@@ -587,6 +587,59 @@ func TestOfficialConversationPollResultUsesLatestImageToolMessage(t *testing.T) 
 	}
 }
 
+func TestOfficialConversationPollResultWithTargetIgnoresHistoricalImage(t *testing.T) {
+	data := map[string]any{
+		"mapping": map[string]any{
+			"old-tool": map[string]any{"message": map[string]any{
+				"id":          "msg-old-tool",
+				"author":      map[string]any{"role": "tool"},
+				"create_time": float64(20),
+				"metadata":    map[string]any{"async_task_type": "image_gen", "turn_exchange_id": "turn-old"},
+				"content": map[string]any{
+					"content_type": "multimodal_text",
+					"parts": []any{map[string]any{
+						"content_type":  "image_asset_pointer",
+						"asset_pointer": "file-service://file_old",
+					}},
+				},
+			}},
+			"assistant-current": map[string]any{"message": map[string]any{
+				"id":          "msg-current-assistant",
+				"author":      map[string]any{"role": "assistant"},
+				"create_time": float64(30),
+				"metadata":    map[string]any{"turn_exchange_id": "turn-current"},
+				"content":     map[string]any{"content_type": "code", "text": "{\"skipped_mainline\":true}"},
+			}},
+			"current-tool": map[string]any{
+				"parent": "assistant-current",
+				"message": map[string]any{
+					"id":          "msg-current-tool",
+					"author":      map[string]any{"role": "tool"},
+					"create_time": float64(10),
+					"metadata":    map[string]any{"async_task_type": "image_gen", "parent_id": "msg-current-assistant"},
+					"content": map[string]any{
+						"content_type": "multimodal_text",
+						"parts": []any{map[string]any{
+							"content_type":  "image_asset_pointer",
+							"asset_pointer": "file-service://file_current",
+						}},
+					},
+				},
+			},
+		},
+	}
+
+	result := officialConversationPollResultFromDataForTarget(data, officialImagePollTarget{TurnExchangeID: "turn-current", MessageIDs: []string{"msg-current-assistant"}})
+	if got := strings.Join(result.FileIDs, ","); got != "file_current" {
+		t.Fatalf("FileIDs = %q, want file_current", got)
+	}
+
+	waiting := officialConversationPollResultFromDataForTarget(data, officialImagePollTarget{TurnExchangeID: "turn-missing", MessageIDs: []string{"msg-missing"}})
+	if len(waiting.FileIDs) != 0 || len(waiting.SedimentIDs) != 0 || waiting.Text != "" {
+		t.Fatalf("missing target result = %#v, want empty while waiting", waiting)
+	}
+}
+
 func TestStreamResponsesImageUsesDirectSSEImageAssetPointer(t *testing.T) {
 	const png1x1 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+X2ioAAAAASUVORK5CYII="
 	imageBytes, err := base64.StdEncoding.DecodeString(png1x1)
@@ -862,6 +915,67 @@ func TestStreamResponsesImageDoesNotTreatQueuedAssistantNoticeAsFinalText(t *tes
 	}
 	if len(results) != 1 || results[0].Result != png1x1 {
 		t.Fatalf("results = %#v, want one final image result", results)
+	}
+}
+
+func TestStreamResponsesImagePollsAsyncImageTaskForCurrentTurn(t *testing.T) {
+	const png1x1 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+X2ioAAAAASUVORK5CYII="
+	imageBytes, err := base64.StdEncoding.DecodeString(png1x1)
+	if err != nil {
+		t.Fatalf("decode png: %v", err)
+	}
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/":
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`<html data-build="build-1"><script src="/backend-api/sentinel/sdk.js"></script></html>`))
+		case r.Method == http.MethodPost && r.URL.Path == "/backend-api/sentinel/chat-requirements":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"token":"req-token","proofofwork":{"required":false},"turnstile":{"required":false},"arkose":{"required":false}}`))
+		case r.Method == http.MethodPost && r.URL.Path == officialPreparePath:
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"conduit_token":"conduit-token"}`))
+		case r.Method == http.MethodPost && r.URL.Path == officialStreamPath:
+			w.Header().Set("Content-Type", "text/event-stream")
+			_, _ = w.Write([]byte(`data: {"type":"resume_conversation_token","conversation_id":"conv-async"}` + "\n\n"))
+			_, _ = w.Write([]byte(`data: {"p":"","o":"add","v":{"message":{"id":"msg-code","author":{"role":"assistant"},"content":{"content_type":"code","language":"python3","text":"{\"skipped_mainline\":true}"},"metadata":{"parent_id":"msg-user","turn_exchange_id":"turn-current"},"recipient":"tool-name"},"conversation_id":"conv-async"}}` + "\n\n"))
+			_, _ = w.Write([]byte(`data: {"p":"","o":"add","v":{"message":{"id":"msg-card","author":{"role":"tool","name":"tool-name"},"content":{"content_type":"text","parts":["正在处理图片\n\n目前有很多人在创建图片，因此可能需要一点时间。"]},"metadata":{"ui_card":true,"image_gen_task_id":"task-current","parent_id":"msg-code","turn_exchange_id":"turn-current"},"recipient":"all"},"conversation_id":"conv-async"}}` + "\n\n"))
+			_, _ = w.Write([]byte(`data: {"type":"server_ste_metadata","metadata":{"tool_invoked":false,"message_id":"msg-code","turn_exchange_id":"turn-current","turn_use_case":"image gen"},"conversation_id":"conv-async"}` + "\n\n"))
+			_, _ = w.Write([]byte(`data: {"type":"message_stream_complete","conversation_id":"conv-async"}` + "\n\n"))
+		case r.Method == http.MethodGet && r.URL.Path == "/backend-api/conversation/conv-async":
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"mapping":{"old-tool":{"message":{"id":"msg-old","author":{"role":"tool"},"create_time":20,"metadata":{"async_task_type":"image_gen","turn_exchange_id":"turn-old"},"content":{"content_type":"multimodal_text","parts":[{"content_type":"image_asset_pointer","asset_pointer":"file-service://file_old"}]}}},"current-tool":{"message":{"id":"msg-current","author":{"role":"tool"},"create_time":10,"metadata":{"async_task_type":"image_gen","image_gen_task_id":"task-current","turn_exchange_id":"turn-current","parent_id":"msg-code"},"content":{"content_type":"multimodal_text","parts":[{"content_type":"image_asset_pointer","asset_pointer":"file-service://file_current"}]}}}}}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/backend-api/files/download/file_current":
+			if got := r.URL.Query().Get("conversation_id"); got != "conv-async" {
+				t.Fatalf("conversation_id = %q", got)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"download_url":"` + server.URL + `/download/file_current.png"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/backend-api/files/download/file_old":
+			t.Fatalf("downloaded historical image")
+		case r.Method == http.MethodGet && r.URL.Path == "/download/file_current.png":
+			w.Header().Set("Content-Type", "image/png")
+			_, _ = w.Write(imageBytes)
+		default:
+			t.Fatalf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	client := newTestBackendClient(server)
+	events, errCh := client.StreamResponsesImage(context.Background(), ResponsesImageRequest{Prompt: "改成动漫风格", Model: "gpt-image-2"})
+	var results []ResponsesImageEvent
+	for event := range events {
+		if event.Result != "" {
+			results = append(results, event)
+		}
+	}
+	if err := <-errCh; err != nil {
+		t.Fatalf("StreamResponsesImage() error = %v", err)
+	}
+	if len(results) != 1 || results[0].Result != png1x1 || results[0].ConversationID != "conv-async" {
+		t.Fatalf("results = %#v, want current async image", results)
 	}
 }
 

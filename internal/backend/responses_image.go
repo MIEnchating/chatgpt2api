@@ -92,6 +92,7 @@ type ResponsesImageEvent struct {
 	TurnUseCase       string
 	Raw               map[string]any
 	interpreterAssets []officialInterpreterAsset
+	pollTarget        officialImagePollTarget
 }
 
 type uploadedImageRef struct {
@@ -114,6 +115,25 @@ type imageConversationState struct {
 	Blocked           bool
 	ToolInvoked       *bool
 	TurnUseCase       string
+	PollTarget        officialImagePollTarget
+}
+
+type officialImagePollTarget struct {
+	TurnExchangeID string
+	ImageGenTaskID string
+	MessageIDs     []string
+}
+
+func (t officialImagePollTarget) clone() officialImagePollTarget {
+	return officialImagePollTarget{
+		TurnExchangeID: t.TurnExchangeID,
+		ImageGenTaskID: t.ImageGenTaskID,
+		MessageIDs:     append([]string(nil), t.MessageIDs...),
+	}
+}
+
+func (t officialImagePollTarget) hasTarget() bool {
+	return strings.TrimSpace(t.TurnExchangeID) != "" || strings.TrimSpace(t.ImageGenTaskID) != "" || len(t.MessageIDs) > 0
 }
 
 type officialInterpreterAsset struct {
@@ -1117,6 +1137,7 @@ func parseOfficialImagePayload(payload string, state *imageConversationState) (R
 		TurnUseCase:       state.TurnUseCase,
 		Raw:               data,
 		interpreterAssets: append([]officialInterpreterAsset(nil), state.InterpreterAssets...),
+		pollTarget:        state.PollTarget.clone(),
 	}
 	if message := officialImageTextMessage(data); message != "" && event.Result == "" {
 		event.Text = message
@@ -1159,6 +1180,7 @@ func updateOfficialImageConversationState(state *imageConversationState, payload
 	if assets := officialInterpreterAssetsFromEvent(event, state.ConversationID); len(assets) > 0 {
 		state.InterpreterAssets = assets
 	}
+	state.PollTarget = mergeOfficialImagePollTarget(state.PollTarget, officialImagePollTargetFromEvent(event))
 	if event["type"] == "moderation" {
 		moderation := util.StringMap(event["moderation_response"])
 		if util.ToBool(moderation["blocked"]) {
@@ -1185,6 +1207,66 @@ func updateOfficialImageConversationState(state *imageConversationState, payload
 	if text := officialImageAssistantText(event); text != "" {
 		state.Text = text
 	}
+}
+
+func officialImagePollTargetFromEvent(event map[string]any) officialImagePollTarget {
+	target := officialImagePollTarget{}
+	mergeMetadata := func(metadata map[string]any) {
+		if len(metadata) == 0 {
+			return
+		}
+		if turnExchangeID := util.Clean(metadata["turn_exchange_id"]); turnExchangeID != "" {
+			target.TurnExchangeID = turnExchangeID
+		}
+		if imageGenTaskID := util.Clean(metadata["image_gen_task_id"]); imageGenTaskID != "" {
+			target.ImageGenTaskID = imageGenTaskID
+		}
+		for _, key := range []string{"message_id", "parent_id"} {
+			if id := util.Clean(metadata[key]); id != "" {
+				target.MessageIDs = appendUniqueString(target.MessageIDs, id)
+			}
+		}
+	}
+	mergeMessage := func(message map[string]any) {
+		if len(message) == 0 {
+			return
+		}
+		if id := util.Clean(message["id"]); id != "" {
+			target.MessageIDs = appendUniqueString(target.MessageIDs, id)
+		}
+		mergeMetadata(util.StringMap(message["metadata"]))
+	}
+	mergeMetadata(util.StringMap(event["metadata"]))
+	if id := util.Clean(event["message_id"]); id != "" {
+		target.MessageIDs = appendUniqueString(target.MessageIDs, id)
+	}
+	mergeMessage(util.StringMap(event["message"]))
+	value := util.StringMap(event["v"])
+	mergeMessage(util.StringMap(value["message"]))
+	if target.TurnExchangeID == "" && target.ImageGenTaskID == "" {
+		target.MessageIDs = nil
+	}
+	return target
+}
+
+func mergeOfficialImagePollTarget(current, incoming officialImagePollTarget) officialImagePollTarget {
+	if !incoming.hasTarget() {
+		return current
+	}
+	if incoming.TurnExchangeID != "" && current.TurnExchangeID != "" && incoming.TurnExchangeID != current.TurnExchangeID {
+		current = officialImagePollTarget{}
+	}
+	if incoming.ImageGenTaskID != "" && current.ImageGenTaskID != "" && incoming.ImageGenTaskID != current.ImageGenTaskID {
+		current = officialImagePollTarget{}
+	}
+	if incoming.TurnExchangeID != "" {
+		current.TurnExchangeID = incoming.TurnExchangeID
+	}
+	if incoming.ImageGenTaskID != "" {
+		current.ImageGenTaskID = incoming.ImageGenTaskID
+	}
+	current.MessageIDs = appendUniqueString(current.MessageIDs, incoming.MessageIDs...)
+	return current
 }
 
 func assistantMessageIDFromOfficialImagePayload(event map[string]any) string {
@@ -1372,7 +1454,7 @@ func (c *Client) resolveOfficialImageResults(ctx context.Context, request Respon
 	sedimentIDs := filterOfficialImageIDs(event.SedimentIDs)
 	text := ""
 	if conversationID != "" && len(fileIDs) == 0 && len(sedimentIDs) == 0 {
-		polled, err := c.pollOfficialImageResults(ctx, conversationID)
+		polled, err := c.pollOfficialImageResults(ctx, conversationID, event.pollTarget)
 		if err != nil {
 			return nil, err
 		}
@@ -1472,7 +1554,7 @@ type officialConversationPollResult struct {
 	MessageID   string
 }
 
-func (c *Client) pollOfficialImageResults(ctx context.Context, conversationID string) (officialConversationPollResult, error) {
+func (c *Client) pollOfficialImageResults(ctx context.Context, conversationID string, target officialImagePollTarget) (officialConversationPollResult, error) {
 	if strings.TrimSpace(conversationID) == "" {
 		return officialConversationPollResult{}, nil
 	}
@@ -1483,7 +1565,7 @@ func (c *Client) pollOfficialImageResults(ctx context.Context, conversationID st
 			return officialConversationPollResult{}, ctx.Err()
 		default:
 		}
-		result, err := c.fetchOfficialConversationImageResult(ctx, conversationID)
+		result, err := c.fetchOfficialConversationImageResult(ctx, conversationID, target)
 		if err != nil {
 			if retry, ok := err.(officialConversationPollRetryError); ok {
 				delay = retry.Delay
@@ -1511,7 +1593,7 @@ func (e officialConversationPollRetryError) Error() string {
 	return "official conversation poll rate limited"
 }
 
-func (c *Client) fetchOfficialConversationImageResult(ctx context.Context, conversationID string) (officialConversationPollResult, error) {
+func (c *Client) fetchOfficialConversationImageResult(ctx context.Context, conversationID string, target officialImagePollTarget) (officialConversationPollResult, error) {
 	path := "/backend-api/conversation/" + conversationID
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, c.BaseURL+path, nil)
 	for key, value := range c.headers(path, map[string]string{"Accept": "application/json"}) {
@@ -1533,36 +1615,47 @@ func (c *Client) fetchOfficialConversationImageResult(ctx context.Context, conve
 	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
 		return officialConversationPollResult{}, err
 	}
-	return officialConversationPollResultFromData(data), nil
+	return officialConversationPollResultFromDataForTarget(data, target), nil
 }
 
 func officialConversationPollResultFromData(data map[string]any) officialConversationPollResult {
+	return officialConversationPollResultFromDataForTarget(data, officialImagePollTarget{})
+}
+
+func officialConversationPollResultFromDataForTarget(data map[string]any, target officialImagePollTarget) officialConversationPollResult {
 	text := officialConversationAssistantText(data)
 	messageID := officialConversationAssistantMessageID(data)
 	var fileIDs []string
 	var sedimentIDs []string
-	for _, message := range latestOfficialConversationImageToolMessages(data) {
+	for _, message := range latestOfficialConversationImageToolMessagesForTarget(data, target) {
 		messageFileIDs, messageSedimentIDs := officialImageAssetPointersFromMessage(message)
 		fileIDs = appendUniqueString(fileIDs, messageFileIDs...)
 		sedimentIDs = appendUniqueString(sedimentIDs, messageSedimentIDs...)
 	}
-	if len(fileIDs) > 0 || len(sedimentIDs) > 0 || isPendingOfficialImageText(text) {
+	if len(fileIDs) > 0 || len(sedimentIDs) > 0 || isPendingOfficialImageText(text) || target.hasTarget() {
 		text = ""
 	}
 	return officialConversationPollResult{FileIDs: fileIDs, SedimentIDs: sedimentIDs, Text: text, MessageID: messageID}
 }
 
 func latestOfficialConversationImageToolMessages(data map[string]any) []map[string]any {
+	return latestOfficialConversationImageToolMessagesForTarget(data, officialImagePollTarget{})
+}
+
+func latestOfficialConversationImageToolMessagesForTarget(data map[string]any, target officialImagePollTarget) []map[string]any {
 	mapping := util.StringMap(data["mapping"])
 	var messages []map[string]any
 	bestTime := -1.0
-	for _, raw := range mapping {
+	for key, raw := range mapping {
 		node, ok := raw.(map[string]any)
 		if !ok {
 			continue
 		}
 		message := util.StringMap(node["message"])
 		if !isOfficialConversationImageToolMessage(message) {
+			continue
+		}
+		if target.hasTarget() && !officialConversationNodeMatchesPollTarget(key, node, message, mapping, target, map[string]bool{}) {
 			continue
 		}
 		fileIDs, sedimentIDs := officialImageAssetPointersFromMessage(message)
@@ -1580,6 +1673,66 @@ func latestOfficialConversationImageToolMessages(data map[string]any) []map[stri
 		}
 	}
 	return messages
+}
+
+func officialConversationNodeMatchesPollTarget(key string, node, message map[string]any, mapping map[string]any, target officialImagePollTarget, seen map[string]bool) bool {
+	if !target.hasTarget() {
+		return true
+	}
+	if key != "" {
+		if seen[key] {
+			return false
+		}
+		seen[key] = true
+	}
+	if officialConversationMessageMatchesPollTarget(key, node, message, target) {
+		return true
+	}
+	parentKey := firstNonEmpty(util.Clean(node["parent"]), util.Clean(node["parent_id"]))
+	if parentKey == "" {
+		return false
+	}
+	parentNode := util.StringMap(mapping[parentKey])
+	if len(parentNode) == 0 {
+		return officialImagePollTargetContainsMessageID(target, parentKey)
+	}
+	return officialConversationNodeMatchesPollTarget(parentKey, parentNode, util.StringMap(parentNode["message"]), mapping, target, seen)
+}
+
+func officialConversationMessageMatchesPollTarget(key string, node, message map[string]any, target officialImagePollTarget) bool {
+	metadata := util.StringMap(message["metadata"])
+	if target.TurnExchangeID != "" && util.Clean(metadata["turn_exchange_id"]) == target.TurnExchangeID {
+		return true
+	}
+	if target.ImageGenTaskID != "" && util.Clean(metadata["image_gen_task_id"]) == target.ImageGenTaskID {
+		return true
+	}
+	for _, id := range []string{
+		key,
+		util.Clean(message["id"]),
+		util.Clean(metadata["message_id"]),
+		util.Clean(metadata["parent_id"]),
+		util.Clean(node["parent"]),
+		util.Clean(node["parent_id"]),
+	} {
+		if officialImagePollTargetContainsMessageID(target, id) {
+			return true
+		}
+	}
+	return false
+}
+
+func officialImagePollTargetContainsMessageID(target officialImagePollTarget, id string) bool {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return false
+	}
+	for _, candidate := range target.MessageIDs {
+		if strings.TrimSpace(candidate) == id {
+			return true
+		}
+	}
+	return false
 }
 
 func isOfficialConversationImageToolMessage(message map[string]any) bool {
