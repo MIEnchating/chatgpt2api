@@ -1,75 +1,22 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import {
-  Ban,
-  CheckCircle2,
-  Copy,
-  Gauge,
-  Eye,
-  EyeOff,
-  KeyRound,
-  LockKeyhole,
-  LoaderCircle,
-  RefreshCw,
-  RotateCcw,
-  Save,
-  ShieldCheck,
-  Trash2,
-  UserCircle2,
-  UserPen,
-} from "lucide-react";
+import { useEffect, useState } from "react";
+import { Copy, Eye, EyeOff, KeyRound, LockKeyhole, LoaderCircle, Save, Trash2, UserCircle2, UserPen } from "lucide-react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import {
-  changeProfilePassword,
-  deleteProfileAPIKey,
-  fetchProfileAPIKey,
-  revealProfileAPIKey,
-  updateProfileName,
-  updateProfileAPIKey,
-  upsertProfileAPIKey,
-  type UserKey,
-} from "@/lib/api";
+import { changeProfilePassword, updateProfileName } from "@/lib/api";
+import { getStoredRelayApiKey, saveStoredRelayApiKey } from "@/lib/relay-key";
 import { authSessionFromLoginResponse, setVerifiedAuthSession } from "@/lib/session";
 import { useAuthGuard } from "@/lib/use-auth-guard";
-import { cn } from "@/lib/utils";
 import type { StoredAuthSession } from "@/store/auth";
 
-function normalizeProfileKeys(items: UserKey[] | null | undefined) {
-  return Array.isArray(items) ? items : [];
-}
-
-function formatDateTime(value?: string | null) {
-  if (!value) {
-    return "—";
-  }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  return new Intl.DateTimeFormat("zh-CN", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(date);
-}
+const relayAIBaseURL = "https://relayai.tech";
 
 function providerLabel(provider?: string) {
   if (provider === "linuxdo") {
@@ -102,32 +49,15 @@ function creationRpmLimitLabel(session: StoredAuthSession) {
   return `${session.creationRpmLimit} 次/分`;
 }
 
-function billingTypeLabel(session: StoredAuthSession) {
-  const billing = session.billing;
-  if (!billing || billing.unlimited) {
-    return "无限额度";
+function maskRelayKey(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "未配置";
   }
-  return billing.type === "subscription" ? "订阅配额制" : "标准余额制";
-}
-
-function billingPrimaryValue(session: StoredAuthSession) {
-  const billing = session.billing;
-  if (!billing || billing.unlimited) {
-    return "不限制";
+  if (trimmed.length <= 10) {
+    return `${trimmed.slice(0, 3)}••••`;
   }
-  if (billing.type === "subscription") {
-    return `${billing.available} / ${billing.subscription?.quota_limit ?? 0}`;
-  }
-  return String(billing.standard?.available_balance ?? billing.available);
-}
-
-function billingResetLabel(session: StoredAuthSession) {
-  const endsAt = session.billing?.subscription?.quota_period_ends_at;
-  return endsAt ? formatDateTime(endsAt) : "—";
-}
-
-function maskKey(hasKey: boolean) {
-  return hasKey ? "sk-••••••••••••••••••••••••••••••••" : "未生成";
+  return `${trimmed.slice(0, 7)}••••••••${trimmed.slice(-4)}`;
 }
 
 type InfoRowProps = {
@@ -141,9 +71,9 @@ function InfoRow({ label, value, code }: InfoRowProps) {
     <div className="flex min-w-0 flex-col gap-1 rounded-lg border border-border bg-muted/30 px-3 py-2">
       <span className="text-xs text-muted-foreground">{label}</span>
       {code ? (
-        <code className="truncate font-mono text-sm text-foreground">{value || "—"}</code>
+        <code className="truncate font-mono text-sm text-foreground">{value || "-"}</code>
       ) : (
-        <span className="truncate text-sm font-medium text-foreground">{value || "—"}</span>
+        <span className="truncate text-sm font-medium text-foreground">{value || "-"}</span>
       )}
     </div>
   );
@@ -151,122 +81,26 @@ function InfoRow({ label, value, code }: InfoRowProps) {
 
 function ProfileContent({ session }: { session: StoredAuthSession }) {
   const [currentSession, setCurrentSession] = useState(session);
-  const [items, setItems] = useState<UserKey[]>([]);
   const [profileName, setProfileName] = useState(session.name || "");
-  const [keyName, setKeyName] = useState("我的 API 令牌");
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [revealedKey, setRevealedKey] = useState("");
-  const [isLoading, setIsLoading] = useState(true);
+  const [relayApiKey, setRelayApiKey] = useState(getStoredRelayApiKey);
+  const [savedRelayApiKey, setSavedRelayApiKey] = useState(getStoredRelayApiKey);
+  const [isRelayKeyVisible, setIsRelayKeyVisible] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
-  const [isSavingName, setIsSavingName] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const [isRevealing, setIsRevealing] = useState(false);
-  const [isToggling, setIsToggling] = useState(false);
-  const [isDeleting, setIsDeleting] = useState(false);
-  const [isRotateDialogOpen, setIsRotateDialogOpen] = useState(false);
-  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isSavingRelayKey, setIsSavingRelayKey] = useState(false);
 
-  const key = items[0] || null;
-  const hasKey = Boolean(key);
-  const isNameDirty = Boolean(key) && keyName.trim() !== (key?.name || "");
   const isProfileNameDirty = profileName.trim() !== (currentSession.name || "");
+  const isRelayKeyDirty = relayApiKey.trim() !== savedRelayApiKey.trim();
+  const relayKeyConfigured = savedRelayApiKey.trim() !== "";
   const roleLabel = sessionRoleLabel(currentSession);
 
   useEffect(() => {
     setCurrentSession(session);
     setProfileName(session.name || "");
   }, [session]);
-
-  const applyItems = useCallback((nextItems: UserKey[]) => {
-    const normalized = normalizeProfileKeys(nextItems);
-    setItems(normalized);
-    setKeyName((currentName) => {
-      if (normalized[0]?.name) {
-        return normalized[0].name;
-      }
-      return currentName.trim() || "我的 API 令牌";
-    });
-  }, []);
-
-  const loadKey = useCallback(async () => {
-    setIsLoading(true);
-    try {
-      const data = await fetchProfileAPIKey();
-      applyItems(data.items);
-      setRevealedKey("");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "加载个人密钥失败");
-    } finally {
-      setIsLoading(false);
-    }
-  }, [applyItems]);
-
-  useEffect(() => {
-    void loadKey();
-  }, [loadKey]);
-
-  const handleGenerate = async () => {
-    setIsGenerating(true);
-    try {
-      const data = await upsertProfileAPIKey(keyName.trim());
-      applyItems(data.items);
-      setRevealedKey(data.key);
-      setIsRotateDialogOpen(false);
-      toast.success(hasKey ? "密钥已重新生成" : "密钥已生成");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "生成密钥失败");
-    } finally {
-      setIsGenerating(false);
-    }
-  };
-
-  const handleReveal = async () => {
-    if (!key) {
-      return;
-    }
-    if (revealedKey) {
-      setRevealedKey("");
-      return;
-    }
-    setIsRevealing(true);
-    try {
-      const data = await revealProfileAPIKey(key.id);
-      setRevealedKey(data.key);
-      toast.success("密钥已显示");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "查看密钥失败");
-    } finally {
-      setIsRevealing(false);
-    }
-  };
-
-  const handleCopy = async (value: string) => {
-    try {
-      await navigator.clipboard.writeText(value);
-      toast.success("已复制到剪贴板");
-    } catch {
-      toast.error("复制失败，请手动复制");
-    }
-  };
-
-  const handleSaveName = async () => {
-    if (!key || !isNameDirty) {
-      return;
-    }
-    setIsSavingName(true);
-    try {
-      const data = await updateProfileAPIKey(key.id, { name: keyName.trim() });
-      applyItems(data.items);
-      toast.success("名称已保存");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "保存名称失败");
-    } finally {
-      setIsSavingName(false);
-    }
-  };
 
   const handleSaveProfile = async () => {
     const nextName = profileName.trim();
@@ -319,52 +153,43 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
     }
   };
 
-  const handleToggle = async () => {
-    if (!key) {
+  const handleSaveRelayKey = async () => {
+    const trimmed = relayApiKey.trim();
+    if (!trimmed) {
+      toast.error("请输入 RelayAI Key");
       return;
     }
-    setIsToggling(true);
+    setIsSavingRelayKey(true);
     try {
-      const data = await updateProfileAPIKey(key.id, { enabled: !key.enabled });
-      applyItems(data.items);
-      toast.success(key.enabled ? "密钥已禁用" : "密钥已启用");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "更新密钥失败");
+      saveStoredRelayApiKey(trimmed);
+      setRelayApiKey(trimmed);
+      setSavedRelayApiKey(trimmed);
+      toast.success("RelayAI Key 已保存");
     } finally {
-      setIsToggling(false);
+      setIsSavingRelayKey(false);
     }
   };
 
-  const handleDelete = async () => {
-    if (!key) {
-      return;
-    }
-    setIsDeleting(true);
+  const handleClearRelayKey = () => {
+    saveStoredRelayApiKey("");
+    setRelayApiKey("");
+    setSavedRelayApiKey("");
+    setIsRelayKeyVisible(false);
+    toast.success("RelayAI Key 已清除");
+  };
+
+  const handleCopy = async (value: string) => {
     try {
-      const data = await deleteProfileAPIKey(key.id);
-      applyItems(data.items);
-      setRevealedKey("");
-      setIsDeleteDialogOpen(false);
-      toast.success("密钥已删除");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "删除密钥失败");
-    } finally {
-      setIsDeleting(false);
+      await navigator.clipboard.writeText(value);
+      toast.success("已复制到剪贴板");
+    } catch {
+      toast.error("复制失败，请手动复制");
     }
   };
 
   return (
     <section className="flex flex-col gap-5">
-      <PageHeader
-        eyebrow="Profile"
-        title="个人中心"
-        actions={
-          <Button variant="outline" onClick={() => void loadKey()} disabled={isLoading} className="h-10 rounded-lg">
-            <RefreshCw className={cn("size-4", isLoading ? "animate-spin" : "")} />
-            刷新
-          </Button>
-        }
-      />
+      <PageHeader eyebrow="个人资料" title="个人中心" />
 
       <div className="grid gap-5 xl:grid-cols-[360px_1fr]">
         <div className="flex flex-col gap-5">
@@ -377,7 +202,7 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
                   </div>
                   <div className="min-w-0">
                     <CardTitle className="truncate text-lg">{currentSession.name || "用户"}</CardTitle>
-                    <CardDescription className="truncate">{currentSession.subjectId || "—"}</CardDescription>
+                    <CardDescription className="truncate">{currentSession.subjectId || "-"}</CardDescription>
                   </div>
                 </div>
                 <Badge variant={currentSession.role === "admin" ? "violet" : "secondary"} className="shrink-0 rounded-md">
@@ -390,36 +215,7 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
               <InfoRow label="登录来源" value={providerLabel(currentSession.provider)} />
               <InfoRow label="角色 ID" value={currentSession.roleId || currentSession.role} code />
               <InfoRow label="创作并发额度" value={creationConcurrentLimitLabel(currentSession)} />
-              <InfoRow label="RPM 限制" value={creationRpmLimitLabel(currentSession)} />
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <div className="flex min-w-0 items-center gap-3">
-                <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-[#edf4ff] text-[#1456f0] dark:bg-sky-950/30 dark:text-sky-300">
-                  <Gauge className="size-5" />
-                </div>
-                <div className="min-w-0">
-                  <CardTitle className="text-lg">本地计费</CardTitle>
-                  <CardDescription className="truncate">图片计费单位</CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-              <InfoRow label="计费类型" value={billingTypeLabel(currentSession)} />
-              <InfoRow label={currentSession.billing?.type === "subscription" ? "剩余 / 上限" : "可用余额"} value={billingPrimaryValue(currentSession)} />
-              {currentSession.billing?.type === "subscription" && !currentSession.billing.unlimited ? (
-                <>
-                  <InfoRow label="当期已用" value={String(currentSession.billing.subscription?.quota_used ?? 0)} />
-                  <InfoRow label="下次重置" value={billingResetLabel(currentSession)} />
-                </>
-              ) : null}
-              {currentSession.billing?.type === "standard" && !currentSession.billing.unlimited ? (
-                <>
-                  <InfoRow label="当前余额" value={String(currentSession.billing.standard?.balance ?? 0)} />
-                </>
-              ) : null}
+              <InfoRow label="每分钟请求限制" value={creationRpmLimitLabel(currentSession)} />
             </CardContent>
           </Card>
 
@@ -504,7 +300,7 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
                 </div>
                 <div className="min-w-0">
                   <CardTitle className="text-lg">账号资料</CardTitle>
-                  <CardDescription className="truncate">{currentSession.subjectId || "—"}</CardDescription>
+                  <CardDescription className="truncate">{currentSession.subjectId || "-"}</CardDescription>
                 </div>
               </div>
             </CardHeader>
@@ -539,208 +335,106 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
 
           <Card>
             <CardHeader>
-            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-              <div className="flex min-w-0 items-center gap-3">
-                <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-[#edf4ff] text-[#1456f0] dark:bg-sky-950/30 dark:text-sky-300">
-                  <KeyRound className="size-5" />
+              <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div className="flex min-w-0 items-center gap-3">
+                  <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-[#edf4ff] text-[#1456f0] dark:bg-sky-950/30 dark:text-sky-300">
+                    <KeyRound className="size-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <CardTitle className="text-lg">RelayAI Key</CardTitle>
+                    <CardDescription className="truncate">创作台会自动读取这里保存的 Key</CardDescription>
+                  </div>
                 </div>
-                <div className="min-w-0">
-                  <CardTitle className="text-lg">接口密钥</CardTitle>
-                  <CardDescription className="truncate">
-                    {key?.id || "尚未生成"}
-                  </CardDescription>
-                </div>
+                <Badge variant={relayKeyConfigured ? "success" : "secondary"} className="w-fit rounded-md">
+                  {relayKeyConfigured ? "已配置" : "未配置"}
+                </Badge>
               </div>
-              {key ? (
-                <Badge variant={key.enabled ? "success" : "danger"} className="w-fit rounded-md">
-                  {key.enabled ? "已启用" : "已禁用"}
-                </Badge>
-              ) : (
-                <Badge variant="secondary" className="w-fit rounded-md">
-                  未生成
-                </Badge>
-              )}
-            </div>
             </CardHeader>
             <CardContent className="flex flex-col gap-5">
-            {isLoading ? (
-              <div className="flex min-h-[260px] items-center justify-center">
-                <LoaderCircle className="size-5 animate-spin text-stone-400" />
+              <div className="grid gap-3 md:grid-cols-2">
+                <InfoRow label="Base URL" value={relayAIBaseURL} code />
+                <InfoRow label="当前状态" value={relayKeyConfigured ? "可以生成图片和对话" : "生成前需要先填写 Key"} />
               </div>
-            ) : (
-              <>
-                <FieldGroup>
-                  <Field>
-                    <FieldLabel htmlFor="profile-api-key-name">密钥名称</FieldLabel>
-                    <div className="flex flex-col gap-2 sm:flex-row">
+
+              <FieldGroup>
+                <Field>
+                  <FieldLabel htmlFor="profile-relay-key">RelayAI Key</FieldLabel>
+                  <div className="flex flex-col gap-2 sm:flex-row">
+                    <div className="relative min-w-0 flex-1">
                       <Input
-                        id="profile-api-key-name"
-                        value={keyName}
-                        onChange={(event) => setKeyName(event.target.value)}
-                        placeholder="我的 API 令牌"
-                        className="h-10 rounded-lg"
+                        id="profile-relay-key"
+                        type={isRelayKeyVisible ? "text" : "password"}
+                        value={relayApiKey}
+                        onChange={(event) => setRelayApiKey(event.target.value)}
+                        placeholder="sk-..."
+                        className="h-10 rounded-lg pr-10"
+                        autoComplete="off"
                       />
-                      <Button
+                      <button
                         type="button"
-                        variant="outline"
-                        className="h-10 rounded-lg"
-                        onClick={() => void handleSaveName()}
-                        disabled={!key || !isNameDirty || isSavingName}
+                        className="absolute top-1/2 right-2 inline-flex size-8 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition hover:bg-accent hover:text-foreground"
+                        onClick={() => setIsRelayKeyVisible((visible) => !visible)}
+                        aria-label={isRelayKeyVisible ? "隐藏 Key" : "显示 Key"}
+                        title={isRelayKeyVisible ? "隐藏" : "显示"}
                       >
-                        {isSavingName ? <LoaderCircle className="size-4 animate-spin" /> : <Save className="size-4" />}
-                        保存
-                      </Button>
+                        {isRelayKeyVisible ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
+                      </button>
                     </div>
-                    <FieldDescription>用于区分当前账号的接口调用密钥。</FieldDescription>
-                  </Field>
-                </FieldGroup>
-
-                <div className="flex min-w-0 flex-col gap-2 rounded-xl border border-border bg-muted/30 p-3">
-                  <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
-                    <span>Bearer Token</span>
-                    <span>更新 {formatDateTime(key?.created_at)}</span>
-                  </div>
-                  <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
-                    <code className="min-w-0 flex-1 truncate rounded-lg bg-background px-3 py-2 font-mono text-sm text-foreground">
-                      {revealedKey || maskKey(hasKey)}
-                    </code>
-                    <div className="flex shrink-0 items-center gap-2">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        className="size-9 rounded-lg"
-                        onClick={() => void handleReveal()}
-                        disabled={!key || isRevealing}
-                        aria-label={revealedKey ? "隐藏密钥" : "查看密钥"}
-                        title={revealedKey ? "隐藏" : "查看"}
-                      >
-                        {isRevealing ? (
-                          <LoaderCircle className="size-4 animate-spin" />
-                        ) : revealedKey ? (
-                          <EyeOff className="size-4" />
-                        ) : (
-                          <Eye className="size-4" />
-                        )}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="icon"
-                        className="size-9 rounded-lg"
-                        onClick={() => revealedKey ? void handleCopy(revealedKey) : null}
-                        disabled={!revealedKey}
-                        aria-label="复制密钥"
-                        title="复制"
-                      >
-                        <Copy className="size-4" />
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="grid gap-3 md:grid-cols-3">
-                  <InfoRow label="密钥 ID" value={key?.id || "—"} code />
-                  <InfoRow label="创建时间" value={formatDateTime(key?.created_at)} />
-                  <InfoRow label="最近使用" value={formatDateTime(key?.last_used_at)} />
-                </div>
-
-                <div className="flex flex-wrap items-center justify-end gap-2">
-                  {key ? (
-                    <>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="h-10 rounded-lg"
-                        onClick={() => void handleToggle()}
-                        disabled={isToggling}
-                      >
-                        {isToggling ? (
-                          <LoaderCircle className="size-4 animate-spin" />
-                        ) : key.enabled ? (
-                          <Ban className="size-4" />
-                        ) : (
-                          <CheckCircle2 className="size-4" />
-                        )}
-                        {key.enabled ? "禁用" : "启用"}
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="h-10 rounded-lg"
-                        onClick={() => setIsRotateDialogOpen(true)}
-                        disabled={isGenerating}
-                      >
-                        <RotateCcw className="size-4" />
-                        重新生成
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="h-10 rounded-lg border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
-                        onClick={() => setIsDeleteDialogOpen(true)}
-                        disabled={isDeleting}
-                      >
-                        <Trash2 className="size-4" />
-                        删除
-                      </Button>
-                    </>
-                  ) : (
-                    <Button type="button" className="h-10 rounded-lg" onClick={() => void handleGenerate()} disabled={isGenerating}>
-                      {isGenerating ? <LoaderCircle className="size-4 animate-spin" /> : <KeyRound className="size-4" />}
-                      生成密钥
+                    <Button
+                      type="button"
+                      className="h-10 rounded-lg"
+                      onClick={() => void handleSaveRelayKey()}
+                      disabled={!isRelayKeyDirty || isSavingRelayKey}
+                    >
+                      {isSavingRelayKey ? <LoaderCircle className="size-4 animate-spin" /> : <Save className="size-4" />}
+                      保存
                     </Button>
-                  )}
+                  </div>
+                  <FieldDescription>
+                    Key 只保存在当前浏览器；提交创作请求时会发送给固定的 RelayAI 上游。
+                  </FieldDescription>
+                </Field>
+              </FieldGroup>
+
+              <div className="flex min-w-0 flex-col gap-2 rounded-xl border border-border bg-muted/30 p-3">
+                <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                  <span>已保存的 Key</span>
+                  <span>{relayKeyConfigured ? "当前浏览器可用" : "尚未保存"}</span>
                 </div>
-              </>
-            )}
+                <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
+                  <code className="min-w-0 flex-1 truncate rounded-lg bg-background px-3 py-2 font-mono text-sm text-foreground">
+                    {isRelayKeyVisible ? savedRelayApiKey || "未配置" : maskRelayKey(savedRelayApiKey)}
+                  </code>
+                  <div className="flex shrink-0 items-center gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      className="size-9 rounded-lg"
+                      onClick={() => savedRelayApiKey ? void handleCopy(savedRelayApiKey) : null}
+                      disabled={!savedRelayApiKey}
+                      aria-label="复制 Key"
+                      title="复制"
+                    >
+                      <Copy className="size-4" />
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="h-9 rounded-lg border-rose-200 px-3 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                      onClick={handleClearRelayKey}
+                      disabled={!savedRelayApiKey}
+                    >
+                      <Trash2 className="size-4" />
+                      清除
+                    </Button>
+                  </div>
+                </div>
+              </div>
             </CardContent>
           </Card>
         </div>
       </div>
-
-      <Dialog open={isRotateDialogOpen} onOpenChange={setIsRotateDialogOpen}>
-        <DialogContent className="rounded-2xl p-6">
-          <DialogHeader className="gap-2">
-            <DialogTitle className="flex items-center gap-2">
-              <ShieldCheck className="size-5 text-[#1456f0]" />
-              重新生成密钥
-            </DialogTitle>
-            <DialogDescription className="text-sm leading-6">
-              旧密钥会立即失效
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button type="button" variant="secondary" className="h-10 rounded-xl px-5" onClick={() => setIsRotateDialogOpen(false)} disabled={isGenerating}>
-              取消
-            </Button>
-            <Button type="button" className="h-10 rounded-xl px-5" onClick={() => void handleGenerate()} disabled={isGenerating}>
-              {isGenerating ? <LoaderCircle className="size-4 animate-spin" /> : <RotateCcw className="size-4" />}
-              确认
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <DialogContent className="rounded-2xl p-6">
-          <DialogHeader className="gap-2">
-            <DialogTitle>删除密钥</DialogTitle>
-            <DialogDescription className="text-sm leading-6">
-              确认删除「{key?.name || "我的 API 令牌"}」吗？
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button type="button" variant="secondary" className="h-10 rounded-xl px-5" onClick={() => setIsDeleteDialogOpen(false)} disabled={isDeleting}>
-              取消
-            </Button>
-            <Button type="button" variant="destructive" className="h-10 rounded-xl px-5" onClick={() => void handleDelete()} disabled={isDeleting}>
-              {isDeleting ? <LoaderCircle className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
-              删除
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </section>
   );
 }

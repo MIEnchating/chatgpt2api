@@ -62,8 +62,8 @@ import {
   createImageGenerationTask,
   DEFAULT_CHAT_MODEL,
   DEFAULT_IMAGE_MODEL,
+  fetchRelayModels,
   fetchCreationTasks,
-  fetchProfile,
   IMAGE_CREATION_MODEL_OPTIONS,
   IMAGE_MODEL_ROUTE_DETAILS,
   IMAGE_OUTPUT_FORMAT_OPTIONS,
@@ -71,12 +71,14 @@ import {
   isImageCreationModel,
   isImageModel,
   isImageOutputFormat,
+  relayModelOptionsFromList,
   supportsImageOutputCompression,
   supportsImageOutputControls,
   supportsStructuredImageParameters,
   usesOfficialImageRoute,
   updateManagedImageVisibility,
   type ImageModel,
+  type ImageModelOption,
   type ImageOutputFormat,
   type CreationTask,
   type CreationTaskMessage,
@@ -85,9 +87,10 @@ import {
 import { fetchAuthenticatedImageBlob } from "@/lib/authenticated-image";
 import { clearImageManagerCache } from "@/lib/image-manager-cache";
 import { getManagedImagePathFromUrl } from "@/lib/image-path";
-import { authSessionFromLoginResponse, setVerifiedAuthSession } from "@/lib/session";
+import { getStoredRelayApiKey, RELAY_API_KEY_CHANGED_EVENT, RELAY_API_KEY_STORAGE_KEY } from "@/lib/relay-key";
 import { cn } from "@/lib/utils";
 import { useAuthGuard } from "@/lib/use-auth-guard";
+import { hasAPIPermission, type StoredAuthSession } from "@/store/auth";
 import {
   ACTIVE_IMAGE_CONVERSATION_STORAGE_KEY,
   clearImageConversations,
@@ -128,7 +131,7 @@ const IMAGE_CUSTOM_WIDTH_STORAGE_KEY = "chatgpt2api:image_last_custom_width";
 const IMAGE_CUSTOM_HEIGHT_STORAGE_KEY = "chatgpt2api:image_last_custom_height";
 const IMAGE_OUTPUT_FORMAT_STORAGE_KEY = "chatgpt2api:image_last_output_format";
 const IMAGE_OUTPUT_COMPRESSION_STORAGE_KEY = "chatgpt2api:image_last_output_compression";
-const QUOTA_REFRESH_EVENT = "chatgpt2api:quota-refresh";
+const IMAGE_STREAM_STORAGE_KEY = "chatgpt2api:image_stream_enabled";
 const DEFAULT_IMAGE_OUTPUT_FORMAT: ImageOutputFormat = "png";
 const activeConversationQueueIds = new Set<string>();
 const EMPTY_IMAGE_ASPECT_RATIO_SELECT_VALUE = "__empty_aspect_ratio__";
@@ -151,6 +154,7 @@ type EditingTurnDraft = {
   customHeight: string;
   outputFormat: ImageOutputFormat;
   outputCompression: string;
+  stream: boolean;
   visibility: ImageVisibility;
   referenceImages: StoredReferenceImage[];
 };
@@ -379,10 +383,8 @@ function imageOutputCompressionForFormat(format: ImageOutputFormat, value: unkno
   return normalizeOutputCompressionValue(value);
 }
 
-function formatHighResolutionHint(canInspectAccounts: boolean) {
-  return canInspectAccounts
-    ? "Codex 结构化高分辨率参数不会在本地预拦截，会直接提交给上游；上游会按账号能力判断或返回错误。"
-    : "Codex 结构化高分辨率参数会直接提交给上游；上游会按账号能力判断或返回错误。";
+function formatHighResolutionHint() {
+  return "高分辨率参数会直接提交给 RelayAI，上游会按模型能力判断或返回错误。";
 }
 
 function imageTaskProgressMessage(turn: ImageTurn, elapsedSeconds = 0) {
@@ -638,6 +640,9 @@ function getStoredImageModel(): ImageModel {
     return DEFAULT_IMAGE_MODEL;
   }
   const storedModel = window.localStorage.getItem(IMAGE_MODEL_STORAGE_KEY);
+  if (storedModel === "auto") {
+    return DEFAULT_IMAGE_MODEL;
+  }
   return isImageModel(storedModel) ? storedModel : DEFAULT_IMAGE_MODEL;
 }
 
@@ -686,6 +691,27 @@ function getStoredImageOutputCompression(): string {
   }
   const normalized = normalizeOutputCompressionValue(window.localStorage.getItem(IMAGE_OUTPUT_COMPRESSION_STORAGE_KEY));
   return normalized === undefined ? "" : String(normalized);
+}
+
+function getStoredImageStreamEnabled() {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  return window.localStorage.getItem(IMAGE_STREAM_STORAGE_KEY) === "true";
+}
+
+function ensureModelOption(options: ReadonlyArray<ImageModelOption>, model: ImageModel): ImageModelOption[] {
+  if (!model || options.some((option) => option.value === model)) {
+    return [...options];
+  }
+  return [{ value: model, label: model }, ...options];
+}
+
+function ensureDefaultImageModelOption(options: ReadonlyArray<ImageModelOption>): ImageModelOption[] {
+  return [
+    { value: DEFAULT_IMAGE_MODEL, label: DEFAULT_IMAGE_MODEL },
+    ...options.filter((option) => option.value !== DEFAULT_IMAGE_MODEL),
+  ];
 }
 
 function serializeImageSizeSelection(selection: ImageSizeSelection): StoredImageSizeSelection {
@@ -741,8 +767,8 @@ function formatCreationTaskErrorMessage(message: string) {
   if (normalized.includes("an error occurred while processing your request")) {
     const requestId = trimmed.match(/request id\s+([a-z0-9-]+)/i)?.[1];
     return [
-      "上游处理图片请求失败，可能是提示词内容过多、账号能力限制或当前图片链路繁忙。",
-      "建议减少提示词内容，或稍后重试；Codex 结构化高分辨率请求可降低尺寸后再试。",
+      "RelayAI 处理图片请求失败，可能是提示词内容过多、模型能力限制或当前图片链路繁忙。",
+      "建议减少提示词内容，或稍后重试；高分辨率请求可降低尺寸后再试。",
       requestId ? `请求 ID：${requestId}` : "",
     ]
       .filter(Boolean)
@@ -752,10 +778,10 @@ function formatCreationTaskErrorMessage(message: string) {
     return "没有生成图片，模型可能检测到敏感内容并拒绝了这次请求，请调整提示词后重试。";
   }
   if (normalized.includes("timed out waiting for async image generation")) {
-    return "图片生成等待超时，建议稍后重试；如果使用 Codex 结构化高分辨率参数，可降低尺寸后再试。";
+    return "图片生成等待超时，建议稍后重试；如果使用高分辨率参数，可降低尺寸后再试。";
   }
   if (normalized.includes("no available image quota")) {
-    return "当前没有可用的图片额度，请检查账号额度或稍后重试。";
+    return "当前 RelayAI Key 没有可用额度，请检查余额或稍后重试。";
   }
 
   return trimmed;
@@ -763,25 +789,6 @@ function formatCreationTaskErrorMessage(message: string) {
 
 function formatCreationTaskError(error: unknown, fallback = "生成图片失败") {
   return formatCreationTaskErrorMessage(error instanceof Error ? error.message : String(error || fallback));
-}
-
-function formatBillingSummary(session: NonNullable<ReturnType<typeof useAuthGuard>["session"]>) {
-  const billing = session.billing;
-  if (!billing) {
-    return "本地额度 --";
-  }
-  if (billing.unlimited) {
-    return "本地额度无限";
-  }
-  if (billing.type === "subscription") {
-    return `订阅剩余 ${billing.available}`;
-  }
-  return `余额 ${billing.available}`;
-}
-
-function hasEnoughBilling(session: NonNullable<ReturnType<typeof useAuthGuard>["session"]>, estimated: number) {
-  const billing = session.billing;
-  return !billing || billing.unlimited || Math.max(0, Number(billing.available) || 0) >= estimated;
 }
 
 function deriveTurnStatus(turn: ImageTurn): Pick<ImageTurn, "status" | "error"> {
@@ -1037,7 +1044,7 @@ async function recoverConversationHistory(items: ImageConversation[]) {
 }
 
 
-function ImagePageContent({ session }: { session: NonNullable<ReturnType<typeof useAuthGuard>["session"]> }) {
+function ImagePageContent({ session }: { session: StoredAuthSession }) {
   const isSubmitDispatchingRef = useRef(false);
   const retryingImageIdsRef = useRef(new Set<string>());
   const cancelledTurnIdsRef = useRef(new Set<string>());
@@ -1062,6 +1069,13 @@ function ImagePageContent({ session }: { session: NonNullable<ReturnType<typeof 
   const [imageCustomHeight, setImageCustomHeight] = useState(() => getStoredImageSizeSelection().customHeight);
   const [imageOutputFormat, setImageOutputFormat] = useState<ImageOutputFormat>(getStoredImageOutputFormat);
   const [imageOutputCompression, setImageOutputCompression] = useState(getStoredImageOutputCompression);
+  const [imageStreamEnabled, setImageStreamEnabled] = useState(getStoredImageStreamEnabled);
+  const [relayApiKey, setRelayApiKey] = useState(getStoredRelayApiKey);
+  const [relayImageModelOptions, setRelayImageModelOptions] = useState<ImageModelOption[]>(() =>
+    ensureDefaultImageModelOption(IMAGE_CREATION_MODEL_OPTIONS),
+  );
+  const [isRelayModelsLoading, setIsRelayModelsLoading] = useState(false);
+  const [relayModelError, setRelayModelError] = useState("");
   const [defaultImageVisibility, setDefaultImageVisibility] = useState<ImageVisibility>("private");
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isPromptMarketOpen, setIsPromptMarketOpen] = useState(false);
@@ -1085,8 +1099,6 @@ function ImagePageContent({ session }: { session: NonNullable<ReturnType<typeof 
     sharePromptParameters: false,
     shareReferenceImages: false,
   });
-  const canInspectAccounts = session.role === "admin" || session.apiPermissions.includes("get/api/accounts");
-
   const parsedCount = useMemo(() => normalizeRequestedImageCount(imageCount), [imageCount]);
   const imageSize = useMemo(
     () => {
@@ -1139,11 +1151,11 @@ function ImagePageContent({ session }: { session: NonNullable<ReturnType<typeof 
     editingTurnDraft && editingTurnDraft.mode !== "chat" && editingDraftEffectiveSizeSelection
       ? editingDraftImageSize
         ? formatImageSizeDisplay(editingDraftImageSize)
-        : editingDraftEffectiveSizeSelection.mode === "auto" ||
+          : editingDraftEffectiveSizeSelection.mode === "auto" ||
             (editingDraftEffectiveSizeSelection.mode === "ratio" &&
               editingDraftEffectiveSizeSelection.resolution === "auto" &&
               !editingDraftCustomRatioInvalid)
-          ? "Auto"
+          ? "自动"
           : "尺寸无效"
       : "";
   const editingDraftSizePreviewDetail =
@@ -1156,8 +1168,8 @@ function ImagePageContent({ session }: { session: NonNullable<ReturnType<typeof 
               ? `将把 ${editingDraftImageSize} 写入提示词作为构图偏好`
               : `将按 ${editingDraftImageSize} 比例下发`
             : editingDraftOfficialRoute
-              ? "不写入固定比例，交给官方链路决定"
-              : "Auto 比例将交给模型决定"
+              ? "不写入固定比例，交给 RelayAI 决定"
+              : "自动比例将交给模型决定"
           : editingDraftImageSize
             ? editingDraftOfficialRoute
               ? `将把 ${formatImageSizeDisplay(editingDraftImageSize)} 作为提示词构图偏好，实际像素以结果为准`
@@ -1168,12 +1180,35 @@ function ImagePageContent({ session }: { session: NonNullable<ReturnType<typeof 
           ? `已按链路限制校准为 ${formatImageSizeDisplay(editingDraftImageSize)}，${getImageSizeRequirementLabel(editingDraftImageSize)}`
           : "宽高需要填写正整数"
         : editingDraftOfficialRoute
-          ? "不写入尺寸提示，实际像素由官方返回决定"
+          ? "不写入尺寸提示，实际像素由 RelayAI 返回决定"
           : "不会强制指定尺寸";
   const editingDraftSizeIsHighResolution = Boolean(
     editingDraftStructuredParameters && editingDraftImageSize && isHighResolutionImageSize(editingDraftImageSize),
   );
-  const composerModelOptions = composerMode === "chat" ? CHAT_MODEL_OPTIONS : IMAGE_CREATION_MODEL_OPTIONS;
+  const imageCreationModelOptions = useMemo(
+    () => ensureDefaultImageModelOption(relayImageModelOptions.length > 0 ? relayImageModelOptions : IMAGE_CREATION_MODEL_OPTIONS),
+    [relayImageModelOptions],
+  );
+  const composerImageModelOptions = useMemo(
+    () => (composerMode === "image" ? ensureModelOption(imageCreationModelOptions, imageModel) : imageCreationModelOptions),
+    [composerMode, imageCreationModelOptions, imageModel],
+  );
+  const composerModelOptions = composerMode === "chat" ? CHAT_MODEL_OPTIONS : composerImageModelOptions;
+  const imageModelStatus = isRelayModelsLoading
+    ? "正在通过 Key 获取模型"
+    : relayModelError
+      ? relayModelError
+      : relayApiKey.trim()
+        ? "模型已通过当前 Key 获取"
+        : "在个人中心配置 Key 后会自动获取模型";
+  const editingTurnModelOptions = useMemo(() => {
+    if (!editingTurnDraft) {
+      return [];
+    }
+    return editingTurnDraft.mode === "chat"
+      ? CHAT_MODEL_OPTIONS
+      : ensureModelOption(imageCreationModelOptions, editingTurnDraft.model);
+  }, [editingTurnDraft, imageCreationModelOptions]);
   const selectedConversation = useMemo(
     () => conversations.find((item) => item.id === selectedConversationId) ?? null,
     [conversations, selectedConversationId],
@@ -1186,9 +1221,6 @@ function ImagePageContent({ session }: { session: NonNullable<ReturnType<typeof 
       }, 0),
     [conversations],
   );
-  const billingSummary = formatBillingSummary(session);
-  const estimatedBillingUnits = composerMode === "chat" ? 1 : parsedCount;
-  const billingBlocked = !hasEnoughBilling(session, estimatedBillingUnits);
   const deleteConfirmTitle = deleteConfirm?.type === "all" ? "清空历史记录" : deleteConfirm?.type === "one" ? "删除对话" : "";
   const deleteConfirmDescription =
     deleteConfirm?.type === "all"
@@ -1196,10 +1228,7 @@ function ImagePageContent({ session }: { session: NonNullable<ReturnType<typeof 
       : deleteConfirm?.type === "one"
         ? "确认删除这条图片对话吗？删除后无法恢复。"
         : "";
-  const highResolutionHint = useMemo(
-    () => formatHighResolutionHint(canInspectAccounts),
-    [canInspectAccounts],
-  );
+  const highResolutionHint = useMemo(() => formatHighResolutionHint(), []);
 
   useEffect(() => {
     conversationsRef.current = conversations;
@@ -1451,10 +1480,49 @@ function ImagePageContent({ session }: { session: NonNullable<ReturnType<typeof 
       return;
     }
 
-    if (!isImageCreationModel(imageModel)) {
-      setImageModel(DEFAULT_IMAGE_MODEL);
+    if (!imageCreationModelOptions.some((option) => option.value === imageModel)) {
+      setImageModel(imageCreationModelOptions[0]?.value ?? DEFAULT_IMAGE_MODEL);
     }
-  }, [composerMode, imageModel]);
+  }, [composerMode, imageCreationModelOptions, imageModel]);
+
+  useEffect(() => {
+    const trimmed = relayApiKey.trim();
+    if (!trimmed) {
+      setRelayImageModelOptions(ensureDefaultImageModelOption(IMAGE_CREATION_MODEL_OPTIONS));
+      setRelayModelError("");
+      setIsRelayModelsLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timer = window.setTimeout(() => {
+      setIsRelayModelsLoading(true);
+      setRelayModelError("");
+      void fetchRelayModels(trimmed, controller.signal)
+        .then((result) => {
+          const options = ensureDefaultImageModelOption(relayModelOptionsFromList(result.data));
+          setRelayImageModelOptions(options.length > 0 ? options : ensureDefaultImageModelOption(IMAGE_CREATION_MODEL_OPTIONS));
+        })
+        .catch((error) => {
+          if (controller.signal.aborted) {
+            return;
+          }
+          const message = error instanceof Error ? error.message : "请求失败";
+          setRelayModelError(`模型获取失败：${message}`);
+          setRelayImageModelOptions(ensureDefaultImageModelOption(IMAGE_CREATION_MODEL_OPTIONS));
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) {
+            setIsRelayModelsLoading(false);
+          }
+        });
+    }, 500);
+
+    return () => {
+      window.clearTimeout(timer);
+      controller.abort();
+    };
+  }, [relayApiKey]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -1463,6 +1531,35 @@ function ImagePageContent({ session }: { session: NonNullable<ReturnType<typeof 
 
     window.localStorage.setItem(IMAGE_MODEL_STORAGE_KEY, imageModel);
   }, [imageModel]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.localStorage.setItem(IMAGE_STREAM_STORAGE_KEY, imageStreamEnabled ? "true" : "false");
+  }, [imageStreamEnabled]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const refreshRelayKey = () => {
+      setRelayApiKey(getStoredRelayApiKey());
+    };
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === RELAY_API_KEY_STORAGE_KEY) {
+        refreshRelayKey();
+      }
+    };
+
+    window.addEventListener(RELAY_API_KEY_CHANGED_EVENT, refreshRelayKey);
+    window.addEventListener("storage", handleStorage);
+    return () => {
+      window.removeEventListener(RELAY_API_KEY_CHANGED_EVENT, refreshRelayKey);
+      window.removeEventListener("storage", handleStorage);
+    };
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -1954,6 +2051,7 @@ function ImagePageContent({ session }: { session: NonNullable<ReturnType<typeof 
         targetTurn.outputCompression === undefined || targetTurn.outputCompression === null
           ? ""
           : String(targetTurn.outputCompression),
+      stream: targetTurn.mode === "chat" ? false : targetTurn.stream === true,
       visibility: targetTurn.visibility || "private",
       referenceImages: targetTurn.mode === "chat" ? [] : targetTurn.referenceImages,
     });
@@ -2158,9 +2256,10 @@ function ImagePageContent({ session }: { session: NonNullable<ReturnType<typeof 
                 activeTurn.model,
                 taskMessages,
                 activeTurn.referenceImages.map((img) => ({ name: img.name, dataUrl: img.dataUrl })),
+                relayApiKey.trim(),
               );
             }
-            return createChatCompletionTask(group.taskId, activeTurn.prompt, activeTurn.model, taskMessages);
+            return createChatCompletionTask(group.taskId, activeTurn.prompt, activeTurn.model, taskMessages, undefined, relayApiKey.trim());
           }
           if (usesReferenceImages(activeTurn.mode)) {
             return createImageEditTask(
@@ -2176,6 +2275,9 @@ function ImagePageContent({ session }: { session: NonNullable<ReturnType<typeof 
               taskImageResolution,
               taskOutputFormat,
               taskOutputCompression,
+              undefined,
+              relayApiKey.trim(),
+              activeTurn.stream === true,
             );
           }
           return createImageGenerationTask(
@@ -2190,6 +2292,9 @@ function ImagePageContent({ session }: { session: NonNullable<ReturnType<typeof 
             taskImageResolution,
             taskOutputFormat,
             taskOutputCompression,
+            undefined,
+            relayApiKey.trim(),
+            activeTurn.stream === true,
           );
         };
         updateTurnProgress(conversationId, activeTurn.id, {
@@ -2255,13 +2360,6 @@ function ImagePageContent({ session }: { session: NonNullable<ReturnType<typeof 
           message: activeTurn.mode === "chat" ? "回复完成" : "生成完成",
           detail: "正在刷新会话",
         });
-        if (activeTurn.mode !== "chat") {
-          window.dispatchEvent(new Event(QUOTA_REFRESH_EVENT));
-        }
-        if (session.role === "user") {
-          const data = await fetchProfile();
-          await setVerifiedAuthSession(authSessionFromLoginResponse(data, session.key));
-        }
       } catch (error) {
         const message = formatCreationTaskError(error, activeTurn.mode === "chat" ? "对话请求失败" : "生成图片失败");
         await updateConversation(conversationId, (current) => {
@@ -2302,7 +2400,7 @@ function ImagePageContent({ session }: { session: NonNullable<ReturnType<typeof 
         }
       }
     },
-    [clearTurnProgress, session.key, session.role, updateConversation, updateTurnProgress],
+    [clearTurnProgress, relayApiKey, updateConversation, updateTurnProgress],
   );
   useEffect(() => {
     for (const conversation of conversations) {
@@ -2446,6 +2544,10 @@ function ImagePageContent({ session }: { session: NonNullable<ReturnType<typeof 
         toast.error("未找到可用的参考图");
         return;
       }
+      if (!relayApiKey.trim()) {
+        toast.error("请先到个人中心配置 RelayAI Key");
+        return;
+      }
 
       retryingImageIdsRef.current.add(retryKey);
       const now = new Date().toISOString();
@@ -2498,7 +2600,7 @@ function ImagePageContent({ session }: { session: NonNullable<ReturnType<typeof 
         retryingImageIdsRef.current.delete(retryKey);
       }
     },
-    [runConversationQueue, updateConversation],
+    [relayApiKey, runConversationQueue, updateConversation],
   );
 
   const handleRegenerateTurn = useCallback(
@@ -2519,6 +2621,10 @@ function ImagePageContent({ session }: { session: NonNullable<ReturnType<typeof 
       }
       if (usesReferenceImages(targetTurn.mode) && targetTurn.referenceImages.length === 0) {
         toast.error("未找到可用的参考图");
+        return;
+      }
+      if (!relayApiKey.trim()) {
+        toast.error("请先到个人中心配置 RelayAI Key");
         return;
       }
 
@@ -2561,7 +2667,7 @@ function ImagePageContent({ session }: { session: NonNullable<ReturnType<typeof 
       void runConversationQueue(conversationId);
       toast.success("已加入重新生成队列");
     },
-    [runConversationQueue, updateConversation],
+    [relayApiKey, runConversationQueue, updateConversation],
   );
 
   const handleSaveEditingTurn = useCallback(
@@ -2584,6 +2690,10 @@ function ImagePageContent({ session }: { session: NonNullable<ReturnType<typeof 
       }
       if (isTurnInProgress(targetTurn)) {
         toast.error("当前轮次正在处理，稍后再编辑");
+        return;
+      }
+      if (regenerate && !relayApiKey.trim()) {
+        toast.error("请先到个人中心配置 RelayAI Key");
         return;
       }
 
@@ -2633,7 +2743,7 @@ function ImagePageContent({ session }: { session: NonNullable<ReturnType<typeof 
       if (mode !== "chat" && supportsStructuredImageParameters(draft.model) && isHighResolutionImageSize(draftImageSize)) {
         const sizeLabel = formatImageSizeDisplay(draftImageSize);
         if (regenerate) {
-          toast.message(`${sizeLabel} 属于 Codex 结构化高分辨率任务，会直接提交给上游判断。`);
+          toast.message(`${sizeLabel} 属于高分辨率任务，会直接提交给 RelayAI 判断。`);
         }
       }
       const now = new Date().toISOString();
@@ -2662,6 +2772,7 @@ function ImagePageContent({ session }: { session: NonNullable<ReturnType<typeof 
               quality: undefined,
               outputFormat: draftOutputFormat,
               outputCompression: draftOutputCompression,
+              stream: mode === "chat" ? false : draft.stream,
               visibility: mode === "chat" ? "private" : draft.visibility,
             };
             if (!regenerate) {
@@ -2698,7 +2809,7 @@ function ImagePageContent({ session }: { session: NonNullable<ReturnType<typeof 
         toast.success("已保存编辑设置");
       }
     },
-    [editingTurnDraft, runConversationQueue, updateConversation],
+    [editingTurnDraft, relayApiKey, runConversationQueue, updateConversation],
   );
 
   const handleSubmit = async () => {
@@ -2711,9 +2822,8 @@ function ImagePageContent({ session }: { session: NonNullable<ReturnType<typeof 
       toast.error("请输入提示词");
       return;
     }
-    const estimatedUnits = composerMode === "chat" ? 1 : parsedCount;
-    if (!hasEnoughBilling(session, estimatedUnits)) {
-      toast.error(session.billing?.type === "subscription" ? "用户配额不足" : "用户余额不足");
+    if (!relayApiKey.trim()) {
+      toast.error("请先到个人中心配置 RelayAI Key");
       return;
     }
     isSubmitDispatchingRef.current = true;
@@ -2778,7 +2888,7 @@ function ImagePageContent({ session }: { session: NonNullable<ReturnType<typeof 
         isHighResolutionImageSize(currentImageSize);
       if (isHighResolutionRequest) {
         const sizeLabel = formatImageSizeDisplay(currentImageSize);
-        toast.message(`${sizeLabel} 属于 Codex 结构化高分辨率任务，会直接提交给上游判断。`);
+        toast.message(`${sizeLabel} 属于高分辨率任务，会直接提交给 RelayAI 判断。`);
       }
       const targetConversation = selectedConversationId
         ? conversationsRef.current.find((conversation) => conversation.id === selectedConversationId) ?? null
@@ -2798,6 +2908,7 @@ function ImagePageContent({ session }: { session: NonNullable<ReturnType<typeof 
         quality: undefined,
         outputFormat: effectiveOutputFormat,
         outputCompression: effectiveImageMode === "chat" ? undefined : effectiveOutputCompression,
+        stream: effectiveImageMode === "chat" ? false : imageStreamEnabled,
         visibility: effectiveImageMode === "chat" ? "private" : defaultImageVisibility,
         images: Array.from({ length: requestedCount }, (_, index): StoredImage => {
           const imageId = `${turnId}-${index}`;
@@ -3025,7 +3136,7 @@ function ImagePageContent({ session }: { session: NonNullable<ReturnType<typeof 
                         </SelectTrigger>
                         <SelectContent>
                           <SelectGroup>
-                            {(editingTurnDraft.mode === "chat" ? CHAT_MODEL_OPTIONS : IMAGE_CREATION_MODEL_OPTIONS).map((option) => (
+                            {editingTurnModelOptions.map((option) => (
                               <SelectItem key={option.value} value={option.value}>
                                 {option.label}
                               </SelectItem>
@@ -3037,9 +3148,7 @@ function ImagePageContent({ session }: { session: NonNullable<ReturnType<typeof 
                     {editingTurnDraft.mode !== "chat" && editingDraftEffectiveSizeSelection ? (
                       <>
                         <div className="rounded-2xl border border-sky-100 bg-sky-50 px-3 py-2 text-xs leading-5 text-sky-900 sm:col-span-2 lg:col-span-4">
-                          {editingDraftOfficialRoute
-                            ? "官方链路只会把比例写入提示词作为构图偏好，不下发 1080P / 2K / 4K 或质量参数；格式由后端保存结果时处理，压缩率仅适用于 JPEG。"
-                            : "Codex 链路会下发结构化尺寸、格式和 JPEG 压缩率参数；后端只保存上游返回的图片，不做格式二次转换。Free 账号会被上游 Codex 图片接口拒绝。"}
+                          图片请求会通过 RelayAI 提交；比例会作为构图偏好，格式和 JPEG 压缩率会随请求参数发送。
                         </div>
                         <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
                           {editingDraftOfficialRoute ? "构图" : "尺寸"}
@@ -3233,6 +3342,21 @@ function ImagePageContent({ session }: { session: NonNullable<ReturnType<typeof 
                                 placeholder={supportsImageOutputCompression(editingTurnDraft.outputFormat) ? "0-100" : "仅 JPEG"}
                               />
                             </label>
+                            <label className="flex items-center justify-between gap-3 rounded-2xl border border-stone-200 bg-white px-3 py-2 text-sm font-medium text-stone-700 lg:col-span-2">
+                              <span className="min-w-0">
+                                <span className="block">流式生成</span>
+                                <span className="block text-xs font-normal text-stone-500">请求 RelayAI 使用 stream 模式</span>
+                              </span>
+                              <Checkbox
+                                checked={editingTurnDraft.stream}
+                                onCheckedChange={(checked) =>
+                                  setEditingTurnDraft((current) =>
+                                    current ? { ...current, stream: checked === true } : current,
+                                  )
+                                }
+                                aria-label="流式生成"
+                              />
+                            </label>
                           </>
                         ) : null}
                         {editingDraftEffectiveSizeSelection.mode !== "auto" ? (
@@ -3361,10 +3485,10 @@ function ImagePageContent({ session }: { session: NonNullable<ReturnType<typeof 
                 imageCustomHeight={imageCustomHeight}
                 imageOutputFormat={imageOutputFormat}
                 imageOutputCompression={imageOutputCompression}
+                imageStreamEnabled={imageStreamEnabled}
+                relayApiKey={relayApiKey}
+                imageModelStatus={composerMode === "image" ? imageModelStatus : undefined}
                 highResolutionHint={highResolutionHint}
-                billingSummary={billingSummary}
-                estimatedBillingUnits={estimatedBillingUnits}
-                billingBlocked={billingBlocked}
                 referenceImages={referenceImages}
                 textareaRef={textareaRef}
                 fileInputRef={fileInputRef}
@@ -3380,6 +3504,7 @@ function ImagePageContent({ session }: { session: NonNullable<ReturnType<typeof 
                 onImageCustomHeightChange={setImageCustomHeight}
                 onImageOutputFormatChange={setImageOutputFormat}
                 onImageOutputCompressionChange={setImageOutputCompression}
+                onImageStreamEnabledChange={setImageStreamEnabled}
                 onSubmit={handleSubmit}
                 onOpenPromptMarket={() => setIsPromptMarketOpen(true)}
                 onReferenceImageChange={handleReferenceImageChange}
@@ -3392,6 +3517,7 @@ function ImagePageContent({ session }: { session: NonNullable<ReturnType<typeof 
 
       <ImagePromptMarket
         open={isPromptMarketOpen}
+        canViewAdultContent={hasAPIPermission(session, "GET", "/api/prompt-market/adult-content")}
         onOpenChange={setIsPromptMarketOpen}
         onApplyPrompt={handleApplyMarketPrompt}
       />

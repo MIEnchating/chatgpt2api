@@ -127,7 +127,7 @@ function getRequestedSizeLabel(turn: ImageTurn) {
   }
   const size = turn.size.includes("x") ? formatImageSizeDisplay(turn.size) : turn.size;
   const requirement = getImageSizeRequirementLabel(turn.size);
-  return requirement === "Auto" ? size : `请求 ${size} / ${requirement}`;
+  return requirement === "自动" ? size : `请求 ${size} / ${requirement}`;
 }
 
 function getLongTaskHint(turn: ImageTurn, elapsedSeconds: number) {
@@ -371,7 +371,7 @@ export function ImageResults({
                   />
                   <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 bg-gradient-to-t from-black/70 via-black/25 to-transparent px-3 pt-8 pb-2">
                     <span className="rounded-full bg-white/92 px-2 py-0.5 text-[11px] font-medium text-[#18181b] shadow-sm">
-                      {preset.size || "Auto"}
+                      {preset.size || "自动"}
                     </span>
                     <span className="rounded-full bg-white/18 px-2 py-0.5 text-[11px] font-medium text-white shadow-sm backdrop-blur">
                       {preset.count} 张
@@ -757,11 +757,11 @@ export function ImageResults({
                                 onOpenLightbox(successfulTurnImages, currentIndex);
                               }}
                               className="inline-flex h-7 items-center gap-1 rounded-full bg-white/95 px-2 text-[11px] font-medium text-stone-800 shadow-sm transition hover:bg-white hover:text-stone-950"
-                              aria-label="View Original"
-                              title="View Original"
+                              aria-label="查看原图"
+                              title="查看原图"
                             >
                               <Eye className="size-3" />
-                              View Original
+                              查看原图
                             </button>
                             <button
                               type="button"

@@ -63,14 +63,14 @@ func TestAuthServiceAssignsManagedRolesToUsers(t *testing.T) {
 		t.Fatalf("CreateAPIKey() error = %v", err)
 	}
 	role, err := auth.CreateRole(map[string]any{
-		"name":            "accounts viewer",
-		"menu_paths":      []string{"/accounts", "/missing"},
-		"api_permissions": []string{APIPermissionKey("GET", "/api/accounts"), "get/missing"},
+		"name":            "image manager",
+		"menu_paths":      []string{"/image-manager", "/missing"},
+		"api_permissions": []string{APIPermissionKey("GET", "/api/images"), "get/missing"},
 	})
 	if err != nil {
 		t.Fatalf("CreateRole() error = %v", err)
 	}
-	if _, err := auth.CreateRole(map[string]any{"name": "accounts viewer"}); err == nil {
+	if _, err := auth.CreateRole(map[string]any{"name": "image manager"}); err == nil {
 		t.Fatal("duplicate role name creation succeeded")
 	}
 	roleID := role["id"].(string)
@@ -79,30 +79,30 @@ func TestAuthServiceAssignsManagedRolesToUsers(t *testing.T) {
 	if updated == nil {
 		t.Fatal("UpdateUser() returned nil")
 	}
-	if updated["role_id"] != roleID || updated["role_name"] != "accounts viewer" {
+	if updated["role_id"] != roleID || updated["role_name"] != "image manager" {
 		t.Fatalf("updated role fields = %#v", updated)
 	}
 	identity := auth.Authenticate(raw)
 	if identity == nil {
 		t.Fatal("Authenticate(raw) returned nil")
 	}
-	if identity.RoleID != roleID || identity.RoleName != "accounts viewer" {
+	if identity.RoleID != roleID || identity.RoleName != "image manager" {
 		t.Fatalf("identity role fields = %#v", identity)
 	}
-	if !HasAPIPermission(PermissionSet{APIPermissions: identity.APIPermissions}, "GET", "/api/accounts") {
-		t.Fatalf("updated API permissions missing accounts read: %#v", identity.APIPermissions)
+	if !HasAPIPermission(PermissionSet{APIPermissions: identity.APIPermissions}, "GET", "/api/images") {
+		t.Fatalf("updated API permissions missing images read: %#v", identity.APIPermissions)
 	}
-	if HasAPIPermission(PermissionSet{APIPermissions: identity.APIPermissions}, "POST", "/api/accounts") {
-		t.Fatalf("unexpected accounts write permission: %#v", identity.APIPermissions)
+	if HasAPIPermission(PermissionSet{APIPermissions: identity.APIPermissions}, "DELETE", "/api/images") {
+		t.Fatalf("unexpected images delete permission: %#v", identity.APIPermissions)
 	}
 
 	if _, err := auth.UpdateRole(roleID, map[string]any{
-		"api_permissions": []string{APIPermissionKey("POST", "/api/accounts")},
+		"api_permissions": []string{APIPermissionKey("DELETE", "/api/images")},
 	}); err != nil {
 		t.Fatalf("UpdateRole() error = %v", err)
 	}
 	identity = auth.Authenticate(raw)
-	if identity == nil || !HasAPIPermission(PermissionSet{APIPermissions: identity.APIPermissions}, "POST", "/api/accounts") {
+	if identity == nil || !HasAPIPermission(PermissionSet{APIPermissions: identity.APIPermissions}, "DELETE", "/api/images") {
 		t.Fatalf("role update did not affect user identity: %#v", identity)
 	}
 

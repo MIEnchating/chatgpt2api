@@ -2,7 +2,7 @@ export const CUSTOM_IMAGE_ASPECT_RATIO = "custom";
 export const DEFAULT_IMAGE_CUSTOM_RATIO = "16:9";
 
 export const IMAGE_ASPECT_RATIO_OPTIONS = [
-  { value: "", label: "Auto" },
+  { value: "", label: "自动" },
   { value: "1:1", label: "1:1 (正方形)" },
   { value: "3:2", label: "3:2 (横版)" },
   { value: "2:3", label: "2:3 (竖版)" },
@@ -17,7 +17,7 @@ export const IMAGE_ASPECT_RATIO_OPTIONS = [
 export type ImageAspectRatio = (typeof IMAGE_ASPECT_RATIO_OPTIONS)[number]["value"];
 
 export const IMAGE_SIZE_MODE_OPTIONS = [
-  { value: "auto", label: "Auto" },
+  { value: "auto", label: "自动" },
   { value: "ratio", label: "按比例" },
   { value: "custom", label: "手动宽高" },
 ] as const;
@@ -25,10 +25,10 @@ export const IMAGE_SIZE_MODE_OPTIONS = [
 export type ImageSizeMode = (typeof IMAGE_SIZE_MODE_OPTIONS)[number]["value"];
 
 export const IMAGE_RESOLUTION_OPTIONS = [
-  { value: "auto", label: "Auto", description: "不指定固定像素，交给图片工具决定" },
+  { value: "auto", label: "自动", description: "不指定固定像素，交给图片工具决定" },
   { value: "1080p", label: "1080P", description: "正方形为 1088×1088，宽高按所选比例计算" },
-  { value: "2k", label: "2K", description: "2K Square 为 2048×2048，上游会按账号能力判断" },
-  { value: "4k", label: "4K", description: "按链路像素上限收敛，上游会按账号能力判断" },
+  { value: "2k", label: "2K", description: "2K 正方形为 2048×2048，上游会按模型能力判断" },
+  { value: "4k", label: "4K", description: "按链路像素上限收敛，上游会按模型能力判断" },
 ] as const;
 
 export type ImageResolution = (typeof IMAGE_RESOLUTION_OPTIONS)[number]["value"];
@@ -62,15 +62,15 @@ export const IMAGE_SIZE_PRESET_DETAILS = [
   { label: "2:3", requestValue: "2:3", normalizedSize: "1024x1536", highResolution: false },
   { label: "16:9", requestValue: "16:9", normalizedSize: "1536x864", highResolution: false },
   { label: "9:16", requestValue: "9:16", normalizedSize: "864x1536", highResolution: false },
-  { label: "1080P Square", requestValue: "1080p", normalizedSize: "1088x1088", highResolution: false },
-  { label: "2K Square", requestValue: "2k", normalizedSize: "2048x2048", highResolution: true },
+  { label: "1080P 正方形", requestValue: "1080p", normalizedSize: "1088x1088", highResolution: false },
+  { label: "2K 正方形", requestValue: "2k", normalizedSize: "2048x2048", highResolution: true },
   { label: "4K", requestValue: "4k", normalizedSize: "2880x2880", highResolution: true },
 ] as const;
 
 export const IMAGE_QUALITY_OPTIONS = [
-  { value: "low", label: "Low", description: "低质量，速度更快，适合草稿测试" },
-  { value: "medium", label: "Medium", description: "均衡质量与速度，适合日常生成" },
-  { value: "high", label: "High", description: "高质量，耗时更长，适合最终出图" },
+  { value: "low", label: "低", description: "低质量，速度更快，适合草稿测试" },
+  { value: "medium", label: "中", description: "均衡质量与速度，适合日常生成" },
+  { value: "high", label: "高", description: "高质量，耗时更长，适合最终出图" },
 ] as const;
 
 function roundToMultiple(value: number, multiple: number) {
@@ -233,7 +233,7 @@ export function formatImageSizeDisplay(size: string) {
 
 export function getImageSizeRequirementLabel(size: string) {
   if (!size || size === "auto") {
-    return "Auto";
+    return "自动";
   }
   return isHighResolutionImageSize(size) ? "高分辨率" : "常规分辨率";
 }

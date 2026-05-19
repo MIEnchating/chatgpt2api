@@ -297,7 +297,7 @@ go build -tags=embed -ldflags "-X chatgpt2api/internal/version.Version=1.0.0" -o
 | --- | --- | --- |
 | `CHATGPT2API_ADMIN_USERNAME` | `admin` | 初始管理员用户名 |
 | `CHATGPT2API_ADMIN_PASSWORD` | 空 | 初始管理员密码；为空时首次启动自动生成一次性密码 |
-| `CHATGPT2API_REGISTRATION_ENABLED` | `false` | 是否开放登录页账号注册入口 |
+| `CHATGPT2API_REGISTRATION_ENABLED` | `true` | 是否开放登录页账号注册入口 |
 | `CHATGPT2API_BASE_URL` | 空 | 用于生成图片 URL 的外部访问地址 |
 | `CHATGPT2API_PROXY` | 空 | 全局代理，支持 `http`、`https`、`socks5`、`socks5h` |
 | `CHATGPT2API_UPDATE_PROXY_URL` | 空 | 检查更新访问 DockerHub / Release API 的代理；为空时复用全局代理 |

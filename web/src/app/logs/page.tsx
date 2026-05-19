@@ -50,7 +50,7 @@ const detailLabels: Record<string, string> = {
   started_at: "开始时间",
   ended_at: "结束时间",
   username: "操作人",
-  key_name: "令牌名称",
+  key_name: "凭据名称",
   session_name: "会话名称",
   auth_kind: "认证方式",
   key_role: "角色",
@@ -60,7 +60,7 @@ const detailLabels: Record<string, string> = {
   ip_address: "IP 地址",
   user_agent: "User-Agent",
   error: "错误",
-  token: "令牌",
+  token: "凭据",
   source: "来源事件",
   added: "新增",
   skipped: "跳过",
@@ -203,7 +203,7 @@ function formatDetailValue(key: string, value: unknown) {
   }
   if (key === "auth_kind") {
     if (value === "session") return "登录会话";
-    if (value === "api_key") return "API 令牌";
+    if (value === "api_key") return "本地凭据";
   }
   if (typeof value === "boolean") return value ? "是" : "否";
   return String(value);
@@ -335,7 +335,7 @@ function LogsContent() {
 
   return (
     <section className="flex flex-col gap-5">
-      <PageHeader eyebrow="Logs" title="日志管理" />
+      <PageHeader eyebrow="日志" title="日志管理" />
 
       <Card>
         <CardHeader className="pb-4">

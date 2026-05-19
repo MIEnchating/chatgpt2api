@@ -3,10 +3,15 @@ import type { LoginPageImageMode } from "@/lib/login-page-image-layout";
 
 export type AccountType = "Free" | "Plus" | "ProLite" | "Pro" | "Team";
 export type AccountStatus = "正常" | "限流" | "异常" | "禁用";
+export type ImageModel = string;
+export type ImageModelOption = { value: ImageModel; label: string };
+export const CODEX_IMAGE_MODEL: ImageModel = "codex-gpt-image-2";
+export const DEFAULT_IMAGE_MODEL: ImageModel = CODEX_IMAGE_MODEL;
+export const DEFAULT_CHAT_MODEL: ImageModel = "auto";
 export const IMAGE_MODEL_OPTIONS = [
-  { value: "auto", label: "Auto" },
-  { value: "gpt-image-2", label: "gpt-image-2" },
+  { value: "auto", label: "自动" },
   { value: "codex-gpt-image-2", label: "codex-gpt-image-2" },
+  { value: "gpt-image-2", label: "gpt-image-2" },
   { value: "gpt-5-mini", label: "gpt-5-mini" },
   { value: "gpt-5-3-mini", label: "gpt-5-3-mini" },
   { value: "gpt-5", label: "gpt-5" },
@@ -15,13 +20,8 @@ export const IMAGE_MODEL_OPTIONS = [
   { value: "gpt-5-3", label: "gpt-5-3" },
   { value: "gpt-5.4", label: "gpt-5.4" },
   { value: "gpt-5.5", label: "gpt-5.5" },
-] as const;
-export type ImageModel = (typeof IMAGE_MODEL_OPTIONS)[number]["value"];
-export const DEFAULT_IMAGE_MODEL: ImageModel = "auto";
-export const DEFAULT_CHAT_MODEL: ImageModel = "auto";
-export const CODEX_IMAGE_MODEL: ImageModel = "codex-gpt-image-2";
-const IMAGE_MODEL_VALUES = new Set<string>(IMAGE_MODEL_OPTIONS.map((option) => option.value));
-const IMAGE_TASK_MODEL_VALUES = new Set<ImageModel>(["auto", "gpt-image-2", "codex-gpt-image-2"]);
+] as const satisfies ReadonlyArray<ImageModelOption>;
+const IMAGE_TASK_MODEL_VALUES = new Set<ImageModel>(["gpt-image-2", "codex-gpt-image-2"]);
 const CHAT_MODEL_VALUES = new Set<ImageModel>([
   "auto",
   "gpt-5-mini",
@@ -45,29 +45,29 @@ export const IMAGE_MODEL_ROUTE_DETAILS: Partial<Record<
   }
 >> = {
   auto: {
-    routeLabel: "官方图片工具",
-    description: "默认等价 gpt-image-2；比例只作为提示词构图偏好，实际像素由官方返回决定。",
+    routeLabel: "RelayAI",
+    description: "通过固定 RelayAI 上游提交请求，使用个人中心配置的 RelayAI Key。",
   },
   "gpt-image-2": {
-    routeLabel: "官方图片工具",
-    description: "走官方 f/conversation 图片链路；尺寸只作为构图偏好，格式由后端保存结果时处理。",
+    routeLabel: "RelayAI",
+    description: "通过 RelayAI 图片接口生成图片。",
   },
   "codex-gpt-image-2": {
-    routeLabel: "Codex 链路",
-    description: "走 Codex Responses 图片接口；尺寸、格式和 JPEG 压缩率交给上游工具处理，需要 Plus / Team / Pro 账号。",
+    routeLabel: "RelayAI",
+    description: "通过 RelayAI 上游提交请求。",
   },
 };
 
 export function isImageModel(value: unknown): value is ImageModel {
-  return typeof value === "string" && IMAGE_MODEL_VALUES.has(value);
+  return typeof value === "string" && value.trim() !== "";
 }
 
 export function isImageTaskModel(value: unknown): value is ImageModel {
-  return isImageModel(value) && IMAGE_TASK_MODEL_VALUES.has(value);
+  return isImageModel(value) && (IMAGE_TASK_MODEL_VALUES.has(value) || !CHAT_MODEL_VALUES.has(value));
 }
 
 export function isImageCreationModel(value: unknown): value is ImageModel {
-  return isImageTaskModel(value);
+  return isImageModel(value);
 }
 
 export function isChatModel(value: unknown): value is ImageModel {
@@ -75,15 +75,18 @@ export function isChatModel(value: unknown): value is ImageModel {
 }
 
 export function usesOfficialImageRoute(model: ImageModel) {
-  return model === "auto" || model === "gpt-image-2";
+  void model;
+  return true;
 }
 
 export function usesCodexImageRoute(model: ImageModel) {
-  return model === CODEX_IMAGE_MODEL;
+  void model;
+  return false;
 }
 
 export function supportsStructuredImageParameters(model: ImageModel) {
-  return usesCodexImageRoute(model);
+  void model;
+  return false;
 }
 
 export function supportsImageOutputControls(model: ImageModel) {
@@ -97,6 +100,26 @@ export function supportsImageQuality(_model: ImageModel) {
 export type ImageQuality = "low" | "medium" | "high";
 export type ImageOutputFormat = "png" | "jpeg" | "webp";
 export type ImageVisibility = "private" | "public";
+
+export type RelayModelListItem = {
+  id?: string;
+  object?: string;
+  owned_by?: string;
+};
+
+export function relayModelOptionsFromList(items: RelayModelListItem[] | null | undefined): ImageModelOption[] {
+  const seen = new Set<string>();
+  const options: ImageModelOption[] = [];
+  for (const item of items || []) {
+    const id = String(item?.id || "").trim();
+    if (!id || seen.has(id)) {
+      continue;
+    }
+    seen.add(id);
+    options.push({ value: id, label: id });
+  }
+  return options;
+}
 
 const IMAGE_QUALITY_VALUES = new Set<string>(["low", "medium", "high"]);
 const IMAGE_OUTPUT_FORMAT_VALUES = new Set<string>(["png", "jpeg", "webp"]);
@@ -475,9 +498,6 @@ export type LoginResponse = {
 };
 
 export type AuthProviders = {
-  linuxdo: {
-    enabled: boolean;
-  };
   registration?: {
     enabled: boolean;
   };
@@ -830,12 +850,13 @@ export async function updateAccount(
   });
 }
 
-export async function generateImage(prompt: string, model?: ImageModel, size?: string, quality?: ImageQuality) {
+export async function generateImage(prompt: string, model?: ImageModel, size?: string, quality?: ImageQuality, apiKey?: string) {
   return httpRequest<ImageResponse>(
     "/v1/images/generations",
     {
       method: "POST",
       body: {
+        api_key: apiKey,
         prompt,
         ...(model ? { model } : {}),
         ...(size ? { size } : {}),
@@ -847,7 +868,7 @@ export async function generateImage(prompt: string, model?: ImageModel, size?: s
   );
 }
 
-export async function editImage(files: File | File[], prompt: string, model?: ImageModel, size?: string, quality?: ImageQuality) {
+export async function editImage(files: File | File[], prompt: string, model?: ImageModel, size?: string, quality?: ImageQuality, apiKey?: string) {
   const formData = new FormData();
   const uploadFiles = Array.isArray(files) ? files : [files];
 
@@ -863,6 +884,9 @@ export async function editImage(files: File | File[], prompt: string, model?: Im
   }
   if (quality) {
     formData.append("quality", quality);
+  }
+  if (apiKey) {
+    formData.append("api_key", apiKey);
   }
   formData.append("n", "1");
 
@@ -893,11 +917,14 @@ export async function createImageGenerationTask(
     style?: string;
     partialImages?: number;
   },
+  apiKey?: string,
+  stream = false,
 ) {
   return httpRequest<CreationTask>("/api/creation-tasks/image-generations", {
     method: "POST",
     body: {
       client_task_id: clientTaskId,
+      api_key: apiKey,
       prompt,
       ...(model ? { model } : {}),
       ...(size ? { size } : {}),
@@ -909,6 +936,7 @@ export async function createImageGenerationTask(
       ...(toolOptions?.moderation ? { moderation: toolOptions.moderation } : {}),
       ...(toolOptions?.style ? { style: toolOptions.style } : {}),
       ...(typeof toolOptions?.partialImages === "number" ? { partial_images: toolOptions.partialImages } : {}),
+      ...(stream ? { stream: true } : {}),
       ...(messages?.length ? { messages } : {}),
       visibility,
       n: count,
@@ -936,6 +964,8 @@ export async function createImageEditTask(
     partialImages?: number;
     inputImageMask?: string;
   },
+  apiKey?: string,
+  stream = false,
 ) {
   const formData = new FormData();
   const uploadFiles = Array.isArray(files) ? files : [files];
@@ -975,6 +1005,12 @@ export async function createImageEditTask(
   if (typeof toolOptions?.partialImages === "number") {
     formData.append("partial_images", String(toolOptions.partialImages));
   }
+  if (apiKey) {
+    formData.append("api_key", apiKey);
+  }
+  if (stream) {
+    formData.append("stream", "true");
+  }
   if (toolOptions?.inputImageMask) {
     formData.append("input_image_mask", toolOptions.inputImageMask);
   }
@@ -996,9 +1032,11 @@ export async function createChatCompletionTask(
   model: ImageModel,
   messages: CreationTaskMessage[],
   referenceImages?: { name: string; dataUrl: string }[],
+  apiKey?: string,
 ) {
   const body: Record<string, unknown> = {
     client_task_id: clientTaskId,
+    api_key: apiKey,
     prompt,
     model,
     messages,
@@ -1024,10 +1062,11 @@ export async function createChatCompletionTask(
   });
 }
 
-export async function createChatCompletion(model: ImageModel, messages: CreationTaskMessage[]) {
+export async function createChatCompletion(model: ImageModel, messages: CreationTaskMessage[], apiKey?: string) {
   return httpRequest<ChatCompletionResponse>("/v1/chat/completions", {
     method: "POST",
     body: {
+      api_key: apiKey,
       model,
       messages,
       stream: false,
@@ -1640,6 +1679,14 @@ export type ProxyTestResult = {
   latency_ms: number;
   error: string | null;
 };
+
+export async function fetchRelayModels(apiKey?: string, signal?: AbortSignal) {
+  const trimmed = apiKey?.trim() || "";
+  return httpRequest<{ object?: string; data?: RelayModelListItem[] | null }>("/v1/models", {
+    headers: trimmed ? { "X-RelayAI-Key": trimmed } : undefined,
+    signal,
+  });
+}
 
 export async function fetchProxy() {
   return httpRequest<{ proxy: ProxySettings }>("/api/proxy");

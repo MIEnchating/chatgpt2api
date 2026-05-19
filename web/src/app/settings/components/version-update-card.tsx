@@ -253,24 +253,23 @@ export function VersionUpdateCard({
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <p className="text-sm font-semibold text-foreground">
-                  GitHub Release 源
+                  GitHub 发布源
                 </p>
                 <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                  检查该仓库的 latest release；公开 Release 不需要 Token，403
-                  通常是匿名 API 额度耗尽。
+                  检查该仓库的最新发布版本；公开发布不需要 Key，403 通常是匿名 API 额度耗尽。
                 </p>
               </div>
               <Badge
                 variant={updateGitHubTokenConfigured ? "success" : "secondary"}
               >
-                {updateGitHubTokenConfigured ? "Token 已配置" : "Token 可选"}
+                {updateGitHubTokenConfigured ? "Key 已配置" : "Key 可选"}
               </Badge>
             </div>
             <div className="grid gap-2">
               <Input
                 value={updateRepo}
                 onChange={(event) => setUpdateRepo(event.target.value)}
-                placeholder="owner/repo"
+                placeholder="所有者/仓库名"
                 disabled={!canManageSystem || isSavingConfig}
                 className="font-mono text-sm"
               />
@@ -280,8 +279,8 @@ export function VersionUpdateCard({
                 onChange={(event) => setUpdateGitHubToken(event.target.value)}
                 placeholder={
                   updateGitHubTokenConfigured
-                    ? "已配置，留空则保留当前 Token"
-                    : "可选：GitHub API Token"
+                    ? "已配置，留空则保留当前 Key"
+                    : "可选：GitHub API Key"
                 }
                 disabled={!canManageSystem || isSavingConfig}
                 className="font-mono text-sm"
@@ -343,7 +342,7 @@ export function VersionUpdateCard({
                 rel="noreferrer"
               >
                 <CheckCircle2 data-icon="inline-start" />
-                Release
+                发布页
               </a>
             </Button>
           ) : null}

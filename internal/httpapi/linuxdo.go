@@ -54,9 +54,6 @@ func (a *App) handleAuthProviders(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	util.WriteJSON(w, http.StatusOK, map[string]any{
-		"linuxdo": map[string]any{
-			"enabled": a.config.LinuxDoOAuth().Ready(),
-		},
 		"registration": map[string]any{
 			"enabled": a.config.RegistrationEnabled(),
 		},

@@ -221,7 +221,7 @@ function RBACContent() {
   return (
     <section className="flex flex-col gap-5">
       <PageHeader
-        eyebrow="RBAC"
+        eyebrow="访问控制"
         title="角色权限"
         actions={
           <>

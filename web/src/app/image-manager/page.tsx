@@ -1252,7 +1252,7 @@ function ImageManagerContent({
 
   return (
     <section className="flex flex-col gap-5 pb-20 sm:pb-24">
-      <PageHeader eyebrow="Images" title="图片库" />
+      <PageHeader eyebrow="图片" title="图片库" />
 
       <div className="flex flex-col gap-4">
         <section className="grid gap-4 rounded-[18px] border border-border bg-background/80 p-3 shadow-[0_6px_20px_rgba(15,23,42,0.04)] sm:p-4 lg:grid-cols-[minmax(180px,220px)_minmax(0,1fr)] lg:items-start">
@@ -1631,11 +1631,11 @@ function ImageManagerContent({
                           setLightboxOpen(true);
                         }}
                         className="inline-flex h-7 items-center gap-1 rounded-full bg-white/95 px-2 text-[11px] font-medium text-stone-800 shadow-sm transition hover:bg-white hover:text-stone-950"
-                        aria-label="View Original"
-                        title="View Original"
+                        aria-label="查看原图"
+                        title="查看原图"
                       >
                         <Eye className="size-3" />
-                        View Original
+                        查看原图
                       </button>
                       {galleryView === "public" && canGenerateSimilar ? (
                         <button

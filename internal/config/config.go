@@ -172,7 +172,7 @@ func (s *Store) AdminPassword() string {
 }
 
 func (s *Store) RegistrationEnabled() bool {
-	return util.ToBool(s.settingValue("registration_enabled", false))
+	return util.ToBool(s.settingValue("registration_enabled", true))
 }
 
 func (s *Store) RefreshAccountIntervalMinute() int {

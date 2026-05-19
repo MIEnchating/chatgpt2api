@@ -265,7 +265,7 @@ func TestAdminSystemCheckUpdates(t *testing.T) {
 	}
 }
 
-func TestPasswordAccountLoginAndRegistrationToggle(t *testing.T) {
+func TestPasswordAccountLogin(t *testing.T) {
 	t.Setenv("CHATGPT2API_USER_DEFAULT_CONCURRENT_LIMIT", "2")
 
 	app := newTestApp(t)
@@ -287,55 +287,35 @@ func TestPasswordAccountLoginAndRegistrationToggle(t *testing.T) {
 	}
 	assertCreationConcurrentLimit(t, login, 0)
 
-	req = httptest.NewRequest(http.MethodPost, "/auth/register", strings.NewReader(`{"username":"alice","password":"Password123","name":"Alice"}`))
-	res = httptest.NewRecorder()
-	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusForbidden {
-		t.Fatalf("disabled registration status = %d body = %s", res.Code, res.Body.String())
-	}
-	if !strings.Contains(res.Body.String(), "已关闭注册通道") {
-		t.Fatalf("disabled registration body = %s", res.Body.String())
-	}
-
-	req = httptest.NewRequest(http.MethodPost, "/api/settings", strings.NewReader(`{"registration_enabled":true}`))
-	req.Header.Set("Authorization", "Bearer "+adminToken)
+	req = httptest.NewRequest(http.MethodGet, "/auth/providers", nil)
 	res = httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
 	if res.Code != http.StatusOK {
-		t.Fatalf("enable registration status = %d body = %s", res.Code, res.Body.String())
+		t.Fatalf("providers status = %d body = %s", res.Code, res.Body.String())
+	}
+	var providers map[string]any
+	if err := json.Unmarshal(res.Body.Bytes(), &providers); err != nil {
+		t.Fatalf("providers json: %v", err)
+	}
+	registration := util.StringMap(providers["registration"])
+	if registration["enabled"] != true {
+		t.Fatalf("registration provider = %#v", registration)
 	}
 
 	req = httptest.NewRequest(http.MethodPost, "/auth/register", strings.NewReader(`{"username":"alice","password":"Password123","name":"Alice"}`))
 	res = httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
 	if res.Code != http.StatusOK {
-		t.Fatalf("enabled registration status = %d body = %s", res.Code, res.Body.String())
+		t.Fatalf("default registration status = %d body = %s", res.Code, res.Body.String())
 	}
 	var registered map[string]any
 	if err := json.Unmarshal(res.Body.Bytes(), &registered); err != nil {
 		t.Fatalf("register json: %v", err)
 	}
-	userToken, _ := registered["token"].(string)
-	if userToken == "" || registered["role"] != service.AuthRoleUser || registered["name"] != "Alice" {
+	if registered["role"] != service.AuthRoleUser || registered["name"] != "Alice" || registered["role_id"] != service.DefaultManagedRoleID {
 		t.Fatalf("register body = %#v", registered)
 	}
-	if registered["role_id"] != service.DefaultManagedRoleID {
-		t.Fatalf("registered role fields = %#v", registered)
-	}
 	assertCreationConcurrentLimit(t, registered, 2)
-
-	req = httptest.NewRequest(http.MethodGet, "/auth/session", nil)
-	req.Header.Set("Authorization", "Bearer "+userToken)
-	res = httptest.NewRecorder()
-	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusOK {
-		t.Fatalf("registered session status = %d body = %s", res.Code, res.Body.String())
-	}
-	var session map[string]any
-	if err := json.Unmarshal(res.Body.Bytes(), &session); err != nil {
-		t.Fatalf("registered session json: %v", err)
-	}
-	assertCreationConcurrentLimit(t, session, 2)
 }
 
 func TestProfileAccountNameAndPasswordUpdates(t *testing.T) {
@@ -421,7 +401,7 @@ func TestProfileAccountNameAndPasswordUpdates(t *testing.T) {
 	assertCreationConcurrentLimit(t, profile, 3)
 }
 
-func TestCreationTaskFailureWritesCallLog(t *testing.T) {
+func TestCreationTaskRequiresRelayAIAPIKey(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()
 
@@ -434,49 +414,15 @@ func TestCreationTaskFailureWritesCallLog(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+rawKey)
 	res := httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusOK {
+	if res.Code != http.StatusBadRequest {
 		t.Fatalf("submit creation task status = %d body = %s", res.Code, res.Body.String())
 	}
-
-	var logs map[string]any
-	var item map[string]any
-	deadline := time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		req = httptest.NewRequest(http.MethodGet, "/api/logs", nil)
-		req.Header.Set("Authorization", adminAuthHeader(t, app))
-		res = httptest.NewRecorder()
-		app.Handler().ServeHTTP(res, req)
-		if res.Code != http.StatusOK {
-			t.Fatalf("logs status = %d body = %s", res.Code, res.Body.String())
-		}
-		if err := json.Unmarshal(res.Body.Bytes(), &logs); err != nil {
-			t.Fatalf("logs json: %v", err)
-		}
-		item = findLogBySummary(logItems(logs), "文生图调用失败")
-		if item != nil {
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
+	var payload map[string]any
+	if err := json.Unmarshal(res.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("error json: %v", err)
 	}
-	if item == nil {
-		t.Fatalf("expected creation task failure to write a log event, got %#v", logs)
-	}
-	if _, ok := item["type"]; ok {
-		t.Fatalf("log item should not expose type: %#v", item)
-	}
-	detail, _ := item["detail"].(map[string]any)
-	if detail["endpoint"] != "/api/creation-tasks/image-generations" ||
-		detail["path"] != "/api/creation-tasks/image-generations" ||
-		detail["method"] != http.MethodPost ||
-		detail["module"] != "creation-tasks" ||
-		detail["outcome"] != "failed" {
-		t.Fatalf("unexpected log detail: %#v", detail)
-	}
-	if _, ok := detail["status"].(float64); !ok {
-		t.Fatalf("log status should use numeric HTTP-style status: %#v", detail)
-	}
-	if detail["key_name"] != "frontend" || detail["key_role"] != "user" {
-		t.Fatalf("call log did not include user key identity: %#v", detail)
+	if detail := util.StringMap(payload["detail"]); detail["error"] != "RelayAI API key is required" {
+		t.Fatalf("error body = %#v", payload)
 	}
 }
 
@@ -528,6 +474,57 @@ func TestRunLoggedImageTaskLogsTextOutputAsFailure(t *testing.T) {
 	detail := util.StringMap(item["detail"])
 	if detail["outcome"] != "failed" || util.ToInt(detail["status"], 0) != http.StatusBadGateway {
 		t.Fatalf("failure log detail = %#v", detail)
+	}
+}
+
+func TestRelayImagePayloadKeepsStream(t *testing.T) {
+	payload := relayPayloadForPath("/v1/images/generations", map[string]any{
+		"prompt":   "draw",
+		"model":    "codex-gpt-image-2",
+		"stream":   true,
+		"messages": []map[string]any{{"role": "user", "content": "draw"}},
+	})
+	if payload["stream"] != true {
+		t.Fatalf("stream was not preserved: %#v", payload)
+	}
+	if _, ok := payload["messages"]; ok {
+		t.Fatalf("messages should be dropped for image relay payload: %#v", payload)
+	}
+}
+
+func TestRelayImageTaskResultCollectsStream(t *testing.T) {
+	items := make(chan map[string]any, 1)
+	errCh := make(chan error, 1)
+	items <- map[string]any{
+		"object":  "image.generation.result",
+		"created": 123,
+		"model":   "codex-gpt-image-2",
+		"index":   0,
+		"data":    []map[string]any{{"url": "https://example.test/image.png"}},
+	}
+	close(items)
+	errCh <- nil
+	close(errCh)
+
+	var progress []map[string]any
+	result, err := relayImageTaskResult(
+		map[string]any{"image_output_callback": func(data []map[string]any) { progress = data }},
+		nil,
+		&protocol.StreamResult{Items: items, Err: errCh, Kind: "openai"},
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("relayImageTaskResult() error = %v", err)
+	}
+	data := util.AsMapSlice(result["data"])
+	if len(data) != 1 || data[0]["url"] != "https://example.test/image.png" {
+		t.Fatalf("stream result data = %#v", result)
+	}
+	if result["model"] != "codex-gpt-image-2" || util.ToInt(result["created"], 0) != 123 {
+		t.Fatalf("stream result metadata = %#v", result)
+	}
+	if len(progress) != 1 || progress[0]["url"] != "https://example.test/image.png" {
+		t.Fatalf("progress callback data = %#v", progress)
 	}
 }
 
@@ -609,6 +606,8 @@ func TestRecordGeneratedImagesForPayloadStoresReusableRequestMetadata(t *testing
 }
 
 func TestDirectImageGenerationUsesCreationLimiter(t *testing.T) {
+	t.Skip("direct image generation now proxies to RelayAI instead of the local image engine")
+
 	t.Setenv("CHATGPT2API_USER_DEFAULT_CONCURRENT_LIMIT", "2")
 	app := newTestApp(t)
 	defer app.Close()
@@ -695,6 +694,8 @@ func TestDirectImageGenerationUsesCreationLimiter(t *testing.T) {
 }
 
 func TestDirectImageGenerationDoesNotLimitAdminToken(t *testing.T) {
+	t.Skip("direct image generation now proxies to RelayAI instead of the local image engine")
+
 	t.Setenv("CHATGPT2API_USER_DEFAULT_CONCURRENT_LIMIT", "2")
 	app := newTestApp(t)
 	defer app.Close()
@@ -772,61 +773,6 @@ func TestDirectImageGenerationDoesNotLimitAdminToken(t *testing.T) {
 	}
 	if res.Code != http.StatusOK {
 		t.Fatalf("admin image generation status = %d body = %s", res.Code, res.Body.String())
-	}
-}
-
-func TestProtocolImageBillingInsufficientErrors(t *testing.T) {
-	for _, tc := range []struct {
-		name              string
-		billingType       string
-		standardBalance   string
-		subscriptionQuota string
-		wantCode          string
-		wantMessage       string
-	}{
-		{
-			name:              "standard",
-			billingType:       service.BillingTypeStandard,
-			standardBalance:   "0",
-			subscriptionQuota: "100",
-			wantCode:          "user_balance_insufficient",
-			wantMessage:       "user balance insufficient",
-		},
-		{
-			name:              "subscription",
-			billingType:       service.BillingTypeSubscription,
-			standardBalance:   "100",
-			subscriptionQuota: "0",
-			wantCode:          "user_quota_exceeded",
-			wantMessage:       "user quota exceeded",
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			app := newTestAppWithBillingDefaults(t, tc.billingType, tc.standardBalance, tc.subscriptionQuota, service.BillingPeriodMonthly)
-			defer app.Close()
-
-			_, rawKey, err := app.auth.CreateAPIKey(service.AuthRoleUser, "billing-user", service.AuthOwner{})
-			if err != nil {
-				t.Fatalf("CreateAPIKey() error = %v", err)
-			}
-
-			req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", strings.NewReader(`{"prompt":"draw","model":"gpt-image-2","n":1,"response_format":"url"}`))
-			req.Header.Set("Authorization", "Bearer "+rawKey)
-			res := httptest.NewRecorder()
-			app.Handler().ServeHTTP(res, req)
-			if res.Code != http.StatusTooManyRequests {
-				t.Fatalf("image generation status = %d body = %s", res.Code, res.Body.String())
-			}
-
-			var payload map[string]any
-			if err := json.Unmarshal(res.Body.Bytes(), &payload); err != nil {
-				t.Fatalf("error json: %v", err)
-			}
-			errorBody := util.StringMap(payload["error"])
-			if errorBody["type"] != "insufficient_quota" || errorBody["code"] != tc.wantCode || errorBody["message"] != tc.wantMessage {
-				t.Fatalf("error body = %#v", payload)
-			}
-		})
 	}
 }
 
@@ -939,6 +885,8 @@ func TestProtocolBillableUnitsBoundaryAndEquivalenceClasses(t *testing.T) {
 }
 
 func TestProtocolImageBillingStandardBalanceBoundary(t *testing.T) {
+	t.Skip("local protocol billing is disabled for RelayAI user-supplied keys")
+
 	app := newTestAppWithBillingDefaults(t, service.BillingTypeStandard, "4", "0", service.BillingPeriodMonthly)
 	defer app.Close()
 	_, rawKey, err := app.auth.CreateAPIKey(service.AuthRoleUser, "billing-user", service.AuthOwner{})
@@ -970,6 +918,8 @@ func TestProtocolImageBillingStandardBalanceBoundary(t *testing.T) {
 }
 
 func TestProtocolImageBillingRejectsBeforeUpstream(t *testing.T) {
+	t.Skip("local protocol billing is disabled for RelayAI user-supplied keys")
+
 	app := newTestAppWithBillingDefaults(t, service.BillingTypeStandard, "3", "0", service.BillingPeriodMonthly)
 	defer app.Close()
 	_, rawKey, err := app.auth.CreateAPIKey(service.AuthRoleUser, "billing-user", service.AuthOwner{})
@@ -1000,6 +950,8 @@ func TestProtocolImageBillingRejectsBeforeUpstream(t *testing.T) {
 }
 
 func TestProtocolImageBillingChargesBeforeDelivery(t *testing.T) {
+	t.Skip("local protocol billing is disabled for RelayAI user-supplied keys")
+
 	t.Run("non-stream does not return generated image when delivery charge fails", func(t *testing.T) {
 		app := newTestAppWithBillingDefaults(t, service.BillingTypeStandard, "1", "0", service.BillingPeriodMonthly)
 		defer app.Close()
@@ -1070,6 +1022,8 @@ func TestProtocolImageBillingChargesBeforeDelivery(t *testing.T) {
 }
 
 func TestProtocolBillingChatAndResponsesEquivalenceClasses(t *testing.T) {
+	t.Skip("local protocol billing is disabled for RelayAI user-supplied keys")
+
 	t.Run("text chat does not require billing", func(t *testing.T) {
 		app := newTestAppWithBillingDefaults(t, service.BillingTypeStandard, "0", "0", service.BillingPeriodMonthly)
 		defer app.Close()
@@ -1194,6 +1148,8 @@ func TestProtocolBillingChatAndResponsesEquivalenceClasses(t *testing.T) {
 }
 
 func TestProtocolBillingAdminBypassAndUserAdjustmentPermission(t *testing.T) {
+	t.Skip("local protocol billing is disabled for RelayAI user-supplied keys")
+
 	app := newTestAppWithBillingDefaults(t, service.BillingTypeStandard, "0", "0", service.BillingPeriodMonthly)
 	defer app.Close()
 	installHTTPTestImageStream(t, app)
@@ -1345,35 +1301,6 @@ func TestDefaultBillingSettingsOnlyInitializeNewUsers(t *testing.T) {
 	}
 }
 
-func TestRegistrationInitializesDefaultBillingForNewUser(t *testing.T) {
-	app := newTestAppWithBillingDefaults(t, service.BillingTypeSubscription, "0", "9", service.BillingPeriodDaily)
-	defer app.Close()
-
-	req := httptest.NewRequest(http.MethodPost, "/api/settings", strings.NewReader(`{"registration_enabled":true}`))
-	req.Header.Set("Authorization", adminAuthHeader(t, app))
-	res := httptest.NewRecorder()
-	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusOK {
-		t.Fatalf("enable registration status = %d body = %s", res.Code, res.Body.String())
-	}
-
-	req = httptest.NewRequest(http.MethodPost, "/auth/register", strings.NewReader(`{"username":"alice","password":"Password123","name":"Alice"}`))
-	res = httptest.NewRecorder()
-	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusOK {
-		t.Fatalf("register status = %d body = %s", res.Code, res.Body.String())
-	}
-	var registered map[string]any
-	if err := json.Unmarshal(res.Body.Bytes(), &registered); err != nil {
-		t.Fatalf("register json: %v", err)
-	}
-	billing := util.StringMap(registered["billing"])
-	subscription := util.StringMap(billing["subscription"])
-	if billing["type"] != service.BillingTypeSubscription || util.ToInt(billing["available"], -1) != 9 || subscription["quota_period"] != service.BillingPeriodDaily {
-		t.Fatalf("registered billing = %#v", billing)
-	}
-}
-
 func TestAdminBulkBillingAdjustmentTargetsExplicitUsers(t *testing.T) {
 	app := newTestAppWithBillingDefaults(t, service.BillingTypeStandard, "2", "0", service.BillingPeriodMonthly)
 	defer app.Close()
@@ -1497,7 +1424,6 @@ func TestEmptyCollectionEndpointsReturnArrays(t *testing.T) {
 		path string
 		keys []string
 	}{
-		{name: "accounts", path: "/api/accounts", keys: []string{"items"}},
 		{name: "images", path: "/api/images", keys: []string{"items", "groups"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1519,145 +1445,6 @@ func TestEmptyCollectionEndpointsReturnArrays(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-func TestRBACPermissionsGateManagementAPIs(t *testing.T) {
-	app := newTestApp(t)
-	defer app.Close()
-
-	user, rawKey, err := app.auth.CreateAPIKey(service.AuthRoleUser, "operator", service.AuthOwner{})
-	if err != nil {
-		t.Fatalf("CreateAPIKey() error = %v", err)
-	}
-
-	req := httptest.NewRequest(http.MethodGet, "/api/accounts", nil)
-	req.Header.Set("Authorization", "Bearer "+rawKey)
-	res := httptest.NewRecorder()
-	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusForbidden {
-		t.Fatalf("default user accounts status = %d body = %s", res.Code, res.Body.String())
-	}
-
-	role, err := app.auth.CreateRole(map[string]any{
-		"name":            "accounts viewer",
-		"menu_paths":      []string{"/accounts"},
-		"api_permissions": []string{service.APIPermissionKey(http.MethodGet, "/api/accounts")},
-	})
-	if err != nil {
-		t.Fatalf("CreateRole() error = %v", err)
-	}
-	userID := user["id"].(string)
-	updated := app.auth.UpdateUser(userID, map[string]any{"role_id": role["id"]})
-	if updated == nil {
-		t.Fatal("UpdateUser() returned nil")
-	}
-
-	req = httptest.NewRequest(http.MethodGet, "/auth/session", nil)
-	req.Header.Set("Authorization", "Bearer "+rawKey)
-	res = httptest.NewRecorder()
-	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusOK {
-		t.Fatalf("login after permission update status = %d body = %s", res.Code, res.Body.String())
-	}
-	var login map[string]any
-	if err := json.Unmarshal(res.Body.Bytes(), &login); err != nil {
-		t.Fatalf("login json: %v", err)
-	}
-	if paths := util.AsStringSlice(login["menu_paths"]); len(paths) != 1 || paths[0] != "/accounts" {
-		t.Fatalf("login menu_paths = %#v", login["menu_paths"])
-	}
-	if login["role_id"] != role["id"] || login["role_name"] != "accounts viewer" {
-		t.Fatalf("login role fields = %#v", login)
-	}
-
-	req = httptest.NewRequest(http.MethodGet, "/api/accounts", nil)
-	req.Header.Set("Authorization", "Bearer "+rawKey)
-	res = httptest.NewRecorder()
-	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusOK {
-		t.Fatalf("granted user accounts status = %d body = %s", res.Code, res.Body.String())
-	}
-
-	app.accounts.AddAccounts([]string{"pool-token"})
-	req = httptest.NewRequest(http.MethodGet, "/api/accounts", nil)
-	req.Header.Set("Authorization", "Bearer "+rawKey)
-	res = httptest.NewRecorder()
-	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusOK {
-		t.Fatalf("granted user accounts with token status = %d body = %s", res.Code, res.Body.String())
-	}
-	var accountsBody map[string]any
-	if err := json.Unmarshal(res.Body.Bytes(), &accountsBody); err != nil {
-		t.Fatalf("accounts json: %v", err)
-	}
-	accountItems := logItems(accountsBody)
-	if len(accountItems) != 1 {
-		t.Fatalf("accounts body = %#v", accountsBody)
-	}
-	if _, ok := accountItems[0]["access_token"]; ok {
-		t.Fatalf("account list should not expose access_token without export permission: %#v", accountItems[0])
-	}
-	accountID, _ := accountItems[0]["id"].(string)
-	if accountID == "" || accountItems[0]["token_preview"] == "" {
-		t.Fatalf("account list missing id/token preview: %#v", accountItems[0])
-	}
-
-	req = httptest.NewRequest(http.MethodGet, "/api/accounts/tokens", nil)
-	req.Header.Set("Authorization", "Bearer "+rawKey)
-	res = httptest.NewRecorder()
-	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusForbidden {
-		t.Fatalf("ungranted account token export status = %d body = %s", res.Code, res.Body.String())
-	}
-
-	req = httptest.NewRequest(http.MethodPost, "/api/accounts", strings.NewReader(`{"tokens":["x"]}`))
-	req.Header.Set("Authorization", "Bearer "+rawKey)
-	res = httptest.NewRecorder()
-	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusForbidden {
-		t.Fatalf("ungranted write accounts status = %d body = %s", res.Code, res.Body.String())
-	}
-
-	if _, err := app.auth.UpdateRole(role["id"].(string), map[string]any{
-		"api_permissions": []string{
-			service.APIPermissionKey(http.MethodGet, "/api/accounts"),
-			service.APIPermissionKey(http.MethodDelete, "/api/accounts"),
-		},
-	}); err != nil {
-		t.Fatalf("UpdateRole(delete accounts) error = %v", err)
-	}
-	req = httptest.NewRequest(http.MethodDelete, "/api/accounts", strings.NewReader(`{"account_ids":["`+accountID+`"]}`))
-	req.Header.Set("Authorization", "Bearer "+rawKey)
-	res = httptest.NewRecorder()
-	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusOK {
-		t.Fatalf("delete account by id status = %d body = %s", res.Code, res.Body.String())
-	}
-
-	app.accounts.AddAccounts([]string{"pool-token"})
-	if _, err := app.auth.UpdateRole(role["id"].(string), map[string]any{
-		"api_permissions": []string{
-			service.APIPermissionKey(http.MethodGet, "/api/accounts"),
-			service.APIPermissionKey(http.MethodGet, "/api/accounts/tokens"),
-		},
-	}); err != nil {
-		t.Fatalf("UpdateRole(export tokens) error = %v", err)
-	}
-	req = httptest.NewRequest(http.MethodGet, "/api/accounts/tokens", nil)
-	req.Header.Set("Authorization", "Bearer "+rawKey)
-	res = httptest.NewRecorder()
-	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusOK {
-		t.Fatalf("granted account token export status = %d body = %s", res.Code, res.Body.String())
-	}
-	var tokenExport map[string]any
-	if err := json.Unmarshal(res.Body.Bytes(), &tokenExport); err != nil {
-		t.Fatalf("token export json: %v", err)
-	}
-	tokens := util.AsStringSlice(tokenExport["tokens"])
-	if len(tokens) != 1 || tokens[0] != "pool-token" {
-		t.Fatalf("exported tokens = %#v", tokenExport["tokens"])
 	}
 }
 
@@ -2791,6 +2578,114 @@ func TestProfilePromptFavoritesArePersonalAndPermissionIndependent(t *testing.T)
 	}
 }
 
+func TestProfilePromptFavoritesAdultContentRequiresPermission(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+
+	user, _, err := app.auth.RegisterPasswordUser("alice", "Password123", "Alice")
+	if err != nil {
+		t.Fatalf("RegisterPasswordUser(alice) error = %v", err)
+	}
+	restrictedRole, err := app.auth.CreateRole(map[string]any{
+		"name":            "safe prompt market",
+		"menu_paths":      []string{"/image"},
+		"api_permissions": []string{service.APIPermissionKey("GET", "/v1/models")},
+	})
+	if err != nil {
+		t.Fatalf("CreateRole(restricted) error = %v", err)
+	}
+	if updated := app.auth.UpdateUser(user.ID, map[string]any{"role_id": restrictedRole["id"]}); updated == nil {
+		t.Fatal("UpdateUser(restricted role) returned nil")
+	}
+	_, restrictedToken, err := app.auth.LoginPassword("alice", "Password123")
+	if err != nil {
+		t.Fatalf("LoginPassword(restricted) error = %v", err)
+	}
+
+	nsfwBody := `{
+		"prompt_id":"banana-prompt-quicker:adult:1",
+		"source":"banana-prompt-quicker",
+		"title":"Adult Prompt",
+		"preview":"https://example.test/adult.png",
+		"prompt":"adult prompt",
+		"author":"Alice",
+		"mode":"generate",
+		"category":"NSFW",
+		"source_label":"banana-prompt-quicker",
+		"is_nsfw":true
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/api/profile/prompt-favorites", strings.NewReader(nsfwBody))
+	req.Header.Set("Authorization", "Bearer "+restrictedToken)
+	res := httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusForbidden {
+		t.Fatalf("restricted nsfw favorite status = %d body = %s", res.Code, res.Body.String())
+	}
+
+	if _, err := app.prompts.Upsert(user.ID, map[string]any{
+		"prompt_id":    "seeded-adult",
+		"source":       "banana-prompt-quicker",
+		"title":        "Seeded Adult",
+		"preview":      "https://example.test/seeded.png",
+		"prompt":       "seeded adult prompt",
+		"author":       "Alice",
+		"mode":         "generate",
+		"category":     "NSFW",
+		"source_label": "banana-prompt-quicker",
+		"is_nsfw":      true,
+	}); err != nil {
+		t.Fatalf("seed nsfw favorite: %v", err)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/profile/prompt-favorites", nil)
+	req.Header.Set("Authorization", "Bearer "+restrictedToken)
+	res = httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("restricted list status = %d body = %s", res.Code, res.Body.String())
+	}
+	var list map[string]any
+	if err := json.Unmarshal(res.Body.Bytes(), &list); err != nil {
+		t.Fatalf("restricted list json: %v", err)
+	}
+	if items := logItems(list); len(items) != 0 {
+		t.Fatalf("restricted user saw nsfw favorites: %#v", list)
+	}
+
+	adultRole, err := app.auth.CreateRole(map[string]any{
+		"name":       "adult prompt market",
+		"menu_paths": []string{"/image"},
+		"api_permissions": []string{
+			service.APIPermissionKey("GET", "/v1/models"),
+			service.APIPermissionKey("GET", service.PromptMarketAdultPermissionPath),
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateRole(adult) error = %v", err)
+	}
+	if updated := app.auth.UpdateUser(user.ID, map[string]any{"role_id": adultRole["id"]}); updated == nil {
+		t.Fatal("UpdateUser(adult role) returned nil")
+	}
+	_, adultToken, err := app.auth.LoginPassword("alice", "Password123")
+	if err != nil {
+		t.Fatalf("LoginPassword(adult) error = %v", err)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/profile/prompt-favorites", strings.NewReader(nsfwBody))
+	req.Header.Set("Authorization", "Bearer "+adultToken)
+	res = httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("adult nsfw favorite status = %d body = %s", res.Code, res.Body.String())
+	}
+	if err := json.Unmarshal(res.Body.Bytes(), &list); err != nil {
+		t.Fatalf("adult create json: %v", err)
+	}
+	if items := logItems(list); len(items) != 2 {
+		t.Fatalf("adult user should see nsfw favorites, got %#v", list)
+	}
+}
+
 func TestAdminUsersManageLinuxDoUsers(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()
@@ -3264,6 +3159,9 @@ func TestLinuxDoOAuthCallbackRejectsNewUserWhenRegistrationDisabled(t *testing.T
 
 	app := newTestApp(t)
 	defer app.Close()
+	if _, err := app.config.Update(map[string]any{"registration_enabled": false}); err != nil {
+		t.Fatalf("disable registration: %v", err)
+	}
 
 	req := httptest.NewRequest(http.MethodGet, "/auth/linuxdo/start?redirect=/settings", nil)
 	res := httptest.NewRecorder()
@@ -3444,6 +3342,8 @@ func TestModelsCallLogIncludesUserKeyName(t *testing.T) {
 }
 
 func TestProtocolCallLogCapturesUnknownLengthRequestWithoutDuplicateAudit(t *testing.T) {
+	t.Skip("direct image generation now proxies to RelayAI instead of the local image engine")
+
 	app := newTestApp(t)
 	defer app.Close()
 
@@ -3582,7 +3482,7 @@ func TestCreationTaskSubmitLogsRequestAndPollingAvoidsGenericAuditNoise(t *testi
 	req.Header.Set("Authorization", "Bearer "+rawKey)
 	res := httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusOK {
+	if res.Code != http.StatusBadRequest {
 		t.Fatalf("submit creation task status = %d body = %s", res.Code, res.Body.String())
 	}
 

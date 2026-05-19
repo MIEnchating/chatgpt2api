@@ -51,6 +51,7 @@ type PromptMarketFavoriteFilter = "all" | "favorites";
 
 type ImagePromptMarketProps = {
   open: boolean;
+  canViewAdultContent: boolean;
   onOpenChange: (open: boolean) => void;
   onApplyPrompt: (prompt: BananaPrompt) => void | Promise<void>;
 };
@@ -84,17 +85,24 @@ function getPromptLocalization(
   return prompt.localizations?.[language] ?? prompt.localizations?.["zh-CN"] ?? prompt.localizations?.en;
 }
 
+function displayPromptCategory(category: string) {
+  return category === "NSFW" ? "成人内容" : category;
+}
+
 function getLocalizedPrompt(prompt: BananaPrompt, language: PromptMarketLanguage): BananaPrompt {
   const localization = getPromptLocalization(prompt, language);
   if (!localization) {
-    return prompt;
+    return {
+      ...prompt,
+      category: displayPromptCategory(prompt.category),
+    };
   }
 
   return {
     ...prompt,
     title: localization.title,
     prompt: localization.prompt,
-    category: localization.category,
+    category: displayPromptCategory(localization.category),
     subCategory: localization.subCategory,
   };
 }
@@ -146,7 +154,7 @@ function PromptPreviewImage({ prompt }: { prompt: BananaPrompt }) {
   );
 }
 
-export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt }: ImagePromptMarketProps) {
+export function ImagePromptMarket({ open, canViewAdultContent, onOpenChange, onApplyPrompt }: ImagePromptMarketProps) {
   const [prompts, setPrompts] = useState<BananaPrompt[]>([]);
   const [favoriteItems, setFavoriteItems] = useState<PromptFavorite[]>([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -274,9 +282,25 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt }: ImagePr
     setIsMobileFiltersOpen(false);
   }, [open]);
 
+  useEffect(() => {
+    if (!canViewAdultContent && nsfwFilter !== "safe") {
+      setNsfwFilter("safe");
+    }
+  }, [canViewAdultContent, nsfwFilter]);
+
   const favoritePrompts = useMemo(
     () => favoriteItems.map((item) => promptFavoriteToBananaPrompt(item)),
     [favoriteItems],
+  );
+
+  const safePromptPool = useMemo(
+    () => prompts.filter((prompt) => canViewAdultContent || !prompt.isNsfw),
+    [canViewAdultContent, prompts],
+  );
+
+  const visibleFavoritePrompts = useMemo(
+    () => favoritePrompts.filter((prompt) => canViewAdultContent || !prompt.isNsfw),
+    [canViewAdultContent, favoritePrompts],
   );
 
   const favoriteIds = useMemo(() => new Set(favoriteItems.map((item) => promptFavoriteRecordKey(item))), [favoriteItems]);
@@ -289,7 +313,7 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt }: ImagePr
     return items;
   }, [favoriteItems]);
 
-  const promptPool = favoriteFilter === "favorites" ? favoritePrompts : prompts;
+  const promptPool = favoriteFilter === "favorites" ? visibleFavoritePrompts : safePromptPool;
 
   const sourceFilteredPrompts = useMemo(() => {
     if (source === "all") {
@@ -317,7 +341,7 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt }: ImagePr
 
     return sourceFilteredPrompts.filter((prompt) => {
       const localizedPrompt = getLocalizedPrompt(prompt, promptLanguage);
-      if (nsfwFilter === "safe" && prompt.isNsfw) {
+      if ((!canViewAdultContent || nsfwFilter === "safe") && prompt.isNsfw) {
         return false;
       }
       if (nsfwFilter === "only" && !prompt.isNsfw) {
@@ -342,17 +366,17 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt }: ImagePr
         includesKeyword(localizedPrompt.sourceLabel, normalizedKeyword)
       );
     });
-  }, [category, keyword, mode, nsfwFilter, promptLanguage, sourceFilteredPrompts]);
+  }, [canViewAdultContent, category, keyword, mode, nsfwFilter, promptLanguage, sourceFilteredPrompts]);
 
   const visiblePrompts = filteredPrompts.slice(0, visibleCount);
   const hasMore = visiblePrompts.length < filteredPrompts.length;
   const selectedSourceLabel =
     source === "all" ? "" : PROMPT_MARKET_SOURCE_OPTIONS.find((item) => item.value === source)?.label || source;
-  const selectedLanguageLabel = promptLanguage === "zh-CN" ? "" : "English";
+  const selectedLanguageLabel = promptLanguage === "zh-CN" ? "" : "英文";
   const selectedCategoryLabel = category === ALL_CATEGORY_VALUE ? "" : category;
   const selectedModeLabel = mode === "all" ? "" : mode === "edit" ? "编辑" : "文生图";
   const selectedNsfwLabel =
-    nsfwFilter === "safe" ? "" : nsfwFilter === "include" ? "包含 NSFW" : "仅 NSFW";
+    nsfwFilter === "safe" ? "" : nsfwFilter === "include" ? "包含成人内容" : "仅成人内容";
   const selectedFavoriteLabel = favoriteFilter === "favorites" ? "已收藏" : "";
   const activeFilterLabels = [
     selectedFavoriteLabel,
@@ -440,7 +464,7 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt }: ImagePr
         onClick={() => setFavoriteFilter("favorites")}
       >
         <Star className={cn("size-3.5", favoriteFilter === "favorites" && "fill-current")} />
-        {favoriteItems.length > 0 ? `收藏 ${favoriteItems.length}` : "收藏"}
+        {visibleFavoritePrompts.length > 0 ? `收藏 ${visibleFavoritePrompts.length}` : "收藏"}
       </button>
     </div>
   );
@@ -475,7 +499,7 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt }: ImagePr
         <SelectContent>
           <SelectGroup>
             <SelectItem value="zh-CN">中文</SelectItem>
-            <SelectItem value="en">English</SelectItem>
+            <SelectItem value="en">英文</SelectItem>
           </SelectGroup>
         </SelectContent>
       </Select>
@@ -506,21 +530,23 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt }: ImagePr
           </SelectGroup>
         </SelectContent>
       </Select>
-      <Select
-        value={nsfwFilter}
-        onValueChange={(value) => setNsfwFilter(value as PromptMarketNsfwFilter)}
-      >
-        <SelectTrigger className={triggerClassName}>
-          <SelectValue placeholder="NSFW" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectGroup>
-            <SelectItem value="safe">隐藏 NSFW</SelectItem>
-            <SelectItem value="include">包含 NSFW</SelectItem>
-            <SelectItem value="only">仅 NSFW</SelectItem>
-          </SelectGroup>
-        </SelectContent>
-      </Select>
+      {canViewAdultContent ? (
+        <Select
+          value={nsfwFilter}
+          onValueChange={(value) => setNsfwFilter(value as PromptMarketNsfwFilter)}
+        >
+          <SelectTrigger className={triggerClassName}>
+            <SelectValue placeholder="成人内容" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectGroup>
+              <SelectItem value="safe">隐藏成人内容</SelectItem>
+              <SelectItem value="include">包含成人内容</SelectItem>
+              <SelectItem value="only">仅成人内容</SelectItem>
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+      ) : null}
     </>
   );
 
@@ -649,7 +675,7 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt }: ImagePr
               </div>
               {renderFavoriteTabs("w-[168px] shrink-0")}
             </div>
-            <div className="grid gap-2 md:grid-cols-[minmax(180px,1fr)_120px_minmax(160px,1fr)_130px_140px]">
+            <div className={cn("grid gap-2", canViewAdultContent ? "md:grid-cols-[minmax(180px,1fr)_120px_minmax(160px,1fr)_130px_140px]" : "md:grid-cols-[minmax(180px,1fr)_120px_minmax(160px,1fr)_130px]")}>
               {renderFilterControls("min-w-0")}
             </div>
           </div>
@@ -690,9 +716,9 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt }: ImagePr
           ) : visiblePrompts.length === 0 ? (
             <div className="flex h-full min-h-[320px] items-center justify-center text-sm text-[#8e8e93]">
               {favoriteFilter === "favorites"
-                ? favoriteItems.length === 0
-                  ? "还没有收藏提示词"
-                  : "没有匹配的收藏提示词"
+                  ? visibleFavoritePrompts.length === 0
+                    ? "还没有收藏提示词"
+                    : "没有匹配的收藏提示词"
                 : "没有找到匹配的提示词"}
             </div>
           ) : (
@@ -733,7 +759,7 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt }: ImagePr
                           </Badge>
                           {prompt.isNsfw ? (
                             <Badge className="bg-white/18 text-white shadow-sm backdrop-blur">
-                              NSFW
+                              成人内容
                             </Badge>
                           ) : null}
                           {prompt.referenceImageUrls.length > 0 ? (

@@ -131,7 +131,7 @@ function getQueueSizeLabel(turn: ImageTurn) {
   }
   const size = turn.size.includes("x") ? formatImageSizeDisplay(turn.size) : turn.size;
   const requirement = getImageSizeRequirementLabel(turn.size);
-  return requirement === "Auto" ? size : `${size} / ${requirement}`;
+  return requirement === "自动" ? size : `${size} / ${requirement}`;
 }
 
 function getQueueLongTaskHint(turn: ImageTurn, elapsedSeconds: number) {

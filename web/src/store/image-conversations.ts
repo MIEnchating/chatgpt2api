@@ -70,6 +70,7 @@ export type ImageTurn = {
   quality?: ImageQuality;
   outputFormat?: ImageOutputFormat;
   outputCompression?: number;
+  stream?: boolean;
   visibility?: ImageVisibility;
   images: StoredImage[];
   createdAt: string;
@@ -349,6 +350,7 @@ function normalizeTurn(turn: ImageTurn & Record<string, unknown>): ImageTurn {
       isImageOutputFormat(turn.outputFormat) && supportsImageOutputCompression(turn.outputFormat)
         ? normalizeOutputCompression(turn.outputCompression)
         : undefined,
+    stream: mode === "chat" ? false : turn.stream === true,
     visibility,
     images,
     createdAt: String(turn.createdAt || new Date().toISOString()),

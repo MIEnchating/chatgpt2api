@@ -271,11 +271,15 @@ func (a *App) handleProfilePromptFavorites(w http.ResponseWriter, r *http.Reques
 	if r.URL.Path == base {
 		switch r.Method {
 		case http.MethodGet:
-			util.WriteJSON(w, http.StatusOK, map[string]any{"items": a.prompts.List(ownerID)})
+			util.WriteJSON(w, http.StatusOK, map[string]any{"items": a.promptFavoritesForIdentity(ownerID, identity)})
 		case http.MethodPost:
 			body, err := readJSONMap(r)
 			if err != nil {
 				util.WriteError(w, http.StatusBadRequest, "invalid json body")
+				return
+			}
+			if util.ToBool(body["is_nsfw"]) && !a.identityCanAccessAPI(identity, http.MethodGet, service.PromptMarketAdultPermissionPath) {
+				util.WriteError(w, http.StatusForbidden, "adult prompt market access is not enabled for this user")
 				return
 			}
 			item, err := a.prompts.Upsert(ownerID, body)
@@ -283,7 +287,7 @@ func (a *App) handleProfilePromptFavorites(w http.ResponseWriter, r *http.Reques
 				util.WriteError(w, http.StatusBadRequest, err.Error())
 				return
 			}
-			util.WriteJSON(w, http.StatusOK, map[string]any{"item": item, "items": a.prompts.List(ownerID)})
+			util.WriteJSON(w, http.StatusOK, map[string]any{"item": item, "items": a.promptFavoritesForIdentity(ownerID, identity)})
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		}
@@ -303,7 +307,22 @@ func (a *App) handleProfilePromptFavorites(w http.ResponseWriter, r *http.Reques
 		util.WriteError(w, http.StatusNotFound, "prompt favorite not found")
 		return
 	}
-	util.WriteJSON(w, http.StatusOK, map[string]any{"items": a.prompts.List(ownerID)})
+	util.WriteJSON(w, http.StatusOK, map[string]any{"items": a.promptFavoritesForIdentity(ownerID, identity)})
+}
+
+func (a *App) promptFavoritesForIdentity(ownerID string, identity service.Identity) []map[string]any {
+	items := a.prompts.List(ownerID)
+	if a.identityCanAccessAPI(identity, http.MethodGet, service.PromptMarketAdultPermissionPath) {
+		return items
+	}
+	filtered := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		if util.ToBool(item["is_nsfw"]) {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	return filtered
 }
 
 func (a *App) handleAdminRoles(w http.ResponseWriter, r *http.Request) {
@@ -1487,7 +1506,12 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == "/api/creation-tasks/image-generations" && r.Method == http.MethodPost {
 		body, _ := readJSONMap(r)
-		task, err := a.tasks.SubmitGenerationWithOptions(r.Context(), identity, util.Clean(body["client_task_id"]), util.Clean(body["prompt"]), firstNonEmpty(util.Clean(body["model"]), util.ImageModelAuto), util.Clean(body["size"]), util.Clean(body["quality"]), a.resolveImageBaseURL(r), util.ToInt(body["n"], 1), body["messages"], imageTaskRequestMetadata(body), imageOutputOptionsFromBody(body), imageToolOptionsFromBody(body), util.Clean(body["visibility"]))
+		a.attachRelayAPIKey(r, body)
+		if util.Clean(body["api_key"]) == "" {
+			util.WriteError(w, http.StatusBadRequest, "RelayAI API key is required")
+			return
+		}
+		task, err := a.tasks.SubmitGenerationWithOptions(r.Context(), identity, util.Clean(body["client_task_id"]), util.Clean(body["prompt"]), firstNonEmpty(util.Clean(body["model"]), util.ImageModelAuto), util.Clean(body["size"]), util.Clean(body["quality"]), relayAIBaseURL, util.ToInt(body["n"], 1), body["messages"], imageTaskRequestMetadata(body), imageOutputOptionsFromBody(body), imageToolOptionsFromBody(body), util.Clean(body["visibility"]))
 		if err != nil {
 			writeCreationTaskSubmitError(w, err)
 			return
@@ -1497,7 +1521,12 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == "/api/creation-tasks/chat-completions" && r.Method == http.MethodPost {
 		body, _ := readJSONMap(r)
-		task, err := a.tasks.SubmitChat(r.Context(), identity, util.Clean(body["client_task_id"]), util.Clean(body["prompt"]), firstNonEmpty(util.Clean(body["model"]), util.ImageModelAuto), body["messages"], protocol.IsImageChatRequest(body), util.ToInt(body["n"], 1))
+		a.attachRelayAPIKey(r, body)
+		if util.Clean(body["api_key"]) == "" {
+			util.WriteError(w, http.StatusBadRequest, "RelayAI API key is required")
+			return
+		}
+		task, err := a.tasks.SubmitChatWithAPIKey(r.Context(), identity, util.Clean(body["client_task_id"]), util.Clean(body["prompt"]), firstNonEmpty(util.Clean(body["model"]), util.ImageModelAuto), body["messages"], protocol.IsImageChatRequest(body), util.Clean(body["api_key"]), util.ToInt(body["n"], 1))
 		if err != nil {
 			writeCreationTaskSubmitError(w, err)
 			return
@@ -1511,7 +1540,12 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		task, err := a.tasks.SubmitEditWithOptions(r.Context(), identity, util.Clean(body["client_task_id"]), util.Clean(body["prompt"]), firstNonEmpty(util.Clean(body["model"]), util.ImageModelAuto), util.Clean(body["size"]), util.Clean(body["quality"]), a.resolveImageBaseURL(r), images, util.ToInt(body["n"], 1), body["messages"], imageTaskRequestMetadata(body), imageOutputOptionsFromBody(body), imageToolOptionsFromBody(body), util.Clean(body["visibility"]))
+		a.attachRelayAPIKey(r, body)
+		if util.Clean(body["api_key"]) == "" {
+			util.WriteError(w, http.StatusBadRequest, "RelayAI API key is required")
+			return
+		}
+		task, err := a.tasks.SubmitEditWithOptions(r.Context(), identity, util.Clean(body["client_task_id"]), util.Clean(body["prompt"]), firstNonEmpty(util.Clean(body["model"]), util.ImageModelAuto), util.Clean(body["size"]), util.Clean(body["quality"]), relayAIBaseURL, images, util.ToInt(body["n"], 1), body["messages"], imageTaskRequestMetadata(body), imageOutputOptionsFromBody(body), imageToolOptionsFromBody(body), util.Clean(body["visibility"]))
 		if err != nil {
 			writeCreationTaskSubmitError(w, err)
 			return
@@ -1536,6 +1570,12 @@ func imageTaskRequestMetadata(body map[string]any) map[string]any {
 		if util.ToBool(body["share_reference_images"]) {
 			metadata["share_reference_images"] = true
 		}
+	}
+	if apiKey := util.Clean(body["api_key"]); apiKey != "" {
+		metadata["api_key"] = apiKey
+	}
+	if util.ToBool(body["stream"]) {
+		metadata["stream"] = true
 	}
 	return metadata
 }

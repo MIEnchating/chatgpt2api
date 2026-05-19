@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ChevronDown, ChevronUp, Github, LogOut, MoonStar, Send, Sun, UserCircle2 } from "lucide-react";
+import { ChevronDown, ChevronUp, LogOut, MoonStar, Sun, UserCircle2 } from "lucide-react";
 import { motion, useReducedMotion, type Transition } from "motion/react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 
@@ -14,14 +14,10 @@ import {
   getCachedAuthSession,
   getVerifiedAuthSession,
 } from "@/lib/session";
-import {
-  canAccessPath,
-  hasAPIPermission,
-  type StoredAuthSession,
-} from "@/store/auth";
+import { canAccessPath, type StoredAuthSession } from "@/store/auth";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { fetchAccounts, logout, type Account, type BillingState } from "@/lib/api";
+import { logout } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import {
   applyColorTheme,
@@ -32,8 +28,6 @@ import {
 
 const navItems = [
   { href: "/image", label: "创作台" },
-  { href: "/accounts", label: "号池管理" },
-  { href: "/register", label: "注册机" },
   { href: "/image-manager", label: "图片库" },
   { href: "/users", label: "用户管理" },
   { href: "/rbac", label: "角色权限" },
@@ -41,7 +35,6 @@ const navItems = [
   { href: "/settings", label: "设置" },
 ];
 const profileNavItem = { href: "/profile", label: "个人中心" };
-const QUOTA_REFRESH_EVENT = "chatgpt2api:quota-refresh";
 const PRIMARY_NAV_ID = "primary-navigation";
 const NAV_ACTIVE_LAYOUT_ID = "top-nav-active-pill";
 const navActiveTransition: Transition = {
@@ -53,21 +46,6 @@ const navActiveTransition: Transition = {
 const reducedNavActiveTransition: Transition = {
   duration: 0.01,
 };
-
-function formatAvailableQuota(accounts: Account[]) {
-  const availableAccounts = accounts.filter((account) => account.status !== "禁用");
-  return String(availableAccounts.reduce((sum, account) => sum + Math.max(0, account.quota), 0));
-}
-
-function formatBillingQuota(billing?: BillingState | null) {
-  if (!billing) {
-    return "--";
-  }
-  if (billing.unlimited) {
-    return "无限";
-  }
-  return String(Math.max(0, Number(billing.available) || 0));
-}
 
 function ThemeToggleButton({
   theme,
@@ -143,13 +121,11 @@ function NavPill({ item, pathname }: { item: NavItem; pathname: string }) {
 function AccountMenu({
   session,
   roleLabel,
-  availableQuota,
   pathname,
   onLogout,
 }: {
   session: StoredAuthSession;
   roleLabel: string;
-  availableQuota: string;
   pathname: string;
   onLogout: () => Promise<void>;
 }) {
@@ -197,14 +173,10 @@ function AccountMenu({
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-2 text-xs">
+          <div className="grid grid-cols-2 gap-2 text-xs">
             <div className="rounded-lg bg-muted/40 px-2 py-1.5">
               <div className="text-muted-foreground">角色</div>
               <div className="truncate font-medium text-foreground">{roleLabel}</div>
-            </div>
-            <div className="rounded-lg bg-muted/40 px-2 py-1.5">
-              <div className="text-muted-foreground">额度</div>
-              <div className="truncate font-medium text-foreground">{availableQuota}</div>
             </div>
             <div className="rounded-lg bg-muted/40 px-2 py-1.5">
               <div className="text-muted-foreground">版本</div>
@@ -212,11 +184,11 @@ function AccountMenu({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-2">
+          <div className="grid grid-cols-1 gap-2">
             <Link
               to={profileNavItem.href}
               className={cn(
-                "col-span-2 flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-medium transition hover:bg-accent hover:text-accent-foreground",
+                "flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-medium transition hover:bg-accent hover:text-accent-foreground",
                 profileActive ? "bg-[#edf4ff] text-[#1456f0] dark:bg-sky-950/30 dark:text-sky-300" : "text-foreground",
               )}
               onClick={() => setOpen(false)}
@@ -224,26 +196,6 @@ function AccountMenu({
               <UserCircle2 className="size-4" />
               个人中心
             </Link>
-            <a
-              href="https://t.me/+YBR7t_CPOYBkYzU1"
-              target="_blank"
-              rel="noreferrer"
-              className="flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm text-muted-foreground transition hover:bg-accent hover:text-accent-foreground"
-              onClick={() => setOpen(false)}
-            >
-              <Send className="size-4" />
-              Telegram
-            </a>
-            <a
-              href="https://github.com/ZyphrZero/chatgpt2api"
-              target="_blank"
-              rel="noreferrer"
-              className="flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm text-muted-foreground transition hover:bg-accent hover:text-accent-foreground"
-              onClick={() => setOpen(false)}
-            >
-              <Github className="size-4" />
-              GitHub
-            </a>
           </div>
 
           <button
@@ -269,7 +221,6 @@ export function TopNav() {
   const pathname = location.pathname.replace(/\/+$/, "") || "/";
   const [session, setSession] = useState<StoredAuthSession | null | undefined>(() => getCachedAuthSession());
   const [theme, setTheme] = useState<ColorTheme>(() => getPreferredColorTheme());
-  const [availableQuota, setAvailableQuota] = useState("--");
   const [navCollapsed, setNavCollapsed] = useState(false);
 
   useEffect(() => {
@@ -307,44 +258,6 @@ export function TopNav() {
     };
   }, []);
 
-  useEffect(() => {
-    if (session?.role === "user") {
-      setAvailableQuota(formatBillingQuota(session.billing));
-      return;
-    }
-    if (!hasAPIPermission(session, "GET", "/api/accounts")) {
-      setAvailableQuota("--");
-      return;
-    }
-
-    let active = true;
-    const loadQuota = async () => {
-      try {
-        const data = await fetchAccounts();
-        if (active) {
-          setAvailableQuota(formatAvailableQuota(data.items));
-        }
-      } catch {
-        if (active) {
-          setAvailableQuota((current) => (current === "加载中..." ? "--" : current));
-        }
-      }
-    };
-    const handleRefresh = () => {
-      void loadQuota();
-    };
-
-    setAvailableQuota("加载中...");
-    void loadQuota();
-    window.addEventListener("focus", handleRefresh);
-    window.addEventListener(QUOTA_REFRESH_EVENT, handleRefresh);
-    return () => {
-      active = false;
-      window.removeEventListener("focus", handleRefresh);
-      window.removeEventListener(QUOTA_REFRESH_EVENT, handleRefresh);
-    };
-  }, [session]);
-
   const handleLogout = async () => {
     try {
       await logout();
@@ -372,7 +285,7 @@ export function TopNav() {
     setTheme(nextTheme);
   };
 
-  if (pathname === "/login" || pathname === "/auth/linuxdo/callback" || session === undefined || !session) {
+  if (pathname === "/login" || session === undefined || !session) {
     return null;
   }
 
@@ -382,14 +295,14 @@ export function TopNav() {
   const navToggleLabel = navCollapsed ? "展开导航栏" : "收起导航栏";
 
   return (
-    <header className="sticky top-3 z-40 rounded-[24px] border border-border bg-card/90 shadow-[0_0_22.576px_rgba(44,74,116,0.09)] backdrop-blur dark:border-border dark:bg-card/92">
+    <header className="sticky top-3 z-40 rounded-2xl border border-border bg-card/92 shadow-[0_12px_36px_-28px_rgba(15,23,42,0.55)] backdrop-blur dark:border-border dark:bg-card/92">
       <div className="flex min-h-14 flex-col gap-2 px-3 py-2 lg:flex-row lg:items-center lg:justify-between lg:gap-4 lg:px-4">
         <div className="flex min-w-0 items-center justify-between gap-2 lg:justify-start">
           <Button
             type="button"
             variant="ghost"
             className={cn(
-              "font-display h-9 max-w-[190px] justify-start rounded-full px-1.5 pr-2 text-[15px] font-semibold text-[#18181b] shadow-none hover:bg-black/[0.04] hover:text-[#1456f0] sm:max-w-none dark:text-foreground dark:hover:text-sky-300",
+              "h-9 max-w-[190px] justify-start rounded-xl px-1.5 pr-2 text-[15px] font-semibold text-[#18181b] shadow-none hover:bg-black/[0.04] hover:text-[#1456f0] sm:max-w-none dark:text-foreground dark:hover:text-sky-300",
               navCollapsed ? "bg-black/[0.04] text-[#1456f0] dark:bg-accent dark:text-sky-300" : "",
             )}
             aria-controls={PRIMARY_NAV_ID}
@@ -414,7 +327,6 @@ export function TopNav() {
             <AccountMenu
               session={session}
               roleLabel={roleLabel}
-              availableQuota={availableQuota}
               pathname={pathname}
               onLogout={handleLogout}
             />
@@ -439,7 +351,6 @@ export function TopNav() {
           <AccountMenu
             session={session}
             roleLabel={roleLabel}
-            availableQuota={availableQuota}
             pathname={pathname}
             onLogout={handleLogout}
           />

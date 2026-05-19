@@ -17,6 +17,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -69,7 +70,7 @@ func NewApp() (*App, error) {
 	if err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	_, cancel := context.WithCancel(context.Background())
 	logs := service.NewLogService(storageBackend)
 	logger, err := service.NewLogger(cfg.DataDir, cfg.LogLevels)
 	if err != nil {
@@ -101,15 +102,15 @@ func NewApp() (*App, error) {
 	app.tasks = service.NewStoredImageTaskService(storageBackend,
 		func(ctx context.Context, identity service.Identity, payload map[string]any) (map[string]any, error) {
 			return app.runLoggedImageTask(ctx, identity, payload, "/api/creation-tasks/image-generations", "文生图", func(ctx context.Context, payload map[string]any) (map[string]any, error) {
-				result, _, err := engine.HandleImageGenerations(ctx, payload)
-				return result, err
+				result, stream, err := app.relayImageGenerations(ctx, payload)
+				return relayImageTaskResult(payload, result, stream, err)
 			})
 		},
 		func(ctx context.Context, identity service.Identity, payload map[string]any) (map[string]any, error) {
 			return app.runLoggedImageTask(ctx, identity, payload, "/api/creation-tasks/image-edits", "图生图", func(ctx context.Context, payload map[string]any) (map[string]any, error) {
 				images, _ := payload["images"].([]protocol.UploadedImage)
-				result, _, err := engine.HandleImageEdits(ctx, payload, images)
-				return result, err
+				result, stream, err := app.relayImageEdits(ctx, payload, images)
+				return relayImageTaskResult(payload, result, stream, err)
 			})
 		},
 		func(ctx context.Context, identity service.Identity, payload map[string]any) (map[string]any, error) {
@@ -123,12 +124,136 @@ func NewApp() (*App, error) {
 	app.tasks.SetTaskTimeoutGetter(func() time.Duration {
 		return time.Duration(app.config.ImageTaskTimeoutSeconds()) * time.Second
 	})
-	accounts.StartLimitedWatcher(ctx, time.Duration(cfg.RefreshAccountIntervalMinute())*time.Minute)
 	_, _ = app.images.CleanupStorage(service.ImageStorageCleanupOptions{
 		RetentionDays: cfg.ImageRetentionDays(),
 		MaxBytes:      cfg.ImageStorageLimitBytes(),
 	})
 	return app, nil
+}
+
+func relayImageTaskResult(payload map[string]any, result map[string]any, stream *protocol.StreamResult, err error) (map[string]any, error) {
+	if err != nil || stream == nil {
+		return result, err
+	}
+	return collectRelayImageTaskStream(payload, stream)
+}
+
+func collectRelayImageTaskStream(payload map[string]any, stream *protocol.StreamResult) (map[string]any, error) {
+	created := time.Now().Unix()
+	model := ""
+	message := ""
+	indexed := map[int][]map[string]any{}
+	unindexed := []map[string]any{}
+	onProgress := relayImageTaskProgressCallback(payload)
+
+	for item := range stream.Items {
+		if item == nil {
+			continue
+		}
+		if value := util.ToInt(item["created"], 0); value > 0 {
+			created = int64(value)
+		}
+		if model == "" {
+			model = util.Clean(item["model"])
+		}
+		if text := util.Clean(item["message"]); text != "" {
+			message = text
+		} else if text := util.Clean(item["progress_text"]); text != "" {
+			message += text
+		}
+		data := relayImageStreamItemData(item)
+		if len(data) == 0 {
+			continue
+		}
+		if index := util.ToInt(item["index"], -1); index >= 0 {
+			indexed[index] = data
+		} else {
+			unindexed = data
+		}
+		if onProgress != nil {
+			onProgress(relayImageStreamData(indexed, unindexed))
+		}
+	}
+
+	data := relayImageStreamData(indexed, unindexed)
+	out := map[string]any{"created": created, "data": data}
+	if model != "" {
+		out["model"] = model
+	}
+	if len(data) == 0 && strings.TrimSpace(message) != "" {
+		out["message"] = strings.TrimSpace(message)
+	}
+	if err := <-stream.Err; err != nil {
+		if out["message"] == nil {
+			out["message"] = err.Error()
+		}
+		return out, err
+	}
+	return out, nil
+}
+
+func relayImageTaskProgressCallback(payload map[string]any) protocol.ImageOutputProgressCallback {
+	switch callback := payload["image_output_callback"].(type) {
+	case protocol.ImageOutputProgressCallback:
+		return callback
+	case func([]map[string]any):
+		return callback
+	default:
+		return nil
+	}
+}
+
+func relayImageStreamItemData(item map[string]any) []map[string]any {
+	if data := util.AsMapSlice(item["data"]); len(data) > 0 {
+		return cloneRelayImageData(data)
+	}
+	data := map[string]any{}
+	for _, key := range []string{"url", "b64_json", "revised_prompt", "text_response"} {
+		if value, ok := item[key]; ok && util.Clean(value) != "" {
+			data[key] = value
+		}
+	}
+	if len(data) == 0 {
+		return nil
+	}
+	return []map[string]any{data}
+}
+
+func relayImageStreamData(indexed map[int][]map[string]any, unindexed []map[string]any) []map[string]any {
+	if len(unindexed) > 0 {
+		return cloneRelayImageData(unindexed)
+	}
+	data := []map[string]any{}
+	if len(indexed) == 0 {
+		return data
+	}
+	keys := make([]int, 0, len(indexed))
+	for index := range indexed {
+		keys = append(keys, index)
+	}
+	sort.Ints(keys)
+	for _, index := range keys {
+		data = append(data, cloneRelayImageData(indexed[index])...)
+	}
+	return data
+}
+
+func cloneRelayImageData(items []map[string]any) []map[string]any {
+	if len(items) == 0 {
+		return nil
+	}
+	out := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+		clone := make(map[string]any, len(item))
+		for key, value := range item {
+			clone[key] = value
+		}
+		out = append(out, clone)
+	}
+	return out
 }
 
 func newUpdateService(cfg *config.Store) *service.UpdateService {
@@ -166,7 +291,7 @@ func (a *App) handleModels(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	result, err := a.engine.ListModels(r.Context())
+	result, err := a.relayListModels(r.Context(), relayAPIKeyFromRequest(r, nil))
 	a.writeProtocol(w, r, result, nil, err, "openai", "/v1/models", "models", identity, "模型列表", service.ImageVisibilityPrivate, service.BillingReference{})
 }
 
@@ -180,9 +305,10 @@ func (a *App) handleImageGenerations(w http.ResponseWriter, r *http.Request) {
 		util.WriteError(w, http.StatusBadRequest, "invalid json body")
 		return
 	}
+	a.attachRelayAPIKey(r, body)
 	body["owner_id"] = identityScope(identity)
 	body["owner_name"] = identityDisplayName(identity)
-	body["base_url"] = a.resolveImageBaseURL(r)
+	body["base_url"] = relayAIBaseURL
 	a.attachCreationTaskLimiter(body, identity)
 	visibility, err := service.NormalizeImageVisibility(util.Clean(body["visibility"]))
 	if err != nil {
@@ -196,7 +322,7 @@ func (a *App) handleImageGenerations(w http.ResponseWriter, r *http.Request) {
 	}
 	billingRef := a.protocolBillingReference(identity, "/v1/images/generations", model)
 	a.attachProtocolBillingCharger(body, identity, billingRef)
-	result, stream, err := a.engine.HandleImageGenerations(r.Context(), body)
+	result, stream, err := a.relayImageGenerations(r.Context(), body)
 	a.writeProtocol(w, r, result, stream, err, "openai", "/v1/images/generations", model, identity, "文生图", visibility, billingRef, body)
 }
 
@@ -210,6 +336,7 @@ func (a *App) handleImageEdits(w http.ResponseWriter, r *http.Request) {
 		util.WriteError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	a.attachRelayAPIKey(r, body)
 	if n := util.ToInt(body["n"], 1); n < 1 || n > 4 {
 		util.WriteError(w, http.StatusBadRequest, "n must be between 1 and 4")
 		return
@@ -220,7 +347,7 @@ func (a *App) handleImageEdits(w http.ResponseWriter, r *http.Request) {
 	}
 	body["owner_id"] = identityScope(identity)
 	body["owner_name"] = identityDisplayName(identity)
-	body["base_url"] = a.resolveImageBaseURL(r)
+	body["base_url"] = relayAIBaseURL
 	a.attachCreationTaskLimiter(body, identity)
 	body["images"] = images
 	visibility, err := service.NormalizeImageVisibility(util.Clean(body["visibility"]))
@@ -235,7 +362,7 @@ func (a *App) handleImageEdits(w http.ResponseWriter, r *http.Request) {
 	}
 	billingRef := a.protocolBillingReference(identity, "/v1/images/edits", model)
 	a.attachProtocolBillingCharger(body, identity, billingRef)
-	result, stream, err := a.engine.HandleImageEdits(r.Context(), body, images)
+	result, stream, err := a.relayImageEdits(r.Context(), body, images)
 	a.writeProtocol(w, r, result, stream, err, "openai", "/v1/images/edits", model, identity, "图生图", visibility, billingRef, body)
 }
 
@@ -249,6 +376,7 @@ func (a *App) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		util.WriteError(w, http.StatusBadRequest, "invalid json body")
 		return
 	}
+	a.attachRelayAPIKey(r, body)
 	body["owner_id"] = identityScope(identity)
 	body["owner_name"] = identityDisplayName(identity)
 	a.attachCreationTaskLimiter(body, identity)
@@ -259,7 +387,7 @@ func (a *App) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	}
 	billingRef := a.protocolBillingReference(identity, "/v1/chat/completions", model)
 	a.attachProtocolBillingCharger(body, identity, billingRef)
-	result, stream, err := a.engine.HandleChatCompletions(r.Context(), body)
+	result, stream, err := a.relayChatCompletions(r.Context(), body)
 	a.writeProtocol(w, r, result, stream, err, "openai", "/v1/chat/completions", model, identity, "文本生成", service.ImageVisibilityPrivate, billingRef)
 }
 
@@ -273,6 +401,7 @@ func (a *App) handleResponses(w http.ResponseWriter, r *http.Request) {
 		util.WriteError(w, http.StatusBadRequest, "invalid json body")
 		return
 	}
+	a.attachRelayAPIKey(r, body)
 	body["owner_id"] = identityScope(identity)
 	body["owner_name"] = identityDisplayName(identity)
 	a.attachCreationTaskLimiter(body, identity)
@@ -283,7 +412,7 @@ func (a *App) handleResponses(w http.ResponseWriter, r *http.Request) {
 	}
 	billingRef := a.protocolBillingReference(identity, "/v1/responses", model)
 	a.attachProtocolBillingCharger(body, identity, billingRef)
-	result, stream, err := a.engine.HandleResponsesScoped(r.Context(), body, identityScope(identity))
+	result, stream, err := a.relayResponses(r.Context(), body)
 	a.writeProtocol(w, r, result, stream, err, "openai", "/v1/responses", model, identity, "Responses", service.ImageVisibilityPrivate, billingRef)
 }
 
@@ -301,8 +430,9 @@ func (a *App) handleMessages(w http.ResponseWriter, r *http.Request) {
 		util.WriteError(w, http.StatusBadRequest, "invalid json body")
 		return
 	}
+	a.attachRelayAPIKey(r, body)
 	model := firstNonEmpty(util.Clean(body["model"]), "auto")
-	result, stream, err := a.engine.HandleMessages(r.Context(), body)
+	result, stream, err := a.relayMessages(r.Context(), body)
 	a.writeProtocol(w, r, result, stream, err, "anthropic", "/v1/messages", model, identity, "Messages", service.ImageVisibilityPrivate, service.BillingReference{})
 }
 
@@ -1189,8 +1319,6 @@ func isPermissionCheckSkipped(path string) bool {
 		return true
 	case "/auth/logout":
 		return true
-	case "/auth/register":
-		return true
 	case "/auth/session":
 		return true
 	case "/api/profile":
@@ -1291,6 +1419,7 @@ func readMultipartImageBody(r *http.Request) (map[string]any, []protocol.Uploade
 		"share_prompt_parameters": firstForm(r.MultipartForm, "share_prompt_parameters"),
 		"share_reference_images":  firstForm(r.MultipartForm, "share_reference_images"),
 		"visibility":              firstForm(r.MultipartForm, "visibility"),
+		"api_key":                 firstForm(r.MultipartForm, "api_key"),
 		"response_format":         firstNonEmpty(firstForm(r.MultipartForm, "response_format"), "b64_json"),
 		"stream":                  util.ToBool(firstForm(r.MultipartForm, "stream")),
 	}
@@ -1629,10 +1758,7 @@ func uploadedImagesFromPayload(value any) []protocol.UploadedImage {
 }
 
 func (a *App) checkProtocolBilling(identity service.Identity, amount int) error {
-	if amount <= 0 || a == nil || a.billing == nil {
-		return nil
-	}
-	return a.billing.CheckAvailable(identity, amount)
+	return nil
 }
 
 func (a *App) protocolBillingReference(identity service.Identity, endpoint, model string) service.BillingReference {
@@ -1762,7 +1888,7 @@ func (a *App) runLoggedChatTask(ctx context.Context, identity service.Identity, 
 	payload["owner_name"] = identityDisplayName(identity)
 	payload["stream"] = false
 	model := firstNonEmpty(util.Clean(payload["model"]), util.ImageModelAuto)
-	result, stream, err := a.engine.HandleChatCompletions(ctx, payload)
+	result, stream, err := a.relayChatCompletions(ctx, payload)
 	if stream != nil {
 		err = errors.New("chat task streaming is not supported")
 	}

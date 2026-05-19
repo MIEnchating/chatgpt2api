@@ -19,37 +19,32 @@ func TestNormalizeAPIPermissionsMigratesCreationTaskPermissions(t *testing.T) {
 	}
 }
 
-func TestAccountPoolPermissionsAreExplicit(t *testing.T) {
-	readOnly := PermissionSet{APIPermissions: []string{APIPermissionKey("GET", "/api/accounts")}}
-	if !HasAPIPermission(readOnly, "GET", "/api/accounts") {
-		t.Fatalf("read-only account permission missing account list")
+func TestRemovedAccountPoolPermissionsAreIgnored(t *testing.T) {
+	permissions := NormalizeAPIPermissions([]string{
+		APIPermissionKey("GET", "/api/accounts"),
+		APIPermissionKey("POST", "/api/accounts/refresh"),
+	})
+	if len(permissions) != 0 {
+		t.Fatalf("removed account pool permissions should be ignored: %#v", permissions)
 	}
-	if HasAPIPermission(readOnly, "GET", "/api/accounts/tokens") {
-		t.Fatalf("account list permission should not allow token export")
+	if HasAPIPermission(PermissionSet{APIPermissions: permissions}, "GET", "/api/accounts") {
+		t.Fatalf("removed account route should not be authorized: %#v", permissions)
 	}
-	if HasAPIPermission(readOnly, "POST", "/api/accounts/refresh") {
-		t.Fatalf("account list permission should not allow refresh")
+}
+
+func TestPromptMarketAdultPermissionIsExplicit(t *testing.T) {
+	userPermissions := DefaultPermissionSetForRole(AuthRoleUser)
+	if HasAPIPermission(userPermissions, "GET", PromptMarketAdultPermissionPath) {
+		t.Fatalf("default user permissions should not include adult prompt market access: %#v", userPermissions.APIPermissions)
 	}
 
-	operators := PermissionSet{APIPermissions: NormalizeAPIPermissions([]string{
-		APIPermissionKey("GET", "/api/accounts/tokens"),
-		APIPermissionKey("POST", "/api/accounts"),
-		APIPermissionKey("POST", "/api/accounts/refresh"),
-		APIPermissionKey("POST", "/api/accounts/update"),
-		APIPermissionKey("DELETE", "/api/accounts"),
-	})}
-	for _, tc := range []struct {
-		method string
-		path   string
-	}{
-		{"GET", "/api/accounts/tokens"},
-		{"POST", "/api/accounts"},
-		{"POST", "/api/accounts/refresh"},
-		{"POST", "/api/accounts/update"},
-		{"DELETE", "/api/accounts"},
-	} {
-		if !HasAPIPermission(operators, tc.method, tc.path) {
-			t.Fatalf("missing explicit permission for %s %s in %#v", tc.method, tc.path, operators.APIPermissions)
-		}
+	adminPermissions := DefaultPermissionSetForRole(AuthRoleAdmin)
+	if !HasAPIPermission(adminPermissions, "GET", PromptMarketAdultPermissionPath) {
+		t.Fatalf("admin permissions should include adult prompt market access: %#v", adminPermissions.APIPermissions)
+	}
+
+	explicit := NormalizeAPIPermissions([]string{APIPermissionKey("GET", PromptMarketAdultPermissionPath)})
+	if !HasAPIPermission(PermissionSet{APIPermissions: explicit}, "GET", PromptMarketAdultPermissionPath) {
+		t.Fatalf("explicit adult prompt market permission was not accepted: %#v", explicit)
 	}
 }

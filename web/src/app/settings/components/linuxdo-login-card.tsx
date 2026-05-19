@@ -183,25 +183,25 @@ export function LinuxDoLoginCard() {
             title="应用凭据"
             tip={
               secretConfigured
-                ? "Client ID 来自 Linuxdo Connect 应用后台；Client Secret 已配置，留空会保留当前密钥，仅在需要更换时填写。"
-                : "Client ID 和 Client Secret 来自 Linuxdo Connect 应用后台；启用 Linuxdo 登录时必须填写 Client Secret。"
+                ? "客户端 ID 来自 Linuxdo Connect 应用后台；客户端密钥已配置，留空会保留当前密钥，仅在需要更换时填写。"
+                : "客户端 ID 和客户端密钥来自 Linuxdo Connect 应用后台；启用 Linuxdo 登录时必须填写客户端密钥。"
             }
           />
           <div className="grid gap-3 md:grid-cols-2">
             <Field className={linuxDoFieldClassName}>
-              <FieldLabel htmlFor="linuxdo-client-id">Client ID</FieldLabel>
+              <FieldLabel htmlFor="linuxdo-client-id">客户端 ID</FieldLabel>
               <Input
                 id="linuxdo-client-id"
                 value={String(config?.linuxdo_client_id || "")}
                 onChange={(event) => setLinuxDoClientId(event.target.value)}
-                placeholder="Linuxdo Connect Client ID"
+                placeholder="Linuxdo Connect 客户端 ID"
                 className={`${settingsDialogInputClassName} font-mono text-sm`}
               />
             </Field>
 
             <Field className={linuxDoFieldClassName}>
               <FieldLabel htmlFor="linuxdo-client-secret">
-                Client Secret
+                客户端密钥
               </FieldLabel>
               <Input
                 id="linuxdo-client-secret"
@@ -211,7 +211,7 @@ export function LinuxDoLoginCard() {
                 placeholder={
                   secretConfigured
                     ? "已配置，留空则保留当前密钥"
-                    : "Linuxdo Connect Client Secret"
+                    : "Linuxdo Connect 客户端密钥"
                 }
                 className={`${settingsDialogInputClassName} font-mono text-sm`}
               />
