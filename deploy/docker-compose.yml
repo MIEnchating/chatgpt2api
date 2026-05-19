@@ -12,9 +12,9 @@ services:
       - ${CHATGPT2API_DATA_DIR:-../data}:/app/data
       - ${CHATGPT2API_ENV_FILE:-../.env}:/app/.env
     networks:
-      - newapi_default
+      - proxy_network
 
 networks:
-  newapi_default:
+  proxy_network:
     external: true
-    name: newapi_default
+    name: ${CHATGPT2API_DOCKER_NETWORK:-newapi_default}
