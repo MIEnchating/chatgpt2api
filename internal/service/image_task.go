@@ -26,6 +26,8 @@ const (
 	imageTaskBillingBillablePayloadKey = "billing_billable"
 	imageTaskBillingChargedAmountKey   = "billing_charged_amount"
 	imageTaskBillingChargeKey          = "billing_charge_key"
+
+	TextOutputCallbackPayloadKey = "text_output_callback"
 )
 
 type ImageTaskHandler func(context.Context, Identity, map[string]any) (map[string]any, error)
@@ -38,8 +40,6 @@ type ImageOutputOptions struct {
 type ImageToolOptions struct {
 	Background     string
 	Moderation     string
-	Style          string
-	PartialImages  *int
 	InputImageMask string
 }
 
@@ -440,6 +440,12 @@ func (s *ImageTaskService) runTask(ctx context.Context, key, mode string, identi
 			release()
 			return
 		}
+		payload[TextOutputCallbackPayloadKey] = func(text string) {
+			if strings.TrimSpace(text) == "" {
+				return
+			}
+			s.updateTextTaskPartialData(key, text)
+		}
 		defer release()
 	}
 	result, err := handler(runCtx, identity, payload)
@@ -708,6 +714,23 @@ func (s *ImageTaskService) updateImageTaskPartialData(key string, data []map[str
 	if len(statuses) > 0 {
 		task["output_statuses"] = statuses
 	}
+	task["updated_at"] = util.NowLocal()
+	_ = s.saveLocked()
+	return true
+}
+
+func (s *ImageTaskService) updateTextTaskPartialData(key, text string) bool {
+	if strings.TrimSpace(text) == "" {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	task := s.tasks[key]
+	if task == nil || !isActiveTaskStatus(util.Clean(task["status"])) {
+		return false
+	}
+	task["output_type"] = "text"
+	task["data"] = []map[string]any{{"text_response": text}}
 	task["updated_at"] = util.NowLocal()
 	_ = s.saveLocked()
 	return true
@@ -1109,9 +1132,6 @@ func mergeImageTaskMetadata(payload map[string]any, metadata map[string]any) {
 	if apiKey := strings.TrimSpace(util.Clean(metadata["api_key"])); apiKey != "" {
 		payload["api_key"] = apiKey
 	}
-	if util.ToBool(metadata["stream"]) {
-		payload["stream"] = true
-	}
 }
 
 func mergeImageOutputOptions(payload map[string]any, options ImageOutputOptions) {
@@ -1135,31 +1155,21 @@ func mergeImageOutputOptions(payload map[string]any, options ImageOutputOptions)
 
 func mergeImageToolOptions(payload map[string]any, options ImageToolOptions) {
 	for key, value := range map[string]string{
-		"background":       options.Background,
-		"moderation":       options.Moderation,
-		"style":            options.Style,
+		"background":       NormalizeImageBackground(options.Background),
+		"moderation":       NormalizeImageModeration(options.Moderation),
 		"input_image_mask": options.InputImageMask,
 	} {
 		if strings.TrimSpace(value) != "" {
 			payload[key] = strings.TrimSpace(value)
 		}
 	}
-	if options.PartialImages != nil && *options.PartialImages > 0 {
-		payload["partial_images"] = *options.PartialImages
-	}
 }
 
 func mergePublicImageToolTaskFields(target, source map[string]any) {
-	for _, key := range []string{"background", "moderation", "style", "input_image_mask"} {
+	for _, key := range []string{"background", "moderation", "input_image_mask"} {
 		if value := util.Clean(source[key]); value != "" {
 			target[key] = value
 		}
-	}
-	if value := util.ToInt(source["partial_images"], 0); value > 0 {
-		target["partial_images"] = value
-	}
-	if util.ToBool(source["stream"]) {
-		target["stream"] = true
 	}
 }
 
@@ -1177,7 +1187,26 @@ func NormalizeImageOutputFormat(format string) string {
 }
 
 func SupportsImageOutputCompression(format string) bool {
-	return NormalizeImageOutputFormat(format) == "jpeg"
+	format = NormalizeImageOutputFormat(format)
+	return format == "jpeg" || format == "webp"
+}
+
+func NormalizeImageBackground(background string) string {
+	switch strings.ToLower(strings.TrimSpace(background)) {
+	case "auto", "opaque":
+		return strings.ToLower(strings.TrimSpace(background))
+	default:
+		return ""
+	}
+}
+
+func NormalizeImageModeration(moderation string) string {
+	switch strings.ToLower(strings.TrimSpace(moderation)) {
+	case "auto", "low":
+		return strings.ToLower(strings.TrimSpace(moderation))
+	default:
+		return ""
+	}
 }
 
 func normalizedImageOutputCompressionValue(value any) (int, bool) {

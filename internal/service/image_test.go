@@ -515,9 +515,8 @@ func TestImageServiceListImagesReturnsGenerationReuseMetadata(t *testing.T) {
 		RequestedSize:     "2048x2048",
 		OutputFormat:      "jpeg",
 		OutputCompression: &outputCompression,
-		Background:        "transparent",
+		Background:        "opaque",
 		Moderation:        "low",
-		Style:             "vivid",
 		PartialImages:     &partialImages,
 		InputImageMask:    "mask-id",
 		ReferenceImages: []GeneratedImageReference{
@@ -540,9 +539,8 @@ func TestImageServiceListImagesReturnsGenerationReuseMetadata(t *testing.T) {
 		item["requested_size"] != "2048x2048" ||
 		item["output_format"] != "jpeg" ||
 		item["output_compression"] != 42 ||
-		item["background"] != "transparent" ||
+		item["background"] != "opaque" ||
 		item["moderation"] != "low" ||
-		item["style"] != "vivid" ||
 		item["partial_images"] != 2 ||
 		item["input_image_mask"] != "mask-id" {
 		t.Fatalf("reuse metadata = %#v", item)

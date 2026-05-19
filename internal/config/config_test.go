@@ -12,6 +12,8 @@ func TestStoreUpdatePersistsRuntimeSettings(t *testing.T) {
 	t.Setenv("CHATGPT2API_ROOT", root)
 	unsetEnv(t, "CHATGPT2API_BASE_URL")
 	unsetEnv(t, "CHATGPT2API_PROXY")
+	unsetEnv(t, "CHATGPT2API_IMAGE_MODELS")
+	unsetEnv(t, "CHATGPT2API_CHAT_MODELS")
 	unsetEnv(t, "CHATGPT2API_REFRESH_ACCOUNT_INTERVAL_MINUTE")
 	unsetEnv(t, "CHATGPT2API_IMAGE_TASK_TIMEOUT_SECONDS")
 	unsetEnv(t, "CHATGPT2API_USER_DEFAULT_CONCURRENT_LIMIT")
@@ -33,6 +35,8 @@ func TestStoreUpdatePersistsRuntimeSettings(t *testing.T) {
 	got, err := store.Update(map[string]any{
 		"base_url":                        "https://example.test/root/",
 		"proxy":                           "http://127.0.0.1:8080",
+		"image_models":                    []any{"gpt-image-2"},
+		"chat_models":                     []any{"gpt-5.5", "gpt-5.4"},
 		"refresh_account_interval_minute": 7,
 		"image_concurrent_limit":          3,
 		"image_task_timeout_seconds":      420,
@@ -51,6 +55,14 @@ func TestStoreUpdatePersistsRuntimeSettings(t *testing.T) {
 		t.Fatalf("BaseURL() = %q", store.BaseURL())
 	}
 	assertConfigValue(t, got, "registration_enabled", true)
+	if models := strings.Join(store.ImageModels(), ","); models != "gpt-image-2" {
+		t.Fatalf("ImageModels() = %q, want gpt-image-2", models)
+	}
+	if models := strings.Join(store.ChatModels(), ","); models != "gpt-5.5,gpt-5.4" {
+		t.Fatalf("ChatModels() = %q, want gpt-5.5,gpt-5.4", models)
+	}
+	assertConfigValue(t, got, "default_image_model", "gpt-image-2")
+	assertConfigValue(t, got, "default_chat_model", "gpt-5.5")
 	if _, ok := got["image_concurrent_limit"]; ok {
 		t.Fatalf("removed image_concurrent_limit leaked in config response: %#v", got)
 	}
@@ -63,6 +75,8 @@ func TestStoreUpdatePersistsRuntimeSettings(t *testing.T) {
 	for _, want := range []string{
 		"CHATGPT2API_BASE_URL=https://example.test/root/",
 		"CHATGPT2API_PROXY=http://127.0.0.1:8080",
+		"CHATGPT2API_IMAGE_MODELS=gpt-image-2",
+		"CHATGPT2API_CHAT_MODELS=gpt-5.5,gpt-5.4",
 		"CHATGPT2API_REFRESH_ACCOUNT_INTERVAL_MINUTE=7",
 		"CHATGPT2API_IMAGE_TASK_TIMEOUT_SECONDS=420",
 		"CHATGPT2API_USER_DEFAULT_CONCURRENT_LIMIT=2",

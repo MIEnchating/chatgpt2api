@@ -70,7 +70,6 @@ type ConversationRequest struct {
 	Quality                string
 	Background             string
 	Moderation             string
-	Style                  string
 	OutputFormat           string
 	OutputCompression      *int
 	PartialImages          *int
@@ -86,6 +85,8 @@ type ConversationRequest struct {
 func (r ConversationRequest) Normalized() ConversationRequest {
 	r.Size = NormalizeImageGenerationSize(r.Size)
 	r.Quality = ImageQualityForModel(r.Model, r.Quality)
+	r.Background = NormalizeImageBackground(r.Background)
+	r.Moderation = NormalizeImageModeration(r.Moderation)
 	r.OutputFormat = NormalizeImageOutputFormat(r.OutputFormat)
 	if !SupportsImageOutputCompression(r.OutputFormat) {
 		r.OutputCompression = nil
@@ -98,6 +99,17 @@ func (r ConversationRequest) Normalized() ConversationRequest {
 		}
 		r.OutputCompression = &compression
 	}
+	if r.PartialImages != nil {
+		partialImages := *r.PartialImages
+		if partialImages <= 0 {
+			r.PartialImages = nil
+		} else {
+			if partialImages > 3 {
+				partialImages = 3
+			}
+			r.PartialImages = &partialImages
+		}
+	}
 	return r
 }
 
@@ -108,12 +120,31 @@ func ImageQualityForModel(model, quality string) string {
 	return strings.TrimSpace(quality)
 }
 
+func NormalizeImageBackground(background string) string {
+	switch strings.ToLower(strings.TrimSpace(background)) {
+	case "auto", "opaque":
+		return strings.ToLower(strings.TrimSpace(background))
+	default:
+		return ""
+	}
+}
+
+func NormalizeImageModeration(moderation string) string {
+	switch strings.ToLower(strings.TrimSpace(moderation)) {
+	case "auto", "low":
+		return strings.ToLower(strings.TrimSpace(moderation))
+	default:
+		return ""
+	}
+}
+
 func NormalizeImageOutputFormat(format string) string {
 	return service.NormalizeImageOutputFormat(format)
 }
 
 func SupportsImageOutputCompression(format string) bool {
-	return NormalizeImageOutputFormat(format) == "jpeg"
+	format = NormalizeImageOutputFormat(format)
+	return format == "jpeg" || format == "webp"
 }
 
 type ImageOutputOptions struct {
@@ -125,7 +156,6 @@ type ImageOutputOptions struct {
 type ImageToolOptions struct {
 	Background     string
 	Moderation     string
-	Style          string
 	PartialImages  *int
 	InputImageMask string
 }
@@ -146,7 +176,6 @@ func ImageToolOptionsFromPayload(payload map[string]any) ImageToolOptions {
 	options := ImageToolOptions{
 		Background:     util.Clean(payload["background"]),
 		Moderation:     util.Clean(payload["moderation"]),
-		Style:          util.Clean(payload["style"]),
 		InputImageMask: responseImageMask(payload["input_image_mask"]),
 	}
 	if partialImages, ok := normalizedPositiveInt(payload["partial_images"]); ok {
@@ -706,7 +735,6 @@ func (e *Engine) StreamResponsesImageOutputs(ctx context.Context, client *backen
 			Quality:           request.Quality,
 			Background:        request.Background,
 			Moderation:        request.Moderation,
-			Style:             request.Style,
 			OutputFormat:      request.OutputFormat,
 			OutputCompression: request.OutputCompression,
 			PartialImages:     request.PartialImages,

@@ -477,18 +477,43 @@ func TestRunLoggedImageTaskLogsTextOutputAsFailure(t *testing.T) {
 	}
 }
 
-func TestRelayImagePayloadKeepsStream(t *testing.T) {
+func TestRelayImagePayloadDropsUnsupportedStreamFields(t *testing.T) {
 	payload := relayPayloadForPath("/v1/images/generations", map[string]any{
-		"prompt":   "draw",
-		"model":    "codex-gpt-image-2",
-		"stream":   true,
-		"messages": []map[string]any{{"role": "user", "content": "draw"}},
+		"prompt":         "draw",
+		"model":          "codex-gpt-image-2",
+		"stream":         true,
+		"partial_images": 2,
+		"messages":       []map[string]any{{"role": "user", "content": "draw"}},
 	})
-	if payload["stream"] != true {
-		t.Fatalf("stream was not preserved: %#v", payload)
+	if _, ok := payload["stream"]; ok {
+		t.Fatalf("stream should be dropped for image relay payload: %#v", payload)
+	}
+	if _, ok := payload["partial_images"]; ok {
+		t.Fatalf("partial_images should be dropped for image relay payload: %#v", payload)
 	}
 	if _, ok := payload["messages"]; ok {
 		t.Fatalf("messages should be dropped for image relay payload: %#v", payload)
+	}
+}
+
+func TestRelayChatPayloadDropsInternalTextCallback(t *testing.T) {
+	payload := relayPayloadForPath("/v1/chat/completions", map[string]any{
+		"prompt":                             "hello",
+		"model":                              "gpt-5.5",
+		service.TextOutputCallbackPayloadKey: func(string) {},
+	})
+	if _, ok := payload[service.TextOutputCallbackPayloadKey]; ok {
+		t.Fatalf("text output callback should be dropped: %#v", payload)
+	}
+	if _, err := json.Marshal(payload); err != nil {
+		t.Fatalf("relay payload should be JSON serializable: %v", err)
+	}
+	auditPayload := cleanAuditPayloadMap(map[string]any{
+		"prompt":                             "hello",
+		service.TextOutputCallbackPayloadKey: func(string) {},
+	})
+	if _, ok := auditPayload[service.TextOutputCallbackPayloadKey]; ok {
+		t.Fatalf("text output callback should be dropped from audit payload: %#v", auditPayload)
 	}
 }
 
@@ -528,6 +553,38 @@ func TestRelayImageTaskResultCollectsStream(t *testing.T) {
 	}
 }
 
+func TestCollectRelayChatTaskStreamPublishesProgress(t *testing.T) {
+	items := make(chan map[string]any, 2)
+	errCh := make(chan error, 1)
+	items <- map[string]any{
+		"created": 123,
+		"model":   "gpt-5.5",
+		"choices": []map[string]any{{"delta": map[string]any{"content": "你"}}},
+	}
+	items <- map[string]any{
+		"choices": []map[string]any{{"delta": map[string]any{"content": "好"}}},
+	}
+	close(items)
+	errCh <- nil
+	close(errCh)
+
+	var progress []string
+	result, err := collectRelayChatTaskStream(
+		map[string]any{service.TextOutputCallbackPayloadKey: func(text string) { progress = append(progress, text) }},
+		&protocol.StreamResult{Items: items, Err: errCh, Kind: "openai"},
+	)
+	if err != nil {
+		t.Fatalf("collectRelayChatTaskStream() error = %v", err)
+	}
+	data := util.AsMapSlice(result["data"])
+	if result["output_type"] != "text" || len(data) != 1 || data[0]["text_response"] != "你好" {
+		t.Fatalf("stream result = %#v", result)
+	}
+	if len(progress) != 2 || progress[0] != "你" || progress[1] != "你好" {
+		t.Fatalf("progress = %#v", progress)
+	}
+}
+
 func TestRecordGeneratedImagesForPayloadStoresReusableRequestMetadata(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()
@@ -553,10 +610,8 @@ func TestRecordGeneratedImagesForPayloadStoresReusableRequestMetadata(t *testing
 			"size":               "2048x2048",
 			"output_format":      "jpeg",
 			"output_compression": 42,
-			"background":         "transparent",
+			"background":         "opaque",
 			"moderation":         "low",
-			"style":              "vivid",
-			"partial_images":     2,
 			"input_image_mask":   "mask-id",
 			"images": []protocol.UploadedImage{
 				{Filename: "source.png", ContentType: "image/png", Data: []byte("reference-bytes")},
@@ -579,10 +634,8 @@ func TestRecordGeneratedImagesForPayloadStoresReusableRequestMetadata(t *testing
 		item["requested_size"] != "2048x2048" ||
 		item["output_format"] != "jpeg" ||
 		item["output_compression"] != 42 ||
-		item["background"] != "transparent" ||
+		item["background"] != "opaque" ||
 		item["moderation"] != "low" ||
-		item["style"] != "vivid" ||
-		item["partial_images"] != 2 ||
 		item["input_image_mask"] != "mask-id" {
 		t.Fatalf("reusable metadata = %#v", item)
 	}

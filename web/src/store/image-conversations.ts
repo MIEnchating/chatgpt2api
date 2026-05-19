@@ -6,12 +6,16 @@ import {
   DEFAULT_CHAT_MODEL,
   DEFAULT_IMAGE_MODEL,
   isChatModel,
+  isImageBackground,
   isImageCreationModel,
+  isImageModeration,
   isImageModel,
   isImageOutputFormat,
   isImageQuality,
   supportsImageOutputCompression,
+  type ImageBackground,
   type ImageModel,
+  type ImageModeration,
   type ImageOutputFormat,
   type ImageQuality,
   type ImageVisibility,
@@ -70,7 +74,8 @@ export type ImageTurn = {
   quality?: ImageQuality;
   outputFormat?: ImageOutputFormat;
   outputCompression?: number;
-  stream?: boolean;
+  background?: ImageBackground;
+  moderation?: ImageModeration;
   visibility?: ImageVisibility;
   images: StoredImage[];
   createdAt: string;
@@ -350,7 +355,8 @@ function normalizeTurn(turn: ImageTurn & Record<string, unknown>): ImageTurn {
       isImageOutputFormat(turn.outputFormat) && supportsImageOutputCompression(turn.outputFormat)
         ? normalizeOutputCompression(turn.outputCompression)
         : undefined,
-    stream: mode === "chat" ? false : turn.stream === true,
+    background: isImageBackground(turn.background) ? turn.background : undefined,
+    moderation: isImageModeration(turn.moderation) ? turn.moderation : undefined,
     visibility,
     images,
     createdAt: String(turn.createdAt || new Date().toISOString()),
@@ -389,6 +395,8 @@ function normalizeConversation(conversation: ImageConversation & Record<string, 
           quality: isImageQuality(conversation.quality) ? conversation.quality : undefined,
           outputFormat: isImageOutputFormat(conversation.outputFormat) ? conversation.outputFormat : undefined,
           outputCompression: normalizeOutputCompression(conversation.outputCompression),
+          background: isImageBackground(conversation.background) ? conversation.background : undefined,
+          moderation: isImageModeration(conversation.moderation) ? conversation.moderation : undefined,
           images: Array.isArray(conversation.images) ? (conversation.images as StoredImage[]) : [],
           createdAt: String(conversation.createdAt || new Date().toISOString()),
           status:

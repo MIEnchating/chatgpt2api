@@ -257,8 +257,7 @@ func TestStreamResponsesImageUsesOfficialPrepareAndConversationRoutes(t *testing
 		Model:         "gpt-image-2",
 		Size:          "16:9",
 		Quality:       "high",
-		Background:    "transparent",
-		Style:         "anime",
+		Background:    "opaque",
 		Moderation:    "low",
 		PartialImages: ptrInt(2),
 		OutputFormat:  "webp",
@@ -989,7 +988,7 @@ func TestResolveOfficialImageResultsAuthenticatesBackendDownloadURL(t *testing.T
 	}
 }
 
-func TestBuildResponsesImagePayloadSendsCompressionOnlyForJPEG(t *testing.T) {
+func TestBuildResponsesImagePayloadSendsCompressionForJPEGAndWebP(t *testing.T) {
 	compression := 37
 	jpegPayload, err := buildResponsesImagePayload(ResponsesImageRequest{
 		Prompt:            "生成封面",
@@ -1025,8 +1024,8 @@ func TestBuildResponsesImagePayloadSendsCompressionOnlyForJPEG(t *testing.T) {
 	}
 	webpTools := webpBody["tools"].([]any)
 	webpTool := webpTools[0].(map[string]any)
-	if _, ok := webpTool["output_compression"]; ok {
-		t.Fatalf("webp tool should not include output_compression: %#v", webpTool)
+	if webpTool["output_compression"] != float64(37) {
+		t.Fatalf("webp output_compression = %#v, want 37", webpTool["output_compression"])
 	}
 }
 

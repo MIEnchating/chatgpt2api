@@ -1511,7 +1511,8 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusBadRequest, "RelayAI API key is required")
 			return
 		}
-		task, err := a.tasks.SubmitGenerationWithOptions(r.Context(), identity, util.Clean(body["client_task_id"]), util.Clean(body["prompt"]), firstNonEmpty(util.Clean(body["model"]), util.ImageModelAuto), util.Clean(body["size"]), util.Clean(body["quality"]), relayAIBaseURL, util.ToInt(body["n"], 1), body["messages"], imageTaskRequestMetadata(body), imageOutputOptionsFromBody(body), imageToolOptionsFromBody(body), util.Clean(body["visibility"]))
+		model := a.applyDefaultImageModel(body)
+		task, err := a.tasks.SubmitGenerationWithOptions(r.Context(), identity, util.Clean(body["client_task_id"]), util.Clean(body["prompt"]), model, util.Clean(body["size"]), util.Clean(body["quality"]), relayAIBaseURL, util.ToInt(body["n"], 1), body["messages"], imageTaskRequestMetadata(body), imageOutputOptionsFromBody(body), imageToolOptionsFromBody(body), util.Clean(body["visibility"]))
 		if err != nil {
 			writeCreationTaskSubmitError(w, err)
 			return
@@ -1526,7 +1527,9 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusBadRequest, "RelayAI API key is required")
 			return
 		}
-		task, err := a.tasks.SubmitChatWithAPIKey(r.Context(), identity, util.Clean(body["client_task_id"]), util.Clean(body["prompt"]), firstNonEmpty(util.Clean(body["model"]), util.ImageModelAuto), body["messages"], protocol.IsImageChatRequest(body), util.Clean(body["api_key"]), util.ToInt(body["n"], 1))
+		billable := protocol.IsImageChatRequest(body)
+		model := a.applyDefaultChatCompletionModel(body)
+		task, err := a.tasks.SubmitChatWithAPIKey(r.Context(), identity, util.Clean(body["client_task_id"]), util.Clean(body["prompt"]), model, body["messages"], billable, util.Clean(body["api_key"]), util.ToInt(body["n"], 1))
 		if err != nil {
 			writeCreationTaskSubmitError(w, err)
 			return
@@ -1545,7 +1548,8 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusBadRequest, "RelayAI API key is required")
 			return
 		}
-		task, err := a.tasks.SubmitEditWithOptions(r.Context(), identity, util.Clean(body["client_task_id"]), util.Clean(body["prompt"]), firstNonEmpty(util.Clean(body["model"]), util.ImageModelAuto), util.Clean(body["size"]), util.Clean(body["quality"]), relayAIBaseURL, images, util.ToInt(body["n"], 1), body["messages"], imageTaskRequestMetadata(body), imageOutputOptionsFromBody(body), imageToolOptionsFromBody(body), util.Clean(body["visibility"]))
+		model := a.applyDefaultImageModel(body)
+		task, err := a.tasks.SubmitEditWithOptions(r.Context(), identity, util.Clean(body["client_task_id"]), util.Clean(body["prompt"]), model, util.Clean(body["size"]), util.Clean(body["quality"]), relayAIBaseURL, images, util.ToInt(body["n"], 1), body["messages"], imageTaskRequestMetadata(body), imageOutputOptionsFromBody(body), imageToolOptionsFromBody(body), util.Clean(body["visibility"]))
 		if err != nil {
 			writeCreationTaskSubmitError(w, err)
 			return
@@ -1574,9 +1578,6 @@ func imageTaskRequestMetadata(body map[string]any) map[string]any {
 	if apiKey := util.Clean(body["api_key"]); apiKey != "" {
 		metadata["api_key"] = apiKey
 	}
-	if util.ToBool(body["stream"]) {
-		metadata["stream"] = true
-	}
 	return metadata
 }
 
@@ -1595,11 +1596,7 @@ func imageToolOptionsFromBody(body map[string]any) service.ImageToolOptions {
 	options := service.ImageToolOptions{
 		Background:     util.Clean(body["background"]),
 		Moderation:     util.Clean(body["moderation"]),
-		Style:          util.Clean(body["style"]),
 		InputImageMask: util.Clean(body["input_image_mask"]),
-	}
-	if partialImages := util.ToInt(body["partial_images"], 0); partialImages > 0 {
-		options.PartialImages = &partialImages
 	}
 	return options
 }

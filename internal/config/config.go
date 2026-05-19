@@ -21,6 +21,8 @@ import (
 var settingEnvKeys = map[string]string{
 	"base_url":                          "CHATGPT2API_BASE_URL",
 	"proxy":                             "CHATGPT2API_PROXY",
+	"image_models":                      "CHATGPT2API_IMAGE_MODELS",
+	"chat_models":                       "CHATGPT2API_CHAT_MODELS",
 	"refresh_account_interval_minute":   "CHATGPT2API_REFRESH_ACCOUNT_INTERVAL_MINUTE",
 	"image_task_timeout_seconds":        "CHATGPT2API_IMAGE_TASK_TIMEOUT_SECONDS",
 	"user_default_concurrent_limit":     "CHATGPT2API_USER_DEFAULT_CONCURRENT_LIMIT",
@@ -56,6 +58,11 @@ const (
 	defaultImageTaskTimeoutSeconds = 300
 	minImageTaskTimeoutSeconds     = 30
 	maxImageTaskTimeoutSeconds     = 3600
+)
+
+var (
+	defaultImageModels = []string{util.ImageModelGPT}
+	defaultChatModels  = []string{util.ImageModelGPT55, util.ImageModelGPT54}
 )
 
 type Store struct {
@@ -415,6 +422,22 @@ func (s *Store) LoginPageImagePositionY() float64 {
 	return clampFloat(floatSetting(s.settingValue("login_page_image_position_y", 50), 50), 0, 100)
 }
 
+func (s *Store) ImageModels() []string {
+	return normalizeModelList(s.settingValue("image_models", defaultImageModels), defaultImageModels)
+}
+
+func (s *Store) ChatModels() []string {
+	return normalizeModelList(s.settingValue("chat_models", defaultChatModels), defaultChatModels)
+}
+
+func (s *Store) DefaultImageModel() string {
+	return firstString(s.ImageModels(), util.ImageModelGPT)
+}
+
+func (s *Store) DefaultChatModel() string {
+	return firstString(s.ChatModels(), util.ImageModelGPT55)
+}
+
 func (s *Store) Get() map[string]any {
 	s.mu.RLock()
 	data := util.CopyMap(s.data)
@@ -422,6 +445,10 @@ func (s *Store) Get() map[string]any {
 	delete(data, "image_concurrent_limit")
 	data["refresh_account_interval_minute"] = s.RefreshAccountIntervalMinute()
 	data["image_task_timeout_seconds"] = s.ImageTaskTimeoutSeconds()
+	data["image_models"] = s.ImageModels()
+	data["chat_models"] = s.ChatModels()
+	data["default_image_model"] = s.DefaultImageModel()
+	data["default_chat_model"] = s.DefaultChatModel()
 	data["user_default_concurrent_limit"] = s.UserDefaultConcurrentLimit()
 	data["user_default_rpm_limit"] = s.UserDefaultRPMLimit()
 	data["default_billing_type"] = s.DefaultBillingType()
@@ -482,6 +509,12 @@ func (s *Store) Update(data map[string]any) (map[string]any, error) {
 	}
 	if value, ok := next["image_storage_limit_mb"]; ok {
 		next["image_storage_limit_mb"] = normalizeNonNegativeInt(value)
+	}
+	if value, ok := next["image_models"]; ok {
+		next["image_models"] = normalizeModelList(value, defaultImageModels)
+	}
+	if value, ok := next["chat_models"]; ok {
+		next["chat_models"] = normalizeModelList(value, defaultChatModels)
 	}
 	if value, ok := next["default_billing_type"]; ok {
 		next["default_billing_type"] = normalizeDefaultBillingType(value)
@@ -804,6 +837,48 @@ func normalizeDefaultSubscriptionPeriod(value any) string {
 	default:
 		return "monthly"
 	}
+}
+
+func normalizeModelList(value any, fallback []string) []string {
+	items := make([]string, 0)
+	switch v := value.(type) {
+	case []string:
+		items = append(items, v...)
+	case []any:
+		for _, item := range v {
+			items = append(items, fmt.Sprint(item))
+		}
+	case string:
+		items = append(items, strings.Split(v, ",")...)
+	default:
+		items = append(items, strings.Split(fmt.Sprint(util.ValueOr(value, "")), ",")...)
+	}
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		model := strings.TrimSpace(item)
+		if model == "" {
+			continue
+		}
+		if _, ok := seen[model]; ok {
+			continue
+		}
+		seen[model] = struct{}{}
+		out = append(out, model)
+	}
+	if len(out) == 0 {
+		return append([]string(nil), fallback...)
+	}
+	return out
+}
+
+func firstString(values []string, fallback string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return fallback
 }
 
 func clampFloat(value, min, max float64) float64 {

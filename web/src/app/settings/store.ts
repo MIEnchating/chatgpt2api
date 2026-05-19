@@ -8,6 +8,8 @@ import {
   cleanupLogs,
   createCPAPool,
   deleteCPAPool,
+  DEFAULT_CHAT_MODELS,
+  DEFAULT_IMAGE_MODELS,
   fetchCPAPoolFiles,
   fetchCPAPools,
   fetchLogGovernance,
@@ -15,6 +17,7 @@ import {
   fetchRegisterConfig,
   resetRegister as resetRegisterApi,
   fetchSettingsConfig,
+  normalizeModelNames,
   startRegister,
   startCPAImport,
   stopRegister,
@@ -67,6 +70,10 @@ function normalizeConfig(config: SettingsConfig): SettingsConfig {
     ...config,
     refresh_account_interval_minute: Number(config.refresh_account_interval_minute || 5),
     image_task_timeout_seconds: Number(config.image_task_timeout_seconds || 300),
+    image_models: normalizeModelNames(config.image_models, DEFAULT_IMAGE_MODELS),
+    chat_models: normalizeModelNames(config.chat_models, DEFAULT_CHAT_MODELS),
+    default_image_model: String(config.default_image_model || DEFAULT_IMAGE_MODELS[0]),
+    default_chat_model: String(config.default_chat_model || DEFAULT_CHAT_MODELS[0]),
     user_default_concurrent_limit: Number(config.user_default_concurrent_limit || 0),
     user_default_rpm_limit: Number(config.user_default_rpm_limit || 0),
     default_billing_type: normalizeDefaultBillingType(config.default_billing_type),
@@ -161,6 +168,8 @@ type SettingsStore = {
   saveConfig: () => Promise<void>;
   setRefreshAccountIntervalMinute: (value: string) => void;
   setImageTaskTimeoutSeconds: (value: string) => void;
+  setImageModels: (value: string) => void;
+  setChatModels: (value: string) => void;
   setUserDefaultConcurrentLimit: (value: string) => void;
   setUserDefaultRpmLimit: (value: string) => void;
   setDefaultBillingType: (value: BillingType) => void;
@@ -304,6 +313,8 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         ...config,
         refresh_account_interval_minute: Math.max(1, Number(config.refresh_account_interval_minute) || 1),
         image_task_timeout_seconds: Math.min(3600, Math.max(30, Number(config.image_task_timeout_seconds) || 300)),
+        image_models: normalizeModelNames(config.image_models, DEFAULT_IMAGE_MODELS),
+        chat_models: normalizeModelNames(config.chat_models, DEFAULT_CHAT_MODELS),
         user_default_concurrent_limit: Math.max(0, Number(config.user_default_concurrent_limit) || 0),
         user_default_rpm_limit: Math.max(0, Number(config.user_default_rpm_limit) || 0),
         default_billing_type: normalizeDefaultBillingType(config.default_billing_type),
@@ -375,6 +386,14 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
 
   setImageTaskTimeoutSeconds: (value) => {
     set((state) => state.config ? { config: { ...state.config, image_task_timeout_seconds: value } } : {});
+  },
+
+  setImageModels: (value) => {
+    set((state) => state.config ? { config: { ...state.config, image_models: value } } : {});
+  },
+
+  setChatModels: (value) => {
+    set((state) => state.config ? { config: { ...state.config, chat_models: value } } : {});
   },
 
   setUserDefaultConcurrentLimit: (value) => {

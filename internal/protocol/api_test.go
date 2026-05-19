@@ -269,8 +269,8 @@ func TestResponseImageGenerationRequestMapsTextModelToOfficialImageFlow(t *testi
 	if request.OutputFormat != "webp" {
 		t.Fatalf("output format = %q, want webp", request.OutputFormat)
 	}
-	if request.OutputCompression != nil {
-		t.Fatalf("output compression = %#v, want nil for webp", request.OutputCompression)
+	if request.OutputCompression == nil || *request.OutputCompression != 37 {
+		t.Fatalf("output compression = %#v, want 37 for webp", request.OutputCompression)
 	}
 }
 
@@ -309,9 +309,8 @@ func TestResponseImageGenerationRequestPreservesOfficialToolOptions(t *testing.T
 				"model":              "gpt-image-2",
 				"size":               "16:9",
 				"quality":            "high",
-				"background":         "transparent",
+				"background":         "opaque",
 				"moderation":         "auto",
-				"style":              "vivid",
 				"output_format":      "webp",
 				"output_compression": 37,
 				"partial_images":     2,
@@ -327,8 +326,8 @@ func TestResponseImageGenerationRequestPreservesOfficialToolOptions(t *testing.T
 	if request.Model != "gpt-image-2" || !request.UsesResponsesImageRoute() {
 		t.Fatalf("request route/model = %q responses=%v", request.Model, request.UsesResponsesImageRoute())
 	}
-	if request.Background != "transparent" || request.Moderation != "auto" || request.Style != "vivid" {
-		t.Fatalf("tool options = background:%q moderation:%q style:%q", request.Background, request.Moderation, request.Style)
+	if request.Background != "opaque" || request.Moderation != "auto" {
+		t.Fatalf("tool options = background:%q moderation:%q", request.Background, request.Moderation)
 	}
 	if request.PartialImages == nil || *request.PartialImages != 2 {
 		t.Fatalf("PartialImages = %#v, want 2", request.PartialImages)
@@ -605,8 +604,8 @@ func TestApplyImageOutputOptionsToRequest(t *testing.T) {
 	webpRequest := ConversationRequest{}
 	applyImageOutputOptionsToRequest(&webpRequest, ImageOutputOptions{Format: "webp", Compression: ptrInt(25)})
 	webpRequest = webpRequest.Normalized()
-	if webpRequest.OutputFormat != "webp" || webpRequest.OutputCompression != nil {
-		t.Fatalf("webp output options = %#v/%#v, want webp/nil", webpRequest.OutputFormat, webpRequest.OutputCompression)
+	if webpRequest.OutputFormat != "webp" || webpRequest.OutputCompression == nil || *webpRequest.OutputCompression != 25 {
+		t.Fatalf("webp output options = %#v/%#v, want webp/25", webpRequest.OutputFormat, webpRequest.OutputCompression)
 	}
 }
 

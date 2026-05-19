@@ -113,6 +113,10 @@ function NumberInputWithUnit({
   );
 }
 
+function modelListInputValue(value: unknown) {
+  return Array.isArray(value) ? value.join(", ") : String(value || "");
+}
+
 export function ConfigCard() {
   const [isTestingProxy, setIsTestingProxy] = useState(false);
   const [proxyTestResult, setProxyTestResult] =
@@ -123,6 +127,8 @@ export function ConfigCard() {
   const setImageTaskTimeoutSeconds = useSettingsStore(
     (state) => state.setImageTaskTimeoutSeconds,
   );
+  const setImageModels = useSettingsStore((state) => state.setImageModels);
+  const setChatModels = useSettingsStore((state) => state.setChatModels);
   const setUserDefaultConcurrentLimit = useSettingsStore(
     (state) => state.setUserDefaultConcurrentLimit,
   );
@@ -252,6 +258,39 @@ export function ConfigCard() {
                 id="settings-relay-base-url"
                 value="https://relayai.tech"
                 readOnly
+                className={settingsInputClassName}
+              />
+            </Field>
+          </div>
+        </section>
+
+        <section className={configSectionClassName}>
+          <SectionHeading
+            title="模型配置"
+            tip="用英文逗号分隔；第一项作为默认模型。"
+          />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field className={configFieldClassName}>
+              <ConfigFieldLabel htmlFor="settings-image-models">
+                图片模型
+              </ConfigFieldLabel>
+              <Input
+                id="settings-image-models"
+                value={modelListInputValue(config?.image_models)}
+                onChange={(event) => setImageModels(event.target.value)}
+                placeholder="gpt-image-2"
+                className={settingsInputClassName}
+              />
+            </Field>
+            <Field className={configFieldClassName}>
+              <ConfigFieldLabel htmlFor="settings-chat-models">
+                对话模型
+              </ConfigFieldLabel>
+              <Input
+                id="settings-chat-models"
+                value={modelListInputValue(config?.chat_models)}
+                onChange={(event) => setChatModels(event.target.value)}
+                placeholder="gpt-5.5, gpt-5.4"
                 className={settingsInputClassName}
               />
             </Field>

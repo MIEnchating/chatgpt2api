@@ -215,18 +215,20 @@ func TestImageTaskServicePassesImageToolOptionsToHandler(t *testing.T) {
 	}
 	svc := newTestImageTaskService(t, handler, handler, handler, func() int { return 30 })
 	identity := Identity{ID: "alice", Name: "Alice", Role: "user"}
-	partialImages := 2
 
-	if _, err := svc.SubmitGenerationWithOptions(context.Background(), identity, "task-1", "draw", "gpt-image-2", "16:9", "high", "https://base.test", 1, nil, nil, ImageOutputOptions{Format: "webp"}, ImageToolOptions{Background: "transparent", Moderation: "auto", Style: "vivid", PartialImages: &partialImages}); err != nil {
+	if _, err := svc.SubmitGenerationWithOptions(context.Background(), identity, "task-1", "draw", "gpt-image-2", "16:9", "high", "https://base.test", 1, nil, nil, ImageOutputOptions{Format: "webp"}, ImageToolOptions{Background: "opaque", Moderation: "auto"}); err != nil {
 		t.Fatalf("SubmitGenerationWithOptions() error = %v", err)
 	}
 
 	select {
 	case payload := <-handlerCalls:
-		for key, want := range map[string]any{"background": "transparent", "moderation": "auto", "style": "vivid", "partial_images": 2, "output_format": "webp"} {
+		for key, want := range map[string]any{"background": "opaque", "moderation": "auto", "output_format": "webp"} {
 			if got := payload[key]; got != want {
 				t.Fatalf("payload[%s] = %#v, want %#v in %#v", key, got, want, payload)
 			}
+		}
+		if _, ok := payload["partial_images"]; ok {
+			t.Fatalf("payload should not include partial_images: %#v", payload)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for handler payload")
@@ -271,6 +273,45 @@ func TestImageTaskServiceSubmitsChatTasks(t *testing.T) {
 	default:
 		t.Fatal("chat handler was not called")
 	}
+}
+
+func TestImageTaskServicePublishesPartialChatTextWhileRunning(t *testing.T) {
+	partialPublished := make(chan struct{})
+	release := make(chan struct{})
+	imageHandler := func(ctx context.Context, identity Identity, payload map[string]any) (map[string]any, error) {
+		return map[string]any{"data": []map[string]any{{"url": "https://example.test/image.png"}}}, nil
+	}
+	chatHandler := func(ctx context.Context, identity Identity, payload map[string]any) (map[string]any, error) {
+		callback, ok := payload[TextOutputCallbackPayloadKey].(func(string))
+		if !ok {
+			return nil, errors.New("text output callback missing")
+		}
+		callback("partial response")
+		close(partialPublished)
+		<-release
+		return map[string]any{"output_type": "text", "data": []map[string]any{{"text_response": "final response"}}}, nil
+	}
+	svc := newTestImageTaskService(t, imageHandler, imageHandler, chatHandler, func() int { return 30 })
+	identity := Identity{ID: "alice", Name: "Alice", Role: AuthRoleUser}
+	messages := []map[string]any{{"role": "user", "content": "hello"}}
+
+	if _, err := svc.SubmitChat(context.Background(), identity, "chat-stream", "hello", "gpt-5.5", messages, false); err != nil {
+		t.Fatalf("SubmitChat() error = %v", err)
+	}
+	select {
+	case <-partialPublished:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for partial chat text")
+	}
+	waitForTaskStatus(t, svc, identity, "chat-stream", TaskStatusRunning)
+	waitForTaskData(t, svc, identity, "chat-stream", func(data []map[string]any) bool {
+		return len(data) == 1 && data[0]["text_response"] == "partial response"
+	})
+	close(release)
+	waitForTaskStatus(t, svc, identity, "chat-stream", TaskStatusSuccess)
+	waitForTaskData(t, svc, identity, "chat-stream", func(data []map[string]any) bool {
+		return len(data) == 1 && data[0]["text_response"] == "final response"
+	})
 }
 
 func TestImageTaskServiceDoesNotLimitGlobalImageSlots(t *testing.T) {

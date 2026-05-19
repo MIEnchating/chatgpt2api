@@ -74,7 +74,7 @@ export function AnimatedRoutes() {
         animate="animate"
         exit="exit"
         transition={prefersReducedMotion ? reducedRouteTransition : routeTransition}
-        className="min-w-0"
+        className="h-full min-h-0 min-w-0"
       >
         <Routes location={location}>
           {appRoutes.map((route) => (

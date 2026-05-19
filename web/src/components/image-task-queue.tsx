@@ -282,7 +282,7 @@ function QueueItem({
         ? 8
         : 0;
   const loadingPhase = getImageTurnLoadingPhase(item.turn);
-  const isWaitingForQuota = loadingPhase === "queued";
+  const isQueued = loadingPhase === "queued";
   const isRunning = loadingPhase === "running";
   const elapsedSeconds = isRunning ? Math.max(0, Math.floor((now - imageTurnStartedAtTimestamp(item.turn.processingStartedAt, item.turn.createdAt)) / 1000)) : 0;
   const elapsed = isRunning ? formatElapsedClock(elapsedSeconds) : "";
@@ -297,8 +297,8 @@ function QueueItem({
   ].filter(Boolean);
   const progressMessage =
     progress?.message ||
-    (isWaitingForQuota
-      ? "等待创作并发额度"
+    (isQueued
+      ? "等待任务开始"
       : item.turn.mode === "chat"
         ? "等待对话回复"
         : "等待图片处理");

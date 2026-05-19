@@ -315,7 +315,7 @@ func (a *App) handleImageGenerations(w http.ResponseWriter, r *http.Request) {
 		util.WriteError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	model := firstNonEmpty(util.Clean(body["model"]), util.ImageModelAuto)
+	model := a.applyDefaultImageModel(body)
 	if err := a.checkProtocolBilling(identity, protocolBillableUnits("/v1/images/generations", body)); err != nil {
 		a.writeProtocol(w, r, nil, nil, err, "openai", "/v1/images/generations", model, identity, "文生图", visibility, service.BillingReference{})
 		return
@@ -355,7 +355,7 @@ func (a *App) handleImageEdits(w http.ResponseWriter, r *http.Request) {
 		util.WriteError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	model := firstNonEmpty(util.Clean(body["model"]), util.ImageModelAuto)
+	model := a.applyDefaultImageModel(body)
 	if err := a.checkProtocolBilling(identity, protocolBillableUnits("/v1/images/edits", body)); err != nil {
 		a.writeProtocol(w, r, nil, nil, err, "openai", "/v1/images/edits", model, identity, "图生图", visibility, service.BillingReference{})
 		return
@@ -380,7 +380,7 @@ func (a *App) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	body["owner_id"] = identityScope(identity)
 	body["owner_name"] = identityDisplayName(identity)
 	a.attachCreationTaskLimiter(body, identity)
-	model := firstNonEmpty(util.Clean(body["model"]), "auto")
+	model := a.applyDefaultChatCompletionModel(body)
 	if err := a.checkProtocolBilling(identity, protocolBillableUnits("/v1/chat/completions", body)); err != nil {
 		a.writeProtocol(w, r, nil, nil, err, "openai", "/v1/chat/completions", model, identity, "文本生成", service.ImageVisibilityPrivate, service.BillingReference{})
 		return
@@ -405,7 +405,7 @@ func (a *App) handleResponses(w http.ResponseWriter, r *http.Request) {
 	body["owner_id"] = identityScope(identity)
 	body["owner_name"] = identityDisplayName(identity)
 	a.attachCreationTaskLimiter(body, identity)
-	model := firstNonEmpty(util.Clean(body["model"]), "auto")
+	model := a.applyDefaultResponsesModel(body)
 	if err := a.checkProtocolBilling(identity, protocolBillableUnits("/v1/responses", body)); err != nil {
 		a.writeProtocol(w, r, nil, nil, err, "openai", "/v1/responses", model, identity, "Responses", service.ImageVisibilityPrivate, service.BillingReference{})
 		return
@@ -431,7 +431,7 @@ func (a *App) handleMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.attachRelayAPIKey(r, body)
-	model := firstNonEmpty(util.Clean(body["model"]), "auto")
+	model := a.applyDefaultChatModel(body)
 	result, stream, err := a.relayMessages(r.Context(), body)
 	a.writeProtocol(w, r, result, stream, err, "anthropic", "/v1/messages", model, identity, "Messages", service.ImageVisibilityPrivate, service.BillingReference{})
 }
@@ -684,6 +684,104 @@ func (a *App) handleSettings(w http.ResponseWriter, r *http.Request) {
 		util.WriteJSON(w, http.StatusOK, map[string]any{"config": updated})
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
+}
+
+func (a *App) handleModelConfig(w http.ResponseWriter, r *http.Request) {
+	if _, ok := a.requireIdentity(w, r, ""); !ok {
+		return
+	}
+	util.WriteJSON(w, http.StatusOK, map[string]any{"config": a.modelConfig()})
+}
+
+func (a *App) modelConfig() map[string]any {
+	imageModels := a.configuredImageModels()
+	chatModels := a.configuredChatModels()
+	return map[string]any{
+		"image_models":        imageModels,
+		"chat_models":         chatModels,
+		"default_image_model": firstString(imageModels, util.ImageModelGPT),
+		"default_chat_model":  firstString(chatModels, util.ImageModelGPT55),
+	}
+}
+
+func (a *App) configuredImageModels() []string {
+	if a != nil && a.config != nil {
+		return a.config.ImageModels()
+	}
+	return []string{util.ImageModelGPT}
+}
+
+func (a *App) configuredChatModels() []string {
+	if a != nil && a.config != nil {
+		return a.config.ChatModels()
+	}
+	return []string{util.ImageModelGPT55, util.ImageModelGPT54}
+}
+
+func (a *App) defaultImageModel() string {
+	if a != nil && a.config != nil {
+		return a.config.DefaultImageModel()
+	}
+	return util.ImageModelGPT
+}
+
+func (a *App) defaultChatModel() string {
+	if a != nil && a.config != nil {
+		return a.config.DefaultChatModel()
+	}
+	return util.ImageModelGPT55
+}
+
+func (a *App) applyDefaultImageModel(body map[string]any) string {
+	model := util.Clean(body["model"])
+	if model == "" {
+		model = a.defaultImageModel()
+		body["model"] = model
+	}
+	return model
+}
+
+func (a *App) applyDefaultChatModel(body map[string]any) string {
+	model := util.Clean(body["model"])
+	if model == "" {
+		model = a.defaultChatModel()
+		body["model"] = model
+	}
+	return model
+}
+
+func (a *App) applyDefaultChatCompletionModel(body map[string]any) string {
+	model := util.Clean(body["model"])
+	if model != "" {
+		return model
+	}
+	if protocol.IsImageChatRequest(body) {
+		model = a.defaultImageModel()
+	} else {
+		model = a.defaultChatModel()
+	}
+	body["model"] = model
+	return model
+}
+
+func (a *App) applyDefaultResponsesModel(body map[string]any) string {
+	if protocol.HasResponseImageGenerationTool(body) {
+		a.applyDefaultResponseImageToolModel(body)
+	}
+	return a.applyDefaultChatModel(body)
+}
+
+func (a *App) applyDefaultResponseImageToolModel(body map[string]any) {
+	defaultModel := a.defaultImageModel()
+	for _, raw := range anyList(body["tools"]) {
+		tool := util.StringMap(raw)
+		if strings.TrimSpace(strings.ToLower(util.Clean(tool["type"]))) != "image_generation" {
+			continue
+		}
+		if model := util.Clean(tool["model"]); model == "" {
+			tool["model"] = defaultModel
+		}
 	}
 }
 
@@ -1411,8 +1509,6 @@ func readMultipartImageBody(r *http.Request) (map[string]any, []protocol.Uploade
 		"quality":                 firstForm(r.MultipartForm, "quality"),
 		"background":              firstForm(r.MultipartForm, "background"),
 		"moderation":              firstForm(r.MultipartForm, "moderation"),
-		"style":                   firstForm(r.MultipartForm, "style"),
-		"partial_images":          firstForm(r.MultipartForm, "partial_images"),
 		"input_image_mask":        firstForm(r.MultipartForm, "input_image_mask"),
 		"output_format":           firstForm(r.MultipartForm, "output_format"),
 		"output_compression":      firstForm(r.MultipartForm, "output_compression"),
@@ -1421,7 +1517,6 @@ func readMultipartImageBody(r *http.Request) (map[string]any, []protocol.Uploade
 		"visibility":              firstForm(r.MultipartForm, "visibility"),
 		"api_key":                 firstForm(r.MultipartForm, "api_key"),
 		"response_format":         firstNonEmpty(firstForm(r.MultipartForm, "response_format"), "b64_json"),
-		"stream":                  util.ToBool(firstForm(r.MultipartForm, "stream")),
 	}
 	if rawMessages := strings.TrimSpace(firstForm(r.MultipartForm, "messages")); rawMessages != "" {
 		var messages any
@@ -1610,7 +1705,7 @@ func isInternalPayloadValue(value any) bool {
 		return false
 	}
 	switch value.(type) {
-	case func(context.Context, int) (func(), error), func([]map[string]any):
+	case func(context.Context, int) (func(), error), func([]map[string]any), func(string):
 		return true
 	default:
 		return false
@@ -1686,14 +1781,10 @@ func (a *App) recordGeneratedImagesForPayload(identity service.Identity, urls []
 	if hasOutputCompression {
 		outputCompressionPtr = &outputCompression
 	}
-	var partialImagesPtr *int
-	if partialImages := util.ToInt(payload["partial_images"], 0); partialImages > 0 {
-		partialImagesPtr = &partialImages
-	}
 	sharePromptParams := util.ToBool(payload["share_prompt_parameters"])
 	a.images.RecordGeneratedImages(urls, ownerID, identityDisplayName(identity), visibility, service.GeneratedImageMetadata{
 		Prompt:            util.Clean(payload["prompt"]),
-		Model:             firstNonEmpty(util.Clean(payload["model"]), util.ImageModelAuto),
+		Model:             firstNonEmpty(util.Clean(payload["model"]), a.defaultImageModel()),
 		Quality:           util.Clean(payload["quality"]),
 		ResolutionPreset:  util.Clean(payload["image_resolution"]),
 		RequestedSize:     util.Clean(payload["size"]),
@@ -1701,8 +1792,6 @@ func (a *App) recordGeneratedImagesForPayload(identity service.Identity, urls []
 		OutputCompression: outputCompressionPtr,
 		Background:        util.Clean(payload["background"]),
 		Moderation:        util.Clean(payload["moderation"]),
-		Style:             util.Clean(payload["style"]),
-		PartialImages:     partialImagesPtr,
 		InputImageMask:    util.Clean(payload["input_image_mask"]),
 		ReferenceImages:   imageReferenceMetadataFromPayload(payload),
 		SharePromptParams: sharePromptParams,
@@ -1855,7 +1944,7 @@ func (a *App) runLoggedImageTask(ctx context.Context, identity service.Identity,
 	requestCapture := payloadAuditCapture(payload)
 	payload["owner_id"] = identityScope(identity)
 	payload["owner_name"] = identityDisplayName(identity)
-	model := firstNonEmpty(util.Clean(payload["model"]), util.ImageModelAuto)
+	model := firstNonEmpty(util.Clean(payload["model"]), a.defaultImageModel())
 	result, err := run(ctx, payload)
 	urls := collectURLs(result)
 	a.recordGeneratedImagesForPayload(identity, urls, util.Clean(payload["visibility"]), payload)
@@ -1886,11 +1975,11 @@ func (a *App) runLoggedChatTask(ctx context.Context, identity service.Identity, 
 	requestCapture := payloadAuditCapture(payload)
 	payload["owner_id"] = identityScope(identity)
 	payload["owner_name"] = identityDisplayName(identity)
-	payload["stream"] = false
-	model := firstNonEmpty(util.Clean(payload["model"]), util.ImageModelAuto)
+	payload["stream"] = true
+	model := firstNonEmpty(util.Clean(payload["model"]), a.defaultChatModel())
 	result, stream, err := a.relayChatCompletions(ctx, payload)
 	if stream != nil {
-		err = errors.New("chat task streaming is not supported")
+		result, err = collectRelayChatTaskStream(payload, stream)
 	}
 	if err != nil {
 		a.logCall(identity, "文本生成", http.MethodPost, "/api/creation-tasks/chat-completions", model, start, "failed", protocolErrorHTTPStatus(err), err.Error(), nil, requestCapture)
@@ -1910,7 +1999,78 @@ func (a *App) runLoggedChatTask(ctx context.Context, identity service.Identity, 
 	}, nil
 }
 
+func collectRelayChatTaskStream(payload map[string]any, stream *protocol.StreamResult) (map[string]any, error) {
+	created := time.Now().Unix()
+	model := ""
+	var text strings.Builder
+	onProgress := relayTextTaskProgressCallback(payload)
+
+	for item := range stream.Items {
+		if item == nil {
+			continue
+		}
+		if value := util.ToInt(item["created"], 0); value > 0 {
+			created = int64(value)
+		}
+		if model == "" {
+			model = util.Clean(item["model"])
+		}
+		if delta := chatCompletionStreamTextDelta(item); delta != "" {
+			text.WriteString(delta)
+			if onProgress != nil {
+				onProgress(text.String())
+			}
+		}
+	}
+	if err := <-stream.Err; err != nil {
+		return nil, err
+	}
+	content := text.String()
+	if strings.TrimSpace(content) == "" {
+		return nil, errors.New("模型没有返回文本内容")
+	}
+	return map[string]any{
+		"created":     created,
+		"model":       model,
+		"output_type": "text",
+		"data":        []map[string]any{{"text_response": content}},
+	}, nil
+}
+
+func relayTextTaskProgressCallback(payload map[string]any) func(string) {
+	if callback, ok := payload[service.TextOutputCallbackPayloadKey].(func(string)); ok {
+		return callback
+	}
+	return nil
+}
+
+func chatCompletionStreamTextDelta(item map[string]any) string {
+	var parts []string
+	for _, choice := range util.AsMapSlice(item["choices"]) {
+		delta := util.StringMap(choice["delta"])
+		if text := chatCompletionContentRawText(delta["content"]); text != "" {
+			parts = append(parts, text)
+		}
+		if text := util.Clean(delta["text"]); text != "" {
+			parts = append(parts, text)
+		}
+		message := util.StringMap(choice["message"])
+		if text := chatCompletionContentRawText(message["content"]); text != "" {
+			parts = append(parts, text)
+		}
+		if text := util.Clean(choice["text"]); text != "" {
+			parts = append(parts, text)
+		}
+	}
+	return strings.Join(parts, "")
+}
+
 func chatCompletionResultText(result map[string]any) string {
+	for _, item := range util.AsMapSlice(result["data"]) {
+		if text := util.Clean(item["text_response"]); text != "" {
+			return text
+		}
+	}
 	for _, choice := range util.AsMapSlice(result["choices"]) {
 		message := util.StringMap(choice["message"])
 		if text := chatCompletionContentText(message["content"]); text != "" {
@@ -1918,6 +2078,20 @@ func chatCompletionResultText(result map[string]any) string {
 		}
 	}
 	return ""
+}
+
+func chatCompletionContentRawText(content any) string {
+	if text, ok := content.(string); ok {
+		return text
+	}
+	var parts []string
+	for _, item := range anyList(content) {
+		block := util.StringMap(item)
+		if text, ok := block["text"].(string); ok {
+			parts = append(parts, text)
+		}
+	}
+	return strings.Join(parts, "")
 }
 
 func chatCompletionContentText(content any) string {
@@ -2138,6 +2312,15 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func firstString(values []string, fallback string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return fallback
 }
 
 func (a *App) serveWeb(w http.ResponseWriter, r *http.Request) {

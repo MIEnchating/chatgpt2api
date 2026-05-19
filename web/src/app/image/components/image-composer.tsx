@@ -26,7 +26,6 @@ import {
 } from "react";
 
 import { ImageLightbox } from "@/components/image-lightbox";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -34,6 +33,7 @@ import { Textarea } from "@/components/ui/textarea";
 import {
   CUSTOM_IMAGE_ASPECT_RATIO,
   IMAGE_ASPECT_RATIO_OPTIONS,
+  IMAGE_QUALITY_OPTIONS,
   IMAGE_RESOLUTION_OPTIONS,
   IMAGE_SIZE_MODE_OPTIONS,
   buildImageSize,
@@ -47,14 +47,22 @@ import {
   type ImageSizeMode,
 } from "@/app/image/image-options";
 import {
+  IMAGE_BACKGROUND_OPTIONS,
   IMAGE_MODEL_ROUTE_DETAILS,
+  IMAGE_MODERATION_OPTIONS,
   IMAGE_OUTPUT_FORMAT_OPTIONS,
+  isImageBackground,
+  isImageModeration,
+  isImageQuality,
   supportsImageOutputControls,
   supportsImageOutputCompression,
   supportsStructuredImageParameters,
   usesOfficialImageRoute,
+  type ImageBackground,
   type ImageModel,
+  type ImageModeration,
   type ImageOutputFormat,
+  type ImageQuality,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -70,9 +78,11 @@ type ImageComposerProps = {
   imageCustomRatio: string;
   imageCustomWidth: string;
   imageCustomHeight: string;
+  imageQuality: "" | ImageQuality;
   imageOutputFormat: ImageOutputFormat;
   imageOutputCompression: string;
-  imageStreamEnabled: boolean;
+  imageBackground: ImageBackground;
+  imageModeration: ImageModeration;
   relayApiKey: string;
   imageModelStatus?: string;
   highResolutionHint?: ReactNode;
@@ -89,9 +99,11 @@ type ImageComposerProps = {
   onImageCustomRatioChange: (value: string) => void;
   onImageCustomWidthChange: (value: string) => void;
   onImageCustomHeightChange: (value: string) => void;
+  onImageQualityChange: (value: "" | ImageQuality) => void;
   onImageOutputFormatChange: (value: ImageOutputFormat) => void;
   onImageOutputCompressionChange: (value: string) => void;
-  onImageStreamEnabledChange: (value: boolean) => void;
+  onImageBackgroundChange: (value: ImageBackground) => void;
+  onImageModerationChange: (value: ImageModeration) => void;
   onSubmit: () => void | Promise<void>;
   onOpenPromptMarket: () => void;
   onReferenceImageChange: (files: File[]) => void | Promise<void>;
@@ -290,9 +302,11 @@ export function ImageComposer({
   imageCustomRatio,
   imageCustomWidth,
   imageCustomHeight,
+  imageQuality,
   imageOutputFormat,
   imageOutputCompression,
-  imageStreamEnabled,
+  imageBackground,
+  imageModeration,
   relayApiKey,
   imageModelStatus,
   highResolutionHint,
@@ -309,9 +323,11 @@ export function ImageComposer({
   onImageCustomRatioChange,
   onImageCustomWidthChange,
   onImageCustomHeightChange,
+  onImageQualityChange,
   onImageOutputFormatChange,
   onImageOutputCompressionChange,
-  onImageStreamEnabledChange,
+  onImageBackgroundChange,
+  onImageModerationChange,
   onSubmit,
   onOpenPromptMarket,
   onReferenceImageChange,
@@ -343,6 +359,13 @@ export function ImageComposer({
       : IMAGE_ASPECT_RATIO_OPTIONS.find((option) => option.value === imageAspectRatio)?.label || "自动";
   const imageResolutionLabel =
     IMAGE_RESOLUTION_OPTIONS.find((option) => option.value === imageResolution)?.label || "自动";
+  const imageQualityLabel = imageQuality
+    ? IMAGE_QUALITY_OPTIONS.find((option) => option.value === imageQuality)?.label || imageQuality
+    : "自动";
+  const imageBackgroundLabel =
+    IMAGE_BACKGROUND_OPTIONS.find((option) => option.value === imageBackground)?.label || "自动";
+  const imageModerationLabel =
+    IMAGE_MODERATION_OPTIONS.find((option) => option.value === imageModeration)?.label || "自动";
   const compressionSupported = supportsImageOutputCompression(imageOutputFormat);
   const compressionDisabled = !compressionSupported;
   const officialImageRoute = usesOfficialImageRoute(imageModel);
@@ -386,16 +409,20 @@ export function ImageComposer({
         ? "比例需要填写为宽:高"
         : effectiveImageResolution === "auto"
           ? activeImageAspectRatio
-            ? officialImageRoute
-              ? `将把 ${activeImageAspectRatio} 写入提示词作为构图偏好`
-              : `将按 ${activeImageAspectRatio} 比例下发`
+            ? structuredImageParameters
+              ? `将按 ${activeImageAspectRatio} 比例下发`
+              : officialImageRoute
+                ? `将把 ${activeImageAspectRatio} 写入提示词作为构图偏好`
+                : `将按 ${activeImageAspectRatio} 比例下发`
             : officialImageRoute
               ? "不写入固定比例，交给 RelayAI 决定"
               : "自动比例将交给模型决定"
           : computedImageSize
-            ? officialImageRoute
-              ? `将把 ${formatImageSizeDisplay(computedImageSize)} 作为提示词构图偏好，实际像素以结果为准`
-              : `将下发计算后的 ${formatImageSizeDisplay(computedImageSize)}，${sizeRequirementLabel}`
+            ? structuredImageParameters
+              ? `将下发计算后的 ${formatImageSizeDisplay(computedImageSize)}，${sizeRequirementLabel}`
+              : officialImageRoute
+                ? `将把 ${formatImageSizeDisplay(computedImageSize)} 作为提示词构图偏好，实际像素以结果为准`
+                : `将下发计算后的 ${formatImageSizeDisplay(computedImageSize)}，${sizeRequirementLabel}`
             : "比例需要填写为宽:高"
       : effectiveImageSizeMode === "custom"
         ? computedImageSize
@@ -882,17 +909,6 @@ export function ImageComposer({
                             className="h-7 w-[36px] border-0 bg-transparent px-0 text-center text-xs font-semibold text-[#18181b] shadow-none focus-visible:ring-0 dark:text-foreground"
                           />
                         </div>
-                        <label className="col-span-1 flex min-w-0 items-center justify-between gap-2 rounded-xl border border-[#e5e7eb] bg-white px-3 py-1 text-xs text-[#45515e] dark:border-border dark:bg-background/70 dark:text-muted-foreground">
-                          <span className="min-w-0">
-                            <span className="block truncate font-medium">流式生成</span>
-                            <span className="block truncate text-[11px] text-[#8e8e93] dark:text-muted-foreground">stream</span>
-                          </span>
-                          <Checkbox
-                            checked={imageStreamEnabled}
-                            onCheckedChange={(checked) => onImageStreamEnabledChange(checked === true)}
-                            aria-label="流式生成"
-                          />
-                        </label>
                         <div className={imageSettingsFieldClass}>
                           <span className="shrink-0 font-medium text-[#45515e] dark:text-muted-foreground">
                             {officialImageRoute ? "构图" : "尺寸"}
@@ -1041,11 +1057,107 @@ export function ImageComposer({
                         ) : null}
                         {officialImageRoute ? (
                           <p className="col-span-2 rounded-xl border border-sky-100 bg-sky-50 px-3 py-1.5 text-[11px] leading-5 text-sky-900 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-100 sm:col-span-3">
-                            图片请求会通过 RelayAI 提交；比例会作为构图偏好，格式和 JPEG 压缩率会随请求参数发送。
+                            图片请求会通过 RelayAI 提交；尺寸、格式和压缩率会随请求参数发送。
                           </p>
                         ) : null}
                         {outputControlsSupported ? (
                         <>
+                        <div className={imageSettingsFieldClass}>
+                          <span className="shrink-0 font-medium text-[#45515e] dark:text-muted-foreground">质量</span>
+                          <Select
+                            value={imageQuality || "__auto_quality__"}
+                            onValueChange={(value) => onImageQualityChange(isImageQuality(value) ? value : "")}
+                          >
+                            <SelectTrigger
+                              className="h-7 min-w-0 flex-1 justify-end gap-1 border-0 bg-transparent px-0 py-0 text-right text-xs font-semibold text-[#18181b] shadow-none focus-visible:ring-0 dark:text-foreground [&_svg]:size-4 [&_svg]:opacity-60 [&>span]:flex-none"
+                              aria-label="图片质量"
+                            >
+                              <SelectValue>{imageQualityLabel}</SelectValue>
+                            </SelectTrigger>
+                            <SelectContent
+                              align="end"
+                              side="top"
+                              sideOffset={8}
+                              collisionPadding={12}
+                              className="z-[120] max-h-[min(var(--radix-select-content-available-height),14rem)] w-[min(12rem,calc(100vw-2rem))] overflow-x-hidden overscroll-contain rounded-[16px] border-[#e5e7eb] bg-white p-1.5 shadow-[0_18px_46px_-26px_rgba(15,23,42,0.35)] dark:border-border dark:bg-card dark:shadow-[0_18px_46px_-24px_rgba(0,0,0,0.72)]"
+                            >
+                              <SelectGroup>
+                                <SelectItem value="__auto_quality__">自动</SelectItem>
+                                {IMAGE_QUALITY_OPTIONS.map((option) => (
+                                  <SelectItem key={option.value} value={option.value}>
+                                    {option.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectGroup>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className={imageSettingsFieldClass}>
+                          <span className="shrink-0 font-medium text-[#45515e] dark:text-muted-foreground">背景</span>
+                          <Select
+                            value={imageBackground}
+                            onValueChange={(value) => {
+                              if (isImageBackground(value)) {
+                                onImageBackgroundChange(value);
+                              }
+                            }}
+                          >
+                            <SelectTrigger
+                              className="h-7 min-w-0 flex-1 justify-end gap-1 border-0 bg-transparent px-0 py-0 text-right text-xs font-semibold text-[#18181b] shadow-none focus-visible:ring-0 dark:text-foreground [&_svg]:size-4 [&_svg]:opacity-60 [&>span]:flex-none"
+                              aria-label="图片背景"
+                            >
+                              <SelectValue>{imageBackgroundLabel}</SelectValue>
+                            </SelectTrigger>
+                            <SelectContent
+                              align="end"
+                              side="top"
+                              sideOffset={8}
+                              collisionPadding={12}
+                              className="z-[120] max-h-[min(var(--radix-select-content-available-height),14rem)] w-[min(12rem,calc(100vw-2rem))] overflow-x-hidden overscroll-contain rounded-[16px] border-[#e5e7eb] bg-white p-1.5 shadow-[0_18px_46px_-26px_rgba(15,23,42,0.35)] dark:border-border dark:bg-card dark:shadow-[0_18px_46px_-24px_rgba(0,0,0,0.72)]"
+                            >
+                              <SelectGroup>
+                                {IMAGE_BACKGROUND_OPTIONS.map((option) => (
+                                  <SelectItem key={option.value} value={option.value}>
+                                    {option.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectGroup>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className={imageSettingsFieldClass}>
+                          <span className="shrink-0 font-medium text-[#45515e] dark:text-muted-foreground">审核</span>
+                          <Select
+                            value={imageModeration}
+                            onValueChange={(value) => {
+                              if (isImageModeration(value)) {
+                                onImageModerationChange(value);
+                              }
+                            }}
+                          >
+                            <SelectTrigger
+                              className="h-7 min-w-0 flex-1 justify-end gap-1 border-0 bg-transparent px-0 py-0 text-right text-xs font-semibold text-[#18181b] shadow-none focus-visible:ring-0 dark:text-foreground [&_svg]:size-4 [&_svg]:opacity-60 [&>span]:flex-none"
+                              aria-label="图片审核"
+                            >
+                              <SelectValue>{imageModerationLabel}</SelectValue>
+                            </SelectTrigger>
+                            <SelectContent
+                              align="end"
+                              side="top"
+                              sideOffset={8}
+                              collisionPadding={12}
+                              className="z-[120] max-h-[min(var(--radix-select-content-available-height),14rem)] w-[min(12rem,calc(100vw-2rem))] overflow-x-hidden overscroll-contain rounded-[16px] border-[#e5e7eb] bg-white p-1.5 shadow-[0_18px_46px_-26px_rgba(15,23,42,0.35)] dark:border-border dark:bg-card dark:shadow-[0_18px_46px_-24px_rgba(0,0,0,0.72)]"
+                            >
+                              <SelectGroup>
+                                {IMAGE_MODERATION_OPTIONS.map((option) => (
+                                  <SelectItem key={option.value} value={option.value}>
+                                    {option.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectGroup>
+                            </SelectContent>
+                          </Select>
+                        </div>
                         <div className={imageSettingsFieldClass}>
                           <span className="shrink-0 font-medium text-[#45515e] dark:text-muted-foreground">格式</span>
                           <Select
@@ -1090,7 +1202,7 @@ export function ImageComposer({
                             imageSettingsFieldClass,
                             compressionDisabled && "opacity-55",
                           )}
-                          title={compressionDisabled ? "只有 JPEG 支持压缩率参数" : "JPEG 压缩率，0-100"}
+                          title={compressionDisabled ? "只有 JPEG 和 WebP 支持压缩率参数" : "输出压缩率，0-100"}
                         >
                           <span className="shrink-0 font-medium text-[#45515e] dark:text-muted-foreground">压缩率</span>
                           <Input
@@ -1108,10 +1220,10 @@ export function ImageComposer({
                         </label>
                         <p className="col-span-2 px-1 text-[11px] leading-5 text-[#8e8e93] dark:text-muted-foreground sm:col-span-3">
                           {compressionDisabled
-                            ? "PNG 和 WebP 不接收压缩率。结果卡会显示实际保存后的格式、尺寸和文件大小。"
+                            ? "PNG 不接收压缩率。结果卡会显示实际保存后的格式、尺寸和文件大小。"
                             : officialImageRoute
-                              ? "JPEG 压缩率会随 RelayAI 请求参数提交。"
-                              : "JPEG 压缩率会随 RelayAI 请求参数提交。"}
+                              ? "JPEG/WebP 压缩率会随 RelayAI 请求参数提交。"
+                              : "JPEG/WebP 压缩率会随 RelayAI 请求参数提交。"}
                         </p>
                         </>
                         ) : null}

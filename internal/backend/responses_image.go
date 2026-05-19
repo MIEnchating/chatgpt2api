@@ -59,7 +59,6 @@ type ResponsesImageRequest struct {
 	Quality           string
 	Background        string
 	Moderation        string
-	Style             string
 	OutputFormat      string
 	OutputCompression *int
 	PartialImages     *int
@@ -259,7 +258,6 @@ func buildResponsesImagePayload(request ResponsesImageRequest) ([]byte, error) {
 		"quality":       request.Quality,
 		"background":    request.Background,
 		"moderation":    request.Moderation,
-		"style":         request.Style,
 		"output_format": request.OutputFormat,
 	} {
 		if trimmed := strings.TrimSpace(value); trimmed != "" {
@@ -291,7 +289,7 @@ func buildResponsesImagePayload(request ResponsesImageRequest) ([]byte, error) {
 
 func supportsResponsesImageOutputCompression(format string) bool {
 	switch strings.ToLower(strings.TrimSpace(format)) {
-	case "jpg", "jpeg":
+	case "jpg", "jpeg", "webp":
 		return true
 	default:
 		return false

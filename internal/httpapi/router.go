@@ -67,6 +67,7 @@ func (a *App) routes() []appRoute {
 		subtree("/api/creation-tasks", a.handleCreationTasks),
 		exact("", "/api/settings", a.handleSettings),
 		exact("", "/api/settings/login-page-image", a.handleLoginPageImageSettings),
+		exact(http.MethodGet, "/api/model-config", a.handleModelConfig),
 		exact(http.MethodGet, "/api/app-meta", a.handleAppMeta),
 		exact(http.MethodGet, "/api/admin/permissions", a.handlePermissionCatalog),
 		exact("", "/api/images/visibility", a.handleImageVisibility),

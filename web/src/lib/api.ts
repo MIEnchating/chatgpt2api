@@ -1,13 +1,17 @@
 import { httpRequest } from "@/lib/request";
 import type { LoginPageImageMode } from "@/lib/login-page-image-layout";
+import webConfig from "@/constants/common-env";
+import { getStoredSessionToken } from "@/store/auth";
 
 export type AccountType = "Free" | "Plus" | "ProLite" | "Pro" | "Team";
 export type AccountStatus = "正常" | "限流" | "异常" | "禁用";
 export type ImageModel = string;
 export type ImageModelOption = { value: ImageModel; label: string };
 export const CODEX_IMAGE_MODEL: ImageModel = "codex-gpt-image-2";
-export const DEFAULT_IMAGE_MODEL: ImageModel = CODEX_IMAGE_MODEL;
-export const DEFAULT_CHAT_MODEL: ImageModel = "auto";
+export const DEFAULT_IMAGE_MODELS: ImageModel[] = ["gpt-image-2"];
+export const DEFAULT_CHAT_MODELS: ImageModel[] = ["gpt-5.5", "gpt-5.4"];
+export const DEFAULT_IMAGE_MODEL: ImageModel = DEFAULT_IMAGE_MODELS[0];
+export const DEFAULT_CHAT_MODEL: ImageModel = DEFAULT_CHAT_MODELS[0];
 export const IMAGE_MODEL_OPTIONS = [
   { value: "auto", label: "自动" },
   { value: "codex-gpt-image-2", label: "codex-gpt-image-2" },
@@ -22,7 +26,7 @@ export const IMAGE_MODEL_OPTIONS = [
   { value: "gpt-5.5", label: "gpt-5.5" },
 ] as const satisfies ReadonlyArray<ImageModelOption>;
 const IMAGE_TASK_MODEL_VALUES = new Set<ImageModel>(["gpt-image-2", "codex-gpt-image-2"]);
-const CHAT_MODEL_VALUES = new Set<ImageModel>([
+const KNOWN_CHAT_MODEL_VALUES = new Set<ImageModel>([
   "auto",
   "gpt-5-mini",
   "gpt-5-3-mini",
@@ -33,9 +37,28 @@ const CHAT_MODEL_VALUES = new Set<ImageModel>([
   "gpt-5.4",
   "gpt-5.5",
 ]);
+export function normalizeModelNames(value: unknown, fallback: ReadonlyArray<ImageModel>): ImageModel[] {
+  const rawItems = Array.isArray(value) ? value : String(value ?? "").split(",");
+  const seen = new Set<string>();
+  const models: ImageModel[] = [];
+  for (const item of rawItems) {
+    const model = String(item ?? "").trim();
+    if (!model || seen.has(model)) {
+      continue;
+    }
+    seen.add(model);
+    models.push(model);
+  }
+  return models.length > 0 ? models : [...fallback];
+}
+
+export function modelOptionsFromNames(names: ReadonlyArray<ImageModel>): ImageModelOption[] {
+  return normalizeModelNames(names, []).map((model) => ({ value: model, label: model }));
+}
+
 export const IMAGE_TASK_MODEL_OPTIONS = IMAGE_MODEL_OPTIONS.filter((option) => IMAGE_TASK_MODEL_VALUES.has(option.value));
-export const IMAGE_CREATION_MODEL_OPTIONS = IMAGE_TASK_MODEL_OPTIONS;
-export const CHAT_MODEL_OPTIONS = IMAGE_MODEL_OPTIONS.filter((option) => CHAT_MODEL_VALUES.has(option.value));
+export const IMAGE_CREATION_MODEL_OPTIONS = modelOptionsFromNames(DEFAULT_IMAGE_MODELS);
+export const CHAT_MODEL_OPTIONS = modelOptionsFromNames(DEFAULT_CHAT_MODELS);
 export const IMAGE_MODEL_ROUTE_DETAILS: Partial<Record<
   ImageModel,
   {
@@ -63,7 +86,7 @@ export function isImageModel(value: unknown): value is ImageModel {
 }
 
 export function isImageTaskModel(value: unknown): value is ImageModel {
-  return isImageModel(value) && (IMAGE_TASK_MODEL_VALUES.has(value) || !CHAT_MODEL_VALUES.has(value));
+  return isImageModel(value) && (IMAGE_TASK_MODEL_VALUES.has(value) || !KNOWN_CHAT_MODEL_VALUES.has(value));
 }
 
 export function isImageCreationModel(value: unknown): value is ImageModel {
@@ -71,7 +94,7 @@ export function isImageCreationModel(value: unknown): value is ImageModel {
 }
 
 export function isChatModel(value: unknown): value is ImageModel {
-  return isImageModel(value) && CHAT_MODEL_VALUES.has(value);
+  return isImageModel(value) && !IMAGE_TASK_MODEL_VALUES.has(value);
 }
 
 export function usesOfficialImageRoute(model: ImageModel) {
@@ -85,8 +108,7 @@ export function usesCodexImageRoute(model: ImageModel) {
 }
 
 export function supportsStructuredImageParameters(model: ImageModel) {
-  void model;
-  return false;
+  return model === "gpt-image-2";
 }
 
 export function supportsImageOutputControls(model: ImageModel) {
@@ -94,11 +116,13 @@ export function supportsImageOutputControls(model: ImageModel) {
 }
 
 export function supportsImageQuality(_model: ImageModel) {
-  return false;
+  return true;
 }
 
 export type ImageQuality = "low" | "medium" | "high";
 export type ImageOutputFormat = "png" | "jpeg" | "webp";
+export type ImageBackground = "auto" | "opaque";
+export type ImageModeration = "auto" | "low";
 export type ImageVisibility = "private" | "public";
 
 export type RelayModelListItem = {
@@ -123,12 +147,24 @@ export function relayModelOptionsFromList(items: RelayModelListItem[] | null | u
 
 const IMAGE_QUALITY_VALUES = new Set<string>(["low", "medium", "high"]);
 const IMAGE_OUTPUT_FORMAT_VALUES = new Set<string>(["png", "jpeg", "webp"]);
+const IMAGE_BACKGROUND_VALUES = new Set<string>(["auto", "opaque"]);
+const IMAGE_MODERATION_VALUES = new Set<string>(["auto", "low"]);
 
 export const IMAGE_OUTPUT_FORMAT_OPTIONS = [
   { value: "png", label: "PNG" },
   { value: "jpeg", label: "JPEG" },
   { value: "webp", label: "WebP" },
 ] as const satisfies ReadonlyArray<{ value: ImageOutputFormat; label: string }>;
+
+export const IMAGE_BACKGROUND_OPTIONS = [
+  { value: "auto", label: "自动" },
+  { value: "opaque", label: "不透明" },
+] as const satisfies ReadonlyArray<{ value: ImageBackground; label: string }>;
+
+export const IMAGE_MODERATION_OPTIONS = [
+  { value: "auto", label: "自动" },
+  { value: "low", label: "低限制" },
+] as const satisfies ReadonlyArray<{ value: ImageModeration; label: string }>;
 
 export function isImageQuality(value: unknown): value is ImageQuality {
   return typeof value === "string" && IMAGE_QUALITY_VALUES.has(value);
@@ -138,8 +174,16 @@ export function isImageOutputFormat(value: unknown): value is ImageOutputFormat 
   return typeof value === "string" && IMAGE_OUTPUT_FORMAT_VALUES.has(value);
 }
 
+export function isImageBackground(value: unknown): value is ImageBackground {
+  return typeof value === "string" && IMAGE_BACKGROUND_VALUES.has(value);
+}
+
+export function isImageModeration(value: unknown): value is ImageModeration {
+  return typeof value === "string" && IMAGE_MODERATION_VALUES.has(value);
+}
+
 export function supportsImageOutputCompression(format: ImageOutputFormat) {
-  return format === "jpeg";
+  return format === "jpeg" || format === "webp";
 }
 
 export type AuthRole = "admin" | "user";
@@ -241,6 +285,10 @@ type AccountUpdateResponse = {
 export type SettingsConfig = {
   proxy: string;
   base_url?: string;
+  image_models?: string[] | string;
+  chat_models?: string[] | string;
+  default_image_model?: string;
+  default_chat_model?: string;
   registration_enabled?: boolean;
   refresh_account_interval_minute?: number | string;
   image_task_timeout_seconds?: number | string;
@@ -273,6 +321,13 @@ export type SettingsConfig = {
   [key: string]: unknown;
 };
 
+export type ModelConfig = {
+  image_models: ImageModel[];
+  chat_models: ImageModel[];
+  default_image_model: ImageModel;
+  default_chat_model: ImageModel;
+};
+
 export type LoginPageImageSettings = {
   login_page_image_url: string;
   login_page_image_mode: LoginPageImageMode;
@@ -303,8 +358,6 @@ export type ManagedImage = {
   output_compression?: number;
   background?: string;
   moderation?: string;
-  style?: string;
-  partial_images?: number;
   input_image_mask?: string;
   reference_image_urls?: string[];
   reference_images?: Array<{
@@ -448,8 +501,6 @@ export type CreationTask = {
   output_compression?: number;
   background?: string;
   moderation?: string;
-  style?: string;
-  partial_images?: number;
   created_at: string;
   updated_at: string;
   data?: CreationTaskData[];
@@ -462,14 +513,6 @@ export type CreationTask = {
 export type CreationTaskMessage = {
   role: "system" | "user" | "assistant" | "tool";
   content: string;
-};
-
-export type ChatCompletionResponse = {
-  choices?: Array<{
-    message?: {
-      content?: string | Array<{ type?: string; text?: string }>;
-    };
-  }>;
 };
 
 type CreationTaskListResponse = {
@@ -914,11 +957,8 @@ export async function createImageGenerationTask(
   toolOptions?: {
     background?: string;
     moderation?: string;
-    style?: string;
-    partialImages?: number;
   },
   apiKey?: string,
-  stream = false,
 ) {
   return httpRequest<CreationTask>("/api/creation-tasks/image-generations", {
     method: "POST",
@@ -934,9 +974,6 @@ export async function createImageGenerationTask(
       ...(typeof outputCompression === "number" ? { output_compression: outputCompression } : {}),
       ...(toolOptions?.background ? { background: toolOptions.background } : {}),
       ...(toolOptions?.moderation ? { moderation: toolOptions.moderation } : {}),
-      ...(toolOptions?.style ? { style: toolOptions.style } : {}),
-      ...(typeof toolOptions?.partialImages === "number" ? { partial_images: toolOptions.partialImages } : {}),
-      ...(stream ? { stream: true } : {}),
       ...(messages?.length ? { messages } : {}),
       visibility,
       n: count,
@@ -960,12 +997,9 @@ export async function createImageEditTask(
   toolOptions?: {
     background?: string;
     moderation?: string;
-    style?: string;
-    partialImages?: number;
     inputImageMask?: string;
   },
   apiKey?: string,
-  stream = false,
 ) {
   const formData = new FormData();
   const uploadFiles = Array.isArray(files) ? files : [files];
@@ -999,17 +1033,8 @@ export async function createImageEditTask(
   if (toolOptions?.moderation) {
     formData.append("moderation", toolOptions.moderation);
   }
-  if (toolOptions?.style) {
-    formData.append("style", toolOptions.style);
-  }
-  if (typeof toolOptions?.partialImages === "number") {
-    formData.append("partial_images", String(toolOptions.partialImages));
-  }
   if (apiKey) {
     formData.append("api_key", apiKey);
-  }
-  if (stream) {
-    formData.append("stream", "true");
   }
   if (toolOptions?.inputImageMask) {
     formData.append("input_image_mask", toolOptions.inputImageMask);
@@ -1062,16 +1087,117 @@ export async function createChatCompletionTask(
   });
 }
 
-export async function createChatCompletion(model: ImageModel, messages: CreationTaskMessage[], apiKey?: string) {
-  return httpRequest<ChatCompletionResponse>("/v1/chat/completions", {
+export async function streamChatCompletion(
+  model: ImageModel,
+  messages: CreationTaskMessage[],
+  prompt: string,
+  referenceImages: { name: string; dataUrl: string }[] | undefined,
+  apiKey: string | undefined,
+  onText: (text: string) => void,
+  signal?: AbortSignal,
+) {
+  const body: Record<string, unknown> = {
+    api_key: apiKey,
+    model,
+    messages,
+    stream: true,
+  };
+
+  if (referenceImages && referenceImages.length > 0) {
+    const content = [
+      { type: "text", text: prompt },
+      ...referenceImages.map((img) => ({
+        type: "image_url",
+        image_url: { url: img.dataUrl },
+      })),
+    ];
+    body.messages = [
+      ...messages,
+      { role: "user" as const, content },
+    ];
+  }
+
+  const token = await getStoredSessionToken();
+  const response = await fetch(`${webConfig.apiUrl.replace(/\/$/, "")}/v1/chat/completions`, {
     method: "POST",
-    body: {
-      api_key: apiKey,
-      model,
-      messages,
-      stream: false,
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
+    body: JSON.stringify(body),
+    signal,
   });
+  if (!response.ok || !response.body) {
+    const text = await response.text().catch(() => "");
+    throw new Error(text || `请求失败 (${response.status})`);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let fullText = "";
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) {
+      break;
+    }
+    buffer += decoder.decode(value, { stream: true });
+    const frames = buffer.split(/\r?\n\r?\n/);
+    buffer = frames.pop() || "";
+    for (const frame of frames) {
+      for (const line of frame.split(/\r?\n/)) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith("data:")) {
+          continue;
+        }
+        const data = trimmed.slice(5).trim();
+        if (!data || data === "[DONE]") {
+          continue;
+        }
+        const parsed = JSON.parse(data) as {
+          choices?: Array<{
+            delta?: { content?: string | Array<{ text?: string }>; text?: string };
+            message?: { content?: string | Array<{ text?: string }> };
+            text?: string;
+          }>;
+        };
+        const delta = chatCompletionChunkText(parsed);
+        if (delta) {
+          fullText += delta;
+          onText(fullText);
+        }
+      }
+    }
+  }
+  return fullText;
+}
+
+function chatCompletionChunkText(chunk: {
+  choices?: Array<{
+    delta?: { content?: string | Array<{ text?: string }>; text?: string };
+    message?: { content?: string | Array<{ text?: string }> };
+    text?: string;
+  }>;
+}) {
+  return (chunk.choices || [])
+    .map((choice) =>
+      contentText(choice.delta?.content) ||
+      choice.delta?.text ||
+      contentText(choice.message?.content) ||
+      choice.text ||
+      "",
+    )
+    .join("");
+}
+
+function contentText(content: unknown) {
+  if (typeof content === "string") {
+    return content;
+  }
+  if (!Array.isArray(content)) {
+    return "";
+  }
+  return content.map((item) => (typeof item?.text === "string" ? item.text : "")).join("");
 }
 
 export async function fetchCreationTasks(ids: string[]) {
@@ -1107,6 +1233,10 @@ export async function updateSettingsConfig(settings: SettingsConfig) {
     method: "POST",
     body: settings,
   });
+}
+
+export async function fetchModelConfig() {
+  return httpRequest<{ config: ModelConfig }>("/api/model-config");
 }
 
 export async function updateLoginPageImageSettings(

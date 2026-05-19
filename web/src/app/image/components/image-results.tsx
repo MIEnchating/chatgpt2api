@@ -432,7 +432,7 @@ export function ImageResults({
         });
         const textReplyImages = turn.images
           .map((image, index) => ({ image, index }))
-          .filter(({ image }) => image.status === "message" && Boolean(image.text_response));
+          .filter(({ image }) => (image.status === "message" || (turn.mode === "chat" && image.status === "loading")) && Boolean(image.text_response));
         const visualImages = turn.images
           .map((image, index) => ({ image, index }))
           .filter(({ image }) => !textReplyImages.some((reply) => reply.image.id === image.id));
@@ -445,7 +445,7 @@ export function ImageResults({
         const showResultSummary = turn.mode !== "chat" && (visualImages.length > 0 || turnBusy);
         const resultSizeLabel = getTurnResultSizeLabel(turn, imageDimensions);
         const loadingPhase = getImageTurnLoadingPhase(turn);
-        const isWaitingForQuota = loadingPhase === "queued";
+        const isQueued = loadingPhase === "queued";
         const isRunning = loadingPhase === "running";
         const elapsedSeconds = isRunning
           ? Math.max(
@@ -456,8 +456,8 @@ export function ImageResults({
         const elapsedClock = isRunning ? formatElapsedClock(elapsedSeconds) : "";
         const progressMessage =
           progress?.message ||
-          (isWaitingForQuota
-            ? "等待创作并发额度"
+          (isQueued
+            ? "等待任务开始"
             : turnBusy
               ? "正在处理图片"
               : "");
@@ -871,7 +871,7 @@ export function ImageResults({
 
                     const imageLoadingPhase = getStoredImageLoadingPhase(image);
                     const imageBusyLabel = imageLoadingPhase === "queued"
-                      ? "等待创作并发额度..."
+                      ? "排队中..."
                       : imageLoadingPhase === "running"
                         ? "正在处理图片..."
                         : "";
@@ -892,7 +892,7 @@ export function ImageResults({
                           <p className="text-sm">
                             {turn.mode === "chat"
                               ? imageLoadingPhase === "queued"
-                                ? "等待创作并发额度..."
+                                ? "排队中..."
                                 : "正在等待回复..."
                               : imageBusyLabel}
                           </p>

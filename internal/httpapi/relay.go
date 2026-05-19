@@ -53,8 +53,9 @@ func relayAPIKeyFromPayload(payload map[string]any) string {
 func (a *App) relayListModels(ctx context.Context, apiKey string) (map[string]any, error) {
 	apiKey = strings.TrimSpace(apiKey)
 	if apiKey == "" {
-		data := make([]map[string]any, 0, len(util.ModelList()))
-		for _, model := range util.ModelList() {
+		models := dedupe(append(a.configuredImageModels(), a.configuredChatModels()...))
+		data := make([]map[string]any, 0, len(models))
+		for _, model := range models {
 			data = append(data, map[string]any{
 				"id": model, "object": "model", "created": 0,
 				"owned_by": "relayai", "permission": []any{}, "root": model, "parent": nil,
@@ -69,7 +70,21 @@ func (a *App) relayImageGenerations(ctx context.Context, payload map[string]any)
 	if strings.TrimSpace(util.Clean(payload["prompt"])) == "" {
 		return nil, nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: "prompt is required"}
 	}
-	return a.relayJSONMaybeStream(ctx, "/v1/images/generations", payload)
+	release, err := relayAcquireImageTaskSlot(ctx, payload)
+	if err != nil {
+		return nil, nil, err
+	}
+	result, stream, err := a.relayJSONMaybeStream(ctx, "/v1/images/generations", payload)
+	if err != nil {
+		if release != nil {
+			release()
+		}
+		return result, stream, err
+	}
+	if release != nil {
+		release()
+	}
+	return result, stream, err
 }
 
 func (a *App) relayImageEdits(ctx context.Context, payload map[string]any, images []protocol.UploadedImage) (map[string]any, *protocol.StreamResult, error) {
@@ -79,7 +94,21 @@ func (a *App) relayImageEdits(ctx context.Context, payload map[string]any, image
 	if strings.TrimSpace(util.Clean(payload["prompt"])) == "" {
 		return nil, nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: "prompt is required"}
 	}
-	return a.relayMultipartMaybeStream(ctx, "/v1/images/edits", payload, images)
+	release, err := relayAcquireImageTaskSlot(ctx, payload)
+	if err != nil {
+		return nil, nil, err
+	}
+	result, stream, err := a.relayMultipartMaybeStream(ctx, "/v1/images/edits", payload, images)
+	if err != nil {
+		if release != nil {
+			release()
+		}
+		return result, stream, err
+	}
+	if release != nil {
+		release()
+	}
+	return result, stream, err
 }
 
 func (a *App) relayChatCompletions(ctx context.Context, payload map[string]any) (map[string]any, *protocol.StreamResult, error) {
@@ -272,6 +301,8 @@ func relayPayloadForPath(pathValue string, payload map[string]any) map[string]an
 		delete(out, "prompt")
 	case "/v1/images/generations", "/v1/images/edits":
 		delete(out, "messages")
+		delete(out, "stream")
+		delete(out, "partial_images")
 	}
 	return out
 }
@@ -283,7 +314,7 @@ func shouldDropRelayPayloadKey(key string) bool {
 		"image_resolution", "requested_size", "images",
 		"share_prompt_parameters", "share_reference_images",
 		protocol.ImageOutputSlotAcquirerPayloadKey, protocol.ImageOutputChargePayloadKey,
-		"image_output_callback":
+		"image_output_callback", "text_output_callback":
 		return true
 	default:
 		return false
@@ -356,4 +387,23 @@ func relayStreamResult(body io.ReadCloser) *protocol.StreamResult {
 		errCh <- scanner.Err()
 	}()
 	return &protocol.StreamResult{Items: items, Err: errCh, Kind: "openai"}
+}
+
+func relayAcquireImageTaskSlot(ctx context.Context, payload map[string]any) (func(), error) {
+	acquire := relayImageOutputSlotAcquirer(payload)
+	if acquire == nil {
+		return nil, nil
+	}
+	return acquire(ctx, 1)
+}
+
+func relayImageOutputSlotAcquirer(payload map[string]any) protocol.ImageOutputSlotAcquirer {
+	switch acquire := payload[protocol.ImageOutputSlotAcquirerPayloadKey].(type) {
+	case protocol.ImageOutputSlotAcquirer:
+		return acquire
+	case func(context.Context, int) (func(), error):
+		return acquire
+	default:
+		return nil
+	}
 }

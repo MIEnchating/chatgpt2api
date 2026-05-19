@@ -62,7 +62,6 @@ type imageMetadata struct {
 	OutputCompression *int
 	Background        string
 	Moderation        string
-	Style             string
 	PartialImages     *int
 	InputImageMask    string
 	ReferenceImages   []imageReferenceMetadata
@@ -80,7 +79,6 @@ type GeneratedImageMetadata struct {
 	OutputCompression *int
 	Background        string
 	Moderation        string
-	Style             string
 	PartialImages     *int
 	InputImageMask    string
 	ReferenceImages   []GeneratedImageReference
@@ -816,7 +814,6 @@ func normalizeImageMetadata(raw map[string]any) imageMetadata {
 		OutputCompression: imageOutputCompressionMetadata(raw["output_compression"]),
 		Background:        strings.TrimSpace(toString(raw["background"])),
 		Moderation:        strings.TrimSpace(toString(raw["moderation"])),
-		Style:             strings.TrimSpace(toString(raw["style"])),
 		PartialImages:     positiveImageMetadataInt(raw["partial_images"]),
 		InputImageMask:    strings.TrimSpace(toString(raw["input_image_mask"])),
 		ReferenceImages:   normalizeImageReferenceMetadata(raw["reference_images"]),
@@ -882,9 +879,6 @@ func (s *ImageService) writeImageMetadataForRef(ref imageFileRef, ownerID, owner
 		if moderation := strings.TrimSpace(metadata.Moderation); moderation != "" {
 			meta.Moderation = moderation
 		}
-		if style := strings.TrimSpace(metadata.Style); style != "" {
-			meta.Style = style
-		}
 		if metadata.PartialImages != nil && *metadata.PartialImages > 0 {
 			partialImages := *metadata.PartialImages
 			meta.PartialImages = &partialImages
@@ -948,9 +942,6 @@ func (s *ImageService) writeImageMetadata(rel string, meta imageMetadata) error 
 	}
 	if meta.Moderation != "" {
 		value["moderation"] = meta.Moderation
-	}
-	if meta.Style != "" {
-		value["style"] = meta.Style
 	}
 	if meta.PartialImages != nil {
 		value["partial_images"] = *meta.PartialImages
@@ -1436,9 +1427,6 @@ func addImageMetadataFields(item map[string]any, meta imageMetadata, optionsValu
 		}
 		if meta.Moderation != "" {
 			item["moderation"] = meta.Moderation
-		}
-		if meta.Style != "" {
-			item["style"] = meta.Style
 		}
 		if meta.PartialImages != nil {
 			item["partial_images"] = *meta.PartialImages

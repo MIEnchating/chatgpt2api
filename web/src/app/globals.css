@@ -139,7 +139,7 @@
   }
   html {
     scrollbar-gutter: stable;
-    overflow-y: scroll;
+    overflow-y: auto;
   }
   body {
     @apply bg-background font-sans text-foreground antialiased;
