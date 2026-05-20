@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ChevronDown, ChevronUp, LogOut, MoonStar, Sun, UserCircle2 } from "lucide-react";
+import { ChevronDown, ChevronUp, LogOut, MoonStar, ShieldCheck, Sun, UserCircle2 } from "lucide-react";
 import { motion, useReducedMotion, type Transition } from "motion/react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 
@@ -15,6 +15,7 @@ import {
 } from "@/lib/session";
 import { canAccessPath, type StoredAuthSession } from "@/store/auth";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { logout } from "@/lib/api";
 import { cn } from "@/lib/utils";
@@ -132,6 +133,8 @@ function AccountMenu({
   const displayName = session.name || roleLabel;
   const initial = (displayName.trim() || "U").slice(0, 1).toUpperCase();
   const profileActive = isActivePath(pathname, profileNavItem.href);
+  const accountID = session.subjectId || session.role;
+  const roleBadgeLabel = session.role === "admin" ? "管理权限" : roleLabel;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -155,54 +158,58 @@ function AccountMenu({
       <PopoverContent
         align="end"
         sideOffset={8}
-        className="w-72 border-border bg-card p-2 text-card-foreground shadow-[0_20px_60px_-30px_rgba(15,23,42,0.45)] dark:border-border dark:bg-card"
+        className="w-[min(calc(100vw-2rem),260px)] rounded-2xl border-border bg-card p-1.5 text-card-foreground shadow-[0_18px_48px_-26px_rgba(15,23,42,0.5)] dark:border-border dark:bg-card"
       >
-        <div className="flex flex-col gap-2">
-          <div className="rounded-xl bg-muted/50 p-3">
-            <div className="flex min-w-0 items-center gap-3">
-              <span className="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">
+        <div className="flex flex-col gap-1">
+          <div className="rounded-xl bg-muted/55 px-3 py-2.5">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[#181d25] text-sm font-semibold text-white shadow-[0_8px_18px_-12px_rgba(15,23,42,0.65)] dark:bg-primary dark:text-primary-foreground">
                 {initial}
               </span>
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-semibold text-foreground">{displayName}</div>
-                <code className="block truncate font-mono text-xs text-muted-foreground">
-                  {session.subjectId || session.role}
-                </code>
+              <div className="min-w-0 flex-1 space-y-1">
+                <div className="flex min-w-0 items-center gap-2">
+                  <div className="truncate text-sm font-semibold text-foreground">{displayName}</div>
+                  <Badge
+                    variant={session.role === "admin" ? "violet" : "secondary"}
+                    className="shrink-0 rounded-md px-1.5 py-0 text-[11px] leading-5"
+                  >
+                    {roleBadgeLabel}
+                  </Badge>
+                </div>
+                <code className="block truncate font-mono text-xs text-muted-foreground">{accountID}</code>
               </div>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-2 text-xs">
-            <div className="rounded-lg bg-muted/40 px-2 py-1.5">
-              <div className="text-muted-foreground">角色</div>
-              <div className="truncate font-medium text-foreground">{roleLabel}</div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 gap-2">
+          <div className="grid grid-cols-1 gap-1">
             <Link
               to={profileNavItem.href}
               className={cn(
-                "flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-medium transition hover:bg-accent hover:text-accent-foreground",
+                "flex h-9 items-center gap-2 rounded-xl px-2.5 text-sm font-medium transition hover:bg-accent hover:text-accent-foreground",
                 profileActive ? "bg-[#edf4ff] text-[#1456f0] dark:bg-sky-950/30 dark:text-sky-300" : "text-foreground",
               )}
               onClick={() => setOpen(false)}
             >
-              <UserCircle2 className="size-4" />
-              个人中心
+              <span className="flex size-7 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                <UserCircle2 className="size-4" />
+              </span>
+              <span className="flex-1 text-left">个人中心</span>
+              {profileActive ? <ShieldCheck className="size-4 text-[#1456f0] dark:text-sky-300" /> : null}
             </Link>
           </div>
 
           <button
             type="button"
-            className="flex items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-medium text-rose-600 transition hover:bg-rose-50 hover:text-rose-700 dark:hover:bg-rose-950/30"
+            className="flex h-9 items-center gap-2 rounded-xl px-2.5 text-sm font-medium text-rose-600 transition hover:bg-rose-50 hover:text-rose-700 dark:text-rose-400 dark:hover:bg-rose-950/30"
             onClick={() => {
               setOpen(false);
               void onLogout();
             }}
           >
-            <LogOut className="size-4" />
-            退出登录
+            <span className="flex size-7 items-center justify-center rounded-lg bg-rose-50 text-rose-600 dark:bg-rose-950/40 dark:text-rose-300">
+              <LogOut className="size-4" />
+            </span>
+            <span className="flex-1 text-left">退出登录</span>
           </button>
         </div>
       </PopoverContent>

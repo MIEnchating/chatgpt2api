@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import { Check, CircleStop, Clock3, Download, Eye, Globe2, LoaderCircle, Lock, PencilLine, Plus, RotateCcw, Sparkles } from "lucide-react";
 
 import { AuthenticatedImage } from "@/components/authenticated-image";
+import { ChatMarkdown } from "@/app/image/components/chat-markdown";
 import { Button } from "@/components/ui/button";
 import type { ImagePromptPreset } from "@/app/image/image-presets";
 import { formatImageSizeDisplay, getImageSizeRequirementLabel, isHighResolutionImageSize } from "@/app/image/image-options";
@@ -671,7 +672,7 @@ export function ImageResults({
                             {turn.mode === "chat" ? "重新发送" : "重试生成"}
                           </Button>
                         </div>
-                        <div className="whitespace-pre-wrap break-words">{image.text_response}</div>
+                        <ChatMarkdown>{image.text_response || ""}</ChatMarkdown>
                       </div>
                     ))}
                   </div>

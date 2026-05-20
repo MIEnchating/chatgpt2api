@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { Globe2, History, ImagePlus, LoaderCircle, Plus, Trash2, X } from "lucide-react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { ArrowDownToLine, Globe2, History, ImagePlus, LoaderCircle, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { ImageComposer } from "@/app/image/components/image-composer";
@@ -148,6 +148,7 @@ const DEFAULT_IMAGE_MODERATION: ImageModeration = "auto";
 const activeConversationQueueIds = new Set<string>();
 const EMPTY_IMAGE_ASPECT_RATIO_SELECT_VALUE = "__empty_aspect_ratio__";
 const MISSING_RECOVERABLE_TASK_ID_ERROR = "页面刷新或任务中断，未找到可恢复的任务 ID";
+const RESULTS_BOTTOM_STICKY_THRESHOLD = 96;
 
 type ComposerMode = "chat" | "image";
 
@@ -212,6 +213,10 @@ function createId() {
     return crypto.randomUUID();
   }
   return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function isNearResultsBottom(element: HTMLElement) {
+  return element.scrollHeight - element.scrollTop - element.clientHeight <= RESULTS_BOTTOM_STICKY_THRESHOLD;
 }
 
 function readFileAsDataUrl(file: File) {
@@ -1113,6 +1118,12 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   const chatStreamControllersRef = useRef(new Map<string, AbortController>());
   const conversationsRef = useRef<ImageConversation[]>([]);
   const resultsViewportRef = useRef<HTMLDivElement>(null);
+  const resultsContentRef = useRef<HTMLDivElement>(null);
+  const shouldStickToResultsBottomRef = useRef(true);
+  const lastResultsScrollTargetRef = useRef<{ conversationId: string | null; turnCount: number }>({
+    conversationId: null,
+    turnCount: 0,
+  });
   const composerDockRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1158,6 +1169,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   );
   const [progressNow, setProgressNow] = useState(Date.now());
   const [composerDockHeight, setComposerDockHeight] = useState(0);
+  const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [visibilityMutatingImageKey, setVisibilityMutatingImageKey] = useState("");
   const [publishImageTarget, setPublishImageTarget] = useState<PublishImageTarget | null>(null);
   const [publishRecipeOptions, setPublishRecipeOptions] = useState<PublishRecipeOptions>({
@@ -1313,6 +1325,51 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       observer.disconnect();
     };
   }, []);
+
+  const scrollResultsToBottom = useCallback((behavior: ScrollBehavior = "auto") => {
+    const viewport = resultsViewportRef.current;
+    if (!viewport) {
+      return;
+    }
+    viewport.scrollTo({
+      top: viewport.scrollHeight,
+      behavior,
+    });
+    shouldStickToResultsBottomRef.current = true;
+    setShowScrollToBottom(false);
+  }, []);
+
+  const handleResultsViewportScroll = useCallback(() => {
+    const viewport = resultsViewportRef.current;
+    if (!viewport) {
+      return;
+    }
+    const nearBottom = isNearResultsBottom(viewport);
+    shouldStickToResultsBottomRef.current = nearBottom;
+    setShowScrollToBottom(!nearBottom && viewport.scrollHeight > viewport.clientHeight + RESULTS_BOTTOM_STICKY_THRESHOLD);
+  }, []);
+
+  useEffect(() => {
+    const content = resultsContentRef.current;
+    if (!content || typeof ResizeObserver === "undefined") {
+      return;
+    }
+
+    let frame = 0;
+    const observer = new ResizeObserver(() => {
+      if (!shouldStickToResultsBottomRef.current) {
+        return;
+      }
+      window.cancelAnimationFrame(frame);
+      frame = window.requestAnimationFrame(() => scrollResultsToBottom("auto"));
+    });
+
+    observer.observe(content);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      observer.disconnect();
+    };
+  }, [scrollResultsToBottom, selectedConversationId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1488,16 +1545,44 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       });
   }, [defaultImageModel, isLoadingHistory]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
+    const turnCount = selectedConversation?.turns.length ?? 0;
+    const previousTarget = lastResultsScrollTargetRef.current;
+    const conversationChanged = previousTarget.conversationId !== selectedConversationId;
+    const turnAdded = !conversationChanged && turnCount > previousTarget.turnCount;
+
+    lastResultsScrollTargetRef.current = {
+      conversationId: selectedConversationId,
+      turnCount,
+    };
+
     if (!selectedConversationId) {
+      shouldStickToResultsBottomRef.current = true;
+      setShowScrollToBottom(false);
+      return;
+    }
+    if (!conversationChanged && !turnAdded) {
       return;
     }
 
-    resultsViewportRef.current?.scrollTo({
-      top: resultsViewportRef.current.scrollHeight,
-      behavior: "smooth",
-    });
-  }, [selectedConversationId, selectedConversation?.turns.length]);
+    shouldStickToResultsBottomRef.current = true;
+    setShowScrollToBottom(false);
+    const frame = window.requestAnimationFrame(() => scrollResultsToBottom(conversationChanged ? "auto" : "smooth"));
+    return () => {
+      window.cancelAnimationFrame(frame);
+    };
+  }, [scrollResultsToBottom, selectedConversation?.turns.length, selectedConversationId]);
+
+  useLayoutEffect(() => {
+    if (!selectedConversationId || !shouldStickToResultsBottomRef.current) {
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => scrollResultsToBottom("auto"));
+    return () => {
+      window.cancelAnimationFrame(frame);
+    };
+  }, [composerDockHeight, progressByTurnKey, scrollResultsToBottom, selectedConversation, selectedConversationId]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -3695,24 +3780,42 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
             ref={resultsViewportRef}
             className="hide-scrollbar min-h-0 flex-1 overflow-y-auto px-1 pt-2 pb-[14rem] sm:px-4 sm:pt-4 sm:pb-[15rem]"
             style={composerDockHeight > 0 ? { paddingBottom: composerDockHeight + 24 } : undefined}
+            onScroll={handleResultsViewportScroll}
           >
-            <ImageResults
-              selectedConversation={selectedConversation}
-              progressByTurnKey={progressByTurnKey}
-              progressNow={progressNow}
-              promptPresets={IMAGE_PROMPT_PRESETS}
-              onOpenLightbox={openLightbox}
-              onApplyPromptPreset={handleApplyPromptPreset}
-              onContinueEdit={handleContinueEdit}
-              onEditTurn={openEditTurnDialog}
-              onCancelTurn={handleCancelTurn}
-              onRegenerateTurn={handleRegenerateTurn}
-              onRetryImage={handleRetryImage}
-              onImageVisibilityChange={handleImageVisibilityChange}
-              visibilityMutatingImageKey={visibilityMutatingImageKey}
-              formatConversationTime={formatConversationTime}
-            />
+            <div ref={resultsContentRef} className="min-h-full">
+              <ImageResults
+                selectedConversation={selectedConversation}
+                progressByTurnKey={progressByTurnKey}
+                progressNow={progressNow}
+                promptPresets={IMAGE_PROMPT_PRESETS}
+                onOpenLightbox={openLightbox}
+                onApplyPromptPreset={handleApplyPromptPreset}
+                onContinueEdit={handleContinueEdit}
+                onEditTurn={openEditTurnDialog}
+                onCancelTurn={handleCancelTurn}
+                onRegenerateTurn={handleRegenerateTurn}
+                onRetryImage={handleRetryImage}
+                onImageVisibilityChange={handleImageVisibilityChange}
+                visibilityMutatingImageKey={visibilityMutatingImageKey}
+                formatConversationTime={formatConversationTime}
+              />
+            </div>
           </div>
+
+          {showScrollToBottom ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="icon"
+              className="absolute left-1/2 z-40 size-9 -translate-x-1/2 rounded-full border-[#dbe7ff] bg-white/95 text-[#1456f0] shadow-[0_14px_34px_-20px_rgba(20,86,240,0.65)] backdrop-blur hover:bg-[#edf4ff] dark:bg-card/95 dark:text-sky-300 dark:hover:bg-sky-950/30"
+              style={{ bottom: composerDockHeight > 0 ? composerDockHeight + 20 : 160 }}
+              onClick={() => scrollResultsToBottom("smooth")}
+              aria-label="滚动到底部"
+              title="滚动到底部"
+            >
+              <ArrowDownToLine className="size-4" />
+            </Button>
+          ) : null}
 
           <div
             ref={composerDockRef}
