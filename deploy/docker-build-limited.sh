@@ -220,5 +220,5 @@ if [ "$command" = "up" ]; then
   CHATGPT2API_ENV_FILE="$repo_root/.env" \
   CHATGPT2API_IMAGE="$CHATGPT2API_LOCAL_IMAGE" \
   CHATGPT2API_PULL_POLICY=never \
-  docker compose --env-file "$repo_root/.env" -f "$repo_root/deploy/docker-compose.yml" up -d --no-build
+  docker compose --project-name "${CHATGPT2API_COMPOSE_PROJECT:-chatgpt2api}" --env-file "$repo_root/.env" -f "$repo_root/deploy/docker-compose.yml" up -d --no-build
 fi

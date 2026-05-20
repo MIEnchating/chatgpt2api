@@ -19,6 +19,7 @@ Environment variables:
   CHATGPT2API_IMAGE           Runtime image. Default: zyphrzero/chatgpt2api:latest
   CHATGPT2API_BUILD_LOCAL     Set to 1/true/yes to build from local source with
                               deploy/docker-build-limited.sh.
+  CHATGPT2API_COMPOSE_PROJECT Docker Compose project name. Default: chatgpt2api
 
 Optional first-run settings:
   CHATGPT2API_ADMIN_USERNAME
@@ -302,11 +303,31 @@ ensure_docker_network() {
 }
 
 compose() {
-  docker_cmd compose --env-file "$install_dir/.env" -f "$install_dir/deploy/docker-compose.yml" "$@"
+  docker_cmd compose --project-name "${CHATGPT2API_COMPOSE_PROJECT:-chatgpt2api}" --env-file "$install_dir/.env" -f "$install_dir/deploy/docker-compose.yml" "$@"
+}
+
+remove_conflicting_container() {
+  container_id=$(docker_cmd ps -aq --filter "name=^/chatgpt2api$" | head -n 1 || true)
+  if [ -z "$container_id" ]; then
+    return
+  fi
+
+  project_label=$(docker_cmd inspect -f '{{index .Config.Labels "com.docker.compose.project"}}' "$container_id" 2>/dev/null || true)
+  service_label=$(docker_cmd inspect -f '{{index .Config.Labels "com.docker.compose.service"}}' "$container_id" 2>/dev/null || true)
+  expected_project="${CHATGPT2API_COMPOSE_PROJECT:-chatgpt2api}"
+
+  if [ "$project_label" = "$expected_project" ] && [ "$service_label" = "chatgpt2api" ]; then
+    return
+  fi
+
+  warn "Removing existing container named chatgpt2api before deployment"
+  warn "Old container id: $container_id project=${project_label:-none} service=${service_label:-none}"
+  docker_cmd rm -f "$container_id" >/dev/null
 }
 
 deploy_service() {
   ensure_docker_network
+  remove_conflicting_container
 
   if truthy "${CHATGPT2API_BUILD_LOCAL:-}"; then
     log "Building and starting local image"
