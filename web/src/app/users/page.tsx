@@ -143,9 +143,6 @@ function createUserPayload(values: CreateUserForm): CreateManagedUserPayload {
 }
 
 function providerFilterLabel(provider?: string) {
-  if (provider === "linuxdo") {
-    return "Linuxdo";
-  }
   if (provider === "local") {
     return "本地账号";
   }
@@ -153,9 +150,6 @@ function providerFilterLabel(provider?: string) {
 }
 
 function userSourceLabel(user: Pick<ManagedUser, "provider" | "username" | "has_api_key" | "has_session">) {
-  if (user.provider === "linuxdo") {
-    return "Linuxdo";
-  }
   if (user.provider === "local") {
     if (user.username) {
       return "账号用户";
@@ -170,13 +164,6 @@ function userSourceLabel(user: Pick<ManagedUser, "provider" | "username" | "has_
   }
   return user.provider || "未知";
 }
-
-const linuxDoLevelColors: Record<string, string> = {
-  "0": "text-stone-500 dark:text-stone-400",
-  "1": "text-emerald-600 dark:text-emerald-400",
-  "2": "text-blue-600 dark:text-blue-400",
-  "3": "text-amber-600 dark:text-amber-400",
-};
 
 function numeric(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
@@ -707,7 +694,6 @@ function UsersContent() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">全部来源</SelectItem>
-                  <SelectItem value="linuxdo">Linuxdo</SelectItem>
                   <SelectItem value="local">{providerFilterLabel("local")}</SelectItem>
                 </SelectContent>
               </Select>
@@ -796,14 +782,8 @@ function UsersContent() {
                                 <span className="truncate">{user.username}</span>
                               </>
                             ) : null}
-                            <Badge variant={user.provider === "linuxdo" ? "info" : "secondary"} className="rounded-md px-1.5 py-0 text-[11px]">
+                            <Badge variant="secondary" className="rounded-md px-1.5 py-0 text-[11px]">
                               {userSourceLabel(user)}
-                              {user.provider === "linuxdo" && (() => {
-                                const level = String(user.linuxdo_level || "").trim();
-                                return level ? (
-                                  <span className={`ml-1 ${linuxDoLevelColors[level] || "text-muted-foreground"}`}>· Lv{level}</span>
-                                ) : null;
-                              })()}
                             </Badge>
                           </div>
                         </div>

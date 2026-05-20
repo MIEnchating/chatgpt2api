@@ -551,7 +551,7 @@ func shouldDropRelayPayloadKey(key string) bool {
 		"owner_id", "owner_name", "base_url", "visibility", "client_task_id",
 		"image_resolution", "requested_size", "images",
 		"share_prompt_parameters", "share_reference_images",
-		protocol.ImageOutputSlotAcquirerPayloadKey, protocol.ImageOutputChargePayloadKey,
+		protocol.ImageOutputSlotAcquirerPayloadKey,
 		"image_output_callback", "text_output_callback":
 		return true
 	default:

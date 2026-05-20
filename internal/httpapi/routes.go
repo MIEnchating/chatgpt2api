@@ -7,7 +7,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"time"
 
 	"chatgpt2api/internal/protocol"
 	"chatgpt2api/internal/service"
@@ -425,7 +424,7 @@ func (a *App) handleAdminRoles(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
-	operator, ok := a.requireIdentity(w, r, "")
+	_, ok := a.requireIdentity(w, r, "")
 	if !ok {
 		return
 	}
@@ -479,40 +478,6 @@ func (a *App) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 	parts := splitPath(r.URL.Path)
 	if len(parts) < 4 || parts[0] != "api" || parts[1] != "admin" || parts[2] != "users" {
 		http.NotFound(w, r)
-		return
-	}
-	if len(parts) == 5 && parts[3] == "billing-adjustments" && parts[4] == "bulk" {
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		body, err := readJSONMap(r)
-		if err != nil {
-			util.WriteError(w, http.StatusBadRequest, "invalid json body")
-			return
-		}
-		targets, err := a.bulkBillingTargetUserIDs(body)
-		if err != nil {
-			util.WriteError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		billingBody := util.StringMap(body["billing"])
-		if len(billingBody) == 0 {
-			billingBody = body
-		}
-		results, err := a.billing.ApplyBulkAdjustment(targets, operator, billingBody)
-		if err != nil {
-			util.WriteError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		response, err := a.managedUsersResponse(r)
-		if err != nil {
-			util.WriteError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		response["results"] = publicBulkBillingAdjustmentResults(results)
-		response["summary"] = bulkBillingAdjustmentSummary(results)
-		util.WriteJSON(w, http.StatusOK, response)
 		return
 	}
 	userID := parts[3]
@@ -576,45 +541,6 @@ func (a *App) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 		util.WriteJSON(w, http.StatusOK, response)
 		return
 	}
-	if len(parts) == 5 && parts[4] == "billing-adjustments" {
-		switch r.Method {
-		case http.MethodGet:
-			if findManagedUser(a.auth.ListUsers(), userID) == nil {
-				util.WriteError(w, http.StatusNotFound, "user not found")
-				return
-			}
-			util.WriteJSON(w, http.StatusOK, map[string]any{"items": a.billing.ListAdjustments(userID, util.ToInt(r.URL.Query().Get("limit"), 20))})
-		case http.MethodPost:
-			body, err := readJSONMap(r)
-			if err != nil {
-				util.WriteError(w, http.StatusBadRequest, "invalid json body")
-				return
-			}
-			if findManagedUser(a.auth.ListUsers(), userID) == nil {
-				util.WriteError(w, http.StatusNotFound, "user not found")
-				return
-			}
-			result, err := a.billing.ApplyAdjustment(userID, operator, body)
-			if err != nil {
-				util.WriteError(w, http.StatusBadRequest, err.Error())
-				return
-			}
-			response, err := a.managedUsersResponse(r)
-			if err != nil {
-				util.WriteError(w, http.StatusBadRequest, err.Error())
-				return
-			}
-			if current := a.managedUser(userID); current != nil {
-				response["item"] = current
-			}
-			response["billing"] = result["billing"]
-			response["adjustment"] = result["adjustment"]
-			util.WriteJSON(w, http.StatusOK, response)
-		default:
-			w.WriteHeader(http.StatusMethodNotAllowed)
-		}
-		return
-	}
 	if len(parts) != 4 {
 		http.NotFound(w, r)
 		return
@@ -626,7 +552,6 @@ func (a *App) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusNotFound, "user not found")
 			return
 		}
-		item["billing_adjustments"] = a.billing.ListAdjustments(userID, 10)
 		util.WriteJSON(w, http.StatusOK, map[string]any{"item": item})
 	case http.MethodPost:
 		body, _ := readJSONMap(r)
@@ -644,8 +569,7 @@ func (a *App) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 			}
 			updates["role_id"] = value
 		}
-		billingBody := util.StringMap(body["billing"])
-		if len(updates) == 0 && len(billingBody) == 0 {
+		if len(updates) == 0 {
 			util.WriteError(w, http.StatusBadRequest, "no updates provided")
 			return
 		}
@@ -657,12 +581,6 @@ func (a *App) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 		} else if findManagedUser(a.auth.ListUsers(), userID) == nil {
 			util.WriteError(w, http.StatusNotFound, "user not found")
 			return
-		}
-		if len(billingBody) > 0 {
-			if _, err := a.billing.ApplyAdjustment(userID, operator, billingBody); err != nil {
-				util.WriteError(w, http.StatusBadRequest, err.Error())
-				return
-			}
 		}
 		response, err := a.managedUsersResponse(r)
 		if err != nil {
@@ -749,7 +667,6 @@ func (a *App) attachManagedUserUsage(items []map[string]any) {
 		return
 	}
 	a.attachManagedUserUsageStats(items, userIDs)
-	a.attachManagedUserBillingStates(items, userIDs)
 }
 
 func managedUserIDs(items []map[string]any) []string {
@@ -776,14 +693,6 @@ func (a *App) attachManagedUserUsageStats(items []map[string]any, userIDs []stri
 	}
 }
 
-func (a *App) attachManagedUserBillingStates(items []map[string]any, userIDs []string) {
-	billingStates := a.billing.GetMany(userIDs)
-	for _, item := range items {
-		userID := util.Clean(item["id"])
-		item["billing"] = billingStates[userID]
-	}
-}
-
 func (a *App) prepareManagedUsersSortValues(items []map[string]any, sortBy string) {
 	if len(items) == 0 {
 		return
@@ -791,115 +700,6 @@ func (a *App) prepareManagedUsersSortValues(items []map[string]any, sortBy strin
 	switch sortBy {
 	case "call_count", "quota_used", "failure_count":
 		a.attachManagedUserUsageStats(items, managedUserIDs(items))
-	case "billing_available":
-		a.attachManagedUserBillingStates(items, managedUserIDs(items))
-	}
-}
-
-func (a *App) bulkBillingTargetUserIDs(body map[string]any) ([]string, error) {
-	scope := strings.ToLower(strings.TrimSpace(util.Clean(body["scope"])))
-	if scope == "" {
-		scope = "users"
-	}
-	users := a.auth.ListUsers()
-	switch scope {
-	case "users":
-		rawIDs := util.AsStringSlice(body["user_ids"])
-		if len(rawIDs) == 0 {
-			rawIDs = util.AsStringSlice(body["ids"])
-		}
-		return existingManagedUserIDs(users, rawIDs)
-	case "role":
-		roleID := util.Clean(body["role_id"])
-		if roleID == "" {
-			return nil, fmt.Errorf("role id is required")
-		}
-		if !a.auth.RoleExists(roleID) {
-			return nil, fmt.Errorf("role not found")
-		}
-		return managedUserIDsByRole(users, roleID)
-	default:
-		return nil, fmt.Errorf("unsupported billing target scope: %s", scope)
-	}
-}
-
-func existingManagedUserIDs(items []map[string]any, requested []string) ([]string, error) {
-	available := map[string]struct{}{}
-	for _, item := range items {
-		if id := util.Clean(item["id"]); id != "" {
-			available[id] = struct{}{}
-		}
-	}
-	seen := map[string]struct{}{}
-	out := make([]string, 0, len(requested))
-	for _, id := range requested {
-		id = strings.TrimSpace(id)
-		if id == "" {
-			continue
-		}
-		if _, ok := seen[id]; ok {
-			continue
-		}
-		if _, ok := available[id]; !ok {
-			return nil, fmt.Errorf("user not found: %s", id)
-		}
-		seen[id] = struct{}{}
-		out = append(out, id)
-	}
-	if len(out) == 0 {
-		return nil, fmt.Errorf("user ids are required")
-	}
-	return out, nil
-}
-
-func managedUserIDsByRole(items []map[string]any, roleID string) ([]string, error) {
-	out := make([]string, 0, len(items))
-	for _, item := range items {
-		if util.Clean(item["role_id"]) != roleID {
-			continue
-		}
-		if id := util.Clean(item["id"]); id != "" {
-			out = append(out, id)
-		}
-	}
-	if len(out) == 0 {
-		return nil, fmt.Errorf("role has no users")
-	}
-	return out, nil
-}
-
-func publicBulkBillingAdjustmentResults(results []service.BillingBulkAdjustmentResult) []map[string]any {
-	out := make([]map[string]any, 0, len(results))
-	for _, result := range results {
-		item := map[string]any{
-			"user_id": result.UserID,
-			"billing": result.Billing,
-		}
-		if result.Adjustment != nil {
-			item["adjustment"] = result.Adjustment
-		}
-		if result.Error != "" {
-			item["error"] = result.Error
-		}
-		out = append(out, item)
-	}
-	return out
-}
-
-func bulkBillingAdjustmentSummary(results []service.BillingBulkAdjustmentResult) map[string]any {
-	succeeded := 0
-	failed := 0
-	for _, result := range results {
-		if result.Error != "" {
-			failed++
-			continue
-		}
-		succeeded++
-	}
-	return map[string]any{
-		"total":     len(results),
-		"succeeded": succeeded,
-		"failed":    failed,
 	}
 }
 
@@ -982,7 +782,7 @@ func parseManagedUsersSortBy(raw string) (string, error) {
 		return "id", nil
 	}
 	switch value {
-	case "id", "name", "username", "provider", "enabled", "role_id", "role_name", "billing_available", "call_count", "quota_used", "failure_count", "created_at", "last_used_at", "updated_at":
+	case "id", "name", "username", "provider", "enabled", "role_id", "role_name", "call_count", "quota_used", "failure_count", "created_at", "last_used_at", "updated_at":
 		return value, nil
 	default:
 		return "", fmt.Errorf("sort_by 参数无效")
@@ -1043,7 +843,7 @@ func compareManagedUsers(left, right map[string]any, sortBy string) int {
 	switch sortBy {
 	case "enabled":
 		return compareManagedUserInts(managedUserSortBool(left, sortBy), managedUserSortBool(right, sortBy))
-	case "billing_available", "call_count", "quota_used", "failure_count":
+	case "call_count", "quota_used", "failure_count":
 		return compareManagedUserInts(managedUserSortInt(left, sortBy), managedUserSortInt(right, sortBy))
 	default:
 		return strings.Compare(strings.ToLower(managedUserSortString(left, sortBy)), strings.ToLower(managedUserSortString(right, sortBy)))
@@ -1081,9 +881,6 @@ func managedUserSortBool(item map[string]any, sortBy string) int {
 }
 
 func managedUserSortInt(item map[string]any, sortBy string) int {
-	if sortBy == "billing_available" {
-		return util.ToInt(util.StringMap(item["billing"])["available"], 0)
-	}
 	return util.ToInt(item[sortBy], 0)
 }
 
@@ -1343,179 +1140,6 @@ func redactAccountToken(item map[string]any) {
 	delete(item, "access_token")
 }
 
-func (a *App) handleCPA(w http.ResponseWriter, r *http.Request) {
-	if _, ok := a.requireIdentity(w, r, ""); !ok {
-		return
-	}
-	parts := splitPath(r.URL.Path)
-	if len(parts) == 3 && r.URL.Path == "/api/cpa/pools" {
-		switch r.Method {
-		case http.MethodGet:
-			util.WriteJSON(w, http.StatusOK, map[string]any{"pools": sanitizeCPAPools(a.cpa.ListPools())})
-		case http.MethodPost:
-			body, _ := readJSONMap(r)
-			if util.Clean(body["base_url"]) == "" {
-				util.WriteError(w, http.StatusBadRequest, "base_url is required")
-				return
-			}
-			if util.Clean(body["secret_key"]) == "" {
-				util.WriteError(w, http.StatusBadRequest, "secret_key is required")
-				return
-			}
-			pool := a.cpa.AddPool(util.Clean(body["name"]), util.Clean(body["base_url"]), util.Clean(body["secret_key"]))
-			util.WriteJSON(w, http.StatusOK, map[string]any{"pool": sanitizeCPAPool(pool), "pools": sanitizeCPAPools(a.cpa.ListPools())})
-		default:
-			w.WriteHeader(http.StatusMethodNotAllowed)
-		}
-		return
-	}
-	if len(parts) < 4 {
-		http.NotFound(w, r)
-		return
-	}
-	poolID := parts[3]
-	pool := a.cpa.GetPool(poolID)
-	if pool == nil {
-		util.WriteError(w, http.StatusNotFound, "pool not found")
-		return
-	}
-	if len(parts) == 4 {
-		switch r.Method {
-		case http.MethodPost:
-			body, _ := readJSONMap(r)
-			updated := a.cpa.UpdatePool(poolID, body)
-			util.WriteJSON(w, http.StatusOK, map[string]any{"pool": sanitizeCPAPool(updated), "pools": sanitizeCPAPools(a.cpa.ListPools())})
-		case http.MethodDelete:
-			if !a.cpa.DeletePool(poolID) {
-				util.WriteError(w, http.StatusNotFound, "pool not found")
-				return
-			}
-			util.WriteJSON(w, http.StatusOK, map[string]any{"pools": sanitizeCPAPools(a.cpa.ListPools())})
-		default:
-			w.WriteHeader(http.StatusMethodNotAllowed)
-		}
-		return
-	}
-	if len(parts) == 5 && parts[4] == "files" && r.Method == http.MethodGet {
-		files, err := a.cpaImport.ListRemoteFiles(r.Context(), pool)
-		if err != nil {
-			util.WriteError(w, http.StatusBadGateway, err.Error())
-			return
-		}
-		util.WriteJSON(w, http.StatusOK, map[string]any{"pool_id": poolID, "files": files})
-		return
-	}
-	if len(parts) == 5 && parts[4] == "import" {
-		if r.Method == http.MethodGet {
-			util.WriteJSON(w, http.StatusOK, map[string]any{"import_job": pool["import_job"]})
-			return
-		}
-		if r.Method == http.MethodPost {
-			body, _ := readJSONMap(r)
-			job, err := a.cpaImport.StartImport(pool, util.AsStringSlice(body["names"]))
-			if err != nil {
-				util.WriteError(w, http.StatusBadRequest, err.Error())
-				return
-			}
-			util.WriteJSON(w, http.StatusOK, map[string]any{"import_job": job})
-			return
-		}
-	}
-	http.NotFound(w, r)
-}
-
-func (a *App) handleSub2API(w http.ResponseWriter, r *http.Request) {
-	if _, ok := a.requireIdentity(w, r, ""); !ok {
-		return
-	}
-	parts := splitPath(r.URL.Path)
-	if r.URL.Path == "/api/sub2api/servers" {
-		switch r.Method {
-		case http.MethodGet:
-			util.WriteJSON(w, http.StatusOK, map[string]any{"servers": sanitizeSub2Servers(a.sub2.ListServers())})
-		case http.MethodPost:
-			body, _ := readJSONMap(r)
-			if util.Clean(body["base_url"]) == "" {
-				util.WriteError(w, http.StatusBadRequest, "base_url is required")
-				return
-			}
-			hasLogin := util.Clean(body["email"]) != "" && util.Clean(body["password"]) != ""
-			hasAPIKey := util.Clean(body["api_key"]) != ""
-			if !hasLogin && !hasAPIKey {
-				util.WriteError(w, http.StatusBadRequest, "email+password or api_key is required")
-				return
-			}
-			server := a.sub2.AddServer(util.Clean(body["name"]), util.Clean(body["base_url"]), util.Clean(body["email"]), util.Clean(body["password"]), util.Clean(body["api_key"]), util.Clean(body["group_id"]))
-			util.WriteJSON(w, http.StatusOK, map[string]any{"server": sanitizeSub2Server(server), "servers": sanitizeSub2Servers(a.sub2.ListServers())})
-		default:
-			w.WriteHeader(http.StatusMethodNotAllowed)
-		}
-		return
-	}
-	if len(parts) < 4 {
-		http.NotFound(w, r)
-		return
-	}
-	serverID := parts[3]
-	server := a.sub2.GetServer(serverID)
-	if server == nil {
-		util.WriteError(w, http.StatusNotFound, "server not found")
-		return
-	}
-	if len(parts) == 4 {
-		switch r.Method {
-		case http.MethodPost:
-			body, _ := readJSONMap(r)
-			updated := a.sub2.UpdateServer(serverID, body)
-			util.WriteJSON(w, http.StatusOK, map[string]any{"server": sanitizeSub2Server(updated), "servers": sanitizeSub2Servers(a.sub2.ListServers())})
-		case http.MethodDelete:
-			if !a.sub2.DeleteServer(serverID) {
-				util.WriteError(w, http.StatusNotFound, "server not found")
-				return
-			}
-			util.WriteJSON(w, http.StatusOK, map[string]any{"servers": sanitizeSub2Servers(a.sub2.ListServers())})
-		default:
-			w.WriteHeader(http.StatusMethodNotAllowed)
-		}
-		return
-	}
-	if len(parts) == 5 && parts[4] == "groups" && r.Method == http.MethodGet {
-		groups, err := a.sub2Import.ListRemoteGroups(r.Context(), server)
-		if err != nil {
-			util.WriteError(w, http.StatusBadGateway, err.Error())
-			return
-		}
-		util.WriteJSON(w, http.StatusOK, map[string]any{"server_id": serverID, "groups": groups})
-		return
-	}
-	if len(parts) == 5 && parts[4] == "accounts" && r.Method == http.MethodGet {
-		accounts, err := a.sub2Import.ListRemoteAccounts(r.Context(), server)
-		if err != nil {
-			util.WriteError(w, http.StatusBadGateway, err.Error())
-			return
-		}
-		util.WriteJSON(w, http.StatusOK, map[string]any{"server_id": serverID, "accounts": accounts})
-		return
-	}
-	if len(parts) == 5 && parts[4] == "import" {
-		if r.Method == http.MethodGet {
-			util.WriteJSON(w, http.StatusOK, map[string]any{"import_job": server["import_job"]})
-			return
-		}
-		if r.Method == http.MethodPost {
-			body, _ := readJSONMap(r)
-			job, err := a.sub2Import.StartImport(server, util.AsStringSlice(body["account_ids"]))
-			if err != nil {
-				util.WriteError(w, http.StatusBadRequest, err.Error())
-				return
-			}
-			util.WriteJSON(w, http.StatusOK, map[string]any{"import_job": job})
-			return
-		}
-	}
-	http.NotFound(w, r)
-}
-
 func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Pragma", "no-cache")
@@ -1647,106 +1271,12 @@ func imageOutputCompressionFromBody(value any) (int, bool) {
 }
 
 func writeCreationTaskSubmitError(w http.ResponseWriter, err error) {
-	var billingErr service.BillingLimitError
-	if errors.As(err, &billingErr) {
-		util.WriteJSON(w, http.StatusTooManyRequests, billingErr.OpenAIError())
-		return
-	}
 	var limitErr service.ImageTaskLimitError
 	if errors.As(err, &limitErr) {
 		util.WriteError(w, http.StatusTooManyRequests, limitErr.Error())
 		return
 	}
 	util.WriteError(w, http.StatusBadRequest, err.Error())
-}
-
-func (a *App) handleRegister(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == "/api/register/events" {
-		token := r.URL.Query().Get("token")
-		if _, ok := a.requireIdentity(w, r, "Bearer "+token); !ok {
-			return
-		}
-		a.streamRegisterEvents(w, r)
-		return
-	}
-	if _, ok := a.requireIdentity(w, r, ""); !ok {
-		return
-	}
-	switch {
-	case r.URL.Path == "/api/register" && r.Method == http.MethodGet:
-		util.WriteJSON(w, http.StatusOK, map[string]any{"register": a.register.Get()})
-	case r.URL.Path == "/api/register" && r.Method == http.MethodPost:
-		body, _ := readJSONMap(r)
-		util.WriteJSON(w, http.StatusOK, map[string]any{"register": a.register.Update(body)})
-	case r.URL.Path == "/api/register/start" && r.Method == http.MethodPost:
-		util.WriteJSON(w, http.StatusOK, map[string]any{"register": a.register.Start()})
-	case r.URL.Path == "/api/register/stop" && r.Method == http.MethodPost:
-		util.WriteJSON(w, http.StatusOK, map[string]any{"register": a.register.Stop()})
-	case r.URL.Path == "/api/register/reset" && r.Method == http.MethodPost:
-		util.WriteJSON(w, http.StatusOK, map[string]any{"register": a.register.Reset()})
-	default:
-		http.NotFound(w, r)
-	}
-}
-
-func (a *App) streamRegisterEvents(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-cache")
-	flusher, _ := w.(http.Flusher)
-	last := ""
-	ticker := time.NewTicker(500 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-r.Context().Done():
-			return
-		case <-ticker.C:
-			payload := jsonString(a.register.Get())
-			if payload != last {
-				last = payload
-				fmt.Fprintf(w, "data: %s\n\n", payload)
-				if flusher != nil {
-					flusher.Flush()
-				}
-			}
-		}
-	}
-}
-
-func sanitizeCPAPool(pool map[string]any) map[string]any {
-	if pool == nil {
-		return nil
-	}
-	out := util.CopyMap(pool)
-	delete(out, "secret_key")
-	return out
-}
-
-func sanitizeCPAPools(pools []map[string]any) []map[string]any {
-	out := make([]map[string]any, 0, len(pools))
-	for _, pool := range pools {
-		out = append(out, sanitizeCPAPool(pool))
-	}
-	return out
-}
-
-func sanitizeSub2Server(server map[string]any) map[string]any {
-	if server == nil {
-		return nil
-	}
-	out := util.CopyMap(server)
-	out["has_api_key"] = util.Clean(server["api_key"]) != ""
-	delete(out, "password")
-	delete(out, "api_key")
-	return out
-}
-
-func sanitizeSub2Servers(servers []map[string]any) []map[string]any {
-	out := make([]map[string]any, 0, len(servers))
-	for _, server := range servers {
-		out = append(out, sanitizeSub2Server(server))
-	}
-	return out
 }
 
 func splitPath(path string) []string {

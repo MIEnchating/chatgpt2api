@@ -423,10 +423,6 @@ func TestStoreUpdateOverridesEnvOnlyRuntimeSettings(t *testing.T) {
 		"CHATGPT2API_IMAGE_TASK_TIMEOUT_SECONDS":        "300",
 		"CHATGPT2API_USER_DEFAULT_CONCURRENT_LIMIT":     "2",
 		"CHATGPT2API_USER_DEFAULT_RPM_LIMIT":            "30",
-		"CHATGPT2API_DEFAULT_BILLING_TYPE":              "standard",
-		"CHATGPT2API_DEFAULT_STANDARD_BALANCE":          "1",
-		"CHATGPT2API_DEFAULT_SUBSCRIPTION_QUOTA":        "2",
-		"CHATGPT2API_DEFAULT_SUBSCRIPTION_PERIOD":       "monthly",
 		"CHATGPT2API_IMAGE_RETENTION_DAYS":              "30",
 		"CHATGPT2API_IMAGE_STORAGE_LIMIT_MB":            "2048",
 		"CHATGPT2API_LOG_RETENTION_DAYS":                "7",
@@ -454,10 +450,6 @@ func TestStoreUpdateOverridesEnvOnlyRuntimeSettings(t *testing.T) {
 		"image_task_timeout_seconds":        480,
 		"user_default_concurrent_limit":     3,
 		"user_default_rpm_limit":            45,
-		"default_billing_type":              "subscription",
-		"default_standard_balance":          11,
-		"default_subscription_quota":        22,
-		"default_subscription_period":       "weekly",
 		"image_retention_days":              12,
 		"image_storage_limit_mb":            1024,
 		"log_retention_days":                30,
@@ -481,10 +473,6 @@ func TestStoreUpdateOverridesEnvOnlyRuntimeSettings(t *testing.T) {
 	assertConfigValue(t, got, "image_task_timeout_seconds", 480)
 	assertConfigValue(t, got, "user_default_concurrent_limit", 3)
 	assertConfigValue(t, got, "user_default_rpm_limit", 45)
-	assertConfigValue(t, got, "default_billing_type", "subscription")
-	assertConfigValue(t, got, "default_standard_balance", 11)
-	assertConfigValue(t, got, "default_subscription_quota", 22)
-	assertConfigValue(t, got, "default_subscription_period", "weekly")
 	assertConfigValue(t, got, "image_retention_days", 12)
 	assertConfigValue(t, got, "image_storage_limit_mb", 1024)
 	assertConfigValue(t, got, "log_retention_days", 30)
@@ -507,10 +495,6 @@ func TestStoreUpdateOverridesEnvOnlyRuntimeSettings(t *testing.T) {
 		"CHATGPT2API_IMAGE_TASK_TIMEOUT_SECONDS":        "480",
 		"CHATGPT2API_USER_DEFAULT_CONCURRENT_LIMIT":     "3",
 		"CHATGPT2API_USER_DEFAULT_RPM_LIMIT":            "45",
-		"CHATGPT2API_DEFAULT_BILLING_TYPE":              "subscription",
-		"CHATGPT2API_DEFAULT_STANDARD_BALANCE":          "11",
-		"CHATGPT2API_DEFAULT_SUBSCRIPTION_QUOTA":        "22",
-		"CHATGPT2API_DEFAULT_SUBSCRIPTION_PERIOD":       "weekly",
 		"CHATGPT2API_IMAGE_RETENTION_DAYS":              "12",
 		"CHATGPT2API_IMAGE_STORAGE_LIMIT_MB":            "1024",
 		"CHATGPT2API_LOG_RETENTION_DAYS":                "30",

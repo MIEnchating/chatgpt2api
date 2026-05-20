@@ -292,7 +292,7 @@ export function TopNav() {
   }
 
   const visibleNavItems = navItems.filter((item) => canAccessPath(session, item.href));
-  const roleLabel = session.role === "admin" ? "管理员" : session.roleName || (session.provider === "linuxdo" ? "Linuxdo 用户" : "普通用户");
+  const roleLabel = session.role === "admin" ? "管理员" : session.roleName || "普通用户";
   const canAccessImageTasks = canAccessPath(session, "/image");
   const navToggleLabel = navCollapsed ? "展开导航栏" : "收起导航栏";
 

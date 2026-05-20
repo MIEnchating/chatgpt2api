@@ -848,10 +848,10 @@ function formatCreationTaskErrorMessage(message: string) {
 
   const normalized = trimmed.toLowerCase();
   if (normalized.includes("user balance insufficient")) {
-    return "用户余额不足（code=user_balance_insufficient）";
+    return "上游拒绝了这次请求，请检查当前 RelayAI Key 或稍后重试。";
   }
   if (normalized.includes("user quota exceeded")) {
-    return "用户配额不足（code=user_quota_exceeded）";
+    return "上游拒绝了这次请求，请检查当前 RelayAI Key 或稍后重试。";
   }
   if (
     normalized.includes("stream disconnected before completion") ||
@@ -877,7 +877,7 @@ function formatCreationTaskErrorMessage(message: string) {
     return "图片生成等待超时，建议稍后重试；如果使用高分辨率参数，可降低尺寸后再试。";
   }
   if (normalized.includes("no available image quota")) {
-    return "当前 RelayAI Key 没有可用额度（code=insufficient_quota），请检查余额或稍后重试。";
+    return "当前 RelayAI Key 暂不可用，请更换 Key 或稍后重试。";
   }
 
   return trimmed;

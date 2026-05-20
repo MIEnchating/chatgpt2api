@@ -3,8 +3,6 @@ import type { LoginPageImageMode } from "@/lib/login-page-image-layout";
 import webConfig from "@/constants/common-env";
 import { getStoredSessionToken } from "@/store/auth";
 
-export type AccountType = "Free" | "Plus" | "ProLite" | "Pro" | "Team";
-export type AccountStatus = "正常" | "限流" | "异常" | "禁用";
 export type ImageModel = string;
 export type ImageModelOption = { value: ImageModel; label: string };
 export const CODEX_IMAGE_MODEL: ImageModel = "codex-gpt-image-2";
@@ -207,81 +205,6 @@ export type ApiPermission = {
   subtree?: boolean;
 };
 
-export type Account = {
-  id: string;
-  access_token?: string;
-  token_preview?: string;
-  type: AccountType;
-  status: AccountStatus;
-  quota: number;
-  imageQuotaUnknown?: boolean;
-  email?: string | null;
-  user_id?: string | null;
-  limits_progress?: Array<{
-    feature_name?: string;
-    remaining?: number;
-    reset_after?: string;
-  }>;
-  default_model_slug?: string | null;
-  restoreAt?: string | null;
-  success: number;
-  fail: number;
-  lastUsedAt: string | null;
-};
-
-type AccountListResponse = {
-  items: Account[];
-};
-
-type AccountTokensResponse = {
-  tokens: string[];
-};
-
-type AccountMutationResponse = {
-  items: Account[];
-  added?: number;
-  skipped?: number;
-  removed?: number;
-  refreshed?: number;
-  errors?: Array<{ access_token?: string; account_id?: string; error: string }>;
-  results?: AccountRefreshResult[];
-  total?: number;
-  failed?: number;
-  duration_ms?: number;
-};
-
-export type AccountRefreshResult = {
-  account_id: string;
-  access_token?: string;
-  token_preview?: string;
-  success: boolean;
-  status: "success" | "error" | string;
-  message?: string;
-  error?: string;
-  duration_ms?: number;
-  account_status?: AccountStatus;
-  email?: string | null;
-  type?: AccountType;
-  quota?: number;
-  image_quota_unknown?: boolean;
-  restore_at?: string | null;
-};
-
-type AccountRefreshResponse = {
-  items: Account[];
-  refreshed: number;
-  errors: Array<{ access_token?: string; account_id?: string; error: string }>;
-  results: AccountRefreshResult[];
-  total?: number;
-  failed?: number;
-  duration_ms?: number;
-};
-
-type AccountUpdateResponse = {
-  item: Account;
-  items: Account[];
-};
-
 export type SettingsConfig = {
   proxy: string;
   base_url?: string;
@@ -295,10 +218,6 @@ export type SettingsConfig = {
   image_task_timeout_seconds?: number | string;
   user_default_concurrent_limit?: number | string;
   user_default_rpm_limit?: number | string;
-  default_billing_type?: BillingType;
-  default_standard_balance?: number | string;
-  default_subscription_quota?: number | string;
-  default_subscription_period?: BillingPeriod;
   image_retention_days?: number | string;
   image_storage_limit_mb?: number | string;
   log_retention_days?: number | string;
@@ -503,7 +422,6 @@ export type LoginResponse = {
   credential_name?: string;
   creation_concurrent_limit: number;
   creation_rpm_limit: number;
-  billing?: BillingState | null;
   menu_paths?: string[];
   api_permissions?: string[];
   menus?: PermissionMenu[];
@@ -549,80 +467,6 @@ export type UserKey = {
   api_permissions?: string[];
 };
 
-export type BillingType = "standard" | "subscription";
-export type BillingPeriod = "daily" | "weekly" | "monthly";
-
-export type BillingStandardState = {
-  balance: number;
-  lifetime_consumed: number;
-  available_balance?: number;
-};
-
-export type BillingSubscriptionState = {
-  quota_limit: number;
-  quota_used: number;
-  manual_delta: number;
-  quota_period: BillingPeriod;
-  quota_period_started_at?: string;
-  quota_period_ends_at?: string;
-  remaining_quota?: number;
-};
-
-export type BillingState = {
-  type: BillingType;
-  unit: "image";
-  unlimited: boolean;
-  available: number;
-  standard?: BillingStandardState | null;
-  subscription?: BillingSubscriptionState | null;
-  limit_state?: "ok" | "insufficient" | "unlimited" | string;
-  updated_at?: string;
-};
-
-export type BillingAdjustment = {
-  id: string;
-  user_id: string;
-  operator_id?: string;
-  operator_name?: string;
-  billing_type: BillingType;
-  type: string;
-  amount?: number;
-  reason?: string;
-  before?: BillingState | Record<string, unknown>;
-  after?: BillingState | Record<string, unknown>;
-  created_at: string;
-};
-
-export type BillingAdjustmentPayload = {
-  type: string;
-  reason?: string;
-  amount?: number;
-  balance?: number;
-  quota_limit?: number;
-  quota_period?: BillingPeriod;
-  unlimited?: boolean;
-};
-
-export type BulkBillingAdjustmentPayload = {
-  scope: "users" | "role";
-  user_ids?: string[];
-  role_id?: string;
-  billing: BillingAdjustmentPayload;
-};
-
-export type BulkBillingAdjustmentResult = {
-  user_id: string;
-  billing?: BillingState | null;
-  adjustment?: BillingAdjustment;
-  error?: string;
-};
-
-export type BulkBillingAdjustmentSummary = {
-  total: number;
-  succeeded: number;
-  failed: number;
-};
-
 export type ManagedUser = {
   id: string;
   username?: string;
@@ -649,7 +493,6 @@ export type ManagedUser = {
   success_count?: number;
   failure_count?: number;
   quota_used?: number;
-  billing?: BillingState | null;
   usage_curve?: Array<{
     date: string;
     calls: number;
@@ -659,7 +502,6 @@ export type ManagedUser = {
   }>;
   menu_paths?: string[];
   api_permissions?: string[];
-  billing_adjustments?: BillingAdjustment[];
 };
 
 export type ManagedUsersQuery = {
@@ -699,44 +541,6 @@ export type CreateManagedUserPayload = {
   password: string;
   role_id?: string;
   enabled?: boolean;
-};
-
-export type RegisterConfig = {
-  enabled: boolean;
-  mail: {
-    request_timeout: number;
-    wait_timeout: number;
-    wait_interval: number;
-    providers: Array<Record<string, unknown>>;
-  };
-  proxy: string;
-  total: number;
-  threads: number;
-  mode: "total" | "quota" | "available";
-  target_quota: number;
-  target_available: number;
-  check_interval: number;
-  stats: {
-    job_id?: string;
-    success: number;
-    fail: number;
-    done: number;
-    running: number;
-    threads: number;
-    elapsed_seconds?: number;
-    avg_seconds?: number;
-    success_rate?: number;
-    current_quota?: number;
-    current_available?: number;
-    started_at?: string;
-    updated_at?: string;
-    finished_at?: string;
-  };
-  logs?: Array<{
-    time: string;
-    text: string;
-    level: string;
-  }>;
 };
 
 export async function login(username: string, password: string) {
@@ -836,52 +640,6 @@ export async function updateAnnouncement(
 export async function deleteAnnouncement(announcementId: string) {
   return httpRequest<{ items: Announcement[] }>(`/api/admin/announcements/${announcementId}`, {
     method: "DELETE",
-  });
-}
-
-export async function fetchAccounts() {
-  return httpRequest<AccountListResponse>("/api/accounts");
-}
-
-export async function fetchAccountTokens() {
-  return httpRequest<AccountTokensResponse>("/api/accounts/tokens");
-}
-
-export async function createAccounts(tokens: string[]) {
-  return httpRequest<AccountMutationResponse>("/api/accounts", {
-    method: "POST",
-    body: { tokens },
-  });
-}
-
-export async function deleteAccounts(accountIds: string[]) {
-  return httpRequest<AccountMutationResponse>("/api/accounts", {
-    method: "DELETE",
-    body: { account_ids: accountIds },
-  });
-}
-
-export async function refreshAccounts(accountIds: string[]) {
-  return httpRequest<AccountRefreshResponse>("/api/accounts/refresh", {
-    method: "POST",
-    body: { account_ids: accountIds },
-  });
-}
-
-export async function updateAccount(
-  accountId: string,
-  updates: {
-    type?: AccountType;
-    status?: AccountStatus;
-    quota?: number;
-  },
-) {
-  return httpRequest<AccountUpdateResponse>("/api/accounts/update", {
-    method: "POST",
-    body: {
-      account_id: accountId,
-      ...updates,
-    },
   });
 }
 
@@ -1509,38 +1267,11 @@ export async function createManagedUser(payload: CreateManagedUserPayload) {
 
 export async function updateManagedUser(
   userId: string,
-  updates: { enabled?: boolean; name?: string; role_id?: string; billing?: BillingAdjustmentPayload },
+  updates: { enabled?: boolean; name?: string; role_id?: string },
 ) {
   return httpRequest<{ item: ManagedUser; items?: ManagedUser[] } & Partial<ManagedUsersResponse>>(managedUserPath(userId), {
     method: "POST",
     body: updates,
-  });
-}
-
-export async function fetchBillingAdjustments(userId: string, limit = 20) {
-  const params = new URLSearchParams({ limit: String(limit) });
-  return httpRequest<{ items: BillingAdjustment[] }>(`${managedUserPath(userId)}/billing-adjustments?${params.toString()}`);
-}
-
-export async function createBillingAdjustment(userId: string, payload: BillingAdjustmentPayload) {
-  return httpRequest<
-    { item?: ManagedUser; billing?: BillingState; adjustment?: BillingAdjustment; items?: ManagedUser[] } & Partial<ManagedUsersResponse>
-  >(`${managedUserPath(userId)}/billing-adjustments`, {
-    method: "POST",
-    body: payload,
-  });
-}
-
-export async function createBulkBillingAdjustment(payload: BulkBillingAdjustmentPayload) {
-  return httpRequest<
-    {
-      results?: BulkBillingAdjustmentResult[];
-      summary?: BulkBillingAdjustmentSummary;
-      items?: ManagedUser[];
-    } & Partial<ManagedUsersResponse>
-  >("/api/admin/users/billing-adjustments/bulk", {
-    method: "POST",
-    body: payload,
   });
 }
 
@@ -1562,217 +1293,6 @@ export async function deleteManagedUser(userId: string) {
   return httpRequest<{ items?: ManagedUser[] } & Partial<ManagedUsersResponse>>(managedUserPath(userId), {
     method: "DELETE",
   });
-}
-
-export async function fetchRegisterConfig() {
-  return httpRequest<{ register: RegisterConfig }>("/api/register");
-}
-
-export async function updateRegisterConfig(updates: Partial<RegisterConfig>) {
-  return httpRequest<{ register: RegisterConfig }>("/api/register", {
-    method: "POST",
-    body: updates,
-  });
-}
-
-export async function startRegister() {
-  return httpRequest<{ register: RegisterConfig }>("/api/register/start", { method: "POST" });
-}
-
-export async function stopRegister() {
-  return httpRequest<{ register: RegisterConfig }>("/api/register/stop", { method: "POST" });
-}
-
-export async function resetRegister() {
-  return httpRequest<{ register: RegisterConfig }>("/api/register/reset", { method: "POST" });
-}
-
-// ── CPA (CLIProxyAPI) ──────────────────────────────────────────────
-
-export type CPAPool = {
-  id: string;
-  name: string;
-  base_url: string;
-  import_job?: CPAImportJob | null;
-};
-
-export type CPARemoteFile = {
-  name: string;
-  email: string;
-};
-
-export type CPAImportJob = {
-  job_id: string;
-  status: "pending" | "running" | "completed" | "failed";
-  created_at: string;
-  updated_at: string;
-  total: number;
-  completed: number;
-  added: number;
-  skipped: number;
-  refreshed: number;
-  failed: number;
-  errors: Array<{ name: string; error: string }>;
-};
-
-export async function fetchCPAPools() {
-  return httpRequest<{ pools: CPAPool[] }>("/api/cpa/pools");
-}
-
-export async function createCPAPool(pool: { name: string; base_url: string; secret_key: string }) {
-  return httpRequest<{ pool: CPAPool; pools: CPAPool[] }>("/api/cpa/pools", {
-    method: "POST",
-    body: pool,
-  });
-}
-
-export async function updateCPAPool(
-  poolId: string,
-  updates: { name?: string; base_url?: string; secret_key?: string },
-) {
-  return httpRequest<{ pool: CPAPool; pools: CPAPool[] }>(`/api/cpa/pools/${poolId}`, {
-    method: "POST",
-    body: updates,
-  });
-}
-
-export async function deleteCPAPool(poolId: string) {
-  return httpRequest<{ pools: CPAPool[] }>(`/api/cpa/pools/${poolId}`, {
-    method: "DELETE",
-  });
-}
-
-export async function fetchCPAPoolFiles(poolId: string) {
-  return httpRequest<{ pool_id: string; files: CPARemoteFile[] }>(`/api/cpa/pools/${poolId}/files`);
-}
-
-export async function startCPAImport(poolId: string, names: string[]) {
-  return httpRequest<{ import_job: CPAImportJob | null }>(`/api/cpa/pools/${poolId}/import`, {
-    method: "POST",
-    body: { names },
-  });
-}
-
-export async function fetchCPAPoolImportJob(poolId: string) {
-  return httpRequest<{ import_job: CPAImportJob | null }>(`/api/cpa/pools/${poolId}/import`);
-}
-
-// ── Sub2API ────────────────────────────────────────────────────────
-
-export type Sub2APIServer = {
-  id: string;
-  name: string;
-  base_url: string;
-  email: string;
-  has_api_key: boolean;
-  group_id: string;
-  import_job?: CPAImportJob | null;
-};
-
-export type Sub2APIRemoteAccount = {
-  id: string;
-  name: string;
-  email: string;
-  plan_type: string;
-  status: string;
-  expires_at: string;
-  has_refresh_token: boolean;
-};
-
-export type Sub2APIRemoteGroup = {
-  id: string;
-  name: string;
-  description: string;
-  platform: string;
-  status: string;
-  account_count: number;
-  active_account_count: number;
-};
-
-export async function fetchSub2APIServers() {
-  const data = await httpRequest<{ servers?: Sub2APIServer[] | null }>("/api/sub2api/servers");
-  return {
-    servers: Array.isArray(data.servers) ? data.servers : [],
-  };
-}
-
-export async function createSub2APIServer(server: {
-  name: string;
-  base_url: string;
-  email: string;
-  password: string;
-  api_key: string;
-  group_id: string;
-}) {
-  const data = await httpRequest<{ server: Sub2APIServer; servers?: Sub2APIServer[] | null }>("/api/sub2api/servers", {
-    method: "POST",
-    body: server,
-  });
-  return {
-    server: data.server,
-    servers: Array.isArray(data.servers) ? data.servers : [],
-  };
-}
-
-export async function updateSub2APIServer(
-  serverId: string,
-  updates: {
-    name?: string;
-    base_url?: string;
-    email?: string;
-    password?: string;
-    api_key?: string;
-    group_id?: string;
-  },
-) {
-  const data = await httpRequest<{ server: Sub2APIServer; servers?: Sub2APIServer[] | null }>(`/api/sub2api/servers/${serverId}`, {
-    method: "POST",
-    body: updates,
-  });
-  return {
-    server: data.server,
-    servers: Array.isArray(data.servers) ? data.servers : [],
-  };
-}
-
-export async function fetchSub2APIServerGroups(serverId: string) {
-  const data = await httpRequest<{ server_id: string; groups?: Sub2APIRemoteGroup[] | null }>(
-    `/api/sub2api/servers/${serverId}/groups`,
-  );
-  return {
-    server_id: data.server_id,
-    groups: Array.isArray(data.groups) ? data.groups : [],
-  };
-}
-
-export async function deleteSub2APIServer(serverId: string) {
-  const data = await httpRequest<{ servers?: Sub2APIServer[] | null }>(`/api/sub2api/servers/${serverId}`, {
-    method: "DELETE",
-  });
-  return {
-    servers: Array.isArray(data.servers) ? data.servers : [],
-  };
-}
-
-export async function fetchSub2APIServerAccounts(serverId: string) {
-  const data = await httpRequest<{ server_id: string; accounts?: Sub2APIRemoteAccount[] | null }>(
-    `/api/sub2api/servers/${serverId}/accounts`,
-  );
-  return {
-    server_id: data.server_id,
-    accounts: Array.isArray(data.accounts) ? data.accounts : [],
-  };
-}
-
-export async function startSub2APIImport(serverId: string, accountIds: string[]) {
-  return httpRequest<{ import_job: CPAImportJob | null }>(`/api/sub2api/servers/${serverId}/import`, {
-    method: "POST",
-    body: { account_ids: accountIds },
-  });
-}
-
-export async function fetchSub2APIImportJob(serverId: string) {
-  return httpRequest<{ import_job: CPAImportJob | null }>(`/api/sub2api/servers/${serverId}/import`);
 }
 
 // ── Upstream proxy ────────────────────────────────────────────────

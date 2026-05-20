@@ -42,10 +42,6 @@ func (a *App) routes() []appRoute {
 		exact(http.MethodPost, "/auth/logout", a.handleLogout),
 		exact(http.MethodGet, "/auth/session", a.handleSession),
 		exact("", "/auth/providers", a.handleAuthProviders),
-		exact("", "/auth/linuxdo/start", a.handleLinuxDoOAuthStart),
-		exact("", "/auth/linuxdo/oauth/callback", a.handleLinuxDoOAuthCallback),
-		exact(http.MethodGet, "/auth/linuxdo/callback", a.serveWeb),
-		exact(http.MethodHead, "/auth/linuxdo/callback", a.serveWeb),
 		exact(http.MethodGet, "/health", a.handleHealth),
 
 		exact("", "/api/announcements", a.handlePublicAnnouncements),
