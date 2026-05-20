@@ -620,11 +620,51 @@ func relayStreamResult(body io.ReadCloser) *protocol.StreamResult {
 				errCh <- err
 				return
 			}
+			if err := relayStreamItemError(item); err != nil {
+				errCh <- err
+				return
+			}
 			items <- item
 		}
 		errCh <- scanner.Err()
 	}()
 	return &protocol.StreamResult{Items: items, Err: errCh, Kind: "openai"}
+}
+
+func relayStreamItemError(item map[string]any) error {
+	if item == nil {
+		return nil
+	}
+	message := ""
+	if _, ok := item["error"]; ok {
+		message = relayErrorMessageFromValue(item["error"])
+	}
+	if message == "" && strings.EqualFold(util.Clean(item["type"]), "error") {
+		message = firstNonEmpty(relayErrorMessageFromValue(item["message"]), relayErrorMessageFromValue(item["detail"]))
+	}
+	if message == "" {
+		return nil
+	}
+	status := util.ToInt(firstNonEmpty(util.Clean(item["status"]), util.Clean(item["status_code"])), http.StatusBadGateway)
+	if status < 400 {
+		status = http.StatusBadGateway
+	}
+	return protocol.HTTPError{Status: status, Message: message}
+}
+
+func relayErrorMessageFromValue(value any) string {
+	switch typed := value.(type) {
+	case string:
+		return strings.TrimSpace(typed)
+	case map[string]any:
+		return firstNonEmpty(
+			relayErrorMessageFromValue(typed["message"]),
+			relayErrorMessageFromValue(typed["error"]),
+			relayErrorMessageFromValue(typed["detail"]),
+		)
+	default:
+		return ""
+	}
 }
 
 func relayAcquireImageTaskSlot(ctx context.Context, payload map[string]any) (func(), error) {

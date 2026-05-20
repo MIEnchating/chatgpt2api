@@ -1133,12 +1133,20 @@ export async function streamChatCompletion(
           continue;
         }
         const parsed = JSON.parse(data) as {
+          error?: unknown;
+          detail?: unknown;
+          message?: unknown;
+          type?: string;
           choices?: Array<{
             delta?: { content?: string | Array<{ text?: string }>; text?: string };
             message?: { content?: string | Array<{ text?: string }> };
             text?: string;
           }>;
         };
+        const errorMessage = streamChunkErrorMessage(parsed);
+        if (errorMessage) {
+          throw new Error(errorMessage);
+        }
         const delta = chatCompletionChunkText(parsed);
         if (delta) {
           fullText += delta;
@@ -1148,6 +1156,28 @@ export async function streamChatCompletion(
     }
   }
   return fullText;
+}
+
+function streamChunkErrorMessage(chunk: { error?: unknown; detail?: unknown; message?: unknown; type?: string }) {
+  const error = errorText(chunk.error);
+  if (error) {
+    return error;
+  }
+  if (chunk.type === "error") {
+    return errorText(chunk.message) || errorText(chunk.detail);
+  }
+  return "";
+}
+
+function errorText(value: unknown): string {
+  if (typeof value === "string") {
+    return value.trim();
+  }
+  if (!value || typeof value !== "object") {
+    return "";
+  }
+  const item = value as { error?: unknown; detail?: unknown; message?: unknown };
+  return errorText(item.message) || errorText(item.error) || errorText(item.detail);
 }
 
 function chatCompletionChunkText(chunk: {

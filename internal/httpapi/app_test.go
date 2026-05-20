@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -706,6 +707,24 @@ func TestRelayImageTaskResultCollectsStream(t *testing.T) {
 	}
 	if len(progress) != 1 || progress[0]["url"] != "https://example.test/image.png" {
 		t.Fatalf("progress callback data = %#v", progress)
+	}
+}
+
+func TestRelayStreamResultReturnsUpstreamErrorFrame(t *testing.T) {
+	stream := relayStreamResult(io.NopCloser(strings.NewReader(
+		"data: {\"error\":{\"message\":\"stream disconnected before completion\"}}\n\n",
+	)))
+
+	if item, ok := <-stream.Items; ok {
+		t.Fatalf("unexpected stream item: %#v", item)
+	}
+	err := <-stream.Err
+	if err == nil || err.Error() != "stream disconnected before completion" {
+		t.Fatalf("stream error = %v", err)
+	}
+	var httpErr protocol.HTTPError
+	if !errors.As(err, &httpErr) || httpErr.Status != http.StatusBadGateway {
+		t.Fatalf("stream error type = %T %#v", err, err)
 	}
 }
 
