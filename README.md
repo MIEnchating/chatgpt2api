@@ -173,7 +173,7 @@ docker inspect chatgpt2api --format '{{range .Config.Env}}{{println .}}{{end}}' 
 默认 SQLite 部署可按下面步骤重置本地登录账号数据。该操作会删除本地后台登录用户（包括管理员和普通本地用户），但不会删除账号池数据；执行前会先备份 `data` 目录。
 
 ```bash
-cd /opt/chatgpt2api
+cd ~/chatgpt2api
 # 编辑 .env，设置一个新的已知管理员密码：
 # CHATGPT2API_ADMIN_PASSWORD=your_new_password
 
@@ -205,6 +205,8 @@ curl -fsSL https://raw.githubusercontent.com/MIEnchating/chatgpt2api/main/deploy
 ```
 
 该命令会拉取 `MIEnchating/chatgpt2api` 仓库并从源码构建本地镜像 `chatgpt2api:local`。如果你已经在仓库目录内，也可以直接运行受限 BuildKit 脚本：
+
+通过 `curl | sudo sh` 执行时，默认会把仓库放在当前执行目录的 `chatgpt2api` 子目录，例如在 `/home/ubuntu` 执行就是 `/home/ubuntu/chatgpt2api`。如需指定其他目录，设置 `CHATGPT2API_INSTALL_DIR`。
 
 ```bash
 sh deploy/docker-build-limited.sh up

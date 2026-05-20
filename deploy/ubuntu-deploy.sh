@@ -14,7 +14,7 @@ Environment variables:
                               Default: https://github.com/MIEnchating/chatgpt2api.git
   CHATGPT2API_BRANCH          Git branch to deploy. Default: main
   CHATGPT2API_INSTALL_DIR     Install directory. Default: current repo when run inside one,
-                              otherwise /opt/chatgpt2api
+                              otherwise ./chatgpt2api under the current directory
   CHATGPT2API_DOCKER_NETWORK  Docker network to join. Default: newapi_default
   CHATGPT2API_BUILD_LOCAL     Build from this repository source. Default: 1
   CHATGPT2API_IMAGE           Runtime image when CHATGPT2API_BUILD_LOCAL=0.
@@ -96,6 +96,12 @@ detect_install_dir() {
     return
   fi
 
+  current_dir=$(pwd -P)
+  if [ -d "$current_dir/.git" ] && [ -f "$current_dir/deploy/docker-compose.yml" ]; then
+    printf '%s\n' "$current_dir"
+    return
+  fi
+
   script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
   candidate_root=$(CDPATH= cd -- "$script_dir/.." && pwd)
   if [ -d "$candidate_root/.git" ]; then
@@ -103,7 +109,24 @@ detect_install_dir() {
     return
   fi
 
-  printf '%s\n' "/opt/chatgpt2api"
+  printf '%s\n' "$current_dir/chatgpt2api"
+}
+
+restore_install_dir_owner() {
+  if [ "$(id -u)" -ne 0 ] || [ -z "${SUDO_USER:-}" ] || [ "$SUDO_USER" = "root" ]; then
+    return
+  fi
+
+  user_entry=$(getent passwd "$SUDO_USER" || true)
+  user_home=$(printf '%s\n' "$user_entry" | awk -F: '{ print $6 }')
+  user_gid=$(printf '%s\n' "$user_entry" | awk -F: '{ print $4 }')
+  [ -n "$user_home" ] && [ -n "$user_gid" ] || return
+
+  case "$install_dir" in
+    "$user_home"|"$user_home"/*)
+      chown -R "$SUDO_USER:$user_gid" "$install_dir"
+      ;;
+  esac
 }
 
 install_base_packages() {
@@ -164,6 +187,7 @@ clone_or_update_repo() {
     run_git -C "$install_dir" fetch origin "$branch"
     run_git -C "$install_dir" checkout "$branch"
     run_git -C "$install_dir" pull --ff-only origin "$branch"
+    restore_install_dir_owner
     return
   fi
 
@@ -178,6 +202,8 @@ clone_or_update_repo() {
   else
     as_root git clone --branch "$branch" "$repo_url" "$install_dir"
   fi
+
+  restore_install_dir_owner
 }
 
 write_file_from_temp() {
@@ -282,6 +308,7 @@ prepare_env_file() {
   fi
 
   as_root mkdir -p "$install_dir/data"
+  restore_install_dir_owner
 }
 
 env_value() {
