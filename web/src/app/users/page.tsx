@@ -746,7 +746,7 @@ function UsersContent() {
             </div>
           </div>
           <div className="overflow-x-auto">
-            <Table className="min-w-[1210px]">
+            <Table className="min-w-[1320px]">
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-12">
@@ -761,7 +761,7 @@ function UsersContent() {
                   {sortableHead("role_name", "角色", "w-[180px]")}
                   {sortableHead("call_count", "近 14 日调用", "w-[280px]")}
                   {sortableHead("last_used_at", "时间", "w-[170px]")}
-                  <TableHead className="w-[180px] text-right">操作</TableHead>
+                  <TableHead className="w-[260px] text-right">操作</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -834,12 +834,13 @@ function UsersContent() {
                           <div>使用 {formatDateTime(user.last_used_at)}</div>
                         </div>
                       </TableCell>
-                      <TableCell>
-                        <div className="grid grid-cols-3 justify-items-end gap-2">
+                      <TableCell className="min-w-[260px] text-right">
+                        <div className="flex flex-nowrap justify-end gap-2">
                           <Button
                             type="button"
                             variant="outline"
-                            className="h-8 w-full rounded-lg px-2"
+                            size="sm"
+                            className="min-w-[74px] rounded-lg px-3 text-xs"
                             onClick={() => openRoleDialog(user)}
                             disabled={isPending}
                           >
@@ -849,7 +850,8 @@ function UsersContent() {
                           <Button
                             type="button"
                             variant="outline"
-                            className="h-8 w-full rounded-lg px-2"
+                            size="sm"
+                            className="min-w-[74px] rounded-lg px-3 text-xs"
                             onClick={() => void handleToggle(user)}
                             disabled={isPending}
                           >
@@ -865,7 +867,8 @@ function UsersContent() {
                           <Button
                             type="button"
                             variant="outline"
-                            className="h-8 w-full rounded-lg border-rose-200 px-2 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                            size="sm"
+                            className="min-w-[74px] rounded-lg border-rose-200 px-3 text-xs text-rose-600 hover:bg-rose-50 hover:text-rose-700"
                             onClick={() => setDeletingUser(user)}
                             disabled={isPending}
                           >
