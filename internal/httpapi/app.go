@@ -3,6 +3,7 @@ package httpapi
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1010,6 +1011,22 @@ func (a *App) handleImageVisibility(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	visibility := util.Clean(body["visibility"])
+	if _, err := service.NormalizeImageVisibility(visibility); err != nil {
+		util.WriteError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if !a.isLocalImageURL(path) && isAbsoluteHTTPURL(path) {
+		localURL, _, importErr := a.localizeRelayImageItem(r.Context(), identityScope(identity), identityDisplayName(identity), map[string]any{"url": path}, nil)
+		if importErr != nil || localURL == "" {
+			if importErr == nil {
+				importErr = errors.New("image import failed")
+			}
+			util.WriteError(w, http.StatusBadRequest, "同步图片到图库失败: "+importErr.Error())
+			return
+		}
+		path = localURL
+		a.images.RecordGeneratedImages([]string{localURL}, identityScope(identity), identityDisplayName(identity), service.ImageVisibilityPrivate)
+	}
 	sharePromptParams := util.ToBool(body["share_prompt_parameters"])
 	shareReferences := sharePromptParams && util.ToBool(body["share_reference_images"])
 	scope := service.ImageAccessScope{OwnerID: identityScope(identity)}
@@ -1933,6 +1950,7 @@ func (a *App) runLoggedImageTask(ctx context.Context, identity service.Identity,
 	payload["owner_name"] = identityDisplayName(identity)
 	model := firstNonEmpty(util.Clean(payload["model"]), a.defaultImageModel())
 	result, err := run(ctx, payload)
+	a.localizeRelayImageResult(ctx, identity, result, payload)
 	urls := collectURLs(result)
 	a.recordGeneratedImagesForPayload(identity, urls, util.Clean(payload["visibility"]), payload)
 	if err != nil {
@@ -1946,6 +1964,159 @@ func (a *App) runLoggedImageTask(ctx context.Context, identity service.Identity,
 	}
 	a.logCall(identity, summary, http.MethodPost, endpoint, model, start, "success", http.StatusOK, "", urls, requestCapture)
 	return result, nil
+}
+
+func (a *App) localizeRelayImageResult(ctx context.Context, identity service.Identity, result map[string]any, payload map[string]any) {
+	if a == nil || a.engine == nil || result == nil {
+		return
+	}
+	items := util.AsMapSlice(result["data"])
+	if len(items) == 0 {
+		return
+	}
+	ownerID := identityScope(identity)
+	ownerName := identityDisplayName(identity)
+	changed := false
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+		localURL, outputFormat, err := a.localizeRelayImageItem(ctx, ownerID, ownerName, item, payload)
+		if err != nil || localURL == "" {
+			continue
+		}
+		item["url"] = localURL
+		if outputFormat != "" {
+			item["output_format"] = outputFormat
+		}
+		changed = true
+	}
+	if changed {
+		result["data"] = items
+	}
+}
+
+func (a *App) localizeRelayImageItem(ctx context.Context, ownerID, ownerName string, item map[string]any, payload map[string]any) (string, string, error) {
+	if a.isLocalImageURL(util.Clean(item["url"])) {
+		return "", "", nil
+	}
+	data, contentType, err := relayImageItemBytes(ctx, a, item)
+	if err != nil || len(data) == 0 {
+		return "", "", err
+	}
+	outputFormat := relayStoredImageFormat(item, payload, contentType, util.Clean(item["url"]), data)
+	return a.engine.SaveImageBytesForOwnerWithFormat(data, "", ownerID, ownerName, outputFormat), outputFormat, nil
+}
+
+func relayImageItemBytes(ctx context.Context, app *App, item map[string]any) ([]byte, string, error) {
+	if b64 := util.Clean(item["b64_json"]); b64 != "" {
+		data, err := base64.StdEncoding.DecodeString(strings.TrimSpace(b64))
+		if err != nil {
+			if decoded, fallbackErr := util.B64Decode(b64); fallbackErr == nil {
+				return decoded, http.DetectContentType(decoded), nil
+			}
+			return nil, "", err
+		}
+		return data, http.DetectContentType(data), nil
+	}
+	imageURL := util.Clean(item["url"])
+	if imageURL == "" {
+		return nil, "", errors.New("image url is empty")
+	}
+	parsed, err := url.Parse(imageURL)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return nil, "", errors.New("image url is not absolute")
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return nil, "", errors.New("image url scheme is not supported")
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, imageURL, nil)
+	if err != nil {
+		return nil, "", err
+	}
+	req.Header.Set("Accept", "image/*")
+	resp, err := app.relayHTTPClient().Do(req)
+	if err != nil {
+		return nil, "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, "", fmt.Errorf("image download failed: %s", resp.Status)
+	}
+	const maxRelayImageBytes = 40 << 20
+	limited := io.LimitReader(resp.Body, maxRelayImageBytes+1)
+	data, err := io.ReadAll(limited)
+	if err != nil {
+		return nil, "", err
+	}
+	if len(data) > maxRelayImageBytes {
+		return nil, "", errors.New("image is too large")
+	}
+	return data, strings.TrimSpace(strings.Split(resp.Header.Get("Content-Type"), ";")[0]), nil
+}
+
+func (a *App) isLocalImageURL(value string) bool {
+	text := strings.TrimSpace(value)
+	if text == "" {
+		return false
+	}
+	if strings.HasPrefix(text, "/images/") {
+		return true
+	}
+	if a == nil || a.config == nil || a.config.BaseURL() == "" {
+		return false
+	}
+	parsed, err := url.Parse(text)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return false
+	}
+	base, err := url.Parse(a.config.BaseURL())
+	if err != nil || base.Scheme == "" || base.Host == "" {
+		return false
+	}
+	return parsed.Scheme == base.Scheme && parsed.Host == base.Host && strings.HasPrefix(parsed.EscapedPath(), "/images/")
+}
+
+func isAbsoluteHTTPURL(value string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(value))
+	if err != nil {
+		return false
+	}
+	return parsed.Host != "" && (parsed.Scheme == "http" || parsed.Scheme == "https")
+}
+
+func relayStoredImageFormat(item, payload map[string]any, contentType, imageURL string, data []byte) string {
+	for _, value := range []string{util.Clean(item["output_format"]), util.Clean(payload["output_format"])} {
+		if format, ok := normalizeRelayImageOutputFormat(value); ok {
+			return format
+		}
+	}
+	switch strings.ToLower(strings.TrimSpace(strings.Split(contentType, ";")[0])) {
+	case "image/jpeg", "image/jpg":
+		return "jpeg"
+	case "image/webp":
+		return "webp"
+	case "image/png":
+		return "png"
+	}
+	if parsed, err := url.Parse(imageURL); err == nil {
+		switch strings.ToLower(filepath.Ext(parsed.Path)) {
+		case ".jpg", ".jpeg":
+			return "jpeg"
+		case ".webp":
+			return "webp"
+		case ".png":
+			return "png"
+		}
+	}
+	switch http.DetectContentType(data) {
+	case "image/jpeg":
+		return "jpeg"
+	case "image/webp":
+		return "webp"
+	default:
+		return "png"
+	}
 }
 
 func (a *App) attachCreationTaskLimiter(body map[string]any, identity service.Identity) {

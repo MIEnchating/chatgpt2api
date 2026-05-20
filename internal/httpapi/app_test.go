@@ -401,6 +401,60 @@ func TestRunLoggedImageTaskLogsTextOutputAsFailure(t *testing.T) {
 	}
 }
 
+func TestRunLoggedImageTaskLocalizesRelayURLForGallery(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+
+	imageServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		if err := encodeHTTPTestPNG(w); err != nil {
+			t.Fatalf("encode test image: %v", err)
+		}
+	}))
+	defer imageServer.Close()
+
+	identity := service.Identity{ID: "user-1", Role: service.AuthRoleUser, Name: "Alice"}
+	result, err := app.runLoggedImageTask(
+		context.Background(),
+		identity,
+		map[string]any{
+			"prompt":     "draw",
+			"model":      "codex-gpt-image-2",
+			"visibility": service.ImageVisibilityPrivate,
+		},
+		"/api/creation-tasks/image-generations",
+		"文生图",
+		func(context.Context, map[string]any) (map[string]any, error) {
+			return map[string]any{
+				"data": []map[string]any{{
+					"url": imageServer.URL + "/image.png",
+				}},
+			}, nil
+		},
+	)
+	if err != nil {
+		t.Fatalf("runLoggedImageTask() error = %v", err)
+	}
+	data := util.AsMapSlice(result["data"])
+	if len(data) != 1 {
+		t.Fatalf("result data = %#v", result)
+	}
+	localURL := util.Clean(data[0]["url"])
+	if !strings.HasPrefix(localURL, "/images/") {
+		t.Fatalf("image url was not localized: %#v", result)
+	}
+	if data[0]["output_format"] != "png" {
+		t.Fatalf("output_format = %#v, want png in %#v", data[0]["output_format"], data[0])
+	}
+	access, err := app.images.ImageFileAccess(localURL, service.ImageAccessScope{OwnerID: identity.ID})
+	if err != nil {
+		t.Fatalf("localized image is not accessible from gallery: %v", err)
+	}
+	if access.Visibility != service.ImageVisibilityPrivate || access.OwnerID != identity.ID {
+		t.Fatalf("localized image access = %#v", access)
+	}
+}
+
 func TestRelayImagePayloadDropsUnsupportedStreamFields(t *testing.T) {
 	payload := relayPayloadForPath("/v1/images/generations", map[string]any{
 		"prompt":         "draw",
@@ -2030,6 +2084,48 @@ func TestManagedImageFilesRequireOwnerOrPublicAccess(t *testing.T) {
 	app.Handler().ServeHTTP(res, req)
 	if res.Code != http.StatusOK || res.Body.String() != "private-reference" {
 		t.Fatalf("anonymous shared public reference status/body = %d %q", res.Code, res.Body.String())
+	}
+}
+
+func TestImageVisibilityImportsExternalImageURL(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+
+	user, rawKey, err := app.auth.CreateAPIKey(service.AuthRoleUser, "frontend", service.AuthOwner{})
+	if err != nil {
+		t.Fatalf("CreateAPIKey() error = %v", err)
+	}
+	ownerID := util.Clean(user["id"])
+	imageServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		if err := encodeHTTPTestPNG(w); err != nil {
+			t.Fatalf("encode test image: %v", err)
+		}
+	}))
+	defer imageServer.Close()
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/images/visibility", strings.NewReader(fmt.Sprintf(`{"path":%q,"visibility":"public"}`, imageServer.URL+"/relay.png")))
+	req.Header.Set("Authorization", "Bearer "+rawKey)
+	res := httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("import external image visibility status = %d body = %s", res.Code, res.Body.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(res.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("visibility json: %v", err)
+	}
+	item := util.StringMap(payload["item"])
+	localPath := util.Clean(item["path"])
+	if localPath == "" || strings.HasPrefix(localPath, "http") || item["visibility"] != service.ImageVisibilityPublic {
+		t.Fatalf("imported visibility item = %#v", item)
+	}
+	access, err := app.images.ImageFileAccess(localPath, service.ImageAccessScope{OwnerID: ownerID})
+	if err != nil {
+		t.Fatalf("imported image is not accessible: %v", err)
+	}
+	if access.Visibility != service.ImageVisibilityPublic || access.OwnerID != ownerID {
+		t.Fatalf("imported image access = %#v", access)
 	}
 }
 

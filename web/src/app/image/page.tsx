@@ -2098,7 +2098,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         toast.error("图片生成成功后才能修改公开状态");
         return;
       }
-      const path = targetImage.path || (targetImage.url ? getManagedImagePathFromUrl(targetImage.url) : "");
+      const path = targetImage.path || (targetImage.url ? getManagedImagePathFromUrl(targetImage.url) || targetImage.url : "");
       if (!path) {
         toast.error("未找到可同步到图库的图片路径");
         return;
