@@ -268,7 +268,7 @@ go build -tags=embed -o chatgpt2api ./internal
 | `CHATGPT2API_ADMIN_PASSWORD` | 空 | 初始管理员密码；为空时首次启动自动生成一次性密码 |
 | `CHATGPT2API_REGISTRATION_ENABLED` | `true` | 是否开放登录页账号注册入口 |
 | `CHATGPT2API_BASE_URL` | 空 | 用于生成图片 URL 的外部访问地址 |
-| `CHATGPT2API_RELAY_BASE_URL` | `https://relayai.tech` | RelayAI 上游地址，可在管理端设置中修改 |
+| `CHATGPT2API_RELAY_BASE_URL` | `http://newapi:3000` | RelayAI 上游地址，可在管理端设置中修改 |
 | `CHATGPT2API_PROXY` | 空 | 全局代理，支持 `http`、`https`、`socks5`、`socks5h` |
 | `CHATGPT2API_IMAGE_MODELS` | `gpt-image-2` | 管理端图片模型列表，多个值用逗号分隔；第一项作为默认模型 |
 | `CHATGPT2API_CHAT_MODELS` | `gpt-5.5,gpt-5.4` | 管理端对话模型列表，多个值用逗号分隔；第一项作为默认模型 |

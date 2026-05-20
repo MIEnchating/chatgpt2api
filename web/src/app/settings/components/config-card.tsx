@@ -259,7 +259,7 @@ export function ConfigCard() {
                 id="settings-relay-base-url"
                 value={String(config?.relay_base_url || "")}
                 onChange={(event) => setRelayBaseUrl(event.target.value)}
-                placeholder="https://relayai.tech"
+                placeholder="http://newapi:3000"
                 className={settingsInputClassName}
               />
             </Field>

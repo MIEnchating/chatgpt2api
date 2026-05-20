@@ -91,7 +91,7 @@ function normalizeConfig(config: SettingsConfig): SettingsConfig {
     relay_base_url:
       typeof config.relay_base_url === "string" && config.relay_base_url.trim()
         ? config.relay_base_url
-        : "https://relayai.tech",
+        : "http://newapi:3000",
     registration_enabled: Boolean(config.registration_enabled),
     linuxdo_enabled: Boolean(config.linuxdo_enabled),
     linuxdo_client_id: typeof config.linuxdo_client_id === "string" ? config.linuxdo_client_id : "",

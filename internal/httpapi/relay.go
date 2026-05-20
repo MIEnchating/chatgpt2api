@@ -43,7 +43,7 @@ func (a *App) relayBaseURL() string {
 	if a != nil && a.config != nil {
 		return a.config.RelayBaseURL()
 	}
-	return "https://relayai.tech"
+	return "http://newapi:3000"
 }
 
 func relayAPIKeyFromPayload(payload map[string]any) string {

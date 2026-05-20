@@ -57,7 +57,7 @@ const (
 	defaultImageTaskTimeoutSeconds = 300
 	minImageTaskTimeoutSeconds     = 30
 	maxImageTaskTimeoutSeconds     = 3600
-	defaultRelayBaseURL            = "https://relayai.tech"
+	defaultRelayBaseURL            = "http://newapi:3000"
 )
 
 var (

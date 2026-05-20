@@ -11,6 +11,7 @@ func TestStoreUpdatePersistsRuntimeSettings(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("CHATGPT2API_ROOT", root)
 	unsetEnv(t, "CHATGPT2API_BASE_URL")
+	unsetEnv(t, "CHATGPT2API_RELAY_BASE_URL")
 	unsetEnv(t, "CHATGPT2API_PROXY")
 	unsetEnv(t, "CHATGPT2API_IMAGE_MODELS")
 	unsetEnv(t, "CHATGPT2API_CHAT_MODELS")
@@ -30,6 +31,9 @@ func TestStoreUpdatePersistsRuntimeSettings(t *testing.T) {
 	store, err := NewStore()
 	if err != nil {
 		t.Fatalf("NewStore() error = %v", err)
+	}
+	if store.RelayBaseURL() != "http://newapi:3000" {
+		t.Fatalf("RelayBaseURL() default = %q", store.RelayBaseURL())
 	}
 
 	got, err := store.Update(map[string]any{

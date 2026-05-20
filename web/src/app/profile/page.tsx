@@ -85,7 +85,7 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [relayApiKey, setRelayApiKey] = useState(getStoredRelayApiKey);
   const [savedRelayApiKey, setSavedRelayApiKey] = useState(getStoredRelayApiKey);
-  const [relayBaseURL, setRelayBaseURL] = useState("https://relayai.tech");
+  const [relayBaseURL, setRelayBaseURL] = useState("http://newapi:3000");
   const [isRelayKeyVisible, setIsRelayKeyVisible] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
@@ -111,7 +111,7 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
       })
       .catch(() => {
         if (!ignore) {
-          setRelayBaseURL("https://relayai.tech");
+          setRelayBaseURL("http://newapi:3000");
         }
       });
     return () => {
