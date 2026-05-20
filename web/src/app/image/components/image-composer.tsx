@@ -83,7 +83,7 @@ type ImageComposerProps = {
   imageOutputCompression: string;
   imageBackground: ImageBackground;
   imageModeration: ImageModeration;
-  relayApiKey: string;
+  relayKeyConfigured: boolean;
   imageModelStatus?: string;
   highResolutionHint?: ReactNode;
   referenceImages: Array<{ name: string; dataUrl: string }>;
@@ -307,7 +307,7 @@ export function ImageComposer({
   imageOutputCompression,
   imageBackground,
   imageModeration,
-  relayApiKey,
+  relayKeyConfigured,
   imageModelStatus,
   highResolutionHint,
   referenceImages,
@@ -377,7 +377,7 @@ export function ImageComposer({
   const effectiveImageSizeMode = structuredImageParameters || imageSizeMode !== "custom" ? imageSizeMode : "auto";
   const effectiveImageResolution = structuredImageParameters ? imageResolution : "auto";
   const submitLabel = composerMode === "chat" ? "发送对话" : referenceImages.length > 0 ? "编辑图片" : "生成图片";
-  const relayApiKeyMissing = !relayApiKey.trim();
+  const relayApiKeyMissing = !relayKeyConfigured;
   const computedImageSize = useMemo(
     () =>
       buildImageSize({

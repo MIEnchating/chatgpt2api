@@ -182,14 +182,10 @@ func (s *ImageTaskService) SubmitEditWithOptions(ctx context.Context, identity I
 }
 
 func (s *ImageTaskService) SubmitChat(ctx context.Context, identity Identity, clientTaskID, prompt, model string, messages any, billable bool, nValues ...int) (map[string]any, error) {
-	return s.submitChat(ctx, identity, clientTaskID, prompt, model, messages, billable, "", nValues...)
+	return s.submitChat(ctx, identity, clientTaskID, prompt, model, messages, billable, nValues...)
 }
 
-func (s *ImageTaskService) SubmitChatWithAPIKey(ctx context.Context, identity Identity, clientTaskID, prompt, model string, messages any, billable bool, apiKey string, nValues ...int) (map[string]any, error) {
-	return s.submitChat(ctx, identity, clientTaskID, prompt, model, messages, billable, apiKey, nValues...)
-}
-
-func (s *ImageTaskService) submitChat(ctx context.Context, identity Identity, clientTaskID, prompt, model string, messages any, billable bool, apiKey string, nValues ...int) (map[string]any, error) {
+func (s *ImageTaskService) submitChat(ctx context.Context, identity Identity, clientTaskID, prompt, model string, messages any, billable bool, nValues ...int) (map[string]any, error) {
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
 		return nil, fmt.Errorf("prompt is required")
@@ -204,9 +200,6 @@ func (s *ImageTaskService) submitChat(ctx context.Context, identity Identity, cl
 	payload := map[string]any{"prompt": prompt, "model": model, "messages": messages, "n": n, "visibility": ImageVisibilityPrivate}
 	if billable {
 		payload[imageTaskBillingBillablePayloadKey] = true
-	}
-	if apiKey = strings.TrimSpace(apiKey); apiKey != "" {
-		payload["api_key"] = apiKey
 	}
 	return s.submit(ctx, identity, clientTaskID, "chat", payload)
 }
@@ -1080,9 +1073,6 @@ func billableTaskOutputCount(task map[string]any) int {
 }
 
 func isBillableImageTaskMode(mode string, payload map[string]any) bool {
-	if util.Clean(payload["api_key"]) != "" {
-		return false
-	}
 	if mode == "generate" || mode == "edit" {
 		return true
 	}
@@ -1128,9 +1118,6 @@ func mergeImageTaskMetadata(payload map[string]any, metadata map[string]any) {
 		if util.ToBool(metadata["share_reference_images"]) {
 			payload["share_reference_images"] = true
 		}
-	}
-	if apiKey := strings.TrimSpace(util.Clean(metadata["api_key"])); apiKey != "" {
-		payload["api_key"] = apiKey
 	}
 }
 

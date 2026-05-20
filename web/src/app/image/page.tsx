@@ -60,6 +60,7 @@ import {
   CHAT_MODEL_OPTIONS,
   createImageEditTask,
   createImageGenerationTask,
+  fetchProfileRelayKey,
   DEFAULT_CHAT_MODEL,
   DEFAULT_IMAGE_MODEL,
   fetchCreationTasks,
@@ -95,12 +96,7 @@ import {
 import { fetchAuthenticatedImageBlob } from "@/lib/authenticated-image";
 import { clearImageManagerCache } from "@/lib/image-manager-cache";
 import { getManagedImagePathFromUrl } from "@/lib/image-path";
-import {
-  getStoredRelayApiKey,
-  relayApiKeyStorageKeyForSession,
-  RELAY_API_KEY_CHANGED_EVENT,
-  RELAY_API_KEY_STORAGE_KEY,
-} from "@/lib/relay-key";
+import { clearStoredRelayApiKey, RELAY_API_KEY_CHANGED_EVENT } from "@/lib/relay-key";
 import { cn } from "@/lib/utils";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import { hasAPIPermission, type StoredAuthSession } from "@/store/auth";
@@ -1151,8 +1147,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   const [imageOutputCompression, setImageOutputCompression] = useState(getStoredImageOutputCompression);
   const [imageBackground, setImageBackground] = useState<ImageBackground>(getStoredImageBackground);
   const [imageModeration, setImageModeration] = useState<ImageModeration>(getStoredImageModeration);
-  const [relayApiKey, setRelayApiKey] = useState(() => getStoredRelayApiKey(session));
-  const relayApiKeyStorageKey = relayApiKeyStorageKeyForSession(session);
+  const [relayKeyConfigured, setRelayKeyConfigured] = useState(false);
   const [relayImageModelOptions, setRelayImageModelOptions] = useState<ImageModelOption[]>(() =>
     ensureDefaultImageModelOption(IMAGE_CREATION_MODEL_OPTIONS),
   );
@@ -1700,41 +1695,38 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     window.localStorage.setItem(IMAGE_MODERATION_STORAGE_KEY, imageModeration);
   }, [imageModeration]);
 
+  const refreshRelayKeyStatus = useCallback(async () => {
+    clearStoredRelayApiKey();
+    try {
+      const status = await fetchProfileRelayKey();
+      setRelayKeyConfigured(status.has_key);
+    } catch {
+      setRelayKeyConfigured(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
 
-    setRelayApiKey(getStoredRelayApiKey(session));
-  }, [session]);
+    void refreshRelayKeyStatus();
+  }, [refreshRelayKeyStatus, session]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
 
-    const refreshRelayKey = () => {
-      setRelayApiKey(getStoredRelayApiKey(session));
-    };
-    const handleRelayKeyChanged = (event: Event) => {
-      const changedStorageKey = (event as CustomEvent<{ storageKey?: string }>).detail?.storageKey;
-      if (!changedStorageKey || changedStorageKey === relayApiKeyStorageKey) {
-        refreshRelayKey();
-      }
-    };
-    const handleStorage = (event: StorageEvent) => {
-      if (event.key === relayApiKeyStorageKey || event.key === RELAY_API_KEY_STORAGE_KEY) {
-        refreshRelayKey();
-      }
+    const handleRelayKeyChanged = () => {
+      void refreshRelayKeyStatus();
     };
 
     window.addEventListener(RELAY_API_KEY_CHANGED_EVENT, handleRelayKeyChanged);
-    window.addEventListener("storage", handleStorage);
     return () => {
       window.removeEventListener(RELAY_API_KEY_CHANGED_EVENT, handleRelayKeyChanged);
-      window.removeEventListener("storage", handleStorage);
     };
-  }, [relayApiKeyStorageKey, session]);
+  }, [refreshRelayKeyStatus]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -2458,7 +2450,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
               activeTurn.referenceImages.length > 0
                 ? activeTurn.referenceImages.map((img) => ({ name: img.name, dataUrl: img.dataUrl }))
                 : undefined,
-              relayApiKey.trim(),
               (text) => {
                 void updateConversation(conversationId, (current) => {
                   const conversation = current ?? snapshot;
@@ -2562,7 +2553,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
               taskOutputFormat,
               taskOutputCompression,
               taskToolOptions,
-              relayApiKey.trim(),
             );
           }
           return createImageGenerationTask(
@@ -2578,7 +2568,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
             taskOutputFormat,
             taskOutputCompression,
             taskToolOptions,
-            relayApiKey.trim(),
           );
         };
         updateTurnProgress(conversationId, activeTurn.id, {
@@ -2687,7 +2676,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         }
       }
     },
-    [clearTurnProgress, relayApiKey, updateConversation, updateTurnProgress],
+    [clearTurnProgress, updateConversation, updateTurnProgress],
   );
   useEffect(() => {
     for (const conversation of conversations) {
@@ -2834,7 +2823,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         toast.error("未找到可用的参考图");
         return;
       }
-      if (!relayApiKey.trim()) {
+      if (!relayKeyConfigured) {
         toast.error("请先到个人中心配置 RelayAI Key");
         return;
       }
@@ -2890,7 +2879,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         retryingImageIdsRef.current.delete(retryKey);
       }
     },
-    [relayApiKey, runConversationQueue, updateConversation],
+    [relayKeyConfigured, runConversationQueue, updateConversation],
   );
 
   const handleRegenerateTurn = useCallback(
@@ -2913,7 +2902,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         toast.error("未找到可用的参考图");
         return;
       }
-      if (!relayApiKey.trim()) {
+      if (!relayKeyConfigured) {
         toast.error("请先到个人中心配置 RelayAI Key");
         return;
       }
@@ -2957,7 +2946,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       void runConversationQueue(conversationId);
       toast.success("已加入重新生成队列");
     },
-    [relayApiKey, runConversationQueue, updateConversation],
+    [relayKeyConfigured, runConversationQueue, updateConversation],
   );
 
   const handleSaveEditingTurn = useCallback(
@@ -2982,7 +2971,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         toast.error("当前轮次正在处理，稍后再编辑");
         return;
       }
-      if (regenerate && !relayApiKey.trim()) {
+      if (regenerate && !relayKeyConfigured) {
         toast.error("请先到个人中心配置 RelayAI Key");
         return;
       }
@@ -3101,7 +3090,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         toast.success("已保存编辑设置");
       }
     },
-    [editingTurnDraft, relayApiKey, runConversationQueue, updateConversation],
+    [editingTurnDraft, relayKeyConfigured, runConversationQueue, updateConversation],
   );
 
   const handleSubmit = async () => {
@@ -3114,7 +3103,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       toast.error("请输入提示词");
       return;
     }
-    if (!relayApiKey.trim()) {
+    if (!relayKeyConfigured) {
       toast.error("请先到个人中心配置 RelayAI Key");
       return;
     }
@@ -3864,7 +3853,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                 imageOutputCompression={imageOutputCompression}
                 imageBackground={imageBackground}
                 imageModeration={imageModeration}
-                relayApiKey={relayApiKey}
+                relayKeyConfigured={relayKeyConfigured}
                 imageModelStatus={composerMode === "image" ? imageModelStatus : undefined}
                 highResolutionHint={highResolutionHint}
                 referenceImages={referenceImages}

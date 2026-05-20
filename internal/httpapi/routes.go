@@ -161,6 +161,43 @@ func (a *App) handleProfilePassword(w http.ResponseWriter, r *http.Request) {
 	util.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
+func (a *App) handleProfileRelayKey(w http.ResponseWriter, r *http.Request) {
+	identity, ok := a.requireIdentity(w, r, "")
+	if !ok {
+		return
+	}
+	ownerID := identityScope(identity)
+	if ownerID == "" || ownerID == "anonymous" {
+		util.WriteError(w, http.StatusForbidden, "RelayAI Key requires a bound user account")
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		util.WriteJSON(w, http.StatusOK, a.relayKeys.Status(ownerID))
+	case http.MethodPost:
+		body, err := readJSONMap(r)
+		if err != nil {
+			util.WriteError(w, http.StatusBadRequest, "invalid json body")
+			return
+		}
+		status, err := a.relayKeys.Save(ownerID, util.Clean(firstNonEmpty(util.Clean(body["api_key"]), util.Clean(body["key"]))))
+		if err != nil {
+			util.WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		util.WriteJSON(w, http.StatusOK, status)
+	case http.MethodDelete:
+		status, err := a.relayKeys.Delete(ownerID)
+		if err != nil {
+			util.WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		util.WriteJSON(w, http.StatusOK, status)
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
+}
+
 func (a *App) handleProfileAPIKey(w http.ResponseWriter, r *http.Request) {
 	identity, ok := a.requireIdentity(w, r, "")
 	if !ok {
@@ -1506,9 +1543,8 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == "/api/creation-tasks/image-generations" && r.Method == http.MethodPost {
 		body, _ := readJSONMap(r)
-		a.attachRelayAPIKey(r, body)
-		if util.Clean(body["api_key"]) == "" {
-			util.WriteError(w, http.StatusBadRequest, "RelayAI API key is required")
+		if _, err := a.relayAPIKeyForIdentity(identity); err != nil {
+			writeCreationTaskSubmitError(w, err)
 			return
 		}
 		model := a.applyDefaultImageModel(body)
@@ -1522,14 +1558,13 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == "/api/creation-tasks/chat-completions" && r.Method == http.MethodPost {
 		body, _ := readJSONMap(r)
-		a.attachRelayAPIKey(r, body)
-		if util.Clean(body["api_key"]) == "" {
-			util.WriteError(w, http.StatusBadRequest, "RelayAI API key is required")
+		if _, err := a.relayAPIKeyForIdentity(identity); err != nil {
+			writeCreationTaskSubmitError(w, err)
 			return
 		}
 		billable := protocol.IsImageChatRequest(body)
 		model := a.applyDefaultChatCompletionModel(body)
-		task, err := a.tasks.SubmitChatWithAPIKey(r.Context(), identity, util.Clean(body["client_task_id"]), util.Clean(body["prompt"]), model, body["messages"], billable, util.Clean(body["api_key"]), util.ToInt(body["n"], 1))
+		task, err := a.tasks.SubmitChat(r.Context(), identity, util.Clean(body["client_task_id"]), util.Clean(body["prompt"]), model, body["messages"], billable, util.ToInt(body["n"], 1))
 		if err != nil {
 			writeCreationTaskSubmitError(w, err)
 			return
@@ -1543,9 +1578,8 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		a.attachRelayAPIKey(r, body)
-		if util.Clean(body["api_key"]) == "" {
-			util.WriteError(w, http.StatusBadRequest, "RelayAI API key is required")
+		if _, err := a.relayAPIKeyForIdentity(identity); err != nil {
+			writeCreationTaskSubmitError(w, err)
 			return
 		}
 		model := a.applyDefaultImageModel(body)
@@ -1574,9 +1608,6 @@ func imageTaskRequestMetadata(body map[string]any) map[string]any {
 		if util.ToBool(body["share_reference_images"]) {
 			metadata["share_reference_images"] = true
 		}
-	}
-	if apiKey := util.Clean(body["api_key"]); apiKey != "" {
-		metadata["api_key"] = apiKey
 	}
 	return metadata
 }

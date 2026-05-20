@@ -345,8 +345,90 @@ func TestCreationTaskRequiresRelayAIAPIKey(t *testing.T) {
 	if err := json.Unmarshal(res.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("error json: %v", err)
 	}
-	if detail := util.StringMap(payload["detail"]); detail["error"] != "RelayAI API key is required" {
+	if detail := util.StringMap(payload["detail"]); detail["error"] != "请先到个人中心配置 RelayAI Key" {
 		t.Fatalf("error body = %#v", payload)
+	}
+}
+
+func TestProfileRelayKeyIsStoredPerUserAndUsedForRelay(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+
+	user, token, err := app.auth.RegisterPasswordUser("alice", "Password123", "Alice")
+	if err != nil {
+		t.Fatalf("RegisterPasswordUser() error = %v", err)
+	}
+	if user.ID == "" || token == "" {
+		t.Fatalf("registered identity=%#v token=%q", user, token)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/profile/relay-key", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	res := httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("initial relay key status = %d body = %s", res.Code, res.Body.String())
+	}
+	var status map[string]any
+	if err := json.Unmarshal(res.Body.Bytes(), &status); err != nil {
+		t.Fatalf("initial relay key json: %v", err)
+	}
+	if status["has_key"] != false {
+		t.Fatalf("initial relay key status = %#v", status)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/profile/relay-key", strings.NewReader(`{"api_key":"sk-alice-relay"}`))
+	req.Header.Set("Authorization", "Bearer "+token)
+	res = httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("save relay key status = %d body = %s", res.Code, res.Body.String())
+	}
+	if err := json.Unmarshal(res.Body.Bytes(), &status); err != nil {
+		t.Fatalf("save relay key json: %v", err)
+	}
+	if status["has_key"] != true || status["key_preview"] == "sk-alice-relay" {
+		t.Fatalf("saved relay key status = %#v", status)
+	}
+
+	var gotAuth string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/models" {
+			t.Fatalf("unexpected upstream path: %s", r.URL.Path)
+		}
+		gotAuth = r.Header.Get("Authorization")
+		util.WriteJSON(w, http.StatusOK, map[string]any{
+			"object": "list",
+			"data": []map[string]any{{
+				"id": "codex-gpt-image-2",
+			}},
+		})
+	}))
+	defer upstream.Close()
+	if _, err := app.config.Update(map[string]any{"relay_base_url": upstream.URL}); err != nil {
+		t.Fatalf("update relay base URL error = %v", err)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	res = httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("relay models status = %d body = %s", res.Code, res.Body.String())
+	}
+	if gotAuth != "Bearer sk-alice-relay" {
+		t.Fatalf("upstream Authorization = %q", gotAuth)
+	}
+
+	req = httptest.NewRequest(http.MethodDelete, "/api/profile/relay-key", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	res = httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("delete relay key status = %d body = %s", res.Code, res.Body.String())
+	}
+	if key, ok := app.relayKeys.Get(user.ID); ok || key != "" {
+		t.Fatalf("relay key after delete = %q %v", key, ok)
 	}
 }
 

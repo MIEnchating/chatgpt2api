@@ -509,6 +509,12 @@ export type LoginResponse = {
   menus?: PermissionMenu[];
 };
 
+export type ProfileRelayKeyStatus = {
+  has_key: boolean;
+  key_preview: string;
+  updated_at?: string;
+};
+
 export type AuthProviders = {
   registration?: {
     enabled: boolean;
@@ -763,6 +769,23 @@ export async function fetchProfile() {
   return httpRequest<LoginResponse>("/api/profile");
 }
 
+export async function fetchProfileRelayKey() {
+  return httpRequest<ProfileRelayKeyStatus>("/api/profile/relay-key");
+}
+
+export async function updateProfileRelayKey(apiKey: string) {
+  return httpRequest<ProfileRelayKeyStatus>("/api/profile/relay-key", {
+    method: "POST",
+    body: { api_key: apiKey },
+  });
+}
+
+export async function clearProfileRelayKey() {
+  return httpRequest<ProfileRelayKeyStatus>("/api/profile/relay-key", {
+    method: "DELETE",
+  });
+}
+
 export async function logout() {
   return httpRequest<{ ok: boolean }>("/auth/logout", {
     method: "POST",
@@ -862,13 +885,12 @@ export async function updateAccount(
   });
 }
 
-export async function generateImage(prompt: string, model?: ImageModel, size?: string, quality?: ImageQuality, apiKey?: string) {
+export async function generateImage(prompt: string, model?: ImageModel, size?: string, quality?: ImageQuality) {
   return httpRequest<ImageResponse>(
     "/v1/images/generations",
     {
       method: "POST",
       body: {
-        api_key: apiKey,
         prompt,
         ...(model ? { model } : {}),
         ...(size ? { size } : {}),
@@ -880,7 +902,7 @@ export async function generateImage(prompt: string, model?: ImageModel, size?: s
   );
 }
 
-export async function editImage(files: File | File[], prompt: string, model?: ImageModel, size?: string, quality?: ImageQuality, apiKey?: string) {
+export async function editImage(files: File | File[], prompt: string, model?: ImageModel, size?: string, quality?: ImageQuality) {
   const formData = new FormData();
   const uploadFiles = Array.isArray(files) ? files : [files];
 
@@ -896,9 +918,6 @@ export async function editImage(files: File | File[], prompt: string, model?: Im
   }
   if (quality) {
     formData.append("quality", quality);
-  }
-  if (apiKey) {
-    formData.append("api_key", apiKey);
   }
   formData.append("n", "1");
 
@@ -927,13 +946,11 @@ export async function createImageGenerationTask(
     background?: string;
     moderation?: string;
   },
-  apiKey?: string,
 ) {
   return httpRequest<CreationTask>("/api/creation-tasks/image-generations", {
     method: "POST",
     body: {
       client_task_id: clientTaskId,
-      api_key: apiKey,
       prompt,
       ...(model ? { model } : {}),
       ...(size ? { size } : {}),
@@ -968,7 +985,6 @@ export async function createImageEditTask(
     moderation?: string;
     inputImageMask?: string;
   },
-  apiKey?: string,
 ) {
   const formData = new FormData();
   const uploadFiles = Array.isArray(files) ? files : [files];
@@ -1002,9 +1018,6 @@ export async function createImageEditTask(
   if (toolOptions?.moderation) {
     formData.append("moderation", toolOptions.moderation);
   }
-  if (apiKey) {
-    formData.append("api_key", apiKey);
-  }
   if (toolOptions?.inputImageMask) {
     formData.append("input_image_mask", toolOptions.inputImageMask);
   }
@@ -1026,11 +1039,9 @@ export async function createChatCompletionTask(
   model: ImageModel,
   messages: CreationTaskMessage[],
   referenceImages?: { name: string; dataUrl: string }[],
-  apiKey?: string,
 ) {
   const body: Record<string, unknown> = {
     client_task_id: clientTaskId,
-    api_key: apiKey,
     prompt,
     model,
     messages,
@@ -1061,12 +1072,10 @@ export async function streamChatCompletion(
   messages: CreationTaskMessage[],
   prompt: string,
   referenceImages: { name: string; dataUrl: string }[] | undefined,
-  apiKey: string | undefined,
   onText: (text: string) => void,
   signal?: AbortSignal,
 ) {
   const body: Record<string, unknown> = {
-    api_key: apiKey,
     model,
     messages,
     stream: true,
@@ -1750,10 +1759,8 @@ export type ProxyTestResult = {
   error: string | null;
 };
 
-export async function fetchRelayModels(apiKey?: string, signal?: AbortSignal) {
-  const trimmed = apiKey?.trim() || "";
+export async function fetchRelayModels(signal?: AbortSignal) {
   return httpRequest<{ object?: string; data?: RelayModelListItem[] | null }>("/v1/models", {
-    headers: trimmed ? { "X-RelayAI-Key": trimmed } : undefined,
     signal,
   });
 }

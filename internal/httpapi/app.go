@@ -52,6 +52,7 @@ type App struct {
 	tasks      *service.ImageTaskService
 	announce   *service.AnnouncementService
 	prompts    *service.PromptFavoriteService
+	relayKeys  *service.RelayAPIKeyService
 	cpa        *service.CPAConfig
 	cpaImport  *service.CPAImportService
 	sub2       *service.Sub2APIConfig
@@ -94,19 +95,25 @@ func NewApp() (*App, error) {
 	}
 	documentStore, _ := storageBackend.(storage.JSONDocumentBackend)
 	engine := &protocol.Engine{Accounts: accounts, Config: cfg, Storage: documentStore, Proxy: proxy, Logger: logger}
-	app := &App{config: cfg, auth: auth, accounts: accounts, billing: billing, logs: logs, logger: logger, proxy: proxy, engine: engine, images: service.NewImageService(cfg, storageBackend), announce: service.NewAnnouncementService(storageBackend), prompts: service.NewPromptFavoriteService(storageBackend), cpa: service.NewCPAConfig(storageBackend), sub2: service.NewSub2APIConfig(storageBackend), cancel: cancel}
+	app := &App{config: cfg, auth: auth, accounts: accounts, billing: billing, logs: logs, logger: logger, proxy: proxy, engine: engine, images: service.NewImageService(cfg, storageBackend), announce: service.NewAnnouncementService(storageBackend), prompts: service.NewPromptFavoriteService(storageBackend), relayKeys: service.NewRelayAPIKeyService(storageBackend), cpa: service.NewCPAConfig(storageBackend), sub2: service.NewSub2APIConfig(storageBackend), cancel: cancel}
 	app.cpaImport = service.NewCPAImportService(app.cpa, accounts, proxy)
 	app.sub2Import = service.NewSub2APIService(app.sub2, accounts)
 	app.register = service.NewRegisterService(accounts, storageBackend)
 	app.tasks = service.NewStoredImageTaskService(storageBackend,
 		func(ctx context.Context, identity service.Identity, payload map[string]any) (map[string]any, error) {
 			return app.runLoggedImageTask(ctx, identity, payload, "/api/creation-tasks/image-generations", "文生图", func(ctx context.Context, payload map[string]any) (map[string]any, error) {
+				if err := app.attachRelayAPIKeyForIdentity(identity, payload); err != nil {
+					return nil, err
+				}
 				result, stream, err := app.relayImageGenerations(ctx, payload)
 				return relayImageTaskResult(payload, result, stream, err)
 			})
 		},
 		func(ctx context.Context, identity service.Identity, payload map[string]any) (map[string]any, error) {
 			return app.runLoggedImageTask(ctx, identity, payload, "/api/creation-tasks/image-edits", "图生图", func(ctx context.Context, payload map[string]any) (map[string]any, error) {
+				if err := app.attachRelayAPIKeyForIdentity(identity, payload); err != nil {
+					return nil, err
+				}
 				images, _ := payload["images"].([]protocol.UploadedImage)
 				result, stream, err := app.relayImageEdits(ctx, payload, images)
 				return relayImageTaskResult(payload, result, stream, err)
@@ -280,7 +287,11 @@ func (a *App) handleModels(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	result, err := a.relayListModels(r.Context(), relayAPIKeyFromRequest(r, nil))
+	relayAPIKey := ""
+	if a.relayKeys != nil {
+		relayAPIKey, _ = a.relayKeys.Get(identityScope(identity))
+	}
+	result, err := a.relayListModels(r.Context(), relayAPIKey)
 	a.writeProtocol(w, r, result, nil, err, "openai", "/v1/models", "models", identity, "模型列表", service.ImageVisibilityPrivate, service.BillingReference{})
 }
 
@@ -294,7 +305,6 @@ func (a *App) handleImageGenerations(w http.ResponseWriter, r *http.Request) {
 		util.WriteError(w, http.StatusBadRequest, "invalid json body")
 		return
 	}
-	a.attachRelayAPIKey(r, body)
 	body["owner_id"] = identityScope(identity)
 	body["owner_name"] = identityDisplayName(identity)
 	body["base_url"] = a.relayBaseURL()
@@ -305,6 +315,10 @@ func (a *App) handleImageGenerations(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	model := a.applyDefaultImageModel(body)
+	if err := a.attachRelayAPIKeyForIdentity(identity, body); err != nil {
+		a.writeProtocol(w, r, nil, nil, err, "openai", "/v1/images/generations", model, identity, "文生图", visibility, service.BillingReference{})
+		return
+	}
 	if err := a.checkProtocolBilling(identity, protocolBillableUnits("/v1/images/generations", body)); err != nil {
 		a.writeProtocol(w, r, nil, nil, err, "openai", "/v1/images/generations", model, identity, "文生图", visibility, service.BillingReference{})
 		return
@@ -325,7 +339,6 @@ func (a *App) handleImageEdits(w http.ResponseWriter, r *http.Request) {
 		util.WriteError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	a.attachRelayAPIKey(r, body)
 	if n := util.ToInt(body["n"], 1); n < 1 || n > 4 {
 		util.WriteError(w, http.StatusBadRequest, "n must be between 1 and 4")
 		return
@@ -345,6 +358,10 @@ func (a *App) handleImageEdits(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	model := a.applyDefaultImageModel(body)
+	if err := a.attachRelayAPIKeyForIdentity(identity, body); err != nil {
+		a.writeProtocol(w, r, nil, nil, err, "openai", "/v1/images/edits", model, identity, "图生图", visibility, service.BillingReference{})
+		return
+	}
 	if err := a.checkProtocolBilling(identity, protocolBillableUnits("/v1/images/edits", body)); err != nil {
 		a.writeProtocol(w, r, nil, nil, err, "openai", "/v1/images/edits", model, identity, "图生图", visibility, service.BillingReference{})
 		return
@@ -365,11 +382,14 @@ func (a *App) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		util.WriteError(w, http.StatusBadRequest, "invalid json body")
 		return
 	}
-	a.attachRelayAPIKey(r, body)
 	body["owner_id"] = identityScope(identity)
 	body["owner_name"] = identityDisplayName(identity)
 	a.attachCreationTaskLimiter(body, identity)
 	model := a.applyDefaultChatCompletionModel(body)
+	if err := a.attachRelayAPIKeyForIdentity(identity, body); err != nil {
+		a.writeProtocol(w, r, nil, nil, err, "openai", "/v1/chat/completions", model, identity, "文本生成", service.ImageVisibilityPrivate, service.BillingReference{})
+		return
+	}
 	if err := a.checkProtocolBilling(identity, protocolBillableUnits("/v1/chat/completions", body)); err != nil {
 		a.writeProtocol(w, r, nil, nil, err, "openai", "/v1/chat/completions", model, identity, "文本生成", service.ImageVisibilityPrivate, service.BillingReference{})
 		return
@@ -390,11 +410,14 @@ func (a *App) handleResponses(w http.ResponseWriter, r *http.Request) {
 		util.WriteError(w, http.StatusBadRequest, "invalid json body")
 		return
 	}
-	a.attachRelayAPIKey(r, body)
 	body["owner_id"] = identityScope(identity)
 	body["owner_name"] = identityDisplayName(identity)
 	a.attachCreationTaskLimiter(body, identity)
 	model := a.applyDefaultResponsesModel(body)
+	if err := a.attachRelayAPIKeyForIdentity(identity, body); err != nil {
+		a.writeProtocol(w, r, nil, nil, err, "openai", "/v1/responses", model, identity, "Responses", service.ImageVisibilityPrivate, service.BillingReference{})
+		return
+	}
 	if err := a.checkProtocolBilling(identity, protocolBillableUnits("/v1/responses", body)); err != nil {
 		a.writeProtocol(w, r, nil, nil, err, "openai", "/v1/responses", model, identity, "Responses", service.ImageVisibilityPrivate, service.BillingReference{})
 		return
@@ -419,8 +442,11 @@ func (a *App) handleMessages(w http.ResponseWriter, r *http.Request) {
 		util.WriteError(w, http.StatusBadRequest, "invalid json body")
 		return
 	}
-	a.attachRelayAPIKey(r, body)
 	model := a.applyDefaultChatModel(body)
+	if err := a.attachRelayAPIKeyForIdentity(identity, body); err != nil {
+		a.writeProtocol(w, r, nil, nil, err, "anthropic", "/v1/messages", model, identity, "Messages", service.ImageVisibilityPrivate, service.BillingReference{})
+		return
+	}
 	result, stream, err := a.relayMessages(r.Context(), body)
 	a.writeProtocol(w, r, result, stream, err, "anthropic", "/v1/messages", model, identity, "Messages", service.ImageVisibilityPrivate, service.BillingReference{})
 }
@@ -1427,6 +1453,8 @@ func isPermissionCheckSkipped(path string) bool {
 		return true
 	case "/api/profile/password":
 		return true
+	case "/api/profile/relay-key":
+		return true
 	case "/api/profile/api-key":
 		return true
 	case "/api/profile/prompt-favorites":
@@ -2135,6 +2163,10 @@ func (a *App) runLoggedChatTask(ctx context.Context, identity service.Identity, 
 	payload["owner_name"] = identityDisplayName(identity)
 	payload["stream"] = true
 	model := firstNonEmpty(util.Clean(payload["model"]), a.defaultChatModel())
+	if err := a.attachRelayAPIKeyForIdentity(identity, payload); err != nil {
+		a.logCall(identity, "文本生成", http.MethodPost, "/api/creation-tasks/chat-completions", model, start, "failed", protocolErrorHTTPStatus(err), err.Error(), nil, requestCapture)
+		return nil, err
+	}
 	result, stream, err := a.relayChatCompletions(ctx, payload)
 	if stream != nil {
 		result, err = collectRelayChatTaskStream(payload, stream)

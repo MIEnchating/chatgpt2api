@@ -15,30 +15,31 @@ import (
 	"time"
 
 	"chatgpt2api/internal/protocol"
+	"chatgpt2api/internal/service"
 	"chatgpt2api/internal/util"
 )
 
-func (a *App) attachRelayAPIKey(r *http.Request, body map[string]any) {
+func (a *App) attachRelayAPIKeyForIdentity(identity service.Identity, body map[string]any) error {
 	if body == nil {
-		return
+		return nil
 	}
-	if key := relayAPIKeyFromRequest(r, body); key != "" {
-		body["api_key"] = key
+	key, err := a.relayAPIKeyForIdentity(identity)
+	if err != nil {
+		return err
 	}
+	body["api_key"] = key
+	return nil
 }
 
-func relayAPIKeyFromRequest(r *http.Request, body map[string]any) string {
-	for _, key := range []string{"api_key", "relay_api_key", "relayai_api_key", "upstream_api_key"} {
-		if value := util.Clean(body[key]); value != "" {
-			return value
-		}
+func (a *App) relayAPIKeyForIdentity(identity service.Identity) (string, error) {
+	if a == nil || a.relayKeys == nil {
+		return "", protocol.HTTPError{Status: http.StatusBadRequest, Message: "请先到个人中心配置 RelayAI Key"}
 	}
-	for _, header := range []string{"X-RelayAI-Key", "X-Relay-Key", "X-Upstream-API-Key"} {
-		if value := strings.TrimSpace(r.Header.Get(header)); value != "" {
-			return value
-		}
+	key, ok := a.relayKeys.Get(identityScope(identity))
+	if !ok {
+		return "", protocol.HTTPError{Status: http.StatusBadRequest, Message: "请先到个人中心配置 RelayAI Key"}
 	}
-	return ""
+	return key, nil
 }
 
 func (a *App) relayBaseURL() string {

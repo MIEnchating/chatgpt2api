@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Copy, Eye, EyeOff, KeyRound, LockKeyhole, LoaderCircle, Save, Trash2, UserCircle2, UserPen } from "lucide-react";
+import { Eye, EyeOff, KeyRound, LockKeyhole, LoaderCircle, Save, Trash2, UserCircle2, UserPen } from "lucide-react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/page-header";
@@ -10,8 +10,15 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { changeProfilePassword, updateProfileName } from "@/lib/api";
-import { getStoredRelayApiKey, RELAY_PUBLIC_BASE_URL, saveStoredRelayApiKey } from "@/lib/relay-key";
+import {
+  changeProfilePassword,
+  clearProfileRelayKey,
+  fetchProfileRelayKey,
+  updateProfileName,
+  updateProfileRelayKey,
+  type ProfileRelayKeyStatus,
+} from "@/lib/api";
+import { clearStoredRelayApiKey, notifyRelayApiKeyChanged, RELAY_PUBLIC_BASE_URL } from "@/lib/relay-key";
 import { authSessionFromLoginResponse, setVerifiedAuthSession } from "@/lib/session";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import type { StoredAuthSession } from "@/store/auth";
@@ -47,17 +54,6 @@ function creationRpmLimitLabel(session: StoredAuthSession) {
   return `${session.creationRpmLimit} 次/分`;
 }
 
-function maskRelayKey(value: string) {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return "未配置";
-  }
-  if (trimmed.length <= 10) {
-    return `${trimmed.slice(0, 3)}••••`;
-  }
-  return `${trimmed.slice(0, 7)}••••••••${trimmed.slice(-4)}`;
-}
-
 type InfoRowProps = {
   label: string;
   value: string;
@@ -83,24 +79,44 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [relayApiKey, setRelayApiKey] = useState(() => getStoredRelayApiKey(session));
-  const [savedRelayApiKey, setSavedRelayApiKey] = useState(() => getStoredRelayApiKey(session));
+  const [relayApiKey, setRelayApiKey] = useState("");
+  const [relayKeyStatus, setRelayKeyStatus] = useState<ProfileRelayKeyStatus>({
+    has_key: false,
+    key_preview: "",
+  });
   const [isRelayKeyVisible, setIsRelayKeyVisible] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [isSavingRelayKey, setIsSavingRelayKey] = useState(false);
 
   const isProfileNameDirty = profileName.trim() !== (currentSession.name || "");
-  const isRelayKeyDirty = relayApiKey.trim() !== savedRelayApiKey.trim();
-  const relayKeyConfigured = savedRelayApiKey.trim() !== "";
+  const isRelayKeyDirty = relayApiKey.trim() !== "";
+  const relayKeyConfigured = relayKeyStatus.has_key;
   const roleLabel = sessionRoleLabel(currentSession);
 
   useEffect(() => {
     setCurrentSession(session);
     setProfileName(session.name || "");
-    const storedRelayKey = getStoredRelayApiKey(session);
-    setRelayApiKey(storedRelayKey);
-    setSavedRelayApiKey(storedRelayKey);
+  }, [session]);
+
+  useEffect(() => {
+    let ignore = false;
+    clearStoredRelayApiKey();
+    void fetchProfileRelayKey()
+      .then((status) => {
+        if (!ignore) {
+          setRelayKeyStatus(status);
+          setRelayApiKey("");
+        }
+      })
+      .catch((error) => {
+        if (!ignore) {
+          toast.error(error instanceof Error ? error.message : "读取 RelayAI Key 状态失败");
+        }
+      });
+    return () => {
+      ignore = true;
+    };
   }, [session]);
 
   const handleSaveProfile = async () => {
@@ -162,29 +178,33 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
     }
     setIsSavingRelayKey(true);
     try {
-      saveStoredRelayApiKey(trimmed, currentSession);
-      setRelayApiKey(trimmed);
-      setSavedRelayApiKey(trimmed);
+      const status = await updateProfileRelayKey(trimmed);
+      clearStoredRelayApiKey();
+      setRelayKeyStatus(status);
+      setRelayApiKey("");
       toast.success("RelayAI Key 已保存");
+      notifyRelayApiKeyChanged();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "保存 RelayAI Key 失败");
     } finally {
       setIsSavingRelayKey(false);
     }
   };
 
-  const handleClearRelayKey = () => {
-    saveStoredRelayApiKey("", currentSession);
-    setRelayApiKey("");
-    setSavedRelayApiKey("");
-    setIsRelayKeyVisible(false);
-    toast.success("RelayAI Key 已清除");
-  };
-
-  const handleCopy = async (value: string) => {
+  const handleClearRelayKey = async () => {
+    setIsSavingRelayKey(true);
     try {
-      await navigator.clipboard.writeText(value);
-      toast.success("已复制到剪贴板");
-    } catch {
-      toast.error("复制失败，请手动复制");
+      const status = await clearProfileRelayKey();
+      clearStoredRelayApiKey();
+      setRelayKeyStatus(status);
+      setRelayApiKey("");
+      setIsRelayKeyVisible(false);
+      toast.success("RelayAI Key 已清除");
+      notifyRelayApiKeyChanged();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "清除 RelayAI Key 失败");
+    } finally {
+      setIsSavingRelayKey(false);
     }
   };
 
@@ -392,7 +412,7 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
                     </Button>
                   </div>
                   <FieldDescription>
-                    Key 按当前登录用户保存在浏览器；页面显示固定公网地址，实际请求由服务端转发到管理员配置的映射地址。
+                    Key 按当前登录用户保存在服务端；页面显示固定公网地址，实际请求由服务端转发到管理员配置的映射地址。
                   </FieldDescription>
                 </Field>
               </FieldGroup>
@@ -400,31 +420,19 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
               <div className="flex min-w-0 flex-col gap-2 rounded-xl border border-border bg-muted/30 p-3">
                 <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
                   <span>已保存的 Key</span>
-                  <span>{relayKeyConfigured ? "当前浏览器可用" : "尚未保存"}</span>
+                  <span>{relayKeyConfigured ? "服务端已保存" : "尚未保存"}</span>
                 </div>
                 <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-center">
                   <code className="min-w-0 flex-1 truncate rounded-lg bg-background px-3 py-2 font-mono text-sm text-foreground">
-                    {isRelayKeyVisible ? savedRelayApiKey || "未配置" : maskRelayKey(savedRelayApiKey)}
+                    {relayKeyStatus.key_preview || "未配置"}
                   </code>
                   <div className="flex shrink-0 items-center gap-2">
                     <Button
                       type="button"
                       variant="outline"
-                      size="icon"
-                      className="size-9 rounded-lg"
-                      onClick={() => savedRelayApiKey ? void handleCopy(savedRelayApiKey) : null}
-                      disabled={!savedRelayApiKey}
-                      aria-label="复制 Key"
-                      title="复制"
-                    >
-                      <Copy className="size-4" />
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="outline"
                       className="h-9 rounded-lg border-rose-200 px-3 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
-                      onClick={handleClearRelayKey}
-                      disabled={!savedRelayApiKey}
+                      onClick={() => void handleClearRelayKey()}
+                      disabled={!relayKeyConfigured || isSavingRelayKey}
                     >
                       <Trash2 className="size-4" />
                       清除
