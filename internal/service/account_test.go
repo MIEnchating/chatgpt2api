@@ -718,6 +718,41 @@ func TestGetAvailableAccessTokenUsesCachedAccountOnConnectionRefreshFailure(t *t
 	}
 }
 
+func TestGetTextAccessTokenEnforcesFreeCooldown(t *testing.T) {
+	accounts := newTestAccountService(t)
+	accounts.AddAccounts([]string{"free-token"})
+	accounts.UpdateAccount("free-token", map[string]any{"status": "正常", "type": "Free"})
+
+	for i := 0; i < 10; i++ {
+		if token := accounts.GetTextAccessToken(); token != "free-token" {
+			t.Fatalf("GetTextAccessToken() call %d = %q, want free-token", i+1, token)
+		}
+	}
+	if token := accounts.GetTextAccessToken(); token != "" {
+		t.Fatalf("GetTextAccessToken() after free cooldown exhaustion = %q, want empty token", token)
+	}
+	if token, ok := accounts.GetTextAccessTokenWithRetry(nil); ok || token != "" {
+		t.Fatalf("GetTextAccessTokenWithRetry() after free cooldown exhaustion = %q %v, want no token", token, ok)
+	}
+
+	accounts.textCooldownUntil = time.Now().Add(-time.Second)
+	if token := accounts.GetTextAccessToken(); token != "free-token" {
+		t.Fatalf("GetTextAccessToken() after cooldown expiry = %q, want free-token", token)
+	}
+}
+
+func TestGetTextAccessTokenKeepsPaidAccountsAvailableAfterSoftLimit(t *testing.T) {
+	accounts := newTestAccountService(t)
+	accounts.AddAccounts([]string{"plus-token"})
+	accounts.UpdateAccount("plus-token", map[string]any{"status": "正常", "type": "Plus"})
+
+	for i := 0; i < 12; i++ {
+		if token := accounts.GetTextAccessToken(); token != "plus-token" {
+			t.Fatalf("GetTextAccessToken() call %d = %q, want plus-token", i+1, token)
+		}
+	}
+}
+
 func TestReserveNextCandidateTokenCanFilterPaidAccounts(t *testing.T) {
 	accounts := newTestAccountService(t)
 	accounts.AddAccounts([]string{"free-token", "plus-token"})

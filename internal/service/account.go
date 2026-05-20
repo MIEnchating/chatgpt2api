@@ -510,30 +510,10 @@ func (s *AccountService) GetTextAccessTokenWithRetry(exhaustedTokens map[string]
 	nonFree := s.filterNonFreeLocked()
 	free := s.filterFreeLocked()
 
-	selectFrom := func(pool []map[string]any) string {
-		var bestToken string
-		bestCount := int(^uint(0) >> 1)
-		for _, item := range pool {
-			token := util.Clean(item["access_token"])
-			if _, exhausted := exhaustedTokens[token]; exhausted {
-				continue
-			}
-			count := s.textRequestCount[token]
-			if count < bestCount {
-				bestCount = count
-				bestToken = token
-			}
-		}
-		if bestToken != "" {
-			s.textRequestCount[bestToken] = bestCount + 1
-		}
-		return bestToken
-	}
-
-	if token := selectFrom(nonFree); token != "" {
+	if token := s.selectTextTokenFromPoolLocked(nonFree, false, exhaustedTokens); token != "" {
 		return token, true
 	}
-	if token := selectFrom(free); token != "" {
+	if token := s.selectTextTokenFromPoolLocked(free, true, exhaustedTokens); token != "" {
 		return token, true
 	}
 	return "", false
@@ -602,14 +582,38 @@ func (s *AccountService) filterFreeLocked() []map[string]any {
 }
 
 func (s *AccountService) selectFromTextPoolLocked(pool []map[string]any, isFree bool) string {
+	return s.selectTextTokenFromPoolLocked(pool, isFree, nil)
+}
+
+func (s *AccountService) selectTextTokenFromPoolLocked(pool []map[string]any, isFree bool, exhaustedTokens map[string]struct{}) string {
 	const maxRequestsPerAccount = 10
+
+	if len(pool) == 0 {
+		return ""
+	}
+	if isFree {
+		now := time.Now()
+		if s.textCooldownUntil.IsZero() || now.After(s.textCooldownUntil) {
+			s.resetTextCountsLocked(pool)
+			s.textCooldownUntil = now.Add(5 * time.Hour)
+		}
+	}
 
 	var bestToken string
 	bestCount := int(^uint(0) >> 1)
 	allExhausted := true
 	for _, item := range pool {
 		token := util.Clean(item["access_token"])
+		if token == "" {
+			continue
+		}
+		if _, exhausted := exhaustedTokens[token]; exhausted {
+			continue
+		}
 		count := s.textRequestCount[token]
+		if isFree && count >= maxRequestsPerAccount {
+			continue
+		}
 		if count < bestCount {
 			bestCount = count
 			bestToken = token
@@ -619,15 +623,11 @@ func (s *AccountService) selectFromTextPoolLocked(pool []map[string]any, isFree 
 		}
 	}
 
+	if bestToken == "" {
+		return ""
+	}
 	if allExhausted {
-		if isFree {
-			now := time.Now()
-			if now.After(s.textCooldownUntil) {
-				s.resetTextCountsLocked(pool)
-				s.textCooldownUntil = now.Add(5 * time.Hour)
-				bestCount = 0
-			}
-		} else if len(pool) > 1 {
+		if !isFree && len(pool) > 1 {
 			s.resetTextCountsLocked(pool)
 			bestCount = 0
 		}
