@@ -7,8 +7,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"mime/multipart"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -308,8 +310,138 @@ func relayPayloadForPath(pathValue string, payload map[string]any) map[string]an
 		delete(out, "messages")
 		delete(out, "stream")
 		delete(out, "partial_images")
+		if normalizedSize, ok := normalizeRelayImageSize(util.Clean(out["size"])); ok {
+			if normalizedSize == "" {
+				delete(out, "size")
+			} else {
+				out["size"] = normalizedSize
+			}
+		}
 	}
 	return out
+}
+
+func normalizeRelayImageSize(size string) (string, bool) {
+	normalized := strings.ToLower(strings.TrimSpace(size))
+	normalized = strings.ReplaceAll(normalized, " ", "")
+	normalized = strings.ReplaceAll(normalized, "×", "x")
+	if normalized == "" || normalized == "auto" {
+		return "", true
+	}
+	switch normalized {
+	case "1080p":
+		return normalizeRelayImageDimensions(1080, 1080), true
+	case "2k":
+		return normalizeRelayImageDimensions(2048, 2048), true
+	case "4k":
+		return normalizeRelayImageDimensions(3840, 3840), true
+	}
+	if width, height, ok := parseRelayImageDimensions(normalized); ok {
+		if width < 128 && height < 128 {
+			return relayImageSizeFromRatio(float64(width), float64(height)), true
+		}
+		return normalizeRelayImageDimensions(width, height), true
+	}
+	if ratioWidth, ratioHeight, ok := parseRelayImageRatio(normalized); ok {
+		return relayImageSizeFromRatio(ratioWidth, ratioHeight), true
+	}
+	return "", false
+}
+
+func parseRelayImageDimensions(value string) (int, int, bool) {
+	parts := strings.Split(value, "x")
+	if len(parts) != 2 {
+		return 0, 0, false
+	}
+	width, err := strconv.Atoi(parts[0])
+	if err != nil || width <= 0 {
+		return 0, 0, false
+	}
+	height, err := strconv.Atoi(parts[1])
+	if err != nil || height <= 0 {
+		return 0, 0, false
+	}
+	return width, height, true
+}
+
+func parseRelayImageRatio(value string) (float64, float64, bool) {
+	parts := strings.Split(value, ":")
+	if len(parts) != 2 {
+		return 0, 0, false
+	}
+	width, err := strconv.ParseFloat(parts[0], 64)
+	if err != nil || width <= 0 {
+		return 0, 0, false
+	}
+	height, err := strconv.ParseFloat(parts[1], 64)
+	if err != nil || height <= 0 {
+		return 0, 0, false
+	}
+	return width, height, true
+}
+
+func relayImageSizeFromRatio(ratioWidth, ratioHeight float64) string {
+	if ratioWidth <= 0 || ratioHeight <= 0 {
+		return ""
+	}
+	if ratioWidth == ratioHeight {
+		return normalizeRelayImageDimensions(1024, 1024)
+	}
+	if ratioWidth > ratioHeight {
+		return normalizeRelayImageDimensions(1536, int(float64(1536)*ratioHeight/ratioWidth+0.5))
+	}
+	return normalizeRelayImageDimensions(int(float64(1536)*ratioWidth/ratioHeight+0.5), 1536)
+}
+
+func normalizeRelayImageDimensions(width, height int) string {
+	const (
+		multiple  = 16
+		maxEdge   = 3840
+		maxRatio  = 3
+		minPixels = 655360
+		maxPixels = 8294400
+	)
+	normalizedWidth := roundToRelayImageMultiple(width, multiple)
+	normalizedHeight := roundToRelayImageMultiple(height, multiple)
+
+	scaleToFit := func(scale float64) {
+		normalizedWidth = floorToRelayImageMultiple(float64(normalizedWidth)*scale, multiple)
+		normalizedHeight = floorToRelayImageMultiple(float64(normalizedHeight)*scale, multiple)
+	}
+	scaleToFill := func(scale float64) {
+		normalizedWidth = ceilToRelayImageMultiple(float64(normalizedWidth)*scale, multiple)
+		normalizedHeight = ceilToRelayImageMultiple(float64(normalizedHeight)*scale, multiple)
+	}
+
+	for range 4 {
+		if max(normalizedWidth, normalizedHeight) > maxEdge {
+			scaleToFit(float64(maxEdge) / float64(max(normalizedWidth, normalizedHeight)))
+		}
+		if normalizedWidth > normalizedHeight*maxRatio {
+			normalizedWidth = floorToRelayImageMultiple(float64(normalizedHeight*maxRatio), multiple)
+		} else if normalizedHeight > normalizedWidth*maxRatio {
+			normalizedHeight = floorToRelayImageMultiple(float64(normalizedWidth*maxRatio), multiple)
+		}
+		pixels := normalizedWidth * normalizedHeight
+		if pixels > maxPixels {
+			scaleToFit(math.Sqrt(float64(maxPixels) / float64(pixels)))
+		} else if pixels < minPixels {
+			scaleToFill(math.Sqrt(float64(minPixels) / float64(pixels)))
+		}
+	}
+	return fmt.Sprintf("%dx%d", normalizedWidth, normalizedHeight)
+}
+
+func roundToRelayImageMultiple(value, multiple int) int {
+	return max(multiple, ((value+multiple/2)/multiple)*multiple)
+}
+
+func floorToRelayImageMultiple(value float64, multiple int) int {
+	return max(multiple, int(value/float64(multiple))*multiple)
+}
+
+func ceilToRelayImageMultiple(value float64, multiple int) int {
+	return max(multiple, int(math.Ceil(value/float64(multiple)))*multiple)
 }
 
 func shouldDropRelayPayloadKey(key string) bool {

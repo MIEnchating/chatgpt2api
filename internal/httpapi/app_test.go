@@ -420,6 +420,42 @@ func TestRelayImagePayloadDropsUnsupportedStreamFields(t *testing.T) {
 	}
 }
 
+func TestRelayImagePayloadNormalizesSizeForRelay(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		want     string
+		wantDrop bool
+	}{
+		{name: "portrait ratio", input: "9:16", want: "864x1536"},
+		{name: "landscape ratio with x", input: "16x9", want: "1536x864"},
+		{name: "preset", input: "2k", want: "2048x2048"},
+		{name: "dimensions", input: "1824x1024", want: "1824x1024"},
+		{name: "auto", input: "auto", wantDrop: true},
+		{name: "unknown", input: "original", want: "original"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			payload := relayPayloadForPath("/v1/images/edits", map[string]any{
+				"prompt": "draw",
+				"model":  "codex-gpt-image-2",
+				"size":   tt.input,
+			})
+			got, ok := payload["size"]
+			if tt.wantDrop {
+				if ok {
+					t.Fatalf("size should be dropped, got %#v in %#v", got, payload)
+				}
+				return
+			}
+			if got != tt.want {
+				t.Fatalf("payload size = %#v, want %q in %#v", got, tt.want, payload)
+			}
+		})
+	}
+}
+
 func TestRelayChatPayloadDropsInternalTextCallback(t *testing.T) {
 	payload := relayPayloadForPath("/v1/chat/completions", map[string]any{
 		"prompt":                             "hello",
