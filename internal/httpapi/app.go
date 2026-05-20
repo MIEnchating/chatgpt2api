@@ -1891,6 +1891,7 @@ func (a *App) localizeRelayImageResult(ctx context.Context, identity service.Ide
 			continue
 		}
 		item["url"] = localURL
+		delete(item, "b64_json")
 		if outputFormat != "" {
 			item["output_format"] = outputFormat
 		}

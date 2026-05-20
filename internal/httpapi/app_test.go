@@ -557,6 +557,17 @@ func TestRelayImagePayloadDropsUnsupportedStreamFields(t *testing.T) {
 	}
 }
 
+func TestRelayImagePayloadDropsResponseFormat(t *testing.T) {
+	payload := relayPayloadForPath("/v1/images/generations", map[string]any{
+		"prompt":          "draw",
+		"model":           "gpt-image-2",
+		"response_format": "url",
+	})
+	if _, ok := payload["response_format"]; ok {
+		t.Fatalf("response_format should not be forwarded to GPT image models: %#v", payload)
+	}
+}
+
 func TestRelayImagePayloadNormalizesSizeForRelay(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -633,8 +644,11 @@ func TestRelayImagePayloadSanitizesOfficialParameters(t *testing.T) {
 		"output_format":      "png",
 		"output_compression": 50,
 	})
-	if payload["quality"] != "auto" || payload["background"] != "opaque" || payload["moderation"] != "low" || payload["response_format"] != "b64_json" {
+	if payload["quality"] != "auto" || payload["background"] != "opaque" || payload["moderation"] != "low" {
 		t.Fatalf("valid enum parameters were not normalized: %#v", payload)
+	}
+	if _, ok := payload["response_format"]; ok {
+		t.Fatalf("response_format should be dropped: %#v", payload)
 	}
 	if payload["output_format"] != "png" {
 		t.Fatalf("output_format = %#v, want png in %#v", payload["output_format"], payload)

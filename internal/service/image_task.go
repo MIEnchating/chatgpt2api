@@ -105,7 +105,7 @@ func (s *ImageTaskService) SubmitGeneration(ctx context.Context, identity Identi
 	if err != nil {
 		return nil, err
 	}
-	payload := map[string]any{"prompt": prompt, "model": model, "n": normalizedImageTaskCount(n), "size": size, "quality": quality, "response_format": "url", "base_url": baseURL, "visibility": visibility}
+	payload := map[string]any{"prompt": prompt, "model": model, "n": normalizedImageTaskCount(n), "size": size, "quality": quality, "base_url": baseURL, "visibility": visibility}
 	if messages != nil {
 		payload["messages"] = messages
 	}
@@ -129,7 +129,7 @@ func (s *ImageTaskService) SubmitEdit(ctx context.Context, identity Identity, cl
 	if err != nil {
 		return nil, err
 	}
-	payload := map[string]any{"prompt": prompt, "images": images, "model": model, "n": normalizedImageTaskCount(n), "size": size, "quality": quality, "response_format": "url", "base_url": baseURL, "visibility": visibility}
+	payload := map[string]any{"prompt": prompt, "images": images, "model": model, "n": normalizedImageTaskCount(n), "size": size, "quality": quality, "base_url": baseURL, "visibility": visibility}
 	if messages != nil {
 		payload["messages"] = messages
 	}
@@ -178,7 +178,7 @@ func (s *ImageTaskService) submitImageWithMetadataAndOptions(ctx context.Context
 	if err != nil {
 		return nil, err
 	}
-	payload := map[string]any{"prompt": prompt, "model": model, "n": normalizedImageTaskCount(n), "size": size, "quality": quality, "response_format": "url", "base_url": baseURL, "visibility": visibility}
+	payload := map[string]any{"prompt": prompt, "model": model, "n": normalizedImageTaskCount(n), "size": size, "quality": quality, "base_url": baseURL, "visibility": visibility}
 	if images != nil {
 		payload["images"] = images
 	}

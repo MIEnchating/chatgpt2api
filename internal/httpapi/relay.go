@@ -328,7 +328,7 @@ func sanitizeRelayImagePayload(payload map[string]any) {
 	normalizeRelayImageEnum(payload, "quality", map[string]string{"auto": "auto", "low": "low", "medium": "medium", "high": "high"})
 	normalizeRelayImageEnum(payload, "background", map[string]string{"auto": "auto", "opaque": "opaque"})
 	normalizeRelayImageEnum(payload, "moderation", map[string]string{"auto": "auto", "low": "low"})
-	normalizeRelayImageEnum(payload, "response_format", map[string]string{"url": "url", "b64_json": "b64_json"})
+	delete(payload, "response_format")
 
 	outputFormat := ""
 	if _, ok := payload["output_format"]; ok {

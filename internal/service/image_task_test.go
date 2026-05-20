@@ -195,6 +195,9 @@ func TestImageTaskServicePassesImageRequestMetadataToHandler(t *testing.T) {
 
 	select {
 	case payload := <-handlerCalls:
+		if _, ok := payload["response_format"]; ok {
+			t.Fatalf("payload should not include response_format: %#v", payload)
+		}
 		if got := payload["image_resolution"]; got != "2k" {
 			t.Fatalf("payload image_resolution = %#v, want 2k in %#v", got, payload)
 		}
@@ -222,6 +225,9 @@ func TestImageTaskServicePassesImageToolOptionsToHandler(t *testing.T) {
 
 	select {
 	case payload := <-handlerCalls:
+		if _, ok := payload["response_format"]; ok {
+			t.Fatalf("payload should not include response_format: %#v", payload)
+		}
 		for key, want := range map[string]any{"background": "opaque", "moderation": "auto", "output_format": "webp"} {
 			if got := payload[key]; got != want {
 				t.Fatalf("payload[%s] = %#v, want %#v in %#v", key, got, want, payload)
