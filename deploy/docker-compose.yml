@@ -1,7 +1,7 @@
 services:
   chatgpt2api:
-    image: ${CHATGPT2API_IMAGE:-zyphrzero/chatgpt2api:latest}
-    pull_policy: ${CHATGPT2API_PULL_POLICY:-always}
+    image: ${CHATGPT2API_IMAGE:-chatgpt2api:local}
+    pull_policy: ${CHATGPT2API_PULL_POLICY:-never}
     container_name: chatgpt2api
     restart: unless-stopped
     env_file:

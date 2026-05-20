@@ -16,9 +16,8 @@ Environment variables:
   CHATGPT2API_INSTALL_DIR     Install directory. Default: current repo when run inside one,
                               otherwise /opt/chatgpt2api
   CHATGPT2API_DOCKER_NETWORK  Docker network to join. Default: newapi_default
-  CHATGPT2API_IMAGE           Runtime image. Default: zyphrzero/chatgpt2api:latest
-  CHATGPT2API_BUILD_LOCAL     Set to 1/true/yes to build from local source with
-                              deploy/docker-build-limited.sh.
+  CHATGPT2API_BUILD_LOCAL     Build from this repository source. Default: 1
+  CHATGPT2API_IMAGE           Runtime image when CHATGPT2API_BUILD_LOCAL=0.
   CHATGPT2API_COMPOSE_PROJECT Docker Compose project name. Default: chatgpt2api
 
 Optional first-run settings:
@@ -33,7 +32,7 @@ Examples:
   curl -fsSL https://raw.githubusercontent.com/MIEnchating/chatgpt2api/main/deploy/ubuntu-deploy.sh | sudo env CHATGPT2API_ADMIN_PASSWORD='change_me' sh
   sh deploy/ubuntu-deploy.sh deploy
   CHATGPT2API_ADMIN_PASSWORD='change_me' sh deploy/ubuntu-deploy.sh deploy
-  CHATGPT2API_BUILD_LOCAL=1 sh deploy/ubuntu-deploy.sh deploy
+  CHATGPT2API_BUILD_LOCAL=0 CHATGPT2API_IMAGE='your-registry/chatgpt2api:latest' sh deploy/ubuntu-deploy.sh deploy
   sh deploy/ubuntu-deploy.sh logs
 EOF
 }
@@ -80,13 +79,13 @@ run_git() {
   as_root git "$@"
 }
 
-truthy() {
-  case "${1:-}" in
-    1|true|TRUE|yes|YES|on|ON)
-      return 0
+use_local_build() {
+  case "${CHATGPT2API_BUILD_LOCAL:-1}" in
+    0|false|FALSE|no|NO|off|OFF)
+      return 1
       ;;
     *)
-      return 1
+      return 0
       ;;
   esac
 }
@@ -273,6 +272,15 @@ prepare_env_file() {
     [ "${CHATGPT2API_PULL_POLICY+x}" = "x" ] && set_env_value CHATGPT2API_PULL_POLICY "$CHATGPT2API_PULL_POLICY" "$env_file"
   fi
 
+  if use_local_build; then
+    set_env_value CHATGPT2API_IMAGE "${CHATGPT2API_LOCAL_IMAGE:-chatgpt2api:local}" "$env_file"
+    set_env_value CHATGPT2API_PULL_POLICY never "$env_file"
+  else
+    [ -n "${CHATGPT2API_IMAGE:-}" ] || die "CHATGPT2API_IMAGE is required when CHATGPT2API_BUILD_LOCAL=0"
+    set_env_value CHATGPT2API_IMAGE "$CHATGPT2API_IMAGE" "$env_file"
+    set_env_value CHATGPT2API_PULL_POLICY "${CHATGPT2API_PULL_POLICY:-always}" "$env_file"
+  fi
+
   as_root mkdir -p "$install_dir/data"
 }
 
@@ -329,14 +337,14 @@ deploy_service() {
   ensure_docker_network
   remove_conflicting_container
 
-  if truthy "${CHATGPT2API_BUILD_LOCAL:-}"; then
-    log "Building and starting local image"
-    (cd "$install_dir" && sh deploy/docker-build-limited.sh up)
-  else
+  if ! use_local_build; then
     log "Pulling runtime image"
     compose pull
     log "Starting service"
     compose up -d
+  else
+    log "Building and starting local image from MIEnchating/chatgpt2api source"
+    (cd "$install_dir" && sh deploy/docker-build-limited.sh up)
   fi
 }
 

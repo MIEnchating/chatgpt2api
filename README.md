@@ -86,7 +86,7 @@
 ### 1. 获取部署文件
 
 ```bash
-git clone https://github.com/ZyphrZero/chatgpt2api.git
+git clone https://github.com/MIEnchating/chatgpt2api.git
 cd chatgpt2api
 cp .env.example .env
 ```
@@ -108,28 +108,29 @@ docker compose -f deploy/docker-compose.yml up -d
 
 默认 Compose 配置：
 
-- 镜像：`zyphrzero/chatgpt2api:latest`
-- 端口：宿主机 `3000` -> 容器 `80`
+- 镜像：本地源码构建镜像 `chatgpt2api:local`
+- 端口：默认不对外暴露端口
 - 数据目录：`./data:/app/data`
 - 环境文件：`./.env:/app/.env`
+- Docker 网络：`${CHATGPT2API_DOCKER_NETWORK:-newapi_default}`
 - 重启策略：`restart: unless-stopped`
 
-访问：
+反向代理目标：
 
 ```text
-http://localhost:3000
+http://chatgpt2api:80
 ```
 
 查看日志（需要在仓库根目录执行）：
 
 ```bash
-docker compose -f deploy/docker-compose.yml logs -f app
+docker compose -f deploy/docker-compose.yml logs -f chatgpt2api
 ```
 
 查看自动生成的管理员密码（需要在仓库根目录执行）：
 
 ```bash
-docker compose -f deploy/docker-compose.yml logs app | grep "bootstrap admin password generated"
+docker compose -f deploy/docker-compose.yml logs chatgpt2api | grep "bootstrap admin password generated"
 ```
 
 日志行格式：
@@ -144,7 +145,7 @@ bootstrap admin password generated: username=admin password=生成的密码
 Windows PowerShell：
 
 ```powershell
-docker compose -f deploy/docker-compose.yml logs app | Select-String "bootstrap admin password generated"
+docker compose -f deploy/docker-compose.yml logs chatgpt2api | Select-String "bootstrap admin password generated"
 ```
 
 默认容器名方式：
@@ -153,7 +154,7 @@ docker compose -f deploy/docker-compose.yml logs app | Select-String "bootstrap 
 docker logs chatgpt2api 2>&1 | grep "bootstrap admin password generated"
 ```
 
-如果提示 `no configuration file provided: not found`，说明当前命令没有指定 Compose 配置文件。先进入仓库根目录再执行 `docker compose -f deploy/docker-compose.yml logs app`，或直接使用上面的 `docker logs chatgpt2api ...` 命令。
+如果提示 `no configuration file provided: not found`，说明当前命令没有指定 Compose 配置文件。先进入仓库根目录再执行 `docker compose -f deploy/docker-compose.yml logs chatgpt2api`，或直接使用上面的 `docker logs chatgpt2api ...` 命令。
 
 如果查不到日志，先确认 `.env` 或容器环境里是否已经设置了固定密码：
 
@@ -197,9 +198,13 @@ docker compose -f deploy/docker-compose.yml up -d
 
 </details>
 
-### 3. 服务器源码构建（可选）
+### 3. 一键部署 / 服务器源码构建
 
-发布镜像由 GitHub Actions 构建。如果你需要在自己的服务器上从当前源码构建镜像，使用受限 BuildKit 脚本：
+```bash
+curl -fsSL https://raw.githubusercontent.com/MIEnchating/chatgpt2api/main/deploy/ubuntu-deploy.sh | sudo sh
+```
+
+该命令会拉取 `MIEnchating/chatgpt2api` 仓库并从源码构建本地镜像 `chatgpt2api:local`。如果你已经在仓库目录内，也可以直接运行受限 BuildKit 脚本：
 
 ```bash
 sh deploy/docker-build-limited.sh up
@@ -227,22 +232,13 @@ sh deploy/docker-build-limited.sh build
 
 ## 升级与在线更新
 
-### Docker 镜像升级
-
-Docker 部署的推荐升级方式：
+### Docker 部署升级
 
 ```bash
-docker compose -f deploy/docker-compose.yml pull
-docker compose -f deploy/docker-compose.yml up -d
+curl -fsSL https://raw.githubusercontent.com/MIEnchating/chatgpt2api/main/deploy/ubuntu-deploy.sh | sudo sh
 ```
 
-默认 Compose 使用 DockerHub 公共镜像。
-
-可用镜像：
-
-```text
-zyphrzero/chatgpt2api:latest
-```
+默认会更新 `MIEnchating/chatgpt2api` 仓库并重新构建本地镜像。
 
 ### 源码部署升级
 
@@ -411,20 +407,20 @@ git push origin v1.0.0
 
 ### Docker 镜像标签
 
-默认发布到 DockerHub：
+如果配置了 DockerHub 凭据，发布到 DockerHub：
 
 ```text
-zyphrzero/chatgpt2api:<version>
-zyphrzero/chatgpt2api:latest
-zyphrzero/chatgpt2api:<major>.<minor>
+<dockerhub-username>/chatgpt2api:<version>
+<dockerhub-username>/chatgpt2api:latest
+<dockerhub-username>/chatgpt2api:<major>.<minor>
 ```
 
 同时发布到 GHCR：
 
 ```text
-ghcr.io/zyphrzero/chatgpt2api:<version>
-ghcr.io/zyphrzero/chatgpt2api:latest
-ghcr.io/zyphrzero/chatgpt2api:<major>.<minor>
+ghcr.io/<github-owner>/chatgpt2api:<version>
+ghcr.io/<github-owner>/chatgpt2api:latest
+ghcr.io/<github-owner>/chatgpt2api:<major>.<minor>
 ```
 
 ## API 接入
@@ -636,10 +632,10 @@ Telegram 群组：[ChatGPT2API](https://t.me/+YBR7t_CPOYBkYzU1)
 
 感谢所有为本项目做出贡献的开发者：
 
-<a href="https://github.com/ZyphrZero/chatgpt2api/graphs/contributors">
-  <img alt="Contributors" src="https://contrib.rocks/image?repo=ZyphrZero/chatgpt2api" />
+<a href="https://github.com/MIEnchating/chatgpt2api/graphs/contributors">
+  <img alt="Contributors" src="https://contrib.rocks/image?repo=MIEnchating/chatgpt2api" />
 </a>
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/chart?repos=ZyphrZero/chatgpt2api&type=date&legend=top-left)](https://www.star-history.com/?repos=ZyphrZero%2Fchatgpt2api&type=date&legend=top-left)
+[![Star History Chart](https://api.star-history.com/chart?repos=MIEnchating/chatgpt2api&type=date&legend=top-left)](https://www.star-history.com/?repos=MIEnchating%2Fchatgpt2api&type=date&legend=top-left)
