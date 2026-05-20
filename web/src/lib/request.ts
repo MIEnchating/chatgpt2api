@@ -10,7 +10,7 @@ type RequestConfig = AxiosRequestConfig & {
 
 type ErrorPayload = {
     detail?: string | { error?: string | { message?: string } };
-    error?: string | { message?: string };
+    error?: string | { message?: string; code?: string; type?: string };
     message?: string;
 };
 
@@ -28,6 +28,27 @@ function errorMessageFromValue(value: unknown): string {
     }
     return errorMessageFromValue(item.error);
 }
+
+function errorCodeFromValue(value: unknown): string {
+    if (!value || typeof value !== "object") {
+        return "";
+    }
+    const item = value as { code?: unknown; type?: unknown; error?: unknown; message?: unknown };
+    if (typeof item.code === "string" && item.code.trim()) {
+        return item.code.trim();
+    }
+    if (typeof item.type === "string" && item.type.trim()) {
+        return item.type.trim();
+    }
+    return errorCodeFromValue(item.error);
+}
+
+export type AppRequestError = Error & {
+    status?: number;
+    code?: string;
+    errorType?: string;
+    payload?: unknown;
+};
 
 const request = axios.create({
     baseURL: webConfig.apiUrl.replace(/\/$/, ""),
@@ -65,13 +86,27 @@ request.interceptors.response.use(
         }
 
         const payload = error.response?.data;
+        const code =
+            errorCodeFromValue(payload?.detail) ||
+            errorCodeFromValue(payload?.error) ||
+            "";
+        const errorValue = payload?.error;
+        const errorType =
+            errorValue && typeof errorValue === "object" && typeof (errorValue as { type?: unknown }).type === "string"
+                ? String((errorValue as { type?: unknown }).type || "")
+                : "";
         const message =
             errorMessageFromValue(payload?.detail) ||
             errorMessageFromValue(payload?.error) ||
             payload?.message ||
             error.message ||
             `请求失败 (${status || 500})`;
-        return Promise.reject(new Error(message));
+        const appError = new Error(message) as AppRequestError;
+        appError.status = status;
+        appError.code = code || undefined;
+        appError.errorType = errorType || undefined;
+        appError.payload = payload;
+        return Promise.reject(appError);
     },
 );
 

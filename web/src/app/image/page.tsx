@@ -848,10 +848,10 @@ function formatCreationTaskErrorMessage(message: string) {
 
   const normalized = trimmed.toLowerCase();
   if (normalized.includes("user balance insufficient")) {
-    return "用户余额不足";
+    return "用户余额不足（code=user_balance_insufficient）";
   }
   if (normalized.includes("user quota exceeded")) {
-    return "用户配额不足";
+    return "用户配额不足（code=user_quota_exceeded）";
   }
   if (
     normalized.includes("stream disconnected before completion") ||
@@ -877,14 +877,39 @@ function formatCreationTaskErrorMessage(message: string) {
     return "图片生成等待超时，建议稍后重试；如果使用高分辨率参数，可降低尺寸后再试。";
   }
   if (normalized.includes("no available image quota")) {
-    return "当前 RelayAI Key 没有可用额度，请检查余额或稍后重试。";
+    return "当前 RelayAI Key 没有可用额度（code=insufficient_quota），请检查余额或稍后重试。";
   }
 
   return trimmed;
 }
 
+function formatCreationTaskErrorDetail(error: unknown) {
+  if (!error || typeof error !== "object") {
+    return null;
+  }
+  const item = error as { message?: unknown; code?: unknown; errorType?: unknown; status?: unknown };
+  const message = typeof item.message === "string" ? item.message.trim() : "";
+  const code = typeof item.code === "string" ? item.code.trim() : "";
+  const errorType = typeof item.errorType === "string" ? item.errorType.trim() : "";
+  const status = typeof item.status === "number" && Number.isFinite(item.status) ? item.status : undefined;
+  if (!message && !code && !errorType && !status) {
+    return null;
+  }
+  const parts = [message || "生成失败"];
+  const meta: string[] = [];
+  if (code) meta.push(`code=${code}`);
+  if (errorType && errorType !== code) meta.push(`type=${errorType}`);
+  if (typeof status === "number") meta.push(`http=${status}`);
+  if (meta.length > 0) {
+    parts.push(`[${meta.join(" ")}]`);
+  }
+  return parts.join(" ");
+}
+
 function formatCreationTaskError(error: unknown, fallback = "生成图片失败") {
-  return formatCreationTaskErrorMessage(error instanceof Error ? error.message : String(error || fallback));
+  const message = formatCreationTaskErrorMessage(error instanceof Error ? error.message : String(error || fallback));
+  const detail = formatCreationTaskErrorDetail(error);
+  return detail ? `${message}\n${detail}` : message;
 }
 
 function deriveTurnStatus(turn: ImageTurn): Pick<ImageTurn, "status" | "error"> {
