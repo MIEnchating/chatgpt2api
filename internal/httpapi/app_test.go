@@ -3,6 +3,7 @@ package httpapi
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -2227,6 +2228,91 @@ func TestImageVisibilityImportsExternalImageURL(t *testing.T) {
 	}
 	if access.Visibility != service.ImageVisibilityPublic || access.OwnerID != ownerID {
 		t.Fatalf("imported image access = %#v", access)
+	}
+}
+
+func TestImageVisibilityImportsDataURL(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+
+	user, rawKey, err := app.auth.CreateAPIKey(service.AuthRoleUser, "frontend", service.AuthOwner{})
+	if err != nil {
+		t.Fatalf("CreateAPIKey() error = %v", err)
+	}
+	ownerID := util.Clean(user["id"])
+	var imageData bytes.Buffer
+	if err := encodeHTTPTestPNG(&imageData); err != nil {
+		t.Fatalf("encode test image: %v", err)
+	}
+	dataURL := "data:image/png;base64," + base64.StdEncoding.EncodeToString(imageData.Bytes())
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/images/visibility", strings.NewReader(fmt.Sprintf(`{"path":%q,"visibility":"public"}`, dataURL)))
+	req.Header.Set("Authorization", "Bearer "+rawKey)
+	res := httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("import data URL visibility status = %d body = %s", res.Code, res.Body.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(res.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("visibility json: %v", err)
+	}
+	item := util.StringMap(payload["item"])
+	localPath := util.Clean(item["path"])
+	if localPath == "" || strings.HasPrefix(localPath, "data:") || item["visibility"] != service.ImageVisibilityPublic {
+		t.Fatalf("imported data URL visibility item = %#v", item)
+	}
+	access, err := app.images.ImageFileAccess(localPath, service.ImageAccessScope{OwnerID: ownerID})
+	if err != nil {
+		t.Fatalf("imported data URL image is not accessible: %v", err)
+	}
+	if access.Visibility != service.ImageVisibilityPublic || access.OwnerID != ownerID {
+		t.Fatalf("imported data URL image access = %#v", access)
+	}
+}
+
+func TestImageVisibilityAcceptsThumbnailURL(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+
+	owner := service.AuthOwner{ID: "linuxdo:123", Name: "alice", Provider: service.AuthProviderLinuxDo}
+	_, rawKey, err := app.auth.UpsertLinuxDoSession(owner)
+	if err != nil {
+		t.Fatalf("UpsertLinuxDoSession() error = %v", err)
+	}
+	rel := "2026/05/01/1777664437_f5b9d1d2cd2a380307ca9fb32c1a84d1.png"
+	imagePath := filepath.Join(app.config.ImagesDir(), filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(imagePath), 0o755); err != nil {
+		t.Fatalf("mkdir image dir: %v", err)
+	}
+	if err := writeHTTPTestPNG(imagePath); err != nil {
+		t.Fatalf("write image: %v", err)
+	}
+	app.images.RecordGeneratedImages([]string{rel}, owner.ID, owner.Name, service.ImageVisibilityPrivate)
+	list := app.images.ListImages("https://gallery.example", "", "", service.ImageAccessScope{OwnerID: owner.ID})
+	items, _ := list["items"].([]map[string]any)
+	if len(items) != 1 {
+		t.Fatalf("ListImages() = %#v", list)
+	}
+	thumbnailURL := util.Clean(items[0]["thumbnail_url"])
+	if !strings.Contains(thumbnailURL, "/image-thumbnails/") {
+		t.Fatalf("thumbnail_url = %q", thumbnailURL)
+	}
+
+	req := httptest.NewRequest(http.MethodPatch, "/api/images/visibility", strings.NewReader(fmt.Sprintf(`{"path":%q,"visibility":"public"}`, thumbnailURL)))
+	req.Header.Set("Authorization", "Bearer "+rawKey)
+	res := httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("publish thumbnail URL status = %d body = %s", res.Code, res.Body.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(res.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("visibility json: %v", err)
+	}
+	item := util.StringMap(payload["item"])
+	if item["path"] != rel || item["visibility"] != service.ImageVisibilityPublic {
+		t.Fatalf("published thumbnail URL item = %#v", item)
 	}
 }
 

@@ -1631,16 +1631,27 @@ func imageRelativePathFromValue(value string) (string, error) {
 			pathValue = parsed.Path
 		}
 		if parsed.Scheme != "" || strings.HasPrefix(pathValue, "/") {
-			const imagePrefix = "/images/"
-			index := strings.Index(pathValue, imagePrefix)
-			if index < 0 {
-				return "", errors.New("invalid image path")
+			for _, candidate := range []struct {
+				prefix    string
+				thumbnail bool
+			}{
+				{prefix: "/images/"},
+				{prefix: "/image-thumbnails/", thumbnail: true},
+			} {
+				index := strings.Index(pathValue, candidate.prefix)
+				if index < 0 {
+					continue
+				}
+				rel, err := url.PathUnescape(pathValue[index+len(candidate.prefix):])
+				if err != nil {
+					return "", errors.New("invalid image path")
+				}
+				if candidate.thumbnail {
+					return sourceImageRelativePathFromThumbnail(rel)
+				}
+				return cleanImageRelativePath(rel)
 			}
-			rel, err := url.PathUnescape(pathValue[index+len(imagePrefix):])
-			if err != nil {
-				return "", errors.New("invalid image path")
-			}
-			return cleanImageRelativePath(rel)
+			return "", errors.New("invalid image path")
 		}
 	}
 	return cleanImageRelativePath(text)

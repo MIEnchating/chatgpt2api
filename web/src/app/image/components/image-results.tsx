@@ -694,7 +694,7 @@ export function ImageResults({
                       const nextVisibility = visibility === "public" ? "private" : "public";
                       const visibilityMutatingKey = `${selectedConversation.id}:${turn.id}:${image.id}`;
                       const isVisibilityMutating = visibilityMutatingImageKey === visibilityMutatingKey;
-                      const canUpdateVisibility = Boolean(image.path || image.url);
+                      const canUpdateVisibility = Boolean(image.path || image.url || image.b64_json);
 
                       return (
                         <figure

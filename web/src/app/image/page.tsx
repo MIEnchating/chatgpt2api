@@ -509,6 +509,27 @@ function updateStoredImage(image: StoredImage, updates: Partial<StoredImage>): S
   return STORED_IMAGE_FIELDS.every((field) => image[field] === next[field]) ? image : next;
 }
 
+function storedImageVisibilityPath(image: StoredImage) {
+  if (image.path?.trim()) {
+    return image.path.trim();
+  }
+  if (image.url?.trim()) {
+    const managedPath = getManagedImagePathFromUrl(image.url);
+    if (managedPath) {
+      return managedPath;
+    }
+    const url = image.url.trim();
+    if (/^https?:\/\//i.test(url) || /^data:image\/[^,]+;base64,/i.test(url)) {
+      return url;
+    }
+  }
+  if (image.b64_json?.trim()) {
+    const format = image.outputFormat === "jpeg" || image.outputFormat === "webp" ? image.outputFormat : "png";
+    return `data:image/${format};base64,${image.b64_json.trim()}`;
+  }
+  return "";
+}
+
 function creationTaskImageStatus(task: CreationTask, dataIndex = 0): "queued" | "running" | "success" | "error" | "cancelled" | undefined {
   const outputStatus = task.output_statuses?.[dataIndex];
   if (outputStatus === "queued" || outputStatus === "running" || outputStatus === "success" || outputStatus === "error" || outputStatus === "cancelled") {
@@ -2117,7 +2138,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         toast.error("图片生成成功后才能修改公开状态");
         return;
       }
-      const path = targetImage.path || (targetImage.url ? getManagedImagePathFromUrl(targetImage.url) || targetImage.url : "");
+      const path = storedImageVisibilityPath(targetImage);
       if (!path) {
         toast.error("未找到可同步到图库的图片路径");
         return;

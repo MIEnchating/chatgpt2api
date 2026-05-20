@@ -5,15 +5,30 @@ export function getManagedImagePathFromUrl(value: string) {
   }
 
   const extractFromPath = (pathname: string) => {
-    const prefix = "/images/";
-    const index = pathname.indexOf(prefix);
-    if (index < 0) {
+    const imagePrefix = "/images/";
+    const imageIndex = pathname.indexOf(imagePrefix);
+    if (imageIndex >= 0) {
+      const encodedPath = pathname.slice(imageIndex + imagePrefix.length);
+      if (!encodedPath) {
+        return "";
+      }
+      try {
+        return decodeURIComponent(encodedPath);
+      } catch {
+        return encodedPath;
+      }
+    }
+
+    const thumbnailPrefix = "/image-thumbnails/";
+    const thumbnailIndex = pathname.indexOf(thumbnailPrefix);
+    if (thumbnailIndex < 0) {
       return "";
     }
-    const encodedPath = pathname.slice(index + prefix.length);
-    if (!encodedPath) {
+    const encodedThumbnailPath = pathname.slice(thumbnailIndex + thumbnailPrefix.length);
+    if (!encodedThumbnailPath) {
       return "";
     }
+    const encodedPath = encodedThumbnailPath.replace(/\.jpg$/i, "");
     try {
       return decodeURIComponent(encodedPath);
     } catch {

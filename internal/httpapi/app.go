@@ -35,6 +35,7 @@ import (
 
 const (
 	maxLoginPageImageSize      = 10 << 20
+	maxRelayImageBytes         = 40 << 20
 	imageThumbnailCacheControl = "public, max-age=31536000, immutable"
 	authSessionCookieName      = "chatgpt2api_session"
 )
@@ -1041,7 +1042,7 @@ func (a *App) handleImageVisibility(w http.ResponseWriter, r *http.Request) {
 		util.WriteError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if !a.isLocalImageURL(path) && isAbsoluteHTTPURL(path) {
+	if a.shouldImportVisibilityImage(path) {
 		localURL, _, importErr := a.localizeRelayImageItem(r.Context(), identityScope(identity), identityDisplayName(identity), map[string]any{"url": path}, nil)
 		if importErr != nil || localURL == "" {
 			if importErr == nil {
@@ -2051,6 +2052,9 @@ func relayImageItemBytes(ctx context.Context, app *App, item map[string]any) ([]
 	if imageURL == "" {
 		return nil, "", errors.New("image url is empty")
 	}
+	if isImageDataURL(imageURL) {
+		return imageDataURLBytes(imageURL)
+	}
 	parsed, err := url.Parse(imageURL)
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
 		return nil, "", errors.New("image url is not absolute")
@@ -2071,7 +2075,6 @@ func relayImageItemBytes(ctx context.Context, app *App, item map[string]any) ([]
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, "", fmt.Errorf("image download failed: %s", resp.Status)
 	}
-	const maxRelayImageBytes = 40 << 20
 	limited := io.LimitReader(resp.Body, maxRelayImageBytes+1)
 	data, err := io.ReadAll(limited)
 	if err != nil {
@@ -2081,6 +2084,31 @@ func relayImageItemBytes(ctx context.Context, app *App, item map[string]any) ([]
 		return nil, "", errors.New("image is too large")
 	}
 	return data, strings.TrimSpace(strings.Split(resp.Header.Get("Content-Type"), ";")[0]), nil
+}
+
+func imageDataURLBytes(value string) ([]byte, string, error) {
+	header, dataPart, ok := strings.Cut(strings.TrimSpace(value), ",")
+	if !ok || !strings.HasPrefix(strings.ToLower(header), "data:") {
+		return nil, "", errors.New("image data url is invalid")
+	}
+	contentType := strings.TrimSpace(strings.TrimPrefix(strings.Split(header, ";")[0], "data:"))
+	if !strings.HasPrefix(strings.ToLower(contentType), "image/") {
+		return nil, "", errors.New("image data url is not an image")
+	}
+	if !strings.Contains(strings.ToLower(header), ";base64") {
+		return nil, "", errors.New("image data url must be base64")
+	}
+	data, err := base64.StdEncoding.DecodeString(strings.TrimSpace(dataPart))
+	if err != nil {
+		return nil, "", err
+	}
+	if len(data) == 0 {
+		return nil, "", errors.New("image data is empty")
+	}
+	if len(data) > maxRelayImageBytes {
+		return nil, "", errors.New("image is too large")
+	}
+	return data, contentType, nil
 }
 
 func (a *App) isLocalImageURL(value string) bool {
@@ -2105,12 +2133,40 @@ func (a *App) isLocalImageURL(value string) bool {
 	return parsed.Scheme == base.Scheme && parsed.Host == base.Host && strings.HasPrefix(parsed.EscapedPath(), "/images/")
 }
 
+func (a *App) shouldImportVisibilityImage(value string) bool {
+	text := strings.TrimSpace(value)
+	if text == "" || a.isLocalImageURL(text) || isManagedImageVisibilityPath(text) {
+		return false
+	}
+	return isAbsoluteHTTPURL(text) || isImageDataURL(text)
+}
+
 func isAbsoluteHTTPURL(value string) bool {
 	parsed, err := url.Parse(strings.TrimSpace(value))
 	if err != nil {
 		return false
 	}
 	return parsed.Host != "" && (parsed.Scheme == "http" || parsed.Scheme == "https")
+}
+
+func isImageDataURL(value string) bool {
+	text := strings.TrimSpace(value)
+	return strings.HasPrefix(strings.ToLower(text), "data:image/") && strings.Contains(strings.ToLower(text), ";base64,")
+}
+
+func isManagedImageVisibilityPath(value string) bool {
+	text := strings.TrimSpace(value)
+	if text == "" {
+		return false
+	}
+	if parsed, err := url.Parse(text); err == nil {
+		pathValue := parsed.EscapedPath()
+		if pathValue == "" {
+			pathValue = parsed.Path
+		}
+		return strings.Contains(pathValue, "/images/") || strings.Contains(pathValue, "/image-thumbnails/")
+	}
+	return strings.Contains(text, "/images/") || strings.Contains(text, "/image-thumbnails/")
 }
 
 func relayStoredImageFormat(item, payload map[string]any, contentType, imageURL string, data []byte) string {
