@@ -858,7 +858,7 @@ function formatCreationTaskErrorMessage(message: string) {
     normalized.includes("stream closed before") ||
     normalized.includes("response.completed")
   ) {
-    return "上游 CLI Proxy/API 的流式连接在完成前断开了。通常是中转服务或上游模型的临时断流，不是页面本身生成失败；请直接重试，连续出现时检查中转服务日志和模型流式兼容性。";
+    return "流式连接在完成前断开了，可能不合法。";
   }
   if (normalized.includes("an error occurred while processing your request")) {
     const requestId = trimmed.match(/request id\s+([a-z0-9-]+)/i)?.[1];
