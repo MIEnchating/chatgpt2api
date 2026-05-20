@@ -1,5 +1,5 @@
 services:
-  app:
+  chatgpt2api:
     image: ${CHATGPT2API_IMAGE:-zyphrzero/chatgpt2api:latest}
     pull_policy: ${CHATGPT2API_PULL_POLICY:-always}
     container_name: chatgpt2api
