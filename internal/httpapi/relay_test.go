@@ -7,13 +7,13 @@ import (
 	"chatgpt2api/internal/protocol"
 )
 
-func TestRelayAcquireImageTaskSlotUsesFirstOutputSlot(t *testing.T) {
+func TestRelayAcquireImageTaskSlotUsesWholeRequestSlot(t *testing.T) {
 	called := 0
 	released := false
 	payload := map[string]any{
 		protocol.ImageOutputSlotAcquirerPayloadKey: func(ctx context.Context, index int) (func(), error) {
-			if index != 1 {
-				t.Fatalf("slot index = %d, want 1", index)
+			if index != 0 {
+				t.Fatalf("slot index = %d, want 0", index)
 			}
 			if err := ctx.Err(); err != nil {
 				t.Fatalf("ctx err = %v", err)

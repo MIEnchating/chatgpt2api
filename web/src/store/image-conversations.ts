@@ -46,6 +46,9 @@ export type StoredImage = {
   height?: number;
   resolution?: string;
   outputFormat?: ImageOutputFormat;
+  taskCreatedAt?: string;
+  taskUpdatedAt?: string;
+  generationDurationMs?: number;
   revised_prompt?: string;
   error?: string;
   text_response?: string;
@@ -196,6 +199,12 @@ function normalizeStoredImage(image: StoredImage): StoredImage {
     height: Number.isFinite(height) && height > 0 ? height : undefined,
     resolution,
     outputFormat: isImageOutputFormat(image.outputFormat) ? image.outputFormat : undefined,
+    taskCreatedAt: typeof image.taskCreatedAt === "string" && image.taskCreatedAt ? image.taskCreatedAt : undefined,
+    taskUpdatedAt: typeof image.taskUpdatedAt === "string" && image.taskUpdatedAt ? image.taskUpdatedAt : undefined,
+    generationDurationMs:
+      typeof image.generationDurationMs === "number" && Number.isFinite(image.generationDurationMs) && image.generationDurationMs >= 0
+        ? image.generationDurationMs
+        : undefined,
     revised_prompt: typeof image.revised_prompt === "string" ? image.revised_prompt : undefined,
     text_response: typeof image.text_response === "string" && image.text_response ? image.text_response : undefined,
   };

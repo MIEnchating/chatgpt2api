@@ -499,6 +499,9 @@ const STORED_IMAGE_FIELDS: Array<keyof StoredImage> = [
   "height",
   "resolution",
   "outputFormat",
+  "taskCreatedAt",
+  "taskUpdatedAt",
+  "generationDurationMs",
   "revised_prompt",
   "error",
   "text_response",
@@ -541,13 +544,46 @@ function creationTaskImageStatus(task: CreationTask, dataIndex = 0): "queued" | 
   return undefined;
 }
 
+function parseCreationTaskTime(value: string | undefined) {
+  const text = String(value || "").trim();
+  if (!text) {
+    return Number.NaN;
+  }
+  const direct = Date.parse(text);
+  if (Number.isFinite(direct)) {
+    return direct;
+  }
+  return Date.parse(text.replace(" ", "T"));
+}
+
+function creationTaskTimingUpdates(task: CreationTask, completed: boolean): Partial<StoredImage> {
+  const updates: Partial<StoredImage> = {
+    taskCreatedAt: task.created_at,
+    taskUpdatedAt: task.updated_at,
+  };
+  if (!completed) {
+    updates.generationDurationMs = undefined;
+    return updates;
+  }
+  const started = parseCreationTaskTime(task.created_at);
+  const ended = parseCreationTaskTime(task.updated_at);
+  updates.generationDurationMs =
+    Number.isFinite(started) && Number.isFinite(ended) && ended >= started
+      ? ended - started
+      : undefined;
+  return updates;
+}
+
 function taskDataToStoredImage(image: StoredImage, task: CreationTask, dataIndex = 0, fallbackVisibility?: ImageVisibility): StoredImage {
   const taskVisibility = task.visibility || fallbackVisibility || image.visibility || "private";
+  const activeTiming = creationTaskTimingUpdates(task, false);
+  const finalTiming = creationTaskTimingUpdates(task, true);
   const successUpdates = (item: CreationTaskDataItem) => {
     const width = positiveDimension(item.width);
     const height = positiveDimension(item.height);
     return {
       taskId: task.id,
+      ...finalTiming,
       taskStatus: "success" as const,
       status: "success" as const,
       b64_json: item.b64_json,
@@ -567,6 +603,7 @@ function taskDataToStoredImage(image: StoredImage, task: CreationTask, dataIndex
     if (task.output_type === "text") {
       return updateStoredImage(image, {
         taskId: task.id,
+        ...finalTiming,
         taskStatus: "success",
         status: "message",
         text_response: task.data?.[dataIndex]?.text_response || task.error || "",
@@ -585,6 +622,7 @@ function taskDataToStoredImage(image: StoredImage, task: CreationTask, dataIndex
         if (slotStatus === "error" || slotStatus === "cancelled") {
           return updateStoredImage(image, {
             taskId: task.id,
+            ...finalTiming,
             taskStatus: slotStatus,
             status: slotStatus === "cancelled" ? "cancelled" : "error",
             error: slotStatus === "cancelled" ? task.error || "任务已终止" : formatCreationTaskErrorMessage(task.error || "生成失败"),
@@ -592,6 +630,7 @@ function taskDataToStoredImage(image: StoredImage, task: CreationTask, dataIndex
         }
         return updateStoredImage(image, {
           taskId: image.id,
+          ...activeTiming,
           taskStatus: "queued",
           status: "loading",
           error: undefined,
@@ -599,6 +638,7 @@ function taskDataToStoredImage(image: StoredImage, task: CreationTask, dataIndex
       }
       return updateStoredImage(image, {
         taskId: task.id,
+        ...finalTiming,
         taskStatus: "success",
         status: "error",
         error: `未返回第 ${dataIndex + 1} 张图片数据`,
@@ -612,6 +652,7 @@ function taskDataToStoredImage(image: StoredImage, task: CreationTask, dataIndex
     if (task.output_type === "text" && item?.text_response) {
       return updateStoredImage(image, {
         taskId: task.id,
+        ...activeTiming,
         taskStatus: task.status === "queued" ? "queued" : "running",
         status: "loading",
         text_response: item.text_response,
@@ -628,6 +669,7 @@ function taskDataToStoredImage(image: StoredImage, task: CreationTask, dataIndex
     }
     return updateStoredImage(image, {
       taskId: task.id,
+      ...activeTiming,
       taskStatus: creationTaskImageStatus(task, dataIndex) || (task.status === "queued" ? "queued" : "running"),
       status: "loading",
       text_response: undefined,
@@ -639,6 +681,7 @@ function taskDataToStoredImage(image: StoredImage, task: CreationTask, dataIndex
     if (task.output_type === "text") {
       return updateStoredImage(image, {
         taskId: task.id,
+        ...finalTiming,
         taskStatus: "success",
         status: "message",
         text_response: task.error || "",
@@ -656,6 +699,7 @@ function taskDataToStoredImage(image: StoredImage, task: CreationTask, dataIndex
     }
     return updateStoredImage(image, {
       taskId: task.id,
+      ...finalTiming,
       taskStatus: undefined,
       status: "error",
       text_response: undefined,
@@ -670,6 +714,7 @@ function taskDataToStoredImage(image: StoredImage, task: CreationTask, dataIndex
     }
     return updateStoredImage(image, {
       taskId: task.id,
+      ...finalTiming,
       taskStatus: undefined,
       status: "cancelled",
       error: task.error || "任务已终止",
@@ -678,6 +723,7 @@ function taskDataToStoredImage(image: StoredImage, task: CreationTask, dataIndex
 
   return updateStoredImage(image, {
     taskId: task.id,
+    ...activeTiming,
     taskStatus: creationTaskImageStatus(task, dataIndex) || "queued",
     status: "loading",
     text_response: undefined,
@@ -2634,6 +2680,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
           submitted.length > 0 && submitted.every((task) => task.status === "queued") ? "queued" : "generating";
         updateTurnProgress(conversationId, activeTurn.id, imageTaskProgressMessage({ ...activeTurn, status: submittedStatus }));
 
+        let pollDelayMs = 300;
         while (true) {
           const latestConversation = conversationsRef.current.find((conversation) => conversation.id === conversationId);
           const latestTurn = latestConversation?.turns.find((turn) => turn.id === activeTurn.id);
@@ -2660,8 +2707,9 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
             message: progressCopy.message,
             detail: imageTaskLoadingDetail(progressTurn, progressCopy.detail),
           });
-          await sleep(2000);
+          await sleep(pollDelayMs);
           const taskList = await fetchCreationTasks(pollingTaskIds);
+          pollDelayMs = Math.min(2000, pollDelayMs < 1000 ? pollDelayMs * 2 : 2000);
           activeTaskIds = new Set(taskList.items.filter(isActiveCreationTask).map((task) => task.id));
           if (taskList.items.length > 0) {
             await applyTasks(taskList.items);
@@ -2907,6 +2955,9 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                       width: undefined,
                       height: undefined,
                       resolution: undefined,
+                      taskCreatedAt: undefined,
+                      taskUpdatedAt: undefined,
+                      generationDurationMs: undefined,
                       visibility: targetTurn.mode === "chat" ? undefined : targetTurn.visibility || "private",
                       revised_prompt: undefined,
                       text_response: undefined,

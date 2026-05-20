@@ -122,6 +122,55 @@ function getTurnResultSizeLabel(turn: ImageTurn, dimensionsByImageId: Record<str
   return "";
 }
 
+function parseImageTaskTime(value?: string) {
+  const text = String(value || "").trim();
+  if (!text) {
+    return Number.NaN;
+  }
+  const direct = Date.parse(text);
+  if (Number.isFinite(direct)) {
+    return direct;
+  }
+  return Date.parse(text.replace(" ", "T"));
+}
+
+function formatGenerationDuration(ms?: number) {
+  if (typeof ms !== "number" || !Number.isFinite(ms) || ms < 0) {
+    return "";
+  }
+  return formatElapsedClock(Math.max(0, Math.round(ms / 1000)));
+}
+
+function imageGenerationDurationLabel(image: StoredImage) {
+  const duration = formatGenerationDuration(image.generationDurationMs);
+  return duration ? `耗时 ${duration}` : "";
+}
+
+function latestGeneratedAt(images: StoredImage[]) {
+  let latest = "";
+  let latestTime = Number.NEGATIVE_INFINITY;
+  for (const image of images) {
+    const time = parseImageTaskTime(image.taskUpdatedAt);
+    if (Number.isFinite(time) && time > latestTime) {
+      latestTime = time;
+      latest = image.taskUpdatedAt || "";
+    }
+  }
+  return latest;
+}
+
+function turnGenerationDurationLabel(images: StoredImage[]) {
+  const durations = images
+    .map((image) => image.generationDurationMs)
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value >= 0);
+  if (durations.length === 0) {
+    return "";
+  }
+  const maxDuration = Math.max(...durations);
+  const prefix = durations.length > 1 ? "最长耗时" : "耗时";
+  return `${prefix} ${formatGenerationDuration(maxDuration)}`;
+}
+
 function getRequestedSizeLabel(turn: ImageTurn) {
   if (!turn.size) {
     return "";
@@ -445,6 +494,11 @@ export function ImageResults({
         const outcomeLabel = getTurnOutcomeLabel(successCount, failedCount, cancelledCount);
         const showResultSummary = turn.mode !== "chat" && (visualImages.length > 0 || turnBusy);
         const resultSizeLabel = getTurnResultSizeLabel(turn, imageDimensions);
+        const finishedVisualImages = visualImages
+          .map(({ image }) => image)
+          .filter((image) => image.status === "success" || image.status === "error" || image.status === "cancelled");
+        const generationDurationLabel = turnGenerationDurationLabel(finishedVisualImages);
+        const generatedAt = latestGeneratedAt(finishedVisualImages);
         const loadingPhase = getImageTurnLoadingPhase(turn);
         const isQueued = loadingPhase === "queued";
         const isRunning = loadingPhase === "running";
@@ -619,6 +673,14 @@ export function ImageResults({
                         </span>
                       ) : null}
                       {resultSizeLabel ? <span className="rounded-full bg-[#f0f0f0] px-3 py-1">{resultSizeLabel}</span> : null}
+                      {generationDurationLabel ? (
+                        <span className="rounded-full bg-[#eef4ff] px-3 py-1 text-[#1456f0]">{generationDurationLabel}</span>
+                      ) : null}
+                      {generatedAt ? (
+                        <span className="rounded-full bg-[#f0f0f0] px-3 py-1">
+                          完成 {formatConversationTime(generatedAt)}
+                        </span>
+                      ) : null}
                       {turn.quality ? (
                         <span className="rounded-full bg-[#f0f0f0] px-3 py-1">Quality {turn.quality}</span>
                       ) : null}
@@ -689,6 +751,8 @@ export function ImageResults({
                       const sizeLabel = image.b64_json ? formatBase64ImageFileSize(image.b64_json) : imageSizeLabels[image.id] || "";
                       const dimensions = imageResolutionLabel(image, imageDimensions[image.id]);
                       const imageMeta = [dimensions, sizeLabel].filter(Boolean).join(" | ");
+                      const generationDuration = imageGenerationDurationLabel(image);
+                      const generationCompletedAt = image.taskUpdatedAt ? `完成 ${formatConversationTime(image.taskUpdatedAt)}` : "";
                       const formatLabel = getImageFormatLabel(image, imageSrc);
                       const visibility = image.visibility || turn.visibility || "private";
                       const nextVisibility = visibility === "public" ? "private" : "public";
@@ -819,11 +883,19 @@ export function ImageResults({
                               {imageVisibilityLabel(visibility)}
                             </div>
                           </div>
+                          {generationDuration ? (
+                            <div className="pointer-events-none absolute bottom-2 left-2 z-20 inline-flex h-7 items-center rounded-full bg-white/95 px-2.5 font-mono text-[11px] font-medium tabular-nums text-[#1456f0] shadow-sm backdrop-blur-sm">
+                              {generationDuration}
+                            </div>
+                          ) : null}
                           <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/55 via-black/20 to-transparent px-2.5 pt-8 pb-11 opacity-0 transition duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
                             <div className="text-left text-white drop-shadow-sm">
                               <div className="text-[10px] font-bold tracking-wide">{formatLabel}</div>
                               {imageMeta ? (
                                 <div className="mt-0.5 truncate text-[11px] text-white/90">{imageMeta}</div>
+                              ) : null}
+                              {generationCompletedAt ? (
+                                <div className="mt-0.5 truncate text-[11px] text-white/90">{generationCompletedAt}</div>
                               ) : null}
                             </div>
                           </div>

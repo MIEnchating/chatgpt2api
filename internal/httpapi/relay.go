@@ -672,7 +672,7 @@ func relayAcquireImageTaskSlot(ctx context.Context, payload map[string]any) (fun
 	if acquire == nil {
 		return nil, nil
 	}
-	return acquire(ctx, 1)
+	return acquire(ctx, 0)
 }
 
 func relayImageOutputSlotAcquirer(payload map[string]any) protocol.ImageOutputSlotAcquirer {

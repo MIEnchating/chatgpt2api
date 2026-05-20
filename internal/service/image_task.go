@@ -337,6 +337,13 @@ func (s *ImageTaskService) runTask(ctx context.Context, key, mode string, identi
 				release()
 				return nil, context.Canceled
 			}
+			if index <= 0 {
+				if !s.markAllImageOutputStatuses(key, "running") {
+					release()
+					return nil, context.Canceled
+				}
+				return release, nil
+			}
 			if !s.markImageOutputStatus(key, index, "running") {
 				release()
 				return nil, context.Canceled
@@ -576,6 +583,37 @@ func (s *ImageTaskService) markImageOutputStatus(key string, index int, status s
 		return true
 	}
 	statuses[index-1] = status
+	task["output_statuses"] = statuses
+	task["updated_at"] = util.NowLocal()
+	_ = s.saveLocked()
+	return true
+}
+
+func (s *ImageTaskService) markAllImageOutputStatuses(key string, status string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	task := s.tasks[key]
+	if task == nil || !isActiveTaskStatus(util.Clean(task["status"])) {
+		return false
+	}
+	count := storedImageOutputCount(task)
+	statuses := normalizedImageOutputStatuses(util.Clean(task["mode"]), count, task["output_statuses"])
+	if len(statuses) == 0 {
+		return true
+	}
+	changed := false
+	for index := range statuses {
+		if statuses[index] == "success" {
+			continue
+		}
+		if statuses[index] != status {
+			statuses[index] = status
+			changed = true
+		}
+	}
+	if !changed {
+		return true
+	}
 	task["output_statuses"] = statuses
 	task["updated_at"] = util.NowLocal()
 	_ = s.saveLocked()
