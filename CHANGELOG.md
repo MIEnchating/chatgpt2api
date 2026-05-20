@@ -75,7 +75,7 @@
 - 修复纯文本图片任务被错误标记为通用失败的问题。
 - 修复图片生成模式下上传图片被强制切换模式的问题。
 - 多模态 SSE 载荷解析支持从 "v" 字段提取文本内容。
-- 修复 Dockerfile 引用路径，CI 构建和本地脚本统一使用 `deploy/Dockerfile.release`。
+- 修复 Dockerfile 引用路径，CI 构建和本地脚本统一使用 `Dockerfile.release`。
 
 ### 文档
 
@@ -154,7 +154,7 @@
 - 修复纯文本图片任务被错误标记为通用失败的问题。
 - 修复图片生成模式下上传图片被强制切换模式的问题。
 - 多模态 SSE 载荷解析支持从 "v" 字段提取文本内容。
-- 修复 Dockerfile 引用路径，CI 构建和本地脚本统一使用 `deploy/Dockerfile.release`。
+- 修复 Dockerfile 引用路径，CI 构建和本地脚本统一使用 `Dockerfile.release`。
 
 ### 文档
 

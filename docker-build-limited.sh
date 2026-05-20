@@ -4,7 +4,7 @@ set -eu
 usage() {
   cat <<'EOF'
 Usage:
-  sh deploy/docker-build-limited.sh [up|build]
+  sh docker-build-limited.sh [up|build]
 
 Creates a resource-capped BuildKit builder, then builds the local Docker image.
 
@@ -20,8 +20,8 @@ Tunable environment variables:
   BUILD_CPUSET_CPUS            Optional cpuset, for example 0-1
 
 Examples:
-  sh deploy/docker-build-limited.sh up
-  BUILD_CPUS=2 BUILD_MEMORY=4g BUILD_MEMORY_SWAP=4g BUILD_GOMAXPROCS=2 BUILD_GOMEMLIMIT=2GiB sh deploy/docker-build-limited.sh up
+  sh docker-build-limited.sh up
+  BUILD_CPUS=2 BUILD_MEMORY=4g BUILD_MEMORY_SWAP=4g BUILD_GOMAXPROCS=2 BUILD_GOMEMLIMIT=2GiB sh docker-build-limited.sh up
 EOF
 }
 
@@ -73,7 +73,7 @@ detect_memory_mib() {
 }
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-repo_root=$(CDPATH= cd -- "$script_dir/.." && pwd)
+repo_root="$script_dir"
 
 detected_cpus="$(detect_cpu_count)"
 require_uint detected_cpus "$detected_cpus"
@@ -208,7 +208,7 @@ docker buildx build \
   --builder "$builder_name" \
   --load \
   --tag "$CHATGPT2API_LOCAL_IMAGE" \
-  --file "$repo_root/deploy/Dockerfile" \
+  --file "$repo_root/Dockerfile" \
   --build-arg "VERSION=$CHATGPT2API_VERSION" \
   --build-arg "BUILD_GOMAXPROCS=$BUILD_GOMAXPROCS" \
   --build-arg "BUILD_GOMEMLIMIT=$BUILD_GOMEMLIMIT" \
@@ -220,5 +220,5 @@ if [ "$command" = "up" ]; then
   CHATGPT2API_ENV_FILE="$repo_root/.env" \
   CHATGPT2API_IMAGE="$CHATGPT2API_LOCAL_IMAGE" \
   CHATGPT2API_PULL_POLICY=never \
-  docker compose --project-name "${CHATGPT2API_COMPOSE_PROJECT:-chatgpt2api}" --env-file "$repo_root/.env" -f "$repo_root/deploy/docker-compose.yml" up -d --no-build
+  docker compose --project-name "${CHATGPT2API_COMPOSE_PROJECT:-chatgpt2api}" --env-file "$repo_root/.env" -f "$repo_root/docker-compose.yml" up -d --no-build
 fi

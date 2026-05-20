@@ -26,7 +26,7 @@ archives:
     files:
       - README.md
       - .env.example
-      - deploy/docker-compose.yml
+      - docker-compose.yml
 
 checksum:
   name_template: checksums.txt
@@ -38,7 +38,7 @@ changelog:
 dockers_v2:
   - id: dockerhub
     disable: '{{ if eq .Env.DOCKERHUB_USERNAME "skip" }}true{{ else }}false{{ end }}'
-    dockerfile: deploy/Dockerfile.release
+    dockerfile: Dockerfile.release
     images:
       - "{{ .Env.DOCKERHUB_USERNAME }}/chatgpt2api"
     tags:
@@ -53,7 +53,7 @@ dockers_v2:
       "org.opencontainers.image.revision": "{{ .FullCommit }}"
 
   - id: ghcr
-    dockerfile: deploy/Dockerfile.release
+    dockerfile: Dockerfile.release
     images:
       - "ghcr.io/{{ .Env.GITHUB_REPO_OWNER_LOWER }}/chatgpt2api"
     tags:

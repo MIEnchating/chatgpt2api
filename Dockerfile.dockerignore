@@ -48,9 +48,9 @@ AGENTS.md
 DESIGN.md
 LICENSE
 docker-compose*.yml
-deploy/docker-compose.yml
-deploy/Dockerfile.release
-deploy/docker-build-limited.sh
+Dockerfile.release
+docker-build-limited.sh
+ubuntu-deploy.sh
 scripts
 
 venv

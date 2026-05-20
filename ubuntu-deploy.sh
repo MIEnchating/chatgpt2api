@@ -4,7 +4,7 @@ set -eu
 usage() {
   cat <<'EOF'
 Usage:
-  sh deploy/ubuntu-deploy.sh [deploy|pull|restart|logs|status]
+  sh ubuntu-deploy.sh [deploy|pull|restart|logs|status]
 
 Default command:
   deploy
@@ -27,13 +27,13 @@ Optional first-run settings:
   CHATGPT2API_IMAGE
 
 Examples:
-  curl -fsSL https://raw.githubusercontent.com/MIEnchating/chatgpt2api/main/deploy/ubuntu-deploy.sh | sudo sh
-  curl -fsSL https://raw.githubusercontent.com/MIEnchating/chatgpt2api/main/deploy/ubuntu-deploy.sh | sudo sh -s -- deploy
-  curl -fsSL https://raw.githubusercontent.com/MIEnchating/chatgpt2api/main/deploy/ubuntu-deploy.sh | sudo env CHATGPT2API_ADMIN_PASSWORD='change_me' sh
-  sh deploy/ubuntu-deploy.sh deploy
-  CHATGPT2API_ADMIN_PASSWORD='change_me' sh deploy/ubuntu-deploy.sh deploy
-  CHATGPT2API_BUILD_LOCAL=0 CHATGPT2API_IMAGE='your-registry/chatgpt2api:latest' sh deploy/ubuntu-deploy.sh deploy
-  sh deploy/ubuntu-deploy.sh logs
+  curl -fsSL https://raw.githubusercontent.com/MIEnchating/chatgpt2api/main/ubuntu-deploy.sh | sudo sh
+  curl -fsSL https://raw.githubusercontent.com/MIEnchating/chatgpt2api/main/ubuntu-deploy.sh | sudo sh -s -- deploy
+  curl -fsSL https://raw.githubusercontent.com/MIEnchating/chatgpt2api/main/ubuntu-deploy.sh | sudo env CHATGPT2API_ADMIN_PASSWORD='change_me' sh
+  sh ubuntu-deploy.sh deploy
+  CHATGPT2API_ADMIN_PASSWORD='change_me' sh ubuntu-deploy.sh deploy
+  CHATGPT2API_BUILD_LOCAL=0 CHATGPT2API_IMAGE='your-registry/chatgpt2api:latest' sh ubuntu-deploy.sh deploy
+  sh ubuntu-deploy.sh logs
 EOF
 }
 
@@ -90,6 +90,10 @@ use_local_build() {
   esac
 }
 
+is_repo_root() {
+  [ -d "$1/.git" ] && [ -f "$1/go.mod" ] && grep -q '^module chatgpt2api$' "$1/go.mod"
+}
+
 detect_install_dir() {
   if [ -n "${CHATGPT2API_INSTALL_DIR:-}" ]; then
     printf '%s\n' "$CHATGPT2API_INSTALL_DIR"
@@ -97,15 +101,14 @@ detect_install_dir() {
   fi
 
   current_dir=$(pwd -P)
-  if [ -d "$current_dir/.git" ] && [ -f "$current_dir/deploy/docker-compose.yml" ]; then
+  if is_repo_root "$current_dir"; then
     printf '%s\n' "$current_dir"
     return
   fi
 
   script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-  candidate_root=$(CDPATH= cd -- "$script_dir/.." && pwd)
-  if [ -d "$candidate_root/.git" ]; then
-    printf '%s\n' "$candidate_root"
+  if is_repo_root "$script_dir"; then
+    printf '%s\n' "$script_dir"
     return
   fi
 
@@ -338,7 +341,7 @@ ensure_docker_network() {
 }
 
 compose() {
-  docker_cmd compose --project-name "${CHATGPT2API_COMPOSE_PROJECT:-chatgpt2api}" --env-file "$install_dir/.env" -f "$install_dir/deploy/docker-compose.yml" "$@"
+  docker_cmd compose --project-name "${CHATGPT2API_COMPOSE_PROJECT:-chatgpt2api}" --env-file "$install_dir/.env" -f "$install_dir/docker-compose.yml" "$@"
 }
 
 remove_conflicting_container() {
@@ -371,7 +374,7 @@ deploy_service() {
     compose up -d
   else
     log "Building and starting local image from MIEnchating/chatgpt2api source"
-    (cd "$install_dir" && sh deploy/docker-build-limited.sh up)
+    (cd "$install_dir" && sh docker-build-limited.sh up)
   fi
 }
 
@@ -407,7 +410,7 @@ print_summary() {
 
 Deployment complete.
   install dir: $install_dir
-  compose:     $install_dir/deploy/docker-compose.yml
+  compose:     $install_dir/docker-compose.yml
   env file:    $env_file
   data dir:    $install_dir/data
   container:   chatgpt2api
@@ -462,17 +465,17 @@ case "$command_name" in
     ;;
   restart)
     prepare_system
-    [ -f "$install_dir/deploy/docker-compose.yml" ] || die "compose file not found under $install_dir"
+    [ -f "$install_dir/docker-compose.yml" ] || die "compose file not found under $install_dir"
     ensure_docker_network
     compose up -d
     wait_for_health
     ;;
   logs)
-    [ -f "$install_dir/deploy/docker-compose.yml" ] || die "compose file not found under $install_dir"
+    [ -f "$install_dir/docker-compose.yml" ] || die "compose file not found under $install_dir"
     compose logs -f --tail 100 chatgpt2api
     ;;
   status)
-    [ -f "$install_dir/deploy/docker-compose.yml" ] || die "compose file not found under $install_dir"
+    [ -f "$install_dir/docker-compose.yml" ] || die "compose file not found under $install_dir"
     compose ps
     ;;
 esac

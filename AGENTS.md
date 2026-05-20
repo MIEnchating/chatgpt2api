@@ -15,8 +15,8 @@ This repository is a Go backend with a Vite/React admin UI. The backend entry po
 - `go test ./...` runs all backend tests after the frontend assets exist.
 - `go build -tags=embed -o chatgpt2api ./internal` builds the service binary with embedded admin UI assets.
 - `CHATGPT2API_ADMIN_PASSWORD=change_me_please ./chatgpt2api` runs the backend locally after build.
-- `docker compose -f deploy/docker-compose.yml up -d` starts the default containerized deployment using `.env`.
-- `sh deploy/docker-build-limited.sh up` rebuilds the image from local source on a server with a resource-capped BuildKit builder.
+- `docker compose up -d` starts the default containerized deployment using `.env` after the local image exists.
+- `sh docker-build-limited.sh up` rebuilds the image from local source on a server with a resource-capped BuildKit builder.
 - `cd web && npm run dev` starts the frontend dev server.
 - `cd web && npm run build` type-checks and builds the frontend.
 - `cd web && npm run lint` runs Oxlint.

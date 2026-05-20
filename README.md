@@ -103,7 +103,7 @@ CHATGPT2API_ADMIN_PASSWORD=change_me_please
 ### 2. 启动服务
 
 ```bash
-docker compose -f deploy/docker-compose.yml up -d
+sh docker-build-limited.sh up
 ```
 
 默认 Compose 配置：
@@ -124,13 +124,13 @@ http://chatgpt2api:80
 查看日志（需要在仓库根目录执行）：
 
 ```bash
-docker compose -f deploy/docker-compose.yml logs -f chatgpt2api
+docker compose logs -f chatgpt2api
 ```
 
 查看自动生成的管理员密码（需要在仓库根目录执行）：
 
 ```bash
-docker compose -f deploy/docker-compose.yml logs chatgpt2api | grep "bootstrap admin password generated"
+docker compose logs chatgpt2api | grep "bootstrap admin password generated"
 ```
 
 日志行格式：
@@ -145,7 +145,7 @@ bootstrap admin password generated: username=admin password=生成的密码
 Windows PowerShell：
 
 ```powershell
-docker compose -f deploy/docker-compose.yml logs chatgpt2api | Select-String "bootstrap admin password generated"
+docker compose logs chatgpt2api | Select-String "bootstrap admin password generated"
 ```
 
 默认容器名方式：
@@ -154,7 +154,7 @@ docker compose -f deploy/docker-compose.yml logs chatgpt2api | Select-String "bo
 docker logs chatgpt2api 2>&1 | grep "bootstrap admin password generated"
 ```
 
-如果提示 `no configuration file provided: not found`，说明当前命令没有指定 Compose 配置文件。先进入仓库根目录再执行 `docker compose -f deploy/docker-compose.yml logs chatgpt2api`，或直接使用上面的 `docker logs chatgpt2api ...` 命令。
+如果提示 `no configuration file provided: not found`，说明当前命令没有在仓库根目录执行。先进入仓库根目录再执行 `docker compose logs chatgpt2api`，或直接使用上面的 `docker logs chatgpt2api ...` 命令。
 
 如果查不到日志，先确认 `.env` 或容器环境里是否已经设置了固定密码：
 
@@ -177,7 +177,7 @@ cd ~/chatgpt2api
 # 编辑 .env，设置一个新的已知管理员密码：
 # CHATGPT2API_ADMIN_PASSWORD=your_new_password
 
-docker compose -f deploy/docker-compose.yml down
+docker compose down
 cp -a data "data.bak.$(date +%Y%m%d-%H%M%S)"
 python3 - <<'PY'
 import sqlite3
@@ -193,7 +193,7 @@ con.commit()
 print(f"removed auth_users.json rows: {cur.rowcount}")
 con.close()
 PY
-docker compose -f deploy/docker-compose.yml up -d
+docker compose up -d
 ```
 
 </details>
@@ -201,7 +201,7 @@ docker compose -f deploy/docker-compose.yml up -d
 ### 3. 一键部署 / 服务器源码构建
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/MIEnchating/chatgpt2api/main/deploy/ubuntu-deploy.sh | sudo sh
+curl -fsSL https://raw.githubusercontent.com/MIEnchating/chatgpt2api/main/ubuntu-deploy.sh | sudo sh
 ```
 
 该命令会拉取 `MIEnchating/chatgpt2api` 仓库并从源码构建本地镜像 `chatgpt2api:local`。如果你已经在仓库目录内，也可以直接运行受限 BuildKit 脚本：
@@ -209,35 +209,35 @@ curl -fsSL https://raw.githubusercontent.com/MIEnchating/chatgpt2api/main/deploy
 通过 `curl | sudo sh` 执行时，默认会把仓库放在当前执行目录的 `chatgpt2api` 子目录，例如在 `/home/ubuntu` 执行就是 `/home/ubuntu/chatgpt2api`。如需指定其他目录，设置 `CHATGPT2API_INSTALL_DIR`。
 
 ```bash
-sh deploy/docker-build-limited.sh up
+sh docker-build-limited.sh up
 ```
 
 该脚本会创建独立的 `docker-container` Buildx builder，并对构建容器设置 CPU / 内存上限。直接运行时会按服务器资源自动选择默认值：最多使用 2 核；内存充足时默认放开到 3-4 GB；低内存机器才会降低 Go 编译并行度，避免 `compile: signal: killed` 这类 OOM：
 
 ```bash
-sh deploy/docker-build-limited.sh up
+sh docker-build-limited.sh up
 ```
 
 如果你想显式放开配额：
 
 ```bash
-BUILD_CPUS=2 BUILD_MEMORY=4g BUILD_MEMORY_SWAP=4g BUILD_GOMAXPROCS=2 BUILD_GOMEMLIMIT=2GiB sh deploy/docker-build-limited.sh up
+BUILD_CPUS=2 BUILD_MEMORY=4g BUILD_MEMORY_SWAP=4g BUILD_GOMAXPROCS=2 BUILD_GOMEMLIMIT=2GiB sh docker-build-limited.sh up
 ```
 
 如果只想构建本地镜像、不重启容器：
 
 ```bash
-sh deploy/docker-build-limited.sh build
+sh docker-build-limited.sh build
 ```
 
-脚本使用 `deploy/Dockerfile` 从源码构建本地镜像，默认镜像名为 `chatgpt2api:local`；`up` 模式会继续用 `deploy/docker-compose.yml` 启动该本地镜像。
+脚本使用根目录 `Dockerfile` 从源码构建本地镜像，默认镜像名为 `chatgpt2api:local`；`up` 模式会继续用根目录 `docker-compose.yml` 启动该本地镜像。
 
 ## 升级与在线更新
 
 ### Docker 部署升级
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/MIEnchating/chatgpt2api/main/deploy/ubuntu-deploy.sh | sudo sh
+curl -fsSL https://raw.githubusercontent.com/MIEnchating/chatgpt2api/main/ubuntu-deploy.sh | sudo sh
 ```
 
 默认会更新 `MIEnchating/chatgpt2api` 仓库并重新构建本地镜像。
@@ -385,7 +385,7 @@ bun run build
 - `go test ./...`
 - `bun install --frozen-lockfile`
 - `bun run build`
-- `docker compose -f deploy/docker-compose.yml config`
+- `docker compose config`
 
 ### Release
 
@@ -396,7 +396,7 @@ bun run build
 3. 将前端 artifact 下载到 `internal/web/dist`。
 4. GoReleaser 使用 `-tags=embed` 构建 Linux `amd64` / `arm64` 二进制。
 5. 生成 GitHub Release archive 和 `checksums.txt`。
-6. 使用 `deploy/Dockerfile.release` 构建多架构 Docker 镜像。
+6. 使用 `Dockerfile.release` 构建多架构 Docker 镜像。
 7. 推送 DockerHub 镜像。
 8. 推送 GHCR 镜像。
 
