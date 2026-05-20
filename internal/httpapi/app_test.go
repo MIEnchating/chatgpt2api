@@ -432,7 +432,7 @@ func TestRelayImagePayloadNormalizesSizeForRelay(t *testing.T) {
 		{name: "preset", input: "2k", want: "2048x2048"},
 		{name: "dimensions", input: "1824x1024", want: "1824x1024"},
 		{name: "auto", input: "auto", wantDrop: true},
-		{name: "unknown", input: "original", want: "original"},
+		{name: "unknown", input: "original", wantDrop: true},
 	}
 
 	for _, tt := range tests {
@@ -453,6 +453,66 @@ func TestRelayImagePayloadNormalizesSizeForRelay(t *testing.T) {
 				t.Fatalf("payload size = %#v, want %q in %#v", got, tt.want, payload)
 			}
 		})
+	}
+}
+
+func TestRelayImagePayloadSanitizesOfficialParameters(t *testing.T) {
+	payload := relayPayloadForPath("/v1/images/generations", map[string]any{
+		"prompt":             "draw",
+		"model":              "codex-gpt-image-2",
+		"quality":            "HD",
+		"background":         "transparent",
+		"moderation":         "strict",
+		"response_format":    "json",
+		"output_format":      "jpg",
+		"output_compression": 120,
+	})
+	if _, ok := payload["quality"]; ok {
+		t.Fatalf("invalid quality should be dropped: %#v", payload)
+	}
+	if _, ok := payload["background"]; ok {
+		t.Fatalf("unsupported background should be dropped: %#v", payload)
+	}
+	if _, ok := payload["moderation"]; ok {
+		t.Fatalf("invalid moderation should be dropped: %#v", payload)
+	}
+	if _, ok := payload["response_format"]; ok {
+		t.Fatalf("invalid response_format should be dropped: %#v", payload)
+	}
+	if payload["output_format"] != "jpeg" {
+		t.Fatalf("output_format = %#v, want jpeg in %#v", payload["output_format"], payload)
+	}
+	if payload["output_compression"] != 100 {
+		t.Fatalf("output_compression = %#v, want clamped 100 in %#v", payload["output_compression"], payload)
+	}
+
+	payload = relayPayloadForPath("/v1/images/edits", map[string]any{
+		"prompt":             "draw",
+		"model":              "codex-gpt-image-2",
+		"quality":            "AUTO",
+		"background":         "OPAQUE",
+		"moderation":         "LOW",
+		"response_format":    "b64_json",
+		"output_format":      "png",
+		"output_compression": 50,
+	})
+	if payload["quality"] != "auto" || payload["background"] != "opaque" || payload["moderation"] != "low" || payload["response_format"] != "b64_json" {
+		t.Fatalf("valid enum parameters were not normalized: %#v", payload)
+	}
+	if payload["output_format"] != "png" {
+		t.Fatalf("output_format = %#v, want png in %#v", payload["output_format"], payload)
+	}
+	if _, ok := payload["output_compression"]; ok {
+		t.Fatalf("png output should not forward output_compression: %#v", payload)
+	}
+
+	payload = relayPayloadForPath("/v1/images/generations", map[string]any{
+		"prompt":             "draw",
+		"model":              "codex-gpt-image-2",
+		"output_compression": 42,
+	})
+	if _, ok := payload["output_compression"]; ok {
+		t.Fatalf("output_compression without jpeg/webp output_format should be dropped: %#v", payload)
 	}
 }
 

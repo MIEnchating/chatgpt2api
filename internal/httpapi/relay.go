@@ -307,18 +307,118 @@ func relayPayloadForPath(pathValue string, payload map[string]any) map[string]an
 		}
 		delete(out, "prompt")
 	case "/v1/images/generations", "/v1/images/edits":
-		delete(out, "messages")
-		delete(out, "stream")
-		delete(out, "partial_images")
-		if normalizedSize, ok := normalizeRelayImageSize(util.Clean(out["size"])); ok {
-			if normalizedSize == "" {
-				delete(out, "size")
-			} else {
-				out["size"] = normalizedSize
-			}
-		}
+		sanitizeRelayImagePayload(out)
 	}
 	return out
+}
+
+func sanitizeRelayImagePayload(payload map[string]any) {
+	delete(payload, "messages")
+	delete(payload, "stream")
+	delete(payload, "partial_images")
+
+	if _, ok := payload["size"]; ok {
+		if normalizedSize, ok := normalizeRelayImageSize(util.Clean(payload["size"])); ok && normalizedSize != "" {
+			payload["size"] = normalizedSize
+		} else {
+			delete(payload, "size")
+		}
+	}
+	normalizeRelayImageEnum(payload, "quality", map[string]string{"auto": "auto", "low": "low", "medium": "medium", "high": "high"})
+	normalizeRelayImageEnum(payload, "background", map[string]string{"auto": "auto", "opaque": "opaque"})
+	normalizeRelayImageEnum(payload, "moderation", map[string]string{"auto": "auto", "low": "low"})
+	normalizeRelayImageEnum(payload, "response_format", map[string]string{"url": "url", "b64_json": "b64_json"})
+
+	outputFormat := ""
+	if _, ok := payload["output_format"]; ok {
+		if format, ok := normalizeRelayImageOutputFormat(util.Clean(payload["output_format"])); ok {
+			payload["output_format"] = format
+			outputFormat = format
+		} else {
+			delete(payload, "output_format")
+		}
+	}
+	if compression, ok := normalizeRelayImageOutputCompression(payload["output_compression"]); ok && relayImageOutputFormatSupportsCompression(outputFormat) {
+		payload["output_compression"] = compression
+	} else {
+		delete(payload, "output_compression")
+	}
+}
+
+func normalizeRelayImageEnum(payload map[string]any, key string, allowed map[string]string) {
+	if _, ok := payload[key]; !ok {
+		return
+	}
+	normalized := strings.ToLower(strings.TrimSpace(util.Clean(payload[key])))
+	if value, ok := allowed[normalized]; ok {
+		payload[key] = value
+		return
+	}
+	delete(payload, key)
+}
+
+func normalizeRelayImageOutputFormat(format string) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "png":
+		return "png", true
+	case "jpg", "jpeg":
+		return "jpeg", true
+	case "webp":
+		return "webp", true
+	default:
+		return "", false
+	}
+}
+
+func relayImageOutputFormatSupportsCompression(format string) bool {
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "jpeg", "webp":
+		return true
+	default:
+		return false
+	}
+}
+
+func normalizeRelayImageOutputCompression(value any) (int, bool) {
+	if value == nil || strings.TrimSpace(util.Clean(value)) == "" {
+		return 0, false
+	}
+	compression, ok := relayImageInt(value)
+	if !ok || compression < 0 {
+		return 0, false
+	}
+	if compression > 100 {
+		compression = 100
+	}
+	return compression, true
+}
+
+func relayImageInt(value any) (int, bool) {
+	switch v := value.(type) {
+	case int:
+		return v, true
+	case int64:
+		return int(v), true
+	case float64:
+		if math.Trunc(v) != v {
+			return 0, false
+		}
+		return int(v), true
+	case json.Number:
+		n, err := v.Int64()
+		if err != nil {
+			return 0, false
+		}
+		return int(n), true
+	case string:
+		n, err := strconv.Atoi(strings.TrimSpace(v))
+		if err != nil {
+			return 0, false
+		}
+		return n, true
+	default:
+		return 0, false
+	}
 }
 
 func normalizeRelayImageSize(size string) (string, bool) {
