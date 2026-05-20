@@ -961,101 +961,109 @@ function UsersContent() {
             <DialogTitle>创建用户</DialogTitle>
             <DialogDescription className="text-sm leading-6">创建本地登录用户并绑定角色。</DialogDescription>
           </DialogHeader>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-stone-700 dark:text-foreground">用户名</label>
-              <div className="relative">
-                <UserRound className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <form
+            className="contents"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void handleCreate();
+            }}
+          >
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-stone-700 dark:text-foreground">用户名</label>
+                <div className="relative">
+                  <UserRound className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={createForm.username}
+                    onChange={(event) => updateCreateField("username", event.target.value.toLowerCase())}
+                    placeholder="例如：operator_01"
+                    autoComplete="username"
+                    className="h-11 rounded-xl pl-9"
+                    aria-invalid={Boolean(createErrors.username)}
+                  />
+                </div>
+                {createErrors.username ? <p className="text-xs leading-5 text-destructive">{createErrors.username}</p> : null}
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-stone-700 dark:text-foreground">显示名称</label>
                 <Input
-                  value={createForm.username}
-                  onChange={(event) => updateCreateField("username", event.target.value.toLowerCase())}
-                  placeholder="例如：operator_01"
-                  autoComplete="username"
-                  className="h-11 rounded-xl pl-9"
-                  aria-invalid={Boolean(createErrors.username)}
+                  value={createForm.name}
+                  onChange={(event) => updateCreateField("name", event.target.value)}
+                  placeholder="例如：运营账号"
+                  className="h-11 rounded-xl"
                 />
               </div>
-              {createErrors.username ? <p className="text-xs leading-5 text-destructive">{createErrors.username}</p> : null}
             </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-stone-700 dark:text-foreground">显示名称</label>
-              <Input
-                value={createForm.name}
-                onChange={(event) => updateCreateField("name", event.target.value)}
-                placeholder="例如：运营账号"
-                className="h-11 rounded-xl"
-              />
-            </div>
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-stone-700 dark:text-foreground">密码</label>
-              <div className="relative">
-                <KeyRound className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-stone-700 dark:text-foreground">密码</label>
+                <div className="relative">
+                  <KeyRound className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                  <Input
+                    value={createForm.password}
+                    onChange={(event) => updateCreateField("password", event.target.value)}
+                    placeholder="至少 8 位"
+                    type="password"
+                    autoComplete="new-password"
+                    className="h-11 rounded-xl pl-9"
+                    aria-invalid={Boolean(createErrors.password)}
+                  />
+                </div>
+                {createErrors.password ? <p className="text-xs leading-5 text-destructive">{createErrors.password}</p> : null}
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-stone-700 dark:text-foreground">确认密码</label>
                 <Input
-                  value={createForm.password}
-                  onChange={(event) => updateCreateField("password", event.target.value)}
-                  placeholder="至少 8 位"
+                  value={createForm.confirmPassword}
+                  onChange={(event) => updateCreateField("confirmPassword", event.target.value)}
+                  placeholder="再次输入密码"
                   type="password"
                   autoComplete="new-password"
-                  className="h-11 rounded-xl pl-9"
-                  aria-invalid={Boolean(createErrors.password)}
+                  className="h-11 rounded-xl"
+                  aria-invalid={Boolean(createErrors.confirmPassword)}
                 />
+                {createErrors.confirmPassword ? <p className="text-xs leading-5 text-destructive">{createErrors.confirmPassword}</p> : null}
               </div>
-              {createErrors.password ? <p className="text-xs leading-5 text-destructive">{createErrors.password}</p> : null}
             </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-stone-700 dark:text-foreground">确认密码</label>
-              <Input
-                value={createForm.confirmPassword}
-                onChange={(event) => updateCreateField("confirmPassword", event.target.value)}
-                placeholder="再次输入密码"
-                type="password"
-                autoComplete="new-password"
-                className="h-11 rounded-xl"
-                aria-invalid={Boolean(createErrors.confirmPassword)}
-              />
-              {createErrors.confirmPassword ? <p className="text-xs leading-5 text-destructive">{createErrors.confirmPassword}</p> : null}
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-stone-700 dark:text-foreground">角色</label>
+                <Select value={createForm.role_id} onValueChange={(value) => updateCreateField("role_id", value)}>
+                  <SelectTrigger className="h-11 rounded-xl">
+                    <SelectValue placeholder="选择角色" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {roles.map((role) => (
+                      <SelectItem key={role.id} value={role.id}>
+                        {role.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-stone-700 dark:text-foreground">状态</label>
+                <Select value={createForm.enabled ? "true" : "false"} onValueChange={(value) => updateCreateField("enabled", value === "true")}>
+                  <SelectTrigger className="h-11 rounded-xl">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="true">已启用</SelectItem>
+                    <SelectItem value="false">已禁用</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
-          </div>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-stone-700 dark:text-foreground">角色</label>
-              <Select value={createForm.role_id} onValueChange={(value) => updateCreateField("role_id", value)}>
-                <SelectTrigger className="h-11 rounded-xl">
-                  <SelectValue placeholder="选择角色" />
-                </SelectTrigger>
-                <SelectContent>
-                  {roles.map((role) => (
-                    <SelectItem key={role.id} value={role.id}>
-                      {role.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium text-stone-700 dark:text-foreground">状态</label>
-              <Select value={createForm.enabled ? "true" : "false"} onValueChange={(value) => updateCreateField("enabled", value === "true")}>
-                <SelectTrigger className="h-11 rounded-xl">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="true">已启用</SelectItem>
-                  <SelectItem value="false">已禁用</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-          <DialogFooter>
-            <Button type="button" variant="secondary" className="h-10 rounded-xl px-5" onClick={() => closeCreateDialog(false)} disabled={isCreating}>
-              取消
-            </Button>
-            <Button type="button" className="h-10 rounded-xl px-5" onClick={() => void handleCreate()} disabled={isCreating}>
-              {isCreating ? <LoaderCircle className="size-4 animate-spin" /> : <Plus className="size-4" />}
-              创建
-            </Button>
-          </DialogFooter>
+            <DialogFooter>
+              <Button type="button" variant="secondary" className="h-10 rounded-xl px-5" onClick={() => closeCreateDialog(false)} disabled={isCreating}>
+                取消
+              </Button>
+              <Button type="submit" className="h-10 rounded-xl px-5" disabled={isCreating}>
+                {isCreating ? <LoaderCircle className="size-4 animate-spin" /> : <Plus className="size-4" />}
+                创建
+              </Button>
+            </DialogFooter>
+          </form>
         </DialogContent>
       </Dialog>
 

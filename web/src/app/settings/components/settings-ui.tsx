@@ -6,6 +6,7 @@ import type { LucideIcon } from "lucide-react";
 import {
   Card,
   CardContent,
+  CardDescription,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -50,6 +51,7 @@ export function SettingsCard({
   children,
   className,
   contentClassName,
+  description,
   icon: Icon,
   meta,
   title,
@@ -76,6 +78,9 @@ export function SettingsCard({
             <CardTitle className="text-lg leading-7 font-semibold">
               {title}
             </CardTitle>
+            <CardDescription className="mt-1 line-clamp-2 text-sm leading-5">
+              {description}
+            </CardDescription>
           </div>
         </div>
         {meta || action ? (

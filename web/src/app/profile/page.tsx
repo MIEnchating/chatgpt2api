@@ -256,53 +256,55 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
             </CardHeader>
             <CardContent>
               {currentSession.provider === "local" ? (
-                <FieldGroup>
-                  <Field>
-                    <FieldLabel htmlFor="profile-current-password">当前密码</FieldLabel>
-                    <Input
-                      id="profile-current-password"
-                      type="password"
-                      autoComplete="current-password"
-                      value={currentPassword}
-                      onChange={(event) => setCurrentPassword(event.target.value)}
-                      className="h-10 rounded-lg"
-                    />
-                  </Field>
-                  <Field>
-                    <FieldLabel htmlFor="profile-new-password">新密码</FieldLabel>
-                    <Input
-                      id="profile-new-password"
-                      type="password"
-                      autoComplete="new-password"
-                      value={newPassword}
-                      onChange={(event) => setNewPassword(event.target.value)}
-                      className="h-10 rounded-lg"
-                    />
-                    <FieldDescription>密码长度不能少于 8 位。</FieldDescription>
-                  </Field>
-                  <Field>
-                    <FieldLabel htmlFor="profile-confirm-password">确认新密码</FieldLabel>
-                    <Input
-                      id="profile-confirm-password"
-                      type="password"
-                      autoComplete="new-password"
-                      value={confirmPassword}
-                      onChange={(event) => setConfirmPassword(event.target.value)}
-                      className="h-10 rounded-lg"
-                    />
-                  </Field>
-                  <div className="flex justify-end">
-                    <Button
-                      type="button"
-                      className="h-10 rounded-lg"
-                      onClick={() => void handleChangePassword()}
-                      disabled={isChangingPassword}
-                    >
-                      {isChangingPassword ? <LoaderCircle className="size-4 animate-spin" /> : <Save className="size-4" />}
-                      修改密码
-                    </Button>
-                  </div>
-                </FieldGroup>
+                <form
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void handleChangePassword();
+                  }}
+                >
+                  <FieldGroup>
+                    <Field>
+                      <FieldLabel htmlFor="profile-current-password">当前密码</FieldLabel>
+                      <Input
+                        id="profile-current-password"
+                        type="password"
+                        autoComplete="current-password"
+                        value={currentPassword}
+                        onChange={(event) => setCurrentPassword(event.target.value)}
+                        className="h-10 rounded-lg"
+                      />
+                    </Field>
+                    <Field>
+                      <FieldLabel htmlFor="profile-new-password">新密码</FieldLabel>
+                      <Input
+                        id="profile-new-password"
+                        type="password"
+                        autoComplete="new-password"
+                        value={newPassword}
+                        onChange={(event) => setNewPassword(event.target.value)}
+                        className="h-10 rounded-lg"
+                      />
+                      <FieldDescription>密码长度不能少于 8 位。</FieldDescription>
+                    </Field>
+                    <Field>
+                      <FieldLabel htmlFor="profile-confirm-password">确认新密码</FieldLabel>
+                      <Input
+                        id="profile-confirm-password"
+                        type="password"
+                        autoComplete="new-password"
+                        value={confirmPassword}
+                        onChange={(event) => setConfirmPassword(event.target.value)}
+                        className="h-10 rounded-lg"
+                      />
+                    </Field>
+                    <div className="flex justify-end">
+                      <Button type="submit" className="h-10 rounded-lg" disabled={isChangingPassword}>
+                        {isChangingPassword ? <LoaderCircle className="size-4 animate-spin" /> : <Save className="size-4" />}
+                        修改密码
+                      </Button>
+                    </div>
+                  </FieldGroup>
+                </form>
               ) : (
                 <div className="rounded-xl border border-border bg-muted/30 px-3 py-4 text-sm text-muted-foreground">
                   外部登录账号不使用本地密码。
@@ -380,7 +382,13 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
               <FieldGroup>
                 <Field>
                   <FieldLabel htmlFor="profile-relay-key">RelayAI Key</FieldLabel>
-                  <div className="flex flex-col gap-2 sm:flex-row">
+                  <form
+                    className="flex flex-col gap-2 sm:flex-row"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void handleSaveRelayKey();
+                    }}
+                  >
                     <div className="relative min-w-0 flex-1">
                       <Input
                         id="profile-relay-key"
@@ -401,16 +409,11 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
                         {isRelayKeyVisible ? <EyeOff className="size-4" /> : <Eye className="size-4" />}
                       </button>
                     </div>
-                    <Button
-                      type="button"
-                      className="h-10 rounded-lg"
-                      onClick={() => void handleSaveRelayKey()}
-                      disabled={!isRelayKeyDirty || isSavingRelayKey}
-                    >
+                    <Button type="submit" className="h-10 rounded-lg" disabled={!isRelayKeyDirty || isSavingRelayKey}>
                       {isSavingRelayKey ? <LoaderCircle className="size-4 animate-spin" /> : <Save className="size-4" />}
                       保存
                     </Button>
-                  </div>
+                  </form>
                   <FieldDescription>
                     Key 按当前登录用户保存在服务端；页面显示固定公网地址，实际请求由服务端转发到管理员配置的映射地址。
                   </FieldDescription>
