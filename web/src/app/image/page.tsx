@@ -95,7 +95,12 @@ import {
 import { fetchAuthenticatedImageBlob } from "@/lib/authenticated-image";
 import { clearImageManagerCache } from "@/lib/image-manager-cache";
 import { getManagedImagePathFromUrl } from "@/lib/image-path";
-import { getStoredRelayApiKey, RELAY_API_KEY_CHANGED_EVENT, RELAY_API_KEY_STORAGE_KEY } from "@/lib/relay-key";
+import {
+  getStoredRelayApiKey,
+  relayApiKeyStorageKeyForSession,
+  RELAY_API_KEY_CHANGED_EVENT,
+  RELAY_API_KEY_STORAGE_KEY,
+} from "@/lib/relay-key";
 import { cn } from "@/lib/utils";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import { hasAPIPermission, type StoredAuthSession } from "@/store/auth";
@@ -1146,7 +1151,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   const [imageOutputCompression, setImageOutputCompression] = useState(getStoredImageOutputCompression);
   const [imageBackground, setImageBackground] = useState<ImageBackground>(getStoredImageBackground);
   const [imageModeration, setImageModeration] = useState<ImageModeration>(getStoredImageModeration);
-  const [relayApiKey, setRelayApiKey] = useState(getStoredRelayApiKey);
+  const [relayApiKey, setRelayApiKey] = useState(() => getStoredRelayApiKey(session));
+  const relayApiKeyStorageKey = relayApiKeyStorageKeyForSession(session);
   const [relayImageModelOptions, setRelayImageModelOptions] = useState<ImageModelOption[]>(() =>
     ensureDefaultImageModelOption(IMAGE_CREATION_MODEL_OPTIONS),
   );
@@ -1699,22 +1705,36 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       return;
     }
 
+    setRelayApiKey(getStoredRelayApiKey(session));
+  }, [session]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
     const refreshRelayKey = () => {
-      setRelayApiKey(getStoredRelayApiKey());
+      setRelayApiKey(getStoredRelayApiKey(session));
+    };
+    const handleRelayKeyChanged = (event: Event) => {
+      const changedStorageKey = (event as CustomEvent<{ storageKey?: string }>).detail?.storageKey;
+      if (!changedStorageKey || changedStorageKey === relayApiKeyStorageKey) {
+        refreshRelayKey();
+      }
     };
     const handleStorage = (event: StorageEvent) => {
-      if (event.key === RELAY_API_KEY_STORAGE_KEY) {
+      if (event.key === relayApiKeyStorageKey || event.key === RELAY_API_KEY_STORAGE_KEY) {
         refreshRelayKey();
       }
     };
 
-    window.addEventListener(RELAY_API_KEY_CHANGED_EVENT, refreshRelayKey);
+    window.addEventListener(RELAY_API_KEY_CHANGED_EVENT, handleRelayKeyChanged);
     window.addEventListener("storage", handleStorage);
     return () => {
-      window.removeEventListener(RELAY_API_KEY_CHANGED_EVENT, refreshRelayKey);
+      window.removeEventListener(RELAY_API_KEY_CHANGED_EVENT, handleRelayKeyChanged);
       window.removeEventListener("storage", handleStorage);
     };
-  }, []);
+  }, [relayApiKeyStorageKey, session]);
 
   useEffect(() => {
     if (typeof window === "undefined") {

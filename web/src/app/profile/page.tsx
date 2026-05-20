@@ -10,8 +10,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { changeProfilePassword, fetchModelConfig, updateProfileName } from "@/lib/api";
-import { getStoredRelayApiKey, saveStoredRelayApiKey } from "@/lib/relay-key";
+import { changeProfilePassword, updateProfileName } from "@/lib/api";
+import { getStoredRelayApiKey, RELAY_PUBLIC_BASE_URL, saveStoredRelayApiKey } from "@/lib/relay-key";
 import { authSessionFromLoginResponse, setVerifiedAuthSession } from "@/lib/session";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import type { StoredAuthSession } from "@/store/auth";
@@ -83,9 +83,8 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [relayApiKey, setRelayApiKey] = useState(getStoredRelayApiKey);
-  const [savedRelayApiKey, setSavedRelayApiKey] = useState(getStoredRelayApiKey);
-  const [relayBaseURL, setRelayBaseURL] = useState("http://newapi:3000");
+  const [relayApiKey, setRelayApiKey] = useState(() => getStoredRelayApiKey(session));
+  const [savedRelayApiKey, setSavedRelayApiKey] = useState(() => getStoredRelayApiKey(session));
   const [isRelayKeyVisible, setIsRelayKeyVisible] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
@@ -99,25 +98,10 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
   useEffect(() => {
     setCurrentSession(session);
     setProfileName(session.name || "");
+    const storedRelayKey = getStoredRelayApiKey(session);
+    setRelayApiKey(storedRelayKey);
+    setSavedRelayApiKey(storedRelayKey);
   }, [session]);
-
-  useEffect(() => {
-    let ignore = false;
-    void fetchModelConfig()
-      .then((data) => {
-        if (!ignore && data.config.relay_base_url) {
-          setRelayBaseURL(data.config.relay_base_url);
-        }
-      })
-      .catch(() => {
-        if (!ignore) {
-          setRelayBaseURL("http://newapi:3000");
-        }
-      });
-    return () => {
-      ignore = true;
-    };
-  }, []);
 
   const handleSaveProfile = async () => {
     const nextName = profileName.trim();
@@ -178,7 +162,7 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
     }
     setIsSavingRelayKey(true);
     try {
-      saveStoredRelayApiKey(trimmed);
+      saveStoredRelayApiKey(trimmed, currentSession);
       setRelayApiKey(trimmed);
       setSavedRelayApiKey(trimmed);
       toast.success("RelayAI Key 已保存");
@@ -188,7 +172,7 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
   };
 
   const handleClearRelayKey = () => {
-    saveStoredRelayApiKey("");
+    saveStoredRelayApiKey("", currentSession);
     setRelayApiKey("");
     setSavedRelayApiKey("");
     setIsRelayKeyVisible(false);
@@ -369,7 +353,7 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
             </CardHeader>
             <CardContent className="flex flex-col gap-5">
               <div className="grid gap-3 md:grid-cols-2">
-                <InfoRow label="Base URL" value={relayBaseURL} code />
+                <InfoRow label="Base URL" value={RELAY_PUBLIC_BASE_URL} code />
                 <InfoRow label="当前状态" value={relayKeyConfigured ? "可以生成图片和对话" : "生成前需要先填写 Key"} />
               </div>
 
@@ -408,7 +392,7 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
                     </Button>
                   </div>
                   <FieldDescription>
-                    Key 只保存在当前浏览器；提交创作请求时会发送给管理员配置的 RelayAI 上游。
+                    Key 按当前登录用户保存在浏览器；页面显示固定公网地址，实际请求由服务端转发到管理员配置的映射地址。
                   </FieldDescription>
                 </Field>
               </FieldGroup>
