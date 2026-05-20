@@ -27,11 +27,8 @@ export type BananaPrompt = {
   localizations?: Partial<Record<PromptMarketLanguage, PromptMarketLocalization>>;
 };
 
-export const BANANA_PROMPTS_SOURCE_URL = "https://github.com/glidea/banana-prompt-quicker";
 export const BANANA_PROMPTS_URL =
   "https://raw.githubusercontent.com/glidea/banana-prompt-quicker/main/prompts.json";
-export const AWESOME_GPT_IMAGE_2_PROMPTS_SOURCE_URL =
-  "https://github.com/EvoLinkAI/awesome-gpt-image-2-prompts";
 export const AWESOME_GPT_IMAGE_2_PROMPTS_ZH_README_URL =
   "https://raw.githubusercontent.com/EvoLinkAI/awesome-gpt-image-2-prompts/main/README_zh-CN.md";
 export const AWESOME_GPT_IMAGE_2_PROMPTS_EN_README_URL =

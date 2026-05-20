@@ -18,7 +18,6 @@ import (
 	"chatgpt2api/internal/config"
 	"chatgpt2api/internal/service"
 	"chatgpt2api/internal/util"
-	"chatgpt2api/internal/version"
 )
 
 const (
@@ -184,7 +183,6 @@ func (a *App) handleLinuxDoOAuthCallback(w http.ResponseWriter, r *http.Request)
 	fragment.Set("role", service.AuthRoleUser)
 	fragment.Set("subject_id", ownerID)
 	fragment.Set("name", userInfo.Username)
-	fragment.Set("version", version.Get())
 	fragment.Set("redirect", redirectTo)
 	setAuthSessionCookie(w, r, rawSessionKey)
 	redirectWithFragment(w, r, frontendCallback, fragment)

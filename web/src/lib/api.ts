@@ -285,6 +285,7 @@ type AccountUpdateResponse = {
 export type SettingsConfig = {
   proxy: string;
   base_url?: string;
+  relay_base_url?: string;
   image_models?: string[] | string;
   chat_models?: string[] | string;
   default_image_model?: string;
@@ -310,9 +311,6 @@ export type SettingsConfig = {
   linuxdo_client_secret_configured?: boolean;
   linuxdo_redirect_url?: string;
   linuxdo_frontend_redirect_url?: string;
-  update_repo?: string;
-  update_github_token?: string;
-  update_github_token_configured?: boolean;
   login_page_image_url?: string;
   login_page_image_mode?: LoginPageImageMode | string;
   login_page_image_zoom?: number | string;
@@ -326,6 +324,7 @@ export type ModelConfig = {
   chat_models: ImageModel[];
   default_image_model: ImageModel;
   default_chat_model: ImageModel;
+  relay_base_url: string;
 };
 
 export type LoginPageImageSettings = {
@@ -445,35 +444,6 @@ export type ImageStorageCleanupResult = {
   action?: string;
 };
 
-export type ReleaseAsset = {
-  name: string;
-  download_url: string;
-  size: number;
-};
-
-export type ReleaseInfo = {
-  name: string;
-  body: string;
-  published_at: string;
-  html_url: string;
-  assets: ReleaseAsset[];
-};
-
-export type SystemUpdateInfo = {
-  current_version: string;
-  latest_version: string;
-  has_update: boolean;
-  release_info?: ReleaseInfo;
-  cached: boolean;
-  warning?: string;
-  build_type: string;
-};
-
-export type SystemUpdateResult = {
-  message: string;
-  need_restart: boolean;
-};
-
 export type ImageResponse = {
   created: number;
   data: Array<{ b64_json?: string; url?: string; revised_prompt?: string }>;
@@ -522,7 +492,6 @@ type CreationTaskListResponse = {
 
 export type LoginResponse = {
   ok: boolean;
-  version: string;
   token?: string;
   role: AuthRole;
   role_id?: string;
@@ -1343,35 +1312,6 @@ export async function cleanupImageStorage(body: {
       body,
     },
   );
-}
-
-export async function checkSystemUpdates(force = false) {
-  const params = new URLSearchParams();
-  if (force) {
-    params.set("force", "true");
-  }
-  return httpRequest<SystemUpdateInfo>(`/api/admin/system/check-updates${params.toString() ? `?${params.toString()}` : ""}`);
-}
-
-export async function performSystemUpdate() {
-  return httpRequest<SystemUpdateResult>("/api/admin/system/update", {
-    method: "POST",
-    body: {},
-  });
-}
-
-export async function rollbackSystemUpdate() {
-  return httpRequest<SystemUpdateResult>("/api/admin/system/rollback", {
-    method: "POST",
-    body: {},
-  });
-}
-
-export async function restartSystemService() {
-  return httpRequest<{ message: string }>("/api/admin/system/restart", {
-    method: "POST",
-    body: {},
-  });
 }
 
 export async function fetchUserKeys() {

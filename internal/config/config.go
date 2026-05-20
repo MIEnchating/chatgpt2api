@@ -20,6 +20,7 @@ import (
 
 var settingEnvKeys = map[string]string{
 	"base_url":                          "CHATGPT2API_BASE_URL",
+	"relay_base_url":                    "CHATGPT2API_RELAY_BASE_URL",
 	"proxy":                             "CHATGPT2API_PROXY",
 	"image_models":                      "CHATGPT2API_IMAGE_MODELS",
 	"chat_models":                       "CHATGPT2API_CHAT_MODELS",
@@ -42,8 +43,6 @@ var settingEnvKeys = map[string]string{
 	"linuxdo_client_secret":             "CHATGPT2API_LINUXDO_CLIENT_SECRET",
 	"linuxdo_redirect_url":              "CHATGPT2API_LINUXDO_REDIRECT_URL",
 	"linuxdo_frontend_redirect_url":     "CHATGPT2API_LINUXDO_FRONTEND_REDIRECT_URL",
-	"update_repo":                       "CHATGPT2API_UPDATE_REPO",
-	"update_github_token":               "CHATGPT2API_UPDATE_GITHUB_TOKEN",
 	"registration_enabled":              "CHATGPT2API_REGISTRATION_ENABLED",
 	"login_page_image_url":              "CHATGPT2API_LOGIN_PAGE_IMAGE_URL",
 	"login_page_image_mode":             "CHATGPT2API_LOGIN_PAGE_IMAGE_MODE",
@@ -58,6 +57,7 @@ const (
 	defaultImageTaskTimeoutSeconds = 300
 	minImageTaskTimeoutSeconds     = 30
 	maxImageTaskTimeoutSeconds     = 3600
+	defaultRelayBaseURL            = "https://relayai.tech"
 )
 
 var (
@@ -287,23 +287,12 @@ func (s *Store) BaseURL() string {
 	return strings.TrimRight(strings.TrimSpace(fmt.Sprint(s.settingValue("base_url", ""))), "/")
 }
 
+func (s *Store) RelayBaseURL() string {
+	return strings.TrimRight(strings.TrimSpace(fmt.Sprint(s.settingValue("relay_base_url", defaultRelayBaseURL))), "/")
+}
+
 func (s *Store) Proxy() string {
 	return strings.TrimSpace(fmt.Sprint(s.settingValue("proxy", "")))
-}
-
-func (s *Store) UpdateProxyURL() string {
-	if value := strings.TrimSpace(os.Getenv("CHATGPT2API_UPDATE_PROXY_URL")); value != "" {
-		return value
-	}
-	return s.Proxy()
-}
-
-func (s *Store) UpdateRepo() string {
-	return normalizeUpdateRepo(s.settingValue("update_repo", "ZyphrZero/chatgpt2api"))
-}
-
-func (s *Store) UpdateGitHubToken() string {
-	return strings.TrimSpace(fmt.Sprint(s.settingValue("update_github_token", "")))
 }
 
 func (s *Store) LogLevels() []string {
@@ -463,6 +452,7 @@ func (s *Store) Get() map[string]any {
 	data["log_levels"] = s.LogLevels()
 	data["proxy"] = s.Proxy()
 	data["base_url"] = s.BaseURL()
+	data["relay_base_url"] = s.RelayBaseURL()
 	data["registration_enabled"] = s.RegistrationEnabled()
 	linuxdo := s.LinuxDoOAuth()
 	data["linuxdo_enabled"] = linuxdo.Enabled
@@ -470,15 +460,12 @@ func (s *Store) Get() map[string]any {
 	data["linuxdo_client_secret_configured"] = linuxdo.ClientSecret != ""
 	data["linuxdo_redirect_url"] = linuxdo.RedirectURL
 	data["linuxdo_frontend_redirect_url"] = linuxdo.FrontendRedirectURL
-	data["update_repo"] = s.UpdateRepo()
-	data["update_github_token_configured"] = s.UpdateGitHubToken() != ""
 	data["login_page_image_url"] = s.LoginPageImageURL()
 	data["login_page_image_mode"] = s.LoginPageImageMode()
 	data["login_page_image_zoom"] = s.LoginPageImageZoom()
 	data["login_page_image_position_x"] = s.LoginPageImagePositionX()
 	data["login_page_image_position_y"] = s.LoginPageImagePositionY()
 	delete(data, "linuxdo_client_secret")
-	delete(data, "update_github_token")
 	return data
 }
 
@@ -489,13 +476,7 @@ func (s *Store) Update(data map[string]any) (map[string]any, error) {
 		if key == "linuxdo_client_secret_configured" {
 			continue
 		}
-		if key == "update_github_token_configured" {
-			continue
-		}
 		if key == "linuxdo_client_secret" && strings.TrimSpace(fmt.Sprint(value)) == "" {
-			continue
-		}
-		if key == "update_github_token" && strings.TrimSpace(fmt.Sprint(value)) == "" {
 			continue
 		}
 		next[key] = value
@@ -522,7 +503,6 @@ func (s *Store) Update(data map[string]any) (map[string]any, error) {
 	if value, ok := next["default_subscription_period"]; ok {
 		next["default_subscription_period"] = normalizeDefaultSubscriptionPeriod(value)
 	}
-	next["update_repo"] = normalizeUpdateRepo(util.ValueOr(next["update_repo"], "ZyphrZero/chatgpt2api"))
 	if err := s.validateSettingsUpdateLocked(next); err != nil {
 		s.mu.Unlock()
 		return nil, err
@@ -602,8 +582,12 @@ func (s *Store) settingValueFromData(data map[string]any, key string, fallback a
 }
 
 func (s *Store) validateSettingsUpdateLocked(data map[string]any) error {
-	if err := validateUpdateRepo(util.Clean(util.ValueOr(data["update_repo"], "ZyphrZero/chatgpt2api"))); err != nil {
-		return err
+	relayBaseURL := strings.TrimSpace(fmt.Sprint(util.ValueOr(data["relay_base_url"], defaultRelayBaseURL)))
+	if relayBaseURL == "" {
+		return errors.New("RelayAI Base URL is required")
+	}
+	if err := validateAbsoluteHTTPURL(relayBaseURL); err != nil {
+		return errors.New("RelayAI Base URL must be an absolute http(s) URL")
 	}
 	linuxdo := s.linuxDoOAuthFromData(data)
 	if !linuxdo.Enabled {
@@ -635,21 +619,6 @@ func (s *Store) validateSettingsUpdateLocked(data map[string]any) error {
 		}
 	default:
 		return errors.New("Linuxdo token auth method must be one of client_secret_post, client_secret_basic, none")
-	}
-	return nil
-}
-
-func normalizeUpdateRepo(value any) string {
-	repo := strings.Trim(strings.TrimSpace(fmt.Sprint(value)), "/")
-	if repo == "" {
-		return "ZyphrZero/chatgpt2api"
-	}
-	return repo
-}
-
-func validateUpdateRepo(value string) error {
-	if !regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`).MatchString(value) {
-		return errors.New("Update repository must use owner/repo format")
 	}
 	return nil
 }

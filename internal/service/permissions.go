@@ -69,8 +69,6 @@ var apiPermissionCatalog = []APIPermission{
 	apiPermission("GET", "/api/proxy", "查看代理", "设置", true),
 	apiPermission("POST", "/api/proxy", "修改/测试代理", "设置", true),
 	apiPermission("GET", "/api/storage/info", "查看存储状态", "设置", false),
-	apiPermission("GET", "/api/admin/system", "查看系统版本和更新", "设置", true),
-	apiPermission("POST", "/api/admin/system", "执行系统更新/重启", "设置", true),
 	apiPermission("GET", "/api/admin/announcements", "查看公告", "公告", true),
 	apiPermission("POST", "/api/admin/announcements", "创建/修改公告", "公告", true),
 	apiPermission("DELETE", "/api/admin/announcements", "删除公告", "公告", true),

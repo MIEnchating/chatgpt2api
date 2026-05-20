@@ -625,87 +625,65 @@ func TestNewStoreDiscoversEnvFromParentDirectory(t *testing.T) {
 	}
 }
 
-func TestStoreReadsUpdateGitHubTokenFromEnvFile(t *testing.T) {
+func TestStoreReadsRelayBaseURLFromEnvFile(t *testing.T) {
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, ".env"), []byte("CHATGPT2API_UPDATE_GITHUB_TOKEN=ghp_test_token\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, ".env"), []byte("CHATGPT2API_RELAY_BASE_URL=https://relay.example/root/\n"), 0o644); err != nil {
 		t.Fatalf("write .env: %v", err)
 	}
 	t.Setenv("CHATGPT2API_ROOT", root)
-	unsetEnv(t, "CHATGPT2API_UPDATE_GITHUB_TOKEN")
+	unsetEnv(t, "CHATGPT2API_RELAY_BASE_URL")
 
 	store, err := NewStore()
 	if err != nil {
 		t.Fatalf("NewStore() error = %v", err)
 	}
-	if got := store.UpdateGitHubToken(); got != "ghp_test_token" {
-		t.Fatalf("UpdateGitHubToken() = %q, want token from .env", got)
-	}
-	if _, ok := store.Get()["update_github_token"]; ok {
-		t.Fatal("Get() leaked update GitHub token")
-	}
-	if got := store.Get()["update_github_token_configured"]; got != true {
-		t.Fatalf("Get() update_github_token_configured = %#v, want true", got)
+	if got := store.RelayBaseURL(); got != "https://relay.example/root" {
+		t.Fatalf("RelayBaseURL() = %q, want configured base URL", got)
 	}
 }
 
-func TestStoreUpdatePersistsUpdateSettings(t *testing.T) {
+func TestStoreUpdatePersistsRelayBaseURL(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("CHATGPT2API_ROOT", root)
-	unsetEnv(t, "CHATGPT2API_UPDATE_GITHUB_TOKEN")
-	unsetEnv(t, "CHATGPT2API_UPDATE_REPO")
+	unsetEnv(t, "CHATGPT2API_RELAY_BASE_URL")
 
 	store, err := NewStore()
 	if err != nil {
 		t.Fatalf("NewStore() error = %v", err)
 	}
 	got, err := store.Update(map[string]any{
-		"update_repo":         "owner/project",
-		"update_github_token": "github_pat_test",
+		"relay_base_url": "https://relay.example/root/",
 	})
 	if err != nil {
 		t.Fatalf("Update() error = %v", err)
 	}
-	if got["update_repo"] != "owner/project" {
-		t.Fatalf("Update() update_repo = %#v, want owner/project", got["update_repo"])
+	if got["relay_base_url"] != "https://relay.example/root" {
+		t.Fatalf("Update() relay_base_url = %#v, want trimmed URL", got["relay_base_url"])
 	}
-	if got["update_github_token_configured"] != true {
-		t.Fatalf("Update() update_github_token_configured = %#v, want true", got["update_github_token_configured"])
-	}
-	if _, ok := got["update_github_token"]; ok {
-		t.Fatalf("Update() leaked update_github_token: %#v", got)
-	}
-	if store.UpdateRepo() != "owner/project" {
-		t.Fatalf("UpdateRepo() = %q, want owner/project", store.UpdateRepo())
-	}
-	if store.UpdateGitHubToken() != "github_pat_test" {
-		t.Fatalf("UpdateGitHubToken() = %q, want saved token", store.UpdateGitHubToken())
+	if store.RelayBaseURL() != "https://relay.example/root" {
+		t.Fatalf("RelayBaseURL() = %q, want saved URL", store.RelayBaseURL())
 	}
 	envData, err := os.ReadFile(filepath.Join(root, ".env"))
 	if err != nil {
 		t.Fatalf("read .env: %v", err)
 	}
 	envText := string(envData)
-	for _, want := range []string{
-		"CHATGPT2API_UPDATE_REPO=owner/project",
-		"CHATGPT2API_UPDATE_GITHUB_TOKEN=github_pat_test",
-	} {
-		if !strings.Contains(envText, want) {
-			t.Fatalf(".env missing %q:\n%s", want, envText)
-		}
+	if want := "CHATGPT2API_RELAY_BASE_URL=https://relay.example/root/"; !strings.Contains(envText, want) {
+		t.Fatalf(".env missing %q:\n%s", want, envText)
 	}
 }
 
-func TestStoreUpdateRejectsInvalidUpdateRepo(t *testing.T) {
+func TestStoreUpdateRejectsInvalidRelayBaseURL(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("CHATGPT2API_ROOT", root)
-	unsetEnv(t, "CHATGPT2API_UPDATE_REPO")
+	unsetEnv(t, "CHATGPT2API_RELAY_BASE_URL")
 
 	store, err := NewStore()
 	if err != nil {
 		t.Fatalf("NewStore() error = %v", err)
 	}
-	if _, err := store.Update(map[string]any{"update_repo": "invalid"}); err == nil {
-		t.Fatal("Update() accepted invalid update_repo")
+	if _, err := store.Update(map[string]any{"relay_base_url": "relay.invalid"}); err == nil {
+		t.Fatal("Update() accepted invalid relay_base_url")
 	}
 }
 

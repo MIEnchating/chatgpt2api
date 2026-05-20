@@ -16,8 +16,6 @@ import (
 	"chatgpt2api/internal/util"
 )
 
-const relayAIBaseURL = "https://relayai.tech"
-
 func (a *App) attachRelayAPIKey(r *http.Request, body map[string]any) {
 	if body == nil {
 		return
@@ -39,6 +37,13 @@ func relayAPIKeyFromRequest(r *http.Request, body map[string]any) string {
 		}
 	}
 	return ""
+}
+
+func (a *App) relayBaseURL() string {
+	if a != nil && a.config != nil {
+		return a.config.RelayBaseURL()
+	}
+	return "https://relayai.tech"
 }
 
 func relayAPIKeyFromPayload(payload map[string]any) string {
@@ -160,7 +165,7 @@ func (a *App) relayJSON(ctx context.Context, method, pathValue, apiKey string, p
 		}
 		body = bytes.NewReader(data)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, relayAIBaseURL+pathValue, body)
+	req, err := http.NewRequestWithContext(ctx, method, a.relayBaseURL()+pathValue, body)
 	if err != nil {
 		return nil, err
 	}
@@ -182,7 +187,7 @@ func (a *App) relayJSONStream(ctx context.Context, pathValue, apiKey string, pay
 	if err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, relayAIBaseURL+pathValue, bytes.NewReader(data))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.relayBaseURL()+pathValue, bytes.NewReader(data))
 	if err != nil {
 		return nil, err
 	}
@@ -202,7 +207,7 @@ func (a *App) relayJSONStream(ctx context.Context, pathValue, apiKey string, pay
 }
 
 func (a *App) relayMultipart(ctx context.Context, pathValue, apiKey string, payload map[string]any, images []protocol.UploadedImage) (map[string]any, error) {
-	req, err := relayMultipartRequest(ctx, pathValue, apiKey, payload, images)
+	req, err := relayMultipartRequest(ctx, a.relayBaseURL(), pathValue, apiKey, payload, images)
 	if err != nil {
 		return nil, err
 	}
@@ -215,7 +220,7 @@ func (a *App) relayMultipart(ctx context.Context, pathValue, apiKey string, payl
 }
 
 func (a *App) relayMultipartStream(ctx context.Context, pathValue, apiKey string, payload map[string]any, images []protocol.UploadedImage) (*protocol.StreamResult, error) {
-	req, err := relayMultipartRequest(ctx, pathValue, apiKey, payload, images)
+	req, err := relayMultipartRequest(ctx, a.relayBaseURL(), pathValue, apiKey, payload, images)
 	if err != nil {
 		return nil, err
 	}
@@ -232,7 +237,7 @@ func (a *App) relayMultipartStream(ctx context.Context, pathValue, apiKey string
 	return relayStreamResult(resp.Body), nil
 }
 
-func relayMultipartRequest(ctx context.Context, pathValue, apiKey string, payload map[string]any, images []protocol.UploadedImage) (*http.Request, error) {
+func relayMultipartRequest(ctx context.Context, baseURL, pathValue, apiKey string, payload map[string]any, images []protocol.UploadedImage) (*http.Request, error) {
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 	for key, value := range payload {
@@ -263,7 +268,7 @@ func relayMultipartRequest(ctx context.Context, pathValue, apiKey string, payloa
 	if err := writer.Close(); err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, relayAIBaseURL+pathValue, &body)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+pathValue, &body)
 	if err != nil {
 		return nil, err
 	}

@@ -142,6 +142,7 @@ export function ConfigCard() {
     (state) => state.setImageStorageLimitMb,
   );
   const setProxy = useSettingsStore((state) => state.setProxy);
+  const setRelayBaseUrl = useSettingsStore((state) => state.setRelayBaseUrl);
   const saveConfig = useSettingsStore((state) => state.saveConfig);
 
   const handleTestProxy = async () => {
@@ -207,7 +208,7 @@ export function ConfigCard() {
         <section className={configSectionClassName}>
           <SectionHeading
             title="基础参数"
-            tip="RelayAI Base URL 固定为 https://relayai.tech；任务超时时间单位秒；图片自动清理会删除指定天数前的本地图片。"
+            tip="RelayAI Base URL 用于提交图片和对话请求；任务超时时间单位秒；图片自动清理会删除指定天数前的本地图片。"
           />
           <div className="grid gap-3 sm:grid-cols-2">
             <Field className={configFieldClassName}>
@@ -256,8 +257,9 @@ export function ConfigCard() {
               </ConfigFieldLabel>
               <Input
                 id="settings-relay-base-url"
-                value="https://relayai.tech"
-                readOnly
+                value={String(config?.relay_base_url || "")}
+                onChange={(event) => setRelayBaseUrl(event.target.value)}
+                placeholder="https://relayai.tech"
                 className={settingsInputClassName}
               />
             </Field>

@@ -9,7 +9,7 @@ import (
 
 func TestMatchAppRoute(t *testing.T) {
 	routes := []appRoute{
-		exact(http.MethodGet, "/version", nil),
+		exact(http.MethodGet, "/health", nil),
 		exact("", "/api/settings", nil),
 		subtree("/api/auth/users", nil),
 		prefix("/images/", nil),
@@ -21,8 +21,8 @@ func TestMatchAppRoute(t *testing.T) {
 		path   string
 		want   string
 	}{
-		{name: "exact method", method: http.MethodGet, path: "/version", want: "/version"},
-		{name: "exact method mismatch", method: http.MethodPost, path: "/version", want: ""},
+		{name: "exact method", method: http.MethodGet, path: "/health", want: "/health"},
+		{name: "exact method mismatch", method: http.MethodPost, path: "/health", want: ""},
 		{name: "methodless exact", method: http.MethodPost, path: "/api/settings", want: "/api/settings"},
 		{name: "subtree base", method: http.MethodGet, path: "/api/auth/users", want: "/api/auth/users"},
 		{name: "subtree child", method: http.MethodGet, path: "/api/auth/users/123/key", want: "/api/auth/users"},

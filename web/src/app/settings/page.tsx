@@ -11,7 +11,6 @@ import { ImageStorageGovernanceCard } from "./components/image-storage-governanc
 import { LogGovernanceCard } from "./components/log-governance-card";
 import { LoginPageImageCard } from "./components/login-page-image-card";
 import { SettingsHeader } from "./components/settings-header";
-import { VersionUpdateCard } from "./components/version-update-card";
 import { useSettingsStore } from "./store";
 
 function SettingsDataController() {
@@ -33,19 +32,12 @@ function SettingsMasonryItem({ children }: { children: ReactNode }) {
   return <div className="mb-5 break-inside-avoid">{children}</div>;
 }
 
-function AdminSettingsPageContent({
-  canManageSystem,
-}: {
-  canManageSystem: boolean;
-}) {
+function AdminSettingsPageContent() {
   return (
     <div className="mx-auto flex w-full max-w-[1180px] flex-col gap-5 pb-8">
       <SettingsDataController />
       <SettingsHeader />
       <section className="columns-1 gap-5 md:columns-2">
-        <SettingsMasonryItem>
-          <VersionUpdateCard canManageSystem={canManageSystem} />
-        </SettingsMasonryItem>
         <SettingsMasonryItem>
           <ConfigCard />
         </SettingsMasonryItem>
@@ -77,5 +69,5 @@ export default function SettingsPage() {
     );
   }
 
-  return <AdminSettingsPageContent canManageSystem={session.role === "admin"} />;
+  return <AdminSettingsPageContent />;
 }

@@ -17,10 +17,6 @@ builds:
       - arm64
     ldflags:
       - -s -w
-      - -X chatgpt2api/internal/version.Version={{ .Version }}
-      - -X chatgpt2api/internal/version.Commit={{ .Commit }}
-      - -X chatgpt2api/internal/version.Date={{ .Date }}
-      - -X chatgpt2api/internal/version.BuildType=release
 
 archives:
   - id: default

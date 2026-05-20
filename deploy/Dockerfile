@@ -1,6 +1,5 @@
 # syntax=docker/dockerfile:1.7
 
-ARG VERSION=0.0.0-dev
 ARG BUN_IMAGE=oven/bun:1-alpine
 ARG GO_IMAGE=golang:1.26.2-bookworm
 ARG RUNTIME_IMAGE=debian:bookworm-slim
@@ -18,10 +17,8 @@ RUN --mount=type=cache,target=/root/.bun/install/cache,sharing=locked \
 FROM web-deps AS web-build
 
 COPY web ./
-ARG VERSION=0.0.0-dev
 ARG BUILD_NODE_OPTIONS=--max-old-space-size=1024
-ENV VITE_APP_VERSION=${VERSION} \
-    NODE_OPTIONS=${BUILD_NODE_OPTIONS}
+ENV NODE_OPTIONS=${BUILD_NODE_OPTIONS}
 RUN bun run build
 
 
@@ -36,7 +33,6 @@ COPY internal ./internal
 COPY --from=web-build /app/internal/web/dist ./internal/web/dist
 ARG TARGETOS
 ARG TARGETARCH
-ARG VERSION=0.0.0-dev
 ARG BUILD_GOMAXPROCS=2
 ARG BUILD_GOMEMLIMIT=2GiB
 RUN --mount=type=cache,target=/go/pkg/mod \
@@ -44,7 +40,7 @@ RUN --mount=type=cache,target=/go/pkg/mod \
     GOMAXPROCS=${BUILD_GOMAXPROCS} GOMEMLIMIT=${BUILD_GOMEMLIMIT} \
     CGO_ENABLED=0 GOOS=${TARGETOS:-linux} GOARCH=${TARGETARCH:-amd64} \
     go build -p=${BUILD_GOMAXPROCS} -trimpath -tags=embed \
-    -ldflags="-s -w -X chatgpt2api/internal/version.Version=${VERSION}" \
+    -ldflags="-s -w" \
     -o /out/chatgpt2api ./internal
 
 

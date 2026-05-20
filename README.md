@@ -14,7 +14,7 @@
 > - 使用本项目即表示你已理解并同意本声明；因滥用、违规或违法使用造成的后果均由使用者自行承担。
 
 > [!CAUTION]
-> 公网部署时请务必添加外部访问控制，不要暴露敏感配置、账号 Token、数据库连接串或管理端入口。旧版本可能存在已知漏洞，请尽快升级到最新版本。
+> 公网部署时请务必添加外部访问控制，不要暴露敏感配置、账号 Token、数据库连接串或管理端入口，并保持部署及时更新。
 
 ## 目录
 
@@ -236,44 +236,13 @@ docker compose -f deploy/docker-compose.yml pull
 docker compose -f deploy/docker-compose.yml up -d
 ```
 
-默认 Compose 使用 DockerHub 公共镜像，普通用户不需要配置 GitHub Release 源、GitHub Token，也不需要登录 GitHub。也可以按需将 `deploy/docker-compose.yml` 的 `image` 改为 GHCR：
-
-```yaml
-image: ghcr.io/zyphrzero/chatgpt2api:latest
-```
+默认 Compose 使用 DockerHub 公共镜像。
 
 可用镜像：
 
 ```text
 zyphrzero/chatgpt2api:latest
-ghcr.io/zyphrzero/chatgpt2api:latest
 ```
-
-### 管理端版本检查
-
-设置页的“版本更新”卡片会按部署方式选择更新来源：
-
-- Docker 镜像：默认匿名检查 DockerHub 公共镜像标签，升级方式是 `docker compose -f deploy/docker-compose.yml pull && docker compose -f deploy/docker-compose.yml up -d`。
-- Release 二进制：检查项目 GitHub Release，只有这种非 Docker 部署会显示“立即更新”并替换当前 `chatgpt2api` 二进制。
-
-Release 二进制在线更新流程：
-
-1. 后端请求项目 latest release。
-2. 比较当前版本和最新版本。
-3. 下载当前平台匹配的 Release 压缩包。
-4. 校验 `checksums.txt`。
-5. 替换当前 `chatgpt2api` 二进制。
-6. 保留 `.backup` 以支持回滚。
-7. 前端提示重启服务。
-
-重要说明：
-
-- Docker 部署默认从 DockerHub 拉取镜像，不需要填写 GitHub Release 源或 GitHub Token。
-- Docker 容器内不会执行二进制替换；请用 `docker compose -f deploy/docker-compose.yml pull && docker compose -f deploy/docker-compose.yml up -d` 更新镜像。
-- 在线二进制替换只在非 Docker 的 `BuildType=release` 构建中开放。
-- 前端资源已嵌入 Release 二进制，在线更新只替换 `chatgpt2api` 这一个运行文件。
-- 检查更新访问 DockerHub / Release API 可通过 `CHATGPT2API_UPDATE_PROXY_URL` 配置代理；未设置时复用 `CHATGPT2API_PROXY`。
-- 正式 Release archive 只发布 Linux `amd64` / `arm64` 构建；Windows 和 macOS 不提供在线更新压缩包。
 
 ### 源码部署升级
 
@@ -284,7 +253,7 @@ git pull
 bun install --cwd web --frozen-lockfile
 bun --cwd web run build
 go test ./...
-go build -tags=embed -ldflags "-X chatgpt2api/internal/version.Version=1.0.0" -o chatgpt2api ./internal
+go build -tags=embed -o chatgpt2api ./internal
 ```
 
 ## 配置说明
@@ -299,10 +268,10 @@ go build -tags=embed -ldflags "-X chatgpt2api/internal/version.Version=1.0.0" -o
 | `CHATGPT2API_ADMIN_PASSWORD` | 空 | 初始管理员密码；为空时首次启动自动生成一次性密码 |
 | `CHATGPT2API_REGISTRATION_ENABLED` | `true` | 是否开放登录页账号注册入口 |
 | `CHATGPT2API_BASE_URL` | 空 | 用于生成图片 URL 的外部访问地址 |
+| `CHATGPT2API_RELAY_BASE_URL` | `https://relayai.tech` | RelayAI 上游地址，可在管理端设置中修改 |
 | `CHATGPT2API_PROXY` | 空 | 全局代理，支持 `http`、`https`、`socks5`、`socks5h` |
 | `CHATGPT2API_IMAGE_MODELS` | `gpt-image-2` | 管理端图片模型列表，多个值用逗号分隔；第一项作为默认模型 |
 | `CHATGPT2API_CHAT_MODELS` | `gpt-5.5,gpt-5.4` | 管理端对话模型列表，多个值用逗号分隔；第一项作为默认模型 |
-| `CHATGPT2API_UPDATE_PROXY_URL` | 空 | 检查更新访问 DockerHub / Release API 的代理；为空时复用全局代理 |
 | `CHATGPT2API_REFRESH_ACCOUNT_INTERVAL_MINUTE` | `5` | 限流账号检查间隔，单位分钟 |
 | `CHATGPT2API_IMAGE_TASK_TIMEOUT_SECONDS` | `300` | 图片任务超时时间，单位秒 |
 | `CHATGPT2API_USER_DEFAULT_CONCURRENT_LIMIT` | `0` | 普通用户默认创作并发额度；图片生成/编辑按请求张数计入，聊天任务按 1 个计入；`0` 表示不限制 |
@@ -369,7 +338,7 @@ CHATGPT2API_LINUXDO_FRONTEND_REDIRECT_URL=/auth/linuxdo/callback
 bun install --cwd web --frozen-lockfile
 bun --cwd web run build
 go test ./...
-go build -tags=embed -ldflags "-X chatgpt2api/internal/version.Version=0.0.0-dev" -o chatgpt2api ./internal
+go build -tags=embed -o chatgpt2api ./internal
 CHATGPT2API_ADMIN_PASSWORD=change_me_please ./chatgpt2api
 ```
 
@@ -440,13 +409,6 @@ git tag -a v1.0.0 -m "Release v1.0.0"
 git push origin v1.0.0
 ```
 
-Release 构建会注入：
-
-- `chatgpt2api/internal/version.Version`
-- `chatgpt2api/internal/version.Commit`
-- `chatgpt2api/internal/version.Date`
-- `chatgpt2api/internal/version.BuildType=release`
-
 ### Docker 镜像标签
 
 默认发布到 DockerHub：
@@ -482,7 +444,6 @@ Authorization: Bearer <session-or-api-token>
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | `GET` | `/health` | 健康检查 |
-| `GET` | `/version` | 当前版本 |
 | `GET` | `/v1/models` | 模型列表 |
 | `POST` | `/v1/images/generations` | OpenAI 兼容图片生成 |
 | `POST` | `/v1/images/edits` | OpenAI 兼容图片编辑 |

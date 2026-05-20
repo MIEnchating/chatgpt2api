@@ -10,13 +10,11 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { changeProfilePassword, updateProfileName } from "@/lib/api";
+import { changeProfilePassword, fetchModelConfig, updateProfileName } from "@/lib/api";
 import { getStoredRelayApiKey, saveStoredRelayApiKey } from "@/lib/relay-key";
 import { authSessionFromLoginResponse, setVerifiedAuthSession } from "@/lib/session";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import type { StoredAuthSession } from "@/store/auth";
-
-const relayAIBaseURL = "https://relayai.tech";
 
 function providerLabel(provider?: string) {
   if (provider === "linuxdo") {
@@ -87,6 +85,7 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [relayApiKey, setRelayApiKey] = useState(getStoredRelayApiKey);
   const [savedRelayApiKey, setSavedRelayApiKey] = useState(getStoredRelayApiKey);
+  const [relayBaseURL, setRelayBaseURL] = useState("https://relayai.tech");
   const [isRelayKeyVisible, setIsRelayKeyVisible] = useState(false);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [isChangingPassword, setIsChangingPassword] = useState(false);
@@ -101,6 +100,24 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
     setCurrentSession(session);
     setProfileName(session.name || "");
   }, [session]);
+
+  useEffect(() => {
+    let ignore = false;
+    void fetchModelConfig()
+      .then((data) => {
+        if (!ignore && data.config.relay_base_url) {
+          setRelayBaseURL(data.config.relay_base_url);
+        }
+      })
+      .catch(() => {
+        if (!ignore) {
+          setRelayBaseURL("https://relayai.tech");
+        }
+      });
+    return () => {
+      ignore = true;
+    };
+  }, []);
 
   const handleSaveProfile = async () => {
     const nextName = profileName.trim();
@@ -352,7 +369,7 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
             </CardHeader>
             <CardContent className="flex flex-col gap-5">
               <div className="grid gap-3 md:grid-cols-2">
-                <InfoRow label="Base URL" value={relayAIBaseURL} code />
+                <InfoRow label="Base URL" value={relayBaseURL} code />
                 <InfoRow label="当前状态" value={relayKeyConfigured ? "可以生成图片和对话" : "生成前需要先填写 Key"} />
               </div>
 
@@ -391,7 +408,7 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
                     </Button>
                   </div>
                   <FieldDescription>
-                    Key 只保存在当前浏览器；提交创作请求时会发送给固定的 RelayAI 上游。
+                    Key 只保存在当前浏览器；提交创作请求时会发送给管理员配置的 RelayAI 上游。
                   </FieldDescription>
                 </Field>
               </FieldGroup>

@@ -27,14 +27,9 @@ import (
 	"chatgpt2api/internal/service"
 	"chatgpt2api/internal/storage"
 	"chatgpt2api/internal/util"
-	"chatgpt2api/internal/version"
 )
 
 func TestAppAuthAndSPACompatibility(t *testing.T) {
-	originalVersion := version.Version
-	version.Version = "test-build"
-	t.Cleanup(func() { version.Version = originalVersion })
-
 	app := newTestApp(t)
 	defer app.Close()
 
@@ -74,23 +69,6 @@ func TestAppAuthAndSPACompatibility(t *testing.T) {
 	}
 	if login["role"] != "user" {
 		t.Fatalf("login role = %#v", login)
-	}
-	if login["version"] != "test-build" {
-		t.Fatalf("login version = %#v", login["version"])
-	}
-
-	req = httptest.NewRequest(http.MethodGet, "/version", nil)
-	res = httptest.NewRecorder()
-	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusOK {
-		t.Fatalf("/version status = %d body = %s", res.Code, res.Body.String())
-	}
-	var versionBody map[string]any
-	if err := json.Unmarshal(res.Body.Bytes(), &versionBody); err != nil {
-		t.Fatalf("version json: %v", err)
-	}
-	if versionBody["version"] != "test-build" {
-		t.Fatalf("/version body = %#v", versionBody)
 	}
 
 	req = httptest.NewRequest(http.MethodGet, "/health", nil)
@@ -208,60 +186,6 @@ func TestAppAuthAndSPACompatibility(t *testing.T) {
 	app.Handler().ServeHTTP(res, req)
 	if res.Code != http.StatusNotFound {
 		t.Fatalf("missing asset status = %d", res.Code)
-	}
-}
-
-func TestAdminSystemCheckUpdates(t *testing.T) {
-	releaseAPI := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/repos/ZyphrZero/chatgpt2api/releases/latest" {
-			http.NotFound(w, r)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{
-			"tag_name": "v1.2.0",
-			"name": "v1.2.0",
-			"body": "release notes",
-			"html_url": "https://github.com/ZyphrZero/chatgpt2api/releases/tag/v1.2.0",
-			"published_at": "2026-01-01T00:00:00Z",
-			"assets": [
-				{"name":"chatgpt2api_1.2.0_linux_amd64.tar.gz","browser_download_url":"https://github.com/ZyphrZero/chatgpt2api/releases/download/v1.2.0/chatgpt2api_1.2.0_linux_amd64.tar.gz","size":123},
-				{"name":"checksums.txt","browser_download_url":"https://github.com/ZyphrZero/chatgpt2api/releases/download/v1.2.0/checksums.txt","size":64}
-			]
-		}`))
-	}))
-	defer releaseAPI.Close()
-
-	originalVersion := version.Version
-	originalBuildType := version.BuildType
-	version.Version = "1.1.0"
-	version.BuildType = "release"
-	t.Cleanup(func() {
-		version.Version = originalVersion
-		version.BuildType = originalBuildType
-	})
-
-	app := newTestApp(t)
-	defer app.Close()
-	app.update = service.NewUpdateService(service.UpdateOptions{
-		APIBaseURL:     releaseAPI.URL,
-		CurrentVersion: version.Get(),
-		BuildType:      version.GetBuildType(),
-	})
-
-	req := httptest.NewRequest(http.MethodGet, "/api/admin/system/check-updates?force=true", nil)
-	req.Header.Set("Authorization", adminAuthHeader(t, app))
-	res := httptest.NewRecorder()
-	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusOK {
-		t.Fatalf("check updates status = %d body = %s", res.Code, res.Body.String())
-	}
-	var body map[string]any
-	if err := json.Unmarshal(res.Body.Bytes(), &body); err != nil {
-		t.Fatalf("check updates json: %v", err)
-	}
-	if body["current_version"] != "1.1.0" || body["latest_version"] != "1.2.0" || body["has_update"] != true || body["build_type"] != "release" {
-		t.Fatalf("unexpected check updates body = %#v", body)
 	}
 }
 

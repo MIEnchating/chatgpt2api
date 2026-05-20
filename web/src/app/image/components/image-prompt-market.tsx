@@ -1,12 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ClipboardCopy, ExternalLink, LoaderCircle, RefreshCcw, Search, SlidersHorizontal, Star } from "lucide-react";
+import { ClipboardCopy, LoaderCircle, RefreshCcw, Search, SlidersHorizontal, Star } from "lucide-react";
 import { toast } from "sonner";
 
 import {
-  AWESOME_GPT_IMAGE_2_PROMPTS_SOURCE_URL,
-  BANANA_PROMPTS_SOURCE_URL,
   PROMPT_MARKET_SOURCE_OPTIONS,
   fetchPromptMarketPrompts,
   type BananaPrompt,
@@ -558,25 +556,7 @@ export function ImagePromptMarket({ open, canViewAdultContent, onOpenChange, onA
             <div className="min-w-0">
               <DialogTitle className="text-xl leading-tight sm:text-2xl">Prompts 提示词市场</DialogTitle>
               <DialogDescription className="mt-2 hidden leading-6 sm:block">
-                来自{" "}
-                <a
-                  href={BANANA_PROMPTS_SOURCE_URL}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="font-medium text-[#1456f0] hover:underline"
-                >
-                  glidea/banana-prompt-quicker
-                </a>
-                {" "}和{" "}
-                <a
-                  href={AWESOME_GPT_IMAGE_2_PROMPTS_SOURCE_URL}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="font-medium text-[#1456f0] hover:underline"
-                >
-                  EvoLinkAI/awesome-gpt-image-2-prompts
-                </a>
-                ，可按来源筛选并一键套用到当前生图输入框。
+                可按分类、模式和收藏筛选，并一键套用到当前生图输入框。
               </DialogDescription>
             </div>
             <div className="flex shrink-0 items-center gap-2 pt-0.5 text-xs text-[#8e8e93]">
@@ -801,18 +781,6 @@ export function ImagePromptMarket({ open, canViewAdultContent, onOpenChange, onA
                                 <Star className={cn("size-3.5", isFavorite && "fill-current")} />
                               )}
                             </button>
-                            {prompt.link ? (
-                              <a
-                                href={prompt.link}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="inline-flex size-8 items-center justify-center rounded-full border border-[#e5e7eb] text-[#45515e] transition hover:bg-black/[0.05] hover:text-[#18181b]"
-                                aria-label="查看来源"
-                                title="查看来源"
-                              >
-                                <ExternalLink className="size-3.5" />
-                              </a>
-                            ) : null}
                           </div>
                         </div>
                         <p className="line-clamp-4 text-sm leading-6 text-[#45515e]">{localizedPrompt.prompt}</p>

@@ -7,7 +7,6 @@ import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 
 import { AnnouncementNotifications } from "@/components/announcement-banner";
 import { ImageTaskQueue } from "@/components/image-task-queue";
-import webConfig from "@/constants/common-env";
 import {
   AUTH_SESSION_CHANGE_EVENT,
   clearVerifiedAuthSession,
@@ -173,14 +172,10 @@ function AccountMenu({
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-2 text-xs">
+          <div className="grid grid-cols-1 gap-2 text-xs">
             <div className="rounded-lg bg-muted/40 px-2 py-1.5">
               <div className="text-muted-foreground">角色</div>
               <div className="truncate font-medium text-foreground">{roleLabel}</div>
-            </div>
-            <div className="rounded-lg bg-muted/40 px-2 py-1.5">
-              <div className="text-muted-foreground">版本</div>
-              <div className="truncate font-medium text-foreground">v{webConfig.appVersion}</div>
             </div>
           </div>
 

@@ -27,7 +27,6 @@ import (
 	"chatgpt2api/internal/service"
 	"chatgpt2api/internal/storage"
 	"chatgpt2api/internal/util"
-	"chatgpt2api/internal/version"
 	frontend "chatgpt2api/internal/web"
 
 	_ "github.com/HugoSmits86/nativewebp"
@@ -57,7 +56,6 @@ type App struct {
 	sub2       *service.Sub2APIConfig
 	sub2Import *service.Sub2APIService
 	register   *service.RegisterService
-	update     *service.UpdateService
 	cancel     context.CancelFunc
 }
 
@@ -95,7 +93,7 @@ func NewApp() (*App, error) {
 	}
 	documentStore, _ := storageBackend.(storage.JSONDocumentBackend)
 	engine := &protocol.Engine{Accounts: accounts, Config: cfg, Storage: documentStore, Proxy: proxy, Logger: logger}
-	app := &App{config: cfg, auth: auth, accounts: accounts, billing: billing, logs: logs, logger: logger, proxy: proxy, engine: engine, images: service.NewImageService(cfg, storageBackend), announce: service.NewAnnouncementService(storageBackend), prompts: service.NewPromptFavoriteService(storageBackend), cpa: service.NewCPAConfig(storageBackend), sub2: service.NewSub2APIConfig(storageBackend), update: newUpdateService(cfg), cancel: cancel}
+	app := &App{config: cfg, auth: auth, accounts: accounts, billing: billing, logs: logs, logger: logger, proxy: proxy, engine: engine, images: service.NewImageService(cfg, storageBackend), announce: service.NewAnnouncementService(storageBackend), prompts: service.NewPromptFavoriteService(storageBackend), cpa: service.NewCPAConfig(storageBackend), sub2: service.NewSub2APIConfig(storageBackend), cancel: cancel}
 	app.cpaImport = service.NewCPAImportService(app.cpa, accounts, proxy)
 	app.sub2Import = service.NewSub2APIService(app.sub2, accounts)
 	app.register = service.NewRegisterService(accounts, storageBackend)
@@ -256,16 +254,6 @@ func cloneRelayImageData(items []map[string]any) []map[string]any {
 	return out
 }
 
-func newUpdateService(cfg *config.Store) *service.UpdateService {
-	return service.NewUpdateService(service.UpdateOptions{
-		CurrentVersion: version.Get(),
-		BuildType:      version.GetBuildType(),
-		Repo:           cfg.UpdateRepo(),
-		ProxyURL:       cfg.UpdateProxyURL(),
-		GitHubToken:    cfg.UpdateGitHubToken(),
-	})
-}
-
 func (a *App) Close() {
 	if a.cancel != nil {
 		a.cancel()
@@ -308,7 +296,7 @@ func (a *App) handleImageGenerations(w http.ResponseWriter, r *http.Request) {
 	a.attachRelayAPIKey(r, body)
 	body["owner_id"] = identityScope(identity)
 	body["owner_name"] = identityDisplayName(identity)
-	body["base_url"] = relayAIBaseURL
+	body["base_url"] = a.relayBaseURL()
 	a.attachCreationTaskLimiter(body, identity)
 	visibility, err := service.NormalizeImageVisibility(util.Clean(body["visibility"]))
 	if err != nil {
@@ -347,7 +335,7 @@ func (a *App) handleImageEdits(w http.ResponseWriter, r *http.Request) {
 	}
 	body["owner_id"] = identityScope(identity)
 	body["owner_name"] = identityDisplayName(identity)
-	body["base_url"] = relayAIBaseURL
+	body["base_url"] = a.relayBaseURL()
 	a.attachCreationTaskLimiter(body, identity)
 	body["images"] = images
 	visibility, err := service.NormalizeImageVisibility(util.Clean(body["visibility"]))
@@ -607,7 +595,6 @@ func (a *App) writeLoginResponse(w http.ResponseWriter, identity service.Identit
 	permissions := a.identityPermissions(identity)
 	payload := map[string]any{
 		"ok":                        true,
-		"version":                   version.Get(),
 		"token":                     token,
 		"role":                      identity.Role,
 		"role_id":                   identity.RoleID,
@@ -680,7 +667,6 @@ func (a *App) handleSettings(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		a.update = newUpdateService(a.config)
 		util.WriteJSON(w, http.StatusOK, map[string]any{"config": updated})
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -702,6 +688,7 @@ func (a *App) modelConfig() map[string]any {
 		"chat_models":         chatModels,
 		"default_image_model": firstString(imageModels, util.ImageModelGPT),
 		"default_chat_model":  firstString(chatModels, util.ImageModelGPT55),
+		"relay_base_url":      a.relayBaseURL(),
 	}
 }
 
