@@ -209,6 +209,7 @@ export type SettingsConfig = {
   proxy: string;
   base_url?: string;
   relay_base_url?: string;
+  newapi_token_group?: string;
   image_models?: string[] | string;
   chat_models?: string[] | string;
   default_image_model?: string;
@@ -431,6 +432,8 @@ export type ProfileRelayKeyStatus = {
   has_key: boolean;
   key_preview: string;
   group?: string;
+  configured_group?: string;
+  groups?: string[];
   source?: "newapi" | string;
   message?: string;
 };
@@ -439,6 +442,9 @@ export type ProfileBalanceStatus = {
   has_balance: boolean;
   source?: "newapi" | string;
   token_group?: string;
+  configured_group?: string;
+  token_groups?: string[];
+  token_message?: string;
   user_id?: number;
   username?: string;
   email?: string;

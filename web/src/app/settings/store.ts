@@ -57,6 +57,10 @@ function normalizeConfig(config: SettingsConfig): SettingsConfig {
       typeof config.relay_base_url === "string" && config.relay_base_url.trim()
         ? config.relay_base_url
         : "http://newapi:3000",
+    newapi_token_group:
+      typeof config.newapi_token_group === "string" && config.newapi_token_group.trim()
+        ? config.newapi_token_group
+        : "codex",
     login_page_image_url: typeof config.login_page_image_url === "string" ? config.login_page_image_url : "",
     login_page_image_mode: normalizeLoginPageImageMode(config.login_page_image_mode),
     login_page_image_zoom: loginImageTransform.zoom,
@@ -96,6 +100,7 @@ type SettingsStore = {
   setProxy: (value: string) => void;
   setBaseUrl: (value: string) => void;
   setRelayBaseUrl: (value: string) => void;
+  setNewAPITokenGroup: (value: string) => void;
   setLoginPageImageUrl: (value: string) => void;
   setLoginPageImageMode: (value: LoginPageImageMode) => void;
   setLoginPageImageTransform: (transform: { zoom: number; positionX: number; positionY: number }) => void;
@@ -164,6 +169,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         proxy: config.proxy.trim(),
         base_url: String(config.base_url || "").trim(),
         relay_base_url: String(config.relay_base_url || "").trim(),
+        newapi_token_group: String(config.newapi_token_group || "codex").trim(),
       };
 
       const data = await updateSettingsConfig(payload);
@@ -279,6 +285,20 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         config: {
           ...state.config,
           relay_base_url: value,
+        },
+      };
+    });
+  },
+
+  setNewAPITokenGroup: (value) => {
+    set((state) => {
+      if (!state.config) {
+        return {};
+      }
+      return {
+        config: {
+          ...state.config,
+          newapi_token_group: value,
         },
       };
     });

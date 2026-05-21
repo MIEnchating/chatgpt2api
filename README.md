@@ -267,7 +267,7 @@ go build -tags=embed -o chatgpt2api ./internal
 | `CHATGPT2API_AUTH_COOKIE_DOMAIN` | `.relayai.tech` | 登录会话 Cookie 父域；`relayai.tech` 登录后 `image.relayai.tech` 自动复用登录态 |
 | `CHATGPT2API_RELAY_BASE_URL` | `http://newapi:3000` | RelayAI 上游地址，可在管理端设置中修改 |
 | `CHATGPT2API_NEWAPI_DATABASE_URL` | 空 | NewAPI 数据库只读连接，用于普通用户登录和按登录用户名读取指定分组令牌；请使用只有 `SELECT` 权限的账号 |
-| `CHATGPT2API_NEWAPI_TOKEN_GROUP` | `default` | 只允许读取这个 NewAPI 分组下的令牌，上线前改成实际分组 |
+| `CHATGPT2API_NEWAPI_TOKEN_GROUP` | `codex` | 默认读取的 NewAPI 令牌分组；系统会列出当前用户所有可用令牌分组，并优先选中这里配置的分组 |
 | `CHATGPT2API_PROXY` | 空 | 全局代理，支持 `http`、`https`、`socks5`、`socks5h` |
 | `CHATGPT2API_IMAGE_MODELS` | `gpt-image-2` | 管理端图片模型列表，多个值用逗号分隔；第一项作为默认模型 |
 | `CHATGPT2API_CHAT_MODELS` | `gpt-5.5,gpt-5.4` | 管理端对话模型列表，多个值用逗号分隔；第一项作为默认模型 |

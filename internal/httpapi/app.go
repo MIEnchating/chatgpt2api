@@ -640,6 +640,9 @@ func (a *App) handleSettings(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusBadRequest, err.Error())
 			return
 		}
+		if a.newAPIKeys != nil {
+			a.newAPIKeys.SetConfiguredGroup(a.config.NewAPITokenGroup())
+		}
 		util.WriteJSON(w, http.StatusOK, map[string]any{"config": updated})
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"chatgpt2api/internal/storage"
@@ -41,9 +42,16 @@ type NewAPIUserBalance struct {
 	RequestCount int64
 }
 
+type NewAPITokenSelection struct {
+	Key    string
+	Group  string
+	Groups []string
+}
+
 type NewAPITokenReader struct {
 	db         *sql.DB
 	driver     string
+	mu         sync.RWMutex
 	group      string
 	configured bool
 	timeout    time.Duration
@@ -70,7 +78,7 @@ func NewNewAPITokenReader(cfg NewAPITokenReaderConfig) (*NewAPITokenReader, erro
 	}
 	reader := &NewAPITokenReader{group: group, timeout: timeout}
 	databaseURL := strings.TrimSpace(cfg.DatabaseURL)
-	if databaseURL == "" || group == "" {
+	if databaseURL == "" {
 		return reader, nil
 	}
 
@@ -101,33 +109,75 @@ func (r *NewAPITokenReader) Close() error {
 	return r.db.Close()
 }
 
-func (r *NewAPITokenReader) Status(ctx context.Context, identity Identity) map[string]any {
-	status := map[string]any{
-		"has_key":     false,
-		"key_preview": "",
-		"group":       r.configuredGroup(),
-		"source":      "newapi",
+func (r *NewAPITokenReader) SetConfiguredGroup(group string) {
+	if r == nil {
+		return
 	}
-	key, err := r.KeyForIdentity(ctx, identity)
+	r.mu.Lock()
+	r.group = strings.TrimSpace(group)
+	r.mu.Unlock()
+}
+
+func (r *NewAPITokenReader) Status(ctx context.Context, identity Identity) map[string]any {
+	configuredGroup := r.configuredGroup()
+	status := map[string]any{
+		"has_key":          false,
+		"key_preview":      "",
+		"group":            configuredGroup,
+		"configured_group": configuredGroup,
+		"groups":           []string{},
+		"source":           "newapi",
+	}
+	selection, err := r.TokenForIdentity(ctx, identity)
 	if err != nil {
 		status["message"] = err.Error()
+		if selection.Groups != nil {
+			status["groups"] = selection.Groups
+		}
 		return status
 	}
 	status["has_key"] = true
-	status["key_preview"] = previewNewAPIKey(key)
+	status["key_preview"] = previewNewAPIKey(selection.Key)
+	status["group"] = selection.Group
+	status["groups"] = selection.Groups
 	return status
 }
 
 func (r *NewAPITokenReader) BalanceStatus(ctx context.Context, identity Identity) map[string]any {
+	configuredGroup := r.configuredGroup()
 	status := map[string]any{
-		"has_balance": false,
-		"source":      "newapi",
-		"token_group": r.configuredGroup(),
+		"has_balance":      false,
+		"source":           "newapi",
+		"token_group":      configuredGroup,
+		"configured_group": configuredGroup,
+		"token_groups":     []string{},
 	}
-	balance, err := r.BalanceForIdentity(ctx, identity)
+	if r == nil || !r.configured || r.db == nil {
+		status["message"] = "请先配置 NewAPI 数据库连接"
+		return status
+	}
+	candidates := newAPIIdentityLookupValues(identity)
+	if len(candidates) == 0 {
+		status["message"] = "当前登录用户缺少 NewAPI 用户名，无法读取 NewAPI 余额"
+		return status
+	}
+
+	queryCtx, cancel := context.WithTimeout(contextOrBackground(ctx), r.timeout)
+	defer cancel()
+	balance, err := r.lookupUserBalance(queryCtx, candidates)
 	if err != nil {
 		status["message"] = err.Error()
 		return status
+	}
+	selection, selectionErr := r.lookupTokenSelection(queryCtx, balance.ID, configuredGroup)
+	if selection.Groups != nil {
+		status["token_groups"] = selection.Groups
+	}
+	if selection.Group != "" {
+		status["token_group"] = selection.Group
+	}
+	if selectionErr != nil {
+		status["token_message"] = selectionErr.Error()
 	}
 	status["has_balance"] = true
 	status["user_id"] = balance.ID
@@ -156,29 +206,33 @@ func (r *NewAPITokenReader) BalanceForIdentity(ctx context.Context, identity Ide
 }
 
 func (r *NewAPITokenReader) KeyForIdentity(ctx context.Context, identity Identity) (string, error) {
+	selection, err := r.TokenForIdentity(ctx, identity)
+	if err != nil {
+		return "", err
+	}
+	return selection.Key, nil
+}
+
+func (r *NewAPITokenReader) TokenForIdentity(ctx context.Context, identity Identity) (NewAPITokenSelection, error) {
 	if r == nil || !r.configured || r.db == nil {
-		return "", newAPITokenMessageError("请先配置 NewAPI 数据库连接，并在 NewAPI 创建指定分组的令牌", nil)
+		return NewAPITokenSelection{}, newAPITokenMessageError("请先配置 NewAPI 数据库连接，并在 NewAPI 创建指定分组的令牌", nil)
 	}
 	group := r.configuredGroup()
 	if group == "" {
-		return "", newAPITokenMessageError("请先配置 NewAPI 令牌分组", nil)
+		return NewAPITokenSelection{}, newAPITokenMessageError("请先配置 NewAPI 令牌分组", nil)
 	}
 	candidates := newAPIIdentityLookupValues(identity)
 	if len(candidates) == 0 {
-		return "", newAPITokenMessageError("当前登录用户缺少 NewAPI 用户名，无法读取 NewAPI Key", nil)
+		return NewAPITokenSelection{}, newAPITokenMessageError("当前登录用户缺少 NewAPI 用户名，无法读取 NewAPI Key", nil)
 	}
 
 	queryCtx, cancel := context.WithTimeout(contextOrBackground(ctx), r.timeout)
 	defer cancel()
 	userID, err := r.lookupUserID(queryCtx, candidates)
 	if err != nil {
-		return "", err
+		return NewAPITokenSelection{}, err
 	}
-	key, err := r.lookupTokenKey(queryCtx, userID, group)
-	if err != nil {
-		return "", err
-	}
-	return normalizeNewAPIKey(key), nil
+	return r.lookupTokenSelection(queryCtx, userID, group)
 }
 
 func (r *NewAPITokenReader) AuthenticatePassword(ctx context.Context, login, password string) (NewAPIUser, error) {
@@ -269,7 +323,7 @@ func (r *NewAPITokenReader) lookupTokenKey(ctx context.Context, userID int64, gr
 		" AND " + keyColumn + " <> ''" +
 		" AND (expired_time = -1 OR expired_time > " + r.placeholder(3) + ")" +
 		" AND (unlimited_quota = true OR remain_quota > 0)" +
-		" ORDER BY id DESC LIMIT 1"
+		" ORDER BY id ASC LIMIT 1"
 	var key string
 	err := r.db.QueryRowContext(ctx, query, userID, group, time.Now().Unix()).Scan(&key)
 	if err == nil && strings.TrimSpace(key) != "" {
@@ -281,10 +335,89 @@ func (r *NewAPITokenReader) lookupTokenKey(ctx context.Context, userID int64, gr
 	return "", newAPITokenMessageError("读取 NewAPI Key 失败，请检查 NewAPI 数据库连接", err)
 }
 
+func (r *NewAPITokenReader) lookupTokenSelection(ctx context.Context, userID int64, group string) (NewAPITokenSelection, error) {
+	groups, err := r.lookupTokenGroups(ctx, userID)
+	selection := NewAPITokenSelection{Group: strings.TrimSpace(group), Groups: groups}
+	if err != nil {
+		return selection, err
+	}
+	if len(groups) == 0 {
+		return selection, newAPITokenMessageError(fmt.Sprintf("请先在 NewAPI 为当前用户创建“%s”分组的可用令牌", group), nil)
+	}
+	selectedGroup, ok := firstMatchingNewAPITokenGroup(groups, group)
+	if !ok {
+		return selection, newAPITokenMessageError(fmt.Sprintf("当前用户没有“%s”分组的可用令牌，可用分组：%s", group, strings.Join(groups, ", ")), nil)
+	}
+	key, err := r.lookupTokenKey(ctx, userID, selectedGroup)
+	if err != nil {
+		selection.Group = selectedGroup
+		return selection, err
+	}
+	selection.Group = selectedGroup
+	selection.Key = normalizeNewAPIKey(key)
+	return selection, nil
+}
+
+func (r *NewAPITokenReader) lookupTokenGroups(ctx context.Context, userID int64) ([]string, error) {
+	keyColumn := r.quoteIdentifier("key")
+	groupColumn := r.quoteIdentifier("group")
+	query := "SELECT " + groupColumn +
+		" FROM tokens WHERE user_id = " + r.placeholder(1) +
+		" AND status = 1 AND deleted_at IS NULL" +
+		" AND " + keyColumn + " <> ''" +
+		" AND " + groupColumn + " <> ''" +
+		" AND (expired_time = -1 OR expired_time > " + r.placeholder(2) + ")" +
+		" AND (unlimited_quota = true OR remain_quota > 0)" +
+		" ORDER BY id ASC"
+	rows, err := r.db.QueryContext(ctx, query, userID, time.Now().Unix())
+	if err != nil {
+		return nil, newAPITokenMessageError("读取 NewAPI 令牌分组失败，请检查 NewAPI 数据库连接", err)
+	}
+	defer rows.Close()
+
+	seen := map[string]struct{}{}
+	groups := make([]string, 0)
+	for rows.Next() {
+		var group sql.NullString
+		if err := rows.Scan(&group); err != nil {
+			return nil, newAPITokenMessageError("读取 NewAPI 令牌分组失败，请检查 NewAPI 数据库连接", err)
+		}
+		value := strings.TrimSpace(group.String)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		groups = append(groups, value)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, newAPITokenMessageError("读取 NewAPI 令牌分组失败，请检查 NewAPI 数据库连接", err)
+	}
+	return groups, nil
+}
+
+func firstMatchingNewAPITokenGroup(groups []string, preferred string) (string, bool) {
+	preferred = strings.TrimSpace(preferred)
+	if preferred == "" {
+		return "", false
+	}
+	for _, group := range groups {
+		group = strings.TrimSpace(group)
+		if strings.EqualFold(group, preferred) {
+			return group, true
+		}
+	}
+	return "", false
+}
+
 func (r *NewAPITokenReader) configuredGroup() string {
 	if r == nil {
 		return ""
 	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
 	return strings.TrimSpace(r.group)
 }
 

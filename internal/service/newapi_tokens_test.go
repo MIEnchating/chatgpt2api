@@ -11,7 +11,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-func TestNewAPITokenReaderReadsNewestMatchingGroupToken(t *testing.T) {
+func TestNewAPITokenReaderReadsFirstMatchingGroupTokenAndListsGroups(t *testing.T) {
 	dbURL := newTestNewAPIDatabase(t)
 	now := time.Now().Unix()
 	insertTestNewAPIUser(t, dbURL, 1, "alice", "alice@example.test")
@@ -31,13 +31,17 @@ func TestNewAPITokenReaderReadsNewestMatchingGroupToken(t *testing.T) {
 	if err != nil {
 		t.Fatalf("KeyForIdentity() error = %v", err)
 	}
-	if key != "sk-alice-newest" {
-		t.Fatalf("KeyForIdentity() = %q, want normalized newest key", key)
+	if key != "sk-alice-older" {
+		t.Fatalf("KeyForIdentity() = %q, want normalized first key", key)
 	}
 
 	status := reader.Status(context.Background(), Identity{Username: "alice"})
 	if status["has_key"] != true || status["group"] != "draw" || status["key_preview"] == key {
 		t.Fatalf("Status() = %#v", status)
+	}
+	groups, ok := status["groups"].([]string)
+	if !ok || strings.Join(groups, ",") != "wrong-group,draw" {
+		t.Fatalf("Status() groups = %#v, want wrong-group,draw", status["groups"])
 	}
 }
 

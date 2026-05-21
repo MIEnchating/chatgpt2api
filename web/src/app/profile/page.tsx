@@ -60,6 +60,13 @@ function formatNumber(value: number | undefined) {
   return new Intl.NumberFormat("zh-CN").format(value);
 }
 
+function formatGroupList(groups: string[] | undefined) {
+  if (!Array.isArray(groups) || groups.length === 0) {
+    return "-";
+  }
+  return groups.join(", ");
+}
+
 type InfoRowProps = {
   label: string;
   value: string;
@@ -130,9 +137,18 @@ function BalanceCard({
             <InfoRow label="请求次数" value={formatNumber(balance.request_count)} />
             <InfoRow label="用户分组" value={balance.user_group || "-"} />
             <InfoRow label="令牌分组" value={balance.token_group || "-"} />
+            <InfoRow label="可用令牌分组" value={formatGroupList(balance.token_groups)} />
             <InfoRow label="NewAPI 用户名" value={balance.username || "-"} code />
             <InfoRow label="邮箱" value={balance.email || "-"} />
             <InfoRow label="NewAPI 用户 ID" value={balance.user_id ? String(balance.user_id) : "-"} code />
+            {balance.token_message ? (
+              <div className="sm:col-span-2 xl:col-span-4">
+                <div className="flex min-h-10 items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                  <AlertCircle className="size-4 shrink-0" />
+                  <span>{balance.token_message}</span>
+                </div>
+              </div>
+            ) : null}
           </div>
         ) : (
           <div className="flex min-h-24 items-center gap-3 rounded-lg border border-border bg-muted/30 px-3 py-4 text-sm text-muted-foreground">

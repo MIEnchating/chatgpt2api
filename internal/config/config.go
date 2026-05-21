@@ -21,6 +21,7 @@ import (
 var settingEnvKeys = map[string]string{
 	"base_url":                          "CHATGPT2API_BASE_URL",
 	"relay_base_url":                    "CHATGPT2API_RELAY_BASE_URL",
+	"newapi_token_group":                "CHATGPT2API_NEWAPI_TOKEN_GROUP",
 	"proxy":                             "CHATGPT2API_PROXY",
 	"image_models":                      "CHATGPT2API_IMAGE_MODELS",
 	"chat_models":                       "CHATGPT2API_CHAT_MODELS",
@@ -53,7 +54,7 @@ const (
 	minImageTaskTimeoutSeconds     = 30
 	maxImageTaskTimeoutSeconds     = 3600
 	defaultRelayBaseURL            = "http://newapi:3000"
-	defaultNewAPITokenGroup        = "default"
+	defaultNewAPITokenGroup        = "codex"
 )
 
 var (
@@ -254,7 +255,7 @@ func (s *Store) NewAPIDatabaseURL() string {
 }
 
 func (s *Store) NewAPITokenGroup() string {
-	value := strings.TrimSpace(os.Getenv("CHATGPT2API_NEWAPI_TOKEN_GROUP"))
+	value := strings.TrimSpace(fmt.Sprint(s.settingValue("newapi_token_group", defaultNewAPITokenGroup)))
 	if value == "" {
 		return defaultNewAPITokenGroup
 	}
@@ -419,6 +420,7 @@ func (s *Store) Get() map[string]any {
 	data["proxy"] = s.Proxy()
 	data["base_url"] = s.BaseURL()
 	data["relay_base_url"] = s.RelayBaseURL()
+	data["newapi_token_group"] = s.NewAPITokenGroup()
 	linuxdo := s.LinuxDoOAuth()
 	data["linuxdo_enabled"] = linuxdo.Enabled
 	data["linuxdo_client_id"] = linuxdo.ClientID

@@ -143,6 +143,7 @@ export function ConfigCard() {
   );
   const setProxy = useSettingsStore((state) => state.setProxy);
   const setRelayBaseUrl = useSettingsStore((state) => state.setRelayBaseUrl);
+  const setNewAPITokenGroup = useSettingsStore((state) => state.setNewAPITokenGroup);
   const saveConfig = useSettingsStore((state) => state.saveConfig);
 
   const handleTestProxy = async () => {
@@ -260,6 +261,18 @@ export function ConfigCard() {
                 value={String(config?.relay_base_url || "")}
                 onChange={(event) => setRelayBaseUrl(event.target.value)}
                 placeholder="http://newapi:3000"
+                className={settingsInputClassName}
+              />
+            </Field>
+            <Field className={configFieldClassName}>
+              <ConfigFieldLabel htmlFor="settings-newapi-token-group">
+                NewAPI 默认令牌分组
+              </ConfigFieldLabel>
+              <Input
+                id="settings-newapi-token-group"
+                value={String(config?.newapi_token_group || "codex")}
+                onChange={(event) => setNewAPITokenGroup(event.target.value)}
+                placeholder="codex"
                 className={settingsInputClassName}
               />
             </Field>
