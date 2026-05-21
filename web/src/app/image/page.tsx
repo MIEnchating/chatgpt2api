@@ -3348,7 +3348,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
 
   return (
     <>
-      <section className="mx-auto grid h-full min-h-0 w-full max-w-[1380px] grid-cols-1 gap-2 px-0 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] sm:gap-3 sm:px-3 sm:pb-6 lg:grid-cols-[240px_minmax(0,1fr)]">
+      <section className="mx-auto grid h-full min-h-0 w-full max-w-[1380px] grid-cols-1 gap-2 px-0 pb-[env(safe-area-inset-bottom)] sm:gap-3 sm:px-3 sm:pb-0 lg:grid-cols-[240px_minmax(0,1fr)]">
         <div className="hidden h-full min-h-0 border-r border-[#f2f3f5] pr-3 lg:block">
           <ImageSidebar
             conversations={conversations}
@@ -3923,7 +3923,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
 
           <div
             ref={composerDockRef}
-            className="pointer-events-none absolute inset-x-0 bottom-0 z-30 px-1 pb-[calc(env(safe-area-inset-bottom)+0.5rem)] sm:px-4 sm:pb-2"
+            className="pointer-events-none absolute inset-x-0 bottom-0 z-30 px-1 pb-[env(safe-area-inset-bottom)] sm:px-4 sm:pb-0"
             style={
               {
                 "--image-composer-dock-height": `${composerDockHeight}px`,
