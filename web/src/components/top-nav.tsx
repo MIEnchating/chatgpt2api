@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ChevronDown, ChevronUp, LogOut, MoonStar, ShieldCheck, Sun, UserCircle2 } from "lucide-react";
+import { ChevronDown, LogOut, MoonStar, ShieldCheck, Sun, UserCircle2 } from "lucide-react";
 import { motion, useReducedMotion, type Transition } from "motion/react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 
@@ -35,7 +35,6 @@ const navItems = [
   { href: "/settings", label: "设置" },
 ];
 const profileNavItem = { href: "/profile", label: "个人中心" };
-const PRIMARY_NAV_ID = "primary-navigation";
 const NAV_ACTIVE_LAYOUT_ID = "top-nav-active-pill";
 const navActiveTransition: Transition = {
   type: "spring",
@@ -223,7 +222,6 @@ export function TopNav() {
   const pathname = location.pathname.replace(/\/+$/, "") || "/";
   const [session, setSession] = useState<StoredAuthSession | null | undefined>(() => getCachedAuthSession());
   const [theme, setTheme] = useState<ColorTheme>(() => getPreferredColorTheme());
-  const [navCollapsed, setNavCollapsed] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -294,25 +292,12 @@ export function TopNav() {
   const visibleNavItems = navItems.filter((item) => canAccessPath(session, item.href));
   const roleLabel = session.role === "admin" ? "管理员" : session.roleName || "普通用户";
   const canAccessImageTasks = canAccessPath(session, "/image");
-  const navToggleLabel = navCollapsed ? "展开导航栏" : "收起导航栏";
 
   return (
     <header className="sticky top-3 z-40 rounded-2xl border border-border bg-card/92 shadow-[0_12px_36px_-28px_rgba(15,23,42,0.55)] backdrop-blur dark:border-border dark:bg-card/92">
       <div className="flex min-h-14 flex-col gap-2 px-3 py-2 lg:flex-row lg:items-center lg:justify-between lg:gap-4 lg:px-4">
         <div className="flex min-w-0 items-center justify-between gap-2 lg:justify-start">
-          <Button
-            type="button"
-            variant="ghost"
-            className={cn(
-              "h-9 max-w-[190px] justify-start rounded-xl px-1.5 pr-2 text-[15px] font-semibold text-[#18181b] shadow-none hover:bg-black/[0.04] hover:text-[#1456f0] sm:max-w-none dark:text-foreground dark:hover:text-sky-300",
-              navCollapsed ? "bg-black/[0.04] text-[#1456f0] dark:bg-accent dark:text-sky-300" : "",
-            )}
-            aria-controls={PRIMARY_NAV_ID}
-            aria-expanded={!navCollapsed}
-            aria-label={navToggleLabel}
-            title={navToggleLabel}
-            onClick={() => setNavCollapsed((collapsed) => !collapsed)}
-          >
+          <div className="flex h-9 max-w-[190px] items-center gap-2 rounded-xl px-1.5 pr-2 text-[15px] font-semibold text-[#18181b] sm:max-w-none dark:text-foreground">
             <img
               src="/logo-mark.svg"
               alt=""
@@ -320,8 +305,7 @@ export function TopNav() {
               className="size-7 rounded-[10px] shadow-[0_4px_10px_rgba(184,90,127,0.16)]"
             />
             <span className="truncate">chatgpt2api</span>
-            {navCollapsed ? <ChevronDown aria-hidden="true" /> : <ChevronUp aria-hidden="true" />}
-          </Button>
+          </div>
           <div className="ml-auto flex shrink-0 items-center gap-1 lg:hidden">
             {canAccessImageTasks ? <ImageTaskQueue className="size-8 px-0" /> : null}
             <AnnouncementNotifications target="image" className="size-8" />
@@ -335,12 +319,8 @@ export function TopNav() {
           </div>
         </div>
         <nav
-          id={PRIMARY_NAV_ID}
           aria-label="主导航"
-          className={cn(
-            "hide-scrollbar -mx-1 min-w-0 gap-1 overflow-x-auto overscroll-x-contain px-1 pb-0.5 scroll-px-1 touch-pan-x [-webkit-overflow-scrolling:touch] lg:mx-0 lg:flex-1 lg:justify-center lg:gap-1.5 lg:px-0 lg:pb-0",
-            navCollapsed ? "hidden" : "flex",
-          )}
+          className="hide-scrollbar -mx-1 flex min-w-0 gap-1 overflow-x-auto overscroll-x-contain px-1 pb-0.5 scroll-px-1 touch-pan-x [-webkit-overflow-scrolling:touch] lg:mx-0 lg:flex-1 lg:justify-center lg:gap-1.5 lg:px-0 lg:pb-0"
         >
           {visibleNavItems.map((item) => (
             <NavPill key={item.href} item={item} pathname={pathname} />
