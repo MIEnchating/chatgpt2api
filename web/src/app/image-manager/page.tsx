@@ -538,6 +538,11 @@ function ImageManagerContent({
         return;
       }
     }
+    if (!cached && !force) {
+      setItems([]);
+      setSelectedImageIds({});
+      setVisibleItemLimit(IMAGE_MANAGER_BATCH_SIZE);
+    }
 
     activeLoadRef.current?.abort();
     const controller = new AbortController();

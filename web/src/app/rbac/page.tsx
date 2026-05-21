@@ -366,7 +366,7 @@ function RBACContent() {
                 />
               </div>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-5 [scrollbar-color:rgba(142,142,147,.45)_transparent] [scrollbar-gutter:stable] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#8e8e93]/45 [&::-webkit-scrollbar-track]:bg-transparent">
+            <div className="min-h-0 flex-1 overflow-hidden p-5">
               {isLoading ? (
                 <div className="flex min-h-[420px] items-center justify-center">
                   <LoaderCircle className="size-5 animate-spin text-stone-400" />

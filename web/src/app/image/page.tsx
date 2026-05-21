@@ -894,18 +894,26 @@ function formatCreationTaskErrorMessage(message: string) {
   }
 
   const normalized = trimmed.toLowerCase();
+  const isImageEdit = normalized.includes("/v1/images/edits");
+  const taskLabel = isImageEdit ? "图片编辑" : "图片生成";
   if (normalized.includes("user balance insufficient")) {
-    return "上游拒绝了这次请求，请检查当前 NewAPI 令牌或稍后重试。";
+    return "当前账号额度不足，上游拒绝了这次请求。请切换可用令牌、补充额度，或稍后再试。";
   }
   if (normalized.includes("user quota exceeded")) {
-    return "上游拒绝了这次请求，请检查当前 NewAPI 令牌或稍后重试。";
+    return "当前账号额度已用完，上游拒绝了这次请求。请切换可用令牌、补充额度，或稍后再试。";
+  }
+  if (normalized.includes("context deadline exceeded") || normalized.includes("client.timeout exceeded") || normalized.includes("awaiting headers") || normalized.includes("awaiting response headers")) {
+    return `${taskLabel}请求已发出，但上游长时间没有响应。请稍后重试；如果连续出现，建议降低分辨率、减少参考图，或检查 NewAPI/RelayAI 和代理是否正常。`;
+  }
+  if (normalized.includes("i/o timeout") || normalized.includes("tls handshake timeout") || normalized.includes("timeout awaiting response headers")) {
+    return `${taskLabel}请求连接超时。通常是代理、网络或上游服务繁忙导致，请稍后重试；如果频繁出现，先检查代理和上游连通性。`;
   }
   if (
     normalized.includes("stream disconnected before completion") ||
     normalized.includes("stream closed before") ||
     normalized.includes("response.completed")
   ) {
-    return "流式连接在完成前断开了，可能不合法。";
+    return "图片结果还没传完，上游连接就断开了。通常是网络波动或上游繁忙导致，请稍后重试；如果频繁出现，建议降低分辨率或减少参考图。";
   }
   if (normalized.includes("an error occurred while processing your request")) {
     const requestId = trimmed.match(/request id\s+([a-z0-9-]+)/i)?.[1];
@@ -921,10 +929,22 @@ function formatCreationTaskErrorMessage(message: string) {
     return "没有生成图片，模型可能检测到敏感内容并拒绝了这次请求，请调整提示词后重试。";
   }
   if (normalized.includes("timed out waiting for async image generation")) {
-    return "图片生成等待超时，建议稍后重试；如果使用高分辨率参数，可降低尺寸后再试。";
+    return `${taskLabel}等待超时。请稍后重试；如果使用高分辨率、较多参考图或复杂提示词，建议先降低尺寸或简化内容。`;
   }
   if (normalized.includes("no available image quota")) {
     return "当前 NewAPI 令牌暂不可用，请检查指定分组令牌或稍后重试。";
+  }
+  if (normalized.includes("upstream connection failed before tls handshake") || normalized.includes("tls connect error")) {
+    return "连接上游失败，代理或网络可能没有连通到 ChatGPT。请检查代理后重试。";
+  }
+  if (normalized.includes("connection refused") || normalized.includes("connect: refused")) {
+    return "连接上游失败：目标服务拒绝连接。请确认 NewAPI/RelayAI 服务正在运行，地址和端口配置正确。";
+  }
+  if (normalized.includes("no such host") || normalized.includes("server misbehaving")) {
+    return "无法解析上游地址。请检查 NewAPI/RelayAI 域名、Docker 网络或 DNS 配置。";
+  }
+  if (normalized.includes("bad gateway") || normalized.includes("service unavailable") || normalized.includes("gateway timeout")) {
+    return "上游服务暂时不可用。请稍后重试；如果持续出现，请检查 NewAPI/RelayAI 状态。";
   }
 
   return trimmed;
@@ -935,22 +955,17 @@ function formatCreationTaskErrorDetail(error: unknown) {
     return null;
   }
   const item = error as { message?: unknown; code?: unknown; errorType?: unknown; status?: unknown };
-  const message = typeof item.message === "string" ? item.message.trim() : "";
   const code = typeof item.code === "string" ? item.code.trim() : "";
   const errorType = typeof item.errorType === "string" ? item.errorType.trim() : "";
   const status = typeof item.status === "number" && Number.isFinite(item.status) ? item.status : undefined;
-  if (!message && !code && !errorType && !status) {
+  if (!code && !errorType && !status) {
     return null;
   }
-  const parts = [message || "生成失败"];
   const meta: string[] = [];
-  if (code) meta.push(`code=${code}`);
-  if (errorType && errorType !== code) meta.push(`type=${errorType}`);
-  if (typeof status === "number") meta.push(`http=${status}`);
-  if (meta.length > 0) {
-    parts.push(`[${meta.join(" ")}]`);
-  }
-  return parts.join(" ");
+  if (code) meta.push(`错误码：${code}`);
+  if (errorType && errorType !== code) meta.push(`类型：${errorType}`);
+  if (typeof status === "number") meta.push(`HTTP：${status}`);
+  return meta.join("，");
 }
 
 function formatCreationTaskError(error: unknown, fallback = "生成图片失败") {
@@ -1620,11 +1635,12 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     )
       .then((results) => {
         if (promptApplyRequestIdRef.current !== requestId) {
+          toast.dismiss(toastId);
           return;
         }
         const loadedReferences = results.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
         if (loadedReferences.length === 0) {
-          toast.error("已带入原始提示词和参数，但参考图读取失败");
+          toast.error("已带入原始提示词和参数，但参考图读取失败", { id: toastId });
           return;
         }
         setReferenceImages(loadedReferences);
@@ -1635,16 +1651,15 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
             : usesPublicImageFallback
               ? "未公开原始参考图，已使用公开图和可用参数"
               : `已带入原始提示词、${loadedReferences.length} 张原始参考图和生成参数`,
+          { id: toastId },
         );
       })
       .catch(() => {
         if (promptApplyRequestIdRef.current !== requestId) {
+          toast.dismiss(toastId);
           return;
         }
-        toast.error("已带入原始提示词和参数，但参考图读取失败");
-      })
-      .finally(() => {
-        toast.dismiss(toastId);
+        toast.error("已带入原始提示词和参数，但参考图读取失败", { id: toastId });
       });
   }, [defaultImageModel, isLoadingHistory]);
 
@@ -1963,15 +1978,13 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         return;
       }
       setReferenceImages([referenceImage]);
-      toast.dismiss(toastId);
-      toast.success("已套用提示词和参考图");
+      toast.success("已套用提示词和参考图", { id: toastId });
     } catch {
       if (promptApplyRequestIdRef.current !== requestId) {
         toast.dismiss(toastId);
         return;
       }
-      toast.dismiss(toastId);
-      toast.error("已套用提示词，但参考图读取失败");
+      toast.error("已套用提示词，但参考图读取失败", { id: toastId });
     }
   }, []);
 
@@ -2014,19 +2027,19 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     );
     const loadedReferences = results.flatMap((result) => (result.status === "fulfilled" ? [result.value] : []));
 
-    toast.dismiss(toastId);
     if (promptApplyRequestIdRef.current !== requestId) {
+      toast.dismiss(toastId);
       return;
     }
     if (loadedReferences.length > 0) {
       setReferenceImages(loadedReferences);
     }
     if (loadedReferences.length === referenceImageUrls.length) {
-      toast.success("已套用提示词和参考图");
+      toast.success("已套用提示词和参考图", { id: toastId });
     } else if (loadedReferences.length > 0) {
-      toast.error(`已套用提示词，${referenceImageUrls.length - loadedReferences.length} 张参考图读取失败`);
+      toast.error(`已套用提示词，${referenceImageUrls.length - loadedReferences.length} 张参考图读取失败`, { id: toastId });
     } else {
-      toast.error("已套用提示词，但参考图读取失败");
+      toast.error("已套用提示词，但参考图读取失败", { id: toastId });
     }
   }, []);
 

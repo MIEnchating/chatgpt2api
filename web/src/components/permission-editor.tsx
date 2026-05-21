@@ -79,7 +79,7 @@ export function PermissionEditor({
   const allApiPermissionKeys = useMemo(() => apis.map((item) => item.key), [apis]);
 
   return (
-    <div className={cn("grid min-h-0 gap-5 lg:grid-cols-[280px_1fr]", className)}>
+    <div className={cn("grid h-full min-h-0 gap-5 lg:grid-cols-[280px_1fr]", className)}>
       <section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-border">
         <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
           <div className="min-w-0">
@@ -107,7 +107,7 @@ export function PermissionEditor({
             </Button>
           </div>
         </div>
-        <div className="min-h-0 divide-y divide-border overflow-y-auto overscroll-contain [scrollbar-color:rgba(142,142,147,.45)_transparent] [scrollbar-gutter:stable] [scrollbar-width:thin] lg:max-h-[calc(100dvh-27rem)] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#8e8e93]/45 [&::-webkit-scrollbar-track]:bg-transparent">
+        <div className="min-h-0 flex-1 divide-y divide-border overflow-y-auto overscroll-contain [scrollbar-color:rgba(142,142,147,.45)_transparent] [scrollbar-gutter:stable] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#8e8e93]/45 [&::-webkit-scrollbar-track]:bg-transparent">
           {menuPermissions.length > 0 ? (
             menuPermissions.map((item) => (
               <label
@@ -159,7 +159,7 @@ export function PermissionEditor({
             </Button>
           </div>
         </div>
-        <div className="min-h-0 space-y-4 overflow-y-auto overscroll-contain p-4 [scrollbar-color:rgba(142,142,147,.45)_transparent] [scrollbar-gutter:stable] [scrollbar-width:thin] lg:max-h-[calc(100dvh-27rem)] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#8e8e93]/45 [&::-webkit-scrollbar-track]:bg-transparent">
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain p-4 [scrollbar-color:rgba(142,142,147,.45)_transparent] [scrollbar-gutter:stable] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#8e8e93]/45 [&::-webkit-scrollbar-track]:bg-transparent">
           {apiPermissionGroups.length > 0 ? (
             apiPermissionGroups.map((group) => (
               <article key={group.group} className="min-w-0">
