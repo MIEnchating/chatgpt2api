@@ -84,6 +84,30 @@ func TestNewAPITokenReaderAuthenticatesNewAPIUserPassword(t *testing.T) {
 	}
 }
 
+func TestNewAPITokenReaderReadsUserBalance(t *testing.T) {
+	dbURL := newTestNewAPIDatabase(t)
+	insertTestNewAPIUser(t, dbURL, 9, "alice", "alice@example.test")
+	updateTestNewAPIUserBalance(t, dbURL, 9, 123456, 789, 42, "codex")
+
+	reader, err := NewNewAPITokenReader(NewAPITokenReaderConfig{DatabaseURL: dbURL, TokenGroup: "draw"})
+	if err != nil {
+		t.Fatalf("NewNewAPITokenReader() error = %v", err)
+	}
+	defer reader.Close()
+
+	balance, err := reader.BalanceForIdentity(context.Background(), Identity{Username: "alice"})
+	if err != nil {
+		t.Fatalf("BalanceForIdentity() error = %v", err)
+	}
+	if balance.ID != 9 || balance.Quota != 123456 || balance.UsedQuota != 789 || balance.RequestCount != 42 || balance.Group != "codex" {
+		t.Fatalf("BalanceForIdentity() = %#v", balance)
+	}
+	status := reader.BalanceStatus(context.Background(), Identity{Username: "alice"})
+	if status["has_balance"] != true || status["quota"] != int64(123456) || status["user_group"] != "codex" {
+		t.Fatalf("BalanceStatus() = %#v", status)
+	}
+}
+
 func newTestNewAPIDatabase(t *testing.T) string {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "newapi.db")
@@ -93,7 +117,7 @@ func newTestNewAPIDatabase(t *testing.T) string {
 	}
 	defer db.Close()
 	schema := []string{
-		`CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT NOT NULL, email TEXT, display_name TEXT, password TEXT NOT NULL, status INTEGER NOT NULL, deleted_at TEXT)`,
+		`CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT NOT NULL, email TEXT, display_name TEXT, password TEXT NOT NULL, quota INTEGER NOT NULL DEFAULT 0, used_quota INTEGER NOT NULL DEFAULT 0, request_count INTEGER NOT NULL DEFAULT 0, ` + "`group`" + ` TEXT NOT NULL DEFAULT 'default', status INTEGER NOT NULL, deleted_at TEXT)`,
 		"CREATE TABLE tokens (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, `key` TEXT NOT NULL, status INTEGER NOT NULL, name TEXT, expired_time INTEGER NOT NULL, remain_quota INTEGER NOT NULL, unlimited_quota BOOLEAN NOT NULL, `group` TEXT NOT NULL, deleted_at TEXT)",
 	}
 	for _, stmt := range schema {
@@ -114,6 +138,15 @@ func insertTestNewAPIUser(t *testing.T, dbURL string, id int, username, email st
 	}
 	if _, err := db.Exec("INSERT INTO users (id, username, email, display_name, password, status, deleted_at) VALUES (?, ?, ?, ?, ?, 1, NULL)", id, username, email, "Alice", string(hash)); err != nil {
 		t.Fatalf("insert user: %v", err)
+	}
+}
+
+func updateTestNewAPIUserBalance(t *testing.T, dbURL string, id int, quota, usedQuota, requestCount int, group string) {
+	t.Helper()
+	db := openTestNewAPIDatabase(t, dbURL)
+	defer db.Close()
+	if _, err := db.Exec("UPDATE users SET quota = ?, used_quota = ?, request_count = ?, `group` = ? WHERE id = ?", quota, usedQuota, requestCount, group, id); err != nil {
+		t.Fatalf("update user balance: %v", err)
 	}
 }
 

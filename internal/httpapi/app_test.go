@@ -428,6 +428,50 @@ func TestProfileRelayKeyReadsNewAPITokenForUserAndGroup(t *testing.T) {
 	}
 }
 
+func TestProfileBalanceReadsNewAPIUser(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+
+	dbURL := newHTTPTestNewAPIDatabase(t)
+	insertHTTPTestNewAPIUser(t, dbURL, 1, "alice", "alice@example.test")
+	updateHTTPTestNewAPIUserBalance(t, dbURL, 1, 123456, 789, 42, "codex")
+	reader, err := service.NewNewAPITokenReader(service.NewAPITokenReaderConfig{DatabaseURL: dbURL, TokenGroup: "codex"})
+	if err != nil {
+		t.Fatalf("NewNewAPITokenReader() error = %v", err)
+	}
+	if app.newAPIKeys != nil {
+		_ = app.newAPIKeys.Close()
+	}
+	app.newAPIKeys = reader
+
+	user, token := createPasswordUserSession(t, app, "alice", "Password123", "Alice")
+	if user.ID == "" || user.Username != "alice" || token == "" {
+		t.Fatalf("created user identity=%#v token=%q", user, token)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/profile/balance", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	res := httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("profile balance status = %d body = %s", res.Code, res.Body.String())
+	}
+	var status map[string]any
+	if err := json.Unmarshal(res.Body.Bytes(), &status); err != nil {
+		t.Fatalf("profile balance json: %v", err)
+	}
+	if status["has_balance"] != true ||
+		status["source"] != "newapi" ||
+		status["token_group"] != "codex" ||
+		status["user_group"] != "codex" ||
+		status["username"] != "alice" ||
+		status["quota"] != float64(123456) ||
+		status["used_quota"] != float64(789) ||
+		status["request_count"] != float64(42) {
+		t.Fatalf("profile balance = %#v", status)
+	}
+}
+
 func TestCreationTaskResponseImageRouteIsNotAnAdminTaskResource(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()
@@ -3429,7 +3473,7 @@ func newHTTPTestNewAPIDatabase(t *testing.T) string {
 	}
 	defer db.Close()
 	for _, stmt := range []string{
-		`CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT NOT NULL, email TEXT, display_name TEXT, password TEXT NOT NULL, status INTEGER NOT NULL, deleted_at TEXT)`,
+		`CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT NOT NULL, email TEXT, display_name TEXT, password TEXT NOT NULL, quota INTEGER NOT NULL DEFAULT 0, used_quota INTEGER NOT NULL DEFAULT 0, request_count INTEGER NOT NULL DEFAULT 0, ` + "`group`" + ` TEXT NOT NULL DEFAULT 'default', status INTEGER NOT NULL, deleted_at TEXT)`,
 		"CREATE TABLE tokens (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, `key` TEXT NOT NULL, status INTEGER NOT NULL, name TEXT, expired_time INTEGER NOT NULL, remain_quota INTEGER NOT NULL, unlimited_quota BOOLEAN NOT NULL, `group` TEXT NOT NULL, deleted_at TEXT)",
 	} {
 		if _, err := db.Exec(stmt); err != nil {
@@ -3449,6 +3493,15 @@ func insertHTTPTestNewAPIUser(t *testing.T, dbURL string, id int, username, emai
 	}
 	if _, err := db.Exec("INSERT INTO users (id, username, email, display_name, password, status, deleted_at) VALUES (?, ?, ?, ?, ?, 1, NULL)", id, username, email, "Alice", string(hash)); err != nil {
 		t.Fatalf("insert newapi user: %v", err)
+	}
+}
+
+func updateHTTPTestNewAPIUserBalance(t *testing.T, dbURL string, id int, quota, usedQuota, requestCount int, group string) {
+	t.Helper()
+	db := openHTTPTestNewAPIDatabase(t, dbURL)
+	defer db.Close()
+	if _, err := db.Exec("UPDATE users SET quota = ?, used_quota = ?, request_count = ?, `group` = ? WHERE id = ?", quota, usedQuota, requestCount, group, id); err != nil {
+		t.Fatalf("update newapi user balance: %v", err)
 	}
 }
 

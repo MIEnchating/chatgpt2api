@@ -435,6 +435,21 @@ export type ProfileRelayKeyStatus = {
   message?: string;
 };
 
+export type ProfileBalanceStatus = {
+  has_balance: boolean;
+  source?: "newapi" | string;
+  token_group?: string;
+  user_id?: number;
+  username?: string;
+  email?: string;
+  display_name?: string;
+  user_group?: string;
+  quota?: number;
+  used_quota?: number;
+  request_count?: number;
+  message?: string;
+};
+
 export type Announcement = {
   id: string;
   title: string;
@@ -562,6 +577,10 @@ export async function fetchProfile() {
 
 export async function fetchProfileRelayKey() {
   return httpRequest<ProfileRelayKeyStatus>("/api/profile/relay-key");
+}
+
+export async function fetchProfileBalance() {
+  return httpRequest<ProfileBalanceStatus>("/api/profile/balance");
 }
 
 export async function logout() {

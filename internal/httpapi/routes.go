@@ -177,6 +177,23 @@ func (a *App) handleProfileRelayKey(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (a *App) handleProfileBalance(w http.ResponseWriter, r *http.Request) {
+	identity, ok := a.requireIdentity(w, r, "")
+	if !ok {
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		if a.newAPIKeys == nil {
+			util.WriteJSON(w, http.StatusOK, map[string]any{"has_balance": false, "source": "newapi", "message": "请先配置 NewAPI 数据库连接"})
+			return
+		}
+		util.WriteJSON(w, http.StatusOK, a.newAPIKeys.BalanceStatus(r.Context(), identity))
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
+}
+
 func (a *App) handleProfileAPIKey(w http.ResponseWriter, r *http.Request) {
 	identity, ok := a.requireIdentity(w, r, "")
 	if !ok {

@@ -1401,6 +1401,8 @@ func isPermissionCheckSkipped(path string) bool {
 		return true
 	case "/api/profile/relay-key":
 		return true
+	case "/api/profile/balance":
+		return true
 	case "/api/model-config":
 		return true
 	case "/api/profile/api-key":

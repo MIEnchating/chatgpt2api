@@ -30,6 +30,17 @@ type NewAPIUser struct {
 	DisplayName string
 }
 
+type NewAPIUserBalance struct {
+	ID           int64
+	Username     string
+	Email        string
+	DisplayName  string
+	Group        string
+	Quota        int64
+	UsedQuota    int64
+	RequestCount int64
+}
+
 type NewAPITokenReader struct {
 	db         *sql.DB
 	driver     string
@@ -107,6 +118,43 @@ func (r *NewAPITokenReader) Status(ctx context.Context, identity Identity) map[s
 	return status
 }
 
+func (r *NewAPITokenReader) BalanceStatus(ctx context.Context, identity Identity) map[string]any {
+	status := map[string]any{
+		"has_balance": false,
+		"source":      "newapi",
+		"token_group": r.configuredGroup(),
+	}
+	balance, err := r.BalanceForIdentity(ctx, identity)
+	if err != nil {
+		status["message"] = err.Error()
+		return status
+	}
+	status["has_balance"] = true
+	status["user_id"] = balance.ID
+	status["username"] = balance.Username
+	status["email"] = balance.Email
+	status["display_name"] = balance.DisplayName
+	status["user_group"] = balance.Group
+	status["quota"] = balance.Quota
+	status["used_quota"] = balance.UsedQuota
+	status["request_count"] = balance.RequestCount
+	return status
+}
+
+func (r *NewAPITokenReader) BalanceForIdentity(ctx context.Context, identity Identity) (NewAPIUserBalance, error) {
+	if r == nil || !r.configured || r.db == nil {
+		return NewAPIUserBalance{}, newAPITokenMessageError("请先配置 NewAPI 数据库连接", nil)
+	}
+	candidates := newAPIIdentityLookupValues(identity)
+	if len(candidates) == 0 {
+		return NewAPIUserBalance{}, newAPITokenMessageError("当前登录用户缺少 NewAPI 用户名，无法读取 NewAPI 余额", nil)
+	}
+
+	queryCtx, cancel := context.WithTimeout(contextOrBackground(ctx), r.timeout)
+	defer cancel()
+	return r.lookupUserBalance(queryCtx, candidates)
+}
+
 func (r *NewAPITokenReader) KeyForIdentity(ctx context.Context, identity Identity) (string, error) {
 	if r == nil || !r.configured || r.db == nil {
 		return "", newAPITokenMessageError("请先配置 NewAPI 数据库连接，并在 NewAPI 创建指定分组的令牌", nil)
@@ -180,6 +228,35 @@ func (r *NewAPITokenReader) lookupUserID(ctx context.Context, candidates []strin
 		return 0, newAPITokenMessageError("读取 NewAPI Key 失败，请检查 NewAPI 数据库连接", err)
 	}
 	return 0, newAPITokenMessageError(fmt.Sprintf("请先在 NewAPI 创建当前登录用户，并创建“%s”分组的令牌", r.configuredGroup()), nil)
+}
+
+func (r *NewAPITokenReader) lookupUserBalance(ctx context.Context, candidates []string) (NewAPIUserBalance, error) {
+	groupColumn := r.quoteIdentifier("group")
+	query := "SELECT id, username, email, display_name, quota, used_quota, request_count, " + groupColumn + " FROM users WHERE (username = " + r.placeholder(1) + " OR email = " + r.placeholder(2) + ") AND status = 1 AND deleted_at IS NULL ORDER BY id ASC LIMIT 1"
+	for _, candidate := range candidates {
+		var balance NewAPIUserBalance
+		var email, displayName, group sql.NullString
+		var quota, usedQuota, requestCount sql.NullInt64
+		err := r.db.QueryRowContext(ctx, query, candidate, candidate).Scan(&balance.ID, &balance.Username, &email, &displayName, &quota, &usedQuota, &requestCount, &group)
+		if err == nil {
+			balance.Username = strings.TrimSpace(balance.Username)
+			balance.Email = strings.TrimSpace(email.String)
+			balance.DisplayName = strings.TrimSpace(displayName.String)
+			balance.Group = strings.TrimSpace(group.String)
+			balance.Quota = quota.Int64
+			balance.UsedQuota = usedQuota.Int64
+			balance.RequestCount = requestCount.Int64
+			if balance.Username == "" {
+				return NewAPIUserBalance{}, newAPITokenMessageError("读取 NewAPI 余额失败，请检查 NewAPI 用户数据", nil)
+			}
+			return balance, nil
+		}
+		if errors.Is(err, sql.ErrNoRows) {
+			continue
+		}
+		return NewAPIUserBalance{}, newAPITokenMessageError("读取 NewAPI 余额失败，请检查 NewAPI 数据库连接", err)
+	}
+	return NewAPIUserBalance{}, newAPITokenMessageError("请先在 NewAPI 创建当前登录用户", nil)
 }
 
 func (r *NewAPITokenReader) lookupTokenKey(ctx context.Context, userID int64, group string) (string, error) {

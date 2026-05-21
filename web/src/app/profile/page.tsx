@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { LockKeyhole, LoaderCircle, Save, UserCircle2, UserPen } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { AlertCircle, LoaderCircle, RefreshCw, Save, UserCircle2, UserPen, WalletCards } from "lucide-react";
 import { toast } from "sonner";
 
 import { PageHeader } from "@/components/page-header";
@@ -11,7 +11,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
-  changeProfilePassword,
+  fetchProfileBalance,
+  type ProfileBalanceStatus,
   updateProfileName,
 } from "@/lib/api";
 import { authSessionFromLoginResponse, setVerifiedAuthSession } from "@/lib/session";
@@ -52,6 +53,13 @@ function creationRpmLimitLabel(session: StoredAuthSession) {
   return `${session.creationRpmLimit} 次/分`;
 }
 
+function formatNumber(value: number | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return "-";
+  }
+  return new Intl.NumberFormat("zh-CN").format(value);
+}
+
 type InfoRowProps = {
   label: string;
   value: string;
@@ -71,14 +79,78 @@ function InfoRow({ label, value, code }: InfoRowProps) {
   );
 }
 
+function BalanceCard({
+  balance,
+  isLoading,
+  onRefresh,
+}: {
+  balance: ProfileBalanceStatus | null;
+  isLoading: boolean;
+  onRefresh: () => void;
+}) {
+  const title = balance?.has_balance ? balance.display_name || balance.username || "NewAPI 用户" : "NewAPI";
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-[#edf4ff] text-[#1456f0] dark:bg-sky-950/30 dark:text-sky-300">
+              <WalletCards className="size-5" />
+            </div>
+            <div className="min-w-0">
+              <CardTitle className="text-lg">用户余额</CardTitle>
+              <CardDescription className="truncate">{title}</CardDescription>
+            </div>
+          </div>
+          <Button
+            type="button"
+            variant="outline"
+            size="icon"
+            className="size-10 shrink-0 rounded-lg"
+            onClick={onRefresh}
+            disabled={isLoading}
+            aria-label="刷新余额"
+            title="刷新余额"
+          >
+            {isLoading ? <LoaderCircle className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {isLoading ? (
+          <div className="flex min-h-24 items-center justify-center rounded-lg border border-border bg-muted/30 text-sm text-muted-foreground">
+            <LoaderCircle className="mr-2 size-4 animate-spin" />
+            正在读取余额
+          </div>
+        ) : balance?.has_balance ? (
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <InfoRow label="当前余额" value={formatNumber(balance.quota)} />
+            <InfoRow label="已用额度" value={formatNumber(balance.used_quota)} />
+            <InfoRow label="请求次数" value={formatNumber(balance.request_count)} />
+            <InfoRow label="用户分组" value={balance.user_group || "-"} />
+            <InfoRow label="令牌分组" value={balance.token_group || "-"} />
+            <InfoRow label="NewAPI 用户名" value={balance.username || "-"} code />
+            <InfoRow label="邮箱" value={balance.email || "-"} />
+            <InfoRow label="NewAPI 用户 ID" value={balance.user_id ? String(balance.user_id) : "-"} code />
+          </div>
+        ) : (
+          <div className="flex min-h-24 items-center gap-3 rounded-lg border border-border bg-muted/30 px-3 py-4 text-sm text-muted-foreground">
+            <AlertCircle className="size-4 shrink-0" />
+            <span>{balance?.message || "未读取到 NewAPI 用户余额"}</span>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 function ProfileContent({ session }: { session: StoredAuthSession }) {
   const [currentSession, setCurrentSession] = useState(session);
   const [profileName, setProfileName] = useState(session.name || "");
-  const [currentPassword, setCurrentPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
+  const [balance, setBalance] = useState<ProfileBalanceStatus | null>(null);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
-  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [isLoadingBalance, setIsLoadingBalance] = useState(true);
 
   const isProfileNameDirty = profileName.trim() !== (currentSession.name || "");
   const roleLabel = sessionRoleLabel(currentSession);
@@ -87,6 +159,25 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
     setCurrentSession(session);
     setProfileName(session.name || "");
   }, [session]);
+
+  const loadBalance = useCallback(async () => {
+    setIsLoadingBalance(true);
+    try {
+      setBalance(await fetchProfileBalance());
+    } catch (error) {
+      setBalance({
+        has_balance: false,
+        source: "newapi",
+        message: error instanceof Error ? error.message : "读取 NewAPI 用户余额失败",
+      });
+    } finally {
+      setIsLoadingBalance(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadBalance();
+  }, [currentSession.key, loadBalance]);
 
   const handleSaveProfile = async () => {
     const nextName = profileName.trim();
@@ -109,33 +200,6 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
       toast.error(error instanceof Error ? error.message : "保存昵称失败");
     } finally {
       setIsSavingProfile(false);
-    }
-  };
-
-  const handleChangePassword = async () => {
-    if (!currentPassword) {
-      toast.error("请输入当前密码");
-      return;
-    }
-    if (!newPassword) {
-      toast.error("请输入新密码");
-      return;
-    }
-    if (newPassword !== confirmPassword) {
-      toast.error("两次输入的新密码不一致");
-      return;
-    }
-    setIsChangingPassword(true);
-    try {
-      await changeProfilePassword(currentPassword, newPassword);
-      setCurrentPassword("");
-      setNewPassword("");
-      setConfirmPassword("");
-      toast.success("密码已修改");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "修改密码失败");
-    } finally {
-      setIsChangingPassword(false);
     }
   };
 
@@ -170,82 +234,11 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
               <InfoRow label="每分钟请求限制" value={creationRpmLimitLabel(currentSession)} />
             </CardContent>
           </Card>
-
-          <Card>
-            <CardHeader>
-              <div className="flex min-w-0 items-center gap-3">
-                <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-[#edf4ff] text-[#1456f0] dark:bg-sky-950/30 dark:text-sky-300">
-                  <LockKeyhole className="size-5" />
-                </div>
-                <div className="min-w-0">
-                  <CardTitle className="text-lg">登录密码</CardTitle>
-                  <CardDescription className="truncate">
-                    {providerLabel(currentSession.provider)}
-                  </CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              {currentSession.provider === "local" ? (
-                <form
-                  onSubmit={(event) => {
-                    event.preventDefault();
-                    void handleChangePassword();
-                  }}
-                >
-                  <FieldGroup>
-                    <Field>
-                      <FieldLabel htmlFor="profile-current-password">当前密码</FieldLabel>
-                      <Input
-                        id="profile-current-password"
-                        type="password"
-                        autoComplete="current-password"
-                        value={currentPassword}
-                        onChange={(event) => setCurrentPassword(event.target.value)}
-                        className="h-10 rounded-lg"
-                      />
-                    </Field>
-                    <Field>
-                      <FieldLabel htmlFor="profile-new-password">新密码</FieldLabel>
-                      <Input
-                        id="profile-new-password"
-                        type="password"
-                        autoComplete="new-password"
-                        value={newPassword}
-                        onChange={(event) => setNewPassword(event.target.value)}
-                        className="h-10 rounded-lg"
-                      />
-                      <FieldDescription>密码长度不能少于 8 位。</FieldDescription>
-                    </Field>
-                    <Field>
-                      <FieldLabel htmlFor="profile-confirm-password">确认新密码</FieldLabel>
-                      <Input
-                        id="profile-confirm-password"
-                        type="password"
-                        autoComplete="new-password"
-                        value={confirmPassword}
-                        onChange={(event) => setConfirmPassword(event.target.value)}
-                        className="h-10 rounded-lg"
-                      />
-                    </Field>
-                    <div className="flex justify-end">
-                      <Button type="submit" className="h-10 rounded-lg" disabled={isChangingPassword}>
-                        {isChangingPassword ? <LoaderCircle className="size-4 animate-spin" /> : <Save className="size-4" />}
-                        修改密码
-                      </Button>
-                    </div>
-                  </FieldGroup>
-                </form>
-              ) : (
-                <div className="rounded-xl border border-border bg-muted/30 px-3 py-4 text-sm text-muted-foreground">
-                  外部登录账号不使用本地密码。
-                </div>
-              )}
-            </CardContent>
-          </Card>
         </div>
 
         <div className="flex flex-col gap-5">
+          <BalanceCard balance={balance} isLoading={isLoadingBalance} onRefresh={() => void loadBalance()} />
+
           <Card>
             <CardHeader>
               <div className="flex min-w-0 items-center gap-3">
