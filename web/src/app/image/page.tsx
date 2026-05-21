@@ -3888,6 +3888,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
             <div ref={resultsContentRef} className="min-h-full">
               <ImageResults
                 selectedConversation={selectedConversation}
+                isLoadingHistory={isLoadingHistory}
                 progressByTurnKey={progressByTurnKey}
                 progressNow={progressNow}
                 promptPresets={IMAGE_PROMPT_PRESETS}

@@ -651,7 +651,7 @@ function UsersContent() {
   };
 
   return (
-    <section className="flex flex-col gap-5">
+    <section className="flex h-full min-h-0 flex-col gap-5 overflow-hidden">
       <PageHeader
         eyebrow="用户"
         title="用户管理"
@@ -669,8 +669,8 @@ function UsersContent() {
         }
       />
 
-      <Card className="overflow-hidden">
-        <CardContent className="p-0">
+      <Card className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <CardContent className="flex min-h-0 flex-1 flex-col p-0">
           <div className="flex flex-col gap-3 border-b border-border px-5 py-4">
             <div className="flex items-center justify-between text-sm text-muted-foreground">
               <span>共 {total} 个用户</span>
@@ -743,9 +743,9 @@ function UsersContent() {
               </Button>
             </div>
           </div>
-          <div className="overflow-x-auto">
+          <div className="min-h-0 flex-1 overflow-auto">
             <Table className="min-w-[1320px]">
-              <TableHeader>
+              <TableHeader className="sticky top-0 z-10">
                 <TableRow>
                   <TableHead className="w-12">
                     <Checkbox

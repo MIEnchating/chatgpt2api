@@ -219,7 +219,7 @@ function RBACContent() {
   };
 
   return (
-    <section className="flex flex-col gap-5">
+    <section className="flex h-full min-h-0 flex-col gap-5 overflow-hidden">
       <PageHeader
         eyebrow="访问控制"
         title="角色权限"
@@ -245,9 +245,9 @@ function RBACContent() {
         }
       />
 
-      <div className="grid gap-5 xl:grid-cols-[360px_1fr]">
-        <Card className="overflow-hidden xl:max-h-[calc(100dvh-11rem)]">
-          <CardContent className="flex min-h-0 flex-col p-0">
+      <div className="grid min-h-0 flex-1 gap-5 overflow-y-auto overscroll-contain xl:grid-cols-[360px_1fr] xl:overflow-hidden">
+        <Card className="flex min-h-0 flex-col overflow-hidden xl:max-h-[calc(100dvh-11rem)]">
+          <CardContent className="flex min-h-0 flex-1 flex-col p-0">
             <div className="border-b border-border px-5 py-4">
               <div className="mb-3 flex items-center justify-between text-sm text-muted-foreground">
                 <span>角色 {filteredRoles.length} / {roles.length}</span>
@@ -263,7 +263,7 @@ function RBACContent() {
                 />
               </div>
             </div>
-            <div className="max-h-[calc(100vh-18rem)] min-h-[360px] overflow-y-auto">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-color:rgba(142,142,147,.45)_transparent] [scrollbar-gutter:stable] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#8e8e93]/45 [&::-webkit-scrollbar-track]:bg-transparent">
               {isLoading ? (
                 <div className="flex min-h-[320px] items-center justify-center">
                   <LoaderCircle className="size-5 animate-spin text-stone-400" />
@@ -312,8 +312,8 @@ function RBACContent() {
           </CardContent>
         </Card>
 
-        <Card className="overflow-hidden">
-          <CardContent className="p-0">
+        <Card className="flex min-h-0 flex-col overflow-hidden">
+          <CardContent className="flex min-h-0 flex-1 flex-col p-0">
             <div className="flex flex-col gap-4 border-b border-border px-5 py-4">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div className="min-w-0">
@@ -366,7 +366,7 @@ function RBACContent() {
                 />
               </div>
             </div>
-            <div className="min-h-0 overflow-y-auto overscroll-contain p-5 [scrollbar-color:rgba(142,142,147,.45)_transparent] [scrollbar-gutter:stable] [scrollbar-width:thin] xl:max-h-[calc(100dvh-20rem)] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#8e8e93]/45 [&::-webkit-scrollbar-track]:bg-transparent">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-5 [scrollbar-color:rgba(142,142,147,.45)_transparent] [scrollbar-gutter:stable] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#8e8e93]/45 [&::-webkit-scrollbar-track]:bg-transparent">
               {isLoading ? (
                 <div className="flex min-h-[420px] items-center justify-center">
                   <LoaderCircle className="size-5 animate-spin text-stone-400" />

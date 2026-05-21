@@ -442,6 +442,7 @@ function ImageManagerContent({
   const activeLoadRef = useRef<AbortController | null>(null);
   const autoRefreshAbortRef = useRef<AbortController | null>(null);
   const loadMoreTargetRef = useRef<HTMLDivElement | null>(null);
+  const imageScrollAreaRef = useRef<HTMLDivElement | null>(null);
   const loadMoreTimerRef = useRef<number | null>(null);
   const [galleryView, setGalleryView] = useState<ImageGalleryView>("mine");
   const [startDate, setStartDate] = useState("");
@@ -1039,7 +1040,7 @@ function ImageManagerContent({
           scheduleLoadMoreImages();
         }
       },
-      { rootMargin: "520px 0px" },
+      { root: imageScrollAreaRef.current, rootMargin: "520px 0px" },
     );
     observer.observe(target);
     return () => observer.disconnect();
@@ -1251,10 +1252,10 @@ function ImageManagerContent({
   );
 
   return (
-    <section className="flex flex-col gap-5 pb-20 sm:pb-24">
+    <section className="flex h-full min-h-0 flex-col gap-5 overflow-hidden">
       <PageHeader eyebrow="图片" title="图片库" />
 
-      <div className="flex flex-col gap-4">
+      <div className="flex min-h-0 flex-1 flex-col gap-4">
         <section className="grid gap-4 rounded-[18px] border border-border bg-background/80 p-3 shadow-[0_6px_20px_rgba(15,23,42,0.04)] sm:p-4 lg:grid-cols-[minmax(180px,220px)_minmax(0,1fr)] lg:items-start">
           <div className="flex min-w-0 flex-col gap-2">
             <div className="inline-flex w-full rounded-lg border border-border bg-muted/50 p-1">
@@ -1505,6 +1506,10 @@ function ImageManagerContent({
           </div>
         </Popover>
 
+        <div
+          ref={imageScrollAreaRef}
+          className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain pr-1 pb-[calc(env(safe-area-inset-bottom)+5rem)] [scrollbar-color:rgba(142,142,147,.45)_transparent] [scrollbar-gutter:stable] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#8e8e93]/45 [&::-webkit-scrollbar-track]:bg-transparent"
+        >
         {showImageLoadingState ? (
           <Card className="overflow-hidden rounded-[20px]">
             <CardContent className="flex min-h-[280px] flex-col items-center justify-center gap-3 px-6 py-14 text-center">
@@ -1776,6 +1781,7 @@ function ImageManagerContent({
             </CardContent>
           </Card>
         ) : null}
+        </div>
       </div>
       <ImageLightbox
         images={lightboxImages}

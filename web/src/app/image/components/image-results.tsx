@@ -47,6 +47,7 @@ type DownloadableImage = {
 
 type ImageResultsProps = {
   selectedConversation: ImageConversation | null;
+  isLoadingHistory: boolean;
   progressByTurnKey: Record<string, ImageTurnProgress>;
   progressNow: number;
   promptPresets: readonly ImagePromptPreset[];
@@ -307,6 +308,7 @@ async function fetchImageSizeLabel(src: string) {
 
 export function ImageResults({
   selectedConversation,
+  isLoadingHistory,
   progressByTurnKey,
   progressNow,
   promptPresets,
@@ -387,10 +389,21 @@ export function ImageResults({
     }
   };
 
+  if (isLoadingHistory) {
+    return (
+      <div className="flex h-full min-h-[300px] items-center justify-center px-0 py-3 text-center sm:min-h-[420px] sm:py-6">
+        <div className="inline-flex items-center gap-2 rounded-full border border-[#e5e7eb] bg-white px-4 py-2 text-sm text-[#45515e] shadow-sm dark:border-border dark:bg-card dark:text-muted-foreground">
+          <LoaderCircle className="size-4 animate-spin text-[#1456f0] dark:text-sky-300" />
+          正在读取历史记录
+        </div>
+      </div>
+    );
+  }
+
   if (!selectedConversation) {
     return (
       <div className="flex h-full min-h-[300px] items-center justify-center px-0 py-3 text-center sm:min-h-[420px] sm:py-6">
-        <div className="mx-auto flex w-full max-w-[1180px] flex-col gap-5">
+        <div className="mx-auto flex w-full max-w-[960px] flex-col gap-5">
           <div className="mx-auto flex max-w-[640px] flex-col items-center">
             <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-[#f0f0f0] px-3 py-1 text-xs font-medium text-[#45515e]">
               <Sparkles className="size-4 text-[#1456f0]" />
@@ -403,7 +416,7 @@ export function ImageResults({
               选择一组真实案例预设快速开始，也可以直接在下方输入自己的画面描述。
             </p>
           </div>
-          <div className="hide-scrollbar flex gap-3 overflow-x-auto px-1 pb-1 text-left sm:grid sm:grid-cols-2 sm:overflow-visible lg:grid-cols-4">
+          <div className="hide-scrollbar flex gap-3 overflow-x-auto px-1 pb-1 text-left sm:grid sm:grid-cols-2 sm:overflow-visible lg:grid-cols-3">
             {promptPresets.map((preset) => (
               <button
                 key={preset.id}

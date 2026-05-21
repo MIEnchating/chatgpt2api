@@ -334,7 +334,7 @@ function LogsContent() {
   }, [loadLogs, query]);
 
   return (
-    <section className="flex flex-col gap-5">
+    <section className="flex h-full min-h-0 flex-col gap-5 overflow-hidden">
       <PageHeader eyebrow="日志" title="日志管理" />
 
       <Card>
@@ -393,8 +393,8 @@ function LogsContent() {
         </CardContent>
       </Card>
 
-      <Card className="overflow-hidden">
-        <CardContent className="p-0">
+      <Card className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <CardContent className="flex min-h-0 flex-1 flex-col p-0">
           <div className="flex items-center justify-between border-b border-border px-5 py-4 text-sm text-muted-foreground">
             <span>共 {items.length} 条</span>
             <Button variant="ghost" className="h-8 rounded-lg px-3" onClick={() => void loadLogs(query)} disabled={isLoading}>
@@ -402,9 +402,9 @@ function LogsContent() {
               刷新
             </Button>
           </div>
-          <div className="overflow-x-auto">
+          <div className="min-h-0 flex-1 overflow-auto">
             <Table className="min-w-[1040px]">
-              <TableHeader>
+              <TableHeader className="sticky top-0 z-10">
                 <TableRow>
                   <TableHead>时间</TableHead>
                   <TableHead>操作人</TableHead>
