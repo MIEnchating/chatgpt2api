@@ -23,7 +23,11 @@ Environment variables:
 Optional first-run settings:
   CHATGPT2API_ADMIN_USERNAME
   CHATGPT2API_ADMIN_PASSWORD
+  CHATGPT2API_BASE_URL
+  CHATGPT2API_AUTH_COOKIE_DOMAIN
   CHATGPT2API_RELAY_BASE_URL
+  CHATGPT2API_NEWAPI_DATABASE_URL
+  CHATGPT2API_NEWAPI_TOKEN_GROUP
   CHATGPT2API_IMAGE
 
 Examples:
@@ -284,8 +288,11 @@ prepare_env_file() {
       generated_admin_password=$(generate_password)
       set_env_value CHATGPT2API_ADMIN_PASSWORD "$generated_admin_password" "$env_file"
     fi
-    set_env_value CHATGPT2API_REGISTRATION_ENABLED "${CHATGPT2API_REGISTRATION_ENABLED:-true}" "$env_file"
+    [ "${CHATGPT2API_BASE_URL+x}" = "x" ] && set_env_value CHATGPT2API_BASE_URL "$CHATGPT2API_BASE_URL" "$env_file"
+    [ "${CHATGPT2API_AUTH_COOKIE_DOMAIN+x}" = "x" ] && set_env_value CHATGPT2API_AUTH_COOKIE_DOMAIN "$CHATGPT2API_AUTH_COOKIE_DOMAIN" "$env_file"
     set_env_value CHATGPT2API_RELAY_BASE_URL "${CHATGPT2API_RELAY_BASE_URL:-http://newapi:3000}" "$env_file"
+    [ "${CHATGPT2API_NEWAPI_DATABASE_URL+x}" = "x" ] && set_env_value CHATGPT2API_NEWAPI_DATABASE_URL "$CHATGPT2API_NEWAPI_DATABASE_URL" "$env_file"
+    [ "${CHATGPT2API_NEWAPI_TOKEN_GROUP+x}" = "x" ] && set_env_value CHATGPT2API_NEWAPI_TOKEN_GROUP "$CHATGPT2API_NEWAPI_TOKEN_GROUP" "$env_file"
     set_env_value CHATGPT2API_DOCKER_NETWORK "${CHATGPT2API_DOCKER_NETWORK:-newapi_default}" "$env_file"
     set_env_value STORAGE_BACKEND "${STORAGE_BACKEND:-sqlite}" "$env_file"
     [ "${CHATGPT2API_IMAGE+x}" = "x" ] && set_env_value CHATGPT2API_IMAGE "$CHATGPT2API_IMAGE" "$env_file"
@@ -293,8 +300,11 @@ prepare_env_file() {
   else
     [ "${CHATGPT2API_ADMIN_USERNAME+x}" = "x" ] && set_env_value CHATGPT2API_ADMIN_USERNAME "$CHATGPT2API_ADMIN_USERNAME" "$env_file"
     [ "${CHATGPT2API_ADMIN_PASSWORD+x}" = "x" ] && set_env_value CHATGPT2API_ADMIN_PASSWORD "$CHATGPT2API_ADMIN_PASSWORD" "$env_file"
-    [ "${CHATGPT2API_REGISTRATION_ENABLED+x}" = "x" ] && set_env_value CHATGPT2API_REGISTRATION_ENABLED "$CHATGPT2API_REGISTRATION_ENABLED" "$env_file"
+    [ "${CHATGPT2API_BASE_URL+x}" = "x" ] && set_env_value CHATGPT2API_BASE_URL "$CHATGPT2API_BASE_URL" "$env_file"
+    [ "${CHATGPT2API_AUTH_COOKIE_DOMAIN+x}" = "x" ] && set_env_value CHATGPT2API_AUTH_COOKIE_DOMAIN "$CHATGPT2API_AUTH_COOKIE_DOMAIN" "$env_file"
     [ "${CHATGPT2API_RELAY_BASE_URL+x}" = "x" ] && set_env_value CHATGPT2API_RELAY_BASE_URL "$CHATGPT2API_RELAY_BASE_URL" "$env_file"
+    [ "${CHATGPT2API_NEWAPI_DATABASE_URL+x}" = "x" ] && set_env_value CHATGPT2API_NEWAPI_DATABASE_URL "$CHATGPT2API_NEWAPI_DATABASE_URL" "$env_file"
+    [ "${CHATGPT2API_NEWAPI_TOKEN_GROUP+x}" = "x" ] && set_env_value CHATGPT2API_NEWAPI_TOKEN_GROUP "$CHATGPT2API_NEWAPI_TOKEN_GROUP" "$env_file"
     [ "${CHATGPT2API_DOCKER_NETWORK+x}" = "x" ] && set_env_value CHATGPT2API_DOCKER_NETWORK "$CHATGPT2API_DOCKER_NETWORK" "$env_file"
     [ "${STORAGE_BACKEND+x}" = "x" ] && set_env_value STORAGE_BACKEND "$STORAGE_BACKEND" "$env_file"
     [ "${CHATGPT2API_IMAGE+x}" = "x" ] && set_env_value CHATGPT2API_IMAGE "$CHATGPT2API_IMAGE" "$env_file"
