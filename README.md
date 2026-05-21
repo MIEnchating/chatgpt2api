@@ -57,10 +57,9 @@
 
 - React 19 + Vite 管理端。
 - 登录页、创作台、号池管理、图片库、用户管理、角色权限、日志管理和设置页。
-- 本地账号密码登录，不再把部署密钥当作后台登录密钥。
+- 登录只保留内置管理员和 NewAPI 普通用户；NewAPI 数据库只读，不在本系统写入用户或令牌。
 - 首次启动自动初始化管理员；未配置密码时会生成一次性管理员密码并输出到启动日志。
 - 内置 RBAC，统一管理菜单权限和 API 权限。
-- 支持 Linuxdo OAuth 登录与本地账号共存。
 - 支持个人 API 令牌管理。
 
 ### 创作与兼容接口
@@ -264,11 +263,11 @@ go build -tags=embed -o chatgpt2api ./internal
 | --- | --- | --- |
 | `CHATGPT2API_ADMIN_USERNAME` | `admin` | 初始管理员用户名 |
 | `CHATGPT2API_ADMIN_PASSWORD` | 空 | 初始管理员密码；为空时首次启动自动生成一次性密码 |
-| `CHATGPT2API_BASE_URL` | 空 | 用于生成图片 URL 的外部访问地址 |
-| `CHATGPT2API_AUTH_COOKIE_DOMAIN` | 自动 | 登录会话 Cookie 父域；`relayai.tech` / `image.relayai.tech` 会自动使用 `.relayai.tech` |
+| `CHATGPT2API_BASE_URL` | `https://relayai.tech` | 主域名，用于生成图片 URL 和外部访问地址 |
+| `CHATGPT2API_AUTH_COOKIE_DOMAIN` | `.relayai.tech` | 登录会话 Cookie 父域；`relayai.tech` 登录后 `image.relayai.tech` 自动复用登录态 |
 | `CHATGPT2API_RELAY_BASE_URL` | `http://newapi:3000` | RelayAI 上游地址，可在管理端设置中修改 |
-| `CHATGPT2API_NEWAPI_DATABASE_URL` | 空 | NewAPI 数据库只读连接，用于普通用户登录和按登录用户名读取指定分组令牌 |
-| `CHATGPT2API_NEWAPI_TOKEN_GROUP` | `default` | 只允许读取这个 NewAPI 分组下的令牌 |
+| `CHATGPT2API_NEWAPI_DATABASE_URL` | 空 | NewAPI 数据库只读连接，用于普通用户登录和按登录用户名读取指定分组令牌；请使用只有 `SELECT` 权限的账号 |
+| `CHATGPT2API_NEWAPI_TOKEN_GROUP` | `default` | 只允许读取这个 NewAPI 分组下的令牌，上线前改成实际分组 |
 | `CHATGPT2API_PROXY` | 空 | 全局代理，支持 `http`、`https`、`socks5`、`socks5h` |
 | `CHATGPT2API_IMAGE_MODELS` | `gpt-image-2` | 管理端图片模型列表，多个值用逗号分隔；第一项作为默认模型 |
 | `CHATGPT2API_CHAT_MODELS` | `gpt-5.5,gpt-5.4` | 管理端对话模型列表，多个值用逗号分隔；第一项作为默认模型 |
@@ -311,24 +310,6 @@ DATABASE_URL=mysql://user:password@host:3306/chatgpt2api
 ```
 
 新部署默认使用 SQLite，并自动创建 `data/chatgpt2api.db`。本地 JSON 文件存储后端已移除，`STORAGE_BACKEND=json` 不再支持。
-
-### Linuxdo 登录
-
-Linuxdo OAuth 是可选能力。启用前需要在 Linuxdo Connect 后台创建应用，并配置后端 OAuth 回调地址。
-
-```env
-CHATGPT2API_LINUXDO_ENABLED=true
-CHATGPT2API_LINUXDO_CLIENT_ID=your-client-id
-CHATGPT2API_LINUXDO_CLIENT_SECRET=your-client-secret
-CHATGPT2API_LINUXDO_REDIRECT_URL=https://your-domain.com/auth/linuxdo/oauth/callback
-CHATGPT2API_LINUXDO_FRONTEND_REDIRECT_URL=/auth/linuxdo/callback
-```
-
-注意：
-
-- Linuxdo Connect 应用后台应填写后端回调地址：`/auth/linuxdo/oauth/callback`。
-- `CHATGPT2API_LINUXDO_FRONTEND_REDIRECT_URL` 是前端接收本地会话的路由，不要填到 Linuxdo Connect 应用后台。
-- 如果未显式设置 `CHATGPT2API_LINUXDO_REDIRECT_URL`，且已配置 `CHATGPT2API_BASE_URL`，后端会自动推导回调地址。
 
 ## 本地开发
 
