@@ -913,7 +913,7 @@ function formatCreationTaskErrorMessage(message: string) {
     normalized.includes("stream closed before") ||
     normalized.includes("response.completed")
   ) {
-    return "图片结果还没传完，上游连接就断开了。通常是网络波动或上游繁忙导致，请稍后重试；如果频繁出现，建议降低分辨率或减少参考图。";
+    return "图片结果还没传完，上游连接就断开了。通常是网络波动、上游繁忙，或提示词/参考图触发安全限制导致；请稍后重试，或调整内容、降低分辨率、减少参考图。";
   }
   if (normalized.includes("an error occurred while processing your request")) {
     const requestId = trimmed.match(/request id\s+([a-z0-9-]+)/i)?.[1];
