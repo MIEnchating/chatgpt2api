@@ -84,6 +84,7 @@ type ImageComposerProps = {
   imageBackground: ImageBackground;
   imageModeration: ImageModeration;
   relayKeyConfigured: boolean;
+  relayKeyStatusMessage?: string;
   imageModelStatus?: string;
   highResolutionHint?: ReactNode;
   referenceImages: Array<{ name: string; dataUrl: string }>;
@@ -308,6 +309,7 @@ export function ImageComposer({
   imageBackground,
   imageModeration,
   relayKeyConfigured,
+  relayKeyStatusMessage,
   imageModelStatus,
   highResolutionHint,
   referenceImages,
@@ -378,6 +380,7 @@ export function ImageComposer({
   const effectiveImageResolution = structuredImageParameters ? imageResolution : "auto";
   const submitLabel = composerMode === "chat" ? "发送对话" : referenceImages.length > 0 ? "编辑图片" : "生成图片";
   const relayApiKeyMissing = !relayKeyConfigured;
+  const relayApiKeyMissingMessage = relayKeyStatusMessage || "请先在 NewAPI 为当前用户创建指定分组的令牌";
   const computedImageSize = useMemo(
     () =>
       buildImageSize({
@@ -1251,7 +1254,7 @@ export function ImageComposer({
                   disabled={!prompt.trim()}
                   className="inline-flex size-11 shrink-0 items-center justify-center rounded-full bg-[#181e25] text-white shadow-[0_4px_10px_rgba(24,30,37,0.12)] transition hover:bg-[#2a323d] disabled:cursor-not-allowed disabled:bg-[#e1e2e4] disabled:text-[#73777f] dark:bg-foreground dark:text-background dark:hover:bg-foreground/90 dark:disabled:bg-muted dark:disabled:text-muted-foreground sm:size-10"
                   aria-label={submitLabel}
-                  title={relayApiKeyMissing ? "请先到个人中心配置 RelayAI Key" : submitLabel}
+                  title={relayApiKeyMissing ? relayApiKeyMissingMessage : submitLabel}
                 >
                   <ArrowUp className="size-5 sm:size-4" />
                 </button>
@@ -1261,7 +1264,7 @@ export function ImageComposer({
               "mt-2 flex flex-wrap items-center justify-between gap-2 px-2 text-[11px] leading-5",
               relayApiKeyMissing ? "text-rose-600 dark:text-rose-400" : "text-[#8e8e93] dark:text-muted-foreground",
             )}>
-              <span>{relayApiKeyMissing ? "未配置 RelayAI Key，请到个人中心配置" : "RelayAI Key 已配置"}</span>
+              <span>{relayApiKeyMissing ? relayApiKeyMissingMessage : "已读取 NewAPI 指定分组令牌"}</span>
               {imageModelStatus ? <span>{imageModelStatus}</span> : null}
               <span>{composerMode === "chat" ? "对话请求" : `预计生成 ${imageCount || "1"} 张`}</span>
             </div>

@@ -24,7 +24,6 @@ func TestStoreUpdatePersistsRuntimeSettings(t *testing.T) {
 	unsetEnv(t, "CHATGPT2API_LOG_RETENTION_DAYS")
 	unsetEnv(t, "CHATGPT2API_AUTO_REMOVE_INVALID_ACCOUNTS")
 	unsetEnv(t, "CHATGPT2API_AUTO_REMOVE_RATE_LIMITED_ACCOUNTS")
-	unsetEnv(t, "CHATGPT2API_REGISTRATION_ENABLED")
 	unsetEnv(t, "CHATGPT2API_LOG_LEVELS")
 	unsetLinuxDoEnv(t)
 
@@ -49,7 +48,6 @@ func TestStoreUpdatePersistsRuntimeSettings(t *testing.T) {
 		"image_retention_days":            14,
 		"image_storage_limit_mb":          512,
 		"log_retention_days":              21,
-		"registration_enabled":            true,
 		"log_levels":                      []any{"debug", "error"},
 	})
 	if err != nil {
@@ -58,7 +56,6 @@ func TestStoreUpdatePersistsRuntimeSettings(t *testing.T) {
 	if store.BaseURL() != "https://example.test/root" {
 		t.Fatalf("BaseURL() = %q", store.BaseURL())
 	}
-	assertConfigValue(t, got, "registration_enabled", true)
 	if models := strings.Join(store.ImageModels(), ","); models != "gpt-image-2" {
 		t.Fatalf("ImageModels() = %q, want gpt-image-2", models)
 	}
@@ -88,7 +85,6 @@ func TestStoreUpdatePersistsRuntimeSettings(t *testing.T) {
 		"CHATGPT2API_IMAGE_RETENTION_DAYS=14",
 		"CHATGPT2API_IMAGE_STORAGE_LIMIT_MB=512",
 		"CHATGPT2API_LOG_RETENTION_DAYS=21",
-		"CHATGPT2API_REGISTRATION_ENABLED=true",
 		"CHATGPT2API_LOG_LEVELS=debug,error",
 	} {
 		if !strings.Contains(envText, want) {
@@ -352,66 +348,6 @@ func TestStoreUpdateRefreshesEnvFileBackedRuntimeSettings(t *testing.T) {
 	}
 }
 
-func TestStoreEnvFileValueWinsOverStaleProcessEnvironment(t *testing.T) {
-	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, ".env"), []byte(strings.Join([]string{
-		"CHATGPT2API_REGISTRATION_ENABLED=false",
-		"",
-	}, "\n")), 0o644); err != nil {
-		t.Fatalf("write .env: %v", err)
-	}
-	t.Setenv("CHATGPT2API_ROOT", root)
-	t.Setenv("CHATGPT2API_REGISTRATION_ENABLED", "true")
-
-	store, err := NewStore()
-	if err != nil {
-		t.Fatalf("NewStore() error = %v", err)
-	}
-	if store.RegistrationEnabled() {
-		t.Fatal("RegistrationEnabled() used stale process environment instead of .env")
-	}
-	got, err := store.Update(map[string]any{"registration_enabled": false})
-	if err != nil {
-		t.Fatalf("Update() error = %v", err)
-	}
-	assertConfigValue(t, got, "registration_enabled", false)
-	if gotEnv := os.Getenv("CHATGPT2API_REGISTRATION_ENABLED"); gotEnv != "false" {
-		t.Fatalf("CHATGPT2API_REGISTRATION_ENABLED = %q, want saved false", gotEnv)
-	}
-}
-
-func TestStoreUpdateOverridesEnvOnlyRuntimeSetting(t *testing.T) {
-	root := t.TempDir()
-	t.Setenv("CHATGPT2API_ROOT", root)
-	t.Setenv("CHATGPT2API_REGISTRATION_ENABLED", "true")
-
-	store, err := NewStore()
-	if err != nil {
-		t.Fatalf("NewStore() error = %v", err)
-	}
-	if !store.RegistrationEnabled() {
-		t.Fatal("RegistrationEnabled() should seed from env-only setting")
-	}
-	got, err := store.Update(map[string]any{"registration_enabled": false})
-	if err != nil {
-		t.Fatalf("Update() error = %v", err)
-	}
-	assertConfigValue(t, got, "registration_enabled", false)
-	if store.RegistrationEnabled() {
-		t.Fatal("RegistrationEnabled() stayed enabled after saving false")
-	}
-	if gotEnv := os.Getenv("CHATGPT2API_REGISTRATION_ENABLED"); gotEnv != "false" {
-		t.Fatalf("CHATGPT2API_REGISTRATION_ENABLED = %q, want saved false", gotEnv)
-	}
-	envData, err := os.ReadFile(filepath.Join(root, ".env"))
-	if err != nil {
-		t.Fatalf("read .env: %v", err)
-	}
-	if !strings.Contains(string(envData), "CHATGPT2API_REGISTRATION_ENABLED=false") {
-		t.Fatalf(".env missing saved registration setting:\n%s", string(envData))
-	}
-}
-
 func TestStoreUpdateOverridesEnvOnlyRuntimeSettings(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("CHATGPT2API_ROOT", root)
@@ -429,7 +365,6 @@ func TestStoreUpdateOverridesEnvOnlyRuntimeSettings(t *testing.T) {
 		"CHATGPT2API_AUTO_REMOVE_INVALID_ACCOUNTS":      "true",
 		"CHATGPT2API_AUTO_REMOVE_RATE_LIMITED_ACCOUNTS": "false",
 		"CHATGPT2API_LOG_LEVELS":                        "warning,error",
-		"CHATGPT2API_REGISTRATION_ENABLED":              "true",
 		"CHATGPT2API_LOGIN_PAGE_IMAGE_URL":              "https://old.example/login.png",
 		"CHATGPT2API_LOGIN_PAGE_IMAGE_MODE":             "contain",
 		"CHATGPT2API_LOGIN_PAGE_IMAGE_ZOOM":             "1",
@@ -456,7 +391,6 @@ func TestStoreUpdateOverridesEnvOnlyRuntimeSettings(t *testing.T) {
 		"auto_remove_invalid_accounts":      false,
 		"auto_remove_rate_limited_accounts": true,
 		"log_levels":                        []any{"debug", "info"},
-		"registration_enabled":              false,
 		"login_page_image_url":              "https://new.example/login.png",
 		"login_page_image_mode":             "cover",
 		"login_page_image_zoom":             2,
@@ -478,7 +412,6 @@ func TestStoreUpdateOverridesEnvOnlyRuntimeSettings(t *testing.T) {
 	assertConfigValue(t, got, "log_retention_days", 30)
 	assertConfigValue(t, got, "auto_remove_invalid_accounts", false)
 	assertConfigValue(t, got, "auto_remove_rate_limited_accounts", true)
-	assertConfigValue(t, got, "registration_enabled", false)
 	assertConfigValue(t, got, "login_page_image_url", "https://new.example/login.png")
 	assertConfigValue(t, got, "login_page_image_mode", "cover")
 	assertConfigValue(t, got, "login_page_image_zoom", float64(2))
@@ -501,7 +434,6 @@ func TestStoreUpdateOverridesEnvOnlyRuntimeSettings(t *testing.T) {
 		"CHATGPT2API_AUTO_REMOVE_INVALID_ACCOUNTS":      "false",
 		"CHATGPT2API_AUTO_REMOVE_RATE_LIMITED_ACCOUNTS": "true",
 		"CHATGPT2API_LOG_LEVELS":                        "debug,info",
-		"CHATGPT2API_REGISTRATION_ENABLED":              "false",
 		"CHATGPT2API_LOGIN_PAGE_IMAGE_URL":              "https://new.example/login.png",
 		"CHATGPT2API_LOGIN_PAGE_IMAGE_MODE":             "cover",
 		"CHATGPT2API_LOGIN_PAGE_IMAGE_ZOOM":             "2",

@@ -105,53 +105,6 @@ func (s *AuthService) EnsureBootstrapAdmin(username, password string) (Bootstrap
 	return BootstrapAdminResult{Created: true, Generated: generated, Username: username, Password: password}, nil
 }
 
-func (s *AuthService) RegisterPasswordUser(username, password, name string) (*Identity, string, error) {
-	username, err := normalizeAccountUsername(username)
-	if err != nil {
-		return nil, "", err
-	}
-	if err := validateAccountPassword(password); err != nil {
-		return nil, "", err
-	}
-	name = normalizeAccountDisplayName(name, username)
-	hash, err := hashAccountPassword(password)
-	if err != nil {
-		return nil, "", err
-	}
-
-	s.mu.Lock()
-	if _, ok := passwordAccountByUsernameLocked(s.accounts, username); ok {
-		s.mu.Unlock()
-		return nil, "", authError("username already exists")
-	}
-	now := util.NowISO()
-	account := PasswordAccount{
-		ID:           "user_" + util.NewHex(12),
-		Username:     username,
-		Name:         name,
-		PasswordHash: hash,
-		Role:         AuthRoleUser,
-		RoleID:       DefaultManagedRoleID,
-		Enabled:      true,
-		CreatedAt:    now,
-		UpdatedAt:    now,
-	}
-	s.accounts = append(s.accounts, account)
-	item, raw := s.issuePasswordSessionLocked(account, now)
-	if err := s.savePasswordAccountsLocked(); err != nil {
-		s.mu.Unlock()
-		return nil, "", err
-	}
-	if err := s.saveLocked(); err != nil {
-		s.mu.Unlock()
-		return nil, "", err
-	}
-	identity := identityForAuthItem(item)
-	s.mu.Unlock()
-	s.notifyUserCreated(account.ID)
-	return identity, raw, nil
-}
-
 func (s *AuthService) CreatePasswordUser(username, password, name, roleID string, enabled bool) (map[string]any, error) {
 	username, err := normalizeAccountUsername(username)
 	if err != nil {
@@ -212,6 +165,34 @@ func (s *AuthService) LoginPassword(username, password string) (*Identity, strin
 	defer s.mu.Unlock()
 	index, account, ok := passwordAccountIndexByUsernameLocked(s.accounts, username)
 	if !ok || !verifyAccountPassword(password, account.PasswordHash) {
+		return nil, "", authError("用户名或密码错误")
+	}
+	if !account.Enabled {
+		return nil, "", authError("用户已被禁用")
+	}
+	now := util.NowISO()
+	account.LastLoginAt = now
+	account.UpdatedAt = now
+	s.accounts[index] = account
+	item, raw := s.issuePasswordSessionLocked(account, now)
+	if err := s.savePasswordAccountsLocked(); err != nil {
+		return nil, "", err
+	}
+	if err := s.saveLocked(); err != nil {
+		return nil, "", err
+	}
+	return identityForAuthItem(item), raw, nil
+}
+
+func (s *AuthService) LoginAdminPassword(username, password string) (*Identity, string, error) {
+	username, err := normalizeAccountUsername(username)
+	if err != nil {
+		return nil, "", authError("用户名或密码错误")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	index, account, ok := passwordAccountIndexByUsernameLocked(s.accounts, username)
+	if !ok || account.Role != AuthRoleAdmin || !verifyAccountPassword(password, account.PasswordHash) {
 		return nil, "", authError("用户名或密码错误")
 	}
 	if !account.Enabled {

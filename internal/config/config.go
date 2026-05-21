@@ -39,7 +39,6 @@ var settingEnvKeys = map[string]string{
 	"linuxdo_client_secret":             "CHATGPT2API_LINUXDO_CLIENT_SECRET",
 	"linuxdo_redirect_url":              "CHATGPT2API_LINUXDO_REDIRECT_URL",
 	"linuxdo_frontend_redirect_url":     "CHATGPT2API_LINUXDO_FRONTEND_REDIRECT_URL",
-	"registration_enabled":              "CHATGPT2API_REGISTRATION_ENABLED",
 	"login_page_image_url":              "CHATGPT2API_LOGIN_PAGE_IMAGE_URL",
 	"login_page_image_mode":             "CHATGPT2API_LOGIN_PAGE_IMAGE_MODE",
 	"login_page_image_zoom":             "CHATGPT2API_LOGIN_PAGE_IMAGE_ZOOM",
@@ -54,6 +53,7 @@ const (
 	minImageTaskTimeoutSeconds     = 30
 	maxImageTaskTimeoutSeconds     = 3600
 	defaultRelayBaseURL            = "http://newapi:3000"
+	defaultNewAPITokenGroup        = "default"
 )
 
 var (
@@ -174,10 +174,6 @@ func (s *Store) AdminPassword() string {
 	return strings.TrimSpace(os.Getenv("CHATGPT2API_ADMIN_PASSWORD"))
 }
 
-func (s *Store) RegistrationEnabled() bool {
-	return util.ToBool(s.settingValue("registration_enabled", true))
-}
-
 func (s *Store) RefreshAccountIntervalMinute() int {
 	return intSetting(s.settingValue("refresh_account_interval_minute", 5), 5)
 }
@@ -251,6 +247,18 @@ func (s *Store) BaseURL() string {
 
 func (s *Store) RelayBaseURL() string {
 	return strings.TrimRight(strings.TrimSpace(fmt.Sprint(s.settingValue("relay_base_url", defaultRelayBaseURL))), "/")
+}
+
+func (s *Store) NewAPIDatabaseURL() string {
+	return strings.TrimSpace(os.Getenv("CHATGPT2API_NEWAPI_DATABASE_URL"))
+}
+
+func (s *Store) NewAPITokenGroup() string {
+	value := strings.TrimSpace(os.Getenv("CHATGPT2API_NEWAPI_TOKEN_GROUP"))
+	if value == "" {
+		return defaultNewAPITokenGroup
+	}
+	return value
 }
 
 func (s *Store) Proxy() string {
@@ -411,7 +419,6 @@ func (s *Store) Get() map[string]any {
 	data["proxy"] = s.Proxy()
 	data["base_url"] = s.BaseURL()
 	data["relay_base_url"] = s.RelayBaseURL()
-	data["registration_enabled"] = s.RegistrationEnabled()
 	linuxdo := s.LinuxDoOAuth()
 	data["linuxdo_enabled"] = linuxdo.Enabled
 	data["linuxdo_client_id"] = linuxdo.ClientID

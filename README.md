@@ -264,9 +264,11 @@ go build -tags=embed -o chatgpt2api ./internal
 | --- | --- | --- |
 | `CHATGPT2API_ADMIN_USERNAME` | `admin` | 初始管理员用户名 |
 | `CHATGPT2API_ADMIN_PASSWORD` | 空 | 初始管理员密码；为空时首次启动自动生成一次性密码 |
-| `CHATGPT2API_REGISTRATION_ENABLED` | `true` | 是否开放登录页账号注册入口 |
 | `CHATGPT2API_BASE_URL` | 空 | 用于生成图片 URL 的外部访问地址 |
+| `CHATGPT2API_AUTH_COOKIE_DOMAIN` | 自动 | 登录会话 Cookie 父域；`relayai.tech` / `image.relayai.tech` 会自动使用 `.relayai.tech` |
 | `CHATGPT2API_RELAY_BASE_URL` | `http://newapi:3000` | RelayAI 上游地址，可在管理端设置中修改 |
+| `CHATGPT2API_NEWAPI_DATABASE_URL` | 空 | NewAPI 数据库只读连接，用于普通用户登录和按登录用户名读取指定分组令牌 |
+| `CHATGPT2API_NEWAPI_TOKEN_GROUP` | `default` | 只允许读取这个 NewAPI 分组下的令牌 |
 | `CHATGPT2API_PROXY` | 空 | 全局代理，支持 `http`、`https`、`socks5`、`socks5h` |
 | `CHATGPT2API_IMAGE_MODELS` | `gpt-image-2` | 管理端图片模型列表，多个值用逗号分隔；第一项作为默认模型 |
 | `CHATGPT2API_CHAT_MODELS` | `gpt-5.5,gpt-5.4` | 管理端对话模型列表，多个值用逗号分隔；第一项作为默认模型 |

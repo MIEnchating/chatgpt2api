@@ -57,7 +57,6 @@ function normalizeConfig(config: SettingsConfig): SettingsConfig {
       typeof config.relay_base_url === "string" && config.relay_base_url.trim()
         ? config.relay_base_url
         : "http://newapi:3000",
-    registration_enabled: Boolean(config.registration_enabled),
     login_page_image_url: typeof config.login_page_image_url === "string" ? config.login_page_image_url : "",
     login_page_image_mode: normalizeLoginPageImageMode(config.login_page_image_mode),
     login_page_image_zoom: loginImageTransform.zoom,
@@ -97,7 +96,6 @@ type SettingsStore = {
   setProxy: (value: string) => void;
   setBaseUrl: (value: string) => void;
   setRelayBaseUrl: (value: string) => void;
-  setRegistrationEnabled: (value: boolean) => void;
   setLoginPageImageUrl: (value: string) => void;
   setLoginPageImageMode: (value: LoginPageImageMode) => void;
   setLoginPageImageTransform: (transform: { zoom: number; positionX: number; positionY: number }) => void;
@@ -166,7 +164,6 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         proxy: config.proxy.trim(),
         base_url: String(config.base_url || "").trim(),
         relay_base_url: String(config.relay_base_url || "").trim(),
-        registration_enabled: Boolean(config.registration_enabled),
       };
 
       const data = await updateSettingsConfig(payload);
@@ -285,10 +282,6 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         },
       };
     });
-  },
-
-  setRegistrationEnabled: (value) => {
-    set((state) => state.config ? { config: { ...state.config, registration_enabled: value } } : {});
   },
 
   setLoginPageImageUrl: (value) => {

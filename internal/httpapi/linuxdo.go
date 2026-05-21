@@ -47,18 +47,6 @@ type linuxDoUserInfo struct {
 	Level    string
 }
 
-func (a *App) handleAuthProviders(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-	util.WriteJSON(w, http.StatusOK, map[string]any{
-		"registration": map[string]any{
-			"enabled": a.config.RegistrationEnabled(),
-		},
-	})
-}
-
 func (a *App) handleLinuxDoOAuthStart(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -164,10 +152,10 @@ func (a *App) handleLinuxDoOAuthCallback(w http.ResponseWriter, r *http.Request)
 		Name:         userInfo.Username,
 		Provider:     service.AuthProviderLinuxDo,
 		LinuxDoLevel: userInfo.Level,
-	}, a.config.RegistrationEnabled())
+	}, false)
 	if err != nil {
 		if errors.Is(err, service.ErrAuthUserCreationDisabled) {
-			redirectLinuxDoOAuthError(w, r, frontendCallback, "registration_disabled", "已关闭注册通道", "")
+			redirectLinuxDoOAuthError(w, r, frontendCallback, "account_not_provisioned", "账号未开通，请联系管理员", "")
 			return
 		}
 		redirectLinuxDoOAuthError(w, r, frontendCallback, "login_failed", "failed to create local session", "")

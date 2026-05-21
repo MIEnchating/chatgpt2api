@@ -3,6 +3,7 @@ package httpapi
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -28,6 +29,8 @@ import (
 	"chatgpt2api/internal/service"
 	"chatgpt2api/internal/storage"
 	"chatgpt2api/internal/util"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 func TestAppAuthAndSPACompatibility(t *testing.T) {
@@ -207,7 +210,7 @@ func TestPasswordAccountLogin(t *testing.T) {
 		t.Fatalf("login json: %v", err)
 	}
 	adminToken, _ := login["token"].(string)
-	if adminToken == "" || login["role"] != service.AuthRoleAdmin || login["subject_id"] != "admin" {
+	if adminToken == "" || login["role"] != service.AuthRoleAdmin || login["subject_id"] != "admin" || login["username"] != "admin" {
 		t.Fatalf("admin login body = %#v", login)
 	}
 	assertCreationConcurrentLimit(t, login, 0)
@@ -215,32 +218,41 @@ func TestPasswordAccountLogin(t *testing.T) {
 	req = httptest.NewRequest(http.MethodGet, "/auth/providers", nil)
 	res = httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusOK {
-		t.Fatalf("providers status = %d body = %s", res.Code, res.Body.String())
-	}
-	var providers map[string]any
-	if err := json.Unmarshal(res.Body.Bytes(), &providers); err != nil {
-		t.Fatalf("providers json: %v", err)
-	}
-	registration := util.StringMap(providers["registration"])
-	if registration["enabled"] != true {
-		t.Fatalf("registration provider = %#v", registration)
+	if res.Code != http.StatusNotFound {
+		t.Fatalf("removed providers endpoint status = %d body = %s", res.Code, res.Body.String())
 	}
 
 	req = httptest.NewRequest(http.MethodPost, "/auth/register", strings.NewReader(`{"username":"alice","password":"Password123","name":"Alice"}`))
 	res = httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusNotFound {
+		t.Fatalf("removed registration endpoint status = %d body = %s", res.Code, res.Body.String())
+	}
+
+	dbURL := newHTTPTestNewAPIDatabase(t)
+	insertHTTPTestNewAPIUser(t, dbURL, 1, "alice", "alice@example.test")
+	reader, err := service.NewNewAPITokenReader(service.NewAPITokenReaderConfig{DatabaseURL: dbURL, TokenGroup: "draw"})
+	if err != nil {
+		t.Fatalf("NewNewAPITokenReader() error = %v", err)
+	}
+	if app.newAPIKeys != nil {
+		_ = app.newAPIKeys.Close()
+	}
+	app.newAPIKeys = reader
+	req = httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(`{"username":"alice","password":"Password123"}`))
+	res = httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
 	if res.Code != http.StatusOK {
-		t.Fatalf("default registration status = %d body = %s", res.Code, res.Body.String())
+		t.Fatalf("user password login status = %d body = %s", res.Code, res.Body.String())
 	}
-	var registered map[string]any
-	if err := json.Unmarshal(res.Body.Bytes(), &registered); err != nil {
-		t.Fatalf("register json: %v", err)
+	var userLogin map[string]any
+	if err := json.Unmarshal(res.Body.Bytes(), &userLogin); err != nil {
+		t.Fatalf("user login json: %v", err)
 	}
-	if registered["role"] != service.AuthRoleUser || registered["name"] != "Alice" || registered["role_id"] != service.DefaultManagedRoleID {
-		t.Fatalf("register body = %#v", registered)
+	if userLogin["role"] != service.AuthRoleUser || userLogin["provider"] != service.AuthProviderNewAPI || userLogin["subject_id"] != "newapi:1" || userLogin["username"] != "alice" || userLogin["name"] != "Alice" || userLogin["role_id"] != service.DefaultManagedRoleID {
+		t.Fatalf("user login body = %#v", userLogin)
 	}
-	assertCreationConcurrentLimit(t, registered, 2)
+	assertCreationConcurrentLimit(t, userLogin, 2)
 }
 
 func TestProfileAccountNameAndPasswordUpdates(t *testing.T) {
@@ -249,12 +261,9 @@ func TestProfileAccountNameAndPasswordUpdates(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()
 
-	user, token, err := app.auth.RegisterPasswordUser("alice", "Password123", "Alice")
-	if err != nil {
-		t.Fatalf("RegisterPasswordUser() error = %v", err)
-	}
+	user, token := createPasswordUserSession(t, app, "alice", "Password123", "Alice")
 	if user.Name != "Alice" || token == "" {
-		t.Fatalf("registered identity=%#v token=%q", user, token)
+		t.Fatalf("created user identity=%#v token=%q", user, token)
 	}
 
 	req := httptest.NewRequest(http.MethodPost, "/api/profile", strings.NewReader(`{"name":"Alice Updated"}`))
@@ -314,16 +323,9 @@ func TestProfileAccountNameAndPasswordUpdates(t *testing.T) {
 	req = httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(`{"username":"alice","password":"NewPassword123"}`))
 	res = httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusOK {
-		t.Fatalf("new password login status = %d body = %s", res.Code, res.Body.String())
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("local user should not use public login after NewAPI login switch, status = %d body = %s", res.Code, res.Body.String())
 	}
-	if err := json.Unmarshal(res.Body.Bytes(), &profile); err != nil {
-		t.Fatalf("new password login json: %v", err)
-	}
-	if profile["name"] != "Alice Updated" || profile["subject_id"] != user.ID {
-		t.Fatalf("new password login body = %#v", profile)
-	}
-	assertCreationConcurrentLimit(t, profile, 3)
 }
 
 func TestCreationTaskRequiresRelayAIAPIKey(t *testing.T) {
@@ -346,21 +348,31 @@ func TestCreationTaskRequiresRelayAIAPIKey(t *testing.T) {
 	if err := json.Unmarshal(res.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("error json: %v", err)
 	}
-	if detail := util.StringMap(payload["detail"]); detail["error"] != "请先到个人中心配置 RelayAI Key" {
+	if detail := util.StringMap(payload["detail"]); detail["error"] != "请先配置 NewAPI 数据库连接，并在 NewAPI 创建指定分组的令牌" {
 		t.Fatalf("error body = %#v", payload)
 	}
 }
 
-func TestProfileRelayKeyIsStoredPerUserAndUsedForRelay(t *testing.T) {
+func TestProfileRelayKeyReadsNewAPITokenForUserAndGroup(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()
 
-	user, token, err := app.auth.RegisterPasswordUser("alice", "Password123", "Alice")
+	dbURL := newHTTPTestNewAPIDatabase(t)
+	insertHTTPTestNewAPIUser(t, dbURL, 1, "alice", "alice@example.test")
+	insertHTTPTestNewAPIToken(t, dbURL, 1, 1, "other", "wrong-key", time.Now().Unix()+3600, 10, false)
+	insertHTTPTestNewAPIToken(t, dbURL, 2, 1, "draw", "alice-relay", -1, 0, true)
+	reader, err := service.NewNewAPITokenReader(service.NewAPITokenReaderConfig{DatabaseURL: dbURL, TokenGroup: "draw"})
 	if err != nil {
-		t.Fatalf("RegisterPasswordUser() error = %v", err)
+		t.Fatalf("NewNewAPITokenReader() error = %v", err)
 	}
-	if user.ID == "" || token == "" {
-		t.Fatalf("registered identity=%#v token=%q", user, token)
+	if app.newAPIKeys != nil {
+		_ = app.newAPIKeys.Close()
+	}
+	app.newAPIKeys = reader
+
+	user, token := createPasswordUserSession(t, app, "alice", "Password123", "Alice")
+	if user.ID == "" || user.Username != "alice" || token == "" {
+		t.Fatalf("created user identity=%#v token=%q", user, token)
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/profile/relay-key", nil)
@@ -372,24 +384,10 @@ func TestProfileRelayKeyIsStoredPerUserAndUsedForRelay(t *testing.T) {
 	}
 	var status map[string]any
 	if err := json.Unmarshal(res.Body.Bytes(), &status); err != nil {
-		t.Fatalf("initial relay key json: %v", err)
+		t.Fatalf("relay key status json: %v", err)
 	}
-	if status["has_key"] != false {
-		t.Fatalf("initial relay key status = %#v", status)
-	}
-
-	req = httptest.NewRequest(http.MethodPost, "/api/profile/relay-key", strings.NewReader(`{"api_key":"sk-alice-relay"}`))
-	req.Header.Set("Authorization", "Bearer "+token)
-	res = httptest.NewRecorder()
-	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusOK {
-		t.Fatalf("save relay key status = %d body = %s", res.Code, res.Body.String())
-	}
-	if err := json.Unmarshal(res.Body.Bytes(), &status); err != nil {
-		t.Fatalf("save relay key json: %v", err)
-	}
-	if status["has_key"] != true || status["key_preview"] == "sk-alice-relay" {
-		t.Fatalf("saved relay key status = %#v", status)
+	if status["has_key"] != true || status["group"] != "draw" || status["key_preview"] == "sk-alice-relay" {
+		t.Fatalf("relay key status = %#v", status)
 	}
 
 	var gotAuth string
@@ -421,15 +419,12 @@ func TestProfileRelayKeyIsStoredPerUserAndUsedForRelay(t *testing.T) {
 		t.Fatalf("upstream Authorization = %q", gotAuth)
 	}
 
-	req = httptest.NewRequest(http.MethodDelete, "/api/profile/relay-key", nil)
+	req = httptest.NewRequest(http.MethodPost, "/api/profile/relay-key", strings.NewReader(`{"api_key":"sk-local-write"}`))
 	req.Header.Set("Authorization", "Bearer "+token)
 	res = httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusOK {
-		t.Fatalf("delete relay key status = %d body = %s", res.Code, res.Body.String())
-	}
-	if key, ok := app.relayKeys.Get(user.ID); ok || key != "" {
-		t.Fatalf("relay key after delete = %q %v", key, ok)
+	if res.Code != http.StatusMethodNotAllowed {
+		t.Fatalf("write relay key status = %d body = %s", res.Code, res.Body.String())
 	}
 }
 
@@ -1859,6 +1854,118 @@ func TestAuthSessionCookieLifecycle(t *testing.T) {
 	}
 }
 
+func TestAuthSessionCookieUsesRelayAIParentDomain(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+
+	for _, host := range []string{"relayai.tech", "image.relayai.tech"} {
+		req := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(`{"username":"`+testAdminUsername+`","password":"`+testAdminPassword+`"}`))
+		req.Host = host
+		req.Header.Set("X-Forwarded-Proto", "https")
+		res := httptest.NewRecorder()
+		app.Handler().ServeHTTP(res, req)
+		if res.Code != http.StatusOK {
+			t.Fatalf("login %s status = %d body = %s", host, res.Code, res.Body.String())
+		}
+		cookie := findResponseCookieByDomain(res.Result(), authSessionCookieName, "relayai.tech")
+		if cookie == nil || cookie.Value == "" || cookie.Path != "/" || !cookie.HttpOnly || !cookie.Secure {
+			t.Fatalf("login %s domain cookie = %#v", host, cookie)
+		}
+		if got := cookie.SameSite; got != http.SameSiteLaxMode {
+			t.Fatalf("login %s cookie SameSite = %v, want Lax", host, got)
+		}
+	}
+}
+
+func TestAuthSessionCookieDomainOverride(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+	t.Setenv("CHATGPT2API_AUTH_COOKIE_DOMAIN", "accounts.example.test")
+
+	req := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(`{"username":"`+testAdminUsername+`","password":"`+testAdminPassword+`"}`))
+	req.Host = "relayai.tech"
+	res := httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("login status = %d body = %s", res.Code, res.Body.String())
+	}
+	cookie := findResponseCookieByDomain(res.Result(), authSessionCookieName, "accounts.example.test")
+	if cookie == nil || cookie.Value == "" {
+		t.Fatalf("override domain cookie = %#v", cookie)
+	}
+}
+
+func TestAuthSessionCanRestoreFromSharedCookie(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(`{"username":"`+testAdminUsername+`","password":"`+testAdminPassword+`"}`))
+	req.Host = "relayai.tech"
+	res := httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("login status = %d body = %s", res.Code, res.Body.String())
+	}
+	cookie := findResponseCookieByDomain(res.Result(), authSessionCookieName, "relayai.tech")
+	if cookie == nil || cookie.Value == "" {
+		t.Fatalf("login domain cookie = %#v", cookie)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/auth/session", nil)
+	req.Host = "image.relayai.tech"
+	req.AddCookie(&http.Cookie{Name: authSessionCookieName, Value: cookie.Value})
+	res = httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("session status = %d body = %s", res.Code, res.Body.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(res.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("session json: %v", err)
+	}
+	if payload["token"] != cookie.Value || payload["username"] != testAdminUsername {
+		t.Fatalf("session payload = %#v", payload)
+	}
+	refreshed := findResponseCookieByDomain(res.Result(), authSessionCookieName, "relayai.tech")
+	if refreshed == nil || refreshed.Value != cookie.Value {
+		t.Fatalf("session refreshed cookie = %#v", refreshed)
+	}
+}
+
+func TestLogoutClearsSharedAndHostOnlyAuthCookies(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(`{"username":"`+testAdminUsername+`","password":"`+testAdminPassword+`"}`))
+	req.Host = "relayai.tech"
+	res := httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("login status = %d body = %s", res.Code, res.Body.String())
+	}
+	cookie := findResponseCookieByDomain(res.Result(), authSessionCookieName, "relayai.tech")
+	if cookie == nil || cookie.Value == "" {
+		t.Fatalf("login domain cookie = %#v", cookie)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
+	req.Host = "relayai.tech"
+	req.AddCookie(&http.Cookie{Name: authSessionCookieName, Value: cookie.Value})
+	res = httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("logout status = %d body = %s", res.Code, res.Body.String())
+	}
+	shared := findResponseCookieByDomain(res.Result(), authSessionCookieName, "relayai.tech")
+	if shared == nil || shared.MaxAge >= 0 || shared.Value != "" {
+		t.Fatalf("shared logout cookie = %#v", shared)
+	}
+	hostOnly := findResponseCookieByDomain(res.Result(), authSessionCookieName, "")
+	if hostOnly == nil || hostOnly.MaxAge >= 0 || hostOnly.Value != "" {
+		t.Fatalf("host-only logout cookie = %#v", hostOnly)
+	}
+}
+
 func TestLoginAllowsCredentialedLoopbackFrontend(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()
@@ -1879,6 +1986,49 @@ func TestLoginAllowsCredentialedLoopbackFrontend(t *testing.T) {
 	}
 	if cookie := findResponseCookie(res.Result(), authSessionCookieName); cookie == nil || cookie.Value == "" {
 		t.Fatalf("login cookie = %#v", cookie)
+	}
+}
+
+func TestRelayAISubdomainAllowsCredentialedCORS(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+
+	req := httptest.NewRequest(http.MethodOptions, "/auth/session", nil)
+	req.Host = "relayai.tech"
+	req.Header.Set("Origin", "https://image.relayai.tech")
+	req.Header.Set("Access-Control-Request-Method", http.MethodGet)
+	res := httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusNoContent {
+		t.Fatalf("preflight status = %d body = %s", res.Code, res.Body.String())
+	}
+	if got := res.Header().Get("Access-Control-Allow-Origin"); got != "https://image.relayai.tech" {
+		t.Fatalf("Access-Control-Allow-Origin = %q, want image origin", got)
+	}
+	if got := res.Header().Get("Access-Control-Allow-Credentials"); got != "true" {
+		t.Fatalf("Access-Control-Allow-Credentials = %q, want true", got)
+	}
+}
+
+func TestRelayAISubdomainAllowsCredentialedCORSWithForwardedHost(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+
+	req := httptest.NewRequest(http.MethodOptions, "/auth/session", nil)
+	req.Host = "127.0.0.1:8000"
+	req.Header.Set("X-Forwarded-Host", "relayai.tech")
+	req.Header.Set("Origin", "https://image.relayai.tech")
+	req.Header.Set("Access-Control-Request-Method", http.MethodGet)
+	res := httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusNoContent {
+		t.Fatalf("preflight status = %d body = %s", res.Code, res.Body.String())
+	}
+	if got := res.Header().Get("Access-Control-Allow-Origin"); got != "https://image.relayai.tech" {
+		t.Fatalf("Access-Control-Allow-Origin = %q, want image origin", got)
+	}
+	if got := res.Header().Get("Access-Control-Allow-Credentials"); got != "true" {
+		t.Fatalf("Access-Control-Allow-Credentials = %q, want true", got)
 	}
 }
 
@@ -2063,10 +2213,7 @@ func TestProfileAPIKeyIsPersonalAndPermissionIndependent(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()
 
-	user, _, err := app.auth.RegisterPasswordUser("alice", "Password123", "Alice")
-	if err != nil {
-		t.Fatalf("RegisterPasswordUser() error = %v", err)
-	}
+	user, _ := createPasswordUserSession(t, app, "alice", "Password123", "Alice")
 	role, err := app.auth.CreateRole(map[string]any{
 		"name":            "creative only",
 		"menu_paths":      []string{"/image"},
@@ -2170,10 +2317,7 @@ func TestProfilePromptFavoritesArePersonalAndPermissionIndependent(t *testing.T)
 	app := newTestApp(t)
 	defer app.Close()
 
-	user, _, err := app.auth.RegisterPasswordUser("alice", "Password123", "Alice")
-	if err != nil {
-		t.Fatalf("RegisterPasswordUser(alice) error = %v", err)
-	}
+	user, _ := createPasswordUserSession(t, app, "alice", "Password123", "Alice")
 	role, err := app.auth.CreateRole(map[string]any{
 		"name":            "models only",
 		"menu_paths":      []string{"/image"},
@@ -2190,10 +2334,7 @@ func TestProfilePromptFavoritesArePersonalAndPermissionIndependent(t *testing.T)
 		t.Fatalf("LoginPassword(alice) error = %v", err)
 	}
 
-	other, otherToken, err := app.auth.RegisterPasswordUser("bob", "Password123", "Bob")
-	if err != nil {
-		t.Fatalf("RegisterPasswordUser(bob) error = %v", err)
-	}
+	other, otherToken := createPasswordUserSession(t, app, "bob", "Password123", "Bob")
 
 	req := httptest.NewRequest(http.MethodGet, "/api/profile/prompt-favorites", nil)
 	req.Header.Set("Authorization", "Bearer "+aliceToken)
@@ -2312,10 +2453,7 @@ func TestProfilePromptFavoritesAdultContentRequiresPermission(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()
 
-	user, _, err := app.auth.RegisterPasswordUser("alice", "Password123", "Alice")
-	if err != nil {
-		t.Fatalf("RegisterPasswordUser(alice) error = %v", err)
-	}
+	user, _ := createPasswordUserSession(t, app, "alice", "Password123", "Alice")
 	restrictedRole, err := app.auth.CreateRole(map[string]any{
 		"name":            "safe prompt market",
 		"menu_paths":      []string{"/image"},
@@ -2518,15 +2656,8 @@ func TestAdminUsersManageLinuxDoUsers(t *testing.T) {
 	req = httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(`{"username":"created_local","password":"Password123"}`))
 	res = httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusOK {
-		t.Fatalf("created password user login status = %d body = %s", res.Code, res.Body.String())
-	}
-	var createdLogin map[string]any
-	if err := json.Unmarshal(res.Body.Bytes(), &createdLogin); err != nil {
-		t.Fatalf("created password user login json: %v", err)
-	}
-	if createdLogin["subject_id"] != createdID || createdLogin["name"] != "Created Local" {
-		t.Fatalf("created password user login body = %#v", createdLogin)
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("created local user should not use public login after NewAPI login switch, status = %d body = %s", res.Code, res.Body.String())
 	}
 
 	req = httptest.NewRequest(http.MethodGet, createdPath+"/key", nil)
@@ -2754,7 +2885,6 @@ func TestAdminUsersListPaginationAndFilters(t *testing.T) {
 		t.Fatalf("invalid page status = %d body = %s", res.Code, res.Body.String())
 	}
 }
-
 
 func TestCreationTaskPollingDisablesCaching(t *testing.T) {
 	app := newTestApp(t)
@@ -3167,6 +3297,15 @@ func findResponseCookie(res *http.Response, name string) *http.Cookie {
 	return nil
 }
 
+func findResponseCookieByDomain(res *http.Response, name, domain string) *http.Cookie {
+	for _, cookie := range res.Cookies() {
+		if cookie.Name == name && cookie.Domain == domain {
+			return cookie
+		}
+	}
+	return nil
+}
+
 func assertCreationConcurrentLimit(t *testing.T, payload map[string]any, want int) {
 	t.Helper()
 	got, ok := payload["creation_concurrent_limit"].(float64)
@@ -3223,6 +3362,71 @@ func adminAuthHeader(t *testing.T, app *App) string {
 	return "Bearer " + token
 }
 
+func createPasswordUserSession(t *testing.T, app *App, username, password, name string) (*service.Identity, string) {
+	t.Helper()
+	if _, err := app.auth.CreatePasswordUser(username, password, name, service.DefaultManagedRoleID, true); err != nil {
+		t.Fatalf("CreatePasswordUser(%s) error = %v", username, err)
+	}
+	identity, token, err := app.auth.LoginPassword(username, password)
+	if err != nil {
+		t.Fatalf("LoginPassword(%s) error = %v", username, err)
+	}
+	if identity == nil || token == "" {
+		t.Fatalf("LoginPassword(%s) identity=%#v token=%q", username, identity, token)
+	}
+	return identity, token
+}
+
+func newHTTPTestNewAPIDatabase(t *testing.T) string {
+	t.Helper()
+	dbPath := filepath.Join(t.TempDir(), "newapi.db")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	defer db.Close()
+	for _, stmt := range []string{
+		`CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT NOT NULL, email TEXT, display_name TEXT, password TEXT NOT NULL, status INTEGER NOT NULL, deleted_at TEXT)`,
+		"CREATE TABLE tokens (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, `key` TEXT NOT NULL, status INTEGER NOT NULL, name TEXT, expired_time INTEGER NOT NULL, remain_quota INTEGER NOT NULL, unlimited_quota BOOLEAN NOT NULL, `group` TEXT NOT NULL, deleted_at TEXT)",
+	} {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("create newapi schema: %v", err)
+		}
+	}
+	return "sqlite:///" + filepath.ToSlash(dbPath)
+}
+
+func insertHTTPTestNewAPIUser(t *testing.T, dbURL string, id int, username, email string) {
+	t.Helper()
+	db := openHTTPTestNewAPIDatabase(t, dbURL)
+	defer db.Close()
+	hash, err := bcrypt.GenerateFromPassword([]byte("Password123"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatalf("hash newapi password: %v", err)
+	}
+	if _, err := db.Exec("INSERT INTO users (id, username, email, display_name, password, status, deleted_at) VALUES (?, ?, ?, ?, ?, 1, NULL)", id, username, email, "Alice", string(hash)); err != nil {
+		t.Fatalf("insert newapi user: %v", err)
+	}
+}
+
+func insertHTTPTestNewAPIToken(t *testing.T, dbURL string, id, userID int, group, key string, expiredTime int64, remainQuota int, unlimited bool) {
+	t.Helper()
+	db := openHTTPTestNewAPIDatabase(t, dbURL)
+	defer db.Close()
+	if _, err := db.Exec("INSERT INTO tokens (id, user_id, `key`, status, name, expired_time, remain_quota, unlimited_quota, `group`, deleted_at) VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, NULL)", id, userID, key, "token", expiredTime, remainQuota, unlimited, group); err != nil {
+		t.Fatalf("insert newapi token: %v", err)
+	}
+}
+
+func openHTTPTestNewAPIDatabase(t *testing.T, dbURL string) *sql.DB {
+	t.Helper()
+	db, err := sql.Open("sqlite", strings.TrimPrefix(dbURL, "sqlite:///"))
+	if err != nil {
+		t.Fatalf("open newapi sqlite: %v", err)
+	}
+	return db
+}
+
 func waitForHTTPTestCondition(t *testing.T, ok func() bool) {
 	t.Helper()
 	deadline := time.Now().Add(2 * time.Second)
@@ -3241,7 +3445,9 @@ func newTestApp(t *testing.T) *App {
 	t.Setenv("CHATGPT2API_ROOT", root)
 	t.Setenv("CHATGPT2API_ADMIN_USERNAME", testAdminUsername)
 	t.Setenv("CHATGPT2API_ADMIN_PASSWORD", testAdminPassword)
-	unsetTestEnv(t, "CHATGPT2API_REGISTRATION_ENABLED")
+	t.Setenv("CHATGPT2API_NEWAPI_DATABASE_URL", "")
+	t.Setenv("CHATGPT2API_NEWAPI_TOKEN_GROUP", "")
+	t.Setenv("CHATGPT2API_AUTH_COOKIE_DOMAIN", "")
 	t.Setenv("STORAGE_BACKEND", "sqlite")
 	t.Setenv("DATABASE_URL", "")
 	app, err := NewApp()

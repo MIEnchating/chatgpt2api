@@ -67,7 +67,7 @@ export const IMAGE_MODEL_ROUTE_DETAILS: Partial<Record<
 >> = {
   auto: {
     routeLabel: "RelayAI",
-    description: "通过固定 RelayAI 上游提交请求，使用个人中心配置的 RelayAI Key。",
+    description: "通过固定 RelayAI 上游提交请求，使用 NewAPI 指定分组令牌。",
   },
   "gpt-image-2": {
     routeLabel: "RelayAI",
@@ -213,7 +213,6 @@ export type SettingsConfig = {
   chat_models?: string[] | string;
   default_image_model?: string;
   default_chat_model?: string;
-  registration_enabled?: boolean;
   refresh_account_interval_minute?: number | string;
   image_task_timeout_seconds?: number | string;
   user_default_concurrent_limit?: number | string;
@@ -416,6 +415,7 @@ export type LoginResponse = {
   role_id?: string;
   role_name?: string;
   subject_id: string;
+  username?: string;
   name: string;
   provider?: string;
   credential_id?: string;
@@ -430,13 +430,9 @@ export type LoginResponse = {
 export type ProfileRelayKeyStatus = {
   has_key: boolean;
   key_preview: string;
-  updated_at?: string;
-};
-
-export type AuthProviders = {
-  registration?: {
-    enabled: boolean;
-  };
+  group?: string;
+  source?: "newapi" | string;
+  message?: string;
 };
 
 export type Announcement = {
@@ -457,7 +453,7 @@ export type UserKey = {
   role_id?: string;
   role_name?: string;
   kind?: "api_key";
-  provider?: "local" | "linuxdo" | string;
+  provider?: "local" | "linuxdo" | "newapi" | string;
   owner_id?: string;
   owner_name?: string;
   enabled: boolean;
@@ -474,7 +470,7 @@ export type ManagedUser = {
   role: "user";
   role_id?: string;
   role_name?: string;
-  provider: "local" | "linuxdo" | string;
+  provider: "local" | "linuxdo" | "newapi" | string;
   owner_id?: string;
   owner_name?: string;
   linuxdo_level?: string;
@@ -508,7 +504,7 @@ export type ManagedUsersQuery = {
   page?: number | string;
   page_size?: number | string;
   search?: string;
-  provider?: "all" | "local" | "linuxdo" | string;
+  provider?: "all" | "local" | "linuxdo" | "newapi" | string;
   status?: "all" | "enabled" | "disabled" | string;
   sort_by?: string;
   sort_order?: "asc" | "desc" | string;
@@ -551,20 +547,11 @@ export async function login(username: string, password: string) {
   });
 }
 
-export async function registerAccount(username: string, password: string, name?: string) {
-  return httpRequest<LoginResponse>("/auth/register", {
-    method: "POST",
-    body: { username, password, name: name ?? "" },
-    redirectOnUnauthorized: false,
-  });
-}
-
-export async function verifySession(token: string) {
+export async function verifySession(token?: string) {
+  const normalizedToken = String(token || "").trim();
   return httpRequest<LoginResponse>("/auth/session", {
     method: "GET",
-    headers: {
-      Authorization: `Bearer ${String(token || "").trim()}`,
-    },
+    headers: normalizedToken ? { Authorization: `Bearer ${normalizedToken}` } : undefined,
     redirectOnUnauthorized: false,
   });
 }
@@ -577,28 +564,9 @@ export async function fetchProfileRelayKey() {
   return httpRequest<ProfileRelayKeyStatus>("/api/profile/relay-key");
 }
 
-export async function updateProfileRelayKey(apiKey: string) {
-  return httpRequest<ProfileRelayKeyStatus>("/api/profile/relay-key", {
-    method: "POST",
-    body: { api_key: apiKey },
-  });
-}
-
-export async function clearProfileRelayKey() {
-  return httpRequest<ProfileRelayKeyStatus>("/api/profile/relay-key", {
-    method: "DELETE",
-  });
-}
-
 export async function logout() {
   return httpRequest<{ ok: boolean }>("/auth/logout", {
     method: "POST",
-    redirectOnUnauthorized: false,
-  });
-}
-
-export async function fetchAuthProviders() {
-  return httpRequest<AuthProviders>("/auth/providers", {
     redirectOnUnauthorized: false,
   });
 }

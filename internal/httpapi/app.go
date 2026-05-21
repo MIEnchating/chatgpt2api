@@ -13,6 +13,7 @@ import (
 	_ "image/png"
 	"io"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/url"
 	"os"
@@ -51,7 +52,7 @@ type App struct {
 	tasks      *service.ImageTaskService
 	announce   *service.AnnouncementService
 	prompts    *service.PromptFavoriteService
-	relayKeys  *service.RelayAPIKeyService
+	newAPIKeys *service.NewAPITokenReader
 	cancel     context.CancelFunc
 }
 
@@ -72,6 +73,14 @@ func NewApp() (*App, error) {
 		return nil, err
 	}
 	proxy := service.NewProxyService(cfg)
+	newAPIKeys, err := service.NewNewAPITokenReader(service.NewAPITokenReaderConfig{
+		DatabaseURL: cfg.NewAPIDatabaseURL(),
+		TokenGroup:  cfg.NewAPITokenGroup(),
+	})
+	if err != nil {
+		cancel()
+		return nil, err
+	}
 	accounts := service.NewAccountService(storageBackend, cfg, proxy, logs)
 	auth := service.NewAuthService(storageBackend)
 	bootstrap, err := auth.EnsureBootstrapAdmin(cfg.AdminUsername(), cfg.AdminPassword())
@@ -85,11 +94,11 @@ func NewApp() (*App, error) {
 	}
 	documentStore, _ := storageBackend.(storage.JSONDocumentBackend)
 	engine := &protocol.Engine{Accounts: accounts, Config: cfg, Storage: documentStore, Proxy: proxy, Logger: logger}
-	app := &App{config: cfg, auth: auth, accounts: accounts, logs: logs, logger: logger, proxy: proxy, engine: engine, images: service.NewImageService(cfg, storageBackend), announce: service.NewAnnouncementService(storageBackend), prompts: service.NewPromptFavoriteService(storageBackend), relayKeys: service.NewRelayAPIKeyService(storageBackend), cancel: cancel}
+	app := &App{config: cfg, auth: auth, accounts: accounts, logs: logs, logger: logger, proxy: proxy, engine: engine, images: service.NewImageService(cfg, storageBackend), announce: service.NewAnnouncementService(storageBackend), prompts: service.NewPromptFavoriteService(storageBackend), newAPIKeys: newAPIKeys, cancel: cancel}
 	app.tasks = service.NewStoredImageTaskService(storageBackend,
 		func(ctx context.Context, identity service.Identity, payload map[string]any) (map[string]any, error) {
 			return app.runLoggedImageTask(ctx, identity, payload, "/api/creation-tasks/image-generations", "文生图", func(ctx context.Context, payload map[string]any) (map[string]any, error) {
-				if err := app.attachRelayAPIKeyForIdentity(identity, payload); err != nil {
+				if err := app.attachRelayAPIKeyForIdentity(ctx, identity, payload); err != nil {
 					return nil, err
 				}
 				result, stream, err := app.relayImageGenerations(ctx, payload)
@@ -98,7 +107,7 @@ func NewApp() (*App, error) {
 		},
 		func(ctx context.Context, identity service.Identity, payload map[string]any) (map[string]any, error) {
 			return app.runLoggedImageTask(ctx, identity, payload, "/api/creation-tasks/image-edits", "图生图", func(ctx context.Context, payload map[string]any) (map[string]any, error) {
-				if err := app.attachRelayAPIKeyForIdentity(identity, payload); err != nil {
+				if err := app.attachRelayAPIKeyForIdentity(ctx, identity, payload); err != nil {
 					return nil, err
 				}
 				images, _ := payload["images"].([]protocol.UploadedImage)
@@ -255,6 +264,9 @@ func (a *App) Close() {
 	if a.logger != nil {
 		_ = a.logger.Close()
 	}
+	if a.newAPIKeys != nil {
+		_ = a.newAPIKeys.Close()
+	}
 	if a.config != nil {
 		if backend, err := a.config.StorageBackend(); err == nil {
 			if closer, ok := backend.(interface{ Close() error }); ok {
@@ -274,8 +286,8 @@ func (a *App) handleModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	relayAPIKey := ""
-	if a.relayKeys != nil {
-		relayAPIKey, _ = a.relayKeys.Get(identityScope(identity))
+	if a.newAPIKeys != nil {
+		relayAPIKey, _ = a.newAPIKeys.KeyForIdentity(r.Context(), identity)
 	}
 	result, err := a.relayListModels(r.Context(), relayAPIKey)
 	a.writeProtocol(w, r, result, nil, err, "openai", "/v1/models", "models", identity, "模型列表", service.ImageVisibilityPrivate)
@@ -301,7 +313,7 @@ func (a *App) handleImageGenerations(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	model := a.applyDefaultImageModel(body)
-	if err := a.attachRelayAPIKeyForIdentity(identity, body); err != nil {
+	if err := a.attachRelayAPIKeyForIdentity(r.Context(), identity, body); err != nil {
 		a.writeProtocol(w, r, nil, nil, err, "openai", "/v1/images/generations", model, identity, "文生图", visibility)
 		return
 	}
@@ -338,7 +350,7 @@ func (a *App) handleImageEdits(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	model := a.applyDefaultImageModel(body)
-	if err := a.attachRelayAPIKeyForIdentity(identity, body); err != nil {
+	if err := a.attachRelayAPIKeyForIdentity(r.Context(), identity, body); err != nil {
 		a.writeProtocol(w, r, nil, nil, err, "openai", "/v1/images/edits", model, identity, "图生图", visibility)
 		return
 	}
@@ -360,7 +372,7 @@ func (a *App) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	body["owner_name"] = identityDisplayName(identity)
 	a.attachCreationTaskLimiter(body, identity)
 	model := a.applyDefaultChatCompletionModel(body)
-	if err := a.attachRelayAPIKeyForIdentity(identity, body); err != nil {
+	if err := a.attachRelayAPIKeyForIdentity(r.Context(), identity, body); err != nil {
 		a.writeProtocol(w, r, nil, nil, err, "openai", "/v1/chat/completions", model, identity, "文本生成", service.ImageVisibilityPrivate)
 		return
 	}
@@ -382,7 +394,7 @@ func (a *App) handleResponses(w http.ResponseWriter, r *http.Request) {
 	body["owner_name"] = identityDisplayName(identity)
 	a.attachCreationTaskLimiter(body, identity)
 	model := a.applyDefaultResponsesModel(body)
-	if err := a.attachRelayAPIKeyForIdentity(identity, body); err != nil {
+	if err := a.attachRelayAPIKeyForIdentity(r.Context(), identity, body); err != nil {
 		a.writeProtocol(w, r, nil, nil, err, "openai", "/v1/responses", model, identity, "Responses", service.ImageVisibilityPrivate)
 		return
 	}
@@ -405,7 +417,7 @@ func (a *App) handleMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	model := a.applyDefaultChatModel(body)
-	if err := a.attachRelayAPIKeyForIdentity(identity, body); err != nil {
+	if err := a.attachRelayAPIKeyForIdentity(r.Context(), identity, body); err != nil {
 		a.writeProtocol(w, r, nil, nil, err, "anthropic", "/v1/messages", model, identity, "Messages", service.ImageVisibilityPrivate)
 		return
 	}
@@ -523,10 +535,24 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 		util.WriteError(w, http.StatusBadRequest, "invalid json body")
 		return
 	}
-	identity, token, err := a.auth.LoginPassword(util.Clean(body["username"]), util.Clean(body["password"]))
+	username := util.Clean(body["username"])
+	password := util.Clean(body["password"])
+	identity, token, err := a.auth.LoginAdminPassword(username, password)
 	if err != nil {
-		util.WriteError(w, http.StatusBadRequest, err.Error())
-		return
+		if strings.EqualFold(username, a.config.AdminUsername()) || a.newAPIKeys == nil {
+			util.WriteError(w, http.StatusBadRequest, "用户名或密码错误")
+			return
+		}
+		newAPIUser, newAPIErr := a.newAPIKeys.AuthenticatePassword(r.Context(), username, password)
+		if newAPIErr != nil {
+			util.WriteError(w, http.StatusBadRequest, newAPIErr.Error())
+			return
+		}
+		identity, token, err = a.auth.UpsertNewAPISession(newAPIUser)
+		if err != nil {
+			util.WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 	}
 	setAuthSessionCookie(w, r, token)
 	a.writeLoginResponse(w, *identity, token)
@@ -537,29 +563,14 @@ func (a *App) handleSession(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if token := requestBearerToken(r); token != "" {
+	token := requestBearerToken(r)
+	if token == "" {
+		token = requestAuthCookieToken(r)
+	}
+	if token != "" {
 		setAuthSessionCookie(w, r, token)
 	}
-	a.writeLoginResponse(w, identity, "")
-}
-
-func (a *App) handleAccountRegister(w http.ResponseWriter, r *http.Request) {
-	if !a.config.RegistrationEnabled() {
-		util.WriteError(w, http.StatusForbidden, "已关闭注册通道")
-		return
-	}
-	body, err := readJSONMap(r)
-	if err != nil {
-		util.WriteError(w, http.StatusBadRequest, "invalid json body")
-		return
-	}
-	identity, token, err := a.auth.RegisterPasswordUser(util.Clean(body["username"]), util.Clean(body["password"]), util.Clean(body["name"]))
-	if err != nil {
-		util.WriteError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	setAuthSessionCookie(w, r, token)
-	a.writeLoginResponse(w, *identity, token)
+	a.writeLoginResponse(w, identity, token)
 }
 
 func (a *App) handleLogout(w http.ResponseWriter, r *http.Request) {
@@ -580,6 +591,7 @@ func (a *App) writeLoginResponse(w http.ResponseWriter, identity service.Identit
 		"role_id":                   identity.RoleID,
 		"role_name":                 identity.RoleName,
 		"subject_id":                identity.ID,
+		"username":                  identity.Username,
 		"name":                      identity.Name,
 		"provider":                  identity.Provider,
 		"credential_id":             identity.CredentialID,
@@ -1411,27 +1423,79 @@ func setAuthSessionCookie(w http.ResponseWriter, r *http.Request, token string) 
 	if token == "" {
 		return
 	}
-	http.SetCookie(w, &http.Cookie{
+	domain := authSessionCookieDomain(r)
+	if domain != "" {
+		setAuthSessionCookieValue(w, r, "", -1, "")
+	}
+	setAuthSessionCookieValue(w, r, token, 30*24*60*60, domain)
+}
+
+func setAuthSessionCookieValue(w http.ResponseWriter, r *http.Request, value string, maxAge int, domain string) {
+	cookie := &http.Cookie{
 		Name:     authSessionCookieName,
-		Value:    token,
+		Value:    value,
 		Path:     "/",
-		MaxAge:   30 * 24 * 60 * 60,
+		MaxAge:   maxAge,
 		HttpOnly: true,
 		Secure:   isHTTPSRequest(r),
 		SameSite: http.SameSiteLaxMode,
-	})
+	}
+	if domain != "" {
+		cookie.Domain = domain
+	}
+	http.SetCookie(w, cookie)
 }
 
 func clearAuthSessionCookie(w http.ResponseWriter, r *http.Request) {
-	http.SetCookie(w, &http.Cookie{
-		Name:     authSessionCookieName,
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1,
-		HttpOnly: true,
-		Secure:   isHTTPSRequest(r),
-		SameSite: http.SameSiteLaxMode,
-	})
+	if domain := authSessionCookieDomain(r); domain != "" {
+		setAuthSessionCookieValue(w, r, "", -1, domain)
+	}
+	setAuthSessionCookieValue(w, r, "", -1, "")
+}
+
+func authSessionCookieDomain(r *http.Request) string {
+	if configured := normalizeAuthSessionCookieDomain(os.Getenv("CHATGPT2API_AUTH_COOKIE_DOMAIN")); configured != "" {
+		return configured
+	}
+	host := requestCookieHost(r)
+	if host == "relayai.tech" || strings.HasSuffix(host, ".relayai.tech") {
+		return ".relayai.tech"
+	}
+	return ""
+}
+
+func normalizeAuthSessionCookieDomain(value string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" || value == "localhost" || strings.Contains(value, ":") {
+		return ""
+	}
+	value = strings.TrimPrefix(value, ".")
+	if value == "" || net.ParseIP(value) != nil || !strings.Contains(value, ".") {
+		return ""
+	}
+	return "." + value
+}
+
+func requestCookieHost(r *http.Request) string {
+	if r == nil {
+		return ""
+	}
+	host := strings.TrimSpace(r.Header.Get("X-Forwarded-Host"))
+	if host != "" {
+		host = strings.TrimSpace(strings.Split(host, ",")[0])
+	}
+	if host == "" {
+		host = strings.TrimSpace(r.Header.Get("Host"))
+	}
+	if host == "" {
+		host = strings.TrimSpace(r.Host)
+	}
+	if parsed, _, err := net.SplitHostPort(host); err == nil {
+		host = parsed
+	} else if strings.Count(host, ":") == 1 {
+		host = strings.Split(host, ":")[0]
+	}
+	return strings.ToLower(strings.Trim(host, "[]"))
 }
 
 func (a *App) resolveImageBaseURL(r *http.Request) string {
@@ -2096,7 +2160,7 @@ func (a *App) runLoggedChatTask(ctx context.Context, identity service.Identity, 
 	payload["owner_name"] = identityDisplayName(identity)
 	payload["stream"] = true
 	model := firstNonEmpty(util.Clean(payload["model"]), a.defaultChatModel())
-	if err := a.attachRelayAPIKeyForIdentity(identity, payload); err != nil {
+	if err := a.attachRelayAPIKeyForIdentity(ctx, identity, payload); err != nil {
 		a.logCall(identity, "文本生成", http.MethodPost, "/api/creation-tasks/chat-completions", model, start, "failed", protocolErrorHTTPStatus(err), err.Error(), nil, requestCapture)
 		return nil, err
 	}

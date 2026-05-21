@@ -68,7 +68,7 @@ type DatabaseBackend struct {
 }
 
 func NewDatabaseBackend(databaseURL string) (*DatabaseBackend, error) {
-	driver, dsn, err := parseDatabaseURL(databaseURL)
+	driver, dsn, err := ParseDatabaseURL(databaseURL)
 	if err != nil {
 		return nil, err
 	}
@@ -446,7 +446,7 @@ func logDay(value string) string {
 	return value[:10]
 }
 
-func parseDatabaseURL(databaseURL string) (driver, dsn string, err error) {
+func ParseDatabaseURL(databaseURL string) (driver, dsn string, err error) {
 	lower := strings.ToLower(databaseURL)
 	switch {
 	case strings.HasPrefix(lower, "sqlite:///"):

@@ -38,10 +38,8 @@ func (a *App) routes() []appRoute {
 		exact(http.MethodPost, "/v1/messages", a.handleMessages),
 
 		exact(http.MethodPost, "/auth/login", a.handleLogin),
-		exact(http.MethodPost, "/auth/register", a.handleAccountRegister),
 		exact(http.MethodPost, "/auth/logout", a.handleLogout),
 		exact(http.MethodGet, "/auth/session", a.handleSession),
-		exact("", "/auth/providers", a.handleAuthProviders),
 		exact(http.MethodGet, "/health", a.handleHealth),
 
 		exact("", "/api/announcements", a.handlePublicAnnouncements),
@@ -133,7 +131,7 @@ func isAPISpace(path string) bool {
 
 func applyCORS(w http.ResponseWriter, r *http.Request) {
 	origin := strings.TrimSpace(r.Header.Get("Origin"))
-	if origin != "" && isAllowedCredentialedOrigin(origin, r.Host) {
+	if origin != "" && isAllowedCredentialedOrigin(origin, requestCookieHost(r)) {
 		w.Header().Set("Access-Control-Allow-Origin", origin)
 		w.Header().Set("Access-Control-Allow-Credentials", "true")
 		w.Header().Add("Vary", "Origin")
@@ -166,7 +164,8 @@ func isAllowedCredentialedOrigin(origin, requestHost string) bool {
 	requestHostname = strings.Trim(requestHostname, "[]")
 	originHostname := originURL.Hostname()
 	return strings.EqualFold(originHostname, requestHostname) ||
-		isLoopbackHostname(originHostname) && isLoopbackHostname(requestHostname)
+		isLoopbackHostname(originHostname) && isLoopbackHostname(requestHostname) ||
+		originURL.Scheme == "https" && isRelayAIHostname(originHostname) && isRelayAIHostname(requestHostname)
 }
 
 func isLoopbackHostname(hostname string) bool {
@@ -176,4 +175,9 @@ func isLoopbackHostname(hostname string) bool {
 	default:
 		return false
 	}
+}
+
+func isRelayAIHostname(hostname string) bool {
+	hostname = strings.ToLower(strings.Trim(strings.TrimSpace(hostname), "[]"))
+	return hostname == "relayai.tech" || strings.HasSuffix(hostname, ".relayai.tech")
 }

@@ -2,6 +2,7 @@ package service
 
 import (
 	"crypto/hmac"
+	"fmt"
 	"sort"
 	"strings"
 	"sync"
@@ -20,6 +21,7 @@ const (
 
 	AuthProviderLocal   = "local"
 	AuthProviderLinuxDo = "linuxdo"
+	AuthProviderNewAPI  = "newapi"
 
 	DefaultManagedRoleID = "default-user"
 
@@ -30,6 +32,7 @@ var ErrAuthUserCreationDisabled = authError("auth user creation is disabled")
 
 type Identity struct {
 	ID             string
+	Username       string
 	Name           string
 	Role           string
 	RoleID         string
@@ -46,6 +49,7 @@ type Identity struct {
 func (i Identity) Map() map[string]any {
 	return map[string]any{
 		"id":              i.ID,
+		"username":        i.Username,
 		"name":            i.Name,
 		"role":            i.Role,
 		"role_id":         i.RoleID,
@@ -406,6 +410,9 @@ func (s *AuthService) UpsertAPIKeyForOwner(name string, owner AuthOwner) (map[st
 		updated["name"] = name
 		updated["provider"] = owner.Provider
 		updated["owner_name"] = owner.Name
+		if account, ok := passwordAccountByIDLocked(s.accounts, owner.ID); ok {
+			updated["username"] = account.Username
+		}
 		updated["key"] = raw
 		updated["key_hash"] = util.SHA256Hex(raw)
 		updated["enabled"] = true
@@ -415,6 +422,9 @@ func (s *AuthService) UpsertAPIKeyForOwner(name string, owner AuthOwner) (map[st
 	}
 	if updated == nil {
 		updated = newAuthItem(AuthRoleUser, AuthKindAPIKey, name, owner, raw)
+		if account, ok := passwordAccountByIDLocked(s.accounts, owner.ID); ok {
+			updated["username"] = account.Username
+		}
 		if roleID, ok := managedAuthRoleIDLocked(s.items, s.accounts, owner.ID); ok {
 			s.applyRoleToAuthItem(updated, roleID)
 		} else {
@@ -477,6 +487,7 @@ func (s *AuthService) UpsertPersonalAPIKey(identity Identity, name string) (map[
 	}
 	if updated == nil {
 		updated = newAuthItem(role, AuthKindAPIKey, name, owner, raw)
+		updated["username"] = identity.Username
 		s.applyIdentityRoleToAPIKey(updated, role, owner.ID)
 		nextItems = append(nextItems, updated)
 	}
@@ -493,6 +504,95 @@ func (s *AuthService) UpsertLinuxDoSession(owner AuthOwner) (map[string]any, str
 
 func (s *AuthService) UpsertLinuxDoSessionIfAllowed(owner AuthOwner, allowCreate bool) (map[string]any, string, error) {
 	return s.upsertLinuxDoSession(owner, allowCreate)
+}
+
+func (s *AuthService) UpsertNewAPISession(user NewAPIUser) (*Identity, string, error) {
+	user.Username = util.Clean(user.Username)
+	if user.ID <= 0 || user.Username == "" {
+		return nil, "", errAuthOwnerRequired()
+	}
+	name := util.Clean(user.DisplayName)
+	if name == "" {
+		name = user.Username
+	}
+	owner := AuthOwner{
+		ID:       fmt.Sprintf("newapi:%d", user.ID),
+		Name:     name,
+		Provider: AuthProviderNewAPI,
+	}
+	raw := "sess-" + util.RandomTokenURL(32)
+	now := util.NowISO()
+
+	s.mu.Lock()
+	sessionEnabled := true
+	ownerSeen := false
+	ownerHasEnabled := false
+	for _, item := range s.items {
+		if util.Clean(item["role"]) != AuthRoleUser || util.Clean(item["owner_id"]) != owner.ID {
+			continue
+		}
+		ownerSeen = true
+		if util.ToBool(util.ValueOr(item["enabled"], true)) {
+			ownerHasEnabled = true
+		}
+	}
+	if ownerSeen && !ownerHasEnabled {
+		sessionEnabled = false
+	}
+	for index, item := range s.items {
+		if util.Clean(item["kind"]) != AuthKindSession ||
+			util.Clean(item["provider"]) != AuthProviderNewAPI ||
+			util.Clean(item["owner_id"]) != owner.ID {
+			continue
+		}
+		next := util.CopyMap(item)
+		next["name"] = name
+		next["key"] = raw
+		next["key_hash"] = util.SHA256Hex(raw)
+		next["enabled"] = sessionEnabled
+		next["owner_name"] = name
+		next["username"] = user.Username
+		next["email"] = user.Email
+		next["last_used_at"] = nil
+		next["updated_at"] = now
+		if roleID, ok := managedAuthRoleIDLocked(s.items, s.accounts, owner.ID); ok {
+			s.applyRoleToAuthItem(next, roleID)
+		} else {
+			s.applyRoleToAuthItem(next, "")
+		}
+		s.items[index] = next
+		if err := s.saveLocked(); err != nil {
+			s.mu.Unlock()
+			return nil, "", err
+		}
+		identity := identityForAuthItem(next)
+		s.mu.Unlock()
+		return identity, raw, nil
+	}
+
+	item := newAuthItem(AuthRoleUser, AuthKindSession, name, owner, raw)
+	item["username"] = user.Username
+	item["email"] = user.Email
+	item["enabled"] = sessionEnabled
+	item["updated_at"] = now
+	if roleID, ok := managedAuthRoleIDLocked(s.items, s.accounts, owner.ID); ok {
+		s.applyRoleToAuthItem(item, roleID)
+	} else {
+		s.applyRoleToAuthItem(item, "")
+	}
+	s.items = append(s.items, item)
+	if err := s.saveLocked(); err != nil {
+		s.mu.Unlock()
+		return nil, "", err
+	}
+	identity := identityForAuthItem(item)
+	createdUserID := ""
+	if !ownerSeen {
+		createdUserID = managedAuthUserID(item)
+	}
+	s.mu.Unlock()
+	s.notifyUserCreated(createdUserID)
+	return identity, raw, nil
 }
 
 func (s *AuthService) upsertLinuxDoSession(owner AuthOwner, allowCreate bool) (map[string]any, string, error) {
@@ -821,6 +921,9 @@ func (s *AuthService) ResetUserAPIKey(id, name string) (map[string]any, map[stri
 			updated["provider"] = owner.Provider
 			updated["owner_name"] = owner.Name
 			updated["linuxdo_level"] = owner.LinuxDoLevel
+			if account, ok := passwordAccountByIDLocked(s.accounts, owner.ID); ok {
+				updated["username"] = account.Username
+			}
 			updated["key"] = raw
 			updated["key_hash"] = util.SHA256Hex(raw)
 			updated["enabled"] = enabled
@@ -830,6 +933,9 @@ func (s *AuthService) ResetUserAPIKey(id, name string) (map[string]any, map[stri
 		}
 		if updated == nil {
 			updated = newAuthItem(AuthRoleUser, AuthKindAPIKey, name, owner, raw)
+			if account, ok := passwordAccountByIDLocked(s.accounts, owner.ID); ok {
+				updated["username"] = account.Username
+			}
 			if roleID, ok := managedAuthRoleIDLocked(s.items, s.accounts, id); ok {
 				s.applyRoleToAuthItem(updated, roleID)
 			} else {
@@ -1161,6 +1267,7 @@ func normalizeAuthItem(raw map[string]any) map[string]any {
 	}
 	out := map[string]any{
 		"id":            id,
+		"username":      util.Clean(raw["username"]),
 		"name":          name,
 		"role":          role,
 		"kind":          kind,
@@ -1204,6 +1311,7 @@ func normalizeAuthItem(raw map[string]any) map[string]any {
 func publicAuthItem(item map[string]any) map[string]any {
 	return map[string]any{
 		"id":              item["id"],
+		"username":        item["username"],
 		"name":            item["name"],
 		"role":            item["role"],
 		"role_id":         item["role_id"],
@@ -1236,6 +1344,7 @@ func identityForAuthItem(item map[string]any) *Identity {
 	}
 	return &Identity{
 		ID:             id,
+		Username:       util.Clean(item["username"]),
 		Name:           name,
 		Role:           util.Clean(item["role"]),
 		RoleID:         util.Clean(item["role_id"]),

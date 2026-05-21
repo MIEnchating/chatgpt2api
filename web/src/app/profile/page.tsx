@@ -22,6 +22,12 @@ function providerLabel(provider?: string) {
   if (provider === "local") {
     return "本地账号";
   }
+  if (provider === "newapi") {
+    return "NewAPI";
+  }
+  if (provider === "linuxdo") {
+    return "LinuxDo";
+  }
   return provider || "未知";
 }
 
@@ -174,7 +180,7 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
                 <div className="min-w-0">
                   <CardTitle className="text-lg">登录密码</CardTitle>
                   <CardDescription className="truncate">
-                    {currentSession.provider === "local" ? "本地账号" : "外部登录"}
+                    {providerLabel(currentSession.provider)}
                   </CardDescription>
                 </div>
               </div>

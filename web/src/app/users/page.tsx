@@ -146,6 +146,12 @@ function providerFilterLabel(provider?: string) {
   if (provider === "local") {
     return "本地账号";
   }
+  if (provider === "newapi") {
+    return "NewAPI";
+  }
+  if (provider === "linuxdo") {
+    return "LinuxDo";
+  }
   return provider || "未知";
 }
 
@@ -161,6 +167,12 @@ function userSourceLabel(user: Pick<ManagedUser, "provider" | "username" | "has_
       return "登录会话";
     }
     return "本地凭据";
+  }
+  if (user.provider === "newapi") {
+    return "NewAPI 用户";
+  }
+  if (user.provider === "linuxdo") {
+    return "LinuxDo 用户";
   }
   return user.provider || "未知";
 }

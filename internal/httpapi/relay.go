@@ -19,11 +19,11 @@ import (
 	"chatgpt2api/internal/util"
 )
 
-func (a *App) attachRelayAPIKeyForIdentity(identity service.Identity, body map[string]any) error {
+func (a *App) attachRelayAPIKeyForIdentity(ctx context.Context, identity service.Identity, body map[string]any) error {
 	if body == nil {
 		return nil
 	}
-	key, err := a.relayAPIKeyForIdentity(identity)
+	key, err := a.relayAPIKeyForIdentity(ctx, identity)
 	if err != nil {
 		return err
 	}
@@ -31,13 +31,13 @@ func (a *App) attachRelayAPIKeyForIdentity(identity service.Identity, body map[s
 	return nil
 }
 
-func (a *App) relayAPIKeyForIdentity(identity service.Identity) (string, error) {
-	if a == nil || a.relayKeys == nil {
-		return "", protocol.HTTPError{Status: http.StatusBadRequest, Message: "请先到个人中心配置 RelayAI Key"}
+func (a *App) relayAPIKeyForIdentity(ctx context.Context, identity service.Identity) (string, error) {
+	if a == nil || a.newAPIKeys == nil {
+		return "", protocol.HTTPError{Status: http.StatusBadRequest, Message: "请先配置 NewAPI 数据库连接，并在 NewAPI 创建指定分组的令牌"}
 	}
-	key, ok := a.relayKeys.Get(identityScope(identity))
-	if !ok {
-		return "", protocol.HTTPError{Status: http.StatusBadRequest, Message: "请先到个人中心配置 RelayAI Key"}
+	key, err := a.newAPIKeys.KeyForIdentity(ctx, identity)
+	if err != nil {
+		return "", protocol.HTTPError{Status: http.StatusBadRequest, Message: err.Error()}
 	}
 	return key, nil
 }

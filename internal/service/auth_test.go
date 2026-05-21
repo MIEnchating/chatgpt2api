@@ -130,18 +130,25 @@ func TestAuthServicePasswordAccountLoginAndRoleUpdates(t *testing.T) {
 		t.Fatalf("admin identity=%#v raw=%q", admin, adminRaw)
 	}
 
-	user, raw, err := auth.RegisterPasswordUser("alice", "Password123", "Alice")
+	createdUser, err := auth.CreatePasswordUser("alice", "Password123", "Alice", DefaultManagedRoleID, true)
 	if err != nil {
-		t.Fatalf("RegisterPasswordUser() error = %v", err)
+		t.Fatalf("CreatePasswordUser(alice) error = %v", err)
+	}
+	user, raw, err := auth.LoginPassword("alice", "Password123")
+	if err != nil {
+		t.Fatalf("LoginPassword(alice) error = %v", err)
 	}
 	if user == nil || user.Role != AuthRoleUser || user.RoleID != DefaultManagedRoleID || raw == "" {
-		t.Fatalf("registered identity=%#v raw=%q", user, raw)
+		t.Fatalf("created user identity=%#v raw=%q", user, raw)
+	}
+	if createdUser["id"] != user.ID {
+		t.Fatalf("created user id = %#v, login identity id = %q", createdUser["id"], user.ID)
 	}
 	if authenticated := auth.Authenticate(raw); authenticated == nil || authenticated.ID != user.ID || authenticated.Name != "Alice" {
-		t.Fatalf("Authenticate(registered) = %#v", authenticated)
+		t.Fatalf("Authenticate(password user) = %#v", authenticated)
 	}
-	if _, _, err := auth.RegisterPasswordUser("alice", "Password123", "Alice again"); err == nil {
-		t.Fatal("duplicate username registration succeeded")
+	if _, err := auth.CreatePasswordUser("alice", "Password123", "Alice again", DefaultManagedRoleID, true); err == nil {
+		t.Fatal("duplicate username creation succeeded")
 	}
 
 	created, err := auth.CreatePasswordUser("bob", "Password123", "Bob", DefaultManagedRoleID, false)

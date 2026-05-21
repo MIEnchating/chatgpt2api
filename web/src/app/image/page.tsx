@@ -96,7 +96,7 @@ import {
 import { fetchAuthenticatedImageBlob } from "@/lib/authenticated-image";
 import { clearImageManagerCache } from "@/lib/image-manager-cache";
 import { getManagedImagePathFromUrl } from "@/lib/image-path";
-import { clearStoredRelayApiKey, RELAY_API_KEY_CHANGED_EVENT } from "@/lib/relay-key";
+import { clearStoredRelayApiKey } from "@/lib/relay-key";
 import { cn } from "@/lib/utils";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import { hasAPIPermission, type StoredAuthSession } from "@/store/auth";
@@ -143,6 +143,7 @@ const IMAGE_OUTPUT_FORMAT_STORAGE_KEY = "chatgpt2api:image_last_output_format";
 const IMAGE_OUTPUT_COMPRESSION_STORAGE_KEY = "chatgpt2api:image_last_output_compression";
 const IMAGE_BACKGROUND_STORAGE_KEY = "chatgpt2api:image_last_background";
 const IMAGE_MODERATION_STORAGE_KEY = "chatgpt2api:image_last_moderation";
+const NEWAPI_TOKEN_MISSING_MESSAGE = "请先在 NewAPI 为当前用户创建指定分组的令牌";
 const DEFAULT_IMAGE_OUTPUT_FORMAT: ImageOutputFormat = "png";
 const DEFAULT_IMAGE_BACKGROUND: ImageBackground = "auto";
 const DEFAULT_IMAGE_MODERATION: ImageModeration = "auto";
@@ -894,10 +895,10 @@ function formatCreationTaskErrorMessage(message: string) {
 
   const normalized = trimmed.toLowerCase();
   if (normalized.includes("user balance insufficient")) {
-    return "上游拒绝了这次请求，请检查当前 RelayAI Key 或稍后重试。";
+    return "上游拒绝了这次请求，请检查当前 NewAPI 令牌或稍后重试。";
   }
   if (normalized.includes("user quota exceeded")) {
-    return "上游拒绝了这次请求，请检查当前 RelayAI Key 或稍后重试。";
+    return "上游拒绝了这次请求，请检查当前 NewAPI 令牌或稍后重试。";
   }
   if (
     normalized.includes("stream disconnected before completion") ||
@@ -923,7 +924,7 @@ function formatCreationTaskErrorMessage(message: string) {
     return "图片生成等待超时，建议稍后重试；如果使用高分辨率参数，可降低尺寸后再试。";
   }
   if (normalized.includes("no available image quota")) {
-    return "当前 RelayAI Key 暂不可用，请更换 Key 或稍后重试。";
+    return "当前 NewAPI 令牌暂不可用，请检查指定分组令牌或稍后重试。";
   }
 
   return trimmed;
@@ -1247,6 +1248,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   const [imageBackground, setImageBackground] = useState<ImageBackground>(getStoredImageBackground);
   const [imageModeration, setImageModeration] = useState<ImageModeration>(getStoredImageModeration);
   const [relayKeyConfigured, setRelayKeyConfigured] = useState(false);
+  const [relayKeyStatusMessage, setRelayKeyStatusMessage] = useState(NEWAPI_TOKEN_MISSING_MESSAGE);
+  const relayKeyMissingMessage = relayKeyStatusMessage || NEWAPI_TOKEN_MISSING_MESSAGE;
   const [relayImageModelOptions, setRelayImageModelOptions] = useState<ImageModelOption[]>(() =>
     ensureDefaultImageModelOption(IMAGE_CREATION_MODEL_OPTIONS),
   );
@@ -1799,8 +1802,10 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     try {
       const status = await fetchProfileRelayKey();
       setRelayKeyConfigured(status.has_key);
+      setRelayKeyStatusMessage(status.has_key ? "" : status.message || NEWAPI_TOKEN_MISSING_MESSAGE);
     } catch {
       setRelayKeyConfigured(false);
+      setRelayKeyStatusMessage("无法读取 NewAPI 令牌状态，请稍后重试");
     }
   }, []);
 
@@ -1811,21 +1816,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
 
     void refreshRelayKeyStatus();
   }, [refreshRelayKeyStatus, session]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    const handleRelayKeyChanged = () => {
-      void refreshRelayKeyStatus();
-    };
-
-    window.addEventListener(RELAY_API_KEY_CHANGED_EVENT, handleRelayKeyChanged);
-    return () => {
-      window.removeEventListener(RELAY_API_KEY_CHANGED_EVENT, handleRelayKeyChanged);
-    };
-  }, [refreshRelayKeyStatus]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -2925,7 +2915,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         return;
       }
       if (!relayKeyConfigured) {
-        toast.error("请先到个人中心配置 RelayAI Key");
+        toast.error(relayKeyMissingMessage);
         return;
       }
 
@@ -2983,7 +2973,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         retryingImageIdsRef.current.delete(retryKey);
       }
     },
-    [relayKeyConfigured, runConversationQueue, updateConversation],
+    [relayKeyConfigured, relayKeyMissingMessage, runConversationQueue, updateConversation],
   );
 
   const handleRegenerateTurn = useCallback(
@@ -3007,7 +2997,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         return;
       }
       if (!relayKeyConfigured) {
-        toast.error("请先到个人中心配置 RelayAI Key");
+        toast.error(relayKeyMissingMessage);
         return;
       }
 
@@ -3050,7 +3040,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       void runConversationQueue(conversationId);
       toast.success("已加入重新生成队列");
     },
-    [relayKeyConfigured, runConversationQueue, updateConversation],
+    [relayKeyConfigured, relayKeyMissingMessage, runConversationQueue, updateConversation],
   );
 
   const handleSaveEditingTurn = useCallback(
@@ -3076,7 +3066,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         return;
       }
       if (regenerate && !relayKeyConfigured) {
-        toast.error("请先到个人中心配置 RelayAI Key");
+        toast.error(relayKeyMissingMessage);
         return;
       }
 
@@ -3194,7 +3184,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         toast.success("已保存编辑设置");
       }
     },
-    [editingTurnDraft, relayKeyConfigured, runConversationQueue, updateConversation],
+    [editingTurnDraft, relayKeyConfigured, relayKeyMissingMessage, runConversationQueue, updateConversation],
   );
 
   const handleSubmit = async () => {
@@ -3208,7 +3198,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       return;
     }
     if (!relayKeyConfigured) {
-      toast.error("请先到个人中心配置 RelayAI Key");
+      toast.error(relayKeyMissingMessage);
       return;
     }
     isSubmitDispatchingRef.current = true;
@@ -3958,6 +3948,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                 imageBackground={imageBackground}
                 imageModeration={imageModeration}
                 relayKeyConfigured={relayKeyConfigured}
+                relayKeyStatusMessage={relayKeyMissingMessage}
                 imageModelStatus={composerMode === "image" ? imageModelStatus : undefined}
                 highResolutionHint={highResolutionHint}
                 referenceImages={referenceImages}

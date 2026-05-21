@@ -19,6 +19,7 @@ export type StoredAuthSession = {
   roleId?: string;
   roleName?: string;
   subjectId: string;
+  username?: string;
   name: string;
   provider?: string;
   creationConcurrentLimit: number;
@@ -97,6 +98,7 @@ function normalizeSession(value: unknown, fallbackKey = ""): StoredAuthSession |
     roleId: String(candidate.roleId || "").trim(),
     roleName: String(candidate.roleName || "").trim(),
     subjectId: String(candidate.subjectId || "").trim(),
+    username: String(candidate.username || "").trim(),
     name: String(candidate.name || "").trim(),
     provider: String(candidate.provider || "").trim(),
     creationConcurrentLimit,

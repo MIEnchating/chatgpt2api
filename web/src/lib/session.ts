@@ -21,6 +21,7 @@ export function authSessionFromLoginResponse(data: LoginResponse, key: string): 
     roleId: data.role_id,
     roleName: data.role_name,
     subjectId: data.subject_id,
+    username: data.username,
     name: data.name,
     provider: data.provider,
     creationConcurrentLimit: data.creation_concurrent_limit,
@@ -89,12 +90,18 @@ export async function clearVerifiedAuthSession() {
 async function verifyStoredAuthSession(): Promise<StoredAuthSession | null> {
   const storedSession = await getStoredAuthSession();
   if (!storedSession) {
-    return null;
+    try {
+      const data = await verifySession();
+      const token = data.token || "";
+      return token ? authSessionFromLoginResponse(data, token) : null;
+    } catch {
+      return null;
+    }
   }
 
   try {
     const data = await verifySession(storedSession.key);
-    return authSessionFromLoginResponse(data, storedSession.key);
+    return authSessionFromLoginResponse(data, data.token || storedSession.key);
   } catch {
     return null;
   }
