@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, Copy, Download, Eye, Globe2, ImageIcon, LoaderCircle, Lock, MoreHorizontal, RefreshCw, Search, SlidersHorizontal, Sparkles, Trash2, X } from "lucide-react";
+import { Check, Copy, Download, Eye, Globe2, ImageIcon, LoaderCircle, Lock, MoreHorizontal, RefreshCw, SlidersHorizontal, Sparkles, Trash2, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -21,7 +21,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
@@ -334,32 +333,6 @@ function imageVisibilityFilterLabel(visibility: ImageVisibilityFilter) {
   return imageVisibilityLabel(visibility);
 }
 
-function matchesManagedImageKeyword(item: ManagedImage, keyword: string) {
-  const normalizedKeyword = keyword.trim().toLowerCase();
-  if (!normalizedKeyword) {
-    return true;
-  }
-  return [
-    item.name,
-    item.path,
-    item.url,
-    item.owner_name,
-    item.owner_id,
-    item.prompt,
-    item.model,
-    item.quality,
-    item.output_format,
-    item.created_at,
-    item.date,
-    getManagedImageResolution(item),
-    imageResolutionPresetLabel(item),
-    item.requested_size,
-    getManagedImageAspectRatio(item),
-    formatManagedImageMegapixels(item),
-    formatImageFileSize(item.size),
-  ].some((value) => String(value || "").toLowerCase().includes(normalizedKeyword));
-}
-
 function imageVisibilityLabel(visibility: ImageVisibility) {
   return visibility === "public" ? "已公开" : "私有";
 }
@@ -474,7 +447,6 @@ function ImageManagerContent({
   const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState(false);
   const [visibleItemLimit, setVisibleItemLimit] = useState(IMAGE_MANAGER_BATCH_SIZE);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [searchKeyword, setSearchKeyword] = useState("");
   const [visibilityFilter, setVisibilityFilter] = useState<ImageVisibilityFilter>("all");
   const [formatFilter, setFormatFilter] = useState<ImageFormatFilter>("all");
   const [orientationFilter, setOrientationFilter] = useState<ImageOrientationFilter>("all");
@@ -483,9 +455,6 @@ function ImageManagerContent({
   const filteredItems = useMemo(
     () =>
       items.filter((item) => {
-        if (!matchesManagedImageKeyword(item, searchKeyword)) {
-          return false;
-        }
         if (visibilityFilter !== "all" && item.visibility !== visibilityFilter) {
           return false;
         }
@@ -503,10 +472,9 @@ function ImageManagerContent({
         }
         return true;
       }),
-    [aspectRatioFilter, formatFilter, items, orientationFilter, resolutionFilter, searchKeyword, visibilityFilter],
+    [aspectRatioFilter, formatFilter, items, orientationFilter, resolutionFilter, visibilityFilter],
   );
   const hasLocalFilters =
-    searchKeyword.trim() !== "" ||
     visibilityFilter !== "all" ||
     formatFilter !== "all" ||
     orientationFilter !== "all" ||
@@ -691,12 +659,6 @@ function ImageManagerContent({
     setLoadError("");
   };
 
-  const updateSearchKeyword = (value: string) => {
-    setSearchKeyword(value);
-    setSelectedImageIds({});
-    setVisibleItemLimit(IMAGE_MANAGER_BATCH_SIZE);
-  };
-
   const updateVisibilityFilter = (value: ImageVisibilityFilter) => {
     setVisibilityFilter(value);
     setSelectedImageIds({});
@@ -730,7 +692,6 @@ function ImageManagerContent({
   const clearImageFilters = () => {
     setStartDate("");
     setEndDate("");
-    setSearchKeyword("");
     setVisibilityFilter("all");
     setFormatFilter("all");
     setOrientationFilter("all");
@@ -1074,29 +1035,6 @@ function ImageManagerContent({
     />
   );
 
-  const renderSearchFilter = (placeholder = "搜索文件、路径、作者、日期、尺寸") => (
-    <div className="relative min-w-0">
-      <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-      <Input
-        value={searchKeyword}
-        onChange={(event) => updateSearchKeyword(event.target.value)}
-        placeholder={placeholder}
-        className="h-10 rounded-lg pr-9 pl-9"
-      />
-      {searchKeyword ? (
-        <button
-          type="button"
-          className="absolute top-1/2 right-2 inline-flex size-6 -translate-y-1/2 items-center justify-center rounded-full text-muted-foreground transition hover:bg-muted hover:text-foreground"
-          onClick={() => updateSearchKeyword("")}
-          aria-label="清空搜索"
-          title="清空搜索"
-        >
-          <X className="size-3.5" />
-        </button>
-      ) : null}
-    </div>
-  );
-
   const renderFilterControls = () => (
     <>
       <Select value={visibilityFilter} onValueChange={(value) => updateVisibilityFilter(value as ImageVisibilityFilter)}>
@@ -1291,9 +1229,8 @@ function ImageManagerContent({
           </div>
 
           <div className="flex min-w-0 flex-col gap-2">
-            <div className="flex items-center justify-between gap-2">
-              <div className="text-sm font-medium text-foreground">筛选项</div>
-              {hasActiveFilters ? (
+            {hasActiveFilters ? (
+              <div className="flex justify-end">
                 <button
                   type="button"
                   className="inline-flex h-7 shrink-0 items-center gap-1 rounded-full px-2 text-xs text-muted-foreground transition hover:bg-muted hover:text-foreground"
@@ -1302,25 +1239,23 @@ function ImageManagerContent({
                   <X className="size-3.5" />
                   清空
                 </button>
-              ) : null}
-            </div>
+              </div>
+            ) : null}
             <div className="md:hidden">
               <div className="flex items-center gap-2">
-                <div className="min-w-0 flex-1">
-                  {renderSearchFilter("搜索图片")}
-                </div>
                 <button
                   type="button"
                   className={cn(
-                    "relative inline-flex size-10 shrink-0 items-center justify-center rounded-full border border-border bg-background text-muted-foreground transition hover:bg-accent hover:text-accent-foreground",
+                    "relative inline-flex h-10 min-w-0 flex-1 items-center justify-center gap-2 rounded-lg border border-border bg-background px-3 text-sm font-medium text-muted-foreground transition hover:bg-accent hover:text-accent-foreground",
                     isMobileFiltersOpen && "border-[#bfdbfe] bg-[#eef4ff] text-[#1456f0] dark:border-sky-900/70 dark:bg-sky-950/30 dark:text-sky-300",
                   )}
                   onClick={() => setIsMobileFiltersOpen((open) => !open)}
-                  aria-label={isMobileFiltersOpen ? "收起筛选项" : "展开筛选项"}
+                  aria-label={isMobileFiltersOpen ? "收起筛选" : "展开筛选"}
                   aria-expanded={isMobileFiltersOpen}
                   title={isMobileFiltersOpen ? "收起筛选" : "筛选"}
                 >
                   <SlidersHorizontal className="size-4" />
+                  <span className="truncate">筛选</span>
                   {activeFilterCount > 0 ? (
                     <span className="absolute -top-0.5 -right-0.5 inline-flex size-4 items-center justify-center rounded-full bg-[#1456f0] text-[10px] font-semibold text-white">
                       {activeFilterCount}
@@ -1366,11 +1301,8 @@ function ImageManagerContent({
             </div>
 
             <div className="hidden flex-col gap-2 md:flex">
-              <div className="grid grid-cols-1 gap-2 lg:grid-cols-2">
-                {renderDateRangeFilter("w-full sm:w-full")}
-                {renderSearchFilter()}
-              </div>
-              <div className="grid grid-cols-2 gap-2 lg:grid-cols-6">
+              <div className="grid grid-cols-2 gap-2 lg:grid-cols-7 xl:grid-cols-9">
+                <div className="col-span-2">{renderDateRangeFilter("w-full sm:w-full")}</div>
                 {renderFilterControls()}
                 {renderAutoRefreshControls("desktop", "col-span-2 flex min-w-0 items-center gap-2")}
               </div>
@@ -1379,136 +1311,141 @@ function ImageManagerContent({
 
         </section>
 
-        <Popover open={isImageActionsOpen} onOpenChange={setIsImageActionsOpen}>
-          <div className="fixed right-4 bottom-[calc(env(safe-area-inset-bottom)+1rem)] z-40 sm:right-6 sm:bottom-6">
-            <PopoverTrigger asChild>
-              <Button
-                type="button"
-                className="h-12 rounded-full px-4 shadow-[0_18px_50px_-24px_rgba(15,23,42,0.65)]"
-                aria-label="打开图片操作"
+        {filteredItems.length > 0 ? (
+          <Popover open={isImageActionsOpen} onOpenChange={setIsImageActionsOpen}>
+            <div className="fixed right-4 bottom-[calc(env(safe-area-inset-bottom)+1rem)] z-40 sm:right-6 sm:bottom-6">
+              <PopoverTrigger asChild>
+                <Button
+                  type="button"
+                  className="h-12 rounded-full px-4 shadow-[0_18px_50px_-24px_rgba(15,23,42,0.65)]"
+                  aria-label="打开图片操作"
+                >
+                  <MoreHorizontal className="size-5" />
+                  <span>操作</span>
+                  {selectedCount > 0 ? (
+                    <span className="ml-0.5 inline-flex min-w-5 items-center justify-center rounded-full bg-white/20 px-1.5 text-xs font-semibold text-white">
+                      {selectedCount}
+                    </span>
+                  ) : null}
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent
+                align="end"
+                side="top"
+                sideOffset={10}
+                className="w-[min(calc(100vw-2rem),20rem)] p-2"
               >
-                <MoreHorizontal className="size-5" />
-                <span>操作</span>
-                {selectedCount > 0 ? (
-                  <span className="ml-0.5 inline-flex min-w-5 items-center justify-center rounded-full bg-white/20 px-1.5 text-xs font-semibold text-white">
-                    {selectedCount}
-                  </span>
-                ) : null}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent
-              align="end"
-              side="top"
-              sideOffset={10}
-              className="w-[min(calc(100vw-2rem),20rem)] p-2"
-            >
-              <div className="flex flex-col gap-1">
-                <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
-                  {hasLocalFilters ? `显示 ${filteredItems.length} / ${items.length} 张` : `共 ${items.length} 张`}
-                </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="h-10 justify-start rounded-lg px-3 text-sm"
-                  disabled={filteredItems.length === 0 || isMutatingImages}
-                  onClick={toggleAllImages}
-                >
-                  <Check className="size-4" />
-                  {allSelected ? "取消全选" : "全选"}
-                </Button>
-                {galleryView === "mine" ? (
-                  <>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      className="h-10 justify-start rounded-lg px-3 text-sm"
-                      disabled={selectedPrivateItems.length === 0 || isMutatingImages}
-                      onClick={() => void handleBulkVisibilityChange(selectedPrivateItems, "public")}
-                    >
-                      {visibilityMutatingPath === "bulk:public" ? (
-                        <LoaderCircle className="size-4 animate-spin" />
-                      ) : (
-                        <Globe2 className="size-4" />
-                      )}
-                      公开已选 ({selectedPrivateItems.length})
-                    </Button>
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      className="h-10 justify-start rounded-lg px-3 text-sm"
-                      disabled={selectedPublicItems.length === 0 || isMutatingImages}
-                      onClick={() => void handleBulkVisibilityChange(selectedPublicItems, "private")}
-                    >
-                      {visibilityMutatingPath === "bulk:private" ? (
-                        <LoaderCircle className="size-4 animate-spin" />
-                      ) : (
-                        <Lock className="size-4" />
-                      )}
-                      设为私有 ({selectedPublicItems.length})
-                    </Button>
-                  </>
-                ) : null}
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="h-10 justify-start rounded-lg px-3 text-sm"
-                  disabled={selectedCount === 0 || isMutatingImages}
-                  onClick={() => void downloadItems("selected", selectedItems)}
-                >
-                  {downloadingKey === "selected" ? (
-                    <LoaderCircle className="size-4 animate-spin" />
-                  ) : (
-                    <Download className="size-4" />
-                  )}
-                  下载已选 ({selectedCount})
-                </Button>
-                {canDeleteImages ? (
+                <div className="flex flex-col gap-1">
+                  <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">
+                    {hasLocalFilters ? `显示 ${filteredItems.length} / ${items.length} 张` : `共 ${items.length} 张`}
+                  </div>
                   <Button
                     type="button"
                     variant="ghost"
-                    className="h-10 justify-start rounded-lg px-3 text-sm text-rose-600 hover:bg-rose-50 hover:text-rose-700"
-                    disabled={selectedCount === 0 || isMutatingImages}
-                    onClick={() => {
-                      setIsImageActionsOpen(false);
-                      openDeleteConfirm(selectedItems);
-                    }}
+                    className="h-10 justify-start rounded-lg px-3 text-sm"
+                    disabled={filteredItems.length === 0 || isMutatingImages}
+                    onClick={toggleAllImages}
                   >
-                    <Trash2 className="size-4" />
-                    删除已选 ({selectedCount})
+                    <Check className="size-4" />
+                    {allSelected ? "取消全选" : "全选"}
                   </Button>
-                ) : null}
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="h-10 justify-start rounded-lg px-3 text-sm"
-                  disabled={filteredItems.length === 0 || isMutatingImages}
-                  onClick={() => void downloadItems("all", filteredItems)}
-                >
-                  {downloadingKey === "all" ? (
-                    <LoaderCircle className="size-4 animate-spin" />
-                  ) : (
-                    <Download className="size-4" />
-                  )}
-                  下载全部 ({filteredItems.length})
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  className="h-10 justify-start rounded-lg px-3 text-sm"
-                  disabled={isLoading || isMutatingImages}
-                  onClick={() => void loadImages({ force: true })}
-                >
-                  <RefreshCw className={`size-4 ${isLoading ? "animate-spin" : ""}`} />
-                  刷新
-                </Button>
-              </div>
-            </PopoverContent>
-          </div>
-        </Popover>
+                  {galleryView === "mine" ? (
+                    <>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="h-10 justify-start rounded-lg px-3 text-sm"
+                        disabled={selectedPrivateItems.length === 0 || isMutatingImages}
+                        onClick={() => void handleBulkVisibilityChange(selectedPrivateItems, "public")}
+                      >
+                        {visibilityMutatingPath === "bulk:public" ? (
+                          <LoaderCircle className="size-4 animate-spin" />
+                        ) : (
+                          <Globe2 className="size-4" />
+                        )}
+                        公开已选 ({selectedPrivateItems.length})
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="h-10 justify-start rounded-lg px-3 text-sm"
+                        disabled={selectedPublicItems.length === 0 || isMutatingImages}
+                        onClick={() => void handleBulkVisibilityChange(selectedPublicItems, "private")}
+                      >
+                        {visibilityMutatingPath === "bulk:private" ? (
+                          <LoaderCircle className="size-4 animate-spin" />
+                        ) : (
+                          <Lock className="size-4" />
+                        )}
+                        设为私有 ({selectedPublicItems.length})
+                      </Button>
+                    </>
+                  ) : null}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="h-10 justify-start rounded-lg px-3 text-sm"
+                    disabled={selectedCount === 0 || isMutatingImages}
+                    onClick={() => void downloadItems("selected", selectedItems)}
+                  >
+                    {downloadingKey === "selected" ? (
+                      <LoaderCircle className="size-4 animate-spin" />
+                    ) : (
+                      <Download className="size-4" />
+                    )}
+                    下载已选 ({selectedCount})
+                  </Button>
+                  {canDeleteImages ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="h-10 justify-start rounded-lg px-3 text-sm text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                      disabled={selectedCount === 0 || isMutatingImages}
+                      onClick={() => {
+                        setIsImageActionsOpen(false);
+                        openDeleteConfirm(selectedItems);
+                      }}
+                    >
+                      <Trash2 className="size-4" />
+                      删除已选 ({selectedCount})
+                    </Button>
+                  ) : null}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="h-10 justify-start rounded-lg px-3 text-sm"
+                    disabled={filteredItems.length === 0 || isMutatingImages}
+                    onClick={() => void downloadItems("all", filteredItems)}
+                  >
+                    {downloadingKey === "all" ? (
+                      <LoaderCircle className="size-4 animate-spin" />
+                    ) : (
+                      <Download className="size-4" />
+                    )}
+                    下载全部 ({filteredItems.length})
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    className="h-10 justify-start rounded-lg px-3 text-sm"
+                    disabled={isLoading || isMutatingImages}
+                    onClick={() => void loadImages({ force: true })}
+                  >
+                    <RefreshCw className={`size-4 ${isLoading ? "animate-spin" : ""}`} />
+                    刷新
+                  </Button>
+                </div>
+              </PopoverContent>
+            </div>
+          </Popover>
+        ) : null}
 
         <div
           ref={imageScrollAreaRef}
-          className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain pr-1 pb-[calc(env(safe-area-inset-bottom)+5rem)] [scrollbar-color:rgba(142,142,147,.45)_transparent] [scrollbar-gutter:stable] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#8e8e93]/45 [&::-webkit-scrollbar-track]:bg-transparent"
+          className={cn(
+            "min-h-0 flex-1 space-y-4 overscroll-contain pr-1 [scrollbar-color:rgba(142,142,147,.45)_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#8e8e93]/45 [&::-webkit-scrollbar-track]:bg-transparent",
+            filteredItems.length > 0 ? "overflow-y-auto pb-[calc(env(safe-area-inset-bottom)+5rem)]" : "overflow-hidden pb-0",
+          )}
         >
         {showImageLoadingState ? (
           <Card className="overflow-hidden rounded-[20px]">
@@ -1772,7 +1709,7 @@ function ImageManagerContent({
                 <p className="text-sm font-medium text-foreground">{showImageFilteredEmptyState ? "没有匹配的图片" : "暂无图片"}</p>
                 <p className="max-w-[32rem] text-sm leading-6 text-muted-foreground">
                   {showImageFilteredEmptyState
-                    ? "调整关键词、状态、格式或方向筛选后再试。"
+                    ? "调整状态、格式或方向筛选后再试。"
                     : galleryView === "mine"
                       ? "图片生成成功后会自动进入个人图库。"
                       : "公开图库暂无公开图片。"}
