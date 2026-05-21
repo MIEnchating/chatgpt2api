@@ -2032,6 +2032,27 @@ func TestRelayAISubdomainAllowsCredentialedCORSWithForwardedHost(t *testing.T) {
 	}
 }
 
+func TestRelayAISubdomainAllowsCredentialedCORSBehindProxyHost(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+
+	req := httptest.NewRequest(http.MethodOptions, "/images/2026/05/21/sample.png", nil)
+	req.Host = "chatgpt2api"
+	req.Header.Set("Origin", "https://image.relayai.tech")
+	req.Header.Set("Access-Control-Request-Method", http.MethodGet)
+	res := httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusNoContent {
+		t.Fatalf("preflight status = %d body = %s", res.Code, res.Body.String())
+	}
+	if got := res.Header().Get("Access-Control-Allow-Origin"); got != "https://image.relayai.tech" {
+		t.Fatalf("Access-Control-Allow-Origin = %q, want image origin", got)
+	}
+	if got := res.Header().Get("Access-Control-Allow-Credentials"); got != "true" {
+		t.Fatalf("Access-Control-Allow-Credentials = %q, want true", got)
+	}
+}
+
 func TestCredentialedLoginPreflightAllowsContentType(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()

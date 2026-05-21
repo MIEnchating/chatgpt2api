@@ -163,9 +163,11 @@ func isAllowedCredentialedOrigin(origin, requestHost string) bool {
 	}
 	requestHostname = strings.Trim(requestHostname, "[]")
 	originHostname := originURL.Hostname()
+	if originURL.Scheme == "https" && isRelayAIHostname(originHostname) {
+		return true
+	}
 	return strings.EqualFold(originHostname, requestHostname) ||
-		isLoopbackHostname(originHostname) && isLoopbackHostname(requestHostname) ||
-		originURL.Scheme == "https" && isRelayAIHostname(originHostname) && isRelayAIHostname(requestHostname)
+		isLoopbackHostname(originHostname) && isLoopbackHostname(requestHostname)
 }
 
 func isLoopbackHostname(hostname string) bool {
