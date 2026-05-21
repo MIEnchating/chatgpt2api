@@ -1228,6 +1228,28 @@ func TestLoginPageImageUploadSettings(t *testing.T) {
 	}
 }
 
+func TestModelConfigAllowsAuthenticatedUserWithoutExplicitPermission(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+
+	_, token := createPasswordUserSession(t, app, "alice", "Password123", "Alice")
+	req := httptest.NewRequest(http.MethodGet, "/api/model-config", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	res := httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("model config status = %d body = %s", res.Code, res.Body.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(res.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("model config json: %v", err)
+	}
+	config, _ := payload["config"].(map[string]any)
+	if config["default_image_model"] == "" || config["default_chat_model"] == "" {
+		t.Fatalf("model config = %#v", payload)
+	}
+}
+
 func TestImageManagementIsScopedByOwner(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()
