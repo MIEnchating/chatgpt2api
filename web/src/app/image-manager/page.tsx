@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { Check, Copy, Download, Eye, Globe2, ImageIcon, LoaderCircle, Lock, MoreHorizontal, RefreshCw, SlidersHorizontal, Sparkles, Trash2, X } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -361,43 +361,73 @@ const IMAGE_MASONRY_BREAKPOINTS = [
   { minWidth: 1024, columns: 3 },
   { minWidth: 640, columns: 2 },
 ] as const;
+const IMAGE_MASONRY_GAP_PX = 16;
 const IMAGE_MANAGER_BATCH_SIZE = 40;
 const IMAGE_MANAGER_LOAD_MORE_DELAY_MS = 220;
 const AUTO_REFRESH_INTERVAL_OPTIONS = [5, 10, 15, 30] as const;
 
 type ImageAutoRefreshInterval = (typeof AUTO_REFRESH_INTERVAL_OPTIONS)[number];
 
-function getImageMasonryColumnCount() {
-  if (typeof window === "undefined") {
+function getImageMasonryColumnCount(containerWidth: number) {
+  if (!Number.isFinite(containerWidth) || containerWidth <= 0) {
     return 1;
   }
 
-  return IMAGE_MASONRY_BREAKPOINTS.find(({ minWidth }) =>
-    window.matchMedia(`(min-width: ${minWidth}px)`).matches,
-  )?.columns ?? 1;
+  return IMAGE_MASONRY_BREAKPOINTS.find(({ minWidth }) => containerWidth >= minWidth)?.columns ?? 1;
 }
 
-function useOrderedImageMasonryColumns(items: ManagedImage[]) {
-  const [columnCount, setColumnCount] = useState(getImageMasonryColumnCount);
+function estimateManagedImageCardHeight(item: ManagedImage, columnWidth: number) {
+  const dimensions = managedImageDimensions(item);
+  return dimensions && columnWidth > 0
+    ? columnWidth * (dimensions.height / dimensions.width)
+    : Math.min(360, Math.max(220, columnWidth));
+}
+
+function useOrderedImageMasonryColumns(items: ManagedImage[], containerRef: RefObject<HTMLElement | null>) {
+  const [containerWidth, setContainerWidth] = useState(0);
 
   useEffect(() => {
-    const updateColumnCount = () => setColumnCount(getImageMasonryColumnCount());
-    const mediaQueries = IMAGE_MASONRY_BREAKPOINTS.map(({ minWidth }) =>
-      window.matchMedia(`(min-width: ${minWidth}px)`),
-    );
+    const container = containerRef.current;
+    if (!container) {
+      return undefined;
+    }
 
-    updateColumnCount();
-    mediaQueries.forEach((query) => query.addEventListener("change", updateColumnCount));
-    return () => mediaQueries.forEach((query) => query.removeEventListener("change", updateColumnCount));
-  }, []);
+    const updateContainerWidth = () => {
+      const nextWidth = container.clientWidth;
+      setContainerWidth((current) => (Math.abs(current - nextWidth) < 1 ? current : nextWidth));
+    };
+
+    updateContainerWidth();
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", updateContainerWidth);
+      return () => window.removeEventListener("resize", updateContainerWidth);
+    }
+
+    const observer = new ResizeObserver(updateContainerWidth);
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [containerRef]);
 
   return useMemo(() => {
+    const columnCount = getImageMasonryColumnCount(containerWidth);
     const columns = Array.from({ length: columnCount }, () => [] as Array<{ item: ManagedImage; index: number }>);
+    const columnHeights = Array.from({ length: columnCount }, () => 0);
+    const columnWidth = columnCount > 0
+      ? (containerWidth - IMAGE_MASONRY_GAP_PX * (columnCount - 1)) / columnCount
+      : 0;
+
     items.forEach((item, index) => {
-      columns[index % columnCount].push({ item, index });
+      let targetColumn = 0;
+      for (let columnIndex = 1; columnIndex < columnHeights.length; columnIndex += 1) {
+        if (columnHeights[columnIndex] < columnHeights[targetColumn]) {
+          targetColumn = columnIndex;
+        }
+      }
+      columns[targetColumn].push({ item, index });
+      columnHeights[targetColumn] += estimateManagedImageCardHeight(item, columnWidth) + IMAGE_MASONRY_GAP_PX;
     });
     return columns;
-  }, [columnCount, items]);
+  }, [containerWidth, items]);
 }
 
 function ImageManagerContent({
@@ -520,7 +550,7 @@ function ImageManagerContent({
   const selectedCount = selectedItems.length;
   const allSelected = filteredItems.length > 0 && selectedCount === filteredItems.length;
   const isMutatingImages = downloadingKey !== null || isDeleting || visibilityMutatingPath !== null;
-  const imageColumns = useOrderedImageMasonryColumns(visibleItems);
+  const imageColumns = useOrderedImageMasonryColumns(visibleItems, imageScrollAreaRef);
   const showImageLoadingState = isLoading && items.length === 0;
   const showImageErrorState = !isLoading && loadError !== "" && items.length === 0;
   const showImageEmptyState = !isLoading && loadError === "" && items.length === 0;
