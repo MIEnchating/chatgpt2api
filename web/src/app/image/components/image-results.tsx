@@ -776,12 +776,12 @@ export function ImageResults({
                       return (
                         <figure
                           key={image.id}
-                          className={cn(
-                            "group relative mb-3 inline-block w-full break-inside-avoid overflow-hidden rounded-[22px] bg-[#f0f0f0] shadow-[0_0_15px_rgba(44,30,116,0.16)] sm:mb-4",
-                            selected && "ring-2 ring-[#1456f0]/90 ring-offset-2",
-                          )}
+                          className="group relative mb-3 inline-block w-full break-inside-avoid overflow-hidden rounded-[22px] bg-[#f0f0f0] shadow-[0_0_15px_rgba(44,30,116,0.16)] sm:mb-4"
                           onMouseLeave={(event) => blurFocusedElementInContainer(event.currentTarget)}
                         >
+                          {selected ? (
+                            <div className="pointer-events-none absolute inset-0 z-10 rounded-[22px] border-[3px] border-[#1456f0]/90" />
+                          ) : null}
                           <button
                             type="button"
                             onClick={(event) => {

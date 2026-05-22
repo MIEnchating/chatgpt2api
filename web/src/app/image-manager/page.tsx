@@ -1535,7 +1535,7 @@ function ImageManagerContent({
                 return (
                   <figure
                     key={item.url}
-                    className={`group relative w-full overflow-hidden rounded-[22px] bg-background shadow-[0_0_15px_rgba(44,30,116,0.16)] ${selected ? "ring-2 ring-[#1456f0]/80 ring-offset-2" : ""}`}
+                    className="group relative w-full overflow-hidden rounded-[22px] bg-background shadow-[0_0_15px_rgba(44,30,116,0.16)]"
                     style={{
                       contentVisibility: "auto",
                       containIntrinsicSize: item.width && item.height ? `${Math.min(360, item.width)}px ${Math.min(480, item.height)}px` : "320px 320px",
@@ -1547,6 +1547,9 @@ function ImageManagerContent({
                       }
                     }}
                   >
+                    {selected ? (
+                      <div className="pointer-events-none absolute inset-0 z-10 rounded-[22px] border-[3px] border-[#1456f0]/85" />
+                    ) : null}
                     <button
                       type="button"
                       onClick={(event) => {
