@@ -1596,6 +1596,10 @@ func readUpload(header *multipart.FileHeader) (protocol.UploadedImage, error) {
 		return protocol.UploadedImage{}, err
 	}
 	contentType := header.Header.Get("Content-Type")
+	contentType = normalizeUploadedImageContentType(contentType)
+	if contentType == "" {
+		contentType = normalizeUploadedImageContentType(http.DetectContentType(data))
+	}
 	if contentType == "" {
 		contentType = "image/png"
 	}
@@ -1604,6 +1608,16 @@ func readUpload(header *multipart.FileHeader) (protocol.UploadedImage, error) {
 		filename = "image.png"
 	}
 	return protocol.UploadedImage{Data: data, Filename: filename, ContentType: contentType}, nil
+}
+
+func normalizeUploadedImageContentType(contentType string) string {
+	contentType = strings.ToLower(strings.TrimSpace(strings.Split(contentType, ";")[0]))
+	switch contentType {
+	case "image/png", "image/jpeg", "image/webp", "image/gif":
+		return contentType
+	default:
+		return ""
+	}
 }
 
 func jsonString(v any) string {

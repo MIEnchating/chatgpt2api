@@ -10,6 +10,7 @@ import (
 	"math"
 	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"strconv"
 	"strings"
 	"time"
@@ -260,7 +261,10 @@ func relayMultipartRequest(ctx context.Context, baseURL, pathValue, apiKey strin
 		if filename == "" {
 			filename = "image.png"
 		}
-		part, err := writer.CreateFormFile("image", filename)
+		header := make(textproto.MIMEHeader)
+		header.Set("Content-Disposition", fmt.Sprintf(`form-data; name="image"; filename="%s"`, escapeMultipartQuote(filename)))
+		header.Set("Content-Type", relayUploadImageContentType(image))
+		part, err := writer.CreatePart(header)
 		if err != nil {
 			return nil, err
 		}
@@ -279,6 +283,31 @@ func relayMultipartRequest(ctx context.Context, baseURL, pathValue, apiKey strin
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.Header.Set("Accept", "application/json")
 	return req, nil
+}
+
+func relayUploadImageContentType(image protocol.UploadedImage) string {
+	contentType := normalizeRelayUploadImageContentType(image.ContentType)
+	if contentType != "" {
+		return contentType
+	}
+	if detected := normalizeRelayUploadImageContentType(http.DetectContentType(image.Data)); detected != "" {
+		return detected
+	}
+	return "image/png"
+}
+
+func normalizeRelayUploadImageContentType(contentType string) string {
+	contentType = strings.ToLower(strings.TrimSpace(strings.Split(contentType, ";")[0]))
+	switch contentType {
+	case "image/png", "image/jpeg", "image/webp", "image/gif":
+		return contentType
+	default:
+		return ""
+	}
+}
+
+func escapeMultipartQuote(value string) string {
+	return strings.NewReplacer("\\", "\\\\", `"`, "\\\"").Replace(value)
 }
 
 func (a *App) relayHTTPClient() *http.Client {
