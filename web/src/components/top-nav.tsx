@@ -295,8 +295,8 @@ export function TopNav() {
 
   return (
     <header className="sticky top-3 z-40 rounded-2xl border border-border bg-card/92 shadow-[0_12px_36px_-28px_rgba(15,23,42,0.55)] backdrop-blur dark:border-border dark:bg-card/92">
-      <div className="flex min-h-14 flex-col gap-2 px-3 py-2 lg:flex-row lg:items-center lg:justify-between lg:gap-4 lg:px-4">
-        <div className="flex min-w-0 items-center justify-between gap-2 lg:justify-start">
+      <div className="flex min-h-14 flex-col gap-2 px-3 py-2 lg:grid lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] lg:items-center lg:gap-4 lg:px-4">
+        <div className="flex min-w-0 items-center justify-between gap-2 lg:col-start-1 lg:justify-self-start">
           <div className="flex h-9 max-w-[190px] items-center gap-2 rounded-xl px-1.5 pr-2 text-[15px] font-semibold text-[#18181b] sm:max-w-none dark:text-foreground">
             <img
               src="/logo-mark.svg"
@@ -320,13 +320,13 @@ export function TopNav() {
         </div>
         <nav
           aria-label="主导航"
-          className="hide-scrollbar -mx-1 flex min-w-0 gap-1 overflow-x-auto overscroll-x-contain px-1 pb-0.5 scroll-px-1 touch-pan-x [-webkit-overflow-scrolling:touch] lg:mx-0 lg:flex-1 lg:justify-center lg:gap-1.5 lg:px-0 lg:pb-0"
+          className="hide-scrollbar -mx-1 flex min-w-0 gap-1 overflow-x-auto overscroll-x-contain px-1 pb-0.5 scroll-px-1 touch-pan-x [-webkit-overflow-scrolling:touch] lg:col-start-2 lg:justify-self-center lg:mx-0 lg:gap-1.5 lg:px-0 lg:pb-0"
         >
           {visibleNavItems.map((item) => (
             <NavPill key={item.href} item={item} pathname={pathname} />
           ))}
         </nav>
-        <div className="hidden items-center justify-end gap-1.5 lg:flex">
+        <div className="hidden items-center justify-end gap-1.5 lg:col-start-3 lg:flex lg:justify-self-end">
           {canAccessImageTasks ? <ImageTaskQueue /> : null}
           <AnnouncementNotifications target="image" className="size-8" />
           <ThemeToggleButton theme={theme} onToggle={handleThemeToggle} />
