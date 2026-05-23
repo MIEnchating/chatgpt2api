@@ -43,6 +43,9 @@ func TestNewAPITokenReaderReadsFirstMatchingGroupTokenAndListsGroups(t *testing.
 	if !ok || strings.Join(groups, ",") != "wrong-group,draw" {
 		t.Fatalf("Status() groups = %#v, want wrong-group,draw", status["groups"])
 	}
+	if groups := reader.ConfiguredTokenGroups(context.Background()); strings.Join(groups, ",") != "wrong-group,draw" {
+		t.Fatalf("ConfiguredTokenGroups() = %#v, want wrong-group,draw", groups)
+	}
 }
 
 func TestNewAPITokenReaderReportsMissingConfiguredGroupToken(t *testing.T) {
@@ -63,6 +66,36 @@ func TestNewAPITokenReaderReportsMissingConfiguredGroupToken(t *testing.T) {
 	status := reader.Status(context.Background(), Identity{Username: "alice"})
 	if status["has_key"] != false || !strings.Contains(status["message"].(string), "draw") {
 		t.Fatalf("Status() = %#v", status)
+	}
+}
+
+func TestNewAPITokenReaderSelectsTokenByNameInConfiguredGroup(t *testing.T) {
+	dbURL := newTestNewAPIDatabase(t)
+	now := time.Now().Unix()
+	insertTestNewAPIUser(t, dbURL, 1, "alice", "alice@example.test")
+	insertTestNewAPITokenNamed(t, dbURL, 1, 1, "codex", "image", "image-key", now+3600, 10, false)
+	insertTestNewAPITokenNamed(t, dbURL, 2, 1, "codex", "codex", "codex-key", now+3600, 10, false)
+
+	reader, err := NewNewAPITokenReader(NewAPITokenReaderConfig{DatabaseURL: dbURL, TokenGroup: "codex"})
+	if err != nil {
+		t.Fatalf("NewNewAPITokenReader() error = %v", err)
+	}
+	defer reader.Close()
+
+	key, err := reader.KeyForIdentityGroupAndName(context.Background(), Identity{Username: "alice"}, "", "codex")
+	if err != nil {
+		t.Fatalf("KeyForIdentityGroupAndName() error = %v", err)
+	}
+	if key != "sk-codex-key" {
+		t.Fatalf("KeyForIdentityGroupAndName() = %q, want selected token name key", key)
+	}
+	status := reader.StatusForGroupAndName(context.Background(), Identity{Username: "alice"}, "", "image")
+	if status["has_key"] != true || status["group"] != "codex" || status["token_name"] != "image" {
+		t.Fatalf("StatusForGroupAndName() = %#v", status)
+	}
+	names, ok := status["token_names"].([]string)
+	if !ok || strings.Join(names, ",") != "image,codex" {
+		t.Fatalf("StatusForGroupAndName() token_names = %#v, want image,codex", status["token_names"])
 	}
 }
 
@@ -155,10 +188,14 @@ func updateTestNewAPIUserBalance(t *testing.T, dbURL string, id int, quota, used
 }
 
 func insertTestNewAPIToken(t *testing.T, dbURL string, id, userID int, group, key string, expiredTime int64, remainQuota int, unlimited bool) {
+	insertTestNewAPITokenNamed(t, dbURL, id, userID, group, "token", key, expiredTime, remainQuota, unlimited)
+}
+
+func insertTestNewAPITokenNamed(t *testing.T, dbURL string, id, userID int, group, name, key string, expiredTime int64, remainQuota int, unlimited bool) {
 	t.Helper()
 	db := openTestNewAPIDatabase(t, dbURL)
 	defer db.Close()
-	if _, err := db.Exec("INSERT INTO tokens (id, user_id, `key`, status, name, expired_time, remain_quota, unlimited_quota, `group`, deleted_at) VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, NULL)", id, userID, key, "token", expiredTime, remainQuota, unlimited, group); err != nil {
+	if _, err := db.Exec("INSERT INTO tokens (id, user_id, `key`, status, name, expired_time, remain_quota, unlimited_quota, `group`, deleted_at) VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, NULL)", id, userID, key, name, expiredTime, remainQuota, unlimited, group); err != nil {
 		t.Fatalf("insert token: %v", err)
 	}
 }

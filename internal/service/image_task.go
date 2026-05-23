@@ -945,6 +945,9 @@ func mergeTaskRoutingMetadata(payload map[string]any, metadata map[string]any) {
 	if tokenGroup := strings.TrimSpace(util.Clean(metadata["token_group"])); tokenGroup != "" {
 		payload["token_group"] = tokenGroup
 	}
+	if tokenName := strings.TrimSpace(util.Clean(metadata["token_name"])); tokenName != "" {
+		payload["token_name"] = tokenName
+	}
 }
 
 func mergeImageOutputOptions(payload map[string]any, options ImageOutputOptions) {

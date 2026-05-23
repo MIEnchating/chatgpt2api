@@ -79,12 +79,9 @@ type ImageComposerProps = {
   imageOutputFormat: ImageOutputFormat;
   imageOutputCompression: string;
   imageBackground: ImageBackground;
-  relayTokenGroup: string;
-  relayTokenGroups: string[];
   imageStreamParameterEnabled: boolean;
   relayKeyConfigured: boolean;
   relayKeyStatusMessage?: string;
-  imageModelStatus?: string;
   highResolutionHint?: ReactNode;
   referenceImages: Array<{ name: string; dataUrl: string }>;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
@@ -103,7 +100,6 @@ type ImageComposerProps = {
   onImageOutputFormatChange: (value: ImageOutputFormat) => void;
   onImageOutputCompressionChange: (value: string) => void;
   onImageBackgroundChange: (value: ImageBackground) => void;
-  onRelayTokenGroupChange: (value: string) => void;
   onSubmit: () => void | Promise<void>;
   onOpenPromptMarket: () => void;
   onReferenceImageChange: (files: File[]) => void | Promise<void>;
@@ -306,12 +302,9 @@ export function ImageComposer({
   imageOutputFormat,
   imageOutputCompression,
   imageBackground,
-  relayTokenGroup,
-  relayTokenGroups,
   imageStreamParameterEnabled,
   relayKeyConfigured,
   relayKeyStatusMessage,
-  imageModelStatus,
   highResolutionHint,
   referenceImages,
   textareaRef,
@@ -330,7 +323,6 @@ export function ImageComposer({
   onImageOutputFormatChange,
   onImageOutputCompressionChange,
   onImageBackgroundChange,
-  onRelayTokenGroupChange,
   onSubmit,
   onOpenPromptMarket,
   onReferenceImageChange,
@@ -367,8 +359,6 @@ export function ImageComposer({
     : "自动";
   const imageBackgroundLabel =
     IMAGE_BACKGROUND_OPTIONS.find((option) => option.value === imageBackground)?.label || "自动";
-  const relayTokenGroupOptions = relayTokenGroups.length > 0 ? relayTokenGroups : relayTokenGroup ? [relayTokenGroup] : [];
-  const relayTokenGroupLabel = relayTokenGroup || relayTokenGroupOptions[0] || "未选择";
   const compressionSupported = supportsImageOutputCompression(imageOutputFormat);
   const compressionDisabled = !compressionSupported;
   const officialImageRoute = usesOfficialImageRoute(imageModel);
@@ -381,7 +371,7 @@ export function ImageComposer({
   const effectiveImageResolution = structuredImageParameters ? imageResolution : "auto";
   const submitLabel = composerMode === "chat" ? "发送对话" : referenceImages.length > 0 ? "编辑图片" : "生成图片";
   const relayApiKeyMissing = !relayKeyConfigured;
-  const relayApiKeyMissingMessage = relayKeyStatusMessage || "请先在云棉为当前用户创建指定分组的令牌";
+  const relayApiKeyMissingMessage = relayKeyStatusMessage || "请先在云棉为当前用户创建可用令牌";
   const computedImageSize = useMemo(
     () =>
       buildImageSize({
@@ -1232,36 +1222,7 @@ export function ImageComposer({
               "mt-2 flex flex-wrap items-center justify-between gap-2 px-2 text-[11px] leading-5",
               relayApiKeyMissing ? "text-rose-600 dark:text-rose-400" : "text-[#8e8e93] dark:text-muted-foreground",
             )}>
-              <div className="flex min-w-0 flex-wrap items-center gap-2">
-                {relayTokenGroupOptions.length > 0 ? (
-                  <Select value={relayTokenGroup || relayTokenGroupOptions[0]} onValueChange={onRelayTokenGroupChange}>
-                    <SelectTrigger
-                      className="h-7 w-[min(12rem,52vw)] rounded-full border-[#e5e7eb] bg-white px-2.5 py-0 text-xs font-medium text-[#45515e] shadow-none focus-visible:ring-0 dark:border-border dark:bg-background/70 dark:text-muted-foreground [&_svg]:size-3.5"
-                      aria-label="云棉令牌分组"
-                      title="云棉令牌分组"
-                    >
-                      <SelectValue>{relayTokenGroupLabel}</SelectValue>
-                    </SelectTrigger>
-                    <SelectContent
-                      align="start"
-                      side="top"
-                      sideOffset={8}
-                      collisionPadding={12}
-                      className="z-[120] max-h-[min(var(--radix-select-content-available-height),14rem)] w-[min(12rem,calc(100vw-2rem))] overflow-x-hidden overscroll-contain rounded-[16px] border-[#e5e7eb] bg-white p-1.5 shadow-[0_18px_46px_-26px_rgba(15,23,42,0.35)] dark:border-border dark:bg-card"
-                    >
-                      <SelectGroup>
-                        {relayTokenGroupOptions.map((group) => (
-                          <SelectItem key={group} value={group}>
-                            {group}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    </SelectContent>
-                  </Select>
-                ) : null}
-                <span>{relayApiKeyMissing ? relayApiKeyMissingMessage : "已读取云棉指定分组令牌"}</span>
-              </div>
-              {imageModelStatus ? <span>{imageModelStatus}</span> : null}
+              <span>{relayApiKeyMissing ? relayApiKeyMissingMessage : "已读取云棉令牌"}</span>
               {imageStreamParameterEnabled && composerMode === "image" ? <span>流式参数已开启</span> : null}
               <span>{composerMode === "chat" ? "对话请求" : `预计生成 ${imageCount || "1"} 张`}</span>
             </div>

@@ -210,6 +210,7 @@ export type SettingsConfig = {
   base_url?: string;
   relay_base_url?: string;
   newapi_token_group?: string;
+  newapi_token_groups?: string[];
   image_models?: string[] | string;
   chat_models?: string[] | string;
   default_image_model?: string;
@@ -434,8 +435,10 @@ export type ProfileRelayKeyStatus = {
   has_key: boolean;
   key_preview: string;
   group?: string;
+  token_name?: string;
   configured_group?: string;
   groups?: string[];
+  token_names?: string[];
   source?: "newapi" | string;
   message?: string;
 };
@@ -444,8 +447,10 @@ export type ProfileBalanceStatus = {
   has_balance: boolean;
   source?: "newapi" | string;
   token_group?: string;
+  token_name?: string;
   configured_group?: string;
   token_groups?: string[];
+  token_names?: string[];
   token_message?: string;
   user_id?: number;
   username?: string;
@@ -583,10 +588,16 @@ export async function fetchProfile() {
   return httpRequest<LoginResponse>("/api/profile");
 }
 
-export async function fetchProfileRelayKey(group?: string) {
+export const PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY = "chatgpt2api:profile_relay_token_name";
+export const PROFILE_RELAY_TOKEN_NAME_CHANGED_EVENT = "chatgpt2api:profile-relay-token-name-changed";
+
+export async function fetchProfileRelayKey(group?: string, tokenName?: string) {
   const params = new URLSearchParams();
   if (group?.trim()) {
     params.set("group", group.trim());
+  }
+  if (tokenName?.trim()) {
+    params.set("token_name", tokenName.trim());
   }
   return httpRequest<ProfileRelayKeyStatus>(`/api/profile/relay-key${params.toString() ? `?${params.toString()}` : ""}`);
 }
@@ -704,6 +715,7 @@ export async function createImageGenerationTask(
     moderation?: string;
   },
   relayTokenGroup?: string,
+  relayTokenName?: string,
 ) {
   return httpRequest<CreationTask>("/api/creation-tasks/image-generations", {
     method: "POST",
@@ -719,6 +731,7 @@ export async function createImageGenerationTask(
       ...(toolOptions?.background ? { background: toolOptions.background } : {}),
       ...(toolOptions?.moderation ? { moderation: toolOptions.moderation } : {}),
       ...(relayTokenGroup ? { token_group: relayTokenGroup } : {}),
+      ...(relayTokenName ? { token_name: relayTokenName } : {}),
       ...(messages?.length ? { messages } : {}),
       visibility,
       n: count,
@@ -745,6 +758,7 @@ export async function createImageEditTask(
     inputImageMask?: string;
   },
   relayTokenGroup?: string,
+  relayTokenName?: string,
 ) {
   const formData = new FormData();
   const uploadFiles = Array.isArray(files) ? files : [files];
@@ -784,6 +798,9 @@ export async function createImageEditTask(
   if (relayTokenGroup) {
     formData.append("token_group", relayTokenGroup);
   }
+  if (relayTokenName) {
+    formData.append("token_name", relayTokenName);
+  }
   if (messages?.length) {
     formData.append("messages", JSON.stringify(messages));
   }
@@ -803,6 +820,7 @@ export async function createChatCompletionTask(
   messages: CreationTaskMessage[],
   referenceImages?: { name: string; dataUrl: string }[],
   relayTokenGroup?: string,
+  relayTokenName?: string,
 ) {
   const body: Record<string, unknown> = {
     client_task_id: clientTaskId,
@@ -810,6 +828,7 @@ export async function createChatCompletionTask(
     model,
     messages,
     ...(relayTokenGroup ? { token_group: relayTokenGroup } : {}),
+    ...(relayTokenName ? { token_name: relayTokenName } : {}),
   };
 
   if (referenceImages && referenceImages.length > 0) {
@@ -840,12 +859,14 @@ export async function streamChatCompletion(
   onText: (text: string) => void,
   signal?: AbortSignal,
   relayTokenGroup?: string,
+  relayTokenName?: string,
 ) {
   const body: Record<string, unknown> = {
     model,
     messages,
     stream: true,
     ...(relayTokenGroup ? { token_group: relayTokenGroup } : {}),
+    ...(relayTokenName ? { token_name: relayTokenName } : {}),
   };
 
   if (referenceImages && referenceImages.length > 0) {

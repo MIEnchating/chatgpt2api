@@ -15,6 +15,13 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { testProxy, type ProxyTestResult } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -119,6 +126,17 @@ function modelListInputValue(value: unknown) {
   return Array.isArray(value) ? value.join(", ") : String(value || "");
 }
 
+function tokenGroupOptions(config: { newapi_token_group?: string; newapi_token_groups?: string[] } | null) {
+  const current = String(config?.newapi_token_group || "codex").trim() || "codex";
+  return Array.from(
+    new Set(
+      [current, ...(Array.isArray(config?.newapi_token_groups) ? config.newapi_token_groups : [])]
+        .map((group) => String(group || "").trim())
+        .filter(Boolean),
+    ),
+  );
+}
+
 export function ConfigCard() {
   const [isTestingProxy, setIsTestingProxy] = useState(false);
   const [proxyTestResult, setProxyTestResult] =
@@ -148,6 +166,8 @@ export function ConfigCard() {
   const setRelayBaseUrl = useSettingsStore((state) => state.setRelayBaseUrl);
   const setNewAPITokenGroup = useSettingsStore((state) => state.setNewAPITokenGroup);
   const saveConfig = useSettingsStore((state) => state.saveConfig);
+  const newAPITokenGroup = String(config?.newapi_token_group || "codex").trim() || "codex";
+  const newAPITokenGroupOptions = tokenGroupOptions(config);
 
   const handleTestProxy = async () => {
     const candidate = String(config?.proxy || "").trim();
@@ -271,13 +291,18 @@ export function ConfigCard() {
               <ConfigFieldLabel htmlFor="settings-newapi-token-group">
                 云棉默认令牌分组
               </ConfigFieldLabel>
-              <Input
-                id="settings-newapi-token-group"
-                value={String(config?.newapi_token_group || "codex")}
-                onChange={(event) => setNewAPITokenGroup(event.target.value)}
-                placeholder="codex"
-                className={settingsInputClassName}
-              />
+              <Select value={newAPITokenGroup} onValueChange={setNewAPITokenGroup}>
+                <SelectTrigger id="settings-newapi-token-group" className={settingsInputClassName}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {newAPITokenGroupOptions.map((group) => (
+                    <SelectItem key={group} value={group}>
+                      {group}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </Field>
             <Field className="min-w-0 gap-2 rounded-xl bg-muted/35 px-3 py-3 sm:col-span-2">
               <label

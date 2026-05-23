@@ -69,6 +69,8 @@ import {
   IMAGE_CREATION_MODEL_OPTIONS,
   IMAGE_MODEL_ROUTE_DETAILS,
   IMAGE_OUTPUT_FORMAT_OPTIONS,
+  PROFILE_RELAY_TOKEN_NAME_CHANGED_EVENT,
+  PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY,
   isImageBackground,
   isImageCreationModel,
   isImageModel,
@@ -139,8 +141,7 @@ const IMAGE_QUALITY_STORAGE_KEY = "chatgpt2api:image_last_quality";
 const IMAGE_OUTPUT_FORMAT_STORAGE_KEY = "chatgpt2api:image_last_output_format";
 const IMAGE_OUTPUT_COMPRESSION_STORAGE_KEY = "chatgpt2api:image_last_output_compression";
 const IMAGE_BACKGROUND_STORAGE_KEY = "chatgpt2api:image_last_background";
-const RELAY_TOKEN_GROUP_STORAGE_KEY = "chatgpt2api:image_relay_token_group";
-const NEWAPI_TOKEN_MISSING_MESSAGE = "请先在云棉为当前用户创建指定分组的令牌";
+const NEWAPI_TOKEN_MISSING_MESSAGE = "请先在云棉为当前用户创建可用令牌";
 const DEFAULT_IMAGE_OUTPUT_FORMAT: ImageOutputFormat = "png";
 const DEFAULT_IMAGE_BACKGROUND: ImageBackground = "auto";
 const activeConversationQueueIds = new Set<string>();
@@ -168,6 +169,7 @@ type EditingTurnDraft = {
   outputCompression: string;
   background: ImageBackground;
   tokenGroup: string;
+  tokenName: string;
   visibility: ImageVisibility;
   referenceImages: StoredReferenceImage[];
 };
@@ -819,11 +821,29 @@ function getStoredImageBackground(): ImageBackground {
   return isImageBackground(storedBackground) ? storedBackground : DEFAULT_IMAGE_BACKGROUND;
 }
 
-function getStoredRelayTokenGroup() {
+function getStoredRelayTokenName() {
   if (typeof window === "undefined") {
     return "";
   }
-  return window.localStorage.getItem(RELAY_TOKEN_GROUP_STORAGE_KEY) || "";
+  return window.localStorage.getItem(PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY) || "";
+}
+
+function normalizeRelayTokenNames(values: unknown) {
+  return Array.isArray(values)
+    ? Array.from(new Set(values.map((name) => String(name || "").trim()).filter(Boolean)))
+    : [];
+}
+
+function nextRelayTokenName(current: string, options: string[], fallback?: string) {
+  const normalizedCurrent = current.trim();
+  if (normalizedCurrent && options.some((name) => name === normalizedCurrent)) {
+    return normalizedCurrent;
+  }
+  const normalizedFallback = String(fallback || "").trim();
+  if (normalizedFallback && options.some((name) => name === normalizedFallback)) {
+    return normalizedFallback;
+  }
+  return options[0] || normalizedFallback || "";
 }
 
 function ensureModelOption(options: ReadonlyArray<ImageModelOption>, model: ImageModel): ImageModelOption[] {
@@ -1256,15 +1276,13 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   const [imageBackground, setImageBackground] = useState<ImageBackground>(getStoredImageBackground);
   const [relayKeyConfigured, setRelayKeyConfigured] = useState(false);
   const [relayKeyStatusMessage, setRelayKeyStatusMessage] = useState(NEWAPI_TOKEN_MISSING_MESSAGE);
-  const [relayTokenGroup, setRelayTokenGroup] = useState(getStoredRelayTokenGroup);
-  const [relayTokenGroups, setRelayTokenGroups] = useState<string[]>([]);
   const [configuredRelayTokenGroup, setConfiguredRelayTokenGroup] = useState("");
+  const [relayTokenName, setRelayTokenName] = useState(getStoredRelayTokenName);
   const relayKeyMissingMessage = relayKeyStatusMessage || NEWAPI_TOKEN_MISSING_MESSAGE;
   const [relayImageModelOptions, setRelayImageModelOptions] = useState<ImageModelOption[]>(() =>
     ensureDefaultImageModelOption(IMAGE_CREATION_MODEL_OPTIONS),
   );
   const [chatModelOptions, setChatModelOptions] = useState<ImageModelOption[]>(CHAT_MODEL_OPTIONS);
-  const [modelConfigStatus, setModelConfigStatus] = useState("模型由管理员配置");
   const [imageStreamParameterEnabled, setImageStreamParameterEnabled] = useState(false);
   const [defaultImageVisibility, setDefaultImageVisibility] = useState<ImageVisibility>("private");
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
@@ -1387,7 +1405,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     [composerMode, imageCreationModelOptions, imageModel],
   );
   const composerModelOptions = composerMode === "chat" ? chatModelOptions : composerImageModelOptions;
-  const imageModelStatus = modelConfigStatus;
   const editingTurnModelOptions = useMemo(() => {
     if (!editingTurnDraft) {
       return [];
@@ -1400,13 +1417,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     () => conversations.find((item) => item.id === selectedConversationId) ?? null,
     [conversations, selectedConversationId],
   );
-  const relayTokenGroupOptions = useMemo(() => {
-    const groups = [relayTokenGroup, configuredRelayTokenGroup, ...relayTokenGroups]
-      .map((group) => group.trim())
-      .filter(Boolean);
-    return Array.from(new Set(groups));
-  }, [configuredRelayTokenGroup, relayTokenGroup, relayTokenGroups]);
-  const activeRelayTokenGroup = relayTokenGroup || configuredRelayTokenGroup || relayTokenGroupOptions[0] || "";
+  const activeRelayTokenGroup = configuredRelayTokenGroup;
+  const activeRelayTokenName = relayTokenName.trim();
   const activeTaskCount = useMemo(
     () =>
       conversations.reduce((sum, conversation) => {
@@ -1766,14 +1778,12 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         setRelayImageModelOptions(ensureDefaultImageModelOption(imageOptions, nextImageDefault));
         setChatModelOptions(ensureDefaultImageModelOption(chatOptions, nextChatDefault));
         setImageStreamParameterEnabled(Boolean(result.config.image_stream_parameter_enabled));
-        setModelConfigStatus("模型由管理员配置");
       })
       .catch((error) => {
         if (ignore) {
           return;
         }
-        const message = error instanceof Error ? error.message : "请求失败";
-        setModelConfigStatus(`模型配置加载失败：${message}`);
+        void error;
         setRelayImageModelOptions(ensureDefaultImageModelOption(IMAGE_CREATION_MODEL_OPTIONS));
         setChatModelOptions(CHAT_MODEL_OPTIONS);
       });
@@ -1813,27 +1823,26 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     if (typeof window === "undefined") {
       return;
     }
-    if (relayTokenGroup) {
-      window.localStorage.setItem(RELAY_TOKEN_GROUP_STORAGE_KEY, relayTokenGroup);
-      return;
-    }
-    window.localStorage.removeItem(RELAY_TOKEN_GROUP_STORAGE_KEY);
-  }, [relayTokenGroup]);
+    const handleTokenNameChange = (event: Event) => {
+      const tokenName = (event as CustomEvent<{ tokenName?: string }>).detail?.tokenName;
+      setRelayTokenName(String(tokenName || window.localStorage.getItem(PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY) || ""));
+    };
+    window.addEventListener(PROFILE_RELAY_TOKEN_NAME_CHANGED_EVENT, handleTokenNameChange);
+    window.addEventListener("storage", handleTokenNameChange);
+    return () => {
+      window.removeEventListener(PROFILE_RELAY_TOKEN_NAME_CHANGED_EVENT, handleTokenNameChange);
+      window.removeEventListener("storage", handleTokenNameChange);
+    };
+  }, []);
 
   const refreshRelayKeyStatus = useCallback(async () => {
     clearStoredRelayApiKey();
     try {
-      const status = await fetchProfileRelayKey(relayTokenGroup);
-      const groups = Array.isArray(status.groups) ? status.groups.filter((group) => group.trim()) : [];
-      const configuredGroup = status.configured_group || "";
-      const statusGroup = status.group || "";
-      setRelayTokenGroups(groups);
-      setConfiguredRelayTokenGroup(configuredGroup);
-      setRelayTokenGroup((current) => {
-        if (current && groups.some((group) => group === current)) {
-          return current;
-        }
-        return statusGroup || configuredGroup || groups[0] || current;
+      const status = await fetchProfileRelayKey(undefined, relayTokenName);
+      setConfiguredRelayTokenGroup(status.configured_group || status.group || "");
+      setRelayTokenName((current) => {
+        const names = normalizeRelayTokenNames(status.token_names);
+        return nextRelayTokenName(current, names, status.token_name);
       });
       setRelayKeyConfigured(status.has_key);
       setRelayKeyStatusMessage(status.has_key ? "" : status.message || NEWAPI_TOKEN_MISSING_MESSAGE);
@@ -1841,7 +1850,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       setRelayKeyConfigured(false);
       setRelayKeyStatusMessage("无法读取云棉令牌状态，请稍后重试");
     }
-  }, [relayTokenGroup]);
+  }, [relayTokenName]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -2344,10 +2353,11 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
           : String(targetTurn.outputCompression),
       background: isImageBackground(targetTurn.background) ? targetTurn.background : DEFAULT_IMAGE_BACKGROUND,
       tokenGroup: targetTurn.tokenGroup || activeRelayTokenGroup,
+      tokenName: targetTurn.tokenName || activeRelayTokenName,
       visibility: targetTurn.visibility || "private",
       referenceImages: targetTurn.mode === "chat" ? [] : targetTurn.referenceImages,
     });
-  }, [activeRelayTokenGroup, chatModelOptions, defaultChatModel, defaultImageModel, imageCreationModelOptions]);
+  }, [activeRelayTokenGroup, activeRelayTokenName, chatModelOptions, defaultChatModel, defaultImageModel, imageCreationModelOptions]);
 
   const handleEditReferenceImageChange = useCallback(async (files: File[]) => {
     if (files.length === 0) {
@@ -2504,6 +2514,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
           throw new Error("未找到可用的参考图");
         }
         const activeTurnRelayTokenGroup = activeTurn.tokenGroup || activeRelayTokenGroup;
+        const activeTurnRelayTokenName = activeTurn.tokenName || activeRelayTokenName;
         const taskMessages = buildCreationTaskMessages(snapshot, activeTurn.id);
         const activeTurnSizeRequest =
           activeTurn.mode === "chat"
@@ -2599,6 +2610,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
               },
               controller.signal,
               activeTurnRelayTokenGroup,
+              activeTurnRelayTokenName,
             );
             if (cancelledTurnIdsRef.current.has(activeTurnKey)) {
               return;
@@ -2675,6 +2687,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
               taskOutputCompression,
               taskToolOptions,
               activeTurnRelayTokenGroup,
+              activeTurnRelayTokenName,
             );
           }
           return createImageGenerationTask(
@@ -2691,6 +2704,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
             taskOutputCompression,
             taskToolOptions,
             activeTurnRelayTokenGroup,
+            activeTurnRelayTokenName,
           );
         };
         updateTurnProgress(conversationId, activeTurn.id, {
@@ -2801,7 +2815,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         }
       }
     },
-    [activeRelayTokenGroup, clearTurnProgress, updateConversation, updateTurnProgress],
+    [activeRelayTokenGroup, activeRelayTokenName, clearTurnProgress, updateConversation, updateTurnProgress],
   );
   useEffect(() => {
     for (const conversation of conversations) {
@@ -3182,6 +3196,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
               outputCompression: draftOutputCompression,
               background: mode === "chat" ? undefined : draft.background,
               tokenGroup: draft.tokenGroup || undefined,
+              tokenName: draft.tokenName || undefined,
               visibility: mode === "chat" ? "private" : draft.visibility,
             };
             if (!regenerate) {
@@ -3321,6 +3336,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         outputCompression: effectiveImageMode === "chat" ? undefined : effectiveOutputCompression,
         background: effectiveImageMode === "chat" ? undefined : imageBackground,
         tokenGroup: activeRelayTokenGroup || undefined,
+        tokenName: activeRelayTokenName || undefined,
         visibility: effectiveImageMode === "chat" ? "private" : defaultImageVisibility,
         images: Array.from({ length: requestedCount }, (_, index): StoredImage => {
           const imageId = `${turnId}-${index}`;
@@ -3957,12 +3973,9 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                 imageOutputFormat={imageOutputFormat}
                 imageOutputCompression={imageOutputCompression}
                 imageBackground={imageBackground}
-                relayTokenGroup={activeRelayTokenGroup}
-                relayTokenGroups={relayTokenGroupOptions}
                 imageStreamParameterEnabled={imageStreamParameterEnabled}
                 relayKeyConfigured={relayKeyConfigured}
                 relayKeyStatusMessage={relayKeyMissingMessage}
-                imageModelStatus={composerMode === "image" ? imageModelStatus : undefined}
                 highResolutionHint={highResolutionHint}
                 referenceImages={referenceImages}
                 textareaRef={textareaRef}
@@ -3981,7 +3994,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                 onImageOutputFormatChange={setImageOutputFormat}
                 onImageOutputCompressionChange={setImageOutputCompression}
                 onImageBackgroundChange={setImageBackground}
-                onRelayTokenGroupChange={setRelayTokenGroup}
                 onSubmit={handleSubmit}
                 onOpenPromptMarket={() => setIsPromptMarketOpen(true)}
                 onReferenceImageChange={handleReferenceImageChange}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertCircle, LoaderCircle, RefreshCw, Save, UserCircle2, UserPen, WalletCards } from "lucide-react";
 import { toast } from "sonner";
 
@@ -11,8 +11,19 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   fetchProfileBalance,
+  fetchProfileRelayKey,
+  PROFILE_RELAY_TOKEN_NAME_CHANGED_EVENT,
+  PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY,
   type ProfileBalanceStatus,
+  type ProfileRelayKeyStatus,
   updateProfileName,
 } from "@/lib/api";
 import { authSessionFromLoginResponse, setVerifiedAuthSession } from "@/lib/session";
@@ -65,15 +76,34 @@ function formatYunMianQuota(value: number | undefined) {
     return "-";
   }
   return new Intl.NumberFormat("zh-CN", {
-    maximumFractionDigits: 6,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(value / 500000);
 }
 
-function formatGroupList(groups: string[] | undefined) {
-  if (!Array.isArray(groups) || groups.length === 0) {
-    return "-";
+function getStoredRelayTokenName() {
+  if (typeof window === "undefined") {
+    return "";
   }
-  return groups.join(", ");
+  return window.localStorage.getItem(PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY) || "";
+}
+
+function normalizeTokenNames(values: unknown) {
+  return Array.isArray(values)
+    ? Array.from(new Set(values.map((name) => String(name || "").trim()).filter(Boolean)))
+    : [];
+}
+
+function nextTokenNameForOptions(current: string, options: string[], fallback?: string) {
+  const normalizedCurrent = current.trim();
+  if (normalizedCurrent && options.some((name) => name === normalizedCurrent)) {
+    return normalizedCurrent;
+  }
+  const normalizedFallback = String(fallback || "").trim();
+  if (normalizedFallback && options.some((name) => name === normalizedFallback)) {
+    return normalizedFallback;
+  }
+  return options[0] || normalizedFallback || "";
 }
 
 type InfoRowProps = {
@@ -98,13 +128,29 @@ function InfoRow({ label, value, code }: InfoRowProps) {
 function BalanceCard({
   balance,
   isLoading,
+  isLoadingRelayKey,
   onRefresh,
+  onTokenNameChange,
+  relayKeyStatus,
+  selectedTokenName,
+  tokenNameOptions,
 }: {
   balance: ProfileBalanceStatus | null;
   isLoading: boolean;
+  isLoadingRelayKey: boolean;
   onRefresh: () => void;
+  onTokenNameChange: (value: string) => void;
+  relayKeyStatus: ProfileRelayKeyStatus | null;
+  selectedTokenName: string;
+  tokenNameOptions: string[];
 }) {
   const title = balance?.has_balance ? balance.display_name || balance.username || "云棉用户" : "云棉";
+  const activeTokenName = selectedTokenName || tokenNameOptions[0] || balance?.token_name || relayKeyStatus?.token_name || "";
+  const keyStatusText = isLoadingRelayKey
+    ? "正在读取密钥"
+    : relayKeyStatus?.has_key
+      ? relayKeyStatus.key_preview || "已读取"
+      : relayKeyStatus?.message || balance?.token_message || "未读取到可用密钥";
 
   return (
     <Card>
@@ -144,17 +190,30 @@ function BalanceCard({
             <InfoRow label="当前余额" value={formatYunMianQuota(balance.quota)} />
             <InfoRow label="已用额度" value={formatYunMianQuota(balance.used_quota)} />
             <InfoRow label="请求次数" value={formatNumber(balance.request_count)} />
-            <InfoRow label="用户分组" value={balance.user_group || "-"} />
-            <InfoRow label="令牌分组" value={balance.token_group || "-"} />
-            <InfoRow label="可用令牌分组" value={formatGroupList(balance.token_groups)} />
+            <div className="flex min-w-0 flex-col gap-1 rounded-lg border border-border bg-muted/30 px-3 py-2">
+              <span className="text-xs text-muted-foreground">令牌名称</span>
+              <Select value={activeTokenName} onValueChange={onTokenNameChange}>
+                <SelectTrigger className="h-8 rounded-lg bg-background px-2.5 text-sm font-medium shadow-none">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {(tokenNameOptions.length > 0 ? tokenNameOptions : [activeTokenName]).filter(Boolean).map((name) => (
+                    <SelectItem key={name} value={name}>
+                      {name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <InfoRow label="当前密钥" value={keyStatusText} code />
             <InfoRow label="云棉用户名" value={balance.username || "-"} code />
             <InfoRow label="邮箱" value={balance.email || "-"} />
             <InfoRow label="云棉用户 ID" value={balance.user_id ? String(balance.user_id) : "-"} code />
-            {balance.token_message ? (
+            {!relayKeyStatus?.has_key && (balance.token_message || relayKeyStatus?.message) ? (
               <div className="sm:col-span-2 xl:col-span-4">
                 <div className="flex min-h-10 items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
                   <AlertCircle className="size-4 shrink-0" />
-                  <span>{balance.token_message}</span>
+                  <span>{relayKeyStatus?.message || balance.token_message}</span>
                 </div>
               </div>
             ) : null}
@@ -174,11 +233,25 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
   const [currentSession, setCurrentSession] = useState(session);
   const [profileName, setProfileName] = useState(session.name || "");
   const [balance, setBalance] = useState<ProfileBalanceStatus | null>(null);
+  const [relayKeyStatus, setRelayKeyStatus] = useState<ProfileRelayKeyStatus | null>(null);
+  const [selectedTokenName, setSelectedTokenName] = useState(getStoredRelayTokenName);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [isLoadingBalance, setIsLoadingBalance] = useState(true);
+  const [isLoadingRelayKey, setIsLoadingRelayKey] = useState(false);
 
   const isProfileNameDirty = profileName.trim() !== (currentSession.name || "");
   const roleLabel = sessionRoleLabel(currentSession);
+  const tokenNameOptions = useMemo(() => {
+    const statusNames = normalizeTokenNames(relayKeyStatus?.token_names);
+    if (statusNames.length > 0) {
+      return statusNames;
+    }
+    const balanceNames = normalizeTokenNames(balance?.token_names);
+    if (balanceNames.length > 0) {
+      return balanceNames;
+    }
+    return normalizeTokenNames([selectedTokenName, balance?.token_name, relayKeyStatus?.token_name]);
+  }, [balance, relayKeyStatus, selectedTokenName]);
 
   useEffect(() => {
     setCurrentSession(session);
@@ -188,7 +261,12 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
   const loadBalance = useCallback(async () => {
     setIsLoadingBalance(true);
     try {
-      setBalance(await fetchProfileBalance());
+      const nextBalance = await fetchProfileBalance();
+      setBalance(nextBalance);
+      setSelectedTokenName((current) => {
+        const names = normalizeTokenNames(nextBalance.token_names);
+        return nextTokenNameForOptions(current, names, nextBalance.token_name);
+      });
     } catch (error) {
       setBalance({
         has_balance: false,
@@ -199,6 +277,59 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
       setIsLoadingBalance(false);
     }
   }, []);
+
+  useEffect(() => {
+    if (!selectedTokenName && tokenNameOptions[0]) {
+      setSelectedTokenName(tokenNameOptions[0]);
+    }
+  }, [selectedTokenName, tokenNameOptions]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    if (selectedTokenName) {
+      window.localStorage.setItem(PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY, selectedTokenName);
+    } else {
+      window.localStorage.removeItem(PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY);
+    }
+    window.dispatchEvent(new CustomEvent(PROFILE_RELAY_TOKEN_NAME_CHANGED_EVENT, { detail: { tokenName: selectedTokenName } }));
+  }, [selectedTokenName]);
+
+  useEffect(() => {
+    let ignore = false;
+    setIsLoadingRelayKey(true);
+    void fetchProfileRelayKey(undefined, selectedTokenName)
+      .then((status) => {
+        if (ignore) {
+          return;
+        }
+        setRelayKeyStatus(status);
+        setSelectedTokenName((current) => {
+          const names = normalizeTokenNames(status.token_names);
+          return nextTokenNameForOptions(current, names, status.token_name);
+        });
+      })
+      .catch((error) => {
+        if (ignore) {
+          return;
+        }
+        setRelayKeyStatus({
+          has_key: false,
+          key_preview: "",
+          source: "newapi",
+          message: error instanceof Error ? error.message : "读取云棉密钥失败",
+        });
+      })
+      .finally(() => {
+        if (!ignore) {
+          setIsLoadingRelayKey(false);
+        }
+      });
+    return () => {
+      ignore = true;
+    };
+  }, [currentSession.key, selectedTokenName]);
 
   useEffect(() => {
     void loadBalance();
@@ -262,7 +393,16 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
         </div>
 
         <div className="flex flex-col gap-5">
-          <BalanceCard balance={balance} isLoading={isLoadingBalance} onRefresh={() => void loadBalance()} />
+          <BalanceCard
+            balance={balance}
+            isLoading={isLoadingBalance}
+            isLoadingRelayKey={isLoadingRelayKey}
+            relayKeyStatus={relayKeyStatus}
+            selectedTokenName={selectedTokenName}
+            tokenNameOptions={tokenNameOptions}
+            onTokenNameChange={setSelectedTokenName}
+            onRefresh={() => void loadBalance()}
+          />
 
           <Card>
             <CardHeader>

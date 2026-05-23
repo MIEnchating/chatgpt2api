@@ -35,6 +35,17 @@ function normalizeConfig(config: SettingsConfig): SettingsConfig {
     positionX: Number(config.login_page_image_position_x),
     positionY: Number(config.login_page_image_position_y),
   });
+  const newAPITokenGroup =
+    typeof config.newapi_token_group === "string" && config.newapi_token_group.trim()
+      ? config.newapi_token_group.trim()
+      : "codex";
+  const newAPITokenGroups = Array.from(
+    new Set(
+      [newAPITokenGroup, ...(Array.isArray(config.newapi_token_groups) ? config.newapi_token_groups : [])]
+        .map((group) => String(group || "").trim())
+        .filter(Boolean),
+    ),
+  );
   return {
     ...config,
     refresh_account_interval_minute: Number(config.refresh_account_interval_minute || 5),
@@ -58,10 +69,8 @@ function normalizeConfig(config: SettingsConfig): SettingsConfig {
       typeof config.relay_base_url === "string" && config.relay_base_url.trim()
         ? config.relay_base_url
         : "http://newapi:3000",
-    newapi_token_group:
-      typeof config.newapi_token_group === "string" && config.newapi_token_group.trim()
-        ? config.newapi_token_group
-        : "codex",
+    newapi_token_group: newAPITokenGroup,
+    newapi_token_groups: newAPITokenGroups,
     login_page_image_url: typeof config.login_page_image_url === "string" ? config.login_page_image_url : "",
     login_page_image_mode: normalizeLoginPageImageMode(config.login_page_image_mode),
     login_page_image_zoom: loginImageTransform.zoom,
@@ -174,6 +183,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         relay_base_url: String(config.relay_base_url || "").trim(),
         newapi_token_group: String(config.newapi_token_group || "codex").trim(),
       };
+      delete payload.newapi_token_groups;
 
       const data = await updateSettingsConfig(payload);
       set({

@@ -171,7 +171,7 @@ func (a *App) handleProfileRelayKey(w http.ResponseWriter, r *http.Request) {
 			util.WriteJSON(w, http.StatusOK, map[string]any{"has_key": false, "key_preview": "", "source": "newapi", "message": "请先配置云棉数据库连接，并在云棉创建指定分组的令牌"})
 			return
 		}
-		util.WriteJSON(w, http.StatusOK, a.newAPIKeys.StatusForGroup(r.Context(), identity, r.URL.Query().Get("group")))
+		util.WriteJSON(w, http.StatusOK, a.newAPIKeys.StatusForGroupAndName(r.Context(), identity, r.URL.Query().Get("group"), r.URL.Query().Get("token_name")))
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
@@ -1164,7 +1164,7 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == "/api/creation-tasks/image-generations" && r.Method == http.MethodPost {
 		body, _ := readJSONMap(r)
-		if _, err := a.relayAPIKeyForIdentityGroup(r.Context(), identity, selectedRelayTokenGroupFromPayload(body)); err != nil {
+		if _, err := a.relayAPIKeyForIdentitySelection(r.Context(), identity, selectedRelayTokenGroupFromPayload(body), selectedRelayTokenNameFromPayload(body)); err != nil {
 			writeCreationTaskSubmitError(w, err)
 			return
 		}
@@ -1180,7 +1180,7 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == "/api/creation-tasks/chat-completions" && r.Method == http.MethodPost {
 		body, _ := readJSONMap(r)
-		if _, err := a.relayAPIKeyForIdentityGroup(r.Context(), identity, selectedRelayTokenGroupFromPayload(body)); err != nil {
+		if _, err := a.relayAPIKeyForIdentitySelection(r.Context(), identity, selectedRelayTokenGroupFromPayload(body), selectedRelayTokenNameFromPayload(body)); err != nil {
 			writeCreationTaskSubmitError(w, err)
 			return
 		}
@@ -1200,7 +1200,7 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		if _, err := a.relayAPIKeyForIdentityGroup(r.Context(), identity, selectedRelayTokenGroupFromPayload(body)); err != nil {
+		if _, err := a.relayAPIKeyForIdentitySelection(r.Context(), identity, selectedRelayTokenGroupFromPayload(body), selectedRelayTokenNameFromPayload(body)); err != nil {
 			writeCreationTaskSubmitError(w, err)
 			return
 		}
@@ -1221,6 +1221,9 @@ func creationTaskRequestMetadata(body map[string]any) map[string]any {
 	metadata := map[string]any{}
 	if tokenGroup := selectedRelayTokenGroupFromPayload(body); tokenGroup != "" {
 		metadata["token_group"] = tokenGroup
+	}
+	if tokenName := selectedRelayTokenNameFromPayload(body); tokenName != "" {
+		metadata["token_name"] = tokenName
 	}
 	return metadata
 }

@@ -632,7 +632,7 @@ func (a *App) handleSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodGet:
-		util.WriteJSON(w, http.StatusOK, map[string]any{"config": a.config.Get()})
+		util.WriteJSON(w, http.StatusOK, map[string]any{"config": a.settingsConfig(r.Context())})
 	case http.MethodPost:
 		body, err := readJSONMap(r)
 		if err != nil {
@@ -647,10 +647,28 @@ func (a *App) handleSettings(w http.ResponseWriter, r *http.Request) {
 		if a.newAPIKeys != nil {
 			a.newAPIKeys.SetConfiguredGroup(a.config.NewAPITokenGroup())
 		}
+		updated["newapi_token_groups"] = a.configuredNewAPITokenGroups(r.Context())
 		util.WriteJSON(w, http.StatusOK, map[string]any{"config": updated})
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
+}
+
+func (a *App) settingsConfig(ctx context.Context) map[string]any {
+	config := a.config.Get()
+	config["newapi_token_groups"] = a.configuredNewAPITokenGroups(ctx)
+	return config
+}
+
+func (a *App) configuredNewAPITokenGroups(ctx context.Context) []string {
+	if a == nil || a.newAPIKeys == nil {
+		return []string{}
+	}
+	groups := a.newAPIKeys.ConfiguredTokenGroups(ctx)
+	if groups == nil {
+		return []string{}
+	}
+	return groups
 }
 
 func (a *App) handleModelConfig(w http.ResponseWriter, r *http.Request) {
@@ -1558,6 +1576,7 @@ func readMultipartImageBody(r *http.Request) (map[string]any, []protocol.Uploade
 		"share_reference_images":  firstForm(r.MultipartForm, "share_reference_images"),
 		"visibility":              firstForm(r.MultipartForm, "visibility"),
 		"token_group":             firstForm(r.MultipartForm, "token_group"),
+		"token_name":              firstForm(r.MultipartForm, "token_name"),
 		"api_key":                 firstForm(r.MultipartForm, "api_key"),
 		"response_format":         firstNonEmpty(firstForm(r.MultipartForm, "response_format"), "b64_json"),
 	}

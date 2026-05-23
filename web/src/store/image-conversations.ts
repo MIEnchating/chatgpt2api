@@ -80,6 +80,7 @@ export type ImageTurn = {
   background?: ImageBackground;
   moderation?: ImageModeration;
   tokenGroup?: string;
+  tokenName?: string;
   visibility?: ImageVisibility;
   images: StoredImage[];
   createdAt: string;
@@ -368,6 +369,7 @@ function normalizeTurn(turn: ImageTurn & Record<string, unknown>): ImageTurn {
     background: isImageBackground(turn.background) ? turn.background : undefined,
     moderation: isImageModeration(turn.moderation) ? turn.moderation : undefined,
     tokenGroup: typeof turn.tokenGroup === "string" && turn.tokenGroup.trim() ? turn.tokenGroup.trim() : undefined,
+    tokenName: typeof turn.tokenName === "string" && turn.tokenName.trim() ? turn.tokenName.trim() : undefined,
     visibility,
     images,
     createdAt: String(turn.createdAt || new Date().toISOString()),
@@ -411,6 +413,10 @@ function normalizeConversation(conversation: ImageConversation & Record<string, 
           tokenGroup:
             typeof conversation.tokenGroup === "string" && conversation.tokenGroup.trim()
               ? conversation.tokenGroup.trim()
+              : undefined,
+          tokenName:
+            typeof conversation.tokenName === "string" && conversation.tokenName.trim()
+              ? conversation.tokenName.trim()
               : undefined,
           images: Array.isArray(conversation.images) ? (conversation.images as StoredImage[]) : [],
           createdAt: String(conversation.createdAt || new Date().toISOString()),

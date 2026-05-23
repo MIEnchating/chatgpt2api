@@ -24,7 +24,7 @@ func (a *App) attachRelayAPIKeyForIdentity(ctx context.Context, identity service
 	if body == nil {
 		return nil
 	}
-	key, err := a.relayAPIKeyForIdentityGroup(ctx, identity, selectedRelayTokenGroupFromPayload(body))
+	key, err := a.relayAPIKeyForIdentitySelection(ctx, identity, selectedRelayTokenGroupFromPayload(body), selectedRelayTokenNameFromPayload(body))
 	if err != nil {
 		return err
 	}
@@ -33,14 +33,18 @@ func (a *App) attachRelayAPIKeyForIdentity(ctx context.Context, identity service
 }
 
 func (a *App) relayAPIKeyForIdentity(ctx context.Context, identity service.Identity) (string, error) {
-	return a.relayAPIKeyForIdentityGroup(ctx, identity, "")
+	return a.relayAPIKeyForIdentitySelection(ctx, identity, "", "")
 }
 
 func (a *App) relayAPIKeyForIdentityGroup(ctx context.Context, identity service.Identity, group string) (string, error) {
+	return a.relayAPIKeyForIdentitySelection(ctx, identity, group, "")
+}
+
+func (a *App) relayAPIKeyForIdentitySelection(ctx context.Context, identity service.Identity, group, name string) (string, error) {
 	if a == nil || a.newAPIKeys == nil {
 		return "", protocol.HTTPError{Status: http.StatusBadRequest, Message: "请先配置云棉数据库连接，并在云棉创建指定分组的令牌"}
 	}
-	key, err := a.newAPIKeys.KeyForIdentityGroup(ctx, identity, group)
+	key, err := a.newAPIKeys.KeyForIdentityGroupAndName(ctx, identity, group, name)
 	if err != nil {
 		return "", protocol.HTTPError{Status: http.StatusBadRequest, Message: err.Error()}
 	}
@@ -65,6 +69,15 @@ func relayAPIKeyFromPayload(payload map[string]any) string {
 
 func selectedRelayTokenGroupFromPayload(payload map[string]any) string {
 	for _, key := range []string{"token_group", "newapi_token_group", "relay_token_group"} {
+		if value := util.Clean(payload[key]); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func selectedRelayTokenNameFromPayload(payload map[string]any) string {
+	for _, key := range []string{"token_name", "newapi_token_name", "relay_token_name"} {
 		if value := util.Clean(payload[key]); value != "" {
 			return value
 		}
@@ -603,6 +616,7 @@ func shouldDropRelayPayloadKey(key string) bool {
 	switch key {
 	case "api_key", "relay_api_key", "relayai_api_key", "upstream_api_key",
 		"token_group", "newapi_token_group", "relay_token_group",
+		"token_name", "newapi_token_name", "relay_token_name",
 		"owner_id", "owner_name", "base_url", "visibility", "client_task_id",
 		"image_resolution", "requested_size", "images",
 		"share_prompt_parameters", "share_reference_images",
