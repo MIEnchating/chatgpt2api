@@ -348,7 +348,7 @@ func TestCreationTaskRequiresRelayAIAPIKey(t *testing.T) {
 	if err := json.Unmarshal(res.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("error json: %v", err)
 	}
-	if detail := util.StringMap(payload["detail"]); detail["error"] != "请先配置 NewAPI 数据库连接，并在 NewAPI 创建指定分组的令牌" {
+	if detail := util.StringMap(payload["detail"]); detail["error"] != "请先配置云棉数据库连接，并在云棉创建指定分组的令牌" {
 		t.Fatalf("error body = %#v", payload)
 	}
 }
@@ -584,7 +584,7 @@ func TestRelayImagePayloadDropsUnsupportedStreamFields(t *testing.T) {
 		"stream":         true,
 		"partial_images": 2,
 		"messages":       []map[string]any{{"role": "user", "content": "draw"}},
-	})
+	}, false)
 	if _, ok := payload["stream"]; ok {
 		t.Fatalf("stream should be dropped for image relay payload: %#v", payload)
 	}
@@ -596,12 +596,23 @@ func TestRelayImagePayloadDropsUnsupportedStreamFields(t *testing.T) {
 	}
 }
 
+func TestRelayImagePayloadKeepsStreamWhenEnabled(t *testing.T) {
+	payload := relayPayloadForPath("/v1/images/generations", map[string]any{
+		"prompt": "draw",
+		"model":  "gpt-image-2",
+		"stream": true,
+	}, true)
+	if payload["stream"] != true {
+		t.Fatalf("stream should be kept when image stream parameter is enabled: %#v", payload)
+	}
+}
+
 func TestRelayImagePayloadDropsResponseFormat(t *testing.T) {
 	payload := relayPayloadForPath("/v1/images/generations", map[string]any{
 		"prompt":          "draw",
 		"model":           "gpt-image-2",
 		"response_format": "url",
-	})
+	}, false)
 	if _, ok := payload["response_format"]; ok {
 		t.Fatalf("response_format should not be forwarded to GPT image models: %#v", payload)
 	}
@@ -628,7 +639,7 @@ func TestRelayImagePayloadNormalizesSizeForRelay(t *testing.T) {
 				"prompt": "draw",
 				"model":  "codex-gpt-image-2",
 				"size":   tt.input,
-			})
+			}, false)
 			got, ok := payload["size"]
 			if tt.wantDrop {
 				if ok {
@@ -653,7 +664,7 @@ func TestRelayImagePayloadSanitizesOfficialParameters(t *testing.T) {
 		"response_format":    "json",
 		"output_format":      "jpg",
 		"output_compression": 120,
-	})
+	}, false)
 	if _, ok := payload["quality"]; ok {
 		t.Fatalf("invalid quality should be dropped: %#v", payload)
 	}
@@ -682,7 +693,7 @@ func TestRelayImagePayloadSanitizesOfficialParameters(t *testing.T) {
 		"response_format":    "b64_json",
 		"output_format":      "png",
 		"output_compression": 50,
-	})
+	}, false)
 	if payload["quality"] != "auto" || payload["background"] != "opaque" || payload["moderation"] != "low" {
 		t.Fatalf("valid enum parameters were not normalized: %#v", payload)
 	}
@@ -700,7 +711,7 @@ func TestRelayImagePayloadSanitizesOfficialParameters(t *testing.T) {
 		"prompt":             "draw",
 		"model":              "codex-gpt-image-2",
 		"output_compression": 42,
-	})
+	}, false)
 	if _, ok := payload["output_compression"]; ok {
 		t.Fatalf("output_compression without jpeg/webp output_format should be dropped: %#v", payload)
 	}
@@ -711,7 +722,7 @@ func TestRelayChatPayloadDropsInternalTextCallback(t *testing.T) {
 		"prompt":                             "hello",
 		"model":                              "gpt-5.5",
 		service.TextOutputCallbackPayloadKey: func(string) {},
-	})
+	}, false)
 	if _, ok := payload[service.TextOutputCallbackPayloadKey]; ok {
 		t.Fatalf("text output callback should be dropped: %#v", payload)
 	}

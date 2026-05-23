@@ -24,7 +24,7 @@ function providerLabel(provider?: string) {
     return "本地账号";
   }
   if (provider === "newapi") {
-    return "NewAPI";
+    return "云棉";
   }
   if (provider === "linuxdo") {
     return "LinuxDo";
@@ -58,6 +58,15 @@ function formatNumber(value: number | undefined) {
     return "-";
   }
   return new Intl.NumberFormat("zh-CN").format(value);
+}
+
+function formatYunMianQuota(value: number | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return "-";
+  }
+  return new Intl.NumberFormat("zh-CN", {
+    maximumFractionDigits: 6,
+  }).format(value / 500000);
 }
 
 function formatGroupList(groups: string[] | undefined) {
@@ -95,7 +104,7 @@ function BalanceCard({
   isLoading: boolean;
   onRefresh: () => void;
 }) {
-  const title = balance?.has_balance ? balance.display_name || balance.username || "NewAPI 用户" : "NewAPI";
+  const title = balance?.has_balance ? balance.display_name || balance.username || "云棉用户" : "云棉";
 
   return (
     <Card>
@@ -132,15 +141,15 @@ function BalanceCard({
           </div>
         ) : balance?.has_balance ? (
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-            <InfoRow label="当前余额" value={formatNumber(balance.quota)} />
-            <InfoRow label="已用额度" value={formatNumber(balance.used_quota)} />
+            <InfoRow label="当前余额" value={formatYunMianQuota(balance.quota)} />
+            <InfoRow label="已用额度" value={formatYunMianQuota(balance.used_quota)} />
             <InfoRow label="请求次数" value={formatNumber(balance.request_count)} />
             <InfoRow label="用户分组" value={balance.user_group || "-"} />
             <InfoRow label="令牌分组" value={balance.token_group || "-"} />
             <InfoRow label="可用令牌分组" value={formatGroupList(balance.token_groups)} />
-            <InfoRow label="NewAPI 用户名" value={balance.username || "-"} code />
+            <InfoRow label="云棉用户名" value={balance.username || "-"} code />
             <InfoRow label="邮箱" value={balance.email || "-"} />
-            <InfoRow label="NewAPI 用户 ID" value={balance.user_id ? String(balance.user_id) : "-"} code />
+            <InfoRow label="云棉用户 ID" value={balance.user_id ? String(balance.user_id) : "-"} code />
             {balance.token_message ? (
               <div className="sm:col-span-2 xl:col-span-4">
                 <div className="flex min-h-10 items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
@@ -153,7 +162,7 @@ function BalanceCard({
         ) : (
           <div className="flex min-h-24 items-center gap-3 rounded-lg border border-border bg-muted/30 px-3 py-4 text-sm text-muted-foreground">
             <AlertCircle className="size-4 shrink-0" />
-            <span>{balance?.message || "未读取到 NewAPI 用户余额"}</span>
+            <span>{balance?.message || "未读取到云棉用户余额"}</span>
           </div>
         )}
       </CardContent>
@@ -184,7 +193,7 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
       setBalance({
         has_balance: false,
         source: "newapi",
-        message: error instanceof Error ? error.message : "读取 NewAPI 用户余额失败",
+        message: error instanceof Error ? error.message : "读取云棉用户余额失败",
       });
     } finally {
       setIsLoadingBalance(false);

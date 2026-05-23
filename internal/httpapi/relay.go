@@ -24,7 +24,7 @@ func (a *App) attachRelayAPIKeyForIdentity(ctx context.Context, identity service
 	if body == nil {
 		return nil
 	}
-	key, err := a.relayAPIKeyForIdentity(ctx, identity)
+	key, err := a.relayAPIKeyForIdentityGroup(ctx, identity, selectedRelayTokenGroupFromPayload(body))
 	if err != nil {
 		return err
 	}
@@ -33,10 +33,14 @@ func (a *App) attachRelayAPIKeyForIdentity(ctx context.Context, identity service
 }
 
 func (a *App) relayAPIKeyForIdentity(ctx context.Context, identity service.Identity) (string, error) {
+	return a.relayAPIKeyForIdentityGroup(ctx, identity, "")
+}
+
+func (a *App) relayAPIKeyForIdentityGroup(ctx context.Context, identity service.Identity, group string) (string, error) {
 	if a == nil || a.newAPIKeys == nil {
-		return "", protocol.HTTPError{Status: http.StatusBadRequest, Message: "请先配置 NewAPI 数据库连接，并在 NewAPI 创建指定分组的令牌"}
+		return "", protocol.HTTPError{Status: http.StatusBadRequest, Message: "请先配置云棉数据库连接，并在云棉创建指定分组的令牌"}
 	}
-	key, err := a.newAPIKeys.KeyForIdentity(ctx, identity)
+	key, err := a.newAPIKeys.KeyForIdentityGroup(ctx, identity, group)
 	if err != nil {
 		return "", protocol.HTTPError{Status: http.StatusBadRequest, Message: err.Error()}
 	}
@@ -52,6 +56,15 @@ func (a *App) relayBaseURL() string {
 
 func relayAPIKeyFromPayload(payload map[string]any) string {
 	for _, key := range []string{"api_key", "relay_api_key", "relayai_api_key", "upstream_api_key"} {
+		if value := util.Clean(payload[key]); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func selectedRelayTokenGroupFromPayload(payload map[string]any) string {
+	for _, key := range []string{"token_group", "newapi_token_group", "relay_token_group"} {
 		if value := util.Clean(payload[key]); value != "" {
 			return value
 		}
@@ -137,7 +150,7 @@ func (a *App) relayJSONMaybeStream(ctx context.Context, path string, payload map
 	if apiKey == "" {
 		return nil, nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: "RelayAI API key is required"}
 	}
-	body := relayPayloadForPath(path, payload)
+	body := relayPayloadForPath(path, payload, a.imageStreamParameterEnabled())
 	if util.ToBool(body["stream"]) {
 		stream, err := a.relayJSONStream(ctx, path, apiKey, body)
 		return nil, stream, err
@@ -151,7 +164,7 @@ func (a *App) relayMultipartMaybeStream(ctx context.Context, path string, payloa
 	if apiKey == "" {
 		return nil, nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: "RelayAI API key is required"}
 	}
-	body := relayPayloadForPath(path, payload)
+	body := relayPayloadForPath(path, payload, a.imageStreamParameterEnabled())
 	if util.ToBool(body["stream"]) {
 		stream, err := a.relayMultipartStream(ctx, path, apiKey, body, images)
 		return nil, stream, err
@@ -317,7 +330,11 @@ func (a *App) relayHTTPClient() *http.Client {
 	return &http.Client{Timeout: 300 * time.Second}
 }
 
-func relayPayloadForPath(pathValue string, payload map[string]any) map[string]any {
+func (a *App) imageStreamParameterEnabled() bool {
+	return a != nil && a.config != nil && a.config.ImageStreamParameterEnabled()
+}
+
+func relayPayloadForPath(pathValue string, payload map[string]any, allowImageStream bool) map[string]any {
 	out := map[string]any{}
 	for key, value := range payload {
 		if shouldDropRelayPayloadKey(key) || value == nil {
@@ -337,15 +354,23 @@ func relayPayloadForPath(pathValue string, payload map[string]any) map[string]an
 		}
 		delete(out, "prompt")
 	case "/v1/images/generations", "/v1/images/edits":
-		sanitizeRelayImagePayload(out)
+		sanitizeRelayImagePayload(out, allowImageStream)
 	}
 	return out
 }
 
-func sanitizeRelayImagePayload(payload map[string]any) {
+func sanitizeRelayImagePayload(payload map[string]any, allowStream bool) {
 	delete(payload, "messages")
-	delete(payload, "stream")
 	delete(payload, "partial_images")
+	if !allowStream {
+		delete(payload, "stream")
+	} else if _, ok := payload["stream"]; ok {
+		if util.ToBool(payload["stream"]) {
+			payload["stream"] = true
+		} else {
+			delete(payload, "stream")
+		}
+	}
 
 	if _, ok := payload["size"]; ok {
 		if normalizedSize, ok := normalizeRelayImageSize(util.Clean(payload["size"])); ok && normalizedSize != "" {
@@ -577,6 +602,7 @@ func ceilToRelayImageMultiple(value float64, multiple int) int {
 func shouldDropRelayPayloadKey(key string) bool {
 	switch key {
 	case "api_key", "relay_api_key", "relayai_api_key", "upstream_api_key",
+		"token_group", "newapi_token_group", "relay_token_group",
 		"owner_id", "owner_name", "base_url", "visibility", "client_task_id",
 		"image_resolution", "requested_size", "images",
 		"share_prompt_parameters", "share_reference_images",

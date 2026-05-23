@@ -12,6 +12,7 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { testProxy, type ProxyTestResult } from "@/lib/api";
@@ -20,8 +21,9 @@ import { cn } from "@/lib/utils";
 import { useSettingsStore } from "../store";
 import { SettingsCard, settingsInputClassName } from "./settings-ui";
 
-const configSectionClassName = "flex flex-col gap-3";
+const configSectionClassName = "flex flex-col gap-3 border-t border-border/60 pt-5 first:border-t-0 first:pt-0";
 const configFieldClassName = "min-w-0 gap-1.5";
+const configGridClassName = "grid gap-x-4 gap-y-3 sm:grid-cols-2";
 
 function ConfigTip({ content }: { content: string }) {
   return (
@@ -127,6 +129,7 @@ export function ConfigCard() {
   const setImageTaskTimeoutSeconds = useSettingsStore(
     (state) => state.setImageTaskTimeoutSeconds,
   );
+  const setImageStreamParameterEnabled = useSettingsStore((state) => state.setImageStreamParameterEnabled);
   const setImageModels = useSettingsStore((state) => state.setImageModels);
   const setChatModels = useSettingsStore((state) => state.setChatModels);
   const setUserDefaultConcurrentLimit = useSettingsStore(
@@ -175,8 +178,8 @@ export function ConfigCard() {
     return (
       <SettingsCard
         icon={Settings2}
-        title="系统配置"
-        description="调整 RelayAI 出站代理、图片任务和本地数据治理。"
+        title="参数配置"
+        description="配置云棉接入、图片任务和模型下发。"
       >
         <div className="flex items-center justify-center py-10">
           <LoaderCircle className="size-5 animate-spin text-muted-foreground" />
@@ -188,8 +191,8 @@ export function ConfigCard() {
   return (
     <SettingsCard
       icon={Settings2}
-      title="系统配置"
-      description="调整 RelayAI 出站代理、图片任务和本地数据治理。"
+      title="参数配置"
+      description="配置云棉接入、图片任务和模型下发。"
       action={
         <Button
           size="lg"
@@ -209,9 +212,9 @@ export function ConfigCard() {
         <section className={configSectionClassName}>
           <SectionHeading
             title="基础参数"
-            tip="RelayAI Base URL 用于提交图片和对话请求；任务超时时间单位秒；图片自动清理会删除指定天数前的本地图片。"
+            tip="配置云棉接入、图片任务超时和本地图片治理。"
           />
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className={configGridClassName}>
             <Field className={configFieldClassName}>
               <ConfigFieldLabel htmlFor="settings-image-retention-days">
                 图片自动清理
@@ -266,7 +269,7 @@ export function ConfigCard() {
             </Field>
             <Field className={configFieldClassName}>
               <ConfigFieldLabel htmlFor="settings-newapi-token-group">
-                NewAPI 默认令牌分组
+                云棉默认令牌分组
               </ConfigFieldLabel>
               <Input
                 id="settings-newapi-token-group"
@@ -276,6 +279,37 @@ export function ConfigCard() {
                 className={settingsInputClassName}
               />
             </Field>
+            <Field className="min-w-0 gap-2 rounded-xl bg-muted/35 px-3 py-3 sm:col-span-2">
+              <label
+                htmlFor="settings-image-stream-parameter-enabled"
+                className="flex min-w-0 cursor-pointer items-start gap-3"
+              >
+                <Checkbox
+                  id="settings-image-stream-parameter-enabled"
+                  className="mt-0.5"
+                  checked={Boolean(config?.image_stream_parameter_enabled)}
+                  onCheckedChange={(checked) => setImageStreamParameterEnabled(checked === true)}
+                />
+                <span className="grid min-w-0 flex-1 gap-1">
+                  <span className="flex min-w-0 flex-wrap items-center gap-2 text-sm font-medium text-foreground">
+                    图片流式参数
+                    <span
+                      className={cn(
+                        "rounded-full px-2 py-0.5 text-[11px] leading-4 font-medium",
+                        config?.image_stream_parameter_enabled
+                          ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100"
+                          : "bg-background text-muted-foreground ring-1 ring-border",
+                      )}
+                    >
+                      {config?.image_stream_parameter_enabled ? "已开启" : "默认关闭"}
+                    </span>
+                  </span>
+                  <span className="text-xs leading-5 text-muted-foreground">
+                    开启后图片生成/编辑会向 RelayAI 下发 <code className="font-mono">stream=true</code>，默认关闭。
+                  </span>
+                </span>
+              </label>
+            </Field>
           </div>
         </section>
 
@@ -284,7 +318,7 @@ export function ConfigCard() {
             title="模型配置"
             tip="用英文逗号分隔；第一项作为默认模型。"
           />
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className={configGridClassName}>
             <Field className={configFieldClassName}>
               <ConfigFieldLabel htmlFor="settings-image-models">
                 图片模型
@@ -317,7 +351,7 @@ export function ConfigCard() {
             title="用户默认限制"
             tip="限制普通用户创作并发额度和速率；图片生成/编辑按请求张数计入，聊天任务按 1 个计入；管理员不受影响；0 表示不限制。"
           />
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className={configGridClassName}>
             <Field className={configFieldClassName}>
               <ConfigFieldLabel htmlFor="settings-user-default-concurrent-limit">
                 创作并发额度

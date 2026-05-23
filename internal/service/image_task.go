@@ -145,10 +145,14 @@ func (s *ImageTaskService) SubmitEditWithOptions(ctx context.Context, identity I
 }
 
 func (s *ImageTaskService) SubmitChat(ctx context.Context, identity Identity, clientTaskID, prompt, model string, messages any, billable bool, nValues ...int) (map[string]any, error) {
-	return s.submitChat(ctx, identity, clientTaskID, prompt, model, messages, billable, nValues...)
+	return s.submitChatWithMetadata(ctx, identity, clientTaskID, prompt, model, messages, billable, nil, nValues...)
 }
 
-func (s *ImageTaskService) submitChat(ctx context.Context, identity Identity, clientTaskID, prompt, model string, messages any, billable bool, nValues ...int) (map[string]any, error) {
+func (s *ImageTaskService) SubmitChatWithMetadata(ctx context.Context, identity Identity, clientTaskID, prompt, model string, messages any, billable bool, metadata map[string]any, nValues ...int) (map[string]any, error) {
+	return s.submitChatWithMetadata(ctx, identity, clientTaskID, prompt, model, messages, billable, metadata, nValues...)
+}
+
+func (s *ImageTaskService) submitChatWithMetadata(ctx context.Context, identity Identity, clientTaskID, prompt, model string, messages any, billable bool, metadata map[string]any, nValues ...int) (map[string]any, error) {
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
 		return nil, fmt.Errorf("prompt is required")
@@ -161,6 +165,7 @@ func (s *ImageTaskService) submitChat(ctx context.Context, identity Identity, cl
 		n = normalizedImageTaskCount(nValues[0])
 	}
 	payload := map[string]any{"prompt": prompt, "model": model, "messages": messages, "n": n, "visibility": ImageVisibilityPrivate}
+	mergeTaskRoutingMetadata(payload, metadata)
 	_ = billable
 	return s.submit(ctx, identity, clientTaskID, "chat", payload)
 }
@@ -921,6 +926,7 @@ func mergeImageTaskMetadata(payload map[string]any, metadata map[string]any) {
 	if len(metadata) == 0 {
 		return
 	}
+	mergeTaskRoutingMetadata(payload, metadata)
 	if preset := NormalizeImageResolutionPreset(util.Clean(metadata["image_resolution"])); preset != "" {
 		payload["image_resolution"] = preset
 	}
@@ -932,6 +938,12 @@ func mergeImageTaskMetadata(payload map[string]any, metadata map[string]any) {
 		if util.ToBool(metadata["share_reference_images"]) {
 			payload["share_reference_images"] = true
 		}
+	}
+}
+
+func mergeTaskRoutingMetadata(payload map[string]any, metadata map[string]any) {
+	if tokenGroup := strings.TrimSpace(util.Clean(metadata["token_group"])); tokenGroup != "" {
+		payload["token_group"] = tokenGroup
 	}
 }
 

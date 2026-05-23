@@ -67,7 +67,7 @@ export const IMAGE_MODEL_ROUTE_DETAILS: Partial<Record<
 >> = {
   auto: {
     routeLabel: "RelayAI",
-    description: "通过固定 RelayAI 上游提交请求，使用 NewAPI 指定分组令牌。",
+    description: "通过固定 RelayAI 上游提交请求，使用云棉指定分组令牌。",
   },
   "gpt-image-2": {
     routeLabel: "RelayAI",
@@ -220,6 +220,7 @@ export type SettingsConfig = {
   user_default_rpm_limit?: number | string;
   image_retention_days?: number | string;
   image_storage_limit_mb?: number | string;
+  image_stream_parameter_enabled?: boolean;
   log_retention_days?: number | string;
   auto_remove_invalid_accounts?: boolean;
   auto_remove_rate_limited_accounts?: boolean;
@@ -244,6 +245,7 @@ export type ModelConfig = {
   default_image_model: ImageModel;
   default_chat_model: ImageModel;
   relay_base_url: string;
+  image_stream_parameter_enabled?: boolean;
 };
 
 export type LoginPageImageSettings = {
@@ -581,8 +583,12 @@ export async function fetchProfile() {
   return httpRequest<LoginResponse>("/api/profile");
 }
 
-export async function fetchProfileRelayKey() {
-  return httpRequest<ProfileRelayKeyStatus>("/api/profile/relay-key");
+export async function fetchProfileRelayKey(group?: string) {
+  const params = new URLSearchParams();
+  if (group?.trim()) {
+    params.set("group", group.trim());
+  }
+  return httpRequest<ProfileRelayKeyStatus>(`/api/profile/relay-key${params.toString() ? `?${params.toString()}` : ""}`);
 }
 
 export async function fetchProfileBalance() {
@@ -697,6 +703,7 @@ export async function createImageGenerationTask(
     background?: string;
     moderation?: string;
   },
+  relayTokenGroup?: string,
 ) {
   return httpRequest<CreationTask>("/api/creation-tasks/image-generations", {
     method: "POST",
@@ -711,6 +718,7 @@ export async function createImageGenerationTask(
       ...(typeof outputCompression === "number" ? { output_compression: outputCompression } : {}),
       ...(toolOptions?.background ? { background: toolOptions.background } : {}),
       ...(toolOptions?.moderation ? { moderation: toolOptions.moderation } : {}),
+      ...(relayTokenGroup ? { token_group: relayTokenGroup } : {}),
       ...(messages?.length ? { messages } : {}),
       visibility,
       n: count,
@@ -736,6 +744,7 @@ export async function createImageEditTask(
     moderation?: string;
     inputImageMask?: string;
   },
+  relayTokenGroup?: string,
 ) {
   const formData = new FormData();
   const uploadFiles = Array.isArray(files) ? files : [files];
@@ -772,6 +781,9 @@ export async function createImageEditTask(
   if (toolOptions?.inputImageMask) {
     formData.append("input_image_mask", toolOptions.inputImageMask);
   }
+  if (relayTokenGroup) {
+    formData.append("token_group", relayTokenGroup);
+  }
   if (messages?.length) {
     formData.append("messages", JSON.stringify(messages));
   }
@@ -790,12 +802,14 @@ export async function createChatCompletionTask(
   model: ImageModel,
   messages: CreationTaskMessage[],
   referenceImages?: { name: string; dataUrl: string }[],
+  relayTokenGroup?: string,
 ) {
   const body: Record<string, unknown> = {
     client_task_id: clientTaskId,
     prompt,
     model,
     messages,
+    ...(relayTokenGroup ? { token_group: relayTokenGroup } : {}),
   };
 
   if (referenceImages && referenceImages.length > 0) {
@@ -825,11 +839,13 @@ export async function streamChatCompletion(
   referenceImages: { name: string; dataUrl: string }[] | undefined,
   onText: (text: string) => void,
   signal?: AbortSignal,
+  relayTokenGroup?: string,
 ) {
   const body: Record<string, unknown> = {
     model,
     messages,
     stream: true,
+    ...(relayTokenGroup ? { token_group: relayTokenGroup } : {}),
   };
 
   if (referenceImages && referenceImages.length > 0) {

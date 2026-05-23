@@ -119,16 +119,21 @@ func (r *NewAPITokenReader) SetConfiguredGroup(group string) {
 }
 
 func (r *NewAPITokenReader) Status(ctx context.Context, identity Identity) map[string]any {
+	return r.StatusForGroup(ctx, identity, "")
+}
+
+func (r *NewAPITokenReader) StatusForGroup(ctx context.Context, identity Identity, group string) map[string]any {
 	configuredGroup := r.configuredGroup()
+	selectedGroup := firstNonEmptyNewAPIString(strings.TrimSpace(group), configuredGroup)
 	status := map[string]any{
 		"has_key":          false,
 		"key_preview":      "",
-		"group":            configuredGroup,
+		"group":            selectedGroup,
 		"configured_group": configuredGroup,
 		"groups":           []string{},
 		"source":           "newapi",
 	}
-	selection, err := r.TokenForIdentity(ctx, identity)
+	selection, err := r.TokenForIdentityGroup(ctx, identity, selectedGroup)
 	if err != nil {
 		status["message"] = err.Error()
 		if selection.Groups != nil {
@@ -153,12 +158,12 @@ func (r *NewAPITokenReader) BalanceStatus(ctx context.Context, identity Identity
 		"token_groups":     []string{},
 	}
 	if r == nil || !r.configured || r.db == nil {
-		status["message"] = "请先配置 NewAPI 数据库连接"
+		status["message"] = "请先配置云棉数据库连接"
 		return status
 	}
 	candidates := newAPIIdentityLookupValues(identity)
 	if len(candidates) == 0 {
-		status["message"] = "当前登录用户缺少 NewAPI 用户名，无法读取 NewAPI 余额"
+		status["message"] = "当前登录用户缺少云棉用户名，无法读取云棉余额"
 		return status
 	}
 
@@ -193,11 +198,11 @@ func (r *NewAPITokenReader) BalanceStatus(ctx context.Context, identity Identity
 
 func (r *NewAPITokenReader) BalanceForIdentity(ctx context.Context, identity Identity) (NewAPIUserBalance, error) {
 	if r == nil || !r.configured || r.db == nil {
-		return NewAPIUserBalance{}, newAPITokenMessageError("请先配置 NewAPI 数据库连接", nil)
+		return NewAPIUserBalance{}, newAPITokenMessageError("请先配置云棉数据库连接", nil)
 	}
 	candidates := newAPIIdentityLookupValues(identity)
 	if len(candidates) == 0 {
-		return NewAPIUserBalance{}, newAPITokenMessageError("当前登录用户缺少 NewAPI 用户名，无法读取 NewAPI 余额", nil)
+		return NewAPIUserBalance{}, newAPITokenMessageError("当前登录用户缺少云棉用户名，无法读取云棉余额", nil)
 	}
 
 	queryCtx, cancel := context.WithTimeout(contextOrBackground(ctx), r.timeout)
@@ -213,22 +218,34 @@ func (r *NewAPITokenReader) KeyForIdentity(ctx context.Context, identity Identit
 	return selection.Key, nil
 }
 
-func (r *NewAPITokenReader) TokenForIdentity(ctx context.Context, identity Identity) (NewAPITokenSelection, error) {
-	if r == nil || !r.configured || r.db == nil {
-		return NewAPITokenSelection{}, newAPITokenMessageError("请先配置 NewAPI 数据库连接，并在 NewAPI 创建指定分组的令牌", nil)
+func (r *NewAPITokenReader) KeyForIdentityGroup(ctx context.Context, identity Identity, group string) (string, error) {
+	selection, err := r.TokenForIdentityGroup(ctx, identity, group)
+	if err != nil {
+		return "", err
 	}
-	group := r.configuredGroup()
+	return selection.Key, nil
+}
+
+func (r *NewAPITokenReader) TokenForIdentity(ctx context.Context, identity Identity) (NewAPITokenSelection, error) {
+	return r.TokenForIdentityGroup(ctx, identity, "")
+}
+
+func (r *NewAPITokenReader) TokenForIdentityGroup(ctx context.Context, identity Identity, groupOverride string) (NewAPITokenSelection, error) {
+	if r == nil || !r.configured || r.db == nil {
+		return NewAPITokenSelection{}, newAPITokenMessageError("请先配置云棉数据库连接，并在云棉创建指定分组的令牌", nil)
+	}
+	group := firstNonEmptyNewAPIString(strings.TrimSpace(groupOverride), r.configuredGroup())
 	if group == "" {
-		return NewAPITokenSelection{}, newAPITokenMessageError("请先配置 NewAPI 令牌分组", nil)
+		return NewAPITokenSelection{}, newAPITokenMessageError("请先配置云棉令牌分组", nil)
 	}
 	candidates := newAPIIdentityLookupValues(identity)
 	if len(candidates) == 0 {
-		return NewAPITokenSelection{}, newAPITokenMessageError("当前登录用户缺少 NewAPI 用户名，无法读取 NewAPI Key", nil)
+		return NewAPITokenSelection{}, newAPITokenMessageError("当前登录用户缺少云棉用户名，无法读取云棉 Key", nil)
 	}
 
 	queryCtx, cancel := context.WithTimeout(contextOrBackground(ctx), r.timeout)
 	defer cancel()
-	userID, err := r.lookupUserID(queryCtx, candidates)
+	userID, err := r.lookupUserID(queryCtx, candidates, group)
 	if err != nil {
 		return NewAPITokenSelection{}, err
 	}
@@ -237,7 +254,7 @@ func (r *NewAPITokenReader) TokenForIdentity(ctx context.Context, identity Ident
 
 func (r *NewAPITokenReader) AuthenticatePassword(ctx context.Context, login, password string) (NewAPIUser, error) {
 	if r == nil || !r.configured || r.db == nil {
-		return NewAPIUser{}, newAPITokenMessageError("请先配置 NewAPI 数据库连接", nil)
+		return NewAPIUser{}, newAPITokenMessageError("请先配置云棉数据库连接", nil)
 	}
 	login = strings.TrimSpace(login)
 	if login == "" || password == "" {
@@ -254,7 +271,7 @@ func (r *NewAPITokenReader) AuthenticatePassword(ctx context.Context, login, pas
 		return NewAPIUser{}, newAPITokenMessageError("用户名或密码错误", nil)
 	}
 	if err != nil {
-		return NewAPIUser{}, newAPITokenMessageError("读取 NewAPI 用户失败，请检查 NewAPI 数据库连接", err)
+		return NewAPIUser{}, newAPITokenMessageError("读取云棉用户失败，请检查云棉数据库连接", err)
 	}
 	if bcrypt.CompareHashAndPassword([]byte(strings.TrimSpace(passwordHash.String)), []byte(password)) != nil {
 		return NewAPIUser{}, newAPITokenMessageError("用户名或密码错误", nil)
@@ -263,12 +280,12 @@ func (r *NewAPITokenReader) AuthenticatePassword(ctx context.Context, login, pas
 	user.Email = strings.TrimSpace(email.String)
 	user.DisplayName = strings.TrimSpace(displayName.String)
 	if user.Username == "" {
-		return NewAPIUser{}, newAPITokenMessageError("读取 NewAPI 用户失败，请检查 NewAPI 用户数据", nil)
+		return NewAPIUser{}, newAPITokenMessageError("读取云棉用户失败，请检查云棉用户数据", nil)
 	}
 	return user, nil
 }
 
-func (r *NewAPITokenReader) lookupUserID(ctx context.Context, candidates []string) (int64, error) {
+func (r *NewAPITokenReader) lookupUserID(ctx context.Context, candidates []string, group string) (int64, error) {
 	query := "SELECT id FROM users WHERE (username = " + r.placeholder(1) + " OR email = " + r.placeholder(2) + ") AND status = 1 AND deleted_at IS NULL ORDER BY id ASC LIMIT 1"
 	for _, candidate := range candidates {
 		var id int64
@@ -279,9 +296,10 @@ func (r *NewAPITokenReader) lookupUserID(ctx context.Context, candidates []strin
 		if errors.Is(err, sql.ErrNoRows) {
 			continue
 		}
-		return 0, newAPITokenMessageError("读取 NewAPI Key 失败，请检查 NewAPI 数据库连接", err)
+		return 0, newAPITokenMessageError("读取云棉 Key 失败，请检查云棉数据库连接", err)
 	}
-	return 0, newAPITokenMessageError(fmt.Sprintf("请先在 NewAPI 创建当前登录用户，并创建“%s”分组的令牌", r.configuredGroup()), nil)
+	group = firstNonEmptyNewAPIString(group, r.configuredGroup())
+	return 0, newAPITokenMessageError(fmt.Sprintf("请先在云棉创建当前登录用户，并创建“%s”分组的令牌", group), nil)
 }
 
 func (r *NewAPITokenReader) lookupUserBalance(ctx context.Context, candidates []string) (NewAPIUserBalance, error) {
@@ -301,16 +319,16 @@ func (r *NewAPITokenReader) lookupUserBalance(ctx context.Context, candidates []
 			balance.UsedQuota = usedQuota.Int64
 			balance.RequestCount = requestCount.Int64
 			if balance.Username == "" {
-				return NewAPIUserBalance{}, newAPITokenMessageError("读取 NewAPI 余额失败，请检查 NewAPI 用户数据", nil)
+				return NewAPIUserBalance{}, newAPITokenMessageError("读取云棉余额失败，请检查云棉用户数据", nil)
 			}
 			return balance, nil
 		}
 		if errors.Is(err, sql.ErrNoRows) {
 			continue
 		}
-		return NewAPIUserBalance{}, newAPITokenMessageError("读取 NewAPI 余额失败，请检查 NewAPI 数据库连接", err)
+		return NewAPIUserBalance{}, newAPITokenMessageError("读取云棉余额失败，请检查云棉数据库连接", err)
 	}
-	return NewAPIUserBalance{}, newAPITokenMessageError("请先在 NewAPI 创建当前登录用户", nil)
+	return NewAPIUserBalance{}, newAPITokenMessageError("请先在云棉创建当前登录用户", nil)
 }
 
 func (r *NewAPITokenReader) lookupTokenKey(ctx context.Context, userID int64, group string) (string, error) {
@@ -330,9 +348,9 @@ func (r *NewAPITokenReader) lookupTokenKey(ctx context.Context, userID int64, gr
 		return key, nil
 	}
 	if errors.Is(err, sql.ErrNoRows) || strings.TrimSpace(key) == "" {
-		return "", newAPITokenMessageError(fmt.Sprintf("请先在 NewAPI 为当前用户创建“%s”分组的令牌", group), nil)
+		return "", newAPITokenMessageError(fmt.Sprintf("请先在云棉为当前用户创建“%s”分组的令牌", group), nil)
 	}
-	return "", newAPITokenMessageError("读取 NewAPI Key 失败，请检查 NewAPI 数据库连接", err)
+	return "", newAPITokenMessageError("读取云棉 Key 失败，请检查云棉数据库连接", err)
 }
 
 func (r *NewAPITokenReader) lookupTokenSelection(ctx context.Context, userID int64, group string) (NewAPITokenSelection, error) {
@@ -342,7 +360,7 @@ func (r *NewAPITokenReader) lookupTokenSelection(ctx context.Context, userID int
 		return selection, err
 	}
 	if len(groups) == 0 {
-		return selection, newAPITokenMessageError(fmt.Sprintf("请先在 NewAPI 为当前用户创建“%s”分组的可用令牌", group), nil)
+		return selection, newAPITokenMessageError(fmt.Sprintf("请先在云棉为当前用户创建“%s”分组的可用令牌", group), nil)
 	}
 	selectedGroup, ok := firstMatchingNewAPITokenGroup(groups, group)
 	if !ok {
@@ -371,7 +389,7 @@ func (r *NewAPITokenReader) lookupTokenGroups(ctx context.Context, userID int64)
 		" ORDER BY id ASC"
 	rows, err := r.db.QueryContext(ctx, query, userID, time.Now().Unix())
 	if err != nil {
-		return nil, newAPITokenMessageError("读取 NewAPI 令牌分组失败，请检查 NewAPI 数据库连接", err)
+		return nil, newAPITokenMessageError("读取云棉令牌分组失败，请检查云棉数据库连接", err)
 	}
 	defer rows.Close()
 
@@ -380,7 +398,7 @@ func (r *NewAPITokenReader) lookupTokenGroups(ctx context.Context, userID int64)
 	for rows.Next() {
 		var group sql.NullString
 		if err := rows.Scan(&group); err != nil {
-			return nil, newAPITokenMessageError("读取 NewAPI 令牌分组失败，请检查 NewAPI 数据库连接", err)
+			return nil, newAPITokenMessageError("读取云棉令牌分组失败，请检查云棉数据库连接", err)
 		}
 		value := strings.TrimSpace(group.String)
 		if value == "" {
@@ -393,9 +411,18 @@ func (r *NewAPITokenReader) lookupTokenGroups(ctx context.Context, userID int64)
 		groups = append(groups, value)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, newAPITokenMessageError("读取 NewAPI 令牌分组失败，请检查 NewAPI 数据库连接", err)
+		return nil, newAPITokenMessageError("读取云棉令牌分组失败，请检查云棉数据库连接", err)
 	}
 	return groups, nil
+}
+
+func firstNonEmptyNewAPIString(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func firstMatchingNewAPITokenGroup(groups []string, preferred string) (string, bool) {

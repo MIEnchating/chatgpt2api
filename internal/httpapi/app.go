@@ -101,6 +101,7 @@ func NewApp() (*App, error) {
 				if err := app.attachRelayAPIKeyForIdentity(ctx, identity, payload); err != nil {
 					return nil, err
 				}
+				app.applyImageStreamParameter(payload)
 				result, stream, err := app.relayImageGenerations(ctx, payload)
 				return relayImageTaskResult(payload, result, stream, err)
 			})
@@ -110,6 +111,7 @@ func NewApp() (*App, error) {
 				if err := app.attachRelayAPIKeyForIdentity(ctx, identity, payload); err != nil {
 					return nil, err
 				}
+				app.applyImageStreamParameter(payload)
 				images, _ := payload["images"].([]protocol.UploadedImage)
 				result, stream, err := app.relayImageEdits(ctx, payload, images)
 				return relayImageTaskResult(payload, result, stream, err)
@@ -317,6 +319,7 @@ func (a *App) handleImageGenerations(w http.ResponseWriter, r *http.Request) {
 		a.writeProtocol(w, r, nil, nil, err, "openai", "/v1/images/generations", model, identity, "文生图", visibility)
 		return
 	}
+	a.applyImageStreamParameter(body)
 	result, stream, err := a.relayImageGenerations(r.Context(), body)
 	a.writeProtocol(w, r, result, stream, err, "openai", "/v1/images/generations", model, identity, "文生图", visibility, body)
 }
@@ -354,6 +357,7 @@ func (a *App) handleImageEdits(w http.ResponseWriter, r *http.Request) {
 		a.writeProtocol(w, r, nil, nil, err, "openai", "/v1/images/edits", model, identity, "图生图", visibility)
 		return
 	}
+	a.applyImageStreamParameter(body)
 	result, stream, err := a.relayImageEdits(r.Context(), body, images)
 	a.writeProtocol(w, r, result, stream, err, "openai", "/v1/images/edits", model, identity, "图生图", visibility, body)
 }
@@ -660,11 +664,12 @@ func (a *App) modelConfig() map[string]any {
 	imageModels := a.configuredImageModels()
 	chatModels := a.configuredChatModels()
 	return map[string]any{
-		"image_models":        imageModels,
-		"chat_models":         chatModels,
-		"default_image_model": firstString(imageModels, util.ImageModelGPT),
-		"default_chat_model":  firstString(chatModels, util.ImageModelGPT55),
-		"relay_base_url":      a.relayBaseURL(),
+		"image_models":                   imageModels,
+		"chat_models":                    chatModels,
+		"default_image_model":            firstString(imageModels, util.ImageModelGPT),
+		"default_chat_model":             firstString(chatModels, util.ImageModelGPT55),
+		"relay_base_url":                 a.relayBaseURL(),
+		"image_stream_parameter_enabled": a.config.ImageStreamParameterEnabled(),
 	}
 }
 
@@ -1552,6 +1557,7 @@ func readMultipartImageBody(r *http.Request) (map[string]any, []protocol.Uploade
 		"share_prompt_parameters": firstForm(r.MultipartForm, "share_prompt_parameters"),
 		"share_reference_images":  firstForm(r.MultipartForm, "share_reference_images"),
 		"visibility":              firstForm(r.MultipartForm, "visibility"),
+		"token_group":             firstForm(r.MultipartForm, "token_group"),
 		"api_key":                 firstForm(r.MultipartForm, "api_key"),
 		"response_format":         firstNonEmpty(firstForm(r.MultipartForm, "response_format"), "b64_json"),
 	}
@@ -2172,6 +2178,17 @@ func (a *App) attachCreationTaskLimiter(body map[string]any, identity service.Id
 	body[protocol.ImageOutputSlotAcquirerPayloadKey] = func(ctx context.Context, index int) (func(), error) {
 		return a.tasks.AcquireCreationUnit(ctx, identity)
 	}
+}
+
+func (a *App) applyImageStreamParameter(body map[string]any) {
+	if body == nil {
+		return
+	}
+	if a != nil && a.config != nil && a.config.ImageStreamParameterEnabled() {
+		body["stream"] = true
+		return
+	}
+	delete(body, "stream")
 }
 
 func (a *App) runLoggedChatTask(ctx context.Context, identity service.Identity, payload map[string]any) (map[string]any, error) {

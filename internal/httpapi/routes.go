@@ -168,10 +168,10 @@ func (a *App) handleProfileRelayKey(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		if a.newAPIKeys == nil {
-			util.WriteJSON(w, http.StatusOK, map[string]any{"has_key": false, "key_preview": "", "source": "newapi", "message": "请先配置 NewAPI 数据库连接，并在 NewAPI 创建指定分组的令牌"})
+			util.WriteJSON(w, http.StatusOK, map[string]any{"has_key": false, "key_preview": "", "source": "newapi", "message": "请先配置云棉数据库连接，并在云棉创建指定分组的令牌"})
 			return
 		}
-		util.WriteJSON(w, http.StatusOK, a.newAPIKeys.Status(r.Context(), identity))
+		util.WriteJSON(w, http.StatusOK, a.newAPIKeys.StatusForGroup(r.Context(), identity, r.URL.Query().Get("group")))
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
@@ -185,7 +185,7 @@ func (a *App) handleProfileBalance(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		if a.newAPIKeys == nil {
-			util.WriteJSON(w, http.StatusOK, map[string]any{"has_balance": false, "source": "newapi", "message": "请先配置 NewAPI 数据库连接"})
+			util.WriteJSON(w, http.StatusOK, map[string]any{"has_balance": false, "source": "newapi", "message": "请先配置云棉数据库连接"})
 			return
 		}
 		util.WriteJSON(w, http.StatusOK, a.newAPIKeys.BalanceStatus(r.Context(), identity))
@@ -1164,10 +1164,11 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == "/api/creation-tasks/image-generations" && r.Method == http.MethodPost {
 		body, _ := readJSONMap(r)
-		if _, err := a.relayAPIKeyForIdentity(r.Context(), identity); err != nil {
+		if _, err := a.relayAPIKeyForIdentityGroup(r.Context(), identity, selectedRelayTokenGroupFromPayload(body)); err != nil {
 			writeCreationTaskSubmitError(w, err)
 			return
 		}
+		a.applyImageStreamParameter(body)
 		model := a.applyDefaultImageModel(body)
 		task, err := a.tasks.SubmitGenerationWithOptions(r.Context(), identity, util.Clean(body["client_task_id"]), util.Clean(body["prompt"]), model, util.Clean(body["size"]), util.Clean(body["quality"]), a.relayBaseURL(), util.ToInt(body["n"], 1), body["messages"], imageTaskRequestMetadata(body), imageOutputOptionsFromBody(body), imageToolOptionsFromBody(body), util.Clean(body["visibility"]))
 		if err != nil {
@@ -1179,13 +1180,13 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == "/api/creation-tasks/chat-completions" && r.Method == http.MethodPost {
 		body, _ := readJSONMap(r)
-		if _, err := a.relayAPIKeyForIdentity(r.Context(), identity); err != nil {
+		if _, err := a.relayAPIKeyForIdentityGroup(r.Context(), identity, selectedRelayTokenGroupFromPayload(body)); err != nil {
 			writeCreationTaskSubmitError(w, err)
 			return
 		}
 		billable := protocol.IsImageChatRequest(body)
 		model := a.applyDefaultChatCompletionModel(body)
-		task, err := a.tasks.SubmitChat(r.Context(), identity, util.Clean(body["client_task_id"]), util.Clean(body["prompt"]), model, body["messages"], billable, util.ToInt(body["n"], 1))
+		task, err := a.tasks.SubmitChatWithMetadata(r.Context(), identity, util.Clean(body["client_task_id"]), util.Clean(body["prompt"]), model, body["messages"], billable, creationTaskRequestMetadata(body), util.ToInt(body["n"], 1))
 		if err != nil {
 			writeCreationTaskSubmitError(w, err)
 			return
@@ -1199,10 +1200,11 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		if _, err := a.relayAPIKeyForIdentity(r.Context(), identity); err != nil {
+		if _, err := a.relayAPIKeyForIdentityGroup(r.Context(), identity, selectedRelayTokenGroupFromPayload(body)); err != nil {
 			writeCreationTaskSubmitError(w, err)
 			return
 		}
+		a.applyImageStreamParameter(body)
 		model := a.applyDefaultImageModel(body)
 		task, err := a.tasks.SubmitEditWithOptions(r.Context(), identity, util.Clean(body["client_task_id"]), util.Clean(body["prompt"]), model, util.Clean(body["size"]), util.Clean(body["quality"]), a.relayBaseURL(), images, util.ToInt(body["n"], 1), body["messages"], imageTaskRequestMetadata(body), imageOutputOptionsFromBody(body), imageToolOptionsFromBody(body), util.Clean(body["visibility"]))
 		if err != nil {
@@ -1215,9 +1217,17 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 	http.NotFound(w, r)
 }
 
+func creationTaskRequestMetadata(body map[string]any) map[string]any {
+	metadata := map[string]any{}
+	if tokenGroup := selectedRelayTokenGroupFromPayload(body); tokenGroup != "" {
+		metadata["token_group"] = tokenGroup
+	}
+	return metadata
+}
+
 func imageTaskRequestMetadata(body map[string]any) map[string]any {
 	size := util.Clean(body["size"])
-	metadata := map[string]any{}
+	metadata := creationTaskRequestMetadata(body)
 	if preset := service.NormalizeImageResolutionPreset(util.Clean(body["image_resolution"])); preset != "" {
 		metadata["image_resolution"] = preset
 	}

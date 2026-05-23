@@ -147,7 +147,7 @@ function providerFilterLabel(provider?: string) {
     return "本地账号";
   }
   if (provider === "newapi") {
-    return "NewAPI";
+    return "云棉";
   }
   if (provider === "linuxdo") {
     return "LinuxDo";
@@ -169,7 +169,7 @@ function userSourceLabel(user: Pick<ManagedUser, "provider" | "username" | "has_
     return "本地凭据";
   }
   if (user.provider === "newapi") {
-    return "NewAPI 用户";
+    return "云棉用户";
   }
   if (user.provider === "linuxdo") {
     return "LinuxDo 用户";

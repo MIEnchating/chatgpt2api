@@ -27,6 +27,7 @@ var settingEnvKeys = map[string]string{
 	"chat_models":                       "CHATGPT2API_CHAT_MODELS",
 	"refresh_account_interval_minute":   "CHATGPT2API_REFRESH_ACCOUNT_INTERVAL_MINUTE",
 	"image_task_timeout_seconds":        "CHATGPT2API_IMAGE_TASK_TIMEOUT_SECONDS",
+	"image_stream_parameter_enabled":    "CHATGPT2API_IMAGE_STREAM_PARAMETER_ENABLED",
 	"user_default_concurrent_limit":     "CHATGPT2API_USER_DEFAULT_CONCURRENT_LIMIT",
 	"user_default_rpm_limit":            "CHATGPT2API_USER_DEFAULT_RPM_LIMIT",
 	"image_retention_days":              "CHATGPT2API_IMAGE_RETENTION_DAYS",
@@ -218,6 +219,10 @@ func (s *Store) ImageTaskTimeoutSeconds() int {
 	return normalizeImageTaskTimeoutSeconds(s.settingValue("image_task_timeout_seconds", defaultImageTaskTimeoutSeconds))
 }
 
+func (s *Store) ImageStreamParameterEnabled() bool {
+	return util.ToBool(s.settingValue("image_stream_parameter_enabled", false))
+}
+
 func (s *Store) UserDefaultConcurrentLimit() int {
 	value := intSetting(s.settingValue("user_default_concurrent_limit", 0), 0)
 	if value < 0 {
@@ -405,6 +410,7 @@ func (s *Store) Get() map[string]any {
 	delete(data, "image_concurrent_limit")
 	data["refresh_account_interval_minute"] = s.RefreshAccountIntervalMinute()
 	data["image_task_timeout_seconds"] = s.ImageTaskTimeoutSeconds()
+	data["image_stream_parameter_enabled"] = s.ImageStreamParameterEnabled()
 	data["image_models"] = s.ImageModels()
 	data["chat_models"] = s.ChatModels()
 	data["default_image_model"] = s.DefaultImageModel()

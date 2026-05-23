@@ -189,7 +189,7 @@ func TestImageTaskServicePassesImageRequestMetadataToHandler(t *testing.T) {
 	svc := newTestImageTaskService(t, handler, handler, handler, func() int { return 30 })
 	identity := Identity{ID: "alice", Name: "Alice", Role: "user"}
 
-	if _, err := svc.SubmitGenerationWithMetadata(context.Background(), identity, "task-1", "draw", "gpt-image-2", "2048x2048", "high", "https://base.test", 1, nil, map[string]any{"image_resolution": "2k", "requested_size": "2048x2048"}); err != nil {
+	if _, err := svc.SubmitGenerationWithMetadata(context.Background(), identity, "task-1", "draw", "gpt-image-2", "2048x2048", "high", "https://base.test", 1, nil, map[string]any{"image_resolution": "2k", "requested_size": "2048x2048", "token_group": "draw"}); err != nil {
 		t.Fatalf("SubmitGenerationWithMetadata() error = %v", err)
 	}
 
@@ -203,6 +203,9 @@ func TestImageTaskServicePassesImageRequestMetadataToHandler(t *testing.T) {
 		}
 		if got := payload["requested_size"]; got != "2048x2048" {
 			t.Fatalf("payload requested_size = %#v, want 2048x2048 in %#v", got, payload)
+		}
+		if got := payload["token_group"]; got != "draw" {
+			t.Fatalf("payload token_group = %#v, want draw in %#v", got, payload)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for handler payload")
@@ -255,8 +258,8 @@ func TestImageTaskServiceSubmitsChatTasks(t *testing.T) {
 	identity := Identity{ID: "alice", Name: "Alice", Role: "user"}
 	messages := []map[string]any{{"role": "user", "content": "hello"}}
 
-	if _, err := svc.SubmitChat(context.Background(), identity, "chat-1", "hello", "auto", messages, false); err != nil {
-		t.Fatalf("SubmitChat() error = %v", err)
+	if _, err := svc.SubmitChatWithMetadata(context.Background(), identity, "chat-1", "hello", "auto", messages, false, map[string]any{"token_group": "draw"}); err != nil {
+		t.Fatalf("SubmitChatWithMetadata() error = %v", err)
 	}
 	waitForTaskStatus(t, svc, identity, "chat-1", TaskStatusSuccess)
 	got := svc.ListTasks(identity, []string{"chat-1"})
@@ -275,6 +278,9 @@ func TestImageTaskServiceSubmitsChatTasks(t *testing.T) {
 	case payload := <-handlerCalls:
 		if got := payload["messages"]; got == nil {
 			t.Fatalf("chat payload messages missing: %#v", payload)
+		}
+		if got := payload["token_group"]; got != "draw" {
+			t.Fatalf("chat payload token_group = %#v, want draw in %#v", got, payload)
 		}
 	default:
 		t.Fatal("chat handler was not called")

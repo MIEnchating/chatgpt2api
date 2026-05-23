@@ -18,6 +18,7 @@ func TestStoreUpdatePersistsRuntimeSettings(t *testing.T) {
 	unsetEnv(t, "CHATGPT2API_CHAT_MODELS")
 	unsetEnv(t, "CHATGPT2API_REFRESH_ACCOUNT_INTERVAL_MINUTE")
 	unsetEnv(t, "CHATGPT2API_IMAGE_TASK_TIMEOUT_SECONDS")
+	unsetEnv(t, "CHATGPT2API_IMAGE_STREAM_PARAMETER_ENABLED")
 	unsetEnv(t, "CHATGPT2API_USER_DEFAULT_CONCURRENT_LIMIT")
 	unsetEnv(t, "CHATGPT2API_USER_DEFAULT_RPM_LIMIT")
 	unsetEnv(t, "CHATGPT2API_IMAGE_RETENTION_DAYS")
@@ -44,6 +45,7 @@ func TestStoreUpdatePersistsRuntimeSettings(t *testing.T) {
 		"refresh_account_interval_minute": 7,
 		"image_concurrent_limit":          3,
 		"image_task_timeout_seconds":      420,
+		"image_stream_parameter_enabled":  true,
 		"newapi_token_group":              "draw",
 		"user_default_concurrent_limit":   2,
 		"user_default_rpm_limit":          30,
@@ -67,6 +69,7 @@ func TestStoreUpdatePersistsRuntimeSettings(t *testing.T) {
 	assertConfigValue(t, got, "default_image_model", "gpt-image-2")
 	assertConfigValue(t, got, "default_chat_model", "gpt-5.5")
 	assertConfigValue(t, got, "newapi_token_group", "draw")
+	assertConfigValue(t, got, "image_stream_parameter_enabled", true)
 	if _, ok := got["image_concurrent_limit"]; ok {
 		t.Fatalf("removed image_concurrent_limit leaked in config response: %#v", got)
 	}
@@ -83,6 +86,7 @@ func TestStoreUpdatePersistsRuntimeSettings(t *testing.T) {
 		"CHATGPT2API_CHAT_MODELS=gpt-5.5,gpt-5.4",
 		"CHATGPT2API_REFRESH_ACCOUNT_INTERVAL_MINUTE=7",
 		"CHATGPT2API_IMAGE_TASK_TIMEOUT_SECONDS=420",
+		"CHATGPT2API_IMAGE_STREAM_PARAMETER_ENABLED=true",
 		"CHATGPT2API_NEWAPI_TOKEN_GROUP=draw",
 		"CHATGPT2API_USER_DEFAULT_CONCURRENT_LIMIT=2",
 		"CHATGPT2API_USER_DEFAULT_RPM_LIMIT=30",
