@@ -909,6 +909,17 @@ function formatCreationTaskErrorMessage(message: string) {
   const normalized = trimmed.toLowerCase();
   const isImageEdit = normalized.includes("/v1/images/edits");
   const taskLabel = isImageEdit ? "图片编辑" : "图片生成";
+  if (
+    normalized.includes("image data you provided does not represent a valid image") ||
+    normalized.includes("supported image formats") ||
+    normalized.includes("unsupported image file") ||
+    normalized.includes("image data url is invalid") ||
+    normalized.includes("image data url is not an image") ||
+    normalized.includes("image data url must be base64") ||
+    normalized.includes("image data is empty")
+  ) {
+    return "参考图不是有效图片。请重新上传 JPEG、PNG、GIF 或 WebP 格式的图片，不要使用损坏文件、空文件、SVG/HEIC/AVIF，或复制出来的无效图片数据。";
+  }
   if (normalized.includes("user balance insufficient")) {
     return "当前账号额度不足，上游拒绝了这次请求。请切换可用令牌、补充额度，或稍后再试。";
   }
