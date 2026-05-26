@@ -200,15 +200,14 @@ func (s *Sub2APIService) ListRemoteAccounts(ctx context.Context, server map[stri
 				continue
 			}
 			credentials := util.StringMap(account["credentials"])
-			accessToken := extractAccessToken(credentials)
-			if accessToken == "" {
+			if !hasSub2AccessToken(account, credentials) {
 				continue
 			}
 			id := util.Clean(account["id"])
 			if id == "" {
 				id = util.Clean(credentials["chatgpt_account_id"])
 			}
-			items = append(items, map[string]any{"id": id, "name": util.Clean(account["name"]), "email": firstNonEmpty(util.Clean(credentials["email"]), util.Clean(account["name"])), "plan_type": util.Clean(credentials["plan_type"]), "status": util.Clean(account["status"]), "expires_at": util.Clean(credentials["expires_at"]), "has_refresh_token": util.Clean(credentials["refresh_token"]) != ""})
+			items = append(items, map[string]any{"id": id, "name": util.Clean(account["name"]), "email": firstNonEmpty(util.Clean(credentials["email"]), util.Clean(account["name"])), "plan_type": util.Clean(credentials["plan_type"]), "status": util.Clean(account["status"]), "expires_at": util.Clean(credentials["expires_at"]), "has_refresh_token": hasSub2RefreshToken(account, credentials)})
 		}
 		if page*200 >= total || len(data) < 200 {
 			break
@@ -289,25 +288,59 @@ func (s *Sub2APIService) runImport(serverID string, server map[string]any, ids [
 }
 
 func (s *Sub2APIService) fetchAccessTokenForAccount(ctx context.Context, server map[string]any, accountID string) (string, error) {
-	baseURL := util.Clean(server["base_url"])
-	headers, err := s.authHeaders(ctx, server)
+	account, err := s.fetchAccountFromDataExport(ctx, server, accountID)
 	if err != nil {
 		return "", err
 	}
+	if account == nil {
+		account, err = s.fetchAccountFromDetail(ctx, server, accountID)
+		if err != nil {
+			return "", err
+		}
+	}
+	token := extractAccessToken(util.StringMap(account["credentials"]))
+	if token == "" {
+		return "", fmt.Errorf("missing access_token")
+	}
+	return token, nil
+}
+
+func (s *Sub2APIService) fetchAccountFromDataExport(ctx context.Context, server map[string]any, accountID string) (map[string]any, error) {
+	baseURL := util.Clean(server["base_url"])
+	headers, err := s.authHeaders(ctx, server)
+	if err != nil {
+		return nil, err
+	}
+	payload, status, err := s.getJSONWithStatus(ctx, strings.TrimRight(baseURL, "/")+"/api/v1/admin/accounts/data?ids="+urlQuery(accountID)+"&include_proxies=false", headers)
+	if err != nil {
+		if status == http.StatusNotFound {
+			return nil, nil
+		}
+		return nil, err
+	}
+	accounts := extractDataAccounts(payload)
+	if len(accounts) == 0 {
+		return nil, nil
+	}
+	return accounts[0], nil
+}
+
+func (s *Sub2APIService) fetchAccountFromDetail(ctx context.Context, server map[string]any, accountID string) (map[string]any, error) {
+	baseURL := util.Clean(server["base_url"])
+	headers, err := s.authHeaders(ctx, server)
+	if err != nil {
+		return nil, err
+	}
 	payload, err := s.getJSON(ctx, strings.TrimRight(baseURL, "/")+"/api/v1/admin/accounts/"+accountID, headers)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	account := unwrapEnvelope(payload)
 	accountMap, ok := account.(map[string]any)
 	if !ok {
 		accountMap = payload
 	}
-	token := extractAccessToken(util.StringMap(accountMap["credentials"]))
-	if token == "" {
-		return "", fmt.Errorf("missing access_token")
-	}
-	return token, nil
+	return accountMap, nil
 }
 
 func (s *Sub2APIService) authHeaders(ctx context.Context, server map[string]any) (map[string]string, error) {
@@ -371,24 +404,29 @@ func (s *Sub2APIService) login(ctx context.Context, baseURL, email, password str
 }
 
 func (s *Sub2APIService) getJSON(ctx context.Context, url string, headers map[string]string) (map[string]any, error) {
+	payload, _, err := s.getJSONWithStatus(ctx, url, headers)
+	return payload, err
+}
+
+func (s *Sub2APIService) getJSONWithStatus(ctx context.Context, url string, headers map[string]string) (map[string]any, int, error) {
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	for key, value := range headers {
 		req.Header.Set(key, value)
 	}
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 	defer resp.Body.Close()
 	data, _ := io.ReadAll(resp.Body)
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("sub2api request failed: HTTP %d %s", resp.StatusCode, string(data[:minInt(len(data), 200)]))
+		return nil, resp.StatusCode, fmt.Errorf("sub2api request failed: HTTP %d %s", resp.StatusCode, string(data[:minInt(len(data), 200)]))
 	}
 	var payload map[string]any
 	if json.Unmarshal(data, &payload) != nil {
-		return nil, fmt.Errorf("invalid payload")
+		return nil, resp.StatusCode, fmt.Errorf("invalid payload")
 	}
-	return payload, nil
+	return payload, resp.StatusCode, nil
 }
 
 func (s *Sub2APIService) updateJob(serverID string, updates map[string]any) {
@@ -426,6 +464,18 @@ func extractAccessToken(credentials map[string]any) string {
 	return ""
 }
 
+func sub2CredentialsStatus(account map[string]any) map[string]any {
+	return util.StringMap(account["credentials_status"])
+}
+
+func hasSub2AccessToken(account, credentials map[string]any) bool {
+	return extractAccessToken(credentials) != "" || util.ToBool(sub2CredentialsStatus(account)["has_access_token"])
+}
+
+func hasSub2RefreshToken(account, credentials map[string]any) bool {
+	return util.Clean(credentials["refresh_token"]) != "" || util.ToBool(sub2CredentialsStatus(account)["has_refresh_token"])
+}
+
 func unwrapEnvelope(payload map[string]any) any {
 	if _, hasData := payload["data"]; hasData {
 		if _, hasCode := payload["code"]; hasCode {
@@ -448,6 +498,25 @@ func extractPagedItems(payload map[string]any) ([]any, int) {
 		}
 	}
 	return []any{}, 0
+}
+
+func extractDataAccounts(payload map[string]any) []map[string]any {
+	data := unwrapEnvelope(payload)
+	obj, ok := data.(map[string]any)
+	if !ok {
+		return nil
+	}
+	raw, ok := asArray(obj["accounts"])
+	if !ok {
+		return nil
+	}
+	out := make([]map[string]any, 0, len(raw))
+	for _, item := range raw {
+		if account, ok := item.(map[string]any); ok {
+			out = append(out, account)
+		}
+	}
+	return out
 }
 
 func asArray(value any) ([]any, bool) {
