@@ -1,5 +1,35 @@
 # Changelog
 
+## [0.3.0] - 2026-05-26
+
+### 新增
+
+- 账号调度引入可配置策略：`load_balance`（默认，按请求计数选最少使用账号）和 `fill_first`（优先使用粘性账号，paid 用尽后再走 free）。
+- 账号租约（`AccountLease`）模型：获取 token 时占用账号槽位，释放后归还，避免文本和图像协议同时占用同一账号造成并发冲突。
+- 上游账号维护操作：账号管理页可对选中账号或单账号触发禁用记忆、隐藏所有对话、批量删除上传文件，新增 `POST /api/accounts/upstream-actions` 接口。
+- 账号 enable 开关：账号支持独立的 `enabled` 字段（与 `禁用` 状态解耦），新增 `POST /api/accounts/toggle-enabled` 接口与表头开关。
+- 长上下文卸载：当对话历史超过阈值（默认 70k 字符）时自动打包为 `history.txt` 附件上传到 ChatGPT，再用简短 prompt 引用，支持 `inline`/`hybrid`/`file` 三种模式。
+- Sub2API v0.1.129 兼容：识别 `credentials_status.has_access_token` 字段，让脱敏凭证账号也能正常出现在导入列表，并优先通过 `/api/v1/admin/accounts/data` 端点拉取凭证。
+
+### 变更
+
+- 文本协议在调用上游遇到账号级错误时，自动把上游账号标记为「异常」或「限流」，并在调用日志中带匿名化的上游账号信息。
+- 账号管理页头部「刷新全部账号」按钮加入二次确认弹窗，避免误触发。
+- 删除/禁用账号时同步清理 `imageReservations`、`busyTokens`、`stickyTextToken`、`stickyImageToken`，token 通过 session 刷新替换时迁移租约别名以保持一致性。
+- 本地账号导入仅保留 `access_token`，主动丢弃远端响应中的 `refresh_token` 和 `id_token`。
+
+### 修复
+
+- 修复 Sub2API v0.1.129 同步显示 0 个账号的问题（`credentials.access_token` 被脱敏后被错误过滤）。
+- 修复 Free 文本账号在新调度结构下 cooldown 失效的回归（继承自 main `81cf37a`），通过新增 `applyFreeTextCooldownLocked` 在租约调度链路中重新生效。
+- 修复账号刷新和会话替换时旧 token 残留在 sticky/busy 映射中可能导致的租约错配。
+
+### 破坏性变更
+
+- `service.AccountConfig` 接口新增 `TextAccountScheduleMode()` 和 `ImageAccountScheduleMode()` 方法；自定义实现需补齐这两个方法。
+- `AccountService.GetAvailableAccessToken*` 系列调用语义变更：内部改用租约模型，旧的 `GetTextAccessToken` / `GetTextAccessTokenWithRetry` 行为保持兼容（返回字符串），但新增的 `AcquireTextAccessToken` 返回 `AccountLease`，调用方使用完毕需 `Release()`。
+- 设置项新增 `text_account_schedule_mode`、`image_account_schedule_mode`，未配置时默认 `load_balance`。
+
 ## [0.2.2] - 2026-05-20
 
 ### 新增
