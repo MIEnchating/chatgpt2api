@@ -15,25 +15,40 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/u
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { fetchSystemLogs, type SystemLog, type SystemLogFilters } from "@/lib/api";
+import { fetchSettingsConfig, fetchSystemLogs, type LogView, type SystemLog, type SystemLogFilters } from "@/lib/api";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 
 const methodOptions = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 const statusOptions = ["200", "201", "400", "401", "403", "404", "422", "429", "500", "502"];
 const logLevelOptions = ["info", "warning", "error"];
+const logViewOptions: Array<{ value: LogView; label: string }> = [
+  { value: "meaningful", label: "有意义日志" },
+  { value: "business", label: "仅业务日志" },
+  { value: "all", label: "全部日志" },
+];
 
-const emptyFilters: SystemLogFilters = {
-  username: "",
-  module: "",
-  summary: "",
-  method: "all",
-  status: "all",
-  ip_address: "",
-  operation_type: "",
-  log_level: "all",
-  start_date: "",
-  end_date: "",
-};
+function normalizeLogView(value: unknown): LogView {
+  if (value === "all" || value === "meaningful" || value === "business") {
+    return value;
+  }
+  return "meaningful";
+}
+
+function createEmptyFilters(view: LogView): SystemLogFilters {
+  return {
+    username: "",
+    module: "",
+    summary: "",
+    method: "all",
+    status: "all",
+    ip_address: "",
+    operation_type: "",
+    log_level: "all",
+    view,
+    start_date: "",
+    end_date: "",
+  };
+}
 
 const detailLabels: Record<string, string> = {
   endpoint: "接口",
@@ -264,15 +279,19 @@ function normalizeFilters(filters: SystemLogFilters): SystemLogFilters {
     ip_address: filters.ip_address?.trim() || "",
     operation_type: filters.operation_type?.trim() || "",
     log_level: filters.log_level || "all",
+    view: normalizeLogView(filters.view),
     start_date: filters.start_date || "",
     end_date: filters.end_date || "",
   };
 }
 
 function LogsContent() {
+  const initialFilters = createEmptyFilters("meaningful");
   const [items, setItems] = useState<SystemLog[]>([]);
-  const [filters, setFilters] = useState<SystemLogFilters>(emptyFilters);
-  const [query, setQuery] = useState<SystemLogFilters>(emptyFilters);
+  const [defaultLogView, setDefaultLogView] = useState<LogView>("meaningful");
+  const [isDefaultLogViewReady, setIsDefaultLogViewReady] = useState(false);
+  const [filters, setFilters] = useState<SystemLogFilters>(initialFilters);
+  const [query, setQuery] = useState<SystemLogFilters>(initialFilters);
   const [detailLog, setDetailLog] = useState<SystemLog | null>(null);
   const [detailOpen, setDetailOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
@@ -311,8 +330,9 @@ function LogsContent() {
   };
 
   const clearFilters = () => {
-    setFilters(emptyFilters);
-    setQuery(emptyFilters);
+    const nextFilters = createEmptyFilters(defaultLogView);
+    setFilters(nextFilters);
+    setQuery(nextFilters);
   };
 
   const openDetail = (item: SystemLog) => {
@@ -330,8 +350,36 @@ function LogsContent() {
   };
 
   useEffect(() => {
+    let ignore = false;
+    const loadDefaultLogView = async () => {
+      let view: LogView = "meaningful";
+      try {
+        const data = await fetchSettingsConfig();
+        view = normalizeLogView(data.config.default_log_view);
+      } catch (error) {
+        toast.error(error instanceof Error ? error.message : "加载默认日志视图失败");
+      }
+      if (ignore) {
+        return;
+      }
+      const nextFilters = createEmptyFilters(view);
+      setDefaultLogView(view);
+      setFilters(nextFilters);
+      setQuery(nextFilters);
+      setIsDefaultLogViewReady(true);
+    };
+    void loadDefaultLogView();
+    return () => {
+      ignore = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isDefaultLogViewReady) {
+      return;
+    }
     void loadLogs(query);
-  }, [loadLogs, query]);
+  }, [isDefaultLogViewReady, loadLogs, query]);
 
   return (
     <section className="flex h-full min-h-0 flex-col gap-5 overflow-hidden">
@@ -343,6 +391,12 @@ function LogsContent() {
         </CardHeader>
         <CardContent>
           <form className="grid gap-3 md:grid-cols-2 xl:grid-cols-4" onSubmit={handleSearch}>
+            <Select value={normalizeLogView(filters.view)} onValueChange={(value) => updateFilter("view", value)}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                {logViewOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
+              </SelectContent>
+            </Select>
             <Input placeholder="操作人" value={filters.username || ""} onChange={(event) => updateFilter("username", event.target.value)} />
             <Input placeholder="模块" value={filters.module || ""} onChange={(event) => updateFilter("module", event.target.value)} />
             <Input placeholder="摘要或接口" value={filters.summary || ""} onChange={(event) => updateFilter("summary", event.target.value)} />

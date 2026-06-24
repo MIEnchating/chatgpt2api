@@ -90,6 +90,7 @@ import {
   type ImageQuality,
   type CreationTask,
   type CreationTaskMessage,
+  type FallbackReferenceImage,
   type ImageVisibility,
 } from "@/lib/api";
 import { fetchAuthenticatedImageBlob } from "@/lib/authenticated-image";
@@ -1084,6 +1085,34 @@ function buildCreationTaskMessages(conversation: ImageConversation, activeTurnId
     }
   }
   return messages;
+}
+
+function getFallbackReferenceImage(conversation: ImageConversation, activeTurnId: string): FallbackReferenceImage | undefined {
+  const previousTurns: ImageTurn[] = [];
+  for (const turn of conversation.turns) {
+    if (turn.id === activeTurnId) {
+      break;
+    }
+    previousTurns.push(turn);
+  }
+  for (let turnIndex = previousTurns.length - 1; turnIndex >= 0; turnIndex -= 1) {
+    const images = previousTurns[turnIndex].images;
+    for (let imageIndex = images.length - 1; imageIndex >= 0; imageIndex -= 1) {
+      const image = images[imageIndex];
+      if (image.status !== "success") {
+        continue;
+      }
+      if (image.path || image.url || image.b64_json) {
+        return {
+          ...(image.path ? { path: image.path } : {}),
+          ...(image.url ? { url: image.url } : {}),
+          ...(image.b64_json ? { b64_json: image.b64_json } : {}),
+          ...(image.outputFormat ? { outputFormat: image.outputFormat } : {}),
+        };
+      }
+    }
+  }
+  return undefined;
 }
 
 async function syncConversationCreationTasks(items: ImageConversation[]) {

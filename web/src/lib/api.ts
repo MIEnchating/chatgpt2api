@@ -186,6 +186,8 @@ export function supportsImageOutputCompression(format: ImageOutputFormat) {
 
 export type AuthRole = "admin" | "user";
 export type AnnouncementTarget = "login" | "image";
+export type LogView = "all" | "meaningful" | "business";
+export type AccountScheduleMode = "load_balance" | "fill_first";
 
 export type PermissionMenu = {
   id: string;
@@ -223,8 +225,11 @@ export type SettingsConfig = {
   image_storage_limit_mb?: number | string;
   image_stream_parameter_enabled?: boolean;
   log_retention_days?: number | string;
+  default_log_view?: LogView | string;
   auto_remove_invalid_accounts?: boolean;
   auto_remove_rate_limited_accounts?: boolean;
+  text_account_schedule_mode?: AccountScheduleMode | string;
+  image_account_schedule_mode?: AccountScheduleMode | string;
   log_levels?: string[];
   linuxdo_enabled?: boolean;
   linuxdo_client_id?: string;
@@ -313,6 +318,7 @@ export type SystemLogFilters = {
   ip_address?: string;
   operation_type?: string;
   log_level?: string;
+  view?: LogView | string;
   start_date?: string;
   end_date?: string;
   start_time?: string;
@@ -405,6 +411,13 @@ export type CreationTask = {
 export type CreationTaskMessage = {
   role: "system" | "user" | "assistant" | "tool";
   content: string;
+};
+
+export type FallbackReferenceImage = {
+  path?: string;
+  url?: string;
+  b64_json?: string;
+  outputFormat?: ImageOutputFormat;
 };
 
 type CreationTaskListResponse = {
@@ -716,6 +729,8 @@ export async function createImageGenerationTask(
   },
   relayTokenGroup?: string,
   relayTokenName?: string,
+  frontendConversationId?: string,
+  fallbackReferenceImage?: FallbackReferenceImage,
 ) {
   return httpRequest<CreationTask>("/api/creation-tasks/image-generations", {
     method: "POST",
@@ -733,6 +748,8 @@ export async function createImageGenerationTask(
       ...(relayTokenGroup ? { token_group: relayTokenGroup } : {}),
       ...(relayTokenName ? { token_name: relayTokenName } : {}),
       ...(messages?.length ? { messages } : {}),
+      ...(frontendConversationId ? { frontend_conversation_id: frontendConversationId } : {}),
+      ...(fallbackReferenceImage ? { fallback_reference_image: fallbackReferenceImage } : {}),
       visibility,
       n: count,
     },
@@ -759,6 +776,8 @@ export async function createImageEditTask(
   },
   relayTokenGroup?: string,
   relayTokenName?: string,
+  frontendConversationId?: string,
+  fallbackReferenceImage?: FallbackReferenceImage,
 ) {
   const formData = new FormData();
   const uploadFiles = Array.isArray(files) ? files : [files];
@@ -803,6 +822,12 @@ export async function createImageEditTask(
   }
   if (messages?.length) {
     formData.append("messages", JSON.stringify(messages));
+  }
+  if (frontendConversationId) {
+    formData.append("frontend_conversation_id", frontendConversationId);
+  }
+  if (fallbackReferenceImage) {
+    formData.append("fallback_reference_image", JSON.stringify(fallbackReferenceImage));
   }
   formData.append("visibility", visibility);
   formData.append("n", String(count));
@@ -1102,12 +1127,12 @@ export async function deleteManagedImages(paths: string[]) {
 export async function fetchSystemLogs(filters: SystemLogFilters) {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(filters)) {
-    if (value === undefined || value === null || value === "" || value === "all") {
+    if (value === undefined || value === null || value === "" || (key !== "view" && value === "all")) {
       continue;
     }
     params.set(key, String(value));
   }
-  return httpRequest<{ items: SystemLog[] }>(`/api/logs${params.toString() ? `?${params.toString()}` : ""}`);
+  return httpRequest<{ items: SystemLog[]; view?: LogView | string }>(`/api/logs${params.toString() ? `?${params.toString()}` : ""}`);
 }
 
 export async function fetchLogGovernance() {

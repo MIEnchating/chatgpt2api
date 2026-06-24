@@ -18,6 +18,8 @@ import {
   type ImageStorageGovernanceSummary,
   type LogCleanupResult,
   type LogGovernanceSummary,
+  type LogView,
+  type AccountScheduleMode,
   type LoginPageImageSettings,
   type SettingsConfig,
 } from "@/lib/api";
@@ -28,6 +30,17 @@ import {
   normalizeLoginPageImageTransform,
   type LoginPageImageMode,
 } from "@/lib/login-page-image-layout";
+
+function normalizeDefaultLogView(value: unknown): LogView {
+  if (value === "all" || value === "meaningful" || value === "business") {
+    return value;
+  }
+  return "meaningful";
+}
+
+function normalizeAccountScheduleMode(value: unknown): AccountScheduleMode {
+  return value === "fill_first" ? "fill_first" : "load_balance";
+}
 
 function normalizeConfig(config: SettingsConfig): SettingsConfig {
   const loginImageTransform = normalizeLoginPageImageTransform({
@@ -60,8 +73,11 @@ function normalizeConfig(config: SettingsConfig): SettingsConfig {
     image_retention_days: Number(config.image_retention_days || 30),
     image_storage_limit_mb: Math.max(0, Number(config.image_storage_limit_mb) || 0),
     log_retention_days: Number(config.log_retention_days || 7),
+    default_log_view: normalizeDefaultLogView(config.default_log_view),
     auto_remove_invalid_accounts: Boolean(config.auto_remove_invalid_accounts),
     auto_remove_rate_limited_accounts: Boolean(config.auto_remove_rate_limited_accounts),
+    text_account_schedule_mode: normalizeAccountScheduleMode(config.text_account_schedule_mode),
+    image_account_schedule_mode: normalizeAccountScheduleMode(config.image_account_schedule_mode),
     log_levels: Array.isArray(config.log_levels) ? config.log_levels : [],
     proxy: typeof config.proxy === "string" ? config.proxy : "",
     base_url: typeof config.base_url === "string" ? config.base_url : "",
@@ -105,8 +121,11 @@ type SettingsStore = {
   setImageRetentionDays: (value: string) => void;
   setImageStorageLimitMb: (value: string) => void;
   setLogRetentionDays: (value: string) => void;
+  setDefaultLogView: (value: LogView) => void;
   setAutoRemoveInvalidAccounts: (value: boolean) => void;
   setAutoRemoveRateLimitedAccounts: (value: boolean) => void;
+  setTextAccountScheduleMode: (value: AccountScheduleMode) => void;
+  setImageAccountScheduleMode: (value: AccountScheduleMode) => void;
   setLogLevel: (level: string, enabled: boolean) => void;
   setProxy: (value: string) => void;
   setBaseUrl: (value: string) => void;
@@ -176,8 +195,11 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         image_retention_days: Math.max(1, Number(config.image_retention_days) || 30),
         image_storage_limit_mb: Math.max(0, Number(config.image_storage_limit_mb) || 0),
         log_retention_days: Math.min(3650, Math.max(1, Number(config.log_retention_days) || 7)),
+        default_log_view: normalizeDefaultLogView(config.default_log_view),
         auto_remove_invalid_accounts: Boolean(config.auto_remove_invalid_accounts),
         auto_remove_rate_limited_accounts: Boolean(config.auto_remove_rate_limited_accounts),
+        text_account_schedule_mode: normalizeAccountScheduleMode(config.text_account_schedule_mode),
+        image_account_schedule_mode: normalizeAccountScheduleMode(config.image_account_schedule_mode),
         proxy: config.proxy.trim(),
         base_url: String(config.base_url || "").trim(),
         relay_base_url: String(config.relay_base_url || "").trim(),
@@ -223,6 +245,10 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     set((state) => state.config ? { config: { ...state.config, log_retention_days: value } } : {});
   },
 
+  setDefaultLogView: (value) => {
+    set((state) => state.config ? { config: { ...state.config, default_log_view: normalizeDefaultLogView(value) } } : {});
+  },
+
   setImageTaskTimeoutSeconds: (value) => {
     set((state) => state.config ? { config: { ...state.config, image_task_timeout_seconds: value } } : {});
   },
@@ -253,6 +279,14 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
 
   setAutoRemoveRateLimitedAccounts: (value) => {
     set((state) => state.config ? { config: { ...state.config, auto_remove_rate_limited_accounts: value } } : {});
+  },
+
+  setTextAccountScheduleMode: (value) => {
+    set((state) => state.config ? { config: { ...state.config, text_account_schedule_mode: normalizeAccountScheduleMode(value) } } : {});
+  },
+
+  setImageAccountScheduleMode: (value) => {
+    set((state) => state.config ? { config: { ...state.config, image_account_schedule_mode: normalizeAccountScheduleMode(value) } } : {});
   },
 
   setLogLevel: (level, enabled) => {

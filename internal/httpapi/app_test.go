@@ -18,6 +18,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 	"sync"
@@ -469,6 +470,138 @@ func TestProfileBalanceReadsNewAPIUser(t *testing.T) {
 		status["used_quota"] != float64(789) ||
 		status["request_count"] != float64(42) {
 		t.Fatalf("profile balance = %#v", status)
+	}
+}
+
+func TestLogsEndpointUsesDefaultLogView(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+	if _, err := app.config.Update(map[string]any{"default_log_view": "business"}); err != nil {
+		t.Fatalf("Update(default_log_view) error = %v", err)
+	}
+	if err := app.logs.Add("新增账号", map[string]any{"module": "accounts", "operation_type": "新增"}); err != nil {
+		t.Fatalf("Add(business log) error = %v", err)
+	}
+	if err := app.logs.Add("GET /api/profile", map[string]any{"method": "GET", "path": "/api/profile", "module": "profile", "status": 200, "log_level": "info"}); err != nil {
+		t.Fatalf("Add(noisy audit log) error = %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/logs", nil)
+	req.Header.Set("Authorization", adminAuthHeader(t, app))
+	res := httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("logs status = %d body = %s", res.Code, res.Body.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(res.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("logs json: %v", err)
+	}
+	if summaries := logPayloadSummaries(logItems(payload)); !reflect.DeepEqual(summaries, []string{"新增账号"}) {
+		t.Fatalf("default logs summaries = %#v", summaries)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/logs?view=all", nil)
+	req.Header.Set("Authorization", adminAuthHeader(t, app))
+	res = httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("logs all status = %d body = %s", res.Code, res.Body.String())
+	}
+	if err := json.Unmarshal(res.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("logs all json: %v", err)
+	}
+	if summaries := logPayloadSummaries(logItems(payload)); !reflect.DeepEqual(summaries, []string{"GET /api/profile", "新增账号"}) {
+		t.Fatalf("all logs summaries = %#v", summaries)
+	}
+}
+
+func TestChatCompletionsCallLogIncludesUpstreamAccountPreview(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+
+	const fullToken = "secret-upstream-token-for-log-test"
+	ctx, tracker := protocol.WithAccountUsageTracker(context.Background())
+	tracker.Record(fullToken)
+	app.logCall(ctx, service.Identity{ID: "user-1", Role: service.AuthRoleUser, Name: "frontend"}, "文本生成", http.MethodPost, "/v1/chat/completions", "gpt-5", time.Now(), "success", http.StatusOK, "", nil, auditRequestCapture{})
+
+	logs := app.logs.Search(service.LogQuery{Limit: 10})
+	item := findLogBySummary(logs, "文本生成调用完成")
+	if item == nil {
+		t.Fatalf("expected chat completions log, got %#v", logs)
+	}
+	detail := util.StringMap(item["detail"])
+	if util.Clean(detail["upstream_account_id"]) == "" || util.Clean(detail["upstream_token_preview"]) == "" {
+		t.Fatalf("log detail missing upstream singleton fields: %#v", detail)
+	}
+	accounts := util.AsMapSlice(detail["upstream_accounts"])
+	if len(accounts) != 1 || accounts[0]["account_id"] != detail["upstream_account_id"] || accounts[0]["token_preview"] != detail["upstream_token_preview"] {
+		t.Fatalf("log detail upstream accounts = %#v, detail = %#v", accounts, detail)
+	}
+	encoded, err := json.Marshal(item)
+	if err != nil {
+		t.Fatalf("marshal log item: %v", err)
+	}
+	if strings.Contains(string(encoded), fullToken) {
+		t.Fatalf("log JSON leaked full upstream token: %s", encoded)
+	}
+}
+
+func TestRunLoggedChatTaskCreatesAccountUsageTrackerForLogs(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+
+	const fullToken = "task-chat-upstream-token-for-log-test"
+	dbURL := newHTTPTestNewAPIDatabase(t)
+	insertHTTPTestNewAPIUser(t, dbURL, 1, "frontend", "frontend@example.test")
+	insertHTTPTestNewAPIToken(t, dbURL, 1, 1, "codex", fullToken, -1, 0, true)
+	reader, err := service.NewNewAPITokenReader(service.NewAPITokenReaderConfig{DatabaseURL: dbURL, TokenGroup: "codex"})
+	if err != nil {
+		t.Fatalf("NewNewAPITokenReader() error = %v", err)
+	}
+	if app.newAPIKeys != nil {
+		_ = app.newAPIKeys.Close()
+	}
+	app.newAPIKeys = reader
+
+	var gotAuth string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/chat/completions" {
+			t.Fatalf("unexpected upstream path: %s", r.URL.Path)
+		}
+		gotAuth = r.Header.Get("Authorization")
+		util.WriteJSON(w, http.StatusBadGateway, map[string]any{"error": map[string]any{"message": "upstream refused chat task"}})
+	}))
+	defer upstream.Close()
+	if _, err := app.config.Update(map[string]any{"relay_base_url": upstream.URL}); err != nil {
+		t.Fatalf("update relay base URL error = %v", err)
+	}
+
+	_, err = app.runLoggedChatTask(context.Background(), service.Identity{ID: "user-1", Role: service.AuthRoleUser, Name: "frontend"}, map[string]any{
+		"model":    "gpt-5",
+		"messages": []any{map[string]any{"role": "user", "content": "hello"}},
+	})
+	if err == nil {
+		t.Fatal("runLoggedChatTask() error = nil, want upstream error")
+	}
+	if gotAuth != "Bearer sk-"+fullToken {
+		t.Fatalf("upstream Authorization = %q", gotAuth)
+	}
+	logs := app.logs.Search(service.LogQuery{Limit: 20})
+	item := findLogBySummary(logs, "文本生成调用失败")
+	if item == nil {
+		t.Fatalf("expected failed chat task log, got %#v", logs)
+	}
+	detail := util.StringMap(item["detail"])
+	if detail["endpoint"] != "/api/creation-tasks/chat-completions" || util.Clean(detail["upstream_account_id"]) == "" || util.Clean(detail["upstream_token_preview"]) == "" {
+		t.Fatalf("chat task log detail missing upstream account fields: %#v", detail)
+	}
+	encoded, err := json.Marshal(item)
+	if err != nil {
+		t.Fatalf("marshal log item: %v", err)
+	}
+	if strings.Contains(string(encoded), fullToken) {
+		t.Fatalf("chat task log JSON leaked full upstream token: %s", encoded)
 	}
 }
 
@@ -2858,6 +2991,31 @@ func TestAdminUsersManageLinuxDoUsers(t *testing.T) {
 	}
 }
 
+func TestManagedUsersDefaultSortsByCreatedAtBeforePagination(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/users?page=1&page_size=2", nil)
+	query, err := parseManagedUsersQuery(req)
+	if err != nil {
+		t.Fatalf("parseManagedUsersQuery() error = %v", err)
+	}
+	if query.SortBy != "created_at" || query.SortOrder != "desc" {
+		t.Fatalf("default sort = %s %s, want created_at desc", query.SortBy, query.SortOrder)
+	}
+
+	items := []map[string]any{
+		{"id": "user_z", "created_at": "2026-01-01 10:00:00"},
+		{"id": "user_a", "created_at": "2026-01-03 10:00:00"},
+		{"id": "user_m", "created_at": "2026-01-02 10:00:00"},
+	}
+	sortManagedUsers(items, query)
+	start := (query.Page - 1) * query.PageSize
+	pageItems := items[start : start+query.PageSize]
+	got := []string{util.Clean(pageItems[0]["id"]), util.Clean(pageItems[1]["id"])}
+	want := []string{"user_a", "user_m"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("default page ids = %#v, want %#v; sorted items = %#v", got, want, items)
+	}
+}
+
 func TestAdminUsersListPaginationAndFilters(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()
@@ -2874,12 +3032,20 @@ func TestAdminUsersListPaginationAndFilters(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreatePasswordUser(enabled_two) error = %v", err)
 	}
+	defaultUsers := []map[string]any{enabledOne, disabledOne, enabledTwo}
+	sort.SliceStable(defaultUsers, func(i, j int) bool {
+		leftCreated := util.Clean(defaultUsers[i]["created_at"])
+		rightCreated := util.Clean(defaultUsers[j]["created_at"])
+		if leftCreated != rightCreated {
+			return leftCreated > rightCreated
+		}
+		return util.Clean(defaultUsers[i]["id"]) > util.Clean(defaultUsers[j]["id"])
+	})
 	expectedDefaultIDs := []string{
-		enabledOne["id"].(string),
-		disabledOne["id"].(string),
-		enabledTwo["id"].(string),
+		util.Clean(defaultUsers[0]["id"]),
+		util.Clean(defaultUsers[1]["id"]),
+		util.Clean(defaultUsers[2]["id"]),
 	}
-	sort.Sort(sort.Reverse(sort.StringSlice(expectedDefaultIDs)))
 
 	req := httptest.NewRequest(http.MethodGet, "/api/admin/users?page=1&page_size=3", nil)
 	req.Header.Set("Authorization", adminAuthHeader(t, app))
@@ -2893,7 +3059,7 @@ func TestAdminUsersListPaginationAndFilters(t *testing.T) {
 		t.Fatalf("default sorted users json: %v", err)
 	}
 	items := logItems(payload)
-	if len(items) != len(expectedDefaultIDs) || payload["sort_by"] != "id" || payload["sort_order"] != "desc" {
+	if len(items) != len(expectedDefaultIDs) || payload["sort_by"] != "created_at" || payload["sort_order"] != "desc" {
 		t.Fatalf("default sorted metadata/items = %#v", payload)
 	}
 	for index, item := range items {
@@ -3154,7 +3320,7 @@ func TestAPIAuditLogCapturesRequestMetadata(t *testing.T) {
 		t.Fatalf("settings status = %d body = %s", res.Code, res.Body.String())
 	}
 
-	req = httptest.NewRequest(http.MethodGet, "/api/logs?username=admin&method=GET&status=200&summary=%2Fapi%2Fsettings", nil)
+	req = httptest.NewRequest(http.MethodGet, "/api/logs?username=admin&method=GET&status=200&summary=%2Fapi%2Fsettings&view=all", nil)
 	req.Header.Set("Authorization", adminAuthHeader(t, app))
 	res = httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
@@ -3219,7 +3385,7 @@ func TestCreationTaskSubmitLogsRequestAndPollingAvoidsGenericAuditNoise(t *testi
 		t.Fatalf("poll creation task status = %d body = %s", res.Code, res.Body.String())
 	}
 
-	req = httptest.NewRequest(http.MethodGet, "/api/logs", nil)
+	req = httptest.NewRequest(http.MethodGet, "/api/logs?view=all", nil)
 	req.Header.Set("Authorization", adminAuthHeader(t, app))
 	res = httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
@@ -3258,7 +3424,7 @@ func TestLogGovernanceEndpointCleansOldLogs(t *testing.T) {
 		t.Fatalf("storage backend %T does not implement LogBackend", backend)
 	}
 	for _, item := range []map[string]any{
-		{"time": "2000-01-01 00:00:00", "type": "event", "summary": "旧日志", "detail": map[string]any{"status": "success"}},
+		{"time": time.Now().AddDate(0, 0, -2).Format("2006-01-02 15:04:05"), "type": "event", "summary": "旧日志", "detail": map[string]any{"status": "success"}},
 		{"time": time.Now().Format("2006-01-02 15:04:05"), "type": "event", "summary": "新日志", "detail": map[string]any{"status": 200}},
 	} {
 		if err := logStore.AppendLog(item); err != nil {
@@ -3297,6 +3463,54 @@ func TestLogGovernanceEndpointCleansOldLogs(t *testing.T) {
 	if cleanup["deleted"] != float64(1) || cleanup["remaining"] != float64(1) {
 		t.Fatalf("cleanup result = %#v, want deleted 1 remaining 1", cleanup)
 	}
+}
+
+func TestNewAppStartsLogRetentionCleaner(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("CHATGPT2API_ROOT", root)
+	t.Setenv("CHATGPT2API_ADMIN_USERNAME", testAdminUsername)
+	t.Setenv("CHATGPT2API_ADMIN_PASSWORD", testAdminPassword)
+	t.Setenv("STORAGE_BACKEND", "sqlite")
+	t.Setenv("DATABASE_URL", "")
+	t.Setenv("CHATGPT2API_LOG_RETENTION_DAYS", "1")
+	unsetTestEnv(t, "CHATGPT2API_REGISTRATION_ENABLED")
+
+	dataDir := filepath.Join(root, "data")
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		t.Fatalf("mkdir data dir: %v", err)
+	}
+	backend, err := storage.NewBackendFromEnv(dataDir)
+	if err != nil {
+		t.Fatalf("NewBackendFromEnv() error = %v", err)
+	}
+	logStore, ok := backend.(storage.LogBackend)
+	if !ok {
+		t.Fatalf("storage backend %T does not implement LogBackend", backend)
+	}
+	for _, item := range []map[string]any{
+		{"time": "2000-01-01 00:00:00", "type": "event", "summary": "旧日志", "detail": map[string]any{"status": "success"}},
+		{"time": time.Now().Format("2006-01-02 15:04:05"), "type": "event", "summary": "新日志", "detail": map[string]any{"status": 200}},
+	} {
+		if err := logStore.AppendLog(item); err != nil {
+			t.Fatalf("AppendLog() error = %v", err)
+		}
+	}
+	if closer, ok := backend.(interface{ Close() error }); ok {
+		if err := closer.Close(); err != nil {
+			t.Fatalf("close seed backend: %v", err)
+		}
+	}
+
+	app, err := NewApp()
+	if err != nil {
+		t.Fatalf("NewApp() error = %v", err)
+	}
+	defer app.Close()
+
+	waitForHTTPTestCondition(t, func() bool {
+		items := app.logs.Search(service.LogQuery{Limit: 10})
+		return len(items) == 1 && items[0]["summary"] == "新日志"
+	})
 }
 
 func TestImageStorageGovernanceEndpointCleansThumbnails(t *testing.T) {
@@ -3355,6 +3569,14 @@ func TestImageStorageGovernanceEndpointCleansThumbnails(t *testing.T) {
 	if _, err := os.Stat(thumbPath); !os.IsNotExist(err) {
 		t.Fatalf("thumbnail still exists, stat error = %v", err)
 	}
+}
+
+func logPayloadSummaries(items []map[string]any) []string {
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		out = append(out, util.Clean(item["summary"]))
+	}
+	return out
 }
 
 func logItems(payload map[string]any) []map[string]any {

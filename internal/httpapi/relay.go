@@ -28,6 +28,7 @@ func (a *App) attachRelayAPIKeyForIdentity(ctx context.Context, identity service
 	if err != nil {
 		return err
 	}
+	protocol.RecordAccountUsage(ctx, key)
 	body["api_key"] = key
 	return nil
 }

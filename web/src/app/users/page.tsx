@@ -335,7 +335,7 @@ function UsersContent() {
   const [searchText, setSearchText] = useState("");
   const [providerFilter, setProviderFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [sortBy, setSortBy] = useState<UserSortField>("id");
+  const [sortBy, setSortBy] = useState<UserSortField>("last_used_at");
   const [sortOrder, setSortOrder] = useState<UserSortOrder>("desc");
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState("20");

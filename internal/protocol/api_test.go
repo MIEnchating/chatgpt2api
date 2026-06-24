@@ -6,10 +6,70 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
+
+	"chatgpt2api/internal/backend"
+	"chatgpt2api/internal/service"
+	"chatgpt2api/internal/storage"
 )
 
 func ptrInt(value int) *int {
 	return &value
+}
+
+type testTextLeaseConfig struct{}
+
+func (testTextLeaseConfig) AutoRemoveInvalidAccounts() bool     { return false }
+func (testTextLeaseConfig) AutoRemoveRateLimitedAccounts() bool { return false }
+func (testTextLeaseConfig) TextAccountScheduleMode() string     { return "load_balance" }
+func (testTextLeaseConfig) ImageAccountScheduleMode() string    { return "load_balance" }
+func (testTextLeaseConfig) Proxy() string                       { return "" }
+
+type testProtocolStorageBackend struct {
+	accounts []map[string]any
+}
+
+var _ storage.Backend = (*testProtocolStorageBackend)(nil)
+
+func (b *testProtocolStorageBackend) LoadAccounts() ([]map[string]any, error) {
+	return cloneMapSlice(b.accounts), nil
+}
+
+func (b *testProtocolStorageBackend) SaveAccounts(items []map[string]any) error {
+	b.accounts = cloneMapSlice(items)
+	return nil
+}
+
+func (b *testProtocolStorageBackend) LoadAuthKeys() ([]map[string]any, error) { return nil, nil }
+func (b *testProtocolStorageBackend) SaveAuthKeys([]map[string]any) error     { return nil }
+func (b *testProtocolStorageBackend) HealthCheck() map[string]any {
+	return map[string]any{"status": "healthy"}
+}
+func (b *testProtocolStorageBackend) Info() map[string]any { return map[string]any{"status": "ok"} }
+
+func cloneMapSlice(items []map[string]any) []map[string]any {
+	if len(items) == 0 {
+		return nil
+	}
+	out := make([]map[string]any, len(items))
+	for i, item := range items {
+		cloned := map[string]any{}
+		for key, value := range item {
+			cloned[key] = value
+		}
+		out[i] = cloned
+	}
+	return out
+}
+
+func newTextLeaseTestEngine(t *testing.T, tokens ...string) (*Engine, *service.AccountService) {
+	t.Helper()
+	store := &testProtocolStorageBackend{}
+	accounts := service.NewAccountService(store, testTextLeaseConfig{}, service.NewProxyService(testTextLeaseConfig{}), service.NewLogService(store))
+	if len(tokens) > 0 {
+		accounts.AddAccounts(tokens)
+	}
+	return &Engine{Accounts: accounts, Proxy: service.NewProxyService(testTextLeaseConfig{})}, accounts
 }
 
 func TestChatAndResponsesImageParsing(t *testing.T) {
@@ -75,6 +135,892 @@ func TestTextModelDoesNotForceImageChatRoute(t *testing.T) {
 	}
 	if !IsImageChatRequest(map[string]any{"model": "gpt-5", "modalities": []any{"image"}, "messages": []any{map[string]any{"role": "user", "content": "draw"}}}) {
 		t.Fatal("gpt-5 with image modality should be routed as an image request")
+	}
+}
+
+func TestWithTextLeaseReleasesOnSuccess(t *testing.T) {
+	engine, accounts := newTextLeaseTestEngine(t, "token-1")
+	if err := engine.withTextLease(context.Background(), nil, func(_ *backend.Client, lease service.AccountLease) error {
+		if lease.Token != "token-1" {
+			t.Fatalf("lease token = %q, want token-1", lease.Token)
+		}
+		if _, err := accounts.AcquireTextAccessToken(nil); err == nil {
+			t.Fatal("expected second acquire to fail while lease is held")
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("withTextLease() error = %v", err)
+	}
+	lease, err := accounts.AcquireTextAccessToken(nil)
+	if err != nil {
+		t.Fatalf("AcquireTextAccessToken() after release error = %v", err)
+	}
+	lease.Release()
+}
+
+func TestWithTextLeaseReleasesOnError(t *testing.T) {
+	engine, accounts := newTextLeaseTestEngine(t, "token-1")
+	wantErr := errors.New("boom")
+	if err := engine.withTextLease(context.Background(), nil, func(_ *backend.Client, lease service.AccountLease) error {
+		if lease.Token != "token-1" {
+			t.Fatalf("lease token = %q, want token-1", lease.Token)
+		}
+		if _, err := accounts.AcquireTextAccessToken(nil); err == nil {
+			t.Fatal("expected second acquire to fail while lease is held")
+		}
+		return wantErr
+	}); !errors.Is(err, wantErr) {
+		t.Fatalf("withTextLease() error = %v, want %v", err, wantErr)
+	}
+	lease, err := accounts.AcquireTextAccessToken(nil)
+	if err != nil {
+		t.Fatalf("AcquireTextAccessToken() after error release error = %v", err)
+	}
+	lease.Release()
+}
+
+func TestWithTextLeaseReleasesOnCanceledContext(t *testing.T) {
+	engine, accounts := newTextLeaseTestEngine(t, "token-1")
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if err := engine.withTextLease(context.Background(), nil, func(_ *backend.Client, lease service.AccountLease) error {
+		if ctx.Err() == nil {
+			t.Fatal("expected canceled context")
+		}
+		if _, err := accounts.AcquireTextAccessToken(nil); err == nil {
+			t.Fatal("expected second acquire to fail while lease is held")
+		}
+		return ctx.Err()
+	}); !errors.Is(err, context.Canceled) {
+		t.Fatalf("withTextLease() error = %v, want context.Canceled", err)
+	}
+	lease, err := accounts.AcquireTextAccessToken(nil)
+	if err != nil {
+		t.Fatalf("AcquireTextAccessToken() after context cancel release error = %v", err)
+	}
+	lease.Release()
+}
+
+func TestTextLeaseRetrySkipsExpiredTokenAndReleasesEachAttempt(t *testing.T) {
+	engine, accounts := newTextLeaseTestEngine(t, "token-1", "token-2")
+	accounts.UpdateAccount("token-1", map[string]any{"session_token": "session-1"})
+	accounts.UpdateAccount("token-2", map[string]any{"session_token": "session-2"})
+	exhaustedTokens := map[string]struct{}{}
+	var firstToken string
+	if err := engine.withTextLease(context.Background(), exhaustedTokens, func(_ *backend.Client, lease service.AccountLease) error {
+		firstToken = lease.Token
+		if !engine.handleTextAccountErrorForRetry(lease.Token, errors.New("authentication token is expired"), exhaustedTokens, true) {
+			t.Fatalf("handleTextAccountErrorForRetry() = false, want true")
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("withTextLease() error = %v", err)
+	}
+	lease, err := accounts.AcquireTextAccessToken(exhaustedTokens)
+	if err != nil {
+		t.Fatalf("AcquireTextAccessToken() retry error = %v", err)
+	}
+	if lease.Token == firstToken {
+		t.Fatalf("retry token = %q, want a different token", lease.Token)
+	}
+	lease.Release()
+}
+
+func stubStreamTextDeltasForTokenRetry(t *testing.T, fn func(context.Context, *Engine, *backend.Client, ConversationRequest) (<-chan string, <-chan error)) {
+	t.Helper()
+	old := streamTextDeltasForTokenRetry
+	streamTextDeltasForTokenRetry = fn
+	t.Cleanup(func() { streamTextDeltasForTokenRetry = old })
+}
+
+func receiveRetryTestError(t *testing.T, errCh <-chan error) error {
+	t.Helper()
+	select {
+	case err := <-errCh:
+		return err
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for retry stream error")
+		return nil
+	}
+}
+
+func TestHandleChatCompletionsCarriesToolsToTextBackendAndFormatsToolCalls(t *testing.T) {
+	engine, _ := newTextLeaseTestEngine(t, "token-1")
+	tools := []any{map[string]any{"type": "function", "function": map[string]any{"name": "read_file"}}}
+	var captured ConversationRequest
+	stubStreamTextDeltasForTokenRetry(t, func(ctx context.Context, e *Engine, client *backend.Client, request ConversationRequest) (<-chan string, <-chan error) {
+		captured = request
+		deltas := make(chan string, 1)
+		errs := make(chan error, 1)
+		deltas <- `<tool_calls><tool_call><tool_name>read_file</tool_name><parameters>{}</parameters></tool_call></tool_calls>`
+		close(deltas)
+		errs <- nil
+		close(errs)
+		return deltas, errs
+	})
+
+	response, stream, err := engine.HandleChatCompletions(context.Background(), map[string]any{
+		"model":       "gpt-5",
+		"messages":    []any{map[string]any{"role": "user", "content": "read"}},
+		"tools":       tools,
+		"tool_choice": "required",
+	})
+	if err != nil || stream != nil {
+		t.Fatalf("HandleChatCompletions() response=%#v stream=%#v err=%v", response, stream, err)
+	}
+	if captured.Tools == nil || captured.ToolChoice != "required" {
+		t.Fatalf("captured request missing tools/tool_choice: %#v", captured)
+	}
+	choice := response["choices"].([]map[string]any)[0]
+	if choice["finish_reason"] != "tool_calls" {
+		t.Fatalf("finish_reason = %#v, want tool_calls", choice["finish_reason"])
+	}
+	message := choice["message"].(map[string]any)
+	if message["content"] != nil {
+		t.Fatalf("message.content = %#v, want nil", message["content"])
+	}
+	if len(message["tool_calls"].([]map[string]any)) != 1 {
+		t.Fatalf("tool_calls = %#v, want one", message["tool_calls"])
+	}
+}
+
+func TestStreamTextChatCompletionWithToolsCarriesToolsToTextBackend(t *testing.T) {
+	engine, _ := newTextLeaseTestEngine(t, "token-1")
+	tools := []any{map[string]any{"type": "function", "function": map[string]any{"name": "read_file"}}}
+	choice := map[string]any{"type": "function", "function": map[string]any{"name": "read_file"}}
+	var captured ConversationRequest
+	stubStreamTextDeltasForTokenRetry(t, func(ctx context.Context, e *Engine, client *backend.Client, request ConversationRequest) (<-chan string, <-chan error) {
+		captured = request
+		deltas := make(chan string, 1)
+		errs := make(chan error, 1)
+		deltas <- `<tool_calls><tool_call><tool_name>read_file</tool_name><parameters>{}</parameters></tool_call></tool_calls>`
+		close(deltas)
+		errs <- nil
+		close(errs)
+		return deltas, errs
+	})
+
+	events, errCh := engine.StreamTextChatCompletionWithTools(context.Background(), []map[string]any{{"role": "user", "content": "read"}}, "gpt-5", tools, choice)
+	for range events {
+	}
+	if err := <-errCh; err != nil {
+		t.Fatalf("StreamTextChatCompletionWithTools() error = %v", err)
+	}
+	if captured.Tools == nil || captured.ToolChoice == nil {
+		t.Fatalf("captured request missing tools/tool_choice: %#v", captured)
+	}
+}
+
+func TestStreamTextDeltasWithTokenRetryHoldsLeaseUntilSuccessStreamEnds(t *testing.T) {
+	engine, accounts := newTextLeaseTestEngine(t, "token-1")
+	started := make(chan struct{})
+	finish := make(chan struct{})
+	stubStreamTextDeltasForTokenRetry(t, func(ctx context.Context, e *Engine, client *backend.Client, request ConversationRequest) (<-chan string, <-chan error) {
+		deltas := make(chan string)
+		errs := make(chan error, 1)
+		close(started)
+		go func() {
+			defer close(deltas)
+			defer close(errs)
+			<-finish
+			errs <- nil
+		}()
+		return deltas, errs
+	})
+
+	deltas, errCh := engine.streamTextDeltasWithTokenRetry(context.Background(), ConversationRequest{Model: "auto"})
+	<-started
+	if _, err := accounts.AcquireTextAccessToken(nil); err == nil {
+		t.Fatal("expected second acquire to fail while stream lease is held")
+	}
+	close(finish)
+	for range deltas {
+	}
+	if err := receiveRetryTestError(t, errCh); err != nil {
+		t.Fatalf("streamTextDeltasWithTokenRetry() error = %v", err)
+	}
+	lease, err := accounts.AcquireTextAccessToken(nil)
+	if err != nil {
+		t.Fatalf("AcquireTextAccessToken() after stream end error = %v", err)
+	}
+	lease.Release()
+}
+
+func TestStreamTextDeltasWithTokenRetryReleasesLeaseOnCanceledContext(t *testing.T) {
+	engine, accounts := newTextLeaseTestEngine(t, "token-1")
+	started := make(chan struct{})
+	stubStreamTextDeltasForTokenRetry(t, func(ctx context.Context, e *Engine, client *backend.Client, request ConversationRequest) (<-chan string, <-chan error) {
+		deltas := make(chan string)
+		errs := make(chan error, 1)
+		close(started)
+		go func() {
+			defer close(deltas)
+			defer close(errs)
+			<-ctx.Done()
+			errs <- ctx.Err()
+		}()
+		return deltas, errs
+	})
+	ctx, cancel := context.WithCancel(context.Background())
+	deltas, errCh := engine.streamTextDeltasWithTokenRetry(ctx, ConversationRequest{Model: "auto"})
+	<-started
+	cancel()
+	for range deltas {
+	}
+	if err := receiveRetryTestError(t, errCh); !errors.Is(err, context.Canceled) {
+		t.Fatalf("streamTextDeltasWithTokenRetry() error = %v, want context.Canceled", err)
+	}
+	lease, err := accounts.AcquireTextAccessToken(nil)
+	if err != nil {
+		t.Fatalf("AcquireTextAccessToken() after canceled stream error = %v", err)
+	}
+	lease.Release()
+}
+
+func TestStreamTextDeltasWithTokenRetrySwitchesTokenAfterExpiredBeforeOutput(t *testing.T) {
+	engine, accounts := newTextLeaseTestEngine(t, "token-1", "token-2")
+	accounts.UpdateAccount("token-1", map[string]any{"session_token": "session-1"})
+	accounts.UpdateAccount("token-2", map[string]any{"session_token": "session-2"})
+	attemptTokens := []string{}
+	stubStreamTextDeltasForTokenRetry(t, func(ctx context.Context, e *Engine, client *backend.Client, request ConversationRequest) (<-chan string, <-chan error) {
+		attemptTokens = append(attemptTokens, client.AccessToken)
+		deltas := make(chan string, 1)
+		errs := make(chan error, 1)
+		if len(attemptTokens) == 1 {
+			close(deltas)
+			errs <- errors.New("authentication token is expired")
+			close(errs)
+			return deltas, errs
+		}
+		deltas <- "ok"
+		close(deltas)
+		errs <- nil
+		close(errs)
+		return deltas, errs
+	})
+
+	deltas, errCh := engine.streamTextDeltasWithTokenRetry(context.Background(), ConversationRequest{Model: "auto"})
+	var text string
+	for delta := range deltas {
+		text += delta
+	}
+	if err := receiveRetryTestError(t, errCh); err != nil {
+		t.Fatalf("streamTextDeltasWithTokenRetry() error = %v", err)
+	}
+	if text != "ok" {
+		t.Fatalf("streamed text = %q, want ok", text)
+	}
+	if len(attemptTokens) != 2 {
+		t.Fatalf("attempt count = %d, want 2 (%#v)", len(attemptTokens), attemptTokens)
+	}
+	if attemptTokens[0] == attemptTokens[1] {
+		t.Fatalf("retry reused token %q, want token switch", attemptTokens[0])
+	}
+	lease, err := accounts.AcquireTextAccessToken(map[string]struct{}{attemptTokens[0]: {}})
+	if err != nil {
+		t.Fatalf("AcquireTextAccessToken() for successful retry token after stream error = %v", err)
+	}
+	if lease.Token != attemptTokens[1] {
+		t.Fatalf("acquired token = %q, want released retry token %q", lease.Token, attemptTokens[1])
+	}
+	lease.Release()
+}
+
+func TestStreamTextDeltasWithTokenRetryDoesNotSwitchTokenAfterPartialOutput(t *testing.T) {
+	engine, accounts := newTextLeaseTestEngine(t, "token-1", "token-2")
+	attemptTokens := []string{}
+	stubStreamTextDeltasForTokenRetry(t, func(ctx context.Context, e *Engine, client *backend.Client, request ConversationRequest) (<-chan string, <-chan error) {
+		attemptTokens = append(attemptTokens, client.AccessToken)
+		deltas := make(chan string, 1)
+		errs := make(chan error, 1)
+		deltas <- "partial"
+		close(deltas)
+		errs <- errors.New("authentication token is expired")
+		close(errs)
+		return deltas, errs
+	})
+
+	deltas, errCh := engine.streamTextDeltasWithTokenRetry(context.Background(), ConversationRequest{Model: "auto"})
+	var text string
+	for delta := range deltas {
+		text += delta
+	}
+	err := receiveRetryTestError(t, errCh)
+	if err == nil || !strings.Contains(err.Error(), "authentication token is expired") {
+		t.Fatalf("streamTextDeltasWithTokenRetry() error = %v, want token expired", err)
+	}
+	if text != "partial" {
+		t.Fatalf("streamed text = %q, want partial", text)
+	}
+	if len(attemptTokens) != 1 {
+		t.Fatalf("attempt count = %d, want 1 (%#v)", len(attemptTokens), attemptTokens)
+	}
+	account := accounts.GetAccount(attemptTokens[0])
+	if account["status"] != "异常" || account["quota"] != 0 {
+		t.Fatalf("partial-error account = %#v, want status 异常 quota 0", account)
+	}
+}
+
+func TestStreamTextDeltasWithTokenRetryMarksInvalidAccountOnUpstreamError(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		detail      string
+		wantStatus  string
+		wantErrText string
+	}{
+		{name: "token invalidated", detail: "token_invalidated", wantStatus: "异常", wantErrText: "token_invalidated"},
+		{name: "token revoked", detail: "token_revoked", wantStatus: "异常", wantErrText: "token_revoked"},
+		{name: "insufficient quota", detail: "insufficient_quota", wantStatus: "限流", wantErrText: "insufficient_quota"},
+		{name: "usage limit", detail: "usage limit reached", wantStatus: "限流", wantErrText: "usage limit"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			engine, accounts := newTextLeaseTestEngine(t, "token-1")
+			accounts.UpdateAccount("token-1", map[string]any{"status": "正常", "quota": 5})
+			stubStreamTextDeltasForTokenRetry(t, func(ctx context.Context, e *Engine, client *backend.Client, request ConversationRequest) (<-chan string, <-chan error) {
+				deltas := make(chan string)
+				errs := make(chan error, 1)
+				close(deltas)
+				errs <- errors.New("auth_chat_requirements failed: status=401, body={\"detail\":\"" + tc.detail + "\"}")
+				close(errs)
+				return deltas, errs
+			})
+
+			ctx, _ := WithAccountUsageTracker(context.Background())
+			deltas, errCh := engine.streamTextDeltasWithTokenRetry(ctx, ConversationRequest{Model: "auto"})
+			for range deltas {
+			}
+			err := receiveRetryTestError(t, errCh)
+			if err == nil || !strings.Contains(err.Error(), tc.wantErrText) {
+				t.Fatalf("streamTextDeltasWithTokenRetry() error = %v, want upstream error containing %q", err, tc.wantErrText)
+			}
+			account := accounts.GetAccount("token-1")
+			if account["status"] != tc.wantStatus || account["quota"] != 0 {
+				t.Fatalf("account = %#v, want status %s quota 0", account, tc.wantStatus)
+			}
+			usedAccounts := AccountUsageFromContext(ctx)
+			if len(usedAccounts) != 1 || usedAccounts[0]["account_id"] == "" || usedAccounts[0]["token_preview"] == "" {
+				t.Fatalf("used accounts = %#v, want one recorded upstream account", usedAccounts)
+			}
+		})
+	}
+}
+
+func TestImageChatRouteStillWinsWhenToolsPresent(t *testing.T) {
+	body := map[string]any{
+		"model": "gpt-image-2",
+		"messages": []any{map[string]any{"role": "user", "content": []any{
+			map[string]any{"type": "text", "text": "把这张图改成海报"},
+			map[string]any{"type": "image_url", "image_url": map[string]any{"url": "data:image/png;base64," + base64.StdEncoding.EncodeToString([]byte("png"))}},
+		}}},
+		"tools": []any{map[string]any{
+			"type": "function",
+			"function": map[string]any{
+				"name":        "lookup_style",
+				"description": "lookup a style preset",
+				"parameters":  map[string]any{"type": "object"},
+			},
+		}},
+	}
+
+	if !IsImageChatRequest(body) {
+		t.Fatal("image model with function tools should still use the image chat route")
+	}
+	if HasVisionImages(body) {
+		t.Fatal("image model with function tools should not be reclassified as a vision request")
+	}
+}
+
+func TestMessageResponseUsesSharedToolUseBlocks(t *testing.T) {
+	tools := []any{map[string]any{
+		"name":        "read_file",
+		"description": "read a file",
+		"input_schema": map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"path": map[string]any{"type": "string"},
+			},
+		},
+	}}
+	content := `<tool_calls><tool_call><tool_name>read_file</tool_name><parameters>{"path":"internal/app.go"}</parameters></tool_call></tool_calls>`
+
+	response := MessageResponse("claude", content, 10, 5, tools)
+	if response["stop_reason"] != "tool_use" {
+		t.Fatalf("stop_reason = %#v, want tool_use", response["stop_reason"])
+	}
+	blocks := response["content"].([]map[string]any)
+	if len(blocks) != 1 || blocks[0]["type"] != "tool_use" || blocks[0]["name"] != "read_file" {
+		t.Fatalf("content blocks = %#v, want one read_file tool_use", blocks)
+	}
+}
+
+func TestMessageRequestFromBodyHonorsToolChoiceNone(t *testing.T) {
+	tools := []any{map[string]any{"name": "read_file", "description": "read a file"}}
+	body := map[string]any{
+		"model":       "claude",
+		"tool_choice": "none",
+		"tools":       tools,
+		"messages":    []any{map[string]any{"role": "user", "content": "hello"}},
+	}
+
+	request := MessageRequestFromBody(&Engine{}, body)
+	if request.ToolChoice != "none" {
+		t.Fatalf("ToolChoice = %#v, want none", request.ToolChoice)
+	}
+	for _, message := range request.Messages {
+		if strings.Contains(message["content"].(string), "Tool:") {
+			t.Fatalf("messages included injected tool prompt: %#v", request.Messages)
+		}
+	}
+}
+
+func TestCompletionResponseWithToolCalls(t *testing.T) {
+	tools := []any{map[string]any{
+		"type": "function",
+		"function": map[string]any{
+			"name":        "read_file",
+			"description": "read a file",
+			"parameters": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{"type": "string"},
+				},
+			},
+		},
+	}}
+	content := `<tool_calls><tool_call><tool_name>read_file</tool_name><parameters>{"path":"internal/app.go"}</parameters></tool_call></tool_calls>`
+
+	response, err := CompletionResponseWithTools("gpt-5", content, 123, []map[string]any{{"role": "user", "content": "read"}}, tools, nil)
+	if err != nil {
+		t.Fatalf("CompletionResponseWithTools() error = %v", err)
+	}
+	choice := response["choices"].([]map[string]any)[0]
+	if choice["finish_reason"] != "tool_calls" {
+		t.Fatalf("finish_reason = %#v, want tool_calls", choice["finish_reason"])
+	}
+	message := choice["message"].(map[string]any)
+	if message["content"] != nil {
+		t.Fatalf("message.content = %#v, want nil", message["content"])
+	}
+	toolCalls := message["tool_calls"].([]map[string]any)
+	if len(toolCalls) != 1 {
+		t.Fatalf("tool_calls = %#v, want one entry", toolCalls)
+	}
+	function := toolCalls[0]["function"].(map[string]any)
+	if function["name"] != "read_file" || !strings.Contains(function["arguments"].(string), "internal/app.go") {
+		t.Fatalf("function tool call = %#v", function)
+	}
+}
+
+func TestCompletionResponseRequiredToolErrorsWithoutCall(t *testing.T) {
+	tools := []any{map[string]any{"type": "function", "function": map[string]any{"name": "read_file"}}}
+	_, err := CompletionResponseWithTools("gpt-5", "plain text", 123, nil, tools, "required")
+	var httpErr HTTPError
+	if !errors.As(err, &httpErr) {
+		t.Fatalf("err = %T %v, want HTTPError", err, err)
+	}
+	if httpErr.Status != 400 || !strings.Contains(httpErr.Message, "tool_choice required") {
+		t.Fatalf("HTTPError = %#v, want status 400 with tool_choice required", httpErr)
+	}
+}
+
+func TestCompletionResponseForcedToolRejectsExtraCall(t *testing.T) {
+	tools := []any{
+		map[string]any{"type": "function", "function": map[string]any{"name": "read_file"}},
+		map[string]any{"type": "function", "function": map[string]any{"name": "search"}},
+	}
+	content := `<tool_calls><tool_call><tool_name>read_file</tool_name><parameters>{}</parameters></tool_call><tool_call><tool_name>search</tool_name><parameters>{}</parameters></tool_call></tool_calls>`
+	choice := map[string]any{"type": "function", "function": map[string]any{"name": "read_file"}}
+
+	_, err := CompletionResponseWithTools("gpt-5", content, 123, nil, tools, choice)
+	var httpErr HTTPError
+	if !errors.As(err, &httpErr) {
+		t.Fatalf("err = %T %v, want HTTPError", err, err)
+	}
+	if httpErr.Status != 400 || !strings.Contains(httpErr.Message, "model produced search") {
+		t.Fatalf("HTTPError = %#v, want forced tool mismatch", httpErr)
+	}
+}
+
+func TestCompletionResponseForcedToolErrorsWhenToolMissing(t *testing.T) {
+	tools := []any{map[string]any{"type": "function", "function": map[string]any{"name": "search"}}}
+	choice := map[string]any{"type": "function", "function": map[string]any{"name": "read_file"}}
+
+	_, err := CompletionResponseWithTools("gpt-5", "plain text", 123, nil, tools, choice)
+	var httpErr HTTPError
+	if !errors.As(err, &httpErr) {
+		t.Fatalf("err = %T %v, want HTTPError", err, err)
+	}
+	if httpErr.Status != 400 || !strings.Contains(httpErr.Message, "not an available tool") {
+		t.Fatalf("HTTPError = %#v, want missing forced tool error", httpErr)
+	}
+}
+
+func TestStreamChatCompletionEventsEmitsFinalToolCalls(t *testing.T) {
+	tools := []any{map[string]any{"type": "function", "function": map[string]any{"name": "read_file"}}}
+	deltas := make(chan string, 2)
+	errs := make(chan error, 1)
+	deltas <- `<tool_calls><tool_call><tool_name>read_file</tool_name>`
+	deltas <- `<parameters>{"path":"internal/app.go"}</parameters></tool_call></tool_calls>`
+	close(deltas)
+	errs <- nil
+	close(errs)
+
+	events, errCh := streamChatCompletionEvents(context.Background(), "gpt-5", deltas, errs, tools, nil)
+	var chunks []map[string]any
+	for event := range events {
+		chunks = append(chunks, event)
+	}
+	if err := <-errCh; err != nil {
+		t.Fatalf("streamChatCompletionEvents() error = %v", err)
+	}
+	if len(chunks) != 2 {
+		t.Fatalf("chunk count = %d, want role and final tool_calls chunks: %#v", len(chunks), chunks)
+	}
+	roleChoice := chunks[0]["choices"].([]map[string]any)[0]
+	roleDelta := roleChoice["delta"].(map[string]any)
+	if roleDelta["role"] != "assistant" {
+		t.Fatalf("first delta = %#v, want assistant role", roleDelta)
+	}
+	finalChoice := chunks[len(chunks)-1]["choices"].([]map[string]any)[0]
+	if finalChoice["finish_reason"] != "tool_calls" {
+		t.Fatalf("finish_reason = %#v, want tool_calls", finalChoice["finish_reason"])
+	}
+	finalDelta := finalChoice["delta"].(map[string]any)
+	toolCalls := finalDelta["tool_calls"].([]map[string]any)
+	if len(toolCalls) != 1 {
+		t.Fatalf("tool_calls = %#v, want one entry", toolCalls)
+	}
+	function := toolCalls[0]["function"].(map[string]any)
+	if function["name"] != "read_file" || !strings.Contains(function["arguments"].(string), "internal/app.go") {
+		t.Fatalf("function tool call = %#v", function)
+	}
+}
+
+func TestStreamChatCompletionEventsRequiredToolErrorsWithoutTools(t *testing.T) {
+	deltas := make(chan string, 1)
+	errs := make(chan error, 1)
+	deltas <- "normal text"
+	close(deltas)
+	errs <- nil
+	close(errs)
+
+	events, errCh := streamChatCompletionEvents(context.Background(), "gpt-5", deltas, errs, nil, "required")
+	var chunks []map[string]any
+	for event := range events {
+		chunks = append(chunks, event)
+	}
+	if len(chunks) != 0 {
+		t.Fatalf("streamed chunks = %#v, want none", chunks)
+	}
+	var httpErr HTTPError
+	if err := <-errCh; !errors.As(err, &httpErr) {
+		t.Fatalf("err = %T %v, want HTTPError", err, err)
+	}
+	if httpErr.Status != 400 || !strings.Contains(httpErr.Message, "tool_choice required") {
+		t.Fatalf("HTTPError = %#v, want status 400 with tool_choice required", httpErr)
+	}
+}
+
+func TestStreamChatCompletionEventsForcedToolErrorsWhenToolMissing(t *testing.T) {
+	tools := []any{map[string]any{"type": "function", "function": map[string]any{"name": "search"}}}
+	choice := map[string]any{"type": "function", "function": map[string]any{"name": "read_file"}}
+	events, errCh := streamChatCompletionEvents(context.Background(), "gpt-5", nil, nil, tools, choice)
+	var chunks []map[string]any
+	for event := range events {
+		chunks = append(chunks, event)
+	}
+	if len(chunks) != 0 {
+		t.Fatalf("streamed chunks = %#v, want none", chunks)
+	}
+	var httpErr HTTPError
+	if err := <-errCh; !errors.As(err, &httpErr) {
+		t.Fatalf("err = %T %v, want HTTPError", err, err)
+	}
+	if httpErr.Status != 400 || !strings.Contains(httpErr.Message, "not an available tool") {
+		t.Fatalf("HTTPError = %#v, want missing forced tool error", httpErr)
+	}
+}
+
+func TestStreamTextChatCompletionWithToolsRequiredToolErrorsBeforeUpstream(t *testing.T) {
+	events, errCh := (&Engine{}).StreamTextChatCompletionWithTools(context.Background(), nil, "gpt-5", nil, "required")
+	var chunks []map[string]any
+	for event := range events {
+		chunks = append(chunks, event)
+	}
+	if len(chunks) != 0 {
+		t.Fatalf("streamed chunks = %#v, want none", chunks)
+	}
+	var httpErr HTTPError
+	if err := <-errCh; !errors.As(err, &httpErr) {
+		t.Fatalf("err = %T %v, want HTTPError", err, err)
+	}
+	if httpErr.Status != 400 || !strings.Contains(httpErr.Message, "tool_choice required") {
+		t.Fatalf("HTTPError = %#v, want status 400 with tool_choice required", httpErr)
+	}
+}
+
+func TestStreamVisionChatCompletionWithToolsRequiredToolErrorsBeforeUpstream(t *testing.T) {
+	events, errCh := (&Engine{}).StreamVisionChatCompletionWithTools(context.Background(), nil, "gpt-5", nil, nil, "required")
+	var chunks []map[string]any
+	for event := range events {
+		chunks = append(chunks, event)
+	}
+	if len(chunks) != 0 {
+		t.Fatalf("streamed chunks = %#v, want none", chunks)
+	}
+	var httpErr HTTPError
+	if err := <-errCh; !errors.As(err, &httpErr) {
+		t.Fatalf("err = %T %v, want HTTPError", err, err)
+	}
+	if httpErr.Status != 400 || !strings.Contains(httpErr.Message, "tool_choice required") {
+		t.Fatalf("HTTPError = %#v, want status 400 with tool_choice required", httpErr)
+	}
+}
+
+func TestStreamTextChatCompletionWithToolsForcedToolErrorsBeforeUpstream(t *testing.T) {
+	tools := []any{map[string]any{"type": "function", "function": map[string]any{"name": "search"}}}
+	choice := map[string]any{"type": "function", "function": map[string]any{"name": "read_file"}}
+	events, errCh := (&Engine{}).StreamTextChatCompletionWithTools(context.Background(), nil, "gpt-5", tools, choice)
+	var chunks []map[string]any
+	for event := range events {
+		chunks = append(chunks, event)
+	}
+	if len(chunks) != 0 {
+		t.Fatalf("streamed chunks = %#v, want none", chunks)
+	}
+	var httpErr HTTPError
+	if err := <-errCh; !errors.As(err, &httpErr) {
+		t.Fatalf("err = %T %v, want HTTPError", err, err)
+	}
+	if httpErr.Status != 400 || !strings.Contains(httpErr.Message, "not an available tool") {
+		t.Fatalf("HTTPError = %#v, want missing forced tool error", httpErr)
+	}
+}
+
+func TestStreamChatCompletionEventsReturnsPlainTextWhenNoCall(t *testing.T) {
+	tools := []any{map[string]any{"type": "function", "function": map[string]any{"name": "read_file"}}}
+	deltas := make(chan string, 2)
+	errs := make(chan error, 1)
+	deltas <- "hello "
+	deltas <- "world"
+	close(deltas)
+	errs <- nil
+	close(errs)
+
+	events, errCh := streamChatCompletionEvents(context.Background(), "gpt-5", deltas, errs, tools, nil)
+	text := ""
+	finishReason := any(nil)
+	for event := range events {
+		choice := event["choices"].([]map[string]any)[0]
+		delta := choice["delta"].(map[string]any)
+		if content, ok := delta["content"].(string); ok {
+			text += content
+		}
+		if choice["finish_reason"] != nil {
+			finishReason = choice["finish_reason"]
+		}
+	}
+	if err := <-errCh; err != nil {
+		t.Fatalf("streamChatCompletionEvents() error = %v", err)
+	}
+	if text != "hello world" {
+		t.Fatalf("streamed text = %q, want hello world", text)
+	}
+	if finishReason != "stop" {
+		t.Fatalf("finish_reason = %#v, want stop", finishReason)
+	}
+}
+
+func TestStreamChatCompletionEventsFlushesHeldMarkerWhenNoToolCall(t *testing.T) {
+	tools := []any{map[string]any{"type": "function", "function": map[string]any{"name": "read_file"}}}
+	deltas := make(chan string, 2)
+	errs := make(chan error, 1)
+	deltas <- "\nhello "
+	deltas <- "<tool_call"
+	close(deltas)
+	errs <- nil
+	close(errs)
+
+	events, errCh := streamChatCompletionEvents(context.Background(), "gpt-5", deltas, errs, tools, nil)
+	text := ""
+	finishReason := any(nil)
+	for event := range events {
+		choice := event["choices"].([]map[string]any)[0]
+		delta := choice["delta"].(map[string]any)
+		if content, ok := delta["content"].(string); ok {
+			text += content
+		}
+		if choice["finish_reason"] != nil {
+			finishReason = choice["finish_reason"]
+		}
+	}
+	if err := <-errCh; err != nil {
+		t.Fatalf("streamChatCompletionEvents() error = %v", err)
+	}
+	if text != "\nhello <tool_call" {
+		t.Fatalf("streamed text = %q, want \\nhello <tool_call", text)
+	}
+	if finishReason != "stop" {
+		t.Fatalf("finish_reason = %#v, want stop", finishReason)
+	}
+}
+
+func TestStreamChatCompletionEventsFlushesHeldMarkerInSingleDeltaWhenNoToolCall(t *testing.T) {
+	tools := []any{map[string]any{"type": "function", "function": map[string]any{"name": "read_file"}}}
+	deltas := make(chan string, 1)
+	errs := make(chan error, 1)
+	deltas <- "\nhello <tool_call"
+	close(deltas)
+	errs <- nil
+	close(errs)
+
+	events, errCh := streamChatCompletionEvents(context.Background(), "gpt-5", deltas, errs, tools, nil)
+	text := ""
+	finishReason := any(nil)
+	for event := range events {
+		choice := event["choices"].([]map[string]any)[0]
+		delta := choice["delta"].(map[string]any)
+		if content, ok := delta["content"].(string); ok {
+			text += content
+		}
+		if choice["finish_reason"] != nil {
+			finishReason = choice["finish_reason"]
+		}
+	}
+	if err := <-errCh; err != nil {
+		t.Fatalf("streamChatCompletionEvents() error = %v", err)
+	}
+	if text != "\nhello <tool_call" {
+		t.Fatalf("streamed text = %q, want \\nhello <tool_call", text)
+	}
+	if finishReason != "stop" {
+		t.Fatalf("finish_reason = %#v, want stop", finishReason)
+	}
+}
+
+func TestStreamChatCompletionEventsDoesNotLeakSplitToolMarkup(t *testing.T) {
+	tools := []any{map[string]any{"type": "function", "function": map[string]any{"name": "read_file"}}}
+	deltas := make(chan string, 3)
+	errs := make(chan error, 1)
+	deltas <- "visible "
+	deltas <- "<"
+	deltas <- `tool_calls><tool_call><tool_name>read_file</tool_name><parameters>{"path":"a.go"}</parameters></tool_call></tool_calls>`
+	close(deltas)
+	errs <- nil
+	close(errs)
+
+	events, errCh := streamChatCompletionEvents(context.Background(), "gpt-5", deltas, errs, tools, nil)
+	text := ""
+	finishReason := any(nil)
+	var toolCalls []map[string]any
+	for event := range events {
+		choice := event["choices"].([]map[string]any)[0]
+		delta := choice["delta"].(map[string]any)
+		if content, ok := delta["content"].(string); ok {
+			text += content
+		}
+		if rawToolCalls, ok := delta["tool_calls"].([]map[string]any); ok {
+			toolCalls = rawToolCalls
+		}
+		if choice["finish_reason"] != nil {
+			finishReason = choice["finish_reason"]
+		}
+	}
+	if err := <-errCh; err != nil {
+		t.Fatalf("streamChatCompletionEvents() error = %v", err)
+	}
+	if text != "visible " {
+		t.Fatalf("streamed text = %q, want visible ", text)
+	}
+	if strings.Contains(text, "<") || strings.Contains(text, "tool_calls") {
+		t.Fatalf("streamed text leaked tool markup: %q", text)
+	}
+	if finishReason != "tool_calls" {
+		t.Fatalf("finish_reason = %#v, want tool_calls", finishReason)
+	}
+	if len(toolCalls) != 1 {
+		t.Fatalf("tool_calls = %#v, want one entry", toolCalls)
+	}
+}
+
+func TestStreamChatCompletionEventsDoesNotLeakSplitSingularToolMarkup(t *testing.T) {
+	tools := []any{map[string]any{"type": "function", "function": map[string]any{"name": "read_file"}}}
+	deltas := make(chan string, 3)
+	errs := make(chan error, 1)
+	deltas <- "visible "
+	deltas <- "<"
+	deltas <- `tool_call><tool_name>read_file</tool_name><parameters>{"path":"a.go"}</parameters></tool_call>`
+	close(deltas)
+	errs <- nil
+	close(errs)
+
+	events, errCh := streamChatCompletionEvents(context.Background(), "gpt-5", deltas, errs, tools, nil)
+	text := ""
+	finishReason := any(nil)
+	var toolCalls []map[string]any
+	for event := range events {
+		choice := event["choices"].([]map[string]any)[0]
+		delta := choice["delta"].(map[string]any)
+		if content, ok := delta["content"].(string); ok {
+			text += content
+		}
+		if rawToolCalls, ok := delta["tool_calls"].([]map[string]any); ok {
+			toolCalls = rawToolCalls
+		}
+		if choice["finish_reason"] != nil {
+			finishReason = choice["finish_reason"]
+		}
+	}
+	if err := <-errCh; err != nil {
+		t.Fatalf("streamChatCompletionEvents() error = %v", err)
+	}
+	if text != "visible " {
+		t.Fatalf("streamed text = %q, want visible ", text)
+	}
+	if strings.Contains(text, "<") || strings.Contains(text, "tool_call") {
+		t.Fatalf("streamed text leaked tool markup: %q", text)
+	}
+	if finishReason != "tool_calls" {
+		t.Fatalf("finish_reason = %#v, want tool_calls", finishReason)
+	}
+	if len(toolCalls) != 1 {
+		t.Fatalf("tool_calls = %#v, want one entry", toolCalls)
+	}
+}
+
+func TestChatPartsInjectToolPromptForTextAndVision(t *testing.T) {
+	tools := []any{map[string]any{"type": "function", "function": map[string]any{"name": "read_file"}}}
+	textBody := map[string]any{
+		"model":    "gpt-5",
+		"messages": []any{map[string]any{"role": "user", "content": "read"}},
+		"tools":    tools,
+	}
+	_, textMessages, err := TextChatParts(textBody)
+	if err != nil {
+		t.Fatalf("TextChatParts() error = %v", err)
+	}
+	if len(textMessages) == 0 || textMessages[0]["role"] != "system" || !strings.Contains(textMessages[0]["content"].(string), "Tool: read_file") {
+		t.Fatalf("text messages missing tool prompt: %#v", textMessages)
+	}
+
+	imageData := base64.StdEncoding.EncodeToString([]byte("png-bytes"))
+	visionBody := map[string]any{
+		"model": "gpt-5",
+		"messages": []any{map[string]any{"role": "user", "content": []any{
+			map[string]any{"type": "text", "text": "read this image"},
+			map[string]any{"type": "image_url", "image_url": map[string]any{"url": "data:image/png;base64," + imageData}},
+		}}},
+		"tools": tools,
+	}
+	_, visionMessages, images, err := VisionChatParts(visionBody)
+	if err != nil {
+		t.Fatalf("VisionChatParts() error = %v", err)
+	}
+	if len(visionMessages) == 0 || visionMessages[0]["role"] != "system" || !strings.Contains(visionMessages[0]["content"].(string), "Tool: read_file") {
+		t.Fatalf("vision messages missing tool prompt: %#v", visionMessages)
+	}
+	if len(images) != 1 || string(images[0].Data) != "png-bytes" {
+		t.Fatalf("VisionChatParts() images = %#v", images)
 	}
 }
 
@@ -271,6 +1217,39 @@ func TestResponseImageGenerationRequestMapsTextModelToOfficialImageFlow(t *testi
 	}
 	if request.OutputCompression == nil || *request.OutputCompression != 37 {
 		t.Fatalf("output compression = %#v, want 37 for webp", request.OutputCompression)
+	}
+}
+
+func TestResponseImageGenerationRouteStillWinsWhenOtherToolsPresent(t *testing.T) {
+	body := map[string]any{
+		"model": "gpt-5.5",
+		"input": []any{map[string]any{"role": "user", "content": []any{
+			map[string]any{"type": "input_text", "text": "生成一张横版产品图"},
+		}}},
+		"tools": []any{
+			map[string]any{
+				"type": "function",
+				"function": map[string]any{
+					"name":       "lookup_product",
+					"parameters": map[string]any{"type": "object"},
+				},
+			},
+			map[string]any{"type": "image_generation", "model": "gpt-image-2", "size": "16:9"},
+		},
+	}
+
+	if !HasResponseImageGenerationTool(body) {
+		t.Fatal("responses body with image_generation plus function tools should use the image generation route")
+	}
+	request, prompt, err := ResponseImageGenerationRequest(body, "linuxdo:1", nil)
+	if err != nil {
+		t.Fatalf("ResponseImageGenerationRequest() error = %v", err)
+	}
+	if prompt != "生成一张横版产品图" {
+		t.Fatalf("prompt = %q, want 生成一张横版产品图", prompt)
+	}
+	if request.Model != "gpt-image-2" || !request.UsesResponsesImageRoute() {
+		t.Fatalf("request route/model = %q responses=%v, want gpt-image-2 responses image route", request.Model, request.UsesResponsesImageRoute())
 	}
 }
 
@@ -500,6 +1479,257 @@ func TestToolCallParsing(t *testing.T) {
 	}
 	if stripped := StripToolMarkup(text); stripped != "先处理" {
 		t.Fatalf("StripToolMarkup() = %q", stripped)
+	}
+
+	fenced := "```xml\n<tool_calls><tool_call><tool_name>read_file</tool_name><parameters><path>hidden</path></parameters></tool_call></tool_calls>\n```"
+	if calls := ParseToolCalls(fenced); len(calls) != 0 {
+		t.Fatalf("ParseToolCalls() parsed fenced XML = %#v", calls)
+	}
+
+	repeated := `<tool_calls><tool_call><tool_name>read_file</tool_name><parameters><path>a.go</path><path>b.go</path></parameters></tool_call></tool_calls>`
+	calls = ParseToolCalls(repeated)
+	if len(calls) != 1 {
+		t.Fatalf("ParseToolCalls() repeated fields = %#v", calls)
+	}
+	paths, ok := calls[0].Input["path"].([]any)
+	if !ok || len(paths) != 2 || paths[0] != "a.go" || paths[1] != "b.go" {
+		t.Fatalf("repeated path input = %#v", calls[0].Input["path"])
+	}
+}
+
+func TestStreamAnthropicEventsDoesNotDuplicateStreamedTextBeforeToolUse(t *testing.T) {
+	const visible = "先处理"
+	const toolXML = `<tool_calls><tool_call><tool_name>read_file</tool_name><parameters><path>internal/app.go</path></parameters></tool_call></tool_calls>`
+
+	oldStreamTextChatCompletion := streamTextChatCompletionForAnthropic
+	streamTextChatCompletionForAnthropic = func(ctx context.Context, e *Engine, request MessageRequest) (<-chan map[string]any, <-chan error) {
+		chunks := make(chan map[string]any, 3)
+		errs := make(chan error, 1)
+		chunks <- CompletionChunk(request.Model, map[string]any{"role": "assistant", "content": visible + "\n"}, nil, "chatcmpl_test", 1)
+		chunks <- CompletionChunk(request.Model, map[string]any{"content": toolXML}, nil, "chatcmpl_test", 1)
+		chunks <- CompletionChunk(request.Model, map[string]any{}, "stop", "chatcmpl_test", 1)
+		close(chunks)
+		errs <- nil
+		close(errs)
+		return chunks, errs
+	}
+	defer func() { streamTextChatCompletionForAnthropic = oldStreamTextChatCompletion }()
+	engine := &Engine{}
+	request := MessageRequest{
+		Model: "auto",
+		Tools: []any{map[string]any{
+			"name":        "read_file",
+			"description": "read a file",
+			"input_schema": map[string]any{
+				"type": "object",
+				"properties": map[string]any{
+					"path": map[string]any{"type": "string"},
+				},
+			},
+		}},
+	}
+
+	events, errCh := engine.StreamAnthropicEvents(context.Background(), request)
+	textStarts := 0
+	toolStarts := 0
+	textDelta := ""
+	toolIndex := -1
+	for event := range events {
+		if event["type"] == "content_block_start" {
+			block := event["content_block"].(map[string]any)
+			switch block["type"] {
+			case "text":
+				textStarts++
+			case "tool_use":
+				toolStarts++
+				toolIndex = event["index"].(int)
+			}
+		}
+		if event["type"] == "content_block_delta" && event["index"] == 0 {
+			delta := event["delta"].(map[string]any)
+			if delta["type"] == "text_delta" {
+				textDelta += delta["text"].(string)
+			}
+		}
+	}
+	if err := <-errCh; err != nil {
+		t.Fatalf("StreamAnthropicEvents() error = %v", err)
+	}
+	if textStarts != 1 || toolStarts != 1 {
+		t.Fatalf("content block starts = text:%d tool_use:%d, want 1/1", textStarts, toolStarts)
+	}
+	if strings.TrimSpace(textDelta) != visible {
+		t.Fatalf("streamed text delta = %q, want %q", textDelta, visible)
+	}
+	if toolIndex != 1 {
+		t.Fatalf("tool_use index = %d, want 1", toolIndex)
+	}
+}
+
+func TestStreamAnthropicEventsDoesNotLeakSplitToolMarkup(t *testing.T) {
+	const toolXMLTail = `tool_calls><tool_call><tool_name>read_file</tool_name><parameters>{"path":"a.go"}</parameters></tool_call></tool_calls>`
+
+	oldStreamTextChatCompletion := streamTextChatCompletionForAnthropic
+	streamTextChatCompletionForAnthropic = func(ctx context.Context, e *Engine, request MessageRequest) (<-chan map[string]any, <-chan error) {
+		chunks := make(chan map[string]any, 3)
+		errs := make(chan error, 1)
+		chunks <- CompletionChunk(request.Model, map[string]any{"role": "assistant", "content": "visible <"}, nil, "chatcmpl_test", 1)
+		chunks <- CompletionChunk(request.Model, map[string]any{"content": toolXMLTail}, nil, "chatcmpl_test", 1)
+		chunks <- CompletionChunk(request.Model, map[string]any{}, "stop", "chatcmpl_test", 1)
+		close(chunks)
+		errs <- nil
+		close(errs)
+		return chunks, errs
+	}
+	defer func() { streamTextChatCompletionForAnthropic = oldStreamTextChatCompletion }()
+
+	events, errCh := (&Engine{}).StreamAnthropicEvents(context.Background(), MessageRequest{
+		Model: "auto",
+		Tools: []any{map[string]any{"name": "read_file", "description": "read a file"}},
+	})
+	text := ""
+	toolStarts := 0
+	for event := range events {
+		if event["type"] == "content_block_start" {
+			block := event["content_block"].(map[string]any)
+			if block["type"] == "tool_use" {
+				toolStarts++
+			}
+		}
+		if event["type"] == "content_block_delta" {
+			delta := event["delta"].(map[string]any)
+			if delta["type"] == "text_delta" {
+				text += delta["text"].(string)
+			}
+		}
+	}
+	if err := <-errCh; err != nil {
+		t.Fatalf("StreamAnthropicEvents() error = %v", err)
+	}
+	if text != "visible " {
+		t.Fatalf("streamed text = %q, want visible ", text)
+	}
+	if strings.Contains(text, "<") || strings.Contains(text, "tool_calls") {
+		t.Fatalf("streamed text leaked tool markup: %q", text)
+	}
+	if toolStarts != 1 {
+		t.Fatalf("tool_use starts = %d, want 1", toolStarts)
+	}
+}
+
+func TestStreamAnthropicEventsFlushesHeldMarkerWhenNoToolCall(t *testing.T) {
+	oldStreamTextChatCompletion := streamTextChatCompletionForAnthropic
+	streamTextChatCompletionForAnthropic = func(ctx context.Context, e *Engine, request MessageRequest) (<-chan map[string]any, <-chan error) {
+		chunks := make(chan map[string]any, 2)
+		errs := make(chan error, 1)
+		chunks <- CompletionChunk(request.Model, map[string]any{"role": "assistant", "content": "\nhello <tool_call"}, nil, "chatcmpl_test", 1)
+		chunks <- CompletionChunk(request.Model, map[string]any{}, "stop", "chatcmpl_test", 1)
+		close(chunks)
+		errs <- nil
+		close(errs)
+		return chunks, errs
+	}
+	defer func() { streamTextChatCompletionForAnthropic = oldStreamTextChatCompletion }()
+
+	events, errCh := (&Engine{}).StreamAnthropicEvents(context.Background(), MessageRequest{
+		Model: "auto",
+		Tools: []any{map[string]any{"name": "read_file", "description": "read a file"}},
+	})
+	text := ""
+	stopReason := any(nil)
+	for event := range events {
+		if event["type"] == "content_block_delta" {
+			delta := event["delta"].(map[string]any)
+			if delta["type"] == "text_delta" {
+				text += delta["text"].(string)
+			}
+		}
+		if event["type"] == "message_delta" {
+			delta := event["delta"].(map[string]any)
+			stopReason = delta["stop_reason"]
+		}
+	}
+	if err := <-errCh; err != nil {
+		t.Fatalf("StreamAnthropicEvents() error = %v", err)
+	}
+	if text != "\nhello <tool_call" {
+		t.Fatalf("streamed text = %q, want \\nhello <tool_call", text)
+	}
+	if stopReason != "end_turn" {
+		t.Fatalf("stop_reason = %#v, want end_turn", stopReason)
+	}
+}
+
+func TestStreamAnthropicEventsRequiredToolErrorsWithoutTools(t *testing.T) {
+	events, errCh := (&Engine{}).StreamAnthropicEvents(context.Background(), MessageRequest{Model: "auto", ToolChoice: "required"})
+	var emitted []map[string]any
+	for event := range events {
+		emitted = append(emitted, event)
+	}
+	if len(emitted) != 0 {
+		t.Fatalf("events = %#v, want none", emitted)
+	}
+	var httpErr HTTPError
+	if err := <-errCh; !errors.As(err, &httpErr) {
+		t.Fatalf("err = %T %v, want HTTPError", err, err)
+	}
+	if httpErr.Status != 400 || !strings.Contains(httpErr.Message, "tool_choice required") {
+		t.Fatalf("HTTPError = %#v, want status 400 with tool_choice required", httpErr)
+	}
+}
+
+func TestStreamAnthropicEventsForcedToolErrorsWhenToolMissing(t *testing.T) {
+	tools := []any{map[string]any{"name": "search"}}
+	choice := map[string]any{"type": "tool", "name": "read_file"}
+	events, errCh := (&Engine{}).StreamAnthropicEvents(context.Background(), MessageRequest{Model: "auto", Tools: tools, ToolChoice: choice})
+	var emitted []map[string]any
+	for event := range events {
+		emitted = append(emitted, event)
+	}
+	if len(emitted) != 0 {
+		t.Fatalf("events = %#v, want none", emitted)
+	}
+	var httpErr HTTPError
+	if err := <-errCh; !errors.As(err, &httpErr) {
+		t.Fatalf("err = %T %v, want HTTPError", err, err)
+	}
+	if httpErr.Status != 400 || !strings.Contains(httpErr.Message, "not an available tool") {
+		t.Fatalf("HTTPError = %#v, want missing forced tool error", httpErr)
+	}
+}
+
+func TestMessageResponseRequiredToolErrorsWithoutTools(t *testing.T) {
+	_, err := MessageResponseWithChoice("claude", "plain text", 10, 2, nil, "required")
+	var httpErr HTTPError
+	if !errors.As(err, &httpErr) {
+		t.Fatalf("err = %T %v, want HTTPError", err, err)
+	}
+	if httpErr.Status != 400 || !strings.Contains(httpErr.Message, "tool_choice required") {
+		t.Fatalf("HTTPError = %#v, want status 400 with tool_choice required", httpErr)
+	}
+}
+
+func TestMessageResponseForcedToolErrorsWhenToolMissing(t *testing.T) {
+	tools := []any{map[string]any{"name": "search"}}
+	choice := map[string]any{"type": "tool", "name": "read_file"}
+	_, err := MessageResponseWithChoice("claude", "plain text", 10, 2, tools, choice)
+	var httpErr HTTPError
+	if !errors.As(err, &httpErr) {
+		t.Fatalf("err = %T %v, want HTTPError", err, err)
+	}
+	if httpErr.Status != 400 || !strings.Contains(httpErr.Message, "not an available tool") {
+		t.Fatalf("HTTPError = %#v, want missing forced tool error", httpErr)
+	}
+}
+
+func TestCompletionResponseRequiredToolErrorsWithoutTools(t *testing.T) {
+	_, err := CompletionResponseWithTools("gpt-5", "plain text", 123, nil, nil, "required")
+	var httpErr HTTPError
+	if !errors.As(err, &httpErr) {
+		t.Fatalf("err = %T %v, want HTTPError", err, err)
+	}
+	if httpErr.Status != 400 || !strings.Contains(httpErr.Message, "tool_choice required") {
+		t.Fatalf("HTTPError = %#v, want status 400 with tool_choice required", httpErr)
 	}
 }
 

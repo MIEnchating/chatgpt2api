@@ -35,11 +35,12 @@ type ImageConfig interface {
 }
 
 type Engine struct {
-	Accounts *service.AccountService
-	Config   ImageConfig
-	Storage  storage.JSONDocumentBackend
-	Proxy    *service.ProxyService
-	Logger   *service.Logger
+	Accounts                  *service.AccountService
+	Config                    ImageConfig
+	Storage                   storage.JSONDocumentBackend
+	Proxy                     *service.ProxyService
+	Logger                    *service.Logger
+	ImageConversationSessions *service.ImageConversationSessionService
 
 	ListModelsFunc         func(context.Context) (map[string]any, error)
 	StreamImageOutputsFunc func(context.Context, *backend.Client, ConversationRequest, int, int) (<-chan ImageOutput, <-chan error)
@@ -53,25 +54,31 @@ type Engine struct {
 type ImageOutputSlotAcquirer func(context.Context, int) (func(), error)
 
 type ConversationRequest struct {
-	Model                  string
-	Prompt                 string
-	Messages               []map[string]any
-	Images                 []string
-	InputImageMask         string
-	N                      int
-	Size                   string
-	Quality                string
-	Background             string
-	Moderation             string
-	OutputFormat           string
-	OutputCompression      *int
-	PartialImages          *int
-	ResponseFormat         string
-	BaseURL                string
-	OwnerID                string
-	OwnerName              string
-	MessageAsError         bool
-	AcquireImageOutputSlot ImageOutputSlotAcquirer
+	Model                   string
+	Prompt                  string
+	Messages                []map[string]any
+	Tools                   any
+	ToolChoice              any
+	Images                  []string
+	InputImageMask          string
+	N                       int
+	Size                    string
+	Quality                 string
+	Background              string
+	Moderation              string
+	OutputFormat            string
+	OutputCompression       *int
+	PartialImages           *int
+	ResponseFormat          string
+	BaseURL                 string
+	OwnerID                 string
+	OwnerName               string
+	FrontendConversationID  string
+	UpstreamConversationID  string
+	UpstreamParentMessageID string
+	FallbackReferenceImage  string
+	MessageAsError          bool
+	AcquireImageOutputSlot  ImageOutputSlotAcquirer
 }
 
 func (r ConversationRequest) Normalized() ConversationRequest {
@@ -218,6 +225,8 @@ type ImageOutput struct {
 	Total             int
 	Created           int64
 	Text              string
+	ConversationID    string
+	MessageID         string
 	UpstreamEventType string
 	Data              []map[string]any
 }
@@ -379,7 +388,7 @@ func (e *Engine) StreamTextDeltas(ctx context.Context, client *backend.Client, r
 	go func() {
 		defer close(out)
 		defer close(errCh)
-		events, convErr := e.ConversationEvents(ctx, client, request.Messages, request.Model, request.Prompt)
+		events, convErr := e.ConversationEvents(ctx, client, request.Messages, request.Model, request.Prompt, request.Tools, request.ToolChoice)
 		for event := range events {
 			if event["type"] != "conversation.delta" {
 				continue
@@ -422,7 +431,7 @@ func (e *Engine) CollectVisionText(ctx context.Context, client *backend.Client, 
 	return strings.Join(parts, ""), <-errCh
 }
 
-func (e *Engine) ConversationEvents(ctx context.Context, client *backend.Client, messages []map[string]any, model, prompt string) (<-chan ConversationEvent, <-chan error) {
+func (e *Engine) ConversationEvents(ctx context.Context, client *backend.Client, messages []map[string]any, model, prompt string, tools any, choice any) (<-chan ConversationEvent, <-chan error) {
 	out := make(chan ConversationEvent)
 	errCh := make(chan error, 1)
 	go func() {
@@ -434,7 +443,7 @@ func (e *Engine) ConversationEvents(ctx context.Context, client *backend.Client,
 		}
 		historyText := AssistantHistoryText(normalized)
 		historyMessages := AssistantHistoryMessages(normalized)
-		payloads, upstreamErr := client.StreamConversation(ctx, normalized, model, prompt)
+		payloads, upstreamErr := client.StreamConversation(ctx, normalized, model, prompt, tools, choice)
 		iterErr := IterConversationPayloads(ctx, payloads, historyText, historyMessages, out)
 		upErr := <-upstreamErr
 		if iterErr != nil {
@@ -589,82 +598,151 @@ func noopImageOutputSlotRelease() {}
 func (e *Engine) runSingleImageOutput(ctx context.Context, out chan<- ImageOutput, request ConversationRequest, index int) imageRunResult {
 	result := imageRunResult{}
 	transientAttempts := 0
+	session, hasSession := e.activeImageConversationSession(request)
+	preferredToken := ""
+	if hasSession {
+		preferredToken = session.AccessToken
+	}
 	for {
-		token, err := e.nextImageAccessToken(ctx)
+		lease, err := e.nextImageAccessLease(ctx, preferredToken)
 		if err != nil {
 			result.lastError = err.Error()
 			result.err = NewImageGenerationError(err.Error())
 			return result
 		}
-		emittedForToken := false
-		returnedMessage := false
-		returnedResult := false
-		rateLimitedForToken := false
-		rateLimitMessage := ""
-		client := e.newImageClient(token)
-		outputs, imageErr := e.StreamImageOutputs(ctx, client, request, index, request.N)
-		for output := range outputs {
-			if output.Kind == "message" && service.IsAccountRateLimitedErrorMessage(output.Text) {
-				rateLimitedForToken = true
-				rateLimitMessage = output.Text
-				result.lastError = output.Text
-				continue
-			}
-			if output.Kind == "message" && request.MessageAsError {
-				if e.Accounts != nil {
-					e.Accounts.MarkImageResult(token, false)
+		retry := func() bool {
+			defer lease.Release()
+			token := lease.Token
+			useSession := hasSession && token == preferredToken
+			requestForToken := request
+			if useSession {
+				requestForToken.UpstreamConversationID = session.UpstreamConversationID
+				requestForToken.UpstreamParentMessageID = session.UpstreamParentMessageID
+			} else {
+				if hasSession {
+					e.invalidateImageConversationSession(request)
+					hasSession = false
+					preferredToken = ""
 				}
-				result.err = &ImageGenerationError{Message: firstNonEmpty(output.Text, "Image generation returned a text response instead of image data."), StatusCode: 400, Type: "invalid_request_error", Code: "image_generation_text_response"}
-				result.lastError = result.err.Error()
-				return result
-			}
-			result.emitted = true
-			emittedForToken = true
-			returnedMessage = output.Kind == "message"
-			returnedResult = returnedResult || output.Kind == "result"
-			out <- output
-		}
-		err = <-imageErr
-		if err == nil {
-			if rateLimitedForToken {
-				if e.Accounts != nil {
-					e.Accounts.MarkImageResult(token, false)
-					e.Accounts.ApplyAccountErrorMessage(token, "image_stream", rateLimitMessage)
+				requestForToken.UpstreamConversationID = ""
+				requestForToken.UpstreamParentMessageID = ""
+				if requestForToken.FallbackReferenceImage != "" {
+					requestForToken.Images = append(append([]string(nil), request.Images...), requestForToken.FallbackReferenceImage)
 				}
-				continue
 			}
-			if returnedMessage || !returnedResult {
-				if e.Accounts != nil {
-					e.Accounts.MarkImageResult(token, false)
+			emittedForToken := false
+			returnedMessage := false
+			returnedResult := false
+			rateLimitedForToken := false
+			rateLimitMessage := ""
+			lastConversationID := ""
+			lastMessageID := ""
+			client := e.newImageClient(token)
+			outputs, imageErr := e.StreamImageOutputs(ctx, client, requestForToken, index, request.N)
+			for output := range outputs {
+				if output.ConversationID != "" {
+					lastConversationID = output.ConversationID
 				}
-				result.returnedMessage = returnedMessage || !returnedResult
-				return result
-			}
-			if e.Accounts != nil {
-				e.Accounts.MarkImageResult(token, true)
-			}
-			return result
-		}
-		if e.Accounts != nil {
-			e.Accounts.MarkImageResult(token, false)
-		}
-		result.lastError = err.Error()
-		if e.Accounts != nil {
-			if normalized, handled := e.Accounts.ApplyAccountErrorMessage(token, "image_stream", result.lastError); handled {
-				result.lastError = normalized
-				if service.IsAccountRateLimitedErrorMessage(err.Error()) || !emittedForToken {
+				if output.MessageID != "" {
+					lastMessageID = output.MessageID
+				}
+				if output.Kind == "message" && service.IsAccountRateLimitedErrorMessage(output.Text) {
+					rateLimitedForToken = true
+					rateLimitMessage = output.Text
+					result.lastError = output.Text
 					continue
 				}
+				if output.Kind == "message" && request.MessageAsError {
+					returnedMessage = true
+					result.lastError = firstNonEmpty(output.Text, "Image generation returned a text response instead of image data.")
+					if useSession {
+						continue
+					}
+					if e.Accounts != nil {
+						e.Accounts.MarkImageResult(token, false)
+					}
+					result.err = &ImageGenerationError{Message: result.lastError, StatusCode: 400, Type: "invalid_request_error", Code: "image_generation_text_response"}
+					return false
+				}
+				result.emitted = true
+				emittedForToken = true
+				returnedMessage = output.Kind == "message"
+				returnedResult = returnedResult || output.Kind == "result"
+				select {
+				case out <- output:
+				case <-ctx.Done():
+					if e.Accounts != nil {
+						e.Accounts.MarkImageResult(token, false)
+					}
+					result.err = ctx.Err()
+					result.lastError = ctx.Err().Error()
+					return false
+				}
 			}
-		}
-		if !emittedForToken && IsTokenInvalidError(result.lastError) {
+			err := <-imageErr
+			if err == nil {
+				if rateLimitedForToken {
+					if e.Accounts != nil {
+						e.Accounts.MarkImageResult(token, false)
+						e.Accounts.ApplyAccountErrorMessage(token, "image_stream", rateLimitMessage)
+					}
+					if useSession {
+						e.invalidateImageConversationSession(request)
+						hasSession = false
+						preferredToken = ""
+					}
+					return true
+				}
+				if returnedMessage || !returnedResult {
+					if e.Accounts != nil {
+						e.Accounts.MarkImageResult(token, false)
+					}
+					if useSession {
+						e.invalidateImageConversationSession(request)
+						hasSession = false
+						preferredToken = ""
+						return true
+					}
+					result.returnedMessage = returnedMessage || !returnedResult
+					return false
+				}
+				if e.Accounts != nil {
+					e.Accounts.MarkImageResult(token, true)
+				}
+				e.bindImageConversationSession(request, token, lastConversationID, lastMessageID)
+				return false
+			}
+			if e.Accounts != nil {
+				e.Accounts.MarkImageResult(token, false)
+			}
+			result.lastError = err.Error()
+			if useSession {
+				e.invalidateImageConversationSession(request)
+				hasSession = false
+				preferredToken = ""
+				return true
+			}
+			if e.Accounts != nil {
+				if normalized, handled := e.Accounts.ApplyAccountErrorMessage(token, "image_stream", result.lastError); handled {
+					result.lastError = normalized
+					if service.IsAccountRateLimitedErrorMessage(err.Error()) || !emittedForToken {
+						return true
+					}
+				}
+			}
+			if !emittedForToken && IsTokenInvalidError(result.lastError) {
+				return true
+			}
+			if !returnedResult && isTransientImageStreamErrorMessage(result.lastError) && transientAttempts < maxTransientImageStreamAttempts {
+				transientAttempts++
+				return true
+			}
+			result.err = NewImageGenerationError(imageStreamErrorMessage(result.lastError))
+			return false
+		}()
+		if retry {
 			continue
 		}
-		if !returnedResult && isTransientImageStreamErrorMessage(result.lastError) && transientAttempts < maxTransientImageStreamAttempts {
-			transientAttempts++
-			continue
-		}
-		result.err = NewImageGenerationError(imageStreamErrorMessage(result.lastError))
 		return result
 	}
 }
@@ -676,11 +754,76 @@ func (e *Engine) StreamImageOutputs(ctx context.Context, client *backend.Client,
 	return e.StreamResponsesImageOutputs(ctx, client, request, index, total)
 }
 
-func (e *Engine) nextImageAccessToken(ctx context.Context) (string, error) {
-	if e.ImageTokenProvider != nil {
-		return e.ImageTokenProvider(ctx)
+func (e *Engine) nextImageAccessLease(ctx context.Context, preferredToken string) (service.AccountLease, error) {
+	if e.Accounts != nil {
+		preferredToken = strings.TrimSpace(preferredToken)
+		if preferredToken != "" {
+			lease, err := e.Accounts.GetAvailableImageAccessTokenFor(ctx, func(account map[string]any) bool {
+				return util.Clean(account["access_token"]) == preferredToken
+			})
+			if err == nil && lease.Token != "" {
+				return lease, nil
+			}
+			lease.Release()
+		}
+		lease, err := e.Accounts.GetAvailableImageAccessToken(ctx)
+		if err == nil {
+			return lease, nil
+		}
+		if e.ImageTokenProvider == nil || len(e.Accounts.ListAccounts()) > 0 {
+			return service.AccountLease{}, err
+		}
 	}
-	return e.Accounts.GetAvailableAccessTokenFor(ctx, nil)
+	if e.ImageTokenProvider != nil {
+		token, err := e.ImageTokenProvider(ctx)
+		if err != nil {
+			return service.AccountLease{}, err
+		}
+		return service.AccountLease{Token: token}, nil
+	}
+	return service.AccountLease{}, fmt.Errorf("no account service configured")
+}
+
+func (e *Engine) activeImageConversationSession(request ConversationRequest) (service.ImageConversationSession, bool) {
+	if e == nil || e.ImageConversationSessions == nil {
+		return service.ImageConversationSession{}, false
+	}
+	if request.OwnerID == "" || request.FrontendConversationID == "" {
+		return service.ImageConversationSession{}, false
+	}
+	session, ok := e.ImageConversationSessions.Get(request.OwnerID, request.FrontendConversationID)
+	if !ok || session.Status != service.ImageConversationSessionActive {
+		return service.ImageConversationSession{}, false
+	}
+	if session.AccessToken == "" || session.UpstreamConversationID == "" || session.UpstreamParentMessageID == "" {
+		return service.ImageConversationSession{}, false
+	}
+	return session, true
+}
+
+func (e *Engine) invalidateImageConversationSession(request ConversationRequest) {
+	if e == nil || e.ImageConversationSessions == nil || request.OwnerID == "" || request.FrontendConversationID == "" {
+		return
+	}
+	e.ImageConversationSessions.Invalidate(request.OwnerID, request.FrontendConversationID)
+}
+
+func (e *Engine) bindImageConversationSession(request ConversationRequest, token, conversationID, parentMessageID string) {
+	if e == nil || e.ImageConversationSessions == nil || request.OwnerID == "" || request.FrontendConversationID == "" {
+		return
+	}
+	conversationID = strings.TrimSpace(conversationID)
+	parentMessageID = strings.TrimSpace(parentMessageID)
+	if token == "" || conversationID == "" || parentMessageID == "" {
+		return
+	}
+	e.ImageConversationSessions.Bind(service.ImageConversationSession{
+		OwnerID:                 request.OwnerID,
+		FrontendConversationID:  request.FrontendConversationID,
+		AccessToken:             token,
+		UpstreamConversationID:  conversationID,
+		UpstreamParentMessageID: parentMessageID,
+	})
 }
 
 func (e *Engine) newImageClient(token string) *backend.Client {
@@ -712,17 +855,19 @@ func (e *Engine) StreamResponsesImageOutputs(ctx context.Context, client *backen
 			PartialImages:     request.PartialImages,
 			InputImages:       responsesInputImages(request.Images),
 			InputImageMask:    responsesInputImagePtr(request.InputImageMask),
+			ConversationID:    request.UpstreamConversationID,
+			ParentMessageID:   request.UpstreamParentMessageID,
 		})
 		emitted := false
 		seen := map[string]struct{}{}
 		for event := range events {
 			if event.PartialImage != "" {
-				out <- ImageOutput{Kind: "progress", Model: request.Model, Index: index, Total: total, Created: firstNonZeroInt64(event.Created, time.Now().Unix()), Text: event.Text, UpstreamEventType: event.Type}
+				out <- ImageOutput{Kind: "progress", Model: request.Model, Index: index, Total: total, Created: firstNonZeroInt64(event.Created, time.Now().Unix()), Text: event.Text, ConversationID: event.ConversationID, MessageID: event.MessageID, UpstreamEventType: event.Type}
 				continue
 			}
 			if isFinalImageTextEvent(event) {
 				emitted = true
-				out <- ImageOutput{Kind: "message", Model: request.Model, Index: index, Total: total, Created: firstNonZeroInt64(event.Created, time.Now().Unix()), Text: strings.TrimSpace(event.Text), UpstreamEventType: event.Type}
+				out <- ImageOutput{Kind: "message", Model: request.Model, Index: index, Total: total, Created: firstNonZeroInt64(event.Created, time.Now().Unix()), Text: strings.TrimSpace(event.Text), ConversationID: event.ConversationID, MessageID: event.MessageID, UpstreamEventType: event.Type}
 				continue
 			}
 			if event.Result == "" {
@@ -1207,6 +1352,27 @@ func NormalizeMessages(messages any, system any) []map[string]any {
 	return normalized
 }
 
+func TokenCountMessages(messages any, system any) []map[string]any {
+	var out []map[string]any
+	if text := MessageText(system); text != "" {
+		out = append(out, map[string]any{"role": "system", "content": text})
+	}
+	if list, ok := messages.([]map[string]any); ok {
+		for _, message := range list {
+			out = append(out, map[string]any{"role": firstNonEmpty(util.Clean(message["role"]), "user"), "content": message["content"]})
+		}
+		return out
+	}
+	if list, ok := messages.([]any); ok {
+		for _, raw := range list {
+			if message, ok := raw.(map[string]any); ok {
+				out = append(out, map[string]any{"role": firstNonEmpty(util.Clean(message["role"]), "user"), "content": message["content"]})
+			}
+		}
+	}
+	return out
+}
+
 func AssistantHistoryText(messages []map[string]any) string {
 	var parts []string
 	for _, item := range messages {
@@ -1304,11 +1470,24 @@ func buildResponsesImagePrompt(prompt, size, model string) string {
 	return BuildImagePrompt(prompt, size, "")
 }
 
+const (
+	imageLowDetailTokens     = 85
+	imageTileTokens          = 170
+	imageUnknownDetailTokens = 765
+	imageTokenTileSize       = 512
+	imageTokenMaxDimension   = 2048
+	imageTokenShortDimension = 768
+)
+
 func CountMessageTokens(messages []map[string]any, model string) int {
 	total := 3
 	for _, message := range messages {
 		total += 3
 		for key, value := range message {
+			if key == "content" {
+				total += CountContentTokens(value, model)
+				continue
+			}
 			if text, ok := value.(string); ok {
 				total += CountTextTokens(text, model)
 				if key == "name" {
@@ -1318,6 +1497,116 @@ func CountMessageTokens(messages []map[string]any, model string) int {
 		}
 	}
 	return total
+}
+
+func CountContentTokens(content any, model string) int {
+	switch v := content.(type) {
+	case string:
+		return CountTextTokens(v, model)
+	case []any:
+		total := 0
+		for _, part := range v {
+			total += CountContentPartTokens(part, model)
+		}
+		return total
+	case []map[string]any:
+		total := 0
+		for _, part := range v {
+			total += CountContentPartTokens(part, model)
+		}
+		return total
+	default:
+		return 0
+	}
+}
+
+func CountContentPartTokens(part any, model string) int {
+	m := util.StringMap(part)
+	if len(m) == 0 {
+		return 0
+	}
+	switch strings.ToLower(strings.TrimSpace(util.Clean(m["type"]))) {
+	case "text", "input_text":
+		return CountTextTokens(util.Clean(m["text"]), model)
+	case "image_url", "input_image":
+		return CountImagePartTokens(m)
+	default:
+		return 0
+	}
+}
+
+func CountImagePartTokens(part any) int {
+	urlValue, detail := imagePartURLAndDetail(part)
+	if strings.EqualFold(strings.TrimSpace(detail), "low") {
+		return imageLowDetailTokens
+	}
+	if width, height, ok := imageDimensionsFromDataURL(urlValue); ok {
+		return estimateImageTokensFromDimensions(width, height)
+	}
+	return imageUnknownDetailTokens
+}
+
+func imagePartURLAndDetail(part any) (string, string) {
+	m := util.StringMap(part)
+	if len(m) == 0 {
+		return "", ""
+	}
+	for _, key := range []string{"image_url", "input_image"} {
+		value := m[key]
+		if nested := util.StringMap(value); len(nested) > 0 {
+			return firstNonEmpty(util.Clean(nested["url"]), util.Clean(nested["image_url"])), firstNonEmpty(util.Clean(nested["detail"]), util.Clean(m["detail"]))
+		}
+		if text := util.Clean(value); text != "" {
+			return text, util.Clean(m["detail"])
+		}
+	}
+	return firstNonEmpty(util.Clean(m["url"]), util.Clean(m["image_url"])), util.Clean(m["detail"])
+}
+
+func imageDimensionsFromDataURL(value string) (int, int, bool) {
+	value = strings.TrimSpace(value)
+	if !strings.HasPrefix(strings.ToLower(value), "data:image/") {
+		return 0, 0, false
+	}
+	header, dataPart, ok := strings.Cut(value, ",")
+	if !ok || !strings.Contains(strings.ToLower(header), ";base64") {
+		return 0, 0, false
+	}
+	data, err := base64.StdEncoding.DecodeString(strings.TrimSpace(dataPart))
+	if err != nil {
+		return 0, 0, false
+	}
+	config, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil || config.Width <= 0 || config.Height <= 0 {
+		return 0, 0, false
+	}
+	return config.Width, config.Height, true
+}
+
+func estimateImageTokensFromDimensions(width, height int) int {
+	if width <= 0 || height <= 0 {
+		return imageUnknownDetailTokens
+	}
+	maxDimension := max(width, height)
+	if maxDimension > imageTokenMaxDimension {
+		width = ceilDiv(width*imageTokenMaxDimension, maxDimension)
+		height = ceilDiv(height*imageTokenMaxDimension, maxDimension)
+	}
+	shortDimension := min(width, height)
+	if shortDimension > imageTokenShortDimension {
+		width = ceilDiv(width*imageTokenShortDimension, shortDimension)
+		height = ceilDiv(height*imageTokenShortDimension, shortDimension)
+	}
+	tilesWide := ceilDiv(width, imageTokenTileSize)
+	tilesHigh := ceilDiv(height, imageTokenTileSize)
+	return imageLowDetailTokens + imageTileTokens*tilesWide*tilesHigh
+}
+
+func ceilDiv(value, divisor int) int {
+	if divisor <= 0 {
+		return 0
+	}
+	return (value + divisor - 1) / divisor
 }
 
 func CountTextTokens(text, model string) int {

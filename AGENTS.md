@@ -1,5 +1,12 @@
 # Repository Guidelines
 
+## Language Rules
+
+- Always use Simplified Chinese to answer all user questions and requests.
+- Technical terms can remain in English, but Chinese explanations must be provided.
+- Code comments must be in English.
+- Configuration file content language should be determined based on actual needs.
+
 ## Coding Principles
 
 **No compatibility layers**

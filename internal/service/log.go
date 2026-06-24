@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,7 +18,10 @@ import (
 )
 
 const (
-	LogTypeEvent = "event"
+	LogTypeEvent      = "event"
+	LogViewAll        = "all"
+	LogViewMeaningful = "meaningful"
+	LogViewBusiness   = "business"
 )
 
 type LogService struct {
@@ -46,6 +50,7 @@ type LogQuery struct {
 	EndDate       string
 	StartTime     string
 	EndTime       string
+	View          string
 	Limit         int
 }
 
@@ -154,6 +159,35 @@ func (s *LogService) CleanupOlderThan(retentionDays int) (LogCleanupResult, erro
 	}, nil
 }
 
+func (s *LogService) StartRetentionCleaner(ctx context.Context, retentionGetter func() int, interval time.Duration, logger *Logger) {
+	if interval <= 0 {
+		interval = 24 * time.Hour
+	}
+	if retentionGetter == nil {
+		retentionGetter = func() int { return 7 }
+	}
+	go func() {
+		timer := time.NewTimer(0)
+		defer timer.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-timer.C:
+				result, err := s.CleanupOlderThan(retentionGetter())
+				if err != nil {
+					if logger != nil {
+						logger.Warning("log retention cleanup failed", "error", err)
+					}
+				} else if result.Deleted > 0 && logger != nil {
+					logger.Info("log retention cleanup completed", "deleted", result.Deleted, "remaining", result.Remaining, "retention_days", result.RetentionDays)
+				}
+				timer.Reset(interval)
+			}
+		}
+	}()
+}
+
 func (s *LogService) governanceSummaryLocked() LogGovernanceSummary {
 	items, ok := s.loadLogItems("", "")
 	summary := LogGovernanceSummary{}
@@ -252,7 +286,50 @@ func matchLogQuery(item map[string]any, query LogQuery) bool {
 	if level := strings.TrimSpace(query.LogLevel); level != "" && logLevel(item) != strings.ToLower(level) {
 		return false
 	}
-	return true
+	return matchLogView(item, query.View)
+}
+
+func matchLogView(item map[string]any, view string) bool {
+	switch NormalizeLogView(view, LogViewAll) {
+	case LogViewBusiness:
+		return !isAuditLogItem(item)
+	case LogViewMeaningful:
+		return isMeaningfulLogItem(item)
+	default:
+		return true
+	}
+}
+
+func NormalizeLogView(value, fallback string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case LogViewAll, LogViewMeaningful, LogViewBusiness:
+		return strings.ToLower(strings.TrimSpace(value))
+	}
+	if fallback == "" || strings.EqualFold(fallback, value) {
+		return LogViewMeaningful
+	}
+	return NormalizeLogView(fallback, LogViewMeaningful)
+}
+
+func isMeaningfulLogItem(item map[string]any) bool {
+	if !isAuditLogItem(item) {
+		return true
+	}
+	method := strings.ToUpper(logDetailString(item, "method"))
+	if method != http.MethodGet && method != http.MethodHead {
+		return true
+	}
+	return logOutcome(item) == "failed"
+}
+
+func isAuditLogItem(item map[string]any) bool {
+	summary := strings.ToUpper(strings.TrimSpace(util.Clean(item["summary"])))
+	method := strings.ToUpper(logDetailString(item, "method"))
+	path := logDetailString(item, "path")
+	if method == "" || path == "" {
+		return false
+	}
+	return strings.HasPrefix(summary, method+" ")
 }
 
 func matchLogDate(item map[string]any, startDate, endDate string) bool {
@@ -751,7 +828,7 @@ func sanitizeLogField(key string, value any) any {
 func sensitiveLogKey(key string) bool {
 	lower := strings.ToLower(strings.TrimSpace(key))
 	switch lower {
-	case "authorization", "password", "secret", "token", "access_token", "refresh_token", "api_key", "key", "dx":
+	case "authorization", "password", "secret", "token", "access_token", "accesstoken", "refresh_token", "refreshtoken", "session_token", "sessiontoken", "session_json", "sessionjson", "api_key", "key", "dx":
 		return true
 	default:
 		return strings.Contains(lower, "password") ||

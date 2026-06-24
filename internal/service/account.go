@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/rand"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -16,24 +18,60 @@ import (
 	"chatgpt2api/internal/util"
 )
 
+// Account map fields stored by the storage layer.
+//
+//	access_token        - ChatGPT access token (JWT), required, unique account identifier
+//	session_token       - Session token used to refresh access_token automatically
+//	type                - Account type: Free / Plus / ProLite / Pro / Team
+//	status              - Account status: normal / invalid / limited / disabled / refresh pending / refreshing
+//	quota               - Remaining quota count
+//	image_quota_unknown - Whether the image quota is unknown
+//	email               - Linked email address
+//	user_id             - User ID
+//	chatgpt_account_id  - ChatGPT account ID
+//	limits_progress     - Usage limit progress
+//	default_model_slug  - Default model slug
+//	restore_at          - Quota restore time
 type AccountConfig interface {
 	AutoRemoveInvalidAccounts() bool
 	AutoRemoveRateLimitedAccounts() bool
+	TextAccountScheduleMode() string
+	ImageAccountScheduleMode() string
+}
+
+type AccountLease struct {
+	Token   string
+	release func()
+}
+
+func (l AccountLease) Release() {
+	if l.release != nil {
+		l.release()
+	}
 }
 
 type AccountService struct {
-	mu                sync.Mutex
-	storage           storage.Backend
-	config            AccountConfig
-	proxy             *ProxyService
-	logs              *LogService
-	index             int
-	items             []map[string]any
-	imageReservations map[string]int
-	remoteBaseURL     string
-	browserHTTPClient func(profile string, timeout time.Duration) *http.Client
-	textRequestCount  map[string]int
-	textCooldownUntil time.Time
+	mu                        sync.Mutex
+	storage                   storage.Backend
+	config                    AccountConfig
+	proxy                     *ProxyService
+	logs                      *LogService
+	index                     int
+	items                     []map[string]any
+	imageReservations         map[string]int
+	imageReservationAliases   map[string]string
+	imageReservationAliasRefs map[string]int
+	busyTokens                map[string]int
+	busyTokenAliases          map[string]string
+	busyTokenAliasRefs        map[string]int
+	remoteBaseURL             string
+	browserHTTPClient         func(profile string, timeout time.Duration) *http.Client
+	textRequestCount          map[string]int
+	stickyTextToken           string
+	stickyImageToken          string
+	textCooldownUntil         time.Time
+	random                    *rand.Rand
+	refresher                 *SessionRefresher
 }
 
 const (
@@ -50,15 +88,29 @@ func NewAccountService(backend storage.Backend, config AccountConfig, proxy *Pro
 		return proxy.BrowserHTTPClientWithProfile(profile, timeout)
 	}
 	s := &AccountService{
-		storage:           backend,
-		config:            config,
-		proxy:             proxy,
-		logs:              logs,
-		imageReservations: map[string]int{},
-		remoteBaseURL:     "https://chatgpt.com",
-		browserHTTPClient: browserHTTPClient,
-		textRequestCount:  map[string]int{},
+		storage:                   backend,
+		config:                    config,
+		proxy:                     proxy,
+		logs:                      logs,
+		imageReservations:         map[string]int{},
+		imageReservationAliases:   map[string]string{},
+		imageReservationAliasRefs: map[string]int{},
+		busyTokens:                map[string]int{},
+		busyTokenAliases:          map[string]string{},
+		busyTokenAliasRefs:        map[string]int{},
+		remoteBaseURL:             "https://chatgpt.com",
+		browserHTTPClient:         browserHTTPClient,
+		textRequestCount:          map[string]int{},
+		random:                    rand.New(rand.NewSource(time.Now().UnixNano())),
 	}
+	// Initialize SessionRefresher with the uTLS client for /api/auth/session.
+	s.refresher = NewSessionRefresher(func(req *http.Request) (*http.Response, error) {
+		client := s.browserHTTPClient(defaultRemoteProfile, refreshTimeout)
+		if client == nil {
+			client = &http.Client{Timeout: refreshTimeout}
+		}
+		return client.Do(req)
+	})
 	s.items = s.loadAccounts()
 	return s
 }
@@ -131,6 +183,24 @@ func (s *AccountService) ListLimitedTokens() []string {
 	return out
 }
 
+func (s *AccountService) listRefreshableLimitedTokens(now time.Time) []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []string
+	for _, item := range s.items {
+		if !accountEnabledValue(item) || util.Clean(item["status"]) != "限流" {
+			continue
+		}
+		if restoreAt, ok := parseAccountRestoreAt(item["restore_at"]); ok && restoreAt.After(now) {
+			continue
+		}
+		if token := util.Clean(item["access_token"]); token != "" {
+			out = append(out, token)
+		}
+	}
+	return out
+}
+
 func (s *AccountService) AddAccounts(tokens []string) map[string]any {
 	cleaned := cleanTokens(tokens)
 	if len(cleaned) == 0 {
@@ -157,7 +227,11 @@ func (s *AccountService) AddAccounts(tokens []string) map[string]any {
 			current = map[string]any{}
 			order = append(order, token)
 		}
-		normalized := normalizeAccount(mergeMaps(current, map[string]any{"access_token": token, "type": util.ValueOr(current["type"], "Free")}))
+		updates := map[string]any{"access_token": token, "type": util.ValueOr(current["type"], "Free")}
+		if !ok {
+			updates["enabled"] = true
+		}
+		normalized := normalizeAccount(mergeMaps(current, updates))
 		if normalized != nil {
 			indexed[token] = normalized
 		}
@@ -184,6 +258,116 @@ func (s *AccountService) AddAccounts(tokens []string) map[string]any {
 	return map[string]any{"added": added, "skipped": skipped, "items": items}
 }
 
+func (s *AccountService) AddAccountFromSession(sessionJSON string) (map[string]any, error) {
+	var session struct {
+		AccessToken  string `json:"accessToken"`
+		Expires      any    `json:"expires"`
+		SessionToken string `json:"sessionToken"`
+		User         struct {
+			ID    string `json:"id"`
+			Name  string `json:"name"`
+			Email string `json:"email"`
+		} `json:"user"`
+	}
+	if err := json.Unmarshal([]byte(sessionJSON), &session); err != nil {
+		return nil, fmt.Errorf("invalid session JSON: %w", err)
+	}
+	accessToken := util.Clean(session.AccessToken)
+	if accessToken == "" {
+		return nil, fmt.Errorf("session JSON missing accessToken")
+	}
+	sessionToken := util.Clean(session.SessionToken)
+	if sessionToken == "" {
+		return nil, fmt.Errorf("session JSON missing sessionToken")
+	}
+
+	validated, err := s.refresher.RefreshSession(context.Background(), accessToken, sessionToken)
+	if err != nil {
+		return nil, fmt.Errorf("session token validation failed: %w", err)
+	}
+	accessToken = validated.AccessToken
+	if validated.SessionToken != "" {
+		sessionToken = validated.SessionToken
+	}
+	sessionExpires := any(session.Expires)
+	if validated.Expires != "" {
+		sessionExpires = validated.Expires
+	}
+
+	userID := util.Clean(validated.User.ID)
+	email := util.Clean(validated.User.Email)
+	updates := map[string]any{
+		"session_token":   sessionToken,
+		"session_expires": sessionExpires,
+	}
+	if userID != "" {
+		updates["user_id"] = userID
+	}
+	if email != "" {
+		updates["email"] = email
+	}
+	if name := util.Clean(validated.User.Name); name != "" {
+		updates["name"] = name
+	}
+
+	matchedToken := s.findSessionImportAccountToken(accessToken, userID, email)
+	result := map[string]any{"added": 0, "skipped": 0, "updated": 0, "items": s.ListAccounts()}
+	if matchedToken != "" {
+		if !s.UpdateAccountFromSessionImport(matchedToken, accessToken, updates, true) {
+			return nil, fmt.Errorf("session account update failed")
+		}
+		result["updated"] = 1
+	} else {
+		result = s.AddAccounts([]string{accessToken})
+	}
+	if item := s.UpdateAccount(accessToken, updates); item != nil {
+		publicItems := publicAccounts([]map[string]any{item})
+		if len(publicItems) > 0 {
+			result["item"] = publicItems[0]
+		}
+		result["items"] = s.ListAccounts()
+	}
+	result["tokens"] = []string{accessToken}
+	return result, nil
+}
+
+func isRecoverableSessionImportStatus(status string) bool {
+	switch status {
+	case "异常", "过期待刷新", "刷新中":
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *AccountService) findSessionImportAccountToken(accessToken, userID, email string) string {
+	accessToken = util.Clean(accessToken)
+	userID = util.Clean(userID)
+	email = strings.ToLower(util.Clean(email))
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if accessToken != "" && s.findIndexLocked(accessToken) >= 0 {
+		return accessToken
+	}
+	if userID != "" {
+		for _, item := range s.items {
+			if util.Clean(item["user_id"]) == userID {
+				return util.Clean(item["access_token"])
+			}
+		}
+	}
+	if email != "" {
+		for _, item := range s.items {
+			if strings.ToLower(util.Clean(item["email"])) == email {
+				return util.Clean(item["access_token"])
+			}
+		}
+	}
+	return ""
+}
+
 func (s *AccountService) DeleteAccounts(tokens []string) map[string]any {
 	targets := map[string]struct{}{}
 	for _, token := range cleanTokens(tokens) {
@@ -199,8 +383,10 @@ func (s *AccountService) DeleteAccounts(tokens []string) map[string]any {
 		token := util.Clean(item["access_token"])
 		if _, ok := targets[token]; ok {
 			removed++
-			delete(s.imageReservations, token)
+			s.clearImageReservationLocked(token)
+			s.clearBusyTokenLocked(token)
 			delete(s.textRequestCount, token)
+			s.clearStickyLocked(token, true, true)
 			continue
 		}
 		next = append(next, item)
@@ -226,6 +412,48 @@ func (s *AccountService) DeleteAccounts(tokens []string) map[string]any {
 	return map[string]any{"removed": removed, "items": items}
 }
 
+func (s *AccountService) SetAccountsEnabledByIDs(ids []string, enabled bool) map[string]any {
+	targets := cleanAccountIDs(ids)
+	if len(targets) == 0 {
+		return map[string]any{"updated": 0, "skipped": 0, "items": s.ListAccounts()}
+	}
+
+	s.mu.Lock()
+	updated, skipped := 0, 0
+	seen := map[string]struct{}{}
+	changed := false
+	for _, item := range s.items {
+		token := util.Clean(item["access_token"])
+		if token == "" {
+			continue
+		}
+		id := accountIDFromToken(token)
+		if _, ok := targets[id]; !ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		if accountEnabledValue(item) == enabled {
+			skipped++
+			continue
+		}
+		item["enabled"] = enabled
+		if !enabled {
+			s.clearImageReservationLocked(token)
+			s.clearBusyTokenLocked(token)
+			s.clearStickyLocked(token, true, true)
+		}
+		updated++
+		changed = true
+	}
+	skipped += len(targets) - len(seen)
+	if changed {
+		_ = s.saveLocked()
+	}
+	items := publicAccounts(s.items)
+	s.mu.Unlock()
+	return map[string]any{"updated": updated, "skipped": skipped, "items": items}
+}
+
 func (s *AccountService) RemoveToken(token string) bool {
 	return util.ToInt(s.DeleteAccounts([]string{token})["removed"], 0) > 0
 }
@@ -246,7 +474,9 @@ func (s *AccountService) UpdateAccount(accessToken string, updates map[string]an
 		return nil
 	}
 	if account["status"] == "限流" && s.config.AutoRemoveRateLimitedAccounts() {
-		delete(s.imageReservations, accessToken)
+		s.clearImageReservationLocked(accessToken)
+		s.clearBusyTokenLocked(accessToken)
+		s.clearStickyLocked(accessToken, true, true)
 		s.items = append(s.items[:idx], s.items[idx+1:]...)
 		_ = s.saveLocked()
 		s.logs.Add("自动移除限流账号", map[string]any{
@@ -255,6 +485,9 @@ func (s *AccountService) UpdateAccount(accessToken string, updates map[string]an
 			"token":          util.AnonymizeToken(accessToken),
 		})
 		return nil
+	}
+	if status := util.Clean(account["status"]); status == "异常" || status == "限流" || status == "禁用" || status == "刷新中" || status == "过期待刷新" {
+		s.clearStickyLocked(accessToken, true, true)
 	}
 	s.items[idx] = account
 	_ = s.saveLocked()
@@ -265,6 +498,62 @@ func (s *AccountService) UpdateAccount(accessToken string, updates map[string]an
 		"status":         account["status"],
 	})
 	return util.CopyMap(account)
+}
+
+func (s *AccountService) UpdateAccountFromSessionImport(oldAccessToken, newAccessToken string, updates map[string]any, recoverStatus bool) bool {
+	oldAccessToken = util.Clean(oldAccessToken)
+	newAccessToken = util.Clean(newAccessToken)
+	if oldAccessToken == "" || newAccessToken == "" {
+		return false
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	idx := s.findIndexLocked(oldAccessToken)
+	if idx < 0 {
+		return false
+	}
+	if oldAccessToken != newAccessToken {
+		if duplicateIdx := s.findIndexLocked(newAccessToken); duplicateIdx >= 0 && duplicateIdx != idx {
+			s.items = append(s.items[:duplicateIdx], s.items[duplicateIdx+1:]...)
+			if duplicateIdx < idx {
+				idx--
+			}
+		}
+	}
+
+	accountUpdates := mergeMaps(updates, map[string]any{"access_token": newAccessToken})
+	if recoverStatus && isRecoverableSessionImportStatus(util.Clean(s.items[idx]["status"])) {
+		accountUpdates["status"] = "正常"
+	}
+	account := normalizeAccount(mergeMaps(s.items[idx], accountUpdates))
+	if account == nil {
+		return false
+	}
+	s.items[idx] = account
+	if oldAccessToken != newAccessToken {
+		s.migrateImageReservationLocked(oldAccessToken, newAccessToken)
+		s.migrateBusyTokenLocked(oldAccessToken, newAccessToken)
+		if count, ok := s.textRequestCount[oldAccessToken]; ok {
+			s.textRequestCount[newAccessToken] += count
+			delete(s.textRequestCount, oldAccessToken)
+		}
+		if s.stickyTextToken == oldAccessToken {
+			s.stickyTextToken = newAccessToken
+		}
+		if s.stickyImageToken == oldAccessToken {
+			s.stickyImageToken = newAccessToken
+		}
+	}
+	_ = s.saveLocked()
+	s.logs.Add("更新Session账号", map[string]any{
+		"module":         "accounts",
+		"operation_type": "更新",
+		"token":          util.AnonymizeToken(newAccessToken),
+		"status":         account["status"],
+	})
+	return true
 }
 
 func (s *AccountService) GetAccount(accessToken string) map[string]any {
@@ -281,28 +570,88 @@ func (s *AccountService) GetAccount(accessToken string) map[string]any {
 	return util.CopyMap(s.items[idx])
 }
 
+const MaxTokenSwitchAttempts = 5
+
 func (s *AccountService) GetTextAccessToken() string {
+	lease, err := s.AcquireTextAccessToken(nil)
+	if err != nil {
+		return ""
+	}
+	defer lease.Release()
+	return lease.Token
+}
+
+func (s *AccountService) GetTextAccessTokenWithRetry(exhaustedTokens map[string]struct{}) (string, bool) {
+	lease, err := s.AcquireTextAccessToken(exhaustedTokens)
+	if err != nil {
+		return "", false
+	}
+	defer lease.Release()
+	return lease.Token, true
+}
+
+func (s *AccountService) AcquireTextAccessToken(exhaustedTokens map[string]struct{}) (AccountLease, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	nonFree := s.filterNonFreeLocked()
-	if len(nonFree) > 0 {
-		return s.selectFromTextPoolLocked(nonFree, false)
+	paid := s.textCandidatesByPaidLocked(true, exhaustedTokens)
+	free := s.textCandidatesByPaidLocked(false, exhaustedTokens)
+	free = s.applyFreeTextCooldownLocked(free)
+
+	if normalizeAccountScheduleMode(s.config.TextAccountScheduleMode()) == "fill_first" {
+		if len(paid) > 0 {
+			return s.selectTextLeaseLocked(paid)
+		}
+		if len(free) > 0 {
+			return s.selectTextLeaseLocked(free)
+		}
+		return AccountLease{}, fmt.Errorf("no available text account")
+	}
+	candidates := append(paid, free...)
+	if len(candidates) == 0 {
+		return AccountLease{}, fmt.Errorf("no available text account")
+	}
+	return s.selectTextLeaseLocked(candidates)
+}
+
+func (s *AccountService) HandleTokenExpiredOnRequest(expiredToken string) (newToken string, shouldRetry bool) {
+	account := s.GetAccount(expiredToken)
+	if account == nil {
+		return "", false
 	}
 
-	free := s.filterFreeLocked()
-	if len(free) > 0 {
-		return s.selectFromTextPoolLocked(free, true)
+	sessionToken := util.Clean(account["session_token"])
+	if sessionToken == "" {
+		return "", false
 	}
+	if s.UpdateAccount(expiredToken, map[string]any{"status": "刷新中"}) == nil {
+		return "", false
+	}
+	s.refreshAccountViaSessionAsync(expiredToken, sessionToken)
+	return "", true
+}
 
-	return ""
+func (s *AccountService) refreshAccountViaSessionAsync(accessToken, sessionToken string) {
+	if s.refresher.IsRefreshing(accessToken) {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), refreshTimeout)
+		defer cancel()
+
+		newAccessToken, newSessionToken, newExpires, err := s.refresher.RefreshToken(ctx, accessToken, sessionToken)
+		if err != nil {
+			s.UpdateAccount(accessToken, map[string]any{"status": "异常"})
+			return
+		}
+		s.RefreshAccountViaSession(accessToken, newAccessToken, newSessionToken, newExpires)
+	}()
 }
 
 func (s *AccountService) filterNonFreeLocked() []map[string]any {
 	var out []map[string]any
 	for _, item := range s.items {
-		status := util.Clean(item["status"])
-		if status == "禁用" || status == "异常" {
+		if !isAccountAvailableForScheduling(item) {
 			continue
 		}
 		if IsPaidImageAccount(item) {
@@ -315,8 +664,7 @@ func (s *AccountService) filterNonFreeLocked() []map[string]any {
 func (s *AccountService) filterFreeLocked() []map[string]any {
 	var out []map[string]any
 	for _, item := range s.items {
-		status := util.Clean(item["status"])
-		if status == "禁用" || status == "异常" {
+		if !isAccountAvailableForScheduling(item) {
 			continue
 		}
 		if !IsPaidImageAccount(item) {
@@ -326,40 +674,113 @@ func (s *AccountService) filterFreeLocked() []map[string]any {
 	return out
 }
 
-func (s *AccountService) selectFromTextPoolLocked(pool []map[string]any, isFree bool) string {
-	const maxRequestsPerAccount = 10
-
-	var bestToken string
-	bestCount := int(^uint(0) >> 1)
-	allExhausted := true
-	for _, item := range pool {
+func (s *AccountService) textCandidatesLocked(exhaustedTokens map[string]struct{}) []map[string]any {
+	var out []map[string]any
+	for _, item := range s.items {
 		token := util.Clean(item["access_token"])
-		count := s.textRequestCount[token]
-		if count < bestCount {
-			bestCount = count
-			bestToken = token
+		if token == "" || !s.isTextAccountAvailableLocked(item) || !s.accountIdleLocked(token) {
+			continue
 		}
-		if count < maxRequestsPerAccount {
-			allExhausted = false
+		if _, exhausted := exhaustedTokens[token]; exhausted {
+			continue
+		}
+		out = append(out, item)
+	}
+	return out
+}
+
+func (s *AccountService) textCandidatesByPaidLocked(paid bool, exhaustedTokens map[string]struct{}) []map[string]any {
+	var out []map[string]any
+	for _, item := range s.items {
+		token := util.Clean(item["access_token"])
+		if token == "" || !s.isTextAccountAvailableLocked(item) || !s.accountIdleLocked(token) {
+			continue
+		}
+		if _, exhausted := exhaustedTokens[token]; exhausted {
+			continue
+		}
+		if IsPaidImageAccount(item) == paid {
+			out = append(out, item)
 		}
 	}
+	return out
+}
 
-	if allExhausted {
-		if isFree {
-			now := time.Now()
-			if now.After(s.textCooldownUntil) {
-				s.resetTextCountsLocked(pool)
-				s.textCooldownUntil = now.Add(5 * time.Hour)
-				bestCount = 0
-			}
-		} else if len(pool) > 1 {
-			s.resetTextCountsLocked(pool)
-			bestCount = 0
-		}
+func (s *AccountService) isTextAccountAvailableLocked(item map[string]any) bool {
+	return isAccountAvailableForScheduling(item)
+}
+
+func accountEnabledValue(account map[string]any) bool {
+	enabled, _ := accountEnabledState(account)
+	return enabled
+}
+
+func accountEnabledState(account map[string]any) (bool, bool) {
+	if account == nil {
+		return false, false
 	}
+	value, ok := account["enabled"]
+	if !ok || value == nil {
+		return util.Clean(account["status"]) != "禁用", false
+	}
+	switch enabled := value.(type) {
+	case bool:
+		return enabled, true
+	case string:
+		switch strings.ToLower(strings.TrimSpace(enabled)) {
+		case "1", "true", "yes", "on":
+			return true, true
+		default:
+			return false, true
+		}
+	default:
+		return util.ToInt(value, 0) != 0, true
+	}
+}
 
-	s.textRequestCount[bestToken] = bestCount + 1
-	return bestToken
+func isAccountAvailableForScheduling(account map[string]any) bool {
+	if account == nil {
+		return false
+	}
+	enabled, hasEnabled := accountEnabledState(account)
+	if !enabled {
+		return false
+	}
+	status := util.Clean(account["status"])
+	if !hasEnabled && status == "禁用" {
+		return false
+	}
+	switch status {
+	case "异常", "限流", "刷新中", "过期待刷新":
+		return false
+	default:
+		return true
+	}
+}
+
+const maxFreeTextRequestsPerAccount = 10
+
+func (s *AccountService) applyFreeTextCooldownLocked(free []map[string]any) []map[string]any {
+	if len(free) == 0 {
+		return free
+	}
+	now := time.Now()
+	if s.textCooldownUntil.IsZero() || now.After(s.textCooldownUntil) {
+		s.resetTextCountsLocked(free)
+		s.textCooldownUntil = now.Add(5 * time.Hour)
+	}
+	out := free[:0:0]
+	for _, item := range free {
+		token := util.Clean(item["access_token"])
+		if token == "" {
+			continue
+		}
+		if s.textRequestCount[token] >= maxFreeTextRequestsPerAccount {
+			continue
+		}
+		out = append(out, item)
+	}
+	return out
 }
 
 func (s *AccountService) resetTextCountsLocked(pool []map[string]any) {
@@ -368,34 +789,95 @@ func (s *AccountService) resetTextCountsLocked(pool []map[string]any) {
 	}
 }
 
+func (s *AccountService) selectTextLeaseLocked(candidates []map[string]any) (AccountLease, error) {
+	var token string
+	if normalizeAccountScheduleMode(s.config.TextAccountScheduleMode()) == "fill_first" {
+		token = s.selectStickyTextTokenLocked(candidates)
+	} else {
+		token = s.selectLeastUsedTextTokenLocked(candidates)
+	}
+	if token == "" {
+		return AccountLease{}, fmt.Errorf("no available text account")
+	}
+	s.textRequestCount[token]++
+	return s.occupyTokenLocked(token), nil
+}
+
+func (s *AccountService) selectStickyTextTokenLocked(candidates []map[string]any) string {
+	if s.tokenInAccounts(s.stickyTextToken, candidates) {
+		return s.stickyTextToken
+	}
+	token := s.selectRandomTokenLocked(candidates)
+	s.stickyTextToken = token
+	return token
+}
+
+func (s *AccountService) selectLeastUsedTextTokenLocked(candidates []map[string]any) string {
+	bestCount := int(^uint(0) >> 1)
+	var tokens []string
+	for _, item := range candidates {
+		token := util.Clean(item["access_token"])
+		if token == "" {
+			continue
+		}
+		count := s.textRequestCount[token]
+		if count < bestCount {
+			bestCount = count
+			tokens = []string{token}
+		} else if count == bestCount {
+			tokens = append(tokens, token)
+		}
+	}
+	return s.selectRandomTokenLockedByToken(tokens)
+}
+
 func (s *AccountService) GetAvailableAccessToken(ctx context.Context) (string, error) {
-	return s.GetAvailableAccessTokenFor(ctx, nil)
+	lease, err := s.GetAvailableImageAccessToken(ctx)
+	if err != nil {
+		return "", err
+	}
+	defer lease.Release()
+	return lease.Token, nil
 }
 
 func (s *AccountService) GetAvailableAccessTokenFor(ctx context.Context, allow func(map[string]any) bool) (string, error) {
+	lease, err := s.GetAvailableImageAccessTokenFor(ctx, allow)
+	if err != nil {
+		return "", err
+	}
+	defer lease.Release()
+	return lease.Token, nil
+}
+
+func (s *AccountService) GetAvailableImageAccessToken(ctx context.Context) (AccountLease, error) {
+	return s.GetAvailableImageAccessTokenFor(ctx, nil)
+}
+
+func (s *AccountService) GetAvailableImageAccessTokenFor(ctx context.Context, allow func(map[string]any) bool) (AccountLease, error) {
 	attempted := map[string]struct{}{}
 	var lastRefreshErr error
 	for {
-		reservation, err := s.reserveNextCandidateToken(attempted, allow)
+		lease, reservation, err := s.acquireImageCandidateLease(attempted, allow)
 		if err != nil {
 			if lastRefreshErr != nil {
-				return "", lastRefreshErr
+				return AccountLease{}, lastRefreshErr
 			}
-			return "", err
+			return AccountLease{}, err
 		}
-		attempted[reservation.token] = struct{}{}
-		account, refreshErr := s.RefreshAccountState(ctx, reservation.token)
+		attempted[lease.Token] = struct{}{}
+		account, refreshErr := s.RefreshAccountState(ctx, lease.Token)
 		if refreshErr != nil {
 			lastRefreshErr = refreshErr
-			if cached := s.cachedAccountForTransientRefreshError(reservation.token, refreshErr); cached != nil &&
+			if cached := s.cachedAccountForTransientRefreshError(lease.Token, refreshErr); cached != nil &&
 				(allow == nil || allow(cached)) &&
 				s.reservedImageSlotAvailable(reservation) {
-				return reservation.token, nil
+				return lease, nil
 			}
 		}
 		if account != nil && (allow == nil || allow(account)) && s.reservedImageSlotAvailable(reservation) {
-			return reservation.token, nil
+			return lease, nil
 		}
+		lease.Release()
 		s.releaseImageReservation(reservation.token)
 	}
 }
@@ -439,20 +921,28 @@ func (s *AccountService) RefreshAccountState(ctx context.Context, accessToken st
 	return s.UpdateAccount(accessToken, remote), nil
 }
 
+type pendingRefreshItem struct {
+	accessToken  string
+	sessionToken string
+}
+
 func (s *AccountService) RefreshAccounts(ctx context.Context, accessTokens []string) map[string]any {
 	tokens := cleanTokens(accessTokens)
 	if len(tokens) == 0 {
 		return map[string]any{
-			"refreshed":   0,
-			"errors":      []map[string]string{},
-			"results":     []map[string]any{},
-			"total":       0,
-			"failed":      0,
-			"duration_ms": 0,
-			"items":       s.ListAccounts(),
+			"refreshed":         0,
+			"session_refreshed": 0,
+			"session_failed":    0,
+			"errors":            []map[string]string{},
+			"results":           []map[string]any{},
+			"total":             0,
+			"failed":            0,
+			"duration_ms":       0,
+			"items":             s.ListAccounts(),
 		}
 	}
 	startedAt := time.Now()
+	pendingRefresh := []pendingRefreshItem{}
 	type result struct {
 		token    string
 		info     map[string]any
@@ -493,6 +983,7 @@ func (s *AccountService) RefreshAccounts(ctx context.Context, accessTokens []str
 	refreshed := 0
 	errors := []map[string]string{}
 	details := make([]map[string]any, 0, len(tokens))
+	detailsByToken := make(map[string]map[string]any, len(tokens))
 	for _, token := range tokens {
 		res := resultsByToken[token]
 		detail := map[string]any{
@@ -503,6 +994,7 @@ func (s *AccountService) RefreshAccounts(ctx context.Context, accessTokens []str
 			"status":        "error",
 			"duration_ms":   res.duration.Milliseconds(),
 		}
+		detailsByToken[token] = detail
 		if res.err == nil {
 			updated := s.UpdateAccount(res.token, res.info)
 			if updated != nil {
@@ -526,6 +1018,7 @@ func (s *AccountService) RefreshAccounts(ctx context.Context, accessTokens []str
 		if normalized, handled := s.ApplyAccountError(res.token, "refresh_accounts", res.err); handled {
 			message = normalized
 		}
+		pendingSessionRefresh := false
 		if current := s.GetAccount(res.token); current != nil {
 			detail["account_status"] = current["status"]
 			detail["email"] = current["email"]
@@ -533,6 +1026,18 @@ func (s *AccountService) RefreshAccounts(ctx context.Context, accessTokens []str
 			detail["quota"] = current["quota"]
 			detail["image_quota_unknown"] = current["image_quota_unknown"]
 			detail["restore_at"] = current["restore_at"]
+			if util.Clean(current["status"]) == "过期待刷新" {
+				if st := util.Clean(current["session_token"]); st != "" {
+					pendingRefresh = append(pendingRefresh, pendingRefreshItem{accessToken: res.token, sessionToken: st})
+					pendingSessionRefresh = true
+				}
+			}
+		}
+		detail["message"] = message
+		if pendingSessionRefresh {
+			detail["status"] = "pending_session_refresh"
+			details = append(details, detail)
+			continue
 		}
 		errorItem := map[string]string{
 			"account_id":   accountIDFromToken(res.token),
@@ -540,18 +1045,82 @@ func (s *AccountService) RefreshAccounts(ctx context.Context, accessTokens []str
 			"error":        message,
 		}
 		errors = append(errors, errorItem)
-		detail["message"] = message
 		detail["error"] = message
 		details = append(details, detail)
 	}
+
+	refreshedCount := 0
+	failedRefreshCount := 0
+	if len(pendingRefresh) > 0 {
+		sortPendingRefreshByPriority(pendingRefresh, s)
+	}
+	for _, item := range pendingRefresh {
+		detail := detailsByToken[item.accessToken]
+		newAccessToken, newSessionToken, newExpires, err := s.refresher.RefreshToken(ctx, item.accessToken, item.sessionToken)
+		if err != nil {
+			s.UpdateAccount(item.accessToken, map[string]any{"status": "异常"})
+			failedRefreshCount++
+			message := fmt.Sprintf("token刷新失败: %s", err.Error())
+			errors = append(errors, map[string]string{
+				"account_id":   accountIDFromToken(item.accessToken),
+				"access_token": item.accessToken,
+				"error":        message,
+			})
+			if detail != nil {
+				detail["status"] = "error"
+				detail["message"] = message
+				detail["error"] = message
+				detail["account_status"] = "异常"
+			}
+			continue
+		}
+		if !s.RefreshAccountViaSession(item.accessToken, newAccessToken, newSessionToken, newExpires) {
+			failedRefreshCount++
+			message := "token刷新失败: 账号更新失败"
+			errors = append(errors, map[string]string{
+				"account_id":   accountIDFromToken(item.accessToken),
+				"access_token": item.accessToken,
+				"error":        message,
+			})
+			if detail != nil {
+				detail["status"] = "error"
+				detail["message"] = message
+				detail["error"] = message
+			}
+			continue
+		}
+		if info, err := s.FetchRemoteInfo(ctx, newAccessToken); err == nil {
+			s.UpdateAccount(newAccessToken, info)
+		}
+		if detail != nil {
+			detail["access_token"] = newAccessToken
+			detail["token_preview"] = util.AnonymizeToken(newAccessToken)
+			detail["success"] = true
+			detail["status"] = "success"
+			detail["message"] = "token刷新成功"
+			delete(detail, "error")
+			if current := s.GetAccount(newAccessToken); current != nil {
+				detail["account_status"] = current["status"]
+				detail["email"] = current["email"]
+				detail["type"] = current["type"]
+				detail["quota"] = current["quota"]
+				detail["image_quota_unknown"] = current["image_quota_unknown"]
+				detail["restore_at"] = current["restore_at"]
+			}
+		}
+		refreshedCount++
+	}
+
 	return map[string]any{
-		"refreshed":   refreshed,
-		"errors":      errors,
-		"results":     details,
-		"total":       len(tokens),
-		"failed":      len(errors),
-		"duration_ms": time.Since(startedAt).Milliseconds(),
-		"items":       s.ListAccounts(),
+		"refreshed":         refreshed,
+		"session_refreshed": refreshedCount,
+		"session_failed":    failedRefreshCount,
+		"errors":            errors,
+		"results":           details,
+		"total":             len(tokens),
+		"failed":            len(errors),
+		"duration_ms":       time.Since(startedAt).Milliseconds(),
+		"items":             s.ListAccounts(),
 	}
 }
 
@@ -562,8 +1131,9 @@ func (s *AccountService) MarkImageResult(accessToken string, success bool) map[s
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	resolvedToken := s.resolveImageReservationTokenLocked(accessToken)
 	s.releaseImageReservationLocked(accessToken)
-	idx := s.findIndexLocked(accessToken)
+	idx := s.findIndexLocked(resolvedToken)
 	if idx < 0 {
 		return nil
 	}
@@ -589,19 +1159,25 @@ func (s *AccountService) MarkImageResult(accessToken string, success bool) map[s
 		}
 	} else {
 		next["fail"] = util.ToInt(next["fail"], 0) + 1
+		s.clearStickyLocked(resolvedToken, false, true)
+	}
+	if util.Clean(next["status"]) == "限流" || util.ToInt(next["quota"], 0) <= 0 && !util.ToBool(next["image_quota_unknown"]) {
+		s.clearStickyLocked(resolvedToken, false, true)
 	}
 	account := normalizeAccount(next)
 	if account == nil {
 		return nil
 	}
 	if account["status"] == "限流" && s.config.AutoRemoveRateLimitedAccounts() {
-		delete(s.imageReservations, accessToken)
+		s.clearImageReservationLocked(resolvedToken)
+		s.clearBusyTokenLocked(resolvedToken)
+		s.clearStickyLocked(resolvedToken, true, true)
 		s.items = append(s.items[:idx], s.items[idx+1:]...)
 		_ = s.saveLocked()
 		s.logs.Add("自动移除限流账号", map[string]any{
 			"module":         "accounts",
 			"operation_type": "自动移除",
-			"token":          util.AnonymizeToken(accessToken),
+			"token":          util.AnonymizeToken(resolvedToken),
 		})
 		return nil
 	}
@@ -634,6 +1210,33 @@ func (s *AccountService) ApplyAccountError(accessToken, event string, err error)
 }
 
 func (s *AccountService) ApplyAccountErrorMessage(accessToken, event, message string) (string, bool) {
+	// The token is expired but may still be refreshable.
+	if IsAccountTokenExpiredErrorMessage(message) {
+		account := s.GetAccount(accessToken)
+		sessionToken := ""
+		if account != nil {
+			sessionToken = util.Clean(account["session_token"])
+		}
+		if sessionToken != "" {
+			// Accounts with session_token refresh asynchronously during live requests;
+			// batch scans refresh serially in the second RefreshAccounts phase.
+			status := "过期待刷新"
+			if event != "refresh_accounts" {
+				status = "刷新中"
+			}
+			s.UpdateAccount(accessToken, map[string]any{"status": status})
+			if event != "refresh_accounts" {
+				s.refreshAccountViaSessionAsync(accessToken, sessionToken)
+			}
+			return "检测到token过期，已提交刷新任务", true
+		}
+		// Accounts without session_token cannot be refreshed and become invalid.
+		if !s.RemoveInvalidToken(accessToken, event) {
+			s.UpdateAccount(accessToken, map[string]any{"status": "异常", "quota": 0, "image_quota_unknown": false})
+		}
+		return "检测到token过期且无法刷新", true
+	}
+	// Revoked or invalidated tokens cannot be refreshed.
 	if IsAccountInvalidErrorMessage(message) {
 		if !s.RemoveInvalidToken(accessToken, event) {
 			s.UpdateAccount(accessToken, map[string]any{"status": "异常", "quota": 0, "image_quota_unknown": false})
@@ -647,92 +1250,277 @@ func (s *AccountService) ApplyAccountErrorMessage(accessToken, event, message st
 	return message, false
 }
 
-func (s *AccountService) FetchRemoteInfo(ctx context.Context, accessToken string) (map[string]any, error) {
+// RefreshAccountViaSession updates account data after a successful session refresh.
+func (s *AccountService) RefreshAccountViaSession(accessToken, newAccessToken, newSessionToken, newExpires string) bool {
 	accessToken = util.Clean(accessToken)
-	if accessToken == "" {
-		return nil, fmt.Errorf("access_token is required")
+	newAccessToken = util.Clean(newAccessToken)
+	if accessToken == "" || newAccessToken == "" {
+		return false
 	}
-	baseURL := strings.TrimRight(firstNonEmpty(s.remoteBaseURL, "https://chatgpt.com"), "/")
-	headers := s.remoteHeaders(accessToken)
-	client := s.browserHTTPClient(s.remoteImpersonation(accessToken), 30*time.Second)
-	if client == nil {
-		client = &http.Client{Timeout: 30 * time.Second}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	idx := s.findIndexLocked(accessToken)
+	if idx < 0 {
+		return false
 	}
-	if err := s.bootstrapRemote(ctx, client, baseURL, accessToken); err != nil {
+	if accessToken != newAccessToken {
+		if duplicateIdx := s.findIndexLocked(newAccessToken); duplicateIdx >= 0 && duplicateIdx != idx {
+			s.items = append(s.items[:duplicateIdx], s.items[duplicateIdx+1:]...)
+			if duplicateIdx < idx {
+				idx--
+			}
+		}
+	}
+
+	account := normalizeAccount(mergeMaps(s.items[idx], map[string]any{
+		"access_token":    newAccessToken,
+		"session_token":   newSessionToken,
+		"session_expires": newExpires,
+		"status":          "正常",
+	}))
+	if account == nil {
+		return false
+	}
+	s.items[idx] = account
+	if accessToken != newAccessToken {
+		s.migrateImageReservationLocked(accessToken, newAccessToken)
+		s.migrateBusyTokenLocked(accessToken, newAccessToken)
+		if count, ok := s.textRequestCount[accessToken]; ok {
+			s.textRequestCount[newAccessToken] += count
+			delete(s.textRequestCount, accessToken)
+		}
+		if s.stickyTextToken == accessToken {
+			s.stickyTextToken = newAccessToken
+		}
+		if s.stickyImageToken == accessToken {
+			s.stickyImageToken = newAccessToken
+		}
+	}
+	_ = s.saveLocked()
+	s.logs.Add("刷新账号token", map[string]any{
+		"module":         "accounts",
+		"operation_type": "更新",
+		"token":          util.AnonymizeToken(newAccessToken),
+		"status":         account["status"],
+	})
+	return true
+}
+
+type UpstreamAccountActionOptions struct {
+	DisableMemory     bool
+	HideConversations bool
+	DeleteFiles       bool
+	FilePageLimit     int
+}
+
+type remoteAccountClient struct {
+	ctx     context.Context
+	baseURL string
+	headers map[string]string
+	client  *http.Client
+}
+
+func (s *AccountService) FetchRemoteInfo(ctx context.Context, accessToken string) (map[string]any, error) {
+	remote, err := s.newRemoteAccountClient(ctx, accessToken, 30*time.Second)
+	if err != nil {
 		return nil, err
 	}
-	type response struct {
-		payload map[string]any
-		err     error
+	me, err := remote.doJSON(http.MethodGet, "/backend-api/me", nil, nil)
+	if err != nil {
+		return nil, err
 	}
-	fetch := func(method, urlPath string, body any, extra map[string]string) response {
-		var reader io.Reader
-		if body != nil {
-			data, _ := json.Marshal(body)
-			reader = bytes.NewReader(data)
-		}
-		req, _ := http.NewRequestWithContext(ctx, method, baseURL+urlPath, reader)
-		for key, value := range headers {
-			req.Header.Set(key, value)
-		}
-		req.Header.Set("x-openai-target-path", urlPath)
-		req.Header.Set("x-openai-target-route", urlPath)
-		for key, value := range extra {
-			req.Header.Set(key, value)
-		}
-		resp, err := client.Do(req)
-		if err != nil {
-			return response{err: err}
-		}
-		defer resp.Body.Close()
-		data, readErr := io.ReadAll(resp.Body)
-		if readErr != nil {
-			return response{err: readErr}
-		}
-		if resp.StatusCode != http.StatusOK {
-			return response{err: refreshHTTPError(urlPath, resp.StatusCode, data)}
-		}
-		var payload map[string]any
-		if err := json.Unmarshal(data, &payload); err != nil {
-			return response{err: err}
-		}
-		return response{payload: payload}
-	}
-	me := fetch(http.MethodGet, "/backend-api/me", nil, nil)
-	if me.err != nil {
-		return nil, me.err
-	}
-	init := fetch(http.MethodPost, "/backend-api/conversation/init", map[string]any{
+	init, err := remote.doJSON(http.MethodPost, "/backend-api/conversation/init", map[string]any{
 		"gizmo_id": nil, "requested_default_model": nil, "conversation_id": nil, "timezone_offset_min": -480,
 	}, nil)
-	if init.err != nil {
-		return nil, init.err
+	if err != nil {
+		return nil, err
 	}
-	limits := anyList(init.payload["limits_progress"])
-	accountType := s.detectAccountType(accessToken, me.payload, init.payload)
+	accessToken = util.Clean(accessToken)
+	limits := anyList(init["limits_progress"])
+	accountType := s.detectAccountType(accessToken, me, init)
 	quota, restoreAt, unknown := extractQuotaAndRestoreAt(limits)
 	chatGPTAccountID := firstNonEmpty(
 		chatGPTAccountIDFromPayload(decodeAccessTokenPayload(accessToken)),
-		util.Clean(me.payload["chatgpt_account_id"]),
-		util.Clean(me.payload["account_id"]),
-		util.Clean(me.payload["id"]),
+		util.Clean(me["chatgpt_account_id"]),
+		util.Clean(me["account_id"]),
+		util.Clean(me["id"]),
 	)
 	status := "正常"
 	if !unknown && quota == 0 {
 		status = "限流"
 	}
 	return map[string]any{
-		"email":               me.payload["email"],
-		"user_id":             me.payload["id"],
+		"email":               me["email"],
+		"user_id":             me["id"],
 		"chatgpt_account_id":  chatGPTAccountID,
 		"type":                accountType,
 		"quota":               quota,
 		"image_quota_unknown": unknown,
 		"limits_progress":     limits,
-		"default_model_slug":  init.payload["default_model_slug"],
+		"default_model_slug":  init["default_model_slug"],
 		"restore_at":          restoreAt,
 		"status":              status,
 	}, nil
+}
+
+func (s *AccountService) RunUpstreamAccountActions(ctx context.Context, accessTokens []string, options UpstreamAccountActionOptions) map[string]any {
+	tokens := cleanTokens(accessTokens)
+	if len(tokens) == 0 {
+		return map[string]any{"total": 0, "succeeded": 0, "failed": 0, "errors": []map[string]string{}, "results": []map[string]any{}}
+	}
+	startedAt := time.Now()
+	results := make([]map[string]any, 0, len(tokens))
+	errors := []map[string]string{}
+	succeeded := 0
+	for _, token := range tokens {
+		accountStartedAt := time.Now()
+		detail := map[string]any{
+			"account_id":    accountIDFromToken(token),
+			"access_token":  token,
+			"token_preview": util.AnonymizeToken(token),
+			"success":       false,
+			"actions":       map[string]any{},
+		}
+		actions := detail["actions"].(map[string]any)
+		remote, err := s.newRemoteAccountClient(ctx, token, 60*time.Second)
+		if err == nil && options.DisableMemory {
+			actions["disable_memory"], err = remote.disableMemory()
+		}
+		if err == nil && options.HideConversations {
+			actions["hide_conversations"], err = remote.hideConversations()
+		}
+		if err == nil && options.DeleteFiles {
+			actions["delete_files"], err = remote.deleteFiles(options.FilePageLimit)
+		}
+		detail["duration_ms"] = time.Since(accountStartedAt).Milliseconds()
+		if err == nil {
+			detail["success"] = true
+			detail["status"] = "success"
+			detail["message"] = "上游账号操作完成"
+			succeeded++
+			results = append(results, detail)
+			continue
+		}
+		message := err.Error()
+		if normalized, handled := s.ApplyAccountError(token, "upstream_account_actions", err); handled {
+			message = normalized
+		}
+		detail["status"] = "error"
+		detail["error"] = message
+		errors = append(errors, map[string]string{"account_id": accountIDFromToken(token), "access_token": token, "error": message})
+		results = append(results, detail)
+	}
+	return map[string]any{
+		"total":       len(tokens),
+		"succeeded":   succeeded,
+		"failed":      len(tokens) - succeeded,
+		"duration_ms": time.Since(startedAt).Milliseconds(),
+		"errors":      errors,
+		"results":     results,
+	}
+}
+
+func (s *AccountService) newRemoteAccountClient(ctx context.Context, accessToken string, timeout time.Duration) (*remoteAccountClient, error) {
+	accessToken = util.Clean(accessToken)
+	if accessToken == "" {
+		return nil, fmt.Errorf("access_token is required")
+	}
+	baseURL := strings.TrimRight(firstNonEmpty(s.remoteBaseURL, "https://chatgpt.com"), "/")
+	client := s.browserHTTPClient(s.remoteImpersonation(accessToken), timeout)
+	if client == nil {
+		client = &http.Client{Timeout: timeout}
+	}
+	if err := s.bootstrapRemote(ctx, client, baseURL, accessToken); err != nil {
+		return nil, err
+	}
+	return &remoteAccountClient{ctx: ctx, baseURL: baseURL, headers: s.remoteHeaders(accessToken), client: client}, nil
+}
+
+func (c *remoteAccountClient) doJSON(method, urlPath string, body any, extra map[string]string) (map[string]any, error) {
+	var reader io.Reader
+	if body != nil {
+		data, _ := json.Marshal(body)
+		reader = bytes.NewReader(data)
+	}
+	req, _ := http.NewRequestWithContext(c.ctx, method, c.baseURL+urlPath, reader)
+	for key, value := range c.headers {
+		req.Header.Set(key, value)
+	}
+	req.Header.Set("x-openai-target-path", urlPath)
+	req.Header.Set("x-openai-target-route", urlPath)
+	for key, value := range extra {
+		req.Header.Set(key, value)
+	}
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	data, readErr := io.ReadAll(resp.Body)
+	if readErr != nil {
+		return nil, readErr
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, refreshHTTPError(urlPath, resp.StatusCode, data)
+	}
+	if len(bytes.TrimSpace(data)) == 0 {
+		return map[string]any{}, nil
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return nil, err
+	}
+	return payload, nil
+}
+
+func (c *remoteAccountClient) disableMemory() (map[string]any, error) {
+	payload, err := c.doJSON(http.MethodPatch, "/backend-api/settings/account_user_setting?feature=sunshine&value=false", map[string]any{"sunshine": false}, nil)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"sunshine": payload["sunshine"]}, nil
+}
+
+func (c *remoteAccountClient) hideConversations() (map[string]any, error) {
+	return c.doJSON(http.MethodPatch, "/backend-api/conversations", map[string]any{"is_visible": false}, nil)
+}
+
+func (c *remoteAccountClient) deleteFiles(limit int) (map[string]any, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 100
+	}
+	seen := 0
+	deleted := 0
+	cursor := ""
+	for page := 0; page < 100; page++ {
+		body := map[string]any{"limit": limit}
+		if cursor != "" {
+			body["cursor"] = cursor
+		}
+		payload, err := c.doJSON(http.MethodPost, "/backend-api/files/library", body, nil)
+		if err != nil {
+			return map[string]any{"files_seen": seen, "files_deleted": deleted}, err
+		}
+		items := util.AsMapSlice(payload["items"])
+		seen += len(items)
+		for _, item := range items {
+			fileID := util.Clean(item["file_id"])
+			if fileID == "" {
+				continue
+			}
+			if _, err := c.doJSON(http.MethodDelete, "/backend-api/files/"+url.PathEscape(fileID), nil, nil); err != nil {
+				return map[string]any{"files_seen": seen, "files_deleted": deleted}, err
+			}
+			deleted++
+		}
+		cursor = util.Clean(payload["cursor"])
+		if cursor == "" || len(items) == 0 {
+			break
+		}
+	}
+	return map[string]any{"files_seen": seen, "files_deleted": deleted}, nil
 }
 
 func (s *AccountService) bootstrapRemote(ctx context.Context, client *http.Client, baseURL, accessToken string) error {
@@ -764,7 +1552,7 @@ func (s *AccountService) StartLimitedWatcher(ctx context.Context, interval time.
 			case <-ctx.Done():
 				return
 			case <-timer.C:
-				tokens := s.ListLimitedTokens()
+				tokens := s.listRefreshableLimitedTokens(time.Now())
 				if len(tokens) > 0 {
 					s.RefreshAccounts(ctx, tokens)
 				}
@@ -780,12 +1568,41 @@ type imageTokenReservation struct {
 }
 
 func (s *AccountService) reserveNextCandidateToken(excluded map[string]struct{}, allow func(map[string]any) bool) (imageTokenReservation, error) {
+	lease, reservation, err := s.acquireImageCandidateLease(excluded, allow)
+	if err != nil {
+		return imageTokenReservation{}, err
+	}
+	lease.Release()
+	return reservation, nil
+}
+
+func (s *AccountService) acquireImageCandidateLease(excluded map[string]struct{}, allow func(map[string]any) bool) (AccountLease, imageTokenReservation, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	var tokens []string
+	candidates := s.imageCandidatesLocked(excluded, allow)
+	if len(candidates) == 0 {
+		return AccountLease{}, imageTokenReservation{}, fmt.Errorf("no available image quota")
+	}
+	var token string
+	if normalizeAccountScheduleMode(s.config.ImageAccountScheduleMode()) == "fill_first" {
+		token = s.selectStickyImageTokenLocked(candidates)
+	} else {
+		token = s.selectWeightedImageTokenLocked(candidates)
+	}
+	if token == "" {
+		return AccountLease{}, imageTokenReservation{}, fmt.Errorf("no available image quota")
+	}
+	s.ensureImageReservationsLocked()
+	s.imageReservations[token]++
+	lease := s.occupyTokenLocked(token)
+	return lease, imageTokenReservation{token: token, slot: s.imageReservations[token]}, nil
+}
+
+func (s *AccountService) imageCandidatesLocked(excluded map[string]struct{}, allow func(map[string]any) bool) []map[string]any {
+	var out []map[string]any
 	for _, item := range s.items {
 		token := util.Clean(item["access_token"])
-		if token == "" {
+		if token == "" || !s.accountIdleLocked(token) {
 			continue
 		}
 		if _, ok := excluded[token]; ok {
@@ -795,17 +1612,212 @@ func (s *AccountService) reserveNextCandidateToken(excluded map[string]struct{},
 			continue
 		}
 		if s.availableImageSlotsLocked(item) > 0 {
-			tokens = append(tokens, token)
+			out = append(out, item)
 		}
 	}
-	if len(tokens) == 0 {
-		return imageTokenReservation{}, fmt.Errorf("no available image quota")
+	return out
+}
+
+func (s *AccountService) selectStickyImageTokenLocked(candidates []map[string]any) string {
+	if s.tokenInAccounts(s.stickyImageToken, candidates) {
+		return s.stickyImageToken
 	}
-	token := tokens[s.index%len(tokens)]
-	s.index++
-	s.ensureImageReservationsLocked()
-	s.imageReservations[token]++
-	return imageTokenReservation{token: token, slot: s.imageReservations[token]}, nil
+	token := s.selectRandomTokenLocked(candidates)
+	s.stickyImageToken = token
+	return token
+}
+
+func (s *AccountService) selectWeightedImageTokenLocked(candidates []map[string]any) string {
+	total := 0
+	for _, item := range candidates {
+		total += s.imageAccountWeightLocked(item)
+	}
+	if total <= 0 {
+		return ""
+	}
+	pick := s.randIntnLocked(total)
+	for _, item := range candidates {
+		weight := s.imageAccountWeightLocked(item)
+		if pick < weight {
+			return util.Clean(item["access_token"])
+		}
+		pick -= weight
+	}
+	return util.Clean(candidates[len(candidates)-1]["access_token"])
+}
+
+func (s *AccountService) imageAccountWeightLocked(account map[string]any) int {
+	if util.ToBool(account["image_quota_unknown"]) {
+		if s.availableImageSlotsLocked(account) > 0 {
+			return 1
+		}
+		return 0
+	}
+	available := s.availableImageSlotsLocked(account)
+	if available < 0 {
+		return 0
+	}
+	return available
+}
+
+func imageAccountWeight(account map[string]any) int {
+	if util.ToBool(account["image_quota_unknown"]) {
+		return 1
+	}
+	quota := util.ToInt(account["quota"], 0)
+	if quota < 0 {
+		return 0
+	}
+	return quota
+}
+
+func (s *AccountService) selectRandomTokenLocked(candidates []map[string]any) string {
+	if len(candidates) == 0 {
+		return ""
+	}
+	return util.Clean(candidates[s.randIntnLocked(len(candidates))]["access_token"])
+}
+
+func (s *AccountService) selectRandomTokenLockedByToken(tokens []string) string {
+	if len(tokens) == 0 {
+		return ""
+	}
+	return tokens[s.randIntnLocked(len(tokens))]
+}
+
+func (s *AccountService) randIntnLocked(n int) int {
+	if n <= 0 {
+		return 0
+	}
+	if s.random == nil {
+		s.random = rand.New(rand.NewSource(time.Now().UnixNano()))
+	}
+	return s.random.Intn(n)
+}
+
+func (s *AccountService) tokenInAccounts(token string, candidates []map[string]any) bool {
+	token = util.Clean(token)
+	if token == "" {
+		return false
+	}
+	for _, item := range candidates {
+		if util.Clean(item["access_token"]) == token {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *AccountService) accountIdleLocked(token string) bool {
+	return s.busyTokens[token] <= 0
+}
+
+func (s *AccountService) occupyTokenLocked(token string) AccountLease {
+	if s.busyTokens == nil {
+		s.busyTokens = map[string]int{}
+	}
+	s.busyTokens[token]++
+	var once sync.Once
+	return AccountLease{Token: token, release: func() {
+		once.Do(func() {
+			s.releaseBusyToken(token)
+		})
+	}}
+}
+
+func (s *AccountService) releaseBusyToken(token string) {
+	original := util.Clean(token)
+	if original == "" {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	token = original
+	if alias := s.busyTokenAliases[original]; alias != "" {
+		token = alias
+	}
+	count := s.busyTokens[token]
+	if count <= 1 {
+		delete(s.busyTokens, token)
+	} else {
+		s.busyTokens[token] = count - 1
+	}
+	if refs := s.busyTokenAliasRefs[original]; refs > 0 {
+		if refs <= 1 {
+			delete(s.busyTokenAliases, original)
+			delete(s.busyTokenAliasRefs, original)
+		} else {
+			s.busyTokenAliasRefs[original] = refs - 1
+		}
+	}
+}
+
+func (s *AccountService) migrateBusyTokenLocked(oldToken, newToken string) {
+	oldToken = util.Clean(oldToken)
+	newToken = util.Clean(newToken)
+	if oldToken == "" || newToken == "" || oldToken == newToken {
+		return
+	}
+	if s.busyTokens == nil {
+		s.busyTokens = map[string]int{}
+	}
+	if s.busyTokenAliases == nil {
+		s.busyTokenAliases = map[string]string{}
+	}
+	if s.busyTokenAliasRefs == nil {
+		s.busyTokenAliasRefs = map[string]int{}
+	}
+
+	count := s.busyTokens[oldToken]
+	inboundRefs := 0
+	for alias, target := range s.busyTokenAliases {
+		if target == oldToken {
+			s.busyTokenAliases[alias] = newToken
+			inboundRefs += s.busyTokenAliasRefs[alias]
+		}
+	}
+	if count <= 0 {
+		return
+	}
+	s.busyTokens[newToken] += count
+	delete(s.busyTokens, oldToken)
+	if directRefs := count - inboundRefs; directRefs > 0 {
+		s.busyTokenAliases[oldToken] = newToken
+		s.busyTokenAliasRefs[oldToken] += directRefs
+	}
+}
+
+func (s *AccountService) clearBusyTokenLocked(token string) {
+	token = util.Clean(token)
+	if token == "" {
+		return
+	}
+	delete(s.busyTokens, token)
+	delete(s.busyTokenAliases, token)
+	delete(s.busyTokenAliasRefs, token)
+	for alias, target := range s.busyTokenAliases {
+		if target == token {
+			delete(s.busyTokenAliases, alias)
+			delete(s.busyTokenAliasRefs, alias)
+		}
+	}
+}
+
+func (s *AccountService) clearStickyLocked(token string, text bool, image bool) {
+	if text && s.stickyTextToken == token {
+		s.stickyTextToken = ""
+	}
+	if image && s.stickyImageToken == token {
+		s.stickyImageToken = ""
+	}
+}
+
+func normalizeAccountScheduleMode(mode string) string {
+	if strings.TrimSpace(mode) == "fill_first" {
+		return "fill_first"
+	}
+	return "load_balance"
 }
 
 func (s *AccountService) reservedImageSlotAvailable(reservation imageTokenReservation) bool {
@@ -845,18 +1857,105 @@ func (s *AccountService) releaseImageReservation(accessToken string) {
 }
 
 func (s *AccountService) releaseImageReservationLocked(accessToken string) {
-	s.ensureImageReservationsLocked()
-	count := s.imageReservations[accessToken]
-	if count <= 1 {
-		delete(s.imageReservations, accessToken)
+	original := util.Clean(accessToken)
+	if original == "" {
 		return
 	}
-	s.imageReservations[accessToken] = count - 1
+	s.ensureImageReservationsLocked()
+
+	token := original
+	if alias := s.imageReservationAliases[original]; alias != "" {
+		token = alias
+	}
+	count := s.imageReservations[token]
+	if count <= 1 {
+		delete(s.imageReservations, token)
+	} else {
+		s.imageReservations[token] = count - 1
+	}
+	if refs := s.imageReservationAliasRefs[original]; refs > 0 {
+		if refs <= 1 {
+			delete(s.imageReservationAliases, original)
+			delete(s.imageReservationAliasRefs, original)
+		} else {
+			s.imageReservationAliasRefs[original] = refs - 1
+		}
+	}
+}
+
+func (s *AccountService) resolveImageReservationTokenLocked(accessToken string) string {
+	current := util.Clean(accessToken)
+	if current == "" {
+		return ""
+	}
+	s.ensureImageReservationsLocked()
+	seen := map[string]struct{}{}
+	for {
+		alias := s.imageReservationAliases[current]
+		if alias == "" || alias == current {
+			return current
+		}
+		if _, ok := seen[current]; ok {
+			return current
+		}
+		seen[current] = struct{}{}
+		current = alias
+	}
+}
+
+func (s *AccountService) migrateImageReservationLocked(oldToken, newToken string) {
+	oldToken = util.Clean(oldToken)
+	newToken = util.Clean(newToken)
+	if oldToken == "" || newToken == "" || oldToken == newToken {
+		return
+	}
+	s.ensureImageReservationsLocked()
+
+	count := s.imageReservations[oldToken]
+	inboundRefs := 0
+	for alias, target := range s.imageReservationAliases {
+		if target == oldToken {
+			s.imageReservationAliases[alias] = newToken
+			inboundRefs += s.imageReservationAliasRefs[alias]
+		}
+	}
+	if count <= 0 {
+		return
+	}
+	s.imageReservations[newToken] += count
+	delete(s.imageReservations, oldToken)
+	if directRefs := count - inboundRefs; directRefs > 0 {
+		s.imageReservationAliases[oldToken] = newToken
+		s.imageReservationAliasRefs[oldToken] += directRefs
+	}
+}
+
+func (s *AccountService) clearImageReservationLocked(token string) {
+	token = util.Clean(token)
+	if token == "" {
+		return
+	}
+	s.ensureImageReservationsLocked()
+	delete(s.imageReservations, token)
+	delete(s.imageReservationAliases, token)
+	delete(s.imageReservationAliasRefs, token)
+	for alias, target := range s.imageReservationAliases {
+		if target == token {
+			delete(s.imageReservationAliases, alias)
+			delete(s.imageReservationAliasRefs, alias)
+		}
+	}
 }
 
 func (s *AccountService) ensureImageReservationsLocked() {
 	if s.imageReservations == nil {
 		s.imageReservations = map[string]int{}
+	}
+	if s.imageReservationAliases == nil {
+		s.imageReservationAliases = map[string]string{}
+	}
+	if s.imageReservationAliasRefs == nil {
+		s.imageReservationAliasRefs = map[string]int{}
 	}
 }
 
@@ -992,12 +2091,40 @@ func (s *AccountService) detectAccountType(accessToken string, mePayload, initPa
 	return "Free"
 }
 
+func sortPendingRefreshByPriority(items []pendingRefreshItem, s *AccountService) {
+	if len(items) < 2 {
+		return
+	}
+	paid := make([]pendingRefreshItem, 0, len(items))
+	free := make([]pendingRefreshItem, 0, len(items))
+	for _, item := range items {
+		if isPaidRefreshAccount(s, item.accessToken) {
+			paid = append(paid, item)
+		} else {
+			free = append(free, item)
+		}
+	}
+	copy(items, append(paid, free...))
+}
+
+func isPaidRefreshAccount(s *AccountService, accessToken string) bool {
+	account := s.GetAccount(accessToken)
+	return IsPaidImageAccount(account)
+}
+
 func IsImageAccountAvailable(account map[string]any) bool {
 	if account == nil {
 		return false
 	}
+	enabled, hasEnabled := accountEnabledState(account)
+	if !enabled {
+		return false
+	}
 	status := util.Clean(account["status"])
-	if status == "禁用" || status == "限流" || status == "异常" {
+	if !hasEnabled && status == "禁用" {
+		return false
+	}
+	if status == "限流" || status == "异常" || status == "刷新中" || status == "过期待刷新" {
 		return false
 	}
 	if util.ToBool(account["image_quota_unknown"]) {
@@ -1025,6 +2152,20 @@ func IsAccountInvalidErrorMessage(message string) bool {
 		strings.Contains(text, "authentication token has been invalidated") ||
 		strings.Contains(text, "invalidated oauth token") ||
 		strings.Contains(text, "token expired") ||
+		strings.Contains(text, "authentication token is expired")
+}
+
+// IsAccountTokenExpiredErrorMessage detects refreshable token-expired errors.
+// Unlike IsAccountInvalidErrorMessage, it excludes non-refreshable cases such as
+// token_invalidated, token_revoked, and invalidated oauth token errors.
+// When this returns true and the account has session_token, refresh it instead of
+// marking the account invalid immediately.
+func IsAccountTokenExpiredErrorMessage(message string) bool {
+	text := strings.ToLower(strings.TrimSpace(message))
+	if text == "" || isBootstrapErrorMessage(text) {
+		return false
+	}
+	return strings.Contains(text, "token expired") ||
 		strings.Contains(text, "authentication token is expired")
 }
 
@@ -1113,6 +2254,7 @@ func publicAccounts(accounts []map[string]any) []map[string]any {
 			"access_token":       token,
 			"type":               util.ValueOr(account["type"], "Free"),
 			"status":             util.ValueOr(account["status"], "正常"),
+			"enabled":            accountEnabledValue(account),
 			"quota":              util.ValueOr(account["quota"], 0),
 			"imageQuotaUnknown":  util.ToBool(account["image_quota_unknown"]),
 			"email":              account["email"],
@@ -1253,6 +2395,19 @@ func extractQuotaAndRestoreAt(limits []any) (int, any, bool) {
 		return util.ToInt(item["remaining"], 0), restore, false
 	}
 	return 0, nil, true
+}
+
+func parseAccountRestoreAt(value any) (time.Time, bool) {
+	text := util.Clean(value)
+	if text == "" {
+		return time.Time{}, false
+	}
+	for _, layout := range []string{time.RFC3339Nano, time.RFC3339, "2006-01-02 15:04:05"} {
+		if parsed, err := time.Parse(layout, text); err == nil {
+			return parsed, true
+		}
+	}
+	return time.Time{}, false
 }
 
 func anyList(value any) []any {

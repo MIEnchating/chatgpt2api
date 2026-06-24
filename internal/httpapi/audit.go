@@ -395,6 +395,7 @@ func parseLogQuery(r *http.Request) (service.LogQuery, error) {
 		EndDate:       strings.TrimSpace(values.Get("end_date")),
 		StartTime:     strings.TrimSpace(values.Get("start_time")),
 		EndTime:       strings.TrimSpace(values.Get("end_time")),
+		View:          strings.TrimSpace(values.Get("view")),
 		Limit:         limit,
 	}, nil
 }

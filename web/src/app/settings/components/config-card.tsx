@@ -22,7 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { testProxy, type ProxyTestResult } from "@/lib/api";
+import { testProxy, type AccountScheduleMode, type ProxyTestResult } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 import { useSettingsStore } from "../store";
@@ -31,6 +31,10 @@ import { SettingsCard, settingsInputClassName } from "./settings-ui";
 const configSectionClassName = "flex flex-col gap-3 border-t border-border/60 pt-5 first:border-t-0 first:pt-0";
 const configFieldClassName = "min-w-0 gap-1.5";
 const configGridClassName = "grid gap-x-4 gap-y-3 sm:grid-cols-2";
+
+function toAccountScheduleMode(value: string): AccountScheduleMode {
+  return value === "fill_first" ? "fill_first" : "load_balance";
+}
 
 function ConfigTip({ content }: { content: string }) {
   return (

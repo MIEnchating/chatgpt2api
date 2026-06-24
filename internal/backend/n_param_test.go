@@ -23,8 +23,8 @@ func (c nParamProxyConfig) Proxy() string {
 	return c.proxy
 }
 
-// TestNParamSequential 测试顺序调用模式：
-// 使用同一个 token，串行调用 n 次，每次等前一次完成后才开始下一次。
+// TestNParamSequential exercises sequential image calls with one token.
+// Each call waits for the previous call to finish before starting the next one.
 func TestNParamSequential(t *testing.T) {
 	token := strings.TrimSpace(os.Getenv("CHATGPT2API_DIAG_ACCESS_TOKEN"))
 	if token == "" {
@@ -82,7 +82,7 @@ func TestNParamSequential(t *testing.T) {
 		}
 
 		if hasError && i < n {
-			// 失败后短暂等待再试下一次
+			// Briefly wait before trying the next call after a failure.
 			select {
 			case <-time.After(2 * time.Second):
 			case <-ctx.Done():
@@ -101,12 +101,12 @@ func TestNParamSequential(t *testing.T) {
 		}())
 }
 
-// TestNParamParallel 测试并行调用模式：
-// 使用多个不同 token（从环境变量中逗号分隔），并发调用 n 次。
+// TestNParamParallel exercises concurrent image calls across configured tokens.
+// Tokens come from the comma-separated environment variable.
 func TestNParamParallel(t *testing.T) {
 	tokenList := strings.TrimSpace(os.Getenv("CHATGPT2API_DIAG_ACCESS_TOKENS"))
 	if tokenList == "" {
-		// 回退到单 token 环境变量
+		// Fall back to the single-token environment variable.
 		single := strings.TrimSpace(os.Getenv("CHATGPT2API_DIAG_ACCESS_TOKEN"))
 		if single == "" {
 			t.Skip("CHATGPT2API_DIAG_ACCESS_TOKENS or CHATGPT2API_DIAG_ACCESS_TOKEN is not set")
@@ -147,7 +147,7 @@ func TestNParamParallel(t *testing.T) {
 			defer wg.Done()
 			iterStart := time.Now()
 
-			// 轮询使用 token 池中的 token
+			// Round-robin through the token pool.
 			token := tokens[idx%len(tokens)]
 			client := NewClient(token, nil, service.NewProxyService(nParamProxyConfig{proxy: proxy}))
 
@@ -179,7 +179,7 @@ func TestNParamParallel(t *testing.T) {
 				Images:         int(imagesForCall),
 				ConversationID: conversationID,
 				Duration:       elapsed,
-				Error:          func() string {
+				Error: func() string {
 					if err != nil {
 						return err.Error()
 					}
@@ -218,7 +218,7 @@ func TestNParamParallel(t *testing.T) {
 		}())
 }
 
-// TestNParamComparison 同时运行顺序和并行两种模式并对比结果
+// TestNParamComparison compares the sequential and parallel call modes.
 func TestNParamComparison(t *testing.T) {
 	tokenList := strings.TrimSpace(os.Getenv("CHATGPT2API_DIAG_ACCESS_TOKENS"))
 	singleToken := strings.TrimSpace(os.Getenv("CHATGPT2API_DIAG_ACCESS_TOKEN"))
@@ -241,7 +241,7 @@ func TestNParamComparison(t *testing.T) {
 	t.Logf("=== n=%d 顺序 vs 并行 对比测试 ===", n)
 	t.Logf("可用 token 数=%d, model=%s", len(tokens), model)
 
-	// ---- 顺序模式 ----
+	// ---- Sequential mode ----
 	t.Log(">> 开始顺序调用...")
 	seqStart := time.Now()
 	seqSuccess := 0
@@ -277,7 +277,7 @@ func TestNParamComparison(t *testing.T) {
 	}
 	seqTotal := time.Since(seqStart)
 
-	// ---- 并行模式 ----
+	// ---- Parallel mode ----
 	t.Log(">> 开始并行调用...")
 	parStart := time.Now()
 	var parWg sync.WaitGroup
@@ -343,7 +343,7 @@ func TestNParamComparison(t *testing.T) {
 		}
 	}
 
-	// ---- 对比总结 ----
+	// ---- Comparison summary ----
 	t.Log("")
 	t.Log("========== 对比总结 ==========")
 	t.Logf("顺序模式: 成功=%d/%d, 总事件=%d, 总耗时=%v",
@@ -358,8 +358,7 @@ func TestNParamComparison(t *testing.T) {
 	t.Log("==============================")
 }
 
-// TestNParamDiagnostic 单次诊断测试（和现有 image_diag_test.go 相同模式），
-// 但额外输出 token 使用情况和详细的 timing。
+// TestNParamDiagnostic runs a single diagnostic call and logs token usage plus timings.
 func TestNParamDiagnostic(t *testing.T) {
 	token := strings.TrimSpace(os.Getenv("CHATGPT2API_DIAG_ACCESS_TOKEN"))
 	if token == "" {
@@ -405,7 +404,7 @@ func TestNParamDiagnostic(t *testing.T) {
 			"has_result":          event.Result != "",
 			"text":                text,
 			"blocked":             event.Blocked,
-			"tool_invoked":        func() any {
+			"tool_invoked": func() any {
 				if event.ToolInvoked != nil {
 					return *event.ToolInvoked
 				}
@@ -416,7 +415,7 @@ func TestNParamDiagnostic(t *testing.T) {
 		encoded, _ := json.Marshal(summary)
 		t.Logf("event[%d]=%s", count, encoded)
 
-		// 检测 raw 中的关键信号
+		// Detect key signals in the raw payload.
 		if strings.Contains(rawText, "asset_pointer") {
 			t.Logf("  -> raw 包含 asset_pointer")
 		}

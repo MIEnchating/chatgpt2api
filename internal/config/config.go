@@ -35,6 +35,7 @@ var settingEnvKeys = map[string]string{
 	"auto_remove_invalid_accounts":      "CHATGPT2API_AUTO_REMOVE_INVALID_ACCOUNTS",
 	"auto_remove_rate_limited_accounts": "CHATGPT2API_AUTO_REMOVE_RATE_LIMITED_ACCOUNTS",
 	"log_retention_days":                "CHATGPT2API_LOG_RETENTION_DAYS",
+	"default_log_view":                  "CHATGPT2API_DEFAULT_LOG_VIEW",
 	"log_levels":                        "CHATGPT2API_LOG_LEVELS",
 	"linuxdo_enabled":                   "CHATGPT2API_LINUXDO_ENABLED",
 	"linuxdo_client_id":                 "CHATGPT2API_LINUXDO_CLIENT_ID",
@@ -46,6 +47,8 @@ var settingEnvKeys = map[string]string{
 	"login_page_image_zoom":             "CHATGPT2API_LOGIN_PAGE_IMAGE_ZOOM",
 	"login_page_image_position_x":       "CHATGPT2API_LOGIN_PAGE_IMAGE_POSITION_X",
 	"login_page_image_position_y":       "CHATGPT2API_LOGIN_PAGE_IMAGE_POSITION_Y",
+	"text_account_schedule_mode":        "CHATGPT2API_TEXT_ACCOUNT_SCHEDULE_MODE",
+	"image_account_schedule_mode":       "CHATGPT2API_IMAGE_ACCOUNT_SCHEDULE_MODE",
 }
 
 var envKeyRE = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
@@ -215,12 +218,24 @@ func (s *Store) LogRetentionDays() int {
 	return value
 }
 
+func (s *Store) DefaultLogView() string {
+	return normalizeDefaultLogView(s.settingValue("default_log_view", "meaningful"))
+}
+
 func (s *Store) ImageTaskTimeoutSeconds() int {
 	return normalizeImageTaskTimeoutSeconds(s.settingValue("image_task_timeout_seconds", defaultImageTaskTimeoutSeconds))
 }
 
 func (s *Store) ImageStreamParameterEnabled() bool {
 	return util.ToBool(s.settingValue("image_stream_parameter_enabled", false))
+}
+
+func (s *Store) TextAccountScheduleMode() string {
+	return normalizeAccountScheduleMode(s.settingValue("text_account_schedule_mode", "load_balance"))
+}
+
+func (s *Store) ImageAccountScheduleMode() string {
+	return normalizeAccountScheduleMode(s.settingValue("image_account_schedule_mode", "load_balance"))
 }
 
 func (s *Store) UserDefaultConcurrentLimit() int {
@@ -420,6 +435,7 @@ func (s *Store) Get() map[string]any {
 	data["image_retention_days"] = s.ImageRetentionDays()
 	data["image_storage_limit_mb"] = s.ImageStorageLimitMB()
 	data["log_retention_days"] = s.LogRetentionDays()
+	data["default_log_view"] = s.DefaultLogView()
 	data["auto_remove_invalid_accounts"] = s.AutoRemoveInvalidAccounts()
 	data["auto_remove_rate_limited_accounts"] = s.AutoRemoveRateLimitedAccounts()
 	data["log_levels"] = s.LogLevels()
@@ -460,6 +476,12 @@ func (s *Store) Update(data map[string]any) (map[string]any, error) {
 	}
 	if value, ok := next["image_task_timeout_seconds"]; ok {
 		next["image_task_timeout_seconds"] = normalizeImageTaskTimeoutSeconds(value)
+	}
+	if value, ok := next["text_account_schedule_mode"]; ok {
+		next["text_account_schedule_mode"] = normalizeAccountScheduleMode(value)
+	}
+	if value, ok := next["image_account_schedule_mode"]; ok {
+		next["image_account_schedule_mode"] = normalizeAccountScheduleMode(value)
 	}
 	if value, ok := next["image_storage_limit_mb"]; ok {
 		next["image_storage_limit_mb"] = normalizeNonNegativeInt(value)
@@ -588,6 +610,15 @@ func (s *Store) validateSettingsUpdateLocked(data map[string]any) error {
 		return errors.New("Linuxdo token auth method must be one of client_secret_post, client_secret_basic, none")
 	}
 	return nil
+}
+
+func normalizeDefaultLogView(value any) string {
+	switch strings.ToLower(strings.TrimSpace(fmt.Sprint(value))) {
+	case "all", "meaningful", "business":
+		return strings.ToLower(strings.TrimSpace(fmt.Sprint(value)))
+	default:
+		return "meaningful"
+	}
 }
 
 func validateAbsoluteHTTPURL(value string) error {
@@ -747,6 +778,14 @@ func normalizeImageTaskTimeoutSeconds(value any) int {
 		return maxImageTaskTimeoutSeconds
 	}
 	return seconds
+}
+
+func normalizeAccountScheduleMode(value any) string {
+	mode := strings.ToLower(strings.TrimSpace(fmt.Sprint(value)))
+	if mode == "fill_first" {
+		return "fill_first"
+	}
+	return "load_balance"
 }
 
 func normalizeNonNegativeInt(value any) int {
