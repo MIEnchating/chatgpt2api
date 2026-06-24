@@ -5,7 +5,6 @@ import { LoaderCircle } from "lucide-react";
 
 import { useAuthGuard } from "@/lib/use-auth-guard";
 
-import { AnnouncementsCard } from "./components/announcements-card";
 import { ConfigCard } from "./components/config-card";
 import { ImageStorageGovernanceCard } from "./components/image-storage-governance-card";
 import { LogGovernanceCard } from "./components/log-governance-card";
@@ -49,9 +48,6 @@ function AdminSettingsPageContent() {
         </SettingsMasonryItem>
         <SettingsMasonryItem>
           <LoginPageImageCard />
-        </SettingsMasonryItem>
-        <SettingsMasonryItem>
-          <AnnouncementsCard />
         </SettingsMasonryItem>
       </section>
     </div>

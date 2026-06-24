@@ -147,6 +147,53 @@ function imageGenerationDurationLabel(image: StoredImage) {
   return duration ? `耗时 ${duration}` : "";
 }
 
+function imageQualityCheckLabel(image: StoredImage) {
+  const check = image.qualityCheck;
+  if (!check) {
+    return "";
+  }
+  const sizeFailed = check.size_matched === false;
+  const formatFailed = check.output_format_matched === false;
+  if (sizeFailed && formatFailed) {
+    return "尺寸/格式不一致";
+  }
+  if (sizeFailed) {
+    return "尺寸不一致";
+  }
+  if (formatFailed) {
+    return "格式不一致";
+  }
+  if (check.size_matched === true || check.output_format_matched === true) {
+    return "检测通过";
+  }
+  return check.actual_size || check.actual_output_format ? "已检测" : "";
+}
+
+function imageQualityCheckClass(image: StoredImage) {
+  const check = image.qualityCheck;
+  if (check?.size_matched === false || check?.output_format_matched === false) {
+    return "bg-amber-50 text-amber-700 ring-1 ring-amber-100";
+  }
+  return "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100";
+}
+
+function imageQualityCheckTitle(image: StoredImage) {
+  const check = image.qualityCheck;
+  if (!check) {
+    return "";
+  }
+  const parts = [
+    check.requested_size || check.actual_size
+      ? `尺寸：请求 ${check.requested_size || "-"}，实际 ${check.actual_size || "-"}`
+      : "",
+    check.requested_output_format || check.actual_output_format
+      ? `格式：请求 ${check.requested_output_format || "-"}，实际 ${check.actual_output_format || "-"}`
+      : "",
+    ...(check.warnings || []),
+  ].filter(Boolean);
+  return parts.join("\n");
+}
+
 function latestGeneratedAt(images: StoredImage[]) {
   let latest = "";
   let latestTime = Number.NEGATIVE_INFINITY;
@@ -183,7 +230,7 @@ function getRequestedSizeLabel(turn: ImageTurn) {
 
 function getLongTaskHint(turn: ImageTurn, elapsedSeconds: number) {
   void elapsedSeconds;
-  if (!isTurnBusy(turn) || turn.mode === "chat") {
+  if (!isTurnBusy(turn)) {
     return "";
   }
   if (isHighResolutionImageSize(turn.size)) {
@@ -495,7 +542,7 @@ export function ImageResults({
         });
         const textReplyImages = turn.images
           .map((image, index) => ({ image, index }))
-          .filter(({ image }) => (image.status === "message" || (turn.mode === "chat" && image.status === "loading")) && Boolean(image.text_response));
+          .filter(({ image }) => image.status === "message" && Boolean(image.text_response));
         const visualImages = turn.images
           .map((image, index) => ({ image, index }))
           .filter(({ image }) => !textReplyImages.some((reply) => reply.image.id === image.id));
@@ -732,20 +779,22 @@ export function ImageResults({
                         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                           <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-stone-500">
                             <span className="rounded-full bg-stone-100 px-2.5 py-0.5 text-stone-600">
-                              {turn.mode === "chat" ? "对话回复" : "模型文本回复"}
+                              模型文本回复
                             </span>
                           </div>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            size="sm"
-                            className="h-8 rounded-full border-[#e5e7eb] bg-white px-3 text-xs text-[#45515e] shadow-none hover:bg-black/[0.05] hover:text-[#18181b]"
-                            disabled={turnBusy || !turn.prompt.trim()}
-                            onClick={() => void onRetryImage(selectedConversation.id, turn.id, index)}
-                          >
-                            <RotateCcw className="size-3.5" />
-                            {turn.mode === "chat" ? "重新发送" : "重试生成"}
-                          </Button>
+                          {turn.mode !== "chat" ? (
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              className="h-8 rounded-full border-[#e5e7eb] bg-white px-3 text-xs text-[#45515e] shadow-none hover:bg-black/[0.05] hover:text-[#18181b]"
+                              disabled={turnBusy || !turn.prompt.trim()}
+                              onClick={() => void onRetryImage(selectedConversation.id, turn.id, index)}
+                            >
+                              <RotateCcw className="size-3.5" />
+                              重试生成
+                            </Button>
+                          ) : null}
                         </div>
                         <ChatMarkdown>{image.text_response || ""}</ChatMarkdown>
                       </div>
@@ -765,6 +814,8 @@ export function ImageResults({
                       const dimensions = imageResolutionLabel(image, imageDimensions[image.id]);
                       const imageMeta = [dimensions, sizeLabel].filter(Boolean).join(" | ");
                       const generationDuration = imageGenerationDurationLabel(image);
+                      const qualityCheckLabel = imageQualityCheckLabel(image);
+                      const qualityCheckTitle = imageQualityCheckTitle(image);
                       const generationCompletedAt = image.taskUpdatedAt ? `完成 ${formatConversationTime(image.taskUpdatedAt)}` : "";
                       const formatLabel = getImageFormatLabel(image, imageSrc);
                       const visibility = image.visibility || turn.visibility || "private";
@@ -901,6 +952,17 @@ export function ImageResults({
                               {generationDuration}
                             </div>
                           ) : null}
+                          {qualityCheckLabel ? (
+                            <div
+                              className={cn(
+                                "pointer-events-none absolute left-2 bottom-10 z-20 inline-flex h-7 items-center rounded-full px-2.5 text-[11px] font-medium shadow-sm backdrop-blur-sm",
+                                imageQualityCheckClass(image),
+                              )}
+                              title={qualityCheckTitle}
+                            >
+                              {qualityCheckLabel}
+                            </div>
+                          ) : null}
                           <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/55 via-black/20 to-transparent px-2.5 pt-8 pb-11 opacity-0 transition duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
                             <div className="text-left text-white drop-shadow-sm">
                               <div className="text-[10px] font-bold tracking-wide">{formatLabel}</div>
@@ -976,11 +1038,7 @@ export function ImageResults({
                             )}
                           </div>
                           <p className="text-sm">
-                            {turn.mode === "chat"
-                              ? imageLoadingPhase === "queued"
-                                ? "排队中..."
-                                : "正在等待回复..."
-                              : imageBusyLabel}
+                            {imageBusyLabel}
                           </p>
                           {imageLoadingPhase === "running" ? (
                             <p className="min-w-[7.5rem] rounded-full bg-white/70 px-2.5 py-1 font-mono text-xs tabular-nums text-stone-400">
@@ -1072,7 +1130,7 @@ function getTurnOutcomeLabel(successCount: number, failedCount: number, cancelle
 
 function getTurnModeLabel(turn: ImageTurn) {
   if (turn.mode === "chat") {
-    return "对话";
+    return "文本记录";
   }
   if (turn.mode === "generate") {
     return "文生图";

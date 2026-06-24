@@ -112,7 +112,7 @@ export function ProxySettingsCard() {
             <div>
               <h2 className="text-lg font-semibold tracking-tight">上游代理配置</h2>
               <p className="text-sm text-stone-500">
-                为 RelayAI 上游请求配置出网代理，适合国内服务器部署。
+                为上游请求配置出网代理，适合国内服务器部署。
               </p>
             </div>
           </div>

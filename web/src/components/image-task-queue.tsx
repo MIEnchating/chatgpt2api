@@ -85,7 +85,7 @@ function formatQueueTime(value: string) {
 
 function getModeLabel(mode: ImageConversationMode) {
   if (mode === "chat") {
-    return "对话";
+    return "文本记录";
   }
   if (mode === "edit") {
     return "继续编辑";
@@ -136,9 +136,6 @@ function getQueueSizeLabel(turn: ImageTurn) {
 
 function getQueueLongTaskHint(turn: ImageTurn, elapsedSeconds: number) {
   void elapsedSeconds;
-  if (turn.mode === "chat") {
-    return "";
-  }
   if (isHighResolutionImageSize(turn.size)) {
     return "高分辨率任务已提交给上游判断";
   }
@@ -146,15 +143,6 @@ function getQueueLongTaskHint(turn: ImageTurn, elapsedSeconds: number) {
 }
 
 function getQueueLoadingDetail(item: TaskQueueItem, loadingPhase: ImageTurnLoadingPhase) {
-  if (item.turn.mode === "chat") {
-    if (loadingPhase === "queued") {
-      return "对话任务排队中";
-    }
-    if (loadingPhase === "running") {
-      return "对话任务处理中";
-    }
-    return "";
-  }
   if (loadingPhase === "queued") {
     return `还有 ${item.queuedCount} 张图片排队中`;
   }
@@ -194,7 +182,7 @@ function getQueueItem(conversation: ImageConversation, turn: ImageTurn): TaskQue
   const completedCount = turn.images.filter((image) => image.status === "success" || image.status === "message").length;
   const failedCount = turn.images.filter((image) => image.status === "error").length;
   const cancelledCount = turn.images.filter((image) => image.status === "cancelled").length;
-  const totalCount = Math.max(1, turn.mode === "chat" ? 1 : turn.count || turn.images.length || 1);
+  const totalCount = Math.max(1, turn.count || turn.images.length || 1);
   return {
     conversationId: conversation.id,
     conversationTitle: conversation.title,
@@ -299,9 +287,7 @@ function QueueItem({
     progress?.message ||
     (isQueued
       ? "等待任务开始"
-      : item.turn.mode === "chat"
-        ? "等待对话回复"
-        : "等待图片处理");
+      : "等待图片处理");
   const loadingDetail = getQueueLoadingDetail(item, loadingPhase);
   const progressDetail = loadingDetail || progress?.detail || "";
   const longTaskHint = getQueueLongTaskHint(item.turn, elapsedSeconds);
@@ -593,7 +579,7 @@ export function ImageTaskQueue({ className }: { className?: string }) {
             </span>
             <div className="mt-3 text-sm font-semibold text-[#222222] dark:text-foreground">队列为空</div>
             <div className="mt-1 max-w-[260px] text-xs leading-5 text-[#8e8e93] dark:text-muted-foreground">
-              在创作台提交图片或对话任务后，这里会显示对应的处理详情和进度。
+              在创作台提交图片任务后，这里会显示对应的处理详情和进度。
             </div>
             <Button
               type="button"

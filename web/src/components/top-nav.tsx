@@ -5,7 +5,6 @@ import { ChevronDown, LogOut, MoonStar, ShieldCheck, Sun, UserCircle2 } from "lu
 import { motion, useReducedMotion, type Transition } from "motion/react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 
-import { AnnouncementNotifications } from "@/components/announcement-banner";
 import { ImageTaskQueue } from "@/components/image-task-queue";
 import {
   AUTH_SESSION_CHANGE_EVENT,
@@ -19,6 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { logout } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { useAppMeta } from "@/lib/use-app-meta";
 import {
   applyColorTheme,
   getPreferredColorTheme,
@@ -219,6 +219,7 @@ function AccountMenu({
 export function TopNav() {
   const location = useLocation();
   const navigate = useNavigate();
+  const appMeta = useAppMeta();
   const pathname = location.pathname.replace(/\/+$/, "") || "/";
   const [session, setSession] = useState<StoredAuthSession | null | undefined>(() => getCachedAuthSession());
   const [theme, setTheme] = useState<ColorTheme>(() => getPreferredColorTheme());
@@ -304,11 +305,10 @@ export function TopNav() {
               aria-hidden="true"
               className="size-7 rounded-[10px] shadow-[0_4px_10px_rgba(184,90,127,0.16)]"
             />
-            <span className="truncate">chatgpt2api</span>
+            <span className="truncate">{appMeta.app_title}</span>
           </div>
           <div className="ml-auto flex shrink-0 items-center gap-1 lg:hidden">
             {canAccessImageTasks ? <ImageTaskQueue className="size-8 px-0" /> : null}
-            <AnnouncementNotifications target="image" className="size-8" />
             <ThemeToggleButton theme={theme} onToggle={handleThemeToggle} />
             <AccountMenu
               session={session}
@@ -328,7 +328,6 @@ export function TopNav() {
         </nav>
         <div className="hidden items-center justify-end gap-1.5 lg:col-start-3 lg:flex lg:justify-self-end">
           {canAccessImageTasks ? <ImageTaskQueue /> : null}
-          <AnnouncementNotifications target="image" className="size-8" />
           <ThemeToggleButton theme={theme} onToggle={handleThemeToggle} />
           <AccountMenu
             session={session}

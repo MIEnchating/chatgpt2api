@@ -22,8 +22,8 @@ export type AppMeta = {
 };
 
 export const defaultAppMeta: AppMeta = {
-  app_title: "chatgpt2api",
-  project_name: "chatgpt2api",
+  app_title: "云棉",
+  project_name: "云棉",
   login_page_image_url: "",
   login_page_image_mode: "contain",
   login_page_image_zoom: LOGIN_PAGE_IMAGE_DEFAULT_TRANSFORM.zoom,
@@ -44,18 +44,27 @@ export function normalizeAppMeta(data: Partial<AppMeta> = {}): AppMeta {
     positionX: Number(data.login_page_image_position_x),
     positionY: Number(data.login_page_image_position_y),
   });
+  const appTitle = normalizeTitle(data.app_title, defaultAppMeta.app_title);
+  const projectName = normalizeTitle(data.project_name, appTitle);
   return {
     ...defaultAppMeta,
     ...data,
-    app_title: typeof data.app_title === "string" && data.app_title.trim() ? data.app_title.trim() : defaultAppMeta.app_title,
-    project_name:
-      typeof data.project_name === "string" && data.project_name.trim() ? data.project_name.trim() : defaultAppMeta.project_name,
+    app_title: appTitle,
+    project_name: projectName,
     login_page_image_url: typeof data.login_page_image_url === "string" ? data.login_page_image_url : "",
     login_page_image_mode: normalizeLoginPageImageMode(data.login_page_image_mode),
     login_page_image_zoom: transform.zoom,
     login_page_image_position_x: transform.positionX,
     login_page_image_position_y: transform.positionY,
   };
+}
+
+function normalizeTitle(value: unknown, fallback: string) {
+  const text = typeof value === "string" ? value.trim() : "";
+  if (!text || text.toLowerCase() === "chatgpt2api") {
+    return fallback;
+  }
+  return text;
 }
 
 export function dispatchAppMetaUpdated(payload: Partial<AppMeta> = {}) {

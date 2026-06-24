@@ -6,7 +6,6 @@ import { toast } from "sonner";
 import {
   cleanupImageStorage,
   cleanupLogs,
-  DEFAULT_CHAT_MODELS,
   DEFAULT_IMAGE_MODELS,
   fetchLogGovernance,
   fetchImageStorageGovernance,
@@ -48,26 +47,16 @@ function normalizeConfig(config: SettingsConfig): SettingsConfig {
     positionX: Number(config.login_page_image_position_x),
     positionY: Number(config.login_page_image_position_y),
   });
-  const newAPITokenGroup =
-    typeof config.newapi_token_group === "string" && config.newapi_token_group.trim()
-      ? config.newapi_token_group.trim()
-      : "codex";
-  const newAPITokenGroups = Array.from(
-    new Set(
-      [newAPITokenGroup, ...(Array.isArray(config.newapi_token_groups) ? config.newapi_token_groups : [])]
-        .map((group) => String(group || "").trim())
-        .filter(Boolean),
-    ),
-  );
+  const appTitle = typeof config.app_title === "string" && config.app_title.trim() ? config.app_title.trim() : "云棉";
+  const projectName = typeof config.project_name === "string" && config.project_name.trim() ? config.project_name.trim() : appTitle;
   return {
     ...config,
+    app_title: appTitle,
+    project_name: projectName,
     refresh_account_interval_minute: Number(config.refresh_account_interval_minute || 5),
     image_task_timeout_seconds: Number(config.image_task_timeout_seconds || 300),
-    image_stream_parameter_enabled: Boolean(config.image_stream_parameter_enabled),
     image_models: normalizeModelNames(config.image_models, DEFAULT_IMAGE_MODELS),
-    chat_models: normalizeModelNames(config.chat_models, DEFAULT_CHAT_MODELS),
     default_image_model: String(config.default_image_model || DEFAULT_IMAGE_MODELS[0]),
-    default_chat_model: String(config.default_chat_model || DEFAULT_CHAT_MODELS[0]),
     user_default_concurrent_limit: Number(config.user_default_concurrent_limit || 0),
     user_default_rpm_limit: Number(config.user_default_rpm_limit || 0),
     image_retention_days: Number(config.image_retention_days || 30),
@@ -85,8 +74,8 @@ function normalizeConfig(config: SettingsConfig): SettingsConfig {
       typeof config.relay_base_url === "string" && config.relay_base_url.trim()
         ? config.relay_base_url
         : "http://newapi:3000",
-    newapi_token_group: newAPITokenGroup,
-    newapi_token_groups: newAPITokenGroups,
+    newapi_token_group: typeof config.newapi_token_group === "string" ? config.newapi_token_group.trim() : "",
+    newapi_token_groups: Array.isArray(config.newapi_token_groups) ? config.newapi_token_groups : [],
     login_page_image_url: typeof config.login_page_image_url === "string" ? config.login_page_image_url : "",
     login_page_image_mode: normalizeLoginPageImageMode(config.login_page_image_mode),
     login_page_image_zoom: loginImageTransform.zoom,
@@ -113,9 +102,7 @@ type SettingsStore = {
   saveConfig: () => Promise<void>;
   setRefreshAccountIntervalMinute: (value: string) => void;
   setImageTaskTimeoutSeconds: (value: string) => void;
-  setImageStreamParameterEnabled: (value: boolean) => void;
   setImageModels: (value: string) => void;
-  setChatModels: (value: string) => void;
   setUserDefaultConcurrentLimit: (value: string) => void;
   setUserDefaultRpmLimit: (value: string) => void;
   setImageRetentionDays: (value: string) => void;
@@ -130,7 +117,7 @@ type SettingsStore = {
   setProxy: (value: string) => void;
   setBaseUrl: (value: string) => void;
   setRelayBaseUrl: (value: string) => void;
-  setNewAPITokenGroup: (value: string) => void;
+  setAppTitle: (value: string) => void;
   setLoginPageImageUrl: (value: string) => void;
   setLoginPageImageMode: (value: LoginPageImageMode) => void;
   setLoginPageImageTransform: (transform: { zoom: number; positionX: number; positionY: number }) => void;
@@ -187,9 +174,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         ...config,
         refresh_account_interval_minute: Math.max(1, Number(config.refresh_account_interval_minute) || 1),
         image_task_timeout_seconds: Math.min(3600, Math.max(30, Number(config.image_task_timeout_seconds) || 300)),
-        image_stream_parameter_enabled: Boolean(config.image_stream_parameter_enabled),
         image_models: normalizeModelNames(config.image_models, DEFAULT_IMAGE_MODELS),
-        chat_models: normalizeModelNames(config.chat_models, DEFAULT_CHAT_MODELS),
         user_default_concurrent_limit: Math.max(0, Number(config.user_default_concurrent_limit) || 0),
         user_default_rpm_limit: Math.max(0, Number(config.user_default_rpm_limit) || 0),
         image_retention_days: Math.max(1, Number(config.image_retention_days) || 30),
@@ -202,14 +187,22 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         image_account_schedule_mode: normalizeAccountScheduleMode(config.image_account_schedule_mode),
         proxy: config.proxy.trim(),
         base_url: String(config.base_url || "").trim(),
+        app_title: String(config.app_title || "云棉").trim() || "云棉",
+        project_name: String(config.app_title || "云棉").trim() || "云棉",
         relay_base_url: String(config.relay_base_url || "").trim(),
-        newapi_token_group: String(config.newapi_token_group || "codex").trim(),
+        newapi_token_group: "",
       };
       delete payload.newapi_token_groups;
+      delete payload.chat_models;
+      delete payload.default_chat_model;
 
       const data = await updateSettingsConfig(payload);
       set({
         config: normalizeConfig(data.config),
+      });
+      dispatchAppMetaUpdated({
+        app_title: String(data.config.app_title || "云棉"),
+        project_name: String(data.config.project_name || data.config.app_title || "云棉"),
       });
       toast.success("配置已保存");
     } catch (error) {
@@ -253,16 +246,8 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     set((state) => state.config ? { config: { ...state.config, image_task_timeout_seconds: value } } : {});
   },
 
-  setImageStreamParameterEnabled: (value) => {
-    set((state) => state.config ? { config: { ...state.config, image_stream_parameter_enabled: value } } : {});
-  },
-
   setImageModels: (value) => {
     set((state) => state.config ? { config: { ...state.config, image_models: value } } : {});
-  },
-
-  setChatModels: (value) => {
-    set((state) => state.config ? { config: { ...state.config, chat_models: value } } : {});
   },
 
   setUserDefaultConcurrentLimit: (value) => {
@@ -341,7 +326,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     });
   },
 
-  setNewAPITokenGroup: (value) => {
+  setAppTitle: (value) => {
     set((state) => {
       if (!state.config) {
         return {};
@@ -349,7 +334,8 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       return {
         config: {
           ...state.config,
-          newapi_token_group: value,
+          app_title: value,
+          project_name: value,
         },
       };
     });
@@ -411,8 +397,8 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       const nextConfig = normalizeConfig(data.config);
       set({ config: nextConfig });
       dispatchAppMetaUpdated({
-        app_title: "chatgpt2api",
-        project_name: "chatgpt2api",
+        app_title: String(nextConfig.app_title || "云棉"),
+        project_name: String(nextConfig.project_name || nextConfig.app_title || "云棉"),
         login_page_image_url: String(nextConfig.login_page_image_url || ""),
         login_page_image_mode: normalizeLoginPageImageMode(nextConfig.login_page_image_mode),
         login_page_image_zoom: Number(nextConfig.login_page_image_zoom),

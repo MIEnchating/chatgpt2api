@@ -36,7 +36,7 @@ export function ImageSidebar({
           <div className="flex items-center gap-2">
             <Button className="h-10 flex-1 rounded-full" onClick={onCreateDraft}>
               <MessageSquarePlus className="size-4" />
-              新建对话
+              新建图片
             </Button>
             <Button
               variant="outline"

@@ -6,7 +6,6 @@ import {
   ChevronDown,
   Image as ImageIcon,
   ImagePlus,
-  MessageCircle,
   Plus,
   SlidersHorizontal,
   Store,
@@ -26,6 +25,7 @@ import {
 } from "react";
 
 import { ImageLightbox } from "@/components/image-lightbox";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -47,16 +47,13 @@ import {
   type ImageSizeMode,
 } from "@/app/image/image-options";
 import {
-  IMAGE_BACKGROUND_OPTIONS,
   IMAGE_MODEL_ROUTE_DETAILS,
   IMAGE_OUTPUT_FORMAT_OPTIONS,
-  isImageBackground,
   isImageQuality,
   supportsImageOutputControls,
   supportsImageOutputCompression,
   supportsStructuredImageParameters,
   usesOfficialImageRoute,
-  type ImageBackground,
   type ImageModel,
   type ImageOutputFormat,
   type ImageQuality,
@@ -78,15 +75,14 @@ type ImageComposerProps = {
   imageQuality: "" | ImageQuality;
   imageOutputFormat: ImageOutputFormat;
   imageOutputCompression: string;
-  imageBackground: ImageBackground;
-  imageStreamParameterEnabled: boolean;
+  imageStreamEnabled: boolean;
+  imagePartialImages: string;
   relayKeyConfigured: boolean;
   relayKeyStatusMessage?: string;
   highResolutionHint?: ReactNode;
   referenceImages: Array<{ name: string; dataUrl: string }>;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
   fileInputRef: RefObject<HTMLInputElement | null>;
-  onComposerModeChange: (mode: "chat" | "image") => void;
   onPromptChange: (value: string) => void;
   onImageCountChange: (value: string) => void;
   onImageModelChange: (value: ImageModel) => void;
@@ -99,7 +95,8 @@ type ImageComposerProps = {
   onImageQualityChange: (value: "" | ImageQuality) => void;
   onImageOutputFormatChange: (value: ImageOutputFormat) => void;
   onImageOutputCompressionChange: (value: string) => void;
-  onImageBackgroundChange: (value: ImageBackground) => void;
+  onImageStreamEnabledChange: (value: boolean) => void;
+  onImagePartialImagesChange: (value: string) => void;
   onSubmit: () => void | Promise<void>;
   onOpenPromptMarket: () => void;
   onReferenceImageChange: (files: File[]) => void | Promise<void>;
@@ -301,15 +298,14 @@ export function ImageComposer({
   imageQuality,
   imageOutputFormat,
   imageOutputCompression,
-  imageBackground,
-  imageStreamParameterEnabled,
+  imageStreamEnabled,
+  imagePartialImages,
   relayKeyConfigured,
   relayKeyStatusMessage,
   highResolutionHint,
   referenceImages,
   textareaRef,
   fileInputRef,
-  onComposerModeChange,
   onPromptChange,
   onImageCountChange,
   onImageModelChange,
@@ -322,7 +318,8 @@ export function ImageComposer({
   onImageQualityChange,
   onImageOutputFormatChange,
   onImageOutputCompressionChange,
-  onImageBackgroundChange,
+  onImageStreamEnabledChange,
+  onImagePartialImagesChange,
   onSubmit,
   onOpenPromptMarket,
   onReferenceImageChange,
@@ -357,8 +354,6 @@ export function ImageComposer({
   const imageQualityLabel = imageQuality
     ? IMAGE_QUALITY_OPTIONS.find((option) => option.value === imageQuality)?.label || imageQuality
     : "自动";
-  const imageBackgroundLabel =
-    IMAGE_BACKGROUND_OPTIONS.find((option) => option.value === imageBackground)?.label || "自动";
   const compressionSupported = supportsImageOutputCompression(imageOutputFormat);
   const compressionDisabled = !compressionSupported;
   const officialImageRoute = usesOfficialImageRoute(imageModel);
@@ -369,7 +364,7 @@ export function ImageComposer({
     : IMAGE_SIZE_MODE_OPTIONS.filter((option) => option.value !== "custom");
   const effectiveImageSizeMode = structuredImageParameters || imageSizeMode !== "custom" ? imageSizeMode : "auto";
   const effectiveImageResolution = structuredImageParameters ? imageResolution : "auto";
-  const submitLabel = composerMode === "chat" ? "发送对话" : referenceImages.length > 0 ? "编辑图片" : "生成图片";
+  const submitLabel = referenceImages.length > 0 ? "编辑图片" : "生成图片";
   const relayApiKeyMissing = !relayKeyConfigured;
   const relayApiKeyMissingMessage = relayKeyStatusMessage || "请先在云棉为当前用户创建可用令牌";
   const computedImageSize = useMemo(
@@ -409,7 +404,7 @@ export function ImageComposer({
                 ? `将把 ${activeImageAspectRatio} 写入提示词作为构图偏好`
                 : `将按 ${activeImageAspectRatio} 比例下发`
             : officialImageRoute
-              ? "不写入固定比例，交给 RelayAI 决定"
+              ? "不写入固定比例，交给上游决定"
               : "自动比例将交给模型决定"
           : computedImageSize
             ? structuredImageParameters
@@ -422,19 +417,11 @@ export function ImageComposer({
         ? computedImageSize
           ? structuredImageParameters
             ? `已按链路限制校准为 ${formatImageSizeDisplay(computedImageSize)}，${sizeRequirementLabel}`
-            : "RelayAI 当前不使用手动宽高"
+            : "上游当前不使用手动宽高"
           : "宽高需要填写正整数"
         : officialImageRoute
-          ? "不写入尺寸提示，实际像素由 RelayAI 返回决定"
+          ? "不写入尺寸提示，实际像素由上游返回决定"
           : "不会强制指定尺寸";
-
-  useEffect(() => {
-    if (composerMode === "chat") {
-      setIsImageSettingsOpen(false);
-      setIsAspectRatioMenuOpen(false);
-      setIsResolutionMenuOpen(false);
-    }
-  }, [composerMode]);
 
   useEffect(() => {
     if (!isModelMenuOpen) {
@@ -731,9 +718,7 @@ export function ImageComposer({
             onChange={(event) => onPromptChange(event.target.value)}
             onPaste={handleTextareaPaste}
             placeholder={
-              composerMode === "chat"
-                ? "输入消息与AI聊天"
-                : referenceImages.length > 0
+              referenceImages.length > 0
                 ? "描述你希望如何修改参考图"
                 : "输入你想要生成的画面，也可直接粘贴图片"
             }
@@ -755,34 +740,16 @@ export function ImageComposer({
             <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 sm:gap-3">
               <div className="flex min-w-0 flex-nowrap items-center gap-1.5 sm:gap-2">
                 <div className="inline-flex h-9 shrink-0 items-center rounded-full bg-transparent p-0 text-xs font-medium text-[#45515e] dark:text-muted-foreground sm:h-8 sm:bg-[#f0f0f0] sm:p-0.5 sm:dark:bg-muted/70">
-                  {[
-                    { value: "chat" as const, label: "对话", icon: MessageCircle },
-                    { value: "image" as const, label: "作画", icon: ImageIcon },
-                  ].map((option) => {
-                    const Icon = option.icon;
-                    const active = composerMode === option.value;
-                    return (
-                      <button
-                        key={option.value}
-                        type="button"
-                        className={cn(
-                          "inline-flex size-9 items-center justify-center gap-1.5 rounded-full transition sm:h-7 sm:w-auto sm:px-2.5",
-                          active && option.value === "chat"
-                            ? "bg-[#fff1f7] text-[#ea5ec1] dark:bg-rose-950/30 dark:text-pink-300 sm:bg-white sm:text-[#18181b] sm:shadow-sm sm:dark:bg-background sm:dark:text-foreground"
-                            : active
-                              ? "bg-[#eef4ff] text-[#1456f0] dark:bg-sky-950/30 dark:text-sky-300 sm:bg-white sm:text-[#18181b] sm:shadow-sm sm:dark:bg-background sm:dark:text-foreground"
-                              : "text-[#686b73] hover:bg-black/[0.05] hover:text-[#18181b] dark:text-muted-foreground dark:hover:bg-accent/60 dark:hover:text-foreground sm:text-[#45515e] sm:hover:bg-transparent sm:dark:text-muted-foreground sm:dark:hover:bg-transparent",
-                        )}
-                        onClick={() => onComposerModeChange(option.value)}
-                        aria-pressed={active}
-                        aria-label={option.label}
-                        title={option.label}
-                      >
-                        <Icon className="size-5 sm:size-3.5" />
-                        <span className="hidden sm:inline">{option.label}</span>
-                      </button>
-                    );
-                  })}
+                  <button
+                    type="button"
+                    className="inline-flex size-9 items-center justify-center gap-1.5 rounded-full bg-[#eef4ff] text-[#1456f0] transition dark:bg-sky-950/30 dark:text-sky-300 sm:h-7 sm:w-auto sm:bg-white sm:px-2.5 sm:text-[#18181b] sm:shadow-sm sm:dark:bg-background sm:dark:text-foreground"
+                    aria-pressed="true"
+                    aria-label="作画"
+                    title="作画"
+                  >
+                    <ImageIcon className="size-5 sm:size-3.5" />
+                    <span className="hidden sm:inline">作画</span>
+                  </button>
                 </div>
                 <div ref={modelMenuRef} className="relative shrink-0">
                   <button
@@ -1051,7 +1018,7 @@ export function ImageComposer({
                         ) : null}
                         {officialImageRoute ? (
                           <p className="col-span-2 rounded-xl border border-sky-100 bg-sky-50 px-3 py-1.5 text-[11px] leading-5 text-sky-900 dark:border-sky-900/60 dark:bg-sky-950/30 dark:text-sky-100 sm:col-span-3">
-                            图片请求会通过 RelayAI 提交；尺寸、格式和压缩率会随请求参数发送。
+                            图片请求会通过上游提交；尺寸、格式和压缩率会随请求参数发送。
                           </p>
                         ) : null}
                         {outputControlsSupported ? (
@@ -1086,21 +1053,39 @@ export function ImageComposer({
                             </SelectContent>
                           </Select>
                         </div>
-                        <div className={imageSettingsFieldClass}>
-                          <span className="shrink-0 font-medium text-[#45515e] dark:text-muted-foreground">背景</span>
+                        <div className={cn(imageSettingsFieldClass, "min-h-10")}>
+                          <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2">
+                            <Checkbox
+                              checked={imageStreamEnabled}
+                              onCheckedChange={(checked) => {
+                                const enabled = checked === true;
+                                onImageStreamEnabledChange(enabled);
+                                if (!enabled) {
+                                  onImagePartialImagesChange("0");
+                                }
+                              }}
+                              aria-label="开启图片流式返回"
+                            />
+                            <span className="min-w-0 text-[11px] font-medium text-[#45515e] dark:text-muted-foreground">
+                              流式
+                            </span>
+                          </label>
+                          <span className="shrink-0 text-xs font-semibold text-[#18181b] dark:text-foreground">
+                            {imageStreamEnabled ? "开启" : "关闭"}
+                          </span>
+                        </div>
+                        <div className={cn(imageSettingsFieldClass, !imageStreamEnabled && "opacity-55")}>
+                          <span className="shrink-0 font-medium text-[#45515e] dark:text-muted-foreground">中间图</span>
                           <Select
-                            value={imageBackground}
-                            onValueChange={(value) => {
-                              if (isImageBackground(value)) {
-                                onImageBackgroundChange(value);
-                              }
-                            }}
+                            value={imagePartialImages}
+                            disabled={!imageStreamEnabled}
+                            onValueChange={onImagePartialImagesChange}
                           >
                             <SelectTrigger
-                              className="h-7 min-w-0 flex-1 justify-end gap-1 border-0 bg-transparent px-0 py-0 text-right text-xs font-semibold text-[#18181b] shadow-none focus-visible:ring-0 dark:text-foreground [&_svg]:size-4 [&_svg]:opacity-60 [&>span]:flex-none"
-                              aria-label="图片背景"
+                              className="h-7 min-w-0 flex-1 justify-end gap-1 border-0 bg-transparent px-0 py-0 text-right text-xs font-semibold text-[#18181b] shadow-none focus-visible:ring-0 disabled:cursor-not-allowed dark:text-foreground [&_svg]:size-4 [&_svg]:opacity-60 [&>span]:flex-none"
+                              aria-label="中间图数量"
                             >
-                              <SelectValue>{imageBackgroundLabel}</SelectValue>
+                              <SelectValue />
                             </SelectTrigger>
                             <SelectContent
                               align="end"
@@ -1110,11 +1095,10 @@ export function ImageComposer({
                               className="z-[120] max-h-[min(var(--radix-select-content-available-height),14rem)] w-[min(12rem,calc(100vw-2rem))] overflow-x-hidden overscroll-contain rounded-[16px] border-[#e5e7eb] bg-white p-1.5 shadow-[0_18px_46px_-26px_rgba(15,23,42,0.35)] dark:border-border dark:bg-card dark:shadow-[0_18px_46px_-24px_rgba(0,0,0,0.72)]"
                             >
                               <SelectGroup>
-                                {IMAGE_BACKGROUND_OPTIONS.map((option) => (
-                                  <SelectItem key={option.value} value={option.value}>
-                                    {option.label}
-                                  </SelectItem>
-                                ))}
+                                <SelectItem value="0">0 张</SelectItem>
+                                <SelectItem value="1">最多 1 张</SelectItem>
+                                <SelectItem value="2">最多 2 张</SelectItem>
+                                <SelectItem value="3">最多 3 张</SelectItem>
                               </SelectGroup>
                             </SelectContent>
                           </Select>
@@ -1183,8 +1167,8 @@ export function ImageComposer({
                           {compressionDisabled
                             ? "PNG 不接收压缩率。结果卡会显示实际保存后的格式、尺寸和文件大小。"
                             : officialImageRoute
-                              ? "JPEG/WebP 压缩率会随 RelayAI 请求参数提交。"
-                              : "JPEG/WebP 压缩率会随 RelayAI 请求参数提交。"}
+                              ? "JPEG/WebP 压缩率会随上游请求参数提交。"
+                              : "JPEG/WebP 压缩率会随上游请求参数提交。"}
                         </p>
                         </>
                         ) : null}
@@ -1223,8 +1207,8 @@ export function ImageComposer({
               relayApiKeyMissing ? "text-rose-600 dark:text-rose-400" : "text-[#8e8e93] dark:text-muted-foreground",
             )}>
               <span>{relayApiKeyMissing ? relayApiKeyMissingMessage : "已读取云棉令牌"}</span>
-              {imageStreamParameterEnabled && composerMode === "image" ? <span>流式参数已开启</span> : null}
-              <span>{composerMode === "chat" ? "对话请求" : `预计生成 ${imageCount || "1"} 张`}</span>
+              {imageStreamEnabled ? <span>{`流式开启，中间图最多 ${imagePartialImages || "0"} 张`}</span> : null}
+              <span>{`预计生成 ${imageCount || "1"} 张`}</span>
             </div>
           </div>
         </div>

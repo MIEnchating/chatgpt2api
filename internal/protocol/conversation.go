@@ -121,7 +121,7 @@ func ImageQualityForModel(model, quality string) string {
 
 func NormalizeImageBackground(background string) string {
 	switch strings.ToLower(strings.TrimSpace(background)) {
-	case "auto", "opaque":
+	case "auto", "opaque", "transparent":
 		return strings.ToLower(strings.TrimSpace(background))
 	default:
 		return ""

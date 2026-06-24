@@ -50,7 +50,6 @@ type App struct {
 	engine     *protocol.Engine
 	images     *service.ImageService
 	tasks      *service.ImageTaskService
-	announce   *service.AnnouncementService
 	prompts    *service.PromptFavoriteService
 	newAPIKeys *service.NewAPITokenReader
 	cancel     context.CancelFunc
@@ -95,14 +94,13 @@ func NewApp() (*App, error) {
 	documentStore, _ := storageBackend.(storage.JSONDocumentBackend)
 	imageSessions := service.NewImageConversationSessionService(filepath.Join(cfg.DataDir, "image_conversation_sessions.json"), storageBackend)
 	engine := &protocol.Engine{Accounts: accounts, Config: cfg, Storage: documentStore, Proxy: proxy, Logger: logger, ImageConversationSessions: imageSessions}
-	app := &App{config: cfg, auth: auth, accounts: accounts, logs: logs, logger: logger, proxy: proxy, engine: engine, images: service.NewImageService(cfg, storageBackend), announce: service.NewAnnouncementService(storageBackend), prompts: service.NewPromptFavoriteService(storageBackend), newAPIKeys: newAPIKeys, cancel: cancel}
+	app := &App{config: cfg, auth: auth, accounts: accounts, logs: logs, logger: logger, proxy: proxy, engine: engine, images: service.NewImageService(cfg, storageBackend), prompts: service.NewPromptFavoriteService(storageBackend), newAPIKeys: newAPIKeys, cancel: cancel}
 	app.tasks = service.NewStoredImageTaskService(storageBackend,
 		func(ctx context.Context, identity service.Identity, payload map[string]any) (map[string]any, error) {
 			return app.runLoggedImageTask(ctx, identity, payload, "/api/creation-tasks/image-generations", "文生图", func(ctx context.Context, payload map[string]any) (map[string]any, error) {
 				if err := app.attachRelayAPIKeyForIdentity(ctx, identity, payload); err != nil {
 					return nil, err
 				}
-				app.applyImageStreamParameter(payload)
 				result, stream, err := app.relayImageGenerations(ctx, payload)
 				return relayImageTaskResult(payload, result, stream, err)
 			})
@@ -112,7 +110,6 @@ func NewApp() (*App, error) {
 				if err := app.attachRelayAPIKeyForIdentity(ctx, identity, payload); err != nil {
 					return nil, err
 				}
-				app.applyImageStreamParameter(payload)
 				images, _ := payload["images"].([]protocol.UploadedImage)
 				result, stream, err := app.relayImageEdits(ctx, payload, images)
 				return relayImageTaskResult(payload, result, stream, err)
@@ -322,7 +319,6 @@ func (a *App) handleImageGenerations(w http.ResponseWriter, r *http.Request) {
 		a.writeProtocol(w, r, nil, nil, err, "openai", "/v1/images/generations", model, identity, "文生图", visibility)
 		return
 	}
-	a.applyImageStreamParameter(body)
 	result, stream, err := a.relayImageGenerations(r.Context(), body)
 	a.writeProtocol(w, r, result, stream, err, "openai", "/v1/images/generations", model, identity, "文生图", visibility, body)
 }
@@ -360,7 +356,6 @@ func (a *App) handleImageEdits(w http.ResponseWriter, r *http.Request) {
 		a.writeProtocol(w, r, nil, nil, err, "openai", "/v1/images/edits", model, identity, "图生图", visibility)
 		return
 	}
-	a.applyImageStreamParameter(body)
 	result, stream, err := a.relayImageEdits(r.Context(), body, images)
 	a.writeProtocol(w, r, result, stream, err, "openai", "/v1/images/edits", model, identity, "图生图", visibility, body)
 }
@@ -683,14 +678,10 @@ func (a *App) handleModelConfig(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) modelConfig() map[string]any {
 	imageModels := a.configuredImageModels()
-	chatModels := a.configuredChatModels()
 	return map[string]any{
-		"image_models":                   imageModels,
-		"chat_models":                    chatModels,
-		"default_image_model":            firstString(imageModels, util.ImageModelGPT),
-		"default_chat_model":             firstString(chatModels, util.ImageModelGPT55),
-		"relay_base_url":                 a.relayBaseURL(),
-		"image_stream_parameter_enabled": a.config.ImageStreamParameterEnabled(),
+		"image_models":        imageModels,
+		"default_image_model": firstString(imageModels, util.ImageModelGPT),
+		"relay_base_url":      a.relayBaseURL(),
 	}
 }
 
@@ -776,8 +767,8 @@ func (a *App) applyDefaultResponseImageToolModel(body map[string]any) {
 
 func (a *App) handleAppMeta(w http.ResponseWriter, r *http.Request) {
 	util.WriteJSON(w, http.StatusOK, map[string]any{
-		"app_title":                   "chatgpt2api",
-		"project_name":                "chatgpt2api",
+		"app_title":                   a.config.AppTitle(),
+		"project_name":                a.config.ProjectName(),
 		"login_page_image_url":        a.config.LoginPageImageURL(),
 		"login_page_image_mode":       a.config.LoginPageImageMode(),
 		"login_page_image_zoom":       a.config.LoginPageImageZoom(),
@@ -1017,7 +1008,7 @@ func (a *App) handleImageVisibility(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if a.shouldImportVisibilityImage(path) {
-		localURL, _, importErr := a.localizeRelayImageItem(r.Context(), identityScope(identity), identityDisplayName(identity), map[string]any{"url": path}, nil)
+		localURL, _, _, importErr := a.localizeRelayImageItem(r.Context(), identityScope(identity), identityDisplayName(identity), map[string]any{"url": path}, nil)
 		if importErr != nil || localURL == "" {
 			if importErr == nil {
 				importErr = errors.New("image import failed")
@@ -1572,13 +1563,15 @@ func readMultipartImageBody(r *http.Request) (map[string]any, []protocol.Uploade
 		"model":                   firstNonEmpty(firstForm(r.MultipartForm, "model"), util.ImageModelAuto),
 		"n":                       util.ToInt(firstForm(r.MultipartForm, "n"), 1),
 		"size":                    firstForm(r.MultipartForm, "size"),
+		"requested_size":          firstForm(r.MultipartForm, "requested_size"),
 		"image_resolution":        firstForm(r.MultipartForm, "image_resolution"),
 		"quality":                 firstForm(r.MultipartForm, "quality"),
-		"background":              firstForm(r.MultipartForm, "background"),
 		"moderation":              firstForm(r.MultipartForm, "moderation"),
 		"input_image_mask":        firstForm(r.MultipartForm, "input_image_mask"),
 		"output_format":           firstForm(r.MultipartForm, "output_format"),
 		"output_compression":      firstForm(r.MultipartForm, "output_compression"),
+		"stream":                  firstForm(r.MultipartForm, "stream"),
+		"partial_images":          firstForm(r.MultipartForm, "partial_images"),
 		"share_prompt_parameters": firstForm(r.MultipartForm, "share_prompt_parameters"),
 		"share_reference_images":  firstForm(r.MultipartForm, "share_reference_images"),
 		"visibility":              firstForm(r.MultipartForm, "visibility"),
@@ -1938,7 +1931,6 @@ func (a *App) recordGeneratedImagesForPayload(identity service.Identity, urls []
 		RequestedSize:     util.Clean(payload["size"]),
 		OutputFormat:      service.NormalizeImageOutputFormat(util.Clean(payload["output_format"])),
 		OutputCompression: outputCompressionPtr,
-		Background:        util.Clean(payload["background"]),
 		Moderation:        util.Clean(payload["moderation"]),
 		InputImageMask:    util.Clean(payload["input_image_mask"]),
 		ReferenceImages:   imageReferenceMetadataFromPayload(payload),
@@ -2049,9 +2041,10 @@ func (a *App) runLoggedImageTask(ctx context.Context, identity service.Identity,
 		return result, err
 	}
 	if len(util.AsMapSlice(result["data"])) == 0 {
-		message := firstNonEmpty(util.Clean(result["message"]), "image task returned no image data")
+		message := firstNonEmpty(util.Clean(result["message"]), "图片任务没有返回图片数据，请检查上游返回、模型参数和日志详情")
+		result["message"] = message
 		a.logCall(ctx, identity, summary, http.MethodPost, endpoint, model, start, "failed", http.StatusBadGateway, message, urls, requestCapture)
-		return result, nil
+		return result, protocol.HTTPError{Status: http.StatusBadGateway, Message: message}
 	}
 	a.logCall(ctx, identity, summary, http.MethodPost, endpoint, model, start, "success", http.StatusOK, "", urls, requestCapture)
 	return result, nil
@@ -2072,7 +2065,7 @@ func (a *App) localizeRelayImageResult(ctx context.Context, identity service.Ide
 		if item == nil {
 			continue
 		}
-		localURL, outputFormat, err := a.localizeRelayImageItem(ctx, ownerID, ownerName, item, payload)
+		localURL, outputFormat, qualityCheck, err := a.localizeRelayImageItem(ctx, ownerID, ownerName, item, payload)
 		if err != nil || localURL == "" {
 			continue
 		}
@@ -2081,6 +2074,9 @@ func (a *App) localizeRelayImageResult(ctx context.Context, identity service.Ide
 		if outputFormat != "" {
 			item["output_format"] = outputFormat
 		}
+		for key, value := range qualityCheck {
+			item[key] = value
+		}
 		changed = true
 	}
 	if changed {
@@ -2088,16 +2084,17 @@ func (a *App) localizeRelayImageResult(ctx context.Context, identity service.Ide
 	}
 }
 
-func (a *App) localizeRelayImageItem(ctx context.Context, ownerID, ownerName string, item map[string]any, payload map[string]any) (string, string, error) {
+func (a *App) localizeRelayImageItem(ctx context.Context, ownerID, ownerName string, item map[string]any, payload map[string]any) (string, string, map[string]any, error) {
 	if a.isLocalImageURL(util.Clean(item["url"])) {
-		return "", "", nil
+		return "", "", nil, nil
 	}
 	data, contentType, err := relayImageItemBytes(ctx, a, item)
 	if err != nil || len(data) == 0 {
-		return "", "", err
+		return "", "", nil, err
 	}
 	outputFormat := relayStoredImageFormat(item, payload, contentType, util.Clean(item["url"]), data)
-	return a.engine.SaveImageBytesForOwnerWithFormat(data, "", ownerID, ownerName, outputFormat), outputFormat, nil
+	qualityCheck := relayImageQualityCheck(data, outputFormat, payload)
+	return a.engine.SaveImageBytesForOwnerWithFormat(data, "", ownerID, ownerName, outputFormat), outputFormat, qualityCheck, nil
 }
 
 func relayImageItemBytes(ctx context.Context, app *App, item map[string]any) ([]byte, string, error) {
@@ -2266,6 +2263,105 @@ func relayStoredImageFormat(item, payload map[string]any, contentType, imageURL 
 	}
 }
 
+func relayImageQualityCheck(data []byte, outputFormat string, payload map[string]any) map[string]any {
+	check := map[string]any{}
+	config, actualFormat, err := image.DecodeConfig(bytes.NewReader(data))
+	if err == nil && config.Width > 0 && config.Height > 0 {
+		actualSize := fmt.Sprintf("%dx%d", config.Width, config.Height)
+		check["width"] = config.Width
+		check["height"] = config.Height
+		check["resolution"] = actualSize
+		check["actual_size"] = actualSize
+	}
+	actualOutputFormat := normalizeActualImageFormat(firstNonEmpty(actualFormat, outputFormat))
+	if actualOutputFormat != "" {
+		check["actual_output_format"] = actualOutputFormat
+	}
+
+	requestedSize := requestedRelayImageSize(payload)
+	requestedOutputFormat := requestedRelayImageOutputFormat(payload, outputFormat)
+	warnings := []string{}
+	qualityCheck := map[string]any{
+		"requested_size":          requestedSize,
+		"actual_size":             util.Clean(check["actual_size"]),
+		"requested_output_format": requestedOutputFormat,
+		"actual_output_format":    actualOutputFormat,
+	}
+	if requestedWidth, requestedHeight, ok := parseImageQualityDimensions(requestedSize); ok {
+		actualWidth := util.ToInt(check["width"], 0)
+		actualHeight := util.ToInt(check["height"], 0)
+		sizeMatched := actualWidth == requestedWidth && actualHeight == requestedHeight
+		qualityCheck["size_matched"] = sizeMatched
+		if !sizeMatched && actualWidth > 0 && actualHeight > 0 {
+			warnings = append(warnings, fmt.Sprintf("请求尺寸 %dx%d，实际尺寸 %dx%d", requestedWidth, requestedHeight, actualWidth, actualHeight))
+		}
+	} else if requestedSize != "" && requestedSize != "auto" {
+		warnings = append(warnings, "请求尺寸不是精确宽高，已记录实际尺寸供人工核对")
+	}
+	if requestedOutputFormat != "" && actualOutputFormat != "" {
+		formatMatched := requestedOutputFormat == actualOutputFormat
+		qualityCheck["output_format_matched"] = formatMatched
+		if !formatMatched {
+			warnings = append(warnings, fmt.Sprintf("请求格式 %s，实际格式 %s", requestedOutputFormat, actualOutputFormat))
+		}
+	}
+	qualityCheck["warnings"] = warnings
+	check["quality_check"] = qualityCheck
+	return check
+}
+
+func requestedRelayImageSize(payload map[string]any) string {
+	if payload == nil {
+		return ""
+	}
+	if requestedSize := util.Clean(payload["requested_size"]); requestedSize != "" {
+		if normalized, ok := normalizeRelayImageSize(requestedSize); ok && normalized != "" {
+			return normalized
+		}
+		return requestedSize
+	}
+	size := util.Clean(payload["size"])
+	if normalized, ok := normalizeRelayImageSize(size); ok && normalized != "" {
+		return normalized
+	}
+	return size
+}
+
+func requestedRelayImageOutputFormat(payload map[string]any, fallback string) string {
+	if payload != nil {
+		if format, ok := normalizeRelayImageOutputFormat(util.Clean(payload["output_format"])); ok {
+			return format
+		}
+	}
+	return normalizeActualImageFormat(fallback)
+}
+
+func normalizeActualImageFormat(format string) string {
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "jpg", "jpeg":
+		return "jpeg"
+	case "png":
+		return "png"
+	case "webp":
+		return "webp"
+	default:
+		return ""
+	}
+}
+
+func parseImageQualityDimensions(value string) (int, int, bool) {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	normalized = strings.ReplaceAll(normalized, " ", "")
+	normalized = strings.ReplaceAll(normalized, "×", "x")
+	parts := strings.Split(normalized, "x")
+	if len(parts) != 2 {
+		return 0, 0, false
+	}
+	width := util.ToInt(parts[0], 0)
+	height := util.ToInt(parts[1], 0)
+	return width, height, width > 0 && height > 0
+}
+
 func (a *App) attachCreationTaskLimiter(body map[string]any, identity service.Identity) {
 	if a == nil || a.tasks == nil || body == nil {
 		return
@@ -2273,17 +2369,6 @@ func (a *App) attachCreationTaskLimiter(body map[string]any, identity service.Id
 	body[protocol.ImageOutputSlotAcquirerPayloadKey] = func(ctx context.Context, index int) (func(), error) {
 		return a.tasks.AcquireCreationUnit(ctx, identity)
 	}
-}
-
-func (a *App) applyImageStreamParameter(body map[string]any) {
-	if body == nil {
-		return
-	}
-	if a != nil && a.config != nil && a.config.ImageStreamParameterEnabled() {
-		body["stream"] = true
-		return
-	}
-	delete(body, "stream")
 }
 
 func (a *App) runLoggedChatTask(ctx context.Context, identity service.Identity, payload map[string]any) (map[string]any, error) {

@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"strings"
 
-	"chatgpt2api/internal/protocol"
 	"chatgpt2api/internal/service"
 	"chatgpt2api/internal/util"
 )
@@ -918,74 +917,6 @@ func findManagedUser(items []map[string]any, id string) map[string]any {
 	return nil
 }
 
-func (a *App) handlePublicAnnouncements(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.WriteHeader(http.StatusMethodNotAllowed)
-		return
-	}
-	util.WriteJSON(w, http.StatusOK, map[string]any{"items": a.announce.ListVisible(strings.TrimSpace(r.URL.Query().Get("target")))})
-}
-
-func (a *App) handleAdminAnnouncements(w http.ResponseWriter, r *http.Request) {
-	if _, ok := a.requireIdentity(w, r, ""); !ok {
-		return
-	}
-	base := "/api/admin/announcements"
-	if r.URL.Path == base {
-		switch r.Method {
-		case http.MethodGet:
-			util.WriteJSON(w, http.StatusOK, map[string]any{"items": a.announce.ListAll()})
-		case http.MethodPost:
-			body, err := readJSONMap(r)
-			if err != nil {
-				util.WriteError(w, http.StatusBadRequest, "invalid json body")
-				return
-			}
-			if util.Clean(body["content"]) == "" {
-				util.WriteError(w, http.StatusBadRequest, "content is required")
-				return
-			}
-			item := a.announce.Create(body)
-			util.WriteJSON(w, http.StatusOK, map[string]any{"item": item, "items": a.announce.ListAll()})
-		default:
-			w.WriteHeader(http.StatusMethodNotAllowed)
-		}
-		return
-	}
-	parts := splitPath(r.URL.Path)
-	if len(parts) != 4 || parts[0] != "api" || parts[1] != "admin" || parts[2] != "announcements" {
-		http.NotFound(w, r)
-		return
-	}
-	id := parts[3]
-	switch r.Method {
-	case http.MethodPost:
-		body, err := readJSONMap(r)
-		if err != nil {
-			util.WriteError(w, http.StatusBadRequest, "invalid json body")
-			return
-		}
-		if value, exists := body["content"]; exists && util.Clean(value) == "" {
-			util.WriteError(w, http.StatusBadRequest, "content is required")
-			return
-		}
-		item := a.announce.Update(id, body)
-		if item == nil {
-			util.WriteError(w, http.StatusNotFound, "announcement not found")
-			return
-		}
-		util.WriteJSON(w, http.StatusOK, map[string]any{"item": item, "items": a.announce.ListAll()})
-	case http.MethodDelete:
-		if !a.announce.Delete(id) {
-			util.WriteError(w, http.StatusNotFound, "announcement not found")
-			return
-		}
-		util.WriteJSON(w, http.StatusOK, map[string]any{"items": a.announce.ListAll()})
-	default:
-		w.WriteHeader(http.StatusMethodNotAllowed)
-	}
-}
-
 func (a *App) handleAccounts(w http.ResponseWriter, r *http.Request) {
 	identity, ok := a.requireIdentity(w, r, "")
 	if !ok {
@@ -1241,7 +1172,6 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 			writeCreationTaskSubmitError(w, err)
 			return
 		}
-		a.applyImageStreamParameter(body)
 		model := a.applyDefaultImageModel(body)
 		task, err := a.tasks.SubmitGenerationWithOptions(r.Context(), identity, util.Clean(body["client_task_id"]), util.Clean(body["prompt"]), model, util.Clean(body["size"]), util.Clean(body["quality"]), a.relayBaseURL(), util.ToInt(body["n"], 1), body["messages"], imageTaskRequestMetadata(body), imageOutputOptionsFromBody(body), imageToolOptionsFromBody(body), util.Clean(body["visibility"]))
 		if err != nil {
@@ -1252,19 +1182,7 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.URL.Path == "/api/creation-tasks/chat-completions" && r.Method == http.MethodPost {
-		body, _ := readJSONMap(r)
-		if _, err := a.relayAPIKeyForIdentitySelection(r.Context(), identity, selectedRelayTokenGroupFromPayload(body), selectedRelayTokenNameFromPayload(body)); err != nil {
-			writeCreationTaskSubmitError(w, err)
-			return
-		}
-		billable := protocol.IsImageChatRequest(body)
-		model := a.applyDefaultChatCompletionModel(body)
-		task, err := a.tasks.SubmitChatWithMetadata(r.Context(), identity, util.Clean(body["client_task_id"]), util.Clean(body["prompt"]), model, body["messages"], billable, creationTaskRequestMetadata(body), util.ToInt(body["n"], 1))
-		if err != nil {
-			writeCreationTaskSubmitError(w, err)
-			return
-		}
-		util.WriteJSON(w, http.StatusOK, task)
+		util.WriteError(w, http.StatusNotFound, "chat creation tasks are disabled")
 		return
 	}
 	if r.URL.Path == "/api/creation-tasks/image-edits" && r.Method == http.MethodPost {
@@ -1277,7 +1195,6 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 			writeCreationTaskSubmitError(w, err)
 			return
 		}
-		a.applyImageStreamParameter(body)
 		model := a.applyDefaultImageModel(body)
 		task, err := a.tasks.SubmitEditWithOptions(r.Context(), identity, util.Clean(body["client_task_id"]), util.Clean(body["prompt"]), model, util.Clean(body["size"]), util.Clean(body["quality"]), a.relayBaseURL(), images, util.ToInt(body["n"], 1), body["messages"], imageTaskRequestMetadata(body), imageOutputOptionsFromBody(body), imageToolOptionsFromBody(body), util.Clean(body["visibility"]))
 		if err != nil {
@@ -1302,13 +1219,13 @@ func creationTaskRequestMetadata(body map[string]any) map[string]any {
 }
 
 func imageTaskRequestMetadata(body map[string]any) map[string]any {
-	size := util.Clean(body["size"])
+	requestedSize := firstNonEmpty(util.Clean(body["requested_size"]), util.Clean(body["size"]))
 	metadata := creationTaskRequestMetadata(body)
 	if preset := service.NormalizeImageResolutionPreset(util.Clean(body["image_resolution"])); preset != "" {
 		metadata["image_resolution"] = preset
 	}
-	if size != "" {
-		metadata["requested_size"] = size
+	if requestedSize != "" {
+		metadata["requested_size"] = requestedSize
 	}
 	if util.ToBool(body["share_prompt_parameters"]) {
 		metadata["share_prompt_parameters"] = true
@@ -1338,11 +1255,22 @@ func imageOutputOptionsFromBody(body map[string]any) service.ImageOutputOptions 
 
 func imageToolOptionsFromBody(body map[string]any) service.ImageToolOptions {
 	options := service.ImageToolOptions{
-		Background:     util.Clean(body["background"]),
 		Moderation:     util.Clean(body["moderation"]),
 		InputImageMask: util.Clean(body["input_image_mask"]),
+		Stream:         util.ToBool(body["stream"]),
+	}
+	if partialImages, ok := imagePartialImagesFromBody(body["partial_images"]); ok {
+		options.PartialImages = partialImages
 	}
 	return options
+}
+
+func imagePartialImagesFromBody(value any) (int, bool) {
+	partialImages := util.ToInt(value, 0)
+	if partialImages < 1 || partialImages > 3 {
+		return 0, false
+	}
+	return partialImages, true
 }
 
 func imageOutputCompressionFromBody(value any) (int, bool) {

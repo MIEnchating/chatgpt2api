@@ -162,9 +162,9 @@ func (a *App) relayMessages(ctx context.Context, payload map[string]any) (map[st
 func (a *App) relayJSONMaybeStream(ctx context.Context, path string, payload map[string]any) (map[string]any, *protocol.StreamResult, error) {
 	apiKey := relayAPIKeyFromPayload(payload)
 	if apiKey == "" {
-		return nil, nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: "RelayAI API key is required"}
+		return nil, nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: "upstream API key is required"}
 	}
-	body := relayPayloadForPath(path, payload, a.imageStreamParameterEnabled())
+	body := relayPayloadForPath(path, payload)
 	if util.ToBool(body["stream"]) {
 		stream, err := a.relayJSONStream(ctx, path, apiKey, body)
 		return nil, stream, err
@@ -176,9 +176,9 @@ func (a *App) relayJSONMaybeStream(ctx context.Context, path string, payload map
 func (a *App) relayMultipartMaybeStream(ctx context.Context, path string, payload map[string]any, images []protocol.UploadedImage) (map[string]any, *protocol.StreamResult, error) {
 	apiKey := relayAPIKeyFromPayload(payload)
 	if apiKey == "" {
-		return nil, nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: "RelayAI API key is required"}
+		return nil, nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: "upstream API key is required"}
 	}
-	body := relayPayloadForPath(path, payload, a.imageStreamParameterEnabled())
+	body := relayPayloadForPath(path, payload)
 	if util.ToBool(body["stream"]) {
 		stream, err := a.relayMultipartStream(ctx, path, apiKey, body, images)
 		return nil, stream, err
@@ -344,11 +344,7 @@ func (a *App) relayHTTPClient() *http.Client {
 	return &http.Client{Timeout: 300 * time.Second}
 }
 
-func (a *App) imageStreamParameterEnabled() bool {
-	return a != nil && a.config != nil && a.config.ImageStreamParameterEnabled()
-}
-
-func relayPayloadForPath(pathValue string, payload map[string]any, allowImageStream bool) map[string]any {
+func relayPayloadForPath(pathValue string, payload map[string]any) map[string]any {
 	out := map[string]any{}
 	for key, value := range payload {
 		if shouldDropRelayPayloadKey(key) || value == nil {
@@ -368,22 +364,24 @@ func relayPayloadForPath(pathValue string, payload map[string]any, allowImageStr
 		}
 		delete(out, "prompt")
 	case "/v1/images/generations", "/v1/images/edits":
-		sanitizeRelayImagePayload(out, allowImageStream)
+		sanitizeRelayImagePayload(out)
 	}
 	return out
 }
 
-func sanitizeRelayImagePayload(payload map[string]any, allowStream bool) {
+func sanitizeRelayImagePayload(payload map[string]any) {
 	delete(payload, "messages")
-	delete(payload, "partial_images")
-	if !allowStream {
-		delete(payload, "stream")
-	} else if _, ok := payload["stream"]; ok {
-		if util.ToBool(payload["stream"]) {
-			payload["stream"] = true
+	delete(payload, "background")
+	if util.ToBool(payload["stream"]) {
+		payload["stream"] = true
+		if partialImages, ok := normalizeRelayImagePartialImages(payload["partial_images"]); ok {
+			payload["partial_images"] = partialImages
 		} else {
-			delete(payload, "stream")
+			delete(payload, "partial_images")
 		}
+	} else {
+		delete(payload, "stream")
+		delete(payload, "partial_images")
 	}
 
 	if _, ok := payload["size"]; ok {
@@ -394,7 +392,6 @@ func sanitizeRelayImagePayload(payload map[string]any, allowStream bool) {
 		}
 	}
 	normalizeRelayImageEnum(payload, "quality", map[string]string{"auto": "auto", "low": "low", "medium": "medium", "high": "high"})
-	normalizeRelayImageEnum(payload, "background", map[string]string{"auto": "auto", "opaque": "opaque"})
 	normalizeRelayImageEnum(payload, "moderation", map[string]string{"auto": "auto", "low": "low"})
 	delete(payload, "response_format")
 
@@ -412,6 +409,14 @@ func sanitizeRelayImagePayload(payload map[string]any, allowStream bool) {
 	} else {
 		delete(payload, "output_compression")
 	}
+}
+
+func normalizeRelayImagePartialImages(value any) (int, bool) {
+	partialImages, ok := relayImageInt(value)
+	if !ok || partialImages < 1 || partialImages > 3 {
+		return 0, false
+	}
+	return partialImages, true
 }
 
 func normalizeRelayImageEnum(payload map[string]any, key string, allowed map[string]string) {
@@ -642,7 +647,7 @@ func relayDecodeJSONResponse(resp *http.Response) (map[string]any, error) {
 	}
 	var payload map[string]any
 	if err := json.Unmarshal(data, &payload); err != nil {
-		return nil, fmt.Errorf("RelayAI response is not valid JSON: %w", err)
+		return nil, fmt.Errorf("upstream response is not valid JSON: %w", err)
 	}
 	return payload, nil
 }

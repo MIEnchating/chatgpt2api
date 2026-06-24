@@ -1,7 +1,7 @@
-<h1 align="center">ChatGPT2API</h1>
+<h1 align="center">云棉</h1>
 
 <p align="center">
-  ChatGPT2API 是一个面向自托管场景的 ChatGPT 官网能力封装服务，提供 OpenAI 兼容图片 API、在线创作台、账号池调度、图片库、日志治理、RBAC 权限管理和 Docker 部署能力。
+  云棉是一个面向自托管场景的 ChatGPT 官网图片能力封装服务，提供 OpenAI 兼容图片 API、在线创作台、账号池调度、图片库、日志治理、RBAC 权限管理和 Docker 部署能力。
 </p>
 
 > [!WARNING]
@@ -66,11 +66,8 @@
 
 - OpenAI 兼容图片生成接口：`POST /v1/images/generations`。
 - OpenAI 兼容图片编辑接口：`POST /v1/images/edits`。
-- 面向图片场景的 Chat Completions：`POST /v1/chat/completions`。
-- 面向图片工具调用场景的 Responses：`POST /v1/responses`。
-- Anthropic Messages 风格入口：`POST /v1/messages`。
 - 异步创作任务资源：`/api/creation-tasks`。
-- 支持 `gpt-image-2`、`codex-gpt-image-2`、`auto` 和多个 `gpt-5*` 文本/图片场景模型选项。
+- 支持 `gpt-image-2`、`codex-gpt-image-2` 和 `auto` 图片任务模型。
 
 ### 账号池与导入
 
@@ -263,17 +260,16 @@ go build -tags=embed -o chatgpt2api ./internal
 | --- | --- | --- |
 | `CHATGPT2API_ADMIN_USERNAME` | `admin` | 初始管理员用户名 |
 | `CHATGPT2API_ADMIN_PASSWORD` | 空 | 初始管理员密码；为空时首次启动自动生成一次性密码 |
-| `CHATGPT2API_BASE_URL` | `https://relayai.tech` | 主域名，用于生成图片 URL 和外部访问地址 |
-| `CHATGPT2API_AUTH_COOKIE_DOMAIN` | `.relayai.tech` | 登录会话 Cookie 父域；`relayai.tech` 登录后 `image.relayai.tech` 自动复用登录态 |
-| `CHATGPT2API_RELAY_BASE_URL` | `http://newapi:3000` | RelayAI 上游地址，可在管理端设置中修改 |
+| `CHATGPT2API_BASE_URL` | `https://example.com` | 主域名，用于生成图片 URL 和外部访问地址 |
+| `CHATGPT2API_AUTH_COOKIE_DOMAIN` | 空 | 登录会话 Cookie 父域；多子域部署时填写，例如 `.example.com` |
+| `CHATGPT2API_RELAY_BASE_URL` | `http://newapi:3000` | 上游 baseurl，可在管理端设置中修改 |
 | `CHATGPT2API_NEWAPI_DATABASE_URL` | 空 | NewAPI 数据库只读连接，用于普通用户登录和按登录用户名读取指定分组令牌；请使用只有 `SELECT` 权限的账号 |
 | `CHATGPT2API_NEWAPI_TOKEN_GROUP` | `codex` | 默认读取的 NewAPI 令牌分组；系统会列出当前用户所有可用令牌分组，并优先选中这里配置的分组 |
 | `CHATGPT2API_PROXY` | 空 | 全局代理，支持 `http`、`https`、`socks5`、`socks5h` |
 | `CHATGPT2API_IMAGE_MODELS` | `gpt-image-2` | 管理端图片模型列表，多个值用逗号分隔；第一项作为默认模型 |
-| `CHATGPT2API_CHAT_MODELS` | `gpt-5.5,gpt-5.4` | 管理端对话模型列表，多个值用逗号分隔；第一项作为默认模型 |
 | `CHATGPT2API_REFRESH_ACCOUNT_INTERVAL_MINUTE` | `5` | 限流账号检查间隔，单位分钟 |
 | `CHATGPT2API_IMAGE_TASK_TIMEOUT_SECONDS` | `300` | 图片任务超时时间，单位秒 |
-| `CHATGPT2API_USER_DEFAULT_CONCURRENT_LIMIT` | `0` | 普通用户默认创作并发额度；图片生成/编辑按请求张数计入，聊天任务按 1 个计入；`0` 表示不限制 |
+| `CHATGPT2API_USER_DEFAULT_CONCURRENT_LIMIT` | `0` | 普通用户默认创作并发额度；图片生成/编辑按请求张数计入；`0` 表示不限制 |
 | `CHATGPT2API_USER_DEFAULT_RPM_LIMIT` | `0` | 普通用户默认创作任务 RPM 限制，`0` 表示不限制 |
 | `CHATGPT2API_IMAGE_RETENTION_DAYS` | `30` | 服务端缓存图片保留天数 |
 | `CHATGPT2API_LOG_RETENTION_DAYS` | `7` | 业务日志保留天数 |
@@ -428,13 +424,9 @@ Authorization: Bearer <session-or-api-token>
 | `GET` | `/v1/models` | 模型列表 |
 | `POST` | `/v1/images/generations` | OpenAI 兼容图片生成 |
 | `POST` | `/v1/images/edits` | OpenAI 兼容图片编辑 |
-| `POST` | `/v1/chat/completions` | 面向图片场景的 Chat Completions |
-| `POST` | `/v1/responses` | 面向图片工具调用场景的 Responses |
-| `POST` | `/v1/messages` | Anthropic Messages 风格入口 |
 | `GET` | `/api/creation-tasks?ids=<id1,id2>` | 查询异步创作任务 |
 | `POST` | `/api/creation-tasks/image-generations` | 提交图片生成任务 |
 | `POST` | `/api/creation-tasks/image-edits` | 提交图片编辑任务 |
-| `POST` | `/api/creation-tasks/chat-completions` | 提交文本/对话补全任务 |
 | `POST` | `/api/creation-tasks/{id}/cancel` | 取消任务 |
 
 权限系统中，异步创作任务对应的 API 权限为 `GET /api/creation-tasks` 和 `POST /api/creation-tasks`，并按子路径生效。
@@ -455,8 +447,7 @@ curl http://localhost:3000/v1/images/generations \
   -d '{
     "model": "auto",
     "prompt": "一只漂浮在太空里的猫",
-    "n": 1,
-    "response_format": "b64_json"
+    "n": 1
   }'
 ```
 
@@ -467,7 +458,6 @@ curl http://localhost:3000/v1/images/generations \
 | `model` | 图片模型，支持 `auto`、`gpt-image-2`、`codex-gpt-image-2` |
 | `prompt` | 图片生成提示词 |
 | `n` | 生成数量，当前限制为 `1-4` |
-| `response_format` | 默认 `b64_json` |
 
 `gpt-image-2` 和 `auto` 走 ChatGPT 官网图片工作台的纯协议链路：当前按官网 HAR 实抓对齐到底层 `gpt-5-5` 模型，请求 `/backend-api/f/conversation` 建立 SSE，并从 `role=tool` 且 `async_task_type=image_gen` 的上游消息里提取图片结果。部分会话/续图场景里官网还会补发 `/backend-api/f/conversation/prepare` 获取 `conduit_token`，但不是每次首发生成前都显式出现。`codex-gpt-image-2` 仍保留为独立的 Codex 图片协议模型，继续走 `/backend-api/codex/responses` 路线，用于和官网图片额度区分。Free 账号不会被本地预先拦截；如果账号没有对应图片工具权限，上游可能直接返回失败。
 
@@ -494,50 +484,6 @@ curl http://localhost:3000/v1/images/edits \
 | `image` | 参考图片，使用 multipart/form-data 上传 |
 
 图片编辑同样按模型分流：`gpt-image-2`、`auto` 走官网图片工作台纯协议链路，`codex-gpt-image-2` 走独立的 Codex 图片协议链路。
-
-### `POST /v1/chat/completions`
-
-该接口面向图片场景，不是完整通用聊天代理。
-
-```bash
-curl http://localhost:3000/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <session-or-api-token>" \
-  -d '{
-    "model": "auto",
-    "messages": [
-      {
-        "role": "user",
-        "content": "生成一张雨夜东京街头的赛博朋克猫"
-      }
-    ],
-    "modalities": ["image"],
-    "n": 1
-  }'
-```
-
-### `POST /v1/responses`
-
-该接口面向图片生成工具调用场景，不是完整通用 Responses API 代理。
-
-```bash
-curl http://localhost:3000/v1/responses \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <session-or-api-token>" \
-  -d '{
-    "model": "gpt-5.5",
-    "input": "生成一张未来感城市天际线图片",
-    "tools": [
-      {
-        "type": "image_generation",
-        "model": "gpt-image-2"
-      }
-    ],
-    "tool_choice": {
-      "type": "image_generation"
-    }
-  }'
-```
 
 ## 截图
 
@@ -604,7 +550,7 @@ curl http://localhost:3000/v1/responses \
 
 ## 社区与鸣谢
 
-Telegram 群组：[ChatGPT2API](https://t.me/+YBR7t_CPOYBkYzU1)
+Telegram 群组：[云棉](https://t.me/+YBR7t_CPOYBkYzU1)
 
 学 AI，上 L 站：[LinuxDO](https://linux.do)
 

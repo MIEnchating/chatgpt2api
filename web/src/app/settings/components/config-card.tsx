@@ -12,16 +12,8 @@ import { useState } from "react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { testProxy, type AccountScheduleMode, type ProxyTestResult } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -130,17 +122,6 @@ function modelListInputValue(value: unknown) {
   return Array.isArray(value) ? value.join(", ") : String(value || "");
 }
 
-function tokenGroupOptions(config: { newapi_token_group?: string; newapi_token_groups?: string[] } | null) {
-  const current = String(config?.newapi_token_group || "codex").trim() || "codex";
-  return Array.from(
-    new Set(
-      [current, ...(Array.isArray(config?.newapi_token_groups) ? config.newapi_token_groups : [])]
-        .map((group) => String(group || "").trim())
-        .filter(Boolean),
-    ),
-  );
-}
-
 export function ConfigCard() {
   const [isTestingProxy, setIsTestingProxy] = useState(false);
   const [proxyTestResult, setProxyTestResult] =
@@ -151,9 +132,8 @@ export function ConfigCard() {
   const setImageTaskTimeoutSeconds = useSettingsStore(
     (state) => state.setImageTaskTimeoutSeconds,
   );
-  const setImageStreamParameterEnabled = useSettingsStore((state) => state.setImageStreamParameterEnabled);
   const setImageModels = useSettingsStore((state) => state.setImageModels);
-  const setChatModels = useSettingsStore((state) => state.setChatModels);
+  const setAppTitle = useSettingsStore((state) => state.setAppTitle);
   const setUserDefaultConcurrentLimit = useSettingsStore(
     (state) => state.setUserDefaultConcurrentLimit,
   );
@@ -168,10 +148,7 @@ export function ConfigCard() {
   );
   const setProxy = useSettingsStore((state) => state.setProxy);
   const setRelayBaseUrl = useSettingsStore((state) => state.setRelayBaseUrl);
-  const setNewAPITokenGroup = useSettingsStore((state) => state.setNewAPITokenGroup);
   const saveConfig = useSettingsStore((state) => state.saveConfig);
-  const newAPITokenGroup = String(config?.newapi_token_group || "codex").trim() || "codex";
-  const newAPITokenGroupOptions = tokenGroupOptions(config);
 
   const handleTestProxy = async () => {
     const candidate = String(config?.proxy || "").trim();
@@ -240,6 +217,18 @@ export function ConfigCard() {
           />
           <div className={configGridClassName}>
             <Field className={configFieldClassName}>
+              <ConfigFieldLabel htmlFor="settings-app-title">
+                网站标题
+              </ConfigFieldLabel>
+              <Input
+                id="settings-app-title"
+                value={String(config?.app_title || "")}
+                onChange={(event) => setAppTitle(event.target.value)}
+                placeholder="云棉"
+                className={settingsInputClassName}
+              />
+            </Field>
+            <Field className={configFieldClassName}>
               <ConfigFieldLabel htmlFor="settings-image-retention-days">
                 图片自动清理
               </ConfigFieldLabel>
@@ -281,7 +270,7 @@ export function ConfigCard() {
             </Field>
             <Field className={configFieldClassName}>
               <ConfigFieldLabel htmlFor="settings-relay-base-url">
-                RelayAI Base URL
+                baseurl
               </ConfigFieldLabel>
               <Input
                 id="settings-relay-base-url"
@@ -290,54 +279,6 @@ export function ConfigCard() {
                 placeholder="http://newapi:3000"
                 className={settingsInputClassName}
               />
-            </Field>
-            <Field className={configFieldClassName}>
-              <ConfigFieldLabel htmlFor="settings-newapi-token-group">
-                云棉默认令牌分组
-              </ConfigFieldLabel>
-              <Select value={newAPITokenGroup} onValueChange={setNewAPITokenGroup}>
-                <SelectTrigger id="settings-newapi-token-group" className={settingsInputClassName}>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {newAPITokenGroupOptions.map((group) => (
-                    <SelectItem key={group} value={group}>
-                      {group}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </Field>
-            <Field className="min-w-0 gap-2 rounded-xl bg-muted/35 px-3 py-3 sm:col-span-2">
-              <label
-                htmlFor="settings-image-stream-parameter-enabled"
-                className="flex min-w-0 cursor-pointer items-start gap-3"
-              >
-                <Checkbox
-                  id="settings-image-stream-parameter-enabled"
-                  className="mt-0.5"
-                  checked={Boolean(config?.image_stream_parameter_enabled)}
-                  onCheckedChange={(checked) => setImageStreamParameterEnabled(checked === true)}
-                />
-                <span className="grid min-w-0 flex-1 gap-1">
-                  <span className="flex min-w-0 flex-wrap items-center gap-2 text-sm font-medium text-foreground">
-                    图片流式参数
-                    <span
-                      className={cn(
-                        "rounded-full px-2 py-0.5 text-[11px] leading-4 font-medium",
-                        config?.image_stream_parameter_enabled
-                          ? "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100"
-                          : "bg-background text-muted-foreground ring-1 ring-border",
-                      )}
-                    >
-                      {config?.image_stream_parameter_enabled ? "已开启" : "默认关闭"}
-                    </span>
-                  </span>
-                  <span className="text-xs leading-5 text-muted-foreground">
-                    开启后图片生成/编辑会向 RelayAI 下发 <code className="font-mono">stream=true</code>，默认关闭。
-                  </span>
-                </span>
-              </label>
             </Field>
           </div>
         </section>
@@ -360,25 +301,13 @@ export function ConfigCard() {
                 className={settingsInputClassName}
               />
             </Field>
-            <Field className={configFieldClassName}>
-              <ConfigFieldLabel htmlFor="settings-chat-models">
-                对话模型
-              </ConfigFieldLabel>
-              <Input
-                id="settings-chat-models"
-                value={modelListInputValue(config?.chat_models)}
-                onChange={(event) => setChatModels(event.target.value)}
-                placeholder="gpt-5.5, gpt-5.4"
-                className={settingsInputClassName}
-              />
-            </Field>
           </div>
         </section>
 
         <section className={configSectionClassName}>
           <SectionHeading
             title="用户默认限制"
-            tip="限制普通用户创作并发额度和速率；图片生成/编辑按请求张数计入，聊天任务按 1 个计入；管理员不受影响；0 表示不限制。"
+            tip="限制普通用户创作并发额度和速率；图片生成/编辑按请求张数计入；管理员不受影响；0 表示不限制。"
           />
           <div className={configGridClassName}>
             <Field className={configFieldClassName}>

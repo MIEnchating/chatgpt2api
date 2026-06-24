@@ -511,6 +511,10 @@ func (s *AuthService) UpsertNewAPISession(user NewAPIUser) (*Identity, string, e
 	if user.ID <= 0 || user.Username == "" {
 		return nil, "", errAuthOwnerRequired()
 	}
+	role := AuthRoleUser
+	if user.IsAdmin {
+		role = AuthRoleAdmin
+	}
 	name := util.Clean(user.DisplayName)
 	if name == "" {
 		name = user.Username
@@ -528,7 +532,7 @@ func (s *AuthService) UpsertNewAPISession(user NewAPIUser) (*Identity, string, e
 	ownerSeen := false
 	ownerHasEnabled := false
 	for _, item := range s.items {
-		if util.Clean(item["role"]) != AuthRoleUser || util.Clean(item["owner_id"]) != owner.ID {
+		if util.Clean(item["owner_id"]) != owner.ID {
 			continue
 		}
 		ownerSeen = true
@@ -555,10 +559,17 @@ func (s *AuthService) UpsertNewAPISession(user NewAPIUser) (*Identity, string, e
 		next["email"] = user.Email
 		next["last_used_at"] = nil
 		next["updated_at"] = now
-		if roleID, ok := managedAuthRoleIDLocked(s.items, s.accounts, owner.ID); ok {
-			s.applyRoleToAuthItem(next, roleID)
+		next["role"] = role
+		if role == AuthRoleAdmin {
+			next["role_id"] = AuthRoleAdmin
+			next["role_name"] = "管理员"
+			applyPermissionSet(next, DefaultPermissionSetForRole(AuthRoleAdmin))
 		} else {
-			s.applyRoleToAuthItem(next, "")
+			if roleID, ok := managedAuthRoleIDLocked(s.items, s.accounts, owner.ID); ok {
+				s.applyRoleToAuthItem(next, roleID)
+			} else {
+				s.applyRoleToAuthItem(next, "")
+			}
 		}
 		s.items[index] = next
 		if err := s.saveLocked(); err != nil {
@@ -570,15 +581,21 @@ func (s *AuthService) UpsertNewAPISession(user NewAPIUser) (*Identity, string, e
 		return identity, raw, nil
 	}
 
-	item := newAuthItem(AuthRoleUser, AuthKindSession, name, owner, raw)
+	item := newAuthItem(role, AuthKindSession, name, owner, raw)
 	item["username"] = user.Username
 	item["email"] = user.Email
 	item["enabled"] = sessionEnabled
 	item["updated_at"] = now
-	if roleID, ok := managedAuthRoleIDLocked(s.items, s.accounts, owner.ID); ok {
-		s.applyRoleToAuthItem(item, roleID)
+	if role == AuthRoleAdmin {
+		item["role_id"] = AuthRoleAdmin
+		item["role_name"] = "管理员"
+		applyPermissionSet(item, DefaultPermissionSetForRole(AuthRoleAdmin))
 	} else {
-		s.applyRoleToAuthItem(item, "")
+		if roleID, ok := managedAuthRoleIDLocked(s.items, s.accounts, owner.ID); ok {
+			s.applyRoleToAuthItem(item, roleID)
+		} else {
+			s.applyRoleToAuthItem(item, "")
+		}
 	}
 	s.items = append(s.items, item)
 	if err := s.saveLocked(); err != nil {

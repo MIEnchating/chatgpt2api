@@ -33,17 +33,12 @@ func (a *App) routes() []appRoute {
 		exact(http.MethodGet, "/v1/models", a.handleModels),
 		exact(http.MethodPost, "/v1/images/generations", a.handleImageGenerations),
 		exact(http.MethodPost, "/v1/images/edits", a.handleImageEdits),
-		exact(http.MethodPost, "/v1/chat/completions", a.handleChatCompletions),
-		exact(http.MethodPost, "/v1/responses", a.handleResponses),
-		exact(http.MethodPost, "/v1/messages", a.handleMessages),
 
 		exact(http.MethodPost, "/auth/login", a.handleLogin),
 		exact(http.MethodPost, "/auth/logout", a.handleLogout),
 		exact(http.MethodGet, "/auth/session", a.handleSession),
 		exact(http.MethodGet, "/health", a.handleHealth),
 
-		exact("", "/api/announcements", a.handlePublicAnnouncements),
-		subtree("/api/admin/announcements", a.handleAdminAnnouncements),
 		subtree("/api/admin/roles", a.handleAdminRoles),
 		subtree("/api/admin/users", a.handleAdminUsers),
 		exact("", "/api/profile", a.handleProfile),

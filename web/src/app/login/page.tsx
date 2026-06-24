@@ -13,7 +13,6 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { AnnouncementNotifications } from "@/components/announcement-banner";
 import { LoginPageImageStage } from "@/components/login-page-image-stage";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -104,7 +103,6 @@ export default function LoginPage() {
       className={`${loginBackgroundClass} fixed inset-0 z-50 flex min-h-svh w-screen items-center justify-center overflow-y-auto px-4 py-6 font-login [align-items:safe_center] sm:px-6 lg:px-8`}
     >
       <div className="fixed right-4 top-4 z-50 flex items-center gap-2 sm:right-6 sm:top-6">
-        <AnnouncementNotifications target="login" className="size-9" />
         <Button
           ref={themeToggleRef}
           type="button"
@@ -133,7 +131,7 @@ export default function LoginPage() {
               />
               <div className="grid min-w-0 leading-none">
                 <div className="truncate text-sm font-semibold tracking-[-0.02em] text-[#222222] dark:text-white">
-                  {appMeta.app_title || "chatgpt2api"}
+                  {appMeta.app_title || "云棉"}
                 </div>
                 <div className="truncate text-[10px] font-medium tracking-[0.28em] text-[#8e8e93] uppercase dark:text-white/50">
                   {appMeta.project_name && appMeta.project_name !== appMeta.app_title ? appMeta.project_name : "控制台"}
@@ -151,7 +149,7 @@ export default function LoginPage() {
                   欢迎回来
                 </h1>
                 <p className="max-w-[340px] text-sm leading-6 text-[#45515e] transition-opacity duration-200 dark:text-white/62">
-                  使用账号和密码进入 {appMeta.app_title || "chatgpt2api"} 控制台。
+                  使用账号和密码进入 {appMeta.app_title || "云棉"} 控制台。
                 </p>
               </div>
             </div>

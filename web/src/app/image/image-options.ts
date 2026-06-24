@@ -168,6 +168,9 @@ export function parseImageRatio(ratio: string) {
   if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
     return null;
   }
+  if (width / height > MAX_ASPECT_RATIO || height / width > MAX_ASPECT_RATIO) {
+    return null;
+  }
   return { width, height };
 }
 

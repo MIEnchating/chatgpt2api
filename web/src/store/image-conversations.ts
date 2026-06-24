@@ -3,21 +3,18 @@
 import localforage from "localforage";
 
 import {
-  DEFAULT_CHAT_MODEL,
   DEFAULT_IMAGE_MODEL,
-  isChatModel,
-  isImageBackground,
   isImageCreationModel,
   isImageModeration,
   isImageModel,
   isImageOutputFormat,
   isImageQuality,
   supportsImageOutputCompression,
-  type ImageBackground,
   type ImageModel,
   type ImageModeration,
   type ImageOutputFormat,
   type ImageQuality,
+  type ImageQualityCheck,
   type ImageVisibility,
 } from "@/lib/api";
 import { getManagedImagePathFromUrl } from "@/lib/image-path";
@@ -46,6 +43,7 @@ export type StoredImage = {
   height?: number;
   resolution?: string;
   outputFormat?: ImageOutputFormat;
+  qualityCheck?: ImageQualityCheck;
   taskCreatedAt?: string;
   taskUpdatedAt?: string;
   generationDurationMs?: number;
@@ -77,7 +75,8 @@ export type ImageTurn = {
   quality?: ImageQuality;
   outputFormat?: ImageOutputFormat;
   outputCompression?: number;
-  background?: ImageBackground;
+  stream?: boolean;
+  partialImages?: number;
   moderation?: ImageModeration;
   tokenGroup?: string;
   tokenName?: string;
@@ -153,6 +152,22 @@ export function getStoredImageLoadingPhase(image: StoredImage): ImageTurnLoading
   return image.taskStatus === "running" ? "running" : "queued";
 }
 
+function normalizeStoredError(value: unknown) {
+  const text = typeof value === "string" ? value.trim() : "";
+  if (!text) {
+    return undefined;
+  }
+  const normalized = text.toLowerCase();
+  if (
+    normalized.includes("task returned no output data") ||
+    normalized.includes("任务没有返回图片数据") ||
+    normalized.includes("图片任务没有返回图片数据")
+  ) {
+    return "图片任务没有返回图片数据。通常是上游没有真正产出图片、模型参数不匹配、提示词被拒绝或上游链路异常导致；请调整提示词/参数后重试，并检查上游日志。";
+  }
+  return text;
+}
+
 function conversationScopeFromSession(session: StoredAuthSession | null) {
   if (!session) {
     return "anonymous";
@@ -201,6 +216,7 @@ function normalizeStoredImage(image: StoredImage): StoredImage {
     height: Number.isFinite(height) && height > 0 ? height : undefined,
     resolution,
     outputFormat: isImageOutputFormat(image.outputFormat) ? image.outputFormat : undefined,
+    qualityCheck: image.qualityCheck && typeof image.qualityCheck === "object" ? image.qualityCheck : undefined,
     taskCreatedAt: typeof image.taskCreatedAt === "string" && image.taskCreatedAt ? image.taskCreatedAt : undefined,
     taskUpdatedAt: typeof image.taskUpdatedAt === "string" && image.taskUpdatedAt ? image.taskUpdatedAt : undefined,
     generationDurationMs:
@@ -209,6 +225,7 @@ function normalizeStoredImage(image: StoredImage): StoredImage {
         : undefined,
     revised_prompt: typeof image.revised_prompt === "string" ? image.revised_prompt : undefined,
     text_response: typeof image.text_response === "string" && image.text_response ? image.text_response : undefined,
+    error: normalizeStoredError(image.error),
   };
   if (image.status === "loading" || image.status === "error" || image.status === "success" || image.status === "cancelled" || image.status === "message") {
     return normalized;
@@ -233,9 +250,6 @@ function normalizeReferenceImage(image: StoredReferenceImage & Record<string, un
 }
 
 function normalizeImageMode(value: unknown, referenceImages: StoredReferenceImage[]): ImageConversationMode {
-  if (value === "chat") {
-    return "chat";
-  }
   if (value === "generate") {
     return "generate";
   }
@@ -285,6 +299,17 @@ function normalizeOutputCompression(value: unknown): number | undefined {
   return Math.min(100, Math.round(numeric));
 }
 
+function normalizePartialImages(value: unknown): number | undefined {
+  if (value === undefined || value === null || String(value).trim() === "") {
+    return undefined;
+  }
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return undefined;
+  }
+  return Math.max(0, Math.min(3, Math.round(numeric)));
+}
+
 function dataUrlMimeType(dataUrl: string) {
   const match = dataUrl.match(/^data:(.*?);base64,/);
   return match?.[1] || "image/png";
@@ -330,11 +355,7 @@ function normalizeTurn(turn: ImageTurn & Record<string, unknown>): ImageTurn {
     image.visibility ? image : { ...image, visibility },
   );
   const model =
-    mode === "chat"
-      ? isChatModel(turn.model)
-        ? turn.model
-        : DEFAULT_CHAT_MODEL
-      : isImageCreationModel(turn.model)
+    isImageCreationModel(turn.model)
         ? turn.model
         : DEFAULT_IMAGE_MODEL;
   const loadingPhase = getImageTurnLoadingPhase({ images });
@@ -366,7 +387,8 @@ function normalizeTurn(turn: ImageTurn & Record<string, unknown>): ImageTurn {
       isImageOutputFormat(turn.outputFormat) && supportsImageOutputCompression(turn.outputFormat)
         ? normalizeOutputCompression(turn.outputCompression)
         : undefined,
-    background: isImageBackground(turn.background) ? turn.background : undefined,
+    stream: Boolean(turn.stream),
+    partialImages: normalizePartialImages(turn.partialImages),
     moderation: isImageModeration(turn.moderation) ? turn.moderation : undefined,
     tokenGroup: typeof turn.tokenGroup === "string" && turn.tokenGroup.trim() ? turn.tokenGroup.trim() : undefined,
     tokenName: typeof turn.tokenName === "string" && turn.tokenName.trim() ? turn.tokenName.trim() : undefined,
@@ -383,7 +405,7 @@ function normalizeTurn(turn: ImageTurn & Record<string, unknown>): ImageTurn {
       turn.status === "message"
         ? turn.status
         : derivedStatus,
-    error: typeof turn.error === "string" ? turn.error : undefined,
+    error: normalizeStoredError(turn.error),
   };
 }
 
@@ -398,9 +420,7 @@ function normalizeConversation(conversation: ImageConversation & Record<string, 
           prompt: String(conversation.prompt || ""),
           model: isImageModel(conversation.model)
             ? conversation.model
-            : legacyMode === "chat"
-              ? DEFAULT_CHAT_MODEL
-              : DEFAULT_IMAGE_MODEL,
+            : DEFAULT_IMAGE_MODEL,
           mode: legacyMode,
           referenceImages: legacyReferenceImages,
           count: Number(conversation.count || 1),
@@ -408,7 +428,8 @@ function normalizeConversation(conversation: ImageConversation & Record<string, 
           quality: isImageQuality(conversation.quality) ? conversation.quality : undefined,
           outputFormat: isImageOutputFormat(conversation.outputFormat) ? conversation.outputFormat : undefined,
           outputCompression: normalizeOutputCompression(conversation.outputCompression),
-          background: isImageBackground(conversation.background) ? conversation.background : undefined,
+          stream: Boolean(conversation.stream),
+          partialImages: normalizePartialImages(conversation.partialImages),
           moderation: isImageModeration(conversation.moderation) ? conversation.moderation : undefined,
           tokenGroup:
             typeof conversation.tokenGroup === "string" && conversation.tokenGroup.trim()
@@ -424,7 +445,7 @@ function normalizeConversation(conversation: ImageConversation & Record<string, 
             conversation.status === "generating" || conversation.status === "success" || conversation.status === "error" || conversation.status === "message"
               ? conversation.status
               : "success",
-          error: typeof conversation.error === "string" ? conversation.error : undefined,
+          error: normalizeStoredError(conversation.error),
         }),
       ];
   const lastTurn = turns.length > 0 ? turns[turns.length - 1] : null;

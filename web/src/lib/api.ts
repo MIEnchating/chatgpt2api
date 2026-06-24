@@ -1,15 +1,11 @@
 import { httpRequest } from "@/lib/request";
 import type { LoginPageImageMode } from "@/lib/login-page-image-layout";
-import webConfig from "@/constants/common-env";
-import { getStoredSessionToken } from "@/store/auth";
 
 export type ImageModel = string;
 export type ImageModelOption = { value: ImageModel; label: string };
 export const CODEX_IMAGE_MODEL: ImageModel = "codex-gpt-image-2";
 export const DEFAULT_IMAGE_MODELS: ImageModel[] = ["gpt-image-2"];
-export const DEFAULT_CHAT_MODELS: ImageModel[] = ["gpt-5.5", "gpt-5.4"];
 export const DEFAULT_IMAGE_MODEL: ImageModel = DEFAULT_IMAGE_MODELS[0];
-export const DEFAULT_CHAT_MODEL: ImageModel = DEFAULT_CHAT_MODELS[0];
 export const IMAGE_MODEL_OPTIONS = [
   { value: "auto", label: "自动" },
   { value: "codex-gpt-image-2", label: "codex-gpt-image-2" },
@@ -56,7 +52,6 @@ export function modelOptionsFromNames(names: ReadonlyArray<ImageModel>): ImageMo
 
 export const IMAGE_TASK_MODEL_OPTIONS = IMAGE_MODEL_OPTIONS.filter((option) => IMAGE_TASK_MODEL_VALUES.has(option.value));
 export const IMAGE_CREATION_MODEL_OPTIONS = modelOptionsFromNames(DEFAULT_IMAGE_MODELS);
-export const CHAT_MODEL_OPTIONS = modelOptionsFromNames(DEFAULT_CHAT_MODELS);
 export const IMAGE_MODEL_ROUTE_DETAILS: Partial<Record<
   ImageModel,
   {
@@ -66,16 +61,16 @@ export const IMAGE_MODEL_ROUTE_DETAILS: Partial<Record<
   }
 >> = {
   auto: {
-    routeLabel: "RelayAI",
-    description: "通过固定 RelayAI 上游提交请求，使用云棉指定分组令牌。",
+    routeLabel: "上游",
+    description: "通过固定上游提交请求，自动读取当前用户可用令牌。",
   },
   "gpt-image-2": {
-    routeLabel: "RelayAI",
-    description: "通过 RelayAI 图片接口生成图片。",
+    routeLabel: "上游",
+    description: "通过上游图片接口生成图片。",
   },
   "codex-gpt-image-2": {
-    routeLabel: "RelayAI",
-    description: "通过 RelayAI 上游提交请求。",
+    routeLabel: "上游",
+    description: "通过上游提交请求。",
   },
 };
 
@@ -89,10 +84,6 @@ export function isImageTaskModel(value: unknown): value is ImageModel {
 
 export function isImageCreationModel(value: unknown): value is ImageModel {
   return isImageModel(value);
-}
-
-export function isChatModel(value: unknown): value is ImageModel {
-  return isImageModel(value) && !IMAGE_TASK_MODEL_VALUES.has(value);
 }
 
 export function usesOfficialImageRoute(model: ImageModel) {
@@ -119,7 +110,6 @@ export function supportsImageQuality(_model: ImageModel) {
 
 export type ImageQuality = "low" | "medium" | "high";
 export type ImageOutputFormat = "png" | "jpeg" | "webp";
-export type ImageBackground = "auto" | "opaque";
 export type ImageModeration = "auto" | "low";
 export type ImageVisibility = "private" | "public";
 
@@ -145,7 +135,6 @@ export function relayModelOptionsFromList(items: RelayModelListItem[] | null | u
 
 const IMAGE_QUALITY_VALUES = new Set<string>(["low", "medium", "high"]);
 const IMAGE_OUTPUT_FORMAT_VALUES = new Set<string>(["png", "jpeg", "webp"]);
-const IMAGE_BACKGROUND_VALUES = new Set<string>(["auto", "opaque"]);
 const IMAGE_MODERATION_VALUES = new Set<string>(["auto", "low"]);
 
 export const IMAGE_OUTPUT_FORMAT_OPTIONS = [
@@ -153,11 +142,6 @@ export const IMAGE_OUTPUT_FORMAT_OPTIONS = [
   { value: "jpeg", label: "JPEG" },
   { value: "webp", label: "WebP" },
 ] as const satisfies ReadonlyArray<{ value: ImageOutputFormat; label: string }>;
-
-export const IMAGE_BACKGROUND_OPTIONS = [
-  { value: "auto", label: "自动" },
-  { value: "opaque", label: "不透明" },
-] as const satisfies ReadonlyArray<{ value: ImageBackground; label: string }>;
 
 export const IMAGE_MODERATION_OPTIONS = [
   { value: "auto", label: "自动" },
@@ -172,10 +156,6 @@ export function isImageOutputFormat(value: unknown): value is ImageOutputFormat 
   return typeof value === "string" && IMAGE_OUTPUT_FORMAT_VALUES.has(value);
 }
 
-export function isImageBackground(value: unknown): value is ImageBackground {
-  return typeof value === "string" && IMAGE_BACKGROUND_VALUES.has(value);
-}
-
 export function isImageModeration(value: unknown): value is ImageModeration {
   return typeof value === "string" && IMAGE_MODERATION_VALUES.has(value);
 }
@@ -184,8 +164,15 @@ export function supportsImageOutputCompression(format: ImageOutputFormat) {
   return format === "jpeg" || format === "webp";
 }
 
+function normalizedImagePartialImages(value: number | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return undefined;
+  }
+  const normalized = Math.round(value);
+  return normalized >= 1 && normalized <= 3 ? normalized : undefined;
+}
+
 export type AuthRole = "admin" | "user";
-export type AnnouncementTarget = "login" | "image";
 export type LogView = "all" | "meaningful" | "business";
 export type AccountScheduleMode = "load_balance" | "fill_first";
 
@@ -210,20 +197,19 @@ export type ApiPermission = {
 export type SettingsConfig = {
   proxy: string;
   base_url?: string;
+  app_title?: string;
+  project_name?: string;
   relay_base_url?: string;
   newapi_token_group?: string;
   newapi_token_groups?: string[];
   image_models?: string[] | string;
-  chat_models?: string[] | string;
   default_image_model?: string;
-  default_chat_model?: string;
   refresh_account_interval_minute?: number | string;
   image_task_timeout_seconds?: number | string;
   user_default_concurrent_limit?: number | string;
   user_default_rpm_limit?: number | string;
   image_retention_days?: number | string;
   image_storage_limit_mb?: number | string;
-  image_stream_parameter_enabled?: boolean;
   log_retention_days?: number | string;
   default_log_view?: LogView | string;
   auto_remove_invalid_accounts?: boolean;
@@ -247,11 +233,8 @@ export type SettingsConfig = {
 
 export type ModelConfig = {
   image_models: ImageModel[];
-  chat_models: ImageModel[];
   default_image_model: ImageModel;
-  default_chat_model: ImageModel;
   relay_base_url: string;
-  image_stream_parameter_enabled?: boolean;
 };
 
 export type LoginPageImageSettings = {
@@ -282,7 +265,7 @@ export type ManagedImage = {
   requested_size?: string;
   output_format?: ImageOutputFormat;
   output_compression?: number;
-  background?: string;
+  partial_images?: number;
   moderation?: string;
   input_image_mask?: string;
   reference_image_urls?: string[];
@@ -377,6 +360,16 @@ export type ImageResponse = {
   data: Array<{ b64_json?: string; url?: string; revised_prompt?: string }>;
 };
 
+export type ImageQualityCheck = {
+  requested_size?: string;
+  actual_size?: string;
+  size_matched?: boolean;
+  requested_output_format?: ImageOutputFormat | string;
+  actual_output_format?: ImageOutputFormat | string;
+  output_format_matched?: boolean;
+  warnings?: string[];
+};
+
 export type CreationTaskData = {
   b64_json?: string;
   url?: string;
@@ -386,6 +379,9 @@ export type CreationTaskData = {
   height?: number;
   resolution?: string;
   output_format?: ImageOutputFormat;
+  actual_size?: string;
+  actual_output_format?: ImageOutputFormat | string;
+  quality_check?: ImageQualityCheck;
 };
 
 export type CreationTask = {
@@ -397,7 +393,7 @@ export type CreationTask = {
   quality?: ImageQuality;
   output_format?: ImageOutputFormat;
   output_compression?: number;
-  background?: string;
+  partial_images?: number;
   moderation?: string;
   created_at: string;
   updated_at: string;
@@ -474,17 +470,6 @@ export type ProfileBalanceStatus = {
   used_quota?: number;
   request_count?: number;
   message?: string;
-};
-
-export type Announcement = {
-  id: string;
-  title: string;
-  content: string;
-  enabled?: boolean;
-  show_login: boolean;
-  show_image: boolean;
-  created_at?: string | null;
-  updated_at?: string | null;
 };
 
 export type UserKey = {
@@ -626,46 +611,6 @@ export async function logout() {
   });
 }
 
-export async function fetchVisibleAnnouncements(target: AnnouncementTarget) {
-  const params = new URLSearchParams({ target });
-  return httpRequest<{ items: Announcement[] }>(`/api/announcements?${params.toString()}`, {
-    redirectOnUnauthorized: false,
-  });
-}
-
-export async function fetchAdminAnnouncements() {
-  return httpRequest<{ items: Announcement[] }>("/api/admin/announcements");
-}
-
-export async function createAnnouncement(announcement: {
-  title: string;
-  content: string;
-  enabled: boolean;
-  show_login: boolean;
-  show_image: boolean;
-}) {
-  return httpRequest<{ item: Announcement; items: Announcement[] }>("/api/admin/announcements", {
-    method: "POST",
-    body: announcement,
-  });
-}
-
-export async function updateAnnouncement(
-  announcementId: string,
-  updates: Partial<Pick<Announcement, "title" | "content" | "enabled" | "show_login" | "show_image">>,
-) {
-  return httpRequest<{ item: Announcement; items: Announcement[] }>(`/api/admin/announcements/${announcementId}`, {
-    method: "POST",
-    body: updates,
-  });
-}
-
-export async function deleteAnnouncement(announcementId: string) {
-  return httpRequest<{ items: Announcement[] }>(`/api/admin/announcements/${announcementId}`, {
-    method: "DELETE",
-  });
-}
-
 export async function generateImage(prompt: string, model?: ImageModel, size?: string, quality?: ImageQuality) {
   return httpRequest<ImageResponse>(
     "/v1/images/generations",
@@ -677,7 +622,6 @@ export async function generateImage(prompt: string, model?: ImageModel, size?: s
         ...(size ? { size } : {}),
         ...(quality ? { quality } : {}),
         n: 1,
-        response_format: "b64_json",
       },
     },
   );
@@ -716,6 +660,7 @@ export async function createImageGenerationTask(
   prompt: string,
   model?: ImageModel,
   size?: string,
+  requestedSize?: string,
   quality?: ImageQuality,
   count = 1,
   messages?: CreationTaskMessage[],
@@ -723,8 +668,9 @@ export async function createImageGenerationTask(
   imageResolution?: string,
   outputFormat?: ImageOutputFormat,
   outputCompression?: number,
+  stream?: boolean,
+  partialImages?: number,
   toolOptions?: {
-    background?: string;
     moderation?: string;
   },
   relayTokenGroup?: string,
@@ -732,6 +678,7 @@ export async function createImageGenerationTask(
   frontendConversationId?: string,
   fallbackReferenceImage?: FallbackReferenceImage,
 ) {
+  const normalizedPartialImages = stream ? normalizedImagePartialImages(partialImages) : undefined;
   return httpRequest<CreationTask>("/api/creation-tasks/image-generations", {
     method: "POST",
     body: {
@@ -739,11 +686,13 @@ export async function createImageGenerationTask(
       prompt,
       ...(model ? { model } : {}),
       ...(size ? { size } : {}),
+      ...(requestedSize ? { requested_size: requestedSize } : {}),
       ...(imageResolution ? { image_resolution: imageResolution } : {}),
       ...(quality ? { quality } : {}),
       ...(outputFormat ? { output_format: outputFormat } : {}),
       ...(typeof outputCompression === "number" ? { output_compression: outputCompression } : {}),
-      ...(toolOptions?.background ? { background: toolOptions.background } : {}),
+      ...(stream ? { stream: true } : {}),
+      ...(normalizedPartialImages ? { partial_images: normalizedPartialImages } : {}),
       ...(toolOptions?.moderation ? { moderation: toolOptions.moderation } : {}),
       ...(relayTokenGroup ? { token_group: relayTokenGroup } : {}),
       ...(relayTokenName ? { token_name: relayTokenName } : {}),
@@ -762,6 +711,7 @@ export async function createImageEditTask(
   prompt: string,
   model?: ImageModel,
   size?: string,
+  requestedSize?: string,
   quality?: ImageQuality,
   count = 1,
   messages?: CreationTaskMessage[],
@@ -769,8 +719,9 @@ export async function createImageEditTask(
   imageResolution?: string,
   outputFormat?: ImageOutputFormat,
   outputCompression?: number,
+  stream?: boolean,
+  partialImages?: number,
   toolOptions?: {
-    background?: string;
     moderation?: string;
     inputImageMask?: string;
   },
@@ -793,6 +744,9 @@ export async function createImageEditTask(
   if (size) {
     formData.append("size", size);
   }
+  if (requestedSize) {
+    formData.append("requested_size", requestedSize);
+  }
   if (imageResolution) {
     formData.append("image_resolution", imageResolution);
   }
@@ -805,8 +759,12 @@ export async function createImageEditTask(
   if (typeof outputCompression === "number") {
     formData.append("output_compression", String(outputCompression));
   }
-  if (toolOptions?.background) {
-    formData.append("background", toolOptions.background);
+  if (stream) {
+    formData.append("stream", "true");
+    const normalizedPartialImages = normalizedImagePartialImages(partialImages);
+    if (normalizedPartialImages) {
+      formData.append("partial_images", String(normalizedPartialImages));
+    }
   }
   if (toolOptions?.moderation) {
     formData.append("moderation", toolOptions.moderation);
@@ -836,189 +794,6 @@ export async function createImageEditTask(
     method: "POST",
     body: formData,
   });
-}
-
-export async function createChatCompletionTask(
-  clientTaskId: string,
-  prompt: string,
-  model: ImageModel,
-  messages: CreationTaskMessage[],
-  referenceImages?: { name: string; dataUrl: string }[],
-  relayTokenGroup?: string,
-  relayTokenName?: string,
-) {
-  const body: Record<string, unknown> = {
-    client_task_id: clientTaskId,
-    prompt,
-    model,
-    messages,
-    ...(relayTokenGroup ? { token_group: relayTokenGroup } : {}),
-    ...(relayTokenName ? { token_name: relayTokenName } : {}),
-  };
-
-  if (referenceImages && referenceImages.length > 0) {
-    const content: Array<{ type: string; text?: string; image_url?: { url: string } }> = [
-      { type: "text", text: prompt },
-      ...referenceImages.map((img) => ({
-        type: "image_url" as const,
-        image_url: { url: img.dataUrl },
-      })),
-    ];
-    body.messages = [
-      ...messages,
-      { role: "user" as const, content },
-    ];
-  }
-
-  return httpRequest<CreationTask>("/api/creation-tasks/chat-completions", {
-    method: "POST",
-    body,
-  });
-}
-
-export async function streamChatCompletion(
-  model: ImageModel,
-  messages: CreationTaskMessage[],
-  prompt: string,
-  referenceImages: { name: string; dataUrl: string }[] | undefined,
-  onText: (text: string) => void,
-  signal?: AbortSignal,
-  relayTokenGroup?: string,
-  relayTokenName?: string,
-) {
-  const body: Record<string, unknown> = {
-    model,
-    messages,
-    stream: true,
-    ...(relayTokenGroup ? { token_group: relayTokenGroup } : {}),
-    ...(relayTokenName ? { token_name: relayTokenName } : {}),
-  };
-
-  if (referenceImages && referenceImages.length > 0) {
-    const content = [
-      { type: "text", text: prompt },
-      ...referenceImages.map((img) => ({
-        type: "image_url",
-        image_url: { url: img.dataUrl },
-      })),
-    ];
-    body.messages = [
-      ...messages,
-      { role: "user" as const, content },
-    ];
-  }
-
-  const token = await getStoredSessionToken();
-  const response = await fetch(`${webConfig.apiUrl.replace(/\/$/, "")}/v1/chat/completions`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify(body),
-    signal,
-  });
-  if (!response.ok || !response.body) {
-    const text = await response.text().catch(() => "");
-    throw new Error(text || `请求失败 (${response.status})`);
-  }
-
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let fullText = "";
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) {
-      break;
-    }
-    buffer += decoder.decode(value, { stream: true });
-    const frames = buffer.split(/\r?\n\r?\n/);
-    buffer = frames.pop() || "";
-    for (const frame of frames) {
-      for (const line of frame.split(/\r?\n/)) {
-        const trimmed = line.trim();
-        if (!trimmed.startsWith("data:")) {
-          continue;
-        }
-        const data = trimmed.slice(5).trim();
-        if (!data || data === "[DONE]") {
-          continue;
-        }
-        const parsed = JSON.parse(data) as {
-          error?: unknown;
-          detail?: unknown;
-          message?: unknown;
-          type?: string;
-          choices?: Array<{
-            delta?: { content?: string | Array<{ text?: string }>; text?: string };
-            message?: { content?: string | Array<{ text?: string }> };
-            text?: string;
-          }>;
-        };
-        const errorMessage = streamChunkErrorMessage(parsed);
-        if (errorMessage) {
-          throw new Error(errorMessage);
-        }
-        const delta = chatCompletionChunkText(parsed);
-        if (delta) {
-          fullText += delta;
-          onText(fullText);
-        }
-      }
-    }
-  }
-  return fullText;
-}
-
-function streamChunkErrorMessage(chunk: { error?: unknown; detail?: unknown; message?: unknown; type?: string }) {
-  const error = errorText(chunk.error);
-  if (error) {
-    return error;
-  }
-  if (chunk.type === "error") {
-    return errorText(chunk.message) || errorText(chunk.detail);
-  }
-  return "";
-}
-
-function errorText(value: unknown): string {
-  if (typeof value === "string") {
-    return value.trim();
-  }
-  if (!value || typeof value !== "object") {
-    return "";
-  }
-  const item = value as { error?: unknown; detail?: unknown; message?: unknown };
-  return errorText(item.message) || errorText(item.error) || errorText(item.detail);
-}
-
-function chatCompletionChunkText(chunk: {
-  choices?: Array<{
-    delta?: { content?: string | Array<{ text?: string }>; text?: string };
-    message?: { content?: string | Array<{ text?: string }> };
-    text?: string;
-  }>;
-}) {
-  return (chunk.choices || [])
-    .map((choice) =>
-      contentText(choice.delta?.content) ||
-      choice.delta?.text ||
-      contentText(choice.message?.content) ||
-      choice.text ||
-      "",
-    )
-    .join("");
-}
-
-function contentText(content: unknown) {
-  if (typeof content === "string") {
-    return content;
-  }
-  if (!Array.isArray(content)) {
-    return "";
-  }
-  return content.map((item) => (typeof item?.text === "string" ? item.text : "")).join("");
 }
 
 export async function fetchCreationTasks(ids: string[]) {

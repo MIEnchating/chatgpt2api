@@ -29,6 +29,7 @@ type NewAPIUser struct {
 	Username    string
 	Email       string
 	DisplayName string
+	IsAdmin     bool
 }
 
 type NewAPIUserBalance struct {
@@ -279,9 +280,6 @@ func (r *NewAPITokenReader) TokenForIdentityGroupAndName(ctx context.Context, id
 		return NewAPITokenSelection{}, newAPITokenMessageError("请先配置云棉数据库连接，并在云棉创建指定分组的令牌", nil)
 	}
 	group := firstNonEmptyNewAPIString(strings.TrimSpace(groupOverride), r.configuredGroup())
-	if group == "" {
-		return NewAPITokenSelection{}, newAPITokenMessageError("请先配置云棉令牌分组", nil)
-	}
 	candidates := newAPIIdentityLookupValues(identity)
 	if len(candidates) == 0 {
 		return NewAPITokenSelection{}, newAPITokenMessageError("当前登录用户缺少云棉用户名，无法读取云棉 Key", nil)
@@ -307,10 +305,12 @@ func (r *NewAPITokenReader) AuthenticatePassword(ctx context.Context, login, pas
 
 	queryCtx, cancel := context.WithTimeout(contextOrBackground(ctx), r.timeout)
 	defer cancel()
-	query := "SELECT id, username, email, display_name, password FROM users WHERE (username = " + r.placeholder(1) + " OR email = " + r.placeholder(2) + ") AND status = 1 AND deleted_at IS NULL ORDER BY id ASC LIMIT 1"
+	adminExpr := r.newAPIAdminSelectExpression(queryCtx)
+	query := "SELECT id, username, email, display_name, password, " + adminExpr + " FROM users WHERE (username = " + r.placeholder(1) + " OR email = " + r.placeholder(2) + ") AND status = 1 AND deleted_at IS NULL ORDER BY id ASC LIMIT 1"
 	var user NewAPIUser
 	var email, displayName, passwordHash sql.NullString
-	err := r.db.QueryRowContext(queryCtx, query, login, login).Scan(&user.ID, &user.Username, &email, &displayName, &passwordHash)
+	var adminValue any
+	err := r.db.QueryRowContext(queryCtx, query, login, login).Scan(&user.ID, &user.Username, &email, &displayName, &passwordHash, &adminValue)
 	if errors.Is(err, sql.ErrNoRows) {
 		return NewAPIUser{}, newAPITokenMessageError("用户名或密码错误", nil)
 	}
@@ -323,6 +323,7 @@ func (r *NewAPITokenReader) AuthenticatePassword(ctx context.Context, login, pas
 	user.Username = strings.TrimSpace(user.Username)
 	user.Email = strings.TrimSpace(email.String)
 	user.DisplayName = strings.TrimSpace(displayName.String)
+	user.IsAdmin = isTruthyNewAPIAdminValue(adminValue)
 	if user.Username == "" {
 		return NewAPIUser{}, newAPITokenMessageError("读取云棉用户失败，请检查云棉用户数据", nil)
 	}
@@ -343,6 +344,9 @@ func (r *NewAPITokenReader) lookupUserID(ctx context.Context, candidates []strin
 		return 0, newAPITokenMessageError("读取云棉 Key 失败，请检查云棉数据库连接", err)
 	}
 	group = firstNonEmptyNewAPIString(group, r.configuredGroup())
+	if group == "" {
+		return 0, newAPITokenMessageError("请先在云棉创建当前登录用户，并创建可用令牌", nil)
+	}
 	return 0, newAPITokenMessageError(fmt.Sprintf("请先在云棉创建当前登录用户，并创建“%s”分组的令牌", group), nil)
 }
 
@@ -413,9 +417,18 @@ func (r *NewAPITokenReader) lookupTokenSelection(ctx context.Context, userID int
 		return selection, err
 	}
 	if len(groups) == 0 {
+		if strings.TrimSpace(group) == "" {
+			return selection, newAPITokenMessageError("请先在云棉为当前用户创建可用令牌", nil)
+		}
 		return selection, newAPITokenMessageError(fmt.Sprintf("请先在云棉为当前用户创建“%s”分组的可用令牌", group), nil)
 	}
 	selectedGroup, ok := firstMatchingNewAPITokenGroup(groups, group)
+	if !ok {
+		if strings.TrimSpace(group) == "" {
+			selectedGroup = groups[0]
+			ok = true
+		}
+	}
 	if !ok {
 		return selection, newAPITokenMessageError(fmt.Sprintf("当前用户没有“%s”分组的可用令牌，可用分组：%s", group, strings.Join(groups, ", ")), nil)
 	}
@@ -535,6 +548,73 @@ func (r *NewAPITokenReader) lookupAvailableTokenGroups(ctx context.Context, user
 		return nil, newAPITokenMessageError("读取云棉令牌分组失败，请检查云棉数据库连接", err)
 	}
 	return groups, nil
+}
+
+func (r *NewAPITokenReader) newAPIAdminSelectExpression(ctx context.Context) string {
+	for _, column := range []string{"role", "is_admin", "root"} {
+		if r.hasTableColumn(ctx, "users", column) {
+			quoted := r.quoteIdentifier(column)
+			switch column {
+			case "role":
+				return "CASE WHEN " + quoted + " IN ('admin', 'root') THEN 1 ELSE 0 END"
+			default:
+				return "CASE WHEN " + quoted + " = 1 THEN 1 ELSE 0 END"
+			}
+		}
+	}
+	return "0"
+}
+
+func (r *NewAPITokenReader) hasTableColumn(ctx context.Context, table, column string) bool {
+	table = strings.TrimSpace(table)
+	column = strings.TrimSpace(column)
+	if table == "" || column == "" || r == nil || r.db == nil {
+		return false
+	}
+	switch r.driver {
+	case "sqlite":
+		rows, err := r.db.QueryContext(ctx, "PRAGMA table_info("+r.quoteIdentifier(table)+")")
+		if err != nil {
+			return false
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var cid int
+			var name, typ string
+			var notNull int
+			var defaultValue any
+			var pk int
+			if err := rows.Scan(&cid, &name, &typ, &notNull, &defaultValue, &pk); err != nil {
+				return false
+			}
+			if strings.EqualFold(strings.TrimSpace(name), column) {
+				return true
+			}
+		}
+		return false
+	default:
+		query := "SELECT 1 FROM information_schema.columns WHERE table_name = " + r.placeholder(1) + " AND column_name = " + r.placeholder(2) + " LIMIT 1"
+		var exists int
+		return r.db.QueryRowContext(ctx, query, table, column).Scan(&exists) == nil
+	}
+}
+
+func isTruthyNewAPIAdminValue(value any) bool {
+	switch v := value.(type) {
+	case bool:
+		return v
+	case int64:
+		return v != 0
+	case int:
+		return v != 0
+	case []byte:
+		return isTruthyNewAPIAdminValue(string(v))
+	case string:
+		text := strings.ToLower(strings.TrimSpace(v))
+		return text == "1" || text == "true" || text == "admin" || text == "root"
+	default:
+		return util.ToBool(v)
+	}
 }
 
 func firstNonEmptyNewAPIString(values ...string) string {

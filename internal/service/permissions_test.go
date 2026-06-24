@@ -11,8 +11,8 @@ func TestNormalizeAPIPermissionsMigratesCreationTaskPermissions(t *testing.T) {
 	if !HasAPIPermission(PermissionSet{APIPermissions: permissions}, "GET", "/api/creation-tasks") {
 		t.Fatalf("migrated permissions missing creation task read: %#v", permissions)
 	}
-	if !HasAPIPermission(PermissionSet{APIPermissions: permissions}, "POST", "/api/creation-tasks/chat-completions") {
-		t.Fatalf("migrated permissions missing creation task submit subtree: %#v", permissions)
+	if !HasAPIPermission(PermissionSet{APIPermissions: permissions}, "POST", "/api/creation-tasks/image-generations") {
+		t.Fatalf("migrated permissions missing image creation task submit subtree: %#v", permissions)
 	}
 	if HasAPIPermission(PermissionSet{APIPermissions: permissions}, "GET", "/api/image-tasks") {
 		t.Fatalf("old image task route should not be authorized: %#v", permissions)

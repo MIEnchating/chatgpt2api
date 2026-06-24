@@ -35,9 +35,10 @@ type ImageOutputOptions struct {
 }
 
 type ImageToolOptions struct {
-	Background     string
 	Moderation     string
 	InputImageMask string
+	Stream         bool
+	PartialImages  int
 }
 
 type ImageTaskService struct {
@@ -393,7 +394,7 @@ func (s *ImageTaskService) runTask(ctx context.Context, key, mode string, identi
 		}
 		data := taskResultData(result)
 		outputType := util.Clean(result["output_type"])
-		if outputType == "text" && len(data) == 0 && ctx.Err() == nil && runCtx.Err() != context.DeadlineExceeded {
+		if mode == "chat" && outputType == "text" && len(data) == 0 && ctx.Err() == nil && runCtx.Err() != context.DeadlineExceeded {
 			if text := util.Clean(result["message"]); text != "" {
 				data = []map[string]any{{"text_response": text}}
 				status = TaskStatusSuccess
@@ -418,7 +419,7 @@ func (s *ImageTaskService) runTask(ctx context.Context, key, mode string, identi
 		}
 	}
 	if len(data) == 0 {
-		message := firstNonEmpty(util.Clean(result["message"]), "task returned no output data")
+		message := firstNonEmpty(util.Clean(result["message"]), "任务没有返回图片数据，请检查上游返回、模型参数和日志详情")
 		updates := map[string]any{"status": TaskStatusError, "error": message, "data": []any{}}
 		if outputType != "" {
 			updates["output_type"] = outputType
@@ -991,7 +992,6 @@ func mergeImageOutputOptions(payload map[string]any, options ImageOutputOptions)
 
 func mergeImageToolOptions(payload map[string]any, options ImageToolOptions) {
 	for key, value := range map[string]string{
-		"background":       NormalizeImageBackground(options.Background),
 		"moderation":       NormalizeImageModeration(options.Moderation),
 		"input_image_mask": options.InputImageMask,
 	} {
@@ -999,12 +999,24 @@ func mergeImageToolOptions(payload map[string]any, options ImageToolOptions) {
 			payload[key] = strings.TrimSpace(value)
 		}
 	}
+	if options.Stream {
+		payload["stream"] = true
+		if options.PartialImages >= 1 && options.PartialImages <= 3 {
+			payload["partial_images"] = options.PartialImages
+		}
+	}
 }
 
 func mergePublicImageToolTaskFields(target, source map[string]any) {
-	for _, key := range []string{"background", "moderation", "input_image_mask"} {
+	for _, key := range []string{"moderation", "input_image_mask"} {
 		if value := util.Clean(source[key]); value != "" {
 			target[key] = value
+		}
+	}
+	if util.ToBool(source["stream"]) {
+		target["stream"] = true
+		if partialImages, ok := normalizedPublicImagePartialImages(source["partial_images"]); ok {
+			target["partial_images"] = partialImages
 		}
 	}
 }
@@ -1027,15 +1039,6 @@ func SupportsImageOutputCompression(format string) bool {
 	return format == "jpeg" || format == "webp"
 }
 
-func NormalizeImageBackground(background string) string {
-	switch strings.ToLower(strings.TrimSpace(background)) {
-	case "auto", "opaque":
-		return strings.ToLower(strings.TrimSpace(background))
-	default:
-		return ""
-	}
-}
-
 func NormalizeImageModeration(moderation string) string {
 	switch strings.ToLower(strings.TrimSpace(moderation)) {
 	case "auto", "low":
@@ -1043,6 +1046,14 @@ func NormalizeImageModeration(moderation string) string {
 	default:
 		return ""
 	}
+}
+
+func normalizedPublicImagePartialImages(value any) (int, bool) {
+	partialImages := util.ToInt(value, 0)
+	if partialImages < 1 || partialImages > 3 {
+		return 0, false
+	}
+	return partialImages, true
 }
 
 func normalizedImageOutputCompressionValue(value any) (int, bool) {

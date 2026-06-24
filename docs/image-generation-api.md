@@ -38,14 +38,13 @@ Authorization: Bearer <session-or-api-token>
 | `n` | number | `1` | 全部 | 生成数量。同步接口要求 `1-4`；异步任务会归一化到 `1-4`。 |
 | `size` | string | 空 | 全部 | 支持 `auto`、比例值、档位和显式尺寸。详见“尺寸”。 |
 | `quality` | string | 空 | 全部 | 可传 `low`、`medium`、`high`。当前前端不强制启用质量控制，部分链路仅作为提示或上游参数。 |
-| `response_format` | string | 同步为 `b64_json`，异步为 `url` | 同步、内部任务 payload | 同步接口可用 `b64_json`；异步任务固定面向 URL 结果。 |
+| `response_format` | string | 同步为 `b64_json`，异步为 `url` | 本地响应格式 | 仅控制本服务同步响应是否附带 `b64_json`；GPT 图片模型上游不支持该参数，服务不会向上游转发。 |
 | `output_format` | string | `png` | 全部 | 输出保存格式。支持 `png`、`jpeg`、`webp`，`jpg` 会归一化为 `jpeg`。非法值归一化为 `png`。 |
-| `output_compression` | number | 空 | 全部 | 仅 `output_format=jpeg` 时生效，范围 `0-100`，超过 `100` 会按 `100` 处理。 |
-| `background` | string | 空 | 全部 | 透传给图片工具的背景参数，例如 `transparent`。实际支持取决于上游链路。 |
+| `output_compression` | number | 空 | 全部 | 仅 `output_format=jpeg` 或 `webp` 时生效，范围 `0-100`，超过 `100` 会按 `100` 处理。 |
 | `moderation` | string | 空 | 全部 | 透传给图片工具的审核参数。实际支持取决于上游链路。 |
-| `style` | string | 空 | 全部 | 透传给图片工具的风格参数。实际支持取决于上游链路。 |
-| `partial_images` | number | 空 | 全部 | 正整数时启用部分图片/进度图片相关参数。 |
+| `partial_images` | number | 空 | 全部 | 仅 `stream=true` 时生效，范围 `0-3`。`0` 不返回中间图；大于 `0` 表示最多返回对应数量，中间图可能提前结束，不保证返回满。 |
 | `input_image_mask` | string | 空 | 编辑接口 | 图生图遮罩。通常传 data URL 或 base64 内容，实际支持取决于上游链路。 |
+| `input_fidelity` | string | 空 | 编辑接口 | 官方编辑接口用于控制输入图保真度；当前 `gpt-image-2` 链路不下发该参数。 |
 | `visibility` | string | `private` | 全部 | 生成图片入库可见性。支持 `private`、`public`。影响图库展示，不影响上游生成语义。 |
 | `messages` | array | 空 | 全部 | 当前会被透传/归一化，但不要把它理解为可靠的“图片上下文记忆”。详见“上下文边界”。 |
 | `stream` | boolean | `false` | 同步接口 | 为 `true` 时返回 SSE。 |
@@ -346,11 +345,9 @@ curl http://localhost:3000/api/creation-tasks/img-task-20260511-001/cancel \
 | `size` | string | 请求尺寸或比例。 |
 | `quality` | string | 请求质量，未传时可能省略。 |
 | `output_format` | string | 归一化后的输出格式。 |
-| `output_compression` | number | JPEG 压缩率，仅 JPEG 时可能出现。 |
-| `background` | string | 背景参数，传入时可能出现。 |
+| `output_compression` | number | JPEG/WebP 压缩率，仅 JPEG/WebP 时可能出现。 |
 | `moderation` | string | 审核参数，传入时可能出现。 |
-| `style` | string | 风格参数，传入时可能出现。 |
-| `partial_images` | number | 部分图片参数，传入正整数时可能出现。 |
+| `partial_images` | number | 流式中间图参数，`stream=true` 且传入 `1-3` 时可能出现。 |
 | `input_image_mask` | string | 编辑遮罩参数，传入时可能出现。 |
 | `output_statuses` | string[] | 单张输出状态。 |
 | `data` | array | 输出结果数组。成功后出现。 |
@@ -369,7 +366,7 @@ curl http://localhost:3000/api/creation-tasks/img-task-20260511-001/cancel \
 | `revised_prompt` | string | 上游或服务记录的最终提示词。 |
 | `output_format` | string | 输出格式。 |
 
-图片可见性和 JPEG 压缩率当前主要在任务级字段返回。调用方展示图库状态时优先读取任务级 `visibility`；保存后的图片元数据由服务端图库模块维护。
+图片可见性和 JPEG/WebP 压缩率当前主要在任务级字段返回。调用方展示图库状态时优先读取任务级 `visibility`；保存后的图片元数据由服务端图库模块维护。
 
 文本结果项：
 

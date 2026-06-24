@@ -86,96 +86,26 @@ func TestAppAuthAndSPACompatibility(t *testing.T) {
 	req = httptest.NewRequest(http.MethodGet, "/api/announcements?target=login", nil)
 	res = httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusOK {
+	if res.Code != http.StatusNotFound {
 		t.Fatalf("/api/announcements status = %d body = %s", res.Code, res.Body.String())
-	}
-	var announcementsBody map[string]any
-	if err := json.Unmarshal(res.Body.Bytes(), &announcementsBody); err != nil {
-		t.Fatalf("announcements json: %v", err)
-	}
-	if items := logItems(announcementsBody); len(items) != 0 {
-		t.Fatalf("unexpected initial announcements = %#v", announcementsBody)
 	}
 
 	req = httptest.NewRequest(http.MethodPost, "/api/admin/announcements", strings.NewReader(`{"title":"通知 A","content":"今晚维护","show_login":true,"show_image":false}`))
 	req.Header.Set("Authorization", adminAuthHeader(t, app))
 	res = httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusOK {
-		t.Fatalf("create login announcement status = %d body = %s", res.Code, res.Body.String())
-	}
-	var createBody map[string]any
-	if err := json.Unmarshal(res.Body.Bytes(), &createBody); err != nil {
-		t.Fatalf("create announcement json: %v", err)
-	}
-	createdItem, _ := createBody["item"].(map[string]any)
-	createdID, _ := createdItem["id"].(string)
-	if createdID == "" {
-		t.Fatalf("missing created announcement id: %#v", createBody)
+	if res.Code != http.StatusNotFound {
+		t.Fatalf("admin announcements status = %d body = %s", res.Code, res.Body.String())
 	}
 
-	req = httptest.NewRequest(http.MethodPost, "/api/admin/announcements", strings.NewReader(`{"title":"通知 B","content":"画图页公告","show_login":false,"show_image":true}`))
-	req.Header.Set("Authorization", adminAuthHeader(t, app))
-	res = httptest.NewRecorder()
-	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusOK {
-		t.Fatalf("create image announcement status = %d body = %s", res.Code, res.Body.String())
-	}
-
-	req = httptest.NewRequest(http.MethodGet, "/api/admin/announcements", nil)
-	req.Header.Set("Authorization", adminAuthHeader(t, app))
-	res = httptest.NewRecorder()
-	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusOK {
-		t.Fatalf("admin list announcements status = %d body = %s", res.Code, res.Body.String())
-	}
-	if err := json.Unmarshal(res.Body.Bytes(), &announcementsBody); err != nil {
-		t.Fatalf("admin announcements json: %v", err)
-	}
-	if items := logItems(announcementsBody); len(items) != 2 {
-		t.Fatalf("admin announcements length = %d body = %#v", len(items), announcementsBody)
-	}
-
-	req = httptest.NewRequest(http.MethodGet, "/api/announcements?target=login", nil)
-	res = httptest.NewRecorder()
-	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusOK {
-		t.Fatalf("public login announcements status = %d body = %s", res.Code, res.Body.String())
-	}
-	if err := json.Unmarshal(res.Body.Bytes(), &announcementsBody); err != nil {
-		t.Fatalf("public login announcements json: %v", err)
-	}
-	items := logItems(announcementsBody)
-	if len(items) != 1 || items[0]["title"] != "通知 A" {
-		t.Fatalf("unexpected public login announcements = %#v", announcementsBody)
-	}
-
-	req = httptest.NewRequest(http.MethodPost, "/api/admin/announcements/"+createdID, strings.NewReader(`{"enabled":false}`))
-	req.Header.Set("Authorization", adminAuthHeader(t, app))
-	res = httptest.NewRecorder()
-	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusOK {
-		t.Fatalf("disable announcement status = %d body = %s", res.Code, res.Body.String())
-	}
-	req = httptest.NewRequest(http.MethodGet, "/api/announcements?target=login", nil)
-	res = httptest.NewRecorder()
-	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusOK {
-		t.Fatalf("public login announcements after disable status = %d body = %s", res.Code, res.Body.String())
-	}
-	if err := json.Unmarshal(res.Body.Bytes(), &announcementsBody); err != nil {
-		t.Fatalf("public login announcements after disable json: %v", err)
-	}
-	if items := logItems(announcementsBody); len(items) != 0 {
-		t.Fatalf("disabled announcement should be hidden: %#v", announcementsBody)
-	}
-
-	msgReq := httptest.NewRequest(http.MethodPost, "/v1/messages", strings.NewReader("{"))
-	msgReq.Header.Set("x-api-key", rawKey)
-	msgRes := httptest.NewRecorder()
-	app.Handler().ServeHTTP(msgRes, msgReq)
-	if msgRes.Code != http.StatusBadRequest {
-		t.Fatalf("x-api-key auth did not reach JSON validation, status = %d body = %s", msgRes.Code, msgRes.Body.String())
+	for _, path := range []string{"/v1/chat/completions", "/v1/responses", "/v1/messages"} {
+		msgReq := httptest.NewRequest(http.MethodPost, path, strings.NewReader("{}"))
+		msgReq.Header.Set("x-api-key", rawKey)
+		msgRes := httptest.NewRecorder()
+		app.Handler().ServeHTTP(msgRes, msgReq)
+		if msgRes.Code != http.StatusNotFound {
+			t.Fatalf("%s status = %d body = %s", path, msgRes.Code, msgRes.Body.String())
+		}
 	}
 
 	for _, path := range []string{"/", "/settings"} {
@@ -639,8 +569,8 @@ func TestRunLoggedImageTaskLogsTextOutputAsFailure(t *testing.T) {
 			return map[string]any{"output_type": "text", "message": "模型返回文本", "data": []map[string]any{}}, nil
 		},
 	)
-	if err != nil {
-		t.Fatalf("runLoggedImageTask() error = %v", err)
+	if err == nil {
+		t.Fatal("runLoggedImageTask() error = nil, want empty image result failure")
 	}
 	if result["output_type"] != "text" || result["message"] != "模型返回文本" {
 		t.Fatalf("runLoggedImageTask() result = %#v", result)
@@ -710,33 +640,37 @@ func TestRunLoggedImageTaskLocalizesRelayURLForGallery(t *testing.T) {
 	}
 }
 
-func TestRelayImagePayloadDropsUnsupportedStreamFields(t *testing.T) {
+func TestRelayImagePayloadDropsPartialImagesWithoutStream(t *testing.T) {
 	payload := relayPayloadForPath("/v1/images/generations", map[string]any{
 		"prompt":         "draw",
 		"model":          "codex-gpt-image-2",
-		"stream":         true,
+		"stream":         false,
 		"partial_images": 2,
 		"messages":       []map[string]any{{"role": "user", "content": "draw"}},
-	}, false)
+	})
 	if _, ok := payload["stream"]; ok {
-		t.Fatalf("stream should be dropped for image relay payload: %#v", payload)
+		t.Fatalf("false stream should be dropped for image relay payload: %#v", payload)
 	}
 	if _, ok := payload["partial_images"]; ok {
-		t.Fatalf("partial_images should be dropped for image relay payload: %#v", payload)
+		t.Fatalf("partial_images should be dropped when stream is false: %#v", payload)
 	}
 	if _, ok := payload["messages"]; ok {
 		t.Fatalf("messages should be dropped for image relay payload: %#v", payload)
 	}
 }
 
-func TestRelayImagePayloadKeepsStreamWhenEnabled(t *testing.T) {
+func TestRelayImagePayloadKeepsStreamAndPartialImagesWhenRequested(t *testing.T) {
 	payload := relayPayloadForPath("/v1/images/generations", map[string]any{
-		"prompt": "draw",
-		"model":  "gpt-image-2",
-		"stream": true,
-	}, true)
+		"prompt":         "draw",
+		"model":          "gpt-image-2",
+		"stream":         true,
+		"partial_images": 2,
+	})
 	if payload["stream"] != true {
-		t.Fatalf("stream should be kept when image stream parameter is enabled: %#v", payload)
+		t.Fatalf("stream should be kept when requested: %#v", payload)
+	}
+	if payload["partial_images"] != 2 {
+		t.Fatalf("partial_images = %#v, want 2 in %#v", payload["partial_images"], payload)
 	}
 }
 
@@ -745,7 +679,7 @@ func TestRelayImagePayloadDropsResponseFormat(t *testing.T) {
 		"prompt":          "draw",
 		"model":           "gpt-image-2",
 		"response_format": "url",
-	}, false)
+	})
 	if _, ok := payload["response_format"]; ok {
 		t.Fatalf("response_format should not be forwarded to GPT image models: %#v", payload)
 	}
@@ -772,7 +706,7 @@ func TestRelayImagePayloadNormalizesSizeForRelay(t *testing.T) {
 				"prompt": "draw",
 				"model":  "codex-gpt-image-2",
 				"size":   tt.input,
-			}, false)
+			})
 			got, ok := payload["size"]
 			if tt.wantDrop {
 				if ok {
@@ -797,12 +731,12 @@ func TestRelayImagePayloadSanitizesOfficialParameters(t *testing.T) {
 		"response_format":    "json",
 		"output_format":      "jpg",
 		"output_compression": 120,
-	}, false)
+	})
 	if _, ok := payload["quality"]; ok {
 		t.Fatalf("invalid quality should be dropped: %#v", payload)
 	}
 	if _, ok := payload["background"]; ok {
-		t.Fatalf("unsupported background should be dropped: %#v", payload)
+		t.Fatalf("background should be dropped for image relay payload: %#v", payload)
 	}
 	if _, ok := payload["moderation"]; ok {
 		t.Fatalf("invalid moderation should be dropped: %#v", payload)
@@ -826,9 +760,12 @@ func TestRelayImagePayloadSanitizesOfficialParameters(t *testing.T) {
 		"response_format":    "b64_json",
 		"output_format":      "png",
 		"output_compression": 50,
-	}, false)
-	if payload["quality"] != "auto" || payload["background"] != "opaque" || payload["moderation"] != "low" {
+	})
+	if payload["quality"] != "auto" || payload["moderation"] != "low" {
 		t.Fatalf("valid enum parameters were not normalized: %#v", payload)
+	}
+	if _, ok := payload["background"]; ok {
+		t.Fatalf("background should be dropped for image relay payload: %#v", payload)
 	}
 	if _, ok := payload["response_format"]; ok {
 		t.Fatalf("response_format should be dropped: %#v", payload)
@@ -844,7 +781,7 @@ func TestRelayImagePayloadSanitizesOfficialParameters(t *testing.T) {
 		"prompt":             "draw",
 		"model":              "codex-gpt-image-2",
 		"output_compression": 42,
-	}, false)
+	})
 	if _, ok := payload["output_compression"]; ok {
 		t.Fatalf("output_compression without jpeg/webp output_format should be dropped: %#v", payload)
 	}
@@ -855,7 +792,7 @@ func TestRelayChatPayloadDropsInternalTextCallback(t *testing.T) {
 		"prompt":                             "hello",
 		"model":                              "gpt-5.5",
 		service.TextOutputCallbackPayloadKey: func(string) {},
-	}, false)
+	})
 	if _, ok := payload[service.TextOutputCallbackPayloadKey]; ok {
 		t.Fatalf("text output callback should be dropped: %#v", payload)
 	}
@@ -982,7 +919,6 @@ func TestRecordGeneratedImagesForPayloadStoresReusableRequestMetadata(t *testing
 			"size":               "2048x2048",
 			"output_format":      "jpeg",
 			"output_compression": 42,
-			"background":         "opaque",
 			"moderation":         "low",
 			"input_image_mask":   "mask-id",
 			"images": []protocol.UploadedImage{
@@ -1006,10 +942,12 @@ func TestRecordGeneratedImagesForPayloadStoresReusableRequestMetadata(t *testing
 		item["requested_size"] != "2048x2048" ||
 		item["output_format"] != "jpeg" ||
 		item["output_compression"] != 42 ||
-		item["background"] != "opaque" ||
 		item["moderation"] != "low" ||
 		item["input_image_mask"] != "mask-id" {
 		t.Fatalf("reusable metadata = %#v", item)
+	}
+	if _, ok := item["background"]; ok {
+		t.Fatalf("background should not be stored as reusable metadata: %#v", item)
 	}
 	referenceURLs, ok := item["reference_image_urls"].([]string)
 	if !ok || len(referenceURLs) != 1 || !strings.Contains(referenceURLs[0], "/image-references/") {
@@ -1433,8 +1371,14 @@ func TestModelConfigAllowsAuthenticatedUserWithoutExplicitPermission(t *testing.
 		t.Fatalf("model config json: %v", err)
 	}
 	config, _ := payload["config"].(map[string]any)
-	if config["default_image_model"] == "" || config["default_chat_model"] == "" {
+	if config["default_image_model"] == "" {
 		t.Fatalf("model config = %#v", payload)
+	}
+	if _, ok := config["chat_models"]; ok {
+		t.Fatalf("model config leaked chat models: %#v", payload)
+	}
+	if _, ok := config["default_chat_model"]; ok {
+		t.Fatalf("model config leaked chat default: %#v", payload)
 	}
 }
 

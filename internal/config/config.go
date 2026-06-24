@@ -20,14 +20,14 @@ import (
 
 var settingEnvKeys = map[string]string{
 	"base_url":                          "CHATGPT2API_BASE_URL",
+	"app_title":                         "CHATGPT2API_APP_TITLE",
+	"project_name":                       "CHATGPT2API_PROJECT_NAME",
 	"relay_base_url":                    "CHATGPT2API_RELAY_BASE_URL",
 	"newapi_token_group":                "CHATGPT2API_NEWAPI_TOKEN_GROUP",
 	"proxy":                             "CHATGPT2API_PROXY",
 	"image_models":                      "CHATGPT2API_IMAGE_MODELS",
-	"chat_models":                       "CHATGPT2API_CHAT_MODELS",
 	"refresh_account_interval_minute":   "CHATGPT2API_REFRESH_ACCOUNT_INTERVAL_MINUTE",
 	"image_task_timeout_seconds":        "CHATGPT2API_IMAGE_TASK_TIMEOUT_SECONDS",
-	"image_stream_parameter_enabled":    "CHATGPT2API_IMAGE_STREAM_PARAMETER_ENABLED",
 	"user_default_concurrent_limit":     "CHATGPT2API_USER_DEFAULT_CONCURRENT_LIMIT",
 	"user_default_rpm_limit":            "CHATGPT2API_USER_DEFAULT_RPM_LIMIT",
 	"image_retention_days":              "CHATGPT2API_IMAGE_RETENTION_DAYS",
@@ -58,7 +58,7 @@ const (
 	minImageTaskTimeoutSeconds     = 30
 	maxImageTaskTimeoutSeconds     = 3600
 	defaultRelayBaseURL            = "http://newapi:3000"
-	defaultNewAPITokenGroup        = "codex"
+	defaultAppTitle                = "云棉"
 )
 
 var (
@@ -226,10 +226,6 @@ func (s *Store) ImageTaskTimeoutSeconds() int {
 	return normalizeImageTaskTimeoutSeconds(s.settingValue("image_task_timeout_seconds", defaultImageTaskTimeoutSeconds))
 }
 
-func (s *Store) ImageStreamParameterEnabled() bool {
-	return util.ToBool(s.settingValue("image_stream_parameter_enabled", false))
-}
-
 func (s *Store) TextAccountScheduleMode() string {
 	return normalizeAccountScheduleMode(s.settingValue("text_account_schedule_mode", "load_balance"))
 }
@@ -266,6 +262,31 @@ func (s *Store) BaseURL() string {
 	return strings.TrimRight(strings.TrimSpace(fmt.Sprint(s.settingValue("base_url", ""))), "/")
 }
 
+func (s *Store) AppTitle() string {
+	value := strings.TrimSpace(fmt.Sprint(s.settingValue("app_title", defaultAppTitle)))
+	if value == "" || isLegacyDefaultAppTitle(value) {
+		return defaultAppTitle
+	}
+	return value
+}
+
+func (s *Store) ProjectName() string {
+	value := strings.TrimSpace(fmt.Sprint(s.settingValue("project_name", s.AppTitle())))
+	if value == "" || isLegacyDefaultAppTitle(value) {
+		return s.AppTitle()
+	}
+	return value
+}
+
+func isLegacyDefaultAppTitle(value string) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "chatgpt2api":
+		return true
+	default:
+		return false
+	}
+}
+
 func (s *Store) RelayBaseURL() string {
 	return strings.TrimRight(strings.TrimSpace(fmt.Sprint(s.settingValue("relay_base_url", defaultRelayBaseURL))), "/")
 }
@@ -275,11 +296,7 @@ func (s *Store) NewAPIDatabaseURL() string {
 }
 
 func (s *Store) NewAPITokenGroup() string {
-	value := strings.TrimSpace(fmt.Sprint(s.settingValue("newapi_token_group", defaultNewAPITokenGroup)))
-	if value == "" {
-		return defaultNewAPITokenGroup
-	}
-	return value
+	return strings.TrimSpace(fmt.Sprint(s.settingValue("newapi_token_group", "")))
 }
 
 func (s *Store) Proxy() string {
@@ -423,13 +440,12 @@ func (s *Store) Get() map[string]any {
 	data := util.CopyMap(s.data)
 	s.mu.RUnlock()
 	delete(data, "image_concurrent_limit")
+	delete(data, "chat_models")
+	delete(data, "default_chat_model")
 	data["refresh_account_interval_minute"] = s.RefreshAccountIntervalMinute()
 	data["image_task_timeout_seconds"] = s.ImageTaskTimeoutSeconds()
-	data["image_stream_parameter_enabled"] = s.ImageStreamParameterEnabled()
 	data["image_models"] = s.ImageModels()
-	data["chat_models"] = s.ChatModels()
 	data["default_image_model"] = s.DefaultImageModel()
-	data["default_chat_model"] = s.DefaultChatModel()
 	data["user_default_concurrent_limit"] = s.UserDefaultConcurrentLimit()
 	data["user_default_rpm_limit"] = s.UserDefaultRPMLimit()
 	data["image_retention_days"] = s.ImageRetentionDays()
@@ -441,6 +457,8 @@ func (s *Store) Get() map[string]any {
 	data["log_levels"] = s.LogLevels()
 	data["proxy"] = s.Proxy()
 	data["base_url"] = s.BaseURL()
+	data["app_title"] = s.AppTitle()
+	data["project_name"] = s.ProjectName()
 	data["relay_base_url"] = s.RelayBaseURL()
 	data["newapi_token_group"] = s.NewAPITokenGroup()
 	linuxdo := s.LinuxDoOAuth()
@@ -489,8 +507,13 @@ func (s *Store) Update(data map[string]any) (map[string]any, error) {
 	if value, ok := next["image_models"]; ok {
 		next["image_models"] = normalizeModelList(value, defaultImageModels)
 	}
-	if value, ok := next["chat_models"]; ok {
-		next["chat_models"] = normalizeModelList(value, defaultChatModels)
+	delete(next, "chat_models")
+	delete(next, "default_chat_model")
+	if value, ok := next["app_title"]; ok {
+		next["app_title"] = strings.TrimSpace(fmt.Sprint(value))
+	}
+	if value, ok := next["project_name"]; ok {
+		next["project_name"] = strings.TrimSpace(fmt.Sprint(value))
 	}
 	if err := s.validateSettingsUpdateLocked(next); err != nil {
 		s.mu.Unlock()
@@ -573,10 +596,10 @@ func (s *Store) settingValueFromData(data map[string]any, key string, fallback a
 func (s *Store) validateSettingsUpdateLocked(data map[string]any) error {
 	relayBaseURL := strings.TrimSpace(fmt.Sprint(util.ValueOr(data["relay_base_url"], defaultRelayBaseURL)))
 	if relayBaseURL == "" {
-		return errors.New("RelayAI Base URL is required")
+		return errors.New("baseurl is required")
 	}
 	if err := validateAbsoluteHTTPURL(relayBaseURL); err != nil {
-		return errors.New("RelayAI Base URL must be an absolute http(s) URL")
+		return errors.New("baseurl must be an absolute http(s) URL")
 	}
 	linuxdo := s.linuxDoOAuthFromData(data)
 	if !linuxdo.Enabled {

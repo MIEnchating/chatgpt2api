@@ -27,7 +27,8 @@ assert.deepEqual(parseImageRatio("2.39:1"), { width: 2.39, height: 1 });
 assert.equal(calculateImageSize("1080p", "16:9"), "1920x1088");
 assert.equal(calculateImageSize("2k", "2.39:1"), "2048x864");
 assert.equal(calculateImageSize("4k", "21:9"), "3840x1648");
-assert.equal(calculateImageSize("4k", "10:1"), "1408x480");
+assert.equal(parseImageRatio("10:1"), null);
+assert.equal(calculateImageSize("4k", "10:1"), "");
 assert.equal(buildCustomImageSize("999", "777"), "992x784");
 assert.equal(
   buildImageSize(ratioSelection({ aspectRatio: CUSTOM_IMAGE_ASPECT_RATIO })),

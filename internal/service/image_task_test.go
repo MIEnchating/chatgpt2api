@@ -225,7 +225,7 @@ func TestImageTaskServicePassesImageToolOptionsToHandler(t *testing.T) {
 	svc := newTestImageTaskService(t, handler, handler, handler, func() int { return 30 })
 	identity := Identity{ID: "alice", Name: "Alice", Role: "user"}
 
-	if _, err := svc.SubmitGenerationWithOptions(context.Background(), identity, "task-1", "draw", "gpt-image-2", "16:9", "high", "https://base.test", 1, nil, nil, ImageOutputOptions{Format: "webp"}, ImageToolOptions{Background: "opaque", Moderation: "auto"}); err != nil {
+	if _, err := svc.SubmitGenerationWithOptions(context.Background(), identity, "task-1", "draw", "gpt-image-2", "16:9", "high", "https://base.test", 1, nil, nil, ImageOutputOptions{Format: "webp"}, ImageToolOptions{Moderation: "auto", Stream: true, PartialImages: 2}); err != nil {
 		t.Fatalf("SubmitGenerationWithOptions() error = %v", err)
 	}
 
@@ -234,13 +234,13 @@ func TestImageTaskServicePassesImageToolOptionsToHandler(t *testing.T) {
 		if _, ok := payload["response_format"]; ok {
 			t.Fatalf("payload should not include response_format: %#v", payload)
 		}
-		for key, want := range map[string]any{"background": "opaque", "moderation": "auto", "output_format": "webp"} {
+		for key, want := range map[string]any{"moderation": "auto", "output_format": "webp", "stream": true, "partial_images": 2} {
 			if got := payload[key]; got != want {
 				t.Fatalf("payload[%s] = %#v, want %#v in %#v", key, got, want, payload)
 			}
 		}
-		if _, ok := payload["partial_images"]; ok {
-			t.Fatalf("payload should not include partial_images: %#v", payload)
+		if _, ok := payload["background"]; ok {
+			t.Fatalf("payload should not include background: %#v", payload)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for handler payload")
