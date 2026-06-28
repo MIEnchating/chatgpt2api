@@ -105,36 +105,6 @@ function imageResolutionLabel(image: StoredImage, dimensions?: string) {
   return dimensions || "";
 }
 
-function getTurnResultSizeLabel(turn: ImageTurn, dimensionsByImageId: Record<string, string>) {
-  const labels = Array.from(
-    new Set(
-      turn.images
-        .filter((image) => image.status === "success")
-        .map((image) => imageResolutionLabel(image, dimensionsByImageId[image.id]))
-        .filter(Boolean),
-    ),
-  );
-  if (labels.length === 1) {
-    return `结果 ${labels[0]}`;
-  }
-  if (labels.length > 1) {
-    return `结果 ${labels.length} 种尺寸`;
-  }
-  return "";
-}
-
-function parseImageTaskTime(value?: string) {
-  const text = String(value || "").trim();
-  if (!text) {
-    return Number.NaN;
-  }
-  const direct = Date.parse(text);
-  if (Number.isFinite(direct)) {
-    return direct;
-  }
-  return Date.parse(text.replace(" ", "T"));
-}
-
 function formatGenerationDuration(ms?: number) {
   if (typeof ms !== "number" || !Number.isFinite(ms) || ms < 0) {
     return "";
@@ -192,31 +162,6 @@ function imageQualityCheckTitle(image: StoredImage) {
     ...(check.warnings || []),
   ].filter(Boolean);
   return parts.join("\n");
-}
-
-function latestGeneratedAt(images: StoredImage[]) {
-  let latest = "";
-  let latestTime = Number.NEGATIVE_INFINITY;
-  for (const image of images) {
-    const time = parseImageTaskTime(image.taskUpdatedAt);
-    if (Number.isFinite(time) && time > latestTime) {
-      latestTime = time;
-      latest = image.taskUpdatedAt || "";
-    }
-  }
-  return latest;
-}
-
-function turnGenerationDurationLabel(images: StoredImage[]) {
-  const durations = images
-    .map((image) => image.generationDurationMs)
-    .filter((value): value is number => typeof value === "number" && Number.isFinite(value) && value >= 0);
-  if (durations.length === 0) {
-    return "";
-  }
-  const maxDuration = Math.max(...durations);
-  const prefix = durations.length > 1 ? "最长耗时" : "耗时";
-  return `${prefix} ${formatGenerationDuration(maxDuration)}`;
 }
 
 function getRequestedSizeLabel(turn: ImageTurn) {
@@ -547,18 +492,8 @@ export function ImageResults({
           .map((image, index) => ({ image, index }))
           .filter(({ image }) => !textReplyImages.some((reply) => reply.image.id === image.id));
         const turnBusy = isTurnBusy(turn);
-        const successCount = visualImages.filter(({ image }) => image.status === "success").length;
-        const failedCount = visualImages.filter(({ image }) => image.status === "error").length;
-        const cancelledCount = visualImages.filter(({ image }) => image.status === "cancelled").length;
         const resultCount = visualImages.length || (turnBusy ? turn.count : 0);
-        const outcomeLabel = getTurnOutcomeLabel(successCount, failedCount, cancelledCount);
         const showResultSummary = turn.mode !== "chat" && (visualImages.length > 0 || turnBusy);
-        const resultSizeLabel = getTurnResultSizeLabel(turn, imageDimensions);
-        const finishedVisualImages = visualImages
-          .map(({ image }) => image)
-          .filter((image) => image.status === "success" || image.status === "error" || image.status === "cancelled");
-        const generationDurationLabel = turnGenerationDurationLabel(finishedVisualImages);
-        const generatedAt = latestGeneratedAt(finishedVisualImages);
         const loadingPhase = getImageTurnLoadingPhase(turn);
         const isQueued = loadingPhase === "queued";
         const isRunning = loadingPhase === "running";
@@ -732,28 +667,17 @@ export function ImageResults({
                           {requestedSizeLabel}
                         </span>
                       ) : null}
-                      {resultSizeLabel ? <span className="rounded-full bg-[#f0f0f0] px-3 py-1">{resultSizeLabel}</span> : null}
-                      {generationDurationLabel ? (
-                        <span className="rounded-full bg-[#eef4ff] px-3 py-1 text-[#1456f0]">{generationDurationLabel}</span>
-                      ) : null}
-                      {generatedAt ? (
-                        <span className="rounded-full bg-[#f0f0f0] px-3 py-1">
-                          完成 {formatConversationTime(generatedAt)}
-                        </span>
-                      ) : null}
                       {turn.quality ? (
                         <span className="rounded-full bg-[#f0f0f0] px-3 py-1">Quality {turn.quality}</span>
-                      ) : null}
-                      {turn.outputFormat ? (
-                        <span className="rounded-full bg-[#f0f0f0] px-3 py-1">{turn.outputFormat.toUpperCase()}</span>
                       ) : null}
                       {turn.outputCompression != null && turn.outputFormat && supportsImageOutputCompression(turn.outputFormat) ? (
                         <span className="rounded-full bg-[#f0f0f0] px-3 py-1">压缩 {turn.outputCompression}</span>
                       ) : null}
-                      {outcomeLabel ? <span className="rounded-full bg-[#f0f0f0] px-3 py-1">{outcomeLabel}</span> : null}
-                      <span className={cn("rounded-full px-3 py-1", getStatusChipClass(turn.status))}>
-                        {getTurnStatusLabel(turn.status)}
-                      </span>
+                      {turn.status !== "success" ? (
+                        <span className={cn("rounded-full px-3 py-1", getStatusChipClass(turn.status))}>
+                          {getTurnStatusLabel(turn.status)}
+                        </span>
+                      ) : null}
                     </div>
                     {turnBusy || downloadActions ? (
                       <div className="flex flex-wrap items-center justify-end gap-2">
@@ -1122,20 +1046,6 @@ function getStatusChipClass(status: ImageTurnStatus) {
     return "bg-amber-50 text-amber-700";
   }
   return "bg-rose-50 text-rose-700";
-}
-
-function getTurnOutcomeLabel(successCount: number, failedCount: number, cancelledCount: number) {
-  if (failedCount === 0 && cancelledCount === 0) {
-    return "";
-  }
-  const parts = [`成功 ${successCount}`];
-  if (failedCount > 0) {
-    parts.push(`失败 ${failedCount}`);
-  }
-  if (cancelledCount > 0) {
-    parts.push(`终止 ${cancelledCount}`);
-  }
-  return parts.join(" / ");
 }
 
 function getTurnModeLabel(turn: ImageTurn) {

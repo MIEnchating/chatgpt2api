@@ -4,6 +4,7 @@ import {
   Bot,
   Check,
   ChevronDown,
+  CircleHelp,
   Image as ImageIcon,
   ImagePlus,
   Plus,
@@ -847,7 +848,7 @@ export function ImageComposer({
                       <button
                         type="button"
                         className={cn(
-                          "inline-flex size-9 shrink-0 items-center justify-center gap-1.5 rounded-full text-[#686b73] transition hover:bg-black/[0.05] dark:text-muted-foreground dark:hover:bg-accent/60 dark:hover:text-foreground sm:h-8 sm:w-auto sm:border sm:border-[#e5e7eb] sm:bg-white sm:px-3 sm:text-xs sm:font-medium sm:text-[#45515e] sm:dark:border-border sm:dark:bg-background/70 sm:dark:text-muted-foreground",
+                          "group relative inline-flex size-9 shrink-0 items-center justify-center gap-1.5 rounded-full text-[#686b73] transition hover:bg-black/[0.05] dark:text-muted-foreground dark:hover:bg-accent/60 dark:hover:text-foreground sm:h-8 sm:w-auto sm:border sm:border-[#e5e7eb] sm:bg-white sm:px-3 sm:text-xs sm:font-medium sm:text-[#45515e] sm:dark:border-border sm:dark:bg-background/70 sm:dark:text-muted-foreground",
                           isImageSettingsOpen && "bg-[#eef4ff] text-[#1456f0] dark:bg-sky-950/30 dark:text-sky-300 sm:border-[#bfdbfe] sm:bg-[#eef4ff] sm:text-[#1456f0] sm:dark:border-sky-900/70 sm:dark:bg-sky-950/30 sm:dark:text-sky-300",
                         )}
                         aria-label={isImageSettingsOpen ? "收起参数设置" : "显示更多参数设置"}
@@ -856,6 +857,10 @@ export function ImageComposer({
                       >
                         <SlidersHorizontal className="size-5 sm:size-3.5" />
                         <span className="hidden sm:inline">参数</span>
+                        <CircleHelp className="hidden size-3.5 opacity-65 sm:block" aria-hidden="true" />
+                        <span className="pointer-events-none absolute right-0 bottom-[calc(100%+0.5rem)] z-[90] hidden w-[18rem] rounded-xl border border-[#e5e7eb] bg-white px-3 py-2 text-left text-[11px] leading-5 font-normal text-[#45515e] opacity-0 shadow-[0_18px_46px_-26px_rgba(15,23,42,0.35)] transition group-hover:block group-hover:opacity-100 group-focus-visible:block group-focus-visible:opacity-100 dark:border-border dark:bg-card dark:text-muted-foreground">
+                          参数包含分组、令牌、张数、尺寸/比例、质量、流式、中间图、格式和压缩率，只影响后续请求。
+                        </span>
                       </button>
                     </PopoverTrigger>
                     <PopoverContent
