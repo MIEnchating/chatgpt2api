@@ -68,6 +68,8 @@ import {
   IMAGE_CREATION_MODEL_OPTIONS,
   IMAGE_MODEL_ROUTE_DETAILS,
   IMAGE_OUTPUT_FORMAT_OPTIONS,
+  PROFILE_RELAY_TOKEN_GROUP_CHANGED_EVENT,
+  PROFILE_RELAY_TOKEN_GROUP_STORAGE_KEY,
   PROFILE_RELAY_TOKEN_NAME_CHANGED_EVENT,
   PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY,
   isImageCreationModel,
@@ -885,9 +887,22 @@ function getStoredRelayTokenName() {
   return window.localStorage.getItem(PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY) || "";
 }
 
+function getStoredRelayTokenGroup() {
+  if (typeof window === "undefined") {
+    return "";
+  }
+  return window.localStorage.getItem(PROFILE_RELAY_TOKEN_GROUP_STORAGE_KEY) || "";
+}
+
 function normalizeRelayTokenNames(values: unknown) {
   return Array.isArray(values)
     ? Array.from(new Set(values.map((name) => String(name || "").trim()).filter(Boolean)))
+    : [];
+}
+
+function normalizeRelayTokenGroups(values: unknown) {
+  return Array.isArray(values)
+    ? Array.from(new Set(values.map((group) => String(group || "").trim()).filter(Boolean)))
     : [];
 }
 
@@ -898,6 +913,18 @@ function nextRelayTokenName(current: string, options: string[], fallback?: strin
   }
   const normalizedFallback = String(fallback || "").trim();
   if (normalizedFallback && options.some((name) => name === normalizedFallback)) {
+    return normalizedFallback;
+  }
+  return options[0] || normalizedFallback || "";
+}
+
+function nextRelayTokenGroup(current: string, options: string[], fallback?: string) {
+  const normalizedCurrent = current.trim();
+  if (normalizedCurrent && options.some((group) => group === normalizedCurrent)) {
+    return normalizedCurrent;
+  }
+  const normalizedFallback = String(fallback || "").trim();
+  if (normalizedFallback && options.some((group) => group === normalizedFallback)) {
     return normalizedFallback;
   }
   return options[0] || normalizedFallback || "";
@@ -1377,8 +1404,10 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   const [imagePartialImages, setImagePartialImages] = useState(getStoredImagePartialImages);
   const [relayKeyConfigured, setRelayKeyConfigured] = useState(false);
   const [relayKeyStatusMessage, setRelayKeyStatusMessage] = useState(NEWAPI_TOKEN_MISSING_MESSAGE);
-  const [configuredRelayTokenGroup, setConfiguredRelayTokenGroup] = useState("");
+  const [relayTokenGroup, setRelayTokenGroup] = useState(getStoredRelayTokenGroup);
+  const [relayTokenGroups, setRelayTokenGroups] = useState<string[]>([]);
   const [relayTokenName, setRelayTokenName] = useState(getStoredRelayTokenName);
+  const [relayTokenNameOptions, setRelayTokenNameOptions] = useState<string[]>([]);
   const relayKeyMissingMessage = relayKeyStatusMessage || NEWAPI_TOKEN_MISSING_MESSAGE;
   const [relayImageModelOptions, setRelayImageModelOptions] = useState<ImageModelOption[]>(() =>
     ensureDefaultImageModelOption(IMAGE_CREATION_MODEL_OPTIONS),
@@ -1512,7 +1541,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     () => conversations.find((item) => item.id === selectedConversationId) ?? null,
     [conversations, selectedConversationId],
   );
-  const activeRelayTokenGroup = configuredRelayTokenGroup;
+  const activeRelayTokenGroup = relayTokenGroup.trim();
   const activeRelayTokenName = relayTokenName.trim();
   const activeTaskCount = useMemo(
     () =>
@@ -1917,21 +1946,58 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       const tokenName = (event as CustomEvent<{ tokenName?: string }>).detail?.tokenName;
       setRelayTokenName(String(tokenName || window.localStorage.getItem(PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY) || ""));
     };
+    const handleTokenGroupChange = (event: Event) => {
+      const tokenGroup = (event as CustomEvent<{ tokenGroup?: string }>).detail?.tokenGroup;
+      setRelayTokenGroup(String(tokenGroup || window.localStorage.getItem(PROFILE_RELAY_TOKEN_GROUP_STORAGE_KEY) || ""));
+    };
     window.addEventListener(PROFILE_RELAY_TOKEN_NAME_CHANGED_EVENT, handleTokenNameChange);
+    window.addEventListener(PROFILE_RELAY_TOKEN_GROUP_CHANGED_EVENT, handleTokenGroupChange);
     window.addEventListener("storage", handleTokenNameChange);
+    window.addEventListener("storage", handleTokenGroupChange);
     return () => {
       window.removeEventListener(PROFILE_RELAY_TOKEN_NAME_CHANGED_EVENT, handleTokenNameChange);
+      window.removeEventListener(PROFILE_RELAY_TOKEN_GROUP_CHANGED_EVENT, handleTokenGroupChange);
       window.removeEventListener("storage", handleTokenNameChange);
+      window.removeEventListener("storage", handleTokenGroupChange);
     };
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const normalizedGroup = relayTokenGroup.trim();
+    if (normalizedGroup) {
+      window.localStorage.setItem(PROFILE_RELAY_TOKEN_GROUP_STORAGE_KEY, normalizedGroup);
+    } else {
+      window.localStorage.removeItem(PROFILE_RELAY_TOKEN_GROUP_STORAGE_KEY);
+    }
+    window.dispatchEvent(new CustomEvent(PROFILE_RELAY_TOKEN_GROUP_CHANGED_EVENT, { detail: { tokenGroup: normalizedGroup } }));
+  }, [relayTokenGroup]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const normalizedName = relayTokenName.trim();
+    if (normalizedName) {
+      window.localStorage.setItem(PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY, normalizedName);
+    } else {
+      window.localStorage.removeItem(PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY);
+    }
+    window.dispatchEvent(new CustomEvent(PROFILE_RELAY_TOKEN_NAME_CHANGED_EVENT, { detail: { tokenName: normalizedName } }));
+  }, [relayTokenName]);
 
   const refreshRelayKeyStatus = useCallback(async () => {
     clearStoredRelayApiKey();
     try {
-      const status = await fetchProfileRelayKey(undefined, relayTokenName);
-      setConfiguredRelayTokenGroup(status.configured_group || status.group || "");
+      const status = await fetchProfileRelayKey(activeRelayTokenGroup, activeRelayTokenName);
+      const groups = normalizeRelayTokenGroups(status.groups);
+      const names = normalizeRelayTokenNames(status.token_names);
+      setRelayTokenGroups(groups);
+      setRelayTokenNameOptions(names);
+      setRelayTokenGroup((current) => nextRelayTokenGroup(current, groups, status.group || status.configured_group));
       setRelayTokenName((current) => {
-        const names = normalizeRelayTokenNames(status.token_names);
         return nextRelayTokenName(current, names, status.token_name);
       });
       setRelayKeyConfigured(status.has_key);
@@ -1940,7 +2006,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       setRelayKeyConfigured(false);
       setRelayKeyStatusMessage("无法读取云棉令牌状态，请稍后重试");
     }
-  }, [relayTokenName]);
+  }, [activeRelayTokenGroup, activeRelayTokenName]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -4020,6 +4086,10 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                 imagePartialImages={imagePartialImages}
                 relayKeyConfigured={relayKeyConfigured}
                 relayKeyStatusMessage={relayKeyMissingMessage}
+                relayTokenGroup={activeRelayTokenGroup}
+                relayTokenGroups={relayTokenGroups}
+                relayTokenName={activeRelayTokenName}
+                relayTokenNames={relayTokenNameOptions}
                 highResolutionHint={highResolutionHint}
                 referenceImages={referenceImages}
                 textareaRef={textareaRef}
@@ -4038,6 +4108,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                 onImageOutputCompressionChange={setImageOutputCompression}
                 onImageStreamEnabledChange={setImageStreamEnabled}
                 onImagePartialImagesChange={setImagePartialImages}
+                onRelayTokenGroupChange={setRelayTokenGroup}
+                onRelayTokenNameChange={setRelayTokenName}
                 onSubmit={handleSubmit}
                 onOpenPromptMarket={() => setIsPromptMarketOpen(true)}
                 onReferenceImageChange={handleReferenceImageChange}

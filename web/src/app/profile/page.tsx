@@ -20,6 +20,8 @@ import {
 import {
   fetchProfileBalance,
   fetchProfileRelayKey,
+  PROFILE_RELAY_TOKEN_GROUP_CHANGED_EVENT,
+  PROFILE_RELAY_TOKEN_GROUP_STORAGE_KEY,
   PROFILE_RELAY_TOKEN_NAME_CHANGED_EVENT,
   PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY,
   type ProfileBalanceStatus,
@@ -88,9 +90,22 @@ function getStoredRelayTokenName() {
   return window.localStorage.getItem(PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY) || "";
 }
 
+function getStoredRelayTokenGroup() {
+  if (typeof window === "undefined") {
+    return "";
+  }
+  return window.localStorage.getItem(PROFILE_RELAY_TOKEN_GROUP_STORAGE_KEY) || "";
+}
+
 function normalizeTokenNames(values: unknown) {
   return Array.isArray(values)
     ? Array.from(new Set(values.map((name) => String(name || "").trim()).filter(Boolean)))
+    : [];
+}
+
+function normalizeTokenGroups(values: unknown) {
+  return Array.isArray(values)
+    ? Array.from(new Set(values.map((group) => String(group || "").trim()).filter(Boolean)))
     : [];
 }
 
@@ -101,6 +116,18 @@ function nextTokenNameForOptions(current: string, options: string[], fallback?: 
   }
   const normalizedFallback = String(fallback || "").trim();
   if (normalizedFallback && options.some((name) => name === normalizedFallback)) {
+    return normalizedFallback;
+  }
+  return options[0] || normalizedFallback || "";
+}
+
+function nextTokenGroupForOptions(current: string, options: string[], fallback?: string) {
+  const normalizedCurrent = current.trim();
+  if (normalizedCurrent && options.some((group) => group === normalizedCurrent)) {
+    return normalizedCurrent;
+  }
+  const normalizedFallback = String(fallback || "").trim();
+  if (normalizedFallback && options.some((group) => group === normalizedFallback)) {
     return normalizedFallback;
   }
   return options[0] || normalizedFallback || "";
@@ -130,21 +157,28 @@ function BalanceCard({
   isLoading,
   isLoadingRelayKey,
   onRefresh,
+  onTokenGroupChange,
   onTokenNameChange,
   relayKeyStatus,
+  selectedTokenGroup,
   selectedTokenName,
+  tokenGroupOptions,
   tokenNameOptions,
 }: {
   balance: ProfileBalanceStatus | null;
   isLoading: boolean;
   isLoadingRelayKey: boolean;
   onRefresh: () => void;
+  onTokenGroupChange: (value: string) => void;
   onTokenNameChange: (value: string) => void;
   relayKeyStatus: ProfileRelayKeyStatus | null;
+  selectedTokenGroup: string;
   selectedTokenName: string;
+  tokenGroupOptions: string[];
   tokenNameOptions: string[];
 }) {
   const title = balance?.has_balance ? balance.display_name || balance.username || "云棉用户" : "云棉";
+  const activeTokenGroup = selectedTokenGroup || tokenGroupOptions[0] || balance?.token_group || relayKeyStatus?.group || "";
   const activeTokenName = selectedTokenName || tokenNameOptions[0] || balance?.token_name || relayKeyStatus?.token_name || "";
   const keyStatusText = isLoadingRelayKey
     ? "正在读取密钥"
@@ -191,12 +225,36 @@ function BalanceCard({
             <InfoRow label="已用额度" value={formatYunMianQuota(balance.used_quota)} />
             <InfoRow label="请求次数" value={formatNumber(balance.request_count)} />
             <div className="flex min-w-0 flex-col gap-1 rounded-lg border border-border bg-muted/30 px-3 py-2">
-              <span className="text-xs text-muted-foreground">令牌名称</span>
-              <Select value={activeTokenName} onValueChange={onTokenNameChange}>
+              <span className="text-xs text-muted-foreground">令牌分组</span>
+              <Select value={activeTokenGroup || "__no_group__"} onValueChange={onTokenGroupChange}>
                 <SelectTrigger className="h-8 rounded-lg bg-background px-2.5 text-sm font-medium shadow-none">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
+                  {(tokenGroupOptions.length > 0 ? tokenGroupOptions : [activeTokenGroup]).filter(Boolean).map((group) => (
+                    <SelectItem key={group} value={group}>
+                      {group}
+                    </SelectItem>
+                  ))}
+                  {!activeTokenGroup && tokenGroupOptions.length === 0 ? (
+                    <SelectItem value="__no_group__" disabled>
+                      无可用分组
+                    </SelectItem>
+                  ) : null}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex min-w-0 flex-col gap-1 rounded-lg border border-border bg-muted/30 px-3 py-2">
+              <span className="text-xs text-muted-foreground">令牌名称</span>
+              <Select
+                value={activeTokenName || "__auto_token_name__"}
+                onValueChange={(value) => onTokenNameChange(value === "__auto_token_name__" ? "" : value)}
+              >
+                <SelectTrigger className="h-8 rounded-lg bg-background px-2.5 text-sm font-medium shadow-none">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__auto_token_name__">自动</SelectItem>
                   {(tokenNameOptions.length > 0 ? tokenNameOptions : [activeTokenName]).filter(Boolean).map((name) => (
                     <SelectItem key={name} value={name}>
                       {name}
@@ -234,6 +292,7 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
   const [profileName, setProfileName] = useState(session.name || "");
   const [balance, setBalance] = useState<ProfileBalanceStatus | null>(null);
   const [relayKeyStatus, setRelayKeyStatus] = useState<ProfileRelayKeyStatus | null>(null);
+  const [selectedTokenGroup, setSelectedTokenGroup] = useState(getStoredRelayTokenGroup);
   const [selectedTokenName, setSelectedTokenName] = useState(getStoredRelayTokenName);
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [isLoadingBalance, setIsLoadingBalance] = useState(true);
@@ -241,6 +300,17 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
 
   const isProfileNameDirty = profileName.trim() !== (currentSession.name || "");
   const roleLabel = sessionRoleLabel(currentSession);
+  const tokenGroupOptions = useMemo(() => {
+    const statusGroups = normalizeTokenGroups(relayKeyStatus?.groups);
+    if (statusGroups.length > 0) {
+      return statusGroups;
+    }
+    const balanceGroups = normalizeTokenGroups(balance?.token_groups);
+    if (balanceGroups.length > 0) {
+      return balanceGroups;
+    }
+    return normalizeTokenGroups([selectedTokenGroup, balance?.token_group, relayKeyStatus?.group]);
+  }, [balance, relayKeyStatus, selectedTokenGroup]);
   const tokenNameOptions = useMemo(() => {
     const statusNames = normalizeTokenNames(relayKeyStatus?.token_names);
     if (statusNames.length > 0) {
@@ -263,6 +333,10 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
     try {
       const nextBalance = await fetchProfileBalance();
       setBalance(nextBalance);
+      setSelectedTokenGroup((current) => {
+        const groups = normalizeTokenGroups(nextBalance.token_groups);
+        return nextTokenGroupForOptions(current, groups, nextBalance.token_group);
+      });
       setSelectedTokenName((current) => {
         const names = normalizeTokenNames(nextBalance.token_names);
         return nextTokenNameForOptions(current, names, nextBalance.token_name);
@@ -279,6 +353,12 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
   }, []);
 
   useEffect(() => {
+    if (!selectedTokenGroup && tokenGroupOptions[0]) {
+      setSelectedTokenGroup(tokenGroupOptions[0]);
+    }
+  }, [selectedTokenGroup, tokenGroupOptions]);
+
+  useEffect(() => {
     if (!selectedTokenName && tokenNameOptions[0]) {
       setSelectedTokenName(tokenNameOptions[0]);
     }
@@ -288,23 +368,41 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
     if (typeof window === "undefined") {
       return;
     }
-    if (selectedTokenName) {
-      window.localStorage.setItem(PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY, selectedTokenName);
+    const normalizedGroup = selectedTokenGroup.trim();
+    if (normalizedGroup) {
+      window.localStorage.setItem(PROFILE_RELAY_TOKEN_GROUP_STORAGE_KEY, normalizedGroup);
+    } else {
+      window.localStorage.removeItem(PROFILE_RELAY_TOKEN_GROUP_STORAGE_KEY);
+    }
+    window.dispatchEvent(new CustomEvent(PROFILE_RELAY_TOKEN_GROUP_CHANGED_EVENT, { detail: { tokenGroup: normalizedGroup } }));
+  }, [selectedTokenGroup]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const normalizedName = selectedTokenName.trim();
+    if (normalizedName) {
+      window.localStorage.setItem(PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY, normalizedName);
     } else {
       window.localStorage.removeItem(PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY);
     }
-    window.dispatchEvent(new CustomEvent(PROFILE_RELAY_TOKEN_NAME_CHANGED_EVENT, { detail: { tokenName: selectedTokenName } }));
+    window.dispatchEvent(new CustomEvent(PROFILE_RELAY_TOKEN_NAME_CHANGED_EVENT, { detail: { tokenName: normalizedName } }));
   }, [selectedTokenName]);
 
   useEffect(() => {
     let ignore = false;
     setIsLoadingRelayKey(true);
-    void fetchProfileRelayKey(undefined, selectedTokenName)
+    void fetchProfileRelayKey(selectedTokenGroup, selectedTokenName)
       .then((status) => {
         if (ignore) {
           return;
         }
         setRelayKeyStatus(status);
+        setSelectedTokenGroup((current) => {
+          const groups = normalizeTokenGroups(status.groups);
+          return nextTokenGroupForOptions(current, groups, status.group || status.configured_group);
+        });
         setSelectedTokenName((current) => {
           const names = normalizeTokenNames(status.token_names);
           return nextTokenNameForOptions(current, names, status.token_name);
@@ -329,7 +427,7 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
     return () => {
       ignore = true;
     };
-  }, [currentSession.key, selectedTokenName]);
+  }, [currentSession.key, selectedTokenGroup, selectedTokenName]);
 
   useEffect(() => {
     void loadBalance();
@@ -398,8 +496,11 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
             isLoading={isLoadingBalance}
             isLoadingRelayKey={isLoadingRelayKey}
             relayKeyStatus={relayKeyStatus}
+            selectedTokenGroup={selectedTokenGroup}
             selectedTokenName={selectedTokenName}
+            tokenGroupOptions={tokenGroupOptions}
             tokenNameOptions={tokenNameOptions}
+            onTokenGroupChange={(value) => setSelectedTokenGroup(value === "__no_group__" ? "" : value)}
             onTokenNameChange={setSelectedTokenName}
             onRefresh={() => void loadBalance()}
           />

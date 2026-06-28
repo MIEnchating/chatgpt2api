@@ -79,6 +79,10 @@ type ImageComposerProps = {
   imagePartialImages: string;
   relayKeyConfigured: boolean;
   relayKeyStatusMessage?: string;
+  relayTokenGroup: string;
+  relayTokenGroups: string[];
+  relayTokenName: string;
+  relayTokenNames: string[];
   highResolutionHint?: ReactNode;
   referenceImages: Array<{ name: string; dataUrl: string }>;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
@@ -97,6 +101,8 @@ type ImageComposerProps = {
   onImageOutputCompressionChange: (value: string) => void;
   onImageStreamEnabledChange: (value: boolean) => void;
   onImagePartialImagesChange: (value: string) => void;
+  onRelayTokenGroupChange: (value: string) => void;
+  onRelayTokenNameChange: (value: string) => void;
   onSubmit: () => void | Promise<void>;
   onOpenPromptMarket: () => void;
   onReferenceImageChange: (files: File[]) => void | Promise<void>;
@@ -302,6 +308,10 @@ export function ImageComposer({
   imagePartialImages,
   relayKeyConfigured,
   relayKeyStatusMessage,
+  relayTokenGroup,
+  relayTokenGroups,
+  relayTokenName,
+  relayTokenNames,
   highResolutionHint,
   referenceImages,
   textareaRef,
@@ -320,6 +330,8 @@ export function ImageComposer({
   onImageOutputCompressionChange,
   onImageStreamEnabledChange,
   onImagePartialImagesChange,
+  onRelayTokenGroupChange,
+  onRelayTokenNameChange,
   onSubmit,
   onOpenPromptMarket,
   onReferenceImageChange,
@@ -367,6 +379,18 @@ export function ImageComposer({
   const submitLabel = referenceImages.length > 0 ? "编辑图片" : "生成图片";
   const relayApiKeyMissing = !relayKeyConfigured;
   const relayApiKeyMissingMessage = relayKeyStatusMessage || "请先在云棉为当前用户创建可用令牌";
+  const relayTokenGroupOptions = useMemo(
+    () => Array.from(new Set([relayTokenGroup, ...relayTokenGroups].map((group) => group.trim()).filter(Boolean))),
+    [relayTokenGroup, relayTokenGroups],
+  );
+  const relayTokenNameOptions = useMemo(
+    () => Array.from(new Set([relayTokenName, ...relayTokenNames].map((name) => name.trim()).filter(Boolean))),
+    [relayTokenName, relayTokenNames],
+  );
+  const relayTokenGroupLabel = relayTokenGroup || relayTokenGroupOptions[0] || "未选择";
+  const relayTokenNameLabel = relayTokenName || relayTokenNameOptions[0] || "自动";
+  const relayTokenGroupSelectValue = relayTokenGroup || relayTokenGroupOptions[0] || "__no_relay_token_group__";
+  const relayTokenNameSelectValue = relayTokenName || "__auto_relay_token_name__";
   const computedImageSize = useMemo(
     () =>
       buildImageSize({
@@ -858,6 +882,78 @@ export function ImageComposer({
                           </div>
                         ) : null}
                         <div className={imageSettingsFieldClass}>
+                          <span className="shrink-0 text-[11px] font-medium text-[#45515e] dark:text-muted-foreground">分组</span>
+                          <Select
+                            value={relayTokenGroupSelectValue}
+                            disabled={relayTokenGroupOptions.length === 0}
+                            onValueChange={(value) => {
+                              if (value !== "__no_relay_token_group__") {
+                                onRelayTokenGroupChange(value);
+                              }
+                            }}
+                          >
+                            <SelectTrigger
+                              className="h-7 min-w-0 flex-1 justify-end gap-1 border-0 bg-transparent px-0 py-0 text-right text-xs font-semibold text-[#18181b] shadow-none focus-visible:ring-0 disabled:cursor-not-allowed dark:text-foreground [&_svg]:size-4 [&_svg]:opacity-60 [&>span]:flex-none"
+                              aria-label="云棉令牌分组"
+                            >
+                              <SelectValue>{relayTokenGroupLabel}</SelectValue>
+                            </SelectTrigger>
+                            <SelectContent
+                              align="end"
+                              side="top"
+                              sideOffset={8}
+                              collisionPadding={12}
+                              className="z-[120] max-h-[min(var(--radix-select-content-available-height),14rem)] w-[min(14rem,calc(100vw-2rem))] overflow-x-hidden overscroll-contain rounded-[16px] border-[#e5e7eb] bg-white p-1.5 shadow-[0_18px_46px_-26px_rgba(15,23,42,0.35)] dark:border-border dark:bg-card dark:shadow-[0_18px_46px_-24px_rgba(0,0,0,0.72)]"
+                            >
+                              <SelectGroup>
+                                {relayTokenGroupOptions.length > 0 ? (
+                                  relayTokenGroupOptions.map((group) => (
+                                    <SelectItem key={group} value={group}>
+                                      {group}
+                                    </SelectItem>
+                                  ))
+                                ) : (
+                                  <SelectItem value="__no_relay_token_group__" disabled>
+                                    无可用分组
+                                  </SelectItem>
+                                )}
+                              </SelectGroup>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className={imageSettingsFieldClass}>
+                          <span className="shrink-0 text-[11px] font-medium text-[#45515e] dark:text-muted-foreground">令牌</span>
+                          <Select
+                            value={relayTokenNameSelectValue}
+                            onValueChange={(value) => {
+                              onRelayTokenNameChange(value === "__auto_relay_token_name__" ? "" : value);
+                            }}
+                          >
+                            <SelectTrigger
+                              className="h-7 min-w-0 flex-1 justify-end gap-1 border-0 bg-transparent px-0 py-0 text-right text-xs font-semibold text-[#18181b] shadow-none focus-visible:ring-0 dark:text-foreground [&_svg]:size-4 [&_svg]:opacity-60 [&>span]:flex-none"
+                              aria-label="云棉令牌名称"
+                            >
+                              <SelectValue>{relayTokenNameLabel}</SelectValue>
+                            </SelectTrigger>
+                            <SelectContent
+                              align="end"
+                              side="top"
+                              sideOffset={8}
+                              collisionPadding={12}
+                              className="z-[120] max-h-[min(var(--radix-select-content-available-height),14rem)] w-[min(14rem,calc(100vw-2rem))] overflow-x-hidden overscroll-contain rounded-[16px] border-[#e5e7eb] bg-white p-1.5 shadow-[0_18px_46px_-26px_rgba(15,23,42,0.35)] dark:border-border dark:bg-card dark:shadow-[0_18px_46px_-24px_rgba(0,0,0,0.72)]"
+                            >
+                              <SelectGroup>
+                                <SelectItem value="__auto_relay_token_name__">自动</SelectItem>
+                                {relayTokenNameOptions.map((name) => (
+                                  <SelectItem key={name} value={name}>
+                                    {name}
+                                  </SelectItem>
+                                ))}
+                              </SelectGroup>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className={imageSettingsFieldClass}>
                           <span className="shrink-0 text-[11px] font-medium text-[#45515e] dark:text-muted-foreground">张数</span>
                           <Input
                             type="number"
@@ -1206,7 +1302,7 @@ export function ImageComposer({
               "mt-2 flex flex-wrap items-center justify-between gap-2 px-2 text-[11px] leading-5",
               relayApiKeyMissing ? "text-rose-600 dark:text-rose-400" : "text-[#8e8e93] dark:text-muted-foreground",
             )}>
-              <span>{relayApiKeyMissing ? relayApiKeyMissingMessage : "已读取云棉令牌"}</span>
+              <span>{relayApiKeyMissing ? relayApiKeyMissingMessage : `已读取云棉令牌：${relayTokenGroupLabel}`}</span>
               {imageStreamEnabled ? <span>{`流式开启，中间图最多 ${imagePartialImages || "0"} 张`}</span> : null}
               <span>{`预计生成 ${imageCount || "1"} 张`}</span>
             </div>

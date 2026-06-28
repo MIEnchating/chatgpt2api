@@ -588,6 +588,8 @@ export async function fetchProfile() {
 
 export const PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY = "chatgpt2api:profile_relay_token_name";
 export const PROFILE_RELAY_TOKEN_NAME_CHANGED_EVENT = "chatgpt2api:profile-relay-token-name-changed";
+export const PROFILE_RELAY_TOKEN_GROUP_STORAGE_KEY = "chatgpt2api:profile_relay_token_group";
+export const PROFILE_RELAY_TOKEN_GROUP_CHANGED_EVENT = "chatgpt2api:profile-relay-token-group-changed";
 
 export async function fetchProfileRelayKey(group?: string, tokenName?: string) {
   const params = new URLSearchParams();
