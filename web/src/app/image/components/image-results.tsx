@@ -833,147 +833,157 @@ export function ImageResults({
                           {selected ? (
                             <div className="pointer-events-none absolute inset-0 z-10 rounded-[22px] border-[3px] border-[#1456f0]/90" />
                           ) : null}
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              toggleImageSelection(selectionKey);
-                              event.currentTarget.blur();
-                            }}
-                            className="block w-full cursor-pointer overflow-hidden text-left"
-                            aria-label={selected ? "取消选择图片" : "选择图片"}
-                          >
-                            <AuthenticatedImage
-                              src={imageSrc}
-                              alt={`Generated result ${index + 1}`}
-                              width={image.width || undefined}
-                              height={image.height || undefined}
-                              loading="lazy"
-                              decoding="async"
-                              className="block h-auto w-full transition duration-200 group-hover:brightness-95"
-                              onLoad={(event) => {
-                                updateImageDimensions(
-                                  image.id,
-                                  event.currentTarget.naturalWidth,
-                                  event.currentTarget.naturalHeight,
-                                );
-                                if (!image.b64_json) {
-                                  ensureImageSizeLabel(image.id, imageSrc);
-                                }
-                              }}
-                            />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(event) => {
-                              toggleImageSelection(selectionKey);
-                              event.currentTarget.blur();
-                            }}
-                            className={cn(
-                              "absolute top-2 left-2 z-10 inline-flex size-6 items-center justify-center rounded-full border transition duration-150",
-                              selected
-                                ? "border-[#1456f0] bg-[#1456f0] text-white opacity-100 shadow-sm"
-                                : "pointer-events-none border-white/90 bg-black/20 text-transparent opacity-0 shadow-sm group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 hover:bg-black/30",
-                            )}
-                            aria-label={selected ? "取消选择图片" : "选择图片"}
-                          >
-                            {selected ? <Check className="size-3.5" /> : null}
-                          </button>
-                          <div className="pointer-events-none absolute top-2 right-2 z-10 flex items-center gap-1 opacity-0 transition duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+                          <div className="relative overflow-hidden">
                             <button
                               type="button"
                               onClick={(event) => {
+                                toggleImageSelection(selectionKey);
                                 event.currentTarget.blur();
-                                onOpenLightbox(successfulTurnImages, currentIndex);
                               }}
-                              className="inline-flex h-7 items-center gap-1 rounded-full bg-white/95 px-2 text-[11px] font-medium text-stone-800 shadow-sm transition hover:bg-white hover:text-stone-950"
-                              aria-label="查看原图"
-                              title="查看原图"
+                              className="block w-full cursor-pointer overflow-hidden text-left"
+                              aria-label={selected ? "取消选择图片" : "选择图片"}
                             >
-                              <Eye className="size-3" />
-                              查看原图
+                              <AuthenticatedImage
+                                src={imageSrc}
+                                alt={`Generated result ${index + 1}`}
+                                width={image.width || undefined}
+                                height={image.height || undefined}
+                                loading="lazy"
+                                decoding="async"
+                                className="block h-auto w-full transition duration-200 group-hover:brightness-95"
+                                onLoad={(event) => {
+                                  updateImageDimensions(
+                                    image.id,
+                                    event.currentTarget.naturalWidth,
+                                    event.currentTarget.naturalHeight,
+                                  );
+                                  if (!image.b64_json) {
+                                    ensureImageSizeLabel(image.id, imageSrc);
+                                  }
+                                }}
+                              />
                             </button>
                             <button
                               type="button"
                               onClick={(event) => {
+                                toggleImageSelection(selectionKey);
                                 event.currentTarget.blur();
-                                onContinueEdit(selectedConversation.id, image);
                               }}
-                              className="inline-flex size-7 items-center justify-center rounded-full bg-white/95 text-stone-800 shadow-sm transition hover:bg-white hover:text-stone-950"
-                              aria-label="加入编辑"
-                              title="加入编辑"
+                              className={cn(
+                                "absolute top-2 left-2 z-10 inline-flex size-6 items-center justify-center rounded-full border transition duration-150",
+                                selected
+                                  ? "border-[#1456f0] bg-[#1456f0] text-white opacity-100 shadow-sm"
+                                  : "pointer-events-none border-white/90 bg-black/20 text-transparent opacity-0 shadow-sm group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 hover:bg-black/30",
+                              )}
+                              aria-label={selected ? "取消选择图片" : "选择图片"}
                             >
-                              <Plus className="size-3.5" />
+                              {selected ? <Check className="size-3.5" /> : null}
                             </button>
-                          </div>
-                          <div className="absolute right-2 bottom-2 z-20 flex items-center gap-1">
-                            {canUpdateVisibility ? (
+                            <div className="pointer-events-none absolute top-2 right-2 z-10 flex items-center gap-1 opacity-0 transition duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
                               <button
                                 type="button"
                                 onClick={(event) => {
-                                  event.stopPropagation();
                                   event.currentTarget.blur();
-                                  void onImageVisibilityChange(
-                                    selectedConversation.id,
-                                    turn.id,
-                                    index,
-                                    nextVisibility,
-                                  );
+                                  onOpenLightbox(successfulTurnImages, currentIndex);
                                 }}
-                                disabled={isVisibilityMutating}
-                                className={cn(
-                                  "inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-[11px] font-medium opacity-0 shadow-sm transition group-hover:opacity-100 group-focus-within:opacity-100 disabled:cursor-not-allowed disabled:opacity-70",
-                                  imageVisibilityActionClass(visibility),
-                                )}
-                                aria-label={visibility === "public" ? "取消公开图片" : "公开图片"}
-                                title={visibility === "public" ? "取消公开" : "公开"}
+                                className="inline-flex h-7 items-center gap-1 rounded-full bg-white/95 px-2 text-[11px] font-medium text-stone-800 shadow-sm transition hover:bg-white hover:text-stone-950"
+                                aria-label="查看原图"
+                                title="查看原图"
                               >
-                                {isVisibilityMutating ? (
-                                  <LoaderCircle className="size-3 animate-spin" />
-                                ) : visibility === "public" ? (
-                                  <Lock className="size-3" />
-                                ) : (
-                                  <Globe2 className="size-3" />
-                                )}
-                                {visibility === "public" ? "取消公开" : "公开"}
+                                <Eye className="size-3" />
+                                查看原图
                               </button>
-                            ) : null}
-                            <div
-                              className={cn(
-                                "pointer-events-none inline-flex h-7 items-center gap-1 rounded-full px-2 text-[11px] font-medium shadow-sm backdrop-blur-sm",
-                                imageVisibilityPillClass(visibility),
-                              )}
-                            >
-                              {visibility === "public" ? <Globe2 className="size-3" /> : <Lock className="size-3" />}
-                              {imageVisibilityLabel(visibility)}
+                              <button
+                                type="button"
+                                onClick={(event) => {
+                                  event.currentTarget.blur();
+                                  onContinueEdit(selectedConversation.id, image);
+                                }}
+                                className="inline-flex size-7 items-center justify-center rounded-full bg-white/95 text-stone-800 shadow-sm transition hover:bg-white hover:text-stone-950"
+                                aria-label="加入编辑"
+                                title="加入编辑"
+                              >
+                                <Plus className="size-3.5" />
+                              </button>
+                            </div>
+                            <div className="absolute right-2 bottom-2 z-20 flex items-center gap-1">
+                              {canUpdateVisibility ? (
+                                <button
+                                  type="button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    event.currentTarget.blur();
+                                    void onImageVisibilityChange(
+                                      selectedConversation.id,
+                                      turn.id,
+                                      index,
+                                      nextVisibility,
+                                    );
+                                  }}
+                                  disabled={isVisibilityMutating}
+                                  className={cn(
+                                    "inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-[11px] font-medium opacity-0 shadow-sm transition group-hover:opacity-100 group-focus-within:opacity-100 disabled:cursor-not-allowed disabled:opacity-70",
+                                    imageVisibilityActionClass(visibility),
+                                  )}
+                                  aria-label={visibility === "public" ? "取消公开图片" : "公开图片"}
+                                  title={visibility === "public" ? "取消公开" : "公开"}
+                                >
+                                  {isVisibilityMutating ? (
+                                    <LoaderCircle className="size-3 animate-spin" />
+                                  ) : visibility === "public" ? (
+                                    <Lock className="size-3" />
+                                  ) : (
+                                    <Globe2 className="size-3" />
+                                  )}
+                                  {visibility === "public" ? "取消公开" : "公开"}
+                                </button>
+                              ) : null}
+                              <div
+                                className={cn(
+                                  "pointer-events-none inline-flex h-7 items-center gap-1 rounded-full px-2 text-[11px] font-medium shadow-sm backdrop-blur-sm",
+                                  imageVisibilityPillClass(visibility),
+                                )}
+                              >
+                                {visibility === "public" ? <Globe2 className="size-3" /> : <Lock className="size-3" />}
+                                {imageVisibilityLabel(visibility)}
+                              </div>
+                            </div>
+                            <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/55 via-black/20 to-transparent px-2.5 pt-8 pb-11 opacity-0 transition duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
+                              <div className="text-left text-white drop-shadow-sm">
+                                <div className="text-[10px] font-bold tracking-wide">{formatLabel}</div>
+                              </div>
                             </div>
                           </div>
-                          {generationDuration ? (
-                            <div className="pointer-events-none absolute bottom-2 left-2 z-20 inline-flex h-7 items-center rounded-full bg-white/95 px-2.5 font-mono text-[11px] font-medium tabular-nums text-[#1456f0] shadow-sm backdrop-blur-sm">
-                              {generationDuration}
-                            </div>
-                          ) : null}
-                          {qualityCheckLabel ? (
-                            <div
-                              className={cn(
-                                "pointer-events-none absolute left-2 bottom-10 z-20 inline-flex h-7 items-center rounded-full px-2.5 text-[11px] font-medium shadow-sm backdrop-blur-sm",
-                                imageQualityCheckClass(image),
-                              )}
-                              title={qualityCheckTitle}
-                            >
-                              {qualityCheckLabel}
-                            </div>
-                          ) : null}
-                          <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/55 via-black/20 to-transparent px-2.5 pt-8 pb-11 opacity-0 transition duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
-                            <div className="text-left text-white drop-shadow-sm">
-                              <div className="text-[10px] font-bold tracking-wide">{formatLabel}</div>
+                          {generationDuration || qualityCheckLabel || imageMeta || generationCompletedAt ? (
+                            <figcaption className="flex flex-wrap items-center gap-1.5 bg-white px-2.5 py-2 text-[11px] text-[#45515e]">
+                              {qualityCheckLabel ? (
+                                <span
+                                  className={cn(
+                                    "inline-flex h-6 items-center rounded-full px-2.5 font-medium",
+                                    imageQualityCheckClass(image),
+                                  )}
+                                  title={qualityCheckTitle}
+                                >
+                                  {qualityCheckLabel}
+                                </span>
+                              ) : null}
+                              {generationDuration ? (
+                                <span className="inline-flex h-6 items-center rounded-full bg-[#eef4ff] px-2.5 font-mono font-medium tabular-nums text-[#1456f0]">
+                                  {generationDuration}
+                                </span>
+                              ) : null}
                               {imageMeta ? (
-                                <div className="mt-0.5 truncate text-[11px] text-white/90">{imageMeta}</div>
+                                <span className="inline-flex min-w-0 max-w-full items-center rounded-full bg-[#f0f0f0] px-2.5 py-1">
+                                  <span className="truncate">{imageMeta}</span>
+                                </span>
                               ) : null}
                               {generationCompletedAt ? (
-                                <div className="mt-0.5 truncate text-[11px] text-white/90">{generationCompletedAt}</div>
+                                <span className="inline-flex min-w-0 max-w-full items-center rounded-full bg-[#f0f0f0] px-2.5 py-1">
+                                  <span className="truncate">{generationCompletedAt}</span>
+                                </span>
                               ) : null}
-                            </div>
-                          </div>
+                            </figcaption>
+                          ) : null}
                         </figure>
                       );
                     }
