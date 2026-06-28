@@ -556,7 +556,7 @@ func (r *NewAPITokenReader) newAPIAdminSelectExpression(ctx context.Context) str
 			quoted := r.quoteIdentifier(column)
 			switch column {
 			case "role":
-				return "CASE WHEN " + quoted + " IN ('admin', 'root') THEN 1 ELSE 0 END"
+				return "CASE WHEN " + quoted + " IN (10, 100) THEN 1 ELSE 0 END"
 			default:
 				return "CASE WHEN " + quoted + " = 1 THEN 1 ELSE 0 END"
 			}

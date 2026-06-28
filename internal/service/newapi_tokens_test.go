@@ -121,6 +121,27 @@ func TestNewAPITokenReaderAuthenticatesNewAPIUserPassword(t *testing.T) {
 	}
 }
 
+func TestNewAPITokenReaderAuthenticatesNumericNewAPIAdminRole(t *testing.T) {
+	dbURL := newTestNewAPIDatabase(t)
+	addTestNewAPIUserRole(t, dbURL)
+	insertTestNewAPIUser(t, dbURL, 8, "root", "root@example.test")
+	updateTestNewAPIUserRole(t, dbURL, 8, 10)
+
+	reader, err := NewNewAPITokenReader(NewAPITokenReaderConfig{DatabaseURL: dbURL, TokenGroup: "draw"})
+	if err != nil {
+		t.Fatalf("NewNewAPITokenReader() error = %v", err)
+	}
+	defer reader.Close()
+
+	user, err := reader.AuthenticatePassword(context.Background(), "root@example.test", "Password123")
+	if err != nil {
+		t.Fatalf("AuthenticatePassword() error = %v", err)
+	}
+	if !user.IsAdmin {
+		t.Fatalf("AuthenticatePassword() IsAdmin = false, want true")
+	}
+}
+
 func TestNewAPITokenReaderReadsUserBalance(t *testing.T) {
 	dbURL := newTestNewAPIDatabase(t)
 	insertTestNewAPIUser(t, dbURL, 9, "alice", "alice@example.test")
@@ -165,6 +186,15 @@ func newTestNewAPIDatabase(t *testing.T) string {
 	return "sqlite:///" + filepath.ToSlash(dbPath)
 }
 
+func addTestNewAPIUserRole(t *testing.T, dbURL string) {
+	t.Helper()
+	db := openTestNewAPIDatabase(t, dbURL)
+	defer db.Close()
+	if _, err := db.Exec("ALTER TABLE users ADD COLUMN role INTEGER NOT NULL DEFAULT 1"); err != nil {
+		t.Fatalf("add user role: %v", err)
+	}
+}
+
 func insertTestNewAPIUser(t *testing.T, dbURL string, id int, username, email string) {
 	t.Helper()
 	db := openTestNewAPIDatabase(t, dbURL)
@@ -175,6 +205,15 @@ func insertTestNewAPIUser(t *testing.T, dbURL string, id int, username, email st
 	}
 	if _, err := db.Exec("INSERT INTO users (id, username, email, display_name, password, status, deleted_at) VALUES (?, ?, ?, ?, ?, 1, NULL)", id, username, email, "Alice", string(hash)); err != nil {
 		t.Fatalf("insert user: %v", err)
+	}
+}
+
+func updateTestNewAPIUserRole(t *testing.T, dbURL string, id, role int) {
+	t.Helper()
+	db := openTestNewAPIDatabase(t, dbURL)
+	defer db.Close()
+	if _, err := db.Exec("UPDATE users SET role = ? WHERE id = ?", role, id); err != nil {
+		t.Fatalf("update user role: %v", err)
 	}
 }
 
