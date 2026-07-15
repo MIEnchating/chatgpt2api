@@ -512,7 +512,7 @@ export function ImageResults({
           .filter(Boolean)
           .sort()
           .at(-1);
-        const resultCompletedAt = latestTaskUpdatedAt ? `完成时间：${formatConversationTime(latestTaskUpdatedAt)}` : "";
+        const resultCompletedAt = latestTaskUpdatedAt ? formatConversationTime(latestTaskUpdatedAt) : "";
         const turnBusy = isTurnBusy(turn);
         const resultCount = visualImages.length || (turnBusy ? turn.count : 0);
         const showResultSummary = turn.mode !== "chat" && (visualImages.length > 0 || turnBusy);
