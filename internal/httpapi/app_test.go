@@ -83,21 +83,6 @@ func TestAppAuthAndSPACompatibility(t *testing.T) {
 		t.Fatalf("/health status = %d body = %s", res.Code, res.Body.String())
 	}
 
-	req = httptest.NewRequest(http.MethodGet, "/api/announcements?target=login", nil)
-	res = httptest.NewRecorder()
-	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusNotFound {
-		t.Fatalf("/api/announcements status = %d body = %s", res.Code, res.Body.String())
-	}
-
-	req = httptest.NewRequest(http.MethodPost, "/api/admin/announcements", strings.NewReader(`{"title":"通知 A","content":"今晚维护","show_login":true,"show_image":false}`))
-	req.Header.Set("Authorization", adminAuthHeader(t, app))
-	res = httptest.NewRecorder()
-	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusNotFound {
-		t.Fatalf("admin announcements status = %d body = %s", res.Code, res.Body.String())
-	}
-
 	for _, path := range []string{"/v1/chat/completions", "/v1/responses", "/v1/messages"} {
 		msgReq := httptest.NewRequest(http.MethodPost, path, strings.NewReader("{}"))
 		msgReq.Header.Set("x-api-key", rawKey)
@@ -121,6 +106,131 @@ func TestAppAuthAndSPACompatibility(t *testing.T) {
 	app.Handler().ServeHTTP(res, req)
 	if res.Code != http.StatusNotFound {
 		t.Fatalf("missing asset status = %d", res.Code)
+	}
+}
+
+func TestAnnouncementManagementAndVisibility(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+
+	_, userToken := createPasswordUserSession(t, app, "announcement_user", "Password123!", "Announcement User")
+
+	req := httptest.NewRequest(http.MethodGet, "/api/announcements", nil)
+	res := httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous announcements status = %d body = %s", res.Code, res.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/announcements", nil)
+	req.Header.Set("Authorization", "Bearer "+userToken)
+	res = httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("user announcements status = %d body = %s", res.Code, res.Body.String())
+	}
+	var response map[string]any
+	if err := json.Unmarshal(res.Body.Bytes(), &response); err != nil {
+		t.Fatalf("user announcements json: %v", err)
+	}
+	if items := logItems(response); len(items) != 0 {
+		t.Fatalf("initial announcements = %#v", response)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/admin/announcements", strings.NewReader(`{"content":"越权公告"}`))
+	req.Header.Set("Authorization", "Bearer "+userToken)
+	res = httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusForbidden {
+		t.Fatalf("user create announcement status = %d body = %s", res.Code, res.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/admin/announcements", strings.NewReader(`{"title":"维护通知","content":"今晚 23:00 进行维护","enabled":true}`))
+	req.Header.Set("Authorization", adminAuthHeader(t, app))
+	res = httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("admin create announcement status = %d body = %s", res.Code, res.Body.String())
+	}
+	if err := json.Unmarshal(res.Body.Bytes(), &response); err != nil {
+		t.Fatalf("create announcement json: %v", err)
+	}
+	created, _ := response["item"].(map[string]any)
+	createdID, _ := created["id"].(string)
+	if createdID == "" || created["title"] != "维护通知" {
+		t.Fatalf("created announcement = %#v", response)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/announcements", nil)
+	req.Header.Set("Authorization", "Bearer "+userToken)
+	res = httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("visible announcements status = %d body = %s", res.Code, res.Body.String())
+	}
+	if err := json.Unmarshal(res.Body.Bytes(), &response); err != nil {
+		t.Fatalf("visible announcements json: %v", err)
+	}
+	items := logItems(response)
+	if len(items) != 1 || items[0]["id"] != createdID {
+		t.Fatalf("visible announcements = %#v", response)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/admin/announcements/"+createdID, strings.NewReader(`{"enabled":false}`))
+	req.Header.Set("Authorization", adminAuthHeader(t, app))
+	res = httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("disable announcement status = %d body = %s", res.Code, res.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/announcements", nil)
+	req.Header.Set("Authorization", "Bearer "+userToken)
+	res = httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("announcements after disable status = %d body = %s", res.Code, res.Body.String())
+	}
+	if err := json.Unmarshal(res.Body.Bytes(), &response); err != nil {
+		t.Fatalf("announcements after disable json: %v", err)
+	}
+	if items := logItems(response); len(items) != 0 {
+		t.Fatalf("disabled announcement remains visible = %#v", response)
+	}
+}
+
+func TestAnnouncementPreferencesArePersonal(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+
+	_, firstToken := createPasswordUserSession(t, app, "announcement-pref-a", "Password123!", "First User")
+	_, secondToken := createPasswordUserSession(t, app, "announcement-pref-b", "Password123!", "Second User")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/profile/announcement-preferences", strings.NewReader(`{"version":"announcement-1:v1","action":"today","local_date":"2026-07-15"}`))
+	req.Header.Set("Authorization", "Bearer "+firstToken)
+	res := httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("update announcement preferences status = %d body = %s", res.Code, res.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/profile/announcement-preferences", nil)
+	req.Header.Set("Authorization", "Bearer "+firstToken)
+	res = httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "2026-07-15") {
+		t.Fatalf("first preferences status = %d body = %s", res.Code, res.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/profile/announcement-preferences", nil)
+	req.Header.Set("Authorization", "Bearer "+secondToken)
+	res = httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("second preferences status = %d body = %s", res.Code, res.Body.String())
+	}
+	if strings.Contains(res.Body.String(), "announcement-1:v1") {
+		t.Fatalf("second user saw first user's preferences: %s", res.Body.String())
 	}
 }
 
@@ -625,7 +735,7 @@ func TestRunLoggedImageTaskLocalizesRelayURLForGallery(t *testing.T) {
 		t.Fatalf("result data = %#v", result)
 	}
 	localURL := util.Clean(data[0]["url"])
-	if !strings.HasPrefix(localURL, "/images/") {
+	if !strings.HasPrefix(localURL, "https://image.yunmian.tech/images/") {
 		t.Fatalf("image url was not localized: %#v", result)
 	}
 	if data[0]["output_format"] != "png" {
@@ -1351,6 +1461,78 @@ func TestLoginPageImageUploadSettings(t *testing.T) {
 	}
 	if meta["login_page_image_url"] != imageURL || meta["login_page_image_mode"] != "cover" {
 		t.Fatalf("app meta after upload = %#v", meta)
+	}
+}
+
+func TestSiteIconUploadSettings(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	_ = writer.WriteField("site_icon_action", "replace")
+	part, err := writer.CreateFormFile("site_icon_file", "brand.png")
+	if err != nil {
+		t.Fatalf("CreateFormFile() error = %v", err)
+	}
+	if err := encodeHTTPTestPNG(part); err != nil {
+		t.Fatalf("encode upload png: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("multipart close: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/settings/site-icon", body)
+	req.Header.Set("Authorization", adminAuthHeader(t, app))
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	res := httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("site icon upload status = %d body = %s", res.Code, res.Body.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(res.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("site icon upload json: %v", err)
+	}
+	config, _ := payload["config"].(map[string]any)
+	iconURL, _ := config["site_icon_url"].(string)
+	if !strings.HasPrefix(iconURL, "/site-icons/") {
+		t.Fatalf("site icon url = %#v in %#v", iconURL, payload)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, iconURL, nil)
+	res = httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK || !strings.HasPrefix(res.Header().Get("Content-Type"), "image/png") {
+		t.Fatalf("site icon static response = %d %q", res.Code, res.Header().Get("Content-Type"))
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/app-meta", nil)
+	res = httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if err := json.Unmarshal(res.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("site icon app meta json: %v", err)
+	}
+	if payload["site_icon_url"] != iconURL {
+		t.Fatalf("site icon app meta = %#v", payload)
+	}
+
+	body = &bytes.Buffer{}
+	writer = multipart.NewWriter(body)
+	_ = writer.WriteField("site_icon_action", "remove")
+	if err := writer.Close(); err != nil {
+		t.Fatalf("remove multipart close: %v", err)
+	}
+	req = httptest.NewRequest(http.MethodPost, "/api/settings/site-icon", body)
+	req.Header.Set("Authorization", adminAuthHeader(t, app))
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	res = httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("site icon remove status = %d body = %s", res.Code, res.Body.String())
+	}
+	if _, err := os.Stat(filepath.Join(app.config.SiteIconsDir(), filepath.Base(iconURL))); !os.IsNotExist(err) {
+		t.Fatalf("removed site icon still exists or stat failed: %v", err)
 	}
 }
 

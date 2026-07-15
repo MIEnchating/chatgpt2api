@@ -12,6 +12,139 @@ import (
 	"chatgpt2api/internal/util"
 )
 
+func (a *App) handleAnnouncements(w http.ResponseWriter, r *http.Request) {
+	if _, ok := a.requireIdentity(w, r, ""); !ok {
+		return
+	}
+	items, err := a.announce.ListVisible()
+	if err != nil {
+		util.WriteError(w, http.StatusInternalServerError, "failed to load announcements")
+		return
+	}
+	util.WriteJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (a *App) handleAnnouncementPreferences(w http.ResponseWriter, r *http.Request) {
+	identity, ok := a.requireIdentity(w, r, "")
+	if !ok {
+		return
+	}
+	ownerID := identityScope(identity)
+	switch r.Method {
+	case http.MethodGet:
+		preferences, err := a.announce.Preferences(ownerID)
+		if err != nil {
+			util.WriteError(w, http.StatusInternalServerError, "failed to load announcement preferences")
+			return
+		}
+		util.WriteJSON(w, http.StatusOK, map[string]any{"preferences": preferences})
+	case http.MethodPost:
+		body, err := readJSONMap(r)
+		if err != nil {
+			util.WriteError(w, http.StatusBadRequest, "invalid json body")
+			return
+		}
+		preferences, err := a.announce.UpdatePreferences(
+			ownerID,
+			util.Clean(body["version"]),
+			util.Clean(body["action"]),
+			util.Clean(body["local_date"]),
+		)
+		if err != nil {
+			util.WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		util.WriteJSON(w, http.StatusOK, map[string]any{"preferences": preferences})
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
+}
+
+func (a *App) handleAdminAnnouncements(w http.ResponseWriter, r *http.Request) {
+	identity, ok := a.requireIdentity(w, r, "")
+	if !ok {
+		return
+	}
+	if identity.Role != service.AuthRoleAdmin {
+		util.WriteError(w, http.StatusForbidden, "admin permission required")
+		return
+	}
+
+	base := "/api/admin/announcements"
+	if r.URL.Path == base {
+		switch r.Method {
+		case http.MethodGet:
+			a.writeAdminAnnouncements(w, nil)
+		case http.MethodPost:
+			body, err := readJSONMap(r)
+			if err != nil {
+				util.WriteError(w, http.StatusBadRequest, "invalid json body")
+				return
+			}
+			item, err := a.announce.Create(body)
+			if err != nil {
+				util.WriteError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			a.writeAdminAnnouncements(w, &item)
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+		return
+	}
+
+	parts := splitPath(r.URL.Path)
+	if len(parts) != 4 || parts[0] != "api" || parts[1] != "admin" || parts[2] != "announcements" {
+		http.NotFound(w, r)
+		return
+	}
+	id := parts[3]
+	switch r.Method {
+	case http.MethodPost:
+		body, err := readJSONMap(r)
+		if err != nil {
+			util.WriteError(w, http.StatusBadRequest, "invalid json body")
+			return
+		}
+		item, err := a.announce.Update(id, body)
+		if err != nil {
+			util.WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if item == nil {
+			util.WriteError(w, http.StatusNotFound, "announcement not found")
+			return
+		}
+		a.writeAdminAnnouncements(w, item)
+	case http.MethodDelete:
+		deleted, err := a.announce.Delete(id)
+		if err != nil {
+			util.WriteError(w, http.StatusInternalServerError, "failed to delete announcement")
+			return
+		}
+		if !deleted {
+			util.WriteError(w, http.StatusNotFound, "announcement not found")
+			return
+		}
+		a.writeAdminAnnouncements(w, nil)
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
+}
+
+func (a *App) writeAdminAnnouncements(w http.ResponseWriter, item *service.Announcement) {
+	items, err := a.announce.ListAll()
+	if err != nil {
+		util.WriteError(w, http.StatusInternalServerError, "failed to load announcements")
+		return
+	}
+	payload := map[string]any{"items": items}
+	if item != nil {
+		payload["item"] = item
+	}
+	util.WriteJSON(w, http.StatusOK, payload)
+}
+
 func (a *App) handleUserKeys(w http.ResponseWriter, r *http.Request) {
 	identity, ok := a.requireIdentity(w, r, "")
 	if !ok {
@@ -355,6 +488,76 @@ func (a *App) promptFavoritesForIdentity(ownerID string, identity service.Identi
 		filtered = append(filtered, item)
 	}
 	return filtered
+}
+
+func (a *App) handleProfileImageConversations(w http.ResponseWriter, r *http.Request) {
+	identity, ok := a.requireIdentity(w, r, "")
+	if !ok {
+		return
+	}
+	ownerID := identityScope(identity)
+	base := "/api/profile/image-conversations"
+	if r.URL.Path == base {
+		switch r.Method {
+		case http.MethodGet:
+			items, err := a.history.List(ownerID)
+			if err != nil {
+				util.WriteError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			util.WriteJSON(w, http.StatusOK, map[string]any{"items": items})
+		case http.MethodPost:
+			r.Body = http.MaxBytesReader(w, r.Body, 256<<20)
+			body, err := readJSONMap(r)
+			if err != nil {
+				util.WriteError(w, http.StatusBadRequest, "invalid json body")
+				return
+			}
+			items := util.AsMapSlice(body["items"])
+			if item := util.StringMap(body["item"]); len(item) > 0 {
+				items = append(items, item)
+			}
+			if len(items) == 0 {
+				util.WriteError(w, http.StatusBadRequest, "conversation items are required")
+				return
+			}
+			merged, err := a.history.Merge(ownerID, items)
+			if err != nil {
+				util.WriteError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			util.WriteJSON(w, http.StatusOK, map[string]any{"items": merged})
+		case http.MethodDelete:
+			if err := a.history.Clear(ownerID); err != nil {
+				util.WriteError(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+			util.WriteJSON(w, http.StatusOK, map[string]any{"items": []map[string]any{}})
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+		return
+	}
+
+	parts := splitPath(r.URL.Path)
+	if len(parts) != 4 || parts[0] != "api" || parts[1] != "profile" || parts[2] != "image-conversations" {
+		http.NotFound(w, r)
+		return
+	}
+	if r.Method != http.MethodDelete {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	items, removed, err := a.history.Delete(ownerID, parts[3])
+	if err != nil {
+		util.WriteError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	if !removed {
+		util.WriteError(w, http.StatusNotFound, "image conversation not found")
+		return
+	}
+	util.WriteJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
 func (a *App) handleAdminRoles(w http.ResponseWriter, r *http.Request) {

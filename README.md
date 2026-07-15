@@ -228,6 +228,14 @@ sh docker-build-limited.sh build
 
 脚本使用根目录 `Dockerfile` 从源码构建本地镜像，默认镜像名为 `chatgpt2api:local`；`up` 模式会继续用根目录 `docker-compose.yml` 启动该本地镜像。
 
+如果希望直接使用 Docker Hub 预构建镜像，不在服务器编译：
+
+```bash
+CHATGPT2API_BUILD_LOCAL=0 sh ubuntu-deploy.sh deploy
+```
+
+该模式默认拉取 `mienvirtuoso/chatgpt2api:latest`，也可以通过 `CHATGPT2API_IMAGE` 指定其他标签。
+
 ## 升级与在线更新
 
 ### Docker 部署升级
@@ -379,6 +387,14 @@ bun run build
 7. 推送 DockerHub 镜像。
 8. 推送 GHCR 镜像。
 
+首次发布前，在 GitHub 仓库的 `Settings -> Secrets and variables -> Actions` 中添加：
+
+| Secret | 内容 |
+| --- | --- |
+| `DOCKERHUB_TOKEN` | Docker Hub Access Token，不要使用账号密码 |
+
+同时确认 Docker Hub 账号 `mienvirtuoso` 下已创建 `chatgpt2api` 仓库，并且 Access Token 具有推送权限。`DOCKERHUB_TOKEN` 是 Tag 发布的必需配置，缺失时工作流会明确失败，不会跳过 Docker Hub。
+
 发布命令示例：
 
 ```bash
@@ -388,12 +404,12 @@ git push origin v1.0.0
 
 ### Docker 镜像标签
 
-如果配置了 DockerHub 凭据，发布到 DockerHub：
+发布到 DockerHub：
 
 ```text
-<dockerhub-username>/chatgpt2api:<version>
-<dockerhub-username>/chatgpt2api:latest
-<dockerhub-username>/chatgpt2api:<major>.<minor>
+mienvirtuoso/chatgpt2api:<version>
+mienvirtuoso/chatgpt2api:latest
+mienvirtuoso/chatgpt2api:<major>.<minor>
 ```
 
 同时发布到 GHCR：

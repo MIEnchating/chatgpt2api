@@ -27,8 +27,8 @@ export type ImageSizeMode = (typeof IMAGE_SIZE_MODE_OPTIONS)[number]["value"];
 export const IMAGE_RESOLUTION_OPTIONS = [
   { value: "auto", label: "自动", description: "不指定固定像素，交给图片工具决定" },
   { value: "1080p", label: "1080P", description: "正方形为 1088×1088，宽高按所选比例计算" },
-  { value: "2k", label: "2K", description: "2K 正方形为 2048×2048，上游会按模型能力判断" },
-  { value: "4k", label: "4K", description: "按链路像素上限收敛，上游会按模型能力判断" },
+  { value: "2k", label: "2K", description: "2K 正方形为 2048×2048，实际结果按模型能力生成" },
+  { value: "4k", label: "4K", description: "按链路像素上限收敛，实际结果按模型能力生成" },
 ] as const;
 
 export type ImageResolution = (typeof IMAGE_RESOLUTION_OPTIONS)[number]["value"];

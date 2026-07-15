@@ -21,7 +21,8 @@ import (
 var settingEnvKeys = map[string]string{
 	"base_url":                          "CHATGPT2API_BASE_URL",
 	"app_title":                         "CHATGPT2API_APP_TITLE",
-	"project_name":                       "CHATGPT2API_PROJECT_NAME",
+	"project_name":                      "CHATGPT2API_PROJECT_NAME",
+	"site_icon_url":                     "CHATGPT2API_SITE_ICON_URL",
 	"relay_base_url":                    "CHATGPT2API_RELAY_BASE_URL",
 	"newapi_token_group":                "CHATGPT2API_NEWAPI_TOKEN_GROUP",
 	"proxy":                             "CHATGPT2API_PROXY",
@@ -57,7 +58,8 @@ const (
 	defaultImageTaskTimeoutSeconds = 300
 	minImageTaskTimeoutSeconds     = 30
 	maxImageTaskTimeoutSeconds     = 3600
-	defaultRelayBaseURL            = "http://newapi:3000"
+	defaultBaseURL                 = "https://image.yunmian.tech"
+	defaultRelayBaseURL            = "https://www.yunmian.tech"
 	defaultAppTitle                = "云棉"
 )
 
@@ -259,7 +261,7 @@ func (s *Store) AutoRemoveRateLimitedAccounts() bool {
 }
 
 func (s *Store) BaseURL() string {
-	return strings.TrimRight(strings.TrimSpace(fmt.Sprint(s.settingValue("base_url", ""))), "/")
+	return strings.TrimRight(strings.TrimSpace(fmt.Sprint(s.settingValue("base_url", defaultBaseURL))), "/")
 }
 
 func (s *Store) AppTitle() string {
@@ -336,7 +338,7 @@ func (s *Store) LinuxDoOAuth() LinuxDoOAuthConfig {
 
 func (s *Store) linuxDoOAuthFromData(data map[string]any) LinuxDoOAuthConfig {
 	redirectURL := strings.TrimSpace(fmt.Sprint(s.settingValueFromData(data, "linuxdo_redirect_url", "")))
-	baseURL := strings.TrimRight(strings.TrimSpace(fmt.Sprint(s.settingValueFromData(data, "base_url", ""))), "/")
+	baseURL := strings.TrimRight(strings.TrimSpace(fmt.Sprint(s.settingValueFromData(data, "base_url", defaultBaseURL))), "/")
 	if redirectURL == "" && baseURL != "" {
 		redirectURL = baseURL + "/auth/linuxdo/oauth/callback"
 	}
@@ -399,6 +401,16 @@ func (s *Store) LoginPageImagesDir() string {
 	return path
 }
 
+func (s *Store) SiteIconsDir() string {
+	path := filepath.Join(s.DataDir, "site_icons")
+	_ = os.MkdirAll(path, 0o755)
+	return path
+}
+
+func (s *Store) SiteIconURL() string {
+	return strings.TrimSpace(fmt.Sprint(s.settingValue("site_icon_url", "")))
+}
+
 func (s *Store) LoginPageImageURL() string {
 	return strings.TrimSpace(fmt.Sprint(s.settingValue("login_page_image_url", "")))
 }
@@ -459,6 +471,7 @@ func (s *Store) Get() map[string]any {
 	data["base_url"] = s.BaseURL()
 	data["app_title"] = s.AppTitle()
 	data["project_name"] = s.ProjectName()
+	data["site_icon_url"] = s.SiteIconURL()
 	data["relay_base_url"] = s.RelayBaseURL()
 	data["newapi_token_group"] = s.NewAPITokenGroup()
 	linuxdo := s.LinuxDoOAuth()

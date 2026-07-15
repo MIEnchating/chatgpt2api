@@ -37,10 +37,9 @@ changelog:
 
 dockers_v2:
   - id: dockerhub
-    disable: '{{ if eq .Env.DOCKERHUB_USERNAME "skip" }}true{{ else }}false{{ end }}'
     dockerfile: Dockerfile.release
     images:
-      - "{{ .Env.DOCKERHUB_USERNAME }}/chatgpt2api"
+      - "mienvirtuoso/chatgpt2api"
     tags:
       - "{{ .Version }}"
       - "latest"
@@ -82,8 +81,6 @@ release:
     ## Docker
 
     ```bash
-    {{ if ne .Env.DOCKERHUB_USERNAME "skip" -}}
-    docker pull {{ .Env.DOCKERHUB_USERNAME }}/chatgpt2api:{{ .Version }}
-    {{ end -}}
+    docker pull mienvirtuoso/chatgpt2api:{{ .Version }}
     docker pull ghcr.io/{{ .Env.GITHUB_REPO_OWNER_LOWER }}/chatgpt2api:{{ .Version }}
     ```

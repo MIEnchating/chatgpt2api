@@ -12,6 +12,7 @@ import {
   fetchSettingsConfig,
   normalizeModelNames,
   updateLoginPageImageSettings,
+  updateSiteIconSettings,
   updateSettingsConfig,
   type ImageStorageCleanupResult,
   type ImageStorageGovernanceSummary,
@@ -53,6 +54,7 @@ function normalizeConfig(config: SettingsConfig): SettingsConfig {
     ...config,
     app_title: appTitle,
     project_name: projectName,
+    site_icon_url: typeof config.site_icon_url === "string" ? config.site_icon_url.trim() : "",
     refresh_account_interval_minute: Number(config.refresh_account_interval_minute || 5),
     image_task_timeout_seconds: Number(config.image_task_timeout_seconds || 300),
     image_models: normalizeModelNames(config.image_models, DEFAULT_IMAGE_MODELS),
@@ -69,11 +71,14 @@ function normalizeConfig(config: SettingsConfig): SettingsConfig {
     image_account_schedule_mode: normalizeAccountScheduleMode(config.image_account_schedule_mode),
     log_levels: Array.isArray(config.log_levels) ? config.log_levels : [],
     proxy: typeof config.proxy === "string" ? config.proxy : "",
-    base_url: typeof config.base_url === "string" ? config.base_url : "",
+    base_url:
+      typeof config.base_url === "string" && config.base_url.trim()
+        ? config.base_url
+        : "https://image.yunmian.tech",
     relay_base_url:
       typeof config.relay_base_url === "string" && config.relay_base_url.trim()
         ? config.relay_base_url
-        : "http://newapi:3000",
+        : "https://www.yunmian.tech",
     newapi_token_group: typeof config.newapi_token_group === "string" ? config.newapi_token_group.trim() : "",
     newapi_token_groups: Array.isArray(config.newapi_token_groups) ? config.newapi_token_groups : [],
     login_page_image_url: typeof config.login_page_image_url === "string" ? config.login_page_image_url : "",
@@ -118,6 +123,7 @@ type SettingsStore = {
   setBaseUrl: (value: string) => void;
   setRelayBaseUrl: (value: string) => void;
   setAppTitle: (value: string) => void;
+  saveSiteIcon: (options: { file?: File | null; action: "keep" | "replace" | "remove" }) => Promise<boolean>;
   setLoginPageImageUrl: (value: string) => void;
   setLoginPageImageMode: (value: LoginPageImageMode) => void;
   setLoginPageImageTransform: (transform: { zoom: number; positionX: number; positionY: number }) => void;
@@ -339,6 +345,25 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         },
       };
     });
+  },
+
+  saveSiteIcon: async ({ file, action }) => {
+    set({ isSavingConfig: true });
+    try {
+      const data = await updateSiteIconSettings({ action, file });
+      const nextConfig = normalizeConfig(data.config);
+      set({ config: nextConfig });
+      dispatchAppMetaUpdated({
+        site_icon_url: String(nextConfig.site_icon_url || ""),
+      });
+      toast.success(action === "remove" ? "已恢复默认网站图标" : "网站图标已保存");
+      return true;
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "保存网站图标失败");
+      return false;
+    } finally {
+      set({ isSavingConfig: false });
+    }
   },
 
   setLoginPageImageUrl: (value) => {

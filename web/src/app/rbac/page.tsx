@@ -221,7 +221,6 @@ function RBACContent() {
   return (
     <section className="flex h-full min-h-0 flex-col gap-5 overflow-hidden">
       <PageHeader
-        title="角色权限"
         actions={
           <>
             <Button variant="outline" onClick={() => void loadRBAC()} disabled={isLoading} className="h-10 rounded-lg">

@@ -6,6 +6,7 @@ import { motion, useReducedMotion, type Transition } from "motion/react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 
 import { ImageTaskQueue } from "@/components/image-task-queue";
+import { AnnouncementCenter } from "@/components/announcement-center";
 import {
   AUTH_SESSION_CHANGE_EVENT,
   clearVerifiedAuthSession,
@@ -20,6 +21,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { logout } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useAppMeta } from "@/lib/use-app-meta";
+import { resolveSiteIconSrc } from "@/lib/app-meta";
 import {
   applyColorTheme,
   getPreferredColorTheme,
@@ -297,38 +299,29 @@ export function TopNav() {
 
   return (
     <header className="sticky top-3 z-40 rounded-2xl border border-border bg-card/92 shadow-[0_12px_36px_-28px_rgba(15,23,42,0.55)] backdrop-blur dark:border-border dark:bg-card/92">
-      <div className="flex min-h-14 flex-col gap-2 px-3 py-2 lg:grid lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] lg:items-center lg:gap-4 lg:px-4">
-        <div className="flex min-w-0 items-center justify-between gap-2 lg:col-start-1 lg:justify-self-start">
+      <div className="grid min-h-14 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-2 px-3 py-2 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] lg:gap-4 lg:px-4">
+        <div className="flex min-w-0 items-center gap-2 lg:col-start-1 lg:justify-self-start">
           <div className="flex h-9 max-w-[190px] items-center gap-2 rounded-xl px-1.5 pr-2 text-[15px] font-semibold text-[#18181b] sm:max-w-none dark:text-foreground">
             <img
-              src="/logo-mark.svg"
+              src={resolveSiteIconSrc(appMeta.site_icon_url)}
               alt=""
               aria-hidden="true"
               className="size-7 rounded-[10px] shadow-[0_4px_10px_rgba(184,90,127,0.16)]"
             />
             <span className="truncate">{appMeta.app_title}</span>
           </div>
-          <div className="ml-auto flex shrink-0 items-center gap-1 lg:hidden">
-            {canAccessImageTasks ? <ImageTaskQueue className="size-8 px-0" /> : null}
-            <ThemeToggleButton theme={theme} onToggle={handleThemeToggle} />
-            <AccountMenu
-              session={session}
-              roleLabel={roleLabel}
-              pathname={pathname}
-              onLogout={handleLogout}
-            />
-          </div>
         </div>
         <nav
           aria-label="主导航"
-          className="hide-scrollbar -mx-1 flex min-w-0 gap-1 overflow-x-auto overscroll-x-contain px-1 pb-0.5 scroll-px-1 touch-pan-x [-webkit-overflow-scrolling:touch] lg:col-start-2 lg:justify-self-center lg:mx-0 lg:gap-1.5 lg:px-0 lg:pb-0"
+          className="hide-scrollbar col-span-2 row-start-2 -mx-1 flex min-w-0 gap-1 overflow-x-auto overscroll-x-contain px-1 pb-0.5 scroll-px-1 touch-pan-x [-webkit-overflow-scrolling:touch] lg:col-span-1 lg:col-start-2 lg:row-start-1 lg:justify-self-center lg:mx-0 lg:gap-1.5 lg:px-0 lg:pb-0"
         >
           {visibleNavItems.map((item) => (
             <NavPill key={item.href} item={item} pathname={pathname} />
           ))}
         </nav>
-        <div className="hidden items-center justify-end gap-1.5 lg:col-start-3 lg:flex lg:justify-self-end">
-          {canAccessImageTasks ? <ImageTaskQueue /> : null}
+        <div className="col-start-2 row-start-1 flex items-center justify-end gap-1 lg:col-start-3 lg:gap-1.5 lg:justify-self-end">
+          {canAccessImageTasks ? <ImageTaskQueue className="size-8 px-0 lg:h-9 lg:w-auto lg:px-3" /> : null}
+          <AnnouncementCenter />
           <ThemeToggleButton theme={theme} onToggle={handleThemeToggle} />
           <AccountMenu
             session={session}

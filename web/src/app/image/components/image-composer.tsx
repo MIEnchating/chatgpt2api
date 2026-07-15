@@ -4,7 +4,6 @@ import {
   Bot,
   Check,
   ChevronDown,
-  CircleHelp,
   ImagePlus,
   Minus,
   Plus,
@@ -26,7 +25,11 @@ import {
 } from "react";
 
 import { ImageLightbox } from "@/components/image-lightbox";
-import { Checkbox } from "@/components/ui/checkbox";
+import {
+  ImageAspectRatioGlyph,
+  ImageParameterLabel,
+} from "@/app/image/components/image-parameter-ui";
+import { imageParameterChoiceClass } from "@/app/image/components/image-parameter-styles";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
@@ -45,7 +48,6 @@ import {
   type ImageSizeMode,
 } from "@/app/image/image-options";
 import {
-  IMAGE_MODEL_ROUTE_DETAILS,
   IMAGE_OUTPUT_FORMAT_OPTIONS,
   supportsImageOutputControls,
   supportsImageOutputCompression,
@@ -147,48 +149,6 @@ function ImageComposerDock({ children }: { children: ReactNode }) {
   );
 }
 
-function ParameterLabel({ children, help }: { children: ReactNode; help?: string }) {
-  return (
-    <div className="flex min-h-5 items-center gap-1 text-xs font-semibold text-[#3f4147] dark:text-foreground">
-      <span>{children}</span>
-      {help ? (
-        <button
-          type="button"
-          className="inline-flex size-4 items-center justify-center rounded-full text-[#92959c] transition hover:bg-black/[0.05] hover:text-[#45515e] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1456f0]/30 dark:text-muted-foreground dark:hover:bg-accent dark:hover:text-foreground"
-          title={help}
-          aria-label={`${String(children)}说明：${help}`}
-        >
-          <CircleHelp className="size-3.5" />
-        </button>
-      ) : null}
-    </div>
-  );
-}
-
-function parameterChoiceClass(active: boolean, className?: string) {
-  return cn(
-    "min-w-0 rounded-md border border-transparent bg-transparent px-2 text-xs text-[#5f626a] transition hover:bg-white/70 hover:text-[#222222] dark:text-muted-foreground dark:hover:bg-background/60 dark:hover:text-foreground",
-    active &&
-      "border-[#dedfe3] bg-white font-semibold text-[#18181b] shadow-sm hover:bg-white dark:border-border dark:bg-background dark:text-foreground dark:hover:bg-background",
-    className,
-  );
-}
-
-function AspectRatioGlyph({ ratio }: { ratio: string }) {
-  const parsed = parseImageRatio(ratio) || { width: 1, height: 1 };
-  const landscape = parsed.width >= parsed.height;
-  return (
-    <span
-      className={cn(
-        "block rounded-[2px] border-2 border-current",
-        landscape ? "h-3.5 max-w-7" : "w-3.5 max-h-7",
-      )}
-      style={{ aspectRatio: `${parsed.width} / ${parsed.height}` }}
-      aria-hidden="true"
-    />
-  );
-}
-
 export function ImageComposer({
   composerMode,
   prompt,
@@ -235,6 +195,7 @@ export function ImageComposer({
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);
   const [isImageSettingsOpen, setIsImageSettingsOpen] = useState(false);
+  const [isAdvancedImageSettingsOpen, setIsAdvancedImageSettingsOpen] = useState(false);
   const [promptAreaHeight, setPromptAreaHeight] = useState(PROMPT_AREA_DEFAULT_HEIGHT);
   const [isPromptAreaResizing, setIsPromptAreaResizing] = useState(false);
   const [isReferenceImageDragActive, setIsReferenceImageDragActive] = useState(false);
@@ -249,7 +210,6 @@ export function ImageComposer({
   );
   const imageModelLabel = imageModelOptions.find((option) => option.value === imageModel)?.label || imageModel;
   const compressionSupported = supportsImageOutputCompression(imageOutputFormat);
-  const compressionDisabled = !compressionSupported;
   const structuredImageParameters = supportsStructuredImageParameters(imageModel);
   const outputControlsSupported = supportsImageOutputControls(imageModel);
   const effectiveImageSizeMode = structuredImageParameters || imageSizeMode !== "custom" ? imageSizeMode : "auto";
@@ -634,14 +594,7 @@ export function ImageComposer({
                               setIsModelMenuOpen(false);
                             }}
                           >
-                            <span className="min-w-0">
-                              <span className="block truncate">{option.label}</span>
-                              {composerMode === "image" && IMAGE_MODEL_ROUTE_DETAILS[option.value] ? (
-                                <span className="block truncate text-[11px] font-normal text-[#8e8e93] dark:text-muted-foreground">
-                                  {IMAGE_MODEL_ROUTE_DETAILS[option.value]?.routeLabel}
-                                </span>
-                              ) : null}
-                            </span>
+                            <span className="min-w-0 truncate">{option.label}</span>
                             {active ? <Check className="size-4 shrink-0" /> : null}
                           </button>
                         );
@@ -681,28 +634,76 @@ export function ImageComposer({
                       align="start"
                       side="top"
                       sideOffset={8}
-                      className="z-[70] max-h-[min(calc(100dvh-2rem),34rem)] w-[min(calc(100vw-1rem),24rem)] overflow-y-auto overflow-x-hidden rounded-lg border-[#dedfe3] bg-white p-0 shadow-[0_18px_50px_-24px_rgba(15,23,42,0.28)] dark:border-border dark:bg-card dark:shadow-[0_18px_50px_-22px_rgba(0,0,0,0.68)] sm:w-[min(calc(100vw-2rem),24rem)]"
+                      className="hide-scrollbar z-[70] max-h-[min(calc(100dvh-2rem),32rem)] w-[min(calc(100vw-1rem),23rem)] overflow-y-auto overflow-x-hidden rounded-lg border-[#dedfe3] bg-white p-0 shadow-[0_18px_50px_-24px_rgba(15,23,42,0.28)] dark:border-border dark:bg-card dark:shadow-[0_18px_50px_-22px_rgba(0,0,0,0.68)] sm:w-[min(calc(100vw-2rem),23rem)]"
                       onOpenAutoFocus={(event) => event.preventDefault()}
                     >
-                      <div className="sticky top-0 z-10 flex h-11 items-center justify-between gap-3 border-b border-[#ececef] bg-white/95 px-3.5 backdrop-blur dark:border-border dark:bg-card/95">
-                          <h2 className="text-sm font-semibold text-[#18181b] dark:text-foreground">参数</h2>
-                          <span
-                            className={cn(
-                              "rounded-md bg-[#f3f4f6] px-2 py-0.5 font-mono text-[11px] text-[#686b73] dark:bg-muted dark:text-muted-foreground",
-                              sizeIsHighResolution && "bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300",
-                            )}
-                          >
-                            {sizePreviewLabel}
-                          </span>
-                      </div>
-
-                      <div className="p-3.5">
+                      <div className="p-3">
                         <div className="space-y-3.5">
+                          <section className="space-y-1.5">
+                            <div className="flex items-center justify-between gap-3">
+                              <ImageParameterLabel help="选择常用画幅比例，系统会自动换算为合法像素尺寸。">
+                                画幅比例
+                              </ImageParameterLabel>
+                              <span
+                                className={cn(
+                                  "rounded-md bg-[#f3f4f6] px-2 py-0.5 font-mono text-[11px] text-[#686b73] dark:bg-muted dark:text-muted-foreground",
+                                  sizeIsHighResolution && "bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300",
+                                )}
+                              >
+                                {sizePreviewLabel}
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-5 gap-1.5" role="group" aria-label="图片画幅比例">
+                              {IMAGE_ASPECT_RATIO_OPTIONS.map((option) => {
+                                const isAuto = option.value === "";
+                                const isCustom = option.value === CUSTOM_IMAGE_ASPECT_RATIO;
+                                const active = isAuto
+                                  ? effectiveImageSizeMode === "auto"
+                                  : effectiveImageSizeMode === "ratio" && imageAspectRatio === option.value;
+                                return (
+                                  <button
+                                    key={option.value || "auto"}
+                                    type="button"
+                                    aria-pressed={active}
+                                    className={cn(
+                                      "flex h-11 min-w-0 flex-col items-center justify-center gap-1 rounded-lg border border-[#e5e7eb] bg-[#f7f7f8] px-1 text-[10px] font-medium text-[#686b73] transition hover:border-[#cfd1d5] hover:bg-white hover:text-[#222222] dark:border-border dark:bg-muted/55 dark:text-muted-foreground dark:hover:bg-background dark:hover:text-foreground",
+                                      active &&
+                                        "border-[#bfd1ff] bg-[#eef4ff] text-[#1456f0] shadow-[inset_0_0_0_1px_rgba(20,86,240,0.08)] hover:border-[#9db9ff] hover:bg-[#eef4ff] hover:text-[#1456f0] dark:border-sky-900/80 dark:bg-sky-950/35 dark:text-sky-300",
+                                    )}
+                                    onClick={() => {
+                                      onImageAspectRatioChange(option.value);
+                                      onImageSizeModeChange(isAuto ? "auto" : "ratio");
+                                    }}
+                                  >
+                                    {isAuto || isCustom ? (
+                                      <SlidersHorizontal className="size-3.5" />
+                                    ) : (
+                                      <ImageAspectRatioGlyph ratio={option.value} />
+                                    )}
+                                    <span className="truncate">{isAuto ? "自动" : isCustom ? "自定义" : option.value}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            {imageAspectRatio === CUSTOM_IMAGE_ASPECT_RATIO && effectiveImageSizeMode === "ratio" ? (
+                              <Input
+                                value={imageCustomRatio}
+                                onChange={(event) => onImageCustomRatioChange(event.target.value)}
+                                placeholder="例如 5:4 或 2.39:1"
+                                aria-invalid={isCustomRatioInvalid}
+                                className={cn(
+                                  "h-8 rounded-lg text-xs shadow-none",
+                                  isCustomRatioInvalid && "border-red-300 focus-visible:border-red-400",
+                                )}
+                              />
+                            ) : null}
+                          </section>
+
                           {outputControlsSupported ? (
                             <section className="space-y-1.5">
-                              <ParameterLabel help="gpt-image-2 支持自动、低、中、高四档；质量越高，生成时间和费用通常越高。">
+                              <ImageParameterLabel help="gpt-image-2 支持自动、低、中、高四档；质量越高，生成时间和费用通常越高。">
                                 质量
-                              </ParameterLabel>
+                              </ImageParameterLabel>
                               <div className="grid grid-cols-4 gap-1 rounded-lg bg-[#f4f4f5] p-1 dark:bg-muted/70" role="group" aria-label="图片质量">
                                 {[
                                   { value: "", label: "自动" },
@@ -714,7 +715,7 @@ export function ImageComposer({
                                       key={option.value || "auto"}
                                       type="button"
                                       aria-pressed={active}
-                                      className={parameterChoiceClass(active, "h-7")}
+                                      className={imageParameterChoiceClass(active, "h-7")}
                                       onClick={() => onImageQualityChange(option.value as "" | ImageQuality)}
                                     >
                                       {option.label}
@@ -725,60 +726,11 @@ export function ImageComposer({
                             </section>
                           ) : null}
 
-                          <section className="space-y-1.5">
-                            <ParameterLabel help="尺寸会转换为合法的 W × H 像素值；边长不超过 3840，必须为 16 的倍数，比例不超过 3:1。">
-                              尺寸
-                            </ParameterLabel>
-                            <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5">
-                              <label className="grid h-8 grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded-lg border border-[#e3e4e7] bg-white px-2.5 dark:border-border dark:bg-background/70">
-                                <span className="text-xs text-[#777a82] dark:text-muted-foreground">W</span>
-                                <Input
-                                  type="number"
-                                  inputMode="numeric"
-                                  min="1"
-                                  step="1"
-                                  value={displayedImageWidth}
-                                  placeholder="自动"
-                                  onFocus={() => {
-                                    if (effectiveImageSizeMode !== "custom") {
-                                      onImageCustomWidthChange(computedImageDimensions?.width || imageCustomWidth || "1024");
-                                      onImageCustomHeightChange(computedImageDimensions?.height || imageCustomHeight || "1024");
-                                      onImageSizeModeChange("custom");
-                                    }
-                                  }}
-                                  onChange={(event) => onImageCustomWidthChange(event.target.value)}
-                                  className="h-7 border-0 bg-transparent px-0 text-xs font-medium shadow-none focus-visible:ring-0"
-                                />
-                              </label>
-                              <X className="size-3.5 text-[#9a9ca2]" aria-hidden="true" />
-                              <label className="grid h-8 grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded-lg border border-[#e3e4e7] bg-white px-2.5 dark:border-border dark:bg-background/70">
-                                <span className="text-xs text-[#777a82] dark:text-muted-foreground">H</span>
-                                <Input
-                                  type="number"
-                                  inputMode="numeric"
-                                  min="1"
-                                  step="1"
-                                  value={displayedImageHeight}
-                                  placeholder="自动"
-                                  onFocus={() => {
-                                    if (effectiveImageSizeMode !== "custom") {
-                                      onImageCustomWidthChange(computedImageDimensions?.width || imageCustomWidth || "1024");
-                                      onImageCustomHeightChange(computedImageDimensions?.height || imageCustomHeight || "1024");
-                                      onImageSizeModeChange("custom");
-                                    }
-                                  }}
-                                  onChange={(event) => onImageCustomHeightChange(event.target.value)}
-                                  className="h-7 border-0 bg-transparent px-0 text-xs font-medium shadow-none focus-visible:ring-0"
-                                />
-                              </label>
-                            </div>
-                          </section>
-
                           {structuredImageParameters ? (
                             <section className="space-y-1.5">
-                              <ParameterLabel help="自动比例使用常规像素；1080P、2K、4K 会结合宽高比计算，并校正为官方允许的尺寸。2K 以上属于实验性高分辨率。">
+                              <ImageParameterLabel help="自动比例使用常规像素；1080P、2K、4K 会结合宽高比计算，并校正为官方允许的尺寸。2K 以上属于实验性高分辨率。">
                                 分辨率
-                              </ParameterLabel>
+                              </ImageParameterLabel>
                               <div className="grid grid-cols-4 gap-1 rounded-lg bg-[#f4f4f5] p-1 dark:bg-muted/70" role="group" aria-label="图片分辨率">
                                 {IMAGE_RESOLUTION_OPTIONS.map((option) => {
                                   const active =
@@ -789,7 +741,7 @@ export function ImageComposer({
                                       key={option.value}
                                       type="button"
                                       aria-pressed={active}
-                                      className={parameterChoiceClass(active, "h-7")}
+                                      className={imageParameterChoiceClass(active, "h-7")}
                                       onClick={() => {
                                         onImageResolutionChange(option.value);
                                         if (effectiveImageSizeMode === "auto" && option.value !== "auto") {
@@ -809,77 +761,10 @@ export function ImageComposer({
                             </section>
                           ) : null}
 
-                          <section className="space-y-1.5">
-                            <ParameterLabel help="宽高比会先换算成合法像素尺寸，不会直接把 16:9 这样的比例字符串作为尺寸发送。">
-                              宽高比
-                            </ParameterLabel>
-                            <div className="grid grid-cols-5 gap-1 rounded-lg bg-[#f4f4f5] p-1 dark:bg-muted/70" role="group" aria-label="图片宽高比">
-                              {IMAGE_ASPECT_RATIO_OPTIONS.filter(
-                                (option) => option.value !== CUSTOM_IMAGE_ASPECT_RATIO,
-                              ).map((option) => {
-                                const isAuto = option.value === "";
-                                const active = isAuto
-                                  ? effectiveImageSizeMode === "auto"
-                                  : effectiveImageSizeMode === "ratio" && imageAspectRatio === option.value;
-                                return (
-                                  <button
-                                    key={option.value || "auto"}
-                                    type="button"
-                                    aria-pressed={active}
-                                    className={parameterChoiceClass(active, "flex h-10 flex-col items-center justify-center gap-0.5 px-1 text-[10px]")}
-                                    onClick={() => {
-                                      onImageAspectRatioChange(option.value);
-                                      onImageSizeModeChange(isAuto ? "auto" : "ratio");
-                                    }}
-                                  >
-                                    {isAuto ? (
-                                      <span className="text-xs">自动</span>
-                                    ) : (
-                                      <>
-                                        <AspectRatioGlyph ratio={option.value} />
-                                        <span>{option.value}</span>
-                                      </>
-                                    )}
-                                  </button>
-                                );
-                              })}
-                              <button
-                                type="button"
-                                aria-pressed={
-                                  effectiveImageSizeMode === "ratio" &&
-                                  imageAspectRatio === CUSTOM_IMAGE_ASPECT_RATIO
-                                }
-                                className={parameterChoiceClass(
-                                  effectiveImageSizeMode === "ratio" && imageAspectRatio === CUSTOM_IMAGE_ASPECT_RATIO,
-                                  "flex h-10 flex-col items-center justify-center px-1 text-[10px]",
-                                )}
-                                onClick={() => {
-                                  onImageAspectRatioChange(CUSTOM_IMAGE_ASPECT_RATIO);
-                                  onImageSizeModeChange("ratio");
-                                }}
-                              >
-                                自定义
-                              </button>
-                            </div>
-                            {imageAspectRatio === CUSTOM_IMAGE_ASPECT_RATIO &&
-                            effectiveImageSizeMode === "ratio" ? (
-                              <Input
-                                value={imageCustomRatio}
-                                onChange={(event) => onImageCustomRatioChange(event.target.value)}
-                                placeholder="例如 5:4 或 2.39:1"
-                                aria-invalid={isCustomRatioInvalid}
-                                className={cn(
-                                  "h-9 rounded-lg text-xs shadow-none",
-                                  isCustomRatioInvalid && "border-red-300 focus-visible:border-red-400",
-                                )}
-                              />
-                            ) : null}
-                          </section>
-
                           <section className="flex items-center justify-between gap-3 border-t border-[#ececef] pt-3 dark:border-border">
-                            <ParameterLabel help="单次请求生成 1-10 张图片；系统会按并发额度拆分和排队。">
+                            <ImageParameterLabel help="单次请求生成 1-10 张图片；系统会按并发额度拆分和排队。">
                               生成数量
-                            </ParameterLabel>
+                            </ImageParameterLabel>
                             <div className="grid h-8 grid-cols-[2rem_3.25rem_2rem] overflow-hidden rounded-lg border border-[#dedfe3] bg-white dark:border-border dark:bg-background/70" role="group" aria-label="生成数量">
                               <button
                                 type="button"
@@ -905,63 +790,130 @@ export function ImageComposer({
                             </div>
                           </section>
 
-                          <details className="group border-t border-[#ececef] pt-2.5 dark:border-border">
+                          <details
+                            open={isAdvancedImageSettingsOpen}
+                            onToggle={(event) => setIsAdvancedImageSettingsOpen(event.currentTarget.open)}
+                            className="group border-t border-[#ececef] pt-2.5 dark:border-border"
+                          >
                             <summary className="flex h-8 cursor-pointer list-none items-center justify-between rounded-md px-1.5 text-xs font-semibold text-[#3f4147] outline-none transition hover:bg-black/[0.04] focus-visible:ring-2 focus-visible:ring-[#1456f0]/30 dark:text-foreground dark:hover:bg-accent/60 [&::-webkit-details-marker]:hidden">
                               <span>高级设置</span>
                               <ChevronDown className="size-3.5 opacity-60 transition group-open:rotate-180" />
                             </summary>
 
                             <div className="mt-2 space-y-3">
-                              <label className="flex h-9 cursor-pointer items-center justify-between rounded-lg bg-[#f4f4f5] px-2.5 dark:bg-muted/70">
-                                <ParameterLabel help="开启后会使用流式返回，需要上游支持图片流式响应。">
+                              <section className="space-y-1.5">
+                                <ImageParameterLabel help="手动输入像素尺寸后会覆盖上方画幅比例；边长不超过 3840，必须为 16 的倍数。">
+                                  精确尺寸
+                                </ImageParameterLabel>
+                                <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5">
+                                  <label className="grid h-8 grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded-lg border border-[#e3e4e7] bg-white px-2.5 dark:border-border dark:bg-background/70">
+                                    <span className="text-[11px] text-[#777a82] dark:text-muted-foreground">W</span>
+                                    <Input
+                                      type="number"
+                                      inputMode="numeric"
+                                      min="1"
+                                      step="1"
+                                      value={displayedImageWidth}
+                                      placeholder="自动"
+                                      onFocus={() => {
+                                        if (effectiveImageSizeMode !== "custom") {
+                                          onImageCustomWidthChange(computedImageDimensions?.width || imageCustomWidth || "1024");
+                                          onImageCustomHeightChange(computedImageDimensions?.height || imageCustomHeight || "1024");
+                                          onImageSizeModeChange("custom");
+                                        }
+                                      }}
+                                      onChange={(event) => onImageCustomWidthChange(event.target.value)}
+                                      className="h-7 border-0 bg-transparent px-0 text-xs font-medium shadow-none focus-visible:ring-0"
+                                    />
+                                  </label>
+                                  <X className="size-3.5 text-[#9a9ca2]" aria-hidden="true" />
+                                  <label className="grid h-8 grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded-lg border border-[#e3e4e7] bg-white px-2.5 dark:border-border dark:bg-background/70">
+                                    <span className="text-[11px] text-[#777a82] dark:text-muted-foreground">H</span>
+                                    <Input
+                                      type="number"
+                                      inputMode="numeric"
+                                      min="1"
+                                      step="1"
+                                      value={displayedImageHeight}
+                                      placeholder="自动"
+                                      onFocus={() => {
+                                        if (effectiveImageSizeMode !== "custom") {
+                                          onImageCustomWidthChange(computedImageDimensions?.width || imageCustomWidth || "1024");
+                                          onImageCustomHeightChange(computedImageDimensions?.height || imageCustomHeight || "1024");
+                                          onImageSizeModeChange("custom");
+                                        }
+                                      }}
+                                      onChange={(event) => onImageCustomHeightChange(event.target.value)}
+                                      className="h-7 border-0 bg-transparent px-0 text-xs font-medium shadow-none focus-visible:ring-0"
+                                    />
+                                  </label>
+                                </div>
+                              </section>
+
+                              <div className="flex h-9 items-center justify-between rounded-lg bg-[#f4f4f5] px-2.5 dark:bg-muted/70">
+                                <ImageParameterLabel help="开启后会使用流式返回，需要图片服务支持流式响应。">
                                   流式返回
-                                </ParameterLabel>
-                                <Checkbox
-                                  checked={imageStreamEnabled}
-                                  onCheckedChange={(checked) => {
-                                    const enabled = checked === true;
+                                </ImageParameterLabel>
+                                <button
+                                  type="button"
+                                  role="switch"
+                                  aria-checked={imageStreamEnabled}
+                                  aria-label="开启图片流式返回"
+                                  className={cn(
+                                    "relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1456f0]/30",
+                                    imageStreamEnabled ? "bg-[#1456f0]" : "bg-[#c8cbd1] dark:bg-muted-foreground/45",
+                                  )}
+                                  onClick={() => {
+                                    const enabled = !imageStreamEnabled;
                                     onImageStreamEnabledChange(enabled);
                                     if (!enabled) {
                                       onImagePartialImagesChange("0");
                                     }
                                   }}
-                                  aria-label="开启图片流式返回"
-                                />
-                              </label>
-
-                            <div className={cn("space-y-1.5", !imageStreamEnabled && "opacity-55")}>
-                              <ParameterLabel help="可返回 0-3 张生成过程中的中间图；每张中间图会产生额外输出费用。">
-                                中间图数量
-                              </ParameterLabel>
-                              <div className="grid grid-cols-4 gap-1 rounded-lg bg-[#f4f4f5] p-1 dark:bg-muted/70">
-                                {["0", "1", "2", "3"].map((count) => (
-                                  <button
-                                    key={count}
-                                    type="button"
-                                    disabled={!imageStreamEnabled}
-                                    aria-pressed={imagePartialImages === count}
-                                    className={parameterChoiceClass(imagePartialImages === count, "h-7 disabled:cursor-not-allowed")}
-                                    onClick={() => onImagePartialImagesChange(count)}
-                                  >
-                                    {count} 张
-                                  </button>
-                                ))}
+                                >
+                                  <span
+                                    className={cn(
+                                      "absolute top-0.5 size-4 rounded-full bg-white shadow-sm transition-transform",
+                                      imageStreamEnabled ? "translate-x-[18px]" : "translate-x-0.5",
+                                    )}
+                                  />
+                                </button>
                               </div>
-                            </div>
+
+                              {imageStreamEnabled ? (
+                                <div className="space-y-1.5">
+                                  <ImageParameterLabel help="可返回 0-3 张生成过程中的中间图；每张中间图会产生额外输出费用。">
+                                    中间图数量
+                                  </ImageParameterLabel>
+                                  <div className="grid grid-cols-4 gap-1 rounded-lg bg-[#f4f4f5] p-1 dark:bg-muted/70">
+                                    {["0", "1", "2", "3"].map((count) => (
+                                      <button
+                                        key={count}
+                                        type="button"
+                                        aria-pressed={imagePartialImages === count}
+                                        className={imageParameterChoiceClass(imagePartialImages === count, "h-7")}
+                                        onClick={() => onImagePartialImagesChange(count)}
+                                      >
+                                        {count} 张
+                                      </button>
+                                    ))}
+                                  </div>
+                                </div>
+                              ) : null}
 
                             {outputControlsSupported ? (
                               <>
                                 <div className="space-y-1.5">
-                                  <ParameterLabel help="支持 PNG、JPEG、WebP；PNG 保留无损质量，JPEG 和 WebP 支持压缩。">
+                                  <ImageParameterLabel help="支持 PNG、JPEG、WebP；PNG 保留无损质量，JPEG 和 WebP 支持压缩。">
                                     输出格式
-                                  </ParameterLabel>
+                                  </ImageParameterLabel>
                                   <div className="grid grid-cols-3 gap-1 rounded-lg bg-[#f4f4f5] p-1 dark:bg-muted/70">
                                     {IMAGE_OUTPUT_FORMAT_OPTIONS.map((option) => (
                                       <button
                                         key={option.value}
                                         type="button"
                                         aria-pressed={imageOutputFormat === option.value}
-                                        className={parameterChoiceClass(imageOutputFormat === option.value, "h-7 uppercase")}
+                                        className={imageParameterChoiceClass(imageOutputFormat === option.value, "h-7 uppercase")}
                                         onClick={() => {
                                           onImageOutputFormatChange(option.value);
                                           if (!supportsImageOutputCompression(option.value)) {
@@ -975,11 +927,12 @@ export function ImageComposer({
                                   </div>
                                 </div>
 
-                                <div className={cn("space-y-1.5", compressionDisabled && "opacity-55")}>
+                                {compressionSupported ? (
+                                <div className="space-y-1.5">
                                   <div className="flex items-center justify-between gap-3">
-                                    <ParameterLabel help="仅适用于 JPEG 和 WebP，范围为 0-100；数值越低，文件通常越小。">
+                                    <ImageParameterLabel help="仅适用于 JPEG 和 WebP，范围为 0-100；数值越低，文件通常越小。">
                                       压缩率
-                                    </ParameterLabel>
+                                    </ImageParameterLabel>
                                     <span className="text-xs text-[#777a82] dark:text-muted-foreground">
                                       {imageOutputCompression ? `${imageOutputCompression}%` : "默认"}
                                     </span>
@@ -991,9 +944,8 @@ export function ImageComposer({
                                       max="100"
                                       step="1"
                                       value={imageOutputCompression || "100"}
-                                      disabled={compressionDisabled}
                                       onChange={(event) => onImageOutputCompressionChange(event.target.value)}
-                                      className="h-1.5 w-full accent-[#18181b] disabled:cursor-not-allowed dark:accent-foreground"
+                                      className="h-1.5 w-full accent-[#18181b] dark:accent-foreground"
                                       aria-label="图片输出压缩率"
                                     />
                                     <Input
@@ -1003,13 +955,13 @@ export function ImageComposer({
                                       max="100"
                                       step="1"
                                       value={imageOutputCompression}
-                                      disabled={compressionDisabled}
                                       placeholder="默认"
                                       onChange={(event) => onImageOutputCompressionChange(event.target.value)}
                                       className="h-8 rounded-lg text-center text-xs shadow-none"
                                     />
                                   </div>
                                 </div>
+                                ) : null}
                               </>
                             ) : null}
                             </div>

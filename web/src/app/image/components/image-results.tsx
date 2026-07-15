@@ -7,8 +7,7 @@ import { AuthenticatedImage } from "@/components/authenticated-image";
 import { ChatMarkdown } from "@/app/image/components/chat-markdown";
 import { Button } from "@/components/ui/button";
 import type { ImagePromptPreset } from "@/app/image/image-presets";
-import { formatImageSizeDisplay, getImageSizeRequirementLabel, isHighResolutionImageSize } from "@/app/image/image-options";
-import { IMAGE_MODEL_ROUTE_DETAILS, supportsImageOutputCompression } from "@/lib/api";
+import { formatImageSizeDisplay, isHighResolutionImageSize } from "@/app/image/image-options";
 import type { ImageVisibility } from "@/lib/api";
 import {
   fetchAuthenticatedImageBlob,
@@ -94,14 +93,6 @@ function imageSelectionKey(conversationId: string, turnId: string, imageId: stri
   return `${conversationId}:${turnId}:${imageId}`;
 }
 
-function getImageFormatLabel(image: StoredImage, src: string) {
-  const dataUrlFormat = src.match(/^data:image\/([^;,]+)/i)?.[1];
-  const urlFormat = image.url ? image.url.split("?")[0]?.match(/\.([a-z0-9]+)$/i)?.[1] : "";
-  const normalized = String(dataUrlFormat || urlFormat || (image.b64_json ? "png" : "png")).toLowerCase();
-  const format = normalized === "jpeg" ? "jpg" : normalized;
-  return `IMAGE ${format.toUpperCase()}`;
-}
-
 function imageResolutionLabel(image: StoredImage, dimensions?: string) {
   if (image.resolution) {
     return image.resolution.replace(/x/g, " x ");
@@ -117,11 +108,6 @@ function formatGenerationDuration(ms?: number) {
     return "";
   }
   return formatElapsedClock(Math.max(0, Math.round(ms / 1000)));
-}
-
-function imageGenerationDurationLabel(image: StoredImage) {
-  const duration = formatGenerationDuration(image.generationDurationMs);
-  return duration ? `耗时 ${duration}` : "";
 }
 
 function imageQualityCheckLabel(image: StoredImage) {
@@ -171,22 +157,13 @@ function imageQualityCheckTitle(image: StoredImage) {
   return parts.join("\n");
 }
 
-function getRequestedSizeLabel(turn: ImageTurn) {
-  if (!turn.size) {
-    return "";
-  }
-  const size = turn.size.includes("x") ? formatImageSizeDisplay(turn.size) : turn.size;
-  const requirement = getImageSizeRequirementLabel(turn.size);
-  return requirement === "自动" ? size : `请求 ${size} / ${requirement}`;
-}
-
 function getLongTaskHint(turn: ImageTurn, elapsedSeconds: number) {
   void elapsedSeconds;
   if (!isTurnBusy(turn)) {
     return "";
   }
   if (isHighResolutionImageSize(turn.size)) {
-    return "高分辨率任务已提交给上游判断";
+    return "高分辨率任务已提交，正在等待生成结果";
   }
   return "";
 }
@@ -486,6 +463,56 @@ export function ImageResults({
         const visualImages = turn.images
           .map((image, index) => ({ image, index }))
           .filter(({ image }) => !textReplyImages.some((reply) => reply.image.id === image.id));
+        const successfulVisualImages = visualImages.flatMap(({ image }) =>
+          image.status === "success" && getStoredImageSrc(image) ? [image] : [],
+        );
+        const checkedImages = successfulVisualImages.filter((image) => imageQualityCheckLabel(image));
+        const mismatchedImages = checkedImages.filter(
+          (image) => image.qualityCheck?.size_matched === false || image.qualityCheck?.output_format_matched === false,
+        );
+        const resultQualityCheckImage = mismatchedImages[0] || checkedImages[0];
+        const resultQualityCheckLabel =
+          mismatchedImages.length > 1
+            ? `${mismatchedImages.length} 张检测异常`
+            : mismatchedImages.length === 1
+              ? imageQualityCheckLabel(mismatchedImages[0])
+              : checkedImages.length > 0
+                ? "检测通过"
+                : "";
+        const generationDurations = successfulVisualImages
+          .map((image) => image.generationDurationMs)
+          .filter((duration): duration is number => typeof duration === "number" && Number.isFinite(duration));
+        const resultGenerationDuration =
+          generationDurations.length > 0
+            ? `${generationDurations.length > 1 ? "最长耗时" : "耗时"}：${formatGenerationDuration(Math.max(...generationDurations))}`
+            : "";
+        const resultDimensions = Array.from(
+          new Set(
+            successfulVisualImages
+              .map((image) => imageResolutionLabel(image, imageDimensions[image.id]))
+              .filter(Boolean),
+          ),
+        );
+        const resultSizeLabel =
+          successfulVisualImages.length === 1
+            ? successfulVisualImages[0].b64_json
+              ? formatBase64ImageFileSize(successfulVisualImages[0].b64_json)
+              : imageSizeLabels[successfulVisualImages[0].id] || ""
+            : "";
+        const resultDimensionsLabel =
+          resultDimensions.length === 1 ? formatImageSizeDisplay(resultDimensions[0]) : resultDimensions.length > 1 ? "多尺寸" : "";
+        const resultFormats = Array.from(
+          new Set(
+            successfulTurnImages.map((image) => imageExtension(image.outputFormat, image.src).toUpperCase()),
+          ),
+        );
+        const resultFormatLabel = resultFormats.length === 1 ? resultFormats[0] : resultFormats.length > 1 ? "多格式" : "";
+        const latestTaskUpdatedAt = successfulVisualImages
+          .map((image) => image.taskUpdatedAt || "")
+          .filter(Boolean)
+          .sort()
+          .at(-1);
+        const resultCompletedAt = latestTaskUpdatedAt ? `完成时间：${formatConversationTime(latestTaskUpdatedAt)}` : "";
         const turnBusy = isTurnBusy(turn);
         const resultCount = visualImages.length || (turnBusy ? turn.count : 0);
         const showResultSummary = turn.mode !== "chat" && (visualImages.length > 0 || turnBusy);
@@ -506,8 +533,7 @@ export function ImageResults({
             : turnBusy
               ? "正在处理图片"
               : "");
-        const requestedSizeLabel = getRequestedSizeLabel(turn);
-        const routeDetail = IMAGE_MODEL_ROUTE_DETAILS[turn.model];
+        const requestedSizeLabel = turn.size ? formatImageSizeDisplay(turn.size) : "自动";
         const longTaskHint = getLongTaskHint(turn, elapsedSeconds);
         const downloadActions =
           downloadableImages.length > 0 ? (
@@ -563,11 +589,6 @@ export function ImageResults({
                     <span className="rounded-full bg-[#f0f0f0] px-2.5 py-0.5 text-[#45515e]">第 {turnIndex + 1} 轮</span>
                     <span className="rounded-full bg-[#f0f0f0] px-2.5 py-0.5 text-[#45515e]">{getTurnModeLabel(turn)}</span>
                     <span className="rounded-full bg-[#f0f0f0] px-2.5 py-0.5 text-[#45515e]">{turn.model}</span>
-                    {turn.mode !== "chat" && routeDetail ? (
-                      <span className="rounded-full bg-[#eef4ff] px-2.5 py-0.5 text-[#1456f0]">
-                        {routeDetail.routeLabel}
-                      </span>
-                    ) : null}
                     <span className="rounded-full bg-[#f0f0f0] px-2.5 py-0.5 text-[#45515e]">
                       {getTurnStatusLabel(turn.status)}
                     </span>
@@ -643,31 +664,50 @@ export function ImageResults({
             <div className="flex justify-start">
               <section className="w-full px-1">
                 {showResultSummary ? (
-                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2 sm:mb-4">
-                    <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-[#45515e] sm:gap-2 sm:text-xs">
-                      <span className="font-medium text-[#222222]">生成结果</span>
-                      <span className="rounded-full bg-[#f0f0f0] px-3 py-1">{resultCount} 张</span>
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-[#eceef1] pb-3 sm:mb-4">
+                    <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 text-[11px] text-[#6b7280] sm:text-xs">
+                      <span className="font-semibold text-[#18181b]">生成结果：</span>
+                      <span><strong className="font-semibold text-[#30343b]">{resultCount}</strong> 张</span>
                       {turn.count !== resultCount ? (
-                        <span className="rounded-full bg-[#f0f0f0] px-3 py-1">目标 {turn.count} 张</span>
+                        <span>目标 <strong className="font-semibold text-[#30343b]">{turn.count}</strong> 张</span>
                       ) : null}
                       {requestedSizeLabel ? (
-                        <span
-                          className={cn(
-                            "rounded-full px-3 py-1",
-                            isHighResolutionImageSize(turn.size)
-                              ? "bg-amber-50 text-amber-700"
-                              : "bg-[#f0f0f0]",
-                          )}
-                        >
-                          {requestedSizeLabel}
+                        <span>
+                          请求：<strong className="font-semibold text-[#30343b]">{requestedSizeLabel}</strong>
                         </span>
                       ) : null}
-                      {turn.quality ? (
-                        <span className="rounded-full bg-[#f0f0f0] px-3 py-1">Quality {turn.quality}</span>
+                      {resultDimensionsLabel ? (
+                        <span>
+                          返回：<strong className="font-semibold text-[#30343b]">{resultDimensionsLabel}</strong>
+                        </span>
                       ) : null}
-                      {turn.outputCompression != null && turn.outputFormat && supportsImageOutputCompression(turn.outputFormat) ? (
-                        <span className="rounded-full bg-[#f0f0f0] px-3 py-1">压缩 {turn.outputCompression}</span>
+                      {successfulVisualImages.length > 0 ? (
+                        <span
+                          className={cn(
+                            "inline-flex items-center rounded-md px-2 py-0.5 font-medium",
+                            resultQualityCheckImage
+                              ? imageQualityCheckClass(resultQualityCheckImage)
+                              : "bg-[#f3f4f6] text-[#6b7280] ring-1 ring-[#e5e7eb]",
+                          )}
+                          title={resultQualityCheckImage ? imageQualityCheckTitle(resultQualityCheckImage) : "当前结果没有检测信息"}
+                        >
+                          检测：{resultQualityCheckLabel || "未检测"}
+                        </span>
                       ) : null}
+                      {resultGenerationDuration ? (
+                        <span className="font-mono font-medium tabular-nums text-[#1456f0]">
+                          {resultGenerationDuration}
+                        </span>
+                      ) : null}
+                      {resultSizeLabel ? (
+                        <span>大小：<strong className="font-semibold text-[#30343b]">{resultSizeLabel}</strong></span>
+                      ) : null}
+                      {resultFormatLabel ? (
+                        <span className="rounded-md bg-[#18181b] px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                          {resultFormatLabel}
+                        </span>
+                      ) : null}
+                      {resultCompletedAt ? <span className="text-[#8e8e93]">{resultCompletedAt}</span> : null}
                       {turn.status !== "success" ? (
                         <span className={cn("rounded-full px-3 py-1", getStatusChipClass(turn.status))}>
                           {getTurnStatusLabel(turn.status)}
@@ -729,14 +769,6 @@ export function ImageResults({
                       const currentIndex = successfulTurnImages.findIndex((item) => item.id === image.id);
                       const selectionKey = imageSelectionKey(selectedConversation.id, turn.id, image.id);
                       const selected = Boolean(selectedImageIds[selectionKey]);
-                      const sizeLabel = image.b64_json ? formatBase64ImageFileSize(image.b64_json) : imageSizeLabels[image.id] || "";
-                      const dimensions = imageResolutionLabel(image, imageDimensions[image.id]);
-                      const imageMeta = [dimensions, sizeLabel].filter(Boolean).join(" | ");
-                      const generationDuration = imageGenerationDurationLabel(image);
-                      const qualityCheckLabel = imageQualityCheckLabel(image);
-                      const qualityCheckTitle = imageQualityCheckTitle(image);
-                      const generationCompletedAt = image.taskUpdatedAt ? `完成 ${formatConversationTime(image.taskUpdatedAt)}` : "";
-                      const formatLabel = getImageFormatLabel(image, imageSrc);
                       const visibility = image.visibility || turn.visibility || "private";
                       const nextVisibility = visibility === "public" ? "private" : "public";
                       const visibilityMutatingKey = `${selectedConversation.id}:${turn.id}:${image.id}`;
@@ -867,42 +899,7 @@ export function ImageResults({
                                 {imageVisibilityLabel(visibility)}
                               </div>
                             </div>
-                            <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/55 via-black/20 to-transparent px-2.5 pt-8 pb-11 opacity-0 transition duration-150 group-hover:opacity-100 group-focus-within:opacity-100">
-                              <div className="text-left text-white drop-shadow-sm">
-                                <div className="text-[10px] font-bold tracking-wide">{formatLabel}</div>
-                              </div>
-                            </div>
                           </div>
-                          {generationDuration || qualityCheckLabel || imageMeta || generationCompletedAt ? (
-                            <figcaption className="flex flex-wrap items-center gap-1.5 bg-white px-2.5 py-2 text-[11px] text-[#45515e]">
-                              {qualityCheckLabel ? (
-                                <span
-                                  className={cn(
-                                    "inline-flex h-6 items-center rounded-full px-2.5 font-medium",
-                                    imageQualityCheckClass(image),
-                                  )}
-                                  title={qualityCheckTitle}
-                                >
-                                  {qualityCheckLabel}
-                                </span>
-                              ) : null}
-                              {generationDuration ? (
-                                <span className="inline-flex h-6 items-center rounded-full bg-[#eef4ff] px-2.5 font-mono font-medium tabular-nums text-[#1456f0]">
-                                  {generationDuration}
-                                </span>
-                              ) : null}
-                              {imageMeta ? (
-                                <span className="inline-flex min-w-0 max-w-full items-center rounded-full bg-[#f0f0f0] px-2.5 py-1">
-                                  <span className="truncate">{imageMeta}</span>
-                                </span>
-                              ) : null}
-                              {generationCompletedAt ? (
-                                <span className="inline-flex min-w-0 max-w-full items-center rounded-full bg-[#f0f0f0] px-2.5 py-1">
-                                  <span className="truncate">{generationCompletedAt}</span>
-                                </span>
-                              ) : null}
-                            </figcaption>
-                          ) : null}
                         </figure>
                       );
                     }

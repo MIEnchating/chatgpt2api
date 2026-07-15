@@ -7,7 +7,6 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { formatImageSizeDisplay, getImageSizeRequirementLabel, isHighResolutionImageSize } from "@/app/image/image-options";
-import { IMAGE_MODEL_ROUTE_DETAILS } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import {
   ACTIVE_IMAGE_CONVERSATION_STORAGE_KEY,
@@ -137,7 +136,7 @@ function getQueueSizeLabel(turn: ImageTurn) {
 function getQueueLongTaskHint(turn: ImageTurn, elapsedSeconds: number) {
   void elapsedSeconds;
   if (isHighResolutionImageSize(turn.size)) {
-    return "高分辨率任务已提交给上游判断";
+    return "高分辨率任务已提交，正在等待生成结果";
   }
   return "";
 }
@@ -274,12 +273,10 @@ function QueueItem({
   const isRunning = loadingPhase === "running";
   const elapsedSeconds = isRunning ? Math.max(0, Math.floor((now - imageTurnStartedAtTimestamp(item.turn.processingStartedAt, item.turn.createdAt)) / 1000)) : 0;
   const elapsed = isRunning ? formatElapsedClock(elapsedSeconds) : "";
-  const routeDetail = IMAGE_MODEL_ROUTE_DETAILS[item.turn.model];
   const sizeLabel = getQueueSizeLabel(item.turn);
   const detailParts = [
     getModeLabel(item.turn.mode),
     item.turn.model,
-    routeDetail?.routeLabel || "",
     sizeLabel,
     item.turn.quality ? `Quality ${item.turn.quality}` : "",
   ].filter(Boolean);

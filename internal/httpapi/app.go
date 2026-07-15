@@ -35,6 +35,7 @@ import (
 
 const (
 	maxLoginPageImageSize      = 10 << 20
+	maxSiteIconSize            = 2 << 20
 	maxRelayImageBytes         = 40 << 20
 	imageThumbnailCacheControl = "public, max-age=31536000, immutable"
 	authSessionCookieName      = "chatgpt2api_session"
@@ -51,6 +52,8 @@ type App struct {
 	images     *service.ImageService
 	tasks      *service.ImageTaskService
 	prompts    *service.PromptFavoriteService
+	history    *service.ImageConversationHistoryService
+	announce   *service.AnnouncementService
 	newAPIKeys *service.NewAPITokenReader
 	cancel     context.CancelFunc
 }
@@ -94,7 +97,7 @@ func NewApp() (*App, error) {
 	documentStore, _ := storageBackend.(storage.JSONDocumentBackend)
 	imageSessions := service.NewImageConversationSessionService(filepath.Join(cfg.DataDir, "image_conversation_sessions.json"), storageBackend)
 	engine := &protocol.Engine{Accounts: accounts, Config: cfg, Storage: documentStore, Proxy: proxy, Logger: logger, ImageConversationSessions: imageSessions}
-	app := &App{config: cfg, auth: auth, accounts: accounts, logs: logs, logger: logger, proxy: proxy, engine: engine, images: service.NewImageService(cfg, storageBackend), prompts: service.NewPromptFavoriteService(storageBackend), newAPIKeys: newAPIKeys, cancel: cancel}
+	app := &App{config: cfg, auth: auth, accounts: accounts, logs: logs, logger: logger, proxy: proxy, engine: engine, images: service.NewImageService(cfg, storageBackend), prompts: service.NewPromptFavoriteService(storageBackend), history: service.NewImageConversationHistoryService(storageBackend), announce: service.NewAnnouncementService(storageBackend), newAPIKeys: newAPIKeys, cancel: cancel}
 	app.tasks = service.NewStoredImageTaskService(storageBackend,
 		func(ctx context.Context, identity service.Identity, payload map[string]any) (map[string]any, error) {
 			return app.runLoggedImageTask(ctx, identity, payload, "/api/creation-tasks/image-generations", "文生图", func(ctx context.Context, payload map[string]any) (map[string]any, error) {
@@ -769,12 +772,152 @@ func (a *App) handleAppMeta(w http.ResponseWriter, r *http.Request) {
 	util.WriteJSON(w, http.StatusOK, map[string]any{
 		"app_title":                   a.config.AppTitle(),
 		"project_name":                a.config.ProjectName(),
+		"site_icon_url":               a.config.SiteIconURL(),
 		"login_page_image_url":        a.config.LoginPageImageURL(),
 		"login_page_image_mode":       a.config.LoginPageImageMode(),
 		"login_page_image_zoom":       a.config.LoginPageImageZoom(),
 		"login_page_image_position_x": a.config.LoginPageImagePositionX(),
 		"login_page_image_position_y": a.config.LoginPageImagePositionY(),
 	})
+}
+
+func (a *App) handleSiteIconSettings(w http.ResponseWriter, r *http.Request) {
+	identity, ok := a.requireIdentity(w, r, "")
+	if !ok {
+		return
+	}
+	if identity.Role != service.AuthRoleAdmin {
+		util.WriteError(w, http.StatusForbidden, "admin permission required")
+		return
+	}
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if err := r.ParseMultipartForm(maxSiteIconSize + (1 << 20)); err != nil {
+		util.WriteError(w, http.StatusBadRequest, "invalid multipart form")
+		return
+	}
+
+	currentIconURL := a.config.SiteIconURL()
+	nextIconURL := currentIconURL
+	uploadedIconURL := ""
+	switch strings.ToLower(strings.TrimSpace(r.FormValue("site_icon_action"))) {
+	case "remove":
+		nextIconURL = ""
+	case "replace":
+		fileHeader := firstMultipartFile(r.MultipartForm, "site_icon_file")
+		if fileHeader == nil {
+			util.WriteError(w, http.StatusBadRequest, "site icon file is required")
+			return
+		}
+		storedURL, err := a.storeSiteIcon(fileHeader)
+		if err != nil {
+			util.WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		nextIconURL = storedURL
+		uploadedIconURL = storedURL
+	case "keep", "":
+	default:
+		util.WriteError(w, http.StatusBadRequest, "invalid site icon action")
+		return
+	}
+
+	updated, err := a.config.Update(map[string]any{"site_icon_url": nextIconURL})
+	if err != nil {
+		if uploadedIconURL != "" {
+			a.deleteLocalSiteIcon(uploadedIconURL)
+		}
+		util.WriteError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if currentIconURL != "" && currentIconURL != nextIconURL {
+		a.deleteLocalSiteIcon(currentIconURL)
+	}
+	util.WriteJSON(w, http.StatusOK, map[string]any{"config": updated})
+}
+
+func (a *App) storeSiteIcon(header *multipart.FileHeader) (string, error) {
+	data, ext, err := readSiteIconFile(header)
+	if err != nil {
+		return "", err
+	}
+	filename := fmt.Sprintf("%d-site-icon%s", time.Now().UnixNano(), ext)
+	target := filepath.Join(a.config.SiteIconsDir(), filename)
+	if err := os.WriteFile(target, data, 0o644); err != nil {
+		return "", err
+	}
+	return "/site-icons/" + filename, nil
+}
+
+func readSiteIconFile(header *multipart.FileHeader) ([]byte, string, error) {
+	if header == nil {
+		return nil, "", fmt.Errorf("site icon file is required")
+	}
+	if header.Size > maxSiteIconSize {
+		return nil, "", fmt.Errorf("site icon cannot exceed 2MB")
+	}
+	file, err := header.Open()
+	if err != nil {
+		return nil, "", err
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, maxSiteIconSize+1))
+	if err != nil {
+		return nil, "", err
+	}
+	if len(data) == 0 {
+		return nil, "", fmt.Errorf("site icon file is empty")
+	}
+	if len(data) > maxSiteIconSize {
+		return nil, "", fmt.Errorf("site icon cannot exceed 2MB")
+	}
+	if _, _, err := image.DecodeConfig(bytes.NewReader(data)); err != nil {
+		return nil, "", fmt.Errorf("unsupported site icon file")
+	}
+	switch http.DetectContentType(data) {
+	case "image/jpeg":
+		return data, ".jpg", nil
+	case "image/gif":
+		return data, ".gif", nil
+	case "image/webp":
+		return data, ".webp", nil
+	case "image/png":
+		return data, ".png", nil
+	default:
+		return nil, "", fmt.Errorf("site icon must be PNG, JPEG, WebP, or GIF")
+	}
+}
+
+func (a *App) deleteLocalSiteIcon(iconURL string) {
+	iconPath, ok := localUploadedFilePath(a.config.SiteIconsDir(), iconURL, "/site-icons/")
+	if ok {
+		_ = os.Remove(iconPath)
+	}
+}
+
+func localUploadedFilePath(rootDir, fileURL, urlPrefix string) (string, bool) {
+	cleanURL := strings.TrimSpace(fileURL)
+	if !strings.HasPrefix(cleanURL, urlPrefix) {
+		return "", false
+	}
+	rel := strings.TrimPrefix(path.Clean(cleanURL), urlPrefix)
+	if rel == "." || rel == "" || strings.Contains(rel, "..") {
+		return "", false
+	}
+	root, err := filepath.Abs(rootDir)
+	if err != nil {
+		return "", false
+	}
+	target, err := filepath.Abs(filepath.Join(root, filepath.FromSlash(rel)))
+	if err != nil {
+		return "", false
+	}
+	if target != root && !strings.HasPrefix(target, root+string(os.PathSeparator)) {
+		return "", false
+	}
+	return target, true
 }
 
 func (a *App) handlePermissionCatalog(w http.ResponseWriter, r *http.Request) {
@@ -903,26 +1046,7 @@ func (a *App) deleteLocalLoginPageImage(imageURL string) {
 }
 
 func (a *App) localLoginPageImagePath(imageURL string) (string, bool) {
-	cleanURL := strings.TrimSpace(imageURL)
-	if !strings.HasPrefix(cleanURL, "/login-page-images/") {
-		return "", false
-	}
-	rel := strings.TrimPrefix(path.Clean(cleanURL), "/login-page-images/")
-	if rel == "." || rel == "" || strings.Contains(rel, "..") {
-		return "", false
-	}
-	root, err := filepath.Abs(a.config.LoginPageImagesDir())
-	if err != nil {
-		return "", false
-	}
-	target, err := filepath.Abs(filepath.Join(root, filepath.FromSlash(rel)))
-	if err != nil {
-		return "", false
-	}
-	if target != root && !strings.HasPrefix(target, root+string(os.PathSeparator)) {
-		return "", false
-	}
-	return target, true
+	return localUploadedFilePath(a.config.LoginPageImagesDir(), imageURL, "/login-page-images/")
 }
 
 func firstMultipartFile(form *multipart.Form, key string) *multipart.FileHeader {
@@ -1429,12 +1553,20 @@ func isPermissionCheckSkipped(path string) bool {
 		return true
 	case "/api/model-config":
 		return true
+	case "/api/announcements":
+		return true
+	case "/api/profile/announcement-preferences":
+		return true
 	case "/api/profile/api-key":
 		return true
 	case "/api/profile/prompt-favorites":
 		return true
+	case "/api/profile/image-conversations":
+		return true
 	default:
-		return strings.HasPrefix(path, "/api/profile/api-key/") || strings.HasPrefix(path, "/api/profile/prompt-favorites/")
+		return strings.HasPrefix(path, "/api/profile/api-key/") ||
+			strings.HasPrefix(path, "/api/profile/prompt-favorites/") ||
+			strings.HasPrefix(path, "/api/profile/image-conversations/")
 	}
 }
 

@@ -10,10 +10,12 @@ import {
 
 export const APP_META_UPDATED_EVENT = "chatgpt2api:app-meta-updated";
 export const DEFAULT_LOGIN_PAGE_IMAGE = "/login-panel-illustration.svg";
+export const DEFAULT_SITE_ICON = "/logo-mark.svg";
 
 export type AppMeta = {
   app_title: string;
   project_name: string;
+  site_icon_url: string;
   login_page_image_url: string;
   login_page_image_mode: LoginPageImageMode;
   login_page_image_zoom: number;
@@ -24,6 +26,7 @@ export type AppMeta = {
 export const defaultAppMeta: AppMeta = {
   app_title: "云棉",
   project_name: "云棉",
+  site_icon_url: "",
   login_page_image_url: "",
   login_page_image_mode: "contain",
   login_page_image_zoom: LOGIN_PAGE_IMAGE_DEFAULT_TRANSFORM.zoom,
@@ -51,6 +54,7 @@ export function normalizeAppMeta(data: Partial<AppMeta> = {}): AppMeta {
     ...data,
     app_title: appTitle,
     project_name: projectName,
+    site_icon_url: typeof data.site_icon_url === "string" ? data.site_icon_url.trim() : "",
     login_page_image_url: typeof data.login_page_image_url === "string" ? data.login_page_image_url : "",
     login_page_image_mode: normalizeLoginPageImageMode(data.login_page_image_mode),
     login_page_image_zoom: transform.zoom,
@@ -85,6 +89,26 @@ export function resolveLoginPageImageSrc(src?: string) {
     return value;
   }
   if (value.startsWith("/login-page-images/")) {
+    const base = webConfig.apiUrl.replace(/\/$/, "");
+    return `${base}${value}`;
+  }
+  return value;
+}
+
+export function resolveSiteIconSrc(src?: string) {
+  const value = String(src || "").trim();
+  if (!value) {
+    return DEFAULT_SITE_ICON;
+  }
+  if (
+    value.startsWith("blob:") ||
+    value.startsWith("data:") ||
+    value.startsWith("http://") ||
+    value.startsWith("https://")
+  ) {
+    return value;
+  }
+  if (value.startsWith("/site-icons/")) {
     const base = webConfig.apiUrl.replace(/\/$/, "");
     return `${base}${value}`;
   }

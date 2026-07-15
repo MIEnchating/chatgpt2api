@@ -13,7 +13,6 @@ export function SettingsHeader() {
 
   return (
     <PageHeader
-      title="设置"
       className="sticky top-0 z-20 border-b border-border/70 bg-background/95 py-2 backdrop-blur"
       actions={
         <Button type="button" onClick={() => void saveConfig()} disabled={isSavingConfig}>

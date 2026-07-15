@@ -29,12 +29,12 @@ export type BananaPrompt = {
 
 export const BANANA_PROMPTS_URL =
   "https://raw.githubusercontent.com/glidea/banana-prompt-quicker/main/prompts.json";
-export const AWESOME_GPT_IMAGE_2_PROMPTS_ZH_README_URL =
-  "https://raw.githubusercontent.com/EvoLinkAI/awesome-gpt-image-2-prompts/main/README_zh-CN.md";
-export const AWESOME_GPT_IMAGE_2_PROMPTS_EN_README_URL =
-  "https://raw.githubusercontent.com/EvoLinkAI/awesome-gpt-image-2-prompts/main/README.md";
 const AWESOME_GPT_IMAGE_2_PROMPTS_RAW_BASE_URL =
-  "https://raw.githubusercontent.com/EvoLinkAI/awesome-gpt-image-2-prompts/main/";
+  "https://raw.githubusercontent.com/shalinda-j/awesome-gpt-image-2-prompts/main/";
+export const AWESOME_GPT_IMAGE_2_PROMPTS_ZH_README_URL =
+  `${AWESOME_GPT_IMAGE_2_PROMPTS_RAW_BASE_URL}README_zh-CN.md`;
+export const AWESOME_GPT_IMAGE_2_PROMPTS_EN_README_URL =
+  `${AWESOME_GPT_IMAGE_2_PROMPTS_RAW_BASE_URL}README.md`;
 
 export const PROMPT_MARKET_SOURCE_OPTIONS: {
   value: PromptMarketSourceId;
@@ -301,39 +301,44 @@ export async function fetchBananaPrompts(signal?: AbortSignal) {
 }
 
 export async function fetchAwesomeGptImage2Prompts(signal?: AbortSignal) {
-  const [zhResponse, enResponse] = await Promise.all([
-    fetch(AWESOME_GPT_IMAGE_2_PROMPTS_ZH_README_URL, {
+  const fetchMarkdown = async (url: string, languageLabel: string) => {
+    const response = await fetch(url, {
       signal,
       headers: {
         Accept: "text/markdown,text/plain",
       },
-    }),
-    fetch(AWESOME_GPT_IMAGE_2_PROMPTS_EN_README_URL, {
-      signal,
-      headers: {
-        Accept: "text/markdown,text/plain",
-      },
-    }),
+    });
+    if (!response.ok) {
+      throw new Error(`读取 awesome-gpt-image-2-prompts ${languageLabel}提示词失败：${response.status}`);
+    }
+    return response.text();
+  };
+
+  const [zhResult, enResult] = await Promise.allSettled([
+    fetchMarkdown(AWESOME_GPT_IMAGE_2_PROMPTS_ZH_README_URL, "中文"),
+    fetchMarkdown(AWESOME_GPT_IMAGE_2_PROMPTS_EN_README_URL, "英文"),
   ]);
-  if (!zhResponse.ok) {
-    throw new Error(`读取 awesome-gpt-image-2-prompts 中文提示词失败：${zhResponse.status}`);
-  }
-  if (!enResponse.ok) {
-    throw new Error(`读取 awesome-gpt-image-2-prompts 英文提示词失败：${enResponse.status}`);
+
+  const zhPrompts = zhResult.status === "fulfilled" ? parseAwesomePrompts(zhResult.value, "zh-CN") : [];
+  const enPrompts = enResult.status === "fulfilled" ? parseAwesomePrompts(enResult.value, "en") : [];
+  if (zhPrompts.length === 0 && enPrompts.length === 0) {
+    const failure = zhResult.status === "rejected" ? zhResult.reason : enResult.status === "rejected" ? enResult.reason : null;
+    throw failure instanceof Error ? failure : new Error("awesome-gpt-image-2-prompts 数据格式无效");
   }
 
-  const [zhMarkdown, enMarkdown] = await Promise.all([zhResponse.text(), enResponse.text()]);
-  return mergeAwesomePrompts(
-    parseAwesomePrompts(zhMarkdown, "zh-CN"),
-    parseAwesomePrompts(enMarkdown, "en"),
-  );
+  return mergeAwesomePrompts(zhPrompts, enPrompts);
 }
 
 export async function fetchPromptMarketPrompts(signal?: AbortSignal) {
-  const [bananaPrompts, awesomePrompts] = await Promise.all([
+  const results = await Promise.allSettled([
     fetchBananaPrompts(signal),
     fetchAwesomeGptImage2Prompts(signal),
   ]);
+  const prompts = results.flatMap((result) => result.status === "fulfilled" ? result.value : []);
+  if (prompts.length > 0) {
+    return prompts;
+  }
 
-  return [...bananaPrompts, ...awesomePrompts];
+  const failure = results.find((result): result is PromiseRejectedResult => result.status === "rejected");
+  throw failure?.reason instanceof Error ? failure.reason : new Error("读取提示词市场失败");
 }

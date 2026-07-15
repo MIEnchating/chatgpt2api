@@ -6,10 +6,12 @@ import { LoaderCircle } from "lucide-react";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 
 import { ConfigCard } from "./components/config-card";
+import { AnnouncementsCard } from "./components/announcements-card";
 import { ImageStorageGovernanceCard } from "./components/image-storage-governance-card";
 import { LogGovernanceCard } from "./components/log-governance-card";
 import { LoginPageImageCard } from "./components/login-page-image-card";
 import { SettingsHeader } from "./components/settings-header";
+import { SiteIconCard } from "./components/site-icon-card";
 import { useSettingsStore } from "./store";
 
 function SettingsDataController() {
@@ -27,7 +29,7 @@ function SettingsDataController() {
   return null;
 }
 
-function AdminSettingsPageContent() {
+function AdminSettingsPageContent({ showAnnouncements }: { showAnnouncements: boolean }) {
   return (
     <div className="h-full min-h-0 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]">
       <div className="mx-auto flex w-full max-w-[1180px] flex-col gap-5 pb-8 pr-1">
@@ -39,6 +41,8 @@ function AdminSettingsPageContent() {
             <ImageStorageGovernanceCard />
           </div>
           <div className="flex min-w-0 flex-col gap-5">
+            {showAnnouncements ? <SiteIconCard /> : null}
+            {showAnnouncements ? <AnnouncementsCard /> : null}
             <LogGovernanceCard />
             <LoginPageImageCard />
           </div>
@@ -59,5 +63,5 @@ export default function SettingsPage() {
     );
   }
 
-  return <AdminSettingsPageContent />;
+  return <AdminSettingsPageContent showAnnouncements={session.role === "admin"} />;
 }

@@ -3,6 +3,12 @@
 import localforage from "localforage";
 
 import {
+  clearImageConversationHistory,
+  deleteImageConversationHistoryItem,
+  fetchImageConversationHistory,
+  mergeImageConversationHistory,
+} from "@/app/image/image-conversation-history-api";
+import {
   DEFAULT_IMAGE_MODEL,
   isImageCreationModel,
   isImageModeration,
@@ -163,7 +169,7 @@ function normalizeStoredError(value: unknown) {
     normalized.includes("任务没有返回图片数据") ||
     normalized.includes("图片任务没有返回图片数据")
   ) {
-    return "图片任务没有返回图片数据。通常是上游没有真正产出图片、模型参数不匹配、提示词被拒绝或上游链路异常导致；请调整提示词/参数后重试，并检查上游日志。";
+    return "图片任务没有返回图片数据。通常是生成服务没有产出图片、模型参数不匹配、提示词被拒绝或服务链路异常导致；请调整提示词或参数后重试，并检查服务日志。";
   }
   return text;
 }
@@ -491,56 +497,56 @@ async function readStoredImageConversations(storageKey?: string): Promise<ImageC
 }
 
 export async function listImageConversations(): Promise<ImageConversation[]> {
-  return sortImageConversations(await readStoredImageConversations());
+  const response = await fetchImageConversationHistory();
+  const serverItems = response.items.map((item) => normalizeConversation(item as ImageConversation & Record<string, unknown>));
+  const storageKey = await imageConversationsStorageKey();
+  const localItems = await readStoredImageConversations(storageKey);
+  if (localItems.length === 0) {
+    return sortImageConversations(serverItems);
+  }
+
+  const merged = new Map(serverItems.map((item) => [item.id, item]));
+  for (const item of localItems) {
+    const current = merged.get(item.id);
+    merged.set(item.id, current ? pickLatestConversation(current, item) : item);
+  }
+  const migrated = sortImageConversations([...merged.values()]);
+  const saved = await mergeImageConversationHistory(migrated as unknown as Record<string, unknown>[]);
+  await imageConversationStorage.removeItem(storageKey);
+  return sortImageConversations(
+    saved.items.map((item) => normalizeConversation(item as ImageConversation & Record<string, unknown>)),
+  );
 }
 
 export async function saveImageConversations(conversations: ImageConversation[]): Promise<void> {
   await queueImageConversationWrite(async () => {
-    const storageKey = await imageConversationsStorageKey();
-    const items = await readStoredImageConversations(storageKey);
-    const conversationMap = new Map(items.map((item) => [item.id, item]));
-    for (const conversation of conversations.map(normalizeConversation)) {
-      const current = conversationMap.get(conversation.id);
-      conversationMap.set(conversation.id, current ? pickLatestConversation(current, conversation) : conversation);
+    const items = conversations.map(normalizeConversation);
+    if (items.length === 0) {
+      return;
     }
-    await imageConversationStorage.setItem(
-      storageKey,
-      sortImageConversations([...conversationMap.values()]),
-    );
+    await mergeImageConversationHistory(items as unknown as Record<string, unknown>[]);
     dispatchImageConversationsChanged();
   });
 }
 
 export async function saveImageConversation(conversation: ImageConversation): Promise<void> {
   await queueImageConversationWrite(async () => {
-    const storageKey = await imageConversationsStorageKey();
-    const items = await readStoredImageConversations(storageKey);
     const nextConversation = normalizeConversation(conversation);
-    const current = items.find((item) => item.id === nextConversation.id);
-    const persistedConversation = current ? pickLatestConversation(current, nextConversation) : nextConversation;
-    const nextItems = sortImageConversations([
-      persistedConversation,
-      ...items.filter((item) => item.id !== persistedConversation.id),
-    ]);
-    await imageConversationStorage.setItem(storageKey, nextItems);
+    await mergeImageConversationHistory([nextConversation as unknown as Record<string, unknown>]);
     dispatchImageConversationsChanged();
   });
 }
 
 export async function deleteImageConversation(id: string): Promise<void> {
   await queueImageConversationWrite(async () => {
-    const storageKey = await imageConversationsStorageKey();
-    const items = await readStoredImageConversations(storageKey);
-    await imageConversationStorage.setItem(
-      storageKey,
-      items.filter((item) => item.id !== id),
-    );
+    await deleteImageConversationHistoryItem(id);
     dispatchImageConversationsChanged();
   });
 }
 
 export async function clearImageConversations(): Promise<void> {
   await queueImageConversationWrite(async () => {
+    await clearImageConversationHistory();
     await imageConversationStorage.removeItem(await imageConversationsStorageKey());
     dispatchImageConversationsChanged();
   });

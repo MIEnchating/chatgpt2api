@@ -41,16 +41,21 @@ func (a *App) routes() []appRoute {
 
 		subtree("/api/admin/roles", a.handleAdminRoles),
 		subtree("/api/admin/users", a.handleAdminUsers),
+		subtree("/api/admin/announcements", a.handleAdminAnnouncements),
+		exact(http.MethodGet, "/api/announcements", a.handleAnnouncements),
+		exact("", "/api/profile/announcement-preferences", a.handleAnnouncementPreferences),
 		exact("", "/api/profile", a.handleProfile),
 		exact(http.MethodPost, "/api/profile/password", a.handleProfilePassword),
 		exact("", "/api/profile/relay-key", a.handleProfileRelayKey),
 		exact("", "/api/profile/balance", a.handleProfileBalance),
 		subtree("/api/profile/api-key", a.handleProfileAPIKey),
 		subtree("/api/profile/prompt-favorites", a.handleProfilePromptFavorites),
+		subtree("/api/profile/image-conversations", a.handleProfileImageConversations),
 		subtree("/api/auth/users", a.handleUserKeys),
 		subtree("/api/creation-tasks", a.handleCreationTasks),
 		exact("", "/api/settings", a.handleSettings),
 		exact("", "/api/settings/login-page-image", a.handleLoginPageImageSettings),
+		exact("", "/api/settings/site-icon", a.handleSiteIconSettings),
 		exact(http.MethodGet, "/api/model-config", a.handleModelConfig),
 		exact(http.MethodGet, "/api/app-meta", a.handleAppMeta),
 		exact(http.MethodGet, "/api/admin/permissions", a.handlePermissionCatalog),
@@ -67,6 +72,7 @@ func (a *App) routes() []appRoute {
 		prefix("/image-references/", a.handleImageReferenceFile),
 		prefix("/image-thumbnails/", a.handleImageThumbnail),
 		prefix("/login-page-images/", http.StripPrefix("/login-page-images/", http.FileServer(http.Dir(a.config.LoginPageImagesDir()))).ServeHTTP),
+		prefix("/site-icons/", http.StripPrefix("/site-icons/", http.FileServer(http.Dir(a.config.SiteIconsDir()))).ServeHTTP),
 	}
 }
 

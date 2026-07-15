@@ -52,28 +52,6 @@ export function modelOptionsFromNames(names: ReadonlyArray<ImageModel>): ImageMo
 
 export const IMAGE_TASK_MODEL_OPTIONS = IMAGE_MODEL_OPTIONS.filter((option) => IMAGE_TASK_MODEL_VALUES.has(option.value));
 export const IMAGE_CREATION_MODEL_OPTIONS = modelOptionsFromNames(DEFAULT_IMAGE_MODELS);
-export const IMAGE_MODEL_ROUTE_DETAILS: Partial<Record<
-  ImageModel,
-  {
-    routeLabel: string;
-    description: string;
-    badge?: string;
-  }
->> = {
-  auto: {
-    routeLabel: "上游",
-    description: "通过固定上游提交请求，自动读取当前用户可用令牌。",
-  },
-  "gpt-image-2": {
-    routeLabel: "上游",
-    description: "通过上游图片接口生成图片。",
-  },
-  "codex-gpt-image-2": {
-    routeLabel: "上游",
-    description: "通过上游提交请求。",
-  },
-};
-
 export function isImageModel(value: unknown): value is ImageModel {
   return typeof value === "string" && value.trim() !== "";
 }
@@ -194,11 +172,33 @@ export type ApiPermission = {
   subtree?: boolean;
 };
 
+export type Announcement = {
+  id: string;
+  title: string;
+  content: string;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type AnnouncementInput = {
+  title: string;
+  content: string;
+  enabled: boolean;
+};
+
+export type AnnouncementPreferences = {
+  seen_versions: string[];
+  permanent_versions: string[];
+  snoozed_dates: Record<string, string>;
+};
+
 export type SettingsConfig = {
   proxy: string;
   base_url?: string;
   app_title?: string;
   project_name?: string;
+  site_icon_url?: string;
   relay_base_url?: string;
   newapi_token_group?: string;
   newapi_token_groups?: string[];
@@ -826,6 +826,52 @@ export async function fetchSettingsConfig() {
   return httpRequest<{ config: SettingsConfig }>("/api/settings");
 }
 
+export async function fetchAnnouncements() {
+  return httpRequest<{ items: Announcement[] }>("/api/announcements");
+}
+
+export async function fetchAnnouncementPreferences() {
+  return httpRequest<{ preferences: AnnouncementPreferences }>("/api/profile/announcement-preferences");
+}
+
+export async function updateAnnouncementPreferences(
+  version: string,
+  action: "seen" | "today" | "forever",
+  localDate = "",
+) {
+  return httpRequest<{ preferences: AnnouncementPreferences }>("/api/profile/announcement-preferences", {
+    method: "POST",
+    body: { version, action, local_date: localDate },
+  });
+}
+
+export async function fetchAdminAnnouncements() {
+  return httpRequest<{ items: Announcement[] }>("/api/admin/announcements");
+}
+
+export async function createAnnouncement(input: AnnouncementInput) {
+  return httpRequest<{ item: Announcement; items: Announcement[] }>("/api/admin/announcements", {
+    method: "POST",
+    body: input,
+  });
+}
+
+export async function updateAnnouncement(id: string, updates: Partial<AnnouncementInput>) {
+  return httpRequest<{ item: Announcement; items: Announcement[] }>(
+    `/api/admin/announcements/${encodeURIComponent(id)}`,
+    {
+      method: "POST",
+      body: updates,
+    },
+  );
+}
+
+export async function deleteAnnouncement(id: string) {
+  return httpRequest<{ items: Announcement[] }>(`/api/admin/announcements/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+}
+
 export async function updateSettingsConfig(settings: SettingsConfig) {
   return httpRequest<{ config: SettingsConfig }>("/api/settings", {
     method: "POST",
@@ -852,6 +898,21 @@ export async function updateLoginPageImageSettings(
     formData.append("login_page_image_file", options.file);
   }
   return httpRequest<{ config: SettingsConfig }>("/api/settings/login-page-image", {
+    method: "POST",
+    body: formData,
+  });
+}
+
+export async function updateSiteIconSettings(options: {
+  action: "keep" | "replace" | "remove";
+  file?: File | null;
+}) {
+  const formData = new FormData();
+  formData.append("site_icon_action", options.action);
+  if (options.file) {
+    formData.append("site_icon_file", options.file);
+  }
+  return httpRequest<{ config: SettingsConfig }>("/api/settings/site-icon", {
     method: "POST",
     body: formData,
   });

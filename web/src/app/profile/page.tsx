@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { AlertCircle, LoaderCircle, RefreshCw, UserCircle2, WalletCards } from "lucide-react";
 
-import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -326,8 +325,6 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
 
   return (
     <section className="flex h-full min-h-0 flex-col gap-5 overflow-y-auto overscroll-contain pb-8 pr-1 [scrollbar-gutter:stable]">
-      <PageHeader title="个人中心" />
-
       <div className="grid gap-5 xl:grid-cols-[320px_minmax(0,1fr)]">
         <div className="flex flex-col gap-5">
           <Card>

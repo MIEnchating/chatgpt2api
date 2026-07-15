@@ -1,13 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { ChevronLeft, ChevronRight, Copy, LoaderCircle, RefreshCw, Search, X } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, Copy, LoaderCircle, RefreshCw, Search, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { AuthenticatedImage } from "@/components/authenticated-image";
 import { DateRangeFilter } from "@/components/date-range-filter";
 import { ImageLightbox } from "@/components/image-lightbox";
-import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -285,6 +284,22 @@ function normalizeFilters(filters: SystemLogFilters): SystemLogFilters {
   };
 }
 
+function activeFilterCount(filters: SystemLogFilters, defaultView: LogView) {
+  const normalized = normalizeFilters(filters);
+  return [
+    normalized.view !== defaultView,
+    Boolean(normalized.username),
+    Boolean(normalized.module),
+    Boolean(normalized.summary),
+    Boolean(normalized.ip_address),
+    Boolean(normalized.operation_type),
+    normalized.method !== "all",
+    normalized.status !== "all",
+    normalized.log_level !== "all",
+    Boolean(normalized.start_date || normalized.end_date),
+  ].filter(Boolean).length;
+}
+
 function LogsContent() {
   const initialFilters = createEmptyFilters("meaningful");
   const [items, setItems] = useState<SystemLog[]>([]);
@@ -298,6 +313,7 @@ function LogsContent() {
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [isLoading, setIsLoading] = useState(true);
+  const [isFiltersExpanded, setIsFiltersExpanded] = useState(true);
   const detailUrls = getUrls(detailLog);
   const detailImages = detailUrls.map((url, index) => ({ id: `${index}`, src: url }));
   const detailMethod = detailText(detailLog, "method");
@@ -306,6 +322,7 @@ function LogsContent() {
   const pageCount = Math.max(1, Math.ceil(items.length / pageSize));
   const safePage = Math.min(page, pageCount);
   const currentRows = items.slice((safePage - 1) * pageSize, safePage * pageSize);
+  const activeFilters = activeFilterCount(filters, defaultLogView);
 
   const loadLogs = useCallback(async (nextQuery: SystemLogFilters) => {
     setIsLoading(true);
@@ -383,13 +400,33 @@ function LogsContent() {
 
   return (
     <section className="flex h-full min-h-0 flex-col gap-5 overflow-hidden">
-      <PageHeader title="日志管理" />
-
       <Card>
-        <CardHeader className="pb-4">
-          <CardTitle>筛选条件</CardTitle>
+        <CardHeader className={isFiltersExpanded ? "pb-4" : "py-3.5"}>
+          <div className="flex min-h-9 items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2.5">
+              <Search className="size-4 shrink-0 text-muted-foreground" />
+              <CardTitle className="text-base">搜索筛选</CardTitle>
+              {activeFilters > 0 ? (
+                <Badge variant="secondary" className="shrink-0 rounded-md">
+                  {activeFilters} 项
+                </Badge>
+              ) : null}
+            </div>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-8 shrink-0 rounded-lg px-2.5 text-muted-foreground"
+              aria-expanded={isFiltersExpanded}
+              aria-controls="log-search-filters"
+              onClick={() => setIsFiltersExpanded((expanded) => !expanded)}
+            >
+              {isFiltersExpanded ? "收起" : "展开"}
+              <ChevronDown className={`size-4 transition-transform ${isFiltersExpanded ? "rotate-180" : ""}`} />
+            </Button>
+          </div>
         </CardHeader>
-        <CardContent>
+        {isFiltersExpanded ? <CardContent id="log-search-filters">
           <form className="grid gap-3 md:grid-cols-2 xl:grid-cols-4" onSubmit={handleSearch}>
             <Select value={normalizeLogView(filters.view)} onValueChange={(value) => updateFilter("view", value)}>
               <SelectTrigger><SelectValue /></SelectTrigger>
@@ -444,7 +481,7 @@ function LogsContent() {
               </Button>
             </div>
           </form>
-        </CardContent>
+        </CardContent> : null}
       </Card>
 
       <Card className="flex min-h-0 flex-1 flex-col overflow-hidden">

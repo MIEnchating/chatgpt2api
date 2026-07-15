@@ -18,6 +18,7 @@ Environment variables:
   CHATGPT2API_DOCKER_NETWORK  Docker network to join. Default: newapi_default
   CHATGPT2API_BUILD_LOCAL     Build from this repository source. Default: 1
   CHATGPT2API_IMAGE           Runtime image when CHATGPT2API_BUILD_LOCAL=0.
+                              Default: mienvirtuoso/chatgpt2api:latest
   CHATGPT2API_COMPOSE_PROJECT Docker Compose project name. Default: chatgpt2api
 
 Optional first-run settings:
@@ -36,7 +37,7 @@ Examples:
   curl -fsSL https://raw.githubusercontent.com/MIEnchating/chatgpt2api/main/ubuntu-deploy.sh | sudo env CHATGPT2API_ADMIN_PASSWORD='change_me' sh
   sh ubuntu-deploy.sh deploy
   CHATGPT2API_ADMIN_PASSWORD='change_me' sh ubuntu-deploy.sh deploy
-  CHATGPT2API_BUILD_LOCAL=0 CHATGPT2API_IMAGE='your-registry/chatgpt2api:latest' sh ubuntu-deploy.sh deploy
+  CHATGPT2API_BUILD_LOCAL=0 sh ubuntu-deploy.sh deploy
   sh ubuntu-deploy.sh logs
 EOF
 }
@@ -315,8 +316,8 @@ prepare_env_file() {
     set_env_value CHATGPT2API_IMAGE "${CHATGPT2API_LOCAL_IMAGE:-chatgpt2api:local}" "$env_file"
     set_env_value CHATGPT2API_PULL_POLICY never "$env_file"
   else
-    [ -n "${CHATGPT2API_IMAGE:-}" ] || die "CHATGPT2API_IMAGE is required when CHATGPT2API_BUILD_LOCAL=0"
-    set_env_value CHATGPT2API_IMAGE "$CHATGPT2API_IMAGE" "$env_file"
+    runtime_image="${CHATGPT2API_IMAGE:-mienvirtuoso/chatgpt2api:latest}"
+    set_env_value CHATGPT2API_IMAGE "$runtime_image" "$env_file"
     set_env_value CHATGPT2API_PULL_POLICY "${CHATGPT2API_PULL_POLICY:-always}" "$env_file"
   fi
 

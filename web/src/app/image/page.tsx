@@ -1,10 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { ArrowDownToLine, Globe2, History, ImagePlus, LoaderCircle, Plus, Trash2, X } from "lucide-react";
+import { ArrowDownToLine, ChevronDown, Globe2, History, ImagePlus, LoaderCircle, Minus, Plus, SlidersHorizontal, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { ImageComposer } from "@/app/image/components/image-composer";
+import {
+  ImageAspectRatioGlyph,
+  ImageParameterLabel,
+} from "@/app/image/components/image-parameter-ui";
+import { imageParameterChoiceClass } from "@/app/image/components/image-parameter-styles";
 import { ImagePromptMarket } from "@/app/image/components/image-prompt-market";
 import { ImageResults, type ImageLightboxItem } from "@/app/image/components/image-results";
 import type { BananaPrompt } from "@/app/image/banana-prompts";
@@ -16,7 +21,6 @@ import {
   IMAGE_ASPECT_RATIO_OPTIONS,
   IMAGE_QUALITY_OPTIONS,
   IMAGE_RESOLUTION_OPTIONS,
-  IMAGE_SIZE_MODE_OPTIONS,
   buildImageSize,
   formatImageSizeDisplay,
   getActiveImageAspectRatio,
@@ -66,7 +70,6 @@ import {
   fetchCreationTasks,
   fetchModelConfig,
   IMAGE_CREATION_MODEL_OPTIONS,
-  IMAGE_MODEL_ROUTE_DETAILS,
   IMAGE_OUTPUT_FORMAT_OPTIONS,
   PROFILE_RELAY_TOKEN_GROUP_CHANGED_EVENT,
   PROFILE_RELAY_TOKEN_GROUP_STORAGE_KEY,
@@ -80,7 +83,6 @@ import {
   supportsImageOutputCompression,
   supportsImageOutputControls,
   supportsStructuredImageParameters,
-  usesOfficialImageRoute,
   updateManagedImageVisibility,
   type ImageModel,
   type ImageModelOption,
@@ -145,7 +147,6 @@ const IMAGE_PARTIAL_IMAGES_STORAGE_KEY = "chatgpt2api:image_last_partial_images"
 const NEWAPI_TOKEN_MISSING_MESSAGE = "请先在云棉为当前用户创建可用令牌";
 const DEFAULT_IMAGE_OUTPUT_FORMAT: ImageOutputFormat = "png";
 const activeConversationQueueIds = new Set<string>();
-const EMPTY_IMAGE_ASPECT_RATIO_SELECT_VALUE = "__empty_aspect_ratio__";
 const MISSING_RECOVERABLE_TASK_ID_ERROR = "页面刷新或任务中断，未找到可恢复的任务 ID";
 const RESULTS_BOTTOM_STICKY_THRESHOLD = 96;
 
@@ -445,7 +446,7 @@ function normalizeImagePartialImages(value: unknown) {
 }
 
 function formatHighResolutionHint() {
-  return "高分辨率会作为目标尺寸记录，实际像素以上游返回为准。";
+  return "高分辨率会作为目标尺寸记录，实际像素以生成结果为准。";
 }
 
 function imageTaskProgressMessage(turn: ImageTurn, elapsedSeconds = 0) {
@@ -456,17 +457,16 @@ function imageTaskProgressMessage(turn: ImageTurn, elapsedSeconds = 0) {
     };
   }
 
-  const route = IMAGE_MODEL_ROUTE_DETAILS[turn.model];
   const isHighResolution = supportsStructuredImageParameters(turn.model) && isHighResolutionImageSize(turn.size);
   void elapsedSeconds;
   if (isHighResolution) {
     return {
       message: "高分辨率生成中",
-      detail: `${getImageSizeRequirementLabel(turn.size)}目标已记录，后端正在等待上游结果`,
+      detail: `${getImageSizeRequirementLabel(turn.size)}目标已记录，正在等待生成结果`,
     };
   }
   return {
-    message: route ? `${route.routeLabel}生成中` : "等待生成结果",
+    message: "正在生成图片",
     detail: "后端正在轮询任务状态",
   };
 }
@@ -997,28 +997,28 @@ function formatCreationTaskErrorMessage(message: string) {
     return "参考图不是有效图片。请重新上传 JPEG、PNG、GIF 或 WebP 格式的图片，不要使用损坏文件、空文件、SVG/HEIC/AVIF，或复制出来的无效图片数据。";
   }
   if (normalized.includes("user balance insufficient")) {
-    return "当前账号额度不足，上游拒绝了这次请求。请切换可用令牌、补充额度，或稍后再试。";
+    return "当前账号额度不足，生成服务拒绝了这次请求。请切换可用令牌、补充额度，或稍后再试。";
   }
   if (normalized.includes("user quota exceeded")) {
-    return "当前账号额度已用完，上游拒绝了这次请求。请切换可用令牌、补充额度，或稍后再试。";
+    return "当前账号额度已用完，生成服务拒绝了这次请求。请切换可用令牌、补充额度，或稍后再试。";
   }
   if (normalized.includes("context deadline exceeded") || normalized.includes("client.timeout exceeded") || normalized.includes("awaiting headers") || normalized.includes("awaiting response headers")) {
-    return `${taskLabel}请求已发出，但上游长时间没有响应。请稍后重试；如果连续出现，建议降低分辨率、减少参考图，或检查上游服务和代理是否正常。`;
+    return `${taskLabel}请求已发出，但生成服务长时间没有响应。请稍后重试；如果连续出现，建议降低分辨率、减少参考图，或检查生成服务和代理是否正常。`;
   }
   if (normalized.includes("i/o timeout") || normalized.includes("tls handshake timeout") || normalized.includes("timeout awaiting response headers")) {
-    return `${taskLabel}请求连接超时。通常是代理、网络或上游服务繁忙导致，请稍后重试；如果频繁出现，先检查代理和上游连通性。`;
+    return `${taskLabel}请求连接超时。通常是代理、网络或生成服务繁忙导致，请稍后重试；如果频繁出现，先检查代理和服务连通性。`;
   }
   if (
     normalized.includes("stream disconnected before completion") ||
     normalized.includes("stream closed before") ||
     normalized.includes("response.completed")
   ) {
-    return "图片结果还没传完，上游连接就断开了。通常是网络波动、上游繁忙，或提示词/参考图触发安全限制导致；请稍后重试，或调整内容、降低分辨率、减少参考图。";
+    return "图片结果还没传完，服务连接就断开了。通常是网络波动、服务繁忙，或提示词/参考图触发安全限制导致；请稍后重试，或调整内容、降低分辨率、减少参考图。";
   }
   if (normalized.includes("an error occurred while processing your request")) {
     const requestId = trimmed.match(/request id\s+([a-z0-9-]+)/i)?.[1];
     return [
-      "上游处理图片请求失败，可能是提示词内容过多、模型能力限制或当前图片链路繁忙。",
+      "生成服务处理图片请求失败，可能是提示词内容过多、模型能力限制或当前图片链路繁忙。",
       "建议减少提示词内容，或稍后重试；高分辨率请求可降低尺寸后再试。",
       requestId ? `请求 ID：${requestId}` : "",
     ]
@@ -1039,19 +1039,19 @@ function formatCreationTaskErrorMessage(message: string) {
     normalized.includes("任务没有返回图片数据") ||
     normalized.includes("图片任务没有返回图片数据")
   ) {
-    return "图片任务没有返回图片数据。通常是上游没有真正产出图片、模型参数不匹配、提示词被拒绝或上游链路异常导致；请调整提示词/参数后重试，并检查上游日志。";
+    return "图片任务没有返回图片数据。通常是生成服务没有产出图片、模型参数不匹配、提示词被拒绝或服务链路异常导致；请调整提示词或参数后重试，并检查服务日志。";
   }
   if (normalized.includes("upstream connection failed before tls handshake") || normalized.includes("tls connect error")) {
-    return "连接上游失败，代理或网络可能没有连通到 ChatGPT。请检查代理后重试。";
+    return "连接生成服务失败，代理或网络可能没有连通到 ChatGPT。请检查代理后重试。";
   }
   if (normalized.includes("connection refused") || normalized.includes("connect: refused")) {
-    return "连接上游失败：目标服务拒绝连接。请确认上游服务正在运行，地址和端口配置正确。";
+    return "连接生成服务失败：目标服务拒绝连接。请确认服务正在运行，地址和端口配置正确。";
   }
   if (normalized.includes("no such host") || normalized.includes("server misbehaving")) {
-    return "无法解析上游地址。请检查上游域名、Docker 网络或 DNS 配置。";
+    return "无法解析生成服务地址。请检查服务域名、Docker 网络或 DNS 配置。";
   }
   if (normalized.includes("bad gateway") || normalized.includes("service unavailable") || normalized.includes("gateway timeout")) {
-    return "上游服务暂时不可用。请稍后重试；如果持续出现，请检查上游服务状态。";
+    return "生成服务暂时不可用。请稍后重试；如果持续出现，请检查服务状态。";
   }
 
   return trimmed;
@@ -1465,9 +1465,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   const editingDraftOutputControls = editingTurnDraft
     ? supportsImageOutputControls(editingTurnDraft.model)
     : false;
-  const editingDraftOfficialRoute = editingTurnDraft
-    ? usesOfficialImageRoute(editingTurnDraft.model)
-    : false;
   const editingDraftCustomRatioInvalid = editingTurnDraft && editingDraftEffectiveSizeSelection
     ? isInvalidCustomRatioSelection(
         editingDraftEffectiveSizeSelection.mode,
@@ -1486,33 +1483,19 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
           ? "自动"
           : "尺寸无效"
       : "";
-  const editingDraftSizePreviewDetail =
-    editingDraftEffectiveSizeSelection?.mode === "ratio"
-      ? editingDraftCustomRatioInvalid
-        ? "比例需要填写为宽:高"
-        : editingDraftEffectiveSizeSelection.resolution === "auto"
-          ? editingDraftImageSize
-            ? editingDraftOfficialRoute
-              ? `将把 ${editingDraftImageSize} 写入提示词作为构图偏好`
-              : `将按 ${editingDraftImageSize} 比例下发`
-            : editingDraftOfficialRoute
-              ? "不写入固定比例，交给上游决定"
-              : "自动比例将交给模型决定"
-          : editingDraftImageSize
-            ? editingDraftOfficialRoute
-              ? `将把 ${formatImageSizeDisplay(editingDraftImageSize)} 作为提示词构图偏好，实际像素以结果为准`
-              : `将下发计算后的 ${formatImageSizeDisplay(editingDraftImageSize)}，${getImageSizeRequirementLabel(editingDraftImageSize)}`
-            : "比例需要填写为宽:高"
-      : editingDraftEffectiveSizeSelection?.mode === "custom"
-        ? editingDraftImageSize
-          ? `已按链路限制校准为 ${formatImageSizeDisplay(editingDraftImageSize)}，${getImageSizeRequirementLabel(editingDraftImageSize)}`
-          : "宽高需要填写正整数"
-        : editingDraftOfficialRoute
-          ? "不写入尺寸提示，实际像素由上游返回决定"
-          : "不会强制指定尺寸";
   const editingDraftSizeIsHighResolution = Boolean(
     editingDraftStructuredParameters && editingDraftImageSize && isHighResolutionImageSize(editingDraftImageSize),
   );
+  const editingDraftDimensions = parseImageSizeDimensions(editingDraftImageSize);
+  const editingDraftDisplayedWidth =
+    editingDraftEffectiveSizeSelection?.mode === "custom"
+      ? editingTurnDraft?.customWidth || editingDraftDimensions?.width || ""
+      : editingDraftDimensions?.width || editingTurnDraft?.customWidth || "";
+  const editingDraftDisplayedHeight =
+    editingDraftEffectiveSizeSelection?.mode === "custom"
+      ? editingTurnDraft?.customHeight || editingDraftDimensions?.height || ""
+      : editingDraftDimensions?.height || editingTurnDraft?.customHeight || "";
+  const editingDraftCount = editingTurnDraft ? normalizeRequestedImageCount(editingTurnDraft.count) : 1;
   const imageCreationModelOptions = useMemo(
     () => (relayImageModelOptions.length > 0 ? relayImageModelOptions : IMAGE_CREATION_MODEL_OPTIONS),
     [relayImageModelOptions],
@@ -1639,10 +1622,26 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       void refreshConversations();
     };
 
+    const handleWindowFocus = () => {
+      void refreshConversations();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void refreshConversations();
+      }
+    };
+
     window.addEventListener(IMAGE_CONVERSATIONS_CHANGED_EVENT, handleConversationsChanged);
+    window.addEventListener("focus", handleWindowFocus);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    const refreshTimer = window.setInterval(() => void refreshConversations(), 30_000);
     return () => {
       cancelled = true;
       window.removeEventListener(IMAGE_CONVERSATIONS_CHANGED_EVENT, handleConversationsChanged);
+      window.removeEventListener("focus", handleWindowFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.clearInterval(refreshTimer);
     };
   }, []);
 
@@ -3241,7 +3240,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       if (supportsStructuredImageParameters(draft.model) && isHighResolutionImageSize(draftImageSize)) {
         const sizeLabel = formatImageSizeDisplay(draftImageSize);
         if (regenerate) {
-          toast.message(`${sizeLabel} 属于高分辨率目标，实际像素以上游返回为准。`);
+          toast.message(`${sizeLabel} 属于高分辨率目标，实际像素以生成结果为准。`);
         }
       }
       const now = new Date().toISOString();
@@ -3391,7 +3390,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         isHighResolutionImageSize(currentImageSize);
       if (isHighResolutionRequest) {
         const sizeLabel = formatImageSizeDisplay(currentImageSize);
-        toast.message(`${sizeLabel} 属于高分辨率目标，实际像素以上游返回为准。`);
+        toast.message(`${sizeLabel} 属于高分辨率目标，实际像素以生成结果为准。`);
       }
       const targetConversation = selectedConversationId
         ? conversationsRef.current.find((conversation) => conversation.id === selectedConversationId) ?? null
@@ -3613,352 +3612,423 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                   </div>
                   ) : null}
 
-                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                    {editingTurnDraft.mode !== "chat" ? (
-                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                      张数
-                      <Input
-                        type="number"
-                        inputMode="numeric"
-                        min="1"
-                        max="10"
-                        step="1"
-                        value={editingTurnDraft.count}
-                        onChange={(event) =>
-                          setEditingTurnDraft((current) =>
-                            current ? { ...current, count: event.target.value } : current,
-                          )
-                        }
-                      />
-                    </label>
-                    ) : null}
-                    <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                      模型
-                      <Select
-                        value={editingTurnDraft.model}
-                        onValueChange={(value) =>
-                          setEditingTurnDraft((current) =>
-                            current && isImageModel(value) ? { ...current, model: value } : current,
-                          )
-                        }
-                      >
-                        <SelectTrigger>
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectGroup>
-                            {editingTurnModelOptions.map((option) => (
-                              <SelectItem key={option.value} value={option.value}>
-                                {option.label}
-                              </SelectItem>
-                            ))}
-                          </SelectGroup>
-                        </SelectContent>
-                      </Select>
-                    </label>
-                    {editingTurnDraft.mode !== "chat" && editingDraftEffectiveSizeSelection ? (
-                      <>
-                        <div className="rounded-2xl border border-sky-100 bg-sky-50 px-3 py-2 text-xs leading-5 text-sky-900 sm:col-span-2 lg:col-span-4">
-                          图片请求会通过上游提交；尺寸、格式和压缩率会随请求参数发送。
+                  <label className="flex max-w-[15rem] flex-col gap-1.5">
+                    <ImageParameterLabel>模型</ImageParameterLabel>
+                    <Select
+                      value={editingTurnDraft.model}
+                      onValueChange={(value) =>
+                        setEditingTurnDraft((current) =>
+                          current && isImageModel(value) ? { ...current, model: value } : current,
+                        )
+                      }
+                    >
+                      <SelectTrigger className="h-9 rounded-lg text-xs shadow-none">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectGroup>
+                          {editingTurnModelOptions.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                              {option.label}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                  </label>
+
+                  {editingTurnDraft.mode !== "chat" && editingDraftEffectiveSizeSelection ? (
+                    <div className="space-y-3.5 rounded-xl border border-[#dedfe3] bg-white p-3.5 dark:border-border dark:bg-card">
+                      <section className="space-y-1.5">
+                        <div className="flex items-center justify-between gap-3">
+                          <ImageParameterLabel help="选择常用画幅比例，系统会自动换算为合法像素尺寸。">
+                            画幅比例
+                          </ImageParameterLabel>
+                          <span
+                            className={cn(
+                              "rounded-md bg-[#f3f4f6] px-2 py-0.5 font-mono text-[11px] text-[#686b73] dark:bg-muted dark:text-muted-foreground",
+                              editingDraftSizeIsHighResolution && "bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300",
+                            )}
+                          >
+                            {editingDraftSizePreviewLabel}
+                          </span>
                         </div>
-                        <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                          {editingDraftOfficialRoute ? "构图" : "尺寸"}
-                          <Select
-                            value={editingDraftEffectiveSizeSelection.mode}
-                            onValueChange={(value) =>
+                        <div className="grid grid-cols-5 gap-1.5" role="group" aria-label="编辑图片画幅比例">
+                          {IMAGE_ASPECT_RATIO_OPTIONS.map((option) => {
+                            const isAuto = option.value === "";
+                            const isCustom = option.value === CUSTOM_IMAGE_ASPECT_RATIO;
+                            const active = isAuto
+                              ? editingDraftEffectiveSizeSelection.mode === "auto"
+                              : editingDraftEffectiveSizeSelection.mode === "ratio" &&
+                                editingTurnDraft.aspectRatio === option.value;
+                            return (
+                              <button
+                                key={option.value || "auto"}
+                                type="button"
+                                aria-pressed={active}
+                                className={cn(
+                                  "flex h-11 min-w-0 flex-col items-center justify-center gap-1 rounded-lg border border-[#e5e7eb] bg-[#f7f7f8] px-1 text-[10px] font-medium text-[#686b73] transition hover:border-[#cfd1d5] hover:bg-white hover:text-[#222222] dark:border-border dark:bg-muted/55 dark:text-muted-foreground dark:hover:bg-background dark:hover:text-foreground",
+                                  active &&
+                                    "border-[#bfd1ff] bg-[#eef4ff] text-[#1456f0] shadow-[inset_0_0_0_1px_rgba(20,86,240,0.08)] hover:border-[#9db9ff] hover:bg-[#eef4ff] hover:text-[#1456f0] dark:border-sky-900/80 dark:bg-sky-950/35 dark:text-sky-300",
+                                )}
+                                onClick={() =>
+                                  setEditingTurnDraft((current) =>
+                                    current
+                                      ? {
+                                          ...current,
+                                          aspectRatio: option.value,
+                                          sizeMode: isAuto ? "auto" : "ratio",
+                                        }
+                                      : current,
+                                  )
+                                }
+                              >
+                                {isAuto || isCustom ? (
+                                  <SlidersHorizontal className="size-3.5" />
+                                ) : (
+                                  <ImageAspectRatioGlyph ratio={option.value} />
+                                )}
+                                <span className="truncate">{isAuto ? "自动" : isCustom ? "自定义" : option.value}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        {editingTurnDraft.aspectRatio === CUSTOM_IMAGE_ASPECT_RATIO &&
+                        editingDraftEffectiveSizeSelection.mode === "ratio" ? (
+                          <Input
+                            value={editingTurnDraft.customRatio}
+                            onChange={(event) =>
                               setEditingTurnDraft((current) =>
-                                current && isImageSizeMode(value) ? { ...current, sizeMode: value } : current,
+                                current ? { ...current, customRatio: event.target.value } : current,
                               )
                             }
-                          >
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectGroup>
-                                {IMAGE_SIZE_MODE_OPTIONS.filter((option) => editingDraftStructuredParameters || option.value !== "custom").map((option) => (
-                                  <SelectItem key={option.value} value={option.value}>
-                                    {option.label}
-                                  </SelectItem>
-                                ))}
-                              </SelectGroup>
-                            </SelectContent>
-                          </Select>
-                        </label>
-                        {editingDraftStructuredParameters && editingDraftEffectiveSizeSelection.mode === "custom" ? (
-                          <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-end gap-2 lg:col-span-2">
-                            <label className="flex min-w-0 flex-col gap-2 text-sm font-medium text-stone-700">
-                              宽度
-                              <Input
-                                type="number"
-                                inputMode="numeric"
-                                min="1"
-                                step="1"
-                                value={editingTurnDraft.customWidth}
-                                onChange={(event) =>
-                                  setEditingTurnDraft((current) =>
-                                    current ? { ...current, customWidth: event.target.value } : current,
-                                  )
-                                }
-                              />
-                            </label>
-                            <span className="pb-2 text-sm font-medium text-stone-400">x</span>
-                            <label className="flex min-w-0 flex-col gap-2 text-sm font-medium text-stone-700">
-                              高度
-                              <Input
-                                type="number"
-                                inputMode="numeric"
-                                min="1"
-                                step="1"
-                                value={editingTurnDraft.customHeight}
-                                onChange={(event) =>
-                                  setEditingTurnDraft((current) =>
-                                    current ? { ...current, customHeight: event.target.value } : current,
-                                  )
-                                }
-                              />
-                            </label>
-                          </div>
+                            placeholder="例如 5:4 或 2.39:1"
+                            aria-invalid={editingDraftCustomRatioInvalid}
+                            className={cn(
+                              "h-8 rounded-lg text-xs shadow-none",
+                              editingDraftCustomRatioInvalid && "border-red-300 focus-visible:border-red-400",
+                            )}
+                          />
                         ) : null}
-                        {editingDraftEffectiveSizeSelection.mode === "ratio" ? (
-                          <>
-                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                              比例
-                              <Select
-                                value={editingTurnDraft.aspectRatio || EMPTY_IMAGE_ASPECT_RATIO_SELECT_VALUE}
-                                onValueChange={(value) =>
+                      </section>
+
+                      {editingDraftOutputControls ? (
+                        <section className="space-y-1.5">
+                          <ImageParameterLabel help="gpt-image-2 支持自动、低、中、高四档；质量越高，生成时间和费用通常越高。">
+                            质量
+                          </ImageParameterLabel>
+                          <div className="grid grid-cols-4 gap-1 rounded-lg bg-[#f4f4f5] p-1 dark:bg-muted/70" role="group" aria-label="编辑图片质量">
+                            {[{ value: "", label: "自动" }, ...IMAGE_QUALITY_OPTIONS].map((option) => (
+                              <button
+                                key={option.value || "auto"}
+                                type="button"
+                                aria-pressed={editingTurnDraft.quality === option.value}
+                                className={imageParameterChoiceClass(editingTurnDraft.quality === option.value, "h-7")}
+                                onClick={() =>
                                   setEditingTurnDraft((current) =>
                                     current
-                                      ? {
-                                          ...current,
-                                          aspectRatio:
-                                            value === EMPTY_IMAGE_ASPECT_RATIO_SELECT_VALUE
-                                              ? ""
-                                              : isImageAspectRatio(value)
-                                                ? value
-                                                : current.aspectRatio,
-                                        }
+                                      ? { ...current, quality: option.value as "" | ImageQuality }
                                       : current,
                                   )
                                 }
                               >
-                                <SelectTrigger>
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectGroup>
-                                    {IMAGE_ASPECT_RATIO_OPTIONS.map((option) => (
-                                      <SelectItem
-                                        key={option.label}
-                                        value={option.value || EMPTY_IMAGE_ASPECT_RATIO_SELECT_VALUE}
-                                      >
-                                        {option.label}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectGroup>
-                                </SelectContent>
-                              </Select>
-                            </label>
-                            {editingDraftStructuredParameters ? (
-                              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                                分辨率
-                                <Select
-                                  value={editingTurnDraft.resolution}
-                                  onValueChange={(value) =>
-                                    setEditingTurnDraft((current) =>
-                                      current && isImageResolution(value) ? { ...current, resolution: value } : current,
-                                    )
+                                {option.label}
+                              </button>
+                            ))}
+                          </div>
+                        </section>
+                      ) : null}
+
+                      {editingDraftStructuredParameters ? (
+                        <section className="space-y-1.5">
+                          <ImageParameterLabel help="自动比例使用常规像素；1080P、2K、4K 会结合宽高比计算，并校正为允许的尺寸。">
+                            分辨率
+                          </ImageParameterLabel>
+                          <div className="grid grid-cols-4 gap-1 rounded-lg bg-[#f4f4f5] p-1 dark:bg-muted/70" role="group" aria-label="编辑图片分辨率">
+                            {IMAGE_RESOLUTION_OPTIONS.map((option) => {
+                              const active =
+                                editingTurnDraft.resolution === option.value &&
+                                (editingDraftEffectiveSizeSelection.mode !== "auto" || option.value === "auto");
+                              return (
+                                <button
+                                  key={option.value}
+                                  type="button"
+                                  aria-pressed={active}
+                                  className={imageParameterChoiceClass(active, "h-7")}
+                                  onClick={() =>
+                                    setEditingTurnDraft((current) => {
+                                      if (!current) return current;
+                                      if (current.sizeMode === "auto" && option.value !== "auto") {
+                                        return { ...current, resolution: option.value, aspectRatio: "1:1", sizeMode: "ratio" };
+                                      }
+                                      return { ...current, resolution: option.value };
+                                    })
                                   }
                                 >
-                                  <SelectTrigger>
-                                    <SelectValue />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectGroup>
-                                      {IMAGE_RESOLUTION_OPTIONS.map((option) => (
-                                        <SelectItem key={option.value} value={option.value}>
-                                          {option.label}
-                                        </SelectItem>
-                                      ))}
-                                    </SelectGroup>
-                                  </SelectContent>
-                                </Select>
-                              </label>
-                            ) : null}
-                            {editingTurnDraft.aspectRatio === CUSTOM_IMAGE_ASPECT_RATIO ? (
-                              <label className="flex flex-col gap-2 text-sm font-medium text-stone-700 sm:col-span-2">
-                                自定义比例
+                                  {option.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          {editingDraftSizeIsHighResolution ? (
+                            <p className="text-xs leading-5 text-amber-700 dark:text-amber-300">{highResolutionHint}</p>
+                          ) : null}
+                        </section>
+                      ) : null}
+
+                      <section className="flex items-center justify-between gap-3 border-t border-[#ececef] pt-3 dark:border-border">
+                        <ImageParameterLabel help="单次请求生成 1-10 张图片；系统会按并发额度拆分和排队。">
+                          生成数量
+                        </ImageParameterLabel>
+                        <div className="grid h-8 grid-cols-[2rem_3.25rem_2rem] overflow-hidden rounded-lg border border-[#dedfe3] bg-white dark:border-border dark:bg-background/70" role="group" aria-label="编辑生成数量">
+                          <button
+                            type="button"
+                            disabled={editingDraftCount <= 1}
+                            className="inline-flex items-center justify-center text-[#686b73] transition hover:bg-[#f4f4f5] hover:text-[#18181b] disabled:cursor-not-allowed disabled:opacity-35 dark:text-muted-foreground dark:hover:bg-muted dark:hover:text-foreground"
+                            onClick={() =>
+                              setEditingTurnDraft((current) =>
+                                current ? { ...current, count: String(editingDraftCount - 1) } : current,
+                              )
+                            }
+                            aria-label="减少编辑生成数量"
+                          >
+                            <Minus className="size-3.5" />
+                          </button>
+                          <span className="inline-flex items-center justify-center border-x border-[#ececef] text-xs font-semibold text-[#18181b] dark:border-border dark:text-foreground">
+                            {editingDraftCount} 张
+                          </span>
+                          <button
+                            type="button"
+                            disabled={editingDraftCount >= 10}
+                            className="inline-flex items-center justify-center text-[#686b73] transition hover:bg-[#f4f4f5] hover:text-[#18181b] disabled:cursor-not-allowed disabled:opacity-35 dark:text-muted-foreground dark:hover:bg-muted dark:hover:text-foreground"
+                            onClick={() =>
+                              setEditingTurnDraft((current) =>
+                                current ? { ...current, count: String(editingDraftCount + 1) } : current,
+                              )
+                            }
+                            aria-label="增加编辑生成数量"
+                          >
+                            <Plus className="size-3.5" />
+                          </button>
+                        </div>
+                      </section>
+
+                      <details className="group border-t border-[#ececef] pt-2.5 dark:border-border">
+                        <summary className="flex h-8 cursor-pointer list-none items-center justify-between rounded-md px-1.5 text-xs font-semibold text-[#3f4147] outline-none transition hover:bg-black/[0.04] focus-visible:ring-2 focus-visible:ring-[#1456f0]/30 dark:text-foreground dark:hover:bg-accent/60 [&::-webkit-details-marker]:hidden">
+                          <span>高级设置</span>
+                          <ChevronDown className="size-3.5 opacity-60 transition group-open:rotate-180" />
+                        </summary>
+                        <div className="mt-2 space-y-3">
+                          <section className="space-y-1.5">
+                            <ImageParameterLabel help="手动输入像素尺寸后会覆盖上方画幅比例；边长不超过 3840，必须为 16 的倍数。">
+                              精确尺寸
+                            </ImageParameterLabel>
+                            <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5">
+                              <label className="grid h-8 grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded-lg border border-[#e3e4e7] bg-white px-2.5 dark:border-border dark:bg-background/70">
+                                <span className="text-[11px] text-[#777a82] dark:text-muted-foreground">W</span>
                                 <Input
-                                  value={editingTurnDraft.customRatio}
-                                  onChange={(event) =>
+                                  type="number"
+                                  inputMode="numeric"
+                                  min="1"
+                                  step="1"
+                                  value={editingDraftDisplayedWidth}
+                                  placeholder="自动"
+                                  onFocus={() =>
                                     setEditingTurnDraft((current) =>
-                                      current ? { ...current, customRatio: event.target.value } : current,
+                                      current && current.sizeMode !== "custom"
+                                        ? {
+                                            ...current,
+                                            customWidth: editingDraftDimensions?.width || current.customWidth || "1024",
+                                            customHeight: editingDraftDimensions?.height || current.customHeight || "1024",
+                                            sizeMode: "custom",
+                                          }
+                                        : current,
                                     )
                                   }
-                                  placeholder="例如 5:4 / 2.39:1"
-                                  aria-invalid={editingDraftCustomRatioInvalid}
-                                  className={cn(editingDraftCustomRatioInvalid && "border-red-300 focus-visible:ring-red-500/20")}
+                                  onChange={(event) =>
+                                    setEditingTurnDraft((current) =>
+                                      current ? { ...current, customWidth: event.target.value, sizeMode: "custom" } : current,
+                                    )
+                                  }
+                                  className="h-7 border-0 bg-transparent px-0 text-xs font-medium shadow-none focus-visible:ring-0"
                                 />
                               </label>
-                            ) : null}
-                          </>
-                        ) : null}
-                        {editingDraftOutputControls ? (
-                          <>
-                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                              质量
-                              <Select
-                                value={editingTurnDraft.quality || "__auto_quality__"}
-                                onValueChange={(value) =>
-                                  setEditingTurnDraft((current) =>
-                                    current
-                                      ? {
-                                          ...current,
-                                          quality: isImageQuality(value) ? value : "",
-                                        }
-                                      : current,
-                                  )
-                                }
-                              >
-                                <SelectTrigger>
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectGroup>
-                                    <SelectItem value="__auto_quality__">自动</SelectItem>
-                                    {IMAGE_QUALITY_OPTIONS.map((option) => (
-                                      <SelectItem key={option.value} value={option.value}>
-                                        {option.label}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectGroup>
-                                </SelectContent>
-                              </Select>
-                            </label>
-                            <label className="flex min-h-10 items-center gap-2 rounded-lg border border-input px-3 py-2 text-sm font-medium text-stone-700">
-                              <Checkbox
-                                checked={editingTurnDraft.stream}
-                                onCheckedChange={(checked) =>
-                                  setEditingTurnDraft((current) =>
-                                    current
-                                      ? {
-                                          ...current,
-                                          stream: checked === true,
-                                          partialImages: checked === true ? current.partialImages : "0",
-                                        }
-                                      : current,
-                                  )
-                                }
+                              <X className="size-3.5 text-[#9a9ca2]" aria-hidden="true" />
+                              <label className="grid h-8 grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded-lg border border-[#e3e4e7] bg-white px-2.5 dark:border-border dark:bg-background/70">
+                                <span className="text-[11px] text-[#777a82] dark:text-muted-foreground">H</span>
+                                <Input
+                                  type="number"
+                                  inputMode="numeric"
+                                  min="1"
+                                  step="1"
+                                  value={editingDraftDisplayedHeight}
+                                  placeholder="自动"
+                                  onFocus={() =>
+                                    setEditingTurnDraft((current) =>
+                                      current && current.sizeMode !== "custom"
+                                        ? {
+                                            ...current,
+                                            customWidth: editingDraftDimensions?.width || current.customWidth || "1024",
+                                            customHeight: editingDraftDimensions?.height || current.customHeight || "1024",
+                                            sizeMode: "custom",
+                                          }
+                                        : current,
+                                    )
+                                  }
+                                  onChange={(event) =>
+                                    setEditingTurnDraft((current) =>
+                                      current ? { ...current, customHeight: event.target.value, sizeMode: "custom" } : current,
+                                    )
+                                  }
+                                  className="h-7 border-0 bg-transparent px-0 text-xs font-medium shadow-none focus-visible:ring-0"
+                                />
+                              </label>
+                            </div>
+                          </section>
+
+                          <div className="flex h-9 items-center justify-between rounded-lg bg-[#f4f4f5] px-2.5 dark:bg-muted/70">
+                            <ImageParameterLabel help="开启后会使用流式返回，需要图片服务支持流式响应。">
+                              流式返回
+                            </ImageParameterLabel>
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-checked={editingTurnDraft.stream}
+                              aria-label="编辑图片流式返回"
+                              className={cn(
+                                "relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1456f0]/30",
+                                editingTurnDraft.stream ? "bg-[#1456f0]" : "bg-[#c8cbd1] dark:bg-muted-foreground/45",
+                              )}
+                              onClick={() =>
+                                setEditingTurnDraft((current) =>
+                                  current
+                                    ? {
+                                        ...current,
+                                        stream: !current.stream,
+                                        partialImages: !current.stream ? current.partialImages : "0",
+                                      }
+                                    : current,
+                                )
+                              }
+                            >
+                              <span
+                                className={cn(
+                                  "absolute top-0.5 size-4 rounded-full bg-white shadow-sm transition-transform",
+                                  editingTurnDraft.stream ? "translate-x-[18px]" : "translate-x-0.5",
+                                )}
                               />
-                              流式
-                            </label>
-                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                              中间图
-                              <Select
-                                value={editingTurnDraft.partialImages}
-                                disabled={!editingTurnDraft.stream}
-                                onValueChange={(value) =>
-                                  setEditingTurnDraft((current) =>
-                                    current ? { ...current, partialImages: String(normalizeImagePartialImages(value)) } : current,
-                                  )
-                                }
-                              >
-                                <SelectTrigger>
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectGroup>
-                                    <SelectItem value="0">0 张</SelectItem>
-                                    <SelectItem value="1">最多 1 张</SelectItem>
-                                    <SelectItem value="2">最多 2 张</SelectItem>
-                                    <SelectItem value="3">最多 3 张</SelectItem>
-                                  </SelectGroup>
-                                </SelectContent>
-                              </Select>
-                            </label>
-                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                              格式
-                              <Select
-                                value={editingTurnDraft.outputFormat}
-                                onValueChange={(value) =>
-                                  setEditingTurnDraft((current) =>
-                                    current && isImageOutputFormat(value)
-                                      ? {
-                                          ...current,
-                                          outputFormat: value,
-                                          outputCompression: supportsImageOutputCompression(value) ? current.outputCompression : "",
-                                        }
-                                      : current,
-                                  )
-                                }
-                              >
-                                <SelectTrigger>
-                                  <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectGroup>
-                                    {IMAGE_OUTPUT_FORMAT_OPTIONS.map((option) => (
-                                      <SelectItem key={option.value} value={option.value}>
-                                        {option.label}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectGroup>
-                                </SelectContent>
-                              </Select>
-                            </label>
-                            <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
-                              压缩率
-                              <Input
-                                type="number"
-                                inputMode="numeric"
-                                min="0"
-                                max="100"
-                                step="1"
-                                value={editingTurnDraft.outputCompression}
-                                disabled={!supportsImageOutputCompression(editingTurnDraft.outputFormat)}
-                                onChange={(event) =>
-                                  setEditingTurnDraft((current) =>
-                                    current ? { ...current, outputCompression: event.target.value } : current,
-                                  )
-                                }
-                                placeholder={supportsImageOutputCompression(editingTurnDraft.outputFormat) ? "0-100" : "仅 PNG 不适用"}
-                              />
-                            </label>
-                          </>
-                        ) : null}
-                        {editingDraftEffectiveSizeSelection.mode !== "auto" ? (
-                          <>
-                            <div className="rounded-2xl border border-stone-200 bg-stone-50 px-3 py-2 text-sm sm:col-span-2 lg:col-span-4">
-                              <div className="flex min-w-0 items-center justify-between gap-3">
-                                <span className="shrink-0 font-medium text-stone-600">
-                                  {editingDraftOfficialRoute ? "构图偏好" : "计算后分辨率"}
-                                </span>
-                                <span className={cn(
-                                  "min-w-0 truncate text-right font-mono font-semibold",
-                                  editingDraftSizeIsHighResolution ? "text-amber-700" : "text-stone-900",
-                                )}>
-                                  {editingDraftSizePreviewLabel}
-                                </span>
-                              </div>
-                              <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-stone-500">
-                                <span className="min-w-0 truncate">{editingDraftSizePreviewDetail}</span>
-                                {editingDraftSizeIsHighResolution ? (
-                                  <span className="shrink-0 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 ring-1 ring-amber-100">
-                                    高分辨率
-                                  </span>
-                                ) : null}
+                            </button>
+                          </div>
+
+                          {editingTurnDraft.stream ? (
+                            <div className="space-y-1.5">
+                              <ImageParameterLabel help="可返回 0-3 张生成过程中的中间图；每张中间图会产生额外输出费用。">
+                                中间图数量
+                              </ImageParameterLabel>
+                              <div className="grid grid-cols-4 gap-1 rounded-lg bg-[#f4f4f5] p-1 dark:bg-muted/70">
+                                {["0", "1", "2", "3"].map((count) => (
+                                  <button
+                                    key={count}
+                                    type="button"
+                                    aria-pressed={editingTurnDraft.partialImages === count}
+                                    className={imageParameterChoiceClass(editingTurnDraft.partialImages === count, "h-7")}
+                                    onClick={() =>
+                                      setEditingTurnDraft((current) =>
+                                        current ? { ...current, partialImages: count } : current,
+                                      )
+                                    }
+                                  >
+                                    {count} 张
+                                  </button>
+                                ))}
                               </div>
                             </div>
-                            {editingDraftSizeIsHighResolution ? (
-                              <div className="rounded-2xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800 sm:col-span-2 lg:col-span-4">
-                                {highResolutionHint}
+                          ) : null}
+
+                          {editingDraftOutputControls ? (
+                            <>
+                              <div className="space-y-1.5">
+                                <ImageParameterLabel help="支持 PNG、JPEG、WebP；PNG 保留无损质量，JPEG 和 WebP 支持压缩。">
+                                  输出格式
+                                </ImageParameterLabel>
+                                <div className="grid grid-cols-3 gap-1 rounded-lg bg-[#f4f4f5] p-1 dark:bg-muted/70">
+                                  {IMAGE_OUTPUT_FORMAT_OPTIONS.map((option) => (
+                                    <button
+                                      key={option.value}
+                                      type="button"
+                                      aria-pressed={editingTurnDraft.outputFormat === option.value}
+                                      className={imageParameterChoiceClass(editingTurnDraft.outputFormat === option.value, "h-7 uppercase")}
+                                      onClick={() =>
+                                        setEditingTurnDraft((current) =>
+                                          current
+                                            ? {
+                                                ...current,
+                                                outputFormat: option.value,
+                                                outputCompression: supportsImageOutputCompression(option.value)
+                                                  ? current.outputCompression
+                                                  : "",
+                                              }
+                                            : current,
+                                        )
+                                      }
+                                    >
+                                      {option.label}
+                                    </button>
+                                  ))}
+                                </div>
                               </div>
-                            ) : null}
-                          </>
-                        ) : null}
-                      </>
-                    ) : null}
-                  </div>
+
+                              {supportsImageOutputCompression(editingTurnDraft.outputFormat) ? (
+                                <div className="space-y-1.5">
+                                  <div className="flex items-center justify-between gap-3">
+                                    <ImageParameterLabel help="仅适用于 JPEG 和 WebP，范围为 0-100；数值越低，文件通常越小。">
+                                      压缩率
+                                    </ImageParameterLabel>
+                                    <span className="text-xs text-[#777a82] dark:text-muted-foreground">
+                                      {editingTurnDraft.outputCompression
+                                        ? `${editingTurnDraft.outputCompression}%`
+                                        : "默认"}
+                                    </span>
+                                  </div>
+                                  <div className="grid grid-cols-[minmax(0,1fr)_4.5rem] items-center gap-2.5">
+                                    <input
+                                      type="range"
+                                      min="0"
+                                      max="100"
+                                      step="1"
+                                      value={editingTurnDraft.outputCompression || "100"}
+                                      onChange={(event) =>
+                                        setEditingTurnDraft((current) =>
+                                          current ? { ...current, outputCompression: event.target.value } : current,
+                                        )
+                                      }
+                                      className="h-1.5 w-full accent-[#18181b] dark:accent-foreground"
+                                      aria-label="编辑图片输出压缩率"
+                                    />
+                                    <Input
+                                      type="number"
+                                      inputMode="numeric"
+                                      min="0"
+                                      max="100"
+                                      step="1"
+                                      value={editingTurnDraft.outputCompression}
+                                      placeholder="默认"
+                                      onChange={(event) =>
+                                        setEditingTurnDraft((current) =>
+                                          current ? { ...current, outputCompression: event.target.value } : current,
+                                        )
+                                      }
+                                      className="h-8 rounded-lg text-center text-xs shadow-none"
+                                    />
+                                  </div>
+                                </div>
+                              ) : null}
+                            </>
+                          ) : null}
+                        </div>
+                      </details>
+                    </div>
+                  ) : null}
                 </div>
               </div>
               <DialogFooter className="border-t border-stone-100 px-6 py-4">

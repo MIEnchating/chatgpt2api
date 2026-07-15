@@ -33,7 +33,10 @@ func TestStoreUpdatePersistsRuntimeSettings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewStore() error = %v", err)
 	}
-	if store.RelayBaseURL() != "http://newapi:3000" {
+	if store.BaseURL() != "https://image.yunmian.tech" {
+		t.Fatalf("BaseURL() default = %q", store.BaseURL())
+	}
+	if store.RelayBaseURL() != "https://www.yunmian.tech" {
 		t.Fatalf("RelayBaseURL() default = %q", store.RelayBaseURL())
 	}
 
