@@ -664,8 +664,8 @@ export function ImageResults({
             <div className="flex justify-start">
               <section className="w-full px-1">
                 {showResultSummary ? (
-                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-[#eceef1] pb-3 sm:mb-4">
-                    <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 text-[11px] text-[#6b7280] sm:text-xs">
+                  <div className="hide-scrollbar mb-3 flex items-center gap-3 overflow-x-auto border-b border-[#eceef1] pb-3 sm:mb-4">
+                    <div className="flex shrink-0 items-center gap-3 whitespace-nowrap text-[11px] text-[#6b7280] sm:text-xs">
                       <span className="font-semibold text-[#18181b]">生成结果：</span>
                       <span><strong className="font-semibold text-[#30343b]">{resultCount}</strong> 张</span>
                       {turn.count !== resultCount ? (
@@ -715,7 +715,7 @@ export function ImageResults({
                       ) : null}
                     </div>
                     {turnBusy || downloadActions ? (
-                      <div className="flex flex-wrap items-center justify-end gap-2">
+                      <div className="ml-auto flex shrink-0 items-center justify-end gap-2">
                         {turnBusy ? (
                           <span className="flex max-w-full flex-col gap-0.5 rounded-2xl bg-amber-50 px-3 py-1 text-[11px] leading-5 text-amber-700 sm:text-xs">
                             <span className="w-fit whitespace-nowrap font-medium">{progressMessage}</span>
