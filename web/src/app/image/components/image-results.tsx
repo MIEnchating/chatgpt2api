@@ -666,8 +666,9 @@ export function ImageResults({
                 {showResultSummary ? (
                   <div className="hide-scrollbar mb-3 flex items-center gap-3 overflow-x-auto border-b border-[#eceef1] pb-3 sm:mb-4">
                     <div className="flex shrink-0 items-center gap-3 whitespace-nowrap text-[11px] text-[#6b7280] sm:text-xs">
-                      <span className="font-semibold text-[#18181b]">生成结果：</span>
-                      <span><strong className="font-semibold text-[#30343b]">{resultCount}</strong> 张</span>
+                      <span>
+                        生成结果：<strong className="font-semibold text-[#30343b]">{resultCount} 张</strong>
+                      </span>
                       {turn.count !== resultCount ? (
                         <span>目标 <strong className="font-semibold text-[#30343b]">{turn.count}</strong> 张</span>
                       ) : null}
