@@ -4,7 +4,6 @@ import { useState } from "react";
 import {
   LoaderCircle,
   RefreshCw,
-  Save,
   ScrollText,
   Trash2,
 } from "lucide-react";
@@ -47,7 +46,7 @@ function formatLogTime(value?: string) {
 
 function StatBlock({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex min-h-20 flex-col justify-between rounded-[16px] border border-border/80 bg-background px-4 py-3 shadow-[0_4px_6px_rgba(0,0,0,0.04)]">
+    <div className="flex min-h-20 flex-col justify-between rounded-xl border border-border/80 bg-background px-4 py-3 shadow-[0_4px_6px_rgba(0,0,0,0.04)]">
       <span className="text-xs leading-5 font-medium text-muted-foreground">
         {label}
       </span>
@@ -110,7 +109,6 @@ export function LogGovernanceCard() {
   const [cleanupDialogOpen, setCleanupDialogOpen] = useState(false);
   const config = useSettingsStore((state) => state.config);
   const isLoadingConfig = useSettingsStore((state) => state.isLoadingConfig);
-  const isSavingConfig = useSettingsStore((state) => state.isSavingConfig);
   const logGovernance = useSettingsStore((state) => state.logGovernance);
   const lastLogCleanup = useSettingsStore((state) => state.lastLogCleanup);
   const isLoadingLogGovernance = useSettingsStore(
@@ -122,7 +120,6 @@ export function LogGovernanceCard() {
   );
   const setDefaultLogView = useSettingsStore((state) => state.setDefaultLogView);
   const setLogLevel = useSettingsStore((state) => state.setLogLevel);
-  const saveConfig = useSettingsStore((state) => state.saveConfig);
   const loadLogGovernance = useSettingsStore((state) => state.loadLogGovernance);
   const cleanupLogsByRetention = useSettingsStore(
     (state) => state.cleanupLogsByRetention,
@@ -158,20 +155,6 @@ export function LogGovernanceCard() {
       title="日志数据治理"
       description="配置日志保留周期、级别和历史数据清理。"
       tone="amber"
-      action={
-        <Button
-          size="lg"
-          onClick={() => void saveConfig()}
-          disabled={isSavingConfig}
-        >
-          {isSavingConfig ? (
-            <LoaderCircle data-icon="inline-start" className="animate-spin" />
-          ) : (
-            <Save data-icon="inline-start" />
-          )}
-          保存
-        </Button>
-      }
     >
       <div className="flex flex-col gap-5">
         <section className="flex flex-col gap-3">
@@ -272,7 +255,7 @@ export function LogGovernanceCard() {
             </Button>
           </div>
           {isLoadingLogGovernance ? (
-            <div className="flex items-center justify-center rounded-[16px] border border-border/80 bg-background py-8">
+            <div className="flex items-center justify-center rounded-xl border border-border/80 bg-background py-8">
               <LoaderCircle className="size-5 animate-spin text-muted-foreground" />
             </div>
           ) : (

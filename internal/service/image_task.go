@@ -394,7 +394,7 @@ func (s *ImageTaskService) runTask(ctx context.Context, key, mode string, identi
 		}
 		data := taskResultData(result)
 		outputType := util.Clean(result["output_type"])
-		if mode == "chat" && outputType == "text" && len(data) == 0 && ctx.Err() == nil && runCtx.Err() != context.DeadlineExceeded {
+		if outputType == "text" && len(data) == 0 && ctx.Err() == nil && runCtx.Err() != context.DeadlineExceeded {
 			if text := util.Clean(result["message"]); text != "" {
 				data = []map[string]any{{"text_response": text}}
 				status = TaskStatusSuccess

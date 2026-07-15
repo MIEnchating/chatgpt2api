@@ -1226,7 +1226,7 @@ function ImageManagerContent({
 
   return (
     <section className="flex h-full min-h-0 flex-col gap-5 overflow-hidden">
-      <PageHeader eyebrow="图片" title="图片库" />
+      <PageHeader title="图片库" />
 
       <div className="flex min-h-0 flex-1 flex-col gap-4">
         <section className="grid gap-4 rounded-[18px] border border-border bg-background/80 p-3 shadow-[0_6px_20px_rgba(15,23,42,0.04)] sm:p-4 lg:grid-cols-[minmax(180px,220px)_minmax(0,1fr)] lg:items-start">

@@ -15,6 +15,16 @@ let verifyAuthSessionPromise: Promise<StoredAuthSession | null> | null = null;
 let authSessionVersion = 0;
 export const AUTH_SESSION_CHANGE_EVENT = "chatgpt2api:auth-session-change";
 
+export function displaySubjectId(subjectId: string, provider?: string) {
+  const normalizedId = subjectId.trim();
+  const normalizedProvider = String(provider || "").trim();
+  const prefix = normalizedProvider ? `${normalizedProvider}:` : "";
+  if (prefix && normalizedId.toLowerCase().startsWith(prefix.toLowerCase())) {
+    return normalizedId.slice(prefix.length) || normalizedId;
+  }
+  return normalizedId || "-";
+}
+
 export function authSessionFromLoginResponse(data: LoginResponse, key: string): StoredAuthSession {
   return {
     key,

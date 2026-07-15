@@ -653,7 +653,6 @@ function UsersContent() {
   return (
     <section className="flex h-full min-h-0 flex-col gap-5 overflow-hidden">
       <PageHeader
-        eyebrow="用户"
         title="用户管理"
         actions={
           <>

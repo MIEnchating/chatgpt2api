@@ -9,6 +9,7 @@ import { ImageTaskQueue } from "@/components/image-task-queue";
 import {
   AUTH_SESSION_CHANGE_EVENT,
   clearVerifiedAuthSession,
+  displaySubjectId,
   getCachedAuthSession,
   getVerifiedAuthSession,
 } from "@/lib/session";
@@ -132,7 +133,7 @@ function AccountMenu({
   const displayName = session.name || roleLabel;
   const initial = (displayName.trim() || "U").slice(0, 1).toUpperCase();
   const profileActive = isActivePath(pathname, profileNavItem.href);
-  const accountID = session.subjectId || session.role;
+  const accountID = displaySubjectId(session.subjectId, session.provider);
   const roleBadgeLabel = session.role === "admin" ? "管理权限" : roleLabel;
 
   return (

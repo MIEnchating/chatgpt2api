@@ -54,6 +54,8 @@
   --theme-transition-radius: 0px;
   --radius: 0.8125rem;
   --background: #f6f8fc;
+  --page-background-start: #f8fbff;
+  --page-background-end: #f2f6fb;
   --foreground: #222222;
   --card: #fbfdff;
   --card-foreground: #222222;
@@ -101,6 +103,8 @@
 
 .dark {
   --background: oklch(0.145 0 0);
+  --page-background-start: oklch(0.17 0.01 255);
+  --page-background-end: oklch(0.125 0.008 255);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.205 0 0);
   --card-foreground: oklch(0.985 0 0);
@@ -143,14 +147,11 @@
   }
   body {
     @apply bg-background font-sans text-foreground antialiased;
-    background-image: linear-gradient(180deg, #f8fbff 0%, var(--background) 42%, #f2f6fb 100%);
+    background-image: linear-gradient(180deg, var(--page-background-start) 0%, var(--background) 42%, var(--page-background-end) 100%);
     line-height: 1.5;
   }
   body[data-scroll-locked] {
     margin-right: 0 !important;
-  }
-  body[data-scroll-locked][data-select-scroll-unlocked] {
-    overflow: visible !important;
   }
   button:not(:disabled),
   [role="button"]:not(:disabled) {

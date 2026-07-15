@@ -4,60 +4,18 @@ import { Check, ChevronDown, ChevronUp } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
-const SELECT_SCROLL_UNLOCK_ATTRIBUTE = "data-select-scroll-unlocked";
-let selectScrollUnlockCount = 0;
-
-function hasOpenModalDialog() {
-  if (typeof document === "undefined") {
-    return false;
-  }
-  return Boolean(
-    document.querySelector(
-      '[data-slot="dialog-content"][data-state="open"], [role="dialog"][data-state="open"]',
-    ),
-  );
-}
-
-function acquireSelectScrollUnlock() {
-  if (typeof document === "undefined") {
-    return () => {};
-  }
-  selectScrollUnlockCount += 1;
-  document.body.setAttribute(SELECT_SCROLL_UNLOCK_ATTRIBUTE, "true");
-
-  return () => {
-    selectScrollUnlockCount = Math.max(0, selectScrollUnlockCount - 1);
-    if (selectScrollUnlockCount === 0) {
-      document.body.removeAttribute(SELECT_SCROLL_UNLOCK_ATTRIBUTE);
-    }
-  };
-}
-
 function Select({
   defaultOpen,
   onOpenChange,
   open,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Root>) {
-  const [internalOpen, setInternalOpen] = React.useState(Boolean(defaultOpen));
-  const isOpen = open ?? internalOpen;
-
-  React.useEffect(() => {
-    if (!isOpen || hasOpenModalDialog()) {
-      return;
-    }
-    return acquireSelectScrollUnlock();
-  }, [isOpen]);
-
   return (
     <SelectPrimitive.Root
       data-slot="select"
       defaultOpen={defaultOpen}
       open={open}
-      onOpenChange={(nextOpen) => {
-        setInternalOpen(nextOpen);
-        onOpenChange?.(nextOpen);
-      }}
+      onOpenChange={onOpenChange}
       {...props}
     />
   );
@@ -144,12 +102,13 @@ function SelectContent({
       <SelectPrimitive.Content
         data-slot="select-content"
         className={cn(
-          "relative z-50 max-h-96 min-w-[8rem] overflow-x-hidden overflow-y-auto rounded-[16px] border border-border bg-popover text-popover-foreground shadow-[0_20px_60px_-30px_rgba(15,23,42,0.35)] data-[state=closed]:animate-out data-[state=open]:animate-in",
+          "relative z-50 max-h-[min(24rem,var(--radix-select-content-available-height))] max-w-[calc(100vw-1rem)] min-w-[8rem] overflow-x-hidden overflow-y-auto overscroll-contain rounded-xl border border-border bg-popover text-popover-foreground shadow-[0_20px_60px_-30px_rgba(15,23,42,0.35)] data-[state=closed]:animate-out data-[state=open]:animate-in",
           position === "popper" &&
             "data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1",
           className,
         )}
         position={position}
+        collisionPadding={8}
         {...props}
       >
         <SelectScrollUpButton />

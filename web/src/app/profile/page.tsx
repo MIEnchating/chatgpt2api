@@ -1,15 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { AlertCircle, LoaderCircle, RefreshCw, Save, UserCircle2, UserPen, WalletCards } from "lucide-react";
-import { toast } from "sonner";
+import { AlertCircle, LoaderCircle, RefreshCw, UserCircle2, WalletCards } from "lucide-react";
 
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -22,13 +19,10 @@ import {
   fetchProfileRelayKey,
   PROFILE_RELAY_TOKEN_GROUP_CHANGED_EVENT,
   PROFILE_RELAY_TOKEN_GROUP_STORAGE_KEY,
-  PROFILE_RELAY_TOKEN_NAME_CHANGED_EVENT,
-  PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY,
   type ProfileBalanceStatus,
   type ProfileRelayKeyStatus,
-  updateProfileName,
 } from "@/lib/api";
-import { authSessionFromLoginResponse, setVerifiedAuthSession } from "@/lib/session";
+import { displaySubjectId } from "@/lib/session";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import type { StoredAuthSession } from "@/store/auth";
 
@@ -83,13 +77,6 @@ function formatYunMianQuota(value: number | undefined) {
   }).format(value / 500000);
 }
 
-function getStoredRelayTokenName() {
-  if (typeof window === "undefined") {
-    return "";
-  }
-  return window.localStorage.getItem(PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY) || "";
-}
-
 function getStoredRelayTokenGroup() {
   if (typeof window === "undefined") {
     return "";
@@ -97,28 +84,10 @@ function getStoredRelayTokenGroup() {
   return window.localStorage.getItem(PROFILE_RELAY_TOKEN_GROUP_STORAGE_KEY) || "";
 }
 
-function normalizeTokenNames(values: unknown) {
-  return Array.isArray(values)
-    ? Array.from(new Set(values.map((name) => String(name || "").trim()).filter(Boolean)))
-    : [];
-}
-
 function normalizeTokenGroups(values: unknown) {
   return Array.isArray(values)
     ? Array.from(new Set(values.map((group) => String(group || "").trim()).filter(Boolean)))
     : [];
-}
-
-function nextTokenNameForOptions(current: string, options: string[], fallback?: string) {
-  const normalizedCurrent = current.trim();
-  if (normalizedCurrent && options.some((name) => name === normalizedCurrent)) {
-    return normalizedCurrent;
-  }
-  const normalizedFallback = String(fallback || "").trim();
-  if (normalizedFallback && options.some((name) => name === normalizedFallback)) {
-    return normalizedFallback;
-  }
-  return options[0] || normalizedFallback || "";
 }
 
 function nextTokenGroupForOptions(current: string, options: string[], fallback?: string) {
@@ -158,28 +127,20 @@ function BalanceCard({
   isLoadingRelayKey,
   onRefresh,
   onTokenGroupChange,
-  onTokenNameChange,
   relayKeyStatus,
   selectedTokenGroup,
-  selectedTokenName,
   tokenGroupOptions,
-  tokenNameOptions,
 }: {
   balance: ProfileBalanceStatus | null;
   isLoading: boolean;
   isLoadingRelayKey: boolean;
   onRefresh: () => void;
   onTokenGroupChange: (value: string) => void;
-  onTokenNameChange: (value: string) => void;
   relayKeyStatus: ProfileRelayKeyStatus | null;
   selectedTokenGroup: string;
-  selectedTokenName: string;
   tokenGroupOptions: string[];
-  tokenNameOptions: string[];
 }) {
-  const title = balance?.has_balance ? balance.display_name || balance.username || "云棉用户" : "云棉";
   const activeTokenGroup = selectedTokenGroup || tokenGroupOptions[0] || balance?.token_group || relayKeyStatus?.group || "";
-  const activeTokenName = selectedTokenName || tokenNameOptions[0] || balance?.token_name || relayKeyStatus?.token_name || "";
   const keyStatusText = isLoadingRelayKey
     ? "正在读取密钥"
     : relayKeyStatus?.has_key
@@ -196,7 +157,6 @@ function BalanceCard({
             </div>
             <div className="min-w-0">
               <CardTitle className="text-lg">用户余额</CardTitle>
-              <CardDescription className="truncate">{title}</CardDescription>
             </div>
           </div>
           <Button
@@ -220,7 +180,7 @@ function BalanceCard({
             正在读取余额
           </div>
         ) : balance?.has_balance ? (
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
             <InfoRow label="当前余额" value={formatYunMianQuota(balance.quota)} />
             <InfoRow label="已用额度" value={formatYunMianQuota(balance.used_quota)} />
             <InfoRow label="请求次数" value={formatNumber(balance.request_count)} />
@@ -244,31 +204,10 @@ function BalanceCard({
                 </SelectContent>
               </Select>
             </div>
-            <div className="flex min-w-0 flex-col gap-1 rounded-lg border border-border bg-muted/30 px-3 py-2">
-              <span className="text-xs text-muted-foreground">令牌名称</span>
-              <Select
-                value={activeTokenName || "__auto_token_name__"}
-                onValueChange={(value) => onTokenNameChange(value === "__auto_token_name__" ? "" : value)}
-              >
-                <SelectTrigger className="h-8 rounded-lg bg-background px-2.5 text-sm font-medium shadow-none">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__auto_token_name__">自动</SelectItem>
-                  {(tokenNameOptions.length > 0 ? tokenNameOptions : [activeTokenName]).filter(Boolean).map((name) => (
-                    <SelectItem key={name} value={name}>
-                      {name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
             <InfoRow label="当前密钥" value={keyStatusText} code />
-            <InfoRow label="云棉用户名" value={balance.username || "-"} code />
             <InfoRow label="邮箱" value={balance.email || "-"} />
-            <InfoRow label="云棉用户 ID" value={balance.user_id ? String(balance.user_id) : "-"} code />
             {!relayKeyStatus?.has_key && (balance.token_message || relayKeyStatus?.message) ? (
-              <div className="sm:col-span-2 xl:col-span-4">
+              <div className="sm:col-span-2 xl:col-span-3">
                 <div className="flex min-h-10 items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
                   <AlertCircle className="size-4 shrink-0" />
                   <span>{relayKeyStatus?.message || balance.token_message}</span>
@@ -288,18 +227,14 @@ function BalanceCard({
 }
 
 function ProfileContent({ session }: { session: StoredAuthSession }) {
-  const [currentSession, setCurrentSession] = useState(session);
-  const [profileName, setProfileName] = useState(session.name || "");
   const [balance, setBalance] = useState<ProfileBalanceStatus | null>(null);
   const [relayKeyStatus, setRelayKeyStatus] = useState<ProfileRelayKeyStatus | null>(null);
   const [selectedTokenGroup, setSelectedTokenGroup] = useState(getStoredRelayTokenGroup);
-  const [selectedTokenName, setSelectedTokenName] = useState(getStoredRelayTokenName);
-  const [isSavingProfile, setIsSavingProfile] = useState(false);
   const [isLoadingBalance, setIsLoadingBalance] = useState(true);
   const [isLoadingRelayKey, setIsLoadingRelayKey] = useState(false);
 
-  const isProfileNameDirty = profileName.trim() !== (currentSession.name || "");
-  const roleLabel = sessionRoleLabel(currentSession);
+  const roleLabel = sessionRoleLabel(session);
+  const subjectId = displaySubjectId(session.subjectId, session.provider);
   const tokenGroupOptions = useMemo(() => {
     const statusGroups = normalizeTokenGroups(relayKeyStatus?.groups);
     if (statusGroups.length > 0) {
@@ -311,23 +246,6 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
     }
     return normalizeTokenGroups([selectedTokenGroup, balance?.token_group, relayKeyStatus?.group]);
   }, [balance, relayKeyStatus, selectedTokenGroup]);
-  const tokenNameOptions = useMemo(() => {
-    const statusNames = normalizeTokenNames(relayKeyStatus?.token_names);
-    if (statusNames.length > 0) {
-      return statusNames;
-    }
-    const balanceNames = normalizeTokenNames(balance?.token_names);
-    if (balanceNames.length > 0) {
-      return balanceNames;
-    }
-    return normalizeTokenNames([selectedTokenName, balance?.token_name, relayKeyStatus?.token_name]);
-  }, [balance, relayKeyStatus, selectedTokenName]);
-
-  useEffect(() => {
-    setCurrentSession(session);
-    setProfileName(session.name || "");
-  }, [session]);
-
   const loadBalance = useCallback(async () => {
     setIsLoadingBalance(true);
     try {
@@ -336,10 +254,6 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
       setSelectedTokenGroup((current) => {
         const groups = normalizeTokenGroups(nextBalance.token_groups);
         return nextTokenGroupForOptions(current, groups, nextBalance.token_group);
-      });
-      setSelectedTokenName((current) => {
-        const names = normalizeTokenNames(nextBalance.token_names);
-        return nextTokenNameForOptions(current, names, nextBalance.token_name);
       });
     } catch (error) {
       setBalance({
@@ -359,12 +273,6 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
   }, [selectedTokenGroup, tokenGroupOptions]);
 
   useEffect(() => {
-    if (!selectedTokenName && tokenNameOptions[0]) {
-      setSelectedTokenName(tokenNameOptions[0]);
-    }
-  }, [selectedTokenName, tokenNameOptions]);
-
-  useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
@@ -378,22 +286,9 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
   }, [selectedTokenGroup]);
 
   useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-    const normalizedName = selectedTokenName.trim();
-    if (normalizedName) {
-      window.localStorage.setItem(PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY, normalizedName);
-    } else {
-      window.localStorage.removeItem(PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY);
-    }
-    window.dispatchEvent(new CustomEvent(PROFILE_RELAY_TOKEN_NAME_CHANGED_EVENT, { detail: { tokenName: normalizedName } }));
-  }, [selectedTokenName]);
-
-  useEffect(() => {
     let ignore = false;
     setIsLoadingRelayKey(true);
-    void fetchProfileRelayKey(selectedTokenGroup, selectedTokenName)
+    void fetchProfileRelayKey(selectedTokenGroup)
       .then((status) => {
         if (ignore) {
           return;
@@ -402,10 +297,6 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
         setSelectedTokenGroup((current) => {
           const groups = normalizeTokenGroups(status.groups);
           return nextTokenGroupForOptions(current, groups, status.group || status.configured_group);
-        });
-        setSelectedTokenName((current) => {
-          const names = normalizeTokenNames(status.token_names);
-          return nextTokenNameForOptions(current, names, status.token_name);
         });
       })
       .catch((error) => {
@@ -427,41 +318,17 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
     return () => {
       ignore = true;
     };
-  }, [currentSession.key, selectedTokenGroup, selectedTokenName]);
+  }, [session.key, selectedTokenGroup]);
 
   useEffect(() => {
     void loadBalance();
-  }, [currentSession.key, loadBalance]);
-
-  const handleSaveProfile = async () => {
-    const nextName = profileName.trim();
-    if (!nextName) {
-      toast.error("昵称不能为空");
-      return;
-    }
-    if (!isProfileNameDirty) {
-      return;
-    }
-    setIsSavingProfile(true);
-    try {
-      const data = await updateProfileName(nextName);
-      const nextSession = authSessionFromLoginResponse(data, currentSession.key);
-      await setVerifiedAuthSession(nextSession);
-      setCurrentSession(nextSession);
-      setProfileName(nextSession.name || "");
-      toast.success("昵称已保存");
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "保存昵称失败");
-    } finally {
-      setIsSavingProfile(false);
-    }
-  };
+  }, [session.key, loadBalance]);
 
   return (
-    <section className="flex flex-col gap-5">
-      <PageHeader eyebrow="个人资料" title="个人中心" />
+    <section className="flex h-full min-h-0 flex-col gap-5 overflow-y-auto overscroll-contain pb-8 pr-1 [scrollbar-gutter:stable]">
+      <PageHeader title="个人中心" />
 
-      <div className="grid gap-5 xl:grid-cols-[360px_1fr]">
+      <div className="grid gap-5 xl:grid-cols-[320px_minmax(0,1fr)]">
         <div className="flex flex-col gap-5">
           <Card>
             <CardHeader>
@@ -471,21 +338,19 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
                     <UserCircle2 className="size-5" />
                   </div>
                   <div className="min-w-0">
-                    <CardTitle className="truncate text-lg">{currentSession.name || "用户"}</CardTitle>
-                    <CardDescription className="truncate">{currentSession.subjectId || "-"}</CardDescription>
+                    <CardTitle className="truncate text-lg">{session.name || "用户"}</CardTitle>
                   </div>
                 </div>
-                <Badge variant={currentSession.role === "admin" ? "violet" : "secondary"} className="shrink-0 rounded-md">
+                <Badge variant={session.role === "admin" ? "violet" : "secondary"} className="shrink-0 rounded-md">
                   {roleLabel}
                 </Badge>
               </div>
             </CardHeader>
             <CardContent className="flex flex-col gap-3">
-              <InfoRow label="用户 ID" value={currentSession.subjectId} code />
-              <InfoRow label="登录来源" value={providerLabel(currentSession.provider)} />
-              <InfoRow label="角色 ID" value={currentSession.roleId || currentSession.role} code />
-              <InfoRow label="创作并发额度" value={creationConcurrentLimitLabel(currentSession)} />
-              <InfoRow label="每分钟请求限制" value={creationRpmLimitLabel(currentSession)} />
+              <InfoRow label="用户 ID" value={subjectId} code />
+              <InfoRow label="登录来源" value={providerLabel(session.provider)} />
+              <InfoRow label="创作并发额度" value={creationConcurrentLimitLabel(session)} />
+              <InfoRow label="每分钟请求限制" value={creationRpmLimitLabel(session)} />
             </CardContent>
           </Card>
         </div>
@@ -497,55 +362,10 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
             isLoadingRelayKey={isLoadingRelayKey}
             relayKeyStatus={relayKeyStatus}
             selectedTokenGroup={selectedTokenGroup}
-            selectedTokenName={selectedTokenName}
             tokenGroupOptions={tokenGroupOptions}
-            tokenNameOptions={tokenNameOptions}
             onTokenGroupChange={(value) => setSelectedTokenGroup(value === "__no_group__" ? "" : value)}
-            onTokenNameChange={setSelectedTokenName}
             onRefresh={() => void loadBalance()}
           />
-
-          <Card>
-            <CardHeader>
-              <div className="flex min-w-0 items-center gap-3">
-                <div className="flex size-11 shrink-0 items-center justify-center rounded-2xl bg-[#edf4ff] text-[#1456f0] dark:bg-sky-950/30 dark:text-sky-300">
-                  <UserPen className="size-5" />
-                </div>
-                <div className="min-w-0">
-                  <CardTitle className="text-lg">账号资料</CardTitle>
-                  <CardDescription className="truncate">{currentSession.subjectId || "-"}</CardDescription>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent>
-              <FieldGroup>
-                <Field>
-                  <FieldLabel htmlFor="profile-display-name">昵称</FieldLabel>
-                  <div className="flex flex-col gap-2 sm:flex-row">
-                    <Input
-                      id="profile-display-name"
-                      value={profileName}
-                      onChange={(event) => setProfileName(event.target.value)}
-                      placeholder="昵称"
-                      className="h-10 rounded-lg"
-                    />
-                    <Button
-                      type="button"
-                      variant="outline"
-                      className="h-10 rounded-lg"
-                      onClick={() => void handleSaveProfile()}
-                      disabled={!isProfileNameDirty || isSavingProfile}
-                    >
-                      {isSavingProfile ? <LoaderCircle className="size-4 animate-spin" /> : <Save className="size-4" />}
-                      保存
-                    </Button>
-                  </div>
-                  <FieldDescription>昵称会显示在导航栏和接口调用记录中。</FieldDescription>
-                </Field>
-              </FieldGroup>
-            </CardContent>
-          </Card>
-
         </div>
       </div>
     </section>

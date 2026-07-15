@@ -43,3 +43,19 @@ export function getManagedImagePathFromUrl(value: string) {
     return extractFromPath(text);
   }
 }
+
+export function getManagedImageUrlFromPath(value: string) {
+  const extractedPath = getManagedImagePathFromUrl(value);
+  const normalizedPath = (extractedPath || value.trim())
+    .replace(/\\/g, "/")
+    .replace(/^\/+/, "");
+  if (!normalizedPath) {
+    return "";
+  }
+
+  const segments = normalizedPath.split("/");
+  if (segments.some((segment) => !segment || segment === "." || segment === "..")) {
+    return "";
+  }
+  return `/images/${segments.map((segment) => encodeURIComponent(segment)).join("/")}`;
+}

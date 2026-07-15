@@ -383,7 +383,7 @@ function LogsContent() {
 
   return (
     <section className="flex h-full min-h-0 flex-col gap-5 overflow-hidden">
-      <PageHeader eyebrow="日志" title="日志管理" />
+      <PageHeader title="日志管理" />
 
       <Card>
         <CardHeader className="pb-4">

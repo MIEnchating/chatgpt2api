@@ -371,7 +371,6 @@ func relayPayloadForPath(pathValue string, payload map[string]any) map[string]an
 
 func sanitizeRelayImagePayload(payload map[string]any) {
 	delete(payload, "messages")
-	delete(payload, "background")
 	if util.ToBool(payload["stream"]) {
 		payload["stream"] = true
 		if partialImages, ok := normalizeRelayImagePartialImages(payload["partial_images"]); ok {
@@ -392,6 +391,7 @@ func sanitizeRelayImagePayload(payload map[string]any) {
 		}
 	}
 	normalizeRelayImageEnum(payload, "quality", map[string]string{"auto": "auto", "low": "low", "medium": "medium", "high": "high"})
+	normalizeRelayImageEnum(payload, "background", map[string]string{"auto": "auto", "opaque": "opaque"})
 	normalizeRelayImageEnum(payload, "moderation", map[string]string{"auto": "auto", "low": "low"})
 	delete(payload, "response_format")
 

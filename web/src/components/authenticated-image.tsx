@@ -1,6 +1,6 @@
 "use client";
 
-import { LoaderCircle } from "lucide-react";
+import { ImageOff, LoaderCircle } from "lucide-react";
 import { useEffect, useMemo, useState, type CSSProperties, type ImgHTMLAttributes } from "react";
 
 import {
@@ -112,7 +112,14 @@ export function AuthenticatedImage({ alt, className, placeholderClassName, src, 
         role={alt ? "img" : undefined}
         aria-label={typeof alt === "string" && alt ? alt : undefined}
       >
-        {showPlaceholder ? <LoaderCircle className="size-5 animate-spin" aria-hidden="true" /> : null}
+        {showPlaceholder ? (
+          <LoaderCircle className="size-5 animate-spin" aria-hidden="true" />
+        ) : (
+          <span className="flex items-center gap-1.5 text-xs font-medium text-stone-500">
+            <ImageOff className="size-4" aria-hidden="true" />
+            图片加载失败
+          </span>
+        )}
       </span>
     );
   }

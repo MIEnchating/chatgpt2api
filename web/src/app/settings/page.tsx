@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef } from "react";
 import { LoaderCircle } from "lucide-react";
 
 import { useAuthGuard } from "@/lib/use-auth-guard";
@@ -27,29 +27,23 @@ function SettingsDataController() {
   return null;
 }
 
-function SettingsMasonryItem({ children }: { children: ReactNode }) {
-  return <div className="mb-5 break-inside-avoid">{children}</div>;
-}
-
 function AdminSettingsPageContent() {
   return (
-    <div className="mx-auto flex w-full max-w-[1180px] flex-col gap-5 pb-8">
-      <SettingsDataController />
-      <SettingsHeader />
-      <section className="columns-1 gap-5 md:columns-2">
-        <SettingsMasonryItem>
-          <ConfigCard />
-        </SettingsMasonryItem>
-        <SettingsMasonryItem>
-          <LogGovernanceCard />
-        </SettingsMasonryItem>
-        <SettingsMasonryItem>
-          <ImageStorageGovernanceCard />
-        </SettingsMasonryItem>
-        <SettingsMasonryItem>
-          <LoginPageImageCard />
-        </SettingsMasonryItem>
-      </section>
+    <div className="h-full min-h-0 overflow-y-auto overscroll-contain [scrollbar-gutter:stable]">
+      <div className="mx-auto flex w-full max-w-[1180px] flex-col gap-5 pb-8 pr-1">
+        <SettingsDataController />
+        <SettingsHeader />
+        <section className="grid items-start gap-5 lg:grid-cols-2">
+          <div className="flex min-w-0 flex-col gap-5">
+            <ConfigCard />
+            <ImageStorageGovernanceCard />
+          </div>
+          <div className="flex min-w-0 flex-col gap-5">
+            <LogGovernanceCard />
+            <LoginPageImageCard />
+          </div>
+        </section>
+      </div>
     </div>
   );
 }

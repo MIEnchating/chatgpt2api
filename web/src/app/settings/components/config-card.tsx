@@ -5,7 +5,6 @@ import {
   CircleHelp,
   LoaderCircle,
   PlugZap,
-  Save,
   Settings2,
 } from "lucide-react";
 import { useState } from "react";
@@ -128,7 +127,6 @@ export function ConfigCard() {
     useState<ProxyTestResult | null>(null);
   const config = useSettingsStore((state) => state.config);
   const isLoadingConfig = useSettingsStore((state) => state.isLoadingConfig);
-  const isSavingConfig = useSettingsStore((state) => state.isSavingConfig);
   const setImageTaskTimeoutSeconds = useSettingsStore(
     (state) => state.setImageTaskTimeoutSeconds,
   );
@@ -147,8 +145,8 @@ export function ConfigCard() {
     (state) => state.setImageStorageLimitMb,
   );
   const setProxy = useSettingsStore((state) => state.setProxy);
+  const setBaseUrl = useSettingsStore((state) => state.setBaseUrl);
   const setRelayBaseUrl = useSettingsStore((state) => state.setRelayBaseUrl);
-  const saveConfig = useSettingsStore((state) => state.saveConfig);
 
   const handleTestProxy = async () => {
     const candidate = String(config?.proxy || "").trim();
@@ -194,20 +192,6 @@ export function ConfigCard() {
       icon={Settings2}
       title="参数配置"
       description="配置云棉接入、图片任务和模型下发。"
-      action={
-        <Button
-          size="lg"
-          onClick={() => void saveConfig()}
-          disabled={isSavingConfig}
-        >
-          {isSavingConfig ? (
-            <LoaderCircle data-icon="inline-start" className="animate-spin" />
-          ) : (
-            <Save data-icon="inline-start" />
-          )}
-          保存
-        </Button>
-      }
     >
       <div className="flex flex-col gap-5">
         <section className={configSectionClassName}>
@@ -269,8 +253,21 @@ export function ConfigCard() {
               />
             </Field>
             <Field className={configFieldClassName}>
+              <ConfigFieldLabel htmlFor="settings-base-url">
+                图片访问地址
+              </ConfigFieldLabel>
+              <Input
+                id="settings-base-url"
+                type="url"
+                value={String(config?.base_url || "")}
+                onChange={(event) => setBaseUrl(event.target.value)}
+                placeholder="https://image.example.com"
+                className={settingsInputClassName}
+              />
+            </Field>
+            <Field className={configFieldClassName}>
               <ConfigFieldLabel htmlFor="settings-relay-base-url">
-                baseurl
+                API 访问地址
               </ConfigFieldLabel>
               <Input
                 id="settings-relay-base-url"
@@ -381,7 +378,7 @@ export function ConfigCard() {
             {proxyTestResult ? (
               <div
                 className={cn(
-                  "rounded-[13px] border px-3 py-2 text-xs leading-5",
+                  "rounded-lg border px-3 py-2 text-xs leading-5",
                   proxyTestResult.ok
                     ? "border-emerald-200 bg-emerald-50 text-emerald-800"
                     : "border-rose-200 bg-rose-50 text-rose-800",

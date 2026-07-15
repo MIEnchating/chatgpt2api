@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Check, CircleStop, Clock3, Download, Eye, Globe2, LoaderCircle, Lock, PencilLine, Plus, RotateCcw, Sparkles } from "lucide-react";
+import { Check, CircleStop, Clock3, Download, Eye, Globe2, LoaderCircle, Lock, PencilLine, Plus, RotateCcw } from "lucide-react";
 
 import { AuthenticatedImage } from "@/components/authenticated-image";
 import { ChatMarkdown } from "@/app/image/components/chat-markdown";
@@ -15,6 +15,7 @@ import {
   getCachedAuthenticatedImageByteSize,
   shouldUseAuthenticatedImageFallback,
 } from "@/lib/authenticated-image";
+import { getManagedImageUrlFromPath } from "@/lib/image-path";
 import { formatBase64ImageFileSize, formatImageFileSize } from "@/lib/image-size";
 import { cn } from "@/lib/utils";
 import {
@@ -71,6 +72,12 @@ type ImageResultsProps = {
 function getStoredImageSrc(image: StoredImage) {
   if (image.b64_json) {
     return `data:image/${image.outputFormat || "png"};base64,${image.b64_json}`;
+  }
+  if (image.path) {
+    const managedURL = getManagedImageUrlFromPath(image.path);
+    if (managedURL) {
+      return managedURL;
+    }
   }
   return image.url || "";
 }
@@ -396,18 +403,6 @@ export function ImageResults({
     return (
       <div className="flex h-full min-h-[300px] items-center justify-center px-0 py-3 text-center sm:min-h-[420px] sm:py-6">
         <div className="mx-auto flex w-full max-w-[960px] flex-col gap-5">
-          <div className="mx-auto flex max-w-[640px] flex-col items-center">
-            <div className="mb-3 inline-flex items-center gap-2 rounded-full bg-[#f0f0f0] px-3 py-1 text-xs font-medium text-[#45515e]">
-              <Sparkles className="size-4 text-[#1456f0]" />
-              生图预设
-            </div>
-            <h1 className="font-display text-3xl leading-[1.08] font-medium text-[#222222] sm:text-5xl">
-              Turn ideas into images
-            </h1>
-            <p className="mx-auto mt-3 max-w-[460px] text-sm leading-6 text-[#45515e] sm:text-[15px]">
-              选择一组真实案例预设快速开始，也可以直接在下方输入自己的画面描述。
-            </p>
-          </div>
           <div className="hide-scrollbar flex gap-3 overflow-x-auto px-1 pb-1 text-left sm:grid sm:grid-cols-2 sm:overflow-visible lg:grid-cols-3">
             {promptPresets.map((preset) => (
               <button

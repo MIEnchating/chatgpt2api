@@ -364,18 +364,10 @@ function effectiveImageSizeSelection(model: ImageModel, selection: ImageSizeSele
 function buildEffectiveImageSizeRequest(model: ImageModel, selection: ImageSizeSelection) {
   const effectiveSelection = effectiveImageSizeSelection(model, selection);
   const requestedSize = buildImageSize(effectiveSelection);
-  let upstreamSize = requestedSize;
-  if (
-    supportsStructuredImageParameters(model) &&
-    effectiveSelection.mode === "ratio" &&
-    effectiveSelection.resolution !== "auto"
-  ) {
-    upstreamSize = getActiveImageAspectRatio(effectiveSelection) || requestedSize;
-  }
   return {
     selection: effectiveSelection,
     size: requestedSize,
-    upstreamSize,
+    upstreamSize: requestedSize,
   };
 }
 
@@ -1405,7 +1397,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   const [relayKeyConfigured, setRelayKeyConfigured] = useState(false);
   const [relayKeyStatusMessage, setRelayKeyStatusMessage] = useState(NEWAPI_TOKEN_MISSING_MESSAGE);
   const [relayTokenGroup, setRelayTokenGroup] = useState(getStoredRelayTokenGroup);
-  const [relayTokenGroups, setRelayTokenGroups] = useState<string[]>([]);
   const [relayTokenName, setRelayTokenName] = useState(getStoredRelayTokenName);
   const [relayTokenNameOptions, setRelayTokenNameOptions] = useState<string[]>([]);
   const relayKeyMissingMessage = relayKeyStatusMessage || NEWAPI_TOKEN_MISSING_MESSAGE;
@@ -1994,7 +1985,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       const status = await fetchProfileRelayKey(activeRelayTokenGroup, activeRelayTokenName);
       const groups = normalizeRelayTokenGroups(status.groups);
       const names = normalizeRelayTokenNames(status.token_names);
-      setRelayTokenGroups(groups);
       setRelayTokenNameOptions(names);
       setRelayTokenGroup((current) => nextRelayTokenGroup(current, groups, status.group || status.configured_group));
       setRelayTokenName((current) => {
@@ -4086,10 +4076,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                 imagePartialImages={imagePartialImages}
                 relayKeyConfigured={relayKeyConfigured}
                 relayKeyStatusMessage={relayKeyMissingMessage}
-                relayTokenGroup={activeRelayTokenGroup}
-                relayTokenGroups={relayTokenGroups}
-                relayTokenName={activeRelayTokenName}
-                relayTokenNames={relayTokenNameOptions}
                 highResolutionHint={highResolutionHint}
                 referenceImages={referenceImages}
                 textareaRef={textareaRef}
@@ -4108,8 +4094,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                 onImageOutputCompressionChange={setImageOutputCompression}
                 onImageStreamEnabledChange={setImageStreamEnabled}
                 onImagePartialImagesChange={setImagePartialImages}
-                onRelayTokenGroupChange={setRelayTokenGroup}
-                onRelayTokenNameChange={setRelayTokenName}
                 onSubmit={handleSubmit}
                 onOpenPromptMarket={() => setIsPromptMarketOpen(true)}
                 onReferenceImageChange={handleReferenceImageChange}

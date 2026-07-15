@@ -3,27 +3,21 @@ import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 type PageHeaderProps = {
-  eyebrow: string;
   title: string;
   actions?: ReactNode;
   className?: string;
 };
 
-export function PageHeader({ eyebrow, title, actions, className }: PageHeaderProps) {
-  void eyebrow;
-  void title;
-  if (!actions) {
-    return null;
-  }
-
+export function PageHeader({ title, actions, className }: PageHeaderProps) {
   return (
     <section
       className={cn(
-        "flex flex-wrap items-center justify-end gap-2",
+        "flex min-w-0 flex-wrap items-center justify-between gap-3",
         className,
       )}
     >
-      {actions}
+      <h1 className="min-w-0 truncate text-xl leading-7 font-semibold text-foreground">{title}</h1>
+      {actions ? <div className="flex flex-wrap items-center justify-end gap-2">{actions}</div> : null}
     </section>
   );
 }

@@ -695,6 +695,9 @@ func TestRelayImagePayloadNormalizesSizeForRelay(t *testing.T) {
 		{name: "portrait ratio", input: "9:16", want: "864x1536"},
 		{name: "landscape ratio with x", input: "16x9", want: "1536x864"},
 		{name: "preset", input: "2k", want: "2048x2048"},
+		{name: "4k preset", input: "4k", want: "2880x2880"},
+		{name: "2k landscape", input: "2048x1152", want: "2048x1152"},
+		{name: "4k landscape", input: "3840x2160", want: "3840x2160"},
 		{name: "dimensions", input: "1824x1024", want: "1824x1024"},
 		{name: "auto", input: "auto", wantDrop: true},
 		{name: "unknown", input: "original", wantDrop: true},
@@ -736,7 +739,7 @@ func TestRelayImagePayloadSanitizesOfficialParameters(t *testing.T) {
 		t.Fatalf("invalid quality should be dropped: %#v", payload)
 	}
 	if _, ok := payload["background"]; ok {
-		t.Fatalf("background should be dropped for image relay payload: %#v", payload)
+		t.Fatalf("unsupported transparent background should be dropped: %#v", payload)
 	}
 	if _, ok := payload["moderation"]; ok {
 		t.Fatalf("invalid moderation should be dropped: %#v", payload)
@@ -761,11 +764,8 @@ func TestRelayImagePayloadSanitizesOfficialParameters(t *testing.T) {
 		"output_format":      "png",
 		"output_compression": 50,
 	})
-	if payload["quality"] != "auto" || payload["moderation"] != "low" {
+	if payload["quality"] != "auto" || payload["background"] != "opaque" || payload["moderation"] != "low" {
 		t.Fatalf("valid enum parameters were not normalized: %#v", payload)
-	}
-	if _, ok := payload["background"]; ok {
-		t.Fatalf("background should be dropped for image relay payload: %#v", payload)
 	}
 	if _, ok := payload["response_format"]; ok {
 		t.Fatalf("response_format should be dropped: %#v", payload)

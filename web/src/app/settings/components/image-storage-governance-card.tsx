@@ -61,7 +61,7 @@ function StatBlock({
   return (
     <div
       className={cn(
-        "flex min-h-20 flex-col justify-between rounded-[16px] border bg-background px-4 py-3 shadow-[0_4px_6px_rgba(0,0,0,0.04)]",
+        "flex min-h-20 flex-col justify-between rounded-xl border bg-background px-4 py-3 shadow-[0_4px_6px_rgba(0,0,0,0.04)]",
         tone === "warning" ? "border-amber-200 bg-amber-50/70" : "border-border/80",
       )}
     >
@@ -172,7 +172,7 @@ export function ImageStorageGovernanceCard() {
     >
       <div className="flex flex-col gap-5">
         {isLoadingImageStorageGovernance && !governance ? (
-          <div className="flex items-center justify-center rounded-[16px] border border-border/80 bg-background py-10">
+          <div className="flex items-center justify-center rounded-xl border border-border/80 bg-background py-10">
             <LoaderCircle className="size-5 animate-spin text-muted-foreground" />
           </div>
         ) : (
