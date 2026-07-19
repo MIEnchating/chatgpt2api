@@ -400,8 +400,8 @@ func TestProfileRelayKeyReadsNewAPITokenForUserAndGroup(t *testing.T) {
 
 	dbURL := newHTTPTestNewAPIDatabase(t)
 	insertHTTPTestNewAPIUser(t, dbURL, 1, "alice", "alice@example.test")
-	insertHTTPTestNewAPIToken(t, dbURL, 1, 1, "other", "wrong-key", time.Now().Unix()+3600, 10, false)
-	insertHTTPTestNewAPIToken(t, dbURL, 2, 1, "draw", "alice-relay", -1, 0, true)
+	insertHTTPTestNewAPITokenNamed(t, dbURL, 1, 1, "other", "secondary", "other-group-relay", time.Now().Unix()+3600, 10, false)
+	insertHTTPTestNewAPITokenNamed(t, dbURL, 2, 1, "draw", "primary", "alice-relay", -1, 0, true)
 	reader, err := service.NewNewAPITokenReader(service.NewAPITokenReaderConfig{DatabaseURL: dbURL, TokenGroup: "draw"})
 	if err != nil {
 		t.Fatalf("NewNewAPITokenReader() error = %v", err)
@@ -416,7 +416,7 @@ func TestProfileRelayKeyReadsNewAPITokenForUserAndGroup(t *testing.T) {
 		t.Fatalf("created user identity=%#v token=%q", user, token)
 	}
 
-	req := httptest.NewRequest(http.MethodGet, "/api/profile/relay-key", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/profile/relay-key?group=draw&token_name=secondary", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	res := httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
@@ -427,7 +427,9 @@ func TestProfileRelayKeyReadsNewAPITokenForUserAndGroup(t *testing.T) {
 	if err := json.Unmarshal(res.Body.Bytes(), &status); err != nil {
 		t.Fatalf("relay key status json: %v", err)
 	}
-	if status["has_key"] != true || status["group"] != "draw" || status["key_preview"] == "sk-alice-relay" {
+	groups, _ := status["groups"].([]any)
+	names, _ := status["token_names"].([]any)
+	if status["has_key"] != true || status["group"] != "other" || status["token_name"] != "secondary" || status["key_preview"] == "sk-other-group-relay" || len(groups) != 2 || groups[0] != "other" || groups[1] != "draw" || len(names) != 2 || names[0] != "secondary" || names[1] != "primary" {
 		t.Fatalf("relay key status = %#v", status)
 	}
 
@@ -466,6 +468,28 @@ func TestProfileRelayKeyReadsNewAPITokenForUserAndGroup(t *testing.T) {
 	app.Handler().ServeHTTP(res, req)
 	if res.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("write relay key status = %d body = %s", res.Code, res.Body.String())
+	}
+}
+
+func TestSettingsCannotOverrideNewAPITokenGroup(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+	t.Setenv("CHATGPT2API_NEWAPI_TOKEN_GROUP", "draw")
+
+	req := httptest.NewRequest(http.MethodPost, "/api/settings", strings.NewReader(`{"newapi_token_group":"other"}`))
+	req.Header.Set("Authorization", adminAuthHeader(t, app))
+	res := httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("settings status = %d body = %s", res.Code, res.Body.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(res.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("settings json: %v", err)
+	}
+	config := util.StringMap(payload["config"])
+	if config["newapi_token_group"] != "draw" {
+		t.Fatalf("newapi_token_group = %#v, want draw", config["newapi_token_group"])
 	}
 }
 
@@ -697,6 +721,7 @@ func TestRunLoggedImageTaskLogsTextOutputAsFailure(t *testing.T) {
 }
 
 func TestRunLoggedImageTaskLocalizesRelayURLForGallery(t *testing.T) {
+	t.Setenv("CHATGPT2API_BASE_URL", "https://image.yunmian.tech")
 	app := newTestApp(t)
 	defer app.Close()
 
@@ -2169,7 +2194,7 @@ func TestAuthSessionCookieLifecycle(t *testing.T) {
 	if res.Code != http.StatusOK {
 		t.Fatalf("login status = %d body = %s", res.Code, res.Body.String())
 	}
-	cookie := findResponseCookie(res.Result(), authSessionCookieName)
+	cookie := findResponseCookieByDomain(res.Result(), authSessionCookieName, "")
 	if cookie == nil || cookie.Value == "" || cookie.Path != "/" || !cookie.HttpOnly {
 		t.Fatalf("login cookie = %#v", cookie)
 	}
@@ -2184,13 +2209,13 @@ func TestAuthSessionCookieLifecycle(t *testing.T) {
 	if res.Code != http.StatusOK {
 		t.Fatalf("logout status = %d body = %s", res.Code, res.Body.String())
 	}
-	cleared := findResponseCookie(res.Result(), authSessionCookieName)
+	cleared := findResponseCookieByDomain(res.Result(), authSessionCookieName, "")
 	if cleared == nil || cleared.MaxAge >= 0 || cleared.Value != "" {
 		t.Fatalf("logout cookie = %#v", cleared)
 	}
 }
 
-func TestAuthSessionCookieUsesRelayAIParentDomain(t *testing.T) {
+func TestAuthSessionCookieIsHostOnly(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()
 
@@ -2203,35 +2228,21 @@ func TestAuthSessionCookieUsesRelayAIParentDomain(t *testing.T) {
 		if res.Code != http.StatusOK {
 			t.Fatalf("login %s status = %d body = %s", host, res.Code, res.Body.String())
 		}
-		cookie := findResponseCookieByDomain(res.Result(), authSessionCookieName, "relayai.tech")
+		cookie := findResponseCookieByDomain(res.Result(), authSessionCookieName, "")
 		if cookie == nil || cookie.Value == "" || cookie.Path != "/" || !cookie.HttpOnly || !cookie.Secure {
-			t.Fatalf("login %s domain cookie = %#v", host, cookie)
+			t.Fatalf("login %s host-only cookie = %#v", host, cookie)
 		}
 		if got := cookie.SameSite; got != http.SameSiteLaxMode {
 			t.Fatalf("login %s cookie SameSite = %v, want Lax", host, got)
 		}
+		legacy := findResponseCookieByDomain(res.Result(), authSessionCookieName, "relayai.tech")
+		if legacy == nil || legacy.MaxAge >= 0 || legacy.Value != "" {
+			t.Fatalf("login %s legacy cookie cleanup = %#v", host, legacy)
+		}
 	}
 }
 
-func TestAuthSessionCookieDomainOverride(t *testing.T) {
-	app := newTestApp(t)
-	defer app.Close()
-	t.Setenv("CHATGPT2API_AUTH_COOKIE_DOMAIN", "accounts.example.test")
-
-	req := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(`{"username":"`+testAdminUsername+`","password":"`+testAdminPassword+`"}`))
-	req.Host = "relayai.tech"
-	res := httptest.NewRecorder()
-	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusOK {
-		t.Fatalf("login status = %d body = %s", res.Code, res.Body.String())
-	}
-	cookie := findResponseCookieByDomain(res.Result(), authSessionCookieName, "accounts.example.test")
-	if cookie == nil || cookie.Value == "" {
-		t.Fatalf("override domain cookie = %#v", cookie)
-	}
-}
-
-func TestAuthSessionCanRestoreFromSharedCookie(t *testing.T) {
+func TestAuthSessionMigratesLegacySharedCookieToHostOnly(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()
 
@@ -2242,9 +2253,9 @@ func TestAuthSessionCanRestoreFromSharedCookie(t *testing.T) {
 	if res.Code != http.StatusOK {
 		t.Fatalf("login status = %d body = %s", res.Code, res.Body.String())
 	}
-	cookie := findResponseCookieByDomain(res.Result(), authSessionCookieName, "relayai.tech")
+	cookie := findResponseCookieByDomain(res.Result(), authSessionCookieName, "")
 	if cookie == nil || cookie.Value == "" {
-		t.Fatalf("login domain cookie = %#v", cookie)
+		t.Fatalf("login host-only cookie = %#v", cookie)
 	}
 
 	req = httptest.NewRequest(http.MethodGet, "/auth/session", nil)
@@ -2262,13 +2273,17 @@ func TestAuthSessionCanRestoreFromSharedCookie(t *testing.T) {
 	if payload["token"] != cookie.Value || payload["username"] != testAdminUsername {
 		t.Fatalf("session payload = %#v", payload)
 	}
-	refreshed := findResponseCookieByDomain(res.Result(), authSessionCookieName, "relayai.tech")
+	refreshed := findResponseCookieByDomain(res.Result(), authSessionCookieName, "")
 	if refreshed == nil || refreshed.Value != cookie.Value {
-		t.Fatalf("session refreshed cookie = %#v", refreshed)
+		t.Fatalf("session refreshed host-only cookie = %#v", refreshed)
+	}
+	legacy := findResponseCookieByDomain(res.Result(), authSessionCookieName, "relayai.tech")
+	if legacy == nil || legacy.MaxAge >= 0 || legacy.Value != "" {
+		t.Fatalf("session legacy cookie cleanup = %#v", legacy)
 	}
 }
 
-func TestLogoutClearsSharedAndHostOnlyAuthCookies(t *testing.T) {
+func TestLogoutClearsLegacyAndHostOnlyAuthCookies(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()
 
@@ -2279,9 +2294,9 @@ func TestLogoutClearsSharedAndHostOnlyAuthCookies(t *testing.T) {
 	if res.Code != http.StatusOK {
 		t.Fatalf("login status = %d body = %s", res.Code, res.Body.String())
 	}
-	cookie := findResponseCookieByDomain(res.Result(), authSessionCookieName, "relayai.tech")
+	cookie := findResponseCookieByDomain(res.Result(), authSessionCookieName, "")
 	if cookie == nil || cookie.Value == "" {
-		t.Fatalf("login domain cookie = %#v", cookie)
+		t.Fatalf("login host-only cookie = %#v", cookie)
 	}
 
 	req = httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
@@ -2320,7 +2335,7 @@ func TestLoginAllowsCredentialedLoopbackFrontend(t *testing.T) {
 	if got := res.Header().Get("Access-Control-Allow-Credentials"); got != "true" {
 		t.Fatalf("Access-Control-Allow-Credentials = %q, want true", got)
 	}
-	if cookie := findResponseCookie(res.Result(), authSessionCookieName); cookie == nil || cookie.Value == "" {
+	if cookie := findResponseCookieByDomain(res.Result(), authSessionCookieName, ""); cookie == nil || cookie.Value == "" {
 		t.Fatalf("login cookie = %#v", cookie)
 	}
 }
@@ -3734,15 +3749,6 @@ func findHTTPItem(items []map[string]any, id string) map[string]any {
 	return nil
 }
 
-func findResponseCookie(res *http.Response, name string) *http.Cookie {
-	for _, cookie := range res.Cookies() {
-		if cookie.Name == name {
-			return cookie
-		}
-	}
-	return nil
-}
-
 func findResponseCookieByDomain(res *http.Response, name, domain string) *http.Cookie {
 	for _, cookie := range res.Cookies() {
 		if cookie.Name == name && cookie.Domain == domain {
@@ -3865,10 +3871,14 @@ func updateHTTPTestNewAPIUserBalance(t *testing.T, dbURL string, id int, quota, 
 }
 
 func insertHTTPTestNewAPIToken(t *testing.T, dbURL string, id, userID int, group, key string, expiredTime int64, remainQuota int, unlimited bool) {
+	insertHTTPTestNewAPITokenNamed(t, dbURL, id, userID, group, "token", key, expiredTime, remainQuota, unlimited)
+}
+
+func insertHTTPTestNewAPITokenNamed(t *testing.T, dbURL string, id, userID int, group, name, key string, expiredTime int64, remainQuota int, unlimited bool) {
 	t.Helper()
 	db := openHTTPTestNewAPIDatabase(t, dbURL)
 	defer db.Close()
-	if _, err := db.Exec("INSERT INTO tokens (id, user_id, `key`, status, name, expired_time, remain_quota, unlimited_quota, `group`, deleted_at) VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, NULL)", id, userID, key, "token", expiredTime, remainQuota, unlimited, group); err != nil {
+	if _, err := db.Exec("INSERT INTO tokens (id, user_id, `key`, status, name, expired_time, remain_quota, unlimited_quota, `group`, deleted_at) VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, NULL)", id, userID, key, name, expiredTime, remainQuota, unlimited, group); err != nil {
 		t.Fatalf("insert newapi token: %v", err)
 	}
 }
@@ -3902,7 +3912,6 @@ func newTestApp(t *testing.T) *App {
 	t.Setenv("CHATGPT2API_ADMIN_PASSWORD", testAdminPassword)
 	t.Setenv("CHATGPT2API_NEWAPI_DATABASE_URL", "")
 	t.Setenv("CHATGPT2API_NEWAPI_TOKEN_GROUP", "")
-	t.Setenv("CHATGPT2API_AUTH_COOKIE_DOMAIN", "")
 	t.Setenv("STORAGE_BACKEND", "sqlite")
 	t.Setenv("DATABASE_URL", "")
 	app, err := NewApp()

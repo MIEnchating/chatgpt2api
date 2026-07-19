@@ -48,3 +48,14 @@ func TestPromptMarketAdultPermissionIsExplicit(t *testing.T) {
 		t.Fatalf("explicit adult prompt market permission was not accepted: %#v", explicit)
 	}
 }
+
+func TestDefaultUserPermissionsIncludeCanvas(t *testing.T) {
+	permissions := DefaultPermissionSetForRole(AuthRoleUser)
+	if !HasAPIPermission(permissions, "GET", "/api/canvas") || !HasAPIPermission(permissions, "POST", "/api/canvas") || !HasAPIPermission(permissions, "PUT", "/api/canvas") || !HasAPIPermission(permissions, "DELETE", "/api/canvas") {
+		t.Fatalf("default user permissions should include canvas access: %#v", permissions.APIPermissions)
+	}
+	menuPaths := sliceSet(permissions.MenuPaths)
+	if _, ok := menuPaths["/canvas"]; !ok {
+		t.Fatalf("default user menus should include canvas: %#v", permissions.MenuPaths)
+	}
+}

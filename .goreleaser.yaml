@@ -71,7 +71,7 @@ release:
   draft: false
   prerelease: auto
   replace_existing_artifacts: true
-  name_template: "chatgpt2api {{ .Version }}"
+  name_template: "{{ .Version }}"
   header: |
     {{ .Env.TAG_MESSAGE }}
   footer: |

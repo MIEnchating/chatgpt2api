@@ -49,12 +49,10 @@ FROM --platform=$TARGETPLATFORM ${RUNTIME_IMAGE} AS app
 
 WORKDIR /app
 ENV PORT=80
-ENV CHATGPT2API_DEPLOYMENT=docker
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
-    git \
     tzdata \
     && rm -rf /var/lib/apt/lists/*
 

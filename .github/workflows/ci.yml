@@ -65,14 +65,15 @@ jobs:
           test -f Dockerfile.release
           test -f Dockerfile.dockerignore
           test -f docker-compose.yml
-          test -f ubuntu-deploy.sh
-          sh -n docker-build-limited.sh
-          sh -n ubuntu-deploy.sh
+          test ! -e Dockerfile.dev
+          test ! -e Dockerfile.dev.dockerignore
+          test ! -e ubuntu-deploy.sh
+          test ! -e docker-build-limited.sh
           test ! -e .dockerignore
           test ! -e Dockerfile.goreleaser
           test ! -e docker-compose.build.yml
           test ! -e docker-compose.local.yml
           test ! -e .goreleaser.simple.yaml
-          CHATGPT2API_ENV_FILE="$PWD/.env.example" \
-          CHATGPT2API_DATA_DIR="$PWD/data" \
+          cp .env.example .env
           docker compose -f docker-compose.yml config >/dev/null
+          rm .env

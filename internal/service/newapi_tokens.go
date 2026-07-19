@@ -3,9 +3,11 @@ package service
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -16,7 +18,10 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-const defaultNewAPITokenQueryTimeout = 5 * time.Second
+const (
+	defaultNewAPITokenQueryTimeout    = 5 * time.Second
+	newAPITokenRouteMaxCooldownSecond = 31_536_000
+)
 
 type NewAPITokenReaderConfig struct {
 	DatabaseURL  string
@@ -49,6 +54,21 @@ type NewAPITokenSelection struct {
 	Name   string
 	Groups []string
 	Names  []string
+}
+
+type newAPITokenCandidate struct {
+	ID               int64
+	Key              string
+	Name             string
+	Group            string
+	GroupRouteConfig string
+}
+
+type newAPITokenGroupRoute struct {
+	Group           string `json:"group"`
+	Priority        int    `json:"priority"`
+	CooldownSeconds int    `json:"cooldown_seconds"`
+	Enabled         *bool  `json:"enabled,omitempty"`
 }
 
 type NewAPITokenReader struct {
@@ -126,16 +146,15 @@ func (r *NewAPITokenReader) Status(ctx context.Context, identity Identity) map[s
 }
 
 func (r *NewAPITokenReader) ConfiguredTokenGroups(ctx context.Context) []string {
-	if r == nil || !r.configured || r.db == nil {
+	_ = ctx
+	if r == nil {
 		return nil
 	}
-	queryCtx, cancel := context.WithTimeout(contextOrBackground(ctx), r.timeout)
-	defer cancel()
-	groups, err := r.lookupAvailableTokenGroups(queryCtx, 0)
-	if err != nil {
+	group := r.configuredGroup()
+	if group == "" {
 		return nil
 	}
-	return groups
+	return []string{group}
 }
 
 func (r *NewAPITokenReader) StatusForGroup(ctx context.Context, identity Identity, group string) map[string]any {
@@ -144,18 +163,19 @@ func (r *NewAPITokenReader) StatusForGroup(ctx context.Context, identity Identit
 
 func (r *NewAPITokenReader) StatusForGroupAndName(ctx context.Context, identity Identity, group, name string) map[string]any {
 	configuredGroup := r.configuredGroup()
-	selectedGroup := firstNonEmptyNewAPIString(strings.TrimSpace(group), configuredGroup)
+	selectedGroup := firstNonEmptyNewAPIString(group, configuredGroup)
+	selectedName := strings.TrimSpace(name)
 	status := map[string]any{
 		"has_key":          false,
 		"key_preview":      "",
 		"group":            selectedGroup,
-		"token_name":       strings.TrimSpace(name),
+		"token_name":       selectedName,
 		"configured_group": configuredGroup,
 		"groups":           []string{},
 		"token_names":      []string{},
 		"source":           "newapi",
 	}
-	selection, err := r.TokenForIdentityGroupAndName(ctx, identity, selectedGroup, name)
+	selection, err := r.TokenForIdentityGroupAndName(ctx, identity, group, name)
 	if err != nil {
 		status["message"] = err.Error()
 		if selection.Groups != nil {
@@ -196,12 +216,12 @@ func (r *NewAPITokenReader) BalanceStatus(ctx context.Context, identity Identity
 
 	queryCtx, cancel := context.WithTimeout(contextOrBackground(ctx), r.timeout)
 	defer cancel()
-	balance, err := r.lookupUserBalance(queryCtx, candidates)
+	balance, err := r.lookupUserBalanceForIdentity(queryCtx, identity, candidates)
 	if err != nil {
 		status["message"] = err.Error()
 		return status
 	}
-	selection, selectionErr := r.lookupTokenSelection(queryCtx, balance.ID, configuredGroup, "")
+	selection, selectionErr := r.lookupTokenSelection(queryCtx, balance.ID, "", "")
 	if selection.Groups != nil {
 		status["token_groups"] = selection.Groups
 	}
@@ -240,7 +260,7 @@ func (r *NewAPITokenReader) BalanceForIdentity(ctx context.Context, identity Ide
 
 	queryCtx, cancel := context.WithTimeout(contextOrBackground(ctx), r.timeout)
 	defer cancel()
-	return r.lookupUserBalance(queryCtx, candidates)
+	return r.lookupUserBalanceForIdentity(queryCtx, identity, candidates)
 }
 
 func (r *NewAPITokenReader) KeyForIdentity(ctx context.Context, identity Identity) (string, error) {
@@ -279,7 +299,8 @@ func (r *NewAPITokenReader) TokenForIdentityGroupAndName(ctx context.Context, id
 	if r == nil || !r.configured || r.db == nil {
 		return NewAPITokenSelection{}, newAPITokenMessageError("请先配置云棉数据库连接，并在云棉创建指定分组的令牌", nil)
 	}
-	group := firstNonEmptyNewAPIString(strings.TrimSpace(groupOverride), r.configuredGroup())
+	group := strings.TrimSpace(groupOverride)
+	name := strings.TrimSpace(nameOverride)
 	candidates := newAPIIdentityLookupValues(identity)
 	if len(candidates) == 0 {
 		return NewAPITokenSelection{}, newAPITokenMessageError("当前登录用户缺少云棉用户名，无法读取云棉 Key", nil)
@@ -287,11 +308,11 @@ func (r *NewAPITokenReader) TokenForIdentityGroupAndName(ctx context.Context, id
 
 	queryCtx, cancel := context.WithTimeout(contextOrBackground(ctx), r.timeout)
 	defer cancel()
-	userID, err := r.lookupUserID(queryCtx, candidates, group)
+	userID, err := r.lookupUserIDForIdentity(queryCtx, identity, candidates, group)
 	if err != nil {
 		return NewAPITokenSelection{}, err
 	}
-	return r.lookupTokenSelection(queryCtx, userID, group, nameOverride)
+	return r.lookupTokenSelection(queryCtx, userID, group, name)
 }
 
 func (r *NewAPITokenReader) AuthenticatePassword(ctx context.Context, login, password string) (NewAPIUser, error) {
@@ -350,6 +371,22 @@ func (r *NewAPITokenReader) lookupUserID(ctx context.Context, candidates []strin
 	return 0, newAPITokenMessageError(fmt.Sprintf("请先在云棉创建当前登录用户，并创建“%s”分组的令牌", group), nil)
 }
 
+func (r *NewAPITokenReader) lookupUserIDForIdentity(ctx context.Context, identity Identity, candidates []string, group string) (int64, error) {
+	if userID, ok := newAPIIdentityUserID(identity); ok {
+		query := "SELECT id FROM users WHERE id = " + r.placeholder(1) + " AND status = 1 AND deleted_at IS NULL LIMIT 1"
+		var id int64
+		err := r.db.QueryRowContext(ctx, query, userID).Scan(&id)
+		if err == nil {
+			return id, nil
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return 0, newAPITokenMessageError("读取云棉 Key 失败，请检查云棉数据库连接", err)
+		}
+		return 0, newAPITokenMessageError(fmt.Sprintf("云棉用户 ID %d 不存在或已停用，请重新登录", userID), nil)
+	}
+	return r.lookupUserID(ctx, candidates, group)
+}
+
 func (r *NewAPITokenReader) lookupUserBalance(ctx context.Context, candidates []string) (NewAPIUserBalance, error) {
 	groupColumn := r.quoteIdentifier("group")
 	query := "SELECT id, username, email, display_name, quota, used_quota, request_count, " + groupColumn + " FROM users WHERE (username = " + r.placeholder(1) + " OR email = " + r.placeholder(2) + ") AND status = 1 AND deleted_at IS NULL ORDER BY id ASC LIMIT 1"
@@ -379,175 +416,188 @@ func (r *NewAPITokenReader) lookupUserBalance(ctx context.Context, candidates []
 	return NewAPIUserBalance{}, newAPITokenMessageError("请先在云棉创建当前登录用户", nil)
 }
 
-func (r *NewAPITokenReader) lookupTokenKey(ctx context.Context, userID int64, group, name string) (string, error) {
-	keyColumn := r.quoteIdentifier("key")
-	groupColumn := r.quoteIdentifier("group")
-	nameColumn := r.quoteIdentifier("name")
-	query := "SELECT " + keyColumn +
-		" FROM tokens WHERE user_id = " + r.placeholder(1) +
-		" AND " + groupColumn + " = " + r.placeholder(2) +
-		" AND status = 1 AND deleted_at IS NULL" +
-		" AND " + keyColumn + " <> ''" +
-		" AND (expired_time = -1 OR expired_time > " + r.placeholder(3) + ")" +
-		" AND (unlimited_quota = true OR remain_quota > 0)"
-	args := []any{userID, group, time.Now().Unix()}
-	if strings.TrimSpace(name) != "" {
-		query += " AND " + nameColumn + " = " + r.placeholder(4)
-		args = append(args, strings.TrimSpace(name))
-	}
-	query += " ORDER BY id ASC LIMIT 1"
-	var key string
-	err := r.db.QueryRowContext(ctx, query, args...).Scan(&key)
-	if err == nil && strings.TrimSpace(key) != "" {
-		return key, nil
-	}
-	if errors.Is(err, sql.ErrNoRows) || strings.TrimSpace(key) == "" {
-		if strings.TrimSpace(name) != "" {
-			return "", newAPITokenMessageError(fmt.Sprintf("请先在云棉为当前用户创建“%s”分组下名为“%s”的令牌", group, name), nil)
+func (r *NewAPITokenReader) lookupUserBalanceForIdentity(ctx context.Context, identity Identity, candidates []string) (NewAPIUserBalance, error) {
+	if userID, ok := newAPIIdentityUserID(identity); ok {
+		groupColumn := r.quoteIdentifier("group")
+		query := "SELECT id, username, email, display_name, quota, used_quota, request_count, " + groupColumn + " FROM users WHERE id = " + r.placeholder(1) + " AND status = 1 AND deleted_at IS NULL LIMIT 1"
+		var balance NewAPIUserBalance
+		var email, displayName, group sql.NullString
+		var quota, usedQuota, requestCount sql.NullInt64
+		err := r.db.QueryRowContext(ctx, query, userID).Scan(&balance.ID, &balance.Username, &email, &displayName, &quota, &usedQuota, &requestCount, &group)
+		if errors.Is(err, sql.ErrNoRows) {
+			return NewAPIUserBalance{}, newAPITokenMessageError(fmt.Sprintf("云棉用户 ID %d 不存在或已停用，请重新登录", userID), nil)
 		}
-		return "", newAPITokenMessageError(fmt.Sprintf("请先在云棉为当前用户创建“%s”分组的令牌", group), nil)
+		if err != nil {
+			return NewAPIUserBalance{}, newAPITokenMessageError("读取云棉余额失败，请检查云棉数据库连接", err)
+		}
+		balance.Username = strings.TrimSpace(balance.Username)
+		balance.Email = strings.TrimSpace(email.String)
+		balance.DisplayName = strings.TrimSpace(displayName.String)
+		balance.Group = strings.TrimSpace(group.String)
+		balance.Quota = quota.Int64
+		balance.UsedQuota = usedQuota.Int64
+		balance.RequestCount = requestCount.Int64
+		if balance.Username == "" {
+			return NewAPIUserBalance{}, newAPITokenMessageError("读取云棉余额失败，请检查云棉用户数据", nil)
+		}
+		return balance, nil
 	}
-	return "", newAPITokenMessageError("读取云棉 Key 失败，请检查云棉数据库连接", err)
+	return r.lookupUserBalance(ctx, candidates)
 }
 
 func (r *NewAPITokenReader) lookupTokenSelection(ctx context.Context, userID int64, group, name string) (NewAPITokenSelection, error) {
-	groups, err := r.lookupTokenGroups(ctx, userID)
-	selection := NewAPITokenSelection{Group: strings.TrimSpace(group), Groups: groups}
+	requestedGroup := strings.TrimSpace(group)
+	requestedName := strings.TrimSpace(name)
+	selection := NewAPITokenSelection{Group: requestedGroup, Name: requestedName, Groups: []string{}, Names: []string{}}
+	userGroup, err := r.lookupUserGroup(ctx, userID)
 	if err != nil {
 		return selection, err
 	}
-	if len(groups) == 0 {
-		if strings.TrimSpace(group) == "" {
-			return selection, newAPITokenMessageError("请先在云棉为当前用户创建可用令牌", nil)
+	candidates, err := r.lookupTokenCandidates(ctx, userID)
+	if err != nil {
+		return selection, err
+	}
+	candidatesByName := make(map[string][]newAPITokenCandidate, len(candidates))
+	names := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		if _, exists := candidatesByName[candidate.Name]; !exists {
+			names = append(names, candidate.Name)
 		}
-		return selection, newAPITokenMessageError(fmt.Sprintf("请先在云棉为当前用户创建“%s”分组的可用令牌", group), nil)
+		candidatesByName[candidate.Name] = append(candidatesByName[candidate.Name], candidate)
 	}
-	selectedGroup, ok := firstMatchingNewAPITokenGroup(groups, group)
-	if !ok {
-		if strings.TrimSpace(group) == "" {
-			selectedGroup = groups[0]
-			ok = true
-		}
-	}
-	if !ok {
-		return selection, newAPITokenMessageError(fmt.Sprintf("当前用户没有“%s”分组的可用令牌，可用分组：%s", group, strings.Join(groups, ", ")), nil)
-	}
-	selection.Group = selectedGroup
-	names, err := r.lookupTokenNames(ctx, userID, selectedGroup)
 	selection.Names = names
-	if err != nil {
-		return selection, err
+
+	firstCandidateByGroup := make(map[string]newAPITokenCandidate, len(candidates))
+	groups := make([]string, 0, len(candidates))
+	for _, candidate := range candidates {
+		candidateGroups, ok := newAPITokenCandidateGroups(candidate, userGroup)
+		if !ok || len(candidateGroups) != 1 {
+			continue
+		}
+		candidateGroup := candidateGroups[0]
+		if _, exists := firstCandidateByGroup[candidateGroup]; exists {
+			continue
+		}
+		firstCandidateByGroup[candidateGroup] = candidate
+		groups = append(groups, candidateGroup)
 	}
-	selectedName := strings.TrimSpace(name)
-	if len(names) > 0 {
-		var ok bool
-		selectedName, ok = firstMatchingNewAPITokenName(names, selectedName)
-		if !ok {
-			if strings.TrimSpace(name) == "" {
-				selectedName = names[0]
-			} else {
-				return selection, newAPITokenMessageError(fmt.Sprintf("当前用户在“%s”分组下没有名为“%s”的可用令牌，可用令牌：%s", selectedGroup, name, strings.Join(names, ", ")), nil)
-			}
+	selection.Groups = groups
+	if len(candidates) == 0 {
+		preferredGroup := firstNonEmptyNewAPIString(requestedGroup, r.configuredGroup())
+		selection.Group = preferredGroup
+		return selection, newAPITokenMessageError("请先在云棉为当前用户创建名称和 Key 均非空的可用令牌", nil)
+	}
+
+	if requestedName != "" {
+		matched := candidatesByName[requestedName]
+		switch len(matched) {
+		case 0:
+			return selection, newAPITokenMessageError(fmt.Sprintf("当前用户没有名为“%s”的可用令牌，可用令牌：%s", requestedName, strings.Join(names, ", ")), nil)
+		case 1:
+			selected := matched[0]
+			selection.Key = normalizeNewAPIKey(selected.Key)
+			selection.Name = selected.Name
+			selection.Group = newAPITokenCandidateGroupMetadata(selected, userGroup)
+			return selection, nil
+		default:
+			return selection, newAPITokenMessageError(fmt.Sprintf("当前用户存在 %d 个名为“%s”的可用令牌，无法唯一选择，请在云棉中重命名后重试", len(matched), requestedName), nil)
 		}
 	}
-	key, err := r.lookupTokenKey(ctx, userID, selectedGroup, selectedName)
-	if err != nil {
-		return selection, err
+
+	if len(groups) == 0 {
+		preferredGroup := firstNonEmptyNewAPIString(requestedGroup, r.configuredGroup())
+		selection.Group = preferredGroup
+		if preferredGroup != "" {
+			return selection, newAPITokenMessageError(fmt.Sprintf("请先在云棉为当前用户创建仅使用“%s”分组的可用令牌", preferredGroup), nil)
+		}
+		return selection, newAPITokenMessageError("请先在云棉为当前用户创建仅使用单一分组的可用令牌", nil)
 	}
-	selection.Name = selectedName
-	selection.Key = normalizeNewAPIKey(key)
+
+	selectedGroup := requestedGroup
+	if selectedGroup != "" {
+		if _, ok := firstCandidateByGroup[selectedGroup]; !ok {
+			return selection, newAPITokenMessageError(fmt.Sprintf("当前用户没有“%s”分组的安全可用令牌，可用分组：%s", selectedGroup, strings.Join(groups, ", ")), nil)
+		}
+	} else {
+		configuredGroup := r.configuredGroup()
+		if _, ok := firstCandidateByGroup[configuredGroup]; ok && configuredGroup != "" {
+			selectedGroup = configuredGroup
+		} else {
+			selectedGroup = groups[0]
+		}
+	}
+
+	selection.Group = selectedGroup
+	selected := firstCandidateByGroup[selectedGroup]
+	selection.Key = normalizeNewAPIKey(selected.Key)
+	selection.Name = selected.Name
 	return selection, nil
 }
 
-func (r *NewAPITokenReader) lookupTokenNames(ctx context.Context, userID int64, group string) ([]string, error) {
+func (r *NewAPITokenReader) lookupTokenCandidates(ctx context.Context, userID int64) ([]newAPITokenCandidate, error) {
 	keyColumn := r.quoteIdentifier("key")
-	groupColumn := r.quoteIdentifier("group")
 	nameColumn := r.quoteIdentifier("name")
-	query := "SELECT " + nameColumn +
+	groupColumn := r.quoteIdentifier("group")
+	routeConfigColumn := "''"
+	if r.hasTableColumn(ctx, "tokens", "group_route_config") {
+		routeConfigColumn = r.quoteIdentifier("group_route_config")
+	}
+	query := "SELECT id, " + keyColumn + ", " + nameColumn + ", " + groupColumn + ", " + routeConfigColumn +
 		" FROM tokens WHERE user_id = " + r.placeholder(1) +
-		" AND " + groupColumn + " = " + r.placeholder(2) +
 		" AND status = 1 AND deleted_at IS NULL" +
 		" AND " + keyColumn + " <> ''" +
-		" AND " + nameColumn + " <> ''" +
-		" AND (expired_time = -1 OR expired_time > " + r.placeholder(3) + ")" +
+		" AND (expired_time = -1 OR expired_time >= " + r.placeholder(2) + ")" +
 		" AND (unlimited_quota = true OR remain_quota > 0)" +
 		" ORDER BY id ASC"
-	rows, err := r.db.QueryContext(ctx, query, userID, group, time.Now().Unix())
+	rows, err := r.db.QueryContext(ctx, query, userID, time.Now().Unix())
 	if err != nil {
-		return nil, newAPITokenMessageError("读取云棉令牌名称失败，请检查云棉数据库连接", err)
+		return nil, newAPITokenMessageError("读取云棉令牌失败，请检查云棉数据库连接", err)
 	}
 	defer rows.Close()
 
-	seen := map[string]struct{}{}
-	names := make([]string, 0)
+	candidates := make([]newAPITokenCandidate, 0)
 	for rows.Next() {
-		var name sql.NullString
-		if err := rows.Scan(&name); err != nil {
-			return nil, newAPITokenMessageError("读取云棉令牌名称失败，请检查云棉数据库连接", err)
+		var candidate newAPITokenCandidate
+		var key, name, group, routeConfig sql.NullString
+		if err := rows.Scan(&candidate.ID, &key, &name, &group, &routeConfig); err != nil {
+			return nil, newAPITokenMessageError("读取云棉令牌失败，请检查云棉数据库连接", err)
 		}
-		value := strings.TrimSpace(name.String)
-		if value == "" {
-			continue
+		candidate.Key = strings.TrimSpace(key.String)
+		candidate.Name = strings.TrimSpace(name.String)
+		candidate.Group = strings.TrimSpace(group.String)
+		candidate.GroupRouteConfig = strings.TrimSpace(routeConfig.String)
+		if candidate.Key != "" && candidate.Name != "" {
+			candidates = append(candidates, candidate)
 		}
-		if _, ok := seen[value]; ok {
-			continue
-		}
-		seen[value] = struct{}{}
-		names = append(names, value)
 	}
 	if err := rows.Err(); err != nil {
-		return nil, newAPITokenMessageError("读取云棉令牌名称失败，请检查云棉数据库连接", err)
+		return nil, newAPITokenMessageError("读取云棉令牌失败，请检查云棉数据库连接", err)
 	}
-	return names, nil
+	return candidates, nil
 }
 
-func (r *NewAPITokenReader) lookupTokenGroups(ctx context.Context, userID int64) ([]string, error) {
-	return r.lookupAvailableTokenGroups(ctx, userID)
+func newAPITokenCandidateGroupMetadata(candidate newAPITokenCandidate, userGroup string) string {
+	if group := strings.TrimSpace(candidate.Group); group != "" {
+		return group
+	}
+	if groups, ok := newAPITokenCandidateGroups(candidate, userGroup); ok && len(groups) == 1 {
+		return groups[0]
+	}
+	return strings.TrimSpace(userGroup)
 }
 
-func (r *NewAPITokenReader) lookupAvailableTokenGroups(ctx context.Context, userID int64) ([]string, error) {
-	keyColumn := r.quoteIdentifier("key")
+func (r *NewAPITokenReader) lookupUserGroup(ctx context.Context, userID int64) (string, error) {
 	groupColumn := r.quoteIdentifier("group")
-	query := "SELECT " + groupColumn +
-		" FROM tokens WHERE status = 1 AND deleted_at IS NULL" +
-		" AND " + keyColumn + " <> ''" +
-		" AND " + groupColumn + " <> ''" +
-		" AND (expired_time = -1 OR expired_time > " + r.placeholder(1) + ")" +
-		" AND (unlimited_quota = true OR remain_quota > 0)"
-	args := []any{time.Now().Unix()}
-	if userID > 0 {
-		query += " AND user_id = " + r.placeholder(2)
-		args = append(args, userID)
+	query := "SELECT " + groupColumn + " FROM users WHERE id = " + r.placeholder(1) + " AND status = 1 AND deleted_at IS NULL LIMIT 1"
+	var group sql.NullString
+	err := r.db.QueryRowContext(ctx, query, userID).Scan(&group)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", newAPITokenMessageError("当前云棉用户不存在或已停用，请重新登录", nil)
 	}
-	query +=
-		" ORDER BY id ASC"
-	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, newAPITokenMessageError("读取云棉令牌分组失败，请检查云棉数据库连接", err)
+		return "", newAPITokenMessageError("读取云棉用户分组失败，请检查云棉数据库连接", err)
 	}
-	defer rows.Close()
-
-	seen := map[string]struct{}{}
-	groups := make([]string, 0)
-	for rows.Next() {
-		var group sql.NullString
-		if err := rows.Scan(&group); err != nil {
-			return nil, newAPITokenMessageError("读取云棉令牌分组失败，请检查云棉数据库连接", err)
-		}
-		value := strings.TrimSpace(group.String)
-		if value == "" {
-			continue
-		}
-		if _, ok := seen[value]; ok {
-			continue
-		}
-		seen[value] = struct{}{}
-		groups = append(groups, value)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, newAPITokenMessageError("读取云棉令牌分组失败，请检查云棉数据库连接", err)
-	}
-	return groups, nil
+	return strings.TrimSpace(group.String), nil
 }
 
 func (r *NewAPITokenReader) newAPIAdminSelectExpression(ctx context.Context) string {
@@ -617,6 +667,48 @@ func isTruthyNewAPIAdminValue(value any) bool {
 	}
 }
 
+func newAPITokenCandidateGroups(candidate newAPITokenCandidate, userGroup string) ([]string, bool) {
+	routeConfig := strings.TrimSpace(candidate.GroupRouteConfig)
+	if routeConfig != "" {
+		var routes []newAPITokenGroupRoute
+		if err := json.Unmarshal([]byte(routeConfig), &routes); err != nil || len(routes) == 0 {
+			return nil, false
+		}
+		seen := map[string]struct{}{}
+		groups := make([]string, 0, len(routes))
+		for _, route := range routes {
+			group := strings.TrimSpace(route.Group)
+			if group == "" || route.Priority < 0 || route.CooldownSeconds <= 0 || route.CooldownSeconds > newAPITokenRouteMaxCooldownSecond {
+				return nil, false
+			}
+			if _, exists := seen[group]; exists {
+				return nil, false
+			}
+			seen[group] = struct{}{}
+			if route.Enabled != nil && !*route.Enabled {
+				continue
+			}
+			if group == "auto" {
+				return nil, false
+			}
+			groups = append(groups, group)
+		}
+		return groups, len(groups) > 0
+	}
+
+	group := strings.TrimSpace(candidate.Group)
+	if group == "auto" {
+		return nil, false
+	}
+	if group == "" {
+		group = strings.TrimSpace(userGroup)
+	}
+	if group == "" || group == "auto" {
+		return nil, false
+	}
+	return []string{group}, true
+}
+
 func firstNonEmptyNewAPIString(values ...string) string {
 	for _, value := range values {
 		if strings.TrimSpace(value) != "" {
@@ -624,34 +716,6 @@ func firstNonEmptyNewAPIString(values ...string) string {
 		}
 	}
 	return ""
-}
-
-func firstMatchingNewAPITokenGroup(groups []string, preferred string) (string, bool) {
-	preferred = strings.TrimSpace(preferred)
-	if preferred == "" {
-		return "", false
-	}
-	for _, group := range groups {
-		group = strings.TrimSpace(group)
-		if strings.EqualFold(group, preferred) {
-			return group, true
-		}
-	}
-	return "", false
-}
-
-func firstMatchingNewAPITokenName(names []string, preferred string) (string, bool) {
-	preferred = strings.TrimSpace(preferred)
-	if preferred == "" {
-		return "", false
-	}
-	for _, name := range names {
-		name = strings.TrimSpace(name)
-		if strings.EqualFold(name, preferred) {
-			return name, true
-		}
-	}
-	return "", false
 }
 
 func (r *NewAPITokenReader) configuredGroup() string {
@@ -691,6 +755,20 @@ func newAPIIdentityLookupValues(identity Identity) []string {
 		util.Clean(identity.OwnerID),
 		util.Clean(identity.ID),
 	})
+}
+
+func newAPIIdentityUserID(identity Identity) (int64, bool) {
+	for _, value := range []string{identity.OwnerID, identity.ID} {
+		value = strings.TrimSpace(value)
+		if !strings.HasPrefix(value, "newapi:") {
+			continue
+		}
+		userID, err := strconv.ParseInt(strings.TrimPrefix(value, "newapi:"), 10, 64)
+		if err == nil && userID > 0 {
+			return userID, true
+		}
+	}
+	return 0, false
 }
 
 func dedupeNewAPIValues(values []string) []string {

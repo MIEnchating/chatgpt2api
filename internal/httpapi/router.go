@@ -51,6 +51,8 @@ func (a *App) routes() []appRoute {
 		subtree("/api/profile/api-key", a.handleProfileAPIKey),
 		subtree("/api/profile/prompt-favorites", a.handleProfilePromptFavorites),
 		subtree("/api/profile/image-conversations", a.handleProfileImageConversations),
+		exact("", "/api/canvas", a.handleCanvasDocument),
+		exact(http.MethodPost, "/api/canvas/images", a.handleCanvasImageUpload),
 		subtree("/api/auth/users", a.handleUserKeys),
 		subtree("/api/creation-tasks", a.handleCreationTasks),
 		exact("", "/api/settings", a.handleSettings),

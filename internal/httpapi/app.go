@@ -31,6 +31,7 @@ import (
 	frontend "chatgpt2api/internal/web"
 
 	_ "github.com/HugoSmits86/nativewebp"
+	"golang.org/x/net/publicsuffix"
 )
 
 const (
@@ -53,6 +54,7 @@ type App struct {
 	tasks      *service.ImageTaskService
 	prompts    *service.PromptFavoriteService
 	history    *service.ImageConversationHistoryService
+	canvas     *service.CanvasDocumentService
 	announce   *service.AnnouncementService
 	newAPIKeys *service.NewAPITokenReader
 	cancel     context.CancelFunc
@@ -97,7 +99,7 @@ func NewApp() (*App, error) {
 	documentStore, _ := storageBackend.(storage.JSONDocumentBackend)
 	imageSessions := service.NewImageConversationSessionService(filepath.Join(cfg.DataDir, "image_conversation_sessions.json"), storageBackend)
 	engine := &protocol.Engine{Accounts: accounts, Config: cfg, Storage: documentStore, Proxy: proxy, Logger: logger, ImageConversationSessions: imageSessions}
-	app := &App{config: cfg, auth: auth, accounts: accounts, logs: logs, logger: logger, proxy: proxy, engine: engine, images: service.NewImageService(cfg, storageBackend), prompts: service.NewPromptFavoriteService(storageBackend), history: service.NewImageConversationHistoryService(storageBackend), announce: service.NewAnnouncementService(storageBackend), newAPIKeys: newAPIKeys, cancel: cancel}
+	app := &App{config: cfg, auth: auth, accounts: accounts, logs: logs, logger: logger, proxy: proxy, engine: engine, images: service.NewImageService(cfg, storageBackend), prompts: service.NewPromptFavoriteService(storageBackend), history: service.NewImageConversationHistoryService(storageBackend), canvas: service.NewCanvasDocumentService(storageBackend), announce: service.NewAnnouncementService(storageBackend), newAPIKeys: newAPIKeys, cancel: cancel}
 	app.tasks = service.NewStoredImageTaskService(storageBackend,
 		func(ctx context.Context, identity service.Identity, payload map[string]any) (map[string]any, error) {
 			return app.runLoggedImageTask(ctx, identity, payload, "/api/creation-tasks/image-generations", "文生图", func(ctx context.Context, payload map[string]any) (map[string]any, error) {
@@ -640,6 +642,8 @@ func (a *App) handleSettings(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusBadRequest, "invalid json body")
 			return
 		}
+		delete(body, "newapi_token_group")
+		delete(body, "newapi_token_groups")
 		updated, err := a.config.Update(body)
 		if err != nil {
 			util.WriteError(w, http.StatusBadRequest, err.Error())
@@ -1583,14 +1587,11 @@ func setAuthSessionCookie(w http.ResponseWriter, r *http.Request, token string) 
 	if token == "" {
 		return
 	}
-	domain := authSessionCookieDomain(r)
-	if domain != "" {
-		setAuthSessionCookieValue(w, r, "", -1, "")
-	}
-	setAuthSessionCookieValue(w, r, token, 30*24*60*60, domain)
+	expireLegacyAuthSessionCookie(w, r)
+	setAuthSessionCookieValue(w, r, token, 30*24*60*60)
 }
 
-func setAuthSessionCookieValue(w http.ResponseWriter, r *http.Request, value string, maxAge int, domain string) {
+func setAuthSessionCookieValue(w http.ResponseWriter, r *http.Request, value string, maxAge int) {
 	cookie := &http.Cookie{
 		Name:     authSessionCookieName,
 		Value:    value,
@@ -1600,40 +1601,35 @@ func setAuthSessionCookieValue(w http.ResponseWriter, r *http.Request, value str
 		Secure:   isHTTPSRequest(r),
 		SameSite: http.SameSiteLaxMode,
 	}
-	if domain != "" {
-		cookie.Domain = domain
-	}
 	http.SetCookie(w, cookie)
 }
 
 func clearAuthSessionCookie(w http.ResponseWriter, r *http.Request) {
-	if domain := authSessionCookieDomain(r); domain != "" {
-		setAuthSessionCookieValue(w, r, "", -1, domain)
-	}
-	setAuthSessionCookieValue(w, r, "", -1, "")
+	expireLegacyAuthSessionCookie(w, r)
+	setAuthSessionCookieValue(w, r, "", -1)
 }
 
-func authSessionCookieDomain(r *http.Request) string {
-	if configured := normalizeAuthSessionCookieDomain(os.Getenv("CHATGPT2API_AUTH_COOKIE_DOMAIN")); configured != "" {
-		return configured
-	}
+func expireLegacyAuthSessionCookie(w http.ResponseWriter, r *http.Request) {
 	host := requestCookieHost(r)
-	if host == "relayai.tech" || strings.HasSuffix(host, ".relayai.tech") {
-		return ".relayai.tech"
+	if host == "" || net.ParseIP(host) != nil || host == "localhost" {
+		return
 	}
-	return ""
-}
-
-func normalizeAuthSessionCookieDomain(value string) string {
-	value = strings.ToLower(strings.TrimSpace(value))
-	if value == "" || value == "localhost" || strings.Contains(value, ":") {
-		return ""
+	parent, err := publicsuffix.EffectiveTLDPlusOne(host)
+	if err != nil || parent == "" {
+		return
 	}
-	value = strings.TrimPrefix(value, ".")
-	if value == "" || net.ParseIP(value) != nil || !strings.Contains(value, ".") {
-		return ""
+	cookie := &http.Cookie{
+		Name:     authSessionCookieName,
+		Value:    "",
+		Path:     "/",
+		Domain:   "." + parent,
+		MaxAge:   -1,
+		Expires:  time.Unix(1, 0),
+		HttpOnly: true,
+		Secure:   isHTTPSRequest(r),
+		SameSite: http.SameSiteLaxMode,
 	}
-	return "." + value
+	http.SetCookie(w, cookie)
 }
 
 func requestCookieHost(r *http.Request) string {

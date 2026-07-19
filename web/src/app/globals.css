@@ -208,6 +208,36 @@
     display: none;
   }
 
+  .canvas-grid {
+    background-color: #eef2f7;
+    background-image: radial-gradient(circle, rgba(98, 116, 139, 0.32) 1px, transparent 1px);
+    background-position: 0 0;
+    background-size: 22px 22px;
+  }
+
+  .dark .canvas-grid {
+    background-color: #161a20;
+    background-image: radial-gradient(circle, rgba(148, 163, 184, 0.22) 1px, transparent 1px);
+  }
+
+  .canvas-grid.canvas-background-grid {
+    background-image:
+      linear-gradient(rgba(98, 116, 139, 0.16) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(98, 116, 139, 0.16) 1px, transparent 1px);
+    background-size: 28px 28px;
+  }
+
+  .dark .canvas-grid.canvas-background-grid {
+    background-image:
+      linear-gradient(rgba(148, 163, 184, 0.14) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(148, 163, 184, 0.14) 1px, transparent 1px);
+  }
+
+  .canvas-grid.canvas-background-plain,
+  .dark .canvas-grid.canvas-background-plain {
+    background-image: none;
+  }
+
   .dark .bg-white,
   .dark .bg-stone-50,
   .dark .bg-\[\#ffffff\] {

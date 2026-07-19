@@ -196,8 +196,8 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         app_title: String(config.app_title || "云棉").trim() || "云棉",
         project_name: String(config.app_title || "云棉").trim() || "云棉",
         relay_base_url: String(config.relay_base_url || "").trim(),
-        newapi_token_group: "",
       };
+      delete payload.newapi_token_group;
       delete payload.newapi_token_groups;
       delete payload.chat_models;
       delete payload.default_chat_model;

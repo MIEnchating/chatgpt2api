@@ -285,6 +285,72 @@ export type ManagedImage = {
   published_at?: string;
 };
 
+export type CanvasViewport = {
+  zoom: number;
+  x: number;
+  y: number;
+};
+
+export type CanvasNode = {
+  id: string;
+  type: "image" | "text";
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  scale_x: number;
+  scale_y: number;
+  angle?: number;
+  url?: string;
+  thumbnail_url?: string;
+  title?: string;
+  prompt?: string;
+  parent_id?: string;
+  task_id?: string;
+  generation_size?: string;
+  generation_resolution?: string;
+  generation_quality?: ImageQuality;
+  generation_count?: number;
+  generation_output_format?: ImageOutputFormat;
+  generation_output_compression?: number;
+  generation_stream?: boolean;
+  generation_partial_images?: number;
+  created_at?: string;
+};
+
+export type CanvasConnection = {
+  id: string;
+  from_node_id: string;
+  to_node_id: string;
+};
+
+export type CanvasDocument = {
+  version: number;
+  id: string;
+  revision: number;
+  title: string;
+  background: "dots" | "grid" | "plain";
+  nodes: CanvasNode[];
+  connections: CanvasConnection[];
+  viewport: CanvasViewport;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type CanvasProjectSummary = {
+  id: string;
+  title: string;
+  node_count: number;
+  created_at?: string;
+  updated_at?: string;
+};
+
+export type CanvasWorkspaceResponse = {
+  document: CanvasDocument;
+  projects: CanvasProjectSummary[];
+  active_project_id: string;
+};
+
 export type SystemLog = {
   time: string;
   summary?: string;
@@ -934,6 +1000,43 @@ export async function fetchManagedImages(
     items: Array.isArray(data.items) ? data.items : [],
     groups: Array.isArray(data.groups) ? data.groups : [],
   };
+}
+
+export async function fetchCanvasDocument() {
+  return httpRequest<CanvasWorkspaceResponse>("/api/canvas");
+}
+
+export async function uploadCanvasImage(file: File) {
+  const formData = new FormData();
+  formData.append("image", file);
+  return httpRequest<{ url: string; name?: string; content_type?: string }>("/api/canvas/images", {
+    method: "POST",
+    body: formData,
+  });
+}
+
+export async function saveCanvasDocument(document: CanvasDocument) {
+  return httpRequest<{ document: CanvasDocument }>("/api/canvas", {
+    method: "PUT",
+    body: document,
+  });
+}
+
+export async function clearCanvasDocument() {
+  return httpRequest<{ document: CanvasDocument }>("/api/canvas", {
+    method: "DELETE",
+  });
+}
+
+export async function updateCanvasProject(input: {
+  action: "create" | "activate" | "rename" | "delete";
+  project_id?: string;
+  title?: string;
+}) {
+  return httpRequest<CanvasWorkspaceResponse>("/api/canvas", {
+    method: "POST",
+    body: input,
+  });
 }
 
 export async function updateManagedImageVisibility(

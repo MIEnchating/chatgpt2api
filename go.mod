@@ -8,6 +8,7 @@ require (
 	github.com/enetx/surf v1.0.199
 	github.com/go-sql-driver/mysql v1.9.3
 	github.com/lib/pq v1.10.9
+	golang.org/x/net v0.43.0
 	modernc.org/sqlite v1.40.1
 )
 
@@ -31,7 +32,6 @@ require (
 	golang.org/x/crypto v0.41.0 // indirect
 	golang.org/x/exp v0.0.0-20250620022241-b7579e27df2b // indirect
 	golang.org/x/image v0.24.0 // indirect
-	golang.org/x/net v0.43.0 // indirect
 	golang.org/x/sys v0.36.0 // indirect
 	golang.org/x/text v0.35.0 // indirect
 	modernc.org/libc v1.66.10 // indirect

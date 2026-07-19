@@ -99,12 +99,13 @@ CHATGPT2API_ADMIN_PASSWORD=change_me_please
 ### 2. 启动服务
 
 ```bash
-sh docker-build-limited.sh up
+docker compose pull
+docker compose up -d
 ```
 
 默认 Compose 配置：
 
-- 镜像：本地源码构建镜像 `chatgpt2api:local`
+- 镜像：Docker Hub 的 `mienvirtuoso/chatgpt2api:latest`
 - 端口：默认不对外暴露端口
 - 数据目录：`./data:/app/data`
 - 环境文件：`./.env:/app/.env`
@@ -194,57 +195,17 @@ docker compose up -d
 
 </details>
 
-### 3. 一键部署 / 服务器源码构建
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/MIEnchating/chatgpt2api/main/ubuntu-deploy.sh | sudo sh
-```
-
-该命令会拉取 `MIEnchating/chatgpt2api` 仓库并从源码构建本地镜像 `chatgpt2api:local`。如果你已经在仓库目录内，也可以直接运行受限 BuildKit 脚本：
-
-通过 `curl | sudo sh` 执行时，默认会把仓库放在当前执行目录的 `chatgpt2api` 子目录，例如在 `/home/ubuntu` 执行就是 `/home/ubuntu/chatgpt2api`。如需指定其他目录，设置 `CHATGPT2API_INSTALL_DIR`。
-
-```bash
-sh docker-build-limited.sh up
-```
-
-该脚本会创建独立的 `docker-container` Buildx builder，并对构建容器设置 CPU / 内存上限。直接运行时会按服务器资源自动选择默认值：最多使用 2 核；内存充足时默认放开到 3-4 GB；低内存机器才会降低 Go 编译并行度，避免 `compile: signal: killed` 这类 OOM：
-
-```bash
-sh docker-build-limited.sh up
-```
-
-如果你想显式放开配额：
-
-```bash
-BUILD_CPUS=2 BUILD_MEMORY=4g BUILD_MEMORY_SWAP=4g BUILD_GOMAXPROCS=2 BUILD_GOMEMLIMIT=2GiB sh docker-build-limited.sh up
-```
-
-如果只想构建本地镜像、不重启容器：
-
-```bash
-sh docker-build-limited.sh build
-```
-
-脚本使用根目录 `Dockerfile` 从源码构建本地镜像，默认镜像名为 `chatgpt2api:local`；`up` 模式会继续用根目录 `docker-compose.yml` 启动该本地镜像。
-
-如果希望直接使用 Docker Hub 预构建镜像，不在服务器编译：
-
-```bash
-CHATGPT2API_BUILD_LOCAL=0 sh ubuntu-deploy.sh deploy
-```
-
-该模式默认拉取 `mienvirtuoso/chatgpt2api:latest`，也可以通过 `CHATGPT2API_IMAGE` 指定其他标签。
-
 ## 升级与在线更新
 
 ### Docker 部署升级
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/MIEnchating/chatgpt2api/main/ubuntu-deploy.sh | sudo sh
+git pull --ff-only
+docker compose pull
+docker compose up -d
 ```
 
-默认会更新 `MIEnchating/chatgpt2api` 仓库并重新构建本地镜像。
+生产环境建议在 `.env` 中固定镜像版本，例如 `mienvirtuoso/chatgpt2api:1.0.0`。升级时先修改 `CHATGPT2API_IMAGE`，再执行上面的拉取和启动命令。
 
 ### 源码部署升级
 
@@ -268,11 +229,12 @@ go build -tags=embed -o chatgpt2api ./internal
 | --- | --- | --- |
 | `CHATGPT2API_ADMIN_USERNAME` | `admin` | 初始管理员用户名 |
 | `CHATGPT2API_ADMIN_PASSWORD` | 空 | 初始管理员密码；为空时首次启动自动生成一次性密码 |
-| `CHATGPT2API_BASE_URL` | `https://example.com` | 主域名，用于生成图片 URL 和外部访问地址 |
-| `CHATGPT2API_AUTH_COOKIE_DOMAIN` | 空 | 登录会话 Cookie 父域；多子域部署时填写，例如 `.example.com` |
-| `CHATGPT2API_RELAY_BASE_URL` | `http://newapi:3000` | 上游 baseurl，可在管理端设置中修改 |
-| `CHATGPT2API_NEWAPI_DATABASE_URL` | 空 | NewAPI 数据库只读连接，用于普通用户登录和按登录用户名读取指定分组令牌；请使用只有 `SELECT` 权限的账号 |
-| `CHATGPT2API_NEWAPI_TOKEN_GROUP` | `codex` | 默认读取的 NewAPI 令牌分组；系统会列出当前用户所有可用令牌分组，并优先选中这里配置的分组 |
+| `CHATGPT2API_BASE_URL` | `https://image.yunmian.tech` | 图片访问地址，用于生成图片 URL 和 OAuth 回调地址 |
+| `CHATGPT2API_APP_TITLE` | `云棉` | 网站名称，可在管理端设置中修改 |
+| `CHATGPT2API_SITE_ICON_URL` | 空 | 网站图标 URL，也可以在管理端上传 |
+| `CHATGPT2API_RELAY_BASE_URL` | `https://www.yunmian.tech` | API 访问地址，即 NewAPI 服务地址，可在管理端设置中修改 |
+| `CHATGPT2API_NEWAPI_DATABASE_URL` | 空 | NewAPI 数据库只读连接，用于普通用户登录并读取本人可用 Key 的名称和密钥；请使用只有 `SELECT` 权限的账号 |
+| `CHATGPT2API_NEWAPI_TOKEN_GROUP` | 空 | 用户尚未选择 Key 名称时的默认分组偏好；实际请求按当前用户选择的 Key 名称精确读取对应密钥 |
 | `CHATGPT2API_PROXY` | 空 | 全局代理，支持 `http`、`https`、`socks5`、`socks5h` |
 | `CHATGPT2API_IMAGE_MODELS` | `gpt-image-2` | 管理端图片模型列表，多个值用逗号分隔；第一项作为默认模型 |
 | `CHATGPT2API_REFRESH_ACCOUNT_INTERVAL_MINUTE` | `5` | 限流账号检查间隔，单位分钟 |
@@ -280,10 +242,19 @@ go build -tags=embed -o chatgpt2api ./internal
 | `CHATGPT2API_USER_DEFAULT_CONCURRENT_LIMIT` | `0` | 普通用户默认创作并发额度；图片生成/编辑按请求张数计入；`0` 表示不限制 |
 | `CHATGPT2API_USER_DEFAULT_RPM_LIMIT` | `0` | 普通用户默认创作任务 RPM 限制，`0` 表示不限制 |
 | `CHATGPT2API_IMAGE_RETENTION_DAYS` | `30` | 服务端缓存图片保留天数 |
+| `CHATGPT2API_IMAGE_STORAGE_LIMIT_MB` | `0` | 图片库容量上限，单位 MB；`0` 表示不限制 |
 | `CHATGPT2API_LOG_RETENTION_DAYS` | `7` | 业务日志保留天数 |
-| `CHATGPT2API_AUTO_REMOVE_INVALID_ACCOUNTS` | `true` | 是否自动移除失效账号 |
+| `CHATGPT2API_AUTO_REMOVE_INVALID_ACCOUNTS` | `false` | 是否自动移除失效账号 |
 | `CHATGPT2API_AUTO_REMOVE_RATE_LIMITED_ACCOUNTS` | `false` | 是否自动移除限流账号 |
 | `CHATGPT2API_LOG_LEVELS` | 空 | 日志级别过滤，多个值用逗号分隔：`debug,info,warning,error` |
+
+### Docker 配置
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `CHATGPT2API_IMAGE` | `mienvirtuoso/chatgpt2api:latest` | 容器镜像；生产环境建议固定版本标签 |
+| `CHATGPT2API_DOCKER_NETWORK` | `newapi_default` | 服务加入的外部 Docker 网络 |
+| `TZ` | 容器默认值 | 容器时区，例如 `Asia/Shanghai` |
 
 ### 存储后端
 

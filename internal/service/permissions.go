@@ -34,6 +34,7 @@ const PromptMarketAdultPermissionPath = "/api/prompt-market/adult-content"
 
 var fullMenuPermissions = []MenuPermission{
 	{ID: "image", Label: "创作台", Path: "/image", Icon: "image", Order: 10},
+	{ID: "canvas", Label: "无限画布", Path: "/canvas", Icon: "panels-top-left", Order: 15},
 	{ID: "image-manager", Label: "图片库", Path: "/image-manager", Icon: "images", Order: 20},
 	{ID: "users", Label: "用户管理", Path: "/users", Icon: "users", Order: 50},
 	{ID: "rbac", Label: "角色权限", Path: "/rbac", Icon: "shield-check", Order: 60},
@@ -47,6 +48,10 @@ var apiPermissionCatalog = []APIPermission{
 	apiPermission("POST", "/v1/images/edits", "图生图", "创作", false),
 	apiPermission("GET", "/api/creation-tasks", "查看创作任务", "创作", true),
 	apiPermission("POST", "/api/creation-tasks", "提交/取消创作任务", "创作", true),
+	apiPermission("GET", "/api/canvas", "读取画布", "无限画布", false),
+	apiPermission("POST", "/api/canvas", "管理画布项目", "无限画布", false),
+	apiPermission("PUT", "/api/canvas", "保存画布", "无限画布", false),
+	apiPermission("DELETE", "/api/canvas", "清空画布", "无限画布", false),
 	apiPermission("GET", PromptMarketAdultPermissionPath, "开放成人提示词市场", "创作", false),
 	apiPermission("GET", "/api/images", "查看图片库", "图片库", false),
 	apiPermission("PATCH", "/api/images/visibility", "发布/收回图片", "图片库", false),
@@ -111,6 +116,7 @@ func DefaultPermissionSetForRole(role string) PermissionSet {
 	return PermissionSet{
 		MenuPaths: NormalizeMenuPermissions([]string{
 			"/image",
+			"/canvas",
 			"/image-manager",
 		}),
 		APIPermissions: NormalizeAPIPermissions([]string{
@@ -119,6 +125,10 @@ func DefaultPermissionSetForRole(role string) PermissionSet {
 			APIPermissionKey("POST", "/v1/images/edits"),
 			APIPermissionKey("GET", "/api/creation-tasks"),
 			APIPermissionKey("POST", "/api/creation-tasks"),
+			APIPermissionKey("GET", "/api/canvas"),
+			APIPermissionKey("POST", "/api/canvas"),
+			APIPermissionKey("PUT", "/api/canvas"),
+			APIPermissionKey("DELETE", "/api/canvas"),
 			APIPermissionKey("GET", "/api/images"),
 			APIPermissionKey("PATCH", "/api/images/visibility"),
 			APIPermissionKey("GET", "/api/auth/users"),

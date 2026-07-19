@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 
+import CanvasRoute from "@/app/canvas/route";
 import ImagePage from "@/app/image/page";
 import ImageManagerPage from "@/app/image-manager/page";
 import HomePage from "@/app/page";
@@ -19,6 +20,7 @@ export type AppRouteConfig = {
 export const appRoutes: AppRouteConfig[] = [
   { path: "/", element: <HomePage /> },
   { path: "/login", element: <LoginPage /> },
+  { path: "/canvas", element: <CanvasRoute />, requiredPath: "/canvas" },
   { path: "/image-manager", element: <ImageManagerPage />, requiredPath: "/image-manager" },
   { path: "/users", element: <UsersPage />, requiredPath: "/users" },
   { path: "/profile", element: <ProfilePage />, requiredPath: "/profile" },

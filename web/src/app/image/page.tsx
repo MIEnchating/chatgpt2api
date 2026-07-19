@@ -71,8 +71,6 @@ import {
   fetchModelConfig,
   IMAGE_CREATION_MODEL_OPTIONS,
   IMAGE_OUTPUT_FORMAT_OPTIONS,
-  PROFILE_RELAY_TOKEN_GROUP_CHANGED_EVENT,
-  PROFILE_RELAY_TOKEN_GROUP_STORAGE_KEY,
   PROFILE_RELAY_TOKEN_NAME_CHANGED_EVENT,
   PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY,
   isImageCreationModel,
@@ -142,7 +140,7 @@ const IMAGE_CUSTOM_HEIGHT_STORAGE_KEY = "chatgpt2api:image_last_custom_height";
 const IMAGE_QUALITY_STORAGE_KEY = "chatgpt2api:image_last_quality";
 const IMAGE_OUTPUT_FORMAT_STORAGE_KEY = "chatgpt2api:image_last_output_format";
 const IMAGE_OUTPUT_COMPRESSION_STORAGE_KEY = "chatgpt2api:image_last_output_compression";
-const IMAGE_STREAM_STORAGE_KEY = "chatgpt2api:image_last_stream";
+const IMAGE_STREAM_STORAGE_KEY = "chatgpt2api:image_last_stream_v2";
 const IMAGE_PARTIAL_IMAGES_STORAGE_KEY = "chatgpt2api:image_last_partial_images";
 const NEWAPI_TOKEN_MISSING_MESSAGE = "请先在云棉为当前用户创建可用令牌";
 const DEFAULT_IMAGE_OUTPUT_FORMAT: ImageOutputFormat = "png";
@@ -860,9 +858,10 @@ function getStoredImageOutputCompression(): string {
 
 function getStoredImageStreamEnabled() {
   if (typeof window === "undefined") {
-    return false;
+    return true;
   }
-  return window.localStorage.getItem(IMAGE_STREAM_STORAGE_KEY) === "true";
+  const stored = window.localStorage.getItem(IMAGE_STREAM_STORAGE_KEY);
+  return stored === null ? true : stored === "true";
 }
 
 function getStoredImagePartialImages() {
@@ -879,22 +878,9 @@ function getStoredRelayTokenName() {
   return window.localStorage.getItem(PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY) || "";
 }
 
-function getStoredRelayTokenGroup() {
-  if (typeof window === "undefined") {
-    return "";
-  }
-  return window.localStorage.getItem(PROFILE_RELAY_TOKEN_GROUP_STORAGE_KEY) || "";
-}
-
 function normalizeRelayTokenNames(values: unknown) {
   return Array.isArray(values)
     ? Array.from(new Set(values.map((name) => String(name || "").trim()).filter(Boolean)))
-    : [];
-}
-
-function normalizeRelayTokenGroups(values: unknown) {
-  return Array.isArray(values)
-    ? Array.from(new Set(values.map((group) => String(group || "").trim()).filter(Boolean)))
     : [];
 }
 
@@ -905,18 +891,6 @@ function nextRelayTokenName(current: string, options: string[], fallback?: strin
   }
   const normalizedFallback = String(fallback || "").trim();
   if (normalizedFallback && options.some((name) => name === normalizedFallback)) {
-    return normalizedFallback;
-  }
-  return options[0] || normalizedFallback || "";
-}
-
-function nextRelayTokenGroup(current: string, options: string[], fallback?: string) {
-  const normalizedCurrent = current.trim();
-  if (normalizedCurrent && options.some((group) => group === normalizedCurrent)) {
-    return normalizedCurrent;
-  }
-  const normalizedFallback = String(fallback || "").trim();
-  if (normalizedFallback && options.some((group) => group === normalizedFallback)) {
     return normalizedFallback;
   }
   return options[0] || normalizedFallback || "";
@@ -1396,9 +1370,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   const [imagePartialImages, setImagePartialImages] = useState(getStoredImagePartialImages);
   const [relayKeyConfigured, setRelayKeyConfigured] = useState(false);
   const [relayKeyStatusMessage, setRelayKeyStatusMessage] = useState(NEWAPI_TOKEN_MISSING_MESSAGE);
-  const [relayTokenGroup, setRelayTokenGroup] = useState(getStoredRelayTokenGroup);
   const [relayTokenName, setRelayTokenName] = useState(getStoredRelayTokenName);
-  const [relayTokenNameOptions, setRelayTokenNameOptions] = useState<string[]>([]);
   const relayKeyMissingMessage = relayKeyStatusMessage || NEWAPI_TOKEN_MISSING_MESSAGE;
   const [relayImageModelOptions, setRelayImageModelOptions] = useState<ImageModelOption[]>(() =>
     ensureDefaultImageModelOption(IMAGE_CREATION_MODEL_OPTIONS),
@@ -1515,7 +1487,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     () => conversations.find((item) => item.id === selectedConversationId) ?? null,
     [conversations, selectedConversationId],
   );
-  const activeRelayTokenGroup = relayTokenGroup.trim();
   const activeRelayTokenName = relayTokenName.trim();
   const activeTaskCount = useMemo(
     () =>
@@ -1933,37 +1904,19 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       return;
     }
     const handleTokenNameChange = (event: Event) => {
+      if (event instanceof StorageEvent && event.key !== PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY) {
+        return;
+      }
       const tokenName = (event as CustomEvent<{ tokenName?: string }>).detail?.tokenName;
       setRelayTokenName(String(tokenName || window.localStorage.getItem(PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY) || ""));
     };
-    const handleTokenGroupChange = (event: Event) => {
-      const tokenGroup = (event as CustomEvent<{ tokenGroup?: string }>).detail?.tokenGroup;
-      setRelayTokenGroup(String(tokenGroup || window.localStorage.getItem(PROFILE_RELAY_TOKEN_GROUP_STORAGE_KEY) || ""));
-    };
     window.addEventListener(PROFILE_RELAY_TOKEN_NAME_CHANGED_EVENT, handleTokenNameChange);
-    window.addEventListener(PROFILE_RELAY_TOKEN_GROUP_CHANGED_EVENT, handleTokenGroupChange);
     window.addEventListener("storage", handleTokenNameChange);
-    window.addEventListener("storage", handleTokenGroupChange);
     return () => {
       window.removeEventListener(PROFILE_RELAY_TOKEN_NAME_CHANGED_EVENT, handleTokenNameChange);
-      window.removeEventListener(PROFILE_RELAY_TOKEN_GROUP_CHANGED_EVENT, handleTokenGroupChange);
       window.removeEventListener("storage", handleTokenNameChange);
-      window.removeEventListener("storage", handleTokenGroupChange);
     };
   }, []);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-    const normalizedGroup = relayTokenGroup.trim();
-    if (normalizedGroup) {
-      window.localStorage.setItem(PROFILE_RELAY_TOKEN_GROUP_STORAGE_KEY, normalizedGroup);
-    } else {
-      window.localStorage.removeItem(PROFILE_RELAY_TOKEN_GROUP_STORAGE_KEY);
-    }
-    window.dispatchEvent(new CustomEvent(PROFILE_RELAY_TOKEN_GROUP_CHANGED_EVENT, { detail: { tokenGroup: normalizedGroup } }));
-  }, [relayTokenGroup]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -1981,11 +1934,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   const refreshRelayKeyStatus = useCallback(async () => {
     clearStoredRelayApiKey();
     try {
-      const status = await fetchProfileRelayKey(activeRelayTokenGroup, activeRelayTokenName);
-      const groups = normalizeRelayTokenGroups(status.groups);
+      const status = await fetchProfileRelayKey(undefined, activeRelayTokenName);
       const names = normalizeRelayTokenNames(status.token_names);
-      setRelayTokenNameOptions(names);
-      setRelayTokenGroup((current) => nextRelayTokenGroup(current, groups, status.group || status.configured_group));
       setRelayTokenName((current) => {
         return nextRelayTokenName(current, names, status.token_name);
       });
@@ -1995,7 +1945,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       setRelayKeyConfigured(false);
       setRelayKeyStatusMessage("无法读取云棉令牌状态，请稍后重试");
     }
-  }, [activeRelayTokenGroup, activeRelayTokenName]);
+  }, [activeRelayTokenName]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -2171,7 +2121,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     setImageQuality("");
     setImageOutputFormat(DEFAULT_IMAGE_OUTPUT_FORMAT);
     setImageOutputCompression("");
-    setImageStreamEnabled(false);
+    setImageStreamEnabled(true);
     setImagePartialImages("0");
     setDefaultImageVisibility("private");
     setReferenceImages([]);
@@ -2490,12 +2440,12 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
           : String(targetTurn.outputCompression),
       stream: Boolean(targetTurn.stream),
       partialImages: String(normalizeImagePartialImages(targetTurn.partialImages)),
-      tokenGroup: targetTurn.tokenGroup || activeRelayTokenGroup,
-      tokenName: targetTurn.tokenName || activeRelayTokenName,
+      tokenGroup: targetTurn.tokenGroup || "",
+      tokenName: targetTurn.tokenName || "",
       visibility: targetTurn.visibility || "private",
       referenceImages: targetTurn.referenceImages,
     });
-  }, [activeRelayTokenGroup, activeRelayTokenName, defaultImageModel, imageCreationModelOptions]);
+  }, [defaultImageModel, imageCreationModelOptions]);
 
   const handleEditReferenceImageChange = useCallback(async (files: File[]) => {
     if (files.length === 0) {
@@ -2689,8 +2639,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         if (usesReferenceImages(activeTurn.mode) && referenceFiles.length === 0) {
           throw new Error("未找到可用的参考图");
         }
-        const activeTurnRelayTokenGroup = activeTurn.tokenGroup || activeRelayTokenGroup;
-        const activeTurnRelayTokenName = activeTurn.tokenName || activeRelayTokenName;
+        const activeTurnRelayTokenGroup = activeTurn.tokenGroup?.trim() || undefined;
+        const activeTurnRelayTokenName = activeTurn.tokenName?.trim() || undefined;
         const taskMessages = buildCreationTaskMessages(snapshot, activeTurn.id);
         const activeTurnSizeRequest = buildEffectiveImageSizeRequest(
           activeTurn.model,
@@ -2877,7 +2827,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         }
       }
     },
-    [activeRelayTokenGroup, activeRelayTokenName, clearTurnProgress, updateConversation, updateTurnProgress],
+    [clearTurnProgress, updateConversation, updateTurnProgress],
   );
   useEffect(() => {
     for (const conversation of conversations) {
@@ -3073,6 +3023,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                 ...turn,
                 ...derived,
                 processingStartedAt: undefined,
+                tokenGroup: undefined,
+                tokenName: activeRelayTokenName || undefined,
                 images,
               };
             }),
@@ -3086,7 +3038,13 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         retryingImageIdsRef.current.delete(retryKey);
       }
     },
-    [relayKeyConfigured, relayKeyMissingMessage, runConversationQueue, updateConversation],
+    [
+      activeRelayTokenName,
+      relayKeyConfigured,
+      relayKeyMissingMessage,
+      runConversationQueue,
+      updateConversation,
+    ],
   );
 
   const handleRegenerateTurn = useCallback(
@@ -3140,6 +3098,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
               status: "queued",
               error: undefined,
               processingStartedAt: undefined,
+              tokenGroup: undefined,
+              tokenName: activeRelayTokenName || undefined,
               images: Array.from({ length: imageCount }, (_, index): StoredImage => {
                 const imageId = `${turn.id}-${regenerationId}-${index}`;
                 return {
@@ -3157,7 +3117,13 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       void runConversationQueue(conversationId);
       toast.success("已加入重新生成队列");
     },
-    [relayKeyConfigured, relayKeyMissingMessage, runConversationQueue, updateConversation],
+    [
+      activeRelayTokenName,
+      relayKeyConfigured,
+      relayKeyMissingMessage,
+      runConversationQueue,
+      updateConversation,
+    ],
   );
 
   const handleSaveEditingTurn = useCallback(
@@ -3271,8 +3237,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
               outputCompression: draftOutputCompression,
               stream: draft.stream,
               partialImages: normalizeImagePartialImages(draft.partialImages),
-              tokenGroup: draft.tokenGroup || undefined,
-              tokenName: draft.tokenName || undefined,
+              tokenGroup: regenerate ? undefined : draft.tokenGroup || undefined,
+              tokenName: regenerate ? activeRelayTokenName || undefined : draft.tokenName || undefined,
               visibility: draft.visibility,
             };
             if (!regenerate) {
@@ -3312,7 +3278,14 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         toast.success("已保存编辑设置");
       }
     },
-    [editingTurnDraft, relayKeyConfigured, relayKeyMissingMessage, runConversationQueue, updateConversation],
+    [
+      activeRelayTokenName,
+      editingTurnDraft,
+      relayKeyConfigured,
+      relayKeyMissingMessage,
+      runConversationQueue,
+      updateConversation,
+    ],
   );
 
   const handleSubmit = async () => {
@@ -3412,7 +3385,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         outputCompression: effectiveOutputCompression,
         stream: imageStreamEnabled,
         partialImages: normalizeImagePartialImages(imagePartialImages),
-        tokenGroup: activeRelayTokenGroup || undefined,
+        tokenGroup: undefined,
         tokenName: activeRelayTokenName || undefined,
         visibility: defaultImageVisibility,
         images: Array.from({ length: requestedCount }, (_, index): StoredImage => {

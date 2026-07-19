@@ -49,8 +49,6 @@ DESIGN.md
 LICENSE
 docker-compose*.yml
 Dockerfile.release
-docker-build-limited.sh
-ubuntu-deploy.sh
 scripts
 
 venv
