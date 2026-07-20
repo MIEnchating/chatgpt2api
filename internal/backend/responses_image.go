@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image"
 	_ "image/gif"
@@ -42,7 +43,9 @@ const (
 	responsesImageMinPixels    = 655360
 	responsesImageMaxPixels    = 8294400
 
-	officialImageDownloadAttempts = 3
+	officialImageDownloadAttempts      = 3
+	responsesImageDownloadMaxBytes     = 40 << 20
+	responsesImageMetadataJSONMaxBytes = 64 << 20
 )
 
 var officialImageDownloadRetryDelay = 750 * time.Millisecond
@@ -212,7 +215,7 @@ func (c *Client) streamOfficialResponsesImage(ctx context.Context, request Respo
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		data, _ := io.ReadAll(resp.Body)
+		data := readUpstreamErrorBody(resp.Body)
 		return upstreamHTTPError(officialStreamPath, resp.StatusCode, data)
 	}
 	return iterOfficialImageSSE(ctx, c, resp.Body, request, out)
@@ -237,7 +240,7 @@ func (c *Client) streamCodexResponsesImage(ctx context.Context, request Response
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		data, _ := io.ReadAll(resp.Body)
+		data := readUpstreamErrorBody(resp.Body)
 		return upstreamHTTPError(codexResponsesPath, resp.StatusCode, data)
 	}
 	return iterResponsesImageSSE(ctx, resp.Body, out)
@@ -735,7 +738,7 @@ func (c *Client) prepareOfficialImageConversation(ctx context.Context, prompt st
 		return "", err
 	}
 	var data map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+	if err := decodeResponsesImageJSON(resp.Body, &data); err != nil {
 		return "", err
 	}
 	return util.Clean(data["conduit_token"]), nil
@@ -783,7 +786,7 @@ func (c *Client) uploadImage(ctx context.Context, input ResponsesInputImage, fil
 		return uploadedImageRef{}, err
 	}
 	var uploaded map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&uploaded); err != nil {
+	if err := decodeResponsesImageJSON(resp.Body, &uploaded); err != nil {
 		return uploadedImageRef{}, err
 	}
 	uploadURL := util.Clean(uploaded["upload_url"])
@@ -810,7 +813,7 @@ func (c *Client) uploadImage(ctx context.Context, input ResponsesInputImage, fil
 	}
 	defer uploadResp.Body.Close()
 	if uploadResp.StatusCode < 200 || uploadResp.StatusCode >= 300 {
-		data, _ := io.ReadAll(uploadResp.Body)
+		data := readUpstreamErrorBody(uploadResp.Body)
 		return uploadedImageRef{}, upstreamHTTPError("image_upload", uploadResp.StatusCode, data)
 	}
 	time.Sleep(500 * time.Millisecond)
@@ -1603,14 +1606,14 @@ func (c *Client) fetchOfficialConversationImageResult(ctx context.Context, conve
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == http.StatusTooManyRequests {
-		io.Copy(io.Discard, resp.Body)
+		_ = readUpstreamErrorBody(resp.Body)
 		return officialConversationPollResult{}, officialConversationPollRetryError{Delay: officialConversationPollRetryDelay(resp.Header.Get("Retry-After"))}
 	}
 	if err := ensureOK(resp, path); err != nil {
 		return officialConversationPollResult{}, err
 	}
 	var data map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+	if err := decodeResponsesImageJSON(resp.Body, &data); err != nil {
 		return officialConversationPollResult{}, err
 	}
 	return officialConversationPollResultFromDataForTarget(data, target), nil
@@ -1814,7 +1817,7 @@ func (c *Client) fetchOfficialConversationText(ctx context.Context, conversation
 		return "", err
 	}
 	var data map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+	if err := decodeResponsesImageJSON(resp.Body, &data); err != nil {
 		return "", err
 	}
 	return officialConversationAssistantText(data), nil
@@ -1926,14 +1929,14 @@ func (c *Client) downloadOfficialInterpreterAsset(ctx context.Context, conversat
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		data, _ := io.ReadAll(resp.Body)
+		data := readUpstreamErrorBody(resp.Body)
 		return nil, upstreamHTTPError(path, resp.StatusCode, data)
 	}
 	contentType := strings.ToLower(strings.TrimSpace(resp.Header.Get("Content-Type")))
 	if contentType != "" && !strings.HasPrefix(contentType, "image/") {
 		return nil, fmt.Errorf("official interpreter asset %s returned non-image content type %s", assetID, contentType)
 	}
-	return io.ReadAll(resp.Body)
+	return readResponsesImageBody(resp.Body)
 }
 
 func (c *Client) getOfficialFileDownloadURL(ctx context.Context, conversationID, fileID string) (string, error) {
@@ -1959,7 +1962,7 @@ func (c *Client) getOfficialFileDownloadURL(ctx context.Context, conversationID,
 		return "", err
 	}
 	var data map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+	if err := decodeResponsesImageJSON(resp.Body, &data); err != nil {
 		return "", err
 	}
 	return firstNonEmpty(util.Clean(data["download_url"]), util.Clean(data["url"])), nil
@@ -2021,10 +2024,37 @@ func (c *Client) downloadOfficialImage(ctx context.Context, url string) ([]byte,
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		data, _ := io.ReadAll(resp.Body)
+		data := readUpstreamErrorBody(resp.Body)
 		return nil, upstreamHTTPError("image_download", resp.StatusCode, data)
 	}
-	return io.ReadAll(resp.Body)
+	return readResponsesImageBody(resp.Body)
+}
+
+func readResponsesImageBody(reader io.Reader) ([]byte, error) {
+	return readResponsesImageBodyWithLimit(reader, responsesImageDownloadMaxBytes)
+}
+
+func readResponsesImageBodyWithLimit(reader io.Reader, maxBytes int64) ([]byte, error) {
+	data, err := readLimitedUpstreamBody(reader, maxBytes)
+	if errors.Is(err, errUpstreamResponseTooLarge) {
+		return nil, fmt.Errorf("official image exceeds %d byte limit: %w", maxBytes, err)
+	}
+	return data, err
+}
+
+func decodeResponsesImageJSON(reader io.Reader, destination any) error {
+	return decodeResponsesImageJSONWithLimit(reader, destination, responsesImageMetadataJSONMaxBytes)
+}
+
+func decodeResponsesImageJSONWithLimit(reader io.Reader, destination any, maxBytes int64) error {
+	data, err := readLimitedUpstreamBody(reader, maxBytes)
+	if errors.Is(err, errUpstreamResponseTooLarge) {
+		return fmt.Errorf("official image metadata exceeds %d byte limit: %w", maxBytes, err)
+	}
+	if err != nil {
+		return err
+	}
+	return json.Unmarshal(data, destination)
 }
 
 func (c *Client) isChatGPTBackendURL(parsed *urlpkg.URL) bool {

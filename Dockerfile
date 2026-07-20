@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 
-ARG BUN_IMAGE=oven/bun:1-alpine
+ARG BUN_IMAGE=oven/bun:1.3.13-alpine
 ARG GO_IMAGE=golang:1.26.2-bookworm
 ARG RUNTIME_IMAGE=debian:bookworm-slim
 
@@ -10,7 +10,6 @@ WORKDIR /app/web
 ENV CI=1
 
 COPY web/package.json web/bun.lock ./
-RUN bun pm cache rm || true
 RUN --mount=type=cache,id=bun-install-cache-v2,target=/root/.bun/install/cache,sharing=locked \
     bun install --frozen-lockfile
 

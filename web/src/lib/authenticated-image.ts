@@ -1,7 +1,7 @@
 import webConfig from "@/constants/common-env";
 import { getStoredSessionToken } from "@/store/auth";
 
-const MANAGED_IMAGE_PREFIXES = ["/images/", "/image-references/", "/image-thumbnails/"] as const;
+const MANAGED_IMAGE_PREFIXES = ["/images/", "/image-references/", "/image-thumbnails/", "/conversation-assets/"] as const;
 const MAX_CACHED_AUTHENTICATED_IMAGE_ENTRIES = 320;
 const MAX_CACHED_AUTHENTICATED_IMAGE_BYTES = 160 * 1024 * 1024;
 
@@ -85,6 +85,9 @@ function managedImageSourcePathFromURL(value: string) {
       const referencePath = normalizeManagedCachePath(decodedPathSegment(pathname.slice("/image-references/".length)));
       const markerIndex = referencePath.lastIndexOf(".refs/");
       return markerIndex > 0 ? referencePath.slice(0, markerIndex) : referencePath;
+    }
+    if (pathname.startsWith("/conversation-assets/")) {
+      return normalizeManagedCachePath(decodedPathSegment(pathname.slice("/conversation-assets/".length)));
     }
   } catch {
     // Ignore invalid cache keys; they cannot match managed image paths.

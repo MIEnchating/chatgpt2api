@@ -49,7 +49,7 @@
 - Go 单体服务，容器内启动 `/app/chatgpt2api`。
 - 前端构建产物嵌入 Go 二进制，由 Go 服务直接托管。
 - 支持 Docker / Docker Compose 部署。
-- 支持 SQLite、JSON 文件和 PostgreSQL 存储后端。
+- 支持 SQLite、PostgreSQL 和 MySQL 存储后端。
 - 支持全局 HTTP / HTTPS / SOCKS5 / SOCKS5H 代理。
 - 支持 DockerHub 默认版本检查，以及非 Docker Release 构建的在线更新和回滚。
 
@@ -298,16 +298,16 @@ go build -tags=embed -o chatgpt2api ./internal
 CHATGPT2API_ADMIN_PASSWORD=change_me_please ./chatgpt2api
 ```
 
-后端默认监听：
+后端单独启动时默认监听：
 
 ```text
 http://127.0.0.1:8000
 ```
 
-也可以通过 `PORT` 指定端口：
+与 Vite 前端一起开发时，建议把后端放在 `8001`，避免占用前端默认端口 `8000`：
 
 ```bash
-PORT=8000 ./chatgpt2api
+PORT=8001 ./chatgpt2api
 ```
 
 ### 前端
@@ -318,10 +318,10 @@ bun install
 bun run dev
 ```
 
-前端开发服务器默认会通过 `VITE_API_URL` 访问后端。未设置时，开发模式默认使用：
+前端开发服务器通过同源代理访问后端，代理目标由 `VITE_BACKEND_URL` 设置。未设置时默认使用：
 
 ```text
-http://127.0.0.1:8000
+http://127.0.0.1:8001
 ```
 
 前端验证命令：
@@ -340,23 +340,28 @@ bun run build
 
 `.github/workflows/ci.yml` 在 `main` push 和 pull request 上执行：
 
-- `go test ./...`
 - `bun install --frozen-lockfile`
+- `bun run lint`
+- `bun run test`
 - `bun run build`
+- `go test ./...`
+- `go vet ./...`
+- 核心有状态包的 Go race test
+- PostgreSQL / MySQL 存储集成测试
 - `docker compose config`
 
 ### Release
 
-推送 `v*` 标签会触发 `.github/workflows/release.yml`：
+推送 `v*` 标签，或在 Actions 中手动提供标签，会触发 `.github/workflows/release.yml`。流程只接受 `vX.Y.Z` 格式的稳定语义化版本（例如 `v1.2.3`）；预发布标签或其他格式会在构建前被拒绝：
 
-1. 构建前端。
-2. 上传 `internal/web/dist` artifact。
-3. 将前端 artifact 下载到 `internal/web/dist`。
-4. GoReleaser 使用 `-tags=embed` 构建 Linux `amd64` / `arm64` 二进制。
-5. 生成 GitHub Release archive 和 `checksums.txt`。
-6. 使用 `Dockerfile.release` 构建多架构 Docker 镜像。
-7. 推送 DockerHub 镜像。
-8. 推送 GHCR 镜像。
+1. 校验标签格式、标签提交与检出的提交一致。
+2. 检查并测试前端，再构建 `internal/web/dist`。
+3. 上传前端 artifact，并在发布任务中下载到 `internal/web/dist`。
+4. 执行 Go 格式、单元测试、vet、race test 和数据库集成测试。
+5. GoReleaser 使用 `-tags=embed` 构建 Linux `amd64` / `arm64` 二进制。
+6. 生成 GitHub Release archive 和 `checksums.txt`。
+7. 使用 `Dockerfile.release` 构建多架构 Docker 镜像。
+8. 推送 Docker Hub 镜像。
 
 首次发布前，在 GitHub 仓库的 `Settings -> Secrets and variables -> Actions` 中添加：
 
@@ -375,20 +380,12 @@ git push origin v1.0.0
 
 ### Docker 镜像标签
 
-发布到 DockerHub：
+发布到 Docker Hub：
 
 ```text
 mienvirtuoso/chatgpt2api:<version>
 mienvirtuoso/chatgpt2api:latest
 mienvirtuoso/chatgpt2api:<major>.<minor>
-```
-
-同时发布到 GHCR：
-
-```text
-ghcr.io/<github-owner>/chatgpt2api:<version>
-ghcr.io/<github-owner>/chatgpt2api:latest
-ghcr.io/<github-owner>/chatgpt2api:<major>.<minor>
 ```
 
 ## API 接入

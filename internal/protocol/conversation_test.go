@@ -1107,6 +1107,25 @@ func TestStreamImageOutputsWithPoolCanceledSendReleasesImageReservation(t *testi
 	lease.Release()
 }
 
+func TestSendImageOutputReturnsWhenConsumerCancels(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	out := make(chan ImageOutput)
+	done := make(chan error, 1)
+	go func() {
+		done <- sendImageOutput(ctx, out, ImageOutput{Kind: "result"})
+	}()
+
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("sendImageOutput() error = %v, want context cancellation", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("sendImageOutput() remained blocked after the consumer canceled")
+	}
+}
+
 func TestStreamImageOutputsWithPoolDoesNotUseProviderWhenAccountServiceHasNoLease(t *testing.T) {
 	engine, accounts := newImageLeaseTestEngine(t, "token-1")
 	busyLease, err := accounts.AcquireTextAccessToken(nil)

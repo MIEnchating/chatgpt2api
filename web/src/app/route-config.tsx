@@ -1,15 +1,19 @@
-import type { ReactNode } from "react";
+import { lazy, type ReactNode } from "react";
 
-import CanvasRoute from "@/app/canvas/route";
-import ImagePage from "@/app/image/page";
-import ImageManagerPage from "@/app/image-manager/page";
-import HomePage from "@/app/page";
-import LoginPage from "@/app/login/page";
-import LogsPage from "@/app/logs/page";
-import ProfilePage from "@/app/profile/page";
-import RBACPage from "@/app/rbac/page";
-import SettingsPage from "@/app/settings/page";
-import UsersPage from "@/app/users/page";
+// Route configuration intentionally exports non-component metadata alongside
+// lazy components; Fast Refresh does not apply to this module.
+/* oxlint-disable react/only-export-components */
+
+const CanvasRoute = lazy(() => import("@/app/canvas/route"));
+const ImagePage = lazy(() => import("@/app/image/page"));
+const ImageManagerPage = lazy(() => import("@/app/image-manager/page"));
+const HomePage = lazy(() => import("@/app/page"));
+const LoginPage = lazy(() => import("@/app/login/page"));
+const LogsPage = lazy(() => import("@/app/logs/page"));
+const ProfilePage = lazy(() => import("@/app/profile/page"));
+const RBACPage = lazy(() => import("@/app/rbac/page"));
+const SettingsPage = lazy(() => import("@/app/settings/page"));
+const UsersPage = lazy(() => import("@/app/users/page"));
 
 export type AppRouteConfig = {
   path: string;

@@ -165,6 +165,74 @@ func TestNewBackendFromEnvRejectsJSONBackend(t *testing.T) {
 	}
 }
 
+func TestNewBackendFromEnvRequiresDatabaseURLForRemoteBackend(t *testing.T) {
+	for _, backendType := range []string{"postgres", "postgresql", "mysql", "database"} {
+		t.Run(backendType, func(t *testing.T) {
+			t.Setenv("STORAGE_BACKEND", backendType)
+			t.Setenv("DATABASE_URL", "")
+
+			_, err := NewBackendFromEnv(t.TempDir())
+			if err == nil || !strings.Contains(err.Error(), "DATABASE_URL is required") {
+				t.Fatalf("NewBackendFromEnv() error = %v, want missing DATABASE_URL error", err)
+			}
+		})
+	}
+}
+
+func TestParseDatabaseURLRejectsEmptyAndUnsupportedURL(t *testing.T) {
+	for _, databaseURL := range []string{"", "   ", "mongodb://db.internal/chatgpt2api", "https://db.internal/chatgpt2api"} {
+		if _, _, err := ParseDatabaseURL(databaseURL); err == nil {
+			t.Fatalf("ParseDatabaseURL(%q) succeeded, want error", databaseURL)
+		}
+	}
+}
+
+func TestParseDatabaseURLAcceptsCaseInsensitiveSQLiteScheme(t *testing.T) {
+	driver, dsn, err := ParseDatabaseURL("  SQLite:////app/data/chatgpt2api.db  ")
+	if err != nil {
+		t.Fatalf("ParseDatabaseURL() error = %v", err)
+	}
+	if driver != "sqlite" || dsn != "/app/data/chatgpt2api.db" {
+		t.Fatalf("ParseDatabaseURL() = (%q, %q), want sqlite absolute path", driver, dsn)
+	}
+}
+
+func TestParseDatabaseURLNormalizesPostgreSQLScheme(t *testing.T) {
+	driver, dsn, err := ParseDatabaseURL("  PostgreSQL://app:p%40ss@db.internal:5432/chatgpt2api?sslmode=disable  ")
+	if err != nil {
+		t.Fatalf("ParseDatabaseURL() error = %v", err)
+	}
+	if driver != "postgres" || dsn != "postgresql://app:p%40ss@db.internal:5432/chatgpt2api?sslmode=disable" {
+		t.Fatalf("ParseDatabaseURL() = (%q, %q), want normalized PostgreSQL URL", driver, dsn)
+	}
+}
+
+func TestParseMySQLDatabaseURLPreservesConnectionOptions(t *testing.T) {
+	driver, dsn, err := ParseDatabaseURL("mysql://app:p%40ss@db.internal:3307/chatgpt2api?tls=true&timeout=5s&parseTime=false")
+	if err != nil {
+		t.Fatalf("ParseDatabaseURL() error = %v", err)
+	}
+	if driver != "mysql" {
+		t.Fatalf("driver = %q, want mysql", driver)
+	}
+	want := "app:p@ss@tcp(db.internal:3307)/chatgpt2api?parseTime=true&timeout=5s&tls=true"
+	if dsn != want {
+		t.Fatalf("dsn = %q, want %q", dsn, want)
+	}
+}
+
+func TestParseMySQLDatabaseURLRequiresCompleteAddress(t *testing.T) {
+	for _, databaseURL := range []string{
+		"mysql://db.internal/chatgpt2api",
+		"mysql://app@/chatgpt2api",
+		"mysql://app@db.internal/",
+	} {
+		if _, _, err := ParseDatabaseURL(databaseURL); err == nil {
+			t.Fatalf("ParseDatabaseURL(%q) succeeded, want error", databaseURL)
+		}
+	}
+}
+
 func TestDocumentNameValidation(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "chatgpt2api.db")
 	backend, err := NewDatabaseBackend("sqlite:///" + filepath.ToSlash(dbPath))

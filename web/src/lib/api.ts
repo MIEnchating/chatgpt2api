@@ -1,4 +1,9 @@
 import { httpRequest } from "@/lib/request";
+import {
+  normalizeImageConversationAssetReference,
+  planImageConversationAssetUploadBatches,
+  type ImageConversationAssetUploadItem,
+} from "@/lib/image-conversation-assets";
 import type { LoginPageImageMode } from "@/lib/login-page-image-layout";
 
 export type ImageModel = string;
@@ -452,6 +457,8 @@ export type CreationTaskData = {
 
 export type CreationTask = {
   id: string;
+  /** Monotonic server-side task revision when available. */
+  revision?: number | string;
   status: "queued" | "running" | "success" | "error" | "cancelled";
   mode: "generate" | "edit" | "chat";
   model?: ImageModel;
@@ -469,6 +476,22 @@ export type CreationTask = {
   output_type?: "text";
   visibility?: ImageVisibility;
 };
+
+export type CreationTaskRequestOptions = {
+  authorization?: string;
+  redirectOnUnauthorized?: boolean;
+};
+
+function creationTaskRequestAuth(options?: CreationTaskRequestOptions) {
+  return {
+    ...(options?.authorization
+      ? { headers: { Authorization: options.authorization } }
+      : {}),
+    ...(options?.redirectOnUnauthorized === undefined
+      ? {}
+      : { redirectOnUnauthorized: options.redirectOnUnauthorized }),
+  };
+}
 
 export type CreationTaskMessage = {
   role: "system" | "user" | "assistant" | "tool";
@@ -745,10 +768,13 @@ export async function createImageGenerationTask(
   relayTokenName?: string,
   frontendConversationId?: string,
   fallbackReferenceImage?: FallbackReferenceImage,
+  requestOptions?: CreationTaskRequestOptions,
 ) {
   const normalizedPartialImages = stream ? normalizedImagePartialImages(partialImages) : undefined;
   return httpRequest<CreationTask>("/api/creation-tasks/image-generations", {
+    ...creationTaskRequestAuth(requestOptions),
     method: "POST",
+    timeout: 30_000,
     body: {
       client_task_id: clientTaskId,
       prompt,
@@ -797,6 +823,7 @@ export async function createImageEditTask(
   relayTokenName?: string,
   frontendConversationId?: string,
   fallbackReferenceImage?: FallbackReferenceImage,
+  requestOptions?: CreationTaskRequestOptions,
 ) {
   const formData = new FormData();
   const uploadFiles = Array.isArray(files) ? files : [files];
@@ -859,18 +886,23 @@ export async function createImageEditTask(
   formData.append("n", String(count));
 
   return httpRequest<CreationTask>("/api/creation-tasks/image-edits", {
+    ...creationTaskRequestAuth(requestOptions),
     method: "POST",
     body: formData,
+    timeout: 60_000,
   });
 }
 
-export async function fetchCreationTasks(ids: string[]) {
+export async function fetchCreationTasks(ids: string[], requestOptions?: CreationTaskRequestOptions) {
   const params = new URLSearchParams();
   if (ids.length > 0) {
     params.set("ids", ids.join(","));
   }
   const data = await httpRequest<CreationTaskListResponse>(`/api/creation-tasks${params.toString() ? `?${params.toString()}` : ""}`, {
+    ...creationTaskRequestAuth(requestOptions),
+    timeout: 15_000,
     headers: {
+      ...(requestOptions?.authorization ? { Authorization: requestOptions.authorization } : {}),
       "Cache-Control": "no-cache",
       Pragma: "no-cache",
     },
@@ -881,10 +913,12 @@ export async function fetchCreationTasks(ids: string[]) {
   };
 }
 
-export async function cancelCreationTask(clientTaskId: string) {
+export async function cancelCreationTask(clientTaskId: string, requestOptions?: CreationTaskRequestOptions) {
   return httpRequest<CreationTask>(`/api/creation-tasks/${encodeURIComponent(clientTaskId)}/cancel`, {
+    ...creationTaskRequestAuth(requestOptions),
     method: "POST",
     body: {},
+    timeout: 20_000,
   });
 }
 
@@ -1013,6 +1047,27 @@ export async function uploadCanvasImage(file: File) {
     method: "POST",
     body: formData,
   });
+}
+
+export async function uploadImageConversationAssets(files: readonly File[]) {
+  const items: ImageConversationAssetUploadItem[] = [];
+  for (const batch of planImageConversationAssetUploadBatches(files)) {
+    const formData = new FormData();
+    batch.forEach((file) => formData.append("images", file));
+    const response = await httpRequest<{ items?: unknown[] }>("/api/profile/image-conversation-assets", {
+      method: "POST",
+      body: formData,
+      timeout: 120_000,
+    });
+    const normalized = Array.isArray(response.items)
+      ? response.items.map(normalizeImageConversationAssetReference).filter((item): item is ImageConversationAssetUploadItem => item !== null)
+      : [];
+    if (normalized.length !== batch.length) {
+      throw new Error("参考图上传响应不完整，请重试");
+    }
+    items.push(...normalized);
+  }
+  return items;
 }
 
 export async function saveCanvasDocument(document: CanvasDocument) {

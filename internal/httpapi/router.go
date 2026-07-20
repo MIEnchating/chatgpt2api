@@ -5,7 +5,12 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"chatgpt2api/internal/service"
+	"chatgpt2api/internal/util"
 )
+
+const maxAPIRequestBodyBytes = 256 << 20
 
 type routeMatch int
 
@@ -45,6 +50,7 @@ func (a *App) routes() []appRoute {
 		exact(http.MethodGet, "/api/announcements", a.handleAnnouncements),
 		exact("", "/api/profile/announcement-preferences", a.handleAnnouncementPreferences),
 		exact("", "/api/profile", a.handleProfile),
+		exact(http.MethodPost, "/api/profile/image-conversation-assets", a.handleImageConversationAssetUpload),
 		exact(http.MethodPost, "/api/profile/password", a.handleProfilePassword),
 		exact("", "/api/profile/relay-key", a.handleProfileRelayKey),
 		exact("", "/api/profile/balance", a.handleProfileBalance),
@@ -71,6 +77,7 @@ func (a *App) routes() []appRoute {
 		exact(http.MethodGet, "/api/storage/info", a.handleStorageInfo),
 
 		prefix("/images/", a.handleImageFile),
+		prefix(service.ImageConversationAssetURLPrefix, a.handleImageConversationAssetFile),
 		prefix("/image-references/", a.handleImageReferenceFile),
 		prefix("/image-thumbnails/", a.handleImageThumbnail),
 		prefix("/login-page-images/", http.StripPrefix("/login-page-images/", http.FileServer(http.Dir(a.config.LoginPageImagesDir()))).ServeHTTP),
@@ -95,6 +102,13 @@ func (a *App) serveHTTP(w http.ResponseWriter, r *http.Request, routes []appRout
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusNoContent)
 		return
+	}
+	if isAPISpace(r.URL.Path) && r.Body != nil && r.Method != http.MethodGet && r.Method != http.MethodHead {
+		if r.ContentLength > maxAPIRequestBodyBytes {
+			util.WriteError(w, http.StatusRequestEntityTooLarge, "request body is too large")
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, maxAPIRequestBodyBytes)
 	}
 	if route := matchAppRoute(routes, r.Method, r.URL.Path); route != nil {
 		route.handler(w, r)

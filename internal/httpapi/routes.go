@@ -12,6 +12,8 @@ import (
 	"chatgpt2api/internal/util"
 )
 
+const maxImageConversationHistoryBodyBytes = 96 << 20
+
 func (a *App) handleAnnouncements(w http.ResponseWriter, r *http.Request) {
 	if _, ok := a.requireIdentity(w, r, ""); !ok {
 		return
@@ -500,17 +502,40 @@ func (a *App) handleProfileImageConversations(w http.ResponseWriter, r *http.Req
 	if r.URL.Path == base {
 		switch r.Method {
 		case http.MethodGet:
-			items, err := a.history.List(ownerID)
+			cursor := strings.TrimSpace(r.URL.Query().Get("cursor"))
+			limit := 0
+			if rawLimit := strings.TrimSpace(r.URL.Query().Get("limit")); rawLimit != "" {
+				parsed, parseErr := strconv.Atoi(rawLimit)
+				if parseErr != nil {
+					util.WriteError(w, http.StatusBadRequest, "invalid conversation history limit")
+					return
+				}
+				limit = parsed
+			}
+			page, err := a.history.ListPage(r.Context(), ownerID, cursor, limit)
 			if err != nil {
-				util.WriteError(w, http.StatusInternalServerError, err.Error())
+				writeImageConversationHistoryError(w, err)
 				return
 			}
-			util.WriteJSON(w, http.StatusOK, map[string]any{"items": items})
+			util.WriteJSON(w, http.StatusOK, page)
 		case http.MethodPost:
-			r.Body = http.MaxBytesReader(w, r.Body, 256<<20)
+			release, acquired := a.acquireImageConversationHistoryWrite(r)
+			if !acquired {
+				util.WriteError(w, http.StatusRequestTimeout, "conversation history request was canceled")
+				return
+			}
+			defer release()
+			r.Body = http.MaxBytesReader(w, r.Body, maxImageConversationHistoryBodyBytes)
 			body, err := readJSONMap(r)
 			if err != nil {
-				util.WriteError(w, http.StatusBadRequest, "invalid json body")
+				status := http.StatusBadRequest
+				message := "invalid json body"
+				var maxBytesError *http.MaxBytesError
+				if errors.As(err, &maxBytesError) {
+					status = http.StatusRequestEntityTooLarge
+					message = "conversation history payload is too large"
+				}
+				util.WriteError(w, status, message)
 				return
 			}
 			items := util.AsMapSlice(body["items"])
@@ -521,18 +546,64 @@ func (a *App) handleProfileImageConversations(w http.ResponseWriter, r *http.Req
 				util.WriteError(w, http.StatusBadRequest, "conversation items are required")
 				return
 			}
-			merged, err := a.history.Merge(ownerID, items)
-			if err != nil {
-				util.WriteError(w, http.StatusBadRequest, err.Error())
+			// Assetization happens before the row CAS. Always enqueue owner GC so
+			// files created by a rejected/conflicting write are reclaimed after the
+			// orphan grace window as well as files released by a successful update.
+			defer a.scheduleImageConversationAssetCleanupDebounced(ownerID)
+			expectedGeneration, generationErr := imageConversationHistoryRequestGeneration(body)
+			if generationErr != nil {
+				util.WriteError(w, http.StatusBadRequest, generationErr.Error())
 				return
 			}
-			util.WriteJSON(w, http.StatusOK, map[string]any{"items": merged})
+			acknowledgements, generation, mergeErr := a.history.MergeWithAcknowledgementsMinimal(r.Context(), ownerID, items, expectedGeneration)
+			if mergeErr != nil {
+				writeImageConversationHistoryError(w, mergeErr)
+				return
+			}
+			// A durable task submission always saves one conversation and needs a
+			// strict acknowledgement. Bulk background sync can legitimately contain
+			// both accepted and stale snapshots, so report each result without
+			// turning a partially successful write into a request-level failure.
+			if len(acknowledgements) == 1 {
+				acknowledgement := acknowledgements[0]
+				if acknowledgement.Gone {
+					util.WriteJSON(w, http.StatusGone, map[string]any{
+						"error":      "conversation history item was deleted or cleared",
+						"id":         acknowledgement.ID,
+						"generation": generation,
+					})
+					return
+				}
+				if !acknowledgement.Accepted {
+					util.WriteJSON(w, http.StatusConflict, map[string]any{
+						"error":      "conversation history revision is stale",
+						"id":         acknowledgement.ID,
+						"revision":   acknowledgement.ActualRevision,
+						"generation": generation,
+					})
+					return
+				}
+			}
+			response := map[string]any{
+				"ok":         true,
+				"generation": generation,
+			}
+			if len(acknowledgements) == 1 {
+				response["accepted"] = true
+				response["id"] = acknowledgements[0].ID
+				response["revision"] = acknowledgements[0].ActualRevision
+			} else {
+				response["acknowledgements"] = acknowledgements
+			}
+			util.WriteJSON(w, http.StatusOK, response)
 		case http.MethodDelete:
-			if err := a.history.Clear(ownerID); err != nil {
-				util.WriteError(w, http.StatusInternalServerError, err.Error())
+			generation, err := a.history.ClearMinimal(r.Context(), ownerID)
+			if err != nil {
+				writeImageConversationHistoryError(w, err)
 				return
 			}
-			util.WriteJSON(w, http.StatusOK, map[string]any{"items": []map[string]any{}})
+			a.scheduleImageConversationAssetCleanup(ownerID)
+			util.WriteJSON(w, http.StatusOK, map[string]any{"ok": true, "generation": generation})
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		}
@@ -544,20 +615,108 @@ func (a *App) handleProfileImageConversations(w http.ResponseWriter, r *http.Req
 		http.NotFound(w, r)
 		return
 	}
+	if parts[3] == "active" {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		limit := 0
+		if rawLimit := strings.TrimSpace(r.URL.Query().Get("limit")); rawLimit != "" {
+			parsed, parseErr := strconv.Atoi(rawLimit)
+			if parseErr != nil {
+				util.WriteError(w, http.StatusBadRequest, "invalid active conversation limit")
+				return
+			}
+			limit = parsed
+		}
+		items, generation, err := a.history.ListActive(r.Context(), ownerID, limit)
+		if err != nil {
+			writeImageConversationHistoryError(w, err)
+			return
+		}
+		util.WriteJSON(w, http.StatusOK, map[string]any{"items": items, "generation": generation})
+		return
+	}
+	if r.Method == http.MethodGet {
+		item, found, generation, err := a.history.GetItem(r.Context(), ownerID, parts[3])
+		if err != nil {
+			writeImageConversationHistoryError(w, err)
+			return
+		}
+		if !found {
+			util.WriteError(w, http.StatusNotFound, "image conversation not found")
+			return
+		}
+		util.WriteJSON(w, http.StatusOK, map[string]any{"item": item, "generation": generation})
+		return
+	}
 	if r.Method != http.MethodDelete {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	items, removed, err := a.history.Delete(ownerID, parts[3])
+	removed, generation, err := a.history.DeleteMinimal(r.Context(), ownerID, parts[3])
 	if err != nil {
-		util.WriteError(w, http.StatusInternalServerError, err.Error())
+		writeImageConversationHistoryError(w, err)
 		return
 	}
-	if !removed {
-		util.WriteError(w, http.StatusNotFound, "image conversation not found")
+	a.scheduleImageConversationAssetCleanup(ownerID)
+	util.WriteJSON(w, http.StatusOK, map[string]any{
+		"ok":         true,
+		"removed":    removed,
+		"generation": generation,
+	})
+}
+
+func (a *App) acquireImageConversationHistoryWrite(r *http.Request) (func(), bool) {
+	if a == nil || a.historyWriteLimiter == nil {
+		return func() {}, true
+	}
+	return a.historyWriteLimiter.acquire(
+		r.Context(),
+		imageConversationHistoryWriteWeight(r.ContentLength),
+	)
+}
+
+func imageConversationHistoryRequestGeneration(body map[string]any) (*int64, error) {
+	value, exists := body["generation"]
+	if !exists {
+		value, exists = body["history_epoch"]
+	}
+	if !exists || value == nil || strings.TrimSpace(fmt.Sprint(value)) == "" {
+		return nil, nil
+	}
+	generation, err := strconv.ParseInt(strings.TrimSpace(fmt.Sprint(value)), 10, 64)
+	if err != nil || generation < 1 {
+		return nil, fmt.Errorf("invalid conversation history generation")
+	}
+	return &generation, nil
+}
+
+func writeImageConversationHistoryError(w http.ResponseWriter, err error) {
+	if errors.Is(err, service.ErrImageConversationAssetStorageLimit) {
+		util.WriteError(w, http.StatusInsufficientStorage, "image storage limit exceeded")
 		return
 	}
-	util.WriteJSON(w, http.StatusOK, map[string]any{"items": items})
+	var cursorInvalidated service.ImageConversationHistoryCursorInvalidatedError
+	if errors.As(err, &cursorInvalidated) {
+		util.WriteJSON(w, http.StatusConflict, map[string]any{
+			"error":      cursorInvalidated.Error(),
+			"code":       "history_reset",
+			"generation": cursorInvalidated.Generation,
+		})
+		return
+	}
+	var cursorError service.ImageConversationHistoryCursorError
+	if errors.As(err, &cursorError) {
+		util.WriteError(w, http.StatusBadRequest, cursorError.Error())
+		return
+	}
+	var validationErr service.ImageConversationHistoryValidationError
+	if errors.As(err, &validationErr) {
+		util.WriteError(w, http.StatusBadRequest, validationErr.Error())
+		return
+	}
+	util.WriteError(w, http.StatusServiceUnavailable, "历史记录数据库暂时不可用，请稍后重试")
 }
 
 func (a *App) handleAdminRoles(w http.ResponseWriter, r *http.Request) {
@@ -1372,13 +1531,13 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == "/api/creation-tasks/image-generations" && r.Method == http.MethodPost {
 		body, _ := readJSONMap(r)
 		if _, err := a.relayAPIKeyForIdentitySelection(r.Context(), identity, selectedRelayTokenGroupFromPayload(body), selectedRelayTokenNameFromPayload(body)); err != nil {
-			writeCreationTaskSubmitError(w, err)
+			a.writeCreationTaskSubmitError(w, err)
 			return
 		}
 		model := a.applyDefaultImageModel(body)
 		task, err := a.tasks.SubmitGenerationWithOptions(r.Context(), identity, util.Clean(body["client_task_id"]), util.Clean(body["prompt"]), model, util.Clean(body["size"]), util.Clean(body["quality"]), a.relayBaseURL(), util.ToInt(body["n"], 1), body["messages"], imageTaskRequestMetadata(body), imageOutputOptionsFromBody(body), imageToolOptionsFromBody(body), util.Clean(body["visibility"]))
 		if err != nil {
-			writeCreationTaskSubmitError(w, err)
+			a.writeCreationTaskSubmitError(w, err)
 			return
 		}
 		util.WriteJSON(w, http.StatusOK, task)
@@ -1389,19 +1548,25 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.URL.Path == "/api/creation-tasks/image-edits" && r.Method == http.MethodPost {
-		body, images, err := readMultipartImageBody(r)
+		release, acquired := a.acquireImageUpload(r.Context())
+		if !acquired {
+			util.WriteError(w, http.StatusRequestTimeout, "image upload was canceled")
+			return
+		}
+		defer release()
+		body, images, err := readMultipartImageBody(w, r)
 		if err != nil {
-			util.WriteError(w, http.StatusBadRequest, err.Error())
+			writeMultipartImageBodyError(w, err)
 			return
 		}
 		if _, err := a.relayAPIKeyForIdentitySelection(r.Context(), identity, selectedRelayTokenGroupFromPayload(body), selectedRelayTokenNameFromPayload(body)); err != nil {
-			writeCreationTaskSubmitError(w, err)
+			a.writeCreationTaskSubmitError(w, err)
 			return
 		}
 		model := a.applyDefaultImageModel(body)
 		task, err := a.tasks.SubmitEditWithOptions(r.Context(), identity, util.Clean(body["client_task_id"]), util.Clean(body["prompt"]), model, util.Clean(body["size"]), util.Clean(body["quality"]), a.relayBaseURL(), images, util.ToInt(body["n"], 1), body["messages"], imageTaskRequestMetadata(body), imageOutputOptionsFromBody(body), imageToolOptionsFromBody(body), util.Clean(body["visibility"]))
 		if err != nil {
-			writeCreationTaskSubmitError(w, err)
+			a.writeCreationTaskSubmitError(w, err)
 			return
 		}
 		util.WriteJSON(w, http.StatusOK, task)
@@ -1490,10 +1655,18 @@ func imageOutputCompressionFromBody(value any) (int, bool) {
 	return compression, true
 }
 
-func writeCreationTaskSubmitError(w http.ResponseWriter, err error) {
+func (a *App) writeCreationTaskSubmitError(w http.ResponseWriter, err error) {
 	var limitErr service.ImageTaskLimitError
 	if errors.As(err, &limitErr) {
 		util.WriteError(w, http.StatusTooManyRequests, limitErr.Error())
+		return
+	}
+	var persistenceErr service.ImageTaskPersistenceError
+	if errors.As(err, &persistenceErr) {
+		if a != nil && a.logger != nil {
+			a.logger.Error("creation task submission persistence failed", "error", persistenceErr.Err)
+		}
+		util.WriteError(w, http.StatusServiceUnavailable, persistenceErr.Error())
 		return
 	}
 	util.WriteError(w, http.StatusBadRequest, err.Error())

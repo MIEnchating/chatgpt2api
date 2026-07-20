@@ -166,6 +166,7 @@ type ImageVisibilityUpdateOptions struct {
 type ImageService struct {
 	config        ImageConfig
 	store         storage.JSONDocumentBackend
+	cleanupMu     sync.Mutex
 	thumbnailMu   sync.Mutex
 	thumbnailJobs map[string]*thumbnailJob
 }
@@ -231,6 +232,9 @@ func (s *ImageService) StorageGovernance() ImageStorageGovernanceSummary {
 }
 
 func (s *ImageService) CleanupStorage(options ImageStorageCleanupOptions) (ImageStorageCleanupResult, error) {
+	s.cleanupMu.Lock()
+	defer s.cleanupMu.Unlock()
+
 	result := ImageStorageCleanupResult{
 		RetentionDays: options.RetentionDays,
 		MaxBytes:      options.MaxBytes,
@@ -584,6 +588,14 @@ func (s *ImageService) RecordImageOwners(values []string, ownerID string) {
 }
 
 func (s *ImageService) RecordGeneratedImages(values []string, ownerID, ownerName, visibility string, metadataValues ...GeneratedImageMetadata) {
+	s.recordGeneratedImages(values, ownerID, ownerName, visibility, true, metadataValues...)
+}
+
+func (s *ImageService) RecordGeneratedImageMetadata(values []string, ownerID, ownerName, visibility string, metadataValues ...GeneratedImageMetadata) {
+	s.recordGeneratedImages(values, ownerID, ownerName, visibility, false, metadataValues...)
+}
+
+func (s *ImageService) recordGeneratedImages(values []string, ownerID, ownerName, visibility string, ensureThumbnails bool, metadataValues ...GeneratedImageMetadata) {
 	ownerID = strings.TrimSpace(ownerID)
 	ownerName = strings.TrimSpace(ownerName)
 	metadata := GeneratedImageMetadata{}
@@ -595,7 +607,9 @@ func (s *ImageService) RecordGeneratedImages(values []string, ownerID, ownerName
 		visibility = ImageVisibilityPrivate
 	}
 	for _, ref := range s.imageFileRefs(values) {
-		s.ensureThumbnailForRef(ref)
+		if ensureThumbnails {
+			s.ensureThumbnailForRef(ref)
+		}
 		if ownerID != "" && ownerID != "anonymous" {
 			_ = s.writeImageMetadataForRef(ref, ownerID, ownerName, visibility, metadata)
 		}

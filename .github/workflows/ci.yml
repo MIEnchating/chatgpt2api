@@ -16,23 +16,34 @@ concurrency:
 
 env:
   BUN_VERSION: 1.3.13
+  NODE_VERSION: 22
 
 jobs:
   test:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: ${{ env.NODE_VERSION }}
 
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
 
-      - name: Clear Bun cache
-        run: bun pm cache rm || true
-
       - name: Install dependencies
         working-directory: web
         run: bun install --frozen-lockfile
+
+      - name: Lint frontend
+        working-directory: web
+        run: bun run lint
+
+      - name: Test frontend
+        working-directory: web
+        run: bun run test
 
       - name: Build frontend
         working-directory: web
@@ -53,11 +64,22 @@ jobs:
       - name: Verify Go version
         run: go version | grep -q 'go1.26.2'
 
-      - name: Configure git for Go modules
-        run: git config --global url."https://${{ secrets.GITHUB_TOKEN }}@github.com/".insteadOf "https://github.com/"
+      - name: Check backend formatting
+        run: |
+          unformatted="$(git ls-files -z '*.go' | xargs -0 -r gofmt -l)"
+          if [ -n "$unformatted" ]; then
+            printf '%s\n' "$unformatted"
+            exit 1
+          fi
 
       - name: Test backend
         run: go test ./...
+
+      - name: Vet backend
+        run: go vet ./...
+
+      - name: Race test stateful backend packages
+        run: go test -race ./internal/storage ./internal/service ./internal/httpapi
 
       - name: Validate Docker deployment files
         run: |
@@ -77,3 +99,56 @@ jobs:
           cp .env.example .env
           docker compose -f docker-compose.yml config >/dev/null
           rm .env
+
+  storage-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: chatgpt2api
+          POSTGRES_USER: chatgpt2api
+          POSTGRES_PASSWORD: chatgpt2api
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U chatgpt2api -d chatgpt2api"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_DATABASE: chatgpt2api
+          MYSQL_USER: chatgpt2api
+          MYSQL_PASSWORD: chatgpt2api
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -uchatgpt2api -pchatgpt2api --silent"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Check backend formatting
+        run: |
+          unformatted="$(git ls-files -z '*.go' | xargs -0 -r gofmt -l)"
+          if [ -n "$unformatted" ]; then
+            printf '%s\n' "$unformatted"
+            exit 1
+          fi
+
+      - name: Test PostgreSQL and MySQL storage backends
+        env:
+          CHATGPT2API_TEST_POSTGRES_DATABASE_URL: postgresql://chatgpt2api:chatgpt2api@127.0.0.1:5432/chatgpt2api?sslmode=disable
+          CHATGPT2API_TEST_MYSQL_DATABASE_URL: mysql://chatgpt2api:chatgpt2api@127.0.0.1:3306/chatgpt2api
+        run: go test ./internal/storage -run '^TestDatabaseBackendIntegration$' -count=1 -v

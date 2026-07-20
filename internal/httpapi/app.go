@@ -19,8 +19,8 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"chatgpt2api/internal/config"
@@ -35,29 +35,104 @@ import (
 )
 
 const (
-	maxLoginPageImageSize      = 10 << 20
-	maxSiteIconSize            = 2 << 20
-	maxRelayImageBytes         = 40 << 20
-	imageThumbnailCacheControl = "public, max-age=31536000, immutable"
-	authSessionCookieName      = "chatgpt2api_session"
+	maxLoginPageImageSize         = 10 << 20
+	maxSiteIconSize               = 2 << 20
+	maxRelayImageBytes            = 40 << 20
+	maxRelayInputImages           = 4
+	maxRelayImageMultipartMemory  = 1 << 20
+	maxRelayImageRequestOverhead  = 4 << 20
+	maxRelayImageEditRequestBytes = maxRelayInputImages*maxRelayImageBytes + maxRelayImageRequestOverhead
+	maxLoginRequestBodyBytes      = 64 << 10
+	imageThumbnailCacheControl    = "public, max-age=31536000, immutable"
+	authSessionCookieName         = "chatgpt2api_session"
+)
+
+var (
+	errRelayImageTooLarge    = errors.New("image file is too large")
+	errTooManyRelayImages    = errors.New("too many image files")
+	errUnsupportedRelayImage = errors.New("unsupported image format")
 )
 
 type App struct {
-	config     *config.Store
-	auth       *service.AuthService
-	accounts   *service.AccountService
-	logs       *service.LogService
-	logger     *service.Logger
-	proxy      *service.ProxyService
-	engine     *protocol.Engine
-	images     *service.ImageService
-	tasks      *service.ImageTaskService
-	prompts    *service.PromptFavoriteService
-	history    *service.ImageConversationHistoryService
-	canvas     *service.CanvasDocumentService
-	announce   *service.AnnouncementService
-	newAPIKeys *service.NewAPITokenReader
-	cancel     context.CancelFunc
+	config              *config.Store
+	auth                *service.AuthService
+	accounts            *service.AccountService
+	logs                *service.LogService
+	logger              *service.Logger
+	proxy               *service.ProxyService
+	engine              *protocol.Engine
+	images              *service.ImageService
+	conversationAssets  *service.ImageConversationAssetService
+	tasks               *service.ImageTaskService
+	prompts             *service.PromptFavoriteService
+	history             *service.ImageConversationHistoryService
+	canvas              *service.CanvasDocumentService
+	announce            *service.AnnouncementService
+	newAPIKeys          *service.NewAPITokenReader
+	cancel              context.CancelFunc
+	historyWriteLimiter *imageConversationHistoryWriteLimiter
+	imageUploadSlots    chan struct{}
+
+	imageCleanup             imageCleanupWorker
+	conversationAssetCleanup imageConversationAssetCleanupWorker
+}
+
+type imageCleanupWorker struct {
+	mu      sync.Mutex
+	queued  bool
+	running bool
+	closed  bool
+	done    chan struct{}
+}
+
+func (w *imageCleanupWorker) schedule(run func()) {
+	if w == nil || run == nil {
+		return
+	}
+	w.mu.Lock()
+	if w.closed {
+		w.mu.Unlock()
+		return
+	}
+	if w.running {
+		w.queued = true
+		w.mu.Unlock()
+		return
+	}
+	w.running = true
+	w.done = make(chan struct{})
+	done := w.done
+	w.mu.Unlock()
+
+	go func() {
+		for {
+			run()
+			w.mu.Lock()
+			if w.closed || !w.queued {
+				w.queued = false
+				w.running = false
+				close(done)
+				w.mu.Unlock()
+				return
+			}
+			w.queued = false
+			w.mu.Unlock()
+		}
+	}()
+}
+
+func (w *imageCleanupWorker) close() {
+	if w == nil {
+		return
+	}
+	w.mu.Lock()
+	w.closed = true
+	w.queued = false
+	done := w.done
+	w.mu.Unlock()
+	if done != nil {
+		<-done
+	}
 }
 
 func NewApp() (*App, error) {
@@ -99,7 +174,11 @@ func NewApp() (*App, error) {
 	documentStore, _ := storageBackend.(storage.JSONDocumentBackend)
 	imageSessions := service.NewImageConversationSessionService(filepath.Join(cfg.DataDir, "image_conversation_sessions.json"), storageBackend)
 	engine := &protocol.Engine{Accounts: accounts, Config: cfg, Storage: documentStore, Proxy: proxy, Logger: logger, ImageConversationSessions: imageSessions}
-	app := &App{config: cfg, auth: auth, accounts: accounts, logs: logs, logger: logger, proxy: proxy, engine: engine, images: service.NewImageService(cfg, storageBackend), prompts: service.NewPromptFavoriteService(storageBackend), history: service.NewImageConversationHistoryService(storageBackend), canvas: service.NewCanvasDocumentService(storageBackend), announce: service.NewAnnouncementService(storageBackend), newAPIKeys: newAPIKeys, cancel: cancel}
+	app := &App{config: cfg, auth: auth, accounts: accounts, logs: logs, logger: logger, proxy: proxy, engine: engine, images: service.NewImageService(cfg, storageBackend), conversationAssets: service.NewImageConversationAssetService(filepath.Join(cfg.DataDir, "image_conversation_assets")), prompts: service.NewPromptFavoriteService(storageBackend), history: service.NewImageConversationHistoryService(storageBackend), canvas: service.NewCanvasDocumentService(storageBackend), announce: service.NewAnnouncementService(storageBackend), newAPIKeys: newAPIKeys, cancel: cancel, historyWriteLimiter: newImageConversationHistoryWriteLimiter(imageConversationHistoryWriteParallelism), imageUploadSlots: make(chan struct{}, 2)}
+	app.conversationAssets.SetStorageBudget(cfg.ImageStorageLimitBytes, func() int64 {
+		return app.images.StorageGovernance().TotalBytes
+	})
+	app.history.SetConversationAssetService(app.conversationAssets)
 	app.tasks = service.NewStoredImageTaskService(storageBackend,
 		func(ctx context.Context, identity service.Identity, payload map[string]any) (map[string]any, error) {
 			return app.runLoggedImageTask(ctx, identity, payload, "/api/creation-tasks/image-generations", "文生图", func(ctx context.Context, payload map[string]any) (map[string]any, error) {
@@ -136,6 +215,8 @@ func NewApp() (*App, error) {
 		RetentionDays: cfg.ImageRetentionDays(),
 		MaxBytes:      cfg.ImageStorageLimitBytes(),
 	})
+	app.startImageStorageCleaner(ctx, time.Hour)
+	app.startImageConversationAssetCleaner(ctx, time.Hour)
 	return app, nil
 }
 
@@ -150,15 +231,15 @@ func collectRelayImageTaskStream(payload map[string]any, stream *protocol.Stream
 	created := time.Now().Unix()
 	model := ""
 	message := ""
-	indexed := map[int][]map[string]any{}
-	unindexed := []map[string]any{}
+	outputLimit := normalizedProtocolImageCount(payload["n"])
+	accumulator := newRelayImageStreamAccumulator(outputLimit)
 	onProgress := relayImageTaskProgressCallback(payload)
 
 	for item := range stream.Items {
 		if item == nil {
 			continue
 		}
-		if value := util.ToInt(item["created"], 0); value > 0 {
+		if value := util.ToInt(firstNonEmpty(util.Clean(item["created"]), util.Clean(item["created_at"])), 0); value > 0 {
 			created = int64(value)
 		}
 		if model == "" {
@@ -173,17 +254,13 @@ func collectRelayImageTaskStream(payload map[string]any, stream *protocol.Stream
 		if len(data) == 0 {
 			continue
 		}
-		if index := util.ToInt(item["index"], -1); index >= 0 {
-			indexed[index] = data
-		} else {
-			unindexed = data
-		}
+		accumulator.apply(item, data)
 		if onProgress != nil {
-			onProgress(relayImageStreamData(indexed, unindexed))
+			onProgress(accumulator.progressData())
 		}
 	}
 
-	data := relayImageStreamData(indexed, unindexed)
+	data := accumulator.finalData()
 	out := map[string]any{"created": created, "data": data}
 	if model != "" {
 		out["model"] = model
@@ -198,6 +275,133 @@ func collectRelayImageTaskStream(payload map[string]any, stream *protocol.Stream
 		return out, err
 	}
 	return out, nil
+}
+
+type relayImageStreamAccumulator struct {
+	final    []map[string]any
+	previews []map[string]any
+}
+
+func newRelayImageStreamAccumulator(outputLimit int) *relayImageStreamAccumulator {
+	outputLimit = normalizedProtocolImageCount(outputLimit)
+	return &relayImageStreamAccumulator{
+		final:    make([]map[string]any, outputLimit),
+		previews: make([]map[string]any, outputLimit),
+	}
+}
+
+func (a *relayImageStreamAccumulator) apply(event map[string]any, data []map[string]any) {
+	if a == nil || len(data) == 0 {
+		return
+	}
+	partial := isRelayImagePartialEvent(event)
+	if !partial && !isRelayImageCompletedEvent(event) {
+		return
+	}
+	start, indexed := relayImageEventOutputIndex(event)
+	for _, item := range data {
+		if !indexed {
+			start = a.nextFinalSlot()
+		}
+		if start < 0 || start >= len(a.final) {
+			return
+		}
+		clone := cloneRelayImageData([]map[string]any{item})
+		if len(clone) == 0 {
+			continue
+		}
+		if partial {
+			if a.final[start] == nil {
+				clone[0]["preview"] = true
+				a.previews[start] = clone[0]
+			}
+		} else {
+			delete(clone[0], "preview")
+			a.final[start] = clone[0]
+			a.previews[start] = nil
+		}
+		start++
+	}
+}
+
+func (a *relayImageStreamAccumulator) nextFinalSlot() int {
+	if a == nil {
+		return -1
+	}
+	for index, item := range a.final {
+		if item == nil {
+			return index
+		}
+	}
+	return -1
+}
+
+func (a *relayImageStreamAccumulator) progressData() []map[string]any {
+	if a == nil {
+		return nil
+	}
+	length := 0
+	for index := range a.final {
+		if a.final[index] != nil || a.previews[index] != nil {
+			length = index + 1
+		}
+	}
+	data := make([]map[string]any, length)
+	for index := range data {
+		switch {
+		case a.final[index] != nil:
+			data[index] = cloneRelayImageData([]map[string]any{a.final[index]})[0]
+		case a.previews[index] != nil:
+			data[index] = cloneRelayImageData([]map[string]any{a.previews[index]})[0]
+		default:
+			data[index] = map[string]any{}
+		}
+	}
+	return data
+}
+
+func (a *relayImageStreamAccumulator) finalData() []map[string]any {
+	if a == nil {
+		return nil
+	}
+	length := 0
+	for index, item := range a.final {
+		if item != nil {
+			length = index + 1
+		}
+	}
+	data := make([]map[string]any, length)
+	for index := range data {
+		if a.final[index] == nil {
+			data[index] = map[string]any{}
+			continue
+		}
+		data[index] = cloneRelayImageData([]map[string]any{a.final[index]})[0]
+	}
+	return data
+}
+
+func relayImageEventOutputIndex(event map[string]any) (int, bool) {
+	for _, key := range []string{"output_index", "index"} {
+		if _, exists := event[key]; !exists {
+			continue
+		}
+		index := util.ToInt(event[key], -1)
+		return index, index >= 0
+	}
+	return -1, false
+}
+
+func isRelayImagePartialEvent(event map[string]any) bool {
+	eventType := strings.ToLower(strings.TrimSpace(util.Clean(event["type"])))
+	return strings.HasSuffix(eventType, ".partial_image")
+}
+
+func isRelayImageCompletedEvent(event map[string]any) bool {
+	eventType := strings.ToLower(strings.TrimSpace(util.Clean(event["type"])))
+	// Some compatible relays use the legacy indexed data shape without an
+	// event type. Typed image streams are final only on a completed event.
+	return eventType == "" || strings.HasSuffix(eventType, ".completed")
 }
 
 func relayImageTaskProgressCallback(payload map[string]any) protocol.ImageOutputProgressCallback {
@@ -227,21 +431,45 @@ func relayImageStreamItemData(item map[string]any) []map[string]any {
 	return []map[string]any{data}
 }
 
-func relayImageStreamData(indexed map[int][]map[string]any, unindexed []map[string]any) []map[string]any {
+func relayImageStreamData(indexed map[int][]map[string]any, unindexed []map[string]any, outputLimit int) []map[string]any {
+	outputLimit = normalizedProtocolImageCount(outputLimit)
 	if len(unindexed) > 0 {
-		return cloneRelayImageData(unindexed)
-	}
-	data := []map[string]any{}
-	if len(indexed) == 0 {
+		data := cloneRelayImageData(unindexed)
+		if len(data) > outputLimit {
+			data = data[:outputLimit]
+		}
 		return data
 	}
-	keys := make([]int, 0, len(indexed))
-	for index := range indexed {
-		keys = append(keys, index)
+	if len(indexed) == 0 {
+		return []map[string]any{}
 	}
-	sort.Ints(keys)
-	for _, index := range keys {
-		data = append(data, cloneRelayImageData(indexed[index])...)
+	length := 0
+	for index, items := range indexed {
+		if index < 0 || index >= outputLimit {
+			continue
+		}
+		itemCount := len(items)
+		if available := outputLimit - index; itemCount > available {
+			itemCount = available
+		}
+		if end := index + itemCount; end > length {
+			length = end
+		}
+	}
+	data := make([]map[string]any, length)
+	for index := range data {
+		data[index] = map[string]any{}
+	}
+	for index, items := range indexed {
+		if index < 0 || index >= len(data) {
+			continue
+		}
+		for offset, item := range cloneRelayImageData(items) {
+			if index+offset >= len(data) {
+				break
+			}
+			data[index+offset] = item
+		}
 	}
 	return data
 }
@@ -268,6 +496,11 @@ func (a *App) Close() {
 	if a.cancel != nil {
 		a.cancel()
 	}
+	if a.tasks != nil {
+		a.tasks.Close()
+	}
+	a.closeImageStorageCleaner()
+	a.closeImageConversationAssetCleaner()
 	if a.logger != nil {
 		_ = a.logger.Close()
 	}
@@ -333,9 +566,15 @@ func (a *App) handleImageEdits(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	body, images, err := readMultipartImageBody(r)
+	release, acquired := a.acquireImageUpload(r.Context())
+	if !acquired {
+		util.WriteError(w, http.StatusRequestTimeout, "image upload was canceled")
+		return
+	}
+	defer release()
+	body, images, err := readMultipartImageBody(w, r)
 	if err != nil {
-		util.WriteError(w, http.StatusBadRequest, err.Error())
+		writeMultipartImageBodyError(w, err)
 		return
 	}
 	if n := util.ToInt(body["n"], 1); n < 1 || n > 4 {
@@ -537,8 +776,14 @@ func (a *App) writeProtocolError(w http.ResponseWriter, err error) {
 }
 
 func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxLoginRequestBodyBytes)
 	body, err := readJSONMap(r)
 	if err != nil {
+		var maxBytesError *http.MaxBytesError
+		if errors.As(err, &maxBytesError) {
+			util.WriteError(w, http.StatusRequestEntityTooLarge, "login payload is too large")
+			return
+		}
 		util.WriteError(w, http.StatusBadRequest, "invalid json body")
 		return
 	}
@@ -1100,7 +1345,11 @@ func (a *App) handleImages(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusBadRequest, "invalid json body")
 			return
 		}
-		result, err := a.images.DeleteImages(util.AsStringSlice(body["paths"]), service.ImageAccessScope{All: true})
+		scope := service.ImageAccessScope{OwnerID: identityScope(identity)}
+		if identity.Role == service.AuthRoleAdmin {
+			scope = service.ImageAccessScope{All: true}
+		}
+		result, err := a.images.DeleteImages(util.AsStringSlice(body["paths"]), scope)
 		if err != nil {
 			util.WriteError(w, http.StatusBadRequest, err.Error())
 			return
@@ -1362,7 +1611,7 @@ func (a *App) handleImageStorageGovernance(w http.ResponseWriter, r *http.Reques
 	}
 	switch r.Method {
 	case http.MethodGet:
-		util.WriteJSON(w, http.StatusOK, map[string]any{"governance": a.images.StorageGovernance()})
+		util.WriteJSON(w, http.StatusOK, map[string]any{"governance": a.imageStorageGovernance()})
 	case http.MethodPost:
 		body, err := readJSONMap(r)
 		if err != nil {
@@ -1388,6 +1637,9 @@ func (a *App) handleImageStorageGovernance(w http.ResponseWriter, r *http.Reques
 			util.WriteError(w, http.StatusBadRequest, "action must be retention, quota, thumbnails, or all")
 			return
 		}
+		if options.MaxBytes > 0 && a.conversationAssets != nil {
+			options.MaxBytes = imageStorageLimitAvailableForGallery(options.MaxBytes, a.conversationAssets.Governance().TotalBytes)
+		}
 		result, err := a.images.CleanupStorage(options)
 		if err != nil {
 			util.WriteError(w, http.StatusBadRequest, err.Error())
@@ -1395,7 +1647,7 @@ func (a *App) handleImageStorageGovernance(w http.ResponseWriter, r *http.Reques
 		}
 		util.WriteJSON(w, http.StatusOK, map[string]any{
 			"cleanup":    result,
-			"governance": a.images.StorageGovernance(),
+			"governance": a.imageStorageGovernance(),
 		})
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -1681,10 +1933,12 @@ func readJSONMap(r *http.Request) (map[string]any, error) {
 	return body, err
 }
 
-func readMultipartImageBody(r *http.Request) (map[string]any, []protocol.UploadedImage, error) {
-	if err := r.ParseMultipartForm(128 << 20); err != nil {
+func readMultipartImageBody(w http.ResponseWriter, r *http.Request) (map[string]any, []protocol.UploadedImage, error) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxRelayImageEditRequestBytes)
+	if err := r.ParseMultipartForm(maxRelayImageMultipartMemory); err != nil {
 		return nil, nil, err
 	}
+	defer r.MultipartForm.RemoveAll()
 	body := map[string]any{
 		"client_task_id":          firstForm(r.MultipartForm, "client_task_id"),
 		"prompt":                  firstForm(r.MultipartForm, "prompt"),
@@ -1722,20 +1976,33 @@ func readMultipartImageBody(r *http.Request) (map[string]any, []protocol.Uploade
 		}
 		body["fallback_reference_image"] = fallback
 	}
-	var images []protocol.UploadedImage
-	for _, field := range []string{"image", "image[]"} {
-		for _, header := range r.MultipartForm.File[field] {
-			image, err := readUpload(header)
-			if err != nil {
-				return nil, nil, err
-			}
-			if len(image.Data) == 0 {
-				return nil, nil, fmt.Errorf("image file is empty")
-			}
-			images = append(images, image)
+	headers := multipartImageFileHeaders(r.MultipartForm)
+	if len(headers) > maxRelayInputImages {
+		return nil, nil, errTooManyRelayImages
+	}
+	images := make([]protocol.UploadedImage, 0, len(headers))
+	for _, header := range headers {
+		image, err := readUpload(header)
+		if err != nil {
+			return nil, nil, err
 		}
+		if len(image.Data) == 0 {
+			return nil, nil, fmt.Errorf("image file is empty")
+		}
+		images = append(images, image)
 	}
 	return body, images, nil
+}
+
+func multipartImageFileHeaders(form *multipart.Form) []*multipart.FileHeader {
+	if form == nil {
+		return nil
+	}
+	headers := make([]*multipart.FileHeader, 0)
+	for _, field := range []string{"image", "image[]"} {
+		headers = append(headers, form.File[field]...)
+	}
+	return headers
 }
 
 func firstForm(form *multipart.Form, key string) string {
@@ -1751,23 +2018,58 @@ func readUpload(header *multipart.FileHeader) (protocol.UploadedImage, error) {
 		return protocol.UploadedImage{}, err
 	}
 	defer file.Close()
-	data, err := io.ReadAll(file)
+	data, err := readLimitedUploadData(file, maxRelayImageBytes)
 	if err != nil {
 		return protocol.UploadedImage{}, err
 	}
-	contentType := header.Header.Get("Content-Type")
-	contentType = normalizeUploadedImageContentType(contentType)
-	if contentType == "" {
-		contentType = normalizeUploadedImageContentType(http.DetectContentType(data))
-	}
-	if contentType == "" {
-		contentType = "image/png"
+	contentType, err := uploadedImageContentType(data)
+	if err != nil {
+		return protocol.UploadedImage{}, err
 	}
 	filename := header.Filename
 	if filename == "" {
 		filename = "image.png"
 	}
 	return protocol.UploadedImage{Data: data, Filename: filename, ContentType: contentType}, nil
+}
+
+func readLimitedUploadData(reader io.Reader, maxBytes int64) ([]byte, error) {
+	if reader == nil || maxBytes < 1 {
+		return nil, errUnsupportedRelayImage
+	}
+	data, err := io.ReadAll(io.LimitReader(reader, maxBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > maxBytes {
+		return nil, errRelayImageTooLarge
+	}
+	return data, nil
+}
+
+func uploadedImageContentType(data []byte) (string, error) {
+	if len(data) == 0 {
+		return "", fmt.Errorf("image file is empty")
+	}
+	_, format, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return "", errUnsupportedRelayImage
+	}
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "png", "jpeg", "gif", "webp":
+		return "image/" + strings.ToLower(strings.TrimSpace(format)), nil
+	default:
+		return "", errUnsupportedRelayImage
+	}
+}
+
+func writeMultipartImageBodyError(w http.ResponseWriter, err error) {
+	status := http.StatusBadRequest
+	var maxBytesError *http.MaxBytesError
+	if errors.As(err, &maxBytesError) || errors.Is(err, errRelayImageTooLarge) {
+		status = http.StatusRequestEntityTooLarge
+	}
+	util.WriteError(w, status, err.Error())
 }
 
 func normalizeUploadedImageContentType(contentType string) string {
@@ -2028,8 +2330,8 @@ func (a *App) recordGeneratedImages(identity service.Identity, urls []string, vi
 		return
 	}
 	ownerID := identityScope(identity)
-	a.images.RecordGeneratedImages(urls, ownerID, identityDisplayName(identity), visibility)
-	a.cleanupImageStorage()
+	a.images.RecordGeneratedImageMetadata(urls, ownerID, identityDisplayName(identity), visibility)
+	a.scheduleImageStorageCleanup()
 }
 
 func (a *App) recordProtocolGeneratedImages(identity service.Identity, urls []string, visibility string, payloads ...map[string]any) {
@@ -2051,7 +2353,7 @@ func (a *App) recordGeneratedImagesForPayload(identity service.Identity, urls []
 		outputCompressionPtr = &outputCompression
 	}
 	sharePromptParams := util.ToBool(payload["share_prompt_parameters"])
-	a.images.RecordGeneratedImages(urls, ownerID, identityDisplayName(identity), visibility, service.GeneratedImageMetadata{
+	a.images.RecordGeneratedImageMetadata(urls, ownerID, identityDisplayName(identity), visibility, service.GeneratedImageMetadata{
 		Prompt:            util.Clean(payload["prompt"]),
 		Model:             firstNonEmpty(util.Clean(payload["model"]), a.defaultImageModel()),
 		Quality:           util.Clean(payload["quality"]),
@@ -2065,16 +2367,56 @@ func (a *App) recordGeneratedImagesForPayload(identity service.Identity, urls []
 		SharePromptParams: sharePromptParams,
 		ShareReferences:   sharePromptParams && util.ToBool(payload["share_reference_images"]),
 	})
-	a.cleanupImageStorage()
+	a.scheduleImageStorageCleanup()
+}
+
+func (a *App) startImageStorageCleaner(ctx context.Context, interval time.Duration) {
+	if a == nil || a.images == nil {
+		return
+	}
+	if interval <= 0 {
+		interval = time.Hour
+	}
+	go func() {
+		timer := time.NewTimer(interval)
+		defer timer.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-timer.C:
+				a.scheduleImageStorageCleanup()
+				timer.Reset(interval)
+			}
+		}
+	}()
+}
+
+func (a *App) scheduleImageStorageCleanup() {
+	if a == nil || a.images == nil || a.config == nil {
+		return
+	}
+	a.imageCleanup.schedule(a.cleanupImageStorage)
+}
+
+func (a *App) closeImageStorageCleaner() {
+	if a == nil {
+		return
+	}
+	a.imageCleanup.close()
 }
 
 func (a *App) cleanupImageStorage() {
 	if a == nil || a.images == nil || a.config == nil {
 		return
 	}
+	maxBytes := a.config.ImageStorageLimitBytes()
+	if a.conversationAssets != nil {
+		maxBytes = imageStorageLimitAvailableForGallery(maxBytes, a.conversationAssets.Governance().TotalBytes)
+	}
 	_, _ = a.images.CleanupStorage(service.ImageStorageCleanupOptions{
 		RetentionDays: a.config.ImageRetentionDays(),
-		MaxBytes:      a.config.ImageStorageLimitBytes(),
+		MaxBytes:      maxBytes,
 	})
 }
 
@@ -2160,6 +2502,17 @@ func (a *App) runLoggedImageTask(ctx context.Context, identity service.Identity,
 	payload["owner_id"] = identityScope(identity)
 	payload["owner_name"] = identityDisplayName(identity)
 	model := firstNonEmpty(util.Clean(payload["model"]), a.defaultImageModel())
+	managedSlot := relayImageOutputSlotAcquirer(payload) != nil
+	release, err := relayAcquireImageTaskSlot(ctx, payload)
+	if err != nil {
+		a.logCall(ctx, identity, summary, http.MethodPost, endpoint, model, start, "failed", protocolErrorHTTPStatus(err), err.Error(), nil, requestCapture)
+		return nil, err
+	}
+	if managedSlot {
+		payload[relayImageTaskSlotManagedPayloadKey] = relayImageTaskSlotManagedMarker{}
+		payload[service.ImageOutputCompletionReleasePayloadKey] = release
+		defer delete(payload, relayImageTaskSlotManagedPayloadKey)
+	}
 	result, err := run(ctx, payload)
 	a.localizeRelayImageResult(ctx, identity, result, payload)
 	urls := collectURLs(result)
@@ -2495,7 +2848,11 @@ func (a *App) attachCreationTaskLimiter(body map[string]any, identity service.Id
 		return
 	}
 	body[protocol.ImageOutputSlotAcquirerPayloadKey] = func(ctx context.Context, index int) (func(), error) {
-		return a.tasks.AcquireCreationUnit(ctx, identity)
+		units := 1
+		if index <= 0 {
+			units = normalizedProtocolImageCount(body["n"])
+		}
+		return a.tasks.AcquireCreationUnits(ctx, identity, units)
 	}
 }
 

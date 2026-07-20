@@ -20,6 +20,15 @@ import (
 	"chatgpt2api/internal/util"
 )
 
+const (
+	relayImageTaskSlotManagedPayloadKey = "relay_image_task_slot_managed"
+	relayStreamMaxTokenSize             = 64 * 1024 * 1024
+	relayJSONSuccessMaxBytes            = 256 * 1024 * 1024
+	relayJSONErrorMaxBytes              = 1 * 1024 * 1024
+)
+
+type relayImageTaskSlotManagedMarker struct{}
+
 func (a *App) attachRelayAPIKeyForIdentity(ctx context.Context, identity service.Identity, body map[string]any) error {
 	if body == nil {
 		return nil
@@ -106,9 +115,13 @@ func (a *App) relayImageGenerations(ctx context.Context, payload map[string]any)
 	if strings.TrimSpace(util.Clean(payload["prompt"])) == "" {
 		return nil, nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: "prompt is required"}
 	}
-	release, err := relayAcquireImageTaskSlot(ctx, payload)
-	if err != nil {
-		return nil, nil, err
+	var release func()
+	var err error
+	if !relayImageTaskSlotIsManaged(payload) {
+		release, err = relayAcquireImageTaskSlot(ctx, payload)
+		if err != nil {
+			return nil, nil, err
+		}
 	}
 	result, stream, err := a.relayJSONMaybeStream(ctx, "/v1/images/generations", payload)
 	if err != nil {
@@ -116,6 +129,9 @@ func (a *App) relayImageGenerations(ctx context.Context, payload map[string]any)
 			release()
 		}
 		return result, stream, err
+	}
+	if stream != nil && release != nil {
+		return result, relayImageStreamWithSlotRelease(ctx, stream, release), nil
 	}
 	if release != nil {
 		release()
@@ -130,9 +146,13 @@ func (a *App) relayImageEdits(ctx context.Context, payload map[string]any, image
 	if strings.TrimSpace(util.Clean(payload["prompt"])) == "" {
 		return nil, nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: "prompt is required"}
 	}
-	release, err := relayAcquireImageTaskSlot(ctx, payload)
-	if err != nil {
-		return nil, nil, err
+	var release func()
+	var err error
+	if !relayImageTaskSlotIsManaged(payload) {
+		release, err = relayAcquireImageTaskSlot(ctx, payload)
+		if err != nil {
+			return nil, nil, err
+		}
 	}
 	result, stream, err := a.relayMultipartMaybeStream(ctx, "/v1/images/edits", payload, images)
 	if err != nil {
@@ -140,6 +160,9 @@ func (a *App) relayImageEdits(ctx context.Context, payload map[string]any, image
 			release()
 		}
 		return result, stream, err
+	}
+	if stream != nil && release != nil {
+		return result, relayImageStreamWithSlotRelease(ctx, stream, release), nil
 	}
 	if release != nil {
 		release()
@@ -626,6 +649,8 @@ func shouldDropRelayPayloadKey(key string) bool {
 		"owner_id", "owner_name", "base_url", "visibility", "client_task_id",
 		"image_resolution", "requested_size", "images",
 		"share_prompt_parameters", "share_reference_images",
+		relayImageTaskSlotManagedPayloadKey,
+		service.ImageOutputCompletionReleasePayloadKey,
 		protocol.ImageOutputSlotAcquirerPayloadKey,
 		"image_output_callback", "text_output_callback":
 		return true
@@ -635,9 +660,30 @@ func shouldDropRelayPayloadKey(key string) bool {
 }
 
 func relayDecodeJSONResponse(resp *http.Response) (map[string]any, error) {
-	data, err := io.ReadAll(resp.Body)
+	return relayDecodeJSONResponseWithLimits(resp, relayJSONSuccessMaxBytes, relayJSONErrorMaxBytes)
+}
+
+func relayDecodeJSONResponseWithLimits(resp *http.Response, successLimit, errorLimit int64) (map[string]any, error) {
+	if resp == nil || resp.Body == nil {
+		return nil, protocol.HTTPError{Status: http.StatusBadGateway, Message: "upstream response body is unavailable"}
+	}
+	maxBytes := successLimit
+	tooLargeStatus := http.StatusBadGateway
+	tooLargeMessage := "upstream response is too large"
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		maxBytes = errorLimit
+		tooLargeStatus = resp.StatusCode
+		tooLargeMessage = "upstream error response is too large"
+	}
+	if maxBytes < 1 {
+		return nil, protocol.HTTPError{Status: tooLargeStatus, Message: tooLargeMessage}
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
 	if err != nil {
 		return nil, err
+	}
+	if int64(len(data)) > maxBytes {
+		return nil, protocol.HTTPError{Status: tooLargeStatus, Message: tooLargeMessage}
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return nil, protocol.HTTPError{Status: resp.StatusCode, Message: relayErrorMessage(data, resp.Status)}
@@ -680,7 +726,7 @@ func relayStreamResult(body io.ReadCloser) *protocol.StreamResult {
 		defer close(errCh)
 		defer body.Close()
 		scanner := bufio.NewScanner(body)
-		scanner.Buffer(make([]byte, 64*1024), 4*1024*1024)
+		scanner.Buffer(make([]byte, 64*1024), relayStreamMaxTokenSize)
 		for scanner.Scan() {
 			line := strings.TrimSpace(scanner.Text())
 			if !strings.HasPrefix(line, "data:") {
@@ -748,6 +794,56 @@ func relayAcquireImageTaskSlot(ctx context.Context, payload map[string]any) (fun
 		return nil, nil
 	}
 	return acquire(ctx, 0)
+}
+
+func relayImageTaskSlotIsManaged(payload map[string]any) bool {
+	if payload == nil {
+		return false
+	}
+	_, ok := payload[relayImageTaskSlotManagedPayloadKey].(relayImageTaskSlotManagedMarker)
+	return ok
+}
+
+func relayImageStreamWithSlotRelease(ctx context.Context, stream *protocol.StreamResult, release func()) *protocol.StreamResult {
+	if stream == nil || release == nil {
+		return stream
+	}
+	items := make(chan map[string]any)
+	errs := make(chan error, 1)
+	go func() {
+		defer close(items)
+		defer close(errs)
+		defer release()
+	streamItems:
+		for {
+			var item map[string]any
+			var ok bool
+			select {
+			case item, ok = <-stream.Items:
+				if !ok {
+					break streamItems
+				}
+			case <-ctx.Done():
+				errs <- ctx.Err()
+				return
+			}
+			select {
+			case items <- item:
+			case <-ctx.Done():
+				errs <- ctx.Err()
+				return
+			}
+		}
+		select {
+		case err, ok := <-stream.Err:
+			if ok {
+				errs <- err
+			}
+		case <-ctx.Done():
+			errs <- ctx.Err()
+		}
+	}()
+	return &protocol.StreamResult{Items: items, Err: errs, Kind: stream.Kind}
 }
 
 func relayImageOutputSlotAcquirer(payload map[string]any) protocol.ImageOutputSlotAcquirer {

@@ -116,10 +116,11 @@ type RequestOptions = {
     headers?: Record<string, string>;
     redirectOnUnauthorized?: boolean;
     signal?: AbortSignal;
+    timeout?: number;
 };
 
 export async function httpRequest<T>(path: string, options: RequestOptions = {}) {
-    const {method = "GET", body, headers, redirectOnUnauthorized = true, signal} = options;
+    const {method = "GET", body, headers, redirectOnUnauthorized = true, signal, timeout} = options;
     const config: RequestConfig = {
         url: path,
         method,
@@ -127,6 +128,7 @@ export async function httpRequest<T>(path: string, options: RequestOptions = {})
         headers,
         redirectOnUnauthorized,
         signal,
+        timeout,
     };
     const response = await request.request<T>(config);
     return response.data;

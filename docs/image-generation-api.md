@@ -123,6 +123,12 @@ curl http://localhost:3000/v1/images/generations \
 - `image` 或 `image[]`：至少一个图片文件。
 - `prompt`：编辑提示词。
 
+上传限制：
+
+- 最多 4 张参考图。
+- 单张图片最大 40 MiB。
+- 支持 PNG、JPEG、WebP 和 GIF；服务端会校验实际文件内容，不依赖客户端声明的 MIME 类型。
+
 示例：
 
 ```bash

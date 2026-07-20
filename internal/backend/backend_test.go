@@ -71,6 +71,78 @@ func TestUpstreamHTTPErrorKeepsPlainBodyDetail(t *testing.T) {
 	}
 }
 
+func TestReadUpstreamErrorBodyIsBounded(t *testing.T) {
+	body := readUpstreamErrorBody(strings.NewReader(strings.Repeat("x", upstreamErrorBodyMaxBytes+1)))
+	if len(body) != upstreamErrorBodyMaxBytes {
+		t.Fatalf("readUpstreamErrorBody() length = %d, want %d", len(body), upstreamErrorBodyMaxBytes)
+	}
+}
+
+func TestReadResponsesImageBodyWithLimit(t *testing.T) {
+	data, err := readResponsesImageBodyWithLimit(strings.NewReader("12345678"), 8)
+	if err != nil || string(data) != "12345678" {
+		t.Fatalf("readResponsesImageBodyWithLimit(exact) = (%q, %v)", data, err)
+	}
+	_, err = readResponsesImageBodyWithLimit(strings.NewReader("123456789"), 8)
+	if !errors.Is(err, errUpstreamResponseTooLarge) {
+		t.Fatalf("readResponsesImageBodyWithLimit(oversize) error = %v", err)
+	}
+}
+
+func TestDecodeResponsesImageJSONWithLimit(t *testing.T) {
+	const payload = `{"ok":true}`
+	var decoded map[string]any
+	if err := decodeResponsesImageJSONWithLimit(strings.NewReader(payload), &decoded, int64(len(payload))); err != nil {
+		t.Fatalf("decodeResponsesImageJSONWithLimit(exact) error = %v", err)
+	}
+	if decoded["ok"] != true {
+		t.Fatalf("decodeResponsesImageJSONWithLimit(exact) = %#v", decoded)
+	}
+	if err := decodeResponsesImageJSONWithLimit(strings.NewReader(payload+" "), &decoded, int64(len(payload))); !errors.Is(err, errUpstreamResponseTooLarge) {
+		t.Fatalf("decodeResponsesImageJSONWithLimit(oversize) error = %v", err)
+	}
+}
+
+func TestResponsesImageLimitsAllowFortyMiBBase64Event(t *testing.T) {
+	encodedBytes := base64.StdEncoding.EncodedLen(responsesImageDownloadMaxBytes)
+	const eventEnvelopeAllowance = 1 << 20
+	if encodedBytes+eventEnvelopeAllowance > upstreamSSEEventMaxBytes {
+		t.Fatalf(
+			"40 MiB base64 event requires %d bytes plus envelope, SSE limit is %d",
+			encodedBytes,
+			upstreamSSEEventMaxBytes,
+		)
+	}
+}
+
+func TestIterSSEPayloadsEnforcesEventLimit(t *testing.T) {
+	const payload = "1234567890"
+	line := "data: " + payload
+	out := make(chan string, 1)
+	if err := iterSSEPayloadsWithLimit(context.Background(), strings.NewReader(line+"\n"), out, len(line)); err != nil {
+		t.Fatalf("iterSSEPayloadsWithLimit(exact) error = %v", err)
+	}
+	if got := <-out; got != payload {
+		t.Fatalf("iterSSEPayloadsWithLimit(exact) payload = %q", got)
+	}
+	if err := iterSSEPayloadsWithLimit(context.Background(), strings.NewReader(line+"x"), out, len(line)); !errors.Is(err, errUpstreamSSEEventTooLarge) {
+		t.Fatalf("iterSSEPayloadsWithLimit(oversize) error = %v", err)
+	}
+}
+
+func TestIterMultimodalSSEPayloadsEnforcesEventLimit(t *testing.T) {
+	out := make(chan string, 1)
+	err := iterMultimodalSSEPayloadsWithLimit(
+		context.Background(),
+		strings.NewReader(strings.Repeat("x", 17)),
+		out,
+		16,
+	)
+	if !errors.Is(err, errUpstreamSSEEventTooLarge) {
+		t.Fatalf("iterMultimodalSSEPayloadsWithLimit(oversize) error = %v", err)
+	}
+}
+
 func TestUpstreamTransportErrorSummarizesSurfHandshakeFailure(t *testing.T) {
 	err := upstreamTransportError("bootstrap", errString(`Get "https://chatgpt.com/": surf: HTTP/2 request failed: uTLS.HandshakeContext() error: EOF; HTTP/1.1 fallback failed: uTLS.HandshakeContext() error: EOF`))
 	got := err.Error()

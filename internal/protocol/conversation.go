@@ -668,14 +668,12 @@ func (e *Engine) runSingleImageOutput(ctx context.Context, out chan<- ImageOutpu
 				emittedForToken = true
 				returnedMessage = output.Kind == "message"
 				returnedResult = returnedResult || output.Kind == "result"
-				select {
-				case out <- output:
-				case <-ctx.Done():
+				if err := sendImageOutput(ctx, out, output); err != nil {
 					if e.Accounts != nil {
 						e.Accounts.MarkImageResult(token, false)
 					}
-					result.err = ctx.Err()
-					result.lastError = ctx.Err().Error()
+					result.err = err
+					result.lastError = err.Error()
 					return false
 				}
 			}
@@ -862,12 +860,18 @@ func (e *Engine) StreamResponsesImageOutputs(ctx context.Context, client *backen
 		seen := map[string]struct{}{}
 		for event := range events {
 			if event.PartialImage != "" {
-				out <- ImageOutput{Kind: "progress", Model: request.Model, Index: index, Total: total, Created: firstNonZeroInt64(event.Created, time.Now().Unix()), Text: event.Text, ConversationID: event.ConversationID, MessageID: event.MessageID, UpstreamEventType: event.Type}
+				if err := sendImageOutput(ctx, out, ImageOutput{Kind: "progress", Model: request.Model, Index: index, Total: total, Created: firstNonZeroInt64(event.Created, time.Now().Unix()), Text: event.Text, ConversationID: event.ConversationID, MessageID: event.MessageID, UpstreamEventType: event.Type}); err != nil {
+					errCh <- err
+					return
+				}
 				continue
 			}
 			if isFinalImageTextEvent(event) {
 				emitted = true
-				out <- ImageOutput{Kind: "message", Model: request.Model, Index: index, Total: total, Created: firstNonZeroInt64(event.Created, time.Now().Unix()), Text: strings.TrimSpace(event.Text), ConversationID: event.ConversationID, MessageID: event.MessageID, UpstreamEventType: event.Type}
+				if err := sendImageOutput(ctx, out, ImageOutput{Kind: "message", Model: request.Model, Index: index, Total: total, Created: firstNonZeroInt64(event.Created, time.Now().Unix()), Text: strings.TrimSpace(event.Text), ConversationID: event.ConversationID, MessageID: event.MessageID, UpstreamEventType: event.Type}); err != nil {
+					errCh <- err
+					return
+				}
 				continue
 			}
 			if event.Result == "" {
@@ -891,7 +895,10 @@ func (e *Engine) StreamResponsesImageOutputs(ctx context.Context, client *backen
 			data := util.AsMapSlice(result["data"])
 			if len(data) > 0 {
 				emitted = true
-				out <- ImageOutput{Kind: "result", Model: request.Model, Index: index, Total: total, Created: created, Data: data}
+				if err := sendImageOutput(ctx, out, ImageOutput{Kind: "result", Model: request.Model, Index: index, Total: total, Created: created, Data: data}); err != nil {
+					errCh <- err
+					return
+				}
 			}
 		}
 		if err := <-upstreamErr; err != nil {
@@ -905,6 +912,18 @@ func (e *Engine) StreamResponsesImageOutputs(ctx context.Context, client *backen
 		errCh <- nil
 	}()
 	return out, errCh
+}
+
+func sendImageOutput(ctx context.Context, out chan<- ImageOutput, output ImageOutput) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case out <- output:
+		return nil
+	}
 }
 
 func imageResultOutputOptions(request ConversationRequest, event backend.ResponsesImageEvent) ImageOutputOptions {

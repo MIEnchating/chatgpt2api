@@ -13,6 +13,12 @@ import (
 	"chatgpt2api/internal/httpapi"
 )
 
+const (
+	httpReadHeaderTimeout = 15 * time.Second
+	httpReadTimeout       = 3 * time.Minute
+	httpIdleTimeout       = 2 * time.Minute
+)
+
 func main() {
 	app, err := httpapi.NewApp()
 	if err != nil {
@@ -25,11 +31,7 @@ func main() {
 	}
 	logger := app.Logger()
 
-	server := &http.Server{
-		Addr:              ":" + port,
-		Handler:           app.Handler(),
-		ReadHeaderTimeout: 30 * time.Second,
-	}
+	server := newHTTPServer(":"+port, app.Handler())
 
 	go func() {
 		logger.Info("starting server", "addr", ":"+port)
@@ -49,4 +51,14 @@ func main() {
 		logger.Error("server shutdown failed", "error", err)
 	}
 	app.Close()
+}
+
+func newHTTPServer(addr string, handler http.Handler) *http.Server {
+	return &http.Server{
+		Addr:              addr,
+		Handler:           handler,
+		ReadHeaderTimeout: httpReadHeaderTimeout,
+		ReadTimeout:       httpReadTimeout,
+		IdleTimeout:       httpIdleTimeout,
+	}
 }

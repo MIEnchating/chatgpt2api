@@ -31,8 +31,10 @@ export type StoredAuthSession = {
 
 export const AUTH_SESSION_STORAGE_KEY = "chatgpt2api_auth_session";
 
+const LOCALFORAGE_DATABASE_NAME = "chatgpt2api";
+
 const authStorage = localforage.createInstance({
-  name: "chatgpt2api",
+  name: LOCALFORAGE_DATABASE_NAME,
   storeName: "auth",
 });
 
@@ -149,7 +151,8 @@ export async function getStoredAuthSession() {
     return null;
   }
 
-  return normalizeSession(await authStorage.getItem<StoredAuthSession>(AUTH_SESSION_STORAGE_KEY));
+  const session = normalizeSession(await authStorage.getItem<StoredAuthSession>(AUTH_SESSION_STORAGE_KEY));
+  return session;
 }
 
 export async function getStoredSessionToken() {

@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	_ "github.com/go-sql-driver/mysql"
+	mysqlDriver "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
 	_ "modernc.org/sqlite"
 )
@@ -52,6 +52,9 @@ func NewBackendFromEnv(dataDir string) (Backend, error) {
 	case "sqlite", "postgres", "postgresql", "mysql", "database":
 		dsn := strings.TrimSpace(os.Getenv("DATABASE_URL"))
 		if dsn == "" {
+			if backendType != "sqlite" {
+				return nil, fmt.Errorf("DATABASE_URL is required for %s storage", backendType)
+			}
 			dsn = "sqlite:///" + filepath.ToSlash(filepath.Join(dataDir, "chatgpt2api.db"))
 		}
 		return NewDatabaseBackend(dsn)
@@ -144,8 +147,8 @@ func (b *DatabaseBackend) init() error {
 	}
 	if b.driver == "mysql" {
 		schema = []string{
-			`CREATE TABLE IF NOT EXISTS accounts (id INTEGER PRIMARY KEY AUTO_INCREMENT, access_token TEXT UNIQUE NOT NULL, data TEXT NOT NULL)`,
-			`CREATE TABLE IF NOT EXISTS auth_keys (id INTEGER PRIMARY KEY AUTO_INCREMENT, key_id TEXT UNIQUE NOT NULL, data TEXT NOT NULL)`,
+			`CREATE TABLE IF NOT EXISTS accounts (id INTEGER PRIMARY KEY AUTO_INCREMENT, access_token LONGTEXT NOT NULL, data LONGTEXT NOT NULL)`,
+			`CREATE TABLE IF NOT EXISTS auth_keys (id INTEGER PRIMARY KEY AUTO_INCREMENT, key_id VARCHAR(768) CHARACTER SET ascii COLLATE ascii_bin UNIQUE NOT NULL, data LONGTEXT NOT NULL)`,
 			`CREATE TABLE IF NOT EXISTS json_documents (name VARCHAR(512) PRIMARY KEY, data LONGTEXT NOT NULL, updated_at TEXT NOT NULL)`,
 			`CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY AUTO_INCREMENT, created_at TEXT NOT NULL, type VARCHAR(64) NOT NULL, day VARCHAR(10) NOT NULL, data LONGTEXT NOT NULL)`,
 			`CREATE INDEX idx_logs_day_id ON logs (day, id)`,
@@ -153,10 +156,14 @@ func (b *DatabaseBackend) init() error {
 	}
 	for _, stmt := range schema {
 		if _, err := b.db.Exec(stmt); err != nil {
+			var mysqlError *mysqlDriver.MySQLError
+			if b.driver == "mysql" && errors.As(err, &mysqlError) && mysqlError.Number == 1061 {
+				continue
+			}
 			return err
 		}
 	}
-	return nil
+	return b.initImageConversationSchema()
 }
 
 func (b *DatabaseBackend) LoadAccounts() ([]map[string]any, error) {
@@ -447,24 +454,51 @@ func logDay(value string) string {
 }
 
 func ParseDatabaseURL(databaseURL string) (driver, dsn string, err error) {
+	databaseURL = strings.TrimSpace(databaseURL)
+	if databaseURL == "" {
+		return "", "", fmt.Errorf("database URL is required")
+	}
 	lower := strings.ToLower(databaseURL)
 	switch {
 	case strings.HasPrefix(lower, "sqlite:///"):
-		return "sqlite", strings.TrimPrefix(databaseURL, "sqlite:///"), nil
+		return "sqlite", databaseURL[len("sqlite:///"):], nil
 	case strings.HasPrefix(lower, "sqlite://"):
-		return "sqlite", strings.TrimPrefix(databaseURL, "sqlite://"), nil
+		return "sqlite", databaseURL[len("sqlite://"):], nil
 	case strings.HasPrefix(lower, "postgresql://"), strings.HasPrefix(lower, "postgres://"):
-		return "postgres", databaseURL, nil
+		u, parseErr := url.Parse(databaseURL)
+		if parseErr != nil {
+			return "", "", parseErr
+		}
+		u.Scheme = strings.ToLower(u.Scheme)
+		return "postgres", u.String(), nil
 	case strings.HasPrefix(lower, "mysql://"):
 		u, parseErr := url.Parse(databaseURL)
 		if parseErr != nil {
 			return "", "", parseErr
 		}
+		if u.User == nil {
+			return "", "", fmt.Errorf("mysql database URL requires user, host, and database name")
+		}
 		pass, _ := u.User.Password()
 		user := u.User.Username()
 		db := strings.TrimPrefix(u.Path, "/")
-		return "mysql", fmt.Sprintf("%s:%s@tcp(%s)/%s?parseTime=true", user, pass, u.Host, db), nil
+		if user == "" || u.Host == "" || db == "" {
+			return "", "", fmt.Errorf("mysql database URL requires user, host, and database name")
+		}
+		params := u.Query()
+		params.Set("parseTime", "true")
+		return "mysql", fmt.Sprintf(
+			"%s:%s@tcp(%s)/%s?%s",
+			user,
+			pass,
+			u.Host,
+			url.PathEscape(db),
+			params.Encode(),
+		), nil
 	default:
+		if strings.Contains(databaseURL, "://") {
+			return "", "", fmt.Errorf("unsupported database URL scheme")
+		}
 		if strings.Contains(lower, "postgres") {
 			return "postgres", databaseURL, nil
 		}

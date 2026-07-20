@@ -18,7 +18,7 @@ import { getManagedImageUrlFromPath } from "@/lib/image-path";
 import { formatBase64ImageFileSize, formatImageFileSize } from "@/lib/image-size";
 import { cn } from "@/lib/utils";
 import {
-  getImageTurnLoadingPhase,
+  getEffectiveImageTurnStatus,
   getStoredImageLoadingPhase,
   type ImageConversation,
   type ImageTurn,
@@ -82,11 +82,8 @@ function getStoredImageSrc(image: StoredImage) {
 }
 
 function isTurnBusy(turn: ImageTurn) {
-  return (
-    turn.status === "queued" ||
-    turn.status === "generating" ||
-    turn.images.some((image) => image.status === "loading")
-  );
+  const status = getEffectiveImageTurnStatus(turn);
+  return status === "queued" || status === "generating";
 }
 
 function imageSelectionKey(conversationId: string, turnId: string, imageId: string) {
@@ -513,12 +510,12 @@ export function ImageResults({
           .sort()
           .at(-1);
         const resultCompletedAt = latestTaskUpdatedAt ? formatConversationTime(latestTaskUpdatedAt) : "";
-        const turnBusy = isTurnBusy(turn);
-        const resultCount = visualImages.length || (turnBusy ? turn.count : 0);
+        const effectiveStatus = getEffectiveImageTurnStatus(turn);
+        const turnBusy = effectiveStatus === "queued" || effectiveStatus === "generating";
+        const resultCount = successfulVisualImages.length;
         const showResultSummary = turn.mode !== "chat" && (visualImages.length > 0 || turnBusy);
-        const loadingPhase = getImageTurnLoadingPhase(turn);
-        const isQueued = loadingPhase === "queued";
-        const isRunning = loadingPhase === "running";
+        const isQueued = effectiveStatus === "queued";
+        const isRunning = effectiveStatus === "generating";
         const elapsedSeconds = isRunning
           ? Math.max(
               0,
@@ -527,12 +524,9 @@ export function ImageResults({
           : 0;
         const elapsedClock = isRunning ? formatElapsedClock(elapsedSeconds) : "";
         const progressMessage =
-          progress?.message ||
-          (isQueued
+          isQueued
             ? "等待任务开始"
-            : turnBusy
-              ? "正在处理图片"
-              : "");
+            : progress?.message || (turnBusy ? "正在处理图片" : "");
         const requestedSizeLabel = turn.size ? formatImageSizeDisplay(turn.size) : "自动";
         const longTaskHint = getLongTaskHint(turn, elapsedSeconds);
         const downloadActions =
@@ -590,7 +584,7 @@ export function ImageResults({
                     <span className="rounded-full bg-[#f0f0f0] px-2.5 py-0.5 text-[#45515e]">{getTurnModeLabel(turn)}</span>
                     <span className="rounded-full bg-[#f0f0f0] px-2.5 py-0.5 text-[#45515e]">{turn.model}</span>
                     <span className="rounded-full bg-[#f0f0f0] px-2.5 py-0.5 text-[#45515e]">
-                      {getTurnStatusLabel(turn.status)}
+                      {getTurnStatusLabel(effectiveStatus)}
                     </span>
                     <span className="px-1 text-[#8e8e93]">{formatConversationTime(turn.createdAt)}</span>
                   </div>
@@ -648,10 +642,11 @@ export function ImageResults({
                           className="group relative size-20 shrink-0 overflow-hidden rounded-2xl border border-stone-200/80 bg-stone-100/60 text-left transition hover:border-stone-300 sm:size-24"
                           aria-label={`预览参考图 ${image.name || index + 1}`}
                         >
-                          <img
+                          <AuthenticatedImage
                             src={image.dataUrl}
                             alt={image.name || `参考图 ${index + 1}`}
                             className="absolute inset-0 h-full w-full object-cover transition duration-200 group-hover:scale-[1.02]"
+                            placeholderClassName="min-h-0"
                           />
                         </button>
                       ))}
@@ -666,10 +661,17 @@ export function ImageResults({
                 {showResultSummary ? (
                   <div className="hide-scrollbar mb-3 flex items-center gap-3 overflow-x-auto border-b border-[#eceef1] pb-3 sm:mb-4">
                     <div className="flex shrink-0 items-center gap-3 whitespace-nowrap text-[11px] text-[#6b7280] sm:text-xs">
-                      <span>
-                        生成结果：<strong className="font-semibold text-[#30343b]">{resultCount} 张</strong>
-                      </span>
-                      {turn.count !== resultCount ? (
+                      {turnBusy ? (
+                        <span>
+                          已完成 <strong className="font-semibold text-[#30343b]">{resultCount}</strong>
+                          {" / "}目标 <strong className="font-semibold text-[#30343b]">{turn.count}</strong> 张
+                        </span>
+                      ) : (
+                        <span>
+                          生成结果：<strong className="font-semibold text-[#30343b]">{resultCount} 张</strong>
+                        </span>
+                      )}
+                      {!turnBusy && turn.count !== resultCount ? (
                         <span>目标 <strong className="font-semibold text-[#30343b]">{turn.count}</strong> 张</span>
                       ) : null}
                       {requestedSizeLabel ? (
@@ -709,9 +711,9 @@ export function ImageResults({
                         </span>
                       ) : null}
                       {resultCompletedAt ? <span className="text-[#8e8e93]">{resultCompletedAt}</span> : null}
-                      {turn.status !== "success" ? (
-                        <span className={cn("rounded-full px-3 py-1", getStatusChipClass(turn.status))}>
-                          {getTurnStatusLabel(turn.status)}
+                      {effectiveStatus !== "success" ? (
+                        <span className={cn("rounded-full px-3 py-1", getStatusChipClass(effectiveStatus))}>
+                          {getTurnStatusLabel(effectiveStatus)}
                         </span>
                       ) : null}
                     </div>
@@ -765,16 +767,23 @@ export function ImageResults({
                 {visualImages.length > 0 ? (
                   <div className="columns-1 gap-3 sm:columns-2 sm:gap-4 xl:columns-3">
                     {visualImages.map(({ image, index }) => {
-                    const imageSrc = image.status === "success" ? getStoredImageSrc(image) : "";
-                    if (image.status === "success" && imageSrc) {
+                    const imageSrc = getStoredImageSrc(image);
+                    const isProcessingPreview =
+                      image.status === "loading" &&
+                      (image.taskStatus === "queued" || image.taskStatus === "running") &&
+                      Boolean(imageSrc);
+                    const isTerminalPreview =
+                      (image.status === "error" || image.status === "cancelled") && Boolean(imageSrc);
+                    const isPreview = isProcessingPreview || isTerminalPreview;
+                    if ((image.status === "success" || isPreview) && imageSrc) {
                       const currentIndex = successfulTurnImages.findIndex((item) => item.id === image.id);
                       const selectionKey = imageSelectionKey(selectedConversation.id, turn.id, image.id);
-                      const selected = Boolean(selectedImageIds[selectionKey]);
+                      const selected = !isPreview && Boolean(selectedImageIds[selectionKey]);
                       const visibility = image.visibility || turn.visibility || "private";
                       const nextVisibility = visibility === "public" ? "private" : "public";
                       const visibilityMutatingKey = `${selectedConversation.id}:${turn.id}:${image.id}`;
                       const isVisibilityMutating = visibilityMutatingImageKey === visibilityMutatingKey;
-                      const canUpdateVisibility = Boolean(image.path || image.url || image.b64_json);
+                      const canUpdateVisibility = image.status === "success" && Boolean(image.path || image.url || image.b64_json);
 
                       return (
                         <figure
@@ -792,7 +801,8 @@ export function ImageResults({
                                 toggleImageSelection(selectionKey);
                                 event.currentTarget.blur();
                               }}
-                              className="block w-full cursor-pointer overflow-hidden text-left"
+                              disabled={isPreview}
+                              className={cn("block w-full overflow-hidden text-left", isPreview ? "cursor-default" : "cursor-pointer")}
                               aria-label={selected ? "取消选择图片" : "选择图片"}
                             >
                               <AuthenticatedImage
@@ -815,6 +825,32 @@ export function ImageResults({
                                 }}
                               />
                             </button>
+                            {isPreview ? (
+                              <div className={cn(
+                                "pointer-events-none absolute inset-0 z-10 flex items-center justify-center",
+                                isTerminalPreview ? "bg-black/45" : "bg-black/20",
+                              )}>
+                                <span className="pointer-events-auto inline-flex items-center gap-1.5 rounded-full bg-black/70 px-3 py-1.5 text-xs font-medium text-white shadow-sm backdrop-blur-sm">
+                                  {isProcessingPreview ? (
+                                    <LoaderCircle className="size-3.5 animate-spin" />
+                                  ) : (
+                                    <CircleStop className="size-3.5" />
+                                  )}
+                                  {isProcessingPreview ? "正在处理" : image.status === "cancelled" ? "任务已终止" : "生成失败"}
+                                  {image.status === "error" ? (
+                                    <button
+                                      type="button"
+                                      className="ml-1 inline-flex items-center gap-1 rounded-full bg-white/15 px-2 py-0.5 transition hover:bg-white/25"
+                                      disabled={turnBusy || !turn.prompt.trim()}
+                                      onClick={() => void onRetryImage(selectedConversation.id, turn.id, index)}
+                                    >
+                                      <RotateCcw className="size-3" />
+                                      重试
+                                    </button>
+                                  ) : null}
+                                </span>
+                              </div>
+                            ) : null}
                             <button
                               type="button"
                               onClick={(event) => {
@@ -827,11 +863,12 @@ export function ImageResults({
                                   ? "border-[#1456f0] bg-[#1456f0] text-white opacity-100 shadow-sm"
                                   : "pointer-events-none border-white/90 bg-black/20 text-transparent opacity-0 shadow-sm group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 hover:bg-black/30",
                               )}
+                              disabled={isPreview}
                               aria-label={selected ? "取消选择图片" : "选择图片"}
                             >
                               {selected ? <Check className="size-3.5" /> : null}
                             </button>
-                            <div className="pointer-events-none absolute top-2 right-2 z-10 flex items-center gap-1 opacity-0 transition duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
+                            {!isPreview ? <div className="pointer-events-none absolute top-2 right-2 z-10 flex items-center gap-1 opacity-0 transition duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
                               <button
                                 type="button"
                                 onClick={(event) => {
@@ -857,7 +894,7 @@ export function ImageResults({
                               >
                                 <Plus className="size-3.5" />
                               </button>
-                            </div>
+                            </div> : null}
                             <div className="absolute right-2 bottom-2 z-20 flex items-center gap-1">
                               {canUpdateVisibility ? (
                                 <button
@@ -944,7 +981,7 @@ export function ImageResults({
                       );
                     }
 
-                    const imageLoadingPhase = getStoredImageLoadingPhase(image);
+                    const imageLoadingPhase = getStoredImageLoadingPhase(image, turn);
                     const imageBusyLabel = imageLoadingPhase === "queued"
                       ? "排队中..."
                       : imageLoadingPhase === "running"

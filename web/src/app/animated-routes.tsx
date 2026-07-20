@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Suspense } from "react";
 import {
   Navigate,
   Route,
@@ -76,15 +77,23 @@ export function AnimatedRoutes() {
         transition={prefersReducedMotion ? reducedRouteTransition : routeTransition}
         className="h-full min-h-0 min-w-0"
       >
-        <Routes location={location}>
-          {appRoutes.map((route) => (
-            <Route
-              key={route.path}
-              path={route.path}
-              element={<PermissionRoute requiredPath={route.requiredPath}>{route.element}</PermissionRoute>}
-            />
-          ))}
-        </Routes>
+        <Suspense
+          fallback={(
+            <div className="flex h-full min-h-[240px] items-center justify-center text-sm text-muted-foreground">
+              正在加载页面
+            </div>
+          )}
+        >
+          <Routes location={location}>
+            {appRoutes.map((route) => (
+              <Route
+                key={route.path}
+                path={route.path}
+                element={<PermissionRoute requiredPath={route.requiredPath}>{route.element}</PermissionRoute>}
+              />
+            ))}
+          </Routes>
+        </Suspense>
       </motion.div>
     </AnimatePresence>
   );

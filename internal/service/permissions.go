@@ -175,6 +175,11 @@ func APIPermissionKey(method, path string) string {
 func MatchAPIPermissionKey(method, path string) (string, bool) {
 	method = strings.ToUpper(strings.TrimSpace(method))
 	path = normalizePermissionPath(path)
+	// Reference-asset upload is part of image editing. Reuse that permission so
+	// existing custom creator roles keep working without an RBAC data migration.
+	if method == "POST" && path == "/api/profile/image-conversation-assets" {
+		path = "/v1/images/edits"
+	}
 	for _, permission := range apiPermissionCatalog {
 		if permission.Method != method {
 			continue

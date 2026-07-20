@@ -34,6 +34,125 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+func TestWriteCreationTaskSubmitErrorReportsPersistenceOutage(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+	response := httptest.NewRecorder()
+	app.writeCreationTaskSubmitError(response, service.ImageTaskPersistenceError{Err: errors.New("database unavailable")})
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d; body = %s", response.Code, http.StatusServiceUnavailable, response.Body.String())
+	}
+	if !strings.Contains(response.Body.String(), "未启动上游请求") {
+		t.Fatalf("response body = %q", response.Body.String())
+	}
+	if strings.Contains(response.Body.String(), "database unavailable") {
+		t.Fatalf("response leaked persistence detail: %q", response.Body.String())
+	}
+}
+
+func TestAppCloseWaitsForImageTasksBeforeClosingStorage(t *testing.T) {
+	app := newTestApp(t)
+	appClosed := false
+
+	backend, err := app.config.StorageBackend()
+	if err != nil {
+		t.Fatalf("StorageBackend() error = %v", err)
+	}
+	app.tasks.Close()
+	cancelObserved := make(chan struct{})
+	allowHandlerExit := make(chan struct{})
+	handlerExited := make(chan struct{})
+	cleanupStarted := make(chan struct{})
+	allowCleanupExit := make(chan struct{})
+	var releaseHandlerOnce sync.Once
+	var releaseCleanupOnce sync.Once
+	releaseHandler := func() { releaseHandlerOnce.Do(func() { close(allowHandlerExit) }) }
+	releaseCleanup := func() { releaseCleanupOnce.Do(func() { close(allowCleanupExit) }) }
+	defer func() {
+		releaseHandler()
+		releaseCleanup()
+		if !appClosed {
+			app.Close()
+		}
+	}()
+	handler := func(ctx context.Context, identity service.Identity, payload map[string]any) (map[string]any, error) {
+		<-ctx.Done()
+		close(cancelObserved)
+		<-allowHandlerExit
+		app.imageCleanup.schedule(func() {
+			close(cleanupStarted)
+			<-allowCleanupExit
+		})
+		close(handlerExited)
+		return nil, ctx.Err()
+	}
+	app.tasks = service.NewStoredImageTaskService(backend, handler, handler, handler, app.config.ImageRetentionDays)
+	identity := service.Identity{ID: "app-close-task-owner", Name: "Alice", Role: service.AuthRoleUser}
+	if _, err := app.tasks.SubmitGeneration(context.Background(), identity, "app-close-task", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 1, nil); err != nil {
+		t.Fatalf("SubmitGeneration() error = %v", err)
+	}
+
+	closeReturned := make(chan struct{})
+	go func() {
+		app.Close()
+		close(closeReturned)
+	}()
+	select {
+	case <-cancelObserved:
+	case <-time.After(2 * time.Second):
+		t.Fatal("App.Close() did not cancel the active image task")
+	}
+	select {
+	case <-closeReturned:
+		t.Fatal("App.Close() returned before the image task handler exited")
+	case <-time.After(50 * time.Millisecond):
+	}
+	releaseHandler()
+	select {
+	case <-handlerExited:
+	case <-time.After(2 * time.Second):
+		t.Fatal("image task handler did not exit")
+	}
+	select {
+	case <-cleanupStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("task shutdown cleanup was dropped before the cleanup worker closed")
+	}
+	select {
+	case <-closeReturned:
+		t.Fatal("App.Close() returned before task shutdown cleanup finished")
+	default:
+	}
+	releaseCleanup()
+	select {
+	case <-closeReturned:
+		appClosed = true
+	case <-time.After(2 * time.Second):
+		t.Fatal("App.Close() did not return after the image task exited")
+	}
+
+	documentStore, ok := backend.(storage.JSONDocumentBackend)
+	if !ok {
+		t.Fatalf("storage backend %T does not implement JSONDocumentBackend", backend)
+	}
+	if _, err := documentStore.LoadJSONDocument("image_tasks.json"); err == nil {
+		t.Fatal("storage backend remained open after App.Close()")
+	}
+	reopened, err := storage.NewDatabaseBackend("sqlite:///" + filepath.ToSlash(filepath.Join(app.config.DataDir, "chatgpt2api.db")))
+	if err != nil {
+		t.Fatalf("reopen storage backend: %v", err)
+	}
+	defer reopened.Close()
+	persisted, err := reopened.LoadJSONDocument("image_tasks.json")
+	if err != nil {
+		t.Fatalf("LoadJSONDocument() after reopen: %v", err)
+	}
+	items := util.AsMapSlice(util.StringMap(persisted)["tasks"])
+	if len(items) != 1 || items[0]["id"] != "app-close-task" || items[0]["status"] != service.TaskStatusCancelled {
+		t.Fatalf("persisted task after App.Close() = %#v, want cancelled task", items)
+	}
+}
+
 func TestAppAuthAndSPACompatibility(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()
@@ -775,13 +894,205 @@ func TestRunLoggedImageTaskLocalizesRelayURLForGallery(t *testing.T) {
 	}
 }
 
+func TestRunLoggedImageTaskHoldsSlotThroughLocalization(t *testing.T) {
+	t.Setenv("CHATGPT2API_BASE_URL", "https://image.yunmian.tech")
+	app := newTestApp(t)
+	defer app.Close()
+
+	localizationStarted := make(chan struct{}, 1)
+	allowLocalization := make(chan struct{})
+	var allowOnce sync.Once
+	imageServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case localizationStarted <- struct{}{}:
+		default:
+		}
+		<-allowLocalization
+		w.Header().Set("Content-Type", "image/png")
+		if err := encodeHTTPTestPNG(w); err != nil {
+			t.Errorf("encode test image: %v", err)
+		}
+	}))
+	defer imageServer.Close()
+	defer allowOnce.Do(func() { close(allowLocalization) })
+
+	releases := make(chan struct{}, 2)
+	payload := map[string]any{
+		"prompt":     "draw",
+		"model":      "gpt-image-2",
+		"visibility": service.ImageVisibilityPrivate,
+		protocol.ImageOutputSlotAcquirerPayloadKey: func(ctx context.Context, index int) (func(), error) {
+			if index != 0 {
+				return nil, fmt.Errorf("slot index = %d, want 0", index)
+			}
+			return func() { releases <- struct{}{} }, nil
+		},
+	}
+	type taskResult struct {
+		result map[string]any
+		err    error
+	}
+	done := make(chan taskResult, 1)
+	go func() {
+		result, err := app.runLoggedImageTask(
+			context.Background(),
+			service.Identity{ID: "user-slot", Role: service.AuthRoleUser, Name: "Alice"},
+			payload,
+			"/api/creation-tasks/image-generations",
+			"文生图",
+			func(_ context.Context, current map[string]any) (map[string]any, error) {
+				if !relayImageTaskSlotIsManaged(current) {
+					return nil, errors.New("runLoggedImageTask did not mark the slot as managed")
+				}
+				return map[string]any{"data": []map[string]any{{"url": imageServer.URL + "/image.png"}}}, nil
+			},
+		)
+		done <- taskResult{result: result, err: err}
+	}()
+
+	select {
+	case <-localizationStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for image localization")
+	}
+	select {
+	case <-releases:
+		t.Fatal("creation slot released before image localization completed")
+	default:
+	}
+	select {
+	case early := <-done:
+		t.Fatalf("runLoggedImageTask returned before localization was released: %#v", early)
+	default:
+	}
+
+	allowOnce.Do(func() { close(allowLocalization) })
+	var completed taskResult
+	select {
+	case completed = <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for logged image task completion")
+	}
+	if completed.err != nil {
+		t.Fatalf("runLoggedImageTask() error = %v", completed.err)
+	}
+	if len(util.AsMapSlice(completed.result["data"])) != 1 {
+		t.Fatalf("runLoggedImageTask() result = %#v", completed.result)
+	}
+	if len(releases) != 0 {
+		t.Fatalf("slot released before terminal task commit: %d", len(releases))
+	}
+	completionRelease, ok := payload[service.ImageOutputCompletionReleasePayloadKey].(func())
+	if !ok {
+		t.Fatalf("completion release missing after handler completion: %#v", payload)
+	}
+	delete(payload, service.ImageOutputCompletionReleasePayloadKey)
+	completionRelease()
+	if len(releases) != 1 {
+		t.Fatalf("slot release count = %d, want 1", len(releases))
+	}
+	if _, ok := payload[relayImageTaskSlotManagedPayloadKey]; ok {
+		t.Fatalf("managed slot marker leaked after task completion: %#v", payload)
+	}
+}
+
+func TestRelayImageStreamDataPreservesSparseOutputIndexes(t *testing.T) {
+	data := relayImageStreamData(map[int][]map[string]any{
+		1: {{"url": "https://example.test/second.png"}},
+	}, nil, 2)
+	if len(data) != 2 || len(data[0]) != 0 || util.Clean(data[1]["url"]) != "https://example.test/second.png" {
+		t.Fatalf("sparse stream data = %#v", data)
+	}
+}
+
+func TestRelayImageStreamDataRejectsIndexesBeyondRequestedOutputs(t *testing.T) {
+	data := relayImageStreamData(map[int][]map[string]any{
+		1:       {{"url": "https://example.test/second.png"}},
+		1 << 30: {{"url": "https://example.test/out-of-range.png"}},
+	}, nil, 2)
+	if len(data) != 2 || len(data[0]) != 0 || util.Clean(data[1]["url"]) != "https://example.test/second.png" {
+		t.Fatalf("bounded sparse stream data = %#v", data)
+	}
+
+	unindexed := relayImageStreamData(nil, []map[string]any{
+		{"url": "https://example.test/first.png"},
+		{"url": "https://example.test/second.png"},
+		{"url": "https://example.test/extra.png"},
+	}, 2)
+	if len(unindexed) != 2 {
+		t.Fatalf("bounded unindexed stream data = %#v", unindexed)
+	}
+}
+
+func TestDirectImageLimiterChargesRequestedOutputCount(t *testing.T) {
+	t.Setenv("CHATGPT2API_USER_DEFAULT_CONCURRENT_LIMIT", "2")
+	app := newTestApp(t)
+	defer app.Close()
+
+	identity := service.Identity{ID: "direct-weighted-user", Role: service.AuthRoleUser}
+	payload := map[string]any{"n": 3}
+	app.attachCreationTaskLimiter(payload, identity)
+	if _, err := relayAcquireImageTaskSlot(context.Background(), payload); err == nil || !strings.Contains(err.Error(), "需要 3 个并发额度") {
+		t.Fatalf("weighted direct acquisition error = %v", err)
+	}
+
+	payload["n"] = 2
+	release, err := relayAcquireImageTaskSlot(context.Background(), payload)
+	if err != nil {
+		t.Fatalf("two-output direct acquisition error = %v", err)
+	}
+	if release == nil {
+		t.Fatal("two-output direct acquisition returned nil release")
+	}
+	release()
+}
+
+func TestRunLoggedImageTaskReleasesSlotOnceOnError(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+
+	releases := make(chan struct{}, 2)
+	payload := map[string]any{
+		"model": "gpt-image-2",
+		protocol.ImageOutputSlotAcquirerPayloadKey: func(context.Context, int) (func(), error) {
+			return func() { releases <- struct{}{} }, nil
+		},
+	}
+	_, err := app.runLoggedImageTask(
+		context.Background(),
+		service.Identity{ID: "user-slot-error", Role: service.AuthRoleUser, Name: "Alice"},
+		payload,
+		"/api/creation-tasks/image-generations",
+		"文生图",
+		func(context.Context, map[string]any) (map[string]any, error) {
+			return nil, errors.New("upstream failed")
+		},
+	)
+	if err == nil || err.Error() != "upstream failed" {
+		t.Fatalf("runLoggedImageTask() error = %v", err)
+	}
+	if len(releases) != 0 {
+		t.Fatalf("slot released before error task commit: %d", len(releases))
+	}
+	completionRelease, ok := payload[service.ImageOutputCompletionReleasePayloadKey].(func())
+	if !ok {
+		t.Fatalf("completion release missing on error: %#v", payload)
+	}
+	completionRelease()
+	if len(releases) != 1 {
+		t.Fatalf("slot release count on error = %d, want 1", len(releases))
+	}
+}
+
 func TestRelayImagePayloadDropsPartialImagesWithoutStream(t *testing.T) {
 	payload := relayPayloadForPath("/v1/images/generations", map[string]any{
-		"prompt":         "draw",
-		"model":          "codex-gpt-image-2",
-		"stream":         false,
-		"partial_images": 2,
-		"messages":       []map[string]any{{"role": "user", "content": "draw"}},
+		"prompt":                            "draw",
+		"model":                             "codex-gpt-image-2",
+		"stream":                            false,
+		"partial_images":                    2,
+		"messages":                          []map[string]any{{"role": "user", "content": "draw"}},
+		relayImageTaskSlotManagedPayloadKey: relayImageTaskSlotManagedMarker{},
+		service.ImageOutputCompletionReleasePayloadKey: func() {},
 	})
 	if _, ok := payload["stream"]; ok {
 		t.Fatalf("false stream should be dropped for image relay payload: %#v", payload)
@@ -791,6 +1102,12 @@ func TestRelayImagePayloadDropsPartialImagesWithoutStream(t *testing.T) {
 	}
 	if _, ok := payload["messages"]; ok {
 		t.Fatalf("messages should be dropped for image relay payload: %#v", payload)
+	}
+	if _, ok := payload[relayImageTaskSlotManagedPayloadKey]; ok {
+		t.Fatalf("managed slot marker should be dropped from relay payload: %#v", payload)
+	}
+	if _, ok := payload[service.ImageOutputCompletionReleasePayloadKey]; ok {
+		t.Fatalf("completion release should be dropped from relay payload: %#v", payload)
 	}
 }
 
@@ -976,6 +1293,81 @@ func TestRelayImageTaskResultCollectsStream(t *testing.T) {
 	}
 	if len(progress) != 1 || progress[0]["url"] != "https://example.test/image.png" {
 		t.Fatalf("progress callback data = %#v", progress)
+	}
+}
+
+func TestCollectRelayImageTaskStreamSeparatesPreviewsAndCompletedOutputs(t *testing.T) {
+	items := make(chan map[string]any, 3)
+	errCh := make(chan error, 1)
+	items <- map[string]any{
+		"type":                "image_generation.partial_image",
+		"partial_image_index": 2,
+		"b64_json":            "preview-first",
+	}
+	items <- map[string]any{"type": "image_generation.completed", "b64_json": "final-first"}
+	items <- map[string]any{"type": "image_generation.completed", "b64_json": "final-second"}
+	close(items)
+	errCh <- nil
+	close(errCh)
+
+	progress := make([][]map[string]any, 0, 3)
+	result, err := collectRelayImageTaskStream(
+		map[string]any{
+			"n": 2,
+			"image_output_callback": func(data []map[string]any) {
+				progress = append(progress, cloneRelayImageData(data))
+			},
+		},
+		&protocol.StreamResult{Items: items, Err: errCh, Kind: "openai"},
+	)
+	if err != nil {
+		t.Fatalf("collectRelayImageTaskStream() error = %v", err)
+	}
+	data := util.AsMapSlice(result["data"])
+	if len(data) != 2 || util.Clean(data[0]["b64_json"]) != "final-first" || util.Clean(data[1]["b64_json"]) != "final-second" {
+		t.Fatalf("completed stream data = %#v", data)
+	}
+	for _, item := range data {
+		if _, exists := item["preview"]; exists {
+			t.Fatalf("preview marker leaked into final stream data: %#v", data)
+		}
+	}
+	if len(progress) != 3 {
+		t.Fatalf("progress callbacks = %d, want 3: %#v", len(progress), progress)
+	}
+	if len(progress[0]) != 1 || !util.ToBool(progress[0][0]["preview"]) || util.Clean(progress[0][0]["b64_json"]) != "preview-first" {
+		t.Fatalf("partial progress = %#v", progress[0])
+	}
+	if len(progress[1]) != 1 || util.ToBool(progress[1][0]["preview"]) || util.Clean(progress[1][0]["b64_json"]) != "final-first" {
+		t.Fatalf("first completed progress = %#v", progress[1])
+	}
+}
+
+func TestRelayImageStreamAccumulatorIgnoresLatePreviewForCompletedSlot(t *testing.T) {
+	accumulator := newRelayImageStreamAccumulator(1)
+	accumulator.apply(
+		map[string]any{"type": "image_generation.partial_image", "output_index": 0},
+		[]map[string]any{{"b64_json": "preview"}},
+	)
+	if data := accumulator.finalData(); len(data) != 0 {
+		t.Fatalf("partial image entered final data: %#v", data)
+	}
+	accumulator.apply(
+		map[string]any{"type": "image_generation.completed", "output_index": 0},
+		[]map[string]any{{"b64_json": "final"}},
+	)
+	accumulator.apply(
+		map[string]any{"type": "image_generation.partial_image", "output_index": 0},
+		[]map[string]any{{"b64_json": "late-preview"}},
+	)
+	accumulator.apply(
+		map[string]any{"type": "image_generation.progress", "output_index": 0},
+		[]map[string]any{{"b64_json": "non-terminal"}},
+	)
+
+	data := accumulator.finalData()
+	if len(data) != 1 || util.Clean(data[0]["b64_json"]) != "final" || util.ToBool(data[0]["preview"]) {
+		t.Fatalf("completed slot was overwritten: %#v", data)
 	}
 }
 
@@ -1356,7 +1748,7 @@ func TestRedactAccountPayloadCoversRefreshResults(t *testing.T) {
 	}
 }
 
-func TestRBACImageDeletePermissionAllowsDelegatedUser(t *testing.T) {
+func TestRBACImageDeletePermissionLimitsDelegatedUserToOwnedImages(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()
 
@@ -1370,6 +1762,16 @@ func TestRBACImageDeletePermissionAllowsDelegatedUser(t *testing.T) {
 		t.Fatalf("write test image: %v", err)
 	}
 	app.images.RecordGeneratedImages([]string{imageRel}, "another-owner", "Another Owner", service.ImageVisibilityPrivate)
+	identity := app.auth.Authenticate(rawKey)
+	if identity == nil {
+		t.Fatal("Authenticate() returned nil")
+	}
+	ownedRel := "delegated-owned-delete.png"
+	ownedPath := filepath.Join(app.config.ImagesDir(), filepath.FromSlash(ownedRel))
+	if err := writeHTTPTestPNG(ownedPath); err != nil {
+		t.Fatalf("write owned test image: %v", err)
+	}
+	app.images.RecordGeneratedImages([]string{ownedRel}, identityScope(*identity), identityDisplayName(*identity), service.ImageVisibilityPrivate)
 
 	req := httptest.NewRequest(http.MethodDelete, "/api/images", strings.NewReader(`{"paths":["delegated-delete.png"]}`))
 	req.Header.Set("Authorization", "Bearer "+rawKey)
@@ -1392,7 +1794,7 @@ func TestRBACImageDeletePermissionAllowsDelegatedUser(t *testing.T) {
 		t.Fatal("UpdateUser() returned nil")
 	}
 
-	req = httptest.NewRequest(http.MethodDelete, "/api/images", strings.NewReader(`{"paths":["delegated-delete.png"]}`))
+	req = httptest.NewRequest(http.MethodDelete, "/api/images", strings.NewReader(`{"paths":["delegated-delete.png","delegated-owned-delete.png"]}`))
 	req.Header.Set("Authorization", "Bearer "+rawKey)
 	res = httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
@@ -1406,8 +1808,11 @@ func TestRBACImageDeletePermissionAllowsDelegatedUser(t *testing.T) {
 	if deleted, _ := payload["deleted"].(float64); int(deleted) != 1 {
 		t.Fatalf("deleted = %#v body = %#v", payload["deleted"], payload)
 	}
-	if _, err := os.Stat(imagePath); !os.IsNotExist(err) {
-		t.Fatalf("image path still exists or stat failed unexpectedly: %v", err)
+	if _, err := os.Stat(imagePath); err != nil {
+		t.Fatalf("other owner's image was changed: %v", err)
+	}
+	if _, err := os.Stat(ownedPath); !os.IsNotExist(err) {
+		t.Fatalf("owned image path still exists or stat failed unexpectedly: %v", err)
 	}
 }
 

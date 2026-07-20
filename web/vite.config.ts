@@ -42,6 +42,10 @@ export default defineConfig({
         target: backendTarget,
         changeOrigin: true,
       },
+      "/conversation-assets": {
+        target: backendTarget,
+        changeOrigin: true,
+      },
       "/login-page-images": {
         target: backendTarget,
         changeOrigin: true,
@@ -59,5 +63,44 @@ export default defineConfig({
   build: {
     outDir: "../internal/web/dist",
     emptyOutDir: true,
+    rolldownOptions: {
+      output: {
+        codeSplitting: {
+          groups: [
+            {
+              name: "react-vendor",
+              test: /node_modules[\\/]react(?:-dom)?|node_modules[\\/]react-router-dom/,
+              priority: 30,
+              minSize: 0,
+            },
+            {
+              name: "motion-vendor",
+              test: /node_modules[\\/]motion[\\/]/,
+              priority: 25,
+              minSize: 0,
+            },
+            {
+              name: "ui-vendor",
+              test: /node_modules[\\/](?:lucide-react|sonner|@radix-ui)[\\/]/,
+              priority: 20,
+              minSize: 0,
+            },
+            {
+              name: "data-vendor",
+              test: /node_modules[\\/](?:axios|localforage|immer|zustand|date-fns)[\\/]/,
+              priority: 15,
+              minSize: 0,
+            },
+            {
+              name: "vendor",
+              test: /node_modules[\\/]/,
+              priority: 1,
+              minSize: 0,
+              maxSize: 300 * 1024,
+            },
+          ],
+        },
+      },
+    },
   },
 });

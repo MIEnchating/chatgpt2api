@@ -51,22 +51,6 @@ dockers_v2:
       "org.opencontainers.image.version": "{{ .Version }}"
       "org.opencontainers.image.revision": "{{ .FullCommit }}"
 
-  - id: ghcr
-    dockerfile: Dockerfile.release
-    images:
-      - "ghcr.io/{{ .Env.GITHUB_REPO_OWNER_LOWER }}/chatgpt2api"
-    tags:
-      - "{{ .Version }}"
-      - "latest"
-      - "{{ .Major }}.{{ .Minor }}"
-    platforms:
-      - linux/amd64
-      - linux/arm64
-    labels:
-      "org.opencontainers.image.version": "{{ .Version }}"
-      "org.opencontainers.image.revision": "{{ .FullCommit }}"
-      "org.opencontainers.image.source": "https://github.com/{{ .Env.GITHUB_REPO_OWNER }}/{{ .Env.GITHUB_REPO_NAME }}"
-
 release:
   draft: false
   prerelease: auto
@@ -82,5 +66,4 @@ release:
 
     ```bash
     docker pull mienvirtuoso/chatgpt2api:{{ .Version }}
-    docker pull ghcr.io/{{ .Env.GITHUB_REPO_OWNER_LOWER }}/chatgpt2api:{{ .Version }}
     ```

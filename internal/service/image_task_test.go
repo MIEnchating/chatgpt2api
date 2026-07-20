@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -397,6 +398,298 @@ func TestImageTaskServicePublishesPartialImageDataWhileRunning(t *testing.T) {
 	waitForTaskStatus(t, svc, identity, "task-1", TaskStatusSuccess)
 }
 
+func TestImageTaskServiceKeepsPreviewRunningAndProtectsCompletedOutput(t *testing.T) {
+	previewPublished := make(chan struct{})
+	publishFinal := make(chan struct{})
+	finalPublished := make(chan struct{})
+	finish := make(chan struct{})
+	handler := func(ctx context.Context, identity Identity, payload map[string]any) (map[string]any, error) {
+		acquire, ok := payload[imageOutputSlotAcquirerPayloadKey].(func(context.Context, int) (func(), error))
+		if !ok {
+			return nil, errors.New("image output slot acquirer missing")
+		}
+		release, err := acquire(ctx, 0)
+		if err != nil {
+			return nil, err
+		}
+		defer release()
+		callback, ok := payload[imageOutputCallbackPayloadKey].(func([]map[string]any))
+		if !ok {
+			return nil, errors.New("image output callback missing")
+		}
+		callback([]map[string]any{{"b64_json": "preview", "preview": true}})
+		close(previewPublished)
+		select {
+		case <-publishFinal:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		callback([]map[string]any{{"b64_json": "final"}})
+		callback([]map[string]any{{"b64_json": "late-preview", "preview": true}})
+		close(finalPublished)
+		select {
+		case <-finish:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		return map[string]any{"data": []map[string]any{{"b64_json": "final"}}}, nil
+	}
+	svc := newTestImageTaskService(t, handler, handler, handler, func() int { return 30 })
+	identity := Identity{ID: "preview-state", Name: "Alice", Role: AuthRoleUser}
+
+	if _, err := svc.SubmitGeneration(context.Background(), identity, "task-preview", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 1, nil); err != nil {
+		t.Fatalf("SubmitGeneration() error = %v", err)
+	}
+	select {
+	case <-previewPublished:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for preview")
+	}
+	previewTask := svc.ListTasks(identity, []string{"task-preview"})["items"].([]map[string]any)[0]
+	previewData := util.AsMapSlice(previewTask["data"])
+	if previewTask["status"] != TaskStatusRunning || !reflect.DeepEqual(util.AsStringSlice(previewTask["output_statuses"]), []string{TaskStatusRunning}) {
+		t.Fatalf("preview completed task slot: %#v", previewTask)
+	}
+	if len(previewData) != 1 || !util.ToBool(previewData[0]["preview"]) || util.Clean(previewData[0]["b64_json"]) != "preview" {
+		t.Fatalf("preview data = %#v", previewData)
+	}
+
+	close(publishFinal)
+	select {
+	case <-finalPublished:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for final progress")
+	}
+	finalTask := svc.ListTasks(identity, []string{"task-preview"})["items"].([]map[string]any)[0]
+	finalData := util.AsMapSlice(finalTask["data"])
+	if finalTask["status"] != TaskStatusRunning || !reflect.DeepEqual(util.AsStringSlice(finalTask["output_statuses"]), []string{TaskStatusSuccess}) {
+		t.Fatalf("final progress slot status = %#v", finalTask)
+	}
+	if len(finalData) != 1 || util.Clean(finalData[0]["b64_json"]) != "final" || util.ToBool(finalData[0]["preview"]) {
+		t.Fatalf("late preview overwrote completed data: %#v", finalData)
+	}
+
+	close(finish)
+	waitForTaskStatus(t, svc, identity, "task-preview", TaskStatusSuccess)
+}
+
+func TestImageTaskServiceMergesPartialSlotsAndDefersPartialPersistence(t *testing.T) {
+	backend := newTestStorageBackend(t)
+	documentStore, ok := backend.(storage.JSONDocumentBackend)
+	if !ok {
+		t.Fatalf("storage backend %T does not implement JSONDocumentBackend", backend)
+	}
+	store := &countingImageTaskDocumentStore{JSONDocumentBackend: documentStore}
+	partialsPublished := make(chan struct{})
+	finish := make(chan struct{})
+	var finishOnce sync.Once
+	defer finishOnce.Do(func() { close(finish) })
+	handler := func(ctx context.Context, identity Identity, payload map[string]any) (map[string]any, error) {
+		acquire, ok := payload[imageOutputSlotAcquirerPayloadKey].(func(context.Context, int) (func(), error))
+		if !ok {
+			return nil, errors.New("image output slot acquirer missing")
+		}
+		release, err := acquire(ctx, 0)
+		if err != nil {
+			return nil, err
+		}
+		defer release()
+		callback, ok := payload[imageOutputCallbackPayloadKey].(func([]map[string]any))
+		if !ok {
+			return nil, errors.New("image output callback missing")
+		}
+		callback([]map[string]any{
+			{},
+			{"url": "https://example.test/second.png", "revised_prompt": "second"},
+		})
+		callback([]map[string]any{{"url": "https://example.test/first.png"}})
+		callback([]map[string]any{{"url": "   "}})
+		callback([]map[string]any{})
+		close(partialsPublished)
+		select {
+		case <-finish:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		return map[string]any{"data": []map[string]any{
+			{"url": "https://example.test/first.png"},
+			{"url": "https://example.test/second.png", "revised_prompt": "second"},
+		}}, nil
+	}
+	svc := newImageTaskService(store, handler, handler, handler, func() int { return 30 })
+	identity := Identity{ID: "alice", Name: "Alice", Role: AuthRoleUser}
+
+	submitted, err := svc.SubmitGeneration(context.Background(), identity, "task-union", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 2, nil)
+	if err != nil {
+		t.Fatalf("SubmitGeneration() error = %v", err)
+	}
+	if revision := util.ToInt(submitted["revision"], 0); revision != 1 {
+		t.Fatalf("submitted revision = %d, want 1: %#v", revision, submitted)
+	}
+	if _, err := time.Parse(time.RFC3339Nano, util.Clean(submitted["updated_at"])); err != nil {
+		t.Fatalf("submitted updated_at is not RFC3339Nano: %#v", submitted["updated_at"])
+	}
+
+	select {
+	case <-partialsPublished:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for partial task data")
+	}
+	got := svc.ListTasks(identity, []string{"task-union"})
+	item := got["items"].([]map[string]any)[0]
+	data := util.AsMapSlice(item["data"])
+	if len(data) != 2 || data[0]["url"] != "https://example.test/first.png" || data[1]["url"] != "https://example.test/second.png" || data[1]["revised_prompt"] != "second" {
+		t.Fatalf("partial slot union = %#v", data)
+	}
+	partialRevision := util.ToInt(item["revision"], 0)
+	if partialRevision <= util.ToInt(submitted["revision"], 0) {
+		t.Fatalf("partial revision did not advance: submitted=%#v partial=%#v", submitted, item)
+	}
+	if store.SaveCount() != 2 {
+		t.Fatalf("save count after partial updates = %d, want queued + running only", store.SaveCount())
+	}
+	persisted, err := store.LoadJSONDocument("image_tasks.json")
+	if err != nil {
+		t.Fatalf("LoadJSONDocument() error = %v", err)
+	}
+	persistedTasks := util.AsMapSlice(util.StringMap(persisted)["tasks"])
+	if len(persistedTasks) != 1 || persistedTasks[0]["status"] != TaskStatusRunning || persistedTasks[0]["data"] != nil {
+		t.Fatalf("partial state should stay in memory until a durable transition: %#v", persistedTasks)
+	}
+	persistedRunningRevision := util.ToInt(persistedTasks[0]["revision"], 0)
+	if persistedRunningRevision <= util.ToInt(submitted["revision"], 0) || persistedRunningRevision >= partialRevision {
+		t.Fatalf("persisted running revision = %d, submitted=%#v partial=%#v", persistedRunningRevision, submitted, item)
+	}
+	persistedStatuses := util.AsStringSlice(persistedTasks[0]["output_statuses"])
+	if len(persistedStatuses) != 2 {
+		t.Fatalf("persisted output statuses = %#v, want two running slots", persistedStatuses)
+	}
+	for _, status := range persistedStatuses {
+		if status != TaskStatusRunning {
+			t.Fatalf("persisted running task contains non-running output status: %#v", persistedTasks[0])
+		}
+	}
+	recoveredService := newImageTaskService(documentStore, failingImageTaskHandler, failingImageTaskHandler, failingImageTaskHandler, func() int { return 30 })
+	recoveredTask := recoveredService.ListTasks(identity, []string{"task-union"})["items"].([]map[string]any)[0]
+	if recoveredTask["status"] != TaskStatusError || util.ToInt(recoveredTask["revision"], 0) <= partialRevision {
+		t.Fatalf("restart recovery revision regressed behind observed partial: partial=%d recovered=%#v", partialRevision, recoveredTask)
+	}
+
+	finishOnce.Do(func() { close(finish) })
+	waitForTaskStatus(t, svc, identity, "task-union", TaskStatusSuccess)
+	final := svc.ListTasks(identity, []string{"task-union"})["items"].([]map[string]any)[0]
+	finalRevision := util.ToInt(final["revision"], 0)
+	if finalRevision <= partialRevision {
+		t.Fatalf("final revision = %d, want greater than partial %d: %#v", finalRevision, partialRevision, final)
+	}
+	if store.SaveCount() != 3 {
+		t.Fatalf("final save count = %d, want queued + running + terminal", store.SaveCount())
+	}
+	persisted, err = store.LoadJSONDocument("image_tasks.json")
+	if err != nil {
+		t.Fatalf("LoadJSONDocument(final) error = %v", err)
+	}
+	persistedTasks = util.AsMapSlice(util.StringMap(persisted)["tasks"])
+	if len(persistedTasks) != 1 || persistedTasks[0]["status"] != TaskStatusSuccess || util.ToInt(persistedTasks[0]["revision"], 0) != finalRevision || len(util.AsMapSlice(persistedTasks[0]["data"])) != 2 {
+		t.Fatalf("terminal task was not durably persisted: %#v", persistedTasks)
+	}
+}
+
+func TestImageTaskServiceLimitsGlobalConcurrentCreationUnitsForAdmins(t *testing.T) {
+	svc := newTestImageTaskService(t, nil, nil, nil, func() int { return 30 })
+	t.Cleanup(svc.Close)
+	admin := Identity{ID: "admin", Name: "Admin", Role: AuthRoleAdmin}
+	releases := make([]func(), 0, defaultGlobalImageTaskConcurrentUnits)
+	for index := 0; index < defaultGlobalImageTaskConcurrentUnits; index++ {
+		release, err := svc.AcquireCreationUnit(context.Background(), admin)
+		if err != nil {
+			t.Fatalf("AcquireCreationUnit(%d) error = %v", index, err)
+		}
+		releases = append(releases, release)
+	}
+	type acquireResult struct {
+		release func()
+		err     error
+	}
+	result := make(chan acquireResult, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go func() {
+		release, err := svc.AcquireCreationUnit(ctx, Identity{ID: "admin-2", Name: "Admin 2", Role: AuthRoleAdmin})
+		result <- acquireResult{release: release, err: err}
+	}()
+	select {
+	case acquired := <-result:
+		if acquired.release != nil {
+			acquired.release()
+		}
+		t.Fatalf("extra admin unit bypassed the global limit: %v", acquired.err)
+	case <-time.After(120 * time.Millisecond):
+	}
+	releases[0]()
+	select {
+	case acquired := <-result:
+		if acquired.err != nil {
+			t.Fatalf("waiting admin acquire error = %v", acquired.err)
+		}
+		acquired.release()
+	case <-time.After(2 * time.Second):
+		t.Fatal("waiting admin unit did not start after a global slot was released")
+	}
+	for _, release := range releases[1:] {
+		release()
+	}
+	if _, err := svc.AcquireCreationUnits(context.Background(), admin, defaultGlobalImageTaskConcurrentUnits+1); err == nil {
+		t.Fatal("oversized request exceeded the global unit limit without an error")
+	}
+}
+
+func TestImageTaskServiceCloseRejectsAndWakesCreationUnitAcquirers(t *testing.T) {
+	svc := newTestImageTaskService(t, nil, nil, nil, func() int { return 30 })
+	admin := Identity{ID: "admin", Name: "Admin", Role: AuthRoleAdmin}
+	releases := make([]func(), 0, defaultGlobalImageTaskConcurrentUnits)
+	for index := 0; index < defaultGlobalImageTaskConcurrentUnits; index++ {
+		release, err := svc.AcquireCreationUnit(context.Background(), admin)
+		if err != nil {
+			t.Fatalf("AcquireCreationUnit(%d) error = %v", index, err)
+		}
+		releases = append(releases, release)
+	}
+
+	result := make(chan error, 1)
+	go func() {
+		release, err := svc.AcquireCreationUnit(context.Background(), admin)
+		if release != nil {
+			release()
+		}
+		result <- err
+	}()
+	select {
+	case err := <-result:
+		t.Fatalf("blocked acquisition returned before Close(): %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	svc.Close()
+	select {
+	case err := <-result:
+		if !errors.Is(err, ErrImageTaskServiceClosed) {
+			t.Fatalf("blocked acquisition error = %v, want closed service", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("Close() did not wake the blocked creation-unit acquisition")
+	}
+	if release, err := svc.AcquireCreationUnit(context.Background(), admin); !errors.Is(err, ErrImageTaskServiceClosed) {
+		if release != nil {
+			release()
+		}
+		t.Fatalf("acquisition after Close() error = %v, want closed service", err)
+	}
+	for _, release := range releases {
+		release()
+	}
+}
+
 func TestImageTaskServiceLimitsUserDefaultConcurrentCreationUnits(t *testing.T) {
 	startedImages := make(chan int, 3)
 	release := make(chan struct{})
@@ -593,6 +886,44 @@ func TestImageTaskServiceLimitsUserDefaultRPM(t *testing.T) {
 	waitForTaskStatus(t, svc, admin, "task-2", TaskStatusSuccess)
 }
 
+func TestImageTaskServiceRequestWideSlotCountsEveryRequestedImage(t *testing.T) {
+	started := make(chan struct{})
+	finish := make(chan struct{})
+	handler := func(ctx context.Context, identity Identity, payload map[string]any) (map[string]any, error) {
+		acquire := payload[imageOutputSlotAcquirerPayloadKey].(func(context.Context, int) (func(), error))
+		release, err := acquire(ctx, 0)
+		if err != nil {
+			return nil, err
+		}
+		defer release()
+		close(started)
+		select {
+		case <-finish:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		return map[string]any{"data": []map[string]any{{"url": "a"}, {"url": "b"}, {"url": "c"}}}, nil
+	}
+	svc := newTestImageTaskService(t, handler, handler, handler, func() int { return 30 }, func() int { return 4 })
+	identity := Identity{ID: "request-wide", Role: AuthRoleUser}
+	if _, err := svc.SubmitGeneration(context.Background(), identity, "task-wide", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 3, nil); err != nil {
+		t.Fatalf("SubmitGeneration() error = %v", err)
+	}
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for request-wide slot")
+	}
+	svc.mu.Lock()
+	units := svc.ownerRunningUnits[ownerID(identity)]
+	svc.mu.Unlock()
+	if units != 3 {
+		t.Fatalf("request-wide running units = %d, want 3", units)
+	}
+	close(finish)
+	waitForTaskStatus(t, svc, identity, "task-wide", TaskStatusSuccess)
+}
+
 func TestImageTaskServiceCancelsRunningTask(t *testing.T) {
 	started := make(chan struct{})
 	handlerDone := make(chan error, 1)
@@ -605,7 +936,8 @@ func TestImageTaskServiceCancelsRunningTask(t *testing.T) {
 	svc := newTestImageTaskService(t, handler, handler, handler, func() int { return 30 })
 	identity := Identity{ID: "alice", Name: "Alice", Role: "user"}
 
-	if _, err := svc.SubmitGeneration(context.Background(), identity, "task-1", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 1, nil); err != nil {
+	submitted, err := svc.SubmitGeneration(context.Background(), identity, "task-1", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 1, nil)
+	if err != nil {
 		t.Fatalf("SubmitGeneration() error = %v", err)
 	}
 	select {
@@ -621,6 +953,17 @@ func TestImageTaskServiceCancelsRunningTask(t *testing.T) {
 	if cancelled["status"] != TaskStatusCancelled {
 		t.Fatalf("cancelled task status = %#v", cancelled)
 	}
+	for _, status := range util.AsStringSlice(cancelled["output_statuses"]) {
+		if status != TaskStatusCancelled {
+			t.Fatalf("cancelled task retained active output status: %#v", cancelled)
+		}
+	}
+	if util.ToInt(cancelled["revision"], 0) <= util.ToInt(submitted["revision"], 0) {
+		t.Fatalf("cancel revision did not advance: submitted=%#v cancelled=%#v", submitted, cancelled)
+	}
+	if _, err := time.Parse(time.RFC3339Nano, util.Clean(cancelled["updated_at"])); err != nil {
+		t.Fatalf("cancelled updated_at is not RFC3339Nano: %#v", cancelled["updated_at"])
+	}
 	select {
 	case err := <-handlerDone:
 		if !errors.Is(err, context.Canceled) {
@@ -630,6 +973,83 @@ func TestImageTaskServiceCancelsRunningTask(t *testing.T) {
 		t.Fatal("task handler did not observe cancellation")
 	}
 	waitForTaskStatus(t, svc, identity, "task-1", TaskStatusCancelled)
+}
+
+func TestImageTaskServiceCancellationPreservesCompletedOutputsAfterReload(t *testing.T) {
+	backend := newTestStorageBackend(t)
+	documentStore, ok := backend.(storage.JSONDocumentBackend)
+	if !ok {
+		t.Fatalf("storage backend %T does not implement JSONDocumentBackend", backend)
+	}
+	partialPublished := make(chan struct{})
+	handlerDone := make(chan struct{})
+	handler := func(ctx context.Context, identity Identity, payload map[string]any) (map[string]any, error) {
+		acquire, ok := payload[imageOutputSlotAcquirerPayloadKey].(func(context.Context, int) (func(), error))
+		if !ok {
+			return nil, errors.New("image output slot acquirer missing")
+		}
+		release, err := acquire(ctx, 0)
+		if err != nil {
+			return nil, err
+		}
+		defer release()
+		callback, ok := payload[imageOutputCallbackPayloadKey].(func([]map[string]any))
+		if !ok {
+			return nil, errors.New("image output callback missing")
+		}
+		callback([]map[string]any{
+			{"url": "https://example.test/completed.png"},
+			{"b64_json": "unfinished-preview", "preview": true},
+		})
+		close(partialPublished)
+		<-ctx.Done()
+		close(handlerDone)
+		return nil, ctx.Err()
+	}
+	svc := newImageTaskService(documentStore, handler, handler, handler, func() int { return 30 })
+	identity := Identity{ID: "partial-cancel", Name: "Alice", Role: AuthRoleUser}
+
+	if _, err := svc.SubmitGeneration(context.Background(), identity, "task-partial-cancel", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 2, nil); err != nil {
+		t.Fatalf("SubmitGeneration() error = %v", err)
+	}
+	select {
+	case <-partialPublished:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for partial output")
+	}
+
+	cancelled, err := svc.CancelTask(identity, "task-partial-cancel")
+	if err != nil {
+		t.Fatalf("CancelTask() error = %v", err)
+	}
+	if got, want := util.AsStringSlice(cancelled["output_statuses"]), []string{TaskStatusSuccess, TaskStatusCancelled}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("cancelled output statuses = %#v, want %#v", got, want)
+	}
+	select {
+	case <-handlerDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("task handler did not stop after cancellation")
+	}
+
+	reloaded := newImageTaskService(documentStore, failingImageTaskHandler, failingImageTaskHandler, failingImageTaskHandler, func() int { return 30 })
+	items := reloaded.ListTasks(identity, []string{"task-partial-cancel"})["items"].([]map[string]any)
+	if len(items) != 1 {
+		t.Fatalf("reloaded cancelled task missing: %#v", items)
+	}
+	item := items[0]
+	if item["status"] != TaskStatusCancelled {
+		t.Fatalf("reloaded status = %#v, want cancelled", item)
+	}
+	if got, want := util.AsStringSlice(item["output_statuses"]), []string{TaskStatusSuccess, TaskStatusCancelled}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("reloaded output statuses = %#v, want %#v", got, want)
+	}
+	data := util.AsMapSlice(item["data"])
+	if len(data) != 2 || util.Clean(data[0]["url"]) != "https://example.test/completed.png" {
+		t.Fatalf("reloaded completed output missing: %#v", data)
+	}
+	if util.Clean(data[1]["b64_json"]) != "" || util.ToBool(data[1]["preview"]) {
+		t.Fatalf("reloaded task retained preview payload: %#v", data)
+	}
 }
 
 func TestImageTaskServicePreservesPartialDataOnFailure(t *testing.T) {
@@ -756,6 +1176,78 @@ func TestImageTaskServiceRestoresUnfinishedTasksAsErrors(t *testing.T) {
 		if item["error"] == nil {
 			t.Fatalf("restored task missing error text: %#v", item)
 		}
+		if util.ToInt(item["revision"], 0) <= 1 {
+			t.Fatalf("legacy unfinished task revision did not advance after recovery: %#v", item)
+		}
+		if _, err := time.Parse(time.RFC3339Nano, util.Clean(item["updated_at"])); err != nil {
+			t.Fatalf("recovered updated_at is not RFC3339Nano: %#v", item["updated_at"])
+		}
+	}
+}
+
+func TestImageTaskServiceRunningTransitionIsAtomicAndPreservesTerminalSlots(t *testing.T) {
+	backend := newTestStorageBackend(t)
+	documentStore, ok := backend.(storage.JSONDocumentBackend)
+	if !ok {
+		t.Fatalf("storage backend %T does not implement JSONDocumentBackend", backend)
+	}
+	started := make(chan struct{})
+	handlerDone := make(chan struct{})
+	handler := func(ctx context.Context, identity Identity, payload map[string]any) (map[string]any, error) {
+		close(started)
+		<-ctx.Done()
+		close(handlerDone)
+		return nil, ctx.Err()
+	}
+	svc := NewStoredImageTaskService(backend, handler, handler, handler, func() int { return 30 })
+	identity := Identity{ID: "atomic-running", Name: "Alice", Role: AuthRoleUser}
+	if _, err := svc.SubmitGeneration(context.Background(), identity, "task-atomic-running", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 4, nil); err != nil {
+		t.Fatalf("SubmitGeneration() error = %v", err)
+	}
+	defer func() { _, _ = svc.CancelTask(identity, "task-atomic-running") }()
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for task handler")
+	}
+	key := taskKey(ownerID(identity), "task-atomic-running")
+	if !svc.markImageOutputStatus(key, 1, TaskStatusSuccess) || !svc.markImageOutputStatus(key, 2, TaskStatusError) || !svc.markImageOutputStatus(key, 3, TaskStatusCancelled) {
+		t.Fatal("failed to seed terminal output statuses")
+	}
+	if !svc.activateImageTaskOutput(key, 0) {
+		t.Fatal("queued task did not transition to running")
+	}
+	if !svc.markAllImageOutputStatuses(key, TaskStatusRunning) || !svc.markImageOutputStatus(key, 1, TaskStatusRunning) {
+		t.Fatal("running status refresh unexpectedly failed")
+	}
+
+	item := svc.ListTasks(identity, []string{"task-atomic-running"})["items"].([]map[string]any)[0]
+	wantStatuses := []string{TaskStatusSuccess, TaskStatusError, TaskStatusCancelled, TaskStatusRunning}
+	if got := util.AsStringSlice(item["output_statuses"]); !reflect.DeepEqual(got, wantStatuses) {
+		t.Fatalf("running output statuses = %#v, want %#v", got, wantStatuses)
+	}
+	if item["status"] != TaskStatusRunning || util.ToInt(item["revision"], 0) <= 1 {
+		t.Fatalf("atomic running task did not advance revision: %#v", item)
+	}
+	if _, err := time.Parse(time.RFC3339Nano, util.Clean(item["updated_at"])); err != nil {
+		t.Fatalf("running updated_at is not RFC3339Nano: %#v", item["updated_at"])
+	}
+	persisted, err := documentStore.LoadJSONDocument("image_tasks.json")
+	if err != nil {
+		t.Fatalf("LoadJSONDocument() error = %v", err)
+	}
+	persistedTasks := util.AsMapSlice(util.StringMap(persisted)["tasks"])
+	if len(persistedTasks) != 1 || persistedTasks[0]["status"] != TaskStatusRunning || util.ToInt(persistedTasks[0]["revision"], 0) != util.ToInt(item["revision"], 0) || !reflect.DeepEqual(util.AsStringSlice(persistedTasks[0]["output_statuses"]), wantStatuses) {
+		t.Fatalf("running transition was not atomically persisted: %#v", persistedTasks)
+	}
+
+	if _, err := svc.CancelTask(identity, "task-atomic-running"); err != nil {
+		t.Fatalf("CancelTask() error = %v", err)
+	}
+	select {
+	case <-handlerDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("task handler did not stop after cancellation")
 	}
 }
 
@@ -801,9 +1293,407 @@ func TestImageTaskServiceCanMarkWholeImageRequestRunning(t *testing.T) {
 	waitForTaskStatus(t, svc, identity, "task-1", TaskStatusSuccess)
 }
 
+func TestImageTaskServiceDoesNotStartHandlerWhenInitialPersistenceFails(t *testing.T) {
+	backend := newTestStorageBackend(t)
+	documentStore, ok := backend.(storage.JSONDocumentBackend)
+	if !ok {
+		t.Fatalf("storage backend %T does not implement JSONDocumentBackend", backend)
+	}
+	store := &flakyImageTaskDocumentStore{JSONDocumentBackend: documentStore}
+	store.FailNextSaves(1)
+	handlerCalls := make(chan struct{}, 1)
+	handler := func(context.Context, Identity, map[string]any) (map[string]any, error) {
+		handlerCalls <- struct{}{}
+		return map[string]any{"data": []map[string]any{{"url": "https://example.test/image.png"}}}, nil
+	}
+	svc := newImageTaskService(store, handler, handler, handler, func() int { return 30 }, func() int { return 0 }, func() int { return 1 })
+	identity := Identity{ID: "initial-save-failure", Name: "Alice", Role: AuthRoleUser}
+
+	result, err := svc.SubmitGeneration(context.Background(), identity, "task-save-failure", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 1, nil)
+	if err == nil || !strings.Contains(err.Error(), "未启动上游请求") {
+		t.Fatalf("SubmitGeneration() result = %#v, error = %v; want clear persistence error", result, err)
+	}
+	select {
+	case <-handlerCalls:
+		t.Fatal("handler ran after the initial queued task failed to persist")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	svc.mu.Lock()
+	taskCount := len(svc.tasks)
+	cancelCount := len(svc.cancels)
+	submitTimeCount := len(svc.ownerSubmitTimes[ownerID(identity)])
+	svc.mu.Unlock()
+	if taskCount != 0 || cancelCount != 0 || submitTimeCount != 0 {
+		t.Fatalf("failed submission was not rolled back: tasks=%d cancels=%d submit_times=%d", taskCount, cancelCount, submitTimeCount)
+	}
+	waitForImageTaskSaveCalls(t, store, 2)
+	persisted, loadErr := documentStore.LoadJSONDocument("image_tasks.json")
+	if loadErr != nil {
+		t.Fatalf("LoadJSONDocument() error = %v", loadErr)
+	}
+	if tasks := util.AsMapSlice(util.StringMap(persisted)["tasks"]); len(tasks) != 0 {
+		t.Fatalf("rolled-back task remained in storage: %#v", tasks)
+	}
+}
+
+func TestImageTaskServiceRetriesFailedTerminalPersistence(t *testing.T) {
+	backend := newTestStorageBackend(t)
+	documentStore, ok := backend.(storage.JSONDocumentBackend)
+	if !ok {
+		t.Fatalf("storage backend %T does not implement JSONDocumentBackend", backend)
+	}
+	store := &flakyImageTaskDocumentStore{JSONDocumentBackend: documentStore}
+	started := make(chan struct{})
+	finish := make(chan struct{})
+	completionReleased := make(chan string, 1)
+	handler := func(ctx context.Context, identity Identity, payload map[string]any) (map[string]any, error) {
+		acquire, ok := payload[imageOutputSlotAcquirerPayloadKey].(func(context.Context, int) (func(), error))
+		if !ok {
+			return nil, errors.New("image output slot acquirer missing")
+		}
+		release, err := acquire(ctx, 0)
+		if err != nil {
+			return nil, err
+		}
+		defer release()
+		close(started)
+		select {
+		case <-finish:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		payload[ImageOutputCompletionReleasePayloadKey] = func() {
+			status := ""
+			persisted, err := documentStore.LoadJSONDocument("image_tasks.json")
+			if err == nil {
+				for _, task := range util.AsMapSlice(util.StringMap(persisted)["tasks"]) {
+					if util.Clean(task["id"]) == "task-terminal-retry" {
+						status = util.Clean(task["status"])
+						break
+					}
+				}
+			}
+			completionReleased <- status
+		}
+		return map[string]any{"data": []map[string]any{{"url": "https://example.test/final.png"}}}, nil
+	}
+	svc := newImageTaskService(store, handler, handler, handler, func() int { return 30 })
+	identity := Identity{ID: "terminal-save-retry", Name: "Alice", Role: AuthRoleUser}
+
+	if _, err := svc.SubmitGeneration(context.Background(), identity, "task-terminal-retry", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 1, nil); err != nil {
+		t.Fatalf("SubmitGeneration() error = %v", err)
+	}
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for running task")
+	}
+	store.FailNextSaves(1)
+	close(finish)
+	waitForTaskStatus(t, svc, identity, "task-terminal-retry", TaskStatusSuccess)
+	select {
+	case persistedStatus := <-completionReleased:
+		if persistedStatus != TaskStatusSuccess {
+			t.Fatalf("completion lease released before terminal persistence: status=%q", persistedStatus)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for completion lease release")
+	}
+	waitForPersistedImageTaskStatus(t, documentStore, "task-terminal-retry", TaskStatusSuccess)
+	if failures := store.FailureCount(); failures != 1 {
+		t.Fatalf("injected terminal save failures = %d, want 1", failures)
+	}
+	if calls := store.SaveCount(); calls < 4 {
+		t.Fatalf("save calls = %d, want queued + running + failed terminal + retry", calls)
+	}
+}
+
+func TestImageTaskServiceCloseCancelsAndWaitsForActiveTask(t *testing.T) {
+	backend := newTestStorageBackend(t)
+	documentStore, ok := backend.(storage.JSONDocumentBackend)
+	if !ok {
+		t.Fatalf("storage backend %T does not implement JSONDocumentBackend", backend)
+	}
+	store := &countingImageTaskDocumentStore{JSONDocumentBackend: documentStore}
+	started := make(chan struct{})
+	stopped := make(chan struct{})
+	handler := func(ctx context.Context, identity Identity, payload map[string]any) (map[string]any, error) {
+		acquire, ok := payload[imageOutputSlotAcquirerPayloadKey].(func(context.Context, int) (func(), error))
+		if !ok {
+			return nil, errors.New("image output slot acquirer missing")
+		}
+		release, err := acquire(ctx, 0)
+		if err != nil {
+			return nil, err
+		}
+		defer release()
+		close(started)
+		<-ctx.Done()
+		close(stopped)
+		return nil, ctx.Err()
+	}
+	svc := newImageTaskService(store, handler, handler, handler, func() int { return 30 })
+	identity := Identity{ID: "close-active", Name: "Alice", Role: AuthRoleUser}
+
+	if _, err := svc.SubmitGeneration(context.Background(), identity, "task-close", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 1, nil); err != nil {
+		t.Fatalf("SubmitGeneration() error = %v", err)
+	}
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for active task")
+	}
+
+	closed := make(chan struct{})
+	go func() {
+		svc.Close()
+		close(closed)
+	}()
+	select {
+	case <-stopped:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Close() did not cancel the active task")
+	}
+	select {
+	case <-closed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Close() did not wait for task shutdown")
+	}
+
+	items := svc.ListTasks(identity, []string{"task-close"})["items"].([]map[string]any)
+	if len(items) != 1 || items[0]["status"] != TaskStatusCancelled {
+		t.Fatalf("closed task = %#v, want cancelled", items)
+	}
+	waitForPersistedImageTaskStatus(t, documentStore, "task-close", TaskStatusCancelled)
+	if _, err := svc.SubmitGeneration(context.Background(), identity, "task-after-close", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 1, nil); err == nil || !strings.Contains(err.Error(), "service is closed") {
+		t.Fatalf("submission after Close() error = %v, want closed service error", err)
+	}
+
+	secondClose := make(chan struct{})
+	go func() {
+		svc.Close()
+		close(secondClose)
+	}()
+	select {
+	case <-secondClose:
+	case <-time.After(time.Second):
+		t.Fatal("second Close() call blocked")
+	}
+}
+
+func TestImageTaskServiceCloseStopsPermanentPersistenceRetry(t *testing.T) {
+	backend := newTestStorageBackend(t)
+	documentStore, ok := backend.(storage.JSONDocumentBackend)
+	if !ok {
+		t.Fatalf("storage backend %T does not implement JSONDocumentBackend", backend)
+	}
+	store := &failingImageTaskDocumentStore{JSONDocumentBackend: documentStore}
+	svc := newImageTaskService(store, failingImageTaskHandler, failingImageTaskHandler, failingImageTaskHandler, func() int { return 30 })
+	svc.mu.Lock()
+	svc.tasks["retry-close:task-retry-close"] = map[string]any{
+		"id":         "task-retry-close",
+		"owner_id":   "retry-close",
+		"status":     TaskStatusSuccess,
+		"mode":       "generate",
+		"revision":   1,
+		"created_at": util.NowISO(),
+		"updated_at": util.NowISO(),
+		"data":       []map[string]any{{"url": "https://example.test/final.png"}},
+	}
+	if err := svc.saveWithRetryLocked(); err == nil {
+		svc.mu.Unlock()
+		t.Fatal("saveWithRetryLocked() unexpectedly succeeded")
+	}
+	svc.mu.Unlock()
+	waitForImageTaskSaveCalls(t, store, 2)
+
+	closed := make(chan struct{})
+	go func() {
+		svc.Close()
+		close(closed)
+	}()
+	select {
+	case <-closed:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Close() blocked on permanent persistence failure")
+	}
+
+	svc.mu.RLock()
+	retrying := svc.persistenceRetrying
+	dirty := svc.persistenceDirty
+	isClosed := svc.closed
+	svc.mu.RUnlock()
+	if retrying || !dirty || !isClosed {
+		t.Fatalf("closed persistence state: retrying=%v dirty=%v closed=%v", retrying, dirty, isClosed)
+	}
+	callsAfterClose := store.SaveCount()
+	time.Sleep(4 * imageTaskPersistenceRetryInitialDelay)
+	if calls := store.SaveCount(); calls != callsAfterClose {
+		t.Fatalf("persistence writes continued after Close(): before=%d after=%d", callsAfterClose, calls)
+	}
+	svc.mu.Lock()
+	err := svc.saveWithRetryLocked()
+	svc.mu.Unlock()
+	if err == nil || !strings.Contains(err.Error(), "service is closed") {
+		t.Fatalf("save after Close() error = %v, want closed service error", err)
+	}
+	if calls := store.SaveCount(); calls != callsAfterClose {
+		t.Fatalf("save after Close() touched storage: before=%d after=%d", callsAfterClose, calls)
+	}
+}
+
+func TestImageTaskServiceDoesNotPersistTerminalPreviewBase64(t *testing.T) {
+	backend := newTestStorageBackend(t)
+	documentStore, ok := backend.(storage.JSONDocumentBackend)
+	if !ok {
+		t.Fatalf("storage backend %T does not implement JSONDocumentBackend", backend)
+	}
+	svc := newImageTaskService(documentStore, failingImageTaskHandler, failingImageTaskHandler, failingImageTaskHandler, func() int { return 30 })
+	svc.mu.Lock()
+	svc.tasks["preview-owner:preview-task"] = map[string]any{
+		"id":         "preview-task",
+		"owner_id":   "preview-owner",
+		"status":     TaskStatusSuccess,
+		"mode":       "generate",
+		"created_at": util.NowISO(),
+		"updated_at": util.NowISO(),
+		"data": []map[string]any{
+			{"b64_json": "preview-base64-must-not-persist", "preview": true},
+			{"b64_json": "final-base64"},
+		},
+	}
+	err := svc.saveLocked()
+	svc.mu.Unlock()
+	if err != nil {
+		t.Fatalf("saveLocked() error = %v", err)
+	}
+
+	persisted, err := documentStore.LoadJSONDocument("image_tasks.json")
+	if err != nil {
+		t.Fatalf("LoadJSONDocument() error = %v", err)
+	}
+	encoded, err := json.Marshal(persisted)
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+	if strings.Contains(string(encoded), "preview-base64-must-not-persist") || strings.Contains(string(encoded), `"preview"`) {
+		t.Fatalf("preview payload was persisted: %s", encoded)
+	}
+	if !strings.Contains(string(encoded), "final-base64") {
+		t.Fatalf("final payload was removed with preview data: %s", encoded)
+	}
+}
+
 func newTestImageTaskService(t *testing.T, generation ImageTaskHandler, edit ImageTaskHandler, chat ImageTaskHandler, retentionGetter func() int, limitGetters ...func() int) *ImageTaskService {
 	t.Helper()
 	return NewStoredImageTaskService(newTestStorageBackend(t), generation, edit, chat, retentionGetter, limitGetters...)
+}
+
+type countingImageTaskDocumentStore struct {
+	storage.JSONDocumentBackend
+	mu        sync.Mutex
+	saveCount int
+}
+
+func (s *countingImageTaskDocumentStore) SaveJSONDocument(name string, value any) error {
+	s.mu.Lock()
+	s.saveCount++
+	s.mu.Unlock()
+	return s.JSONDocumentBackend.SaveJSONDocument(name, value)
+}
+
+func (s *countingImageTaskDocumentStore) SaveCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.saveCount
+}
+
+type flakyImageTaskDocumentStore struct {
+	storage.JSONDocumentBackend
+	mu           sync.Mutex
+	failNext     int
+	saveCount    int
+	failureCount int
+}
+
+type failingImageTaskDocumentStore struct {
+	storage.JSONDocumentBackend
+	mu        sync.Mutex
+	saveCount int
+}
+
+func (s *failingImageTaskDocumentStore) SaveJSONDocument(string, any) error {
+	s.mu.Lock()
+	s.saveCount++
+	s.mu.Unlock()
+	return errors.New("injected permanent image task persistence failure")
+}
+
+func (s *failingImageTaskDocumentStore) SaveCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.saveCount
+}
+
+func (s *flakyImageTaskDocumentStore) FailNextSaves(count int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.failNext = count
+}
+
+func (s *flakyImageTaskDocumentStore) SaveJSONDocument(name string, value any) error {
+	s.mu.Lock()
+	s.saveCount++
+	if s.failNext > 0 {
+		s.failNext--
+		s.failureCount++
+		s.mu.Unlock()
+		return errors.New("injected image task persistence failure")
+	}
+	s.mu.Unlock()
+	return s.JSONDocumentBackend.SaveJSONDocument(name, value)
+}
+
+func (s *flakyImageTaskDocumentStore) SaveCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.saveCount
+}
+
+func (s *flakyImageTaskDocumentStore) FailureCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.failureCount
+}
+
+func waitForImageTaskSaveCalls(t *testing.T, store interface{ SaveCount() int }, want int) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if store.SaveCount() >= want {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("save calls did not reach %d; got %d", want, store.SaveCount())
+}
+
+func waitForPersistedImageTaskStatus(t *testing.T, store storage.JSONDocumentBackend, taskID, want string) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		persisted, err := store.LoadJSONDocument("image_tasks.json")
+		if err == nil {
+			for _, task := range util.AsMapSlice(util.StringMap(persisted)["tasks"]) {
+				if util.Clean(task["id"]) == taskID && util.Clean(task["status"]) == want {
+					return
+				}
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("persisted task %s did not reach status %s", taskID, want)
 }
 
 func waitForStartedTask(t *testing.T, started <-chan string) string {

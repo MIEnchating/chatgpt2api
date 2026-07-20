@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -31,6 +32,14 @@ const (
 	browserSecCHUAArch            = `"x86"`
 	browserSecCHUABitness         = `"64"`
 	browserImpersonationProfile   = "chrome145"
+
+	upstreamErrorBodyMaxBytes = 1 << 20
+	upstreamSSEEventMaxBytes  = 64 << 20
+)
+
+var (
+	errUpstreamResponseTooLarge = errors.New("upstream response exceeds size limit")
+	errUpstreamSSEEventTooLarge = errors.New("upstream SSE event exceeds size limit")
 )
 
 type AccountLookup interface {
@@ -881,8 +890,33 @@ func ensureOK(resp *http.Response, context string) error {
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		return nil
 	}
-	data, _ := io.ReadAll(resp.Body)
+	data := readUpstreamErrorBody(resp.Body)
 	return upstreamHTTPError(context, resp.StatusCode, data)
+}
+
+func readUpstreamErrorBody(reader io.Reader) []byte {
+	if reader == nil {
+		return nil
+	}
+	data, _ := io.ReadAll(io.LimitReader(reader, upstreamErrorBodyMaxBytes))
+	return data
+}
+
+func readLimitedUpstreamBody(reader io.Reader, maxBytes int64) ([]byte, error) {
+	if reader == nil {
+		return nil, nil
+	}
+	if maxBytes < 1 {
+		return nil, fmt.Errorf("%w: invalid limit", errUpstreamResponseTooLarge)
+	}
+	data, err := io.ReadAll(io.LimitReader(reader, maxBytes+1))
+	if err != nil {
+		return nil, err
+	}
+	if int64(len(data)) > maxBytes {
+		return nil, fmt.Errorf("%w: limit=%d", errUpstreamResponseTooLarge, maxBytes)
+	}
+	return data, nil
 }
 
 func upstreamHTTPError(context string, status int, body []byte) error {
@@ -936,6 +970,13 @@ func looksLikeHTMLBody(lower string) bool {
 }
 
 func iterSSEPayloads(ctx context.Context, reader io.Reader, out chan<- string) error {
+	return iterSSEPayloadsWithLimit(ctx, reader, out, upstreamSSEEventMaxBytes)
+}
+
+func iterSSEPayloadsWithLimit(ctx context.Context, reader io.Reader, out chan<- string, maxEventBytes int) error {
+	if maxEventBytes < 1 {
+		return errUpstreamSSEEventTooLarge
+	}
 	buf := make([]byte, 0, 4096)
 	tmp := make([]byte, 2048)
 	for {
@@ -945,7 +986,13 @@ func iterSSEPayloads(ctx context.Context, reader io.Reader, out chan<- string) e
 			for {
 				idx := bytes.IndexByte(buf, '\n')
 				if idx < 0 {
+					if len(buf) > maxEventBytes {
+						return errUpstreamSSEEventTooLarge
+					}
 					break
+				}
+				if idx > maxEventBytes {
+					return errUpstreamSSEEventTooLarge
 				}
 				line := strings.TrimSpace(string(buf[:idx]))
 				buf = buf[idx+1:]
@@ -963,6 +1010,9 @@ func iterSSEPayloads(ctx context.Context, reader io.Reader, out chan<- string) e
 		}
 		if err == io.EOF {
 			if len(buf) > 0 {
+				if len(buf) > maxEventBytes {
+					return errUpstreamSSEEventTooLarge
+				}
 				line := strings.TrimSpace(string(buf))
 				if strings.HasPrefix(line, "data:") {
 					payload := strings.TrimSpace(line[5:])
@@ -984,6 +1034,13 @@ func iterSSEPayloads(ctx context.Context, reader io.Reader, out chan<- string) e
 }
 
 func iterMultimodalSSEPayloads(ctx context.Context, reader io.Reader, out chan<- string) error {
+	return iterMultimodalSSEPayloadsWithLimit(ctx, reader, out, upstreamSSEEventMaxBytes)
+}
+
+func iterMultimodalSSEPayloadsWithLimit(ctx context.Context, reader io.Reader, out chan<- string, maxEventBytes int) error {
+	if maxEventBytes < 1 {
+		return errUpstreamSSEEventTooLarge
+	}
 	buf := make([]byte, 0, 4096)
 	tmp := make([]byte, 2048)
 	processLine := func(line string) error {
@@ -1018,7 +1075,13 @@ func iterMultimodalSSEPayloads(ctx context.Context, reader io.Reader, out chan<-
 			for {
 				idx := bytes.IndexByte(buf, '\n')
 				if idx < 0 {
+					if len(buf) > maxEventBytes {
+						return errUpstreamSSEEventTooLarge
+					}
 					break
+				}
+				if idx > maxEventBytes {
+					return errUpstreamSSEEventTooLarge
 				}
 				line := strings.TrimSpace(string(buf[:idx]))
 				buf = buf[idx+1:]
@@ -1029,6 +1092,9 @@ func iterMultimodalSSEPayloads(ctx context.Context, reader io.Reader, out chan<-
 		}
 		if err == io.EOF {
 			if len(buf) > 0 {
+				if len(buf) > maxEventBytes {
+					return errUpstreamSSEEventTooLarge
+				}
 				line := strings.TrimSpace(string(buf))
 				if err := processLine(line); err != nil {
 					return err
@@ -1038,6 +1104,9 @@ func iterMultimodalSSEPayloads(ctx context.Context, reader io.Reader, out chan<-
 		}
 		if err != nil {
 			if len(buf) > 0 {
+				if len(buf) > maxEventBytes {
+					return errUpstreamSSEEventTooLarge
+				}
 				line := strings.TrimSpace(string(buf))
 				_ = processLine(line)
 			}

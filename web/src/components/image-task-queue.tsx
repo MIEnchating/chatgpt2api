@@ -12,9 +12,10 @@ import {
   ACTIVE_IMAGE_CONVERSATION_STORAGE_KEY,
   IMAGE_ACTIVE_CONVERSATION_REQUEST_EVENT,
   IMAGE_CONVERSATIONS_CHANGED_EVENT,
-  listImageConversations,
+  getEffectiveImageTurnStatus,
   getImageTurnLoadingCounts,
-  getImageTurnLoadingPhase,
+  loadImageConversationHistoryWindow,
+  mergeImageConversationItems,
   type ImageConversation,
   type ImageConversationMode,
   type ImageTurn,
@@ -47,11 +48,8 @@ type RecentQueueCompletion = TaskQueueItem & {
 };
 
 function isTurnBusy(turn: ImageTurn) {
-  return (
-    turn.status === "queued" ||
-    turn.status === "generating" ||
-    turn.images.some((image) => image.status === "loading")
-  );
+  const status = getEffectiveImageTurnStatus(turn);
+  return status === "queued" || status === "generating";
 }
 
 function isTerminalTurnStatus(status: ImageTurnStatus) {
@@ -142,10 +140,10 @@ function getQueueLongTaskHint(turn: ImageTurn, elapsedSeconds: number) {
 }
 
 function getQueueLoadingDetail(item: TaskQueueItem, loadingPhase: ImageTurnLoadingPhase) {
-  if (loadingPhase === "queued") {
+  if (loadingPhase === "queued" && item.queuedCount > 0) {
     return `还有 ${item.queuedCount} 张图片排队中`;
   }
-  if (loadingPhase === "running") {
+  if (loadingPhase === "running" && item.runningCount > 0) {
     return `还有 ${item.runningCount} 张图片处理中`;
   }
   return "";
@@ -217,18 +215,21 @@ function findQueueItem(conversations: ImageConversation[], conversationId: strin
 
 function useImageConversationsForQueue() {
   const [conversations, setConversations] = useState<ImageConversation[]>([]);
+  const requestSequenceRef = useRef(0);
 
   useEffect(() => {
     let active = true;
 
     const loadConversations = async () => {
+      const requestSequence = ++requestSequenceRef.current;
       try {
-        const items = await listImageConversations();
-        if (active) {
+        const { firstPage, activePage } = await loadImageConversationHistoryWindow(24);
+        const items = mergeImageConversationItems(firstPage.items, activePage.items);
+        if (active && requestSequence === requestSequenceRef.current) {
           setConversations(items);
         }
       } catch {
-        if (active) {
+        if (active && requestSequence === requestSequenceRef.current) {
           setConversations([]);
         }
       }
@@ -243,6 +244,7 @@ function useImageConversationsForQueue() {
     window.addEventListener(IMAGE_CONVERSATIONS_CHANGED_EVENT, handleRefresh);
     return () => {
       active = false;
+      requestSequenceRef.current += 1;
       window.removeEventListener("focus", handleRefresh);
       window.removeEventListener(IMAGE_CONVERSATIONS_CHANGED_EVENT, handleRefresh);
     };
@@ -262,13 +264,15 @@ function QueueItem({
 }) {
   const progress = getImageTurnProgressSnapshot()[imageTurnProgressKey(item.conversationId, item.turn.id)];
   const settledCount = item.completedCount + item.failedCount + item.cancelledCount;
+  const effectiveStatus = getEffectiveImageTurnStatus(item.turn);
+  const loadingPhase: ImageTurnLoadingPhase =
+    effectiveStatus === "generating" ? "running" : effectiveStatus === "queued" ? "queued" : "idle";
   const progressPercent =
     settledCount > 0
       ? Math.min(100, Math.round((settledCount / item.totalCount) * 100))
-      : item.turn.status === "generating"
+      : effectiveStatus === "generating"
         ? 8
         : 0;
-  const loadingPhase = getImageTurnLoadingPhase(item.turn);
   const isQueued = loadingPhase === "queued";
   const isRunning = loadingPhase === "running";
   const elapsedSeconds = isRunning ? Math.max(0, Math.floor((now - imageTurnStartedAtTimestamp(item.turn.processingStartedAt, item.turn.createdAt)) / 1000)) : 0;
@@ -281,12 +285,11 @@ function QueueItem({
     item.turn.quality ? `Quality ${item.turn.quality}` : "",
   ].filter(Boolean);
   const progressMessage =
-    progress?.message ||
-    (isQueued
+    isQueued
       ? "等待任务开始"
-      : "等待图片处理");
+      : progress?.message || "等待图片处理";
   const loadingDetail = getQueueLoadingDetail(item, loadingPhase);
-  const progressDetail = loadingDetail || progress?.detail || "";
+  const progressDetail = loadingDetail || (isQueued ? "" : progress?.detail) || "";
   const longTaskHint = getQueueLongTaskHint(item.turn, elapsedSeconds);
 
   return (
@@ -299,20 +302,20 @@ function QueueItem({
         <span
           className={cn(
             "mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full ring-1",
-            item.turn.status === "queued"
+            isQueued
               ? "bg-amber-50 text-amber-700 ring-amber-100"
               : "bg-sky-50 text-[#1456f0] ring-sky-100",
           )}
         >
-          {item.turn.status === "queued" ? <Clock3 className="size-4" /> : <LoaderCircle className="size-4 animate-spin" />}
+          {isQueued ? <Clock3 className="size-4" /> : <LoaderCircle className="size-4 animate-spin" />}
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center justify-between gap-2">
             <p className="truncate text-sm font-semibold text-[#222222] dark:text-foreground">
               {item.conversationTitle || item.turn.prompt || "未命名任务"}
             </p>
-            <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ring-1", getStatusClass(item.turn.status))}>
-              {getStatusLabel(item.turn.status)}
+            <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ring-1", getStatusClass(effectiveStatus))}>
+              {getStatusLabel(effectiveStatus)}
             </span>
           </div>
           <p className="mt-1 line-clamp-2 text-xs leading-5 text-[#45515e] dark:text-muted-foreground">
@@ -437,7 +440,11 @@ export function ImageTaskQueue({ className }: { className?: string }) {
       }
 
       const completedItem = findQueueItem(conversations, previousItem.conversationId, previousItem.turn.id);
-      if (!completedItem || isTurnBusy(completedItem.turn) || !isTerminalTurnStatus(completedItem.turn.status)) {
+      if (!completedItem) {
+        return;
+      }
+      const finalStatus = getEffectiveImageTurnStatus(completedItem.turn);
+      if (isTurnBusy(completedItem.turn) || !isTerminalTurnStatus(finalStatus)) {
         return;
       }
 
@@ -445,7 +452,7 @@ export function ImageTaskQueue({ className }: { className?: string }) {
         ...completedItem,
         key,
         completedAt: Date.now(),
-        finalStatus: completedItem.turn.status,
+        finalStatus,
       });
     });
 

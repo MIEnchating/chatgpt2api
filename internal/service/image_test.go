@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -461,6 +462,45 @@ func TestImageServicePublicVisibility(t *testing.T) {
 	}
 }
 
+func TestImageServiceRecordGeneratedImageMetadataDoesNotGenerateThumbnail(t *testing.T) {
+	root := t.TempDir()
+	config := testImageConfig{root: root}
+	rel := "2026/04/29/metadata-only.png"
+	imagePath := filepath.Join(config.ImagesDir(), filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(imagePath), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := writeTestPNG(imagePath); err != nil {
+		t.Fatalf("writeTestPNG() error = %v", err)
+	}
+
+	service := NewImageService(config)
+	service.RecordGeneratedImageMetadata([]string{rel}, " linuxdo:123 ", " alice ", ImageVisibilityPublic, GeneratedImageMetadata{
+		Prompt:            "metadata is immediately available",
+		Model:             "gpt-image-2",
+		RequestedSize:     "1024x1024",
+		SharePromptParams: true,
+	})
+
+	list := service.ListImages("http://127.0.0.1:8000", "", "", ImageAccessScope{OwnerID: "linuxdo:123"})
+	items := list["items"].([]map[string]any)
+	if len(items) != 1 {
+		t.Fatalf("ListImages() = %#v", list)
+	}
+	item := items[0]
+	if item["owner_name"] != "alice" || item["visibility"] != ImageVisibilityPublic || item["prompt"] != "metadata is immediately available" || item["model"] != "gpt-image-2" || item["requested_size"] != "1024x1024" {
+		t.Fatalf("metadata-only item = %#v", item)
+	}
+
+	thumbPath := filepath.Join(config.ImageThumbnailsDir(), filepath.FromSlash(rel)+thumbnailExtension)
+	if _, err := os.Stat(thumbPath); !os.IsNotExist(err) {
+		t.Fatalf("RecordGeneratedImageMetadata() generated thumbnail, stat error = %v", err)
+	}
+	if _, err := os.Stat(thumbPath + ".json"); !os.IsNotExist(err) {
+		t.Fatalf("RecordGeneratedImageMetadata() generated thumbnail metadata, stat error = %v", err)
+	}
+}
+
 func TestImageServiceListImagesReturnsRequestedResolutionPreset(t *testing.T) {
 	root := t.TempDir()
 	config := testImageConfig{root: root}
@@ -753,6 +793,83 @@ func TestImageServiceCleanupStorageLimitCanIncludePublic(t *testing.T) {
 	if _, err := os.Stat(path); !os.IsNotExist(err) {
 		t.Fatalf("public image should be deleted when include_public=true, stat error = %v", err)
 	}
+}
+
+func TestImageServiceCleanupStorageSerializesConcurrentRuns(t *testing.T) {
+	started := make(chan struct{})
+	release := make(chan struct{})
+	config := &blockingCleanupImageConfig{
+		testImageConfig: testImageConfig{root: t.TempDir()},
+		started:         started,
+		release:         release,
+	}
+	service := NewImageService(config)
+	results := make(chan error, 2)
+
+	go func() {
+		_, err := service.CleanupStorage(ImageStorageCleanupOptions{})
+		results <- err
+	}()
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for first cleanup")
+	}
+
+	secondStarted := make(chan struct{})
+	go func() {
+		close(secondStarted)
+		_, err := service.CleanupStorage(ImageStorageCleanupOptions{})
+		results <- err
+	}()
+	<-secondStarted
+	time.Sleep(20 * time.Millisecond)
+	if got := config.maxActive.Load(); got != 1 {
+		t.Fatalf("concurrent cleanup config calls = %d, want 1", got)
+	}
+	if got := config.imageDirCalls.Load(); got != 1 {
+		t.Fatalf("second cleanup entered before first completed; image dir calls = %d", got)
+	}
+
+	close(release)
+	for range 2 {
+		select {
+		case err := <-results:
+			if err != nil {
+				t.Fatalf("CleanupStorage() error = %v", err)
+			}
+		case <-time.After(2 * time.Second):
+			t.Fatal("timed out waiting for cleanup completion")
+		}
+	}
+	if got := config.maxActive.Load(); got != 1 {
+		t.Fatalf("maximum concurrent cleanup config calls = %d, want 1", got)
+	}
+}
+
+type blockingCleanupImageConfig struct {
+	testImageConfig
+	started       chan struct{}
+	release       chan struct{}
+	startOnce     sync.Once
+	active        atomic.Int32
+	maxActive     atomic.Int32
+	imageDirCalls atomic.Int32
+}
+
+func (c *blockingCleanupImageConfig) ImagesDir() string {
+	c.imageDirCalls.Add(1)
+	active := c.active.Add(1)
+	for {
+		maximum := c.maxActive.Load()
+		if active <= maximum || c.maxActive.CompareAndSwap(maximum, active) {
+			break
+		}
+	}
+	c.startOnce.Do(func() { close(c.started) })
+	<-c.release
+	c.active.Add(-1)
+	return c.testImageConfig.ImagesDir()
 }
 
 func TestImageServiceDeleteImagesRejectsTraversal(t *testing.T) {
