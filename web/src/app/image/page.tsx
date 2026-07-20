@@ -122,7 +122,7 @@ import {
   isImageConversationAssetURL,
 } from "@/lib/image-conversation-assets";
 import { clearImageManagerCache } from "@/lib/image-manager-cache";
-import { getManagedImagePathFromUrl } from "@/lib/image-path";
+import { getManagedImagePathFromUrl, getManagedImageUrlFromPath } from "@/lib/image-path";
 import { clearStoredRelayApiKey } from "@/lib/relay-key";
 import { AUTH_SESSION_CHANGE_EVENT, getCachedAuthSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
@@ -364,7 +364,11 @@ function reusableOutputCompressionValue(value: unknown, outputFormat: ImageOutpu
 
 async function buildReferenceImageFromStoredImage(image: StoredImage, fileName: string) {
   const mimeType = imageMimeTypeForOutputFormat(image.outputFormat);
-  const source = image.b64_json ? `data:${mimeType};base64,${image.b64_json}` : image.url;
+  const source = image.b64_json
+    ? `data:${mimeType};base64,${image.b64_json}`
+    : image.path
+      ? getManagedImageUrlFromPath(image.path)
+      : image.url;
   if (!source) {
     return null;
   }
@@ -3099,6 +3103,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       }
       const uploadEpoch = referenceUploadEpochRef.current;
       referenceUploadPendingCountRef.current += 1;
+      const toastId = toast.loading("正在加入编辑");
       try {
         const nextReference =
           "dataUrl" in image
@@ -3108,6 +3113,11 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                 `conversation-${conversationId}-${Date.now()}.${imageFileExtensionForOutputFormat(image.outputFormat)}`,
               );
         if (!nextReference || uploadEpoch !== referenceUploadEpochRef.current) {
+          if (!nextReference) {
+            toast.error("未找到可用的结果图，无法加入编辑", { id: toastId });
+          } else {
+            toast.dismiss(toastId);
+          }
           return;
         }
 
@@ -3120,10 +3130,10 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         });
         setImagePrompt("");
         textareaRef.current?.focus();
-        toast.success("已加入当前参考图，继续输入描述即可编辑");
+        toast.success("已加入当前参考图，继续输入描述即可编辑", { id: toastId });
       } catch (error) {
         const message = error instanceof Error ? error.message : "读取结果图失败";
-        toast.error(message);
+        toast.error(message, { id: toastId });
       } finally {
         referenceUploadPendingCountRef.current = Math.max(0, referenceUploadPendingCountRef.current - 1);
       }

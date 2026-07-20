@@ -1,5 +1,5 @@
 import { toPng } from "html-to-image";
-import { Bot, Check, ChevronDown, CircleDot, CircleStop, Clipboard, Copy, Download, FileDown, FileUp, Focus, Grid2X2, Hand, ImagePlus, Images, Info, LoaderCircle, Map as MapIcon, MousePointer2, Pencil, Plus, Redo2, Save, Sparkles, Square, Trash2, Type, Undo2, Upload, WandSparkles, X, ZoomIn, ZoomOut } from "lucide-react";
+import { ArrowUp, Bot, Check, ChevronDown, CircleDot, Clipboard, Copy, Download, FileDown, FileUp, Focus, Grid2X2, Hand, ImagePlus, Images, Info, LoaderCircle, Map as MapIcon, MousePointer2, Pencil, Plus, Redo2, Save, Sparkles, Square, Trash2, Type, Undo2, Upload, WandSparkles, X, ZoomIn, ZoomOut } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 
@@ -14,7 +14,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { cancelCreationTask, clearCanvasDocument, createImageEditTask, createImageGenerationTask, DEFAULT_IMAGE_MODEL, fetchCanvasDocument, fetchCreationTasks, fetchManagedImages, fetchModelConfig, PROFILE_RELAY_TOKEN_NAME_CHANGED_EVENT, PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY, saveCanvasDocument, updateCanvasProject, uploadCanvasImage, type CanvasConnection, type CanvasDocument, type CanvasNode, type CanvasProjectSummary, type CanvasWorkspaceResponse, type CreationTask, type ImageModel, type ManagedImage } from "@/lib/api";
-import { fetchAuthenticatedImageBlob } from "@/lib/authenticated-image";
+import { fetchAuthenticatedImageBlob, primeAuthenticatedImageCache } from "@/lib/authenticated-image";
 import { cn } from "@/lib/utils";
 
 type SaveState = "saved" | "dirty" | "saving" | "error";
@@ -30,8 +30,10 @@ type CanvasContextMenu =
 const DEFAULT_DOCUMENT: CanvasDocument = { version: 1, id: "", revision: 0, title: "我的画布", background: "dots", nodes: [], connections: [], viewport: { zoom: 1, x: 0, y: 0 } };
 const MAX_HISTORY = 40;
 const TASK_POLL_INTERVAL_MS = 1200;
-const TASK_POLL_LIMIT = 320;
+const TASK_POLL_MAX_DURATION_MS = 8 * 60 * 1000;
+const TASK_POLL_MAX_RETRY_DELAY_MS = 10_000;
 const MINI_MAP_STORAGE_KEY = "yunmian-canvas-mini-map-open";
+const STORAGE_IMAGE_FILENAME_PATTERN = /^(?:[0-9]+-)?[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}(?:\.[a-z0-9]+)?$/i;
 
 function cloneDocument(document: CanvasDocument) {
   return JSON.parse(JSON.stringify(document)) as CanvasDocument;
@@ -81,6 +83,31 @@ function taskImageURL(task: CreationTask) {
   });
 }
 
+function promptTitle(prompt?: string) {
+  return String(prompt || "").trim().replace(/\s+/g, " ").slice(0, 32);
+}
+
+function canvasLibraryImageTitle(image: Pick<ManagedImage, "name" | "prompt">) {
+  const name = String(image.name || "").trim();
+  return promptTitle(image.prompt) || (STORAGE_IMAGE_FILENAME_PATTERN.test(name) ? "图片" : name) || "图库图片";
+}
+
+function normalizeCanvasNodeTitle(node: CanvasNode) {
+  const title = String(node.title || "").trim();
+  if (node.type === "image" && STORAGE_IMAGE_FILENAME_PATTERN.test(title)) {
+    return { ...node, title: promptTitle(node.prompt) || "图片" };
+  }
+  return node;
+}
+
+function isRetryableTaskPollError(error: unknown) {
+  const status = typeof error === "object" && error !== null && "status" in error
+    ? Number((error as { status?: unknown }).status)
+    : Number.NaN;
+  if (!Number.isFinite(status)) return true;
+  return status === 408 || status === 425 || status === 429 || status >= 500;
+}
+
 function saveLabel(state: SaveState) {
   if (state === "saving") return "保存中";
   if (state === "dirty") return "未保存";
@@ -102,6 +129,84 @@ function canvasImageParameters(node?: CanvasNode | null) {
   };
 }
 
+function CanvasNodePromptPanel({ node, running, generationBusy, imageModel, imageModelReady, cancelling, canStop, onPromptChange, onParametersChange, onGenerate, onStop }: {
+  node: CanvasNode;
+  running: boolean;
+  generationBusy: boolean;
+  imageModel: string;
+  imageModelReady: boolean;
+  cancelling: boolean;
+  canStop: boolean;
+  onPromptChange: (value: string, commit?: boolean) => void;
+  onParametersChange: (patch: Partial<CanvasNode>) => void;
+  onGenerate: (prompt: string) => void;
+  onStop: () => void;
+}) {
+  const editingExistingImage = Boolean(node.url);
+  const [prompt, setPrompt] = useState(editingExistingImage ? "" : node.prompt || "");
+
+  useEffect(() => {
+    setPrompt(editingExistingImage ? "" : node.prompt || "");
+    // The editor keeps a local draft after opening; node changes should not overwrite active input.
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingExistingImage, node.id]);
+
+  function updatePrompt(value: string) {
+    setPrompt(value);
+    if (!editingExistingImage) onPromptChange(value);
+  }
+
+  function submit() {
+    const value = prompt.trim();
+    if (!value || generationBusy) return;
+    onGenerate(value);
+    setPrompt("");
+  }
+
+  return (
+    <div className="rounded-2xl border border-border bg-card p-3 shadow-[0_18px_50px_rgba(15,23,42,.18)] backdrop-blur-xl">
+      <Textarea
+        value={prompt}
+        onChange={(event) => updatePrompt(event.target.value)}
+        onBlur={(event) => { if (!editingExistingImage) onPromptChange(event.target.value, true); }}
+        onKeyDown={(event) => {
+          if ((event.metaKey || event.ctrlKey) && event.key === "Enter") submit();
+        }}
+        placeholder={editingExistingImage ? "请输入你想要把这张图修改成什么" : "描述要生成的图片内容"}
+        className="h-24 resize-none rounded-xl bg-background px-3 py-2 text-sm leading-5 shadow-none"
+      />
+      <div className="mt-2 flex min-w-0 items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          <span
+            className="inline-flex h-10 min-w-0 max-w-[190px] items-center gap-1.5 rounded-full border border-border bg-background px-3 text-xs font-medium text-muted-foreground"
+            title={`模型：${imageModel || "默认模型"}`}
+          >
+            <Bot className="size-3.5 shrink-0" />
+            <span className="hidden shrink-0 sm:inline">模型</span>
+            <span className="min-w-0 truncate font-semibold text-foreground">{imageModelReady ? imageModel || "默认模型" : "读取中"}</span>
+          </span>
+          <CanvasImageParameterPopover node={node} onChange={onParametersChange} />
+        </div>
+        <Button
+          size="sm"
+          variant={running ? "destructive" : "default"}
+          className="h-10 min-w-16 shrink-0 rounded-full px-3 text-xs"
+          disabled={running ? !canStop || cancelling : !imageModelReady || !prompt.trim() || generationBusy}
+          aria-label={running ? "停止生成" : "生成"}
+          onClick={() => running ? onStop() : submit()}
+        >
+          {running ? (
+            <span className="flex items-center gap-1.5">
+              {cancelling ? <LoaderCircle className="size-4 animate-spin" /> : <Square className="size-3.5 fill-current" />}
+              <span>{cancelling ? "停止中" : "停止"}</span>
+            </span>
+          ) : <ArrowUp className="size-4" />}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 export default function CanvasPage() {
   const hostRef = useRef<HTMLElement | null>(null);
   const documentRef = useRef(cloneDocument(DEFAULT_DOCUMENT));
@@ -119,6 +224,7 @@ export default function CanvasPage() {
   const uploadNodeIDRef = useRef("");
   const uploadPositionRef = useRef<{ x: number; y: number } | null>(null);
   const cancelledTaskIDsRef = useRef(new Set<string>());
+  const transientNodeIDsRef = useRef(new Set<string>());
   const loadedRef = useRef(false);
   const mountedRef = useRef(true);
 
@@ -147,10 +253,9 @@ export default function CanvasPage() {
   const [uploadingNodeID, setUploadingNodeID] = useState("");
   const [contextMenu, setContextMenu] = useState<CanvasContextMenu | null>(null);
   const [runningNodeID, setRunningNodeID] = useState("");
-  const [runningMode, setRunningMode] = useState<"generate" | "edit" | "">("");
+  const [runningResultNodeID, setRunningResultNodeID] = useState("");
   const [runningTaskID, setRunningTaskID] = useState("");
   const [cancellingTaskID, setCancellingTaskID] = useState("");
-  const [runningPreviewImages, setRunningPreviewImages] = useState<Array<{ url: string; width?: number; height?: number }>>([]);
   const [imageModel, setImageModel] = useState<ImageModel>("");
   const [imageModelReady, setImageModelReady] = useState(false);
   const [relayTokenName, setRelayTokenName] = useState(() => {
@@ -209,7 +314,16 @@ export default function CanvasPage() {
   }
 
   function captureDocument(): CanvasDocument {
-    return { ...documentRef.current, version: 1, title: titleRef.current, background: backgroundRef.current, nodes: nodesRef.current, connections: connectionsRef.current, viewport: viewportRef.current };
+    const transientNodeIDs = transientNodeIDsRef.current;
+    return {
+      ...documentRef.current,
+      version: 1,
+      title: titleRef.current,
+      background: backgroundRef.current,
+      nodes: nodesRef.current.filter((node) => !transientNodeIDs.has(node.id)),
+      connections: connectionsRef.current.filter((connection) => !transientNodeIDs.has(connection.from_node_id) && !transientNodeIDs.has(connection.to_node_id)),
+      viewport: viewportRef.current,
+    };
   }
 
   function historyKey(document: CanvasDocument) {
@@ -252,7 +366,8 @@ export default function CanvasPage() {
 
   function applyDocument(document: CanvasDocument, resetHistory = true) {
     loadedRef.current = false;
-    const next = cloneDocument({ ...document, connections: document.connections || [] });
+    transientNodeIDsRef.current.clear();
+    const next = cloneDocument({ ...document, nodes: (document.nodes || []).map(normalizeCanvasNodeTitle), connections: document.connections || [] });
     documentRef.current = next;
     replaceNodes(next.nodes || []);
     replaceConnections(next.connections || []);
@@ -436,6 +551,7 @@ export default function CanvasPage() {
     setUploadingNodeID(nodeID || "canvas-upload");
     try {
       const [uploaded, sourceSize] = await Promise.all([uploadCanvasImage(file), imageFileSize(file)]);
+      await primeAuthenticatedImageCache(uploaded.url, file);
       const size = fitImageNodeSize(sourceSize.width, sourceSize.height);
       let selectedID = nodeID;
       if (target) {
@@ -498,6 +614,7 @@ export default function CanvasPage() {
 
   function removeNodes(ids: Set<string>) {
     if (!ids.size) return;
+    ids.forEach((id) => transientNodeIDsRef.current.delete(id));
     replaceNodes(nodesRef.current.filter((node) => !ids.has(node.id)));
     replaceConnections(connectionsRef.current.filter((connection) => !ids.has(connection.from_node_id) && !ids.has(connection.to_node_id)));
     if (panelNodeID && ids.has(panelNodeID)) setPanelNodeID("");
@@ -692,14 +809,28 @@ export default function CanvasPage() {
   }
 
   async function waitForTask(taskID: string, onProgress?: (task: CreationTask) => void) {
-    for (let index = 0; index < TASK_POLL_LIMIT; index += 1) {
-      await sleep(TASK_POLL_INTERVAL_MS);
-      const task = (await fetchCreationTasks([taskID])).items.find((item) => item.id === taskID);
+    const deadline = Date.now() + TASK_POLL_MAX_DURATION_MS;
+    let delay = TASK_POLL_INTERVAL_MS;
+    let errorCount = 0;
+    while (Date.now() < deadline) {
+      await sleep(delay);
+      let task: CreationTask | undefined;
+      try {
+        task = (await fetchCreationTasks([taskID])).items.find((item) => item.id === taskID);
+        errorCount = 0;
+      } catch (error) {
+        if (!isRetryableTaskPollError(error)) throw error;
+        errorCount += 1;
+        const retryDelay = Math.min(TASK_POLL_MAX_RETRY_DELAY_MS, 1000 * 2 ** Math.min(errorCount - 1, 4));
+        await sleep(retryDelay);
+        continue;
+      }
       if (task) onProgress?.(task);
       if (task?.status === "success") return task;
       if (task?.status === "error" || task?.status === "cancelled") throw new Error(task.error || "图片生成失败");
+      delay = Math.min(2500, Math.round(delay * 1.35));
     }
-    throw new Error("图片任务等待超时");
+    throw new Error("图片任务处理时间过长，请稍后在任务队列中查看结果");
   }
 
   async function stopGeneration() {
@@ -716,10 +847,10 @@ export default function CanvasPage() {
     }
   }
 
-  async function runGeneration(nodeID: string) {
+  async function runGeneration(nodeID: string, prompt?: string) {
     const sourceNode = nodesRef.current.find((node) => node.id === nodeID && node.type === "image");
     if (!sourceNode) return;
-    const text = (sourceNode.prompt || "").trim();
+    const text = (prompt ?? sourceNode.prompt ?? "").trim();
     const mode = sourceNode.url ? "edit" : "generate";
     if (!text || runningNodeID) return toast.error("请输入画面描述");
     const parameters = canvasImageParameters(sourceNode);
@@ -730,10 +861,25 @@ export default function CanvasPage() {
     const taskRelayTokenName = relayTokenName.trim() || undefined;
     const taskID = `canvas-${mode}-${randomID()}`;
     let activeTaskID = taskID;
+    const resultTitle = text.slice(0, 32) || "图片";
+    const resultNodeID = mode === "edit" ? `image-${randomID()}` : sourceNode.id;
+    let resultNode = sourceNode;
+    if (mode === "edit") {
+      transientNodeIDsRef.current.add(resultNodeID);
+      resultNode = {
+        ...buildImageNode(
+          { url: "", title: resultTitle, prompt: text, width: 340, height: 240, taskID },
+          { x: sourceNode.x + sourceNode.width + 96, y: sourceNode.y + sourceNode.height / 2 - 120 },
+          sourceNode,
+        ),
+        id: resultNodeID,
+      };
+      replaceNodes([...nodesRef.current, resultNode]);
+      replaceConnections([...connectionsRef.current, { id: `connection-${randomID()}`, from_node_id: sourceNode.id, to_node_id: resultNode.id }]);
+    }
     setRunningNodeID(nodeID);
-    setRunningMode(mode);
+    setRunningResultNodeID(resultNodeID);
     setRunningTaskID("");
-    setRunningPreviewImages([]);
     try {
       let submitted: CreationTask;
       if (mode === "edit" && sourceNode.url) {
@@ -745,58 +891,51 @@ export default function CanvasPage() {
       const images = taskImageURL(await waitForTask(activeTaskID, (task) => {
         const previews = taskImageURL(task);
         if (!previews.length) return;
-        setRunningPreviewImages(previews);
-        if (mode === "generate" && !sourceNode.url) {
-          replaceNodes(nodesRef.current.map((node) => node.id === sourceNode.id ? { ...node, url: previews[0].url, thumbnail_url: "" } : node));
-        }
+        replaceNodes(nodesRef.current.map((node) => node.id === resultNodeID ? { ...node, url: previews[0].url, thumbnail_url: "" } : node));
       }));
       if (!images.length) throw new Error("任务完成但没有返回图片");
-      let start = 0;
-      let parentNode = sourceNode;
-      let nextNodes = nodesRef.current;
-      if (mode === "generate" && !sourceNode.url) {
-        const image = images[0];
-        const dimensions = image.width && image.height ? fitImageNodeSize(image.width, image.height) : { width: sourceNode.width, height: sourceNode.height };
-        parentNode = {
-          ...sourceNode,
-          x: sourceNode.x + (sourceNode.width - dimensions.width) / 2,
-          y: sourceNode.y + (sourceNode.height - dimensions.height) / 2,
-          width: dimensions.width,
-          height: dimensions.height,
-          url: image.url,
-          thumbnail_url: "",
-          title: "图片",
-          prompt: text,
-          task_id: taskID,
-        };
-        nextNodes = nextNodes.map((node) => node.id === sourceNode.id ? parentNode : node);
-        start = 1;
-      }
-      let nextY = parentNode.y;
-      const childNodes = images.slice(start).map((image) => {
+      const image = images[0];
+      const currentResult = nodesRef.current.find((node) => node.id === resultNodeID) || resultNode;
+      const dimensions = image.width && image.height ? fitImageNodeSize(image.width, image.height) : { width: currentResult.width, height: currentResult.height };
+      const rootNode: CanvasNode = {
+        ...currentResult,
+        x: currentResult.x + (currentResult.width - dimensions.width) / 2,
+        y: currentResult.y + (currentResult.height - dimensions.height) / 2,
+        width: dimensions.width,
+        height: dimensions.height,
+        url: image.url,
+        thumbnail_url: "",
+        title: resultTitle,
+        prompt: text,
+        task_id: activeTaskID,
+      };
+      const nextNodes = nodesRef.current.map((node) => node.id === resultNodeID ? rootNode : node);
+      let nextY = rootNode.y;
+      const childNodes = images.slice(1).map((childImage) => {
         const child = buildImageNode(
-          { url: image.url, title: "图片", prompt: text, width: image.width, height: image.height, taskID },
-          { x: parentNode.x + parentNode.width + 110, y: nextY },
-          parentNode,
+          { url: childImage.url, title: resultTitle, prompt: text, width: childImage.width, height: childImage.height, taskID: activeTaskID },
+          { x: rootNode.x + rootNode.width + 110, y: nextY },
+          rootNode,
         );
         nextY += child.height + 48;
         return child;
       });
+      transientNodeIDsRef.current.delete(resultNodeID);
       replaceNodes([...nextNodes, ...childNodes]);
       if (childNodes.length) {
         replaceConnections([
           ...connectionsRef.current,
-          ...childNodes.map((child) => ({ id: `connection-${randomID()}`, from_node_id: parentNode.id, to_node_id: child.id })),
+          ...childNodes.map((child) => ({ id: `connection-${randomID()}`, from_node_id: rootNode.id, to_node_id: child.id })),
         ]);
       }
-      setSelectedNodeIDs(new Set([childNodes[0]?.id || parentNode.id]));
+      setSelectedNodeIDs(new Set([rootNode.id]));
       setSelectedConnectionID("");
       setPanelNodeID("");
       pushHistory();
       void refreshLibrary();
       toast.success(`已添加 ${images.length} 张图片到画布`);
     } catch (error) {
-      if (mode === "generate" && !sourceNode.url) {
+      if (mode === "generate") {
         replaceNodes(nodesRef.current.map((node) => node.id === sourceNode.id ? {
           ...node,
           x: sourceNode.x,
@@ -808,16 +947,20 @@ export default function CanvasPage() {
           title: sourceNode.title,
           task_id: sourceNode.task_id,
         } : node));
+      } else {
+        transientNodeIDsRef.current.delete(resultNodeID);
+        replaceNodes(nodesRef.current.filter((node) => node.id !== resultNodeID));
+        replaceConnections(connectionsRef.current.filter((connection) => connection.from_node_id !== resultNodeID && connection.to_node_id !== resultNodeID));
       }
+      scheduleSave();
       if (!cancelledTaskIDsRef.current.has(activeTaskID)) toast.error(error instanceof Error ? error.message : "创作任务失败");
     } finally {
       cancelledTaskIDsRef.current.delete(activeTaskID);
       if (mountedRef.current) {
         setRunningNodeID("");
-        setRunningMode("");
+        setRunningResultNodeID("");
         setRunningTaskID("");
         setCancellingTaskID("");
-        setRunningPreviewImages([]);
       }
     }
   }
@@ -885,7 +1028,7 @@ export default function CanvasPage() {
     if (!raw) return;
     try {
       const image = JSON.parse(raw) as ManagedImage;
-      addImageNode({ url: image.url || image.path, thumbnailURL: image.thumbnail_url, title: image.name || "图库图片", prompt: image.prompt, width: image.width, height: image.height }, { x: position.x - 180, y: position.y - 180 });
+      addImageNode({ url: image.url || image.path, thumbnailURL: image.thumbnail_url, title: canvasLibraryImageTitle(image), prompt: image.prompt, width: image.width, height: image.height }, { x: position.x - 180, y: position.y - 180 });
     } catch {
       toast.error("无法添加这张图片");
     }
@@ -893,53 +1036,20 @@ export default function CanvasPage() {
 
   function renderNodePanel(node: CanvasNode) {
     const running = runningNodeID === node.id;
-    const editing = running ? runningMode === "edit" : Boolean(node.url);
     return (
-      <div className="rounded-2xl border border-border bg-card p-3 shadow-2xl">
-        {running && runningMode === "edit" && runningPreviewImages.length ? (
-          <div className="mb-2 flex gap-2 overflow-x-auto rounded-xl border border-border bg-muted/25 p-2">
-            {runningPreviewImages.map((image, index) => <AuthenticatedImage key={`${image.url}-${index}`} src={image.url} alt={`生成预览 ${index + 1}`} className="size-20 shrink-0 rounded-lg border border-border object-cover" />)}
-          </div>
-        ) : null}
-        <Textarea
-          value={node.prompt || ""}
-          disabled={running}
-          onChange={(event) => updateNodePrompt(node.id, event.target.value)}
-          onBlur={(event) => updateNodePrompt(node.id, event.target.value, true)}
-          placeholder={editing ? "描述要如何修改这张图片" : "描述要生成的图片内容"}
-          className="h-28 resize-none rounded-xl bg-background px-3 py-3 text-sm leading-6 shadow-none"
-        />
-        <div className="mt-2 flex items-center justify-between gap-3">
-          <div className="flex min-w-0 items-center gap-2">
-            <span
-              className="inline-flex h-9 min-w-0 max-w-[190px] shrink items-center gap-1.5 rounded-full border border-border bg-background px-3 text-xs font-medium text-muted-foreground"
-              title={`模型：${imageModel || "默认模型"}`}
-            >
-              <Bot className="size-3.5 shrink-0" />
-              <span className="shrink-0">模型</span>
-              <span className="min-w-0 truncate font-semibold text-foreground">
-                {imageModelReady ? imageModel || "默认模型" : "读取中"}
-              </span>
-            </span>
-            <CanvasImageParameterPopover node={node} onChange={(patch) => updateNodeGenerationParameters(node.id, patch)} />
-            <span className="hidden truncate text-xs text-muted-foreground sm:inline">{editing ? "基于当前图片编辑" : "在当前节点生成图片"}</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button variant="ghost" size="sm" className="h-9 rounded-full px-3 text-xs" onClick={() => setPanelNodeID("")}><X className="size-3.5" />关闭</Button>
-            {running ? (
-              <Button variant="destructive" size="sm" className="h-9 min-w-24 rounded-full px-4 text-xs" disabled={!runningTaskID || Boolean(cancellingTaskID)} onClick={() => void stopGeneration()}>
-                {cancellingTaskID ? <LoaderCircle className="animate-spin" /> : <CircleStop />}
-                {cancellingTaskID ? "停止中" : runningTaskID ? "停止生成" : "提交中"}
-              </Button>
-            ) : (
-              <Button size="sm" className="h-9 min-w-20 rounded-full px-4 text-xs" disabled={!imageModelReady || !node.prompt?.trim() || Boolean(runningNodeID)} onClick={() => void runGeneration(node.id)}>
-                {editing ? <WandSparkles /> : <Sparkles />}
-                {editing ? "编辑" : "生成"}
-              </Button>
-            )}
-          </div>
-        </div>
-      </div>
+      <CanvasNodePromptPanel
+        node={node}
+        running={running}
+        generationBusy={Boolean(runningNodeID)}
+        imageModel={imageModel}
+        imageModelReady={imageModelReady}
+        cancelling={Boolean(cancellingTaskID)}
+        canStop={Boolean(runningTaskID)}
+        onPromptChange={(value, commit) => updateNodePrompt(node.id, value, commit)}
+        onParametersChange={(patch) => updateNodeGenerationParameters(node.id, patch)}
+        onGenerate={(prompt) => void runGeneration(node.id, prompt)}
+        onStop={() => void stopGeneration()}
+      />
     );
   }
 
@@ -1026,7 +1136,7 @@ export default function CanvasPage() {
 
   return (
     <section ref={hostRef} className="relative h-full min-h-[540px] overflow-hidden rounded-xl border border-border bg-[#eef2f7] shadow-[0_18px_48px_-34px_rgba(15,23,42,0.42)] dark:bg-[#161a20]">
-      <CanvasEngine nodes={nodes} connections={connections} viewport={viewport} background={background} tool={tool} selectedNodeIDs={selectedNodeIDs} selectedConnectionID={selectedConnectionID} panelNodeID={panelNodeID} runningNodeID={runningNodeID} onNodesChange={replaceNodes} onNodesCommit={pushHistory} onViewportChange={updateViewport} onSelectionChange={selectionChanged} onConnect={connectNodes} canConnect={canConnect} onConnectionDropEmpty={(origin, position, menu) => setPendingConnection({ ...origin, position, menu })} onPromptChange={updateNodePrompt} onTitleChange={updateNodeTitle} onNodePanelToggle={(nodeID) => setPanelNodeID((current) => current === nodeID ? "" : nodeID)} onNodeUpload={requestNodeImageUpload} uploadingNodeID={uploadingNodeID} onViewImage={(nodeID) => { setPanelNodeID(""); setPreviewNodeID(nodeID); }} onCopyPrompt={(nodeID) => void copyNodePrompt(nodeID)} onDownloadImage={(nodeID) => void downloadNodeImage(nodeID)} onTextToImage={generateFromTextNode} onNodeInfo={setInfoNodeID} onNodeDelete={(nodeID) => removeNodes(new Set([nodeID]))} onNodeContextMenu={openNodeContextMenu} onConnectionContextMenu={openConnectionContextMenu} onCanvasContextMenu={openCanvasContextMenu} onCanvasDoubleClick={(event, position) => { const rect = hostRef.current?.getBoundingClientRect(); setNodeCreateMenu({ position, menu: { x: event.clientX - (rect?.left || 0), y: event.clientY - (rect?.top || 0) } }); }} renderNodePanel={renderNodePanel} onDrop={handleCanvasDrop} />
+      <CanvasEngine nodes={nodes} connections={connections} viewport={viewport} background={background} tool={tool} selectedNodeIDs={selectedNodeIDs} selectedConnectionID={selectedConnectionID} panelNodeID={panelNodeID} runningNodeID={runningNodeID} loadingNodeID={runningResultNodeID} onNodesChange={replaceNodes} onNodesCommit={pushHistory} onViewportChange={updateViewport} onSelectionChange={selectionChanged} onConnect={connectNodes} canConnect={canConnect} onConnectionDropEmpty={(origin, position, menu) => setPendingConnection({ ...origin, position, menu })} onPromptChange={updateNodePrompt} onTitleChange={updateNodeTitle} onNodePanelToggle={(nodeID) => setPanelNodeID((current) => current === nodeID ? "" : nodeID)} onNodeUpload={requestNodeImageUpload} uploadingNodeID={uploadingNodeID} onViewImage={(nodeID) => { setPanelNodeID(""); setPreviewNodeID(nodeID); }} onCopyPrompt={(nodeID) => void copyNodePrompt(nodeID)} onDownloadImage={(nodeID) => void downloadNodeImage(nodeID)} onTextToImage={generateFromTextNode} onNodeInfo={setInfoNodeID} onNodeDelete={(nodeID) => removeNodes(new Set([nodeID]))} onNodeContextMenu={openNodeContextMenu} onConnectionContextMenu={openConnectionContextMenu} onCanvasContextMenu={openCanvasContextMenu} onCanvasDoubleClick={(event, position) => { const rect = hostRef.current?.getBoundingClientRect(); setNodeCreateMenu({ position, menu: { x: event.clientX - (rect?.left || 0), y: event.clientY - (rect?.top || 0) } }); }} renderNodePanel={renderNodePanel} onDrop={handleCanvasDrop} />
 
       {pendingConnection ? <div data-connection-create-menu className="absolute z-40 w-48 rounded-xl border border-border bg-card p-1.5 shadow-xl" style={{ left: Math.max(8, Math.min(pendingConnection.menu.x, (hostRef.current?.clientWidth || 240) - 200)), top: Math.max(64, Math.min(pendingConnection.menu.y, (hostRef.current?.clientHeight || 240) - 130)) }}><p className="px-2 py-1.5 text-[11px] font-semibold text-muted-foreground">创建节点并连接</p><button className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs hover:bg-muted" onClick={() => createPendingNode("text")}><Type className="size-4" />想法节点</button><button className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs hover:bg-muted" onClick={() => createPendingNode("image")}><ImagePlus className="size-4" />空白图片节点</button></div> : null}
       {nodeCreateMenu ? <div data-node-create-menu className="absolute z-40 w-48 rounded-xl border border-border bg-card p-1.5 shadow-xl" style={{ left: Math.max(8, Math.min(nodeCreateMenu.menu.x, (hostRef.current?.clientWidth || 240) - 200)), top: Math.max(64, Math.min(nodeCreateMenu.menu.y, (hostRef.current?.clientHeight || 240) - 130)) }}><p className="px-2 py-1.5 text-[11px] font-semibold text-muted-foreground">添加到画布</p><button className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs hover:bg-muted" onClick={() => { addTextNodeAt({ x: nodeCreateMenu.position.x - 170, y: nodeCreateMenu.position.y - 110 }); setNodeCreateMenu(null); }}><Type className="size-4" />想法节点</button><button className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs hover:bg-muted" onClick={() => { addBlankNodeAt({ x: nodeCreateMenu.position.x - 170, y: nodeCreateMenu.position.y - 120 }); setNodeCreateMenu(null); }}><ImagePlus className="size-4" />空白图片节点</button></div> : null}
@@ -1071,7 +1181,7 @@ export default function CanvasPage() {
 
       {projectMenuOpen ? <aside className="absolute top-16 left-3 z-30 w-80 rounded-xl border border-border bg-card shadow-xl"><div className="flex items-center justify-between border-b p-3"><div><p className="text-sm font-semibold">画布项目</p><p className="text-[11px] text-muted-foreground">跨设备自动同步</p></div><Button size="sm" className="h-8 text-xs" onClick={() => { const value = window.prompt("新画布名称", `无限画布 ${projects.length + 1}`)?.trim(); if (value) void runProject({ action: "create", title: value }); }}><Plus />新建</Button></div><div className="max-h-56 overflow-y-auto p-1.5">{projects.map((project) => <button key={project.id} className={cn("flex w-full items-center gap-2 rounded-lg p-2 text-left text-xs hover:bg-muted", project.id === documentRef.current.id && "bg-[#e7efff] text-[#1456f0]")} onClick={() => project.id !== documentRef.current.id && void runProject({ action: "activate", project_id: project.id })}><span className="flex size-7 items-center justify-center rounded-md bg-muted">{project.id === documentRef.current.id ? <Check className="size-3.5" /> : project.node_count}</span><span className="truncate font-semibold">{project.title}</span></button>)}</div><div className="space-y-2 border-t p-2.5"><div className="flex rounded-lg bg-muted p-1"><BackgroundButton active={background === "dots"} label="点阵" onClick={() => { backgroundRef.current = "dots"; setBackground("dots"); setTimeout(pushHistory); }}><CircleDot /></BackgroundButton><BackgroundButton active={background === "grid"} label="网格" onClick={() => { backgroundRef.current = "grid"; setBackground("grid"); setTimeout(pushHistory); }}><Grid2X2 /></BackgroundButton><BackgroundButton active={background === "plain"} label="空白" onClick={() => { backgroundRef.current = "plain"; setBackground("plain"); setTimeout(pushHistory); }}><Square /></BackgroundButton></div><div className="grid grid-cols-2 gap-2"><Button variant="outline" size="sm" onClick={() => { const value = window.prompt("画布名称", title)?.trim(); if (value) void runProject({ action: "rename", project_id: documentRef.current.id, title: value }); }}><Pencil />重命名</Button><Button variant="outline" size="sm" className="text-rose-600" onClick={() => window.confirm(`确定删除“${title}”吗？`) && void runProject({ action: "delete", project_id: documentRef.current.id })}><Trash2 />删除</Button></div></div></aside> : null}
 
-      {libraryOpen ? <aside className="absolute inset-y-16 left-3 z-20 flex w-80 flex-col rounded-xl border border-border bg-card shadow-xl"><div className="flex h-12 items-center justify-between border-b px-3"><span className="text-sm font-semibold">图片库 · {libraryImages.length}</span><Button variant="ghost" size="icon" onClick={() => setLibraryOpen(false)}><X /></Button></div><div className="min-h-0 flex-1 overflow-y-auto p-2.5">{libraryLoading ? <LoaderCircle className="mx-auto mt-16 animate-spin" /> : <div className="grid grid-cols-2 gap-2">{libraryImages.map((image) => <button key={image.path} draggable className="relative aspect-square overflow-hidden rounded-lg border" onDragStart={(event) => event.dataTransfer.setData("application/x-yunmian-image", JSON.stringify(image))} onClick={() => addImageNode({ url: image.url || image.path, thumbnailURL: image.thumbnail_url, title: image.name, prompt: image.prompt, width: image.width, height: image.height })}><AuthenticatedImage src={image.thumbnail_url || image.url || image.path} alt={image.name} className="size-full object-cover" /></button>)}</div>}</div></aside> : null}
+      {libraryOpen ? <aside className="absolute inset-y-16 left-3 z-20 flex w-80 flex-col rounded-xl border border-border bg-card shadow-xl"><div className="flex h-12 items-center justify-between border-b px-3"><span className="text-sm font-semibold">图片库 · {libraryImages.length}</span><Button variant="ghost" size="icon" onClick={() => setLibraryOpen(false)}><X /></Button></div><div className="min-h-0 flex-1 overflow-y-auto p-2.5">{libraryLoading ? <LoaderCircle className="mx-auto mt-16 animate-spin" /> : <div className="grid grid-cols-2 gap-2">{libraryImages.map((image) => <button key={image.path} draggable className="relative aspect-square overflow-hidden rounded-lg border" onDragStart={(event) => event.dataTransfer.setData("application/x-yunmian-image", JSON.stringify(image))} onClick={() => addImageNode({ url: image.url || image.path, thumbnailURL: image.thumbnail_url, title: canvasLibraryImageTitle(image), prompt: image.prompt, width: image.width, height: image.height })}><AuthenticatedImage src={image.thumbnail_url || image.url || image.path} alt={canvasLibraryImageTitle(image)} className="size-full object-cover" /></button>)}</div>}</div></aside> : null}
 
       {miniMapOpen && !libraryOpen && nodes.length && canvasSize.width > 0 ? <CanvasMiniMap nodes={nodes} viewport={viewport} viewportSize={canvasSize} onViewportChange={(next) => updateViewport(next, true)} /> : null}
 

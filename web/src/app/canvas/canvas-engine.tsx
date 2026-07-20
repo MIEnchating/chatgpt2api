@@ -20,6 +20,7 @@ type CanvasEngineProps = {
   selectedConnectionID: string;
   panelNodeID: string;
   runningNodeID: string;
+  loadingNodeID: string;
   onNodesChange: (nodes: CanvasNode[]) => void;
   onNodesCommit: () => void;
   onViewportChange: (viewport: CanvasDocument["viewport"], commit?: boolean) => void;
@@ -56,6 +57,7 @@ export function CanvasEngine({
   selectedConnectionID,
   panelNodeID,
   runningNodeID,
+  loadingNodeID,
   onNodesChange,
   onNodesCommit,
   onViewportChange,
@@ -342,6 +344,22 @@ export function CanvasEngine({
   const preview = connectionPreview(connecting, connectionTargetID, mouseWorld, nodeByID);
   const toolbarNodeID = selectedNodeIDs.size === 1 ? Array.from(selectedNodeIDs)[0] : "";
   const toolbarNode = toolbarNodeID ? nodeByID.get(toolbarNodeID) || null : null;
+  const panelNode = panelNodeID ? nodeByID.get(panelNodeID) || null : null;
+  const panelWidth = Math.min(500, Math.max(280, (containerRef.current?.clientWidth || 532) - 32));
+  const panelNodeTop = panelNode ? viewport.y + panelNode.y * viewport.zoom : 0;
+  const panelNodeBottom = panelNode ? viewport.y + (panelNode.y + panelNode.height) * viewport.zoom : 0;
+  const panelHeight = 180;
+  const canvasHeight = containerRef.current?.clientHeight || window.innerHeight;
+  const spaceBelow = canvasHeight - panelNodeBottom - 88;
+  const spaceAbove = panelNodeTop - 16;
+  const panelLeft = panelNode
+    ? Math.max(16 + panelWidth / 2, Math.min((containerRef.current?.clientWidth || window.innerWidth) - 16 - panelWidth / 2, viewport.x + (panelNode.x + panelNode.width / 2) * viewport.zoom))
+    : 0;
+  const panelTop = spaceBelow >= panelHeight
+    ? panelNodeBottom + 16
+    : spaceAbove >= panelHeight
+      ? panelNodeTop - panelHeight - 16
+      : Math.max(16, canvasHeight - panelHeight - 16);
 
   return (
     <div
@@ -399,7 +417,7 @@ export function CanvasEngine({
             node={node}
             selected={selectedNodeIDs.has(node.id)}
             showPanel={panelNodeID === node.id}
-            running={runningNodeID === node.id}
+            loading={loadingNodeID === node.id}
             connecting={Boolean(connecting)}
             connectionTarget={connectionTargetID === node.id}
             onMouseDown={startNodeDrag}
@@ -411,7 +429,6 @@ export function CanvasEngine({
             onViewImage={onViewImage}
             onTextToImage={onTextToImage}
             onContextMenu={onNodeContextMenu}
-            renderPanel={renderNodePanel}
           />
         ))}
 
@@ -419,12 +436,24 @@ export function CanvasEngine({
           <div className="pointer-events-none absolute border border-[#1456f0] bg-[#1456f0]/10" style={selectionBoxStyle(selectionBox)} />
         ) : null}
       </div>
+      {panelNode ? (
+        <div
+          data-canvas-no-pan
+          className="absolute z-[90]"
+          style={{ left: panelLeft, top: panelTop, width: panelWidth, transform: "translateX(-50%)" }}
+          onMouseDown={(event) => event.stopPropagation()}
+          onPointerDown={(event) => event.stopPropagation()}
+          onWheel={(event) => event.stopPropagation()}
+        >
+          {renderNodePanel(panelNode)}
+        </div>
+      ) : null}
       {toolbarNode ? (
         <CanvasNodeToolbar
           node={toolbarNode}
           viewport={viewport}
           showPanel={panelNodeID === toolbarNode.id}
-          running={runningNodeID === toolbarNode.id}
+          running={runningNodeID === toolbarNode.id || loadingNodeID === toolbarNode.id}
           uploading={uploadingNodeID === toolbarNode.id}
           onInfo={() => onNodeInfo(toolbarNode.id)}
           onEditText={() => setTextEditRequest((current) => ({ nodeID: toolbarNode.id, nonce: current.nonce + 1 }))}
@@ -443,11 +472,11 @@ export function CanvasEngine({
 
 type ResizeCorner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
 
-function CanvasDOMNode({ node, selected, showPanel, running, connecting, connectionTarget, onMouseDown, onResize, onConnect, onPromptChange, onTitleChange, editRequestNonce, onViewImage, onTextToImage, onContextMenu, renderPanel }: {
+function CanvasDOMNode({ node, selected, showPanel, loading, connecting, connectionTarget, onMouseDown, onResize, onConnect, onPromptChange, onTitleChange, editRequestNonce, onViewImage, onTextToImage, onContextMenu }: {
   node: CanvasNode;
   selected: boolean;
   showPanel: boolean;
-  running: boolean;
+  loading: boolean;
   connecting: boolean;
   connectionTarget: boolean;
   onMouseDown: (event: ReactMouseEvent, nodeID: string) => void;
@@ -459,7 +488,6 @@ function CanvasDOMNode({ node, selected, showPanel, running, connecting, connect
   onViewImage: (nodeID: string) => void;
   onTextToImage: (nodeID: string) => void;
   onContextMenu: (event: ReactMouseEvent, nodeID: string) => void;
-  renderPanel: (node: CanvasNode) => ReactNode;
 }) {
   const [hovered, setHovered] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -598,12 +626,20 @@ function CanvasDOMNode({ node, selected, showPanel, running, connecting, connect
           </div>
         )}
         {node.type === "text" ? <button data-canvas-no-pan type="button" className="absolute top-3 right-3 z-20 flex h-8 items-center gap-1.5 rounded-full border border-border bg-card/90 px-3 text-xs font-medium shadow-sm backdrop-blur hover:bg-muted" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onTextToImage(node.id); }}><ImagePlus className="size-3.5" />生图</button> : null}
-        {running ? <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center rounded-[inherit] bg-black/25 backdrop-blur-[1px]"><span className="flex items-center gap-2 rounded-full bg-black/65 px-3 py-2 text-xs font-medium text-white"><LoaderCircle className="size-4 animate-spin" />生成中</span></div> : null}
+        {loading ? node.url ? (
+          <div className="pointer-events-none absolute inset-0 z-30 flex items-center justify-center rounded-[inherit] bg-black/20">
+            <span className="flex items-center gap-2 rounded-full bg-black/70 px-3 py-2 text-xs font-medium text-white"><LoaderCircle className="size-4 animate-spin" />生成中</span>
+          </div>
+        ) : (
+          <div className="pointer-events-none absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 rounded-[inherit] bg-card text-[#1456f0]">
+            <LoaderCircle className="size-8 animate-spin" />
+            <span className="text-[10px] font-medium tracking-[0.16em]">生成中</span>
+          </div>
+        ) : null}
       </div>
       <ConnectionHandle side="left" visible={hovered || selected || connecting} onMouseDown={(event) => onConnect(event, node.id, "target")} />
       <ConnectionHandle side="right" visible={hovered || selected || connecting} onMouseDown={(event) => onConnect(event, node.id, "source")} />
       {selected ? (["top-left", "top-right", "bottom-left", "bottom-right"] as ResizeCorner[]).map((corner) => <ResizeHandle key={corner} corner={corner} onMouseDown={(event) => onResize(event, node, corner)} />) : null}
-      {showPanel ? <div data-canvas-no-pan className="absolute top-full left-1/2 z-[70] w-[500px] -translate-x-1/2 pt-4" onMouseDown={(event) => event.stopPropagation()}>{renderPanel(node)}</div> : null}
     </div>
   );
 }

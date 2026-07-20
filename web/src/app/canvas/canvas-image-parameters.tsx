@@ -82,7 +82,7 @@ export function CanvasImageParameterPopover({ node, onChange }: { node: CanvasNo
   return (
     <>
       <span ref={buttonRef} className="inline-flex">
-        <button type="button" className={cn("inline-flex h-9 items-center gap-2 rounded-full border border-border bg-background px-3 text-xs font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground", open && "border-[#bfd1ff] bg-[#eef4ff] text-[#1456f0]")} onClick={() => setOpen((value) => !value)}>
+        <button type="button" className={cn("inline-flex h-10 shrink-0 items-center gap-2 whitespace-nowrap rounded-full border border-border bg-background px-3 text-xs font-medium text-muted-foreground transition hover:bg-muted hover:text-foreground", open && "border-[#bfd1ff] bg-[#eef4ff] text-[#1456f0]")} onClick={() => setOpen((value) => !value)}>
           <SlidersHorizontal className="size-3.5" />
           <span>{sizeLabel}</span>
           <span className="text-border">·</span>

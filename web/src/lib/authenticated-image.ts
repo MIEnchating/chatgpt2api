@@ -146,6 +146,22 @@ function storeAuthenticatedImageCacheEntry(key: string, objectURL: string, byteS
   trimAuthenticatedImageCache();
 }
 
+async function decodeAuthenticatedImage(objectURL: string) {
+  if (typeof Image === "undefined") return;
+  const image = new Image();
+  image.decoding = "async";
+  if (typeof image.decode === "function") {
+    image.src = objectURL;
+    await image.decode();
+    return;
+  }
+  await new Promise<void>((resolve, reject) => {
+    image.onload = () => resolve();
+    image.onerror = () => reject(new Error("图片解码失败"));
+    image.src = objectURL;
+  });
+}
+
 export function resolveImageRequestURL(src: string) {
   const value = String(src || "").trim();
   if (!value) {
@@ -231,14 +247,19 @@ export async function fetchCachedAuthenticatedImage(src: string): Promise<Retain
   let pending = pendingAuthenticatedImageFetches.get(key);
   if (!pending) {
     pending = fetchAuthenticatedImageBlob(src)
-      .then((blob) => {
+      .then(async (blob) => {
         const objectURL = URL.createObjectURL(blob);
-        if (generation !== authenticatedImageCacheGeneration) {
+        try {
+          await decodeAuthenticatedImage(objectURL);
+          if (generation !== authenticatedImageCacheGeneration) {
+            throw new Error("图片缓存已重置");
+          }
+          storeAuthenticatedImageCacheEntry(key, objectURL, blob.size);
+          return { key, objectURL, byteSize: blob.size };
+        } catch (error) {
           URL.revokeObjectURL(objectURL);
-          throw new Error("图片缓存已重置");
+          throw error;
         }
-        storeAuthenticatedImageCacheEntry(key, objectURL, blob.size);
-        return { key, objectURL, byteSize: blob.size };
       })
       .finally(() => {
         pendingAuthenticatedImageFetches.delete(key);
@@ -252,6 +273,23 @@ export async function fetchCachedAuthenticatedImage(src: string): Promise<Retain
     throw new Error("图片缓存不可用");
   }
   return retainAuthenticatedImageCacheEntry(key, entry);
+}
+
+export async function primeAuthenticatedImageCache(src: string, blob: Blob) {
+  const key = resolveImageRequestURL(src);
+  if (!key || authenticatedImageCache.has(key)) return;
+  const generation = authenticatedImageCacheGeneration;
+  const objectURL = URL.createObjectURL(blob);
+  try {
+    await decodeAuthenticatedImage(objectURL);
+    if (generation !== authenticatedImageCacheGeneration) {
+      throw new Error("图片缓存已重置");
+    }
+    storeAuthenticatedImageCacheEntry(key, objectURL, blob.size);
+  } catch (error) {
+    URL.revokeObjectURL(objectURL);
+    throw error;
+  }
 }
 
 export function releaseCachedAuthenticatedImage(key: string) {

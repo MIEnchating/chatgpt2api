@@ -145,6 +145,11 @@
     scrollbar-gutter: stable;
     overflow-y: auto;
   }
+  html[data-image-lightbox-open] {
+    scrollbar-gutter: auto;
+    overflow: hidden;
+    background: #262626;
+  }
   body {
     @apply bg-background font-sans text-foreground antialiased;
     background-image: linear-gradient(180deg, var(--page-background-start) 0%, var(--background) 42%, var(--page-background-end) 100%);

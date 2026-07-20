@@ -872,6 +872,7 @@ export function ImageResults({
                               <button
                                 type="button"
                                 onClick={(event) => {
+                                  event.stopPropagation();
                                   event.currentTarget.blur();
                                   onOpenLightbox(successfulTurnImages, currentIndex);
                                 }}
@@ -885,6 +886,7 @@ export function ImageResults({
                               <button
                                 type="button"
                                 onClick={(event) => {
+                                  event.stopPropagation();
                                   event.currentTarget.blur();
                                   onContinueEdit(selectedConversation.id, image);
                                 }}
