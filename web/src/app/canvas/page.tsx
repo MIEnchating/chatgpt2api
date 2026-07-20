@@ -1,9 +1,10 @@
 import { toPng } from "html-to-image";
-import { Check, ChevronDown, CircleDot, CircleStop, Clipboard, Copy, Download, FileDown, FileUp, Focus, Grid2X2, Hand, ImagePlus, Images, Info, LoaderCircle, Map as MapIcon, MousePointer2, Pencil, Plus, Redo2, Save, Sparkles, Square, Trash2, Type, Undo2, Upload, WandSparkles, X, ZoomIn, ZoomOut } from "lucide-react";
+import { Bot, Check, ChevronDown, CircleDot, CircleStop, Clipboard, Copy, Download, FileDown, FileUp, Focus, Grid2X2, Hand, ImagePlus, Images, Info, LoaderCircle, Map as MapIcon, MousePointer2, Pencil, Plus, Redo2, Save, Sparkles, Square, Trash2, Type, Undo2, Upload, WandSparkles, X, ZoomIn, ZoomOut } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 
 import { CanvasEngine } from "@/app/canvas/canvas-engine";
+import { resolveCanvasImageModel } from "@/app/canvas/canvas-image-model";
 import { defaultCanvasImageParameters } from "@/app/canvas/canvas-image-parameter-defaults";
 import { CanvasImageParameterPopover } from "@/app/canvas/canvas-image-parameters";
 import { AuthenticatedImage } from "@/components/authenticated-image";
@@ -12,7 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { cancelCreationTask, clearCanvasDocument, createImageEditTask, createImageGenerationTask, fetchCanvasDocument, fetchCreationTasks, fetchManagedImages, PROFILE_RELAY_TOKEN_NAME_CHANGED_EVENT, PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY, saveCanvasDocument, updateCanvasProject, uploadCanvasImage, type CanvasConnection, type CanvasDocument, type CanvasNode, type CanvasProjectSummary, type CanvasWorkspaceResponse, type CreationTask, type ManagedImage } from "@/lib/api";
+import { cancelCreationTask, clearCanvasDocument, createImageEditTask, createImageGenerationTask, DEFAULT_IMAGE_MODEL, fetchCanvasDocument, fetchCreationTasks, fetchManagedImages, fetchModelConfig, PROFILE_RELAY_TOKEN_NAME_CHANGED_EVENT, PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY, saveCanvasDocument, updateCanvasProject, uploadCanvasImage, type CanvasConnection, type CanvasDocument, type CanvasNode, type CanvasProjectSummary, type CanvasWorkspaceResponse, type CreationTask, type ImageModel, type ManagedImage } from "@/lib/api";
 import { fetchAuthenticatedImageBlob } from "@/lib/authenticated-image";
 import { cn } from "@/lib/utils";
 
@@ -150,6 +151,8 @@ export default function CanvasPage() {
   const [runningTaskID, setRunningTaskID] = useState("");
   const [cancellingTaskID, setCancellingTaskID] = useState("");
   const [runningPreviewImages, setRunningPreviewImages] = useState<Array<{ url: string; width?: number; height?: number }>>([]);
+  const [imageModel, setImageModel] = useState<ImageModel>("");
+  const [imageModelReady, setImageModelReady] = useState(false);
   const [relayTokenName, setRelayTokenName] = useState(() => {
     if (typeof window === "undefined") return "";
     return window.localStorage.getItem(PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY) || "";
@@ -163,6 +166,25 @@ export default function CanvasPage() {
   const infoNode = nodes.find((node) => node.id === infoNodeID) || null;
   const previewImages = nodes.flatMap((node) => node.type === "image" && node.url ? [{ id: node.id, src: node.url, fileName: node.title, outputFormat: node.generation_output_format, dimensions: `${Math.round(node.width)} × ${Math.round(node.height)}` }] : []);
   const previewIndex = Math.max(0, previewImages.findIndex((image) => image.id === previewNodeID));
+
+  useEffect(() => {
+    let active = true;
+    void fetchModelConfig()
+      .then(({ config }) => {
+        if (active) {
+          setImageModel(resolveCanvasImageModel(config.default_image_model, config.image_models, DEFAULT_IMAGE_MODEL));
+          setImageModelReady(true);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setImageModelReady(true);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const refreshLibrary = useCallback(async (showLoading = false, notifyError = false) => {
     if (showLoading) setLibraryLoading(true);
@@ -716,8 +738,8 @@ export default function CanvasPage() {
       let submitted: CreationTask;
       if (mode === "edit" && sourceNode.url) {
         const blob = await fetchAuthenticatedImageBlob(sourceNode.url);
-        submitted = await createImageEditTask(taskID, new File([blob], "canvas-source.png", { type: blob.type || "image/png" }), text, undefined, size, size, parameters.generation_quality, count, undefined, "private", resolution, parameters.generation_output_format, parameters.generation_output_compression, stream, parameters.generation_partial_images, undefined, undefined, taskRelayTokenName);
-      } else submitted = await createImageGenerationTask(taskID, text, undefined, size, size, parameters.generation_quality, count, undefined, "private", resolution, parameters.generation_output_format, parameters.generation_output_compression, stream, parameters.generation_partial_images, undefined, undefined, taskRelayTokenName);
+        submitted = await createImageEditTask(taskID, new File([blob], "canvas-source.png", { type: blob.type || "image/png" }), text, imageModel || undefined, size, size, parameters.generation_quality, count, undefined, "private", resolution, parameters.generation_output_format, parameters.generation_output_compression, stream, parameters.generation_partial_images, undefined, undefined, taskRelayTokenName);
+      } else submitted = await createImageGenerationTask(taskID, text, imageModel || undefined, size, size, parameters.generation_quality, count, undefined, "private", resolution, parameters.generation_output_format, parameters.generation_output_compression, stream, parameters.generation_partial_images, undefined, undefined, taskRelayTokenName);
       activeTaskID = submitted.id || taskID;
       setRunningTaskID(activeTaskID);
       const images = taskImageURL(await waitForTask(activeTaskID, (task) => {
@@ -889,6 +911,16 @@ export default function CanvasPage() {
         />
         <div className="mt-2 flex items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-2">
+            <span
+              className="inline-flex h-9 min-w-0 max-w-[190px] shrink items-center gap-1.5 rounded-full border border-border bg-background px-3 text-xs font-medium text-muted-foreground"
+              title={`模型：${imageModel || "默认模型"}`}
+            >
+              <Bot className="size-3.5 shrink-0" />
+              <span className="shrink-0">模型</span>
+              <span className="min-w-0 truncate font-semibold text-foreground">
+                {imageModelReady ? imageModel || "默认模型" : "读取中"}
+              </span>
+            </span>
             <CanvasImageParameterPopover node={node} onChange={(patch) => updateNodeGenerationParameters(node.id, patch)} />
             <span className="hidden truncate text-xs text-muted-foreground sm:inline">{editing ? "基于当前图片编辑" : "在当前节点生成图片"}</span>
           </div>
@@ -900,7 +932,7 @@ export default function CanvasPage() {
                 {cancellingTaskID ? "停止中" : runningTaskID ? "停止生成" : "提交中"}
               </Button>
             ) : (
-              <Button size="sm" className="h-9 min-w-20 rounded-full px-4 text-xs" disabled={!node.prompt?.trim() || Boolean(runningNodeID)} onClick={() => void runGeneration(node.id)}>
+              <Button size="sm" className="h-9 min-w-20 rounded-full px-4 text-xs" disabled={!imageModelReady || !node.prompt?.trim() || Boolean(runningNodeID)} onClick={() => void runGeneration(node.id)}>
                 {editing ? <WandSparkles /> : <Sparkles />}
                 {editing ? "编辑" : "生成"}
               </Button>

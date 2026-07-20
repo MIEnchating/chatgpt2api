@@ -52,7 +52,7 @@ const MAX_EDGE = 3840;
 const MAX_ASPECT_RATIO = 3;
 const MIN_PIXELS = 655_360;
 const MAX_PIXELS = 8_294_400;
-const HIGH_RESOLUTION_PIXEL_THRESHOLD = 1_577_536;
+const HIGH_RESOLUTION_EDGE_THRESHOLD = 2048;
 export const DEFAULT_IMAGE_CUSTOM_WIDTH = "1024";
 export const DEFAULT_IMAGE_CUSTOM_HEIGHT = "1024";
 
@@ -154,8 +154,27 @@ export function imageSizePixels(size: string) {
   return Number(dimensions.width) * Number(dimensions.height);
 }
 
-export function isHighResolutionImageSize(size: string) {
-  return imageSizePixels(size) > HIGH_RESOLUTION_PIXEL_THRESHOLD;
+export function isHighResolutionImageSize(
+  size: string,
+  selection?: { mode?: string; resolution?: string } | null,
+) {
+  if (selection?.mode === "auto") {
+    return false;
+  }
+  if (selection?.mode === "ratio" && isImageResolution(selection.resolution)) {
+    return selection.resolution === "2k" || selection.resolution === "4k";
+  }
+
+  const inferredResolution = getImageResolutionFromSize(size);
+  if (inferredResolution !== "auto") {
+    return inferredResolution === "2k" || inferredResolution === "4k";
+  }
+
+  const dimensions = parseImageSizeDimensions(size);
+  if (!dimensions) {
+    return false;
+  }
+  return Math.max(Number(dimensions.width), Number(dimensions.height)) >= HIGH_RESOLUTION_EDGE_THRESHOLD;
 }
 
 export function parseImageRatio(ratio: string) {
@@ -257,11 +276,14 @@ export function formatImageSizeDisplay(size: string) {
   return size.replace(/x/g, "×");
 }
 
-export function getImageSizeRequirementLabel(size: string) {
+export function getImageSizeRequirementLabel(
+  size: string,
+  selection?: { mode?: string; resolution?: string } | null,
+) {
   if (!size || size === "auto") {
     return "自动";
   }
-  return isHighResolutionImageSize(size) ? "高分辨率" : "常规分辨率";
+  return isHighResolutionImageSize(size, selection) ? "高分辨率" : "常规分辨率";
 }
 
 export function isImageAspectRatio(value: unknown): value is ImageAspectRatio {

@@ -505,12 +505,13 @@ function imageTaskProgressMessage(turn: ImageTurn, elapsedSeconds = 0) {
     };
   }
 
-  const isHighResolution = supportsStructuredImageParameters(turn.model) && isHighResolutionImageSize(turn.size);
+  const isHighResolution =
+    supportsStructuredImageParameters(turn.model) && isHighResolutionImageSize(turn.size, turn.sizeSelection);
   void elapsedSeconds;
   if (isHighResolution) {
     return {
       message: "高分辨率生成中",
-      detail: `${getImageSizeRequirementLabel(turn.size)}目标已记录，正在等待生成结果`,
+      detail: `${getImageSizeRequirementLabel(turn.size, turn.sizeSelection)}目标已记录，正在等待生成结果`,
     };
   }
   return {
@@ -1763,7 +1764,9 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
           : "尺寸无效"
       : "";
   const editingDraftSizeIsHighResolution = Boolean(
-    editingDraftStructuredParameters && editingDraftImageSize && isHighResolutionImageSize(editingDraftImageSize),
+    editingDraftStructuredParameters &&
+      editingDraftImageSize &&
+      isHighResolutionImageSize(editingDraftImageSize, editingDraftEffectiveSizeSelection),
   );
   const editingDraftDimensions = parseImageSizeDimensions(editingDraftImageSize);
   const editingDraftDisplayedWidth =
@@ -4422,7 +4425,10 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
           ? undefined
           : imageOutputCompressionForModel(draft.model, draftOutputFormat, draft.outputCompression);
       const draftQuality = imageQualityForRequest(draft.quality);
-      if (supportsStructuredImageParameters(draft.model) && isHighResolutionImageSize(draftImageSize)) {
+      if (
+        supportsStructuredImageParameters(draft.model) &&
+        isHighResolutionImageSize(draftImageSize, draftSizeRequest?.selection)
+      ) {
         const sizeLabel = formatImageSizeDisplay(draftImageSize);
         if (regenerate) {
           toast.message(`${sizeLabel} 属于高分辨率目标，实际像素以生成结果为准。`);
@@ -4602,7 +4608,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         imageQualityForRequest(imageQuality);
       const isHighResolutionRequest =
         supportsStructuredImageParameters(effectiveModel) &&
-        isHighResolutionImageSize(currentImageSize);
+        isHighResolutionImageSize(currentImageSize, currentImageSizeRequest?.selection);
       if (isHighResolutionRequest) {
         const sizeLabel = formatImageSizeDisplay(currentImageSize);
         toast.message(`${sizeLabel} 属于高分辨率目标，实际像素以生成结果为准。`);

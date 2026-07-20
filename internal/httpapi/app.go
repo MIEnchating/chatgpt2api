@@ -932,7 +932,7 @@ func (a *App) modelConfig() map[string]any {
 	imageModels := a.configuredImageModels()
 	return map[string]any{
 		"image_models":        imageModels,
-		"default_image_model": firstString(imageModels, util.ImageModelGPT),
+		"default_image_model": a.defaultImageModel(),
 		"relay_base_url":      a.relayBaseURL(),
 	}
 }
@@ -953,7 +953,12 @@ func (a *App) configuredChatModels() []string {
 
 func (a *App) defaultImageModel() string {
 	if a != nil && a.config != nil {
-		return a.config.DefaultImageModel()
+		for _, model := range a.config.ImageModels() {
+			model = strings.TrimSpace(model)
+			if model != "" && !strings.EqualFold(model, util.ImageModelAuto) {
+				return model
+			}
+		}
 	}
 	return util.ImageModelGPT
 }
@@ -967,7 +972,7 @@ func (a *App) defaultChatModel() string {
 
 func (a *App) applyDefaultImageModel(body map[string]any) string {
 	model := util.Clean(body["model"])
-	if model == "" {
+	if model == "" || strings.EqualFold(model, util.ImageModelAuto) {
 		model = a.defaultImageModel()
 		body["model"] = model
 	}
@@ -1942,7 +1947,7 @@ func readMultipartImageBody(w http.ResponseWriter, r *http.Request) (map[string]
 	body := map[string]any{
 		"client_task_id":          firstForm(r.MultipartForm, "client_task_id"),
 		"prompt":                  firstForm(r.MultipartForm, "prompt"),
-		"model":                   firstNonEmpty(firstForm(r.MultipartForm, "model"), util.ImageModelAuto),
+		"model":                   firstForm(r.MultipartForm, "model"),
 		"n":                       util.ToInt(firstForm(r.MultipartForm, "n"), 1),
 		"size":                    firstForm(r.MultipartForm, "size"),
 		"requested_size":          firstForm(r.MultipartForm, "requested_size"),

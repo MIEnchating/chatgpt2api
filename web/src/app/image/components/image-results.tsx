@@ -159,7 +159,7 @@ function getLongTaskHint(turn: ImageTurn, elapsedSeconds: number) {
   if (!isTurnBusy(turn)) {
     return "";
   }
-  if (isHighResolutionImageSize(turn.size)) {
+  if (isHighResolutionImageSize(turn.size, turn.sizeSelection)) {
     return "高分辨率任务已提交，正在等待生成结果";
   }
   return "";

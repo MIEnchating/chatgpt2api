@@ -127,13 +127,13 @@ function getQueueSizeLabel(turn: ImageTurn) {
     return "";
   }
   const size = turn.size.includes("x") ? formatImageSizeDisplay(turn.size) : turn.size;
-  const requirement = getImageSizeRequirementLabel(turn.size);
+  const requirement = getImageSizeRequirementLabel(turn.size, turn.sizeSelection);
   return requirement === "自动" ? size : `${size} / ${requirement}`;
 }
 
 function getQueueLongTaskHint(turn: ImageTurn, elapsedSeconds: number) {
   void elapsedSeconds;
-  if (isHighResolutionImageSize(turn.size)) {
+  if (isHighResolutionImageSize(turn.size, turn.sizeSelection)) {
     return "高分辨率任务已提交，正在等待生成结果";
   }
   return "";

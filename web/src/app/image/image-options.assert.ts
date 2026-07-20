@@ -40,6 +40,7 @@ assert.equal(
 );
 assert.equal(buildImageSize(ratioSelection({ aspectRatio: "", resolution: "4k" })), "2880x2880");
 assert.equal(isHighResolutionImageSize("1088x1088"), false);
+assert.equal(isHighResolutionImageSize("1920x1088", { mode: "ratio", resolution: "1080p" }), false);
 assert.equal(isHighResolutionImageSize("2048x2048"), true);
 assert.deepEqual(getImageSizeSelectionFromSize("2.39:1"), {
   mode: "ratio",

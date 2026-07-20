@@ -57,6 +57,54 @@ func TestReadMultipartImageBodyRejectsMoreThanFourImages(t *testing.T) {
 	}
 }
 
+func TestReadMultipartImageBodyUsesConfiguredDefaultWhenModelIsMissing(t *testing.T) {
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	if err := writer.WriteField("prompt", "edit this image"); err != nil {
+		t.Fatalf("WriteField(prompt) error = %v", err)
+	}
+	part, err := writer.CreateFormFile("image", "source.png")
+	if err != nil {
+		t.Fatalf("CreateFormFile() error = %v", err)
+	}
+	if err := encodeHTTPTestPNG(part); err != nil {
+		t.Fatalf("encodeHTTPTestPNG() error = %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/creation-tasks/image-edits", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	res := httptest.NewRecorder()
+	parsed, images, err := readMultipartImageBody(res, req)
+	if err != nil {
+		t.Fatalf("readMultipartImageBody() error = %v", err)
+	}
+	if len(images) != 1 {
+		t.Fatalf("readMultipartImageBody() images = %d, want 1", len(images))
+	}
+	if model, _ := parsed["model"].(string); model != "" {
+		t.Fatalf("parsed model = %q, want empty before configured default is applied", model)
+	}
+
+	app := newTestApp(t)
+	defer app.Close()
+	if model := app.applyDefaultImageModel(parsed); model != app.defaultImageModel() {
+		t.Fatalf("default model = %q, want %q", model, app.defaultImageModel())
+	}
+	if _, err := app.config.Update(map[string]any{"image_models": []any{"auto", "codex-gpt-image-2"}}); err != nil {
+		t.Fatalf("Update(image_models) error = %v", err)
+	}
+	parsed["model"] = "auto"
+	if model := app.applyDefaultImageModel(parsed); model != "codex-gpt-image-2" {
+		t.Fatalf("auto model fallback = %q, want codex-gpt-image-2", model)
+	}
+	if model := app.modelConfig()["default_image_model"]; model != "codex-gpt-image-2" {
+		t.Fatalf("model config default = %#v, want codex-gpt-image-2", model)
+	}
+}
+
 func TestLoginRejectsOversizedJSONBody(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()

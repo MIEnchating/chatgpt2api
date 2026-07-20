@@ -5,6 +5,7 @@ import {
   Check,
   ChevronDown,
   ImagePlus,
+  LoaderCircle,
   Minus,
   Plus,
   SlidersHorizontal,
@@ -102,11 +103,26 @@ type ImageComposerProps = {
   onRemoveReferenceImage: (index: number) => void;
 };
 
+type PendingReferenceImage = {
+  id: string;
+  name: string;
+  dataUrl: string;
+};
+
+type DisplayReferenceImage = {
+  id: string;
+  name: string;
+  dataUrl: string;
+  storedIndex: number | null;
+  uploading: boolean;
+};
+
 const PROMPT_AREA_MIN_HEIGHT = 58;
 const PROMPT_AREA_DEFAULT_HEIGHT = 72;
 const PROMPT_AREA_MAX_HEIGHT = 320;
 const PROMPT_AREA_KEYBOARD_STEP = 12;
-const IMAGE_FILE_EXTENSION_PATTERN = /\.(avif|bmp|gif|heic|heif|jpeg|jpg|png|svg|webp)$/i;
+const IMAGE_FILE_EXTENSION_PATTERN = /\.(jpeg|jpg|png|webp)$/i;
+const IMAGE_FILE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 function getPromptAreaMaxHeight() {
   if (typeof window === "undefined") {
@@ -120,7 +136,9 @@ function clampPromptAreaHeight(height: number) {
 }
 
 function isImageFile(file: File) {
-  return file.type.startsWith("image/") || IMAGE_FILE_EXTENSION_PATTERN.test(file.name);
+  const mimeType = file.type.trim().toLowerCase().split(";", 1)[0];
+  return IMAGE_FILE_MIME_TYPES.has(mimeType) ||
+    ((mimeType === "" || mimeType === "application/octet-stream") && IMAGE_FILE_EXTENSION_PATTERN.test(file.name));
 }
 
 function getImageFiles(files: FileList | File[]) {
@@ -141,7 +159,10 @@ function hasDraggedImage(dataTransfer: DataTransfer) {
     return true;
   }
 
-  return items.some((item) => item.kind === "file" && (item.type === "" || item.type.startsWith("image/")));
+  return items.some((item) => {
+    const mimeType = item.type.trim().toLowerCase().split(";", 1)[0];
+    return item.kind === "file" && (mimeType === "" || IMAGE_FILE_MIME_TYPES.has(mimeType));
+  });
 }
 
 function ImageComposerDock({ children }: { children: ReactNode }) {
@@ -200,14 +221,34 @@ export function ImageComposer({
   const [promptAreaHeight, setPromptAreaHeight] = useState(PROMPT_AREA_DEFAULT_HEIGHT);
   const [isPromptAreaResizing, setIsPromptAreaResizing] = useState(false);
   const [isReferenceImageDragActive, setIsReferenceImageDragActive] = useState(false);
+  const [pendingReferenceImages, setPendingReferenceImages] = useState<PendingReferenceImage[]>([]);
   const composerPanelRef = useRef<HTMLDivElement>(null);
   const composerToolbarRef = useRef<HTMLDivElement>(null);
   const modelMenuRef = useRef<HTMLDivElement>(null);
   const promptAreaResizeRef = useRef<{ pointerOffsetY: number } | null>(null);
   const referenceImageDragDepthRef = useRef(0);
+  const pendingReferenceImageSequenceRef = useRef(0);
+  const pendingReferenceImageURLsRef = useRef(new Set<string>());
+  const displayReferenceImages = useMemo<DisplayReferenceImage[]>(
+    () => [
+      ...referenceImages.map((image, index) => ({
+        id: `stored-${image.name}-${index}`,
+        name: image.name,
+        dataUrl: image.dataUrl,
+        storedIndex: index,
+        uploading: false,
+      })),
+      ...pendingReferenceImages.map((image) => ({
+        ...image,
+        storedIndex: null,
+        uploading: true,
+      })),
+    ],
+    [pendingReferenceImages, referenceImages],
+  );
   const lightboxImages = useMemo(
-    () => referenceImages.map((image, index) => ({ id: `${image.name}-${index}`, src: image.dataUrl })),
-    [referenceImages],
+    () => displayReferenceImages.map((image) => ({ id: image.id, src: image.dataUrl })),
+    [displayReferenceImages],
   );
   const imageModelLabel = imageModelOptions.find((option) => option.value === imageModel)?.label || imageModel;
   const compressionSupported = supportsImageOutputCompression(imageOutputFormat);
@@ -215,7 +256,8 @@ export function ImageComposer({
   const outputControlsSupported = supportsImageOutputControls(imageModel);
   const effectiveImageSizeMode = structuredImageParameters || imageSizeMode !== "custom" ? imageSizeMode : "auto";
   const effectiveImageResolution = structuredImageParameters ? imageResolution : "auto";
-  const submitLabel = referenceImages.length > 0 ? "编辑图片" : "生成图片";
+  const hasReferenceImages = displayReferenceImages.length > 0;
+  const submitLabel = hasReferenceImages ? "编辑图片" : "生成图片";
   const relayApiKeyMissing = !relayKeyConfigured;
   const relayApiKeyMissingMessage = relayKeyStatusMessage || "请先在云棉为当前用户创建可用令牌";
   const computedImageSize = useMemo(
@@ -237,7 +279,13 @@ export function ImageComposer({
     : effectiveImageSizeMode === "auto"
       ? "自动"
       : "尺寸无效";
-  const sizeIsHighResolution = Boolean(computedImageSize && isHighResolutionImageSize(computedImageSize));
+  const sizeIsHighResolution = Boolean(
+    computedImageSize &&
+      isHighResolutionImageSize(computedImageSize, {
+        mode: effectiveImageSizeMode,
+        resolution: effectiveImageResolution,
+      }),
+  );
   const computedImageDimensions = computedImageSize ? parseImageSizeDimensions(computedImageSize) : null;
   const displayedImageWidth = effectiveImageSizeMode === "custom" ? imageCustomWidth : computedImageDimensions?.width || "";
   const displayedImageHeight = effectiveImageSizeMode === "custom" ? imageCustomHeight : computedImageDimensions?.height || "";
@@ -285,6 +333,44 @@ export function ImageComposer({
     };
   }, [isPromptAreaResizing]);
 
+  useEffect(() => {
+    const pendingURLs = pendingReferenceImageURLsRef.current;
+    return () => {
+      pendingURLs.forEach((url) => URL.revokeObjectURL(url));
+      pendingURLs.clear();
+    };
+  }, []);
+
+  const addReferenceImages = async (files: File[]) => {
+    const imageFiles = getImageFiles(files);
+    if (imageFiles.length === 0) {
+      return;
+    }
+
+    const pendingImages = imageFiles.map((file) => {
+      const dataUrl = URL.createObjectURL(file);
+      pendingReferenceImageURLsRef.current.add(dataUrl);
+      pendingReferenceImageSequenceRef.current += 1;
+      return {
+        id: `pending-${pendingReferenceImageSequenceRef.current}`,
+        name: file.name,
+        dataUrl,
+      };
+    });
+    const pendingIDs = new Set(pendingImages.map((image) => image.id));
+    setPendingReferenceImages((previous) => [...previous, ...pendingImages]);
+
+    try {
+      await onReferenceImageChange(imageFiles);
+    } finally {
+      setPendingReferenceImages((previous) => previous.filter((image) => !pendingIDs.has(image.id)));
+      pendingImages.forEach((image) => {
+        pendingReferenceImageURLsRef.current.delete(image.dataUrl);
+        URL.revokeObjectURL(image.dataUrl);
+      });
+    }
+  };
+
   const handleTextareaPaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
     const imageFiles = getImageFiles(event.clipboardData.files);
     if (imageFiles.length === 0) {
@@ -292,16 +378,7 @@ export function ImageComposer({
     }
 
     event.preventDefault();
-    void onReferenceImageChange(imageFiles);
-  };
-
-  const addReferenceImages = (files: File[]) => {
-    const imageFiles = getImageFiles(files);
-    if (imageFiles.length === 0) {
-      return;
-    }
-
-    void onReferenceImageChange(imageFiles);
+    void addReferenceImages(imageFiles);
   };
 
   const resetReferenceImageDragState = () => {
@@ -349,7 +426,7 @@ export function ImageComposer({
 
     event.preventDefault();
     resetReferenceImageDragState();
-    addReferenceImages(Array.from(event.dataTransfer.files));
+    void addReferenceImages(Array.from(event.dataTransfer.files));
   };
 
   const handlePromptResizeStart = (event: PointerEvent<HTMLButtonElement>) => {
@@ -436,14 +513,14 @@ export function ImageComposer({
           if (files.length === 0) {
             return;
           }
-          addReferenceImages(files);
+          void addReferenceImages(files);
         }}
       />
 
-      {referenceImages.length > 0 ? (
+      {displayReferenceImages.length > 0 ? (
         <div className="hide-scrollbar mb-2 flex max-h-20 gap-2 overflow-x-auto px-1 py-1 sm:mb-3">
-          {referenceImages.map((image, index) => (
-            <div key={`${image.name}-${index}`} className="relative size-14 shrink-0 sm:size-16">
+          {displayReferenceImages.map((image, index) => (
+            <div key={image.id} className="relative size-14 shrink-0 sm:size-16">
               <button
                 type="button"
                 onClick={() => {
@@ -451,7 +528,7 @@ export function ImageComposer({
                   setLightboxOpen(true);
                 }}
                 className="group size-14 overflow-hidden rounded-xl border border-stone-200 bg-stone-50 transition hover:border-stone-300 sm:size-16"
-                aria-label={`预览参考图 ${image.name || index + 1}`}
+                aria-label={`${image.uploading ? "正在上传" : "预览"}参考图 ${image.name || index + 1}`}
               >
                 <AuthenticatedImage
                   src={image.dataUrl}
@@ -460,17 +537,28 @@ export function ImageComposer({
                   placeholderClassName="min-h-0"
                 />
               </button>
-              <button
-                type="button"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onRemoveReferenceImage(index);
-                }}
-                className="absolute -right-1 -top-1 z-10 inline-flex size-5 items-center justify-center rounded-full border border-stone-200 bg-white text-stone-500 shadow-sm transition hover:border-stone-300 hover:text-stone-800"
-                aria-label={`移除参考图 ${image.name || index + 1}`}
-              >
-                <X className="size-3" />
-              </button>
+              {image.uploading ? (
+                <span
+                  className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-xl bg-black/30 text-white"
+                  aria-hidden="true"
+                >
+                  <LoaderCircle className="size-4 animate-spin" />
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    if (image.storedIndex !== null) {
+                      onRemoveReferenceImage(image.storedIndex);
+                    }
+                  }}
+                  className="absolute -right-1 -top-1 z-10 inline-flex size-5 items-center justify-center rounded-full border border-stone-200 bg-white text-stone-500 shadow-sm transition hover:border-stone-300 hover:text-stone-800"
+                  aria-label={`移除参考图 ${image.name || index + 1}`}
+                >
+                  <X className="size-3" />
+                </button>
+              )}
             </div>
           ))}
         </div>
@@ -535,7 +623,7 @@ export function ImageComposer({
             onChange={(event) => onPromptChange(event.target.value)}
             onPaste={handleTextareaPaste}
             placeholder={
-              referenceImages.length > 0
+              hasReferenceImages
                 ? "描述你希望如何修改参考图"
                 : "输入你想要生成的画面，也可直接粘贴图片"
             }
