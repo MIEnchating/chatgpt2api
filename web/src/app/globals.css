@@ -115,11 +115,11 @@
   --shadow-ambient: 0 18px 54px rgba(44, 74, 116, 0.09);
   --shadow-brand: 0 0 15px rgba(44, 30, 116, 0.16);
   --shadow-elevated: 0 12px 16px -4px rgba(36, 36, 36, 0.08);
-  --canvas-connection-muted: #78716c;
-  --canvas-connection-active: #1c1917;
-  --canvas-connection-shadow: rgba(28, 25, 23, 0.4);
-  --canvas-grid-dot: rgba(68, 64, 60, 0.28);
-  --canvas-grid-line: rgba(68, 64, 60, 0.12);
+  --canvas-connection-muted: #9aa3af;
+  --canvas-connection-active: #1456f0;
+  --canvas-connection-shadow: rgba(20, 86, 240, 0.26);
+  --canvas-grid-dot: rgba(100, 116, 139, 0.22);
+  --canvas-grid-line: rgba(100, 116, 139, 0.10);
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
@@ -140,11 +140,11 @@
   --page-background-start: oklch(0.17 0.01 255);
   --page-background-end: oklch(0.125 0.008 255);
   --foreground: oklch(0.985 0 0);
-  --canvas-connection-muted: #d6d3d1;
-  --canvas-connection-active: #fafaf9;
-  --canvas-connection-shadow: rgba(250, 250, 249, 0.4);
-  --canvas-grid-dot: rgba(245, 245, 244, 0.24);
-  --canvas-grid-line: rgba(245, 245, 244, 0.10);
+  --canvas-connection-muted: #717b89;
+  --canvas-connection-active: #6ea0ff;
+  --canvas-connection-shadow: rgba(110, 160, 255, 0.3);
+  --canvas-grid-dot: rgba(203, 213, 225, 0.18);
+  --canvas-grid-line: rgba(203, 213, 225, 0.08);
   --card: oklch(0.205 0 0);
   --card-foreground: oklch(0.985 0 0);
   --popover: oklch(0.205 0 0);
@@ -253,11 +253,11 @@
   }
 
   .canvas-grid {
-    background-color: #eef2f7;
+    background-color: #f3f5f8;
   }
 
   .dark .canvas-grid {
-    background-color: #161a20;
+    background-color: #15181d;
   }
 
   .dark .bg-white,

@@ -1,4 +1,4 @@
-import { Brush, Camera, ChevronRight, Copy, Download, Grid2X2, ImagePlus, Info, LoaderCircle, Lock, LockOpen, Maximize2, Minus, MoreHorizontal, Pencil, Play, Plus, RefreshCw, Scissors, Settings2, Sparkles, Star, Trash2, Upload, WandSparkles, ZoomIn } from "lucide-react";
+import { AlertCircle, Brush, Camera, ChevronRight, Copy, Download, Grid2X2, ImagePlus, Info, LoaderCircle, Lock, LockOpen, Maximize2, Minus, MoreHorizontal, Pencil, Play, Plus, RefreshCw, Scissors, Settings2, Sparkles, Star, Trash2, Upload, WandSparkles, ZoomIn } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent as ReactWheelEvent } from "react";
 
 import { AuthenticatedImage } from "@/components/authenticated-image";
@@ -555,7 +555,7 @@ export function CanvasEngine({
   const panelWidth = Math.min(500, Math.max(280, (containerRef.current?.clientWidth || 532) - 32));
   const panelNodeTop = panelNode ? viewport.y + panelNode.y * viewport.zoom : 0;
   const panelNodeBottom = panelNode ? viewport.y + (panelNode.y + panelNode.height) * viewport.zoom : 0;
-  const panelHeight = 180;
+  const panelHeight = 154;
   const canvasHeight = containerRef.current?.clientHeight || window.innerHeight;
   const spaceBelow = canvasHeight - panelNodeBottom - 88;
   const spaceAbove = panelNodeTop - 16;
@@ -563,9 +563,9 @@ export function CanvasEngine({
     ? Math.max(16 + panelWidth / 2, Math.min((containerRef.current?.clientWidth || window.innerWidth) - 16 - panelWidth / 2, viewport.x + (panelNode.x + panelNode.width / 2) * viewport.zoom))
     : 0;
   const panelTop = spaceBelow >= panelHeight
-    ? panelNodeBottom + 16
+    ? panelNodeBottom + 12
     : spaceAbove >= panelHeight
-      ? panelNodeTop - panelHeight - 16
+      ? panelNodeTop - panelHeight - 12
       : Math.max(16, canvasHeight - panelHeight - 16);
 
   return (
@@ -843,14 +843,14 @@ function CanvasDOMNode({ node, selected, related, focusRelated, showPanel, runni
       onMouseDownCapture={(event) => onSelectCapture(event, node.id)}
       onContextMenu={(event) => onContextMenu(event, node.id)}
     >
-      <div data-canvas-no-pan className="absolute top-[-28px] left-3 z-30 max-w-[calc(100%-24px)]" onMouseDown={(event) => event.stopPropagation()}>
+      <div data-canvas-no-pan className="absolute top-[-30px] left-2 z-30 max-w-[calc(100%-16px)]" onMouseDown={(event) => event.stopPropagation()}>
         {editingTitle ? (
           <input
             ref={titleInputRef}
             autoFocus
             value={titleDraft}
             maxLength={64}
-            className="h-6 max-w-full border-0 border-b border-dashed border-foreground/50 bg-transparent px-0 py-0.5 text-left text-xs font-medium text-foreground outline-none"
+            className="h-7 max-w-full rounded-md border border-border bg-card/92 px-2 text-left text-xs font-medium text-foreground shadow-sm outline-none backdrop-blur"
             onChange={(event) => setTitleDraft(event.target.value)}
             onBlur={finishTitleEditing}
             onKeyDown={(event) => {
@@ -865,7 +865,7 @@ function CanvasDOMNode({ node, selected, related, focusRelated, showPanel, runni
           <button
             type="button"
             title="双击修改节点名称"
-            className="block max-w-full truncate border-b border-dashed border-transparent py-0.5 text-left text-xs font-medium text-foreground/75 transition hover:border-current hover:text-foreground"
+            className="block h-7 max-w-full truncate rounded-md border border-transparent bg-card/78 px-2 text-left text-xs font-medium leading-7 text-foreground/70 shadow-sm backdrop-blur transition hover:border-border hover:bg-card hover:text-foreground"
             onDoubleClick={(event) => {
               event.stopPropagation();
               setEditingTitle(true);
@@ -877,7 +877,7 @@ function CanvasDOMNode({ node, selected, related, focusRelated, showPanel, runni
       </div>
       <div
         className={cn(
-          "relative size-full rounded-3xl border-2 transition-[border-color,box-shadow]",
+          "relative size-full rounded-2xl border-2 transition-[border-color,box-shadow]",
           isBatchRoot ? "overflow-visible" : "overflow-hidden",
           node.type === "image" && node.url ? "bg-transparent" : "bg-card",
           active
@@ -896,7 +896,7 @@ function CanvasDOMNode({ node, selected, related, focusRelated, showPanel, runni
       >
         {isBatchRoot ? <CanvasBatchStack count={batchCount} expanded={Boolean(node.batch_expanded)} opening={batchOpening} recovering={batchRecovering} /> : null}
         {node.type === "config" ? (
-          <div className="flex size-full flex-col justify-between bg-card px-5 py-5">
+          <div className="flex size-full flex-col justify-between bg-card px-4 py-4">
             <div className="flex items-start gap-3">
               <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/12 text-emerald-600"><Settings2 className="size-5" /></span>
               <div className="min-w-0"><div className="text-sm font-semibold">生成配置</div><div className="mt-1 flex flex-wrap gap-1.5 text-[11px] text-muted-foreground"><span className="rounded-md bg-muted px-2 py-1">提示词 {configInputSummary.text} 个</span><span className="rounded-md bg-muted px-2 py-1">参考图 {configInputSummary.image} 张</span></div></div>
@@ -907,9 +907,10 @@ function CanvasDOMNode({ node, selected, related, focusRelated, showPanel, runni
             </div>
           </div>
         ) : node.type === "image" ? node.generation_status === "error" ? (
-          <div className="flex size-full flex-col items-center justify-center gap-3 bg-rose-950/90 px-6 text-center text-white">
-            <span className="text-xs leading-5 text-rose-100">{node.generation_error || "生成失败"}</span>
-            <button data-canvas-no-pan type="button" className="flex h-8 items-center gap-1.5 rounded-full border border-white/25 bg-white/10 px-3 text-xs font-medium hover:bg-white/15" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onRetry(node.id); }}><RefreshCw className="size-3.5" />重试</button>
+          <div className="flex size-full flex-col items-center justify-center gap-3 bg-card px-6 text-center">
+            <span className="grid size-9 place-items-center rounded-full bg-rose-500/10 text-rose-600"><AlertCircle className="size-4.5" /></span>
+            <span className="max-w-[260px] text-xs leading-5 text-muted-foreground">{node.generation_error || "生成失败"}</span>
+            <button data-canvas-no-pan type="button" className="flex h-8 items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-xs font-medium text-foreground shadow-sm transition hover:bg-muted" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onRetry(node.id); }}><RefreshCw className="size-3.5" />重试</button>
           </div>
         ) : node.url ? (
           <AuthenticatedImage src={node.url} alt={node.title || node.prompt || "画布图片"} draggable={false} className="pointer-events-none size-full rounded-[inherit] object-contain" />
@@ -970,7 +971,7 @@ function CanvasBatchStack({ count, expanded, opening, recovering }: { count: num
       {Array.from({ length: Math.min(Math.max(0, count - 1), 5) }, (_, index) => (
         <span
           key={index}
-          className="absolute inset-0 rounded-3xl border border-border bg-card shadow-[0_14px_34px_rgba(15,23,42,.13)] transition-transform duration-300"
+          className="absolute inset-0 rounded-2xl border border-border bg-card shadow-[0_12px_28px_rgba(15,23,42,.11)] transition-transform duration-300"
           style={{
             opacity: expanded && !opening ? 0.34 : 1,
             transform: opening || recovering
@@ -1031,7 +1032,7 @@ function CanvasNodeToolbar({ node, viewport, canvasWidth, showPanel, running, up
       data-canvas-no-pan
       data-canvas-node-toolbar
       className={cn(
-        "hide-scrollbar absolute z-40 flex h-12 -translate-y-full items-center rounded-2xl border border-border bg-card/96 text-sm shadow-[0_12px_32px_rgba(15,23,42,.16)] backdrop-blur-xl",
+        "hide-scrollbar absolute z-40 flex h-10 -translate-y-full items-center rounded-xl border border-border bg-card/96 text-xs shadow-[0_10px_26px_rgba(15,23,42,.13)] backdrop-blur-xl",
         placement.compact ? "min-w-0 overflow-x-auto" : "min-w-max -translate-x-1/2 overflow-hidden",
       )}
       style={{ left: placement.left, right: placement.right, top: placement.top }}
@@ -1085,7 +1086,7 @@ function CanvasNodeToolbar({ node, viewport, canvasWidth, showPanel, running, up
 function CanvasImageToolsMenu({ node, onToggleFreeResize, onCrop, onSplit, onUpscale, onMaskEdit, onAngle }: { node: CanvasNode; onToggleFreeResize: () => void; onCrop: () => void; onSplit: () => void; onUpscale: () => void; onMaskEdit: () => void; onAngle: () => void }) {
   const [open, setOpen] = useState(false);
   const run = (action: () => void) => { setOpen(false); action(); };
-  return <Popover open={open} onOpenChange={setOpen}><PopoverTrigger asChild><button type="button" title="图片工具" className="flex h-full shrink-0 items-center gap-2 whitespace-nowrap px-4 font-medium transition hover:bg-muted"><MoreHorizontal className="size-[17px]" />工具</button></PopoverTrigger><PopoverContent side="top" align="center" className="w-44 p-1.5" onOpenAutoFocus={(event) => event.preventDefault()}><ImageToolMenuButton icon={node.free_resize ? <LockOpen /> : <Lock />} label={node.free_resize ? "锁定比例" : "自由缩放"} onClick={() => run(onToggleFreeResize)} /><ImageToolMenuButton icon={<Brush />} label="局部编辑" onClick={() => run(onMaskEdit)} /><ImageToolMenuButton icon={<Scissors />} label="裁剪" onClick={() => run(onCrop)} /><ImageToolMenuButton icon={<Grid2X2 />} label="切图" onClick={() => run(onSplit)} /><ImageToolMenuButton icon={<ZoomIn />} label="放大" onClick={() => run(onUpscale)} /><ImageToolMenuButton icon={<Camera />} label="多角度" onClick={() => run(onAngle)} /></PopoverContent></Popover>;
+  return <Popover open={open} onOpenChange={setOpen}><PopoverTrigger asChild><button type="button" title="图片工具" className="flex h-full shrink-0 items-center gap-1.5 whitespace-nowrap px-3 font-medium transition hover:bg-muted"><MoreHorizontal className="size-4" />工具</button></PopoverTrigger><PopoverContent side="top" align="center" className="w-44 p-1.5" onOpenAutoFocus={(event) => event.preventDefault()}><ImageToolMenuButton icon={node.free_resize ? <LockOpen /> : <Lock />} label={node.free_resize ? "锁定比例" : "自由缩放"} onClick={() => run(onToggleFreeResize)} /><ImageToolMenuButton icon={<Brush />} label="局部编辑" onClick={() => run(onMaskEdit)} /><ImageToolMenuButton icon={<Scissors />} label="裁剪" onClick={() => run(onCrop)} /><ImageToolMenuButton icon={<Grid2X2 />} label="切图" onClick={() => run(onSplit)} /><ImageToolMenuButton icon={<ZoomIn />} label="放大" onClick={() => run(onUpscale)} /><ImageToolMenuButton icon={<Camera />} label="多角度" onClick={() => run(onAngle)} /></PopoverContent></Popover>;
 }
 
 function ImageToolMenuButton({ icon, label, onClick }: { icon: ReactNode; label: string; onClick: () => void }) {
@@ -1093,7 +1094,7 @@ function ImageToolMenuButton({ icon, label, onClick }: { icon: ReactNode; label:
 }
 
 function NodeAction({ label, active = false, danger = false, disabled = false, onClick, children }: { label: string; active?: boolean; danger?: boolean; disabled?: boolean; onClick: () => void; children: ReactNode }) {
-  return <button type="button" title={label} disabled={disabled} className={cn("flex h-full shrink-0 items-center gap-2 whitespace-nowrap px-4 font-medium transition hover:bg-muted disabled:cursor-wait disabled:opacity-60", active && "bg-[#e7efff] text-[#1456f0]", danger && "border-l border-border text-rose-600")} onClick={onClick}><span className="[&>svg]:size-[17px]">{children}</span>{label}</button>;
+  return <button type="button" title={label} disabled={disabled} className={cn("flex h-full shrink-0 items-center gap-1.5 whitespace-nowrap px-3 font-medium transition hover:bg-muted disabled:cursor-wait disabled:opacity-60", active && "bg-[#e7efff] text-[#1456f0]", danger && "border-l border-border text-rose-600")} onClick={onClick}><span className="[&>svg]:size-4">{children}</span>{label}</button>;
 }
 
 function ConnectionHandle({ side, visible, onMouseDown }: { side: "left" | "right"; visible: boolean; onMouseDown: (event: ReactMouseEvent) => void }) {

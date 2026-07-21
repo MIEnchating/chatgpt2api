@@ -1,4 +1,5 @@
 import type { CanvasNode, CreationTask } from "@/lib/api";
+import { INTERRUPTED_CANVAS_GENERATION_ERROR } from "./canvas-generation-context.ts";
 import { taskDataIsPreview } from "../image/image-task-state.ts";
 
 export type CanvasTaskImage = {
@@ -165,6 +166,90 @@ export function reconcileCancelledCanvasTaskNodes(
     };
   });
   return { nodes: nextNodes, completedImageByNodeID };
+}
+
+export function reconcilePersistedCanvasTaskNodes(nodes: readonly CanvasNode[], task: CreationTask) {
+  const taskNodeIDs = new Set(nodes.flatMap((node) => (
+    node.task_id === task.id
+      && (node.generation_status === "loading" || node.generation_error === INTERRUPTED_CANVAS_GENERATION_ERROR)
+      ? [node.id]
+      : []
+  )));
+  if (!taskNodeIDs.size) {
+    return { nodes: [...nodes], changed: false, terminal: isTerminalCanvasTask(task), completedImageCount: 0 };
+  }
+
+  const batchRoot = nodes.find((node) => (
+    taskNodeIDs.has(node.id)
+    && node.type === "image"
+    && node.batch_child_ids?.some((childID) => taskNodeIDs.has(childID))
+  ));
+  const outputNodeIDs = batchRoot
+    ? (batchRoot.batch_child_ids || []).filter((nodeID) => taskNodeIDs.has(nodeID))
+    : nodes.flatMap((node) => taskNodeIDs.has(node.id) && node.type === "image" ? [node.id] : []);
+  const progress = applyCanvasTaskProgressNodes(nodes, task, {
+    outputNodeIDs,
+    batchRootID: batchRoot?.id,
+    taskID: task.id,
+  });
+  const terminal = isTerminalCanvasTask(task);
+  if (!terminal) {
+    return {
+      nodes: progress.nodes,
+      changed: progress.nodes.some((node, index) => node !== nodes[index]),
+      terminal: false,
+      completedImageCount: progress.completedImageByNodeID.size,
+    };
+  }
+
+  const completedImageByNodeID = successfulCanvasTaskImagesByNodeID(task, outputNodeIDs);
+  const completedPrimaryID = batchRoot?.batch_primary_id && completedImageByNodeID.has(batchRoot.batch_primary_id)
+    ? batchRoot.batch_primary_id
+    : outputNodeIDs.find((nodeID) => completedImageByNodeID.has(nodeID));
+  const cancelled = task.status === "cancelled";
+  const terminalError = String(task.error || "").trim() || "图片任务生成失败";
+  const nextNodes = progress.nodes.map((node): CanvasNode => {
+    if (!taskNodeIDs.has(node.id)) return node;
+    if (node.type === "config") {
+      return {
+        ...node,
+        generation_status: completedImageByNodeID.size ? "success" : cancelled ? "idle" : "error",
+        generation_error: completedImageByNodeID.size || cancelled ? "" : terminalError,
+      };
+    }
+    if (node.id === batchRoot?.id) {
+      const primaryImage = completedPrimaryID ? completedImageByNodeID.get(completedPrimaryID) : undefined;
+      if (primaryImage) {
+        return {
+          ...applyCanvasTaskImage(node, primaryImage, task.id),
+          batch_primary_id: node.batch_child_ids?.includes(completedPrimaryID || "") ? completedPrimaryID : undefined,
+        };
+      }
+      return {
+        ...node,
+        generation_status: cancelled ? "idle" : "error",
+        generation_error: cancelled ? "" : "任务完成但图片组没有可用结果",
+        batch_primary_id: undefined,
+      };
+    }
+    const completedImage = completedImageByNodeID.get(node.id);
+    if (completedImage) return applyCanvasTaskImage(node, completedImage, task.id);
+    return {
+      ...node,
+      generation_status: cancelled ? "idle" : "error",
+      generation_error: cancelled ? "" : terminalError,
+    };
+  });
+  return {
+    nodes: nextNodes,
+    changed: true,
+    terminal: true,
+    completedImageCount: completedImageByNodeID.size,
+  };
+}
+
+function isTerminalCanvasTask(task: CreationTask) {
+  return task.status === "success" || task.status === "error" || task.status === "cancelled";
 }
 
 function fitCanvasTaskImageSize(width: number, height: number, maxWidth: number, maxHeight: number) {

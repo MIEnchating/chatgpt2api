@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { applyCanvasTaskProgressNodes, canvasTaskImageSlots, canvasTaskImages, reconcileCancelledCanvasTaskNodes, successfulCanvasTaskImagesByNodeID, summarizeCanvasTaskResult } from "../src/app/canvas/canvas-task-results.ts";
+import { applyCanvasTaskProgressNodes, canvasTaskImageSlots, canvasTaskImages, reconcileCancelledCanvasTaskNodes, reconcilePersistedCanvasTaskNodes, successfulCanvasTaskImagesByNodeID, summarizeCanvasTaskResult } from "../src/app/canvas/canvas-task-results.ts";
 
 test("canvas task images preserve output order and support base64 results", () => {
   assert.deepEqual(canvasTaskImages({ id: "task", status: "success", data: [
@@ -223,4 +223,65 @@ test("cancelled retries restore the original image and thumbnail", () => {
   assert.equal(result.nodes[0].url, "/original.png");
   assert.equal(result.nodes[0].thumbnail_url, "/original-thumb.png");
   assert.equal(result.nodes[0].generation_status, "idle");
+});
+
+test("persisted canvas tasks restore completed images after the page reloads", () => {
+  const nodes = [
+    { id: "config", type: "config", task_id: "task", generation_status: "loading", x: 0, y: 0, width: 340, height: 240, scale_x: 1, scale_y: 1 },
+    { id: "result", type: "image", task_id: "task", generation_status: "loading", x: 420, y: 0, width: 340, height: 240, scale_x: 1, scale_y: 1 },
+  ];
+  const result = reconcilePersistedCanvasTaskNodes(nodes, {
+    id: "task",
+    status: "success",
+    data: [{ url: "/images/restored.png", width: 1024, height: 1024 }],
+    output_statuses: ["success"],
+  });
+  assert.equal(result.terminal, true);
+  assert.equal(result.completedImageCount, 1);
+  assert.equal(result.nodes[0].generation_status, "success");
+  assert.equal(result.nodes[1].generation_status, "success");
+  assert.equal(result.nodes[1].url, "/images/restored.png");
+});
+
+test("previously interrupted canvas nodes can be recovered on a later reload", () => {
+  const result = reconcilePersistedCanvasTaskNodes([{
+    id: "result",
+    type: "image",
+    task_id: "task",
+    generation_status: "error",
+    generation_error: "页面刷新后生成已中断，请重新生成。",
+    x: 0,
+    y: 0,
+    width: 340,
+    height: 240,
+    scale_x: 1,
+    scale_y: 1,
+  }], {
+    id: "task",
+    status: "success",
+    data: [{ url: "/images/late-result.png" }],
+    output_statuses: ["success"],
+  });
+  assert.equal(result.nodes[0].generation_status, "success");
+  assert.equal(result.nodes[0].url, "/images/late-result.png");
+});
+
+test("persisted canvas batch tasks restore sparse successful outputs", () => {
+  const base = { type: "image", task_id: "task", generation_status: "loading", x: 0, y: 0, width: 340, height: 240, scale_x: 1, scale_y: 1 };
+  const nodes = [
+    { ...base, id: "root", batch_child_ids: ["first", "second"] },
+    { ...base, id: "first", batch_root_id: "root" },
+    { ...base, id: "second", batch_root_id: "root" },
+  ];
+  const result = reconcilePersistedCanvasTaskNodes(nodes, {
+    id: "task",
+    status: "error",
+    error: "第二张失败",
+    data: [{ url: "/images/first.png" }, {}],
+    output_statuses: ["success", "error"],
+  });
+  assert.equal(result.nodes[0].generation_status, "success");
+  assert.equal(result.nodes[0].batch_primary_id, "first");
+  assert.equal(result.nodes[1].url, "/images/first.png");
+  assert.equal(result.nodes[2].generation_status, "error");
 });

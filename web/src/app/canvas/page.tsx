@@ -8,14 +8,14 @@ import { detachCanvasBatchRootForReplacement, duplicateCanvasNodeGroup, expandCa
 import { CanvasConfigComposer } from "@/app/canvas/canvas-config-composer";
 import { canvasConfigInputs, canvasConfigPromptDisplay } from "@/app/canvas/canvas-config-inputs";
 import { canCreateCanvasConnection, resolveCanvasConnection } from "@/app/canvas/canvas-connections";
-import { buildCanvasGenerationContext, buildCanvasImageReferencePrompt, canvasGenerationCount, canvasGenerationReferenceImageURLs, findCanvasRetryConfigurationNode, restoreInterruptedCanvasGenerations } from "@/app/canvas/canvas-generation-context";
+import { buildCanvasGenerationContext, buildCanvasImageReferencePrompt, canvasGenerationCount, canvasGenerationReferenceImageURLs, findCanvasRetryConfigurationNode, INTERRUPTED_CANVAS_GENERATION_ERROR, restoreInterruptedCanvasGenerations } from "@/app/canvas/canvas-generation-context";
 import { canvasGenerationActiveNodeID, placeCanvasGenerationResultNodes, setCanvasConfigGenerationStatus } from "@/app/canvas/canvas-generation-layout";
 import { appendCanvasHistorySnapshot, canvasHistoryKey, commitCanvasGenerationHistory, restoreCanvasHistoryDocument } from "@/app/canvas/canvas-history";
 import { canvasImageAngleLabel, canvasImageAnglePrompt, cropCanvasImage, splitCanvasImage, upscaleCanvasImage, type CanvasImageAngleParams, type CanvasImageCropRect, type CanvasImageSplitParams, type CanvasImageUpscaleParams } from "@/app/canvas/canvas-image-data";
 import { canvasCenteredNodePosition, canvasCroppedNodeSize, canvasEmptyImageFrameFromSize, canvasImageReplacementFrame, canvasNodeAspectRatio } from "@/app/canvas/canvas-node-geometry";
 import { canvasGenerationStatusLabel, canvasNodeInfoJSON } from "@/app/canvas/canvas-node-info";
 import { CanvasAngleDialog, CanvasCropDialog, CanvasMaskDialog, CanvasSplitDialog, CanvasUpscaleDialog, type CanvasMaskEditPayload } from "@/app/canvas/canvas-image-tools";
-import { applyCanvasTaskImage, applyCanvasTaskProgressNodes, reconcileCancelledCanvasTaskNodes, restoreCanvasTaskInitialImage, summarizeCanvasTaskResult } from "@/app/canvas/canvas-task-results";
+import { applyCanvasTaskImage, applyCanvasTaskProgressNodes, reconcileCancelledCanvasTaskNodes, reconcilePersistedCanvasTaskNodes, restoreCanvasTaskInitialImage, summarizeCanvasTaskResult } from "@/app/canvas/canvas-task-results";
 import { canvasExportBounds } from "@/app/canvas/canvas-export";
 import { normalizeCanvasClipboard, remapCanvasNodeReferences } from "@/app/canvas/canvas-clipboard";
 import { CANVAS_MAX_ZOOM, CANVAS_MIN_ZOOM, resetCanvasViewport, setCanvasViewportZoom } from "@/app/canvas/canvas-viewport";
@@ -195,7 +195,7 @@ function CanvasNodePromptPanel({ node, mentionReferences, running, generationBus
   }
 
   return (
-    <div className="rounded-2xl border border-border bg-card p-3 shadow-[0_18px_50px_rgba(15,23,42,.18)] backdrop-blur-xl">
+    <div className="rounded-xl border border-border/90 bg-card/96 p-2.5 shadow-[0_14px_38px_rgba(15,23,42,.14)] backdrop-blur-xl">
       <CanvasResourceMentionTextarea
         value={prompt}
         references={mentionReferences}
@@ -203,13 +203,13 @@ function CanvasNodePromptPanel({ node, mentionReferences, running, generationBus
         onSubmit={submit}
         onBlur={(event) => { if (!editingExistingImage) onPromptChange(event.target.value, true); }}
         placeholder={editingExistingImage ? "请输入你想要把这张图修改成什么" : "描述要生成的图片内容"}
-        containerClassName="h-24"
-        className="h-24 resize-none rounded-xl bg-background px-3 py-2 text-sm leading-5 shadow-none"
+        containerClassName="h-20"
+        className="h-20 resize-none rounded-lg border border-input bg-background px-3 py-2.5 text-sm leading-5 shadow-none outline-none placeholder:text-muted-foreground focus-visible:border-[#9dbaff] focus-visible:ring-[3px] focus-visible:ring-[#1456f0]/10"
       />
-      <div className="mt-2 flex min-w-0 items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-2">
+      <div className="mt-2 flex min-w-0 items-center justify-between gap-1.5">
+        <div className="flex min-w-0 items-center gap-1.5">
           <span
-            className="inline-flex h-10 min-w-0 max-w-[190px] items-center gap-1.5 rounded-full border border-border bg-background px-3 text-xs font-medium text-muted-foreground"
+            className="inline-flex h-9 min-w-0 max-w-[180px] items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 text-xs font-medium text-muted-foreground"
             title={`模型：${imageModel || "默认模型"}`}
           >
             <Bot className="size-3.5 shrink-0" />
@@ -221,7 +221,7 @@ function CanvasNodePromptPanel({ node, mentionReferences, running, generationBus
         <Button
           size="sm"
           variant={running ? "destructive" : "default"}
-          className="h-10 min-w-16 shrink-0 rounded-full px-3 text-xs"
+          className={cn("h-9 shrink-0 rounded-lg px-2.5 text-xs", running ? "min-w-20" : "w-9")}
           disabled={running ? !canStop || cancelling : !imageModelReady || (!prompt.trim() && !connectedPromptAvailable) || generationBusy}
           aria-label={running ? "停止生成" : "生成"}
           onClick={() => running ? onStop() : submit()}
@@ -261,6 +261,7 @@ export default function CanvasPage() {
   const uploadPositionRef = useRef<{ x: number; y: number } | null>(null);
   const cancelledTaskIDsRef = useRef(new Set<string>());
   const generationAbortControllerRef = useRef<AbortController | null>(null);
+  const canvasRecoveryAbortControllerRef = useRef<AbortController | null>(null);
   const generationEpochRef = useRef(0);
   const canvasOperationEpochRef = useRef(0);
   const pendingTaskIDRef = useRef("");
@@ -281,10 +282,7 @@ export default function CanvasPage() {
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [libraryLoading, setLibraryLoading] = useState(false);
   const [libraryImages, setLibraryImages] = useState<ManagedImage[]>([]);
-  const [miniMapOpen, setMiniMapOpen] = useState(() => {
-    if (typeof window === "undefined") return false;
-    return window.localStorage.getItem(MINI_MAP_STORAGE_KEY) === "true";
-  });
+  const [miniMapOpen, setMiniMapOpen] = useState(false);
   const [pendingConnection, setPendingConnection] = useState<PendingConnectionCreate | null>(null);
   const [nodeCreateMenu, setNodeCreateMenu] = useState<CanvasNodeCreateMenu | null>(null);
   const [panelNodeID, setPanelNodeID] = useState("");
@@ -449,10 +447,17 @@ export default function CanvasPage() {
   function applyDocument(document: CanvasDocument, resetHistory = true) {
     loadedRef.current = false;
     canvasOperationEpochRef.current += 1;
-    const hadInterruptedGeneration = (document.nodes || []).some((node) => node.generation_status === "loading");
+    canvasRecoveryAbortControllerRef.current?.abort();
+    canvasRecoveryAbortControllerRef.current = null;
+    const recoveryTaskIDs = [...new Set((document.nodes || []).flatMap((node) => (
+      node.task_id && (node.generation_status === "loading" || node.generation_error === INTERRUPTED_CANVAS_GENERATION_ERROR)
+        ? [node.task_id]
+        : []
+    )))];
+    const operationEpoch = canvasOperationEpochRef.current;
     const next = cloneDocument({
       ...document,
-      nodes: restoreInterruptedCanvasGenerations((document.nodes || []).map(normalizeCanvasNodeTitle)),
+      nodes: (document.nodes || []).map(normalizeCanvasNodeTitle),
       connections: document.connections || [],
     });
     documentRef.current = next;
@@ -483,7 +488,11 @@ export default function CanvasPage() {
     }
     setSaveState("saved");
     loadedRef.current = true;
-    if (hadInterruptedGeneration) scheduleSave();
+    if (recoveryTaskIDs.length) {
+      const controller = new AbortController();
+      canvasRecoveryAbortControllerRef.current = controller;
+      void recoverCanvasTasks(next.id, operationEpoch, recoveryTaskIDs, controller.signal);
+    }
   }
 
   function applyWorkspace(response: CanvasWorkspaceResponse) {
@@ -1261,6 +1270,67 @@ export default function CanvasPage() {
     throw new Error("图片任务处理时间过长，请稍后在任务队列中查看结果");
   }
 
+  function isCurrentCanvasRecovery(projectID: string, operationEpoch: number, signal: AbortSignal) {
+    return mountedRef.current
+      && !signal.aborted
+      && documentRef.current.id === projectID
+      && canvasOperationEpochRef.current === operationEpoch;
+  }
+
+  function applyRecoveredCanvasTask(task: CreationTask, projectID: string, operationEpoch: number, signal: AbortSignal) {
+    if (!isCurrentCanvasRecovery(projectID, operationEpoch, signal)) return { terminal: false, completedImageCount: 0 };
+    const result = reconcilePersistedCanvasTaskNodes(nodesRef.current, task);
+    if (!result.changed) return { terminal: result.terminal, completedImageCount: result.completedImageCount };
+    replaceNodes(result.nodes);
+    if (result.terminal || result.completedImageCount > 0) scheduleSave();
+    return { terminal: result.terminal, completedImageCount: result.completedImageCount };
+  }
+
+  function markCanvasTaskRecoveryError(taskID: string, message: string, projectID: string, operationEpoch: number, signal: AbortSignal) {
+    if (!isCurrentCanvasRecovery(projectID, operationEpoch, signal)) return;
+    const nextNodes = nodesRef.current.map((node) => node.task_id === taskID && node.generation_status === "loading"
+      ? { ...node, generation_status: "error" as const, generation_error: message }
+      : node);
+    replaceNodes(nextNodes);
+    scheduleSave();
+  }
+
+  async function recoverCanvasTasks(projectID: string, operationEpoch: number, taskIDs: string[], signal: AbortSignal) {
+    let response: Awaited<ReturnType<typeof fetchCreationTasks>>;
+    try {
+      response = await fetchCreationTasks(taskIDs, { signal });
+    } catch (error) {
+      if (!(error instanceof DOMException && error.name === "AbortError")) {
+        const message = error instanceof Error ? error.message : "无法读取图片任务状态";
+        taskIDs.forEach((taskID) => markCanvasTaskRecoveryError(taskID, message, projectID, operationEpoch, signal));
+      }
+      return;
+    }
+    if (!isCurrentCanvasRecovery(projectID, operationEpoch, signal)) return;
+    const tasksByID = new Map(response.items.map((task) => [task.id, task]));
+    response.missing_ids.forEach((taskID) => markCanvasTaskRecoveryError(taskID, "任务记录不存在，无法恢复生成结果", projectID, operationEpoch, signal));
+    await Promise.all(taskIDs.flatMap((taskID) => {
+      const task = tasksByID.get(taskID);
+      if (!task) return [];
+      const progress = applyRecoveredCanvasTask(task, projectID, operationEpoch, signal);
+      if (progress.terminal) return [];
+      return [
+        (async () => {
+          try {
+            const completedTask = await waitForTask(taskID, (nextTask) => {
+              applyRecoveredCanvasTask(nextTask, projectID, operationEpoch, signal);
+            }, signal);
+            applyRecoveredCanvasTask(completedTask, projectID, operationEpoch, signal);
+          } catch (error) {
+            if (!(error instanceof DOMException && error.name === "AbortError")) {
+              markCanvasTaskRecoveryError(taskID, error instanceof Error ? error.message : "恢复图片任务失败", projectID, operationEpoch, signal);
+            }
+          }
+        })(),
+      ];
+    }));
+  }
+
   async function stopGeneration() {
     if (!runningNodeID || cancellingTaskID) return;
     const serverTaskID = submittedTaskIDRef.current || runningTaskID;
@@ -1693,6 +1763,8 @@ export default function CanvasPage() {
       generationEpochRef.current += 1;
       generationAbortControllerRef.current?.abort();
       generationAbortControllerRef.current = null;
+      canvasRecoveryAbortControllerRef.current?.abort();
+      canvasRecoveryAbortControllerRef.current = null;
       flushPendingSave();
       window.removeEventListener("pagehide", flushPendingSave);
       batchAnimationTimers.forEach((timer) => window.clearTimeout(timer));
@@ -1783,22 +1855,22 @@ export default function CanvasPage() {
   }, [nodeCreateMenu]);
 
   return (
-    <section ref={hostRef} className="relative h-full min-h-[540px] overflow-hidden rounded-xl border border-border bg-[#eef2f7] shadow-[0_18px_48px_-34px_rgba(15,23,42,0.42)] dark:bg-[#161a20]">
+    <section ref={hostRef} className="relative h-full min-h-[540px] overflow-hidden rounded-xl border border-border bg-[#f3f5f8] shadow-[0_16px_42px_-34px_rgba(15,23,42,0.34)] dark:bg-[#15181d]">
       <CanvasEngine nodes={nodes} connections={connections} viewport={viewport} background={background} canvasSize={canvasSize} exporting={exportingCanvas} exportBounds={exportingCanvas ? canvasExportBounds(visibleCanvasNodes(nodes)) : undefined} selectedNodeIDs={selectedNodeIDs} selectedConnectionID={selectedConnectionID} panelNodeID={panelNodeID} runningNodeID={runningControlNodeID} loadingNodeID={runningResultNodeID} pendingConnectionActive={Boolean(pendingConnection)} collapsingBatchRootIDs={collapsingBatchRootIDs} openingBatchRootIDs={openingBatchRootIDs} onNodesChange={replaceNodes} onNodesCommit={pushHistory} onViewportChange={updateViewport} onSelectionChange={selectionChanged} onConnect={connectNodes} canConnect={canConnect} onConnectionDropEmpty={(origin, position, menu) => setPendingConnection({ ...origin, position, menu })} onPromptChange={updateNodePrompt} onTextFontSizeChange={updateTextFontSize} onTitleChange={updateNodeTitle} onNodePanelToggle={(nodeID) => setPanelNodeID((current) => current === nodeID ? "" : nodeID)} onNodeGenerate={(nodeID) => void runGeneration(nodeID)} onNodeStop={requestStopGeneration} onNodeParametersChange={updateNodeGenerationParameters} onNodeUpload={requestNodeImageUpload} onToggleFreeResize={toggleCanvasFreeResize} onCropImage={(nodeID) => void openCanvasImageTool(nodeID, "crop")} onSplitImage={(nodeID) => void openCanvasImageTool(nodeID, "split")} onUpscaleImage={(nodeID) => void openCanvasImageTool(nodeID, "upscale")} onMaskEdit={(nodeID) => void openCanvasImageTool(nodeID, "mask")} onAngleImage={(nodeID) => void openCanvasImageTool(nodeID, "angle")} uploadingNodeID={uploadingNodeID} onViewImage={(nodeID) => { setPanelNodeID(""); setPreviewNodeID(nodeID); }} onCopyPrompt={(nodeID) => void copyNodePrompt(nodeID)} onDownloadImage={(nodeID) => void downloadNodeImage(nodeID)} onTextToImage={generateFromTextNode} onNodeRetry={(nodeID) => void runGeneration(nodeID, undefined, true)} onNodeActivate={activateNode} onToggleBatch={toggleCanvasBatch} onSetBatchPrimary={makeCanvasBatchPrimary} onNodeInfo={setInfoNodeID} onNodeDelete={(nodeID) => removeNodes(new Set([nodeID]))} onNodeContextMenu={openNodeContextMenu} onConnectionContextMenu={openConnectionContextMenu} onCanvasContextMenu={openCanvasContextMenu} onCanvasDoubleClick={(event, position) => { const rect = hostRef.current?.getBoundingClientRect(); setNodeCreateMenu({ position, menu: { x: event.clientX - (rect?.left || 0), y: event.clientY - (rect?.top || 0) } }); }} renderNodePanel={renderNodePanel} onDrop={handleCanvasDrop} />
 
       {pendingConnection ? <div data-connection-create-menu className="absolute z-40 w-48 rounded-xl border border-border bg-card p-1.5 shadow-xl" style={{ left: Math.max(8, Math.min(pendingConnection.menu.x, (hostRef.current?.clientWidth || 240) - 200)), top: Math.max(64, Math.min(pendingConnection.menu.y, (hostRef.current?.clientHeight || 240) - 168)) }}><p className="px-2 py-1.5 text-[11px] font-semibold text-muted-foreground">创建节点并连接</p><button className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs hover:bg-muted" onClick={() => createPendingNode("text")}><Type className="size-4" />想法节点</button><button className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs hover:bg-muted" onClick={() => createPendingNode("image")}><ImagePlus className="size-4" />空白图片节点</button><button className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs hover:bg-muted" onClick={() => createPendingNode("config")}><Settings2 className="size-4" />生成配置节点</button></div> : null}
       {nodeCreateMenu ? <div data-node-create-menu className="absolute z-40 w-48 rounded-xl border border-border bg-card p-1.5 shadow-xl" style={{ left: Math.max(8, Math.min(nodeCreateMenu.menu.x, (hostRef.current?.clientWidth || 240) - 200)), top: Math.max(64, Math.min(nodeCreateMenu.menu.y, (hostRef.current?.clientHeight || 240) - 168)) }}><p className="px-2 py-1.5 text-[11px] font-semibold text-muted-foreground">添加到画布</p><button className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs hover:bg-muted" onClick={() => { addTextNodeAt({ x: nodeCreateMenu.position.x - 170, y: nodeCreateMenu.position.y - 120 }); setNodeCreateMenu(null); }}><Type className="size-4" />想法节点</button><button className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs hover:bg-muted" onClick={() => { addBlankNodeAt({ x: nodeCreateMenu.position.x - 170, y: nodeCreateMenu.position.y - 120 }); setNodeCreateMenu(null); }}><ImagePlus className="size-4" />空白图片节点</button><button className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs hover:bg-muted" onClick={() => { addConfigNodeAt({ x: nodeCreateMenu.position.x - 170, y: nodeCreateMenu.position.y - 120 }); setNodeCreateMenu(null); }}><Settings2 className="size-4" />生成配置节点</button></div> : null}
 
       <div className="pointer-events-none absolute inset-x-3 top-3 z-20 flex items-start justify-between gap-3">
-        <div className="pointer-events-auto flex h-11 items-center rounded-2xl border border-border bg-card/92 p-1.5 shadow-[0_10px_28px_rgba(15,23,42,.10)] backdrop-blur-xl">
-          <Button aria-label="画布项目" variant="ghost" size="sm" className="h-8 max-w-56 rounded-xl px-3 text-xs font-semibold" onClick={() => setProjectMenuOpen((value) => !value)}><span className="truncate">{title}</span><ChevronDown className="size-3.5" /></Button>
+        <div className="pointer-events-auto flex h-10 items-center rounded-xl border border-border bg-card/94 p-1 shadow-[0_8px_24px_rgba(15,23,42,.09)] backdrop-blur-xl">
+          <Button aria-label="画布项目" variant="ghost" size="sm" className="h-8 max-w-56 rounded-lg px-2.5 text-xs font-semibold" onClick={() => setProjectMenuOpen((value) => !value)}><span className="truncate">{title}</span><ChevronDown className="size-3.5" /></Button>
         </div>
-        <Button variant="ghost" size="sm" className="pointer-events-auto h-11 min-w-[94px] rounded-2xl border border-border bg-card/92 px-3 text-xs shadow-[0_10px_28px_rgba(15,23,42,.10)] backdrop-blur-xl" onClick={() => void persistCanvas()}>{saveState === "saving" ? <LoaderCircle className="animate-spin" /> : <Save />}{saveLabel(saveState)}</Button>
+        <Button variant="ghost" size="sm" className="pointer-events-auto h-10 min-w-[88px] rounded-xl border border-border bg-card/94 px-2.5 text-xs shadow-[0_8px_24px_rgba(15,23,42,.09)] backdrop-blur-xl" onClick={() => void persistCanvas()}>{saveState === "saving" ? <LoaderCircle className="animate-spin" /> : <Save />}{saveLabel(saveState)}</Button>
       </div>
 
       <div className="pointer-events-none absolute inset-x-3 bottom-3 z-30 flex justify-center">
         <div className="hide-scrollbar pointer-events-auto flex max-w-full items-center gap-2 overflow-x-auto px-1">
-          <div className="flex h-12 shrink-0 items-center gap-1 rounded-2xl border border-border bg-card/94 p-1.5 shadow-[0_12px_32px_rgba(15,23,42,.14)] backdrop-blur-xl">
+          <div className="flex h-11 shrink-0 items-center gap-0.5 rounded-xl border border-border bg-card/95 p-1 shadow-[0_10px_28px_rgba(15,23,42,.12)] backdrop-blur-xl">
             <ToolButton active={!selectedNodeIDs.size && !selectedConnectionID} label="移动/选择" onClick={() => selectionChanged(new Set())}><Hand /></ToolButton>
             <ToolbarDivider />
             <ToolButton label="撤销" disabled={historyRef.current.length <= 1} onClick={undo}><Undo2 /></ToolButton>
@@ -1818,7 +1890,7 @@ export default function CanvasPage() {
         </div>
       </div>
 
-      <div className="pointer-events-auto absolute bottom-3 left-3 z-30 hidden h-12 items-center gap-1 rounded-2xl border border-border bg-card/94 p-1.5 shadow-[0_12px_32px_rgba(15,23,42,.14)] backdrop-blur-xl lg:flex">
+      <div className="pointer-events-auto absolute bottom-3 left-3 z-30 hidden h-11 items-center gap-0.5 rounded-xl border border-border bg-card/95 p-1 shadow-[0_10px_28px_rgba(15,23,42,.12)] backdrop-blur-xl lg:flex">
         <ToolButton label="重置视图" onClick={resetViewport}><Focus /></ToolButton>
         <ToolButton label="缩小" onClick={() => updateViewport(setCanvasViewportZoom(viewportRef.current, canvasSize, viewportRef.current.zoom / 1.2), true)}><ZoomOut /></ToolButton>
         <input aria-label="画布缩放" type="range" min={CANVAS_MIN_ZOOM * 100} max={CANVAS_MAX_ZOOM * 100} value={Math.round(viewport.zoom * 100)} className="h-1.5 w-20 cursor-pointer accent-[#1456f0]" onChange={(event) => updateViewport(setCanvasViewportZoom(viewportRef.current, canvasSize, Number(event.target.value) / 100), true)} />
@@ -1873,7 +1945,7 @@ export default function CanvasPage() {
 }
 
 function ToolButton({ active = false, label, className, ...props }: React.ComponentProps<typeof Button> & { active?: boolean; label: string }) {
-  return <Button type="button" variant="ghost" size="icon" title={label} aria-label={label} className={cn("size-9 rounded-xl", active && "bg-[#e7efff] text-[#1456f0]", className)} {...props} />;
+  return <Button type="button" variant="ghost" size="icon" title={label} aria-label={label} className={cn("size-9 rounded-lg", active && "bg-[#e7efff] text-[#1456f0]", className)} {...props} />;
 }
 
 function ToolbarDivider() {
