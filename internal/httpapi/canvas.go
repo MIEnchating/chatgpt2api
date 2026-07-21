@@ -25,15 +25,26 @@ func (a *App) handleCanvasDocument(w http.ResponseWriter, r *http.Request) {
 		util.WriteJSON(w, http.StatusOK, workspace)
 	case http.MethodPost:
 		var input struct {
-			Action    string `json:"action"`
-			ProjectID string `json:"project_id"`
-			Title     string `json:"title"`
+			Action    string                  `json:"action"`
+			ProjectID string                  `json:"project_id"`
+			Title     string                  `json:"title"`
+			Document  *service.CanvasDocument `json:"document"`
 		}
 		if err := util.DecodeJSON(r.Body, &input); err != nil {
 			util.WriteError(w, http.StatusBadRequest, "invalid json body")
 			return
 		}
-		workspace, err := a.canvas.UpdateProject(ownerID, input.Action, input.ProjectID, input.Title)
+		var workspace service.CanvasWorkspaceResult
+		var err error
+		if strings.EqualFold(strings.TrimSpace(input.Action), "import") {
+			if input.Document == nil {
+				util.WriteError(w, http.StatusBadRequest, "canvas document is required")
+				return
+			}
+			workspace, err = a.canvas.Import(ownerID, *input.Document)
+		} else {
+			workspace, err = a.canvas.UpdateProject(ownerID, input.Action, input.ProjectID, input.Title)
+		}
 		if err != nil {
 			if errors.Is(err, service.ErrInvalidCanvasDocument) {
 				util.WriteError(w, http.StatusBadRequest, err.Error())
@@ -60,8 +71,12 @@ func (a *App) handleCanvasDocument(w http.ResponseWriter, r *http.Request) {
 		}
 		util.WriteJSON(w, http.StatusOK, map[string]any{"document": document})
 	case http.MethodDelete:
-		document, err := a.canvas.Clear(ownerID)
+		document, err := a.canvas.Clear(ownerID, r.URL.Query().Get("project_id"))
 		if err != nil {
+			if errors.Is(err, service.ErrInvalidCanvasDocument) {
+				util.WriteError(w, http.StatusBadRequest, err.Error())
+				return
+			}
 			util.WriteError(w, http.StatusInternalServerError, "failed to clear canvas")
 			return
 		}

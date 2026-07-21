@@ -298,11 +298,15 @@ export type CanvasViewport = {
 
 export type CanvasNode = {
   id: string;
-  type: "image" | "text";
+  type: "image" | "text" | "config";
   x: number;
   y: number;
   width: number;
   height: number;
+  font_size?: number;
+  natural_width?: number;
+  natural_height?: number;
+  free_resize?: boolean;
   scale_x: number;
   scale_y: number;
   angle?: number;
@@ -310,7 +314,7 @@ export type CanvasNode = {
   thumbnail_url?: string;
   title?: string;
   prompt?: string;
-  parent_id?: string;
+  composer_content?: string;
   task_id?: string;
   generation_size?: string;
   generation_resolution?: string;
@@ -320,6 +324,14 @@ export type CanvasNode = {
   generation_output_compression?: number;
   generation_stream?: boolean;
   generation_partial_images?: number;
+  generation_status?: "idle" | "loading" | "success" | "error";
+  generation_error?: string;
+  generation_type?: "generate" | "edit";
+  generation_reference_urls?: string[];
+  batch_child_ids?: string[];
+  batch_root_id?: string;
+  batch_primary_id?: string;
+  batch_expanded?: boolean;
   created_at?: string;
 };
 
@@ -480,6 +492,7 @@ export type CreationTask = {
 export type CreationTaskRequestOptions = {
   authorization?: string;
   redirectOnUnauthorized?: boolean;
+  signal?: AbortSignal;
 };
 
 function creationTaskRequestAuth(options?: CreationTaskRequestOptions) {
@@ -490,6 +503,7 @@ function creationTaskRequestAuth(options?: CreationTaskRequestOptions) {
     ...(options?.redirectOnUnauthorized === undefined
       ? {}
       : { redirectOnUnauthorized: options.redirectOnUnauthorized }),
+    ...(options?.signal ? { signal: options.signal } : {}),
   };
 }
 
@@ -1077,8 +1091,8 @@ export async function saveCanvasDocument(document: CanvasDocument) {
   });
 }
 
-export async function clearCanvasDocument() {
-  return httpRequest<{ document: CanvasDocument }>("/api/canvas", {
+export async function clearCanvasDocument(projectID: string) {
+  return httpRequest<{ document: CanvasDocument }>(`/api/canvas?project_id=${encodeURIComponent(projectID)}`, {
     method: "DELETE",
   });
 }
@@ -1091,6 +1105,13 @@ export async function updateCanvasProject(input: {
   return httpRequest<CanvasWorkspaceResponse>("/api/canvas", {
     method: "POST",
     body: input,
+  });
+}
+
+export async function importCanvasProject(document: CanvasDocument) {
+  return httpRequest<CanvasWorkspaceResponse>("/api/canvas", {
+    method: "POST",
+    body: { action: "import", document },
   });
 }
 

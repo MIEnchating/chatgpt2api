@@ -39,30 +39,43 @@ type CanvasViewport struct {
 }
 
 type CanvasNode struct {
-	ID                          string  `json:"id"`
-	Type                        string  `json:"type"`
-	X                           float64 `json:"x"`
-	Y                           float64 `json:"y"`
-	Width                       float64 `json:"width"`
-	Height                      float64 `json:"height"`
-	ScaleX                      float64 `json:"scale_x"`
-	ScaleY                      float64 `json:"scale_y"`
-	Angle                       float64 `json:"angle,omitempty"`
-	URL                         string  `json:"url,omitempty"`
-	ThumbnailURL                string  `json:"thumbnail_url,omitempty"`
-	Title                       string  `json:"title,omitempty"`
-	Prompt                      string  `json:"prompt,omitempty"`
-	ParentID                    string  `json:"parent_id,omitempty"`
-	TaskID                      string  `json:"task_id,omitempty"`
-	GenerationSize              string  `json:"generation_size,omitempty"`
-	GenerationResolution        string  `json:"generation_resolution,omitempty"`
-	GenerationQuality           string  `json:"generation_quality,omitempty"`
-	GenerationCount             int     `json:"generation_count,omitempty"`
-	GenerationOutputFormat      string  `json:"generation_output_format,omitempty"`
-	GenerationOutputCompression *int    `json:"generation_output_compression,omitempty"`
-	GenerationStream            *bool   `json:"generation_stream,omitempty"`
-	GenerationPartialImages     int     `json:"generation_partial_images,omitempty"`
-	CreatedAt                   string  `json:"created_at,omitempty"`
+	ID                          string   `json:"id"`
+	Type                        string   `json:"type"`
+	X                           float64  `json:"x"`
+	Y                           float64  `json:"y"`
+	Width                       float64  `json:"width"`
+	Height                      float64  `json:"height"`
+	FontSize                    int      `json:"font_size,omitempty"`
+	NaturalWidth                int      `json:"natural_width,omitempty"`
+	NaturalHeight               int      `json:"natural_height,omitempty"`
+	FreeResize                  bool     `json:"free_resize,omitempty"`
+	ScaleX                      float64  `json:"scale_x"`
+	ScaleY                      float64  `json:"scale_y"`
+	Angle                       float64  `json:"angle,omitempty"`
+	URL                         string   `json:"url,omitempty"`
+	ThumbnailURL                string   `json:"thumbnail_url,omitempty"`
+	Title                       string   `json:"title,omitempty"`
+	Prompt                      string   `json:"prompt,omitempty"`
+	ComposerContent             *string  `json:"composer_content,omitempty"`
+	ParentID                    string   `json:"parent_id,omitempty"`
+	TaskID                      string   `json:"task_id,omitempty"`
+	GenerationSize              string   `json:"generation_size,omitempty"`
+	GenerationResolution        string   `json:"generation_resolution,omitempty"`
+	GenerationQuality           string   `json:"generation_quality,omitempty"`
+	GenerationCount             int      `json:"generation_count,omitempty"`
+	GenerationOutputFormat      string   `json:"generation_output_format,omitempty"`
+	GenerationOutputCompression *int     `json:"generation_output_compression,omitempty"`
+	GenerationStream            *bool    `json:"generation_stream,omitempty"`
+	GenerationPartialImages     int      `json:"generation_partial_images,omitempty"`
+	GenerationStatus            string   `json:"generation_status,omitempty"`
+	GenerationError             string   `json:"generation_error,omitempty"`
+	GenerationType              string   `json:"generation_type,omitempty"`
+	GenerationReferenceURLs     []string `json:"generation_reference_urls,omitempty"`
+	BatchChildIDs               []string `json:"batch_child_ids,omitempty"`
+	BatchRootID                 string   `json:"batch_root_id,omitempty"`
+	BatchPrimaryID              string   `json:"batch_primary_id,omitempty"`
+	BatchExpanded               *bool    `json:"batch_expanded,omitempty"`
+	CreatedAt                   string   `json:"created_at,omitempty"`
 }
 
 type CanvasConnection struct {
@@ -189,10 +202,49 @@ func (s *CanvasDocumentService) Save(ownerID string, input CanvasDocument) (Canv
 	return normalized, nil
 }
 
-func (s *CanvasDocumentService) Clear(ownerID string) (CanvasDocument, error) {
+func (s *CanvasDocumentService) Import(ownerID string, input CanvasDocument) (CanvasWorkspaceResult, error) {
+	ownerID = util.Clean(ownerID)
+	if ownerID == "" {
+		return CanvasWorkspaceResult{}, invalidCanvasDocument("owner_id is required")
+	}
+	if s.store == nil {
+		return CanvasWorkspaceResult{}, fmt.Errorf("storage document backend is required")
+	}
+	normalized, err := normalizeCanvasDocument(input)
+	if err != nil {
+		return CanvasWorkspaceResult{}, err
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	workspace, err := s.loadWorkspaceLocked(ownerID)
+	if err != nil {
+		return CanvasWorkspaceResult{}, err
+	}
+	if len(workspace.Projects) >= canvasWorkspaceMaxProjects {
+		return CanvasWorkspaceResult{}, invalidCanvasDocument("canvas project limit reached")
+	}
+	now := util.NowISO()
+	normalized.ID = newCanvasProjectID()
+	normalized.Revision = 0
+	normalized.CreatedAt = now
+	normalized.UpdatedAt = now
+	workspace.Projects = append([]CanvasDocument{normalized}, workspace.Projects...)
+	workspace.ActiveProjectID = normalized.ID
+	if err := s.saveWorkspaceLocked(ownerID, workspace); err != nil {
+		return CanvasWorkspaceResult{}, err
+	}
+	return canvasWorkspaceResult(workspace), nil
+}
+
+func (s *CanvasDocumentService) Clear(ownerID, projectID string) (CanvasDocument, error) {
 	ownerID = util.Clean(ownerID)
 	if ownerID == "" {
 		return CanvasDocument{}, invalidCanvasDocument("owner_id is required")
+	}
+	projectID = strings.TrimSpace(projectID)
+	if projectID == "" {
+		return CanvasDocument{}, invalidCanvasDocument("canvas project id is required")
 	}
 	if s.store == nil {
 		return CanvasDocument{}, fmt.Errorf("storage document backend is required")
@@ -203,7 +255,7 @@ func (s *CanvasDocumentService) Clear(ownerID string) (CanvasDocument, error) {
 	if err != nil {
 		return CanvasDocument{}, err
 	}
-	projectIndex := activeCanvasProjectIndex(workspace)
+	projectIndex := canvasProjectIndex(workspace, projectID)
 	if projectIndex < 0 {
 		return CanvasDocument{}, invalidCanvasDocument("canvas project does not exist")
 	}
@@ -212,9 +264,11 @@ func (s *CanvasDocumentService) Clear(ownerID string) (CanvasDocument, error) {
 	cleared.ID = current.ID
 	cleared.Title = current.Title
 	cleared.Background = current.Background
+	cleared.Viewport = current.Viewport
 	cleared.CreatedAt = current.CreatedAt
 	cleared.Revision = current.Revision + 1
 	workspace.Projects[projectIndex] = cleared
+	workspace.ActiveProjectID = cleared.ID
 	if err := s.saveWorkspaceLocked(ownerID, workspace); err != nil {
 		return CanvasDocument{}, err
 	}
@@ -456,6 +510,27 @@ func normalizeCanvasDocument(input CanvasDocument) (CanvasDocument, error) {
 		seen[node.ID] = struct{}{}
 		input.Nodes[index] = node
 	}
+	nodeByID := make(map[string]CanvasNode, len(input.Nodes))
+	for _, node := range input.Nodes {
+		nodeByID[node.ID] = node
+	}
+	for _, node := range input.Nodes {
+		if node.BatchRootID != "" {
+			root, exists := nodeByID[node.BatchRootID]
+			if !exists || !canvasNodeIDListContains(root.BatchChildIDs, node.ID) {
+				return CanvasDocument{}, invalidCanvasDocument("batch child root does not exist")
+			}
+		}
+		for _, childID := range node.BatchChildIDs {
+			child, exists := nodeByID[childID]
+			if !exists || child.BatchRootID != node.ID {
+				return CanvasDocument{}, invalidCanvasDocument("batch root child does not exist")
+			}
+		}
+		if node.BatchPrimaryID != "" && !canvasNodeIDListContains(node.BatchChildIDs, node.BatchPrimaryID) {
+			return CanvasDocument{}, invalidCanvasDocument("batch primary image is invalid")
+		}
+	}
 	if len(input.Connections) == 0 {
 		for _, node := range input.Nodes {
 			if node.ParentID != "" {
@@ -481,6 +556,9 @@ func normalizeCanvasDocument(input CanvasDocument) (CanvasDocument, error) {
 		}
 		if _, exists := seen[connection.ToNodeID]; !exists {
 			return CanvasDocument{}, invalidCanvasDocument("connection target does not exist")
+		}
+		if nodeByID[connection.FromNodeID].Type == "config" && nodeByID[connection.ToNodeID].Type == "config" {
+			return CanvasDocument{}, invalidCanvasDocument("configuration nodes cannot be connected")
 		}
 		if _, exists := connectionIDs[connection.ID]; exists {
 			return CanvasDocument{}, invalidCanvasDocument("canvas contains duplicate connection ids")
@@ -531,14 +609,20 @@ func normalizeCanvasNode(node CanvasNode) (CanvasNode, error) {
 		return CanvasNode{}, invalidCanvasDocument("node id is required")
 	}
 	node.Type = strings.ToLower(strings.TrimSpace(node.Type))
-	if node.Type != "image" && node.Type != "text" {
-		return CanvasNode{}, invalidCanvasDocument("node type must be image or text")
+	if node.Type != "image" && node.Type != "text" && node.Type != "config" {
+		return CanvasNode{}, invalidCanvasDocument("node type must be image, text, or config")
 	}
 	if !finiteCanvasNumber(node.X) || !finiteCanvasNumber(node.Y) || math.Abs(node.X) > 1e7 || math.Abs(node.Y) > 1e7 {
 		return CanvasNode{}, invalidCanvasDocument("node position is invalid")
 	}
 	if !finiteCanvasNumber(node.Width) || !finiteCanvasNumber(node.Height) || node.Width <= 0 || node.Height <= 0 || node.Width > canvasDocumentMaxNodeDim || node.Height > canvasDocumentMaxNodeDim {
 		return CanvasNode{}, invalidCanvasDocument("node size is invalid")
+	}
+	if node.NaturalWidth < 0 || node.NaturalHeight < 0 || node.NaturalWidth > 65535 || node.NaturalHeight > 65535 {
+		return CanvasNode{}, invalidCanvasDocument("node natural size is invalid")
+	}
+	if node.FontSize != 0 && (node.FontSize < 10 || node.FontSize > 32) {
+		return CanvasNode{}, invalidCanvasDocument("node font size is invalid")
 	}
 	if !finiteCanvasNumber(node.ScaleX) || node.ScaleX <= 0 || node.ScaleX > 20 {
 		node.ScaleX = 1
@@ -553,17 +637,32 @@ func normalizeCanvasNode(node CanvasNode) (CanvasNode, error) {
 	node.ThumbnailURL = strings.TrimSpace(node.ThumbnailURL)
 	node.Title = strings.TrimSpace(node.Title)
 	node.Prompt = strings.TrimSpace(node.Prompt)
+	if node.ComposerContent != nil {
+		composerContent := strings.TrimSpace(*node.ComposerContent)
+		node.ComposerContent = &composerContent
+	}
 	node.ParentID = strings.TrimSpace(node.ParentID)
 	node.TaskID = strings.TrimSpace(node.TaskID)
 	node.GenerationSize = strings.ToLower(strings.TrimSpace(node.GenerationSize))
 	node.GenerationResolution = strings.ToLower(strings.TrimSpace(node.GenerationResolution))
 	node.GenerationQuality = strings.ToLower(strings.TrimSpace(node.GenerationQuality))
 	node.GenerationOutputFormat = strings.ToLower(strings.TrimSpace(node.GenerationOutputFormat))
+	node.GenerationStatus = strings.ToLower(strings.TrimSpace(node.GenerationStatus))
+	node.GenerationError = strings.TrimSpace(node.GenerationError)
+	node.GenerationType = strings.ToLower(strings.TrimSpace(node.GenerationType))
+	node.BatchRootID = strings.TrimSpace(node.BatchRootID)
+	node.BatchPrimaryID = strings.TrimSpace(node.BatchPrimaryID)
 	node.CreatedAt = strings.TrimSpace(node.CreatedAt)
+	for index := range node.GenerationReferenceURLs {
+		node.GenerationReferenceURLs[index] = strings.TrimSpace(node.GenerationReferenceURLs[index])
+	}
+	for index := range node.BatchChildIDs {
+		node.BatchChildIDs[index] = strings.TrimSpace(node.BatchChildIDs[index])
+	}
 	if len(node.URL) > canvasDocumentMaxURL || len(node.ThumbnailURL) > canvasDocumentMaxURL {
 		return CanvasNode{}, invalidCanvasDocument("node image url is too long")
 	}
-	if len(node.Title) > canvasDocumentMaxTitle || len(node.Prompt) > canvasDocumentMaxPrompt {
+	if len(node.Title) > canvasDocumentMaxTitle || len(node.Prompt) > canvasDocumentMaxPrompt || node.ComposerContent != nil && len(*node.ComposerContent) > canvasDocumentMaxPrompt {
 		return CanvasNode{}, invalidCanvasDocument("node text is too long")
 	}
 	if len(node.GenerationSize) > 64 || len(node.GenerationResolution) > 16 {
@@ -581,7 +680,49 @@ func normalizeCanvasNode(node CanvasNode) (CanvasNode, error) {
 	if (node.GenerationOutputCompression != nil && (*node.GenerationOutputCompression < 0 || *node.GenerationOutputCompression > 100)) || node.GenerationPartialImages < 0 || node.GenerationPartialImages > 3 {
 		return CanvasNode{}, invalidCanvasDocument("node generation output settings are invalid")
 	}
+	if node.GenerationStatus != "" && node.GenerationStatus != "idle" && node.GenerationStatus != "loading" && node.GenerationStatus != "success" && node.GenerationStatus != "error" {
+		return CanvasNode{}, invalidCanvasDocument("node generation status is invalid")
+	}
+	if len(node.GenerationError) > 4096 {
+		return CanvasNode{}, invalidCanvasDocument("node generation error is too long")
+	}
+	if node.GenerationType != "" && node.GenerationType != "generate" && node.GenerationType != "edit" {
+		return CanvasNode{}, invalidCanvasDocument("node generation type is invalid")
+	}
+	if len(node.GenerationReferenceURLs) > 4 {
+		return CanvasNode{}, invalidCanvasDocument("node has too many generation reference images")
+	}
+	for _, referenceURL := range node.GenerationReferenceURLs {
+		if referenceURL == "" || len(referenceURL) > canvasDocumentMaxURL {
+			return CanvasNode{}, invalidCanvasDocument("node generation reference image is invalid")
+		}
+	}
+	if len(node.BatchChildIDs) > 10 || len(node.BatchRootID) > 128 || len(node.BatchPrimaryID) > 128 {
+		return CanvasNode{}, invalidCanvasDocument("node batch relationship is invalid")
+	}
+	batchChildIDs := make(map[string]struct{}, len(node.BatchChildIDs))
+	for _, childID := range node.BatchChildIDs {
+		if childID == "" || len(childID) > 128 || childID == node.ID {
+			return CanvasNode{}, invalidCanvasDocument("node batch child is invalid")
+		}
+		if _, exists := batchChildIDs[childID]; exists {
+			return CanvasNode{}, invalidCanvasDocument("node batch contains duplicate children")
+		}
+		batchChildIDs[childID] = struct{}{}
+	}
+	if node.BatchRootID == node.ID || node.BatchPrimaryID == node.ID {
+		return CanvasNode{}, invalidCanvasDocument("node batch relationship is invalid")
+	}
 	return node, nil
+}
+
+func canvasNodeIDListContains(ids []string, target string) bool {
+	for _, id := range ids {
+		if id == target {
+			return true
+		}
+	}
+	return false
 }
 
 func canvasDocumentName(ownerID string) string {

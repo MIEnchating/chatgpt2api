@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { ImageAspectRatioGlyph, ImageParameterLabel } from "@/app/image/components/image-parameter-ui";
 import { imageParameterChoiceClass } from "@/app/image/components/image-parameter-styles";
 import { defaultCanvasImageParameters } from "@/app/canvas/canvas-image-parameter-defaults";
+import { canvasFloatingPanelPlacement } from "@/app/canvas/canvas-floating-panel";
 import {
   IMAGE_ASPECT_RATIO_OPTIONS,
   IMAGE_QUALITY_OPTIONS,
@@ -49,6 +50,11 @@ export function CanvasImageParameterPopover({ node, onChange }: { node: CanvasNo
   const stream = node.generation_stream ?? defaults.generation_stream ?? true;
   const partialImages = Math.max(0, Math.min(3, node.generation_partial_images ?? defaults.generation_partial_images ?? 0));
   const sizeLabel = size ? formatImageSizeDisplay(size) : "自动";
+  const panelPlacement = buttonRect ? canvasFloatingPanelPlacement({
+    anchor: buttonRect,
+    viewportWidth: window.innerWidth,
+    viewportHeight: window.innerHeight,
+  }) : null;
 
   useEffect(() => {
     if (!open) return;
@@ -89,14 +95,18 @@ export function CanvasImageParameterPopover({ node, onChange }: { node: CanvasNo
           <span>{count} 张</span>
         </button>
       </span>
-      {open && buttonRect ? createPortal(
+      {open && buttonRect && panelPlacement ? createPortal(
         <div
           ref={panelRef}
-          className="fixed z-[1200] w-[360px] overflow-y-auto rounded-xl border border-border bg-popover p-3 text-popover-foreground shadow-[0_18px_54px_rgba(15,23,42,.18)]"
+          data-canvas-parameter-panel
+          className="fixed z-[1200] overflow-y-auto rounded-xl border border-border bg-popover p-3 text-popover-foreground shadow-[0_18px_54px_rgba(15,23,42,.18)]"
           style={{
-            left: Math.max(12, Math.min(window.innerWidth - 372, buttonRect.left)),
-            bottom: window.innerHeight - buttonRect.top + 8,
-            maxHeight: Math.max(260, buttonRect.top - 24),
+            left: panelPlacement.left,
+            width: panelPlacement.width,
+            maxHeight: panelPlacement.maxHeight,
+            ...(panelPlacement.direction === "above"
+              ? { bottom: window.innerHeight - buttonRect.top + 8 }
+              : { top: buttonRect.bottom + 8 }),
           }}
           onPointerDown={(event) => event.stopPropagation()}
           onMouseDown={(event) => event.stopPropagation()}

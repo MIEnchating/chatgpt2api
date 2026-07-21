@@ -8,7 +8,52 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"testing"
+
+	"chatgpt2api/internal/service"
 )
+
+func TestCanvasClearRequiresExplicitProjectID(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+	authorization := adminAuthHeader(t, app)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/canvas", nil)
+	req.Header.Set("Authorization", authorization)
+	res := httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("workspace status = %d body = %s", res.Code, res.Body.String())
+	}
+	var workspace service.CanvasWorkspaceResult
+	if err := json.Unmarshal(res.Body.Bytes(), &workspace); err != nil {
+		t.Fatalf("workspace json: %v", err)
+	}
+
+	req = httptest.NewRequest(http.MethodDelete, "/api/canvas", nil)
+	req.Header.Set("Authorization", authorization)
+	res = httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("missing project id status = %d body = %s", res.Code, res.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodDelete, "/api/canvas?project_id="+url.QueryEscape(workspace.Document.ID), nil)
+	req.Header.Set("Authorization", authorization)
+	res = httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("clear status = %d body = %s", res.Code, res.Body.String())
+	}
+	var payload struct {
+		Document service.CanvasDocument `json:"document"`
+	}
+	if err := json.Unmarshal(res.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("clear json: %v", err)
+	}
+	if payload.Document.ID != workspace.Document.ID {
+		t.Fatalf("cleared project id = %q, want %q", payload.Document.ID, workspace.Document.ID)
+	}
+}
 
 func TestCanvasImageUploadStoresPrivateGalleryImage(t *testing.T) {
 	app := newTestApp(t)
