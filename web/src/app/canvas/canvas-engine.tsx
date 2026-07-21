@@ -555,7 +555,7 @@ export function CanvasEngine({
   const panelWidth = Math.min(500, Math.max(280, (containerRef.current?.clientWidth || 532) - 32));
   const panelNodeTop = panelNode ? viewport.y + panelNode.y * viewport.zoom : 0;
   const panelNodeBottom = panelNode ? viewport.y + (panelNode.y + panelNode.height) * viewport.zoom : 0;
-  const panelHeight = 154;
+  const panelHeight = 132;
   const canvasHeight = containerRef.current?.clientHeight || window.innerHeight;
   const spaceBelow = canvasHeight - panelNodeBottom - 88;
   const spaceAbove = panelNodeTop - 16;
@@ -843,14 +843,26 @@ function CanvasDOMNode({ node, selected, related, focusRelated, showPanel, runni
       onMouseDownCapture={(event) => onSelectCapture(event, node.id)}
       onContextMenu={(event) => onContextMenu(event, node.id)}
     >
-      <div data-canvas-no-pan className="absolute top-[-30px] left-2 z-30 max-w-[calc(100%-16px)]" onMouseDown={(event) => event.stopPropagation()}>
+      <div
+        data-canvas-no-pan
+        className={cn(
+          "absolute top-[-30px] z-30",
+          node.type === "image"
+            ? "left-1/2 flex w-[calc(100%-16px)] -translate-x-1/2 justify-center"
+            : "left-2 max-w-[calc(100%-16px)]",
+        )}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
         {editingTitle ? (
           <input
             ref={titleInputRef}
             autoFocus
             value={titleDraft}
             maxLength={64}
-            className="h-7 max-w-full rounded-md border border-border bg-card/92 px-2 text-left text-xs font-medium text-foreground shadow-sm outline-none backdrop-blur"
+            className={cn(
+              "h-7 max-w-full rounded-md border border-border bg-card/92 px-2 text-xs font-medium text-foreground shadow-sm outline-none backdrop-blur",
+              node.type === "image" ? "w-56 text-center" : "text-left",
+            )}
             onChange={(event) => setTitleDraft(event.target.value)}
             onBlur={finishTitleEditing}
             onKeyDown={(event) => {
@@ -865,7 +877,10 @@ function CanvasDOMNode({ node, selected, related, focusRelated, showPanel, runni
           <button
             type="button"
             title="双击修改节点名称"
-            className="block h-7 max-w-full truncate rounded-md border border-transparent bg-card/78 px-2 text-left text-xs font-medium leading-7 text-foreground/70 shadow-sm backdrop-blur transition hover:border-border hover:bg-card hover:text-foreground"
+            className={cn(
+              "block h-7 max-w-full truncate rounded-md border border-transparent bg-card/78 px-2 text-xs font-medium leading-7 text-foreground/70 shadow-sm backdrop-blur transition hover:border-border hover:bg-card hover:text-foreground",
+              node.type === "image" ? "text-center" : "text-left",
+            )}
             onDoubleClick={(event) => {
               event.stopPropagation();
               setEditingTitle(true);
@@ -903,7 +918,7 @@ function CanvasDOMNode({ node, selected, related, focusRelated, showPanel, runni
             </div>
             <div data-canvas-no-pan className="flex items-center gap-2" onMouseDown={(event) => event.stopPropagation()}>
               <CanvasImageParameterPopover node={node} onChange={(patch) => onParametersChange(node.id, patch)} />
-              <button data-canvas-no-pan type="button" disabled={!running && !configCanGenerate} className={cn("flex h-9 min-w-24 flex-1 items-center justify-center gap-2 rounded-xl px-3 text-xs font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-45", running ? "bg-rose-600 hover:bg-rose-700" : "bg-[#1456f0] hover:bg-[#0f45c8]")} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); if (running) onStop(); else onGenerate(node.id); }}>{running ? <><LoaderCircle className="size-3.5 animate-spin" />停止</> : <><Play className="size-3.5 fill-current" />开始生成</>}</button>
+              <button data-canvas-no-pan type="button" disabled={!running && !configCanGenerate} className={cn("flex h-8 min-w-24 flex-1 items-center justify-center gap-2 rounded-lg px-3 text-xs font-semibold text-white transition disabled:cursor-not-allowed disabled:opacity-45", running ? "bg-rose-600 hover:bg-rose-700" : "bg-[#1456f0] hover:bg-[#0f45c8]")} onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); if (running) onStop(); else onGenerate(node.id); }}>{running ? <><LoaderCircle className="size-3.5 animate-spin" />停止</> : <><Play className="size-3.5 fill-current" />开始生成</>}</button>
             </div>
           </div>
         ) : node.type === "image" ? node.generation_status === "error" ? (

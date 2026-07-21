@@ -97,7 +97,7 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Can
   const mergedStyle = {
     ...style,
     color: showOverlay ? "transparent" : style?.color,
-    caretColor: style?.color || "currentColor",
+    caretColor: style?.caretColor || style?.color || "var(--foreground)",
     ...(showOverlay ? { background: "transparent", backgroundColor: "transparent" } : {}),
   } satisfies CSSProperties;
 

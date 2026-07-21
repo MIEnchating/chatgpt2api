@@ -195,7 +195,7 @@ function CanvasNodePromptPanel({ node, mentionReferences, running, generationBus
   }
 
   return (
-    <div className="rounded-xl border border-border/90 bg-card/96 p-2.5 shadow-[0_14px_38px_rgba(15,23,42,.14)] backdrop-blur-xl">
+    <div className="overflow-hidden rounded-xl border border-border/90 bg-card/96 shadow-[0_14px_38px_rgba(15,23,42,.14)] backdrop-blur-xl transition-[border-color,box-shadow] focus-within:border-[#8eacf0] focus-within:shadow-[0_14px_38px_rgba(15,23,42,.13),0_0_0_2px_rgba(20,86,240,.07)]">
       <CanvasResourceMentionTextarea
         value={prompt}
         references={mentionReferences}
@@ -204,12 +204,12 @@ function CanvasNodePromptPanel({ node, mentionReferences, running, generationBus
         onBlur={(event) => { if (!editingExistingImage) onPromptChange(event.target.value, true); }}
         placeholder={editingExistingImage ? "请输入你想要把这张图修改成什么" : "描述要生成的图片内容"}
         containerClassName="h-20"
-        className="h-20 resize-none rounded-lg border border-input bg-background px-3 py-2.5 text-sm leading-5 shadow-none outline-none placeholder:text-muted-foreground focus-visible:border-[#9dbaff] focus-visible:ring-[3px] focus-visible:ring-[#1456f0]/10"
+        className="h-20 resize-none border-0 bg-transparent px-3.5 py-3 text-sm leading-5 shadow-none outline-none placeholder:text-muted-foreground"
       />
-      <div className="mt-2 flex min-w-0 items-center justify-between gap-1.5">
+      <div className="flex min-w-0 items-center justify-between gap-1.5 border-t border-border/70 bg-muted/20 px-2 py-2">
         <div className="flex min-w-0 items-center gap-1.5">
           <span
-            className="inline-flex h-9 min-w-0 max-w-[180px] items-center gap-1.5 rounded-lg border border-border bg-background px-2.5 text-xs font-medium text-muted-foreground"
+            className="inline-flex h-8 min-w-0 max-w-[180px] items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-muted-foreground transition hover:bg-muted"
             title={`模型：${imageModel || "默认模型"}`}
           >
             <Bot className="size-3.5 shrink-0" />
@@ -221,7 +221,7 @@ function CanvasNodePromptPanel({ node, mentionReferences, running, generationBus
         <Button
           size="sm"
           variant={running ? "destructive" : "default"}
-          className={cn("h-9 shrink-0 rounded-lg px-2.5 text-xs", running ? "min-w-20" : "w-9")}
+          className={cn("h-8 shrink-0 rounded-lg px-2 text-xs", running ? "min-w-20" : "w-8 bg-[#1456f0] text-white hover:bg-[#0f45c8]")}
           disabled={running ? !canStop || cancelling : !imageModelReady || (!prompt.trim() && !connectedPromptAvailable) || generationBusy}
           aria-label={running ? "停止生成" : "生成"}
           onClick={() => running ? onStop() : submit()}
