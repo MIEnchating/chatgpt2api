@@ -205,7 +205,7 @@ function CanvasNodePromptPanel({ node, mentionReferences, running, generationBus
         onBlur={(event) => { if (!editingExistingImage) onPromptChange(event.target.value, true); }}
         placeholder={editingExistingImage ? "请输入你想要把这张图修改成什么" : "描述要生成的图片内容"}
         containerClassName="h-20"
-        className="h-20 resize-none border-0 bg-transparent px-3.5 py-3 text-sm leading-5 shadow-none outline-none placeholder:text-muted-foreground"
+        className="h-20 resize-none border-0 bg-transparent px-3.5 py-3 text-sm leading-5 shadow-none outline-none placeholder:text-muted-foreground/65"
       />
       <div className="flex min-w-0 items-center justify-between gap-1.5 border-t border-border/70 bg-muted/20 px-2 py-2">
         <div className="flex min-w-0 items-center gap-1.5">
