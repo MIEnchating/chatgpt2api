@@ -1,5 +1,5 @@
 import type { CanvasConnection, CanvasNode } from "@/lib/api";
-import { canvasConfigInputLabel, canvasGenerationInputs, type CanvasConfigInput } from "./canvas-config-inputs.ts";
+import { buildCanvasInputIndex, canvasConfigInputLabel, canvasGenerationInputsFromIndex, type CanvasConfigInput, type CanvasInputIndex } from "./canvas-config-inputs.ts";
 
 export type CanvasResourceLabel = {
   label: string;
@@ -19,8 +19,9 @@ export function canvasResourceLabels(
   nodes: readonly CanvasNode[],
   connections: readonly CanvasConnection[],
   contextNodeID: string,
+  inputIndex = buildCanvasInputIndex(nodes, connections),
 ) {
-  const activeReferences = canvasNodeMentionReferences(contextNodeID, nodes, connections);
+  const activeReferences = canvasNodeMentionReferencesFromIndex(contextNodeID, inputIndex);
   const activeByNodeID = new Map(activeReferences.map((reference) => [reference.nodeID, reference]));
   const counts = { image: 0, text: 0 };
   const labels = new Map<string, CanvasResourceLabel>();
@@ -45,10 +46,23 @@ export function canvasNodeMentionReferences(
   nodes: readonly CanvasNode[],
   connections: readonly CanvasConnection[],
 ) {
+  return canvasNodeMentionReferencesFromIndex(nodeID, buildCanvasInputIndex(nodes, connections));
+}
+
+export function canvasNodeMentionReferencesByNodeID(
+  nodeIDs: readonly string[],
+  inputIndex: CanvasInputIndex,
+) {
+  const references = new Map<string, CanvasResourceReference[]>();
+  nodeIDs.forEach((nodeID) => references.set(nodeID, canvasNodeMentionReferencesFromIndex(nodeID, inputIndex)));
+  return references;
+}
+
+function canvasNodeMentionReferencesFromIndex(nodeID: string, inputIndex: CanvasInputIndex) {
   if (!nodeID) return [];
-  const inputs = canvasGenerationInputs(nodeID, nodes, connections);
+  const inputs = canvasGenerationInputsFromIndex(nodeID, inputIndex);
   if (inputs.length) return inputs.map((input) => canvasInputReference(input, inputs));
-  const node = nodes.find((item) => item.id === nodeID);
+  const node = inputIndex.nodeByID.get(nodeID);
   if (!isCanvasResourceNode(node)) return [];
   const input: CanvasConfigInput = node.type === "image"
     ? { nodeID: node.id, type: "image", title: node.title || "图片", url: String(node.url).trim() }

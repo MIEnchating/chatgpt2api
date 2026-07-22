@@ -17,11 +17,11 @@ import { canvasGridMetrics, canvasNodesInViewport, zoomCanvasViewport } from "@/
 import { canvasExportTransform, type CanvasExportBounds } from "@/app/canvas/canvas-export";
 import { canvasNodeToolbarPlacement } from "@/app/canvas/canvas-floating-panel";
 import { canvasNodeAspectRatio } from "@/app/canvas/canvas-node-geometry";
-import { canGenerateCanvasConfig, canvasConfigInputs } from "@/app/canvas/canvas-config-inputs";
+import { buildCanvasInputIndex, canGenerateCanvasConfig } from "@/app/canvas/canvas-config-inputs";
 import { CanvasImageParameterPopover } from "@/app/canvas/canvas-image-parameters";
 import { canvasBatchMotion, expandCanvasBatchNodeIDs, visibleCanvasNodes } from "@/app/canvas/canvas-batches";
 import { CanvasResourceMentionTextarea } from "@/app/canvas/canvas-resource-mention-textarea";
-import { canvasNodeMentionReferences, canvasResourceLabels, type CanvasResourceLabel, type CanvasResourceReference } from "@/app/canvas/canvas-resources";
+import { canvasNodeMentionReferencesByNodeID, canvasResourceLabels, type CanvasResourceLabel, type CanvasResourceReference } from "@/app/canvas/canvas-resources";
 import type { CanvasConnection, CanvasDocument, CanvasNode } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -163,7 +163,8 @@ export function CanvasEngine({
   viewportRef.current = viewport;
   selectedRef.current = selectedNodeIDs;
 
-  const nodeByID = useMemo(() => new Map(nodes.map((node) => [node.id, node])), [nodes]);
+  const canvasInputIndex = useMemo(() => buildCanvasInputIndex(nodes, connections), [connections, nodes]);
+  const nodeByID = canvasInputIndex.nodeByID;
   const batchVisibleNodes = useMemo(() => visibleCanvasNodes(nodes, collapsingBatchRootIDs), [collapsingBatchRootIDs, nodes]);
   const renderedNodes = useMemo(() => exporting ? batchVisibleNodes : canvasNodesInViewport(batchVisibleNodes, viewport, canvasSize), [batchVisibleNodes, canvasSize, exporting, viewport]);
   const connectionNodeIDs = useMemo(() => new Set(batchVisibleNodes.map((node) => node.id)), [batchVisibleNodes]);
@@ -172,7 +173,7 @@ export function CanvasEngine({
     const summaries = new Map<string, { text: number; image: number; canGenerate: boolean }>();
     nodes.forEach((node) => {
       if (node.type !== "config") return;
-      const inputs = canvasConfigInputs(node.id, nodes, connections);
+      const inputs = canvasInputIndex.configInputsByNodeID.get(node.id) || [];
       summaries.set(node.id, {
         text: inputs.filter((input) => input.type === "text").length,
         image: inputs.filter((input) => input.type === "image").length,
@@ -180,7 +181,7 @@ export function CanvasEngine({
       });
     });
     return summaries;
-  }, [connections, nodes]);
+  }, [canvasInputIndex, nodes]);
 
   useEffect(() => {
     if (hoveredNodeID && !renderedNodeIDs.has(hoveredNodeID)) setHoveredNodeID("");
@@ -361,14 +362,54 @@ export function CanvasEngine({
   }, []);
 
   useEffect(() => {
+    const cancelPendingFrame = () => {
+      if (frameRef.current === null) return;
+      cancelAnimationFrame(frameRef.current);
+      frameRef.current = null;
+    };
+    const scheduleFrame = (callback: () => void) => {
+      cancelPendingFrame();
+      frameRef.current = requestAnimationFrame(() => {
+        frameRef.current = null;
+        callback();
+      });
+    };
+    const applyNodeDrag = (clientX: number, clientY: number) => {
+      const drag = dragRef.current;
+      if (!drag.active) return;
+      const dx = (clientX - drag.startX) / viewportRef.current.zoom;
+      const dy = (clientY - drag.startY) / viewportRef.current.zoom;
+      const initialByID = new Map(drag.initial.map((item) => [item.id, item]));
+      onNodesChange(nodesRef.current.map((node) => {
+        const initial = initialByID.get(node.id);
+        return initial ? { ...node, x: initial.x + dx, y: initial.y + dy } : node;
+      }));
+    };
+    const applyNodeResize = (clientX: number, clientY: number) => {
+      const resize = resizeRef.current;
+      const start = resize.node;
+      if (!resize.active || !start) return;
+      const dx = (clientX - resize.startX) / viewportRef.current.zoom;
+      const dy = (clientY - resize.startY) / viewportRef.current.zoom;
+      const left = resize.corner.includes("left");
+      const top = resize.corner.includes("top");
+      let width = Math.max(220, start.width + (left ? -dx : dx));
+      let height = Math.max(160, start.height + (top ? -dy : dy));
+      if (start.type === "image" && !start.free_resize) {
+        const ratio = canvasNodeAspectRatio(start);
+        if (Math.abs(dx) >= Math.abs(dy)) height = width / ratio;
+        else width = height * ratio;
+        if (height < 160) { height = 160; width = height * ratio; }
+        if (width < 220) { width = 220; height = width / ratio; }
+      }
+      onNodesChange(nodesRef.current.map((node) => node.id === start.id ? { ...node, x: left ? start.x + start.width - width : start.x, y: top ? start.y + start.height - height : start.y, width, height } : node));
+    };
     const handleMove = (event: PointerEvent) => {
       if (panRef.current.active) {
         const dx = event.clientX - panRef.current.startX;
         const dy = event.clientY - panRef.current.startY;
         if (Math.abs(dx) > 3 || Math.abs(dy) > 3) panRef.current.moved = true;
-        if (frameRef.current) cancelAnimationFrame(frameRef.current);
-        frameRef.current = requestAnimationFrame(() => {
-          frameRef.current = null;
+        scheduleFrame(() => {
           const next = { ...viewportRef.current, x: panRef.current.initialX + dx, y: panRef.current.initialY + dy };
           viewportRef.current = next;
           onViewportChange(next);
@@ -376,31 +417,14 @@ export function CanvasEngine({
         return;
       }
       if (dragRef.current.active) {
-        const dx = (event.clientX - dragRef.current.startX) / viewportRef.current.zoom;
-        const dy = (event.clientY - dragRef.current.startY) / viewportRef.current.zoom;
         if (Math.abs(event.clientX - dragRef.current.startX) > 3 || Math.abs(event.clientY - dragRef.current.startY) > 3) dragRef.current.moved = true;
-        onNodesChange(nodesRef.current.map((node) => {
-          const initial = dragRef.current.initial.find((item) => item.id === node.id);
-          return initial ? { ...node, x: initial.x + dx, y: initial.y + dy } : node;
-        }));
+        const { clientX, clientY } = event;
+        scheduleFrame(() => applyNodeDrag(clientX, clientY));
         return;
       }
       if (resizeRef.current.active && resizeRef.current.node) {
-        const start = resizeRef.current.node;
-        const dx = (event.clientX - resizeRef.current.startX) / viewportRef.current.zoom;
-        const dy = (event.clientY - resizeRef.current.startY) / viewportRef.current.zoom;
-        const left = resizeRef.current.corner.includes("left");
-        const top = resizeRef.current.corner.includes("top");
-        let width = Math.max(220, start.width + (left ? -dx : dx));
-        let height = Math.max(160, start.height + (top ? -dy : dy));
-        if (start.type === "image" && !start.free_resize) {
-          const ratio = canvasNodeAspectRatio(start);
-          if (Math.abs(dx) >= Math.abs(dy)) height = width / ratio;
-          else width = height * ratio;
-          if (height < 160) { height = 160; width = height * ratio; }
-          if (width < 220) { width = 220; height = width / ratio; }
-        }
-        onNodesChange(nodesRef.current.map((node) => node.id === start.id ? { ...node, x: left ? start.x + start.width - width : start.x, y: top ? start.y + start.height - height : start.y, width, height } : node));
+        const { clientX, clientY } = event;
+        scheduleFrame(() => applyNodeResize(clientX, clientY));
         return;
       }
       if (connectionRef.current) {
@@ -435,10 +459,7 @@ export function CanvasEngine({
         const dy = event.clientY - panRef.current.startY;
         panRef.current.active = false;
         document.body.style.cursor = spacePressedRef.current ? "grab" : "default";
-        if (frameRef.current) {
-          cancelAnimationFrame(frameRef.current);
-          frameRef.current = null;
-        }
+        cancelPendingFrame();
         if (!wasCancelled && wasMoved) {
           const next = { ...viewportRef.current, x: panRef.current.initialX + dx, y: panRef.current.initialY + dy };
           viewportRef.current = next;
@@ -451,6 +472,8 @@ export function CanvasEngine({
         const wasClick = event.type !== "pointercancel" && !dragRef.current.moved && dragRef.current.initial.length === 1;
         const clickedNodeID = dragRef.current.initial[0]?.id || "";
         const moved = dragRef.current.moved;
+        cancelPendingFrame();
+        if (event.type !== "pointercancel" && moved) applyNodeDrag(event.clientX, event.clientY);
         dragRef.current.active = false;
         dragRef.current.moved = false;
         dragRef.current.initial = [];
@@ -459,6 +482,8 @@ export function CanvasEngine({
         else if (wasClick && clickedNodeID) onNodeActivate(clickedNodeID);
       }
       if (resizeRef.current.active) {
+        cancelPendingFrame();
+        if (event.type !== "pointercancel") applyNodeResize(event.clientX, event.clientY);
         resizeRef.current.active = false;
         resizeRef.current.node = null;
         onNodesCommit();
@@ -488,10 +513,7 @@ export function CanvasEngine({
     };
 
     const handleBlur = () => {
-      if (frameRef.current) {
-        cancelAnimationFrame(frameRef.current);
-        frameRef.current = null;
-      }
+      cancelPendingFrame();
       if (panRef.current.active && panRef.current.moved) onViewportChange(viewportRef.current, true);
       if (dragRef.current.active && dragRef.current.moved) onNodesCommit();
       if (resizeRef.current.active) onNodesCommit();
@@ -530,14 +552,13 @@ export function CanvasEngine({
     : hoveredNodeID || (selectedNodeIDs.size === 1 ? Array.from(selectedNodeIDs)[0] : "");
   const related = useMemo(() => canvasConnectionRelations(activeNodeID, connections), [activeNodeID, connections]);
   const resourceLabels = useMemo(
-    () => canvasResourceLabels(nodes, connections, panelNodeID || activeNodeID),
-    [activeNodeID, connections, nodes, panelNodeID],
+    () => canvasResourceLabels(nodes, connections, panelNodeID || activeNodeID, canvasInputIndex),
+    [activeNodeID, canvasInputIndex, connections, nodes, panelNodeID],
   );
-  const mentionReferencesByNodeID = useMemo(() => {
-    const references = new Map<string, CanvasResourceReference[]>();
-    nodes.forEach((node) => references.set(node.id, canvasNodeMentionReferences(node.id, nodes, connections)));
-    return references;
-  }, [connections, nodes]);
+  const mentionReferencesByNodeID = useMemo(
+    () => canvasNodeMentionReferencesByNodeID(nodes.map((node) => node.id), canvasInputIndex),
+    [canvasInputIndex, nodes],
+  );
   const exportViewport = exporting && exportBounds ? { zoom: 1, x: -exportBounds.minX, y: -exportBounds.minY } : viewport;
   const grid = canvasGridMetrics(exportViewport);
   const canvasBackgroundStyle = {

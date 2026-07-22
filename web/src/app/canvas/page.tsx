@@ -19,7 +19,7 @@ import { applyCanvasTaskImage, applyCanvasTaskProgressNodes, reconcileCancelledC
 import { canvasExportBounds } from "@/app/canvas/canvas-export";
 import { normalizeCanvasClipboard, remapCanvasNodeReferences } from "@/app/canvas/canvas-clipboard";
 import { CANVAS_MAX_ZOOM, CANVAS_MIN_ZOOM, resetCanvasViewport, setCanvasViewportZoom } from "@/app/canvas/canvas-viewport";
-import { flushCanvasSaves } from "@/app/canvas/canvas-save";
+import { canvasSaveRequired, flushCanvasSaves } from "@/app/canvas/canvas-save";
 import { resolveCanvasImageModel } from "@/app/canvas/canvas-image-model";
 import { canvasImageTitle } from "@/app/canvas/canvas-image-title";
 import { defaultCanvasImageParameters } from "@/app/canvas/canvas-image-parameter-defaults";
@@ -37,6 +37,7 @@ import { MAX_IMAGE_CONVERSATION_REFERENCE_IMAGES } from "@/lib/image-conversatio
 import { cn } from "@/lib/utils";
 
 type SaveState = "saved" | "dirty" | "saving" | "error";
+type CanvasSwitchPhase = "switching" | "revealing" | null;
 type ConnectionOrigin = { nodeID: string; handleType: "source" | "target" };
 type PendingConnectionCreate = ConnectionOrigin & { position: { x: number; y: number }; menu: { x: number; y: number } };
 type CanvasNodeCreateMenu = { position: { x: number; y: number }; menu: { x: number; y: number } };
@@ -253,8 +254,11 @@ export default function CanvasPage() {
   const saveTimerRef = useRef<number | null>(null);
   const saveQueueRef = useRef<Promise<void>>(Promise.resolve());
   const workspaceMutationQueueRef = useRef<Promise<void>>(Promise.resolve());
+  const libraryRefreshPromiseRef = useRef<Promise<void> | null>(null);
   const saveChangeVersionRef = useRef(0);
+  const persistedChangeVersionRef = useRef(0);
   const saveRequestVersionRef = useRef(0);
+  const switchRevealTimerRef = useRef<number | null>(null);
   const importRef = useRef<HTMLInputElement | null>(null);
   const imageInputRef = useRef<HTMLInputElement | null>(null);
   const uploadNodeIDRef = useRef("");
@@ -309,6 +313,7 @@ export default function CanvasPage() {
     return window.localStorage.getItem(PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY) || "";
   });
   const [saveState, setSaveState] = useState<SaveState>("saved");
+  const [switchPhase, setSwitchPhase] = useState<CanvasSwitchPhase>(null);
   const [loading, setLoading] = useState(true);
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
   const [, setHistoryVersion] = useState(0);
@@ -340,16 +345,24 @@ export default function CanvasPage() {
     };
   }, []);
 
-  const refreshLibrary = useCallback(async (showLoading = false, notifyError = false) => {
-    if (showLoading) setLibraryLoading(true);
-    try {
-      const response = await fetchManagedImages({ scope: "mine" });
-      if (mountedRef.current) setLibraryImages(response.items.slice(0, 120));
-    } catch (error) {
-      if (notifyError) toast.error(error instanceof Error ? error.message : "图片库加载失败");
-    } finally {
-      if (showLoading && mountedRef.current) setLibraryLoading(false);
-    }
+  const refreshLibrary = useCallback((showLoading = false, notifyError = false) => {
+    if (libraryRefreshPromiseRef.current) return libraryRefreshPromiseRef.current;
+    const request = (async () => {
+      if (showLoading) setLibraryLoading(true);
+      try {
+        const response = await fetchManagedImages({ scope: "mine" });
+        if (mountedRef.current) setLibraryImages(response.items.slice(0, 120));
+      } catch (error) {
+        if (notifyError) toast.error(error instanceof Error ? error.message : "图片库加载失败");
+      } finally {
+        if (showLoading && mountedRef.current) setLibraryLoading(false);
+      }
+    })();
+    libraryRefreshPromiseRef.current = request;
+    void request.finally(() => {
+      if (libraryRefreshPromiseRef.current === request) libraryRefreshPromiseRef.current = null;
+    });
+    return request;
   }, []);
 
   function replaceNodes(next: CanvasNode[]) {
@@ -417,6 +430,10 @@ export default function CanvasPage() {
     if (!loadedRef.current) return true;
     if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current);
     saveTimerRef.current = null;
+    if (!canvasSaveRequired(persistedChangeVersionRef.current, saveChangeVersionRef.current)) {
+      if (mountedRef.current) setSaveState("saved");
+      return true;
+    }
     const payload = captureDocument();
     const changeVersion = saveChangeVersionRef.current;
     const requestVersion = saveRequestVersionRef.current + 1;
@@ -431,6 +448,7 @@ export default function CanvasPage() {
       response = await request;
       if (documentRef.current.id === payload.id) {
         documentRef.current = { ...documentRef.current, revision: response.document.revision, updated_at: response.document.updated_at };
+        persistedChangeVersionRef.current = Math.max(persistedChangeVersionRef.current, changeVersion);
       }
       if (mountedRef.current) {
         setProjects((items) => items.map((item) => item.id === payload.id ? { ...item, title: payload.title, node_count: payload.nodes.length, updated_at: response.document.updated_at } : item));
@@ -484,6 +502,7 @@ export default function CanvasPage() {
       historyRef.current = [next];
       redoRef.current = [];
       saveChangeVersionRef.current = 0;
+      persistedChangeVersionRef.current = 0;
       setHistoryVersion((value) => value + 1);
     }
     setSaveState("saved");
@@ -1229,6 +1248,10 @@ export default function CanvasPage() {
     if (changesActiveProject) {
       canvasOperationEpochRef.current += 1;
       interruptGenerationForProjectChange();
+      setProjectMenuOpen(false);
+      if (switchRevealTimerRef.current !== null) window.clearTimeout(switchRevealTimerRef.current);
+      switchRevealTimerRef.current = null;
+      setSwitchPhase("switching");
     }
     try {
       await enqueueWorkspaceMutation(async () => {
@@ -1243,6 +1266,14 @@ export default function CanvasPage() {
       });
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "画布项目操作失败");
+    } finally {
+      if (changesActiveProject && mountedRef.current) {
+        setSwitchPhase("revealing");
+        switchRevealTimerRef.current = window.setTimeout(() => {
+          switchRevealTimerRef.current = null;
+          if (mountedRef.current) setSwitchPhase(null);
+        }, 180);
+      }
     }
   }
 
@@ -1769,6 +1800,7 @@ export default function CanvasPage() {
       window.removeEventListener("pagehide", flushPendingSave);
       batchAnimationTimers.forEach((timer) => window.clearTimeout(timer));
       batchAnimationTimers.clear();
+      if (switchRevealTimerRef.current !== null) window.clearTimeout(switchRevealTimerRef.current);
     };
   }, []);
 
@@ -1799,8 +1831,15 @@ export default function CanvasPage() {
   useEffect(() => {
     if (!libraryOpen) return;
     void refreshLibrary(true, true);
-    const timer = window.setInterval(() => void refreshLibrary(), 4000);
-    return () => window.clearInterval(timer);
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") void refreshLibrary();
+    };
+    const timer = window.setInterval(refreshWhenVisible, 4000);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
   }, [libraryOpen, refreshLibrary]);
 
   useEffect(() => {
@@ -1939,8 +1978,24 @@ export default function CanvasPage() {
       <ImageLightbox images={previewImages} currentIndex={previewIndex} open={Boolean(previewNodeID)} onOpenChange={(open) => { if (!open) setPreviewNodeID(""); }} onIndexChange={(index) => setPreviewNodeID(previewImages[index]?.id || "")} />
       <Input ref={importRef} type="file" accept="application/json,.json" className="hidden" onChange={(event) => void importJSON(event)} />
       <Input ref={imageInputRef} type="file" accept="image/*" className="hidden" onChange={(event) => void handleNodeImageUpload(event)} />
-      {loading ? <div className="absolute inset-0 z-50 flex items-center justify-center bg-background/70"><LoaderCircle className="size-6 animate-spin text-[#1456f0]" /></div> : null}
+      {loading || switchPhase ? <CanvasSwitchShell revealing={!loading && switchPhase === "revealing"} /> : null}
     </section>
+  );
+}
+
+function CanvasSwitchShell({ revealing = false }: { revealing?: boolean }) {
+  return (
+    <div className={cn("absolute inset-0 z-50 overflow-hidden bg-[#f3f5f8] transition-opacity duration-200 dark:bg-[#15181d]", revealing && "pointer-events-none opacity-0")} aria-label="正在加载画布">
+      <div className="absolute inset-0 opacity-55" style={{ backgroundImage: "radial-gradient(circle, var(--border) 1px, transparent 1px)", backgroundSize: "24px 24px" }} />
+      <div className="absolute inset-x-3 top-3 flex items-center justify-between">
+        <div className="h-10 w-44 animate-pulse rounded-xl border border-border bg-card/90 shadow-sm" />
+        <div className="h-10 w-24 animate-pulse rounded-xl border border-border bg-card/90 shadow-sm" />
+      </div>
+      <div className="absolute left-[18%] top-[28%] h-28 w-44 animate-pulse rounded-lg border border-border bg-card/80 shadow-sm" />
+      <div className="absolute left-[48%] top-[40%] h-40 w-56 animate-pulse rounded-lg border border-border bg-card/80 shadow-sm" />
+      <div className="absolute bottom-3 left-1/2 h-11 w-[min(80%,430px)] -translate-x-1/2 animate-pulse rounded-xl border border-border bg-card/90 shadow-lg" />
+      <div className="absolute bottom-3 left-3 hidden h-11 w-72 animate-pulse rounded-xl border border-border bg-card/90 shadow-lg lg:block" />
+    </div>
   );
 }
 

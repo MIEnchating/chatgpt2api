@@ -10,24 +10,54 @@ export type CanvasConfigInput = {
   url?: string;
 };
 
+export type CanvasInputIndex = {
+  nodeByID: Map<string, CanvasNode>;
+  configInputsByNodeID: Map<string, CanvasConfigInput[]>;
+  configTargetBySourceID: Map<string, string>;
+};
+
+export function buildCanvasInputIndex(
+  nodes: readonly CanvasNode[],
+  connections: readonly CanvasConnection[],
+): CanvasInputIndex {
+  const nodeByID = new Map(nodes.map((node) => [node.id, node]));
+  const configInputsByNodeID = new Map<string, CanvasConfigInput[]>();
+  const configTargetBySourceID = new Map<string, string>();
+  connections.forEach((connection) => {
+    const source = nodeByID.get(connection.from_node_id);
+    const target = nodeByID.get(connection.to_node_id);
+    if (!configTargetBySourceID.has(connection.from_node_id) && target?.type === "config") {
+      configTargetBySourceID.set(connection.from_node_id, connection.to_node_id);
+    }
+    let input: CanvasConfigInput | null = null;
+    if (source?.type === "image" && String(source.url || "").trim()) {
+      input = { nodeID: source.id, type: "image", title: source.title || "图片", url: String(source.url).trim() };
+    } else if (source && source.type !== "config" && String(source.prompt || "").trim()) {
+      input = { nodeID: source.id, type: "text", title: source.title || "想法", text: String(source.prompt).trim() };
+    }
+    if (!input) return;
+    const inputs = configInputsByNodeID.get(connection.to_node_id);
+    if (inputs) inputs.push(input);
+    else configInputsByNodeID.set(connection.to_node_id, [input]);
+  });
+  return { nodeByID, configInputsByNodeID, configTargetBySourceID };
+}
+
+export function canvasGenerationInputsFromIndex(nodeID: string, index: CanvasInputIndex) {
+  const configNodeID = index.configTargetBySourceID.get(nodeID);
+  if (configNodeID) {
+    const inputs = (index.configInputsByNodeID.get(configNodeID) || []).filter((input) => input.nodeID !== nodeID);
+    if (inputs.length) return inputs;
+  }
+  return index.configInputsByNodeID.get(nodeID) || [];
+}
+
 export function canvasConfigInputs(
   configNodeID: string,
   nodes: readonly CanvasNode[],
   connections: readonly CanvasConnection[],
 ) {
-  const nodeByID = new Map(nodes.map((node) => [node.id, node]));
-  return connections
-    .filter((connection) => connection.to_node_id === configNodeID)
-    .flatMap((connection): CanvasConfigInput[] => {
-      const node = nodeByID.get(connection.from_node_id);
-      if (node?.type === "image" && String(node.url || "").trim()) {
-        return [{ nodeID: node.id, type: "image", title: node.title || "图片", url: String(node.url).trim() }];
-      }
-      if (node && node.type !== "config" && String(node.prompt || "").trim()) {
-        return [{ nodeID: node.id, type: "text", title: node.title || "想法", text: String(node.prompt).trim() }];
-      }
-      return [];
-    });
+  return buildCanvasInputIndex(nodes, connections).configInputsByNodeID.get(configNodeID) || [];
 }
 
 export function canvasGenerationInputs(
@@ -35,17 +65,7 @@ export function canvasGenerationInputs(
   nodes: readonly CanvasNode[],
   connections: readonly CanvasConnection[],
 ) {
-  const nodeByID = new Map(nodes.map((node) => [node.id, node]));
-  const configConnection = connections.find((connection) => (
-    connection.from_node_id === nodeID
-    && nodeByID.get(connection.to_node_id)?.type === "config"
-  ));
-  if (configConnection) {
-    const configInputs = canvasConfigInputs(configConnection.to_node_id, nodes, connections)
-      .filter((input) => input.nodeID !== nodeID);
-    if (configInputs.length) return configInputs;
-  }
-  return canvasConfigInputs(nodeID, nodes, connections);
+  return canvasGenerationInputsFromIndex(nodeID, buildCanvasInputIndex(nodes, connections));
 }
 
 export function canvasConfigInputLabel(input: CanvasConfigInput, inputs: readonly CanvasConfigInput[]) {

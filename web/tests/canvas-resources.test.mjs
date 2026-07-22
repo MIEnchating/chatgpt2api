@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { canvasNodeMentionReferences, canvasResourceLabels } from "../src/app/canvas/canvas-resources.ts";
+import { buildCanvasInputIndex } from "../src/app/canvas/canvas-config-inputs.ts";
+import { canvasNodeMentionReferences, canvasNodeMentionReferencesByNodeID, canvasResourceLabels } from "../src/app/canvas/canvas-resources.ts";
 
 function node(id, type, values = {}) {
   return { id, type, x: 0, y: 0, width: 100, height: 100, scale_x: 1, scale_y: 1, ...values };
@@ -69,4 +70,8 @@ test("a configuration input can mention the configuration's other resources", ()
   assert.deepEqual(labels.get("source"), { label: "图片1", active: false });
   assert.deepEqual(labels.get("idea"), { label: "文本1", active: true });
   assert.deepEqual(labels.get("reference"), { label: "图片1", active: true });
+
+  const indexed = canvasNodeMentionReferencesByNodeID(["source", "idea"], buildCanvasInputIndex(nodes, connections));
+  assert.deepEqual(indexed.get("source"), canvasNodeMentionReferences("source", nodes, connections));
+  assert.deepEqual(indexed.get("idea"), canvasNodeMentionReferences("idea", nodes, connections));
 });

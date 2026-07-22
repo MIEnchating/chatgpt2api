@@ -2,9 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  buildCanvasInputIndex,
   canGenerateCanvasConfig,
   canvasConfigInputLabel,
   canvasConfigInputs,
+  canvasGenerationInputsFromIndex,
   canvasConfigPromptDisplay,
   canvasConfigPromptValue,
   insertCanvasConfigReference,
@@ -30,6 +32,27 @@ test("configuration inputs follow connection order and ignore empty nodes", () =
   assert.deepEqual(inputs.map((input) => input.nodeID), ["image", "idea"]);
   assert.equal(canvasConfigInputLabel(inputs[0], inputs), "图片1");
   assert.equal(canvasConfigInputLabel(inputs[1], inputs), "文本1");
+});
+
+test("shared input index preserves direct and connected generation semantics", () => {
+  const nodes = [
+    node("source", "image", { url: "source.png" }),
+    node("idea", "text", { prompt: "保留构图" }),
+    node("reference", "image", { url: "reference.png" }),
+    node("config", "config"),
+    node("direct", "image"),
+  ];
+  const connections = [
+    { id: "source-config", from_node_id: "source", to_node_id: "config" },
+    { id: "idea-config", from_node_id: "idea", to_node_id: "config" },
+    { id: "reference-config", from_node_id: "reference", to_node_id: "config" },
+    { id: "idea-direct", from_node_id: "idea", to_node_id: "direct" },
+  ];
+  const index = buildCanvasInputIndex(nodes, connections);
+
+  assert.deepEqual(index.configInputsByNodeID.get("config").map((input) => input.nodeID), ["source", "idea", "reference"]);
+  assert.deepEqual(canvasGenerationInputsFromIndex("source", index).map((input) => input.nodeID), ["idea", "reference"]);
+  assert.deepEqual(canvasGenerationInputsFromIndex("direct", index).map((input) => input.nodeID), ["idea"]);
 });
 
 test("configuration prompt labels round-trip to stable node references", () => {

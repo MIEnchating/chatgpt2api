@@ -5,6 +5,10 @@ export type CanvasSaveFlushOptions = {
   maxPasses?: number;
 };
 
+export function canvasSaveRequired(persistedVersion: number, changeVersion: number) {
+  return persistedVersion !== changeVersion;
+}
+
 /** Wait until the save operation has observed the latest edit for one project. */
 export async function flushCanvasSaves({ save, getChangeVersion, getProjectID, maxPasses = 8 }: CanvasSaveFlushOptions) {
   const projectID = getProjectID();

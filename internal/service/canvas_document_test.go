@@ -3,7 +3,38 @@ package service
 import (
 	"errors"
 	"testing"
+
+	"chatgpt2api/internal/storage"
 )
+
+type countingCanvasDocumentBackend struct {
+	storage.Backend
+	documents storage.JSONDocumentBackend
+	saves     map[string]int
+}
+
+func newCountingCanvasDocumentBackend(t *testing.T) *countingCanvasDocumentBackend {
+	t.Helper()
+	backend := newTestStorageBackend(t)
+	documents, ok := backend.(storage.JSONDocumentBackend)
+	if !ok {
+		t.Fatal("test backend does not support JSON documents")
+	}
+	return &countingCanvasDocumentBackend{Backend: backend, documents: documents, saves: make(map[string]int)}
+}
+
+func (b *countingCanvasDocumentBackend) LoadJSONDocument(name string) (any, error) {
+	return b.documents.LoadJSONDocument(name)
+}
+
+func (b *countingCanvasDocumentBackend) SaveJSONDocument(name string, value any) error {
+	b.saves[name]++
+	return b.documents.SaveJSONDocument(name, value)
+}
+
+func (b *countingCanvasDocumentBackend) DeleteJSONDocument(name string) error {
+	return b.documents.DeleteJSONDocument(name)
+}
 
 func TestCanvasDocumentServiceSavesAndIsolatesOwners(t *testing.T) {
 	service := NewCanvasDocumentService(newTestStorageBackend(t))
@@ -233,6 +264,79 @@ func TestCanvasDocumentServiceManagesProjects(t *testing.T) {
 	}
 	if len(deleted.Projects) != 1 || deleted.Document.ID == secondID {
 		t.Fatalf("deleted workspace = %#v", deleted)
+	}
+}
+
+func TestCanvasDocumentServiceActivatesProjectWithoutRewritingWorkspace(t *testing.T) {
+	backend := newCountingCanvasDocumentBackend(t)
+	service := NewCanvasDocumentService(backend)
+	initial, err := service.Workspace("owner")
+	if err != nil {
+		t.Fatalf("Workspace() error = %v", err)
+	}
+	created, err := service.UpdateProject("owner", "create", "", "第二张画布")
+	if err != nil {
+		t.Fatalf("Create project error = %v", err)
+	}
+	workspaceName := canvasWorkspaceName("owner")
+	workspaceSaves := backend.saves[workspaceName]
+
+	activated, err := service.UpdateProject("owner", "activate", initial.Document.ID, "")
+	if err != nil {
+		t.Fatalf("Activate project error = %v", err)
+	}
+	if activated.Document.ID != initial.Document.ID {
+		t.Fatalf("activated document = %q, want %q", activated.Document.ID, initial.Document.ID)
+	}
+	if backend.saves[workspaceName] != workspaceSaves {
+		t.Fatalf("workspace saves = %d, want %d", backend.saves[workspaceName], workspaceSaves)
+	}
+	if backend.saves[canvasActiveProjectName("owner")] != 1 {
+		t.Fatalf("active project pointer saves = %d, want 1", backend.saves[canvasActiveProjectName("owner")])
+	}
+
+	reloaded := NewCanvasDocumentService(backend)
+	workspace, err := reloaded.Workspace("owner")
+	if err != nil {
+		t.Fatalf("Workspace(after reload) error = %v", err)
+	}
+	if workspace.Document.ID != initial.Document.ID || workspace.ActiveProjectID != initial.Document.ID {
+		t.Fatalf("reloaded workspace = %#v", workspace)
+	}
+	if len(created.Projects) != len(workspace.Projects) {
+		t.Fatalf("project count = %d, want %d", len(workspace.Projects), len(created.Projects))
+	}
+}
+
+func TestCanvasDocumentServiceIgnoresStaleActiveProjectPointer(t *testing.T) {
+	backend := newCountingCanvasDocumentBackend(t)
+	service := NewCanvasDocumentService(backend)
+	initial, err := service.Workspace("owner")
+	if err != nil {
+		t.Fatalf("Workspace() error = %v", err)
+	}
+	second, err := service.UpdateProject("owner", "create", "", "第二张画布")
+	if err != nil {
+		t.Fatalf("Create second project error = %v", err)
+	}
+	if _, err := service.UpdateProject("owner", "activate", initial.Document.ID, ""); err != nil {
+		t.Fatalf("Activate first project error = %v", err)
+	}
+	third, err := service.UpdateProject("owner", "create", "", "第三张画布")
+	if err != nil {
+		t.Fatalf("Create third project error = %v", err)
+	}
+	if third.Document.Title != "第三张画布" || third.Document.ID == second.Document.ID {
+		t.Fatalf("third workspace = %#v", third)
+	}
+
+	reloaded := NewCanvasDocumentService(backend)
+	workspace, err := reloaded.Workspace("owner")
+	if err != nil {
+		t.Fatalf("Workspace(after create) error = %v", err)
+	}
+	if workspace.Document.ID != third.Document.ID {
+		t.Fatalf("stale pointer selected %q, want %q", workspace.Document.ID, third.Document.ID)
 	}
 }
 

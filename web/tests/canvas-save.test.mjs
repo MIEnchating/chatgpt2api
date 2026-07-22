@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { flushCanvasSaves } from "../src/app/canvas/canvas-save.ts";
+import { canvasSaveRequired, flushCanvasSaves } from "../src/app/canvas/canvas-save.ts";
+
+test("skips a full save when the server already has the latest change", () => {
+  assert.equal(canvasSaveRequired(4, 4), false);
+  assert.equal(canvasSaveRequired(4, 5), true);
+});
 
 test("flushes again when an edit happens during a save", async () => {
   let version = 1;

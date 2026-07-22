@@ -17,6 +17,7 @@ import (
 const (
 	canvasDocumentDir            = "canvas_documents"
 	canvasWorkspaceDir           = "canvas_workspaces"
+	canvasActiveProjectDir       = "canvas_active_projects"
 	canvasDocumentVersion        = 1
 	canvasWorkspaceVersion       = 1
 	canvasWorkspaceMaxProjects   = 24
@@ -115,6 +116,13 @@ type canvasWorkspace struct {
 	Version         int              `json:"version"`
 	ActiveProjectID string           `json:"active_project_id"`
 	Projects        []CanvasDocument `json:"projects"`
+	storedActiveID  string
+}
+
+type canvasActiveProject struct {
+	Version                  int    `json:"version"`
+	ProjectID                string `json:"project_id"`
+	WorkspaceActiveProjectID string `json:"workspace_active_project_id"`
 }
 
 type CanvasDocumentService struct {
@@ -305,7 +313,12 @@ func (s *CanvasDocumentService) UpdateProject(ownerID, action, projectID, title 
 		if canvasProjectIndex(workspace, projectID) < 0 {
 			return CanvasWorkspaceResult{}, invalidCanvasDocument("canvas project does not exist")
 		}
-		workspace.ActiveProjectID = strings.TrimSpace(projectID)
+		projectID = strings.TrimSpace(projectID)
+		if err := s.saveActiveProjectLocked(ownerID, projectID, workspace.storedActiveID); err != nil {
+			return CanvasWorkspaceResult{}, err
+		}
+		workspace.ActiveProjectID = projectID
+		return canvasWorkspaceResult(workspace), nil
 	case "rename":
 		index := canvasProjectIndex(workspace, projectID)
 		title = strings.TrimSpace(title)
@@ -352,7 +365,19 @@ func (s *CanvasDocumentService) loadWorkspaceLocked(ownerID string) (canvasWorks
 		if err := json.Unmarshal(data, &workspace); err != nil {
 			return canvasWorkspace{}, err
 		}
-		return normalizeCanvasWorkspace(workspace)
+		workspace, err = normalizeCanvasWorkspace(workspace)
+		if err != nil {
+			return canvasWorkspace{}, err
+		}
+		workspace.storedActiveID = workspace.ActiveProjectID
+		activeProjectID, err := s.loadActiveProjectLocked(ownerID, workspace.storedActiveID)
+		if err != nil {
+			return canvasWorkspace{}, err
+		}
+		if canvasProjectIndex(workspace, activeProjectID) >= 0 {
+			workspace.ActiveProjectID = activeProjectID
+		}
+		return workspace, nil
 	}
 
 	legacyRaw, err := s.store.LoadJSONDocument(canvasDocumentName(ownerID))
@@ -377,11 +402,39 @@ func (s *CanvasDocumentService) loadWorkspaceLocked(ownerID string) (canvasWorks
 		Version:         canvasWorkspaceVersion,
 		ActiveProjectID: document.ID,
 		Projects:        []CanvasDocument{document},
+		storedActiveID:  document.ID,
 	}
 	if err := s.saveWorkspaceLocked(ownerID, workspace); err != nil {
 		return canvasWorkspace{}, err
 	}
 	return workspace, nil
+}
+
+func (s *CanvasDocumentService) loadActiveProjectLocked(ownerID, workspaceActiveProjectID string) (string, error) {
+	raw, err := s.store.LoadJSONDocument(canvasActiveProjectName(ownerID))
+	if err != nil || raw == nil {
+		return "", err
+	}
+	data, err := json.Marshal(raw)
+	if err != nil {
+		return "", err
+	}
+	var active canvasActiveProject
+	if err := json.Unmarshal(data, &active); err != nil {
+		return "", err
+	}
+	if active.Version != canvasWorkspaceVersion || strings.TrimSpace(active.WorkspaceActiveProjectID) != workspaceActiveProjectID {
+		return "", nil
+	}
+	return strings.TrimSpace(active.ProjectID), nil
+}
+
+func (s *CanvasDocumentService) saveActiveProjectLocked(ownerID, projectID, workspaceActiveProjectID string) error {
+	return s.store.SaveJSONDocument(canvasActiveProjectName(ownerID), canvasActiveProject{
+		Version:                  canvasWorkspaceVersion,
+		ProjectID:                strings.TrimSpace(projectID),
+		WorkspaceActiveProjectID: strings.TrimSpace(workspaceActiveProjectID),
+	})
 }
 
 func (s *CanvasDocumentService) saveWorkspaceLocked(ownerID string, workspace canvasWorkspace) error {
@@ -731,6 +784,10 @@ func canvasDocumentName(ownerID string) string {
 
 func canvasWorkspaceName(ownerID string) string {
 	return canvasWorkspaceDir + "/" + util.SHA256Hex(ownerID) + ".json"
+}
+
+func canvasActiveProjectName(ownerID string) string {
+	return canvasActiveProjectDir + "/" + util.SHA256Hex(ownerID) + ".json"
 }
 
 func newCanvasProjectID() string {
