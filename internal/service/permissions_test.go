@@ -51,11 +51,37 @@ func TestPromptMarketAdultPermissionIsExplicit(t *testing.T) {
 
 func TestDefaultUserPermissionsIncludeCanvas(t *testing.T) {
 	permissions := DefaultPermissionSetForRole(AuthRoleUser)
-	if !HasAPIPermission(permissions, "GET", "/api/canvas") || !HasAPIPermission(permissions, "POST", "/api/canvas") || !HasAPIPermission(permissions, "PUT", "/api/canvas") || !HasAPIPermission(permissions, "DELETE", "/api/canvas") {
+	if !HasAPIPermission(permissions, "GET", "/api/canvas") || !HasAPIPermission(permissions, "POST", "/api/canvas") || !HasAPIPermission(permissions, "POST", "/api/canvas/images") || !HasAPIPermission(permissions, "PUT", "/api/canvas") || !HasAPIPermission(permissions, "DELETE", "/api/canvas") {
 		t.Fatalf("default user permissions should include canvas access: %#v", permissions.APIPermissions)
 	}
 	menuPaths := sliceSet(permissions.MenuPaths)
 	if _, ok := menuPaths["/canvas"]; !ok {
 		t.Fatalf("default user menus should include canvas: %#v", permissions.MenuPaths)
+	}
+}
+
+func TestDefaultUserPermissionsIncludeCreatorFlows(t *testing.T) {
+	permissions := DefaultPermissionSetForRole(AuthRoleUser)
+	requests := []struct {
+		method string
+		path   string
+	}{
+		{"GET", "/v1/models"},
+		{"POST", "/v1/images/generations"},
+		{"POST", "/v1/images/edits"},
+		{"GET", "/api/creation-tasks"},
+		{"POST", "/api/creation-tasks/image-generations"},
+		{"POST", "/api/creation-tasks/image-edits"},
+		{"POST", "/api/creation-tasks/task-1/cancel"},
+		{"GET", "/api/images"},
+		{"PATCH", "/api/images/visibility"},
+		{"GET", "/api/auth/users"},
+		{"POST", "/api/auth/users"},
+		{"DELETE", "/api/auth/users/key-1"},
+	}
+	for _, request := range requests {
+		if !HasAPIPermission(permissions, request.method, request.path) {
+			t.Errorf("default user permissions missing %s %s: %#v", request.method, request.path, permissions.APIPermissions)
+		}
 	}
 }

@@ -49,7 +49,7 @@ var apiPermissionCatalog = []APIPermission{
 	apiPermission("GET", "/api/creation-tasks", "查看创作任务", "创作", true),
 	apiPermission("POST", "/api/creation-tasks", "提交/取消创作任务", "创作", true),
 	apiPermission("GET", "/api/canvas", "读取画布", "无限画布", false),
-	apiPermission("POST", "/api/canvas", "管理画布项目", "无限画布", false),
+	apiPermission("POST", "/api/canvas", "管理画布及上传图片", "无限画布", true),
 	apiPermission("PUT", "/api/canvas", "保存画布", "无限画布", false),
 	apiPermission("DELETE", "/api/canvas", "清空画布", "无限画布", false),
 	apiPermission("GET", PromptMarketAdultPermissionPath, "开放成人提示词市场", "创作", false),

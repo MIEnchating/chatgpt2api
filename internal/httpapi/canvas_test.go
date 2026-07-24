@@ -55,9 +55,14 @@ func TestCanvasClearRequiresExplicitProjectID(t *testing.T) {
 	}
 }
 
-func TestCanvasImageUploadStoresPrivateGalleryImage(t *testing.T) {
+func TestDefaultUserCanvasImageUploadStoresPrivateGalleryImage(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()
+	_, rawKey, err := app.auth.CreateAPIKey(service.AuthRoleUser, "canvas-user", service.AuthOwner{})
+	if err != nil {
+		t.Fatalf("CreateAPIKey() error = %v", err)
+	}
+	authorization := "Bearer " + rawKey
 
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
@@ -73,7 +78,7 @@ func TestCanvasImageUploadStoresPrivateGalleryImage(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodPost, "/api/canvas/images", body)
-	req.Header.Set("Authorization", adminAuthHeader(t, app))
+	req.Header.Set("Authorization", authorization)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	res := httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
@@ -98,7 +103,7 @@ func TestCanvasImageUploadStoresPrivateGalleryImage(t *testing.T) {
 		t.Fatalf("parse image url: %v", err)
 	}
 	req = httptest.NewRequest(http.MethodGet, parsed.Path, nil)
-	req.Header.Set("Authorization", adminAuthHeader(t, app))
+	req.Header.Set("Authorization", authorization)
 	res = httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
 	if res.Code != http.StatusOK || res.Body.Len() == 0 {
@@ -106,7 +111,7 @@ func TestCanvasImageUploadStoresPrivateGalleryImage(t *testing.T) {
 	}
 
 	req = httptest.NewRequest(http.MethodGet, "/api/images?scope=mine", nil)
-	req.Header.Set("Authorization", adminAuthHeader(t, app))
+	req.Header.Set("Authorization", authorization)
 	res = httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
 	if res.Code != http.StatusOK {
