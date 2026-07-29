@@ -207,7 +207,7 @@ export function reconcilePersistedCanvasTaskNodes(nodes: readonly CanvasNode[], 
     ? batchRoot.batch_primary_id
     : outputNodeIDs.find((nodeID) => completedImageByNodeID.has(nodeID));
   const cancelled = task.status === "cancelled";
-  const terminalError = String(task.error || "").trim() || "图片任务生成失败";
+  const terminalError = String(task.error || "").trim() || "生成失败";
   const nextNodes = progress.nodes.map((node): CanvasNode => {
     if (!taskNodeIDs.has(node.id)) return node;
     if (node.type === "config") {

@@ -945,7 +945,14 @@ function CanvasDOMNode({ node, selected, related, focusRelated, showPanel, runni
         ) : node.type === "image" ? node.generation_status === "error" ? (
           <div className="flex size-full flex-col items-center justify-center gap-3 bg-card px-6 text-center">
             <span className="grid size-9 place-items-center rounded-full bg-rose-500/10 text-rose-600"><AlertCircle className="size-4.5" /></span>
-            <span className="max-w-[260px] text-xs leading-5 text-muted-foreground">{node.generation_error || "生成失败"}</span>
+            <span
+              data-canvas-no-pan
+              data-canvas-no-zoom
+              className="max-h-[calc(100%-88px)] max-w-[260px] overflow-y-auto whitespace-pre-wrap break-words px-1 text-xs leading-5 text-muted-foreground"
+              onWheel={(event) => event.stopPropagation()}
+            >
+              {node.generation_error || "生成失败"}
+            </span>
             <button data-canvas-no-pan type="button" className="flex h-8 items-center gap-1.5 rounded-lg border border-border bg-background px-3 text-xs font-medium text-foreground shadow-sm transition hover:bg-muted" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onRetry(node.id); }}><RefreshCw className="size-3.5" />重试</button>
           </div>
         ) : node.url ? (

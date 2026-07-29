@@ -699,17 +699,14 @@ func relayDecodeJSONResponseWithLimits(resp *http.Response, successLimit, errorL
 }
 
 func relayErrorMessage(data []byte, fallback string) string {
-	var payload map[string]any
+	var payload struct {
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
 	if json.Unmarshal(data, &payload) == nil {
-		for _, value := range []any{
-			util.StringMap(payload["error"])["message"],
-			payload["message"],
-			util.StringMap(payload["detail"])["message"],
-			payload["detail"],
-		} {
-			if message := util.Clean(value); message != "" {
-				return message
-			}
+		if message := strings.TrimSpace(payload.Error.Message); message != "" {
+			return message
 		}
 	}
 	if text := strings.TrimSpace(string(data)); text != "" {

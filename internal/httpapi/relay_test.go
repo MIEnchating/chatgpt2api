@@ -219,6 +219,26 @@ func TestRelayDecodeJSONResponseLimitsSuccessfulBody(t *testing.T) {
 	}
 }
 
+func TestRelayDecodeJSONResponsePreservesNewAPIErrorMessage(t *testing.T) {
+	const message = "upstream rejected the image request (request id: req_test_123)"
+	resp := &http.Response{
+		StatusCode: http.StatusBadGateway,
+		Status:     "502 Bad Gateway",
+		Body: io.NopCloser(strings.NewReader(
+			`{"error":{"message":"` + message + `","type":"openai_error","param":"","code":"bad_response"}}`,
+		)),
+	}
+
+	_, err := relayDecodeJSONResponse(resp)
+	var httpErr protocol.HTTPError
+	if !errors.As(err, &httpErr) {
+		t.Fatalf("relayDecodeJSONResponse() error = %T %v, want protocol.HTTPError", err, err)
+	}
+	if httpErr.Status != http.StatusBadGateway || httpErr.Message != message {
+		t.Fatalf("NewAPI upstream error = %#v", httpErr)
+	}
+}
+
 func TestRelayDecodeJSONResponseLimitsErrorBody(t *testing.T) {
 	resp := &http.Response{
 		StatusCode: http.StatusTooManyRequests,

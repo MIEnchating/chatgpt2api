@@ -830,17 +830,16 @@ export function ImageResults({
                                 "pointer-events-none absolute inset-0 z-10 flex items-center justify-center",
                                 isTerminalPreview ? "bg-black/45" : "bg-black/20",
                               )}>
-                                <span className="pointer-events-auto inline-flex items-center gap-1.5 rounded-full bg-black/70 px-3 py-1.5 text-xs font-medium text-white shadow-sm backdrop-blur-sm">
+                                <span className="pointer-events-auto flex max-h-[80%] max-w-[min(88%,32rem)] flex-col items-center gap-2 overflow-y-auto rounded-lg bg-black/75 px-3 py-2 text-center text-xs font-medium text-white shadow-sm backdrop-blur-sm">
                                   {isProcessingPreview ? (
-                                    <LoaderCircle className="size-3.5 animate-spin" />
+                                    <span className="inline-flex items-center gap-1.5"><LoaderCircle className="size-3.5 animate-spin" />正在处理</span>
                                   ) : (
-                                    <CircleStop className="size-3.5" />
+                                    <span className="whitespace-pre-wrap break-words">{image.error || (image.status === "cancelled" ? "任务已终止" : "生成失败")}</span>
                                   )}
-                                  {isProcessingPreview ? "正在处理" : image.status === "cancelled" ? "任务已终止" : "生成失败"}
                                   {image.status === "error" ? (
                                     <button
                                       type="button"
-                                      className="ml-1 inline-flex items-center gap-1 rounded-full bg-white/15 px-2 py-0.5 transition hover:bg-white/25"
+                                      className="inline-flex shrink-0 items-center gap-1 rounded-full bg-white/15 px-2 py-0.5 transition hover:bg-white/25"
                                       disabled={turnBusy || !turn.prompt.trim()}
                                       onClick={() => void onRetryImage(selectedConversation.id, turn.id, index)}
                                     >
@@ -961,9 +960,9 @@ export function ImageResults({
                       return (
                         <div
                           key={image.id}
-                          className="mb-3 inline-flex h-[160px] w-full break-inside-avoid flex-col overflow-hidden rounded-[18px] border border-rose-200 bg-rose-50 sm:mb-4"
+                          className="mb-3 inline-flex min-h-[160px] w-full break-inside-avoid flex-col overflow-hidden rounded-[18px] border border-rose-200 bg-rose-50 sm:mb-4"
                         >
-                          <div className="flex min-h-0 flex-1 items-center justify-center whitespace-pre-line px-4 py-3 text-center text-sm leading-6 text-rose-600 sm:px-5">
+                          <div className="flex min-h-[112px] flex-1 items-center justify-center whitespace-pre-wrap break-words px-4 py-4 text-center text-sm leading-6 text-rose-600 sm:px-5">
                             {image.error || "生成失败"}
                           </div>
                           <div className="flex justify-end border-t border-rose-100 bg-white/70 px-3 py-2.5">

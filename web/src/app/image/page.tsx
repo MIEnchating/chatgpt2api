@@ -744,7 +744,7 @@ function taskDataToStoredImage(image: StoredImage, task: CreationTask, dataIndex
           ...finalTiming,
           taskStatus: slotStatus,
           status: slotStatus === "cancelled" ? "cancelled" : "error",
-          error: slotStatus === "cancelled" ? task.error || "任务已终止" : formatCreationTaskErrorMessage(task.error || "生成失败"),
+          error: slotStatus === "cancelled" ? task.error || "任务已终止" : task.error || "生成失败",
         });
       }
       if (dataIndex > 0 && image.taskId !== image.id) {
@@ -780,7 +780,7 @@ function taskDataToStoredImage(image: StoredImage, task: CreationTask, dataIndex
     if (slotStatus === "error" || slotStatus === "cancelled") {
       const error = slotStatus === "cancelled"
         ? task.error || "任务已终止"
-        : formatCreationTaskErrorMessage(task.error || "生成失败");
+        : task.error || "生成失败";
       return updateStoredImage(image, {
         ...(item && (item.b64_json || item.url) ? successUpdates(item) : {}),
         taskId: task.id,
@@ -869,7 +869,7 @@ function taskDataToStoredImage(image: StoredImage, task: CreationTask, dataIndex
     }
     const item = task.data?.[dataIndex];
     const slotStatus = creationTaskImageStatus(task, dataIndex);
-    const error = formatCreationTaskErrorMessage(task.error || "生成失败");
+    const error = task.error || "生成失败";
     if (hasFinalTaskOutput(item)) {
       return updateStoredImage(image, {
         ...successUpdates(item),
@@ -1137,109 +1137,8 @@ function buildTurnOutcomeMessage(successCount: number, failedCount: number, canc
   return parts.join("，");
 }
 
-function formatCreationTaskErrorMessage(message: string) {
-  const trimmed = String(message || "").trim();
-  if (!trimmed) {
-    return "生成图片失败";
-  }
-
-  const normalized = trimmed.toLowerCase();
-  const isImageEdit = normalized.includes("/v1/images/edits");
-  const taskLabel = isImageEdit ? "图片编辑" : "图片生成";
-  if (
-    normalized.includes("image data you provided does not represent a valid image") ||
-    normalized.includes("supported image formats") ||
-    normalized.includes("unsupported image file") ||
-    normalized.includes("image data url is invalid") ||
-    normalized.includes("image data url is not an image") ||
-    normalized.includes("image data url must be base64") ||
-    normalized.includes("image data is empty")
-  ) {
-    return "参考图不是有效图片。请重新上传 JPEG、PNG、GIF 或 WebP 格式的图片，不要使用损坏文件、空文件、SVG/HEIC/AVIF，或复制出来的无效图片数据。";
-  }
-  if (normalized.includes("user balance insufficient")) {
-    return "当前账号额度不足，生成服务拒绝了这次请求。请切换可用令牌、补充额度，或稍后再试。";
-  }
-  if (normalized.includes("user quota exceeded")) {
-    return "当前账号额度已用完，生成服务拒绝了这次请求。请切换可用令牌、补充额度，或稍后再试。";
-  }
-  if (normalized.includes("context deadline exceeded") || normalized.includes("client.timeout exceeded") || normalized.includes("awaiting headers") || normalized.includes("awaiting response headers")) {
-    return `${taskLabel}请求已发出，但生成服务长时间没有响应。请稍后重试；如果连续出现，建议降低分辨率、减少参考图，或检查生成服务和代理是否正常。`;
-  }
-  if (normalized.includes("i/o timeout") || normalized.includes("tls handshake timeout") || normalized.includes("timeout awaiting response headers")) {
-    return `${taskLabel}请求连接超时。通常是代理、网络或生成服务繁忙导致，请稍后重试；如果频繁出现，先检查代理和服务连通性。`;
-  }
-  if (
-    normalized.includes("stream disconnected before completion") ||
-    normalized.includes("stream closed before") ||
-    normalized.includes("response.completed")
-  ) {
-    return "图片结果还没传完，服务连接就断开了。通常是网络波动、服务繁忙，或提示词/参考图触发安全限制导致；请稍后重试，或调整内容、降低分辨率、减少参考图。";
-  }
-  if (normalized.includes("an error occurred while processing your request")) {
-    const requestId = trimmed.match(/request id\s+([a-z0-9-]+)/i)?.[1];
-    return [
-      "生成服务处理图片请求失败，可能是提示词内容过多、模型能力限制或当前图片链路繁忙。",
-      "建议减少提示词内容，或稍后重试；高分辨率请求可降低尺寸后再试。",
-      requestId ? `请求 ID：${requestId}` : "",
-    ]
-      .filter(Boolean)
-      .join("\n");
-  }
-  if (normalized.includes("no images generated") && normalized.includes("model may have refused")) {
-    return "没有生成图片，模型可能检测到敏感内容并拒绝了这次请求，请调整提示词后重试。";
-  }
-  if (normalized.includes("timed out waiting for async image generation")) {
-    return `${taskLabel}等待超时。请稍后重试；如果使用高分辨率、较多参考图或复杂提示词，建议先降低尺寸或简化内容。`;
-  }
-  if (normalized.includes("no available image quota")) {
-    return "当前云棉令牌暂不可用，请检查指定分组令牌或稍后重试。";
-  }
-  if (
-    normalized.includes("task returned no output data") ||
-    normalized.includes("任务没有返回图片数据") ||
-    normalized.includes("图片任务没有返回图片数据")
-  ) {
-    return "图片任务没有返回图片数据。通常是生成服务没有产出图片、模型参数不匹配、提示词被拒绝或服务链路异常导致；请调整提示词或参数后重试，并检查服务日志。";
-  }
-  if (normalized.includes("upstream connection failed before tls handshake") || normalized.includes("tls connect error")) {
-    return "连接生成服务失败，代理或网络可能没有连通到 ChatGPT。请检查代理后重试。";
-  }
-  if (normalized.includes("connection refused") || normalized.includes("connect: refused")) {
-    return "连接生成服务失败：目标服务拒绝连接。请确认服务正在运行，地址和端口配置正确。";
-  }
-  if (normalized.includes("no such host") || normalized.includes("server misbehaving")) {
-    return "无法解析生成服务地址。请检查服务域名、Docker 网络或 DNS 配置。";
-  }
-  if (normalized.includes("bad gateway") || normalized.includes("service unavailable") || normalized.includes("gateway timeout")) {
-    return "生成服务暂时不可用。请稍后重试；如果持续出现，请检查服务状态。";
-  }
-
-  return trimmed;
-}
-
-function formatCreationTaskErrorDetail(error: unknown) {
-  if (!error || typeof error !== "object") {
-    return null;
-  }
-  const item = error as { message?: unknown; code?: unknown; errorType?: unknown; status?: unknown };
-  const code = typeof item.code === "string" ? item.code.trim() : "";
-  const errorType = typeof item.errorType === "string" ? item.errorType.trim() : "";
-  const status = typeof item.status === "number" && Number.isFinite(item.status) ? item.status : undefined;
-  if (!code && !errorType && !status) {
-    return null;
-  }
-  const meta: string[] = [];
-  if (code) meta.push(`错误码：${code}`);
-  if (errorType && errorType !== code) meta.push(`类型：${errorType}`);
-  if (typeof status === "number") meta.push(`HTTP：${status}`);
-  return meta.join("，");
-}
-
 function formatCreationTaskError(error: unknown, fallback = "生成图片失败") {
-  const message = formatCreationTaskErrorMessage(error instanceof Error ? error.message : String(error || fallback));
-  const detail = formatCreationTaskErrorDetail(error);
-  return detail ? `${message}\n${detail}` : message;
+  return error instanceof Error ? error.message : String(error || fallback);
 }
 
 function deriveTurnStatus(turn: ImageTurn): Pick<ImageTurn, "status" | "error"> {
@@ -1255,7 +1154,8 @@ function deriveTurnStatus(turn: ImageTurn): Pick<ImageTurn, "status" | "error"> 
     return { status: "queued", error: undefined };
   }
   if (failedCount > 0) {
-    return { status: "error", error: buildTurnOutcomeMessage(successCount, failedCount, cancelledCount) };
+    const upstreamError = turn.images.find((image) => image.status === "error" && image.error)?.error;
+    return { status: "error", error: upstreamError || buildTurnOutcomeMessage(successCount, failedCount, cancelledCount) };
   }
   if (cancelledCount > 0) {
     return { status: "cancelled", error: buildTurnOutcomeMessage(successCount, failedCount, cancelledCount) };
