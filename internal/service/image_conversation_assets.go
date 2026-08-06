@@ -16,6 +16,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -149,6 +150,11 @@ type ImageConversationAssetGovernance struct {
 	DeletedCount    int   `json:"deleted_count,omitempty"`
 	LimitBytes      int64 `json:"limit_bytes,omitempty"`
 	OverLimitBytes  int64 `json:"over_limit_bytes,omitempty"`
+}
+
+type imageConversationAssetCleanupCandidate struct {
+	path string
+	info os.FileInfo
 }
 
 func NewImageConversationAssetService(root string) *ImageConversationAssetService {
@@ -377,6 +383,147 @@ func (s *ImageConversationAssetService) Governance() ImageConversationAssetGover
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.governanceLocked("", nil, time.Time{}, 0)
+}
+
+// CleanupExpired removes conversation reference images older than the configured
+// retention window, including files still referenced by historical conversations.
+// Conversation records remain intact and will treat removed assets as unavailable.
+func (s *ImageConversationAssetService) CleanupExpired(retentionDays int) (ImageConversationAssetGovernance, error) {
+	if s == nil {
+		return ImageConversationAssetGovernance{}, nil
+	}
+	if retentionDays < 1 {
+		retentionDays = 1
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	cutoff := time.Now().Add(-time.Duration(retentionDays) * 24 * time.Hour)
+	return s.cleanupStorageLocked(func(candidate imageConversationAssetCleanupCandidate) bool {
+		return candidate.info.ModTime().Before(cutoff)
+	})
+}
+
+// CleanupToMaxBytes removes the oldest conversation reference images until the
+// asset store fits within maxBytes. A zero limit intentionally removes all assets.
+func (s *ImageConversationAssetService) CleanupToMaxBytes(maxBytes int64) (ImageConversationAssetGovernance, error) {
+	if s == nil {
+		return ImageConversationAssetGovernance{}, nil
+	}
+	if maxBytes < 0 {
+		maxBytes = 0
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	candidates, err := s.cleanupCandidatesLocked()
+	if err != nil {
+		return ImageConversationAssetGovernance{}, err
+	}
+	current := int64(0)
+	for _, candidate := range candidates {
+		current += candidate.info.Size()
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		return candidates[i].info.ModTime().Before(candidates[j].info.ModTime())
+	})
+	remaining := current
+	remove := make(map[string]struct{})
+	for _, candidate := range candidates {
+		if remaining <= maxBytes {
+			break
+		}
+		remove[candidate.path] = struct{}{}
+		remaining -= candidate.info.Size()
+	}
+	return s.cleanupStorageLocked(func(candidate imageConversationAssetCleanupCandidate) bool {
+		_, ok := remove[candidate.path]
+		return ok
+	})
+}
+
+func (s *ImageConversationAssetService) cleanupStorageLocked(shouldRemove func(imageConversationAssetCleanupCandidate) bool) (ImageConversationAssetGovernance, error) {
+	candidates, err := s.cleanupCandidatesLocked()
+	if err != nil {
+		return ImageConversationAssetGovernance{}, err
+	}
+	result := ImageConversationAssetGovernance{}
+	for _, candidate := range candidates {
+		if shouldRemove == nil || !shouldRemove(candidate) {
+			continue
+		}
+		if err := os.Remove(candidate.path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return result, err
+		}
+		result.DeletedCount++
+		result.DeletedBytes += candidate.info.Size()
+	}
+	s.removeEmptyOwnerDirectoriesLocked()
+	remaining, err := s.governanceLockedContext(context.Background(), "", nil, time.Time{}, 0)
+	if err != nil {
+		return result, err
+	}
+	remaining.DeletedCount = result.DeletedCount
+	remaining.DeletedBytes = result.DeletedBytes
+	return remaining, nil
+}
+
+func (s *ImageConversationAssetService) cleanupCandidatesLocked() ([]imageConversationAssetCleanupCandidate, error) {
+	root, err := filepath.Abs(s.root)
+	if err != nil {
+		return nil, err
+	}
+	candidates := make([]imageConversationAssetCleanupCandidate, 0)
+	err = filepath.WalkDir(root, func(filePath string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			if errors.Is(walkErr, os.ErrNotExist) {
+				return nil
+			}
+			return walkErr
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		rel, relErr := filepath.Rel(root, filePath)
+		if relErr != nil {
+			return relErr
+		}
+		if _, _, _, _, parseErr := parseImageConversationAssetPath(filepath.ToSlash(rel)); parseErr != nil {
+			return nil
+		}
+		info, infoErr := entry.Info()
+		if infoErr != nil {
+			return infoErr
+		}
+		candidates = append(candidates, imageConversationAssetCleanupCandidate{path: filePath, info: info})
+		return nil
+	})
+	if errors.Is(err, os.ErrNotExist) {
+		return candidates, nil
+	}
+	return candidates, err
+}
+
+func (s *ImageConversationAssetService) removeEmptyOwnerDirectoriesLocked() {
+	root, err := filepath.Abs(s.root)
+	if err != nil {
+		return
+	}
+	entries, err := os.ReadDir(root)
+	if err != nil {
+		return
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() || !isLowerHexDigest(entry.Name()) {
+			continue
+		}
+		ownerRoot := filepath.Join(root, entry.Name())
+		if !imageConversationAssetOwnerDirectoryEmpty(ownerRoot) {
+			continue
+		}
+		_ = os.Remove(filepath.Join(ownerRoot, imageConversationAssetOwnerMarker))
+		_ = os.Remove(ownerRoot)
+	}
 }
 
 func (s *ImageConversationAssetService) Owners() []string {

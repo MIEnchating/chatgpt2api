@@ -124,6 +124,10 @@ func (a *App) relayImageGenerations(ctx context.Context, payload map[string]any)
 		}
 	}
 	result, stream, err := a.relayJSONMaybeStream(ctx, "/v1/images/generations", payload)
+	if shouldRetryRelayImageWithoutStream(payload, err) {
+		fallback := relayImageNonStreamPayload(payload)
+		result, stream, err = a.relayJSONMaybeStream(ctx, "/v1/images/generations", fallback)
+	}
 	if err != nil {
 		if release != nil {
 			release()
@@ -155,6 +159,10 @@ func (a *App) relayImageEdits(ctx context.Context, payload map[string]any, image
 		}
 	}
 	result, stream, err := a.relayMultipartMaybeStream(ctx, "/v1/images/edits", payload, images)
+	if shouldRetryRelayImageWithoutStream(payload, err) {
+		fallback := relayImageNonStreamPayload(payload)
+		result, stream, err = a.relayMultipartMaybeStream(ctx, "/v1/images/edits", fallback, images)
+	}
 	if err != nil {
 		if release != nil {
 			release()
@@ -432,6 +440,24 @@ func sanitizeRelayImagePayload(payload map[string]any) {
 	} else {
 		delete(payload, "output_compression")
 	}
+}
+
+func shouldRetryRelayImageWithoutStream(payload map[string]any, err error) bool {
+	if err == nil || !util.ToBool(payload["stream"]) {
+		return false
+	}
+	message := strings.ToLower(strings.TrimSpace(err.Error()))
+	return strings.Contains(message, "invalid character ':' looking for beginning of value")
+}
+
+func relayImageNonStreamPayload(payload map[string]any) map[string]any {
+	fallback := make(map[string]any, len(payload))
+	for key, value := range payload {
+		fallback[key] = value
+	}
+	delete(fallback, "stream")
+	delete(fallback, "partial_images")
+	return fallback
 }
 
 func normalizeRelayImagePartialImages(value any) (int, bool) {
@@ -730,7 +756,10 @@ func relayStreamResult(body io.ReadCloser) *protocol.StreamResult {
 				continue
 			}
 			data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
-			if data == "" || data == "[DONE]" {
+			for strings.HasPrefix(data, "data:") {
+				data = strings.TrimSpace(strings.TrimPrefix(data, "data:"))
+			}
+			if data == "" || data == "[DONE]" || strings.HasPrefix(data, ":") {
 				continue
 			}
 			var item map[string]any

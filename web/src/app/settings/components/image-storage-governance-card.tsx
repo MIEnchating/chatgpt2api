@@ -135,6 +135,7 @@ export function ImageStorageGovernanceCard() {
   const retentionDays = Math.max(1, Number(config?.image_retention_days) || 30);
   const limitMb = Math.max(0, Number(config?.image_storage_limit_mb) || 0);
   const overLimit = (governance?.over_limit_bytes ?? 0) > 0;
+  const storedImageCount = (governance?.images_count ?? 0) + (governance?.conversation_asset_count ?? 0);
 
   const handleCleanup = async () => {
     if (cleanupAction === "retention") {
@@ -205,7 +206,7 @@ export function ImageStorageGovernanceCard() {
                 />
                 <UsageBar
                   label="元数据与参考图"
-                  value={governance?.metadata_bytes ?? 0}
+                  value={(governance?.metadata_bytes ?? 0) + (governance?.conversation_asset_bytes ?? 0)}
                   total={totalBytes}
                 />
               </div>
@@ -222,7 +223,7 @@ export function ImageStorageGovernanceCard() {
               />
               <StatBlock
                 label="参考图附件"
-                value={`${governance?.reference_files ?? 0} 个 · ${formatBytes(governance?.reference_bytes)}`}
+                value={`${(governance?.reference_files ?? 0) + (governance?.conversation_asset_count ?? 0)} 个 · ${formatBytes((governance?.reference_bytes ?? 0) + (governance?.conversation_asset_bytes ?? 0))}`}
               />
               <StatBlock
                 label="缩略图缓存"
@@ -256,7 +257,7 @@ export function ImageStorageGovernanceCard() {
             variant="outline"
             className="min-h-11"
             onClick={() => setCleanupAction("retention")}
-            disabled={isCleaningImageStorage || (governance?.images_count ?? 0) === 0}
+            disabled={isCleaningImageStorage || storedImageCount === 0}
           >
             <Trash2 data-icon="inline-start" />
             按天数清理
@@ -266,7 +267,7 @@ export function ImageStorageGovernanceCard() {
             variant={overLimit ? "destructive" : "outline"}
             className="min-h-11"
             onClick={() => setCleanupAction("quota")}
-            disabled={isCleaningImageStorage || limitMb <= 0 || (governance?.images_count ?? 0) === 0}
+            disabled={isCleaningImageStorage || limitMb <= 0 || storedImageCount === 0}
           >
             <Database data-icon="inline-start" />
             按容量清理
@@ -276,6 +277,7 @@ export function ImageStorageGovernanceCard() {
         {lastImageStorageCleanup ? (
           <SettingsNotice>
             上次清理删除 {lastImageStorageCleanup.deleted_images} 张图片、{" "}
+            {lastImageStorageCleanup.deleted_conversation_assets} 张会话参考图、{" "}
             {lastImageStorageCleanup.deleted_thumbnails} 个缩略图，释放{" "}
             {formatBytes(lastImageStorageCleanup.deleted_bytes)}。
           </SettingsNotice>

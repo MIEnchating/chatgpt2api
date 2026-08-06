@@ -1642,10 +1642,7 @@ func (a *App) handleImageStorageGovernance(w http.ResponseWriter, r *http.Reques
 			util.WriteError(w, http.StatusBadRequest, "action must be retention, quota, thumbnails, or all")
 			return
 		}
-		if options.MaxBytes > 0 && a.conversationAssets != nil {
-			options.MaxBytes = imageStorageLimitAvailableForGallery(options.MaxBytes, a.conversationAssets.Governance().TotalBytes)
-		}
-		result, err := a.images.CleanupStorage(options)
+		result, err := a.cleanupImageStorageWithOptions(options)
 		if err != nil {
 			util.WriteError(w, http.StatusBadRequest, err.Error())
 			return
@@ -1667,6 +1664,52 @@ func imageCleanupMaxBytes(rawBytes, rawMB any, fallback int64) int64 {
 		return int64(mb) * 1024 * 1024
 	}
 	return fallback
+}
+
+func (a *App) cleanupImageStorageWithOptions(options service.ImageStorageCleanupOptions) (service.ImageStorageCleanupResult, error) {
+	assetCleanup := service.ImageConversationAssetGovernance{}
+	if a.conversationAssets != nil && options.RetentionDays > 0 {
+		var err error
+		assetCleanup, err = a.conversationAssets.CleanupExpired(options.RetentionDays)
+		if err != nil {
+			return service.ImageStorageCleanupResult{}, err
+		}
+	}
+
+	galleryOptions := options
+	if galleryOptions.MaxBytes > 0 && a.conversationAssets != nil {
+		galleryOptions.MaxBytes = imageStorageLimitAvailableForGallery(galleryOptions.MaxBytes, a.conversationAssets.Governance().TotalBytes)
+	}
+	result, err := a.images.CleanupStorage(galleryOptions)
+	if err != nil {
+		return result, err
+	}
+	result.MaxBytes = options.MaxBytes
+
+	if a.conversationAssets != nil && options.MaxBytes > 0 {
+		assetAllowance := options.MaxBytes - result.RemainingBytes
+		if assetAllowance < 0 {
+			assetAllowance = 0
+		}
+		quotaCleanup, cleanupErr := a.conversationAssets.CleanupToMaxBytes(assetAllowance)
+		if cleanupErr != nil {
+			return result, cleanupErr
+		}
+		assetCleanup.DeletedBytes += quotaCleanup.DeletedBytes
+		assetCleanup.DeletedCount += quotaCleanup.DeletedCount
+	}
+	assets := service.ImageConversationAssetGovernance{}
+	if a.conversationAssets != nil {
+		assets = a.conversationAssets.Governance()
+	}
+	result.DeletedConversationAssets = assetCleanup.DeletedCount
+	result.DeletedBytes += assetCleanup.DeletedBytes
+	result.RemainingBytes += assets.TotalBytes
+	result.OverLimitBytes = 0
+	if options.MaxBytes > 0 && result.RemainingBytes > options.MaxBytes {
+		result.OverLimitBytes = result.RemainingBytes - options.MaxBytes
+	}
+	return result, nil
 }
 
 func (a *App) handleStorageInfo(w http.ResponseWriter, r *http.Request) {
@@ -2415,13 +2458,9 @@ func (a *App) cleanupImageStorage() {
 	if a == nil || a.images == nil || a.config == nil {
 		return
 	}
-	maxBytes := a.config.ImageStorageLimitBytes()
-	if a.conversationAssets != nil {
-		maxBytes = imageStorageLimitAvailableForGallery(maxBytes, a.conversationAssets.Governance().TotalBytes)
-	}
-	_, _ = a.images.CleanupStorage(service.ImageStorageCleanupOptions{
+	_, _ = a.cleanupImageStorageWithOptions(service.ImageStorageCleanupOptions{
 		RetentionDays: a.config.ImageRetentionDays(),
-		MaxBytes:      maxBytes,
+		MaxBytes:      a.config.ImageStorageLimitBytes(),
 	})
 }
 

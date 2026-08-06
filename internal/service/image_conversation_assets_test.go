@@ -497,6 +497,78 @@ func TestImageConversationAssetServiceCleanupOnlyRemovesExpiredOrphans(t *testin
 	}
 }
 
+func TestImageConversationAssetServiceCleanupExpiredIncludesReferencedAssets(t *testing.T) {
+	assets := NewImageConversationAssetService(t.TempDir())
+	oldAsset, err := assets.Store("owner", "old.png", imageConversationAssetTestPNG(t))
+	if err != nil {
+		t.Fatalf("Store(old) error = %v", err)
+	}
+	newData := append([]byte(nil), imageConversationAssetTestPNG(t)...)
+	newData[len(newData)-1] ^= 1
+	newAsset, err := assets.Store("owner", "new.png", newData)
+	if err != nil {
+		t.Fatalf("Store(new) error = %v", err)
+	}
+	oldAccess, err := assets.Access(oldAsset.AssetPath, "owner", false)
+	if err != nil {
+		t.Fatalf("Access(old) error = %v", err)
+	}
+	oldTime := time.Now().Add(-48 * time.Hour)
+	if err := os.Chtimes(oldAccess.Path, oldTime, oldTime); err != nil {
+		t.Fatalf("Chtimes(old) error = %v", err)
+	}
+
+	result, err := assets.CleanupExpired(1)
+	if err != nil {
+		t.Fatalf("CleanupExpired() error = %v", err)
+	}
+	if result.DeletedCount != 1 || result.FileCount != 1 {
+		t.Fatalf("CleanupExpired() = %#v", result)
+	}
+	if _, err := assets.Access(oldAsset.AssetPath, "owner", false); !errors.Is(err, ErrImageConversationAssetNotFound) {
+		t.Fatalf("expired asset still accessible: %v", err)
+	}
+	if _, err := assets.Access(newAsset.AssetPath, "owner", false); err != nil {
+		t.Fatalf("recent asset was deleted: %v", err)
+	}
+}
+
+func TestImageConversationAssetServiceCleanupToMaxBytesRemovesOldestFirst(t *testing.T) {
+	assets := NewImageConversationAssetService(t.TempDir())
+	oldAsset, err := assets.Store("owner", "old.png", imageConversationAssetTestPNG(t))
+	if err != nil {
+		t.Fatalf("Store(old) error = %v", err)
+	}
+	newData := append([]byte(nil), imageConversationAssetTestPNG(t)...)
+	newData[len(newData)-1] ^= 1
+	newAsset, err := assets.Store("owner", "new.png", newData)
+	if err != nil {
+		t.Fatalf("Store(new) error = %v", err)
+	}
+	oldAccess, err := assets.Access(oldAsset.AssetPath, "owner", false)
+	if err != nil {
+		t.Fatalf("Access(old) error = %v", err)
+	}
+	oldTime := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(oldAccess.Path, oldTime, oldTime); err != nil {
+		t.Fatalf("Chtimes(old) error = %v", err)
+	}
+
+	result, err := assets.CleanupToMaxBytes(newAsset.Size)
+	if err != nil {
+		t.Fatalf("CleanupToMaxBytes() error = %v", err)
+	}
+	if result.DeletedCount != 1 || result.TotalBytes > newAsset.Size {
+		t.Fatalf("CleanupToMaxBytes() = %#v", result)
+	}
+	if _, err := assets.Access(oldAsset.AssetPath, "owner", false); !errors.Is(err, ErrImageConversationAssetNotFound) {
+		t.Fatalf("oldest asset still accessible: %v", err)
+	}
+	if _, err := assets.Access(newAsset.AssetPath, "owner", false); err != nil {
+		t.Fatalf("newest asset was deleted: %v", err)
+	}
+}
+
 func TestImageConversationAssetCleanupContextStopsWaitingForFilesystemLock(t *testing.T) {
 	assets := NewImageConversationAssetService(t.TempDir())
 	assets.mu.Lock()

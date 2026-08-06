@@ -3,14 +3,17 @@ package httpapi
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
 	"chatgpt2api/internal/protocol"
+	"chatgpt2api/internal/util"
 )
 
 func TestRelayAcquireImageTaskSlotUsesWholeRequestSlot(t *testing.T) {
@@ -127,6 +130,105 @@ func TestManagedRelayImageTaskDoesNotAcquireSecondSlot(t *testing.T) {
 	}
 }
 
+func TestShouldRetryRelayImageWithoutStreamOnlyForNewAPIColonParseError(t *testing.T) {
+	err := protocol.HTTPError{
+		Status:  http.StatusInternalServerError,
+		Message: "invalid character ':' looking for beginning of value (request id: req_test)",
+	}
+	if !shouldRetryRelayImageWithoutStream(map[string]any{"stream": true}, err) {
+		t.Fatal("NewAPI stream parse error did not trigger non-stream fallback")
+	}
+	if shouldRetryRelayImageWithoutStream(map[string]any{"stream": false}, err) {
+		t.Fatal("disabled stream triggered fallback")
+	}
+	if shouldRetryRelayImageWithoutStream(map[string]any{"stream": true}, errors.New("user quota exceeded")) {
+		t.Fatal("unrelated upstream error triggered fallback")
+	}
+}
+
+func TestRelayImageNonStreamPayloadDoesNotMutateOriginal(t *testing.T) {
+	payload := map[string]any{
+		"prompt":         "draw",
+		"stream":         true,
+		"partial_images": 2,
+	}
+	fallback := relayImageNonStreamPayload(payload)
+	if _, ok := fallback["stream"]; ok {
+		t.Fatalf("fallback stream = %#v, want omitted", fallback["stream"])
+	}
+	if _, ok := fallback["partial_images"]; ok {
+		t.Fatalf("fallback partial_images = %#v, want omitted", fallback["partial_images"])
+	}
+	if payload["stream"] != true || payload["partial_images"] != 2 {
+		t.Fatalf("original payload mutated: %#v", payload)
+	}
+}
+
+func TestRelayImageGenerationsRetriesNewAPIColonParseErrorWithoutStream(t *testing.T) {
+	requestCount := 0
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode request %d: %v", requestCount, err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		switch requestCount {
+		case 1:
+			if body["stream"] != true || body["partial_images"] != float64(2) {
+				t.Errorf("first request body = %#v, want stream with partial images", body)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = w.Write([]byte(`{"error":{"message":"invalid character ':' looking for beginning of value (request id: 202607300220530891561808268d9d6K2BvRB98)"}}`))
+		case 2:
+			if _, ok := body["stream"]; ok {
+				t.Errorf("fallback request retained stream: %#v", body)
+			}
+			if _, ok := body["partial_images"]; ok {
+				t.Errorf("fallback request retained partial_images: %#v", body)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":[{"url":"https://image.example/result.png"}]}`))
+		default:
+			t.Errorf("unexpected request %d", requestCount)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer upstream.Close()
+
+	app := newTestApp(t)
+	defer app.Close()
+	if _, err := app.config.Update(map[string]any{"relay_base_url": upstream.URL}); err != nil {
+		t.Fatalf("update relay URL: %v", err)
+	}
+	payload := map[string]any{
+		"api_key":        "sk-test",
+		"prompt":         "draw",
+		"stream":         true,
+		"partial_images": 2,
+	}
+
+	result, stream, err := app.relayImageGenerations(context.Background(), payload)
+	if err != nil {
+		t.Fatalf("relayImageGenerations() error = %v", err)
+	}
+	if stream != nil {
+		t.Fatal("fallback returned an unexpected stream")
+	}
+	data := result["data"].([]any)
+	if len(data) != 1 || util.Clean(util.StringMap(data[0])["url"]) != "https://image.example/result.png" {
+		t.Fatalf("fallback result = %#v", result)
+	}
+	if requestCount != 2 {
+		t.Fatalf("request count = %d, want 2", requestCount)
+	}
+	if payload["stream"] != true || payload["partial_images"] != 2 {
+		t.Fatalf("original payload mutated: %#v", payload)
+	}
+}
+
 func TestRelayMultipartRequestNormalizesOctetStreamImageContentType(t *testing.T) {
 	req, err := relayMultipartRequest(
 		context.Background(),
@@ -195,6 +297,28 @@ func TestRelayStreamResultAcceptsImageFrameBeyondLegacyScannerLimit(t *testing.T
 	required := base64.StdEncoding.EncodedLen(40*1024*1024) + 1024
 	if relayStreamMaxTokenSize < required {
 		t.Fatalf("scanner limit = %d, need at least %d bytes for a 40 MiB image frame", relayStreamMaxTokenSize, required)
+	}
+}
+
+func TestRelayStreamResultIgnoresWrappedHeartbeatAndDuplicateDataPrefix(t *testing.T) {
+	stream := relayStreamResult(io.NopCloser(strings.NewReader(strings.Join([]string{
+		"data: : PING",
+		"",
+		`data: data: {"type":"image_generation.completed","b64_json":"image"}`,
+		"",
+		"data: [DONE]",
+		"",
+	}, "\n"))))
+
+	item, ok := <-stream.Items
+	if !ok {
+		t.Fatalf("stream closed before completed image: %v", <-stream.Err)
+	}
+	if item["type"] != "image_generation.completed" || item["b64_json"] != "image" {
+		t.Fatalf("stream item = %#v", item)
+	}
+	if err := <-stream.Err; err != nil {
+		t.Fatalf("relayStreamResult() error = %v", err)
 	}
 }
 

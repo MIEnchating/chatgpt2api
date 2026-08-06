@@ -493,7 +493,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     try {
       const data = await cleanupImageStorage({ action: "retention", retention_days: retentionDays });
       set({ lastImageStorageCleanup: data.cleanup, imageStorageGovernance: data.governance });
-      toast.success(`已清理 ${data.cleanup.deleted_images} 张过期图片`);
+      toast.success(`已清理 ${data.cleanup.deleted_images + data.cleanup.deleted_conversation_assets} 张过期图片`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "清理图片失败");
     } finally {
@@ -513,7 +513,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     try {
       const data = await cleanupImageStorage({ action: "quota", max_mb: maxMb, include_public: includePublic });
       set({ lastImageStorageCleanup: data.cleanup, imageStorageGovernance: data.governance });
-      toast.success(`已按容量清理 ${data.cleanup.deleted_images} 张图片`);
+      toast.success(`已按容量清理 ${data.cleanup.deleted_images + data.cleanup.deleted_conversation_assets} 张图片`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "按容量清理图片失败");
     } finally {

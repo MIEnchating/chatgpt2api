@@ -417,6 +417,8 @@ export type ImageStorageGovernanceSummary = {
   thumbnail_files: number;
   metadata_files: number;
   reference_files: number;
+  conversation_asset_bytes: number;
+  conversation_asset_count: number;
   limit_bytes: number;
   over_limit_bytes: number;
   oldest_image_at?: string;
@@ -431,6 +433,7 @@ export type ImageStorageCleanupResult = {
   deleted_thumbnails: number;
   deleted_metadata_files: number;
   deleted_reference_files: number;
+  deleted_conversation_assets: number;
   deleted_bytes: number;
   remaining_bytes: number;
   over_limit_bytes: number;

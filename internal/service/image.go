@@ -119,18 +119,19 @@ type ImageStorageGovernanceSummary struct {
 }
 
 type ImageStorageCleanupResult struct {
-	RetentionDays         int    `json:"retention_days,omitempty"`
-	MaxBytes              int64  `json:"max_bytes,omitempty"`
-	IncludePublic         bool   `json:"include_public,omitempty"`
-	DeletedImages         int    `json:"deleted_images"`
-	DeletedThumbnails     int    `json:"deleted_thumbnails"`
-	DeletedMetadataFiles  int    `json:"deleted_metadata_files"`
-	DeletedReferenceFiles int    `json:"deleted_reference_files"`
-	DeletedBytes          int64  `json:"deleted_bytes"`
-	RemainingBytes        int64  `json:"remaining_bytes"`
-	OverLimitBytes        int64  `json:"over_limit_bytes"`
-	PreservedPublicImages int    `json:"preserved_public_images,omitempty"`
-	Action                string `json:"action,omitempty"`
+	RetentionDays             int    `json:"retention_days,omitempty"`
+	MaxBytes                  int64  `json:"max_bytes,omitempty"`
+	IncludePublic             bool   `json:"include_public,omitempty"`
+	DeletedImages             int    `json:"deleted_images"`
+	DeletedThumbnails         int    `json:"deleted_thumbnails"`
+	DeletedMetadataFiles      int    `json:"deleted_metadata_files"`
+	DeletedReferenceFiles     int    `json:"deleted_reference_files"`
+	DeletedConversationAssets int    `json:"deleted_conversation_assets"`
+	DeletedBytes              int64  `json:"deleted_bytes"`
+	RemainingBytes            int64  `json:"remaining_bytes"`
+	OverLimitBytes            int64  `json:"over_limit_bytes"`
+	PreservedPublicImages     int    `json:"preserved_public_images,omitempty"`
+	Action                    string `json:"action,omitempty"`
 }
 
 type imageReferenceMetadata struct {

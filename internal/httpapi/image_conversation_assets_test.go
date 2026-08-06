@@ -129,6 +129,48 @@ func TestImageConversationAssetsUploadAndPrivateAccess(t *testing.T) {
 	}
 }
 
+func TestImageStorageRetentionCleanupRemovesConversationAssets(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+	_, token, err := app.auth.CreateAPIKey(service.AuthRoleUser, "retention-asset-user", service.AuthOwner{})
+	if err != nil {
+		t.Fatalf("CreateAPIKey() error = %v", err)
+	}
+
+	payload := uploadHTTPTestConversationAssets(t, app, token, 1, true)
+	asset := payload.Items[0]
+	assetPath := filepath.Join(app.conversationAssets.Root(), filepath.FromSlash(asset.AssetPath))
+	old := time.Now().Add(-48 * time.Hour)
+	if err := os.Chtimes(assetPath, old, old); err != nil {
+		t.Fatalf("Chtimes() error = %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/images/storage-governance", strings.NewReader(`{"action":"retention","retention_days":1}`))
+	req.Header.Set("Authorization", adminAuthHeader(t, app))
+	res := httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("retention cleanup status = %d body = %s", res.Code, res.Body.String())
+	}
+	var result struct {
+		Cleanup struct {
+			DeletedConversationAssets int `json:"deleted_conversation_assets"`
+		} `json:"cleanup"`
+		Governance struct {
+			ConversationAssetCount int `json:"conversation_asset_count"`
+		} `json:"governance"`
+	}
+	if err := json.Unmarshal(res.Body.Bytes(), &result); err != nil {
+		t.Fatalf("retention cleanup json: %v", err)
+	}
+	if result.Cleanup.DeletedConversationAssets != 1 || result.Governance.ConversationAssetCount != 0 {
+		t.Fatalf("retention cleanup result = %#v", result)
+	}
+	if _, err := os.Stat(assetPath); !os.IsNotExist(err) {
+		t.Fatalf("expired conversation asset still exists: %v", err)
+	}
+}
+
 func TestImageConversationAssetUploadValidatesFormatAndCount(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()
