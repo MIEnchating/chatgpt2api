@@ -23,11 +23,11 @@ Authorization: Bearer <session-or-api-token>
 
 | 模型 | 链路 | 说明 |
 | --- | --- | --- |
-| `auto` | 官方图片工具 | 默认等价 `gpt-image-2`。 |
-| `gpt-image-2` | 官方图片工具 | 走 ChatGPT 官网 `f/conversation` 图片链路。尺寸更接近构图提示，实际像素以上游返回为准。 |
-| `codex-gpt-image-2` | Codex 图片链路 | 走 Codex Responses 图片链路，结构化尺寸、格式、JPEG 压缩等参数更直接交给上游工具处理。通常需要 Plus、Team 或 Pro 账号。 |
+| `auto` | NewAPI 转发 | 默认图片模型选择，具体路由由 NewAPI 配置决定。 |
+| `gpt-image-2` | NewAPI 转发 | 转发给当前用户所选 Key 对应的 NewAPI 渠道。 |
+| `codex-gpt-image-2` | NewAPI 转发 | 可用于在 NewAPI 中配置独立的 Codex 图片渠道。实际支持取决于渠道。 |
 
-`/v1/models` 可能返回更多文本模型，但图片生成/图片编辑接口只应使用上述图片任务模型。
+云棉从当前登录用户可用的 NewAPI Key 名称中读取选择，并按该名称精确取得密钥。请求随后发送到 `CHATGPT2API_RELAY_BASE_URL`；模型对应的账号、额度和最终上游协议由 NewAPI 决定。`/v1/models` 可能返回更多文本模型，但图片生成/图片编辑接口只应使用 NewAPI 图片渠道实际支持的模型。
 
 ## 通用参数
 
@@ -49,6 +49,44 @@ Authorization: Bearer <session-or-api-token>
 | `messages` | array | 空 | 全部 | 当前会被透传/归一化，但不要把它理解为可靠的“图片上下文记忆”。详见“上下文边界”。 |
 | `stream` | boolean | `false` | 同步接口 | 为 `true` 时返回 SSE。 |
 
+## 流式图片生成
+
+`/v1/images/generations` 和 `/v1/images/edits` 均支持流式响应。请求中设置：
+
+```json
+{
+  "stream": true,
+  "partial_images": 2
+}
+```
+
+服务返回 `Content-Type: text/event-stream`。SSE 数据帧中的 JSON 通常包含以下事件类型：
+
+| `type` | 说明 |
+| --- | --- |
+| `image_generation.partial_image` | 渐进预览图；仅请求了 `partial_images=1-3` 且上游渠道支持时可能返回。 |
+| `image_generation.completed` | 正式完成图片。最终结果以此事件为准，渐进预览不会覆盖已完成图片。 |
+| `[DONE]` | SSE 响应结束标记。 |
+
+典型响应：
+
+```text
+: stream-open
+
+data: {"type":"image_generation.partial_image","partial_image_index":0,"b64_json":"<base64-preview>"}
+
+data: {"type":"image_generation.completed","b64_json":"<base64-image>"}
+
+data: [DONE]
+```
+
+注意：
+
+- `partial_images` 表示最多返回多少张渐进预览，不保证返回满。部分 NewAPI 渠道只返回 `image_generation.completed` 和 `[DONE]`，仍属于正常的流式完成。
+- NewAPI 的心跳帧可能表现为 `: PING`、`data: : PING`，某些代理还会产生重复的 `data: data: {...}` 前缀；服务端会兼容这些格式。
+- 如果流式请求在建立阶段返回精确错误 `invalid character ':' looking for beginning of value`，服务会移除 `stream` 和 `partial_images`，以非流式方式重试一次。这只是针对已知 NewAPI 解析问题的兼容，不会修改流式功能的默认配置。
+- 其他上游错误不会触发该降级，也不会被替换为泛化提示；服务会保留 NewAPI 返回的可用错误详情，便于用户和管理员排查。
+
 ## 尺寸
 
 `size` 支持以下写法：
@@ -60,7 +98,7 @@ Authorization: Bearer <session-or-api-token>
 | `2k` | 归一化为 `2048x2048`。 |
 | `4k` | 归一化为 `2880x2880`。 |
 | `1:1`、`3:2`、`2:3`、`16:9`、`21:9`、`9:16`、`4:3`、`3:4` | 作为构图比例提示。 |
-| `1024x1024`、`1536x2048` | 显式宽高。官方图片工具链路会把它作为构图/目标尺寸提示，实际像素仍以上游返回为准。 |
+| `1024x1024`、`1536x2048` | 显式宽高。服务归一化后转发给 NewAPI，实际像素仍以上游返回为准。 |
 
 异步任务还支持 `image_resolution` 元数据字段，取值为 `1080p`、`2k`、`4k`。该字段用于记录分辨率档位和图库元数据，不替代 `size`。
 
@@ -77,7 +115,7 @@ Authorization: Bearer <session-or-api-token>
 示例：
 
 ```bash
-curl http://localhost:3000/v1/images/generations \
+curl http://localhost:8000/v1/images/generations \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <session-or-api-token>" \
   -d '{
@@ -97,7 +135,7 @@ curl http://localhost:3000/v1/images/generations \
   "created": 1778470000,
   "data": [
     {
-      "url": "http://localhost:3000/images/2026/05/11/example.png",
+      "url": "http://localhost:8000/images/2026/05/11/example.png",
       "b64_json": "<base64-image>",
       "revised_prompt": "一张雨夜东京街头的赛博朋克猫，霓虹灯反射在地面",
       "output_format": "png"
@@ -132,7 +170,7 @@ curl http://localhost:3000/v1/images/generations \
 示例：
 
 ```bash
-curl http://localhost:3000/v1/images/edits \
+curl http://localhost:8000/v1/images/edits \
   -H "Authorization: Bearer <session-or-api-token>" \
   -F "model=auto" \
   -F "prompt=把这张图改成赛博朋克夜景风格，保留主体轮廓" \
@@ -146,7 +184,7 @@ curl http://localhost:3000/v1/images/edits \
 多图参考：
 
 ```bash
-curl http://localhost:3000/v1/images/edits \
+curl http://localhost:8000/v1/images/edits \
   -H "Authorization: Bearer <session-or-api-token>" \
   -F "model=gpt-image-2" \
   -F "prompt=融合两张参考图的产品外观，生成一张干净的广告图" \
@@ -174,7 +212,7 @@ curl http://localhost:3000/v1/images/edits \
 示例：
 
 ```bash
-curl http://localhost:3000/api/creation-tasks/image-generations \
+curl http://localhost:8000/api/creation-tasks/image-generations \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <session-or-api-token>" \
   -d '{
@@ -223,7 +261,7 @@ curl http://localhost:3000/api/creation-tasks/image-generations \
 示例：
 
 ```bash
-curl http://localhost:3000/api/creation-tasks/image-edits \
+curl http://localhost:8000/api/creation-tasks/image-edits \
   -H "Authorization: Bearer <session-or-api-token>" \
   -F "client_task_id=edit-task-20260511-001" \
   -F "model=auto" \
@@ -239,7 +277,7 @@ curl http://localhost:3000/api/creation-tasks/image-edits \
 带遮罩示例：
 
 ```bash
-curl http://localhost:3000/api/creation-tasks/image-edits \
+curl http://localhost:8000/api/creation-tasks/image-edits \
   -H "Authorization: Bearer <session-or-api-token>" \
   -F "client_task_id=edit-task-mask-001" \
   -F "prompt=只替换背景为雪山，主体不变" \
@@ -254,14 +292,14 @@ curl http://localhost:3000/api/creation-tasks/image-edits \
 查询当前用户的任务列表：
 
 ```bash
-curl "http://localhost:3000/api/creation-tasks" \
+curl "http://localhost:8000/api/creation-tasks" \
   -H "Authorization: Bearer <session-or-api-token>"
 ```
 
 按任务 ID 查询：
 
 ```bash
-curl "http://localhost:3000/api/creation-tasks?ids=img-task-20260511-001,edit-task-20260511-001" \
+curl "http://localhost:8000/api/creation-tasks?ids=img-task-20260511-001,edit-task-20260511-001" \
   -H "Authorization: Bearer <session-or-api-token>"
 ```
 
@@ -283,12 +321,12 @@ curl "http://localhost:3000/api/creation-tasks?ids=img-task-20260511-001,edit-ta
       "visibility": "private",
       "data": [
         {
-          "url": "http://localhost:3000/images/2026/05/11/example-1.webp",
+          "url": "http://localhost:8000/images/2026/05/11/example-1.webp",
           "revised_prompt": "一张用于产品发布会的未来城市主视觉",
           "output_format": "webp"
         },
         {
-          "url": "http://localhost:3000/images/2026/05/11/example-2.webp",
+          "url": "http://localhost:8000/images/2026/05/11/example-2.webp",
           "revised_prompt": "一张用于产品发布会的未来城市主视觉",
           "output_format": "webp"
         }
@@ -306,7 +344,7 @@ curl "http://localhost:3000/api/creation-tasks?ids=img-task-20260511-001,edit-ta
 示例：
 
 ```bash
-curl http://localhost:3000/api/creation-tasks/img-task-20260511-001/cancel \
+curl http://localhost:8000/api/creation-tasks/img-task-20260511-001/cancel \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <session-or-api-token>" \
   -d '{}'
@@ -468,14 +506,27 @@ OpenAI 风格图片错误：
 
 ## 上下文边界
 
-当前图片生成接口默认是无状态的：
+OpenAI 兼容图片接口默认是无状态的：
 
 - 每次 `/v1/images/generations` 请求只应依赖本次请求体。
 - 每个 `/api/creation-tasks/image-generations` 任务只应依赖本次任务 payload。
 - `messages` 字段会被接收和透传，但当前不保证它等价于 ChatGPT Web 端“对话作画记忆”。
 - `visibility`、任务历史、图库记录只用于本地管理，不会自动变成下一次官方图片链路的上下文。
 
-如果未来需要 Web 端对话作画上下文，应使用显式的上下文拼装策略，并按用户、API key、会话隔离。后续扩展设计见 [图片对话上下文设计](image-conversation-context-design.md)。
+云棉 Web 创作台使用独立的服务端会话历史：同一用户可以跨设备读取对话，并由前端按当前轮次显式提交提示词和参考图。无限画布项目也保存在服务端。两者都不会让外部 OpenAI 兼容 API 自动继承上一次请求的上下文。
+
+## 图片保存与清理
+
+- 同步和异步接口的正式生成结果都会保存到服务端图片库；`visibility` 决定图片是 `private` 还是 `public`。
+- `CHATGPT2API_IMAGE_STORAGE_BACKEND=local` 时原图保存在本地数据目录；设为 `s3` 时，正式生成结果、图片库图片、无限画布上传和画布工具结果会保存到 S3 兼容对象存储。
+- S3 模式支持 AWS S3、Cloudflare R2、MinIO 和提供 S3 API 的对象存储。Bucket 应预先创建并设为私有，图片仍通过 `/images/...` 鉴权接口访问。
+- `partial_images` 渐进预览只用于当前响应，不写入对象存储；仅最终完成的图片会持久化。
+- 生成结果关联的缩略图、元数据和参考图会随原图作为一组治理。
+- Web 创作台上传的图生图参考图保存到 `/app/data/image_conversation_assets/`，访问时校验所属用户。
+- `CHATGPT2API_IMAGE_RETENTION_DAYS` 同时作用于生成结果和创作台会话参考图。参考图文件过期后，历史对话文字、参数和任务元数据仍会保留，但图片将不可访问。
+- `CHATGPT2API_IMAGE_STORAGE_LIMIT_MB` 按治理页口径统计生成原图、缩略图、元数据和会话参考图；清理原图时会同步删除其关联参考图。`0` 表示不按容量自动清理。
+- 公开图片默认不参与普通自动清理；管理员执行存储清理时可以明确选择包含公开图片。
+- 对象存储配置只在启动时读取，修改后需要重启。切换到 S3 只影响新图片，不会自动迁移已有本地原图；修改 Bucket 或前缀前应先自行迁移对象。
 
 ## 推荐调用流程
 

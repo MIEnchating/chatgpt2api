@@ -1,7 +1,7 @@
 <h1 align="center">云棉</h1>
 
 <p align="center">
-  云棉是一个面向自托管场景的 ChatGPT 官网图片能力封装服务，提供 OpenAI 兼容图片 API、在线创作台、账号池调度、图片库、日志治理、RBAC 权限管理和 Docker 部署能力。
+  云棉是一个面向自托管场景的 AI 图片创作与管理服务，提供 OpenAI 兼容图片 API、在线创作台、无限画布、跨设备创作历史、图片库、NewAPI 接入、RBAC 权限管理和 Docker 部署能力。
 </p>
 
 > [!WARNING]
@@ -21,14 +21,12 @@
 - [快速入口](#快速入口)
 - [项目能力](#项目能力)
 - [快速部署](#快速部署)
-- [升级与在线更新](#升级与在线更新)
+- [升级说明](#升级说明)
 - [配置说明](#配置说明)
 - [本地开发](#本地开发)
 - [发布流程](#发布流程)
 - [API 接入](#api-接入)
-- [截图](#截图)
 - [技术研究文档](#技术研究文档)
-- [社区与鸣谢](#社区与鸣谢)
 
 ## 快速入口
 
@@ -39,7 +37,7 @@
 | 创建 API Token 并调用接口 | [API 接入](#api-接入) |
 | 查看生图参数、异步任务和错误码 | [生图接口文档](./docs/image-generation-api.md) |
 | 本地改代码和验证构建 | [本地开发](#本地开发) |
-| 升级 Docker 镜像或 Release 二进制 | [升级与在线更新](#升级与在线更新) |
+| 升级 Docker 镜像或 Release 二进制 | [升级说明](#升级说明) |
 | ChatGPT 官网生图协议研究 | [技术研究文档](#技术研究文档) / [jshook 索引](./jshook/README.md) |
 
 ## 项目能力
@@ -51,16 +49,19 @@
 - 支持 Docker / Docker Compose 部署。
 - 支持 SQLite、PostgreSQL 和 MySQL 存储后端。
 - 支持全局 HTTP / HTTPS / SOCKS5 / SOCKS5H 代理。
-- 支持 DockerHub 默认版本检查，以及非 Docker Release 构建的在线更新和回滚。
+- 支持 GitHub Actions 自动测试，并在推送稳定版本标签时发布 Docker Hub 多架构镜像。
 
 ### 管理端
 
 - React 19 + Vite 管理端。
-- 登录页、创作台、号池管理、图片库、用户管理、角色权限、日志管理和设置页。
-- 登录只保留内置管理员和 NewAPI 普通用户；NewAPI 数据库只读，不在本系统写入用户或令牌。
+- 登录页、创作台、无限画布、图片库、号池管理、用户管理、角色权限、日志管理和设置页。
+- 登录只保留内置管理员和 NewAPI 普通用户；NewAPI 数据库只读，不在本系统写入用户、Key 或令牌。
+- 普通用户按本人可用的 NewAPI Key 名称选择令牌；切换 Key 后，新请求按当前选择精确读取对应密钥。
 - 首次启动自动初始化管理员；未配置密码时会生成一次性管理员密码并输出到启动日志。
 - 内置 RBAC，统一管理菜单权限和 API 权限。
 - 支持个人 API 令牌管理。
+- 支持管理员发布系统公告，用户通过通知铃铛查看，并可关闭当日或永久关闭弹窗提醒。
+- 支持管理端修改网站名称、图片访问地址、API 访问地址，以及上传自定义网站图标。
 
 ### 创作与兼容接口
 
@@ -68,6 +69,19 @@
 - OpenAI 兼容图片编辑接口：`POST /v1/images/edits`。
 - 异步创作任务资源：`/api/creation-tasks`。
 - 支持 `gpt-image-2`、`codex-gpt-image-2` 和 `auto` 图片任务模型。
+- 支持流式图片生成和渐进预览；部分渠道只返回最终图片，特定上游流式解析错误会自动非流式重试一次。
+- 创作台历史保存在服务端数据库，同一用户登录不同设备后可以继续查看；图生图参考图保存在服务端受保护目录。
+- 无限画布支持服务端项目存储、想法/图片/生成配置节点、节点连线、批量生成、局部编辑、裁剪、多角度、导入导出和图片库同步。
+
+### 图片与数据治理
+
+- 生成结果、缩略图、元数据、结果关联参考图和创作台会话参考图均由服务端统一管理。
+- 图片库原图可以保存在本地或 S3 兼容对象存储；对象存储模式适用于 AWS S3、Cloudflare R2、MinIO 和提供 S3 API 的服务。
+- 对象存储 Bucket 应设为私有，浏览器仍通过云棉 `/images/...` 鉴权地址读取，不会获得 Bucket 直链。
+- 保留天数清理会删除过期私有生成结果及其关联文件，也会删除过期会话参考图；历史对话文字、参数和任务元数据仍保留。
+- 总容量限制按治理页口径统计生成原图、缩略图、元数据和创作台会话参考图；清理生成原图时会同时删除其关联参考图。
+- 公开图片默认不参与普通保留天数和容量清理；管理员执行清理时可以明确选择包含公开图片。
+- 无限画布上传图片和生成结果会进入图片库，因此遵循图片库的可见性与清理策略。
 
 ### 账号池与导入
 
@@ -87,14 +101,20 @@ cd chatgpt2api
 cp .env.example .env
 ```
 
-编辑 `.env`。建议至少设置管理员密码：
+编辑 `.env`。至少确认管理员、外部地址和 NewAPI 接入配置：
 
 ```env
 CHATGPT2API_ADMIN_USERNAME=admin
 CHATGPT2API_ADMIN_PASSWORD=change_me_please
+CHATGPT2API_BASE_URL=https://image.example.com
+CHATGPT2API_RELAY_BASE_URL=https://api.example.com
+CHATGPT2API_NEWAPI_DATABASE_URL=postgresql://readonly:password@postgres:5432/new-api?sslmode=disable
+CHATGPT2API_NEWAPI_TOKEN_GROUP=gpt-image-2
 ```
 
 如果不设置 `CHATGPT2API_ADMIN_PASSWORD`，服务首次启动会生成一次性管理员密码并输出到容器日志。
+
+`CHATGPT2API_NEWAPI_DATABASE_URL` 应使用只有 `SELECT` 权限的只读数据库账号。云棉通过它校验普通用户并读取该用户可用的 NewAPI Key；所有 AI 请求再发送到 `CHATGPT2API_RELAY_BASE_URL`，不会向 NewAPI 数据库写入数据。
 
 ### 2. 启动服务
 
@@ -153,12 +173,13 @@ docker logs chatgpt2api 2>&1 | grep "bootstrap admin password generated"
 
 如果提示 `no configuration file provided: not found`，说明当前命令没有在仓库根目录执行。先进入仓库根目录再执行 `docker compose logs chatgpt2api`，或直接使用上面的 `docker logs chatgpt2api ...` 命令。
 
-如果查不到日志，先确认 `.env` 或容器环境里是否已经设置了固定密码：
+如果查不到日志，先确认本地 `.env` 是否已经设置了固定密码：
 
 ```bash
 grep -n "^CHATGPT2API_ADMIN_PASSWORD=" .env
-docker inspect chatgpt2api --format '{{range .Config.Env}}{{println .}}{{end}}' | grep "^CHATGPT2API_ADMIN_PASSWORD="
 ```
+
+不要使用会打印容器全部环境变量的排查命令；它可能同时暴露数据库连接串、上游 Token 和其他敏感配置。
 
 如果已经设置了 `CHATGPT2API_ADMIN_PASSWORD`，服务会直接使用该值作为初始管理员密码，不会生成密码，也不会输出 `bootstrap admin password generated` 日志。自动生成的密码只会在首次创建管理员账号时输出一次；如果管理员账号已经存在，重新设置 `.env` 里的 `CHATGPT2API_ADMIN_PASSWORD` 不会覆盖现有管理员密码。容器日志被清理后，明文密码无法从已保存的 bcrypt 哈希中反查。
 
@@ -195,7 +216,7 @@ docker compose up -d
 
 </details>
 
-## 升级与在线更新
+## 升级说明
 
 ### Docker 部署升级
 
@@ -205,7 +226,7 @@ docker compose pull
 docker compose up -d
 ```
 
-生产环境建议在 `.env` 中固定镜像版本，例如 `mienvirtuoso/chatgpt2api:1.0.0`。升级时先修改 `CHATGPT2API_IMAGE`，再执行上面的拉取和启动命令。
+生产环境建议在 `.env` 中固定镜像版本，例如 `mienvirtuoso/chatgpt2api:1.3.8`。Git 标签使用 `v1.3.8`，Docker Hub 镜像标签使用不带 `v` 的 `1.3.8`。升级时先修改 `CHATGPT2API_IMAGE`，再执行上面的拉取和启动命令。
 
 ### 源码部署升级
 
@@ -241,12 +262,48 @@ go build -tags=embed -o chatgpt2api ./internal
 | `CHATGPT2API_IMAGE_TASK_TIMEOUT_SECONDS` | `300` | 图片任务超时时间，单位秒 |
 | `CHATGPT2API_USER_DEFAULT_CONCURRENT_LIMIT` | `0` | 普通用户默认创作并发额度；图片生成/编辑按请求张数计入；`0` 表示不限制 |
 | `CHATGPT2API_USER_DEFAULT_RPM_LIMIT` | `0` | 普通用户默认创作任务 RPM 限制，`0` 表示不限制 |
-| `CHATGPT2API_IMAGE_RETENTION_DAYS` | `30` | 服务端缓存图片保留天数 |
-| `CHATGPT2API_IMAGE_STORAGE_LIMIT_MB` | `0` | 图片库容量上限，单位 MB；`0` 表示不限制 |
+| `CHATGPT2API_IMAGE_RETENTION_DAYS` | `30` | 生成图片及会话参考图保留天数；过期文件清理后仍保留历史文字、参数和任务元数据 |
+| `CHATGPT2API_IMAGE_STORAGE_LIMIT_MB` | `0` | 图片治理总容量上限，统计生成原图、缩略图、元数据和会话参考图；单位 MB，`0` 表示不按容量自动清理 |
+| `CHATGPT2API_IMAGE_STORAGE_BACKEND` | `local` | 图片原图存储后端，可选 `local` 或 `s3`；修改后需要重启 |
+| `CHATGPT2API_S3_ENDPOINT` | 空 | S3 兼容服务地址，只能包含协议和主机，例如 R2 或 MinIO Endpoint |
+| `CHATGPT2API_S3_REGION` | 空 | S3 Region；Cloudflare R2 使用 `auto`，MinIO 通常可留空 |
+| `CHATGPT2API_S3_BUCKET` | 空 | 已创建的私有 Bucket 名称 |
+| `CHATGPT2API_S3_ACCESS_KEY` | 空 | S3 Access Key，仅服务端读取，不通过设置接口返回 |
+| `CHATGPT2API_S3_SECRET_KEY` | 空 | S3 Secret Key，仅服务端读取，不通过设置接口返回 |
+| `CHATGPT2API_S3_SESSION_TOKEN` | 空 | 可选临时会话令牌，仅服务端读取 |
+| `CHATGPT2API_S3_PREFIX` | 空 | 可选对象 Key 前缀，例如 `images` |
+| `CHATGPT2API_S3_USE_PATH_STYLE` | `false` | 是否使用 path-style；MinIO 通常设为 `true`，AWS S3/R2 通常为 `false` |
 | `CHATGPT2API_LOG_RETENTION_DAYS` | `7` | 业务日志保留天数 |
 | `CHATGPT2API_AUTO_REMOVE_INVALID_ACCOUNTS` | `false` | 是否自动移除失效账号 |
 | `CHATGPT2API_AUTO_REMOVE_RATE_LIMITED_ACCOUNTS` | `false` | 是否自动移除限流账号 |
 | `CHATGPT2API_LOG_LEVELS` | 空 | 日志级别过滤，多个值用逗号分隔：`debug,info,warning,error` |
+
+Cloudflare R2 示例：
+
+```env
+CHATGPT2API_IMAGE_STORAGE_BACKEND=s3
+CHATGPT2API_S3_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
+CHATGPT2API_S3_REGION=auto
+CHATGPT2API_S3_BUCKET=cloud-cotton-images
+CHATGPT2API_S3_ACCESS_KEY=<access-key>
+CHATGPT2API_S3_SECRET_KEY=<secret-key>
+CHATGPT2API_S3_PREFIX=images
+CHATGPT2API_S3_USE_PATH_STYLE=false
+```
+
+MinIO 示例：
+
+```env
+CHATGPT2API_IMAGE_STORAGE_BACKEND=s3
+CHATGPT2API_S3_ENDPOINT=http://minio:9000
+CHATGPT2API_S3_BUCKET=cloud-cotton-images
+CHATGPT2API_S3_ACCESS_KEY=<access-key>
+CHATGPT2API_S3_SECRET_KEY=<secret-key>
+CHATGPT2API_S3_PREFIX=images
+CHATGPT2API_S3_USE_PATH_STYLE=true
+```
+
+Bucket 需要提前创建并建议保持私有。启用后，正式生图结果、图片库图片、无限画布上传图片及画布工具派生结果会保存到对象存储；缩略图继续作为本地按需缓存。创作台会话中的临时图生图参考附件仍保存在受保护的本地目录，并继续参与统一保留天数和容量治理。对象存储配置在启动时加载，修改后需要重启；切换只影响新图片，不自动迁移已有本地原图。
 
 ### Docker 配置
 
@@ -262,6 +319,8 @@ go build -tags=embed -o chatgpt2api ./internal
 | --- | --- | --- |
 | `STORAGE_BACKEND` | `sqlite` | 存储后端，可选 `sqlite`、`postgres`、`mysql` |
 | `DATABASE_URL` | 自动 | SQLite、PostgreSQL 或 MySQL 连接串 |
+
+这里配置的是业务数据库，与图片原图的 `CHATGPT2API_IMAGE_STORAGE_BACKEND` 相互独立。
 
 SQLite 示例：
 
@@ -374,8 +433,8 @@ bun run build
 发布命令示例：
 
 ```bash
-git tag -a v1.0.0 -m "Release v1.0.0"
-git push origin v1.0.0
+git tag -a v1.3.8 -m "Release v1.3.8"
+git push origin v1.3.8
 ```
 
 ### Docker 镜像标签
@@ -418,14 +477,14 @@ Authorization: Bearer <session-or-api-token>
 ### `GET /v1/models`
 
 ```bash
-curl http://localhost:3000/v1/models \
+curl http://localhost:8000/v1/models \
   -H "Authorization: Bearer <session-or-api-token>"
 ```
 
 ### `POST /v1/images/generations`
 
 ```bash
-curl http://localhost:3000/v1/images/generations \
+curl http://localhost:8000/v1/images/generations \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer <session-or-api-token>" \
   -d '{
@@ -443,14 +502,14 @@ curl http://localhost:3000/v1/images/generations \
 | `prompt` | 图片生成提示词 |
 | `n` | 生成数量，当前限制为 `1-4` |
 
-`gpt-image-2` 和 `auto` 走 ChatGPT 官网图片工作台的纯协议链路：当前按官网 HAR 实抓对齐到底层 `gpt-5-5` 模型，请求 `/backend-api/f/conversation` 建立 SSE，并从 `role=tool` 且 `async_task_type=image_gen` 的上游消息里提取图片结果。部分会话/续图场景里官网还会补发 `/backend-api/f/conversation/prepare` 获取 `conduit_token`，但不是每次首发生成前都显式出现。`codex-gpt-image-2` 仍保留为独立的 Codex 图片协议模型，继续走 `/backend-api/codex/responses` 路线，用于和官网图片额度区分。Free 账号不会被本地预先拦截；如果账号没有对应图片工具权限，上游可能直接返回失败。
+云棉会读取当前用户选择的 NewAPI Key，并把请求转发到 `CHATGPT2API_RELAY_BASE_URL` 配置的 NewAPI 服务。模型对应的实际渠道、账号能力和最终上游协议由 NewAPI 配置决定；云棉负责参数归一化、鉴权、任务状态、流式事件消费、图片入库和错误展示。
 
-`size` 可以传 `auto`、比例值（如 `1:1`、`16:9`、`9:16`）、分辨率档位（`1080p`、`2k`、`4k`）或显式 `WIDTHxHEIGHT`。在纯协议工作台链路下，这些信息会作为上游提示词约束参与构图，不再转换为 Codex Responses 专用的工具尺寸字段。
+`size` 可以传 `auto`、比例值（如 `1:1`、`16:9`、`9:16`）、分辨率档位（`1080p`、`2k`、`4k`）或显式 `WIDTHxHEIGHT`。服务会先归一化参数再转发，最终输出像素以上游实际返回为准。
 
 ### `POST /v1/images/edits`
 
 ```bash
-curl http://localhost:3000/v1/images/edits \
+curl http://localhost:8000/v1/images/edits \
   -H "Authorization: Bearer <session-or-api-token>" \
   -F "model=auto" \
   -F "prompt=把这张图改成赛博朋克夜景风格" \
@@ -467,54 +526,7 @@ curl http://localhost:3000/v1/images/edits \
 | `n` | 生成数量，当前限制为 `1-4` |
 | `image` | 参考图片，使用 multipart/form-data 上传 |
 
-图片编辑同样按模型分流：`gpt-image-2`、`auto` 走官网图片工作台纯协议链路，`codex-gpt-image-2` 走独立的 Codex 图片协议链路。
-
-## 截图
-
-以下截图均来自仓库的 `assets/` 目录。
-
-<table>
-  <tr>
-    <td width="50%">
-      <strong>创作台</strong><br />
-      <img src="assets/image.png" alt="创作台" />
-    </td>
-    <td width="50%">
-      <strong>任务队列</strong><br />
-      <img src="assets/duilie.png" alt="任务队列" />
-    </td>
-  </tr>
-  <tr>
-    <td width="50%">
-      <strong>图片库</strong><br />
-      <img src="assets/tuku.png" alt="图片库" />
-    </td>
-    <td width="50%">
-      <strong>提示词管理</strong><br />
-      <img src="assets/prompts.png" alt="提示词管理" />
-    </td>
-  </tr>
-  <tr>
-    <td width="50%">
-      <strong>号池管理</strong><br />
-      <img src="assets/account_pool.png" alt="号池管理" />
-    </td>
-    <td width="50%">
-      <strong>角色与权限</strong><br />
-      <img src="assets/rabc.png" alt="角色与权限" />
-    </td>
-  </tr>
-  <tr>
-    <td width="50%">
-      <strong>日志管理</strong><br />
-      <img src="assets/log.png" alt="日志管理" />
-    </td>
-    <td width="50%">
-      <strong>注册管理</strong><br />
-      <img src="assets/zhuceji.png" alt="注册管理" />
-    </td>
-  </tr>
-</table>
+图片编辑同样通过当前用户选择的 NewAPI Key 转发；支持的模型和参数能力取决于对应 NewAPI 渠道。
 
 ## 技术研究文档
 
@@ -531,17 +543,6 @@ curl http://localhost:3000/v1/images/edits \
 | [内容类型枚举](./jshook/docs/content-type-enum.md) | 前端 zo 枚举还原 |
 | [函数名映射](./jshook/docs/function-mapping.md) | 混淆函数名 → 实际功能对照 |
 | [内部代号词典](./jshook/docs/internal-codenames.md) | 后端暗语/代号含义 |
-
-## 社区与鸣谢
-
-Telegram 群组：[云棉](https://t.me/+YBR7t_CPOYBkYzU1)
-
-学 AI，上 L 站：[LinuxDO](https://linux.do)
-
-- [banana-prompt-quicker](https://github.com/glidea/banana-prompt-quicker)，作者：[阿良](https://linux.do/u/ajd)
-- [awesome-gpt-image-2-prompts](https://github.com/EvoLinkAI/awesome-gpt-image-2-prompts)
-- [ChatGpt-Image-Studio](https://github.com/peiyizhi0724/ChatGpt-Image-Studio)，作者：[小怪兽](https://linux.do/u/peiyizhi)
-- [sub2api](https://github.com/Wei-Shaw/sub2api)
 
 ## Contributors
 

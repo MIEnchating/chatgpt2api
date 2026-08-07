@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import {
+  Cloud,
   Database,
   HardDrive,
   Image as ImageIcon,
@@ -136,6 +137,7 @@ export function ImageStorageGovernanceCard() {
   const limitMb = Math.max(0, Number(config?.image_storage_limit_mb) || 0);
   const overLimit = (governance?.over_limit_bytes ?? 0) > 0;
   const storedImageCount = (governance?.images_count ?? 0) + (governance?.conversation_asset_count ?? 0);
+  const usesObjectStorage = governance?.storage_backend === "s3";
 
   const handleCleanup = async () => {
     if (cleanupAction === "retention") {
@@ -178,6 +180,24 @@ export function ImageStorageGovernanceCard() {
           </div>
         ) : (
           <>
+            <section className={settingsPanelClassName}>
+              <div className="flex items-start gap-3">
+                <div className="flex size-9 shrink-0 items-center justify-center rounded-lg border border-border/80 bg-background text-muted-foreground">
+                  {usesObjectStorage ? <Cloud className="size-4" /> : <HardDrive className="size-4" />}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-foreground">
+                    {usesObjectStorage ? "S3 对象存储" : "服务器本地存储"}
+                  </p>
+                  <p className="mt-1 break-all text-xs leading-5 text-muted-foreground">
+                    {usesObjectStorage
+                      ? `Bucket：${governance?.object_storage_bucket || "未配置"}${governance?.object_storage_prefix ? ` · 前缀：${governance.object_storage_prefix}` : ""}`
+                      : "原图保存在当前服务的数据目录中。"}
+                  </p>
+                </div>
+              </div>
+            </section>
+
             <section className="grid gap-3 sm:grid-cols-3">
               <StatBlock label="总占用" value={formatBytes(totalBytes)} />
               <StatBlock

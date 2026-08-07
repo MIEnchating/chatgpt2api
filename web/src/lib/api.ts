@@ -215,6 +215,11 @@ export type SettingsConfig = {
   user_default_rpm_limit?: number | string;
   image_retention_days?: number | string;
   image_storage_limit_mb?: number | string;
+  image_storage_backend?: "local" | "s3" | string;
+  s3_bucket?: string;
+  s3_prefix?: string;
+  s3_endpoint_configured?: boolean;
+  s3_credentials_configured?: boolean;
   log_retention_days?: number | string;
   default_log_view?: LogView | string;
   auto_remove_invalid_accounts?: boolean;
@@ -406,6 +411,9 @@ export type LogCleanupResult = {
 };
 
 export type ImageStorageGovernanceSummary = {
+  storage_backend?: "local" | "s3" | string;
+  object_storage_bucket?: string;
+  object_storage_prefix?: string;
   total_bytes: number;
   images_bytes: number;
   thumbnails_bytes: number;

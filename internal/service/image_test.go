@@ -1,7 +1,10 @@
 package service
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"image"
 	"image/color"
 	"image/jpeg"
@@ -44,6 +47,53 @@ func (c testImageConfig) ImageStorageLimitBytes() int64 { return 0 }
 
 var allImages = ImageAccessScope{All: true}
 
+type memoryImageObjectStore struct {
+	mu      sync.Mutex
+	objects map[string][]byte
+	failPut error
+}
+
+func (s *memoryImageObjectStore) Backend() string { return "s3" }
+func (s *memoryImageObjectStore) Bucket() string  { return "test-images" }
+func (s *memoryImageObjectStore) Prefix() string  { return "cloud-cotton" }
+
+func (s *memoryImageObjectStore) Put(_ context.Context, key string, data []byte, _ string) error {
+	if s.failPut != nil {
+		return s.failPut
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.objects == nil {
+		s.objects = make(map[string][]byte)
+	}
+	s.objects[key] = append([]byte(nil), data...)
+	return nil
+}
+
+func (s *memoryImageObjectStore) Get(_ context.Context, key string) ([]byte, string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	data, ok := s.objects[key]
+	if !ok {
+		return nil, "", errors.New("object not found")
+	}
+	return append([]byte(nil), data...), "image/png", nil
+}
+
+func (s *memoryImageObjectStore) Delete(_ context.Context, key string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.objects, key)
+	return nil
+}
+
+func (s *memoryImageObjectStore) has(key string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, ok := s.objects[key]
+	return ok
+}
+
 func TestImageServiceListImagesReturnsEmptyArrays(t *testing.T) {
 	service := NewImageService(testImageConfig{root: t.TempDir()})
 	result := service.ListImages("http://127.0.0.1:8000", "", "", allImages)
@@ -54,6 +104,96 @@ func TestImageServiceListImagesReturnsEmptyArrays(t *testing.T) {
 	}
 	if string(data) != `{"groups":[],"items":[]}` {
 		t.Fatalf("ListImages() JSON = %s", data)
+	}
+}
+
+func TestImageServiceObjectStorageLifecycleAndIndexRecovery(t *testing.T) {
+	backend := newTestStorageBackend(t)
+	store := &memoryImageObjectStore{}
+	firstConfig := testImageConfig{root: t.TempDir()}
+	first := NewImageService(firstConfig, backend)
+	if err := first.SetObjectStore(store); err != nil {
+		t.Fatalf("SetObjectStore() error = %v", err)
+	}
+	imageData := testPNGBytes(t, 32, 24)
+
+	imageURL, err := first.SaveImageBytes(context.Background(), imageData, "https://image.example.test", "user-1", "User", "png")
+	if err != nil {
+		t.Fatalf("SaveImageBytes() error = %v", err)
+	}
+	rel, err := imageRelativePathFromValue(imageURL)
+	if err != nil {
+		t.Fatalf("imageRelativePathFromValue() error = %v", err)
+	}
+	marker := filepath.Join(firstConfig.ImagesDir(), filepath.FromSlash(rel))
+	info, err := os.Stat(marker)
+	if err != nil || info.Size() != 0 {
+		t.Fatalf("object-storage marker info = %#v, error = %v", info, err)
+	}
+	if !store.has(rel) {
+		t.Fatalf("object store does not contain %q", rel)
+	}
+	data, contentType, err := first.ImageBytes(rel, ImageAccessScope{OwnerID: "user-1"})
+	if err != nil || !bytes.Equal(data, imageData) || contentType != "image/png" {
+		t.Fatalf("ImageBytes() bytes=%d contentType=%q error=%v", len(data), contentType, err)
+	}
+	if _, _, err := first.ImageBytes(rel, ImageAccessScope{OwnerID: "user-2"}); err == nil {
+		t.Fatal("ImageBytes() allowed another owner")
+	}
+
+	secondConfig := testImageConfig{root: t.TempDir()}
+	second := NewImageService(secondConfig, backend)
+	if err := second.SetObjectStore(store); err != nil {
+		t.Fatalf("SetObjectStore() error = %v", err)
+	}
+	items := second.ListImages("https://image.example.test", "", "", ImageAccessScope{OwnerID: "user-1"})["items"].([]map[string]any)
+	if len(items) != 1 || toString(items[0]["path"]) != rel || numericMetaValue(items[0]["width"]) != 32 || numericMetaValue(items[0]["height"]) != 24 {
+		t.Fatalf("recovered object-storage image list = %#v", items)
+	}
+	recoveredMarker := filepath.Join(secondConfig.ImagesDir(), filepath.FromSlash(rel))
+	if info, err := os.Stat(recoveredMarker); err != nil || info.Size() != 0 {
+		t.Fatalf("recovered marker info = %#v, error = %v", info, err)
+	}
+	second.EnsureThumbnails([]string{rel})
+	thumbnail := filepath.Join(secondConfig.ImageThumbnailsDir(), filepath.FromSlash(rel+thumbnailExtension))
+	if info, err := os.Stat(thumbnail); err != nil || info.Size() == 0 {
+		t.Fatalf("object-storage thumbnail info = %#v, error = %v", info, err)
+	}
+
+	result, err := second.DeleteImages([]string{rel}, ImageAccessScope{OwnerID: "user-1"})
+	if err != nil || result["deleted"] != 1 || store.has(rel) {
+		t.Fatalf("DeleteImages() result=%#v remoteExists=%v error=%v", result, store.has(rel), err)
+	}
+	if err := os.MkdirAll(filepath.Dir(recoveredMarker), 0o755); err != nil {
+		t.Fatalf("restore stale marker directory: %v", err)
+	}
+	if err := os.WriteFile(recoveredMarker, nil, 0o644); err != nil {
+		t.Fatalf("restore stale marker: %v", err)
+	}
+	staleAt := time.Now().Add(-objectIndexStaleAfter - time.Minute)
+	if err := os.Chtimes(recoveredMarker, staleAt, staleAt); err != nil {
+		t.Fatalf("age stale marker: %v", err)
+	}
+	if err := second.SyncObjectStoreIndex(); err != nil {
+		t.Fatalf("SyncObjectStoreIndex() error = %v", err)
+	}
+	if _, err := os.Stat(recoveredMarker); !os.IsNotExist(err) {
+		t.Fatalf("stale object-storage marker still exists: %v", err)
+	}
+}
+
+func TestImageServiceObjectStoragePutFailureDoesNotCreateImage(t *testing.T) {
+	config := testImageConfig{root: t.TempDir()}
+	service := NewImageService(config, newTestStorageBackend(t))
+	if err := service.SetObjectStore(&memoryImageObjectStore{failPut: errors.New("bucket unavailable")}); err != nil {
+		t.Fatalf("SetObjectStore() error = %v", err)
+	}
+	if value, err := service.SaveImageBytes(context.Background(), testPNGBytes(t, 8, 8), "https://image.example.test", "user", "User", "png"); err == nil || value != "" {
+		t.Fatalf("SaveImageBytes() value=%q error=%v", value, err)
+	}
+	items := service.ListImages("https://image.example.test", "", "", allImages)["items"].([]map[string]any)
+	if len(items) != 0 {
+		t.Fatalf("failed object upload entered image list: %#v", items)
 	}
 }
 
@@ -916,6 +1056,16 @@ func writeTestPNG(path string) error {
 	}
 	defer file.Close()
 	return png.Encode(file, img)
+}
+
+func testPNGBytes(t *testing.T, width, height int) []byte {
+	t.Helper()
+	img := image.NewRGBA(image.Rect(0, 0, width, height))
+	var buffer bytes.Buffer
+	if err := png.Encode(&buffer, img); err != nil {
+		t.Fatalf("png.Encode() error = %v", err)
+	}
+	return buffer.Bytes()
 }
 
 func writeLargeTestPNG(path string) error {

@@ -41,6 +41,7 @@ type Engine struct {
 	Proxy                     *service.ProxyService
 	Logger                    *service.Logger
 	ImageConversationSessions *service.ImageConversationSessionService
+	Images                    *service.ImageService
 
 	ListModelsFunc         func(context.Context) (map[string]any, error)
 	StreamImageOutputsFunc func(context.Context, *backend.Client, ConversationRequest, int, int) (<-chan ImageOutput, <-chan error)
@@ -891,7 +892,11 @@ func (e *Engine) StreamResponsesImageOutputs(ctx context.Context, client *backen
 				item["background"] = event.Background
 			}
 			created := firstNonZeroInt64(event.Created, time.Now().Unix())
-			result := e.FormatImageResultWithOptions([]map[string]any{item}, prompt, request.ResponseFormat, request.BaseURL, request.OwnerID, request.OwnerName, created, "", imageResultOutputOptions(request, event))
+			result, err := e.FormatImageResultWithOptionsE(ctx, []map[string]any{item}, prompt, request.ResponseFormat, request.BaseURL, request.OwnerID, request.OwnerName, created, "", imageResultOutputOptions(request, event))
+			if err != nil {
+				errCh <- err
+				return
+			}
 			data := util.AsMapSlice(result["data"])
 			if len(data) > 0 {
 				emitted = true
@@ -1147,10 +1152,11 @@ func (e *Engine) FormatImageResult(items []map[string]any, prompt, responseForma
 }
 
 func (e *Engine) FormatImageResultWithOptions(items []map[string]any, prompt, responseFormat, baseURL, ownerID, ownerName string, created int64, message string, options ImageOutputOptions) map[string]any {
-	return e.formatImageResultWithOptions(items, prompt, responseFormat, baseURL, ownerID, ownerName, created, message, options)
+	result, _ := e.FormatImageResultWithOptionsE(context.Background(), items, prompt, responseFormat, baseURL, ownerID, ownerName, created, message, options)
+	return result
 }
 
-func (e *Engine) formatImageResultWithOptions(items []map[string]any, prompt, responseFormat, baseURL, ownerID, ownerName string, created int64, message string, options ImageOutputOptions) map[string]any {
+func (e *Engine) FormatImageResultWithOptionsE(ctx context.Context, items []map[string]any, prompt, responseFormat, baseURL, ownerID, ownerName string, created int64, message string, options ImageOutputOptions) (map[string]any, error) {
 	defaultFormat := NormalizeImageOutputFormat(options.Format)
 	hasRequestedFormat := strings.TrimSpace(options.Format) != ""
 	var data []map[string]any
@@ -1190,7 +1196,13 @@ func (e *Engine) formatImageResultWithOptions(items []map[string]any, prompt, re
 			}
 		}
 		outputFormat := NormalizeImageOutputFormat(itemOptions.Format)
-		urlValue := e.SaveImageBytesForOwnerWithFormat(imageBytes, baseURL, ownerID, ownerName, outputFormat)
+		urlValue, err := e.SaveImageBytesForOwnerWithFormatE(ctx, imageBytes, baseURL, ownerID, ownerName, outputFormat)
+		if err != nil {
+			return nil, err
+		}
+		if urlValue == "" {
+			continue
+		}
 		responseItem := map[string]any{"url": urlValue, "revised_prompt": revised, "output_format": outputFormat}
 		if responseFormat == "b64_json" {
 			responseItem["b64_json"] = base64.StdEncoding.EncodeToString(imageBytes)
@@ -1204,7 +1216,7 @@ func (e *Engine) formatImageResultWithOptions(items []map[string]any, prompt, re
 	if message != "" && len(data) == 0 {
 		result["message"] = message
 	}
-	return result
+	return result, nil
 }
 
 func (e *Engine) SaveImageBytes(imageData []byte, baseURL string) string {
@@ -1216,6 +1228,17 @@ func (e *Engine) SaveImageBytesForOwner(imageData []byte, baseURL, ownerID, owne
 }
 
 func (e *Engine) SaveImageBytesForOwnerWithFormat(imageData []byte, baseURL, ownerID, ownerName, outputFormat string) string {
+	value, _ := e.SaveImageBytesForOwnerWithFormatE(context.Background(), imageData, baseURL, ownerID, ownerName, outputFormat)
+	return value
+}
+
+func (e *Engine) SaveImageBytesForOwnerWithFormatE(ctx context.Context, imageData []byte, baseURL, ownerID, ownerName, outputFormat string) (string, error) {
+	if e != nil && e.Images != nil {
+		if baseURL == "" && e.Config != nil {
+			baseURL = e.Config.BaseURL()
+		}
+		return e.Images.SaveImageBytes(ctx, imageData, baseURL, ownerID, ownerName, outputFormat)
+	}
 	outputFormat = NormalizeImageOutputFormat(outputFormat)
 	sum := md5.Sum(imageData)
 	filename := fmt.Sprintf("%d_%s.%s", time.Now().Unix(), hex.EncodeToString(sum[:]), imageFileExtension(outputFormat))
@@ -1228,7 +1251,7 @@ func (e *Engine) SaveImageBytesForOwnerWithFormat(imageData []byte, baseURL, own
 	if baseURL == "" {
 		baseURL = e.Config.BaseURL()
 	}
-	return strings.TrimRight(baseURL, "/") + "/images/" + filepath.ToSlash(rel)
+	return strings.TrimRight(baseURL, "/") + "/images/" + filepath.ToSlash(rel), nil
 }
 
 func imageFileExtension(outputFormat string) string {

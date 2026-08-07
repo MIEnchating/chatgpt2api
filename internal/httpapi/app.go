@@ -19,6 +19,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -173,8 +174,29 @@ func NewApp() (*App, error) {
 	}
 	documentStore, _ := storageBackend.(storage.JSONDocumentBackend)
 	imageSessions := service.NewImageConversationSessionService(filepath.Join(cfg.DataDir, "image_conversation_sessions.json"), storageBackend)
-	engine := &protocol.Engine{Accounts: accounts, Config: cfg, Storage: documentStore, Proxy: proxy, Logger: logger, ImageConversationSessions: imageSessions}
-	app := &App{config: cfg, auth: auth, accounts: accounts, logs: logs, logger: logger, proxy: proxy, engine: engine, images: service.NewImageService(cfg, storageBackend), conversationAssets: service.NewImageConversationAssetService(filepath.Join(cfg.DataDir, "image_conversation_assets")), prompts: service.NewPromptFavoriteService(storageBackend), history: service.NewImageConversationHistoryService(storageBackend), canvas: service.NewCanvasDocumentService(storageBackend), announce: service.NewAnnouncementService(storageBackend), newAPIKeys: newAPIKeys, cancel: cancel, historyWriteLimiter: newImageConversationHistoryWriteLimiter(imageConversationHistoryWriteParallelism), imageUploadSlots: make(chan struct{}, 2)}
+	images := service.NewImageService(cfg, storageBackend)
+	switch cfg.ImageStorageBackend() {
+	case "local":
+	case "s3":
+		objectStore, storeErr := service.NewS3ImageObjectStore(service.S3ImageObjectStoreConfig{
+			Endpoint: cfg.S3Endpoint(), Bucket: cfg.S3Bucket(), Region: cfg.S3Region(), Prefix: cfg.S3Prefix(),
+			AccessKey: cfg.S3AccessKey(), SecretKey: cfg.S3SecretKey(), SessionToken: cfg.S3SessionToken(),
+			UsePathStyle: cfg.S3UsePathStyle(),
+		})
+		if storeErr != nil {
+			cancel()
+			return nil, fmt.Errorf("initialize image object storage: %w", storeErr)
+		}
+		if storeErr := images.SetObjectStore(objectStore); storeErr != nil {
+			cancel()
+			return nil, fmt.Errorf("synchronize image object storage index: %w", storeErr)
+		}
+	default:
+		cancel()
+		return nil, fmt.Errorf("initialize image object storage: CHATGPT2API_IMAGE_STORAGE_BACKEND must be local or s3")
+	}
+	engine := &protocol.Engine{Accounts: accounts, Config: cfg, Storage: documentStore, Proxy: proxy, Logger: logger, ImageConversationSessions: imageSessions, Images: images}
+	app := &App{config: cfg, auth: auth, accounts: accounts, logs: logs, logger: logger, proxy: proxy, engine: engine, images: images, conversationAssets: service.NewImageConversationAssetService(filepath.Join(cfg.DataDir, "image_conversation_assets")), prompts: service.NewPromptFavoriteService(storageBackend), history: service.NewImageConversationHistoryService(storageBackend), canvas: service.NewCanvasDocumentService(storageBackend), announce: service.NewAnnouncementService(storageBackend), newAPIKeys: newAPIKeys, cancel: cancel, historyWriteLimiter: newImageConversationHistoryWriteLimiter(imageConversationHistoryWriteParallelism), imageUploadSlots: make(chan struct{}, 2)}
 	app.conversationAssets.SetStorageBudget(cfg.ImageStorageLimitBytes, func() int64 {
 		return app.images.StorageGovernance().TotalBytes
 	})
@@ -558,6 +580,9 @@ func (a *App) handleImageGenerations(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result, stream, err := a.relayImageGenerations(r.Context(), body)
+	if err == nil && stream == nil {
+		err = a.localizeRelayImageResult(r.Context(), identity, result, body)
+	}
 	a.writeProtocol(w, r, result, stream, err, "openai", "/v1/images/generations", model, identity, "文生图", visibility, body)
 }
 
@@ -601,6 +626,9 @@ func (a *App) handleImageEdits(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result, stream, err := a.relayImageEdits(r.Context(), body, images)
+	if err == nil && stream == nil {
+		err = a.localizeRelayImageResult(r.Context(), identity, result, body)
+	}
 	a.writeProtocol(w, r, result, stream, err, "openai", "/v1/images/edits", model, identity, "图生图", visibility, body)
 }
 
@@ -1437,7 +1465,21 @@ func (a *App) handleImageFile(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	http.ServeFile(w, r, ref.Path)
+	if !ref.Remote {
+		http.ServeFile(w, r, ref.Path)
+		return
+	}
+	data, contentType, err := a.images.ImageBytes(rel, service.ImageAccessScope{All: true})
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+	w.Header().Set("Cache-Control", "private, max-age=3600")
+	if r.Method == http.MethodGet {
+		_, _ = w.Write(data)
+	}
 }
 
 func (a *App) handleImageReferenceFile(w http.ResponseWriter, r *http.Request) {
@@ -1521,9 +1563,12 @@ func (a *App) handleImageThumbnail(w http.ResponseWriter, r *http.Request) {
 		http.ServeFile(w, r, thumbPath)
 		return
 	}
-	sourcePath := filepath.Join(a.config.ImagesDir(), filepath.FromSlash(sourceRel))
-	if info, err := os.Stat(sourcePath); err == nil && !info.IsDir() {
-		http.ServeFile(w, r, sourcePath)
+	if data, contentType, err := a.images.ImageBytes(sourceRel, service.ImageAccessScope{All: true}); err == nil {
+		w.Header().Set("Content-Type", contentType)
+		w.Header().Set("Content-Length", strconv.Itoa(len(data)))
+		if r.Method == http.MethodGet {
+			_, _ = w.Write(data)
+		}
 		return
 	}
 	http.NotFound(w, r)
@@ -2558,7 +2603,9 @@ func (a *App) runLoggedImageTask(ctx context.Context, identity service.Identity,
 		defer delete(payload, relayImageTaskSlotManagedPayloadKey)
 	}
 	result, err := run(ctx, payload)
-	a.localizeRelayImageResult(ctx, identity, result, payload)
+	if err == nil {
+		err = a.localizeRelayImageResult(ctx, identity, result, payload)
+	}
 	urls := collectURLs(result)
 	a.recordGeneratedImagesForPayload(identity, urls, util.Clean(payload["visibility"]), payload)
 	if err != nil {
@@ -2575,13 +2622,13 @@ func (a *App) runLoggedImageTask(ctx context.Context, identity service.Identity,
 	return result, nil
 }
 
-func (a *App) localizeRelayImageResult(ctx context.Context, identity service.Identity, result map[string]any, payload map[string]any) {
+func (a *App) localizeRelayImageResult(ctx context.Context, identity service.Identity, result map[string]any, payload map[string]any) error {
 	if a == nil || a.engine == nil || result == nil {
-		return
+		return nil
 	}
 	items := util.AsMapSlice(result["data"])
 	if len(items) == 0 {
-		return
+		return nil
 	}
 	ownerID := identityScope(identity)
 	ownerName := identityDisplayName(identity)
@@ -2591,7 +2638,10 @@ func (a *App) localizeRelayImageResult(ctx context.Context, identity service.Ide
 			continue
 		}
 		localURL, outputFormat, qualityCheck, err := a.localizeRelayImageItem(ctx, ownerID, ownerName, item, payload)
-		if err != nil || localURL == "" {
+		if err != nil {
+			return err
+		}
+		if localURL == "" {
 			continue
 		}
 		item["url"] = localURL
@@ -2607,6 +2657,95 @@ func (a *App) localizeRelayImageResult(ctx context.Context, identity service.Ide
 	if changed {
 		result["data"] = items
 	}
+	return nil
+}
+
+func (a *App) localizeRelayImageStream(ctx context.Context, payload map[string]any, stream *protocol.StreamResult) *protocol.StreamResult {
+	if a == nil || stream == nil {
+		return stream
+	}
+	items := make(chan map[string]any)
+	errorsOut := make(chan error, 1)
+	go func() {
+		defer close(items)
+		defer close(errorsOut)
+		ownerID := strings.TrimSpace(util.Clean(payload["owner_id"]))
+		ownerName := strings.TrimSpace(util.Clean(payload["owner_name"]))
+		for item := range stream.Items {
+			if item == nil || !isRelayImageCompletedEvent(item) || isRelayImagePartialEvent(item) {
+				select {
+				case <-ctx.Done():
+					errorsOut <- ctx.Err()
+					return
+				case items <- item:
+				}
+				continue
+			}
+			localized, err := a.localizeRelayImageStreamItem(ctx, ownerID, ownerName, item, payload)
+			if err != nil {
+				errorsOut <- err
+				go drainProtocolStream(stream)
+				return
+			}
+			select {
+			case <-ctx.Done():
+				errorsOut <- ctx.Err()
+				return
+			case items <- localized:
+			}
+		}
+		errorsOut <- <-stream.Err
+	}()
+	return &protocol.StreamResult{Items: items, Err: errorsOut, Kind: stream.Kind}
+}
+
+func (a *App) localizeRelayImageStreamItem(ctx context.Context, ownerID, ownerName string, event, payload map[string]any) (map[string]any, error) {
+	data := relayImageStreamItemData(event)
+	if len(data) == 0 {
+		return event, nil
+	}
+	localized := make([]map[string]any, 0, len(data))
+	for _, imageItem := range data {
+		next := util.CopyMap(imageItem)
+		localURL, outputFormat, qualityCheck, err := a.localizeRelayImageItem(ctx, ownerID, ownerName, next, payload)
+		if err != nil {
+			return nil, err
+		}
+		if localURL != "" {
+			next["url"] = localURL
+			delete(next, "b64_json")
+		}
+		if outputFormat != "" {
+			next["output_format"] = outputFormat
+		}
+		for key, value := range qualityCheck {
+			next[key] = value
+		}
+		localized = append(localized, next)
+	}
+	out := util.CopyMap(event)
+	if _, exists := event["data"]; exists || len(localized) != 1 {
+		out["data"] = localized
+		delete(out, "url")
+		delete(out, "b64_json")
+		return out, nil
+	}
+	for _, key := range []string{"url", "b64_json", "revised_prompt", "output_format", "requested_size", "actual_size", "quality_warning"} {
+		delete(out, key)
+		if value, ok := localized[0][key]; ok {
+			out[key] = value
+		}
+	}
+	return out, nil
+}
+
+func drainProtocolStream(stream *protocol.StreamResult) {
+	if stream == nil {
+		return
+	}
+	for range stream.Items {
+	}
+	<-stream.Err
 }
 
 func (a *App) localizeRelayImageItem(ctx context.Context, ownerID, ownerName string, item map[string]any, payload map[string]any) (string, string, map[string]any, error) {
@@ -2619,7 +2758,8 @@ func (a *App) localizeRelayImageItem(ctx context.Context, ownerID, ownerName str
 	}
 	outputFormat := relayStoredImageFormat(item, payload, contentType, util.Clean(item["url"]), data)
 	qualityCheck := relayImageQualityCheck(data, outputFormat, payload)
-	return a.engine.SaveImageBytesForOwnerWithFormat(data, "", ownerID, ownerName, outputFormat), outputFormat, qualityCheck, nil
+	url, err := a.engine.SaveImageBytesForOwnerWithFormatE(ctx, data, "", ownerID, ownerName, outputFormat)
+	return url, outputFormat, qualityCheck, err
 }
 
 func relayImageItemBytes(ctx context.Context, app *App, item map[string]any) ([]byte, string, error) {

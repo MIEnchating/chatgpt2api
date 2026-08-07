@@ -34,6 +34,10 @@ type JSONDocumentBackend interface {
 	DeleteJSONDocument(name string) error
 }
 
+type JSONDocumentPrefixBackend interface {
+	ListJSONDocuments(prefix string) (map[string]any, error)
+}
+
 type LogBackend interface {
 	AppendLog(item map[string]any) error
 	QueryLogs(startDate, endDate string, limit int) ([]map[string]any, error)
@@ -320,6 +324,31 @@ func (b *DatabaseBackend) DeleteJSONDocument(name string) error {
 	}
 	_, err = b.db.Exec("DELETE FROM json_documents WHERE name = "+b.placeholder(1), rel)
 	return err
+}
+
+func (b *DatabaseBackend) ListJSONDocuments(prefix string) (map[string]any, error) {
+	prefix = filepath.ToSlash(strings.TrimSpace(prefix))
+	if prefix == "" || strings.HasPrefix(prefix, "/") || strings.Contains(prefix, "..") {
+		return nil, errors.New("invalid document prefix")
+	}
+	rows, err := b.db.Query("SELECT name, data FROM json_documents WHERE name LIKE "+b.placeholder(1)+" ORDER BY name", prefix+"%")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[string]any)
+	for rows.Next() {
+		var name, text string
+		if err := rows.Scan(&name, &text); err != nil {
+			return nil, err
+		}
+		value, err := decodeJSONString(text)
+		if err != nil {
+			continue
+		}
+		out[name] = value
+	}
+	return out, rows.Err()
 }
 
 func (b *DatabaseBackend) AppendLog(item map[string]any) error {

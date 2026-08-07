@@ -123,9 +123,12 @@ func (a *App) handleCanvasImageUpload(w http.ResponseWriter, r *http.Request) {
 	if format == "jpg" {
 		format = "jpeg"
 	}
-	url := a.engine.SaveImageBytesForOwnerWithFormat(upload.Data, "", identityScope(identity), identityDisplayName(identity), format)
-	if url == "" {
-		util.WriteError(w, http.StatusInternalServerError, "failed to store image")
+	url, err := a.engine.SaveImageBytesForOwnerWithFormatE(r.Context(), upload.Data, "", identityScope(identity), identityDisplayName(identity), format)
+	if err != nil || url == "" {
+		if err == nil {
+			err = errors.New("image storage returned an empty URL")
+		}
+		util.WriteError(w, http.StatusInternalServerError, "failed to store image: "+err.Error())
 		return
 	}
 	a.images.RecordGeneratedImages([]string{url}, identityScope(identity), identityDisplayName(identity), service.ImageVisibilityPrivate)

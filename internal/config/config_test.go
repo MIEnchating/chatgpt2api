@@ -7,6 +7,47 @@ import (
 	"testing"
 )
 
+func TestStoreImageObjectStorageConfigDoesNotExposeCredentials(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("CHATGPT2API_ROOT", root)
+	t.Setenv("CHATGPT2API_IMAGE_STORAGE_BACKEND", "s3")
+	t.Setenv("CHATGPT2API_S3_ENDPOINT", "https://s3.example.test")
+	t.Setenv("CHATGPT2API_S3_BUCKET", "private-images")
+	t.Setenv("CHATGPT2API_S3_PREFIX", "cloud-cotton/images")
+	t.Setenv("CHATGPT2API_S3_ACCESS_KEY", "test-access-key")
+	t.Setenv("CHATGPT2API_S3_SECRET_KEY", "test-secret-key")
+	t.Setenv("CHATGPT2API_S3_SESSION_TOKEN", "test-session-token")
+
+	store, err := NewStore()
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	config := store.Get()
+	assertConfigValue(t, config, "image_storage_backend", "s3")
+	assertConfigValue(t, config, "s3_bucket", "private-images")
+	assertConfigValue(t, config, "s3_prefix", "cloud-cotton/images")
+	assertConfigValue(t, config, "s3_endpoint_configured", true)
+	assertConfigValue(t, config, "s3_credentials_configured", true)
+	for _, key := range []string{"s3_endpoint", "s3_access_key", "s3_secret_key", "s3_session_token"} {
+		if _, ok := config[key]; ok {
+			t.Fatalf("%s leaked in config response: %#v", key, config)
+		}
+	}
+}
+
+func TestStoreImageStorageBackendDefaultsToLocal(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("CHATGPT2API_ROOT", root)
+	unsetEnv(t, "CHATGPT2API_IMAGE_STORAGE_BACKEND")
+	store, err := NewStore()
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	if got := store.ImageStorageBackend(); got != "local" {
+		t.Fatalf("ImageStorageBackend() = %q", got)
+	}
+}
+
 func TestStoreUpdatePersistsRuntimeSettings(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("CHATGPT2API_ROOT", root)

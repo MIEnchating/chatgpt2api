@@ -448,6 +448,11 @@ func (a *App) imageStorageGovernance() map[string]any {
 	value["conversation_asset_count"] = assets.FileCount
 	value["total_bytes"] = totalBytes
 	value["over_limit_bytes"] = overLimitBytes
+	value["storage_backend"] = a.images.StorageBackend()
+	if bucket, prefix := a.images.ObjectStoreInfo(); bucket != "" {
+		value["object_storage_bucket"] = bucket
+		value["object_storage_prefix"] = prefix
+	}
 	return value
 }
 

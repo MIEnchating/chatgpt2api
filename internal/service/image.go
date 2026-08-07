@@ -1,6 +1,10 @@
 package service
 
 import (
+	"bytes"
+	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"image"
@@ -9,6 +13,7 @@ import (
 	_ "image/gif"
 	"image/jpeg"
 	_ "image/png"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -30,6 +35,7 @@ const (
 	thumbnailExtension    = ".jpg"
 	imageReferencePrefix  = "references"
 	imageReferenceMarker  = ".refs/"
+	objectIndexStaleAfter = 5 * time.Minute
 
 	ImageVisibilityPrivate = "private"
 	ImageVisibilityPublic  = "public"
@@ -68,6 +74,12 @@ type imageMetadata struct {
 	ReferenceImages   []imageReferenceMetadata
 	SharePromptParams bool
 	ShareReferences   bool
+	StorageBackend    string
+	StoredSize        int64
+	StoredAt          string
+	ContentType       string
+	Width             int
+	Height            int
 }
 
 type GeneratedImageMetadata struct {
@@ -142,11 +154,13 @@ type imageReferenceMetadata struct {
 }
 
 type ImageFileAccess struct {
-	Rel        string
-	Path       string
-	Info       os.FileInfo
-	Visibility string
-	OwnerID    string
+	Rel         string
+	Path        string
+	Info        os.FileInfo
+	Visibility  string
+	OwnerID     string
+	Remote      bool
+	ContentType string
 }
 
 type ImageReferenceFileAccess struct {
@@ -167,9 +181,12 @@ type ImageVisibilityUpdateOptions struct {
 type ImageService struct {
 	config        ImageConfig
 	store         storage.JSONDocumentBackend
+	storePrefix   storage.JSONDocumentPrefixBackend
 	cleanupMu     sync.Mutex
+	indexMu       sync.Mutex
 	thumbnailMu   sync.Mutex
 	thumbnailJobs map[string]*thumbnailJob
+	objectStore   ImageObjectStore
 }
 
 type imageFileRef struct {
@@ -200,21 +217,218 @@ type imageStorageRemovalStats struct {
 }
 
 func NewImageService(config ImageConfig, backend ...storage.Backend) *ImageService {
-	return &ImageService{config: config, store: firstJSONDocumentStore(backend)}
+	service := &ImageService{config: config, store: firstJSONDocumentStore(backend)}
+	for _, candidate := range backend {
+		if prefixStore, ok := candidate.(storage.JSONDocumentPrefixBackend); ok {
+			service.storePrefix = prefixStore
+			break
+		}
+	}
+	return service
+}
+
+func (s *ImageService) SetObjectStore(store ImageObjectStore) error {
+	if s == nil {
+		return errors.New("image service is nil")
+	}
+	s.objectStore = store
+	return s.SyncObjectStoreIndex()
+}
+
+func (s *ImageService) SyncObjectStoreIndex() error {
+	if s == nil || s.objectStore == nil || s.storePrefix == nil {
+		return nil
+	}
+	s.indexMu.Lock()
+	defer s.indexMu.Unlock()
+	documents, err := s.storePrefix.ListJSONDocuments("image_metadata/")
+	if err != nil {
+		return err
+	}
+	root, err := filepath.Abs(s.config.ImagesDir())
+	if err != nil {
+		return err
+	}
+	remoteImages := make(map[string]struct{})
+	for name, raw := range documents {
+		metaRaw, ok := raw.(map[string]any)
+		if !ok || strings.TrimSpace(toString(metaRaw["storage_backend"])) != "s3" {
+			continue
+		}
+		rel := strings.TrimSuffix(strings.TrimPrefix(filepath.ToSlash(name), "image_metadata/"), ".json")
+		rel, err = cleanImageRelativePath(rel)
+		if err != nil {
+			continue
+		}
+		remoteImages[rel] = struct{}{}
+		marker := filepath.Join(root, filepath.FromSlash(rel))
+		if !pathInsideRoot(root, marker) {
+			continue
+		}
+		if info, statErr := os.Stat(marker); statErr == nil && !info.IsDir() {
+			continue
+		}
+		if err := os.MkdirAll(filepath.Dir(marker), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(marker, nil, 0o644); err != nil {
+			return err
+		}
+		if storedAt, parseErr := time.Parse(time.RFC3339Nano, strings.TrimSpace(toString(metaRaw["stored_at"]))); parseErr == nil {
+			_ = os.Chtimes(marker, storedAt, storedAt)
+		}
+	}
+	cutoff := time.Now().Add(-objectIndexStaleAfter)
+	if err := filepath.WalkDir(root, func(marker string, entry os.DirEntry, walkErr error) error {
+		if walkErr != nil || entry.IsDir() {
+			return walkErr
+		}
+		info, statErr := entry.Info()
+		if statErr != nil || info.Size() != 0 || info.ModTime().After(cutoff) {
+			return statErr
+		}
+		rel, relErr := filepath.Rel(root, marker)
+		if relErr != nil {
+			return relErr
+		}
+		rel = filepath.ToSlash(rel)
+		if _, ok := remoteImages[rel]; ok {
+			return nil
+		}
+		if removeErr := os.Remove(marker); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
+			return removeErr
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *ImageService) StorageBackend() string {
+	if s != nil && s.objectStore != nil {
+		return s.objectStore.Backend()
+	}
+	return "local"
+}
+
+func (s *ImageService) ObjectStoreInfo() (string, string) {
+	if s == nil || s.objectStore == nil {
+		return "", ""
+	}
+	return s.objectStore.Bucket(), s.objectStore.Prefix()
+}
+
+func (s *ImageService) SaveImageBytes(ctx context.Context, imageData []byte, baseURL, ownerID, ownerName, outputFormat string) (string, error) {
+	if len(imageData) == 0 {
+		return "", errors.New("image data is empty")
+	}
+	outputFormat = NormalizeImageOutputFormat(outputFormat)
+	sum := md5Sum(imageData)
+	now := time.Now().UTC()
+	filename := strconv.FormatInt(now.Unix(), 10) + "_" + sum + "." + imageStorageExtension(outputFormat)
+	rel := filepath.ToSlash(filepath.Join(now.Format("2006"), now.Format("01"), now.Format("02"), filename))
+	imagePath := filepath.Join(s.config.ImagesDir(), filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(imagePath), 0o755); err != nil {
+		return "", err
+	}
+	contentType := imageOutputContentType(outputFormat)
+	storageBackend := "local"
+	if s.objectStore != nil {
+		if err := s.objectStore.Put(ctx, rel, imageData, contentType); err != nil {
+			return "", err
+		}
+		storageBackend = s.objectStore.Backend()
+		if err := os.WriteFile(imagePath, nil, 0o644); err != nil {
+			_ = s.objectStore.Delete(ctx, rel)
+			return "", err
+		}
+	} else if err := os.WriteFile(imagePath, imageData, 0o644); err != nil {
+		return "", err
+	}
+	width, height := imageDataDimensions(imageData)
+	meta := imageMetadata{
+		OwnerID: ownerID, OwnerName: ownerName, Visibility: ImageVisibilityPrivate,
+		StorageBackend: storageBackend, StoredSize: int64(len(imageData)), StoredAt: now.Format(time.RFC3339Nano),
+		ContentType: contentType, Width: width, Height: height, OutputFormat: outputFormat,
+	}
+	if err := s.writeImageMetadata(rel, meta); err != nil {
+		_ = os.Remove(imagePath)
+		if s.objectStore != nil {
+			_ = s.objectStore.Delete(ctx, rel)
+		}
+		return "", err
+	}
+	return publicAssetURL(baseURL, "images", rel), nil
+}
+
+func md5Sum(data []byte) string {
+	sum := md5.Sum(data)
+	return hex.EncodeToString(sum[:])
+}
+
+func imageStorageExtension(format string) string {
+	if NormalizeImageOutputFormat(format) == "jpeg" {
+		return "jpg"
+	}
+	return NormalizeImageOutputFormat(format)
+}
+
+func imageOutputContentType(format string) string {
+	return "image/" + NormalizeImageOutputFormat(format)
+}
+
+func imageDataDimensions(data []byte) (int, int) {
+	config, _, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return 0, 0
+	}
+	return config.Width, config.Height
+}
+
+func storedImageSize(meta imageMetadata, info os.FileInfo) int64 {
+	if meta.StoredSize > 0 {
+		return meta.StoredSize
+	}
+	if info != nil {
+		return info.Size()
+	}
+	return 0
+}
+
+func storedImageTime(meta imageMetadata, info os.FileInfo) time.Time {
+	if value, err := time.Parse(time.RFC3339Nano, meta.StoredAt); err == nil {
+		return value
+	}
+	if info != nil {
+		return info.ModTime()
+	}
+	return time.Time{}
+}
+
+func firstNonZero(values ...int) int {
+	for _, value := range values {
+		if value > 0 {
+			return value
+		}
+	}
+	return 0
 }
 
 func (s *ImageService) StorageGovernance() ImageStorageGovernanceSummary {
+	_ = s.SyncObjectStoreIndex()
 	summary := ImageStorageGovernanceSummary{LimitBytes: s.config.ImageStorageLimitBytes()}
 	candidates := s.imageCleanupCandidates()
 	for _, candidate := range candidates {
+		meta := candidate.meta
 		summary.ImagesCount++
-		summary.ImagesBytes += candidate.info.Size()
-		if candidate.meta.Visibility == ImageVisibilityPublic {
+		summary.ImagesBytes += storedImageSize(meta, candidate.info)
+		if meta.Visibility == ImageVisibilityPublic {
 			summary.PublicImagesCount++
 		} else {
 			summary.PrivateImagesCount++
 		}
-		created := candidate.info.ModTime().Format("2006-01-02 15:04:05")
+		created := storedImageTime(meta, candidate.info).Format("2006-01-02 15:04:05")
 		if summary.OldestImageAt == "" || created < summary.OldestImageAt {
 			summary.OldestImageAt = created
 		}
@@ -225,7 +439,7 @@ func (s *ImageService) StorageGovernance() ImageStorageGovernanceSummary {
 	summary.ThumbnailsBytes, summary.ThumbnailFiles, _ = thumbnailCacheStats(s.config.ImageThumbnailsDir())
 	summary.MetadataBytes, summary.MetadataFiles = directorySize(s.config.ImageMetadataDir(), "")
 	summary.ReferenceBytes, summary.ReferenceFiles = directorySize(s.imageReferencesDir(), "")
-	summary.TotalBytes = summary.ImagesBytes + summary.ThumbnailsBytes + summary.MetadataBytes
+	summary.TotalBytes = summary.ImagesBytes + summary.ThumbnailsBytes + summary.MetadataBytes + summary.ReferenceBytes
 	if summary.LimitBytes > 0 && summary.TotalBytes > summary.LimitBytes {
 		summary.OverLimitBytes = summary.TotalBytes - summary.LimitBytes
 	}
@@ -288,6 +502,7 @@ func (r *ImageStorageCleanupResult) addRemovalStats(stats imageStorageRemovalSta
 }
 
 func (s *ImageService) ListImages(baseURL, startDate, endDate string, scope ImageAccessScope) map[string]any {
+	_ = s.SyncObjectStoreIndex()
 	_, _ = s.CleanupStorage(ImageStorageCleanupOptions{
 		RetentionDays: s.config.ImageRetentionDays(),
 		MaxBytes:      s.config.ImageStorageLimitBytes(),
@@ -319,6 +534,7 @@ func (s *ImageService) ListImages(baseURL, startDate, endDate string, scope Imag
 			return nil
 		}
 		meta := s.imageMetadata(rel)
+		storedTime := storedImageTime(meta, info)
 		ownerID := meta.OwnerID
 		if scope.Public {
 			if meta.Visibility != ImageVisibilityPublic {
@@ -332,9 +548,9 @@ func (s *ImageService) ListImages(baseURL, startDate, endDate string, scope Imag
 			"name":       filepath.Base(path),
 			"path":       rel,
 			"date":       day,
-			"size":       info.Size(),
+			"size":       storedImageSize(meta, info),
 			"url":        publicAssetURL(baseURL, "images", rel),
-			"created_at": info.ModTime().Format("2006-01-02 15:04:05"),
+			"created_at": storedTime.Format("2006-01-02 15:04:05"),
 			"visibility": meta.Visibility,
 		}
 		addImageMetadataFields(item, meta, imageMetadataFieldOptions{
@@ -343,11 +559,11 @@ func (s *ImageService) ListImages(baseURL, startDate, endDate string, scope Imag
 			IncludeReferenceImages: !scope.Public || meta.ShareReferences,
 		})
 		if thumbRel, ok := thumb["thumbnail_rel"].(string); ok && thumbRel != "" {
-			item["thumbnail_url"] = thumbnailURL(baseURL, thumbRel, info.ModTime())
+			item["thumbnail_url"] = thumbnailURL(baseURL, thumbRel, storedTime)
 		} else {
 			item["thumbnail_url"] = ""
 		}
-		if !setImageItemDimensions(item, thumb["width"], thumb["height"]) {
+		if !setImageItemDimensions(item, firstNonZero(meta.Width, numericMetaValue(thumb["width"])), firstNonZero(meta.Height, numericMetaValue(thumb["height"]))) {
 			if width, height, ok := imageFileDimensions(path); ok {
 				setImageItemDimensions(item, width, height)
 			}
@@ -421,13 +637,15 @@ func (s *ImageService) UpdateImageVisibility(value, visibility string, scope Ima
 	item := map[string]any{
 		"name":       filepath.Base(ref.path),
 		"path":       ref.rel,
-		"date":       imageDay(ref.rel, ref.info.ModTime()),
-		"size":       ref.info.Size(),
+		"date":       imageDay(ref.rel, storedImageTime(nextMeta, ref.info)),
+		"size":       storedImageSize(nextMeta, ref.info),
 		"visibility": nextMeta.Visibility,
-		"created_at": ref.info.ModTime().Format("2006-01-02 15:04:05"),
+		"created_at": storedImageTime(nextMeta, ref.info).Format("2006-01-02 15:04:05"),
 	}
 	addImageMetadataFields(item, nextMeta)
-	if width, height, ok := imageFileDimensions(ref.path); ok {
+	if nextMeta.Width > 0 && nextMeta.Height > 0 {
+		setImageItemDimensions(item, nextMeta.Width, nextMeta.Height)
+	} else if width, height, ok := imageFileDimensions(ref.path); ok {
 		setImageItemDimensions(item, width, height)
 	}
 	return item, nil
@@ -454,11 +672,13 @@ func (s *ImageService) ImageFileAccess(value string, scope ImageAccessScope) (Im
 		return ImageFileAccess{}, errors.New("image not found")
 	}
 	return ImageFileAccess{
-		Rel:        ref.rel,
-		Path:       ref.path,
-		Info:       ref.info,
-		Visibility: meta.Visibility,
-		OwnerID:    meta.OwnerID,
+		Rel:         ref.rel,
+		Path:        ref.path,
+		Info:        ref.info,
+		Visibility:  meta.Visibility,
+		OwnerID:     meta.OwnerID,
+		Remote:      meta.StorageBackend == "s3",
+		ContentType: meta.ContentType,
 	}, nil
 }
 
@@ -516,11 +736,23 @@ func (s *ImageService) ImageBytes(value string, scope ImageAccessScope) ([]byte,
 	if err != nil {
 		return nil, "", err
 	}
-	data, err := os.ReadFile(access.Path)
+	var data []byte
+	contentType := access.ContentType
+	if access.Remote {
+		if s.objectStore == nil {
+			return nil, "", errors.New("image object storage is not configured")
+		}
+		data, contentType, err = s.objectStore.Get(context.Background(), access.Rel)
+	} else {
+		data, err = os.ReadFile(access.Path)
+	}
 	if err != nil {
 		return nil, "", err
 	}
-	mimeType := http.DetectContentType(data)
+	mimeType := strings.TrimSpace(contentType)
+	if mimeType == "" {
+		mimeType = http.DetectContentType(data)
+	}
 	if !strings.HasPrefix(mimeType, "image/") {
 		return nil, "", errors.New("unsupported image file")
 	}
@@ -708,12 +940,26 @@ func (s *ImageService) thumbnailCacheInfo(rel string, sourceModTime time.Time) (
 
 func (s *ImageService) generateThumbnail(ref imageFileRef) map[string]any {
 	thumbPath, result, _ := s.thumbnailCacheInfo(ref.rel, ref.info.ModTime())
-	file, err := os.Open(ref.path)
-	if err != nil {
-		return map[string]any{}
+	meta := s.imageMetadata(ref.rel)
+	var reader io.Reader
+	if meta.StorageBackend == "s3" {
+		if s.objectStore == nil {
+			return map[string]any{}
+		}
+		data, _, err := s.objectStore.Get(context.Background(), ref.rel)
+		if err != nil {
+			return map[string]any{}
+		}
+		reader = bytes.NewReader(data)
+	} else {
+		file, err := os.Open(ref.path)
+		if err != nil {
+			return map[string]any{}
+		}
+		defer file.Close()
+		reader = file
 	}
-	defer file.Close()
-	img, _, err := image.Decode(file)
+	img, _, err := image.Decode(reader)
 	if err != nil {
 		return map[string]any{}
 	}
@@ -851,6 +1097,12 @@ func normalizeImageMetadata(raw map[string]any) imageMetadata {
 		ReferenceImages:   normalizeImageReferenceMetadata(raw["reference_images"]),
 		SharePromptParams: boolMetadataValue(raw["share_prompt_parameters"]),
 		ShareReferences:   boolMetadataValue(raw["share_reference_images"]),
+		StorageBackend:    strings.TrimSpace(toString(raw["storage_backend"])),
+		StoredSize:        int64(numericMetaValue(raw["stored_size"])),
+		StoredAt:          strings.TrimSpace(toString(raw["stored_at"])),
+		ContentType:       strings.TrimSpace(toString(raw["content_type"])),
+		Width:             numericMetaValue(raw["width"]),
+		Height:            numericMetaValue(raw["height"]),
 	}
 }
 
@@ -1009,6 +1261,22 @@ func (s *ImageService) writeImageMetadata(rel string, meta imageMetadata) error 
 			value["reference_images"] = refs
 		}
 	}
+	if meta.StorageBackend != "" {
+		value["storage_backend"] = meta.StorageBackend
+	}
+	if meta.StoredSize > 0 {
+		value["stored_size"] = meta.StoredSize
+	}
+	if meta.StoredAt != "" {
+		value["stored_at"] = meta.StoredAt
+	}
+	if meta.ContentType != "" {
+		value["content_type"] = meta.ContentType
+	}
+	if meta.Width > 0 && meta.Height > 0 {
+		value["width"] = meta.Width
+		value["height"] = meta.Height
+	}
 	if s.store != nil {
 		return s.store.SaveJSONDocument(imageOwnerDocumentName(rel), value)
 	}
@@ -1136,7 +1404,7 @@ func (s *ImageService) imageCleanupCandidates() []imageCleanupCandidate {
 			path:      path,
 			info:      info,
 			meta:      meta,
-			groupSize: s.imageGroupSize(rel, info.Size()),
+			groupSize: s.imageGroupSize(rel, storedImageSize(meta, info)),
 		})
 		return nil
 	})
@@ -1151,7 +1419,7 @@ func (s *ImageService) cleanupByRetention(retentionDays int, includePublic bool)
 	var total imageStorageRemovalStats
 	preservedPublic := 0
 	for _, candidate := range s.imageCleanupCandidates() {
-		if !candidate.info.ModTime().Before(cutoff) {
+		if !storedImageTime(candidate.meta, candidate.info).Before(cutoff) {
 			continue
 		}
 		if candidate.meta.Visibility == ImageVisibilityPublic && !includePublic {
@@ -1182,7 +1450,7 @@ func (s *ImageService) cleanupByStorageLimit(maxBytes int64, includePublic bool)
 		if leftPublic != rightPublic {
 			return !leftPublic
 		}
-		return candidates[i].info.ModTime().Before(candidates[j].info.ModTime())
+		return storedImageTime(candidates[i].meta, candidates[i].info).Before(storedImageTime(candidates[j].meta, candidates[j].info))
 	})
 	current := summary.TotalBytes
 	var total imageStorageRemovalStats
@@ -1215,6 +1483,15 @@ func (s *ImageService) removeImageGroup(rel string) (imageStorageRemovalStats, e
 		return imageStorageRemovalStats{}, err
 	}
 	var stats imageStorageRemovalStats
+	meta := s.imageMetadata(rel)
+	if meta.StorageBackend == "s3" {
+		if s.objectStore == nil {
+			return stats, errors.New("image object storage is not configured")
+		}
+		if err := s.objectStore.Delete(context.Background(), rel); err != nil {
+			return stats, err
+		}
+	}
 	thumbnailRoot, err := filepath.Abs(s.config.ImageThumbnailsDir())
 	if err != nil {
 		return stats, err
@@ -1252,7 +1529,11 @@ func (s *ImageService) removeImageGroup(rel string) (imageStorageRemovalStats, e
 		return stats, err
 	} else if removed {
 		stats.images++
-		stats.bytes += bytes
+		if meta.StorageBackend == "s3" && meta.StoredSize > 0 {
+			stats.bytes += meta.StoredSize
+		} else {
+			stats.bytes += bytes
+		}
 	}
 	removeEmptyParentDirs(imageRoot, filepath.Dir(imagePath))
 	return stats, nil

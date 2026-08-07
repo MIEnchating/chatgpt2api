@@ -134,6 +134,9 @@ func (a *App) relayImageGenerations(ctx context.Context, payload map[string]any)
 		}
 		return result, stream, err
 	}
+	if stream != nil {
+		stream = a.localizeRelayImageStream(ctx, payload, stream)
+	}
 	if stream != nil && release != nil {
 		return result, relayImageStreamWithSlotRelease(ctx, stream, release), nil
 	}
@@ -168,6 +171,9 @@ func (a *App) relayImageEdits(ctx context.Context, payload map[string]any, image
 			release()
 		}
 		return result, stream, err
+	}
+	if stream != nil {
+		stream = a.localizeRelayImageStream(ctx, payload, stream)
 	}
 	if stream != nil && release != nil {
 		return result, relayImageStreamWithSlotRelease(ctx, stream, release), nil

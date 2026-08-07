@@ -209,6 +209,31 @@ func (s *Store) ImageStorageLimitBytes() int64 {
 	return int64(mb) * 1024 * 1024
 }
 
+func (s *Store) ImageStorageBackend() string {
+	value := strings.ToLower(strings.TrimSpace(os.Getenv("CHATGPT2API_IMAGE_STORAGE_BACKEND")))
+	if value == "" {
+		return "local"
+	}
+	return value
+}
+
+func (s *Store) S3Endpoint() string { return strings.TrimSpace(os.Getenv("CHATGPT2API_S3_ENDPOINT")) }
+func (s *Store) S3Region() string   { return strings.TrimSpace(os.Getenv("CHATGPT2API_S3_REGION")) }
+func (s *Store) S3Bucket() string   { return strings.TrimSpace(os.Getenv("CHATGPT2API_S3_BUCKET")) }
+func (s *Store) S3AccessKey() string {
+	return strings.TrimSpace(os.Getenv("CHATGPT2API_S3_ACCESS_KEY"))
+}
+func (s *Store) S3SecretKey() string {
+	return strings.TrimSpace(os.Getenv("CHATGPT2API_S3_SECRET_KEY"))
+}
+func (s *Store) S3SessionToken() string {
+	return strings.TrimSpace(os.Getenv("CHATGPT2API_S3_SESSION_TOKEN"))
+}
+func (s *Store) S3Prefix() string {
+	return strings.Trim(strings.TrimSpace(os.Getenv("CHATGPT2API_S3_PREFIX")), "/")
+}
+func (s *Store) S3UsePathStyle() bool { return envBool("CHATGPT2API_S3_USE_PATH_STYLE", false) }
+
 func (s *Store) LogRetentionDays() int {
 	value := intSetting(s.settingValue("log_retention_days", 7), 7)
 	if value < 1 {
@@ -462,6 +487,11 @@ func (s *Store) Get() map[string]any {
 	data["user_default_rpm_limit"] = s.UserDefaultRPMLimit()
 	data["image_retention_days"] = s.ImageRetentionDays()
 	data["image_storage_limit_mb"] = s.ImageStorageLimitMB()
+	data["image_storage_backend"] = s.ImageStorageBackend()
+	data["s3_bucket"] = s.S3Bucket()
+	data["s3_prefix"] = s.S3Prefix()
+	data["s3_endpoint_configured"] = s.S3Endpoint() != ""
+	data["s3_credentials_configured"] = s.S3AccessKey() != "" && s.S3SecretKey() != ""
 	data["log_retention_days"] = s.LogRetentionDays()
 	data["default_log_view"] = s.DefaultLogView()
 	data["auto_remove_invalid_accounts"] = s.AutoRemoveInvalidAccounts()
