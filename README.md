@@ -543,15 +543,3 @@ curl http://localhost:8000/v1/images/edits \
 | [内容类型枚举](./jshook/docs/content-type-enum.md) | 前端 zo 枚举还原 |
 | [函数名映射](./jshook/docs/function-mapping.md) | 混淆函数名 → 实际功能对照 |
 | [内部代号词典](./jshook/docs/internal-codenames.md) | 后端暗语/代号含义 |
-
-## Contributors
-
-感谢所有为本项目做出贡献的开发者：
-
-<a href="https://github.com/MIEnchating/chatgpt2api/graphs/contributors">
-  <img alt="Contributors" src="https://contrib.rocks/image?repo=MIEnchating/chatgpt2api" />
-</a>
-
-## Star History
-
-[![Star History Chart](https://api.star-history.com/chart?repos=MIEnchating/chatgpt2api&type=date&legend=top-left)](https://www.star-history.com/?repos=MIEnchating%2Fchatgpt2api&type=date&legend=top-left)
