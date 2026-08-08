@@ -8,6 +8,7 @@ import { useAuthGuard } from "@/lib/use-auth-guard";
 import { ConfigCard } from "./components/config-card";
 import { AnnouncementsCard } from "./components/announcements-card";
 import { ImageStorageGovernanceCard } from "./components/image-storage-governance-card";
+import { ImageObjectStorageCard } from "./components/image-object-storage-card";
 import { LogGovernanceCard } from "./components/log-governance-card";
 import { LoginPageImageCard } from "./components/login-page-image-card";
 import { SettingsHeader } from "./components/settings-header";
@@ -38,6 +39,7 @@ function AdminSettingsPageContent({ showAnnouncements }: { showAnnouncements: bo
         <section className="grid items-start gap-5 lg:grid-cols-2">
           <div className="flex min-w-0 flex-col gap-5">
             <ConfigCard />
+            <ImageObjectStorageCard />
             <ImageStorageGovernanceCard />
           </div>
           <div className="flex min-w-0 flex-col gap-5">

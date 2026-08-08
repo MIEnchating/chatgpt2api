@@ -226,7 +226,7 @@ docker compose pull
 docker compose up -d
 ```
 
-生产环境建议在 `.env` 中固定镜像版本，例如 `mienvirtuoso/chatgpt2api:1.3.9`。Git 标签使用 `v1.3.9`，Docker Hub 镜像标签使用不带 `v` 的 `1.3.9`。升级时先修改 `CHATGPT2API_IMAGE`，再执行上面的拉取和启动命令。
+生产环境建议在 `.env` 中固定镜像版本，例如 `mienvirtuoso/chatgpt2api:1.3.10`。Git 标签使用 `v1.3.10`，Docker Hub 镜像标签使用不带 `v` 的 `1.3.10`。升级时先修改 `CHATGPT2API_IMAGE`，再执行上面的拉取和启动命令。
 
 ### 源码部署升级
 
@@ -433,8 +433,8 @@ bun run build
 发布命令示例：
 
 ```bash
-git tag -a v1.3.9 -m "Release v1.3.9"
-git push origin v1.3.9
+git tag -a v1.3.10 -m "Release v1.3.10"
+git push origin v1.3.10
 ```
 
 ### Docker 镜像标签
