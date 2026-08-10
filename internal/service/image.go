@@ -186,7 +186,9 @@ type ImageService struct {
 	indexMu       sync.Mutex
 	thumbnailMu   sync.Mutex
 	thumbnailJobs map[string]*thumbnailJob
+	objectStoreMu sync.RWMutex
 	objectStore   ImageObjectStore
+	objectWrites  bool
 }
 
 type imageFileRef struct {
@@ -227,16 +229,39 @@ func NewImageService(config ImageConfig, backend ...storage.Backend) *ImageServi
 	return service
 }
 
-func (s *ImageService) SetObjectStore(store ImageObjectStore) error {
+func (s *ImageService) ConfigureObjectStore(store ImageObjectStore, writes bool) error {
 	if s == nil {
 		return errors.New("image service is nil")
 	}
+	if writes && store == nil {
+		return errors.New("image object storage is not configured")
+	}
+	s.objectStoreMu.Lock()
 	s.objectStore = store
-	return s.SyncObjectStoreIndex()
+	s.objectWrites = writes
+	s.objectStoreMu.Unlock()
+	return nil
+}
+
+func (s *ImageService) objectStoreSnapshot() (ImageObjectStore, bool) {
+	if s == nil {
+		return nil, false
+	}
+	s.objectStoreMu.RLock()
+	defer s.objectStoreMu.RUnlock()
+	return s.objectStore, s.objectWrites
 }
 
 func (s *ImageService) SyncObjectStoreIndex() error {
-	if s == nil || s.objectStore == nil || s.storePrefix == nil {
+	store, _ := s.objectStoreSnapshot()
+	if s == nil || store == nil || s.storePrefix == nil {
+		return nil
+	}
+	return s.syncObjectStoreIndex()
+}
+
+func (s *ImageService) syncObjectStoreIndex() error {
+	if s == nil || s.storePrefix == nil {
 		return nil
 	}
 	s.indexMu.Lock()
@@ -306,17 +331,37 @@ func (s *ImageService) SyncObjectStoreIndex() error {
 }
 
 func (s *ImageService) StorageBackend() string {
-	if s != nil && s.objectStore != nil {
-		return s.objectStore.Backend()
+	store, writes := s.objectStoreSnapshot()
+	if store != nil && writes {
+		return store.Backend()
 	}
 	return "local"
 }
 
 func (s *ImageService) ObjectStoreInfo() (string, string) {
-	if s == nil || s.objectStore == nil {
+	store, _ := s.objectStoreSnapshot()
+	if store == nil {
 		return "", ""
 	}
-	return s.objectStore.Bucket(), s.objectStore.Prefix()
+	return store.Bucket(), store.Prefix()
+}
+
+func (s *ImageService) ObjectStoredImageCount() (int, error) {
+	if s == nil || s.storePrefix == nil {
+		return 0, nil
+	}
+	documents, err := s.storePrefix.ListJSONDocuments("image_metadata/")
+	if err != nil {
+		return 0, err
+	}
+	count := 0
+	for _, raw := range documents {
+		metaRaw, ok := raw.(map[string]any)
+		if ok && strings.TrimSpace(toString(metaRaw["storage_backend"])) == "s3" {
+			count++
+		}
+	}
+	return count, nil
 }
 
 func (s *ImageService) SaveImageBytes(ctx context.Context, imageData []byte, baseURL, ownerID, ownerName, outputFormat string) (string, error) {
@@ -334,13 +379,16 @@ func (s *ImageService) SaveImageBytes(ctx context.Context, imageData []byte, bas
 	}
 	contentType := imageOutputContentType(outputFormat)
 	storageBackend := "local"
-	if s.objectStore != nil {
-		if err := s.objectStore.Put(ctx, rel, imageData, contentType); err != nil {
+	s.objectStoreMu.RLock()
+	objectStore, objectWrites := s.objectStore, s.objectWrites
+	defer s.objectStoreMu.RUnlock()
+	if objectStore != nil && objectWrites {
+		if err := objectStore.Put(ctx, rel, imageData, contentType); err != nil {
 			return "", err
 		}
-		storageBackend = s.objectStore.Backend()
+		storageBackend = objectStore.Backend()
 		if err := os.WriteFile(imagePath, nil, 0o644); err != nil {
-			_ = s.objectStore.Delete(ctx, rel)
+			_ = objectStore.Delete(ctx, rel)
 			return "", err
 		}
 	} else if err := os.WriteFile(imagePath, imageData, 0o644); err != nil {
@@ -354,8 +402,8 @@ func (s *ImageService) SaveImageBytes(ctx context.Context, imageData []byte, bas
 	}
 	if err := s.writeImageMetadata(rel, meta); err != nil {
 		_ = os.Remove(imagePath)
-		if s.objectStore != nil {
-			_ = s.objectStore.Delete(ctx, rel)
+		if objectStore != nil && objectWrites {
+			_ = objectStore.Delete(ctx, rel)
 		}
 		return "", err
 	}
@@ -739,10 +787,11 @@ func (s *ImageService) ImageBytes(value string, scope ImageAccessScope) ([]byte,
 	var data []byte
 	contentType := access.ContentType
 	if access.Remote {
-		if s.objectStore == nil {
+		objectStore, _ := s.objectStoreSnapshot()
+		if objectStore == nil {
 			return nil, "", errors.New("image object storage is not configured")
 		}
-		data, contentType, err = s.objectStore.Get(context.Background(), access.Rel)
+		data, contentType, err = objectStore.Get(context.Background(), access.Rel)
 	} else {
 		data, err = os.ReadFile(access.Path)
 	}
@@ -943,10 +992,11 @@ func (s *ImageService) generateThumbnail(ref imageFileRef) map[string]any {
 	meta := s.imageMetadata(ref.rel)
 	var reader io.Reader
 	if meta.StorageBackend == "s3" {
-		if s.objectStore == nil {
+		objectStore, _ := s.objectStoreSnapshot()
+		if objectStore == nil {
 			return map[string]any{}
 		}
-		data, _, err := s.objectStore.Get(context.Background(), ref.rel)
+		data, _, err := objectStore.Get(context.Background(), ref.rel)
 		if err != nil {
 			return map[string]any{}
 		}
@@ -1485,10 +1535,11 @@ func (s *ImageService) removeImageGroup(rel string) (imageStorageRemovalStats, e
 	var stats imageStorageRemovalStats
 	meta := s.imageMetadata(rel)
 	if meta.StorageBackend == "s3" {
-		if s.objectStore == nil {
+		objectStore, _ := s.objectStoreSnapshot()
+		if objectStore == nil {
 			return stats, errors.New("image object storage is not configured")
 		}
-		if err := s.objectStore.Delete(context.Background(), rel); err != nil {
+		if err := objectStore.Delete(context.Background(), rel); err != nil {
 			return stats, err
 		}
 	}

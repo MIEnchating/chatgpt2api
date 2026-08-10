@@ -63,6 +63,12 @@ function normalizeConfig(config: SettingsConfig): SettingsConfig {
     user_default_rpm_limit: Number(config.user_default_rpm_limit || 0),
     image_retention_days: Number(config.image_retention_days || 30),
     image_storage_limit_mb: Math.max(0, Number(config.image_storage_limit_mb) || 0),
+    image_storage_backend: config.image_storage_backend === "s3" ? "s3" : "local",
+    s3_endpoint: typeof config.s3_endpoint === "string" ? config.s3_endpoint.trim() : "",
+    s3_region: typeof config.s3_region === "string" ? config.s3_region.trim() : "",
+    s3_bucket: typeof config.s3_bucket === "string" ? config.s3_bucket.trim() : "",
+    s3_prefix: typeof config.s3_prefix === "string" ? config.s3_prefix.trim() : "",
+    s3_use_path_style: Boolean(config.s3_use_path_style),
     log_retention_days: Number(config.log_retention_days || 7),
     default_log_view: normalizeDefaultLogView(config.default_log_view),
     auto_remove_invalid_accounts: Boolean(config.auto_remove_invalid_accounts),
@@ -112,6 +118,12 @@ type SettingsStore = {
   setUserDefaultRpmLimit: (value: string) => void;
   setImageRetentionDays: (value: string) => void;
   setImageStorageLimitMb: (value: string) => void;
+  setImageStorageBackend: (value: "local" | "s3") => void;
+  setS3Endpoint: (value: string) => void;
+  setS3Region: (value: string) => void;
+  setS3Bucket: (value: string) => void;
+  setS3Prefix: (value: string) => void;
+  setS3UsePathStyle: (value: boolean) => void;
   setLogRetentionDays: (value: string) => void;
   setDefaultLogView: (value: LogView) => void;
   setAutoRemoveInvalidAccounts: (value: boolean) => void;
@@ -185,6 +197,12 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         user_default_rpm_limit: Math.max(0, Number(config.user_default_rpm_limit) || 0),
         image_retention_days: Math.max(1, Number(config.image_retention_days) || 30),
         image_storage_limit_mb: Math.max(0, Number(config.image_storage_limit_mb) || 0),
+        image_storage_backend: config.image_storage_backend === "s3" ? "s3" : "local",
+        s3_endpoint: String(config.s3_endpoint || "").trim(),
+        s3_region: String(config.s3_region || "").trim(),
+        s3_bucket: String(config.s3_bucket || "").trim(),
+        s3_prefix: String(config.s3_prefix || "").trim(),
+        s3_use_path_style: Boolean(config.s3_use_path_style),
         log_retention_days: Math.min(3650, Math.max(1, Number(config.log_retention_days) || 7)),
         default_log_view: normalizeDefaultLogView(config.default_log_view),
         auto_remove_invalid_accounts: Boolean(config.auto_remove_invalid_accounts),
@@ -201,6 +219,8 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       delete payload.newapi_token_groups;
       delete payload.chat_models;
       delete payload.default_chat_model;
+      delete payload.s3_endpoint_configured;
+      delete payload.s3_credentials_configured;
 
       const data = await updateSettingsConfig(payload);
       set({
@@ -210,6 +230,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         app_title: String(data.config.app_title || "云棉"),
         project_name: String(data.config.project_name || data.config.app_title || "云棉"),
       });
+      await get().loadImageStorageGovernance(true);
       toast.success("配置已保存");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "保存系统配置失败");
@@ -238,6 +259,30 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
 
   setImageStorageLimitMb: (value) => {
     set((state) => state.config ? { config: { ...state.config, image_storage_limit_mb: value } } : {});
+  },
+
+  setImageStorageBackend: (value) => {
+    set((state) => state.config ? { config: { ...state.config, image_storage_backend: value } } : {});
+  },
+
+  setS3Endpoint: (value) => {
+    set((state) => state.config ? { config: { ...state.config, s3_endpoint: value } } : {});
+  },
+
+  setS3Region: (value) => {
+    set((state) => state.config ? { config: { ...state.config, s3_region: value } } : {});
+  },
+
+  setS3Bucket: (value) => {
+    set((state) => state.config ? { config: { ...state.config, s3_bucket: value } } : {});
+  },
+
+  setS3Prefix: (value) => {
+    set((state) => state.config ? { config: { ...state.config, s3_prefix: value } } : {});
+  },
+
+  setS3UsePathStyle: (value) => {
+    set((state) => state.config ? { config: { ...state.config, s3_use_path_style: value } } : {});
   },
 
   setLogRetentionDays: (value) => {

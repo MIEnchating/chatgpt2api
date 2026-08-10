@@ -264,7 +264,7 @@ go build -tags=embed -o chatgpt2api ./internal
 | `CHATGPT2API_USER_DEFAULT_RPM_LIMIT` | `0` | 普通用户默认创作任务 RPM 限制，`0` 表示不限制 |
 | `CHATGPT2API_IMAGE_RETENTION_DAYS` | `30` | 生成图片及会话参考图保留天数；过期文件清理后仍保留历史文字、参数和任务元数据 |
 | `CHATGPT2API_IMAGE_STORAGE_LIMIT_MB` | `0` | 图片治理总容量上限，统计生成原图、缩略图、元数据和会话参考图；单位 MB，`0` 表示不按容量自动清理 |
-| `CHATGPT2API_IMAGE_STORAGE_BACKEND` | `local` | 图片原图存储后端，可选 `local` 或 `s3`；修改后需要重启 |
+| `CHATGPT2API_IMAGE_STORAGE_BACKEND` | `local` | 图片原图存储后端，可选 `local` 或 `s3`；也可以在管理端在线修改 |
 | `CHATGPT2API_S3_ENDPOINT` | 空 | S3 兼容服务地址，只能包含协议和主机，例如 R2 或 MinIO Endpoint |
 | `CHATGPT2API_S3_REGION` | 空 | S3 Region；Cloudflare R2 使用 `auto`，MinIO 通常可留空 |
 | `CHATGPT2API_S3_BUCKET` | 空 | 已创建的私有 Bucket 名称 |
@@ -303,7 +303,9 @@ CHATGPT2API_S3_PREFIX=images
 CHATGPT2API_S3_USE_PATH_STYLE=true
 ```
 
-Bucket 需要提前创建并建议保持私有。启用后，正式生图结果、图片库图片、无限画布上传图片及画布工具派生结果会保存到对象存储；缩略图继续作为本地按需缓存。创作台会话中的临时图生图参考附件仍保存在受保护的本地目录，并继续参与统一保留天数和容量治理。对象存储配置在启动时加载，修改后需要重启；切换只影响新图片，不自动迁移已有本地原图。
+Bucket 需要提前创建并建议保持私有。启用后，正式生图结果、图片库图片、无限画布上传图片及画布工具派生结果会保存到对象存储；缩略图继续作为本地按需缓存。创作台会话中的临时图生图参考附件仍保存在受保护的本地目录，并继续参与统一保留天数和容量治理。
+
+管理端设置页可以在线修改存储后端、Endpoint、Region、Bucket、对象前缀和 Path Style，保存后立即生效。Access Key、Secret Key 和 Session Token 仍只能通过服务端环境变量配置，修改凭据后需要重启服务。切换本地/S3只影响新图片写入位置，历史 S3 图片仍通过保留的读客户端访问；存在历史 S3 图片时，系统会禁止在线修改 Endpoint、Region、Bucket、前缀或 Path Style，避免旧图片失联。系统不会自动迁移已有图片。
 
 ### Docker 配置
 

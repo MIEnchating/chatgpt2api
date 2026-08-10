@@ -612,6 +612,124 @@ func TestSettingsCannotOverrideNewAPITokenGroup(t *testing.T) {
 	}
 }
 
+func TestSettingsReconfigureImageObjectStorageOnline(t *testing.T) {
+	t.Setenv("CHATGPT2API_IMAGE_STORAGE_BACKEND", "local")
+	t.Setenv("CHATGPT2API_S3_ENDPOINT", "")
+	t.Setenv("CHATGPT2API_S3_REGION", "")
+	t.Setenv("CHATGPT2API_S3_BUCKET", "")
+	t.Setenv("CHATGPT2API_S3_PREFIX", "")
+	t.Setenv("CHATGPT2API_S3_USE_PATH_STYLE", "false")
+	t.Setenv("CHATGPT2API_S3_ACCESS_KEY", "server-access")
+	t.Setenv("CHATGPT2API_S3_SECRET_KEY", "server-secret")
+	t.Setenv("CHATGPT2API_S3_SESSION_TOKEN", "server-session")
+	app := newTestApp(t)
+	defer app.Close()
+
+	req := httptest.NewRequest(http.MethodPost, "/api/settings", strings.NewReader(`{
+		"image_storage_backend":"s3",
+		"s3_endpoint":"http://minio:9000",
+		"s3_region":"us-east-1",
+		"s3_bucket":"online-images",
+		"s3_prefix":"gallery",
+		"s3_use_path_style":true,
+		"s3_access_key":"browser-access",
+		"s3_secret_key":"browser-secret",
+		"s3_session_token":"browser-session"
+	}`))
+	req.Header.Set("Authorization", adminAuthHeader(t, app))
+	res := httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("enable object storage status = %d body = %s", res.Code, res.Body.String())
+	}
+	if app.images.StorageBackend() != "s3" {
+		t.Fatalf("StorageBackend() = %q", app.images.StorageBackend())
+	}
+	if bucket, prefix := app.images.ObjectStoreInfo(); bucket != "online-images" || prefix != "gallery" {
+		t.Fatalf("ObjectStoreInfo() = %q, %q", bucket, prefix)
+	}
+	if app.config.S3AccessKey() != "server-access" || app.config.S3SecretKey() != "server-secret" || app.config.S3SessionToken() != "server-session" {
+		t.Fatal("browser-submitted credentials replaced server credentials")
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(res.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("settings response json: %v", err)
+	}
+	responseConfig := util.StringMap(payload["config"])
+	for _, key := range []string{"s3_access_key", "s3_secret_key", "s3_session_token"} {
+		if _, ok := responseConfig[key]; ok {
+			t.Fatalf("settings response leaked %s: %#v", key, responseConfig)
+		}
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/settings", strings.NewReader(`{"image_storage_backend":"local"}`))
+	req.Header.Set("Authorization", adminAuthHeader(t, app))
+	res = httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK || app.images.StorageBackend() != "local" {
+		t.Fatalf("switch to local status=%d backend=%q body=%s", res.Code, app.images.StorageBackend(), res.Body.String())
+	}
+	if bucket, _ := app.images.ObjectStoreInfo(); bucket != "online-images" {
+		t.Fatalf("local mode did not retain S3 read client: bucket=%q", bucket)
+	}
+}
+
+func TestSettingsRejectObjectLocationChangeWithStoredS3Images(t *testing.T) {
+	t.Setenv("CHATGPT2API_IMAGE_STORAGE_BACKEND", "s3")
+	t.Setenv("CHATGPT2API_S3_ENDPOINT", "https://s3.example.test")
+	t.Setenv("CHATGPT2API_S3_REGION", "us-east-1")
+	t.Setenv("CHATGPT2API_S3_BUCKET", "existing-images")
+	t.Setenv("CHATGPT2API_S3_PREFIX", "gallery")
+	t.Setenv("CHATGPT2API_S3_USE_PATH_STYLE", "false")
+	t.Setenv("CHATGPT2API_S3_ACCESS_KEY", "server-access")
+	t.Setenv("CHATGPT2API_S3_SECRET_KEY", "server-secret")
+	app := newTestApp(t)
+	defer app.Close()
+
+	backend, err := app.config.StorageBackend()
+	if err != nil {
+		t.Fatalf("StorageBackend() error = %v", err)
+	}
+	documents := backend.(storage.JSONDocumentBackend)
+	if err := documents.SaveJSONDocument("image_metadata/2026/08/10/existing.png.json", map[string]any{
+		"storage_backend": "s3",
+		"owner_id":        "admin",
+		"visibility":      service.ImageVisibilityPrivate,
+	}); err != nil {
+		t.Fatalf("SaveJSONDocument() error = %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/settings", strings.NewReader(`{"s3_bucket":"different-images"}`))
+	req.Header.Set("Authorization", adminAuthHeader(t, app))
+	res := httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusBadRequest || !strings.Contains(res.Body.String(), "switch image storage to local") {
+		t.Fatalf("active S3 location change status = %d body = %s", res.Code, res.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/settings", strings.NewReader(`{"image_storage_backend":"local"}`))
+	req.Header.Set("Authorization", adminAuthHeader(t, app))
+	res = httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK || app.images.StorageBackend() != "local" {
+		t.Fatalf("switch to local status=%d backend=%q body=%s", res.Code, app.images.StorageBackend(), res.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/settings", strings.NewReader(`{"s3_bucket":"different-images"}`))
+	req.Header.Set("Authorization", adminAuthHeader(t, app))
+	res = httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusBadRequest || !strings.Contains(res.Body.String(), "existing S3 images") {
+		t.Fatalf("location change status = %d body = %s", res.Code, res.Body.String())
+	}
+	if app.config.S3Bucket() != "existing-images" {
+		t.Fatalf("failed update was not rolled back: bucket=%q", app.config.S3Bucket())
+	}
+	if bucket, _ := app.images.ObjectStoreInfo(); bucket != "existing-images" {
+		t.Fatalf("active object store changed after rejection: bucket=%q", bucket)
+	}
+}
+
 func TestProfileBalanceReadsNewAPIUser(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()

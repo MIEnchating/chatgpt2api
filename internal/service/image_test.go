@@ -48,9 +48,12 @@ func (c testImageConfig) ImageStorageLimitBytes() int64 { return 0 }
 var allImages = ImageAccessScope{All: true}
 
 type memoryImageObjectStore struct {
-	mu      sync.Mutex
-	objects map[string][]byte
-	failPut error
+	mu         sync.Mutex
+	objects    map[string][]byte
+	failPut    error
+	putStarted chan struct{}
+	allowPut   chan struct{}
+	putOnce    sync.Once
 }
 
 func (s *memoryImageObjectStore) Backend() string { return "s3" }
@@ -60,6 +63,12 @@ func (s *memoryImageObjectStore) Prefix() string  { return "cloud-cotton" }
 func (s *memoryImageObjectStore) Put(_ context.Context, key string, data []byte, _ string) error {
 	if s.failPut != nil {
 		return s.failPut
+	}
+	if s.putStarted != nil {
+		s.putOnce.Do(func() { close(s.putStarted) })
+	}
+	if s.allowPut != nil {
+		<-s.allowPut
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -112,8 +121,8 @@ func TestImageServiceObjectStorageLifecycleAndIndexRecovery(t *testing.T) {
 	store := &memoryImageObjectStore{}
 	firstConfig := testImageConfig{root: t.TempDir()}
 	first := NewImageService(firstConfig, backend)
-	if err := first.SetObjectStore(store); err != nil {
-		t.Fatalf("SetObjectStore() error = %v", err)
+	if err := first.ConfigureObjectStore(store, true); err != nil {
+		t.Fatalf("ConfigureObjectStore() error = %v", err)
 	}
 	imageData := testPNGBytes(t, 32, 24)
 
@@ -143,8 +152,8 @@ func TestImageServiceObjectStorageLifecycleAndIndexRecovery(t *testing.T) {
 
 	secondConfig := testImageConfig{root: t.TempDir()}
 	second := NewImageService(secondConfig, backend)
-	if err := second.SetObjectStore(store); err != nil {
-		t.Fatalf("SetObjectStore() error = %v", err)
+	if err := second.ConfigureObjectStore(store, true); err != nil {
+		t.Fatalf("ConfigureObjectStore() error = %v", err)
 	}
 	items := second.ListImages("https://image.example.test", "", "", ImageAccessScope{OwnerID: "user-1"})["items"].([]map[string]any)
 	if len(items) != 1 || toString(items[0]["path"]) != rel || numericMetaValue(items[0]["width"]) != 32 || numericMetaValue(items[0]["height"]) != 24 {
@@ -185,8 +194,8 @@ func TestImageServiceObjectStorageLifecycleAndIndexRecovery(t *testing.T) {
 func TestImageServiceObjectStoragePutFailureDoesNotCreateImage(t *testing.T) {
 	config := testImageConfig{root: t.TempDir()}
 	service := NewImageService(config, newTestStorageBackend(t))
-	if err := service.SetObjectStore(&memoryImageObjectStore{failPut: errors.New("bucket unavailable")}); err != nil {
-		t.Fatalf("SetObjectStore() error = %v", err)
+	if err := service.ConfigureObjectStore(&memoryImageObjectStore{failPut: errors.New("bucket unavailable")}, true); err != nil {
+		t.Fatalf("ConfigureObjectStore() error = %v", err)
 	}
 	if value, err := service.SaveImageBytes(context.Background(), testPNGBytes(t, 8, 8), "https://image.example.test", "user", "User", "png"); err == nil || value != "" {
 		t.Fatalf("SaveImageBytes() value=%q error=%v", value, err)
@@ -194,6 +203,74 @@ func TestImageServiceObjectStoragePutFailureDoesNotCreateImage(t *testing.T) {
 	items := service.ListImages("https://image.example.test", "", "", allImages)["items"].([]map[string]any)
 	if len(items) != 0 {
 		t.Fatalf("failed object upload entered image list: %#v", items)
+	}
+}
+
+func TestImageServiceObjectStorageReadClientSurvivesLocalWriteSwitch(t *testing.T) {
+	backend := newTestStorageBackend(t)
+	store := &memoryImageObjectStore{}
+	config := testImageConfig{root: t.TempDir()}
+	service := NewImageService(config, backend)
+	if err := service.ConfigureObjectStore(store, true); err != nil {
+		t.Fatalf("ConfigureObjectStore(write) error = %v", err)
+	}
+	remoteURL, err := service.SaveImageBytes(context.Background(), testPNGBytes(t, 12, 10), "https://image.example.test", "user", "User", "png")
+	if err != nil {
+		t.Fatalf("SaveImageBytes(remote) error = %v", err)
+	}
+	remoteRel, _ := imageRelativePathFromValue(remoteURL)
+
+	if err := service.ConfigureObjectStore(store, false); err != nil {
+		t.Fatalf("ConfigureObjectStore(read-only) error = %v", err)
+	}
+	if service.StorageBackend() != "local" {
+		t.Fatalf("StorageBackend() = %q", service.StorageBackend())
+	}
+	if data, _, err := service.ImageBytes(remoteRel, ImageAccessScope{OwnerID: "user"}); err != nil || len(data) == 0 {
+		t.Fatalf("read remote image after local switch: bytes=%d error=%v", len(data), err)
+	}
+	localURL, err := service.SaveImageBytes(context.Background(), testPNGBytes(t, 9, 7), "https://image.example.test", "user", "User", "png")
+	if err != nil {
+		t.Fatalf("SaveImageBytes(local) error = %v", err)
+	}
+	localRel, _ := imageRelativePathFromValue(localURL)
+	if store.has(localRel) {
+		t.Fatalf("local image %q was uploaded to object storage", localRel)
+	}
+	if info, err := os.Stat(filepath.Join(config.ImagesDir(), filepath.FromSlash(localRel))); err != nil || info.Size() == 0 {
+		t.Fatalf("local image file info=%#v error=%v", info, err)
+	}
+}
+
+func TestImageServiceObjectStorageSwitchWaitsForActiveSave(t *testing.T) {
+	store := &memoryImageObjectStore{putStarted: make(chan struct{}), allowPut: make(chan struct{})}
+	service := NewImageService(testImageConfig{root: t.TempDir()}, newTestStorageBackend(t))
+	if err := service.ConfigureObjectStore(store, true); err != nil {
+		t.Fatalf("ConfigureObjectStore(write) error = %v", err)
+	}
+	saveDone := make(chan error, 1)
+	go func() {
+		_, err := service.SaveImageBytes(context.Background(), testPNGBytes(t, 10, 10), "https://image.example.test", "user", "User", "png")
+		saveDone <- err
+	}()
+	select {
+	case <-store.putStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for object upload")
+	}
+	switchDone := make(chan error, 1)
+	go func() { switchDone <- service.ConfigureObjectStore(store, false) }()
+	select {
+	case err := <-switchDone:
+		t.Fatalf("object storage switched before active save completed: %v", err)
+	case <-time.After(50 * time.Millisecond):
+	}
+	close(store.allowPut)
+	if err := <-saveDone; err != nil {
+		t.Fatalf("SaveImageBytes() error = %v", err)
+	}
+	if err := <-switchDone; err != nil {
+		t.Fatalf("ConfigureObjectStore(read-only) error = %v", err)
 	}
 }
 

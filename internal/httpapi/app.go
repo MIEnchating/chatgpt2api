@@ -73,6 +73,7 @@ type App struct {
 	cancel              context.CancelFunc
 	historyWriteLimiter *imageConversationHistoryWriteLimiter
 	imageUploadSlots    chan struct{}
+	settingsMu          sync.Mutex
 
 	imageCleanup             imageCleanupWorker
 	conversationAssetCleanup imageConversationAssetCleanupWorker
@@ -175,25 +176,9 @@ func NewApp() (*App, error) {
 	documentStore, _ := storageBackend.(storage.JSONDocumentBackend)
 	imageSessions := service.NewImageConversationSessionService(filepath.Join(cfg.DataDir, "image_conversation_sessions.json"), storageBackend)
 	images := service.NewImageService(cfg, storageBackend)
-	switch cfg.ImageStorageBackend() {
-	case "local":
-	case "s3":
-		objectStore, storeErr := service.NewS3ImageObjectStore(service.S3ImageObjectStoreConfig{
-			Endpoint: cfg.S3Endpoint(), Bucket: cfg.S3Bucket(), Region: cfg.S3Region(), Prefix: cfg.S3Prefix(),
-			AccessKey: cfg.S3AccessKey(), SecretKey: cfg.S3SecretKey(), SessionToken: cfg.S3SessionToken(),
-			UsePathStyle: cfg.S3UsePathStyle(),
-		})
-		if storeErr != nil {
-			cancel()
-			return nil, fmt.Errorf("initialize image object storage: %w", storeErr)
-		}
-		if storeErr := images.SetObjectStore(objectStore); storeErr != nil {
-			cancel()
-			return nil, fmt.Errorf("synchronize image object storage index: %w", storeErr)
-		}
-	default:
+	if storeErr := configureImageObjectStorage(cfg, images); storeErr != nil {
 		cancel()
-		return nil, fmt.Errorf("initialize image object storage: CHATGPT2API_IMAGE_STORAGE_BACKEND must be local or s3")
+		return nil, fmt.Errorf("initialize image object storage: %w", storeErr)
 	}
 	engine := &protocol.Engine{Accounts: accounts, Config: cfg, Storage: documentStore, Proxy: proxy, Logger: logger, ImageConversationSessions: imageSessions, Images: images}
 	app := &App{config: cfg, auth: auth, accounts: accounts, logs: logs, logger: logger, proxy: proxy, engine: engine, images: images, conversationAssets: service.NewImageConversationAssetService(filepath.Join(cfg.DataDir, "image_conversation_assets")), prompts: service.NewPromptFavoriteService(storageBackend), history: service.NewImageConversationHistoryService(storageBackend), canvas: service.NewCanvasDocumentService(storageBackend), announce: service.NewAnnouncementService(storageBackend), newAPIKeys: newAPIKeys, cancel: cancel, historyWriteLimiter: newImageConversationHistoryWriteLimiter(imageConversationHistoryWriteParallelism), imageUploadSlots: make(chan struct{}, 2)}
@@ -910,6 +895,8 @@ func (a *App) handleSettings(w http.ResponseWriter, r *http.Request) {
 	case http.MethodGet:
 		util.WriteJSON(w, http.StatusOK, map[string]any{"config": a.settingsConfig(r.Context())})
 	case http.MethodPost:
+		a.settingsMu.Lock()
+		defer a.settingsMu.Unlock()
 		body, err := readJSONMap(r)
 		if err != nil {
 			util.WriteError(w, http.StatusBadRequest, "invalid json body")
@@ -917,9 +904,20 @@ func (a *App) handleSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		delete(body, "newapi_token_group")
 		delete(body, "newapi_token_groups")
+		previousImageStorage := a.config.ImageStorageSettings()
+		nextImageStorage := a.config.ImageStorageSettingsWithUpdate(body)
+		objectStore, objectWrites, err := a.prepareImageObjectStorageChange(previousImageStorage, nextImageStorage)
+		if err != nil {
+			util.WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		updated, err := a.config.Update(body)
 		if err != nil {
 			util.WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if err := a.images.ConfigureObjectStore(objectStore, objectWrites); err != nil {
+			util.WriteError(w, http.StatusInternalServerError, "failed to activate object storage configuration")
 			return
 		}
 		if a.newAPIKeys != nil {
@@ -930,6 +928,78 @@ func (a *App) handleSettings(w http.ResponseWriter, r *http.Request) {
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
+}
+
+func configureImageObjectStorage(cfg *config.Store, images *service.ImageService) error {
+	if cfg == nil || images == nil {
+		return errors.New("image service is not configured")
+	}
+	settings := cfg.ImageStorageSettings()
+	count, err := images.ObjectStoredImageCount()
+	if err != nil {
+		return fmt.Errorf("read object-stored image metadata: %w", err)
+	}
+	store, writes, err := imageObjectStoreForSettings(cfg, settings)
+	if err != nil {
+		return err
+	}
+	if count > 0 && store == nil {
+		return errors.New("existing S3 images require the server S3 endpoint and credentials")
+	}
+	if err := images.ConfigureObjectStore(store, writes); err != nil {
+		return err
+	}
+	return images.SyncObjectStoreIndex()
+}
+
+func (a *App) prepareImageObjectStorageChange(previous, next config.ImageStorageSettings) (service.ImageObjectStore, bool, error) {
+	if a == nil || a.config == nil || a.images == nil {
+		return nil, false, errors.New("image service is not configured")
+	}
+	count, err := a.images.ObjectStoredImageCount()
+	if err != nil {
+		return nil, false, fmt.Errorf("read object-stored image metadata: %w", err)
+	}
+	locationChanged := !sameImageObjectStorageLocation(previous, next)
+	if locationChanged && previous.Backend != "local" {
+		return nil, false, errors.New("switch image storage to local before changing endpoint, region, bucket, prefix, or path style")
+	}
+	if count > 0 && locationChanged {
+		return nil, false, errors.New("existing S3 images prevent changing endpoint, region, bucket, prefix, or path style; migrate or delete those images first")
+	}
+	store, writes, err := imageObjectStoreForSettings(a.config, next)
+	if err != nil {
+		return nil, false, err
+	}
+	if count > 0 && store == nil {
+		return nil, false, errors.New("existing S3 images require the server S3 endpoint and credentials")
+	}
+	return store, writes, nil
+}
+
+func imageObjectStoreForSettings(cfg *config.Store, settings config.ImageStorageSettings) (service.ImageObjectStore, bool, error) {
+	if settings.Backend != "local" && settings.Backend != "s3" {
+		return nil, false, errors.New("image storage backend must be local or s3")
+	}
+	writes := settings.Backend == "s3"
+	hasLocation := settings.Endpoint != "" && settings.Bucket != ""
+	hasCredentials := cfg.S3AccessKey() != "" && cfg.S3SecretKey() != ""
+	if !writes && (!hasLocation || !hasCredentials) {
+		return nil, false, nil
+	}
+	store, err := service.NewS3ImageObjectStore(service.S3ImageObjectStoreConfig{
+		Endpoint: settings.Endpoint, Bucket: settings.Bucket, Region: settings.Region, Prefix: settings.Prefix,
+		AccessKey: cfg.S3AccessKey(), SecretKey: cfg.S3SecretKey(), SessionToken: cfg.S3SessionToken(),
+		UsePathStyle: settings.UsePathStyle,
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	return store, writes, nil
+}
+
+func sameImageObjectStorageLocation(left, right config.ImageStorageSettings) bool {
+	return left.Endpoint == right.Endpoint && left.Region == right.Region && left.Bucket == right.Bucket && left.Prefix == right.Prefix && left.UsePathStyle == right.UsePathStyle
 }
 
 func (a *App) settingsConfig(ctx context.Context) map[string]any {

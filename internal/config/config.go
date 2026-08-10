@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -33,6 +34,12 @@ var settingEnvKeys = map[string]string{
 	"user_default_rpm_limit":            "CHATGPT2API_USER_DEFAULT_RPM_LIMIT",
 	"image_retention_days":              "CHATGPT2API_IMAGE_RETENTION_DAYS",
 	"image_storage_limit_mb":            "CHATGPT2API_IMAGE_STORAGE_LIMIT_MB",
+	"image_storage_backend":             "CHATGPT2API_IMAGE_STORAGE_BACKEND",
+	"s3_endpoint":                       "CHATGPT2API_S3_ENDPOINT",
+	"s3_region":                         "CHATGPT2API_S3_REGION",
+	"s3_bucket":                         "CHATGPT2API_S3_BUCKET",
+	"s3_prefix":                         "CHATGPT2API_S3_PREFIX",
+	"s3_use_path_style":                 "CHATGPT2API_S3_USE_PATH_STYLE",
 	"auto_remove_invalid_accounts":      "CHATGPT2API_AUTO_REMOVE_INVALID_ACCOUNTS",
 	"auto_remove_rate_limited_accounts": "CHATGPT2API_AUTO_REMOVE_RATE_LIMITED_ACCOUNTS",
 	"log_retention_days":                "CHATGPT2API_LOG_RETENTION_DAYS",
@@ -75,6 +82,15 @@ type Store struct {
 	EnvFile        string
 	data           map[string]any
 	storageBackend storage.Backend
+}
+
+type ImageStorageSettings struct {
+	Backend      string
+	Endpoint     string
+	Region       string
+	Bucket       string
+	Prefix       string
+	UsePathStyle bool
 }
 
 type LinuxDoOAuthConfig struct {
@@ -210,16 +226,22 @@ func (s *Store) ImageStorageLimitBytes() int64 {
 }
 
 func (s *Store) ImageStorageBackend() string {
-	value := strings.ToLower(strings.TrimSpace(os.Getenv("CHATGPT2API_IMAGE_STORAGE_BACKEND")))
+	value := strings.ToLower(strings.TrimSpace(fmt.Sprint(s.settingValue("image_storage_backend", "local"))))
 	if value == "" {
 		return "local"
 	}
 	return value
 }
 
-func (s *Store) S3Endpoint() string { return strings.TrimSpace(os.Getenv("CHATGPT2API_S3_ENDPOINT")) }
-func (s *Store) S3Region() string   { return strings.TrimSpace(os.Getenv("CHATGPT2API_S3_REGION")) }
-func (s *Store) S3Bucket() string   { return strings.TrimSpace(os.Getenv("CHATGPT2API_S3_BUCKET")) }
+func (s *Store) S3Endpoint() string {
+	return strings.TrimSpace(fmt.Sprint(s.settingValue("s3_endpoint", "")))
+}
+func (s *Store) S3Region() string {
+	return strings.TrimSpace(fmt.Sprint(s.settingValue("s3_region", "")))
+}
+func (s *Store) S3Bucket() string {
+	return strings.TrimSpace(fmt.Sprint(s.settingValue("s3_bucket", "")))
+}
 func (s *Store) S3AccessKey() string {
 	return strings.TrimSpace(os.Getenv("CHATGPT2API_S3_ACCESS_KEY"))
 }
@@ -230,9 +252,48 @@ func (s *Store) S3SessionToken() string {
 	return strings.TrimSpace(os.Getenv("CHATGPT2API_S3_SESSION_TOKEN"))
 }
 func (s *Store) S3Prefix() string {
-	return strings.Trim(strings.TrimSpace(os.Getenv("CHATGPT2API_S3_PREFIX")), "/")
+	return strings.Trim(strings.TrimSpace(fmt.Sprint(s.settingValue("s3_prefix", ""))), "/")
 }
-func (s *Store) S3UsePathStyle() bool { return envBool("CHATGPT2API_S3_USE_PATH_STYLE", false) }
+func (s *Store) S3UsePathStyle() bool {
+	return util.ToBool(s.settingValue("s3_use_path_style", false))
+}
+
+func (s *Store) ImageStorageSettings() ImageStorageSettings {
+	return ImageStorageSettings{
+		Backend:      s.ImageStorageBackend(),
+		Endpoint:     s.S3Endpoint(),
+		Region:       s.S3Region(),
+		Bucket:       s.S3Bucket(),
+		Prefix:       s.S3Prefix(),
+		UsePathStyle: s.S3UsePathStyle(),
+	}
+}
+
+func (s *Store) ImageStorageSettingsWithUpdate(data map[string]any) ImageStorageSettings {
+	settings := s.ImageStorageSettings()
+	if value, ok := data["image_storage_backend"]; ok {
+		settings.Backend = strings.ToLower(strings.TrimSpace(fmt.Sprint(value)))
+		if settings.Backend == "" {
+			settings.Backend = "local"
+		}
+	}
+	if value, ok := data["s3_endpoint"]; ok {
+		settings.Endpoint = strings.TrimSpace(fmt.Sprint(value))
+	}
+	if value, ok := data["s3_region"]; ok {
+		settings.Region = strings.TrimSpace(fmt.Sprint(value))
+	}
+	if value, ok := data["s3_bucket"]; ok {
+		settings.Bucket = strings.TrimSpace(fmt.Sprint(value))
+	}
+	if value, ok := data["s3_prefix"]; ok {
+		settings.Prefix = strings.Trim(strings.TrimSpace(fmt.Sprint(value)), "/")
+	}
+	if value, ok := data["s3_use_path_style"]; ok {
+		settings.UsePathStyle = util.ToBool(value)
+	}
+	return settings
+}
 
 func (s *Store) LogRetentionDays() int {
 	value := intSetting(s.settingValue("log_retention_days", 7), 7)
@@ -488,8 +549,11 @@ func (s *Store) Get() map[string]any {
 	data["image_retention_days"] = s.ImageRetentionDays()
 	data["image_storage_limit_mb"] = s.ImageStorageLimitMB()
 	data["image_storage_backend"] = s.ImageStorageBackend()
+	data["s3_endpoint"] = s.S3Endpoint()
+	data["s3_region"] = s.S3Region()
 	data["s3_bucket"] = s.S3Bucket()
 	data["s3_prefix"] = s.S3Prefix()
+	data["s3_use_path_style"] = s.S3UsePathStyle()
 	data["s3_endpoint_configured"] = s.S3Endpoint() != ""
 	data["s3_credentials_configured"] = s.S3AccessKey() != "" && s.S3SecretKey() != ""
 	data["log_retention_days"] = s.LogRetentionDays()
@@ -523,7 +587,10 @@ func (s *Store) Update(data map[string]any) (map[string]any, error) {
 	s.mu.Lock()
 	next := util.CopyMap(s.data)
 	for key, value := range data {
-		if key == "linuxdo_client_secret_configured" {
+		if key == "linuxdo_client_secret_configured" || key == "s3_endpoint_configured" || key == "s3_credentials_configured" {
+			continue
+		}
+		if key == "s3_access_key" || key == "s3_secret_key" || key == "s3_session_token" {
 			continue
 		}
 		if key == "linuxdo_client_secret" && strings.TrimSpace(fmt.Sprint(value)) == "" {
@@ -547,6 +614,20 @@ func (s *Store) Update(data map[string]any) (map[string]any, error) {
 	if value, ok := next["image_storage_limit_mb"]; ok {
 		next["image_storage_limit_mb"] = normalizeNonNegativeInt(value)
 	}
+	if value, ok := next["image_storage_backend"]; ok {
+		next["image_storage_backend"] = strings.ToLower(strings.TrimSpace(fmt.Sprint(value)))
+	}
+	for _, key := range []string{"s3_endpoint", "s3_region", "s3_bucket"} {
+		if value, ok := next[key]; ok {
+			next[key] = strings.TrimSpace(fmt.Sprint(value))
+		}
+	}
+	if value, ok := next["s3_prefix"]; ok {
+		next["s3_prefix"] = strings.Trim(strings.TrimSpace(fmt.Sprint(value)), "/")
+	}
+	if value, ok := next["s3_use_path_style"]; ok {
+		next["s3_use_path_style"] = util.ToBool(value)
+	}
 	if value, ok := next["image_models"]; ok {
 		next["image_models"] = normalizeModelList(value, defaultImageModels)
 	}
@@ -562,8 +643,12 @@ func (s *Store) Update(data map[string]any) (map[string]any, error) {
 		s.mu.Unlock()
 		return nil, err
 	}
+	previous := s.data
 	s.data = next
 	err := s.saveLocked()
+	if err != nil {
+		s.data = previous
+	}
 	s.mu.Unlock()
 	if err != nil {
 		return nil, err
@@ -644,6 +729,37 @@ func (s *Store) validateSettingsUpdateLocked(data map[string]any) error {
 	if err := validateAbsoluteHTTPURL(relayBaseURL); err != nil {
 		return errors.New("baseurl must be an absolute http(s) URL")
 	}
+	imageStorageBackend := strings.ToLower(strings.TrimSpace(fmt.Sprint(s.settingValueFromData(data, "image_storage_backend", "local"))))
+	if imageStorageBackend == "" {
+		imageStorageBackend = "local"
+	}
+	if imageStorageBackend != "local" && imageStorageBackend != "s3" {
+		return errors.New("image storage backend must be local or s3")
+	}
+	s3Endpoint := strings.TrimSpace(fmt.Sprint(s.settingValueFromData(data, "s3_endpoint", "")))
+	s3Bucket := strings.TrimSpace(fmt.Sprint(s.settingValueFromData(data, "s3_bucket", "")))
+	s3Prefix := strings.Trim(strings.TrimSpace(fmt.Sprint(s.settingValueFromData(data, "s3_prefix", ""))), "/")
+	if s3Endpoint != "" {
+		if err := validateS3Endpoint(s3Endpoint); err != nil {
+			return err
+		}
+	}
+	if s3Prefix != "" {
+		if err := validateS3Prefix(s3Prefix); err != nil {
+			return err
+		}
+	}
+	if imageStorageBackend == "s3" {
+		if s3Endpoint == "" {
+			return errors.New("S3 endpoint is required")
+		}
+		if s3Bucket == "" {
+			return errors.New("S3 bucket is required")
+		}
+		if s.S3AccessKey() == "" || s.S3SecretKey() == "" {
+			return errors.New("S3 access key and secret key must be configured on the server")
+		}
+	}
 	linuxdo := s.linuxDoOAuthFromData(data)
 	if !linuxdo.Enabled {
 		return nil
@@ -674,6 +790,32 @@ func (s *Store) validateSettingsUpdateLocked(data map[string]any) error {
 		}
 	default:
 		return errors.New("Linuxdo token auth method must be one of client_secret_post, client_secret_basic, none")
+	}
+	return nil
+}
+
+func validateS3Endpoint(value string) error {
+	value = strings.TrimSpace(value)
+	if !strings.Contains(value, "://") {
+		value = "https://" + value
+	}
+	parsed, err := url.Parse(value)
+	if err != nil || parsed.Host == "" {
+		return errors.New("S3 endpoint must be a valid http(s) URL")
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return errors.New("S3 endpoint must use http or https")
+	}
+	if parsed.User != nil || parsed.Path != "" && parsed.Path != "/" || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return errors.New("S3 endpoint must not contain user info, a path, query, or fragment")
+	}
+	return nil
+}
+
+func validateS3Prefix(value string) error {
+	cleaned := path.Clean(strings.Trim(strings.TrimSpace(value), "/"))
+	if cleaned == "." || cleaned == ".." || strings.HasPrefix(cleaned, "../") || strings.Contains(cleaned, ":") {
+		return errors.New("S3 prefix is invalid")
 	}
 	return nil
 }

@@ -216,8 +216,11 @@ export type SettingsConfig = {
   image_retention_days?: number | string;
   image_storage_limit_mb?: number | string;
   image_storage_backend?: "local" | "s3" | string;
+  s3_endpoint?: string;
+  s3_region?: string;
   s3_bucket?: string;
   s3_prefix?: string;
+  s3_use_path_style?: boolean;
   s3_endpoint_configured?: boolean;
   s3_credentials_configured?: boolean;
   log_retention_days?: number | string;

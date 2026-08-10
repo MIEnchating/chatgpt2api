@@ -24,13 +24,69 @@ func TestStoreImageObjectStorageConfigDoesNotExposeCredentials(t *testing.T) {
 	}
 	config := store.Get()
 	assertConfigValue(t, config, "image_storage_backend", "s3")
+	assertConfigValue(t, config, "s3_endpoint", "https://s3.example.test")
 	assertConfigValue(t, config, "s3_bucket", "private-images")
 	assertConfigValue(t, config, "s3_prefix", "cloud-cotton/images")
 	assertConfigValue(t, config, "s3_endpoint_configured", true)
 	assertConfigValue(t, config, "s3_credentials_configured", true)
-	for _, key := range []string{"s3_endpoint", "s3_access_key", "s3_secret_key", "s3_session_token"} {
+	for _, key := range []string{"s3_access_key", "s3_secret_key", "s3_session_token"} {
 		if _, ok := config[key]; ok {
 			t.Fatalf("%s leaked in config response: %#v", key, config)
+		}
+	}
+
+	updated, err := store.Update(map[string]any{
+		"image_storage_backend": "local",
+		"s3_endpoint":           "http://minio:9000",
+		"s3_region":             "us-east-1",
+		"s3_bucket":             "next-images",
+		"s3_prefix":             "/gallery/",
+		"s3_use_path_style":     true,
+		"s3_access_key":         "browser-access-key",
+		"s3_secret_key":         "browser-secret-key",
+		"s3_session_token":      "browser-session-token",
+	})
+	if err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	assertConfigValue(t, updated, "image_storage_backend", "local")
+	assertConfigValue(t, updated, "s3_endpoint", "http://minio:9000")
+	assertConfigValue(t, updated, "s3_region", "us-east-1")
+	assertConfigValue(t, updated, "s3_bucket", "next-images")
+	assertConfigValue(t, updated, "s3_prefix", "gallery")
+	assertConfigValue(t, updated, "s3_use_path_style", true)
+	if store.S3AccessKey() != "test-access-key" || store.S3SecretKey() != "test-secret-key" || store.S3SessionToken() != "test-session-token" {
+		t.Fatal("browser-submitted S3 credentials replaced server credentials")
+	}
+	envData, err := os.ReadFile(filepath.Join(root, ".env"))
+	if err != nil {
+		t.Fatalf("read .env: %v", err)
+	}
+	envText := string(envData)
+	for _, forbidden := range []string{"browser-access-key", "browser-secret-key", "browser-session-token"} {
+		if strings.Contains(envText, forbidden) {
+			t.Fatalf("browser credential %q persisted in .env", forbidden)
+		}
+	}
+}
+
+func TestStoreRejectsInvalidImageObjectStorageSettings(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("CHATGPT2API_ROOT", root)
+	t.Setenv("CHATGPT2API_S3_ACCESS_KEY", "access")
+	t.Setenv("CHATGPT2API_S3_SECRET_KEY", "secret")
+	store, err := NewStore()
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	for _, update := range []map[string]any{
+		{"image_storage_backend": "ftp"},
+		{"image_storage_backend": "s3", "s3_endpoint": "https://s3.example.test/path", "s3_bucket": "images"},
+		{"image_storage_backend": "s3", "s3_endpoint": "https://s3.example.test", "s3_bucket": ""},
+		{"image_storage_backend": "local", "s3_prefix": "../images"},
+	} {
+		if _, err := store.Update(update); err == nil {
+			t.Fatalf("Update(%#v) accepted invalid object storage settings", update)
 		}
 	}
 }
