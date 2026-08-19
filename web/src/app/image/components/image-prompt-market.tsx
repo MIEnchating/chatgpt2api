@@ -1,18 +1,20 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ClipboardCopy, LoaderCircle, RefreshCcw, Search, SlidersHorizontal, Star } from "lucide-react";
+import { ChevronDown, ChevronUp, ClipboardCopy, LoaderCircle, RefreshCcw, Search, SlidersHorizontal, Star } from "lucide-react";
 import { toast } from "sonner";
 
 import {
-  PROMPT_MARKET_SOURCE_OPTIONS,
+  DEFAULT_PROMPT_MARKET_SOURCES,
   fetchPromptMarketPrompts,
+  normalizePromptMarketSources,
   type BananaPrompt,
   type BananaPromptMode,
   type PromptMarketLanguage,
   type PromptMarketLocalization,
   type PromptMarketSourceId,
 } from "@/app/image/banana-prompts";
+import { fetchSettingsConfig } from "@/lib/api";
 import {
   createPromptFavorite,
   deletePromptFavorite,
@@ -117,6 +119,7 @@ function buildPromptJSON(prompt: BananaPrompt) {
       prompt: prompt.prompt,
       mode: prompt.mode,
       category: prompt.category,
+      tags: prompt.tags,
       sub_category: prompt.subCategory || undefined,
       reference_image_urls: getPromptReferenceImageUrls(prompt),
       preview: prompt.preview,
@@ -154,6 +157,7 @@ function PromptPreviewImage({ prompt }: { prompt: BananaPrompt }) {
 
 export function ImagePromptMarket({ open, canViewAdultContent, onOpenChange, onApplyPrompt }: ImagePromptMarketProps) {
   const [prompts, setPrompts] = useState<BananaPrompt[]>([]);
+  const [sourceConfigs, setSourceConfigs] = useState(DEFAULT_PROMPT_MARKET_SOURCES);
   const [favoriteItems, setFavoriteItems] = useState<PromptFavorite[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingFavorites, setIsLoadingFavorites] = useState(false);
@@ -161,6 +165,8 @@ export function ImagePromptMarket({ open, canViewAdultContent, onOpenChange, onA
   const [favoriteError, setFavoriteError] = useState("");
   const [keyword, setKeyword] = useState("");
   const [favoriteFilter, setFavoriteFilter] = useState<PromptMarketFavoriteFilter>("all");
+  const [tagFilter, setTagFilter] = useState("");
+  const [tagsExpanded, setTagsExpanded] = useState(false);
   const [source, setSource] = useState<PromptMarketSourceFilter>("all");
   const [promptLanguage, setPromptLanguage] = useState<PromptMarketLanguage>("zh-CN");
   const [category, setCategory] = useState(ALL_CATEGORY_VALUE);
@@ -179,7 +185,7 @@ export function ImagePromptMarket({ open, canViewAdultContent, onOpenChange, onA
     setIsLoading(true);
     setError("");
 
-    void fetchPromptMarketPrompts()
+    void fetchPromptMarketPrompts(undefined, sourceConfigs)
       .then((items) => {
         setPrompts(items);
       })
@@ -218,7 +224,12 @@ export function ImagePromptMarket({ open, canViewAdultContent, onOpenChange, onA
     setError("");
     const controller = new AbortController();
 
-    void fetchPromptMarketPrompts(controller.signal)
+    void fetchSettingsConfig()
+      .then(({ config }) => {
+        const configured = normalizePromptMarketSources(config.prompt_sources);
+        setSourceConfigs(configured);
+        return fetchPromptMarketPrompts(controller.signal, configured);
+      })
       .then((items) => {
         setPrompts(items);
       })
@@ -269,6 +280,8 @@ export function ImagePromptMarket({ open, canViewAdultContent, onOpenChange, onA
 
   useEffect(() => {
     setVisibleCount(INITIAL_VISIBLE_COUNT);
+    setTagFilter("");
+    setTagsExpanded(false);
     scrollAreaRef.current?.scrollTo({ top: 0 });
   }, [keyword, source, promptLanguage, category, mode, nsfwFilter, favoriteFilter]);
 
@@ -328,6 +341,13 @@ export function ImagePromptMarket({ open, canViewAdultContent, onOpenChange, onA
     return [...values].sort((a, b) => a.localeCompare(b, "zh-CN"));
   }, [promptLanguage, sourceFilteredPrompts]);
 
+  const tags = useMemo(() => {
+    const counts = new Map<string, number>();
+    sourceFilteredPrompts.forEach((prompt) => prompt.tags.forEach((tag) => counts.set(tag, (counts.get(tag) || 0) + 1)));
+    return [...counts].sort(([leftTag, leftCount], [rightTag, rightCount]) => rightCount - leftCount || leftTag.localeCompare(rightTag, "zh-CN")).map(([tag]) => tag).slice(0, 60);
+  }, [sourceFilteredPrompts]);
+  const displayedTags = tagsExpanded ? tags : tags.slice(0, 12);
+
   useEffect(() => {
     if (category !== ALL_CATEGORY_VALUE && !categories.includes(category)) {
       setCategory(ALL_CATEGORY_VALUE);
@@ -351,6 +371,9 @@ export function ImagePromptMarket({ open, canViewAdultContent, onOpenChange, onA
       if (mode !== "all" && localizedPrompt.mode !== mode) {
         return false;
       }
+      if (tagFilter && !localizedPrompt.tags.includes(tagFilter)) {
+        return false;
+      }
       if (!normalizedKeyword) {
         return true;
       }
@@ -364,21 +387,22 @@ export function ImagePromptMarket({ open, canViewAdultContent, onOpenChange, onA
         includesKeyword(localizedPrompt.sourceLabel, normalizedKeyword)
       );
     });
-  }, [canViewAdultContent, category, keyword, mode, nsfwFilter, promptLanguage, sourceFilteredPrompts]);
+  }, [canViewAdultContent, category, keyword, mode, nsfwFilter, promptLanguage, sourceFilteredPrompts, tagFilter]);
 
   const visiblePrompts = filteredPrompts.slice(0, visibleCount);
   const hasMore = visiblePrompts.length < filteredPrompts.length;
-  const selectedSourceLabel =
-    source === "all" ? "" : PROMPT_MARKET_SOURCE_OPTIONS.find((item) => item.value === source)?.label || source;
+  const selectedSourceLabel = source === "all" ? "" : sourceConfigs.find((item) => item.id === source)?.label || source;
   const selectedLanguageLabel = promptLanguage === "zh-CN" ? "" : "英文";
   const selectedCategoryLabel = category === ALL_CATEGORY_VALUE ? "" : category;
   const selectedModeLabel = mode === "all" ? "" : mode === "edit" ? "编辑" : "文生图";
   const selectedNsfwLabel =
     nsfwFilter === "safe" ? "" : nsfwFilter === "include" ? "包含成人内容" : "仅成人内容";
   const selectedFavoriteLabel = favoriteFilter === "favorites" ? "已收藏" : "";
+  const selectedTagLabel = tagFilter ? `标签：${tagFilter}` : "";
   const activeFilterLabels = [
     selectedFavoriteLabel,
     selectedSourceLabel,
+    selectedTagLabel,
     selectedLanguageLabel,
     selectedCategoryLabel,
     selectedModeLabel,
@@ -393,6 +417,7 @@ export function ImagePromptMarket({ open, canViewAdultContent, onOpenChange, onA
     setCategory(ALL_CATEGORY_VALUE);
     setMode("all");
     setNsfwFilter("safe");
+    setTagFilter("");
   };
 
   const setFavoriteBusy = (id: string, busy: boolean) => {
@@ -479,8 +504,8 @@ export function ImagePromptMarket({ open, canViewAdultContent, onOpenChange, onA
         <SelectContent>
           <SelectGroup>
             <SelectItem value="all">全部</SelectItem>
-            {PROMPT_MARKET_SOURCE_OPTIONS.map((item) => (
-              <SelectItem key={item.value} value={item.value}>
+            {sourceConfigs.map((item) => (
+              <SelectItem key={item.id} value={item.id}>
                 {item.label}
               </SelectItem>
             ))}
@@ -554,9 +579,9 @@ export function ImagePromptMarket({ open, canViewAdultContent, onOpenChange, onA
         <DialogHeader className="border-b border-[#f2f3f5] px-4 pt-4 pr-12 pb-3 sm:px-6 sm:pt-5 sm:pr-14 sm:pb-4">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
-              <DialogTitle className="text-xl leading-tight sm:text-2xl">Prompts 提示词市场</DialogTitle>
+              <DialogTitle className="text-xl leading-tight sm:text-2xl">提示词市场</DialogTitle>
               <DialogDescription className="mt-2 hidden leading-6 sm:block">
-                可按分类、模式和收藏筛选，并一键套用到当前生图输入框。
+                搜索、筛选并收藏提示词，一键套用到当前生图输入框。
               </DialogDescription>
             </div>
             <div className="flex shrink-0 items-center gap-2 pt-0.5 text-xs text-[#8e8e93]">
@@ -659,6 +684,61 @@ export function ImagePromptMarket({ open, canViewAdultContent, onOpenChange, onA
               {renderFilterControls("min-w-0")}
             </div>
           </div>
+          {tags.length > 0 ? (
+            <div className="mt-3 flex min-w-0 items-center gap-2">
+              <span className="shrink-0 text-xs font-medium text-muted-foreground">标签</span>
+              <div className="hide-scrollbar flex min-w-0 flex-1 flex-nowrap items-center gap-1.5 overflow-x-auto md:flex-wrap md:overflow-visible">
+                <button
+                  type="button"
+                  onClick={() => setTagFilter("")}
+                  className={cn(
+                    "shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors",
+                    !tagFilter
+                      ? "bg-foreground text-background"
+                      : "bg-muted/70 text-muted-foreground hover:bg-muted hover:text-foreground",
+                  )}
+                >
+                  全部
+                </button>
+                {displayedTags.map((tag) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() => setTagFilter((current) => current === tag ? "" : tag)}
+                    className={cn(
+                      "max-w-44 shrink-0 truncate rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors",
+                      tagFilter === tag
+                        ? "bg-[#1456f0] text-white"
+                        : "bg-muted/70 text-muted-foreground hover:bg-muted hover:text-foreground",
+                    )}
+                    title={tag}
+                  >
+                    {tag}
+                  </button>
+                ))}
+                {tags.length > 12 ? (
+                  <button
+                    type="button"
+                    onClick={() => setTagsExpanded((current) => !current)}
+                    className="inline-flex shrink-0 items-center gap-0.5 rounded-full px-2 py-1 text-[11px] font-medium text-[#1456f0] transition-colors hover:bg-[#1456f0]/10"
+                    aria-expanded={tagsExpanded}
+                  >
+                    {tagsExpanded ? (
+                      <>
+                        收起
+                        <ChevronUp className="size-3" />
+                      </>
+                    ) : (
+                      <>
+                        更多 {tags.length - 12}
+                        <ChevronDown className="size-3" />
+                      </>
+                    )}
+                  </button>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
           {favoriteError ? (
             <div className="mt-2 flex items-center justify-between gap-3 rounded-[12px] bg-[#fff7ed] px-3 py-2 text-xs text-[#9a3412]">
               <span>{favoriteError}</span>
@@ -784,6 +864,21 @@ export function ImagePromptMarket({ open, canViewAdultContent, onOpenChange, onA
                           </div>
                         </div>
                         <p className="line-clamp-4 text-sm leading-6 text-[#45515e]">{localizedPrompt.prompt}</p>
+                        {localizedPrompt.tags.length > 0 ? (
+                          <div className="flex flex-wrap gap-1.5">
+                            {localizedPrompt.tags.slice(0, 3).map((tag) => (
+                              <button
+                                key={tag}
+                                type="button"
+                                onClick={() => setTagFilter(tag)}
+                                className="max-w-40 truncate rounded-md bg-muted/70 px-2 py-1 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                                title={tag}
+                              >
+                                {tag}
+                              </button>
+                            ))}
+                          </div>
+                        ) : null}
                         <div className="mt-auto flex flex-wrap justify-end gap-2 border-t border-[#f2f3f5] pt-3">
                           <Button
                             type="button"

@@ -1098,7 +1098,11 @@ func normalizeRegisterMailConfig(raw map[string]any) map[string]any {
 }
 
 func (s *RegisterService) load() map[string]any {
-	raw, ok := loadStoredJSON(s.store, s.docName).(map[string]any)
+	rawValue, err := loadStoredJSON(s.store, s.docName)
+	if err != nil {
+		return normalizeRegisterConfig(nil)
+	}
+	raw, ok := rawValue.(map[string]any)
 	if !ok {
 		return normalizeRegisterConfig(nil)
 	}

@@ -54,14 +54,14 @@ function DialogContent({
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
-          "fixed top-[50%] left-[50%] z-50 grid max-h-[calc(100dvh-2rem)] w-[min(92vw,560px)] translate-x-[-50%] translate-y-[-50%] gap-4 overflow-y-auto overscroll-contain rounded-2xl border border-border bg-background p-5 shadow-[0_28px_90px_-36px_rgba(15,23,42,0.45)] duration-200 data-[state=open]:animate-in sm:p-6",
+            "fixed top-[50%] left-[50%] z-50 grid max-h-[calc(100dvh-2rem)] w-[min(92vw,560px)] translate-x-[-50%] translate-y-[-50%] gap-4 overflow-y-auto overscroll-contain rounded-xl border border-border bg-background p-5 shadow-[0_24px_70px_-32px_rgba(15,23,42,0.42)] duration-200 data-[state=open]:animate-in sm:p-6",
           className,
         )}
         {...props}
       >
         {children}
         {showCloseButton ? (
-          <DialogPrimitive.Close className="ring-offset-background focus:ring-ring data-[state=open]:bg-accent data-[state=open]:text-muted-foreground absolute top-4 right-4 rounded-full p-1 opacity-70 transition-opacity hover:opacity-100 focus:ring-2 focus:outline-none disabled:pointer-events-none">
+          <DialogPrimitive.Close aria-label="关闭" className="ring-offset-background focus:ring-ring data-[state=open]:bg-accent data-[state=open]:text-muted-foreground absolute top-4 right-4 rounded-full p-1.5 opacity-70 transition-colors hover:bg-accent hover:opacity-100 focus:ring-2 focus:outline-none disabled:pointer-events-none">
             <X className="size-4" />
             <span className="sr-only">Close</span>
           </DialogPrimitive.Close>

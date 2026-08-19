@@ -37,15 +37,15 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
-test("owner scope is stable across token rotation and isolated by subject", () => {
+test("owner scope is stable across credential rotation and isolated by subject", () => {
   const first = imageConversationOwnerScope(session());
   const rotated = imageConversationOwnerScope(session({ key: "token-rotated" }));
   const otherUser = imageConversationOwnerScope(session({ subjectId: "newapi:84" }));
 
   assert.equal(first, rotated);
   assert.notEqual(first, otherUser);
-  assert.equal(imageConversationScopeBinding(session()).authorization, "Bearer token-a");
-  assert.equal(imageConversationScopeBinding(null).authorization, "Bearer __no_auth_session__");
+  assert.equal(imageConversationScopeBinding(session()).credentialScope, "token-a");
+  assert.equal(imageConversationScopeBinding(null).credentialScope, "");
 });
 
 test("account switch rejects unsent old writes without blocking the new account", async () => {
@@ -54,18 +54,18 @@ test("account switch rejects unsent old writes without blocking the new account"
   const oldRequestStarted = deferred();
   const finishOldRequest = deferred();
   const publishedScopes = [];
-  const requestAuthorizations = [];
+  const requestCredentialScopes = [];
 
   const runningOldWrite = enqueueScopedWrite(
     oldScope.writes,
     () => runCurrentImageConversationScopeOperation(coordinator, oldScope, async () => {
-      requestAuthorizations.push(oldScope.authorization);
+      requestCredentialScopes.push(oldScope.credentialScope);
       oldRequestStarted.resolve();
       await finishOldRequest.promise;
       if (coordinator.isCurrent(oldScope)) {
         publishedScopes.push(oldScope.ownerScope);
       }
-      return oldScope.authorization;
+      return oldScope.credentialScope;
     }),
   );
   await oldRequestStarted.promise;
@@ -82,9 +82,9 @@ test("account switch rejects unsent old writes without blocking the new account"
     username: "bob",
     name: "Bob",
   })));
-  const newWrite = enqueueScopedWrite(newScope.writes, async () => newScope.authorization);
+  const newWrite = enqueueScopedWrite(newScope.writes, async () => newScope.credentialScope);
 
-  assert.equal(await newWrite, "Bearer token-b");
+  assert.equal(await newWrite, "token-b");
   await unsentRejection;
   assert.equal(coordinator.isCurrent(oldScope), false);
   assert.equal(coordinator.isCurrent(newScope), true);
@@ -95,11 +95,11 @@ test("account switch rejects unsent old writes without blocking the new account"
   );
   finishOldRequest.resolve();
   await runningRejection;
-  assert.deepEqual(requestAuthorizations, ["Bearer token-a"]);
+  assert.deepEqual(requestCredentialScopes, ["token-a"]);
   assert.deepEqual(publishedScopes, []);
 });
 
-test("a token change retires the previous lease even for the same owner", async () => {
+test("a credential change retires the previous lease even for the same owner", async () => {
   const coordinator = new ImageConversationSessionScopeCoordinator();
   const first = coordinator.activate(imageConversationScopeBinding(session()));
   const blocker = deferred();
@@ -114,7 +114,7 @@ test("a token change retires the previous lease even for the same owner", async 
   const rotated = coordinator.activate(imageConversationScopeBinding(session({ key: "token-rotated" })));
   assert.notEqual(rotated, first);
   assert.equal(rotated.ownerScope, first.ownerScope);
-  assert.equal(rotated.authorization, "Bearer token-rotated");
+  assert.equal(rotated.credentialScope, "token-rotated");
   await pendingRejection;
 
   blocker.resolve();

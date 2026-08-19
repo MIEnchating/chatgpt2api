@@ -151,7 +151,7 @@ export function effectiveStoredImageLoadingPhase(
 }
 
 export function hasTaskOutput(item: CreationTaskData | undefined) {
-  return Boolean(item?.b64_json || item?.url || item?.text_response);
+  return Boolean(item?.b64_json || item?.url || item?.video_url || item?.text_response);
 }
 
 export function taskDataIsPreview(item: CreationTaskData | undefined) {

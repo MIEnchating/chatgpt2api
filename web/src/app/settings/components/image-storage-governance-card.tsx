@@ -191,7 +191,7 @@ export function ImageStorageGovernanceCard() {
                   </p>
                   <p className="mt-1 break-all text-xs leading-5 text-muted-foreground">
                     {usesObjectStorage
-                      ? `Bucket：${governance?.object_storage_bucket || "未配置"}${governance?.object_storage_prefix ? ` · 前缀：${governance.object_storage_prefix}` : ""}`
+                      ? `存储桶：${governance?.object_storage_bucket || "未配置"}${governance?.object_storage_prefix ? ` · 前缀：${governance.object_storage_prefix}` : ""}`
                       : "原图保存在当前服务的数据目录中。"}
                   </p>
                 </div>

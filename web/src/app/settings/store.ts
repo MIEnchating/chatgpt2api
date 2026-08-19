@@ -24,6 +24,7 @@ import {
   type SettingsConfig,
 } from "@/lib/api";
 import { dispatchAppMetaUpdated } from "@/lib/app-meta";
+import { normalizePromptMarketSources, type PromptMarketSourceConfig } from "@/app/image/banana-prompts";
 import {
   LOGIN_PAGE_IMAGE_DEFAULT_TRANSFORM,
   normalizeLoginPageImageMode,
@@ -59,6 +60,8 @@ function normalizeConfig(config: SettingsConfig): SettingsConfig {
     image_task_timeout_seconds: Number(config.image_task_timeout_seconds || 300),
     image_models: normalizeModelNames(config.image_models, DEFAULT_IMAGE_MODELS),
     default_image_model: String(config.default_image_model || DEFAULT_IMAGE_MODELS[0]),
+    video_models: normalizeModelNames(config.video_models, ["sora-2"]),
+    default_video_model: String(config.default_video_model || config.video_models?.[0] || "sora-2"),
     user_default_concurrent_limit: Number(config.user_default_concurrent_limit || 0),
     user_default_rpm_limit: Number(config.user_default_rpm_limit || 0),
     image_retention_days: Number(config.image_retention_days || 30),
@@ -92,6 +95,7 @@ function normalizeConfig(config: SettingsConfig): SettingsConfig {
     login_page_image_zoom: loginImageTransform.zoom,
     login_page_image_position_x: loginImageTransform.positionX,
     login_page_image_position_y: loginImageTransform.positionY,
+    prompt_sources: normalizePromptMarketSources(config.prompt_sources),
   };
 }
 
@@ -114,6 +118,7 @@ type SettingsStore = {
   setRefreshAccountIntervalMinute: (value: string) => void;
   setImageTaskTimeoutSeconds: (value: string) => void;
   setImageModels: (value: string) => void;
+  setVideoModels: (value: string) => void;
   setUserDefaultConcurrentLimit: (value: string) => void;
   setUserDefaultRpmLimit: (value: string) => void;
   setImageRetentionDays: (value: string) => void;
@@ -135,6 +140,7 @@ type SettingsStore = {
   setBaseUrl: (value: string) => void;
   setRelayBaseUrl: (value: string) => void;
   setAppTitle: (value: string) => void;
+  setPromptSources: (value: PromptMarketSourceConfig[]) => void;
   saveSiteIcon: (options: { file?: File | null; action: "keep" | "replace" | "remove" }) => Promise<boolean>;
   setLoginPageImageUrl: (value: string) => void;
   setLoginPageImageMode: (value: LoginPageImageMode) => void;
@@ -193,6 +199,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         refresh_account_interval_minute: Math.max(1, Number(config.refresh_account_interval_minute) || 1),
         image_task_timeout_seconds: Math.min(3600, Math.max(30, Number(config.image_task_timeout_seconds) || 300)),
         image_models: normalizeModelNames(config.image_models, DEFAULT_IMAGE_MODELS),
+        video_models: normalizeModelNames(config.video_models, ["sora-2"]),
         user_default_concurrent_limit: Math.max(0, Number(config.user_default_concurrent_limit) || 0),
         user_default_rpm_limit: Math.max(0, Number(config.user_default_rpm_limit) || 0),
         image_retention_days: Math.max(1, Number(config.image_retention_days) || 30),
@@ -301,6 +308,10 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     set((state) => state.config ? { config: { ...state.config, image_models: value } } : {});
   },
 
+  setVideoModels: (value) => {
+    set((state) => state.config ? { config: { ...state.config, video_models: value } } : {});
+  },
+
   setUserDefaultConcurrentLimit: (value) => {
     set((state) => state.config ? { config: { ...state.config, user_default_concurrent_limit: value } } : {});
   },
@@ -390,6 +401,9 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         },
       };
     });
+  },
+  setPromptSources: (value) => {
+    set((state) => state.config ? { config: { ...state.config, prompt_sources: normalizePromptMarketSources(value) } } : {});
   },
 
   saveSiteIcon: async ({ file, action }) => {

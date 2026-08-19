@@ -378,11 +378,15 @@ func TestImageConversationHistoryDropsActivePreviewOutputAndKeepsTerminalOutput(
 	activeImage["b64_json"] = "preview-base64"
 	activeImage["path"] = "images/preview.png"
 	activeImage["text_response"] = "partial response"
+	activeImage["videoUrl"] = "/videos/preview.mp4"
 	items, err := history.Merge("user-a", []map[string]any{active})
 	if err != nil {
 		t.Fatalf("active preview Merge() error = %v", err)
 	}
 	assertImageConversationOutputFields(t, imageFromHistoryItem(t, items[0]), false)
+	if _, exists := imageFromHistoryItem(t, items[0])["videoUrl"]; exists {
+		t.Fatal("active video output was persisted")
+	}
 
 	reloaded := NewImageConversationHistoryService(backend)
 	assertImageConversationOutputFields(t, imageFromHistoryItem(t, mustListImageConversationHistory(t, reloaded, "user-a")), false)
@@ -393,11 +397,15 @@ func TestImageConversationHistoryDropsActivePreviewOutputAndKeepsTerminalOutput(
 	terminalImage["b64_json"] = "final-base64"
 	terminalImage["path"] = "images/final.png"
 	terminalImage["text_response"] = "final response"
+	terminalImage["videoUrl"] = "/videos/final.mp4"
 	items, err = reloaded.Merge("user-a", []map[string]any{terminal})
 	if err != nil {
 		t.Fatalf("terminal Merge() error = %v", err)
 	}
 	assertImageConversationOutputFields(t, imageFromHistoryItem(t, items[0]), true)
+	if got := imageFromHistoryItem(t, items[0])["videoUrl"]; got != "/videos/final.mp4" {
+		t.Fatalf("terminal video output = %v, want /videos/final.mp4", got)
+	}
 
 	newTask := imageConversationHistoryTestItem(3, "2026-07-15T12:00:00Z", "success", "task-new", "https://example.test/new.png")
 	setImageConversationTaskState(t, newTask, 1, "success")

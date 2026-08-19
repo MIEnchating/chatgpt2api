@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"image/jpeg"
 	"image/png"
 	"io"
 	"mime/multipart"
@@ -22,6 +23,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -47,6 +49,55 @@ func TestWriteCreationTaskSubmitErrorReportsPersistenceOutage(t *testing.T) {
 	}
 	if strings.Contains(response.Body.String(), "database unavailable") {
 		t.Fatalf("response leaked persistence detail: %q", response.Body.String())
+	}
+}
+
+func TestImageTaskOptionalIntegerParametersRejectFractions(t *testing.T) {
+	if value, ok := imagePartialImagesFromBody(1.5); ok || value != 0 {
+		t.Fatalf("imagePartialImagesFromBody(1.5) = (%d, %v), want (0, false)", value, ok)
+	}
+	if value, ok := imageOutputCompressionFromBody(42.5); ok || value != 0 {
+		t.Fatalf("imageOutputCompressionFromBody(42.5) = (%d, %v), want (0, false)", value, ok)
+	}
+	if value, ok := imagePartialImagesFromBody(float64(2)); !ok || value != 2 {
+		t.Fatalf("imagePartialImagesFromBody(2) = (%d, %v), want (2, true)", value, ok)
+	}
+	if value, ok := imageOutputCompressionFromBody(float64(42)); !ok || value != 42 {
+		t.Fatalf("imageOutputCompressionFromBody(42) = (%d, %v), want (42, true)", value, ok)
+	}
+}
+
+func TestWriteCreationTaskStorageErrorReportsStatePersistenceOutage(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+	response := httptest.NewRecorder()
+	if !app.writeCreationTaskStorageError(response, service.ImageTaskPersistenceError{Err: errors.New("database unavailable"), TaskStarted: true}) {
+		t.Fatal("writeCreationTaskStorageError() did not handle persistence error")
+	}
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d; body = %s", response.Code, http.StatusServiceUnavailable, response.Body.String())
+	}
+	if !strings.Contains(response.Body.String(), "刷新后重试") {
+		t.Fatalf("response body = %q", response.Body.String())
+	}
+	if strings.Contains(response.Body.String(), "database unavailable") {
+		t.Fatalf("response leaked persistence detail: %q", response.Body.String())
+	}
+}
+
+func TestWriteCreationTaskSubmitErrorPreservesProtocolStatus(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+	response := httptest.NewRecorder()
+	app.writeCreationTaskSubmitError(response, protocol.HTTPError{
+		Status:  http.StatusRequestEntityTooLarge,
+		Message: "Gemini request is too large",
+	})
+	if response.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want %d; body = %s", response.Code, http.StatusRequestEntityTooLarge, response.Body.String())
+	}
+	if !strings.Contains(response.Body.String(), "Gemini request is too large") {
+		t.Fatalf("response body = %q", response.Body.String())
 	}
 }
 
@@ -369,8 +420,8 @@ func TestPasswordAccountLogin(t *testing.T) {
 	if err := json.Unmarshal(res.Body.Bytes(), &login); err != nil {
 		t.Fatalf("login json: %v", err)
 	}
-	adminToken, _ := login["token"].(string)
-	if adminToken == "" || login["role"] != service.AuthRoleAdmin || login["subject_id"] != "admin" || login["username"] != "admin" {
+	adminCookie := findResponseCookieByDomain(res.Result(), authSessionCookieName, "")
+	if adminCookie == nil || adminCookie.Value == "" || login["token"] != nil || login["role"] != service.AuthRoleAdmin || login["subject_id"] != "admin" || login["username"] != "admin" {
 		t.Fatalf("admin login body = %#v", login)
 	}
 	assertCreationConcurrentLimit(t, login, 0)
@@ -476,14 +527,14 @@ func TestProfileAccountNameAndPasswordUpdates(t *testing.T) {
 	req = httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(`{"username":"alice","password":"Password123"}`))
 	res = httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusBadRequest {
+	if res.Code != http.StatusUnauthorized {
 		t.Fatalf("old password login status = %d body = %s", res.Code, res.Body.String())
 	}
 
 	req = httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(`{"username":"alice","password":"NewPassword123"}`))
 	res = httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusBadRequest {
+	if res.Code != http.StatusUnauthorized {
 		t.Fatalf("local user should not use public login after NewAPI login switch, status = %d body = %s", res.Code, res.Body.String())
 	}
 }
@@ -510,6 +561,51 @@ func TestCreationTaskRequiresRelayAIAPIKey(t *testing.T) {
 	}
 	if detail := util.StringMap(payload["detail"]); detail["error"] != "请先配置云棉数据库连接，并在云棉创建指定分组的令牌" {
 		t.Fatalf("error body = %#v", payload)
+	}
+}
+
+func TestCreationTaskRejectsMalformedJSONBeforeRelayLookup(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+
+	_, rawKey, err := app.auth.CreateAPIKey(service.AuthRoleUser, "frontend", service.AuthOwner{})
+	if err != nil {
+		t.Fatalf("CreateAPIKey() error = %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/creation-tasks/image-generations", strings.NewReader(`{"client_task_id":`))
+	req.Header.Set("Authorization", "Bearer "+rawKey)
+	res := httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("malformed creation task status = %d body = %s", res.Code, res.Body.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(res.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("error json: %v", err)
+	}
+	if detail := util.StringMap(payload["detail"]); detail["error"] != "invalid json body" {
+		t.Fatalf("error body = %#v", payload)
+	}
+}
+
+func TestCreationTaskRejectsInvalidImageCountBeforeRelayLookup(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+
+	_, rawKey, err := app.auth.CreateAPIKey(service.AuthRoleUser, "frontend", service.AuthOwner{})
+	if err != nil {
+		t.Fatalf("CreateAPIKey() error = %v", err)
+	}
+
+	for _, count := range []string{"0", "11", "1.5", "true"} {
+		req := httptest.NewRequest(http.MethodPost, "/api/creation-tasks/image-generations", strings.NewReader(`{"client_task_id":"invalid-count","prompt":"draw","n":`+count+`}`))
+		req.Header.Set("Authorization", "Bearer "+rawKey)
+		res := httptest.NewRecorder()
+		app.Handler().ServeHTTP(res, req)
+		if res.Code != http.StatusBadRequest || !strings.Contains(res.Body.String(), "n must be between 1 and 10") {
+			t.Fatalf("n=%s status = %d body = %s", count, res.Code, res.Body.String())
+		}
 	}
 }
 
@@ -1012,6 +1108,143 @@ func TestRunLoggedImageTaskLocalizesRelayURLForGallery(t *testing.T) {
 	}
 }
 
+func TestRunLoggedImageTaskLocalizesPartialResultOnUpstreamFailure(t *testing.T) {
+	t.Setenv("CHATGPT2API_BASE_URL", "https://image.yunmian.tech")
+	app := newTestApp(t)
+	defer app.Close()
+
+	identity := service.Identity{ID: "user-partial", Role: service.AuthRoleUser, Name: "Alice"}
+	result, err := app.runLoggedImageTask(
+		context.Background(),
+		identity,
+		map[string]any{
+			"prompt":     "draw",
+			"model":      "gemini-3.1-flash-image",
+			"visibility": service.ImageVisibilityPrivate,
+		},
+		"/api/creation-tasks/image-generations",
+		"文生图",
+		func(context.Context, map[string]any) (map[string]any, error) {
+			return map[string]any{
+				"data": []map[string]any{{
+					"b64_json": base64.StdEncoding.EncodeToString(httpTestPNGBytes(t)),
+				}},
+			}, errors.New("second image failed")
+		},
+	)
+	if err == nil || !strings.Contains(err.Error(), "second image failed") {
+		t.Fatalf("runLoggedImageTask() error = %v, want partial upstream failure", err)
+	}
+	data := util.AsMapSlice(result["data"])
+	if len(data) != 1 {
+		t.Fatalf("partial result data = %#v", result)
+	}
+	localURL := util.Clean(data[0]["url"])
+	if !strings.HasPrefix(localURL, "https://image.yunmian.tech/images/") || util.Clean(data[0]["b64_json"]) != "" {
+		t.Fatalf("partial image was not localized: %#v", result)
+	}
+	if _, accessErr := app.images.ImageFileAccess(localURL, service.ImageAccessScope{OwnerID: identity.ID}); accessErr != nil {
+		t.Fatalf("localized partial image is not accessible from gallery: %v", accessErr)
+	}
+}
+
+type cancellationCheckingImageStore struct {
+	putCalls int
+}
+
+func (s *cancellationCheckingImageStore) Backend() string { return "s3" }
+func (s *cancellationCheckingImageStore) Bucket() string  { return "test-images" }
+func (s *cancellationCheckingImageStore) Prefix() string  { return "tests" }
+
+func (s *cancellationCheckingImageStore) Put(ctx context.Context, _ string, _ []byte, _ string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.putCalls++
+	return nil
+}
+
+func (s *cancellationCheckingImageStore) Get(context.Context, string) ([]byte, string, error) {
+	return nil, "", os.ErrNotExist
+}
+
+func (s *cancellationCheckingImageStore) Delete(context.Context, string) error { return nil }
+
+func TestRunLoggedImageTaskPersistsCompletedImageAfterRequestCancellation(t *testing.T) {
+	t.Setenv("CHATGPT2API_BASE_URL", "https://image.yunmian.tech")
+	app := newTestApp(t)
+	defer app.Close()
+
+	store := &cancellationCheckingImageStore{}
+	if err := app.images.ConfigureObjectStore(store, true); err != nil {
+		t.Fatalf("ConfigureObjectStore() error = %v", err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	result, err := app.runLoggedImageTask(
+		ctx,
+		service.Identity{ID: "user-cancelled", Role: service.AuthRoleUser, Name: "Alice"},
+		map[string]any{
+			"prompt":     "draw",
+			"model":      "gemini-3.1-flash-image",
+			"visibility": service.ImageVisibilityPrivate,
+		},
+		"/api/creation-tasks/image-generations",
+		"文生图",
+		func(context.Context, map[string]any) (map[string]any, error) {
+			return map[string]any{
+				"data": []map[string]any{{
+					"b64_json": base64.StdEncoding.EncodeToString(httpTestPNGBytes(t)),
+				}},
+			}, context.Canceled
+		},
+	)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("runLoggedImageTask() error = %v, want context.Canceled", err)
+	}
+	data := util.AsMapSlice(result["data"])
+	if len(data) != 1 || util.Clean(data[0]["url"]) == "" || util.Clean(data[0]["b64_json"]) != "" {
+		t.Fatalf("completed image was not localized after cancellation: %#v", result)
+	}
+	if store.putCalls != 1 {
+		t.Fatalf("object store put calls = %d, want 1", store.putCalls)
+	}
+}
+
+func TestRelayStoredImageFormatUsesActualImageBytes(t *testing.T) {
+	var encoded bytes.Buffer
+	imageValue := image.NewRGBA(image.Rect(0, 0, 2, 1))
+	imageValue.Set(0, 0, color.RGBA{R: 255, A: 255})
+	if err := jpeg.Encode(&encoded, imageValue, nil); err != nil {
+		t.Fatalf("encode JPEG: %v", err)
+	}
+
+	actualFormat := relayStoredImageFormat(
+		map[string]any{"output_format": "png"},
+		map[string]any{"output_format": "png"},
+		"image/png",
+		"https://example.test/image.png",
+		encoded.Bytes(),
+	)
+	if actualFormat != "jpeg" {
+		t.Fatalf("relayStoredImageFormat() = %q, want jpeg", actualFormat)
+	}
+
+	unspecified := util.StringMap(relayImageQualityCheck(encoded.Bytes(), actualFormat, map[string]any{})["quality_check"])
+	if requested := util.Clean(unspecified["requested_output_format"]); requested != "" {
+		t.Fatalf("unspecified request invented requested format %q: %#v", requested, unspecified)
+	}
+	if _, ok := unspecified["output_format_matched"]; ok {
+		t.Fatalf("unspecified request should not compare output formats: %#v", unspecified)
+	}
+
+	explicit := util.StringMap(relayImageQualityCheck(encoded.Bytes(), actualFormat, map[string]any{"output_format": "png"})["quality_check"])
+	if explicit["requested_output_format"] != "png" || explicit["actual_output_format"] != "jpeg" || explicit["output_format_matched"] != false {
+		t.Fatalf("explicit format mismatch was not reported: %#v", explicit)
+	}
+}
+
 func TestRunLoggedImageTaskHoldsSlotThroughLocalization(t *testing.T) {
 	t.Setenv("CHATGPT2API_BASE_URL", "https://image.yunmian.tech")
 	app := newTestApp(t)
@@ -1226,6 +1459,149 @@ func TestRelayImagePayloadDropsPartialImagesWithoutStream(t *testing.T) {
 	}
 	if _, ok := payload[service.ImageOutputCompletionReleasePayloadKey]; ok {
 		t.Fatalf("completion release should be dropped from relay payload: %#v", payload)
+	}
+}
+
+func TestImageGenerationRouteRejectsMaskBeforeProviderNormalization(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", strings.NewReader(`{"model":"gemini-3.1-flash-image","prompt":"draw","input_image_mask":"data:image/png;base64,bWFzaw=="}`))
+	req.Header.Set("Authorization", adminAuthHeader(t, app))
+	req.Header.Set("Content-Type", "application/json")
+	res := httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusBadRequest || !strings.Contains(res.Body.String(), "only supported by the image edits endpoint") {
+		t.Fatalf("generation mask status = %d body = %s", res.Code, res.Body.String())
+	}
+}
+
+func TestImageEditTaskRouteRejectsUnsupportedProviderMaskBeforeTokenLookup(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	for key, value := range map[string]string{
+		"model":  "gemini-3.1-flash-image",
+		"prompt": "edit",
+	} {
+		if err := writer.WriteField(key, value); err != nil {
+			t.Fatalf("WriteField(%s) error = %v", key, err)
+		}
+	}
+	imagePart, err := writer.CreateFormFile("image", "source.png")
+	if err != nil {
+		t.Fatalf("CreateFormFile(image) error = %v", err)
+	}
+	if _, err := imagePart.Write(httpTestPNGBytes(t)); err != nil {
+		t.Fatalf("write image: %v", err)
+	}
+	maskPart, err := writer.CreateFormFile("mask", "mask.png")
+	if err != nil {
+		t.Fatalf("CreateFormFile(mask) error = %v", err)
+	}
+	if _, err := maskPart.Write(httpTestAlphaPNGBytes(t, 12, 12)); err != nil {
+		t.Fatalf("write mask: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/creation-tasks/image-edits", body)
+	req.Header.Set("Authorization", adminAuthHeader(t, app))
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	res := httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusBadRequest || !strings.Contains(res.Body.String(), "does not support mask editing through NewAPI") {
+		t.Fatalf("unsupported provider mask status = %d body = %s", res.Code, res.Body.String())
+	}
+}
+
+func TestImageTaskRouteRejectsInvalidOptionalIntegerParameters(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+	tests := []struct {
+		name  string
+		field string
+		value string
+		want  string
+	}{
+		{name: "fractional partial images", field: "partial_images", value: "1.5", want: "partial_images must be an integer between 0 and 3"},
+		{name: "too many partial images", field: "partial_images", value: "4", want: "partial_images must be an integer between 0 and 3"},
+		{name: "negative compression", field: "output_compression", value: "-1", want: "output_compression must be an integer between 0 and 100"},
+		{name: "compression overflow", field: "output_compression", value: "101", want: "output_compression must be an integer between 0 and 100"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			body := fmt.Sprintf(`{"model":"gpt-image-2","prompt":"draw","%s":%s}`, test.field, test.value)
+			req := httptest.NewRequest(http.MethodPost, "/api/creation-tasks/image-generations", strings.NewReader(body))
+			req.Header.Set("Authorization", adminAuthHeader(t, app))
+			req.Header.Set("Content-Type", "application/json")
+			res := httptest.NewRecorder()
+			app.Handler().ServeHTTP(res, req)
+			if res.Code != http.StatusBadRequest || !strings.Contains(res.Body.String(), test.want) {
+				t.Fatalf("status = %d body = %s, want %q", res.Code, res.Body.String(), test.want)
+			}
+		})
+	}
+}
+
+func TestDirectGeminiPartialSuccessIsStoredBeforeReturningUpstreamError(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+
+	dbURL := newHTTPTestNewAPIDatabase(t)
+	insertHTTPTestNewAPIUser(t, dbURL, 1, "alice", "alice@example.test")
+	insertHTTPTestNewAPIToken(t, dbURL, 1, 1, "draw", "gemini-relay-token", -1, 0, true)
+	reader, err := service.NewNewAPITokenReader(service.NewAPITokenReaderConfig{DatabaseURL: dbURL, TokenGroup: "draw"})
+	if err != nil {
+		t.Fatalf("NewNewAPITokenReader() error = %v", err)
+	}
+	if app.newAPIKeys != nil {
+		_ = app.newAPIKeys.Close()
+	}
+	app.newAPIKeys = reader
+	_, rawKey, err := app.auth.UpsertAPIKeyForOwner("", service.AuthOwner{ID: "newapi:1", Name: "Alice", Provider: service.AuthProviderNewAPI})
+	if err != nil {
+		t.Fatalf("UpsertAPIKeyForOwner() error = %v", err)
+	}
+
+	encoded := base64.StdEncoding.EncodeToString(httpTestPNGBytes(t))
+	var requestCount atomic.Int32
+	secondStarted := make(chan struct{})
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch requestCount.Add(1) {
+		case 1:
+			<-secondStarted
+			util.WriteJSON(w, http.StatusBadGateway, map[string]any{"error": map[string]any{"message": "Gemini sibling failed"}})
+		case 2:
+			close(secondStarted)
+			util.WriteJSON(w, http.StatusOK, map[string]any{
+				"model":   "gemini-3.1-flash-image",
+				"choices": []map[string]any{{"message": map[string]any{"role": "assistant", "content": "![image](data:image/png;base64," + encoded + ")"}}},
+			})
+		default:
+			t.Errorf("unexpected upstream request %d", requestCount.Load())
+		}
+	}))
+	defer upstream.Close()
+	if _, err := app.config.Update(map[string]any{"relay_base_url": upstream.URL}); err != nil {
+		t.Fatalf("update relay base URL: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/images/generations", strings.NewReader(`{"model":"gemini-3.1-flash-image","prompt":"draw","n":2}`))
+	req.Header.Set("Authorization", "Bearer "+rawKey)
+	req.Header.Set("Content-Type", "application/json")
+	res := httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusBadGateway || !strings.Contains(res.Body.String(), "Gemini sibling failed") {
+		t.Fatalf("partial Gemini status = %d body = %s", res.Code, res.Body.String())
+	}
+	if requestCount.Load() != 2 {
+		t.Fatalf("upstream request count = %d, want 2", requestCount.Load())
+	}
+	images := app.images.ListImages("http://example.test", "", "", service.ImageAccessScope{All: true})
+	items := images["items"].([]map[string]any)
+	if len(items) != 1 || items[0]["model"] != "gemini-3.1-flash-image" {
+		t.Fatalf("stored partial Gemini result = %#v", images)
 	}
 }
 
@@ -1461,6 +1837,31 @@ func TestCollectRelayImageTaskStreamSeparatesPreviewsAndCompletedOutputs(t *test
 	}
 }
 
+func TestCollectRelayImageTaskStreamKeepsCompletedOutputsWithTerminalUpstreamError(t *testing.T) {
+	items := make(chan map[string]any, 1)
+	errCh := make(chan error, 1)
+	items <- map[string]any{
+		"type":         "image_generation.completed",
+		"output_index": 0,
+		"url":          "https://example.test/completed.png",
+	}
+	close(items)
+	errCh <- protocol.HTTPError{Status: http.StatusBadGateway, Message: "provider stream failed"}
+	close(errCh)
+
+	result, err := collectRelayImageTaskStream(
+		map[string]any{"n": 2},
+		&protocol.StreamResult{Items: items, Err: errCh, Kind: "openai"},
+	)
+	if err == nil || err.Error() != "provider stream failed" {
+		t.Fatalf("collectRelayImageTaskStream() error = %v, want upstream error", err)
+	}
+	data := util.AsMapSlice(result["data"])
+	if len(data) != 1 || util.Clean(data[0]["url"]) != "https://example.test/completed.png" {
+		t.Fatalf("completed output was lost after stream error: %#v", result)
+	}
+}
+
 func TestRelayImageStreamAccumulatorIgnoresLatePreviewForCompletedSlot(t *testing.T) {
 	accumulator := newRelayImageStreamAccumulator(1)
 	accumulator.apply(
@@ -1552,6 +1953,7 @@ func TestRecordGeneratedImagesForPayloadStoresReusableRequestMetadata(t *testing
 		t.Fatalf("writeHTTPTestPNG() error = %v", err)
 	}
 
+	referenceData := httpTestPNGBytes(t)
 	app.recordGeneratedImagesForPayload(
 		service.Identity{ID: "admin", Role: service.AuthRoleAdmin, Name: "Admin"},
 		[]string{rel},
@@ -1567,7 +1969,7 @@ func TestRecordGeneratedImagesForPayloadStoresReusableRequestMetadata(t *testing
 			"moderation":         "low",
 			"input_image_mask":   "mask-id",
 			"images": []protocol.UploadedImage{
-				{Filename: "source.png", ContentType: "image/png", Data: []byte("reference-bytes")},
+				{Filename: "source.png", ContentType: "image/png", Data: referenceData},
 			},
 			"share_prompt_parameters": true,
 			"share_reference_images":  true,
@@ -1587,9 +1989,11 @@ func TestRecordGeneratedImagesForPayloadStoresReusableRequestMetadata(t *testing
 		item["requested_size"] != "2048x2048" ||
 		item["output_format"] != "jpeg" ||
 		item["output_compression"] != 42 ||
-		item["moderation"] != "low" ||
-		item["input_image_mask"] != "mask-id" {
+		item["moderation"] != "low" {
 		t.Fatalf("reusable metadata = %#v", item)
+	}
+	if _, ok := item["input_image_mask"]; ok {
+		t.Fatalf("raw mask data must not be stored as reusable metadata: %#v", item)
 	}
 	if _, ok := item["background"]; ok {
 		t.Fatalf("background should not be stored as reusable metadata: %#v", item)
@@ -1605,11 +2009,39 @@ func TestRecordGeneratedImagesForPayloadStoresReusableRequestMetadata(t *testing
 	req := httptest.NewRequest(http.MethodGet, parsedReferenceURL.RequestURI(), nil)
 	res := httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusOK || res.Body.String() != "reference-bytes" {
-		t.Fatalf("public reference status/body = %d %q", res.Code, res.Body.String())
+	if res.Code != http.StatusOK || !bytes.Equal(res.Body.Bytes(), referenceData) {
+		t.Fatalf("public reference status = %d or body differs from source", res.Code)
 	}
 	if got := res.Header().Get("Content-Type"); got != "image/png" {
 		t.Fatalf("reference Content-Type = %q, want image/png", got)
+	}
+}
+
+func TestRecordGeneratedImagesForPayloadPreservesDetectedOutputFormat(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+
+	var encoded bytes.Buffer
+	imageValue := image.NewRGBA(image.Rect(0, 0, 2, 1))
+	if err := jpeg.Encode(&encoded, imageValue, nil); err != nil {
+		t.Fatalf("encode JPEG: %v", err)
+	}
+	imageURL, err := app.images.SaveImageBytes(context.Background(), encoded.Bytes(), "", "admin", "Admin", "png")
+	if err != nil {
+		t.Fatalf("SaveImageBytes() error = %v", err)
+	}
+
+	app.recordGeneratedImagesForPayload(
+		service.Identity{ID: "admin", Role: service.AuthRoleAdmin, Name: "Admin"},
+		[]string{imageURL},
+		service.ImageVisibilityPrivate,
+		map[string]any{"prompt": "format check", "model": "grok-imagine-image", "output_format": "png"},
+	)
+
+	list := app.images.ListImages("", "", "", service.ImageAccessScope{All: true})
+	items := list["items"].([]map[string]any)
+	if len(items) != 1 || items[0]["output_format"] != "jpeg" {
+		t.Fatalf("actual JPEG format was overwritten by request metadata: %#v", list)
 	}
 }
 
@@ -1907,9 +2339,9 @@ func TestRBACImageDeletePermissionLimitsDelegatedUserToOwnedImages(t *testing.T)
 	if err != nil {
 		t.Fatalf("CreateRole() error = %v", err)
 	}
-	updated := app.auth.UpdateUser(user["id"].(string), map[string]any{"role_id": role["id"]})
-	if updated == nil {
-		t.Fatal("UpdateUser() returned nil")
+	updated, err := app.auth.UpdateUser(user["id"].(string), map[string]any{"role_id": role["id"]})
+	if err != nil || updated == nil {
+		t.Fatalf("UpdateUser() = %#v, %v", updated, err)
 	}
 
 	req = httptest.NewRequest(http.MethodDelete, "/api/images", strings.NewReader(`{"paths":["delegated-delete.png","delegated-owned-delete.png"]}`))
@@ -2319,9 +2751,10 @@ func TestManagedImageFilesRequireOwnerOrPublicAccess(t *testing.T) {
 	if err := writeHTTPTestPNG(imagePath); err != nil {
 		t.Fatalf("write image: %v", err)
 	}
+	privateReferenceData := httpTestPNGBytes(t)
 	app.images.RecordGeneratedImages([]string{rel}, owner.ID, owner.Name, service.ImageVisibilityPrivate, service.GeneratedImageMetadata{
 		ReferenceImages: []service.GeneratedImageReference{
-			{Filename: "private-source.png", ContentType: "image/png", Data: []byte("private-reference")},
+			{Filename: "private-source.png", ContentType: "image/png", Data: privateReferenceData},
 		},
 	})
 	privateList := app.images.ListImages("http://127.0.0.1:8000", "", "", service.ImageAccessScope{All: true})
@@ -2372,8 +2805,8 @@ func TestManagedImageFilesRequireOwnerOrPublicAccess(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+aliceKey)
 	res = httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusOK || res.Body.String() != "private-reference" {
-		t.Fatalf("owner private reference status/body = %d %q", res.Code, res.Body.String())
+	if res.Code != http.StatusOK || !bytes.Equal(res.Body.Bytes(), privateReferenceData) {
+		t.Fatalf("owner private reference status = %d or body differs from source", res.Code)
 	}
 
 	req = httptest.NewRequest(http.MethodGet, "/images/"+rel, nil)
@@ -2437,21 +2870,22 @@ func TestManagedImageFilesRequireOwnerOrPublicAccess(t *testing.T) {
 	req = httptest.NewRequest(http.MethodGet, privateReferencePath, nil)
 	res = httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusOK || res.Body.String() != "private-reference" {
-		t.Fatalf("anonymous shared public reference status/body = %d %q", res.Code, res.Body.String())
+	if res.Code != http.StatusOK || !bytes.Equal(res.Body.Bytes(), privateReferenceData) {
+		t.Fatalf("anonymous shared public reference status = %d or body differs from source", res.Code)
 	}
 }
 
-func TestImageVisibilityImportsExternalImageURL(t *testing.T) {
+func TestImageVisibilityRejectsExternalImageURLWithoutFetching(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()
 
-	user, rawKey, err := app.auth.CreateAPIKey(service.AuthRoleUser, "frontend", service.AuthOwner{})
+	_, rawKey, err := app.auth.CreateAPIKey(service.AuthRoleUser, "frontend", service.AuthOwner{})
 	if err != nil {
 		t.Fatalf("CreateAPIKey() error = %v", err)
 	}
-	ownerID := util.Clean(user["id"])
+	requested := make(chan struct{}, 1)
 	imageServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requested <- struct{}{}
 		w.Header().Set("Content-Type", "image/png")
 		if err := encodeHTTPTestPNG(w); err != nil {
 			t.Fatalf("encode test image: %v", err)
@@ -2463,24 +2897,13 @@ func TestImageVisibilityImportsExternalImageURL(t *testing.T) {
 	req.Header.Set("Authorization", "Bearer "+rawKey)
 	res := httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusOK {
-		t.Fatalf("import external image visibility status = %d body = %s", res.Code, res.Body.String())
+	if res.Code != http.StatusBadRequest || !strings.Contains(res.Body.String(), "external image URLs cannot be imported") {
+		t.Fatalf("external image visibility status = %d body = %s", res.Code, res.Body.String())
 	}
-	var payload map[string]any
-	if err := json.Unmarshal(res.Body.Bytes(), &payload); err != nil {
-		t.Fatalf("visibility json: %v", err)
-	}
-	item := util.StringMap(payload["item"])
-	localPath := util.Clean(item["path"])
-	if localPath == "" || strings.HasPrefix(localPath, "http") || item["visibility"] != service.ImageVisibilityPublic {
-		t.Fatalf("imported visibility item = %#v", item)
-	}
-	access, err := app.images.ImageFileAccess(localPath, service.ImageAccessScope{OwnerID: ownerID})
-	if err != nil {
-		t.Fatalf("imported image is not accessible: %v", err)
-	}
-	if access.Visibility != service.ImageVisibilityPublic || access.OwnerID != ownerID {
-		t.Fatalf("imported image access = %#v", access)
+	select {
+	case <-requested:
+		t.Fatal("external image server was requested")
+	default:
 	}
 }
 
@@ -2738,6 +3161,43 @@ func TestAuthSessionCookieLifecycle(t *testing.T) {
 	}
 }
 
+func TestLogoutRevokesBearerAndCookieSessions(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+
+	_, bearerToken, err := app.auth.UpsertLinuxDoSession(service.AuthOwner{
+		ID:       "linuxdo:logout-bearer",
+		Name:     "bearer",
+		Provider: service.AuthProviderLinuxDo,
+	})
+	if err != nil {
+		t.Fatalf("UpsertLinuxDoSession(bearer) error = %v", err)
+	}
+	_, cookieToken, err := app.auth.UpsertLinuxDoSession(service.AuthOwner{
+		ID:       "linuxdo:logout-cookie",
+		Name:     "cookie",
+		Provider: service.AuthProviderLinuxDo,
+	})
+	if err != nil {
+		t.Fatalf("UpsertLinuxDoSession(cookie) error = %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/auth/logout", nil)
+	req.Header.Set("Authorization", "Bearer "+bearerToken)
+	req.AddCookie(&http.Cookie{Name: authSessionCookieName, Value: cookieToken})
+	res := httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("logout status = %d body = %s", res.Code, res.Body.String())
+	}
+	if app.auth.Authenticate(bearerToken) != nil {
+		t.Fatal("bearer session was not revoked")
+	}
+	if app.auth.Authenticate(cookieToken) != nil {
+		t.Fatal("cookie session was not revoked")
+	}
+}
+
 func TestAuthSessionCookieIsHostOnly(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()
@@ -2793,7 +3253,7 @@ func TestAuthSessionMigratesLegacySharedCookieToHostOnly(t *testing.T) {
 	if err := json.Unmarshal(res.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("session json: %v", err)
 	}
-	if payload["token"] != cookie.Value || payload["username"] != testAdminUsername {
+	if payload["token"] != nil || payload["username"] != testAdminUsername {
 		t.Fatalf("session payload = %#v", payload)
 	}
 	refreshed := findResponseCookieByDomain(res.Result(), authSessionCookieName, "")
@@ -2863,7 +3323,7 @@ func TestLoginAllowsCredentialedLoopbackFrontend(t *testing.T) {
 	}
 }
 
-func TestRelayAISubdomainAllowsCredentialedCORS(t *testing.T) {
+func TestUnconfiguredSiblingSubdomainDoesNotAllowCredentialedCORS(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()
 
@@ -2876,15 +3336,15 @@ func TestRelayAISubdomainAllowsCredentialedCORS(t *testing.T) {
 	if res.Code != http.StatusNoContent {
 		t.Fatalf("preflight status = %d body = %s", res.Code, res.Body.String())
 	}
-	if got := res.Header().Get("Access-Control-Allow-Origin"); got != "https://image.relayai.tech" {
-		t.Fatalf("Access-Control-Allow-Origin = %q, want image origin", got)
+	if got := res.Header().Get("Access-Control-Allow-Origin"); got != "*" {
+		t.Fatalf("Access-Control-Allow-Origin = %q, want wildcard without credentials", got)
 	}
-	if got := res.Header().Get("Access-Control-Allow-Credentials"); got != "true" {
-		t.Fatalf("Access-Control-Allow-Credentials = %q, want true", got)
+	if got := res.Header().Get("Access-Control-Allow-Credentials"); got != "" {
+		t.Fatalf("Access-Control-Allow-Credentials = %q, want empty", got)
 	}
 }
 
-func TestRelayAISubdomainAllowsCredentialedCORSWithForwardedHost(t *testing.T) {
+func TestUnconfiguredSiblingSubdomainWithForwardedHostDoesNotAllowCredentialedCORS(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()
 
@@ -2898,15 +3358,37 @@ func TestRelayAISubdomainAllowsCredentialedCORSWithForwardedHost(t *testing.T) {
 	if res.Code != http.StatusNoContent {
 		t.Fatalf("preflight status = %d body = %s", res.Code, res.Body.String())
 	}
-	if got := res.Header().Get("Access-Control-Allow-Origin"); got != "https://image.relayai.tech" {
-		t.Fatalf("Access-Control-Allow-Origin = %q, want image origin", got)
+	if got := res.Header().Get("Access-Control-Allow-Origin"); got != "*" {
+		t.Fatalf("Access-Control-Allow-Origin = %q, want wildcard without credentials", got)
 	}
-	if got := res.Header().Get("Access-Control-Allow-Credentials"); got != "true" {
-		t.Fatalf("Access-Control-Allow-Credentials = %q, want true", got)
+	if got := res.Header().Get("Access-Control-Allow-Credentials"); got != "" {
+		t.Fatalf("Access-Control-Allow-Credentials = %q, want empty", got)
 	}
 }
 
-func TestRelayAISubdomainAllowsCredentialedCORSBehindProxyHost(t *testing.T) {
+func TestForgedForwardedHostDoesNotAllowCredentialedCORS(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+
+	req := httptest.NewRequest(http.MethodOptions, "/auth/session", nil)
+	req.Host = "image.relayai.tech"
+	req.Header.Set("X-Forwarded-Host", "evil.example")
+	req.Header.Set("Origin", "https://evil.example")
+	req.Header.Set("Access-Control-Request-Method", http.MethodGet)
+	res := httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusNoContent {
+		t.Fatalf("preflight status = %d body = %s", res.Code, res.Body.String())
+	}
+	if got := res.Header().Get("Access-Control-Allow-Origin"); got != "*" {
+		t.Fatalf("Access-Control-Allow-Origin = %q, want wildcard without credentials", got)
+	}
+	if got := res.Header().Get("Access-Control-Allow-Credentials"); got != "" {
+		t.Fatalf("Access-Control-Allow-Credentials = %q, want empty", got)
+	}
+}
+
+func TestUnconfiguredSiblingSubdomainBehindProxyDoesNotAllowCredentialedCORS(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()
 
@@ -2919,11 +3401,11 @@ func TestRelayAISubdomainAllowsCredentialedCORSBehindProxyHost(t *testing.T) {
 	if res.Code != http.StatusNoContent {
 		t.Fatalf("preflight status = %d body = %s", res.Code, res.Body.String())
 	}
-	if got := res.Header().Get("Access-Control-Allow-Origin"); got != "https://image.relayai.tech" {
-		t.Fatalf("Access-Control-Allow-Origin = %q, want image origin", got)
+	if got := res.Header().Get("Access-Control-Allow-Origin"); got != "*" {
+		t.Fatalf("Access-Control-Allow-Origin = %q, want wildcard without credentials", got)
 	}
-	if got := res.Header().Get("Access-Control-Allow-Credentials"); got != "true" {
-		t.Fatalf("Access-Control-Allow-Credentials = %q, want true", got)
+	if got := res.Header().Get("Access-Control-Allow-Credentials"); got != "" {
+		t.Fatalf("Access-Control-Allow-Credentials = %q, want empty", got)
 	}
 }
 
@@ -3117,8 +3599,8 @@ func TestProfileAPIKeyIsPersonalAndPermissionIndependent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateRole() error = %v", err)
 	}
-	if updated := app.auth.UpdateUser(user.ID, map[string]any{"role_id": role["id"]}); updated == nil {
-		t.Fatal("UpdateUser(role) returned nil")
+	if updated, err := app.auth.UpdateUser(user.ID, map[string]any{"role_id": role["id"]}); err != nil || updated == nil {
+		t.Fatalf("UpdateUser(role) = %#v, %v", updated, err)
 	}
 	_, userSession, err := app.auth.LoginPassword("alice", "Password123")
 	if err != nil {
@@ -3221,8 +3703,8 @@ func TestProfilePromptFavoritesArePersonalAndPermissionIndependent(t *testing.T)
 	if err != nil {
 		t.Fatalf("CreateRole() error = %v", err)
 	}
-	if updated := app.auth.UpdateUser(user.ID, map[string]any{"role_id": role["id"]}); updated == nil {
-		t.Fatal("UpdateUser(role) returned nil")
+	if updated, err := app.auth.UpdateUser(user.ID, map[string]any{"role_id": role["id"]}); err != nil || updated == nil {
+		t.Fatalf("UpdateUser(role) = %#v, %v", updated, err)
 	}
 	_, aliceToken, err := app.auth.LoginPassword("alice", "Password123")
 	if err != nil {
@@ -3357,8 +3839,8 @@ func TestProfilePromptFavoritesAdultContentRequiresPermission(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateRole(restricted) error = %v", err)
 	}
-	if updated := app.auth.UpdateUser(user.ID, map[string]any{"role_id": restrictedRole["id"]}); updated == nil {
-		t.Fatal("UpdateUser(restricted role) returned nil")
+	if updated, err := app.auth.UpdateUser(user.ID, map[string]any{"role_id": restrictedRole["id"]}); err != nil || updated == nil {
+		t.Fatalf("UpdateUser(restricted role) = %#v, %v", updated, err)
 	}
 	_, restrictedToken, err := app.auth.LoginPassword("alice", "Password123")
 	if err != nil {
@@ -3426,8 +3908,8 @@ func TestProfilePromptFavoritesAdultContentRequiresPermission(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateRole(adult) error = %v", err)
 	}
-	if updated := app.auth.UpdateUser(user.ID, map[string]any{"role_id": adultRole["id"]}); updated == nil {
-		t.Fatal("UpdateUser(adult role) returned nil")
+	if updated, err := app.auth.UpdateUser(user.ID, map[string]any{"role_id": adultRole["id"]}); err != nil || updated == nil {
+		t.Fatalf("UpdateUser(adult role) = %#v, %v", updated, err)
 	}
 	_, adultToken, err := app.auth.LoginPassword("alice", "Password123")
 	if err != nil {
@@ -3551,7 +4033,7 @@ func TestAdminUsersManageLinuxDoUsers(t *testing.T) {
 	req = httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(`{"username":"created_local","password":"Password123"}`))
 	res = httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusBadRequest {
+	if res.Code != http.StatusUnauthorized {
 		t.Fatalf("created local user should not use public login after NewAPI login switch, status = %d body = %s", res.Code, res.Body.String())
 	}
 
@@ -4536,4 +5018,32 @@ func encodeHTTPTestPNG(file interface {
 		}
 	}
 	return png.Encode(file, img)
+}
+
+func httpTestPNGBytes(t *testing.T) []byte {
+	t.Helper()
+	var data bytes.Buffer
+	if err := encodeHTTPTestPNG(&data); err != nil {
+		t.Fatalf("encodeHTTPTestPNG() error = %v", err)
+	}
+	return data.Bytes()
+}
+
+func httpTestAlphaPNGBytes(t *testing.T, width, height int) []byte {
+	t.Helper()
+	imageData := image.NewNRGBA(image.Rect(0, 0, width, height))
+	for y := 0; y < height; y++ {
+		for x := 0; x < width; x++ {
+			alpha := uint8(255)
+			if x == 0 && y == 0 {
+				alpha = 0
+			}
+			imageData.SetNRGBA(x, y, color.NRGBA{R: 255, G: 255, B: 255, A: alpha})
+		}
+	}
+	var data bytes.Buffer
+	if err := png.Encode(&data, imageData); err != nil {
+		t.Fatalf("encode alpha PNG: %v", err)
+	}
+	return data.Bytes()
 }

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"testing"
 
 	"chatgpt2api/internal/service"
@@ -37,7 +38,7 @@ func TestCanvasClearRequiresExplicitProjectID(t *testing.T) {
 		t.Fatalf("missing project id status = %d body = %s", res.Code, res.Body.String())
 	}
 
-	req = httptest.NewRequest(http.MethodDelete, "/api/canvas?project_id="+url.QueryEscape(workspace.Document.ID), nil)
+	req = httptest.NewRequest(http.MethodDelete, "/api/canvas?project_id="+url.QueryEscape(workspace.Document.ID)+"&revision="+strconv.FormatInt(workspace.Document.Revision, 10), nil)
 	req.Header.Set("Authorization", authorization)
 	res = httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
@@ -52,6 +53,91 @@ func TestCanvasClearRequiresExplicitProjectID(t *testing.T) {
 	}
 	if payload.Document.ID != workspace.Document.ID {
 		t.Fatalf("cleared project id = %q, want %q", payload.Document.ID, workspace.Document.ID)
+	}
+}
+
+func TestCanvasClearRejectsStaleRevision(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+	authorization := adminAuthHeader(t, app)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/canvas", nil)
+	req.Header.Set("Authorization", authorization)
+	res := httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("workspace status = %d body = %s", res.Code, res.Body.String())
+	}
+	var workspace service.CanvasWorkspaceResult
+	if err := json.Unmarshal(res.Body.Bytes(), &workspace); err != nil {
+		t.Fatalf("workspace json: %v", err)
+	}
+
+	updated := workspace.Document
+	updated.Title = "更新后的画布"
+	data, err := json.Marshal(updated)
+	if err != nil {
+		t.Fatalf("Marshal(canvas) error = %v", err)
+	}
+	req = httptest.NewRequest(http.MethodPut, "/api/canvas", bytes.NewReader(data))
+	req.Header.Set("Authorization", authorization)
+	req.Header.Set("Content-Type", "application/json")
+	res = httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("save status = %d body = %s", res.Code, res.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodDelete, "/api/canvas?project_id="+url.QueryEscape(workspace.Document.ID)+"&revision="+strconv.FormatInt(workspace.Document.Revision, 10), nil)
+	req.Header.Set("Authorization", authorization)
+	res = httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusConflict {
+		t.Fatalf("stale clear status = %d body = %s", res.Code, res.Body.String())
+	}
+}
+
+func TestCanvasSaveRejectsStaleRevision(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+	authorization := adminAuthHeader(t, app)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/canvas", nil)
+	req.Header.Set("Authorization", authorization)
+	res := httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("workspace status = %d body = %s", res.Code, res.Body.String())
+	}
+	var workspace service.CanvasWorkspaceResult
+	if err := json.Unmarshal(res.Body.Bytes(), &workspace); err != nil {
+		t.Fatalf("workspace json: %v", err)
+	}
+
+	save := func(document service.CanvasDocument) *httptest.ResponseRecorder {
+		data, err := json.Marshal(document)
+		if err != nil {
+			t.Fatalf("Marshal(canvas) error = %v", err)
+		}
+		req := httptest.NewRequest(http.MethodPut, "/api/canvas", bytes.NewReader(data))
+		req.Header.Set("Authorization", authorization)
+		req.Header.Set("Content-Type", "application/json")
+		res := httptest.NewRecorder()
+		app.Handler().ServeHTTP(res, req)
+		return res
+	}
+
+	first := workspace.Document
+	first.Title = "第一台设备"
+	res = save(first)
+	if res.Code != http.StatusOK {
+		t.Fatalf("first save status = %d body = %s", res.Code, res.Body.String())
+	}
+	stale := workspace.Document
+	stale.Title = "第二台设备"
+	res = save(stale)
+	if res.Code != http.StatusConflict {
+		t.Fatalf("stale save status = %d body = %s", res.Code, res.Body.String())
 	}
 }
 

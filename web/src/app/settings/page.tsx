@@ -11,8 +11,10 @@ import { ImageStorageGovernanceCard } from "./components/image-storage-governanc
 import { ImageObjectStorageCard } from "./components/image-object-storage-card";
 import { LogGovernanceCard } from "./components/log-governance-card";
 import { LoginPageImageCard } from "./components/login-page-image-card";
+import { ModelConfigCard } from "./components/model-config-card";
 import { SettingsHeader } from "./components/settings-header";
 import { SiteIconCard } from "./components/site-icon-card";
+import { PromptSourcesCard } from "./components/prompt-sources-card";
 import { useSettingsStore } from "./store";
 
 function SettingsDataController() {
@@ -39,12 +41,14 @@ function AdminSettingsPageContent({ showAnnouncements }: { showAnnouncements: bo
         <section className="grid items-start gap-5 lg:grid-cols-2">
           <div className="flex min-w-0 flex-col gap-5">
             <ConfigCard />
+            <ModelConfigCard />
             <ImageObjectStorageCard />
             <ImageStorageGovernanceCard />
           </div>
           <div className="flex min-w-0 flex-col gap-5">
             {showAnnouncements ? <SiteIconCard /> : null}
             {showAnnouncements ? <AnnouncementsCard /> : null}
+            {showAnnouncements ? <PromptSourcesCard /> : null}
             <LogGovernanceCard />
             <LoginPageImageCard />
           </div>

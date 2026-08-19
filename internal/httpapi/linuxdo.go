@@ -167,10 +167,6 @@ func (a *App) handleLinuxDoOAuthCallback(w http.ResponseWriter, r *http.Request)
 	}
 
 	fragment := url.Values{}
-	fragment.Set("key", rawSessionKey)
-	fragment.Set("role", service.AuthRoleUser)
-	fragment.Set("subject_id", ownerID)
-	fragment.Set("name", userInfo.Username)
 	fragment.Set("redirect", redirectTo)
 	setAuthSessionCookie(w, r, rawSessionKey)
 	redirectWithFragment(w, r, frontendCallback, fragment)

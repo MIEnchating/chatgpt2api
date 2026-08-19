@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"sort"
 	"strings"
 	"sync"
@@ -34,6 +35,7 @@ type ImageConversationSessionService struct {
 	store   storage.JSONDocumentBackend
 	docName string
 	items   map[string]ImageConversationSession
+	loadErr error
 }
 
 func NewImageConversationSessionService(path string, backends ...storage.Backend) *ImageConversationSessionService {
@@ -43,7 +45,7 @@ func NewImageConversationSessionService(path string, backends ...storage.Backend
 		docName: imageConversationSessionDocumentName,
 		items:   map[string]ImageConversationSession{},
 	}
-	s.items = s.load()
+	s.items, s.loadErr = s.load()
 	return s
 }
 
@@ -55,15 +57,18 @@ func (s *ImageConversationSessionService) Get(ownerID, frontendConversationID st
 	if key == "" {
 		return ImageConversationSession{}, false
 	}
-	s.mu.RLock()
-	defer s.mu.RUnlock()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.ensureLoadedLocked(); err != nil {
+		return ImageConversationSession{}, false
+	}
 	item, ok := s.items[key]
 	return item, ok
 }
 
-func (s *ImageConversationSessionService) Bind(item ImageConversationSession) {
+func (s *ImageConversationSessionService) Bind(item ImageConversationSession) error {
 	if s == nil {
-		return
+		return nil
 	}
 	item.OwnerID = util.Clean(item.OwnerID)
 	item.FrontendConversationID = util.Clean(item.FrontendConversationID)
@@ -72,12 +77,16 @@ func (s *ImageConversationSessionService) Bind(item ImageConversationSession) {
 	item.UpstreamParentMessageID = util.Clean(item.UpstreamParentMessageID)
 	key := imageConversationSessionKey(item.OwnerID, item.FrontendConversationID)
 	if key == "" || item.AccessToken == "" || item.UpstreamConversationID == "" || item.UpstreamParentMessageID == "" {
-		return
+		return nil
 	}
 
 	now := time.Now().UTC()
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.ensureLoadedLocked(); err != nil {
+		return err
+	}
+	previous, existed := s.items[key]
 	if existing, ok := s.items[key]; ok && item.CreatedAt.IsZero() {
 		item.CreatedAt = existing.CreatedAt
 	}
@@ -92,55 +101,94 @@ func (s *ImageConversationSessionService) Bind(item ImageConversationSession) {
 		s.items = map[string]ImageConversationSession{}
 	}
 	s.items[key] = item
-	_ = s.saveLocked()
+	if err := s.saveMergedLocked(); err != nil {
+		s.restoreAfterSaveFailureLocked(key, previous, existed)
+		return err
+	}
+	return nil
 }
 
-func (s *ImageConversationSessionService) Invalidate(ownerID, frontendConversationID string) {
+func (s *ImageConversationSessionService) Invalidate(ownerID, frontendConversationID string) error {
 	if s == nil {
-		return
+		return nil
 	}
 	key := imageConversationSessionKey(ownerID, frontendConversationID)
 	if key == "" {
-		return
+		return nil
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.ensureLoadedLocked(); err != nil {
+		return err
+	}
 	item, ok := s.items[key]
 	if !ok {
-		return
+		return nil
 	}
+	previous := item
 	item.Status = ImageConversationSessionFailed
 	item.LastUsedAt = time.Now().UTC()
 	s.items[key] = item
-	_ = s.saveLocked()
+	if err := s.saveMergedLocked(); err != nil {
+		s.restoreAfterSaveFailureLocked(key, previous, true)
+		return err
+	}
+	return nil
 }
 
-func (s *ImageConversationSessionService) Cleanup(maxAge time.Duration) int {
+func (s *ImageConversationSessionService) Cleanup(maxAge time.Duration) (int, error) {
 	if s == nil || maxAge <= 0 {
-		return 0
+		return 0, nil
 	}
 	cutoff := time.Now().UTC().Add(-maxAge)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	removed := 0
-	for key, item := range s.items {
-		lastUsed := item.LastUsedAt
-		if lastUsed.IsZero() {
-			lastUsed = item.CreatedAt
-		}
-		if !lastUsed.IsZero() && lastUsed.Before(cutoff) {
-			delete(s.items, key)
-			removed++
-		}
+	if err := s.ensureLoadedLocked(); err != nil {
+		return 0, err
 	}
-	if removed > 0 {
-		_ = s.saveLocked()
+	for attempt := 0; attempt < 3; attempt++ {
+		removedItems := make(map[string]ImageConversationSession)
+		for key, item := range s.items {
+			lastUsed := item.LastUsedAt
+			if lastUsed.IsZero() {
+				lastUsed = item.CreatedAt
+			}
+			if !lastUsed.IsZero() && lastUsed.Before(cutoff) {
+				removedItems[key] = item
+				delete(s.items, key)
+			}
+		}
+		if len(removedItems) == 0 {
+			return 0, nil
+		}
+		err := s.persistLocked()
+		if err == nil {
+			return len(removedItems), nil
+		}
+		if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt < 2 {
+			items, loadErr := s.load()
+			if loadErr != nil {
+				for key, item := range removedItems {
+					s.items[key] = item
+				}
+				return 0, loadErr
+			}
+			s.items = items
+			continue
+		}
+		for key, item := range removedItems {
+			s.items[key] = item
+		}
+		return 0, err
 	}
-	return removed
+	return 0, nil
 }
 
-func (s *ImageConversationSessionService) load() map[string]ImageConversationSession {
-	raw := loadStoredJSON(s.store, s.docName)
+func (s *ImageConversationSessionService) load() (map[string]ImageConversationSession, error) {
+	raw, err := loadStoredJSON(s.store, s.docName)
+	if err != nil {
+		return map[string]ImageConversationSession{}, err
+	}
 	if obj, ok := raw.(map[string]any); ok {
 		raw = obj["sessions"]
 	}
@@ -165,10 +213,42 @@ func (s *ImageConversationSessionService) load() map[string]ImageConversationSes
 		}
 		items[key] = item
 	}
-	return items
+	return items, nil
 }
 
-func (s *ImageConversationSessionService) saveLocked() error {
+func (s *ImageConversationSessionService) ensureLoadedLocked() error {
+	if s.loadErr == nil {
+		return nil
+	}
+	items, err := s.load()
+	if err != nil {
+		s.loadErr = err
+		return err
+	}
+	s.items = items
+	s.loadErr = nil
+	return nil
+}
+
+func (s *ImageConversationSessionService) saveMergedLocked() error {
+	for attempt := 0; attempt < 3; attempt++ {
+		err := s.persistLocked()
+		if !errors.Is(err, storage.ErrConcurrentRowUpdate) || attempt == 2 {
+			return err
+		}
+		remote, loadErr := s.load()
+		if loadErr != nil {
+			return loadErr
+		}
+		s.items = mergeImageConversationSessions(remote, s.items)
+	}
+	return nil
+}
+
+func (s *ImageConversationSessionService) persistLocked() error {
+	if s.store == nil {
+		return nil
+	}
 	items := make([]ImageConversationSession, 0, len(s.items))
 	for _, item := range s.items {
 		items = append(items, item)
@@ -177,6 +257,50 @@ func (s *ImageConversationSessionService) saveLocked() error {
 		return items[i].LastUsedAt.After(items[j].LastUsedAt)
 	})
 	return saveStoredJSON(s.store, s.docName, map[string]any{"sessions": items})
+}
+
+func mergeImageConversationSessions(remote, local map[string]ImageConversationSession) map[string]ImageConversationSession {
+	merged := make(map[string]ImageConversationSession, len(remote)+len(local))
+	for key, item := range remote {
+		merged[key] = item
+	}
+	for key, item := range local {
+		current, exists := merged[key]
+		if !exists || imageConversationSessionNewer(item, current) {
+			merged[key] = item
+		}
+	}
+	return merged
+}
+
+func imageConversationSessionNewer(candidate, current ImageConversationSession) bool {
+	candidateTime := candidate.LastUsedAt
+	if candidateTime.IsZero() {
+		candidateTime = candidate.CreatedAt
+	}
+	currentTime := current.LastUsedAt
+	if currentTime.IsZero() {
+		currentTime = current.CreatedAt
+	}
+	if !candidateTime.Equal(currentTime) {
+		return candidateTime.After(currentTime)
+	}
+	if candidate.Status != current.Status {
+		return candidate.Status == ImageConversationSessionFailed
+	}
+	return true
+}
+
+func (s *ImageConversationSessionService) restoreAfterSaveFailureLocked(key string, previous ImageConversationSession, existed bool) {
+	if items, err := s.load(); err == nil {
+		s.items = items
+		return
+	}
+	if existed {
+		s.items[key] = previous
+	} else {
+		delete(s.items, key)
+	}
 }
 
 func imageConversationSessionKey(ownerID, frontendConversationID string) string {

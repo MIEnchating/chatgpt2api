@@ -5,6 +5,7 @@ import type { CSSProperties } from "react";
 import { RotateCcw } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Slider } from "@/components/ui/slider";
 import { DEFAULT_LOGIN_PAGE_IMAGE, resolveLoginPageImageSrc } from "@/lib/app-meta";
 import {
   getLoginPageImageLayout,
@@ -301,13 +302,12 @@ export function LoginPageImageEditor({
           <span>缩放</span>
           <span>{transform.zoom.toFixed(2)}x</span>
         </div>
-        <input
-          type="range"
+        <Slider
           min={String(LOGIN_PAGE_IMAGE_MIN_ZOOM)}
           max={String(LOGIN_PAGE_IMAGE_MAX_ZOOM)}
           step="0.01"
           value={transform.zoom}
-          className="w-full accent-[#1456f0]"
+          className="w-full"
           onChange={(event) => applyZoomAtPoint(Number(event.target.value), frameSize.width / 2, frameSize.height / 2)}
         />
       </div>

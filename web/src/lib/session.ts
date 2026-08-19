@@ -3,12 +3,7 @@
 import { verifySession, type LoginResponse } from "@/lib/api";
 import { clearAuthenticatedImageCache } from "@/lib/authenticated-image";
 import { clearImageManagerCache } from "@/lib/image-manager-cache";
-import {
-  clearStoredAuthSession,
-  getStoredAuthSession,
-  setStoredAuthSession,
-  type StoredAuthSession,
-} from "@/store/auth";
+import type { StoredAuthSession } from "@/store/auth";
 
 let cachedAuthSession: StoredAuthSession | null | undefined;
 let verifyAuthSessionPromise: Promise<StoredAuthSession | null> | null = null;
@@ -25,9 +20,13 @@ export function displaySubjectId(subjectId?: string | null, provider?: string) {
   return normalizedId || "-";
 }
 
-export function authSessionFromLoginResponse(data: LoginResponse, key: string): StoredAuthSession {
+export function authSessionFromLoginResponse(data: LoginResponse): StoredAuthSession {
+  const credentialId = String(data.credential_id || "").trim();
+  if (!credentialId) {
+    throw new Error("登录会话缺少凭据标识");
+  }
   return {
-    key,
+    key: credentialId,
     role: data.role,
     roleId: data.role_id,
     roleName: data.role_name,
@@ -64,12 +63,9 @@ export async function getVerifiedAuthSession(): Promise<StoredAuthSession | null
     const verifiedSession = await verifyAuthSessionPromise;
     if (verifyStartedAtVersion === authSessionVersion) {
       cachedAuthSession = verifiedSession;
-      if (verifiedSession) {
-        await setStoredAuthSession(verifiedSession);
-      } else {
+      if (!verifiedSession) {
         clearAuthenticatedImageCache();
         clearImageManagerCache();
-        await clearStoredAuthSession();
       }
       return verifiedSession;
     }
@@ -87,7 +83,6 @@ export async function setVerifiedAuthSession(session: StoredAuthSession) {
   clearImageManagerCache();
   cachedAuthSession = session;
   verifyAuthSessionPromise = null;
-  await setStoredAuthSession(session);
   emitAuthSessionChange();
 }
 
@@ -97,25 +92,13 @@ export async function clearVerifiedAuthSession() {
   clearImageManagerCache();
   cachedAuthSession = null;
   verifyAuthSessionPromise = null;
-  await clearStoredAuthSession();
   emitAuthSessionChange();
 }
 
 async function verifyStoredAuthSession(): Promise<StoredAuthSession | null> {
-  const storedSession = await getStoredAuthSession();
-  if (!storedSession) {
-    try {
-      const data = await verifySession();
-      const token = data.token || "";
-      return token ? authSessionFromLoginResponse(data, token) : null;
-    } catch {
-      return null;
-    }
-  }
-
   try {
-    const data = await verifySession(storedSession.key);
-    return authSessionFromLoginResponse(data, data.token || storedSession.key);
+    const data = await verifySession();
+    return authSessionFromLoginResponse(data);
   } catch {
     return null;
   }

@@ -1,5 +1,5 @@
 import { toPng } from "html-to-image";
-import { ArrowUp, Bot, Check, ChevronDown, CircleDot, Clipboard, Copy, Download, FileDown, FileUp, Focus, Grid2X2, Hand, ImagePlus, Images, Info, LoaderCircle, Map as MapIcon, Pencil, Plus, Redo2, Save, Settings2, Sparkles, Square, Trash2, Type, Undo2, Upload, WandSparkles, X, ZoomIn, ZoomOut } from "lucide-react";
+import { ArrowUp, Bot, Check, ChevronDown, CircleDot, Clipboard, Copy, Download, FileDown, FileUp, Focus, Grid2X2, Hand, ImagePlus, Images, Info, LoaderCircle, Map as MapIcon, Pencil, Plus, Redo2, Save, Settings2, Sparkles, Square, Trash2, Type, Undo2, Upload, WandSparkles, Video, X, ZoomIn, ZoomOut } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { toast } from "sonner";
 
@@ -8,7 +8,7 @@ import { detachCanvasBatchRootForReplacement, duplicateCanvasNodeGroup, expandCa
 import { CanvasConfigComposer } from "@/app/canvas/canvas-config-composer";
 import { canvasConfigInputs, canvasConfigPromptDisplay } from "@/app/canvas/canvas-config-inputs";
 import { canCreateCanvasConnection, resolveCanvasConnection } from "@/app/canvas/canvas-connections";
-import { buildCanvasGenerationContext, buildCanvasImageReferencePrompt, canvasGenerationCount, canvasGenerationReferenceImageURLs, findCanvasRetryConfigurationNode, INTERRUPTED_CANVAS_GENERATION_ERROR, restoreInterruptedCanvasGenerations } from "@/app/canvas/canvas-generation-context";
+import { buildCanvasGenerationContext, buildCanvasImageReferencePrompt, canvasGenerationCount, canvasGenerationModel, canvasGenerationNeedsRecovery, canvasGenerationReferenceImageURLs, canvasGenerationRequestSize, findCanvasRetryConfigurationNode, markCanvasGenerationRecoveryPending, restoreInterruptedCanvasGenerations } from "@/app/canvas/canvas-generation-context";
 import { canvasGenerationActiveNodeID, placeCanvasGenerationResultNodes, setCanvasConfigGenerationStatus } from "@/app/canvas/canvas-generation-layout";
 import { appendCanvasHistorySnapshot, canvasHistoryKey, commitCanvasGenerationHistory, restoreCanvasHistoryDocument } from "@/app/canvas/canvas-history";
 import { canvasImageAngleLabel, canvasImageAnglePrompt, cropCanvasImage, splitCanvasImage, upscaleCanvasImage, type CanvasImageAngleParams, type CanvasImageCropRect, type CanvasImageSplitParams, type CanvasImageUpscaleParams } from "@/app/canvas/canvas-image-data";
@@ -30,11 +30,15 @@ import { AuthenticatedImage } from "@/components/authenticated-image";
 import { ImageLightbox } from "@/components/image-lightbox";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { cancelCreationTask, clearCanvasDocument, createImageEditTask, createImageGenerationTask, DEFAULT_IMAGE_MODEL, fetchCanvasDocument, fetchCreationTasks, fetchManagedImages, fetchModelConfig, importCanvasProject, PROFILE_RELAY_TOKEN_NAME_CHANGED_EVENT, PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY, saveCanvasDocument, updateCanvasProject, uploadCanvasImage, type CanvasConnection, type CanvasDocument, type CanvasNode, type CanvasProjectSummary, type CanvasWorkspaceResponse, type CreationTask, type ImageModel, type ManagedImage } from "@/lib/api";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Slider } from "@/components/ui/slider";
+import { cancelCreationTask, clearCanvasDocument, createImageEditTask, createImageGenerationTask, createVideoGenerationTask, DEFAULT_IMAGE_MODEL, fetchCanvasDocument, fetchCreationTasks, fetchManagedImages, fetchModelConfig, imageReferenceImageLimit, importCanvasProject, PROFILE_RELAY_TOKEN_NAME_CHANGED_EVENT, PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY, saveCanvasDocument, supportsImageEditing, supportsImageMask, supportsImageOutputControls, supportsImageQualityValue, supportsImageResolution, supportsImageStreaming, supportsStructuredImageParameters, updateCanvasProject, uploadCanvasImage, type CanvasConnection, type CanvasDocument, type CanvasNode, type CanvasProjectSummary, type CanvasWorkspaceResponse, type CreationTask, type ImageModel, type ManagedImage } from "@/lib/api";
 import { fetchAuthenticatedImageBlob, primeAuthenticatedImageCache } from "@/lib/authenticated-image";
-import { MAX_IMAGE_CONVERSATION_REFERENCE_IMAGES } from "@/lib/image-conversation-assets";
+import { imageConversationReferenceLimitMessage } from "@/lib/image-conversation-assets";
 import { cn } from "@/lib/utils";
+import { videoAudioControl, videoResolutionOptions, videoSecondsOptions, videoSizeLabel, videoSizeOptions, videoWatermarkSupported } from "@/lib/video-model-capabilities";
 
 type SaveState = "saved" | "dirty" | "saving" | "error";
 type CanvasSwitchPhase = "switching" | "revealing" | null;
@@ -47,13 +51,14 @@ type CanvasContextMenu =
   | { type: "connection"; x: number; y: number; connectionID: string };
 type CanvasImageToolState = { kind: "crop" | "split" | "upscale" | "mask" | "angle"; nodeID: string; sourceURL: string };
 type CanvasGenerationOptions = { resultTitle?: string; inputImageMask?: string; resultBounds?: { width: number; height: number }; resultCount?: number; selectResultNode?: boolean };
-
 const DEFAULT_DOCUMENT: CanvasDocument = { version: 1, id: "", revision: 0, title: "我的画布", background: "dots", nodes: [], connections: [], viewport: { zoom: 1, x: 0, y: 0 } };
 const MAX_HISTORY = 50;
 const TASK_POLL_INTERVAL_MS = 1200;
 const TASK_POLL_MAX_DURATION_MS = 8 * 60 * 1000;
 const TASK_POLL_MAX_RETRY_DELAY_MS = 10_000;
 const MINI_MAP_STORAGE_KEY = "yunmian-canvas-mini-map-open";
+
+class CanvasTaskPollingTimeoutError extends Error {}
 
 function cloneDocument(document: CanvasDocument) {
   return JSON.parse(JSON.stringify(document)) as CanvasDocument;
@@ -98,11 +103,45 @@ function imageFileSize(file: File) {
   });
 }
 
+function blobDataURL(blob: Blob) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("无法读取视频参考图片"));
+    reader.readAsDataURL(blob);
+  });
+}
+
 async function canvasDataURLFile(dataURL: string, fileName: string) {
   const response = await fetch(dataURL);
   if (!response.ok) throw new Error("无法读取处理后的图片");
   const blob = await response.blob();
-  return new File([blob], fileName, { type: blob.type || "image/png" });
+	return new File([blob], fileName, { type: blob.type || "image/png" });
+}
+
+async function canvasPNGFile(file: File, fileName: string) {
+	if (file.type.toLowerCase() === "image/png") return file;
+	const sourceURL = URL.createObjectURL(file);
+	try {
+		const source = await new Promise<HTMLImageElement>((resolve, reject) => {
+			const image = new Image();
+			image.onload = () => resolve(image);
+			image.onerror = () => reject(new Error("无法读取局部编辑原图"));
+			image.src = sourceURL;
+		});
+		const canvas = document.createElement("canvas");
+		canvas.width = Math.max(1, source.naturalWidth);
+		canvas.height = Math.max(1, source.naturalHeight);
+		const context = canvas.getContext("2d");
+		if (!context) throw new Error("无法转换局部编辑原图");
+		context.drawImage(source, 0, 0);
+		const blob = await new Promise<Blob>((resolve, reject) => {
+			canvas.toBlob((value) => value ? resolve(value) : reject(new Error("无法转换局部编辑原图")), "image/png");
+		});
+		return new File([blob], fileName, { type: "image/png" });
+	} finally {
+		URL.revokeObjectURL(sourceURL);
+	}
 }
 
 function fitImageNodeSize(width: number, height: number, maxWidth = 640, maxHeight = 640) {
@@ -126,8 +165,55 @@ function normalizeCanvasNodeTitle(node: CanvasNode) {
 
 function canvasNodeFallbackTitle(type: CanvasNode["type"]) {
   if (type === "image") return "图片";
+  if (type === "video") return "视频";
   if (type === "config") return "生成配置";
   return "想法";
+}
+
+function canvasVideoParameters(node?: CanvasNode | null) {
+  const model = node?.generation_video_model || "sora-2";
+  const sizes = videoSizeOptions(model);
+  const seconds = videoSecondsOptions(model);
+  const resolutions = videoResolutionOptions(model);
+  const selectedSeconds = node?.generation_video_seconds;
+  return {
+    generation_video_model: model,
+    generation_video_size: sizes.includes(node?.generation_video_size || "") ? node?.generation_video_size : sizes[0] || "",
+    generation_video_seconds: typeof selectedSeconds === "number" && seconds.includes(selectedSeconds) ? selectedSeconds : seconds.find((value) => value > 0) || 4,
+    generation_video_resolution: resolutions.includes(node?.generation_video_resolution || "") ? node?.generation_video_resolution : resolutions[0],
+    generation_video_audio: videoAudioControl(model) === "toggle" ? (node?.generation_video_audio ?? true) : videoAudioControl(model) === "always",
+    generation_video_watermark: node?.generation_video_watermark ?? false,
+  };
+}
+
+function CanvasVideoPromptPanel({ node, running, generationBusy, videoModels, onPromptChange, onParametersChange, onGenerate, onStop }: { node: CanvasNode; running: boolean; generationBusy: boolean; videoModels: string[]; onPromptChange: (value: string, commit?: boolean) => void; onParametersChange: (patch: Partial<CanvasNode>) => void; onGenerate: (prompt: string) => void; onStop: () => void }) {
+  const [prompt, setPrompt] = useState(node.prompt || "");
+  useEffect(() => setPrompt(node.prompt || ""), [node.id, node.prompt]);
+  const params = canvasVideoParameters(node);
+  const [secondsDraft, setSecondsDraft] = useState(String(params.generation_video_seconds));
+  useEffect(() => setSecondsDraft(String(params.generation_video_seconds)), [node.id, params.generation_video_seconds]);
+  const modelOptions = Array.from(new Set([...(videoModels || []), params.generation_video_model]));
+  const sizeOptions = videoSizeOptions(params.generation_video_model);
+  const secondsOptions = videoSecondsOptions(params.generation_video_model);
+  const positiveSecondsOptions = secondsOptions.filter((value) => value > 0);
+  const minimumSeconds = positiveSecondsOptions[0] || 1;
+  const maximumSeconds = positiveSecondsOptions.at(-1) || minimumSeconds;
+  const secondsValid = secondsOptions.includes(Number(secondsDraft));
+  const resolutionOptions = videoResolutionOptions(params.generation_video_model);
+  const audioControl = videoAudioControl(params.generation_video_model);
+  const watermarkSupported = videoWatermarkSupported(params.generation_video_model);
+  return <div className="overflow-hidden rounded-xl border border-border/90 bg-card/96 shadow-[0_14px_38px_rgba(15,23,42,.14)] backdrop-blur-xl">
+    <textarea value={prompt} onChange={(event) => { setPrompt(event.target.value); onPromptChange(event.target.value); }} onBlur={(event) => onPromptChange(event.target.value, true)} placeholder="描述你想生成的视频" className="h-20 w-full resize-none border-0 bg-transparent px-3.5 py-3 text-sm leading-5 outline-none placeholder:text-muted-foreground/55" />
+    <div className="grid grid-cols-2 gap-2 border-t border-border/70 bg-muted/20 p-2 text-xs">
+      <label className="space-y-1"><span className="text-muted-foreground">模型</span><Select value={params.generation_video_model} onValueChange={(model) => { const sizes = videoSizeOptions(model); const seconds = videoSecondsOptions(model); const resolutions = videoResolutionOptions(model); const nextSeconds = seconds.find((value) => value > 0) || 4; setSecondsDraft(String(nextSeconds)); onParametersChange({ generation_video_model: model, generation_video_size: sizes[0], generation_video_seconds: nextSeconds, generation_video_resolution: resolutions[0] }); }}><SelectTrigger className="h-8 rounded-md px-2 text-xs shadow-none"><SelectValue /></SelectTrigger><SelectContent>{modelOptions.map((model) => <SelectItem key={model} value={model}>{model}</SelectItem>)}</SelectContent></Select></label>
+      {sizeOptions.length > 0 ? <label className="space-y-1"><span className="text-muted-foreground">画幅</span><Select value={params.generation_video_size || undefined} onValueChange={(value) => onParametersChange({ generation_video_size: value })}><SelectTrigger className="h-8 rounded-md px-2 text-xs shadow-none"><SelectValue /></SelectTrigger><SelectContent>{sizeOptions.map((size) => <SelectItem key={size} value={size}>{videoSizeLabel(size)}</SelectItem>)}</SelectContent></Select></label> : null}
+      <label className="col-span-2 space-y-1"><span className="text-muted-foreground">时长</span><div className="grid grid-cols-[minmax(0,1fr)_6rem] gap-2"><Select value={secondsValid ? secondsDraft : undefined} onValueChange={(value) => { setSecondsDraft(value); onParametersChange({ generation_video_seconds: Number(value) }); }}><SelectTrigger className="h-8 min-w-0 rounded-md px-2 text-xs shadow-none"><SelectValue placeholder="选择时长" /></SelectTrigger><SelectContent>{secondsOptions.map((seconds) => <SelectItem key={seconds} value={String(seconds)}>{seconds < 0 ? "智能时长" : `${seconds} 秒`}</SelectItem>)}</SelectContent></Select><div className={cn("grid h-8 grid-cols-[1fr_auto] items-center overflow-hidden rounded-md border bg-background", !secondsValid && "border-rose-400 ring-2 ring-rose-500/10")}><Input type="number" inputMode="numeric" min={minimumSeconds} max={maximumSeconds} step="1" value={secondsDraft === "-1" ? "" : secondsDraft} placeholder={secondsDraft === "-1" ? "智能" : `${minimumSeconds}-${maximumSeconds}`} onChange={(event) => { const value = event.target.value; setSecondsDraft(value); if (secondsOptions.includes(Number(value))) onParametersChange({ generation_video_seconds: Number(value) }); }} className="h-full min-w-0 border-0 bg-transparent px-2 text-center text-xs shadow-none focus-visible:ring-0" aria-label="手动输入视频秒数" /><span className="pr-2 text-[11px] text-muted-foreground">{secondsDraft === "-1" ? "" : "秒"}</span></div></div>{!secondsValid ? <span className="text-[11px] text-rose-600 dark:text-rose-400">请输入当前模型支持的时长</span> : null}</label>
+      <label className="space-y-1"><span className="text-muted-foreground">清晰度</span><Select value={params.generation_video_resolution || undefined} onValueChange={(value) => onParametersChange({ generation_video_resolution: value })}><SelectTrigger className="h-8 rounded-md px-2 text-xs shadow-none"><SelectValue /></SelectTrigger><SelectContent>{resolutionOptions.map((resolution) => <SelectItem key={resolution} value={resolution}>{resolution.toUpperCase()}</SelectItem>)}</SelectContent></Select></label>
+      {audioControl === "toggle" ? <label className="flex items-center gap-2"><Checkbox checked={params.generation_video_audio} onCheckedChange={(checked) => onParametersChange({ generation_video_audio: checked === true })} />生成声音</label> : null}
+      {watermarkSupported ? <label className="flex items-center gap-2"><Checkbox checked={params.generation_video_watermark} onCheckedChange={(checked) => onParametersChange({ generation_video_watermark: checked === true })} />添加水印</label> : null}
+      <button type="button" disabled={running ? false : generationBusy || !prompt.trim() || !secondsValid} onClick={() => running ? onStop() : onGenerate(prompt.trim())} className={cn("col-span-2 flex h-8 items-center justify-center gap-2 rounded-lg text-xs font-semibold text-white", running ? "bg-rose-600" : "bg-[#1456f0] disabled:opacity-50")}>{running ? <><Square className="size-3.5 fill-current" />停止</> : <><Video className="size-3.5" />生成视频</>}</button>
+    </div>
+  </div>;
 }
 
 function isRetryableTaskPollError(error: unknown) {
@@ -207,22 +293,22 @@ function CanvasNodePromptPanel({ node, mentionReferences, running, generationBus
         containerClassName="h-20"
         className="h-20 resize-none border-0 bg-transparent px-3.5 py-3 text-sm leading-5 shadow-none outline-none placeholder:text-muted-foreground/55"
       />
-      <div className="flex min-w-0 items-center justify-between gap-1.5 border-t border-border/70 bg-muted/20 px-2 py-2">
+      <div className="flex min-w-0 items-center justify-between gap-2 border-t border-border/80 bg-muted/35 px-2.5 py-2">
         <div className="flex min-w-0 items-center gap-1.5">
           <span
-            className="inline-flex h-8 min-w-0 max-w-[180px] items-center gap-1.5 rounded-lg px-2 text-xs font-medium text-muted-foreground transition hover:bg-muted"
+            className="inline-flex h-8 min-w-0 max-w-[180px] items-center gap-1.5 rounded-lg border border-border/70 bg-background/75 px-2.5 text-xs font-medium text-foreground shadow-[0_1px_2px_rgba(15,23,42,.04)] transition hover:border-border hover:bg-background"
             title={`模型：${imageModel || "默认模型"}`}
           >
-            <Bot className="size-3.5 shrink-0" />
-            <span className="hidden shrink-0 sm:inline">模型</span>
-            <span className="min-w-0 truncate font-semibold text-foreground">{imageModelReady ? imageModel || "默认模型" : "读取中"}</span>
+            <Bot className="size-3.5 shrink-0 text-[#1456f0]" />
+            <span className="hidden shrink-0 text-muted-foreground sm:inline">模型</span>
+            <span className="min-w-0 truncate font-semibold">{imageModelReady ? imageModel || "默认模型" : "读取中"}</span>
           </span>
-          <CanvasImageParameterPopover node={node} onChange={onParametersChange} />
+          <CanvasImageParameterPopover node={node} imageModel={imageModel} onChange={onParametersChange} />
         </div>
         <Button
           size="sm"
           variant={running ? "destructive" : "default"}
-          className={cn("h-8 shrink-0 rounded-lg px-2 text-xs", running ? "min-w-20" : "w-8 bg-[#1456f0] text-white hover:bg-[#0f45c8]")}
+          className={cn("h-9 shrink-0 rounded-lg px-2 text-xs shadow-sm", running ? "min-w-20" : "w-9 bg-[#1456f0] text-white shadow-[0_4px_10px_rgba(20,86,240,.24)] hover:bg-[#0f45c8] hover:shadow-[0_5px_12px_rgba(20,86,240,.3)]")}
           disabled={running ? !canStop || cancelling : !imageModelReady || (!prompt.trim() && !connectedPromptAvailable) || generationBusy}
           aria-label={running ? "停止生成" : "生成"}
           onClick={() => running ? onStop() : submit()}
@@ -308,6 +394,8 @@ export default function CanvasPage() {
   const [openingBatchRootIDs, setOpeningBatchRootIDs] = useState(new Set<string>());
   const [imageModel, setImageModel] = useState<ImageModel>("");
   const [imageModelReady, setImageModelReady] = useState(false);
+  const [videoModel, setVideoModel] = useState("sora-2");
+  const [videoModels, setVideoModels] = useState(["sora-2"]);
   const [relayTokenName, setRelayTokenName] = useState(() => {
     if (typeof window === "undefined") return "";
     return window.localStorage.getItem(PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY) || "";
@@ -332,6 +420,8 @@ export default function CanvasPage() {
       .then(({ config }) => {
         if (active) {
           setImageModel(resolveCanvasImageModel(config.default_image_model, config.image_models, DEFAULT_IMAGE_MODEL));
+          setVideoModel(config.default_video_model || config.video_models?.[0] || "sora-2");
+          setVideoModels(config.video_models?.length ? config.video_models : ["sora-2"]);
           setImageModelReady(true);
         }
       })
@@ -373,6 +463,34 @@ export default function CanvasPage() {
   function replaceConnections(next: CanvasConnection[]) {
     connectionsRef.current = next;
     setConnectionsState(next);
+  }
+
+  function handleNodeMediaLoad(nodeID: string, naturalWidth: number, naturalHeight: number) {
+    const width = Math.round(Number(naturalWidth));
+    const height = Math.round(Number(naturalHeight));
+    if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) return;
+    const node = nodesRef.current.find((item) => item.id === nodeID);
+    if (!node || (node.type !== "image" && node.type !== "video") || !node.url) return;
+    if (node.natural_width === width && node.natural_height === height) return;
+
+    // Keep the node's largest edge as the display bound while matching the loaded
+    // media ratio. This removes letterboxing when the API omits output dimensions.
+    const maxEdge = Math.max(220, node.width, node.height);
+    const scale = Math.min(1, maxEdge / width, maxEdge / height);
+    const nextWidth = Math.max(1, Math.round(width * scale));
+    const nextHeight = Math.max(1, Math.round(height * scale));
+    const centerX = node.x + node.width / 2;
+    const centerY = node.y + node.height / 2;
+    replaceNodes(nodesRef.current.map((item) => item.id === nodeID ? {
+      ...item,
+      x: centerX - nextWidth / 2,
+      y: centerY - nextHeight / 2,
+      width: nextWidth,
+      height: nextHeight,
+      natural_width: width,
+      natural_height: height,
+    } : item));
+    scheduleSave();
   }
 
   function captureDocument(): CanvasDocument {
@@ -442,7 +560,10 @@ export default function CanvasPage() {
     let response: Awaited<ReturnType<typeof saveCanvasDocument>>;
     const request = saveQueueRef.current
       .catch(() => undefined)
-      .then(() => saveCanvasDocument(payload));
+      .then(() => saveCanvasDocument({
+        ...payload,
+        revision: documentRef.current.id === payload.id ? documentRef.current.revision : payload.revision,
+      }));
     saveQueueRef.current = request.then(() => undefined, () => undefined);
     try {
       response = await request;
@@ -468,9 +589,7 @@ export default function CanvasPage() {
     canvasRecoveryAbortControllerRef.current?.abort();
     canvasRecoveryAbortControllerRef.current = null;
     const recoveryTaskIDs = [...new Set((document.nodes || []).flatMap((node) => (
-      node.task_id && (node.generation_status === "loading" || node.generation_error === INTERRUPTED_CANVAS_GENERATION_ERROR)
-        ? [node.task_id]
-        : []
+      canvasGenerationNeedsRecovery(node) ? [node.task_id || ""] : []
     )))];
     const operationEpoch = canvasOperationEpochRef.current;
     const next = cloneDocument({
@@ -579,7 +698,7 @@ export default function CanvasPage() {
 
   function activateNode(nodeID: string) {
     const node = nodesRef.current.find((item) => item.id === nodeID);
-    setPanelNodeID(node?.type === "image" || node?.type === "config" ? node.id : "");
+    setPanelNodeID(node?.type === "image" || node?.type === "video" || node?.type === "config" ? node.id : "");
   }
 
   function toggleCanvasFreeResize(nodeID: string) {
@@ -656,8 +775,8 @@ export default function CanvasPage() {
     addTextNodeAt(placement());
   }
 
-  function addTextNodeAt(point: { x: number; y: number }) {
-    addNode({ id: `text-${randomID()}`, type: "text", x: point.x, y: point.y, width: 340, height: 240, font_size: 14, scale_x: 1, scale_y: 1, title: "想法", prompt: "", created_at: createdAt() });
+  function addTextNodeAt(point: { x: number; y: number }, prompt = "", title = "想法") {
+    addNode({ id: `text-${randomID()}`, type: "text", x: point.x, y: point.y, width: 340, height: 240, font_size: 14, scale_x: 1, scale_y: 1, title, prompt, created_at: createdAt() });
   }
 
   function addBlankNode() {
@@ -668,6 +787,16 @@ export default function CanvasPage() {
     const node = { id: `image-${randomID()}`, type: "image" as const, x: point.x, y: point.y, width: 340, height: 240, scale_x: 1, scale_y: 1, title: "图片", prompt: "", ...defaultCanvasImageParameters(), created_at: createdAt() };
     addNode(node);
     setPanelNodeID(node.id);
+  }
+
+  function addBlankVideoNodeAt(point: { x: number; y: number }) {
+    const node = buildVideoNode({}, point);
+    addNode(node);
+    setPanelNodeID(node.id);
+  }
+
+  function addBlankVideoNode() {
+    addBlankVideoNodeAt(placement());
   }
 
   function addConfigNodeAt(point: { x: number; y: number }) {
@@ -713,6 +842,25 @@ export default function CanvasPage() {
     };
   }
 
+  function buildVideoNode(video: { url?: string; title?: string; prompt?: string; taskID?: string }, point: { x: number; y: number }, parent?: CanvasNode | null): CanvasNode {
+    return {
+      id: `video-${randomID()}`,
+      type: "video",
+      x: point.x,
+      y: point.y,
+      width: 420,
+      height: 236,
+      scale_x: 1,
+      scale_y: 1,
+      url: video.url || "",
+      title: video.title || "视频",
+      prompt: video.prompt || "",
+      task_id: video.taskID || "",
+      ...canvasVideoParameters(parent),
+      created_at: createdAt(),
+    };
+  }
+
   function addImageNode(image: { url: string; thumbnailURL?: string; title?: string; prompt?: string; width?: number; height?: number; taskID?: string }, options: { x?: number; y?: number; parentID?: string; centered?: boolean } = {}) {
     if (!image.url) return;
     const parent = options.parentID ? nodesRef.current.find((node) => node.id === options.parentID) : null;
@@ -724,8 +872,10 @@ export default function CanvasPage() {
     setPanelNodeID(node.id);
   }
 
-  function requestNodeImageUpload(nodeID: string) {
+  function requestNodeMediaUpload(nodeID: string) {
     if (uploadingNodeID) return;
+    const target = nodesRef.current.find((node) => node.id === nodeID);
+    if (target?.type !== "image") return;
     uploadNodeIDRef.current = nodeID;
     uploadPositionRef.current = null;
     imageInputRef.current?.click();
@@ -787,6 +937,7 @@ export default function CanvasPage() {
           thumbnail_url: "",
           title: canvasImageTitle(file.name),
           task_id: "",
+          generation_model: undefined,
           generation_type: undefined,
           generation_reference_urls: undefined,
           generation_status: "success" as const,
@@ -837,11 +988,11 @@ export default function CanvasPage() {
     }
   }
 
-  function createPendingNode(type: "text" | "image" | "config") {
+  function createPendingNode(type: "text" | "image" | "video" | "config") {
     if (!pendingConnection) return;
     const width = 340;
     const height = 240;
-    const node: CanvasNode = { id: `${type}-${randomID()}`, type, x: pendingConnection.position.x - width / 2, y: pendingConnection.position.y - height / 2, width, height, ...(type === "text" ? { font_size: 14 } : {}), scale_x: 1, scale_y: 1, title: canvasNodeFallbackTitle(type), prompt: "", ...(type !== "text" ? defaultCanvasImageParameters() : {}), created_at: createdAt() };
+    const node: CanvasNode = { id: `${type}-${randomID()}`, type, x: pendingConnection.position.x - width / 2, y: pendingConnection.position.y - height / 2, width: type === "video" ? 420 : width, height: type === "video" ? 236 : height, ...(type === "text" ? { font_size: 14 } : {}), scale_x: 1, scale_y: 1, title: canvasNodeFallbackTitle(type), prompt: "", ...(type === "image" ? defaultCanvasImageParameters() : type === "video" ? canvasVideoParameters() : {}), created_at: createdAt() };
     const connection = resolveCanvasConnection(pendingConnection, node.id, [...nodesRef.current, node]);
     if (!connection || !canConnect(connection.sourceID, connection.targetID)) {
       return toast.error("该节点不能与生成配置节点连接");
@@ -939,13 +1090,13 @@ export default function CanvasPage() {
   }
 
   async function downloadNodeImage(nodeID: string) {
-    const node = nodesRef.current.find((item) => item.id === nodeID && item.type === "image");
+    const node = nodesRef.current.find((item) => item.id === nodeID && (item.type === "image" || item.type === "video"));
     if (!node?.url) return;
     try {
       const blob = await fetchAuthenticatedImageBlob(node.url);
       const objectURL = URL.createObjectURL(blob);
       const extension = blob.type.split("/")[1]?.replace("jpeg", "jpg") || node.generation_output_format || "png";
-      const rawTitle = (node.title || `image-${node.id}`).replace(/[\\/:*?"<>|]/g, "-");
+      const rawTitle = (node.title || `${node.type}-${node.id}`).replace(/[\\/:*?"<>|]/g, "-");
       const fileName = /\.[a-z0-9]{2,5}$/i.test(rawTitle) ? rawTitle : `${rawTitle}.${extension}`;
       const link = document.createElement("a");
       link.href = objectURL;
@@ -953,11 +1104,15 @@ export default function CanvasPage() {
       link.click();
       window.setTimeout(() => URL.revokeObjectURL(objectURL), 1000);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "图片下载失败");
+      toast.error(error instanceof Error ? error.message : "文件下载失败");
     }
   }
 
   async function openCanvasImageTool(nodeID: string, kind: CanvasImageToolState["kind"]) {
+    if (kind === "mask" && !supportsImageMask(imageModel)) {
+      toast.error(`模型 ${imageModel} 暂不支持局部遮罩编辑`);
+      return;
+    }
     const node = nodesRef.current.find((item) => item.id === nodeID && item.type === "image" && item.url);
     if (!node?.url || imageToolBusy) return;
     setImageToolBusy(true);
@@ -1260,7 +1415,10 @@ export default function CanvasPage() {
           getChangeVersion: () => saveChangeVersionRef.current,
           getProjectID: () => documentRef.current.id,
         })) return;
-        const response = await updateCanvasProject(input);
+        const request = input.action === "rename" || input.action === "delete"
+          ? { ...input, revision: documentRef.current.revision }
+          : input;
+        const response = await updateCanvasProject(request);
         applyWorkspace(response);
         setProjectMenuOpen(false);
       });
@@ -1298,7 +1456,7 @@ export default function CanvasPage() {
       if (task?.status === "success" || task?.status === "error" || task?.status === "cancelled") return task;
       delay = Math.min(2500, Math.round(delay * 1.35));
     }
-    throw new Error("图片任务处理时间过长，请稍后在任务队列中查看结果");
+    throw new CanvasTaskPollingTimeoutError("任务处理时间过长，请稍后在任务队列中查看结果");
   }
 
   function isCurrentCanvasRecovery(projectID: string, operationEpoch: number, signal: AbortSignal) {
@@ -1326,14 +1484,24 @@ export default function CanvasPage() {
     scheduleSave();
   }
 
+  function markCanvasTaskRecoveryPending(taskID: string, projectID: string, operationEpoch: number, signal: AbortSignal) {
+    if (!isCurrentCanvasRecovery(projectID, operationEpoch, signal)) return;
+    replaceNodes(markCanvasGenerationRecoveryPending(nodesRef.current, taskID));
+    scheduleSave();
+  }
+
   async function recoverCanvasTasks(projectID: string, operationEpoch: number, taskIDs: string[], signal: AbortSignal) {
     let response: Awaited<ReturnType<typeof fetchCreationTasks>>;
     try {
       response = await fetchCreationTasks(taskIDs, { signal });
     } catch (error) {
       if (!(error instanceof DOMException && error.name === "AbortError")) {
-        const message = error instanceof Error ? error.message : "无法读取图片任务状态";
-        taskIDs.forEach((taskID) => markCanvasTaskRecoveryError(taskID, message, projectID, operationEpoch, signal));
+        if (isRetryableTaskPollError(error)) {
+          taskIDs.forEach((taskID) => markCanvasTaskRecoveryPending(taskID, projectID, operationEpoch, signal));
+        } else {
+          const message = error instanceof Error ? error.message : "无法读取任务状态";
+          taskIDs.forEach((taskID) => markCanvasTaskRecoveryError(taskID, message, projectID, operationEpoch, signal));
+        }
       }
       return;
     }
@@ -1354,7 +1522,11 @@ export default function CanvasPage() {
             applyRecoveredCanvasTask(completedTask, projectID, operationEpoch, signal);
           } catch (error) {
             if (!(error instanceof DOMException && error.name === "AbortError")) {
-              markCanvasTaskRecoveryError(taskID, error instanceof Error ? error.message : "恢复图片任务失败", projectID, operationEpoch, signal);
+              if (error instanceof CanvasTaskPollingTimeoutError || isRetryableTaskPollError(error)) {
+                markCanvasTaskRecoveryPending(taskID, projectID, operationEpoch, signal);
+              } else {
+                markCanvasTaskRecoveryError(taskID, error instanceof Error ? error.message : "恢复任务失败", projectID, operationEpoch, signal);
+              }
             }
           }
         })(),
@@ -1388,7 +1560,49 @@ export default function CanvasPage() {
     void stopGeneration();
   }
 
+  async function runVideoGeneration(nodeID: string, prompt?: string) {
+    const sourceNode = nodesRef.current.find((node) => node.id === nodeID && node.type === "video");
+    if (!sourceNode || runningNodeID) return;
+    const context = buildCanvasGenerationContext(nodeID, nodesRef.current, connectionsRef.current, prompt ?? sourceNode.prompt ?? "");
+    const text = context.prompt.trim();
+    if (!text && !context.referenceImageURLs.length) return toast.error("请填写视频描述或连接参考图片");
+    const params = canvasVideoParameters(sourceNode);
+    if (!videoSecondsOptions(params.generation_video_model).includes(params.generation_video_seconds)) {
+      return toast.error("请输入当前视频模型支持的时长");
+    }
+    const taskID = `canvas-video-${randomID()}`;
+    const controller = new AbortController();
+    const projectID = documentRef.current.id;
+    const resultNodeID = sourceNode.url ? `video-${randomID()}` : sourceNode.id;
+    const resultNode = sourceNode.url ? { ...buildVideoNode({ title: text.slice(0, 32) || "视频", prompt: text, taskID }, { x: sourceNode.x + sourceNode.width + 96, y: sourceNode.y + sourceNode.height / 2 - 118 }, sourceNode), id: resultNodeID, generation_status: "loading" as const, generation_model: params.generation_video_model, task_id: taskID } : { ...sourceNode, prompt: text, task_id: taskID, generation_status: "loading" as const, generation_model: params.generation_video_model };
+    const historyBase = appendCanvasHistorySnapshot(historyRef.current, cloneDocument(captureDocument()), MAX_HISTORY);
+    historyRef.current = historyBase;
+    replaceNodes(sourceNode.url ? [...nodesRef.current.map((node) => node), resultNode] : nodesRef.current.map((node) => node.id === nodeID ? resultNode : node));
+    if (sourceNode.url) replaceConnections([...connectionsRef.current, { id: `connection-${randomID()}`, from_node_id: sourceNode.id, to_node_id: resultNodeID }]);
+    setPanelNodeID(resultNodeID); setSelectedNodeIDs(new Set([resultNodeID])); setRunningNodeID(nodeID); setRunningResultNodeID(resultNodeID); setRunningControlNodeID(nodeID); generationAbortControllerRef.current = controller;
+    try {
+      const referenceImageURLs = await Promise.all(context.referenceImageURLs.slice(0, 1).map(async (url) => blobDataURL(await fetchAuthenticatedImageBlob(url, controller.signal))));
+      const submitted = await createVideoGenerationTask(taskID, text, params.generation_video_model, params.generation_video_size, params.generation_video_seconds, params.generation_video_resolution, params.generation_video_audio, params.generation_video_watermark, referenceImageURLs, relayTokenName.trim() || undefined, { signal: controller.signal });
+      const completed = await waitForTask(submitted.id || taskID, undefined, controller.signal);
+      const item = completed.data?.find((entry) => String(entry.type || "") === "video" || entry.video_url || entry.url);
+      const url = String(item?.video_url || item?.url || "").trim();
+      if (!url) throw new Error(completed.error || "视频任务完成但没有返回视频地址");
+      replaceNodes(nodesRef.current.map((node) => node.id === resultNodeID ? { ...node, url, generation_status: "success" as const, generation_error: "", task_id: completed.id || taskID } : node));
+      commitGenerationHistory(historyBase); toast.success("已添加视频到画布");
+    } catch (error) {
+      if (controller.signal.aborted) return;
+      const message = error instanceof Error ? error.message : "视频生成失败";
+      replaceNodes(nodesRef.current.map((node) => node.id === resultNodeID ? { ...node, generation_status: "error" as const, generation_error: message, task_id: taskID } : node));
+      commitGenerationHistory(historyBase); toast.error(message);
+    } finally {
+      if (generationAbortControllerRef.current === controller) generationAbortControllerRef.current = null;
+      setRunningNodeID(""); setRunningResultNodeID(""); setRunningControlNodeID("");
+    }
+  }
+
   async function runGeneration(nodeID: string, prompt?: string, retry = false, options: CanvasGenerationOptions = {}) {
+    const videoNode = nodesRef.current.find((node) => node.id === nodeID && node.type === "video");
+    if (videoNode) return runVideoGeneration(nodeID, prompt);
     const sourceNode = nodesRef.current.find((node) => node.id === nodeID && (node.type === "image" || node.type === "config"));
     if (!sourceNode) return;
     const retrying = sourceNode.type === "image" && retry && sourceNode.generation_status === "error";
@@ -1396,22 +1610,37 @@ export default function CanvasPage() {
       ? findCanvasRetryConfigurationNode(sourceNode.id, nodesRef.current, connectionsRef.current)
       : null;
     const contextNode = retryConfiguration || sourceNode;
+    const generationModel = canvasGenerationModel(imageModel, sourceNode, retryConfiguration, retrying);
     const contextPrompt = prompt ?? retryConfiguration?.composer_content ?? retryConfiguration?.prompt ?? sourceNode.composer_content ?? sourceNode.prompt ?? "";
     const context = buildCanvasGenerationContext(contextNode.id, nodesRef.current, connectionsRef.current, contextPrompt);
     const text = retrying ? String(sourceNode.prompt || context.prompt).trim() : context.prompt;
-    const upstreamReferenceImageURLs = canvasGenerationReferenceImageURLs(contextNode, context.referenceImageURLs, MAX_IMAGE_CONVERSATION_REFERENCE_IMAGES);
+    const referenceImageLimit = imageReferenceImageLimit(generationModel);
+    const upstreamReferenceImageURLs = canvasGenerationReferenceImageURLs(contextNode, context.referenceImageURLs, referenceImageLimit + 1);
     const referenceImageURLs = retrying && sourceNode.generation_type
-      ? (sourceNode.generation_reference_urls || []).slice(0, MAX_IMAGE_CONVERSATION_REFERENCE_IMAGES)
+      ? (sourceNode.generation_reference_urls || []).slice(0, referenceImageLimit + 1)
       : upstreamReferenceImageURLs;
     const mode = referenceImageURLs.length ? "edit" : "generate";
     const createsResultNode = !retrying && (sourceNode.type === "config" || Boolean(sourceNode.url));
     if ((!text && !referenceImageURLs.length) || runningNodeID) return toast.error("请连接有效输入或填写画面描述");
     if (retrying && sourceNode.generation_type === "edit" && !referenceImageURLs.length) return toast.error("参考图片已丢失，无法继续重试");
+    if (referenceImageURLs.length && !supportsImageEditing(generationModel)) return toast.error(`模型 ${generationModel} 暂不支持参考图编辑`);
+    if (options.inputImageMask && !supportsImageMask(generationModel)) return toast.error(`模型 ${generationModel} 暂不支持局部遮罩编辑`);
+    const referenceLimitMessage = imageConversationReferenceLimitMessage(0, referenceImageURLs.length, referenceImageLimit);
+    if (referenceLimitMessage) return toast.error(referenceLimitMessage);
     const parameters = canvasImageParameters(retryConfiguration || sourceNode);
-    const size = parameters.generation_size || undefined;
-    const resolution = parameters.generation_resolution && parameters.generation_resolution !== "auto" ? parameters.generation_resolution : undefined;
-    const count = canvasGenerationCount(parameters.generation_count, options.resultCount, retrying);
-    const stream = parameters.generation_stream ?? true;
+    const structuredParameters = supportsStructuredImageParameters(generationModel);
+    const size = canvasGenerationRequestSize(generationModel, parameters.generation_size, parameters.generation_resolution);
+    const resolution = structuredParameters && parameters.generation_resolution && parameters.generation_resolution !== "auto" && supportsImageResolution(generationModel, parameters.generation_resolution)
+      ? parameters.generation_resolution
+      : undefined;
+    const quality = parameters.generation_quality && supportsImageQualityValue(generationModel, parameters.generation_quality)
+      ? parameters.generation_quality
+      : undefined;
+    const outputFormat = supportsImageOutputControls(generationModel) ? parameters.generation_output_format : undefined;
+    const outputCompression = outputFormat ? parameters.generation_output_compression : undefined;
+    const count = canvasGenerationCount(generationModel, parameters.generation_count, options.resultCount, retrying);
+    const stream = supportsImageStreaming(generationModel) && (parameters.generation_stream ?? true);
+    const partialImages = stream ? parameters.generation_partial_images : 0;
     const taskRelayTokenName = relayTokenName.trim() || undefined;
     const taskID = `canvas-${mode}-${randomID()}`;
     const controller = new AbortController();
@@ -1426,13 +1655,16 @@ export default function CanvasPage() {
     submittedTaskIDRef.current = "";
     let activeTaskID = taskID;
     let taskCancelled = false;
+    let taskSubmissionAttempted = false;
+    let terminalTaskReceived = false;
     const completedProgressNodeIDs = new Set<string>();
     const resultTitle = options.resultTitle?.trim() || text.slice(0, 32) || "图片";
     const resultNodeID = createsResultNode ? `image-${randomID()}` : sourceNode.id;
-    const generationState: Pick<CanvasNode, "title" | "prompt" | "task_id" | "generation_status" | "generation_error" | "generation_type" | "generation_reference_urls"> = {
+    const generationState: Pick<CanvasNode, "title" | "prompt" | "task_id" | "generation_model" | "generation_status" | "generation_error" | "generation_type" | "generation_reference_urls"> = {
       title: resultTitle,
       prompt: text,
       task_id: taskID,
+      generation_model: generationModel,
       generation_status: "loading" as const,
       generation_error: "",
       generation_type: mode,
@@ -1510,12 +1742,17 @@ export default function CanvasPage() {
     try {
       let submitted: CreationTask;
       if (referenceImageURLs.length) {
-        const referenceFiles = await Promise.all(referenceImageURLs.map(async (url, index) => {
-          const blob = await fetchAuthenticatedImageBlob(url, controller.signal);
-          return new File([blob], `canvas-reference-${index + 1}.${blob.type === "image/jpeg" ? "jpg" : blob.type === "image/webp" ? "webp" : "png"}`, { type: blob.type || "image/png" });
-        }));
-        submitted = await createImageEditTask(taskID, referenceFiles, buildCanvasImageReferencePrompt(text, referenceFiles.length), imageModel || undefined, size, size, parameters.generation_quality, count, undefined, "private", resolution, parameters.generation_output_format, parameters.generation_output_compression, stream, parameters.generation_partial_images, options.inputImageMask ? { inputImageMask: options.inputImageMask } : undefined, undefined, taskRelayTokenName, undefined, undefined, { signal: controller.signal });
-      } else submitted = await createImageGenerationTask(taskID, text, imageModel || undefined, size, size, parameters.generation_quality, count, undefined, "private", resolution, parameters.generation_output_format, parameters.generation_output_compression, stream, parameters.generation_partial_images, undefined, undefined, taskRelayTokenName, undefined, undefined, { signal: controller.signal });
+		const referenceFiles = await Promise.all(referenceImageURLs.map(async (url, index) => {
+			const blob = await fetchAuthenticatedImageBlob(url, controller.signal);
+			const file = new File([blob], `canvas-reference-${index + 1}.${blob.type === "image/jpeg" ? "jpg" : blob.type === "image/webp" ? "webp" : "png"}`, { type: blob.type || "image/png" });
+			return options.inputImageMask && index === 0 ? canvasPNGFile(file, "canvas-reference-1.png") : file;
+		}));
+        taskSubmissionAttempted = true;
+        submitted = await createImageEditTask(taskID, referenceFiles, buildCanvasImageReferencePrompt(text, referenceFiles.length), generationModel || undefined, size, size, quality, count, undefined, "private", resolution, outputFormat, outputCompression, stream, partialImages, options.inputImageMask ? { inputImageMask: options.inputImageMask } : undefined, undefined, taskRelayTokenName, undefined, undefined, { signal: controller.signal });
+      } else {
+        taskSubmissionAttempted = true;
+        submitted = await createImageGenerationTask(taskID, text, generationModel || undefined, size, size, quality, count, undefined, "private", resolution, outputFormat, outputCompression, stream, partialImages, undefined, undefined, taskRelayTokenName, undefined, undefined, { signal: controller.signal });
+      }
       if (!generationIsCurrent()) return;
       activeTaskID = submitted.id || taskID;
       pendingTaskIDRef.current = activeTaskID;
@@ -1539,12 +1776,14 @@ export default function CanvasPage() {
         replaceNodes(nextNodes);
         if (receivedNewFinal) scheduleSave();
       }, controller.signal);
+      terminalTaskReceived = true;
       if (!generationIsCurrent()) return;
       const taskResult = summarizeCanvasTaskResult(completedTask, outputNodeIDs.length);
       taskCancelled = taskResult.cancelled;
       if (taskCancelled) throw new DOMException("请求已取消", "AbortError");
       const images = taskResult.images;
       if (!images.length) throw new Error(taskResult.error || "任务完成但没有返回图片");
+      const terminalImageError = taskResult.error || "任务完成但没有返回这张图片";
       const imageByNodeID = new Map(taskResult.slots.flatMap((slot, index) => slot.image ? [[outputNodeIDs[index], slot.image] as const] : []));
       const currentNodeIDs = new Set(nodesRef.current.map((node) => node.id));
       const currentBatchRoot = isBatch ? nodesRef.current.find((node) => node.id === resultNodeID) : null;
@@ -1558,7 +1797,7 @@ export default function CanvasPage() {
           if (!image) return {
             ...restoreCanvasTaskInitialImage(node, initialResultImageByID),
             generation_status: "error",
-            generation_error: "任务完成但图片组没有可用结果",
+            generation_error: taskResult.error || "任务完成但图片组没有可用结果",
             task_id: activeTaskID,
             batch_primary_id: undefined,
           };
@@ -1571,7 +1810,7 @@ export default function CanvasPage() {
         if (!image) return {
           ...restoreCanvasTaskInitialImage(node, initialResultImageByID),
           generation_status: "error",
-          generation_error: "任务完成但没有返回这张图片",
+          generation_error: terminalImageError,
           task_id: activeTaskID,
         };
         return applyCanvasTaskImage(node, image, activeTaskID);
@@ -1586,13 +1825,16 @@ export default function CanvasPage() {
       commitGenerationHistory(generationHistoryBase);
       void refreshLibrary();
       const missingCount = taskResult.missingCount;
-      if (missingCount) toast.error(`已完成 ${images.length} 张，${missingCount} 张生成失败`);
-      else if (completedTask.status === "error") toast.error(completedTask.error || "图片任务返回异常状态");
+      if (missingCount) toast.error(taskResult.error || `已完成 ${images.length} 张，${missingCount} 张生成失败`);
+      else if (completedTask.status === "error") toast.error(completedTask.error || "任务返回异常状态");
       else toast.success(`已添加 ${images.length} 张图片到画布`);
     } catch (error) {
       if (!generationIsCurrent()) return;
       const cancelled = taskCancelled || controller.signal.aborted || cancelledTaskIDsRef.current.has(activeTaskID) || cancelledTaskIDsRef.current.has(taskID);
       const generationError = error instanceof Error ? error.message : "创作任务失败";
+      const recoveryPending = !cancelled && taskSubmissionAttempted && !terminalTaskReceived && (
+        error instanceof CanvasTaskPollingTimeoutError || isRetryableTaskPollError(error)
+      );
       let cancelledTask: CreationTask | null = null;
       if (cancelled) {
         try { cancelledTask = await cancelCreationTask(activeTaskID); } catch { /* A request cancelled before submission has no server task. */ }
@@ -1606,18 +1848,20 @@ export default function CanvasPage() {
         initialImageByNodeID: initialResultImageByID,
       }) : null;
       const completedImageByNodeID = cancelledResult?.completedImageByNodeID || new Map();
-      let nextNodes = cancelledResult?.nodes || nodesRef.current.map((node): CanvasNode => resultNodeIDs.includes(node.id) ? {
-        ...restoreCanvasTaskInitialImage(node, initialResultImageByID),
-        task_id: activeTaskID,
-        generation_status: "error",
-        generation_error: generationError,
-      } : node);
+      let nextNodes = recoveryPending
+        ? markCanvasGenerationRecoveryPending(nodesRef.current, activeTaskID)
+        : cancelledResult?.nodes || nodesRef.current.map((node): CanvasNode => resultNodeIDs.includes(node.id) ? {
+          ...restoreCanvasTaskInitialImage(node, initialResultImageByID),
+          task_id: activeTaskID,
+          generation_status: "error",
+          generation_error: generationError,
+        } : node);
       if (cancelled && retrying && sourceNode.batch_root_id && completedImageByNodeID.has(sourceNode.id)) nextNodes = syncCanvasBatchRootAfterRetry(nextNodes, sourceNode.id);
-      nextNodes = setCanvasConfigGenerationStatus(nextNodes, sourceNode.id, cancelled ? "idle" : "error", cancelled ? "" : generationError, cancelled ? "" : activeTaskID);
+      if (!recoveryPending) nextNodes = setCanvasConfigGenerationStatus(nextNodes, sourceNode.id, cancelled ? "idle" : "error", cancelled ? "" : generationError, cancelled ? "" : activeTaskID);
       replaceNodes(nextNodes);
       commitGenerationHistory(generationHistoryBase);
       if (completedImageByNodeID.size) void refreshLibrary();
-      if (!cancelled) toast.error(generationError);
+      if (!cancelled) toast.error(recoveryPending ? "暂时无法同步后台任务，重新进入画布后将继续恢复" : generationError);
     } finally {
       cancelledTaskIDsRef.current.delete(taskID);
       cancelledTaskIDsRef.current.delete(activeTaskID);
@@ -1641,8 +1885,11 @@ export default function CanvasPage() {
     interruptActiveGeneration();
     try {
       await enqueueWorkspaceMutation(async () => {
+        if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+        await saveQueueRef.current.catch(() => undefined);
         const projectID = documentRef.current.id;
-        const response = await clearCanvasDocument(projectID);
+        const response = await clearCanvasDocument(projectID, documentRef.current.revision);
         applyDocument(response.document);
       });
     } catch (error) {
@@ -1732,7 +1979,7 @@ export default function CanvasPage() {
   function handleCanvasDrop(event: ReactDragEvent<HTMLDivElement>, position: { x: number; y: number }) {
     event.preventDefault();
     const file = Array.from(event.dataTransfer.files).find((item) => item.type.startsWith("image/"));
-    if (file) {
+    if (file?.type.startsWith("image/")) {
       void uploadImageFile(file, "", position);
       return;
     }
@@ -1746,6 +1993,7 @@ export default function CanvasPage() {
     }
   }
 
+
   function renderNodePanel(node: CanvasNode) {
     if (node.type === "config") {
       return (
@@ -1756,6 +2004,9 @@ export default function CanvasPage() {
           onClose={() => setPanelNodeID("")}
         />
       );
+    }
+    if (node.type === "video") {
+      return <CanvasVideoPromptPanel node={node} running={runningControlNodeID === node.id} generationBusy={Boolean(runningNodeID)} videoModels={videoModels} onPromptChange={(value, commit) => updateNodePrompt(node.id, value, commit)} onParametersChange={(patch) => updateNodeGenerationParameters(node.id, patch)} onGenerate={(prompt) => void runVideoGeneration(node.id, prompt)} onStop={requestStopGeneration} />;
     }
     const running = runningControlNodeID === node.id;
     const connectedPromptAvailable = Boolean(buildCanvasGenerationContext(node.id, nodesRef.current, connectionsRef.current, node.prompt || "").prompt);
@@ -1895,10 +2146,10 @@ export default function CanvasPage() {
 
   return (
     <section ref={hostRef} className="relative h-full min-h-[540px] overflow-hidden rounded-xl border border-border bg-[#f3f5f8] shadow-[0_16px_42px_-34px_rgba(15,23,42,0.34)] dark:bg-[#15181d]">
-      <CanvasEngine nodes={nodes} connections={connections} viewport={viewport} background={background} canvasSize={canvasSize} exporting={exportingCanvas} exportBounds={exportingCanvas ? canvasExportBounds(visibleCanvasNodes(nodes)) : undefined} selectedNodeIDs={selectedNodeIDs} selectedConnectionID={selectedConnectionID} panelNodeID={panelNodeID} runningNodeID={runningControlNodeID} loadingNodeID={runningResultNodeID} pendingConnectionActive={Boolean(pendingConnection)} collapsingBatchRootIDs={collapsingBatchRootIDs} openingBatchRootIDs={openingBatchRootIDs} onNodesChange={replaceNodes} onNodesCommit={pushHistory} onViewportChange={updateViewport} onSelectionChange={selectionChanged} onConnect={connectNodes} canConnect={canConnect} onConnectionDropEmpty={(origin, position, menu) => setPendingConnection({ ...origin, position, menu })} onPromptChange={updateNodePrompt} onTextFontSizeChange={updateTextFontSize} onTitleChange={updateNodeTitle} onNodePanelToggle={(nodeID) => setPanelNodeID((current) => current === nodeID ? "" : nodeID)} onNodeGenerate={(nodeID) => void runGeneration(nodeID)} onNodeStop={requestStopGeneration} onNodeParametersChange={updateNodeGenerationParameters} onNodeUpload={requestNodeImageUpload} onToggleFreeResize={toggleCanvasFreeResize} onCropImage={(nodeID) => void openCanvasImageTool(nodeID, "crop")} onSplitImage={(nodeID) => void openCanvasImageTool(nodeID, "split")} onUpscaleImage={(nodeID) => void openCanvasImageTool(nodeID, "upscale")} onMaskEdit={(nodeID) => void openCanvasImageTool(nodeID, "mask")} onAngleImage={(nodeID) => void openCanvasImageTool(nodeID, "angle")} uploadingNodeID={uploadingNodeID} onViewImage={(nodeID) => { setPanelNodeID(""); setPreviewNodeID(nodeID); }} onCopyPrompt={(nodeID) => void copyNodePrompt(nodeID)} onDownloadImage={(nodeID) => void downloadNodeImage(nodeID)} onTextToImage={generateFromTextNode} onNodeRetry={(nodeID) => void runGeneration(nodeID, undefined, true)} onNodeActivate={activateNode} onToggleBatch={toggleCanvasBatch} onSetBatchPrimary={makeCanvasBatchPrimary} onNodeInfo={setInfoNodeID} onNodeDelete={(nodeID) => removeNodes(new Set([nodeID]))} onNodeContextMenu={openNodeContextMenu} onConnectionContextMenu={openConnectionContextMenu} onCanvasContextMenu={openCanvasContextMenu} onCanvasDoubleClick={(event, position) => { const rect = hostRef.current?.getBoundingClientRect(); setNodeCreateMenu({ position, menu: { x: event.clientX - (rect?.left || 0), y: event.clientY - (rect?.top || 0) } }); }} renderNodePanel={renderNodePanel} onDrop={handleCanvasDrop} />
+      <CanvasEngine nodes={nodes} connections={connections} imageModel={imageModel} viewport={viewport} background={background} canvasSize={canvasSize} exporting={exportingCanvas} exportBounds={exportingCanvas ? canvasExportBounds(visibleCanvasNodes(nodes)) : undefined} selectedNodeIDs={selectedNodeIDs} selectedConnectionID={selectedConnectionID} panelNodeID={panelNodeID} runningNodeID={runningControlNodeID} loadingNodeID={runningResultNodeID} pendingConnectionActive={Boolean(pendingConnection)} collapsingBatchRootIDs={collapsingBatchRootIDs} openingBatchRootIDs={openingBatchRootIDs} onNodesChange={replaceNodes} onNodesCommit={pushHistory} onViewportChange={updateViewport} onSelectionChange={selectionChanged} onConnect={connectNodes} canConnect={canConnect} onConnectionDropEmpty={(origin, position, menu) => setPendingConnection({ ...origin, position, menu })} onPromptChange={updateNodePrompt} onTextFontSizeChange={updateTextFontSize} onTitleChange={updateNodeTitle} onNodePanelToggle={(nodeID) => setPanelNodeID((current) => current === nodeID ? "" : nodeID)} onNodeGenerate={(nodeID) => void runGeneration(nodeID)} onNodeStop={requestStopGeneration} onNodeParametersChange={updateNodeGenerationParameters} onNodeMediaLoad={handleNodeMediaLoad} onNodeUpload={requestNodeMediaUpload} onToggleFreeResize={toggleCanvasFreeResize} onCropImage={(nodeID) => void openCanvasImageTool(nodeID, "crop")} onSplitImage={(nodeID) => void openCanvasImageTool(nodeID, "split")} onUpscaleImage={(nodeID) => void openCanvasImageTool(nodeID, "upscale")} onMaskEdit={(nodeID) => void openCanvasImageTool(nodeID, "mask")} onAngleImage={(nodeID) => void openCanvasImageTool(nodeID, "angle")} uploadingNodeID={uploadingNodeID} onViewImage={(nodeID) => { setPanelNodeID(""); setPreviewNodeID(nodeID); }} onCopyPrompt={(nodeID) => void copyNodePrompt(nodeID)} onDownloadImage={(nodeID) => void downloadNodeImage(nodeID)} onTextToImage={generateFromTextNode} onNodeRetry={(nodeID) => void runGeneration(nodeID, undefined, true)} onNodeActivate={activateNode} onToggleBatch={toggleCanvasBatch} onSetBatchPrimary={makeCanvasBatchPrimary} onNodeInfo={setInfoNodeID} onNodeDelete={(nodeID) => removeNodes(new Set([nodeID]))} onNodeContextMenu={openNodeContextMenu} onConnectionContextMenu={openConnectionContextMenu} onCanvasContextMenu={openCanvasContextMenu} onCanvasDoubleClick={(event, position) => { const rect = hostRef.current?.getBoundingClientRect(); setNodeCreateMenu({ position, menu: { x: event.clientX - (rect?.left || 0), y: event.clientY - (rect?.top || 0) } }); }} renderNodePanel={renderNodePanel} onDrop={handleCanvasDrop} />
 
-      {pendingConnection ? <div data-connection-create-menu className="absolute z-40 w-48 rounded-xl border border-border bg-card p-1.5 shadow-xl" style={{ left: Math.max(8, Math.min(pendingConnection.menu.x, (hostRef.current?.clientWidth || 240) - 200)), top: Math.max(64, Math.min(pendingConnection.menu.y, (hostRef.current?.clientHeight || 240) - 168)) }}><p className="px-2 py-1.5 text-[11px] font-semibold text-muted-foreground">创建节点并连接</p><button className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs hover:bg-muted" onClick={() => createPendingNode("text")}><Type className="size-4" />想法节点</button><button className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs hover:bg-muted" onClick={() => createPendingNode("image")}><ImagePlus className="size-4" />空白图片节点</button><button className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs hover:bg-muted" onClick={() => createPendingNode("config")}><Settings2 className="size-4" />生成配置节点</button></div> : null}
-      {nodeCreateMenu ? <div data-node-create-menu className="absolute z-40 w-48 rounded-xl border border-border bg-card p-1.5 shadow-xl" style={{ left: Math.max(8, Math.min(nodeCreateMenu.menu.x, (hostRef.current?.clientWidth || 240) - 200)), top: Math.max(64, Math.min(nodeCreateMenu.menu.y, (hostRef.current?.clientHeight || 240) - 168)) }}><p className="px-2 py-1.5 text-[11px] font-semibold text-muted-foreground">添加到画布</p><button className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs hover:bg-muted" onClick={() => { addTextNodeAt({ x: nodeCreateMenu.position.x - 170, y: nodeCreateMenu.position.y - 120 }); setNodeCreateMenu(null); }}><Type className="size-4" />想法节点</button><button className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs hover:bg-muted" onClick={() => { addBlankNodeAt({ x: nodeCreateMenu.position.x - 170, y: nodeCreateMenu.position.y - 120 }); setNodeCreateMenu(null); }}><ImagePlus className="size-4" />空白图片节点</button><button className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs hover:bg-muted" onClick={() => { addConfigNodeAt({ x: nodeCreateMenu.position.x - 170, y: nodeCreateMenu.position.y - 120 }); setNodeCreateMenu(null); }}><Settings2 className="size-4" />生成配置节点</button></div> : null}
+      {pendingConnection ? <div data-connection-create-menu className="absolute z-40 w-48 rounded-xl border border-border bg-card p-1.5 shadow-xl" style={{ left: Math.max(8, Math.min(pendingConnection.menu.x, (hostRef.current?.clientWidth || 240) - 200)), top: Math.max(64, Math.min(pendingConnection.menu.y, (hostRef.current?.clientHeight || 240) - 168)) }}><p className="px-2 py-1.5 text-[11px] font-semibold text-muted-foreground">创建节点并连接</p><button className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs hover:bg-muted" onClick={() => createPendingNode("text")}><Type className="size-4" />想法节点</button><button className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs hover:bg-muted" onClick={() => createPendingNode("image")}><ImagePlus className="size-4" />空白图片节点</button><button className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs hover:bg-muted" onClick={() => createPendingNode("video")}><Video className="size-4" />视频生成节点</button><button className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs hover:bg-muted" onClick={() => createPendingNode("config")}><Settings2 className="size-4" />生成配置节点</button></div> : null}
+      {nodeCreateMenu ? <div data-node-create-menu className="absolute z-40 w-48 rounded-xl border border-border bg-card p-1.5 shadow-xl" style={{ left: Math.max(8, Math.min(nodeCreateMenu.menu.x, (hostRef.current?.clientWidth || 240) - 200)), top: Math.max(64, Math.min(nodeCreateMenu.menu.y, (hostRef.current?.clientHeight || 240) - 168)) }}><p className="px-2 py-1.5 text-[11px] font-semibold text-muted-foreground">添加到画布</p><button className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs hover:bg-muted" onClick={() => { addTextNodeAt({ x: nodeCreateMenu.position.x - 170, y: nodeCreateMenu.position.y - 120 }); setNodeCreateMenu(null); }}><Type className="size-4" />想法节点</button><button className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs hover:bg-muted" onClick={() => { addBlankNodeAt({ x: nodeCreateMenu.position.x - 170, y: nodeCreateMenu.position.y - 120 }); setNodeCreateMenu(null); }}><ImagePlus className="size-4" />空白图片节点</button><button className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs hover:bg-muted" onClick={() => { const point = { x: nodeCreateMenu.position.x - 210, y: nodeCreateMenu.position.y - 118 }; const node = buildVideoNode({}, point); addNode(node); setPanelNodeID(node.id); setNodeCreateMenu(null); }}><Video className="size-4" />视频生成节点</button><button className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs hover:bg-muted" onClick={() => { addConfigNodeAt({ x: nodeCreateMenu.position.x - 170, y: nodeCreateMenu.position.y - 120 }); setNodeCreateMenu(null); }}><Settings2 className="size-4" />生成配置节点</button></div> : null}
 
       <div className="pointer-events-none absolute inset-x-3 top-3 z-20 flex items-start justify-between gap-3">
         <div className="pointer-events-auto flex h-10 items-center rounded-xl border border-border bg-card/94 p-1 shadow-[0_8px_24px_rgba(15,23,42,.09)] backdrop-blur-xl">
@@ -1917,6 +2168,7 @@ export default function CanvasPage() {
             <ToolbarDivider />
             <ToolButton label="添加想法" onClick={addTextNode}><Type /></ToolButton>
             <ToolButton label="添加空白图片" onClick={addBlankNode}><ImagePlus /></ToolButton>
+            <ToolButton label="添加视频生成" onClick={addBlankVideoNode}><Video /></ToolButton>
             <ToolButton label="添加生成配置" onClick={() => addConfigNodeAt(placement())}><Settings2 /></ToolButton>
             <ToolButton label="上传图片" disabled={Boolean(uploadingNodeID)} onClick={() => requestCanvasImageUpload()}>{uploadingNodeID === "canvas-upload" ? <LoaderCircle className="animate-spin" /> : <Upload />}</ToolButton>
             <ToolButton active={libraryOpen} label="图片库" onClick={() => setLibraryOpen((value) => !value)}><Images /></ToolButton>
@@ -1932,7 +2184,7 @@ export default function CanvasPage() {
       <div className="pointer-events-auto absolute bottom-3 left-3 z-30 hidden h-11 items-center gap-0.5 rounded-xl border border-border bg-card/95 p-1 shadow-[0_10px_28px_rgba(15,23,42,.12)] backdrop-blur-xl lg:flex">
         <ToolButton label="重置视图" onClick={resetViewport}><Focus /></ToolButton>
         <ToolButton label="缩小" onClick={() => updateViewport(setCanvasViewportZoom(viewportRef.current, canvasSize, viewportRef.current.zoom / 1.2), true)}><ZoomOut /></ToolButton>
-        <input aria-label="画布缩放" type="range" min={CANVAS_MIN_ZOOM * 100} max={CANVAS_MAX_ZOOM * 100} value={Math.round(viewport.zoom * 100)} className="h-1.5 w-20 cursor-pointer accent-[#1456f0]" onChange={(event) => updateViewport(setCanvasViewportZoom(viewportRef.current, canvasSize, Number(event.target.value) / 100), true)} />
+        <Slider aria-label="画布缩放" min={CANVAS_MIN_ZOOM * 100} max={CANVAS_MAX_ZOOM * 100} value={Math.round(viewport.zoom * 100)} className="w-20" onChange={(event) => updateViewport(setCanvasViewportZoom(viewportRef.current, canvasSize, Number(event.target.value) / 100), true)} />
         <span className="w-11 text-center text-[11px] font-semibold text-muted-foreground">{Math.round(viewport.zoom * 100)}%</span>
         <ToolButton label="放大" onClick={() => updateViewport(setCanvasViewportZoom(viewportRef.current, canvasSize, viewportRef.current.zoom * 1.2), true)}><ZoomIn /></ToolButton>
         <ToolButton active={miniMapOpen} label="小地图" onClick={() => setMiniMapOpen((value) => !value)}><MapIcon /></ToolButton>
@@ -1944,13 +2196,13 @@ export default function CanvasPage() {
 
       {miniMapOpen && !libraryOpen && nodes.length && canvasSize.width > 0 ? <CanvasMiniMap nodes={nodes} viewport={viewport} viewportSize={canvasSize} onViewportChange={(next) => updateViewport(next, true)} /> : null}
 
-      {contextMenu ? <CanvasRightClickMenu menu={contextMenu} onClose={() => setContextMenu(null)} onDuplicate={() => { if (contextMenu.type === "node") duplicateNode(contextMenu.nodeID); setContextMenu(null); }} onDelete={() => { if (contextMenu.type === "node") removeNodes(new Set([contextMenu.nodeID])); else if (contextMenu.type === "connection") { replaceConnections(connectionsRef.current.filter((connection) => connection.id !== contextMenu.connectionID)); setSelectedConnectionID(""); pushHistory(); } setContextMenu(null); }} onAddText={() => { if (contextMenu.type === "canvas") addTextNodeAt({ x: contextMenu.position.x - 170, y: contextMenu.position.y - 120 }); setContextMenu(null); }} onAddImage={() => { if (contextMenu.type === "canvas") addBlankNodeAt({ x: contextMenu.position.x - 170, y: contextMenu.position.y - 120 }); setContextMenu(null); }} onAddConfig={() => { if (contextMenu.type === "canvas") addConfigNodeAt({ x: contextMenu.position.x - 170, y: contextMenu.position.y - 120 }); setContextMenu(null); }} onPaste={() => { void pasteSelected(); setContextMenu(null); }} onExportImage={() => { void exportImage(); setContextMenu(null); }} onExportJSON={() => { exportJSON(); setContextMenu(null); }} onImport={() => { importRef.current?.click(); setContextMenu(null); }} onClear={() => { setClearConfirmationOpen(true); setContextMenu(null); }} /> : null}
+      {contextMenu ? <CanvasRightClickMenu menu={contextMenu} onClose={() => setContextMenu(null)} onDuplicate={() => { if (contextMenu.type === "node") duplicateNode(contextMenu.nodeID); setContextMenu(null); }} onDelete={() => { if (contextMenu.type === "node") removeNodes(new Set([contextMenu.nodeID])); else if (contextMenu.type === "connection") { replaceConnections(connectionsRef.current.filter((connection) => connection.id !== contextMenu.connectionID)); setSelectedConnectionID(""); pushHistory(); } setContextMenu(null); }} onAddText={() => { if (contextMenu.type === "canvas") addTextNodeAt({ x: contextMenu.position.x - 170, y: contextMenu.position.y - 120 }); setContextMenu(null); }} onAddImage={() => { if (contextMenu.type === "canvas") addBlankNodeAt({ x: contextMenu.position.x - 170, y: contextMenu.position.y - 120 }); setContextMenu(null); }} onAddVideo={() => { if (contextMenu.type === "canvas") { const point = { x: contextMenu.position.x - 210, y: contextMenu.position.y - 118 }; const node = buildVideoNode({}, point); addNode(node); setPanelNodeID(node.id); } setContextMenu(null); }} onAddConfig={() => { if (contextMenu.type === "canvas") addConfigNodeAt({ x: contextMenu.position.x - 170, y: contextMenu.position.y - 120 }); setContextMenu(null); }} onPaste={() => { void pasteSelected(); setContextMenu(null); }} onExportImage={() => { void exportImage(); setContextMenu(null); }} onExportJSON={() => { exportJSON(); setContextMenu(null); }} onImport={() => { importRef.current?.click(); setContextMenu(null); }} onClear={() => { setClearConfirmationOpen(true); setContextMenu(null); }} /> : null}
       <CanvasNodeInfoDialog node={infoNode} configInputs={infoNodeInputs} open={Boolean(infoNode)} onOpenChange={(open) => { if (!open) setInfoNodeID(""); }} />
       <Dialog open={stopConfirmationOpen} onOpenChange={setStopConfirmationOpen}>
         <DialogContent className="w-[min(92vw,420px)] rounded-2xl">
           <DialogHeader>
             <DialogTitle>停止生成？</DialogTitle>
-            <DialogDescription>当前生成请求会被中断，已经生成完成的图片会保留。</DialogDescription>
+            <DialogDescription>当前生成请求会被中断，已经生成完成的结果会保留。</DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setStopConfirmationOpen(false)}>继续生成</Button>
@@ -2042,20 +2294,21 @@ function CanvasMiniMap({ nodes, viewport, viewportSize, onViewportChange }: { no
   return (
     <div className="absolute bottom-20 left-3 z-20 hidden overflow-hidden rounded-xl border border-border bg-card/90 shadow-xl backdrop-blur lg:block" style={{ width, height }}>
       <div ref={containerRef} className="relative size-full cursor-crosshair" onPointerDown={(event) => { event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); setDragging(true); navigate(event); }} onPointerMove={(event) => { if (dragging) navigate(event); }} onPointerUp={() => setDragging(false)} onPointerCancel={() => setDragging(false)}>
-        {nodes.map((node) => { const point = toMap(node.x, node.y); return <span key={node.id} className={cn("pointer-events-none absolute rounded-sm", node.type === "image" ? "bg-[#1456f0]" : node.type === "config" ? "bg-emerald-500" : "bg-amber-500")} style={{ left: point.x, top: point.y, width: Math.max(2, node.width * map.scale), height: Math.max(2, node.height * map.scale), opacity: .82 }} />; })}
+        {nodes.map((node) => { const point = toMap(node.x, node.y); return <span key={node.id} className={cn("pointer-events-none absolute rounded-sm", node.type === "image" ? "bg-[#1456f0]" : node.type === "video" ? "bg-orange-500" : node.type === "config" ? "bg-emerald-500" : "bg-amber-500")} style={{ left: point.x, top: point.y, width: Math.max(2, node.width * map.scale), height: Math.max(2, node.height * map.scale), opacity: .82 }} />; })}
         <span className="pointer-events-none absolute border border-[#1456f0] bg-[#1456f0]/10" style={{ left: viewportStart.x, top: viewportStart.y, width: Math.max(4, viewportEnd.x - viewportStart.x), height: Math.max(4, viewportEnd.y - viewportStart.y) }} />
       </div>
     </div>
   );
 }
 
-function CanvasRightClickMenu({ menu, onClose, onDuplicate, onDelete, onAddText, onAddImage, onAddConfig, onPaste, onExportImage, onExportJSON, onImport, onClear }: {
+function CanvasRightClickMenu({ menu, onClose, onDuplicate, onDelete, onAddText, onAddImage, onAddVideo, onAddConfig, onPaste, onExportImage, onExportJSON, onImport, onClear }: {
   menu: CanvasContextMenu;
   onClose: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
   onAddText: () => void;
   onAddImage: () => void;
+  onAddVideo: () => void;
   onAddConfig: () => void;
   onPaste: () => void;
   onExportImage: () => void;
@@ -2080,6 +2333,7 @@ function CanvasRightClickMenu({ menu, onClose, onDuplicate, onDelete, onAddText,
         <>
           <ContextMenuButton icon={<Type />} onClick={onAddText}>添加想法节点</ContextMenuButton>
           <ContextMenuButton icon={<ImagePlus />} onClick={onAddImage}>添加图片节点</ContextMenuButton>
+          <ContextMenuButton icon={<Video />} onClick={onAddVideo}>添加视频生成节点</ContextMenuButton>
           <ContextMenuButton icon={<Settings2 />} onClick={onAddConfig}>添加生成配置节点</ContextMenuButton>
           <ContextMenuButton icon={<Clipboard />} onClick={onPaste}>粘贴节点</ContextMenuButton>
           <ContextMenuDivider />
@@ -2128,7 +2382,7 @@ function CanvasNodeInfoDialog({ node, configInputs, open, onOpenChange }: { node
           <div className="max-h-[56vh] space-y-2 overflow-y-auto pr-1 text-sm">
             <InfoRow label="ID" value={node.id} mono />
             <InfoRow label="名称" value={node.title || canvasNodeFallbackTitle(node.type)} />
-            <InfoRow label="类型" value={node.type === "image" ? "图片" : node.type === "config" ? "生成配置" : "想法"} />
+            <InfoRow label="类型" value={node.type === "image" ? "图片" : node.type === "video" ? "视频" : node.type === "config" ? "生成配置" : "想法"} />
             <InfoRow label="尺寸" value={`${Math.round(node.width)} × ${Math.round(node.height)}`} />
             <InfoRow label="位置" value={`${Math.round(node.x)}, ${Math.round(node.y)}`} />
             {node.type === "text" ? <InfoRow label="字号" value={`${node.font_size || 14}px`} /> : null}
@@ -2136,11 +2390,12 @@ function CanvasNodeInfoDialog({ node, configInputs, open, onOpenChange }: { node
             {node.prompt ? <InfoRow label="提示词" value={node.prompt} /> : null}
             {node.composer_content ? <InfoRow label="组装提示词" value={canvasConfigPromptDisplay(node.composer_content, configInputs)} /> : null}
             {node.task_id ? <InfoRow label="任务 ID" value={node.task_id} mono /> : null}
+            {node.generation_model ? <InfoRow label="生成模型" value={node.generation_model} mono /> : null}
             {node.generation_type ? <InfoRow label="请求类型" value={node.generation_type === "edit" ? "图片编辑" : "图片生成"} /> : null}
             {node.generation_status ? <InfoRow label="生成状态" value={canvasGenerationStatusLabel(node.generation_status)} /> : null}
             {node.generation_error ? <InfoRow label="失败原因" value={node.generation_error} /> : null}
             {node.created_at ? <InfoRow label="创建时间" value={new Date(node.created_at).toLocaleString("zh-CN")} /> : null}
-            {node.url ? <InfoRow label="图片地址" value={node.url} mono /> : null}
+            {node.url ? <InfoRow label={node.type === "video" ? "视频地址" : "图片地址"} value={node.url} mono /> : null}
           </div>
         ) : (
           <pre className="max-h-[56vh] overflow-auto rounded-xl border border-border bg-muted/45 p-4 text-xs leading-5">{json}</pre>

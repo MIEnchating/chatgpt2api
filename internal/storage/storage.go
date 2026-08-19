@@ -12,6 +12,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	mysqlDriver "github.com/go-sql-driver/mysql"
@@ -32,6 +33,10 @@ type JSONDocumentBackend interface {
 	LoadJSONDocument(name string) (any, error)
 	SaveJSONDocument(name string, value any) error
 	DeleteJSONDocument(name string) error
+}
+
+type AuthStateBackend interface {
+	SaveAuthKeysAndJSONDocument(keys []map[string]any, name string, value any) error
 }
 
 type JSONDocumentPrefixBackend interface {
@@ -68,11 +73,21 @@ func NewBackendFromEnv(dataDir string) (Backend, error) {
 }
 
 type DatabaseBackend struct {
-	databaseURL string
-	driver      string
-	dsn         string
-	db          *sql.DB
+	databaseURL       string
+	driver            string
+	dsn               string
+	db                *sql.DB
+	stateMu           sync.Mutex
+	rowSnapshots      map[string]map[string]string
+	documentSnapshots map[string]jsonDocumentSnapshot
 }
+
+type jsonDocumentSnapshot struct {
+	Data   string
+	Exists bool
+}
+
+var ErrConcurrentRowUpdate = errors.New("storage row changed concurrently")
 
 func NewDatabaseBackend(databaseURL string) (*DatabaseBackend, error) {
 	driver, dsn, err := ParseDatabaseURL(databaseURL)
@@ -83,7 +98,14 @@ func NewDatabaseBackend(databaseURL string) (*DatabaseBackend, error) {
 	if err != nil {
 		return nil, err
 	}
-	backend := &DatabaseBackend{databaseURL: databaseURL, driver: driver, dsn: dsn, db: db}
+	backend := &DatabaseBackend{
+		databaseURL:       databaseURL,
+		driver:            driver,
+		dsn:               dsn,
+		db:                db,
+		rowSnapshots:      make(map[string]map[string]string),
+		documentSnapshots: make(map[string]jsonDocumentSnapshot),
+	}
 	backend.configurePool()
 	if err := backend.configureSQLite(); err != nil {
 		_ = db.Close()
@@ -151,7 +173,13 @@ func (b *DatabaseBackend) init() error {
 	}
 	if b.driver == "mysql" {
 		schema = []string{
-			`CREATE TABLE IF NOT EXISTS accounts (id INTEGER PRIMARY KEY AUTO_INCREMENT, access_token LONGTEXT NOT NULL, data LONGTEXT NOT NULL)`,
+			`CREATE TABLE IF NOT EXISTS accounts (
+				id INTEGER PRIMARY KEY AUTO_INCREMENT,
+				access_token LONGTEXT NOT NULL,
+				access_token_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin GENERATED ALWAYS AS (SHA2(access_token, 256)) STORED,
+				data LONGTEXT NOT NULL,
+				UNIQUE KEY uq_accounts_access_token_hash (access_token_hash)
+			)`,
 			`CREATE TABLE IF NOT EXISTS auth_keys (id INTEGER PRIMARY KEY AUTO_INCREMENT, key_id VARCHAR(768) CHARACTER SET ascii COLLATE ascii_bin UNIQUE NOT NULL, data LONGTEXT NOT NULL)`,
 			`CREATE TABLE IF NOT EXISTS json_documents (name VARCHAR(512) PRIMARY KEY, data LONGTEXT NOT NULL, updated_at TEXT NOT NULL)`,
 			`CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY AUTO_INCREMENT, created_at TEXT NOT NULL, type VARCHAR(64) NOT NULL, day VARCHAR(10) NOT NULL, data LONGTEXT NOT NULL)`,
@@ -167,11 +195,41 @@ func (b *DatabaseBackend) init() error {
 			return err
 		}
 	}
+	if err := b.ensureMySQLAccountAccessTokenHash(); err != nil {
+		return err
+	}
 	return b.initImageConversationSchema()
 }
 
+func (b *DatabaseBackend) ensureMySQLAccountAccessTokenHash() error {
+	if b.driver != "mysql" {
+		return nil
+	}
+	var columnCount int
+	if err := b.db.QueryRow(`SELECT COUNT(*) FROM information_schema.columns
+		WHERE table_schema = DATABASE() AND table_name = 'accounts' AND column_name = 'access_token_hash'`).Scan(&columnCount); err != nil {
+		return fmt.Errorf("inspect MySQL account token hash column: %w", err)
+	}
+	if columnCount == 0 {
+		if _, err := b.db.Exec(`ALTER TABLE accounts ADD COLUMN access_token_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin GENERATED ALWAYS AS (SHA2(access_token, 256)) STORED`); err != nil {
+			return fmt.Errorf("add MySQL account token hash column: %w", err)
+		}
+	}
+	var indexCount int
+	if err := b.db.QueryRow(`SELECT COUNT(*) FROM information_schema.statistics
+		WHERE table_schema = DATABASE() AND table_name = 'accounts' AND index_name = 'uq_accounts_access_token_hash'`).Scan(&indexCount); err != nil {
+		return fmt.Errorf("inspect MySQL account token hash index: %w", err)
+	}
+	if indexCount == 0 {
+		if _, err := b.db.Exec(`CREATE UNIQUE INDEX uq_accounts_access_token_hash ON accounts (access_token_hash)`); err != nil {
+			return fmt.Errorf("create MySQL account token hash index: %w", err)
+		}
+	}
+	return nil
+}
+
 func (b *DatabaseBackend) LoadAccounts() ([]map[string]any, error) {
-	return b.loadRows("accounts")
+	return b.loadRows("accounts", "access_token")
 }
 
 func (b *DatabaseBackend) SaveAccounts(accounts []map[string]any) error {
@@ -179,7 +237,7 @@ func (b *DatabaseBackend) SaveAccounts(accounts []map[string]any) error {
 }
 
 func (b *DatabaseBackend) LoadAuthKeys() ([]map[string]any, error) {
-	return b.loadRows("auth_keys")
+	return b.loadRows("auth_keys", "key_id")
 }
 
 func (b *DatabaseBackend) SaveAuthKeys(keys []map[string]any) error {
@@ -212,27 +270,50 @@ func (b *DatabaseBackend) Info() map[string]any {
 	return map[string]any{"type": "database", "db_type": dbType, "description": "数据库存储 (" + dbType + ")", "database_url": maskPassword(b.databaseURL)}
 }
 
-func (b *DatabaseBackend) loadRows(table string) ([]map[string]any, error) {
-	rows, err := b.db.Query("SELECT data FROM " + table)
+func (b *DatabaseBackend) loadRows(table, keyColumn string) ([]map[string]any, error) {
+	b.stateMu.Lock()
+	defer b.stateMu.Unlock()
+	rows, err := b.db.Query("SELECT " + keyColumn + ", data FROM " + table)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 	var out []map[string]any
+	snapshot := make(map[string]string)
 	for rows.Next() {
+		var key string
 		var text string
-		if err := rows.Scan(&text); err != nil {
-			continue
+		if err := rows.Scan(&key, &text); err != nil {
+			return nil, err
 		}
 		var item map[string]any
-		if json.Unmarshal([]byte(text), &item) == nil && item != nil {
-			out = append(out, item)
+		if err := json.Unmarshal([]byte(text), &item); err != nil {
+			return nil, fmt.Errorf("decode %s row %q: %w", table, key, err)
 		}
+		if item == nil {
+			return nil, fmt.Errorf("decode %s row %q: expected JSON object", table, key)
+		}
+		out = append(out, item)
+		snapshot[key] = text
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	b.rowSnapshots[table] = snapshot
+	return out, nil
 }
 
 func (b *DatabaseBackend) saveRows(table, keyColumn string, items []map[string]any) error {
+	b.stateMu.Lock()
+	defer b.stateMu.Unlock()
+	current, err := encodeRows(table, items)
+	if err != nil {
+		return err
+	}
+	known := b.rowSnapshots[table]
+	if known == nil {
+		known = map[string]string{}
+	}
 	tx, err := b.db.Begin()
 	if err != nil {
 		return err
@@ -240,36 +321,198 @@ func (b *DatabaseBackend) saveRows(table, keyColumn string, items []map[string]a
 	defer func() {
 		_ = tx.Rollback()
 	}()
-	if _, err := tx.Exec("DELETE FROM " + table); err != nil {
+	if err := b.applyRows(tx, table, keyColumn, known, current); err != nil {
 		return err
 	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	b.rowSnapshots[table] = current
+	return nil
+}
+
+func encodeRows(table string, items []map[string]any) (map[string]string, error) {
 	sourceKey := "access_token"
 	if table == "auth_keys" {
 		sourceKey = "id"
 	}
-	stmtText := "INSERT INTO " + table + " (" + keyColumn + ", data) VALUES (?, ?)"
-	if b.driver == "postgres" {
-		stmtText = "INSERT INTO " + table + " (" + keyColumn + ", data) VALUES ($1, $2)"
-	}
-	stmt, err := tx.Prepare(stmtText)
-	if err != nil {
-		return err
-	}
-	defer stmt.Close()
+	current := make(map[string]string, len(items))
 	for _, item := range items {
-		key := strings.TrimSpace(fmt.Sprint(item[sourceKey]))
+		rawKey, ok := item[sourceKey]
+		if !ok || rawKey == nil {
+			return nil, fmt.Errorf("encode %s row: %s is required", table, sourceKey)
+		}
+		key := strings.TrimSpace(fmt.Sprint(rawKey))
 		if key == "" {
-			continue
+			return nil, fmt.Errorf("encode %s row: %s is required", table, sourceKey)
+		}
+		if _, exists := current[key]; exists {
+			return nil, fmt.Errorf("encode %s row %q: duplicate key", table, key)
 		}
 		data, err := json.Marshal(item)
 		if err != nil {
+			return nil, err
+		}
+		current[key] = string(data)
+	}
+	return current, nil
+}
+
+func (b *DatabaseBackend) applyRows(tx *sql.Tx, table, keyColumn string, known, current map[string]string) error {
+	for key, data := range current {
+		previous, existed := known[key]
+		if existed && previous == data {
 			continue
 		}
-		if _, err := stmt.Exec(key, string(data)); err != nil {
+		if !existed {
+			query := "INSERT INTO " + table + " (" + keyColumn + ", data) VALUES (?, ?)"
+			if b.driver == "postgres" {
+				query = "INSERT INTO " + table + " (" + keyColumn + ", data) VALUES ($1, $2)"
+			}
+			if _, err := tx.Exec(query, key, data); err != nil {
+				return b.classifyRowInsertError(tx, table, keyColumn, key, err)
+			}
+			continue
+		}
+		query := "UPDATE " + table + " SET data = ? WHERE " + b.rowKeyPredicate(table, keyColumn, 1) + " AND " + b.rowDataPredicate(2)
+		args := []any{data, key, previous}
+		if b.driver == "postgres" {
+			query = "UPDATE " + table + " SET data = $1 WHERE " + keyColumn + " = $2 AND data = $3"
+		}
+		result, err := tx.Exec(query, args...)
+		if err != nil {
 			return err
 		}
+		affected, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if affected != 1 {
+			return b.concurrentRowUpdateError(tx, table, keyColumn, "update", key)
+		}
 	}
-	return tx.Commit()
+	for key, previous := range known {
+		if _, exists := current[key]; exists {
+			continue
+		}
+		query := "DELETE FROM " + table + " WHERE " + b.rowKeyPredicate(table, keyColumn, 0) + " AND " + b.rowDataPredicate(1)
+		if b.driver == "postgres" {
+			query = "DELETE FROM " + table + " WHERE " + keyColumn + " = $1 AND data = $2"
+		}
+		result, err := tx.Exec(query, key, previous)
+		if err != nil {
+			return err
+		}
+		affected, err := result.RowsAffected()
+		if err != nil {
+			return err
+		}
+		if affected != 1 {
+			return b.concurrentRowUpdateError(tx, table, keyColumn, "delete", key)
+		}
+	}
+	return nil
+}
+
+func (b *DatabaseBackend) SaveAuthKeysAndJSONDocument(keys []map[string]any, name string, value any) error {
+	rel, err := cleanDocumentName(name)
+	if err != nil {
+		return err
+	}
+	documentData, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+	current, err := encodeRows("auth_keys", keys)
+	if err != nil {
+		return err
+	}
+
+	b.stateMu.Lock()
+	defer b.stateMu.Unlock()
+	known := b.rowSnapshots["auth_keys"]
+	if known == nil {
+		known = map[string]string{}
+	}
+	knownDocument, err := b.jsonDocumentSnapshotLocked(rel)
+	if err != nil {
+		return err
+	}
+	tx, err := b.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = tx.Rollback()
+	}()
+	if err := b.applyRows(tx, "auth_keys", "key_id", known, current); err != nil {
+		return err
+	}
+	documentText := string(documentData)
+	if err := b.applyJSONDocument(tx, rel, knownDocument, documentText, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	b.rowSnapshots["auth_keys"] = current
+	b.documentSnapshots[rel] = jsonDocumentSnapshot{Data: documentText, Exists: true}
+	return nil
+}
+
+func (b *DatabaseBackend) classifyRowInsertError(tx *sql.Tx, table, keyColumn, key string, insertErr error) error {
+	_ = tx.Rollback()
+	exists, inspectErr := b.rowExists(table, keyColumn, key)
+	if inspectErr != nil {
+		return fmt.Errorf("insert %s row %q: %w (inspect row: %v)", table, key, insertErr, inspectErr)
+	}
+	if !exists {
+		return insertErr
+	}
+	return fmt.Errorf("%w: insert %s row %q", ErrConcurrentRowUpdate, table, key)
+}
+
+func (b *DatabaseBackend) concurrentRowUpdateError(tx *sql.Tx, table, keyColumn, operation, key string) error {
+	_ = tx.Rollback()
+	return fmt.Errorf("%w: %s %s row %q", ErrConcurrentRowUpdate, operation, table, key)
+}
+
+func (b *DatabaseBackend) rowExists(table, keyColumn, key string) (bool, error) {
+	query := "SELECT 1 FROM " + table + " WHERE " + b.rowKeyPredicate(table, keyColumn, 0)
+	if b.driver == "postgres" {
+		query = "SELECT 1 FROM " + table + " WHERE " + keyColumn + " = $1"
+	}
+	var marker int
+	err := b.db.QueryRow(query, key).Scan(&marker)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
+func (b *DatabaseBackend) rowKeyPredicate(table, keyColumn string, argumentIndex int) string {
+	placeholder := "?"
+	if b.driver == "postgres" {
+		placeholder = fmt.Sprintf("$%d", argumentIndex+1)
+	}
+	if b.driver == "mysql" && table == "accounts" && keyColumn == "access_token" {
+		return "access_token_hash = SHA2(" + placeholder + ", 256)"
+	}
+	return keyColumn + " = " + placeholder
+}
+
+func (b *DatabaseBackend) rowDataPredicate(argumentIndex int) string {
+	placeholder := "?"
+	if b.driver == "postgres" {
+		placeholder = fmt.Sprintf("$%d", argumentIndex+1)
+	}
+	if b.driver == "mysql" {
+		return "BINARY data = BINARY " + placeholder
+	}
+	return "data = " + placeholder
 }
 
 func (b *DatabaseBackend) count(table string) int {
@@ -283,15 +526,22 @@ func (b *DatabaseBackend) LoadJSONDocument(name string) (any, error) {
 	if err != nil {
 		return nil, err
 	}
-	var text string
-	err = b.db.QueryRow("SELECT data FROM json_documents WHERE name = "+b.placeholder(1), rel).Scan(&text)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
+	b.stateMu.Lock()
+	defer b.stateMu.Unlock()
+	snapshot, err := b.readJSONDocumentSnapshot(rel)
 	if err != nil {
 		return nil, err
 	}
-	return decodeJSONString(text)
+	if !snapshot.Exists {
+		b.documentSnapshots[rel] = snapshot
+		return nil, nil
+	}
+	value, err := decodeJSONString(snapshot.Data)
+	if err != nil {
+		return nil, err
+	}
+	b.documentSnapshots[rel] = snapshot
+	return value, nil
 }
 
 func (b *DatabaseBackend) SaveJSONDocument(name string, value any) error {
@@ -303,18 +553,26 @@ func (b *DatabaseBackend) SaveJSONDocument(name string, value any) error {
 	if err != nil {
 		return err
 	}
-	now := time.Now().UTC().Format(time.RFC3339Nano)
-	var stmt string
-	switch b.driver {
-	case "postgres":
-		stmt = "INSERT INTO json_documents (name, data, updated_at) VALUES ($1, $2, $3) ON CONFLICT (name) DO UPDATE SET data = EXCLUDED.data, updated_at = EXCLUDED.updated_at"
-	case "mysql":
-		stmt = "REPLACE INTO json_documents (name, data, updated_at) VALUES (?, ?, ?)"
-	default:
-		stmt = "INSERT INTO json_documents (name, data, updated_at) VALUES (?, ?, ?) ON CONFLICT(name) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at"
+	b.stateMu.Lock()
+	defer b.stateMu.Unlock()
+	known, err := b.jsonDocumentSnapshotLocked(rel)
+	if err != nil {
+		return err
 	}
-	_, err = b.db.Exec(stmt, rel, string(data), now)
-	return err
+	tx, err := b.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	text := string(data)
+	if err := b.applyJSONDocument(tx, rel, known, text, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	b.documentSnapshots[rel] = jsonDocumentSnapshot{Data: text, Exists: true}
+	return nil
 }
 
 func (b *DatabaseBackend) DeleteJSONDocument(name string) error {
@@ -322,8 +580,99 @@ func (b *DatabaseBackend) DeleteJSONDocument(name string) error {
 	if err != nil {
 		return err
 	}
-	_, err = b.db.Exec("DELETE FROM json_documents WHERE name = "+b.placeholder(1), rel)
-	return err
+	b.stateMu.Lock()
+	defer b.stateMu.Unlock()
+	known, err := b.jsonDocumentSnapshotLocked(rel)
+	if err != nil {
+		return err
+	}
+	if !known.Exists {
+		return nil
+	}
+	tx, err := b.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	query := "DELETE FROM json_documents WHERE name = ? AND data = ?"
+	args := []any{rel, known.Data}
+	if b.driver == "postgres" {
+		query = "DELETE FROM json_documents WHERE name = $1 AND data = $2"
+	} else if b.driver == "mysql" {
+		query = "DELETE FROM json_documents WHERE name = ? AND BINARY data = BINARY ?"
+	}
+	result, err := tx.Exec(query, args...)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return b.concurrentRowUpdateError(tx, "json_documents", "name", "delete", rel)
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	b.documentSnapshots[rel] = jsonDocumentSnapshot{}
+	return nil
+}
+
+func (b *DatabaseBackend) jsonDocumentSnapshotLocked(name string) (jsonDocumentSnapshot, error) {
+	if snapshot, ok := b.documentSnapshots[name]; ok {
+		return snapshot, nil
+	}
+	snapshot, err := b.readJSONDocumentSnapshot(name)
+	if err != nil {
+		return jsonDocumentSnapshot{}, err
+	}
+	b.documentSnapshots[name] = snapshot
+	return snapshot, nil
+}
+
+func (b *DatabaseBackend) readJSONDocumentSnapshot(name string) (jsonDocumentSnapshot, error) {
+	var text string
+	err := b.db.QueryRow("SELECT data FROM json_documents WHERE name = "+b.placeholder(1), name).Scan(&text)
+	if errors.Is(err, sql.ErrNoRows) {
+		return jsonDocumentSnapshot{}, nil
+	}
+	if err != nil {
+		return jsonDocumentSnapshot{}, err
+	}
+	return jsonDocumentSnapshot{Data: text, Exists: true}, nil
+}
+
+func (b *DatabaseBackend) applyJSONDocument(tx *sql.Tx, name string, known jsonDocumentSnapshot, data, updatedAt string) error {
+	if !known.Exists {
+		query := "INSERT INTO json_documents (name, data, updated_at) VALUES (?, ?, ?)"
+		if b.driver == "postgres" {
+			query = "INSERT INTO json_documents (name, data, updated_at) VALUES ($1, $2, $3)"
+		}
+		if _, err := tx.Exec(query, name, data, updatedAt); err != nil {
+			return b.classifyRowInsertError(tx, "json_documents", "name", name, err)
+		}
+		return nil
+	}
+	query := "UPDATE json_documents SET data = ?, updated_at = ? WHERE name = ? AND data = ?"
+	args := []any{data, updatedAt, name, known.Data}
+	if b.driver == "postgres" {
+		query = "UPDATE json_documents SET data = $1, updated_at = $2 WHERE name = $3 AND data = $4"
+	} else if b.driver == "mysql" {
+		query = "UPDATE json_documents SET data = ?, updated_at = ? WHERE name = ? AND BINARY data = BINARY ?"
+	}
+	result, err := tx.Exec(query, args...)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected != 1 {
+		return b.concurrentRowUpdateError(tx, "json_documents", "name", "update", name)
+	}
+	return nil
 }
 
 func (b *DatabaseBackend) ListJSONDocuments(prefix string) (map[string]any, error) {

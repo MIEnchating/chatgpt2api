@@ -17,6 +17,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"chatgpt2api/internal/storage"
 )
 
 type testImageConfig struct {
@@ -48,12 +50,69 @@ func (c testImageConfig) ImageStorageLimitBytes() int64 { return 0 }
 var allImages = ImageAccessScope{All: true}
 
 type memoryImageObjectStore struct {
-	mu         sync.Mutex
-	objects    map[string][]byte
-	failPut    error
-	putStarted chan struct{}
-	allowPut   chan struct{}
-	putOnce    sync.Once
+	mu            sync.Mutex
+	objects       map[string][]byte
+	failPut       error
+	putStarted    chan struct{}
+	allowPut      chan struct{}
+	putOnce       sync.Once
+	deleteStarted chan struct{}
+	allowDelete   chan struct{}
+	deleteOnce    sync.Once
+}
+
+type firstImageMetadataSaveGate struct {
+	storage.Backend
+	documents storage.JSONDocumentBackend
+	started   chan struct{}
+	release   chan struct{}
+	once      sync.Once
+}
+
+type failingImageMetadataBackend struct {
+	storage.Backend
+	documents storage.JSONDocumentBackend
+	err       error
+}
+
+func (b *failingImageMetadataBackend) LoadJSONDocument(name string) (any, error) {
+	return b.documents.LoadJSONDocument(name)
+}
+
+func (b *failingImageMetadataBackend) SaveJSONDocument(string, any) error {
+	return b.err
+}
+
+func (b *failingImageMetadataBackend) DeleteJSONDocument(name string) error {
+	return b.documents.DeleteJSONDocument(name)
+}
+
+func newFirstImageMetadataSaveGate(t *testing.T, backend storage.Backend) *firstImageMetadataSaveGate {
+	t.Helper()
+	documents, ok := backend.(storage.JSONDocumentBackend)
+	if !ok {
+		t.Fatal("test backend does not support JSON documents")
+	}
+	return &firstImageMetadataSaveGate{
+		Backend: backend, documents: documents,
+		started: make(chan struct{}), release: make(chan struct{}),
+	}
+}
+
+func (b *firstImageMetadataSaveGate) LoadJSONDocument(name string) (any, error) {
+	return b.documents.LoadJSONDocument(name)
+}
+
+func (b *firstImageMetadataSaveGate) SaveJSONDocument(name string, value any) error {
+	b.once.Do(func() {
+		close(b.started)
+		<-b.release
+	})
+	return b.documents.SaveJSONDocument(name, value)
+}
+
+func (b *firstImageMetadataSaveGate) DeleteJSONDocument(name string) error {
+	return b.documents.DeleteJSONDocument(name)
 }
 
 func (s *memoryImageObjectStore) Backend() string { return "s3" }
@@ -90,10 +149,78 @@ func (s *memoryImageObjectStore) Get(_ context.Context, key string) ([]byte, str
 }
 
 func (s *memoryImageObjectStore) Delete(_ context.Context, key string) error {
+	if s.deleteStarted != nil {
+		s.deleteOnce.Do(func() { close(s.deleteStarted) })
+	}
+	if s.allowDelete != nil {
+		<-s.allowDelete
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.objects, key)
 	return nil
+}
+
+func TestImageServiceDeletionTombstoneBlocksConcurrentMetadataUpdates(t *testing.T) {
+	databaseURL := "sqlite:///" + filepath.ToSlash(filepath.Join(t.TempDir(), "shared-images.db"))
+	backendA, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend(A) error = %v", err)
+	}
+	t.Cleanup(func() { _ = backendA.Close() })
+	backendB, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend(B) error = %v", err)
+	}
+	t.Cleanup(func() { _ = backendB.Close() })
+
+	config := testImageConfig{root: t.TempDir()}
+	store := &memoryImageObjectStore{deleteStarted: make(chan struct{}), allowDelete: make(chan struct{})}
+	serviceA := NewImageService(config, backendA)
+	serviceB := NewImageService(config, backendB)
+	if err := serviceA.ConfigureObjectStore(store, true); err != nil {
+		t.Fatalf("ConfigureObjectStore(A) error = %v", err)
+	}
+	if err := serviceB.ConfigureObjectStore(store, true); err != nil {
+		t.Fatalf("ConfigureObjectStore(B) error = %v", err)
+	}
+	imageURL, err := serviceA.SaveImageBytes(context.Background(), testPNGBytes(t, 16, 16), "https://image.example.test", "owner", "Owner", "png")
+	if err != nil {
+		t.Fatalf("SaveImageBytes() error = %v", err)
+	}
+	rel, err := imageRelativePathFromValue(imageURL)
+	if err != nil {
+		t.Fatalf("imageRelativePathFromValue() error = %v", err)
+	}
+
+	deleteResult := make(chan error, 1)
+	go func() {
+		_, deleteErr := serviceA.DeleteImages([]string{rel}, ImageAccessScope{OwnerID: "owner"})
+		deleteResult <- deleteErr
+	}()
+	select {
+	case <-store.deleteStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for object deletion")
+	}
+	if _, err := serviceB.UpdateImageVisibility(rel, ImageVisibilityPublic, ImageAccessScope{OwnerID: "owner"}); err == nil {
+		t.Fatal("UpdateImageVisibility() succeeded after deletion started")
+	}
+	close(store.allowDelete)
+	select {
+	case err := <-deleteResult:
+		if err != nil {
+			t.Fatalf("DeleteImages() error = %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for image deletion")
+	}
+	if store.has(rel) {
+		t.Fatal("object still exists after deletion")
+	}
+	if value, err := backendB.LoadJSONDocument(imageOwnerDocumentName(rel)); err != nil || value != nil {
+		t.Fatalf("image metadata after deletion = %#v, error = %v", value, err)
+	}
 }
 
 func (s *memoryImageObjectStore) has(key string) bool {
@@ -188,6 +315,41 @@ func TestImageServiceObjectStorageLifecycleAndIndexRecovery(t *testing.T) {
 	}
 	if _, err := os.Stat(recoveredMarker); !os.IsNotExist(err) {
 		t.Fatalf("stale object-storage marker still exists: %v", err)
+	}
+}
+
+func TestImageServiceValidatesObjectStorageBytesOnRead(t *testing.T) {
+	store := &memoryImageObjectStore{}
+	service := NewImageService(testImageConfig{root: t.TempDir()}, newTestStorageBackend(t))
+	if err := service.ConfigureObjectStore(store, true); err != nil {
+		t.Fatalf("ConfigureObjectStore() error = %v", err)
+	}
+	imageURL, err := service.SaveImageBytes(context.Background(), testPNGBytes(t, 8, 8), "https://image.example.test", "user", "User", "png")
+	if err != nil {
+		t.Fatalf("SaveImageBytes() error = %v", err)
+	}
+	rel, err := imageRelativePathFromValue(imageURL)
+	if err != nil {
+		t.Fatalf("imageRelativePathFromValue() error = %v", err)
+	}
+
+	store.mu.Lock()
+	store.objects[rel] = []byte("not an image")
+	store.mu.Unlock()
+	if _, _, err := service.ImageBytes(rel, ImageAccessScope{OwnerID: "user"}); err == nil {
+		t.Fatal("ImageBytes() accepted corrupt object storage bytes")
+	}
+
+	var encoded bytes.Buffer
+	if err := jpeg.Encode(&encoded, image.NewRGBA(image.Rect(0, 0, 8, 8)), nil); err != nil {
+		t.Fatalf("encode JPEG: %v", err)
+	}
+	store.mu.Lock()
+	store.objects[rel] = append([]byte(nil), encoded.Bytes()...)
+	store.mu.Unlock()
+	data, contentType, err := service.ImageBytes(rel, ImageAccessScope{OwnerID: "user"})
+	if err != nil || len(data) == 0 || contentType != "image/jpeg" {
+		t.Fatalf("ImageBytes() bytes=%d contentType=%q error=%v", len(data), contentType, err)
 	}
 }
 
@@ -679,6 +841,128 @@ func TestImageServicePublicVisibility(t *testing.T) {
 	}
 }
 
+func TestImageServiceMergesConcurrentMetadataUpdates(t *testing.T) {
+	root := t.TempDir()
+	config := testImageConfig{root: filepath.Join(root, "files")}
+	databaseURL := "sqlite:///" + filepath.ToSlash(filepath.Join(root, "shared-image-metadata.db"))
+	backendA, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend(A) error = %v", err)
+	}
+	t.Cleanup(func() { _ = backendA.Close() })
+	backendB, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend(B) error = %v", err)
+	}
+	t.Cleanup(func() { _ = backendB.Close() })
+
+	seed := NewImageService(config, backendA)
+	imageURL, err := seed.SaveImageBytes(context.Background(), testPNGBytes(t, 32, 24), "https://image.example.test", "owner", "Owner", "png")
+	if err != nil {
+		t.Fatalf("SaveImageBytes() error = %v", err)
+	}
+	refs := seed.imageFileRefs([]string{imageURL})
+	if len(refs) != 1 {
+		t.Fatalf("imageFileRefs() = %#v", refs)
+	}
+
+	barrier := newTestDocumentSaveBarrier(2)
+	serviceA := NewImageService(config, newFirstSaveBarrierBackend(t, backendA, barrier))
+	serviceB := NewImageService(config, newFirstSaveBarrierBackend(t, backendB, barrier))
+	errorsCh := make(chan error, 2)
+	go func() {
+		_, updateErr := serviceA.UpdateImageVisibility(imageURL, ImageVisibilityPublic, ImageAccessScope{OwnerID: "owner"}, ImageVisibilityUpdateOptions{
+			SharePromptParams: true,
+			ShareReferences:   true,
+		})
+		errorsCh <- updateErr
+	}()
+	go func() {
+		errorsCh <- serviceB.writeImageMetadataForRef(refs[0], "", "", "", GeneratedImageMetadata{
+			Prompt: "concurrent prompt",
+			Model:  "gpt-image-2",
+		})
+	}()
+	for range 2 {
+		if updateErr := <-errorsCh; updateErr != nil {
+			t.Fatalf("concurrent metadata update error = %v", updateErr)
+		}
+	}
+
+	meta, err := serviceA.loadImageMetadata(refs[0].rel)
+	if err != nil {
+		t.Fatalf("loadImageMetadata() error = %v", err)
+	}
+	if meta.Visibility != ImageVisibilityPublic || !meta.SharePromptParams || !meta.ShareReferences || meta.Prompt != "concurrent prompt" || meta.Model != "gpt-image-2" {
+		t.Fatalf("concurrent metadata update lost fields: %#v", meta)
+	}
+}
+
+func TestImageServiceCleanupRechecksVisibilityAfterMetadataConflict(t *testing.T) {
+	root := t.TempDir()
+	config := testImageConfig{root: filepath.Join(root, "files")}
+	databaseURL := "sqlite:///" + filepath.ToSlash(filepath.Join(root, "shared-cleanup.db"))
+	backendA, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend(A) error = %v", err)
+	}
+	t.Cleanup(func() { _ = backendA.Close() })
+	backendB, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend(B) error = %v", err)
+	}
+	t.Cleanup(func() { _ = backendB.Close() })
+
+	seed := NewImageService(config, backendA)
+	imageURL, err := seed.SaveImageBytes(context.Background(), testPNGBytes(t, 24, 24), "https://image.example.test", "owner", "Owner", "png")
+	if err != nil {
+		t.Fatalf("SaveImageBytes() error = %v", err)
+	}
+	rel, err := imageRelativePathFromValue(imageURL)
+	if err != nil {
+		t.Fatalf("imageRelativePathFromValue() error = %v", err)
+	}
+
+	gate := newFirstImageMetadataSaveGate(t, backendA)
+	cleanupService := NewImageService(config, gate)
+	publishService := NewImageService(config, backendB)
+	type cleanupResult struct {
+		claimed bool
+		err     error
+	}
+	result := make(chan cleanupResult, 1)
+	go func() {
+		_, claimed, cleanupErr := cleanupService.removeImageGroupIf(rel, func(meta imageMetadata) bool {
+			return meta.Visibility != ImageVisibilityPublic
+		})
+		result <- cleanupResult{claimed: claimed, err: cleanupErr}
+	}()
+	select {
+	case <-gate.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for cleanup metadata claim")
+	}
+	if _, err := publishService.UpdateImageVisibility(rel, ImageVisibilityPublic, ImageAccessScope{OwnerID: "owner"}); err != nil {
+		t.Fatalf("UpdateImageVisibility() error = %v", err)
+	}
+	close(gate.release)
+	select {
+	case outcome := <-result:
+		if outcome.err != nil || outcome.claimed {
+			t.Fatalf("cleanup outcome = %#v, want public image preserved", outcome)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for cleanup result")
+	}
+	if _, err := os.Stat(filepath.Join(config.ImagesDir(), filepath.FromSlash(rel))); err != nil {
+		t.Fatalf("published image was deleted: %v", err)
+	}
+	meta, err := cleanupService.loadImageMetadata(rel)
+	if err != nil || meta.Visibility != ImageVisibilityPublic || meta.Deleting {
+		t.Fatalf("image metadata after cleanup conflict = %#v, error = %v", meta, err)
+	}
+}
+
 func TestImageServiceRecordGeneratedImageMetadataDoesNotGenerateThumbnail(t *testing.T) {
 	root := t.TempDir()
 	config := testImageConfig{root: root}
@@ -715,6 +999,49 @@ func TestImageServiceRecordGeneratedImageMetadataDoesNotGenerateThumbnail(t *tes
 	}
 	if _, err := os.Stat(thumbPath + ".json"); !os.IsNotExist(err) {
 		t.Fatalf("RecordGeneratedImageMetadata() generated thumbnail metadata, stat error = %v", err)
+	}
+}
+
+func TestImageServiceRecordGeneratedImageMetadataReturnsStorageError(t *testing.T) {
+	config := testImageConfig{root: t.TempDir()}
+	rel := "2026/04/29/metadata-error.png"
+	imagePath := filepath.Join(config.ImagesDir(), filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(imagePath), 0o755); err != nil {
+		t.Fatalf("MkdirAll() error = %v", err)
+	}
+	if err := writeTestPNG(imagePath); err != nil {
+		t.Fatalf("writeTestPNG() error = %v", err)
+	}
+
+	backend := newTestStorageBackend(t)
+	documents, ok := backend.(storage.JSONDocumentBackend)
+	if !ok {
+		t.Fatal("test backend does not support JSON documents")
+	}
+	wantErr := errors.New("metadata storage unavailable")
+	service := NewImageService(config, &failingImageMetadataBackend{
+		Backend: backend, documents: documents, err: wantErr,
+	})
+
+	err := service.RecordGeneratedImageMetadata([]string{rel}, "linuxdo:123", "alice", ImageVisibilityPrivate)
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("RecordGeneratedImageMetadata() error = %v, want %v", err, wantErr)
+	}
+}
+
+func TestNormalizeImageResolutionPresetKeepsGeminiResolutions(t *testing.T) {
+	tests := map[string]string{
+		"512":   "512",
+		"512px": "512",
+		"0.5K":  "512",
+		"1K":    "1k",
+		"2K":    "2k",
+		"4K":    "4k",
+	}
+	for input, want := range tests {
+		if got := NormalizeImageResolutionPreset(input); got != want {
+			t.Errorf("NormalizeImageResolutionPreset(%q) = %q, want %q", input, got, want)
+		}
 	}
 }
 
@@ -763,6 +1090,7 @@ func TestImageServiceListImagesReturnsGenerationReuseMetadata(t *testing.T) {
 
 	outputCompression := 42
 	partialImages := 2
+	referenceData := testPNGBytes(t, 8, 8)
 	service := NewImageService(config)
 	service.RecordGeneratedImages([]string{rel}, "linuxdo:123", "alice", ImageVisibilityPublic, GeneratedImageMetadata{
 		Prompt:            "draw a reusable image",
@@ -775,9 +1103,8 @@ func TestImageServiceListImagesReturnsGenerationReuseMetadata(t *testing.T) {
 		Background:        "opaque",
 		Moderation:        "low",
 		PartialImages:     &partialImages,
-		InputImageMask:    "mask-id",
 		ReferenceImages: []GeneratedImageReference{
-			{Filename: "原始参考图.png", ContentType: "image/png", Data: []byte("reference-bytes")},
+			{Filename: "原始参考图.png", ContentType: "image/png", Data: referenceData},
 		},
 		SharePromptParams: true,
 		ShareReferences:   true,
@@ -798,9 +1125,11 @@ func TestImageServiceListImagesReturnsGenerationReuseMetadata(t *testing.T) {
 		item["output_compression"] != 42 ||
 		item["background"] != "opaque" ||
 		item["moderation"] != "low" ||
-		item["partial_images"] != 2 ||
-		item["input_image_mask"] != "mask-id" {
+		item["partial_images"] != 2 {
 		t.Fatalf("reuse metadata = %#v", item)
+	}
+	if _, ok := item["input_image_mask"]; ok {
+		t.Fatalf("raw mask data must not be returned in image metadata: %#v", item)
 	}
 	referenceURLs, ok := item["reference_image_urls"].([]string)
 	if !ok || len(referenceURLs) != 1 || !strings.Contains(referenceURLs[0], "/image-references/") {
@@ -821,14 +1150,69 @@ func TestImageServiceListImagesReturnsGenerationReuseMetadata(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ReadFile(reference) error = %v", err)
 	}
-	if string(data) != "reference-bytes" {
-		t.Fatalf("reference data = %q", data)
+	if !bytes.Equal(data, referenceData) {
+		t.Fatalf("reference data differs from the source image")
 	}
 	if _, err := service.DeleteImages([]string{rel}, ImageAccessScope{OwnerID: "linuxdo:123"}); err != nil {
 		t.Fatalf("DeleteImages() error = %v", err)
 	}
 	if _, err := os.Stat(access.Path); !os.IsNotExist(err) {
 		t.Fatalf("reference path still exists or stat failed unexpectedly: %v", err)
+	}
+}
+
+func TestImageServiceReferenceReplacementRollsBackWhenMetadataSaveFails(t *testing.T) {
+	config := testImageConfig{root: t.TempDir()}
+	backend := &failingAtomicAuthStorage{}
+	service := NewImageService(config, backend)
+	imageURL, err := service.SaveImageBytes(context.Background(), testPNGBytes(t, 32, 24), "https://image.example.test", "user-1", "User", "png")
+	if err != nil {
+		t.Fatalf("SaveImageBytes() error = %v", err)
+	}
+	refs := service.imageFileRefs([]string{imageURL})
+	if len(refs) != 1 {
+		t.Fatalf("imageFileRefs() = %#v", refs)
+	}
+	firstData := testPNGBytes(t, 8, 8)
+	if err := service.writeImageMetadataForRef(refs[0], "user-1", "User", ImageVisibilityPrivate, GeneratedImageMetadata{
+		ReferenceImages: []GeneratedImageReference{{Filename: "first.png", Data: firstData}},
+	}); err != nil {
+		t.Fatalf("initial writeImageMetadataForRef() error = %v", err)
+	}
+	meta := service.imageMetadata(refs[0].rel)
+	if len(meta.ReferenceImages) != 1 {
+		t.Fatalf("initial reference metadata = %#v", meta.ReferenceImages)
+	}
+	firstPath := filepath.Join(service.imageReferencesDir(), filepath.FromSlash(meta.ReferenceImages[0].Path))
+
+	backend.failDocument = true
+	if err := service.writeImageMetadataForRef(refs[0], "user-1", "User", ImageVisibilityPrivate, GeneratedImageMetadata{
+		ReferenceImages: []GeneratedImageReference{{Filename: "second.png", Data: testPNGBytes(t, 10, 10)}},
+	}); err == nil {
+		t.Fatal("writeImageMetadataForRef() error = nil, want metadata persistence failure")
+	}
+	stored, err := os.ReadFile(firstPath)
+	if err != nil {
+		t.Fatalf("read restored reference: %v", err)
+	}
+	if !bytes.Equal(stored, firstData) {
+		t.Fatal("failed metadata update did not restore the previous reference")
+	}
+	referenceDir := filepath.Join(service.imageReferencesDir(), filepath.FromSlash(refs[0].rel+".refs"))
+	fileCount := 0
+	if err := filepath.Walk(referenceDir, func(_ string, info os.FileInfo, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+		if info.Mode().IsRegular() {
+			fileCount++
+		}
+		return nil
+	}); err != nil {
+		t.Fatalf("walk reference directory: %v", err)
+	}
+	if fileCount != 1 {
+		t.Fatalf("reference file count = %d, want only the committed reference", fileCount)
 	}
 }
 
@@ -848,7 +1232,7 @@ func TestImageServicePublicListHidesUnsharedGenerationMetadata(t *testing.T) {
 	service.RecordGeneratedImages([]string{rel}, "linuxdo:123", "alice", ImageVisibilityPublic, GeneratedImageMetadata{
 		Prompt: "private recipe",
 		ReferenceImages: []GeneratedImageReference{
-			{Filename: "source.png", ContentType: "image/png", Data: []byte("reference-bytes")},
+			{Filename: "source.png", ContentType: "image/png", Data: testPNGBytes(t, 8, 8)},
 		},
 	})
 
@@ -921,7 +1305,7 @@ func TestImageServiceCleanupStorageRetentionRemovesImageGroup(t *testing.T) {
 
 	service := NewImageService(config)
 	service.RecordGeneratedImages([]string{rel}, "linuxdo:123", "alice", ImageVisibilityPrivate, GeneratedImageMetadata{
-		ReferenceImages: []GeneratedImageReference{{Filename: "ref.png", ContentType: "image/png", Data: []byte("reference-bytes")}},
+		ReferenceImages: []GeneratedImageReference{{Filename: "ref.png", ContentType: "image/png", Data: testPNGBytes(t, 8, 8)}},
 	})
 	service.EnsureThumbnails([]string{rel})
 	thumbPath := filepath.Join(config.ImageThumbnailsDir(), filepath.FromSlash(rel)+thumbnailExtension)

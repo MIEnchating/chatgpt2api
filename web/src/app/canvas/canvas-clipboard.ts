@@ -32,12 +32,17 @@ export function normalizeCanvasClipboard(value: unknown): CanvasClipboard | null
     const source = raw as Partial<CanvasNode>;
     const id = String(source.id || "").trim();
     const type = source.type;
-    if (!id || id.length > 128 || ids.has(id) || (type !== "image" && type !== "text" && type !== "config")) return null;
+    if (!id || id.length > 128 || ids.has(id) || (type !== "image" && type !== "video" && type !== "text" && type !== "config")) return null;
     if (!isFiniteNumber(source.x) || !isFiniteNumber(source.y) || Math.abs(source.x) > 1e7 || Math.abs(source.y) > 1e7) return null;
     if (!isFiniteNumber(source.width) || !isFiniteNumber(source.height) || source.width <= 0 || source.height <= 0 || source.width > 20000 || source.height > 20000) return null;
     if (source.font_size !== undefined && (!isFiniteNumber(source.font_size) || source.font_size < 10 || source.font_size > 32)) return null;
     if (!isFiniteNumber(source.scale_x) || !isFiniteNumber(source.scale_y) || source.scale_x <= 0 || source.scale_y <= 0) return null;
     if (source.composer_content !== undefined && (typeof source.composer_content !== "string" || source.composer_content.length > 12000)) return null;
+    if (source.generation_model !== undefined && (typeof source.generation_model !== "string" || source.generation_model.trim().length > 256)) return null;
+    if (source.generation_video_model !== undefined && (typeof source.generation_video_model !== "string" || source.generation_video_model.trim().length > 256)) return null;
+    if (source.generation_video_size !== undefined && (typeof source.generation_video_size !== "string" || !["1280x720", "720x1280", "1024x1024", "16:9", "9:16", "1:1", "4:3", "3:4", "3:2", "2:3", "21:9", "adaptive"].includes(source.generation_video_size.trim().toLowerCase()))) return null;
+    if (source.generation_video_seconds !== undefined && (!isFiniteNumber(source.generation_video_seconds) || source.generation_video_seconds === 0 || source.generation_video_seconds < -1 || source.generation_video_seconds > 60 || (source.generation_video_seconds !== -1 && !Number.isInteger(source.generation_video_seconds)))) return null;
+    if (source.generation_video_resolution !== undefined && (typeof source.generation_video_resolution !== "string" || !["480p", "512p", "720p", "768p", "1080p", "2k", "4k"].includes(source.generation_video_resolution.trim().toLowerCase()))) return null;
     if (source.batch_child_ids !== undefined && (!Array.isArray(source.batch_child_ids) || source.batch_child_ids.some((childID) => typeof childID !== "string"))) return null;
     if (source.generation_reference_urls !== undefined && (!Array.isArray(source.generation_reference_urls) || source.generation_reference_urls.some((url) => typeof url !== "string"))) return null;
     ids.add(id);

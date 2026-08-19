@@ -152,7 +152,7 @@ export function duplicateCanvasNodeGroup(
     x: node.x + 36,
     y: node.y + 36,
     title: node.id === source.id
-      ? `${node.title || (node.type === "image" ? "图片" : node.type === "config" ? "生成配置" : "想法")} Copy`
+      ? `${node.title || (node.type === "image" ? "图片" : node.type === "video" ? "视频" : node.type === "config" ? "生成配置" : "想法")} Copy`
       : node.title,
     batch_child_ids: node.batch_child_ids?.flatMap((childID) => idBySourceID.get(childID) || []),
     batch_root_id: node.batch_root_id ? idBySourceID.get(node.batch_root_id) : undefined,

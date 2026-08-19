@@ -2,6 +2,7 @@ package service
 
 import (
 	"crypto/hmac"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -26,9 +27,22 @@ const (
 	DefaultManagedRoleID = "default-user"
 
 	rbacRolesDocumentName = "rbac_roles.json"
+	AuthSessionLifetime   = 30 * 24 * time.Hour
 )
 
 var ErrAuthUserCreationDisabled = authError("auth user creation is disabled")
+
+type AuthPersistenceError struct {
+	Err error
+}
+
+func (e AuthPersistenceError) Error() string {
+	return "auth persistence failed"
+}
+
+func (e AuthPersistenceError) Unwrap() error {
+	return e.Err
+}
 
 type Identity struct {
 	ID             string
@@ -106,14 +120,33 @@ type AuthService struct {
 	onUserCreated   func(string)
 }
 
-func NewAuthService(backend storage.Backend) *AuthService {
+func NewAuthService(backend storage.Backend) (*AuthService, error) {
+	if backend == nil {
+		return nil, fmt.Errorf("auth storage backend is required")
+	}
 	s := &AuthService{storage: backend, roleStore: jsonDocumentStoreFromBackend(backend), lastUsedFlushAt: map[string]time.Time{}}
-	s.roles = s.loadRoles()
-	s.accounts = s.loadPasswordAccounts()
-	s.items = s.load()
+	var err error
+	s.roles, err = s.loadRoles()
+	if err != nil {
+		return nil, fmt.Errorf("load auth roles: %w", err)
+	}
+	s.accounts, err = s.loadPasswordAccounts()
+	if err != nil {
+		return nil, fmt.Errorf("load password accounts: %w", err)
+	}
+	var sanitizeSessions bool
+	s.items, sanitizeSessions, err = s.load()
+	if err != nil {
+		return nil, fmt.Errorf("load auth credentials: %w", err)
+	}
 	s.syncPasswordAccountsToItems()
 	s.applyRolesToItems()
-	return s
+	if sanitizeSessions {
+		if err := s.saveLocked(); err != nil {
+			return nil, fmt.Errorf("sanitize stored auth sessions: %w", err)
+		}
+	}
+	return s, nil
 }
 
 func (s *AuthService) SetUserCreatedHook(fn func(string)) {
@@ -155,29 +188,20 @@ func (s *AuthService) ListSingleAPIKeyForOwner(ownerID string) []map[string]any 
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	nextItems := s.items[:0]
 	out := []map[string]any{}
 	kept := false
-	changed := false
 	for _, item := range s.items {
 		matchesOwnerAPIKey := util.Clean(item["role"]) == AuthRoleUser &&
 			util.Clean(item["kind"]) == AuthKindAPIKey &&
 			util.Clean(item["owner_id"]) == ownerID
 		if !matchesOwnerAPIKey {
-			nextItems = append(nextItems, item)
 			continue
 		}
 		if kept {
-			changed = true
 			continue
 		}
 		kept = true
-		nextItems = append(nextItems, item)
 		out = append(out, publicAuthItem(item))
-	}
-	if changed {
-		s.items = nextItems
-		_ = s.saveLocked()
 	}
 	return out
 }
@@ -189,29 +213,20 @@ func (s *AuthService) ListPersonalAPIKey(identity Identity) []map[string]any {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	nextItems := s.items[:0]
 	out := []map[string]any{}
 	kept := false
-	changed := false
 	for _, item := range s.items {
 		matchesPersonalAPIKey := util.Clean(item["role"]) == role &&
 			util.Clean(item["kind"]) == AuthKindAPIKey &&
 			util.Clean(item["owner_id"]) == owner.ID
 		if !matchesPersonalAPIKey {
-			nextItems = append(nextItems, item)
 			continue
 		}
 		if kept {
-			changed = true
 			continue
 		}
 		kept = true
-		nextItems = append(nextItems, item)
 		out = append(out, publicAuthItem(item))
-	}
-	if changed {
-		s.items = nextItems
-		_ = s.saveLocked()
 	}
 	return out
 }
@@ -267,9 +282,12 @@ func (s *AuthService) CreateRole(updates map[string]any) (map[string]any, error)
 	if managedRoleNameExistsLocked(s.roles, "", name) {
 		return nil, authError("role name already exists")
 	}
+	previousRoles := append([]ManagedRole(nil), s.roles...)
+	previousItems := cloneAuthItems(s.items)
 	s.roles = append(s.roles, role)
 	sortManagedRoles(s.roles)
 	if err := s.saveRolesLocked(); err != nil {
+		s.restoreAuthRolesAfterSaveFailureLocked(previousRoles, previousItems, err)
 		return nil, err
 	}
 	counts := managedRoleUserCountsLocked(s.items, s.accounts)
@@ -295,6 +313,8 @@ func (s *AuthService) UpdateRole(id string, updates map[string]any) (map[string]
 		if role.ID != id {
 			continue
 		}
+		previousRoles := append([]ManagedRole(nil), s.roles...)
+		previousItems := cloneAuthItems(s.items)
 		next := role
 		if hasName {
 			name := util.Clean(updates["name"])
@@ -324,10 +344,8 @@ func (s *AuthService) UpdateRole(id string, updates map[string]any) (map[string]
 				applyManagedRoleToAuthItem(item, next)
 			}
 		}
-		if err := s.saveRolesLocked(); err != nil {
-			return nil, err
-		}
-		if err := s.saveLocked(); err != nil {
+		if err := s.saveAuthAndRolesLocked(); err != nil {
+			s.restoreAuthRolesAfterSaveFailureLocked(previousRoles, previousItems, err)
 			return nil, err
 		}
 		counts := managedRoleUserCountsLocked(s.items, s.accounts)
@@ -354,6 +372,8 @@ func (s *AuthService) DeleteRole(id string) (bool, error) {
 	if counts[id] > 0 {
 		return false, authError("role is assigned to users")
 	}
+	previousRoles := append([]ManagedRole(nil), s.roles...)
+	previousItems := cloneAuthItems(s.items)
 	next := s.roles[:0]
 	for _, item := range s.roles {
 		if item.ID != id {
@@ -362,6 +382,7 @@ func (s *AuthService) DeleteRole(id string) (bool, error) {
 	}
 	s.roles = next
 	if err := s.saveRolesLocked(); err != nil {
+		s.restoreAuthRolesAfterSaveFailureLocked(previousRoles, previousItems, err)
 		return false, err
 	}
 	return true, nil
@@ -391,6 +412,7 @@ func (s *AuthService) UpsertAPIKeyForOwner(name string, owner AuthOwner) (map[st
 	now := util.NowISO()
 
 	s.mu.Lock()
+	previousItems := cloneAuthItems(s.items)
 	nextItems := make([]map[string]any, 0, len(s.items)+1)
 	var updated map[string]any
 	createdUserID := ""
@@ -437,6 +459,7 @@ func (s *AuthService) UpsertAPIKeyForOwner(name string, owner AuthOwner) (map[st
 	}
 	s.items = nextItems
 	if err := s.saveLocked(); err != nil {
+		s.restoreAuthItemsAfterSaveFailureLocked(previousItems, err)
 		s.mu.Unlock()
 		return nil, "", err
 	}
@@ -460,6 +483,7 @@ func (s *AuthService) UpsertPersonalAPIKey(identity Identity, name string) (map[
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	previousItems := cloneAuthItems(s.items)
 	nextItems := make([]map[string]any, 0, len(s.items)+1)
 	var updated map[string]any
 	for _, item := range s.items {
@@ -493,6 +517,7 @@ func (s *AuthService) UpsertPersonalAPIKey(identity Identity, name string) (map[
 	}
 	s.items = nextItems
 	if err := s.saveLocked(); err != nil {
+		s.restoreAuthItemsAfterSaveFailureLocked(previousItems, err)
 		return nil, "", err
 	}
 	return publicAuthItem(updated), raw, nil
@@ -528,6 +553,7 @@ func (s *AuthService) UpsertNewAPISession(user NewAPIUser) (*Identity, string, e
 	now := util.NowISO()
 
 	s.mu.Lock()
+	previousItems := cloneAuthItems(s.items)
 	sessionEnabled := true
 	ownerSeen := false
 	ownerHasEnabled := false
@@ -550,8 +576,9 @@ func (s *AuthService) UpsertNewAPISession(user NewAPIUser) (*Identity, string, e
 			continue
 		}
 		next := util.CopyMap(item)
+		next["id"] = util.NewHex(12)
 		next["name"] = name
-		next["key"] = raw
+		delete(next, "key")
 		next["key_hash"] = util.SHA256Hex(raw)
 		next["enabled"] = sessionEnabled
 		next["owner_name"] = name
@@ -559,6 +586,7 @@ func (s *AuthService) UpsertNewAPISession(user NewAPIUser) (*Identity, string, e
 		next["email"] = user.Email
 		next["last_used_at"] = nil
 		next["updated_at"] = now
+		next["expires_at"] = authSessionExpiry(now)
 		next["role"] = role
 		if role == AuthRoleAdmin {
 			next["role_id"] = AuthRoleAdmin
@@ -573,6 +601,7 @@ func (s *AuthService) UpsertNewAPISession(user NewAPIUser) (*Identity, string, e
 		}
 		s.items[index] = next
 		if err := s.saveLocked(); err != nil {
+			s.restoreAuthItemsAfterSaveFailureLocked(previousItems, err)
 			s.mu.Unlock()
 			return nil, "", err
 		}
@@ -599,6 +628,7 @@ func (s *AuthService) UpsertNewAPISession(user NewAPIUser) (*Identity, string, e
 	}
 	s.items = append(s.items, item)
 	if err := s.saveLocked(); err != nil {
+		s.restoreAuthItemsAfterSaveFailureLocked(previousItems, err)
 		s.mu.Unlock()
 		return nil, "", err
 	}
@@ -627,6 +657,7 @@ func (s *AuthService) upsertLinuxDoSession(owner AuthOwner, allowCreate bool) (m
 	now := util.NowISO()
 
 	s.mu.Lock()
+	previousItems := cloneAuthItems(s.items)
 	sessionEnabled := true
 	ownerSeen := false
 	ownerHasEnabled := false
@@ -649,16 +680,19 @@ func (s *AuthService) upsertLinuxDoSession(owner AuthOwner, allowCreate bool) (m
 			continue
 		}
 		next := util.CopyMap(item)
+		next["id"] = util.NewHex(12)
 		next["name"] = name
-		next["key"] = raw
+		delete(next, "key")
 		next["key_hash"] = util.SHA256Hex(raw)
 		next["enabled"] = sessionEnabled
 		next["owner_name"] = name
 		next["linuxdo_level"] = owner.LinuxDoLevel
 		next["last_used_at"] = nil
 		next["updated_at"] = now
+		next["expires_at"] = authSessionExpiry(now)
 		s.items[index] = next
 		if err := s.saveLocked(); err != nil {
+			s.restoreAuthItemsAfterSaveFailureLocked(previousItems, err)
 			s.mu.Unlock()
 			return nil, "", err
 		}
@@ -680,6 +714,7 @@ func (s *AuthService) upsertLinuxDoSession(owner AuthOwner, allowCreate bool) (m
 	item["enabled"] = sessionEnabled
 	s.items = append(s.items, item)
 	if err := s.saveLocked(); err != nil {
+		s.restoreAuthItemsAfterSaveFailureLocked(previousItems, err)
 		s.mu.Unlock()
 		return nil, "", err
 	}
@@ -714,10 +749,10 @@ func (s *AuthService) RevealKey(id string, filter AuthKeyFilter) (string, bool) 
 	return "", false
 }
 
-func (s *AuthService) UpdateKey(id string, updates map[string]any, filter AuthKeyFilter) map[string]any {
+func (s *AuthService) UpdateKey(id string, updates map[string]any, filter AuthKeyFilter) (map[string]any, error) {
 	id = util.Clean(id)
 	if id == "" {
-		return nil
+		return nil, nil
 	}
 	filter = normalizeAuthKeyFilter(filter)
 	s.mu.Lock()
@@ -737,23 +772,28 @@ func (s *AuthService) UpdateKey(id string, updates map[string]any, filter AuthKe
 		if value, ok := updates["enabled"]; ok && value != nil {
 			next["enabled"] = util.ToBool(value)
 		}
+		previous := s.items[index]
 		s.items[index] = next
-		_ = s.saveLocked()
-		return publicAuthItem(next)
+		if err := s.saveLocked(); err != nil {
+			s.items[index] = previous
+			s.reloadAuthItemsAfterConflictLocked(err)
+			return nil, err
+		}
+		return publicAuthItem(next), nil
 	}
-	return nil
+	return nil, nil
 }
 
-func (s *AuthService) UpdateUser(id string, updates map[string]any) map[string]any {
+func (s *AuthService) UpdateUser(id string, updates map[string]any) (map[string]any, error) {
 	id = util.Clean(id)
 	if id == "" {
-		return nil
+		return nil, nil
 	}
 	_, hasName := updates["name"]
 	_, hasEnabled := updates["enabled"]
 	_, hasRoleID := updates["role_id"]
 	if !hasName && !hasEnabled && !hasRoleID {
-		return nil
+		return nil, nil
 	}
 	name := util.Clean(updates["name"])
 	enabled := util.ToBool(updates["enabled"])
@@ -769,7 +809,7 @@ func (s *AuthService) UpdateUser(id string, updates map[string]any) map[string]a
 	if hasRoleID {
 		role, ok := managedRoleByIDLocked(s.roles, roleID)
 		if !ok {
-			return nil
+			return nil, nil
 		}
 		selectedRole = role
 	}
@@ -777,6 +817,8 @@ func (s *AuthService) UpdateUser(id string, updates map[string]any) map[string]a
 	if account, ok := passwordAccountByIDLocked(s.accounts, id); ok {
 		accountDisplayName = account.DisplayName()
 	}
+	previousAccounts := append([]PasswordAccount(nil), s.accounts...)
+	previousItems := cloneAuthItems(s.items)
 	changed := false
 	for index, account := range s.accounts {
 		if account.ID != id || account.Role != AuthRoleUser {
@@ -832,21 +874,30 @@ func (s *AuthService) UpdateUser(id string, updates map[string]any) map[string]a
 		changed = true
 	}
 	if !changed {
-		return nil
+		return nil, nil
 	}
-	_ = s.savePasswordAccountsLocked()
-	_ = s.saveLocked()
-	return managedAuthUserByIDLocked(s.items, s.roles, s.accounts, id)
+	var err error
+	if account, ok := passwordAccountByIDLocked(s.accounts, id); ok && account.Role == AuthRoleUser {
+		err = s.saveAuthAndPasswordAccountsLocked()
+	} else {
+		err = s.saveLocked()
+	}
+	if err != nil {
+		s.restoreAuthAccountsAfterSaveFailureLocked(previousAccounts, previousItems, err)
+		return nil, err
+	}
+	return managedAuthUserByIDLocked(s.items, s.roles, s.accounts, id), nil
 }
 
-func (s *AuthService) DeleteKey(id string, filter AuthKeyFilter) bool {
+func (s *AuthService) DeleteKey(id string, filter AuthKeyFilter) (bool, error) {
 	id = util.Clean(id)
 	if id == "" {
-		return false
+		return false, nil
 	}
 	filter = normalizeAuthKeyFilter(filter)
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	previous := cloneAuthItems(s.items)
 	next := s.items[:0]
 	removed := false
 	for _, item := range s.items {
@@ -857,25 +908,32 @@ func (s *AuthService) DeleteKey(id string, filter AuthKeyFilter) bool {
 		next = append(next, item)
 	}
 	if !removed {
-		return false
+		return false, nil
 	}
 	s.items = next
-	_ = s.saveLocked()
-	return true
+	if err := s.saveLocked(); err != nil {
+		s.restoreAuthItemsAfterSaveFailureLocked(previous, err)
+		return false, err
+	}
+	return true, nil
 }
 
-func (s *AuthService) DeleteUser(id string) bool {
+func (s *AuthService) DeleteUser(id string) (bool, error) {
 	id = util.Clean(id)
 	if id == "" {
-		return false
+		return false, nil
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	previousAccounts := append([]PasswordAccount(nil), s.accounts...)
+	previousItems := cloneAuthItems(s.items)
 	removed := false
+	removedAccount := false
 	nextAccounts := s.accounts[:0]
 	for _, account := range s.accounts {
 		if account.ID == id {
 			removed = true
+			removedAccount = true
 			continue
 		}
 		nextAccounts = append(nextAccounts, account)
@@ -890,12 +948,20 @@ func (s *AuthService) DeleteUser(id string) bool {
 		next = append(next, item)
 	}
 	if !removed {
-		return false
+		return false, nil
 	}
 	s.items = next
-	_ = s.savePasswordAccountsLocked()
-	_ = s.saveLocked()
-	return true
+	var err error
+	if removedAccount {
+		err = s.saveAuthAndPasswordAccountsLocked()
+	} else {
+		err = s.saveLocked()
+	}
+	if err != nil {
+		s.restoreAuthAccountsAfterSaveFailureLocked(previousAccounts, previousItems, err)
+		return false, err
+	}
+	return true, nil
 }
 
 func (s *AuthService) ResetUserAPIKey(id, name string) (map[string]any, map[string]any, string, bool, error) {
@@ -909,6 +975,7 @@ func (s *AuthService) ResetUserAPIKey(id, name string) (map[string]any, map[stri
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	previousItems := cloneAuthItems(s.items)
 	owner, found := managedAuthOwnerLocked(s.items, s.accounts, id)
 	if !found {
 		return nil, nil, "", false, nil
@@ -988,6 +1055,7 @@ func (s *AuthService) ResetUserAPIKey(id, name string) (map[string]any, map[stri
 		return nil, nil, "", false, nil
 	}
 	if err := s.saveLocked(); err != nil {
+		s.restoreAuthItemsAfterSaveFailureLocked(previousItems, err)
 		return nil, nil, "", true, err
 	}
 	return managedAuthUserByIDLocked(s.items, s.roles, s.accounts, id), publicAuthItem(updated), raw, true, nil
@@ -1025,6 +1093,9 @@ func (s *AuthService) Authenticate(raw string) *Identity {
 		if !util.ToBool(util.ValueOr(item["enabled"], true)) {
 			continue
 		}
+		if util.Clean(item["kind"]) == AuthKindSession && authSessionExpired(item, time.Now().UTC()) {
+			continue
+		}
 		stored := util.Clean(item["key_hash"])
 		if stored == "" || !hmac.Equal([]byte(stored), []byte(hash)) {
 			continue
@@ -1036,8 +1107,22 @@ func (s *AuthService) Authenticate(raw string) *Identity {
 		s.items[index] = next
 		id := util.Clean(next["id"])
 		if last, ok := s.lastUsedFlushAt[id]; !ok || now.Sub(last) >= time.Minute {
-			if s.saveLocked() == nil {
+			if err := s.saveLocked(); err == nil {
 				s.lastUsedFlushAt[id] = now
+			} else {
+				s.items[index] = item
+				s.reloadAuthItemsAfterConflictLocked(err)
+				if errors.Is(err, storage.ErrConcurrentRowUpdate) {
+					for _, current := range s.items {
+						if !util.ToBool(util.ValueOr(current["enabled"], true)) || authSessionExpiredIfNeeded(current, now) {
+							continue
+						}
+						if hmac.Equal([]byte(util.Clean(current["key_hash"])), []byte(hash)) {
+							return identityForAuthItem(current)
+						}
+					}
+					return nil
+				}
 			}
 		}
 		return identityForAuthItem(next)
@@ -1045,66 +1130,269 @@ func (s *AuthService) Authenticate(raw string) *Identity {
 	return nil
 }
 
-func (s *AuthService) load() []map[string]any {
+func authSessionExpiredIfNeeded(item map[string]any, now time.Time) bool {
+	return util.Clean(item["kind"]) == AuthKindSession && authSessionExpired(item, now)
+}
+
+func (s *AuthService) RevokeSession(raw string) (bool, error) {
+	removed, err := s.RevokeSessions(raw)
+	return removed > 0, err
+}
+
+func (s *AuthService) RevokeSessions(rawTokens ...string) (int, error) {
+	hashes := make([]string, 0, len(rawTokens))
+	seen := make(map[string]struct{}, len(rawTokens))
+	for _, raw := range rawTokens {
+		candidate := util.Clean(raw)
+		if candidate == "" {
+			continue
+		}
+		hash := util.SHA256Hex(candidate)
+		if _, exists := seen[hash]; exists {
+			continue
+		}
+		seen[hash] = struct{}{}
+		hashes = append(hashes, hash)
+	}
+	if len(hashes) == 0 {
+		return 0, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	previous := cloneAuthItems(s.items)
+	next := make([]map[string]any, 0, len(s.items))
+	removed := 0
+	for _, item := range s.items {
+		if util.Clean(item["kind"]) == AuthKindSession && authHashMatchesAny(util.Clean(item["key_hash"]), hashes) {
+			removed++
+			continue
+		}
+		next = append(next, item)
+	}
+	if removed == 0 {
+		return 0, nil
+	}
+	s.items = next
+	if err := s.saveLocked(); err != nil {
+		s.restoreAuthItemsAfterSaveFailureLocked(previous, err)
+		return 0, err
+	}
+	return removed, nil
+}
+
+func authHashMatchesAny(stored string, candidates []string) bool {
+	for _, candidate := range candidates {
+		if hmac.Equal([]byte(stored), []byte(candidate)) {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *AuthService) RevokeCredential(id string) error {
+	id = util.Clean(id)
+	if id == "" {
+		return nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	previous := cloneAuthItems(s.items)
+	next := make([]map[string]any, 0, len(s.items))
+	for _, item := range s.items {
+		if util.Clean(item["id"]) == id && util.Clean(item["kind"]) == AuthKindSession {
+			continue
+		}
+		next = append(next, item)
+	}
+	if len(next) == len(s.items) {
+		return nil
+	}
+	s.items = next
+	if err := s.saveLocked(); err != nil {
+		s.restoreAuthItemsAfterSaveFailureLocked(previous, err)
+		return err
+	}
+	return nil
+}
+
+func authSessionExpired(item map[string]any, now time.Time) bool {
+	expiresAt, err := time.Parse(time.RFC3339Nano, util.Clean(item["expires_at"]))
+	return err != nil || !expiresAt.After(now)
+}
+
+func authSessionExpiry(now string) string {
+	issuedAt, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(now))
+	if err != nil {
+		issuedAt = time.Now().UTC()
+	}
+	return issuedAt.Add(AuthSessionLifetime).Format(time.RFC3339Nano)
+}
+
+func cloneAuthItems(items []map[string]any) []map[string]any {
+	cloned := make([]map[string]any, len(items))
+	for index, item := range items {
+		cloned[index] = util.CopyMap(item)
+	}
+	return cloned
+}
+
+func (s *AuthService) restoreAuthItemsAfterSaveFailureLocked(previous []map[string]any, saveErr error) {
+	s.items = previous
+	s.reloadAuthItemsAfterConflictLocked(saveErr)
+}
+
+func (s *AuthService) restoreAuthAccountsAfterSaveFailureLocked(previousAccounts []PasswordAccount, previousItems []map[string]any, saveErr error) {
+	s.accounts = previousAccounts
+	s.items = previousItems
+	if !errors.Is(saveErr, storage.ErrConcurrentRowUpdate) {
+		return
+	}
+	accounts, accountsErr := s.loadPasswordAccounts()
+	items, _, itemsErr := s.load()
+	if accountsErr != nil || itemsErr != nil {
+		return
+	}
+	s.accounts = accounts
+	s.items = items
+	s.syncPasswordAccountsToItems()
+	s.applyRolesToItems()
+}
+
+func (s *AuthService) restoreAuthRolesAfterSaveFailureLocked(previousRoles []ManagedRole, previousItems []map[string]any, saveErr error) {
+	s.roles = previousRoles
+	s.items = previousItems
+	if !errors.Is(saveErr, storage.ErrConcurrentRowUpdate) {
+		return
+	}
+	roles, rolesErr := s.loadRoles()
+	items, _, itemsErr := s.load()
+	if rolesErr != nil || itemsErr != nil {
+		return
+	}
+	s.roles = roles
+	s.items = items
+	s.syncPasswordAccountsToItems()
+	s.applyRolesToItems()
+}
+
+func (s *AuthService) reloadAuthItemsAfterConflictLocked(saveErr error) {
+	if !errors.Is(saveErr, storage.ErrConcurrentRowUpdate) {
+		return
+	}
+	items, _, err := s.load()
+	if err != nil {
+		return
+	}
+	s.items = items
+	s.syncPasswordAccountsToItems()
+	s.applyRolesToItems()
+}
+
+func (s *AuthService) load() ([]map[string]any, bool, error) {
 	items, err := s.storage.LoadAuthKeys()
 	if err != nil {
-		return []map[string]any{}
+		return nil, false, err
 	}
 	out := make([]map[string]any, 0, len(items))
+	sanitizeSessions := false
 	for _, item := range items {
+		if normalizeAuthKind(util.Clean(item["kind"])) == AuthKindSession && util.Clean(item["key"]) != "" {
+			sanitizeSessions = true
+		}
 		if normalized := normalizeAuthItem(item); normalized != nil {
 			out = append(out, normalized)
 		}
 	}
-	return out
+	return out, sanitizeSessions, nil
 }
 
-func (s *AuthService) loadRoles() []ManagedRole {
+func (s *AuthService) loadRoles() ([]ManagedRole, error) {
 	var raw any
 	if s.roleStore != nil {
 		value, err := s.roleStore.LoadJSONDocument(rbacRolesDocumentName)
-		if err == nil {
-			raw = value
+		if err != nil {
+			return nil, err
 		}
+		raw = value
 	}
-	return normalizeManagedRoles(raw)
+	return normalizeManagedRoles(raw), nil
 }
 
-func (s *AuthService) loadPasswordAccounts() []PasswordAccount {
+func (s *AuthService) loadPasswordAccounts() ([]PasswordAccount, error) {
 	var raw any
 	if s.roleStore != nil {
 		value, err := s.roleStore.LoadJSONDocument(passwordAccountsDocumentName)
-		if err == nil {
-			raw = value
+		if err != nil {
+			return nil, err
 		}
+		raw = value
 	}
-	return normalizePasswordAccounts(raw)
+	return normalizePasswordAccounts(raw), nil
 }
 
 func (s *AuthService) saveLocked() error {
-	return s.storage.SaveAuthKeys(s.items)
+	if err := s.storage.SaveAuthKeys(s.items); err != nil {
+		return AuthPersistenceError{Err: err}
+	}
+	return nil
 }
 
 func (s *AuthService) savePasswordAccountsLocked() error {
 	if s.roleStore == nil {
-		return nil
+		return AuthPersistenceError{Err: fmt.Errorf("auth document storage is required")}
 	}
 	items := make([]map[string]any, 0, len(s.accounts))
 	for _, account := range s.accounts {
 		items = append(items, storedPasswordAccount(account))
 	}
-	return s.roleStore.SaveJSONDocument(passwordAccountsDocumentName, map[string]any{"items": items})
+	if err := s.roleStore.SaveJSONDocument(passwordAccountsDocumentName, map[string]any{"items": items}); err != nil {
+		return AuthPersistenceError{Err: err}
+	}
+	return nil
 }
 
-func (s *AuthService) saveRolesLocked() error {
-	if s.roleStore == nil {
-		return nil
+func (s *AuthService) saveAuthAndPasswordAccountsLocked() error {
+	store, ok := s.storage.(storage.AuthStateBackend)
+	if !ok {
+		return AuthPersistenceError{Err: fmt.Errorf("atomic auth state storage is required")}
+	}
+	items := make([]map[string]any, 0, len(s.accounts))
+	for _, account := range s.accounts {
+		items = append(items, storedPasswordAccount(account))
+	}
+	if err := store.SaveAuthKeysAndJSONDocument(s.items, passwordAccountsDocumentName, map[string]any{"items": items}); err != nil {
+		return AuthPersistenceError{Err: err}
+	}
+	return nil
+}
+
+func (s *AuthService) saveAuthAndRolesLocked() error {
+	store, ok := s.storage.(storage.AuthStateBackend)
+	if !ok {
+		return AuthPersistenceError{Err: fmt.Errorf("atomic auth state storage is required")}
 	}
 	items := make([]map[string]any, 0, len(s.roles))
 	for _, role := range s.roles {
 		items = append(items, storedManagedRole(role))
 	}
-	return s.roleStore.SaveJSONDocument(rbacRolesDocumentName, map[string]any{"items": items})
+	if err := store.SaveAuthKeysAndJSONDocument(s.items, rbacRolesDocumentName, map[string]any{"items": items}); err != nil {
+		return AuthPersistenceError{Err: err}
+	}
+	return nil
+}
+
+func (s *AuthService) saveRolesLocked() error {
+	if s.roleStore == nil {
+		return AuthPersistenceError{Err: fmt.Errorf("auth document storage is required")}
+	}
+	items := make([]map[string]any, 0, len(s.roles))
+	for _, role := range s.roles {
+		items = append(items, storedManagedRole(role))
+	}
+	if err := s.roleStore.SaveJSONDocument(rbacRolesDocumentName, map[string]any{"items": items}); err != nil {
+		return AuthPersistenceError{Err: err}
+	}
+	return nil
 }
 
 func (s *AuthService) applyRolesToItems() {
@@ -1189,6 +1477,7 @@ func (s *AuthService) createCredential(role, kind, name string, owner AuthOwner,
 	raw := prefix + util.RandomTokenURL(24)
 	item := newAuthItem(role, kind, name, owner, raw)
 	s.mu.Lock()
+	previousItems := cloneAuthItems(s.items)
 	userID := managedAuthUserID(item)
 	createdUserID := ""
 	if userID != "" && !managedUserExistsLocked(s.items, s.accounts, userID) {
@@ -1197,6 +1486,7 @@ func (s *AuthService) createCredential(role, kind, name string, owner AuthOwner,
 	s.applyRoleToAuthItem(item, "")
 	s.items = append(s.items, item)
 	if err := s.saveLocked(); err != nil {
+		s.restoreAuthItemsAfterSaveFailureLocked(previousItems, err)
 		s.mu.Unlock()
 		return nil, "", err
 	}
@@ -1218,6 +1508,7 @@ func newAuthItem(role, kind, name string, owner AuthOwner, raw string) map[strin
 	if provider == "" {
 		provider = AuthProviderLocal
 	}
+	now := time.Now().UTC()
 	item := map[string]any{
 		"id":            util.NewHex(12),
 		"name":          name,
@@ -1227,11 +1518,15 @@ func newAuthItem(role, kind, name string, owner AuthOwner, raw string) map[strin
 		"owner_id":      owner.ID,
 		"owner_name":    owner.Name,
 		"linuxdo_level": owner.LinuxDoLevel,
-		"key":           raw,
 		"key_hash":      util.SHA256Hex(raw),
 		"enabled":       true,
-		"created_at":    util.NowISO(),
+		"created_at":    now.Format(time.RFC3339Nano),
 		"last_used_at":  nil,
+	}
+	if kind == AuthKindSession {
+		item["expires_at"] = now.Add(AuthSessionLifetime).Format(time.RFC3339Nano)
+	} else {
+		item["key"] = raw
 	}
 	applyPermissionSet(item, DefaultPermissionSetForRole(role))
 	return item
@@ -1243,19 +1538,19 @@ func normalizeAuthItem(raw map[string]any) map[string]any {
 		return nil
 	}
 	key := util.Clean(raw["key"])
-	if key == "" {
-		return nil
-	}
 	hash := util.Clean(raw["key_hash"])
 	if hash == "" {
-		return nil
-	}
-	if util.SHA256Hex(key) != hash {
 		return nil
 	}
 	kind := normalizeAuthKind(util.Clean(raw["kind"]))
 	if kind == "" {
 		kind = AuthKindAPIKey
+	}
+	if kind == AuthKindAPIKey && key == "" {
+		return nil
+	}
+	if key != "" && util.SHA256Hex(key) != hash {
+		return nil
 	}
 	id := util.Clean(raw["id"])
 	if id == "" {
@@ -1292,11 +1587,27 @@ func normalizeAuthItem(raw map[string]any) map[string]any {
 		"owner_id":      owner.ID,
 		"owner_name":    owner.Name,
 		"linuxdo_level": owner.LinuxDoLevel,
-		"key":           key,
 		"key_hash":      hash,
 		"enabled":       util.ToBool(util.ValueOr(raw["enabled"], true)),
 		"created_at":    created,
 		"last_used_at":  lastUsed,
+	}
+	if kind == AuthKindAPIKey {
+		out["key"] = key
+	}
+	if kind == AuthKindSession {
+		expiresAt := util.Clean(raw["expires_at"])
+		if expiresAt == "" {
+			createdAt, err := time.Parse(time.RFC3339Nano, created)
+			if err != nil {
+				return nil
+			}
+			expiresAt = createdAt.Add(AuthSessionLifetime).Format(time.RFC3339Nano)
+		}
+		if _, err := time.Parse(time.RFC3339Nano, expiresAt); err != nil {
+			return nil
+		}
+		out["expires_at"] = expiresAt
 	}
 	if role == AuthRoleUser {
 		roleID := util.Clean(raw["role_id"])
@@ -1341,6 +1652,7 @@ func publicAuthItem(item map[string]any) map[string]any {
 		"enabled":         util.ToBool(util.ValueOr(item["enabled"], true)),
 		"created_at":      item["created_at"],
 		"last_used_at":    item["last_used_at"],
+		"expires_at":      item["expires_at"],
 		"menu_paths":      append([]string(nil), authItemPermissions(item).MenuPaths...),
 		"api_permissions": append([]string(nil), authItemPermissions(item).APIPermissions...),
 	}

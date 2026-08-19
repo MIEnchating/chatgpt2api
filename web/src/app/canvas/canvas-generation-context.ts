@@ -1,4 +1,6 @@
 import type { CanvasConnection, CanvasNode } from "@/lib/api";
+import { getImageSizeSelectionFromSize } from "../image/image-options.ts";
+import { imageOutputCountLimit, supportsImageAspectRatio, supportsImageExactDimensions, supportsImageSize } from "../../lib/image-model-capabilities.ts";
 import { CANVAS_CONFIG_REFERENCE_PATTERN, canvasGenerationInputs } from "./canvas-config-inputs.ts";
 
 export type CanvasGenerationContext = {
@@ -9,10 +11,41 @@ export type CanvasGenerationContext = {
 };
 
 export const INTERRUPTED_CANVAS_GENERATION_ERROR = "页面刷新后生成已中断，请重新生成。";
+export const PENDING_CANVAS_GENERATION_RECOVERY_ERROR = "暂时无法同步后台任务，重新进入画布后将继续恢复。";
 
-export function canvasGenerationCount(configured: number | undefined, override: number | undefined, retrying: boolean) {
+export function canvasGenerationNeedsRecovery(node: CanvasNode) {
+  return Boolean(node.task_id) && (
+    node.generation_status === "loading" ||
+    node.generation_error === INTERRUPTED_CANVAS_GENERATION_ERROR ||
+    node.generation_error === PENDING_CANVAS_GENERATION_RECOVERY_ERROR
+  );
+}
+
+export function markCanvasGenerationRecoveryPending(nodes: readonly CanvasNode[], taskID: string) {
+  return nodes.map((node): CanvasNode => node.task_id === taskID && canvasGenerationNeedsRecovery(node) ? {
+    ...node,
+    generation_status: "error",
+    generation_error: PENDING_CANVAS_GENERATION_RECOVERY_ERROR,
+  } : node);
+}
+
+export function canvasGenerationCount(model: string, configured: number | undefined, override: number | undefined, retrying: boolean) {
   if (retrying) return 1;
-  return Math.max(1, Math.min(10, Math.floor(override ?? configured ?? 1)));
+  return Math.max(1, Math.min(imageOutputCountLimit(model), Math.floor(override ?? configured ?? 1)));
+}
+
+export function canvasGenerationModel(currentModel: string, sourceNode: CanvasNode, retryConfiguration: CanvasNode | null, retrying: boolean) {
+  if (!retrying) return currentModel.trim();
+  return sourceNode.generation_model?.trim() || retryConfiguration?.generation_model?.trim() || currentModel.trim();
+}
+
+export function canvasGenerationRequestSize(model: string, size: string | undefined, resolution: string | undefined) {
+  const value = String(size || "").trim();
+  if (!value || !supportsImageSize(model)) return undefined;
+  const selection = getImageSizeSelectionFromSize(value, resolution);
+  if (selection.mode === "ratio" && !supportsImageAspectRatio(model, selection.aspectRatio)) return undefined;
+  if (selection.mode === "custom" && !supportsImageExactDimensions(model)) return undefined;
+  return value;
 }
 
 export function buildCanvasImageReferencePrompt(prompt: string, referenceCount: number) {

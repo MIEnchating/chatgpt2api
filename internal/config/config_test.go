@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"chatgpt2api/internal/util"
 )
 
 func TestStoreImageObjectStorageConfigDoesNotExposeCredentials(t *testing.T) {
@@ -101,6 +103,24 @@ func TestStoreImageStorageBackendDefaultsToLocal(t *testing.T) {
 	}
 	if got := store.ImageStorageBackend(); got != "local" {
 		t.Fatalf("ImageStorageBackend() = %q", got)
+	}
+}
+
+func TestStoreDefaultImageModelsIncludeProviderRoutes(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("CHATGPT2API_ROOT", root)
+	unsetEnv(t, "CHATGPT2API_IMAGE_MODELS")
+	store, err := NewStore()
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	want := strings.Join([]string{
+		util.ImageModelGPT,
+		util.ImageModelGemini,
+		util.ImageModelGrok,
+	}, ",")
+	if got := strings.Join(store.ImageModels(), ","); got != want {
+		t.Fatalf("ImageModels() = %q, want %q", got, want)
 	}
 }
 

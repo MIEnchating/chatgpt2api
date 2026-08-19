@@ -9,7 +9,7 @@ export type ImageConversationSessionIdentity = {
 
 export type ImageConversationScopeBinding = {
   ownerScope: string;
-  authorization: string;
+  credentialScope: string;
 };
 
 export type ImageConversationMinimalAck = {
@@ -87,10 +87,9 @@ export function imageConversationOwnerScope(session: ImageConversationSessionIde
 export function imageConversationScopeBinding(
   session: ImageConversationSessionIdentity | null,
 ): ImageConversationScopeBinding {
-  const token = String(session?.key || "").trim();
   return {
     ownerScope: imageConversationOwnerScope(session),
-    authorization: token ? `Bearer ${token}` : "Bearer __no_auth_session__",
+    credentialScope: String(session?.key || "").trim(),
   };
 }
 
@@ -396,7 +395,7 @@ export class ImageConversationSessionScopeCoordinator {
       current &&
       !current.retired &&
       current.ownerScope === binding.ownerScope &&
-      current.authorization === binding.authorization
+      current.credentialScope === binding.credentialScope
     ) {
       return current;
     }

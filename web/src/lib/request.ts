@@ -2,7 +2,6 @@ import axios, {AxiosError, type AxiosRequestConfig} from "axios";
 
 import webConfig from "@/constants/common-env";
 import {clearAuthenticatedImageCache} from "@/lib/authenticated-image";
-import {clearStoredAuthSession, getStoredSessionToken} from "@/store/auth";
 
 type RequestConfig = AxiosRequestConfig & {
     redirectOnUnauthorized?: boolean;
@@ -55,19 +54,6 @@ const request = axios.create({
     withCredentials: true,
 });
 
-request.interceptors.request.use(async (config) => {
-    const nextConfig = {...config};
-    const sessionToken = await getStoredSessionToken();
-    const headers = {...nextConfig.headers} as Record<string, string>;
-    if (sessionToken && !headers.Authorization) {
-        headers.Authorization = `Bearer ${sessionToken}`;
-    }
-    // oxlint-disable-next-line typescript/ban-ts-comment
-    // @ts-expect-error
-    nextConfig.headers = headers;
-    return nextConfig;
-});
-
 request.interceptors.response.use(
     (response) => response,
     async (error: AxiosError<ErrorPayload>) => {
@@ -77,7 +63,6 @@ request.interceptors.response.use(
             // Avoid redirect loop — only redirect if not already on /login
             if (!window.location.pathname.startsWith("/login")) {
                 clearAuthenticatedImageCache();
-                await clearStoredAuthSession();
                 window.location.replace("/login");
                 // Return a never-resolving promise to prevent further error handling
                 // while the browser navigates away

@@ -1,16 +1,11 @@
 package httpapi
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"image"
-	_ "image/gif"
-	_ "image/jpeg"
-	_ "image/png"
 	"io"
 	"mime/multipart"
 	"net"
@@ -31,26 +26,28 @@ import (
 	"chatgpt2api/internal/util"
 	frontend "chatgpt2api/internal/web"
 
-	_ "github.com/HugoSmits86/nativewebp"
 	"golang.org/x/net/publicsuffix"
 )
 
 const (
-	maxLoginPageImageSize         = 10 << 20
-	maxSiteIconSize               = 2 << 20
-	maxRelayImageBytes            = 40 << 20
-	maxRelayInputImages           = 4
-	maxRelayImageMultipartMemory  = 1 << 20
-	maxRelayImageRequestOverhead  = 4 << 20
-	maxRelayImageEditRequestBytes = maxRelayInputImages*maxRelayImageBytes + maxRelayImageRequestOverhead
+	maxLoginPageImageSize        = 10 << 20
+	maxSiteIconSize              = 2 << 20
+	maxRelayImageBytes           = 40 << 20
+	maxRelayInputImages          = 14
+	maxRelayImageMultipartMemory = 1 << 20
+	// Gemini 3 image editing accepts up to 14 references. Keep a finite total
+	// request cap even though each individual image has its own limit.
+	maxRelayImageEditRequestBytes = 192 << 20
 	maxLoginRequestBodyBytes      = 64 << 10
 	imageThumbnailCacheControl    = "public, max-age=31536000, immutable"
+	relayImageLocalizationTimeout = time.Minute
 	authSessionCookieName         = "chatgpt2api_session"
 )
 
 var (
 	errRelayImageTooLarge    = errors.New("image file is too large")
 	errTooManyRelayImages    = errors.New("too many image files")
+	errTooManyRelayMasks     = errors.New("only one mask file is allowed")
 	errUnsupportedRelayImage = errors.New("unsupported image format")
 )
 
@@ -73,6 +70,8 @@ type App struct {
 	cancel              context.CancelFunc
 	historyWriteLimiter *imageConversationHistoryWriteLimiter
 	imageUploadSlots    chan struct{}
+	videoDir            string
+	loginLimiter        *loginRateLimiter
 	settingsMu          sync.Mutex
 
 	imageCleanup             imageCleanupWorker
@@ -162,8 +161,16 @@ func NewApp() (*App, error) {
 		cancel()
 		return nil, err
 	}
-	accounts := service.NewAccountService(storageBackend, cfg, proxy, logs)
-	auth := service.NewAuthService(storageBackend)
+	accounts, err := service.NewAccountService(storageBackend, cfg, proxy, logs)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	auth, err := service.NewAuthService(storageBackend)
+	if err != nil {
+		cancel()
+		return nil, err
+	}
 	bootstrap, err := auth.EnsureBootstrapAdmin(cfg.AdminUsername(), cfg.AdminPassword())
 	if err != nil {
 		cancel()
@@ -181,7 +188,12 @@ func NewApp() (*App, error) {
 		return nil, fmt.Errorf("initialize image object storage: %w", storeErr)
 	}
 	engine := &protocol.Engine{Accounts: accounts, Config: cfg, Storage: documentStore, Proxy: proxy, Logger: logger, ImageConversationSessions: imageSessions, Images: images}
-	app := &App{config: cfg, auth: auth, accounts: accounts, logs: logs, logger: logger, proxy: proxy, engine: engine, images: images, conversationAssets: service.NewImageConversationAssetService(filepath.Join(cfg.DataDir, "image_conversation_assets")), prompts: service.NewPromptFavoriteService(storageBackend), history: service.NewImageConversationHistoryService(storageBackend), canvas: service.NewCanvasDocumentService(storageBackend), announce: service.NewAnnouncementService(storageBackend), newAPIKeys: newAPIKeys, cancel: cancel, historyWriteLimiter: newImageConversationHistoryWriteLimiter(imageConversationHistoryWriteParallelism), imageUploadSlots: make(chan struct{}, 2)}
+	videoDir := filepath.Join(cfg.DataDir, "videos")
+	if err := os.MkdirAll(videoDir, 0o755); err != nil {
+		cancel()
+		return nil, fmt.Errorf("initialize video storage: %w", err)
+	}
+	app := &App{config: cfg, auth: auth, accounts: accounts, logs: logs, logger: logger, proxy: proxy, engine: engine, images: images, videoDir: videoDir, conversationAssets: service.NewImageConversationAssetService(filepath.Join(cfg.DataDir, "image_conversation_assets")), prompts: service.NewPromptFavoriteService(storageBackend), history: service.NewImageConversationHistoryService(storageBackend), canvas: service.NewCanvasDocumentService(storageBackend), announce: service.NewAnnouncementService(storageBackend), newAPIKeys: newAPIKeys, cancel: cancel, historyWriteLimiter: newImageConversationHistoryWriteLimiter(imageConversationHistoryWriteParallelism), imageUploadSlots: make(chan struct{}, 2), loginLimiter: newLoginRateLimiter()}
 	app.conversationAssets.SetStorageBudget(cfg.ImageStorageLimitBytes, func() int64 {
 		return app.images.StorageGovernance().TotalBytes
 	})
@@ -213,6 +225,9 @@ func NewApp() (*App, error) {
 		cfg.UserDefaultConcurrentLimit,
 		cfg.UserDefaultRPMLimit,
 	)
+	app.tasks.SetVideoHandler(func(ctx context.Context, identity service.Identity, payload map[string]any) (map[string]any, error) {
+		return app.runLoggedVideoTask(ctx, identity, payload)
+	})
 	app.tasks.SetTaskTimeoutGetter(func() time.Duration {
 		return time.Duration(app.config.ImageTaskTimeoutSeconds()) * time.Second
 	})
@@ -227,6 +242,25 @@ func NewApp() (*App, error) {
 	return app, nil
 }
 
+func (a *App) runLoggedVideoTask(ctx context.Context, identity service.Identity, payload map[string]any) (map[string]any, error) {
+	start := time.Now()
+	payload["owner_id"] = identityScope(identity)
+	payload["owner_name"] = identityDisplayName(identity)
+	model := firstNonEmpty(util.Clean(payload["model"]), firstString(a.config.VideoModels(), "sora-2"))
+	payload["model"] = model
+	if err := a.attachRelayAPIKeyForIdentity(ctx, identity, payload); err != nil {
+		return nil, err
+	}
+	result, err := a.relayVideoTask(ctx, payload)
+	urls := collectURLs(result)
+	if err != nil {
+		a.logCall(ctx, identity, "视频生成", http.MethodPost, "/api/creation-tasks/video-generations", model, start, "failed", protocolErrorHTTPStatus(err), err.Error(), urls, payloadAuditCapture(payload))
+		return result, err
+	}
+	a.logCall(ctx, identity, "视频生成", http.MethodPost, "/api/creation-tasks/video-generations", model, start, "success", http.StatusOK, "", urls, payloadAuditCapture(payload))
+	return result, nil
+}
+
 func relayImageTaskResult(payload map[string]any, result map[string]any, stream *protocol.StreamResult, err error) (map[string]any, error) {
 	if err != nil || stream == nil {
 		return result, err
@@ -238,7 +272,7 @@ func collectRelayImageTaskStream(payload map[string]any, stream *protocol.Stream
 	created := time.Now().Unix()
 	model := ""
 	message := ""
-	outputLimit := normalizedProtocolImageCount(payload["n"])
+	outputLimit := normalizedProtocolImageCount(payload["n"], util.Clean(payload["model"]))
 	accumulator := newRelayImageStreamAccumulator(outputLimit)
 	onProgress := relayImageTaskProgressCallback(payload)
 
@@ -290,7 +324,7 @@ type relayImageStreamAccumulator struct {
 }
 
 func newRelayImageStreamAccumulator(outputLimit int) *relayImageStreamAccumulator {
-	outputLimit = normalizedProtocolImageCount(outputLimit)
+	outputLimit = normalizedRelayImageStreamOutputLimit(outputLimit)
 	return &relayImageStreamAccumulator{
 		final:    make([]map[string]any, outputLimit),
 		previews: make([]map[string]any, outputLimit),
@@ -439,7 +473,7 @@ func relayImageStreamItemData(item map[string]any) []map[string]any {
 }
 
 func relayImageStreamData(indexed map[int][]map[string]any, unindexed []map[string]any, outputLimit int) []map[string]any {
-	outputLimit = normalizedProtocolImageCount(outputLimit)
+	outputLimit = normalizedRelayImageStreamOutputLimit(outputLimit)
 	if len(unindexed) > 0 {
 		data := cloneRelayImageData(unindexed)
 		if len(data) > outputLimit {
@@ -550,6 +584,16 @@ func (a *App) handleImageGenerations(w http.ResponseWriter, r *http.Request) {
 		util.WriteError(w, http.StatusBadRequest, "invalid json body")
 		return
 	}
+	model := a.applyDefaultImageModel(body)
+	if err := validateRelayImageRequest("/v1/images/generations", model, body, nil); err != nil {
+		a.writeProtocol(w, r, nil, nil, err, "openai", "/v1/images/generations", model, identity, "文生图", service.ImageVisibilityPrivate, body)
+		return
+	}
+	normalizeImagePayloadForModel(body)
+	if !validProtocolImageCount(body["n"], model) {
+		util.WriteError(w, http.StatusBadRequest, protocolImageCountRangeMessage(model))
+		return
+	}
 	body["owner_id"] = identityScope(identity)
 	body["owner_name"] = identityDisplayName(identity)
 	body["base_url"] = a.relayBaseURL()
@@ -559,14 +603,31 @@ func (a *App) handleImageGenerations(w http.ResponseWriter, r *http.Request) {
 		util.WriteError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	model := a.applyDefaultImageModel(body)
+	if err := validateGoogleGeminiInlineRequest(body, nil); err != nil {
+		a.writeProtocol(w, r, nil, nil, err, "openai", "/v1/images/generations", model, identity, "文生图", visibility, body)
+		return
+	}
 	if err := a.attachRelayAPIKeyForIdentity(r.Context(), identity, body); err != nil {
 		a.writeProtocol(w, r, nil, nil, err, "openai", "/v1/images/generations", model, identity, "文生图", visibility)
 		return
 	}
+	release, err := relayAcquireDirectImageTaskSlot(r.Context(), body)
+	if err != nil {
+		a.writeProtocol(w, r, nil, nil, err, "openai", "/v1/images/generations", model, identity, "文生图", visibility, body)
+		return
+	}
+	if release != nil {
+		defer release()
+	}
 	result, stream, err := a.relayImageGenerations(r.Context(), body)
-	if err == nil && stream == nil {
-		err = a.localizeRelayImageResult(r.Context(), identity, result, body)
+	if stream == nil && result != nil {
+		if localizeErr := a.localizeRelayImageResult(r.Context(), identity, result, body); localizeErr != nil {
+			if err == nil {
+				err = localizeErr
+			} else {
+				err = errors.Join(err, localizeErr)
+			}
+		}
 	}
 	a.writeProtocol(w, r, result, stream, err, "openai", "/v1/images/generations", model, identity, "文生图", visibility, body)
 }
@@ -587,10 +648,6 @@ func (a *App) handleImageEdits(w http.ResponseWriter, r *http.Request) {
 		writeMultipartImageBodyError(w, err)
 		return
 	}
-	if n := util.ToInt(body["n"], 1); n < 1 || n > 4 {
-		util.WriteError(w, http.StatusBadRequest, "n must be between 1 and 4")
-		return
-	}
 	if len(images) == 0 {
 		util.WriteError(w, http.StatusBadRequest, "image file is required")
 		return
@@ -606,13 +663,44 @@ func (a *App) handleImageEdits(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	model := a.applyDefaultImageModel(body)
+	if err := validateRelayImageRequest("/v1/images/edits", model, body, images); err != nil {
+		a.writeProtocol(w, r, nil, nil, err, "openai", "/v1/images/edits", model, identity, "图生图", visibility, body)
+		return
+	}
+	normalizeImagePayloadForModel(body)
+	if !validProtocolImageCount(body["n"], model) {
+		util.WriteError(w, http.StatusBadRequest, protocolImageCountRangeMessage(model))
+		return
+	}
+	if err := validateRelayImageReferenceCount(model, len(images)); err != nil {
+		a.writeProtocol(w, r, nil, nil, err, "openai", "/v1/images/edits", model, identity, "图生图", visibility, body)
+		return
+	}
+	if err := validateGoogleGeminiInlineRequest(body, images); err != nil {
+		a.writeProtocol(w, r, nil, nil, err, "openai", "/v1/images/edits", model, identity, "图生图", visibility, body)
+		return
+	}
 	if err := a.attachRelayAPIKeyForIdentity(r.Context(), identity, body); err != nil {
 		a.writeProtocol(w, r, nil, nil, err, "openai", "/v1/images/edits", model, identity, "图生图", visibility)
 		return
 	}
+	imageTaskRelease, err := relayAcquireDirectImageTaskSlot(r.Context(), body)
+	if err != nil {
+		a.writeProtocol(w, r, nil, nil, err, "openai", "/v1/images/edits", model, identity, "图生图", visibility, body)
+		return
+	}
+	if imageTaskRelease != nil {
+		defer imageTaskRelease()
+	}
 	result, stream, err := a.relayImageEdits(r.Context(), body, images)
-	if err == nil && stream == nil {
-		err = a.localizeRelayImageResult(r.Context(), identity, result, body)
+	if stream == nil && result != nil {
+		if localizeErr := a.localizeRelayImageResult(r.Context(), identity, result, body); localizeErr != nil {
+			if err == nil {
+				err = localizeErr
+			} else {
+				err = errors.Join(err, localizeErr)
+			}
+		}
 	}
 	a.writeProtocol(w, r, result, stream, err, "openai", "/v1/images/edits", model, identity, "图生图", visibility, body)
 }
@@ -688,14 +776,24 @@ func (a *App) writeProtocol(w http.ResponseWriter, r *http.Request, result map[s
 	start := time.Now()
 	requestCapture := requestAuditCapture(r.Context())
 	if err != nil {
-		a.logCall(r.Context(), identity, summary, r.Method, endpoint, model, start, "failed", protocolErrorHTTPStatus(err), err.Error(), nil, requestCapture)
+		urls := collectURLs(result)
+		if recordErr := a.recordProtocolGeneratedImages(identity, urls, visibility, imagePayloads...); recordErr != nil {
+			err = errors.Join(err, imageMetadataPersistenceError(recordErr))
+		}
+		a.logCall(r.Context(), identity, summary, r.Method, endpoint, model, start, "failed", protocolErrorHTTPStatus(err), err.Error(), urls, requestCapture)
 		markRequestBusinessLogged(r)
 		a.writeProtocolError(w, err)
 		return
 	}
 	if stream == nil {
 		urls := collectURLs(result)
-		a.recordProtocolGeneratedImages(identity, urls, visibility, imagePayloads...)
+		if recordErr := a.recordProtocolGeneratedImages(identity, urls, visibility, imagePayloads...); recordErr != nil {
+			err := imageMetadataPersistenceError(recordErr)
+			a.logCall(r.Context(), identity, summary, r.Method, endpoint, model, start, "failed", protocolErrorHTTPStatus(err), err.Error(), urls, requestCapture)
+			markRequestBusinessLogged(r)
+			a.writeProtocolError(w, err)
+			return
+		}
 		a.logCall(r.Context(), identity, summary, r.Method, endpoint, model, start, "success", http.StatusOK, "", urls, requestCapture)
 		markRequestBusinessLogged(r)
 		util.WriteJSON(w, http.StatusOK, result)
@@ -715,15 +813,27 @@ func (a *App) writeProtocol(w http.ResponseWriter, r *http.Request, result map[s
 				flusher.Flush()
 			}
 		}
-		if err := <-stream.Err; err != nil {
-			a.recordProtocolGeneratedImages(identity, urls, visibility, imagePayloads...)
+		upstreamErr := <-stream.Err
+		recordErr := a.recordProtocolGeneratedImages(identity, urls, visibility, imagePayloads...)
+		if upstreamErr != nil {
+			loggedErr := upstreamErr
+			if recordErr != nil {
+				loggedErr = errors.Join(upstreamErr, imageMetadataPersistenceError(recordErr))
+			}
+			a.logCall(r.Context(), identity, summary, r.Method, endpoint, model, start, "failed", protocolErrorHTTPStatus(upstreamErr), loggedErr.Error(), urls, requestCapture)
+			markRequestBusinessLogged(r)
+			fmt.Fprintf(w, "event: error\n")
+			fmt.Fprintf(w, "data: %s\n\n", jsonString(map[string]any{"type": "error", "error": map[string]any{"type": fmt.Sprintf("%T", upstreamErr), "message": upstreamErr.Error()}}))
+			return
+		}
+		if recordErr != nil {
+			err := imageMetadataPersistenceError(recordErr)
 			a.logCall(r.Context(), identity, summary, r.Method, endpoint, model, start, "failed", protocolErrorHTTPStatus(err), err.Error(), urls, requestCapture)
 			markRequestBusinessLogged(r)
 			fmt.Fprintf(w, "event: error\n")
-			fmt.Fprintf(w, "data: %s\n\n", jsonString(map[string]any{"type": "error", "error": map[string]any{"type": fmt.Sprintf("%T", err), "message": err.Error()}}))
+			fmt.Fprintf(w, "data: %s\n\n", jsonString(map[string]any{"type": "error", "error": map[string]any{"type": "persistence_error", "message": err.Error()}}))
 			return
 		}
-		a.recordProtocolGeneratedImages(identity, urls, visibility, imagePayloads...)
 		a.logCall(r.Context(), identity, summary, r.Method, endpoint, model, start, "success", http.StatusOK, "", urls, requestCapture)
 		markRequestBusinessLogged(r)
 		return
@@ -740,17 +850,33 @@ func (a *App) writeProtocol(w http.ResponseWriter, r *http.Request, result map[s
 			flusher.Flush()
 		}
 	}
-	if err := <-stream.Err; err != nil {
-		a.recordProtocolGeneratedImages(identity, urls, visibility, imagePayloads...)
+	upstreamErr := <-stream.Err
+	recordErr := a.recordProtocolGeneratedImages(identity, urls, visibility, imagePayloads...)
+	if upstreamErr != nil {
+		loggedErr := upstreamErr
+		if recordErr != nil {
+			loggedErr = errors.Join(upstreamErr, imageMetadataPersistenceError(recordErr))
+		}
+		a.logCall(r.Context(), identity, summary, r.Method, endpoint, model, start, "failed", protocolErrorHTTPStatus(upstreamErr), loggedErr.Error(), urls, requestCapture)
+		markRequestBusinessLogged(r)
+		fmt.Fprintf(w, "data: %s\n\n", jsonString(openAIErrorForStream(upstreamErr)))
+	} else if recordErr != nil {
+		err := imageMetadataPersistenceError(recordErr)
 		a.logCall(r.Context(), identity, summary, r.Method, endpoint, model, start, "failed", protocolErrorHTTPStatus(err), err.Error(), urls, requestCapture)
 		markRequestBusinessLogged(r)
 		fmt.Fprintf(w, "data: %s\n\n", jsonString(openAIErrorForStream(err)))
 	} else {
-		a.recordProtocolGeneratedImages(identity, urls, visibility, imagePayloads...)
 		a.logCall(r.Context(), identity, summary, r.Method, endpoint, model, start, "success", http.StatusOK, "", urls, requestCapture)
 		markRequestBusinessLogged(r)
 	}
 	fmt.Fprint(w, "data: [DONE]\n\n")
+}
+
+func imageMetadataPersistenceError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return protocol.HTTPError{Status: http.StatusServiceUnavailable, Message: "failed to persist generated image metadata: " + err.Error()}
 }
 
 func protocolErrorHTTPStatus(err error) int {
@@ -802,25 +928,40 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	username := util.Clean(body["username"])
 	password := util.Clean(body["password"])
+	loginLimiter := a.loginLimiter
+	requestIP := clientIP(r)
+	if retryAfter, allowed := loginLimiter.allow(requestIP, username); !allowed {
+		w.Header().Set("Retry-After", loginRetryAfterSeconds(retryAfter))
+		util.WriteError(w, http.StatusTooManyRequests, "登录尝试过于频繁，请稍后再试")
+		return
+	}
 	identity, token, err := a.auth.LoginAdminPassword(username, password)
 	if err != nil {
+		if a.writeAuthPersistenceError(w, err) {
+			return
+		}
 		if strings.EqualFold(username, a.config.AdminUsername()) || a.newAPIKeys == nil {
-			util.WriteError(w, http.StatusBadRequest, "用户名或密码错误")
+			loginLimiter.recordFailure(requestIP, username)
+			util.WriteError(w, http.StatusUnauthorized, "用户名或密码错误")
 			return
 		}
 		newAPIUser, newAPIErr := a.newAPIKeys.AuthenticatePassword(r.Context(), username, password)
 		if newAPIErr != nil {
-			util.WriteError(w, http.StatusBadRequest, newAPIErr.Error())
+			loginLimiter.recordFailure(requestIP, username)
+			util.WriteError(w, http.StatusUnauthorized, newAPIErr.Error())
 			return
 		}
 		identity, token, err = a.auth.UpsertNewAPISession(newAPIUser)
 		if err != nil {
-			util.WriteError(w, http.StatusBadRequest, err.Error())
+			if !a.writeAuthPersistenceError(w, err) {
+				util.WriteError(w, http.StatusInternalServerError, "登录会话保存失败")
+			}
 			return
 		}
 	}
+	loginLimiter.recordSuccess(username)
 	setAuthSessionCookie(w, r, token)
-	a.writeLoginResponse(w, *identity, token)
+	a.writeLoginResponse(w, *identity)
 }
 
 func (a *App) handleSession(w http.ResponseWriter, r *http.Request) {
@@ -828,14 +969,10 @@ func (a *App) handleSession(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	token := requestBearerToken(r)
-	if token == "" {
-		token = requestAuthCookieToken(r)
-	}
-	if token != "" {
+	if token := requestAuthCookieToken(r); token != "" {
 		setAuthSessionCookie(w, r, token)
 	}
-	a.writeLoginResponse(w, identity, token)
+	a.writeLoginResponse(w, identity)
 }
 
 func (a *App) handleLogout(w http.ResponseWriter, r *http.Request) {
@@ -843,15 +980,20 @@ func (a *App) handleLogout(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
+	if _, err := a.auth.RevokeSessions(requestBearerToken(r), requestAuthCookieToken(r)); err != nil {
+		if !a.writeAuthPersistenceError(w, err) {
+			util.WriteError(w, http.StatusInternalServerError, "failed to revoke session")
+		}
+		return
+	}
 	clearAuthSessionCookie(w, r)
 	util.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
-func (a *App) writeLoginResponse(w http.ResponseWriter, identity service.Identity, token string) {
+func (a *App) writeLoginResponse(w http.ResponseWriter, identity service.Identity) {
 	permissions := a.identityPermissions(identity)
 	payload := map[string]any{
 		"ok":                        true,
-		"token":                     token,
 		"role":                      identity.Role,
 		"role_id":                   identity.RoleID,
 		"role_name":                 identity.RoleName,
@@ -866,9 +1008,6 @@ func (a *App) writeLoginResponse(w http.ResponseWriter, identity service.Identit
 		"menu_paths":                permissions.MenuPaths,
 		"api_permissions":           permissions.APIPermissions,
 		"menus":                     service.FilterMenuPermissions(permissions.MenuPaths),
-	}
-	if token == "" {
-		delete(payload, "token")
 	}
 	util.WriteJSON(w, http.StatusOK, payload)
 }
@@ -1031,6 +1170,8 @@ func (a *App) modelConfig() map[string]any {
 	return map[string]any{
 		"image_models":        imageModels,
 		"default_image_model": a.defaultImageModel(),
+		"video_models":        a.config.VideoModels(),
+		"default_video_model": firstString(a.config.VideoModels(), "sora-2"),
 		"relay_base_url":      a.relayBaseURL(),
 	}
 }
@@ -1225,10 +1366,11 @@ func readSiteIconFile(header *multipart.FileHeader) ([]byte, string, error) {
 	if len(data) > maxSiteIconSize {
 		return nil, "", fmt.Errorf("site icon cannot exceed 2MB")
 	}
-	if _, _, err := image.DecodeConfig(bytes.NewReader(data)); err != nil {
+	info, err := util.InspectRasterImage(data, "image/png", "image/jpeg", "image/webp", "image/gif")
+	if err != nil {
 		return nil, "", fmt.Errorf("unsupported site icon file")
 	}
-	switch http.DetectContentType(data) {
+	switch info.ContentType {
 	case "image/jpeg":
 		return data, ".jpg", nil
 	case "image/gif":
@@ -1270,6 +1412,34 @@ func localUploadedFilePath(rootDir, fileURL, urlPrefix string) (string, bool) {
 		return "", false
 	}
 	return target, true
+}
+
+func (a *App) handleLoginPageImageFile(w http.ResponseWriter, r *http.Request) {
+	a.serveUploadedRasterFile(w, r, a.config.LoginPageImagesDir(), "/login-page-images/")
+}
+
+func (a *App) handleSiteIconFile(w http.ResponseWriter, r *http.Request) {
+	a.serveUploadedRasterFile(w, r, a.config.SiteIconsDir(), "/site-icons/")
+}
+
+func (a *App) serveUploadedRasterFile(w http.ResponseWriter, r *http.Request, rootDir, urlPrefix string) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	filePath, ok := localUploadedFilePath(rootDir, r.URL.Path, urlPrefix)
+	if !ok || strings.EqualFold(filepath.Ext(filePath), ".svg") {
+		http.NotFound(w, r)
+		return
+	}
+	info, err := os.Lstat(filePath)
+	if err != nil || !info.Mode().IsRegular() {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
+	http.ServeFile(w, r, filePath)
 }
 
 func (a *App) handlePermissionCatalog(w http.ResponseWriter, r *http.Request) {
@@ -1372,13 +1542,11 @@ func readLoginPageImageFile(header *multipart.FileHeader) ([]byte, string, error
 	if len(data) > maxLoginPageImageSize {
 		return nil, "", fmt.Errorf("login page image cannot exceed 10MB")
 	}
-	if ext := strings.ToLower(filepath.Ext(header.Filename)); ext == ".svg" && bytes.Contains(bytes.ToLower(data[:min(len(data), 512)]), []byte("<svg")) {
-		return data, ".svg", nil
-	}
-	if _, _, err := image.DecodeConfig(bytes.NewReader(data)); err != nil {
+	info, err := util.InspectRasterImage(data, "image/png", "image/jpeg", "image/webp", "image/gif")
+	if err != nil {
 		return nil, "", fmt.Errorf("unsupported image file")
 	}
-	switch http.DetectContentType(data) {
+	switch info.ContentType {
 	case "image/jpeg":
 		return data, ".jpg", nil
 	case "image/gif":
@@ -1487,6 +1655,10 @@ func (a *App) handleImageVisibility(w http.ResponseWriter, r *http.Request) {
 		util.WriteError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	if isAbsoluteHTTPURL(path) && !isManagedImageVisibilityPath(path) {
+		util.WriteError(w, http.StatusBadRequest, "external image URLs cannot be imported")
+		return
+	}
 	if a.shouldImportVisibilityImage(path) {
 		localURL, _, _, importErr := a.localizeRelayImageItem(r.Context(), identityScope(identity), identityDisplayName(identity), map[string]any{"url": path}, nil)
 		if importErr != nil || localURL == "" {
@@ -1497,7 +1669,7 @@ func (a *App) handleImageVisibility(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		path = localURL
-		a.images.RecordGeneratedImages([]string{localURL}, identityScope(identity), identityDisplayName(identity), service.ImageVisibilityPrivate)
+		a.images.EnsureThumbnails([]string{localURL})
 	}
 	sharePromptParams := util.ToBool(body["share_prompt_parameters"])
 	shareReferences := sharePromptParams && util.ToBool(body["share_reference_images"])
@@ -1535,6 +1707,7 @@ func (a *App) handleImageFile(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	setRasterResponseSecurityHeaders(w)
 	if !ref.Remote {
 		http.ServeFile(w, r, ref.Path)
 		return
@@ -1552,6 +1725,33 @@ func (a *App) handleImageFile(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (a *App) handleVideoFile(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	if _, ok := a.requireIdentity(w, r, ""); !ok {
+		return
+	}
+	name := strings.TrimPrefix(r.URL.Path, "/videos/")
+	if name == "" || strings.Contains(name, "/") || strings.Contains(name, "\\") || strings.Contains(name, "..") {
+		http.NotFound(w, r)
+		return
+	}
+	path := filepath.Join(a.videoDir, name)
+	if filepath.Dir(path) != filepath.Clean(a.videoDir) {
+		http.NotFound(w, r)
+		return
+	}
+	contentType := "video/mp4"
+	if strings.EqualFold(filepath.Ext(name), ".webm") {
+		contentType = "video/webm"
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Cache-Control", "private, max-age=3600")
+	http.ServeFile(w, r, path)
+}
+
 func (a *App) handleImageReferenceFile(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -1567,6 +1767,7 @@ func (a *App) handleImageReferenceFile(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	setRasterResponseSecurityHeaders(w)
 	if ref.Visibility == service.ImageVisibilityPublic && ref.Shared {
 		if ref.ContentType != "" {
 			w.Header().Set("Content-Type", ref.ContentType)
@@ -1586,6 +1787,11 @@ func (a *App) handleImageReferenceFile(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", ref.ContentType)
 	}
 	http.ServeFile(w, r, ref.Path)
+}
+
+func setRasterResponseSecurityHeaders(w http.ResponseWriter) {
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
 }
 
 func (a *App) authorizeImageFileRequest(w http.ResponseWriter, r *http.Request, rel string) (service.ImageFileAccess, bool) {
@@ -2003,7 +2209,7 @@ func setAuthSessionCookie(w http.ResponseWriter, r *http.Request, token string) 
 		return
 	}
 	expireLegacyAuthSessionCookie(w, r)
-	setAuthSessionCookieValue(w, r, token, 30*24*60*60)
+	setAuthSessionCookieValue(w, r, token, int(service.AuthSessionLifetime/time.Second))
 }
 
 func setAuthSessionCookieValue(w http.ResponseWriter, r *http.Request, value string, maxAge int) {
@@ -2106,7 +2312,7 @@ func readMultipartImageBody(w http.ResponseWriter, r *http.Request) (map[string]
 		"client_task_id":          firstForm(r.MultipartForm, "client_task_id"),
 		"prompt":                  firstForm(r.MultipartForm, "prompt"),
 		"model":                   firstForm(r.MultipartForm, "model"),
-		"n":                       util.ToInt(firstForm(r.MultipartForm, "n"), 1),
+		"n":                       firstForm(r.MultipartForm, "n"),
 		"size":                    firstForm(r.MultipartForm, "size"),
 		"requested_size":          firstForm(r.MultipartForm, "requested_size"),
 		"image_resolution":        firstForm(r.MultipartForm, "image_resolution"),
@@ -2124,6 +2330,20 @@ func readMultipartImageBody(w http.ResponseWriter, r *http.Request) (map[string]
 		"token_name":              firstForm(r.MultipartForm, "token_name"),
 		"api_key":                 firstForm(r.MultipartForm, "api_key"),
 		"response_format":         firstNonEmpty(firstForm(r.MultipartForm, "response_format"), "b64_json"),
+	}
+	maskHeaders := r.MultipartForm.File["mask"]
+	if len(maskHeaders) > 1 {
+		return nil, nil, errTooManyRelayMasks
+	}
+	if len(maskHeaders) == 1 {
+		if strings.TrimSpace(util.Clean(body["input_image_mask"])) != "" {
+			return nil, nil, errors.New("provide either mask or input_image_mask, not both")
+		}
+		mask, err := readUpload(maskHeaders[0])
+		if err != nil {
+			return nil, nil, err
+		}
+		body["input_image_mask"] = uploadedImageDataURL(mask)
 	}
 	if rawMessages := strings.TrimSpace(firstForm(r.MultipartForm, "messages")); rawMessages != "" {
 		var messages any
@@ -2155,6 +2375,17 @@ func readMultipartImageBody(w http.ResponseWriter, r *http.Request) (map[string]
 		images = append(images, image)
 	}
 	return body, images, nil
+}
+
+func uploadedImageDataURL(image protocol.UploadedImage) string {
+	if len(image.Data) == 0 {
+		return ""
+	}
+	contentType := normalizeUploadedImageContentType(image.ContentType)
+	if contentType == "" {
+		contentType = "image/png"
+	}
+	return "data:" + contentType + ";base64," + base64.StdEncoding.EncodeToString(image.Data)
 }
 
 func multipartImageFileHeaders(form *multipart.Form) []*multipart.FileHeader {
@@ -2214,16 +2445,11 @@ func uploadedImageContentType(data []byte) (string, error) {
 	if len(data) == 0 {
 		return "", fmt.Errorf("image file is empty")
 	}
-	_, format, err := image.DecodeConfig(bytes.NewReader(data))
+	info, err := util.InspectRasterImage(data, "image/png", "image/jpeg", "image/webp", "image/gif")
 	if err != nil {
 		return "", errUnsupportedRelayImage
 	}
-	switch strings.ToLower(strings.TrimSpace(format)) {
-	case "png", "jpeg", "gif", "webp":
-		return "image/" + strings.ToLower(strings.TrimSpace(format)), nil
-	default:
-		return "", errUnsupportedRelayImage
-	}
+	return info.ContentType, nil
 }
 
 func writeMultipartImageBodyError(w http.ResponseWriter, err error) {
@@ -2488,26 +2714,26 @@ func imageListAccessScope(identity service.Identity, value string) (service.Imag
 	}
 }
 
-func (a *App) recordGeneratedImages(identity service.Identity, urls []string, visibility string) {
+func (a *App) recordGeneratedImages(identity service.Identity, urls []string, visibility string) error {
 	if len(urls) == 0 || a.images == nil {
-		return
+		return nil
 	}
 	ownerID := identityScope(identity)
-	a.images.RecordGeneratedImageMetadata(urls, ownerID, identityDisplayName(identity), visibility)
+	err := a.images.RecordGeneratedImageMetadata(urls, ownerID, identityDisplayName(identity), visibility)
 	a.scheduleImageStorageCleanup()
+	return err
 }
 
-func (a *App) recordProtocolGeneratedImages(identity service.Identity, urls []string, visibility string, payloads ...map[string]any) {
+func (a *App) recordProtocolGeneratedImages(identity service.Identity, urls []string, visibility string, payloads ...map[string]any) error {
 	if len(payloads) > 0 && payloads[0] != nil {
-		a.recordGeneratedImagesForPayload(identity, urls, visibility, payloads[0])
-		return
+		return a.recordGeneratedImagesForPayload(identity, urls, visibility, payloads[0])
 	}
-	a.recordGeneratedImages(identity, urls, visibility)
+	return a.recordGeneratedImages(identity, urls, visibility)
 }
 
-func (a *App) recordGeneratedImagesForPayload(identity service.Identity, urls []string, visibility string, payload map[string]any) {
+func (a *App) recordGeneratedImagesForPayload(identity service.Identity, urls []string, visibility string, payload map[string]any) error {
 	if len(urls) == 0 || a.images == nil {
-		return
+		return nil
 	}
 	ownerID := identityScope(identity)
 	outputCompression, hasOutputCompression := imageOutputCompressionFromBody(payload["output_compression"])
@@ -2516,21 +2742,25 @@ func (a *App) recordGeneratedImagesForPayload(identity service.Identity, urls []
 		outputCompressionPtr = &outputCompression
 	}
 	sharePromptParams := util.ToBool(payload["share_prompt_parameters"])
-	a.images.RecordGeneratedImageMetadata(urls, ownerID, identityDisplayName(identity), visibility, service.GeneratedImageMetadata{
+	outputFormat := ""
+	if rawOutputFormat := util.Clean(payload["output_format"]); rawOutputFormat != "" {
+		outputFormat = service.NormalizeImageOutputFormat(rawOutputFormat)
+	}
+	err := a.images.RecordGeneratedImageMetadata(urls, ownerID, identityDisplayName(identity), visibility, service.GeneratedImageMetadata{
 		Prompt:            util.Clean(payload["prompt"]),
 		Model:             firstNonEmpty(util.Clean(payload["model"]), a.defaultImageModel()),
 		Quality:           util.Clean(payload["quality"]),
 		ResolutionPreset:  util.Clean(payload["image_resolution"]),
 		RequestedSize:     util.Clean(payload["size"]),
-		OutputFormat:      service.NormalizeImageOutputFormat(util.Clean(payload["output_format"])),
+		OutputFormat:      outputFormat,
 		OutputCompression: outputCompressionPtr,
 		Moderation:        util.Clean(payload["moderation"]),
-		InputImageMask:    util.Clean(payload["input_image_mask"]),
 		ReferenceImages:   imageReferenceMetadataFromPayload(payload),
 		SharePromptParams: sharePromptParams,
 		ShareReferences:   sharePromptParams && util.ToBool(payload["share_reference_images"]),
 	})
 	a.scheduleImageStorageCleanup()
+	return err
 }
 
 func (a *App) startImageStorageCleaner(ctx context.Context, interval time.Duration) {
@@ -2657,10 +2887,18 @@ func (a *App) imageOwnerDisplayNames() map[string]string {
 
 func (a *App) runLoggedImageTask(ctx context.Context, identity service.Identity, payload map[string]any, endpoint, summary string, run func(context.Context, map[string]any) (map[string]any, error)) (map[string]any, error) {
 	start := time.Now()
-	requestCapture := payloadAuditCapture(payload)
 	payload["owner_id"] = identityScope(identity)
 	payload["owner_name"] = identityDisplayName(identity)
 	model := firstNonEmpty(util.Clean(payload["model"]), a.defaultImageModel())
+	if util.Clean(payload["model"]) == "" {
+		payload["model"] = model
+	}
+	if err := validateRelayImageRequest(endpoint, model, payload, uploadedImagesFromPayload(payload["images"])); err != nil {
+		a.logCall(ctx, identity, summary, http.MethodPost, endpoint, model, start, "failed", protocolErrorHTTPStatus(err), err.Error(), nil, payloadAuditCapture(payload))
+		return nil, err
+	}
+	normalizeImagePayloadForModel(payload)
+	requestCapture := payloadAuditCapture(payload)
 	managedSlot := relayImageOutputSlotAcquirer(payload) != nil
 	release, err := relayAcquireImageTaskSlot(ctx, payload)
 	if err != nil {
@@ -2673,11 +2911,24 @@ func (a *App) runLoggedImageTask(ctx context.Context, identity service.Identity,
 		defer delete(payload, relayImageTaskSlotManagedPayloadKey)
 	}
 	result, err := run(ctx, payload)
-	if err == nil {
-		err = a.localizeRelayImageResult(ctx, identity, result, payload)
+	if result != nil {
+		if localizeErr := a.localizeRelayImageResult(ctx, identity, result, payload); localizeErr != nil {
+			if err == nil {
+				err = localizeErr
+			} else {
+				err = errors.Join(err, localizeErr)
+			}
+		}
 	}
 	urls := collectURLs(result)
-	a.recordGeneratedImagesForPayload(identity, urls, util.Clean(payload["visibility"]), payload)
+	if recordErr := a.recordGeneratedImagesForPayload(identity, urls, util.Clean(payload["visibility"]), payload); recordErr != nil {
+		persistErr := imageMetadataPersistenceError(recordErr)
+		if err == nil {
+			err = persistErr
+		} else {
+			err = errors.Join(err, persistErr)
+		}
+	}
 	if err != nil {
 		a.logCall(ctx, identity, summary, http.MethodPost, endpoint, model, start, "failed", protocolErrorHTTPStatus(err), err.Error(), urls, requestCapture)
 		return result, err
@@ -2700,6 +2951,11 @@ func (a *App) localizeRelayImageResult(ctx context.Context, identity service.Ide
 	if len(items) == 0 {
 		return nil
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	localizeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), relayImageLocalizationTimeout)
+	defer cancel()
 	ownerID := identityScope(identity)
 	ownerName := identityDisplayName(identity)
 	changed := false
@@ -2707,7 +2963,7 @@ func (a *App) localizeRelayImageResult(ctx context.Context, identity service.Ide
 		if item == nil {
 			continue
 		}
-		localURL, outputFormat, qualityCheck, err := a.localizeRelayImageItem(ctx, ownerID, ownerName, item, payload)
+		localURL, outputFormat, qualityCheck, err := a.localizeRelayImageItem(localizeCtx, ownerID, ownerName, item, payload)
 		if err != nil {
 			return err
 		}
@@ -2741,10 +2997,29 @@ func (a *App) localizeRelayImageStream(ctx context.Context, payload map[string]a
 		defer close(errorsOut)
 		ownerID := strings.TrimSpace(util.Clean(payload["owner_id"]))
 		ownerName := strings.TrimSpace(util.Clean(payload["owner_name"]))
-		for item := range stream.Items {
+	streamItems:
+		for {
+			var item map[string]any
+			var ok bool
+			select {
+			case <-ctx.Done():
+				go drainProtocolStream(stream)
+				errorsOut <- ctx.Err()
+				return
+			case item, ok = <-stream.Items:
+				if !ok {
+					break streamItems
+				}
+			}
+			if err := ctx.Err(); err != nil {
+				go drainProtocolStream(stream)
+				errorsOut <- err
+				return
+			}
 			if item == nil || !isRelayImageCompletedEvent(item) || isRelayImagePartialEvent(item) {
 				select {
 				case <-ctx.Done():
+					go drainProtocolStream(stream)
 					errorsOut <- ctx.Err()
 					return
 				case items <- item:
@@ -2759,12 +3034,19 @@ func (a *App) localizeRelayImageStream(ctx context.Context, payload map[string]a
 			}
 			select {
 			case <-ctx.Done():
+				go drainProtocolStream(stream)
 				errorsOut <- ctx.Err()
 				return
 			case items <- localized:
 			}
 		}
-		errorsOut <- <-stream.Err
+		select {
+		case err := <-stream.Err:
+			errorsOut <- err
+		case <-ctx.Done():
+			go drainProtocolStream(stream)
+			errorsOut <- ctx.Err()
+		}
 	}()
 	return &protocol.StreamResult{Items: items, Err: errorsOut, Kind: stream.Kind}
 }
@@ -2834,14 +3116,25 @@ func (a *App) localizeRelayImageItem(ctx context.Context, ownerID, ownerName str
 
 func relayImageItemBytes(ctx context.Context, app *App, item map[string]any) ([]byte, string, error) {
 	if b64 := util.Clean(item["b64_json"]); b64 != "" {
+		if len(b64) > base64.StdEncoding.EncodedLen(maxRelayImageBytes)+4 {
+			return nil, "", errors.New("image is too large")
+		}
 		data, err := base64.StdEncoding.DecodeString(strings.TrimSpace(b64))
 		if err != nil {
 			if decoded, fallbackErr := util.B64Decode(b64); fallbackErr == nil {
-				return decoded, http.DetectContentType(decoded), nil
+				info, inspectErr := util.InspectRasterImage(decoded, "image/png", "image/jpeg", "image/webp")
+				if inspectErr != nil {
+					return nil, "", inspectErr
+				}
+				return decoded, info.ContentType, nil
 			}
 			return nil, "", err
 		}
-		return data, http.DetectContentType(data), nil
+		info, err := util.InspectRasterImage(data, "image/png", "image/jpeg", "image/webp")
+		if err != nil {
+			return nil, "", err
+		}
+		return data, info.ContentType, nil
 	}
 	imageURL := util.Clean(item["url"])
 	if imageURL == "" {
@@ -2878,7 +3171,15 @@ func relayImageItemBytes(ctx context.Context, app *App, item map[string]any) ([]
 	if len(data) > maxRelayImageBytes {
 		return nil, "", errors.New("image is too large")
 	}
-	return data, strings.TrimSpace(strings.Split(resp.Header.Get("Content-Type"), ";")[0]), nil
+	info, err := util.InspectRasterImage(data, "image/png", "image/jpeg", "image/webp")
+	if err != nil {
+		return nil, "", err
+	}
+	declaredType := strings.TrimSpace(strings.Split(resp.Header.Get("Content-Type"), ";")[0])
+	if declaredType != "" && !strings.EqualFold(declaredType, "application/octet-stream") && !strings.EqualFold(declaredType, info.ContentType) {
+		return nil, "", util.ErrRasterImageTypeMismatch
+	}
+	return data, info.ContentType, nil
 }
 
 func imageDataURLBytes(value string) ([]byte, string, error) {
@@ -2893,6 +3194,9 @@ func imageDataURLBytes(value string) ([]byte, string, error) {
 	if !strings.Contains(strings.ToLower(header), ";base64") {
 		return nil, "", errors.New("image data url must be base64")
 	}
+	if len(dataPart) > base64.StdEncoding.EncodedLen(maxRelayImageBytes)+4 {
+		return nil, "", errors.New("image is too large")
+	}
 	data, err := base64.StdEncoding.DecodeString(strings.TrimSpace(dataPart))
 	if err != nil {
 		return nil, "", err
@@ -2903,7 +3207,14 @@ func imageDataURLBytes(value string) ([]byte, string, error) {
 	if len(data) > maxRelayImageBytes {
 		return nil, "", errors.New("image is too large")
 	}
-	return data, contentType, nil
+	info, err := util.InspectRasterImage(data, "image/png", "image/jpeg", "image/webp")
+	if err != nil {
+		return nil, "", err
+	}
+	if !strings.EqualFold(contentType, info.ContentType) {
+		return nil, "", util.ErrRasterImageTypeMismatch
+	}
+	return data, info.ContentType, nil
 }
 
 func (a *App) isLocalImageURL(value string) bool {
@@ -2933,7 +3244,7 @@ func (a *App) shouldImportVisibilityImage(value string) bool {
 	if text == "" || a.isLocalImageURL(text) || isManagedImageVisibilityPath(text) {
 		return false
 	}
-	return isAbsoluteHTTPURL(text) || isImageDataURL(text)
+	return isImageDataURL(text)
 }
 
 func isAbsoluteHTTPURL(value string) bool {
@@ -2965,6 +3276,9 @@ func isManagedImageVisibilityPath(value string) bool {
 }
 
 func relayStoredImageFormat(item, payload map[string]any, contentType, imageURL string, data []byte) string {
+	if info, err := util.InspectRasterImage(data, "image/png", "image/jpeg", "image/webp"); err == nil {
+		return info.Format
+	}
 	for _, value := range []string{util.Clean(item["output_format"]), util.Clean(payload["output_format"])} {
 		if format, ok := normalizeRelayImageOutputFormat(value); ok {
 			return format
@@ -3000,11 +3314,13 @@ func relayStoredImageFormat(item, payload map[string]any, contentType, imageURL 
 
 func relayImageQualityCheck(data []byte, outputFormat string, payload map[string]any) map[string]any {
 	check := map[string]any{}
-	config, actualFormat, err := image.DecodeConfig(bytes.NewReader(data))
-	if err == nil && config.Width > 0 && config.Height > 0 {
-		actualSize := fmt.Sprintf("%dx%d", config.Width, config.Height)
-		check["width"] = config.Width
-		check["height"] = config.Height
+	info, err := util.InspectRasterImage(data, "image/png", "image/jpeg", "image/webp")
+	actualFormat := ""
+	if err == nil {
+		actualFormat = info.Format
+		actualSize := fmt.Sprintf("%dx%d", info.Width, info.Height)
+		check["width"] = info.Width
+		check["height"] = info.Height
 		check["resolution"] = actualSize
 		check["actual_size"] = actualSize
 	}
@@ -3014,7 +3330,7 @@ func relayImageQualityCheck(data []byte, outputFormat string, payload map[string
 	}
 
 	requestedSize := requestedRelayImageSize(payload)
-	requestedOutputFormat := requestedRelayImageOutputFormat(payload, outputFormat)
+	requestedOutputFormat := requestedRelayImageOutputFormat(payload)
 	warnings := []string{}
 	qualityCheck := map[string]any{
 		"requested_size":          requestedSize,
@@ -3062,13 +3378,13 @@ func requestedRelayImageSize(payload map[string]any) string {
 	return size
 }
 
-func requestedRelayImageOutputFormat(payload map[string]any, fallback string) string {
+func requestedRelayImageOutputFormat(payload map[string]any) string {
 	if payload != nil {
 		if format, ok := normalizeRelayImageOutputFormat(util.Clean(payload["output_format"])); ok {
 			return format
 		}
 	}
-	return normalizeActualImageFormat(fallback)
+	return ""
 }
 
 func normalizeActualImageFormat(format string) string {
@@ -3104,7 +3420,7 @@ func (a *App) attachCreationTaskLimiter(body map[string]any, identity service.Id
 	body[protocol.ImageOutputSlotAcquirerPayloadKey] = func(ctx context.Context, index int) (func(), error) {
 		units := 1
 		if index <= 0 {
-			units = normalizedProtocolImageCount(body["n"])
+			units = normalizedProtocolImageCount(body["n"], util.Clean(body["model"]))
 		}
 		return a.tasks.AcquireCreationUnits(ctx, identity, units)
 	}
@@ -3290,15 +3606,39 @@ func collectURLs(v any) []string {
 	}
 }
 
-func normalizedProtocolImageCount(value any) int {
-	n := util.ToInt(value, 1)
-	if n < 1 {
+func normalizedProtocolImageCount(value any, model string) int {
+	n, ok := util.StrictInt(value)
+	if !ok || n < 1 {
 		return 1
 	}
-	if n > 4 {
-		return 4
+	limit := util.MaxImageOutputCount(model)
+	if n > limit {
+		return limit
 	}
 	return n
+}
+
+func validProtocolImageCount(value any, model string) bool {
+	if value == nil || strings.TrimSpace(util.Clean(value)) == "" {
+		return true
+	}
+	n, ok := util.StrictInt(value)
+	return ok && n >= 1 && n <= util.MaxImageOutputCount(model)
+}
+
+func protocolImageCountRangeMessage(model string) string {
+	return fmt.Sprintf("n must be between 1 and %d", util.MaxImageOutputCount(model))
+}
+
+func normalizedRelayImageStreamOutputLimit(value int) int {
+	if value < 1 {
+		return 1
+	}
+	limit := util.MaxImageOutputCount(util.ImageModelGPT)
+	if value > limit {
+		return limit
+	}
+	return value
 }
 
 func billableProtocolOutputCount(endpoint string, result map[string]any) int {

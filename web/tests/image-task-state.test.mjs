@@ -67,6 +67,11 @@ test("terminal task cannot be reopened by a late active snapshot", () => {
   assert.equal(mergeCreationTaskSnapshot(terminal, lateRunning).status, "success");
 });
 
+test("video task URLs are final outputs", () => {
+  assert.equal(hasFinalTaskOutput({ video_url: "/videos/result.mp4", type: "video", mime_type: "video/mp4" }), true);
+  assert.equal(hasFinalTaskOutput({ url: "/videos/result.mp4", type: "video" }), true);
+});
+
 test("task dispatch requires the current page, session, conversation, and task ids", () => {
   const active = conversation({
     id: "image-1",

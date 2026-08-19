@@ -68,8 +68,11 @@
 - OpenAI 兼容图片生成接口：`POST /v1/images/generations`。
 - OpenAI 兼容图片编辑接口：`POST /v1/images/edits`。
 - 异步创作任务资源：`/api/creation-tasks`。
-- 支持 `gpt-image-2`、`codex-gpt-image-2` 和 `auto` 图片任务模型。
-- 支持流式图片生成和渐进预览；部分渠道只返回最终图片，特定上游流式解析错误会自动非流式重试一次。
+- 默认支持 `gpt-image-2`、Google Gemini 和 Grok 图片模型，也可通过配置添加其他 NewAPI 图片模型。
+- Gemini 通过 NewAPI 聊天接口生成并支持参考图编辑；Grok 通过 NewAPI 图片接口生成。
+- Gemini 3 图片模型最多支持 14 张参考图；Grok 生图按 xAI 官方协议提供画幅比例、1K/2K 分辨率，Grok 2.0 另支持低/中质量档位。
+- 支持流式图片生成和渐进预览；部分渠道只返回最终图片，上游错误会保留原始请求语义并直接返回。
+- GPT 图片局部编辑使用官方 multipart `mask` 文件字段；遮罩会校验 PNG、alpha 通道和尺寸，并且不会把原始 base64 写入任务或图片元数据。
 - 创作台历史保存在服务端数据库，同一用户登录不同设备后可以继续查看；图生图参考图保存在服务端受保护目录。
 - 无限画布支持服务端项目存储、想法/图片/生成配置节点、节点连线、批量生成、局部编辑、裁剪、多角度、导入导出和图片库同步。
 
@@ -110,11 +113,14 @@ CHATGPT2API_BASE_URL=https://image.example.com
 CHATGPT2API_RELAY_BASE_URL=https://api.example.com
 CHATGPT2API_NEWAPI_DATABASE_URL=postgresql://readonly:password@postgres:5432/new-api?sslmode=disable
 CHATGPT2API_NEWAPI_TOKEN_GROUP=gpt-image-2
+CHATGPT2API_IMAGE_MODELS=gpt-image-2,gemini-3.1-flash-image,grok-imagine-image
 ```
 
 如果不设置 `CHATGPT2API_ADMIN_PASSWORD`，服务首次启动会生成一次性管理员密码并输出到容器日志。
 
 `CHATGPT2API_NEWAPI_DATABASE_URL` 应使用只有 `SELECT` 权限的只读数据库账号。云棉通过它校验普通用户并读取该用户可用的 NewAPI Key；所有 AI 请求再发送到 `CHATGPT2API_RELAY_BASE_URL`，不会向 NewAPI 数据库写入数据。
+
+默认使用最新 NewAPI 已内置、且 xAI 官方仍提供的 `grok-imagine-image`。xAI 官方当前还提供 `grok-imagine-image-quality`（`grok-imagine-image-pro` 是其别名）和 `grok-imagine-image-2.0`；本次核对的 NewAPI `upstream/main`（`47ba9d2`）已内置 `grok-imagine-image-pro`，但尚未内置 2.0 名称。使用 2.0 前需要在 NewAPI 配置自定义模型映射，再把它加入 `CHATGPT2API_IMAGE_MODELS`。云棉不会静默把 2.0 降级成其他模型。
 
 ### 2. 启动服务
 
@@ -257,7 +263,7 @@ go build -tags=embed -o chatgpt2api ./internal
 | `CHATGPT2API_NEWAPI_DATABASE_URL` | 空 | NewAPI 数据库只读连接，用于普通用户登录并读取本人可用 Key 的名称和密钥；请使用只有 `SELECT` 权限的账号 |
 | `CHATGPT2API_NEWAPI_TOKEN_GROUP` | 空 | 用户尚未选择 Key 名称时的默认分组偏好；实际请求按当前用户选择的 Key 名称精确读取对应密钥 |
 | `CHATGPT2API_PROXY` | 空 | 全局代理，支持 `http`、`https`、`socks5`、`socks5h` |
-| `CHATGPT2API_IMAGE_MODELS` | `gpt-image-2` | 管理端图片模型列表，多个值用逗号分隔；第一项作为默认模型 |
+| `CHATGPT2API_IMAGE_MODELS` | `gpt-image-2,gemini-3.1-flash-image,grok-imagine-image` | 管理端图片模型列表，多个值用逗号分隔；第一项作为默认模型，对应模型需已在 NewAPI 配置可用渠道 |
 | `CHATGPT2API_REFRESH_ACCOUNT_INTERVAL_MINUTE` | `5` | 限流账号检查间隔，单位分钟 |
 | `CHATGPT2API_IMAGE_TASK_TIMEOUT_SECONDS` | `300` | 图片任务超时时间，单位秒 |
 | `CHATGPT2API_USER_DEFAULT_CONCURRENT_LIMIT` | `0` | 普通用户默认创作并发额度；图片生成/编辑按请求张数计入；`0` 表示不限制 |
@@ -500,13 +506,13 @@ curl http://localhost:8000/v1/images/generations \
 
 | 字段 | 说明 |
 | --- | --- |
-| `model` | 图片模型，支持 `auto`、`gpt-image-2`、`codex-gpt-image-2` |
+| `model` | 图片模型，默认包含 `gpt-image-2`、`gemini-3.1-flash-image`、`grok-imagine-image`，也支持管理端配置的其他模型 |
 | `prompt` | 图片生成提示词 |
-| `n` | 生成数量，当前限制为 `1-4` |
+| `n` | 生成数量；GPT Image 为 `1-10`，Gemini、Grok 和未知兼容模型为 `1-4` |
 
 云棉会读取当前用户选择的 NewAPI Key，并把请求转发到 `CHATGPT2API_RELAY_BASE_URL` 配置的 NewAPI 服务。模型对应的实际渠道、账号能力和最终上游协议由 NewAPI 配置决定；云棉负责参数归一化、鉴权、任务状态、流式事件消费、图片入库和错误展示。
 
-`size` 可以传 `auto`、比例值（如 `1:1`、`16:9`、`9:16`）、分辨率档位（`1080p`、`2k`、`4k`）或显式 `WIDTHxHEIGHT`。服务会先归一化参数再转发，最终输出像素以上游实际返回为准。
+`size` 可以传 `auto`、比例值（如 `1:1`、`16:9`、`9:16`）或显式 `WIDTHxHEIGHT`。GPT 图片链路还支持 `1080p`、`2k`、`4k` 档位；Gemini 3 图片链路会把请求映射为 `extra_body.google.image_config` 的官方比例和分辨率档位，不承诺精确复现显式宽高。最终输出像素以上游实际返回为准。
 
 ### `POST /v1/images/edits`
 
@@ -523,12 +529,13 @@ curl http://localhost:8000/v1/images/edits \
 
 | 字段 | 说明 |
 | --- | --- |
-| `model` | 图片模型，支持 `auto`、`gpt-image-2`、`codex-gpt-image-2` |
+| `model` | 图片编辑模型；当前 NewAPI 链路中仅 GPT 图片和 Gemini 支持参考图，Grok 会返回明确的不支持错误 |
 | `prompt` | 图片编辑提示词 |
-| `n` | 生成数量，当前限制为 `1-4` |
+| `n` | 生成数量；GPT Image 为 `1-10`，Gemini 和未知兼容模型为 `1-4` |
 | `image` | 参考图片，使用 multipart/form-data 上传 |
+| `mask` | GPT 图片局部编辑的 PNG 遮罩文件；必须与第一张 PNG 输入图尺寸一致并包含 alpha 通道 |
 
-图片编辑同样通过当前用户选择的 NewAPI Key 转发；支持的模型和参数能力取决于对应 NewAPI 渠道。
+图片编辑同样通过当前用户选择的 NewAPI Key 转发；参考图上限按模型校验，支持的模型和参数能力取决于对应 NewAPI 渠道。Grok 编辑在当前 NewAPI 链路会返回明确错误。
 
 ## 技术研究文档
 

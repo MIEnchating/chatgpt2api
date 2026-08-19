@@ -1,6 +1,61 @@
 package service
 
-import "testing"
+import (
+	"path/filepath"
+	"sync"
+	"testing"
+
+	"chatgpt2api/internal/storage"
+)
+
+type testDocumentSaveBarrier struct {
+	mu        sync.Mutex
+	remaining int
+	release   chan struct{}
+}
+
+func newTestDocumentSaveBarrier(participants int) *testDocumentSaveBarrier {
+	return &testDocumentSaveBarrier{remaining: participants, release: make(chan struct{})}
+}
+
+func (b *testDocumentSaveBarrier) wait() {
+	b.mu.Lock()
+	b.remaining--
+	if b.remaining == 0 {
+		close(b.release)
+	}
+	b.mu.Unlock()
+	<-b.release
+}
+
+type firstSaveBarrierBackend struct {
+	storage.Backend
+	documents storage.JSONDocumentBackend
+	barrier   *testDocumentSaveBarrier
+	once      sync.Once
+}
+
+func newFirstSaveBarrierBackend(t *testing.T, backend storage.Backend, barrier *testDocumentSaveBarrier) *firstSaveBarrierBackend {
+	t.Helper()
+	documents, ok := backend.(storage.JSONDocumentBackend)
+	if !ok {
+		t.Fatal("test backend does not support JSON documents")
+	}
+	return &firstSaveBarrierBackend{Backend: backend, documents: documents, barrier: barrier}
+}
+
+func (b *firstSaveBarrierBackend) LoadJSONDocument(name string) (any, error) {
+	return b.documents.LoadJSONDocument(name)
+}
+
+func (b *firstSaveBarrierBackend) SaveJSONDocument(name string, value any) error {
+	b.once.Do(b.barrier.wait)
+	return b.documents.SaveJSONDocument(name, value)
+}
+
+func (b *firstSaveBarrierBackend) DeleteJSONDocument(name string) error {
+	return b.documents.DeleteJSONDocument(name)
+}
 
 func TestPromptFavoriteServiceUpsertListAndDelete(t *testing.T) {
 	backend := newTestStorageBackend(t)
@@ -16,6 +71,7 @@ func TestPromptFavoriteServiceUpsertListAndDelete(t *testing.T) {
 		"author":               "Alice",
 		"mode":                 "edit",
 		"category":             "Animals",
+		"tags":                 []any{"cat", "poster", "cat"},
 		"source_label":         "banana-prompt-quicker",
 		"is_nsfw":              false,
 		"localizations": map[string]any{
@@ -40,6 +96,9 @@ func TestPromptFavoriteServiceUpsertListAndDelete(t *testing.T) {
 	}
 	if refs := item["reference_image_urls"].([]string); len(refs) != 1 {
 		t.Fatalf("reference urls were not normalized: %#v", item["reference_image_urls"])
+	}
+	if tags := item["tags"].([]string); len(tags) != 2 || tags[0] != "cat" || tags[1] != "poster" {
+		t.Fatalf("tags were not normalized: %#v", item["tags"])
 	}
 	if localizations := item["localizations"].(map[string]any); len(localizations) != 1 {
 		t.Fatalf("localizations were not normalized: %#v", item["localizations"])
@@ -75,14 +134,14 @@ func TestPromptFavoriteServiceUpsertListAndDelete(t *testing.T) {
 		t.Fatalf("duplicate upsert did not update in place: %#v", items)
 	}
 
-	if !service.Delete("user_1", item["id"].(string)) {
-		t.Fatal("Delete() returned false")
+	if deleted, err := service.Delete("user_1", item["id"].(string)); err != nil || !deleted {
+		t.Fatalf("Delete() = %v, %v", deleted, err)
 	}
 	if items = service.List("user_1"); len(items) != 0 {
 		t.Fatalf("favorite remained after delete: %#v", items)
 	}
-	if service.Delete("user_1", item["id"].(string)) {
-		t.Fatal("Delete() returned true for missing favorite")
+	if deleted, err := service.Delete("user_1", item["id"].(string)); err != nil || deleted {
+		t.Fatalf("Delete() missing favorite = %v, %v", deleted, err)
 	}
 }
 
@@ -100,5 +159,50 @@ func TestPromptFavoriteServiceRejectsInvalidInput(t *testing.T) {
 		if _, err := service.Upsert("user_1", body); err == nil {
 			t.Fatalf("case %d Upsert() error = nil", index)
 		}
+	}
+}
+
+func TestPromptFavoriteServiceMergesConcurrentDatabaseUpdates(t *testing.T) {
+	databaseURL := "sqlite:///" + filepath.ToSlash(filepath.Join(t.TempDir(), "shared-favorites.db"))
+	backendA, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend(A) error = %v", err)
+	}
+	t.Cleanup(func() { _ = backendA.Close() })
+	backendB, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend(B) error = %v", err)
+	}
+	t.Cleanup(func() { _ = backendB.Close() })
+	barrier := newTestDocumentSaveBarrier(2)
+	serviceA := NewPromptFavoriteService(newFirstSaveBarrierBackend(t, backendA, barrier))
+	serviceB := NewPromptFavoriteService(newFirstSaveBarrierBackend(t, backendB, barrier))
+
+	body := func(id string) map[string]any {
+		return map[string]any{
+			"prompt_id": id, "source": "banana-prompt-quicker", "title": id,
+			"preview": "https://example.test/preview.png", "prompt": "draw", "author": "Alice",
+		}
+	}
+	errorsCh := make(chan error, 2)
+	go func() {
+		_, saveErr := serviceA.Upsert("owner", body("prompt-a"))
+		errorsCh <- saveErr
+	}()
+	go func() {
+		_, saveErr := serviceB.Upsert("owner", body("prompt-b"))
+		errorsCh <- saveErr
+	}()
+	for range 2 {
+		if saveErr := <-errorsCh; saveErr != nil {
+			t.Fatalf("concurrent Upsert() error = %v", saveErr)
+		}
+	}
+	items, err := serviceA.ListWithError("owner")
+	if err != nil {
+		t.Fatalf("ListWithError() error = %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("concurrent favorites lost an update: %#v", items)
 	}
 }

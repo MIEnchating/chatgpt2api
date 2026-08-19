@@ -117,10 +117,6 @@ function NumberInputWithUnit({
   );
 }
 
-function modelListInputValue(value: unknown) {
-  return Array.isArray(value) ? value.join(", ") : String(value || "");
-}
-
 export function ConfigCard() {
   const [isTestingProxy, setIsTestingProxy] = useState(false);
   const [proxyTestResult, setProxyTestResult] =
@@ -130,7 +126,6 @@ export function ConfigCard() {
   const setImageTaskTimeoutSeconds = useSettingsStore(
     (state) => state.setImageTaskTimeoutSeconds,
   );
-  const setImageModels = useSettingsStore((state) => state.setImageModels);
   const setAppTitle = useSettingsStore((state) => state.setAppTitle);
   const setUserDefaultConcurrentLimit = useSettingsStore(
     (state) => state.setUserDefaultConcurrentLimit,
@@ -178,7 +173,7 @@ export function ConfigCard() {
       <SettingsCard
         icon={Settings2}
         title="参数配置"
-        description="配置云棉接入、图片任务和模型下发。"
+        description="配置云棉接入、图片任务和图片治理参数。"
       >
         <div className="flex items-center justify-center py-10">
           <LoaderCircle className="size-5 animate-spin text-muted-foreground" />
@@ -191,7 +186,7 @@ export function ConfigCard() {
     <SettingsCard
       icon={Settings2}
       title="参数配置"
-      description="配置云棉接入、图片任务和模型下发。"
+      description="配置云棉接入、图片任务和图片治理参数。"
     >
       <div className="flex flex-col gap-5">
         <section className={configSectionClassName}>
@@ -274,27 +269,6 @@ export function ConfigCard() {
                 value={String(config?.relay_base_url || "")}
                 onChange={(event) => setRelayBaseUrl(event.target.value)}
                 placeholder="http://newapi:3000"
-                className={settingsInputClassName}
-              />
-            </Field>
-          </div>
-        </section>
-
-        <section className={configSectionClassName}>
-          <SectionHeading
-            title="模型配置"
-            tip="用英文逗号分隔；第一项作为默认模型。"
-          />
-          <div className={configGridClassName}>
-            <Field className={configFieldClassName}>
-              <ConfigFieldLabel htmlFor="settings-image-models">
-                图片模型
-              </ConfigFieldLabel>
-              <Input
-                id="settings-image-models"
-                value={modelListInputValue(config?.image_models)}
-                onChange={(event) => setImageModels(event.target.value)}
-                placeholder="gpt-image-2"
                 className={settingsInputClassName}
               />
             </Field>

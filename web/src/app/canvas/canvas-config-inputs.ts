@@ -32,7 +32,7 @@ export function buildCanvasInputIndex(
     let input: CanvasConfigInput | null = null;
     if (source?.type === "image" && String(source.url || "").trim()) {
       input = { nodeID: source.id, type: "image", title: source.title || "图片", url: String(source.url).trim() };
-    } else if (source && source.type !== "config" && String(source.prompt || "").trim()) {
+    } else if (source && source.type !== "config" && source.type !== "video" && String(source.prompt || "").trim()) {
       input = { nodeID: source.id, type: "text", title: source.title || "想法", text: String(source.prompt).trim() };
     }
     if (!input) return;

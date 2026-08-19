@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"sync"
@@ -190,7 +191,7 @@ func TestImageTaskServicePassesImageRequestMetadataToHandler(t *testing.T) {
 	svc := newTestImageTaskService(t, handler, handler, handler, func() int { return 30 })
 	identity := Identity{ID: "alice", Name: "Alice", Role: "user"}
 
-	if _, err := svc.SubmitGenerationWithMetadata(context.Background(), identity, "task-1", "draw", "gpt-image-2", "2048x2048", "high", "https://base.test", 1, nil, map[string]any{"image_resolution": "2k", "requested_size": "2048x2048", "token_group": "draw", "token_name": "image"}); err != nil {
+	if _, err := svc.SubmitGenerationWithMetadata(context.Background(), identity, "task-1", "draw", "gemini-3.1-flash-image", "1:1", "", "https://base.test", 1, nil, map[string]any{"image_resolution": "512", "requested_size": "1:1", "token_group": "draw", "token_name": "image"}); err != nil {
 		t.Fatalf("SubmitGenerationWithMetadata() error = %v", err)
 	}
 
@@ -199,11 +200,11 @@ func TestImageTaskServicePassesImageRequestMetadataToHandler(t *testing.T) {
 		if _, ok := payload["response_format"]; ok {
 			t.Fatalf("payload should not include response_format: %#v", payload)
 		}
-		if got := payload["image_resolution"]; got != "2k" {
-			t.Fatalf("payload image_resolution = %#v, want 2k in %#v", got, payload)
+		if got := payload["image_resolution"]; got != "512" {
+			t.Fatalf("payload image_resolution = %#v, want 512 in %#v", got, payload)
 		}
-		if got := payload["requested_size"]; got != "2048x2048" {
-			t.Fatalf("payload requested_size = %#v, want 2048x2048 in %#v", got, payload)
+		if got := payload["requested_size"]; got != "1:1" {
+			t.Fatalf("payload requested_size = %#v, want 1:1 in %#v", got, payload)
 		}
 		if got := payload["token_group"]; got != "draw" {
 			t.Fatalf("payload token_group = %#v, want draw in %#v", got, payload)
@@ -247,6 +248,240 @@ func TestImageTaskServicePassesImageToolOptionsToHandler(t *testing.T) {
 		t.Fatal("timed out waiting for handler payload")
 	}
 	waitForTaskStatus(t, svc, identity, "task-1", TaskStatusSuccess)
+}
+
+func TestImageTaskServiceDoesNotPersistRawMaskData(t *testing.T) {
+	handlerCalls := make(chan map[string]any, 1)
+	handler := func(ctx context.Context, identity Identity, payload map[string]any) (map[string]any, error) {
+		handlerCalls <- payload
+		return map[string]any{"data": []map[string]any{{"url": "https://example.test/image.png"}}}, nil
+	}
+	svc := newTestImageTaskService(t, handler, handler, handler, func() int { return 30 })
+	identity := Identity{ID: "alice", Name: "Alice", Role: "user"}
+	mask := "data:image/png;base64,bWFzaw=="
+
+	task, err := svc.SubmitEditWithOptions(context.Background(), identity, "task-mask", "edit", "gpt-image-2", "1024x1024", "high", "https://base.test", []string{"source"}, 1, nil, nil, ImageOutputOptions{}, ImageToolOptions{InputImageMask: mask}, ImageVisibilityPrivate)
+	if err != nil {
+		t.Fatalf("SubmitEditWithOptions() error = %v", err)
+	}
+	if _, ok := task["input_image_mask"]; ok {
+		t.Fatalf("public task contains raw mask data: %#v", task)
+	}
+
+	select {
+	case payload := <-handlerCalls:
+		if payload["input_image_mask"] != mask {
+			t.Fatalf("handler mask = %#v, want transient mask", payload["input_image_mask"])
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for handler payload")
+	}
+	waitForTaskStatus(t, svc, identity, "task-mask", TaskStatusSuccess)
+	listed, err := svc.ListTasksWithError(identity, []string{"task-mask"})
+	if err != nil {
+		t.Fatalf("ListTasksWithError() error = %v", err)
+	}
+	items := anyList(listed["items"])
+	if len(items) != 1 {
+		t.Fatalf("listed tasks = %#v", listed)
+	}
+	if _, ok := items[0].(map[string]any)["input_image_mask"]; ok {
+		t.Fatalf("stored task contains raw mask data: %#v", items[0])
+	}
+}
+
+func TestImageTaskServiceMergesConcurrentDatabaseDocumentUpdates(t *testing.T) {
+	databaseURL := "sqlite:///" + filepath.ToSlash(filepath.Join(t.TempDir(), "shared-tasks.db"))
+	backendA, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend(A) error = %v", err)
+	}
+	t.Cleanup(func() { _ = backendA.Close() })
+	backendB, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend(B) error = %v", err)
+	}
+	t.Cleanup(func() { _ = backendB.Close() })
+
+	serviceA := newImageTaskService(backendA, nil, nil, nil, func() int { return 30 })
+	serviceB := newImageTaskService(backendB, nil, nil, nil, func() int { return 30 })
+	newTask := func(id string) map[string]any {
+		now := util.NowISO()
+		return map[string]any{
+			"id": id, "owner_id": "owner", "status": TaskStatusSuccess,
+			"mode": "generate", "model": "gpt-image-2", "count": 1,
+			"revision": 1, "created_at": now, "updated_at": now,
+		}
+	}
+
+	serviceA.mu.Lock()
+	serviceA.tasks[taskKey("owner", "task-a")] = newTask("task-a")
+	err = serviceA.saveLocked()
+	serviceA.mu.Unlock()
+	if err != nil {
+		t.Fatalf("service A saveLocked() error = %v", err)
+	}
+
+	serviceB.mu.Lock()
+	serviceB.tasks[taskKey("owner", "task-b")] = newTask("task-b")
+	err = serviceB.saveLocked()
+	serviceB.mu.Unlock()
+	if err != nil {
+		t.Fatalf("service B saveLocked() error = %v", err)
+	}
+
+	raw, err := backendB.LoadJSONDocument("image_tasks.json")
+	if err != nil {
+		t.Fatalf("LoadJSONDocument() error = %v", err)
+	}
+	ids := map[string]bool{}
+	for _, task := range util.AsMapSlice(util.StringMap(raw)["tasks"]) {
+		ids[util.Clean(task["id"])] = true
+	}
+	if !ids["task-a"] || !ids["task-b"] || len(ids) != 2 {
+		t.Fatalf("concurrent task document lost an update: %#v", raw)
+	}
+}
+
+func TestImageTaskServiceClaimsDuplicateTaskAcrossDatabaseInstances(t *testing.T) {
+	databaseURL := "sqlite:///" + filepath.ToSlash(filepath.Join(t.TempDir(), "shared-idempotency.db"))
+	backendA, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend(A) error = %v", err)
+	}
+	t.Cleanup(func() { _ = backendA.Close() })
+	backendB, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend(B) error = %v", err)
+	}
+	t.Cleanup(func() { _ = backendB.Close() })
+
+	started := make(chan string, 2)
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseHandler := func() { releaseOnce.Do(func() { close(release) }) }
+	defer releaseHandler()
+	handler := func(ctx context.Context, _ Identity, payload map[string]any) (map[string]any, error) {
+		started <- util.Clean(payload["prompt"])
+		select {
+		case <-release:
+			return map[string]any{"data": []map[string]any{{"url": "https://example.test/image.png"}}}, nil
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	serviceA := newImageTaskService(backendA, handler, handler, handler, func() int { return 30 })
+	serviceB := newImageTaskService(backendB, handler, handler, handler, func() int { return 30 })
+	t.Cleanup(serviceA.Close)
+	t.Cleanup(serviceB.Close)
+	identity := Identity{ID: "alice", Name: "Alice", Role: AuthRoleUser}
+
+	first, err := serviceA.SubmitGeneration(context.Background(), identity, "shared-task", "first", "gpt-image-2", "1024x1024", "high", "https://base.test", 1, nil)
+	if err != nil {
+		t.Fatalf("service A SubmitGeneration() error = %v", err)
+	}
+	if got := waitForStartedTask(t, started); got != "first" {
+		t.Fatalf("service A started prompt = %q, want first", got)
+	}
+	second, err := serviceB.SubmitGeneration(context.Background(), identity, "shared-task", "second", "gpt-image-2", "1024x1024", "high", "https://base.test", 1, nil)
+	if err != nil {
+		t.Fatalf("service B duplicate SubmitGeneration() error = %v", err)
+	}
+	if first["id"] != second["id"] {
+		t.Fatalf("duplicate task IDs differ: first=%#v second=%#v", first, second)
+	}
+	select {
+	case prompt := <-started:
+		t.Fatalf("duplicate task started a second upstream request with prompt %q", prompt)
+	case <-time.After(150 * time.Millisecond):
+	}
+
+	releaseHandler()
+	waitForTaskStatus(t, serviceA, identity, "shared-task", TaskStatusSuccess)
+}
+
+func TestImageTaskServicePropagatesCancellationAcrossDatabaseInstances(t *testing.T) {
+	databaseURL := "sqlite:///" + filepath.ToSlash(filepath.Join(t.TempDir(), "shared-cancellation.db"))
+	backendA, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend(A) error = %v", err)
+	}
+	t.Cleanup(func() { _ = backendA.Close() })
+	backendB, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend(B) error = %v", err)
+	}
+	t.Cleanup(func() { _ = backendB.Close() })
+
+	started := make(chan struct{})
+	stopped := make(chan struct{})
+	var startedOnce sync.Once
+	var stoppedOnce sync.Once
+	handler := func(ctx context.Context, _ Identity, _ map[string]any) (map[string]any, error) {
+		startedOnce.Do(func() { close(started) })
+		<-ctx.Done()
+		stoppedOnce.Do(func() { close(stopped) })
+		return nil, ctx.Err()
+	}
+	serviceA := newImageTaskService(backendA, handler, handler, handler, func() int { return 30 })
+	serviceB := newImageTaskService(backendB, handler, handler, handler, func() int { return 30 })
+	t.Cleanup(serviceA.Close)
+	t.Cleanup(serviceB.Close)
+	identity := Identity{ID: "alice", Name: "Alice", Role: AuthRoleUser}
+	if _, err := serviceA.SubmitGeneration(context.Background(), identity, "cancel-across-instances", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 1, nil); err != nil {
+		t.Fatalf("SubmitGeneration() error = %v", err)
+	}
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for task handler")
+	}
+	if _, err := serviceB.CancelTask(identity, "cancel-across-instances"); err != nil {
+		t.Fatalf("CancelTask() error = %v", err)
+	}
+	select {
+	case <-stopped:
+	case <-time.After(2 * time.Second):
+		t.Fatal("remote cancellation did not stop the owning handler")
+	}
+	waitForTaskStatus(t, serviceA, identity, "cancel-across-instances", TaskStatusCancelled)
+}
+
+func TestImageTaskServicePreservesUnspecifiedOutputFormat(t *testing.T) {
+	handlerCalls := make(chan map[string]any, 1)
+	handler := func(ctx context.Context, identity Identity, payload map[string]any) (map[string]any, error) {
+		handlerCalls <- payload
+		return map[string]any{"data": []map[string]any{{"url": "https://example.test/image.jpg", "output_format": "jpeg"}}}, nil
+	}
+	svc := newTestImageTaskService(t, handler, handler, handler, func() int { return 30 })
+	identity := Identity{ID: "alice", Name: "Alice", Role: "user"}
+
+	submitted, err := svc.SubmitGenerationWithOptions(context.Background(), identity, "task-no-format", "draw", "grok-imagine-image", "", "", "https://base.test", 1, nil, nil, ImageOutputOptions{}, ImageToolOptions{})
+	if err != nil {
+		t.Fatalf("SubmitGenerationWithOptions() error = %v", err)
+	}
+	if _, ok := submitted["output_format"]; ok {
+		t.Fatalf("submitted task invented output_format: %#v", submitted)
+	}
+
+	select {
+	case payload := <-handlerCalls:
+		if _, ok := payload["output_format"]; ok {
+			t.Fatalf("handler payload invented output_format: %#v", payload)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for handler payload")
+	}
+
+	waitForTaskStatus(t, svc, identity, "task-no-format", TaskStatusSuccess)
+	completed := svc.ListTasks(identity, []string{"task-no-format"})["items"].([]map[string]any)[0]
+	if _, ok := completed["output_format"]; ok {
+		t.Fatalf("completed task invented task-level output_format: %#v", completed)
+	}
+	data := util.AsMapSlice(completed["data"])
+	if len(data) != 1 || data[0]["output_format"] != "jpeg" {
+		t.Fatalf("completed task lost actual item format: %#v", completed)
+	}
 }
 
 func TestImageTaskServiceSubmitsChatTasks(t *testing.T) {
@@ -569,14 +804,15 @@ func TestImageTaskServiceMergesPartialSlotsAndDefersPartialPersistence(t *testin
 			t.Fatalf("persisted running task contains non-running output status: %#v", persistedTasks[0])
 		}
 	}
-	recoveredService := newImageTaskService(documentStore, failingImageTaskHandler, failingImageTaskHandler, failingImageTaskHandler, func() int { return 30 })
-	recoveredTask := recoveredService.ListTasks(identity, []string{"task-union"})["items"].([]map[string]any)[0]
-	if recoveredTask["status"] != TaskStatusError || util.ToInt(recoveredTask["revision"], 0) <= partialRevision {
-		t.Fatalf("restart recovery revision regressed behind observed partial: partial=%d recovered=%#v", partialRevision, recoveredTask)
+	observerService := newImageTaskService(documentStore, failingImageTaskHandler, failingImageTaskHandler, failingImageTaskHandler, func() int { return 30 })
+	observedTask := observerService.ListTasks(identity, []string{"task-union"})["items"].([]map[string]any)[0]
+	if observedTask["status"] != TaskStatusRunning {
+		t.Fatalf("a second service interrupted an active task: %#v", observedTask)
 	}
 
 	finishOnce.Do(func() { close(finish) })
 	waitForTaskStatus(t, svc, identity, "task-union", TaskStatusSuccess)
+	waitForTaskStatus(t, observerService, identity, "task-union", TaskStatusSuccess)
 	final := svc.ListTasks(identity, []string{"task-union"})["items"].([]map[string]any)[0]
 	finalRevision := util.ToInt(final["revision"], 0)
 	if finalRevision <= partialRevision {
@@ -642,6 +878,38 @@ func TestImageTaskServiceLimitsGlobalConcurrentCreationUnitsForAdmins(t *testing
 	if _, err := svc.AcquireCreationUnits(context.Background(), admin, defaultGlobalImageTaskConcurrentUnits+1); err == nil {
 		t.Fatal("oversized request exceeded the global unit limit without an error")
 	}
+}
+
+func TestImageTaskCountUsesSelectedModelLimit(t *testing.T) {
+	tests := []struct {
+		name    string
+		payload map[string]any
+		want    int
+	}{
+		{name: "GPT permits ten outputs", payload: map[string]any{"model": "gpt-image-2", "n": 10}, want: 10},
+		{name: "GPT clamps oversized count", payload: map[string]any{"model": "gpt-image-2", "n": 11}, want: 10},
+		{name: "Gemini keeps conservative limit", payload: map[string]any{"model": "gemini-3.1-flash-image", "n": 10}, want: 4},
+		{name: "stored count uses task model", payload: map[string]any{"model": "gpt-image-2", "count": 10}, want: 10},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := imageTaskCount(test.payload); got != test.want {
+				t.Fatalf("imageTaskCount(%#v) = %d, want %d", test.payload, got, test.want)
+			}
+		})
+	}
+}
+
+func TestImageTaskServiceAcceptsMaximumGPTOutputUnits(t *testing.T) {
+	svc := newTestImageTaskService(t, nil, nil, nil, func() int { return 30 })
+	t.Cleanup(svc.Close)
+	admin := Identity{ID: "admin", Name: "Admin", Role: AuthRoleAdmin}
+
+	release, err := svc.AcquireCreationUnits(context.Background(), admin, util.MaxImageOutputCount("gpt-image-2"))
+	if err != nil {
+		t.Fatalf("AcquireCreationUnits() rejected a valid GPT image request: %v", err)
+	}
+	release()
 }
 
 func TestImageTaskServiceCloseRejectsAndWakesCreationUnitAcquirers(t *testing.T) {
@@ -1337,6 +1605,70 @@ func TestImageTaskServiceDoesNotStartHandlerWhenInitialPersistenceFails(t *testi
 	}
 }
 
+func TestImageTaskServiceRetriesInitialLoadWithoutOverwritingStoredTasks(t *testing.T) {
+	backend := newTestStorageBackend(t)
+	documentStore, ok := backend.(storage.JSONDocumentBackend)
+	if !ok {
+		t.Fatalf("storage backend %T does not implement JSONDocumentBackend", backend)
+	}
+	identity := Identity{ID: "load-retry-owner", Name: "Alice", Role: AuthRoleUser}
+	stored := map[string]any{
+		"tasks": []map[string]any{{
+			"id":         "stored-task",
+			"owner_id":   ownerID(identity),
+			"status":     TaskStatusSuccess,
+			"mode":       "generate",
+			"model":      "gpt-image-2",
+			"count":      1,
+			"revision":   1,
+			"created_at": util.NowISO(),
+			"updated_at": util.NowISO(),
+			"data":       []map[string]any{{"url": "https://example.test/stored.png"}},
+		}},
+	}
+	if err := documentStore.SaveJSONDocument("image_tasks.json", stored); err != nil {
+		t.Fatalf("SaveJSONDocument() error = %v", err)
+	}
+	store := &flakyImageTaskLoadStore{JSONDocumentBackend: documentStore, failNext: 2}
+	handlerCalls := make(chan struct{}, 1)
+	handler := func(context.Context, Identity, map[string]any) (map[string]any, error) {
+		handlerCalls <- struct{}{}
+		return map[string]any{"data": []map[string]any{{"url": "https://example.test/new.png"}}}, nil
+	}
+	svc := newImageTaskService(store, handler, handler, handler, func() int { return 30 })
+
+	result, err := svc.SubmitGeneration(context.Background(), identity, "new-task", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 1, nil)
+	var loadErr ImageTaskLoadError
+	if result != nil || !errors.As(err, &loadErr) {
+		t.Fatalf("SubmitGeneration() result = %#v, error = %v; want ImageTaskLoadError", result, err)
+	}
+	select {
+	case <-handlerCalls:
+		t.Fatal("handler ran before stored tasks were loaded")
+	case <-time.After(100 * time.Millisecond):
+	}
+	persisted, err := documentStore.LoadJSONDocument("image_tasks.json")
+	if err != nil {
+		t.Fatalf("LoadJSONDocument() error = %v", err)
+	}
+	items := util.AsMapSlice(util.StringMap(persisted)["tasks"])
+	if len(items) != 1 || util.Clean(items[0]["id"]) != "stored-task" {
+		t.Fatalf("stored tasks changed after load failure: %#v", items)
+	}
+
+	if _, err := svc.SubmitGeneration(context.Background(), identity, "new-task", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 1, nil); err != nil {
+		t.Fatalf("SubmitGeneration() after recovery error = %v", err)
+	}
+	waitForTaskStatus(t, svc, identity, "new-task", TaskStatusSuccess)
+	loaded, err := svc.ListTasksWithError(identity, []string{"stored-task", "new-task"})
+	if err != nil {
+		t.Fatalf("ListTasksWithError() error = %v", err)
+	}
+	if got := loaded["items"].([]map[string]any); len(got) != 2 {
+		t.Fatalf("ListTasksWithError() items = %#v", got)
+	}
+}
+
 func TestImageTaskServiceRetriesFailedTerminalPersistence(t *testing.T) {
 	backend := newTestStorageBackend(t)
 	documentStore, ok := backend.(storage.JSONDocumentBackend)
@@ -1615,6 +1947,23 @@ type flakyImageTaskDocumentStore struct {
 	failNext     int
 	saveCount    int
 	failureCount int
+}
+
+type flakyImageTaskLoadStore struct {
+	storage.JSONDocumentBackend
+	mu       sync.Mutex
+	failNext int
+}
+
+func (s *flakyImageTaskLoadStore) LoadJSONDocument(name string) (any, error) {
+	s.mu.Lock()
+	if s.failNext > 0 {
+		s.failNext--
+		s.mu.Unlock()
+		return nil, errors.New("injected image task load failure")
+	}
+	s.mu.Unlock()
+	return s.JSONDocumentBackend.LoadJSONDocument(name)
 }
 
 type failingImageTaskDocumentStore struct {

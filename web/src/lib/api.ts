@@ -9,12 +9,18 @@ import type { LoginPageImageMode } from "@/lib/login-page-image-layout";
 export type ImageModel = string;
 export type ImageModelOption = { value: ImageModel; label: string };
 export const CODEX_IMAGE_MODEL: ImageModel = "codex-gpt-image-2";
-export const DEFAULT_IMAGE_MODELS: ImageModel[] = ["gpt-image-2"];
+export const DEFAULT_IMAGE_MODELS: ImageModel[] = [
+  "gpt-image-2",
+  "gemini-3.1-flash-image",
+  "grok-imagine-image",
+];
 export const DEFAULT_IMAGE_MODEL: ImageModel = DEFAULT_IMAGE_MODELS[0];
 export const IMAGE_MODEL_OPTIONS = [
   { value: "auto", label: "自动" },
   { value: "codex-gpt-image-2", label: "codex-gpt-image-2" },
   { value: "gpt-image-2", label: "gpt-image-2" },
+  { value: "gemini-3.1-flash-image", label: "Google Gemini Image" },
+  { value: "grok-imagine-image", label: "Grok Imagine" },
   { value: "gpt-5-mini", label: "gpt-5-mini" },
   { value: "gpt-5-3-mini", label: "gpt-5-3-mini" },
   { value: "gpt-5", label: "gpt-5" },
@@ -69,27 +75,25 @@ export function isImageCreationModel(value: unknown): value is ImageModel {
   return isImageModel(value);
 }
 
-export function usesOfficialImageRoute(model: ImageModel) {
-  void model;
-  return true;
-}
-
-export function usesCodexImageRoute(model: ImageModel) {
-  void model;
-  return false;
-}
-
-export function supportsStructuredImageParameters(model: ImageModel) {
-  return model === "gpt-image-2";
-}
-
-export function supportsImageOutputControls(model: ImageModel) {
-  return usesOfficialImageRoute(model) || usesCodexImageRoute(model);
-}
-
-export function supportsImageQuality(_model: ImageModel) {
-  return true;
-}
+export {
+  imageModelRoute,
+  imageOutputCountLimit,
+  imageReferenceImageLimit,
+  supportsImageAspectRatio,
+  supportsImageEditing,
+  supportsImageExactDimensions,
+  supportsImageMask,
+  supportsImageOutputControls,
+  supportsImageQuality,
+  supportsImageQualityValue,
+  supportsImageResolution,
+  supportsImageSize,
+  supportsImageStreaming,
+  supportsStructuredImageParameters,
+  usesCodexImageRoute,
+  usesOfficialImageRoute,
+  type ImageModelRoute,
+} from "@/lib/image-model-capabilities";
 
 export type ImageQuality = "low" | "medium" | "high";
 export type ImageOutputFormat = "png" | "jpeg" | "webp";
@@ -209,6 +213,8 @@ export type SettingsConfig = {
   newapi_token_groups?: string[];
   image_models?: string[] | string;
   default_image_model?: string;
+  video_models?: string[] | string;
+  default_video_model?: string;
   refresh_account_interval_minute?: number | string;
   image_task_timeout_seconds?: number | string;
   user_default_concurrent_limit?: number | string;
@@ -241,12 +247,22 @@ export type SettingsConfig = {
   login_page_image_zoom?: number | string;
   login_page_image_position_x?: number | string;
   login_page_image_position_y?: number | string;
+  prompt_sources?: Array<{
+    id: string;
+    label: string;
+    url: string;
+    format: "banana-json" | "awesome-gpt-image-2-markdown" | "generic-json" | string;
+    enabled?: boolean;
+    builtin?: boolean;
+  }>;
   [key: string]: unknown;
 };
 
 export type ModelConfig = {
   image_models: ImageModel[];
   default_image_model: ImageModel;
+  video_models: string[];
+  default_video_model: string;
   relay_base_url: string;
 };
 
@@ -278,10 +294,9 @@ export type ManagedImage = {
   requested_size?: string;
   output_format?: ImageOutputFormat;
   output_compression?: number;
-  partial_images?: number;
-  moderation?: string;
-  input_image_mask?: string;
-  reference_image_urls?: string[];
+	partial_images?: number;
+	moderation?: string;
+	reference_image_urls?: string[];
   reference_images?: Array<{
     path: string;
     url?: string;
@@ -306,7 +321,7 @@ export type CanvasViewport = {
 
 export type CanvasNode = {
   id: string;
-  type: "image" | "text" | "config";
+  type: "image" | "video" | "text" | "config";
   x: number;
   y: number;
   width: number;
@@ -324,6 +339,7 @@ export type CanvasNode = {
   prompt?: string;
   composer_content?: string;
   task_id?: string;
+  generation_model?: string;
   generation_size?: string;
   generation_resolution?: string;
   generation_quality?: ImageQuality;
@@ -336,6 +352,12 @@ export type CanvasNode = {
   generation_error?: string;
   generation_type?: "generate" | "edit";
   generation_reference_urls?: string[];
+  generation_video_model?: string;
+  generation_video_size?: string;
+  generation_video_seconds?: number;
+  generation_video_resolution?: string;
+  generation_video_audio?: boolean;
+  generation_video_watermark?: boolean;
   batch_child_ids?: string[];
   batch_root_id?: string;
   batch_primary_id?: string;
@@ -479,6 +501,9 @@ export type CreationTaskData = {
   actual_size?: string;
   actual_output_format?: ImageOutputFormat | string;
   quality_check?: ImageQualityCheck;
+  video_url?: string;
+  type?: string;
+  mime_type?: string;
 };
 
 export type CreationTask = {
@@ -486,7 +511,7 @@ export type CreationTask = {
   /** Monotonic server-side task revision when available. */
   revision?: number | string;
   status: "queued" | "running" | "success" | "error" | "cancelled";
-  mode: "generate" | "edit" | "chat";
+  mode: "generate" | "edit" | "chat" | "video";
   model?: ImageModel;
   size?: string;
   quality?: ImageQuality;
@@ -499,7 +524,7 @@ export type CreationTask = {
   data?: CreationTaskData[];
   output_statuses?: ("queued" | "running" | "success" | "error" | "cancelled")[];
   error?: string;
-  output_type?: "text";
+  output_type?: "text" | "image" | "video";
   visibility?: ImageVisibility;
 };
 
@@ -540,7 +565,6 @@ type CreationTaskListResponse = {
 
 export type LoginResponse = {
   ok: boolean;
-  token?: string;
   role: AuthRole;
   role_id?: string;
   role_name?: string;
@@ -690,11 +714,9 @@ export async function login(username: string, password: string) {
   });
 }
 
-export async function verifySession(token?: string) {
-  const normalizedToken = String(token || "").trim();
+export async function verifySession() {
   return httpRequest<LoginResponse>("/auth/session", {
     method: "GET",
-    headers: normalizedToken ? { Authorization: `Bearer ${normalizedToken}` } : undefined,
     redirectOnUnauthorized: false,
   });
 }
@@ -827,6 +849,38 @@ export async function createImageGenerationTask(
   });
 }
 
+export async function createVideoGenerationTask(
+  clientTaskId: string,
+  prompt: string,
+  model?: string,
+  size?: string,
+  seconds = 4,
+  resolution?: string,
+  generateAudio = true,
+  watermark = false,
+  referenceImageURLs?: string[],
+  relayTokenName?: string,
+  requestOptions?: CreationTaskRequestOptions,
+) {
+  return httpRequest<CreationTask>("/api/creation-tasks/video-generations", {
+    ...creationTaskRequestAuth(requestOptions),
+    method: "POST",
+    timeout: 30_000,
+    body: {
+      client_task_id: clientTaskId,
+      prompt,
+      ...(model ? { model } : {}),
+      ...(size ? { size } : {}),
+      seconds,
+      ...(resolution ? { resolution } : {}),
+      generate_audio: generateAudio,
+      watermark,
+      ...(referenceImageURLs?.length ? { reference_image_urls: referenceImageURLs } : {}),
+      ...(relayTokenName ? { token_name: relayTokenName } : {}),
+    },
+  });
+}
+
 export async function createImageEditTask(
   clientTaskId: string,
   files: File | File[],
@@ -853,12 +907,27 @@ export async function createImageEditTask(
   fallbackReferenceImage?: FallbackReferenceImage,
   requestOptions?: CreationTaskRequestOptions,
 ) {
-  const formData = new FormData();
-  const uploadFiles = Array.isArray(files) ? files : [files];
+	const formData = new FormData();
+	const uploadFiles = Array.isArray(files) ? files : [files];
+	let maskFile: File | undefined;
+	if (toolOptions?.inputImageMask) {
+		const response = await fetch(toolOptions.inputImageMask);
+		if (!response.ok) {
+			throw new Error("无法读取局部编辑遮罩");
+		}
+		const blob = await response.blob();
+		if (blob.type && blob.type.toLowerCase() !== "image/png") {
+			throw new Error("局部编辑遮罩必须是 PNG 图片");
+		}
+		maskFile = new File([blob], "mask.png", { type: "image/png" });
+	}
 
-  uploadFiles.forEach((file) => {
-    formData.append("image", file);
-  });
+	uploadFiles.forEach((file) => {
+		formData.append("image", file);
+	});
+	if (maskFile) {
+		formData.append("mask", maskFile);
+	}
   formData.append("client_task_id", clientTaskId);
   formData.append("prompt", prompt);
   if (model) {
@@ -891,9 +960,6 @@ export async function createImageEditTask(
   }
   if (toolOptions?.moderation) {
     formData.append("moderation", toolOptions.moderation);
-  }
-  if (toolOptions?.inputImageMask) {
-    formData.append("input_image_mask", toolOptions.inputImageMask);
   }
   if (relayTokenGroup) {
     formData.append("token_group", relayTokenGroup);
@@ -1105,8 +1171,8 @@ export async function saveCanvasDocument(document: CanvasDocument) {
   });
 }
 
-export async function clearCanvasDocument(projectID: string) {
-  return httpRequest<{ document: CanvasDocument }>(`/api/canvas?project_id=${encodeURIComponent(projectID)}`, {
+export async function clearCanvasDocument(projectID: string, revision: number) {
+  return httpRequest<{ document: CanvasDocument }>(`/api/canvas?project_id=${encodeURIComponent(projectID)}&revision=${encodeURIComponent(String(revision))}`, {
     method: "DELETE",
   });
 }
@@ -1115,6 +1181,7 @@ export async function updateCanvasProject(input: {
   action: "create" | "activate" | "rename" | "delete";
   project_id?: string;
   title?: string;
+  revision?: number;
 }) {
   return httpRequest<CanvasWorkspaceResponse>("/api/canvas", {
     method: "POST",

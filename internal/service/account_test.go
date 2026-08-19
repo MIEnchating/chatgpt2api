@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"chatgpt2api/internal/storage"
 	"chatgpt2api/internal/util"
 )
 
@@ -1227,8 +1228,8 @@ func TestRefreshAccountViaSessionMigratesBusyTokenCounts(t *testing.T) {
 	accounts.busyTokens["old-token"] = 2
 	accounts.busyTokens["new-token"] = 3
 
-	if !accounts.RefreshAccountViaSession("old-token", "new-token", "new-session", "2026-05-20T00:00:00Z") {
-		t.Fatal("RefreshAccountViaSession() = false")
+	if updated, err := accounts.RefreshAccountViaSession("old-token", "new-token", "new-session", "2026-05-20T00:00:00Z"); err != nil || !updated {
+		t.Fatalf("RefreshAccountViaSession() = %v, %v", updated, err)
 	}
 	if _, ok := accounts.busyTokens["old-token"]; ok {
 		t.Fatalf("old busy token still present: %#v", accounts.busyTokens)
@@ -1269,9 +1270,9 @@ func TestRefreshAccountViaSessionAllowsOldLeaseToReleaseMigratedBusyToken(t *tes
 		t.Fatalf("lease token = %q, want old-token", lease.Token)
 	}
 
-	if !accounts.RefreshAccountViaSession("old-token", "new-token", "new-session", "2026-05-20T00:00:00Z") {
+	if updated, err := accounts.RefreshAccountViaSession("old-token", "new-token", "new-session", "2026-05-20T00:00:00Z"); err != nil || !updated {
 		lease.Release()
-		t.Fatal("RefreshAccountViaSession() = false")
+		t.Fatalf("RefreshAccountViaSession() = %v, %v", updated, err)
 	}
 	if got := accounts.busyTokens["new-token"]; got != 1 {
 		lease.Release()
@@ -1307,8 +1308,8 @@ func TestRefreshAccountViaSessionMigratesImageReservationsWithOldTokenAlias(t *t
 	accounts.textRequestCount["old-token"] = 2
 	accounts.textRequestCount["new-token"] = 3
 
-	if !accounts.RefreshAccountViaSession("old-token", "new-token", "new-session", "2026-05-20T00:00:00Z") {
-		t.Fatal("RefreshAccountViaSession() = false")
+	if updated, err := accounts.RefreshAccountViaSession("old-token", "new-token", "new-session", "2026-05-20T00:00:00Z"); err != nil || !updated {
+		t.Fatalf("RefreshAccountViaSession() = %v, %v", updated, err)
 	}
 	if _, ok := accounts.imageReservations["old-token"]; ok {
 		t.Fatalf("old image reservation still present: %#v", accounts.imageReservations)
@@ -1385,8 +1386,8 @@ func TestUpdateAccountFromSessionImportMigratesImageReservationOldRelease(t *tes
 	accounts.textRequestCount["old-token"] = 2
 	accounts.textRequestCount["new-token"] = 3
 
-	if !accounts.UpdateAccountFromSessionImport("old-token", "new-token", map[string]any{"session_token": "new-session"}, true) {
-		t.Fatal("UpdateAccountFromSessionImport() = false")
+	if updated, err := accounts.UpdateAccountFromSessionImport("old-token", "new-token", map[string]any{"session_token": "new-session"}, true); err != nil || !updated {
+		t.Fatalf("UpdateAccountFromSessionImport() = %v, %v", updated, err)
 	}
 	if got := accounts.imageReservations["new-token"]; got != 2 {
 		t.Fatalf("new image reservation count after import migration = %d, want 2", got)
@@ -1420,9 +1421,9 @@ func TestUpdateAccountFromSessionImportAllowsOldLeaseToReleaseMigratedBusyToken(
 		t.Fatalf("lease token = %q, want old-token", lease.Token)
 	}
 
-	if !accounts.UpdateAccountFromSessionImport("old-token", "new-token", map[string]any{"session_token": "new-session"}, true) {
+	if updated, err := accounts.UpdateAccountFromSessionImport("old-token", "new-token", map[string]any{"session_token": "new-session"}, true); err != nil || !updated {
 		lease.Release()
-		t.Fatal("UpdateAccountFromSessionImport() = false")
+		t.Fatalf("UpdateAccountFromSessionImport() = %v, %v", updated, err)
 	}
 	if got := accounts.busyTokens["new-token"]; got != 1 {
 		lease.Release()
@@ -1441,7 +1442,10 @@ func TestSetAccountsEnabledByIDsDisablesSchedulingWithoutChangingStatus(t *testi
 	accounts.UpdateAccount("token-1", map[string]any{"status": "正常", "type": "Plus", "quota": 5})
 
 	id := accountIDFromToken("token-1")
-	result := accounts.SetAccountsEnabledByIDs([]string{id}, false)
+	result, err := accounts.SetAccountsEnabledByIDs([]string{id}, false)
+	if err != nil {
+		t.Fatalf("SetAccountsEnabledByIDs(disable) error = %v", err)
+	}
 	if result["updated"] != 1 || result["skipped"] != 0 {
 		t.Fatalf("disable result = %#v, want updated=1 skipped=0", result)
 	}
@@ -1460,7 +1464,10 @@ func TestSetAccountsEnabledByIDsDisablesSchedulingWithoutChangingStatus(t *testi
 		t.Fatal("disabled account should not be available for text scheduling")
 	}
 
-	result = accounts.SetAccountsEnabledByIDs([]string{id}, true)
+	result, err = accounts.SetAccountsEnabledByIDs([]string{id}, true)
+	if err != nil {
+		t.Fatalf("SetAccountsEnabledByIDs(enable) error = %v", err)
+	}
 	if result["updated"] != 1 || result["skipped"] != 0 {
 		t.Fatalf("enable result = %#v, want updated=1 skipped=0", result)
 	}
@@ -1488,22 +1495,34 @@ func TestSetAccountsEnabledByIDsIsIdempotent(t *testing.T) {
 	accounts.UpdateAccount("token-1", map[string]any{"status": "正常", "type": "Plus", "quota": 5})
 	accounts.UpdateAccount("token-2", map[string]any{"status": "正常", "type": "Plus", "quota": 5, "enabled": false})
 
-	result := accounts.SetAccountsEnabledByIDs([]string{accountIDFromToken("token-1"), accountIDFromToken("token-2")}, false)
+	result, err := accounts.SetAccountsEnabledByIDs([]string{accountIDFromToken("token-1"), accountIDFromToken("token-2")}, false)
+	if err != nil {
+		t.Fatalf("SetAccountsEnabledByIDs(disable) error = %v", err)
+	}
 	if result["updated"] != 1 || result["skipped"] != 1 {
 		t.Fatalf("batch disable result = %#v, want updated=1 skipped=1", result)
 	}
 
-	result = accounts.SetAccountsEnabledByIDs([]string{accountIDFromToken("token-1"), accountIDFromToken("token-2")}, false)
+	result, err = accounts.SetAccountsEnabledByIDs([]string{accountIDFromToken("token-1"), accountIDFromToken("token-2")}, false)
+	if err != nil {
+		t.Fatalf("SetAccountsEnabledByIDs(repeat disable) error = %v", err)
+	}
 	if result["updated"] != 0 || result["skipped"] != 2 {
 		t.Fatalf("repeat disable result = %#v, want updated=0 skipped=2", result)
 	}
 
-	result = accounts.SetAccountsEnabledByIDs([]string{accountIDFromToken("token-1"), accountIDFromToken("token-2")}, true)
+	result, err = accounts.SetAccountsEnabledByIDs([]string{accountIDFromToken("token-1"), accountIDFromToken("token-2")}, true)
+	if err != nil {
+		t.Fatalf("SetAccountsEnabledByIDs(enable) error = %v", err)
+	}
 	if result["updated"] != 2 || result["skipped"] != 0 {
 		t.Fatalf("batch enable result = %#v, want updated=2 skipped=0", result)
 	}
 
-	result = accounts.SetAccountsEnabledByIDs([]string{accountIDFromToken("token-1"), accountIDFromToken("token-2")}, true)
+	result, err = accounts.SetAccountsEnabledByIDs([]string{accountIDFromToken("token-1"), accountIDFromToken("token-2")}, true)
+	if err != nil {
+		t.Fatalf("SetAccountsEnabledByIDs(repeat enable) error = %v", err)
+	}
 	if result["updated"] != 0 || result["skipped"] != 2 {
 		t.Fatalf("repeat enable result = %#v, want updated=0 skipped=2", result)
 	}
@@ -1549,7 +1568,10 @@ func TestLegacyDisabledStatusRemainsUnschedulableAndPubliclyDisabled(t *testing.
 
 func TestAddAccountsDefaultsToEnabledAndListsIt(t *testing.T) {
 	accounts := newTestAccountService(t)
-	result := accounts.AddAccounts([]string{"token-1"})
+	result, err := accounts.AddAccounts([]string{"token-1"})
+	if err != nil {
+		t.Fatalf("AddAccounts() error = %v", err)
+	}
 	if result["added"] != 1 || result["skipped"] != 0 {
 		t.Fatalf("AddAccounts() = %#v, want added=1 skipped=0", result)
 	}
@@ -1576,7 +1598,10 @@ func TestLoadAccountsDoesNotPersistEnabledForLegacyRecord(t *testing.T) {
 		"image_quota_unknown": false,
 	}}}
 
-	accounts := NewAccountService(backend, testAccountConfig{}, nil, NewLogService())
+	accounts, err := NewAccountService(backend, testAccountConfig{}, nil, NewLogService())
+	if err != nil {
+		t.Fatalf("NewAccountService() error = %v", err)
+	}
 	if backend.saveCount != 0 {
 		t.Fatalf("NewAccountService() saved legacy account %d times, want 0", backend.saveCount)
 	}
@@ -1594,6 +1619,71 @@ func TestLoadAccountsDoesNotPersistEnabledForLegacyRecord(t *testing.T) {
 	}
 	if backend.saveCount != 0 {
 		t.Fatalf("ListAccounts() saved legacy account %d times, want 0", backend.saveCount)
+	}
+}
+
+func TestNewAccountServiceReturnsLoadError(t *testing.T) {
+	backend := &accountStorageSpy{loadErr: errors.New("account storage unavailable")}
+	if _, err := NewAccountService(backend, testAccountConfig{}, nil, NewLogService()); err == nil {
+		t.Fatal("NewAccountService() error = nil, want account load failure")
+	}
+}
+
+func TestAccountServiceRollsBackMutationWhenPersistenceFails(t *testing.T) {
+	backend := &accountStorageSpy{accounts: []map[string]any{{
+		"access_token": "token-1",
+		"type":         "Plus",
+		"status":       "正常",
+		"quota":        5,
+		"enabled":      true,
+	}}}
+	accounts, err := NewAccountService(backend, testAccountConfig{}, nil, NewLogService())
+	if err != nil {
+		t.Fatalf("NewAccountService() error = %v", err)
+	}
+	accounts.stickyTextToken = "token-1"
+	accounts.imageReservations["token-1"] = 2
+	backend.saveErr = errors.New("account storage unavailable")
+
+	if _, err := accounts.SetAccountsEnabledByIDs([]string{accountIDFromToken("token-1")}, false); err == nil {
+		t.Fatal("SetAccountsEnabledByIDs() error = nil, want persistence failure")
+	}
+	account := accounts.GetAccount("token-1")
+	if account == nil || account["enabled"] != true {
+		t.Fatalf("failed mutation changed in-memory account: %#v", account)
+	}
+	if accounts.stickyTextToken != "token-1" || accounts.imageReservations["token-1"] != 2 {
+		t.Fatalf("failed mutation changed scheduling state: sticky=%q reservations=%#v", accounts.stickyTextToken, accounts.imageReservations)
+	}
+}
+
+func TestAccountServiceReloadsAfterConcurrentPersistenceConflict(t *testing.T) {
+	backend := &accountStorageSpy{accounts: []map[string]any{{
+		"access_token": "token-1",
+		"type":         "Plus",
+		"status":       "正常",
+		"quota":        5,
+		"enabled":      true,
+	}}}
+	accounts, err := NewAccountService(backend, testAccountConfig{}, nil, NewLogService())
+	if err != nil {
+		t.Fatalf("NewAccountService() error = %v", err)
+	}
+	backend.accounts = []map[string]any{{
+		"access_token": "token-1",
+		"type":         "Pro",
+		"status":       "正常",
+		"quota":        9,
+		"enabled":      true,
+	}}
+	backend.saveErr = storage.ErrConcurrentRowUpdate
+
+	if _, err := accounts.UpdateAccount("token-1", map[string]any{"quota": 1}); !errors.Is(err, storage.ErrConcurrentRowUpdate) {
+		t.Fatalf("UpdateAccount() error = %v, want ErrConcurrentRowUpdate", err)
+	}
+	account := accounts.GetAccount("token-1")
+	if account == nil || account["type"] != "Pro" || util.ToInt(account["quota"], 0) != 9 {
+		t.Fatalf("account after conflict reload = %#v", account)
 	}
 }
 
@@ -1645,7 +1735,10 @@ func TestSetAccountsEnabledByIDsClearsReservationsAndStickyState(t *testing.T) {
 	accounts.stickyImageToken = "token-1"
 	accounts.mu.Unlock()
 
-	result := accounts.SetAccountsEnabledByIDs([]string{accountIDFromToken("token-1")}, false)
+	result, err := accounts.SetAccountsEnabledByIDs([]string{accountIDFromToken("token-1")}, false)
+	if err != nil {
+		t.Fatalf("SetAccountsEnabledByIDs() error = %v", err)
+	}
 	if result["updated"] != 1 || result["skipped"] != 0 {
 		t.Fatalf("disable result = %#v, want updated=1 skipped=0", result)
 	}
@@ -1671,17 +1764,26 @@ func TestSetAccountsEnabledByIDsClearsReservationsAndStickyState(t *testing.T) {
 
 type accountStorageSpy struct {
 	accounts  []map[string]any
+	loadErr   error
+	saveErr   error
 	saveCount int
 	saved     []map[string]any
 }
 
 func (s *accountStorageSpy) LoadAccounts() ([]map[string]any, error) {
+	if s.loadErr != nil {
+		return nil, s.loadErr
+	}
 	return copyAccountItems(s.accounts), nil
 }
 
 func (s *accountStorageSpy) SaveAccounts(accounts []map[string]any) error {
 	s.saveCount++
+	if s.saveErr != nil {
+		return s.saveErr
+	}
 	s.saved = copyAccountItems(accounts)
+	s.accounts = copyAccountItems(accounts)
 	return nil
 }
 
@@ -1717,12 +1819,16 @@ func newTestAccountService(t *testing.T) *AccountService {
 func newTestAccountServiceWithConfig(t *testing.T, cfg testAccountConfig) *AccountService {
 	t.Helper()
 	backend := newTestStorageBackend(t)
-	return NewAccountService(
+	service, err := NewAccountService(
 		backend,
 		cfg,
 		NewProxyService(cfg),
 		NewLogService(backend),
 	)
+	if err != nil {
+		t.Fatalf("NewAccountService() error = %v", err)
+	}
+	return service
 }
 
 func newAccountQuotaServer(t *testing.T, mePayload map[string]any, limits []map[string]any) *httptest.Server {

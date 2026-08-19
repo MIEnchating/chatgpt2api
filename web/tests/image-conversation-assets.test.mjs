@@ -68,6 +68,12 @@ test("reference count validation accepts four and clearly rejects overflow", () 
   assert.match(imageConversationReferenceLimitMessage(2, 3), /最多支持 4 张参考图/);
 });
 
+test("reference count validation supports provider-specific limits", () => {
+  assert.equal(imageConversationReferenceLimitMessage(0, 14, 14), "");
+  assert.match(imageConversationReferenceLimitMessage(14, 1, 14), /最多支持 14 张参考图/);
+  assert.match(imageConversationReferenceLimitMessage(0, 1, 0), /最多支持 0 张参考图/);
+});
+
 test("asset upload batches stay under 80 MiB and preserve file order", () => {
   const mib = 1024 * 1024;
   const files = [

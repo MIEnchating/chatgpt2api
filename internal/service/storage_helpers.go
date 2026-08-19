@@ -20,15 +20,11 @@ func firstJSONDocumentStore(backends []storage.Backend) storage.JSONDocumentBack
 	return jsonDocumentStoreFromBackend(backends[0])
 }
 
-func loadStoredJSON(store storage.JSONDocumentBackend, name string) any {
+func loadStoredJSON(store storage.JSONDocumentBackend, name string) (any, error) {
 	if store == nil {
-		return nil
+		return nil, nil
 	}
-	value, err := store.LoadJSONDocument(name)
-	if err != nil {
-		return nil
-	}
-	return value
+	return store.LoadJSONDocument(name)
 }
 
 func saveStoredJSON(store storage.JSONDocumentBackend, name string, value any) error {

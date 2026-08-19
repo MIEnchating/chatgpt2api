@@ -77,11 +77,12 @@ func (a *App) routes() []appRoute {
 		exact(http.MethodGet, "/api/storage/info", a.handleStorageInfo),
 
 		prefix("/images/", a.handleImageFile),
+		prefix("/videos/", a.handleVideoFile),
 		prefix(service.ImageConversationAssetURLPrefix, a.handleImageConversationAssetFile),
 		prefix("/image-references/", a.handleImageReferenceFile),
 		prefix("/image-thumbnails/", a.handleImageThumbnail),
-		prefix("/login-page-images/", http.StripPrefix("/login-page-images/", http.FileServer(http.Dir(a.config.LoginPageImagesDir()))).ServeHTTP),
-		prefix("/site-icons/", http.StripPrefix("/site-icons/", http.FileServer(http.Dir(a.config.SiteIconsDir()))).ServeHTTP),
+		prefix("/login-page-images/", a.handleLoginPageImageFile),
+		prefix("/site-icons/", a.handleSiteIconFile),
 	}
 }
 
@@ -149,7 +150,7 @@ func isAPISpace(path string) bool {
 
 func applyCORS(w http.ResponseWriter, r *http.Request) {
 	origin := strings.TrimSpace(r.Header.Get("Origin"))
-	if origin != "" && isAllowedCredentialedOrigin(origin, requestCookieHost(r)) {
+	if origin != "" && isAllowedCredentialedOrigin(origin, r.Host) {
 		w.Header().Set("Access-Control-Allow-Origin", origin)
 		w.Header().Set("Access-Control-Allow-Credentials", "true")
 		w.Header().Add("Vary", "Origin")
@@ -181,9 +182,6 @@ func isAllowedCredentialedOrigin(origin, requestHost string) bool {
 	}
 	requestHostname = strings.Trim(requestHostname, "[]")
 	originHostname := originURL.Hostname()
-	if originURL.Scheme == "https" && isRelayAIHostname(originHostname) {
-		return true
-	}
 	return strings.EqualFold(originHostname, requestHostname) ||
 		isLoopbackHostname(originHostname) && isLoopbackHostname(requestHostname)
 }
@@ -195,9 +193,4 @@ func isLoopbackHostname(hostname string) bool {
 	default:
 		return false
 	}
-}
-
-func isRelayAIHostname(hostname string) bool {
-	hostname = strings.ToLower(strings.Trim(strings.TrimSpace(hostname), "[]"))
-	return hostname == "relayai.tech" || strings.HasSuffix(hostname, ".relayai.tech")
 }

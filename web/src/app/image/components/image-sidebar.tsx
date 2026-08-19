@@ -46,7 +46,7 @@ export function ImageSidebar({
           <div className="flex items-center gap-2">
             <Button className="h-10 flex-1 rounded-full" onClick={onCreateDraft}>
               <MessageSquarePlus className="size-4" />
-              新建图片
+              新建对话
             </Button>
             <Button
               variant="outline"
@@ -71,7 +71,7 @@ export function ImageSidebar({
               正在读取会话记录
             </div>
           ) : conversations.length === 0 ? (
-            <div className="px-2 py-3 text-sm leading-6 text-stone-500">还没有图片记录，输入提示词后会在这里显示。</div>
+            <div className="px-2 py-3 text-sm leading-6 text-stone-500">还没有对话记录，输入提示词后会在这里显示。</div>
           ) : (
             <>
               {conversations.map((conversation) => {

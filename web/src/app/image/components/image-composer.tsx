@@ -10,6 +10,7 @@ import {
   Plus,
   SlidersHorizontal,
   Store,
+  Video,
   X,
 } from "lucide-react";
 import {
@@ -34,12 +35,17 @@ import {
 import { imageParameterChoiceClass } from "@/app/image/components/image-parameter-styles";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Slider } from "@/components/ui/slider";
 import { Textarea } from "@/components/ui/textarea";
 import {
   CUSTOM_IMAGE_ASPECT_RATIO,
+  GEMINI_IMAGE_RESOLUTION_OPTIONS,
   IMAGE_ASPECT_RATIO_OPTIONS,
   IMAGE_QUALITY_OPTIONS,
   IMAGE_RESOLUTION_OPTIONS,
+  XAI_IMAGE_RESOLUTION_OPTIONS,
   buildImageSize,
   formatImageSizeDisplay,
   isHighResolutionImageSize,
@@ -51,17 +57,28 @@ import {
 } from "@/app/image/image-options";
 import {
   IMAGE_OUTPUT_FORMAT_OPTIONS,
+  imageModelRoute,
+  imageOutputCountLimit,
+  supportsImageEditing,
+  supportsImageExactDimensions,
+  supportsImageAspectRatio,
   supportsImageOutputControls,
   supportsImageOutputCompression,
+  supportsImageQuality,
+  supportsImageQualityValue,
+  supportsImageResolution,
+  supportsImageSize,
+  supportsImageStreaming,
   supportsStructuredImageParameters,
   type ImageModel,
   type ImageOutputFormat,
   type ImageQuality,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { videoAudioControl, videoResolutionOptions, videoSecondsOptions, videoSizeLabel, videoSizeOptions, videoWatermarkSupported } from "@/lib/video-model-capabilities";
 
 type ImageComposerProps = {
-  composerMode: "chat" | "image";
+  composerMode: "chat" | "image" | "video";
   prompt: string;
   imageCount: string;
   imageModel: ImageModel;
@@ -77,6 +94,13 @@ type ImageComposerProps = {
   imageOutputCompression: string;
   imageStreamEnabled: boolean;
   imagePartialImages: string;
+  videoModel: string;
+  videoModelOptions: ReadonlyArray<{ value: string; label: string }>;
+  videoSize: string;
+  videoSeconds: string;
+  videoResolution: string;
+  videoGenerateAudio: boolean;
+  videoWatermark: boolean;
   relayKeyConfigured: boolean;
   relayKeyStatusMessage?: string;
   highResolutionHint?: ReactNode;
@@ -97,6 +121,13 @@ type ImageComposerProps = {
   onImageOutputCompressionChange: (value: string) => void;
   onImageStreamEnabledChange: (value: boolean) => void;
   onImagePartialImagesChange: (value: string) => void;
+  onComposerModeChange: (value: "image" | "video") => void;
+  onVideoModelChange: (value: string) => void;
+  onVideoSizeChange: (value: string) => void;
+  onVideoSecondsChange: (value: string) => void;
+  onVideoResolutionChange: (value: string) => void;
+  onVideoGenerateAudioChange: (value: boolean) => void;
+  onVideoWatermarkChange: (value: boolean) => void;
   onSubmit: () => void | Promise<void>;
   onOpenPromptMarket: () => void;
   onReferenceImageChange: (files: File[]) => void | Promise<void>;
@@ -188,6 +219,13 @@ export function ImageComposer({
   imageOutputCompression,
   imageStreamEnabled,
   imagePartialImages,
+  videoModel,
+  videoModelOptions,
+  videoSize,
+  videoSeconds,
+  videoResolution,
+  videoGenerateAudio,
+  videoWatermark,
   relayKeyConfigured,
   relayKeyStatusMessage,
   highResolutionHint,
@@ -208,6 +246,13 @@ export function ImageComposer({
   onImageOutputCompressionChange,
   onImageStreamEnabledChange,
   onImagePartialImagesChange,
+  onComposerModeChange,
+  onVideoModelChange,
+  onVideoSizeChange,
+  onVideoSecondsChange,
+  onVideoResolutionChange,
+  onVideoGenerateAudioChange,
+  onVideoWatermarkChange,
   onSubmit,
   onOpenPromptMarket,
   onReferenceImageChange,
@@ -217,7 +262,6 @@ export function ImageComposer({
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [isModelMenuOpen, setIsModelMenuOpen] = useState(false);
   const [isImageSettingsOpen, setIsImageSettingsOpen] = useState(false);
-  const [isAdvancedImageSettingsOpen, setIsAdvancedImageSettingsOpen] = useState(false);
   const [promptAreaHeight, setPromptAreaHeight] = useState(PROMPT_AREA_DEFAULT_HEIGHT);
   const [isPromptAreaResizing, setIsPromptAreaResizing] = useState(false);
   const [isReferenceImageDragActive, setIsReferenceImageDragActive] = useState(false);
@@ -250,27 +294,69 @@ export function ImageComposer({
     () => displayReferenceImages.map((image) => ({ id: image.id, src: image.dataUrl })),
     [displayReferenceImages],
   );
-  const imageModelLabel = imageModelOptions.find((option) => option.value === imageModel)?.label || imageModel;
+  const activeModel = composerMode === "video" ? videoModel : imageModel;
+  const activeModelOptions = composerMode === "video" ? videoModelOptions : imageModelOptions;
+  const activeVideoSizeOptions = videoSizeOptions(videoModel);
+  const activeVideoSecondsOptions = videoSecondsOptions(videoModel);
+  const activeVideoPositiveSeconds = activeVideoSecondsOptions.filter((value) => value > 0);
+  const activeVideoMinimumSeconds = activeVideoPositiveSeconds[0] || 1;
+  const activeVideoMaximumSeconds = activeVideoPositiveSeconds.at(-1) || activeVideoMinimumSeconds;
+  const activeVideoSecondsValid = activeVideoSecondsOptions.includes(Number(videoSeconds));
+  const activeVideoResolutionOptions = videoResolutionOptions(videoModel);
+  const activeVideoAudioControl = videoAudioControl(videoModel);
+  const activeVideoWatermarkSupported = videoWatermarkSupported(videoModel);
+  const imageModelLabel = activeModelOptions.find((option) => option.value === activeModel)?.label || activeModel;
   const compressionSupported = supportsImageOutputCompression(imageOutputFormat);
+  const imageRoute = imageModelRoute(imageModel);
+  const googleGeminiImageParameters = imageRoute === "google-gemini-image";
+  const xaiImageParameters = imageRoute === "xai-image";
+  const sizeSupported = supportsImageSize(imageModel);
   const structuredImageParameters = supportsStructuredImageParameters(imageModel);
+  const exactDimensionsSupported = supportsImageExactDimensions(imageModel);
   const outputControlsSupported = supportsImageOutputControls(imageModel);
-  const effectiveImageSizeMode = structuredImageParameters || imageSizeMode !== "custom" ? imageSizeMode : "auto";
-  const effectiveImageResolution = structuredImageParameters ? imageResolution : "auto";
+  const qualitySupported = supportsImageQuality(imageModel);
+  const streamingSupported = supportsImageStreaming(imageModel);
+  const referenceEditingSupported = composerMode === "video" || supportsImageEditing(imageModel);
+  const imageAspectRatioOptions = IMAGE_ASPECT_RATIO_OPTIONS.filter((option) =>
+    supportsImageAspectRatio(imageModel, option.value),
+  );
+  const imageResolutionOptions = (googleGeminiImageParameters
+    ? GEMINI_IMAGE_RESOLUTION_OPTIONS
+    : xaiImageParameters
+      ? XAI_IMAGE_RESOLUTION_OPTIONS
+      : IMAGE_RESOLUTION_OPTIONS
+  ).filter((option) => supportsImageResolution(imageModel, option.value));
+  const imageQualityOptions = [
+    { value: "", label: "自动" },
+    ...IMAGE_QUALITY_OPTIONS,
+  ].filter((option) => supportsImageQualityValue(imageModel, option.value));
+  const selectedAspectRatioSupported = supportsImageAspectRatio(imageModel, imageAspectRatio);
+  const effectiveImageSizeMode = sizeSupported &&
+    (exactDimensionsSupported || imageSizeMode !== "custom") &&
+    (imageSizeMode !== "ratio" || selectedAspectRatioSupported)
+    ? imageSizeMode
+    : "auto";
+  const effectiveImageResolution = structuredImageParameters && supportsImageResolution(imageModel, imageResolution)
+    ? imageResolution
+    : "auto";
   const hasReferenceImages = displayReferenceImages.length > 0;
-  const submitLabel = hasReferenceImages ? "编辑图片" : "生成图片";
+  const submitLabel = composerMode === "video" ? (hasReferenceImages ? "参考图生成视频" : "生成视频") : hasReferenceImages ? "编辑图片" : "生成图片";
   const relayApiKeyMissing = !relayKeyConfigured;
   const relayApiKeyMissingMessage = relayKeyStatusMessage || "请先在云棉为当前用户创建可用令牌";
   const computedImageSize = useMemo(
     () =>
-      buildImageSize({
-        mode: effectiveImageSizeMode,
-        aspectRatio: imageAspectRatio,
-        resolution: effectiveImageResolution,
-        customRatio: imageCustomRatio,
-        customWidth: imageCustomWidth,
-        customHeight: imageCustomHeight,
-      }),
-    [effectiveImageResolution, effectiveImageSizeMode, imageAspectRatio, imageCustomHeight, imageCustomRatio, imageCustomWidth],
+      buildImageSize(
+        {
+          mode: effectiveImageSizeMode,
+          aspectRatio: imageAspectRatio,
+          resolution: effectiveImageResolution,
+          customRatio: imageCustomRatio,
+          customWidth: imageCustomWidth,
+          customHeight: imageCustomHeight,
+        },
+        { preserveAspectRatio: googleGeminiImageParameters || xaiImageParameters },
+      ),
+    [effectiveImageResolution, effectiveImageSizeMode, googleGeminiImageParameters, imageAspectRatio, imageCustomHeight, imageCustomRatio, imageCustomWidth, xaiImageParameters],
   );
   const isCustomRatioInvalid =
     effectiveImageSizeMode === "ratio" && imageAspectRatio === CUSTOM_IMAGE_ASPECT_RATIO && !parseImageRatio(imageCustomRatio);
@@ -289,7 +375,8 @@ export function ImageComposer({
   const computedImageDimensions = computedImageSize ? parseImageSizeDimensions(computedImageSize) : null;
   const displayedImageWidth = effectiveImageSizeMode === "custom" ? imageCustomWidth : computedImageDimensions?.width || "";
   const displayedImageHeight = effectiveImageSizeMode === "custom" ? imageCustomHeight : computedImageDimensions?.height || "";
-  const normalizedImageCount = Math.min(10, Math.max(1, Number.parseInt(imageCount, 10) || 1));
+  const imageCountLimit = imageOutputCountLimit(imageModel);
+  const normalizedImageCount = Math.min(imageCountLimit, Math.max(1, Number.parseInt(imageCount, 10) || 1));
 
   useEffect(() => {
     if (!isModelMenuOpen) {
@@ -342,6 +429,9 @@ export function ImageComposer({
   }, []);
 
   const addReferenceImages = async (files: File[]) => {
+    if (!referenceEditingSupported) {
+      return;
+    }
     const imageFiles = getImageFiles(files);
     if (imageFiles.length === 0) {
       return;
@@ -372,6 +462,9 @@ export function ImageComposer({
   };
 
   const handleTextareaPaste = (event: ClipboardEvent<HTMLTextAreaElement>) => {
+    if (!referenceEditingSupported) {
+      return;
+    }
     const imageFiles = getImageFiles(event.clipboardData.files);
     if (imageFiles.length === 0) {
       return;
@@ -387,6 +480,9 @@ export function ImageComposer({
   };
 
   const handleReferenceImageDragEnter = (event: DragEvent<HTMLDivElement>) => {
+    if (!referenceEditingSupported) {
+      return;
+    }
     if (!hasDraggedImage(event.dataTransfer)) {
       return;
     }
@@ -398,6 +494,9 @@ export function ImageComposer({
   };
 
   const handleReferenceImageDragOver = (event: DragEvent<HTMLDivElement>) => {
+    if (!referenceEditingSupported) {
+      return;
+    }
     if (!hasDraggedImage(event.dataTransfer)) {
       return;
     }
@@ -408,6 +507,9 @@ export function ImageComposer({
   };
 
   const handleReferenceImageDragLeave = (event: DragEvent<HTMLDivElement>) => {
+    if (!referenceEditingSupported) {
+      return;
+    }
     if (!hasDraggedImage(event.dataTransfer)) {
       return;
     }
@@ -420,6 +522,9 @@ export function ImageComposer({
   };
 
   const handleReferenceImageDrop = (event: DragEvent<HTMLDivElement>) => {
+    if (!referenceEditingSupported) {
+      return;
+    }
     if (!hasDraggedFiles(event.dataTransfer)) {
       return;
     }
@@ -493,6 +598,9 @@ export function ImageComposer({
   };
 
   const handlePickReferenceImage = () => {
+    if (!referenceEditingSupported) {
+      return;
+    }
     fileInputRef.current?.click();
   };
 
@@ -623,7 +731,9 @@ export function ImageComposer({
             onChange={(event) => onPromptChange(event.target.value)}
             onPaste={handleTextareaPaste}
             placeholder={
-              hasReferenceImages
+              composerMode === "video"
+                ? hasReferenceImages ? "描述参考图如何动起来" : "描述你想生成的视频画面"
+                : hasReferenceImages
                 ? "描述你希望如何修改参考图"
                 : "输入你想要生成的画面，也可直接粘贴图片"
             }
@@ -639,16 +749,36 @@ export function ImageComposer({
 
           <div
             ref={composerToolbarRef}
-            className="rounded-b-[30px] bg-transparent px-3 pt-1 pb-3 sm:rounded-b-[24px] sm:border-t sm:border-[#f2f3f5] sm:bg-white/80 sm:px-4 sm:py-2.5 sm:dark:border-border sm:dark:bg-card/80"
+            className="rounded-b-[30px] border-t border-[#f2f3f5] bg-white/55 px-3 pt-2 pb-3 sm:rounded-b-[24px] sm:bg-white/80 sm:px-4 sm:py-2.5 sm:dark:border-border sm:dark:bg-card/80"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 sm:gap-3">
               <div className="flex min-w-0 flex-nowrap items-center gap-1.5 sm:gap-2">
+                <div className="flex shrink-0 items-center rounded-full bg-[#f4f4f5] p-0.5 dark:bg-muted/70" role="group" aria-label="创作类型">
+                  <button
+                    type="button"
+                    className={cn("inline-flex size-8 items-center justify-center rounded-full text-muted-foreground transition hover:text-foreground", composerMode === "image" && "bg-white text-[#1456f0] shadow-sm dark:bg-background dark:text-sky-300")}
+                    onClick={() => onComposerModeChange("image")}
+                    aria-label="图片生成"
+                    title="图片生成"
+                  >
+                    <ImagePlus className="size-4" />
+                  </button>
+                  <button
+                    type="button"
+                    className={cn("inline-flex size-8 items-center justify-center rounded-full text-muted-foreground transition hover:text-foreground", composerMode === "video" && "bg-white text-[#1456f0] shadow-sm dark:bg-background dark:text-sky-300")}
+                    onClick={() => onComposerModeChange("video")}
+                    aria-label="视频生成"
+                    title="视频生成"
+                  >
+                    <Video className="size-4" />
+                  </button>
+                </div>
                 <div ref={modelMenuRef} className="relative shrink-0">
                   <button
                     type="button"
                     className={cn(
-                      "inline-flex size-9 items-center justify-center gap-1.5 rounded-full text-xs font-medium text-[#686b73] transition hover:bg-black/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1456f0]/30 dark:text-muted-foreground dark:hover:bg-accent/60 dark:hover:text-foreground sm:h-8 sm:w-[190px] sm:border sm:border-[#e5e7eb] sm:bg-white sm:px-3 sm:text-[#45515e] sm:dark:border-border sm:dark:bg-background/70 sm:dark:text-muted-foreground",
+                      "inline-flex size-9 items-center justify-center gap-1.5 rounded-full bg-muted/60 text-xs font-medium text-foreground transition hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1456f0]/30 dark:bg-muted/70 dark:text-foreground sm:h-8 sm:w-[190px] sm:border sm:border-[#e5e7eb] sm:bg-white sm:px-3 sm:text-[#45515e] sm:dark:border-border sm:dark:bg-background/70 sm:dark:text-muted-foreground",
                       isModelMenuOpen &&
                         "bg-[#eef4ff] text-[#1456f0] dark:bg-sky-950/30 dark:text-sky-300 sm:border-[#bfdbfe] sm:bg-[#eef4ff] sm:text-[#1456f0] sm:dark:border-sky-900/70 sm:dark:bg-sky-950/30 sm:dark:text-sky-300",
                     )}
@@ -669,18 +799,26 @@ export function ImageComposer({
                   </button>
                   {isModelMenuOpen ? (
                     <div className="absolute bottom-[calc(100%+0.5rem)] left-0 z-[80] max-h-[45dvh] w-[min(14rem,calc(100vw-2rem))] overflow-y-auto rounded-[20px] border border-[#e5e7eb] bg-white p-1.5 shadow-[0_24px_80px_-32px_rgba(15,23,42,0.35)] dark:border-border dark:bg-card dark:shadow-[0_24px_80px_-28px_rgba(0,0,0,0.72)] sm:bottom-[calc(100%+8px)] sm:w-[218px]">
-                      {imageModelOptions.map((option) => {
-                        const active = option.value === imageModel;
+                      {activeModelOptions.map((option) => {
+                        const active = option.value === activeModel;
+                        const unavailableForReferences = composerMode !== "video" && hasReferenceImages && !supportsImageEditing(option.value);
                         return (
                           <button
                             key={option.value}
                             type="button"
+                            disabled={unavailableForReferences}
+                            title={unavailableForReferences ? "请先移除参考图再切换到此模型" : option.label}
                             className={cn(
                               "flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm text-[#45515e] transition hover:bg-black/[0.05] dark:text-muted-foreground dark:hover:bg-accent/60",
                               active && "bg-black/[0.05] font-medium text-[#18181b] dark:bg-accent dark:text-foreground",
+                              unavailableForReferences && "cursor-not-allowed opacity-45 hover:bg-transparent dark:hover:bg-transparent",
                             )}
                             onClick={() => {
-                              onImageModelChange(option.value);
+                              if (composerMode === "video") {
+                                onVideoModelChange(option.value);
+                              } else {
+                                onImageModelChange(option.value);
+                              }
                               setIsModelMenuOpen(false);
                             }}
                           >
@@ -692,23 +830,23 @@ export function ImageComposer({
                     </div>
                   ) : null}
                 </div>
-                <button
+                {composerMode === "image" ? <button
                   type="button"
-                  className="inline-flex size-9 shrink-0 items-center justify-center gap-1.5 rounded-full text-[#686b73] transition hover:bg-black/[0.05] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1456f0]/30 dark:text-muted-foreground dark:hover:bg-accent/60 dark:hover:text-foreground sm:h-8 sm:w-auto sm:border sm:border-[#e5e7eb] sm:bg-white sm:px-3 sm:text-xs sm:font-medium sm:text-[#45515e] sm:dark:border-border sm:dark:bg-background/70 sm:dark:text-muted-foreground"
+                  className="inline-flex size-9 shrink-0 items-center justify-center gap-1.5 rounded-full bg-muted/60 text-foreground transition hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1456f0]/30 dark:bg-muted/70 dark:text-foreground sm:h-8 sm:w-auto sm:border sm:border-[#e5e7eb] sm:bg-white sm:px-3 sm:text-xs sm:font-medium sm:text-[#45515e] sm:dark:border-border sm:dark:bg-background/70 sm:dark:text-muted-foreground"
                   onClick={onOpenPromptMarket}
                   aria-label="打开提示词市场"
                   title="提示词市场"
                 >
                   <Store className="size-5 sm:size-3.5" />
                   <span className="hidden sm:inline">市场</span>
-                </button>
+                </button> : null}
                 {composerMode === "image" ? (
                   <Popover open={isImageSettingsOpen} onOpenChange={handleImageSettingsOpenChange}>
                     <PopoverTrigger asChild>
                       <button
                         type="button"
                         className={cn(
-                          "inline-flex size-9 shrink-0 items-center justify-center gap-1.5 rounded-full text-[#686b73] transition hover:bg-black/[0.05] dark:text-muted-foreground dark:hover:bg-accent/60 dark:hover:text-foreground sm:h-8 sm:w-auto sm:border sm:border-[#e5e7eb] sm:bg-white sm:px-3 sm:text-xs sm:font-medium sm:text-[#45515e] sm:dark:border-border sm:dark:bg-background/70 sm:dark:text-muted-foreground",
+                          "inline-flex size-9 shrink-0 items-center justify-center gap-1.5 rounded-full bg-muted/60 text-foreground transition hover:bg-muted dark:bg-muted/70 dark:text-foreground sm:h-8 sm:w-auto sm:border sm:border-[#e5e7eb] sm:bg-white sm:px-3 sm:text-xs sm:font-medium sm:text-[#45515e] sm:dark:border-border sm:dark:bg-background/70 sm:dark:text-muted-foreground",
                           isImageSettingsOpen &&
                             "bg-[#eef4ff] text-[#1456f0] dark:bg-sky-950/30 dark:text-sky-300 sm:border-[#bfdbfe] sm:bg-[#eef4ff] sm:text-[#1456f0] sm:dark:border-sky-900/70 sm:dark:bg-sky-950/30 sm:dark:text-sky-300",
                         )}
@@ -729,7 +867,7 @@ export function ImageComposer({
                     >
                       <div className="p-3">
                         <div className="space-y-3.5">
-                          <section className="space-y-1.5">
+                          {sizeSupported ? <section className="space-y-1.5">
                             <div className="flex items-center justify-between gap-3">
                               <ImageParameterLabel help="选择常用画幅比例，系统会自动换算为合法像素尺寸。">
                                 画幅比例
@@ -744,7 +882,7 @@ export function ImageComposer({
                               </span>
                             </div>
                             <div className="grid grid-cols-5 gap-1.5" role="group" aria-label="图片画幅比例">
-                              {IMAGE_ASPECT_RATIO_OPTIONS.map((option) => {
+                              {imageAspectRatioOptions.map((option) => {
                                 const isAuto = option.value === "";
                                 const isCustom = option.value === CUSTOM_IMAGE_ASPECT_RATIO;
                                 const active = isAuto
@@ -787,18 +925,15 @@ export function ImageComposer({
                                 )}
                               />
                             ) : null}
-                          </section>
+                          </section> : null}
 
-                          {outputControlsSupported ? (
+                          {qualitySupported ? (
                             <section className="space-y-1.5">
-                              <ImageParameterLabel help="gpt-image-2 支持自动、低、中、高四档；质量越高，生成时间和费用通常越高。">
+                              <ImageParameterLabel help={xaiImageParameters ? "Grok Imagine Image 2.0 官方支持低、中两个质量档位，默认使用中等质量。" : "质量越高，生成时间和费用通常越高。"}>
                                 质量
                               </ImageParameterLabel>
-                              <div className="grid grid-cols-4 gap-1 rounded-lg bg-[#f4f4f5] p-1 dark:bg-muted/70" role="group" aria-label="图片质量">
-                                {[
-                                  { value: "", label: "自动" },
-                                  ...IMAGE_QUALITY_OPTIONS,
-                                ].map((option) => {
+                              <div className={cn("grid gap-1 rounded-lg bg-[#f4f4f5] p-1 dark:bg-muted/70", imageQualityOptions.length === 3 ? "grid-cols-3" : "grid-cols-4")} role="group" aria-label="图片质量">
+                                {imageQualityOptions.map((option) => {
                                   const active = imageQuality === option.value;
                                   return (
                                     <button
@@ -816,15 +951,15 @@ export function ImageComposer({
                             </section>
                           ) : null}
 
-                          {structuredImageParameters ? (
+                          {structuredImageParameters && imageResolutionOptions.length > 1 ? (
                             <section className="space-y-1.5">
-                              <ImageParameterLabel help="自动比例使用常规像素；1080P、2K、4K 会结合宽高比计算，并校正为官方允许的尺寸。2K 以上属于实验性高分辨率。">
+                              <ImageParameterLabel help={googleGeminiImageParameters ? "Gemini 使用官方 512、1K、2K、4K 档位；不同模型可用档位不同。" : xaiImageParameters ? "Grok 官方支持 1K、2K 分辨率。" : "自动比例使用常规像素；1080P、2K、4K 会结合宽高比计算，并校正为当前模型支持的尺寸。"}>
                                 分辨率
                               </ImageParameterLabel>
-                              <div className="grid grid-cols-4 gap-1 rounded-lg bg-[#f4f4f5] p-1 dark:bg-muted/70" role="group" aria-label="图片分辨率">
-                                {IMAGE_RESOLUTION_OPTIONS.map((option) => {
+                              <div className={cn("grid gap-1 rounded-lg bg-[#f4f4f5] p-1 dark:bg-muted/70", imageResolutionOptions.length === 5 ? "grid-cols-5" : imageResolutionOptions.length === 3 ? "grid-cols-3" : "grid-cols-4")} role="group" aria-label="图片分辨率">
+                                {imageResolutionOptions.map((option) => {
                                   const active =
-                                    imageResolution === option.value &&
+                                    effectiveImageResolution === option.value &&
                                     (effectiveImageSizeMode !== "auto" || option.value === "auto");
                                   return (
                                     <button
@@ -852,7 +987,7 @@ export function ImageComposer({
                           ) : null}
 
                           <section className="flex items-center justify-between gap-3 border-t border-[#ececef] pt-3 dark:border-border">
-                            <ImageParameterLabel help="单次请求生成 1-10 张图片；系统会按并发额度拆分和排队。">
+                            <ImageParameterLabel help={`当前模型单次请求支持 1-${imageCountLimit} 张图片。`}>
                               生成数量
                             </ImageParameterLabel>
                             <div className="grid h-8 grid-cols-[2rem_3.25rem_2rem] overflow-hidden rounded-lg border border-[#dedfe3] bg-white dark:border-border dark:bg-background/70" role="group" aria-label="生成数量">
@@ -870,7 +1005,7 @@ export function ImageComposer({
                               </span>
                               <button
                                 type="button"
-                                disabled={normalizedImageCount >= 10}
+                                disabled={normalizedImageCount >= imageCountLimit}
                                 className="inline-flex items-center justify-center text-[#686b73] transition hover:bg-[#f4f4f5] hover:text-[#18181b] disabled:cursor-not-allowed disabled:opacity-35 dark:text-muted-foreground dark:hover:bg-muted dark:hover:text-foreground"
                                 onClick={() => onImageCountChange(String(normalizedImageCount + 1))}
                                 aria-label="增加生成数量"
@@ -880,18 +1015,9 @@ export function ImageComposer({
                             </div>
                           </section>
 
-                          <details
-                            open={isAdvancedImageSettingsOpen}
-                            onToggle={(event) => setIsAdvancedImageSettingsOpen(event.currentTarget.open)}
-                            className="group border-t border-[#ececef] pt-2.5 dark:border-border"
-                          >
-                            <summary className="flex h-8 cursor-pointer list-none items-center justify-between rounded-md px-1.5 text-xs font-semibold text-[#3f4147] outline-none transition hover:bg-black/[0.04] focus-visible:ring-2 focus-visible:ring-[#1456f0]/30 dark:text-foreground dark:hover:bg-accent/60 [&::-webkit-details-marker]:hidden">
-                              <span>高级设置</span>
-                              <ChevronDown className="size-3.5 opacity-60 transition group-open:rotate-180" />
-                            </summary>
-
-                            <div className="mt-2 space-y-3">
-                              <section className="space-y-1.5">
+                          {exactDimensionsSupported || streamingSupported || outputControlsSupported ? <div className="border-t border-[#ececef] pt-2.5 dark:border-border">
+                            <div className="space-y-3">
+                              {exactDimensionsSupported ? <section className="space-y-1.5">
                                 <ImageParameterLabel help="手动输入像素尺寸后会覆盖上方画幅比例；边长不超过 3840，必须为 16 的倍数。">
                                   精确尺寸
                                 </ImageParameterLabel>
@@ -938,39 +1064,16 @@ export function ImageComposer({
                                     />
                                   </label>
                                 </div>
-                              </section>
+                              </section> : null}
 
-                              <div className="flex h-9 items-center justify-between rounded-lg bg-[#f4f4f5] px-2.5 dark:bg-muted/70">
+                              {streamingSupported ? <div className="flex h-9 items-center justify-between rounded-lg bg-[#f4f4f5] px-2.5 dark:bg-muted/70">
                                 <ImageParameterLabel help="开启后会使用流式返回，需要图片服务支持流式响应。">
                                   流式返回
                                 </ImageParameterLabel>
-                                <button
-                                  type="button"
-                                  role="switch"
-                                  aria-checked={imageStreamEnabled}
-                                  aria-label="开启图片流式返回"
-                                  className={cn(
-                                    "relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1456f0]/30",
-                                    imageStreamEnabled ? "bg-[#1456f0]" : "bg-[#c8cbd1] dark:bg-muted-foreground/45",
-                                  )}
-                                  onClick={() => {
-                                    const enabled = !imageStreamEnabled;
-                                    onImageStreamEnabledChange(enabled);
-                                    if (!enabled) {
-                                      onImagePartialImagesChange("0");
-                                    }
-                                  }}
-                                >
-                                  <span
-                                    className={cn(
-                                      "absolute top-0.5 size-4 rounded-full bg-white shadow-sm transition-transform",
-                                      imageStreamEnabled ? "translate-x-[18px]" : "translate-x-0.5",
-                                    )}
-                                  />
-                                </button>
-                              </div>
+                                <Switch checked={imageStreamEnabled} aria-label="开启图片流式返回" onCheckedChange={(enabled) => { onImageStreamEnabledChange(enabled); if (!enabled) onImagePartialImagesChange("0"); }} />
+                              </div> : null}
 
-                              {imageStreamEnabled ? (
+                              {streamingSupported && imageStreamEnabled ? (
                                 <div className="space-y-1.5">
                                   <ImageParameterLabel help="可返回 0-3 张生成过程中的中间图；每张中间图会产生额外输出费用。">
                                     中间图数量
@@ -1028,14 +1131,13 @@ export function ImageComposer({
                                     </span>
                                   </div>
                                   <div className="grid grid-cols-[minmax(0,1fr)_4.5rem] items-center gap-2.5">
-                                    <input
-                                      type="range"
+                                    <Slider
                                       min="0"
                                       max="100"
                                       step="1"
                                       value={imageOutputCompression || "100"}
                                       onChange={(event) => onImageOutputCompressionChange(event.target.value)}
-                                      className="h-1.5 w-full accent-[#18181b] dark:accent-foreground"
+                                      className="w-full"
                                       aria-label="图片输出压缩率"
                                     />
                                     <Input
@@ -1055,21 +1157,102 @@ export function ImageComposer({
                               </>
                             ) : null}
                             </div>
-                          </details>
+                          </div> : null}
                         </div>
                       </div>
                     </PopoverContent>
                   </Popover>
                   ) : null}
+                {composerMode === "video" ? (
+                  <Popover open={isImageSettingsOpen} onOpenChange={handleImageSettingsOpenChange}>
+                    <PopoverTrigger asChild>
+                      <button
+                        type="button"
+                        className={cn(
+                          "inline-flex size-9 shrink-0 items-center justify-center gap-1.5 rounded-full text-[#686b73] transition hover:bg-black/[0.05] dark:text-muted-foreground dark:hover:bg-accent/60 sm:h-8 sm:w-auto sm:border sm:border-[#e5e7eb] sm:bg-white sm:px-3 sm:text-xs sm:font-medium dark:sm:border-border dark:sm:bg-background/70",
+                          isImageSettingsOpen && "bg-[#eef4ff] text-[#1456f0] dark:bg-sky-950/30 dark:text-sky-300 sm:border-[#bfdbfe]",
+                        )}
+                        aria-label="打开视频设置"
+                        title="视频设置"
+                      >
+                        <SlidersHorizontal className="size-5 sm:size-3.5" />
+                        <span className="hidden sm:inline">参数</span>
+                      </button>
+                    </PopoverTrigger>
+                    <PopoverContent
+                      align="start"
+                      side="top"
+                      sideOffset={8}
+                      className="z-[70] w-[min(calc(100vw-1rem),22rem)] rounded-lg border-[#dedfe3] bg-white p-3 shadow-[0_18px_50px_-24px_rgba(15,23,42,0.28)] dark:border-border dark:bg-card"
+                      onOpenAutoFocus={(event) => event.preventDefault()}
+                    >
+                      <div className="space-y-3.5">
+                        {activeVideoSizeOptions.length > 0 ? <section className="space-y-1.5">
+                          <ImageParameterLabel help="选择视频画幅比例。">画幅比例</ImageParameterLabel>
+                          <div className="grid grid-cols-2 gap-1 rounded-lg bg-[#f4f4f5] p-1 dark:bg-muted/70">
+                            {activeVideoSizeOptions.map((value) => <button key={value} type="button" aria-pressed={videoSize === value} className={imageParameterChoiceClass(videoSize === value, "h-8")} onClick={() => onVideoSizeChange(value)}>{videoSizeLabel(value)}</button>)}
+                          </div>
+                        </section> : null}
+                        <section className="space-y-1.5">
+                          <ImageParameterLabel help="视频生成所需时间会随时长增加。">视频时长</ImageParameterLabel>
+                          <div className="grid grid-cols-[minmax(0,1fr)_6.5rem] gap-2">
+                            <Select value={activeVideoSecondsValid ? videoSeconds : undefined} onValueChange={onVideoSecondsChange}>
+                              <SelectTrigger className="h-8 min-w-0 rounded-lg border-[#dedfe3] bg-white px-2 text-xs font-medium text-[#3f4147] shadow-none dark:border-border dark:bg-background/70 dark:text-foreground" aria-label="选择视频时长">
+                                <SelectValue placeholder="选择时长" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {activeVideoSecondsOptions.map((seconds) => <SelectItem key={seconds} value={String(seconds)}>{seconds < 0 ? "智能时长" : `${seconds} 秒`}</SelectItem>)}
+                              </SelectContent>
+                            </Select>
+                            <div className={cn("grid h-8 grid-cols-[1fr_auto] items-center overflow-hidden rounded-lg border bg-white dark:bg-background/70", activeVideoSecondsValid ? "border-[#dedfe3] dark:border-border" : "border-rose-400 ring-2 ring-rose-500/10")}>
+                              <Input
+                                type="number"
+                                inputMode="numeric"
+                                min={activeVideoMinimumSeconds}
+                                max={activeVideoMaximumSeconds}
+                                step="1"
+                                value={videoSeconds === "-1" ? "" : videoSeconds}
+                                placeholder={videoSeconds === "-1" ? "智能" : `${activeVideoMinimumSeconds}-${activeVideoMaximumSeconds}`}
+                                onChange={(event) => onVideoSecondsChange(event.target.value)}
+                                className="h-full min-w-0 border-0 bg-transparent px-2 text-center text-xs font-semibold shadow-none focus-visible:ring-0"
+                                aria-label="手动输入视频秒数"
+                              />
+                              <span className="pr-2 text-[11px] text-[#8e8e93] dark:text-muted-foreground">{videoSeconds === "-1" ? "" : "秒"}</span>
+                            </div>
+                          </div>
+                          {!activeVideoSecondsValid ? <p className="text-[11px] text-rose-600 dark:text-rose-400">请输入当前模型支持的时长</p> : null}
+                        </section>
+                        <section className="space-y-1.5">
+                          <ImageParameterLabel help="更高清晰度通常需要更长生成时间。">清晰度</ImageParameterLabel>
+                          <div className="grid grid-cols-2 gap-1 rounded-lg bg-[#f4f4f5] p-1 dark:bg-muted/70">
+                            {activeVideoResolutionOptions.map((resolution) => (
+                              <button key={resolution} type="button" aria-pressed={videoResolution === resolution} className={imageParameterChoiceClass(videoResolution === resolution, "h-8 uppercase")} onClick={() => onVideoResolutionChange(resolution)}>{resolution}</button>
+                            ))}
+                          </div>
+                        </section>
+                        {[
+                          ...(activeVideoAudioControl === "toggle" ? [["生成声音", videoGenerateAudio, onVideoGenerateAudioChange] as const] : []),
+                          ...(activeVideoWatermarkSupported ? [["添加水印", videoWatermark, onVideoWatermarkChange] as const] : []),
+                        ].map(([label, checked, onChange]) => (
+                          <div key={String(label)} className="flex h-9 items-center justify-between rounded-lg bg-[#f4f4f5] px-2.5 dark:bg-muted/70">
+                            <span className="text-xs font-medium text-[#3f4147] dark:text-foreground">{String(label)}</span>
+                            <Switch checked={Boolean(checked)} aria-label={String(label)} onCheckedChange={onChange as (value: boolean) => void} />
+                          </div>
+                        ))}
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                ) : null}
               </div>
 
               <div className="flex shrink-0 items-center gap-2">
                 <button
                   type="button"
                   onClick={handlePickReferenceImage}
+                  disabled={!referenceEditingSupported}
                   className="inline-flex size-11 items-center justify-center rounded-full text-[#686b73] transition hover:bg-black/[0.05] dark:text-muted-foreground dark:hover:bg-accent/60 dark:hover:text-foreground sm:size-10 sm:border sm:border-[#e5e7eb] sm:bg-white sm:text-[#45515e] sm:dark:border-border sm:dark:bg-background/70 sm:dark:text-muted-foreground"
                   aria-label="上传参考图"
-                  title="上传参考图"
+                  title={referenceEditingSupported ? "上传参考图" : "当前模型不支持参考图编辑"}
                 >
                   <Plus className="size-6 sm:hidden" />
                   <ImagePlus className="hidden size-4 sm:block" />
@@ -1088,8 +1271,17 @@ export function ImageComposer({
               </div>
             </div>
             <div className="mt-2 flex flex-wrap items-center justify-between gap-2 px-2 text-[11px] leading-5 text-[#8e8e93] dark:text-muted-foreground">
-              {imageStreamEnabled ? <span>{`流式开启，中间图最多 ${imagePartialImages || "0"} 张`}</span> : null}
-              <span>{`预计生成 ${imageCount || "1"} 张`}</span>
+              {composerMode === "video" ? (
+                <>
+                  <span>{`${videoSizeLabel(videoSize)} · ${videoResolution.toUpperCase()} · ${videoSeconds === "-1" ? "智能时长" : `${videoSeconds || "未设置"} 秒`}`}</span>
+                  <span>预计生成 1 个视频</span>
+                </>
+              ) : (
+                <>
+                  {streamingSupported && imageStreamEnabled ? <span>{`流式开启，中间图最多 ${imagePartialImages || "0"} 张`}</span> : null}
+                  <span>{`预计生成 ${imageCount || "1"} 张`}</span>
+                </>
+              )}
             </div>
           </div>
         </div>

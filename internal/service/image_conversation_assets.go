@@ -1,17 +1,12 @@
 package service
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"image"
-	_ "image/jpeg"
-	_ "image/png"
 	"io"
-	"net/http"
 	"net/url"
 	"os"
 	"path"
@@ -21,7 +16,7 @@ import (
 	"sync"
 	"time"
 
-	_ "github.com/HugoSmits86/nativewebp"
+	"chatgpt2api/internal/util"
 )
 
 const (
@@ -452,7 +447,10 @@ func (s *ImageConversationAssetService) cleanupStorageLocked(shouldRemove func(i
 		if shouldRemove == nil || !shouldRemove(candidate) {
 			continue
 		}
-		if err := os.Remove(candidate.path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		if err := os.Remove(candidate.path); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
 			return result, err
 		}
 		result.DeletedCount++
@@ -603,16 +601,22 @@ func (s *ImageConversationAssetService) CleanupOrphansContext(ctx context.Contex
 	if !pathInsideRoot(root, ownerRoot) {
 		return result, ErrInvalidImageConversationAsset
 	}
-	_ = filepath.WalkDir(ownerRoot, func(filePath string, entry os.DirEntry, walkErr error) error {
+	walkErr := filepath.WalkDir(ownerRoot, func(filePath string, entry os.DirEntry, walkErr error) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if walkErr != nil || entry.IsDir() {
+		if walkErr != nil {
+			if errors.Is(walkErr, os.ErrNotExist) {
+				return nil
+			}
+			return walkErr
+		}
+		if entry.IsDir() {
 			return nil
 		}
 		rel, relErr := filepath.Rel(root, filePath)
 		if relErr != nil {
-			return nil
+			return relErr
 		}
 		rel = filepath.ToSlash(rel)
 		if rel == path.Join(ownerHash, imageConversationAssetOwnerMarker) {
@@ -622,19 +626,31 @@ func (s *ImageConversationAssetService) CleanupOrphansContext(ctx context.Contex
 			return nil
 		}
 		info, infoErr := entry.Info()
-		if infoErr != nil || !info.ModTime().Before(cutoff) {
+		if infoErr != nil {
+			if errors.Is(infoErr, os.ErrNotExist) {
+				return nil
+			}
+			return infoErr
+		}
+		if !info.ModTime().Before(cutoff) {
 			return nil
 		}
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if removeErr := os.Remove(filePath); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
-			return nil
+		if removeErr := os.Remove(filePath); removeErr != nil {
+			if errors.Is(removeErr, os.ErrNotExist) {
+				return nil
+			}
+			return removeErr
 		}
 		result.DeletedCount++
 		result.DeletedBytes += info.Size()
 		return nil
 	})
+	if walkErr != nil && !errors.Is(walkErr, os.ErrNotExist) {
+		return result, walkErr
+	}
 	if err := ctx.Err(); err != nil {
 		return result, err
 	}
@@ -677,7 +693,10 @@ func imageConversationAssetOwnerDirectoryEmptyContext(ctx context.Context, owner
 	}
 	entries, err := os.ReadDir(ownerRoot)
 	if err != nil {
-		return errors.Is(err, os.ErrNotExist), nil
+		if errors.Is(err, os.ErrNotExist) {
+			return true, nil
+		}
+		return false, err
 	}
 	if err := ctx.Err(); err != nil {
 		return false, err
@@ -711,16 +730,22 @@ func (s *ImageConversationAssetService) governanceLockedContext(ctx context.Cont
 	if ownerHash != "" {
 		scanRoot = filepath.Join(root, ownerHash)
 	}
-	_ = filepath.WalkDir(scanRoot, func(filePath string, entry os.DirEntry, walkErr error) error {
+	walkErr := filepath.WalkDir(scanRoot, func(filePath string, entry os.DirEntry, walkErr error) error {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		if walkErr != nil || entry.IsDir() {
+		if walkErr != nil {
+			if errors.Is(walkErr, os.ErrNotExist) {
+				return nil
+			}
+			return walkErr
+		}
+		if entry.IsDir() {
 			return nil
 		}
 		rel, relErr := filepath.Rel(root, filePath)
 		if relErr != nil {
-			return nil
+			return relErr
 		}
 		rel = filepath.ToSlash(rel)
 		if _, _, _, _, parseErr := parseImageConversationAssetPath(rel); parseErr != nil {
@@ -728,7 +753,10 @@ func (s *ImageConversationAssetService) governanceLockedContext(ctx context.Cont
 		}
 		info, infoErr := entry.Info()
 		if infoErr != nil {
-			return nil
+			if errors.Is(infoErr, os.ErrNotExist) {
+				return nil
+			}
+			return infoErr
 		}
 		result.FileCount++
 		result.TotalBytes += info.Size()
@@ -747,6 +775,9 @@ func (s *ImageConversationAssetService) governanceLockedContext(ctx context.Cont
 		}
 		return nil
 	})
+	if walkErr != nil && !errors.Is(walkErr, os.ErrNotExist) {
+		return result, walkErr
+	}
 	if err := ctx.Err(); err != nil {
 		return result, err
 	}
@@ -1260,17 +1291,11 @@ func validateImageConversationAsset(data []byte) (string, string, error) {
 	if len(data) > ImageConversationAssetMaxBytes {
 		return "", "", ErrImageConversationAssetTooLarge
 	}
-	contentType := normalizeImageConversationAssetContentType(http.DetectContentType(data))
-	if contentType == "" {
-		return "", "", fmt.Errorf("%w: unsupported image format", ErrInvalidImageConversationAsset)
-	}
-	config, format, err := image.DecodeConfig(bytes.NewReader(data))
-	if err != nil || config.Width < 1 || config.Height < 1 {
+	info, err := util.InspectRasterImage(data, "image/png", "image/jpeg", "image/webp")
+	if err != nil {
 		return "", "", fmt.Errorf("%w: image file is corrupt", ErrInvalidImageConversationAsset)
 	}
-	if normalizeImageConversationAssetFormat(format) != contentType {
-		return "", "", fmt.Errorf("%w: image type does not match file content", ErrInvalidImageConversationAsset)
-	}
+	contentType := info.ContentType
 	switch contentType {
 	case "image/png":
 		return contentType, ".png", nil

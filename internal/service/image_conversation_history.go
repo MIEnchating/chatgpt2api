@@ -768,7 +768,7 @@ func imageConversationImageIsQueued(image map[string]any) bool {
 }
 
 func imageConversationHasData(image map[string]any) bool {
-	for _, key := range []string{"b64_json", "url", "path", "text_response"} {
+	for _, key := range []string{"b64_json", "url", "video_url", "videoUrl", "path", "text_response"} {
 		if strings.TrimSpace(util.Clean(image[key])) != "" {
 			return true
 		}
@@ -793,7 +793,7 @@ func stripImageConversationActiveOutput(image map[string]any) bool {
 		return false
 	}
 	removed := false
-	for _, key := range []string{"b64_json", "url", "path", "text_response"} {
+	for _, key := range []string{"b64_json", "url", "video_url", "videoUrl", "path", "text_response"} {
 		if _, exists := image[key]; exists {
 			delete(image, key)
 			removed = true

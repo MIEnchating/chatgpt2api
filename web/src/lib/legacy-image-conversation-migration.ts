@@ -6,8 +6,7 @@ import {
   type ImageConversationHistoryMergeResponse,
 } from "@/app/image/image-conversation-history-api";
 import { rebaseImageConversationSnapshot } from "@/app/image/image-task-state";
-import { getCachedAuthSession } from "@/lib/session";
-import { getStoredAuthSession } from "@/store/auth";
+import { getCachedAuthSession, getVerifiedAuthSession } from "@/lib/session";
 import {
   classifyImageConversationMergeAcknowledgements,
   type ImageConversationAcknowledgementResult,
@@ -64,7 +63,7 @@ function isSameMigrationSession(
 
 async function assertMigrationSession(expected: LegacyImageConversationSession) {
   const cached = getCachedAuthSession();
-  const current = cached === undefined ? await getStoredAuthSession() : cached;
+  const current = cached === undefined ? await getVerifiedAuthSession() : cached;
   if (!isSameMigrationSession(expected, current)) {
     throw new LegacyImageConversationMigrationScopeChangedError();
   }
@@ -89,9 +88,8 @@ async function readLegacyItems(storage: ReturnType<typeof legacyStorage>, key: s
   return validated.items;
 }
 
-function migrationAuthorization(session: LegacyImageConversationSession) {
+function migrationAuthorization(_session: LegacyImageConversationSession) {
   return {
-    authorization: `Bearer ${String(session.key || "").trim()}`,
     redirectOnUnauthorized: false,
   };
 }
@@ -282,8 +280,7 @@ export function migrateLegacyImageConversations(
   session: LegacyImageConversationSession,
 ) {
   const scope = legacyImageConversationScope(session);
-  // A token rotation for the same owner must be able to start a fresh run
-  // after the old request observes the scope change.
+  // A new server credential for the same owner starts an independent run.
   const migrationKey = `${scope}:${String(session.key || "")}`;
   const existing = migrationPromises.get(migrationKey);
   if (existing) {

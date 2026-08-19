@@ -4,12 +4,24 @@ export const DEFAULT_IMAGE_CUSTOM_RATIO = "16:9";
 export const IMAGE_ASPECT_RATIO_OPTIONS = [
   { value: "", label: "自动" },
   { value: "1:1", label: "1:1 (正方形)" },
+  { value: "1:4", label: "1:4 (长竖版)" },
+  { value: "1:8", label: "1:8 (超长竖版)" },
   { value: "3:2", label: "3:2 (横版)" },
   { value: "2:3", label: "2:3 (竖版)" },
+  { value: "2:1", label: "2:1 (宽幅横版)" },
+  { value: "1:2", label: "1:2 (长竖版)" },
   { value: "16:9", label: "16:9 (横版)" },
+  { value: "19.5:9", label: "19.5:9 (手机宽屏)" },
+  { value: "9:19.5", label: "9:19.5 (手机竖屏)" },
+  { value: "20:9", label: "20:9 (超宽屏)" },
+  { value: "9:20", label: "9:20 (超长竖屏)" },
   { value: "21:9", label: "21:9 (超宽横版)" },
+  { value: "4:1", label: "4:1 (长横版)" },
+  { value: "8:1", label: "8:1 (超长横版)" },
   { value: "4:3", label: "4:3 (横版)" },
   { value: "3:4", label: "3:4 (竖版)" },
+  { value: "4:5", label: "4:5 (竖版)" },
+  { value: "5:4", label: "5:4 (横版)" },
   { value: "9:16", label: "9:16 (竖版)" },
   { value: CUSTOM_IMAGE_ASPECT_RATIO, label: "自定义比例" },
 ] as const;
@@ -31,7 +43,23 @@ export const IMAGE_RESOLUTION_OPTIONS = [
   { value: "4k", label: "4K", description: "按链路像素上限收敛，实际结果按模型能力生成" },
 ] as const;
 
-export type ImageResolution = (typeof IMAGE_RESOLUTION_OPTIONS)[number]["value"];
+export const GEMINI_IMAGE_RESOLUTION_OPTIONS = [
+  { value: "auto", label: "自动", description: "使用 Gemini 默认的 1K 分辨率" },
+  { value: "512", label: "512", description: "仅 Gemini 3.1 Flash Image 支持" },
+  { value: "1k", label: "1K", description: "Gemini 默认图片分辨率" },
+  { value: "2k", label: "2K", description: "Gemini 高分辨率图片" },
+  { value: "4k", label: "4K", description: "Gemini 最高图片分辨率" },
+] as const;
+
+export const XAI_IMAGE_RESOLUTION_OPTIONS = [
+  { value: "auto", label: "自动", description: "不指定分辨率，使用 Grok 默认设置" },
+  { value: "1k", label: "1K", description: "xAI 官方 1K 分辨率" },
+  { value: "2k", label: "2K", description: "xAI 官方 2K 分辨率" },
+] as const;
+
+export type ImageResolution =
+  | (typeof IMAGE_RESOLUTION_OPTIONS)[number]["value"]
+  | (typeof GEMINI_IMAGE_RESOLUTION_OPTIONS)[number]["value"];
 
 export type ImageSizeSelection = {
   mode: ImageSizeMode;
@@ -44,7 +72,11 @@ export type ImageSizeSelection = {
 
 const IMAGE_ASPECT_RATIO_VALUES = new Set<string>(IMAGE_ASPECT_RATIO_OPTIONS.map((option) => option.value));
 const IMAGE_SIZE_MODE_VALUES = new Set<string>(IMAGE_SIZE_MODE_OPTIONS.map((option) => option.value));
-const IMAGE_RESOLUTION_VALUES = new Set<string>(IMAGE_RESOLUTION_OPTIONS.map((option) => option.value));
+const IMAGE_RESOLUTION_VALUES = new Set<string>([
+  ...IMAGE_RESOLUTION_OPTIONS.map((option) => option.value),
+  ...GEMINI_IMAGE_RESOLUTION_OPTIONS.map((option) => option.value),
+  ...XAI_IMAGE_RESOLUTION_OPTIONS.map((option) => option.value),
+]);
 const SIZE_PATTERN = /^\s*(\d+)\s*[xX×]\s*(\d+)\s*$/;
 const RATIO_PATTERN = /^\s*(\d+(?:\.\d+)?)\s*[:xX×]\s*(\d+(?:\.\d+)?)\s*$/;
 const SIZE_MULTIPLE = 16;
@@ -211,8 +243,22 @@ export function calculateImageSize(resolution: Exclude<ImageResolution, "auto">,
 
   const { width: ratioWidth, height: ratioHeight } = parsed;
   if (ratioWidth === ratioHeight) {
-    const side = resolution === "1080p" ? 1080 : resolution === "2k" ? 2048 : 3840;
+    if (resolution === "512") {
+      return "512x512";
+    }
+    const side = resolution === "1k" ? 1024 : resolution === "1080p" ? 1080 : resolution === "2k" ? 2048 : 3840;
     return normalizeImageSize(`${side}x${side}`);
+  }
+
+  if (resolution === "512" || resolution === "1k") {
+    const longSide = resolution === "512" ? 512 : 1024;
+    const width = ratioWidth > ratioHeight
+      ? longSide
+      : roundToMultiple((longSide * ratioWidth) / ratioHeight, SIZE_MULTIPLE);
+    const height = ratioWidth > ratioHeight
+      ? roundToMultiple((longSide * ratioHeight) / ratioWidth, SIZE_MULTIPLE)
+      : longSide;
+    return `${width}x${height}`;
   }
 
   if (resolution === "1080p") {
@@ -298,14 +344,17 @@ export function isImageResolution(value: unknown): value is ImageResolution {
   return typeof value === "string" && IMAGE_RESOLUTION_VALUES.has(value);
 }
 
-export function buildImageSize({
-  mode,
-  aspectRatio,
-  resolution,
-  customRatio,
-  customWidth,
-  customHeight,
-}: ImageSizeSelection) {
+export function buildImageSize(
+  {
+    mode,
+    aspectRatio,
+    resolution,
+    customRatio,
+    customWidth,
+    customHeight,
+  }: ImageSizeSelection,
+  options: { preserveAspectRatio?: boolean } = {},
+) {
   if (mode === "auto") {
     return "";
   }
@@ -315,6 +364,9 @@ export function buildImageSize({
   const activeAspectRatio = getActiveImageAspectRatio({ aspectRatio, customRatio });
   if (aspectRatio === CUSTOM_IMAGE_ASPECT_RATIO && !activeAspectRatio) {
     return "";
+  }
+  if (options.preserveAspectRatio && aspectRatio !== CUSTOM_IMAGE_ASPECT_RATIO && activeAspectRatio) {
+    return activeAspectRatio;
   }
   if (resolution === "auto") {
     return activeAspectRatio ? calculateDefaultImageSize(activeAspectRatio) : "";
@@ -374,11 +426,13 @@ export function getImageResolutionFromSize(size: string): ImageResolution {
   return "auto";
 }
 
-export function getImageSizeSelectionFromSize(size: string): ImageSizeSelection {
+export function getImageSizeSelectionFromSize(size: string, preferredResolution?: unknown): ImageSizeSelection {
   const normalized = normalizeImageSize(size);
   const customSize = parseImageSizeDimensions(normalized);
   const aspectRatio = getImageAspectRatioFromSize(normalized);
-  const resolution = getImageResolutionFromSize(normalized);
+  const resolution = isImageResolution(preferredResolution)
+    ? preferredResolution
+    : getImageResolutionFromSize(normalized);
   const customRatio = aspectRatio === CUSTOM_IMAGE_ASPECT_RATIO ? normalized : DEFAULT_IMAGE_CUSTOM_RATIO;
   const baseSelection = {
     aspectRatio,

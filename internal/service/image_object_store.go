@@ -10,11 +10,13 @@ import (
 	"path"
 	"strings"
 
+	"chatgpt2api/internal/util"
+
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
-const maxStoredImageBytes = 256 << 20
+const maxStoredImageBytes = util.MaxRasterImageEncodedBytes
 
 type ImageObjectStore interface {
 	Backend() string

@@ -8,7 +8,9 @@ import (
 	"strconv"
 	"strings"
 
+	"chatgpt2api/internal/protocol"
 	"chatgpt2api/internal/service"
+	"chatgpt2api/internal/storage"
 	"chatgpt2api/internal/util"
 )
 
@@ -177,6 +179,9 @@ func (a *App) handleUserKeys(w http.ResponseWriter, r *http.Request) {
 				item, raw, err = a.auth.UpsertAPIKeyForOwner(util.Clean(body["name"]), owner)
 			}
 			if err != nil {
+				if a.writeAuthPersistenceError(w, err) {
+					return
+				}
 				util.WriteError(w, http.StatusBadRequest, err.Error())
 				return
 			}
@@ -223,14 +228,29 @@ func (a *App) handleUserKeys(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusBadRequest, "no updates provided")
 			return
 		}
-		item := a.auth.UpdateKey(keyID, updates, filter)
+		item, err := a.auth.UpdateKey(keyID, updates, filter)
+		if err != nil {
+			if a.writeAuthPersistenceError(w, err) {
+				return
+			}
+			util.WriteError(w, http.StatusInternalServerError, "failed to update user key")
+			return
+		}
 		if item == nil {
 			util.WriteError(w, http.StatusNotFound, "user key not found")
 			return
 		}
 		util.WriteJSON(w, http.StatusOK, map[string]any{"item": item, "items": a.auth.ListKeys(filter)})
 	case http.MethodDelete:
-		if !a.auth.DeleteKey(keyID, filter) {
+		deleted, err := a.auth.DeleteKey(keyID, filter)
+		if err != nil {
+			if a.writeAuthPersistenceError(w, err) {
+				return
+			}
+			util.WriteError(w, http.StatusInternalServerError, "failed to delete user key")
+			return
+		}
+		if !deleted {
 			util.WriteError(w, http.StatusNotFound, "user key not found")
 			return
 		}
@@ -259,7 +279,7 @@ func (a *App) handleProfile(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodGet:
-		a.writeLoginResponse(w, identity, "")
+		a.writeLoginResponse(w, identity)
 	case http.MethodPost:
 		body, err := readJSONMap(r)
 		if err != nil {
@@ -268,10 +288,13 @@ func (a *App) handleProfile(w http.ResponseWriter, r *http.Request) {
 		}
 		updated, err := a.auth.UpdateProfileName(identity, util.Clean(body["name"]))
 		if err != nil {
+			if a.writeAuthPersistenceError(w, err) {
+				return
+			}
 			util.WriteError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		a.writeLoginResponse(w, *updated, "")
+		a.writeLoginResponse(w, *updated)
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
@@ -288,9 +311,13 @@ func (a *App) handleProfilePassword(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := a.auth.ChangeProfilePassword(identity, util.Clean(body["current_password"]), util.Clean(body["new_password"])); err != nil {
+		if a.writeAuthPersistenceError(w, err) {
+			return
+		}
 		util.WriteError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	clearAuthSessionCookie(w, r)
 	util.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
@@ -347,6 +374,9 @@ func (a *App) handleProfileAPIKey(w http.ResponseWriter, r *http.Request) {
 			body, _ := readJSONMap(r)
 			item, raw, err := a.auth.UpsertPersonalAPIKey(identity, util.Clean(body["name"]))
 			if err != nil {
+				if a.writeAuthPersistenceError(w, err) {
+					return
+				}
 				util.WriteError(w, http.StatusBadRequest, err.Error())
 				return
 			}
@@ -394,14 +424,29 @@ func (a *App) handleProfileAPIKey(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusBadRequest, "no updates provided")
 			return
 		}
-		item := a.auth.UpdateKey(keyID, updates, filter)
+		item, err := a.auth.UpdateKey(keyID, updates, filter)
+		if err != nil {
+			if a.writeAuthPersistenceError(w, err) {
+				return
+			}
+			util.WriteError(w, http.StatusInternalServerError, "failed to update profile API key")
+			return
+		}
 		if item == nil {
 			util.WriteError(w, http.StatusNotFound, "profile API key not found")
 			return
 		}
 		util.WriteJSON(w, http.StatusOK, map[string]any{"item": item, "items": a.auth.ListPersonalAPIKey(identity)})
 	case http.MethodDelete:
-		if !a.auth.DeleteKey(keyID, filter) {
+		deleted, err := a.auth.DeleteKey(keyID, filter)
+		if err != nil {
+			if a.writeAuthPersistenceError(w, err) {
+				return
+			}
+			util.WriteError(w, http.StatusInternalServerError, "failed to delete profile API key")
+			return
+		}
+		if !deleted {
 			util.WriteError(w, http.StatusNotFound, "profile API key not found")
 			return
 		}
@@ -438,7 +483,12 @@ func (a *App) handleProfilePromptFavorites(w http.ResponseWriter, r *http.Reques
 	if r.URL.Path == base {
 		switch r.Method {
 		case http.MethodGet:
-			util.WriteJSON(w, http.StatusOK, map[string]any{"items": a.promptFavoritesForIdentity(ownerID, identity)})
+			items, err := a.promptFavoritesForIdentity(ownerID, identity)
+			if err != nil {
+				util.WriteError(w, http.StatusInternalServerError, "failed to load prompt favorites")
+				return
+			}
+			util.WriteJSON(w, http.StatusOK, map[string]any{"items": items})
 		case http.MethodPost:
 			body, err := readJSONMap(r)
 			if err != nil {
@@ -454,7 +504,12 @@ func (a *App) handleProfilePromptFavorites(w http.ResponseWriter, r *http.Reques
 				util.WriteError(w, http.StatusBadRequest, err.Error())
 				return
 			}
-			util.WriteJSON(w, http.StatusOK, map[string]any{"item": item, "items": a.promptFavoritesForIdentity(ownerID, identity)})
+			items, err := a.promptFavoritesForIdentity(ownerID, identity)
+			if err != nil {
+				util.WriteError(w, http.StatusInternalServerError, "failed to load prompt favorites")
+				return
+			}
+			util.WriteJSON(w, http.StatusOK, map[string]any{"item": item, "items": items})
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		}
@@ -470,17 +525,30 @@ func (a *App) handleProfilePromptFavorites(w http.ResponseWriter, r *http.Reques
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	if !a.prompts.Delete(ownerID, parts[3]) {
+	deleted, err := a.prompts.Delete(ownerID, parts[3])
+	if err != nil {
+		util.WriteError(w, http.StatusInternalServerError, "failed to delete prompt favorite")
+		return
+	}
+	if !deleted {
 		util.WriteError(w, http.StatusNotFound, "prompt favorite not found")
 		return
 	}
-	util.WriteJSON(w, http.StatusOK, map[string]any{"items": a.promptFavoritesForIdentity(ownerID, identity)})
+	items, err := a.promptFavoritesForIdentity(ownerID, identity)
+	if err != nil {
+		util.WriteError(w, http.StatusInternalServerError, "failed to load prompt favorites")
+		return
+	}
+	util.WriteJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
-func (a *App) promptFavoritesForIdentity(ownerID string, identity service.Identity) []map[string]any {
-	items := a.prompts.List(ownerID)
+func (a *App) promptFavoritesForIdentity(ownerID string, identity service.Identity) ([]map[string]any, error) {
+	items, err := a.prompts.ListWithError(ownerID)
+	if err != nil {
+		return nil, err
+	}
 	if a.identityCanAccessAPI(identity, http.MethodGet, service.PromptMarketAdultPermissionPath) {
-		return items
+		return items, nil
 	}
 	filtered := make([]map[string]any, 0, len(items))
 	for _, item := range items {
@@ -489,7 +557,7 @@ func (a *App) promptFavoritesForIdentity(ownerID string, identity service.Identi
 		}
 		filtered = append(filtered, item)
 	}
-	return filtered
+	return filtered, nil
 }
 
 func (a *App) handleProfileImageConversations(w http.ResponseWriter, r *http.Request) {
@@ -732,6 +800,9 @@ func (a *App) handleAdminRoles(w http.ResponseWriter, r *http.Request) {
 			body, _ := readJSONMap(r)
 			item, err := a.auth.CreateRole(body)
 			if err != nil {
+				if a.writeAuthPersistenceError(w, err) {
+					return
+				}
 				util.WriteError(w, http.StatusBadRequest, err.Error())
 				return
 			}
@@ -753,6 +824,9 @@ func (a *App) handleAdminRoles(w http.ResponseWriter, r *http.Request) {
 		body, _ := readJSONMap(r)
 		item, err := a.auth.UpdateRole(roleID, body)
 		if err != nil {
+			if a.writeAuthPersistenceError(w, err) {
+				return
+			}
 			status := http.StatusBadRequest
 			if err.Error() == "role not found" {
 				status = http.StatusNotFound
@@ -764,6 +838,9 @@ func (a *App) handleAdminRoles(w http.ResponseWriter, r *http.Request) {
 	case http.MethodDelete:
 		deleted, err := a.auth.DeleteRole(roleID)
 		if err != nil {
+			if a.writeAuthPersistenceError(w, err) {
+				return
+			}
 			status := http.StatusBadRequest
 			if err.Error() == "role is assigned to users" {
 				status = http.StatusConflict
@@ -814,6 +891,9 @@ func (a *App) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 				enabled,
 			)
 			if err != nil {
+				if a.writeAuthPersistenceError(w, err) {
+					return
+				}
 				util.WriteError(w, http.StatusBadRequest, err.Error())
 				return
 			}
@@ -878,6 +958,9 @@ func (a *App) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 		}
 		item, apiKey, raw, found, err := a.auth.ResetUserAPIKey(userID, util.Clean(body["name"]))
 		if err != nil {
+			if a.writeAuthPersistenceError(w, err) {
+				return
+			}
 			util.WriteError(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -932,7 +1015,15 @@ func (a *App) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if len(updates) > 0 {
-			if item := a.auth.UpdateUser(userID, updates); item == nil {
+			item, err := a.auth.UpdateUser(userID, updates)
+			if err != nil {
+				if a.writeAuthPersistenceError(w, err) {
+					return
+				}
+				util.WriteError(w, http.StatusInternalServerError, "failed to update user")
+				return
+			}
+			if item == nil {
 				util.WriteError(w, http.StatusNotFound, "user not found")
 				return
 			}
@@ -949,7 +1040,15 @@ func (a *App) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 		response["item"] = item
 		util.WriteJSON(w, http.StatusOK, response)
 	case http.MethodDelete:
-		if !a.auth.DeleteUser(userID) {
+		deleted, err := a.auth.DeleteUser(userID)
+		if err != nil {
+			if a.writeAuthPersistenceError(w, err) {
+				return
+			}
+			util.WriteError(w, http.StatusInternalServerError, "failed to delete user")
+			return
+		}
+		if !deleted {
 			util.WriteError(w, http.StatusNotFound, "user not found")
 			return
 		}
@@ -1302,6 +1401,9 @@ func (a *App) handleAccounts(w http.ResponseWriter, r *http.Request) {
 		}
 		result, err := a.accounts.AddAccountFromSession(sessionJSON)
 		if err != nil {
+			if a.writeAccountPersistenceError(w, err) {
+				return
+			}
 			util.WriteError(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -1315,7 +1417,11 @@ func (a *App) handleAccounts(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusBadRequest, "tokens is required")
 			return
 		}
-		result := a.accounts.AddAccounts(tokens)
+		result, err := a.accounts.AddAccounts(tokens)
+		if err != nil {
+			a.writeAccountPersistenceError(w, err)
+			return
+		}
 		refresh := a.accounts.RefreshAccounts(r.Context(), tokens)
 		for key, value := range refresh {
 			if key == "refreshed" || key == "errors" || key == "items" {
@@ -1339,7 +1445,11 @@ func (a *App) handleAccounts(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusBadRequest, "tokens or account_ids is required")
 			return
 		}
-		result := a.accounts.DeleteAccounts(tokens)
+		result, err := a.accounts.DeleteAccounts(tokens)
+		if err != nil {
+			a.writeAccountPersistenceError(w, err)
+			return
+		}
 		a.redactAccountPayloadForIdentity(identity, result)
 		util.WriteJSON(w, http.StatusOK, result)
 	case r.URL.Path == "/api/accounts/refresh" && r.Method == http.MethodPost:
@@ -1414,7 +1524,11 @@ func (a *App) handleAccounts(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusBadRequest, "enabled is required")
 			return
 		}
-		result := a.accounts.SetAccountsEnabledByIDs(accountIDs, util.ToBool(enabledRaw))
+		result, err := a.accounts.SetAccountsEnabledByIDs(accountIDs, util.ToBool(enabledRaw))
+		if err != nil {
+			a.writeAccountPersistenceError(w, err)
+			return
+		}
 		a.redactAccountPayloadForIdentity(identity, result)
 		util.WriteJSON(w, http.StatusOK, result)
 	case r.URL.Path == "/api/accounts/update" && r.Method == http.MethodPost:
@@ -1442,7 +1556,11 @@ func (a *App) handleAccounts(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusBadRequest, "no updates provided")
 			return
 		}
-		item := a.accounts.UpdateAccount(token, updates)
+		item, err := a.accounts.UpdateAccount(token, updates)
+		if err != nil {
+			a.writeAccountPersistenceError(w, err)
+			return
+		}
 		if item == nil {
 			util.WriteError(w, http.StatusNotFound, "account not found")
 			return
@@ -1453,6 +1571,38 @@ func (a *App) handleAccounts(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+func (a *App) writeAccountPersistenceError(w http.ResponseWriter, err error) bool {
+	var persistenceErr service.AccountPersistenceError
+	if !errors.As(err, &persistenceErr) {
+		return false
+	}
+	if a != nil && a.logger != nil {
+		a.logger.Error("account persistence failed", "error", persistenceErr.Err)
+	}
+	if errors.Is(err, storage.ErrConcurrentRowUpdate) {
+		util.WriteError(w, http.StatusConflict, "账号数据已被其他实例更新，请重试")
+		return true
+	}
+	util.WriteError(w, http.StatusServiceUnavailable, "账号数据库暂时不可用，请稍后重试")
+	return true
+}
+
+func (a *App) writeAuthPersistenceError(w http.ResponseWriter, err error) bool {
+	var persistenceErr service.AuthPersistenceError
+	if !errors.As(err, &persistenceErr) {
+		return false
+	}
+	if a != nil && a.logger != nil {
+		a.logger.Error("auth persistence failed", "error", persistenceErr.Err)
+	}
+	if errors.Is(err, storage.ErrConcurrentRowUpdate) {
+		util.WriteError(w, http.StatusConflict, "认证数据已被其他实例更新，请重试")
+		return true
+	}
+	util.WriteError(w, http.StatusServiceUnavailable, "认证数据库暂时不可用，请稍后重试")
+	return true
 }
 
 func (a *App) accountItemsForIdentity(identity service.Identity) []map[string]any {
@@ -1512,7 +1662,12 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 	}
 	parts := splitPath(r.URL.Path)
 	if r.URL.Path == "/api/creation-tasks" && r.Method == http.MethodGet {
-		util.WriteJSON(w, http.StatusOK, a.tasks.ListTasks(identity, util.ParseCommaList(r.URL.Query().Get("ids"))))
+		tasks, err := a.tasks.ListTasksWithError(identity, util.ParseCommaList(r.URL.Query().Get("ids")))
+		if err != nil {
+			a.writeCreationTaskStorageError(w, err)
+			return
+		}
+		util.WriteJSON(w, http.StatusOK, tasks)
 		return
 	}
 	if len(parts) == 4 && parts[0] == "api" && parts[1] == "creation-tasks" && parts[3] == "cancel" {
@@ -1522,6 +1677,9 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 		}
 		task, err := a.tasks.CancelTask(identity, parts[2])
 		if err != nil {
+			if a.writeCreationTaskStorageError(w, err) {
+				return
+			}
 			util.WriteError(w, http.StatusNotFound, err.Error())
 			return
 		}
@@ -1529,13 +1687,70 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.URL.Path == "/api/creation-tasks/image-generations" && r.Method == http.MethodPost {
-		body, _ := readJSONMap(r)
+		body, err := readJSONMap(r)
+		if err != nil {
+			util.WriteError(w, http.StatusBadRequest, "invalid json body")
+			return
+		}
+		model := a.applyDefaultImageModel(body)
+		if err := validateRelayImageRequest("/api/creation-tasks/image-generations", model, body, nil); err != nil {
+			a.writeCreationTaskSubmitError(w, err)
+			return
+		}
+		normalizeImagePayloadForModel(body)
+		if !validProtocolImageCount(body["n"], model) {
+			util.WriteError(w, http.StatusBadRequest, protocolImageCountRangeMessage(model))
+			return
+		}
 		if _, err := a.relayAPIKeyForIdentitySelection(r.Context(), identity, selectedRelayTokenGroupFromPayload(body), selectedRelayTokenNameFromPayload(body)); err != nil {
 			a.writeCreationTaskSubmitError(w, err)
 			return
 		}
-		model := a.applyDefaultImageModel(body)
+		if err := validateGoogleGeminiInlineRequest(body, nil); err != nil {
+			a.writeCreationTaskSubmitError(w, err)
+			return
+		}
 		task, err := a.tasks.SubmitGenerationWithOptions(r.Context(), identity, util.Clean(body["client_task_id"]), util.Clean(body["prompt"]), model, util.Clean(body["size"]), util.Clean(body["quality"]), a.relayBaseURL(), util.ToInt(body["n"], 1), body["messages"], imageTaskRequestMetadata(body), imageOutputOptionsFromBody(body), imageToolOptionsFromBody(body), util.Clean(body["visibility"]))
+		if err != nil {
+			a.writeCreationTaskSubmitError(w, err)
+			return
+		}
+		util.WriteJSON(w, http.StatusOK, task)
+		return
+	}
+	if r.URL.Path == "/api/creation-tasks/video-generations" && r.Method == http.MethodPost {
+		body, err := readJSONMap(r)
+		if err != nil {
+			util.WriteError(w, http.StatusBadRequest, "invalid json body")
+			return
+		}
+		model := util.Clean(body["model"])
+		if model == "" {
+			model = firstString(a.config.VideoModels(), "sora-2")
+			body["model"] = model
+		}
+		allowed := false
+		for _, candidate := range a.config.VideoModels() {
+			if candidate == model {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			util.WriteError(w, http.StatusBadRequest, "视频模型不可用")
+			return
+		}
+		seconds := util.ToInt(body["seconds"], videoDefaultSeconds(model))
+		if err := validateVideoParameters(model, util.Clean(body["size"]), seconds, util.Clean(body["resolution"])); err != nil {
+			util.WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if _, err := a.relayAPIKeyForIdentitySelection(r.Context(), identity, selectedRelayTokenGroupFromPayload(body), selectedRelayTokenNameFromPayload(body)); err != nil {
+			a.writeCreationTaskSubmitError(w, err)
+			return
+		}
+		refs := util.AsStringSlice(body["reference_image_urls"])
+		task, err := a.tasks.SubmitVideo(r.Context(), identity, util.Clean(body["client_task_id"]), util.Clean(body["prompt"]), model, util.Clean(body["size"]), seconds, util.Clean(body["resolution"]), util.ToBool(body["generate_audio"]), util.ToBool(body["watermark"]), refs, creationTaskRequestMetadata(body))
 		if err != nil {
 			a.writeCreationTaskSubmitError(w, err)
 			return
@@ -1559,11 +1774,28 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 			writeMultipartImageBodyError(w, err)
 			return
 		}
+		model := a.applyDefaultImageModel(body)
+		if err := validateRelayImageRequest("/api/creation-tasks/image-edits", model, body, images); err != nil {
+			a.writeCreationTaskSubmitError(w, err)
+			return
+		}
+		normalizeImagePayloadForModel(body)
+		if !validProtocolImageCount(body["n"], model) {
+			util.WriteError(w, http.StatusBadRequest, protocolImageCountRangeMessage(model))
+			return
+		}
 		if _, err := a.relayAPIKeyForIdentitySelection(r.Context(), identity, selectedRelayTokenGroupFromPayload(body), selectedRelayTokenNameFromPayload(body)); err != nil {
 			a.writeCreationTaskSubmitError(w, err)
 			return
 		}
-		model := a.applyDefaultImageModel(body)
+		if err := validateRelayImageReferenceCount(model, len(images)); err != nil {
+			a.writeCreationTaskSubmitError(w, err)
+			return
+		}
+		if err := validateGoogleGeminiInlineRequest(body, images); err != nil {
+			a.writeCreationTaskSubmitError(w, err)
+			return
+		}
 		task, err := a.tasks.SubmitEditWithOptions(r.Context(), identity, util.Clean(body["client_task_id"]), util.Clean(body["prompt"]), model, util.Clean(body["size"]), util.Clean(body["quality"]), a.relayBaseURL(), images, util.ToInt(body["n"], 1), body["messages"], imageTaskRequestMetadata(body), imageOutputOptionsFromBody(body), imageToolOptionsFromBody(body), util.Clean(body["visibility"]))
 		if err != nil {
 			a.writeCreationTaskSubmitError(w, err)
@@ -1573,6 +1805,144 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.NotFound(w, r)
+}
+
+func validateVideoParameters(model, size string, seconds int, resolution string) error {
+	name := strings.ToLower(strings.TrimSpace(model))
+	size = strings.ToLower(strings.TrimSpace(size))
+	resolution = strings.ToLower(strings.TrimSpace(resolution))
+	contains := func(values ...string) bool {
+		for _, value := range values {
+			if value == size {
+				return true
+			}
+		}
+		return false
+	}
+	validRange := func(min, max int) bool { return seconds >= min && seconds <= max }
+	if strings.Contains(name, "seedance") || strings.Contains(name, "doubao-seedance") {
+		if !contains("", "adaptive", "16:9", "4:3", "1:1", "3:4", "9:16", "21:9") {
+			return fmt.Errorf("Seedance 官方画幅仅支持 adaptive、16:9、4:3、1:1、3:4、9:16、21:9")
+		}
+		min, max, smart := 4, 15, true
+		resolutionValues := []string{"480p", "720p", "1080p"}
+		switch {
+		case strings.Contains(name, "2-5") || strings.Contains(name, "2.5"):
+			max = 30
+		case strings.Contains(name, "1-5") || strings.Contains(name, "1.5"):
+			max = 12
+		case strings.Contains(name, "1-0") || strings.Contains(name, "1.0"):
+			min, smart = 2, false
+		case strings.Contains(name, "2-0") || strings.Contains(name, "2.0"):
+			resolutionValues = []string{"480p", "720p", "1080p", "4k"}
+		}
+		if (seconds == -1 && !smart) || (seconds != -1 && !validRange(min, max)) {
+			return fmt.Errorf("Seedance 官方视频时长不在当前模型支持范围内")
+		}
+		if resolution != "" && !stringIn(resolution, resolutionValues...) {
+			return fmt.Errorf("Seedance 官方清晰度不受支持")
+		}
+		if (strings.Contains(name, "fast") || strings.Contains(name, "mini")) && resolution != "" && resolution != "480p" && resolution != "720p" {
+			return fmt.Errorf("Seedance fast/mini 官方仅支持 480p、720p")
+		}
+		return nil
+	}
+	if strings.Contains(name, "grok") {
+		if !contains("", "1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3") || !validRange(1, 15) {
+			return fmt.Errorf("Grok 官方视频支持 1-15 秒及 1:1、16:9、9:16、4:3、3:4、3:2、2:3 画幅")
+		}
+		if resolution != "" && !stringIn(resolution, "480p", "720p", "1080p") {
+			return fmt.Errorf("Grok 官方清晰度仅支持 480p、720p、1080p")
+		}
+		if !strings.Contains(name, "1.5") && !strings.Contains(name, "1-5") && resolution == "1080p" {
+			return fmt.Errorf("Grok 官方 1080p 仅支持 grok-imagine-video-1.5")
+		}
+		return nil
+	}
+	if strings.Contains(name, "kling") {
+		if !contains("", "16:9", "9:16", "1:1") {
+			return fmt.Errorf("Kling 官方画幅仅支持 16:9、9:16、1:1")
+		}
+		if strings.Contains(name, "v3") || strings.Contains(name, "3-0") {
+			if !validRange(3, 15) {
+				return fmt.Errorf("Kling 3.0 官方视频时长支持 3-15 秒")
+			}
+		} else if seconds != 5 && seconds != 10 {
+			return fmt.Errorf("Kling 当前模型官方视频时长支持 5 秒或 10 秒")
+		}
+		if resolution != "" && !stringIn(resolution, "720p", "1080p") {
+			return fmt.Errorf("Kling 官方清晰度仅支持 720p、1080p")
+		}
+		return nil
+	}
+	if strings.Contains(name, "minimax") || strings.Contains(name, "hailuo") || strings.HasPrefix(name, "t2v-") || strings.HasPrefix(name, "i2v-") || strings.HasPrefix(name, "s2v-") {
+		if strings.Contains(name, "h3") {
+			if !contains("", "adaptive", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16") || !validRange(4, 15) {
+				return fmt.Errorf("MiniMax H3 官方视频支持 4-15 秒及 adaptive、21:9、16:9、4:3、1:1、3:4、9:16 画幅")
+			}
+			if resolution != "" && !stringIn(resolution, "768p", "2k") {
+				return fmt.Errorf("MiniMax H3 官方清晰度仅支持 768P、2K")
+			}
+			return nil
+		}
+		if size != "" {
+			return fmt.Errorf("MiniMax v1 官方接口没有画幅参数")
+		}
+		if seconds != 6 && seconds != 10 {
+			return fmt.Errorf("MiniMax 官方视频时长支持 6 秒或 10 秒")
+		}
+		if resolution != "" {
+			if strings.Contains(name, "hailuo") && !stringIn(resolution, "768p", "1080p") {
+				return fmt.Errorf("MiniMax Hailuo 官方清晰度仅支持 768P、1080P")
+			}
+			if !strings.Contains(name, "hailuo") && resolution != "720p" {
+				return fmt.Errorf("MiniMax 旧版官方清晰度仅支持 720P")
+			}
+		}
+		return nil
+	}
+	if size != "" && !contains("", "1280x720", "720x1280") {
+		return fmt.Errorf("视频画幅仅支持 16:9 或 9:16")
+	}
+	if seconds != 4 && seconds != 8 && seconds != 12 {
+		return fmt.Errorf("视频时长支持 4 秒、8 秒或 12 秒")
+	}
+	if resolution != "" && resolution != "720p" && resolution != "1080p" {
+		return fmt.Errorf("视频清晰度仅支持 720p 或 1080p")
+	}
+	return nil
+}
+
+func stringIn(value string, values ...string) bool {
+	for _, candidate := range values {
+		if value == candidate {
+			return true
+		}
+	}
+	return false
+}
+
+func videoDefaultSeconds(model string) int {
+	name := strings.ToLower(strings.TrimSpace(model))
+	if strings.Contains(name, "grok") {
+		return 10
+	}
+	if strings.Contains(name, "minimax") || strings.Contains(name, "hailuo") || strings.HasPrefix(name, "t2v-") || strings.HasPrefix(name, "i2v-") || strings.HasPrefix(name, "s2v-") {
+		if strings.Contains(name, "h3") {
+			return 5
+		}
+		return 6
+	}
+	if strings.Contains(name, "kling") {
+		if strings.Contains(name, "v3") || strings.Contains(name, "3-0") {
+			return 5
+		}
+		return 5
+	}
+	if strings.Contains(name, "seedance") || strings.Contains(name, "doubao-seedance") {
+		return 5
+	}
+	return 4
 }
 
 func creationTaskRequestMetadata(body map[string]any) map[string]any {
@@ -1611,7 +1981,11 @@ func imageTaskRequestMetadata(body map[string]any) map[string]any {
 }
 
 func imageOutputOptionsFromBody(body map[string]any) service.ImageOutputOptions {
-	format := service.NormalizeImageOutputFormat(util.Clean(body["output_format"]))
+	rawFormat := util.Clean(body["output_format"])
+	if rawFormat == "" {
+		return service.ImageOutputOptions{}
+	}
+	format := service.NormalizeImageOutputFormat(rawFormat)
 	options := service.ImageOutputOptions{Format: format}
 	if service.SupportsImageOutputCompression(format) {
 		if compression, ok := imageOutputCompressionFromBody(body["output_compression"]); ok {
@@ -1634,7 +2008,10 @@ func imageToolOptionsFromBody(body map[string]any) service.ImageToolOptions {
 }
 
 func imagePartialImagesFromBody(value any) (int, bool) {
-	partialImages := util.ToInt(value, 0)
+	partialImages, ok := util.StrictInt(value)
+	if !ok {
+		return 0, false
+	}
 	if partialImages < 1 || partialImages > 3 {
 		return 0, false
 	}
@@ -1645,7 +2022,10 @@ func imageOutputCompressionFromBody(value any) (int, bool) {
 	if value == nil || strings.TrimSpace(util.Clean(value)) == "" {
 		return 0, false
 	}
-	compression := util.ToInt(value, -1)
+	compression, ok := util.StrictInt(value)
+	if !ok {
+		return 0, false
+	}
 	if compression < 0 {
 		return 0, false
 	}
@@ -1656,20 +2036,44 @@ func imageOutputCompressionFromBody(value any) (int, bool) {
 }
 
 func (a *App) writeCreationTaskSubmitError(w http.ResponseWriter, err error) {
+	var httpErr protocol.HTTPError
+	if errors.As(err, &httpErr) {
+		status := httpErr.Status
+		if status < http.StatusBadRequest || status > 599 {
+			status = http.StatusBadRequest
+		}
+		util.WriteError(w, status, httpErr.Message)
+		return
+	}
 	var limitErr service.ImageTaskLimitError
 	if errors.As(err, &limitErr) {
 		util.WriteError(w, http.StatusTooManyRequests, limitErr.Error())
 		return
 	}
-	var persistenceErr service.ImageTaskPersistenceError
-	if errors.As(err, &persistenceErr) {
-		if a != nil && a.logger != nil {
-			a.logger.Error("creation task submission persistence failed", "error", persistenceErr.Err)
-		}
-		util.WriteError(w, http.StatusServiceUnavailable, persistenceErr.Error())
+	if a.writeCreationTaskStorageError(w, err) {
 		return
 	}
 	util.WriteError(w, http.StatusBadRequest, err.Error())
+}
+
+func (a *App) writeCreationTaskStorageError(w http.ResponseWriter, err error) bool {
+	var persistenceErr service.ImageTaskPersistenceError
+	if errors.As(err, &persistenceErr) {
+		if a != nil && a.logger != nil {
+			a.logger.Error("creation task persistence failed", "error", persistenceErr.Err)
+		}
+		util.WriteError(w, http.StatusServiceUnavailable, persistenceErr.Error())
+		return true
+	}
+	var loadErr service.ImageTaskLoadError
+	if !errors.As(err, &loadErr) {
+		return false
+	}
+	if a != nil && a.logger != nil {
+		a.logger.Error("creation task database load failed", "error", loadErr.Err)
+	}
+	util.WriteError(w, http.StatusServiceUnavailable, loadErr.Error())
+	return true
 }
 
 func splitPath(path string) []string {

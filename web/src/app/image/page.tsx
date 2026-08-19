@@ -5,6 +5,8 @@ import { ArrowDownToLine, ChevronDown, Globe2, History, ImagePlus, LoaderCircle,
 import { toast } from "sonner";
 
 import { ImageComposer } from "@/app/image/components/image-composer";
+import { Slider } from "@/components/ui/slider";
+import { Switch } from "@/components/ui/switch";
 import {
   ImageAspectRatioGlyph,
   ImageParameterLabel,
@@ -24,9 +26,11 @@ import {
   DEFAULT_IMAGE_CUSTOM_HEIGHT,
   DEFAULT_IMAGE_CUSTOM_RATIO,
   DEFAULT_IMAGE_CUSTOM_WIDTH,
+  GEMINI_IMAGE_RESOLUTION_OPTIONS,
   IMAGE_ASPECT_RATIO_OPTIONS,
   IMAGE_QUALITY_OPTIONS,
   IMAGE_RESOLUTION_OPTIONS,
+  XAI_IMAGE_RESOLUTION_OPTIONS,
   buildImageSize,
   formatImageSizeDisplay,
   getActiveImageAspectRatio,
@@ -63,6 +67,7 @@ import {
   taskImageHasPreview,
 } from "@/app/image/image-task-state";
 import { Button } from "@/components/ui/button";
+import { videoAudioControl, videoResolutionOptions, videoSecondsOptions, videoSizeOptions } from "@/lib/video-model-capabilities";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
@@ -86,10 +91,14 @@ import {
   cancelCreationTask,
   createImageEditTask,
   createImageGenerationTask,
+  createVideoGenerationTask,
   fetchProfileRelayKey,
   DEFAULT_IMAGE_MODEL,
   fetchCreationTasks,
   fetchModelConfig,
+  imageOutputCountLimit,
+  imageReferenceImageLimit,
+  imageModelRoute,
   IMAGE_CREATION_MODEL_OPTIONS,
   IMAGE_OUTPUT_FORMAT_OPTIONS,
   PROFILE_RELAY_TOKEN_NAME_CHANGED_EVENT,
@@ -99,8 +108,16 @@ import {
   isImageOutputFormat,
   isImageQuality,
   modelOptionsFromNames,
+  supportsImageEditing,
+  supportsImageExactDimensions,
+  supportsImageAspectRatio,
   supportsImageOutputCompression,
   supportsImageOutputControls,
+  supportsImageQuality,
+  supportsImageQualityValue,
+  supportsImageResolution,
+  supportsImageSize,
+  supportsImageStreaming,
   supportsStructuredImageParameters,
   uploadImageConversationAssets,
   updateManagedImageVisibility,
@@ -179,6 +196,12 @@ const IMAGE_OUTPUT_FORMAT_STORAGE_KEY = "chatgpt2api:image_last_output_format";
 const IMAGE_OUTPUT_COMPRESSION_STORAGE_KEY = "chatgpt2api:image_last_output_compression";
 const IMAGE_STREAM_STORAGE_KEY = "chatgpt2api:image_last_stream_v2";
 const IMAGE_PARTIAL_IMAGES_STORAGE_KEY = "chatgpt2api:image_last_partial_images";
+const VIDEO_MODEL_STORAGE_KEY = "chatgpt2api:video_last_model";
+const VIDEO_SIZE_STORAGE_KEY = "chatgpt2api:video_last_size";
+const VIDEO_SECONDS_STORAGE_KEY = "chatgpt2api:video_last_seconds";
+const VIDEO_RESOLUTION_STORAGE_KEY = "chatgpt2api:video_last_resolution";
+const VIDEO_AUDIO_STORAGE_KEY = "chatgpt2api:video_last_audio";
+const VIDEO_WATERMARK_STORAGE_KEY = "chatgpt2api:video_last_watermark";
 const NEWAPI_TOKEN_MISSING_MESSAGE = "请先在云棉为当前用户创建可用令牌";
 const DEFAULT_IMAGE_OUTPUT_FORMAT: ImageOutputFormat = "png";
 const MISSING_RECOVERABLE_TASK_ID_ERROR = "页面刷新或任务中断，未找到可恢复的任务 ID";
@@ -219,7 +242,7 @@ async function runExclusiveImageConversationMutation<T>(
   }
 }
 
-type ComposerMode = "chat" | "image";
+type ComposerMode = "chat" | "image" | "video";
 
 type EditingTurnDraft = {
   conversationId: string;
@@ -292,6 +315,15 @@ function isNearResultsBottom(element: HTMLElement) {
 
 async function dataUrlToFile(dataUrl: string, fileName: string, mimeType?: string) {
   return imageSourceToFile(dataUrl, fileName, mimeType, fetchAuthenticatedImageBlob);
+}
+
+function fileToDataUrl(file: File) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(reader.error || new Error("读取参考图失败"));
+    reader.readAsDataURL(file);
+  });
 }
 
 function imageFileExtensionForOutputFormat(format?: ImageOutputFormat) {
@@ -387,10 +419,8 @@ async function ensureReferenceImageAsset(
   return (await uploadReferenceFiles([file], source))[0] || null;
 }
 
-const IMAGE_TASK_IMAGE_COUNT = 4;
-
-function normalizeRequestedImageCount(value: string | number) {
-  return Math.max(1, Math.min(10, Number(value) || 1));
+function normalizeRequestedImageCount(value: string | number, model: ImageModel) {
+  return Math.max(1, Math.min(imageOutputCountLimit(model), Math.floor(Number(value) || 1)));
 }
 
 function isInvalidCustomRatioSelection(sizeMode: ImageSizeMode, aspectRatio: ImageAspectRatio, customRatio: string) {
@@ -398,8 +428,33 @@ function isInvalidCustomRatioSelection(sizeMode: ImageSizeMode, aspectRatio: Ima
 }
 
 function effectiveImageSizeSelection(model: ImageModel, selection: ImageSizeSelection): ImageSizeSelection {
+  if (!supportsImageSize(model)) {
+    return {
+      ...selection,
+      mode: "auto",
+      aspectRatio: "",
+      resolution: "auto",
+    };
+  }
+  if (selection.mode === "ratio" && !supportsImageAspectRatio(model, selection.aspectRatio)) {
+    return {
+      ...selection,
+      mode: "auto",
+      aspectRatio: "",
+      resolution: "auto",
+    };
+  }
+  if (selection.mode === "custom" && !supportsImageExactDimensions(model)) {
+    return {
+      ...selection,
+      mode: "auto",
+      resolution: "auto",
+    };
+  }
   if (supportsStructuredImageParameters(model)) {
-    return selection;
+    return supportsImageResolution(model, selection.resolution)
+      ? selection
+      : { ...selection, resolution: "auto" };
   }
   if (selection.mode !== "ratio") {
     return {
@@ -416,7 +471,9 @@ function effectiveImageSizeSelection(model: ImageModel, selection: ImageSizeSele
 
 function buildEffectiveImageSizeRequest(model: ImageModel, selection: ImageSizeSelection) {
   const effectiveSelection = effectiveImageSizeSelection(model, selection);
-  const requestedSize = buildImageSize(effectiveSelection);
+  const requestedSize = buildImageSize(effectiveSelection, {
+    preserveAspectRatio: imageModelRoute(model) !== "openai-image",
+  });
   return {
     selection: effectiveSelection,
     size: requestedSize,
@@ -485,8 +542,8 @@ function imageOutputCompressionForFormat(format: ImageOutputFormat, value: unkno
   return normalizeOutputCompressionValue(value);
 }
 
-function imageQualityForRequest(value: "" | ImageQuality): ImageQuality | undefined {
-  return isImageQuality(value) ? value : undefined;
+function imageQualityForRequest(model: ImageModel, value: "" | ImageQuality): ImageQuality | undefined {
+  return isImageQuality(value) && supportsImageQualityValue(model, value) ? value : undefined;
 }
 
 function normalizeImagePartialImages(value: unknown) {
@@ -535,12 +592,12 @@ function imageTaskLoadingDetail(turn: ImageTurn, fallbackDetail: string) {
   return "图片结果已返回，正在确认任务状态";
 }
 
-function imageTaskBatchId(turnId: string, imageIndex: number) {
-  return `${turnId}-task-${Math.floor(imageIndex / IMAGE_TASK_IMAGE_COUNT)}`;
+function imageTaskBatchId(turnId: string, imageIndex: number, model: ImageModel) {
+  return `${turnId}-task-${Math.floor(imageIndex / imageOutputCountLimit(model))}`;
 }
 
-function imageTaskIdForImage(turnId: string, images: StoredImage[], imageIndex: number) {
-  return images[imageIndex]?.taskId || imageTaskBatchId(turnId, imageIndex);
+function imageTaskIdForImage(turnId: string, model: ImageModel, images: StoredImage[], imageIndex: number) {
+  return images[imageIndex]?.taskId || imageTaskBatchId(turnId, imageIndex, model);
 }
 
 function imageDataIndexForTask(images: StoredImage[], imageIndex: number) {
@@ -561,6 +618,9 @@ const STORED_IMAGE_FIELDS: Array<keyof StoredImage> = [
   "visibility",
   "b64_json",
   "url",
+  "mediaType",
+  "videoUrl",
+  "mimeType",
   "width",
   "height",
   "resolution",
@@ -697,6 +757,8 @@ function taskDataToStoredImage(image: StoredImage, task: CreationTask, dataIndex
   const successUpdates = (item: CreationTaskDataItem) => {
     const width = positiveDimension(item.width);
     const height = positiveDimension(item.height);
+    const videoUrl = String(item.video_url || (item.type === "video" ? item.url || "" : "")).trim() || undefined;
+    const isVideo = task.mode === "video" || item.type === "video" || Boolean(videoUrl) || item.mime_type?.startsWith("video/");
     return {
       taskId: task.id,
       taskRevision: normalizedTaskRevision,
@@ -704,8 +766,11 @@ function taskDataToStoredImage(image: StoredImage, task: CreationTask, dataIndex
       taskStatus: "success" as const,
       status: "success" as const,
       b64_json: item.b64_json,
-      url: item.url,
-      path: item.url ? getManagedImagePathFromUrl(item.url) || image.path : image.path,
+      url: isVideo ? videoUrl || item.url : item.url,
+      mediaType: isVideo ? "video" as const : "image" as const,
+      videoUrl: isVideo ? videoUrl || item.url : undefined,
+      mimeType: isVideo ? item.mime_type || "video/mp4" : undefined,
+      path: !isVideo && item.url ? getManagedImagePathFromUrl(item.url) || image.path : image.path,
       visibility: taskVisibility,
       width,
       height,
@@ -782,7 +847,7 @@ function taskDataToStoredImage(image: StoredImage, task: CreationTask, dataIndex
         ? task.error || "任务已终止"
         : task.error || "生成失败";
       return updateStoredImage(image, {
-        ...(item && (item.b64_json || item.url) ? successUpdates(item) : {}),
+        ...(item && (item.b64_json || item.url || item.video_url) ? successUpdates(item) : {}),
         taskId: task.id,
         taskRevision: normalizedTaskRevision,
         ...finalTiming,
@@ -828,7 +893,7 @@ function taskDataToStoredImage(image: StoredImage, task: CreationTask, dataIndex
         error: undefined,
       });
     }
-    if (item?.b64_json || item?.url) {
+    if (item?.b64_json || item?.url || item?.video_url) {
       return updateStoredImage(image, {
         ...successUpdates(item),
         ...activeTiming,
@@ -992,7 +1057,17 @@ function getStoredImageModel(): ImageModel {
 }
 
 function getStoredComposerMode(): ComposerMode {
-  return "image";
+  if (typeof window === "undefined") {
+    return "image";
+  }
+  return window.localStorage.getItem(COMPOSER_MODE_STORAGE_KEY) === "video" ? "video" : "image";
+}
+
+function getStoredVideoSetting(key: string, fallback: string) {
+  if (typeof window === "undefined") {
+    return fallback;
+  }
+  return window.localStorage.getItem(key) || fallback;
 }
 
 function getStoredImageSizeSelection(): ImageSizeSelection {
@@ -1194,7 +1269,9 @@ function isMissingRecoverableTaskIdError(error?: string) {
 }
 
 function getComposerConversationMode(composerMode: ComposerMode, referenceImages: StoredReferenceImage[]): ImageConversationMode {
-  void composerMode;
+  if (composerMode === "video") {
+    return "video";
+  }
   if (referenceImages.length === 0) {
     return "generate";
   }
@@ -1240,7 +1317,7 @@ function getFallbackReferenceImage(conversation: ImageConversation, activeTurnId
     const images = previousTurns[turnIndex].images;
     for (let imageIndex = images.length - 1; imageIndex >= 0; imageIndex -= 1) {
       const image = images[imageIndex];
-      if (image.status !== "success") {
+      if (image.status !== "success" || image.mediaType === "video" || image.videoUrl) {
         continue;
       }
       if (image.path || image.url || image.b64_json) {
@@ -1365,7 +1442,7 @@ async function recoverConversationHistory(
           turnChanged = true;
           return {
             ...image,
-            taskId: imageTaskIdForImage(turn.id, turn.images, imageIndex),
+            taskId: imageTaskIdForImage(turn.id, turn.model, turn.images, imageIndex),
             taskRevision: undefined,
             taskStatus: "queued" as const,
             taskCreatedAt: undefined,
@@ -1379,7 +1456,7 @@ async function recoverConversationHistory(
           turnChanged = true;
           return {
             ...image,
-            taskId: imageTaskIdForImage(turn.id, turn.images, imageIndex),
+            taskId: imageTaskIdForImage(turn.id, turn.model, turn.images, imageIndex),
           };
         }
         return image;
@@ -1517,9 +1594,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   const promptApplyRequestIdRef = useRef(0);
   const similarIntentAppliedRef = useRef(false);
   const creationTaskRequestOptions = useMemo<CreationTaskRequestOptions>(() => ({
-    authorization: `Bearer ${session.key}`,
     redirectOnUnauthorized: false,
-  }), [session.key]);
+  }), []);
 
   const [imagePrompt, setImagePrompt] = useState("");
   const [composerMode, setComposerMode] = useState<ComposerMode>(getStoredComposerMode);
@@ -1536,6 +1612,32 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   const [imageOutputCompression, setImageOutputCompression] = useState(getStoredImageOutputCompression);
   const [imageStreamEnabled, setImageStreamEnabled] = useState(getStoredImageStreamEnabled);
   const [imagePartialImages, setImagePartialImages] = useState(getStoredImagePartialImages);
+  const [videoModel, setVideoModel] = useState(() => getStoredVideoSetting(VIDEO_MODEL_STORAGE_KEY, "sora-2"));
+  const [videoModelOptions, setVideoModelOptions] = useState<Array<{ value: string; label: string }>>([
+    { value: "sora-2", label: "sora-2" },
+  ]);
+  const [videoSize, setVideoSize] = useState(() => getStoredVideoSetting(VIDEO_SIZE_STORAGE_KEY, "1280x720"));
+  const [videoSeconds, setVideoSeconds] = useState(() => getStoredVideoSetting(VIDEO_SECONDS_STORAGE_KEY, "4"));
+  const [videoResolution, setVideoResolution] = useState(() => getStoredVideoSetting(VIDEO_RESOLUTION_STORAGE_KEY, "720p"));
+  const [videoGenerateAudio, setVideoGenerateAudio] = useState(() => getStoredVideoSetting(VIDEO_AUDIO_STORAGE_KEY, "true") === "true");
+  const [videoWatermark, setVideoWatermark] = useState(() => getStoredVideoSetting(VIDEO_WATERMARK_STORAGE_KEY, "false") === "true");
+  const handleVideoModelChange = useCallback((model: string) => {
+    setVideoModel(model);
+    setVideoSize(videoSizeOptions(model)[0] || "");
+    setVideoSeconds(String(videoSecondsOptions(model).find((value) => value > 0) || 4));
+    setVideoResolution(videoResolutionOptions(model)[0]);
+    setVideoGenerateAudio(videoAudioControl(model) === "toggle" || videoAudioControl(model) === "always");
+  }, []);
+  useEffect(() => {
+    const sizes = videoSizeOptions(videoModel);
+    const seconds = videoSecondsOptions(videoModel);
+    const resolutions = videoResolutionOptions(videoModel);
+    setVideoSize((current) => sizes.includes(current) ? current : sizes[0] || "");
+    setVideoSeconds((current) => seconds.includes(Number(current)) ? current : String(seconds.find((value) => value > 0) || 4));
+    setVideoResolution((current) => resolutions.includes(current) ? current : resolutions[0] || "");
+    const audioControl = videoAudioControl(videoModel);
+    if (audioControl !== "toggle") setVideoGenerateAudio(audioControl === "always");
+  }, [videoModel]);
   const [relayKeyConfigured, setRelayKeyConfigured] = useState(false);
   const [relayKeyStatusMessage, setRelayKeyStatusMessage] = useState(NEWAPI_TOKEN_MISSING_MESSAGE);
   const [relayTokenName, setRelayTokenName] = useState(getStoredRelayTokenName);
@@ -1611,7 +1713,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     };
   }, [session.key]);
 
-  const parsedCount = useMemo(() => normalizeRequestedImageCount(imageCount), [imageCount]);
   const imageSize = useMemo(
     () => {
       const request = buildEffectiveImageSizeRequest(imageModel, {
@@ -1646,8 +1747,42 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   const editingDraftStructuredParameters = editingTurnDraft
     ? supportsStructuredImageParameters(editingTurnDraft.model)
     : false;
+  const editingDraftSizeSupported = editingTurnDraft
+    ? supportsImageSize(editingTurnDraft.model)
+    : false;
+  const editingDraftExactDimensionsSupported = editingTurnDraft
+    ? supportsImageExactDimensions(editingTurnDraft.model)
+    : false;
+  const editingDraftGoogleGeminiParameters = editingTurnDraft
+    ? imageModelRoute(editingTurnDraft.model) === "google-gemini-image"
+    : false;
+  const editingDraftXAIParameters = editingTurnDraft
+    ? imageModelRoute(editingTurnDraft.model) === "xai-image"
+    : false;
+  const editingDraftAspectRatioOptions = editingTurnDraft
+    ? IMAGE_ASPECT_RATIO_OPTIONS.filter((option) => supportsImageAspectRatio(editingTurnDraft.model, option.value))
+    : [];
+  const editingDraftResolutionOptions = editingTurnDraft
+    ? (editingDraftGoogleGeminiParameters
+        ? GEMINI_IMAGE_RESOLUTION_OPTIONS
+        : editingDraftXAIParameters
+          ? XAI_IMAGE_RESOLUTION_OPTIONS
+          : IMAGE_RESOLUTION_OPTIONS).filter((option) =>
+        supportsImageResolution(editingTurnDraft.model, option.value),
+      )
+    : [];
+  const editingDraftQualityOptions = editingTurnDraft
+    ? [{ value: "", label: "自动" }, ...IMAGE_QUALITY_OPTIONS]
+        .filter((option) => supportsImageQualityValue(editingTurnDraft.model, option.value))
+    : [];
   const editingDraftOutputControls = editingTurnDraft
     ? supportsImageOutputControls(editingTurnDraft.model)
+    : false;
+  const editingDraftQualitySupported = editingTurnDraft
+    ? supportsImageQuality(editingTurnDraft.model)
+    : false;
+  const editingDraftStreamingSupported = editingTurnDraft
+    ? supportsImageStreaming(editingTurnDraft.model)
     : false;
   const editingDraftCustomRatioInvalid = editingTurnDraft && editingDraftEffectiveSizeSelection
     ? isInvalidCustomRatioSelection(
@@ -1681,7 +1816,10 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     editingDraftEffectiveSizeSelection?.mode === "custom"
       ? editingTurnDraft?.customHeight || editingDraftDimensions?.height || ""
       : editingDraftDimensions?.height || editingTurnDraft?.customHeight || "";
-  const editingDraftCount = editingTurnDraft ? normalizeRequestedImageCount(editingTurnDraft.count) : 1;
+  const editingDraftCount = editingTurnDraft
+    ? normalizeRequestedImageCount(editingTurnDraft.count, editingTurnDraft.model)
+    : 1;
+  const editingDraftCountLimit = editingTurnDraft ? imageOutputCountLimit(editingTurnDraft.model) : 4;
   const imageCreationModelOptions = useMemo(
     () => (relayImageModelOptions.length > 0 ? relayImageModelOptions : IMAGE_CREATION_MODEL_OPTIONS),
     [relayImageModelOptions],
@@ -2084,10 +2222,19 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     const prompt = intent.prompt.trim() || "参考这张图，生成一张风格、主体和构图相近的新图片。";
     const sizeSelection = getImageSizeSelectionFromSize(intent.requestedSize || intent.resolutionPreset || "");
     const outputFormat = isImageOutputFormat(intent.outputFormat) ? intent.outputFormat : DEFAULT_IMAGE_OUTPUT_FORMAT;
+    const intentModel = isImageCreationModel(intent.model) ? intent.model : defaultImageModel;
 
     const sourceImageUrls = intent.sourceImageUrls.length > 0 ? intent.sourceImageUrls : [intent.sourceImageUrl];
     const usesPublicImageFallback = intent.sourceKind !== "original_references";
-    const referenceLimitMessage = imageConversationReferenceLimitMessage(0, sourceImageUrls.length);
+    if (sourceImageUrls.length > 0 && !supportsImageEditing(intentModel)) {
+      toast.error(`模型 ${intentModel} 暂不支持参考图编辑`);
+      return;
+    }
+    const referenceLimitMessage = imageConversationReferenceLimitMessage(
+      0,
+      sourceImageUrls.length,
+      imageReferenceImageLimit(intentModel),
+    );
     if (referenceLimitMessage) {
       toast.error(referenceLimitMessage);
       return;
@@ -2113,7 +2260,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         setComposerMode("image");
         setImagePrompt(prompt);
         setImageCount("1");
-        setImageModel(isImageCreationModel(intent.model) ? intent.model : defaultImageModel);
+        setImageModel(intentModel);
         setImageSizeMode(sizeSelection.mode);
         setImageAspectRatio(sizeSelection.aspectRatio);
         setImageResolution(isImageResolution(intent.resolutionPreset) ? intent.resolutionPreset : sizeSelection.resolution);
@@ -2231,7 +2378,10 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
 
   useEffect(() => {
     if (!imageCreationModelOptions.some((option) => option.value === imageModel)) {
-      setImageModel(defaultImageModel);
+      const nextModel = referenceImagesRef.current.length > 0
+        ? imageCreationModelOptions.find((option) => supportsImageEditing(option.value))?.value || defaultImageModel
+        : defaultImageModel;
+      setImageModel(nextModel);
     }
   }, [defaultImageModel, imageCreationModelOptions, imageModel]);
 
@@ -2245,6 +2395,10 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         const imageOptions = modelOptionsFromNames(result.config.image_models);
         const nextImageDefault = result.config.default_image_model || imageOptions[0]?.value || DEFAULT_IMAGE_MODEL;
         setRelayImageModelOptions(ensureDefaultImageModelOption(imageOptions, nextImageDefault));
+        const nextVideoModels = result.config.video_models?.length ? result.config.video_models : ["sora-2"];
+        const nextVideoDefault = result.config.default_video_model || nextVideoModels[0] || "sora-2";
+        setVideoModelOptions(nextVideoModels.map((model) => ({ value: model, label: model })));
+        setVideoModel((current) => nextVideoModels.includes(current) ? current : nextVideoDefault);
       })
       .catch((error) => {
         if (ignore) {
@@ -2258,6 +2412,16 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       ignore = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(VIDEO_MODEL_STORAGE_KEY, videoModel);
+    window.localStorage.setItem(VIDEO_SIZE_STORAGE_KEY, videoSize);
+    window.localStorage.setItem(VIDEO_SECONDS_STORAGE_KEY, videoSeconds);
+    window.localStorage.setItem(VIDEO_RESOLUTION_STORAGE_KEY, videoResolution);
+    window.localStorage.setItem(VIDEO_AUDIO_STORAGE_KEY, String(videoGenerateAudio));
+    window.localStorage.setItem(VIDEO_WATERMARK_STORAGE_KEY, String(videoWatermark));
+  }, [videoGenerateAudio, videoModel, videoResolution, videoSeconds, videoSize, videoWatermark]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -2684,6 +2848,10 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   };
 
   const handleApplyPromptPreset = useCallback(async (preset: ImagePromptPreset) => {
+    if (!supportsImageEditing(imageModel)) {
+      toast.error(`模型 ${imageModel} 暂不支持参考图编辑`);
+      return;
+    }
     const requestId = promptApplyRequestIdRef.current + 1;
     promptApplyRequestIdRef.current = requestId;
     const presetSizeSelection = getImageSizeSelectionFromSize(preset.size);
@@ -2724,7 +2892,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       }
       toast.error("参考图读取失败，未修改创作台", { id: toastId });
     }
-  }, [replaceReferenceImages]);
+  }, [imageModel, replaceReferenceImages]);
 
   const handleApplyMarketPrompt = useCallback(async (prompt: BananaPrompt) => {
     const referenceImageUrls = getPromptReferenceImageUrls(prompt);
@@ -2762,7 +2930,15 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       return;
     }
 
-    const referenceLimitMessage = imageConversationReferenceLimitMessage(0, referenceImageUrls.length);
+    if (!supportsImageEditing(imageModel)) {
+      toast.error(`模型 ${imageModel} 暂不支持参考图编辑`);
+      return;
+    }
+    const referenceLimitMessage = imageConversationReferenceLimitMessage(
+      0,
+      referenceImageUrls.length,
+      imageReferenceImageLimit(imageModel),
+    );
     if (referenceLimitMessage) {
       toast.error(referenceLimitMessage);
       return;
@@ -2784,7 +2960,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       }
       toast.error("参考图读取失败，未修改创作台", { id: toastId });
     }
-  }, [replaceReferenceImages]);
+  }, [imageModel, replaceReferenceImages]);
 
   const handleDeleteConversation = async (id: string) => {
     const targetConversation = conversationsRef.current.find((item) => item.id === id);
@@ -2934,9 +3110,17 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       return;
     }
     promptApplyRequestIdRef.current += 1;
-    const limitMessage = imageConversationReferenceLimitMessage(
+    if (composerMode !== "video" && !supportsImageEditing(imageModel)) {
+      toast.error(`模型 ${imageModel} 暂不支持参考图编辑`);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+      return;
+    }
+    const limitMessage = composerMode === "video" ? "" : imageConversationReferenceLimitMessage(
       referenceImagesRef.current.length + referenceUploadPendingCountRef.current,
       files.length,
+      imageReferenceImageLimit(imageModel),
     );
     if (limitMessage) {
       toast.error(limitMessage);
@@ -2967,7 +3151,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         fileInputRef.current.value = "";
       }
     }
-  }, []);
+  }, [composerMode, imageModel]);
 
   const handleReferenceImageChange = useCallback(
     async (files: File[]) => {
@@ -2991,11 +3175,40 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     });
   }, []);
 
+  const handleImageModelChange = useCallback((model: ImageModel) => {
+    if (referenceUploadPendingCountRef.current > 0) {
+      toast.error("参考图正在上传，请稍候再切换模型");
+      return;
+    }
+    if (referenceImagesRef.current.length > 0 && !supportsImageEditing(model)) {
+      toast.error(`模型 ${model} 暂不支持参考图编辑，请先移除参考图`);
+      return;
+    }
+    setImageModel(model);
+  }, []);
+
+  const handleComposerModeChange = useCallback((mode: "image" | "video") => {
+    if (referenceUploadPendingCountRef.current > 0) {
+      toast.error("参考图正在上传，请稍候再切换类型");
+      return;
+    }
+    if (mode === "image" && referenceImagesRef.current.length > 0 && !supportsImageEditing(imageModel)) {
+      toast.error(`模型 ${imageModel} 暂不支持参考图编辑，请先移除参考图`);
+      return;
+    }
+    setComposerMode(mode);
+  }, [imageModel]);
+
   const handleContinueEdit = useCallback(
     async (conversationId: string, image: StoredImage | StoredReferenceImage) => {
+      if (!supportsImageEditing(imageModel)) {
+        toast.error(`模型 ${imageModel} 暂不支持参考图编辑`);
+        return;
+      }
       const limitMessage = imageConversationReferenceLimitMessage(
         referenceImagesRef.current.length + referenceUploadPendingCountRef.current,
         1,
+        imageReferenceImageLimit(imageModel),
       );
       if (limitMessage) {
         toast.error(limitMessage);
@@ -3038,7 +3251,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         referenceUploadPendingCountRef.current = Math.max(0, referenceUploadPendingCountRef.current - 1);
       }
     },
-    [],
+    [imageModel],
   );
 
   const openLightbox = useCallback((images: ImageLightboxItem[], index: number) => {
@@ -3159,6 +3372,21 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       toast.error("当前轮次正在处理，稍后再编辑");
       return;
     }
+    if (targetTurn.mode === "video") {
+      setSelectedConversationId(conversationId);
+      setComposerMode("video");
+      setImagePrompt(targetTurn.prompt);
+      setVideoModel(targetTurn.model);
+      setVideoSize(targetTurn.size || "1280x720");
+      setVideoSeconds(String(targetTurn.videoSeconds || 4));
+      setVideoResolution(targetTurn.videoResolution || "720p");
+      setVideoGenerateAudio(targetTurn.videoGenerateAudio ?? true);
+      setVideoWatermark(targetTurn.videoWatermark ?? false);
+      replaceReferenceImages(targetTurn.referenceImages);
+      window.requestAnimationFrame(() => textareaRef.current?.focus());
+      toast.message("已载入视频提示词和参数");
+      return;
+    }
     const sizeSelection = restoreImageSizeSelection(targetTurn.sizeSelection, targetTurn.size);
     setEditingTurnDraft({
       conversationId,
@@ -3168,7 +3396,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         ? targetTurn.model
         : defaultImageModel,
       mode: targetTurn.mode,
-      count: String(normalizeRequestedImageCount(targetTurn.count || targetTurn.images.length || 1)),
+      count: String(normalizeRequestedImageCount(targetTurn.count || targetTurn.images.length || 1, targetTurn.model)),
       sizeMode: sizeSelection.mode,
       aspectRatio: sizeSelection.aspectRatio,
       resolution: sizeSelection.resolution,
@@ -3188,16 +3416,24 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       visibility: targetTurn.visibility || "private",
       referenceImages: targetTurn.referenceImages,
     });
-  }, [defaultImageModel, imageCreationModelOptions]);
+  }, [defaultImageModel, imageCreationModelOptions, replaceReferenceImages]);
 
   const handleEditReferenceImageChange = useCallback(async (files: File[]) => {
     const draft = editingTurnDraft;
     if (!draft || files.length === 0) {
       return;
     }
+    if (!supportsImageEditing(draft.model)) {
+      toast.error(`模型 ${draft.model} 暂不支持参考图编辑`);
+      if (editFileInputRef.current) {
+        editFileInputRef.current.value = "";
+      }
+      return;
+    }
     const limitMessage = imageConversationReferenceLimitMessage(
       draft.referenceImages.length + editReferenceUploadPendingCountRef.current,
       files.length,
+      imageReferenceImageLimit(draft.model),
     );
     if (limitMessage) {
       toast.error(limitMessage);
@@ -3314,7 +3550,9 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       }
       updateTurnProgress(conversationId, activeTurn.id, {
         message: "正在准备生成任务",
-        detail: `准备处理 ${activeTurn.images.filter((image) => image.status === "loading").length || activeTurn.count} 张图片`,
+        detail: activeTurn.mode === "video"
+          ? "正在准备视频生成参数"
+          : `准备处理 ${activeTurn.images.filter((image) => image.status === "loading").length || activeTurn.count} 张图片`,
         startedAt: activeTurnStartedAt,
       });
       const applyTasks = async (tasks: CreationTask[]) => {
@@ -3436,7 +3674,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                         image.status === "loading" && !image.taskId
                           ? {
                               ...image,
-                              taskId: imageTaskIdForImage(turn.id, turn.images, imageIndex),
+                              taskId: imageTaskIdForImage(turn.id, turn.model, turn.images, imageIndex),
                             }
                           : image,
                       ),
@@ -3449,11 +3687,22 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
 
         updateTurnProgress(conversationId, activeTurn.id, {
           message: usesReferenceImages(activeTurn.mode) ? "正在整理参考图" : "正在准备生成请求",
-          detail: usesReferenceImages(activeTurn.mode) ? "正在读取参考图并准备上传" : "正在创建图片生成任务",
+          detail: usesReferenceImages(activeTurn.mode)
+            ? "正在读取参考图并准备上传"
+            : activeTurn.mode === "video" ? "正在创建视频生成任务" : "正在创建图片生成任务",
         });
-        const referenceLimitMessage = imageConversationReferenceLimitMessage(0, activeTurn.referenceImages.length);
-        if (referenceLimitMessage) {
-          throw new Error(referenceLimitMessage);
+        if (activeTurn.mode !== "video" && usesReferenceImages(activeTurn.mode) && !supportsImageEditing(activeTurn.model)) {
+          throw new Error(`模型 ${activeTurn.model} 暂不支持参考图编辑`);
+        }
+        if (activeTurn.mode !== "video") {
+          const referenceLimitMessage = imageConversationReferenceLimitMessage(
+            0,
+            activeTurn.referenceImages.length,
+            imageReferenceImageLimit(activeTurn.model),
+          );
+          if (referenceLimitMessage) {
+            throw new Error(referenceLimitMessage);
+          }
         }
         const referenceFiles = await Promise.all(
           activeTurn.referenceImages.map((image, index) =>
@@ -3465,6 +3714,9 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         }
         const activeTurnRelayTokenGroup = activeTurn.tokenGroup?.trim() || undefined;
         const activeTurnRelayTokenName = activeTurn.tokenName?.trim() || undefined;
+        const videoReferenceUrls = activeTurn.mode === "video"
+          ? await Promise.all(referenceFiles.slice(0, 1).map(fileToDataUrl))
+          : [];
         const taskMessages = buildCreationTaskMessages(snapshot, activeTurn.id);
         const activeTurnSizeRequest = buildEffectiveImageSizeRequest(
           activeTurn.model,
@@ -3482,14 +3734,15 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
           supportsStructuredImageParameters(activeTurn.model) && activeTurnSizeRequest.selection?.resolution !== "auto"
             ? activeTurnSizeRequest.selection?.resolution
             : undefined;
-        const taskStream = Boolean(activeTurn.stream);
-        const taskPartialImages = normalizeImagePartialImages(activeTurn.partialImages);
+        const taskQuality = imageQualityForRequest(activeTurn.model, activeTurn.quality || "");
+        const taskStream = supportsImageStreaming(activeTurn.model) && Boolean(activeTurn.stream);
+        const taskPartialImages = taskStream ? normalizeImagePartialImages(activeTurn.partialImages) : 0;
         const pendingTaskGroups = activeTurn.images.reduce<Array<{ taskId: string; count: number }>>(
           (groups, image, imageIndex) => {
             if (image.status !== "loading") {
               return groups;
             }
-            const taskId = imageTaskIdForImage(activeTurn.id, activeTurn.images, imageIndex);
+            const taskId = imageTaskIdForImage(activeTurn.id, activeTurn.model, activeTurn.images, imageIndex);
             const existing = groups.find((group) => group.taskId === taskId);
             if (existing) {
               existing.count += 1;
@@ -3501,6 +3754,21 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
           [],
         );
         const submitTaskGroup = (group: { taskId: string; count: number }) => {
+          if (activeTurn.mode === "video") {
+            return createVideoGenerationTask(
+              group.taskId,
+              activeTurn.prompt,
+              activeTurn.model,
+              activeTurn.size || "1280x720",
+              activeTurn.videoSeconds || 4,
+              activeTurn.videoResolution || "720p",
+              activeTurn.videoGenerateAudio ?? true,
+              activeTurn.videoWatermark ?? false,
+              videoReferenceUrls,
+              activeTurnRelayTokenName,
+              creationTaskRequestOptions,
+            );
+          }
           if (usesReferenceImages(activeTurn.mode)) {
             return createImageEditTask(
               group.taskId,
@@ -3509,7 +3777,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
               activeTurn.model,
               activeTurnSizeRequest.upstreamSize,
               activeTurnSizeRequest.size,
-              activeTurn.quality,
+              taskQuality,
               group.count,
               taskMessages,
               activeTurn.visibility || "private",
@@ -3532,7 +3800,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
             activeTurn.model,
             activeTurnSizeRequest.upstreamSize,
             activeTurnSizeRequest.size,
-            activeTurn.quality,
+            taskQuality,
             group.count,
             taskMessages,
             activeTurn.visibility || "private",
@@ -4063,7 +4331,15 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         toast.error("未找到可用的参考图");
         return;
       }
-      const referenceLimitMessage = imageConversationReferenceLimitMessage(0, targetTurn.referenceImages.length);
+      if (usesReferenceImages(targetTurn.mode) && !supportsImageEditing(targetTurn.model)) {
+        toast.error(`模型 ${targetTurn.model} 暂不支持参考图编辑`);
+        return;
+      }
+      const referenceLimitMessage = imageConversationReferenceLimitMessage(
+        0,
+        targetTurn.referenceImages.length,
+        imageReferenceImageLimit(targetTurn.model),
+      );
       if (referenceLimitMessage) {
         toast.error(referenceLimitMessage);
         return;
@@ -4080,7 +4356,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       queueingTurnIdsRef.current.add(turnQueueKey);
       retryingImageIdsRef.current.add(retryKey);
       const now = new Date().toISOString();
-      const retryTaskId = imageTaskBatchId(`${targetTurn.id}-${createId()}`, imageIndex);
+      const retryTaskId = imageTaskBatchId(`${targetTurn.id}-${createId()}`, imageIndex, targetTurn.model);
       try {
         const retryPersisted = await updateConversation(conversationId, (current) => {
           const conversation = current ?? targetConversation;
@@ -4101,6 +4377,9 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                       status: "loading" as const,
                       b64_json: undefined,
                       url: undefined,
+                      videoUrl: undefined,
+                      mimeType: turn.mode === "video" ? "video/mp4" : undefined,
+                      mediaType: turn.mode === "video" ? "video" as const : "image" as const,
                       path: undefined,
                       width: undefined,
                       height: undefined,
@@ -4175,7 +4454,15 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         toast.error("未找到可用的参考图");
         return;
       }
-      const referenceLimitMessage = imageConversationReferenceLimitMessage(0, targetTurn.referenceImages.length);
+      if (usesReferenceImages(targetTurn.mode) && !supportsImageEditing(targetTurn.model)) {
+        toast.error(`模型 ${targetTurn.model} 暂不支持参考图编辑`);
+        return;
+      }
+      const referenceLimitMessage = imageConversationReferenceLimitMessage(
+        0,
+        targetTurn.referenceImages.length,
+        imageReferenceImageLimit(targetTurn.model),
+      );
       if (referenceLimitMessage) {
         toast.error(referenceLimitMessage);
         return;
@@ -4205,7 +4492,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                 return turn;
               }
 
-              const imageCount = normalizeRequestedImageCount(turn.count || turn.images.length || 1);
+              const imageCount = turn.mode === "video" ? 1 : normalizeRequestedImageCount(turn.count || turn.images.length || 1, turn.model);
               const visibility = turn.visibility || "private";
               return {
                 ...turn,
@@ -4219,9 +4506,10 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                   const imageId = `${turn.id}-${regenerationId}-${index}`;
                   return {
                     id: imageId,
-                    taskId: imageTaskBatchId(`${turn.id}-${regenerationId}`, index),
+                    taskId: imageTaskBatchId(`${turn.id}-${regenerationId}`, index, turn.model),
                     taskStatus: "queued" as const,
                     status: "loading" as const,
+                    mediaType: turn.mode === "video" ? "video" as const : "image" as const,
                     visibility,
                   };
                 }),
@@ -4283,14 +4571,22 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         toast.error(relayKeyMissingMessage);
         return;
       }
-      const referenceLimitMessage = imageConversationReferenceLimitMessage(0, draft.referenceImages.length);
+      const mode = getComposerConversationMode("image", draft.referenceImages);
+      if (usesReferenceImages(mode) && !supportsImageEditing(draft.model)) {
+        toast.error(`模型 ${draft.model} 暂不支持参考图编辑`);
+        return;
+      }
+      const referenceLimitMessage = imageConversationReferenceLimitMessage(
+        0,
+        draft.referenceImages.length,
+        imageReferenceImageLimit(draft.model),
+      );
       if (referenceLimitMessage) {
         toast.error(referenceLimitMessage);
         return;
       }
 
-      const imageCount = normalizeRequestedImageCount(draft.count);
-      const mode = getComposerConversationMode("image", draft.referenceImages);
+      const imageCount = normalizeRequestedImageCount(draft.count, draft.model);
       const referenceImages = usesReferenceImages(mode) ? draft.referenceImages : [];
       const rawDraftSizeSelection = {
         mode: draft.sizeMode,
@@ -4334,7 +4630,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         draftOutputFormat === undefined
           ? undefined
           : imageOutputCompressionForModel(draft.model, draftOutputFormat, draft.outputCompression);
-      const draftQuality = imageQualityForRequest(draft.quality);
+      const draftQuality = imageQualityForRequest(draft.model, draft.quality);
+      const draftStream = supportsImageStreaming(draft.model) && draft.stream;
       if (
         supportsStructuredImageParameters(draft.model) &&
         isHighResolutionImageSize(draftImageSize, draftSizeRequest?.selection)
@@ -4376,8 +4673,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                 quality: draftQuality,
                 outputFormat: draftOutputFormat,
                 outputCompression: draftOutputCompression,
-                stream: draft.stream,
-                partialImages: normalizeImagePartialImages(draft.partialImages),
+                stream: draftStream,
+                partialImages: draftStream ? normalizeImagePartialImages(draft.partialImages) : 0,
                 tokenGroup: regenerate ? undefined : draft.tokenGroup || undefined,
                 tokenName: regenerate ? activeRelayTokenName || undefined : draft.tokenName || undefined,
                 visibility: draft.visibility,
@@ -4394,7 +4691,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                   const imageId = `${turn.id}-${regenerationId}-${index}`;
                   return {
                     id: imageId,
-                    taskId: imageTaskBatchId(`${turn.id}-${regenerationId}`, index),
+                    taskId: imageTaskBatchId(`${turn.id}-${regenerationId}`, index, draft.model),
                     taskStatus: "queued" as const,
                     status: "loading" as const,
                     visibility: baseTurn.visibility,
@@ -4455,7 +4752,24 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       toast.error(relayKeyMissingMessage);
       return;
     }
-    const referenceLimitMessage = imageConversationReferenceLimitMessage(0, referenceImages.length);
+    const videoMode = composerMode === "video";
+    const effectiveModel = videoMode
+      ? (videoModelOptions.some((option) => option.value === videoModel) ? videoModel : videoModelOptions[0]?.value || "sora-2")
+      : imageCreationModelOptions.some((option) => option.value === imageModel) ? imageModel : defaultImageModel;
+    const selectedVideoSeconds = Number(videoSeconds);
+    if (videoMode && !videoSecondsOptions(effectiveModel).includes(selectedVideoSeconds)) {
+      toast.error("请输入当前视频模型支持的时长");
+      return;
+    }
+    if (!videoMode && referenceImages.length > 0 && !supportsImageEditing(effectiveModel)) {
+      toast.error(`模型 ${effectiveModel} 暂不支持参考图编辑`);
+      return;
+    }
+    const referenceLimitMessage = videoMode ? "" : imageConversationReferenceLimitMessage(
+      0,
+      referenceImages.length,
+      imageReferenceImageLimit(effectiveModel),
+    );
     if (referenceLimitMessage) {
       toast.error(referenceLimitMessage);
       return;
@@ -4464,12 +4778,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     let draftProgressTarget: { conversationId: string; turnId: string } | null = null;
 
     try {
-      const effectiveImageMode = getComposerConversationMode("image", referenceImages);
-      const effectiveModel =
-        imageCreationModelOptions.some((option) => option.value === imageModel)
-            ? imageModel
-            : defaultImageModel;
-      const requestedCount = parsedCount;
+      const effectiveImageMode = getComposerConversationMode(composerMode, referenceImages);
+      const requestedCount = videoMode ? 1 : normalizeRequestedImageCount(imageCount, effectiveModel);
       const rawImageSizeSelection = {
         mode: imageSizeMode,
         aspectRatio: imageAspectRatio,
@@ -4478,8 +4788,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         customWidth: imageCustomWidth,
         customHeight: imageCustomHeight,
       };
-      const currentImageSizeRequest =
-        buildEffectiveImageSizeRequest(effectiveModel, rawImageSizeSelection);
+      const currentImageSizeRequest = videoMode ? null : buildEffectiveImageSizeRequest(effectiveModel, rawImageSizeSelection);
       if (
         currentImageSizeRequest?.selection.mode === "custom" &&
         !currentImageSizeRequest.size
@@ -4498,7 +4807,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         toast.error("请输入有效的自定义比例，例如 5:4 或 2.39:1");
         return;
       }
-      const currentImageSize = currentImageSizeRequest?.size ?? "";
+      const currentImageSize = videoMode ? videoSize : currentImageSizeRequest?.size ?? "";
       const currentSelectionChanged = currentImageSizeRequest
         ? customImageSizeChanged(rawImageSizeSelection, currentImageSize)
         : false;
@@ -4508,14 +4817,13 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       const currentImageSizeSelection = currentSelection
         ? serializeImageSizeSelection(currentSelection)
         : undefined;
-      const effectiveOutputFormat =
-        imageOutputFormatForModel(effectiveModel, imageOutputFormat);
+      const effectiveOutputFormat = videoMode ? undefined : imageOutputFormatForModel(effectiveModel, imageOutputFormat);
       const effectiveOutputCompression =
         effectiveOutputFormat === undefined
           ? undefined
           : imageOutputCompressionForModel(effectiveModel, effectiveOutputFormat, imageOutputCompression);
-      const effectiveImageQuality =
-        imageQualityForRequest(imageQuality);
+      const effectiveImageQuality = videoMode ? undefined : imageQualityForRequest(effectiveModel, imageQuality);
+      const effectiveImageStream = !videoMode && supportsImageStreaming(effectiveModel) && imageStreamEnabled;
       const isHighResolutionRequest =
         supportsStructuredImageParameters(effectiveModel) &&
         isHighResolutionImageSize(currentImageSize, currentImageSizeRequest?.selection);
@@ -4534,15 +4842,19 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         prompt,
         model: effectiveModel,
         mode: effectiveImageMode,
-        referenceImages: usesReferenceImages(effectiveImageMode) ? referenceImages : [],
+        referenceImages: videoMode || usesReferenceImages(effectiveImageMode) ? referenceImages : [],
         count: requestedCount,
         size: currentImageSize,
         sizeSelection: currentImageSizeSelection,
         quality: effectiveImageQuality,
         outputFormat: effectiveOutputFormat,
         outputCompression: effectiveOutputCompression,
-        stream: imageStreamEnabled,
-        partialImages: normalizeImagePartialImages(imagePartialImages),
+        stream: effectiveImageStream,
+        partialImages: effectiveImageStream ? normalizeImagePartialImages(imagePartialImages) : 0,
+        videoSeconds: videoMode ? selectedVideoSeconds : undefined,
+        videoResolution: videoMode ? videoResolution : undefined,
+        videoGenerateAudio: videoMode ? videoGenerateAudio : undefined,
+        videoWatermark: videoMode ? videoWatermark : undefined,
         tokenGroup: undefined,
         tokenName: activeRelayTokenName || undefined,
         visibility: defaultImageVisibility,
@@ -4550,9 +4862,10 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
           const imageId = `${turnId}-${index}`;
           return {
             id: imageId,
-            taskId: imageTaskBatchId(turnId, index),
+            taskId: imageTaskBatchId(turnId, index, effectiveModel),
             taskStatus: "queued" as const,
             status: "loading" as const,
+            mediaType: videoMode ? "video" as const : "image" as const,
             visibility: defaultImageVisibility,
           };
         }),
@@ -4596,11 +4909,11 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
 
       const targetStats = getImageConversationStats(baseConversation);
       if (targetStats.running > 0 || targetStats.queued > 1) {
-        toast.success("已加入当前图片队列");
+        toast.success(videoMode ? "已加入当前视频队列" : "已加入当前图片队列");
       } else if (!targetConversation) {
-        toast.success("已创建新图片任务并开始处理");
+        toast.success(videoMode ? "已创建新视频任务并开始处理" : "已创建新图片任务并开始处理");
       } else {
-        toast.success("已发送到当前图片记录");
+        toast.success(videoMode ? "已发送到当前创作记录" : "已发送到当前图片记录");
       }
     } catch (error) {
       if (draftProgressTarget) {
@@ -4780,6 +5093,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                     <ImageParameterLabel>模型</ImageParameterLabel>
                     <Select
                       value={editingTurnDraft.model}
+                      disabled={editReferenceUploadPendingCount > 0}
                       onValueChange={(value) =>
                         setEditingTurnDraft((current) =>
                           current && isImageModel(value) ? { ...current, model: value } : current,
@@ -4792,7 +5106,11 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                       <SelectContent>
                         <SelectGroup>
                           {editingTurnModelOptions.map((option) => (
-                            <SelectItem key={option.value} value={option.value}>
+                            <SelectItem
+                              key={option.value}
+                              value={option.value}
+                              disabled={editingTurnDraft.referenceImages.length > 0 && !supportsImageEditing(option.value)}
+                            >
                               {option.label}
                             </SelectItem>
                           ))}
@@ -4801,7 +5119,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                     </Select>
                   </label>
 
-                  {editingTurnDraft.mode !== "chat" && editingDraftEffectiveSizeSelection ? (
+                  {editingTurnDraft.mode !== "chat" && editingDraftEffectiveSizeSelection && editingDraftSizeSupported ? (
                     <div className="space-y-3.5 rounded-xl border border-[#dedfe3] bg-white p-3.5 dark:border-border dark:bg-card">
                       <section className="space-y-1.5">
                         <div className="flex items-center justify-between gap-3">
@@ -4818,7 +5136,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                           </span>
                         </div>
                         <div className="grid grid-cols-5 gap-1.5" role="group" aria-label="编辑图片画幅比例">
-                          {IMAGE_ASPECT_RATIO_OPTIONS.map((option) => {
+                          {editingDraftAspectRatioOptions.map((option) => {
                             const isAuto = option.value === "";
                             const isCustom = option.value === CUSTOM_IMAGE_ASPECT_RATIO;
                             const active = isAuto
@@ -4876,13 +5194,13 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                         ) : null}
                       </section>
 
-                      {editingDraftOutputControls ? (
+                      {editingDraftQualitySupported ? (
                         <section className="space-y-1.5">
-                          <ImageParameterLabel help="gpt-image-2 支持自动、低、中、高四档；质量越高，生成时间和费用通常越高。">
+                          <ImageParameterLabel help={editingDraftXAIParameters ? "Grok Imagine Image 2.0 官方支持低、中两个质量档位，默认使用中等质量。" : "质量越高，生成时间和费用通常越高。"}>
                             质量
                           </ImageParameterLabel>
-                          <div className="grid grid-cols-4 gap-1 rounded-lg bg-[#f4f4f5] p-1 dark:bg-muted/70" role="group" aria-label="编辑图片质量">
-                            {[{ value: "", label: "自动" }, ...IMAGE_QUALITY_OPTIONS].map((option) => (
+                          <div className={cn("grid gap-1 rounded-lg bg-[#f4f4f5] p-1 dark:bg-muted/70", editingDraftQualityOptions.length === 3 ? "grid-cols-3" : "grid-cols-4")} role="group" aria-label="编辑图片质量">
+                            {editingDraftQualityOptions.map((option) => (
                               <button
                                 key={option.value || "auto"}
                                 type="button"
@@ -4903,15 +5221,15 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                         </section>
                       ) : null}
 
-                      {editingDraftStructuredParameters ? (
+                      {editingDraftStructuredParameters && editingDraftResolutionOptions.length > 1 ? (
                         <section className="space-y-1.5">
-                          <ImageParameterLabel help="自动比例使用常规像素；1080P、2K、4K 会结合宽高比计算，并校正为允许的尺寸。">
+                          <ImageParameterLabel help={editingDraftGoogleGeminiParameters ? "Gemini 使用官方 512、1K、2K、4K 档位；不同模型可用档位不同。" : editingDraftXAIParameters ? "Grok 官方支持 1K、2K 分辨率。" : "自动比例使用常规像素；1080P、2K、4K 会结合宽高比计算，并校正为允许的尺寸。"}>
                             分辨率
                           </ImageParameterLabel>
-                          <div className="grid grid-cols-4 gap-1 rounded-lg bg-[#f4f4f5] p-1 dark:bg-muted/70" role="group" aria-label="编辑图片分辨率">
-                            {IMAGE_RESOLUTION_OPTIONS.map((option) => {
+                          <div className={cn("grid gap-1 rounded-lg bg-[#f4f4f5] p-1 dark:bg-muted/70", editingDraftResolutionOptions.length === 5 ? "grid-cols-5" : editingDraftResolutionOptions.length === 3 ? "grid-cols-3" : "grid-cols-4")} role="group" aria-label="编辑图片分辨率">
+                            {editingDraftResolutionOptions.map((option) => {
                               const active =
-                                editingTurnDraft.resolution === option.value &&
+                                editingDraftEffectiveSizeSelection.resolution === option.value &&
                                 (editingDraftEffectiveSizeSelection.mode !== "auto" || option.value === "auto");
                               return (
                                 <button
@@ -4941,7 +5259,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                       ) : null}
 
                       <section className="flex items-center justify-between gap-3 border-t border-[#ececef] pt-3 dark:border-border">
-                        <ImageParameterLabel help="单次请求生成 1-10 张图片；系统会按并发额度拆分和排队。">
+                        <ImageParameterLabel help={`当前模型单次请求支持 1-${editingDraftCountLimit} 张图片。`}>
                           生成数量
                         </ImageParameterLabel>
                         <div className="grid h-8 grid-cols-[2rem_3.25rem_2rem] overflow-hidden rounded-lg border border-[#dedfe3] bg-white dark:border-border dark:bg-background/70" role="group" aria-label="编辑生成数量">
@@ -4963,7 +5281,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                           </span>
                           <button
                             type="button"
-                            disabled={editingDraftCount >= 10}
+                            disabled={editingDraftCount >= editingDraftCountLimit}
                             className="inline-flex items-center justify-center text-[#686b73] transition hover:bg-[#f4f4f5] hover:text-[#18181b] disabled:cursor-not-allowed disabled:opacity-35 dark:text-muted-foreground dark:hover:bg-muted dark:hover:text-foreground"
                             onClick={() =>
                               setEditingTurnDraft((current) =>
@@ -4977,13 +5295,9 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                         </div>
                       </section>
 
-                      <details className="group border-t border-[#ececef] pt-2.5 dark:border-border">
-                        <summary className="flex h-8 cursor-pointer list-none items-center justify-between rounded-md px-1.5 text-xs font-semibold text-[#3f4147] outline-none transition hover:bg-black/[0.04] focus-visible:ring-2 focus-visible:ring-[#1456f0]/30 dark:text-foreground dark:hover:bg-accent/60 [&::-webkit-details-marker]:hidden">
-                          <span>高级设置</span>
-                          <ChevronDown className="size-3.5 opacity-60 transition group-open:rotate-180" />
-                        </summary>
-                        <div className="mt-2 space-y-3">
-                          <section className="space-y-1.5">
+                      {editingDraftExactDimensionsSupported || editingDraftStreamingSupported || editingDraftOutputControls ? <div className="border-t border-[#ececef] pt-2.5 dark:border-border">
+                        <div className="space-y-3">
+                          {editingDraftExactDimensionsSupported ? <section className="space-y-1.5">
                             <ImageParameterLabel help="手动输入像素尺寸后会覆盖上方画幅比例；边长不超过 3840，必须为 16 的倍数。">
                               精确尺寸
                             </ImageParameterLabel>
@@ -5048,43 +5362,16 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                                 />
                               </label>
                             </div>
-                          </section>
+                          </section> : null}
 
-                          <div className="flex h-9 items-center justify-between rounded-lg bg-[#f4f4f5] px-2.5 dark:bg-muted/70">
+                          {editingDraftStreamingSupported ? <div className="flex h-9 items-center justify-between rounded-lg bg-[#f4f4f5] px-2.5 dark:bg-muted/70">
                             <ImageParameterLabel help="开启后会使用流式返回，需要图片服务支持流式响应。">
                               流式返回
                             </ImageParameterLabel>
-                            <button
-                              type="button"
-                              role="switch"
-                              aria-checked={editingTurnDraft.stream}
-                              aria-label="编辑图片流式返回"
-                              className={cn(
-                                "relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1456f0]/30",
-                                editingTurnDraft.stream ? "bg-[#1456f0]" : "bg-[#c8cbd1] dark:bg-muted-foreground/45",
-                              )}
-                              onClick={() =>
-                                setEditingTurnDraft((current) =>
-                                  current
-                                    ? {
-                                        ...current,
-                                        stream: !current.stream,
-                                        partialImages: !current.stream ? current.partialImages : "0",
-                                      }
-                                    : current,
-                                )
-                              }
-                            >
-                              <span
-                                className={cn(
-                                  "absolute top-0.5 size-4 rounded-full bg-white shadow-sm transition-transform",
-                                  editingTurnDraft.stream ? "translate-x-[18px]" : "translate-x-0.5",
-                                )}
-                              />
-                            </button>
-                          </div>
+                            <Switch checked={editingTurnDraft.stream} aria-label="编辑图片流式返回" onCheckedChange={(enabled) => setEditingTurnDraft((current) => current ? { ...current, stream: enabled, partialImages: enabled ? current.partialImages : "0" } : current)} />
+                          </div> : null}
 
-                          {editingTurnDraft.stream ? (
+                          {editingDraftStreamingSupported && editingTurnDraft.stream ? (
                             <div className="space-y-1.5">
                               <ImageParameterLabel help="可返回 0-3 张生成过程中的中间图；每张中间图会产生额外输出费用。">
                                 中间图数量
@@ -5155,8 +5442,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                                     </span>
                                   </div>
                                   <div className="grid grid-cols-[minmax(0,1fr)_4.5rem] items-center gap-2.5">
-                                    <input
-                                      type="range"
+                                    <Slider
                                       min="0"
                                       max="100"
                                       step="1"
@@ -5166,7 +5452,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                                           current ? { ...current, outputCompression: event.target.value } : current,
                                         )
                                       }
-                                      className="h-1.5 w-full accent-[#18181b] dark:accent-foreground"
+                                      className="w-full"
                                       aria-label="编辑图片输出压缩率"
                                     />
                                     <Input
@@ -5190,7 +5476,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                             </>
                           ) : null}
                         </div>
-                      </details>
+                      </div> : null}
                     </div>
                   ) : null}
                 </div>
@@ -5237,7 +5523,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                 onClick={handleCreateDraft}
               >
                 <Plus className="size-4" />
-                新建
+                新建对话
               </Button>
               <Button
                 variant="outline"
@@ -5319,6 +5605,13 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                 imageOutputCompression={imageOutputCompression}
                 imageStreamEnabled={imageStreamEnabled}
                 imagePartialImages={imagePartialImages}
+                videoModel={videoModel}
+                videoModelOptions={videoModelOptions}
+                videoSize={videoSize}
+                videoSeconds={videoSeconds}
+                videoResolution={videoResolution}
+                videoGenerateAudio={videoGenerateAudio}
+                videoWatermark={videoWatermark}
                 relayKeyConfigured={relayKeyConfigured}
                 relayKeyStatusMessage={relayKeyMissingMessage}
                 highResolutionHint={highResolutionHint}
@@ -5327,7 +5620,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                 fileInputRef={fileInputRef}
                 onPromptChange={setImagePrompt}
                 onImageCountChange={setImageCount}
-                onImageModelChange={setImageModel}
+                onImageModelChange={handleImageModelChange}
                 onImageSizeModeChange={setImageSizeMode}
                 onImageAspectRatioChange={setImageAspectRatio}
                 onImageResolutionChange={setImageResolution}
@@ -5339,6 +5632,13 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                 onImageOutputCompressionChange={setImageOutputCompression}
                 onImageStreamEnabledChange={setImageStreamEnabled}
                 onImagePartialImagesChange={setImagePartialImages}
+                onComposerModeChange={handleComposerModeChange}
+                onVideoModelChange={handleVideoModelChange}
+                onVideoSizeChange={setVideoSize}
+                onVideoSecondsChange={setVideoSeconds}
+                onVideoResolutionChange={setVideoResolution}
+                onVideoGenerateAudioChange={setVideoGenerateAudio}
+                onVideoWatermarkChange={setVideoWatermark}
                 onSubmit={handleSubmit}
                 onOpenPromptMarket={() => setIsPromptMarketOpen(true)}
                 onReferenceImageChange={handleReferenceImageChange}

@@ -243,6 +243,21 @@ test("persisted canvas tasks restore completed images after the page reloads", (
   assert.equal(result.nodes[1].url, "/images/restored.png");
 });
 
+test("persisted video tasks restore completed video nodes after the page reloads", () => {
+  const result = reconcilePersistedCanvasTaskNodes([{
+    id: "video", type: "video", task_id: "video-task", generation_status: "loading",
+    x: 0, y: 0, width: 420, height: 236, scale_x: 1, scale_y: 1,
+  }], {
+    id: "video-task",
+    status: "success",
+    data: [{ type: "video", video_url: "/videos/restored.mp4", width: 1280, height: 720 }],
+  });
+  assert.equal(result.terminal, true);
+  assert.equal(result.completedImageCount, 1);
+  assert.equal(result.nodes[0].generation_status, "success");
+  assert.equal(result.nodes[0].url, "/videos/restored.mp4");
+});
+
 test("previously interrupted canvas nodes can be recovered on a later reload", () => {
   const result = reconcilePersistedCanvasTaskNodes([{
     id: "result",
@@ -266,6 +281,30 @@ test("previously interrupted canvas nodes can be recovered on a later reload", (
   assert.equal(result.nodes[0].url, "/images/late-result.png");
 });
 
+test("canvas nodes marked for deferred recovery can be recovered on a later reload", () => {
+  const result = reconcilePersistedCanvasTaskNodes([{
+    id: "result",
+    type: "image",
+    task_id: "task",
+    generation_status: "error",
+    generation_error: "暂时无法同步后台任务，重新进入画布后将继续恢复。",
+    x: 0,
+    y: 0,
+    width: 340,
+    height: 240,
+    scale_x: 1,
+    scale_y: 1,
+  }], {
+    id: "task",
+    status: "success",
+    data: [{ url: "/images/deferred-result.png" }],
+    output_statuses: ["success"],
+  });
+  assert.equal(result.nodes[0].generation_status, "success");
+  assert.equal(result.nodes[0].generation_error, "");
+  assert.equal(result.nodes[0].url, "/images/deferred-result.png");
+});
+
 test("persisted canvas batch tasks restore sparse successful outputs", () => {
   const base = { type: "image", task_id: "task", generation_status: "loading", x: 0, y: 0, width: 340, height: 240, scale_x: 1, scale_y: 1 };
   const nodes = [
@@ -284,4 +323,25 @@ test("persisted canvas batch tasks restore sparse successful outputs", () => {
   assert.equal(result.nodes[0].batch_primary_id, "first");
   assert.equal(result.nodes[1].url, "/images/first.png");
   assert.equal(result.nodes[2].generation_status, "error");
+  assert.equal(result.nodes[2].generation_error, "第二张失败");
+});
+
+test("persisted canvas batch root keeps the upstream error when no output completed", () => {
+  const base = { type: "image", task_id: "task", generation_status: "loading", x: 0, y: 0, width: 340, height: 240, scale_x: 1, scale_y: 1 };
+  const nodes = [
+    { ...base, id: "root", batch_child_ids: ["first", "second"] },
+    { ...base, id: "first", batch_root_id: "root" },
+    { ...base, id: "second", batch_root_id: "root" },
+  ];
+  const result = reconcilePersistedCanvasTaskNodes(nodes, {
+    id: "task",
+    status: "error",
+    error: "upstream quota exhausted",
+    data: [],
+    output_statuses: ["error", "error"],
+  });
+  assert.equal(result.nodes[0].generation_status, "error");
+  assert.equal(result.nodes[0].generation_error, "upstream quota exhausted");
+  assert.equal(result.nodes[1].generation_error, "upstream quota exhausted");
+  assert.equal(result.nodes[2].generation_error, "upstream quota exhausted");
 });

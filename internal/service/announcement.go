@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -17,6 +18,7 @@ const (
 	maxAnnouncementTitleRunes         = 80
 	maxAnnouncementBodyRunes          = 2000
 	maxAnnouncementPreferenceVersions = 500
+	announcementSaveAttempts          = 3
 )
 
 type Announcement struct {
@@ -90,15 +92,26 @@ func (s *AnnouncementService) Create(body map[string]any) (Announcement, error) 
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	items, err := s.loadLocked()
-	if err != nil {
-		return Announcement{}, err
+	for attempt := 0; attempt < announcementSaveAttempts; attempt++ {
+		items, err := s.loadLocked()
+		if err != nil {
+			return Announcement{}, err
+		}
+		for _, existing := range items {
+			if existing.ID == item.ID {
+				return item, nil
+			}
+		}
+		items = append([]Announcement{item}, items...)
+		if err := s.saveLocked(items); err != nil {
+			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < announcementSaveAttempts {
+				continue
+			}
+			return Announcement{}, err
+		}
+		return item, nil
 	}
-	items = append([]Announcement{item}, items...)
-	if err := s.saveLocked(items); err != nil {
-		return Announcement{}, err
-	}
-	return item, nil
+	return Announcement{}, fmt.Errorf("failed to save announcement")
 }
 
 func (s *AnnouncementService) Update(id string, body map[string]any) (*Announcement, error) {
@@ -109,47 +122,55 @@ func (s *AnnouncementService) Update(id string, body map[string]any) (*Announcem
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	items, err := s.loadLocked()
-	if err != nil {
-		return nil, err
-	}
-	for index := range items {
-		if items[index].ID != id {
-			continue
-		}
-		changed := false
-		if value, exists := body["title"]; exists {
-			title, normalizeErr := normalizeAnnouncementTitle(value)
-			if normalizeErr != nil {
-				return nil, normalizeErr
-			}
-			items[index].Title = title
-			changed = true
-		}
-		if value, exists := body["content"]; exists {
-			content, normalizeErr := normalizeAnnouncementContent(value)
-			if normalizeErr != nil {
-				return nil, normalizeErr
-			}
-			items[index].Content = content
-			changed = true
-		}
-		if value, exists := body["enabled"]; exists {
-			items[index].Enabled = util.ToBool(value)
-			changed = true
-		}
-		if !changed {
-			return nil, fmt.Errorf("no updates provided")
-		}
-		items[index].UpdatedAt = util.NowISO()
-		updated := items[index]
-		sortAnnouncements(items)
-		if err := s.saveLocked(items); err != nil {
+	for attempt := 0; attempt < announcementSaveAttempts; attempt++ {
+		items, err := s.loadLocked()
+		if err != nil {
 			return nil, err
 		}
-		return &updated, nil
+		for index := range items {
+			if items[index].ID != id {
+				continue
+			}
+			changed := false
+			if value, exists := body["title"]; exists {
+				title, normalizeErr := normalizeAnnouncementTitle(value)
+				if normalizeErr != nil {
+					return nil, normalizeErr
+				}
+				items[index].Title = title
+				changed = true
+			}
+			if value, exists := body["content"]; exists {
+				content, normalizeErr := normalizeAnnouncementContent(value)
+				if normalizeErr != nil {
+					return nil, normalizeErr
+				}
+				items[index].Content = content
+				changed = true
+			}
+			if value, exists := body["enabled"]; exists {
+				items[index].Enabled = util.ToBool(value)
+				changed = true
+			}
+			if !changed {
+				return nil, fmt.Errorf("no updates provided")
+			}
+			items[index].UpdatedAt = util.NowISO()
+			updated := items[index]
+			sortAnnouncements(items)
+			if err := s.saveLocked(items); err != nil {
+				if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < announcementSaveAttempts {
+					break
+				}
+				return nil, err
+			}
+			return &updated, nil
+		}
+		if attempt+1 == announcementSaveAttempts {
+			return nil, nil
+		}
 	}
-	return nil, nil
+	return nil, fmt.Errorf("failed to update announcement")
 }
 
 func (s *AnnouncementService) Delete(id string) (bool, error) {
@@ -159,26 +180,34 @@ func (s *AnnouncementService) Delete(id string) (bool, error) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	items, err := s.loadLocked()
-	if err != nil {
-		return false, err
-	}
-	next := make([]Announcement, 0, len(items))
-	removed := false
-	for _, item := range items {
-		if item.ID == id {
-			removed = true
-			continue
+	removedOnce := false
+	for attempt := 0; attempt < announcementSaveAttempts; attempt++ {
+		items, err := s.loadLocked()
+		if err != nil {
+			return false, err
 		}
-		next = append(next, item)
+		next := make([]Announcement, 0, len(items))
+		removed := false
+		for _, item := range items {
+			if item.ID == id {
+				removed = true
+				continue
+			}
+			next = append(next, item)
+		}
+		if !removed {
+			return removedOnce, nil
+		}
+		removedOnce = true
+		if err := s.saveLocked(next); err != nil {
+			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < announcementSaveAttempts {
+				continue
+			}
+			return false, err
+		}
+		return true, nil
 	}
-	if !removed {
-		return false, nil
-	}
-	if err := s.saveLocked(next); err != nil {
-		return false, err
-	}
-	return true, nil
+	return false, fmt.Errorf("failed to delete announcement")
 }
 
 func (s *AnnouncementService) Preferences(ownerID string) (AnnouncementPreferences, error) {
@@ -208,22 +237,28 @@ func (s *AnnouncementService) UpdatePreferences(ownerID, version, action, localD
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	preferences, err := s.loadPreferencesLocked(ownerID)
-	if err != nil {
-		return AnnouncementPreferences{}, err
+	for attempt := 0; attempt < announcementSaveAttempts; attempt++ {
+		preferences, err := s.loadPreferencesLocked(ownerID)
+		if err != nil {
+			return AnnouncementPreferences{}, err
+		}
+		preferences.SeenVersions = appendUniqueAnnouncementVersion(preferences.SeenVersions, version)
+		switch action {
+		case "today":
+			preferences.SnoozedDates[version] = localDate
+		case "forever":
+			preferences.PermanentVersions = appendUniqueAnnouncementVersion(preferences.PermanentVersions, version)
+			delete(preferences.SnoozedDates, version)
+		}
+		if err := s.savePreferencesLocked(ownerID, preferences); err != nil {
+			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < announcementSaveAttempts {
+				continue
+			}
+			return AnnouncementPreferences{}, err
+		}
+		return preferences, nil
 	}
-	preferences.SeenVersions = appendUniqueAnnouncementVersion(preferences.SeenVersions, version)
-	switch action {
-	case "today":
-		preferences.SnoozedDates[version] = localDate
-	case "forever":
-		preferences.PermanentVersions = appendUniqueAnnouncementVersion(preferences.PermanentVersions, version)
-		delete(preferences.SnoozedDates, version)
-	}
-	if err := s.savePreferencesLocked(ownerID, preferences); err != nil {
-		return AnnouncementPreferences{}, err
-	}
-	return preferences, nil
+	return AnnouncementPreferences{}, fmt.Errorf("failed to save announcement preferences")
 }
 
 func (s *AnnouncementService) loadPreferencesLocked(ownerID string) (AnnouncementPreferences, error) {

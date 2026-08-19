@@ -364,17 +364,36 @@ func clientIP(r *http.Request) string {
 	if r == nil {
 		return ""
 	}
-	if forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); forwarded != "" {
-		return strings.TrimSpace(strings.Split(forwarded, ",")[0])
+	remoteIP := remoteRequestIP(r.RemoteAddr)
+	if trustedProxyIP(remoteIP) {
+		if forwarded := strings.TrimSpace(r.Header.Get("X-Forwarded-For")); forwarded != "" {
+			parts := strings.Split(forwarded, ",")
+			candidate := strings.TrimSpace(parts[len(parts)-1])
+			if net.ParseIP(candidate) != nil {
+				return candidate
+			}
+		}
+		if realIP := strings.TrimSpace(r.Header.Get("X-Real-IP")); realIP != "" {
+			if net.ParseIP(realIP) != nil {
+				return realIP
+			}
+		}
 	}
-	if realIP := strings.TrimSpace(r.Header.Get("X-Real-IP")); realIP != "" {
-		return realIP
-	}
-	host, _, err := net.SplitHostPort(strings.TrimSpace(r.RemoteAddr))
+	return remoteIP
+}
+
+func remoteRequestIP(remoteAddr string) string {
+	value := strings.TrimSpace(remoteAddr)
+	host, _, err := net.SplitHostPort(value)
 	if err == nil {
 		return host
 	}
-	return util.Clean(r.RemoteAddr)
+	return util.Clean(value)
+}
+
+func trustedProxyIP(value string) bool {
+	ip := net.ParseIP(strings.TrimSpace(value))
+	return ip != nil && (ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast())
 }
 
 func parseLogQuery(r *http.Request) (service.LogQuery, error) {

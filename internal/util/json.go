@@ -20,6 +20,8 @@ const (
 	ImageModelAuto      = "auto"
 	ImageModelGPT       = "gpt-image-2"
 	ImageModelCodex     = "codex-gpt-image-2"
+	ImageModelGemini    = "gemini-3.1-flash-image"
+	ImageModelGrok      = "grok-imagine-image"
 	ImageModelGPT5      = "gpt-5"
 	ImageModelGPT51     = "gpt-5-1"
 	ImageModelGPT52     = "gpt-5-2"
@@ -159,6 +161,50 @@ func ToInt(v any, fallback int) int {
 	return fallback
 }
 
+// StrictInt returns an integer only when the input represents one exactly.
+func StrictInt(v any) (int, bool) {
+	switch x := v.(type) {
+	case int:
+		return x, true
+	case int8:
+		return int(x), true
+	case int16:
+		return int(x), true
+	case int32:
+		return int(x), true
+	case int64:
+		return strictParsedInt(strconv.FormatInt(x, 10))
+	case uint:
+		return strictParsedInt(strconv.FormatUint(uint64(x), 10))
+	case uint8:
+		return int(x), true
+	case uint16:
+		return int(x), true
+	case uint32:
+		return strictParsedInt(strconv.FormatUint(uint64(x), 10))
+	case uint64:
+		return strictParsedInt(strconv.FormatUint(x, 10))
+	case float32:
+		return strictParsedInt(strconv.FormatFloat(float64(x), 'f', -1, 32))
+	case float64:
+		return strictParsedInt(strconv.FormatFloat(x, 'f', -1, 64))
+	case json.Number:
+		return strictParsedInt(x.String())
+	case string:
+		return strictParsedInt(strings.TrimSpace(x))
+	default:
+		return 0, false
+	}
+}
+
+func strictParsedInt(value string) (int, bool) {
+	n, err := strconv.Atoi(value)
+	if err != nil {
+		return 0, false
+	}
+	return n, true
+}
+
 func ToBool(v any) bool {
 	switch x := v.(type) {
 	case bool:
@@ -177,7 +223,17 @@ func ToBool(v any) bool {
 func DecodeJSON(r io.Reader, out any) error {
 	dec := json.NewDecoder(r)
 	dec.UseNumber()
-	return dec.Decode(out)
+	if err := dec.Decode(out); err != nil {
+		return err
+	}
+	var trailing any
+	if err := dec.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return fmt.Errorf("request body must contain a single JSON value")
+		}
+		return err
+	}
+	return nil
 }
 
 func WriteJSON(w http.ResponseWriter, status int, payload any) {

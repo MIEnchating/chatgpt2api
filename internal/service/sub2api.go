@@ -132,7 +132,11 @@ func (c *Sub2APIConfig) GetImportJob(id string) map[string]any {
 }
 
 func (c *Sub2APIConfig) load() []map[string]any {
-	raw := util.AsMapSlice(loadStoredJSON(c.store, c.docName))
+	rawValue, err := loadStoredJSON(c.store, c.docName)
+	if err != nil {
+		return nil
+	}
+	raw := util.AsMapSlice(rawValue)
 	out := make([]map[string]any, 0, len(raw))
 	for _, item := range raw {
 		out = append(out, normalizeSub2Server(item))
@@ -281,7 +285,13 @@ func (s *Sub2APIService) runImport(serverID string, server map[string]any, ids [
 		s.updateJob(serverID, map[string]any{"status": "failed", "completed": util.ToInt(current["total"], 0), "failed": len(anyList(current["errors"]))})
 		return
 	}
-	add := s.accounts.AddAccounts(tokens)
+	add, err := s.accounts.AddAccounts(tokens)
+	if err != nil {
+		s.appendJobError(serverID, "database", err.Error())
+		current := s.config.GetImportJob(serverID)
+		s.updateJob(serverID, map[string]any{"status": "failed", "completed": len(ids), "failed": len(anyList(current["errors"]))})
+		return
+	}
 	refresh := s.accounts.RefreshAccounts(context.Background(), tokens)
 	current := s.config.GetImportJob(serverID)
 	s.updateJob(serverID, map[string]any{"status": "completed", "completed": len(ids), "added": util.ToInt(add["added"], 0), "skipped": util.ToInt(add["skipped"], 0), "refreshed": util.ToInt(refresh["refreshed"], 0), "failed": len(anyList(current["errors"]))})

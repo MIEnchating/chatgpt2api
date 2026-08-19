@@ -34,6 +34,12 @@ test("configuration inputs follow connection order and ignore empty nodes", () =
   assert.equal(canvasConfigInputLabel(inputs[1], inputs), "文本1");
 });
 
+test("video nodes are not coerced into image configuration text inputs", () => {
+  const nodes = [node("config", "config"), node("video", "video", { prompt: "视频描述" })];
+  const inputs = canvasConfigInputs("config", nodes, [{ id: "video-config", from_node_id: "video", to_node_id: "config" }]);
+  assert.deepEqual(inputs, []);
+});
+
 test("shared input index preserves direct and connected generation semantics", () => {
   const nodes = [
     node("source", "image", { url: "source.png" }),

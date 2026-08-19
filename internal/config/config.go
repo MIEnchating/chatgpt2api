@@ -28,6 +28,7 @@ var settingEnvKeys = map[string]string{
 	"newapi_token_group":                "CHATGPT2API_NEWAPI_TOKEN_GROUP",
 	"proxy":                             "CHATGPT2API_PROXY",
 	"image_models":                      "CHATGPT2API_IMAGE_MODELS",
+	"video_models":                      "CHATGPT2API_VIDEO_MODELS",
 	"refresh_account_interval_minute":   "CHATGPT2API_REFRESH_ACCOUNT_INTERVAL_MINUTE",
 	"image_task_timeout_seconds":        "CHATGPT2API_IMAGE_TASK_TIMEOUT_SECONDS",
 	"user_default_concurrent_limit":     "CHATGPT2API_USER_DEFAULT_CONCURRENT_LIMIT",
@@ -71,7 +72,8 @@ const (
 )
 
 var (
-	defaultImageModels = []string{util.ImageModelGPT}
+	defaultImageModels = []string{util.ImageModelGPT, util.ImageModelGemini, util.ImageModelGrok}
+	defaultVideoModels = []string{"sora-2", "grok-imagine-video-1.5", "kling-v3", "MiniMax-Hailuo-2.3", "doubao-seedance-2-5-260628"}
 	defaultChatModels  = []string{util.ImageModelGPT55, util.ImageModelGPT54}
 )
 
@@ -521,6 +523,10 @@ func (s *Store) ImageModels() []string {
 	return normalizeModelList(s.settingValue("image_models", defaultImageModels), defaultImageModels)
 }
 
+func (s *Store) VideoModels() []string {
+	return normalizeModelList(s.settingValue("video_models", defaultVideoModels), defaultVideoModels)
+}
+
 func (s *Store) ChatModels() []string {
 	return normalizeModelList(s.settingValue("chat_models", defaultChatModels), defaultChatModels)
 }
@@ -543,6 +549,7 @@ func (s *Store) Get() map[string]any {
 	data["refresh_account_interval_minute"] = s.RefreshAccountIntervalMinute()
 	data["image_task_timeout_seconds"] = s.ImageTaskTimeoutSeconds()
 	data["image_models"] = s.ImageModels()
+	data["video_models"] = s.VideoModels()
 	data["default_image_model"] = s.DefaultImageModel()
 	data["user_default_concurrent_limit"] = s.UserDefaultConcurrentLimit()
 	data["user_default_rpm_limit"] = s.UserDefaultRPMLimit()
@@ -630,6 +637,9 @@ func (s *Store) Update(data map[string]any) (map[string]any, error) {
 	}
 	if value, ok := next["image_models"]; ok {
 		next["image_models"] = normalizeModelList(value, defaultImageModels)
+	}
+	if value, ok := next["video_models"]; ok {
+		next["video_models"] = normalizeModelList(value, defaultVideoModels)
 	}
 	delete(next, "chat_models")
 	delete(next, "default_chat_model")

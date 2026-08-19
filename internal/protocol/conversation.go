@@ -3,10 +3,9 @@ package protocol
 import (
 	"bytes"
 	"context"
-	"crypto/md5"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image"
 	"image/color"
@@ -188,8 +187,8 @@ func normalizedImageOutputCompression(value any) (int, bool) {
 	if value == nil || strings.TrimSpace(util.Clean(value)) == "" {
 		return 0, false
 	}
-	compression := util.ToInt(value, -1)
-	if compression < 0 {
+	compression, ok := util.StrictInt(value)
+	if !ok || compression < 0 {
 		return 0, false
 	}
 	if compression > 100 {
@@ -804,7 +803,9 @@ func (e *Engine) invalidateImageConversationSession(request ConversationRequest)
 	if e == nil || e.ImageConversationSessions == nil || request.OwnerID == "" || request.FrontendConversationID == "" {
 		return
 	}
-	e.ImageConversationSessions.Invalidate(request.OwnerID, request.FrontendConversationID)
+	if err := e.ImageConversationSessions.Invalidate(request.OwnerID, request.FrontendConversationID); err != nil && e.Logger != nil {
+		e.Logger.Error("failed to persist invalidated image conversation session", "error", err)
+	}
 }
 
 func (e *Engine) bindImageConversationSession(request ConversationRequest, token, conversationID, parentMessageID string) {
@@ -816,13 +817,15 @@ func (e *Engine) bindImageConversationSession(request ConversationRequest, token
 	if token == "" || conversationID == "" || parentMessageID == "" {
 		return
 	}
-	e.ImageConversationSessions.Bind(service.ImageConversationSession{
+	if err := e.ImageConversationSessions.Bind(service.ImageConversationSession{
 		OwnerID:                 request.OwnerID,
 		FrontendConversationID:  request.FrontendConversationID,
 		AccessToken:             token,
 		UpstreamConversationID:  conversationID,
 		UpstreamParentMessageID: parentMessageID,
-	})
+	}); err != nil && e.Logger != nil {
+		e.Logger.Error("failed to persist image conversation session", "error", err)
+	}
 }
 
 func (e *Engine) newImageClient(token string) *backend.Client {
@@ -1170,14 +1173,17 @@ func (e *Engine) FormatImageResultWithOptionsE(ctx context.Context, items []map[
 		if err != nil {
 			continue
 		}
-		itemOptions := options
-		if hasRequestedFormat {
-			itemOptions.Format = defaultFormat
-		} else if itemFormat := strings.TrimSpace(util.Clean(item["output_format"])); itemFormat != "" {
-			itemOptions.Format = NormalizeImageOutputFormat(itemFormat)
+		sourceInfo, err := util.InspectRasterImage(imageBytes, "image/png", "image/jpeg", "image/webp")
+		if err != nil {
+			continue
 		}
-		if itemOptions.Format == "" {
+		itemOptions := options
+		if itemOptions.TrustUpstreamFormat {
+			itemOptions.Format = sourceInfo.Format
+		} else if hasRequestedFormat {
 			itemOptions.Format = defaultFormat
+		} else {
+			itemOptions.Format = sourceInfo.Format
 		}
 		if !SupportsImageOutputCompression(itemOptions.Format) {
 			itemOptions.Compression = nil
@@ -1239,15 +1245,32 @@ func (e *Engine) SaveImageBytesForOwnerWithFormatE(ctx context.Context, imageDat
 		}
 		return e.Images.SaveImageBytes(ctx, imageData, baseURL, ownerID, ownerName, outputFormat)
 	}
-	outputFormat = NormalizeImageOutputFormat(outputFormat)
-	sum := md5.Sum(imageData)
-	filename := fmt.Sprintf("%d_%s.%s", time.Now().Unix(), hex.EncodeToString(sum[:]), imageFileExtension(outputFormat))
-	relativeDir := filepath.Join(time.Now().Format("2006"), time.Now().Format("01"), time.Now().Format("02"))
+	if e == nil || e.Config == nil {
+		return "", errors.New("image configuration is required")
+	}
+	if len(imageData) > util.MaxRasterImageEncodedBytes {
+		return "", errors.New("image data is too large")
+	}
+	info, err := util.InspectRasterImage(imageData, "image/png", "image/jpeg", "image/webp")
+	if err != nil {
+		return "", fmt.Errorf("invalid image data: %w", err)
+	}
+	outputFormat = info.Format
+	now := time.Now()
+	filename := fmt.Sprintf("%d_%s.%s", now.UnixNano(), util.NewHex(12), imageFileExtension(outputFormat))
+	relativeDir := filepath.Join(now.Format("2006"), now.Format("01"), now.Format("02"))
 	rel := filepath.Join(relativeDir, filename)
 	filePath := filepath.Join(e.Config.ImagesDir(), rel)
-	_ = os.MkdirAll(filepath.Dir(filePath), 0o755)
-	_ = os.WriteFile(filePath, imageData, 0o644)
-	e.writeImageOwnerMetadata(rel, ownerID, ownerName)
+	if err := os.MkdirAll(filepath.Dir(filePath), 0o755); err != nil {
+		return "", fmt.Errorf("create image directory: %w", err)
+	}
+	if err := os.WriteFile(filePath, imageData, 0o644); err != nil {
+		return "", fmt.Errorf("write image file: %w", err)
+	}
+	if err := e.writeImageOwnerMetadata(rel, ownerID, ownerName); err != nil {
+		_ = os.Remove(filePath)
+		return "", fmt.Errorf("write image metadata: %w", err)
+	}
 	if baseURL == "" {
 		baseURL = e.Config.BaseURL()
 	}
@@ -1263,7 +1286,14 @@ func imageFileExtension(outputFormat string) string {
 
 func encodeImageBytes(data []byte, options ImageOutputOptions) ([]byte, error) {
 	format := NormalizeImageOutputFormat(options.Format)
-	if format == "png" {
+	if len(data) > util.MaxRasterImageEncodedBytes {
+		return nil, errors.New("image data is too large")
+	}
+	info, err := util.InspectRasterImage(data, "image/png", "image/jpeg", "image/webp")
+	if err != nil {
+		return nil, fmt.Errorf("invalid image data: %w", err)
+	}
+	if format == info.Format {
 		return data, nil
 	}
 	img, _, err := image.Decode(bytes.NewReader(data))
@@ -1320,26 +1350,28 @@ func blendOverWhite(channel, alpha int) uint8 {
 	return uint8(value >> 8)
 }
 
-func (e *Engine) writeImageOwnerMetadata(rel, ownerID, ownerName string) {
+func (e *Engine) writeImageOwnerMetadata(rel, ownerID, ownerName string) error {
 	ownerID = strings.TrimSpace(ownerID)
 	ownerName = strings.TrimSpace(ownerName)
 	if e == nil || e.Config == nil || ownerID == "" {
-		return
+		return nil
 	}
 	value := map[string]any{"owner_id": ownerID, "updated_at": time.Now().UTC().Format(time.RFC3339Nano)}
 	if ownerName != "" {
 		value["owner_name"] = ownerName
 	}
 	if e.Storage != nil {
-		_ = e.Storage.SaveJSONDocument(imageOwnerDocumentName(rel), value)
-		return
+		return e.Storage.SaveJSONDocument(imageOwnerDocumentName(rel), value)
 	}
 	metaPath := filepath.Join(e.Config.ImageMetadataDir(), filepath.FromSlash(filepath.ToSlash(rel))+".json")
-	_ = os.MkdirAll(filepath.Dir(metaPath), 0o755)
 	data, err := json.Marshal(value)
-	if err == nil {
-		_ = os.WriteFile(metaPath, data, 0o644)
+	if err != nil {
+		return err
 	}
+	if err := os.MkdirAll(filepath.Dir(metaPath), 0o755); err != nil {
+		return err
+	}
+	return os.WriteFile(metaPath, data, 0o644)
 }
 
 func imageOwnerDocumentName(rel string) string {
@@ -1618,11 +1650,11 @@ func imageDimensionsFromDataURL(value string) (int, int, bool) {
 	if err != nil {
 		return 0, 0, false
 	}
-	config, _, err := image.DecodeConfig(bytes.NewReader(data))
-	if err != nil || config.Width <= 0 || config.Height <= 0 {
+	info, err := util.InspectRasterImage(data, "image/png", "image/jpeg", "image/webp", "image/gif")
+	if err != nil {
 		return 0, 0, false
 	}
-	return config.Width, config.Height, true
+	return info.Width, info.Height, true
 }
 
 func estimateImageTokensFromDimensions(width, height int) int {

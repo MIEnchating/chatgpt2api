@@ -582,6 +582,36 @@ func TestImageConversationAssetCleanupContextStopsWaitingForFilesystemLock(t *te
 	}
 }
 
+func TestImageConversationAssetFilesystemScansPropagateErrors(t *testing.T) {
+	parent := t.TempDir()
+	blocker := filepath.Join(parent, "not-a-directory")
+	if err := os.WriteFile(blocker, []byte("blocker"), 0o600); err != nil {
+		t.Fatalf("WriteFile(blocker) error = %v", err)
+	}
+	assets := NewImageConversationAssetService(filepath.Join(blocker, "assets"))
+
+	if _, err := assets.governanceLockedContext(context.Background(), "", nil, time.Time{}, 0); err == nil {
+		t.Fatal("governanceLockedContext() error = nil, want filesystem traversal error")
+	}
+	if _, err := imageConversationAssetOwnerDirectoryEmptyContext(context.Background(), filepath.Join(blocker, "owner")); err == nil {
+		t.Fatal("imageConversationAssetOwnerDirectoryEmptyContext() error = nil, want filesystem read error")
+	}
+}
+
+func TestImageConversationAssetFilesystemScansAllowMissingDirectories(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "missing")
+	assets := NewImageConversationAssetService(root)
+
+	usage, err := assets.governanceLockedContext(context.Background(), "", nil, time.Time{}, 0)
+	if err != nil || usage.FileCount != 0 || usage.TotalBytes != 0 {
+		t.Fatalf("governanceLockedContext(missing) = %#v, error = %v", usage, err)
+	}
+	result, err := assets.CleanupOrphans("owner", map[string]struct{}{}, time.Hour, 0)
+	if err != nil || result.FileCount != 0 || result.DeletedCount != 0 {
+		t.Fatalf("CleanupOrphans(missing) = %#v, error = %v", result, err)
+	}
+}
+
 func TestImageConversationHistoryMergeAssetizesBeforeAcceptedHash(t *testing.T) {
 	backend := newTestStorageBackend(t)
 	rows := backend.(storage.ImageConversationBackend)

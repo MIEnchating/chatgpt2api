@@ -3,11 +3,16 @@ import test from "node:test";
 
 import {
   INTERRUPTED_CANVAS_GENERATION_ERROR,
+  PENDING_CANVAS_GENERATION_RECOVERY_ERROR,
   buildCanvasGenerationContext,
   buildCanvasImageReferencePrompt,
   canvasGenerationCount,
+  canvasGenerationModel,
+  canvasGenerationNeedsRecovery,
   canvasGenerationReferenceImageURLs,
+  canvasGenerationRequestSize,
   findCanvasRetryConfigurationNode,
+  markCanvasGenerationRecoveryPending,
   restoreInterruptedCanvasGenerations,
 } from "../src/app/canvas/canvas-generation-context.ts";
 
@@ -22,10 +27,29 @@ test("reference image prompts use the same numbered labels as the canvas", () =>
 });
 
 test("tool-specific and retry generation force a single output", () => {
-  assert.equal(canvasGenerationCount(4, undefined, false), 4);
-  assert.equal(canvasGenerationCount(4, 1, false), 1);
-  assert.equal(canvasGenerationCount(4, 8, true), 1);
-  assert.equal(canvasGenerationCount(20, undefined, false), 10);
+  assert.equal(canvasGenerationCount("gpt-image-2", 10, undefined, false), 10);
+  assert.equal(canvasGenerationCount("gpt-image-2", 10, 1, false), 1);
+  assert.equal(canvasGenerationCount("gpt-image-2", 10, 8, true), 1);
+  assert.equal(canvasGenerationCount("gemini-3.1-flash-image", 20, undefined, false), 4);
+});
+
+test("canvas retries retain the model that created the failed node", () => {
+  const failed = node("failed", "image", { generation_model: "gemini-3.1-flash-image" });
+  const legacy = node("legacy", "image");
+  const configuration = node("config", "config", { generation_model: "gpt-image-2" });
+
+  assert.equal(canvasGenerationModel("grok-imagine-image", failed, null, true), "gemini-3.1-flash-image");
+  assert.equal(canvasGenerationModel("grok-imagine-image", legacy, configuration, true), "gpt-image-2");
+  assert.equal(canvasGenerationModel("grok-imagine-image", failed, null, false), "grok-imagine-image");
+});
+
+test("canvas generation keeps official Grok ratio values after switching models", () => {
+  assert.equal(canvasGenerationRequestSize("gemini-3.1-flash-image", "1:8", "4k"), "1:8");
+  assert.equal(canvasGenerationRequestSize("gemini-3.1-flash-lite-image", "1:8", "auto"), undefined);
+  assert.equal(canvasGenerationRequestSize("gpt-image-2", "1:8", "4k"), undefined);
+  assert.equal(canvasGenerationRequestSize("grok-imagine-image", "16:9", "auto"), "16:9");
+  assert.equal(canvasGenerationRequestSize("gpt-image-2", "1024x768", "auto"), "1024x768");
+  assert.equal(canvasGenerationRequestSize("codex-gpt-image-2", "1024x768", "auto"), undefined);
 });
 
 test("generation context appends direct upstream text in connection order", () => {
@@ -190,6 +214,22 @@ test("loading nodes become retryable after the canvas reloads", () => {
     { ...loading, generation_status: "error", generation_error: INTERRUPTED_CANVAS_GENERATION_ERROR },
     success,
   ]);
+});
+
+test("temporary synchronization failures remain recoverable without overwriting completed images", () => {
+  const loading = node("loading", "image", { task_id: "task-1", generation_status: "loading" });
+  const completed = node("completed", "image", { task_id: "task-1", generation_status: "success", url: "/images/final.png" });
+  const unrelated = node("unrelated", "image", { task_id: "task-2", generation_status: "loading" });
+  const pending = markCanvasGenerationRecoveryPending([loading, completed, unrelated], "task-1");
+
+  assert.deepEqual(pending, [
+    { ...loading, generation_status: "error", generation_error: PENDING_CANVAS_GENERATION_RECOVERY_ERROR },
+    completed,
+    unrelated,
+  ]);
+  assert.equal(canvasGenerationNeedsRecovery(pending[0]), true);
+  assert.equal(canvasGenerationNeedsRecovery(pending[1]), false);
+  assert.equal(canvasGenerationNeedsRecovery({ ...loading, generation_status: "error", generation_error: "上游拒绝请求" }), false);
 });
 
 test("retry fallback finds the nearest upstream generation configuration", () => {

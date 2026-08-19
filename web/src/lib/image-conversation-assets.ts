@@ -122,13 +122,18 @@ export function isImageConversationAssetURL(value: string) {
   return assetPathFromURL(textValue(value)) !== "";
 }
 
-export function imageConversationReferenceLimitMessage(existingCount: number, incomingCount: number) {
+export function imageConversationReferenceLimitMessage(
+  existingCount: number,
+  incomingCount: number,
+  maximum = MAX_IMAGE_CONVERSATION_REFERENCE_IMAGES,
+) {
   const existing = Math.max(0, Math.floor(Number(existingCount) || 0));
   const incoming = Math.max(0, Math.floor(Number(incomingCount) || 0));
-  if (existing + incoming <= MAX_IMAGE_CONVERSATION_REFERENCE_IMAGES) {
+  const limit = Math.max(0, Math.floor(Number(maximum) || 0));
+  if (existing + incoming <= limit) {
     return "";
   }
-  return `最多支持 ${MAX_IMAGE_CONVERSATION_REFERENCE_IMAGES} 张参考图，请先移除多余图片`;
+  return `最多支持 ${limit} 张参考图，请先移除多余图片`;
 }
 
 export function planImageConversationAssetUploadBatches<T extends SizedUpload>(

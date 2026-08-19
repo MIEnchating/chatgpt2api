@@ -20,6 +20,7 @@ export type PromptFavorite = {
   mode: BananaPromptMode;
   category: string;
   sub_category?: string;
+  tags: string[];
   created?: string;
   source_label: string;
   is_nsfw: boolean;
@@ -55,6 +56,7 @@ export function promptFavoriteToBananaPrompt(favorite: PromptFavorite): BananaPr
     mode: favorite.mode,
     category: favorite.category,
     subCategory: favorite.sub_category,
+    tags: favorite.tags || [],
     created: favorite.created,
     source: favorite.source,
     sourceLabel: favorite.source_label,
@@ -76,6 +78,7 @@ export function bananaPromptToFavoritePayload(prompt: BananaPrompt) {
     mode: prompt.mode,
     category: prompt.category,
     sub_category: prompt.subCategory,
+    tags: prompt.tags,
     created: prompt.created,
     source_label: prompt.sourceLabel,
     is_nsfw: prompt.isNsfw,

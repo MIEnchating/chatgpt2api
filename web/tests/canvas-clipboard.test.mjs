@@ -26,6 +26,22 @@ test("preserves generation configuration nodes in copied graphs", () => {
   assert.deepEqual(result?.connections, [{ id: "idea-config", from_node_id: "idea", to_node_id: "config" }]);
 });
 
+test("preserves video nodes and their generation settings in copied graphs", () => {
+  const result = normalizeCanvasClipboard({
+    nodes: [node("video", {
+      type: "video",
+      url: "/videos/example.mp4",
+      generation_video_model: "sora-2",
+      generation_video_size: "1280x720",
+      generation_video_seconds: 8,
+      generation_video_resolution: "1080p",
+    })],
+  });
+  assert.equal(result?.nodes[0].type, "video");
+  assert.equal(result?.nodes[0].url, "/videos/example.mp4");
+  assert.equal(result?.nodes[0].generation_video_seconds, 8);
+});
+
 test("drops legacy parent ids because connections are the current graph source", () => {
   const result = normalizeCanvasClipboard({
     nodes: [node("parent"), node("child", { parent_id: "parent" })],
@@ -38,9 +54,12 @@ test("drops legacy parent ids because connections are the current graph source",
 test("rejects malformed nodes instead of allowing invalid canvas state", () => {
   assert.equal(normalizeCanvasClipboard({ nodes: [node("bad", { width: 0 })] }), null);
   assert.equal(normalizeCanvasClipboard({ nodes: [node("bad", { type: "text", font_size: 40 })] }), null);
-  assert.equal(normalizeCanvasClipboard({ nodes: [{ id: "bad", type: "video", x: 0, y: 0, width: 1, height: 1, scale_x: 1, scale_y: 1 }] }), null);
+  assert.equal(normalizeCanvasClipboard({ nodes: [node("bad", { type: "video", generation_video_seconds: 0 })] }), null);
+  assert.equal(normalizeCanvasClipboard({ nodes: [node("bad", { type: "video", generation_video_size: "800x600" })] }), null);
+  assert.ok(normalizeCanvasClipboard({ nodes: [node("seedance", { type: "video", generation_video_resolution: "4k" })] }));
   assert.equal(normalizeCanvasClipboard({ nodes: [node("bad", { batch_child_ids: "child" })] }), null);
   assert.equal(normalizeCanvasClipboard({ nodes: [node("bad", { type: "config", composer_content: 42 })] }), null);
+  assert.equal(normalizeCanvasClipboard({ nodes: [node("bad", { generation_model: 42 })] }), null);
 });
 
 test("rejects dangling, duplicate, and self connections", () => {

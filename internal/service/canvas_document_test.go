@@ -2,6 +2,9 @@ package service
 
 import (
 	"errors"
+	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 
 	"chatgpt2api/internal/storage"
@@ -11,6 +14,48 @@ type countingCanvasDocumentBackend struct {
 	storage.Backend
 	documents storage.JSONDocumentBackend
 	saves     map[string]int
+}
+
+type canvasSaveBarrier struct {
+	mu        sync.Mutex
+	remaining int
+	release   chan struct{}
+}
+
+func newCanvasSaveBarrier(participants int) *canvasSaveBarrier {
+	return &canvasSaveBarrier{remaining: participants, release: make(chan struct{})}
+}
+
+func (b *canvasSaveBarrier) wait() {
+	b.mu.Lock()
+	b.remaining--
+	if b.remaining == 0 {
+		close(b.release)
+	}
+	b.mu.Unlock()
+	<-b.release
+}
+
+type barrierCanvasDocumentBackend struct {
+	storage.Backend
+	documents storage.JSONDocumentBackend
+	barrier   *canvasSaveBarrier
+	once      sync.Once
+}
+
+func (b *barrierCanvasDocumentBackend) LoadJSONDocument(name string) (any, error) {
+	return b.documents.LoadJSONDocument(name)
+}
+
+func (b *barrierCanvasDocumentBackend) SaveJSONDocument(name string, value any) error {
+	if b.barrier != nil && strings.HasPrefix(name, canvasWorkspaceDir+"/") {
+		b.once.Do(b.barrier.wait)
+	}
+	return b.documents.SaveJSONDocument(name, value)
+}
+
+func (b *barrierCanvasDocumentBackend) DeleteJSONDocument(name string) error {
+	return b.documents.DeleteJSONDocument(name)
 }
 
 func newCountingCanvasDocumentBackend(t *testing.T) *countingCanvasDocumentBackend {
@@ -66,6 +111,134 @@ func TestCanvasDocumentServiceSavesAndIsolatesOwners(t *testing.T) {
 	}
 	if other.Revision != 0 || len(other.Nodes) != 0 {
 		t.Fatalf("other owner saw canvas = %#v", other)
+	}
+}
+
+func TestCanvasDocumentServiceRejectsStaleRevision(t *testing.T) {
+	service := NewCanvasDocumentService(newTestStorageBackend(t))
+	initial, err := service.Load("owner")
+	if err != nil {
+		t.Fatalf("Load(initial) error = %v", err)
+	}
+	first := initial
+	first.Title = "第一台设备"
+	first.Nodes = []CanvasNode{{ID: "first", Type: "text", Width: 320, Height: 160, ScaleX: 1, ScaleY: 1}}
+	saved, err := service.SaveAtRevision("owner", first)
+	if err != nil {
+		t.Fatalf("SaveAtRevision(first) error = %v", err)
+	}
+
+	stale := initial
+	stale.Title = "第二台设备"
+	if _, err := service.SaveAtRevision("owner", stale); !errors.Is(err, ErrCanvasRevisionConflict) {
+		t.Fatalf("SaveAtRevision(stale) error = %v, want ErrCanvasRevisionConflict", err)
+	}
+	loaded, err := service.Load("owner")
+	if err != nil {
+		t.Fatalf("Load(after conflict) error = %v", err)
+	}
+	if loaded.Title != saved.Title || loaded.Revision != saved.Revision || len(loaded.Nodes) != 1 {
+		t.Fatalf("stale save changed document: loaded=%#v saved=%#v", loaded, saved)
+	}
+
+	loaded.Title = "基于最新版本"
+	updated, err := service.SaveAtRevision("owner", loaded)
+	if err != nil {
+		t.Fatalf("SaveAtRevision(current) error = %v", err)
+	}
+	if updated.Revision != saved.Revision+1 || updated.Title != "基于最新版本" {
+		t.Fatalf("updated document = %#v", updated)
+	}
+}
+
+func TestCanvasDocumentServiceRenameAdvancesRevision(t *testing.T) {
+	service := NewCanvasDocumentService(newTestStorageBackend(t))
+	initial, err := service.Load("owner")
+	if err != nil {
+		t.Fatalf("Load(initial) error = %v", err)
+	}
+
+	renamed, err := service.UpdateProjectAtRevision("owner", "rename", initial.ID, "新名称", initial.Revision)
+	if err != nil {
+		t.Fatalf("UpdateProjectAtRevision(rename) error = %v", err)
+	}
+	if renamed.Document.Title != "新名称" || renamed.Document.Revision != initial.Revision+1 {
+		t.Fatalf("renamed document = %#v", renamed.Document)
+	}
+	if _, err := service.SaveAtRevision("owner", initial); !errors.Is(err, ErrCanvasRevisionConflict) {
+		t.Fatalf("stale SaveAtRevision() error = %v, want ErrCanvasRevisionConflict", err)
+	}
+	if _, err := service.UpdateProjectAtRevision("owner", "delete", initial.ID, "", initial.Revision); !errors.Is(err, ErrCanvasRevisionConflict) {
+		t.Fatalf("stale delete error = %v, want ErrCanvasRevisionConflict", err)
+	}
+}
+
+func TestCanvasDocumentServiceMergesConcurrentSavesToDifferentProjects(t *testing.T) {
+	databaseURL := "sqlite:///" + filepath.ToSlash(filepath.Join(t.TempDir(), "shared-canvas.db"))
+	backendA, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend(A) error = %v", err)
+	}
+	t.Cleanup(func() { _ = backendA.Close() })
+	backendB, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend(B) error = %v", err)
+	}
+	t.Cleanup(func() { _ = backendB.Close() })
+
+	seed := NewCanvasDocumentService(backendA)
+	first, err := seed.Workspace("owner")
+	if err != nil {
+		t.Fatalf("Workspace(initial) error = %v", err)
+	}
+	second, err := seed.UpdateProject("owner", "create", "", "第二张画布")
+	if err != nil {
+		t.Fatalf("UpdateProject(create) error = %v", err)
+	}
+
+	barrier := newCanvasSaveBarrier(2)
+	wrap := func(backend storage.Backend) *barrierCanvasDocumentBackend {
+		documents, ok := backend.(storage.JSONDocumentBackend)
+		if !ok {
+			t.Fatal("database backend does not support JSON documents")
+		}
+		return &barrierCanvasDocumentBackend{Backend: backend, documents: documents, barrier: barrier}
+	}
+	serviceA := NewCanvasDocumentService(wrap(backendA))
+	serviceB := NewCanvasDocumentService(wrap(backendB))
+	firstDocument := first.Document
+	firstDocument.Nodes = []CanvasNode{{ID: "first-node", Type: "text", Width: 340, Height: 240, ScaleX: 1, ScaleY: 1}}
+	secondDocument := second.Document
+	secondDocument.Nodes = []CanvasNode{{ID: "second-node", Type: "text", Width: 340, Height: 240, ScaleX: 1, ScaleY: 1}}
+
+	errorsCh := make(chan error, 2)
+	go func() {
+		_, saveErr := serviceA.SaveAtRevision("owner", firstDocument)
+		errorsCh <- saveErr
+	}()
+	go func() {
+		_, saveErr := serviceB.SaveAtRevision("owner", secondDocument)
+		errorsCh <- saveErr
+	}()
+	for range 2 {
+		if saveErr := <-errorsCh; saveErr != nil {
+			t.Fatalf("concurrent SaveAtRevision() error = %v", saveErr)
+		}
+	}
+
+	firstResult, err := serviceA.UpdateProject("owner", "activate", firstDocument.ID, "")
+	if err != nil {
+		t.Fatalf("activate first error = %v", err)
+	}
+	secondResult, err := serviceA.UpdateProject("owner", "activate", secondDocument.ID, "")
+	if err != nil {
+		t.Fatalf("activate second error = %v", err)
+	}
+	if len(firstResult.Document.Nodes) != 1 || firstResult.Document.Nodes[0].ID != "first-node" {
+		t.Fatalf("first project lost concurrent update: %#v", firstResult.Document)
+	}
+	if len(secondResult.Document.Nodes) != 1 || secondResult.Document.Nodes[0].ID != "second-node" {
+		t.Fatalf("second project lost concurrent update: %#v", secondResult.Document)
 	}
 }
 
@@ -147,13 +320,59 @@ func TestCanvasDocumentServiceClearsExplicitProject(t *testing.T) {
 	}
 }
 
-func TestCanvasDocumentServiceRejectsUnsupportedNodeType(t *testing.T) {
+func TestCanvasDocumentServiceRejectsVideoWithoutGenerationModel(t *testing.T) {
 	service := NewCanvasDocumentService(newTestStorageBackend(t))
 	_, err := service.Save("owner", CanvasDocument{Nodes: []CanvasNode{{
 		ID: "video-1", Type: "video", Width: 340, Height: 240, ScaleX: 1, ScaleY: 1,
 	}}})
 	if !errors.Is(err, ErrInvalidCanvasDocument) {
-		t.Fatalf("Save(unsupported type) error = %v, want ErrInvalidCanvasDocument", err)
+		t.Fatalf("Save(video without model) error = %v, want ErrInvalidCanvasDocument", err)
+	}
+}
+
+func TestCanvasDocumentServiceStoresVideoGenerationParameters(t *testing.T) {
+	service := NewCanvasDocumentService(newTestStorageBackend(t))
+	audio := true
+	watermark := false
+	document, err := service.Save("owner", CanvasDocument{Nodes: []CanvasNode{{
+		ID: "video-1", Type: "video", Width: 420, Height: 236, ScaleX: 1, ScaleY: 1,
+		GenerationVideoModel: " sora-2 ", GenerationVideoSize: " 1280X720 ",
+		GenerationVideoSeconds: 8, GenerationVideoResolution: " 1080P ",
+		GenerationVideoAudio: &audio, GenerationVideoWatermark: &watermark,
+	}}})
+	if err != nil {
+		t.Fatalf("Save(video) error = %v", err)
+	}
+	node := document.Nodes[0]
+	if node.GenerationVideoModel != "sora-2" || node.GenerationVideoSize != "1280x720" || node.GenerationVideoSeconds != 8 || node.GenerationVideoResolution != "1080p" || node.GenerationVideoAudio == nil || !*node.GenerationVideoAudio || node.GenerationVideoWatermark == nil || *node.GenerationVideoWatermark {
+		t.Fatalf("video generation parameters = %#v", node)
+	}
+}
+
+func TestCanvasDocumentServiceRejectsInvalidVideoGenerationParameters(t *testing.T) {
+	valid := CanvasNode{
+		ID: "video-1", Type: "video", Width: 420, Height: 236, ScaleX: 1, ScaleY: 1,
+		GenerationVideoModel: "sora-2", GenerationVideoSize: "1280x720",
+		GenerationVideoSeconds: 8, GenerationVideoResolution: "1080p",
+	}
+	tests := []struct {
+		name   string
+		mutate func(*CanvasNode)
+	}{
+		{name: "model too long", mutate: func(node *CanvasNode) { node.GenerationVideoModel = strings.Repeat("m", 257) }},
+		{name: "unsupported size", mutate: func(node *CanvasNode) { node.GenerationVideoSize = "800x600" }},
+		{name: "unsupported duration", mutate: func(node *CanvasNode) { node.GenerationVideoSeconds = 7 }},
+		{name: "unsupported resolution", mutate: func(node *CanvasNode) { node.GenerationVideoResolution = "4k" }},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			node := valid
+			test.mutate(&node)
+			service := NewCanvasDocumentService(newTestStorageBackend(t))
+			if _, err := service.Save("owner", CanvasDocument{Nodes: []CanvasNode{node}}); !errors.Is(err, ErrInvalidCanvasDocument) {
+				t.Fatalf("Save(invalid video) error = %v, want ErrInvalidCanvasDocument", err)
+			}
+		})
 	}
 }
 
@@ -202,7 +421,8 @@ func TestCanvasDocumentServiceStoresNodeGenerationParameters(t *testing.T) {
 		ID: "image-parameters", Type: "image", Width: 340, Height: 240, ScaleX: 1, ScaleY: 1,
 		ComposerContent: &composerContent,
 		NaturalWidth:    2048, NaturalHeight: 1536, FreeResize: true,
-		GenerationSize: "2048x2048", GenerationResolution: "2k", GenerationQuality: "high",
+		GenerationModel: " gemini-3.1-flash-image ",
+		GenerationSize:  "2048x2048", GenerationResolution: "2k", GenerationQuality: "high",
 		GenerationCount: 3, GenerationOutputFormat: "webp", GenerationOutputCompression: &compression,
 		GenerationStream: &stream, GenerationPartialImages: 2, GenerationStatus: "error",
 		GenerationError: "request failed", GenerationType: "edit", GenerationReferenceURLs: []string{"/images/reference.png"},
@@ -215,8 +435,37 @@ func TestCanvasDocumentServiceStoresNodeGenerationParameters(t *testing.T) {
 		t.Fatalf("Save() error = %v", err)
 	}
 	node := document.Nodes[0]
-	if node.NaturalWidth != 2048 || node.NaturalHeight != 1536 || !node.FreeResize || node.ComposerContent == nil || *node.ComposerContent != composerContent || node.GenerationSize != "2048x2048" || node.GenerationCount != 3 || node.GenerationOutputCompression == nil || *node.GenerationOutputCompression != compression || node.GenerationStream == nil || !*node.GenerationStream || node.GenerationStatus != "error" || node.GenerationError != "request failed" || node.GenerationType != "edit" || len(node.GenerationReferenceURLs) != 1 || len(node.BatchChildIDs) != 1 || node.BatchPrimaryID != "image-child" || node.BatchExpanded == nil || !*node.BatchExpanded || document.Nodes[1].BatchRootID != node.ID {
+	if node.NaturalWidth != 2048 || node.NaturalHeight != 1536 || !node.FreeResize || node.ComposerContent == nil || *node.ComposerContent != composerContent || node.GenerationModel != "gemini-3.1-flash-image" || node.GenerationSize != "2048x2048" || node.GenerationCount != 3 || node.GenerationOutputCompression == nil || *node.GenerationOutputCompression != compression || node.GenerationStream == nil || !*node.GenerationStream || node.GenerationStatus != "error" || node.GenerationError != "request failed" || node.GenerationType != "edit" || len(node.GenerationReferenceURLs) != 1 || len(node.BatchChildIDs) != 1 || node.BatchPrimaryID != "image-child" || node.BatchExpanded == nil || !*node.BatchExpanded || document.Nodes[1].BatchRootID != node.ID {
 		t.Fatalf("generation parameters = %#v", node)
+	}
+}
+
+func TestCanvasDocumentServicePreservesGeminiReferenceImageLimit(t *testing.T) {
+	service := NewCanvasDocumentService(newTestStorageBackend(t))
+	referenceURLs := make([]string, canvasDocumentMaxGenerationReferenceImages)
+	for index := range referenceURLs {
+		referenceURLs[index] = "/images/reference.png"
+	}
+	document := CanvasDocument{Nodes: []CanvasNode{{
+		ID: "gemini-edit", Type: "image", Width: 340, Height: 240, ScaleX: 1, ScaleY: 1,
+		GenerationType: "edit", GenerationReferenceURLs: referenceURLs,
+	}}}
+
+	saved, err := service.Save("owner", document)
+	if err != nil {
+		t.Fatalf("Save(14 references) error = %v", err)
+	}
+	loaded, err := service.Load("owner")
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if len(saved.Nodes[0].GenerationReferenceURLs) != canvasDocumentMaxGenerationReferenceImages || len(loaded.Nodes[0].GenerationReferenceURLs) != canvasDocumentMaxGenerationReferenceImages {
+		t.Fatalf("reference URLs were not preserved: saved=%d loaded=%d", len(saved.Nodes[0].GenerationReferenceURLs), len(loaded.Nodes[0].GenerationReferenceURLs))
+	}
+
+	document.Nodes[0].GenerationReferenceURLs = append(referenceURLs, "/images/overflow.png")
+	if _, err := service.Save("owner", document); !errors.Is(err, ErrInvalidCanvasDocument) {
+		t.Fatalf("Save(15 references) error = %v, want ErrInvalidCanvasDocument", err)
 	}
 }
 

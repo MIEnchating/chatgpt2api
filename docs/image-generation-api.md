@@ -26,32 +26,71 @@ Authorization: Bearer <session-or-api-token>
 | `auto` | NewAPI 转发 | 默认图片模型选择，具体路由由 NewAPI 配置决定。 |
 | `gpt-image-2` | NewAPI 转发 | 转发给当前用户所选 Key 对应的 NewAPI 渠道。 |
 | `codex-gpt-image-2` | NewAPI 转发 | 可用于在 NewAPI 中配置独立的 Codex 图片渠道。实际支持取决于渠道。 |
+| `gemini-3.1-flash-image` | NewAPI `/v1/chat/completions` | 默认 Google 图片模型；支持参考图，宽高比和分辨率通过 `extra_body.google.image_config` 发送。 |
+| `grok-imagine-image` | NewAPI `/v1/images/generations` | 默认 Grok 文生图模型；最新 NewAPI 已内置。 |
+| `grok-imagine-image-quality` | NewAPI `/v1/images/generations` | xAI 官方质量模型；NewAPI 当前内置其 `grok-imagine-image-pro` 别名，使用规范名称前需要配置模型映射。 |
+| `grok-imagine-image-2.0` | NewAPI `/v1/images/generations` | xAI 官方新模型；当前 NewAPI 使用前需要配置自定义模型映射。 |
 
 云棉从当前登录用户可用的 NewAPI Key 名称中读取选择，并按该名称精确取得密钥。请求随后发送到 `CHATGPT2API_RELAY_BASE_URL`；模型对应的账号、额度和最终上游协议由 NewAPI 决定。`/v1/models` 可能返回更多文本模型，但图片生成/图片编辑接口只应使用 NewAPI 图片渠道实际支持的模型。
+
+默认模型列表为 `gpt-image-2`、`gemini-3.1-flash-image` 和 `grok-imagine-image`。Google 链路只识别官方当前模型 ID：`gemini-3.1-flash-lite-image`、`gemini-3.1-flash-image`、`gemini-3-pro-image`、`gemini-2.5-flash-image`，不再把旧 Nano Banana 别名当作正式 ID。自定义列表通过 `CHATGPT2API_IMAGE_MODELS` 或管理端设置配置，模型必须已在 NewAPI 中存在可用渠道。
+
+图片参数能力以各厂商官方文档为准：
+
+- [Google Gemini 图片生成官方文档](https://ai.google.dev/gemini-api/docs/image-generation)：Gemini 3 图片模型最多可混合 14 张参考图；`gemini-3.1-flash-image` 支持 512/1K/2K/4K 和 14 种画幅比例，Flash Lite 仅支持 1K 和常规 10 种画幅比例。
+- [Google Imagen 官方模型文档](https://ai.google.dev/gemini-api/docs/models/imagen)：Imagen 4 已弃用并将于 2026-08-17 关闭，因此项目不再新增 Imagen 路由。
+- [xAI 图片生成官方文档](https://docs.x.ai/developers/model-capabilities/images/generation)：当前列出 `grok-imagine-image`、`grok-imagine-image-quality` 和 `grok-imagine-image-2.0`；这些模型支持画幅比例和 1K/2K，2.0 还支持 `low`、`medium` 质量。
+- [xAI 图片编辑官方文档](https://docs.x.ai/developers/model-capabilities/images/editing)：Grok 官方编辑接口是 JSON `/v1/images/edits`，图片通过 URL、data URI 或文件 ID 提交，一次最多使用 3 张输入图。
+- [OpenAI 图片生成官方文档](https://developers.openai.com/api/docs/guides/image-generation)：Image API 编辑遮罩使用 multipart 文件字段 `mask`；遮罩和首张输入图必须同格式、同尺寸且小于 50 MB，遮罩必须包含 alpha 通道。
+
+Grok 生图参数按 xAI 官方协议原样发送：画幅使用 `aspect_ratio`，分辨率使用 `resolution`，质量使用 `quality`。中间代理或渠道必须支持这些官方字段；本服务不会因为代理实现滞后而隐藏或删除官方参数。
+
+xAI 官方生成文档展示了 `n=4` 的批量请求，但未在当前能力页声明更高的固定上限。云棉因此对 Grok 保持保守的 `1-4` 限制。
+
+当前项目经 NewAPI 的实际能力：
+
+| 能力 | GPT 图片 | Gemini | Grok |
+| --- | --- | --- | --- |
+| 文生图 | 支持 | 支持 | 支持 |
+| 参考图编辑 | 支持 | 支持 | 当前不支持 |
+| 流式图片 | 取决于 NewAPI 渠道 | 不支持 | 不支持 |
+| 尺寸/比例 | 支持 | 通过 Google `image_config` | 官方 `aspect_ratio`、`resolution` |
+| 质量 | 支持 | 官方不提供质量档位 | 仅 2.0 支持 `low`、`medium` |
+
+参考图数量按实际链路校验：
+
+| 模型系列 | 本服务上限 | 限制来源 |
+| --- | --- | --- |
+| Gemini 3 图片模型 | 14 张 | Google 官方总参考图上限 |
+| Gemini 2.5 Flash Image | 3 张 | Google 官方建议该模型最多使用 3 张输入图时效果最佳 |
+| OpenAI GPT Image 模型 | 10 张 | OpenAI 官方输入图上限 |
+| 其他 OpenAI 兼容图片模型 | 4 张 | 未知渠道采用保守上限 |
+| Grok | 0 张 | xAI 官方最多支持 3 张编辑输入，但当前 NewAPI xAI 适配器不会转发参考图 |
 
 ## 通用参数
 
 | 字段 | 类型 | 默认值 | 适用接口 | 说明 |
 | --- | --- | --- | --- | --- |
 | `prompt` | string | 无 | 全部 | 生图或编辑提示词。生成接口必填；编辑接口也建议必填。 |
-| `model` | string | `auto` | 全部 | 图片任务模型：`auto`、`gpt-image-2`、`codex-gpt-image-2`。 |
-| `n` | number | `1` | 全部 | 生成数量。同步接口要求 `1-4`；异步任务会归一化到 `1-4`。 |
+| `model` | string | `auto` | 全部 | 图片任务模型；默认提供 GPT 图片、Gemini 和 Grok，实际可用性取决于 NewAPI 渠道。 |
+| `n` | number | `1` | 全部 | 生成数量。OpenAI GPT Image 模型接受整数 `1-10`；Gemini、Grok 和未知兼容模型接受整数 `1-4`。超出当前模型范围直接返回 `400`，不会静默改写。 |
 | `size` | string | 空 | 全部 | 支持 `auto`、比例值、档位和显式尺寸。详见“尺寸”。 |
-| `quality` | string | 空 | 全部 | 可传 `low`、`medium`、`high`。当前前端不强制启用质量控制，部分链路仅作为提示或上游参数。 |
-| `response_format` | string | 同步为 `b64_json`，异步为 `url` | 本地响应格式 | 仅控制本服务同步响应是否附带 `b64_json`；GPT 图片模型上游不支持该参数，服务不会向上游转发。 |
-| `output_format` | string | `png` | 全部 | 输出保存格式。支持 `png`、`jpeg`、`webp`，`jpg` 会归一化为 `jpeg`。非法值归一化为 `png`。 |
-| `output_compression` | number | 空 | 全部 | 仅 `output_format=jpeg` 或 `webp` 时生效，范围 `0-100`，超过 `100` 会按 `100` 处理。 |
+| `quality` | string | 空 | 全部 | GPT 图片链路可传 `low`、`medium`、`high`；Gemini 没有质量档位；仅 `grok-imagine-image-2.0` 支持 `low`、`medium`，省略时官方默认 `medium`。 |
+| `response_format` | string | 同步为 `b64_json`，异步为 `url` | 本地响应格式 | 控制本服务响应是否附带 `b64_json`；GPT 图片模型不会转发。xAI 模型会按官方允许值 `url`/`b64_json` 转发给最新 NewAPI 适配器。 |
+| `output_format` | string | 空（不指定） | 全部 | 输出保存格式。支持 `png`、`jpeg`、`webp`，`jpg` 会归一化为 `jpeg`，非法值归一化为 `png`。省略时不会自行向上游补 `png`，保存后按图片实际内容记录格式。 |
+| `output_compression` | number | 空 | 全部 | 仅 `output_format=jpeg` 或 `webp` 时生效，必须是 `0-100` 的整数；非法值返回 `400`。 |
 | `moderation` | string | 空 | 全部 | 透传给图片工具的审核参数。实际支持取决于上游链路。 |
-| `partial_images` | number | 空 | 全部 | 仅 `stream=true` 时生效，范围 `0-3`。`0` 不返回中间图；大于 `0` 表示最多返回对应数量，中间图可能提前结束，不保证返回满。 |
-| `input_image_mask` | string | 空 | 编辑接口 | 图生图遮罩。通常传 data URL 或 base64 内容，实际支持取决于上游链路。 |
+| `partial_images` | number | 空 | 全部 | 仅 `stream=true` 时生效，必须是 `0-3` 的整数；非法值返回 `400`。`0` 不返回中间图，大于 `0` 表示最多返回对应数量。 |
+| `mask` | PNG 文件 | 空 | multipart 编辑接口 | GPT 图片局部编辑遮罩，按官方字段上传。必须与首张输入图尺寸一致，首张输入图也必须为 PNG，遮罩必须带 alpha 通道。Gemini/Grok 和文生图接口传入遮罩会返回 `400`。 |
+| `input_image_mask` | string | 空 | multipart 编辑接口 | 旧客户端兼容字段，可传 PNG data URL 或纯 base64；服务校验后会转换为上游 multipart `mask` 文件，不会把原始 base64 写入任务或图片元数据。新调用应使用 `mask`。 |
 | `input_fidelity` | string | 空 | 编辑接口 | 官方编辑接口用于控制输入图保真度；当前 `gpt-image-2` 链路不下发该参数。 |
 | `visibility` | string | `private` | 全部 | 生成图片入库可见性。支持 `private`、`public`。影响图库展示，不影响上游生成语义。 |
 | `messages` | array | 空 | 全部 | 当前会被透传/归一化，但不要把它理解为可靠的“图片上下文记忆”。详见“上下文边界”。 |
-| `stream` | boolean | `false` | 同步接口 | 为 `true` 时返回 SSE。 |
+| `stream` | boolean | `false` | 同步接口 | GPT 图片链路为 `true` 时返回 SSE；Gemini 和 Grok 会自动关闭流式参数。 |
 
 ## 流式图片生成
 
-`/v1/images/generations` 和 `/v1/images/edits` 均支持流式响应。请求中设置：
+GPT 图片链路的 `/v1/images/generations` 和 `/v1/images/edits` 支持流式响应。Gemini 和 Grok 当前使用非流式响应。请求中设置：
 
 ```json
 {
@@ -83,9 +122,9 @@ data: [DONE]
 注意：
 
 - `partial_images` 表示最多返回多少张渐进预览，不保证返回满。部分 NewAPI 渠道只返回 `image_generation.completed` 和 `[DONE]`，仍属于正常的流式完成。
+- 如果请求了流式响应，但 NewAPI 或上游返回的是完整 `application/json` 图片结果，服务会把该响应转换为完成事件，不会为了转换格式再次请求上游生成。
 - NewAPI 的心跳帧可能表现为 `: PING`、`data: : PING`，某些代理还会产生重复的 `data: data: {...}` 前缀；服务端会兼容这些格式。
-- 如果流式请求在建立阶段返回精确错误 `invalid character ':' looking for beginning of value`，服务会移除 `stream` 和 `partial_images`，以非流式方式重试一次。这只是针对已知 NewAPI 解析问题的兼容，不会修改流式功能的默认配置。
-- 其他上游错误不会触发该降级，也不会被替换为泛化提示；服务会保留 NewAPI 返回的可用错误详情，便于用户和管理员排查。
+- 上游错误不会触发改变请求语义的自动重试，也不会被替换为泛化提示；服务会保留 NewAPI 返回的可用错误详情，便于用户和管理员排查。
 
 ## 尺寸
 
@@ -94,13 +133,20 @@ data: [DONE]
 | 写法 | 说明 |
 | --- | --- |
 | `auto` | 不强制尺寸，由上游决定。 |
-| `1080p` | 归一化为 `1080x1080`。 |
+| `1080p` | 通用图片链路的正方形归一化为 `1088x1088`。 |
 | `2k` | 归一化为 `2048x2048`。 |
 | `4k` | 归一化为 `2880x2880`。 |
+| `512`、`1k` | Gemini 分辨率档位；`512` 仅 Gemini 3.1 Flash Image 支持。 |
 | `1:1`、`3:2`、`2:3`、`16:9`、`21:9`、`9:16`、`4:3`、`3:4` | 作为构图比例提示。 |
+| `1:4`、`1:8`、`4:1`、`8:1` | 仅 Gemini 3.1 Flash Image 支持的扩展画幅。 |
 | `1024x1024`、`1536x2048` | 显式宽高。服务归一化后转发给 NewAPI，实际像素仍以上游返回为准。 |
 
-异步任务还支持 `image_resolution` 元数据字段，取值为 `1080p`、`2k`、`4k`。该字段用于记录分辨率档位和图库元数据，不替代 `size`。
+异步任务还支持 `image_resolution` 元数据字段。通用 GPT 图片链路取值为 `1080p`、`2k`、`4k`；Gemini 3.1 Flash Image 支持 `512`、`1k`、`2k`、`4k`，Gemini 3 Pro Image 支持 `1k`、`2k`、`4k`，Gemini 3.1 Flash Lite Image 和 Gemini 2.5 Flash Image 仅使用 `1k`；Grok 官方图片模型支持 `1k`、`2k`。
+
+模型特例：
+
+- Gemini 会把显式尺寸转换为最接近的官方 `aspect_ratio`，并按像素总量推断 `image_size` 档位；Google 返回的是对应比例/档位，不保证精确复现请求的宽高像素。GPT 的质量档位不会伪装成 Gemini 参数。
+- Grok 会把界面中的画幅和分辨率分别映射为 xAI 官方的 `aspect_ratio` 与 `resolution`。官方画幅包括 `1:1`、`16:9`、`9:16`、`4:3`、`3:4`、`3:2`、`2:3`、`2:1`、`1:2`、`19.5:9`、`9:19.5`、`20:9`、`9:20`。
 
 ## 同步文生图
 
@@ -148,6 +194,7 @@ curl http://localhost:8000/v1/images/generations \
 
 - `response_format=b64_json` 时返回 `b64_json`，同时仍会保存图片并返回 `url`。
 - `response_format` 不为 `b64_json` 时，响应项通常只有 `url`、`revised_prompt`、`output_format`。
+- `output_format` 以服务对图片字节的实际检测结果为准；上游响应头或请求元数据与图片内容不一致时，不会覆盖真实格式。
 - 请求会记录生成图片；`visibility` 控制这些图片在图库中的默认可见性。
 
 ## 同步图生图
@@ -163,9 +210,10 @@ curl http://localhost:8000/v1/images/generations \
 
 上传限制：
 
-- 最多 4 张参考图。
-- 单张图片最大 40 MiB。
-- 支持 PNG、JPEG、WebP 和 GIF；服务端会校验实际文件内容，不依赖客户端声明的 MIME 类型。
+- 参考图数量按模型校验：Gemini 3 最多 14 张、Gemini 2.5 Flash Image 最多 3 张、GPT Image 最多 10 张、未知 OpenAI 兼容模型最多 4 张；Grok 经当前 NewAPI 链路为 0 张。
+- 单张图片及遮罩在本服务中最大 40 MiB，整个 multipart 请求最大 192 MiB。
+- 参考图支持 PNG、JPEG、WebP 和 GIF；服务端会校验实际文件内容，不依赖客户端声明的 MIME 类型。
+- 使用 `mask` 时，遮罩与第一张输入图必须都是同尺寸 PNG，遮罩必须包含 alpha 通道；同一请求只能上传一个遮罩。
 
 示例：
 
@@ -191,6 +239,19 @@ curl http://localhost:8000/v1/images/edits \
   -F "image[]=@./reference-a.png" \
   -F "image[]=@./reference-b.png"
 ```
+
+GPT 图片遮罩编辑：
+
+```bash
+curl http://localhost:8000/v1/images/edits \
+  -H "Authorization: Bearer <session-or-api-token>" \
+  -F "model=gpt-image-2" \
+  -F "prompt=只替换透明遮罩区域中的背景，保留主体" \
+  -F "image=@./input.png" \
+  -F "mask=@./mask.png"
+```
+
+Google Gemini 可使用相同的 multipart 编辑接口，例如把 `model` 改为 `gemini-3.1-flash-image`。Grok 官方已经支持 JSON 图片编辑，但当前 NewAPI 的 xAI 适配器尚未转换该协议；Grok 请求会直接返回 `400`，不会静默忽略上传的图片。
 
 `messages` 如果通过表单传入，必须是 JSON 字符串：
 
@@ -280,9 +341,10 @@ curl http://localhost:8000/api/creation-tasks/image-edits \
 curl http://localhost:8000/api/creation-tasks/image-edits \
   -H "Authorization: Bearer <session-or-api-token>" \
   -F "client_task_id=edit-task-mask-001" \
+  -F "model=gpt-image-2" \
   -F "prompt=只替换背景为雪山，主体不变" \
   -F "image=@./input.png" \
-  -F "input_image_mask=data:image/png;base64,<mask-base64>"
+  -F "mask=@./mask.png"
 ```
 
 ## 查询任务
@@ -388,11 +450,10 @@ curl http://localhost:8000/api/creation-tasks/img-task-20260511-001/cancel \
 | `model` | string | 实际记录的模型。 |
 | `size` | string | 请求尺寸或比例。 |
 | `quality` | string | 请求质量，未传时可能省略。 |
-| `output_format` | string | 归一化后的输出格式。 |
+| `output_format` | string | 请求明确指定时为归一化后的格式；未指定时任务级字段可能省略。 |
 | `output_compression` | number | JPEG/WebP 压缩率，仅 JPEG/WebP 时可能出现。 |
 | `moderation` | string | 审核参数，传入时可能出现。 |
 | `partial_images` | number | 流式中间图参数，`stream=true` 且传入 `1-3` 时可能出现。 |
-| `input_image_mask` | string | 编辑遮罩参数，传入时可能出现。 |
 | `output_statuses` | string[] | 单张输出状态。 |
 | `data` | array | 输出结果数组。成功后出现。 |
 | `error` | string | 失败原因。失败或取消时可能出现。 |
@@ -408,7 +469,7 @@ curl http://localhost:8000/api/creation-tasks/img-task-20260511-001/cancel \
 | `url` | string | 服务保存后的图片 URL。 |
 | `b64_json` | string | base64 图片。同步接口且 `response_format=b64_json` 时返回。 |
 | `revised_prompt` | string | 上游或服务记录的最终提示词。 |
-| `output_format` | string | 输出格式。 |
+| `output_format` | string | 根据保存图片实际内容识别的输出格式。 |
 
 图片可见性和 JPEG/WebP 压缩率当前主要在任务级字段返回。调用方展示图库状态时优先读取任务级 `visibility`；保存后的图片元数据由服务端图库模块维护。
 
@@ -494,8 +555,10 @@ OpenAI 风格图片错误：
 | `400` | JSON 解析失败 | `invalid json body` |
 | `400` | 缺少提示词 | `prompt is required` |
 | `400` | 异步任务缺少 ID | `client_task_id is required` |
-| `400` | `n` 超出范围 | `n must be between 1 and 4` |
+| `400` | `n` 不是整数或超出当前模型范围 | `n must be between 1 and 10`（GPT Image）或 `n must be between 1 and 4`（Gemini、Grok 和未知兼容模型） |
+| `400` | `partial_images` 或 `output_compression` 不是整数或越界 | `partial_images must be an integer between 0 and 3` 或 `output_compression must be an integer between 0 and 100` |
 | `400` | 图生图缺少图片 | `image file is required` 或 `image is required` |
+| `400` | 遮罩接口、模型、格式、alpha 或尺寸不合法 | `mask is only supported by the image edits endpoint`、`does not support mask editing through NewAPI` 或具体 PNG 校验错误 |
 | `400` | `messages` 表单字段不是 JSON | `invalid messages` |
 | `400` | 非法可见性 | `visibility must be private or public` |
 | `400` | 上游返回文本而非图片 | `image_generation_text_response` |

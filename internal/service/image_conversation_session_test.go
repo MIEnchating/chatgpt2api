@@ -1,12 +1,43 @@
 package service
 
 import (
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
 
 	"chatgpt2api/internal/storage"
 )
+
+type recoveringSessionBackend struct {
+	loadFailures int
+	document     any
+}
+
+func (b *recoveringSessionBackend) LoadAccounts() ([]map[string]any, error) { return nil, nil }
+func (b *recoveringSessionBackend) SaveAccounts([]map[string]any) error     { return nil }
+func (b *recoveringSessionBackend) LoadAuthKeys() ([]map[string]any, error) { return nil, nil }
+func (b *recoveringSessionBackend) SaveAuthKeys([]map[string]any) error     { return nil }
+func (b *recoveringSessionBackend) HealthCheck() map[string]any             { return map[string]any{} }
+func (b *recoveringSessionBackend) Info() map[string]any                    { return map[string]any{} }
+
+func (b *recoveringSessionBackend) LoadJSONDocument(string) (any, error) {
+	if b.loadFailures > 0 {
+		b.loadFailures--
+		return nil, errors.New("temporary database failure")
+	}
+	return b.document, nil
+}
+
+func (b *recoveringSessionBackend) SaveJSONDocument(_ string, value any) error {
+	b.document = value
+	return nil
+}
+
+func (b *recoveringSessionBackend) DeleteJSONDocument(string) error {
+	b.document = nil
+	return nil
+}
 
 func newImageConversationSessionTestBackend(t *testing.T) storage.Backend {
 	t.Helper()
@@ -47,6 +78,62 @@ func TestImageConversationSessionServiceScopesBindings(t *testing.T) {
 	}
 }
 
+func TestImageConversationSessionServiceMergesConcurrentDatabaseUpdates(t *testing.T) {
+	databaseURL := "sqlite:///" + filepath.ToSlash(filepath.Join(t.TempDir(), "shared-sessions.db"))
+	backendA, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend(A) error = %v", err)
+	}
+	t.Cleanup(func() { _ = backendA.Close() })
+	backendB, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend(B) error = %v", err)
+	}
+	t.Cleanup(func() { _ = backendB.Close() })
+
+	serviceA := NewImageConversationSessionService("", backendA)
+	serviceB := NewImageConversationSessionService("", backendB)
+	if err := serviceA.Bind(ImageConversationSession{OwnerID: "owner-a", FrontendConversationID: "front-a", AccessToken: "token-a", UpstreamConversationID: "conv-a", UpstreamParentMessageID: "msg-a"}); err != nil {
+		t.Fatalf("service A Bind() error = %v", err)
+	}
+	if err := serviceB.Bind(ImageConversationSession{OwnerID: "owner-b", FrontendConversationID: "front-b", AccessToken: "token-b", UpstreamConversationID: "conv-b", UpstreamParentMessageID: "msg-b"}); err != nil {
+		t.Fatalf("service B Bind() error = %v", err)
+	}
+
+	backendC, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend(C) error = %v", err)
+	}
+	t.Cleanup(func() { _ = backendC.Close() })
+	reloaded := NewImageConversationSessionService("", backendC)
+	if _, ok := reloaded.Get("owner-a", "front-a"); !ok {
+		t.Fatal("concurrent session update lost service A binding")
+	}
+	if _, ok := reloaded.Get("owner-b", "front-b"); !ok {
+		t.Fatal("concurrent session update lost service B binding")
+	}
+}
+
+func TestImageConversationSessionServiceRetriesInitialLoadFailure(t *testing.T) {
+	backend := &recoveringSessionBackend{loadFailures: 1}
+	svc := NewImageConversationSessionService("", backend)
+	binding := ImageConversationSession{
+		OwnerID:                 "owner",
+		FrontendConversationID:  "frontend",
+		AccessToken:             "token",
+		UpstreamConversationID:  "conversation",
+		UpstreamParentMessageID: "message",
+	}
+
+	if err := svc.Bind(binding); err != nil {
+		t.Fatalf("Bind() after database recovery error = %v", err)
+	}
+	got, ok := svc.Get("owner", "frontend")
+	if !ok || got.UpstreamConversationID != "conversation" {
+		t.Fatalf("Get() after database recovery = %#v, %v", got, ok)
+	}
+}
+
 func TestImageConversationSessionServiceOverwriteInvalidateCleanupAndReload(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "image_conversation_sessions.json")
 	backend := newImageConversationSessionTestBackend(t)
@@ -73,9 +160,9 @@ func TestImageConversationSessionServiceOverwriteInvalidateCleanupAndReload(t *t
 
 	old := time.Now().Add(-48 * time.Hour)
 	reloaded.Bind(ImageConversationSession{OwnerID: "owner", FrontendConversationID: "old", AccessToken: "token", UpstreamConversationID: "conv", UpstreamParentMessageID: "msg", LastUsedAt: old})
-	removed := reloaded.Cleanup(24 * time.Hour)
-	if removed != 1 {
-		t.Fatalf("Cleanup() removed %d, want 1", removed)
+	removed, err := reloaded.Cleanup(24 * time.Hour)
+	if err != nil || removed != 1 {
+		t.Fatalf("Cleanup() = %d, %v; want 1", removed, err)
 	}
 	if _, ok := reloaded.Get("owner", "old"); ok {
 		t.Fatal("Cleanup() kept expired binding")

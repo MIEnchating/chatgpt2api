@@ -65,7 +65,10 @@ func cloneMapSlice(items []map[string]any) []map[string]any {
 func newTextLeaseTestEngine(t *testing.T, tokens ...string) (*Engine, *service.AccountService) {
 	t.Helper()
 	store := &testProtocolStorageBackend{}
-	accounts := service.NewAccountService(store, testTextLeaseConfig{}, service.NewProxyService(testTextLeaseConfig{}), service.NewLogService(store))
+	accounts, err := service.NewAccountService(store, testTextLeaseConfig{}, service.NewProxyService(testTextLeaseConfig{}), service.NewLogService(store))
+	if err != nil {
+		t.Fatalf("NewAccountService() error = %v", err)
+	}
 	if len(tokens) > 0 {
 		accounts.AddAccounts(tokens)
 	}
@@ -1802,6 +1805,9 @@ func TestHandleImageGenerationsValidatesPromptAndCount(t *testing.T) {
 	}{
 		{name: "empty prompt", body: map[string]any{"n": 1}, want: "prompt is required"},
 		{name: "too many images", body: map[string]any{"prompt": "draw", "n": 5}, want: "n must be between 1 and 4"},
+		{name: "fractional count", body: map[string]any{"prompt": "draw", "n": 1.5}, want: "n must be between 1 and 4"},
+		{name: "boolean count", body: map[string]any{"prompt": "draw", "n": true}, want: "n must be between 1 and 4"},
+		{name: "gpt count above official limit", body: map[string]any{"model": "gpt-image-2", "prompt": "draw", "n": 11}, want: "n must be between 1 and 10"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			_, _, err := engine.HandleImageGenerations(context.Background(), tc.body)
@@ -1836,6 +1842,16 @@ func TestApplyImageOutputOptionsToRequest(t *testing.T) {
 	webpRequest = webpRequest.Normalized()
 	if webpRequest.OutputFormat != "webp" || webpRequest.OutputCompression == nil || *webpRequest.OutputCompression != 25 {
 		t.Fatalf("webp output options = %#v/%#v, want webp/25", webpRequest.OutputFormat, webpRequest.OutputCompression)
+	}
+}
+
+func TestImageOutputOptionsRejectsFractionalCompression(t *testing.T) {
+	options := ImageOutputOptionsFromPayload(map[string]any{
+		"output_format":      "webp",
+		"output_compression": 37.5,
+	})
+	if options.Compression != nil {
+		t.Fatalf("Compression = %#v, want nil", options.Compression)
 	}
 }
 

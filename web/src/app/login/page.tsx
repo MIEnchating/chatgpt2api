@@ -43,11 +43,7 @@ export default function LoginPage() {
   const { isCheckingAuth } = useRedirectIfAuthenticated();
 
   const finishAuth = async (data: Awaited<ReturnType<typeof login>>, message: string, redirectTo?: string) => {
-    const token = String(data.token || "").trim();
-    if (!token) {
-      throw new Error("登录会话签发失败");
-    }
-    const session = authSessionFromLoginResponse(data, token);
+    const session = authSessionFromLoginResponse(data);
     await setVerifiedAuthSession(session);
     toast.success(message);
     navigate(redirectTo || getDefaultRouteForSession(session), { replace: true });

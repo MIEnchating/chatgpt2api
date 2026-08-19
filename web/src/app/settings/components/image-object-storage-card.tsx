@@ -72,15 +72,15 @@ export function ImageObjectStorageCard() {
             </Select>
           </Field>
           <Field className="min-w-0 gap-1.5">
-            <FieldLabel htmlFor="settings-s3-endpoint">Endpoint</FieldLabel>
+            <FieldLabel htmlFor="settings-s3-endpoint">服务地址</FieldLabel>
             <Input id="settings-s3-endpoint" value={String(config?.s3_endpoint || "")} onChange={(event) => setS3Endpoint(event.target.value)} placeholder="https://s3.example.com" className={settingsInputClassName} />
           </Field>
           <Field className="min-w-0 gap-1.5">
-            <FieldLabel htmlFor="settings-s3-region">Region</FieldLabel>
+            <FieldLabel htmlFor="settings-s3-region">区域</FieldLabel>
             <Input id="settings-s3-region" value={String(config?.s3_region || "")} onChange={(event) => setS3Region(event.target.value)} placeholder="auto" className={settingsInputClassName} />
           </Field>
           <Field className="min-w-0 gap-1.5">
-            <FieldLabel htmlFor="settings-s3-bucket">Bucket</FieldLabel>
+            <FieldLabel htmlFor="settings-s3-bucket">存储桶</FieldLabel>
             <Input id="settings-s3-bucket" value={String(config?.s3_bucket || "")} onChange={(event) => setS3Bucket(event.target.value)} placeholder="cloud-cotton-images" className={settingsInputClassName} />
           </Field>
           <Field className="min-w-0 gap-1.5 sm:col-span-2">
@@ -92,7 +92,7 @@ export function ImageObjectStorageCard() {
         <label className={settingsToggleClassName}>
           <Checkbox checked={Boolean(config?.s3_use_path_style)} onCheckedChange={(checked) => setS3UsePathStyle(checked === true)} />
           <span className="min-w-0 flex-1">
-            <span className="block">Path Style</span>
+            <span className="block">路径式访问</span>
             <span className="mt-0.5 block text-xs font-normal text-muted-foreground">MinIO 通常需要开启，AWS S3 和 Cloudflare R2 通常关闭。</span>
           </span>
         </label>
@@ -101,9 +101,9 @@ export function ImageObjectStorageCard() {
           <StatusLine label="当前后端" value={activeBackend === "s3" ? "S3 兼容对象存储" : "服务器本地存储"} tone={activeBackend === "s3" ? "success" : "default"} />
           {activeBackend === "s3" ? (
             <>
-              <StatusLine label="Bucket" value={activeBucket || bucket || "未配置"} />
+              <StatusLine label="存储桶" value={activeBucket || bucket || "未配置"} />
               <StatusLine label="对象前缀" value={activePrefix || prefix || "未设置"} tone={activePrefix || prefix ? "default" : "muted"} />
-              <StatusLine label="Endpoint" value={endpointConfigured ? "已配置" : "未配置"} tone={endpointConfigured ? "success" : "muted"} />
+              <StatusLine label="服务地址" value={endpointConfigured ? "已配置" : "未配置"} tone={endpointConfigured ? "success" : "muted"} />
               <StatusLine label="访问凭据" value={credentialsConfigured ? "已配置" : "未配置"} tone={credentialsConfigured ? "success" : "muted"} />
             </>
           ) : null}
@@ -112,7 +112,7 @@ export function ImageObjectStorageCard() {
         <div className="flex items-start gap-2 rounded-xl border border-border/70 bg-muted/35 px-3 py-2.5 text-xs leading-5 text-muted-foreground">
           <KeyRound className="mt-0.5 size-3.5 shrink-0" />
           <p>
-            Access Key、Secret Key 和 Session Token 仅通过服务端环境变量配置。上方非敏感参数在线保存后立即生效，无需重启服务。
+            访问密钥、私有密钥和会话令牌仅通过服务端环境变量配置。上方非敏感参数在线保存后立即生效，无需重启服务。
           </p>
         </div>
 

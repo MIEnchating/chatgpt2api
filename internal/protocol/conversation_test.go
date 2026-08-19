@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"image/jpeg"
 	"image/png"
 	"net/http"
 	"net/http/httptest"
@@ -23,6 +24,9 @@ import (
 
 	"chatgpt2api/internal/backend"
 	"chatgpt2api/internal/service"
+	"chatgpt2api/internal/util"
+
+	"github.com/HugoSmits86/nativewebp"
 )
 
 type testProtocolImageConfig struct {
@@ -30,6 +34,23 @@ type testProtocolImageConfig struct {
 }
 
 type testProtocolProxyConfig struct{}
+
+type staticProtocolImageConfig struct {
+	imagesDir   string
+	metadataDir string
+}
+
+func (c staticProtocolImageConfig) ImagesDir() string        { return c.imagesDir }
+func (c staticProtocolImageConfig) ImageMetadataDir() string { return c.metadataDir }
+func (staticProtocolImageConfig) BaseURL() string            { return "https://example.test" }
+
+type failingProtocolDocumentStore struct {
+	err error
+}
+
+func (f failingProtocolDocumentStore) LoadJSONDocument(string) (any, error) { return nil, nil }
+func (f failingProtocolDocumentStore) SaveJSONDocument(string, any) error   { return f.err }
+func (f failingProtocolDocumentStore) DeleteJSONDocument(string) error      { return nil }
 
 func (testProtocolProxyConfig) Proxy() string { return "" }
 
@@ -51,13 +72,56 @@ func (c testProtocolImageConfig) BaseURL() string {
 
 func testPNGDataURL(t *testing.T, width, height int) string {
 	t.Helper()
+	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(testPNGBytes(t, width, height))
+}
+
+func testPNGBytes(t *testing.T, width, height int) []byte {
+	t.Helper()
 	img := image.NewRGBA(image.Rect(0, 0, width, height))
 	img.Set(0, 0, color.RGBA{R: 255, A: 255})
 	var buf bytes.Buffer
 	if err := png.Encode(&buf, img); err != nil {
 		t.Fatalf("png.Encode() error = %v", err)
 	}
-	return "data:image/png;base64," + base64.StdEncoding.EncodeToString(buf.Bytes())
+	return buf.Bytes()
+}
+
+func TestSaveImageBytesForOwnerRequiresConfiguration(t *testing.T) {
+	engine := &Engine{}
+	if _, err := engine.SaveImageBytesForOwnerWithFormatE(context.Background(), testPNGBytes(t, 1, 1), "", "owner", "Owner", "png"); err == nil {
+		t.Fatal("SaveImageBytesForOwnerWithFormatE() error = nil")
+	}
+}
+
+func TestSaveImageBytesForOwnerReturnsFilesystemError(t *testing.T) {
+	root := t.TempDir()
+	blocked := filepath.Join(root, "blocked")
+	if err := os.WriteFile(blocked, []byte("file"), 0o644); err != nil {
+		t.Fatalf("WriteFile(blocked) error = %v", err)
+	}
+	engine := &Engine{Config: staticProtocolImageConfig{imagesDir: blocked, metadataDir: filepath.Join(root, "metadata")}}
+	if _, err := engine.SaveImageBytesForOwnerWithFormatE(context.Background(), testPNGBytes(t, 1, 1), "", "owner", "Owner", "png"); err == nil || !strings.Contains(err.Error(), "create image directory") {
+		t.Fatalf("SaveImageBytesForOwnerWithFormatE() error = %v", err)
+	}
+}
+
+func TestSaveImageBytesForOwnerRollsBackFileWhenMetadataFails(t *testing.T) {
+	root := t.TempDir()
+	wantErr := errors.New("metadata unavailable")
+	engine := &Engine{
+		Config:  staticProtocolImageConfig{imagesDir: filepath.Join(root, "images"), metadataDir: filepath.Join(root, "metadata")},
+		Storage: failingProtocolDocumentStore{err: wantErr},
+	}
+	if _, err := engine.SaveImageBytesForOwnerWithFormatE(context.Background(), testPNGBytes(t, 1, 1), "", "owner", "Owner", "png"); !errors.Is(err, wantErr) {
+		t.Fatalf("SaveImageBytesForOwnerWithFormatE() error = %v, want %v", err, wantErr)
+	}
+	matches, err := filepath.Glob(filepath.Join(root, "images", "*", "*", "*", "*"))
+	if err != nil {
+		t.Fatalf("Glob(images) error = %v", err)
+	}
+	if len(matches) != 0 {
+		t.Fatalf("orphaned image files = %#v", matches)
+	}
 }
 
 func TestCountMessageTokensCountsTextContentParts(t *testing.T) {
@@ -269,7 +333,7 @@ func TestCountMessageTokensIgnoresUnknownContentParts(t *testing.T) {
 func TestFormatImageResultStoresOwnerName(t *testing.T) {
 	config := testProtocolImageConfig{root: t.TempDir()}
 	engine := &Engine{Config: config}
-	imageData := base64.StdEncoding.EncodeToString([]byte("png-bytes"))
+	imageData := base64.StdEncoding.EncodeToString(testPNGBytes(t, 2, 2))
 
 	result := engine.FormatImageResult(
 		[]map[string]any{{"b64_json": imageData}},
@@ -411,10 +475,57 @@ func TestFormatImageResultRequestedFormatOverridesUpstreamFormat(t *testing.T) {
 	}
 }
 
+func TestFormatImageResultWithoutRequestedFormatUsesActualBytes(t *testing.T) {
+	config := testProtocolImageConfig{root: t.TempDir()}
+	engine := &Engine{Config: config}
+	src := image.NewNRGBA(image.Rect(0, 0, 2, 2))
+	src.Set(0, 0, color.NRGBA{R: 255, A: 255})
+	var encoded bytes.Buffer
+	if err := jpeg.Encode(&encoded, src, nil); err != nil {
+		t.Fatalf("jpeg.Encode() error = %v", err)
+	}
+
+	result := engine.FormatImageResultWithOptions(
+		[]map[string]any{{
+			"b64_json":      base64.StdEncoding.EncodeToString(encoded.Bytes()),
+			"output_format": "png",
+		}},
+		"draw",
+		"b64_json",
+		"https://example.test",
+		"owner-1",
+		"Alice",
+		123,
+		"",
+		ImageOutputOptions{},
+	)
+	items := util.AsMapSlice(result["data"])
+	if len(items) != 1 || items[0]["output_format"] != "jpeg" {
+		t.Fatalf("FormatImageResultWithOptions() data = %#v, want actual JPEG format", result["data"])
+	}
+	imageURL := util.Clean(items[0]["url"])
+	if !strings.HasSuffix(imageURL, ".jpg") {
+		t.Fatalf("image URL = %q, want .jpg suffix", imageURL)
+	}
+	stored, err := base64.StdEncoding.DecodeString(util.Clean(items[0]["b64_json"]))
+	if err != nil {
+		t.Fatalf("decode result image: %v", err)
+	}
+	if _, format, err := image.DecodeConfig(bytes.NewReader(stored)); err != nil || format != "jpeg" {
+		t.Fatalf("stored result format = %q, error = %v; want jpeg", format, err)
+	}
+}
+
 func TestFormatImageResultTrustsCodexUpstreamOutputFormat(t *testing.T) {
 	config := testProtocolImageConfig{root: t.TempDir()}
 	engine := &Engine{Config: config}
-	upstreamBytes := []byte("RIFF\x10\x00\x00\x00WEBPcodex-upstream-bytes")
+	src := image.NewNRGBA(image.Rect(0, 0, 2, 2))
+	src.Set(0, 0, color.NRGBA{R: 255, A: 255})
+	var encoded bytes.Buffer
+	if err := nativewebp.Encode(&encoded, src, nil); err != nil {
+		t.Fatalf("nativewebp.Encode() error = %v", err)
+	}
+	upstreamBytes := encoded.Bytes()
 	compression := 40
 	options := imageResultOutputOptions(
 		ConversationRequest{Model: "codex-gpt-image-2", OutputFormat: "jpeg", OutputCompression: &compression},

@@ -1,5 +1,5 @@
 import type { CanvasNode, CreationTask } from "@/lib/api";
-import { INTERRUPTED_CANVAS_GENERATION_ERROR } from "./canvas-generation-context.ts";
+import { canvasGenerationNeedsRecovery } from "./canvas-generation-context.ts";
 import { taskDataIsPreview } from "../image/image-task-state.ts";
 
 export type CanvasTaskImage = {
@@ -18,9 +18,14 @@ export type CanvasTaskInitialImage = {
   thumbnailURL: string;
 };
 
+function canvasTaskVideo(item: NonNullable<CreationTask["data"]>[number] | undefined): CanvasTaskImage | undefined {
+  const url = String(item?.video_url || item?.url || "").trim();
+  return url ? { url, width: item?.width, height: item?.height } : undefined;
+}
+
 function canvasTaskImage(item: NonNullable<CreationTask["data"]>[number] | undefined, includePreview = true): CanvasTaskImage | undefined {
   if (!includePreview && taskDataIsPreview(item)) return undefined;
-  const url = String(item?.url || "").trim();
+  const url = String(item?.url || item?.video_url || "").trim();
   if (url) return { url, width: item?.width, height: item?.height };
   const b64 = String(item?.b64_json || "").trim();
   return b64 ? { url: `data:image/png;base64,${b64}`, width: item?.width, height: item?.height } : undefined;
@@ -171,7 +176,7 @@ export function reconcileCancelledCanvasTaskNodes(
 export function reconcilePersistedCanvasTaskNodes(nodes: readonly CanvasNode[], task: CreationTask) {
   const taskNodeIDs = new Set(nodes.flatMap((node) => (
     node.task_id === task.id
-      && (node.generation_status === "loading" || node.generation_error === INTERRUPTED_CANVAS_GENERATION_ERROR)
+      && canvasGenerationNeedsRecovery(node)
       ? [node.id]
       : []
   )));
@@ -186,7 +191,12 @@ export function reconcilePersistedCanvasTaskNodes(nodes: readonly CanvasNode[], 
   ));
   const outputNodeIDs = batchRoot
     ? (batchRoot.batch_child_ids || []).filter((nodeID) => taskNodeIDs.has(nodeID))
-    : nodes.flatMap((node) => taskNodeIDs.has(node.id) && node.type === "image" ? [node.id] : []);
+    : nodes.flatMap((node) => taskNodeIDs.has(node.id) && (node.type === "image" || node.type === "video") ? [node.id] : []);
+  const videoNodeIDs = nodes.flatMap((node) => taskNodeIDs.has(node.id) && node.type === "video" ? [node.id] : []);
+  const videoByNodeID = new Map(videoNodeIDs.flatMap((nodeID, index) => {
+    const video = canvasTaskVideo(task.data?.[index]);
+    return video ? [[nodeID, video] as const] : [];
+  }));
   const progress = applyCanvasTaskProgressNodes(nodes, task, {
     outputNodeIDs,
     batchRootID: batchRoot?.id,
@@ -198,11 +208,12 @@ export function reconcilePersistedCanvasTaskNodes(nodes: readonly CanvasNode[], 
       nodes: progress.nodes,
       changed: progress.nodes.some((node, index) => node !== nodes[index]),
       terminal: false,
-      completedImageCount: progress.completedImageByNodeID.size,
+      completedImageCount: progress.completedImageByNodeID.size + videoByNodeID.size,
     };
   }
 
   const completedImageByNodeID = successfulCanvasTaskImagesByNodeID(task, outputNodeIDs);
+  const completedOutputCount = completedImageByNodeID.size + videoByNodeID.size;
   const completedPrimaryID = batchRoot?.batch_primary_id && completedImageByNodeID.has(batchRoot.batch_primary_id)
     ? batchRoot.batch_primary_id
     : outputNodeIDs.find((nodeID) => completedImageByNodeID.has(nodeID));
@@ -210,11 +221,17 @@ export function reconcilePersistedCanvasTaskNodes(nodes: readonly CanvasNode[], 
   const terminalError = String(task.error || "").trim() || "生成失败";
   const nextNodes = progress.nodes.map((node): CanvasNode => {
     if (!taskNodeIDs.has(node.id)) return node;
+    if (node.type === "video") {
+      const video = videoByNodeID.get(node.id);
+      return video
+        ? applyCanvasTaskImage(node, video, task.id)
+        : { ...node, generation_status: cancelled ? "idle" : "error", generation_error: cancelled ? "" : terminalError };
+    }
     if (node.type === "config") {
       return {
         ...node,
-        generation_status: completedImageByNodeID.size ? "success" : cancelled ? "idle" : "error",
-        generation_error: completedImageByNodeID.size || cancelled ? "" : terminalError,
+        generation_status: completedOutputCount ? "success" : cancelled ? "idle" : "error",
+        generation_error: completedOutputCount || cancelled ? "" : terminalError,
       };
     }
     if (node.id === batchRoot?.id) {
@@ -228,7 +245,7 @@ export function reconcilePersistedCanvasTaskNodes(nodes: readonly CanvasNode[], 
       return {
         ...node,
         generation_status: cancelled ? "idle" : "error",
-        generation_error: cancelled ? "" : "任务完成但图片组没有可用结果",
+        generation_error: cancelled ? "" : terminalError,
         batch_primary_id: undefined,
       };
     }
@@ -244,7 +261,7 @@ export function reconcilePersistedCanvasTaskNodes(nodes: readonly CanvasNode[], 
     nodes: nextNodes,
     changed: true,
     terminal: true,
-    completedImageCount: completedImageByNodeID.size,
+    completedImageCount: completedOutputCount,
   };
 }
 

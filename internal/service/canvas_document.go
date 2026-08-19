@@ -15,23 +15,41 @@ import (
 )
 
 const (
-	canvasDocumentDir            = "canvas_documents"
-	canvasWorkspaceDir           = "canvas_workspaces"
-	canvasActiveProjectDir       = "canvas_active_projects"
-	canvasDocumentVersion        = 1
-	canvasWorkspaceVersion       = 1
-	canvasWorkspaceMaxProjects   = 24
-	canvasWorkspaceMaxBytes      = 12 << 20
-	canvasDocumentMaxNodes       = 500
-	canvasDocumentMaxConnections = 2000
-	canvasDocumentMaxBytes       = 2 << 20
-	canvasDocumentMaxPrompt      = 12000
-	canvasDocumentMaxURL         = 4096
-	canvasDocumentMaxTitle       = 200
-	canvasDocumentMaxNodeDim     = 20000
+	canvasDocumentDir                          = "canvas_documents"
+	canvasWorkspaceDir                         = "canvas_workspaces"
+	canvasActiveProjectDir                     = "canvas_active_projects"
+	canvasDocumentVersion                      = 1
+	canvasWorkspaceVersion                     = 1
+	canvasWorkspaceMaxProjects                 = 24
+	canvasWorkspaceMaxBytes                    = 12 << 20
+	canvasDocumentMaxNodes                     = 500
+	canvasDocumentMaxConnections               = 2000
+	canvasDocumentMaxBytes                     = 2 << 20
+	canvasDocumentMaxPrompt                    = 12000
+	canvasDocumentMaxURL                       = 4096
+	canvasDocumentMaxTitle                     = 200
+	canvasDocumentMaxNodeDim                   = 20000
+	canvasDocumentMaxGenerationReferenceImages = 14
+	canvasWorkspaceSaveAttempts                = 3
 )
 
-var ErrInvalidCanvasDocument = errors.New("invalid canvas document")
+var (
+	ErrInvalidCanvasDocument  = errors.New("invalid canvas document")
+	ErrCanvasRevisionConflict = errors.New("canvas revision conflict")
+)
+
+type CanvasRevisionConflictError struct {
+	Expected int64
+	Actual   int64
+}
+
+func (e CanvasRevisionConflictError) Error() string {
+	return "画布已在其他设备更新，请刷新页面后再保存"
+}
+
+func (e CanvasRevisionConflictError) Unwrap() error {
+	return ErrCanvasRevisionConflict
+}
 
 type CanvasViewport struct {
 	Zoom float64 `json:"zoom"`
@@ -60,6 +78,7 @@ type CanvasNode struct {
 	ComposerContent             *string  `json:"composer_content,omitempty"`
 	ParentID                    string   `json:"parent_id,omitempty"`
 	TaskID                      string   `json:"task_id,omitempty"`
+	GenerationModel             string   `json:"generation_model,omitempty"`
 	GenerationSize              string   `json:"generation_size,omitempty"`
 	GenerationResolution        string   `json:"generation_resolution,omitempty"`
 	GenerationQuality           string   `json:"generation_quality,omitempty"`
@@ -72,6 +91,12 @@ type CanvasNode struct {
 	GenerationError             string   `json:"generation_error,omitempty"`
 	GenerationType              string   `json:"generation_type,omitempty"`
 	GenerationReferenceURLs     []string `json:"generation_reference_urls,omitempty"`
+	GenerationVideoModel        string   `json:"generation_video_model,omitempty"`
+	GenerationVideoSize         string   `json:"generation_video_size,omitempty"`
+	GenerationVideoSeconds      int      `json:"generation_video_seconds,omitempty"`
+	GenerationVideoResolution   string   `json:"generation_video_resolution,omitempty"`
+	GenerationVideoAudio        *bool    `json:"generation_video_audio,omitempty"`
+	GenerationVideoWatermark    *bool    `json:"generation_video_watermark,omitempty"`
 	BatchChildIDs               []string `json:"batch_child_ids,omitempty"`
 	BatchRootID                 string   `json:"batch_root_id,omitempty"`
 	BatchPrimaryID              string   `json:"batch_primary_id,omitempty"`
@@ -172,6 +197,15 @@ func (s *CanvasDocumentService) Load(ownerID string) (CanvasDocument, error) {
 }
 
 func (s *CanvasDocumentService) Save(ownerID string, input CanvasDocument) (CanvasDocument, error) {
+	return s.save(ownerID, input, nil)
+}
+
+func (s *CanvasDocumentService) SaveAtRevision(ownerID string, input CanvasDocument) (CanvasDocument, error) {
+	expected := input.Revision
+	return s.save(ownerID, input, &expected)
+}
+
+func (s *CanvasDocumentService) save(ownerID string, input CanvasDocument, expectedRevision *int64) (CanvasDocument, error) {
 	ownerID = util.Clean(ownerID)
 	if ownerID == "" {
 		return CanvasDocument{}, invalidCanvasDocument("owner_id is required")
@@ -186,28 +220,41 @@ func (s *CanvasDocumentService) Save(ownerID string, input CanvasDocument) (Canv
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	workspace, err := s.loadWorkspaceLocked(ownerID)
-	if err != nil {
-		return CanvasDocument{}, err
+	for attempt := 0; attempt < canvasWorkspaceSaveAttempts; attempt++ {
+		workspace, err := s.loadWorkspaceLocked(ownerID)
+		if err != nil {
+			return CanvasDocument{}, err
+		}
+		projectIndex := activeCanvasProjectIndex(workspace)
+		if input.ID != "" {
+			projectIndex = canvasProjectIndex(workspace, input.ID)
+		}
+		if projectIndex < 0 {
+			return CanvasDocument{}, invalidCanvasDocument("canvas project does not exist")
+		}
+		current := workspace.Projects[projectIndex]
+		if expectedRevision != nil && *expectedRevision != current.Revision {
+			return CanvasDocument{}, CanvasRevisionConflictError{Expected: *expectedRevision, Actual: current.Revision}
+		}
+		candidate := normalized
+		candidate.ID = current.ID
+		candidate.CreatedAt = current.CreatedAt
+		candidate.Revision = current.Revision + 1
+		candidate.UpdatedAt = util.NowISO()
+		workspace.Projects[projectIndex] = candidate
+		workspace.ActiveProjectID = candidate.ID
+		if err := s.saveWorkspaceLocked(ownerID, workspace); err != nil {
+			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < canvasWorkspaceSaveAttempts {
+				continue
+			}
+			if expectedRevision != nil && errors.Is(err, storage.ErrConcurrentRowUpdate) {
+				return CanvasDocument{}, CanvasRevisionConflictError{Expected: *expectedRevision, Actual: -1}
+			}
+			return CanvasDocument{}, err
+		}
+		return candidate, nil
 	}
-	projectIndex := activeCanvasProjectIndex(workspace)
-	if input.ID != "" {
-		projectIndex = canvasProjectIndex(workspace, input.ID)
-	}
-	if projectIndex < 0 {
-		return CanvasDocument{}, invalidCanvasDocument("canvas project does not exist")
-	}
-	current := workspace.Projects[projectIndex]
-	normalized.ID = current.ID
-	normalized.CreatedAt = current.CreatedAt
-	normalized.Revision = current.Revision + 1
-	normalized.UpdatedAt = util.NowISO()
-	workspace.Projects[projectIndex] = normalized
-	workspace.ActiveProjectID = normalized.ID
-	if err := s.saveWorkspaceLocked(ownerID, workspace); err != nil {
-		return CanvasDocument{}, err
-	}
-	return normalized, nil
+	return CanvasDocument{}, fmt.Errorf("failed to save canvas workspace")
 }
 
 func (s *CanvasDocumentService) Import(ownerID string, input CanvasDocument) (CanvasWorkspaceResult, error) {
@@ -225,27 +272,45 @@ func (s *CanvasDocumentService) Import(ownerID string, input CanvasDocument) (Ca
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	workspace, err := s.loadWorkspaceLocked(ownerID)
-	if err != nil {
-		return CanvasWorkspaceResult{}, err
-	}
-	if len(workspace.Projects) >= canvasWorkspaceMaxProjects {
-		return CanvasWorkspaceResult{}, invalidCanvasDocument("canvas project limit reached")
-	}
 	now := util.NowISO()
 	normalized.ID = newCanvasProjectID()
 	normalized.Revision = 0
 	normalized.CreatedAt = now
 	normalized.UpdatedAt = now
-	workspace.Projects = append([]CanvasDocument{normalized}, workspace.Projects...)
-	workspace.ActiveProjectID = normalized.ID
-	if err := s.saveWorkspaceLocked(ownerID, workspace); err != nil {
-		return CanvasWorkspaceResult{}, err
+	for attempt := 0; attempt < canvasWorkspaceSaveAttempts; attempt++ {
+		workspace, err := s.loadWorkspaceLocked(ownerID)
+		if err != nil {
+			return CanvasWorkspaceResult{}, err
+		}
+		if canvasProjectIndex(workspace, normalized.ID) >= 0 {
+			workspace.ActiveProjectID = normalized.ID
+			return canvasWorkspaceResult(workspace), nil
+		}
+		if len(workspace.Projects) >= canvasWorkspaceMaxProjects {
+			return CanvasWorkspaceResult{}, invalidCanvasDocument("canvas project limit reached")
+		}
+		workspace.Projects = append([]CanvasDocument{normalized}, workspace.Projects...)
+		workspace.ActiveProjectID = normalized.ID
+		if err := s.saveWorkspaceLocked(ownerID, workspace); err != nil {
+			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < canvasWorkspaceSaveAttempts {
+				continue
+			}
+			return CanvasWorkspaceResult{}, err
+		}
+		return canvasWorkspaceResult(workspace), nil
 	}
-	return canvasWorkspaceResult(workspace), nil
+	return CanvasWorkspaceResult{}, fmt.Errorf("failed to import canvas workspace")
 }
 
 func (s *CanvasDocumentService) Clear(ownerID, projectID string) (CanvasDocument, error) {
+	return s.clear(ownerID, projectID, nil)
+}
+
+func (s *CanvasDocumentService) ClearAtRevision(ownerID, projectID string, expectedRevision int64) (CanvasDocument, error) {
+	return s.clear(ownerID, projectID, &expectedRevision)
+}
+
+func (s *CanvasDocumentService) clear(ownerID, projectID string, expectedRevision *int64) (CanvasDocument, error) {
 	ownerID = util.Clean(ownerID)
 	if ownerID == "" {
 		return CanvasDocument{}, invalidCanvasDocument("owner_id is required")
@@ -259,31 +324,51 @@ func (s *CanvasDocumentService) Clear(ownerID, projectID string) (CanvasDocument
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	workspace, err := s.loadWorkspaceLocked(ownerID)
-	if err != nil {
-		return CanvasDocument{}, err
+	for attempt := 0; attempt < canvasWorkspaceSaveAttempts; attempt++ {
+		workspace, err := s.loadWorkspaceLocked(ownerID)
+		if err != nil {
+			return CanvasDocument{}, err
+		}
+		projectIndex := canvasProjectIndex(workspace, projectID)
+		if projectIndex < 0 {
+			return CanvasDocument{}, invalidCanvasDocument("canvas project does not exist")
+		}
+		current := workspace.Projects[projectIndex]
+		if expectedRevision != nil && *expectedRevision != current.Revision {
+			return CanvasDocument{}, CanvasRevisionConflictError{Expected: *expectedRevision, Actual: current.Revision}
+		}
+		cleared := DefaultCanvasDocument()
+		cleared.ID = current.ID
+		cleared.Title = current.Title
+		cleared.Background = current.Background
+		cleared.Viewport = current.Viewport
+		cleared.CreatedAt = current.CreatedAt
+		cleared.Revision = current.Revision + 1
+		workspace.Projects[projectIndex] = cleared
+		workspace.ActiveProjectID = cleared.ID
+		if err := s.saveWorkspaceLocked(ownerID, workspace); err != nil {
+			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < canvasWorkspaceSaveAttempts {
+				continue
+			}
+			if expectedRevision != nil && errors.Is(err, storage.ErrConcurrentRowUpdate) {
+				return CanvasDocument{}, CanvasRevisionConflictError{Expected: *expectedRevision, Actual: -1}
+			}
+			return CanvasDocument{}, err
+		}
+		return cleared, nil
 	}
-	projectIndex := canvasProjectIndex(workspace, projectID)
-	if projectIndex < 0 {
-		return CanvasDocument{}, invalidCanvasDocument("canvas project does not exist")
-	}
-	current := workspace.Projects[projectIndex]
-	cleared := DefaultCanvasDocument()
-	cleared.ID = current.ID
-	cleared.Title = current.Title
-	cleared.Background = current.Background
-	cleared.Viewport = current.Viewport
-	cleared.CreatedAt = current.CreatedAt
-	cleared.Revision = current.Revision + 1
-	workspace.Projects[projectIndex] = cleared
-	workspace.ActiveProjectID = cleared.ID
-	if err := s.saveWorkspaceLocked(ownerID, workspace); err != nil {
-		return CanvasDocument{}, err
-	}
-	return cleared, nil
+	return CanvasDocument{}, fmt.Errorf("failed to clear canvas workspace")
 }
 
 func (s *CanvasDocumentService) UpdateProject(ownerID, action, projectID, title string) (CanvasWorkspaceResult, error) {
+	return s.updateProject(ownerID, action, projectID, title, nil)
+}
+
+func (s *CanvasDocumentService) UpdateProjectAtRevision(ownerID, action, projectID, title string, expectedRevision int64) (CanvasWorkspaceResult, error) {
+	return s.updateProject(ownerID, action, projectID, title, &expectedRevision)
+}
+
+func (s *CanvasDocumentService) updateProject(ownerID, action, projectID, title string, expectedRevision *int64) (CanvasWorkspaceResult, error) {
 	ownerID = util.Clean(ownerID)
 	if ownerID == "" {
 		return CanvasWorkspaceResult{}, invalidCanvasDocument("owner_id is required")
@@ -293,62 +378,87 @@ func (s *CanvasDocumentService) UpdateProject(ownerID, action, projectID, title 
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	workspace, err := s.loadWorkspaceLocked(ownerID)
-	if err != nil {
-		return CanvasWorkspaceResult{}, err
-	}
-	switch strings.ToLower(strings.TrimSpace(action)) {
-	case "create":
-		if len(workspace.Projects) >= canvasWorkspaceMaxProjects {
-			return CanvasWorkspaceResult{}, invalidCanvasDocument("canvas project limit reached")
-		}
-		project := DefaultCanvasDocument()
-		project.Title = strings.TrimSpace(title)
-		if project.Title == "" {
-			project.Title = fmt.Sprintf("无限画布 %d", len(workspace.Projects)+1)
-		}
-		workspace.Projects = append([]CanvasDocument{project}, workspace.Projects...)
-		workspace.ActiveProjectID = project.ID
-	case "activate":
-		if canvasProjectIndex(workspace, projectID) < 0 {
-			return CanvasWorkspaceResult{}, invalidCanvasDocument("canvas project does not exist")
-		}
-		projectID = strings.TrimSpace(projectID)
-		if err := s.saveActiveProjectLocked(ownerID, projectID, workspace.storedActiveID); err != nil {
-			return CanvasWorkspaceResult{}, err
-		}
-		workspace.ActiveProjectID = projectID
-		return canvasWorkspaceResult(workspace), nil
-	case "rename":
-		index := canvasProjectIndex(workspace, projectID)
-		title = strings.TrimSpace(title)
-		if index < 0 {
-			return CanvasWorkspaceResult{}, invalidCanvasDocument("canvas project does not exist")
-		}
-		if title == "" || len(title) > canvasDocumentMaxTitle {
-			return CanvasWorkspaceResult{}, invalidCanvasDocument("canvas title is invalid")
-		}
-		workspace.Projects[index].Title = title
-		workspace.Projects[index].UpdatedAt = util.NowISO()
-	case "delete":
-		index := canvasProjectIndex(workspace, projectID)
-		if index < 0 {
-			return CanvasWorkspaceResult{}, invalidCanvasDocument("canvas project does not exist")
-		}
-		workspace.Projects = append(workspace.Projects[:index], workspace.Projects[index+1:]...)
-		if len(workspace.Projects) == 0 {
-			workspace.Projects = []CanvasDocument{DefaultCanvasDocument()}
-		}
-		if workspace.ActiveProjectID == projectID {
-			workspace.ActiveProjectID = workspace.Projects[0].ID
-		}
-	default:
+	action = strings.ToLower(strings.TrimSpace(action))
+	if action != "create" && action != "activate" && action != "rename" && action != "delete" {
 		return CanvasWorkspaceResult{}, invalidCanvasDocument("canvas project action is invalid")
 	}
-	if err := s.saveWorkspaceLocked(ownerID, workspace); err != nil {
-		return CanvasWorkspaceResult{}, err
+	project := DefaultCanvasDocument()
+	for attempt := 0; attempt < canvasWorkspaceSaveAttempts; attempt++ {
+		workspace, err := s.loadWorkspaceLocked(ownerID)
+		if err != nil {
+			return CanvasWorkspaceResult{}, err
+		}
+		switch action {
+		case "create":
+			if canvasProjectIndex(workspace, project.ID) >= 0 {
+				workspace.ActiveProjectID = project.ID
+				return canvasWorkspaceResult(workspace), nil
+			}
+			if len(workspace.Projects) >= canvasWorkspaceMaxProjects {
+				return CanvasWorkspaceResult{}, invalidCanvasDocument("canvas project limit reached")
+			}
+			project.Title = strings.TrimSpace(title)
+			if project.Title == "" {
+				project.Title = fmt.Sprintf("无限画布 %d", len(workspace.Projects)+1)
+			}
+			workspace.Projects = append([]CanvasDocument{project}, workspace.Projects...)
+			workspace.ActiveProjectID = project.ID
+		case "activate":
+			if canvasProjectIndex(workspace, projectID) < 0 {
+				return CanvasWorkspaceResult{}, invalidCanvasDocument("canvas project does not exist")
+			}
+			projectID = strings.TrimSpace(projectID)
+			if err := s.saveActiveProjectLocked(ownerID, projectID, workspace.storedActiveID); err != nil {
+				if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < canvasWorkspaceSaveAttempts {
+					continue
+				}
+				return CanvasWorkspaceResult{}, err
+			}
+			workspace.ActiveProjectID = projectID
+			return canvasWorkspaceResult(workspace), nil
+		case "rename":
+			index := canvasProjectIndex(workspace, projectID)
+			title = strings.TrimSpace(title)
+			if index < 0 {
+				return CanvasWorkspaceResult{}, invalidCanvasDocument("canvas project does not exist")
+			}
+			if expectedRevision != nil && workspace.Projects[index].Revision != *expectedRevision {
+				return CanvasWorkspaceResult{}, CanvasRevisionConflictError{Expected: *expectedRevision, Actual: workspace.Projects[index].Revision}
+			}
+			if title == "" || len(title) > canvasDocumentMaxTitle {
+				return CanvasWorkspaceResult{}, invalidCanvasDocument("canvas title is invalid")
+			}
+			workspace.Projects[index].Title = title
+			workspace.Projects[index].Revision++
+			workspace.Projects[index].UpdatedAt = util.NowISO()
+		case "delete":
+			index := canvasProjectIndex(workspace, projectID)
+			if index < 0 {
+				return CanvasWorkspaceResult{}, invalidCanvasDocument("canvas project does not exist")
+			}
+			if expectedRevision != nil && workspace.Projects[index].Revision != *expectedRevision {
+				return CanvasWorkspaceResult{}, CanvasRevisionConflictError{Expected: *expectedRevision, Actual: workspace.Projects[index].Revision}
+			}
+			workspace.Projects = append(workspace.Projects[:index], workspace.Projects[index+1:]...)
+			if len(workspace.Projects) == 0 {
+				workspace.Projects = []CanvasDocument{DefaultCanvasDocument()}
+			}
+			if workspace.ActiveProjectID == projectID {
+				workspace.ActiveProjectID = workspace.Projects[0].ID
+			}
+		}
+		if err := s.saveWorkspaceLocked(ownerID, workspace); err != nil {
+			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < canvasWorkspaceSaveAttempts {
+				continue
+			}
+			if expectedRevision != nil && errors.Is(err, storage.ErrConcurrentRowUpdate) {
+				return CanvasWorkspaceResult{}, CanvasRevisionConflictError{Expected: *expectedRevision, Actual: -1}
+			}
+			return CanvasWorkspaceResult{}, err
+		}
+		return canvasWorkspaceResult(workspace), nil
 	}
-	return canvasWorkspaceResult(workspace), nil
+	return CanvasWorkspaceResult{}, fmt.Errorf("failed to update canvas workspace")
 }
 
 func (s *CanvasDocumentService) loadWorkspaceLocked(ownerID string) (canvasWorkspace, error) {
@@ -405,6 +515,9 @@ func (s *CanvasDocumentService) loadWorkspaceLocked(ownerID string) (canvasWorks
 		storedActiveID:  document.ID,
 	}
 	if err := s.saveWorkspaceLocked(ownerID, workspace); err != nil {
+		if errors.Is(err, storage.ErrConcurrentRowUpdate) {
+			return s.loadWorkspaceLocked(ownerID)
+		}
 		return canvasWorkspace{}, err
 	}
 	return workspace, nil
@@ -662,8 +775,8 @@ func normalizeCanvasNode(node CanvasNode) (CanvasNode, error) {
 		return CanvasNode{}, invalidCanvasDocument("node id is required")
 	}
 	node.Type = strings.ToLower(strings.TrimSpace(node.Type))
-	if node.Type != "image" && node.Type != "text" && node.Type != "config" {
-		return CanvasNode{}, invalidCanvasDocument("node type must be image, text, or config")
+	if node.Type != "image" && node.Type != "video" && node.Type != "text" && node.Type != "config" {
+		return CanvasNode{}, invalidCanvasDocument("node type must be image, video, text, or config")
 	}
 	if !finiteCanvasNumber(node.X) || !finiteCanvasNumber(node.Y) || math.Abs(node.X) > 1e7 || math.Abs(node.Y) > 1e7 {
 		return CanvasNode{}, invalidCanvasDocument("node position is invalid")
@@ -696,6 +809,7 @@ func normalizeCanvasNode(node CanvasNode) (CanvasNode, error) {
 	}
 	node.ParentID = strings.TrimSpace(node.ParentID)
 	node.TaskID = strings.TrimSpace(node.TaskID)
+	node.GenerationModel = strings.TrimSpace(node.GenerationModel)
 	node.GenerationSize = strings.ToLower(strings.TrimSpace(node.GenerationSize))
 	node.GenerationResolution = strings.ToLower(strings.TrimSpace(node.GenerationResolution))
 	node.GenerationQuality = strings.ToLower(strings.TrimSpace(node.GenerationQuality))
@@ -703,6 +817,9 @@ func normalizeCanvasNode(node CanvasNode) (CanvasNode, error) {
 	node.GenerationStatus = strings.ToLower(strings.TrimSpace(node.GenerationStatus))
 	node.GenerationError = strings.TrimSpace(node.GenerationError)
 	node.GenerationType = strings.ToLower(strings.TrimSpace(node.GenerationType))
+	node.GenerationVideoModel = strings.TrimSpace(node.GenerationVideoModel)
+	node.GenerationVideoSize = strings.ToLower(strings.TrimSpace(node.GenerationVideoSize))
+	node.GenerationVideoResolution = strings.ToLower(strings.TrimSpace(node.GenerationVideoResolution))
 	node.BatchRootID = strings.TrimSpace(node.BatchRootID)
 	node.BatchPrimaryID = strings.TrimSpace(node.BatchPrimaryID)
 	node.CreatedAt = strings.TrimSpace(node.CreatedAt)
@@ -717,6 +834,23 @@ func normalizeCanvasNode(node CanvasNode) (CanvasNode, error) {
 	}
 	if len(node.Title) > canvasDocumentMaxTitle || len(node.Prompt) > canvasDocumentMaxPrompt || node.ComposerContent != nil && len(*node.ComposerContent) > canvasDocumentMaxPrompt {
 		return CanvasNode{}, invalidCanvasDocument("node text is too long")
+	}
+	if len(node.GenerationModel) > 256 {
+		return CanvasNode{}, invalidCanvasDocument("node generation model is invalid")
+	}
+	if node.Type == "video" {
+		if node.GenerationVideoModel == "" || len(node.GenerationVideoModel) > 256 {
+			return CanvasNode{}, invalidCanvasDocument("video node generation model is invalid")
+		}
+		if node.GenerationVideoSize != "1280x720" && node.GenerationVideoSize != "720x1280" && node.GenerationVideoSize != "1024x1024" && node.GenerationVideoSize != "16:9" && node.GenerationVideoSize != "9:16" && node.GenerationVideoSize != "1:1" && node.GenerationVideoSize != "4:3" && node.GenerationVideoSize != "3:4" && node.GenerationVideoSize != "21:9" && node.GenerationVideoSize != "adaptive" {
+			return CanvasNode{}, invalidCanvasDocument("video node generation size is invalid")
+		}
+		if node.GenerationVideoSeconds != -1 && node.GenerationVideoSeconds != 4 && node.GenerationVideoSeconds != 5 && node.GenerationVideoSeconds != 6 && node.GenerationVideoSeconds != 8 && node.GenerationVideoSeconds != 10 && node.GenerationVideoSeconds != 12 && node.GenerationVideoSeconds != 15 {
+			return CanvasNode{}, invalidCanvasDocument("video node generation duration is invalid")
+		}
+		if node.GenerationVideoResolution != "480p" && node.GenerationVideoResolution != "512p" && node.GenerationVideoResolution != "720p" && node.GenerationVideoResolution != "768p" && node.GenerationVideoResolution != "1080p" {
+			return CanvasNode{}, invalidCanvasDocument("video node generation resolution is invalid")
+		}
 	}
 	if len(node.GenerationSize) > 64 || len(node.GenerationResolution) > 16 {
 		return CanvasNode{}, invalidCanvasDocument("node generation size is invalid")
@@ -742,7 +876,7 @@ func normalizeCanvasNode(node CanvasNode) (CanvasNode, error) {
 	if node.GenerationType != "" && node.GenerationType != "generate" && node.GenerationType != "edit" {
 		return CanvasNode{}, invalidCanvasDocument("node generation type is invalid")
 	}
-	if len(node.GenerationReferenceURLs) > 4 {
+	if len(node.GenerationReferenceURLs) > canvasDocumentMaxGenerationReferenceImages {
 		return CanvasNode{}, invalidCanvasDocument("node has too many generation reference images")
 	}
 	for _, referenceURL := range node.GenerationReferenceURLs {

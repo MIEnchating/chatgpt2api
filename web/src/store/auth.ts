@@ -1,7 +1,5 @@
 "use client";
 
-import localforage from "localforage";
-
 export type AuthRole = "admin" | "user";
 
 export type AuthMenuItem = {
@@ -14,6 +12,7 @@ export type AuthMenuItem = {
 };
 
 export type StoredAuthSession = {
+  /** Non-secret server credential identifier used only for client-side scoping. */
   key: string;
   role: AuthRole;
   roleId?: string;
@@ -28,88 +27,6 @@ export type StoredAuthSession = {
   apiPermissions: string[];
   menus: AuthMenuItem[];
 };
-
-export const AUTH_SESSION_STORAGE_KEY = "chatgpt2api_auth_session";
-
-const LOCALFORAGE_DATABASE_NAME = "chatgpt2api";
-
-const authStorage = localforage.createInstance({
-  name: LOCALFORAGE_DATABASE_NAME,
-  storeName: "auth",
-});
-
-function normalizeStringList(value: unknown): string[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  const seen = new Set<string>();
-  const out: string[] = [];
-  value.forEach((item) => {
-    const text = String(item || "").trim();
-    if (!text || seen.has(text)) {
-      return;
-    }
-    seen.add(text);
-    out.push(text);
-  });
-  return out;
-}
-
-function normalizeMenus(value: unknown): AuthMenuItem[] {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-  return value.flatMap((item) => {
-    if (!item || typeof item !== "object") {
-      return [];
-    }
-    const candidate = item as Partial<AuthMenuItem>;
-    const path = String(candidate.path || "").trim();
-    const label = String(candidate.label || "").trim();
-    if (!path || !label) {
-      return [];
-    }
-    return [{
-      id: String(candidate.id || path).trim(),
-      label,
-      path,
-      icon: String(candidate.icon || "").trim(),
-      order: typeof candidate.order === "number" ? candidate.order : 0,
-      children: normalizeMenus(candidate.children),
-    }];
-  });
-}
-
-function normalizeSession(value: unknown, fallbackKey = ""): StoredAuthSession | null {
-  if (!value || typeof value !== "object") {
-    return null;
-  }
-
-  const candidate = value as Partial<StoredAuthSession>;
-  const key = String(candidate.key || fallbackKey || "").trim();
-  const role = candidate.role === "admin" || candidate.role === "user" ? candidate.role : null;
-  const creationConcurrentLimit = Number(candidate.creationConcurrentLimit);
-  const creationRpmLimit = Number(candidate.creationRpmLimit ?? 0);
-  if (!key || !role || !Number.isFinite(creationConcurrentLimit) || creationConcurrentLimit < 0) {
-    return null;
-  }
-
-  return {
-    key,
-    role,
-    roleId: String(candidate.roleId || "").trim(),
-    roleName: String(candidate.roleName || "").trim(),
-    subjectId: String(candidate.subjectId || "").trim(),
-    username: String(candidate.username || "").trim(),
-    name: String(candidate.name || "").trim(),
-    provider: String(candidate.provider || "").trim(),
-    creationConcurrentLimit,
-    creationRpmLimit: Number.isFinite(creationRpmLimit) && creationRpmLimit > 0 ? creationRpmLimit : 0,
-    menuPaths: normalizeStringList(candidate.menuPaths),
-    apiPermissions: normalizeStringList(candidate.apiPermissions),
-    menus: normalizeMenus(candidate.menus),
-  };
-}
 
 export function canAccessPath(session: StoredAuthSession | null | undefined, path: string) {
   if (!session) {
@@ -144,35 +61,4 @@ export function getDefaultRouteForSession(session: StoredAuthSession) {
     }
   }
   return "/image";
-}
-
-export async function getStoredAuthSession() {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  const session = normalizeSession(await authStorage.getItem<StoredAuthSession>(AUTH_SESSION_STORAGE_KEY));
-  return session;
-}
-
-export async function getStoredSessionToken() {
-  const session = await getStoredAuthSession();
-  return session?.key ?? "";
-}
-
-export async function setStoredAuthSession(session: StoredAuthSession) {
-  const normalizedSession = normalizeSession(session);
-  if (!normalizedSession) {
-    await clearStoredAuthSession();
-    return;
-  }
-
-  await authStorage.setItem(AUTH_SESSION_STORAGE_KEY, normalizedSession);
-}
-
-export async function clearStoredAuthSession() {
-  if (typeof window === "undefined") {
-    return;
-  }
-  await authStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
 }

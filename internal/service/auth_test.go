@@ -1,10 +1,287 @@
 package service
 
-import "testing"
+import (
+	"errors"
+	"testing"
+
+	"chatgpt2api/internal/storage"
+	"chatgpt2api/internal/util"
+)
+
+func newTestAuthService(t *testing.T, backend storage.Backend) *AuthService {
+	t.Helper()
+	auth, err := NewAuthService(backend)
+	if err != nil {
+		t.Fatalf("NewAuthService() error = %v", err)
+	}
+	return auth
+}
+
+type failingAuthStorage struct {
+	items    []map[string]any
+	failLoad bool
+	failSave bool
+	saveErr  error
+}
+
+type failingAtomicAuthStorage struct {
+	failingAuthStorage
+	documents    map[string]any
+	failDocument bool
+	failAtomic   bool
+}
+
+func (s *failingAuthStorage) LoadAccounts() ([]map[string]any, error) { return nil, nil }
+func (s *failingAuthStorage) SaveAccounts([]map[string]any) error     { return nil }
+func (s *failingAuthStorage) LoadAuthKeys() ([]map[string]any, error) {
+	if s.failLoad {
+		return nil, errors.New("auth storage unavailable")
+	}
+	return cloneAuthItems(s.items), nil
+}
+func (s *failingAuthStorage) SaveAuthKeys(items []map[string]any) error {
+	if s.saveErr != nil {
+		return s.saveErr
+	}
+	if s.failSave {
+		return errors.New("auth storage unavailable")
+	}
+	s.items = make([]map[string]any, len(items))
+	for index, item := range items {
+		s.items[index] = util.CopyMap(item)
+	}
+	return nil
+}
+
+func TestAuthServiceReloadsAfterConcurrentCredentialConflict(t *testing.T) {
+	backend := &failingAuthStorage{}
+	auth := newTestAuthService(t, backend)
+	public, raw, err := auth.CreateAPIKey(AuthRoleUser, "original", AuthOwner{})
+	if err != nil {
+		t.Fatalf("CreateAPIKey() error = %v", err)
+	}
+
+	external := cloneAuthItems(backend.items)
+	external[0]["name"] = "external"
+	external[0]["enabled"] = false
+	backend.items = external
+	backend.saveErr = storage.ErrConcurrentRowUpdate
+	if _, err := auth.UpdateKey(util.Clean(public["id"]), map[string]any{"name": "local"}, AuthKeyFilter{}); !errors.Is(err, storage.ErrConcurrentRowUpdate) {
+		t.Fatalf("UpdateKey() error = %v, want ErrConcurrentRowUpdate", err)
+	}
+
+	items := auth.ListKeys(AuthKeyFilter{})
+	if len(items) != 1 || items[0]["name"] != "external" || items[0]["enabled"] != false {
+		t.Fatalf("credentials after conflict reload = %#v", items)
+	}
+	if identity := auth.Authenticate(raw); identity != nil {
+		t.Fatalf("Authenticate() accepted externally disabled credential: %#v", identity)
+	}
+}
+
+func TestAuthServiceDoesNotPersistRawSessionToken(t *testing.T) {
+	backend := &failingAuthStorage{}
+	auth := newTestAuthService(t, backend)
+	_, raw, err := auth.UpsertLinuxDoSession(AuthOwner{ID: "linuxdo:1", Name: "user"})
+	if err != nil {
+		t.Fatalf("UpsertLinuxDoSession() error = %v", err)
+	}
+	if len(backend.items) != 1 {
+		t.Fatalf("stored sessions = %#v", backend.items)
+	}
+	if value := util.Clean(backend.items[0]["key"]); value != "" {
+		t.Fatalf("stored session leaked raw key %q", value)
+	}
+	if value := util.Clean(backend.items[0]["key_hash"]); value == "" {
+		t.Fatal("stored session key_hash is empty")
+	}
+	if identity := auth.Authenticate(raw); identity == nil {
+		t.Fatal("Authenticate() rejected hash-only session")
+	}
+
+	legacyRaw := "sess-legacy"
+	legacy := newAuthItem(AuthRoleUser, AuthKindSession, "legacy", AuthOwner{ID: "linuxdo:2", Provider: AuthProviderLinuxDo}, legacyRaw)
+	legacy["key"] = legacyRaw
+	legacyBackend := &failingAuthStorage{items: []map[string]any{legacy}}
+	legacyAuth := newTestAuthService(t, legacyBackend)
+	if value := util.Clean(legacyBackend.items[0]["key"]); value != "" {
+		t.Fatalf("legacy session migration retained raw key %q", value)
+	}
+	if identity := legacyAuth.Authenticate(legacyRaw); identity == nil {
+		t.Fatal("Authenticate() rejected migrated legacy session")
+	}
+}
+func (s *failingAuthStorage) HealthCheck() map[string]any { return map[string]any{} }
+func (s *failingAuthStorage) Info() map[string]any        { return map[string]any{} }
+
+func (s *failingAtomicAuthStorage) LoadJSONDocument(name string) (any, error) {
+	return s.documents[name], nil
+}
+
+func (s *failingAtomicAuthStorage) SaveJSONDocument(name string, value any) error {
+	if s.failDocument {
+		return errors.New("auth document storage unavailable")
+	}
+	if s.documents == nil {
+		s.documents = map[string]any{}
+	}
+	s.documents[name] = value
+	return nil
+}
+
+func TestNewAuthServiceReturnsCredentialLoadError(t *testing.T) {
+	backend := &failingAuthStorage{failLoad: true}
+	if _, err := NewAuthService(backend); err == nil {
+		t.Fatal("NewAuthService() error = nil, want credential load failure")
+	}
+}
+
+func TestAuthServiceRollsBackRoleCreateAndDeleteWhenPersistenceFails(t *testing.T) {
+	backend := &failingAtomicAuthStorage{}
+	auth := newTestAuthService(t, backend)
+	beforeCreate := auth.ListRoles()
+
+	backend.failDocument = true
+	if _, err := auth.CreateRole(map[string]any{"name": "failed role"}); err == nil {
+		t.Fatal("CreateRole() error = nil, want persistence failure")
+	}
+	if roles := auth.ListRoles(); len(roles) != len(beforeCreate) {
+		t.Fatalf("failed role create changed in-memory roles: %#v", roles)
+	}
+
+	backend.failDocument = false
+	role, err := auth.CreateRole(map[string]any{"name": "saved role"})
+	if err != nil {
+		t.Fatalf("CreateRole() error = %v", err)
+	}
+	roleID := util.Clean(role["id"])
+	backend.failDocument = true
+	if deleted, err := auth.DeleteRole(roleID); err == nil || deleted {
+		t.Fatalf("DeleteRole() = %v, %v; want persistence failure", deleted, err)
+	}
+	if _, ok := managedRoleByIDLocked(auth.roles, roleID); !ok {
+		t.Fatalf("failed role delete removed role %q from memory", roleID)
+	}
+}
+
+func (s *failingAtomicAuthStorage) DeleteJSONDocument(name string) error {
+	delete(s.documents, name)
+	return nil
+}
+
+func (s *failingAtomicAuthStorage) SaveAuthKeysAndJSONDocument(items []map[string]any, name string, value any) error {
+	if s.failAtomic {
+		return errors.New("atomic auth storage unavailable")
+	}
+	if err := s.SaveAuthKeys(items); err != nil {
+		return err
+	}
+	return s.SaveJSONDocument(name, value)
+}
+
+func TestAuthServiceRollsBackCredentialMemoryWhenPersistenceFails(t *testing.T) {
+	backend := &failingAuthStorage{failSave: true}
+	auth := newTestAuthService(t, backend)
+	if _, _, err := auth.CreateAPIKey(AuthRoleUser, "failed", AuthOwner{}); err == nil {
+		t.Fatal("CreateAPIKey() error = nil, want persistence failure")
+	}
+	if items := auth.ListKeys(AuthKeyFilter{Role: AuthRoleUser, Kind: AuthKindAPIKey}); len(items) != 0 {
+		t.Fatalf("failed credential remained in memory: %#v", items)
+	}
+
+	backend.failSave = false
+	if _, _, err := auth.CreateAPIKey(AuthRoleUser, "saved", AuthOwner{}); err != nil {
+		t.Fatalf("CreateAPIKey() after recovery error = %v", err)
+	}
+}
+
+func TestAuthServiceRollsBackResetAPIKeyWhenPersistenceFails(t *testing.T) {
+	backend := &failingAuthStorage{}
+	auth := newTestAuthService(t, backend)
+	public, raw, err := auth.CreateAPIKey(AuthRoleUser, "original", AuthOwner{})
+	if err != nil {
+		t.Fatalf("CreateAPIKey() error = %v", err)
+	}
+	backend.failSave = true
+	if _, _, _, found, err := auth.ResetUserAPIKey(public["id"].(string), "replacement"); err == nil || !found {
+		t.Fatalf("ResetUserAPIKey() = found %v, error %v; want persistence failure", found, err)
+	}
+	if identity := auth.Authenticate(raw); identity == nil {
+		t.Fatal("failed API key reset invalidated the persisted key in memory")
+	}
+}
+
+func TestAuthServiceAuthenticateRollsBackLastUsedWhenPersistenceFails(t *testing.T) {
+	backend := &failingAuthStorage{}
+	auth := newTestAuthService(t, backend)
+	public, raw, err := auth.CreateAPIKey(AuthRoleUser, "audit", AuthOwner{})
+	if err != nil {
+		t.Fatalf("CreateAPIKey() error = %v", err)
+	}
+	backend.failSave = true
+	if identity := auth.Authenticate(raw); identity == nil {
+		t.Fatal("Authenticate() rejected a valid key when audit persistence failed")
+	}
+	items := auth.ListKeys(AuthKeyFilter{Role: AuthRoleUser, Kind: AuthKindAPIKey})
+	if len(items) != 1 || items[0]["id"] != public["id"] || items[0]["last_used_at"] != nil {
+		t.Fatalf("failed audit persistence changed in-memory key: %#v", items)
+	}
+	backend.failSave = false
+	if identity := auth.Authenticate(raw); identity == nil {
+		t.Fatal("Authenticate() after storage recovery returned nil")
+	}
+	items = auth.ListKeys(AuthKeyFilter{Role: AuthRoleUser, Kind: AuthKindAPIKey})
+	if len(items) != 1 || items[0]["last_used_at"] == nil {
+		t.Fatalf("successful audit persistence did not update key: %#v", items)
+	}
+}
+
+func TestAuthServiceUpdateRoleRollsBackBothStatesWhenAtomicPersistenceFails(t *testing.T) {
+	backend := &failingAtomicAuthStorage{}
+	auth := newTestAuthService(t, backend)
+	user, raw, err := auth.CreateAPIKey(AuthRoleUser, "operator", AuthOwner{})
+	if err != nil {
+		t.Fatalf("CreateAPIKey() error = %v", err)
+	}
+	role, err := auth.CreateRole(map[string]any{
+		"name":            "image viewer",
+		"api_permissions": []string{APIPermissionKey("GET", "/api/images")},
+	})
+	if err != nil {
+		t.Fatalf("CreateRole() error = %v", err)
+	}
+	roleID := role["id"].(string)
+	if _, err := auth.UpdateUser(user["id"].(string), map[string]any{"role_id": roleID}); err != nil {
+		t.Fatalf("UpdateUser() error = %v", err)
+	}
+
+	backend.failAtomic = true
+	if _, err := auth.UpdateRole(roleID, map[string]any{
+		"api_permissions": []string{APIPermissionKey("GET", "/api/logs")},
+	}); err == nil {
+		t.Fatal("UpdateRole() error = nil, want atomic persistence failure")
+	}
+	identity := auth.Authenticate(raw)
+	if identity == nil {
+		t.Fatal("Authenticate() returned nil after failed role update")
+	}
+	permissions := PermissionSet{APIPermissions: identity.APIPermissions}
+	if !HasAPIPermission(permissions, "GET", "/api/images") || HasAPIPermission(permissions, "GET", "/api/logs") {
+		t.Fatalf("failed role update changed in-memory permissions: %#v", identity.APIPermissions)
+	}
+
+	backend.failAtomic = false
+	updated, err := auth.UpdateRole(roleID, map[string]any{
+		"api_permissions": []string{APIPermissionKey("GET", "/api/logs")},
+	})
+	if err != nil || updated == nil {
+		t.Fatalf("UpdateRole() after recovery = %#v, %v", updated, err)
+	}
+}
 
 func TestAuthServiceCreateAuthenticateDisableAndDelete(t *testing.T) {
 	backend := newTestStorageBackend(t)
-	auth := NewAuthService(backend)
+	auth := newTestAuthService(t, backend)
 
 	filter := AuthKeyFilter{Role: AuthRoleUser, Kind: AuthKindAPIKey}
 	public, raw, err := auth.CreateAPIKey(AuthRoleUser, "绘图用户", AuthOwner{})
@@ -38,16 +315,16 @@ func TestAuthServiceCreateAuthenticateDisableAndDelete(t *testing.T) {
 		t.Fatalf("RevealKey() = %q, %v; want raw, true", revealed, found)
 	}
 
-	updated := auth.UpdateKey(keyID, map[string]any{"enabled": false}, filter)
-	if updated == nil {
-		t.Fatal("UpdateKey() returned nil")
+	updated, err := auth.UpdateKey(keyID, map[string]any{"enabled": false}, filter)
+	if err != nil || updated == nil {
+		t.Fatalf("UpdateKey() = %#v, %v", updated, err)
 	}
 	if auth.Authenticate(raw) != nil {
 		t.Fatal("disabled key still authenticated")
 	}
 
-	if !auth.DeleteKey(keyID, filter) {
-		t.Fatal("DeleteKey() = false")
+	if deleted, err := auth.DeleteKey(keyID, filter); err != nil || !deleted {
+		t.Fatalf("DeleteKey() = %v, %v", deleted, err)
 	}
 	if len(auth.ListKeys(filter)) != 0 {
 		t.Fatalf("ListKeys(user) after delete = %#v", auth.ListKeys(filter))
@@ -56,7 +333,7 @@ func TestAuthServiceCreateAuthenticateDisableAndDelete(t *testing.T) {
 
 func TestAuthServiceAssignsManagedRolesToUsers(t *testing.T) {
 	backend := newTestStorageBackend(t)
-	auth := NewAuthService(backend)
+	auth := newTestAuthService(t, backend)
 
 	user, raw, err := auth.CreateAPIKey(AuthRoleUser, "operator", AuthOwner{})
 	if err != nil {
@@ -75,9 +352,9 @@ func TestAuthServiceAssignsManagedRolesToUsers(t *testing.T) {
 	}
 	roleID := role["id"].(string)
 	userID := user["id"].(string)
-	updated := auth.UpdateUser(userID, map[string]any{"role_id": roleID})
-	if updated == nil {
-		t.Fatal("UpdateUser() returned nil")
+	updated, err := auth.UpdateUser(userID, map[string]any{"role_id": roleID})
+	if err != nil || updated == nil {
+		t.Fatalf("UpdateUser() = %#v, %v", updated, err)
 	}
 	if updated["role_id"] != roleID || updated["role_name"] != "image manager" {
 		t.Fatalf("updated role fields = %#v", updated)
@@ -113,7 +390,7 @@ func TestAuthServiceAssignsManagedRolesToUsers(t *testing.T) {
 
 func TestAuthServicePasswordAccountLoginAndRoleUpdates(t *testing.T) {
 	backend := newTestStorageBackend(t)
-	auth := NewAuthService(backend)
+	auth := newTestAuthService(t, backend)
 
 	bootstrap, err := auth.EnsureBootstrapAdmin("admin", "AdminPass123!")
 	if err != nil {
@@ -173,9 +450,9 @@ func TestAuthServicePasswordAccountLoginAndRoleUpdates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateRole() error = %v", err)
 	}
-	updated := auth.UpdateUser(user.ID, map[string]any{"role_id": role["id"]})
-	if updated == nil || updated["role_id"] != role["id"] {
-		t.Fatalf("UpdateUser(role) = %#v", updated)
+	updated, err := auth.UpdateUser(user.ID, map[string]any{"role_id": role["id"]})
+	if err != nil || updated == nil || updated["role_id"] != role["id"] {
+		t.Fatalf("UpdateUser(role) = %#v, %v", updated, err)
 	}
 	assignedRole := findManagedRole(auth.ListRoles(), role["id"].(string))
 	if assignedRole == nil || assignedRole["user_count"] != 1 {
@@ -189,9 +466,9 @@ func TestAuthServicePasswordAccountLoginAndRoleUpdates(t *testing.T) {
 		t.Fatalf("role-updated identity = %#v", identity)
 	}
 
-	disabled := auth.UpdateUser(user.ID, map[string]any{"enabled": false})
-	if disabled == nil || disabled["enabled"] != false {
-		t.Fatalf("UpdateUser(disable) = %#v", disabled)
+	disabled, err := auth.UpdateUser(user.ID, map[string]any{"enabled": false})
+	if err != nil || disabled == nil || disabled["enabled"] != false {
+		t.Fatalf("UpdateUser(disable) = %#v, %v", disabled, err)
 	}
 	if auth.Authenticate(raw) != nil {
 		t.Fatal("disabled password account session still authenticated")
@@ -203,7 +480,7 @@ func TestAuthServicePasswordAccountLoginAndRoleUpdates(t *testing.T) {
 
 func TestAuthServiceLinuxDoSessionOwnsAPIKeys(t *testing.T) {
 	backend := newTestStorageBackend(t)
-	auth := NewAuthService(backend)
+	auth := newTestAuthService(t, backend)
 
 	owner := AuthOwner{ID: "linuxdo:123", Name: "linuxdo_user", Provider: AuthProviderLinuxDo, LinuxDoLevel: "3"}
 	_, rawSession, err := auth.UpsertLinuxDoSession(owner)
@@ -244,9 +521,38 @@ func TestAuthServiceLinuxDoSessionOwnsAPIKeys(t *testing.T) {
 	}
 }
 
+func TestAuthServiceRevokeSessionsRemovesAllRequestedSessionsOnly(t *testing.T) {
+	backend := newTestStorageBackend(t)
+	auth := newTestAuthService(t, backend)
+
+	_, first, err := auth.UpsertLinuxDoSession(AuthOwner{ID: "linuxdo:revoke-first", Name: "first"})
+	if err != nil {
+		t.Fatalf("UpsertLinuxDoSession(first) error = %v", err)
+	}
+	_, second, err := auth.UpsertLinuxDoSession(AuthOwner{ID: "linuxdo:revoke-second", Name: "second"})
+	if err != nil {
+		t.Fatalf("UpsertLinuxDoSession(second) error = %v", err)
+	}
+	_, untouched, err := auth.UpsertLinuxDoSession(AuthOwner{ID: "linuxdo:revoke-untouched", Name: "untouched"})
+	if err != nil {
+		t.Fatalf("UpsertLinuxDoSession(untouched) error = %v", err)
+	}
+
+	removed, err := auth.RevokeSessions(first, second, first, "")
+	if err != nil || removed != 2 {
+		t.Fatalf("RevokeSessions() = (%d, %v), want (2, nil)", removed, err)
+	}
+	if auth.Authenticate(first) != nil || auth.Authenticate(second) != nil {
+		t.Fatal("requested sessions remain valid")
+	}
+	if auth.Authenticate(untouched) == nil {
+		t.Fatal("unrequested session was revoked")
+	}
+}
+
 func TestAuthServiceUpsertLinuxDoSessionHonorsCreateGate(t *testing.T) {
 	backend := newTestStorageBackend(t)
-	auth := NewAuthService(backend)
+	auth := newTestAuthService(t, backend)
 
 	owner := AuthOwner{ID: "linuxdo:blocked", Name: "blocked_user", Provider: AuthProviderLinuxDo, LinuxDoLevel: "1"}
 	if _, _, err := auth.UpsertLinuxDoSessionIfAllowed(owner, false); err != ErrAuthUserCreationDisabled {
@@ -268,14 +574,17 @@ func TestAuthServiceUpsertLinuxDoSessionHonorsCreateGate(t *testing.T) {
 	if err != nil || nextRaw == "" {
 		t.Fatalf("UpsertLinuxDoSessionIfAllowed(existing, disallow new) raw=%q err=%v", nextRaw, err)
 	}
-	if next["id"] != created["id"] {
-		t.Fatalf("existing linuxdo session should be updated, created=%#v next=%#v", created, next)
+	if next["id"] == created["id"] {
+		t.Fatalf("new login should rotate the non-secret credential id, created=%#v next=%#v", created, next)
+	}
+	if auth.Authenticate(createdRaw) != nil {
+		t.Fatal("new login left the previous LinuxDo session active")
 	}
 }
 
 func TestAuthServiceUpsertAPIKeyForOwnerKeepsOneToken(t *testing.T) {
 	backend := newTestStorageBackend(t)
-	auth := NewAuthService(backend)
+	auth := newTestAuthService(t, backend)
 
 	owner := AuthOwner{ID: "linuxdo:123", Name: "linuxdo_user", Provider: AuthProviderLinuxDo, LinuxDoLevel: "3"}
 	if items := auth.ListSingleAPIKeyForOwner(owner.ID); len(items) != 0 {
@@ -308,9 +617,9 @@ func TestAuthServiceUpsertAPIKeyForOwnerKeepsOneToken(t *testing.T) {
 	}
 }
 
-func TestAuthServiceListSingleAPIKeyForOwnerPrunesDuplicates(t *testing.T) {
+func TestAuthServiceListSingleAPIKeyForOwnerDoesNotMutateDuplicates(t *testing.T) {
 	backend := newTestStorageBackend(t)
-	auth := NewAuthService(backend)
+	auth := newTestAuthService(t, backend)
 
 	owner := AuthOwner{ID: "linuxdo:123", Name: "linuxdo_user", Provider: AuthProviderLinuxDo, LinuxDoLevel: "3"}
 	first, firstRaw, err := auth.CreateAPIKey(AuthRoleUser, "first", owner)
@@ -328,14 +637,14 @@ func TestAuthServiceListSingleAPIKeyForOwnerPrunesDuplicates(t *testing.T) {
 	if auth.Authenticate(firstRaw) == nil {
 		t.Fatal("kept token should still authenticate")
 	}
-	if auth.Authenticate(secondRaw) != nil {
-		t.Fatal("pruned duplicate token still authenticated")
+	if auth.Authenticate(secondRaw) == nil {
+		t.Fatal("listing one token must not silently revoke a duplicate token")
 	}
 }
 
 func TestAuthServiceManagedUsersGroupAndControlCredentials(t *testing.T) {
 	backend := newTestStorageBackend(t)
-	auth := NewAuthService(backend)
+	auth := newTestAuthService(t, backend)
 
 	owner := AuthOwner{ID: "linuxdo:123", Name: "linuxdo_user", Provider: AuthProviderLinuxDo, LinuxDoLevel: "3"}
 	_, sessionRaw, err := auth.UpsertLinuxDoSession(owner)
@@ -374,9 +683,9 @@ func TestAuthServiceManagedUsersGroupAndControlCredentials(t *testing.T) {
 		t.Fatalf("local user = %#v in %#v", localUser, users)
 	}
 
-	disabled := auth.UpdateUser(owner.ID, map[string]any{"enabled": false})
-	if disabled == nil || disabled["enabled"] != false {
-		t.Fatalf("disabled managed user = %#v", disabled)
+	disabled, err := auth.UpdateUser(owner.ID, map[string]any{"enabled": false})
+	if err != nil || disabled == nil || disabled["enabled"] != false {
+		t.Fatalf("disabled managed user = %#v, %v", disabled, err)
 	}
 	if auth.Authenticate(sessionRaw) != nil {
 		t.Fatal("disabled linuxdo session still authenticated")
@@ -416,9 +725,9 @@ func TestAuthServiceManagedUsersGroupAndControlCredentials(t *testing.T) {
 		t.Fatal("resetting API key should not re-enable disabled linuxdo session")
 	}
 
-	enabled := auth.UpdateUser(owner.ID, map[string]any{"enabled": true})
-	if enabled == nil || enabled["enabled"] != true {
-		t.Fatalf("enabled managed user = %#v", enabled)
+	enabled, err := auth.UpdateUser(owner.ID, map[string]any{"enabled": true})
+	if err != nil || enabled == nil || enabled["enabled"] != true {
+		t.Fatalf("enabled managed user = %#v, %v", enabled, err)
 	}
 	if auth.Authenticate(sessionRaw) == nil {
 		t.Fatal("enabled linuxdo session should authenticate")
@@ -444,8 +753,8 @@ func TestAuthServiceManagedUsersGroupAndControlCredentials(t *testing.T) {
 		t.Fatalf("local rotated identity = %#v", identity)
 	}
 
-	if !auth.DeleteUser(owner.ID) {
-		t.Fatal("DeleteUser(owner) = false")
+	if deleted, err := auth.DeleteUser(owner.ID); err != nil || !deleted {
+		t.Fatalf("DeleteUser(owner) = %v, %v", deleted, err)
 	}
 	if auth.Authenticate(sessionRaw) != nil || auth.Authenticate(rotatedRaw) != nil {
 		t.Fatal("deleted linuxdo user still authenticated")

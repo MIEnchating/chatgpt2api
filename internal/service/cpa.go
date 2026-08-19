@@ -126,7 +126,10 @@ func (c *CPAConfig) GetImportJob(id string) map[string]any {
 }
 
 func (c *CPAConfig) load() []map[string]any {
-	raw := loadStoredJSON(c.store, c.docName)
+	raw, err := loadStoredJSON(c.store, c.docName)
+	if err != nil {
+		return nil
+	}
 	if obj, ok := raw.(map[string]any); ok && obj["base_url"] != nil {
 		pool := normalizeCPAPool(obj)
 		if util.Clean(pool["base_url"]) != "" {
@@ -247,7 +250,13 @@ func (s *CPAImportService) runImport(poolID string, pool map[string]any, names [
 		s.updateJob(poolID, map[string]any{"status": "failed", "completed": util.ToInt(current["total"], 0), "failed": len(anyList(current["errors"]))})
 		return
 	}
-	add := s.accounts.AddAccounts(tokens)
+	add, err := s.accounts.AddAccounts(tokens)
+	if err != nil {
+		s.appendJobError(poolID, "database", err.Error())
+		current := s.config.GetImportJob(poolID)
+		s.updateJob(poolID, map[string]any{"status": "failed", "completed": len(names), "failed": len(anyList(current["errors"]))})
+		return
+	}
 	refresh := s.accounts.RefreshAccounts(context.Background(), tokens)
 	current := s.config.GetImportJob(poolID)
 	s.updateJob(poolID, map[string]any{"status": "completed", "completed": len(names), "added": util.ToInt(add["added"], 0), "skipped": util.ToInt(add["skipped"], 0), "refreshed": util.ToInt(refresh["refreshed"], 0), "failed": len(anyList(current["errors"]))})

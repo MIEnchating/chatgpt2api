@@ -40,8 +40,7 @@ import {
 } from "@/app/image/image-history-pagination";
 import { getManagedImagePathFromUrl } from "@/lib/image-path";
 import { normalizeImageConversationAssetReference } from "@/lib/image-conversation-assets";
-import { AUTH_SESSION_CHANGE_EVENT, getCachedAuthSession } from "@/lib/session";
-import { getStoredAuthSession } from "@/store/auth";
+import { AUTH_SESSION_CHANGE_EVENT, getCachedAuthSession, getVerifiedAuthSession } from "@/lib/session";
 import {
   classifyImageConversationMergeAcknowledgements,
   enqueueScopedWrite,
@@ -59,7 +58,7 @@ import {
   type ImageConversationSessionScope,
 } from "@/store/image-conversation-session-scope";
 
-export type ImageConversationMode = "chat" | "generate" | "image" | "edit";
+export type ImageConversationMode = "chat" | "generate" | "image" | "edit" | "video";
 export type StoredReferenceImageSource = "upload" | "conversation";
 
 export type StoredReferenceImage = {
@@ -81,6 +80,9 @@ export type StoredImage = {
   visibility?: ImageVisibility;
   b64_json?: string;
   url?: string;
+  mediaType?: "image" | "video";
+  videoUrl?: string;
+  mimeType?: string;
   width?: number;
   height?: number;
   resolution?: string;
@@ -119,6 +121,10 @@ export type ImageTurn = {
   outputCompression?: number;
   stream?: boolean;
   partialImages?: number;
+  videoSeconds?: number;
+  videoResolution?: string;
+  videoGenerateAudio?: boolean;
+  videoWatermark?: boolean;
   moderation?: ImageModeration;
   tokenGroup?: string;
   tokenName?: string;
@@ -290,7 +296,7 @@ if (typeof window !== "undefined") {
 async function getCurrentImageConversationScopeState() {
   const authGeneration = imageConversationAuthGeneration;
   const cachedSession = getCachedAuthSession();
-  const session = cachedSession === undefined ? await getStoredAuthSession() : cachedSession;
+  const session = cachedSession === undefined ? await getVerifiedAuthSession() : cachedSession;
   if (authGeneration !== imageConversationAuthGeneration) {
     throw new ImageConversationScopeChangedError();
   }
@@ -330,7 +336,6 @@ function assertCurrentImageConversationRequest(
 
 function historyRequestOptions(state: ImageConversationScopeState): ImageConversationHistoryRequestOptions {
   return {
-    authorization: state.scope.authorization,
     redirectOnUnauthorized: false,
     generation: state.remoteGeneration,
   };
@@ -616,6 +621,9 @@ function normalizeStoredImage(image: StoredImage): StoredImage {
   const taskRevision = Number(image.taskRevision);
   const normalized = {
     ...image,
+    mediaType: image.mediaType === "video" || image.videoUrl || image.mimeType?.startsWith("video/") ? "video" as const : "image" as const,
+    videoUrl: typeof image.videoUrl === "string" && image.videoUrl ? image.videoUrl : undefined,
+    mimeType: typeof image.mimeType === "string" && image.mimeType ? image.mimeType : undefined,
     taskId: typeof image.taskId === "string" && image.taskId ? image.taskId : undefined,
     taskRevision:
       Number.isSafeInteger(taskRevision) && taskRevision > 0
@@ -651,7 +659,7 @@ function normalizeStoredImage(image: StoredImage): StoredImage {
   }
   return {
     ...normalized,
-    status: image.b64_json || image.url ? "success" : "loading",
+    status: image.b64_json || image.url || image.videoUrl ? "success" : "loading",
   };
 }
 
@@ -675,6 +683,9 @@ function normalizeReferenceImage(image: Record<string, unknown>): StoredReferenc
 }
 
 function normalizeImageMode(value: unknown, referenceImages: StoredReferenceImage[]): ImageConversationMode {
+  if (value === "video") {
+    return "video";
+  }
   if (value === "generate") {
     return "generate";
   }
@@ -821,6 +832,10 @@ function normalizeTurn(turn: ImageTurn & Record<string, unknown>): ImageTurn {
         : undefined,
     stream: Boolean(turn.stream),
     partialImages: normalizePartialImages(turn.partialImages),
+    videoSeconds: Number.isFinite(Number(turn.videoSeconds)) ? Math.max(1, Math.min(60, Math.round(Number(turn.videoSeconds)))) : undefined,
+    videoResolution: typeof turn.videoResolution === "string" && turn.videoResolution ? turn.videoResolution : undefined,
+    videoGenerateAudio: typeof turn.videoGenerateAudio === "boolean" ? turn.videoGenerateAudio : undefined,
+    videoWatermark: typeof turn.videoWatermark === "boolean" ? turn.videoWatermark : undefined,
     moderation: isImageModeration(turn.moderation) ? turn.moderation : undefined,
     tokenGroup: typeof turn.tokenGroup === "string" && turn.tokenGroup.trim() ? turn.tokenGroup.trim() : undefined,
     tokenName: typeof turn.tokenName === "string" && turn.tokenName.trim() ? turn.tokenName.trim() : undefined,

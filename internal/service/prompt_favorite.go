@@ -1,15 +1,20 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 
 	"chatgpt2api/internal/storage"
 	"chatgpt2api/internal/util"
 )
 
-const promptFavoritesDocumentDir = "prompt_favorites"
+const (
+	promptFavoritesDocumentDir = "prompt_favorites"
+	promptFavoriteSaveAttempts = 3
+)
 
 type PromptFavoriteService struct {
 	mu    sync.Mutex
@@ -21,13 +26,22 @@ func NewPromptFavoriteService(backend ...storage.Backend) *PromptFavoriteService
 }
 
 func (s *PromptFavoriteService) List(ownerID string) []map[string]any {
+	items, _ := s.ListWithError(ownerID)
+	return items
+}
+
+func (s *PromptFavoriteService) ListWithError(ownerID string) ([]map[string]any, error) {
 	ownerID = util.Clean(ownerID)
 	if ownerID == "" {
-		return []map[string]any{}
+		return []map[string]any{}, nil
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return copyMaps(s.loadLocked(ownerID))
+	items, err := s.loadLocked(ownerID)
+	if err != nil {
+		return nil, err
+	}
+	return copyMaps(items), nil
 }
 
 func (s *PromptFavoriteService) Upsert(ownerID string, body map[string]any) (map[string]any, error) {
@@ -39,65 +53,90 @@ func (s *PromptFavoriteService) Upsert(ownerID string, body map[string]any) (map
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	items := s.loadLocked(ownerID)
 	now := util.NowISO()
-	existingIndex := -1
-	existingFavoritedAt := ""
-	for index, item := range items {
-		if util.Clean(item["source"]) != util.Clean(body["source"]) || util.Clean(item["prompt_id"]) != util.Clean(body["prompt_id"]) {
-			continue
+	for attempt := 0; attempt < promptFavoriteSaveAttempts; attempt++ {
+		items, err := s.loadLocked(ownerID)
+		if err != nil {
+			return nil, err
 		}
-		existingIndex = index
-		existingFavoritedAt = util.Clean(item["favorited_at"])
-		break
-	}
+		existingIndex := -1
+		existingFavoritedAt := ""
+		for index, item := range items {
+			if util.Clean(item["source"]) != util.Clean(body["source"]) || util.Clean(item["prompt_id"]) != util.Clean(body["prompt_id"]) {
+				continue
+			}
+			existingIndex = index
+			existingFavoritedAt = util.Clean(item["favorited_at"])
+			break
+		}
 
-	item, err := normalizePromptFavoriteInput(body, now, existingFavoritedAt)
-	if err != nil {
-		return nil, err
+		item, err := normalizePromptFavoriteInput(body, now, existingFavoritedAt)
+		if err != nil {
+			return nil, err
+		}
+		if existingIndex >= 0 {
+			items[existingIndex] = item
+		} else {
+			items = append(items, item)
+		}
+		sortPromptFavorites(items)
+		if err := s.saveLocked(ownerID, items); err != nil {
+			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < promptFavoriteSaveAttempts {
+				continue
+			}
+			return nil, err
+		}
+		return util.CopyMap(item), nil
 	}
-	if existingIndex >= 0 {
-		items[existingIndex] = item
-	} else {
-		items = append(items, item)
-	}
-	sortPromptFavorites(items)
-	if err := s.saveLocked(ownerID, items); err != nil {
-		return nil, err
-	}
-	return util.CopyMap(item), nil
+	return nil, fmt.Errorf("failed to save prompt favorite")
 }
 
-func (s *PromptFavoriteService) Delete(ownerID, id string) bool {
+func (s *PromptFavoriteService) Delete(ownerID, id string) (bool, error) {
 	ownerID = util.Clean(ownerID)
 	id = util.Clean(id)
 	if ownerID == "" || id == "" {
-		return false
+		return false, nil
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	items := s.loadLocked(ownerID)
-	next := items[:0]
-	removed := false
-	for _, item := range items {
-		if util.Clean(item["id"]) == id {
-			removed = true
-			continue
+	removedOnce := false
+	for attempt := 0; attempt < promptFavoriteSaveAttempts; attempt++ {
+		items, err := s.loadLocked(ownerID)
+		if err != nil {
+			return false, err
 		}
-		next = append(next, item)
+		next := items[:0]
+		removed := false
+		for _, item := range items {
+			if util.Clean(item["id"]) == id {
+				removed = true
+				continue
+			}
+			next = append(next, item)
+		}
+		if !removed {
+			return removedOnce, nil
+		}
+		removedOnce = true
+		if err := s.saveLocked(ownerID, next); err != nil {
+			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < promptFavoriteSaveAttempts {
+				continue
+			}
+			return false, err
+		}
+		return true, nil
 	}
-	if !removed {
-		return false
-	}
-	_ = s.saveLocked(ownerID, next)
-	return true
+	return false, fmt.Errorf("failed to delete prompt favorite")
 }
 
-func (s *PromptFavoriteService) loadLocked(ownerID string) []map[string]any {
+func (s *PromptFavoriteService) loadLocked(ownerID string) ([]map[string]any, error) {
 	name := promptFavoriteDocumentName(ownerID)
-	raw := loadStoredJSON(s.store, name)
+	raw, err := loadStoredJSON(s.store, name)
+	if err != nil {
+		return nil, err
+	}
 	items := make([]map[string]any, 0)
 	for _, item := range util.AsMapSlice(util.StringMap(raw)["items"]) {
 		if normalized := normalizeStoredPromptFavorite(item); normalized != nil {
@@ -105,7 +144,7 @@ func (s *PromptFavoriteService) loadLocked(ownerID string) []map[string]any {
 		}
 	}
 	sortPromptFavorites(items)
-	return items
+	return items, nil
 }
 
 func (s *PromptFavoriteService) saveLocked(ownerID string, items []map[string]any) error {
@@ -167,6 +206,7 @@ func normalizePromptFavoriteInput(body map[string]any, now, existingFavoritedAt 
 		"author":               author,
 		"mode":                 mode,
 		"category":             category,
+		"tags":                 normalizePromptFavoriteStringList(body["tags"]),
 		"source_label":         sourceLabel,
 		"is_nsfw":              util.ToBool(body["is_nsfw"]),
 		"favorited_at":         favoritedAt,
@@ -203,12 +243,20 @@ func promptFavoriteID(source, promptID string) string {
 }
 
 func normalizePromptFavoriteSource(source string) string {
-	switch source {
-	case "banana-prompt-quicker", "awesome-gpt-image-2-prompts":
-		return source
-	default:
+	source = util.Clean(source)
+	if source == "" || len(source) > 96 {
 		return ""
 	}
+	if source != "banana-prompt-quicker" && source != "awesome-gpt-image-2-prompts" && !strings.HasPrefix(source, "prompt-source-") {
+		return ""
+	}
+	for _, r := range source {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' {
+			continue
+		}
+		return ""
+	}
+	return source
 }
 
 func normalizePromptFavoriteMode(mode string) string {

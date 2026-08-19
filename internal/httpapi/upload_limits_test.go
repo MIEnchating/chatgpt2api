@@ -33,7 +33,7 @@ func TestUploadedImageContentTypeUsesDecodedFormat(t *testing.T) {
 	}
 }
 
-func TestReadMultipartImageBodyRejectsMoreThanFourImages(t *testing.T) {
+func TestReadMultipartImageBodyRejectsMoreThanFourteenImages(t *testing.T) {
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 	for index := 0; index < maxRelayInputImages+1; index++ {
@@ -102,6 +102,75 @@ func TestReadMultipartImageBodyUsesConfiguredDefaultWhenModelIsMissing(t *testin
 	}
 	if model := app.modelConfig()["default_image_model"]; model != "codex-gpt-image-2" {
 		t.Fatalf("model config default = %#v, want codex-gpt-image-2", model)
+	}
+}
+
+func TestReadMultipartImageBodyAcceptsOfficialMaskFile(t *testing.T) {
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	if err := writer.WriteField("prompt", "edit the selected area"); err != nil {
+		t.Fatalf("WriteField(prompt) error = %v", err)
+	}
+	if err := writer.WriteField("model", "gpt-image-2"); err != nil {
+		t.Fatalf("WriteField(model) error = %v", err)
+	}
+	imagePart, err := writer.CreateFormFile("image", "source.png")
+	if err != nil {
+		t.Fatalf("CreateFormFile(image) error = %v", err)
+	}
+	if _, err := imagePart.Write(httpTestPNGBytes(t)); err != nil {
+		t.Fatalf("write image: %v", err)
+	}
+	maskPart, err := writer.CreateFormFile("mask", "mask.png")
+	if err != nil {
+		t.Fatalf("CreateFormFile(mask) error = %v", err)
+	}
+	if _, err := maskPart.Write(httpTestAlphaPNGBytes(t, 12, 12)); err != nil {
+		t.Fatalf("write mask: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/v1/images/edits", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	res := httptest.NewRecorder()
+	parsed, images, err := readMultipartImageBody(res, req)
+	if err != nil {
+		t.Fatalf("readMultipartImageBody() error = %v", err)
+	}
+	if len(images) != 1 {
+		t.Fatalf("images = %d, want 1", len(images))
+	}
+	if err := validateRelayImageMask("/v1/images/edits", "gpt-image-2", parsed, images); err != nil {
+		t.Fatalf("validateRelayImageMask() error = %v", err)
+	}
+	if !strings.HasPrefix(parsed["input_image_mask"].(string), "data:image/png;base64,") {
+		t.Fatalf("normalized mask = %#v", parsed["input_image_mask"])
+	}
+}
+
+func TestReadMultipartImageBodyRejectsMultipleMaskFiles(t *testing.T) {
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	for index := 0; index < 2; index++ {
+		part, err := writer.CreateFormFile("mask", "mask.png")
+		if err != nil {
+			t.Fatalf("CreateFormFile(mask) error = %v", err)
+		}
+		if _, err := part.Write([]byte("not read after count validation")); err != nil {
+			t.Fatalf("write mask: %v", err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/v1/images/edits", body)
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	res := httptest.NewRecorder()
+	_, _, err := readMultipartImageBody(res, req)
+	if !errors.Is(err, errTooManyRelayMasks) {
+		t.Fatalf("multiple mask error = %v", err)
 	}
 }
 

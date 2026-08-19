@@ -141,3 +141,81 @@ func TestAnnouncementPreferencesValidateActions(t *testing.T) {
 		t.Fatal("preference accepted invalid action")
 	}
 }
+
+func TestAnnouncementServiceMergesConcurrentDatabaseCreates(t *testing.T) {
+	databaseURL := "sqlite:///" + filepath.ToSlash(filepath.Join(t.TempDir(), "shared-announcements.db"))
+	backendA, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend(A) error = %v", err)
+	}
+	t.Cleanup(func() { _ = backendA.Close() })
+	backendB, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend(B) error = %v", err)
+	}
+	t.Cleanup(func() { _ = backendB.Close() })
+	barrier := newTestDocumentSaveBarrier(2)
+	serviceA := NewAnnouncementService(newFirstSaveBarrierBackend(t, backendA, barrier))
+	serviceB := NewAnnouncementService(newFirstSaveBarrierBackend(t, backendB, barrier))
+
+	errorsCh := make(chan error, 2)
+	go func() {
+		_, saveErr := serviceA.Create(map[string]any{"content": "公告 A"})
+		errorsCh <- saveErr
+	}()
+	go func() {
+		_, saveErr := serviceB.Create(map[string]any{"content": "公告 B"})
+		errorsCh <- saveErr
+	}()
+	for range 2 {
+		if saveErr := <-errorsCh; saveErr != nil {
+			t.Fatalf("concurrent Create() error = %v", saveErr)
+		}
+	}
+	items, err := serviceA.ListAll()
+	if err != nil {
+		t.Fatalf("ListAll() error = %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("concurrent announcements lost an update: %#v", items)
+	}
+}
+
+func TestAnnouncementServiceMergesConcurrentPreferenceUpdates(t *testing.T) {
+	databaseURL := "sqlite:///" + filepath.ToSlash(filepath.Join(t.TempDir(), "shared-announcement-preferences.db"))
+	backendA, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend(A) error = %v", err)
+	}
+	t.Cleanup(func() { _ = backendA.Close() })
+	backendB, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend(B) error = %v", err)
+	}
+	t.Cleanup(func() { _ = backendB.Close() })
+	barrier := newTestDocumentSaveBarrier(2)
+	serviceA := NewAnnouncementService(newFirstSaveBarrierBackend(t, backendA, barrier))
+	serviceB := NewAnnouncementService(newFirstSaveBarrierBackend(t, backendB, barrier))
+
+	errorsCh := make(chan error, 2)
+	go func() {
+		_, saveErr := serviceA.UpdatePreferences("owner", "announcement-a:v1", "seen", "")
+		errorsCh <- saveErr
+	}()
+	go func() {
+		_, saveErr := serviceB.UpdatePreferences("owner", "announcement-b:v1", "forever", "")
+		errorsCh <- saveErr
+	}()
+	for range 2 {
+		if saveErr := <-errorsCh; saveErr != nil {
+			t.Fatalf("concurrent UpdatePreferences() error = %v", saveErr)
+		}
+	}
+	preferences, err := serviceA.Preferences("owner")
+	if err != nil {
+		t.Fatalf("Preferences() error = %v", err)
+	}
+	if len(preferences.SeenVersions) != 2 || len(preferences.PermanentVersions) != 1 {
+		t.Fatalf("concurrent preferences lost an update: %#v", preferences)
+	}
+}

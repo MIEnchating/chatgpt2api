@@ -2,10 +2,21 @@ package storage
 
 import (
 	"encoding/json"
+	"errors"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func openSQLiteStorageTestBackend(t *testing.T, path string) *DatabaseBackend {
+	t.Helper()
+	backend, err := NewDatabaseBackend("sqlite:///" + filepath.ToSlash(path))
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend() error = %v", err)
+	}
+	t.Cleanup(func() { _ = backend.Close() })
+	return backend
+}
 
 func TestDatabaseBackendStoresDocumentsAndLogs(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "chatgpt2api.db")
@@ -68,6 +79,217 @@ func TestDatabaseBackendStoresDocumentsAndLogs(t *testing.T) {
 	health := backend.HealthCheck()
 	if health["document_count"] != 1 || health["log_count"] != 2 {
 		t.Fatalf("HealthCheck() = %#v", health)
+	}
+}
+
+func TestDatabaseBackendRowCASConflictRequiresReloadBeforeRetry(t *testing.T) {
+	databasePath := filepath.Join(t.TempDir(), "cas-retry.db")
+	first := openSQLiteStorageTestBackend(t, databasePath)
+	second := openSQLiteStorageTestBackend(t, databasePath)
+	seed := []map[string]any{{"access_token": "token", "type": "seed"}}
+	if err := first.SaveAccounts(seed); err != nil {
+		t.Fatalf("seed SaveAccounts() error = %v", err)
+	}
+	if _, err := first.LoadAccounts(); err != nil {
+		t.Fatalf("first LoadAccounts() error = %v", err)
+	}
+	if _, err := second.LoadAccounts(); err != nil {
+		t.Fatalf("second LoadAccounts() error = %v", err)
+	}
+	if err := first.SaveAccounts([]map[string]any{{"access_token": "token", "type": "first"}}); err != nil {
+		t.Fatalf("first SaveAccounts() error = %v", err)
+	}
+	secondValue := []map[string]any{{"access_token": "token", "type": "second"}}
+	if err := second.SaveAccounts(secondValue); !errors.Is(err, ErrConcurrentRowUpdate) {
+		t.Fatalf("stale SaveAccounts() error = %v, want ErrConcurrentRowUpdate", err)
+	}
+	if err := second.SaveAccounts(secondValue); !errors.Is(err, ErrConcurrentRowUpdate) {
+		t.Fatalf("second stale SaveAccounts() error = %v, want ErrConcurrentRowUpdate", err)
+	}
+	reloaded, err := second.LoadAccounts()
+	if err != nil {
+		t.Fatalf("reload accounts error = %v", err)
+	}
+	reloaded[0]["type"] = "second"
+	if err := second.SaveAccounts(reloaded); err != nil {
+		t.Fatalf("rebased SaveAccounts() error = %v", err)
+	}
+	items, err := first.LoadAccounts()
+	if err != nil {
+		t.Fatalf("final LoadAccounts() error = %v", err)
+	}
+	if len(items) != 1 || items[0]["type"] != "second" {
+		t.Fatalf("final accounts = %#v", items)
+	}
+}
+
+func TestEncodeRowsRejectsMissingAndDuplicateKeys(t *testing.T) {
+	if _, err := encodeRows("accounts", []map[string]any{{"type": "Plus"}}); err == nil {
+		t.Fatal("encodeRows() missing key error = nil")
+	}
+	if _, err := encodeRows("auth_keys", []map[string]any{{"id": "same"}, {"id": "same"}}); err == nil {
+		t.Fatal("encodeRows() duplicate key error = nil")
+	}
+}
+
+func TestDatabaseBackendMySQLRowCASUsesExactPredicates(t *testing.T) {
+	backend := &DatabaseBackend{driver: "mysql"}
+	if got := backend.rowKeyPredicate("accounts", "access_token", 0); got != "access_token_hash = SHA2(?, 256)" {
+		t.Fatalf("accounts key predicate = %q", got)
+	}
+	if got := backend.rowKeyPredicate("auth_keys", "key_id", 0); got != "key_id = ?" {
+		t.Fatalf("auth key predicate = %q", got)
+	}
+	if got := backend.rowDataPredicate(0); got != "BINARY data = BINARY ?" {
+		t.Fatalf("data predicate = %q", got)
+	}
+}
+
+func TestDatabaseBackendPostgresRowPredicatesUseNumberedArguments(t *testing.T) {
+	backend := &DatabaseBackend{driver: "postgres"}
+	if got := backend.rowKeyPredicate("accounts", "access_token", 1); got != "access_token = $2" {
+		t.Fatalf("key predicate = %q", got)
+	}
+	if got := backend.rowDataPredicate(2); got != "data = $3" {
+		t.Fatalf("data predicate = %q", got)
+	}
+}
+
+func TestDatabaseBackendRowCASPreservesUnrelatedConcurrentUpdates(t *testing.T) {
+	databasePath := filepath.Join(t.TempDir(), "cas-independent.db")
+	first := openSQLiteStorageTestBackend(t, databasePath)
+	second := openSQLiteStorageTestBackend(t, databasePath)
+	seed := []map[string]any{
+		{"access_token": "token-a", "type": "seed"},
+		{"access_token": "token-b", "type": "seed"},
+	}
+	if err := first.SaveAccounts(seed); err != nil {
+		t.Fatalf("seed SaveAccounts() error = %v", err)
+	}
+	firstItems, err := first.LoadAccounts()
+	if err != nil {
+		t.Fatalf("first LoadAccounts() error = %v", err)
+	}
+	secondItems, err := second.LoadAccounts()
+	if err != nil {
+		t.Fatalf("second LoadAccounts() error = %v", err)
+	}
+	for _, item := range firstItems {
+		if item["access_token"] == "token-a" {
+			item["type"] = "first"
+		}
+	}
+	for _, item := range secondItems {
+		if item["access_token"] == "token-b" {
+			item["type"] = "second"
+		}
+	}
+	if err := first.SaveAccounts(firstItems); err != nil {
+		t.Fatalf("first SaveAccounts() error = %v", err)
+	}
+	if err := second.SaveAccounts(secondItems); err != nil {
+		t.Fatalf("second SaveAccounts() error = %v", err)
+	}
+	items, err := openSQLiteStorageTestBackend(t, databasePath).LoadAccounts()
+	if err != nil {
+		t.Fatalf("final LoadAccounts() error = %v", err)
+	}
+	values := map[string]any{}
+	for _, item := range items {
+		values[item["access_token"].(string)] = item["type"]
+	}
+	if values["token-a"] != "first" || values["token-b"] != "second" {
+		t.Fatalf("final account values = %#v", values)
+	}
+}
+
+func TestDatabaseBackendJSONDocumentCASConflictRequiresReload(t *testing.T) {
+	databasePath := filepath.Join(t.TempDir(), "document-cas.db")
+	first := openSQLiteStorageTestBackend(t, databasePath)
+	second := openSQLiteStorageTestBackend(t, databasePath)
+	if err := first.SaveJSONDocument("auth_users.json", map[string]any{"version": 1}); err != nil {
+		t.Fatalf("seed SaveJSONDocument() error = %v", err)
+	}
+	if _, err := first.LoadJSONDocument("auth_users.json"); err != nil {
+		t.Fatalf("first LoadJSONDocument() error = %v", err)
+	}
+	if _, err := second.LoadJSONDocument("auth_users.json"); err != nil {
+		t.Fatalf("second LoadJSONDocument() error = %v", err)
+	}
+	if err := first.SaveJSONDocument("auth_users.json", map[string]any{"version": 2}); err != nil {
+		t.Fatalf("first SaveJSONDocument() error = %v", err)
+	}
+	if err := second.SaveJSONDocument("auth_users.json", map[string]any{"version": 3}); !errors.Is(err, ErrConcurrentRowUpdate) {
+		t.Fatalf("stale SaveJSONDocument() error = %v, want ErrConcurrentRowUpdate", err)
+	}
+	if _, err := second.LoadJSONDocument("auth_users.json"); err != nil {
+		t.Fatalf("reload LoadJSONDocument() error = %v", err)
+	}
+	if err := second.SaveJSONDocument("auth_users.json", map[string]any{"version": 3}); err != nil {
+		t.Fatalf("rebased SaveJSONDocument() error = %v", err)
+	}
+	value, err := first.LoadJSONDocument("auth_users.json")
+	if err != nil {
+		t.Fatalf("final LoadJSONDocument() error = %v", err)
+	}
+	if version := value.(map[string]any)["version"]; version != json.Number("3") {
+		t.Fatalf("final document version = %#v, want 3", version)
+	}
+}
+
+func TestDatabaseBackendSaveAuthStateRollsBackBothWrites(t *testing.T) {
+	databasePath := filepath.Join(t.TempDir(), "auth-state.db")
+	backend := openSQLiteStorageTestBackend(t, databasePath)
+	seedKeys := []map[string]any{{"id": "session-1", "name": "before"}}
+	seedDocument := map[string]any{"items": []map[string]any{{"id": "user-1", "name": "before"}}}
+	if err := backend.SaveAuthKeysAndJSONDocument(seedKeys, "auth_users.json", seedDocument); err != nil {
+		t.Fatalf("seed SaveAuthKeysAndJSONDocument() error = %v", err)
+	}
+	if _, err := backend.db.Exec(`CREATE TRIGGER fail_auth_users_update
+		BEFORE UPDATE ON json_documents
+		WHEN NEW.name = 'auth_users.json'
+		BEGIN
+			SELECT RAISE(ABORT, 'forced auth document failure');
+		END`); err != nil {
+		t.Fatalf("create failure trigger: %v", err)
+	}
+
+	nextKeys := []map[string]any{{"id": "session-1", "name": "after"}}
+	nextDocument := map[string]any{"items": []map[string]any{{"id": "user-1", "name": "after"}}}
+	if err := backend.SaveAuthKeysAndJSONDocument(nextKeys, "auth_users.json", nextDocument); err == nil {
+		t.Fatal("SaveAuthKeysAndJSONDocument() error = nil, want document failure")
+	}
+	var storedKey string
+	if err := backend.db.QueryRow(`SELECT data FROM auth_keys WHERE key_id = ?`, "session-1").Scan(&storedKey); err != nil {
+		t.Fatalf("read auth key after rollback: %v", err)
+	}
+	if !strings.Contains(storedKey, `"name":"before"`) {
+		t.Fatalf("auth key was not rolled back: %s", storedKey)
+	}
+	storedDocument, err := backend.LoadJSONDocument("auth_users.json")
+	if err != nil {
+		t.Fatalf("LoadJSONDocument() after rollback error = %v", err)
+	}
+	encodedDocument, err := json.Marshal(storedDocument)
+	if err != nil {
+		t.Fatalf("marshal stored document: %v", err)
+	}
+	if !strings.Contains(string(encodedDocument), `"name":"before"`) {
+		t.Fatalf("auth document was not rolled back: %s", encodedDocument)
+	}
+
+	if _, err := backend.db.Exec(`DROP TRIGGER fail_auth_users_update`); err != nil {
+		t.Fatalf("drop failure trigger: %v", err)
+	}
+	if err := backend.SaveAuthKeysAndJSONDocument(nextKeys, "auth_users.json", nextDocument); err != nil {
+		t.Fatalf("retry SaveAuthKeysAndJSONDocument() error = %v", err)
+	}
+	storedKeys, err := backend.LoadAuthKeys()
+	if err != nil {
+		t.Fatalf("LoadAuthKeys() after retry error = %v", err)
+	}
+	if len(storedKeys) != 1 || storedKeys[0]["name"] != "after" {
+		t.Fatalf("stored auth keys after retry = %#v", storedKeys)
 	}
 }
 

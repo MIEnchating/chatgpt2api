@@ -98,7 +98,7 @@ func (e *Engine) HandleImageGenerations(ctx context.Context, body map[string]any
 		return nil, nil, HTTPError{Status: 400, Message: "prompt is required"}
 	}
 	model := firstNonEmpty(util.Clean(body["model"]), util.ImageModelAuto)
-	n, err := ParseImageCount(body["n"])
+	n, err := ParseImageCount(body["n"], model)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -130,11 +130,16 @@ func (e *Engine) HandleImageEdits(ctx context.Context, body map[string]any, imag
 	if len(encoded) == 0 {
 		return nil, nil, &ImageGenerationError{Message: "image is required", StatusCode: 502, Type: "server_error", Code: "upstream_error"}
 	}
+	model := firstNonEmpty(util.Clean(body["model"]), util.ImageModelAuto)
+	n, err := ParseImageCount(body["n"], model)
+	if err != nil {
+		return nil, nil, err
+	}
 	size := util.Clean(body["size"])
 	request := ConversationRequest{
 		Prompt:                 util.Clean(body["prompt"]),
-		Model:                  firstNonEmpty(util.Clean(body["model"]), util.ImageModelAuto),
-		N:                      util.ToInt(body["n"], 1),
+		Model:                  model,
+		N:                      n,
 		Size:                   size,
 		Quality:                util.Clean(body["quality"]),
 		Background:             util.Clean(body["background"]),
@@ -931,7 +936,7 @@ func ChatImageArgs(body map[string]any) (string, string, int, []UploadedImage, [
 	if prompt == "" {
 		return "", "", 0, nil, nil, HTTPError{Status: 400, Message: "prompt is required"}
 	}
-	n, err := ParseImageCount(body["n"])
+	n, err := ParseImageCount(body["n"], model)
 	if err != nil {
 		return "", "", 0, nil, nil, err
 	}
@@ -946,10 +951,14 @@ func ImageResultContent(result map[string]any) string {
 	return firstNonEmpty(util.Clean(result["message"]), "Image generation completed.")
 }
 
-func ParseImageCount(raw any) (int, error) {
-	value := util.ToInt(raw, 1)
-	if value < 1 || value > 4 {
-		return 0, HTTPError{Status: 400, Message: "n must be between 1 and 4"}
+func ParseImageCount(raw any, model string) (int, error) {
+	limit := util.MaxImageOutputCount(model)
+	if raw == nil || strings.TrimSpace(util.Clean(raw)) == "" {
+		return 1, nil
+	}
+	value, ok := util.StrictInt(raw)
+	if !ok || value < 1 || value > limit {
+		return 0, HTTPError{Status: 400, Message: fmt.Sprintf("n must be between 1 and %d", limit)}
 	}
 	return value, nil
 }
@@ -1158,11 +1167,16 @@ func ResponseImageGenerationRequest(body map[string]any, scope string, previous 
 	if prompt == "" {
 		return ConversationRequest{}, "", HTTPError{Status: 400, Message: "input text is required"}
 	}
-	n, err := ParseImageCount(body["n"])
+	tool := ResponseImageGenerationTool(body)
+	toolModel := firstNonEmpty(util.Clean(tool["model"]), responseModel)
+	if !util.IsResponsesImageToolModel(toolModel) {
+		return ConversationRequest{}, "", HTTPError{Status: 400, Message: "unsupported image_generation model: " + toolModel}
+	}
+	imageModel := responseImageGenerationModel(toolModel)
+	n, err := ParseImageCount(body["n"], imageModel)
 	if err != nil {
 		return ConversationRequest{}, "", err
 	}
-	tool := ResponseImageGenerationTool(body)
 	size := firstNonEmpty(util.Clean(tool["size"]), util.Clean(body["size"]), "auto")
 	inputImages := ExtractResponseImages(body["input"])
 	if len(inputImages) > 0 && util.Clean(tool["size"]) == "" && util.Clean(body["size"]) == "" {
@@ -1176,15 +1190,11 @@ func ResponseImageGenerationRequest(body map[string]any, scope string, previous 
 	if len(images) > maxContextImages {
 		images = images[len(images)-maxContextImages:]
 	}
-	toolModel := firstNonEmpty(util.Clean(tool["model"]), responseModel)
-	if !util.IsResponsesImageToolModel(toolModel) {
-		return ConversationRequest{}, "", HTTPError{Status: 400, Message: "unsupported image_generation model: " + toolModel}
-	}
 	outputFormat := NormalizeImageOutputFormat(firstNonEmpty(util.Clean(tool["output_format"]), util.Clean(body["output_format"])))
 	partialImages, hasPartialImages := normalizedPositiveInt(firstNonNil(tool["partial_images"], body["partial_images"]))
 	request := ConversationRequest{
 		Prompt:         prompt,
-		Model:          responseImageGenerationModel(toolModel),
+		Model:          imageModel,
 		Messages:       messages,
 		N:              n,
 		Size:           size,
@@ -1942,8 +1952,8 @@ func normalizedPositiveInt(value any) (int, bool) {
 	if value == nil || strings.TrimSpace(util.Clean(value)) == "" {
 		return 0, false
 	}
-	n := util.ToInt(value, 0)
-	if n < 1 {
+	n, ok := util.StrictInt(value)
+	if !ok || n < 1 {
 		return 0, false
 	}
 	return n, true

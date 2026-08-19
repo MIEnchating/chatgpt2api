@@ -3,10 +3,9 @@ package service
 import (
 	"bytes"
 	"context"
-	"crypto/md5"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"image"
 	"image/color"
 	"image/draw"
@@ -14,7 +13,6 @@ import (
 	"image/jpeg"
 	_ "image/png"
 	"io"
-	"net/http"
 	"net/url"
 	"os"
 	"path"
@@ -26,6 +24,7 @@ import (
 	"time"
 
 	"chatgpt2api/internal/storage"
+	"chatgpt2api/internal/util"
 )
 
 const (
@@ -36,6 +35,7 @@ const (
 	imageReferencePrefix  = "references"
 	imageReferenceMarker  = ".refs/"
 	objectIndexStaleAfter = 5 * time.Minute
+	imageMetadataAttempts = 8
 
 	ImageVisibilityPrivate = "private"
 	ImageVisibilityPublic  = "public"
@@ -59,6 +59,7 @@ type imageMetadata struct {
 	OwnerID           string
 	OwnerName         string
 	Visibility        string
+	Deleting          bool
 	PublishedAt       string
 	Prompt            string
 	Model             string
@@ -70,7 +71,6 @@ type imageMetadata struct {
 	Background        string
 	Moderation        string
 	PartialImages     *int
-	InputImageMask    string
 	ReferenceImages   []imageReferenceMetadata
 	SharePromptParams bool
 	ShareReferences   bool
@@ -93,7 +93,6 @@ type GeneratedImageMetadata struct {
 	Background        string
 	Moderation        string
 	PartialImages     *int
-	InputImageMask    string
 	ReferenceImages   []GeneratedImageReference
 	SharePromptParams bool
 	ShareReferences   bool
@@ -184,6 +183,7 @@ type ImageService struct {
 	storePrefix   storage.JSONDocumentPrefixBackend
 	cleanupMu     sync.Mutex
 	indexMu       sync.Mutex
+	metadataMu    sync.Mutex
 	thumbnailMu   sync.Mutex
 	thumbnailJobs map[string]*thumbnailJob
 	objectStoreMu sync.RWMutex
@@ -368,16 +368,22 @@ func (s *ImageService) SaveImageBytes(ctx context.Context, imageData []byte, bas
 	if len(imageData) == 0 {
 		return "", errors.New("image data is empty")
 	}
-	outputFormat = NormalizeImageOutputFormat(outputFormat)
-	sum := md5Sum(imageData)
+	if len(imageData) > util.MaxRasterImageEncodedBytes {
+		return "", errors.New("image data is too large")
+	}
+	info, err := util.InspectRasterImage(imageData, "image/png", "image/jpeg", "image/webp")
+	if err != nil {
+		return "", fmt.Errorf("invalid image data: %w", err)
+	}
+	outputFormat = info.Format
 	now := time.Now().UTC()
-	filename := strconv.FormatInt(now.Unix(), 10) + "_" + sum + "." + imageStorageExtension(outputFormat)
+	filename := strconv.FormatInt(now.UnixNano(), 10) + "_" + util.NewHex(12) + "." + imageStorageExtension(outputFormat)
 	rel := filepath.ToSlash(filepath.Join(now.Format("2006"), now.Format("01"), now.Format("02"), filename))
 	imagePath := filepath.Join(s.config.ImagesDir(), filepath.FromSlash(rel))
 	if err := os.MkdirAll(filepath.Dir(imagePath), 0o755); err != nil {
 		return "", err
 	}
-	contentType := imageOutputContentType(outputFormat)
+	contentType := info.ContentType
 	storageBackend := "local"
 	s.objectStoreMu.RLock()
 	objectStore, objectWrites := s.objectStore, s.objectWrites
@@ -394,11 +400,10 @@ func (s *ImageService) SaveImageBytes(ctx context.Context, imageData []byte, bas
 	} else if err := os.WriteFile(imagePath, imageData, 0o644); err != nil {
 		return "", err
 	}
-	width, height := imageDataDimensions(imageData)
 	meta := imageMetadata{
 		OwnerID: ownerID, OwnerName: ownerName, Visibility: ImageVisibilityPrivate,
 		StorageBackend: storageBackend, StoredSize: int64(len(imageData)), StoredAt: now.Format(time.RFC3339Nano),
-		ContentType: contentType, Width: width, Height: height, OutputFormat: outputFormat,
+		ContentType: contentType, Width: info.Width, Height: info.Height, OutputFormat: outputFormat,
 	}
 	if err := s.writeImageMetadata(rel, meta); err != nil {
 		_ = os.Remove(imagePath)
@@ -410,11 +415,6 @@ func (s *ImageService) SaveImageBytes(ctx context.Context, imageData []byte, bas
 	return publicAssetURL(baseURL, "images", rel), nil
 }
 
-func md5Sum(data []byte) string {
-	sum := md5.Sum(data)
-	return hex.EncodeToString(sum[:])
-}
-
 func imageStorageExtension(format string) string {
 	if NormalizeImageOutputFormat(format) == "jpeg" {
 		return "jpg"
@@ -424,14 +424,6 @@ func imageStorageExtension(format string) string {
 
 func imageOutputContentType(format string) string {
 	return "image/" + NormalizeImageOutputFormat(format)
-}
-
-func imageDataDimensions(data []byte) (int, int) {
-	config, _, err := image.DecodeConfig(bytes.NewReader(data))
-	if err != nil {
-		return 0, 0
-	}
-	return config.Width, config.Height
 }
 
 func storedImageSize(meta imageMetadata, info os.FileInfo) int64 {
@@ -582,6 +574,9 @@ func (s *ImageService) ListImages(baseURL, startDate, endDate string, scope Imag
 			return nil
 		}
 		meta := s.imageMetadata(rel)
+		if meta.Deleting {
+			return nil
+		}
 		storedTime := storedImageTime(meta, info)
 		ownerID := meta.OwnerID
 		if scope.Public {
@@ -672,13 +667,13 @@ func (s *ImageService) UpdateImageVisibility(value, visibility string, scope Ima
 		return nil, err
 	}
 	meta := s.imageMetadata(ref.rel)
+	if meta.Deleting {
+		return nil, errors.New("image not found")
+	}
 	if !scope.All && (scope.OwnerID == "" || meta.OwnerID != scope.OwnerID) {
 		return nil, errors.New("image not found")
 	}
-	if err := s.writeImageMetadataForRef(ref, "", "", visibility, GeneratedImageMetadata{
-		SharePromptParams: options.SharePromptParams,
-		ShareReferences:   options.ShareReferences,
-	}); err != nil {
+	if err := s.writeImageMetadataForRefWithSharingOptions(ref, "", "", visibility, &options); err != nil {
 		return nil, err
 	}
 	nextMeta := s.imageMetadata(ref.rel)
@@ -740,6 +735,9 @@ func (s *ImageService) ImageReferenceFileAccess(value string) (ImageReferenceFil
 		return ImageReferenceFileAccess{}, err
 	}
 	meta := s.imageMetadata(sourceRel)
+	if meta.Deleting {
+		return ImageReferenceFileAccess{}, errors.New("image not found")
+	}
 	var metadata imageReferenceMetadata
 	for _, ref := range meta.ReferenceImages {
 		if ref.Path == rel {
@@ -785,27 +783,31 @@ func (s *ImageService) ImageBytes(value string, scope ImageAccessScope) ([]byte,
 		return nil, "", err
 	}
 	var data []byte
-	contentType := access.ContentType
 	if access.Remote {
 		objectStore, _ := s.objectStoreSnapshot()
 		if objectStore == nil {
 			return nil, "", errors.New("image object storage is not configured")
 		}
-		data, contentType, err = objectStore.Get(context.Background(), access.Rel)
+		data, _, err = objectStore.Get(context.Background(), access.Rel)
 	} else {
-		data, err = os.ReadFile(access.Path)
+		file, openErr := os.Open(access.Path)
+		if openErr != nil {
+			return nil, "", openErr
+		}
+		defer file.Close()
+		data, err = io.ReadAll(io.LimitReader(file, util.MaxRasterImageEncodedBytes+1))
 	}
 	if err != nil {
 		return nil, "", err
 	}
-	mimeType := strings.TrimSpace(contentType)
-	if mimeType == "" {
-		mimeType = http.DetectContentType(data)
+	if len(data) > util.MaxRasterImageEncodedBytes {
+		return nil, "", errors.New("stored image is too large")
 	}
-	if !strings.HasPrefix(mimeType, "image/") {
-		return nil, "", errors.New("unsupported image file")
+	info, err := util.InspectRasterImage(data, "image/png", "image/jpeg", "image/webp")
+	if err != nil {
+		return nil, "", fmt.Errorf("invalid stored image: %w", err)
 	}
-	return data, mimeType, nil
+	return data, info.ContentType, nil
 }
 
 func (s *ImageService) DeleteImages(paths []string, scope ImageAccessScope) (map[string]any, error) {
@@ -845,9 +847,15 @@ func (s *ImageService) DeleteImages(paths []string, scope ImageAccessScope) (map
 			missing++
 			continue
 		}
-		stats, err := s.removeImageGroup(rel)
+		stats, claimed, err := s.removeImageGroupIf(rel, func(meta imageMetadata) bool {
+			return scope.All || (scope.OwnerID != "" && meta.OwnerID == scope.OwnerID)
+		})
 		if err != nil {
 			return nil, err
+		}
+		if !claimed {
+			missing++
+			continue
 		}
 		if stats.images == 0 {
 			missing++
@@ -859,25 +867,29 @@ func (s *ImageService) DeleteImages(paths []string, scope ImageAccessScope) (map
 	return map[string]any{"deleted": deleted, "missing": missing, "paths": removedPaths}, nil
 }
 
-func (s *ImageService) RecordImageOwners(values []string, ownerID string) {
+func (s *ImageService) RecordImageOwners(values []string, ownerID string) error {
 	ownerID = strings.TrimSpace(ownerID)
 	if ownerID == "" {
-		return
+		return nil
 	}
+	var writeErrors []error
 	for _, ref := range s.imageFileRefs(values) {
-		_ = s.writeImageMetadataForRef(ref, ownerID, "", "")
+		if err := s.writeImageMetadataForRef(ref, ownerID, "", ""); err != nil {
+			writeErrors = append(writeErrors, fmt.Errorf("record image owner for %s: %w", ref.rel, err))
+		}
 	}
+	return errors.Join(writeErrors...)
 }
 
-func (s *ImageService) RecordGeneratedImages(values []string, ownerID, ownerName, visibility string, metadataValues ...GeneratedImageMetadata) {
-	s.recordGeneratedImages(values, ownerID, ownerName, visibility, true, metadataValues...)
+func (s *ImageService) RecordGeneratedImages(values []string, ownerID, ownerName, visibility string, metadataValues ...GeneratedImageMetadata) error {
+	return s.recordGeneratedImages(values, ownerID, ownerName, visibility, true, metadataValues...)
 }
 
-func (s *ImageService) RecordGeneratedImageMetadata(values []string, ownerID, ownerName, visibility string, metadataValues ...GeneratedImageMetadata) {
-	s.recordGeneratedImages(values, ownerID, ownerName, visibility, false, metadataValues...)
+func (s *ImageService) RecordGeneratedImageMetadata(values []string, ownerID, ownerName, visibility string, metadataValues ...GeneratedImageMetadata) error {
+	return s.recordGeneratedImages(values, ownerID, ownerName, visibility, false, metadataValues...)
 }
 
-func (s *ImageService) recordGeneratedImages(values []string, ownerID, ownerName, visibility string, ensureThumbnails bool, metadataValues ...GeneratedImageMetadata) {
+func (s *ImageService) recordGeneratedImages(values []string, ownerID, ownerName, visibility string, ensureThumbnails bool, metadataValues ...GeneratedImageMetadata) error {
 	ownerID = strings.TrimSpace(ownerID)
 	ownerName = strings.TrimSpace(ownerName)
 	metadata := GeneratedImageMetadata{}
@@ -888,14 +900,18 @@ func (s *ImageService) recordGeneratedImages(values []string, ownerID, ownerName
 	if err != nil {
 		visibility = ImageVisibilityPrivate
 	}
+	var writeErrors []error
 	for _, ref := range s.imageFileRefs(values) {
 		if ensureThumbnails {
 			s.ensureThumbnailForRef(ref)
 		}
 		if ownerID != "" && ownerID != "anonymous" {
-			_ = s.writeImageMetadataForRef(ref, ownerID, ownerName, visibility, metadata)
+			if err := s.writeImageMetadataForRef(ref, ownerID, ownerName, visibility, metadata); err != nil {
+				writeErrors = append(writeErrors, fmt.Errorf("record generated image metadata for %s: %w", ref.rel, err))
+			}
 		}
 	}
+	return errors.Join(writeErrors...)
 }
 
 func (s *ImageService) EnsureThumbnails(values []string) {
@@ -990,45 +1006,62 @@ func (s *ImageService) thumbnailCacheInfo(rel string, sourceModTime time.Time) (
 func (s *ImageService) generateThumbnail(ref imageFileRef) map[string]any {
 	thumbPath, result, _ := s.thumbnailCacheInfo(ref.rel, ref.info.ModTime())
 	meta := s.imageMetadata(ref.rel)
-	var reader io.Reader
+	if meta.Deleting {
+		return map[string]any{}
+	}
+	var data []byte
 	if meta.StorageBackend == "s3" {
 		objectStore, _ := s.objectStoreSnapshot()
 		if objectStore == nil {
 			return map[string]any{}
 		}
-		data, _, err := objectStore.Get(context.Background(), ref.rel)
+		storedData, _, err := objectStore.Get(context.Background(), ref.rel)
 		if err != nil {
 			return map[string]any{}
 		}
-		reader = bytes.NewReader(data)
+		data = storedData
 	} else {
 		file, err := os.Open(ref.path)
 		if err != nil {
 			return map[string]any{}
 		}
 		defer file.Close()
-		reader = file
+		data, err = io.ReadAll(io.LimitReader(file, util.MaxRasterImageEncodedBytes+1))
+		if err != nil {
+			return map[string]any{}
+		}
 	}
-	img, _, err := image.Decode(reader)
+	if len(data) > util.MaxRasterImageEncodedBytes {
+		return map[string]any{}
+	}
+	info, err := util.InspectRasterImage(data, "image/png", "image/jpeg", "image/webp")
 	if err != nil {
 		return map[string]any{}
 	}
-	bounds := img.Bounds()
-	width, height := bounds.Dx(), bounds.Dy()
+	img, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return map[string]any{}
+	}
 	thumb := resizeToFit(flattenImage(img), ThumbnailSize, ThumbnailSize)
+	if _, err := os.Stat(ref.path); err != nil {
+		return map[string]any{}
+	}
 	if err := writeJPEGThumbnail(thumbPath, thumb); err != nil {
 		return map[string]any{}
 	}
-	_ = s.writeThumbnailMetadata(ref.rel, thumbPath+".json", map[string]any{
-		"width":             width,
-		"height":            height,
+	if err := s.writeThumbnailMetadata(ref.rel, thumbPath+".json", map[string]any{
+		"width":             info.Width,
+		"height":            info.Height,
 		"thumbnail_format":  "jpeg",
 		"thumbnail_quality": thumbnailQuality,
 		"thumbnail_size":    ThumbnailSize,
 		"thumbnail_version": thumbnailCacheVersion,
-	})
-	result["width"] = width
-	result["height"] = height
+	}); err != nil {
+		_ = os.Remove(thumbPath)
+		return map[string]any{}
+	}
+	result["width"] = info.Width
+	result["height"] = info.Height
 	return result
 }
 
@@ -1088,6 +1121,9 @@ func (s *ImageService) imageOwner(rel string) string {
 }
 
 func imageMetadataAllowsAccess(meta imageMetadata, scope ImageAccessScope) bool {
+	if meta.Deleting {
+		return false
+	}
 	if meta.Visibility == ImageVisibilityPublic {
 		return true
 	}
@@ -1098,29 +1134,41 @@ func imageMetadataAllowsAccess(meta imageMetadata, scope ImageAccessScope) bool 
 }
 
 func (s *ImageService) imageMetadata(rel string) imageMetadata {
-	metaPath, err := s.imageOwnerMetadataPath(rel)
+	meta, err := s.loadImageMetadata(rel)
 	if err != nil {
 		return imageMetadata{Visibility: ImageVisibilityPrivate}
+	}
+	return meta
+}
+
+func (s *ImageService) loadImageMetadata(rel string) (imageMetadata, error) {
+	metaPath, err := s.imageOwnerMetadataPath(rel)
+	if err != nil {
+		return imageMetadata{Visibility: ImageVisibilityPrivate}, err
 	}
 	var raw map[string]any
 	if s.store != nil {
 		value, err := s.store.LoadJSONDocument(imageOwnerDocumentName(rel))
-		if err == nil {
-			if meta, ok := value.(map[string]any); ok {
-				raw = meta
-			}
+		if err != nil {
+			return imageMetadata{Visibility: ImageVisibilityPrivate}, err
+		}
+		if meta, ok := value.(map[string]any); ok {
+			raw = meta
 		}
 	}
 	if raw == nil {
 		data, err := os.ReadFile(metaPath)
 		if err != nil {
-			return imageMetadata{Visibility: ImageVisibilityPrivate}
+			if errors.Is(err, os.ErrNotExist) {
+				return imageMetadata{Visibility: ImageVisibilityPrivate}, nil
+			}
+			return imageMetadata{Visibility: ImageVisibilityPrivate}, err
 		}
-		if json.Unmarshal(data, &raw) != nil {
-			return imageMetadata{Visibility: ImageVisibilityPrivate}
+		if err := json.Unmarshal(data, &raw); err != nil {
+			return imageMetadata{Visibility: ImageVisibilityPrivate}, err
 		}
 	}
-	return normalizeImageMetadata(raw)
+	return normalizeImageMetadata(raw), nil
 }
 
 func normalizeImageMetadata(raw map[string]any) imageMetadata {
@@ -1132,18 +1180,18 @@ func normalizeImageMetadata(raw map[string]any) imageMetadata {
 		OwnerID:           strings.TrimSpace(toString(raw["owner_id"])),
 		OwnerName:         strings.TrimSpace(toString(raw["owner_name"])),
 		Visibility:        visibility,
+		Deleting:          boolMetadataValue(raw["deleting"]),
 		PublishedAt:       strings.TrimSpace(toString(raw["published_at"])),
 		Prompt:            strings.TrimSpace(toString(raw["prompt"])),
 		Model:             strings.TrimSpace(toString(raw["model"])),
 		Quality:           strings.TrimSpace(toString(raw["quality"])),
 		ResolutionPreset:  NormalizeImageResolutionPreset(toString(raw["resolution_preset"])),
 		RequestedSize:     strings.TrimSpace(toString(raw["requested_size"])),
-		OutputFormat:      NormalizeImageOutputFormat(strings.TrimSpace(toString(raw["output_format"]))),
+		OutputFormat:      normalizeOptionalImageOutputFormat(strings.TrimSpace(toString(raw["output_format"]))),
 		OutputCompression: imageOutputCompressionMetadata(raw["output_compression"]),
 		Background:        strings.TrimSpace(toString(raw["background"])),
 		Moderation:        strings.TrimSpace(toString(raw["moderation"])),
 		PartialImages:     positiveImageMetadataInt(raw["partial_images"]),
-		InputImageMask:    strings.TrimSpace(toString(raw["input_image_mask"])),
 		ReferenceImages:   normalizeImageReferenceMetadata(raw["reference_images"]),
 		SharePromptParams: boolMetadataValue(raw["share_prompt_parameters"]),
 		ShareReferences:   boolMetadataValue(raw["share_reference_images"]),
@@ -1157,7 +1205,31 @@ func normalizeImageMetadata(raw map[string]any) imageMetadata {
 }
 
 func (s *ImageService) writeImageMetadataForRef(ref imageFileRef, ownerID, ownerName, visibility string, metadataValues ...GeneratedImageMetadata) error {
-	meta := s.imageMetadata(ref.rel)
+	return s.writeImageMetadataForRefWithSharingOptions(ref, ownerID, ownerName, visibility, nil, metadataValues...)
+}
+
+func (s *ImageService) writeImageMetadataForRefWithSharingOptions(ref imageFileRef, ownerID, ownerName, visibility string, sharing *ImageVisibilityUpdateOptions, metadataValues ...GeneratedImageMetadata) error {
+	s.metadataMu.Lock()
+	defer s.metadataMu.Unlock()
+	var lastErr error
+	for attempt := 0; attempt < imageMetadataAttempts; attempt++ {
+		lastErr = s.writeImageMetadataForRefOnce(ref, ownerID, ownerName, visibility, sharing, metadataValues...)
+		if lastErr == nil || !errors.Is(lastErr, storage.ErrConcurrentRowUpdate) {
+			return lastErr
+		}
+	}
+	return fmt.Errorf("save image metadata after %d attempts: %w", imageMetadataAttempts, lastErr)
+}
+
+func (s *ImageService) writeImageMetadataForRefOnce(ref imageFileRef, ownerID, ownerName, visibility string, sharing *ImageVisibilityUpdateOptions, metadataValues ...GeneratedImageMetadata) error {
+	meta, err := s.loadImageMetadata(ref.rel)
+	if err != nil {
+		return err
+	}
+	if meta.Deleting {
+		return errors.New("image is being deleted")
+	}
+	var finishReferenceReplacement func(bool)
 	if ownerID = strings.TrimSpace(ownerID); ownerID != "" {
 		meta.OwnerID = ownerID
 	}
@@ -1195,7 +1267,7 @@ func (s *ImageService) writeImageMetadataForRef(ref imageFileRef, ownerID, owner
 		if requestedSize := strings.TrimSpace(metadata.RequestedSize); requestedSize != "" {
 			meta.RequestedSize = requestedSize
 		}
-		if outputFormat := NormalizeImageOutputFormat(metadata.OutputFormat); outputFormat != "" {
+		if outputFormat := normalizeOptionalImageOutputFormat(metadata.OutputFormat); outputFormat != "" && meta.OutputFormat == "" {
 			meta.OutputFormat = outputFormat
 		}
 		if metadata.OutputCompression != nil {
@@ -1217,19 +1289,31 @@ func (s *ImageService) writeImageMetadataForRef(ref imageFileRef, ownerID, owner
 			partialImages := *metadata.PartialImages
 			meta.PartialImages = &partialImages
 		}
-		if inputImageMask := strings.TrimSpace(metadata.InputImageMask); inputImageMask != "" {
-			meta.InputImageMask = inputImageMask
-		}
 		if len(metadata.ReferenceImages) > 0 {
-			meta.ReferenceImages = s.writeImageReferencesForRef(ref, metadata.ReferenceImages)
+			references, finish, err := s.writeImageReferencesForRef(ref, metadata.ReferenceImages, meta.ReferenceImages)
+			if err != nil {
+				return err
+			}
+			meta.ReferenceImages = references
+			finishReferenceReplacement = finish
 		}
-		meta.SharePromptParams = metadata.SharePromptParams
-		meta.ShareReferences = metadata.ShareReferences
+		if metadata.SharePromptParams || metadata.ShareReferences {
+			meta.SharePromptParams = metadata.SharePromptParams
+			meta.ShareReferences = metadata.ShareReferences
+		}
+	}
+	if sharing != nil {
+		meta.SharePromptParams = sharing.SharePromptParams
+		meta.ShareReferences = sharing.ShareReferences
 	}
 	if meta.Visibility == "" {
 		meta.Visibility = ImageVisibilityPrivate
 	}
-	return s.writeImageMetadata(ref.rel, meta)
+	err = s.writeImageMetadata(ref.rel, meta)
+	if finishReferenceReplacement != nil {
+		finishReferenceReplacement(err == nil)
+	}
+	return err
 }
 
 func (s *ImageService) writeImageMetadata(rel string, meta imageMetadata) error {
@@ -1240,6 +1324,9 @@ func (s *ImageService) writeImageMetadata(rel string, meta imageMetadata) error 
 	value := map[string]any{
 		"visibility": meta.Visibility,
 		"updated_at": time.Now().UTC().Format(time.RFC3339Nano),
+	}
+	if meta.Deleting {
+		value["deleting"] = true
 	}
 	if meta.OwnerID != "" {
 		value["owner_id"] = meta.OwnerID
@@ -1279,9 +1366,6 @@ func (s *ImageService) writeImageMetadata(rel string, meta imageMetadata) error 
 	}
 	if meta.PartialImages != nil {
 		value["partial_images"] = *meta.PartialImages
-	}
-	if meta.InputImageMask != "" {
-		value["input_image_mask"] = meta.InputImageMask
 	}
 	if meta.SharePromptParams {
 		value["share_prompt_parameters"] = true
@@ -1356,56 +1440,106 @@ func (s *ImageService) imageReferencesDir() string {
 	return filepath.Join(s.config.ImageMetadataDir(), imageReferencePrefix)
 }
 
-func (s *ImageService) writeImageReferencesForRef(ref imageFileRef, refs []GeneratedImageReference) []imageReferenceMetadata {
+func (s *ImageService) writeImageReferencesForRef(ref imageFileRef, refs []GeneratedImageReference, previous []imageReferenceMetadata) ([]imageReferenceMetadata, func(bool), error) {
 	if len(refs) == 0 {
-		return nil
-	}
-	if err := s.removeImageReferences(ref.rel); err != nil {
-		return nil
+		return nil, nil, nil
 	}
 	root, err := filepath.Abs(s.imageReferencesDir())
 	if err != nil {
-		return nil
+		return nil, nil, err
 	}
-	dir := filepath.Join(root, filepath.FromSlash(ref.rel+".refs"))
+	generation := util.NewHex(8)
+	dirRel := filepath.ToSlash(filepath.Join(ref.rel+".refs", generation))
+	dir := filepath.Join(root, filepath.FromSlash(dirRel))
 	if !pathInsideRoot(root, dir) {
-		return nil
+		return nil, nil, errors.New("invalid image reference path")
 	}
 	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return nil
+		return nil, nil, err
+	}
+	cleanupGeneration := func() {
+		_ = os.RemoveAll(dir)
+		removeEmptyParentDirs(root, filepath.Dir(dir))
 	}
 	result := make([]imageReferenceMetadata, 0, len(refs))
 	for index, source := range refs {
 		if len(source.Data) == 0 {
 			continue
 		}
+		info, inspectErr := util.InspectRasterImage(source.Data, "image/png", "image/jpeg", "image/webp", "image/gif")
+		if inspectErr != nil || len(source.Data) > util.MaxRasterImageEncodedBytes {
+			continue
+		}
 		filename := safeImageReferenceFilename(source.Filename, index)
-		rel := filepath.ToSlash(filepath.Join(ref.rel+".refs", strconv.Itoa(index+1)+"-"+filename))
+		baseName := strings.TrimSuffix(filename, filepath.Ext(filename))
+		if baseName == "" {
+			baseName = "reference-" + strconv.Itoa(index+1)
+		}
+		filename = baseName + "." + imageReferenceStorageExtension(info.Format)
+		rel := filepath.ToSlash(filepath.Join(dirRel, strconv.Itoa(index+1)+"-"+filename))
 		if _, err := cleanImageReferenceRelativePath(rel); err != nil {
 			continue
 		}
 		path := filepath.Join(root, filepath.FromSlash(rel))
-		if !pathInsideRoot(root, path) {
+		if !pathInsideRoot(root, path) || !pathInsideRoot(dir, path) {
 			continue
 		}
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-			continue
+			cleanupGeneration()
+			return nil, nil, err
 		}
 		if err := os.WriteFile(path, source.Data, 0o644); err != nil {
-			continue
+			cleanupGeneration()
+			return nil, nil, err
 		}
 		result = append(result, imageReferenceMetadata{
 			Path:        rel,
 			Filename:    strings.TrimSpace(source.Filename),
-			ContentType: strings.TrimSpace(source.ContentType),
+			ContentType: info.ContentType,
 			Size:        int64(len(source.Data)),
 		})
 	}
 	if len(result) == 0 {
-		_ = os.Remove(dir)
-		removeEmptyParentDirs(root, filepath.Dir(dir))
+		cleanupGeneration()
 	}
-	return result
+	finish := func(committed bool) {
+		if !committed {
+			cleanupGeneration()
+			return
+		}
+		removeImageReferenceMetadataFiles(root, previous)
+	}
+	return result, finish, nil
+}
+
+func removeImageReferenceMetadataFiles(root string, references []imageReferenceMetadata) {
+	for _, reference := range references {
+		rel, err := cleanImageReferenceRelativePath(reference.Path)
+		if err != nil {
+			continue
+		}
+		filePath := filepath.Join(root, filepath.FromSlash(rel))
+		if !pathInsideRoot(root, filePath) {
+			continue
+		}
+		if err := os.Remove(filePath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		removeEmptyParentDirs(root, filepath.Dir(filePath))
+	}
+}
+
+func imageReferenceStorageExtension(format string) string {
+	switch strings.ToLower(strings.TrimSpace(format)) {
+	case "jpeg", "jpg":
+		return "jpg"
+	case "gif":
+		return "gif"
+	case "webp":
+		return "webp"
+	default:
+		return "png"
+	}
 }
 
 func (s *ImageService) removeImageReferences(sourceRel string) error {
@@ -1472,13 +1606,15 @@ func (s *ImageService) cleanupByRetention(retentionDays int, includePublic bool)
 		if !storedImageTime(candidate.meta, candidate.info).Before(cutoff) {
 			continue
 		}
-		if candidate.meta.Visibility == ImageVisibilityPublic && !includePublic {
-			preservedPublic++
-			continue
-		}
-		stats, err := s.removeImageGroup(candidate.rel)
+		stats, claimed, err := s.removeImageGroupIf(candidate.rel, func(meta imageMetadata) bool {
+			return includePublic || meta.Visibility != ImageVisibilityPublic
+		})
 		if err != nil {
 			return total, preservedPublic, err
+		}
+		if !claimed {
+			preservedPublic++
+			continue
 		}
 		total.add(stats)
 	}
@@ -1509,13 +1645,15 @@ func (s *ImageService) cleanupByStorageLimit(maxBytes int64, includePublic bool)
 		if current <= maxBytes {
 			break
 		}
-		if candidate.meta.Visibility == ImageVisibilityPublic && !includePublic {
-			preservedPublic++
-			continue
-		}
-		stats, err := s.removeImageGroup(candidate.rel)
+		stats, claimed, err := s.removeImageGroupIf(candidate.rel, func(meta imageMetadata) bool {
+			return includePublic || meta.Visibility != ImageVisibilityPublic
+		})
 		if err != nil {
 			return total, preservedPublic, err
+		}
+		if !claimed {
+			preservedPublic++
+			continue
 		}
 		total.add(stats)
 		if stats.bytes > 0 {
@@ -1527,57 +1665,46 @@ func (s *ImageService) cleanupByStorageLimit(maxBytes int64, includePublic bool)
 	return total, preservedPublic, nil
 }
 
-func (s *ImageService) removeImageGroup(rel string) (imageStorageRemovalStats, error) {
+func (s *ImageService) removeImageGroupIf(rel string, allowed func(imageMetadata) bool) (imageStorageRemovalStats, bool, error) {
 	rel, err := cleanImageRelativePath(rel)
 	if err != nil {
-		return imageStorageRemovalStats{}, err
+		return imageStorageRemovalStats{}, false, err
 	}
+	s.metadataMu.Lock()
+	defer s.metadataMu.Unlock()
 	var stats imageStorageRemovalStats
-	meta := s.imageMetadata(rel)
+	meta, claimed, err := s.markImageDeletingLocked(rel, allowed)
+	if err != nil {
+		return stats, false, err
+	}
+	if !claimed {
+		return stats, false, nil
+	}
 	if meta.StorageBackend == "s3" {
 		objectStore, _ := s.objectStoreSnapshot()
 		if objectStore == nil {
-			return stats, errors.New("image object storage is not configured")
+			return stats, true, errors.New("image object storage is not configured")
 		}
 		if err := objectStore.Delete(context.Background(), rel); err != nil {
-			return stats, err
+			return stats, true, err
 		}
-	}
-	thumbnailRoot, err := filepath.Abs(s.config.ImageThumbnailsDir())
-	if err != nil {
-		return stats, err
-	}
-	if removed, bytes, err := s.removeImageThumbnailWithStats(thumbnailRoot, rel); err != nil {
-		return stats, err
-	} else if removed > 0 {
-		stats.thumbnails++
-		if removed > 1 {
-			stats.metadataFiles += removed - 1
-		}
-		stats.bytes += bytes
 	}
 	if removed, bytes, err := s.removeImageReferencesWithStats(rel); err != nil {
-		return stats, err
+		return stats, true, err
 	} else {
 		stats.referenceFiles += removed
 		stats.bytes += bytes
 	}
-	if removed, bytes, err := s.removeImageOwnerWithStats(rel); err != nil {
-		return stats, err
-	} else {
-		stats.metadataFiles += removed
-		stats.bytes += bytes
-	}
 	imageRoot, err := filepath.Abs(s.config.ImagesDir())
 	if err != nil {
-		return stats, err
+		return stats, true, err
 	}
 	imagePath := filepath.Join(imageRoot, filepath.FromSlash(rel))
 	if !pathInsideRoot(imageRoot, imagePath) {
-		return stats, errors.New("invalid image path")
+		return stats, true, errors.New("invalid image path")
 	}
 	if removed, bytes, err := removeFileWithStats(imagePath); err != nil {
-		return stats, err
+		return stats, true, err
 	} else if removed {
 		stats.images++
 		if meta.StorageBackend == "s3" && meta.StoredSize > 0 {
@@ -1587,15 +1714,73 @@ func (s *ImageService) removeImageGroup(rel string) (imageStorageRemovalStats, e
 		}
 	}
 	removeEmptyParentDirs(imageRoot, filepath.Dir(imagePath))
-	return stats, nil
+	thumbnailRoot, err := filepath.Abs(s.config.ImageThumbnailsDir())
+	if err != nil {
+		return stats, true, err
+	}
+	if removed, bytes, err := s.removeImageThumbnailWithStats(thumbnailRoot, rel); err != nil {
+		return stats, true, err
+	} else if removed > 0 {
+		stats.thumbnails++
+		if removed > 1 {
+			stats.metadataFiles += removed - 1
+		}
+		stats.bytes += bytes
+	}
+	if removed, bytes, err := s.removeImageOwnerWithStats(rel); err != nil {
+		return stats, true, err
+	} else {
+		stats.metadataFiles += removed
+		stats.bytes += bytes
+	}
+	return stats, true, nil
+}
+
+func (s *ImageService) markImageDeletingLocked(rel string, allowed func(imageMetadata) bool) (imageMetadata, bool, error) {
+	var lastErr error
+	for attempt := 0; attempt < imageMetadataAttempts; attempt++ {
+		meta, err := s.loadImageMetadata(rel)
+		if err != nil {
+			return imageMetadata{}, false, err
+		}
+		if meta.Deleting {
+			return meta, true, nil
+		}
+		if allowed != nil && !allowed(meta) {
+			return meta, false, nil
+		}
+		meta.Deleting = true
+		lastErr = s.writeImageMetadata(rel, meta)
+		if lastErr == nil {
+			return meta, true, nil
+		}
+		if !errors.Is(lastErr, storage.ErrConcurrentRowUpdate) {
+			return imageMetadata{}, false, lastErr
+		}
+	}
+	return imageMetadata{}, false, fmt.Errorf("mark image deleting after %d attempts: %w", imageMetadataAttempts, lastErr)
 }
 
 func (s *ImageService) removeImageOwnerWithStats(rel string) (int, int64, error) {
 	if s.store != nil {
-		if err := s.store.DeleteJSONDocument(imageOwnerDocumentName(rel)); err != nil {
-			return 0, 0, err
+		var lastErr error
+		for attempt := 0; attempt < imageMetadataAttempts; attempt++ {
+			lastErr = s.store.DeleteJSONDocument(imageOwnerDocumentName(rel))
+			if lastErr == nil {
+				return 1, 0, nil
+			}
+			if !errors.Is(lastErr, storage.ErrConcurrentRowUpdate) {
+				return 0, 0, lastErr
+			}
+			value, loadErr := s.store.LoadJSONDocument(imageOwnerDocumentName(rel))
+			if loadErr != nil {
+				return 0, 0, loadErr
+			}
+			if value == nil {
+				return 0, 0, nil
+			}
 		}
-		return 1, 0, nil
+		return 0, 0, fmt.Errorf("delete image metadata after %d attempts: %w", imageMetadataAttempts, lastErr)
 	}
 	metaPath, err := s.imageOwnerMetadataPath(rel)
 	if err != nil {
@@ -1723,6 +1908,13 @@ func (s *ImageService) readThumbnailMetadata(rel, metaPath string, sourceMtime t
 }
 
 func (s *ImageService) writeThumbnailMetadata(rel, metaPath string, value map[string]any) error {
+	meta, err := s.loadImageMetadata(rel)
+	if err != nil {
+		return err
+	}
+	if meta.Deleting {
+		return errors.New("image is being deleted")
+	}
 	if s.store != nil {
 		return s.store.SaveJSONDocument(thumbnailMetadataDocumentName(rel), value)
 	}
@@ -1795,9 +1987,6 @@ func addImageMetadataFields(item map[string]any, meta imageMetadata, optionsValu
 		if meta.PartialImages != nil {
 			item["partial_images"] = *meta.PartialImages
 		}
-		if meta.InputImageMask != "" {
-			item["input_image_mask"] = meta.InputImageMask
-		}
 	}
 	if options.IncludeReferenceImages && len(meta.ReferenceImages) > 0 {
 		baseURL := strings.TrimSpace(options.BaseURL)
@@ -1846,6 +2035,10 @@ func NormalizeImageVisibility(value string) (string, error) {
 
 func NormalizeImageResolutionPreset(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "512", "512px", "0.5k":
+		return "512"
+	case "1k":
+		return "1k"
 	case "1080p":
 		return "1080p"
 	case "2k":
@@ -1910,7 +2103,7 @@ func imageFileDimensions(path string) (int, int, bool) {
 	}
 	defer file.Close()
 	config, _, err := image.DecodeConfig(file)
-	if err != nil || config.Width <= 0 || config.Height <= 0 {
+	if err != nil || util.ValidateRasterImageDimensions(config.Width, config.Height) != nil {
 		return 0, 0, false
 	}
 	return config.Width, config.Height, true

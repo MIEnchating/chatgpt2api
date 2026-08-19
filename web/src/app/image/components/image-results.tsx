@@ -69,6 +69,9 @@ type ImageResultsProps = {
 };
 
 function getStoredImageSrc(image: StoredImage) {
+  if (image.mediaType === "video" || image.videoUrl) {
+    return image.videoUrl || image.url || "";
+  }
   if (image.b64_json) {
     return `data:image/${image.outputFormat || "png"};base64,${image.b64_json}`;
   }
@@ -79,6 +82,10 @@ function getStoredImageSrc(image: StoredImage) {
     }
   }
   return image.url || "";
+}
+
+function isStoredVideo(image: StoredImage) {
+  return image.mediaType === "video" || Boolean(image.videoUrl) || image.mimeType?.startsWith("video/") === true;
 }
 
 function isTurnBusy(turn: ImageTurn) {
@@ -432,7 +439,9 @@ export function ImageResults({
                   id: image.id,
                   selectionKey: imageSelectionKey(selectedConversation.id, turn.id, image.id),
                   src,
-                  fileName: buildDownloadName(turn.createdAt, turn.id, index, image.outputFormat || turn.outputFormat, src),
+                  fileName: isStoredVideo(image)
+                    ? `yunmian-video-${turn.id.slice(0, 8)}-${String(index + 1).padStart(2, "0")}.mp4`
+                    : buildDownloadName(turn.createdAt, turn.id, index, image.outputFormat || turn.outputFormat, src),
                   imageIndex: index,
                 },
               ]
@@ -440,6 +449,9 @@ export function ImageResults({
         });
         const selectedDownloadableImages = downloadableImages.filter((image) => selectedImageIds[image.selectionKey]);
         const successfulTurnImages = turn.images.flatMap((image, index) => {
+          if (isStoredVideo(image)) {
+            return [];
+          }
           const src = image.status === "success" ? getStoredImageSrc(image) : "";
           return src
             ? [
@@ -500,7 +512,7 @@ export function ImageResults({
           resultDimensions.length === 1 ? formatImageSizeDisplay(resultDimensions[0]) : resultDimensions.length > 1 ? "多尺寸" : "";
         const resultFormats = Array.from(
           new Set(
-            successfulTurnImages.map((image) => imageExtension(image.outputFormat, image.src).toUpperCase()),
+            successfulVisualImages.map((image) => isStoredVideo(image) ? "MP4" : imageExtension(image.outputFormat, getStoredImageSrc(image)).toUpperCase()),
           ),
         );
         const resultFormatLabel = resultFormats.length === 1 ? resultFormats[0] : resultFormats.length > 1 ? "多格式" : "";
@@ -526,7 +538,7 @@ export function ImageResults({
         const progressMessage =
           isQueued
             ? "等待任务开始"
-            : progress?.message || (turnBusy ? "正在处理图片" : "");
+            : progress?.message || (turnBusy ? turn.mode === "video" ? "正在处理视频" : "正在处理图片" : "");
         const requestedSizeLabel = turn.size ? formatImageSizeDisplay(turn.size) : "自动";
         const longTaskHint = getLongTaskHint(turn, elapsedSeconds);
         const downloadActions =
@@ -583,6 +595,11 @@ export function ImageResults({
                     <span className="rounded-full bg-[#f0f0f0] px-2.5 py-0.5 text-[#45515e]">第 {turnIndex + 1} 轮</span>
                     <span className="rounded-full bg-[#f0f0f0] px-2.5 py-0.5 text-[#45515e]">{getTurnModeLabel(turn)}</span>
                     <span className="rounded-full bg-[#f0f0f0] px-2.5 py-0.5 text-[#45515e]">{turn.model}</span>
+                    {turn.mode === "video" ? (
+                      <span className="rounded-full bg-[#f0f0f0] px-2.5 py-0.5 text-[#45515e]">
+                        {turn.videoResolution || "720p"} · {turn.videoSeconds || 4} 秒{turn.videoGenerateAudio === false ? " · 静音" : " · 声音"}
+                      </span>
+                    ) : null}
                     <span className="rounded-full bg-[#f0f0f0] px-2.5 py-0.5 text-[#45515e]">
                       {getTurnStatusLabel(effectiveStatus)}
                     </span>
@@ -664,15 +681,15 @@ export function ImageResults({
                       {turnBusy ? (
                         <span>
                           已完成 <strong className="font-semibold text-[#30343b]">{resultCount}</strong>
-                          {" / "}目标 <strong className="font-semibold text-[#30343b]">{turn.count}</strong> 张
+                          {" / "}目标 <strong className="font-semibold text-[#30343b]">{turn.count}</strong> {turn.mode === "video" ? "个" : "张"}
                         </span>
                       ) : (
                         <span>
-                          生成结果：<strong className="font-semibold text-[#30343b]">{resultCount} 张</strong>
+                          生成结果：<strong className="font-semibold text-[#30343b]">{resultCount} {turn.mode === "video" ? "个视频" : "张"}</strong>
                         </span>
                       )}
                       {!turnBusy && turn.count !== resultCount ? (
-                        <span>目标 <strong className="font-semibold text-[#30343b]">{turn.count}</strong> 张</span>
+                        <span>目标 <strong className="font-semibold text-[#30343b]">{turn.count}</strong> {turn.mode === "video" ? "个" : "张"}</span>
                       ) : null}
                       {requestedSizeLabel ? (
                         <span>
@@ -765,9 +782,10 @@ export function ImageResults({
                 ) : null}
 
                 {visualImages.length > 0 ? (
-                  <div className="columns-1 gap-3 sm:columns-2 sm:gap-4 xl:columns-3">
+                  <div className={cn(turn.mode === "video" ? "grid grid-cols-1 gap-4" : "columns-1 gap-3 sm:columns-2 sm:gap-4 xl:columns-3")}>
                     {visualImages.map(({ image, index }) => {
                     const imageSrc = getStoredImageSrc(image);
+                    const video = isStoredVideo(image) || turn.mode === "video";
                     const isProcessingPreview =
                       image.status === "loading" &&
                       (image.taskStatus === "queued" || image.taskStatus === "running") &&
@@ -775,6 +793,36 @@ export function ImageResults({
                     const isTerminalPreview =
                       (image.status === "error" || image.status === "cancelled") && Boolean(imageSrc);
                     const isPreview = isProcessingPreview || isTerminalPreview;
+                    if (video && image.status === "success" && imageSrc) {
+                      const downloadItem = downloadableImages.find((item) => item.id === image.id);
+                      return (
+                        <figure key={image.id} className="group relative mx-auto w-full max-w-[820px] overflow-hidden rounded-[18px] border border-[#e5e7eb] bg-black shadow-[0_14px_40px_-28px_rgba(15,23,42,0.5)] dark:border-border">
+                          <video
+                            src={imageSrc}
+                            controls
+                            preload="metadata"
+                            playsInline
+                            className="block aspect-video w-full bg-black object-contain"
+                          />
+                          <div className="flex items-center justify-between gap-3 bg-white px-3 py-2.5 text-xs text-[#686b73] dark:bg-card dark:text-muted-foreground">
+                            <span className="min-w-0 truncate">{image.mimeType || "video/mp4"}</span>
+                            {downloadItem ? (
+                              <Button
+                                type="button"
+                                variant="outline"
+                                size="sm"
+                                className="h-8 shrink-0 rounded-full px-3 text-xs"
+                                disabled={downloadingKey !== null}
+                                onClick={() => void downloadItems(`video:${selectedConversation.id}:${turn.id}:${image.id}`, [downloadItem])}
+                              >
+                                {downloadingKey === `video:${selectedConversation.id}:${turn.id}:${image.id}` ? <LoaderCircle className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
+                                下载视频
+                              </Button>
+                            ) : null}
+                          </div>
+                        </figure>
+                      );
+                    }
                     if ((image.status === "success" || isPreview) && imageSrc) {
                       const currentIndex = successfulTurnImages.findIndex((item) => item.id === image.id);
                       const selectionKey = imageSelectionKey(selectedConversation.id, turn.id, image.id);
@@ -986,7 +1034,7 @@ export function ImageResults({
                     const imageBusyLabel = imageLoadingPhase === "queued"
                       ? "排队中..."
                       : imageLoadingPhase === "running"
-                        ? "正在处理图片..."
+                        ? video ? "正在生成视频..." : "正在处理图片..."
                         : "";
 
                     return (
@@ -1085,6 +1133,9 @@ function getTurnModeLabel(turn: ImageTurn) {
   }
   if (turn.mode === "generate") {
     return "文生图";
+  }
+  if (turn.mode === "video") {
+    return turn.referenceImages.length > 0 ? "图生视频" : "文生视频";
   }
   if (turn.mode === "edit" && turn.referenceImages.some((image) => image.source === "conversation")) {
     return "编辑图";
