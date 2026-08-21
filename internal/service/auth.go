@@ -23,6 +23,7 @@ const (
 	AuthProviderLocal   = "local"
 	AuthProviderLinuxDo = "linuxdo"
 	AuthProviderNewAPI  = "newapi"
+	AuthProviderSub2API = "sub2api"
 
 	DefaultManagedRoleID = "default-user"
 
@@ -544,10 +545,18 @@ func (s *AuthService) UpsertNewAPISession(user NewAPIUser) (*Identity, string, e
 	if name == "" {
 		name = user.Username
 	}
+	provider := util.Clean(user.Provider)
+	if provider == "" {
+		provider = AuthProviderNewAPI
+	}
+	subjectPrefix := util.Clean(user.SubjectPrefix)
+	if subjectPrefix == "" {
+		subjectPrefix = provider
+	}
 	owner := AuthOwner{
-		ID:       fmt.Sprintf("newapi:%d", user.ID),
+		ID:       fmt.Sprintf("%s:%d", subjectPrefix, user.ID),
 		Name:     name,
-		Provider: AuthProviderNewAPI,
+		Provider: provider,
 	}
 	raw := "sess-" + util.RandomTokenURL(32)
 	now := util.NowISO()
@@ -571,7 +580,7 @@ func (s *AuthService) UpsertNewAPISession(user NewAPIUser) (*Identity, string, e
 	}
 	for index, item := range s.items {
 		if util.Clean(item["kind"]) != AuthKindSession ||
-			util.Clean(item["provider"]) != AuthProviderNewAPI ||
+			util.Clean(item["provider"]) != provider ||
 			util.Clean(item["owner_id"]) != owner.ID {
 			continue
 		}

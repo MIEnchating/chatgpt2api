@@ -1135,6 +1135,23 @@ func TestRelayImageGenerationsReturnsNewAPIColonParseErrorWithoutRetry(t *testin
 	}
 }
 
+func TestVideoErrorMessageSupportsUpstreamShapes(t *testing.T) {
+	tests := []struct {
+		state map[string]any
+		want  string
+	}{
+		{state: map[string]any{"error": "provider unavailable"}, want: "provider unavailable"},
+		{state: map[string]any{"detail": map[string]any{"error": map[string]any{"message": "content blocked"}}}, want: "content blocked"},
+		{state: map[string]any{"last_error": map[string]any{"message": "polling failed"}}, want: "polling failed"},
+		{state: map[string]any{"failure_reason": "invalid reference image"}, want: "invalid reference image"},
+	}
+	for _, test := range tests {
+		if got := videoErrorMessage(test.state); got != test.want {
+			t.Errorf("videoErrorMessage(%#v) = %q, want %q", test.state, got, test.want)
+		}
+	}
+}
+
 func TestRelayMultipartRequestNormalizesOctetStreamImageContentType(t *testing.T) {
 	req, err := relayMultipartRequest(
 		context.Background(),

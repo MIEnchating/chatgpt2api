@@ -15,8 +15,14 @@ import { toast } from "sonner";
 
 import { LoginPageImageStage } from "@/components/login-page-image-stage";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { login } from "@/lib/api";
+import {
+  clearRememberedLogin,
+  getRememberedLogin,
+  saveRememberedLogin,
+} from "@/lib/remembered-login";
 import { authSessionFromLoginResponse, setVerifiedAuthSession } from "@/lib/session";
 import {
   applyColorTheme,
@@ -36,8 +42,10 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const appMeta = useAppMeta();
   const themeToggleRef = useRef<HTMLButtonElement | null>(null);
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
+  const rememberedLogin = useRef(getRememberedLogin()).current;
+  const [username, setUsername] = useState(rememberedLogin?.username || "");
+  const [password, setPassword] = useState(rememberedLogin?.password || "");
+  const [rememberPassword, setRememberPassword] = useState(Boolean(rememberedLogin));
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [theme, setTheme] = useState<ColorTheme>(() => getPreferredColorTheme());
   const { isCheckingAuth } = useRedirectIfAuthenticated();
@@ -63,6 +71,11 @@ export default function LoginPage() {
     setIsSubmitting(true);
     try {
       const data = await login(normalizedUsername, password);
+      if (rememberPassword) {
+        saveRememberedLogin({ username: normalizedUsername, password });
+      } else {
+        clearRememberedLogin();
+      }
       await finishAuth(data, "登录成功");
     } catch (error) {
       const message = error instanceof Error ? error.message : "登录失败";
@@ -192,6 +205,21 @@ export default function LoginPage() {
                   />
                 </div>
               </div>
+
+              <label className="flex w-fit cursor-pointer items-center gap-2 text-sm text-[#45515e] dark:text-white/68">
+                <Checkbox
+                  checked={rememberPassword}
+                  onCheckedChange={(checked) => {
+                    const nextChecked = checked === true;
+                    setRememberPassword(nextChecked);
+                    if (!nextChecked) {
+                      clearRememberedLogin();
+                    }
+                  }}
+                  aria-label="记住密码"
+                />
+                <span>记住密码</span>
+              </label>
 
               <div className="flex flex-col gap-3 pt-1">
                 <Button

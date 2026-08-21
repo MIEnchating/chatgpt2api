@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"chatgpt2api/internal/storage"
@@ -25,16 +24,18 @@ const (
 
 type NewAPITokenReaderConfig struct {
 	DatabaseURL  string
-	TokenGroup   string
+	DatabaseType string
 	QueryTimeout time.Duration
 }
 
 type NewAPIUser struct {
-	ID          int64
-	Username    string
-	Email       string
-	DisplayName string
-	IsAdmin     bool
+	ID            int64
+	Username      string
+	Email         string
+	DisplayName   string
+	IsAdmin       bool
+	Provider      string
+	SubjectPrefix string
 }
 
 type NewAPIUserBalance struct {
@@ -43,8 +44,8 @@ type NewAPIUserBalance struct {
 	Email        string
 	DisplayName  string
 	Group        string
-	Quota        int64
-	UsedQuota    int64
+	Quota        float64
+	UsedQuota    float64
 	RequestCount int64
 }
 
@@ -72,12 +73,11 @@ type newAPITokenGroupRoute struct {
 }
 
 type NewAPITokenReader struct {
-	db         *sql.DB
-	driver     string
-	mu         sync.RWMutex
-	group      string
-	configured bool
-	timeout    time.Duration
+	db           *sql.DB
+	driver       string
+	databaseKind string
+	configured   bool
+	timeout      time.Duration
 }
 
 type NewAPITokenError struct {
@@ -94,12 +94,18 @@ func (e NewAPITokenError) Unwrap() error {
 }
 
 func NewNewAPITokenReader(cfg NewAPITokenReaderConfig) (*NewAPITokenReader, error) {
-	group := strings.TrimSpace(cfg.TokenGroup)
 	timeout := cfg.QueryTimeout
 	if timeout <= 0 {
 		timeout = defaultNewAPITokenQueryTimeout
 	}
-	reader := &NewAPITokenReader{group: group, timeout: timeout}
+	databaseKind := strings.ToLower(strings.TrimSpace(cfg.DatabaseType))
+	if databaseKind == "" {
+		databaseKind = "newapi"
+	}
+	if databaseKind != "newapi" && databaseKind != "sub2api" {
+		return nil, fmt.Errorf("unsupported relay database type %q: must be newapi or sub2api", cfg.DatabaseType)
+	}
+	reader := &NewAPITokenReader{timeout: timeout, databaseKind: databaseKind}
 	databaseURL := strings.TrimSpace(cfg.DatabaseURL)
 	if databaseURL == "" {
 		return reader, nil
@@ -125,6 +131,17 @@ func NewNewAPITokenReader(cfg NewAPITokenReaderConfig) (*NewAPITokenReader, erro
 	return reader, nil
 }
 
+func (r *NewAPITokenReader) IsSub2API() bool {
+	return r != nil && r.databaseKind == "sub2api"
+}
+
+func (r *NewAPITokenReader) Source() string {
+	if r != nil && r.IsSub2API() {
+		return "sub2api"
+	}
+	return "newapi"
+}
+
 func (r *NewAPITokenReader) Close() error {
 	if r == nil || r.db == nil {
 		return nil
@@ -132,29 +149,8 @@ func (r *NewAPITokenReader) Close() error {
 	return r.db.Close()
 }
 
-func (r *NewAPITokenReader) SetConfiguredGroup(group string) {
-	if r == nil {
-		return
-	}
-	r.mu.Lock()
-	r.group = strings.TrimSpace(group)
-	r.mu.Unlock()
-}
-
 func (r *NewAPITokenReader) Status(ctx context.Context, identity Identity) map[string]any {
 	return r.StatusForGroupAndName(ctx, identity, "", "")
-}
-
-func (r *NewAPITokenReader) ConfiguredTokenGroups(ctx context.Context) []string {
-	_ = ctx
-	if r == nil {
-		return nil
-	}
-	group := r.configuredGroup()
-	if group == "" {
-		return nil
-	}
-	return []string{group}
 }
 
 func (r *NewAPITokenReader) StatusForGroup(ctx context.Context, identity Identity, group string) map[string]any {
@@ -162,18 +158,16 @@ func (r *NewAPITokenReader) StatusForGroup(ctx context.Context, identity Identit
 }
 
 func (r *NewAPITokenReader) StatusForGroupAndName(ctx context.Context, identity Identity, group, name string) map[string]any {
-	configuredGroup := r.configuredGroup()
-	selectedGroup := firstNonEmptyNewAPIString(group, configuredGroup)
+	selectedGroup := strings.TrimSpace(group)
 	selectedName := strings.TrimSpace(name)
 	status := map[string]any{
-		"has_key":          false,
-		"key_preview":      "",
-		"group":            selectedGroup,
-		"token_name":       selectedName,
-		"configured_group": configuredGroup,
-		"groups":           []string{},
-		"token_names":      []string{},
-		"source":           "newapi",
+		"has_key":     false,
+		"key_preview": "",
+		"group":       selectedGroup,
+		"token_name":  selectedName,
+		"groups":      []string{},
+		"token_names": []string{},
+		"source":      r.Source(),
 	}
 	selection, err := r.TokenForIdentityGroupAndName(ctx, identity, group, name)
 	if err != nil {
@@ -187,7 +181,7 @@ func (r *NewAPITokenReader) StatusForGroupAndName(ctx context.Context, identity 
 		return status
 	}
 	status["has_key"] = true
-	status["key_preview"] = previewNewAPIKey(selection.Key)
+	status["key_preview"] = previewRelayKey(selection.Key)
 	status["group"] = selection.Group
 	status["token_name"] = selection.Name
 	status["groups"] = selection.Groups
@@ -196,13 +190,10 @@ func (r *NewAPITokenReader) StatusForGroupAndName(ctx context.Context, identity 
 }
 
 func (r *NewAPITokenReader) BalanceStatus(ctx context.Context, identity Identity) map[string]any {
-	configuredGroup := r.configuredGroup()
 	status := map[string]any{
-		"has_balance":      false,
-		"source":           "newapi",
-		"token_group":      configuredGroup,
-		"configured_group": configuredGroup,
-		"token_groups":     []string{},
+		"has_balance":  false,
+		"source":       r.Source(),
+		"token_groups": []string{},
 	}
 	if r == nil || !r.configured || r.db == nil {
 		status["message"] = "请先配置云棉数据库连接"
@@ -327,7 +318,13 @@ func (r *NewAPITokenReader) AuthenticatePassword(ctx context.Context, login, pas
 	queryCtx, cancel := context.WithTimeout(contextOrBackground(ctx), r.timeout)
 	defer cancel()
 	adminExpr := r.newAPIAdminSelectExpression(queryCtx)
-	query := "SELECT id, username, email, display_name, password, " + adminExpr + " FROM users WHERE (username = " + r.placeholder(1) + " OR email = " + r.placeholder(2) + ") AND status = 1 AND deleted_at IS NULL ORDER BY id ASC LIMIT 1"
+	query := "SELECT id, username, email, "
+	if r.IsSub2API() {
+		query += "username, password_hash, " + adminExpr
+	} else {
+		query += "display_name, password, " + adminExpr
+	}
+	query += " FROM users WHERE (username = " + r.placeholder(1) + " OR email = " + r.placeholder(2) + ") AND " + r.activeUserPredicate() + " AND deleted_at IS NULL ORDER BY id ASC LIMIT 1"
 	var user NewAPIUser
 	var email, displayName, passwordHash sql.NullString
 	var adminValue any
@@ -344,7 +341,13 @@ func (r *NewAPITokenReader) AuthenticatePassword(ctx context.Context, login, pas
 	user.Username = strings.TrimSpace(user.Username)
 	user.Email = strings.TrimSpace(email.String)
 	user.DisplayName = strings.TrimSpace(displayName.String)
+	if r.IsSub2API() && user.Username == "" {
+		user.Username = user.Email
+		user.DisplayName = user.Email
+	}
 	user.IsAdmin = isTruthyNewAPIAdminValue(adminValue)
+	user.Provider = r.Source()
+	user.SubjectPrefix = r.Source()
 	if user.Username == "" {
 		return NewAPIUser{}, newAPITokenMessageError("读取云棉用户失败，请检查云棉用户数据", nil)
 	}
@@ -352,7 +355,7 @@ func (r *NewAPITokenReader) AuthenticatePassword(ctx context.Context, login, pas
 }
 
 func (r *NewAPITokenReader) lookupUserID(ctx context.Context, candidates []string, group string) (int64, error) {
-	query := "SELECT id FROM users WHERE (username = " + r.placeholder(1) + " OR email = " + r.placeholder(2) + ") AND status = 1 AND deleted_at IS NULL ORDER BY id ASC LIMIT 1"
+	query := "SELECT id FROM users WHERE (username = " + r.placeholder(1) + " OR email = " + r.placeholder(2) + ") AND " + r.activeUserPredicate() + " AND deleted_at IS NULL ORDER BY id ASC LIMIT 1"
 	for _, candidate := range candidates {
 		var id int64
 		err := r.db.QueryRowContext(ctx, query, candidate, candidate).Scan(&id)
@@ -364,7 +367,7 @@ func (r *NewAPITokenReader) lookupUserID(ctx context.Context, candidates []strin
 		}
 		return 0, newAPITokenMessageError("读取云棉 Key 失败，请检查云棉数据库连接", err)
 	}
-	group = firstNonEmptyNewAPIString(group, r.configuredGroup())
+	group = strings.TrimSpace(group)
 	if group == "" {
 		return 0, newAPITokenMessageError("请先在云棉创建当前登录用户，并创建可用令牌", nil)
 	}
@@ -372,8 +375,8 @@ func (r *NewAPITokenReader) lookupUserID(ctx context.Context, candidates []strin
 }
 
 func (r *NewAPITokenReader) lookupUserIDForIdentity(ctx context.Context, identity Identity, candidates []string, group string) (int64, error) {
-	if userID, ok := newAPIIdentityUserID(identity); ok {
-		query := "SELECT id FROM users WHERE id = " + r.placeholder(1) + " AND status = 1 AND deleted_at IS NULL LIMIT 1"
+	if userID, ok := r.identityUserID(identity); ok {
+		query := "SELECT id FROM users WHERE id = " + r.placeholder(1) + " AND " + r.activeUserPredicate() + " AND deleted_at IS NULL LIMIT 1"
 		var id int64
 		err := r.db.QueryRowContext(ctx, query, userID).Scan(&id)
 		if err == nil {
@@ -388,6 +391,9 @@ func (r *NewAPITokenReader) lookupUserIDForIdentity(ctx context.Context, identit
 }
 
 func (r *NewAPITokenReader) lookupUserBalance(ctx context.Context, candidates []string) (NewAPIUserBalance, error) {
+	if r.IsSub2API() {
+		return r.lookupSub2APIUserBalance(ctx, candidates)
+	}
 	groupColumn := r.quoteIdentifier("group")
 	query := "SELECT id, username, email, display_name, quota, used_quota, request_count, " + groupColumn + " FROM users WHERE (username = " + r.placeholder(1) + " OR email = " + r.placeholder(2) + ") AND status = 1 AND deleted_at IS NULL ORDER BY id ASC LIMIT 1"
 	for _, candidate := range candidates {
@@ -400,8 +406,8 @@ func (r *NewAPITokenReader) lookupUserBalance(ctx context.Context, candidates []
 			balance.Email = strings.TrimSpace(email.String)
 			balance.DisplayName = strings.TrimSpace(displayName.String)
 			balance.Group = strings.TrimSpace(group.String)
-			balance.Quota = quota.Int64
-			balance.UsedQuota = usedQuota.Int64
+			balance.Quota = float64(quota.Int64)
+			balance.UsedQuota = float64(usedQuota.Int64)
 			balance.RequestCount = requestCount.Int64
 			if balance.Username == "" {
 				return NewAPIUserBalance{}, newAPITokenMessageError("读取云棉余额失败，请检查云棉用户数据", nil)
@@ -417,8 +423,11 @@ func (r *NewAPITokenReader) lookupUserBalance(ctx context.Context, candidates []
 }
 
 func (r *NewAPITokenReader) lookupUserBalanceForIdentity(ctx context.Context, identity Identity, candidates []string) (NewAPIUserBalance, error) {
-	if userID, ok := newAPIIdentityUserID(identity); ok {
+	if userID, ok := r.identityUserID(identity); ok {
 		groupColumn := r.quoteIdentifier("group")
+		if r.IsSub2API() {
+			return r.lookupSub2APIUserBalanceByID(ctx, userID)
+		}
 		query := "SELECT id, username, email, display_name, quota, used_quota, request_count, " + groupColumn + " FROM users WHERE id = " + r.placeholder(1) + " AND status = 1 AND deleted_at IS NULL LIMIT 1"
 		var balance NewAPIUserBalance
 		var email, displayName, group sql.NullString
@@ -434,8 +443,8 @@ func (r *NewAPITokenReader) lookupUserBalanceForIdentity(ctx context.Context, id
 		balance.Email = strings.TrimSpace(email.String)
 		balance.DisplayName = strings.TrimSpace(displayName.String)
 		balance.Group = strings.TrimSpace(group.String)
-		balance.Quota = quota.Int64
-		balance.UsedQuota = usedQuota.Int64
+		balance.Quota = float64(quota.Int64)
+		balance.UsedQuota = float64(usedQuota.Int64)
 		balance.RequestCount = requestCount.Int64
 		if balance.Username == "" {
 			return NewAPIUserBalance{}, newAPITokenMessageError("读取云棉余额失败，请检查云棉用户数据", nil)
@@ -483,8 +492,7 @@ func (r *NewAPITokenReader) lookupTokenSelection(ctx context.Context, userID int
 	}
 	selection.Groups = groups
 	if len(candidates) == 0 {
-		preferredGroup := firstNonEmptyNewAPIString(requestedGroup, r.configuredGroup())
-		selection.Group = preferredGroup
+		selection.Group = requestedGroup
 		return selection, newAPITokenMessageError("请先在云棉为当前用户创建名称和 Key 均非空的可用令牌", nil)
 	}
 
@@ -495,7 +503,7 @@ func (r *NewAPITokenReader) lookupTokenSelection(ctx context.Context, userID int
 			return selection, newAPITokenMessageError(fmt.Sprintf("当前用户没有名为“%s”的可用令牌，可用令牌：%s", requestedName, strings.Join(names, ", ")), nil)
 		case 1:
 			selected := matched[0]
-			selection.Key = normalizeNewAPIKey(selected.Key)
+			selection.Key = r.normalizeRelayKey(selected.Key)
 			selection.Name = selected.Name
 			selection.Group = newAPITokenCandidateGroupMetadata(selected, userGroup)
 			return selection, nil
@@ -505,10 +513,9 @@ func (r *NewAPITokenReader) lookupTokenSelection(ctx context.Context, userID int
 	}
 
 	if len(groups) == 0 {
-		preferredGroup := firstNonEmptyNewAPIString(requestedGroup, r.configuredGroup())
-		selection.Group = preferredGroup
-		if preferredGroup != "" {
-			return selection, newAPITokenMessageError(fmt.Sprintf("请先在云棉为当前用户创建仅使用“%s”分组的可用令牌", preferredGroup), nil)
+		selection.Group = requestedGroup
+		if requestedGroup != "" {
+			return selection, newAPITokenMessageError(fmt.Sprintf("请先在云棉为当前用户创建仅使用“%s”分组的可用令牌", requestedGroup), nil)
 		}
 		return selection, newAPITokenMessageError("请先在云棉为当前用户创建仅使用单一分组的可用令牌", nil)
 	}
@@ -519,22 +526,20 @@ func (r *NewAPITokenReader) lookupTokenSelection(ctx context.Context, userID int
 			return selection, newAPITokenMessageError(fmt.Sprintf("当前用户没有“%s”分组的安全可用令牌，可用分组：%s", selectedGroup, strings.Join(groups, ", ")), nil)
 		}
 	} else {
-		configuredGroup := r.configuredGroup()
-		if _, ok := firstCandidateByGroup[configuredGroup]; ok && configuredGroup != "" {
-			selectedGroup = configuredGroup
-		} else {
-			selectedGroup = groups[0]
-		}
+		selectedGroup = groups[0]
 	}
 
 	selection.Group = selectedGroup
 	selected := firstCandidateByGroup[selectedGroup]
-	selection.Key = normalizeNewAPIKey(selected.Key)
+	selection.Key = r.normalizeRelayKey(selected.Key)
 	selection.Name = selected.Name
 	return selection, nil
 }
 
 func (r *NewAPITokenReader) lookupTokenCandidates(ctx context.Context, userID int64) ([]newAPITokenCandidate, error) {
+	if r.IsSub2API() {
+		return r.lookupSub2APITokenCandidates(ctx, userID)
+	}
 	keyColumn := r.quoteIdentifier("key")
 	nameColumn := r.quoteIdentifier("name")
 	groupColumn := r.quoteIdentifier("group")
@@ -587,6 +592,9 @@ func newAPITokenCandidateGroupMetadata(candidate newAPITokenCandidate, userGroup
 }
 
 func (r *NewAPITokenReader) lookupUserGroup(ctx context.Context, userID int64) (string, error) {
+	if r.IsSub2API() {
+		return "", nil
+	}
 	groupColumn := r.quoteIdentifier("group")
 	query := "SELECT " + groupColumn + " FROM users WHERE id = " + r.placeholder(1) + " AND status = 1 AND deleted_at IS NULL LIMIT 1"
 	var group sql.NullString
@@ -601,6 +609,9 @@ func (r *NewAPITokenReader) lookupUserGroup(ctx context.Context, userID int64) (
 }
 
 func (r *NewAPITokenReader) newAPIAdminSelectExpression(ctx context.Context) string {
+	if r.IsSub2API() {
+		return "CASE WHEN LOWER(" + r.quoteIdentifier("role") + ") IN ('admin', 'owner', 'super_admin') THEN 1 ELSE 0 END"
+	}
 	for _, column := range []string{"role", "is_admin", "root"} {
 		if r.hasTableColumn(ctx, "users", column) {
 			quoted := r.quoteIdentifier(column)
@@ -647,6 +658,114 @@ func (r *NewAPITokenReader) hasTableColumn(ctx context.Context, table, column st
 		var exists int
 		return r.db.QueryRowContext(ctx, query, table, column).Scan(&exists) == nil
 	}
+}
+
+func (r *NewAPITokenReader) hasTable(ctx context.Context, table string) bool {
+	if r == nil || r.db == nil || strings.TrimSpace(table) == "" {
+		return false
+	}
+	var exists int
+	if r.driver == "sqlite" {
+		err := r.db.QueryRowContext(ctx, "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1", table).Scan(&exists)
+		return err == nil
+	}
+	err := r.db.QueryRowContext(ctx, "SELECT 1 FROM information_schema.tables WHERE table_name = "+r.placeholder(1)+" LIMIT 1", table).Scan(&exists)
+	return err == nil
+}
+
+func (r *NewAPITokenReader) activeUserPredicate() string {
+	if r.IsSub2API() {
+		return "status = 'active'"
+	}
+	return "status = 1"
+}
+
+func (r *NewAPITokenReader) lookupSub2APITokenCandidates(ctx context.Context, userID int64) ([]newAPITokenCandidate, error) {
+	query := "SELECT ak.id, ak.key, ak.name, g.name, '' FROM api_keys ak JOIN groups g ON g.id = ak.group_id AND g.status = 'active' AND g.deleted_at IS NULL WHERE ak.user_id = " + r.placeholder(1) +
+		" AND ak.status = 'active' AND ak.deleted_at IS NULL AND ak.key <> '' AND (ak.expires_at IS NULL OR ak.expires_at >= " + r.placeholder(2) + ") AND (ak.quota <= 0 OR ak.quota_used < ak.quota) ORDER BY ak.id ASC"
+	rows, err := r.db.QueryContext(ctx, query, userID, time.Now().UTC())
+	if err != nil {
+		return nil, newAPITokenMessageError("读取 Sub2API 令牌失败，请检查数据库连接", err)
+	}
+	defer rows.Close()
+	var out []newAPITokenCandidate
+	for rows.Next() {
+		var candidate newAPITokenCandidate
+		var key, name, group, route sql.NullString
+		if err := rows.Scan(&candidate.ID, &key, &name, &group, &route); err != nil {
+			return nil, newAPITokenMessageError("读取 Sub2API 令牌失败，请检查数据库连接", err)
+		}
+		candidate.Key, candidate.Name, candidate.Group = strings.TrimSpace(key.String), strings.TrimSpace(name.String), strings.TrimSpace(group.String)
+		if candidate.Key != "" && candidate.Name != "" && candidate.Group != "" {
+			out = append(out, candidate)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, newAPITokenMessageError("读取 Sub2API 令牌失败，请检查数据库连接", err)
+	}
+	return out, nil
+}
+
+func (r *NewAPITokenReader) lookupSub2APIUserBalance(ctx context.Context, candidates []string) (NewAPIUserBalance, error) {
+	query := "SELECT id, username, email, balance FROM users WHERE (username = " + r.placeholder(1) + " OR email = " + r.placeholder(2) + ") AND status = 'active' AND deleted_at IS NULL ORDER BY id ASC LIMIT 1"
+	for _, candidate := range candidates {
+		var balance NewAPIUserBalance
+		var email, username sql.NullString
+		var amount sql.NullFloat64
+		err := r.db.QueryRowContext(ctx, query, candidate, candidate).Scan(&balance.ID, &username, &email, &amount)
+		if errors.Is(err, sql.ErrNoRows) {
+			continue
+		}
+		if err != nil {
+			return NewAPIUserBalance{}, newAPITokenMessageError("读取 Sub2API 余额失败，请检查数据库连接", err)
+		}
+		balance.Username, balance.Email, balance.DisplayName = strings.TrimSpace(username.String), strings.TrimSpace(email.String), strings.TrimSpace(username.String)
+		if balance.Username == "" {
+			balance.Username = balance.Email
+			balance.DisplayName = balance.Email
+		}
+		balance.Quota = amount.Float64 * 500000
+		balance.UsedQuota, balance.RequestCount = r.lookupSub2APIUsage(ctx, balance.ID)
+		return balance, nil
+	}
+	return NewAPIUserBalance{}, newAPITokenMessageError("请先在 Sub2API 创建当前登录用户", nil)
+}
+
+func (r *NewAPITokenReader) lookupSub2APIUserBalanceByID(ctx context.Context, userID int64) (NewAPIUserBalance, error) {
+	query := "SELECT id, username, email, balance FROM users WHERE id = " + r.placeholder(1) + " AND status = 'active' AND deleted_at IS NULL LIMIT 1"
+	var balance NewAPIUserBalance
+	var email, username sql.NullString
+	var amount sql.NullFloat64
+	err := r.db.QueryRowContext(ctx, query, userID).Scan(&balance.ID, &username, &email, &amount)
+	if errors.Is(err, sql.ErrNoRows) {
+		return NewAPIUserBalance{}, newAPITokenMessageError(fmt.Sprintf("Sub2API 用户 ID %d 不存在或已停用，请重新登录", userID), nil)
+	}
+	if err != nil {
+		return NewAPIUserBalance{}, newAPITokenMessageError("读取 Sub2API 余额失败，请检查数据库连接", err)
+	}
+	balance.Username = strings.TrimSpace(username.String)
+	balance.Email = strings.TrimSpace(email.String)
+	balance.DisplayName = balance.Username
+	if balance.Username == "" {
+		balance.Username = balance.Email
+		balance.DisplayName = balance.Email
+	}
+	balance.Quota = amount.Float64 * 500000
+	balance.UsedQuota, balance.RequestCount = r.lookupSub2APIUsage(ctx, balance.ID)
+	return balance, nil
+}
+
+func (r *NewAPITokenReader) lookupSub2APIUsage(ctx context.Context, userID int64) (float64, int64) {
+	if !r.hasTable(ctx, "usage_logs") {
+		return 0, 0
+	}
+	var used float64
+	var count int64
+	query := "SELECT COALESCE(SUM(actual_cost), 0), COUNT(*) FROM usage_logs WHERE user_id = " + r.placeholder(1)
+	if err := r.db.QueryRowContext(ctx, query, userID).Scan(&used, &count); err != nil {
+		return 0, 0
+	}
+	return used * 500000, count
 }
 
 func isTruthyNewAPIAdminValue(value any) bool {
@@ -709,24 +828,6 @@ func newAPITokenCandidateGroups(candidate newAPITokenCandidate, userGroup string
 	return []string{group}, true
 }
 
-func firstNonEmptyNewAPIString(values ...string) string {
-	for _, value := range values {
-		if strings.TrimSpace(value) != "" {
-			return strings.TrimSpace(value)
-		}
-	}
-	return ""
-}
-
-func (r *NewAPITokenReader) configuredGroup() string {
-	if r == nil {
-		return ""
-	}
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	return strings.TrimSpace(r.group)
-}
-
 func (r *NewAPITokenReader) placeholder(index int) string {
 	if r != nil && r.driver == "postgres" {
 		return fmt.Sprintf("$%d", index)
@@ -757,13 +858,14 @@ func newAPIIdentityLookupValues(identity Identity) []string {
 	})
 }
 
-func newAPIIdentityUserID(identity Identity) (int64, bool) {
+func (r *NewAPITokenReader) identityUserID(identity Identity) (int64, bool) {
+	prefix := r.Source() + ":"
 	for _, value := range []string{identity.OwnerID, identity.ID} {
 		value = strings.TrimSpace(value)
-		if !strings.HasPrefix(value, "newapi:") {
+		if !strings.HasPrefix(value, prefix) {
 			continue
 		}
-		userID, err := strconv.ParseInt(strings.TrimPrefix(value, "newapi:"), 10, 64)
+		userID, err := strconv.ParseInt(strings.TrimPrefix(value, prefix), 10, 64)
 		if err == nil && userID > 0 {
 			return userID, true
 		}
@@ -789,16 +891,16 @@ func dedupeNewAPIValues(values []string) []string {
 	return out
 }
 
-func normalizeNewAPIKey(key string) string {
+func (r *NewAPITokenReader) normalizeRelayKey(key string) string {
 	key = strings.TrimSpace(key)
-	if key == "" || strings.HasPrefix(key, "sk-") {
+	if r.IsSub2API() || key == "" || strings.HasPrefix(key, "sk-") {
 		return key
 	}
 	return "sk-" + key
 }
 
-func previewNewAPIKey(key string) string {
-	key = normalizeNewAPIKey(key)
+func previewRelayKey(key string) string {
+	key = strings.TrimSpace(key)
 	if len(key) <= 12 {
 		return key
 	}

@@ -88,8 +88,6 @@ function normalizeConfig(config: SettingsConfig): SettingsConfig {
       typeof config.relay_base_url === "string" && config.relay_base_url.trim()
         ? config.relay_base_url
         : "https://www.yunmian.tech",
-    newapi_token_group: typeof config.newapi_token_group === "string" ? config.newapi_token_group.trim() : "",
-    newapi_token_groups: Array.isArray(config.newapi_token_groups) ? config.newapi_token_groups : [],
     login_page_image_url: typeof config.login_page_image_url === "string" ? config.login_page_image_url : "",
     login_page_image_mode: normalizeLoginPageImageMode(config.login_page_image_mode),
     login_page_image_zoom: loginImageTransform.zoom,
@@ -222,8 +220,6 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         project_name: String(config.app_title || "云棉").trim() || "云棉",
         relay_base_url: String(config.relay_base_url || "").trim(),
       };
-      delete payload.newapi_token_group;
-      delete payload.newapi_token_groups;
       delete payload.chat_models;
       delete payload.default_chat_model;
       delete payload.s3_endpoint_configured;

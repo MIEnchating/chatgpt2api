@@ -20,44 +20,75 @@ import (
 )
 
 var settingEnvKeys = map[string]string{
-	"base_url":                          "CHATGPT2API_BASE_URL",
-	"app_title":                         "CHATGPT2API_APP_TITLE",
-	"project_name":                      "CHATGPT2API_PROJECT_NAME",
-	"site_icon_url":                     "CHATGPT2API_SITE_ICON_URL",
-	"relay_base_url":                    "CHATGPT2API_RELAY_BASE_URL",
-	"newapi_token_group":                "CHATGPT2API_NEWAPI_TOKEN_GROUP",
-	"proxy":                             "CHATGPT2API_PROXY",
-	"image_models":                      "CHATGPT2API_IMAGE_MODELS",
-	"video_models":                      "CHATGPT2API_VIDEO_MODELS",
-	"refresh_account_interval_minute":   "CHATGPT2API_REFRESH_ACCOUNT_INTERVAL_MINUTE",
-	"image_task_timeout_seconds":        "CHATGPT2API_IMAGE_TASK_TIMEOUT_SECONDS",
-	"user_default_concurrent_limit":     "CHATGPT2API_USER_DEFAULT_CONCURRENT_LIMIT",
-	"user_default_rpm_limit":            "CHATGPT2API_USER_DEFAULT_RPM_LIMIT",
-	"image_retention_days":              "CHATGPT2API_IMAGE_RETENTION_DAYS",
-	"image_storage_limit_mb":            "CHATGPT2API_IMAGE_STORAGE_LIMIT_MB",
-	"image_storage_backend":             "CHATGPT2API_IMAGE_STORAGE_BACKEND",
-	"s3_endpoint":                       "CHATGPT2API_S3_ENDPOINT",
-	"s3_region":                         "CHATGPT2API_S3_REGION",
-	"s3_bucket":                         "CHATGPT2API_S3_BUCKET",
-	"s3_prefix":                         "CHATGPT2API_S3_PREFIX",
-	"s3_use_path_style":                 "CHATGPT2API_S3_USE_PATH_STYLE",
-	"auto_remove_invalid_accounts":      "CHATGPT2API_AUTO_REMOVE_INVALID_ACCOUNTS",
-	"auto_remove_rate_limited_accounts": "CHATGPT2API_AUTO_REMOVE_RATE_LIMITED_ACCOUNTS",
-	"log_retention_days":                "CHATGPT2API_LOG_RETENTION_DAYS",
-	"default_log_view":                  "CHATGPT2API_DEFAULT_LOG_VIEW",
-	"log_levels":                        "CHATGPT2API_LOG_LEVELS",
-	"linuxdo_enabled":                   "CHATGPT2API_LINUXDO_ENABLED",
-	"linuxdo_client_id":                 "CHATGPT2API_LINUXDO_CLIENT_ID",
-	"linuxdo_client_secret":             "CHATGPT2API_LINUXDO_CLIENT_SECRET",
-	"linuxdo_redirect_url":              "CHATGPT2API_LINUXDO_REDIRECT_URL",
-	"linuxdo_frontend_redirect_url":     "CHATGPT2API_LINUXDO_FRONTEND_REDIRECT_URL",
-	"login_page_image_url":              "CHATGPT2API_LOGIN_PAGE_IMAGE_URL",
-	"login_page_image_mode":             "CHATGPT2API_LOGIN_PAGE_IMAGE_MODE",
-	"login_page_image_zoom":             "CHATGPT2API_LOGIN_PAGE_IMAGE_ZOOM",
-	"login_page_image_position_x":       "CHATGPT2API_LOGIN_PAGE_IMAGE_POSITION_X",
-	"login_page_image_position_y":       "CHATGPT2API_LOGIN_PAGE_IMAGE_POSITION_Y",
-	"text_account_schedule_mode":        "CHATGPT2API_TEXT_ACCOUNT_SCHEDULE_MODE",
-	"image_account_schedule_mode":       "CHATGPT2API_IMAGE_ACCOUNT_SCHEDULE_MODE",
+	"base_url":                          "IMAGE_BASE_URL",
+	"app_title":                         "APP_TITLE",
+	"project_name":                      "PROJECT_NAME",
+	"site_icon_url":                     "SITE_ICON_URL",
+	"relay_base_url":                    "API_BASE_URL",
+	"proxy":                             "PROXY",
+	"image_models":                      "IMAGE_MODELS",
+	"video_models":                      "VIDEO_MODELS",
+	"chat_models":                       "CHAT_MODELS",
+	"refresh_account_interval_minute":   "REFRESH_ACCOUNT_INTERVAL_MINUTE",
+	"image_task_timeout_seconds":        "CREATION_TASK_TIMEOUT_SECONDS",
+	"user_default_concurrent_limit":     "USER_DEFAULT_CONCURRENT_LIMIT",
+	"user_default_rpm_limit":            "USER_DEFAULT_RPM_LIMIT",
+	"image_retention_days":              "IMAGE_RETENTION_DAYS",
+	"image_storage_limit_mb":            "IMAGE_STORAGE_LIMIT_MB",
+	"image_storage_backend":             "IMAGE_STORAGE_BACKEND",
+	"s3_endpoint":                       "S3_ENDPOINT",
+	"s3_region":                         "S3_REGION",
+	"s3_bucket":                         "S3_BUCKET",
+	"s3_prefix":                         "S3_PREFIX",
+	"s3_use_path_style":                 "S3_USE_PATH_STYLE",
+	"auto_remove_invalid_accounts":      "AUTO_REMOVE_INVALID_ACCOUNTS",
+	"auto_remove_rate_limited_accounts": "AUTO_REMOVE_RATE_LIMITED_ACCOUNTS",
+	"log_retention_days":                "LOG_RETENTION_DAYS",
+	"default_log_view":                  "DEFAULT_LOG_VIEW",
+	"log_levels":                        "LOG_LEVELS",
+	"login_page_image_url":              "LOGIN_PAGE_IMAGE_URL",
+	"login_page_image_mode":             "LOGIN_PAGE_IMAGE_MODE",
+	"login_page_image_zoom":             "LOGIN_PAGE_IMAGE_ZOOM",
+	"login_page_image_position_x":       "LOGIN_PAGE_IMAGE_POSITION_X",
+	"login_page_image_position_y":       "LOGIN_PAGE_IMAGE_POSITION_Y",
+	"text_account_schedule_mode":        "TEXT_ACCOUNT_SCHEDULE_MODE",
+	"image_account_schedule_mode":       "IMAGE_ACCOUNT_SCHEDULE_MODE",
+}
+
+var legacySettingEnvKeys = map[string][]string{
+	"base_url":                          {"CHATGPT2API_BASE_URL"},
+	"app_title":                         {"CHATGPT2API_APP_TITLE"},
+	"project_name":                      {"CHATGPT2API_PROJECT_NAME"},
+	"site_icon_url":                     {"CHATGPT2API_SITE_ICON_URL"},
+	"relay_base_url":                    {"RELAY_BASE_URL", "CHATGPT2API_RELAY_BASE_URL"},
+	"proxy":                             {"CHATGPT2API_PROXY"},
+	"image_models":                      {"CHATGPT2API_IMAGE_MODELS"},
+	"video_models":                      {"CHATGPT2API_VIDEO_MODELS"},
+	"chat_models":                       {"CHATGPT2API_CHAT_MODELS"},
+	"refresh_account_interval_minute":   {"CHATGPT2API_REFRESH_ACCOUNT_INTERVAL_MINUTE"},
+	"image_task_timeout_seconds":        {"IMAGE_TASK_TIMEOUT_SECONDS", "CHATGPT2API_IMAGE_TASK_TIMEOUT_SECONDS"},
+	"user_default_concurrent_limit":     {"CHATGPT2API_USER_DEFAULT_CONCURRENT_LIMIT"},
+	"user_default_rpm_limit":            {"CHATGPT2API_USER_DEFAULT_RPM_LIMIT"},
+	"image_retention_days":              {"CHATGPT2API_IMAGE_RETENTION_DAYS"},
+	"image_storage_limit_mb":            {"CHATGPT2API_IMAGE_STORAGE_LIMIT_MB"},
+	"image_storage_backend":             {"CHATGPT2API_IMAGE_STORAGE_BACKEND"},
+	"s3_endpoint":                       {"CHATGPT2API_S3_ENDPOINT"},
+	"s3_region":                         {"CHATGPT2API_S3_REGION"},
+	"s3_bucket":                         {"CHATGPT2API_S3_BUCKET"},
+	"s3_prefix":                         {"CHATGPT2API_S3_PREFIX"},
+	"s3_use_path_style":                 {"CHATGPT2API_S3_USE_PATH_STYLE"},
+	"auto_remove_invalid_accounts":      {"CHATGPT2API_AUTO_REMOVE_INVALID_ACCOUNTS"},
+	"auto_remove_rate_limited_accounts": {"CHATGPT2API_AUTO_REMOVE_RATE_LIMITED_ACCOUNTS"},
+	"log_retention_days":                {"CHATGPT2API_LOG_RETENTION_DAYS"},
+	"default_log_view":                  {"CHATGPT2API_DEFAULT_LOG_VIEW"},
+	"log_levels":                        {"CHATGPT2API_LOG_LEVELS"},
+	"login_page_image_url":              {"CHATGPT2API_LOGIN_PAGE_IMAGE_URL"},
+	"login_page_image_mode":             {"CHATGPT2API_LOGIN_PAGE_IMAGE_MODE"},
+	"login_page_image_zoom":             {"CHATGPT2API_LOGIN_PAGE_IMAGE_ZOOM"},
+	"login_page_image_position_x":       {"CHATGPT2API_LOGIN_PAGE_IMAGE_POSITION_X"},
+	"login_page_image_position_y":       {"CHATGPT2API_LOGIN_PAGE_IMAGE_POSITION_Y"},
+	"text_account_schedule_mode":        {"CHATGPT2API_TEXT_ACCOUNT_SCHEDULE_MODE"},
+	"image_account_schedule_mode":       {"CHATGPT2API_IMAGE_ACCOUNT_SCHEDULE_MODE"},
 }
 
 var envKeyRE = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
@@ -95,23 +126,6 @@ type ImageStorageSettings struct {
 	UsePathStyle bool
 }
 
-type LinuxDoOAuthConfig struct {
-	Enabled              bool
-	ClientID             string
-	ClientSecret         string
-	AuthorizeURL         string
-	TokenURL             string
-	UserInfoURL          string
-	Scopes               string
-	RedirectURL          string
-	FrontendRedirectURL  string
-	TokenAuthMethod      string
-	UsePKCE              bool
-	UserInfoEmailPath    string
-	UserInfoIDPath       string
-	UserInfoUsernamePath string
-}
-
 func NewStore() (*Store, error) {
 	root, err := resolveRootDir()
 	if err != nil {
@@ -120,6 +134,7 @@ func NewStore() (*Store, error) {
 
 	envFile := filepath.Join(root, ".env")
 	envFileValues := readEnvObject(envFile)
+	processEnvValues := currentSettingEnvValues()
 	s := &Store{
 		RootDir: root,
 		DataDir: filepath.Join(root, "data"),
@@ -131,6 +146,9 @@ func NewStore() (*Store, error) {
 	}
 	s.loadEnvFile()
 	s.data = settingsFromEnvValues(envFileValues)
+	for key, value := range settingsFromEnvValues(processEnvValues) {
+		s.data[key] = value
+	}
 	return s, nil
 }
 
@@ -139,7 +157,7 @@ func resolveRootDir() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if configured := strings.TrimSpace(os.Getenv("CHATGPT2API_ROOT")); configured != "" {
+	if configured := strings.TrimSpace(envValue("ROOT_DIR", "CHATGPT2API_ROOT")); configured != "" {
 		return filepath.Abs(configured)
 	}
 	if root := findAncestorWithFile(cwd, ".env"); root != "" {
@@ -188,7 +206,7 @@ func findAncestorWithProjectGoMod(start string) string {
 }
 
 func (s *Store) AdminUsername() string {
-	value := strings.TrimSpace(os.Getenv("CHATGPT2API_ADMIN_USERNAME"))
+	value := strings.TrimSpace(envValue("ADMIN_USERNAME", "CHATGPT2API_ADMIN_USERNAME"))
 	if value == "" {
 		return "admin"
 	}
@@ -196,7 +214,7 @@ func (s *Store) AdminUsername() string {
 }
 
 func (s *Store) AdminPassword() string {
-	return strings.TrimSpace(os.Getenv("CHATGPT2API_ADMIN_PASSWORD"))
+	return strings.TrimSpace(envValue("ADMIN_PASSWORD", "CHATGPT2API_ADMIN_PASSWORD"))
 }
 
 func (s *Store) RefreshAccountIntervalMinute() int {
@@ -245,13 +263,13 @@ func (s *Store) S3Bucket() string {
 	return strings.TrimSpace(fmt.Sprint(s.settingValue("s3_bucket", "")))
 }
 func (s *Store) S3AccessKey() string {
-	return strings.TrimSpace(os.Getenv("CHATGPT2API_S3_ACCESS_KEY"))
+	return strings.TrimSpace(envValue("S3_ACCESS_KEY", "CHATGPT2API_S3_ACCESS_KEY"))
 }
 func (s *Store) S3SecretKey() string {
-	return strings.TrimSpace(os.Getenv("CHATGPT2API_S3_SECRET_KEY"))
+	return strings.TrimSpace(envValue("S3_SECRET_KEY", "CHATGPT2API_S3_SECRET_KEY"))
 }
 func (s *Store) S3SessionToken() string {
-	return strings.TrimSpace(os.Getenv("CHATGPT2API_S3_SESSION_TOKEN"))
+	return strings.TrimSpace(envValue("S3_SESSION_TOKEN", "CHATGPT2API_S3_SESSION_TOKEN"))
 }
 func (s *Store) S3Prefix() string {
 	return strings.Trim(strings.TrimSpace(fmt.Sprint(s.settingValue("s3_prefix", ""))), "/")
@@ -381,12 +399,25 @@ func (s *Store) RelayBaseURL() string {
 	return strings.TrimRight(strings.TrimSpace(fmt.Sprint(s.settingValue("relay_base_url", defaultRelayBaseURL))), "/")
 }
 
-func (s *Store) NewAPIDatabaseURL() string {
-	return strings.TrimSpace(os.Getenv("CHATGPT2API_NEWAPI_DATABASE_URL"))
+func (s *Store) RelayDatabaseURL() string {
+	legacyURL := strings.TrimSpace(envValue("CHATGPT2API_NEWAPI_DATABASE_URL"))
+	currentValue, currentConfigured := lookupEnvValue("DATABASE_URL", "RELAY_DATABASE_URL", "CHATGPT2API_RELAY_DATABASE_URL")
+	currentURL := strings.TrimSpace(currentValue)
+	if legacyURL != "" && legacyDatabaseURLBelongsToStorage() {
+		return legacyURL
+	}
+	if !currentConfigured {
+		return legacyURL
+	}
+	return currentURL
 }
 
-func (s *Store) NewAPITokenGroup() string {
-	return strings.TrimSpace(fmt.Sprint(s.settingValue("newapi_token_group", "")))
+func (s *Store) RelayDatabaseType() string {
+	value := strings.ToLower(strings.TrimSpace(envValue("DATABASE_TYPE", "RELAY_DATABASE_TYPE", "CHATGPT2API_DATABASE_TYPE")))
+	if value == "" {
+		return "newapi"
+	}
+	return value
 }
 
 func (s *Store) Proxy() string {
@@ -415,54 +446,6 @@ func (s *Store) LogLevels() []string {
 		}
 	}
 	return out
-}
-
-func (s *Store) LinuxDoOAuth() LinuxDoOAuthConfig {
-	s.mu.RLock()
-	data := util.CopyMap(s.data)
-	s.mu.RUnlock()
-	return s.linuxDoOAuthFromData(data)
-}
-
-func (s *Store) linuxDoOAuthFromData(data map[string]any) LinuxDoOAuthConfig {
-	redirectURL := strings.TrimSpace(fmt.Sprint(s.settingValueFromData(data, "linuxdo_redirect_url", "")))
-	baseURL := strings.TrimRight(strings.TrimSpace(fmt.Sprint(s.settingValueFromData(data, "base_url", defaultBaseURL))), "/")
-	if redirectURL == "" && baseURL != "" {
-		redirectURL = baseURL + "/auth/linuxdo/oauth/callback"
-	}
-	return LinuxDoOAuthConfig{
-		Enabled:              util.ToBool(s.settingValueFromData(data, "linuxdo_enabled", false)),
-		ClientID:             strings.TrimSpace(fmt.Sprint(s.settingValueFromData(data, "linuxdo_client_id", ""))),
-		ClientSecret:         strings.TrimSpace(fmt.Sprint(s.settingValueFromData(data, "linuxdo_client_secret", ""))),
-		AuthorizeURL:         envString("CHATGPT2API_LINUXDO_AUTHORIZE_URL", "https://connect.linux.do/oauth2/authorize"),
-		TokenURL:             envString("CHATGPT2API_LINUXDO_TOKEN_URL", "https://connect.linux.do/oauth2/token"),
-		UserInfoURL:          envString("CHATGPT2API_LINUXDO_USERINFO_URL", "https://connect.linux.do/api/user"),
-		Scopes:               envString("CHATGPT2API_LINUXDO_SCOPES", "user"),
-		RedirectURL:          redirectURL,
-		FrontendRedirectURL:  strings.TrimSpace(fmt.Sprint(s.settingValueFromData(data, "linuxdo_frontend_redirect_url", "/auth/linuxdo/callback"))),
-		TokenAuthMethod:      strings.ToLower(envString("CHATGPT2API_LINUXDO_TOKEN_AUTH_METHOD", "client_secret_post")),
-		UsePKCE:              envBool("CHATGPT2API_LINUXDO_USE_PKCE", false),
-		UserInfoEmailPath:    envString("CHATGPT2API_LINUXDO_USERINFO_EMAIL_PATH", ""),
-		UserInfoIDPath:       envString("CHATGPT2API_LINUXDO_USERINFO_ID_PATH", ""),
-		UserInfoUsernamePath: envString("CHATGPT2API_LINUXDO_USERINFO_USERNAME_PATH", ""),
-	}
-}
-
-func (c LinuxDoOAuthConfig) Ready() bool {
-	if !c.Enabled {
-		return false
-	}
-	if c.ClientID == "" || c.AuthorizeURL == "" || c.TokenURL == "" || c.UserInfoURL == "" || c.RedirectURL == "" {
-		return false
-	}
-	switch c.TokenAuthMethod {
-	case "", "client_secret_post", "client_secret_basic":
-		return c.ClientSecret != ""
-	case "none":
-		return c.UsePKCE
-	default:
-		return false
-	}
 }
 
 func (s *Store) ImagesDir() string {
@@ -574,19 +557,11 @@ func (s *Store) Get() map[string]any {
 	data["project_name"] = s.ProjectName()
 	data["site_icon_url"] = s.SiteIconURL()
 	data["relay_base_url"] = s.RelayBaseURL()
-	data["newapi_token_group"] = s.NewAPITokenGroup()
-	linuxdo := s.LinuxDoOAuth()
-	data["linuxdo_enabled"] = linuxdo.Enabled
-	data["linuxdo_client_id"] = linuxdo.ClientID
-	data["linuxdo_client_secret_configured"] = linuxdo.ClientSecret != ""
-	data["linuxdo_redirect_url"] = linuxdo.RedirectURL
-	data["linuxdo_frontend_redirect_url"] = linuxdo.FrontendRedirectURL
 	data["login_page_image_url"] = s.LoginPageImageURL()
 	data["login_page_image_mode"] = s.LoginPageImageMode()
 	data["login_page_image_zoom"] = s.LoginPageImageZoom()
 	data["login_page_image_position_x"] = s.LoginPageImagePositionX()
 	data["login_page_image_position_y"] = s.LoginPageImagePositionY()
-	delete(data, "linuxdo_client_secret")
 	return data
 }
 
@@ -594,13 +569,10 @@ func (s *Store) Update(data map[string]any) (map[string]any, error) {
 	s.mu.Lock()
 	next := util.CopyMap(s.data)
 	for key, value := range data {
-		if key == "linuxdo_client_secret_configured" || key == "s3_endpoint_configured" || key == "s3_credentials_configured" {
+		if key == "s3_endpoint_configured" || key == "s3_credentials_configured" {
 			continue
 		}
 		if key == "s3_access_key" || key == "s3_secret_key" || key == "s3_session_token" {
-			continue
-		}
-		if key == "linuxdo_client_secret" && strings.TrimSpace(fmt.Sprint(value)) == "" {
 			continue
 		}
 		next[key] = value
@@ -702,17 +674,14 @@ func (s *Store) StorageBackend() (storage.Backend, error) {
 }
 
 func (s *Store) settingValue(key string, fallback any) any {
-	envKey := settingEnvKeys[key]
 	s.mu.RLock()
 	if value, ok := s.data[key]; ok {
 		s.mu.RUnlock()
 		return value
 	}
 	s.mu.RUnlock()
-	if envKey != "" {
-		if value, ok := os.LookupEnv(envKey); ok {
-			return value
-		}
+	if value, ok := lookupEnvValue(settingEnvNames(key)...); ok {
+		return value
 	}
 	return fallback
 }
@@ -723,10 +692,8 @@ func (s *Store) settingValueFromData(data map[string]any, key string, fallback a
 			return value
 		}
 	}
-	if envKey := settingEnvKeys[key]; envKey != "" {
-		if value, ok := os.LookupEnv(envKey); ok {
-			return value
-		}
+	if value, ok := lookupEnvValue(settingEnvNames(key)...); ok {
+		return value
 	}
 	return fallback
 }
@@ -769,37 +736,6 @@ func (s *Store) validateSettingsUpdateLocked(data map[string]any) error {
 		if s.S3AccessKey() == "" || s.S3SecretKey() == "" {
 			return errors.New("S3 access key and secret key must be configured on the server")
 		}
-	}
-	linuxdo := s.linuxDoOAuthFromData(data)
-	if !linuxdo.Enabled {
-		return nil
-	}
-	if linuxdo.ClientID == "" {
-		return errors.New("Linuxdo Client ID is required when enabled")
-	}
-	if linuxdo.RedirectURL == "" {
-		return errors.New("Linuxdo Redirect URL is required when enabled")
-	}
-	if linuxdo.FrontendRedirectURL == "" {
-		return errors.New("Linuxdo Frontend Redirect URL is required when enabled")
-	}
-	if err := validateAbsoluteHTTPURL(linuxdo.RedirectURL); err != nil {
-		return errors.New("Linuxdo Redirect URL must be an absolute http(s) URL")
-	}
-	if err := validateFrontendRedirectURL(linuxdo.FrontendRedirectURL); err != nil {
-		return errors.New("Linuxdo Frontend Redirect URL must be an absolute http(s) URL or a relative path")
-	}
-	switch linuxdo.TokenAuthMethod {
-	case "", "client_secret_post", "client_secret_basic":
-		if linuxdo.ClientSecret == "" {
-			return errors.New("Linuxdo Client Secret is required when enabled")
-		}
-	case "none":
-		if !linuxdo.UsePKCE {
-			return errors.New("Linuxdo PKCE must be enabled when token auth method is none")
-		}
-	default:
-		return errors.New("Linuxdo token auth method must be one of client_secret_post, client_secret_basic, none")
 	}
 	return nil
 }
@@ -853,30 +789,6 @@ func validateAbsoluteHTTPURL(value string) error {
 	return nil
 }
 
-func validateFrontendRedirectURL(value string) error {
-	value = strings.TrimSpace(value)
-	if strings.ContainsAny(value, "\r\n") {
-		return errors.New("newlines are not allowed")
-	}
-	parsed, err := url.Parse(value)
-	if err != nil {
-		return err
-	}
-	if parsed.Scheme != "" {
-		if parsed.Scheme != "http" && parsed.Scheme != "https" {
-			return errors.New("scheme must be http or https")
-		}
-		if parsed.Host == "" {
-			return errors.New("host is required")
-		}
-		return nil
-	}
-	if !strings.HasPrefix(value, "/") || strings.HasPrefix(value, "//") {
-		return errors.New("relative path must start with one slash")
-	}
-	return nil
-}
-
 func (s *Store) saveLocked() error {
 	updates := map[string]string{}
 	keys := make([]string, 0, len(settingEnvKeys))
@@ -908,12 +820,65 @@ func (s *Store) loadEnvFile() {
 
 func settingsFromEnvValues(values map[string]string) map[string]any {
 	settings := map[string]any{}
-	for settingKey, envKey := range settingEnvKeys {
-		if value, ok := values[envKey]; ok {
-			settings[settingKey] = value
+	for settingKey := range settingEnvKeys {
+		for _, envKey := range settingEnvNames(settingKey) {
+			if value, ok := values[envKey]; ok {
+				settings[settingKey] = value
+				break
+			}
 		}
 	}
 	return settings
+}
+
+func currentSettingEnvValues() map[string]string {
+	values := map[string]string{}
+	for settingKey := range settingEnvKeys {
+		for _, envKey := range settingEnvNames(settingKey) {
+			if value, ok := os.LookupEnv(envKey); ok {
+				values[envKey] = value
+			}
+		}
+	}
+	return values
+}
+
+func settingEnvNames(settingKey string) []string {
+	primary := settingEnvKeys[settingKey]
+	aliases := legacySettingEnvKeys[settingKey]
+	if primary == "" {
+		return aliases
+	}
+	return append([]string{primary}, aliases...)
+}
+
+func envValue(names ...string) string {
+	value, _ := lookupEnvValue(names...)
+	return value
+}
+
+func lookupEnvValue(names ...string) (string, bool) {
+	for _, name := range names {
+		if name == "" {
+			continue
+		}
+		if value, ok := os.LookupEnv(name); ok {
+			return value, true
+		}
+	}
+	return "", false
+}
+
+func legacyDatabaseURLBelongsToStorage() bool {
+	if _, configured := os.LookupEnv("STORAGE_DATABASE_URL"); configured {
+		return false
+	}
+	backend := strings.ToLower(strings.TrimSpace(envValue("STORAGE_BACKEND")))
+	if backend == "postgres" || backend == "postgresql" || backend == "mysql" || backend == "database" {
+		return true
+	}
+	databaseURL := strings.ToLower(strings.TrimSpace(envValue("DATABASE_URL")))
+	return backend == "sqlite" && strings.HasPrefix(databaseURL, "sqlite:")
 }
 
 func intSetting(value any, fallback int) int {
@@ -1073,21 +1038,6 @@ func clampFloat(value, min, max float64) float64 {
 		return max
 	}
 	return value
-}
-
-func envString(key, fallback string) string {
-	if value, ok := os.LookupEnv(key); ok {
-		return strings.TrimSpace(value)
-	}
-	return fallback
-}
-
-func envBool(key string, fallback bool) bool {
-	if value, ok := os.LookupEnv(key); ok {
-		value = strings.ToLower(strings.TrimSpace(value))
-		return value == "1" || value == "true" || value == "yes" || value == "on"
-	}
-	return fallback
 }
 
 func readEnvObject(path string) map[string]string {

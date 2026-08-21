@@ -104,23 +104,23 @@ cd chatgpt2api
 cp .env.example .env
 ```
 
-编辑 `.env`。至少确认管理员、外部地址和 NewAPI 接入配置：
+编辑 `.env`。至少确认管理员、外部地址和 NewAPI / Sub2API 接入配置：
 
 ```env
-CHATGPT2API_ADMIN_USERNAME=admin
-CHATGPT2API_ADMIN_PASSWORD=change_me_please
-CHATGPT2API_BASE_URL=https://image.example.com
-CHATGPT2API_RELAY_BASE_URL=https://api.example.com
-CHATGPT2API_NEWAPI_DATABASE_URL=postgresql://readonly:password@postgres:5432/new-api?sslmode=disable
-CHATGPT2API_NEWAPI_TOKEN_GROUP=gpt-image-2
-CHATGPT2API_IMAGE_MODELS=gpt-image-2,gemini-3.1-flash-image,grok-imagine-image
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=change_me_please
+IMAGE_BASE_URL=https://image.example.com
+API_BASE_URL=https://api.example.com
+DATABASE_URL=postgresql://readonly:password@postgres:5432/relay?sslmode=disable
+DATABASE_TYPE=sub2api
+IMAGE_MODELS=gpt-image-2,gemini-3.1-flash-image,grok-imagine-image
 ```
 
-如果不设置 `CHATGPT2API_ADMIN_PASSWORD`，服务首次启动会生成一次性管理员密码并输出到容器日志。
+如果不设置 `ADMIN_PASSWORD`，服务首次启动会生成一次性管理员密码并输出到容器日志。
 
-`CHATGPT2API_NEWAPI_DATABASE_URL` 应使用只有 `SELECT` 权限的只读数据库账号。云棉通过它校验普通用户并读取该用户可用的 NewAPI Key；所有 AI 请求再发送到 `CHATGPT2API_RELAY_BASE_URL`，不会向 NewAPI 数据库写入数据。
+`DATABASE_URL` 是唯一的上游用户数据库连接，`DATABASE_TYPE` 指定其结构，默认 `newapi`，也可设置为 `sub2api`。数据库账号应只有 `SELECT` 权限；云棉通过它校验普通用户并读取余额与本人可用的 Key，不会向上游数据库写入数据。
 
-默认使用最新 NewAPI 已内置、且 xAI 官方仍提供的 `grok-imagine-image`。xAI 官方当前还提供 `grok-imagine-image-quality`（`grok-imagine-image-pro` 是其别名）和 `grok-imagine-image-2.0`；本次核对的 NewAPI `upstream/main`（`47ba9d2`）已内置 `grok-imagine-image-pro`，但尚未内置 2.0 名称。使用 2.0 前需要在 NewAPI 配置自定义模型映射，再把它加入 `CHATGPT2API_IMAGE_MODELS`。云棉不会静默把 2.0 降级成其他模型。
+默认使用最新 NewAPI 已内置、且 xAI 官方仍提供的 `grok-imagine-image`。xAI 官方当前还提供 `grok-imagine-image-quality`（`grok-imagine-image-pro` 是其别名）和 `grok-imagine-image-2.0`；本次核对的 NewAPI `upstream/main`（`47ba9d2`）已内置 `grok-imagine-image-pro`，但尚未内置 2.0 名称。使用 2.0 前需要在 NewAPI 配置自定义模型映射，再把它加入 `IMAGE_MODELS`。云棉不会静默把 2.0 降级成其他模型。
 
 ### 2. 启动服务
 
@@ -135,7 +135,7 @@ docker compose up -d
 - 端口：默认不对外暴露端口
 - 数据目录：`./data:/app/data`
 - 环境文件：`./.env:/app/.env`
-- Docker 网络：`${CHATGPT2API_DOCKER_NETWORK:-newapi_default}`
+- Docker 网络：`${DOCKER_NETWORK:-newapi_default}`
 - 重启策略：`restart: unless-stopped`
 
 反向代理目标：
@@ -182,12 +182,12 @@ docker logs chatgpt2api 2>&1 | grep "bootstrap admin password generated"
 如果查不到日志，先确认本地 `.env` 是否已经设置了固定密码：
 
 ```bash
-grep -n "^CHATGPT2API_ADMIN_PASSWORD=" .env
+grep -n "^ADMIN_PASSWORD=" .env
 ```
 
 不要使用会打印容器全部环境变量的排查命令；它可能同时暴露数据库连接串、上游 Token 和其他敏感配置。
 
-如果已经设置了 `CHATGPT2API_ADMIN_PASSWORD`，服务会直接使用该值作为初始管理员密码，不会生成密码，也不会输出 `bootstrap admin password generated` 日志。自动生成的密码只会在首次创建管理员账号时输出一次；如果管理员账号已经存在，重新设置 `.env` 里的 `CHATGPT2API_ADMIN_PASSWORD` 不会覆盖现有管理员密码。容器日志被清理后，明文密码无法从已保存的 bcrypt 哈希中反查。
+如果已经设置了 `ADMIN_PASSWORD`，服务会直接使用该值作为初始管理员密码，不会生成密码，也不会输出 `bootstrap admin password generated` 日志。自动生成的密码只会在首次创建管理员账号时输出一次；如果管理员账号已经存在，重新设置 `.env` 里的 `ADMIN_PASSWORD` 不会覆盖现有管理员密码。容器日志被清理后，明文密码无法从已保存的 bcrypt 哈希中反查。
 
 </details>
 
@@ -199,7 +199,7 @@ grep -n "^CHATGPT2API_ADMIN_PASSWORD=" .env
 ```bash
 cd ~/chatgpt2api
 # 编辑 .env，设置一个新的已知管理员密码：
-# CHATGPT2API_ADMIN_PASSWORD=your_new_password
+# ADMIN_PASSWORD=your_new_password
 
 docker compose down
 cp -a data "data.bak.$(date +%Y%m%d-%H%M%S)"
@@ -232,7 +232,7 @@ docker compose pull
 docker compose up -d
 ```
 
-生产环境建议在 `.env` 中固定镜像版本，例如 `mienvirtuoso/chatgpt2api:1.3.10`。Git 标签使用 `v1.3.10`，Docker Hub 镜像标签使用不带 `v` 的 `1.3.10`。升级时先修改 `CHATGPT2API_IMAGE`，再执行上面的拉取和启动命令。
+生产环境建议在 `.env` 中固定镜像版本，例如 `mienvirtuoso/chatgpt2api:1.3.10`。Git 标签使用 `v1.3.10`，Docker Hub 镜像标签使用不带 `v` 的 `1.3.10`。升级时先修改 `DOCKER_IMAGE`，再执行上面的拉取和启动命令。
 
 ### 源码部署升级
 
@@ -250,63 +250,77 @@ go build -tags=embed -o chatgpt2api ./internal
 
 运行时配置统一写入 `.env`。容器部署时，平台环境变量也可以覆盖 `.env` 中的同名变量。
 
+升级兼容：服务仍可读取上一版 `CHATGPT2API_*` 和 `RELAY_*` 环境变量，`docker-compose.yml` 也兼容旧的 `CHATGPT2API_IMAGE` 与 `CHATGPT2API_DOCKER_NETWORK`。除下述旧数据库布局外，新旧名称同时存在时使用新名称；在设置页保存配置后只写入新名称。已经移除的 LinuxDo 和固定令牌分组功能不会因为兼容读取而恢复。
+
+旧部署若使用远程业务数据库，原来的 `DATABASE_URL` 仍会作为业务数据库连接，同时 `CHATGPT2API_NEWAPI_DATABASE_URL` 继续作为上游用户数据库连接。完成迁移后应分别改为 `STORAGE_DATABASE_URL` 和 `DATABASE_URL`，避免两个数据库的用途混淆。
+
 ### 基础配置
 
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
-| `CHATGPT2API_ADMIN_USERNAME` | `admin` | 初始管理员用户名 |
-| `CHATGPT2API_ADMIN_PASSWORD` | 空 | 初始管理员密码；为空时首次启动自动生成一次性密码 |
-| `CHATGPT2API_BASE_URL` | `https://image.yunmian.tech` | 图片访问地址，用于生成图片 URL 和 OAuth 回调地址 |
-| `CHATGPT2API_APP_TITLE` | `云棉` | 网站名称，可在管理端设置中修改 |
-| `CHATGPT2API_SITE_ICON_URL` | 空 | 网站图标 URL，也可以在管理端上传 |
-| `CHATGPT2API_RELAY_BASE_URL` | `https://www.yunmian.tech` | API 访问地址，即 NewAPI 服务地址，可在管理端设置中修改 |
-| `CHATGPT2API_NEWAPI_DATABASE_URL` | 空 | NewAPI 数据库只读连接，用于普通用户登录并读取本人可用 Key 的名称和密钥；请使用只有 `SELECT` 权限的账号 |
-| `CHATGPT2API_NEWAPI_TOKEN_GROUP` | 空 | 用户尚未选择 Key 名称时的默认分组偏好；实际请求按当前用户选择的 Key 名称精确读取对应密钥 |
-| `CHATGPT2API_PROXY` | 空 | 全局代理，支持 `http`、`https`、`socks5`、`socks5h` |
-| `CHATGPT2API_IMAGE_MODELS` | `gpt-image-2,gemini-3.1-flash-image,grok-imagine-image` | 管理端图片模型列表，多个值用逗号分隔；第一项作为默认模型，对应模型需已在 NewAPI 配置可用渠道 |
-| `CHATGPT2API_REFRESH_ACCOUNT_INTERVAL_MINUTE` | `5` | 限流账号检查间隔，单位分钟 |
-| `CHATGPT2API_IMAGE_TASK_TIMEOUT_SECONDS` | `300` | 图片任务超时时间，单位秒 |
-| `CHATGPT2API_USER_DEFAULT_CONCURRENT_LIMIT` | `0` | 普通用户默认创作并发额度；图片生成/编辑按请求张数计入；`0` 表示不限制 |
-| `CHATGPT2API_USER_DEFAULT_RPM_LIMIT` | `0` | 普通用户默认创作任务 RPM 限制，`0` 表示不限制 |
-| `CHATGPT2API_IMAGE_RETENTION_DAYS` | `30` | 生成图片及会话参考图保留天数；过期文件清理后仍保留历史文字、参数和任务元数据 |
-| `CHATGPT2API_IMAGE_STORAGE_LIMIT_MB` | `0` | 图片治理总容量上限，统计生成原图、缩略图、元数据和会话参考图；单位 MB，`0` 表示不按容量自动清理 |
-| `CHATGPT2API_IMAGE_STORAGE_BACKEND` | `local` | 图片原图存储后端，可选 `local` 或 `s3`；也可以在管理端在线修改 |
-| `CHATGPT2API_S3_ENDPOINT` | 空 | S3 兼容服务地址，只能包含协议和主机，例如 R2 或 MinIO Endpoint |
-| `CHATGPT2API_S3_REGION` | 空 | S3 Region；Cloudflare R2 使用 `auto`，MinIO 通常可留空 |
-| `CHATGPT2API_S3_BUCKET` | 空 | 已创建的私有 Bucket 名称 |
-| `CHATGPT2API_S3_ACCESS_KEY` | 空 | S3 Access Key，仅服务端读取，不通过设置接口返回 |
-| `CHATGPT2API_S3_SECRET_KEY` | 空 | S3 Secret Key，仅服务端读取，不通过设置接口返回 |
-| `CHATGPT2API_S3_SESSION_TOKEN` | 空 | 可选临时会话令牌，仅服务端读取 |
-| `CHATGPT2API_S3_PREFIX` | 空 | 可选对象 Key 前缀，例如 `images` |
-| `CHATGPT2API_S3_USE_PATH_STYLE` | `false` | 是否使用 path-style；MinIO 通常设为 `true`，AWS S3/R2 通常为 `false` |
-| `CHATGPT2API_LOG_RETENTION_DAYS` | `7` | 业务日志保留天数 |
-| `CHATGPT2API_AUTO_REMOVE_INVALID_ACCOUNTS` | `false` | 是否自动移除失效账号 |
-| `CHATGPT2API_AUTO_REMOVE_RATE_LIMITED_ACCOUNTS` | `false` | 是否自动移除限流账号 |
-| `CHATGPT2API_LOG_LEVELS` | 空 | 日志级别过滤，多个值用逗号分隔：`debug,info,warning,error` |
+| `ADMIN_USERNAME` | `admin` | 初始管理员用户名 |
+| `ADMIN_PASSWORD` | 空 | 初始管理员密码；为空时首次启动自动生成一次性密码 |
+| `IMAGE_BASE_URL` | `https://image.yunmian.tech` | 图片访问地址，用于生成图片 URL |
+| `APP_TITLE` | `云棉` | 网站名称，可在管理端设置中修改 |
+| `SITE_ICON_URL` | 空 | 网站图标 URL，也可以在管理端上传 |
+| `API_BASE_URL` | `https://www.yunmian.tech` | API 访问地址，即 NewAPI / Sub2API 服务地址，可在管理端设置中修改 |
+| `DATABASE_URL` | 空 | 上游用户数据库只读连接，用于普通用户登录并读取余额与本人可用 Key |
+| `DATABASE_TYPE` | `newapi` | 数据库类型，只能是 `newapi` 或 `sub2api`；服务按类型选择对应表结构和认证逻辑 |
+| `PROXY` | 空 | 全局代理，支持 `http`、`https`、`socks5`、`socks5h` |
+| `IMAGE_MODELS` | `gpt-image-2,gemini-3.1-flash-image,grok-imagine-image` | 图片生成可用模型，创作台、无限画布和图片生成接口共用；多个值用逗号分隔，未指定模型时使用第一项；对应模型需已在 NewAPI / Sub2API 配置可用渠道 |
+| `VIDEO_MODELS` | 见 `.env.example` | 视频生成可用模型，创作台、无限画布和视频生成接口共用；多个值用逗号分隔，未指定模型时使用第一项 |
+| `REFRESH_ACCOUNT_INTERVAL_MINUTE` | `5` | 账号池限流状态检查间隔，单位分钟 |
+| `CREATION_TASK_TIMEOUT_SECONDS` | `300` | 图片、视频和聊天异步创作任务的统一超时时间，单位秒，允许范围 `30-3600` |
+| `USER_DEFAULT_CONCURRENT_LIMIT` | `0` | 普通用户默认创作并发额度；每张图片占 1 个额度，视频和聊天任务各占 1 个额度；`0` 表示不限制，管理员不受限制 |
+| `USER_DEFAULT_RPM_LIMIT` | `0` | 普通用户默认创作任务提交频率，每次提交计 1 次请求，单位为次/分钟；`0` 表示不限制，管理员不受限制 |
+| `TEXT_ACCOUNT_SCHEDULE_MODE` | `load_balance` | 文本账号池调度模式；`load_balance` 表示负载均衡，`fill_first` 表示优先用满一个账号 |
+| `IMAGE_ACCOUNT_SCHEDULE_MODE` | `load_balance` | 图片账号池调度模式；`load_balance` 表示负载均衡，`fill_first` 表示优先用满一个账号 |
+| `IMAGE_RETENTION_DAYS` | `30` | 生成图片及会话参考图保留天数；过期文件清理后仍保留历史文字、参数和任务元数据 |
+| `IMAGE_STORAGE_LIMIT_MB` | `0` | 图片治理总容量上限，统计生成原图、缩略图、元数据和会话参考图；单位 MB，`0` 表示不按容量自动清理 |
+| `IMAGE_STORAGE_BACKEND` | `local` | 图片原图存储后端，可选 `local` 或 `s3`；也可以在管理端在线修改 |
+| `S3_ENDPOINT` | 空 | S3 兼容服务地址，只能包含协议和主机，例如 R2 或 MinIO Endpoint |
+| `S3_REGION` | 空 | S3 Region；Cloudflare R2 使用 `auto`，MinIO 通常可留空 |
+| `S3_BUCKET` | 空 | 已创建的私有 Bucket 名称 |
+| `S3_ACCESS_KEY` | 空 | S3 Access Key，仅服务端读取，不通过设置接口返回 |
+| `S3_SECRET_KEY` | 空 | S3 Secret Key，仅服务端读取，不通过设置接口返回 |
+| `S3_SESSION_TOKEN` | 空 | 可选临时会话令牌，仅服务端读取 |
+| `S3_PREFIX` | 空 | 可选对象 Key 前缀，例如 `images` |
+| `S3_USE_PATH_STYLE` | `false` | 是否使用 path-style；MinIO 通常设为 `true`，AWS S3/R2 通常为 `false` |
+| `LOG_RETENTION_DAYS` | `7` | 业务日志保留天数 |
+| `DEFAULT_LOG_VIEW` | `meaningful` | 默认日志视图，可选 `all`、`meaningful`、`business` |
+| `AUTO_REMOVE_INVALID_ACCOUNTS` | `false` | 是否自动移除失效账号 |
+| `AUTO_REMOVE_RATE_LIMITED_ACCOUNTS` | `false` | 是否自动移除限流账号 |
+| `LOG_LEVELS` | 空 | 需要写入业务日志的级别，多个值用逗号分隔：`debug,info,warning,error`；留空表示记录全部级别 |
+| `PROJECT_NAME` | 跟随 `APP_TITLE` | 登录页项目名称 |
+| `LOGIN_PAGE_IMAGE_URL` | 空 | 登录页背景图片 URL |
+| `LOGIN_PAGE_IMAGE_MODE` | `contain` | 登录页背景模式，可选 `contain`、`cover`、`fill` |
+| `LOGIN_PAGE_IMAGE_ZOOM` | `1` | 登录页背景缩放，范围 `1-3` |
+| `LOGIN_PAGE_IMAGE_POSITION_X` | `50` | 登录页背景水平位置，范围 `0-100` |
+| `LOGIN_PAGE_IMAGE_POSITION_Y` | `50` | 登录页背景垂直位置，范围 `0-100` |
 
 Cloudflare R2 示例：
 
 ```env
-CHATGPT2API_IMAGE_STORAGE_BACKEND=s3
-CHATGPT2API_S3_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
-CHATGPT2API_S3_REGION=auto
-CHATGPT2API_S3_BUCKET=cloud-cotton-images
-CHATGPT2API_S3_ACCESS_KEY=<access-key>
-CHATGPT2API_S3_SECRET_KEY=<secret-key>
-CHATGPT2API_S3_PREFIX=images
-CHATGPT2API_S3_USE_PATH_STYLE=false
+IMAGE_STORAGE_BACKEND=s3
+S3_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com
+S3_REGION=auto
+S3_BUCKET=cloud-cotton-images
+S3_ACCESS_KEY=<access-key>
+S3_SECRET_KEY=<secret-key>
+S3_PREFIX=images
+S3_USE_PATH_STYLE=false
 ```
 
 MinIO 示例：
 
 ```env
-CHATGPT2API_IMAGE_STORAGE_BACKEND=s3
-CHATGPT2API_S3_ENDPOINT=http://minio:9000
-CHATGPT2API_S3_BUCKET=cloud-cotton-images
-CHATGPT2API_S3_ACCESS_KEY=<access-key>
-CHATGPT2API_S3_SECRET_KEY=<secret-key>
-CHATGPT2API_S3_PREFIX=images
-CHATGPT2API_S3_USE_PATH_STYLE=true
+IMAGE_STORAGE_BACKEND=s3
+S3_ENDPOINT=http://minio:9000
+S3_BUCKET=cloud-cotton-images
+S3_ACCESS_KEY=<access-key>
+S3_SECRET_KEY=<secret-key>
+S3_PREFIX=images
+S3_USE_PATH_STYLE=true
 ```
 
 Bucket 需要提前创建并建议保持私有。启用后，正式生图结果、图片库图片、无限画布上传图片及画布工具派生结果会保存到对象存储；缩略图继续作为本地按需缓存。创作台会话中的临时图生图参考附件仍保存在受保护的本地目录，并继续参与统一保留天数和容量治理。
@@ -317,38 +331,40 @@ Bucket 需要提前创建并建议保持私有。启用后，正式生图结果�
 
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
-| `CHATGPT2API_IMAGE` | `mienvirtuoso/chatgpt2api:latest` | 容器镜像；生产环境建议固定版本标签 |
-| `CHATGPT2API_DOCKER_NETWORK` | `newapi_default` | 服务加入的外部 Docker 网络 |
+| `DOCKER_IMAGE` | `mienvirtuoso/chatgpt2api:latest` | 容器镜像；生产环境建议固定版本标签 |
+| `DOCKER_NETWORK` | `newapi_default` | 服务加入的外部 Docker 网络 |
 | `TZ` | 容器默认值 | 容器时区，例如 `Asia/Shanghai` |
+| `PORT` | 镜像为 `80` | HTTP 监听端口；直接运行二进制时默认 `8000` |
+| `ROOT_DIR` | 自动查找 | 项目根目录，通常只用于非标准目录结构或本地开发 |
 
 ### 存储后端
 
 | 变量 | 默认值 | 说明 |
 | --- | --- | --- |
 | `STORAGE_BACKEND` | `sqlite` | 存储后端，可选 `sqlite`、`postgres`、`mysql` |
-| `DATABASE_URL` | 自动 | SQLite、PostgreSQL 或 MySQL 连接串 |
+| `STORAGE_DATABASE_URL` | 自动 | SQLite、PostgreSQL 或 MySQL 连接串 |
 
-这里配置的是业务数据库，与图片原图的 `CHATGPT2API_IMAGE_STORAGE_BACKEND` 相互独立。
+这里配置的是业务数据库，与图片原图的 `IMAGE_STORAGE_BACKEND` 相互独立。
 
 SQLite 示例：
 
 ```env
 STORAGE_BACKEND=sqlite
-DATABASE_URL=sqlite:////app/data/chatgpt2api.db
+STORAGE_DATABASE_URL=sqlite:////app/data/chatgpt2api.db
 ```
 
 PostgreSQL 示例：
 
 ```env
 STORAGE_BACKEND=postgres
-DATABASE_URL=postgresql://user:password@host:5432/chatgpt2api
+STORAGE_DATABASE_URL=postgresql://user:password@host:5432/chatgpt2api
 ```
 
 MySQL 示例：
 
 ```env
 STORAGE_BACKEND=mysql
-DATABASE_URL=mysql://user:password@host:3306/chatgpt2api
+STORAGE_DATABASE_URL=mysql://user:password@host:3306/chatgpt2api
 ```
 
 新部署默认使用 SQLite，并自动创建 `data/chatgpt2api.db`。本地 JSON 文件存储后端已移除，`STORAGE_BACKEND=json` 不再支持。
@@ -362,7 +378,7 @@ bun install --cwd web --frozen-lockfile
 bun --cwd web run build
 go test ./...
 go build -tags=embed -o chatgpt2api ./internal
-CHATGPT2API_ADMIN_PASSWORD=change_me_please ./chatgpt2api
+ADMIN_PASSWORD=change_me_please ./chatgpt2api
 ```
 
 后端单独启动时默认监听：
@@ -506,11 +522,11 @@ curl http://localhost:8000/v1/images/generations \
 
 | 字段 | 说明 |
 | --- | --- |
-| `model` | 图片模型，默认包含 `gpt-image-2`、`gemini-3.1-flash-image`、`grok-imagine-image`，也支持管理端配置的其他模型 |
+| `model` | 图片模型，默认包含 `gpt-image-2`、`gemini-3.1-flash-image`、`grok-imagine-image`；其他模型通过 `IMAGE_MODELS` 或设置页统一配置 |
 | `prompt` | 图片生成提示词 |
 | `n` | 生成数量；GPT Image 为 `1-10`，Gemini、Grok 和未知兼容模型为 `1-4` |
 
-云棉会读取当前用户选择的 NewAPI Key，并把请求转发到 `CHATGPT2API_RELAY_BASE_URL` 配置的 NewAPI 服务。模型对应的实际渠道、账号能力和最终上游协议由 NewAPI 配置决定；云棉负责参数归一化、鉴权、任务状态、流式事件消费、图片入库和错误展示。
+服务会读取当前用户选择的 NewAPI / Sub2API Key，并把请求转发到 `API_BASE_URL` 配置的上游服务。模型对应的实际渠道、账号能力和最终上游协议由该服务配置决定；本服务负责参数归一化、鉴权、任务状态、流式事件消费、图片入库和错误展示。
 
 `size` 可以传 `auto`、比例值（如 `1:1`、`16:9`、`9:16`）或显式 `WIDTHxHEIGHT`。GPT 图片链路还支持 `1080p`、`2k`、`4k` 档位；Gemini 3 图片链路会把请求映射为 `extra_body.google.image_config` 的官方比例和分辨率档位，不承诺精确复现显式宽高。最终输出像素以上游实际返回为准。
 

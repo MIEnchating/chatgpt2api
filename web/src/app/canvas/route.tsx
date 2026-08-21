@@ -24,7 +24,7 @@ export default function CanvasRoute() {
         </div>
       )}
     >
-      <CanvasPage />
+      <CanvasPage session={session} />
     </Suspense>
   );
 }

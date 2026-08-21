@@ -405,7 +405,7 @@ func TestAnnouncementPreferencesArePersonal(t *testing.T) {
 }
 
 func TestPasswordAccountLogin(t *testing.T) {
-	t.Setenv("CHATGPT2API_USER_DEFAULT_CONCURRENT_LIMIT", "2")
+	t.Setenv("USER_DEFAULT_CONCURRENT_LIMIT", "2")
 
 	app := newTestApp(t)
 	defer app.Close()
@@ -442,7 +442,7 @@ func TestPasswordAccountLogin(t *testing.T) {
 
 	dbURL := newHTTPTestNewAPIDatabase(t)
 	insertHTTPTestNewAPIUser(t, dbURL, 1, "alice", "alice@example.test")
-	reader, err := service.NewNewAPITokenReader(service.NewAPITokenReaderConfig{DatabaseURL: dbURL, TokenGroup: "draw"})
+	reader, err := service.NewNewAPITokenReader(service.NewAPITokenReaderConfig{DatabaseURL: dbURL})
 	if err != nil {
 		t.Fatalf("NewNewAPITokenReader() error = %v", err)
 	}
@@ -467,7 +467,7 @@ func TestPasswordAccountLogin(t *testing.T) {
 }
 
 func TestProfileAccountNameAndPasswordUpdates(t *testing.T) {
-	t.Setenv("CHATGPT2API_USER_DEFAULT_CONCURRENT_LIMIT", "3")
+	t.Setenv("USER_DEFAULT_CONCURRENT_LIMIT", "3")
 
 	app := newTestApp(t)
 	defer app.Close()
@@ -617,7 +617,7 @@ func TestProfileRelayKeyReadsNewAPITokenForUserAndGroup(t *testing.T) {
 	insertHTTPTestNewAPIUser(t, dbURL, 1, "alice", "alice@example.test")
 	insertHTTPTestNewAPITokenNamed(t, dbURL, 1, 1, "other", "secondary", "other-group-relay", time.Now().Unix()+3600, 10, false)
 	insertHTTPTestNewAPITokenNamed(t, dbURL, 2, 1, "draw", "primary", "alice-relay", -1, 0, true)
-	reader, err := service.NewNewAPITokenReader(service.NewAPITokenReaderConfig{DatabaseURL: dbURL, TokenGroup: "draw"})
+	reader, err := service.NewNewAPITokenReader(service.NewAPITokenReaderConfig{DatabaseURL: dbURL})
 	if err != nil {
 		t.Fatalf("NewNewAPITokenReader() error = %v", err)
 	}
@@ -673,7 +673,7 @@ func TestProfileRelayKeyReadsNewAPITokenForUserAndGroup(t *testing.T) {
 	if res.Code != http.StatusOK {
 		t.Fatalf("relay models status = %d body = %s", res.Code, res.Body.String())
 	}
-	if gotAuth != "Bearer sk-alice-relay" {
+	if gotAuth != "Bearer sk-other-group-relay" {
 		t.Fatalf("upstream Authorization = %q", gotAuth)
 	}
 
@@ -686,38 +686,16 @@ func TestProfileRelayKeyReadsNewAPITokenForUserAndGroup(t *testing.T) {
 	}
 }
 
-func TestSettingsCannotOverrideNewAPITokenGroup(t *testing.T) {
-	app := newTestApp(t)
-	defer app.Close()
-	t.Setenv("CHATGPT2API_NEWAPI_TOKEN_GROUP", "draw")
-
-	req := httptest.NewRequest(http.MethodPost, "/api/settings", strings.NewReader(`{"newapi_token_group":"other"}`))
-	req.Header.Set("Authorization", adminAuthHeader(t, app))
-	res := httptest.NewRecorder()
-	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusOK {
-		t.Fatalf("settings status = %d body = %s", res.Code, res.Body.String())
-	}
-	var payload map[string]any
-	if err := json.Unmarshal(res.Body.Bytes(), &payload); err != nil {
-		t.Fatalf("settings json: %v", err)
-	}
-	config := util.StringMap(payload["config"])
-	if config["newapi_token_group"] != "draw" {
-		t.Fatalf("newapi_token_group = %#v, want draw", config["newapi_token_group"])
-	}
-}
-
 func TestSettingsReconfigureImageObjectStorageOnline(t *testing.T) {
-	t.Setenv("CHATGPT2API_IMAGE_STORAGE_BACKEND", "local")
-	t.Setenv("CHATGPT2API_S3_ENDPOINT", "")
-	t.Setenv("CHATGPT2API_S3_REGION", "")
-	t.Setenv("CHATGPT2API_S3_BUCKET", "")
-	t.Setenv("CHATGPT2API_S3_PREFIX", "")
-	t.Setenv("CHATGPT2API_S3_USE_PATH_STYLE", "false")
-	t.Setenv("CHATGPT2API_S3_ACCESS_KEY", "server-access")
-	t.Setenv("CHATGPT2API_S3_SECRET_KEY", "server-secret")
-	t.Setenv("CHATGPT2API_S3_SESSION_TOKEN", "server-session")
+	t.Setenv("IMAGE_STORAGE_BACKEND", "local")
+	t.Setenv("S3_ENDPOINT", "")
+	t.Setenv("S3_REGION", "")
+	t.Setenv("S3_BUCKET", "")
+	t.Setenv("S3_PREFIX", "")
+	t.Setenv("S3_USE_PATH_STYLE", "false")
+	t.Setenv("S3_ACCESS_KEY", "server-access")
+	t.Setenv("S3_SECRET_KEY", "server-secret")
+	t.Setenv("S3_SESSION_TOKEN", "server-session")
 	app := newTestApp(t)
 	defer app.Close()
 
@@ -771,14 +749,14 @@ func TestSettingsReconfigureImageObjectStorageOnline(t *testing.T) {
 }
 
 func TestSettingsRejectObjectLocationChangeWithStoredS3Images(t *testing.T) {
-	t.Setenv("CHATGPT2API_IMAGE_STORAGE_BACKEND", "s3")
-	t.Setenv("CHATGPT2API_S3_ENDPOINT", "https://s3.example.test")
-	t.Setenv("CHATGPT2API_S3_REGION", "us-east-1")
-	t.Setenv("CHATGPT2API_S3_BUCKET", "existing-images")
-	t.Setenv("CHATGPT2API_S3_PREFIX", "gallery")
-	t.Setenv("CHATGPT2API_S3_USE_PATH_STYLE", "false")
-	t.Setenv("CHATGPT2API_S3_ACCESS_KEY", "server-access")
-	t.Setenv("CHATGPT2API_S3_SECRET_KEY", "server-secret")
+	t.Setenv("IMAGE_STORAGE_BACKEND", "s3")
+	t.Setenv("S3_ENDPOINT", "https://s3.example.test")
+	t.Setenv("S3_REGION", "us-east-1")
+	t.Setenv("S3_BUCKET", "existing-images")
+	t.Setenv("S3_PREFIX", "gallery")
+	t.Setenv("S3_USE_PATH_STYLE", "false")
+	t.Setenv("S3_ACCESS_KEY", "server-access")
+	t.Setenv("S3_SECRET_KEY", "server-secret")
 	app := newTestApp(t)
 	defer app.Close()
 
@@ -833,7 +811,7 @@ func TestProfileBalanceReadsNewAPIUser(t *testing.T) {
 	dbURL := newHTTPTestNewAPIDatabase(t)
 	insertHTTPTestNewAPIUser(t, dbURL, 1, "alice", "alice@example.test")
 	updateHTTPTestNewAPIUserBalance(t, dbURL, 1, 123456, 789, 42, "codex")
-	reader, err := service.NewNewAPITokenReader(service.NewAPITokenReaderConfig{DatabaseURL: dbURL, TokenGroup: "codex"})
+	reader, err := service.NewNewAPITokenReader(service.NewAPITokenReaderConfig{DatabaseURL: dbURL})
 	if err != nil {
 		t.Fatalf("NewNewAPITokenReader() error = %v", err)
 	}
@@ -860,7 +838,6 @@ func TestProfileBalanceReadsNewAPIUser(t *testing.T) {
 	}
 	if status["has_balance"] != true ||
 		status["source"] != "newapi" ||
-		status["token_group"] != "codex" ||
 		status["user_group"] != "codex" ||
 		status["username"] != "alice" ||
 		status["quota"] != float64(123456) ||
@@ -952,7 +929,7 @@ func TestRunLoggedChatTaskCreatesAccountUsageTrackerForLogs(t *testing.T) {
 	dbURL := newHTTPTestNewAPIDatabase(t)
 	insertHTTPTestNewAPIUser(t, dbURL, 1, "frontend", "frontend@example.test")
 	insertHTTPTestNewAPIToken(t, dbURL, 1, 1, "codex", fullToken, -1, 0, true)
-	reader, err := service.NewNewAPITokenReader(service.NewAPITokenReaderConfig{DatabaseURL: dbURL, TokenGroup: "codex"})
+	reader, err := service.NewNewAPITokenReader(service.NewAPITokenReaderConfig{DatabaseURL: dbURL})
 	if err != nil {
 		t.Fatalf("NewNewAPITokenReader() error = %v", err)
 	}
@@ -1054,7 +1031,7 @@ func TestRunLoggedImageTaskLogsTextOutputAsFailure(t *testing.T) {
 }
 
 func TestRunLoggedImageTaskLocalizesRelayURLForGallery(t *testing.T) {
-	t.Setenv("CHATGPT2API_BASE_URL", "https://image.yunmian.tech")
+	t.Setenv("IMAGE_BASE_URL", "https://image.yunmian.tech")
 	app := newTestApp(t)
 	defer app.Close()
 
@@ -1109,7 +1086,7 @@ func TestRunLoggedImageTaskLocalizesRelayURLForGallery(t *testing.T) {
 }
 
 func TestRunLoggedImageTaskLocalizesPartialResultOnUpstreamFailure(t *testing.T) {
-	t.Setenv("CHATGPT2API_BASE_URL", "https://image.yunmian.tech")
+	t.Setenv("IMAGE_BASE_URL", "https://image.yunmian.tech")
 	app := newTestApp(t)
 	defer app.Close()
 
@@ -1171,7 +1148,7 @@ func (s *cancellationCheckingImageStore) Get(context.Context, string) ([]byte, s
 func (s *cancellationCheckingImageStore) Delete(context.Context, string) error { return nil }
 
 func TestRunLoggedImageTaskPersistsCompletedImageAfterRequestCancellation(t *testing.T) {
-	t.Setenv("CHATGPT2API_BASE_URL", "https://image.yunmian.tech")
+	t.Setenv("IMAGE_BASE_URL", "https://image.yunmian.tech")
 	app := newTestApp(t)
 	defer app.Close()
 
@@ -1246,7 +1223,7 @@ func TestRelayStoredImageFormatUsesActualImageBytes(t *testing.T) {
 }
 
 func TestRunLoggedImageTaskHoldsSlotThroughLocalization(t *testing.T) {
-	t.Setenv("CHATGPT2API_BASE_URL", "https://image.yunmian.tech")
+	t.Setenv("IMAGE_BASE_URL", "https://image.yunmian.tech")
 	app := newTestApp(t)
 	defer app.Close()
 
@@ -1376,7 +1353,7 @@ func TestRelayImageStreamDataRejectsIndexesBeyondRequestedOutputs(t *testing.T) 
 }
 
 func TestDirectImageLimiterChargesRequestedOutputCount(t *testing.T) {
-	t.Setenv("CHATGPT2API_USER_DEFAULT_CONCURRENT_LIMIT", "2")
+	t.Setenv("USER_DEFAULT_CONCURRENT_LIMIT", "2")
 	app := newTestApp(t)
 	defer app.Close()
 
@@ -1551,7 +1528,7 @@ func TestDirectGeminiPartialSuccessIsStoredBeforeReturningUpstreamError(t *testi
 	dbURL := newHTTPTestNewAPIDatabase(t)
 	insertHTTPTestNewAPIUser(t, dbURL, 1, "alice", "alice@example.test")
 	insertHTTPTestNewAPIToken(t, dbURL, 1, 1, "draw", "gemini-relay-token", -1, 0, true)
-	reader, err := service.NewNewAPITokenReader(service.NewAPITokenReaderConfig{DatabaseURL: dbURL, TokenGroup: "draw"})
+	reader, err := service.NewNewAPITokenReader(service.NewAPITokenReaderConfig{DatabaseURL: dbURL})
 	if err != nil {
 		t.Fatalf("NewNewAPITokenReader() error = %v", err)
 	}
@@ -2048,7 +2025,7 @@ func TestRecordGeneratedImagesForPayloadPreservesDetectedOutputFormat(t *testing
 func TestDirectImageGenerationUsesCreationLimiter(t *testing.T) {
 	t.Skip("direct image generation now proxies to RelayAI instead of the local image engine")
 
-	t.Setenv("CHATGPT2API_USER_DEFAULT_CONCURRENT_LIMIT", "2")
+	t.Setenv("USER_DEFAULT_CONCURRENT_LIMIT", "2")
 	app := newTestApp(t)
 	defer app.Close()
 	_, rawKey, err := app.auth.CreateAPIKey(service.AuthRoleUser, "image-user", service.AuthOwner{})
@@ -2136,7 +2113,7 @@ func TestDirectImageGenerationUsesCreationLimiter(t *testing.T) {
 func TestDirectImageGenerationDoesNotLimitAdminToken(t *testing.T) {
 	t.Skip("direct image generation now proxies to RelayAI instead of the local image engine")
 
-	t.Setenv("CHATGPT2API_USER_DEFAULT_CONCURRENT_LIMIT", "2")
+	t.Setenv("USER_DEFAULT_CONCURRENT_LIMIT", "2")
 	app := newTestApp(t)
 	defer app.Close()
 
@@ -4613,13 +4590,13 @@ func TestLogGovernanceEndpointCleansOldLogs(t *testing.T) {
 
 func TestNewAppStartsLogRetentionCleaner(t *testing.T) {
 	root := t.TempDir()
-	t.Setenv("CHATGPT2API_ROOT", root)
-	t.Setenv("CHATGPT2API_ADMIN_USERNAME", testAdminUsername)
-	t.Setenv("CHATGPT2API_ADMIN_PASSWORD", testAdminPassword)
+	t.Setenv("ROOT_DIR", root)
+	t.Setenv("ADMIN_USERNAME", testAdminUsername)
+	t.Setenv("ADMIN_PASSWORD", testAdminPassword)
 	t.Setenv("STORAGE_BACKEND", "sqlite")
-	t.Setenv("DATABASE_URL", "")
-	t.Setenv("CHATGPT2API_LOG_RETENTION_DAYS", "1")
-	unsetTestEnv(t, "CHATGPT2API_REGISTRATION_ENABLED")
+	t.Setenv("STORAGE_DATABASE_URL", "")
+	t.Setenv("LOG_RETENTION_DAYS", "1")
+	unsetTestEnv(t, "REGISTRATION_ENABLED")
 
 	dataDir := filepath.Join(root, "data")
 	if err := os.MkdirAll(dataDir, 0o755); err != nil {
@@ -4912,13 +4889,11 @@ func waitForHTTPTestCondition(t *testing.T, ok func() bool) {
 func newTestApp(t *testing.T) *App {
 	t.Helper()
 	root := t.TempDir()
-	t.Setenv("CHATGPT2API_ROOT", root)
-	t.Setenv("CHATGPT2API_ADMIN_USERNAME", testAdminUsername)
-	t.Setenv("CHATGPT2API_ADMIN_PASSWORD", testAdminPassword)
-	t.Setenv("CHATGPT2API_NEWAPI_DATABASE_URL", "")
-	t.Setenv("CHATGPT2API_NEWAPI_TOKEN_GROUP", "")
+	t.Setenv("ROOT_DIR", root)
+	t.Setenv("ADMIN_USERNAME", testAdminUsername)
+	t.Setenv("ADMIN_PASSWORD", testAdminPassword)
 	t.Setenv("STORAGE_BACKEND", "sqlite")
-	t.Setenv("DATABASE_URL", "")
+	t.Setenv("STORAGE_DATABASE_URL", "")
 	app, err := NewApp()
 	if err != nil {
 		t.Fatalf("NewApp() error = %v", err)

@@ -13,6 +13,7 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { testProxy, type AccountScheduleMode, type ProxyTestResult } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -29,13 +30,18 @@ function toAccountScheduleMode(value: string): AccountScheduleMode {
 
 function ConfigTip({ content }: { content: string }) {
   return (
-    <span
-      aria-label={content}
-      title={content}
-      className="inline-flex size-5 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-    >
-      <CircleHelp className="size-4" />
-    </span>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          aria-label="查看说明"
+          className="inline-flex size-5 shrink-0 cursor-help items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+        >
+          <CircleHelp className="size-4" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent>{content}</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -173,7 +179,7 @@ export function ConfigCard() {
       <SettingsCard
         icon={Settings2}
         title="参数配置"
-        description="配置云棉接入、图片任务和图片治理参数。"
+        description="配置站点接入、异步创作任务和图片治理参数。"
       >
         <div className="flex items-center justify-center py-10">
           <LoaderCircle className="size-5 animate-spin text-muted-foreground" />
@@ -186,13 +192,13 @@ export function ConfigCard() {
     <SettingsCard
       icon={Settings2}
       title="参数配置"
-      description="配置云棉接入、图片任务和图片治理参数。"
+      description="配置站点接入、异步创作任务和图片治理参数。"
     >
       <div className="flex flex-col gap-5">
         <section className={configSectionClassName}>
           <SectionHeading
             title="基础参数"
-            tip="配置云棉接入、图片任务超时和本地图片治理。"
+            tip="配置站点接入、创作任务超时和图片治理。"
           />
           <div className={configGridClassName}>
             <Field className={configFieldClassName}>
@@ -235,7 +241,7 @@ export function ConfigCard() {
             </Field>
             <Field className={configFieldClassName}>
               <ConfigFieldLabel htmlFor="settings-image-task-timeout-seconds">
-                任务超时时间
+                创作任务超时
               </ConfigFieldLabel>
               <NumberInputWithUnit
                 id="settings-image-task-timeout-seconds"
@@ -278,7 +284,7 @@ export function ConfigCard() {
         <section className={configSectionClassName}>
           <SectionHeading
             title="用户默认限制"
-            tip="限制普通用户创作并发额度和速率；图片生成/编辑按请求张数计入；管理员不受影响；0 表示不限制。"
+            tip="限制普通用户创作并发额度和提交速率；每张图片占 1 个并发额度，视频和聊天任务各占 1 个；每次任务提交计 1 次请求；管理员不受限制。"
           />
           <div className={configGridClassName}>
             <Field className={configFieldClassName}>

@@ -31,9 +31,9 @@ Authorization: Bearer <session-or-api-token>
 | `grok-imagine-image-quality` | NewAPI `/v1/images/generations` | xAI 官方质量模型；NewAPI 当前内置其 `grok-imagine-image-pro` 别名，使用规范名称前需要配置模型映射。 |
 | `grok-imagine-image-2.0` | NewAPI `/v1/images/generations` | xAI 官方新模型；当前 NewAPI 使用前需要配置自定义模型映射。 |
 
-云棉从当前登录用户可用的 NewAPI Key 名称中读取选择，并按该名称精确取得密钥。请求随后发送到 `CHATGPT2API_RELAY_BASE_URL`；模型对应的账号、额度和最终上游协议由 NewAPI 决定。`/v1/models` 可能返回更多文本模型，但图片生成/图片编辑接口只应使用 NewAPI 图片渠道实际支持的模型。
+云棉从当前登录用户可用的 NewAPI Key 名称中读取选择，并按该名称精确取得密钥。请求随后发送到 `API_BASE_URL`；模型对应的账号、额度和最终上游协议由 NewAPI 决定。`/v1/models` 可能返回更多文本模型，但图片生成/图片编辑接口只应使用 NewAPI 图片渠道实际支持的模型。
 
-默认模型列表为 `gpt-image-2`、`gemini-3.1-flash-image` 和 `grok-imagine-image`。Google 链路只识别官方当前模型 ID：`gemini-3.1-flash-lite-image`、`gemini-3.1-flash-image`、`gemini-3-pro-image`、`gemini-2.5-flash-image`，不再把旧 Nano Banana 别名当作正式 ID。自定义列表通过 `CHATGPT2API_IMAGE_MODELS` 或管理端设置配置，模型必须已在 NewAPI 中存在可用渠道。
+默认模型列表为 `gpt-image-2`、`gemini-3.1-flash-image` 和 `grok-imagine-image`。Google 链路只识别官方当前模型 ID：`gemini-3.1-flash-lite-image`、`gemini-3.1-flash-image`、`gemini-3-pro-image`、`gemini-2.5-flash-image`，不再把旧 Nano Banana 别名当作正式 ID。图片生成可用模型通过 `IMAGE_MODELS` 或设置页统一配置，供创作台、无限画布和图片生成接口共用；模型必须已在 NewAPI / Sub2API 中存在可用渠道。
 
 图片参数能力以各厂商官方文档为准：
 
@@ -124,7 +124,7 @@ data: [DONE]
 - `partial_images` 表示最多返回多少张渐进预览，不保证返回满。部分 NewAPI 渠道只返回 `image_generation.completed` 和 `[DONE]`，仍属于正常的流式完成。
 - 如果请求了流式响应，但 NewAPI 或上游返回的是完整 `application/json` 图片结果，服务会把该响应转换为完成事件，不会为了转换格式再次请求上游生成。
 - NewAPI 的心跳帧可能表现为 `: PING`、`data: : PING`，某些代理还会产生重复的 `data: data: {...}` 前缀；服务端会兼容这些格式。
-- 上游错误不会触发改变请求语义的自动重试，也不会被替换为泛化提示；服务会保留 NewAPI 返回的可用错误详情，便于用户和管理员排查。
+- 上游错误不会触发改变请求语义的自动重试，也不会被替换为泛化提示；服务会保留 NewAPI 返回的可用错误详情，便于用户和管理员排查。不支持流式图片的渠道应在界面中关闭流式返回。
 
 ## 尺寸
 
@@ -581,13 +581,13 @@ OpenAI 兼容图片接口默认是无状态的：
 ## 图片保存与清理
 
 - 同步和异步接口的正式生成结果都会保存到服务端图片库；`visibility` 决定图片是 `private` 还是 `public`。
-- `CHATGPT2API_IMAGE_STORAGE_BACKEND=local` 时原图保存在本地数据目录；设为 `s3` 时，正式生成结果、图片库图片、无限画布上传和画布工具结果会保存到 S3 兼容对象存储。
+- `IMAGE_STORAGE_BACKEND=local` 时原图保存在本地数据目录；设为 `s3` 时，正式生成结果、图片库图片、无限画布上传和画布工具结果会保存到 S3 兼容对象存储。
 - S3 模式支持 AWS S3、Cloudflare R2、MinIO 和提供 S3 API 的对象存储。Bucket 应预先创建并设为私有，图片仍通过 `/images/...` 鉴权接口访问。
 - `partial_images` 渐进预览只用于当前响应，不写入对象存储；仅最终完成的图片会持久化。
 - 生成结果关联的缩略图、元数据和参考图会随原图作为一组治理。
 - Web 创作台上传的图生图参考图保存到 `/app/data/image_conversation_assets/`，访问时校验所属用户。
-- `CHATGPT2API_IMAGE_RETENTION_DAYS` 同时作用于生成结果和创作台会话参考图。参考图文件过期后，历史对话文字、参数和任务元数据仍会保留，但图片将不可访问。
-- `CHATGPT2API_IMAGE_STORAGE_LIMIT_MB` 按治理页口径统计生成原图、缩略图、元数据和会话参考图；清理原图时会同步删除其关联参考图。`0` 表示不按容量自动清理。
+- `IMAGE_RETENTION_DAYS` 同时作用于生成结果和创作台会话参考图。参考图文件过期后，历史对话文字、参数和任务元数据仍会保留，但图片将不可访问。
+- `IMAGE_STORAGE_LIMIT_MB` 按治理页口径统计生成原图、缩略图、元数据和会话参考图；清理原图时会同步删除其关联参考图。`0` 表示不按容量自动清理。
 - 公开图片默认不参与普通自动清理；管理员执行存储清理时可以明确选择包含公开图片。
 - 管理端可以在线修改对象存储后端、Endpoint、Region、Bucket、前缀和 Path Style，保存后立即生效；Access Key、Secret Key 和 Session Token 仍只从服务端环境变量读取，修改凭据后需要重启。
 - 切换本地/S3只影响新图片写入位置，不会自动迁移已有原图。历史 S3 图片仍通过对象存储读客户端访问；存在历史 S3 图片时，系统会拒绝在线修改 Endpoint、Region、Bucket、前缀或 Path Style，避免旧图片失联。

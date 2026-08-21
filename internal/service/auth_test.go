@@ -79,6 +79,30 @@ func TestAuthServiceReloadsAfterConcurrentCredentialConflict(t *testing.T) {
 	}
 }
 
+func TestAuthServiceCreatesSub2APISessionIdentity(t *testing.T) {
+	auth := newTestAuthService(t, &failingAuthStorage{})
+	identity, raw, err := auth.UpsertNewAPISession(NewAPIUser{
+		ID:            42,
+		Username:      "alice",
+		Email:         "alice@example.test",
+		DisplayName:   "Alice",
+		Provider:      AuthProviderSub2API,
+		SubjectPrefix: AuthProviderSub2API,
+	})
+	if err != nil {
+		t.Fatalf("UpsertNewAPISession() error = %v", err)
+	}
+	if raw == "" || identity == nil {
+		t.Fatalf("UpsertNewAPISession() identity=%#v raw=%q", identity, raw)
+	}
+	if identity.ID != "sub2api:42" || identity.OwnerID != "sub2api:42" || identity.Provider != AuthProviderSub2API || identity.Username != "alice" {
+		t.Fatalf("UpsertNewAPISession() identity = %#v", identity)
+	}
+	if authenticated := auth.Authenticate(raw); authenticated == nil || authenticated.ID != "sub2api:42" || authenticated.Provider != AuthProviderSub2API {
+		t.Fatalf("Authenticate() identity = %#v", authenticated)
+	}
+}
+
 func TestAuthServiceDoesNotPersistRawSessionToken(t *testing.T) {
 	backend := &failingAuthStorage{}
 	auth := newTestAuthService(t, backend)

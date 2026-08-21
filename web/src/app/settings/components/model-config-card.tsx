@@ -68,7 +68,7 @@ export function ModelConfigCard() {
       <SettingsCard
         icon={Settings2}
         title="模型配置"
-        description="管理图片和视频生成可用的模型。"
+        description="配置创作台、无限画布和任务接口共用的生成模型。"
       >
         <div className="flex items-center justify-center py-10">
           <LoaderCircle className="size-5 animate-spin text-muted-foreground" />
@@ -81,14 +81,14 @@ export function ModelConfigCard() {
     <SettingsCard
       icon={Settings2}
       title="模型配置"
-      description="管理图片和视频生成可用的模型。"
+      description="配置创作台、无限画布和任务接口共用的生成模型。"
     >
       <div className="flex flex-col gap-4">
         <div className="grid gap-3 lg:grid-cols-2">
           <ModelConfigField
             icon={ImageIcon}
             id="settings-image-models"
-            label="图片模型"
+            label="图片生成模型"
             value={config.image_models}
             onChange={setImageModels}
             placeholder="gpt-image-2"
@@ -96,7 +96,7 @@ export function ModelConfigCard() {
           <ModelConfigField
             icon={Clapperboard}
             id="settings-video-models"
-            label="视频模型"
+            label="视频生成模型"
             value={config.video_models}
             onChange={setVideoModels}
             placeholder="sora-2, grok-imagine-video-1.5"

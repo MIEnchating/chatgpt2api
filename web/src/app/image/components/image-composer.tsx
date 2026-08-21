@@ -29,12 +29,13 @@ import {
 import { ImageLightbox } from "@/components/image-lightbox";
 import { AuthenticatedImage } from "@/components/authenticated-image";
 import {
-  ImageAspectRatioGlyph,
+  ImageAspectRatioOptionButton,
   ImageParameterLabel,
 } from "@/app/image/components/image-parameter-ui";
 import { imageParameterChoiceClass } from "@/app/image/components/image-parameter-styles";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Slider } from "@/components/ui/slider";
@@ -862,10 +863,11 @@ export function ImageComposer({
                       align="start"
                       side="top"
                       sideOffset={8}
-                      className="hide-scrollbar z-[70] max-h-[min(calc(100dvh-2rem),32rem)] w-[min(calc(100vw-1rem),23rem)] overflow-y-auto overflow-x-hidden rounded-lg border-[#dedfe3] bg-white p-0 shadow-[0_18px_50px_-24px_rgba(15,23,42,0.28)] dark:border-border dark:bg-card dark:shadow-[0_18px_50px_-22px_rgba(0,0,0,0.68)] sm:w-[min(calc(100vw-2rem),23rem)]"
+                      className="z-[70] w-[min(calc(100vw-1rem),23rem)] overflow-hidden rounded-lg border-[#dedfe3] bg-white p-0 shadow-[0_18px_50px_-24px_rgba(15,23,42,0.28)] dark:border-border dark:bg-card dark:shadow-[0_18px_50px_-22px_rgba(0,0,0,0.68)] sm:w-[min(calc(100vw-2rem),23rem)]"
                       onOpenAutoFocus={(event) => event.preventDefault()}
                     >
-                      <div className="p-3">
+                      <ScrollArea className="max-h-[min(calc(100dvh-2rem),32rem)]" viewportClassName="max-h-[min(calc(100dvh-2rem),32rem)]">
+                      <div className="p-3 pr-4">
                         <div className="space-y-3.5">
                           {sizeSupported ? <section className="space-y-1.5">
                             <div className="flex items-center justify-between gap-3">
@@ -881,7 +883,7 @@ export function ImageComposer({
                                 {sizePreviewLabel}
                               </span>
                             </div>
-                            <div className="grid grid-cols-5 gap-1.5" role="group" aria-label="图片画幅比例">
+                            <div className="grid grid-cols-4 gap-1.5" role="group" aria-label="图片画幅比例">
                               {imageAspectRatioOptions.map((option) => {
                                 const isAuto = option.value === "";
                                 const isCustom = option.value === CUSTOM_IMAGE_ASPECT_RATIO;
@@ -889,27 +891,16 @@ export function ImageComposer({
                                   ? effectiveImageSizeMode === "auto"
                                   : effectiveImageSizeMode === "ratio" && imageAspectRatio === option.value;
                                 return (
-                                  <button
+                                  <ImageAspectRatioOptionButton
                                     key={option.value || "auto"}
-                                    type="button"
-                                    aria-pressed={active}
-                                    className={cn(
-                                      "flex h-11 min-w-0 flex-col items-center justify-center gap-1 rounded-lg border border-[#e5e7eb] bg-[#f7f7f8] px-1 text-[10px] font-medium text-[#686b73] transition hover:border-[#cfd1d5] hover:bg-white hover:text-[#222222] dark:border-border dark:bg-muted/55 dark:text-muted-foreground dark:hover:bg-background dark:hover:text-foreground",
-                                      active &&
-                                        "border-[#bfd1ff] bg-[#eef4ff] text-[#1456f0] shadow-[inset_0_0_0_1px_rgba(20,86,240,0.08)] hover:border-[#9db9ff] hover:bg-[#eef4ff] hover:text-[#1456f0] dark:border-sky-900/80 dark:bg-sky-950/35 dark:text-sky-300",
-                                    )}
+                                    active={active}
+                                    label={isAuto ? "自动" : isCustom ? "自定义" : option.value}
+                                    ratio={isAuto || isCustom ? undefined : option.value}
                                     onClick={() => {
                                       onImageAspectRatioChange(option.value);
                                       onImageSizeModeChange(isAuto ? "auto" : "ratio");
                                     }}
-                                  >
-                                    {isAuto || isCustom ? (
-                                      <SlidersHorizontal className="size-3.5" />
-                                    ) : (
-                                      <ImageAspectRatioGlyph ratio={option.value} />
-                                    )}
-                                    <span className="truncate">{isAuto ? "自动" : isCustom ? "自定义" : option.value}</span>
-                                  </button>
+                                  />
                                 );
                               })}
                             </div>
@@ -1160,6 +1151,7 @@ export function ImageComposer({
                           </div> : null}
                         </div>
                       </div>
+                      </ScrollArea>
                     </PopoverContent>
                   </Popover>
                   ) : null}

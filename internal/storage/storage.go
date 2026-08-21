@@ -53,16 +53,22 @@ type LogMaintenanceBackend interface {
 }
 
 func NewBackendFromEnv(dataDir string) (Backend, error) {
-	backendType := strings.ToLower(strings.TrimSpace(os.Getenv("STORAGE_BACKEND")))
+	backendType := strings.ToLower(strings.TrimSpace(firstConfiguredEnv("STORAGE_BACKEND", "CHATGPT2API_STORAGE_BACKEND")))
 	if backendType == "" {
 		backendType = "sqlite"
 	}
 	switch backendType {
 	case "sqlite", "postgres", "postgresql", "mysql", "database":
-		dsn := strings.TrimSpace(os.Getenv("DATABASE_URL"))
+		dsnValue, dsnConfigured := lookupConfiguredEnv("STORAGE_DATABASE_URL", "CHATGPT2API_STORAGE_DATABASE_URL")
+		dsn := strings.TrimSpace(dsnValue)
+		if !dsnConfigured && legacyDatabaseURLBelongsToStorage(backendType) {
+			// Before the upstream database was renamed to DATABASE_URL, this name
+			// belonged to the service's own storage database.
+			dsn = strings.TrimSpace(os.Getenv("DATABASE_URL"))
+		}
 		if dsn == "" {
 			if backendType != "sqlite" {
-				return nil, fmt.Errorf("DATABASE_URL is required for %s storage", backendType)
+				return nil, fmt.Errorf("STORAGE_DATABASE_URL is required for %s storage", backendType)
 			}
 			dsn = "sqlite:///" + filepath.ToSlash(filepath.Join(dataDir, "chatgpt2api.db"))
 		}
@@ -70,6 +76,34 @@ func NewBackendFromEnv(dataDir string) (Backend, error) {
 	default:
 		return nil, fmt.Errorf("unknown storage backend: %s", backendType)
 	}
+}
+
+func legacyDatabaseURLBelongsToStorage(backendType string) bool {
+	if strings.TrimSpace(os.Getenv("CHATGPT2API_NEWAPI_DATABASE_URL")) == "" {
+		return false
+	}
+	switch backendType {
+	case "postgres", "postgresql", "mysql", "database":
+		return true
+	case "sqlite":
+		return strings.HasPrefix(strings.ToLower(strings.TrimSpace(os.Getenv("DATABASE_URL"))), "sqlite:")
+	default:
+		return false
+	}
+}
+
+func firstConfiguredEnv(names ...string) string {
+	value, _ := lookupConfiguredEnv(names...)
+	return value
+}
+
+func lookupConfiguredEnv(names ...string) (string, bool) {
+	for _, name := range names {
+		if value, ok := os.LookupEnv(name); ok {
+			return value, true
+		}
+	}
+	return "", false
 }
 
 type DatabaseBackend struct {

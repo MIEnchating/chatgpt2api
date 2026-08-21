@@ -154,8 +154,8 @@ func NewApp() (*App, error) {
 	}
 	proxy := service.NewProxyService(cfg)
 	newAPIKeys, err := service.NewNewAPITokenReader(service.NewAPITokenReaderConfig{
-		DatabaseURL: cfg.NewAPIDatabaseURL(),
-		TokenGroup:  cfg.NewAPITokenGroup(),
+		DatabaseURL:  cfg.RelayDatabaseURL(),
+		DatabaseType: cfg.RelayDatabaseType(),
 	})
 	if err != nil {
 		cancel()
@@ -1041,8 +1041,6 @@ func (a *App) handleSettings(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusBadRequest, "invalid json body")
 			return
 		}
-		delete(body, "newapi_token_group")
-		delete(body, "newapi_token_groups")
 		previousImageStorage := a.config.ImageStorageSettings()
 		nextImageStorage := a.config.ImageStorageSettingsWithUpdate(body)
 		objectStore, objectWrites, err := a.prepareImageObjectStorageChange(previousImageStorage, nextImageStorage)
@@ -1059,10 +1057,6 @@ func (a *App) handleSettings(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusInternalServerError, "failed to activate object storage configuration")
 			return
 		}
-		if a.newAPIKeys != nil {
-			a.newAPIKeys.SetConfiguredGroup(a.config.NewAPITokenGroup())
-		}
-		updated["newapi_token_groups"] = a.configuredNewAPITokenGroups(r.Context())
 		util.WriteJSON(w, http.StatusOK, map[string]any{"config": updated})
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -1143,19 +1137,7 @@ func sameImageObjectStorageLocation(left, right config.ImageStorageSettings) boo
 
 func (a *App) settingsConfig(ctx context.Context) map[string]any {
 	config := a.config.Get()
-	config["newapi_token_groups"] = a.configuredNewAPITokenGroups(ctx)
 	return config
-}
-
-func (a *App) configuredNewAPITokenGroups(ctx context.Context) []string {
-	if a == nil || a.newAPIKeys == nil {
-		return []string{}
-	}
-	groups := a.newAPIKeys.ConfiguredTokenGroups(ctx)
-	if groups == nil {
-		return []string{}
-	}
-	return groups
 }
 
 func (a *App) handleModelConfig(w http.ResponseWriter, r *http.Request) {
@@ -2201,6 +2183,14 @@ func extractBearerToken(auth string) string {
 		return ""
 	}
 	return strings.TrimSpace(value)
+}
+
+func isHTTPSRequest(r *http.Request) bool {
+	if r.TLS != nil {
+		return true
+	}
+	proto := strings.ToLower(strings.TrimSpace(r.Header.Get("X-Forwarded-Proto")))
+	return proto == "https"
 }
 
 func setAuthSessionCookie(w http.ResponseWriter, r *http.Request, token string) {

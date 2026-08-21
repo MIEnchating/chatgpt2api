@@ -166,8 +166,8 @@ jobs:
 
       - name: Test PostgreSQL and MySQL storage backends
         env:
-          CHATGPT2API_TEST_POSTGRES_DATABASE_URL: postgresql://chatgpt2api:chatgpt2api@127.0.0.1:5432/chatgpt2api?sslmode=disable
-          CHATGPT2API_TEST_MYSQL_DATABASE_URL: mysql://chatgpt2api:chatgpt2api@127.0.0.1:3306/chatgpt2api
+          TEST_POSTGRES_DATABASE_URL: postgresql://chatgpt2api:chatgpt2api@127.0.0.1:5432/chatgpt2api?sslmode=disable
+          TEST_MYSQL_DATABASE_URL: mysql://chatgpt2api:chatgpt2api@127.0.0.1:3306/chatgpt2api
         run: go test ./internal/storage -run '^TestDatabaseBackendIntegration$' -count=1 -v
 
       - name: Verify Docker Hub credentials

@@ -28,17 +28,23 @@ import { CanvasResourceMentionTextarea } from "@/app/canvas/canvas-resource-ment
 import { canvasNodeMentionReferences, type CanvasResourceReference } from "@/app/canvas/canvas-resources";
 import { AuthenticatedImage } from "@/components/authenticated-image";
 import { ImageLightbox } from "@/components/image-lightbox";
+import {
+  RelayTokenRequiredDialog,
+  type RelayTokenCreationKind,
+} from "@/components/relay-token-required-dialog";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
-import { cancelCreationTask, clearCanvasDocument, createImageEditTask, createImageGenerationTask, createVideoGenerationTask, DEFAULT_IMAGE_MODEL, fetchCanvasDocument, fetchCreationTasks, fetchManagedImages, fetchModelConfig, imageReferenceImageLimit, importCanvasProject, PROFILE_RELAY_TOKEN_NAME_CHANGED_EVENT, PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY, saveCanvasDocument, supportsImageEditing, supportsImageMask, supportsImageOutputControls, supportsImageQualityValue, supportsImageResolution, supportsImageStreaming, supportsStructuredImageParameters, updateCanvasProject, uploadCanvasImage, type CanvasConnection, type CanvasDocument, type CanvasNode, type CanvasProjectSummary, type CanvasWorkspaceResponse, type CreationTask, type ImageModel, type ManagedImage } from "@/lib/api";
+import { cancelCreationTask, clearCanvasDocument, createImageEditTask, createImageGenerationTask, createVideoGenerationTask, DEFAULT_IMAGE_MODEL, fetchCanvasDocument, fetchCreationTasks, fetchManagedImages, fetchModelConfig, imageReferenceImageLimit, importCanvasProject, PROFILE_RELAY_TOKEN_NAME_CHANGED_EVENT, saveCanvasDocument, supportsImageEditing, supportsImageMask, supportsImageOutputControls, supportsImageQualityValue, supportsImageResolution, supportsImageStreaming, supportsStructuredImageParameters, updateCanvasProject, uploadCanvasImage, type CanvasConnection, type CanvasDocument, type CanvasNode, type CanvasProjectSummary, type CanvasWorkspaceResponse, type CreationTask, type ImageModel, type ManagedImage } from "@/lib/api";
 import { fetchAuthenticatedImageBlob, primeAuthenticatedImageCache } from "@/lib/authenticated-image";
 import { imageConversationReferenceLimitMessage } from "@/lib/image-conversation-assets";
+import { getStoredRelayTokenName, relayTokenNameStorageKey } from "@/lib/relay-token-selection";
 import { cn } from "@/lib/utils";
 import { videoAudioControl, videoResolutionOptions, videoSecondsOptions, videoSizeLabel, videoSizeOptions, videoWatermarkSupported } from "@/lib/video-model-capabilities";
+import type { StoredAuthSession } from "@/store/auth";
 
 type SaveState = "saved" | "dirty" | "saving" | "error";
 type CanvasSwitchPhase = "switching" | "revealing" | null;
@@ -325,7 +331,7 @@ function CanvasNodePromptPanel({ node, mentionReferences, running, generationBus
   );
 }
 
-export default function CanvasPage() {
+export default function CanvasPage({ session }: { session: StoredAuthSession }) {
   const hostRef = useRef<HTMLElement | null>(null);
   const documentRef = useRef(cloneDocument(DEFAULT_DOCUMENT));
   const nodesRef = useRef<CanvasNode[]>([]);
@@ -396,10 +402,9 @@ export default function CanvasPage() {
   const [imageModelReady, setImageModelReady] = useState(false);
   const [videoModel, setVideoModel] = useState("sora-2");
   const [videoModels, setVideoModels] = useState(["sora-2"]);
-  const [relayTokenName, setRelayTokenName] = useState(() => {
-    if (typeof window === "undefined") return "";
-    return window.localStorage.getItem(PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY) || "";
-  });
+  const relayTokenStorageKey = relayTokenNameStorageKey(session);
+  const [relayTokenName, setRelayTokenName] = useState(() => getStoredRelayTokenName(session));
+  const [relayTokenDialogKind, setRelayTokenDialogKind] = useState<RelayTokenCreationKind | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [switchPhase, setSwitchPhase] = useState<CanvasSwitchPhase>(null);
   const [loading, setLoading] = useState(true);
@@ -1563,6 +1568,10 @@ export default function CanvasPage() {
   async function runVideoGeneration(nodeID: string, prompt?: string) {
     const sourceNode = nodesRef.current.find((node) => node.id === nodeID && node.type === "video");
     if (!sourceNode || runningNodeID) return;
+    if (!relayTokenName.trim()) {
+      setRelayTokenDialogKind("video");
+      return;
+    }
     const context = buildCanvasGenerationContext(nodeID, nodesRef.current, connectionsRef.current, prompt ?? sourceNode.prompt ?? "");
     const text = context.prompt.trim();
     if (!text && !context.referenceImageURLs.length) return toast.error("请填写视频描述或连接参考图片");
@@ -1605,6 +1614,10 @@ export default function CanvasPage() {
     if (videoNode) return runVideoGeneration(nodeID, prompt);
     const sourceNode = nodesRef.current.find((node) => node.id === nodeID && (node.type === "image" || node.type === "config"));
     if (!sourceNode) return;
+    if (!relayTokenName.trim()) {
+      setRelayTokenDialogKind("image");
+      return;
+    }
     const retrying = sourceNode.type === "image" && retry && sourceNode.generation_status === "error";
     const retryConfiguration = retrying && !sourceNode.generation_type
       ? findCanvasRetryConfigurationNode(sourceNode.id, nodesRef.current, connectionsRef.current)
@@ -2057,9 +2070,9 @@ export default function CanvasPage() {
 
   useEffect(() => {
     const handleTokenNameChange = (event: Event) => {
-      if (event instanceof StorageEvent && event.key !== PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY) return;
+      if (event instanceof StorageEvent && event.key !== relayTokenStorageKey) return;
       const eventTokenName = (event as CustomEvent<{ tokenName?: string }>).detail?.tokenName;
-      setRelayTokenName(String(eventTokenName ?? window.localStorage.getItem(PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY) ?? ""));
+      setRelayTokenName(String(eventTokenName ?? getStoredRelayTokenName(session)));
     };
     window.addEventListener(PROFILE_RELAY_TOKEN_NAME_CHANGED_EVENT, handleTokenNameChange);
     window.addEventListener("storage", handleTokenNameChange);
@@ -2067,7 +2080,11 @@ export default function CanvasPage() {
       window.removeEventListener(PROFILE_RELAY_TOKEN_NAME_CHANGED_EVENT, handleTokenNameChange);
       window.removeEventListener("storage", handleTokenNameChange);
     };
-  }, []);
+  }, [relayTokenStorageKey, session]);
+
+  useEffect(() => {
+    setRelayTokenName(getStoredRelayTokenName(session));
+  }, [relayTokenStorageKey, session]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -2197,6 +2214,13 @@ export default function CanvasPage() {
       {miniMapOpen && !libraryOpen && nodes.length && canvasSize.width > 0 ? <CanvasMiniMap nodes={nodes} viewport={viewport} viewportSize={canvasSize} onViewportChange={(next) => updateViewport(next, true)} /> : null}
 
       {contextMenu ? <CanvasRightClickMenu menu={contextMenu} onClose={() => setContextMenu(null)} onDuplicate={() => { if (contextMenu.type === "node") duplicateNode(contextMenu.nodeID); setContextMenu(null); }} onDelete={() => { if (contextMenu.type === "node") removeNodes(new Set([contextMenu.nodeID])); else if (contextMenu.type === "connection") { replaceConnections(connectionsRef.current.filter((connection) => connection.id !== contextMenu.connectionID)); setSelectedConnectionID(""); pushHistory(); } setContextMenu(null); }} onAddText={() => { if (contextMenu.type === "canvas") addTextNodeAt({ x: contextMenu.position.x - 170, y: contextMenu.position.y - 120 }); setContextMenu(null); }} onAddImage={() => { if (contextMenu.type === "canvas") addBlankNodeAt({ x: contextMenu.position.x - 170, y: contextMenu.position.y - 120 }); setContextMenu(null); }} onAddVideo={() => { if (contextMenu.type === "canvas") { const point = { x: contextMenu.position.x - 210, y: contextMenu.position.y - 118 }; const node = buildVideoNode({}, point); addNode(node); setPanelNodeID(node.id); } setContextMenu(null); }} onAddConfig={() => { if (contextMenu.type === "canvas") addConfigNodeAt({ x: contextMenu.position.x - 170, y: contextMenu.position.y - 120 }); setContextMenu(null); }} onPaste={() => { void pasteSelected(); setContextMenu(null); }} onExportImage={() => { void exportImage(); setContextMenu(null); }} onExportJSON={() => { exportJSON(); setContextMenu(null); }} onImport={() => { importRef.current?.click(); setContextMenu(null); }} onClear={() => { setClearConfirmationOpen(true); setContextMenu(null); }} /> : null}
+      <RelayTokenRequiredDialog
+        kind={relayTokenDialogKind || "image"}
+        open={relayTokenDialogKind !== null}
+        onOpenChange={(open) => {
+          if (!open) setRelayTokenDialogKind(null);
+        }}
+      />
       <CanvasNodeInfoDialog node={infoNode} configInputs={infoNodeInputs} open={Boolean(infoNode)} onOpenChange={(open) => { if (!open) setInfoNodeID(""); }} />
       <Dialog open={stopConfirmationOpen} onOpenChange={setStopConfirmationOpen}>
         <DialogContent className="w-[min(92vw,420px)] rounded-2xl">

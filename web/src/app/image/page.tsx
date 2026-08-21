@@ -8,7 +8,7 @@ import { ImageComposer } from "@/app/image/components/image-composer";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import {
-  ImageAspectRatioGlyph,
+  ImageAspectRatioOptionButton,
   ImageParameterLabel,
 } from "@/app/image/components/image-parameter-ui";
 import { imageParameterChoiceClass } from "@/app/image/components/image-parameter-styles";
@@ -52,6 +52,10 @@ import { consumeSimilarImageIntent } from "@/app/image/similar-image-intent";
 import { ImageSidebar } from "@/app/image/components/image-sidebar";
 import { ImageLightbox } from "@/components/image-lightbox";
 import { AuthenticatedImage } from "@/components/authenticated-image";
+import {
+  RelayTokenRequiredDialog,
+  type RelayTokenCreationKind,
+} from "@/components/relay-token-required-dialog";
 import {
   canStartImageConversationQueueRunner,
   canDispatchImageTurn,
@@ -102,7 +106,6 @@ import {
   IMAGE_CREATION_MODEL_OPTIONS,
   IMAGE_OUTPUT_FORMAT_OPTIONS,
   PROFILE_RELAY_TOKEN_NAME_CHANGED_EVENT,
-  PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY,
   isImageCreationModel,
   isImageModel,
   isImageOutputFormat,
@@ -141,6 +144,11 @@ import {
 import { clearImageManagerCache } from "@/lib/image-manager-cache";
 import { getManagedImagePathFromUrl, getManagedImageUrlFromPath } from "@/lib/image-path";
 import { clearStoredRelayApiKey } from "@/lib/relay-key";
+import {
+  getStoredRelayTokenName,
+  relayTokenNameStorageKey,
+  retainSelectedRelayTokenName,
+} from "@/lib/relay-token-selection";
 import { AUTH_SESSION_CHANGE_EVENT, getCachedAuthSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
 import { useAuthGuard } from "@/lib/use-auth-guard";
@@ -1133,29 +1141,10 @@ function getStoredImagePartialImages() {
   return String(normalizeImagePartialImages(window.localStorage.getItem(IMAGE_PARTIAL_IMAGES_STORAGE_KEY)));
 }
 
-function getStoredRelayTokenName() {
-  if (typeof window === "undefined") {
-    return "";
-  }
-  return window.localStorage.getItem(PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY) || "";
-}
-
 function normalizeRelayTokenNames(values: unknown) {
   return Array.isArray(values)
     ? Array.from(new Set(values.map((name) => String(name || "").trim()).filter(Boolean)))
     : [];
-}
-
-function nextRelayTokenName(current: string, options: string[], fallback?: string) {
-  const normalizedCurrent = current.trim();
-  if (normalizedCurrent && options.some((name) => name === normalizedCurrent)) {
-    return normalizedCurrent;
-  }
-  const normalizedFallback = String(fallback || "").trim();
-  if (normalizedFallback && options.some((name) => name === normalizedFallback)) {
-    return normalizedFallback;
-  }
-  return options[0] || normalizedFallback || "";
 }
 
 function ensureModelOption(options: ReadonlyArray<ImageModelOption>, model: ImageModel): ImageModelOption[] {
@@ -1640,7 +1629,9 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   }, [videoModel]);
   const [relayKeyConfigured, setRelayKeyConfigured] = useState(false);
   const [relayKeyStatusMessage, setRelayKeyStatusMessage] = useState(NEWAPI_TOKEN_MISSING_MESSAGE);
-  const [relayTokenName, setRelayTokenName] = useState(getStoredRelayTokenName);
+  const relayTokenStorageKey = relayTokenNameStorageKey(session);
+  const [relayTokenName, setRelayTokenName] = useState(() => getStoredRelayTokenName(session));
+  const [relayTokenDialogKind, setRelayTokenDialogKind] = useState<RelayTokenCreationKind | null>(null);
   const relayKeyMissingMessage = relayKeyStatusMessage || NEWAPI_TOKEN_MISSING_MESSAGE;
   const [relayImageModelOptions, setRelayImageModelOptions] = useState<ImageModelOption[]>(() =>
     ensureDefaultImageModelOption(IMAGE_CREATION_MODEL_OPTIONS),
@@ -1840,6 +1831,13 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     [conversations, selectedConversationId],
   );
   const activeRelayTokenName = relayTokenName.trim();
+  const requireRelayToken = useCallback((kind: RelayTokenCreationKind) => {
+    if (activeRelayTokenName && relayKeyConfigured) {
+      return true;
+    }
+    setRelayTokenDialogKind(kind);
+    return false;
+  }, [activeRelayTokenName, relayKeyConfigured]);
   const activeTaskCount = useMemo(
     () =>
       conversations.reduce((sum, conversation) => {
@@ -2461,11 +2459,11 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       return;
     }
     const handleTokenNameChange = (event: Event) => {
-      if (event instanceof StorageEvent && event.key !== PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY) {
+      if (event instanceof StorageEvent && event.key !== relayTokenStorageKey) {
         return;
       }
       const tokenName = (event as CustomEvent<{ tokenName?: string }>).detail?.tokenName;
-      setRelayTokenName(String(tokenName || window.localStorage.getItem(PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY) || ""));
+      setRelayTokenName(String(tokenName ?? getStoredRelayTokenName(session)));
     };
     window.addEventListener(PROFILE_RELAY_TOKEN_NAME_CHANGED_EVENT, handleTokenNameChange);
     window.addEventListener("storage", handleTokenNameChange);
@@ -2473,31 +2471,28 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       window.removeEventListener(PROFILE_RELAY_TOKEN_NAME_CHANGED_EVENT, handleTokenNameChange);
       window.removeEventListener("storage", handleTokenNameChange);
     };
-  }, []);
+  }, [relayTokenStorageKey, session]);
 
   useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-    const normalizedName = relayTokenName.trim();
-    if (normalizedName) {
-      window.localStorage.setItem(PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY, normalizedName);
-    } else {
-      window.localStorage.removeItem(PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY);
-    }
-    window.dispatchEvent(new CustomEvent(PROFILE_RELAY_TOKEN_NAME_CHANGED_EVENT, { detail: { tokenName: normalizedName } }));
-  }, [relayTokenName]);
+    setRelayTokenName(getStoredRelayTokenName(session));
+  }, [relayTokenStorageKey, session]);
 
   const refreshRelayKeyStatus = useCallback(async () => {
     clearStoredRelayApiKey();
     try {
       const status = await fetchProfileRelayKey(undefined, activeRelayTokenName);
       const names = normalizeRelayTokenNames(status.token_names);
-      setRelayTokenName((current) => {
-        return nextRelayTokenName(current, names, status.token_name);
-      });
-      setRelayKeyConfigured(status.has_key);
-      setRelayKeyStatusMessage(status.has_key ? "" : status.message || NEWAPI_TOKEN_MISSING_MESSAGE);
+      const selectedName = retainSelectedRelayTokenName(activeRelayTokenName, names);
+      const configured = Boolean(selectedName && status.has_key);
+      setRelayTokenName(selectedName);
+      setRelayKeyConfigured(configured);
+      setRelayKeyStatusMessage(
+        configured
+          ? ""
+          : selectedName
+            ? status.message || NEWAPI_TOKEN_MISSING_MESSAGE
+            : "请先选择用于生成的密钥",
+      );
     } catch {
       setRelayKeyConfigured(false);
       setRelayKeyStatusMessage("无法读取云棉令牌状态，请稍后重试");
@@ -4344,8 +4339,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         toast.error(referenceLimitMessage);
         return;
       }
-      if (!relayKeyConfigured) {
-        toast.error(relayKeyMissingMessage);
+      if (!requireRelayToken(targetTurn.mode === "video" ? "video" : "image")) {
         return;
       }
 
@@ -4423,8 +4417,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     },
     [
       activeRelayTokenName,
-      relayKeyConfigured,
-      relayKeyMissingMessage,
+      requireRelayToken,
       runConversationQueue,
       updateConversation,
     ],
@@ -4467,8 +4460,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         toast.error(referenceLimitMessage);
         return;
       }
-      if (!relayKeyConfigured) {
-        toast.error(relayKeyMissingMessage);
+      if (!requireRelayToken(targetTurn.mode === "video" ? "video" : "image")) {
         return;
       }
 
@@ -4530,8 +4522,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     },
     [
       activeRelayTokenName,
-      relayKeyConfigured,
-      relayKeyMissingMessage,
+      requireRelayToken,
       runConversationQueue,
       updateConversation,
     ],
@@ -4567,8 +4558,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         toast.error("当前轮次正在处理，稍后再编辑");
         return;
       }
-      if (regenerate && !relayKeyConfigured) {
-        toast.error(relayKeyMissingMessage);
+      if (regenerate && !requireRelayToken(targetTurn.mode === "video" ? "video" : "image")) {
         return;
       }
       const mode = getComposerConversationMode("image", draft.referenceImages);
@@ -4727,8 +4717,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     [
       activeRelayTokenName,
       editingTurnDraft,
-      relayKeyConfigured,
-      relayKeyMissingMessage,
+      requireRelayToken,
       runConversationQueue,
       updateConversation,
     ],
@@ -4743,16 +4732,16 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       return;
     }
 
+    const videoMode = composerMode === "video";
+    if (!requireRelayToken(videoMode ? "video" : "image")) {
+      return;
+    }
+
     const prompt = imagePrompt.trim();
     if (!prompt) {
       toast.error("请输入提示词");
       return;
     }
-    if (!relayKeyConfigured) {
-      toast.error(relayKeyMissingMessage);
-      return;
-    }
-    const videoMode = composerMode === "video";
     const effectiveModel = videoMode
       ? (videoModelOptions.some((option) => option.value === videoModel) ? videoModel : videoModelOptions[0]?.value || "sora-2")
       : imageCreationModelOptions.some((option) => option.value === imageModel) ? imageModel : defaultImageModel;
@@ -5135,7 +5124,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                             {editingDraftSizePreviewLabel}
                           </span>
                         </div>
-                        <div className="grid grid-cols-5 gap-1.5" role="group" aria-label="编辑图片画幅比例">
+                        <div className="grid grid-cols-4 gap-1.5" role="group" aria-label="编辑图片画幅比例">
                           {editingDraftAspectRatioOptions.map((option) => {
                             const isAuto = option.value === "";
                             const isCustom = option.value === CUSTOM_IMAGE_ASPECT_RATIO;
@@ -5144,15 +5133,11 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                               : editingDraftEffectiveSizeSelection.mode === "ratio" &&
                                 editingTurnDraft.aspectRatio === option.value;
                             return (
-                              <button
+                              <ImageAspectRatioOptionButton
                                 key={option.value || "auto"}
-                                type="button"
-                                aria-pressed={active}
-                                className={cn(
-                                  "flex h-11 min-w-0 flex-col items-center justify-center gap-1 rounded-lg border border-[#e5e7eb] bg-[#f7f7f8] px-1 text-[10px] font-medium text-[#686b73] transition hover:border-[#cfd1d5] hover:bg-white hover:text-[#222222] dark:border-border dark:bg-muted/55 dark:text-muted-foreground dark:hover:bg-background dark:hover:text-foreground",
-                                  active &&
-                                    "border-[#bfd1ff] bg-[#eef4ff] text-[#1456f0] shadow-[inset_0_0_0_1px_rgba(20,86,240,0.08)] hover:border-[#9db9ff] hover:bg-[#eef4ff] hover:text-[#1456f0] dark:border-sky-900/80 dark:bg-sky-950/35 dark:text-sky-300",
-                                )}
+                                active={active}
+                                label={isAuto ? "自动" : isCustom ? "自定义" : option.value}
+                                ratio={isAuto || isCustom ? undefined : option.value}
                                 onClick={() =>
                                   setEditingTurnDraft((current) =>
                                     current
@@ -5164,14 +5149,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                                       : current,
                                   )
                                 }
-                              >
-                                {isAuto || isCustom ? (
-                                  <SlidersHorizontal className="size-3.5" />
-                                ) : (
-                                  <ImageAspectRatioGlyph ratio={option.value} />
-                                )}
-                                <span className="truncate">{isAuto ? "自动" : isCustom ? "自定义" : option.value}</span>
-                              </button>
+                              />
                             );
                           })}
                         </div>
@@ -5662,6 +5640,16 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         open={lightboxOpen}
         onOpenChange={setLightboxOpen}
         onIndexChange={setLightboxIndex}
+      />
+
+      <RelayTokenRequiredDialog
+        kind={relayTokenDialogKind || "image"}
+        open={relayTokenDialogKind !== null}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRelayTokenDialogKind(null);
+          }
+        }}
       />
 
       {publishImageTarget ? (

@@ -2,7 +2,7 @@ import { Minus, Plus, SlidersHorizontal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-import { ImageAspectRatioGlyph, ImageParameterLabel } from "@/app/image/components/image-parameter-ui";
+import { ImageAspectRatioOptionButton, ImageParameterLabel } from "@/app/image/components/image-parameter-ui";
 import { imageParameterChoiceClass } from "@/app/image/components/image-parameter-styles";
 import { defaultCanvasImageParameters } from "@/app/canvas/canvas-image-parameter-defaults";
 import { canvasFloatingPanelPlacement } from "@/app/canvas/canvas-floating-panel";
@@ -17,6 +17,7 @@ import {
   getImageSizeSelectionFromSize,
 } from "@/app/image/image-options";
 import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -147,10 +148,10 @@ export function CanvasImageParameterPopover({ node, imageModel, onChange }: { no
         </button>
       </span>
       {open && buttonRect && panelPlacement ? createPortal(
-        <div
+        <ScrollArea
           ref={panelRef}
           data-canvas-parameter-panel
-          className="fixed z-[1200] overflow-y-auto rounded-xl border border-border bg-popover p-3 text-popover-foreground shadow-[0_18px_54px_rgba(15,23,42,.18)]"
+          className="fixed z-[1200] rounded-xl border border-border bg-popover text-popover-foreground shadow-[0_18px_54px_rgba(15,23,42,.18)]"
           style={{
             left: panelPlacement.left,
             width: panelPlacement.width,
@@ -163,16 +164,16 @@ export function CanvasImageParameterPopover({ node, imageModel, onChange }: { no
           onMouseDown={(event) => event.stopPropagation()}
           onClick={(event) => event.stopPropagation()}
         >
-        <div className="space-y-3.5">
+        <div className="space-y-3.5 p-3 pr-4">
           {sizeSupported ? <section className="space-y-1.5">
             <div className="flex items-center justify-between gap-3">
               <ImageParameterLabel help="选择画幅比例，系统会自动换算为合法像素尺寸。">画幅比例</ImageParameterLabel>
               <span className="rounded-md bg-muted px-2 py-0.5 font-mono text-[11px] text-muted-foreground">{sizeLabel}</span>
             </div>
-            <div className="grid grid-cols-5 gap-1.5">
+            <div className="grid grid-cols-4 gap-1.5" role="group" aria-label="图片画幅比例">
               {aspectRatioOptions.map((option) => {
                 const active = option.value ? selectedSizeMode === "ratio" && selectedAspectRatio === option.value : selectedSizeMode === "auto";
-                return <button key={option.value || "auto"} type="button" className={cn("flex h-11 min-w-0 flex-col items-center justify-center gap-1 rounded-lg border border-border bg-muted/45 px-1 text-[10px] font-medium text-muted-foreground transition hover:bg-background hover:text-foreground", active && "border-[#bfd1ff] bg-[#eef4ff] text-[#1456f0]")} onClick={() => updateSize(option.value, option.value ? selectedResolution : "auto")}>{option.value ? <ImageAspectRatioGlyph ratio={option.value} /> : <SlidersHorizontal className="size-3.5" />}<span>{option.value || "自动"}</span></button>;
+                return <ImageAspectRatioOptionButton key={option.value || "auto"} active={active} label={option.value || "自动"} ratio={option.value || undefined} onClick={() => updateSize(option.value, option.value ? selectedResolution : "auto")} />;
               })}
             </div>
           </section> : null}
@@ -218,7 +219,7 @@ export function CanvasImageParameterPopover({ node, imageModel, onChange }: { no
             </div>
           </div> : null}
         </div>
-        </div>,
+        </ScrollArea>,
         document.body,
       ) : null}
     </>

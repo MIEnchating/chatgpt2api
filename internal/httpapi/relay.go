@@ -754,6 +754,9 @@ func (a *App) relayVideoTask(ctx context.Context, payload map[string]any) (map[s
 	}
 	taskID := firstNonEmpty(util.Clean(created["id"]), util.Clean(created["task_id"]))
 	if taskID == "" {
+		if message := videoUpstreamErrorMessage(created); message != "" {
+			return created, protocol.HTTPError{Status: http.StatusBadGateway, Message: message}
+		}
 		return created, protocol.HTTPError{Status: http.StatusBadGateway, Message: "视频上游没有返回任务 ID"}
 	}
 	interval := 2 * time.Second
@@ -913,12 +916,20 @@ func absoluteRelayURL(baseURL, value string) string {
 }
 
 func videoErrorMessage(state map[string]any) string {
-	if value, ok := state["error"].(map[string]any); ok {
-		if message := util.Clean(value["message"]); message != "" {
-			return message
-		}
+	return firstNonEmpty(videoUpstreamErrorMessage(state), "视频生成失败，请查看上游错误详情")
+}
+
+func videoUpstreamErrorMessage(state map[string]any) string {
+	if state == nil {
+		return ""
 	}
-	return firstNonEmpty(util.Clean(state["message"]), "视频生成失败，请查看上游错误详情")
+	return firstNonEmpty(
+		relayErrorMessageFromValue(state["error"]),
+		relayErrorMessageFromValue(state["detail"]),
+		relayErrorMessageFromValue(state["message"]),
+		relayErrorMessageFromValue(state["last_error"]),
+		relayErrorMessageFromValue(state["failure_reason"]),
+	)
 }
 
 func (a *App) relayJSONStream(ctx context.Context, pathValue, apiKey string, payload map[string]any) (map[string]any, *protocol.StreamResult, error) {

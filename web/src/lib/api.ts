@@ -209,8 +209,6 @@ export type SettingsConfig = {
   project_name?: string;
   site_icon_url?: string;
   relay_base_url?: string;
-  newapi_token_group?: string;
-  newapi_token_groups?: string[];
   image_models?: string[] | string;
   default_image_model?: string;
   video_models?: string[] | string;
@@ -236,12 +234,6 @@ export type SettingsConfig = {
   text_account_schedule_mode?: AccountScheduleMode | string;
   image_account_schedule_mode?: AccountScheduleMode | string;
   log_levels?: string[];
-  linuxdo_enabled?: boolean;
-  linuxdo_client_id?: string;
-  linuxdo_client_secret?: string;
-  linuxdo_client_secret_configured?: boolean;
-  linuxdo_redirect_url?: string;
-  linuxdo_frontend_redirect_url?: string;
   login_page_image_url?: string;
   login_page_image_mode?: LoginPageImageMode | string;
   login_page_image_zoom?: number | string;
@@ -586,19 +578,17 @@ export type ProfileRelayKeyStatus = {
   key_preview: string;
   group?: string;
   token_name?: string;
-  configured_group?: string;
   groups?: string[];
   token_names?: string[];
-  source?: "newapi" | string;
+  source?: "newapi" | "sub2api" | string;
   message?: string;
 };
 
 export type ProfileBalanceStatus = {
   has_balance: boolean;
-  source?: "newapi" | string;
+  source?: "newapi" | "sub2api" | string;
   token_group?: string;
   token_name?: string;
-  configured_group?: string;
   token_groups?: string[];
   token_names?: string[];
   token_message?: string;
@@ -620,7 +610,7 @@ export type UserKey = {
   role_id?: string;
   role_name?: string;
   kind?: "api_key";
-  provider?: "local" | "linuxdo" | "newapi" | string;
+  provider?: "local" | "newapi" | "sub2api" | string;
   owner_id?: string;
   owner_name?: string;
   enabled: boolean;
@@ -637,10 +627,9 @@ export type ManagedUser = {
   role: "user";
   role_id?: string;
   role_name?: string;
-  provider: "local" | "linuxdo" | "newapi" | string;
+  provider: "local" | "newapi" | "sub2api" | string;
   owner_id?: string;
   owner_name?: string;
-  linuxdo_level?: string;
   enabled: boolean;
   has_api_key: boolean;
   has_session: boolean;
@@ -671,7 +660,7 @@ export type ManagedUsersQuery = {
   page?: number | string;
   page_size?: number | string;
   search?: string;
-  provider?: "all" | "local" | "linuxdo" | "newapi" | string;
+  provider?: "all" | "local" | "newapi" | "sub2api" | string;
   status?: "all" | "enabled" | "disabled" | string;
   sort_by?: string;
   sort_order?: "asc" | "desc" | string;
@@ -725,10 +714,8 @@ export async function fetchProfile() {
   return httpRequest<LoginResponse>("/api/profile");
 }
 
-export const PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY = "chatgpt2api:profile_relay_token_name";
+export { PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY } from "@/lib/relay-token-selection";
 export const PROFILE_RELAY_TOKEN_NAME_CHANGED_EVENT = "chatgpt2api:profile-relay-token-name-changed";
-export const PROFILE_RELAY_TOKEN_GROUP_STORAGE_KEY = "chatgpt2api:profile_relay_token_group";
-export const PROFILE_RELAY_TOKEN_GROUP_CHANGED_EVENT = "chatgpt2api:profile-relay-token-group-changed";
 
 export async function fetchProfileRelayKey(group?: string, tokenName?: string) {
   const params = new URLSearchParams();

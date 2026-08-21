@@ -1,6 +1,6 @@
 services:
   chatgpt2api:
-    image: ${CHATGPT2API_IMAGE:-mienvirtuoso/chatgpt2api:latest}
+    image: ${DOCKER_IMAGE:-${CHATGPT2API_IMAGE:-mienvirtuoso/chatgpt2api:latest}}
     container_name: chatgpt2api
     restart: unless-stopped
     env_file:
@@ -14,4 +14,4 @@ services:
 networks:
   proxy_network:
     external: true
-    name: ${CHATGPT2API_DOCKER_NETWORK:-newapi_default}
+    name: ${DOCKER_NETWORK:-${CHATGPT2API_DOCKER_NETWORK:-newapi_default}}

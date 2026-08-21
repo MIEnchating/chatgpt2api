@@ -3,6 +3,7 @@ package storage
 import (
 	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -354,7 +355,7 @@ func TestDatabaseBackendDeletesLogsBeforeDay(t *testing.T) {
 func TestNewBackendFromEnvDefaultsToSQLiteProjectDatabase(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("STORAGE_BACKEND", "")
-	t.Setenv("DATABASE_URL", "")
+	t.Setenv("STORAGE_DATABASE_URL", "")
 
 	backend, err := NewBackendFromEnv(dir)
 	if err != nil {
@@ -374,9 +375,50 @@ func TestNewBackendFromEnvDefaultsToSQLiteProjectDatabase(t *testing.T) {
 	}
 }
 
+func TestNewBackendFromEnvReadsLegacyStorageNames(t *testing.T) {
+	dir := t.TempDir()
+	unsetStorageEnv(t, "STORAGE_BACKEND")
+	unsetStorageEnv(t, "STORAGE_DATABASE_URL")
+	t.Setenv("CHATGPT2API_STORAGE_BACKEND", "sqlite")
+	databasePath := filepath.Join(dir, "legacy.db")
+	t.Setenv("CHATGPT2API_STORAGE_DATABASE_URL", "sqlite:///"+filepath.ToSlash(databasePath))
+
+	backend, err := NewBackendFromEnv(dir)
+	if err != nil {
+		t.Fatalf("NewBackendFromEnv() error = %v", err)
+	}
+	database, ok := backend.(*DatabaseBackend)
+	if !ok {
+		t.Fatalf("NewBackendFromEnv() returned %T, want *DatabaseBackend", backend)
+	}
+	defer database.db.Close()
+	if database.driver != "sqlite" || database.dsn != filepath.ToSlash(databasePath) {
+		t.Fatalf("database = (%q, %q), want legacy SQLite path", database.driver, database.dsn)
+	}
+}
+
+func TestNewBackendFromEnvPreservesLegacyDatabaseURLMeaning(t *testing.T) {
+	dir := t.TempDir()
+	databasePath := filepath.Join(dir, "legacy-layout.db")
+	t.Setenv("STORAGE_BACKEND", "sqlite")
+	unsetStorageEnv(t, "STORAGE_DATABASE_URL")
+	t.Setenv("DATABASE_URL", "sqlite:///"+filepath.ToSlash(databasePath))
+	t.Setenv("CHATGPT2API_NEWAPI_DATABASE_URL", "postgresql://upstream.example/newapi")
+
+	backend, err := NewBackendFromEnv(dir)
+	if err != nil {
+		t.Fatalf("NewBackendFromEnv() error = %v", err)
+	}
+	database := backend.(*DatabaseBackend)
+	defer database.db.Close()
+	if database.dsn != filepath.ToSlash(databasePath) {
+		t.Fatalf("database dsn = %q, want legacy DATABASE_URL", database.dsn)
+	}
+}
+
 func TestNewBackendFromEnvRejectsJSONBackend(t *testing.T) {
 	t.Setenv("STORAGE_BACKEND", "json")
-	t.Setenv("DATABASE_URL", "")
+	t.Setenv("STORAGE_DATABASE_URL", "")
 
 	_, err := NewBackendFromEnv(t.TempDir())
 	if err == nil {
@@ -391,11 +433,11 @@ func TestNewBackendFromEnvRequiresDatabaseURLForRemoteBackend(t *testing.T) {
 	for _, backendType := range []string{"postgres", "postgresql", "mysql", "database"} {
 		t.Run(backendType, func(t *testing.T) {
 			t.Setenv("STORAGE_BACKEND", backendType)
-			t.Setenv("DATABASE_URL", "")
+			t.Setenv("STORAGE_DATABASE_URL", "")
 
 			_, err := NewBackendFromEnv(t.TempDir())
-			if err == nil || !strings.Contains(err.Error(), "DATABASE_URL is required") {
-				t.Fatalf("NewBackendFromEnv() error = %v, want missing DATABASE_URL error", err)
+			if err == nil || !strings.Contains(err.Error(), "STORAGE_DATABASE_URL is required") {
+				t.Fatalf("NewBackendFromEnv() error = %v, want missing STORAGE_DATABASE_URL error", err)
 			}
 		})
 	}
@@ -417,6 +459,21 @@ func TestParseDatabaseURLAcceptsCaseInsensitiveSQLiteScheme(t *testing.T) {
 	if driver != "sqlite" || dsn != "/app/data/chatgpt2api.db" {
 		t.Fatalf("ParseDatabaseURL() = (%q, %q), want sqlite absolute path", driver, dsn)
 	}
+}
+
+func unsetStorageEnv(t *testing.T, key string) {
+	t.Helper()
+	original, existed := os.LookupEnv(key)
+	if err := os.Unsetenv(key); err != nil {
+		t.Fatalf("Unsetenv(%s): %v", key, err)
+	}
+	t.Cleanup(func() {
+		if existed {
+			_ = os.Setenv(key, original)
+		} else {
+			_ = os.Unsetenv(key)
+		}
+	})
 }
 
 func TestParseDatabaseURLNormalizesPostgreSQLScheme(t *testing.T) {

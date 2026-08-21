@@ -11,14 +11,14 @@ import (
 
 func TestStoreImageObjectStorageConfigDoesNotExposeCredentials(t *testing.T) {
 	root := t.TempDir()
-	t.Setenv("CHATGPT2API_ROOT", root)
-	t.Setenv("CHATGPT2API_IMAGE_STORAGE_BACKEND", "s3")
-	t.Setenv("CHATGPT2API_S3_ENDPOINT", "https://s3.example.test")
-	t.Setenv("CHATGPT2API_S3_BUCKET", "private-images")
-	t.Setenv("CHATGPT2API_S3_PREFIX", "cloud-cotton/images")
-	t.Setenv("CHATGPT2API_S3_ACCESS_KEY", "test-access-key")
-	t.Setenv("CHATGPT2API_S3_SECRET_KEY", "test-secret-key")
-	t.Setenv("CHATGPT2API_S3_SESSION_TOKEN", "test-session-token")
+	t.Setenv("ROOT_DIR", root)
+	t.Setenv("IMAGE_STORAGE_BACKEND", "s3")
+	t.Setenv("S3_ENDPOINT", "https://s3.example.test")
+	t.Setenv("S3_BUCKET", "private-images")
+	t.Setenv("S3_PREFIX", "cloud-cotton/images")
+	t.Setenv("S3_ACCESS_KEY", "test-access-key")
+	t.Setenv("S3_SECRET_KEY", "test-secret-key")
+	t.Setenv("S3_SESSION_TOKEN", "test-session-token")
 
 	store, err := NewStore()
 	if err != nil {
@@ -72,11 +72,123 @@ func TestStoreImageObjectStorageConfigDoesNotExposeCredentials(t *testing.T) {
 	}
 }
 
+func TestStoreReadsLegacyEnvironmentNamesWhenNewNamesAreUnset(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("ROOT_DIR", root)
+	for _, key := range []string{
+		"ADMIN_USERNAME", "ADMIN_PASSWORD", "IMAGE_BASE_URL", "API_BASE_URL", "IMAGE_MODELS",
+		"CREATION_TASK_TIMEOUT_SECONDS", "S3_ENDPOINT", "S3_ACCESS_KEY", "S3_SECRET_KEY",
+	} {
+		unsetEnv(t, key)
+	}
+	t.Setenv("CHATGPT2API_ADMIN_USERNAME", "legacy-admin")
+	t.Setenv("CHATGPT2API_ADMIN_PASSWORD", "legacy-password")
+	t.Setenv("CHATGPT2API_BASE_URL", "https://legacy-images.example")
+	t.Setenv("CHATGPT2API_RELAY_BASE_URL", "https://legacy-api.example")
+	t.Setenv("CHATGPT2API_IMAGE_MODELS", "legacy-image,legacy-image-2")
+	t.Setenv("CHATGPT2API_IMAGE_TASK_TIMEOUT_SECONDS", "420")
+	t.Setenv("CHATGPT2API_S3_ENDPOINT", "https://legacy-s3.example")
+	t.Setenv("CHATGPT2API_S3_ACCESS_KEY", "legacy-access")
+	t.Setenv("CHATGPT2API_S3_SECRET_KEY", "legacy-secret")
+
+	store, err := NewStore()
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	if store.AdminUsername() != "legacy-admin" || store.AdminPassword() != "legacy-password" {
+		t.Fatalf("legacy admin settings were not read: %q / %q", store.AdminUsername(), store.AdminPassword())
+	}
+	if store.BaseURL() != "https://legacy-images.example" || store.RelayBaseURL() != "https://legacy-api.example" {
+		t.Fatalf("legacy URLs were not read: %q / %q", store.BaseURL(), store.RelayBaseURL())
+	}
+	if got := strings.Join(store.ImageModels(), ","); got != "legacy-image,legacy-image-2" {
+		t.Fatalf("legacy image models = %q", got)
+	}
+	if store.ImageTaskTimeoutSeconds() != 420 || store.S3Endpoint() != "https://legacy-s3.example" {
+		t.Fatalf("legacy runtime settings were not read")
+	}
+	if store.S3AccessKey() != "legacy-access" || store.S3SecretKey() != "legacy-secret" {
+		t.Fatalf("legacy S3 credentials were not read")
+	}
+}
+
+func TestStorePrefersNewEnvironmentNameOverLegacyName(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("ROOT_DIR", root)
+	t.Setenv("IMAGE_BASE_URL", "https://new.example")
+	t.Setenv("CHATGPT2API_BASE_URL", "https://legacy.example")
+	store, err := NewStore()
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	if store.BaseURL() != "https://new.example" {
+		t.Fatalf("BaseURL() = %q, want new value", store.BaseURL())
+	}
+}
+
+func TestStorePrefersNewProcessEnvironmentOverLegacyEnvFile(t *testing.T) {
+	root := t.TempDir()
+	unsetEnv(t, "CHATGPT2API_BASE_URL")
+	if err := os.WriteFile(filepath.Join(root, ".env"), []byte("CHATGPT2API_BASE_URL=https://legacy-file.example\n"), 0o644); err != nil {
+		t.Fatalf("write .env: %v", err)
+	}
+	t.Setenv("ROOT_DIR", root)
+	t.Setenv("IMAGE_BASE_URL", "https://new-process.example")
+	store, err := NewStore()
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	if store.BaseURL() != "https://new-process.example" {
+		t.Fatalf("BaseURL() = %q, want new process value", store.BaseURL())
+	}
+}
+
+func TestStoreMigratesLegacyEnvFileSettingsWhenSaved(t *testing.T) {
+	root := t.TempDir()
+	envText := strings.Join([]string{
+		"CHATGPT2API_BASE_URL=https://legacy.example",
+		"CHATGPT2API_IMAGE_MODELS=legacy-image",
+		"CHATGPT2API_IMAGE_TASK_TIMEOUT_SECONDS=420",
+		"",
+	}, "\n")
+	if err := os.WriteFile(filepath.Join(root, ".env"), []byte(envText), 0o644); err != nil {
+		t.Fatalf("write .env: %v", err)
+	}
+	t.Setenv("ROOT_DIR", root)
+	for _, key := range []string{
+		"IMAGE_BASE_URL", "IMAGE_MODELS", "CREATION_TASK_TIMEOUT_SECONDS",
+		"CHATGPT2API_BASE_URL", "CHATGPT2API_IMAGE_MODELS", "CHATGPT2API_IMAGE_TASK_TIMEOUT_SECONDS",
+	} {
+		unsetEnv(t, key)
+	}
+	store, err := NewStore()
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	if _, err := store.Update(map[string]any{"base_url": "https://saved.example"}); err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(root, ".env"))
+	if err != nil {
+		t.Fatalf("read .env: %v", err)
+	}
+	text := string(data)
+	for _, want := range []string{
+		"IMAGE_BASE_URL=https://saved.example",
+		"IMAGE_MODELS=legacy-image",
+		"CREATION_TASK_TIMEOUT_SECONDS=420",
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("migrated .env missing %q:\n%s", want, text)
+		}
+	}
+}
+
 func TestStoreRejectsInvalidImageObjectStorageSettings(t *testing.T) {
 	root := t.TempDir()
-	t.Setenv("CHATGPT2API_ROOT", root)
-	t.Setenv("CHATGPT2API_S3_ACCESS_KEY", "access")
-	t.Setenv("CHATGPT2API_S3_SECRET_KEY", "secret")
+	t.Setenv("ROOT_DIR", root)
+	t.Setenv("S3_ACCESS_KEY", "access")
+	t.Setenv("S3_SECRET_KEY", "secret")
 	store, err := NewStore()
 	if err != nil {
 		t.Fatalf("NewStore() error = %v", err)
@@ -95,8 +207,8 @@ func TestStoreRejectsInvalidImageObjectStorageSettings(t *testing.T) {
 
 func TestStoreImageStorageBackendDefaultsToLocal(t *testing.T) {
 	root := t.TempDir()
-	t.Setenv("CHATGPT2API_ROOT", root)
-	unsetEnv(t, "CHATGPT2API_IMAGE_STORAGE_BACKEND")
+	t.Setenv("ROOT_DIR", root)
+	unsetEnv(t, "IMAGE_STORAGE_BACKEND")
 	store, err := NewStore()
 	if err != nil {
 		t.Fatalf("NewStore() error = %v", err)
@@ -108,8 +220,8 @@ func TestStoreImageStorageBackendDefaultsToLocal(t *testing.T) {
 
 func TestStoreDefaultImageModelsIncludeProviderRoutes(t *testing.T) {
 	root := t.TempDir()
-	t.Setenv("CHATGPT2API_ROOT", root)
-	unsetEnv(t, "CHATGPT2API_IMAGE_MODELS")
+	t.Setenv("ROOT_DIR", root)
+	unsetEnv(t, "IMAGE_MODELS")
 	store, err := NewStore()
 	if err != nil {
 		t.Fatalf("NewStore() error = %v", err)
@@ -126,25 +238,23 @@ func TestStoreDefaultImageModelsIncludeProviderRoutes(t *testing.T) {
 
 func TestStoreUpdatePersistsRuntimeSettings(t *testing.T) {
 	root := t.TempDir()
-	t.Setenv("CHATGPT2API_ROOT", root)
-	unsetEnv(t, "CHATGPT2API_BASE_URL")
-	unsetEnv(t, "CHATGPT2API_RELAY_BASE_URL")
-	unsetEnv(t, "CHATGPT2API_NEWAPI_TOKEN_GROUP")
-	unsetEnv(t, "CHATGPT2API_PROXY")
-	unsetEnv(t, "CHATGPT2API_IMAGE_MODELS")
-	unsetEnv(t, "CHATGPT2API_CHAT_MODELS")
-	unsetEnv(t, "CHATGPT2API_REFRESH_ACCOUNT_INTERVAL_MINUTE")
-	unsetEnv(t, "CHATGPT2API_IMAGE_TASK_TIMEOUT_SECONDS")
-	unsetEnv(t, "CHATGPT2API_USER_DEFAULT_CONCURRENT_LIMIT")
-	unsetEnv(t, "CHATGPT2API_USER_DEFAULT_RPM_LIMIT")
-	unsetEnv(t, "CHATGPT2API_IMAGE_RETENTION_DAYS")
-	unsetEnv(t, "CHATGPT2API_IMAGE_STORAGE_LIMIT_MB")
-	unsetEnv(t, "CHATGPT2API_LOG_RETENTION_DAYS")
-	unsetEnv(t, "CHATGPT2API_DEFAULT_LOG_VIEW")
-	unsetEnv(t, "CHATGPT2API_AUTO_REMOVE_INVALID_ACCOUNTS")
-	unsetEnv(t, "CHATGPT2API_AUTO_REMOVE_RATE_LIMITED_ACCOUNTS")
-	unsetEnv(t, "CHATGPT2API_LOG_LEVELS")
-	unsetLinuxDoEnv(t)
+	t.Setenv("ROOT_DIR", root)
+	unsetEnv(t, "IMAGE_BASE_URL")
+	unsetEnv(t, "API_BASE_URL")
+	unsetEnv(t, "PROXY")
+	unsetEnv(t, "IMAGE_MODELS")
+	unsetEnv(t, "CHAT_MODELS")
+	unsetEnv(t, "REFRESH_ACCOUNT_INTERVAL_MINUTE")
+	unsetEnv(t, "CREATION_TASK_TIMEOUT_SECONDS")
+	unsetEnv(t, "USER_DEFAULT_CONCURRENT_LIMIT")
+	unsetEnv(t, "USER_DEFAULT_RPM_LIMIT")
+	unsetEnv(t, "IMAGE_RETENTION_DAYS")
+	unsetEnv(t, "IMAGE_STORAGE_LIMIT_MB")
+	unsetEnv(t, "LOG_RETENTION_DAYS")
+	unsetEnv(t, "DEFAULT_LOG_VIEW")
+	unsetEnv(t, "AUTO_REMOVE_INVALID_ACCOUNTS")
+	unsetEnv(t, "AUTO_REMOVE_RATE_LIMITED_ACCOUNTS")
+	unsetEnv(t, "LOG_LEVELS")
 
 	store, err := NewStore()
 	if err != nil {
@@ -164,7 +274,6 @@ func TestStoreUpdatePersistsRuntimeSettings(t *testing.T) {
 		"refresh_account_interval_minute": 7,
 		"image_concurrent_limit":          3,
 		"image_task_timeout_seconds":      420,
-		"newapi_token_group":              "draw",
 		"user_default_concurrent_limit":   2,
 		"user_default_rpm_limit":          30,
 		"image_retention_days":            14,
@@ -188,7 +297,6 @@ func TestStoreUpdatePersistsRuntimeSettings(t *testing.T) {
 	if _, ok := got["default_chat_model"]; ok {
 		t.Fatalf("default_chat_model leaked in config response: %#v", got)
 	}
-	assertConfigValue(t, got, "newapi_token_group", "draw")
 	if _, ok := got["image_concurrent_limit"]; ok {
 		t.Fatalf("removed image_concurrent_limit leaked in config response: %#v", got)
 	}
@@ -199,34 +307,80 @@ func TestStoreUpdatePersistsRuntimeSettings(t *testing.T) {
 	}
 	envText := string(envData)
 	for _, want := range []string{
-		"CHATGPT2API_BASE_URL=https://example.test/root/",
-		"CHATGPT2API_PROXY=http://127.0.0.1:8080",
-		"CHATGPT2API_IMAGE_MODELS=gpt-image-2",
-		"CHATGPT2API_REFRESH_ACCOUNT_INTERVAL_MINUTE=7",
-		"CHATGPT2API_IMAGE_TASK_TIMEOUT_SECONDS=420",
-		"CHATGPT2API_NEWAPI_TOKEN_GROUP=draw",
-		"CHATGPT2API_USER_DEFAULT_CONCURRENT_LIMIT=2",
-		"CHATGPT2API_USER_DEFAULT_RPM_LIMIT=30",
-		"CHATGPT2API_IMAGE_RETENTION_DAYS=14",
-		"CHATGPT2API_IMAGE_STORAGE_LIMIT_MB=512",
-		"CHATGPT2API_LOG_RETENTION_DAYS=21",
-		"CHATGPT2API_LOG_LEVELS=debug,error",
+		"IMAGE_BASE_URL=https://example.test/root/",
+		"PROXY=http://127.0.0.1:8080",
+		"IMAGE_MODELS=gpt-image-2",
+		"REFRESH_ACCOUNT_INTERVAL_MINUTE=7",
+		"CREATION_TASK_TIMEOUT_SECONDS=420",
+		"USER_DEFAULT_CONCURRENT_LIMIT=2",
+		"USER_DEFAULT_RPM_LIMIT=30",
+		"IMAGE_RETENTION_DAYS=14",
+		"IMAGE_STORAGE_LIMIT_MB=512",
+		"LOG_RETENTION_DAYS=21",
+		"LOG_LEVELS=debug,error",
 	} {
 		if !strings.Contains(envText, want) {
 			t.Fatalf(".env missing %q in:\n%s", want, envText)
 		}
 	}
-	if strings.Contains(envText, "CHATGPT2API_IMAGE_CONCURRENT_LIMIT") {
+	if strings.Contains(envText, "IMAGE_CONCURRENT_LIMIT") {
 		t.Fatalf(".env persisted removed image concurrent limit:\n%s", envText)
+	}
+}
+
+func TestStoreReadsRelayDatabaseConfig(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("ROOT_DIR", root)
+	t.Setenv("DATABASE_URL", "postgresql://relay.example/sub2api")
+	t.Setenv("DATABASE_TYPE", "sub2api")
+	store, err := NewStore()
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	if got := store.RelayDatabaseURL(); got != "postgresql://relay.example/sub2api" {
+		t.Fatalf("RelayDatabaseURL() = %q", got)
+	}
+	if got := store.RelayDatabaseType(); got != "sub2api" {
+		t.Fatalf("RelayDatabaseType() = %q", got)
+	}
+}
+
+func TestStorePreservesLegacyUpstreamAndStorageDatabaseLayout(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("ROOT_DIR", root)
+	t.Setenv("STORAGE_BACKEND", "postgres")
+	unsetEnv(t, "STORAGE_DATABASE_URL")
+	t.Setenv("DATABASE_URL", "postgresql://business.example/chatgpt2api")
+	t.Setenv("CHATGPT2API_NEWAPI_DATABASE_URL", "postgresql://upstream.example/newapi")
+	store, err := NewStore()
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	if got := store.RelayDatabaseURL(); got != "postgresql://upstream.example/newapi" {
+		t.Fatalf("RelayDatabaseURL() = %q, want legacy upstream database", got)
+	}
+}
+
+func TestStoreUsesNewDatabaseURLAfterStorageDatabaseMigration(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("ROOT_DIR", root)
+	t.Setenv("DATABASE_URL", "postgresql://new-upstream.example/newapi")
+	t.Setenv("STORAGE_DATABASE_URL", "postgresql://business.example/chatgpt2api")
+	t.Setenv("CHATGPT2API_NEWAPI_DATABASE_URL", "postgresql://legacy-upstream.example/newapi")
+	store, err := NewStore()
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	if got := store.RelayDatabaseURL(); got != "postgresql://new-upstream.example/newapi" {
+		t.Fatalf("RelayDatabaseURL() = %q, want new upstream database", got)
 	}
 }
 
 func TestStoreNormalizesAccountScheduleModes(t *testing.T) {
 	root := t.TempDir()
-	t.Setenv("CHATGPT2API_ROOT", root)
-	unsetEnv(t, "CHATGPT2API_TEXT_ACCOUNT_SCHEDULE_MODE")
-	unsetEnv(t, "CHATGPT2API_IMAGE_ACCOUNT_SCHEDULE_MODE")
-	unsetLinuxDoEnv(t)
+	t.Setenv("ROOT_DIR", root)
+	unsetEnv(t, "TEXT_ACCOUNT_SCHEDULE_MODE")
+	unsetEnv(t, "IMAGE_ACCOUNT_SCHEDULE_MODE")
 
 	store, err := NewStore()
 	if err != nil {
@@ -261,8 +415,8 @@ func TestStoreNormalizesAccountScheduleModes(t *testing.T) {
 	}
 	envText := string(envData)
 	for _, want := range []string{
-		"CHATGPT2API_TEXT_ACCOUNT_SCHEDULE_MODE=fill_first",
-		"CHATGPT2API_IMAGE_ACCOUNT_SCHEDULE_MODE=load_balance",
+		"TEXT_ACCOUNT_SCHEDULE_MODE=fill_first",
+		"IMAGE_ACCOUNT_SCHEDULE_MODE=load_balance",
 	} {
 		if !strings.Contains(envText, want) {
 			t.Fatalf(".env missing %q in:\n%s", want, envText)
@@ -272,9 +426,8 @@ func TestStoreNormalizesAccountScheduleModes(t *testing.T) {
 
 func TestStoreNormalizesUnsupportedLoginPageImageMode(t *testing.T) {
 	root := t.TempDir()
-	t.Setenv("CHATGPT2API_ROOT", root)
-	unsetEnv(t, "CHATGPT2API_LOGIN_PAGE_IMAGE_MODE")
-	unsetLinuxDoEnv(t)
+	t.Setenv("ROOT_DIR", root)
+	unsetEnv(t, "LOGIN_PAGE_IMAGE_MODE")
 
 	store, err := NewStore()
 	if err != nil {
@@ -293,19 +446,18 @@ func TestStoreNormalizesUnsupportedLoginPageImageMode(t *testing.T) {
 		t.Fatalf("read .env: %v", err)
 	}
 	envText := string(envData)
-	if strings.Contains(envText, "CHATGPT2API_LOGIN_PAGE_IMAGE_MODE=repeat") {
+	if strings.Contains(envText, "LOGIN_PAGE_IMAGE_MODE=repeat") {
 		t.Fatalf(".env persisted unsupported login page image mode:\n%s", envText)
 	}
-	if !strings.Contains(envText, "CHATGPT2API_LOGIN_PAGE_IMAGE_MODE=contain") {
+	if !strings.Contains(envText, "LOGIN_PAGE_IMAGE_MODE=contain") {
 		t.Fatalf(".env missing normalized login page image mode:\n%s", envText)
 	}
 }
 
 func TestStoreNormalizesImageTaskTimeoutSeconds(t *testing.T) {
 	root := t.TempDir()
-	t.Setenv("CHATGPT2API_ROOT", root)
-	unsetEnv(t, "CHATGPT2API_IMAGE_TASK_TIMEOUT_SECONDS")
-	unsetLinuxDoEnv(t)
+	t.Setenv("ROOT_DIR", root)
+	unsetEnv(t, "CREATION_TASK_TIMEOUT_SECONDS")
 
 	store, err := NewStore()
 	if err != nil {
@@ -340,127 +492,39 @@ func TestStoreNormalizesImageTaskTimeoutSeconds(t *testing.T) {
 	}
 }
 
-func TestStoreUpdatePersistsLinuxDoSettingsWithoutLeakingSecret(t *testing.T) {
-	root := t.TempDir()
-	t.Setenv("CHATGPT2API_ROOT", root)
-	unsetLinuxDoEnv(t)
-
-	store, err := NewStore()
-	if err != nil {
-		t.Fatalf("NewStore() error = %v", err)
-	}
-
-	got, err := store.Update(map[string]any{
-		"linuxdo_enabled":               true,
-		"linuxdo_client_id":             "client-id",
-		"linuxdo_client_secret":         "client-secret",
-		"linuxdo_redirect_url":          "https://example.test/auth/linuxdo/oauth/callback",
-		"linuxdo_frontend_redirect_url": "http://127.0.0.1:5173/auth/linuxdo/callback",
-	})
-	if err != nil {
-		t.Fatalf("Update() error = %v", err)
-	}
-
-	assertConfigValue(t, got, "linuxdo_enabled", true)
-	assertConfigValue(t, got, "linuxdo_client_id", "client-id")
-	assertConfigValue(t, got, "linuxdo_client_secret_configured", true)
-	assertConfigValue(t, got, "linuxdo_redirect_url", "https://example.test/auth/linuxdo/oauth/callback")
-	assertConfigValue(t, got, "linuxdo_frontend_redirect_url", "http://127.0.0.1:5173/auth/linuxdo/callback")
-	if _, ok := got["linuxdo_client_secret"]; ok {
-		t.Fatalf("Get() leaked linuxdo_client_secret: %#v", got)
-	}
-	if !store.LinuxDoOAuth().Ready() {
-		t.Fatalf("LinuxDoOAuth() should be ready: %#v", store.LinuxDoOAuth())
-	}
-
-	envData, err := os.ReadFile(filepath.Join(root, ".env"))
-	if err != nil {
-		t.Fatalf("read .env: %v", err)
-	}
-	envText := string(envData)
-	for _, want := range []string{
-		"CHATGPT2API_LINUXDO_ENABLED=true",
-		"CHATGPT2API_LINUXDO_CLIENT_ID=client-id",
-		"CHATGPT2API_LINUXDO_CLIENT_SECRET=client-secret",
-		"CHATGPT2API_LINUXDO_FRONTEND_REDIRECT_URL=http://127.0.0.1:5173/auth/linuxdo/callback",
-		"CHATGPT2API_LINUXDO_REDIRECT_URL=https://example.test/auth/linuxdo/oauth/callback",
-	} {
-		if !strings.Contains(envText, want) {
-			t.Fatalf(".env missing %q in:\n%s", want, envText)
-		}
-	}
-
-	got, err = store.Update(map[string]any{
-		"linuxdo_enabled":               true,
-		"linuxdo_client_id":             "client-id-next",
-		"linuxdo_client_secret":         "",
-		"linuxdo_redirect_url":          "https://example.test/auth/linuxdo/oauth/callback",
-		"linuxdo_frontend_redirect_url": "/auth/linuxdo/callback",
-	})
-	if err != nil {
-		t.Fatalf("Update() with blank secret error = %v", err)
-	}
-	assertConfigValue(t, got, "linuxdo_client_id", "client-id-next")
-	assertConfigValue(t, got, "linuxdo_client_secret_configured", true)
-	assertConfigValue(t, got, "linuxdo_frontend_redirect_url", "/auth/linuxdo/callback")
-	if store.LinuxDoOAuth().ClientSecret != "client-secret" {
-		t.Fatalf("blank secret update should preserve existing secret")
-	}
-}
-
-func TestStoreUpdateRejectsIncompleteLinuxDoSettings(t *testing.T) {
-	root := t.TempDir()
-	t.Setenv("CHATGPT2API_ROOT", root)
-	unsetLinuxDoEnv(t)
-
-	store, err := NewStore()
-	if err != nil {
-		t.Fatalf("NewStore() error = %v", err)
-	}
-
-	_, err = store.Update(map[string]any{
-		"linuxdo_enabled":      true,
-		"linuxdo_client_id":    "client-id",
-		"linuxdo_redirect_url": "https://example.test/auth/linuxdo/oauth/callback",
-	})
-	if err == nil || !strings.Contains(err.Error(), "Client Secret") {
-		t.Fatalf("Update() error = %v, want missing secret", err)
-	}
-}
-
 func TestStoreUpdateRefreshesEnvFileBackedRuntimeSettings(t *testing.T) {
 	root := t.TempDir()
 	envText := strings.Join([]string{
-		"CHATGPT2API_BASE_URL=https://old.example/root",
-		"CHATGPT2API_PROXY=http://127.0.0.1:8080",
-		"CHATGPT2API_REFRESH_ACCOUNT_INTERVAL_MINUTE=5",
-		"CHATGPT2API_IMAGE_TASK_TIMEOUT_SECONDS=300",
-		"CHATGPT2API_USER_DEFAULT_CONCURRENT_LIMIT=2",
-		"CHATGPT2API_USER_DEFAULT_RPM_LIMIT=30",
-		"CHATGPT2API_IMAGE_RETENTION_DAYS=30",
-		"CHATGPT2API_IMAGE_STORAGE_LIMIT_MB=2048",
-		"CHATGPT2API_LOG_RETENTION_DAYS=7",
-		"CHATGPT2API_AUTO_REMOVE_INVALID_ACCOUNTS=true",
-		"CHATGPT2API_AUTO_REMOVE_RATE_LIMITED_ACCOUNTS=false",
-		"CHATGPT2API_LOG_LEVELS=warning,error",
+		"IMAGE_BASE_URL=https://old.example/root",
+		"PROXY=http://127.0.0.1:8080",
+		"REFRESH_ACCOUNT_INTERVAL_MINUTE=5",
+		"CREATION_TASK_TIMEOUT_SECONDS=300",
+		"USER_DEFAULT_CONCURRENT_LIMIT=2",
+		"USER_DEFAULT_RPM_LIMIT=30",
+		"IMAGE_RETENTION_DAYS=30",
+		"IMAGE_STORAGE_LIMIT_MB=2048",
+		"LOG_RETENTION_DAYS=7",
+		"AUTO_REMOVE_INVALID_ACCOUNTS=true",
+		"AUTO_REMOVE_RATE_LIMITED_ACCOUNTS=false",
+		"LOG_LEVELS=warning,error",
 		"",
 	}, "\n")
 	if err := os.WriteFile(filepath.Join(root, ".env"), []byte(envText), 0o644); err != nil {
 		t.Fatalf("write .env: %v", err)
 	}
-	t.Setenv("CHATGPT2API_ROOT", root)
-	t.Setenv("CHATGPT2API_BASE_URL", "https://old.example/root")
-	t.Setenv("CHATGPT2API_PROXY", "http://127.0.0.1:8080")
-	t.Setenv("CHATGPT2API_REFRESH_ACCOUNT_INTERVAL_MINUTE", "5")
-	t.Setenv("CHATGPT2API_IMAGE_TASK_TIMEOUT_SECONDS", "300")
-	t.Setenv("CHATGPT2API_USER_DEFAULT_CONCURRENT_LIMIT", "2")
-	t.Setenv("CHATGPT2API_USER_DEFAULT_RPM_LIMIT", "30")
-	t.Setenv("CHATGPT2API_IMAGE_RETENTION_DAYS", "30")
-	t.Setenv("CHATGPT2API_IMAGE_STORAGE_LIMIT_MB", "2048")
-	t.Setenv("CHATGPT2API_LOG_RETENTION_DAYS", "7")
-	t.Setenv("CHATGPT2API_AUTO_REMOVE_INVALID_ACCOUNTS", "true")
-	t.Setenv("CHATGPT2API_AUTO_REMOVE_RATE_LIMITED_ACCOUNTS", "false")
-	t.Setenv("CHATGPT2API_LOG_LEVELS", "warning,error")
+	t.Setenv("ROOT_DIR", root)
+	t.Setenv("IMAGE_BASE_URL", "https://old.example/root")
+	t.Setenv("PROXY", "http://127.0.0.1:8080")
+	t.Setenv("REFRESH_ACCOUNT_INTERVAL_MINUTE", "5")
+	t.Setenv("CREATION_TASK_TIMEOUT_SECONDS", "300")
+	t.Setenv("USER_DEFAULT_CONCURRENT_LIMIT", "2")
+	t.Setenv("USER_DEFAULT_RPM_LIMIT", "30")
+	t.Setenv("IMAGE_RETENTION_DAYS", "30")
+	t.Setenv("IMAGE_STORAGE_LIMIT_MB", "2048")
+	t.Setenv("LOG_RETENTION_DAYS", "7")
+	t.Setenv("AUTO_REMOVE_INVALID_ACCOUNTS", "true")
+	t.Setenv("AUTO_REMOVE_RATE_LIMITED_ACCOUNTS", "false")
+	t.Setenv("LOG_LEVELS", "warning,error")
 
 	store, err := NewStore()
 	if err != nil {
@@ -503,18 +567,18 @@ func TestStoreUpdateRefreshesEnvFileBackedRuntimeSettings(t *testing.T) {
 	}
 
 	for key, want := range map[string]string{
-		"CHATGPT2API_BASE_URL":                          "https://new.example/root/",
-		"CHATGPT2API_PROXY":                             "http://127.0.0.1:9090",
-		"CHATGPT2API_REFRESH_ACCOUNT_INTERVAL_MINUTE":   "9",
-		"CHATGPT2API_IMAGE_TASK_TIMEOUT_SECONDS":        "480",
-		"CHATGPT2API_USER_DEFAULT_CONCURRENT_LIMIT":     "3",
-		"CHATGPT2API_USER_DEFAULT_RPM_LIMIT":            "45",
-		"CHATGPT2API_IMAGE_RETENTION_DAYS":              "12",
-		"CHATGPT2API_IMAGE_STORAGE_LIMIT_MB":            "1024",
-		"CHATGPT2API_LOG_RETENTION_DAYS":                "30",
-		"CHATGPT2API_AUTO_REMOVE_INVALID_ACCOUNTS":      "false",
-		"CHATGPT2API_AUTO_REMOVE_RATE_LIMITED_ACCOUNTS": "true",
-		"CHATGPT2API_LOG_LEVELS":                        "debug,info",
+		"IMAGE_BASE_URL":                    "https://new.example/root/",
+		"PROXY":                             "http://127.0.0.1:9090",
+		"REFRESH_ACCOUNT_INTERVAL_MINUTE":   "9",
+		"CREATION_TASK_TIMEOUT_SECONDS":     "480",
+		"USER_DEFAULT_CONCURRENT_LIMIT":     "3",
+		"USER_DEFAULT_RPM_LIMIT":            "45",
+		"IMAGE_RETENTION_DAYS":              "12",
+		"IMAGE_STORAGE_LIMIT_MB":            "1024",
+		"LOG_RETENTION_DAYS":                "30",
+		"AUTO_REMOVE_INVALID_ACCOUNTS":      "false",
+		"AUTO_REMOVE_RATE_LIMITED_ACCOUNTS": "true",
+		"LOG_LEVELS":                        "debug,info",
 	} {
 		if gotEnv := os.Getenv(key); gotEnv != want {
 			t.Fatalf("%s = %q, want %q", key, gotEnv, want)
@@ -524,26 +588,25 @@ func TestStoreUpdateRefreshesEnvFileBackedRuntimeSettings(t *testing.T) {
 
 func TestStoreUpdateOverridesEnvOnlyRuntimeSettings(t *testing.T) {
 	root := t.TempDir()
-	t.Setenv("CHATGPT2API_ROOT", root)
-	unsetLinuxDoEnv(t)
+	t.Setenv("ROOT_DIR", root)
 	for key, value := range map[string]string{
-		"CHATGPT2API_BASE_URL":                          "https://old.example/root",
-		"CHATGPT2API_PROXY":                             "http://127.0.0.1:8080",
-		"CHATGPT2API_REFRESH_ACCOUNT_INTERVAL_MINUTE":   "5",
-		"CHATGPT2API_IMAGE_TASK_TIMEOUT_SECONDS":        "300",
-		"CHATGPT2API_USER_DEFAULT_CONCURRENT_LIMIT":     "2",
-		"CHATGPT2API_USER_DEFAULT_RPM_LIMIT":            "30",
-		"CHATGPT2API_IMAGE_RETENTION_DAYS":              "30",
-		"CHATGPT2API_IMAGE_STORAGE_LIMIT_MB":            "2048",
-		"CHATGPT2API_LOG_RETENTION_DAYS":                "7",
-		"CHATGPT2API_AUTO_REMOVE_INVALID_ACCOUNTS":      "true",
-		"CHATGPT2API_AUTO_REMOVE_RATE_LIMITED_ACCOUNTS": "false",
-		"CHATGPT2API_LOG_LEVELS":                        "warning,error",
-		"CHATGPT2API_LOGIN_PAGE_IMAGE_URL":              "https://old.example/login.png",
-		"CHATGPT2API_LOGIN_PAGE_IMAGE_MODE":             "contain",
-		"CHATGPT2API_LOGIN_PAGE_IMAGE_ZOOM":             "1",
-		"CHATGPT2API_LOGIN_PAGE_IMAGE_POSITION_X":       "50",
-		"CHATGPT2API_LOGIN_PAGE_IMAGE_POSITION_Y":       "50",
+		"IMAGE_BASE_URL":                    "https://old.example/root",
+		"PROXY":                             "http://127.0.0.1:8080",
+		"REFRESH_ACCOUNT_INTERVAL_MINUTE":   "5",
+		"CREATION_TASK_TIMEOUT_SECONDS":     "300",
+		"USER_DEFAULT_CONCURRENT_LIMIT":     "2",
+		"USER_DEFAULT_RPM_LIMIT":            "30",
+		"IMAGE_RETENTION_DAYS":              "30",
+		"IMAGE_STORAGE_LIMIT_MB":            "2048",
+		"LOG_RETENTION_DAYS":                "7",
+		"AUTO_REMOVE_INVALID_ACCOUNTS":      "true",
+		"AUTO_REMOVE_RATE_LIMITED_ACCOUNTS": "false",
+		"LOG_LEVELS":                        "warning,error",
+		"LOGIN_PAGE_IMAGE_URL":              "https://old.example/login.png",
+		"LOGIN_PAGE_IMAGE_MODE":             "contain",
+		"LOGIN_PAGE_IMAGE_ZOOM":             "1",
+		"LOGIN_PAGE_IMAGE_POSITION_X":       "50",
+		"LOGIN_PAGE_IMAGE_POSITION_Y":       "50",
 	} {
 		t.Setenv(key, value)
 	}
@@ -596,88 +659,23 @@ func TestStoreUpdateOverridesEnvOnlyRuntimeSettings(t *testing.T) {
 	}
 
 	for key, want := range map[string]string{
-		"CHATGPT2API_BASE_URL":                          "https://new.example/root/",
-		"CHATGPT2API_PROXY":                             "http://127.0.0.1:9090",
-		"CHATGPT2API_REFRESH_ACCOUNT_INTERVAL_MINUTE":   "9",
-		"CHATGPT2API_IMAGE_TASK_TIMEOUT_SECONDS":        "480",
-		"CHATGPT2API_USER_DEFAULT_CONCURRENT_LIMIT":     "3",
-		"CHATGPT2API_USER_DEFAULT_RPM_LIMIT":            "45",
-		"CHATGPT2API_IMAGE_RETENTION_DAYS":              "12",
-		"CHATGPT2API_IMAGE_STORAGE_LIMIT_MB":            "1024",
-		"CHATGPT2API_LOG_RETENTION_DAYS":                "30",
-		"CHATGPT2API_AUTO_REMOVE_INVALID_ACCOUNTS":      "false",
-		"CHATGPT2API_AUTO_REMOVE_RATE_LIMITED_ACCOUNTS": "true",
-		"CHATGPT2API_LOG_LEVELS":                        "debug,info",
-		"CHATGPT2API_LOGIN_PAGE_IMAGE_URL":              "https://new.example/login.png",
-		"CHATGPT2API_LOGIN_PAGE_IMAGE_MODE":             "cover",
-		"CHATGPT2API_LOGIN_PAGE_IMAGE_ZOOM":             "2",
-		"CHATGPT2API_LOGIN_PAGE_IMAGE_POSITION_X":       "25",
-		"CHATGPT2API_LOGIN_PAGE_IMAGE_POSITION_Y":       "75",
-	} {
-		if gotEnv := os.Getenv(key); gotEnv != want {
-			t.Fatalf("%s = %q, want %q", key, gotEnv, want)
-		}
-	}
-}
-
-func TestStoreUpdateOverridesLinuxDoEnvOnlyRuntimeSettings(t *testing.T) {
-	root := t.TempDir()
-	t.Setenv("CHATGPT2API_ROOT", root)
-	t.Setenv("CHATGPT2API_BASE_URL", "https://old.example")
-	t.Setenv("CHATGPT2API_LINUXDO_ENABLED", "true")
-	t.Setenv("CHATGPT2API_LINUXDO_CLIENT_ID", "old-client")
-	t.Setenv("CHATGPT2API_LINUXDO_CLIENT_SECRET", "old-secret")
-	t.Setenv("CHATGPT2API_LINUXDO_REDIRECT_URL", "https://old.example/auth/linuxdo/oauth/callback")
-	t.Setenv("CHATGPT2API_LINUXDO_FRONTEND_REDIRECT_URL", "/old/callback")
-	for _, key := range []string{
-		"CHATGPT2API_LINUXDO_AUTHORIZE_URL",
-		"CHATGPT2API_LINUXDO_TOKEN_URL",
-		"CHATGPT2API_LINUXDO_USERINFO_URL",
-		"CHATGPT2API_LINUXDO_SCOPES",
-		"CHATGPT2API_LINUXDO_TOKEN_AUTH_METHOD",
-		"CHATGPT2API_LINUXDO_USE_PKCE",
-		"CHATGPT2API_LINUXDO_USERINFO_EMAIL_PATH",
-		"CHATGPT2API_LINUXDO_USERINFO_ID_PATH",
-		"CHATGPT2API_LINUXDO_USERINFO_USERNAME_PATH",
-	} {
-		unsetEnv(t, key)
-	}
-
-	store, err := NewStore()
-	if err != nil {
-		t.Fatalf("NewStore() error = %v", err)
-	}
-	got, err := store.Update(map[string]any{
-		"base_url":                      "https://new.example",
-		"linuxdo_enabled":               false,
-		"linuxdo_client_id":             "new-client",
-		"linuxdo_client_secret":         "new-secret",
-		"linuxdo_redirect_url":          "https://new.example/auth/linuxdo/oauth/callback",
-		"linuxdo_frontend_redirect_url": "/auth/linuxdo/callback",
-	})
-	if err != nil {
-		t.Fatalf("Update() error = %v", err)
-	}
-	assertConfigValue(t, got, "linuxdo_enabled", false)
-	assertConfigValue(t, got, "linuxdo_client_id", "new-client")
-	assertConfigValue(t, got, "linuxdo_redirect_url", "https://new.example/auth/linuxdo/oauth/callback")
-	assertConfigValue(t, got, "linuxdo_frontend_redirect_url", "/auth/linuxdo/callback")
-	if got["linuxdo_client_secret_configured"] != true {
-		t.Fatalf("linuxdo_client_secret_configured = %#v, want true", got["linuxdo_client_secret_configured"])
-	}
-	linuxdo := store.LinuxDoOAuth()
-	if linuxdo.Enabled || linuxdo.ClientID != "new-client" || linuxdo.ClientSecret != "new-secret" ||
-		linuxdo.RedirectURL != "https://new.example/auth/linuxdo/oauth/callback" ||
-		linuxdo.FrontendRedirectURL != "/auth/linuxdo/callback" {
-		t.Fatalf("LinuxDoOAuth() = %#v", linuxdo)
-	}
-	for key, want := range map[string]string{
-		"CHATGPT2API_BASE_URL":                      "https://new.example",
-		"CHATGPT2API_LINUXDO_ENABLED":               "false",
-		"CHATGPT2API_LINUXDO_CLIENT_ID":             "new-client",
-		"CHATGPT2API_LINUXDO_CLIENT_SECRET":         "new-secret",
-		"CHATGPT2API_LINUXDO_REDIRECT_URL":          "https://new.example/auth/linuxdo/oauth/callback",
-		"CHATGPT2API_LINUXDO_FRONTEND_REDIRECT_URL": "/auth/linuxdo/callback",
+		"IMAGE_BASE_URL":                    "https://new.example/root/",
+		"PROXY":                             "http://127.0.0.1:9090",
+		"REFRESH_ACCOUNT_INTERVAL_MINUTE":   "9",
+		"CREATION_TASK_TIMEOUT_SECONDS":     "480",
+		"USER_DEFAULT_CONCURRENT_LIMIT":     "3",
+		"USER_DEFAULT_RPM_LIMIT":            "45",
+		"IMAGE_RETENTION_DAYS":              "12",
+		"IMAGE_STORAGE_LIMIT_MB":            "1024",
+		"LOG_RETENTION_DAYS":                "30",
+		"AUTO_REMOVE_INVALID_ACCOUNTS":      "false",
+		"AUTO_REMOVE_RATE_LIMITED_ACCOUNTS": "true",
+		"LOG_LEVELS":                        "debug,info",
+		"LOGIN_PAGE_IMAGE_URL":              "https://new.example/login.png",
+		"LOGIN_PAGE_IMAGE_MODE":             "cover",
+		"LOGIN_PAGE_IMAGE_ZOOM":             "2",
+		"LOGIN_PAGE_IMAGE_POSITION_X":       "25",
+		"LOGIN_PAGE_IMAGE_POSITION_Y":       "75",
 	} {
 		if gotEnv := os.Getenv(key); gotEnv != want {
 			t.Fatalf("%s = %q, want %q", key, gotEnv, want)
@@ -687,7 +685,7 @@ func TestStoreUpdateOverridesLinuxDoEnvOnlyRuntimeSettings(t *testing.T) {
 
 func TestNewStoreDiscoversEnvFromParentDirectory(t *testing.T) {
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, ".env"), []byte("CHATGPT2API_BASE_URL=https://parent.example\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, ".env"), []byte("IMAGE_BASE_URL=https://parent.example\n"), 0o644); err != nil {
 		t.Fatalf("write .env: %v", err)
 	}
 	nested := filepath.Join(root, "cmd", "chatgpt2api")
@@ -704,8 +702,8 @@ func TestNewStoreDiscoversEnvFromParentDirectory(t *testing.T) {
 	t.Cleanup(func() {
 		_ = os.Chdir(originalWD)
 	})
-	unsetEnv(t, "CHATGPT2API_ROOT")
-	unsetEnv(t, "CHATGPT2API_BASE_URL")
+	unsetEnv(t, "ROOT_DIR")
+	unsetEnv(t, "IMAGE_BASE_URL")
 
 	store, err := NewStore()
 	if err != nil {
@@ -721,11 +719,11 @@ func TestNewStoreDiscoversEnvFromParentDirectory(t *testing.T) {
 
 func TestStoreReadsRelayBaseURLFromEnvFile(t *testing.T) {
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, ".env"), []byte("CHATGPT2API_RELAY_BASE_URL=https://relay.example/root/\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, ".env"), []byte("API_BASE_URL=https://relay.example/root/\n"), 0o644); err != nil {
 		t.Fatalf("write .env: %v", err)
 	}
-	t.Setenv("CHATGPT2API_ROOT", root)
-	unsetEnv(t, "CHATGPT2API_RELAY_BASE_URL")
+	t.Setenv("ROOT_DIR", root)
+	unsetEnv(t, "API_BASE_URL")
 
 	store, err := NewStore()
 	if err != nil {
@@ -738,8 +736,8 @@ func TestStoreReadsRelayBaseURLFromEnvFile(t *testing.T) {
 
 func TestStoreUpdatePersistsRelayBaseURL(t *testing.T) {
 	root := t.TempDir()
-	t.Setenv("CHATGPT2API_ROOT", root)
-	unsetEnv(t, "CHATGPT2API_RELAY_BASE_URL")
+	t.Setenv("ROOT_DIR", root)
+	unsetEnv(t, "API_BASE_URL")
 
 	store, err := NewStore()
 	if err != nil {
@@ -762,15 +760,15 @@ func TestStoreUpdatePersistsRelayBaseURL(t *testing.T) {
 		t.Fatalf("read .env: %v", err)
 	}
 	envText := string(envData)
-	if want := "CHATGPT2API_RELAY_BASE_URL=https://relay.example/root/"; !strings.Contains(envText, want) {
+	if want := "API_BASE_URL=https://relay.example/root/"; !strings.Contains(envText, want) {
 		t.Fatalf(".env missing %q:\n%s", want, envText)
 	}
 }
 
 func TestStoreUpdateRejectsInvalidRelayBaseURL(t *testing.T) {
 	root := t.TempDir()
-	t.Setenv("CHATGPT2API_ROOT", root)
-	unsetEnv(t, "CHATGPT2API_RELAY_BASE_URL")
+	t.Setenv("ROOT_DIR", root)
+	unsetEnv(t, "API_BASE_URL")
 
 	store, err := NewStore()
 	if err != nil {
@@ -801,26 +799,4 @@ func unsetEnv(t *testing.T, key string) {
 			_ = os.Unsetenv(key)
 		}
 	})
-}
-
-func unsetLinuxDoEnv(t *testing.T) {
-	t.Helper()
-	for _, key := range []string{
-		"CHATGPT2API_LINUXDO_ENABLED",
-		"CHATGPT2API_LINUXDO_CLIENT_ID",
-		"CHATGPT2API_LINUXDO_CLIENT_SECRET",
-		"CHATGPT2API_LINUXDO_REDIRECT_URL",
-		"CHATGPT2API_LINUXDO_AUTHORIZE_URL",
-		"CHATGPT2API_LINUXDO_TOKEN_URL",
-		"CHATGPT2API_LINUXDO_USERINFO_URL",
-		"CHATGPT2API_LINUXDO_SCOPES",
-		"CHATGPT2API_LINUXDO_FRONTEND_REDIRECT_URL",
-		"CHATGPT2API_LINUXDO_TOKEN_AUTH_METHOD",
-		"CHATGPT2API_LINUXDO_USE_PKCE",
-		"CHATGPT2API_LINUXDO_USERINFO_EMAIL_PATH",
-		"CHATGPT2API_LINUXDO_USERINFO_ID_PATH",
-		"CHATGPT2API_LINUXDO_USERINFO_USERNAME_PATH",
-	} {
-		unsetEnv(t, key)
-	}
 }

@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	postgresIntegrationDatabaseURLEnv = "CHATGPT2API_TEST_POSTGRES_DATABASE_URL"
-	mysqlIntegrationDatabaseURLEnv    = "CHATGPT2API_TEST_MYSQL_DATABASE_URL"
+	postgresIntegrationDatabaseURLEnv = "TEST_POSTGRES_DATABASE_URL"
+	mysqlIntegrationDatabaseURLEnv    = "TEST_MYSQL_DATABASE_URL"
 	integrationFailureConversationID  = "integration-failure"
 )
 
@@ -39,7 +39,7 @@ func TestDatabaseBackendIntegration(t *testing.T) {
 				t.Skipf("%s is not set; skipping destructive database integration test", testCase.envName)
 			}
 			t.Setenv("STORAGE_BACKEND", testCase.backendType)
-			t.Setenv("DATABASE_URL", databaseURL)
+			t.Setenv("STORAGE_DATABASE_URL", databaseURL)
 			runDatabaseBackendIntegration(t, databaseURL, testCase.driver)
 		})
 	}

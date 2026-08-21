@@ -26,14 +26,14 @@ func (c nParamProxyConfig) Proxy() string {
 // TestNParamSequential exercises sequential image calls with one token.
 // Each call waits for the previous call to finish before starting the next one.
 func TestNParamSequential(t *testing.T) {
-	token := strings.TrimSpace(os.Getenv("CHATGPT2API_DIAG_ACCESS_TOKEN"))
+	token := strings.TrimSpace(os.Getenv("DIAG_ACCESS_TOKEN"))
 	if token == "" {
-		t.Skip("CHATGPT2API_DIAG_ACCESS_TOKEN is not set")
+		t.Skip("DIAG_ACCESS_TOKEN is not set")
 	}
-	proxy := strings.TrimSpace(os.Getenv("CHATGPT2API_DIAG_PROXY"))
-	n := intFromEnv("CHATGPT2API_DIAG_N", 2)
-	model := firstNonEmpty(strings.TrimSpace(os.Getenv("CHATGPT2API_DIAG_MODEL")), util.ImageModelGPT)
-	prompt := firstNonEmpty(strings.TrimSpace(os.Getenv("CHATGPT2API_DIAG_PROMPT")), "一只可爱的猫咪在草地上晒太阳，油画风格")
+	proxy := strings.TrimSpace(os.Getenv("DIAG_PROXY"))
+	n := intFromEnv("DIAG_N", 2)
+	model := firstNonEmpty(strings.TrimSpace(os.Getenv("DIAG_MODEL")), util.ImageModelGPT)
+	prompt := firstNonEmpty(strings.TrimSpace(os.Getenv("DIAG_PROMPT")), "一只可爱的猫咪在草地上晒太阳，油画风格")
 
 	client := NewClient(token, nil, service.NewProxyService(nParamProxyConfig{proxy: proxy}))
 
@@ -104,12 +104,12 @@ func TestNParamSequential(t *testing.T) {
 // TestNParamParallel exercises concurrent image calls across configured tokens.
 // Tokens come from the comma-separated environment variable.
 func TestNParamParallel(t *testing.T) {
-	tokenList := strings.TrimSpace(os.Getenv("CHATGPT2API_DIAG_ACCESS_TOKENS"))
+	tokenList := strings.TrimSpace(os.Getenv("DIAG_ACCESS_TOKENS"))
 	if tokenList == "" {
 		// Fall back to the single-token environment variable.
-		single := strings.TrimSpace(os.Getenv("CHATGPT2API_DIAG_ACCESS_TOKEN"))
+		single := strings.TrimSpace(os.Getenv("DIAG_ACCESS_TOKEN"))
 		if single == "" {
-			t.Skip("CHATGPT2API_DIAG_ACCESS_TOKENS or CHATGPT2API_DIAG_ACCESS_TOKEN is not set")
+			t.Skip("DIAG_ACCESS_TOKENS or DIAG_ACCESS_TOKEN is not set")
 		}
 		tokenList = single
 	}
@@ -117,10 +117,10 @@ func TestNParamParallel(t *testing.T) {
 	if len(tokens) == 0 {
 		t.Skip("no tokens available")
 	}
-	proxy := strings.TrimSpace(os.Getenv("CHATGPT2API_DIAG_PROXY"))
-	n := intFromEnv("CHATGPT2API_DIAG_N", 2)
-	model := firstNonEmpty(strings.TrimSpace(os.Getenv("CHATGPT2API_DIAG_MODEL")), util.ImageModelGPT)
-	prompt := firstNonEmpty(strings.TrimSpace(os.Getenv("CHATGPT2API_DIAG_PROMPT")), "一只可爱的猫咪在草地上晒太阳，油画风格")
+	proxy := strings.TrimSpace(os.Getenv("DIAG_PROXY"))
+	n := intFromEnv("DIAG_N", 2)
+	model := firstNonEmpty(strings.TrimSpace(os.Getenv("DIAG_MODEL")), util.ImageModelGPT)
+	prompt := firstNonEmpty(strings.TrimSpace(os.Getenv("DIAG_PROMPT")), "一只可爱的猫咪在草地上晒太阳，油画风格")
 
 	t.Logf("=== 并行调用测试 ===")
 	t.Logf("tokens=%d, model=%s, n=%d, prompt=%s", len(tokens), model, n, prompt)
@@ -220,10 +220,10 @@ func TestNParamParallel(t *testing.T) {
 
 // TestNParamComparison compares the sequential and parallel call modes.
 func TestNParamComparison(t *testing.T) {
-	tokenList := strings.TrimSpace(os.Getenv("CHATGPT2API_DIAG_ACCESS_TOKENS"))
-	singleToken := strings.TrimSpace(os.Getenv("CHATGPT2API_DIAG_ACCESS_TOKEN"))
+	tokenList := strings.TrimSpace(os.Getenv("DIAG_ACCESS_TOKENS"))
+	singleToken := strings.TrimSpace(os.Getenv("DIAG_ACCESS_TOKEN"))
 	if tokenList == "" && singleToken == "" {
-		t.Skip("CHATGPT2API_DIAG_ACCESS_TOKENS or CHATGPT2API_DIAG_ACCESS_TOKEN is not set")
+		t.Skip("DIAG_ACCESS_TOKENS or DIAG_ACCESS_TOKEN is not set")
 	}
 	if tokenList == "" {
 		tokenList = singleToken
@@ -233,10 +233,10 @@ func TestNParamComparison(t *testing.T) {
 		t.Skip("no tokens available")
 	}
 
-	proxy := strings.TrimSpace(os.Getenv("CHATGPT2API_DIAG_PROXY"))
-	n := intFromEnv("CHATGPT2API_DIAG_N", 2)
-	model := firstNonEmpty(strings.TrimSpace(os.Getenv("CHATGPT2API_DIAG_MODEL")), util.ImageModelGPT)
-	prompt := firstNonEmpty(strings.TrimSpace(os.Getenv("CHATGPT2API_DIAG_PROMPT")), "一只可爱的猫咪在草地上晒太阳，油画风格")
+	proxy := strings.TrimSpace(os.Getenv("DIAG_PROXY"))
+	n := intFromEnv("DIAG_N", 2)
+	model := firstNonEmpty(strings.TrimSpace(os.Getenv("DIAG_MODEL")), util.ImageModelGPT)
+	prompt := firstNonEmpty(strings.TrimSpace(os.Getenv("DIAG_PROMPT")), "一只可爱的猫咪在草地上晒太阳，油画风格")
 
 	t.Logf("=== n=%d 顺序 vs 并行 对比测试 ===", n)
 	t.Logf("可用 token 数=%d, model=%s", len(tokens), model)
@@ -360,13 +360,13 @@ func TestNParamComparison(t *testing.T) {
 
 // TestNParamDiagnostic runs a single diagnostic call and logs token usage plus timings.
 func TestNParamDiagnostic(t *testing.T) {
-	token := strings.TrimSpace(os.Getenv("CHATGPT2API_DIAG_ACCESS_TOKEN"))
+	token := strings.TrimSpace(os.Getenv("DIAG_ACCESS_TOKEN"))
 	if token == "" {
-		t.Skip("CHATGPT2API_DIAG_ACCESS_TOKEN is not set")
+		t.Skip("DIAG_ACCESS_TOKEN is not set")
 	}
-	proxy := strings.TrimSpace(os.Getenv("CHATGPT2API_DIAG_PROXY"))
-	prompt := firstNonEmpty(strings.TrimSpace(os.Getenv("CHATGPT2API_DIAG_PROMPT")), "你好，你是什么模型？")
-	model := firstNonEmpty(strings.TrimSpace(os.Getenv("CHATGPT2API_DIAG_MODEL")), util.ImageModelGPT)
+	proxy := strings.TrimSpace(os.Getenv("DIAG_PROXY"))
+	prompt := firstNonEmpty(strings.TrimSpace(os.Getenv("DIAG_PROMPT")), "你好，你是什么模型？")
+	model := firstNonEmpty(strings.TrimSpace(os.Getenv("DIAG_MODEL")), util.ImageModelGPT)
 
 	client := NewClient(token, nil, service.NewProxyService(nParamProxyConfig{proxy: proxy}))
 	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Minute)

@@ -11,7 +11,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-func TestNewAPITokenReaderPrefersConfiguredGroupAndAllowsSafeOverride(t *testing.T) {
+func TestNewAPITokenReaderSelectsFirstGroupAndAllowsSafeOverride(t *testing.T) {
 	dbURL := newTestNewAPIDatabase(t)
 	now := time.Now().Unix()
 	insertTestNewAPIUser(t, dbURL, 1, "alice", "alice@example.test")
@@ -21,7 +21,7 @@ func TestNewAPITokenReaderPrefersConfiguredGroupAndAllowsSafeOverride(t *testing
 	insertTestNewAPIToken(t, dbURL, 4, 1, "draw", "alice-older", now+3600, 1, false)
 	insertTestNewAPIToken(t, dbURL, 5, 1, "draw", "alice-newest", -1, 0, true)
 
-	reader, err := NewNewAPITokenReader(NewAPITokenReaderConfig{DatabaseURL: dbURL, TokenGroup: "draw"})
+	reader, err := NewNewAPITokenReader(NewAPITokenReaderConfig{DatabaseURL: dbURL})
 	if err != nil {
 		t.Fatalf("NewNewAPITokenReader() error = %v", err)
 	}
@@ -31,20 +31,17 @@ func TestNewAPITokenReaderPrefersConfiguredGroupAndAllowsSafeOverride(t *testing
 	if err != nil {
 		t.Fatalf("KeyForIdentity() error = %v", err)
 	}
-	if key != "sk-alice-older" {
-		t.Fatalf("KeyForIdentity() = %q, want normalized first key", key)
+	if key != "sk-wrong" {
+		t.Fatalf("KeyForIdentity() = %q, want first available key", key)
 	}
 
 	status := reader.Status(context.Background(), Identity{Username: "alice"})
-	if status["has_key"] != true || status["group"] != "draw" || status["key_preview"] == key {
+	if status["has_key"] != true || status["group"] != "wrong-group" {
 		t.Fatalf("Status() = %#v", status)
 	}
 	groups, ok := status["groups"].([]string)
 	if !ok || strings.Join(groups, ",") != "wrong-group,draw" {
 		t.Fatalf("Status() groups = %#v, want wrong-group,draw", status["groups"])
-	}
-	if groups := reader.ConfiguredTokenGroups(context.Background()); strings.Join(groups, ",") != "draw" {
-		t.Fatalf("ConfiguredTokenGroups() = %#v, want draw", groups)
 	}
 	overridden, err := reader.TokenForIdentityGroup(context.Background(), Identity{Username: "alice"}, "wrong-group")
 	if err != nil {
@@ -86,9 +83,6 @@ func TestNewAPITokenReaderSelectsFirstSafeGroupWithoutConfiguredDefault(t *testi
 	if err != nil || key != "sk-draw-key" {
 		t.Fatalf("KeyForIdentityGroup(draw) = %q, %v", key, err)
 	}
-	if groups := reader.ConfiguredTokenGroups(context.Background()); len(groups) != 0 {
-		t.Fatalf("ConfiguredTokenGroups() = %#v, want empty", groups)
-	}
 }
 
 func TestNewAPITokenReaderMatchesNewAPISingleGroupRouting(t *testing.T) {
@@ -98,7 +92,7 @@ func TestNewAPITokenReaderMatchesNewAPISingleGroupRouting(t *testing.T) {
 		updateTestNewAPIUserBalance(t, dbURL, 1, 0, 0, 0, "draw")
 		insertTestNewAPIToken(t, dbURL, 1, 1, "", "default-group-key", time.Now().Unix()+3600, 10, false)
 
-		reader, err := NewNewAPITokenReader(NewAPITokenReaderConfig{DatabaseURL: dbURL, TokenGroup: "draw"})
+		reader, err := NewNewAPITokenReader(NewAPITokenReaderConfig{DatabaseURL: dbURL})
 		if err != nil {
 			t.Fatalf("NewNewAPITokenReader() error = %v", err)
 		}
@@ -116,7 +110,7 @@ func TestNewAPITokenReaderMatchesNewAPISingleGroupRouting(t *testing.T) {
 		insertTestNewAPIToken(t, dbURL, 1, 1, "", "route-key", time.Now().Unix()+3600, 10, false)
 		updateTestNewAPITokenRouteConfig(t, dbURL, 1, `[{"group":"draw","priority":1,"cooldown_seconds":60},{"group":"other","priority":0,"cooldown_seconds":60,"enabled":false}]`)
 
-		reader, err := NewNewAPITokenReader(NewAPITokenReaderConfig{DatabaseURL: dbURL, TokenGroup: "draw"})
+		reader, err := NewNewAPITokenReader(NewAPITokenReaderConfig{DatabaseURL: dbURL})
 		if err != nil {
 			t.Fatalf("NewNewAPITokenReader() error = %v", err)
 		}
@@ -139,7 +133,7 @@ func TestNewAPITokenReaderUsesSafeGroupsForDefaultButAllowsNamedRoutedTokens(t *
 	updateTestNewAPITokenRouteConfig(t, dbURL, 3, `[{"group":"other","priority":0,"cooldown_seconds":0}]`)
 	insertTestNewAPITokenNamed(t, dbURL, 4, 1, "draw", "direct", "safe-key", time.Now().Unix()+3600, 10, false)
 
-	reader, err := NewNewAPITokenReader(NewAPITokenReaderConfig{DatabaseURL: dbURL, TokenGroup: "draw"})
+	reader, err := NewNewAPITokenReader(NewAPITokenReaderConfig{DatabaseURL: dbURL})
 	if err != nil {
 		t.Fatalf("NewNewAPITokenReader() error = %v", err)
 	}
@@ -183,7 +177,7 @@ func TestNewAPITokenReaderUsesStableNewAPIUserID(t *testing.T) {
 	}
 	db.Close()
 
-	reader, err := NewNewAPITokenReader(NewAPITokenReaderConfig{DatabaseURL: dbURL, TokenGroup: "draw"})
+	reader, err := NewNewAPITokenReader(NewAPITokenReaderConfig{DatabaseURL: dbURL})
 	if err != nil {
 		t.Fatalf("NewNewAPITokenReader() error = %v", err)
 	}
@@ -200,12 +194,12 @@ func TestNewAPITokenReaderUsesStableNewAPIUserID(t *testing.T) {
 	}
 }
 
-func TestNewAPITokenReaderFallsBackWhenConfiguredGroupIsUnavailable(t *testing.T) {
+func TestNewAPITokenReaderUsesAvailableGroup(t *testing.T) {
 	dbURL := newTestNewAPIDatabase(t)
 	insertTestNewAPIUser(t, dbURL, 1, "alice", "alice@example.test")
 	insertTestNewAPIToken(t, dbURL, 1, 1, "other", "other-key", time.Now().Unix()+3600, 10, false)
 
-	reader, err := NewNewAPITokenReader(NewAPITokenReaderConfig{DatabaseURL: dbURL, TokenGroup: "draw"})
+	reader, err := NewNewAPITokenReader(NewAPITokenReaderConfig{DatabaseURL: dbURL})
 	if err != nil {
 		t.Fatalf("NewNewAPITokenReader() error = %v", err)
 	}
@@ -219,7 +213,7 @@ func TestNewAPITokenReaderFallsBackWhenConfiguredGroupIsUnavailable(t *testing.T
 		t.Fatalf("TokenForIdentity() = %#v, want fallback other token", selection)
 	}
 	status := reader.Status(context.Background(), Identity{Username: "alice"})
-	if status["has_key"] != true || status["group"] != "other" || status["configured_group"] != "draw" {
+	if status["has_key"] != true || status["group"] != "other" {
 		t.Fatalf("Status() = %#v", status)
 	}
 }
@@ -233,7 +227,7 @@ func TestNewAPITokenReaderSelectsCurrentUsersKeyByExactTokenName(t *testing.T) {
 	insertTestNewAPITokenNamed(t, dbURL, 2, 1, "codex", "codex", "codex-key", now+3600, 10, false)
 	insertTestNewAPITokenNamed(t, dbURL, 3, 2, "other", "codex", "bob-key", now+3600, 10, false)
 
-	reader, err := NewNewAPITokenReader(NewAPITokenReaderConfig{DatabaseURL: dbURL, TokenGroup: "codex"})
+	reader, err := NewNewAPITokenReader(NewAPITokenReaderConfig{DatabaseURL: dbURL})
 	if err != nil {
 		t.Fatalf("NewNewAPITokenReader() error = %v", err)
 	}
@@ -280,7 +274,7 @@ func TestNewAPITokenReaderFiltersTokenNamesByOwnerAndAvailability(t *testing.T) 
 	}
 	db.Close()
 
-	reader, err := NewNewAPITokenReader(NewAPITokenReaderConfig{DatabaseURL: dbURL, TokenGroup: "draw"})
+	reader, err := NewNewAPITokenReader(NewAPITokenReaderConfig{DatabaseURL: dbURL})
 	if err != nil {
 		t.Fatalf("NewNewAPITokenReader() error = %v", err)
 	}
@@ -306,7 +300,7 @@ func TestNewAPITokenReaderRejectsAmbiguousDuplicateTokenNames(t *testing.T) {
 	insertTestNewAPITokenNamed(t, dbURL, 1, 1, "draw", "duplicate", "first-key", now+3600, 10, false)
 	insertTestNewAPITokenNamed(t, dbURL, 2, 1, "other", "duplicate", "second-key", now+3600, 10, false)
 
-	reader, err := NewNewAPITokenReader(NewAPITokenReaderConfig{DatabaseURL: dbURL, TokenGroup: "draw"})
+	reader, err := NewNewAPITokenReader(NewAPITokenReaderConfig{DatabaseURL: dbURL})
 	if err != nil {
 		t.Fatalf("NewNewAPITokenReader() error = %v", err)
 	}
@@ -325,7 +319,7 @@ func TestNewAPITokenReaderAuthenticatesNewAPIUserPassword(t *testing.T) {
 	dbURL := newTestNewAPIDatabase(t)
 	insertTestNewAPIUser(t, dbURL, 7, "alice", "alice@example.test")
 
-	reader, err := NewNewAPITokenReader(NewAPITokenReaderConfig{DatabaseURL: dbURL, TokenGroup: "draw"})
+	reader, err := NewNewAPITokenReader(NewAPITokenReaderConfig{DatabaseURL: dbURL})
 	if err != nil {
 		t.Fatalf("NewNewAPITokenReader() error = %v", err)
 	}
@@ -349,7 +343,7 @@ func TestNewAPITokenReaderAuthenticatesNumericNewAPIAdminRole(t *testing.T) {
 	insertTestNewAPIUser(t, dbURL, 8, "root", "root@example.test")
 	updateTestNewAPIUserRole(t, dbURL, 8, 10)
 
-	reader, err := NewNewAPITokenReader(NewAPITokenReaderConfig{DatabaseURL: dbURL, TokenGroup: "draw"})
+	reader, err := NewNewAPITokenReader(NewAPITokenReaderConfig{DatabaseURL: dbURL})
 	if err != nil {
 		t.Fatalf("NewNewAPITokenReader() error = %v", err)
 	}
@@ -369,7 +363,7 @@ func TestNewAPITokenReaderReadsUserBalance(t *testing.T) {
 	insertTestNewAPIUser(t, dbURL, 9, "alice", "alice@example.test")
 	updateTestNewAPIUserBalance(t, dbURL, 9, 123456, 789, 42, "codex")
 
-	reader, err := NewNewAPITokenReader(NewAPITokenReaderConfig{DatabaseURL: dbURL, TokenGroup: "draw"})
+	reader, err := NewNewAPITokenReader(NewAPITokenReaderConfig{DatabaseURL: dbURL})
 	if err != nil {
 		t.Fatalf("NewNewAPITokenReader() error = %v", err)
 	}
@@ -383,8 +377,87 @@ func TestNewAPITokenReaderReadsUserBalance(t *testing.T) {
 		t.Fatalf("BalanceForIdentity() = %#v", balance)
 	}
 	status := reader.BalanceStatus(context.Background(), Identity{Username: "alice"})
-	if status["has_balance"] != true || status["quota"] != int64(123456) || status["user_group"] != "codex" {
+	if status["has_balance"] != true || status["quota"] != float64(123456) || status["user_group"] != "codex" {
 		t.Fatalf("BalanceStatus() = %#v", status)
+	}
+}
+
+func TestNewAPITokenReaderSupportsSub2API(t *testing.T) {
+	dbURL := newTestSub2APIDatabase(t)
+	insertTestSub2APIUser(t, dbURL, 1, "alice", "alice@example.test", "admin", 12.5)
+	insertTestSub2APIGroup(t, dbURL, 1, "image", "active", false)
+	insertTestSub2APIGroup(t, dbURL, 2, "disabled", "disabled", false)
+	insertTestSub2APIGroup(t, dbURL, 3, "deleted", "active", true)
+	now := time.Now()
+	insertTestSub2APIKey(t, dbURL, 1, 1, "sub-valid", "main", 1, "active", 10, 1, now.Add(time.Hour), false)
+	insertTestSub2APIKey(t, dbURL, 2, 1, "sk-disabled", "disabled-key", 1, "disabled", 0, 0, time.Time{}, false)
+	insertTestSub2APIKey(t, dbURL, 3, 1, "sk-expired", "expired", 1, "active", 0, 0, now.Add(-time.Hour), false)
+	insertTestSub2APIKey(t, dbURL, 4, 1, "sk-exhausted", "exhausted", 1, "active", 10, 10, time.Time{}, false)
+	insertTestSub2APIKey(t, dbURL, 5, 1, "sk-no-group", "no-group", 0, "active", 0, 0, time.Time{}, false)
+	insertTestSub2APIKey(t, dbURL, 6, 1, "sk-disabled-group", "disabled-group", 2, "active", 0, 0, time.Time{}, false)
+	insertTestSub2APIKey(t, dbURL, 7, 1, "sk-deleted-group", "deleted-group", 3, "active", 0, 0, time.Time{}, false)
+	insertTestSub2APIUsage(t, dbURL, 1, 2.25)
+	insertTestSub2APIUsage(t, dbURL, 1, 0.75)
+
+	reader, err := NewNewAPITokenReader(NewAPITokenReaderConfig{DatabaseURL: dbURL, DatabaseType: "sub2api"})
+	if err != nil {
+		t.Fatalf("NewNewAPITokenReader() error = %v", err)
+	}
+	defer reader.Close()
+	if !reader.IsSub2API() || reader.Source() != "sub2api" {
+		t.Fatalf("database kind = %q, want sub2api", reader.Source())
+	}
+
+	user, err := reader.AuthenticatePassword(context.Background(), "alice@example.test", "Password123")
+	if err != nil {
+		t.Fatalf("AuthenticatePassword() error = %v", err)
+	}
+	if user.ID != 1 || user.Username != "alice" || user.DisplayName != "alice" || !user.IsAdmin || user.Provider != "sub2api" || user.SubjectPrefix != "sub2api" {
+		t.Fatalf("AuthenticatePassword() user = %#v", user)
+	}
+
+	identity := Identity{ID: "sub2api:1", OwnerID: "sub2api:1", Username: "old-name"}
+	selection, err := reader.TokenForIdentity(context.Background(), identity)
+	if err != nil {
+		t.Fatalf("TokenForIdentity() error = %v", err)
+	}
+	if selection.Key != "sub-valid" || selection.Name != "main" || selection.Group != "image" || strings.Join(selection.Names, ",") != "main" {
+		t.Fatalf("TokenForIdentity() = %#v", selection)
+	}
+
+	db := openTestNewAPIDatabase(t, dbURL)
+	if _, err := db.Exec("UPDATE users SET username = ? WHERE id = ?", "alice-renamed", 1); err != nil {
+		db.Close()
+		t.Fatalf("rename Sub2API user: %v", err)
+	}
+	db.Close()
+	balance, err := reader.BalanceForIdentity(context.Background(), identity)
+	if err != nil {
+		t.Fatalf("BalanceForIdentity() error = %v", err)
+	}
+	if balance.Username != "alice-renamed" || balance.Quota != 6_250_000 || balance.UsedQuota != 1_500_000 || balance.RequestCount != 2 {
+		t.Fatalf("BalanceForIdentity() = %#v", balance)
+	}
+	status := reader.BalanceStatus(context.Background(), identity)
+	if status["source"] != "sub2api" || status["has_balance"] != true {
+		t.Fatalf("BalanceStatus() = %#v", status)
+	}
+}
+
+func TestNewAPITokenReaderSub2APIFallsBackToEmailUsername(t *testing.T) {
+	dbURL := newTestSub2APIDatabase(t)
+	insertTestSub2APIUser(t, dbURL, 2, "", "email-only@example.test", "user", 0)
+	reader, err := NewNewAPITokenReader(NewAPITokenReaderConfig{DatabaseURL: dbURL, DatabaseType: "sub2api"})
+	if err != nil {
+		t.Fatalf("NewNewAPITokenReader() error = %v", err)
+	}
+	defer reader.Close()
+	user, err := reader.AuthenticatePassword(context.Background(), "email-only@example.test", "Password123")
+	if err != nil {
+		t.Fatalf("AuthenticatePassword() error = %v", err)
+	}
+	if user.Username != "email-only@example.test" || user.DisplayName != "email-only@example.test" || user.IsAdmin {
+		t.Fatalf("AuthenticatePassword() user = %#v", user)
 	}
 }
 
@@ -403,6 +476,28 @@ func newTestNewAPIDatabase(t *testing.T) string {
 	for _, stmt := range schema {
 		if _, err := db.Exec(stmt); err != nil {
 			t.Fatalf("create newapi schema: %v", err)
+		}
+	}
+	return "sqlite:///" + filepath.ToSlash(dbPath)
+}
+
+func newTestSub2APIDatabase(t *testing.T) string {
+	t.Helper()
+	dbPath := filepath.Join(t.TempDir(), "sub2api.db")
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	defer db.Close()
+	schema := []string{
+		`CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT NOT NULL, password_hash TEXT NOT NULL, role TEXT NOT NULL, balance REAL NOT NULL DEFAULT 0, status TEXT NOT NULL, username TEXT NOT NULL DEFAULT '', deleted_at DATETIME)`,
+		`CREATE TABLE groups (id INTEGER PRIMARY KEY, name TEXT NOT NULL, status TEXT NOT NULL, deleted_at DATETIME)`,
+		`CREATE TABLE api_keys (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, key TEXT NOT NULL, name TEXT NOT NULL, group_id INTEGER, status TEXT NOT NULL, quota REAL NOT NULL DEFAULT 0, quota_used REAL NOT NULL DEFAULT 0, expires_at DATETIME, deleted_at DATETIME)`,
+		`CREATE TABLE usage_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, actual_cost REAL NOT NULL DEFAULT 0)`,
+	}
+	for _, stmt := range schema {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatalf("create Sub2API schema: %v", err)
 		}
 	}
 	return "sqlite:///" + filepath.ToSlash(dbPath)
@@ -427,6 +522,62 @@ func insertTestNewAPIUser(t *testing.T, dbURL string, id int, username, email st
 	}
 	if _, err := db.Exec("INSERT INTO users (id, username, email, display_name, password, status, deleted_at) VALUES (?, ?, ?, ?, ?, 1, NULL)", id, username, email, "Alice", string(hash)); err != nil {
 		t.Fatalf("insert user: %v", err)
+	}
+}
+
+func insertTestSub2APIUser(t *testing.T, dbURL string, id int, username, email, role string, balance float64) {
+	t.Helper()
+	db := openTestNewAPIDatabase(t, dbURL)
+	defer db.Close()
+	hash, err := bcrypt.GenerateFromPassword([]byte("Password123"), bcrypt.DefaultCost)
+	if err != nil {
+		t.Fatalf("hash password: %v", err)
+	}
+	if _, err := db.Exec("INSERT INTO users (id, username, email, password_hash, role, balance, status, deleted_at) VALUES (?, ?, ?, ?, ?, ?, 'active', NULL)", id, username, email, string(hash), role, balance); err != nil {
+		t.Fatalf("insert Sub2API user: %v", err)
+	}
+}
+
+func insertTestSub2APIGroup(t *testing.T, dbURL string, id int, name, status string, deleted bool) {
+	t.Helper()
+	db := openTestNewAPIDatabase(t, dbURL)
+	defer db.Close()
+	var deletedAt any
+	if deleted {
+		deletedAt = time.Now()
+	}
+	if _, err := db.Exec("INSERT INTO groups (id, name, status, deleted_at) VALUES (?, ?, ?, ?)", id, name, status, deletedAt); err != nil {
+		t.Fatalf("insert Sub2API group: %v", err)
+	}
+}
+
+func insertTestSub2APIKey(t *testing.T, dbURL string, id, userID int, key, name string, groupID int, status string, quota, quotaUsed float64, expiresAt time.Time, deleted bool) {
+	t.Helper()
+	db := openTestNewAPIDatabase(t, dbURL)
+	defer db.Close()
+	var groupValue any
+	if groupID > 0 {
+		groupValue = groupID
+	}
+	var expiresValue any
+	if !expiresAt.IsZero() {
+		expiresValue = expiresAt
+	}
+	var deletedAt any
+	if deleted {
+		deletedAt = time.Now()
+	}
+	if _, err := db.Exec("INSERT INTO api_keys (id, user_id, key, name, group_id, status, quota, quota_used, expires_at, deleted_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", id, userID, key, name, groupValue, status, quota, quotaUsed, expiresValue, deletedAt); err != nil {
+		t.Fatalf("insert Sub2API key: %v", err)
+	}
+}
+
+func insertTestSub2APIUsage(t *testing.T, dbURL string, userID int, actualCost float64) {
+	t.Helper()
+	db := openTestNewAPIDatabase(t, dbURL)
+	defer db.Close()
+	if _, err := db.Exec("INSERT INTO usage_logs (user_id, actual_cost) VALUES (?, ?)", userID, actualCost); err != nil {
+		t.Fatalf("insert Sub2API usage: %v", err)
 	}
 }
 
