@@ -1639,7 +1639,7 @@ export default function CanvasPage() {
     const outputFormat = supportsImageOutputControls(generationModel) ? parameters.generation_output_format : undefined;
     const outputCompression = outputFormat ? parameters.generation_output_compression : undefined;
     const count = canvasGenerationCount(generationModel, parameters.generation_count, options.resultCount, retrying);
-    const stream = supportsImageStreaming(generationModel) && (parameters.generation_stream ?? true);
+    const stream = supportsImageStreaming(generationModel) && (parameters.generation_stream ?? false);
     const partialImages = stream ? parameters.generation_partial_images : 0;
     const taskRelayTokenName = relayTokenName.trim() || undefined;
     const taskID = `canvas-${mode}-${randomID()}`;

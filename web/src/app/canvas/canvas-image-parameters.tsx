@@ -66,7 +66,7 @@ export function CanvasImageParameterPopover({ node, imageModel, onChange }: { no
   const count = Math.max(1, Math.min(countLimit, node.generation_count ?? defaults.generation_count ?? 1));
   const outputFormat = node.generation_output_format ?? defaults.generation_output_format ?? "png";
   const outputCompression = node.generation_output_compression ?? defaults.generation_output_compression;
-  const stream = node.generation_stream ?? defaults.generation_stream ?? true;
+  const stream = node.generation_stream ?? defaults.generation_stream ?? false;
   const partialImages = Math.max(0, Math.min(3, node.generation_partial_images ?? defaults.generation_partial_images ?? 0));
   const imageRoute = imageModelRoute(imageModel);
   const googleGeminiImageParameters = imageRoute === "google-gemini-image";

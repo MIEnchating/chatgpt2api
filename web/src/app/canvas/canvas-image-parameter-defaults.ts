@@ -6,12 +6,12 @@ const STORAGE_KEYS = {
   quality: "chatgpt2api:image_last_quality",
   outputFormat: "chatgpt2api:image_last_output_format",
   outputCompression: "chatgpt2api:image_last_output_compression",
-  stream: "chatgpt2api:image_last_stream_v2",
+  stream: "chatgpt2api:image_last_stream_v3",
   partialImages: "chatgpt2api:image_last_partial_images",
 } as const;
 
 export function defaultCanvasImageParameters(): Partial<CanvasNode> {
-  if (typeof window === "undefined") return { generation_count: 1, generation_output_format: "png", generation_stream: true };
+  if (typeof window === "undefined") return { generation_count: 1, generation_output_format: "png", generation_stream: false };
   const size = window.localStorage.getItem(STORAGE_KEYS.size) || "";
   const quality = window.localStorage.getItem(STORAGE_KEYS.quality);
   const outputFormat = window.localStorage.getItem(STORAGE_KEYS.outputFormat);
@@ -26,7 +26,7 @@ export function defaultCanvasImageParameters(): Partial<CanvasNode> {
     generation_count: 1,
     generation_output_format: isImageOutputFormat(outputFormat) ? outputFormat : "png",
     generation_output_compression: Number.isFinite(compression) && compression >= 0 && compression <= 100 ? compression : undefined,
-    generation_stream: streamValue === null ? true : streamValue === "true",
+    generation_stream: streamValue === "true",
     generation_partial_images: Number.isFinite(partialImages) ? Math.max(0, Math.min(3, partialImages)) : 0,
   };
 }

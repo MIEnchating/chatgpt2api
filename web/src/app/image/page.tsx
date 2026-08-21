@@ -194,7 +194,7 @@ const IMAGE_CUSTOM_HEIGHT_STORAGE_KEY = "chatgpt2api:image_last_custom_height";
 const IMAGE_QUALITY_STORAGE_KEY = "chatgpt2api:image_last_quality";
 const IMAGE_OUTPUT_FORMAT_STORAGE_KEY = "chatgpt2api:image_last_output_format";
 const IMAGE_OUTPUT_COMPRESSION_STORAGE_KEY = "chatgpt2api:image_last_output_compression";
-const IMAGE_STREAM_STORAGE_KEY = "chatgpt2api:image_last_stream_v2";
+const IMAGE_STREAM_STORAGE_KEY = "chatgpt2api:image_last_stream_v3";
 const IMAGE_PARTIAL_IMAGES_STORAGE_KEY = "chatgpt2api:image_last_partial_images";
 const VIDEO_MODEL_STORAGE_KEY = "chatgpt2api:video_last_model";
 const VIDEO_SIZE_STORAGE_KEY = "chatgpt2api:video_last_size";
@@ -1120,10 +1120,10 @@ function getStoredImageOutputCompression(): string {
 
 function getStoredImageStreamEnabled() {
   if (typeof window === "undefined") {
-    return true;
+    return false;
   }
   const stored = window.localStorage.getItem(IMAGE_STREAM_STORAGE_KEY);
-  return stored === null ? true : stored === "true";
+  return stored === "true";
 }
 
 function getStoredImagePartialImages() {
