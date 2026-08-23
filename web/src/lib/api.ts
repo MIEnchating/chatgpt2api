@@ -350,6 +350,7 @@ export type CanvasNode = {
   generation_video_resolution?: string;
   generation_video_audio?: boolean;
   generation_video_watermark?: boolean;
+  generation_video_reference_urls?: string[];
   batch_child_ids?: string[];
   batch_root_id?: string;
   batch_primary_id?: string;
@@ -846,6 +847,9 @@ export async function createVideoGenerationTask(
   generateAudio = true,
   watermark = false,
   referenceImageURLs?: string[],
+  referenceVideoURLs?: string[],
+  referenceAudioURLs?: string[],
+  referenceMode: "first-frame" | "reference" = "first-frame",
   relayTokenName?: string,
   requestOptions?: CreationTaskRequestOptions,
 ) {
@@ -862,9 +866,22 @@ export async function createVideoGenerationTask(
       ...(resolution ? { resolution } : {}),
       generate_audio: generateAudio,
       watermark,
+      reference_mode: referenceMode,
       ...(referenceImageURLs?.length ? { reference_image_urls: referenceImageURLs } : {}),
+      ...(referenceVideoURLs?.length ? { reference_video_urls: referenceVideoURLs } : {}),
+      ...(referenceAudioURLs?.length ? { reference_audio_urls: referenceAudioURLs } : {}),
       ...(relayTokenName ? { token_name: relayTokenName } : {}),
     },
+  });
+}
+
+export async function uploadVideoReference(file: File) {
+  const formData = new FormData();
+  formData.append("video", file);
+  return httpRequest<{ url: string; name?: string; content_type?: string; size?: number }>("/api/creation-tasks/video-reference-uploads", {
+    method: "POST",
+    body: formData,
+    timeout: 120_000,
   });
 }
 
@@ -1449,10 +1466,14 @@ export type ProxyTestResult = {
   error: string | null;
 };
 
-export async function fetchRelayModels(signal?: AbortSignal) {
-  return httpRequest<{ object?: string; data?: RelayModelListItem[] | null }>("/v1/models", {
-    signal,
-  });
+export async function fetchRelayModels(options: { group?: string; tokenName?: string; signal?: AbortSignal } = {}) {
+  const params = new URLSearchParams();
+  if (options.group?.trim()) params.set("group", options.group.trim());
+  if (options.tokenName?.trim()) params.set("token_name", options.tokenName.trim());
+  return httpRequest<{ object?: string; data?: RelayModelListItem[] | null }>(
+    `/v1/models${params.toString() ? `?${params.toString()}` : ""}`,
+    { signal: options.signal },
+  );
 }
 
 export async function fetchProxy() {

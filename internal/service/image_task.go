@@ -265,7 +265,7 @@ func (s *ImageTaskService) SubmitChatWithMetadata(ctx context.Context, identity 
 	return s.submitChatWithMetadata(ctx, identity, clientTaskID, prompt, model, messages, billable, metadata, nValues...)
 }
 
-func (s *ImageTaskService) SubmitVideo(ctx context.Context, identity Identity, clientTaskID, prompt, model, size string, seconds int, resolution string, generateAudio, watermark bool, images any, metadata map[string]any) (map[string]any, error) {
+func (s *ImageTaskService) SubmitVideo(ctx context.Context, identity Identity, clientTaskID, prompt, model, size string, seconds int, resolution string, generateAudio, watermark bool, referenceMode string, images, videos, audios any, metadata map[string]any) (map[string]any, error) {
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
 		return nil, fmt.Errorf("prompt is required")
@@ -282,11 +282,18 @@ func (s *ImageTaskService) SubmitVideo(ctx context.Context, identity Identity, c
 		"resolution":     strings.TrimSpace(resolution),
 		"generate_audio": generateAudio,
 		"watermark":      watermark,
+		"reference_mode": strings.TrimSpace(referenceMode),
 		"visibility":     ImageVisibilityPrivate,
 		"n":              1,
 	}
 	if images != nil {
 		payload["reference_image_urls"] = images
+	}
+	if videos != nil {
+		payload["reference_video_urls"] = videos
+	}
+	if audios != nil {
+		payload["reference_audio_urls"] = audios
 	}
 	mergeTaskRoutingMetadata(payload, metadata)
 	return s.submit(ctx, identity, clientTaskID, "video", payload)

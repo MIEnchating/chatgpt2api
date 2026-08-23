@@ -45,6 +45,7 @@ export function normalizeCanvasClipboard(value: unknown): CanvasClipboard | null
     if (source.generation_video_resolution !== undefined && (typeof source.generation_video_resolution !== "string" || !["480p", "512p", "720p", "768p", "1080p", "2k", "4k"].includes(source.generation_video_resolution.trim().toLowerCase()))) return null;
     if (source.batch_child_ids !== undefined && (!Array.isArray(source.batch_child_ids) || source.batch_child_ids.some((childID) => typeof childID !== "string"))) return null;
     if (source.generation_reference_urls !== undefined && (!Array.isArray(source.generation_reference_urls) || source.generation_reference_urls.some((url) => typeof url !== "string"))) return null;
+    if (source.generation_video_reference_urls !== undefined && (!Array.isArray(source.generation_video_reference_urls) || source.generation_video_reference_urls.some((url) => typeof url !== "string"))) return null;
     ids.add(id);
     const normalizedSource = { ...source } as Partial<CanvasNode> & { parent_id?: unknown };
     delete normalizedSource.parent_id;

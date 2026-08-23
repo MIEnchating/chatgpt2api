@@ -53,6 +53,7 @@ var settingEnvKeys = map[string]string{
 	"login_page_image_position_y":       "LOGIN_PAGE_IMAGE_POSITION_Y",
 	"text_account_schedule_mode":        "TEXT_ACCOUNT_SCHEDULE_MODE",
 	"image_account_schedule_mode":       "IMAGE_ACCOUNT_SCHEDULE_MODE",
+	"prompt_sources":                    "PROMPT_SOURCES",
 }
 
 var legacySettingEnvKeys = map[string][]string{
@@ -562,6 +563,9 @@ func (s *Store) Get() map[string]any {
 	data["login_page_image_zoom"] = s.LoginPageImageZoom()
 	data["login_page_image_position_x"] = s.LoginPageImagePositionX()
 	data["login_page_image_position_y"] = s.LoginPageImagePositionY()
+	if value, ok := data["prompt_sources"]; ok {
+		data["prompt_sources"] = normalizePromptSourcesValue(value)
+	}
 	return data
 }
 
@@ -612,6 +616,9 @@ func (s *Store) Update(data map[string]any) (map[string]any, error) {
 	}
 	if value, ok := next["video_models"]; ok {
 		next["video_models"] = normalizeModelList(value, defaultVideoModels)
+	}
+	if value, ok := next["prompt_sources"]; ok {
+		next["prompt_sources"] = normalizePromptSourcesValue(value)
 	}
 	delete(next, "chat_models")
 	delete(next, "default_chat_model")
@@ -798,7 +805,7 @@ func (s *Store) saveLocked() error {
 	sort.Strings(keys)
 	for _, key := range keys {
 		if value, ok := s.data[key]; ok {
-			updates[settingEnvKeys[key]] = stringifyEnvValue(value)
+			updates[settingEnvKeys[key]] = stringifySettingEnvValue(key, value)
 		}
 	}
 	if err := writeEnvUpdates(s.EnvFile, updates); err != nil {
@@ -823,7 +830,11 @@ func settingsFromEnvValues(values map[string]string) map[string]any {
 	for settingKey := range settingEnvKeys {
 		for _, envKey := range settingEnvNames(settingKey) {
 			if value, ok := values[envKey]; ok {
-				settings[settingKey] = value
+				if settingKey == "prompt_sources" {
+					settings[settingKey] = normalizePromptSourcesValue(value)
+				} else {
+					settings[settingKey] = value
+				}
 				break
 			}
 		}
@@ -1116,6 +1127,36 @@ func stringifyEnvValue(value any) string {
 	default:
 		return strings.TrimSpace(fmt.Sprint(util.ValueOr(value, "")))
 	}
+}
+
+func stringifySettingEnvValue(settingKey string, value any) string {
+	if settingKey == "prompt_sources" {
+		encoded, err := json.Marshal(normalizePromptSourcesValue(value))
+		if err == nil {
+			return string(encoded)
+		}
+		return "[]"
+	}
+	return stringifyEnvValue(value)
+}
+
+func normalizePromptSourcesValue(value any) []any {
+	switch v := value.(type) {
+	case []any:
+		return v
+	case []map[string]any:
+		out := make([]any, 0, len(v))
+		for _, item := range v {
+			out = append(out, item)
+		}
+		return out
+	case string:
+		var decoded any
+		if err := json.Unmarshal([]byte(strings.TrimSpace(v)), &decoded); err == nil {
+			return normalizePromptSourcesValue(decoded)
+		}
+	}
+	return []any{}
 }
 
 func writeEnvUpdates(path string, updates map[string]string) error {

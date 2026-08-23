@@ -58,50 +58,51 @@ type CanvasViewport struct {
 }
 
 type CanvasNode struct {
-	ID                          string   `json:"id"`
-	Type                        string   `json:"type"`
-	X                           float64  `json:"x"`
-	Y                           float64  `json:"y"`
-	Width                       float64  `json:"width"`
-	Height                      float64  `json:"height"`
-	FontSize                    int      `json:"font_size,omitempty"`
-	NaturalWidth                int      `json:"natural_width,omitempty"`
-	NaturalHeight               int      `json:"natural_height,omitempty"`
-	FreeResize                  bool     `json:"free_resize,omitempty"`
-	ScaleX                      float64  `json:"scale_x"`
-	ScaleY                      float64  `json:"scale_y"`
-	Angle                       float64  `json:"angle,omitempty"`
-	URL                         string   `json:"url,omitempty"`
-	ThumbnailURL                string   `json:"thumbnail_url,omitempty"`
-	Title                       string   `json:"title,omitempty"`
-	Prompt                      string   `json:"prompt,omitempty"`
-	ComposerContent             *string  `json:"composer_content,omitempty"`
-	ParentID                    string   `json:"parent_id,omitempty"`
-	TaskID                      string   `json:"task_id,omitempty"`
-	GenerationModel             string   `json:"generation_model,omitempty"`
-	GenerationSize              string   `json:"generation_size,omitempty"`
-	GenerationResolution        string   `json:"generation_resolution,omitempty"`
-	GenerationQuality           string   `json:"generation_quality,omitempty"`
-	GenerationCount             int      `json:"generation_count,omitempty"`
-	GenerationOutputFormat      string   `json:"generation_output_format,omitempty"`
-	GenerationOutputCompression *int     `json:"generation_output_compression,omitempty"`
-	GenerationStream            *bool    `json:"generation_stream,omitempty"`
-	GenerationPartialImages     int      `json:"generation_partial_images,omitempty"`
-	GenerationStatus            string   `json:"generation_status,omitempty"`
-	GenerationError             string   `json:"generation_error,omitempty"`
-	GenerationType              string   `json:"generation_type,omitempty"`
-	GenerationReferenceURLs     []string `json:"generation_reference_urls,omitempty"`
-	GenerationVideoModel        string   `json:"generation_video_model,omitempty"`
-	GenerationVideoSize         string   `json:"generation_video_size,omitempty"`
-	GenerationVideoSeconds      int      `json:"generation_video_seconds,omitempty"`
-	GenerationVideoResolution   string   `json:"generation_video_resolution,omitempty"`
-	GenerationVideoAudio        *bool    `json:"generation_video_audio,omitempty"`
-	GenerationVideoWatermark    *bool    `json:"generation_video_watermark,omitempty"`
-	BatchChildIDs               []string `json:"batch_child_ids,omitempty"`
-	BatchRootID                 string   `json:"batch_root_id,omitempty"`
-	BatchPrimaryID              string   `json:"batch_primary_id,omitempty"`
-	BatchExpanded               *bool    `json:"batch_expanded,omitempty"`
-	CreatedAt                   string   `json:"created_at,omitempty"`
+	ID                           string   `json:"id"`
+	Type                         string   `json:"type"`
+	X                            float64  `json:"x"`
+	Y                            float64  `json:"y"`
+	Width                        float64  `json:"width"`
+	Height                       float64  `json:"height"`
+	FontSize                     int      `json:"font_size,omitempty"`
+	NaturalWidth                 int      `json:"natural_width,omitempty"`
+	NaturalHeight                int      `json:"natural_height,omitempty"`
+	FreeResize                   bool     `json:"free_resize,omitempty"`
+	ScaleX                       float64  `json:"scale_x"`
+	ScaleY                       float64  `json:"scale_y"`
+	Angle                        float64  `json:"angle,omitempty"`
+	URL                          string   `json:"url,omitempty"`
+	ThumbnailURL                 string   `json:"thumbnail_url,omitempty"`
+	Title                        string   `json:"title,omitempty"`
+	Prompt                       string   `json:"prompt,omitempty"`
+	ComposerContent              *string  `json:"composer_content,omitempty"`
+	ParentID                     string   `json:"parent_id,omitempty"`
+	TaskID                       string   `json:"task_id,omitempty"`
+	GenerationModel              string   `json:"generation_model,omitempty"`
+	GenerationSize               string   `json:"generation_size,omitempty"`
+	GenerationResolution         string   `json:"generation_resolution,omitempty"`
+	GenerationQuality            string   `json:"generation_quality,omitempty"`
+	GenerationCount              int      `json:"generation_count,omitempty"`
+	GenerationOutputFormat       string   `json:"generation_output_format,omitempty"`
+	GenerationOutputCompression  *int     `json:"generation_output_compression,omitempty"`
+	GenerationStream             *bool    `json:"generation_stream,omitempty"`
+	GenerationPartialImages      int      `json:"generation_partial_images,omitempty"`
+	GenerationStatus             string   `json:"generation_status,omitempty"`
+	GenerationError              string   `json:"generation_error,omitempty"`
+	GenerationType               string   `json:"generation_type,omitempty"`
+	GenerationReferenceURLs      []string `json:"generation_reference_urls,omitempty"`
+	GenerationVideoModel         string   `json:"generation_video_model,omitempty"`
+	GenerationVideoSize          string   `json:"generation_video_size,omitempty"`
+	GenerationVideoSeconds       int      `json:"generation_video_seconds,omitempty"`
+	GenerationVideoResolution    string   `json:"generation_video_resolution,omitempty"`
+	GenerationVideoAudio         *bool    `json:"generation_video_audio,omitempty"`
+	GenerationVideoWatermark     *bool    `json:"generation_video_watermark,omitempty"`
+	GenerationVideoReferenceURLs []string `json:"generation_video_reference_urls,omitempty"`
+	BatchChildIDs                []string `json:"batch_child_ids,omitempty"`
+	BatchRootID                  string   `json:"batch_root_id,omitempty"`
+	BatchPrimaryID               string   `json:"batch_primary_id,omitempty"`
+	BatchExpanded                *bool    `json:"batch_expanded,omitempty"`
+	CreatedAt                    string   `json:"created_at,omitempty"`
 }
 
 type CanvasConnection struct {
@@ -826,6 +827,9 @@ func normalizeCanvasNode(node CanvasNode) (CanvasNode, error) {
 	for index := range node.GenerationReferenceURLs {
 		node.GenerationReferenceURLs[index] = strings.TrimSpace(node.GenerationReferenceURLs[index])
 	}
+	for index := range node.GenerationVideoReferenceURLs {
+		node.GenerationVideoReferenceURLs[index] = strings.TrimSpace(node.GenerationVideoReferenceURLs[index])
+	}
 	for index := range node.BatchChildIDs {
 		node.BatchChildIDs[index] = strings.TrimSpace(node.BatchChildIDs[index])
 	}
@@ -848,7 +852,9 @@ func normalizeCanvasNode(node CanvasNode) (CanvasNode, error) {
 		if node.GenerationVideoSeconds != -1 && node.GenerationVideoSeconds != 4 && node.GenerationVideoSeconds != 5 && node.GenerationVideoSeconds != 6 && node.GenerationVideoSeconds != 8 && node.GenerationVideoSeconds != 10 && node.GenerationVideoSeconds != 12 && node.GenerationVideoSeconds != 15 {
 			return CanvasNode{}, invalidCanvasDocument("video node generation duration is invalid")
 		}
-		if node.GenerationVideoResolution != "480p" && node.GenerationVideoResolution != "512p" && node.GenerationVideoResolution != "720p" && node.GenerationVideoResolution != "768p" && node.GenerationVideoResolution != "1080p" {
+		// Sora selects its output size through generation_video_size and does not
+		// send an independent resolution. Other providers may expose 2K/4K.
+		if node.GenerationVideoResolution != "" && node.GenerationVideoResolution != "480p" && node.GenerationVideoResolution != "512p" && node.GenerationVideoResolution != "720p" && node.GenerationVideoResolution != "768p" && node.GenerationVideoResolution != "1080p" && node.GenerationVideoResolution != "2k" && node.GenerationVideoResolution != "4k" {
 			return CanvasNode{}, invalidCanvasDocument("video node generation resolution is invalid")
 		}
 	}
@@ -882,6 +888,14 @@ func normalizeCanvasNode(node CanvasNode) (CanvasNode, error) {
 	for _, referenceURL := range node.GenerationReferenceURLs {
 		if referenceURL == "" || len(referenceURL) > canvasDocumentMaxURL {
 			return CanvasNode{}, invalidCanvasDocument("node generation reference image is invalid")
+		}
+	}
+	if len(node.GenerationVideoReferenceURLs) > 3 {
+		return CanvasNode{}, invalidCanvasDocument("node has too many generation reference videos")
+	}
+	for _, referenceURL := range node.GenerationVideoReferenceURLs {
+		if referenceURL == "" || len(referenceURL) > canvasDocumentMaxURL {
+			return CanvasNode{}, invalidCanvasDocument("node generation reference video is invalid")
 		}
 	}
 	if len(node.BatchChildIDs) > 10 || len(node.BatchRootID) > 128 || len(node.BatchPrimaryID) > 128 {

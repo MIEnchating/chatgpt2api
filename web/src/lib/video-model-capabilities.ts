@@ -1,6 +1,8 @@
 export type VideoModelProfile =
   | "seedance-25"
   | "seedance-20"
+  | "seedance-20-fast"
+  | "seedance-20-mini"
   | "seedance-15"
   | "seedance-10"
   | "kling-3"
@@ -9,7 +11,9 @@ export type VideoModelProfile =
   | "minimax-hailuo"
   | "grok-15"
   | "grok"
+  | "sora-pro"
   | "sora"
+  | "vendor-unknown"
   | "generic";
 
 const range = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, index) => from + index);
@@ -18,16 +22,31 @@ export function videoModelProfile(model: string): VideoModelProfile {
   const value = String(model || "").trim().toLowerCase();
   if (value.includes("seedance") || value.includes("doubao-seedance")) {
     if (value.includes("2-5") || value.includes("2.5")) return "seedance-25";
+    if (value.includes("2-0") || value.includes("2.0")) {
+      if (value.includes("fast")) return "seedance-20-fast";
+      if (value.includes("mini")) return "seedance-20-mini";
+      return "seedance-20";
+    }
     if (value.includes("1-5") || value.includes("1.5")) return "seedance-15";
     if (value.includes("1-0") || value.includes("1.0")) return "seedance-10";
-    return "seedance-20";
+    return "vendor-unknown";
   }
-  if (value.includes("kling")) return value.includes("v3") || value.includes("3-0") ? "kling-3" : "kling-legacy";
+  if (value.includes("kling")) {
+    if (value.includes("v3") || value.includes("3-0") || value.includes("3.0")) return "kling-3";
+    if (/kling[-_.]?(?:v)?[12](?:[-_.]|$)/.test(value)) return "kling-legacy";
+    return "vendor-unknown";
+  }
   if (value.includes("minimax") || value.includes("hailuo") || value.startsWith("t2v-") || value.startsWith("i2v-") || value.startsWith("s2v-")) {
     return value.includes("h3") ? "minimax-h3" : "minimax-hailuo";
   }
-  if (value.includes("grok")) return value.includes("1.5") || value.includes("1-5") ? "grok-15" : "grok";
-  if (value.includes("sora")) return "sora";
+  if (value.includes("grok")) {
+    if (value.includes("1.5") || value.includes("1-5")) return "grok-15";
+    return value === "grok-imagine-video" || value === "grok-imagine-video-latest" ? "grok" : "vendor-unknown";
+  }
+  if (value.includes("sora")) {
+    if (value.includes("sora-2") || value.includes("sora_2")) return value.includes("pro") ? "sora-pro" : "sora";
+    return "vendor-unknown";
+  }
   return "generic";
 }
 
@@ -36,6 +55,8 @@ export function videoSizeOptions(model: string): string[] {
   switch (videoModelProfile(model)) {
     case "seedance-25":
     case "seedance-20":
+    case "seedance-20-fast":
+    case "seedance-20-mini":
     case "seedance-15":
     case "seedance-10":
       return ["adaptive", "16:9", "4:3", "1:1", "3:4", "9:16", "21:9"];
@@ -43,13 +64,21 @@ export function videoSizeOptions(model: string): string[] {
     case "kling-legacy":
       return ["16:9", "9:16", "1:1"];
     case "minimax-h3":
-      return ["adaptive", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16"];
+      // H3 text-to-video requires a concrete ratio. Image-to-video ignores
+      // this selection and follows the uploaded first frame.
+      return ["16:9", "21:9", "4:3", "1:1", "3:4", "9:16"];
     case "minimax-hailuo":
       // The v1 MiniMax API has no aspect-ratio field; leave it unset.
       return [];
     case "grok-15":
     case "grok":
       return ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3"];
+    case "sora-pro":
+      return ["1280x720", "720x1280", "1792x1024", "1024x1792", "1920x1080", "1080x1920"];
+    case "sora":
+      return ["1280x720", "720x1280"];
+    case "vendor-unknown":
+      return [];
     default:
       return ["1280x720", "720x1280"];
   }
@@ -59,6 +88,8 @@ export function videoSecondsOptions(model: string): number[] {
   switch (videoModelProfile(model)) {
     case "seedance-25": return [-1, ...range(4, 30)];
     case "seedance-20": return [-1, ...range(4, 15)];
+    case "seedance-20-fast":
+    case "seedance-20-mini": return [-1, ...range(4, 15)];
     case "seedance-15": return [-1, ...range(4, 12)];
     case "seedance-10": return range(2, 12);
     case "kling-3": return range(3, 15);
@@ -67,31 +98,62 @@ export function videoSecondsOptions(model: string): number[] {
     case "minimax-hailuo": return [6, 10];
     case "grok-15":
     case "grok": return range(1, 15);
+    case "sora-pro":
+    case "sora": return [4, 8, 12, 16, 20];
+    case "vendor-unknown": return [4, 8, 12];
     default: return [4, 8, 12];
   }
 }
 
-export function videoResolutionOptions(model: string): string[] {
+export function videoResolutionOptions(model: string, seconds?: number): string[] {
   switch (videoModelProfile(model)) {
     case "seedance-20": return ["480p", "720p", "1080p", "4k"];
+    case "seedance-20-fast":
+    case "seedance-20-mini": return ["480p", "720p"];
     case "seedance-25":
     case "seedance-15":
     case "seedance-10": return ["480p", "720p", "1080p"];
     case "minimax-h3": return ["768P", "2K"];
-    case "minimax-hailuo": return ["768P", "1080P"];
+    case "minimax-hailuo": return seconds === 10 ? ["768P"] : ["768P", "1080P"];
     case "grok-15": return ["480p", "720p", "1080p"];
     case "grok": return ["480p", "720p"];
-    case "kling-3":
+    case "sora-pro":
+    case "sora": return [];
+    case "kling-3": return ["720p", "1080p", "4k"];
     case "kling-legacy": return ["720p", "1080p"];
+    case "vendor-unknown": return [];
     default: return ["720p", "1080p"];
   }
+}
+
+export function videoReferenceImageLimit(_model: string) {
+  // The current product route models reference images as one opening frame.
+  return 1;
+}
+
+export function supportsVideoMultimodalReferences(model: string) {
+  return videoModelProfile(model) === "minimax-h3";
+}
+
+export function videoMultimodalReferenceLimits(model: string) {
+  return supportsVideoMultimodalReferences(model)
+    ? { image: 9, video: 3, audio: 3 }
+    : { image: 0, video: 0, audio: 0 };
+}
+
+export function videoRequiresReferenceImage(model: string) {
+  const value = String(model || "").trim().toLowerCase();
+  return value.includes("hailuo-2.3-fast") || value.startsWith("i2v-");
 }
 
 export function videoAudioControl(model: string): "toggle" | "always" | "none" {
   switch (videoModelProfile(model)) {
     case "seedance-25":
     case "seedance-20":
+    case "seedance-20-fast":
+    case "seedance-20-mini":
     case "seedance-15":
+    case "kling-3":
     case "kling-legacy": return "toggle";
     case "grok-15":
     case "grok": return "always";
@@ -101,7 +163,7 @@ export function videoAudioControl(model: string): "toggle" | "always" | "none" {
 
 export function videoWatermarkSupported(model: string) {
   const profile = videoModelProfile(model);
-  return profile === "seedance-25" || profile === "seedance-20" || profile === "seedance-15" || profile === "seedance-10" || profile === "minimax-h3" || profile === "minimax-hailuo";
+  return profile === "seedance-25" || profile === "seedance-20" || profile === "seedance-20-fast" || profile === "seedance-20-mini" || profile === "seedance-15" || profile === "seedance-10" || profile === "kling-3" || profile === "minimax-hailuo";
 }
 
 export function videoSizeLabel(size: string) {

@@ -261,37 +261,70 @@ func TestRelayPayloadForGrokUsesOfficialGenerationParameters(t *testing.T) {
 
 func TestOfficialVideoRequestPayloadUsesProviderFields(t *testing.T) {
 	tests := []struct {
-		name   string
-		model  string
-		input  map[string]any
-		want   map[string]any
-		absent []string
+		name     string
+		model    string
+		input    map[string]any
+		want     map[string]any
+		metadata map[string]any
+		absent   []string
 	}{
 		{
-			name:   "grok",
-			model:  "grok-imagine-video-1.5",
-			input:  map[string]any{"seconds": 10, "size": "16:9", "resolution": "1080p", "generate_audio": true, "watermark": true},
-			want:   map[string]any{"duration": 10, "aspect_ratio": "16:9", "resolution": "1080p"},
-			absent: []string{"generate_audio", "watermark"},
+			name:     "grok",
+			model:    "grok-imagine-video-1.5",
+			input:    map[string]any{"seconds": 10, "size": "16:9", "resolution": "1080p", "generate_audio": true, "watermark": true},
+			want:     map[string]any{"duration": 10, "aspect_ratio": "16:9", "resolution": "1080p"},
+			metadata: map[string]any{"aspect_ratio": "16:9", "resolution": "1080p"},
+			absent:   []string{"generate_audio", "watermark"},
 		},
 		{
-			name:   "minimax",
-			model:  "MiniMax-Hailuo-2.3",
-			input:  map[string]any{"seconds": 6, "resolution": "768P", "watermark": true},
-			want:   map[string]any{"duration": 6, "resolution": "768P", "aigc_watermark": true},
-			absent: []string{"ratio", "generate_audio"},
+			name:     "minimax",
+			model:    "MiniMax-Hailuo-2.3",
+			input:    map[string]any{"seconds": 6, "resolution": "768P", "watermark": true},
+			want:     map[string]any{"duration": 6, "resolution": "768P", "aigc_watermark": true},
+			metadata: map[string]any{"resolution": "768P", "aigc_watermark": true},
+			absent:   []string{"ratio", "generate_audio"},
 		},
 		{
-			name:  "seedance",
-			model: "doubao-seedance-2-5-260628",
-			input: map[string]any{"seconds": 30, "size": "adaptive", "resolution": "1080p", "generate_audio": true, "watermark": false},
-			want:  map[string]any{"duration": 30, "ratio": "adaptive", "resolution": "1080p", "generate_audio": true, "watermark": false},
+			name:   "minimax h3 text",
+			model:  "MiniMax-H3",
+			input:  map[string]any{"seconds": 6, "size": "adaptive", "resolution": "2K", "watermark": true},
+			want:   map[string]any{"duration": 6, "ratio": "16:9", "resolution": "2K", "generation_mode": "text-to-video"},
+			absent: []string{"aigc_watermark"},
 		},
 		{
-			name:  "kling",
-			model: "kling-v3",
-			input: map[string]any{"seconds": 5, "size": "1:1", "generate_audio": true},
-			want:  map[string]any{"duration": 5, "aspect_ratio": "1:1", "sound": true},
+			name:  "minimax h3 reference",
+			model: "MiniMax-H3",
+			input: map[string]any{"seconds": 6, "size": "adaptive", "reference_image_urls": []string{"data:image/png;base64,reference"}},
+			want:  map[string]any{"duration": 6, "ratio": "auto", "generation_mode": "image-to-video", "input_reference": "data:image/png;base64,reference"},
+		},
+		{
+			name:   "sora official fields only",
+			model:  "sora-2-pro",
+			input:  map[string]any{"seconds": 20, "size": "1920x1080", "resolution": "1080p", "generate_audio": true, "watermark": true},
+			want:   map[string]any{"seconds": "20", "size": "1920x1080"},
+			absent: []string{"duration", "resolution", "generate_audio", "watermark"},
+		},
+		{
+			name:     "seedance",
+			model:    "doubao-seedance-2-5-260628",
+			input:    map[string]any{"seconds": 30, "size": "adaptive", "resolution": "1080p", "generate_audio": true, "watermark": false},
+			want:     map[string]any{"duration": 30, "ratio": "adaptive", "resolution": "1080p", "generate_audio": true, "watermark": false},
+			metadata: map[string]any{"ratio": "adaptive", "resolution": "1080p", "generate_audio": true, "watermark": false},
+		},
+		{
+			name:     "kling",
+			model:    "kling-v3",
+			input:    map[string]any{"seconds": 5, "size": "1:1", "resolution": "4k", "generate_audio": true, "watermark": false},
+			want:     map[string]any{"duration": 5, "aspect_ratio": "1:1", "resolution": "4k", "sound": true, "watermark": false},
+			metadata: map[string]any{"aspect_ratio": "1:1", "resolution": "4k", "sound": true, "audio": "native", "watermark": false},
+		},
+		{
+			name:     "kling reference follows first frame ratio",
+			model:    "kling-v3",
+			input:    map[string]any{"seconds": 5, "size": "16:9", "resolution": "1080p", "reference_image_urls": []string{"https://example.com/frame.png"}},
+			want:     map[string]any{"duration": 5, "resolution": "1080p", "input_reference": "https://example.com/frame.png"},
+			metadata: map[string]any{"resolution": "1080p"},
+			absent:   []string{"aspect_ratio"},
 		},
 	}
 	for _, test := range tests {
@@ -310,6 +343,215 @@ func TestOfficialVideoRequestPayloadUsesProviderFields(t *testing.T) {
 				if _, ok := got[key]; ok {
 					t.Fatalf("unexpected provider field %q in %#v", key, got)
 				}
+			}
+			if test.metadata != nil && !reflect.DeepEqual(got["metadata"], test.metadata) {
+				t.Fatalf("metadata = %#v, want %#v", got["metadata"], test.metadata)
+			}
+		})
+	}
+}
+
+func TestOfficialVideoRequestPayloadMapsMiniMaxH3MultimodalReferences(t *testing.T) {
+	images := []string{"https://cdn.example.com/character.png"}
+	videos := []string{"https://cdn.example.com/motion.mp4"}
+	audios := []string{"https://cdn.example.com/voice.mp3"}
+	got := officialVideoRequestPayload(map[string]any{
+		"model":                "MiniMax-H3",
+		"prompt":               "follow the references",
+		"seconds":              8,
+		"size":                 "16:9",
+		"resolution":           "2K",
+		"reference_mode":       "reference",
+		"reference_image_urls": images,
+		"reference_video_urls": videos,
+		"reference_audio_urls": audios,
+	})
+	if got["generation_mode"] != "reference-to-video" || got["ratio"] != "16:9" {
+		t.Fatalf("unexpected H3 reference mode payload: %#v", got)
+	}
+	if _, ok := got["input_reference"]; ok {
+		t.Fatalf("multimodal references must not be reduced to input_reference: %#v", got)
+	}
+	for key, want := range map[string]any{
+		"reference_image_urls": images,
+		"reference_video_urls": videos,
+		"reference_audio_urls": audios,
+	} {
+		if !reflect.DeepEqual(got[key], want) {
+			t.Fatalf("%s = %#v, want %#v", key, got[key], want)
+		}
+		metadata := got["metadata"].(map[string]any)
+		if !reflect.DeepEqual(metadata[key], want) {
+			t.Fatalf("metadata.%s = %#v, want %#v", key, metadata[key], want)
+		}
+	}
+}
+
+func TestOfficialVideoRequestPayloadMapsVideoToVideoAlias(t *testing.T) {
+	got := officialVideoRequestPayload(map[string]any{
+		"model":                "MiniMax-H3",
+		"prompt":               "restyle the source video",
+		"seconds":              8,
+		"size":                 "adaptive",
+		"resolution":           "2K",
+		"reference_mode":       "video-to-video",
+		"reference_video_urls": []string{"https://media.example.com/source.mp4"},
+	})
+	if got["generation_mode"] != "reference-to-video" || got["ratio"] != "auto" {
+		t.Fatalf("video-to-video alias was not mapped to H3 reference-to-video: %#v", got)
+	}
+	if _, ok := got["input_reference"]; ok {
+		t.Fatalf("video-to-video must use reference_video_urls, not input_reference: %#v", got)
+	}
+}
+
+func TestRelayVideoMultipartRequestUploadsInputReferenceFile(t *testing.T) {
+	req, err := relayVideoMultipartRequest(
+		context.Background(),
+		"https://relay.example/",
+		"sk-test",
+		map[string]any{
+			"model":           "MiniMax-H3",
+			"prompt":          "make a video",
+			"ratio":           "auto",
+			"generation_mode": "image-to-video",
+			"metadata":        map[string]any{"resolution": "768P"},
+		},
+		protocol.UploadedImage{Filename: "reference.png", ContentType: "image/png", Data: []byte("png-bytes")},
+	)
+	if err != nil {
+		t.Fatalf("relayVideoMultipartRequest() error = %v", err)
+	}
+	if req.URL.String() != "https://relay.example/v1/videos" {
+		t.Fatalf("request URL = %q", req.URL.String())
+	}
+	if req.Header.Get("Authorization") != "Bearer sk-test" {
+		t.Fatalf("Authorization = %q", req.Header.Get("Authorization"))
+	}
+	reader, err := req.MultipartReader()
+	if err != nil {
+		t.Fatalf("MultipartReader() error = %v", err)
+	}
+	fields := map[string]string{}
+	var reference []byte
+	for {
+		part, partErr := reader.NextPart()
+		if partErr == io.EOF {
+			break
+		}
+		if partErr != nil {
+			t.Fatalf("NextPart() error = %v", partErr)
+		}
+		data, readErr := io.ReadAll(part)
+		if readErr != nil {
+			t.Fatalf("ReadAll() error = %v", readErr)
+		}
+		if part.FormName() == "input_reference" {
+			reference = data
+			if part.FileName() != "reference.png" || part.Header.Get("Content-Type") != "image/png" {
+				t.Fatalf("reference headers filename=%q content-type=%q", part.FileName(), part.Header.Get("Content-Type"))
+			}
+		} else {
+			fields[part.FormName()] = string(data)
+		}
+	}
+	if fields["ratio"] != "auto" || fields["generation_mode"] != "image-to-video" {
+		t.Fatalf("multipart fields = %#v", fields)
+	}
+	if fields["metadata"] != `{"resolution":"768P"}` {
+		t.Fatalf("multipart metadata = %q", fields["metadata"])
+	}
+	if string(reference) != "png-bytes" {
+		t.Fatalf("input_reference = %q", reference)
+	}
+}
+
+func TestRelayVideoSubmitConvertsDataURLToMultipart(t *testing.T) {
+	imageData := httpTestAlphaPNGBytes(t, 256, 256)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/videos" {
+			t.Errorf("upstream path = %q, want /v1/videos", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer sk-test" {
+			t.Errorf("Authorization = %q, want Bearer sk-test", got)
+		}
+		if err := r.ParseMultipartForm(int64(len(imageData)) + (1 << 20)); err != nil {
+			t.Errorf("ParseMultipartForm() error = %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if r.FormValue("ratio") != "auto" || r.FormValue("generation_mode") != "image-to-video" {
+			t.Errorf("multipart form = %#v", r.MultipartForm.Value)
+		}
+		file, header, err := r.FormFile("input_reference")
+		if err != nil {
+			t.Errorf("FormFile(input_reference) error = %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		defer file.Close()
+		got, err := io.ReadAll(file)
+		if err != nil {
+			t.Errorf("ReadAll(input_reference) error = %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if !bytes.Equal(got, imageData) || header.Header.Get("Content-Type") != "image/png" {
+			t.Errorf("input_reference bytes=%d content-type=%q", len(got), header.Header.Get("Content-Type"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"id":"video-task-1","status":"queued"}`))
+	}))
+	defer upstream.Close()
+
+	app := newTestApp(t)
+	defer app.Close()
+	if _, err := app.config.Update(map[string]any{"relay_base_url": upstream.URL}); err != nil {
+		t.Fatalf("update relay URL: %v", err)
+	}
+	request := officialVideoRequestPayload(map[string]any{
+		"model":                "MiniMax-H3",
+		"prompt":               "make a video",
+		"seconds":              6,
+		"size":                 "adaptive",
+		"reference_image_urls": []string{"data:image/png;base64," + base64.StdEncoding.EncodeToString(imageData)},
+	})
+	result, err := app.relayVideoSubmit(context.Background(), "sk-test", request)
+	if err != nil {
+		t.Fatalf("relayVideoSubmit() error = %v", err)
+	}
+	if result["id"] != "video-task-1" {
+		t.Fatalf("relayVideoSubmit() result = %#v", result)
+	}
+}
+
+func TestValidateVideoReferenceImageUsesOfficialLimits(t *testing.T) {
+	tests := []struct {
+		name      string
+		model     string
+		size      string
+		width     int
+		height    int
+		wantError bool
+	}{
+		{name: "minimax h3 minimum dimensions", model: "MiniMax-H3", width: 256, height: 256},
+		{name: "minimax h3 rejects short edge", model: "MiniMax-H3", width: 255, height: 256, wantError: true},
+		{name: "minimax h3 rejects extreme ratio", model: "MiniMax-H3", width: 256, height: 700, wantError: true},
+		{name: "seedance accepts boundary ratio", model: "doubao-seedance-2-5-260628", width: 400, height: 1000},
+		{name: "seedance rejects extreme ratio", model: "doubao-seedance-2-5-260628", width: 399, height: 1000, wantError: true},
+		{name: "kling 3 minimum dimensions", model: "kling-v3", width: 300, height: 300},
+		{name: "kling 3 rejects short edge", model: "kling-v3", width: 299, height: 300, wantError: true},
+		{name: "kling 3 rejects extreme ratio", model: "kling-v3", width: 300, height: 751, wantError: true},
+		{name: "sora matching size", model: "sora-2", size: "1280x720", width: 1280, height: 720},
+		{name: "sora rejects mismatched size", model: "sora-2", size: "1280x720", width: 720, height: 1280, wantError: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateVideoReferenceImage(test.model, test.size, httpTestAlphaPNGBytes(t, test.width, test.height))
+			if (err != nil) != test.wantError {
+				t.Fatalf("validateVideoReferenceImage() error = %v, wantError %v", err, test.wantError)
 			}
 		})
 	}

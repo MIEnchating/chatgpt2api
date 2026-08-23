@@ -748,7 +748,7 @@ func (a *App) relayVideoTask(ctx context.Context, payload map[string]any) (map[s
 		return nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: "视频任务缺少上游令牌"}
 	}
 	request := officialVideoRequestPayload(payload)
-	created, err := a.relayJSON(ctx, http.MethodPost, "/v1/videos", apiKey, request)
+	created, err := a.relayVideoSubmit(ctx, apiKey, request)
 	if err != nil {
 		return created, err
 	}
@@ -800,13 +800,52 @@ func (a *App) relayVideoTask(ctx context.Context, payload map[string]any) (map[s
 	return nil, protocol.HTTPError{Status: http.StatusGatewayTimeout, Message: "视频生成超时，请稍后重试"}
 }
 
-// officialVideoRequestPayload keeps the application API stable while adding
-// the parameter names used by the providers' official video APIs. The
-// OpenAI-compatible aliases remain for relays that expose a common schema.
+func (a *App) relayVideoSubmit(ctx context.Context, apiKey string, request map[string]any) (map[string]any, error) {
+	inputReference := strings.TrimSpace(util.Clean(request["input_reference"]))
+	if !strings.HasPrefix(strings.ToLower(inputReference), "data:") {
+		return a.relayJSON(ctx, http.MethodPost, "/v1/videos", apiKey, request)
+	}
+	data, contentType, err := imageDataURLBytes(inputReference)
+	if err != nil {
+		return nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: "视频参考图必须是有效的 PNG、JPEG 或 WebP 图片"}
+	}
+	if err := validateVideoReferenceImage(util.Clean(request["model"]), util.Clean(request["size"]), data); err != nil {
+		return nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: err.Error()}
+	}
+	delete(request, "input_reference")
+	req, err := relayVideoMultipartRequest(ctx, a.relayBaseURL(), apiKey, request, protocol.UploadedImage{
+		Data:        data,
+		Filename:    "input-reference." + videoReferenceImageExtension(contentType),
+		ContentType: contentType,
+	})
+	if err != nil {
+		return nil, err
+	}
+	resp, err := a.relayHTTPClient().Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	return relayDecodeJSONResponse(resp)
+}
+
+// officialVideoRequestPayload maps official provider semantics onto the
+// flattened /v1/videos compatibility contract exposed by the relay.
 func officialVideoRequestPayload(payload map[string]any) map[string]any {
 	model := util.Clean(payload["model"])
 	name := strings.ToLower(model)
 	seconds := util.ToInt(payload["seconds"], 0)
+	refs := util.AsStringSlice(payload["reference_image_urls"])
+	referenceVideoURLs := util.AsStringSlice(payload["reference_video_urls"])
+	referenceAudioURLs := util.AsStringSlice(payload["reference_audio_urls"])
+	referenceMode := normalizeVideoReferenceMode(util.Clean(payload["reference_mode"]))
+	if referenceMode == "" {
+		if len(referenceVideoURLs) > 0 || len(referenceAudioURLs) > 0 {
+			referenceMode = "reference"
+		} else {
+			referenceMode = "first-frame"
+		}
+	}
 	request := map[string]any{
 		"model":    model,
 		"prompt":   payload["prompt"],
@@ -814,40 +853,114 @@ func officialVideoRequestPayload(payload map[string]any) map[string]any {
 		"duration": seconds,
 		"size":     payload["size"],
 	}
+	metadata := map[string]any{}
 	if resolution := util.Clean(payload["resolution"]); resolution != "" {
 		request["resolution"] = resolution
 	}
 	size := util.Clean(payload["size"])
 	switch {
+	case isSora2Model(name):
+		// OpenAI's Videos API uses size and seconds. It does not accept the
+		// provider-neutral resolution, duration, audio, or watermark fields.
+		request["seconds"] = strconv.Itoa(seconds)
+		delete(request, "duration")
+		delete(request, "resolution")
 	case strings.Contains(name, "grok"):
 		if size != "" {
 			request["aspect_ratio"] = size
+			metadata["aspect_ratio"] = size
+		}
+		if resolution := util.Clean(payload["resolution"]); resolution != "" {
+			metadata["resolution"] = resolution
 		}
 		// xAI's video API does not expose audio or watermark controls.
 	case strings.Contains(name, "kling"):
-		if size != "" {
+		if len(refs) == 0 && size != "" {
 			request["aspect_ratio"] = size
+			metadata["aspect_ratio"] = size
+		}
+		if resolution := util.Clean(payload["resolution"]); resolution != "" {
+			metadata["resolution"] = resolution
 		}
 		if value, ok := payload["generate_audio"].(bool); ok {
-			// Kling's official request names this switch sound.
+			// The shared relay currently uses the legacy flattened `sound`
+			// compatibility field. Kling 3.0's direct API expresses the same
+			// setting as settings.audio = native/off.
 			request["sound"] = value
+			metadata["sound"] = value
+			if value {
+				metadata["audio"] = "native"
+			} else {
+				metadata["audio"] = "off"
+			}
+		}
+		if value, ok := payload["watermark"].(bool); ok && isKling3Model(model) {
+			request["watermark"] = value
+			metadata["watermark"] = value
 		}
 	case strings.Contains(name, "minimax") || strings.Contains(name, "hailuo") || strings.HasPrefix(name, "t2v-") || strings.HasPrefix(name, "i2v-") || strings.HasPrefix(name, "s2v-"):
-		if size != "" {
+		if isMiniMaxH3Model(model) {
+			delete(request, "seconds")
+			delete(request, "size")
+			if referenceMode == "reference" {
+				request["generation_mode"] = "reference-to-video"
+				if size == "" || strings.EqualFold(size, "adaptive") {
+					request["ratio"] = "auto"
+				} else {
+					request["ratio"] = size
+				}
+				if len(refs) > 0 {
+					request["reference_image_urls"] = refs
+					metadata["reference_image_urls"] = refs
+				}
+				if len(referenceVideoURLs) > 0 {
+					request["reference_video_urls"] = referenceVideoURLs
+					metadata["reference_video_urls"] = referenceVideoURLs
+				}
+				if len(referenceAudioURLs) > 0 {
+					request["reference_audio_urls"] = referenceAudioURLs
+					metadata["reference_audio_urls"] = referenceAudioURLs
+				}
+			} else if len(refs) > 0 {
+				request["generation_mode"] = "image-to-video"
+				// The relay's H3 compatibility schema names the provider's
+				// adaptive image-to-video ratio "auto".
+				request["ratio"] = "auto"
+			} else {
+				request["generation_mode"] = "text-to-video"
+				if size == "" || strings.EqualFold(size, "adaptive") || strings.EqualFold(size, "auto") {
+					request["ratio"] = "16:9"
+				} else {
+					request["ratio"] = size
+				}
+			}
+		} else if size != "" {
 			request["ratio"] = size
 		}
-		if value, ok := payload["watermark"].(bool); ok {
-			request["aigc_watermark"] = value
+		if !isMiniMaxH3Model(model) {
+			if resolution := util.Clean(payload["resolution"]); resolution != "" {
+				metadata["resolution"] = resolution
+			}
+			if value, ok := payload["watermark"].(bool); ok {
+				request["aigc_watermark"] = value
+				metadata["aigc_watermark"] = value
+			}
 		}
 	case strings.Contains(name, "seedance") || strings.Contains(name, "doubao-seedance"):
 		if size != "" {
 			request["ratio"] = size
+			metadata["ratio"] = size
+		}
+		if resolution := util.Clean(payload["resolution"]); resolution != "" {
+			metadata["resolution"] = resolution
 		}
 		if value, ok := payload["generate_audio"].(bool); ok {
 			request["generate_audio"] = value
+			metadata["generate_audio"] = value
 		}
 		if value, ok := payload["watermark"].(bool); ok {
 			request["watermark"] = value
+			metadata["watermark"] = value
 		}
 	default:
 		if value, ok := payload["generate_audio"].(bool); ok {
@@ -857,10 +970,127 @@ func officialVideoRequestPayload(payload map[string]any) map[string]any {
 			request["watermark"] = value
 		}
 	}
-	if refs := util.AsStringSlice(payload["reference_image_urls"]); len(refs) > 0 {
+	if len(refs) > 0 && referenceMode != "reference" {
 		request["input_reference"] = refs[0]
 	}
+	if len(metadata) > 0 {
+		request["metadata"] = metadata
+	}
 	return request
+}
+
+func isMiniMaxH3Model(model string) bool {
+	name := strings.ToLower(strings.TrimSpace(model))
+	return strings.Contains(name, "h3") && (strings.Contains(name, "minimax") || strings.Contains(name, "hailuo"))
+}
+
+func validateVideoReferenceImage(model, size string, data []byte) error {
+	info, err := util.InspectRasterImage(data, "image/png", "image/jpeg", "image/webp")
+	if err != nil {
+		return fmt.Errorf("视频参考图必须是有效的 PNG、JPEG 或 WebP 图片")
+	}
+	if isMiniMaxH3Model(model) {
+		if len(data) > 30<<20 {
+			return fmt.Errorf("MiniMax H3 官方参考图大小不能超过 30 MB")
+		}
+		if info.Width < 256 || info.Width > 5760 || info.Height < 256 || info.Height > 5760 {
+			return fmt.Errorf("MiniMax H3 官方参考图宽高必须在 256 到 5760 像素之间")
+		}
+		ratio := float64(info.Width) / float64(info.Height)
+		if ratio < 0.4 || ratio > 2.5 {
+			return fmt.Errorf("MiniMax H3 官方参考图宽高比必须在 2:5 到 5:2 之间")
+		}
+	}
+	name := strings.ToLower(strings.TrimSpace(model))
+	if seedanceVideoProfile(name) != "" {
+		if len(data) >= 30<<20 {
+			return fmt.Errorf("Seedance 官方要求单张参考图小于 30 MB")
+		}
+		ratio := float64(info.Width) / float64(info.Height)
+		if ratio < 0.4 || ratio > 2.5 {
+			return fmt.Errorf("Seedance 官方参考图宽高比必须在 2:5 到 5:2 之间")
+		}
+	}
+	if isKling3Model(name) {
+		if info.ContentType != "image/png" && info.ContentType != "image/jpeg" {
+			return fmt.Errorf("Kling 3.0 官方参考图仅支持 JPG、JPEG、PNG")
+		}
+		if len(data) > 50<<20 {
+			return fmt.Errorf("Kling 3.0 官方参考图大小不能超过 50 MB")
+		}
+		if info.Width < 300 || info.Height < 300 {
+			return fmt.Errorf("Kling 3.0 官方参考图宽高均不能小于 300 像素")
+		}
+		ratio := float64(info.Width) / float64(info.Height)
+		if ratio < 0.4 || ratio > 2.5 {
+			return fmt.Errorf("Kling 3.0 官方参考图宽高比必须在 1:2.5 到 2.5:1 之间")
+		}
+	}
+	if isSora2Model(name) {
+		width, height, ok := strings.Cut(strings.ToLower(strings.TrimSpace(size)), "x")
+		if !ok {
+			return fmt.Errorf("Sora 图生视频必须指定官方 size")
+		}
+		targetWidth, widthErr := strconv.Atoi(width)
+		targetHeight, heightErr := strconv.Atoi(height)
+		if widthErr != nil || heightErr != nil || info.Width != targetWidth || info.Height != targetHeight {
+			return fmt.Errorf("Sora 官方要求首帧参考图尺寸与视频 size 完全一致，当前图片为 %dx%d，目标为 %s", info.Width, info.Height, size)
+		}
+	}
+	return nil
+}
+
+func relayVideoMultipartRequest(ctx context.Context, baseURL, apiKey string, payload map[string]any, image protocol.UploadedImage) (*http.Request, error) {
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	for key, value := range payload {
+		if value == nil {
+			continue
+		}
+		fieldValue := strings.TrimSpace(util.Clean(value))
+		switch value.(type) {
+		case map[string]any, []any, []string:
+			encoded, err := json.Marshal(value)
+			if err != nil {
+				return nil, err
+			}
+			fieldValue = string(encoded)
+		}
+		if fieldValue == "" {
+			continue
+		}
+		if err := writer.WriteField(key, fieldValue); err != nil {
+			return nil, err
+		}
+	}
+	header := make(textproto.MIMEHeader)
+	header.Set("Content-Disposition", fmt.Sprintf(`form-data; name="input_reference"; filename="%s"`, escapeMultipartQuote(image.Filename)))
+	header.Set("Content-Type", relayUploadImageContentType(image))
+	part, err := writer.CreatePart(header)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := part.Write(image.Data); err != nil {
+		return nil, err
+	}
+	if err := writer.Close(); err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(baseURL, "/")+"/v1/videos", &body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(apiKey))
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("Accept", "application/json")
+	return req, nil
+}
+
+func videoReferenceImageExtension(contentType string) string {
+	if strings.EqualFold(contentType, "image/jpeg") {
+		return "jpg"
+	}
+	return strings.TrimPrefix(strings.ToLower(strings.TrimSpace(contentType)), "image/")
 }
 
 func (a *App) downloadRelayVideo(ctx context.Context, videoURL, apiKey, owner, taskID string) (string, error) {

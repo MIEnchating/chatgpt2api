@@ -1135,6 +1135,9 @@ function getTurnModeLabel(turn: ImageTurn) {
     return "文生图";
   }
   if (turn.mode === "video") {
+    if (turn.videoReferenceMode === "reference") {
+      return turn.videoReferenceVideoURLs?.some(Boolean) ? "视频生视频" : "参考生视频";
+    }
     return turn.referenceImages.length > 0 ? "图生视频" : "文生视频";
   }
   if (turn.mode === "edit" && turn.referenceImages.some((image) => image.source === "conversation")) {

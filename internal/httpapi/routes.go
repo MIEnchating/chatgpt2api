@@ -3,10 +3,13 @@ package httpapi
 import (
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 
 	"chatgpt2api/internal/protocol"
 	"chatgpt2api/internal/service"
@@ -1741,7 +1744,33 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		seconds := util.ToInt(body["seconds"], videoDefaultSeconds(model))
-		if err := validateVideoParameters(model, util.Clean(body["size"]), seconds, util.Clean(body["resolution"])); err != nil {
+		refs := util.AsStringSlice(body["reference_image_urls"])
+		referenceVideoURLs := util.AsStringSlice(body["reference_video_urls"])
+		referenceAudioURLs := util.AsStringSlice(body["reference_audio_urls"])
+		referenceMode := normalizeVideoReferenceMode(util.Clean(body["reference_mode"]))
+		if referenceMode == "" {
+			if len(referenceVideoURLs) > 0 || len(referenceAudioURLs) > 0 {
+				referenceMode = "reference"
+			} else {
+				referenceMode = "first-frame"
+			}
+		}
+		body["reference_mode"] = referenceMode
+		if err := validateVideoPrompt(model, util.Clean(body["prompt"])); err != nil {
+			util.WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		firstFrameCount := len(refs)
+		multimodalReferenceCount := 0
+		if referenceMode == "reference" {
+			firstFrameCount = 0
+			multimodalReferenceCount = len(refs) + len(referenceVideoURLs) + len(referenceAudioURLs)
+		}
+		if err := validateVideoParameters(model, util.Clean(body["size"]), seconds, util.Clean(body["resolution"]), firstFrameCount, multimodalReferenceCount); err != nil {
+			util.WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if err := validateVideoReferences(model, referenceMode, refs, referenceVideoURLs, referenceAudioURLs); err != nil {
 			util.WriteError(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -1749,8 +1778,7 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 			a.writeCreationTaskSubmitError(w, err)
 			return
 		}
-		refs := util.AsStringSlice(body["reference_image_urls"])
-		task, err := a.tasks.SubmitVideo(r.Context(), identity, util.Clean(body["client_task_id"]), util.Clean(body["prompt"]), model, util.Clean(body["size"]), seconds, util.Clean(body["resolution"]), util.ToBool(body["generate_audio"]), util.ToBool(body["watermark"]), refs, creationTaskRequestMetadata(body))
+		task, err := a.tasks.SubmitVideo(r.Context(), identity, util.Clean(body["client_task_id"]), util.Clean(body["prompt"]), model, util.Clean(body["size"]), seconds, util.Clean(body["resolution"]), util.ToBool(body["generate_audio"]), util.ToBool(body["watermark"]), referenceMode, refs, referenceVideoURLs, referenceAudioURLs, creationTaskRequestMetadata(body))
 		if err != nil {
 			a.writeCreationTaskSubmitError(w, err)
 			return
@@ -1807,10 +1835,111 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 	http.NotFound(w, r)
 }
 
-func validateVideoParameters(model, size string, seconds int, resolution string) error {
+func validateVideoReferences(model, mode string, imageURLs, videoURLs, audioURLs []string) error {
+	mode = normalizeVideoReferenceMode(mode)
+	if mode != "first-frame" && mode != "reference" {
+		return fmt.Errorf("视频参考模式仅支持 first-frame 或 reference")
+	}
+	if mode == "first-frame" {
+		if len(videoURLs) > 0 || len(audioURLs) > 0 {
+			return fmt.Errorf("首帧图生视频不能同时传入参考视频或参考音频")
+		}
+		if len(imageURLs) > 1 {
+			return fmt.Errorf("当前视频图生视频入口只支持一张首帧参考图")
+		}
+		return nil
+	}
+	if !isMiniMaxH3Model(model) {
+		return fmt.Errorf("当前模型尚未接入多模态参考生视频")
+	}
+	if len(imageURLs)+len(videoURLs)+len(audioURLs) == 0 {
+		return fmt.Errorf("多模态参考生视频至少需要一个参考图片、视频或音频 URL")
+	}
+	if len(imageURLs) > 9 || len(videoURLs) > 3 || len(audioURLs) > 3 {
+		return fmt.Errorf("MiniMax H3 最多支持 9 张参考图片、3 个参考视频和 3 个参考音频")
+	}
+	for kind, values := range map[string][]string{"图片": imageURLs, "视频": videoURLs, "音频": audioURLs} {
+		for _, value := range values {
+			if !isPublicReferenceURL(value) {
+				return fmt.Errorf("参考%s必须使用公网可访问的 http:// 或 https:// URL", kind)
+			}
+		}
+	}
+	return nil
+}
+
+// normalizeVideoReferenceMode keeps the public API aligned with the provider
+// vocabulary: MiniMax calls mixed media and video-to-video reference-to-video.
+func normalizeVideoReferenceMode(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "first-frame", "image-to-video":
+		return "first-frame"
+	case "":
+		return ""
+	case "reference", "reference-generation", "reference-to-video", "video-to-video", "multimodal":
+		return "reference"
+	default:
+		return strings.ToLower(strings.TrimSpace(value))
+	}
+}
+
+func isPublicReferenceURL(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" || utf8.RuneCountInString(value) > 2083 {
+		return false
+	}
+	parsed, err := url.ParseRequestURI(value)
+	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.User != nil {
+		return false
+	}
+	host := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(parsed.Hostname())), ".")
+	if host == "" || host == "localhost" || strings.HasSuffix(host, ".localhost") || strings.HasSuffix(host, ".local") || strings.HasSuffix(host, ".internal") || strings.HasSuffix(host, ".home.arpa") {
+		return false
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return isPublicReferenceIP(ip)
+	}
+	return strings.Contains(host, ".")
+}
+
+func isPublicReferenceIP(ip net.IP) bool {
+	if !ip.IsGlobalUnicast() || ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
+		return false
+	}
+	for _, raw := range []string{
+		"100.64.0.0/10",
+		"192.0.0.0/24",
+		"192.0.2.0/24",
+		"198.18.0.0/15",
+		"198.51.100.0/24",
+		"203.0.113.0/24",
+		"240.0.0.0/4",
+		"2001:db8::/32",
+	} {
+		_, block, err := net.ParseCIDR(raw)
+		if err == nil && block.Contains(ip) {
+			return false
+		}
+	}
+	return true
+}
+
+func validateVideoParameters(model, size string, seconds int, resolution string, referenceCountValues ...int) error {
 	name := strings.ToLower(strings.TrimSpace(model))
 	size = strings.ToLower(strings.TrimSpace(size))
 	resolution = strings.ToLower(strings.TrimSpace(resolution))
+	referenceCount := 0
+	multimodalReferenceCount := 0
+	if len(referenceCountValues) > 0 {
+		referenceCount = referenceCountValues[0]
+	}
+	if len(referenceCountValues) > 1 {
+		multimodalReferenceCount = referenceCountValues[1]
+	}
+	hasH3Reference := referenceCount > 0 || multimodalReferenceCount > 0
+	if referenceCount > 1 {
+		return fmt.Errorf("当前视频图生视频入口只支持一张首帧参考图")
+	}
 	contains := func(values ...string) bool {
 		for _, value := range values {
 			if value == size {
@@ -1820,21 +1949,23 @@ func validateVideoParameters(model, size string, seconds int, resolution string)
 		return false
 	}
 	validRange := func(min, max int) bool { return seconds >= min && seconds <= max }
-	if strings.Contains(name, "seedance") || strings.Contains(name, "doubao-seedance") {
+	if profile := seedanceVideoProfile(name); profile != "" {
 		if !contains("", "adaptive", "16:9", "4:3", "1:1", "3:4", "9:16", "21:9") {
 			return fmt.Errorf("Seedance 官方画幅仅支持 adaptive、16:9、4:3、1:1、3:4、9:16、21:9")
 		}
 		min, max, smart := 4, 15, true
 		resolutionValues := []string{"480p", "720p", "1080p"}
-		switch {
-		case strings.Contains(name, "2-5") || strings.Contains(name, "2.5"):
+		switch profile {
+		case "2.5":
 			max = 30
-		case strings.Contains(name, "1-5") || strings.Contains(name, "1.5"):
+		case "1.5":
 			max = 12
-		case strings.Contains(name, "1-0") || strings.Contains(name, "1.0"):
+		case "1.0":
 			min, smart = 2, false
-		case strings.Contains(name, "2-0") || strings.Contains(name, "2.0"):
+		case "2.0":
 			resolutionValues = []string{"480p", "720p", "1080p", "4k"}
+		case "2.0-fast", "2.0-mini":
+			resolutionValues = []string{"480p", "720p"}
 		}
 		if (seconds == -1 && !smart) || (seconds != -1 && !validRange(min, max)) {
 			return fmt.Errorf("Seedance 官方视频时长不在当前模型支持范围内")
@@ -1842,12 +1973,12 @@ func validateVideoParameters(model, size string, seconds int, resolution string)
 		if resolution != "" && !stringIn(resolution, resolutionValues...) {
 			return fmt.Errorf("Seedance 官方清晰度不受支持")
 		}
-		if (strings.Contains(name, "fast") || strings.Contains(name, "mini")) && resolution != "" && resolution != "480p" && resolution != "720p" {
-			return fmt.Errorf("Seedance fast/mini 官方仅支持 480p、720p")
-		}
 		return nil
 	}
-	if strings.Contains(name, "grok") {
+	if strings.Contains(name, "seedance") && (size != "" || resolution != "") {
+		return fmt.Errorf("尚未录入当前 Seedance 型号的官方画幅和清晰度，请留空并使用上游默认值")
+	}
+	if isKnownGrokVideoModel(name) {
 		if !contains("", "1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3") || !validRange(1, 15) {
 			return fmt.Errorf("Grok 官方视频支持 1-15 秒及 1:1、16:9、9:16、4:3、3:4、3:2、2:3 画幅")
 		}
@@ -1859,28 +1990,41 @@ func validateVideoParameters(model, size string, seconds int, resolution string)
 		}
 		return nil
 	}
-	if strings.Contains(name, "kling") {
+	if strings.Contains(name, "kling") && (isKling3Model(name) || isKlingLegacyModel(name)) {
 		if !contains("", "16:9", "9:16", "1:1") {
 			return fmt.Errorf("Kling 官方画幅仅支持 16:9、9:16、1:1")
 		}
-		if strings.Contains(name, "v3") || strings.Contains(name, "3-0") {
+		if isKling3Model(name) {
 			if !validRange(3, 15) {
 				return fmt.Errorf("Kling 3.0 官方视频时长支持 3-15 秒")
 			}
 		} else if seconds != 5 && seconds != 10 {
 			return fmt.Errorf("Kling 当前模型官方视频时长支持 5 秒或 10 秒")
 		}
-		if resolution != "" && !stringIn(resolution, "720p", "1080p") {
-			return fmt.Errorf("Kling 官方清晰度仅支持 720p、1080p")
+		resolutionValues := []string{"720p", "1080p"}
+		if isKling3Model(name) {
+			resolutionValues = append(resolutionValues, "4k")
+		}
+		if resolution != "" && !stringIn(resolution, resolutionValues...) {
+			return fmt.Errorf("Kling 官方清晰度不支持当前选择")
 		}
 		return nil
 	}
+	if strings.Contains(name, "kling") && (size != "" || resolution != "") {
+		return fmt.Errorf("尚未录入当前 Kling 型号的官方画幅和清晰度，请留空并使用上游默认值")
+	}
 	if strings.Contains(name, "minimax") || strings.Contains(name, "hailuo") || strings.HasPrefix(name, "t2v-") || strings.HasPrefix(name, "i2v-") || strings.HasPrefix(name, "s2v-") {
 		if strings.Contains(name, "h3") {
-			if !contains("", "adaptive", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16") || !validRange(4, 15) {
-				return fmt.Errorf("MiniMax H3 官方视频支持 4-15 秒及 adaptive、21:9、16:9、4:3、1:1、3:4、9:16 画幅")
+			if !hasH3Reference && !contains("21:9", "16:9", "4:3", "1:1", "3:4", "9:16") {
+				return fmt.Errorf("MiniMax H3 文生视频必须选择 21:9、16:9、4:3、1:1、3:4 或 9:16，不能使用自适应画幅")
 			}
-			if resolution != "" && !stringIn(resolution, "768p", "2k") {
+			if hasH3Reference && !contains("", "adaptive", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16") {
+				return fmt.Errorf("MiniMax H3 图生视频画幅由首帧参考图决定")
+			}
+			if !validRange(4, 15) {
+				return fmt.Errorf("MiniMax H3 官方视频时长仅支持 4-15 秒")
+			}
+			if !stringIn(resolution, "768p", "2k") {
 				return fmt.Errorf("MiniMax H3 官方清晰度仅支持 768P、2K")
 			}
 			return nil
@@ -1899,6 +2043,34 @@ func validateVideoParameters(model, size string, seconds int, resolution string)
 				return fmt.Errorf("MiniMax 旧版官方清晰度仅支持 720P")
 			}
 		}
+		if strings.Contains(name, "hailuo") && seconds == 10 && resolution == "1080p" {
+			return fmt.Errorf("MiniMax Hailuo 官方 10 秒视频仅支持 768P")
+		}
+		if strings.Contains(name, "hailuo-2.3-fast") && referenceCount == 0 {
+			return fmt.Errorf("MiniMax-Hailuo-2.3-Fast 官方仅支持图生视频，请上传一张首帧参考图")
+		}
+		if strings.HasPrefix(name, "i2v-") && referenceCount == 0 {
+			return fmt.Errorf("MiniMax I2V 官方模型仅支持图生视频，请上传一张首帧参考图")
+		}
+		return nil
+	}
+	if isSora2Model(name) {
+		allowedSizes := []string{"1280x720", "720x1280"}
+		if strings.Contains(name, "pro") {
+			allowedSizes = append(allowedSizes, "1792x1024", "1024x1792", "1920x1080", "1080x1920")
+		}
+		if !stringIn(size, allowedSizes...) {
+			return fmt.Errorf("Sora 官方视频尺寸不支持当前选择")
+		}
+		if !stringIn(strconv.Itoa(seconds), "4", "8", "12", "16", "20") {
+			return fmt.Errorf("Sora 官方视频时长仅支持 4、8、12、16、20 秒")
+		}
+		if resolution != "" {
+			return fmt.Errorf("Sora 官方接口使用 size 指定尺寸，不支持独立 resolution 参数")
+		}
+		if referenceCount > 1 {
+			return fmt.Errorf("Sora 官方 input_reference 只支持一张首帧参考图")
+		}
 		return nil
 	}
 	if size != "" && !contains("", "1280x720", "720x1280") {
@@ -1911,6 +2083,65 @@ func validateVideoParameters(model, size string, seconds int, resolution string)
 		return fmt.Errorf("视频清晰度仅支持 720p 或 1080p")
 	}
 	return nil
+}
+
+func validateVideoPrompt(model, prompt string) error {
+	characters := utf8.RuneCountInString(prompt)
+	if isMiniMaxH3Model(model) && characters > 7000 {
+		return fmt.Errorf("MiniMax H3 官方提示词最多支持 7000 个字符")
+	}
+	if isKling3Model(model) && characters > 3072 {
+		return fmt.Errorf("Kling 3.0 官方提示词最多支持 3072 个字符")
+	}
+	return nil
+}
+
+func seedanceVideoProfile(model string) string {
+	name := strings.ToLower(strings.TrimSpace(model))
+	if !strings.Contains(name, "seedance") {
+		return ""
+	}
+	switch {
+	case strings.Contains(name, "2-5") || strings.Contains(name, "2.5"):
+		return "2.5"
+	case strings.Contains(name, "2-0") || strings.Contains(name, "2.0"):
+		if strings.Contains(name, "fast") {
+			return "2.0-fast"
+		}
+		if strings.Contains(name, "mini") {
+			return "2.0-mini"
+		}
+		return "2.0"
+	case strings.Contains(name, "1-5") || strings.Contains(name, "1.5"):
+		return "1.5"
+	case strings.Contains(name, "1-0") || strings.Contains(name, "1.0"):
+		return "1.0"
+	default:
+		return ""
+	}
+}
+
+func isKling3Model(model string) bool {
+	name := strings.ToLower(strings.TrimSpace(model))
+	return strings.Contains(name, "kling") && (strings.Contains(name, "v3") || strings.Contains(name, "3-0") || strings.Contains(name, "3.0"))
+}
+
+func isKnownGrokVideoModel(model string) bool {
+	name := strings.ToLower(strings.TrimSpace(model))
+	return name == "grok-imagine-video" || name == "grok-imagine-video-latest" || strings.Contains(name, "grok-imagine-video-1.5") || strings.Contains(name, "grok-imagine-video-1-5")
+}
+
+func isKlingLegacyModel(model string) bool {
+	name := strings.ToLower(strings.TrimSpace(model))
+	if !strings.Contains(name, "kling") || isKling3Model(name) {
+		return false
+	}
+	return strings.Contains(name, "kling-v1") || strings.Contains(name, "kling-v2") || strings.Contains(name, "kling-1") || strings.Contains(name, "kling-2")
+}
+
+func isSora2Model(model string) bool {
+	name := strings.ToLower(strings.TrimSpace(model))
+	return strings.Contains(name, "sora-2") || strings.Contains(name, "sora_2")
 }
 
 func stringIn(value string, values ...string) bool {

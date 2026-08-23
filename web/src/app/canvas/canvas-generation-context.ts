@@ -136,6 +136,36 @@ export function canvasGenerationReferenceImageURLs(
   return upstreamURLs.slice(0, Math.max(0, maximum));
 }
 
+export function canvasGenerationVideoReferenceURLs(
+  nodeID: string,
+  nodes: readonly CanvasNode[],
+  connections: readonly CanvasConnection[],
+) {
+  const nodeByID = new Map(nodes.map((node) => [node.id, node]));
+  const references: string[] = [];
+  const visited = new Set<string>();
+
+  function collect(targetID: string) {
+    connections
+      .filter((connection) => connection.to_node_id === targetID)
+      .forEach((connection) => {
+        const sourceID = connection.from_node_id;
+        if (visited.has(sourceID)) return;
+        visited.add(sourceID);
+        const source = nodeByID.get(sourceID);
+        if (!source) return;
+        if (source.type === "video" && String(source.url || "").trim()) {
+          references.push(String(source.url).trim());
+        } else if (source.type === "config") {
+          collect(sourceID);
+        }
+      });
+  }
+
+  collect(nodeID);
+  return Array.from(new Set(references));
+}
+
 export function restoreInterruptedCanvasGenerations(nodes: readonly CanvasNode[]) {
   return nodes.map((node): CanvasNode => node.generation_status === "loading" ? {
     ...node,

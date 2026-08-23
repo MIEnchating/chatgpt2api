@@ -90,7 +90,7 @@ export function SettingsCard({
           </div>
         ) : null}
       </CardHeader>
-      <CardContent className={cn("p-5 sm:p-6", contentClassName)}>
+      <CardContent className={cn("p-5 pt-0 sm:p-6 sm:pt-0", contentClassName)}>
         {children}
       </CardContent>
     </Card>

@@ -125,6 +125,10 @@ export type ImageTurn = {
   videoResolution?: string;
   videoGenerateAudio?: boolean;
   videoWatermark?: boolean;
+  videoReferenceMode?: "first-frame" | "reference";
+  videoReferenceImageURLs?: string[];
+  videoReferenceVideoURLs?: string[];
+  videoReferenceAudioURLs?: string[];
   moderation?: ImageModeration;
   tokenGroup?: string;
   tokenName?: string;
@@ -773,6 +777,11 @@ function dataUrlMimeType(dataUrl: string) {
   return match?.[1] || "image/png";
 }
 
+function normalizeStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => typeof item === "string" && item.trim() ? [item.trim()] : []);
+}
+
 function getLegacyReferenceImages(source: Record<string, unknown>): StoredReferenceImage[] {
   if (Array.isArray(source.referenceImages)) {
     return source.referenceImages
@@ -836,6 +845,10 @@ function normalizeTurn(turn: ImageTurn & Record<string, unknown>): ImageTurn {
     videoResolution: typeof turn.videoResolution === "string" && turn.videoResolution ? turn.videoResolution : undefined,
     videoGenerateAudio: typeof turn.videoGenerateAudio === "boolean" ? turn.videoGenerateAudio : undefined,
     videoWatermark: typeof turn.videoWatermark === "boolean" ? turn.videoWatermark : undefined,
+    videoReferenceMode: turn.videoReferenceMode === "reference" ? "reference" : "first-frame",
+    videoReferenceImageURLs: normalizeStringList(turn.videoReferenceImageURLs),
+    videoReferenceVideoURLs: normalizeStringList(turn.videoReferenceVideoURLs),
+    videoReferenceAudioURLs: normalizeStringList(turn.videoReferenceAudioURLs),
     moderation: isImageModeration(turn.moderation) ? turn.moderation : undefined,
     tokenGroup: typeof turn.tokenGroup === "string" && turn.tokenGroup.trim() ? turn.tokenGroup.trim() : undefined,
     tokenName: typeof turn.tokenName === "string" && turn.tokenName.trim() ? turn.tokenName.trim() : undefined,

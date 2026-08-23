@@ -666,15 +666,23 @@ func TestProfileRelayKeyReadsNewAPITokenForUserAndGroup(t *testing.T) {
 		t.Fatalf("update relay base URL error = %v", err)
 	}
 
-	req = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+	req = httptest.NewRequest(http.MethodGet, "/v1/models?token_name=primary", nil)
 	req.Header.Set("Authorization", "Bearer "+token)
 	res = httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
 	if res.Code != http.StatusOK {
 		t.Fatalf("relay models status = %d body = %s", res.Code, res.Body.String())
 	}
-	if gotAuth != "Bearer sk-other-group-relay" {
+	if gotAuth != "Bearer sk-alice-relay" {
 		t.Fatalf("upstream Authorization = %q", gotAuth)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/v1/models?token_name=missing", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	res = httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusBadRequest || !strings.Contains(res.Body.String(), "missing") {
+		t.Fatalf("missing named token status = %d body = %s", res.Code, res.Body.String())
 	}
 
 	req = httptest.NewRequest(http.MethodPost, "/api/profile/relay-key", strings.NewReader(`{"api_key":"sk-local-write"}`))

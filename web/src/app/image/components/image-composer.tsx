@@ -76,7 +76,7 @@ import {
   type ImageQuality,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { videoAudioControl, videoResolutionOptions, videoSecondsOptions, videoSizeLabel, videoSizeOptions, videoWatermarkSupported } from "@/lib/video-model-capabilities";
+import { supportsVideoMultimodalReferences, videoAudioControl, videoMultimodalReferenceLimits, videoResolutionOptions, videoSecondsOptions, videoSizeLabel, videoSizeOptions, videoWatermarkSupported } from "@/lib/video-model-capabilities";
 
 type ImageComposerProps = {
   composerMode: "chat" | "image" | "video";
@@ -102,6 +102,10 @@ type ImageComposerProps = {
   videoResolution: string;
   videoGenerateAudio: boolean;
   videoWatermark: boolean;
+  videoReferenceMode: "first-frame" | "reference";
+  videoReferenceImageURLs: string[];
+  videoReferenceVideoURLs: string[];
+  videoReferenceAudioURLs: string[];
   relayKeyConfigured: boolean;
   relayKeyStatusMessage?: string;
   highResolutionHint?: ReactNode;
@@ -129,6 +133,12 @@ type ImageComposerProps = {
   onVideoResolutionChange: (value: string) => void;
   onVideoGenerateAudioChange: (value: boolean) => void;
   onVideoWatermarkChange: (value: boolean) => void;
+  onVideoReferenceModeChange: (value: "first-frame" | "reference") => void;
+  onVideoReferenceImageURLsChange: (value: string[]) => void;
+  onVideoReferenceVideoURLsChange: (value: string[]) => void;
+  onVideoReferenceAudioURLsChange: (value: string[]) => void;
+  videoReferenceUploading: boolean;
+  onVideoReferenceFileChange: (file: File) => void | Promise<void>;
   onSubmit: () => void | Promise<void>;
   onOpenPromptMarket: () => void;
   onReferenceImageChange: (files: File[]) => void | Promise<void>;
@@ -153,6 +163,63 @@ const PROMPT_AREA_MIN_HEIGHT = 58;
 const PROMPT_AREA_DEFAULT_HEIGHT = 72;
 const PROMPT_AREA_MAX_HEIGHT = 320;
 const PROMPT_AREA_KEYBOARD_STEP = 12;
+
+function ReferenceURLList({ label, values, max, onChange }: { label: string; values: string[]; max: number; onChange: (values: string[]) => void }) {
+  const rows = values.length > 0 ? values : [""];
+  return (
+    <section className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium text-[#3f4147] dark:text-foreground">{label}</span>
+        <span className="text-[11px] text-[#8e8e93] dark:text-muted-foreground">{values.filter(Boolean).length}/{max}</span>
+      </div>
+      <div className="space-y-1.5">
+        {rows.map((value, index) => (
+          <div key={`${label}-${index}`} className="flex items-center gap-1.5">
+            <Input
+              type="url"
+              value={value}
+              placeholder="https://"
+              aria-label={`${label} ${index + 1}`}
+              onChange={(event) => {
+                const next = [...rows];
+                next[index] = event.target.value;
+                onChange(next);
+              }}
+              className="h-8 min-w-0 rounded-lg text-xs shadow-none"
+            />
+            {rows.length > 1 || value ? (
+              <button type="button" onClick={() => onChange(rows.filter((_, itemIndex) => itemIndex !== index))} className="inline-flex size-8 shrink-0 items-center justify-center rounded-lg text-muted-foreground hover:bg-muted" aria-label={`移除${label} ${index + 1}`} title="移除">
+                <X className="size-3.5" />
+              </button>
+            ) : null}
+          </div>
+        ))}
+      </div>
+      {rows.length < max && rows.every((value) => value.trim()) ? (
+        <button type="button" onClick={() => onChange([...rows, ""])} className="inline-flex h-7 items-center gap-1 rounded-md px-2 text-[11px] font-medium text-[#1456f0] hover:bg-[#eef4ff] dark:text-sky-300 dark:hover:bg-sky-950/30">
+          <Plus className="size-3" />添加
+        </button>
+      ) : null}
+    </section>
+  );
+}
+
+function VideoReferencePicker({ value, disabled, uploading, onChange }: { value: string; disabled: boolean; uploading: boolean; onChange: (file: File) => void | Promise<void> }) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  return (
+    <section className="space-y-1.5">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-medium text-[#3f4147] dark:text-foreground">参考视频</span>
+        <span className="text-[11px] text-[#8e8e93] dark:text-muted-foreground">MP4 / MOV，最大 50 MiB</span>
+      </div>
+      <input ref={inputRef} type="file" accept="video/mp4,video/quicktime,.mp4,.mov" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void onChange(file); }} />
+      <button type="button" disabled={disabled || uploading} onClick={() => inputRef.current?.click()} className="flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-dashed border-[#cbd5e1] bg-background text-xs font-medium text-[#45515e] transition hover:border-[#1456f0] hover:text-[#1456f0] disabled:cursor-not-allowed disabled:opacity-50 dark:border-border dark:text-muted-foreground">
+        <Video className="size-4" />{uploading ? "上传中…" : value ? "替换参考视频" : "上传参考视频"}
+      </button>
+      {value ? <p className="truncate text-[11px] text-emerald-600 dark:text-emerald-400">已上传参考视频</p> : null}
+    </section>
+  );
+}
 const IMAGE_FILE_EXTENSION_PATTERN = /\.(jpeg|jpg|png|webp)$/i;
 const IMAGE_FILE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
@@ -227,6 +294,10 @@ export function ImageComposer({
   videoResolution,
   videoGenerateAudio,
   videoWatermark,
+  videoReferenceMode,
+  videoReferenceImageURLs,
+  videoReferenceVideoURLs,
+  videoReferenceAudioURLs,
   relayKeyConfigured,
   relayKeyStatusMessage,
   highResolutionHint,
@@ -254,6 +325,12 @@ export function ImageComposer({
   onVideoResolutionChange,
   onVideoGenerateAudioChange,
   onVideoWatermarkChange,
+  onVideoReferenceModeChange,
+  onVideoReferenceImageURLsChange,
+  onVideoReferenceVideoURLsChange,
+  onVideoReferenceAudioURLsChange,
+  videoReferenceUploading,
+  onVideoReferenceFileChange,
   onSubmit,
   onOpenPromptMarket,
   onReferenceImageChange,
@@ -303,9 +380,11 @@ export function ImageComposer({
   const activeVideoMinimumSeconds = activeVideoPositiveSeconds[0] || 1;
   const activeVideoMaximumSeconds = activeVideoPositiveSeconds.at(-1) || activeVideoMinimumSeconds;
   const activeVideoSecondsValid = activeVideoSecondsOptions.includes(Number(videoSeconds));
-  const activeVideoResolutionOptions = videoResolutionOptions(videoModel);
+  const activeVideoResolutionOptions = videoResolutionOptions(videoModel, Number(videoSeconds));
   const activeVideoAudioControl = videoAudioControl(videoModel);
   const activeVideoWatermarkSupported = videoWatermarkSupported(videoModel);
+  const activeVideoMultimodalReferences = supportsVideoMultimodalReferences(videoModel);
+  const activeVideoReferenceLimits = videoMultimodalReferenceLimits(videoModel);
   const imageModelLabel = activeModelOptions.find((option) => option.value === activeModel)?.label || activeModel;
   const compressionSupported = supportsImageOutputCompression(imageOutputFormat);
   const imageRoute = imageModelRoute(imageModel);
@@ -317,7 +396,9 @@ export function ImageComposer({
   const outputControlsSupported = supportsImageOutputControls(imageModel);
   const qualitySupported = supportsImageQuality(imageModel);
   const streamingSupported = supportsImageStreaming(imageModel);
-  const referenceEditingSupported = composerMode === "video" || supportsImageEditing(imageModel);
+  const referenceEditingSupported = composerMode === "video"
+    ? true
+    : supportsImageEditing(imageModel);
   const imageAspectRatioOptions = IMAGE_ASPECT_RATIO_OPTIONS.filter((option) =>
     supportsImageAspectRatio(imageModel, option.value),
   );
@@ -341,7 +422,11 @@ export function ImageComposer({
     ? imageResolution
     : "auto";
   const hasReferenceImages = displayReferenceImages.length > 0;
-  const submitLabel = composerMode === "video" ? (hasReferenceImages ? "参考图生成视频" : "生成视频") : hasReferenceImages ? "编辑图片" : "生成图片";
+  const hasReferenceVideo = videoReferenceVideoURLs.some(Boolean);
+  const hasMultimodalReferences = videoReferenceImageURLs.some(Boolean) || hasReferenceVideo || videoReferenceAudioURLs.some(Boolean);
+  const submitLabel = composerMode === "video"
+    ? hasReferenceVideo ? "视频生视频" : hasReferenceImages || videoReferenceImageURLs.some(Boolean) ? "图片生视频" : hasMultimodalReferences ? "参考生成视频" : "生成视频"
+    : hasReferenceImages ? "编辑图片" : "生成图片";
   const relayApiKeyMissing = !relayKeyConfigured;
   const relayApiKeyMissingMessage = relayKeyStatusMessage || "请先在云棉为当前用户创建可用令牌";
   const computedImageSize = useMemo(
@@ -1175,10 +1260,22 @@ export function ImageComposer({
                       align="start"
                       side="top"
                       sideOffset={8}
-                      className="z-[70] w-[min(calc(100vw-1rem),22rem)] rounded-lg border-[#dedfe3] bg-white p-3 shadow-[0_18px_50px_-24px_rgba(15,23,42,0.28)] dark:border-border dark:bg-card"
+                      className="z-[70] max-h-[min(80vh,40rem)] w-[min(calc(100vw-1rem),22rem)] overflow-y-auto rounded-lg border-[#dedfe3] bg-white p-3 shadow-[0_18px_50px_-24px_rgba(15,23,42,0.28)] dark:border-border dark:bg-card"
                       onOpenAutoFocus={(event) => event.preventDefault()}
                     >
                       <div className="space-y-3.5">
+                        <p className="rounded-lg bg-[#f4f4f5] px-2.5 py-2 text-[11px] leading-4 text-muted-foreground dark:bg-muted/70">上传图片自动使用图片生视频；上传视频或填写视频 URL 自动使用视频生视频。没有参考素材时为文生视频。</p>
+                        {activeVideoMultimodalReferences && videoReferenceMode === "reference" ? (
+                          <div className="space-y-3 border-b border-[#ececf0] pb-3 dark:border-border">
+                            <ReferenceURLList label="参考图片 URL" values={videoReferenceImageURLs} max={activeVideoReferenceLimits.image} onChange={onVideoReferenceImageURLsChange} />
+                            <VideoReferencePicker value={videoReferenceVideoURLs[0] || ""} disabled={!activeVideoMultimodalReferences} uploading={videoReferenceUploading} onChange={onVideoReferenceFileChange} />
+                            <details className="rounded-lg border border-border/70 px-2.5 py-2">
+                              <summary className="cursor-pointer text-[11px] font-medium text-muted-foreground">高级：使用公网视频 URL</summary>
+                              <div className="mt-2"><ReferenceURLList label="参考视频 URL" values={videoReferenceVideoURLs} max={activeVideoReferenceLimits.video} onChange={onVideoReferenceVideoURLsChange} /></div>
+                            </details>
+                            <ReferenceURLList label="参考音频 URL" values={videoReferenceAudioURLs} max={activeVideoReferenceLimits.audio} onChange={onVideoReferenceAudioURLsChange} />
+                          </div>
+                        ) : null}
                         {activeVideoSizeOptions.length > 0 ? <section className="space-y-1.5">
                           <ImageParameterLabel help="选择视频画幅比例。">画幅比例</ImageParameterLabel>
                           <div className="grid grid-cols-2 gap-1 rounded-lg bg-[#f4f4f5] p-1 dark:bg-muted/70">
@@ -1214,14 +1311,14 @@ export function ImageComposer({
                           </div>
                           {!activeVideoSecondsValid ? <p className="text-[11px] text-rose-600 dark:text-rose-400">请输入当前模型支持的时长</p> : null}
                         </section>
-                        <section className="space-y-1.5">
+                        {activeVideoResolutionOptions.length > 0 ? <section className="space-y-1.5">
                           <ImageParameterLabel help="更高清晰度通常需要更长生成时间。">清晰度</ImageParameterLabel>
                           <div className="grid grid-cols-2 gap-1 rounded-lg bg-[#f4f4f5] p-1 dark:bg-muted/70">
                             {activeVideoResolutionOptions.map((resolution) => (
                               <button key={resolution} type="button" aria-pressed={videoResolution === resolution} className={imageParameterChoiceClass(videoResolution === resolution, "h-8 uppercase")} onClick={() => onVideoResolutionChange(resolution)}>{resolution}</button>
                             ))}
                           </div>
-                        </section>
+                        </section> : null}
                         {[
                           ...(activeVideoAudioControl === "toggle" ? [["生成声音", videoGenerateAudio, onVideoGenerateAudioChange] as const] : []),
                           ...(activeVideoWatermarkSupported ? [["添加水印", videoWatermark, onVideoWatermarkChange] as const] : []),
@@ -1244,7 +1341,7 @@ export function ImageComposer({
                   disabled={!referenceEditingSupported}
                   className="inline-flex size-11 items-center justify-center rounded-full text-[#686b73] transition hover:bg-black/[0.05] dark:text-muted-foreground dark:hover:bg-accent/60 dark:hover:text-foreground sm:size-10 sm:border sm:border-[#e5e7eb] sm:bg-white sm:text-[#45515e] sm:dark:border-border sm:dark:bg-background/70 sm:dark:text-muted-foreground"
                   aria-label="上传参考图"
-                  title={referenceEditingSupported ? "上传参考图" : "当前模型不支持参考图编辑"}
+                  title={referenceEditingSupported ? "上传参考图" : videoReferenceMode === "reference" ? "参考生视频请在参数中上传视频或填写公网 URL" : "当前模型不支持参考图编辑"}
                 >
                   <Plus className="size-6 sm:hidden" />
                   <ImagePlus className="hidden size-4 sm:block" />

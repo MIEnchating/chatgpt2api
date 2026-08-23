@@ -349,6 +349,18 @@ func TestCanvasDocumentServiceStoresVideoGenerationParameters(t *testing.T) {
 	}
 }
 
+func TestCanvasDocumentServiceAllowsVideoWithoutIndependentResolution(t *testing.T) {
+	service := NewCanvasDocumentService(newTestStorageBackend(t))
+	_, err := service.Save("owner", CanvasDocument{Nodes: []CanvasNode{{
+		ID: "video-1", Type: "video", Width: 420, Height: 236, ScaleX: 1, ScaleY: 1,
+		GenerationVideoModel: "sora-2", GenerationVideoSize: "1280x720",
+		GenerationVideoSeconds: 4,
+	}}})
+	if err != nil {
+		t.Fatalf("Save(Sora video without resolution) error = %v", err)
+	}
+}
+
 func TestCanvasDocumentServiceRejectsInvalidVideoGenerationParameters(t *testing.T) {
 	valid := CanvasNode{
 		ID: "video-1", Type: "video", Width: 420, Height: 236, ScaleX: 1, ScaleY: 1,
@@ -362,7 +374,7 @@ func TestCanvasDocumentServiceRejectsInvalidVideoGenerationParameters(t *testing
 		{name: "model too long", mutate: func(node *CanvasNode) { node.GenerationVideoModel = strings.Repeat("m", 257) }},
 		{name: "unsupported size", mutate: func(node *CanvasNode) { node.GenerationVideoSize = "800x600" }},
 		{name: "unsupported duration", mutate: func(node *CanvasNode) { node.GenerationVideoSeconds = 7 }},
-		{name: "unsupported resolution", mutate: func(node *CanvasNode) { node.GenerationVideoResolution = "4k" }},
+		{name: "unsupported resolution", mutate: func(node *CanvasNode) { node.GenerationVideoResolution = "2160p" }},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

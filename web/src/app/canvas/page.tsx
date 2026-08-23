@@ -8,7 +8,7 @@ import { detachCanvasBatchRootForReplacement, duplicateCanvasNodeGroup, expandCa
 import { CanvasConfigComposer } from "@/app/canvas/canvas-config-composer";
 import { canvasConfigInputs, canvasConfigPromptDisplay } from "@/app/canvas/canvas-config-inputs";
 import { canCreateCanvasConnection, resolveCanvasConnection } from "@/app/canvas/canvas-connections";
-import { buildCanvasGenerationContext, buildCanvasImageReferencePrompt, canvasGenerationCount, canvasGenerationModel, canvasGenerationNeedsRecovery, canvasGenerationReferenceImageURLs, canvasGenerationRequestSize, findCanvasRetryConfigurationNode, markCanvasGenerationRecoveryPending, restoreInterruptedCanvasGenerations } from "@/app/canvas/canvas-generation-context";
+import { buildCanvasGenerationContext, buildCanvasImageReferencePrompt, canvasGenerationCount, canvasGenerationModel, canvasGenerationNeedsRecovery, canvasGenerationReferenceImageURLs, canvasGenerationRequestSize, canvasGenerationVideoReferenceURLs, findCanvasRetryConfigurationNode, markCanvasGenerationRecoveryPending, restoreInterruptedCanvasGenerations } from "@/app/canvas/canvas-generation-context";
 import { canvasGenerationActiveNodeID, placeCanvasGenerationResultNodes, setCanvasConfigGenerationStatus } from "@/app/canvas/canvas-generation-layout";
 import { appendCanvasHistorySnapshot, canvasHistoryKey, commitCanvasGenerationHistory, restoreCanvasHistoryDocument } from "@/app/canvas/canvas-history";
 import { canvasImageAngleLabel, canvasImageAnglePrompt, cropCanvasImage, splitCanvasImage, upscaleCanvasImage, type CanvasImageAngleParams, type CanvasImageCropRect, type CanvasImageSplitParams, type CanvasImageUpscaleParams } from "@/app/canvas/canvas-image-data";
@@ -38,12 +38,13 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
-import { cancelCreationTask, clearCanvasDocument, createImageEditTask, createImageGenerationTask, createVideoGenerationTask, DEFAULT_IMAGE_MODEL, fetchCanvasDocument, fetchCreationTasks, fetchManagedImages, fetchModelConfig, imageReferenceImageLimit, importCanvasProject, PROFILE_RELAY_TOKEN_NAME_CHANGED_EVENT, saveCanvasDocument, supportsImageEditing, supportsImageMask, supportsImageOutputControls, supportsImageQualityValue, supportsImageResolution, supportsImageStreaming, supportsStructuredImageParameters, updateCanvasProject, uploadCanvasImage, type CanvasConnection, type CanvasDocument, type CanvasNode, type CanvasProjectSummary, type CanvasWorkspaceResponse, type CreationTask, type ImageModel, type ManagedImage } from "@/lib/api";
+import { cancelCreationTask, clearCanvasDocument, createImageEditTask, createImageGenerationTask, createVideoGenerationTask, DEFAULT_IMAGE_MODEL, fetchCanvasDocument, fetchCreationTasks, fetchManagedImages, fetchModelConfig, imageReferenceImageLimit, importCanvasProject, PROFILE_RELAY_TOKEN_NAME_CHANGED_EVENT, saveCanvasDocument, supportsImageEditing, supportsImageMask, supportsImageOutputControls, supportsImageQualityValue, supportsImageResolution, supportsImageStreaming, supportsStructuredImageParameters, updateCanvasProject, uploadCanvasImage, uploadVideoReference, type CanvasConnection, type CanvasDocument, type CanvasNode, type CanvasProjectSummary, type CanvasWorkspaceResponse, type CreationTask, type ImageModel, type ManagedImage } from "@/lib/api";
 import { fetchAuthenticatedImageBlob, primeAuthenticatedImageCache } from "@/lib/authenticated-image";
 import { imageConversationReferenceLimitMessage } from "@/lib/image-conversation-assets";
-import { getStoredRelayTokenName, relayTokenNameStorageKey } from "@/lib/relay-token-selection";
+import { isPublicReferenceURL } from "@/lib/public-reference-url";
+import { getStoredRelayTokenName, relayTokenNameStorageKey, type RelayTokenKind } from "@/lib/relay-token-selection";
 import { cn } from "@/lib/utils";
-import { videoAudioControl, videoResolutionOptions, videoSecondsOptions, videoSizeLabel, videoSizeOptions, videoWatermarkSupported } from "@/lib/video-model-capabilities";
+import { supportsVideoMultimodalReferences, videoAudioControl, videoRequiresReferenceImage, videoResolutionOptions, videoSecondsOptions, videoSizeLabel, videoSizeOptions, videoWatermarkSupported } from "@/lib/video-model-capabilities";
 import type { StoredAuthSession } from "@/store/auth";
 
 type SaveState = "saved" | "dirty" | "saving" | "error";
@@ -177,18 +178,20 @@ function canvasNodeFallbackTitle(type: CanvasNode["type"]) {
 }
 
 function canvasVideoParameters(node?: CanvasNode | null) {
-  const model = node?.generation_video_model || "sora-2";
-  const sizes = videoSizeOptions(model);
-  const seconds = videoSecondsOptions(model);
-  const resolutions = videoResolutionOptions(model);
-  const selectedSeconds = node?.generation_video_seconds;
-  return {
+	const model = node?.generation_video_model || "sora-2";
+	const sizes = videoSizeOptions(model);
+	const seconds = videoSecondsOptions(model);
+	const selectedSeconds = node?.generation_video_seconds;
+	const normalizedSeconds = typeof selectedSeconds === "number" && seconds.includes(selectedSeconds) ? selectedSeconds : seconds.find((value) => value > 0) || 4;
+	const resolutions = videoResolutionOptions(model, normalizedSeconds);
+	return {
     generation_video_model: model,
     generation_video_size: sizes.includes(node?.generation_video_size || "") ? node?.generation_video_size : sizes[0] || "",
-    generation_video_seconds: typeof selectedSeconds === "number" && seconds.includes(selectedSeconds) ? selectedSeconds : seconds.find((value) => value > 0) || 4,
+		generation_video_seconds: normalizedSeconds,
     generation_video_resolution: resolutions.includes(node?.generation_video_resolution || "") ? node?.generation_video_resolution : resolutions[0],
     generation_video_audio: videoAudioControl(model) === "toggle" ? (node?.generation_video_audio ?? true) : videoAudioControl(model) === "always",
     generation_video_watermark: node?.generation_video_watermark ?? false,
+    generation_video_reference_urls: Array.isArray(node?.generation_video_reference_urls) ? node.generation_video_reference_urls : [],
   };
 }
 
@@ -205,16 +208,36 @@ function CanvasVideoPromptPanel({ node, running, generationBusy, videoModels, on
   const minimumSeconds = positiveSecondsOptions[0] || 1;
   const maximumSeconds = positiveSecondsOptions.at(-1) || minimumSeconds;
   const secondsValid = secondsOptions.includes(Number(secondsDraft));
-  const resolutionOptions = videoResolutionOptions(params.generation_video_model);
+	const resolutionOptions = videoResolutionOptions(params.generation_video_model, params.generation_video_seconds);
   const audioControl = videoAudioControl(params.generation_video_model);
   const watermarkSupported = videoWatermarkSupported(params.generation_video_model);
+  const videoReferenceSupported = supportsVideoMultimodalReferences(params.generation_video_model);
+  const videoReferenceURL = params.generation_video_reference_urls[0] || "";
+  const [videoReferenceUploading, setVideoReferenceUploading] = useState(false);
+  const videoReferenceInputRef = useRef<HTMLInputElement>(null);
+  async function uploadReferenceVideo(file: File) {
+    const mime = file.type.toLowerCase().split(";", 1)[0];
+    if (!(mime === "video/mp4" || mime === "video/quicktime" || /\.(mp4|mov)$/i.test(file.name))) return toast.error("参考视频仅支持 MP4 或 MOV 格式");
+    if (file.size > 50 * 1024 * 1024) return toast.error("参考视频不能超过 50 MiB");
+    setVideoReferenceUploading(true);
+    try {
+      const uploaded = await uploadVideoReference(file);
+      onParametersChange({ generation_video_reference_urls: [uploaded.url] });
+      toast.success("参考视频已上传");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "参考视频上传失败");
+    } finally {
+      setVideoReferenceUploading(false);
+    }
+  }
   return <div className="overflow-hidden rounded-xl border border-border/90 bg-card/96 shadow-[0_14px_38px_rgba(15,23,42,.14)] backdrop-blur-xl">
     <textarea value={prompt} onChange={(event) => { setPrompt(event.target.value); onPromptChange(event.target.value); }} onBlur={(event) => onPromptChange(event.target.value, true)} placeholder="描述你想生成的视频" className="h-20 w-full resize-none border-0 bg-transparent px-3.5 py-3 text-sm leading-5 outline-none placeholder:text-muted-foreground/55" />
     <div className="grid grid-cols-2 gap-2 border-t border-border/70 bg-muted/20 p-2 text-xs">
-      <label className="space-y-1"><span className="text-muted-foreground">模型</span><Select value={params.generation_video_model} onValueChange={(model) => { const sizes = videoSizeOptions(model); const seconds = videoSecondsOptions(model); const resolutions = videoResolutionOptions(model); const nextSeconds = seconds.find((value) => value > 0) || 4; setSecondsDraft(String(nextSeconds)); onParametersChange({ generation_video_model: model, generation_video_size: sizes[0], generation_video_seconds: nextSeconds, generation_video_resolution: resolutions[0] }); }}><SelectTrigger className="h-8 rounded-md px-2 text-xs shadow-none"><SelectValue /></SelectTrigger><SelectContent>{modelOptions.map((model) => <SelectItem key={model} value={model}>{model}</SelectItem>)}</SelectContent></Select></label>
+		<label className="space-y-1"><span className="text-muted-foreground">模型</span><Select value={params.generation_video_model} onValueChange={(model) => { const sizes = videoSizeOptions(model); const seconds = videoSecondsOptions(model); const nextSeconds = seconds.find((value) => value > 0) || 4; const resolutions = videoResolutionOptions(model, nextSeconds); setSecondsDraft(String(nextSeconds)); onParametersChange({ generation_video_model: model, generation_video_size: sizes[0], generation_video_seconds: nextSeconds, generation_video_resolution: resolutions[0] }); }}><SelectTrigger className="h-8 rounded-md px-2 text-xs shadow-none"><SelectValue /></SelectTrigger><SelectContent>{modelOptions.map((model) => <SelectItem key={model} value={model}>{model}</SelectItem>)}</SelectContent></Select></label>
       {sizeOptions.length > 0 ? <label className="space-y-1"><span className="text-muted-foreground">画幅</span><Select value={params.generation_video_size || undefined} onValueChange={(value) => onParametersChange({ generation_video_size: value })}><SelectTrigger className="h-8 rounded-md px-2 text-xs shadow-none"><SelectValue /></SelectTrigger><SelectContent>{sizeOptions.map((size) => <SelectItem key={size} value={size}>{videoSizeLabel(size)}</SelectItem>)}</SelectContent></Select></label> : null}
       <label className="col-span-2 space-y-1"><span className="text-muted-foreground">时长</span><div className="grid grid-cols-[minmax(0,1fr)_6rem] gap-2"><Select value={secondsValid ? secondsDraft : undefined} onValueChange={(value) => { setSecondsDraft(value); onParametersChange({ generation_video_seconds: Number(value) }); }}><SelectTrigger className="h-8 min-w-0 rounded-md px-2 text-xs shadow-none"><SelectValue placeholder="选择时长" /></SelectTrigger><SelectContent>{secondsOptions.map((seconds) => <SelectItem key={seconds} value={String(seconds)}>{seconds < 0 ? "智能时长" : `${seconds} 秒`}</SelectItem>)}</SelectContent></Select><div className={cn("grid h-8 grid-cols-[1fr_auto] items-center overflow-hidden rounded-md border bg-background", !secondsValid && "border-rose-400 ring-2 ring-rose-500/10")}><Input type="number" inputMode="numeric" min={minimumSeconds} max={maximumSeconds} step="1" value={secondsDraft === "-1" ? "" : secondsDraft} placeholder={secondsDraft === "-1" ? "智能" : `${minimumSeconds}-${maximumSeconds}`} onChange={(event) => { const value = event.target.value; setSecondsDraft(value); if (secondsOptions.includes(Number(value))) onParametersChange({ generation_video_seconds: Number(value) }); }} className="h-full min-w-0 border-0 bg-transparent px-2 text-center text-xs shadow-none focus-visible:ring-0" aria-label="手动输入视频秒数" /><span className="pr-2 text-[11px] text-muted-foreground">{secondsDraft === "-1" ? "" : "秒"}</span></div></div>{!secondsValid ? <span className="text-[11px] text-rose-600 dark:text-rose-400">请输入当前模型支持的时长</span> : null}</label>
-      <label className="space-y-1"><span className="text-muted-foreground">清晰度</span><Select value={params.generation_video_resolution || undefined} onValueChange={(value) => onParametersChange({ generation_video_resolution: value })}><SelectTrigger className="h-8 rounded-md px-2 text-xs shadow-none"><SelectValue /></SelectTrigger><SelectContent>{resolutionOptions.map((resolution) => <SelectItem key={resolution} value={resolution}>{resolution.toUpperCase()}</SelectItem>)}</SelectContent></Select></label>
+      {resolutionOptions.length > 0 ? <label className="space-y-1"><span className="text-muted-foreground">清晰度</span><Select value={params.generation_video_resolution || undefined} onValueChange={(value) => onParametersChange({ generation_video_resolution: value })}><SelectTrigger className="h-8 rounded-md px-2 text-xs shadow-none"><SelectValue /></SelectTrigger><SelectContent>{resolutionOptions.map((resolution) => <SelectItem key={resolution} value={resolution}>{resolution.toUpperCase()}</SelectItem>)}</SelectContent></Select></label> : null}
+      <div className="col-span-2 space-y-1.5"><span className="text-muted-foreground">参考素材</span><span className="block text-[11px] leading-4 text-muted-foreground">图片生视频：连接图片节点即可。视频生视频：上传或连接视频节点。</span><input ref={videoReferenceInputRef} type="file" accept="video/mp4,video/quicktime,.mp4,.mov" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void uploadReferenceVideo(file); }} /><button type="button" disabled={!videoReferenceSupported || videoReferenceUploading} onClick={() => videoReferenceInputRef.current?.click()} className="flex h-9 w-full items-center justify-center gap-2 rounded-md border border-dashed border-border bg-background text-xs font-medium hover:border-[#1456f0] hover:text-[#1456f0] disabled:cursor-not-allowed disabled:opacity-50"><Upload className="size-3.5" />{videoReferenceUploading ? "上传中…" : videoReferenceURL ? "替换参考视频" : "上传视频（视频生视频）"}</button>{videoReferenceURL ? <span className="block truncate text-[11px] text-emerald-600">已设置视频参考，也可以连接已有视频节点</span> : <span className="block text-[11px] leading-4 text-muted-foreground">支持 MP4 / MOV，最大 50 MiB；也可以连接已有视频节点。</span>}<details><summary className="cursor-pointer text-[11px] text-muted-foreground">高级：使用公网视频 URL</summary><Input type="url" value={videoReferenceURL} disabled={!videoReferenceSupported} onChange={(event) => onParametersChange({ generation_video_reference_urls: event.target.value.trim() ? [event.target.value] : [] })} placeholder="https://公网可访问的视频.mp4" className="mt-1 h-8 rounded-md px-2 text-xs shadow-none" /></details></div>
       {audioControl === "toggle" ? <label className="flex items-center gap-2"><Checkbox checked={params.generation_video_audio} onCheckedChange={(checked) => onParametersChange({ generation_video_audio: checked === true })} />生成声音</label> : null}
       {watermarkSupported ? <label className="flex items-center gap-2"><Checkbox checked={params.generation_video_watermark} onCheckedChange={(checked) => onParametersChange({ generation_video_watermark: checked === true })} />添加水印</label> : null}
       <button type="button" disabled={running ? false : generationBusy || !prompt.trim() || !secondsValid} onClick={() => running ? onStop() : onGenerate(prompt.trim())} className={cn("col-span-2 flex h-8 items-center justify-center gap-2 rounded-lg text-xs font-semibold text-white", running ? "bg-rose-600" : "bg-[#1456f0] disabled:opacity-50")}>{running ? <><Square className="size-3.5 fill-current" />停止</> : <><Video className="size-3.5" />生成视频</>}</button>
@@ -402,8 +425,10 @@ export default function CanvasPage({ session }: { session: StoredAuthSession }) 
   const [imageModelReady, setImageModelReady] = useState(false);
   const [videoModel, setVideoModel] = useState("sora-2");
   const [videoModels, setVideoModels] = useState(["sora-2"]);
-  const relayTokenStorageKey = relayTokenNameStorageKey(session);
-  const [relayTokenName, setRelayTokenName] = useState(() => getStoredRelayTokenName(session));
+  const imageRelayTokenStorageKey = relayTokenNameStorageKey(session, "image");
+  const videoRelayTokenStorageKey = relayTokenNameStorageKey(session, "video");
+  const [imageRelayTokenName, setImageRelayTokenName] = useState(() => getStoredRelayTokenName(session, "image"));
+  const [videoRelayTokenName, setVideoRelayTokenName] = useState(() => getStoredRelayTokenName(session, "video"));
   const [relayTokenDialogKind, setRelayTokenDialogKind] = useState<RelayTokenCreationKind | null>(null);
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [switchPhase, setSwitchPhase] = useState<CanvasSwitchPhase>(null);
@@ -861,7 +886,7 @@ export default function CanvasPage({ session }: { session: StoredAuthSession }) 
       title: video.title || "视频",
       prompt: video.prompt || "",
       task_id: video.taskID || "",
-      ...canvasVideoParameters(parent),
+      ...canvasVideoParameters(parent || ({ generation_video_model: videoModel } as CanvasNode)),
       created_at: createdAt(),
     };
   }
@@ -1568,14 +1593,27 @@ export default function CanvasPage({ session }: { session: StoredAuthSession }) 
   async function runVideoGeneration(nodeID: string, prompt?: string) {
     const sourceNode = nodesRef.current.find((node) => node.id === nodeID && node.type === "video");
     if (!sourceNode || runningNodeID) return;
-    if (!relayTokenName.trim()) {
+    if (!videoRelayTokenName.trim()) {
       setRelayTokenDialogKind("video");
       return;
     }
-    const context = buildCanvasGenerationContext(nodeID, nodesRef.current, connectionsRef.current, prompt ?? sourceNode.prompt ?? "");
+		const context = buildCanvasGenerationContext(nodeID, nodesRef.current, connectionsRef.current, prompt ?? sourceNode.prompt ?? "");
     const text = context.prompt.trim();
     if (!text && !context.referenceImageURLs.length) return toast.error("请填写视频描述或连接参考图片");
-    const params = canvasVideoParameters(sourceNode);
+		const params = canvasVideoParameters(sourceNode);
+		const connectedVideoReferenceURLs = canvasGenerationVideoReferenceURLs(nodeID, nodesRef.current, connectionsRef.current);
+		const configuredVideoReferenceURLs = params.generation_video_reference_urls.filter((url) => url.trim());
+		const referenceVideoURLs = Array.from(new Set([...configuredVideoReferenceURLs, ...connectedVideoReferenceURLs])).slice(0, 3);
+		if (referenceVideoURLs.length > 0 && !supportsVideoMultimodalReferences(params.generation_video_model)) {
+			return toast.error(`模型 ${params.generation_video_model} 不支持视频生视频，请选择 MiniMax-H3`);
+		}
+		if (referenceVideoURLs.some((url) => !isPublicReferenceURL(url))) {
+			return toast.error("参考视频 URL 必须是公网可访问的 http(s) 地址，不能使用本地或内网地址");
+		}
+		const referenceMode = referenceVideoURLs.length > 0 ? "reference" : "first-frame";
+		if (videoRequiresReferenceImage(params.generation_video_model) && context.referenceImageURLs.length === 0) {
+			return toast.error(`模型 ${params.generation_video_model} 仅支持图生视频，请连接一张参考图片`);
+		}
     if (!videoSecondsOptions(params.generation_video_model).includes(params.generation_video_seconds)) {
       return toast.error("请输入当前视频模型支持的时长");
     }
@@ -1590,8 +1628,8 @@ export default function CanvasPage({ session }: { session: StoredAuthSession }) 
     if (sourceNode.url) replaceConnections([...connectionsRef.current, { id: `connection-${randomID()}`, from_node_id: sourceNode.id, to_node_id: resultNodeID }]);
     setPanelNodeID(resultNodeID); setSelectedNodeIDs(new Set([resultNodeID])); setRunningNodeID(nodeID); setRunningResultNodeID(resultNodeID); setRunningControlNodeID(nodeID); generationAbortControllerRef.current = controller;
     try {
-      const referenceImageURLs = await Promise.all(context.referenceImageURLs.slice(0, 1).map(async (url) => blobDataURL(await fetchAuthenticatedImageBlob(url, controller.signal))));
-      const submitted = await createVideoGenerationTask(taskID, text, params.generation_video_model, params.generation_video_size, params.generation_video_seconds, params.generation_video_resolution, params.generation_video_audio, params.generation_video_watermark, referenceImageURLs, relayTokenName.trim() || undefined, { signal: controller.signal });
+			const referenceImageURLs = referenceMode === "reference" ? [] : await Promise.all(context.referenceImageURLs.slice(0, 1).map(async (url) => blobDataURL(await fetchAuthenticatedImageBlob(url, controller.signal))));
+			const submitted = await createVideoGenerationTask(taskID, text, params.generation_video_model, params.generation_video_size || undefined, params.generation_video_seconds, params.generation_video_resolution || undefined, params.generation_video_audio, params.generation_video_watermark, referenceImageURLs, referenceVideoURLs, undefined, referenceMode, videoRelayTokenName.trim() || undefined, { signal: controller.signal });
       const completed = await waitForTask(submitted.id || taskID, undefined, controller.signal);
       const item = completed.data?.find((entry) => String(entry.type || "") === "video" || entry.video_url || entry.url);
       const url = String(item?.video_url || item?.url || "").trim();
@@ -1614,7 +1652,7 @@ export default function CanvasPage({ session }: { session: StoredAuthSession }) 
     if (videoNode) return runVideoGeneration(nodeID, prompt);
     const sourceNode = nodesRef.current.find((node) => node.id === nodeID && (node.type === "image" || node.type === "config"));
     if (!sourceNode) return;
-    if (!relayTokenName.trim()) {
+    if (!imageRelayTokenName.trim()) {
       setRelayTokenDialogKind("image");
       return;
     }
@@ -1654,7 +1692,7 @@ export default function CanvasPage({ session }: { session: StoredAuthSession }) 
     const count = canvasGenerationCount(generationModel, parameters.generation_count, options.resultCount, retrying);
     const stream = supportsImageStreaming(generationModel) && (parameters.generation_stream ?? false);
     const partialImages = stream ? parameters.generation_partial_images : 0;
-    const taskRelayTokenName = relayTokenName.trim() || undefined;
+    const taskRelayTokenName = imageRelayTokenName.trim() || undefined;
     const taskID = `canvas-${mode}-${randomID()}`;
     const controller = new AbortController();
     const generationEpoch = generationEpochRef.current + 1;
@@ -2070,9 +2108,20 @@ export default function CanvasPage({ session }: { session: StoredAuthSession }) 
 
   useEffect(() => {
     const handleTokenNameChange = (event: Event) => {
-      if (event instanceof StorageEvent && event.key !== relayTokenStorageKey) return;
-      const eventTokenName = (event as CustomEvent<{ tokenName?: string }>).detail?.tokenName;
-      setRelayTokenName(String(eventTokenName ?? getStoredRelayTokenName(session)));
+      if (event instanceof StorageEvent) {
+        if (event.key === imageRelayTokenStorageKey) {
+          setImageRelayTokenName(getStoredRelayTokenName(session, "image"));
+        } else if (event.key === videoRelayTokenStorageKey) {
+          setVideoRelayTokenName(getStoredRelayTokenName(session, "video"));
+        }
+        return;
+      }
+      const detail = (event as CustomEvent<{ kind?: RelayTokenKind; tokenName?: string }>).detail;
+      if (detail?.kind === "image") {
+        setImageRelayTokenName(String(detail.tokenName ?? getStoredRelayTokenName(session, "image")));
+      } else if (detail?.kind === "video") {
+        setVideoRelayTokenName(String(detail.tokenName ?? getStoredRelayTokenName(session, "video")));
+      }
     };
     window.addEventListener(PROFILE_RELAY_TOKEN_NAME_CHANGED_EVENT, handleTokenNameChange);
     window.addEventListener("storage", handleTokenNameChange);
@@ -2080,11 +2129,12 @@ export default function CanvasPage({ session }: { session: StoredAuthSession }) 
       window.removeEventListener(PROFILE_RELAY_TOKEN_NAME_CHANGED_EVENT, handleTokenNameChange);
       window.removeEventListener("storage", handleTokenNameChange);
     };
-  }, [relayTokenStorageKey, session]);
+  }, [imageRelayTokenStorageKey, videoRelayTokenStorageKey, session]);
 
   useEffect(() => {
-    setRelayTokenName(getStoredRelayTokenName(session));
-  }, [relayTokenStorageKey, session]);
+    setImageRelayTokenName(getStoredRelayTokenName(session, "image"));
+    setVideoRelayTokenName(getStoredRelayTokenName(session, "video"));
+  }, [imageRelayTokenStorageKey, videoRelayTokenStorageKey, session]);
 
   useEffect(() => {
     const host = hostRef.current;

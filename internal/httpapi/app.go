@@ -71,6 +71,7 @@ type App struct {
 	historyWriteLimiter *imageConversationHistoryWriteLimiter
 	imageUploadSlots    chan struct{}
 	videoDir            string
+	videoReferenceDir   string
 	loginLimiter        *loginRateLimiter
 	settingsMu          sync.Mutex
 
@@ -193,7 +194,12 @@ func NewApp() (*App, error) {
 		cancel()
 		return nil, fmt.Errorf("initialize video storage: %w", err)
 	}
-	app := &App{config: cfg, auth: auth, accounts: accounts, logs: logs, logger: logger, proxy: proxy, engine: engine, images: images, videoDir: videoDir, conversationAssets: service.NewImageConversationAssetService(filepath.Join(cfg.DataDir, "image_conversation_assets")), prompts: service.NewPromptFavoriteService(storageBackend), history: service.NewImageConversationHistoryService(storageBackend), canvas: service.NewCanvasDocumentService(storageBackend), announce: service.NewAnnouncementService(storageBackend), newAPIKeys: newAPIKeys, cancel: cancel, historyWriteLimiter: newImageConversationHistoryWriteLimiter(imageConversationHistoryWriteParallelism), imageUploadSlots: make(chan struct{}, 2), loginLimiter: newLoginRateLimiter()}
+	videoReferenceDir := filepath.Join(videoDir, "references")
+	if err := os.MkdirAll(videoReferenceDir, 0o755); err != nil {
+		cancel()
+		return nil, fmt.Errorf("initialize video reference storage: %w", err)
+	}
+	app := &App{config: cfg, auth: auth, accounts: accounts, logs: logs, logger: logger, proxy: proxy, engine: engine, images: images, videoDir: videoDir, videoReferenceDir: videoReferenceDir, conversationAssets: service.NewImageConversationAssetService(filepath.Join(cfg.DataDir, "image_conversation_assets")), prompts: service.NewPromptFavoriteService(storageBackend), history: service.NewImageConversationHistoryService(storageBackend), canvas: service.NewCanvasDocumentService(storageBackend), announce: service.NewAnnouncementService(storageBackend), newAPIKeys: newAPIKeys, cancel: cancel, historyWriteLimiter: newImageConversationHistoryWriteLimiter(imageConversationHistoryWriteParallelism), imageUploadSlots: make(chan struct{}, 2), loginLimiter: newLoginRateLimiter()}
 	app.conversationAssets.SetStorageBudget(cfg.ImageStorageLimitBytes, func() int64 {
 		return app.images.StorageGovernance().TotalBytes
 	})
@@ -568,7 +574,18 @@ func (a *App) handleModels(w http.ResponseWriter, r *http.Request) {
 	}
 	relayAPIKey := ""
 	if a.newAPIKeys != nil {
-		relayAPIKey, _ = a.newAPIKeys.KeyForIdentity(r.Context(), identity)
+		group := strings.TrimSpace(r.URL.Query().Get("group"))
+		tokenName := strings.TrimSpace(r.URL.Query().Get("token_name"))
+		if group != "" || tokenName != "" {
+			var err error
+			relayAPIKey, err = a.newAPIKeys.KeyForIdentityGroupAndName(r.Context(), identity, group, tokenName)
+			if err != nil {
+				a.writeProtocol(w, r, nil, nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: err.Error()}, "openai", "/v1/models", "models", identity, "模型列表", service.ImageVisibilityPrivate)
+				return
+			}
+		} else {
+			relayAPIKey, _ = a.newAPIKeys.KeyForIdentity(r.Context(), identity)
+		}
 	}
 	result, err := a.relayListModels(r.Context(), relayAPIKey)
 	a.writeProtocol(w, r, result, nil, err, "openai", "/v1/models", "models", identity, "模型列表", service.ImageVisibilityPrivate)

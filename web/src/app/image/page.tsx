@@ -71,7 +71,7 @@ import {
   taskImageHasPreview,
 } from "@/app/image/image-task-state";
 import { Button } from "@/components/ui/button";
-import { videoAudioControl, videoResolutionOptions, videoSecondsOptions, videoSizeOptions } from "@/lib/video-model-capabilities";
+import { supportsVideoMultimodalReferences, videoAudioControl, videoMultimodalReferenceLimits, videoReferenceImageLimit, videoRequiresReferenceImage, videoResolutionOptions, videoSecondsOptions, videoSizeOptions } from "@/lib/video-model-capabilities";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
@@ -96,6 +96,7 @@ import {
   createImageEditTask,
   createImageGenerationTask,
   createVideoGenerationTask,
+  uploadVideoReference,
   fetchProfileRelayKey,
   DEFAULT_IMAGE_MODEL,
   fetchCreationTasks,
@@ -143,11 +144,13 @@ import {
 } from "@/lib/image-conversation-assets";
 import { clearImageManagerCache } from "@/lib/image-manager-cache";
 import { getManagedImagePathFromUrl, getManagedImageUrlFromPath } from "@/lib/image-path";
+import { isPublicReferenceURL } from "@/lib/public-reference-url";
 import { clearStoredRelayApiKey } from "@/lib/relay-key";
 import {
   getStoredRelayTokenName,
   relayTokenNameStorageKey,
   retainSelectedRelayTokenName,
+  type RelayTokenKind,
 } from "@/lib/relay-token-selection";
 import { AUTH_SESSION_CHANGE_EVENT, getCachedAuthSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
@@ -251,6 +254,12 @@ async function runExclusiveImageConversationMutation<T>(
 }
 
 type ComposerMode = "chat" | "image" | "video";
+
+type VideoReferenceMode = "first-frame" | "reference";
+
+function cleanReferenceURLs(values: string[]) {
+  return values.map((value) => value.trim()).filter(Boolean);
+}
 
 type EditingTurnDraft = {
   conversationId: string;
@@ -1610,29 +1619,69 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   const [videoResolution, setVideoResolution] = useState(() => getStoredVideoSetting(VIDEO_RESOLUTION_STORAGE_KEY, "720p"));
   const [videoGenerateAudio, setVideoGenerateAudio] = useState(() => getStoredVideoSetting(VIDEO_AUDIO_STORAGE_KEY, "true") === "true");
   const [videoWatermark, setVideoWatermark] = useState(() => getStoredVideoSetting(VIDEO_WATERMARK_STORAGE_KEY, "false") === "true");
+  const [videoReferenceMode, setVideoReferenceMode] = useState<VideoReferenceMode>("first-frame");
+  const [videoReferenceImageURLs, setVideoReferenceImageURLs] = useState<string[]>([]);
+  const [videoReferenceVideoURLs, setVideoReferenceVideoURLs] = useState<string[]>([]);
+  const [videoReferenceUploading, setVideoReferenceUploading] = useState(false);
+  const handleVideoReferenceFileChange = useCallback(async (file: File) => {
+    const mime = file.type.toLowerCase().split(";", 1)[0];
+    if (!(mime === "video/mp4" || mime === "video/quicktime" || /\.(mp4|mov)$/i.test(file.name))) {
+      toast.error("参考视频仅支持 MP4 或 MOV 格式");
+      return;
+    }
+    if (file.size > 50 * 1024 * 1024) {
+      toast.error("参考视频不能超过 50 MiB");
+      return;
+    }
+    setVideoReferenceUploading(true);
+    try {
+      const uploaded = await uploadVideoReference(file);
+      setVideoReferenceVideoURLs([uploaded.url]);
+      setVideoReferenceImageURLs([]);
+      setVideoReferenceAudioURLs([]);
+      setVideoReferenceMode("reference");
+      toast.success("参考视频已上传");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "参考视频上传失败");
+    } finally {
+      setVideoReferenceUploading(false);
+    }
+  }, []);
+  const [videoReferenceAudioURLs, setVideoReferenceAudioURLs] = useState<string[]>([]);
   const handleVideoModelChange = useCallback((model: string) => {
+    const nextSeconds = videoSecondsOptions(model).find((value) => value > 0) || 4;
     setVideoModel(model);
     setVideoSize(videoSizeOptions(model)[0] || "");
-    setVideoSeconds(String(videoSecondsOptions(model).find((value) => value > 0) || 4));
-    setVideoResolution(videoResolutionOptions(model)[0]);
+    setVideoSeconds(String(nextSeconds));
+    setVideoResolution(videoResolutionOptions(model, nextSeconds)[0] || "");
     setVideoGenerateAudio(videoAudioControl(model) === "toggle" || videoAudioControl(model) === "always");
+    if (!supportsVideoMultimodalReferences(model)) {
+      setVideoReferenceMode("first-frame");
+    }
   }, []);
   useEffect(() => {
     const sizes = videoSizeOptions(videoModel);
     const seconds = videoSecondsOptions(videoModel);
-    const resolutions = videoResolutionOptions(videoModel);
+    const resolutions = videoResolutionOptions(videoModel, Number(videoSeconds));
     setVideoSize((current) => sizes.includes(current) ? current : sizes[0] || "");
     setVideoSeconds((current) => seconds.includes(Number(current)) ? current : String(seconds.find((value) => value > 0) || 4));
     setVideoResolution((current) => resolutions.includes(current) ? current : resolutions[0] || "");
     const audioControl = videoAudioControl(videoModel);
     if (audioControl !== "toggle") setVideoGenerateAudio(audioControl === "always");
-  }, [videoModel]);
-  const [relayKeyConfigured, setRelayKeyConfigured] = useState(false);
-  const [relayKeyStatusMessage, setRelayKeyStatusMessage] = useState(NEWAPI_TOKEN_MISSING_MESSAGE);
-  const relayTokenStorageKey = relayTokenNameStorageKey(session);
-  const [relayTokenName, setRelayTokenName] = useState(() => getStoredRelayTokenName(session));
+  }, [videoModel, videoSeconds]);
+  const [relayKeyConfigured, setRelayKeyConfigured] = useState<Record<RelayTokenKind, boolean>>({
+    image: false,
+    video: false,
+  });
+  const [relayKeyStatusMessage, setRelayKeyStatusMessage] = useState<Record<RelayTokenKind, string>>({
+    image: NEWAPI_TOKEN_MISSING_MESSAGE,
+    video: NEWAPI_TOKEN_MISSING_MESSAGE,
+  });
+  const imageRelayTokenStorageKey = relayTokenNameStorageKey(session, "image");
+  const videoRelayTokenStorageKey = relayTokenNameStorageKey(session, "video");
+  const [imageRelayTokenName, setImageRelayTokenName] = useState(() => getStoredRelayTokenName(session, "image"));
+  const [videoRelayTokenName, setVideoRelayTokenName] = useState(() => getStoredRelayTokenName(session, "video"));
   const [relayTokenDialogKind, setRelayTokenDialogKind] = useState<RelayTokenCreationKind | null>(null);
-  const relayKeyMissingMessage = relayKeyStatusMessage || NEWAPI_TOKEN_MISSING_MESSAGE;
   const [relayImageModelOptions, setRelayImageModelOptions] = useState<ImageModelOption[]>(() =>
     ensureDefaultImageModelOption(IMAGE_CREATION_MODEL_OPTIONS),
   );
@@ -1830,14 +1879,20 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     () => conversations.find((item) => item.id === selectedConversationId) ?? null,
     [conversations, selectedConversationId],
   );
-  const activeRelayTokenName = relayTokenName.trim();
+  const activeRelayTokenKind: RelayTokenKind = composerMode === "video" ? "video" : "image";
+  const activeRelayTokenName = (activeRelayTokenKind === "video" ? videoRelayTokenName : imageRelayTokenName).trim();
+  const activeRelayKeyConfigured = relayKeyConfigured[activeRelayTokenKind];
+  const activeRelayKeyMissingMessage = relayKeyStatusMessage[activeRelayTokenKind] || NEWAPI_TOKEN_MISSING_MESSAGE;
+  const relayTokenNameForKind = useCallback((kind: RelayTokenKind) => (
+    kind === "video" ? videoRelayTokenName : imageRelayTokenName
+  ).trim(), [imageRelayTokenName, videoRelayTokenName]);
   const requireRelayToken = useCallback((kind: RelayTokenCreationKind) => {
-    if (activeRelayTokenName && relayKeyConfigured) {
+    if (relayTokenNameForKind(kind) && relayKeyConfigured[kind]) {
       return true;
     }
     setRelayTokenDialogKind(kind);
     return false;
-  }, [activeRelayTokenName, relayKeyConfigured]);
+  }, [relayKeyConfigured, relayTokenNameForKind]);
   const activeTaskCount = useMemo(
     () =>
       conversations.reduce((sum, conversation) => {
@@ -2459,11 +2514,20 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       return;
     }
     const handleTokenNameChange = (event: Event) => {
-      if (event instanceof StorageEvent && event.key !== relayTokenStorageKey) {
+      if (event instanceof StorageEvent) {
+        if (event.key === imageRelayTokenStorageKey) {
+          setImageRelayTokenName(getStoredRelayTokenName(session, "image"));
+        } else if (event.key === videoRelayTokenStorageKey) {
+          setVideoRelayTokenName(getStoredRelayTokenName(session, "video"));
+        }
         return;
       }
-      const tokenName = (event as CustomEvent<{ tokenName?: string }>).detail?.tokenName;
-      setRelayTokenName(String(tokenName ?? getStoredRelayTokenName(session)));
+      const detail = (event as CustomEvent<{ kind?: RelayTokenKind; tokenName?: string }>).detail;
+      if (detail?.kind === "image") {
+        setImageRelayTokenName(String(detail.tokenName ?? getStoredRelayTokenName(session, "image")));
+      } else if (detail?.kind === "video") {
+        setVideoRelayTokenName(String(detail.tokenName ?? getStoredRelayTokenName(session, "video")));
+      }
     };
     window.addEventListener(PROFILE_RELAY_TOKEN_NAME_CHANGED_EVENT, handleTokenNameChange);
     window.addEventListener("storage", handleTokenNameChange);
@@ -2471,41 +2535,55 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       window.removeEventListener(PROFILE_RELAY_TOKEN_NAME_CHANGED_EVENT, handleTokenNameChange);
       window.removeEventListener("storage", handleTokenNameChange);
     };
-  }, [relayTokenStorageKey, session]);
+  }, [imageRelayTokenStorageKey, videoRelayTokenStorageKey, session]);
 
   useEffect(() => {
-    setRelayTokenName(getStoredRelayTokenName(session));
-  }, [relayTokenStorageKey, session]);
-
-  const refreshRelayKeyStatus = useCallback(async () => {
-    clearStoredRelayApiKey();
-    try {
-      const status = await fetchProfileRelayKey(undefined, activeRelayTokenName);
-      const names = normalizeRelayTokenNames(status.token_names);
-      const selectedName = retainSelectedRelayTokenName(activeRelayTokenName, names);
-      const configured = Boolean(selectedName && status.has_key);
-      setRelayTokenName(selectedName);
-      setRelayKeyConfigured(configured);
-      setRelayKeyStatusMessage(
-        configured
-          ? ""
-          : selectedName
-            ? status.message || NEWAPI_TOKEN_MISSING_MESSAGE
-            : "请先选择用于生成的密钥",
-      );
-    } catch {
-      setRelayKeyConfigured(false);
-      setRelayKeyStatusMessage("无法读取云棉令牌状态，请稍后重试");
-    }
-  }, [activeRelayTokenName]);
+    setImageRelayTokenName(getStoredRelayTokenName(session, "image"));
+    setVideoRelayTokenName(getStoredRelayTokenName(session, "video"));
+  }, [imageRelayTokenStorageKey, videoRelayTokenStorageKey, session]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
       return;
     }
-
-    void refreshRelayKeyStatus();
-  }, [refreshRelayKeyStatus, session]);
+    let ignore = false;
+    clearStoredRelayApiKey();
+    void Promise.all([
+      fetchProfileRelayKey(undefined, imageRelayTokenName.trim()),
+      fetchProfileRelayKey(undefined, videoRelayTokenName.trim()),
+    ])
+      .then(([imageStatus, videoStatus]) => {
+        if (ignore) return;
+        const imageName = retainSelectedRelayTokenName(
+          imageRelayTokenName,
+          normalizeRelayTokenNames(imageStatus.token_names),
+        );
+        const videoName = retainSelectedRelayTokenName(
+          videoRelayTokenName,
+          normalizeRelayTokenNames(videoStatus.token_names),
+        );
+        const imageConfigured = Boolean(imageName && imageStatus.has_key);
+        const videoConfigured = Boolean(videoName && videoStatus.has_key);
+        setImageRelayTokenName(imageName);
+        setVideoRelayTokenName(videoName);
+        setRelayKeyConfigured({ image: imageConfigured, video: videoConfigured });
+        setRelayKeyStatusMessage({
+          image: imageConfigured ? "" : imageName ? imageStatus.message || NEWAPI_TOKEN_MISSING_MESSAGE : "请先选择用于生图的密钥",
+          video: videoConfigured ? "" : videoName ? videoStatus.message || NEWAPI_TOKEN_MISSING_MESSAGE : "请先选择用于生视频的密钥",
+        });
+      })
+      .catch(() => {
+        if (ignore) return;
+        setRelayKeyConfigured({ image: false, video: false });
+        setRelayKeyStatusMessage({
+          image: "无法读取云棉令牌状态，请稍后重试",
+          video: "无法读取云棉令牌状态，请稍后重试",
+        });
+      });
+    return () => {
+      ignore = true;
+    };
+  }, [imageRelayTokenName, session, videoRelayTokenName]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -2826,6 +2904,9 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     setImageOutputFormat(DEFAULT_IMAGE_OUTPUT_FORMAT);
     setImageOutputCompression("");
     setDefaultImageVisibility("private");
+    setVideoReferenceImageURLs([]);
+    setVideoReferenceVideoURLs([]);
+    setVideoReferenceAudioURLs([]);
     replaceReferenceImages([]);
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
@@ -3112,10 +3193,10 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       }
       return;
     }
-    const limitMessage = composerMode === "video" ? "" : imageConversationReferenceLimitMessage(
+    const limitMessage = imageConversationReferenceLimitMessage(
       referenceImagesRef.current.length + referenceUploadPendingCountRef.current,
       files.length,
-      imageReferenceImageLimit(imageModel),
+      composerMode === "video" ? videoReferenceImageLimit(videoModel) : imageReferenceImageLimit(imageModel),
     );
     if (limitMessage) {
       toast.error(limitMessage);
@@ -3146,17 +3227,21 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         fileInputRef.current.value = "";
       }
     }
-  }, [composerMode, imageModel]);
+  }, [composerMode, imageModel, videoModel]);
 
   const handleReferenceImageChange = useCallback(
     async (files: File[]) => {
       if (files.length === 0) {
         return;
       }
-
+      if (composerMode === "video") {
+        setVideoReferenceMode("first-frame");
+        setVideoReferenceVideoURLs([]);
+        setVideoReferenceAudioURLs([]);
+      }
       await appendReferenceImages(files);
     },
-    [appendReferenceImages],
+    [appendReferenceImages, composerMode],
   );
 
   const handleRemoveReferenceImage = useCallback((index: number) => {
@@ -3377,6 +3462,10 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       setVideoResolution(targetTurn.videoResolution || "720p");
       setVideoGenerateAudio(targetTurn.videoGenerateAudio ?? true);
       setVideoWatermark(targetTurn.videoWatermark ?? false);
+      setVideoReferenceMode(targetTurn.videoReferenceMode === "reference" ? "reference" : "first-frame");
+      setVideoReferenceImageURLs(targetTurn.videoReferenceImageURLs || []);
+      setVideoReferenceVideoURLs(targetTurn.videoReferenceVideoURLs || []);
+      setVideoReferenceAudioURLs(targetTurn.videoReferenceAudioURLs || []);
       replaceReferenceImages(targetTurn.referenceImages);
       window.requestAnimationFrame(() => textareaRef.current?.focus());
       toast.message("已载入视频提示词和参数");
@@ -3709,9 +3798,9 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         }
         const activeTurnRelayTokenGroup = activeTurn.tokenGroup?.trim() || undefined;
         const activeTurnRelayTokenName = activeTurn.tokenName?.trim() || undefined;
-        const videoReferenceUrls = activeTurn.mode === "video"
+        const videoReferenceUrls = activeTurn.mode === "video" && activeTurn.videoReferenceMode !== "reference"
           ? await Promise.all(referenceFiles.slice(0, 1).map(fileToDataUrl))
-          : [];
+          : activeTurn.mode === "video" ? activeTurn.videoReferenceImageURLs || [] : [];
         const taskMessages = buildCreationTaskMessages(snapshot, activeTurn.id);
         const activeTurnSizeRequest = buildEffectiveImageSizeRequest(
           activeTurn.model,
@@ -3754,12 +3843,15 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
               group.taskId,
               activeTurn.prompt,
               activeTurn.model,
-              activeTurn.size || "1280x720",
-              activeTurn.videoSeconds || 4,
-              activeTurn.videoResolution || "720p",
+              activeTurn.size || undefined,
+              activeTurn.videoSeconds ?? 4,
+              activeTurn.videoResolution || undefined,
               activeTurn.videoGenerateAudio ?? true,
               activeTurn.videoWatermark ?? false,
               videoReferenceUrls,
+              activeTurn.videoReferenceVideoURLs,
+              activeTurn.videoReferenceAudioURLs,
+              activeTurn.videoReferenceMode || "first-frame",
               activeTurnRelayTokenName,
               creationTaskRequestOptions,
             );
@@ -4395,7 +4487,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                 ...derived,
                 processingStartedAt: undefined,
                 tokenGroup: undefined,
-                tokenName: activeRelayTokenName || undefined,
+                tokenName: relayTokenNameForKind(targetTurn.mode === "video" ? "video" : "image") || undefined,
                 images,
               };
             }),
@@ -4416,7 +4508,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       }
     },
     [
-      activeRelayTokenName,
+      relayTokenNameForKind,
       requireRelayToken,
       runConversationQueue,
       updateConversation,
@@ -4493,7 +4585,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                 error: undefined,
                 processingStartedAt: undefined,
                 tokenGroup: undefined,
-                tokenName: activeRelayTokenName || undefined,
+                tokenName: relayTokenNameForKind(targetTurn.mode === "video" ? "video" : "image") || undefined,
                 images: Array.from({ length: imageCount }, (_, index): StoredImage => {
                   const imageId = `${turn.id}-${regenerationId}-${index}`;
                   return {
@@ -4521,7 +4613,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       toast.success("已加入重新生成队列");
     },
     [
-      activeRelayTokenName,
+      relayTokenNameForKind,
       requireRelayToken,
       runConversationQueue,
       updateConversation,
@@ -4666,7 +4758,9 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                 stream: draftStream,
                 partialImages: draftStream ? normalizeImagePartialImages(draft.partialImages) : 0,
                 tokenGroup: regenerate ? undefined : draft.tokenGroup || undefined,
-                tokenName: regenerate ? activeRelayTokenName || undefined : draft.tokenName || undefined,
+                tokenName: regenerate
+                  ? relayTokenNameForKind(targetTurn.mode === "video" ? "video" : "image") || undefined
+                  : draft.tokenName || undefined,
                 visibility: draft.visibility,
               };
               if (!regenerate) {
@@ -4715,8 +4809,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       }
     },
     [
-      activeRelayTokenName,
       editingTurnDraft,
+      relayTokenNameForKind,
       requireRelayToken,
       runConversationQueue,
       updateConversation,
@@ -4750,14 +4844,40 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       toast.error("请输入当前视频模型支持的时长");
       return;
     }
+    if (videoMode && videoRequiresReferenceImage(effectiveModel) && referenceImages.length === 0) {
+      toast.error(`模型 ${effectiveModel} 仅支持图生视频，请上传一张首帧参考图`);
+      return;
+    }
+    const normalizedVideoReferenceImages = cleanReferenceURLs(videoReferenceImageURLs);
+    const normalizedVideoReferenceVideos = cleanReferenceURLs(videoReferenceVideoURLs);
+    const normalizedVideoReferenceAudios = cleanReferenceURLs(videoReferenceAudioURLs);
+    if (videoMode && videoReferenceMode === "reference") {
+      if (!supportsVideoMultimodalReferences(effectiveModel)) {
+        toast.error(`模型 ${effectiveModel} 尚未接入多模态参考生视频`);
+        return;
+      }
+      const limits = videoMultimodalReferenceLimits(effectiveModel);
+      if (normalizedVideoReferenceImages.length + normalizedVideoReferenceVideos.length + normalizedVideoReferenceAudios.length === 0) {
+        toast.error("请至少填写一个参考图片、视频或音频 URL");
+        return;
+      }
+      if (normalizedVideoReferenceImages.length > limits.image || normalizedVideoReferenceVideos.length > limits.video || normalizedVideoReferenceAudios.length > limits.audio) {
+        toast.error(`当前模型最多支持 ${limits.image} 张参考图片、${limits.video} 个参考视频和 ${limits.audio} 个参考音频`);
+        return;
+      }
+      if (![...normalizedVideoReferenceImages, ...normalizedVideoReferenceVideos, ...normalizedVideoReferenceAudios].every(isPublicReferenceURL)) {
+        toast.error("多模态参考必须使用公网可访问的 http:// 或 https:// URL");
+        return;
+      }
+    }
     if (!videoMode && referenceImages.length > 0 && !supportsImageEditing(effectiveModel)) {
       toast.error(`模型 ${effectiveModel} 暂不支持参考图编辑`);
       return;
     }
-    const referenceLimitMessage = videoMode ? "" : imageConversationReferenceLimitMessage(
+    const referenceLimitMessage = imageConversationReferenceLimitMessage(
       0,
-      referenceImages.length,
-      imageReferenceImageLimit(effectiveModel),
+      videoMode && videoReferenceMode === "reference" ? 0 : referenceImages.length,
+      videoMode ? videoReferenceImageLimit(effectiveModel) : imageReferenceImageLimit(effectiveModel),
     );
     if (referenceLimitMessage) {
       toast.error(referenceLimitMessage);
@@ -4844,6 +4964,10 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         videoResolution: videoMode ? videoResolution : undefined,
         videoGenerateAudio: videoMode ? videoGenerateAudio : undefined,
         videoWatermark: videoMode ? videoWatermark : undefined,
+        videoReferenceMode: videoMode ? videoReferenceMode : undefined,
+        videoReferenceImageURLs: videoMode && videoReferenceMode === "reference" ? normalizedVideoReferenceImages : undefined,
+        videoReferenceVideoURLs: videoMode && videoReferenceMode === "reference" ? normalizedVideoReferenceVideos : undefined,
+        videoReferenceAudioURLs: videoMode && videoReferenceMode === "reference" ? normalizedVideoReferenceAudios : undefined,
         tokenGroup: undefined,
         tokenName: activeRelayTokenName || undefined,
         visibility: defaultImageVisibility,
@@ -5590,8 +5714,12 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                 videoResolution={videoResolution}
                 videoGenerateAudio={videoGenerateAudio}
                 videoWatermark={videoWatermark}
-                relayKeyConfigured={relayKeyConfigured}
-                relayKeyStatusMessage={relayKeyMissingMessage}
+                videoReferenceMode={videoReferenceMode}
+                videoReferenceImageURLs={videoReferenceImageURLs}
+                videoReferenceVideoURLs={videoReferenceVideoURLs}
+                videoReferenceAudioURLs={videoReferenceAudioURLs}
+                relayKeyConfigured={activeRelayKeyConfigured}
+                relayKeyStatusMessage={activeRelayKeyMissingMessage}
                 highResolutionHint={highResolutionHint}
                 referenceImages={referenceImages}
                 textareaRef={textareaRef}
@@ -5617,6 +5745,32 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                 onVideoResolutionChange={setVideoResolution}
                 onVideoGenerateAudioChange={setVideoGenerateAudio}
                 onVideoWatermarkChange={setVideoWatermark}
+                onVideoReferenceModeChange={(mode) => {
+                  setVideoReferenceMode(mode);
+                  if (mode === "reference") replaceReferenceImages([]);
+                }}
+                onVideoReferenceImageURLsChange={(value) => {
+                  setVideoReferenceImageURLs(value);
+                  if (value.some((item) => item.trim())) {
+                    setVideoReferenceMode("reference");
+                    setVideoReferenceVideoURLs([]);
+                    setVideoReferenceAudioURLs([]);
+                  }
+                }}
+                onVideoReferenceVideoURLsChange={(value) => {
+                  setVideoReferenceVideoURLs(value);
+                  if (value.some((item) => item.trim())) {
+                    setVideoReferenceMode("reference");
+                    setVideoReferenceImageURLs([]);
+                    setVideoReferenceAudioURLs([]);
+                  }
+                }}
+                onVideoReferenceAudioURLsChange={(value) => {
+                  setVideoReferenceAudioURLs(value);
+                  if (value.some((item) => item.trim())) setVideoReferenceMode("reference");
+                }}
+                videoReferenceUploading={videoReferenceUploading}
+                onVideoReferenceFileChange={handleVideoReferenceFileChange}
                 onSubmit={handleSubmit}
                 onOpenPromptMarket={() => setIsPromptMarketOpen(true)}
                 onReferenceImageChange={handleReferenceImageChange}

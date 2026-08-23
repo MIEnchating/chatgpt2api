@@ -11,6 +11,7 @@ import {
   canvasGenerationNeedsRecovery,
   canvasGenerationReferenceImageURLs,
   canvasGenerationRequestSize,
+  canvasGenerationVideoReferenceURLs,
   findCanvasRetryConfigurationNode,
   markCanvasGenerationRecoveryPending,
   restoreInterruptedCanvasGenerations,
@@ -205,6 +206,26 @@ test("plain composer content does not implicitly attach every connected resource
 test("a populated source image replaces upstream image references", () => {
   assert.deepEqual(canvasGenerationReferenceImageURLs(node("target", "image", { url: "/images/source.png" }), ["/images/upstream-a.png", "/images/upstream-b.png"], 4), ["/images/source.png"]);
   assert.deepEqual(canvasGenerationReferenceImageURLs(node("target", "image"), ["a", "b", "c"], 2), ["a", "b"]);
+});
+
+test("video generation collects connected video references directly and through a config node", () => {
+  const nodes = [
+    node("target", "video"),
+    node("direct", "video", { url: "https://cdn.example.com/direct.mp4" }),
+    node("config", "config"),
+    node("indirect", "video", { url: "https://cdn.example.com/indirect.mp4" }),
+    node("duplicate", "video", { url: "https://cdn.example.com/direct.mp4" }),
+  ];
+  const connections = [
+    { id: "direct-target", from_node_id: "direct", to_node_id: "target" },
+    { id: "config-target", from_node_id: "config", to_node_id: "target" },
+    { id: "indirect-config", from_node_id: "indirect", to_node_id: "config" },
+    { id: "duplicate-config", from_node_id: "duplicate", to_node_id: "config" },
+  ];
+  assert.deepEqual(canvasGenerationVideoReferenceURLs("target", nodes, connections), [
+    "https://cdn.example.com/direct.mp4",
+    "https://cdn.example.com/indirect.mp4",
+  ]);
 });
 
 test("loading nodes become retryable after the canvas reloads", () => {

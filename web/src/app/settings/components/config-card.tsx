@@ -5,6 +5,7 @@ import {
   CircleHelp,
   LoaderCircle,
   PlugZap,
+  Save,
   Settings2,
 } from "lucide-react";
 import { useState } from "react";
@@ -129,6 +130,8 @@ export function ConfigCard() {
     useState<ProxyTestResult | null>(null);
   const config = useSettingsStore((state) => state.config);
   const isLoadingConfig = useSettingsStore((state) => state.isLoadingConfig);
+  const isSavingConfig = useSettingsStore((state) => state.isSavingConfig);
+  const saveConfig = useSettingsStore((state) => state.saveConfig);
   const setImageTaskTimeoutSeconds = useSettingsStore(
     (state) => state.setImageTaskTimeoutSeconds,
   );
@@ -193,6 +196,13 @@ export function ConfigCard() {
       icon={Settings2}
       title="参数配置"
       description="配置站点接入、异步创作任务和图片治理参数。"
+      action={
+        <Button type="button" size="sm" onClick={() => void saveConfig()} disabled={isSavingConfig}>
+          {isSavingConfig ? <LoaderCircle className="size-4 animate-spin" /> : <Save className="size-4" />}
+          保存参数配置
+        </Button>
+      }
+      contentClassName="pt-0 sm:pt-0"
     >
       <div className="flex flex-col gap-5">
         <section className={configSectionClassName}>

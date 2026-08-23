@@ -1,6 +1,6 @@
 "use client";
 
-import { BookOpen, Plus, Trash2 } from "lucide-react";
+import { BookOpen, LoaderCircle, Plus, Save, Trash2 } from "lucide-react";
 import { useMemo } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -25,6 +25,8 @@ function sourceID() {
 
 export function PromptSourcesCard() {
   const config = useSettingsStore((state) => state.config);
+  const isSavingConfig = useSettingsStore((state) => state.isSavingConfig);
+  const saveConfig = useSettingsStore((state) => state.saveConfig);
   const setPromptSources = useSettingsStore((state) => state.setPromptSources);
   const sources = useMemo(() => normalizePromptMarketSources(config?.prompt_sources), [config?.prompt_sources]);
 
@@ -45,7 +47,24 @@ export function PromptSourcesCard() {
   };
 
   return (
-    <SettingsCard icon={BookOpen} title="提示词来源" description="管理提示词市场的来源、启用状态和解析格式。" tone="violet" action={<Button type="button" variant="outline" size="sm" onClick={addSource}><Plus className="size-4" />新增来源</Button>}>
+    <SettingsCard
+      icon={BookOpen}
+      title="提示词来源"
+      description="管理提示词市场的来源、启用状态和解析格式。"
+      tone="violet"
+      action={
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          <Button type="button" variant="outline" size="sm" onClick={addSource}>
+            <Plus className="size-4" />
+            新增来源
+          </Button>
+          <Button type="button" size="sm" onClick={() => void saveConfig()} disabled={isSavingConfig}>
+            {isSavingConfig ? <LoaderCircle className="size-4 animate-spin" /> : <Save className="size-4" />}
+            保存
+          </Button>
+        </div>
+      }
+    >
       <div className="flex flex-col gap-3">
         <SettingsNotice className="px-3 py-2.5 text-xs leading-5 sm:text-sm">来源配置保存后会同步到服务端。自定义来源需要返回 JSON 数组，字段支持 title、prompt、preview、category、tags、author、mode。</SettingsNotice>
         {sources.map((source) => (

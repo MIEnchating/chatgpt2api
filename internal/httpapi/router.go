@@ -59,6 +59,7 @@ func (a *App) routes() []appRoute {
 		subtree("/api/profile/image-conversations", a.handleProfileImageConversations),
 		exact("", "/api/canvas", a.handleCanvasDocument),
 		exact(http.MethodPost, "/api/canvas/images", a.handleCanvasImageUpload),
+		exact(http.MethodPost, "/api/creation-tasks/video-reference-uploads", a.handleVideoReferenceUpload),
 		subtree("/api/auth/users", a.handleUserKeys),
 		subtree("/api/creation-tasks", a.handleCreationTasks),
 		exact("", "/api/settings", a.handleSettings),
@@ -78,6 +79,7 @@ func (a *App) routes() []appRoute {
 
 		prefix("/images/", a.handleImageFile),
 		prefix("/videos/", a.handleVideoFile),
+		prefix("/video-references/", a.handleVideoReferenceFile),
 		prefix(service.ImageConversationAssetURLPrefix, a.handleImageConversationAssetFile),
 		prefix("/image-references/", a.handleImageReferenceFile),
 		prefix("/image-thumbnails/", a.handleImageThumbnail),

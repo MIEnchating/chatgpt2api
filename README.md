@@ -36,6 +36,7 @@
 | 配置管理员、代理、并发、存储 | [配置说明](#配置说明) |
 | 创建 API Token 并调用接口 | [API 接入](#api-接入) |
 | 查看生图参数、异步任务和错误码 | [生图接口文档](./docs/image-generation-api.md) |
+| 查看视频模型参数和上游映射 | [视频生成参数文档](./docs/video-generation-api.md) |
 | 本地改代码和验证构建 | [本地开发](#本地开发) |
 | 升级 Docker 镜像或 Release 二进制 | [升级说明](#升级说明) |
 | ChatGPT 官网生图协议研究 | [技术研究文档](#技术研究文档) / [jshook 索引](./jshook/README.md) |

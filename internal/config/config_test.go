@@ -184,6 +184,55 @@ func TestStoreMigratesLegacyEnvFileSettingsWhenSaved(t *testing.T) {
 	}
 }
 
+func TestStorePersistsPromptSourcesAsJSON(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("ROOT_DIR", root)
+	unsetEnv(t, "PROMPT_SOURCES")
+	t.Cleanup(func() { _ = os.Unsetenv("PROMPT_SOURCES") })
+
+	store, err := NewStore()
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	sources := []any{
+		map[string]any{
+			"id":      "custom-source",
+			"label":   "自定义来源",
+			"url":     "https://example.test/prompts.json",
+			"format":  "generic-json",
+			"enabled": true,
+		},
+	}
+	updated, err := store.Update(map[string]any{"prompt_sources": sources})
+	if err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	updatedSources, ok := updated["prompt_sources"].([]any)
+	if !ok || len(updatedSources) != 1 {
+		t.Fatalf("updated prompt_sources = %#v", updated["prompt_sources"])
+	}
+	envData, err := os.ReadFile(filepath.Join(root, ".env"))
+	if err != nil {
+		t.Fatalf("read .env: %v", err)
+	}
+	if !strings.Contains(string(envData), "PROMPT_SOURCES=") || !strings.Contains(string(envData), "custom-source") {
+		t.Fatalf("prompt sources were not persisted as JSON: %s", envData)
+	}
+
+	reloaded, err := NewStore()
+	if err != nil {
+		t.Fatalf("reload NewStore() error = %v", err)
+	}
+	reloadedSources, ok := reloaded.Get()["prompt_sources"].([]any)
+	if !ok || len(reloadedSources) != 1 {
+		t.Fatalf("reloaded prompt_sources = %#v", reloaded.Get()["prompt_sources"])
+	}
+	reloadedSource, ok := reloadedSources[0].(map[string]any)
+	if !ok || reloadedSource["url"] != "https://example.test/prompts.json" {
+		t.Fatalf("reloaded source = %#v", reloadedSources[0])
+	}
+}
+
 func TestStoreRejectsInvalidImageObjectStorageSettings(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("ROOT_DIR", root)
