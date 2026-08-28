@@ -58,6 +58,11 @@ jobs:
           fi
           echo "tag=$TAG_NAME" >> "$GITHUB_OUTPUT"
 
+      - name: Validate release notes
+        env:
+          RELEASE_TAG: ${{ steps.version.outputs.tag }}
+        run: bash scripts/validate-release-notes.sh "$RELEASE_TAG"
+
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
@@ -193,11 +198,9 @@ jobs:
 
       - name: Resolve release metadata
         id: meta
-        env:
-          TAG_NAME: ${{ needs.build-frontend.outputs.release_tag }}
         run: |
-          BODY="$(git tag -l --format='%(contents)' "$TAG_NAME")"
-          DELIMITER="TAG_BODY_$(date +%s)_$RANDOM"
+          BODY="$(cat RELEASE_NOTES.md)"
+          DELIMITER="RELEASE_NOTES_$(date +%s)_$RANDOM"
           {
             echo "body<<$DELIMITER"
             printf '%s\n' "$BODY"

@@ -25,6 +25,9 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      - name: Validate release notes format
+        run: bash scripts/validate-release-notes.sh
+
       - uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}

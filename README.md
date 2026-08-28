@@ -430,7 +430,7 @@ bun run build
 
 推送 `v*` 标签，或在 Actions 中手动提供标签，会触发 `.github/workflows/release.yml`。流程只接受 `vX.Y.Z` 格式的稳定语义化版本（例如 `v1.2.3`）；预发布标签或其他格式会在构建前被拒绝：
 
-1. 校验标签格式、标签提交与检出的提交一致。
+1. 校验标签格式、标签提交与检出的提交一致，并验证 `RELEASE_NOTES.md` 的版本和章节合同。
 2. 检查并测试前端，再构建 `internal/web/dist`。
 3. 上传前端 artifact，并在发布任务中下载到 `internal/web/dist`。
 4. 执行 Go 格式、单元测试、vet、race test 和数据库集成测试。
@@ -447,12 +447,20 @@ bun run build
 
 同时确认 Docker Hub 账号 `mienvirtuoso` 下已创建 `chatgpt2api` 仓库，并且 Access Token 具有推送权限。`DOCKERHUB_TOKEN` 是 Tag 发布的必需配置，缺失时工作流会明确失败，不会跳过 Docker Hub。
 
-GoReleaser 不会根据提交记录自动生成 Changelog。GitHub Release 正文直接使用 annotated tag 的消息，因此发布前需要先更新 `CHANGELOG.md`，并为标签准备完整的 Markdown 说明。仓库不要求提交独立的 Release Notes 文件；临时说明文件建议控制在 100 KB 以内。
+每次发布必须提交根目录 `RELEASE_NOTES.md`。第一行必须是与标签一致的 `# vX.Y.Z`，随后必须按顺序包含且只能包含以下五个二级章节：
+
+1. `## 版本概览`
+2. `## 新增功能`
+3. `## 功能改进`
+4. `## 问题修复`
+5. `## 移除与调整`
+
+五个章节都必须有内容；没有对应变更时填写 `- 无`。不允许增加其他 Markdown 标题，文件不得超过 100 KB。CI 检查文件格式，Release 还会检查文件版本与标签完全一致；任一条件不满足都会终止。GitHub Release 正文只读取该文件，GoReleaser 不根据提交记录或标签消息自动生成说明。
 
 发布命令示例：
 
 ```bash
-git tag -a v2.0.0 -F /tmp/v2.0.0-release-notes.md
+git tag -a v2.0.0 -m "v2.0.0"
 git push origin v2.0.0
 ```
 

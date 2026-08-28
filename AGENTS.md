@@ -14,7 +14,7 @@ Write for the current API version only. Do not add fallbacks, shims, feature fla
 
 ## Project Structure & Module Organization
 
-This repository is a Go backend with a Vite/React admin UI. The backend entry point is `internal/main.go`; implementation packages live under `internal/` (`httpapi`, `service`, `protocol`, `backend`, `storage`, `config`, and helpers). Frontend source is in `web/src/`, with pages under `web/src/app/`, shared UI in `web/src/components/`, API helpers in `web/src/lib/`, and stores in `web/src/store/`. Screenshots are in `assets/`. ChatGPT web reverse-engineering notes live in `jshook/docs/`, with validation scripts and sanitized response samples under `jshook/`.
+This repository is a Go backend with a Vite/React admin UI. The backend entry point is `internal/main.go`; implementation packages live under `internal/` (`httpapi`, `service`, `protocol`, `storage`, `config`, and helpers). Frontend source is in `web/src/`, with pages under `web/src/app/`, shared UI in `web/src/components/`, API helpers in `web/src/lib/`, and stores in `web/src/store/`. Screenshots are in `assets/`. ChatGPT web reverse-engineering notes live in `jshook/docs/`, with validation scripts and sanitized response samples under `jshook/`.
 
 ## Build, Test, and Development Commands
 
@@ -51,6 +51,10 @@ Backend coverage is Go test based; add focused unit tests in the relevant `inter
 ## Commit & Pull Request Guidelines
 
 Recent history uses Conventional Commit-style subjects such as `feat: ...`, `chore: ...`, `feat(httpapi): ...`, and breaking markers like `feat!:`. Keep subjects concise and scoped to intent. Pull requests should include a summary, verification (`go test ./...`, `npm run build`, screenshots for UI changes), linked issues when applicable, and notes for config or deployment changes.
+
+## Release Notes Guidelines
+
+Every release commit must include a root `RELEASE_NOTES.md`. Its first line must be `# vX.Y.Z`, matching the release tag. It must contain exactly these five H2 sections in order: `版本概览`, `新增功能`, `功能改进`, `问题修复`, and `移除与调整`. Every section must contain content; use `- 无` when no change applies. Do not add other Markdown headings. Validate locally with `bash scripts/validate-release-notes.sh`, or pass the expected tag as its only argument before release.
 
 ## Security & Configuration Tips
 
