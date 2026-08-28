@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
+  Clock3,
+  Info,
   LoaderCircle,
   RefreshCw,
   ScrollText,
@@ -22,17 +24,18 @@ import {
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { NumberInput } from "@/components/ui/number-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import type { LogView } from "@/lib/api";
 
 import { useSettingsStore } from "../store";
 import {
   SettingsCard,
-  SettingsNotice,
   settingsInputClassName,
   settingsPanelClassName,
 } from "./settings-ui";
 
 const LOG_LEVEL_OPTIONS = ["debug", "info", "warning", "error"];
+const LOG_CLEANUP_HOURS = Array.from({ length: 24 }, (_, hour) => hour);
 const LOG_VIEW_OPTIONS: Array<{ value: LogView; label: string; description: string }> = [
   { value: "meaningful", label: "有意义日志", description: "默认隐藏成功的查询类 HTTP 审计日志。" },
   { value: "business", label: "仅业务日志", description: "只显示业务事件，隐藏 HTTP 审计日志。" },
@@ -43,15 +46,20 @@ function formatLogTime(value?: string) {
   return value && value.trim() ? value : "暂无数据";
 }
 
-function StatBlock({ label, value }: { label: string; value: string }) {
+function LogMetric({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex min-h-20 flex-col justify-between rounded-xl border border-border/80 bg-background px-4 py-3 shadow-[0_4px_6px_rgba(0,0,0,0.04)]">
-      <span className="text-xs leading-5 font-medium text-muted-foreground">
-        {label}
-      </span>
-      <span className="truncate text-lg leading-7 font-semibold text-foreground">
-        {value}
-      </span>
+    <div className="min-w-0 py-1 sm:px-5 sm:first:pl-0 sm:last:pr-0">
+      <p className="text-xs leading-5 text-muted-foreground">{label}</p>
+      <p className="mt-0.5 truncate text-sm font-semibold text-foreground sm:text-base">{value}</p>
+    </div>
+  );
+}
+
+function InlineHint({ children }: { children: ReactNode }) {
+  return (
+    <div className="flex items-start gap-2 text-xs leading-5 text-muted-foreground">
+      <Info className="mt-0.5 size-3.5 shrink-0" />
+      <span>{children}</span>
     </div>
   );
 }
@@ -66,7 +74,7 @@ function LogLevelOption({
   onCheckedChange: (checked: boolean) => void;
 }) {
   return (
-    <label className="flex min-h-10 min-w-0 items-center gap-2.5 rounded-[12px] border border-border/70 bg-background/75 px-3 py-2 text-sm font-medium text-foreground">
+    <label className="flex min-h-9 min-w-0 items-center gap-2.5 text-sm font-medium text-foreground">
       <Checkbox
         checked={checked}
         onCheckedChange={(value) => onCheckedChange(Boolean(value))}
@@ -113,6 +121,12 @@ export function LogGovernanceCard() {
   const setLogRetentionDays = useSettingsStore(
     (state) => state.setLogRetentionDays,
   );
+  const setLogCleanupScheduleEnabled = useSettingsStore(
+    (state) => state.setLogCleanupScheduleEnabled,
+  );
+  const setLogCleanupHour = useSettingsStore(
+    (state) => state.setLogCleanupHour,
+  );
   const setDefaultLogView = useSettingsStore((state) => state.setDefaultLogView);
   const setLogLevel = useSettingsStore((state) => state.setLogLevel);
   const loadLogGovernance = useSettingsStore((state) => state.loadLogGovernance);
@@ -121,6 +135,8 @@ export function LogGovernanceCard() {
   );
 
   const retentionDays = Math.max(1, Number(config?.log_retention_days) || 7);
+  const scheduleEnabled = config?.log_cleanup_schedule_enabled === true;
+  const cleanupHour = Number(config?.log_cleanup_hour ?? 3);
   const defaultLogView = (config?.default_log_view || "meaningful") as LogView;
   const total = logGovernance?.total ?? 0;
 
@@ -150,30 +166,30 @@ export function LogGovernanceCard() {
       title="日志数据治理"
       description="配置日志保留周期、级别和历史数据清理。"
       tone="amber"
+      action={
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => void loadLogGovernance()}
+          disabled={isLoadingLogGovernance}
+        >
+          {isLoadingLogGovernance ? (
+            <LoaderCircle data-icon="inline-start" className="animate-spin" />
+          ) : (
+            <RefreshCw data-icon="inline-start" />
+          )}
+          刷新统计
+        </Button>
+      }
     >
-      <div className="flex flex-col gap-5">
-        <section className="flex flex-col gap-3">
-          <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-            <h3 className="truncate text-sm leading-6 font-semibold text-foreground">
-              保留策略
-            </h3>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="w-full sm:w-auto"
-              onClick={() => void loadLogGovernance()}
-              disabled={isLoadingLogGovernance}
-            >
-              {isLoadingLogGovernance ? (
-                <LoaderCircle data-icon="inline-start" className="animate-spin" />
-              ) : (
-                <RefreshCw data-icon="inline-start" />
-              )}
-              刷新统计
-            </Button>
+      <div className="flex flex-col">
+        <section className="flex flex-col gap-4 pb-5">
+          <div>
+            <h3 className="text-sm font-semibold text-foreground">保留与展示</h3>
+            <p className="mt-0.5 text-xs leading-5 text-muted-foreground">统一控制日志保存范围和日志页默认展示内容。</p>
           </div>
-          <div className="grid gap-3 lg:grid-cols-2">
+          <div className="grid gap-x-6 gap-y-4 lg:grid-cols-2">
             <Field className="gap-1.5">
               <FieldLabel htmlFor="settings-log-retention-days">
                 日志保留天数
@@ -207,13 +223,54 @@ export function LogGovernanceCard() {
               </FieldDescription>
             </Field>
           </div>
+          <div className="flex flex-col gap-3 border-y border-border/70 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex size-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+                <Clock3 className="size-4" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-foreground">每天自动清理</p>
+                <p className="mt-0.5 text-xs leading-5 text-muted-foreground">按上方保留天数删除过期日志</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 sm:justify-end">
+              <Switch
+                checked={scheduleEnabled}
+                aria-label="启用日志定时清理"
+                onCheckedChange={setLogCleanupScheduleEnabled}
+              />
+              <span className="text-xs text-muted-foreground">执行于</span>
+              <Select
+                value={String(cleanupHour)}
+                onValueChange={(value) => setLogCleanupHour(Number(value))}
+                disabled={!scheduleEnabled}
+              >
+                <SelectTrigger id="settings-log-cleanup-hour" className="h-9 w-28 bg-background" aria-label="日志清理执行时间">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {LOG_CLEANUP_HOURS.map((hour) => (
+                    <SelectItem key={hour} value={String(hour)}>
+                      {String(hour).padStart(2, "0")}:00
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <InlineHint>
+            {scheduleEnabled
+              ? `保存后每天 ${String(cleanupHour).padStart(2, "0")}:00 执行，使用服务器本地时间。`
+              : "定时清理默认关闭，可继续使用下方的手动清理。"}
+          </InlineHint>
         </section>
 
-        <section className="flex flex-col gap-3">
-          <h3 className="truncate text-sm leading-6 font-semibold text-foreground">
-            控制台日志级别
-          </h3>
-          <div className="grid grid-cols-2 gap-2">
+        <section className="flex flex-col gap-3 border-t border-border/70 py-5">
+          <div>
+            <h3 className="text-sm font-semibold text-foreground">记录级别</h3>
+            <p className="mt-0.5 text-xs leading-5 text-muted-foreground">选择需要写入控制台和业务日志的级别。</p>
+          </div>
+          <div className="grid grid-cols-2 gap-x-6 gap-y-1 border-y border-border/70 py-2 sm:grid-cols-4">
             {LOG_LEVEL_OPTIONS.map((level) => (
               <LogLevelOption
                 key={level}
@@ -223,12 +280,10 @@ export function LogGovernanceCard() {
               />
             ))}
           </div>
-          <SettingsNotice>
-            不选择时默认记录 info、warning 和 error；开启 debug 后日志量会明显增加。
-          </SettingsNotice>
+          <InlineHint>不选择时默认记录 Info、Warning 和 Error；Debug 会明显增加日志量。</InlineHint>
         </section>
 
-        <section className="flex flex-col gap-3">
+        <section className="flex flex-col gap-3 border-t border-border/70 pt-5">
           <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
             <h3 className="truncate text-sm leading-6 font-semibold text-foreground">
               数据概览
@@ -250,27 +305,24 @@ export function LogGovernanceCard() {
             </Button>
           </div>
           {isLoadingLogGovernance ? (
-            <div className="flex items-center justify-center rounded-xl border border-border/80 bg-background py-8">
+            <div className="flex items-center justify-center border-y border-border/70 py-8">
               <LoaderCircle className="size-5 animate-spin text-muted-foreground" />
             </div>
           ) : (
-            <div className="grid gap-3 sm:grid-cols-3">
-              <StatBlock label="日志总量" value={String(total)} />
-              <StatBlock
+            <div className="grid gap-3 border-y border-border/70 py-3 sm:grid-cols-3 sm:gap-0 sm:divide-x sm:divide-border/70">
+              <LogMetric label="日志总量" value={String(total)} />
+              <LogMetric
                 label="最早日志"
                 value={formatLogTime(logGovernance?.oldest_time)}
               />
-              <StatBlock
+              <LogMetric
                 label="最新日志"
                 value={formatLogTime(logGovernance?.latest_time)}
               />
             </div>
           )}
           {lastLogCleanup ? (
-            <SettingsNotice>
-              上次清理删除 {lastLogCleanup.deleted} 条，保留自{" "}
-              {lastLogCleanup.cutoff_date} 起的最近日志。
-            </SettingsNotice>
+            <InlineHint>上次清理删除 {lastLogCleanup.deleted} 条，保留自 {lastLogCleanup.cutoff_date} 起的最近日志。</InlineHint>
           ) : null}
         </section>
       </div>

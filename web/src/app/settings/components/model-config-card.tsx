@@ -44,7 +44,7 @@ import {
   normalizeModelNames,
   relayModelOptionsFromList,
 } from "@/lib/api";
-import { getStoredRelayTokenName } from "@/lib/relay-token-selection";
+import { useRelayTokenPreferences } from "@/lib/use-relay-token-preferences";
 import { filterModelsByCapability } from "@/lib/model-capabilities";
 import { cn } from "@/lib/utils";
 import type { StoredAuthSession } from "@/store/auth";
@@ -222,6 +222,7 @@ function AddModelDialog({
   session: StoredAuthSession;
   initialKind: ModelKind;
 }) {
+  const { tokenNames: relayTokenNames } = useRelayTokenPreferences();
   const [mode, setMode] = useState<AddMode>("automatic");
   const [kind, setKind] = useState<ModelKind>("image");
   const [tokenNames, setTokenNames] = useState<string[]>([]);
@@ -245,7 +246,7 @@ function AddModelDialog({
     if (!open) return;
     const controller = new AbortController();
     const preferredKind = initialKind;
-    const preferredTokenName = getStoredRelayTokenName(session, preferredKind).trim();
+    const preferredTokenName = relayTokenNames[preferredKind].trim();
     setMode("automatic");
     setKind(preferredKind);
     setSelectedTokenName(preferredTokenName);
@@ -277,7 +278,7 @@ function AddModelDialog({
         if (!controller.signal.aborted) setIsLoadingKeys(false);
       });
     return () => controller.abort();
-  }, [initialKind, open, session]);
+  }, [initialKind, open, relayTokenNames, session]);
 
   function selectTokenName(value: string) {
     setSelectedTokenName(value);
@@ -288,7 +289,7 @@ function AddModelDialog({
 
   function selectModelKind(value: ModelKind) {
     setKind(value);
-    const preferredTokenName = getStoredRelayTokenName(session, value).trim();
+    const preferredTokenName = relayTokenNames[value].trim();
     setSelectedTokenName(tokenNames.includes(preferredTokenName) ? preferredTokenName : "");
     setFetchedModels([]);
     setSelectedModels(new Set());

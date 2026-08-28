@@ -30,6 +30,7 @@ export function ImageSettingsPanel({
   model,
   value,
   onChange,
+  disabled = false,
   showSize = true,
   showCount = true,
   showQuality = true,
@@ -38,6 +39,7 @@ export function ImageSettingsPanel({
   model: string;
   value: ImageSettingsValue;
   onChange: (patch: Partial<ImageSettingsValue>) => void;
+  disabled?: boolean;
   showSize?: boolean;
   showCount?: boolean;
   showQuality?: boolean;
@@ -77,6 +79,7 @@ export function ImageSettingsPanel({
             <button
               key={option.value || "auto"}
               type="button"
+              disabled={disabled}
               aria-pressed={value.quality === option.value}
               className={imageParameterChoiceClass(value.quality === option.value, "h-7")}
               onClick={() => onChange({ quality: option.value as "" | ImageQuality })}
@@ -92,11 +95,12 @@ export function ImageSettingsPanel({
           <ImageParameterLabel help="手动输入图片宽高；输入完成后可自动向上补成 16 的倍数。">尺寸</ImageParameterLabel>
           {showSnapToMultiple16 ? <label className="flex items-center gap-2 text-[11px] text-muted-foreground">
             <span>16倍数对齐</span>
-            <Switch checked={value.snapToMultiple16} aria-label="16倍数对齐" onCheckedChange={(checked) => onChange({ snapToMultiple16: checked })} />
+            <Switch disabled={disabled} checked={value.snapToMultiple16} aria-label="16倍数对齐" onCheckedChange={(checked) => onChange({ snapToMultiple16: checked })} />
           </label> : null}
         </div>
         <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5">
           <DimensionInput
+            disabled={disabled}
             prefix="W"
             value={displayedWidth}
             onFocus={beginCustomSize}
@@ -105,6 +109,7 @@ export function ImageSettingsPanel({
           />
           <X className="size-3.5 text-[#9a9ca2]" aria-hidden="true" />
           <DimensionInput
+            disabled={disabled}
             prefix="H"
             value={displayedHeight}
             onFocus={beginCustomSize}
@@ -129,6 +134,7 @@ export function ImageSettingsPanel({
               <ImageAspectRatioOptionButton
                 key={option.value}
                 active={active}
+                disabled={disabled}
                 label={option.label}
                 ratio={automatic ? undefined : option.aspectRatio}
                 onClick={() => onChange({
@@ -144,19 +150,21 @@ export function ImageSettingsPanel({
 
       {showCount ? <section className="order-4 flex items-center justify-between gap-3 border-t border-[#ececef] pt-3 dark:border-border">
         <ImageParameterLabel help={`当前模型单次请求支持 1-${countLimit} 张图片。`}>生成数量</ImageParameterLabel>
-        <NumberInput value={count} min={1} max={countLimit} controlsLayout="split" suffix="张" aria-label="生成数量" className="h-8 w-32" inputClassName="px-0 text-right text-xs font-semibold" onValueChange={(raw) => { const next = Number(raw); if (Number.isFinite(next)) onChange({ count: Math.max(1, Math.min(countLimit, Math.round(next))) }); }} />
+        <NumberInput disabled={disabled} value={count} min={1} max={countLimit} controlsLayout="split" suffix="张" aria-label="生成数量" className="h-8 w-32" inputClassName="px-0 text-right text-xs font-semibold" onValueChange={(raw) => { const next = Number(raw); if (Number.isFinite(next)) onChange({ count: Math.max(1, Math.min(countLimit, Math.round(next))) }); }} />
       </section> : null}
     </div>
   );
 }
 
 function DimensionInput({
+  disabled,
   prefix,
   value,
   onFocus,
   onChange,
   onBlur,
 }: {
+  disabled: boolean;
   prefix: "W" | "H";
   value: string;
   onFocus: () => void;
@@ -164,19 +172,27 @@ function DimensionInput({
   onBlur: (value: string) => void;
 }) {
   return (
-    <label className="grid h-8 grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded-lg border border-[#e3e4e7] bg-white px-2.5 dark:border-border dark:bg-background/70">
+    <label
+      className={cn(
+        "grid h-8 grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded-lg border px-2.5",
+        disabled
+          ? "cursor-not-allowed border-border/60 bg-muted/50 dark:bg-muted/40"
+          : "border-[#e3e4e7] bg-white dark:border-border dark:bg-background/70",
+      )}
+    >
       <span className="text-[11px] text-[#777a82] dark:text-muted-foreground">{prefix}</span>
       <Input
         type="number"
         inputMode="numeric"
         min="1"
         step="1"
+        disabled={disabled}
         value={value}
         placeholder="自动"
         onFocus={onFocus}
         onChange={(event) => onChange(event.target.value)}
         onBlur={(event) => onBlur(event.target.value)}
-        className="h-7 rounded-none border-0 bg-transparent px-0 text-xs font-medium shadow-none focus-visible:ring-0"
+        className="h-7 rounded-none border-0 bg-transparent px-0 text-xs font-medium shadow-none disabled:bg-transparent disabled:opacity-100 focus-visible:ring-0"
       />
     </label>
   );

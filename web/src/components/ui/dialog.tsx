@@ -66,7 +66,7 @@ function DialogContent({
           </ScrollArea>
         ) : children}
         {showCloseButton ? (
-          <DialogPrimitive.Close aria-label="关闭" className="ring-offset-background focus:ring-ring data-[state=open]:bg-accent data-[state=open]:text-muted-foreground absolute top-4 right-4 rounded-full p-1.5 opacity-70 transition-colors hover:bg-accent hover:opacity-100 focus:ring-2 focus:outline-none disabled:pointer-events-none">
+          <DialogPrimitive.Close aria-label="关闭" className="ring-offset-background focus:ring-ring data-[state=open]:bg-accent data-[state=open]:text-muted-foreground absolute top-4 right-6 z-30 rounded-full bg-background p-1.5 opacity-70 transition-colors hover:bg-accent hover:opacity-100 focus:ring-2 focus:outline-none disabled:pointer-events-none">
             <X className="size-4" />
             <span className="sr-only">Close</span>
           </DialogPrimitive.Close>
@@ -80,7 +80,7 @@ function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="dialog-header"
-      className={cn("flex flex-col gap-2 text-left", className)}
+      className={cn("min-w-0 shrink-0 flex flex-col gap-2 pr-12 text-left", className)}
       {...props}
     />
   );
@@ -106,7 +106,7 @@ function DialogTitle({
   return (
     <DialogPrimitive.Title
       data-slot="dialog-title"
-      className={cn("font-display text-xl leading-none font-semibold", className)}
+      className={cn("font-display min-w-0 break-words text-xl leading-tight font-semibold", className)}
       {...props}
     />
   );

@@ -20,42 +20,43 @@ import (
 )
 
 var settingEnvKeys = map[string]string{
-	"base_url":                      "IMAGE_BASE_URL",
-	"app_title":                     "APP_TITLE",
-	"project_name":                  "PROJECT_NAME",
-	"site_icon_url":                 "SITE_ICON_URL",
-	"relay_base_url":                "API_BASE_URL",
-	"relay_database_url":            "DATABASE_URL",
-	"relay_database_type":           "DATABASE_TYPE",
-	"relay_database_driver":         "DATABASE_DRIVER",
-	"relay_database_host":           "DATABASE_HOST",
-	"relay_database_port":           "DATABASE_PORT",
-	"relay_database_name":           "DATABASE_NAME",
-	"relay_database_user":           "DATABASE_USER",
-	"relay_database_password":       "DATABASE_PASSWORD",
-	"proxy":                         "PROXY",
-	"image_models":                  "IMAGE_MODELS",
-	"video_models":                  "VIDEO_MODELS",
-	"text_models":                   "TEXT_MODELS",
-	"audio_models":                  "AUDIO_MODELS",
-	"chat_models":                   "CHAT_MODELS",
-	"image_task_timeout_seconds":    "CREATION_TASK_TIMEOUT_SECONDS",
-	"user_default_concurrent_limit": "USER_DEFAULT_CONCURRENT_LIMIT",
-	"user_default_rpm_limit":        "USER_DEFAULT_RPM_LIMIT",
-	"image_retention_days":          "IMAGE_RETENTION_DAYS",
-	"image_storage_limit_mb":        "IMAGE_STORAGE_LIMIT_MB",
-	"storage":                       "OBJECT_STORAGE_SETTINGS",
-	"log_retention_days":            "LOG_RETENTION_DAYS",
-	"default_log_view":              "DEFAULT_LOG_VIEW",
-	"log_levels":                    "LOG_LEVELS",
-	"login_page_image_url":          "LOGIN_PAGE_IMAGE_URL",
-	"login_page_image_mode":         "LOGIN_PAGE_IMAGE_MODE",
-	"login_page_image_zoom":         "LOGIN_PAGE_IMAGE_ZOOM",
-	"login_page_image_position_x":   "LOGIN_PAGE_IMAGE_POSITION_X",
-	"login_page_image_position_y":   "LOGIN_PAGE_IMAGE_POSITION_Y",
-	"prompt_sources":                "PROMPT_SOURCES",
-	"prompt_pull_schedule_enabled":  "PROMPT_PULL_SCHEDULE_ENABLED",
-	"prompt_pull_interval_minutes":  "PROMPT_PULL_INTERVAL_MINUTES",
+	"base_url":                       "IMAGE_BASE_URL",
+	"app_title":                      "APP_TITLE",
+	"project_name":                   "PROJECT_NAME",
+	"site_icon_url":                  "SITE_ICON_URL",
+	"relay_base_url":                 "API_BASE_URL",
+	"relay_database_url":             "DATABASE_URL",
+	"relay_database_type":            "DATABASE_TYPE",
+	"relay_database_driver":          "DATABASE_DRIVER",
+	"relay_database_host":            "DATABASE_HOST",
+	"relay_database_port":            "DATABASE_PORT",
+	"relay_database_name":            "DATABASE_NAME",
+	"relay_database_user":            "DATABASE_USER",
+	"relay_database_password":        "DATABASE_PASSWORD",
+	"proxy":                          "PROXY",
+	"image_models":                   "IMAGE_MODELS",
+	"video_models":                   "VIDEO_MODELS",
+	"text_models":                    "TEXT_MODELS",
+	"audio_models":                   "AUDIO_MODELS",
+	"chat_models":                    "CHAT_MODELS",
+	"image_task_timeout_seconds":     "CREATION_TASK_TIMEOUT_SECONDS",
+	"user_default_concurrent_limit":  "USER_DEFAULT_CONCURRENT_LIMIT",
+	"user_default_rpm_limit":         "USER_DEFAULT_RPM_LIMIT",
+	"allow_user_custom_relay_config": "ALLOW_USER_CUSTOM_RELAY_CONFIG",
+	"image_retention_days":           "IMAGE_RETENTION_DAYS",
+	"image_storage_limit_mb":         "IMAGE_STORAGE_LIMIT_MB",
+	"storage":                        "OBJECT_STORAGE_SETTINGS",
+	"log_retention_days":             "LOG_RETENTION_DAYS",
+	"log_cleanup_schedule_enabled":   "LOG_CLEANUP_SCHEDULE_ENABLED",
+	"log_cleanup_hour":               "LOG_CLEANUP_HOUR",
+	"default_log_view":               "DEFAULT_LOG_VIEW",
+	"log_levels":                     "LOG_LEVELS",
+	"login_page_image_url":           "LOGIN_PAGE_IMAGE_URL",
+	"login_page_image_mode":          "LOGIN_PAGE_IMAGE_MODE",
+	"login_page_image_zoom":          "LOGIN_PAGE_IMAGE_ZOOM",
+	"login_page_image_position_x":    "LOGIN_PAGE_IMAGE_POSITION_X",
+	"login_page_image_position_y":    "LOGIN_PAGE_IMAGE_POSITION_Y",
+	"prompt_sources":                 "PROMPT_SOURCES",
 }
 
 var envKeyRE = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
@@ -307,6 +308,18 @@ func (s *Store) LogRetentionDays() int {
 	return value
 }
 
+func (s *Store) LogCleanupScheduleEnabled() bool {
+	return util.ToBool(s.settingValue("log_cleanup_schedule_enabled", false))
+}
+
+func (s *Store) LogCleanupHour() int {
+	value := intSetting(s.settingValue("log_cleanup_hour", 3), 3)
+	if value < 0 || value > 23 {
+		return 3
+	}
+	return value
+}
+
 func (s *Store) DefaultLogView() string {
 	return normalizeDefaultLogView(s.settingValue("default_log_view", "meaningful"))
 }
@@ -329,6 +342,10 @@ func (s *Store) UserDefaultRPMLimit() int {
 		return 0
 	}
 	return value
+}
+
+func (s *Store) AllowUserCustomRelayConfig() bool {
+	return util.ToBool(s.settingValue("allow_user_custom_relay_config", false))
 }
 
 func (s *Store) BaseURL() string {
@@ -602,6 +619,7 @@ func (s *Store) Get() map[string]any {
 	data["default_audio_model"] = s.DefaultAudioModel()
 	data["user_default_concurrent_limit"] = s.UserDefaultConcurrentLimit()
 	data["user_default_rpm_limit"] = s.UserDefaultRPMLimit()
+	data["allow_user_custom_relay_config"] = s.AllowUserCustomRelayConfig()
 	data["image_retention_days"] = s.ImageRetentionDays()
 	data["image_storage_limit_mb"] = s.ImageStorageLimitMB()
 	storageSetting := s.StorageSettings()
@@ -612,6 +630,8 @@ func (s *Store) Get() map[string]any {
 	}
 	data["storage"] = storageSetting
 	data["log_retention_days"] = s.LogRetentionDays()
+	data["log_cleanup_schedule_enabled"] = s.LogCleanupScheduleEnabled()
+	data["log_cleanup_hour"] = s.LogCleanupHour()
 	data["default_log_view"] = s.DefaultLogView()
 	data["log_levels"] = s.LogLevels()
 	data["proxy"] = s.Proxy()
@@ -636,8 +656,6 @@ func (s *Store) Get() map[string]any {
 	data["login_page_image_zoom"] = s.LoginPageImageZoom()
 	data["login_page_image_position_x"] = s.LoginPageImagePositionX()
 	data["login_page_image_position_y"] = s.LoginPageImagePositionY()
-	data["prompt_pull_schedule_enabled"] = util.ToBool(s.settingValue("prompt_pull_schedule_enabled", false))
-	data["prompt_pull_interval_minutes"] = normalizePromptPullIntervalMinutes(s.settingValue("prompt_pull_interval_minutes", 30))
 	if value, ok := data["prompt_sources"]; ok {
 		data["prompt_sources"] = normalizePromptSourcesValue(value)
 	}
@@ -688,6 +706,12 @@ func (s *Store) Update(data map[string]any) (map[string]any, error) {
 	if value, ok := next["image_storage_limit_mb"]; ok {
 		next["image_storage_limit_mb"] = normalizeNonNegativeInt(value)
 	}
+	if value, ok := next["log_cleanup_schedule_enabled"]; ok {
+		next["log_cleanup_schedule_enabled"] = util.ToBool(value)
+	}
+	if value, ok := next["log_cleanup_hour"]; ok {
+		next["log_cleanup_hour"] = normalizeHour(value, 3)
+	}
 	if value, ok := next["storage"]; ok {
 		incoming := normalizeStorageSetting(value)
 		saved := normalizeStorageSetting(s.data["storage"])
@@ -726,12 +750,6 @@ func (s *Store) Update(data map[string]any) (map[string]any, error) {
 	}
 	if value, ok := next["prompt_sources"]; ok {
 		next["prompt_sources"] = normalizePromptSourcesValue(value)
-	}
-	if value, ok := next["prompt_pull_schedule_enabled"]; ok {
-		next["prompt_pull_schedule_enabled"] = util.ToBool(value)
-	}
-	if value, ok := next["prompt_pull_interval_minutes"]; ok {
-		next["prompt_pull_interval_minutes"] = normalizePromptPullIntervalMinutes(value)
 	}
 	delete(next, "chat_models")
 	delete(next, "default_chat_model")
@@ -1055,6 +1073,14 @@ func normalizeNonNegativeInt(value any) int {
 	return n
 }
 
+func normalizeHour(value any, fallback int) int {
+	hour := intSetting(value, fallback)
+	if hour < 0 || hour > 23 {
+		return fallback
+	}
+	return hour
+}
+
 func normalizeModelList(value any, fallback []string) []string {
 	items := make([]string, 0)
 	switch v := value.(type) {
@@ -1362,16 +1388,6 @@ func normalizePromptSourcesValue(value any) []any {
 		}
 	}
 	return []any{}
-}
-
-func normalizePromptPullIntervalMinutes(value any) int {
-	minutes := intSetting(value, 30)
-	for _, allowed := range []int{30, 60, 360, 1440} {
-		if minutes == allowed {
-			return minutes
-		}
-	}
-	return 30
 }
 
 func writeEnvUpdates(path string, updates map[string]string) error {

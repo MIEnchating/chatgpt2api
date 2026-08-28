@@ -52,8 +52,6 @@ type ImagePromptMarketProps = {
 
 const INITIAL_VISIBLE_COUNT = 60;
 const VISIBLE_COUNT_STEP = 60;
-const SYSTEM_PROMPT_CATEGORY = { id: "system", label: "系统" } as const;
-
 function formatPromptDate(value?: string) {
   if (!value) {
     return "";
@@ -272,9 +270,7 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
   const promptPool = favoriteFilter === "favorites" ? visibleFavoritePrompts : prompts;
 
   const sourceFilteredPrompts = useMemo(() => {
-    if (source === "all") {
-      return promptPool;
-    }
+    if (source === "all") return promptPool;
     return promptPool.filter((prompt) => prompt.source === source);
   }, [promptPool, source]);
 
@@ -315,7 +311,6 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
   const categoryOptions = useMemo(
     () => [
       { id: "all", label: "全部" },
-      SYSTEM_PROMPT_CATEGORY,
       ...sourceConfigs.filter((item) => item.enabled).map(({ id, label }) => ({ id, label })),
     ],
     [sourceConfigs],

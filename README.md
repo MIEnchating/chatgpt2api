@@ -294,9 +294,12 @@ go build -tags=embed -o chatgpt2api ./internal
 | `CREATION_TASK_TIMEOUT_SECONDS` | `300` | 图片、视频、音频和聊天异步创作任务的统一超时时间，单位秒，允许范围 `30-3600` |
 | `USER_DEFAULT_CONCURRENT_LIMIT` | `0` | 普通用户默认创作并发额度；每张图片占 1 个额度，视频、音频和聊天任务各占 1 个额度；`0` 表示不限制，管理员不受限制 |
 | `USER_DEFAULT_RPM_LIMIT` | `0` | 普通用户默认创作任务提交频率，每次提交计 1 次请求，单位为次/分钟；`0` 表示不限制，管理员不受限制 |
+| `ALLOW_USER_CUSTOM_RELAY_CONFIG` | `false` | 是否允许普通用户在个人设置中添加自定义 API Base URL 和 Key；管理员始终可见并可配置 |
 | `IMAGE_RETENTION_DAYS` | `30` | 生成图片及会话参考图保留天数；过期文件清理后仍保留历史文字、参数和任务元数据 |
 | `IMAGE_STORAGE_LIMIT_MB` | `0` | 媒体治理中的生成图库容量上限，统计原图、缩略图、元数据和会话参考图；单位 MB，`0` 表示不按容量自动清理 |
 | `LOG_RETENTION_DAYS` | `7` | 业务日志保留天数 |
+| `LOG_CLEANUP_SCHEDULE_ENABLED` | `false` | 是否每天按保留策略自动清理过期日志 |
+| `LOG_CLEANUP_HOUR` | `3` | 自动清理执行小时，使用服务器本地时间，范围 `0-23` |
 | `DEFAULT_LOG_VIEW` | `meaningful` | 默认日志视图，可选 `all`、`meaningful`、`business` |
 | `LOG_LEVELS` | 空 | 需要写入业务日志的级别，多个值用逗号分隔：`debug,info,warning,error`；留空表示记录全部级别 |
 | `PROJECT_NAME` | 跟随 `APP_TITLE` | 登录页项目名称 |
@@ -305,8 +308,6 @@ go build -tags=embed -o chatgpt2api ./internal
 | `LOGIN_PAGE_IMAGE_ZOOM` | `1` | 登录页背景缩放，范围 `1-3` |
 | `LOGIN_PAGE_IMAGE_POSITION_X` | `50` | 登录页背景水平位置，范围 `0-100` |
 | `LOGIN_PAGE_IMAGE_POSITION_Y` | `50` | 登录页背景垂直位置，范围 `0-100` |
-| `PROMPT_PULL_SCHEDULE_ENABLED` | `false` | 是否启用管理端提示词来源页打开期间的定时拉取；不是服务器后台 Cron |
-| `PROMPT_PULL_INTERVAL_MINUTES` | `30` | 页面打开期间的提示词来源拉取间隔，可选 `30`、`60`、`360`、`1440` 分钟 |
 
 模型变量都是可选覆盖项。不写入 `.env` 时使用程序内置模型目录；这样升级后可以自动获得新增的内置模型。只有需要限制可选模型时才显式填写。
 

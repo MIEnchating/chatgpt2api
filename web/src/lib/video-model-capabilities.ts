@@ -143,8 +143,8 @@ function videoCapability(model: string): SharedVideoCapability {
 	} else if (value === "minimax-h3/image-to-video") {
 		capability.sizes = [];
 		capability.default_size = "";
-		// KIE's H3 image-to-video schema accepts only first_frame_url.
-		capability.first_frame_image_limit = 1;
+		// KIE maps the ordered pair to first_frame_url and last_frame_url.
+		capability.first_frame_image_limit = 2;
 		capability.reference_mode = false;
     capability.references = { image: 0, video: 0, audio: 0 };
   } else if (value === "minimax-h3/reference-to-video") {
@@ -487,7 +487,7 @@ export function videoResolutionOptions(model: string, seconds?: number): string[
 export function videoReferenceImageLimit(model: string) {
 	const value = canonicalVideoModel(model).toLowerCase();
 	if (value.startsWith("bytedance/v1-")) return value.includes("v1-lite-image-to-video") ? 2 : value.includes("text-to-video") ? 0 : 1;
-	if (value === "minimax-h3/image-to-video") return 1;
+	if (value === "minimax-h3/image-to-video") return 2;
 	if (value === "kling-2.6/image-to-video" || value === "kling/v3-turbo-image-to-video") return 2;
 	if (value.startsWith("hailuo/02-image-to-video")) return 2;
 	if (value.startsWith("hailuo/2-3-image-to-video")) return 1;

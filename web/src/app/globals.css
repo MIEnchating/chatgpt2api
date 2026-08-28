@@ -108,6 +108,7 @@
 }
 
 :root {
+  --page-section-gap: 1rem;
   --theme-transition-x: 50vw;
   --theme-transition-y: 50vh;
   --theme-transition-radius: 0px;
@@ -249,9 +250,47 @@
   body[data-scroll-locked] {
     margin-right: 0 !important;
   }
-  button:not(:disabled),
-  [role="button"]:not(:disabled) {
+  button:not(:disabled):not([aria-disabled="true"]):not([data-disabled]:not([data-disabled="false"])),
+  [role="button"]:not(:disabled):not([aria-disabled="true"]):not([data-disabled]:not([data-disabled="false"])) {
     cursor: pointer;
+  }
+  :where(
+    button,
+    input,
+    textarea,
+    select,
+    [role="button"],
+    [role="option"],
+    [role="menuitem"],
+    [role="tab"],
+    [role="switch"],
+    [role="checkbox"],
+    [role="radio"],
+    [role="slider"],
+    [role="combobox"]
+  ):where(
+    :disabled,
+    [aria-disabled="true"],
+    [data-disabled]:not([data-disabled="false"])
+  ) {
+    cursor: not-allowed;
+    opacity: 0.52;
+    box-shadow: none;
+  }
+  :where(
+    [aria-disabled="true"],
+    [data-disabled]:not([data-disabled="false"])
+  ) {
+    cursor: not-allowed;
+  }
+  :where(input, textarea, select):disabled {
+    border-color: color-mix(in srgb, var(--border) 82%, transparent);
+    background-color: color-mix(in srgb, var(--muted) 72%, transparent);
+    color: var(--muted-foreground);
+    -webkit-text-fill-color: var(--muted-foreground);
+  }
+  fieldset:disabled {
+    color: var(--muted-foreground);
   }
 }
 
@@ -275,6 +314,17 @@
 @layer components {
   .card-surface {
     background: var(--surface-card-gradient);
+  }
+
+  .canvas-prompt-scroll-frame {
+    max-height: max(5rem, min(40vh, calc(100dvh - 26rem)));
+    resize: vertical;
+  }
+
+  .canvas-prompt-editor-resize {
+    max-height: max(7rem, min(40vh, calc(100dvh - 26rem)));
+    overflow: hidden;
+    resize: vertical;
   }
 }
 

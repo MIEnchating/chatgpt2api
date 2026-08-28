@@ -28,20 +28,6 @@ import {
   DEFAULT_IMAGE_CUSTOM_RATIO,
   DEFAULT_IMAGE_CUSTOM_WIDTH,
   IMAGE_ASPECT_RATIO_PRESET_OPTIONS,
-  IMAGE_ASPECT_RATIO_STORAGE_KEY,
-  IMAGE_COUNT_STORAGE_KEY,
-  IMAGE_CUSTOM_HEIGHT_STORAGE_KEY,
-  IMAGE_CUSTOM_RATIO_STORAGE_KEY,
-  IMAGE_CUSTOM_WIDTH_STORAGE_KEY,
-  IMAGE_MODEL_STORAGE_KEY,
-  IMAGE_OUTPUT_COMPRESSION_STORAGE_KEY,
-  IMAGE_OUTPUT_FORMAT_STORAGE_KEY,
-  IMAGE_PARTIAL_IMAGES_STORAGE_KEY,
-  IMAGE_QUALITY_STORAGE_KEY,
-  IMAGE_RESOLUTION_STORAGE_KEY,
-  IMAGE_SIZE_MODE_STORAGE_KEY,
-  IMAGE_SIZE_STORAGE_KEY,
-  IMAGE_STREAM_STORAGE_KEY,
   IMAGE_WORKBENCH_QUALITY_OPTIONS,
   buildImageSize,
   formatImageSizeDisplay,
@@ -120,7 +106,6 @@ import {
   fetchCreationTasks,
   fetchModelConfig,
   IMAGE_CREATION_MODEL_OPTIONS,
-  PROFILE_RELAY_TOKEN_NAME_CHANGED_EVENT,
   isImageCreationModel,
   isImageModel,
   isImageOutputFormat,
@@ -130,7 +115,10 @@ import {
   supportsImageOutputControls,
   supportsStructuredImageParameters,
   uploadImageConversationAssets,
+  updateCreationWorkbenchPreferences,
   updateManagedImageVisibility,
+  IMAGE_GENERATION_PREFERENCES_CHANGED_EVENT,
+  type CreationWorkbenchPreferences,
   type ImageModel,
   type ImageModelOption,
   type ImageOutputFormat,
@@ -154,16 +142,12 @@ import {
 } from "@/lib/image-api-contract";
 import { getManagedImagePathFromUrl, getManagedImageUrlFromPath } from "@/lib/image-path";
 import { isPublicReferenceURL } from "@/lib/public-reference-url";
-import {
-  getStoredRelayTokenName,
-  relayTokenNameStorageKey,
-  retainSelectedRelayTokenName,
-  type RelayTokenKind,
-} from "@/lib/relay-token-selection";
+import { retainSelectedRelayTokenName, type RelayTokenKind } from "@/lib/relay-token-selection";
+import { useRelayTokenPreferences } from "@/lib/use-relay-token-preferences";
 import { AUTH_SESSION_CHANGE_EVENT, getCachedAuthSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
 import { useAuthGuard } from "@/lib/use-auth-guard";
-import { useImageGenerationPreferences } from "@/lib/use-image-generation-preferences";
+import { DEFAULT_CREATION_WORKBENCH_PREFERENCES, useImageGenerationPreferences } from "@/lib/use-image-generation-preferences";
 import { persistCreationTaskOutputs } from "@/services/generation-result-storage";
 import { normalizeVideoKlingElementList, normalizeVideoRequest, validateVideoKlingElementList, videoAudioGenerationError, videoHasKlingElementReferences, videoReferenceCombinationError, videoWorkbenchReferenceLimitError } from "@/lib/video-request-normalizer";
 import { defaultVideoElementList, defaultVideoMultiPrompts, normalizeVideoElementList, normalizeVideoMultiPrompts, videoElementListToRequest, videoMultiPromptsToRequest, type VideoElementReference } from "@/lib/video-kling-workbench";
@@ -210,13 +194,6 @@ import {
 type CreationRelayTokenKind = Extract<RelayTokenKind, "image" | "video">;
 
 const COMPOSER_MODE_STORAGE_KEY = "chatgpt2api:image_composer_mode";
-const VIDEO_MODEL_STORAGE_KEY = "chatgpt2api:video_last_model";
-const VIDEO_SIZE_STORAGE_KEY = "chatgpt2api:video_last_size";
-const VIDEO_SECONDS_STORAGE_KEY = "chatgpt2api:video_last_seconds";
-const VIDEO_RESOLUTION_STORAGE_KEY = "chatgpt2api:video_last_resolution";
-const VIDEO_MODE_STORAGE_KEY = "chatgpt2api:video_last_mode";
-const VIDEO_AUDIO_STORAGE_KEY = "chatgpt2api:video_last_audio";
-const VIDEO_WATERMARK_STORAGE_KEY = "chatgpt2api:video_last_watermark";
 const NEWAPI_TOKEN_MISSING_MESSAGE = "请先在云棉为当前用户创建可用令牌";
 const DEFAULT_IMAGE_OUTPUT_FORMAT: ImageOutputFormat = "png";
 const MISSING_RECOVERABLE_TASK_ID_ERROR = "页面刷新或任务中断，未找到可恢复的任务 ID";
@@ -576,7 +553,7 @@ function buildEffectiveImageSizeRequest(model: ImageModel, selection: ImageSizeS
   const effectiveSelection = effectiveImageSizeSelection(model, selection);
   const requestedSize = buildImageSize(effectiveSelection, {
     preserveAspectRatio: true,
-    snapToMultiple16: snapToMultiple16 ?? (typeof window === "undefined" || window.localStorage.getItem("chatgpt2api:image_generation_snap_to_multiple_16") !== "false"),
+    snapToMultiple16: snapToMultiple16 ?? true,
   });
   return {
     selection: effectiveSelection,
@@ -1138,99 +1115,11 @@ function sortImageConversations(conversations: ImageConversation[]) {
   });
 }
 
-function getStoredImageModel(): ImageModel {
-  if (typeof window === "undefined") {
-    return DEFAULT_IMAGE_MODEL;
-  }
-  const storedModel = window.localStorage.getItem(IMAGE_MODEL_STORAGE_KEY);
-  if (storedModel === "auto") {
-    return DEFAULT_IMAGE_MODEL;
-  }
-  return isImageModel(storedModel) ? storedModel : DEFAULT_IMAGE_MODEL;
-}
-
 function getStoredComposerMode(): ComposerMode {
   if (typeof window === "undefined") {
     return "image";
   }
   return window.localStorage.getItem(COMPOSER_MODE_STORAGE_KEY) === "video" ? "video" : "image";
-}
-
-function getStoredVideoSetting(key: string, fallback: string) {
-  if (typeof window === "undefined") {
-    return fallback;
-  }
-  return window.localStorage.getItem(key) || fallback;
-}
-
-function getStoredImageSizeSelection(): ImageSizeSelection {
-  if (typeof window === "undefined") {
-    return getImageSizeSelectionFromSize("1:1");
-  }
-  const fallbackSelection = getImageSizeSelectionFromSize(window.localStorage.getItem(IMAGE_SIZE_STORAGE_KEY) || "1:1");
-  const storedSizeMode = window.localStorage.getItem(IMAGE_SIZE_MODE_STORAGE_KEY);
-  const storedAspectRatio = window.localStorage.getItem(IMAGE_ASPECT_RATIO_STORAGE_KEY) || "";
-  const storedResolution = window.localStorage.getItem(IMAGE_RESOLUTION_STORAGE_KEY);
-  const customRatio = window.localStorage.getItem(IMAGE_CUSTOM_RATIO_STORAGE_KEY) || fallbackSelection.customRatio;
-  const customWidth = window.localStorage.getItem(IMAGE_CUSTOM_WIDTH_STORAGE_KEY) || fallbackSelection.customWidth;
-  const customHeight = window.localStorage.getItem(IMAGE_CUSTOM_HEIGHT_STORAGE_KEY) || fallbackSelection.customHeight;
-  if (isImageSizeMode(storedSizeMode) && isImageAspectRatio(storedAspectRatio) && isImageResolution(storedResolution)) {
-    return {
-      mode: storedSizeMode,
-      aspectRatio: storedAspectRatio,
-      resolution: storedResolution,
-      customRatio,
-      customWidth,
-      customHeight,
-    };
-  }
-  return fallbackSelection;
-}
-
-function getStoredImageOutputFormat(): ImageOutputFormat {
-  if (typeof window === "undefined") {
-    return DEFAULT_IMAGE_OUTPUT_FORMAT;
-  }
-  const storedFormat = window.localStorage.getItem(IMAGE_OUTPUT_FORMAT_STORAGE_KEY);
-  return isImageOutputFormat(storedFormat) ? storedFormat : DEFAULT_IMAGE_OUTPUT_FORMAT;
-}
-
-function getStoredImageQuality(): "" | ImageQuality {
-  if (typeof window === "undefined") {
-    return "";
-  }
-  const storedQuality = window.localStorage.getItem(IMAGE_QUALITY_STORAGE_KEY);
-  return isImageQuality(storedQuality) ? storedQuality : "";
-}
-
-function getStoredImageCount() {
-  if (typeof window === "undefined") return "1";
-  const count = Math.round(Number(window.localStorage.getItem(IMAGE_COUNT_STORAGE_KEY)) || 1);
-  return String(Math.max(1, Math.min(10, count)));
-}
-
-function getStoredImageOutputCompression(): string {
-  if (typeof window === "undefined") {
-    return "";
-  }
-  const normalized = normalizeOutputCompressionValue(window.localStorage.getItem(IMAGE_OUTPUT_COMPRESSION_STORAGE_KEY));
-  return normalized === undefined ? "" : String(normalized);
-}
-
-function getStoredImageStreamEnabled() {
-  if (typeof window === "undefined") {
-    return false;
-  }
-  const stored = window.localStorage.getItem(IMAGE_STREAM_STORAGE_KEY);
-  return stored === "true";
-}
-
-function getStoredImagePartialImages() {
-  if (typeof window === "undefined") {
-    return "1";
-  }
-  const stored = window.localStorage.getItem(IMAGE_PARTIAL_IMAGES_STORAGE_KEY);
-  return stored === null ? "1" : String(normalizedImagePartialImages(Number(stored)));
 }
 
 function normalizeRelayTokenNames(values: unknown) {
@@ -1598,41 +1487,44 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
 
   const [imagePrompt, setImagePrompt] = useState("");
   const [composerMode, setComposerMode] = useState<ComposerMode>(getStoredComposerMode);
-  const [imageModel, setImageModel] = useState<ImageModel>(getStoredImageModel);
+  const [imageModel, setImageModel] = useState<ImageModel>(DEFAULT_IMAGE_MODEL);
   const [imageModelConfigReady, setImageModelConfigReady] = useState(false);
-  const [imageCount, setImageCount] = useState(getStoredImageCount);
-  const [imageSizeMode, setImageSizeMode] = useState<ImageSizeMode>(() => getStoredImageSizeSelection().mode);
-  const [imageAspectRatio, setImageAspectRatio] = useState<ImageAspectRatio>(() => getStoredImageSizeSelection().aspectRatio);
-  const [imageResolution, setImageResolution] = useState<ImageResolution>(() => getStoredImageSizeSelection().resolution);
-  const [imageCustomRatio, setImageCustomRatio] = useState(() => getStoredImageSizeSelection().customRatio);
-  const [imageCustomWidth, setImageCustomWidth] = useState(() => getStoredImageSizeSelection().customWidth);
-  const [imageCustomHeight, setImageCustomHeight] = useState(() => getStoredImageSizeSelection().customHeight);
-  const [imageSnapToMultiple16, setImageSnapToMultiple16] = useState(true);
-  const [imageQuality, setImageQuality] = useState<"" | ImageQuality>(getStoredImageQuality);
-  const [imageOutputFormat, setImageOutputFormat] = useState<ImageOutputFormat>(getStoredImageOutputFormat);
-  const [imageOutputCompression, setImageOutputCompression] = useState(getStoredImageOutputCompression);
-  const [imageStreamEnabled, setImageStreamEnabled] = useState(getStoredImageStreamEnabled);
-  const [imagePartialImages, setImagePartialImages] = useState(getStoredImagePartialImages);
+  const [imageCount, setImageCount] = useState(String(DEFAULT_CREATION_WORKBENCH_PREFERENCES.image_count));
+  const [imageSizeMode, setImageSizeMode] = useState<ImageSizeMode>(DEFAULT_CREATION_WORKBENCH_PREFERENCES.image_size_mode);
+  const [imageAspectRatio, setImageAspectRatio] = useState<ImageAspectRatio>(DEFAULT_CREATION_WORKBENCH_PREFERENCES.image_aspect_ratio as ImageAspectRatio);
+  const [imageResolution, setImageResolution] = useState<ImageResolution>(DEFAULT_CREATION_WORKBENCH_PREFERENCES.image_resolution as ImageResolution);
+  const [imageCustomRatio, setImageCustomRatio] = useState(DEFAULT_CREATION_WORKBENCH_PREFERENCES.image_custom_ratio);
+  const [imageCustomWidth, setImageCustomWidth] = useState(DEFAULT_CREATION_WORKBENCH_PREFERENCES.image_custom_width);
+  const [imageCustomHeight, setImageCustomHeight] = useState(DEFAULT_CREATION_WORKBENCH_PREFERENCES.image_custom_height);
+  const [imageSnapToMultiple16, setImageSnapToMultiple16] = useState(DEFAULT_CREATION_WORKBENCH_PREFERENCES.image_snap_to_multiple_16);
+  const [imageQuality, setImageQuality] = useState<"" | ImageQuality>(DEFAULT_CREATION_WORKBENCH_PREFERENCES.image_quality);
+  const [imageOutputFormat, setImageOutputFormat] = useState<ImageOutputFormat>(DEFAULT_CREATION_WORKBENCH_PREFERENCES.image_output_format);
+  const [imageOutputCompression, setImageOutputCompression] = useState(DEFAULT_CREATION_WORKBENCH_PREFERENCES.image_output_compression);
+  const [imageStreamEnabled, setImageStreamEnabled] = useState(false);
+  const [imagePartialImages, setImagePartialImages] = useState("1");
   const [imageResponseFormatB64JSON, setImageResponseFormatB64JSON] = useState(false);
   const [imageCodexCLICompatibility, setImageCodexCLICompatibility] = useState(false);
   const { preferences: imageGenerationPreferences, isReady: imageGenerationPreferencesReady } = useImageGenerationPreferences(session.key);
   const imageAPIMode = imageGenerationPreferences.api_mode;
-  const [videoModel, setVideoModel] = useState(() => getStoredVideoSetting(VIDEO_MODEL_STORAGE_KEY, DEFAULT_VIDEO_MODEL));
+  const [videoModel, setVideoModel] = useState(DEFAULT_VIDEO_MODEL);
   const [videoModelOptions, setVideoModelOptions] = useState<Array<{ value: string; label: string }>>([
     { value: DEFAULT_VIDEO_MODEL, label: DEFAULT_VIDEO_MODEL },
   ]);
-  const [videoSize, setVideoSize] = useState(() => getStoredVideoSetting(VIDEO_SIZE_STORAGE_KEY, "1280x720"));
-  const [videoSeconds, setVideoSeconds] = useState(() => getStoredVideoSetting(VIDEO_SECONDS_STORAGE_KEY, "6"));
-  const [videoResolution, setVideoResolution] = useState(() => getStoredVideoSetting(VIDEO_RESOLUTION_STORAGE_KEY, "720p"));
-  const [videoKlingMode, setVideoKlingMode] = useState(() => getStoredVideoSetting(VIDEO_MODE_STORAGE_KEY, "std"));
+  const [videoSize, setVideoSize] = useState(DEFAULT_CREATION_WORKBENCH_PREFERENCES.video_size);
+  const [videoSeconds, setVideoSeconds] = useState(DEFAULT_CREATION_WORKBENCH_PREFERENCES.video_seconds);
+  const [videoResolution, setVideoResolution] = useState(DEFAULT_CREATION_WORKBENCH_PREFERENCES.video_resolution);
+  const [videoKlingMode, setVideoKlingMode] = useState(DEFAULT_CREATION_WORKBENCH_PREFERENCES.video_mode);
   const [videoNegativePrompt, setVideoNegativePrompt] = useState("");
   const [videoMultiShot, setVideoMultiShot] = useState(false);
   const [videoShotType, setVideoShotType] = useState<"intelligence" | "customize">("intelligence");
   const [videoMultiPrompt, setVideoMultiPrompt] = useState(defaultVideoMultiPrompts);
   const [videoElementList, setVideoElementList] = useState(defaultVideoElementList);
   const [videoCharacterOrientation, setVideoCharacterOrientation] = useState<"image" | "video">("video");
-  const [videoGenerateAudio, setVideoGenerateAudio] = useState(() => getStoredVideoSetting(VIDEO_AUDIO_STORAGE_KEY, "false") === "true");
-  const [videoWatermark, setVideoWatermark] = useState(() => getStoredVideoSetting(VIDEO_WATERMARK_STORAGE_KEY, "false") === "true");
+  const [videoGenerateAudio, setVideoGenerateAudio] = useState(DEFAULT_CREATION_WORKBENCH_PREFERENCES.video_generate_audio);
+  const [videoWatermark, setVideoWatermark] = useState(DEFAULT_CREATION_WORKBENCH_PREFERENCES.video_watermark);
+  const [workbenchPreferencesReady, setWorkbenchPreferencesReady] = useState(false);
+  const persistedWorkbenchSignatureRef = useRef("");
+  const currentWorkbenchSignatureRef = useRef("");
   const [videoTaskCount, setVideoTaskCount] = useState(1);
   const [videoFirstFrameURL, setVideoFirstFrameURL] = useState("");
   const [videoLastFrameURL, setVideoLastFrameURL] = useState("");
@@ -1816,10 +1708,9 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     image: NEWAPI_TOKEN_MISSING_MESSAGE,
     video: NEWAPI_TOKEN_MISSING_MESSAGE,
   });
-  const imageRelayTokenStorageKey = relayTokenNameStorageKey(session, "image");
-  const videoRelayTokenStorageKey = relayTokenNameStorageKey(session, "video");
-  const [imageRelayTokenName, setImageRelayTokenName] = useState(() => getStoredRelayTokenName(session, "image"));
-  const [videoRelayTokenName, setVideoRelayTokenName] = useState(() => getStoredRelayTokenName(session, "video"));
+  const { tokenNames: relayTokenNames, setTokenName: setRelayTokenName } = useRelayTokenPreferences();
+  const imageRelayTokenName = relayTokenNames.image;
+  const videoRelayTokenName = relayTokenNames.video;
   const [relayTokenDialogKind, setRelayTokenDialogKind] = useState<CreationRelayTokenKind | null>(null);
   const [relayImageModelOptions, setRelayImageModelOptions] = useState<ImageModelOption[]>(() =>
     ensureDefaultImageModelOption(IMAGE_CREATION_MODEL_OPTIONS),
@@ -1920,6 +1811,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     }, undefined, editingTurnDraft.quality);
   }, [editingTurnDraft]);
   const editingDraftEffectiveSizeSelection = editingDraftSizeRequest?.selection;
+  const editingDraftDimensionsDisabled = editingDraftEffectiveSizeSelection?.mode === "auto";
   const editingDraftImageSize = useMemo(() => {
     return editingDraftSizeRequest?.size ?? "";
   }, [editingDraftSizeRequest]);
@@ -2298,15 +2190,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         const storedConversationId =
           typeof window !== "undefined" ? window.localStorage.getItem(ACTIVE_IMAGE_CONVERSATION_STORAGE_KEY) : null;
         let storedSelectionDetailTransientFailure = false;
-        const storedSelection = getStoredImageSizeSelection();
-        setImageSizeMode(storedSelection.mode);
-        setImageAspectRatio(storedSelection.aspectRatio);
-        setImageResolution(storedSelection.resolution);
-        setImageCustomRatio(storedSelection.customRatio);
-        setImageCustomWidth(storedSelection.customWidth);
-        setImageCustomHeight(storedSelection.customHeight);
-        setImageOutputFormat(getStoredImageOutputFormat());
-        setImageOutputCompression(getStoredImageOutputCompression());
 
         const {
           firstPage,
@@ -2598,106 +2481,89 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   }, [imageGenerationPreferences.default_image_model, imageGenerationPreferences.default_video_model, imageGenerationPreferencesReady]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem(VIDEO_MODEL_STORAGE_KEY, videoModel);
-    window.localStorage.setItem(VIDEO_SIZE_STORAGE_KEY, videoSize);
-    window.localStorage.setItem(VIDEO_SECONDS_STORAGE_KEY, videoSeconds);
-    window.localStorage.setItem(VIDEO_RESOLUTION_STORAGE_KEY, videoResolution);
-    window.localStorage.setItem(VIDEO_MODE_STORAGE_KEY, videoKlingMode);
-    window.localStorage.setItem(VIDEO_AUDIO_STORAGE_KEY, String(videoGenerateAudio));
-    window.localStorage.setItem(VIDEO_WATERMARK_STORAGE_KEY, String(videoWatermark));
-  }, [videoGenerateAudio, videoKlingMode, videoModel, videoResolution, videoSeconds, videoSize, videoWatermark]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    window.localStorage.setItem(IMAGE_MODEL_STORAGE_KEY, imageModel);
-  }, [imageModel]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-    if (isImageQuality(imageQuality)) {
-      window.localStorage.setItem(IMAGE_QUALITY_STORAGE_KEY, imageQuality);
-    } else {
-      window.localStorage.removeItem(IMAGE_QUALITY_STORAGE_KEY);
-    }
-  }, [imageQuality]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem(IMAGE_COUNT_STORAGE_KEY, imageCount);
-  }, [imageCount]);
-
-  useEffect(() => {
     if (!imageGenerationPreferencesReady) return;
+    const workbench = imageGenerationPreferences.workbench;
+    persistedWorkbenchSignatureRef.current = JSON.stringify({
+      workbench,
+      stream: imageGenerationPreferences.stream,
+      partial_images: imageGenerationPreferences.partial_images,
+      response_format_b64_json: imageGenerationPreferences.response_format_b64_json,
+      codex_cli_compatibility: imageGenerationPreferences.codex_cli_compatibility,
+    });
+    setImageSizeMode(isImageSizeMode(workbench.image_size_mode) ? workbench.image_size_mode : DEFAULT_CREATION_WORKBENCH_PREFERENCES.image_size_mode);
+    setImageAspectRatio(isImageAspectRatio(workbench.image_aspect_ratio) ? workbench.image_aspect_ratio : DEFAULT_CREATION_WORKBENCH_PREFERENCES.image_aspect_ratio as ImageAspectRatio);
+    setImageResolution(isImageResolution(workbench.image_resolution) ? workbench.image_resolution : DEFAULT_CREATION_WORKBENCH_PREFERENCES.image_resolution as ImageResolution);
+    setImageCustomRatio(workbench.image_custom_ratio);
+    setImageCustomWidth(workbench.image_custom_width);
+    setImageCustomHeight(workbench.image_custom_height);
+    setImageSnapToMultiple16(workbench.image_snap_to_multiple_16);
+    setImageQuality(isImageQuality(workbench.image_quality) ? workbench.image_quality : "");
+    setImageCount(String(workbench.image_count));
+    setImageOutputFormat(isImageOutputFormat(workbench.image_output_format) ? workbench.image_output_format : DEFAULT_IMAGE_OUTPUT_FORMAT);
+    setImageOutputCompression(workbench.image_output_compression);
+    setVideoSize(workbench.video_size);
+    setVideoSeconds(workbench.video_seconds);
+    setVideoResolution(workbench.video_resolution);
+    setVideoKlingMode(workbench.video_mode);
+    setVideoGenerateAudio(workbench.video_generate_audio);
+    setVideoWatermark(workbench.video_watermark);
     setImageStreamEnabled(imageGenerationPreferences.stream);
     setImagePartialImages(String(imageGenerationPreferences.partial_images));
     setImageResponseFormatB64JSON(imageGenerationPreferences.response_format_b64_json);
     setImageCodexCLICompatibility(imageGenerationPreferences.codex_cli_compatibility);
+    setWorkbenchPreferencesReady(true);
   }, [imageGenerationPreferences, imageGenerationPreferencesReady]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const stored = window.localStorage.getItem("chatgpt2api:image_generation_snap_to_multiple_16");
-    if (stored !== null) setImageSnapToMultiple16(stored !== "false");
-  }, []);
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem("chatgpt2api:image_generation_snap_to_multiple_16", String(imageSnapToMultiple16));
-    }
-  }, [imageSnapToMultiple16]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-    window.localStorage.setItem(IMAGE_STREAM_STORAGE_KEY, imageStreamEnabled ? "true" : "false");
-  }, [imageStreamEnabled]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-    window.localStorage.setItem(IMAGE_PARTIAL_IMAGES_STORAGE_KEY, String(normalizedImagePartialImages(Number(imagePartialImages))));
-  }, [imagePartialImages]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-    const handleTokenNameChange = (event: Event) => {
-      if (event instanceof StorageEvent) {
-        if (event.key === imageRelayTokenStorageKey) {
-          setImageRelayTokenName(getStoredRelayTokenName(session, "image"));
-        } else if (event.key === videoRelayTokenStorageKey) {
-          setVideoRelayTokenName(getStoredRelayTokenName(session, "video"));
-        }
-        return;
-      }
-      const detail = (event as CustomEvent<{ kind?: RelayTokenKind; tokenName?: string }>).detail;
-      if (detail?.kind === "image") {
-        setImageRelayTokenName(String(detail.tokenName ?? getStoredRelayTokenName(session, "image")));
-      } else if (detail?.kind === "video") {
-        setVideoRelayTokenName(String(detail.tokenName ?? getStoredRelayTokenName(session, "video")));
-      }
+    if (!workbenchPreferencesReady) return;
+    const workbench: CreationWorkbenchPreferences = {
+      image_size: imageSize || DEFAULT_CREATION_WORKBENCH_PREFERENCES.image_size,
+      image_size_mode: imageSizeMode,
+      image_aspect_ratio: imageAspectRatio,
+      image_resolution: imageResolution,
+      image_custom_ratio: imageCustomRatio,
+      image_custom_width: imageCustomWidth,
+      image_custom_height: imageCustomHeight,
+      image_snap_to_multiple_16: imageSnapToMultiple16,
+      image_quality: isImageQuality(imageQuality) ? imageQuality : "",
+      image_count: normalizedImageWorkbenchCount(Number(imageCount)),
+      image_output_format: imageOutputFormat,
+      image_output_compression: supportsImageOutputCompression(imageOutputFormat)
+        ? String(normalizeOutputCompressionValue(imageOutputCompression) ?? "")
+        : "",
+      video_size: videoSize,
+      video_seconds: videoSeconds,
+      video_resolution: videoResolution,
+      video_mode: videoKlingMode,
+      video_generate_audio: videoGenerateAudio,
+      video_watermark: videoWatermark,
     };
-    window.addEventListener(PROFILE_RELAY_TOKEN_NAME_CHANGED_EVENT, handleTokenNameChange);
-    window.addEventListener("storage", handleTokenNameChange);
-    return () => {
-      window.removeEventListener(PROFILE_RELAY_TOKEN_NAME_CHANGED_EVENT, handleTokenNameChange);
-      window.removeEventListener("storage", handleTokenNameChange);
+    const creationOptions = {
+      stream: imageStreamEnabled,
+      partial_images: normalizedImagePartialImages(Number(imagePartialImages)),
+      response_format_b64_json: imageResponseFormatB64JSON,
+      codex_cli_compatibility: imageCodexCLICompatibility,
     };
-  }, [imageRelayTokenStorageKey, videoRelayTokenStorageKey, session]);
-
-  useEffect(() => {
-    setImageRelayTokenName(getStoredRelayTokenName(session, "image"));
-    setVideoRelayTokenName(getStoredRelayTokenName(session, "video"));
-  }, [imageRelayTokenStorageKey, videoRelayTokenStorageKey, session]);
+    const signature = JSON.stringify({ workbench, ...creationOptions });
+    currentWorkbenchSignatureRef.current = signature;
+    if (signature === persistedWorkbenchSignatureRef.current) return;
+    const timer = window.setTimeout(() => {
+      void updateCreationWorkbenchPreferences(workbench, creationOptions)
+        .then(({ preferences }) => {
+          if (currentWorkbenchSignatureRef.current !== signature) return;
+          persistedWorkbenchSignatureRef.current = JSON.stringify({
+            workbench: preferences.workbench,
+            stream: preferences.stream,
+            partial_images: preferences.partial_images,
+            response_format_b64_json: preferences.response_format_b64_json,
+            codex_cli_compatibility: preferences.codex_cli_compatibility,
+          });
+          window.dispatchEvent(new CustomEvent(IMAGE_GENERATION_PREFERENCES_CHANGED_EVENT, { detail: preferences }));
+        })
+        .catch((error) => toast.error(error instanceof Error ? error.message : "创作参数保存失败"));
+    }, 400);
+    return () => window.clearTimeout(timer);
+  }, [imageAspectRatio, imageCodexCLICompatibility, imageCount, imageCustomHeight, imageCustomRatio, imageCustomWidth, imageOutputCompression, imageOutputFormat, imagePartialImages, imageQuality, imageResolution, imageResponseFormatB64JSON, imageSize, imageSizeMode, imageSnapToMultiple16, imageStreamEnabled, videoGenerateAudio, videoKlingMode, videoResolution, videoSeconds, videoSize, videoWatermark, workbenchPreferencesReady]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -2720,8 +2586,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         );
         const imageConfigured = Boolean(imageName && imageStatus.has_key);
         const videoConfigured = Boolean(videoName && videoStatus.has_key);
-        setImageRelayTokenName(imageName);
-        setVideoRelayTokenName(videoName);
+        if (imageName !== imageRelayTokenName) void setRelayTokenName("image", imageName).catch(() => undefined);
+        if (videoName !== videoRelayTokenName) void setRelayTokenName("video", videoName).catch(() => undefined);
         setRelayKeyConfigured({ image: imageConfigured, video: videoConfigured });
         setRelayKeyStatusMessage({
           image: imageConfigured ? "" : imageName ? imageStatus.message || NEWAPI_TOKEN_MISSING_MESSAGE : "请先选择用于生图的密钥",
@@ -2739,43 +2605,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     return () => {
       ignore = true;
     };
-  }, [imageRelayTokenName, session, videoRelayTokenName]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    window.localStorage.setItem(IMAGE_SIZE_MODE_STORAGE_KEY, imageSizeMode);
-    if (imageAspectRatio) {
-      window.localStorage.setItem(IMAGE_ASPECT_RATIO_STORAGE_KEY, imageAspectRatio);
-    } else {
-      window.localStorage.removeItem(IMAGE_ASPECT_RATIO_STORAGE_KEY);
-    }
-    window.localStorage.setItem(IMAGE_RESOLUTION_STORAGE_KEY, imageResolution);
-    window.localStorage.setItem(IMAGE_CUSTOM_RATIO_STORAGE_KEY, imageCustomRatio);
-    window.localStorage.setItem(IMAGE_CUSTOM_WIDTH_STORAGE_KEY, imageCustomWidth);
-    window.localStorage.setItem(IMAGE_CUSTOM_HEIGHT_STORAGE_KEY, imageCustomHeight);
-    if (imageSize) {
-      window.localStorage.setItem(IMAGE_SIZE_STORAGE_KEY, imageSize);
-      return;
-    }
-    window.localStorage.removeItem(IMAGE_SIZE_STORAGE_KEY);
-  }, [imageAspectRatio, imageCustomHeight, imageCustomRatio, imageCustomWidth, imageResolution, imageSize, imageSizeMode]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    window.localStorage.setItem(IMAGE_OUTPUT_FORMAT_STORAGE_KEY, imageOutputFormat);
-    const normalizedCompression = normalizeOutputCompressionValue(imageOutputCompression);
-    if (normalizedCompression === undefined || !supportsImageOutputCompression(imageOutputFormat)) {
-      window.localStorage.removeItem(IMAGE_OUTPUT_COMPRESSION_STORAGE_KEY);
-      return;
-    }
-    window.localStorage.setItem(IMAGE_OUTPUT_COMPRESSION_STORAGE_KEY, String(normalizedCompression));
-  }, [imageOutputCompression, imageOutputFormat]);
+  }, [imageRelayTokenName, session, setRelayTokenName, videoRelayTokenName]);
 
   useEffect(() => {
     const selectedConversation = selectedConversationId
@@ -5701,7 +5531,14 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                               <label className="flex items-center gap-2 text-[11px] text-muted-foreground"><span>16倍数对齐</span><Switch checked={imageSnapToMultiple16} aria-label="16倍数对齐" onCheckedChange={setImageSnapToMultiple16} /></label>
                             </div>
                             <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5">
-                              <label className="grid h-8 grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded-lg border border-[#e3e4e7] bg-white px-2.5 dark:border-border dark:bg-background/70">
+                              <label
+                                className={cn(
+                                  "grid h-8 grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded-lg border px-2.5",
+                                  editingDraftDimensionsDisabled
+                                    ? "cursor-not-allowed border-border/60 bg-muted/50 dark:bg-muted/40"
+                                    : "border-[#e3e4e7] bg-white dark:border-border dark:bg-background/70",
+                                )}
+                              >
                                 <span className="text-[11px] text-[#777a82] dark:text-muted-foreground">W</span>
                                 <Input
                                   type="number"
@@ -5710,7 +5547,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                                   step="1"
                                   value={editingDraftDisplayedWidth}
                                   placeholder="自动"
-                                  disabled={editingDraftEffectiveSizeSelection.mode === "auto"}
+                                  disabled={editingDraftDimensionsDisabled}
                                   onFocus={() =>
                                     setEditingTurnDraft((current) =>
                                       current && current.sizeMode !== "custom"
@@ -5733,11 +5570,18 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                                     const value = Number(event.target.value);
                                     if (Number.isFinite(value) && value > 0) setEditingTurnDraft((current) => current ? { ...current, customWidth: String(Math.max(16, Math.ceil(value / 16) * 16)) } : current);
                                   }}
-                                  className="h-7 border-0 bg-transparent px-0 text-xs font-medium shadow-none focus-visible:ring-0"
+                                  className="h-7 border-0 bg-transparent px-0 text-xs font-medium shadow-none disabled:bg-transparent disabled:opacity-100 focus-visible:ring-0"
                                 />
                               </label>
                               <X className="size-3.5 text-[#9a9ca2]" aria-hidden="true" />
-                              <label className="grid h-8 grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded-lg border border-[#e3e4e7] bg-white px-2.5 dark:border-border dark:bg-background/70">
+                              <label
+                                className={cn(
+                                  "grid h-8 grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded-lg border px-2.5",
+                                  editingDraftDimensionsDisabled
+                                    ? "cursor-not-allowed border-border/60 bg-muted/50 dark:bg-muted/40"
+                                    : "border-[#e3e4e7] bg-white dark:border-border dark:bg-background/70",
+                                )}
+                              >
                                 <span className="text-[11px] text-[#777a82] dark:text-muted-foreground">H</span>
                                 <Input
                                   type="number"
@@ -5746,7 +5590,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                                   step="1"
                                   value={editingDraftDisplayedHeight}
                                   placeholder="自动"
-                                  disabled={editingDraftEffectiveSizeSelection.mode === "auto"}
+                                  disabled={editingDraftDimensionsDisabled}
                                   onFocus={() =>
                                     setEditingTurnDraft((current) =>
                                       current && current.sizeMode !== "custom"
@@ -5769,7 +5613,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                                     const value = Number(event.target.value);
                                     if (Number.isFinite(value) && value > 0) setEditingTurnDraft((current) => current ? { ...current, customHeight: String(Math.max(16, Math.ceil(value / 16) * 16)) } : current);
                                   }}
-                                  className="h-7 border-0 bg-transparent px-0 text-xs font-medium shadow-none focus-visible:ring-0"
+                                  className="h-7 border-0 bg-transparent px-0 text-xs font-medium shadow-none disabled:bg-transparent disabled:opacity-100 focus-visible:ring-0"
                                 />
                               </label>
                             </div>

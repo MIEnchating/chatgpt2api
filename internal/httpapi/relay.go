@@ -41,29 +41,57 @@ type relayBufferedReadCloser struct {
 	io.Closer
 }
 
+type relayCredential struct {
+	APIKey  string
+	BaseURL string
+}
+
 func (a *App) attachRelayAPIKeyForIdentity(ctx context.Context, identity service.Identity, body map[string]any) error {
 	if body == nil {
 		return nil
 	}
-	key, err := a.relayAPIKeyForIdentitySelection(ctx, identity, selectedRelayTokenGroupFromPayload(body), selectedRelayTokenNameFromPayload(body))
+	credential, err := a.relayCredentialForIdentitySelection(ctx, identity, selectedRelayTokenGroupFromPayload(body), selectedRelayTokenNameFromPayload(body))
 	if err != nil {
 		return err
 	}
-	protocol.RecordAccountUsage(ctx, key)
-	body["api_key"] = key
+	protocol.RecordAccountUsage(ctx, credential.APIKey)
+	body["api_key"] = credential.APIKey
+	if credential.BaseURL != "" && credential.BaseURL != a.relayBaseURL() {
+		body["relay_base_url"] = credential.BaseURL
+	} else {
+		delete(body, "relay_base_url")
+	}
 	return nil
 }
 
 func (a *App) relayAPIKeyForIdentitySelection(ctx context.Context, identity service.Identity, group, name string) (string, error) {
+	credential, err := a.relayCredentialForIdentitySelection(ctx, identity, group, name)
+	return credential.APIKey, err
+}
+
+func (a *App) relayCredentialForIdentitySelection(ctx context.Context, identity service.Identity, group, name string) (relayCredential, error) {
+	if kind := service.CustomRelayKindFromTokenName(name); kind != "" {
+		if a.customRelayConfigs == nil {
+			return relayCredential{}, protocol.HTTPError{Status: http.StatusBadRequest, Message: "自定义 API 配置存储不可用"}
+		}
+		config, err := a.customRelayConfigs.Config(identityScope(identity), kind)
+		if err != nil {
+			return relayCredential{}, protocol.HTTPError{Status: http.StatusBadRequest, Message: err.Error()}
+		}
+		if config.BaseURL == "" || config.APIKey == "" {
+			return relayCredential{}, protocol.HTTPError{Status: http.StatusBadRequest, Message: "所选自定义 API 配置不完整，请重新配置 Base URL 和 Key"}
+		}
+		return relayCredential{APIKey: config.APIKey, BaseURL: config.BaseURL}, nil
+	}
 	reader := a.relayTokenReader()
 	if reader == nil {
-		return "", protocol.HTTPError{Status: http.StatusBadRequest, Message: "请先配置数据库连接，并创建指定分组的令牌"}
+		return relayCredential{}, protocol.HTTPError{Status: http.StatusBadRequest, Message: "请先配置数据库连接，并创建指定分组的令牌"}
 	}
 	key, err := reader.KeyForIdentityGroupAndName(ctx, identity, group, name)
 	if err != nil {
-		return "", protocol.HTTPError{Status: http.StatusBadRequest, Message: err.Error()}
+		return relayCredential{}, protocol.HTTPError{Status: http.StatusBadRequest, Message: err.Error()}
 	}
-	return key, nil
+	return relayCredential{APIKey: key, BaseURL: a.relayBaseURL()}, nil
 }
 
 func (a *App) relayBaseURL() string {
@@ -71,6 +99,13 @@ func (a *App) relayBaseURL() string {
 		return a.config.RelayBaseURL()
 	}
 	return "http://newapi:3000"
+}
+
+func (a *App) relayBaseURLFromPayload(payload map[string]any) string {
+	if value := strings.TrimRight(strings.TrimSpace(util.Clean(payload["relay_base_url"])), "/"); value != "" {
+		return value
+	}
+	return a.relayBaseURL()
 }
 
 func relayAPIKeyFromPayload(payload map[string]any) string {
@@ -86,6 +121,10 @@ func selectedRelayTokenNameFromPayload(payload map[string]any) string {
 }
 
 func (a *App) relayListModels(ctx context.Context, apiKey string) (map[string]any, error) {
+	return a.relayListModelsAt(ctx, a.relayBaseURL(), apiKey)
+}
+
+func (a *App) relayListModelsAt(ctx context.Context, baseURL, apiKey string) (map[string]any, error) {
 	apiKey = strings.TrimSpace(apiKey)
 	if apiKey == "" {
 		models := dedupe(append(a.configuredImageModels(), a.configuredChatModels()...))
@@ -98,7 +137,7 @@ func (a *App) relayListModels(ctx context.Context, apiKey string) (map[string]an
 		}
 		return map[string]any{"object": "list", "data": data}, nil
 	}
-	return a.relayJSON(ctx, http.MethodGet, "/v1/models", apiKey, nil)
+	return a.relayJSONAt(ctx, baseURL, http.MethodGet, "/v1/models", apiKey, nil)
 }
 
 func (a *App) relayImageGenerations(ctx context.Context, payload map[string]any) (map[string]any, *protocol.StreamResult, error) {
@@ -508,7 +547,7 @@ func (a *App) relayGoogleGeminiImage(ctx context.Context, payload map[string]any
 		waitGroup.Add(1)
 		go func() {
 			defer waitGroup.Done()
-			response, err := a.relayJSONData(ctx, http.MethodPost, "/v1/chat/completions", apiKey, requestData)
+			response, err := a.relayJSONDataAt(ctx, a.relayBaseURLFromPayload(payload), http.MethodPost, "/v1/chat/completions", apiKey, requestData)
 			if err == nil {
 				results[index], err = googleGeminiImageItems(response, util.Clean(payload["prompt"]))
 			}
@@ -805,10 +844,11 @@ func (a *App) relayJSONMaybeStream(ctx context.Context, path string, payload map
 		return nil, nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: "upstream API key is required"}
 	}
 	body := relayPayloadForPath(path, payload)
+	baseURL := a.relayBaseURLFromPayload(payload)
 	if util.ToBool(body["stream"]) {
-		return a.relayJSONStream(ctx, path, apiKey, body)
+		return a.relayJSONStreamAt(ctx, baseURL, path, apiKey, body)
 	}
-	result, err := a.relayJSON(ctx, http.MethodPost, path, apiKey, body)
+	result, err := a.relayJSONAt(ctx, baseURL, http.MethodPost, path, apiKey, body)
 	if err == nil && relayImagePath(path) {
 		err = relayImageJSONResultError(result)
 	}
@@ -821,10 +861,11 @@ func (a *App) relayMultipartMaybeStream(ctx context.Context, path string, payloa
 		return nil, nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: "upstream API key is required"}
 	}
 	body := relayPayloadForPath(path, payload)
+	baseURL := a.relayBaseURLFromPayload(payload)
 	if util.ToBool(body["stream"]) {
-		return a.relayMultipartStream(ctx, path, apiKey, body, images)
+		return a.relayMultipartStreamAt(ctx, baseURL, path, apiKey, body, images)
 	}
-	result, err := a.relayMultipart(ctx, path, apiKey, body, images)
+	result, err := a.relayMultipartAt(ctx, baseURL, path, apiKey, body, images)
 	if err == nil && relayImagePath(path) {
 		err = relayImageJSONResultError(result)
 	}
@@ -836,6 +877,10 @@ func relayImagePath(path string) bool {
 }
 
 func (a *App) relayJSON(ctx context.Context, method, pathValue, apiKey string, payload map[string]any) (map[string]any, error) {
+	return a.relayJSONAt(ctx, a.relayBaseURL(), method, pathValue, apiKey, payload)
+}
+
+func (a *App) relayJSONAt(ctx context.Context, baseURL, method, pathValue, apiKey string, payload map[string]any) (map[string]any, error) {
 	var data []byte
 	if payload != nil {
 		var err error
@@ -844,15 +889,19 @@ func (a *App) relayJSON(ctx context.Context, method, pathValue, apiKey string, p
 			return nil, err
 		}
 	}
-	return a.relayJSONData(ctx, method, pathValue, apiKey, data)
+	return a.relayJSONDataAt(ctx, baseURL, method, pathValue, apiKey, data)
 }
 
 func (a *App) relayJSONData(ctx context.Context, method, pathValue, apiKey string, data []byte) (map[string]any, error) {
+	return a.relayJSONDataAt(ctx, a.relayBaseURL(), method, pathValue, apiKey, data)
+}
+
+func (a *App) relayJSONDataAt(ctx context.Context, baseURL, method, pathValue, apiKey string, data []byte) (map[string]any, error) {
 	var body io.Reader
 	if data != nil {
 		body = bytes.NewReader(data)
 	}
-	req, err := http.NewRequestWithContext(ctx, method, a.relayBaseURL()+pathValue, body)
+	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(strings.TrimSpace(baseURL), "/")+pathValue, body)
 	if err != nil {
 		return nil, err
 	}
@@ -883,15 +932,19 @@ func (a *App) relayVideoTask(ctx context.Context, payload map[string]any) (map[s
 	if isGeminiOmniVideoModel(util.Clean(payload["model"])) && len(util.AsStringSlice(payload["reference_audio_urls"])) > 0 {
 		return nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: "Gemini Omni 参考音频必须使用已上传的 audio_* 音频 ID，当前视频接口仅支持公网音频 URL，因此暂不支持参考音频"}
 	}
-	request := officialVideoRequestPayload(payload)
+	request := newAPIVideoRequestPayload(payload)
+	baseURL := a.relayBaseURLFromPayload(payload)
 	if err := validateVideoReferencePayloadURLs(request); err != nil {
 		return nil, err
 	}
-	created, err := a.relayVideoSubmit(ctx, apiKey, request)
+	created, err := a.relayVideoSubmitAt(ctx, baseURL, apiKey, request)
 	if err != nil {
 		return created, err
 	}
-	taskID := firstNonEmpty(util.Clean(created["id"]), util.Clean(created["task_id"]))
+	if videoRelayTaskStatus(created) == "failed" {
+		return created, protocol.HTTPError{Status: http.StatusBadGateway, Message: videoErrorMessage(created)}
+	}
+	taskID := videoCreateTaskID(created, 0)
 	if taskID == "" {
 		if message := videoUpstreamErrorMessage(created); message != "" {
 			return created, protocol.HTTPError{Status: http.StatusBadGateway, Message: message}
@@ -908,13 +961,13 @@ func (a *App) relayVideoTask(ctx context.Context, payload map[string]any) (map[s
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		state, pollErr := a.relayJSON(ctx, http.MethodGet, "/v1/videos/"+url.PathEscape(taskID), apiKey, nil)
+		state, pollErr := a.relayJSONAt(ctx, baseURL, http.MethodGet, "/v1/videos/"+url.PathEscape(taskID), apiKey, nil)
 		if pollErr != nil {
 			return state, pollErr
 		}
-		status := strings.ToLower(strings.TrimSpace(util.Clean(state["status"])))
-		if status == "completed" || status == "succeeded" || status == "success" {
-			videoURL := videoResultURL(state, a.relayBaseURL(), taskID)
+		status := videoRelayTaskStatus(state)
+		if status == "completed" {
+			videoURL := videoResultURL(state, baseURL, taskID)
 			if videoURL == "" {
 				return state, protocol.HTTPError{Status: http.StatusBadGateway, Message: "视频已完成但上游没有返回视频地址"}
 			}
@@ -925,7 +978,7 @@ func (a *App) relayVideoTask(ctx context.Context, payload map[string]any) (map[s
 			}
 			return map[string]any{"created": state["created_at"], "data": []map[string]any{{"url": videoURL, "type": "video", "mime_type": "video/mp4", "video_url": videoURL}}, "output_type": "video", "model": payload["model"]}, nil
 		}
-		if status == "failed" || status == "cancelled" || status == "error" {
+		if status == "failed" {
 			return state, protocol.HTTPError{Status: http.StatusBadGateway, Message: videoErrorMessage(state)}
 		}
 		timer := time.NewTimer(interval)
@@ -937,6 +990,37 @@ func (a *App) relayVideoTask(ctx context.Context, payload map[string]any) (map[s
 		}
 	}
 	return nil, protocol.HTTPError{Status: http.StatusGatewayTimeout, Message: "视频生成超时，请稍后重试"}
+}
+
+func videoCreateTaskID(value any, depth int) string {
+	if depth > 5 || value == nil {
+		return ""
+	}
+	switch typed := value.(type) {
+	case map[string]any:
+		for _, key := range []string{"id", "task_id", "taskId", "video_id", "videoId"} {
+			if taskID := strings.TrimSpace(util.Clean(typed[key])); taskID != "" {
+				return taskID
+			}
+		}
+		for _, key := range []string{"data", "task", "result", "response"} {
+			if taskID := videoCreateTaskID(typed[key], depth+1); taskID != "" {
+				return taskID
+			}
+		}
+	case []any:
+		for _, item := range typed {
+			if taskID := videoCreateTaskID(item, depth+1); taskID != "" {
+				return taskID
+			}
+		}
+	case string:
+		var decoded any
+		if json.Unmarshal([]byte(strings.TrimSpace(typed)), &decoded) == nil {
+			return videoCreateTaskID(decoded, depth+1)
+		}
+	}
+	return ""
 }
 
 func isGeminiOmniVideoModel(model string) bool {
@@ -1068,6 +1152,10 @@ func validateNestedVideoReferenceURLs(value any) error {
 }
 
 func (a *App) relayVideoSubmit(ctx context.Context, apiKey string, request map[string]any) (map[string]any, error) {
+	return a.relayVideoSubmitAt(ctx, a.relayBaseURL(), apiKey, request)
+}
+
+func (a *App) relayVideoSubmitAt(ctx context.Context, baseURL, apiKey string, request map[string]any) (map[string]any, error) {
 	if videoProviderAdapterForModel(strings.ToLower(util.Clean(request["model"]))).name == "veo" {
 		if err := a.inlineVeoReferenceImage(ctx, request); err != nil {
 			return nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: err.Error()}
@@ -1100,7 +1188,8 @@ func (a *App) relayVideoSubmit(ctx context.Context, apiKey string, request map[s
 		}
 	}
 	if !strings.HasPrefix(strings.ToLower(inputReference), "data:") {
-		return a.relayJSON(ctx, http.MethodPost, "/v1/videos", apiKey, request)
+		deleteVideoInternalRequestFields(request)
+		return a.relayJSONAt(ctx, baseURL, http.MethodPost, "/v1/videos", apiKey, request)
 	}
 	// The compatibility payload may contain both input_reference and a
 	// provider-native alias for the same image. Once the image is uploaded as a
@@ -1120,7 +1209,8 @@ func (a *App) relayVideoSubmit(ctx context.Context, apiKey string, request map[s
 	if inlineField != "" {
 		delete(request, inlineField)
 	}
-	req, err := relayVideoMultipartRequest(ctx, a.relayBaseURL(), apiKey, request, protocol.UploadedImage{
+	deleteVideoInternalRequestFields(request)
+	req, err := relayVideoMultipartRequest(ctx, baseURL, apiKey, request, protocol.UploadedImage{
 		Data:        data,
 		Filename:    "input-reference." + videoReferenceImageExtension(contentType),
 		ContentType: contentType,
@@ -1229,8 +1319,112 @@ func (a *App) inlineVeoReferenceImage(ctx context.Context, request map[string]an
 	return nil
 }
 
-// officialVideoRequestPayload maps official provider semantics onto the
-// flattened /v1/videos compatibility contract exposed by the relay.
+// newAPIVideoRequestPayload keeps the NewAPI-facing contract provider-neutral.
+// NewAPI selects the concrete channel after receiving this request, so shaping
+// KIE or APIMart fields here would apply the provider conversion twice.
+func newAPIVideoRequestPayload(payload map[string]any) map[string]any {
+	if videoUsesDedicatedRequestContract(payload) {
+		nativePayload := payload
+		if videoProtocolHint(payload) == "" && strings.TrimSpace(util.Clean(payload["model"])) == "MiniMax-H3" {
+			nativePayload = make(map[string]any, len(payload)+1)
+			for key, value := range payload {
+				nativePayload[key] = value
+			}
+			nativePayload["protocol"] = "metaso"
+		}
+		return officialVideoRequestPayload(nativePayload)
+	}
+
+	model := protocol.CanonicalVideoModel(util.Clean(payload["model"]))
+	request := map[string]any{
+		"model":  model,
+		"prompt": payload["prompt"],
+	}
+	copyValue := func(target, source string) {
+		if value, ok := payload[source]; ok && value != nil && strings.TrimSpace(util.Clean(value)) != "" {
+			request[target] = value
+		}
+	}
+	copyValue("size", "size")
+	copyValue("seconds", "seconds")
+	// NewAPI's shared video contract consumes `resolution`. It removes the field
+	// at the official Sora boundary and maps or drops it only after the selected
+	// KIE/APIMart model contract is known.
+	copyValue("resolution", "resolution")
+	if resolution := util.Clean(payload["resolution"]); resolution != "" && strings.EqualFold(strings.TrimSpace(model), "bytedance/seedance-2-5") {
+		request["resolution"] = normalizeSeedance25VideoResolution(resolution)
+	}
+	copyValue("first_frame_url", "first_frame_url")
+	copyValue("last_frame_url", "last_frame_url")
+	imageReferences := util.AsStringSlice(payload["reference_image_urls"])
+	videoReferences := util.AsStringSlice(payload["reference_video_urls"])
+	audioReferences := util.AsStringSlice(payload["reference_audio_urls"])
+	if !isSora2Model(model) {
+		if len(imageReferences) > 0 {
+			request["input_reference[]"] = imageReferences
+		}
+		if len(videoReferences) > 0 {
+			request["video_reference[]"] = videoReferences
+		}
+		if len(audioReferences) > 0 {
+			request["audio_reference[]"] = audioReferences
+		}
+	}
+
+	if value, ok := payload["generate_audio"].(bool); ok {
+		request["generate_audio"] = value
+	} else if value, ok := payload["video_generate_audio"].(bool); ok {
+		request["generate_audio"] = value
+	}
+	if value, ok := payload["watermark"].(bool); ok {
+		request["watermark"] = value
+	}
+	for _, key := range []string{
+		"negative_prompt", "multi_shot", "shot_type", "multi_prompt",
+		"element_list", "character_orientation", "preset", "mode",
+	} {
+		if value, ok := payload[key]; ok && value != nil {
+			request[key] = value
+		}
+	}
+	if videoMode := strings.TrimSpace(util.Clean(payload["video_mode"])); videoMode != "" {
+		request["mode"] = videoMode
+	}
+
+	// OpenAI Sora consumes one compatibility reference. KIE and APIMart also
+	// recognize this alias and remap it only after their channel is selected.
+	if isSora2Model(model) {
+		frames := videoFrameAliases(payload)
+		if len(frames) > 0 {
+			request["input_reference"] = frames[0]
+		} else if len(imageReferences) > 0 {
+			request["input_reference"] = imageReferences[0]
+		}
+	}
+
+	deleteVideoInternalRequestFields(request)
+	return request
+}
+
+func videoUsesDedicatedRequestContract(payload map[string]any) bool {
+	switch videoProtocolHint(payload) {
+	case "kie", "apimart", "openai":
+		return false
+	case "gemini", "grok2api", "metaso":
+		return true
+	}
+	model := strings.TrimSpace(util.Clean(payload["model"]))
+	name := strings.ToLower(model)
+	return model == "MiniMax-H3" ||
+		isGrok2APIVideoModel(name) ||
+		strings.Contains(name, "cogvideox-3") || strings.Contains(name, "cogvideo-x3") ||
+		strings.Contains(name, "agnes-video") ||
+		strings.HasPrefix(name, "veo-")
+}
+
+// officialVideoRequestPayload maps official provider semantics onto a native
+// provider request. It is used only for dedicated protocols whose model name
+// or explicit protocol identifies the upstream before NewAPI channel routing.
 func officialVideoRequestPayload(payload map[string]any) map[string]any {
 	model := protocol.CanonicalVideoModel(util.Clean(payload["model"]))
 	name := strings.ToLower(model)
@@ -1320,13 +1514,57 @@ func officialVideoRequestPayload(payload map[string]any) map[string]any {
 		normalizeKIEVideoAspectRequest(request, name)
 	}
 	normalizeAPIMartVideoRequest(request, metadata, payload, name, seconds)
-	if len(adapterRefs) > 0 && referenceMode != "reference" && !isKIEVideoModelName(name) && adapter.name != "sora" && adapter.name != "veo" && adapter.name != "wan" && adapter.name != "vidu" && adapter.name != "jimeng" && adapter.name != "cogvideox" && adapter.name != "agnes" && adapter.name != "kling" && adapter.name != "gemini-omni" && adapter.name != "pixverse" && adapter.name != "skyreels" && adapter.name != "happyhorse" && adapter.name != "infinitalk" && adapter.name != "flux-3-video" && adapter.name != "seedance" && adapter.name != "bytedance-v1" && adapter.name != "minimax" {
+	// Only an unknown generic endpoint needs the compatibility upload alias.
+	// Every registered provider adapter owns its native reference fields; a
+	// hand-maintained exclusion list lets newly added adapters leak both shapes.
+	if len(adapterRefs) > 0 && referenceMode != "reference" && !isKIEVideoModelName(name) && adapter.name == "generic" {
 		request["input_reference"] = adapterRefs[0]
 	}
 	if len(metadata) > 0 {
 		request["metadata"] = metadata
 	}
+	deleteVideoInternalRequestFields(request)
+	if nested, ok := request["metadata"].(map[string]any); ok {
+		if len(nested) == 0 {
+			delete(request, "metadata")
+		}
+	}
 	return request
+}
+
+var videoInternalRequestFields = []string{
+	"generation_mode",
+	"reference_mode",
+	"provider",
+	"video_provider",
+	"channel_protocol",
+	"protocol",
+	"channel_base_url",
+	"provider_base_url",
+}
+
+func deleteVideoInternalRequestFields(request map[string]any) {
+	for _, field := range videoInternalRequestFields {
+		deleteVideoRequestField(request, field)
+	}
+}
+
+func deleteVideoRequestField(value any, field string) {
+	switch typed := value.(type) {
+	case map[string]any:
+		delete(typed, field)
+		for _, item := range typed {
+			deleteVideoRequestField(item, field)
+		}
+	case []any:
+		for _, item := range typed {
+			deleteVideoRequestField(item, field)
+		}
+	case []map[string]any:
+		for _, item := range typed {
+			deleteVideoRequestField(item, field)
+		}
+	}
 }
 
 // normalizeAPIMartVideoRequest removes compatibility-only fields after the
@@ -1378,9 +1616,9 @@ func normalizeAPIMartVideoRequest(request, metadata, payload map[string]any, mod
 
 	if name == "minimax-h3" {
 		// Generic APIMart normalization lower-cases video resolutions. H3 has a
-		// stricter enum and also requires one of its three generation modes, so
-		// make this the final provider-specific guard after aliases are removed.
-		normalizeMiniMaxH3Request(request, false)
+		// stricter enum. Keep APIMart's native `adaptive` aspect value intact;
+		// KIE uses a separate final guard that maps it to `auto`.
+		normalizeMiniMaxH3APIMartRequest(request)
 	}
 	if strings.HasPrefix(name, "sora-2") {
 		if resolution := strings.TrimSpace(util.Clean(request["resolution"])); resolution != "" {
@@ -1933,20 +2171,110 @@ func (a *App) downloadRelayVideo(ctx context.Context, videoURL, apiKey, owner, t
 }
 
 func videoResultURL(state map[string]any, baseURL, taskID string) string {
-	if metadata, ok := state["metadata"].(map[string]any); ok {
-		if value := util.Clean(metadata["url"]); value != "" {
-			return absoluteRelayURL(baseURL, value)
-		}
-		if value := util.Clean(metadata["video_url"]); value != "" {
-			return absoluteRelayURL(baseURL, value)
-		}
-	}
-	for _, key := range []string{"url", "video_url", "result_url", "content_url"} {
-		if value := util.Clean(state[key]); value != "" {
-			return absoluteRelayURL(baseURL, value)
-		}
+	if value := videoStateResultURL(state, 0); value != "" {
+		return absoluteRelayURL(baseURL, value)
 	}
 	return strings.TrimRight(baseURL, "/") + "/v1/videos/" + url.PathEscape(taskID) + "/content"
+}
+
+func videoRelayTaskStatus(state map[string]any) string {
+	status := videoStateStatus(state, 0)
+	if status == "" && videoStateResultURL(state, 0) != "" {
+		return "completed"
+	}
+	return status
+}
+
+func videoStateStatus(value any, depth int) string {
+	if depth > 7 || value == nil {
+		return ""
+	}
+	switch typed := value.(type) {
+	case map[string]any:
+		for _, key := range []string{"status", "state", "task_status", "taskStatus"} {
+			if status := normalizeVideoRelayStatus(util.Clean(typed[key])); status != "" {
+				return status
+			}
+		}
+		for _, key := range []string{"data", "task", "result", "output", "response", "metadata"} {
+			if status := videoStateStatus(typed[key], depth+1); status != "" {
+				return status
+			}
+		}
+	case []any:
+		for _, item := range typed {
+			if status := videoStateStatus(item, depth+1); status != "" {
+				return status
+			}
+		}
+	case string:
+		var decoded any
+		if json.Unmarshal([]byte(strings.TrimSpace(typed)), &decoded) == nil {
+			return videoStateStatus(decoded, depth+1)
+		}
+	}
+	return ""
+}
+
+func normalizeVideoRelayStatus(status string) string {
+	switch strings.ToLower(strings.TrimSpace(status)) {
+	case "completed", "complete", "done", "succeeded", "success":
+		return "completed"
+	case "failed", "fail", "error", "cancelled", "canceled":
+		return "failed"
+	case "submitted", "pending", "queued", "queue", "waiting", "queuing", "preparing", "processing", "running", "in_progress", "in-progress", "generating":
+		return "processing"
+	default:
+		return ""
+	}
+}
+
+func videoStateResultURL(value any, depth int) string {
+	if depth > 8 || value == nil {
+		return ""
+	}
+	switch typed := value.(type) {
+	case string:
+		text := strings.TrimSpace(typed)
+		if strings.HasPrefix(text, "http://") || strings.HasPrefix(text, "https://") || strings.HasPrefix(text, "data:") || strings.HasPrefix(text, "/") {
+			return text
+		}
+		var decoded any
+		if json.Unmarshal([]byte(text), &decoded) == nil {
+			return videoStateResultURL(decoded, depth+1)
+		}
+	case []any:
+		for _, item := range typed {
+			if result := videoStateResultURL(item, depth+1); result != "" {
+				return result
+			}
+		}
+	case []string:
+		for _, item := range typed {
+			if result := videoStateResultURL(item, depth+1); result != "" {
+				return result
+			}
+		}
+	case map[string]any:
+		for _, key := range []string{
+			"video_url", "videoUrl", "output_url", "outputUrl", "download_url", "downloadUrl",
+			"result_url", "resultUrl", "content_url", "contentUrl", "file_url", "fileUrl", "url", "uri",
+		} {
+			if result := videoStateResultURL(typed[key], depth+1); result != "" {
+				return result
+			}
+		}
+		for _, key := range []string{
+			"resultUrls", "result_urls", "videoUrls", "video_urls", "urls", "videos", "video",
+			"generatedVideos", "generatedSamples", "generateVideoResponse", "resultJson", "result_json",
+			"data", "result", "output", "content", "response", "metadata",
+		} {
+			if result := videoStateResultURL(typed[key], depth+1); result != "" {
+				return result
+			}
+		}
+	}
+	return ""
 }
 
 func absoluteRelayURL(baseURL, value string) string {
@@ -1964,21 +2292,55 @@ func videoUpstreamErrorMessage(state map[string]any) string {
 	if state == nil {
 		return ""
 	}
-	return firstNonEmpty(
-		relayErrorMessageFromValue(state["error"]),
-		relayErrorMessageFromValue(state["detail"]),
-		relayErrorMessageFromValue(state["message"]),
-		relayErrorMessageFromValue(state["last_error"]),
-		relayErrorMessageFromValue(state["failure_reason"]),
-	)
+	return videoStateErrorMessage(state, 0)
+}
+
+func videoStateErrorMessage(value any, depth int) string {
+	if depth > 7 || value == nil {
+		return ""
+	}
+	switch typed := value.(type) {
+	case map[string]any:
+		for _, key := range []string{"error", "detail", "last_error", "failure_reason", "failMsg", "fail_msg", "failCode", "fail_code", "reason"} {
+			if message := relayErrorMessageFromValue(typed[key]); message != "" {
+				return message
+			}
+		}
+		for _, key := range []string{"data", "task", "result", "output", "response", "metadata"} {
+			if message := videoStateErrorMessage(typed[key], depth+1); message != "" {
+				return message
+			}
+		}
+		for _, key := range []string{"message", "msg"} {
+			if message := relayErrorMessageFromValue(typed[key]); message != "" {
+				return message
+			}
+		}
+	case []any:
+		for _, item := range typed {
+			if message := videoStateErrorMessage(item, depth+1); message != "" {
+				return message
+			}
+		}
+	case string:
+		var decoded any
+		if json.Unmarshal([]byte(strings.TrimSpace(typed)), &decoded) == nil {
+			return videoStateErrorMessage(decoded, depth+1)
+		}
+	}
+	return ""
 }
 
 func (a *App) relayJSONStream(ctx context.Context, pathValue, apiKey string, payload map[string]any) (map[string]any, *protocol.StreamResult, error) {
+	return a.relayJSONStreamAt(ctx, a.relayBaseURL(), pathValue, apiKey, payload)
+}
+
+func (a *App) relayJSONStreamAt(ctx context.Context, baseURL, pathValue, apiKey string, payload map[string]any) (map[string]any, *protocol.StreamResult, error) {
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return nil, nil, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, a.relayBaseURL()+pathValue, bytes.NewReader(data))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(strings.TrimSpace(baseURL), "/")+pathValue, bytes.NewReader(data))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1993,7 +2355,11 @@ func (a *App) relayJSONStream(ctx context.Context, pathValue, apiKey string, pay
 }
 
 func (a *App) relayMultipart(ctx context.Context, pathValue, apiKey string, payload map[string]any, images []protocol.UploadedImage) (map[string]any, error) {
-	req, err := relayMultipartRequest(ctx, a.relayBaseURL(), pathValue, apiKey, payload, images)
+	return a.relayMultipartAt(ctx, a.relayBaseURL(), pathValue, apiKey, payload, images)
+}
+
+func (a *App) relayMultipartAt(ctx context.Context, baseURL, pathValue, apiKey string, payload map[string]any, images []protocol.UploadedImage) (map[string]any, error) {
+	req, err := relayMultipartRequest(ctx, baseURL, pathValue, apiKey, payload, images)
 	if err != nil {
 		return nil, err
 	}
@@ -2006,7 +2372,11 @@ func (a *App) relayMultipart(ctx context.Context, pathValue, apiKey string, payl
 }
 
 func (a *App) relayMultipartStream(ctx context.Context, pathValue, apiKey string, payload map[string]any, images []protocol.UploadedImage) (map[string]any, *protocol.StreamResult, error) {
-	req, err := relayMultipartRequest(ctx, a.relayBaseURL(), pathValue, apiKey, payload, images)
+	return a.relayMultipartStreamAt(ctx, a.relayBaseURL(), pathValue, apiKey, payload, images)
+}
+
+func (a *App) relayMultipartStreamAt(ctx context.Context, baseURL, pathValue, apiKey string, payload map[string]any, images []protocol.UploadedImage) (map[string]any, *protocol.StreamResult, error) {
+	req, err := relayMultipartRequest(ctx, baseURL, pathValue, apiKey, payload, images)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -3231,6 +3601,7 @@ func ceilToRelayImageMultiple(value float64, multiple int) int {
 func shouldDropRelayPayloadKey(key string) bool {
 	switch key {
 	case "api_key", "relay_api_key", "relayai_api_key", "upstream_api_key",
+		"relay_base_url",
 		"token_group", "newapi_token_group", "relay_token_group",
 		"token_name", "newapi_token_name", "relay_token_name",
 		"owner_id", "owner_name", "base_url", "visibility", "client_task_id",

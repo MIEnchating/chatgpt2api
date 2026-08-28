@@ -109,6 +109,8 @@ const ScrollArea = React.forwardRef<ScrollAreaHandle, ScrollAreaProps>(function 
   const reachedRef = React.useRef({ left: false, right: false, top: false, bottom: false });
   const previousScrollRef = React.useRef<ScrollPosition | null>(null);
   const scrollRef = React.useRef<ScrollPosition>({ scrollTop: 0, scrollLeft: 0 });
+  const scrollFrameRef = React.useRef<number | null>(null);
+  const hideTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
   const [metrics, setMetrics] = React.useState<ScrollMetrics>(EMPTY_METRICS);
   const metricsRef = React.useRef<ScrollMetrics>(EMPTY_METRICS);
   const [scroll, setScroll] = React.useState<ScrollPosition>({ scrollTop: 0, scrollLeft: 0 });
@@ -167,14 +169,36 @@ const ScrollArea = React.forwardRef<ScrollAreaHandle, ScrollAreaProps>(function 
   }, [children, measure, noresize]);
 
   const showScrollbar = React.useCallback(() => {
+    if (hideTimerRef.current) {
+      clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = null;
+    }
     if (effectiveAlways) return;
     setInteracting(true);
   }, [effectiveAlways]);
 
   const hideScrollbar = React.useCallback(() => {
+    if (hideTimerRef.current) {
+      clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = null;
+    }
     if (effectiveAlways || dragRef.current.active) return;
     setInteracting(false);
   }, [effectiveAlways]);
+
+  const scheduleScrollbarHide = React.useCallback(() => {
+    if (effectiveAlways || dragRef.current.active) return;
+    if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    hideTimerRef.current = setTimeout(() => {
+      hideTimerRef.current = null;
+      if (!dragRef.current.active) setInteracting(false);
+    }, 700);
+  }, [effectiveAlways]);
+
+  React.useEffect(() => () => {
+    if (scrollFrameRef.current !== null) cancelAnimationFrame(scrollFrameRef.current);
+    if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+  }, []);
 
   const handleMouseMove = React.useCallback(() => {
     showScrollbar();
@@ -193,53 +217,28 @@ const ScrollArea = React.forwardRef<ScrollAreaHandle, ScrollAreaProps>(function 
     scrollRef.current = position;
     const wrap = wrapRef.current;
     if (wrap) {
-      wrap.scrollTop = position.scrollTop;
-      wrap.scrollLeft = position.scrollLeft;
-    }
-    setScroll(position);
+      wrap.scrollTo({ top: position.scrollTop, left: position.scrollLeft, behavior: "auto" });
+    } else setScroll(position);
     if (reveal) showScrollbar();
   }, [metrics, showScrollbar]);
 
   React.useEffect(() => {
     const root = rootRef.current;
-    const wrap = wrapRef.current;
-    if (!root || !wrap) return;
+    if (!root) return;
     const handleNativeWheel = (event: WheelEvent) => {
-      // Keep wheel input inside the scroll area instead of letting canvas
-      // zoom consume it. Canvas uses touch-action:none and a non-passive wheel
-      // listener, so drive the native viewport directly in that context.
+      // Keep wheel input inside the scroll area instead of letting an
+      // enclosing canvas consume it for zooming or panning. The viewport
+      // itself remains browser-native so trackpads retain momentum scrolling.
       event.stopPropagation();
       showScrollbar();
+      scheduleScrollbarHide();
       onWheel?.(event as unknown as React.WheelEvent<HTMLDivElement>);
-      if (event.defaultPrevented || !root.closest("[data-canvas-export-root]")) return;
-
-      const deltaScale = event.deltaMode === WheelEvent.DOM_DELTA_LINE
-        ? 16
-        : event.deltaMode === WheelEvent.DOM_DELTA_PAGE
-          ? Math.max(1, wrap.clientHeight)
-          : 1;
-      let deltaX = event.deltaX * deltaScale;
-      let deltaY = event.deltaY * deltaScale;
-      if (event.shiftKey && deltaX === 0) {
-        deltaX = deltaY;
-        deltaY = 0;
-      }
-
-      const maxTop = Math.max(0, wrap.scrollHeight - wrap.clientHeight);
-      const maxLeft = Math.max(0, wrap.scrollWidth - wrap.clientWidth);
-      const nextTop = clamp(wrap.scrollTop + deltaY, maxTop);
-      const nextLeft = clamp(wrap.scrollLeft + deltaX, maxLeft);
-      if (nextTop === wrap.scrollTop && nextLeft === wrap.scrollLeft) return;
-
-      event.preventDefault();
-      wrap.scrollTop = nextTop;
-      wrap.scrollLeft = nextLeft;
     };
     // Listen on the root so wheel input over the custom thumb/track is owned
     // by the same viewport as wheel input over its content.
     root.addEventListener("wheel", handleNativeWheel, { passive: false });
     return () => root.removeEventListener("wheel", handleNativeWheel);
-  }, [onWheel, showScrollbar]);
+  }, [onWheel, scheduleScrollbarHide, showScrollbar]);
 
   const handleKeyDown = React.useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
     const page = Math.max(80, metrics.viewportHeight * 0.85);
@@ -256,9 +255,15 @@ const ScrollArea = React.forwardRef<ScrollAreaHandle, ScrollAreaProps>(function 
     const target = event.currentTarget;
     const next = { scrollTop: target.scrollTop, scrollLeft: target.scrollLeft };
     scrollRef.current = next;
-    setScroll(next);
+    if (scrollFrameRef.current === null) {
+      scrollFrameRef.current = requestAnimationFrame(() => {
+        scrollFrameRef.current = null;
+        setScroll({ ...scrollRef.current });
+      });
+    }
     showScrollbar();
-  }, [showScrollbar]);
+    scheduleScrollbarHide();
+  }, [scheduleScrollbarHide, showScrollbar]);
 
   React.useEffect(() => {
     const previous = previousScrollRef.current;
@@ -309,6 +314,7 @@ const ScrollArea = React.forwardRef<ScrollAreaHandle, ScrollAreaProps>(function 
 
   const moveThumbDrag = (event: React.PointerEvent<HTMLButtonElement>) => {
     if (!dragRef.current.active) return;
+    event.preventDefault();
     const axis = dragRef.current.axis;
     const delta = (axis === "y" ? event.clientY : event.clientX) - dragRef.current.start;
     const travel = axis === "y" ? verticalTravel : horizontalTravel;
@@ -320,18 +326,24 @@ const ScrollArea = React.forwardRef<ScrollAreaHandle, ScrollAreaProps>(function 
   const endThumbDrag = (event: React.PointerEvent<HTMLButtonElement>) => {
     dragRef.current.active = false;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-    hideScrollbar();
+    scheduleScrollbarHide();
   };
 
   const handleTrackPointerDown = (axis: "x" | "y", event: React.PointerEvent<HTMLDivElement>) => {
     if (event.target !== event.currentTarget) return;
+    event.preventDefault();
+    event.stopPropagation();
     const rect = event.currentTarget.getBoundingClientRect();
     if (axis === "y" && verticalOverflow && verticalTravel) {
-      const ratio = (event.clientY - rect.top - verticalThumbHeight / 2) / Math.max(1, rect.height - verticalThumbHeight);
-      updateScroll({ scrollTop: ratio * verticalOverflow });
+      const pointer = event.clientY - rect.top;
+      const direction = pointer < verticalThumbTop ? -1 : pointer > verticalThumbTop + verticalThumbHeight ? 1 : 0;
+      const pageStep = Math.max(40, metrics.viewportHeight * 0.9);
+      if (direction) updateScroll({ scrollTop: scrollRef.current.scrollTop + direction * pageStep });
     } else if (axis === "x" && horizontalOverflow && horizontalTravel) {
-      const ratio = (event.clientX - rect.left - horizontalThumbWidth / 2) / Math.max(1, rect.width - horizontalThumbWidth);
-      updateScroll({ scrollLeft: ratio * horizontalOverflow });
+      const pointer = event.clientX - rect.left;
+      const direction = pointer < horizontalThumbLeft ? -1 : pointer > horizontalThumbLeft + horizontalThumbWidth ? 1 : 0;
+      const pageStep = Math.max(40, metrics.viewportWidth * 0.9);
+      if (direction) updateScroll({ scrollLeft: scrollRef.current.scrollLeft + direction * pageStep });
     }
   };
 
@@ -394,13 +406,13 @@ const ScrollArea = React.forwardRef<ScrollAreaHandle, ScrollAreaProps>(function 
         </ViewTag>
       </ViewportTag>
       {!native && verticalOverflow > 0 ? (
-        <div className={cn("absolute inset-y-0 right-0 z-20 w-2", effectiveAlways || interacting ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0")} aria-hidden="true" onPointerDown={(event) => handleTrackPointerDown("y", event)}>
-          <button type="button" tabIndex={-1} className="pointer-events-auto absolute left-0.5 w-1.5 rounded-full bg-[#9297a2]/70 transition-colors hover:bg-[#737985] dark:bg-[#a2a8b4]/65 dark:hover:bg-[#c0c4cc]" style={{ height: verticalThumbHeight, top: verticalThumbTop }} onPointerDown={(event) => startThumbDrag("y", event)} onPointerMove={moveThumbDrag} onPointerUp={endThumbDrag} onPointerCancel={endThumbDrag} />
+        <div className={cn("absolute inset-y-0 right-0 z-20 w-3 touch-none select-none transition-opacity duration-150", effectiveAlways || interacting ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0")} aria-hidden="true" onPointerDown={(event) => handleTrackPointerDown("y", event)}>
+          <button type="button" tabIndex={-1} className="pointer-events-auto absolute left-1 w-1.5 touch-none select-none rounded-full bg-[#9297a2]/70 transition-colors hover:bg-[#737985] dark:bg-[#a2a8b4]/65 dark:hover:bg-[#c0c4cc]" style={{ height: verticalThumbHeight, top: 0, transform: `translate3d(0, ${verticalThumbTop}px, 0)` }} onPointerDown={(event) => startThumbDrag("y", event)} onPointerMove={moveThumbDrag} onPointerUp={endThumbDrag} onPointerCancel={endThumbDrag} />
         </div>
       ) : null}
       {!native && horizontalOverflow > 0 ? (
-        <div className={cn("absolute bottom-0 left-0 z-20 h-2 w-full", effectiveAlways || interacting ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0")} aria-hidden="true" onPointerDown={(event) => handleTrackPointerDown("x", event)}>
-          <button type="button" tabIndex={-1} className="pointer-events-auto absolute top-0.5 h-1.5 rounded-full bg-[#9297a2]/70 transition-colors hover:bg-[#737985] dark:bg-[#a2a8b4]/65 dark:hover:bg-[#c0c4cc]" style={{ width: horizontalThumbWidth, left: horizontalThumbLeft }} onPointerDown={(event) => startThumbDrag("x", event)} onPointerMove={moveThumbDrag} onPointerUp={endThumbDrag} onPointerCancel={endThumbDrag} />
+        <div className={cn("absolute bottom-0 left-0 z-20 h-3 w-full touch-none select-none transition-opacity duration-150", effectiveAlways || interacting ? "pointer-events-auto opacity-100" : "pointer-events-none opacity-0")} aria-hidden="true" onPointerDown={(event) => handleTrackPointerDown("x", event)}>
+          <button type="button" tabIndex={-1} className="pointer-events-auto absolute top-1 h-1.5 touch-none select-none rounded-full bg-[#9297a2]/70 transition-colors hover:bg-[#737985] dark:bg-[#a2a8b4]/65 dark:hover:bg-[#c0c4cc]" style={{ width: horizontalThumbWidth, left: 0, transform: `translate3d(${horizontalThumbLeft}px, 0, 0)` }} onPointerDown={(event) => startThumbDrag("x", event)} onPointerMove={moveThumbDrag} onPointerUp={endThumbDrag} onPointerCancel={endThumbDrag} />
         </div>
       ) : null}
     </div>

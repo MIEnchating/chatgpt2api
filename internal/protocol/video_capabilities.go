@@ -307,10 +307,7 @@ func VideoCapability(model string) VideoCapabilityProfile {
 		clearVideoReferences(&profile)
 	case name == "minimax-h3/image-to-video":
 		profile.Sizes, profile.DefaultSize = nil, ""
-		// KIE's MiniMax H3 image-to-video endpoint declares a single
-		// first_frame_url. Tail frames belong to the reference-to-video
-		// contract and must not leak into this endpoint.
-		profile.FirstFrameImageLimit = 1
+		profile.FirstFrameImageLimit = 2
 		profile.ReferenceMode = false
 		profile.References.Image = 0
 		profile.References.Video = 0

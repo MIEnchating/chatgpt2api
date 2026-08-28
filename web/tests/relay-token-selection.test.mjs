@@ -1,50 +1,41 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
-  getStoredRelayTokenName,
-  relayTokenNameStorageKey,
+  relayTokenNamesFromPreferences,
+  relayTokenPreferenceField,
   retainSelectedRelayTokenName,
-  storeRelayTokenName,
 } from "../src/lib/relay-token-selection.ts";
 
-function installLocalStorage(t) {
-  const values = new Map();
-  globalThis.window = {
-    localStorage: {
-      getItem: (key) => values.get(key) ?? null,
-      removeItem: (key) => values.delete(key),
-      setItem: (key, value) => values.set(key, String(value)),
-    },
-  };
-  t.after(() => {
-    delete globalThis.window;
+const relayTokenSelectionSource = await readFile(new URL("../src/lib/relay-token-selection.ts", import.meta.url), "utf8");
+const relayTokenPreferencesSource = await readFile(new URL("../src/lib/relay-token-preferences.tsx", import.meta.url), "utf8");
+
+test("relay token selections use account preferences instead of browser storage", () => {
+  assert.doesNotMatch(relayTokenSelectionSource, /localStorage|sessionStorage/);
+  assert.doesNotMatch(relayTokenPreferencesSource, /localStorage|sessionStorage/);
+  assert.match(relayTokenPreferencesSource, /updateRelayTokenPreferences/);
+});
+
+test("maps account relay token preferences by media kind", () => {
+  assert.deepEqual(relayTokenNamesFromPreferences({
+    default_text_relay_token_name: " text-key ",
+    default_image_relay_token_name: "image-key",
+    default_video_relay_token_name: "video-key",
+    default_audio_relay_token_name: "audio-key",
+  }), {
+    text: "text-key",
+    image: "image-key",
+    video: "video-key",
+    audio: "audio-key",
   });
-  return values;
-}
-
-test("scopes relay token selections by provider and user", () => {
-  const xiaoge = relayTokenNameStorageKey({ provider: "newapi", subjectId: "newapi:42" }, "image");
-  const anotherUser = relayTokenNameStorageKey({ provider: "newapi", subjectId: "newapi:84" }, "image");
-  assert.notEqual(xiaoge, anotherUser);
-  assert.equal(xiaoge, "chatgpt2api:profile_relay_token_name:v3:newapi%3Anewapi%3A42:image");
 });
 
-test("keeps image and video relay token selections separate", () => {
-  const identity = { provider: "newapi", subjectId: "newapi:42" };
-  assert.notEqual(
-    relayTokenNameStorageKey(identity, "image"),
-    relayTokenNameStorageKey(identity, "video"),
-  );
-});
-
-test("stores image and video selections independently", (t) => {
-  installLocalStorage(t);
-  const identity = { provider: "newapi", subjectId: "newapi:42" };
-  storeRelayTokenName(identity, "image", "image-key");
-  storeRelayTokenName(identity, "video", "video-key");
-  assert.equal(getStoredRelayTokenName(identity, "image"), "image-key");
-  assert.equal(getStoredRelayTokenName(identity, "video"), "video-key");
+test("maps each relay token kind to its account preference field", () => {
+  assert.equal(relayTokenPreferenceField("text"), "default_text_relay_token_name");
+  assert.equal(relayTokenPreferenceField("image"), "default_image_relay_token_name");
+  assert.equal(relayTokenPreferenceField("video"), "default_video_relay_token_name");
+  assert.equal(relayTokenPreferenceField("audio"), "default_audio_relay_token_name");
 });
 
 test("does not select the first relay token when the user has not chosen one", () => {

@@ -89,14 +89,14 @@ export default function AssetsPage() {
     if (!session) return;
     const controller = new AbortController();
     setVisibleLoading(true);
-    void fetchVisibleMyAssets(controller.signal)
+    void fetchVisibleMyAssets(scope, controller.signal)
       .then((items) => setVisibleRemoteAssets(items.filter((item) => item.owned !== true)))
       .catch((error) => {
         if (!controller.signal.aborted) toast.error(error instanceof Error ? `共享素材读取失败：${error.message}` : "共享素材读取失败");
       })
       .finally(() => { if (!controller.signal.aborted) setVisibleLoading(false); });
     return () => controller.abort();
-  }, [session]);
+  }, [scope, session]);
 
   const allAssets = useMemo(() => {
     return mergeAssetLibrary(assets, visibleRemoteAssets, managedAssets);
@@ -224,7 +224,7 @@ export default function AssetsPage() {
   };
 
   return (
-    <section className="flex h-full min-h-0 flex-col gap-5 overflow-hidden">
+    <section className="flex h-full min-h-0 flex-col gap-[var(--page-section-gap)] overflow-hidden">
       <PageHeader actions={<Button type="button" onClick={() => { setEditing(null); setFormOpen(true); }}><Plus />新增素材</Button>} />
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-background">
         <div className="shrink-0 border-b border-border px-5 py-3 sm:px-8">

@@ -36,19 +36,23 @@ test("asset filters and cards use the full content width", () => {
   assert.match(globalStylesSource, /\.selection-control\[data-state="checked"\]/);
 });
 
-test("prompt and workflow libraries use the shared four-column wide-screen grid", () => {
+test("prompt and workflow libraries keep dense wide-screen layouts", () => {
   assert.match(promptsSource, /data-prompt-library-grid/);
   assert.match(promptsSource, /grid-cols-1 items-stretch gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4/);
   assert.match(workflowsSource, /data-workflow-grid/);
-  assert.match(workflowsSource, /data-workflow-task-grid/);
+  assert.match(workflowsSource, /data-workflow-task-list/);
+  assert.match(workflowsSource, /<WorkflowTaskHistoryDialog/);
+  assert.match(workflowsSource, />任务记录</);
+  assert.doesNotMatch(workflowsSource, /<section aria-labelledby="workflow-task-title"/);
   assert.match(workflowsSource, /<article data-interaction="controls" className="interactive-card/);
-  assert.match(workflowsSource, /data-interaction="primary" className="interactive-card/);
-  assert.match(workflowsSource, /grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4/);
+  assert.match(workflowsSource, /grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4/);
+  assert.match(workflowsSource, /role="button"[\s\S]*?aria-label=\{`查看任务/);
+  assert.match(workflowsSource, /<WorkflowTaskDialog task=\{selectedTask\}/);
 });
 
 test("prompt filters match the reference category and tag taxonomy", () => {
   assert.match(promptsSource, /function promptFilterTags/);
-  assert.match(promptsSource, /SYSTEM_PROMPT_CATEGORY = \{ id: "system", label: "系统" \}/);
+  assert.doesNotMatch(promptsSource, /SYSTEM_PROMPT_CATEGORY|SYSTEM_PROMPT_SOURCE_ID/);
   assert.match(promptsSource, /localizedPrompt\.tags\.filter/);
   assert.match(promptsSource, /keywordFilteredPrompts/);
   assert.match(promptsSource, /promptMatchesKeyword\(getLocalizedPrompt\(prompt\), keyword\)/);

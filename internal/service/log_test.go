@@ -211,7 +211,7 @@ func TestLogServiceCleansOldLogs(t *testing.T) {
 	}
 }
 
-func TestLogServiceRetentionCleanerRunsImmediately(t *testing.T) {
+func TestLogServiceRetentionCleanerRunsAtConfiguredHour(t *testing.T) {
 	logs := NewLogService(newTestStorageBackend(t))
 	for _, item := range []map[string]any{
 		{"time": "2000-01-01 00:00:00", "type": "event", "summary": "旧调用", "detail": map[string]any{"status": "success"}},
@@ -224,7 +224,9 @@ func TestLogServiceRetentionCleanerRunsImmediately(t *testing.T) {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	logs.StartRetentionCleaner(ctx, func() int { return 1 }, time.Hour, nil)
+	logs.StartRetentionCleaner(ctx, func() LogRetentionSchedule {
+		return LogRetentionSchedule{Enabled: true, RetentionDays: 1, Hour: time.Now().Hour()}
+	}, time.Hour, nil)
 
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
@@ -235,4 +237,24 @@ func TestLogServiceRetentionCleanerRunsImmediately(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("retention cleaner did not remove old logs, remaining = %#v", logs.Search(LogQuery{Limit: 10}))
+}
+
+func TestLogServiceRetentionCleanerHonorsDisabledSchedule(t *testing.T) {
+	logs := NewLogService(newTestStorageBackend(t))
+	if err := logs.store.AppendLog(map[string]any{
+		"time": "2000-01-01 00:00:00", "type": "event", "summary": "旧调用", "detail": map[string]any{"status": "success"},
+	}); err != nil {
+		t.Fatalf("AppendLog() error = %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	logs.StartRetentionCleaner(ctx, func() LogRetentionSchedule {
+		return LogRetentionSchedule{Enabled: false, RetentionDays: 1, Hour: time.Now().Hour()}
+	}, 10*time.Millisecond, nil)
+	time.Sleep(30 * time.Millisecond)
+
+	if items := logs.Search(LogQuery{Limit: 10}); len(items) != 1 {
+		t.Fatalf("disabled retention cleaner removed logs, remaining = %#v", items)
+	}
 }

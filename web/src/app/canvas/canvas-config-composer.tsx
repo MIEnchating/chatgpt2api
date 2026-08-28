@@ -1,5 +1,6 @@
 import { FileText, Image as ImageIcon, Music2, Video, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 
 import { CANVAS_CONFIG_REFERENCE_PATTERN, canvasConfigInputLabel, canvasConfigUsesConnectedText, type CanvasConfigInput } from "@/app/canvas/canvas-config-inputs";
 import { ImageLightbox } from "@/components/image-lightbox";
@@ -22,11 +23,14 @@ export function CanvasConfigComposer({ node, inputs, children, promptTools, onCo
 }) {
   const editorRef = useRef<HTMLDivElement | null>(null);
   const composingRef = useRef(false);
+  const inputsRef = useRef(inputs);
+  const composerChangeRef = useRef(onComposerChange);
+  inputsRef.current = inputs;
+  composerChangeRef.current = onComposerChange;
   const value = node.composer_content ?? node.prompt ?? "";
-  const connectedTextInputs = useMemo(() => inputs.filter((input) => input.type === "text" && Boolean(input.text?.trim())), [inputs]);
+  const hasExplicitComposerContent = node.composer_content !== undefined;
+  const inputsSignature = JSON.stringify(inputs);
   const usesConnectedText = canvasConfigUsesConnectedText(inputs);
-  const tokens = useMemo(() => parseComposerTokens(value), [value]);
-  const inputByID = useMemo(() => new Map(inputs.map((input) => [input.nodeID, input])), [inputs]);
   const [mention, setMention] = useState<{ query: string } | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const [previewInput, setPreviewInput] = useState<CanvasConfigInput | null>(null);
@@ -40,10 +44,14 @@ export function CanvasConfigComposer({ node, inputs, children, promptTools, onCo
     if (document.activeElement === editorRef.current) return;
     const editor = editorRef.current;
     if (!editor) return;
+    const currentInputs = inputsRef.current;
+    const connectedTextInputs = currentInputs.filter((input) => input.type === "text" && Boolean(input.text?.trim()));
+    const inputByID = new Map(currentInputs.map((input) => [input.nodeID, input]));
+    const tokens = parseComposerTokens(value);
     editor.textContent = "";
-    if (node.composer_content === undefined && !tokens.length && connectedTextInputs.length) {
+    if (!hasExplicitComposerContent && !tokens.length && connectedTextInputs.length) {
       connectedTextInputs.forEach((input) => {
-        const chip = createReferenceChip(input, inputs, setPreviewInput, () => removeReferenceChip(chip, editor, onComposerChange));
+        const chip = createReferenceChip(input, currentInputs, setPreviewInput, () => removeReferenceChip(chip, editor, composerChangeRef.current));
         editor.append(chip, document.createTextNode(" "));
       });
       return;
@@ -55,11 +63,11 @@ export function CanvasConfigComposer({ node, inputs, children, promptTools, onCo
       }
       const input = inputByID.get(token.nodeID);
       if (input) {
-        const chip = createReferenceChip(input, inputs, setPreviewInput, () => removeReferenceChip(chip, editor, onComposerChange));
+        const chip = createReferenceChip(input, currentInputs, setPreviewInput, () => removeReferenceChip(chip, editor, composerChangeRef.current));
         editor.append(chip);
       }
     });
-  }, [connectedTextInputs, inputByID, inputs, node.composer_content, onComposerChange, tokens]);
+  }, [hasExplicitComposerContent, inputsSignature, value]);
 
   function closeMention() {
     setMention(null);
@@ -109,6 +117,7 @@ export function CanvasConfigComposer({ node, inputs, children, promptTools, onCo
   }
 
   const previewImages = previewInput?.url ? [{ id: previewInput.nodeID, src: previewInput.url, fileName: previewInput.title }] : [];
+  const composerEditor = editorRef.current;
 
   return (
     <div
@@ -125,9 +134,9 @@ export function CanvasConfigComposer({ node, inputs, children, promptTools, onCo
         </div>
         <Button variant="ghost" size="icon" className="size-7 shrink-0" aria-label="关闭提示词面板" onClick={onClose}><X className="size-3.5" /></Button>
       </div>
-      <div className="relative rounded-xl border border-border bg-background">
+      <div className="canvas-prompt-editor-resize relative h-28 rounded-xl border border-border bg-background">
           {!value.trim() && !usesConnectedText ? <div className="pointer-events-none absolute top-2 left-3 text-sm leading-7 text-muted-foreground">输入提示词，按 @ 引用连接的图片或文本</div> : null}
-          <ScrollArea className="max-h-56" viewportClassName="max-h-56" viewClass="min-h-28 w-full">
+          <ScrollArea className="h-full" viewportClassName="h-full" viewClass="w-full" viewStyle={{ minHeight: "100%" }}>
           <div
             ref={editorRef}
             contentEditable
@@ -189,8 +198,9 @@ export function CanvasConfigComposer({ node, inputs, children, promptTools, onCo
             }}
           />
           </ScrollArea>
-          {mention && candidates.length ? (
+          {mention && candidates.length && composerEditor ? (
             <ComposerMentionMenu
+              editor={composerEditor}
               inputs={candidates}
               allInputs={inputs}
               activeIndex={Math.min(activeIndex, candidates.length - 1)}
@@ -205,7 +215,8 @@ export function CanvasConfigComposer({ node, inputs, children, promptTools, onCo
   );
 }
 
-function ComposerMentionMenu({ inputs, allInputs, activeIndex, onSelect }: {
+function ComposerMentionMenu({ editor, inputs, allInputs, activeIndex, onSelect }: {
+  editor: HTMLDivElement;
   inputs: CanvasConfigInput[];
   allInputs: CanvasConfigInput[];
   activeIndex: number;
@@ -213,10 +224,35 @@ function ComposerMentionMenu({ inputs, allInputs, activeIndex, onSelect }: {
 }) {
   const selectedRef = useRef(false);
   const activeItemRef = useRef<HTMLButtonElement | null>(null);
+  const [position, setPosition] = useState<{ left: number; top: number; width: number } | null>(null);
 
   useEffect(() => {
     activeItemRef.current?.scrollIntoView({ block: "nearest" });
   }, [activeIndex, inputs]);
+
+  useLayoutEffect(() => {
+    function updatePosition() {
+      const anchor = composerCaretRect(editor);
+      const width = Math.min(288, Math.max(240, window.innerWidth - 16));
+      const estimatedHeight = 224;
+      const gap = 6;
+      const left = clamp(anchor.left, 8, window.innerWidth - width - 8);
+      const showAbove = anchor.bottom + gap + estimatedHeight > window.innerHeight && anchor.top - gap - estimatedHeight >= 8;
+      const top = clamp(showAbove ? anchor.top - gap - estimatedHeight : anchor.bottom + gap, 8, window.innerHeight - estimatedHeight - 8);
+      setPosition({ left, top, width });
+    }
+
+    updatePosition();
+    const resizeObserver = new ResizeObserver(updatePosition);
+    resizeObserver.observe(editor);
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [editor]);
 
   function select(input: CanvasConfigInput) {
     if (selectedRef.current) return;
@@ -224,15 +260,26 @@ function ComposerMentionMenu({ inputs, allInputs, activeIndex, onSelect }: {
     onSelect(input);
   }
 
-  return (
-    <ScrollArea className="absolute top-[calc(100%+6px)] left-2 z-[90] max-h-56 w-64 rounded-xl border border-border bg-popover text-popover-foreground shadow-2xl" viewportClassName="p-1">
+  if (!position) return null;
+
+  return createPortal(
+    <ScrollArea
+      data-canvas-config-mention-menu
+      className="fixed z-[140] max-h-56 rounded-xl border border-border bg-popover text-popover-foreground shadow-2xl"
+      viewportClassName="p-1"
+      style={position}
+      onPointerDown={(event) => event.stopPropagation()}
+      onMouseDown={(event) => event.stopPropagation()}
+      onClick={(event) => event.stopPropagation()}
+      onWheel={(event) => event.stopPropagation()}
+    >
       {inputs.map((input, index) => (
         <button
           key={input.nodeID}
           ref={index === activeIndex ? activeItemRef : undefined}
           type="button"
           className={cn("flex w-full min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 text-left text-xs", index === activeIndex && "bg-accent text-accent-foreground")}
-          onMouseDown={(event) => {
+          onPointerDown={(event) => {
             event.preventDefault();
             event.stopPropagation();
             select(input);
@@ -245,7 +292,8 @@ function ComposerMentionMenu({ inputs, allInputs, activeIndex, onSelect }: {
           </span>
         </button>
       ))}
-    </ScrollArea>
+    </ScrollArea>,
+    document.body,
   );
 }
 
@@ -274,13 +322,21 @@ function createReferenceChip(input: CanvasConfigInput, inputs: CanvasConfigInput
     const remove = document.createElement("button");
     remove.type = "button";
     remove.ariaLabel = `删除${canvasConfigInputLabel(input, inputs)}引用`;
-    remove.dataset.tooltip = "删除引用";
     remove.textContent = "×";
     remove.className = "ml-0.5 grid size-4 shrink-0 place-items-center rounded text-sm leading-none text-muted-foreground hover:bg-muted hover:text-foreground";
+    let removed = false;
+    const deleteReference = (event: Event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      if (removed) return;
+      removed = true;
+      onDelete();
+    };
+    remove.addEventListener("pointerdown", deleteReference);
     remove.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
-      onDelete();
+      if (!removed) deleteReference(event);
     });
     chip.append(remove);
   }
@@ -289,18 +345,46 @@ function createReferenceChip(input: CanvasConfigInput, inputs: CanvasConfigInput
     chip.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopPropagation();
+      if (event.target instanceof Element && event.target.closest("button")) return;
       onPreview(input);
     });
   }
   return chip;
 }
 
-function removeReferenceChip(chip: HTMLElement, editor: HTMLElement, onChange: (value: string) => void) {
+function removeReferenceChip(chip: HTMLElement, editor: HTMLElement, onChange: (value: string, commit?: boolean) => void) {
   const next = chip.nextSibling;
   if (next?.nodeType === Node.TEXT_NODE && next.textContent?.startsWith(" ")) next.textContent = next.textContent.slice(1);
   chip.remove();
-  onChange(serializeEditor(editor));
+  onChange(serializeEditor(editor), true);
   placeCaretAtEnd(editor);
+}
+
+function composerCaretRect(editor: HTMLElement) {
+  const selection = window.getSelection();
+  if (selection?.rangeCount) {
+    const range = selection.getRangeAt(0);
+    const anchorNode = range.startContainer;
+    if (editor === anchorNode || editor.contains(anchorNode)) {
+      const collapsed = range.cloneRange();
+      collapsed.collapse(true);
+      const rect = Array.from(collapsed.getClientRects()).at(-1) || collapsed.getBoundingClientRect();
+      if (rect && (rect.width || rect.height || rect.top || rect.left)) {
+        return {
+          bottom: rect.bottom || rect.top + 28,
+          left: rect.left,
+          top: rect.top,
+        };
+      }
+    }
+  }
+  const rect = editor.getBoundingClientRect();
+  return { bottom: rect.top + 40, left: rect.left + 12, top: rect.top + 12 };
+}
+
+function clamp(value: number, minimum: number, maximum: number) {
+  if (maximum < minimum) return minimum;
+  return Math.min(Math.max(value, minimum), maximum);
 }
 
 function serializeEditor(editor: HTMLElement) {

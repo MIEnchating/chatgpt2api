@@ -45,8 +45,8 @@ export default function LoginPage() {
   const themeToggleRef = useRef<HTMLButtonElement | null>(null);
   const rememberedLogin = useRef(getRememberedLogin()).current;
   const [username, setUsername] = useState(rememberedLogin?.username || "");
-  const [password, setPassword] = useState(rememberedLogin?.password || "");
-  const [rememberPassword, setRememberPassword] = useState(Boolean(rememberedLogin));
+  const [password, setPassword] = useState("");
+  const [rememberAccount, setRememberAccount] = useState(Boolean(rememberedLogin));
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [theme, setTheme] = useState<ColorTheme>(() => getPreferredColorTheme());
   const { isCheckingAuth } = useRedirectIfAuthenticated();
@@ -72,8 +72,8 @@ export default function LoginPage() {
     setIsSubmitting(true);
     try {
       const data = await login(normalizedUsername, password);
-      if (rememberPassword) {
-        saveRememberedLogin({ username: normalizedUsername, password });
+      if (rememberAccount) {
+        saveRememberedLogin({ username: normalizedUsername });
       } else {
         clearRememberedLogin();
       }
@@ -211,17 +211,17 @@ export default function LoginPage() {
 
               <label className="flex w-fit cursor-pointer items-center gap-2 text-sm text-[#45515e] dark:text-white/68">
                 <Checkbox
-                  checked={rememberPassword}
+                  checked={rememberAccount}
                   onCheckedChange={(checked) => {
                     const nextChecked = checked === true;
-                    setRememberPassword(nextChecked);
+                    setRememberAccount(nextChecked);
                     if (!nextChecked) {
                       clearRememberedLogin();
                     }
                   }}
-                  aria-label="记住密码"
+                  aria-label="记住账号"
                 />
-                <span>记住密码</span>
+                <span>记住账号</span>
               </label>
 
               <div className="flex flex-col gap-3 pt-1">

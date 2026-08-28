@@ -56,6 +56,7 @@ import { canvasVideoDisplaySize, canvasVideoFileError } from "@/app/canvas/canva
 import { ImageParameterLabel } from "@/app/image/components/image-parameter-ui";
 import { IMAGE_ASPECT_RATIO_OPTIONS, IMAGE_ASPECT_RATIO_PRESET_OPTIONS, IMAGE_QUALITY_OPTIONS } from "@/app/image/image-options";
 import { CanvasResourceMentionTextarea } from "@/app/canvas/canvas-resource-mention-textarea";
+import { CanvasPromptScrollFrame } from "@/app/canvas/canvas-prompt-scroll-frame";
 import { CanvasAudioPromptPanel, CanvasAudioSettingsFields, CanvasPanoramaPromptPanel, CanvasPanoramaViewer } from "@/app/canvas/canvas-special-nodes";
 import { canvasNodeMentionReferences, type CanvasResourceReference } from "@/app/canvas/canvas-resources";
 import { ImageLightbox } from "@/components/image-lightbox";
@@ -76,15 +77,16 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { cancelCreationTask, createAudioGenerationTask, createChatGenerationTask, createImageEditTask, createImageGenerationTask, createVideoGenerationTask, DEFAULT_IMAGE_MODEL, fetchCreationTasks, fetchManagedImages, fetchModelConfig, imageReferenceImageLimit, PROFILE_RELAY_TOKEN_NAME_CHANGED_EVENT, supportsImageEditing, supportsImageOutputControls, supportsImageQualityValue, supportsImageResolution, supportsImageStreaming, supportsStructuredImageParameters, uploadAudioReference, uploadVideoImageReference, uploadVideoReference, type CreationTask, type CreationTaskMessage, type ImageModel, type ManagedImage } from "@/lib/api";
+import { cancelCreationTask, createAudioGenerationTask, createChatGenerationTask, createImageEditTask, createImageGenerationTask, createVideoGenerationTask, DEFAULT_IMAGE_MODEL, fetchCreationTasks, fetchManagedImages, fetchModelConfig, imageReferenceImageLimit, supportsImageEditing, supportsImageOutputControls, supportsImageQualityValue, supportsImageResolution, supportsImageStreaming, supportsStructuredImageParameters, uploadAudioReference, uploadVideoImageReference, uploadVideoReference, type CreationTask, type CreationTaskMessage, type ImageModel, type ManagedImage } from "@/lib/api";
 import { fetchAuthenticatedImageBlob, primeAuthenticatedImageCache } from "@/lib/authenticated-image";
 import { imageConversationReferenceLimitMessage } from "@/lib/image-conversation-assets";
 import { isPublicReferenceURL } from "@/lib/public-reference-url";
-import { getStoredRelayTokenName, relayTokenNameStorageKey, type RelayTokenKind } from "@/lib/relay-token-selection";
-import { createMyAsset, fetchMyAssets, loadMyAssets, mergeMyAssets, saveMyAssets, syncMyAssets } from "@/lib/my-assets";
+import { useRelayTokenPreferences } from "@/lib/use-relay-token-preferences";
+import { createMyAsset, fetchMyAssets, syncMyAssets } from "@/lib/my-assets";
 import { cn } from "@/lib/utils";
 import { COLOR_THEME_CHANGE_EVENT, getPreferredColorTheme, type ColorTheme } from "@/lib/theme";
 import { useImageGenerationPreferences } from "@/lib/use-image-generation-preferences";
+import { syncCanvasTaskQueue } from "@/store/canvas-task-queue";
 import { DEFAULT_VIDEO_MODEL, supportsKlingElements, supportsVideoFrameReferences, supportsVideoMultimodalReferences, videoAllowsCustomDimensions, videoAllowsCustomResolution, videoAudioControl, videoDefaultResolution, videoDefaultSeconds, videoDefaultSize, videoMultimodalReferenceLimits, videoRequiresReferenceImage, videoResolutionOptions, videoSecondsIsValid, videoSizeLabel, videoSizeOptions, videoWorkbenchResolutionForModelSize, videoWorkbenchResolutionOptions, videoWorkbenchSecondsOptions, videoWorkbenchSizeForModelResolution } from "@/lib/video-model-capabilities";
 import { normalizeVideoRequest } from "@/lib/video-request-normalizer";
 import { normalizeVideoMultiPrompts } from "@/lib/video-kling-workbench";
@@ -126,6 +128,12 @@ type PendingPanoramaImport = {
   position: { x: number; y: number };
 };
 type CanvasGenerationOptions = { resultTitle?: string; generationModel?: string; referenceImageDataURLs?: string[]; forceImageGeneration?: boolean; resultBounds?: { width: number; height: number }; resultCount?: number; selectResultNode?: boolean; concurrent?: boolean };
+type CanvasActiveGeneration = {
+  controller: AbortController;
+  nodeIDs: Set<string>;
+  taskIDs: Set<string>;
+  submittedTaskIDs: Set<string>;
+};
 const DEFAULT_AGENT_PANEL = { open: false, width: 390 };
 const DEFAULT_DOCUMENT: CanvasDocument = { version: 1, id: "", revision: 0, title: "我的画布", background: "dots", show_image_info: false, nodes: [], connections: [], agent_panel: DEFAULT_AGENT_PANEL, viewport: { zoom: 1, x: 0, y: 0 } };
 const MAX_HISTORY = 50;
@@ -611,10 +619,12 @@ function CanvasVideoPromptPanel({ node, inputs, running, generationBusy, uploadi
   }
 	return <div className="flex h-full min-h-0 flex-col gap-4">
 			  {showPromptEditor ? <div className="overflow-hidden rounded-xl border border-border/90 bg-card/96 shadow-[0_14px_38px_rgba(15,23,42,.14)] backdrop-blur-xl transition-[border-color,box-shadow] focus-within:border-[#8eacf0] focus-within:shadow-[0_14px_38px_rgba(15,23,42,.13),0_0_0_2px_rgba(20,86,240,.07)]">
-			    <textarea value={prompt} onChange={(event) => { setPrompt(event.target.value); onPromptChange(event.target.value); }} onBlur={(event) => onPromptChange(event.target.value, true)} placeholder="描述你想生成的视频" className="h-20 w-full resize-none border-0 bg-transparent px-3.5 py-3 text-sm leading-5 outline-none placeholder:text-muted-foreground/55 focus:ring-0" />
+			    <CanvasPromptScrollFrame className="h-20 min-h-20">
+			      <textarea value={prompt} onChange={(event) => { setPrompt(event.target.value); onPromptChange(event.target.value); }} onBlur={(event) => onPromptChange(event.target.value, true)} placeholder="描述你想生成的视频" className="min-h-full w-full resize-none overflow-hidden border-0 bg-transparent px-3.5 py-3 text-sm leading-5 outline-none placeholder:text-muted-foreground/55 focus:ring-0" />
+			    </CanvasPromptScrollFrame>
         <div className="flex min-w-0 items-center justify-between gap-2 border-t border-border/60 px-1.5 py-1"><CanvasInlineModelSelect value={params.generation_video_model} models={modelOptions} label="视频模型" onChange={(model) => onParametersChange(canvasVideoModelPatch(model))} /><CanvasPromptLibrary onSelect={(value) => { setPrompt(value); onPromptChange(value, true); }} /></div>
 			  </div> : null}
-	  <AppScrollArea className="h-0 flex-1" viewportClassName="pr-3">
+	  <AppScrollArea className="h-0 min-h-40 flex-1" viewportClassName="pr-3">
 	   <div className="space-y-4">
 		    <div className="flex items-center justify-between gap-3">
 		      <h3 className="text-xs font-semibold text-foreground">生成参数</h3>
@@ -722,13 +732,15 @@ function CanvasTextContentPanel({ node, onContentChange, onFontSizeChange }: {
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
       <div className="overflow-hidden rounded-xl border border-border/90 bg-card/96 shadow-[0_14px_38px_rgba(15,23,42,.14)] backdrop-blur-xl transition-[border-color,box-shadow] focus-within:border-[#8eacf0] focus-within:shadow-[0_14px_38px_rgba(15,23,42,.13),0_0_0_2px_rgba(20,86,240,.07)]">
-        <Textarea
-          value={content}
-          onChange={(event) => updateContent(event.target.value)}
-          onBlur={(event) => updateContent(event.target.value, true)}
-          placeholder="输入文字内容"
-          className="h-48 resize-none border-0 bg-transparent px-3.5 py-3 text-sm leading-6 shadow-none outline-none placeholder:text-muted-foreground/55 focus-visible:ring-0"
-        />
+        <CanvasPromptScrollFrame className="h-48 min-h-32">
+          <Textarea
+            value={content}
+            onChange={(event) => updateContent(event.target.value)}
+            onBlur={(event) => updateContent(event.target.value, true)}
+            placeholder="输入文字内容"
+            className="min-h-full resize-none overflow-hidden border-0 bg-transparent px-3.5 py-3 text-sm leading-6 shadow-none outline-none placeholder:text-muted-foreground/55 focus-visible:ring-0"
+          />
+        </CanvasPromptScrollFrame>
         <div className="flex min-w-0 items-center justify-between gap-2 border-t border-border/60 px-1.5 py-1">
           <span className="px-2 text-[11px] tabular-nums text-muted-foreground">{content.length} 字</span>
           <CanvasPromptLibrary onSelect={(value) => updateContent(value, true)} />
@@ -786,19 +798,21 @@ function CanvasNodePromptPanel({ node, mentionReferences, running, generationBus
   return (
     <div className="flex h-full min-h-0 flex-col gap-4">
       <div className="overflow-hidden rounded-xl border border-border/90 bg-card/96 shadow-[0_14px_38px_rgba(15,23,42,.14)] backdrop-blur-xl transition-[border-color,box-shadow] focus-within:border-[#8eacf0] focus-within:shadow-[0_14px_38px_rgba(15,23,42,.13),0_0_0_2px_rgba(20,86,240,.07)]">
-        <CanvasResourceMentionTextarea
-          value={prompt}
-          references={mentionReferences}
-          onChange={updatePrompt}
-          onSubmit={submit}
-          onBlur={(event) => { if (!editingExistingImage) onPromptChange(event.target.value, true); }}
-          placeholder={editingExistingImage ? "请输入你想要把这张图修改成什么" : "描述要生成的图片内容"}
-          containerClassName="h-20"
-          className="h-20 resize-none border-0 bg-transparent px-3.5 py-3 text-sm leading-5 shadow-none outline-none placeholder:text-muted-foreground/55"
-        />
+        <CanvasPromptScrollFrame className="h-20 min-h-20">
+          <CanvasResourceMentionTextarea
+            value={prompt}
+            references={mentionReferences}
+            onChange={updatePrompt}
+            onSubmit={submit}
+            onBlur={(event) => { if (!editingExistingImage) onPromptChange(event.target.value, true); }}
+            placeholder={editingExistingImage ? "请输入你想要把这张图修改成什么" : "描述要生成的图片内容"}
+            containerClassName="min-h-full"
+            className="min-h-full resize-none overflow-hidden border-0 bg-transparent px-3.5 py-3 text-sm leading-5 shadow-none outline-none placeholder:text-muted-foreground/55"
+          />
+        </CanvasPromptScrollFrame>
         <div className="flex min-w-0 items-center justify-between gap-2 border-t border-border/60 px-1.5 py-1"><CanvasInlineModelSelect value={node.generation_model?.trim() || imageModel} models={imageModels} label="图片模型" onChange={(generation_model) => onParametersChange({ generation_model })} /><CanvasPromptLibrary onSelect={updatePrompt} /></div>
       </div>
-      <AppScrollArea className="h-0 flex-1" viewportClassName="pr-3">
+      <AppScrollArea className="h-0 min-h-40 flex-1" viewportClassName="pr-3">
         <div className="space-y-3">
           <CanvasImageParameterPopover node={node} imageModel={imageModel} imageModels={imageModels} onChange={onParametersChange} expanded showModel={false} />
           <CanvasCameraControl value={node.camera_control} onChange={(camera_control) => onParametersChange({ camera_control })} className="w-full" />
@@ -845,6 +859,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
   const uploadPositionRef = useRef<{ x: number; y: number } | null>(null);
   const cancelledTaskIDsRef = useRef(new Set<string>());
   const generationAbortControllerRef = useRef<AbortController | null>(null);
+  const activeGenerationsRef = useRef(new Map<string, CanvasActiveGeneration>());
   const canvasRecoveryAbortControllerRef = useRef<AbortController | null>(null);
   const generationEpochRef = useRef(0);
   const canvasOperationEpochRef = useRef(0);
@@ -891,10 +906,12 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
   const [contextMenu, setContextMenu] = useState<CanvasContextMenu | null>(null);
   const [runningNodeID, setRunningNodeID] = useState("");
   const [runningResultNodeID, setRunningResultNodeID] = useState("");
-  const [runningControlNodeID, setRunningControlNodeID] = useState("");
+  const [, setRunningControlNodeID] = useState("");
   const [runningTaskID, setRunningTaskID] = useState("");
-  const [cancellingTaskID, setCancellingTaskID] = useState("");
-  const [stopConfirmationOpen, setStopConfirmationOpen] = useState(false);
+  const [, setCancellingTaskID] = useState("");
+  const [activeGenerationNodeIDs, setActiveGenerationNodeIDs] = useState(new Set<string>());
+  const [cancellingGenerationNodeIDs, setCancellingGenerationNodeIDs] = useState(new Set<string>());
+  const [stopTargetNodeID, setStopTargetNodeID] = useState("");
   const [clearConfirmationOpen, setClearConfirmationOpen] = useState(false);
   const [pendingPanoramaImport, setPendingPanoramaImport] = useState<PendingPanoramaImport | null>(null);
   const [imageTool, setImageTool] = useState<CanvasImageToolState | null>(null);
@@ -911,14 +928,11 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
   const [videoModels, setVideoModels] = useState([DEFAULT_VIDEO_MODEL]);
   const [audioModel, setAudioModel] = useState("gpt-4o-mini-tts");
   const [audioModels, setAudioModels] = useState(["gpt-4o-mini-tts"]);
-  const imageRelayTokenStorageKey = relayTokenNameStorageKey(session, "image");
-  const videoRelayTokenStorageKey = relayTokenNameStorageKey(session, "video");
-  const audioRelayTokenStorageKey = relayTokenNameStorageKey(session, "audio");
-  const textRelayTokenStorageKey = relayTokenNameStorageKey(session, "text");
-  const [imageRelayTokenName, setImageRelayTokenName] = useState(() => getStoredRelayTokenName(session, "image"));
-  const [videoRelayTokenName, setVideoRelayTokenName] = useState(() => getStoredRelayTokenName(session, "video"));
-  const [audioRelayTokenName, setAudioRelayTokenName] = useState(() => getStoredRelayTokenName(session, "audio"));
-  const [textRelayTokenName, setTextRelayTokenName] = useState(() => getStoredRelayTokenName(session, "text"));
+  const { tokenNames: relayTokenNames } = useRelayTokenPreferences();
+  const imageRelayTokenName = relayTokenNames.image;
+  const videoRelayTokenName = relayTokenNames.video;
+  const audioRelayTokenName = relayTokenNames.audio;
+  const textRelayTokenName = relayTokenNames.text;
   const [relayTokenDialogKind, setRelayTokenDialogKind] = useState<RelayTokenCreationKind | null>(null);
   const [, setSaveState] = useState<SaveState>("saved");
   const [switchPhase, setSwitchPhase] = useState<CanvasSwitchPhase>(null);
@@ -941,12 +955,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
   }, []);
 
   const preferredCanvasImageParameters = useCallback((): Partial<CanvasNode> => ({
-    ...defaultCanvasImageParameters(),
-    generation_count: imageGenerationPreferences.canvas_default_image_count,
-    generation_stream: imageGenerationPreferences.stream,
-    generation_partial_images: imageGenerationPreferences.partial_images,
-    generation_response_format_b64_json: imageGenerationPreferences.response_format_b64_json,
-    generation_codex_cli_compatibility: imageGenerationPreferences.codex_cli_compatibility,
+    ...defaultCanvasImageParameters(imageGenerationPreferences),
   }), [imageGenerationPreferences]);
 
   function preferredCanvasAudioParameters(model = audioModel): Partial<CanvasNode> {
@@ -956,7 +965,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     };
   }
 
-  const defaultAgentImageParameters = defaultCanvasImageParameters();
+  const defaultAgentImageParameters = defaultCanvasImageParameters(imageGenerationPreferences);
   const defaultAgentVideoParameters = canvasVideoParameters({ generation_video_model: videoModel } as CanvasNode);
   const agentImageQualityValues = ["", ...IMAGE_QUALITY_OPTIONS.map((option) => option.value)];
   const agentImageSizeValues = Array.from(new Set([
@@ -1078,6 +1087,51 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
   function replaceNodes(next: CanvasNode[]) {
     nodesRef.current = next;
     setNodesState(next);
+    syncCanvasTaskQueue(documentRef.current.id, titleRef.current, next);
+  }
+
+  function registerActiveGeneration(controller: AbortController, nodeIDs: Iterable<string>, taskIDs: Iterable<string> = []) {
+    const generation: CanvasActiveGeneration = {
+      controller,
+      nodeIDs: new Set([...nodeIDs].filter(Boolean)),
+      taskIDs: new Set([...taskIDs].filter(Boolean)),
+      submittedTaskIDs: new Set(),
+    };
+    generation.nodeIDs.forEach((nodeID) => activeGenerationsRef.current.set(nodeID, generation));
+    setActiveGenerationNodeIDs((current) => new Set([...current, ...generation.nodeIDs]));
+    return generation;
+  }
+
+  function addActiveGenerationTask(generation: CanvasActiveGeneration, taskID: string, previousTaskID = "") {
+    if (previousTaskID && previousTaskID !== taskID) generation.taskIDs.delete(previousTaskID);
+    if (taskID) {
+      generation.taskIDs.add(taskID);
+      generation.submittedTaskIDs.add(taskID);
+    }
+  }
+
+  function releaseActiveGeneration(generation: CanvasActiveGeneration) {
+    generation.nodeIDs.forEach((nodeID) => {
+      if (activeGenerationsRef.current.get(nodeID) === generation) activeGenerationsRef.current.delete(nodeID);
+    });
+    setActiveGenerationNodeIDs((current) => new Set([...current].filter((nodeID) => activeGenerationsRef.current.has(nodeID))));
+    setCancellingGenerationNodeIDs((current) => new Set([...current].filter((nodeID) => activeGenerationsRef.current.has(nodeID))));
+  }
+
+  function interruptGenerationRecords(records: Iterable<CanvasActiveGeneration>, notifyServer = true) {
+    const uniqueRecords = new Set(records);
+    uniqueRecords.forEach((generation) => {
+      generation.controller.abort();
+      generation.taskIDs.forEach((taskID) => cancelledTaskIDsRef.current.add(taskID));
+      if (notifyServer) generation.submittedTaskIDs.forEach((taskID) => {
+        void cancelCreationTask(taskID).catch((error) => toast.error(error instanceof Error ? `本地已停止，服务端停止失败：${error.message}` : "本地已停止，服务端停止失败"));
+      });
+      releaseActiveGeneration(generation);
+    });
+  }
+
+  function nodeGenerationRunning(nodeID: string) {
+    return activeGenerationNodeIDs.has(nodeID);
   }
 
   function replaceConnections(next: CanvasConnection[]) {
@@ -2367,6 +2421,11 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       documentRef.current = { ...documentRef.current, agent_sessions: next };
       return next;
     });
+    const removedGenerations = new Set([...removedIDs].flatMap((nodeID) => {
+      const generation = activeGenerationsRef.current.get(nodeID);
+      return generation ? [generation] : [];
+    }));
+    interruptGenerationRecords(removedGenerations);
     const generationHistoryBase = removedIDs.has(runningNodeID) || removedIDs.has(runningResultNodeID)
       ? interruptActiveGeneration()
       : null;
@@ -2459,12 +2518,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     const url = node.url?.trim() || "";
     if (kind === "text" ? !content : !url) return toast.error("当前节点没有可保存的内容");
     try {
-      let assets = loadMyAssets(session.key);
-      try {
-        assets = mergeMyAssets(await fetchMyAssets(), assets);
-      } catch {
-        // Keep local asset saving available during a temporary sync outage.
-      }
+      const assets = await fetchMyAssets(session.key);
       const duplicate = assets.some((asset) => asset.kind === kind && (kind === "text" ? asset.content === content : asset.url === url));
       if (duplicate) return toast.info("该内容已在我的素材中");
       const asset = createMyAsset({
@@ -2482,13 +2536,8 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         metadata: { projectId: documentRef.current.id, nodeId: node.id, nodeType: node.type, prompt: node.prompt || "" },
       });
       const next = [asset, ...assets];
-      saveMyAssets(session.key, next);
-      try {
-        saveMyAssets(session.key, await syncMyAssets(next));
-        toast.success("已保存到我的素材");
-      } catch (error) {
-        toast.error(error instanceof Error ? `已保存到本地，云端同步失败：${error.message}` : "已保存到本地，云端同步失败");
-      }
+      await syncMyAssets(session.key, next);
+      toast.success("已保存到我的素材");
     } catch (error) {
       toast.error(error instanceof Error ? `保存素材失败：${error.message}` : "保存素材失败");
     }
@@ -2944,9 +2993,11 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
   }
 
   function interruptActiveGeneration() {
-    if (!generationAbortControllerRef.current && !runningNodeID) return null;
+    const activeRecords = new Set(activeGenerationsRef.current.values());
+    if (!generationAbortControllerRef.current && !runningNodeID && !activeRecords.size) return null;
     const generationHistoryBase = generationHistoryBaseRef.current;
     generationHistoryBaseRef.current = null;
+    interruptGenerationRecords(activeRecords);
     const serverTaskID = submittedTaskIDRef.current || runningTaskID;
     const serverTaskIDs = new Set([...submittedTaskIDsRef.current, ...(serverTaskID ? [serverTaskID] : [])]);
     const taskID = serverTaskID || pendingTaskIDRef.current;
@@ -2958,7 +3009,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     submittedTaskIDRef.current = "";
     submittedTaskIDsRef.current.clear();
     replaceNodes(restoreInterruptedCanvasGenerations(nodesRef.current));
-    setStopConfirmationOpen(false);
+    setStopTargetNodeID("");
     setRunningNodeID("");
     setRunningResultNodeID("");
     setRunningControlNodeID("");
@@ -3126,37 +3177,36 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     }));
   }
 
-  async function stopGeneration() {
-    if (!runningNodeID || cancellingTaskID) return;
-    const serverTaskID = submittedTaskIDRef.current || runningTaskID;
-    const serverTaskIDs = new Set([...submittedTaskIDsRef.current, ...(serverTaskID ? [serverTaskID] : [])]);
-    const taskID = serverTaskID || pendingTaskIDRef.current;
-    serverTaskIDs.forEach((submittedID) => cancelledTaskIDsRef.current.add(submittedID));
-    if (taskID) cancelledTaskIDsRef.current.add(taskID);
-    setCancellingTaskID(taskID || "pending");
-    generationAbortControllerRef.current?.abort();
+  async function stopGeneration(nodeID: string) {
+    const generation = activeGenerationsRef.current.get(nodeID);
+    if (!generation || cancellingGenerationNodeIDs.has(nodeID)) return;
+    generation.taskIDs.forEach((taskID) => cancelledTaskIDsRef.current.add(taskID));
+    setCancellingGenerationNodeIDs((current) => new Set([...current, ...generation.nodeIDs]));
+    generation.controller.abort();
     try {
-      await Promise.all([...serverTaskIDs].map((submittedID) => cancelCreationTask(submittedID)));
+      await Promise.all([...generation.submittedTaskIDs].map((taskID) => cancelCreationTask(taskID)));
       toast.success("已停止生成");
     } catch (error) {
-      if (mountedRef.current) setCancellingTaskID("");
       toast.error(error instanceof Error ? `本地已停止，服务端停止失败：${error.message}` : "本地已停止，服务端停止失败");
+    } finally {
+      releaseActiveGeneration(generation);
     }
   }
 
-  function requestStopGeneration() {
-    if (!runningNodeID || cancellingTaskID) return;
-    setStopConfirmationOpen(true);
+  function requestStopGeneration(nodeID: string) {
+    if (!activeGenerationsRef.current.has(nodeID) || cancellingGenerationNodeIDs.has(nodeID)) return;
+    setStopTargetNodeID(nodeID);
   }
 
   function confirmStopGeneration() {
-    setStopConfirmationOpen(false);
-    void stopGeneration();
+    const nodeID = stopTargetNodeID;
+    setStopTargetNodeID("");
+    if (nodeID) void stopGeneration(nodeID);
   }
 
   async function runTextGeneration(nodeID: string, retry = false) {
     const requestedNode = nodesRef.current.find((node) => node.id === nodeID && (node.type === "text" || node.type === "config" && node.generation_mode === "text"));
-    if (!requestedNode || runningNodeID) return;
+    if (!requestedNode || activeGenerationsRef.current.has(nodeID)) return;
     const retrying = requestedNode.type === "text" && retry && requestedNode.generation_status === "error";
     const retryConfiguration = retrying ? findCanvasRetryConfigurationNode(requestedNode.id, nodesRef.current, connectionsRef.current) : null;
     const sourceNode = retryConfiguration || requestedNode;
@@ -3173,6 +3223,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     const childIDs = retrying ? [] : plan.createsChildNodes ? resultIDs : [];
     const clientTaskIDs = new Map(resultIDs.map((resultID) => [resultID, `canvas-text-${randomID()}`]));
     const controller = new AbortController();
+    const activeGeneration = registerActiveGeneration(controller, [requestedNode.id, sourceNode.id, ...resultIDs], clientTaskIDs.values());
     const generationStartedAt = Date.now();
     const historyBase = appendCanvasHistorySnapshot(historyRef.current, cloneDocument(captureDocument()), MAX_HISTORY);
     historyRef.current = historyBase;
@@ -3210,10 +3261,6 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       ...connectionsRef.current,
       ...childIDs.map((resultID): CanvasConnection => ({ id: `connection-${randomID()}`, from_node_id: sourceNode.id, to_node_id: resultID })),
     ]);
-    setRunningNodeID(retrying ? requestedNode.id : sourceNode.id);
-    setRunningResultNodeID(resultIDs[0] || "");
-    setRunningControlNodeID(retrying ? requestedNode.id : sourceNode.id);
-    generationAbortControllerRef.current = controller;
     try {
       const messages = await canvasTextGenerationMessages(context.prompt.trim(), context.referenceImageURLs, controller.signal);
       const outcomes = await Promise.all(resultIDs.map(async (resultID) => {
@@ -3221,12 +3268,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         try {
           const submitted = await createChatGenerationTask({ clientTaskId: clientTaskID, prompt: context.prompt.trim(), model, messages, relayTokenName: textRelayTokenName, requestOptions: { signal: controller.signal } });
           const serverTaskID = submitted.id || clientTaskID;
-          submittedTaskIDsRef.current.add(serverTaskID);
-          if (!submittedTaskIDRef.current) {
-            submittedTaskIDRef.current = serverTaskID;
-            pendingTaskIDRef.current = serverTaskID;
-            setRunningTaskID(serverTaskID);
-          }
+          addActiveGenerationTask(activeGeneration, serverTaskID, clientTaskID);
           replaceNodes(nodesRef.current.map((node) => node.id === resultID ? { ...node, task_id: serverTaskID } : node));
           if (!retrying && resultID === resultIDs[0] && sourceNode.type === "config") replaceNodes(nodesRef.current.map((node) => node.id === sourceNode.id ? { ...node, task_id: serverTaskID } : node));
           const completed = await waitForTask(serverTaskID, (task) => {
@@ -3263,18 +3305,14 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         toast.error(message);
       }
     } finally {
-      if (generationAbortControllerRef.current === controller) generationAbortControllerRef.current = null;
-      submittedTaskIDsRef.current.forEach((submittedID) => cancelledTaskIDsRef.current.delete(submittedID));
-      submittedTaskIDsRef.current.clear();
-      pendingTaskIDRef.current = "";
-      submittedTaskIDRef.current = "";
-      setRunningNodeID(""); setRunningResultNodeID(""); setRunningControlNodeID(""); setRunningTaskID("");
+      activeGeneration.taskIDs.forEach((taskID) => cancelledTaskIDsRef.current.delete(taskID));
+      releaseActiveGeneration(activeGeneration);
     }
   }
 
-  async function runAudioGeneration(nodeID: string, concurrent = false, retry = false) {
+  async function runAudioGeneration(nodeID: string, concurrent = true, retry = false) {
     const requestedNode = nodesRef.current.find((node) => node.id === nodeID && (node.type === "audio" || node.type === "config" && node.generation_mode === "audio"));
-    if (!requestedNode || runningNodeID && !concurrent) return;
+    if (!requestedNode || activeGenerationsRef.current.has(nodeID) || runningNodeID && !concurrent) return;
     const retrying = requestedNode.type === "audio" && retry && requestedNode.generation_status === "error";
     const retryConfiguration = retrying ? findCanvasRetryConfigurationNode(requestedNode.id, nodesRef.current, connectionsRef.current) : null;
     const sourceNode = retryConfiguration || requestedNode;
@@ -3289,6 +3327,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     const generationStartedAt = Date.now();
     const createsResult = !retrying && (requestedNode.type === "config" || Boolean(requestedNode.url));
     const resultID = createsResult ? `audio-${randomID()}` : requestedNode.id;
+    const activeGeneration = registerActiveGeneration(controller, [requestedNode.id, sourceNode.id, resultID], [taskID]);
     const generationAudioModel = sourceNode.generation_audio_model || audioModel;
     const settingsSource: CanvasNode = {
       ...canvasAgentAudioNodeParameters(generationAudioModel, imageGenerationPreferences.default_audio_voice, imageGenerationPreferences.audio_instructions, "", { format: imageGenerationPreferences.default_audio_format, speed: imageGenerationPreferences.default_audio_speed }),
@@ -3344,6 +3383,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       const request = buildCanvasAudioGenerationRequest(resultNode, text, cloneDataURL);
       const submitted = await createAudioGenerationTask({ clientTaskId: taskID, request, relayTokenName, requestOptions: { signal: controller.signal } });
       const serverTaskID = submitted.id || taskID;
+      addActiveGenerationTask(activeGeneration, serverTaskID, taskID);
       if (!concurrent) {
         pendingTaskIDRef.current = serverTaskID;
         submittedTaskIDRef.current = serverTaskID;
@@ -3367,6 +3407,8 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         finishHistory(); toast.error(message);
       }
     } finally {
+      activeGeneration.taskIDs.forEach((activeTaskID) => cancelledTaskIDsRef.current.delete(activeTaskID));
+      releaseActiveGeneration(activeGeneration);
       if (!concurrent) {
         if (generationAbortControllerRef.current === controller) generationAbortControllerRef.current = null;
         submittedTaskIDsRef.current.forEach((submittedID) => cancelledTaskIDsRef.current.delete(submittedID));
@@ -3380,7 +3422,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
 
   async function runPanoramaGeneration(nodeID: string, retry = false) {
     const sourceNode = nodesRef.current.find((node) => node.id === nodeID && node.type === "panorama");
-    if (!sourceNode || runningNodeID) return;
+    if (!sourceNode || activeGenerationsRef.current.has(nodeID)) return;
     if (!imageRelayTokenName.trim()) { setRelayTokenDialogKind("image"); return; }
     const retrying = retry && sourceNode.generation_status === "error";
     const sourcePrompt = String(sourceNode.panorama_source_prompt || sourceNode.prompt || "").trim();
@@ -3472,6 +3514,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       created_at: createdAt(),
     }));
     const controller = new AbortController();
+    const activeGeneration = registerActiveGeneration(controller, [sourceNode.id, rootID, ...targetIDs], taskIDs.values());
     const historyBase = appendCanvasHistorySnapshot(historyRef.current, cloneDocument(captureDocument()), MAX_HISTORY);
     historyRef.current = historyBase;
     const startedNodes = nodesRef.current.map((node) => {
@@ -3487,7 +3530,6 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     setSelectedNodeIDs(new Set([nodeID]));
     setSelectedConnectionID("");
     setPanelNodeID(nodeID);
-    setRunningNodeID(nodeID); setRunningResultNodeID(rootID); setRunningControlNodeID(nodeID); generationAbortControllerRef.current = controller;
     try {
       const referenceFiles = referenceImageURLs.length ? await Promise.all(referenceImageURLs.map(async (url, index) => {
         const blob = await fetchAuthenticatedImageBlob(url, controller.signal);
@@ -3501,12 +3543,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
             ? await createImageEditTask(clientTaskID, referenceFiles, prompt, generationModel || undefined, PANORAMA_IMAGE_SIZE, PANORAMA_IMAGE_SIZE, quality, 1, "private", resolution, outputFormat, outputCompression, stream, partialImages, { apiMode: imageGenerationPreferences.api_mode, responseFormatB64JSON: sourceNode.generation_response_format_b64_json }, undefined, imageRelayTokenName, undefined, undefined, { signal: controller.signal })
             : await createImageGenerationTask(clientTaskID, prompt, generationModel || undefined, PANORAMA_IMAGE_SIZE, PANORAMA_IMAGE_SIZE, quality, 1, "private", resolution, outputFormat, outputCompression, stream, partialImages, { apiMode: imageGenerationPreferences.api_mode, responseFormatB64JSON: sourceNode.generation_response_format_b64_json }, undefined, imageRelayTokenName, undefined, undefined, { signal: controller.signal });
           const serverTaskID = submitted.id || clientTaskID;
-          submittedTaskIDsRef.current.add(serverTaskID);
-          if (!submittedTaskIDRef.current) {
-            submittedTaskIDRef.current = serverTaskID;
-            pendingTaskIDRef.current = serverTaskID;
-            setRunningTaskID(serverTaskID);
-          }
+          addActiveGenerationTask(activeGeneration, serverTaskID, clientTaskID);
           replaceNodes(nodesRef.current.map((node) => node.id === targetID ? { ...node, task_id: serverTaskID } : node));
           const completed = await persistCreationTaskOutputs(await waitForTask(serverTaskID, undefined, controller.signal));
           const result = summarizeCanvasTaskResult(completed, 1);
@@ -3576,17 +3613,14 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     } catch (error) {
       if (!controller.signal.aborted) { const message = error instanceof Error ? error.message : "全景图生成失败"; replaceNodes(nodesRef.current.map((node) => node.id === rootID ? { ...node, duration_ms: Date.now() - generationStartedAt, generation_status: "error", generation_error: message } : node)); commitGenerationHistory(historyBase); toast.error(message); }
     } finally {
-      if (generationAbortControllerRef.current === controller) generationAbortControllerRef.current = null;
-      pendingTaskIDRef.current = "";
-      submittedTaskIDRef.current = "";
-      submittedTaskIDsRef.current.clear();
-      setRunningNodeID(""); setRunningResultNodeID(""); setRunningControlNodeID(""); setRunningTaskID("");
+      activeGeneration.taskIDs.forEach((taskID) => cancelledTaskIDsRef.current.delete(taskID));
+      releaseActiveGeneration(activeGeneration);
     }
   }
 
-  async function runVideoGeneration(nodeID: string, prompt?: string, concurrent = false) {
+  async function runVideoGeneration(nodeID: string, prompt?: string, concurrent = true) {
     const sourceNode = nodesRef.current.find((node) => node.id === nodeID && (node.type === "video" || node.type === "config" && node.generation_mode === "video"));
-    if (!sourceNode || runningNodeID && !concurrent) return;
+    if (!sourceNode || activeGenerationsRef.current.has(nodeID) || runningNodeID && !concurrent) return;
     if (!videoRelayTokenName.trim()) {
       setRelayTokenDialogKind("video");
       return;
@@ -3642,6 +3676,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     const generationStartedAt = Date.now();
     const createsResult = sourceNode.type === "config" || Boolean(sourceNode.url);
     const resultNodeID = createsResult ? `video-${randomID()}` : sourceNode.id;
+    const activeGeneration = registerActiveGeneration(controller, [sourceNode.id, resultNodeID], [taskID]);
     const videoNodeSize = canvasNodeSizeFromRatio(params.generation_video_size, CANVAS_NODE_DEFAULT_SIZE.video.width, CANVAS_NODE_DEFAULT_SIZE.video.height) || CANVAS_NODE_DEFAULT_SIZE.video;
     const resultNode = createsResult ? { ...buildVideoNode({ title: text.slice(0, 32) || "视频", prompt: text, taskID }, { x: sourceNode.x + sourceNode.width + 96, y: sourceNode.y + sourceNode.height / 2 - videoNodeSize.height / 2 }, sourceNode), ...videoNodeSize, id: resultNodeID, generation_status: "loading" as const, generation_started_at: generationStartedAt, generation_progress: 0, generation_model: params.generation_video_model, task_id: taskID, camera_control: sourceNode.camera_control } : { ...sourceNode, prompt: text, task_id: taskID, generation_status: "loading" as const, generation_started_at: generationStartedAt, generation_progress: 0, generation_model: params.generation_video_model };
     const historyBase = concurrent ? historyRef.current : appendCanvasHistorySnapshot(historyRef.current, cloneDocument(captureDocument()), MAX_HISTORY);
@@ -3723,6 +3758,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
 				requestOptions: { signal: controller.signal },
 				});
       const serverTaskID = submitted.id || taskID;
+      addActiveGenerationTask(activeGeneration, serverTaskID, taskID);
       if (!concurrent) {
         pendingTaskIDRef.current = serverTaskID;
         submittedTaskIDRef.current = serverTaskID;
@@ -3746,6 +3782,8 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       replaceNodes(nodesRef.current.map((node) => node.id === resultNodeID ? { ...node, duration_ms: Date.now() - generationStartedAt, generation_status: "error" as const, generation_error: message, task_id: taskID } : node));
       finishHistory(); toast.error(message);
     } finally {
+      activeGeneration.taskIDs.forEach((activeTaskID) => cancelledTaskIDsRef.current.delete(activeTaskID));
+      releaseActiveGeneration(activeGeneration);
       if (!concurrent) {
         if (generationAbortControllerRef.current === controller) generationAbortControllerRef.current = null;
         submittedTaskIDsRef.current.forEach((submittedID) => cancelledTaskIDsRef.current.delete(submittedID));
@@ -3758,16 +3796,17 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
   }
 
   async function runGeneration(nodeID: string, prompt?: string, retry = false, options: CanvasGenerationOptions = {}) {
+    const concurrent = options.concurrent !== false;
     const specialNode = nodesRef.current.find((node) => node.id === nodeID);
     if (specialNode?.type === "text") return runTextGeneration(nodeID, retry);
     if (specialNode?.type === "config" && specialNode.generation_mode === "text") return runTextGeneration(nodeID, retry);
-    if (specialNode?.type === "audio" || specialNode?.type === "config" && specialNode.generation_mode === "audio") return runAudioGeneration(nodeID, Boolean(options.concurrent), retry);
+    if (specialNode?.type === "audio" || specialNode?.type === "config" && specialNode.generation_mode === "audio") return runAudioGeneration(nodeID, concurrent, retry);
     if (specialNode?.type === "panorama" && !options.forceImageGeneration) return runPanoramaGeneration(nodeID, retry);
-    if (specialNode?.type === "config" && specialNode.generation_mode === "video") return runVideoGeneration(nodeID, prompt, Boolean(options.concurrent));
+    if (specialNode?.type === "config" && specialNode.generation_mode === "video") return runVideoGeneration(nodeID, prompt, concurrent);
     const videoNode = nodesRef.current.find((node) => node.id === nodeID && node.type === "video");
-    if (videoNode) return runVideoGeneration(nodeID, prompt, Boolean(options.concurrent));
+    if (videoNode) return runVideoGeneration(nodeID, prompt, concurrent);
     const sourceNode = nodesRef.current.find((node) => node.id === nodeID && (node.type === "image" || node.type === "config" || options.forceImageGeneration && node.type === "panorama"));
-    if (!sourceNode) return;
+    if (!sourceNode || activeGenerationsRef.current.has(nodeID)) return;
     if (!imageRelayTokenName.trim()) {
       setRelayTokenDialogKind("image");
       return;
@@ -3791,7 +3830,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         : upstreamReferenceImageURLs;
     const mode = referenceImageURLs.length ? "edit" : "generation";
     const createsResultNode = !retrying && (sourceNode.type === "config" || Boolean(sourceNode.url));
-    if ((!text && !referenceImageURLs.length) || runningNodeID && !options.concurrent) return toast.error("请连接有效输入或填写画面描述");
+    if ((!text && !referenceImageURLs.length) || runningNodeID && !concurrent) return toast.error("请连接有效输入或填写画面描述");
     if (retrying && sourceNode.generation_type === "edit" && !referenceImageURLs.length) return toast.error("参考图片已丢失，无法继续重试");
     if (referenceImageURLs.length && !supportsImageEditing(generationModel)) return toast.error(`模型 ${generationModel} 暂不支持参考图编辑`);
     const referenceLimitMessage = imageConversationReferenceLimitMessage(0, referenceImageURLs.length, referenceImageLimit);
@@ -3818,14 +3857,15 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     const taskRelayTokenName = imageRelayTokenName.trim() || undefined;
     const taskID = `canvas-${mode}-${randomID()}`;
     const controller = new AbortController();
-    const generationEpoch = options.concurrent ? generationEpochRef.current : generationEpochRef.current + 1;
-    if (!options.concurrent) generationEpochRef.current = generationEpoch;
+    const generationEpoch = concurrent ? generationEpochRef.current : generationEpochRef.current + 1;
+    if (!concurrent) generationEpochRef.current = generationEpoch;
     const generationProjectID = documentRef.current.id;
-    const generationIsCurrent = () => documentRef.current.id === generationProjectID
-      && nodesRef.current.some((node) => node.id === sourceNode.id)
+    const generationOwnsCanvas = () => documentRef.current.id === generationProjectID
+      && nodesRef.current.some((node) => node.id === sourceNode.id);
+    const generationIsCurrent = () => generationOwnsCanvas()
       && !controller.signal.aborted
-      && (options.concurrent || generationEpochRef.current === generationEpoch && generationAbortControllerRef.current === controller);
-    if (!options.concurrent) {
+      && (concurrent || generationEpochRef.current === generationEpoch && generationAbortControllerRef.current === controller);
+    if (!concurrent) {
       generationAbortControllerRef.current = controller;
       pendingTaskIDRef.current = taskID;
       submittedTaskIDRef.current = "";
@@ -3898,15 +3938,16 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     }]));
     const outputNodeIDs = isBatch ? batchChildren.map((node) => node.id) : [resultNode.id];
     const resultNodeIDs = resultNodes.map((node) => node.id);
+    const activeGeneration = registerActiveGeneration(controller, [sourceNode.id, ...resultNodeIDs], [taskID]);
     const activeSelectionNodeID = canvasGenerationActiveNodeID(sourceNode.id, resultNode.id, createsResultNode, options.selectResultNode);
     const replacedBatchChildIDs = sourceNode.type === "image" && !createsResultNode && !retrying ? new Set(sourceNode.batch_child_ids || []) : new Set<string>();
     const resultConnections: CanvasConnection[] = [
       ...(createsResultNode ? [{ id: `connection-${randomID()}`, from_node_id: sourceNode.id, to_node_id: resultNode.id }] : []),
       ...batchChildren.map((node) => ({ id: `connection-${randomID()}`, from_node_id: resultNode.id, to_node_id: node.id })),
     ];
-    const generationHistoryBase = options.concurrent ? historyRef.current : appendCanvasHistorySnapshot(historyRef.current, cloneDocument(captureDocument()), MAX_HISTORY);
-    if (!options.concurrent) historyRef.current = generationHistoryBase;
-    const finishHistory = () => options.concurrent ? scheduleSave() : commitGenerationHistory(generationHistoryBase);
+    const generationHistoryBase = concurrent ? historyRef.current : appendCanvasHistorySnapshot(historyRef.current, cloneDocument(captureDocument()), MAX_HISTORY);
+    if (!concurrent) historyRef.current = generationHistoryBase;
+    const finishHistory = () => concurrent ? scheduleSave() : commitGenerationHistory(generationHistoryBase);
     const generationStartNodes = setCanvasConfigGenerationStatus(nodesRef.current, sourceNode.id, "loading", "", taskID);
     replaceNodes(placeCanvasGenerationResultNodes(generationStartNodes, sourceNode.id, resultNodes, replacedBatchChildIDs));
     replaceConnections([
@@ -3917,7 +3958,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     setSelectedConnectionID("");
     setPanelNodeID(activeSelectionNodeID);
     pushHistory();
-    if (!options.concurrent) {
+    if (!concurrent) {
       generationHistoryBaseRef.current = generationHistoryBase;
       setRunningNodeID(nodeID);
       setRunningResultNodeID(resultNodeID);
@@ -3939,8 +3980,9 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       }
       if (!generationIsCurrent()) return;
       activeTaskID = submitted.id || taskID;
+      addActiveGenerationTask(activeGeneration, activeTaskID, taskID);
       replaceNodes(setCanvasConfigGenerationStatus(nodesRef.current, sourceNode.id, "success", "", activeTaskID));
-      if (!options.concurrent) {
+      if (!concurrent) {
         pendingTaskIDRef.current = activeTaskID;
         submittedTaskIDRef.current = activeTaskID;
         submittedTaskIDsRef.current.add(activeTaskID);
@@ -4017,7 +4059,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       else if (completedTask.status === "error") toast.error(completedTask.error || "任务返回异常状态");
       else toast.success(`已添加 ${images.length} 张图片到画布`);
     } catch (error) {
-      if (!generationIsCurrent()) return;
+      if (!generationOwnsCanvas()) return;
       const cancelled = taskCancelled || controller.signal.aborted || cancelledTaskIDsRef.current.has(activeTaskID) || cancelledTaskIDsRef.current.has(taskID);
       const generationError = error instanceof Error ? error.message : "创作任务失败";
       const recoveryPending = !cancelled && taskSubmissionAttempted && !terminalTaskReceived && (
@@ -4026,7 +4068,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       let cancelledTask: CreationTask | null = null;
       if (cancelled) {
         try { cancelledTask = await persistCreationTaskOutputs(await cancelCreationTask(activeTaskID)); } catch { /* A request cancelled before submission has no server task. */ }
-        if (!generationIsCurrent()) return;
+        if (!generationOwnsCanvas()) return;
       }
       const cancelledResult = cancelled ? reconcileCancelledCanvasTaskNodes(nodesRef.current, cancelledTask, {
         resultNodeIDs,
@@ -4052,7 +4094,9 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       if (completedImageByNodeID.size) void refreshLibrary();
       if (!cancelled) toast.error(recoveryPending ? "暂时无法同步后台任务，重新进入画布后将继续恢复" : generationError);
     } finally {
-      if (!options.concurrent) {
+      activeGeneration.taskIDs.forEach((activeID) => cancelledTaskIDsRef.current.delete(activeID));
+      releaseActiveGeneration(activeGeneration);
+      if (!concurrent) {
         cancelledTaskIDsRef.current.delete(taskID);
         cancelledTaskIDsRef.current.delete(activeTaskID);
         if (generationEpochRef.current === generationEpoch && generationAbortControllerRef.current === controller) generationAbortControllerRef.current = null;
@@ -4060,8 +4104,8 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         if (generationEpochRef.current === generationEpoch && submittedTaskIDRef.current === activeTaskID) submittedTaskIDRef.current = "";
         submittedTaskIDsRef.current.delete(activeTaskID);
       }
-      if (!options.concurrent && mountedRef.current && generationEpochRef.current === generationEpoch) {
-        setStopConfirmationOpen(false);
+      if (!concurrent && mountedRef.current && generationEpochRef.current === generationEpoch) {
+        setStopTargetNodeID("");
         setRunningNodeID("");
         setRunningResultNodeID("");
         setRunningControlNodeID("");
@@ -4205,8 +4249,8 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     return (
       <CanvasNodeActionsPanel
         node={node}
-        running={runningControlNodeID === node.id}
-        busy={Boolean(runningNodeID) || imageToolBusy}
+        running={nodeGenerationRunning(node.id)}
+        busy={nodeGenerationRunning(node.id) || imageToolBusy}
         uploading={uploadingNodeID === node.id}
         imageEditingSupported={supportsImageEditing(imageEditingModel)}
         onUpload={() => requestNodeMediaUpload(node.id)}
@@ -4229,7 +4273,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     return (
       <CanvasNodeQuickActions
         node={node}
-        busy={Boolean(runningNodeID) || imageToolBusy}
+        busy={nodeGenerationRunning(node.id) || imageToolBusy}
         imageEditingSupported={supportsImageEditing(imageEditingModel)}
         onImageOperation={(operation) => void openCanvasImageTool(node.id, operation)}
         onPreview={() => { setPanelNodeID(""); setPreviewNodeID(node.id); }}
@@ -4248,6 +4292,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
 
   function renderNodePanel(node: CanvasNode) {
     if (node.type === "config") {
+      const running = nodeGenerationRunning(node.id);
       const mode = node.generation_mode || "image";
       const inputs = canvasConfigInputs(node.id, nodesRef.current, connectionsRef.current);
       const canGenerate = canGenerateCanvasConfig(node, inputs);
@@ -4276,15 +4321,15 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
                 {mode === "image" ? <><CanvasImageParameterPopover node={node} imageModel={node.generation_model || imageModel} imageModels={imageModels} onChange={(patch) => updateNodeGenerationParameters(node.id, patch)} expanded showModel={false} /><CanvasCameraControl value={node.camera_control} onChange={(camera_control) => updateNodeGenerationParameters(node.id, { camera_control })} className="w-full" /></> : null}
                 {mode === "audio" ? <CanvasAudioSettingsFields node={node} models={audioModels} audioReferences={canvasAudioReferences(node.id, nodesRef.current, connectionsRef.current)} relayTokenName={audioRelayTokenName} onChange={(patch) => updateNodeGenerationParameters(node.id, patch)} showModel={false} /> : null}
               </CanvasConfigComposer>
-              {mode === "video" ? <div className="h-[640px] overflow-hidden rounded-xl border border-border bg-card p-3"><CanvasVideoPromptPanel node={{ ...node, prompt: node.composer_content ?? node.prompt }} inputs={inputs} running={runningControlNodeID === node.id} generationBusy={Boolean(runningNodeID)} showPromptEditor={false} showGenerateFooter={false} videoModels={videoModels} onPromptChange={(value, commit) => updateNodeComposerContent(node.id, value, commit)} onParametersChange={(patch) => updateNodeGenerationParameters(node.id, patch)} onGenerate={(prompt) => void runVideoGeneration(node.id, prompt)} onStop={requestStopGeneration} /></div> : null}
+              {mode === "video" ? <div className="h-[640px] overflow-hidden rounded-xl border border-border bg-card p-3"><CanvasVideoPromptPanel node={{ ...node, prompt: node.composer_content ?? node.prompt }} inputs={inputs} running={running} generationBusy={false} showPromptEditor={false} showGenerateFooter={false} videoModels={videoModels} onPromptChange={(value, commit) => updateNodeComposerContent(node.id, value, commit)} onParametersChange={(patch) => updateNodeGenerationParameters(node.id, patch)} onGenerate={(prompt) => void runVideoGeneration(node.id, prompt)} onStop={() => requestStopGeneration(node.id)} /></div> : null}
             </div>
           </AppScrollArea>
           <CanvasGenerationFooter
             className="mt-3"
-            running={runningControlNodeID === node.id}
-            disabled={runningControlNodeID !== node.id && (Boolean(runningNodeID) || !canGenerate || !canGenerateWithParameters)}
+            running={running}
+            disabled={!running && (!canGenerate || !canGenerateWithParameters)}
             onGenerate={mode === "video" ? () => void runVideoGeneration(node.id, (node.composer_content ?? node.prompt ?? "").trim()) : () => void runGeneration(node.id)}
-            onStop={requestStopGeneration}
+            onStop={() => requestStopGeneration(node.id)}
           />
         </div>
       );
@@ -4300,40 +4345,41 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     }
     if (node.type === "audio") {
       const context = buildCanvasGenerationContext(node.id, nodesRef.current, connectionsRef.current, node.prompt || "");
-      return <CanvasAudioPromptPanel node={node} models={audioModels} audioReferences={canvasAudioReferences(node.id, nodesRef.current, connectionsRef.current)} relayTokenName={audioRelayTokenName} running={runningControlNodeID === node.id} busy={Boolean(runningNodeID)} uploading={uploadingNodeID === node.id} canGenerate={Boolean(context.prompt.trim())} onChange={(patch) => updateNodeGenerationParameters(node.id, patch)} onPromptChange={(value, commit) => updateNodePrompt(node.id, value, commit)} onUpload={() => requestNodeMediaUpload(node.id)} onGenerate={() => void runAudioGeneration(node.id)} onStop={requestStopGeneration} />;
+      return <CanvasAudioPromptPanel node={node} models={audioModels} audioReferences={canvasAudioReferences(node.id, nodesRef.current, connectionsRef.current)} relayTokenName={audioRelayTokenName} running={nodeGenerationRunning(node.id)} busy={false} uploading={uploadingNodeID === node.id} canGenerate={Boolean(context.prompt.trim())} onChange={(patch) => updateNodeGenerationParameters(node.id, patch)} onPromptChange={(value, commit) => updateNodePrompt(node.id, value, commit)} onUpload={() => requestNodeMediaUpload(node.id)} onGenerate={() => void runAudioGeneration(node.id)} onStop={() => requestStopGeneration(node.id)} />;
     }
     if (node.type === "panorama") {
       const context = buildCanvasGenerationContext(node.id, nodesRef.current, connectionsRef.current, node.panorama_source_prompt || node.prompt || "");
-      return <CanvasPanoramaPromptPanel node={node} imageModel={node.generation_model?.trim() || imageModel} imageModels={imageModels} running={runningControlNodeID === node.id} busy={Boolean(runningNodeID)} uploading={uploadingNodeID === node.id} canGenerate={Boolean(context.prompt.trim() || context.referenceImageURLs.length || node.url)} onChange={(patch) => updateNodeGenerationParameters(node.id, { ...patch, generation_size: PANORAMA_IMAGE_SIZE })} onPromptChange={(value, commit) => { replaceNodes(nodesRef.current.map((item) => item.id === node.id ? { ...item, panorama_source_prompt: value, prompt: value } : item)); scheduleSave(); if (commit) pushHistory(); }} onUpload={() => requestNodeMediaUpload(node.id)} onGenerate={() => void runPanoramaGeneration(node.id)} onStop={requestStopGeneration} />;
+      return <CanvasPanoramaPromptPanel node={node} imageModel={node.generation_model?.trim() || imageModel} imageModels={imageModels} running={nodeGenerationRunning(node.id)} busy={false} uploading={uploadingNodeID === node.id} canGenerate={Boolean(context.prompt.trim() || context.referenceImageURLs.length || node.url)} onChange={(patch) => updateNodeGenerationParameters(node.id, { ...patch, generation_size: PANORAMA_IMAGE_SIZE })} onPromptChange={(value, commit) => { replaceNodes(nodesRef.current.map((item) => item.id === node.id ? { ...item, panorama_source_prompt: value, prompt: value } : item)); scheduleSave(); if (commit) pushHistory(); }} onUpload={() => requestNodeMediaUpload(node.id)} onGenerate={() => void runPanoramaGeneration(node.id)} onStop={() => requestStopGeneration(node.id)} />;
     }
     if (node.type === "director") return null;
     if (node.type === "video") {
-      return <CanvasVideoPromptPanel node={node} inputs={canvasGenerationInputs(node.id, nodesRef.current, connectionsRef.current)} running={runningControlNodeID === node.id} generationBusy={Boolean(runningNodeID)} uploading={uploadingNodeID === node.id} videoModels={videoModels} onPromptChange={(value, commit) => updateNodePrompt(node.id, value, commit)} onParametersChange={(patch) => updateNodeGenerationParameters(node.id, patch)} onGenerate={(prompt) => void runVideoGeneration(node.id, prompt)} onStop={requestStopGeneration} onUpload={() => requestNodeMediaUpload(node.id)} />;
+      return <CanvasVideoPromptPanel node={node} inputs={canvasGenerationInputs(node.id, nodesRef.current, connectionsRef.current)} running={nodeGenerationRunning(node.id)} generationBusy={false} uploading={uploadingNodeID === node.id} videoModels={videoModels} onPromptChange={(value, commit) => updateNodePrompt(node.id, value, commit)} onParametersChange={(patch) => updateNodeGenerationParameters(node.id, patch)} onGenerate={(prompt) => void runVideoGeneration(node.id, prompt)} onStop={() => requestStopGeneration(node.id)} onUpload={() => requestNodeMediaUpload(node.id)} />;
     }
-    const running = runningControlNodeID === node.id;
+    const running = nodeGenerationRunning(node.id);
     const connectedPromptAvailable = Boolean(buildCanvasGenerationContext(node.id, nodesRef.current, connectionsRef.current, node.prompt || "").prompt);
     return (
       <CanvasNodePromptPanel
         node={node}
         mentionReferences={canvasNodeMentionReferences(node.id, nodesRef.current, connectionsRef.current)}
         running={running}
-        generationBusy={Boolean(runningNodeID)}
+        generationBusy={false}
         imageModel={imageModel}
         imageModels={imageModels}
         imageModelReady={imageModelReady}
-        cancelling={Boolean(cancellingTaskID)}
-        canStop={Boolean(runningNodeID)}
+        cancelling={cancellingGenerationNodeIDs.has(node.id)}
+        canStop={running}
         connectedPromptAvailable={connectedPromptAvailable}
         onPromptChange={(value, commit) => updateNodePrompt(node.id, value, commit)}
         onParametersChange={(patch) => updateNodeGenerationParameters(node.id, patch)}
         onGenerate={(prompt) => void runGeneration(node.id, prompt)}
-        onStop={requestStopGeneration}
+        onStop={() => requestStopGeneration(node.id)}
       />
     );
   }
 
   useEffect(() => {
     const batchAnimationTimers = batchAnimationTimersRef.current;
+    const activeGenerations = activeGenerationsRef.current;
     mountedRef.current = true;
     const loadWorkspace = async () => {
       let workspace = await fetchCanvasDocument();
@@ -4358,6 +4404,8 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       generationEpochRef.current += 1;
       generationAbortControllerRef.current?.abort();
       generationAbortControllerRef.current = null;
+      new Set(activeGenerations.values()).forEach((generation) => generation.controller.abort());
+      activeGenerations.clear();
       canvasRecoveryAbortControllerRef.current?.abort();
       canvasRecoveryAbortControllerRef.current = null;
       flushPendingSave();
@@ -4368,46 +4416,6 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       if (focusAnimationRef.current !== null) window.cancelAnimationFrame(focusAnimationRef.current);
     };
   }, [projectID]);
-
-  useEffect(() => {
-    const handleTokenNameChange = (event: Event) => {
-      if (event instanceof StorageEvent) {
-        if (event.key === imageRelayTokenStorageKey) {
-          setImageRelayTokenName(getStoredRelayTokenName(session, "image"));
-        } else if (event.key === videoRelayTokenStorageKey) {
-          setVideoRelayTokenName(getStoredRelayTokenName(session, "video"));
-        } else if (event.key === audioRelayTokenStorageKey) {
-          setAudioRelayTokenName(getStoredRelayTokenName(session, "audio"));
-        } else if (event.key === textRelayTokenStorageKey) {
-          setTextRelayTokenName(getStoredRelayTokenName(session, "text"));
-        }
-        return;
-      }
-      const detail = (event as CustomEvent<{ kind?: RelayTokenKind; tokenName?: string }>).detail;
-      if (detail?.kind === "image") {
-        setImageRelayTokenName(String(detail.tokenName ?? getStoredRelayTokenName(session, "image")));
-      } else if (detail?.kind === "video") {
-        setVideoRelayTokenName(String(detail.tokenName ?? getStoredRelayTokenName(session, "video")));
-      } else if (detail?.kind === "audio") {
-        setAudioRelayTokenName(String(detail.tokenName ?? getStoredRelayTokenName(session, "audio")));
-      } else if (detail?.kind === "text") {
-        setTextRelayTokenName(String(detail.tokenName ?? getStoredRelayTokenName(session, "text")));
-      }
-    };
-    window.addEventListener(PROFILE_RELAY_TOKEN_NAME_CHANGED_EVENT, handleTokenNameChange);
-    window.addEventListener("storage", handleTokenNameChange);
-    return () => {
-      window.removeEventListener(PROFILE_RELAY_TOKEN_NAME_CHANGED_EVENT, handleTokenNameChange);
-      window.removeEventListener("storage", handleTokenNameChange);
-    };
-  }, [audioRelayTokenStorageKey, imageRelayTokenStorageKey, textRelayTokenStorageKey, videoRelayTokenStorageKey, session]);
-
-  useEffect(() => {
-    setImageRelayTokenName(getStoredRelayTokenName(session, "image"));
-    setVideoRelayTokenName(getStoredRelayTokenName(session, "video"));
-    setAudioRelayTokenName(getStoredRelayTokenName(session, "audio"));
-    setTextRelayTokenName(getStoredRelayTokenName(session, "text"));
-  }, [audioRelayTokenStorageKey, imageRelayTokenStorageKey, textRelayTokenStorageKey, videoRelayTokenStorageKey, session]);
 
   useEffect(() => {
     const host = hostRef.current;
@@ -4525,7 +4533,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         onInsertPrompt={(prompt, promptTitle) => addTextNodeAt(placement(), prompt, promptTitle.trim() || prompt.trim().slice(0, 32) || "文字")}
       />
       <div ref={hostRef} className="relative min-w-0 flex-1 overflow-hidden bg-[#f3f5f8] dark:bg-[#15181d]">
-      <CanvasEngine nodes={nodes} connections={connections} viewport={viewport} background={background} showImageInfo={showImageInfo} canvasSize={canvasSize} exporting={exportingCanvas} exportBounds={exportingCanvas ? canvasExportBounds(visibleCanvasNodes(nodes)) : undefined} selectedNodeIDs={selectedNodeIDs} selectedConnectionID={selectedConnectionID} panelNodeID={panelNodeID} loadingNodeID={runningResultNodeID} pendingConnectionActive={Boolean(pendingConnection)} collapsingBatchRootIDs={collapsingBatchRootIDs} openingBatchRootIDs={openingBatchRootIDs} onNodesChange={replaceNodes} onNodesCommit={pushHistory} onViewportChange={updateViewport} onSelectionChange={selectionChanged} onConnect={connectNodes} canConnect={canConnect} onConnectionDropEmpty={(origin, position, menu) => setPendingConnection({ ...origin, position, menu })} onTitleChange={updateNodeTitle} onNodePanelToggle={(nodeID) => setPanelNodeID((current) => current === nodeID ? "" : nodeID)} onNodeMediaLoad={handleNodeMediaLoad} onViewImage={(nodeID) => { setPanelNodeID(""); setPreviewNodeID(nodeID); }} onDirectorOpen={(nodeID) => { setPanelNodeID(""); setOpenDirectorNodeID(nodeID); }} onTextToImage={generateFromTextNode} onNodeRetry={(nodeID) => void runGeneration(nodeID, undefined, true)} onNodeActivate={activateNode} onToggleBatch={toggleCanvasBatch} onSetBatchPrimary={makeCanvasBatchPrimary} onNodeDelete={(nodeID) => removeNodes(new Set([nodeID]))} onNodeContextMenu={openNodeContextMenu} onConnectionContextMenu={openConnectionContextMenu} onCanvasContextMenu={openCanvasContextMenu} onCanvasDoubleClick={(event, position) => { const rect = hostRef.current?.getBoundingClientRect(); setNodeCreateMenu({ position, menu: { x: event.clientX - (rect?.left || 0), y: event.clientY - (rect?.top || 0) } }); }} renderNodePanel={renderNodePanel} renderNodeQuickActions={renderNodeQuickActions} renderNodeActions={renderNodeActions} renderNodeInfo={(node) => <CanvasNodeInfoContent node={node} configInputs={node.type === "config" ? canvasConfigInputs(node.id, nodesRef.current, connectionsRef.current) : []} />} onDrop={handleCanvasDrop} />
+      <CanvasEngine nodes={nodes} connections={connections} viewport={viewport} background={background} showImageInfo={showImageInfo} canvasSize={canvasSize} exporting={exportingCanvas} exportBounds={exportingCanvas ? canvasExportBounds(visibleCanvasNodes(nodes)) : undefined} selectedNodeIDs={selectedNodeIDs} selectedConnectionID={selectedConnectionID} panelNodeID={panelNodeID} loadingNodeID="" pendingConnectionActive={Boolean(pendingConnection)} collapsingBatchRootIDs={collapsingBatchRootIDs} openingBatchRootIDs={openingBatchRootIDs} onNodesChange={replaceNodes} onNodesCommit={pushHistory} onViewportChange={updateViewport} onSelectionChange={selectionChanged} onConnect={connectNodes} canConnect={canConnect} onConnectionDropEmpty={(origin, position, menu) => setPendingConnection({ ...origin, position, menu })} onTitleChange={updateNodeTitle} onNodePanelToggle={(nodeID) => setPanelNodeID((current) => current === nodeID ? "" : nodeID)} onNodeMediaLoad={handleNodeMediaLoad} onViewImage={(nodeID) => { setPanelNodeID(""); setPreviewNodeID(nodeID); }} onDirectorOpen={(nodeID) => { setPanelNodeID(""); setOpenDirectorNodeID(nodeID); }} onTextToImage={generateFromTextNode} onNodeRetry={(nodeID) => void runGeneration(nodeID, undefined, true)} onNodeActivate={activateNode} onToggleBatch={toggleCanvasBatch} onSetBatchPrimary={makeCanvasBatchPrimary} onNodeDelete={(nodeID) => removeNodes(new Set([nodeID]))} onNodeContextMenu={openNodeContextMenu} onConnectionContextMenu={openConnectionContextMenu} onCanvasContextMenu={openCanvasContextMenu} onCanvasDoubleClick={(event, position) => { const rect = hostRef.current?.getBoundingClientRect(); setNodeCreateMenu({ position, menu: { x: event.clientX - (rect?.left || 0), y: event.clientY - (rect?.top || 0) } }); }} renderNodePanel={renderNodePanel} renderNodeQuickActions={renderNodeQuickActions} renderNodeActions={renderNodeActions} renderNodeInfo={(node) => <CanvasNodeInfoContent node={node} configInputs={node.type === "config" ? canvasConfigInputs(node.id, nodesRef.current, connectionsRef.current) : []} />} onDrop={handleCanvasDrop} />
       {openDirectorNode ? <CanvasDirector nodeId={openDirectorNode.id} project={openDirectorNode.director_project} panoramas={directorPanoramas} theme={colorTheme} onClose={() => setOpenDirectorNodeID("")} onProjectChange={handleDirectorProjectChange} onPanoramaRemoved={handleDirectorPanoramaRemoved} onCapturesSent={handleDirectorCapturesSent} onVideoSent={handleDirectorVideoSent} /> : null}
 
       {pendingConnection ? <div data-connection-create-menu className="absolute z-40 w-48 rounded-xl border border-border bg-card p-1.5 shadow-xl" style={{ left: Math.max(8, Math.min(pendingConnection.menu.x, (hostRef.current?.clientWidth || 240) - 200)), top: Math.max(64, Math.min(pendingConnection.menu.y, (hostRef.current?.clientHeight || 240) - 300)) }}><p className="px-2 py-1.5 text-[11px] font-semibold text-muted-foreground">创建节点并连接</p><button className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs hover:bg-muted" onClick={() => createPendingNode("text")}><Type className="size-4" />文字节点</button><button className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs hover:bg-muted" onClick={() => createPendingNode("image")}><ImagePlus className="size-4" />空白图片节点</button><button className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs hover:bg-muted" onClick={() => createPendingNode("video")}><Video className="size-4" />视频生成节点</button><button className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs hover:bg-muted" onClick={() => createPendingNode("audio")}><Music className="size-4" />音频生成节点</button><button className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs hover:bg-muted" onClick={() => createPendingNode("panorama")}><Compass className="size-4" />全景图节点</button><button className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs hover:bg-muted" onClick={() => createPendingNode("director")}><Camera className="size-4" />导演台节点</button><button className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs hover:bg-muted" onClick={() => createPendingNode("config")}><Settings2 className="size-4" />生成配置节点</button></div> : null}
@@ -4583,7 +4591,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
 
       <div className="pointer-events-none absolute inset-x-3 bottom-3 z-30 flex justify-center">
         <div className="hide-scrollbar pointer-events-auto flex max-w-full items-center gap-2 overflow-x-auto px-1">
-          <div className="flex h-11 shrink-0 items-center gap-0.5 rounded-xl border border-border bg-card/95 p-1 shadow-[0_10px_28px_rgba(15,23,42,.12)] backdrop-blur-xl">
+          <div className="flex h-11 shrink-0 items-center gap-0.5 rounded-xl border border-border bg-card/95 p-1 shadow-none backdrop-blur-xl dark:shadow-[0_10px_28px_rgba(0,0,0,.24)]">
             <ToolButton active={!selectedNodeIDs.size && !selectedConnectionID} label="移动/选择" onClick={() => selectionChanged(new Set())}><Hand /></ToolButton>
             <ToolbarDivider />
             <ToolButton label="撤销" disabled={historyRef.current.length <= 1} onClick={undo}><Undo2 /></ToolButton>
@@ -4618,7 +4626,6 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       <CanvasAgentPanel
         key={documentRef.current.id}
         open={agentOpen}
-        session={session}
         nodes={nodes}
         selectedNodeIDs={[...selectedNodeIDs]}
         referenceNodeClick={agentReferenceNodeClick}
@@ -4724,14 +4731,14 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <Dialog open={stopConfirmationOpen} onOpenChange={setStopConfirmationOpen}>
+      <Dialog open={Boolean(stopTargetNodeID)} onOpenChange={(open) => { if (!open) setStopTargetNodeID(""); }}>
         <DialogContent className="w-[min(92vw,420px)] rounded-2xl">
           <DialogHeader>
             <DialogTitle>停止生成？</DialogTitle>
-            <DialogDescription>当前生成请求会被中断，已经生成完成的结果会保留。</DialogDescription>
+            <DialogDescription>当前节点的生成请求会被中断，其他节点的任务会继续运行，已经生成完成的结果会保留。</DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setStopConfirmationOpen(false)}>继续生成</Button>
+            <Button variant="outline" onClick={() => setStopTargetNodeID("")}>继续生成</Button>
             <Button variant="destructive" onClick={confirmStopGeneration}>停止</Button>
           </DialogFooter>
         </DialogContent>

@@ -19,11 +19,13 @@ import {
   Video,
   type LucideIcon,
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 
 import {
   fetchPromptMarketPrompts,
   normalizePromptMarketSources,
+  promptMatchesKeyword,
+  sortPromptMarketPrompts,
   type BananaPrompt,
 } from "@/app/image/banana-prompts";
 import { AuthenticatedImage } from "@/components/authenticated-image";
@@ -82,10 +84,14 @@ const STATUS_CLASS: Record<NonNullable<CanvasNode["generation_status"]>, string>
   error: "bg-rose-500",
 };
 
-type SidePanelPromptData = { prompts: BananaPrompt[]; sourceIDs: string[] };
+type SidePanelPromptData = {
+  prompts: BananaPrompt[];
+  categories: Array<{ id: string; label: string; builtin?: boolean }>;
+};
 
 let sidePanelPromptCache: SidePanelPromptData | null = null;
 let sidePanelPromptRequest: Promise<SidePanelPromptData> | null = null;
+const SIDE_PANEL_PROMPT_CATEGORY_PAGE_SIZE = 12;
 
 function localizedPrompt(prompt: BananaPrompt): BananaPrompt {
   const localization = prompt.localizations?.["zh-CN"] ?? prompt.localizations?.en;
@@ -107,8 +113,8 @@ function loadSidePanelPrompts(force = false) {
       const sources = normalizePromptMarketSources(config.prompt_sources).filter((source) => source.enabled);
       const prompts = await fetchPromptMarketPrompts(undefined, sources);
       return {
-        prompts: prompts.filter((prompt) => !prompt.isNsfw).map(localizedPrompt),
-        sourceIDs: sources.map((source) => source.id),
+        prompts: sortPromptMarketPrompts(prompts.map(localizedPrompt)),
+        categories: sources.map(({ id, label, builtin }) => ({ id, label, builtin })),
       };
     })
     .then((data) => {
@@ -138,6 +144,11 @@ export function CanvasSidePanel({
   onInsertPrompt,
 }: CanvasSidePanelProps) {
   const resizeRef = useRef<{ pointerID: number; startX: number; startWidth: number } | null>(null);
+  const insertPromptRef = useRef(onInsertPrompt);
+  insertPromptRef.current = onInsertPrompt;
+  const insertPrompt = useCallback((prompt: string, title: string) => {
+    insertPromptRef.current(prompt, title);
+  }, []);
 
   const startResize = (event: ReactPointerEvent<HTMLButtonElement>) => {
     event.preventDefault();
@@ -192,20 +203,20 @@ export function CanvasSidePanel({
           ) : tab === "assets" ? (
             <CanvasAssetsTab images={libraryImages} loading={libraryLoading} onInsert={onInsertLibraryImage} onOpenAssets={onOpenAssets} />
           ) : (
-            <CanvasPromptsTab onInsert={onInsertPrompt} />
+            <CanvasPromptsTab onInsert={insertPrompt} />
           )}
         </div>
 
         <button
           type="button"
-          className="absolute inset-y-0 right-0 z-20 hidden w-3 translate-x-1/2 cursor-col-resize touch-none md:block"
+          className="absolute inset-y-0 right-0 z-30 hidden w-2 translate-x-full cursor-col-resize touch-none md:block"
           aria-label="调整侧栏宽度"
           onPointerDown={startResize}
           onPointerMove={resize}
           onPointerUp={stopResize}
           onPointerCancel={stopResize}
         >
-          <span className="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-[#1456f0]/0 transition-colors hover:bg-[#1456f0]/70" />
+          <span className="absolute inset-y-0 left-0 w-px bg-[#1456f0]/0 transition-colors hover:bg-[#1456f0]/70" />
         </button>
       </aside>
     </div>
@@ -400,13 +411,14 @@ function CanvasAssetsTab({ images, loading, onInsert, onOpenAssets }: {
   );
 }
 
-function CanvasPromptsTab({ onInsert }: { onInsert: (prompt: string, title: string) => void }) {
+const CanvasPromptsTab = memo(function CanvasPromptsTab({ onInsert }: { onInsert: (prompt: string, title: string) => void }) {
   const [prompts, setPrompts] = useState<BananaPrompt[]>(() => sidePanelPromptCache?.prompts || []);
-  const [sourceIDs, setSourceIDs] = useState<string[]>(() => sidePanelPromptCache?.sourceIDs || []);
+  const [categories, setCategories] = useState<Array<{ id: string; label: string; builtin?: boolean }>>(() => sidePanelPromptCache?.categories || []);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(!sidePanelPromptCache);
   const [error, setError] = useState("");
-  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const [expandedCategoryID, setExpandedCategoryID] = useState<string | null>(null);
+  const [visibleCounts, setVisibleCounts] = useState<Record<string, number>>({});
   const [detail, setDetail] = useState<BananaPrompt | null>(null);
 
   const load = (force = false) => {
@@ -415,7 +427,7 @@ function CanvasPromptsTab({ onInsert }: { onInsert: (prompt: string, title: stri
     void loadSidePanelPrompts(force)
       .then((data) => {
         setPrompts(data.prompts);
-        setSourceIDs(data.sourceIDs);
+        setCategories(data.categories);
       })
       .catch((loadError: unknown) => setError(loadError instanceof Error ? loadError.message : "提示词加载失败"))
       .finally(() => setLoading(false));
@@ -424,23 +436,36 @@ function CanvasPromptsTab({ onInsert }: { onInsert: (prompt: string, title: stri
   useEffect(() => load(), []);
 
   const filteredPrompts = useMemo(() => {
-    const keyword = query.trim().toLowerCase();
-    if (!keyword) return prompts;
-    return prompts.filter((prompt) => [prompt.title, prompt.prompt, prompt.category, prompt.subCategory, prompt.sourceLabel, ...prompt.tags]
-      .some((value) => String(value || "").toLowerCase().includes(keyword)));
+    const matching = prompts.filter((prompt) => promptMatchesKeyword(prompt, query));
+    return sortPromptMarketPrompts(matching);
   }, [prompts, query]);
 
-  const groups = useMemo(() => {
-    const records = new Map<string, BananaPrompt[]>();
+  const promptGroups = useMemo(() => {
+    const promptsByCategory = new Map<string, BananaPrompt[]>();
     filteredPrompts.forEach((prompt) => {
-      const sourceID = prompt.source.trim() || "unknown";
-      records.set(sourceID, [...(records.get(sourceID) || []), prompt]);
+      const categoryID = prompt.source.trim() || "unknown";
+      const items = promptsByCategory.get(categoryID);
+      if (items) items.push(prompt);
+      else promptsByCategory.set(categoryID, [prompt]);
     });
-    const configured = sourceIDs.map((sourceID) => [sourceID, records.get(sourceID) || []] as const);
-    const configuredIDs = new Set(sourceIDs);
-    const remaining = [...records.entries()].filter(([sourceID]) => !configuredIDs.has(sourceID));
-    return [["system", []] as const, ...configured, ...remaining];
-  }, [filteredPrompts, sourceIDs]);
+    const configuredIDs = new Set(categories.map(({ id }) => id));
+    return [
+      ...categories.map((category) => ({ ...category, prompts: promptsByCategory.get(category.id) || [] })),
+      ...[...promptsByCategory.entries()]
+        .filter(([id]) => !configuredIDs.has(id))
+        .map(([id, categoryPrompts]) => ({ id, label: categoryPrompts[0]?.sourceLabel || id, prompts: categoryPrompts })),
+    ].filter((category) => category.prompts.length > 0);
+  }, [categories, filteredPrompts]);
+
+  useEffect(() => setVisibleCounts({}), [prompts, query]);
+
+  useEffect(() => {
+    setExpandedCategoryID((current) => (
+      current && promptGroups.some((category) => category.id === current)
+        ? current
+        : promptGroups[0]?.id || null
+    ));
+  }, [promptGroups]);
 
   const insert = (prompt: BananaPrompt) => {
     onInsert(prompt.prompt, prompt.title);
@@ -449,9 +474,12 @@ function CanvasPromptsTab({ onInsert }: { onInsert: (prompt: string, title: stri
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="shrink-0 border-b border-border/70 p-3">
-        <div className="relative">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
-          <Input value={query} onChange={(event) => setQuery(event.target.value)} className="h-8 rounded-md pl-8 text-xs" placeholder="搜索提示词" />
+        <div className="flex items-center gap-2">
+          <div className="relative min-w-0 flex-1">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input value={query} onChange={(event) => setQuery(event.target.value)} className="h-8 rounded-md pl-8 text-xs" placeholder="搜索提示词" />
+          </div>
+          <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">{filteredPrompts.length}</span>
         </div>
       </div>
 
@@ -463,31 +491,43 @@ function CanvasPromptsTab({ onInsert }: { onInsert: (prompt: string, title: stri
             <span className="line-clamp-3">{error}</span>
             <Button type="button" variant="outline" size="sm" className="h-8 text-xs" onClick={() => load(true)}><RefreshCcw className="size-3.5" />重试</Button>
           </div>
-        ) : groups.length ? (
+        ) : promptGroups.length ? (
           <div className="space-y-1">
-            {groups.map(([sourceID, items]) => {
-              const opened = Boolean(query.trim()) || expanded.has(sourceID);
+            {promptGroups.map((category) => {
+              const opened = expandedCategoryID === category.id;
+              const visibleCount = visibleCounts[category.id] || SIDE_PANEL_PROMPT_CATEGORY_PAGE_SIZE;
+              const visiblePrompts = category.prompts.slice(0, visibleCount);
               return (
-                <section key={sourceID}>
+                <section key={category.id} className="pb-1">
                   <button
                     type="button"
-                    className="flex h-8 w-full items-center gap-1.5 rounded-md px-1.5 text-left text-xs font-medium text-muted-foreground transition hover:bg-muted/65 hover:text-foreground"
+                    className="sticky top-0 z-10 flex h-8 w-full items-center gap-1.5 rounded-md bg-background/95 px-1.5 text-left text-xs font-medium text-muted-foreground backdrop-blur-sm transition-colors hover:bg-muted hover:text-foreground"
                     aria-expanded={opened}
-                    onClick={() => setExpanded((current) => {
-                      const next = new Set(current);
-                      if (next.has(sourceID)) next.delete(sourceID);
-                      else next.add(sourceID);
-                      return next;
-                    })}
+                    title={category.label !== category.id ? category.label : undefined}
+                    onClick={() => setExpandedCategoryID((current) => current === category.id ? null : category.id)}
                   >
                     <ChevronRight className={cn("size-3.5 shrink-0 transition-transform", opened && "rotate-90")} />
                     <BookOpen className="size-3.5 shrink-0" />
-                    <span className="min-w-0 flex-1 truncate">{sourceID === "system" ? "系统提示词" : sourceID}</span>
-                    {sourceID === "system" || opened ? <span className="shrink-0 tabular-nums text-muted-foreground/70">{items.length}</span> : null}
+                    <span className="min-w-0 flex-1 truncate">{category.id}</span>
+                    <span className="shrink-0 tabular-nums text-muted-foreground/70">{category.prompts.length}</span>
                   </button>
                   {opened ? (
-                    <div className="space-y-1 pb-2 pt-1">
-                      {items.map((prompt) => <CanvasPromptRow key={`${prompt.source}:${prompt.id}`} prompt={prompt} onView={() => setDetail(prompt)} onInsert={() => insert(prompt)} />)}
+                    <div className="space-y-1 pt-1">
+                      {visiblePrompts.map((prompt) => <CanvasPromptRow key={`${prompt.source}:${prompt.id}`} prompt={prompt} onView={() => setDetail(prompt)} onInsert={() => insert(prompt)} />)}
+                      {visiblePrompts.length < category.prompts.length ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="h-8 w-full text-[11px] text-muted-foreground"
+                          onClick={() => setVisibleCounts((current) => ({
+                            ...current,
+                            [category.id]: Math.min(category.prompts.length, visibleCount + SIDE_PANEL_PROMPT_CATEGORY_PAGE_SIZE),
+                          }))}
+                        >
+                          加载更多（{visiblePrompts.length}/{category.prompts.length}）
+                        </Button>
+                      ) : null}
                     </div>
                   ) : null}
                 </section>
@@ -519,7 +559,7 @@ function CanvasPromptsTab({ onInsert }: { onInsert: (prompt: string, title: stri
       </Dialog>
     </div>
   );
-}
+});
 
 function CanvasPromptRow({ prompt, onView, onInsert }: { prompt: BananaPrompt; onView: () => void; onInsert: () => void }) {
   return (
@@ -528,6 +568,9 @@ function CanvasPromptRow({ prompt, onView, onInsert }: { prompt: BananaPrompt; o
       <button type="button" className="min-w-0 flex-1 text-left" onClick={onView}>
         <span className="block truncate text-xs font-medium">{prompt.title}</span>
         <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">{prompt.prompt}</span>
+        <span className="mt-0.5 block truncate text-[10px] text-muted-foreground/75">
+          {[prompt.sourceLabel, formatSidePanelPromptDate(prompt.created)].filter(Boolean).join(" · ")}
+        </span>
       </button>
       <span className="flex shrink-0 items-center gap-0.5">
         <Button type="button" variant="ghost" size="icon" className="size-7 text-muted-foreground" aria-label={`查看 ${prompt.title}`} title="查看详情" onClick={onView}><Eye className="size-3.5" /></Button>
@@ -535,6 +578,13 @@ function CanvasPromptRow({ prompt, onView, onInsert }: { prompt: BananaPrompt; o
       </span>
     </div>
   );
+}
+
+function formatSidePanelPromptDate(value?: string) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit" }).format(date);
 }
 
 function PromptThumbnail({ prompt }: { prompt: BananaPrompt }) {

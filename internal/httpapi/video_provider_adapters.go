@@ -26,7 +26,7 @@ type videoProviderAdapterInput struct {
 // example Hailuo and MiniMax). Adding a provider only requires one adapter.
 var videoProviderAdapters = []videoProviderAdapter{
 	{name: "sora", matches: func(model string) bool { return isSora2Model(model) }, apply: func(in videoProviderAdapterInput) {
-		applySoraVideoRequest(in.request, in.refs, in.seconds)
+		applySoraVideoRequest(in.request, in.payload, in.refs, in.seconds)
 	}},
 	{name: "veo", matches: func(model string) bool { return strings.Contains(model, "veo") }, apply: func(in videoProviderAdapterInput) {
 		applyVeoVideoRequest(in.request, in.metadata, in.payload, in.refs, in.referenceMode, in.size, in.resolution, in.model, in.seconds)
@@ -110,25 +110,30 @@ func videoProviderAdapterForModel(model string) videoProviderAdapter {
 // Provider-specific video request shaping lives here so the relay entrypoint
 // only owns the shared compatibility envelope and provider dispatch.
 
-func applySoraVideoRequest(request map[string]any, refs []string, seconds int) {
+func applySoraVideoRequest(request, payload map[string]any, refs []string, seconds int) {
 	request["seconds"] = strconv.Itoa(seconds)
-	model := strings.ToLower(strings.TrimSpace(util.Clean(request["model"])))
+	isAPIMart := isAPIMartVideoPayload(payload)
 	if len(refs) > 0 {
-		// Both the OpenAI-compatible endpoint and APIMart understand this
-		// single-reference compatibility field.
-		request["input_reference"] = refs[0]
-		delete(request, "size")
-		delete(request, "aspect_ratio")
-	} else if !strings.Contains(model, "/") {
-		// APIMart's Sora adapter calls the text-to-video aspect field
-		// `aspect_ratio`; retain `size` for the OpenAI-compatible relay.
+		if isAPIMart {
+			request["image_urls"] = refs[:1]
+			delete(request, "size")
+			delete(request, "input_reference")
+		} else {
+			request["input_reference"] = refs[0]
+		}
+	} else if isAPIMart {
 		if size := strings.TrimSpace(util.Clean(request["size"])); size != "" {
 			request["aspect_ratio"] = size
+			delete(request, "size")
 		}
 	}
 	delete(request, "duration")
-	// Resolution is retained in the compatibility request. APIMart's Sora
-	// adapter maps it to its quality field; official providers may ignore it.
+	if !isAPIMart {
+		// OpenAI's official video API accepts size/seconds but has no generic
+		// resolution or aspect-ratio fields.
+		delete(request, "resolution")
+		delete(request, "aspect_ratio")
+	}
 }
 
 func applyVeoVideoRequest(request, metadata, payload map[string]any, refs []string, referenceMode, size, resolution, model string, seconds int) {
@@ -460,6 +465,7 @@ func applyCogVideoX3Request(request, payload map[string]any, refs []string, size
 	}
 	request["quality"] = quality
 	request["size"] = normalizeCogVideoX3Size(size, resolution)
+	delete(request, "seconds")
 	delete(request, "resolution")
 	if value, ok := payload["generate_audio"].(bool); ok {
 		request["with_audio"] = value
@@ -516,6 +522,11 @@ func applyAgnesVideoRequest(request, payload map[string]any, refs, videos, audio
 	delete(request, "duration")
 	delete(request, "resolution")
 	if name == "agnes-video-2-5" {
+		if seconds < 4 {
+			seconds = 4
+		} else if seconds > 12 {
+			seconds = 12
+		}
 		mode := "text"
 		if referenceMode == "reference" {
 			mode = "reference"
@@ -600,6 +611,7 @@ func applyGrokVideoRequest(request, metadata, payload map[string]any, refs []str
 		if ratio := normalizeKIEAspectRatio(size); ratio != "" && ratio != "adaptive" && ratio != "auto" {
 			request["aspect_ratio"] = ratio
 		}
+		delete(request, "seconds")
 		delete(request, "size")
 		return
 	}
@@ -1269,6 +1281,15 @@ func buildKlingVideoList(videos []string) []map[string]string {
 func applyMiniMaxVideoRequest(request, metadata, payload map[string]any, refs, referenceVideoURLs, referenceAudioURLs []string, referenceMode, size, model string) {
 	if isMiniMaxH3Model(model) {
 		name := strings.ToLower(strings.TrimSpace(model))
+		protocolName := videoProtocolHint(payload)
+		if protocolName == "metaso" {
+			applyMiniMaxH3MetasoRequest(request, payload, refs, referenceVideoURLs, referenceAudioURLs, referenceMode, size)
+			return
+		}
+		if name == "minimax-h3" && protocolName == "" && !isAPIMartVideoPayload(payload) {
+			applyMiniMaxH3NeutralRelayRequest(request, metadata, refs, referenceVideoURLs, referenceAudioURLs, referenceMode, size)
+			return
+		}
 		// APIMart exposes the bare `minimax-h3` model as one multimodal
 		// endpoint. KIE exposes the same family as three slash-qualified
 		// endpoints. Do not run the bare model through the legacy Hailuo
@@ -1276,23 +1297,22 @@ func applyMiniMaxVideoRequest(request, metadata, payload map[string]any, refs, r
 		// drops references sent under first_frame_image.
 		if name == "minimax-h3" && isAPIMartVideoPayload(payload) {
 			if size != "" {
-				ratio := normalizeMiniMaxH3Ratio(size, referenceMode)
+				// APIMart documents `adaptive` as a native H3 aspect value. KIE's
+				// slash-qualified H3 endpoints use `auto` instead, so do not share
+				// that normalization across the two provider contracts.
+				ratio := normalizeKIEAspectRatio(size)
 				request["aspect_ratio"] = ratio
 				delete(request, "size")
 			}
 			if referenceMode == "reference" || len(referenceVideoURLs) > 0 || len(referenceAudioURLs) > 0 {
-				request["generation_mode"] = "reference-to-video"
 				copyVideoReference(request, metadata, "image_urls", refs)
 				copyVideoReference(request, metadata, "video_urls", referenceVideoURLs)
 				copyVideoReference(request, metadata, "audio_urls", referenceAudioURLs)
 			} else if len(refs) > 0 {
-				request["generation_mode"] = "image-to-video"
 				setVideoProviderField(request, metadata, "first_frame_image", refs[0])
 				if len(refs) > 1 {
 					setVideoProviderField(request, metadata, "last_frame_image", refs[1])
 				}
-			} else {
-				request["generation_mode"] = "text-to-video"
 			}
 			if resolution := normalizeMiniMaxH3Resolution(util.Clean(payload["resolution"])); resolution != "" {
 				request["resolution"] = resolution
@@ -1307,34 +1327,30 @@ func applyMiniMaxVideoRequest(request, metadata, payload map[string]any, refs, r
 			referenceMode, refs, referenceVideoURLs, referenceAudioURLs = "first-frame", nil, nil, nil
 		} else if strings.HasSuffix(name, "/image-to-video") {
 			referenceMode, referenceVideoURLs, referenceAudioURLs = "first-frame", nil, nil
-			if len(refs) > 1 {
-				refs = refs[:1]
-			}
 		} else if strings.HasSuffix(name, "/reference-to-video") {
 			referenceMode = "reference"
 		}
 		delete(request, "seconds")
 		delete(request, "size")
 		if referenceMode == "reference" {
-			request["generation_mode"] = "reference-to-video"
-			request["aspect_ratio"] = normalizeMiniMaxH3Ratio(size, referenceMode)
+			if size != "" {
+				request["aspect_ratio"] = normalizeMiniMaxH3KIERatio(size)
+			}
 			copyVideoReference(request, metadata, "reference_image_urls", refs)
 			copyVideoReference(request, metadata, "reference_video_urls", referenceVideoURLs)
 			copyVideoReference(request, metadata, "reference_audio_urls", referenceAudioURLs)
 		} else if len(refs) > 0 {
-			request["generation_mode"] = "image-to-video"
 			setVideoProviderField(request, metadata, "first_frame_url", refs[0])
-			if len(refs) > 1 && !strings.HasSuffix(name, "/image-to-video") {
+			if len(refs) > 1 {
 				setVideoProviderField(request, metadata, "last_frame_url", refs[1])
 			}
 			if strings.HasPrefix(strings.ToLower(strings.TrimSpace(refs[0])), "data:") {
 				request["input_reference"] = refs[0]
 			}
 		} else {
-			request["generation_mode"] = "text-to-video"
-			request["aspect_ratio"] = normalizeMiniMaxH3Ratio(size, referenceMode)
+			request["aspect_ratio"] = normalizeMiniMaxH3KIERatio(size)
 		}
-		normalizeMiniMaxH3Request(request, strings.HasSuffix(name, "/image-to-video"))
+		normalizeMiniMaxH3KIERequest(request, strings.HasSuffix(name, "/image-to-video"))
 		return
 	}
 	name := strings.ToLower(strings.TrimSpace(model))
@@ -1391,32 +1407,116 @@ func applyMiniMaxVideoRequest(request, metadata, payload map[string]any, refs, r
 	}
 }
 
-// A bare MiniMax H3 name is used by both channel adapters. Keep KIE as the
-// compatibility default, while allowing the caller that knows its selected
-// channel to opt into APIMart's aspect_ratio/URL-array contract explicitly.
+func applyMiniMaxH3NeutralRelayRequest(request, metadata map[string]any, refs, videos, audios []string, referenceMode, size string) {
+	if size != "" {
+		request["size"] = size
+	}
+	if referenceMode == "reference" || len(videos) > 0 || len(audios) > 0 {
+		copyVideoReference(request, metadata, "reference_image_urls", refs)
+		copyVideoReference(request, metadata, "reference_video_urls", videos)
+		copyVideoReference(request, metadata, "reference_audio_urls", audios)
+	} else if len(refs) > 0 {
+		request["input_reference"] = refs[0]
+		if len(refs) > 1 {
+			metadata["last_frame_url"] = refs[1]
+		}
+	}
+}
+
+func applyMiniMaxH3MetasoRequest(request, payload map[string]any, refs, videos, audios []string, referenceMode, size string) {
+	content := []map[string]any{{"type": "text", "text": util.Clean(payload["prompt"])}}
+	appendMedia := func(kind, role string, values []string) {
+		for _, value := range values {
+			item := map[string]any{"type": kind, kind: map[string]any{"url": value}}
+			if role != "" {
+				item["role"] = role
+			}
+			content = append(content, item)
+		}
+	}
+	if referenceMode == "reference" || len(videos) > 0 || len(audios) > 0 {
+		appendMedia("image_url", "reference_image", refs)
+		appendMedia("video_url", "reference_video", videos)
+		appendMedia("audio_url", "reference_audio", audios)
+	} else {
+		for index, value := range refs {
+			role := "first_frame"
+			if index > 0 {
+				role = "last_frame"
+			}
+			appendMedia("image_url", role, []string{value})
+			if index == 1 {
+				break
+			}
+		}
+	}
+
+	request["content"] = content
+	resolution := normalizeMiniMaxH3Resolution(util.Clean(payload["resolution"]))
+	if resolution == "" {
+		resolution = "768P"
+	}
+	request["resolution"] = resolution
+	request["duration"] = clampVideoInt(util.ToInt(payload["seconds"], 5), 4, 15)
+	ratio := normalizeKIEAspectRatio(size)
+	if len(refs) > 0 && referenceMode != "reference" {
+		ratio = "adaptive"
+	} else if ratio == "" || ratio == "adaptive" && len(refs)+len(videos)+len(audios) == 0 {
+		ratio = "16:9"
+	}
+	request["ratio"] = ratio
+	for _, key := range []string{
+		"prompt", "seconds", "size", "aspect_ratio", "input_reference",
+		"first_frame_url", "last_frame_url", "reference_image_urls",
+		"reference_video_urls", "reference_audio_urls", "metadata",
+	} {
+		delete(request, key)
+	}
+}
+
+func clampVideoInt(value, minimum, maximum int) int {
+	if value < minimum {
+		return minimum
+	}
+	if value > maximum {
+		return maximum
+	}
+	return value
+}
+
+// Explicit channel protocol always wins. Older creator requests did not carry
+// that hint, so their unambiguous APIMart model IDs still use family inference.
 func isAPIMartVideoPayload(payload map[string]any) bool {
-	for _, key := range []string{"provider", "video_provider", "channel_protocol", "protocol"} {
-		value := strings.ToLower(strings.TrimSpace(util.Clean(payload[key])))
-		if strings.Contains(value, "apimart") {
-			return true
-		}
-		if value == "kie" {
-			return false
-		}
+	if hint := videoProtocolHint(payload); hint != "" {
+		return hint == "apimart"
 	}
 	for _, key := range []string{"channel_base_url", "provider_base_url"} {
 		value := strings.ToLower(strings.TrimSpace(util.Clean(payload[key])))
-		if strings.Contains(value, "apimart") {
-			return true
+		if value != "" {
+			return strings.Contains(value, "apimart")
 		}
 	}
-	// The creator submits only the selected token name. APIMart model IDs are
-	// bare names in the reference project, while KIE endpoints are slash
-	// qualified (apart from a small set of explicitly KIE legacy IDs). Infer
-	// the APIMart contract for the known bare families so strict cleanup also
-	// runs for real creator requests without a synthetic provider field.
+	// Legacy creator requests do not carry a channel hint. Retain the reference
+	// project's APIMart model-family inference for those requests, while any
+	// explicit protocol above takes precedence over the model name.
 	model := strings.ToLower(strings.TrimSpace(util.Clean(payload["model"])))
 	return isKnownAPIMartVideoModel(model)
+}
+
+func videoProtocolHint(payload map[string]any) string {
+	for _, key := range []string{"provider", "video_provider", "channel_protocol", "protocol"} {
+		value := strings.ToLower(strings.TrimSpace(util.Clean(payload[key])))
+		if value == "" {
+			continue
+		}
+		for _, protocolName := range []string{"openai", "gemini", "grok2api", "metaso", "apimart", "kie"} {
+			if value == protocolName || strings.Contains(value, protocolName) {
+				return protocolName
+			}
+		}
+		return value
+	}
+	return ""
 }
 
 func isKnownAPIMartVideoModel(model string) bool {
@@ -1461,32 +1561,43 @@ func isKnownAPIMartVideoModel(model string) bool {
 	return model == "minimax-h3" || model == "veo3.1" || model == "veo3.1-official"
 }
 
-// normalizeMiniMaxH3Request is the final guard for the H3 provider contract.
-func normalizeMiniMaxH3Request(request map[string]any, dropImageRatio bool) {
-	mode := strings.ToLower(strings.TrimSpace(util.Clean(request["generation_mode"])))
+// normalizeMiniMaxH3KIERequest is the final guard for KIE's slash-qualified
+// H3 endpoints. APIMart's bare H3 model has a different aspect enum.
+func normalizeMiniMaxH3KIERequest(request map[string]any, dropImageRatio bool) {
+	delete(request, "generation_mode")
 	if resolution := normalizeMiniMaxH3Resolution(util.Clean(request["resolution"])); resolution != "" {
 		request["resolution"] = resolution
 	}
 
 	ratio := strings.ToLower(strings.TrimSpace(util.Clean(request["aspect_ratio"])))
-	switch mode {
-	case "image-to-video":
+	if dropImageRatio {
 		// H3 image-to-video derives the ratio from the first frame and does not
 		// declare a ratio field.
-		if dropImageRatio {
-			delete(request, "ratio")
-			delete(request, "aspect_ratio")
-		} else {
-			request["aspect_ratio"] = normalizeMiniMaxH3Ratio(ratio, "first-frame")
-			delete(request, "ratio")
-		}
-	case "reference-to-video":
-		request["aspect_ratio"] = normalizeMiniMaxH3Ratio(ratio, "reference")
 		delete(request, "ratio")
-	default:
-		request["aspect_ratio"] = normalizeMiniMaxH3Ratio(ratio, "text")
+		delete(request, "aspect_ratio")
+	} else if ratio != "" {
+		request["aspect_ratio"] = normalizeMiniMaxH3KIERatio(ratio)
 		delete(request, "ratio")
 	}
+}
+
+func normalizeMiniMaxH3APIMartRequest(request map[string]any) {
+	delete(request, "generation_mode")
+	if resolution := normalizeMiniMaxH3Resolution(util.Clean(request["resolution"])); resolution != "" {
+		request["resolution"] = resolution
+	}
+	if ratio := strings.TrimSpace(util.Clean(request["aspect_ratio"])); ratio != "" {
+		request["aspect_ratio"] = normalizeKIEAspectRatio(ratio)
+	}
+	delete(request, "ratio")
+}
+
+func normalizeMiniMaxH3KIERatio(value string) string {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	if normalized == "auto" || normalized == "adaptive" {
+		return "auto"
+	}
+	return normalizeMiniMaxH3Ratio(value, "text")
 }
 
 func normalizeHailuoVideoResolution(value string) string {
@@ -1711,7 +1822,10 @@ func applySeedanceVideoRequest(request, metadata, payload map[string]any, refs, 
 			metadata["watermark"] = value
 		}
 	}
-	if referenceMode == "reference" && !(strings.Contains(name, "seedance-1.5") || strings.Contains(name, "seedance-1-5")) {
+	// The generic compatibility relay can express multimodal references as
+	// content parts. KIE and APIMart already received their provider-native
+	// reference arrays above, and both strict contracts reject this extra field.
+	if referenceMode == "reference" && !isKIE && !isAPIMartVideoPayload(payload) && !(strings.Contains(name, "seedance-1.5") || strings.Contains(name, "seedance-1-5")) {
 		content := make([]map[string]any, 0, len(refs)+len(referenceVideoURLs)+len(referenceAudioURLs))
 		for _, value := range refs {
 			content = append(content, map[string]any{"type": "image_url", "image_url": map[string]any{"url": value}, "role": "reference_image"})
@@ -1975,11 +2089,6 @@ func normalizeKIEVideoDurationBounds(request map[string]any, model string) {
 	}
 	duration, err := strconv.Atoi(strings.TrimSpace(util.Clean(value)))
 	if err != nil {
-		return
-	}
-	// Seedance exposes -1 as its documented smart-duration sentinel. Keep it
-	// intact instead of clamping it to the model's minimum duration.
-	if duration == -1 && strings.HasPrefix(name, "bytedance/seedance-") {
 		return
 	}
 	if duration < minimum {

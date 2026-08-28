@@ -1,10 +1,4 @@
 import type { ImageGenerationPreferences, ModelConfig } from "@/lib/api";
-import {
-  IMAGE_COUNT_STORAGE_KEY,
-  IMAGE_MODEL_STORAGE_KEY,
-  IMAGE_QUALITY_STORAGE_KEY,
-  IMAGE_SIZE_STORAGE_KEY,
-} from "@/app/image/image-options";
 import type {
   CreativeWorkflow,
   WorkflowGenerationConfig,
@@ -29,15 +23,17 @@ export type WorkflowGenerationDefaults = Partial<Pick<
   text_channel_id?: string;
 };
 
-export function readStoredWorkflowGenerationDefaults(): WorkflowGenerationDefaults {
-  if (typeof window === "undefined") return {};
-  const count = Math.max(1, Math.min(10, Math.round(Number(window.localStorage.getItem(IMAGE_COUNT_STORAGE_KEY)) || 1)));
-  const imageModel = String(window.localStorage.getItem(IMAGE_MODEL_STORAGE_KEY) || "").trim();
+export function workflowGenerationDefaultsFromPreferences(
+  preferences: ImageGenerationPreferences | undefined,
+): WorkflowGenerationDefaults {
+  if (!preferences) return {};
+  const imageModel = preferences.default_image_model.trim();
+  const workbench = preferences.workbench;
   return {
     ...(imageModel ? { image_model: imageModel, model: imageModel } : {}),
-    quality: String(window.localStorage.getItem(IMAGE_QUALITY_STORAGE_KEY) || "auto").trim() || "auto",
-    size: String(window.localStorage.getItem(IMAGE_SIZE_STORAGE_KEY) || "auto").trim() || "auto",
-    count: String(count),
+    quality: workbench.image_quality || "auto",
+    size: workbench.image_size || "auto",
+    count: String(Math.max(1, Math.min(10, Math.round(workbench.image_count || 1)))),
   };
 }
 
@@ -249,13 +245,25 @@ export function resolveWorkflowRuntime(
   models: ModelConfig | null,
   preferences: ImageGenerationPreferences,
 ) {
-  const workflowModel = workflow.config.image_model || workflow.config.model;
-  const fallbackModel = preferences.default_image_model || models?.default_image_model || "";
-  const useFallback = !workflowModel || Boolean(models?.image_models.length && !models.image_models.includes(workflowModel));
+  const preferredModel =
+    workflow.config.image_model ||
+    workflow.config.model ||
+    preferences.default_image_model ||
+    models?.default_image_model ||
+    "";
+  const model = models?.image_models.length && !models.image_models.includes(preferredModel)
+    ? models.default_image_model || models.image_models[0] || ""
+    : preferredModel;
+  const count = Math.max(1, Math.min(10, Math.round(Number(workflow.config.count) || 1)));
+  const timeout = Math.max(1, Math.min(3600, Math.round(Number(workflow.config.timeout) || 600)));
   return {
-    model: useFallback ? fallbackModel : workflowModel,
-    api_mode: preferences.api_mode,
+    model,
+    api_mode: workflow.config.api_mode,
     system_prompt: workflow.config.system_prompt || preferences.system_prompt,
+    quality: workflow.config.quality || "auto",
+    size: workflow.config.size || "auto",
+    count,
+    timeout,
   };
 }
 

@@ -1,18 +1,26 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { CheckCircle2, Clock3, ClipboardList, LoaderCircle, Sparkles } from "lucide-react";
+import { CheckCircle2, Clock3, ClipboardList, Image as ImageIcon, LoaderCircle, Map as MapIcon, Music, Type, Video } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { formatImageSizeDisplay, getImageSizeRequirementLabel, isHighResolutionImageSize } from "@/app/image/image-options";
+import { isWorkflowImageConversation } from "@/lib/image-conversation-source";
 import { cn, formatElapsedClock } from "@/lib/utils";
+import { canvasProjectPath } from "@/app/canvas/canvas-project-route";
+import {
+  getCanvasTaskQueueSnapshot,
+  subscribeCanvasTaskQueue,
+  type CanvasTaskQueueItem,
+} from "@/store/canvas-task-queue";
 import {
   ACTIVE_IMAGE_CONVERSATION_STORAGE_KEY,
   IMAGE_ACTIVE_CONVERSATION_REQUEST_EVENT,
   IMAGE_CONVERSATIONS_CHANGED_EVENT,
+  deleteImageConversation,
   getEffectiveImageTurnStatus,
   getImageTurnLoadingCounts,
   loadImageConversationHistoryWindow,
@@ -206,6 +214,7 @@ function findQueueItem(conversations: ImageConversation[], conversationId: strin
 function useImageConversationsForQueue() {
   const [conversations, setConversations] = useState<ImageConversation[]>([]);
   const requestSequenceRef = useRef(0);
+  const cleanupIDsRef = useRef(new Set<string>());
 
   useEffect(() => {
     let active = true;
@@ -214,9 +223,17 @@ function useImageConversationsForQueue() {
       const requestSequence = ++requestSequenceRef.current;
       try {
         const { firstPage, activePage } = await loadImageConversationHistoryWindow(24);
+        const sourceItems = [...firstPage.items, ...activePage.items];
         const items = mergeImageConversationItems(firstPage.items, activePage.items);
         if (active && requestSequence === requestSequenceRef.current) {
           setConversations(items);
+        }
+        for (const conversation of sourceItems) {
+          if (!isWorkflowImageConversation(conversation) || cleanupIDsRef.current.has(conversation.id)) continue;
+          cleanupIDsRef.current.add(conversation.id);
+          void deleteImageConversation(conversation.id)
+            .catch(() => undefined)
+            .finally(() => cleanupIDsRef.current.delete(conversation.id));
         }
       } catch {
         if (active && requestSequence === requestSequenceRef.current) {
@@ -285,13 +302,13 @@ function QueueItem({
   return (
     <button
       type="button"
-      className="w-full rounded-2xl border border-[#f2f3f5] bg-white p-3 text-left shadow-[0_4px_6px_rgba(0,0,0,0.05)] transition hover:border-[#dbe7ff] hover:bg-[#f8fbff] dark:border-border dark:bg-card dark:hover:bg-accent/40"
+      className="w-full border-b border-border/70 px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-muted/40"
       onClick={() => onOpenConversation(item.conversationId)}
     >
       <div className="flex items-start gap-3">
         <span
           className={cn(
-            "mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full ring-1",
+            "mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md ring-1",
             isQueued
               ? "bg-amber-50 text-amber-700 ring-amber-100"
               : "bg-sky-50 text-[#1456f0] ring-sky-100",
@@ -312,22 +329,15 @@ function QueueItem({
             {item.turn.prompt || "无提示词内容"}
           </p>
 
-          <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-[#45515e] dark:text-muted-foreground">
-            {detailParts.map((part, index) => (
-              <span key={`${part}-${index}`} className="rounded-full bg-[#f0f0f0] px-2 py-0.5 dark:bg-muted">
-                {part}
-              </span>
-            ))}
-            <span className="rounded-full bg-[#f0f0f0] px-2 py-0.5 font-mono tabular-nums dark:bg-muted">
-              {item.completedCount + item.failedCount + item.cancelledCount}/{item.totalCount}
-            </span>
+          <div className="mt-1.5 flex min-w-0 items-center gap-2 text-[11px] text-muted-foreground">
+            <span className="min-w-0 truncate">{[...detailParts, `${item.completedCount + item.failedCount + item.cancelledCount}/${item.totalCount}`].join(" · ")}</span>
             {item.queuedCount > 0 ? (
-              <span className="rounded-full bg-amber-50 px-2 py-0.5 font-mono tabular-nums text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
+              <span className="shrink-0 rounded-md bg-amber-50 px-1.5 py-0.5 font-mono tabular-nums text-amber-700 dark:bg-amber-950/30 dark:text-amber-300">
                 排队 {item.queuedCount}
               </span>
             ) : null}
             {item.runningCount > 0 ? (
-              <span className="rounded-full bg-sky-50 px-2 py-0.5 font-mono tabular-nums text-sky-700 dark:bg-sky-950/30 dark:text-sky-300">
+              <span className="shrink-0 rounded-md bg-sky-50 px-1.5 py-0.5 font-mono tabular-nums text-sky-700 dark:bg-sky-950/30 dark:text-sky-300">
                 处理中 {item.runningCount}
               </span>
             ) : null}
@@ -369,12 +379,11 @@ function CompletionItem({
   return (
     <button
       type="button"
-      className="animate-in fade-in slide-in-from-top-1 zoom-in-95 w-full rounded-2xl border border-emerald-100 bg-white p-3 text-left shadow-[0_12px_24px_-18px_rgba(16,185,129,0.55)] duration-300 hover:border-emerald-200 hover:bg-emerald-50/45 dark:border-emerald-900/50 dark:bg-card dark:hover:bg-emerald-950/20"
+      className="animate-in fade-in slide-in-from-top-1 w-full border-b border-border/70 px-4 py-3 text-left duration-300 last:border-b-0 hover:bg-emerald-50/45 dark:hover:bg-emerald-950/20"
       onClick={() => onOpenConversation(item.conversationId)}
     >
       <div className="flex items-start gap-3">
-        <span className={cn("relative mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-full ring-1", tone.iconClass)}>
-          <span className="absolute inset-0 rounded-full bg-current opacity-15 animate-ping" />
+        <span className={cn("relative mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md ring-1", tone.iconClass)}>
           <CheckCircle2 className="relative size-4" />
         </span>
         <div className="min-w-0 flex-1">
@@ -404,6 +413,68 @@ function CompletionItem({
   );
 }
 
+function getCanvasTaskTypeMeta(type: CanvasTaskQueueItem["type"]) {
+  if (type === "video") return { label: "视频", icon: Video };
+  if (type === "audio") return { label: "音频", icon: Music };
+  if (type === "panorama") return { label: "全景图", icon: MapIcon };
+  if (type === "text") return { label: "文本", icon: Type };
+  return { label: "图片", icon: ImageIcon };
+}
+
+function CanvasQueueItem({ item, now, onOpenCanvas }: { item: CanvasTaskQueueItem; now: number; onOpenCanvas: (canvasID: string) => void }) {
+  const terminal = item.status !== "generating";
+  const successful = item.status === "success";
+  const meta = getCanvasTaskTypeMeta(item.type);
+  const Icon = meta.icon;
+  const elapsed = formatElapsedClock(Math.max(0, Math.floor(((item.completedAt || now) - item.startedAt) / 1000)));
+  const statusLabel = item.status === "generating" ? "处理中" : successful ? "已完成" : item.status === "cancelled" ? "已终止" : "失败";
+  const tone = item.status === "generating"
+    ? "bg-sky-50 text-[#1456f0] ring-sky-100 dark:bg-sky-950/30 dark:text-sky-300 dark:ring-sky-800"
+    : successful
+      ? "bg-emerald-50 text-emerald-700 ring-emerald-100 dark:bg-emerald-950/30 dark:text-emerald-300 dark:ring-emerald-800"
+      : item.status === "cancelled"
+        ? "bg-amber-50 text-amber-700 ring-amber-100 dark:bg-amber-950/30 dark:text-amber-300 dark:ring-amber-800"
+        : "bg-rose-50 text-rose-700 ring-rose-100 dark:bg-rose-950/30 dark:text-rose-300 dark:ring-rose-800";
+
+  return (
+    <button
+      type="button"
+      className={cn(
+        "w-full border-b border-border/70 px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-muted/40",
+        terminal && "animate-in fade-in slide-in-from-top-1",
+      )}
+      onClick={() => onOpenCanvas(item.canvasID)}
+    >
+      <div className="flex items-start gap-3">
+        <span className={cn("mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md ring-1", tone)}>
+          {item.status === "generating" ? <LoaderCircle className="size-4 animate-spin" /> : successful ? <CheckCircle2 className="size-4" /> : <Icon className="size-4" />}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-center justify-between gap-2">
+            <p className="truncate text-sm font-semibold text-[#222222] dark:text-foreground">{item.title || `${meta.label}任务`}</p>
+            <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ring-1", tone)}>{statusLabel}</span>
+          </div>
+          <p className="mt-1 line-clamp-2 text-xs leading-5 text-[#45515e] dark:text-muted-foreground">{item.prompt || "无提示词内容"}</p>
+          <p className="mt-1.5 truncate text-[11px] text-muted-foreground">{["无限画布", meta.label, item.model, `${item.completedCount + item.failedCount}/${item.totalCount}`].filter(Boolean).join(" · ")}</p>
+          <div className="mt-3">
+            <div className="mb-1.5 flex items-center justify-between gap-2 text-[11px] text-[#45515e] dark:text-muted-foreground">
+              <span className="truncate font-medium text-[#222222] dark:text-foreground">{item.error || `${item.canvasTitle} · ${statusLabel}`}</span>
+              <span className="shrink-0 font-mono tabular-nums">{item.progress}%</span>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-[#edf2f7] dark:bg-muted">
+              <div className={cn("h-full rounded-full transition-[width] duration-300", successful ? "bg-emerald-500" : item.status === "error" ? "bg-rose-500" : item.status === "cancelled" ? "bg-amber-500" : "bg-[#1456f0]")} style={{ width: `${item.progress}%` }} />
+            </div>
+            <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px] text-[#8e8e93] dark:text-muted-foreground">
+              <span className="truncate">{item.canvasTitle}</span>
+              <span className="shrink-0 font-mono tabular-nums">{terminal ? "耗时" : "已运行"} {elapsed}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </button>
+  );
+}
+
 export function ImageTaskQueue({ className }: { className?: string }) {
   const navigate = useNavigate();
   const conversations = useImageConversationsForQueue();
@@ -412,13 +483,16 @@ export function ImageTaskQueue({ className }: { className?: string }) {
     getImageTurnProgressSnapshot,
     getImageTurnProgressSnapshot,
   );
+  const canvasTasks = useSyncExternalStore(subscribeCanvasTaskQueue, getCanvasTaskQueueSnapshot, getCanvasTaskQueueSnapshot);
   const queueItems = useMemo(() => getTaskQueueItems(conversations), [conversations]);
-  const activeCount = queueItems.length;
+  const activeCanvasTasks = useMemo(() => canvasTasks.filter((item) => item.status === "generating"), [canvasTasks]);
+  const completedCanvasTasks = useMemo(() => canvasTasks.filter((item) => item.status !== "generating"), [canvasTasks]);
+  const activeCount = queueItems.length + activeCanvasTasks.length;
   const [recentCompletions, setRecentCompletions] = useState<RecentQueueCompletion[]>([]);
   const [open, setOpen] = useState(false);
   const [now, setNow] = useState(Date.now());
   const previousQueueItemsRef = useRef<Map<string, TaskQueueItem>>(new Map());
-  const hasRecentCompletion = recentCompletions.length > 0;
+  const hasRecentCompletion = recentCompletions.length > 0 || completedCanvasTasks.length > 0;
 
   useEffect(() => {
     const currentItems = new Map(queueItems.map((item) => [`${item.conversationId}:${item.turn.id}`, item]));
@@ -491,6 +565,11 @@ export function ImageTaskQueue({ className }: { className?: string }) {
     navigate("/image");
   };
 
+  const handleOpenCanvas = (canvasID: string) => {
+    setOpen(false);
+    navigate(canvasProjectPath(canvasID));
+  };
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
@@ -498,7 +577,7 @@ export function ImageTaskQueue({ className }: { className?: string }) {
           type="button"
           variant="outline"
           className={cn(
-            "relative h-9 rounded-full px-2.5 shadow-none",
+            "h-9 rounded-lg px-2.5 shadow-none",
             activeCount > 0
               ? "border-sky-200 bg-sky-50 text-[#1456f0] hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-300"
               : hasRecentCompletion
@@ -509,9 +588,6 @@ export function ImageTaskQueue({ className }: { className?: string }) {
           aria-label={activeCount > 0 ? `查看 ${activeCount} 个处理中任务` : hasRecentCompletion ? "查看刚完成的任务" : "查看任务队列"}
           title="任务队列"
         >
-          {hasRecentCompletion ? (
-            <span className="pointer-events-none absolute -inset-1 rounded-full border border-emerald-300/70 animate-ping" />
-          ) : null}
           {activeCount > 0 ? (
             <LoaderCircle className="size-4 animate-spin" />
           ) : hasRecentCompletion ? (
@@ -521,41 +597,34 @@ export function ImageTaskQueue({ className }: { className?: string }) {
           )}
           <span className="hidden text-xs font-medium xl:inline">任务队列</span>
           {activeCount > 0 ? (
-            <span className="absolute -top-1 -right-1 inline-flex min-w-5 items-center justify-center rounded-full bg-[#1456f0] px-1.5 text-[10px] font-semibold leading-5 text-white">
+            <span className="inline-flex min-w-5 items-center justify-center rounded-md bg-[#1456f0] px-1.5 text-[10px] font-semibold leading-5 text-white dark:bg-sky-400 dark:text-sky-950">
               {activeCount}
             </span>
           ) : null}
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" sideOffset={8} className="w-[min(calc(100vw-2rem),460px)] p-0">
+      <PopoverContent align="end" sideOffset={8} className="w-[min(calc(100vw-2rem),420px)] overflow-hidden rounded-lg p-0">
         <div className="flex items-center justify-between gap-3 border-b border-[#f2f3f5] px-4 py-3 dark:border-border">
           <div className="flex min-w-0 items-center gap-2">
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-full bg-[#edf4ff] text-[#1456f0] dark:bg-sky-950/30 dark:text-sky-300">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-[#edf4ff] text-[#1456f0] dark:bg-sky-950/30 dark:text-sky-300">
               <ClipboardList className="size-4" />
             </span>
             <div className="min-w-0">
-              <div className="text-sm font-semibold text-[#222222] dark:text-foreground">任务处理队列</div>
+              <div className="text-sm font-semibold text-[#222222] dark:text-foreground">任务队列</div>
               <div className="text-xs text-[#8e8e93] dark:text-muted-foreground">
                 {activeCount > 0
                   ? `${activeCount} 个任务正在排队或处理`
                   : hasRecentCompletion
                     ? "最近完成的任务"
-                    : "暂无处理中任务"}
+                    : "查看任务状态与处理进度"}
               </div>
             </div>
           </div>
         </div>
 
-        {queueItems.length > 0 || recentCompletions.length > 0 ? (
-          <ScrollArea aria-live="polite" className="max-h-[min(68vh,560px)] bg-[#fbfcfe] p-3 dark:bg-background">
-            <div className="flex flex-col gap-3">
-              {recentCompletions.map((item) => (
-                <CompletionItem
-                  key={`${item.key}:${item.completedAt}`}
-                  item={item}
-                  onOpenConversation={handleOpenConversation}
-                />
-              ))}
+        {queueItems.length > 0 || recentCompletions.length > 0 || canvasTasks.length > 0 ? (
+          <ScrollArea aria-live="polite" className="max-h-[min(68vh,520px)] bg-background">
+            <div className="flex flex-col">
               {queueItems.map((item) => (
                 <QueueItem
                   key={`${item.conversationId}:${item.turn.id}`}
@@ -564,29 +633,24 @@ export function ImageTaskQueue({ className }: { className?: string }) {
                   onOpenConversation={handleOpenConversation}
                 />
               ))}
+              {activeCanvasTasks.map((item) => <CanvasQueueItem key={item.id} item={item} now={now} onOpenCanvas={handleOpenCanvas} />)}
+              {recentCompletions.map((item) => (
+                <CompletionItem
+                  key={`${item.key}:${item.completedAt}`}
+                  item={item}
+                  onOpenConversation={handleOpenConversation}
+                />
+              ))}
+              {completedCanvasTasks.map((item) => <CanvasQueueItem key={item.id} item={item} now={now} onOpenCanvas={handleOpenCanvas} />)}
             </div>
           </ScrollArea>
         ) : (
-          <div className="flex flex-col items-center justify-center px-6 py-10 text-center">
-            <span className="flex size-12 items-center justify-center rounded-full bg-[#f0f0f0] text-[#45515e] dark:bg-muted dark:text-muted-foreground">
+          <div className="bg-muted/15 px-6 py-8 text-center">
+            <span className="mx-auto flex size-10 items-center justify-center rounded-lg border border-emerald-100 bg-emerald-50 text-emerald-600 shadow-sm dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300">
               <CheckCircle2 className="size-5" />
             </span>
-            <div className="mt-3 text-sm font-semibold text-[#222222] dark:text-foreground">队列为空</div>
-            <div className="mt-1 max-w-[260px] text-xs leading-5 text-[#8e8e93] dark:text-muted-foreground">
-              在创作台提交图片任务后，这里会显示对应的处理详情和进度。
-            </div>
-            <Button
-              type="button"
-              size="sm"
-              className="mt-4 h-8 rounded-full bg-[#1456f0] px-3 text-xs text-white hover:bg-[#2563eb]"
-              onClick={() => {
-                setOpen(false);
-                navigate("/image");
-              }}
-            >
-              <Sparkles className="size-3.5" />
-              打开创作台
-            </Button>
+            <div className="mt-3 text-sm font-semibold text-[#222222] dark:text-foreground">暂无处理中的任务</div>
+            <div className="mt-1 text-xs leading-5 text-[#8e8e93] dark:text-muted-foreground">新任务开始后，状态与进度会显示在这里</div>
           </div>
         )}
       </PopoverContent>

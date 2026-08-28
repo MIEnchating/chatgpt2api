@@ -1,7 +1,6 @@
 import {
   Brush,
   Camera,
-  ChevronDown,
   ChevronUp,
   Copy,
   Download,
@@ -228,15 +227,12 @@ export function CanvasNodeQuickActions({
             aria-label={collapsed ? "展开工具栏" : "收起工具栏"}
             aria-expanded={!collapsed}
             className={cn(
-              "grid size-9 shrink-0 place-items-center rounded-lg text-muted-foreground transition-[color,background-color,box-shadow,transform] duration-200 ease-in-out hover:scale-105 hover:bg-muted hover:text-foreground active:scale-90",
+              "grid size-9 shrink-0 place-items-center rounded-lg text-muted-foreground transition-[color,background-color,box-shadow] duration-200 ease-in-out hover:bg-muted hover:text-foreground",
               collapsed && "bg-muted/70 text-foreground shadow-inner",
             )}
             onClick={() => setCollapsed((value) => !value)}
           >
-            <span className="relative size-4">
-              <ChevronUp className={cn("absolute inset-0 size-4 transition-[opacity,transform] duration-200 ease-in-out", collapsed ? "-translate-y-1 scale-75 opacity-0" : "translate-y-0 scale-100 opacity-100")} />
-              <ChevronDown className={cn("absolute inset-0 size-4 transition-[opacity,transform] duration-200 ease-in-out", collapsed ? "translate-y-0 scale-100 opacity-100" : "translate-y-1 scale-75 opacity-0")} />
-            </span>
+            <ChevronUp className={cn("size-4 transition-transform duration-300 ease-in-out", collapsed && "rotate-180")} />
           </button>
         </TooltipTrigger>
         <TooltipContent side="left">{collapsed ? "展开工具栏" : "收起工具栏"}</TooltipContent>

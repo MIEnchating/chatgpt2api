@@ -3,12 +3,14 @@
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { fetchMyAssets, loadMyAssets, mergeMyAssets, saveMyAssets, syncMyAssets, type MyAsset } from "@/lib/my-assets";
+import { fetchMyAssets, syncMyAssets, type MyAsset } from "@/lib/my-assets";
 
 export function useMyAssets(scope: string, enabled: boolean) {
   const [assets, setAssets] = useState<MyAsset[]>([]);
   const [loading, setLoading] = useState(true);
   const hydratedScopeRef = useRef("");
+  const syncedSignatureRef = useRef("");
+  const currentSignatureRef = useRef("");
 
   useEffect(() => {
     if (!enabled) return;
@@ -16,18 +18,13 @@ export function useMyAssets(scope: string, enabled: boolean) {
     let active = true;
     hydratedScopeRef.current = "";
     setLoading(true);
-    const localAssets = loadMyAssets(scope);
-    setAssets(localAssets);
-    void fetchMyAssets(controller.signal)
-      .then(async (remoteAssets) => {
+    void fetchMyAssets(scope, controller.signal)
+      .then((remoteAssets) => {
         if (!active) return;
-        const resolved = mergeMyAssets(remoteAssets, localAssets);
-        setAssets(resolved);
-        saveMyAssets(scope, resolved);
+        syncedSignatureRef.current = JSON.stringify(remoteAssets);
+        currentSignatureRef.current = syncedSignatureRef.current;
+        setAssets(remoteAssets);
         hydratedScopeRef.current = scope;
-        if (resolved.length !== remoteAssets.length || resolved.some((asset, index) => asset.id !== remoteAssets[index]?.id || asset.updatedAt !== remoteAssets[index]?.updatedAt)) {
-          await syncMyAssets(resolved);
-        }
       })
       .catch((error) => {
         if (!active || controller.signal.aborted) return;
@@ -40,9 +37,27 @@ export function useMyAssets(scope: string, enabled: boolean) {
 
   useEffect(() => {
     if (!enabled || hydratedScopeRef.current !== scope) return;
-    saveMyAssets(scope, assets);
+    const signature = JSON.stringify(assets);
+    currentSignatureRef.current = signature;
+    if (signature === syncedSignatureRef.current) return;
     const timer = window.setTimeout(() => {
-      void syncMyAssets(assets).catch((error) => toast.error(error instanceof Error ? `素材同步失败：${error.message}` : "素材同步失败"));
+      void syncMyAssets(scope, assets)
+        .then((synced) => {
+          if (currentSignatureRef.current !== signature) return;
+          syncedSignatureRef.current = JSON.stringify(synced);
+          setAssets(synced);
+        })
+        .catch(async (error) => {
+          toast.error(error instanceof Error ? `素材同步失败：${error.message}` : "素材同步失败");
+          try {
+            const remoteAssets = await fetchMyAssets(scope);
+            if (currentSignatureRef.current !== signature) return;
+            syncedSignatureRef.current = JSON.stringify(remoteAssets);
+            setAssets(remoteAssets);
+          } catch {
+            // The next page load will restore the authoritative server state.
+          }
+        });
     }, 400);
     return () => window.clearTimeout(timer);
   }, [assets, enabled, scope]);

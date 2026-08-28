@@ -1,21 +1,6 @@
 export const CUSTOM_IMAGE_ASPECT_RATIO = "custom";
 export const DEFAULT_IMAGE_CUSTOM_RATIO = "16:9";
 
-export const IMAGE_MODEL_STORAGE_KEY = "chatgpt2api:image_last_model";
-export const IMAGE_SIZE_STORAGE_KEY = "chatgpt2api:image_last_size";
-export const IMAGE_SIZE_MODE_STORAGE_KEY = "chatgpt2api:image_last_size_mode";
-export const IMAGE_ASPECT_RATIO_STORAGE_KEY = "chatgpt2api:image_last_aspect_ratio";
-export const IMAGE_RESOLUTION_STORAGE_KEY = "chatgpt2api:image_last_resolution";
-export const IMAGE_CUSTOM_RATIO_STORAGE_KEY = "chatgpt2api:image_last_custom_ratio";
-export const IMAGE_CUSTOM_WIDTH_STORAGE_KEY = "chatgpt2api:image_last_custom_width";
-export const IMAGE_CUSTOM_HEIGHT_STORAGE_KEY = "chatgpt2api:image_last_custom_height";
-export const IMAGE_QUALITY_STORAGE_KEY = "chatgpt2api:image_last_quality";
-export const IMAGE_COUNT_STORAGE_KEY = "chatgpt2api:image_last_count";
-export const IMAGE_OUTPUT_FORMAT_STORAGE_KEY = "chatgpt2api:image_last_output_format";
-export const IMAGE_OUTPUT_COMPRESSION_STORAGE_KEY = "chatgpt2api:image_last_output_compression";
-export const IMAGE_STREAM_STORAGE_KEY = "chatgpt2api:image_last_stream_v3";
-export const IMAGE_PARTIAL_IMAGES_STORAGE_KEY = "chatgpt2api:image_last_partial_images";
-
 export const IMAGE_ASPECT_RATIO_OPTIONS = [
   { value: "", label: "自动" },
   { value: "1:1", label: "1:1 (正方形)" },

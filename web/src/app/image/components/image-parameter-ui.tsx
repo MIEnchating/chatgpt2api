@@ -46,12 +46,14 @@ function ImageAspectRatioGlyph({ ratio }: { ratio: string }) {
 
 export function ImageAspectRatioOptionButton({
   active,
+  disabled = false,
   label,
   ratio,
   description,
   onClick,
 }: {
   active: boolean;
+  disabled?: boolean;
   label: string;
   ratio?: string;
   description?: string;
@@ -60,9 +62,10 @@ export function ImageAspectRatioOptionButton({
   return (
     <button
       type="button"
+      disabled={disabled}
       aria-pressed={active}
       className={cn(
-        "flex min-w-0 items-center justify-center rounded-md border border-transparent bg-[#f4f4f5] px-1.5 text-[10px] font-medium text-[#686b73] transition-colors hover:bg-[#eceef1] hover:text-[#222222] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1456f0]/30 dark:bg-muted/55 dark:text-muted-foreground dark:hover:bg-muted dark:hover:text-foreground",
+        "flex min-w-0 items-center justify-center rounded-md border border-transparent bg-[#f4f4f5] px-1.5 text-[10px] font-medium text-[#686b73] transition-colors hover:bg-[#eceef1] hover:text-[#222222] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1456f0]/30 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-[#f4f4f5] disabled:hover:text-[#686b73] dark:bg-muted/55 dark:text-muted-foreground dark:hover:bg-muted dark:hover:text-foreground dark:disabled:hover:bg-muted/55 dark:disabled:hover:text-muted-foreground",
         description ? "h-14 flex-col gap-0.5" : "h-9 gap-1",
         active &&
           "border-[#a9c1ff] bg-[#edf3ff] text-[#1456f0] shadow-[inset_0_0_0_1px_rgba(20,86,240,0.04)] hover:bg-[#edf3ff] hover:text-[#1456f0] dark:border-sky-800 dark:bg-sky-950/35 dark:text-sky-300 dark:hover:bg-sky-950/45 dark:hover:text-sky-200",

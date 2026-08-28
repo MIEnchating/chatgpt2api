@@ -11,7 +11,7 @@ export function PageHeader({ actions, className }: PageHeaderProps) {
   return (
     <section
       className={cn(
-        "flex min-w-0 flex-wrap items-center justify-end gap-2",
+        "flex min-w-0 shrink-0 flex-wrap items-center justify-end gap-2",
         className,
       )}
     >

@@ -1,50 +1,33 @@
-const PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY = "chatgpt2api:profile_relay_token_name";
-
 export type RelayTokenKind = "text" | "image" | "video" | "audio";
+export const RELAY_TOKEN_KINDS = ["text", "image", "video", "audio"] as const;
 
-export type RelayTokenSelectionIdentity = {
-  provider?: string | null;
-  subjectId?: string | null;
-  username?: string | null;
-  name?: string | null;
+export type RelayTokenNames = Record<RelayTokenKind, string>;
+
+export const EMPTY_RELAY_TOKEN_NAMES: RelayTokenNames = {
+  text: "",
+  image: "",
+  video: "",
+  audio: "",
 };
 
-function normalizedIdentityPart(value: unknown) {
-  return String(value || "").trim().toLowerCase();
+type RelayTokenPreferenceSource = {
+  default_text_relay_token_name?: unknown;
+  default_image_relay_token_name?: unknown;
+  default_video_relay_token_name?: unknown;
+  default_audio_relay_token_name?: unknown;
+};
+
+export function relayTokenNamesFromPreferences(value: RelayTokenPreferenceSource | null | undefined): RelayTokenNames {
+  return {
+    text: String(value?.default_text_relay_token_name || "").trim(),
+    image: String(value?.default_image_relay_token_name || "").trim(),
+    video: String(value?.default_video_relay_token_name || "").trim(),
+    audio: String(value?.default_audio_relay_token_name || "").trim(),
+  };
 }
 
-function relayTokenSelectionOwner(identity: RelayTokenSelectionIdentity) {
-  const provider = normalizedIdentityPart(identity.provider) || "local";
-  const owner =
-    normalizedIdentityPart(identity.subjectId) ||
-    normalizedIdentityPart(identity.username) ||
-    normalizedIdentityPart(identity.name) ||
-    "anonymous";
-  return encodeURIComponent(`${provider}:${owner}`);
-}
-
-export function relayTokenNameStorageKey(identity: RelayTokenSelectionIdentity, kind: RelayTokenKind) {
-  return `${PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY}:v3:${relayTokenSelectionOwner(identity)}:${kind}`;
-}
-
-export function getStoredRelayTokenName(identity: RelayTokenSelectionIdentity, kind: RelayTokenKind) {
-  if (typeof window === "undefined") {
-    return "";
-  }
-  return window.localStorage.getItem(relayTokenNameStorageKey(identity, kind)) || "";
-}
-
-export function storeRelayTokenName(
-  identity: RelayTokenSelectionIdentity,
-  kind: RelayTokenKind,
-  tokenName: string,
-) {
-  if (typeof window === "undefined") {
-    return;
-  }
-  const normalizedName = tokenName.trim();
-  const storageKey = relayTokenNameStorageKey(identity, kind);
-  window.localStorage.setItem(storageKey, normalizedName);
+export function relayTokenPreferenceField(kind: RelayTokenKind) {
+  return `default_${kind}_relay_token_name` as const;
 }
 
 export function retainSelectedRelayTokenName(current: string, options: string[]) {

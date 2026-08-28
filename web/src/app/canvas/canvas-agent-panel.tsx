@@ -24,10 +24,9 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { fetchAuthenticatedImageBlob } from "@/lib/authenticated-image";
-import { getStoredRelayTokenName } from "@/lib/relay-token-selection";
+import { useRelayTokenPreferences } from "@/lib/use-relay-token-preferences";
 import { cn } from "@/lib/utils";
 import type { CanvasNode } from "@/services/api/canvas";
-import type { StoredAuthSession } from "@/store/auth";
 
 export type { CanvasAgentAction, CanvasAgentToolResult } from "@/app/canvas/agent/canvas-agent-tools";
 
@@ -38,9 +37,8 @@ function createSession(): CanvasAssistantSession {
 
 type PendingDeleteConfirmation = { title: string; resolve: (confirmed: boolean) => void };
 
-export function CanvasAgentPanel({ open, session, nodes, selectedNodeIDs, referenceNodeClick, model, imageModel, videoModel, configuredSystemPrompt, initialSessions, initialActiveSessionID, initialRequest, agentConfig, width, getAgentContext, onSessionsChange, onAgentConfigChange, onWidthChange, onExecuteAction, onOpenUpload, onOpenAssets, onPasteImage, onInitialRequestConsumed, onClose }: {
+export function CanvasAgentPanel({ open, nodes, selectedNodeIDs, referenceNodeClick, model, imageModel, videoModel, configuredSystemPrompt, initialSessions, initialActiveSessionID, initialRequest, agentConfig, width, getAgentContext, onSessionsChange, onAgentConfigChange, onWidthChange, onExecuteAction, onOpenUpload, onOpenAssets, onPasteImage, onInitialRequestConsumed, onClose }: {
   open: boolean;
-  session: StoredAuthSession;
   nodes: CanvasNode[];
   selectedNodeIDs: string[];
   referenceNodeClick: { nodeID: string | null; version: number };
@@ -64,6 +62,7 @@ export function CanvasAgentPanel({ open, session, nodes, selectedNodeIDs, refere
   onInitialRequestConsumed?: () => void;
   onClose: () => void;
 }) {
+  const { tokenNames: relayTokenNames } = useRelayTokenPreferences();
   const [initialSession] = useState(createSession);
   const sessions = useMemo(() => initialSessions.length ? initialSessions : [initialSession], [initialSession, initialSessions]);
   const activeSessionID = initialActiveSessionID && sessions.some((item) => item.id === initialActiveSessionID) ? initialActiveSessionID : sessions[0].id;
@@ -174,7 +173,7 @@ export function CanvasAgentPanel({ open, session, nodes, selectedNodeIDs, refere
   async function submit(nextText = input, savedReferences?: CanvasAssistantReference[], referenceNodeIDs = composerReferenceNodeIDs) {
     const text = nextText.trim();
     if (!text || busy || !activeSession) return;
-    const relayTokenName = getStoredRelayTokenName(session, "text");
+    const relayTokenName = relayTokenNames.text;
     if (!relayTokenName) return toast.error("请先在个人中心选择文本生成密钥");
     if (!model) return toast.error("请先配置文本模型");
     const references = savedReferences

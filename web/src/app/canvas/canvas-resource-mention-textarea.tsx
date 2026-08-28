@@ -103,7 +103,7 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Can
   } satisfies CSSProperties;
 
   return (
-    <div className={cn("relative size-full", containerClassName)}>
+    <div className={cn("relative w-full", containerClassName)}>
       {showOverlay ? (
         <div
           ref={overlayRef}

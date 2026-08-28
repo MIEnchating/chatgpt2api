@@ -161,8 +161,8 @@ func TestExactKIEEndpointCapabilitiesDoNotInheritUnsupportedControls(t *testing.
 	if capability := VideoCapability("minimax-h3/image-to-video"); len(capability.Resolutions) == 0 {
 		t.Fatalf("MiniMax H3 image endpoint lost its official resolution controls: %+v", capability)
 	}
-	if capability := VideoCapability("minimax-h3/image-to-video"); capability.FirstFrameImageLimit != 1 {
-		t.Fatalf("MiniMax H3 image endpoint image limit = %d, want 1", capability.FirstFrameImageLimit)
+	if capability := VideoCapability("minimax-h3/image-to-video"); capability.FirstFrameImageLimit != 2 {
+		t.Fatalf("MiniMax H3 image endpoint image limit = %d, want 2", capability.FirstFrameImageLimit)
 	}
 	if capability := VideoCapability("gemini-omni-video"); capability.References.Audio != 0 {
 		t.Fatalf("Gemini Omni must not expose URL audio references = %+v", capability.References)

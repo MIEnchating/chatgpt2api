@@ -17,6 +17,24 @@ func TestDefaultVideoModelsMatchReferenceWorkbenchDefault(t *testing.T) {
 	}
 }
 
+func TestAllowUserCustomRelayConfigDefaultsOffAndPersists(t *testing.T) {
+	t.Setenv("ROOT_DIR", t.TempDir())
+	unsetEnv(t, "ALLOW_USER_CUSTOM_RELAY_CONFIG")
+	store, err := NewStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if store.AllowUserCustomRelayConfig() || store.Get()["allow_user_custom_relay_config"] != false {
+		t.Fatalf("default allow_user_custom_relay_config = %#v", store.Get()["allow_user_custom_relay_config"])
+	}
+	if _, err := store.Update(map[string]any{"allow_user_custom_relay_config": true}); err != nil {
+		t.Fatal(err)
+	}
+	if !store.AllowUserCustomRelayConfig() || store.Get()["allow_user_custom_relay_config"] != true {
+		t.Fatalf("updated allow_user_custom_relay_config = %#v", store.Get()["allow_user_custom_relay_config"])
+	}
+}
+
 func TestEnvExampleMatchesSupportedEnvironmentContract(t *testing.T) {
 	root := findAncestorWithProjectGoMod(".")
 	if root == "" {
@@ -278,11 +296,7 @@ func TestStorePersistsPromptSourcesAsJSON(t *testing.T) {
 			"enabled":  true,
 		},
 	}
-	updated, err := store.Update(map[string]any{
-		"prompt_sources":               sources,
-		"prompt_pull_schedule_enabled": true,
-		"prompt_pull_interval_minutes": 360,
-	})
+	updated, err := store.Update(map[string]any{"prompt_sources": sources})
 	if err != nil {
 		t.Fatalf("Update() error = %v", err)
 	}
@@ -290,18 +304,12 @@ func TestStorePersistsPromptSourcesAsJSON(t *testing.T) {
 	if !ok || len(updatedSources) != 1 {
 		t.Fatalf("updated prompt_sources = %#v", updated["prompt_sources"])
 	}
-	if updated["prompt_pull_schedule_enabled"] != true || updated["prompt_pull_interval_minutes"] != 360 {
-		t.Fatalf("updated prompt pull schedule = %#v, %#v", updated["prompt_pull_schedule_enabled"], updated["prompt_pull_interval_minutes"])
-	}
 	envData, err := os.ReadFile(filepath.Join(root, ".env"))
 	if err != nil {
 		t.Fatalf("read .env: %v", err)
 	}
 	if !strings.Contains(string(envData), "PROMPT_SOURCES=") || !strings.Contains(string(envData), "custom-source") {
 		t.Fatalf("prompt sources were not persisted as JSON: %s", envData)
-	}
-	if !strings.Contains(string(envData), "PROMPT_PULL_SCHEDULE_ENABLED=true") || !strings.Contains(string(envData), "PROMPT_PULL_INTERVAL_MINUTES=360") {
-		t.Fatalf("prompt pull schedule was not persisted: %s", envData)
 	}
 
 	reloaded, err := NewStore()
@@ -319,24 +327,45 @@ func TestStorePersistsPromptSourcesAsJSON(t *testing.T) {
 	if reloadedSource["homepage"] != "https://example.test/prompts" {
 		t.Fatalf("reloaded source homepage = %#v", reloadedSource["homepage"])
 	}
-	if reloaded.Get()["prompt_pull_schedule_enabled"] != true || reloaded.Get()["prompt_pull_interval_minutes"] != 360 {
-		t.Fatalf("reloaded prompt pull schedule = %#v, %#v", reloaded.Get()["prompt_pull_schedule_enabled"], reloaded.Get()["prompt_pull_interval_minutes"])
-	}
 }
 
-func TestStoreNormalizesPromptPullInterval(t *testing.T) {
+func TestStorePersistsLogCleanupSchedule(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("ROOT_DIR", root)
+	unsetEnv(t, "LOG_CLEANUP_SCHEDULE_ENABLED")
+	unsetEnv(t, "LOG_CLEANUP_HOUR")
+
 	store, err := NewStore()
 	if err != nil {
 		t.Fatalf("NewStore() error = %v", err)
 	}
-	updated, err := store.Update(map[string]any{"prompt_pull_interval_minutes": 45})
+	updated, err := store.Update(map[string]any{
+		"log_cleanup_schedule_enabled": true,
+		"log_cleanup_hour":             4,
+	})
 	if err != nil {
 		t.Fatalf("Update() error = %v", err)
 	}
-	if updated["prompt_pull_interval_minutes"] != 30 {
-		t.Fatalf("prompt_pull_interval_minutes = %#v, want 30", updated["prompt_pull_interval_minutes"])
+	if !store.LogCleanupScheduleEnabled() || store.LogCleanupHour() != 4 {
+		t.Fatalf("log cleanup schedule = enabled %v hour %d", store.LogCleanupScheduleEnabled(), store.LogCleanupHour())
+	}
+	if updated["log_cleanup_schedule_enabled"] != true || updated["log_cleanup_hour"] != 4 {
+		t.Fatalf("updated log cleanup schedule = %#v, %#v", updated["log_cleanup_schedule_enabled"], updated["log_cleanup_hour"])
+	}
+	envData, err := os.ReadFile(filepath.Join(root, ".env"))
+	if err != nil {
+		t.Fatalf("read .env: %v", err)
+	}
+	if !strings.Contains(string(envData), "LOG_CLEANUP_SCHEDULE_ENABLED=true") || !strings.Contains(string(envData), "LOG_CLEANUP_HOUR=4") {
+		t.Fatalf("log cleanup schedule was not persisted: %s", envData)
+	}
+
+	updated, err = store.Update(map[string]any{"log_cleanup_hour": 99})
+	if err != nil {
+		t.Fatalf("Update(invalid hour) error = %v", err)
+	}
+	if updated["log_cleanup_hour"] != 3 {
+		t.Fatalf("invalid log cleanup hour = %#v, want 3", updated["log_cleanup_hour"])
 	}
 }
 

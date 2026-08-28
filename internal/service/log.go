@@ -67,6 +67,12 @@ type LogCleanupResult struct {
 	Remaining     int    `json:"remaining"`
 }
 
+type LogRetentionSchedule struct {
+	Enabled       bool
+	RetentionDays int
+	Hour          int
+}
+
 type userUsageDay struct {
 	Calls     int
 	Success   int
@@ -155,33 +161,54 @@ func (s *LogService) CleanupOlderThan(retentionDays int) (LogCleanupResult, erro
 	}, nil
 }
 
-func (s *LogService) StartRetentionCleaner(ctx context.Context, retentionGetter func() int, interval time.Duration, logger *Logger) {
+func (s *LogService) StartRetentionCleaner(ctx context.Context, scheduleGetter func() LogRetentionSchedule, interval time.Duration, logger *Logger) {
 	if interval <= 0 {
-		interval = 24 * time.Hour
+		interval = time.Hour
 	}
-	if retentionGetter == nil {
-		retentionGetter = func() int { return 7 }
+	if scheduleGetter == nil {
+		scheduleGetter = func() LogRetentionSchedule { return LogRetentionSchedule{} }
 	}
 	go func() {
 		timer := time.NewTimer(0)
 		defer timer.Stop()
+		lastRunDate := ""
 		for {
 			select {
 			case <-ctx.Done():
 				return
 			case <-timer.C:
-				result, err := s.CleanupOlderThan(retentionGetter())
-				if err != nil {
-					if logger != nil {
-						logger.Warning("log retention cleanup failed", "error", err)
+				now := time.Now()
+				schedule := normalizeLogRetentionSchedule(scheduleGetter())
+				runDate := now.Format("2006-01-02")
+				if schedule.Enabled && now.Hour() == schedule.Hour && runDate != lastRunDate {
+					result, err := s.CleanupOlderThan(schedule.RetentionDays)
+					if err != nil {
+						if logger != nil {
+							logger.Warning("scheduled log retention cleanup failed", "error", err)
+						}
+					} else {
+						lastRunDate = runDate
+						if logger != nil {
+							logger.Info("scheduled log retention cleanup completed", "deleted", result.Deleted, "remaining", result.Remaining, "retention_days", result.RetentionDays)
+						}
 					}
-				} else if result.Deleted > 0 && logger != nil {
-					logger.Info("log retention cleanup completed", "deleted", result.Deleted, "remaining", result.Remaining, "retention_days", result.RetentionDays)
 				}
 				timer.Reset(interval)
 			}
 		}
 	}()
+}
+
+func normalizeLogRetentionSchedule(schedule LogRetentionSchedule) LogRetentionSchedule {
+	if schedule.RetentionDays < 1 {
+		schedule.RetentionDays = 1
+	} else if schedule.RetentionDays > 3650 {
+		schedule.RetentionDays = 3650
+	}
+	if schedule.Hour < 0 || schedule.Hour > 23 {
+		schedule.Hour = 3
+	}
+	return schedule
 }
 
 func (s *LogService) governanceSummaryLocked() LogGovernanceSummary {

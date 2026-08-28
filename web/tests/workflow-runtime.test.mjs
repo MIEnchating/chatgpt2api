@@ -11,6 +11,7 @@ import {
   parseWorkflowSeriesDrafts,
   renderWorkflowPrompt,
   resolveWorkflowRuntime,
+  workflowGenerationDefaultsFromPreferences,
 } from "../src/app/workflows/workflow-runtime.ts";
 import {
   restoreWorkflowTasks,
@@ -42,7 +43,37 @@ const preferences = {
   default_image_model: "gpt-image-1.5",
   default_video_model: "",
   default_audio_model: "",
+  workbench: {
+    image_size: "2048x1152",
+    image_size_mode: "ratio",
+    image_aspect_ratio: "16:9",
+    image_resolution: "2k",
+    image_custom_ratio: "16:9",
+    image_custom_width: "2048",
+    image_custom_height: "1152",
+    image_snap_to_multiple_16: true,
+    image_quality: "high",
+    image_count: 3,
+    image_output_format: "png",
+    image_output_compression: "",
+    video_size: "1280x720",
+    video_seconds: "6",
+    video_resolution: "720p",
+    video_mode: "std",
+    video_generate_audio: false,
+    video_watermark: false,
+  },
 };
+
+test("workflow defaults come from account workbench preferences", () => {
+  assert.deepEqual(workflowGenerationDefaultsFromPreferences(preferences), {
+    image_model: "gpt-image-1.5",
+    model: "gpt-image-1.5",
+    quality: "high",
+    size: "2048x1152",
+    count: "3",
+  });
+});
 
 test("blank workflow uses the complete reference generation contract", () => {
   const workflow = createBlankWorkflow(models, preferences);
@@ -285,25 +316,45 @@ test("workflow normalization removes legacy personal transport settings", () => 
   assert.equal("codex_cli" in workflow.config, false);
 });
 
-test("workflow runtime falls back model, API mode, and system prompt together", () => {
+test("workflow runtime uses the selected template's saved generation settings", () => {
   const source = createBlankWorkflow(models, { ...preferences, api_mode: "responses" });
-  const invalid = {
+  const configured = {
     ...source,
     config: {
       ...source.config,
-      model: "removed-image-model",
-      image_model: "removed-image-model",
-      image_channel_id: "legacy-token",
-      api_mode: "chat",
+      model: "gemini-3-pro-image-preview",
+      image_model: "gemini-3-pro-image-preview",
+      api_mode: "images",
       system_prompt: "",
+      quality: "high",
+      size: "2048x1152",
+      count: "3",
+      timeout: "900",
     },
   };
   assert.deepEqual(
-    resolveWorkflowRuntime(invalid, models, { ...preferences, api_mode: "responses" }),
+    resolveWorkflowRuntime(
+      configured,
+      models,
+      { ...preferences, api_mode: "responses" },
+    ),
     {
-      model: "gpt-image-1.5",
-      api_mode: "responses",
+      model: "gemini-3-pro-image-preview",
+      api_mode: "images",
       system_prompt: "保持视觉一致",
+      quality: "high",
+      size: "2048x1152",
+      count: 3,
+      timeout: 900,
     },
   );
+});
+
+test("editing one workflow does not change another workflow's generation settings", () => {
+  const first = createBlankWorkflow(models, preferences);
+  const second = createBlankWorkflow(models, preferences);
+  first.config = { ...first.config, quality: "high", size: "2048x1152", count: "3" };
+  assert.equal(second.config.quality, "auto");
+  assert.equal(second.config.size, "auto");
+  assert.equal(second.config.count, "1");
 });

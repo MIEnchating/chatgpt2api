@@ -60,7 +60,7 @@ export function CanvasAssetPicker({ open, session, onInsert, onClose }: {
         mine.items.forEach((item) => records.set(item.path, item));
         return { items: [...records.values()], groups: [] };
       });
-    void Promise.all([fetchVisibleMyAssets(controller.signal), managed])
+    void Promise.all([fetchVisibleMyAssets(session.key, controller.signal), managed])
       .then(([visible, images]) => {
         setSharedAssets(visible.filter((asset) => asset.owned !== true));
         setManagedAssets(images.items.map((item) => managedImageAsset(item, Boolean(item.owner_id && item.owner_id === session.subjectId))));
@@ -72,7 +72,7 @@ export function CanvasAssetPicker({ open, session, onInsert, onClose }: {
         if (!controller.signal.aborted) setRemoteLoading(false);
       });
     return () => controller.abort();
-  }, [open, session.role, session.subjectId]);
+  }, [open, session.key, session.role, session.subjectId]);
 
   const tabAssets = useMemo(() => {
     const source = tab === "my-assets"

@@ -9,7 +9,6 @@ import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } fr
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { TooltipHint } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -17,7 +16,7 @@ import { cn } from "@/lib/utils";
 import { useSettingsStore } from "../store";
 import { SettingsCard, settingsDialogInputClassName, settingsListItemClassName } from "./settings-ui";
 import { PromptSourceContentDialog } from "./prompt-source-content-dialog";
-import { PROMPT_SOURCE_PULL_INTERVALS, usePromptSourcePulls } from "./use-prompt-source-pulls";
+import { usePromptSourcePulls } from "./use-prompt-source-pulls";
 
 type SourceDraft = {
   label: string;
@@ -71,21 +70,12 @@ function formatPullTime(value?: string) {
   }).format(date);
 }
 
-function pullIntervalLabel(minutes: number) {
-  if (minutes < 60) return `每 ${minutes} 分钟`;
-  return `每 ${minutes / 60} 小时`;
-}
-
 export function PromptSourcesCard() {
   const config = useSettingsStore((state) => state.config);
   const isSavingConfig = useSettingsStore((state) => state.isSavingConfig);
   const saveConfig = useSettingsStore((state) => state.saveConfig);
   const setPromptSources = useSettingsStore((state) => state.setPromptSources);
-  const setPromptPullScheduleEnabled = useSettingsStore((state) => state.setPromptPullScheduleEnabled);
-  const setPromptPullIntervalMinutes = useSettingsStore((state) => state.setPromptPullIntervalMinutes);
   const sources = useMemo(() => normalizePromptMarketSources(config?.prompt_sources), [config?.prompt_sources]);
-  const scheduleEnabled = Boolean(config?.prompt_pull_schedule_enabled);
-  const scheduleIntervalMinutes = Number(config?.prompt_pull_interval_minutes) || 30;
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [editingID, setEditingID] = useState<string | null>(null);
   const [draft, setDraft] = useState<SourceDraft>(EMPTY_SOURCE_DRAFT);
@@ -93,12 +83,10 @@ export function PromptSourcesCard() {
   const [viewingSource, setViewingSource] = useState<PromptMarketSourceConfig | null>(null);
   const {
     states: pullStates,
-    lastPullAt,
     isPullingAll,
     pullSource,
     pullAll,
-    restartSchedule,
-  } = usePromptSourcePulls(sources, { enabled: scheduleEnabled, intervalMinutes: scheduleIntervalMinutes });
+  } = usePromptSourcePulls(sources);
 
   const updateSource = (id: string, patch: Partial<PromptMarketSourceConfig>) => {
     setPromptSources(sources.map((source) => source.id === id ? { ...source, ...patch } : source));
@@ -171,7 +159,7 @@ export function PromptSourcesCard() {
       <SettingsCard
         icon={BookOpen}
         title="提示词来源"
-        description="管理提示词库的数据来源、拉取状态和更新周期。"
+        description="管理提示词库的数据来源，并按需检查远端内容。"
         tone="violet"
         action={
           <div className="flex flex-wrap items-center justify-end gap-2">
@@ -217,7 +205,7 @@ export function PromptSourcesCard() {
                         (pullState.status === "idle" || isPulling) && "bg-muted text-muted-foreground",
                       )}
                     >
-                      {isPulling ? "拉取中" : pullState.status === "success" ? "正常" : pullState.status === "error" ? "失败" : "尚未拉取"}
+                      {isPulling ? "检查中" : pullState.status === "success" ? "正常" : pullState.status === "error" ? "失败" : "尚未检查"}
                     </span></TooltipHint>
                     {pullState.lastSuccess ? <span className="shrink-0 tabular-nums">上次成功 {formatPullTime(pullState.lastSuccess)}</span> : null}
                   </div>
@@ -228,7 +216,7 @@ export function PromptSourcesCard() {
                     </Button>
                     <Button type="button" variant="outline" size="sm" disabled={!source.enabled || isPulling} onClick={() => void pullSource(source)}>
                       {isPulling ? <LoaderCircle className="size-4 animate-spin" /> : <RefreshCcw className="size-4" />}
-                      立即拉取
+                      立即检查
                     </Button>
                     {!source.builtin ? (
                       <Button type="button" variant="ghost" size="icon" className="size-8" title="编辑来源" aria-label={`编辑${source.label}`} onClick={() => openSourceEditor(source)}>
@@ -246,39 +234,11 @@ export function PromptSourcesCard() {
             );
           })}
 
-          <div className="mt-2 border-t border-border pt-5">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-              <div className="flex items-center gap-3">
-                <Switch
-                  checked={scheduleEnabled}
-                  aria-label="启用提示词定时拉取"
-                  onCheckedChange={(enabled) => {
-                    setPromptPullScheduleEnabled(enabled);
-                    if (enabled) restartSchedule();
-                  }}
-                />
-                <div>
-                  <p className="text-sm font-semibold">定时拉取</p>
-                  <p className="mt-0.5 text-xs text-muted-foreground">自动更新所有已启用的来源</p>
-                </div>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Select value={String(scheduleIntervalMinutes)} onValueChange={(value) => setPromptPullIntervalMinutes(Number(value))} disabled={!scheduleEnabled}>
-                  <SelectTrigger className="h-9 w-[142px]" aria-label="拉取周期">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PROMPT_SOURCE_PULL_INTERVALS.map((minutes) => <SelectItem key={minutes} value={String(minutes)}>{pullIntervalLabel(minutes)}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-                <Button type="button" variant="outline" size="sm" disabled={isPullingAll || !sources.some((source) => source.enabled)} onClick={() => void pullAll()}>
-                  {isPullingAll ? <LoaderCircle className="size-4 animate-spin" /> : <RefreshCcw className="size-4" />}
-                  全部立即拉取
-                </Button>
-                {lastPullAt ? <span className="text-xs tabular-nums text-muted-foreground">上次拉取 {formatPullTime(lastPullAt)}</span> : null}
-              </div>
-            </div>
-            <p className="mt-3 text-xs leading-5 text-muted-foreground">开启后，设置页面打开期间会按周期自动拉取所有已启用的来源。</p>
+          <div className="mt-2 flex justify-end border-t border-border pt-4">
+            <Button type="button" variant="outline" size="sm" disabled={isPullingAll || !sources.some((source) => source.enabled)} onClick={() => void pullAll()}>
+              {isPullingAll ? <LoaderCircle className="size-4 animate-spin" /> : <RefreshCcw className="size-4" />}
+              全部刷新
+            </Button>
           </div>
         </div>
       </SettingsCard>

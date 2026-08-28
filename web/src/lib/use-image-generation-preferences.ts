@@ -3,11 +3,33 @@
 import { useEffect, useState } from "react";
 
 import {
+  type CreationWorkbenchPreferences,
   fetchImageGenerationPreferences,
   IMAGE_GENERATION_PREFERENCES_CHANGED_EVENT,
   type ImageGenerationPreferences,
 } from "@/lib/api";
 import { normalizedImagePartialImages } from "@/lib/image-api-contract";
+
+export const DEFAULT_CREATION_WORKBENCH_PREFERENCES: CreationWorkbenchPreferences = {
+  image_size: "1024x1024",
+  image_size_mode: "ratio",
+  image_aspect_ratio: "1:1",
+  image_resolution: "auto",
+  image_custom_ratio: "16:9",
+  image_custom_width: "1024",
+  image_custom_height: "1024",
+  image_snap_to_multiple_16: true,
+  image_quality: "",
+  image_count: 1,
+  image_output_format: "png",
+  image_output_compression: "",
+  video_size: "1280x720",
+  video_seconds: "6",
+  video_resolution: "720p",
+  video_mode: "std",
+  video_generate_audio: false,
+  video_watermark: false,
+};
 
 const DEFAULT_IMAGE_GENERATION_PREFERENCES: ImageGenerationPreferences = {
   api_mode: "images",
@@ -26,16 +48,12 @@ const DEFAULT_IMAGE_GENERATION_PREFERENCES: ImageGenerationPreferences = {
   default_audio_voice: "",
   default_audio_format: "",
   default_audio_speed: 1,
+  default_text_relay_token_name: "",
+  default_image_relay_token_name: "",
+  default_video_relay_token_name: "",
+  default_audio_relay_token_name: "",
+  workbench: DEFAULT_CREATION_WORKBENCH_PREFERENCES,
 };
-
-const STORAGE_KEYS = {
-  apiMode: "chatgpt2api:image_last_api_mode",
-  stream: "chatgpt2api:image_last_stream_v3",
-  partialImages: "chatgpt2api:image_last_partial_images",
-  responseFormatB64JSON: "chatgpt2api:image_generation_response_format_b64_json",
-  codexCLICompatibility: "chatgpt2api:image_generation_codex_cli_compatibility",
-  canvasImageCount: "chatgpt2api:canvas_default_image_count",
-} as const;
 
 const AUDIO_FORMATS: readonly ImageGenerationPreferences["default_audio_format"][] = ["", "mp3", "wav", "opus", "aac", "flac", "pcm"];
 
@@ -61,17 +79,19 @@ function normalizePreferences(value: Partial<ImageGenerationPreferences> | undef
     default_audio_voice: String(value?.default_audio_voice || "").trim(),
     default_audio_format: defaultAudioFormat,
     default_audio_speed: Math.max(0.25, Math.min(4, Number(value?.default_audio_speed) || 1)),
+    default_text_relay_token_name: String(value?.default_text_relay_token_name || "").trim(),
+    default_image_relay_token_name: String(value?.default_image_relay_token_name || "").trim(),
+    default_video_relay_token_name: String(value?.default_video_relay_token_name || "").trim(),
+    default_audio_relay_token_name: String(value?.default_audio_relay_token_name || "").trim(),
+    workbench: {
+      ...DEFAULT_CREATION_WORKBENCH_PREFERENCES,
+      ...value?.workbench,
+      image_count: Math.max(1, Math.min(10, Math.round(Number(value?.workbench?.image_count) || 1))),
+      image_snap_to_multiple_16: value?.workbench?.image_snap_to_multiple_16 !== false,
+      video_generate_audio: value?.workbench?.video_generate_audio === true,
+      video_watermark: value?.workbench?.video_watermark === true,
+    },
   };
-}
-
-function storePreferences(preferences: ImageGenerationPreferences) {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(STORAGE_KEYS.apiMode, preferences.api_mode);
-  window.localStorage.setItem(STORAGE_KEYS.stream, String(preferences.stream));
-  window.localStorage.setItem(STORAGE_KEYS.partialImages, String(preferences.partial_images));
-  window.localStorage.setItem(STORAGE_KEYS.responseFormatB64JSON, String(preferences.response_format_b64_json));
-  window.localStorage.setItem(STORAGE_KEYS.codexCLICompatibility, String(preferences.codex_cli_compatibility));
-  window.localStorage.setItem(STORAGE_KEYS.canvasImageCount, String(preferences.canvas_default_image_count));
 }
 
 export function useImageGenerationPreferences(sessionKey: string) {
@@ -86,7 +106,6 @@ export function useImageGenerationPreferences(sessionKey: string) {
         if (ignore) return;
         const normalized = normalizePreferences(loaded);
         setPreferences(normalized);
-        storePreferences(normalized);
       })
       .catch(() => undefined)
       .finally(() => {
@@ -98,7 +117,6 @@ export function useImageGenerationPreferences(sessionKey: string) {
         (event as CustomEvent<Partial<ImageGenerationPreferences>>).detail,
       );
       setPreferences(normalized);
-      storePreferences(normalized);
       setIsReady(true);
     };
     window.addEventListener(IMAGE_GENERATION_PREFERENCES_CHANGED_EVENT, handleChange);

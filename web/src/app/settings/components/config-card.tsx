@@ -15,6 +15,7 @@ import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { NumberInput } from "@/components/ui/number-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
 import { testProxy, type ProxyTestResult } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -116,6 +117,9 @@ export function ConfigCard({ isAdmin }: { isAdmin: boolean }) {
   );
   const setUserDefaultRpmLimit = useSettingsStore(
     (state) => state.setUserDefaultRpmLimit,
+  );
+  const setAllowUserCustomRelayConfig = useSettingsStore(
+    (state) => state.setAllowUserCustomRelayConfig,
   );
   const setImageRetentionDays = useSettingsStore(
     (state) => state.setImageRetentionDays,
@@ -307,6 +311,17 @@ export function ConfigCard({ isAdmin }: { isAdmin: boolean }) {
                 unit="次/分"
               />
             </Field>
+            {isAdmin ? <div className="flex min-h-16 items-center justify-between gap-4 rounded-lg border border-border/70 bg-background px-3 py-2">
+              <div className="min-w-0">
+                <label htmlFor="settings-allow-user-custom-relay-config" className="block cursor-pointer text-sm font-medium text-foreground">允许自定义 API 配置</label>
+                <p className="mt-0.5 text-xs leading-5 text-muted-foreground">普通用户可在 Key 选择中配置 Base URL 和 Key；管理员始终可用</p>
+              </div>
+              <Switch
+                id="settings-allow-user-custom-relay-config"
+                checked={config?.allow_user_custom_relay_config === true}
+                onCheckedChange={setAllowUserCustomRelayConfig}
+              />
+            </div> : null}
           </div>
         </section>
 

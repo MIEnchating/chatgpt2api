@@ -40,6 +40,7 @@ import {
 } from "@/lib/image-conversation-history";
 import { getManagedImagePathFromUrl } from "@/lib/image-path";
 import { normalizeImageConversationAssetReference } from "@/lib/image-conversation-assets";
+import { isWorkflowImageConversation } from "@/lib/image-conversation-source";
 import type { GenerationMediaType, GenerationTaskStatus } from "@/lib/generation-task-contract";
 import { normalizeStoredVideoSeconds } from "@/lib/video-request-normalizer";
 import { AUTH_SESSION_CHANGE_EVENT, getCachedAuthSession, getVerifiedAuthSession } from "@/lib/session";
@@ -936,6 +937,7 @@ export function mergeImageConversationItems(
   const byID = new Map<string, ImageConversation>();
   for (const group of groups) {
     for (const item of group) {
+      if (isWorkflowImageConversation(item)) continue;
       const previous = byID.get(item.id);
       byID.set(item.id, previous ? mergeImageConversationSnapshot(previous, item) : item);
     }

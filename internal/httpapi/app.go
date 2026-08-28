@@ -63,6 +63,7 @@ type App struct {
 	canvas              *service.CanvasDocumentService
 	announce            *service.AnnouncementService
 	imagePreferences    *service.ImageGenerationPreferenceService
+	customRelayConfigs  *service.CustomRelayConfigService
 	workflows           *service.WorkflowService
 	storageFiles        *service.GenericStorageService
 	newAPIKeys          *service.NewAPITokenReader
@@ -205,7 +206,7 @@ func NewApp() (*App, error) {
 		cancel()
 		return nil, fmt.Errorf("initialize audio storage: %w", err)
 	}
-	app := &App{ctx: ctx, config: cfg, auth: auth, logs: logs, logger: logger, proxy: proxy, engine: engine, images: images, videoDir: videoDir, audioDir: audioDir, videoReferenceDir: videoReferenceDir, conversationAssets: service.NewImageConversationAssetService(filepath.Join(cfg.DataDir, "image_conversation_assets")), prompts: service.NewPromptFavoriteService(storageBackend), myAssets: service.NewMyAssetService(storageBackend, storageFiles), history: service.NewImageConversationHistoryService(storageBackend), canvas: service.NewCanvasDocumentService(storageBackend), announce: service.NewAnnouncementService(storageBackend), imagePreferences: service.NewImageGenerationPreferenceService(storageBackend), workflows: service.NewWorkflowService(storageBackend), storageFiles: storageFiles, newAPIKeys: newAPIKeys, cancel: cancel, historyWriteLimiter: newImageConversationHistoryWriteLimiter(imageConversationHistoryWriteParallelism), imageUploadSlots: make(chan struct{}, 2), loginLimiter: newLoginRateLimiter()}
+	app := &App{ctx: ctx, config: cfg, auth: auth, logs: logs, logger: logger, proxy: proxy, engine: engine, images: images, videoDir: videoDir, audioDir: audioDir, videoReferenceDir: videoReferenceDir, conversationAssets: service.NewImageConversationAssetService(filepath.Join(cfg.DataDir, "image_conversation_assets")), prompts: service.NewPromptFavoriteService(storageBackend), myAssets: service.NewMyAssetService(storageBackend, storageFiles), history: service.NewImageConversationHistoryService(storageBackend), canvas: service.NewCanvasDocumentService(storageBackend), announce: service.NewAnnouncementService(storageBackend), imagePreferences: service.NewImageGenerationPreferenceService(storageBackend), customRelayConfigs: service.NewCustomRelayConfigService(storageBackend), workflows: service.NewWorkflowService(storageBackend), storageFiles: storageFiles, newAPIKeys: newAPIKeys, cancel: cancel, historyWriteLimiter: newImageConversationHistoryWriteLimiter(imageConversationHistoryWriteParallelism), imageUploadSlots: make(chan struct{}, 2), loginLimiter: newLoginRateLimiter()}
 	app.conversationAssets.SetStorageBudget(cfg.ImageStorageLimitBytes, func() int64 {
 		return app.images.StorageGovernance().TotalBytes
 	})
@@ -244,7 +245,13 @@ func NewApp() (*App, error) {
 	app.tasks.SetTaskTimeoutGetter(func() time.Duration {
 		return time.Duration(app.config.ImageTaskTimeoutSeconds()) * time.Second
 	})
-	logs.StartRetentionCleaner(ctx, cfg.LogRetentionDays, 24*time.Hour, logger)
+	logs.StartRetentionCleaner(ctx, func() service.LogRetentionSchedule {
+		return service.LogRetentionSchedule{
+			Enabled:       cfg.LogCleanupScheduleEnabled(),
+			RetentionDays: cfg.LogRetentionDays(),
+			Hour:          cfg.LogCleanupHour(),
+		}
+	}, time.Hour, logger)
 	_, _ = app.images.CleanupStorage(service.ImageStorageCleanupOptions{
 		RetentionDays: cfg.ImageRetentionDays(),
 		MaxBytes:      cfg.ImageStorageLimitBytes(),
@@ -535,10 +542,20 @@ func (a *App) handleUpstreamModels(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	relayAPIKey := ""
+	relayBaseURL := a.relayBaseURL()
+	group := strings.TrimSpace(r.URL.Query().Get("group"))
+	tokenName := strings.TrimSpace(r.URL.Query().Get("token_name"))
+	if service.CustomRelayKindFromTokenName(tokenName) != "" {
+		credential, err := a.relayCredentialForIdentitySelection(r.Context(), identity, group, tokenName)
+		if err != nil {
+			a.writeProtocol(w, r, nil, nil, err, "openai", "/api/profile/upstream-models", "models", identity, "上游模型列表", service.ImageVisibilityPrivate)
+			return
+		}
+		relayAPIKey = credential.APIKey
+		relayBaseURL = credential.BaseURL
+	}
 	newAPIKeys := a.relayTokenReader()
-	if newAPIKeys != nil {
-		group := strings.TrimSpace(r.URL.Query().Get("group"))
-		tokenName := strings.TrimSpace(r.URL.Query().Get("token_name"))
+	if relayAPIKey == "" && newAPIKeys != nil {
 		if group != "" || tokenName != "" {
 			var err error
 			relayAPIKey, err = newAPIKeys.KeyForIdentityGroupAndName(r.Context(), identity, group, tokenName)
@@ -550,7 +567,7 @@ func (a *App) handleUpstreamModels(w http.ResponseWriter, r *http.Request) {
 			relayAPIKey, _ = newAPIKeys.KeyForIdentity(r.Context(), identity)
 		}
 	}
-	result, err := a.relayListModels(r.Context(), relayAPIKey)
+	result, err := a.relayListModelsAt(r.Context(), relayBaseURL, relayAPIKey)
 	a.writeProtocol(w, r, result, nil, err, "openai", "/api/profile/upstream-models", "models", identity, "上游模型列表", service.ImageVisibilityPrivate)
 }
 
@@ -827,6 +844,10 @@ func (a *App) handleSettings(w http.ResponseWriter, r *http.Request) {
 		}
 		if identity.Role != service.AuthRoleAdmin {
 			for key := range body {
+				if key == "allow_user_custom_relay_config" {
+					delete(body, key)
+					continue
+				}
 				if strings.HasPrefix(key, "relay_database_") || isObjectStorageCredentialKey(key) {
 					util.WriteError(w, http.StatusForbidden, "仅管理员可以配置数据库或存储凭据")
 					return
@@ -922,10 +943,13 @@ func (a *App) settingsConfig(ctx context.Context, includeDatabaseCredentials boo
 }
 
 func (a *App) handleModelConfig(w http.ResponseWriter, r *http.Request) {
-	if _, ok := a.requireIdentity(w, r); !ok {
+	identity, ok := a.requireIdentity(w, r)
+	if !ok {
 		return
 	}
-	util.WriteJSON(w, http.StatusOK, map[string]any{"config": a.modelConfig()})
+	config := a.modelConfig()
+	config["custom_relay_configurable"] = identity.Role == service.AuthRoleAdmin || a.config.AllowUserCustomRelayConfig()
+	util.WriteJSON(w, http.StatusOK, map[string]any{"config": config})
 }
 
 func (a *App) modelConfig() map[string]any {
@@ -1841,6 +1865,8 @@ func isPermissionCheckSkipped(method, path string) bool {
 		return true
 	case "/api/profile/relay-key":
 		return true
+	case "/api/profile/custom-relay-configs":
+		return true
 	case "/api/profile/balance":
 		return true
 	case "/api/model-config":
@@ -1866,7 +1892,8 @@ func isPermissionCheckSkipped(method, path string) bool {
 	case "/api/profile/image-conversations":
 		return true
 	default:
-		return strings.HasPrefix(path, "/api/profile/prompt-favorites/") ||
+		return strings.HasPrefix(path, "/api/profile/custom-relay-configs/") ||
+			strings.HasPrefix(path, "/api/profile/prompt-favorites/") ||
 			strings.HasPrefix(path, "/api/profile/image-conversations/") ||
 			(method == http.MethodGet || method == http.MethodHead) && strings.HasPrefix(path, "/api/files/")
 	}
@@ -2184,7 +2211,7 @@ func cleanAuditPayloadMap(payload map[string]any) map[string]any {
 	out := make(map[string]any, len(payload))
 	for key, value := range payload {
 		switch key {
-		case "owner_id", "owner_name", "base_url":
+		case "owner_id", "owner_name", "base_url", "relay_base_url":
 			continue
 		}
 		if isInternalPayloadValue(value) {

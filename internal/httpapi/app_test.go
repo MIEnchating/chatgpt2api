@@ -103,6 +103,99 @@ func TestWriteCreationTaskSubmitErrorPreservesProtocolStatus(t *testing.T) {
 	}
 }
 
+func TestVideoCreationRouteRemovesInternalFieldsBeforeNewAPI(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+
+	dbURL := newHTTPTestNewAPIDatabase(t)
+	insertHTTPTestNewAPIUser(t, dbURL, 1, "alice", "alice@example.test")
+	insertHTTPTestNewAPIToken(t, dbURL, 1, 1, "video", "video-relay-token", -1, 0, true)
+	reader, err := service.NewNewAPITokenReader(service.NewAPITokenReaderConfig{DatabaseURL: dbURL})
+	if err != nil {
+		t.Fatalf("NewNewAPITokenReader() error = %v", err)
+	}
+	if app.newAPIKeys != nil {
+		_ = app.newAPIKeys.Close()
+	}
+	app.newAPIKeys = reader
+
+	received := make(chan map[string]any, 1)
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/videos":
+			var body map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Errorf("decode NewAPI video request: %v", err)
+				http.Error(w, "invalid request", http.StatusBadRequest)
+				return
+			}
+			received <- body
+			_, _ = w.Write([]byte(`{"id":"video-public","status":"queued"}`))
+		case r.Method == http.MethodGet && r.URL.Path == "/v1/videos/video-public":
+			_, _ = w.Write([]byte(`{"id":"video-public","status":"completed","video_url":"https://cdn.example.com/generated.mp4"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+	if _, err := app.config.Update(map[string]any{
+		"relay_base_url": upstream.URL,
+		"video_models":   []string{"kling-v3"},
+	}); err != nil {
+		t.Fatalf("configure video route: %v", err)
+	}
+
+	_, token := createPasswordUserSession(t, app, "alice", "Password123", "Alice")
+	requestBody := `{
+		"client_task_id":"video-contract-route",
+		"model":"kling-v3",
+		"provider":"apimart",
+		"video_provider":"apimart",
+		"channel_protocol":"apimart",
+		"protocol":"apimart",
+		"prompt":"animate",
+		"seconds":6,
+		"size":"16:9",
+		"resolution":"1080p",
+		"video_mode":"pro",
+		"generation_mode":"text-to-video",
+		"metadata":{"generation_mode":"nested-metadata"},
+		"multi_shot":true,
+		"shot_type":"customize",
+		"multi_prompt":[{"prompt":"first shot","duration":3,"generation_mode":"nested-array"}]
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/api/creation-tasks/video-generations", strings.NewReader(requestBody))
+	req.Header.Set("Content-Type", "application/json")
+	setRequestAuthCookie(req, token)
+	res := httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("video creation status = %d body = %s", res.Code, res.Body.String())
+	}
+
+	var posted map[string]any
+	select {
+	case posted = <-received:
+	case <-time.After(3 * time.Second):
+		t.Fatal("timed out waiting for NewAPI video request")
+	}
+	if posted["model"] != "kling-v3" || posted["prompt"] != "animate" || posted["mode"] != "pro" {
+		t.Fatalf("NewAPI video request lost supported fields: %#v", posted)
+	}
+	for _, field := range videoInternalRequestFields {
+		assertVideoRequestFieldAbsentRecursively(t, posted, field)
+	}
+	if _, ok := posted["metadata"]; ok {
+		t.Fatalf("NewAPI video request leaked client metadata: %#v", posted)
+	}
+	prompts := util.AsMapSlice(posted["multi_prompt"])
+	if len(prompts) != 1 || prompts[0]["prompt"] != "first shot" {
+		t.Fatalf("NewAPI video multi_prompt = %#v", posted["multi_prompt"])
+	}
+	assertVideoRequestFieldAbsentRecursively(t, prompts, "generation_mode")
+}
+
 func TestAppAuthAndSPACompatibility(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()
@@ -346,6 +439,22 @@ func TestImageGenerationPreferencesArePersonal(t *testing.T) {
 		t.Fatalf("update image generation preferences status = %d body = %s", res.Code, res.Body.String())
 	}
 
+	req = httptest.NewRequest(http.MethodPatch, "/api/profile/image-generation-preferences", strings.NewReader(`{"default_text_relay_token_name":"text-key","default_image_relay_token_name":"image-key","default_video_relay_token_name":"video-key","default_audio_relay_token_name":"audio-key"}`))
+	setRequestAuthCookie(req, "Bearer "+firstToken)
+	res = httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), `"default_text_relay_token_name":"text-key"`) || !strings.Contains(res.Body.String(), `"default_image_relay_token_name":"image-key"`) || !strings.Contains(res.Body.String(), `"default_video_relay_token_name":"video-key"`) || !strings.Contains(res.Body.String(), `"default_audio_relay_token_name":"audio-key"`) || !strings.Contains(res.Body.String(), `"system_prompt":"系统"`) {
+		t.Fatalf("update relay token preferences status = %d body = %s", res.Code, res.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPatch, "/api/profile/image-generation-preferences", strings.NewReader(`{"stream":false,"partial_images":3,"response_format_b64_json":false,"codex_cli_compatibility":false,"workbench":{"image_size":"2048x1152","image_size_mode":"ratio","image_aspect_ratio":"16:9","image_resolution":"2k","image_custom_ratio":"16:9","image_custom_width":"2048","image_custom_height":"1152","image_snap_to_multiple_16":true,"image_quality":"high","image_count":3,"image_output_format":"webp","image_output_compression":"88","video_size":"1920x1080","video_seconds":"10","video_resolution":"1080p","video_mode":"pro","video_generate_audio":true,"video_watermark":true}}`))
+	setRequestAuthCookie(req, "Bearer "+firstToken)
+	res = httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), `"partial_images":3`) || !strings.Contains(res.Body.String(), `"image_size":"2048x1152"`) || !strings.Contains(res.Body.String(), `"image_count":3`) || !strings.Contains(res.Body.String(), `"video_generate_audio":true`) || !strings.Contains(res.Body.String(), `"default_text_relay_token_name":"text-key"`) {
+		t.Fatalf("update creation workbench preferences status = %d body = %s", res.Code, res.Body.String())
+	}
+
 	req = httptest.NewRequest(http.MethodPut, "/api/profile/image-generation-preferences", strings.NewReader(`{"partial_images":1,"default_video_model":"video-disabled"}`))
 	setRequestAuthCookie(req, "Bearer "+firstToken)
 	res = httptest.NewRecorder()
@@ -369,7 +478,7 @@ func TestImageGenerationPreferencesArePersonal(t *testing.T) {
 	setRequestAuthCookie(req, "Bearer "+secondToken)
 	res = httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusOK || strings.Contains(res.Body.String(), `"stream":true`) || strings.Contains(res.Body.String(), `"response_format_b64_json":true`) || strings.Contains(res.Body.String(), `"codex_cli_compatibility":true`) {
+	if res.Code != http.StatusOK || strings.Contains(res.Body.String(), `"stream":true`) || strings.Contains(res.Body.String(), `"response_format_b64_json":true`) || strings.Contains(res.Body.String(), `"codex_cli_compatibility":true`) || strings.Contains(res.Body.String(), `"default_text_relay_token_name":"text-key"`) {
 		t.Fatalf("second user saw first user's preferences status = %d body = %s", res.Code, res.Body.String())
 	}
 
@@ -612,6 +721,53 @@ func TestProfileRelayKeyReadsNewAPITokenForUserAndGroup(t *testing.T) {
 	app.Handler().ServeHTTP(res, req)
 	if res.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("write relay key status = %d body = %s", res.Code, res.Body.String())
+	}
+}
+
+func TestProfileCustomRelayConfigsVisibilityAndSecretRedaction(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+
+	_, userToken, err := createTestUserSession(app, "frontend", service.AuthOwner{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := func(method, path, token, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(method, path, strings.NewReader(body))
+		if body != "" {
+			req.Header.Set("Content-Type", "application/json")
+		}
+		setRequestAuthCookie(req, token)
+		res := httptest.NewRecorder()
+		app.Handler().ServeHTTP(res, req)
+		return res
+	}
+
+	res := request(http.MethodGet, "/api/profile/custom-relay-configs", userToken, "")
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), `"configurable":false`) {
+		t.Fatalf("default user custom config status = %d body = %s", res.Code, res.Body.String())
+	}
+	res = request(http.MethodPut, "/api/profile/custom-relay-configs/image", userToken, `{"base_url":"https://api.example.test","api_key":"sk-user-secret"}`)
+	if res.Code != http.StatusForbidden {
+		t.Fatalf("disabled user update status = %d body = %s", res.Code, res.Body.String())
+	}
+
+	adminToken := adminSessionToken(t, app)
+	res = request(http.MethodPut, "/api/profile/custom-relay-configs/image", adminToken, `{"base_url":"https://api.example.test/v1/","api_key":"sk-admin-secret"}`)
+	if res.Code != http.StatusOK || strings.Contains(res.Body.String(), "sk-admin-secret") || !strings.Contains(res.Body.String(), `"configured":true`) {
+		t.Fatalf("admin update status = %d body = %s", res.Code, res.Body.String())
+	}
+	res = request(http.MethodGet, "/api/profile/custom-relay-configs", adminToken, "")
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), `"configurable":true`) || strings.Contains(res.Body.String(), "sk-admin-secret") {
+		t.Fatalf("admin config status = %d body = %s", res.Code, res.Body.String())
+	}
+
+	if _, err := app.config.Update(map[string]any{"allow_user_custom_relay_config": true}); err != nil {
+		t.Fatal(err)
+	}
+	res = request(http.MethodPut, "/api/profile/custom-relay-configs/text", userToken, `{"base_url":"https://text.example.test","api_key":"sk-user-secret"}`)
+	if res.Code != http.StatusOK || strings.Contains(res.Body.String(), "sk-user-secret") {
+		t.Fatalf("enabled user update status = %d body = %s", res.Code, res.Body.String())
 	}
 }
 
@@ -3062,6 +3218,8 @@ func TestNewAppStartsLogRetentionCleaner(t *testing.T) {
 	t.Setenv("STORAGE_BACKEND", "sqlite")
 	t.Setenv("STORAGE_DATABASE_URL", "")
 	t.Setenv("LOG_RETENTION_DAYS", "1")
+	t.Setenv("LOG_CLEANUP_SCHEDULE_ENABLED", "true")
+	t.Setenv("LOG_CLEANUP_HOUR", fmt.Sprint(time.Now().Hour()))
 	unsetTestEnv(t, "REGISTRATION_ENABLED")
 
 	dataDir := filepath.Join(root, "data")

@@ -95,7 +95,7 @@ test("reference project KIE model IDs resolve to functional video profiles", () 
   assert.deepEqual(videoMultimodalReferenceLimits("grok-imagine/image-to-video"), { image: 9, video: 0, audio: 0 });
   assert.equal(videoReferenceImageLimit("minimax-h3/text-to-video"), 0);
   assert.equal(supportsVideoMultimodalReferences("minimax-h3/text-to-video"), false);
-  assert.equal(videoReferenceImageLimit("minimax-h3/image-to-video"), 1);
+  assert.equal(videoReferenceImageLimit("minimax-h3/image-to-video"), 2);
   assert.equal(videoReferenceImageLimit("minimax-h3/reference-to-video"), 0);
   assert.deepEqual(videoMultimodalReferenceLimits("minimax-h3/reference-to-video"), { image: 9, video: 3, audio: 3 });
   assert.equal(videoReferenceImageLimit("happyhorse/text-to-video"), 0);

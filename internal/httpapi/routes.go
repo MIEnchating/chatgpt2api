@@ -80,6 +80,19 @@ func (a *App) handleImageGenerationPreferences(w http.ResponseWriter, r *http.Re
 				return
 			}
 		}
+		current, err := a.imagePreferences.Preferences(ownerID)
+		if err != nil {
+			util.WriteError(w, http.StatusInternalServerError, "failed to load image generation preferences")
+			return
+		}
+		workbench := current.Workbench
+		if rawWorkbench, present := body["workbench"]; present {
+			workbench, err = creationWorkbenchPreferencesFromValue(rawWorkbench)
+			if err != nil {
+				util.WriteError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+		}
 		preferences, err := a.imagePreferences.Update(ownerID, service.ImageGenerationPreferences{
 			APIMode:                 util.Clean(body["api_mode"]),
 			Stream:                  util.ToBool(body["stream"]),
@@ -97,15 +110,127 @@ func (a *App) handleImageGenerationPreferences(w http.ResponseWriter, r *http.Re
 			DefaultAudioVoice:       strings.TrimSpace(util.Clean(body["default_audio_voice"])),
 			DefaultAudioFormat:      defaultAudioFormat,
 			DefaultAudioSpeed:       defaultAudioSpeed,
+			DefaultTextRelayToken:   relayTokenPreferenceValue(body, "default_text_relay_token_name", current.DefaultTextRelayToken),
+			DefaultImageRelayToken:  relayTokenPreferenceValue(body, "default_image_relay_token_name", current.DefaultImageRelayToken),
+			DefaultVideoRelayToken:  relayTokenPreferenceValue(body, "default_video_relay_token_name", current.DefaultVideoRelayToken),
+			DefaultAudioRelayToken:  relayTokenPreferenceValue(body, "default_audio_relay_token_name", current.DefaultAudioRelayToken),
+			Workbench:               workbench,
 		})
 		if err != nil {
 			util.WriteError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 		util.WriteJSON(w, http.StatusOK, map[string]any{"preferences": preferences})
+	case http.MethodPatch:
+		body, err := readJSONMap(r)
+		if err != nil {
+			util.WriteError(w, http.StatusBadRequest, "invalid json body")
+			return
+		}
+		updates := map[string]string{}
+		for _, kind := range []string{"text", "image", "video", "audio"} {
+			field := "default_" + kind + "_relay_token_name"
+			if value, present := body[field]; present {
+				updates[kind] = util.Clean(value)
+			}
+		}
+		var preferences service.ImageGenerationPreferences
+		if len(updates) > 0 {
+			preferences, err = a.imagePreferences.UpdateRelayTokenNames(ownerID, updates)
+			if err != nil {
+				util.WriteError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+		}
+		_, hasWorkbench := body["workbench"]
+		_, hasStream := body["stream"]
+		_, hasPartialImages := body["partial_images"]
+		_, hasResponseFormat := body["response_format_b64_json"]
+		_, hasCodexCompatibility := body["codex_cli_compatibility"]
+		hasCreationOptions := hasWorkbench || hasStream || hasPartialImages || hasResponseFormat || hasCodexCompatibility
+		if hasCreationOptions {
+			current, loadErr := a.imagePreferences.Preferences(ownerID)
+			if loadErr != nil {
+				util.WriteError(w, http.StatusInternalServerError, "failed to load image generation preferences")
+				return
+			}
+			if rawWorkbench, present := body["workbench"]; present {
+				workbench, parseErr := creationWorkbenchPreferencesFromValue(rawWorkbench)
+				if parseErr != nil {
+					util.WriteError(w, http.StatusBadRequest, parseErr.Error())
+					return
+				}
+				current.Workbench = workbench
+			}
+			if hasStream {
+				current.Stream = util.ToBool(body["stream"])
+			}
+			if hasPartialImages {
+				partialImages, valid := imagePreferencePartialImages(body["partial_images"])
+				if !valid {
+					util.WriteError(w, http.StatusBadRequest, "partial_images must be an integer between 0 and 3")
+					return
+				}
+				current.PartialImages = partialImages
+			}
+			if hasResponseFormat {
+				current.ResponseFormatB64JSON = util.ToBool(body["response_format_b64_json"])
+			}
+			if hasCodexCompatibility {
+				current.CodexCLICompatibility = util.ToBool(body["codex_cli_compatibility"])
+			}
+			preferences, err = a.imagePreferences.Update(ownerID, current)
+			if err != nil {
+				util.WriteError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+		}
+		if len(updates) == 0 && !hasCreationOptions {
+			util.WriteError(w, http.StatusBadRequest, "at least one preference is required")
+			return
+		}
+		util.WriteJSON(w, http.StatusOK, map[string]any{"preferences": preferences})
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
+}
+
+func relayTokenPreferenceValue(body map[string]any, field, fallback string) string {
+	if value, present := body[field]; present {
+		return util.Clean(value)
+	}
+	return fallback
+}
+
+func creationWorkbenchPreferencesFromValue(value any) (service.CreationWorkbenchPreferences, error) {
+	workbench := util.StringMap(value)
+	if len(workbench) == 0 {
+		return service.CreationWorkbenchPreferences{}, fmt.Errorf("workbench must be an object")
+	}
+	count, ok := util.StrictInt(workbench["image_count"])
+	if !ok {
+		return service.CreationWorkbenchPreferences{}, fmt.Errorf("workbench.image_count must be an integer")
+	}
+	return service.CreationWorkbenchPreferences{
+		ImageSize:              util.Clean(workbench["image_size"]),
+		ImageSizeMode:          util.Clean(workbench["image_size_mode"]),
+		ImageAspectRatio:       util.Clean(workbench["image_aspect_ratio"]),
+		ImageResolution:        util.Clean(workbench["image_resolution"]),
+		ImageCustomRatio:       util.Clean(workbench["image_custom_ratio"]),
+		ImageCustomWidth:       util.Clean(workbench["image_custom_width"]),
+		ImageCustomHeight:      util.Clean(workbench["image_custom_height"]),
+		ImageSnapToMultiple16:  util.ToBool(workbench["image_snap_to_multiple_16"]),
+		ImageQuality:           util.Clean(workbench["image_quality"]),
+		ImageCount:             count,
+		ImageOutputFormat:      util.Clean(workbench["image_output_format"]),
+		ImageOutputCompression: util.Clean(workbench["image_output_compression"]),
+		VideoSize:              util.Clean(workbench["video_size"]),
+		VideoSeconds:           util.Clean(workbench["video_seconds"]),
+		VideoResolution:        util.Clean(workbench["video_resolution"]),
+		VideoMode:              util.Clean(workbench["video_mode"]),
+		VideoGenerateAudio:     util.ToBool(workbench["video_generate_audio"]),
+		VideoWatermark:         util.ToBool(workbench["video_watermark"]),
+	}, nil
 }
 
 func allowedPersonalModel(model string, allowed []string) string {
@@ -149,6 +274,35 @@ func (a *App) handleProfileRelayKey(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodGet:
+		selectedName := strings.TrimSpace(r.URL.Query().Get("token_name"))
+		if kind := service.CustomRelayKindFromTokenName(selectedName); kind != "" {
+			if a.customRelayConfigs == nil {
+				util.WriteError(w, http.StatusServiceUnavailable, "自定义 API 配置存储不可用")
+				return
+			}
+			config, err := a.customRelayConfigs.Config(identityScope(identity), kind)
+			if err != nil {
+				util.WriteError(w, http.StatusInternalServerError, "读取自定义 API 配置失败")
+				return
+			}
+			names := []string{}
+			if reader := a.relayTokenReader(); reader != nil {
+				status := reader.StatusForGroupAndName(r.Context(), identity, "", "")
+				names = append(names, util.AsStringSlice(status["token_names"])...)
+			}
+			if config.BaseURL != "" && config.APIKey != "" {
+				names = append(names, selectedName)
+			}
+			status := map[string]any{
+				"has_key": config.APIKey != "", "key_preview": "••••••••", "source": "custom",
+				"token_name": selectedName, "token_names": names,
+			}
+			if config.BaseURL == "" || config.APIKey == "" {
+				status["message"] = "自定义 API 配置不完整"
+			}
+			util.WriteJSON(w, http.StatusOK, status)
+			return
+		}
 		reader := a.relayTokenReader()
 		if reader == nil {
 			message := "数据库连接未配置，请联系管理员"
@@ -1139,12 +1293,12 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusBadRequest, "Grok TTS 模型不可用")
 			return
 		}
-		apiKey, err := a.relayAPIKeyForIdentitySelection(r.Context(), identity, strings.TrimSpace(r.URL.Query().Get("token_group")), strings.TrimSpace(r.URL.Query().Get("token_name")))
+		credential, err := a.relayCredentialForIdentitySelection(r.Context(), identity, strings.TrimSpace(r.URL.Query().Get("token_group")), strings.TrimSpace(r.URL.Query().Get("token_name")))
 		if err != nil {
 			a.writeCreationTaskSubmitError(w, err)
 			return
 		}
-		voices, err := a.fetchGrokTTSVoices(r.Context(), apiKey, model)
+		voices, err := a.fetchGrokTTSVoicesAt(r.Context(), credential.BaseURL, credential.APIKey, model)
 		if err != nil {
 			a.writeCreationTaskSubmitError(w, err)
 			return

@@ -198,9 +198,12 @@ export type SettingsConfig = {
   image_task_timeout_seconds?: number | string;
   user_default_concurrent_limit?: number | string;
   user_default_rpm_limit?: number | string;
+  allow_user_custom_relay_config?: boolean;
   image_retention_days?: number | string;
   image_storage_limit_mb?: number | string;
   log_retention_days?: number | string;
+  log_cleanup_schedule_enabled?: boolean;
+  log_cleanup_hour?: number | string;
   default_log_view?: LogView | string;
   log_levels?: string[];
   login_page_image_url?: string;
@@ -222,8 +225,6 @@ export type SettingsConfig = {
     enabled?: boolean;
     builtin?: boolean;
   }>;
-  prompt_pull_schedule_enabled?: boolean;
-  prompt_pull_interval_minutes?: number | string;
   [key: string]: unknown;
 };
 
@@ -269,6 +270,20 @@ export type ModelConfig = {
   audio_models: string[];
   default_audio_model: string;
   relay_base_url: string;
+  custom_relay_configurable?: boolean;
+};
+
+export type CustomRelayConfigStatus = {
+  kind: "text" | "image" | "video" | "audio";
+  token_name: string;
+  base_url: string;
+  has_key: boolean;
+  configured: boolean;
+};
+
+export type CustomRelayConfigsResponse = {
+  configurable: boolean;
+  configs: Record<CustomRelayConfigStatus["kind"], CustomRelayConfigStatus>;
 };
 
 export type LoginPageImageSettings = {
@@ -277,6 +292,27 @@ export type LoginPageImageSettings = {
   login_page_image_zoom: number;
   login_page_image_position_x: number;
   login_page_image_position_y: number;
+};
+
+export type CreationWorkbenchPreferences = {
+  image_size: string;
+  image_size_mode: "auto" | "ratio" | "custom";
+  image_aspect_ratio: string;
+  image_resolution: string;
+  image_custom_ratio: string;
+  image_custom_width: string;
+  image_custom_height: string;
+  image_snap_to_multiple_16: boolean;
+  image_quality: "" | ImageQuality;
+  image_count: number;
+  image_output_format: ImageOutputFormat;
+  image_output_compression: string;
+  video_size: string;
+  video_seconds: string;
+  video_resolution: string;
+  video_mode: string;
+  video_generate_audio: boolean;
+  video_watermark: boolean;
 };
 
 export type ImageGenerationPreferences = {
@@ -296,6 +332,11 @@ export type ImageGenerationPreferences = {
   default_audio_voice: string;
   default_audio_format: "" | "mp3" | "wav" | "opus" | "aac" | "flac" | "pcm";
   default_audio_speed: number;
+  default_text_relay_token_name: string;
+  default_image_relay_token_name: string;
+  default_video_relay_token_name: string;
+  default_audio_relay_token_name: string;
+  workbench: CreationWorkbenchPreferences;
 };
 
 export type ImageAPIMode = "images" | "responses" | "chat";
@@ -694,8 +735,6 @@ export async function verifySession() {
   });
 }
 
-export const PROFILE_RELAY_TOKEN_NAME_CHANGED_EVENT =
-  "chatgpt2api:profile-relay-token-name-changed";
 export const IMAGE_GENERATION_PREFERENCES_CHANGED_EVENT =
   "chatgpt2api:image-generation-preferences-changed";
 
@@ -709,6 +748,27 @@ export async function fetchProfileRelayKey(group?: string, tokenName?: string) {
   }
   return httpRequest<ProfileRelayKeyStatus>(
     `/api/profile/relay-key${params.toString() ? `?${params.toString()}` : ""}`,
+  );
+}
+
+export async function fetchCustomRelayConfigs() {
+  return httpRequest<CustomRelayConfigsResponse>("/api/profile/custom-relay-configs");
+}
+
+export async function updateCustomRelayConfig(
+  kind: CustomRelayConfigStatus["kind"],
+  input: { base_url: string; api_key: string },
+) {
+  return httpRequest<{ item: CustomRelayConfigStatus }>(
+    `/api/profile/custom-relay-configs/${encodeURIComponent(kind)}`,
+    { method: "PUT", body: input },
+  );
+}
+
+export async function deleteCustomRelayConfig(kind: CustomRelayConfigStatus["kind"]) {
+  return httpRequest<{ ok: boolean }>(
+    `/api/profile/custom-relay-configs/${encodeURIComponent(kind)}`,
+    { method: "DELETE" },
   );
 }
 
@@ -730,6 +790,37 @@ export async function updateImageGenerationPreferences(
     {
       method: "PUT",
       body: preferences,
+    },
+  );
+}
+
+export type RelayTokenPreferenceUpdate = Partial<Pick<
+  ImageGenerationPreferences,
+  | "default_text_relay_token_name"
+  | "default_image_relay_token_name"
+  | "default_video_relay_token_name"
+  | "default_audio_relay_token_name"
+>>;
+
+export async function updateRelayTokenPreferences(preferences: RelayTokenPreferenceUpdate) {
+  return httpRequest<{ preferences: ImageGenerationPreferences }>(
+    "/api/profile/image-generation-preferences",
+    {
+      method: "PATCH",
+      body: preferences,
+    },
+  );
+}
+
+export async function updateCreationWorkbenchPreferences(
+  workbench: CreationWorkbenchPreferences,
+  options: Pick<ImageGenerationPreferences, "stream" | "partial_images" | "response_format_b64_json" | "codex_cli_compatibility">,
+) {
+  return httpRequest<{ preferences: ImageGenerationPreferences }>(
+    "/api/profile/image-generation-preferences",
+    {
+      method: "PATCH",
+      body: { workbench, ...options },
     },
   );
 }

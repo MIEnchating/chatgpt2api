@@ -220,7 +220,7 @@ function RBACContent() {
   };
 
   return (
-    <section data-rbac-layout className="flex h-full min-h-0 flex-col gap-5 overflow-hidden">
+    <section data-rbac-layout className="flex h-full min-h-0 flex-col gap-[var(--page-section-gap)] overflow-hidden">
       <PageHeader
         actions={
           <>

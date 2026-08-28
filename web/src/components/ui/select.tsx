@@ -5,20 +5,35 @@ import { Check, ChevronDown } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 
+type SelectOpenContextValue = {
+  open: boolean;
+  setOpen: (open: boolean) => void;
+};
+
+const SelectOpenContext = React.createContext<SelectOpenContextValue | null>(null);
+
 function Select({
   defaultOpen,
   onOpenChange,
   open,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Root>) {
+  const [internalOpen, setInternalOpen] = React.useState(defaultOpen ?? false);
+  const actualOpen = open ?? internalOpen;
+  const setOpen = React.useCallback((nextOpen: boolean) => {
+    if (open === undefined) setInternalOpen(nextOpen);
+    onOpenChange?.(nextOpen);
+  }, [onOpenChange, open]);
+
   return (
-    <SelectPrimitive.Root
-      data-slot="select"
-      defaultOpen={defaultOpen}
-      open={open}
-      onOpenChange={onOpenChange}
-      {...props}
-    />
+    <SelectOpenContext.Provider value={{ open: actualOpen, setOpen }}>
+      <SelectPrimitive.Root
+        data-slot="select"
+        open={actualOpen}
+        onOpenChange={setOpen}
+        {...props}
+      />
+    </SelectOpenContext.Provider>
   );
 }
 
@@ -37,8 +52,11 @@ function SelectValue(
 function SelectTrigger({
   className,
   children,
+  onPointerDown,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Trigger>) {
+  const select = React.useContext(SelectOpenContext);
+
   return (
     <SelectPrimitive.Trigger
       data-slot="select-trigger"
@@ -46,11 +64,18 @@ function SelectTrigger({
         "flex h-10 w-full items-center justify-between gap-2 rounded-lg border border-input bg-background px-3 py-2 text-sm whitespace-nowrap shadow-[0_1px_3px_rgba(0,0,0,0.03)] outline-none transition-[border-color,box-shadow,background-color] data-[placeholder]:text-muted-foreground disabled:cursor-not-allowed disabled:bg-muted/50 disabled:opacity-60 focus-visible:border-ring focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/20 [&>span]:line-clamp-1",
         className,
       )}
+      onPointerDown={(event) => {
+        onPointerDown?.(event);
+        if (!event.defaultPrevented && select?.open) {
+          event.preventDefault();
+          select.setOpen(false);
+        }
+      }}
       {...props}
     >
       {children}
       <SelectPrimitive.Icon asChild>
-        <ChevronDown className="size-4 opacity-60" />
+        <ChevronDown className={cn("size-4 shrink-0 opacity-60 transition-transform duration-200 ease-in-out", select?.open && "rotate-180")} />
       </SelectPrimitive.Icon>
     </SelectPrimitive.Trigger>
   );

@@ -40,9 +40,9 @@ function normalizeDefaultLogView(value: unknown): LogView {
   return "meaningful";
 }
 
-function normalizePromptPullInterval(value: unknown) {
-  const minutes = Number(value);
-  return [30, 60, 360, 1440].includes(minutes) ? minutes : 30;
+function normalizeLogCleanupHour(value: unknown) {
+  const hour = Number(value);
+  return Number.isInteger(hour) && hour >= 0 && hour <= 23 ? hour : 3;
 }
 
 function databaseFieldsFromConfig(config: SettingsConfig) {
@@ -81,10 +81,13 @@ function normalizeConfig(config: SettingsConfig): SettingsConfig {
     default_audio_model: String(config.default_audio_model || config.audio_models?.[0] || "gpt-4o-mini-tts"),
     user_default_concurrent_limit: Number(config.user_default_concurrent_limit || 0),
     user_default_rpm_limit: Number(config.user_default_rpm_limit || 0),
+    allow_user_custom_relay_config: config.allow_user_custom_relay_config === true,
     image_retention_days: Number(config.image_retention_days || 30),
     image_storage_limit_mb: Math.max(0, Number(config.image_storage_limit_mb) || 0),
-			storage: normalizeStorageSetting(config.storage),
+    storage: normalizeStorageSetting(config.storage),
     log_retention_days: Number(config.log_retention_days || 7),
+    log_cleanup_schedule_enabled: config.log_cleanup_schedule_enabled === true,
+    log_cleanup_hour: normalizeLogCleanupHour(config.log_cleanup_hour),
     default_log_view: normalizeDefaultLogView(config.default_log_view),
     log_levels: Array.isArray(config.log_levels) ? config.log_levels : [],
     proxy: typeof config.proxy === "string" ? config.proxy : "",
@@ -108,8 +111,6 @@ function normalizeConfig(config: SettingsConfig): SettingsConfig {
     login_page_image_position_x: loginImageTransform.positionX,
     login_page_image_position_y: loginImageTransform.positionY,
     prompt_sources: normalizePromptMarketSources(config.prompt_sources),
-    prompt_pull_schedule_enabled: Boolean(config.prompt_pull_schedule_enabled),
-    prompt_pull_interval_minutes: normalizePromptPullInterval(config.prompt_pull_interval_minutes),
   };
 }
 
@@ -168,10 +169,13 @@ type SettingsStore = {
   setAudioModels: (value: string) => void;
   setUserDefaultConcurrentLimit: (value: string) => void;
   setUserDefaultRpmLimit: (value: string) => void;
+  setAllowUserCustomRelayConfig: (value: boolean) => void;
   setImageRetentionDays: (value: string) => void;
   setImageStorageLimitMb: (value: string) => void;
 	setStorage: (value: NonNullable<SettingsConfig["storage"]>) => void;
   setLogRetentionDays: (value: string) => void;
+  setLogCleanupScheduleEnabled: (value: boolean) => void;
+  setLogCleanupHour: (value: number) => void;
   setDefaultLogView: (value: LogView) => void;
   setLogLevel: (level: string, enabled: boolean) => void;
   setProxy: (value: string) => void;
@@ -183,8 +187,6 @@ type SettingsStore = {
   setRelayDatabaseField: (field: "host" | "port" | "name" | "user" | "password", value: string) => void;
   setAppTitle: (value: string) => void;
   setPromptSources: (value: PromptMarketSourceConfig[]) => void;
-  setPromptPullScheduleEnabled: (value: boolean) => void;
-  setPromptPullIntervalMinutes: (value: number) => void;
   saveSiteIcon: (options: { file?: File | null; action: "keep" | "replace" | "remove" }) => Promise<boolean>;
   setLoginPageImageUrl: (value: string) => void;
   setLoginPageImageMode: (value: LoginPageImageMode) => void;
@@ -248,13 +250,14 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         audio_models: normalizeModelNames(config.audio_models, ["gpt-4o-mini-tts"]),
         user_default_concurrent_limit: Math.max(0, Number(config.user_default_concurrent_limit) || 0),
         user_default_rpm_limit: Math.max(0, Number(config.user_default_rpm_limit) || 0),
+        allow_user_custom_relay_config: config.allow_user_custom_relay_config === true,
         image_retention_days: Math.max(1, Number(config.image_retention_days) || 30),
         image_storage_limit_mb: Math.max(0, Number(config.image_storage_limit_mb) || 0),
-			storage: config.storage,
+        storage: config.storage,
         log_retention_days: Math.min(3650, Math.max(1, Number(config.log_retention_days) || 7)),
+        log_cleanup_schedule_enabled: config.log_cleanup_schedule_enabled === true,
+        log_cleanup_hour: normalizeLogCleanupHour(config.log_cleanup_hour),
         default_log_view: normalizeDefaultLogView(config.default_log_view),
-        prompt_pull_schedule_enabled: Boolean(config.prompt_pull_schedule_enabled),
-        prompt_pull_interval_minutes: normalizePromptPullInterval(config.prompt_pull_interval_minutes),
         proxy: config.proxy.trim(),
         base_url: String(config.base_url || "").trim(),
         app_title: String(config.app_title || "云棉").trim() || "云棉",
@@ -320,6 +323,14 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     set((state) => state.config ? { config: { ...state.config, log_retention_days: value } } : {});
   },
 
+  setLogCleanupScheduleEnabled: (value) => {
+    set((state) => state.config ? { config: { ...state.config, log_cleanup_schedule_enabled: value } } : {});
+  },
+
+  setLogCleanupHour: (value) => {
+    set((state) => state.config ? { config: { ...state.config, log_cleanup_hour: normalizeLogCleanupHour(value) } } : {});
+  },
+
   setDefaultLogView: (value) => {
     set((state) => state.config ? { config: { ...state.config, default_log_view: normalizeDefaultLogView(value) } } : {});
   },
@@ -350,6 +361,10 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
 
   setUserDefaultRpmLimit: (value) => {
     set((state) => state.config ? { config: { ...state.config, user_default_rpm_limit: value } } : {});
+  },
+
+  setAllowUserCustomRelayConfig: (value) => {
+    set((state) => state.config ? { config: { ...state.config, allow_user_custom_relay_config: value } } : {});
   },
 
   setLogLevel: (level, enabled) => {
@@ -436,14 +451,6 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   },
   setPromptSources: (value) => {
     set((state) => state.config ? { config: { ...state.config, prompt_sources: normalizePromptMarketSources(value) } } : {});
-  },
-
-  setPromptPullScheduleEnabled: (value) => {
-    set((state) => state.config ? { config: { ...state.config, prompt_pull_schedule_enabled: value } } : {});
-  },
-
-  setPromptPullIntervalMinutes: (value) => {
-    set((state) => state.config ? { config: { ...state.config, prompt_pull_interval_minutes: normalizePromptPullInterval(value) } } : {});
   },
 
   saveSiteIcon: async ({ file, action }) => {

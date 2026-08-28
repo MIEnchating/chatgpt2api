@@ -5,6 +5,9 @@ import {
   ArrowDown,
   ArrowUp,
   Bot,
+  ChevronRight,
+  Clock3,
+  ClipboardList,
   Copy,
   Download,
   Globe2,
@@ -17,6 +20,7 @@ import {
   Plus,
   Save,
   Search,
+  Settings2,
   Sparkles,
   Trash2,
   Upload,
@@ -34,26 +38,28 @@ import {
   normalizeWorkflow,
   parseVariableOptions,
   parseWorkflowSeriesDrafts,
+  workflowGenerationDefaultsFromPreferences,
   renderWorkflowPrompt,
   resolveWorkflowRuntime,
-  readStoredWorkflowGenerationDefaults,
   type WorkflowGenerationDefaults,
   type WorkflowSeriesDraft,
 } from "@/app/workflows/workflow-runtime";
 import {
+  buildImageSize,
+  getImageSizeSelectionFromSize,
+} from "@/app/image/image-options";
+import {
   creationTaskImages,
   restoreWorkflowTasks,
-  workflowTaskFailureEvent,
-  workflowTaskStartEvent,
-  workflowTaskSuccessEvent,
-  type WorkflowExternalTaskFailure,
-  type WorkflowExternalTaskStart,
-  type WorkflowExternalTaskSuccess,
   type WorkflowTask,
 } from "@/app/workflows/workflow-task-runtime";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { TooltipButton } from "@/components/ui/tooltip";
+import {
+  ImageSettingsPanel,
+  type ImageSettingsValue,
+} from "@/components/generation/image-settings-panel";
+import { ImageParameterLabel } from "@/app/image/components/image-parameter-ui";
 import { PageHeader } from "@/components/page-header";
 import {
   Dialog,
@@ -63,6 +69,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
@@ -80,6 +87,7 @@ import {
   createImageGenerationTask,
   fetchCreationTasks,
   fetchModelConfig,
+  isImageQuality,
   type CreationTask,
   type ImageGenerationPreferences,
   type ImageQuality,
@@ -96,7 +104,7 @@ import {
   type WorkflowSeriesConfig,
   type WorkflowVariable,
 } from "@/services/api/workflows";
-import { getStoredRelayTokenName } from "@/lib/relay-token-selection";
+import { useRelayTokenPreferences } from "@/lib/use-relay-token-preferences";
 import type { MyAsset } from "@/lib/my-assets";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import { useImageGenerationPreferences } from "@/lib/use-image-generation-preferences";
@@ -111,9 +119,6 @@ type WorkflowReference = {
 };
 
 export type {
-  WorkflowExternalTaskFailure,
-  WorkflowExternalTaskStart,
-  WorkflowExternalTaskSuccess,
   WorkflowRunResult,
 } from "@/app/workflows/workflow-task-runtime";
 
@@ -121,11 +126,28 @@ type CreativeWorkflowWorkspaceProps = {
   embedded?: boolean;
   hideTaskList?: boolean;
   generationDefaults?: WorkflowGenerationDefaults;
-  onGenerationLogSaved?: () => void;
-  onWorkflowTaskStarted?: (task: WorkflowExternalTaskStart) => void;
-  onWorkflowTaskSuccess?: (task: WorkflowExternalTaskSuccess) => void;
-  onWorkflowTaskFailure?: (task: WorkflowExternalTaskFailure) => void;
 };
+
+function workflowImageSettings(config: WorkflowGenerationConfig): ImageSettingsValue {
+  return {
+    ...getImageSizeSelectionFromSize(config.size || "auto"),
+    quality: isImageQuality(config.quality) ? config.quality : "",
+    count: Math.max(1, Math.min(10, Math.round(Number(config.count) || 1))),
+    snapToMultiple16: true,
+  };
+}
+
+function workflowGenerationDefaults(
+  preferences: ImageGenerationPreferences | undefined,
+  overrides: WorkflowGenerationDefaults | undefined,
+  textChannelID: string,
+) {
+  return {
+    ...workflowGenerationDefaultsFromPreferences(preferences),
+    ...(textChannelID ? { text_channel_id: textChannelID } : {}),
+    ...overrides,
+  };
+}
 
 const workflowScopeOptions: Array<{
   value: "all" | CreativeWorkflow["scope"];
@@ -208,47 +230,11 @@ export function CreativeWorkflowWorkspace({
   embedded = false,
   hideTaskList = false,
   generationDefaults,
-  onGenerationLogSaved,
-  onWorkflowTaskStarted,
-  onWorkflowTaskSuccess,
-  onWorkflowTaskFailure,
 }: CreativeWorkflowWorkspaceProps = {}) {
   const { isCheckingAuth, session } = useAuthGuard(undefined, "/workflows");
   const { preferences } = useImageGenerationPreferences(session?.key || "");
-  const storedGenerationDefaults = useMemo(readStoredWorkflowGenerationDefaults, []);
-  const sessionTextChannelID = session ? getStoredRelayTokenName(session, "text") : "";
-  const generationImageModel = generationDefaults?.image_model;
-  const generationModel = generationDefaults?.model;
-  const generationTextModel = generationDefaults?.text_model;
-  const generationTextChannelID = generationDefaults?.text_channel_id;
-  const generationQuality = generationDefaults?.quality;
-  const generationSize = generationDefaults?.size;
-  const generationCount = generationDefaults?.count;
-  const effectiveGenerationDefaults = useMemo(
-    () => ({
-      ...storedGenerationDefaults,
-      ...(session ? { text_channel_id: sessionTextChannelID } : {}),
-      ...(generationImageModel !== undefined ? { image_model: generationImageModel } : {}),
-      ...(generationModel !== undefined ? { model: generationModel } : {}),
-      ...(generationTextModel !== undefined ? { text_model: generationTextModel } : {}),
-      ...(generationTextChannelID !== undefined ? { text_channel_id: generationTextChannelID } : {}),
-      ...(generationQuality !== undefined ? { quality: generationQuality } : {}),
-      ...(generationSize !== undefined ? { size: generationSize } : {}),
-      ...(generationCount !== undefined ? { count: generationCount } : {}),
-    }),
-    [
-      generationCount,
-      generationImageModel,
-      generationModel,
-      generationQuality,
-      generationSize,
-      generationTextChannelID,
-      generationTextModel,
-      session,
-      sessionTextChannelID,
-      storedGenerationDefaults,
-    ],
-  );
+  const { tokenNames: relayTokenNames } = useRelayTokenPreferences();
+  const sessionTextChannelID = relayTokenNames.text;
   const { assets: myAssets, loading: assetLoading } = useMyAssets(
     session?.key || "",
     Boolean(session),
@@ -268,7 +254,10 @@ export function CreativeWorkflowWorkspace({
   const [seriesDraftLoading, setSeriesDraftLoading] = useState(false);
   const [seriesBatchAppend, setSeriesBatchAppend] = useState("");
   const [tasks, setTasks] = useState<WorkflowTask[]>([]);
+  const [taskHistoryOpen, setTaskHistoryOpen] = useState(false);
+  const [selectedTaskID, setSelectedTaskID] = useState("");
   const [now, setNow] = useState(Date.now());
+  const selectedTask = tasks.find((task) => task.id === selectedTaskID) || null;
   const [agentOpen, setAgentOpen] = useState(false);
   const [agentPrompt, setAgentPrompt] = useState("");
   const [agentScope, setAgentScope] = useState<"private" | "public">("private");
@@ -279,9 +268,6 @@ export function CreativeWorkflowWorkspace({
   const [agentDraft, setAgentDraft] = useState<CreativeWorkflow | null>(null);
   const [agentWarnings, setAgentWarnings] = useState<string[]>([]);
   const [assetPickerTarget, setAssetPickerTarget] = useState<"workflow" | "agent" | null>(null);
-  const reportedTaskStartsRef = useRef(new Set<string>());
-  const reportedTerminalTasksRef = useRef(new Set<string>());
-
   useEffect(() => {
     if (!session) return;
     let ignore = false;
@@ -294,7 +280,7 @@ export function CreativeWorkflowWorkspace({
         setTasks(restoredTasks);
         if (workflows.length) {
           const normalized = workflows.map((workflow) =>
-            normalizeWorkflow(workflow, modelConfig, preferences, effectiveGenerationDefaults),
+            normalizeWorkflow(workflow, modelConfig, preferences),
           );
           const recovered = normalized.map((workflow) => {
             if (workflow.editable === false) return workflow;
@@ -310,7 +296,7 @@ export function CreativeWorkflowWorkspace({
           setItems(recovered);
           return;
         }
-        const starters = createStarterWorkflows(modelConfig, preferences, effectiveGenerationDefaults);
+        const starters = createStarterWorkflows(modelConfig, preferences, workflowGenerationDefaults(preferences, generationDefaults, sessionTextChannelID));
         const saved = await Promise.all(starters.map((workflow) => saveWorkflow(workflow)));
         if (!ignore) setItems(saved);
       })
@@ -321,7 +307,7 @@ export function CreativeWorkflowWorkspace({
     return () => {
       ignore = true;
     };
-  }, [effectiveGenerationDefaults, preferences, session]);
+  }, [generationDefaults, preferences, session, sessionTextChannelID]);
 
   useEffect(() => {
     if (!agentModel && models?.default_text_model) {
@@ -340,23 +326,6 @@ export function CreativeWorkflowWorkspace({
     const timer = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(timer);
   }, [runningTaskCount]);
-
-  useEffect(() => {
-    for (const task of tasks) {
-      if (!reportedTaskStartsRef.current.has(task.id)) {
-        reportedTaskStartsRef.current.add(task.id);
-        onWorkflowTaskStarted?.(workflowTaskStartEvent(task));
-      }
-      if (task.status === "running" || reportedTerminalTasksRef.current.has(task.id)) continue;
-      reportedTerminalTasksRef.current.add(task.id);
-      if (task.status === "success") {
-        onWorkflowTaskSuccess?.(workflowTaskSuccessEvent(task));
-      } else {
-        onWorkflowTaskFailure?.(workflowTaskFailureEvent(task));
-      }
-      onGenerationLogSaved?.();
-    }
-  }, [onGenerationLogSaved, onWorkflowTaskFailure, onWorkflowTaskStarted, onWorkflowTaskSuccess, tasks]);
 
   useEffect(() => {
     if (!runningWorkflowTaskIDs) return;
@@ -404,7 +373,6 @@ export function CreativeWorkflowWorkspace({
     () => (running ? renderWorkflowPrompt(running, values) : ""),
     [running, values],
   );
-
   async function persist(workflow: CreativeWorkflow) {
     if (!workflow.name.trim()) {
       toast.error("请输入工作流名称");
@@ -416,7 +384,7 @@ export function CreativeWorkflowWorkspace({
     }
     try {
       const generatedByAgent = agentDraft?.id === workflow.id;
-      const saved = await saveWorkflow(normalizeWorkflow(workflow, models, preferences, effectiveGenerationDefaults));
+      const saved = await saveWorkflow(normalizeWorkflow(workflow, models, preferences));
       setItems((current) => [saved, ...current.filter((item) => item.id !== saved.id)]);
       setEditing(null);
       if (generatedByAgent) {
@@ -445,7 +413,6 @@ export function CreativeWorkflowWorkspace({
       },
       models,
       preferences,
-      effectiveGenerationDefaults,
     );
     try {
       const saved = await saveWorkflow(copy);
@@ -582,16 +549,15 @@ export function CreativeWorkflowWorkspace({
     seriesDraftIndex?: number,
   ) {
     if (!session) throw new Error("登录状态已失效");
-    const config = workflow.config;
     const runtime = resolveWorkflowRuntime(workflow, models, preferences);
     const model = runtime.model;
-    const count = Math.max(1, Math.min(10, countOverride || Number(config.count) || 1));
-    const quality = ["low", "medium", "high"].includes(config.quality)
-      ? (config.quality as ImageQuality)
+    const count = Math.max(1, Math.min(10, countOverride || runtime.count));
+    const quality = ["low", "medium", "high"].includes(runtime.quality)
+      ? (runtime.quality as ImageQuality)
       : undefined;
     const stream = preferences.stream;
     const partialImages = preferences.partial_images || undefined;
-    const relayTokenName = getStoredRelayTokenName(session, "image");
+    const relayTokenName = relayTokenNames.image;
     const execution = {
       stream,
       partial_images: preferences.partial_images,
@@ -602,12 +568,15 @@ export function CreativeWorkflowWorkspace({
     const localTaskID = taskID("workflow-image");
     const startedAt = Date.now();
     const taskConfig = {
-      ...config,
+      ...workflow.config,
       model,
       image_model: model,
       api_mode: runtime.api_mode,
       system_prompt: runtime.system_prompt,
+      quality: runtime.quality,
+      size: runtime.size,
       count: String(count),
+      timeout: String(runtime.timeout),
     };
     const seriesIndex = draft ? Math.max(0, seriesDraftIndex || 0) + 1 : undefined;
     const taskSnapshot: WorkflowTask = {
@@ -631,10 +600,7 @@ export function CreativeWorkflowWorkspace({
         backend_task_ids: [],
     };
     setTasks((current) => [taskSnapshot, ...current]);
-    reportedTaskStartsRef.current.add(localTaskID);
-    onWorkflowTaskStarted?.(workflowTaskStartEvent(taskSnapshot));
     if (draft) patchSeriesDraft(draft.id, { status: "running", error: undefined });
-    let completedImages: WorkflowTask["images"] = [];
     try {
       const imageFiles = references.length ? await workflowImageFiles(references) : [];
       const settled = await Promise.allSettled(
@@ -663,8 +629,8 @@ export function CreativeWorkflowWorkspace({
             workflowContext,
           };
           const submitted = imageFiles.length
-            ? await createImageEditTask(clientTaskID, imageFiles, prompt, model, config.size || undefined, undefined, quality, 1, "private", undefined, undefined, undefined, stream, partialImages, toolOptions, undefined, relayTokenName || undefined)
-            : await createImageGenerationTask(clientTaskID, prompt, model, config.size || undefined, undefined, quality, 1, "private", undefined, undefined, undefined, stream, partialImages, toolOptions, undefined, relayTokenName || undefined);
+            ? await createImageEditTask(clientTaskID, imageFiles, prompt, model, runtime.size || undefined, undefined, quality, 1, "private", undefined, undefined, undefined, stream, partialImages, toolOptions, undefined, relayTokenName || undefined)
+            : await createImageGenerationTask(clientTaskID, prompt, model, runtime.size || undefined, undefined, quality, 1, "private", undefined, undefined, undefined, stream, partialImages, toolOptions, undefined, relayTokenName || undefined);
           setTasks((current) => current.map((task) =>
             task.id === localTaskID
               ? {
@@ -673,7 +639,7 @@ export function CreativeWorkflowWorkspace({
                 }
               : task,
           ));
-          return waitForTask(submitted.id, Number(config.timeout) || 600);
+          return waitForTask(submitted.id, runtime.timeout);
         }),
       );
       const completed = settled.flatMap((item, index) =>
@@ -686,7 +652,6 @@ export function CreativeWorkflowWorkspace({
         creationTaskImages(task).map((image) => ({ ...image, index })),
       );
       const imageURLs = images.map((image) => image.url);
-      completedImages = images;
       if (!imageURLs.length) throw new Error(failures[0] || "接口没有返回图片");
       const endedAt = Date.now();
       const partialError = failures.join("\n") || undefined;
@@ -709,10 +674,6 @@ export function CreativeWorkflowWorkspace({
         });
       }
       markWorkflowRunCompleted(workflow, endedAt);
-      const completedTask = { ...taskSnapshot, status: "success" as const, ended_at: endedAt, image_urls: imageURLs, images };
-      reportedTerminalTasksRef.current.add(localTaskID);
-      onWorkflowTaskSuccess?.(workflowTaskSuccessEvent(completedTask));
-      onGenerationLogSaved?.();
       return imageURLs;
     } catch (error) {
       const message = error instanceof Error ? error.message : "工作流运行失败";
@@ -725,10 +686,6 @@ export function CreativeWorkflowWorkspace({
         ),
       );
       if (draft) patchSeriesDraft(draft.id, { status: "failed", error: message });
-      const failedTask = { ...taskSnapshot, status: "failed" as const, ended_at: endedAt, error: message, images: completedImages, image_urls: completedImages.map((image) => image.url) };
-      reportedTerminalTasksRef.current.add(localTaskID);
-      onWorkflowTaskFailure?.(workflowTaskFailureEvent(failedTask));
-      onGenerationLogSaved?.();
       throw error;
     }
   }
@@ -746,8 +703,11 @@ export function CreativeWorkflowWorkspace({
       await generateSeriesDrafts();
       return;
     }
+    const workflow = running;
+    const prompt = renderedPrompt;
+    closeRunner();
     try {
-      await executeImageTask(running, renderedPrompt);
+      await executeImageTask(workflow, prompt);
       toast.success("工作流运行完成");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "工作流运行失败");
@@ -776,7 +736,6 @@ export function CreativeWorkflowWorkspace({
         values,
       );
       const model =
-        running.series_config.prompt_model ||
         preferences.default_text_model ||
         models?.default_text_model ||
         "";
@@ -784,14 +743,12 @@ export function CreativeWorkflowWorkspace({
         clientTaskId: taskID("workflow-series"),
         prompt,
         model,
-        relayTokenName:
-          running.series_config.prompt_channel_id ||
-          (session ? getStoredRelayTokenName(session, "text") : ""),
+        relayTokenName: relayTokenNames.text,
         messages: [{ role: "user", content: prompt }],
       });
       const completed = await waitForTask(
         submitted.id,
-        Number(running.config.timeout) || 600,
+        600,
       );
       const drafts = parseWorkflowSeriesDrafts(taskText(completed), count, renderedPrompt);
       setSeriesDrafts(drafts);
@@ -884,7 +841,7 @@ export function CreativeWorkflowWorkspace({
         scope: agentScope,
         model:
           agentModel || preferences.default_text_model || models?.default_text_model || "",
-        channelID: agentChannelID || getStoredRelayTokenName(session, "text"),
+        channelID: agentChannelID || relayTokenNames.text,
         references: agentReferences.length
           ? await workflowImageDataURLs(agentReferences)
           : [],
@@ -896,7 +853,7 @@ export function CreativeWorkflowWorkspace({
         draft.mode === "multi_image_series"
           ? "multi_image_series"
           : "single_image",
-        effectiveGenerationDefaults,
+        workflowGenerationDefaults(preferences, generationDefaults, sessionTextChannelID),
       );
       setAgentDraft(
         normalizeWorkflow(
@@ -914,7 +871,6 @@ export function CreativeWorkflowWorkspace({
           },
           models,
           preferences,
-          effectiveGenerationDefaults,
         ),
       );
       setAgentWarnings(Array.isArray(response.warnings) ? response.warnings : []);
@@ -944,21 +900,26 @@ export function CreativeWorkflowWorkspace({
   const workflowActions = (
     <>
       <Button variant="outline" onClick={() => setAgentOpen(true)}><Bot />Agent</Button>
-      <Button variant="outline" onClick={() => setEditing(createBlankWorkflow(models, preferences, "multi_image_series", effectiveGenerationDefaults))}><Layers3 />新建多图</Button>
-      <Button onClick={() => setEditing(createBlankWorkflow(models, preferences, "single_image", effectiveGenerationDefaults))}><Plus />新建工作流</Button>
+      {!hideTaskList ? <Button variant="outline" className="relative" onClick={() => setTaskHistoryOpen(true)}>
+        {runningTaskCount ? <LoaderCircle className="animate-spin" /> : <ClipboardList />}
+        任务记录
+        {runningTaskCount ? <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-[#1456f0] px-1.5 text-[10px] font-semibold leading-5 text-white">{runningTaskCount}</span> : null}
+      </Button> : null}
+      <Button variant="outline" onClick={() => setEditing(createBlankWorkflow(models, preferences, "multi_image_series", workflowGenerationDefaults(preferences, generationDefaults, sessionTextChannelID)))}><Layers3 />新建多图</Button>
+      <Button onClick={() => setEditing(createBlankWorkflow(models, preferences, "single_image", workflowGenerationDefaults(preferences, generationDefaults, sessionTextChannelID)))}><Plus />新建工作流</Button>
     </>
   );
 
   return (
-    <div className={cn("flex h-full min-h-0 flex-col overflow-hidden", embedded ? "bg-background" : "gap-5")}>
+    <div className={cn("flex h-full min-h-0 flex-col overflow-hidden bg-background", !embedded && "gap-4")}>
       {!embedded ? <PageHeader actions={workflowActions} /> : null}
-      <div className={cn("flex min-h-0 flex-1 flex-col overflow-hidden bg-background", !embedded && "rounded-xl border border-border")}>
-        <header className={cn("shrink-0 border-b border-border px-5 py-3 sm:px-8", embedded && "pr-14 sm:pr-14")}>
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background">
+        <header className={cn("shrink-0 border-y border-border bg-muted/20 px-5 py-3 sm:px-8", embedded && "border-t-0 pr-14 sm:pr-14")}>
           <div className="flex w-full flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
             <div className="shrink-0">
               <h1 className="text-base font-semibold">创意工作流</h1>
               <p className="mt-0.5 text-xs text-muted-foreground">
-                {items.length} 个模板 · {tasks.filter((task) => task.status === "running").length} 个任务运行中
+                {items.length} 个模板{runningTaskCount ? ` · ${runningTaskCount} 个任务运行中` : ""}
               </p>
             </div>
             <div className="flex min-w-0 flex-1 flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center lg:justify-end">
@@ -998,10 +959,17 @@ export function CreativeWorkflowWorkspace({
             </div>
           </div>
         </header>
-        <ScrollArea className="min-h-0 flex-1" viewportClassName="px-5 py-5 sm:px-8">
-          <div className="flex w-full flex-col gap-5">
+        <ScrollArea className="min-h-0 flex-1" viewportClassName="px-5 py-5 sm:px-8 lg:py-6">
+          <div className="mx-auto flex w-full max-w-[1680px] flex-col gap-8">
             {filteredItems.length ? (
-              <div data-workflow-grid className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+              <section aria-labelledby="workflow-template-title">
+                <div className="mb-3 flex items-end justify-between gap-4">
+                  <div>
+                    <h2 id="workflow-template-title" className="text-sm font-semibold">工作流模板</h2>
+                  </div>
+                  <span className="text-xs text-muted-foreground">{filteredItems.length} 个</span>
+                </div>
+                <div data-workflow-grid className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
                 {filteredItems.map((workflow) => (
                   <WorkflowCard
                     key={workflow.id}
@@ -1020,25 +988,33 @@ export function CreativeWorkflowWorkspace({
                     }}
                   />
                 ))}
-              </div>
+                </div>
+              </section>
             ) : (
               <div className="grid min-h-72 place-items-center text-center text-sm text-muted-foreground">暂无工作流</div>
             )}
-            {!hideTaskList && tasks.length ? (
-              <section className="border-t border-border pt-5">
-                <div className="mb-3 flex items-center justify-between">
-                  <h2 className="text-sm font-semibold">工作流任务</h2>
-                  <Button size="sm" variant="outline" onClick={() => setTasks((current) => current.filter((task) => task.status === "running"))}>清理已完成</Button>
-                </div>
-                <div data-workflow-task-grid className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-                  {tasks.map((task) => <WorkflowTaskCard key={task.id} task={task} now={now} />)}
-                </div>
-              </section>
-            ) : null}
           </div>
         </ScrollArea>
       </div>
-      <WorkflowEditor workflow={editing} models={models} preferences={preferences} onChange={setEditing} onSave={persist} onClose={() => setEditing(null)} />
+      <WorkflowTaskHistoryDialog
+        open={taskHistoryOpen}
+        tasks={tasks}
+        now={now}
+        onClearCompleted={() => setTasks((current) => current.filter((task) => task.status === "running"))}
+        onOpenTask={(taskID) => {
+          setTaskHistoryOpen(false);
+          setSelectedTaskID(taskID);
+        }}
+        onClose={() => setTaskHistoryOpen(false)}
+      />
+      <WorkflowEditor
+        workflow={editing}
+        models={models}
+        preferences={preferences}
+        onChange={setEditing}
+        onSave={persist}
+        onClose={() => setEditing(null)}
+      />
       <WorkflowRunner
         workflow={running}
         values={values}
@@ -1047,6 +1023,7 @@ export function CreativeWorkflowWorkspace({
         referenceBusy={referenceBusy}
         drafts={seriesDrafts}
         draftLoading={seriesDraftLoading}
+        models={models}
         batchAppend={seriesBatchAppend}
         onValuesChange={setValues}
         onAssetsOpen={() => setAssetPickerTarget("workflow")}
@@ -1092,22 +1069,23 @@ export function CreativeWorkflowWorkspace({
         onInsert={insertWorkflowAsset}
         onClose={() => setAssetPickerTarget(null)}
       />
+      <WorkflowTaskDialog task={selectedTask} now={now} onClose={() => setSelectedTaskID("")} />
     </div>
   );
 }
 
 function WorkflowCard({ workflow, onRun, onEdit, onCopy, onDelete }: { workflow: CreativeWorkflow; onRun: () => void; onEdit: () => void; onCopy: () => void; onDelete: () => void }) {
   return (
-    <article data-interaction="controls" className="interactive-card group flex min-h-48 flex-col rounded-xl border border-border bg-card p-5 shadow-sm">
+    <article data-interaction="controls" className="interactive-card group flex min-h-44 flex-col rounded-lg border border-border bg-card p-4 shadow-sm">
       <div className="flex items-start gap-3">
-        <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-[#edf4ff] text-[#1456f0] dark:bg-blue-950/40 dark:text-blue-300"><WorkflowIcon className="size-4" /></span>
+        <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-[#edf4ff] text-[#1456f0] dark:bg-blue-950/40 dark:text-blue-300"><WorkflowIcon className="size-4" /></span>
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2"><h2 className="truncate text-sm font-semibold">{workflow.name}</h2><span className="inline-flex items-center gap-1 text-[11px] text-muted-foreground">{workflow.scope === "public" ? <Globe2 className="size-3" /> : <LockKeyhole className="size-3" />}{workflow.scope === "public" ? "公开" : "个人"}</span></div>
-          <p className="mt-1 text-xs text-muted-foreground">{workflow.category || "未分类"}</p>
+          <div className="flex min-w-0 items-center gap-2"><h3 className="truncate text-sm font-semibold">{workflow.name}</h3><span className="inline-flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground">{workflow.scope === "public" ? <Globe2 className="size-3" /> : <LockKeyhole className="size-3" />}{workflow.scope === "public" ? "公开" : "个人"}</span></div>
+          <p className="mt-0.5 text-xs text-muted-foreground">{workflow.category || "未分类"}</p>
         </div>
       </div>
-      <p className="mt-3 line-clamp-3 flex-1 text-xs leading-5 text-muted-foreground">{workflow.description || workflow.config.prompt_template}</p>
-      <p className="mt-3 text-[11px] text-muted-foreground">{workflow.variables.length} 个变量 · {workflow.mode === "multi_image_series" ? "多图生成" : "单图生成"}{workflow.last_run_at ? ` · ${new Date(workflow.last_run_at).toLocaleString("zh-CN")}` : ""}</p>
+      <p className="mt-3 line-clamp-2 flex-1 text-xs leading-5 text-muted-foreground">{workflow.description || workflow.config.prompt_template}</p>
+      <p className="mt-3 truncate text-[11px] text-muted-foreground">{workflow.variables.length} 个变量 · {workflow.mode === "multi_image_series" ? "多图生成" : "单图生成"}{workflow.last_run_at ? ` · 最近运行 ${new Date(workflow.last_run_at).toLocaleString("zh-CN")}` : ""}</p>
       <div className="mt-3 flex items-center gap-1 border-t border-border/70 pt-3">
         <Button size="sm" onClick={onRun}><Play />运行</Button>
         {workflow.editable !== false ? <Button size="icon" variant="ghost" title="编辑" onClick={onEdit}><Pencil /></Button> : null}
@@ -1118,29 +1096,123 @@ function WorkflowCard({ workflow, onRun, onEdit, onCopy, onDelete }: { workflow:
   );
 }
 
-function WorkflowTaskCard({ task, now }: { task: WorkflowTask; now: number }) {
+function workflowTaskDuration(task: WorkflowTask, now: number) {
   const elapsed = Math.max(0, (task.ended_at || now) - task.started_at);
-  const duration = elapsed < 60_000
+  return elapsed < 60_000
     ? `${Math.max(1, Math.round(elapsed / 1000))} 秒`
     : `${Math.floor(elapsed / 60_000)} 分 ${Math.round((elapsed % 60_000) / 1000)} 秒`;
+}
+
+function WorkflowTaskStatus({ task }: { task: WorkflowTask }) {
+  if (task.status === "running") return <Badge variant="info"><LoaderCircle className="size-3 animate-spin" />运行中</Badge>;
+  if (task.status === "failed") return <Badge variant="danger">失败</Badge>;
+  return <Badge variant="success">完成</Badge>;
+}
+
+type WorkflowTaskFilter = "all" | WorkflowTask["status"];
+
+function WorkflowTaskHistoryDialog({ open, tasks, now, onClearCompleted, onOpenTask, onClose }: { open: boolean; tasks: WorkflowTask[]; now: number; onClearCompleted: () => void; onOpenTask: (taskID: string) => void; onClose: () => void }) {
+  const [filter, setFilter] = useState<WorkflowTaskFilter>("all");
+  const counts = {
+    all: tasks.length,
+    running: tasks.filter((task) => task.status === "running").length,
+    success: tasks.filter((task) => task.status === "success").length,
+    failed: tasks.filter((task) => task.status === "failed").length,
+  };
+  const filteredTasks = filter === "all" ? tasks : tasks.filter((task) => task.status === filter);
+  const filters: Array<{ value: WorkflowTaskFilter; label: string }> = [
+    { value: "all", label: "全部" },
+    { value: "running", label: "运行中" },
+    { value: "success", label: "已完成" },
+    { value: "failed", label: "失败" },
+  ];
   return (
-    <article className="rounded-xl border border-border bg-card p-4 shadow-sm">
-      <div className="flex items-start gap-2">
-        <ImageIcon className="mt-0.5 size-4 shrink-0" />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-xs font-semibold">{task.series_title ? `${task.workflow_name} · ${task.series_title}` : task.workflow_name}</p>
-          <p className="mt-1 text-[11px] text-muted-foreground">{new Date(task.started_at).toLocaleString("zh-CN")} · {duration}</p>
+    <Dialog open={open} onOpenChange={(nextOpen) => !nextOpen && onClose()}>
+      <DialogContent scrollable={false} className="max-h-[min(88dvh,780px)] w-[min(96vw,920px)] max-w-none gap-0 p-0">
+        <DialogHeader className="border-b border-border px-5 py-4 sm:px-6">
+          <DialogTitle className="flex items-center gap-2 text-lg"><ClipboardList className="size-5" />任务记录</DialogTitle>
+          <DialogDescription>{counts.running ? `${counts.running} 个工作流任务正在执行` : tasks.length ? `共 ${tasks.length} 条工作流运行记录` : "运行工作流后，任务记录会显示在这里"}</DialogDescription>
+        </DialogHeader>
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border bg-muted/20 px-5 py-3 sm:px-6">
+          <div className="hide-scrollbar flex max-w-full items-center gap-1 overflow-x-auto rounded-lg bg-muted p-1" role="tablist" aria-label="任务状态">
+            {filters.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                role="tab"
+                aria-selected={filter === option.value}
+                onClick={() => setFilter(option.value)}
+                className={cn(
+                  "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-3 text-xs font-medium text-muted-foreground transition-colors",
+                  filter === option.value && "bg-card text-foreground shadow-sm",
+                )}
+              >
+                {option.label}
+                <span className="tabular-nums text-[10px] opacity-70">{counts[option.value]}</span>
+              </button>
+            ))}
+          </div>
+          {counts.success + counts.failed > 0 ? <Button size="sm" variant="ghost" className="text-muted-foreground" onClick={onClearCompleted}><Trash2 />清理历史</Button> : null}
         </div>
-        {task.status === "running" ? <LoaderCircle className="size-4 animate-spin" /> : <span className={cn("text-[11px]", task.status === "failed" ? "text-rose-600" : "text-emerald-600")}>{task.status === "failed" ? "失败" : "完成"}</span>}
-        <Button size="icon" variant="ghost" title="复制提示词" onClick={() => void navigator.clipboard.writeText(task.prompt)}><Copy /></Button>
+        <ScrollArea className="max-h-[min(62dvh,560px)]" viewportClassName="overscroll-contain">
+          {filteredTasks.length ? (
+            <div data-workflow-task-list>
+              {filteredTasks.map((task) => <WorkflowTaskRow key={task.id} task={task} now={now} onOpen={() => onOpenTask(task.id)} />)}
+            </div>
+          ) : (
+            <div className="grid min-h-72 place-items-center px-6 text-center">
+              <div>
+                <span className="mx-auto grid size-11 place-items-center rounded-full bg-muted text-muted-foreground"><ClipboardList className="size-5" /></span>
+                <p className="mt-3 text-sm font-medium">当前没有{filter === "all" ? "任务记录" : filters.find((option) => option.value === filter)?.label + "任务"}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{filter === "all" ? "从工作流模板启动任务后可在这里查看进度和结果" : "切换其他状态查看工作流运行记录"}</p>
+              </div>
+            </div>
+          )}
+        </ScrollArea>
+        <DialogFooter className="shrink-0 border-t border-border bg-background px-5 py-3 sm:px-6"><Button variant="outline" onClick={onClose}>关闭</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function WorkflowTaskRow({ task, now, onOpen }: { task: WorkflowTask; now: number; onOpen: () => void }) {
+  const duration = workflowTaskDuration(task, now);
+  const title = task.series_title ? `${task.workflow_name} · ${task.series_title}` : task.workflow_name;
+  return (
+    <article
+      role="button"
+      tabIndex={0}
+      aria-label={`查看任务：${title}`}
+      onClick={onOpen}
+      onKeyDown={(event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          onOpen();
+        }
+      }}
+      className="group grid cursor-pointer grid-cols-[56px_minmax(0,1fr)_auto] items-center gap-3 border-b border-border px-3 py-3 outline-none transition-colors last:border-b-0 hover:bg-muted/45 focus-visible:bg-muted/45 focus-visible:ring-2 focus-visible:ring-ring/30 sm:grid-cols-[64px_minmax(0,1fr)_auto] sm:px-4"
+    >
+      <div className="grid aspect-square size-14 shrink-0 place-items-center overflow-hidden rounded-md border border-border bg-muted sm:size-16">
+        {task.images[0]?.url ? <img src={task.images[0].url} alt="" className="size-full object-cover" /> : task.status === "running" ? <LoaderCircle className="size-5 animate-spin text-muted-foreground" /> : <ImageIcon className="size-5 text-muted-foreground" />}
       </div>
-      <p className="mt-2 line-clamp-2 whitespace-pre-wrap text-xs text-muted-foreground">{task.prompt}</p>
-      <div className="mt-2 flex flex-wrap gap-1 text-[10px] text-muted-foreground">
-        {[task.model, task.config.size || "auto", task.config.quality || "auto", `${task.count} 张`].map((value, index) => <span key={`${index}-${value}`} className="rounded-md border bg-muted/50 px-1.5 py-0.5">{value}</span>)}
+      <div className="min-w-0">
+        <div className="flex min-w-0 items-center gap-2">
+          <h3 className="truncate text-sm font-semibold">{title}</h3>
+          <WorkflowTaskStatus task={task} />
+        </div>
+        <p className="mt-1 truncate text-xs text-muted-foreground">{task.prompt || "未记录提示词"}</p>
+        <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+          <span>{new Date(task.started_at).toLocaleString("zh-CN")}</span>
+          <span className="inline-flex items-center gap-1"><Clock3 className="size-3" />{duration}</span>
+          <span className="truncate">{task.model || "默认模型"}</span>
+          <span>{task.count} 张</span>
+          {task.images.length ? <span>{task.images.length} 个结果</span> : null}
+        </div>
       </div>
-      {Object.entries(task.inputs).some(([, value]) => String(value).trim()) ? <div className="mt-2 flex flex-wrap gap-1">{Object.entries(task.inputs).filter(([, value]) => String(value).trim()).slice(0, 6).map(([key, value]) => <span key={key} className="max-w-full truncate rounded-md border px-1.5 py-0.5 text-[10px]"><strong>{key}</strong>: {value}</span>)}</div> : null}
-      {task.error ? <p className="mt-2 rounded-lg bg-rose-50 px-2 py-1.5 text-xs text-rose-700 dark:bg-rose-950/30 dark:text-rose-300">{task.error}</p> : null}
-      {task.images.length ? <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">{task.images.map((image, index) => <div key={`${image.url}-${index}`} className="group overflow-hidden rounded-lg border bg-muted"><div className="relative aspect-square"><img src={image.url} alt={`${task.workflow_name} ${index + 1}`} className="size-full object-cover" /><TooltipButton type="button" tooltip="下载" className="absolute right-1 bottom-1 grid size-7 place-items-center rounded-md bg-black/70 text-white opacity-0 group-hover:opacity-100" onClick={() => void downloadWorkflowImage(image.url, `workflow-task-${index + 1}.png`).catch((error) => toast.error(error instanceof Error ? error.message : "图片下载失败"))}><Download className="size-3.5" /></TooltipButton></div>{image.width || image.height || image.bytes ? <p className="truncate px-1.5 py-1 text-[10px] text-muted-foreground">{image.width && image.height ? `${image.width}x${image.height}` : ""}{image.bytes ? `${image.width && image.height ? " · " : ""}${formatWorkflowBytes(image.bytes)}` : ""}</p> : null}</div>)}</div> : task.status === "running" ? <div className="mt-3 flex h-24 items-center justify-center rounded-lg border border-dashed text-xs text-muted-foreground">生成中 {duration}</div> : null}
+      <div className="flex items-center gap-1">
+        <Button size="icon" variant="ghost" title="复制提示词" onClick={(event) => { event.stopPropagation(); void navigator.clipboard.writeText(task.prompt); }}><Copy /></Button>
+        <ChevronRight className="size-4 text-muted-foreground transition-transform group-hover:translate-x-0.5" />
+      </div>
     </article>
   );
 }
@@ -1151,17 +1223,157 @@ function formatWorkflowBytes(bytes: number) {
   return `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
 }
 
+function generationQualityLabel(value: string) {
+  if (value === "low") return "低";
+  if (value === "medium") return "中";
+  if (value === "high") return "高";
+  return "自动";
+}
+
+function WorkflowImageSettings({
+  models,
+  model,
+  value,
+  className,
+  readOnly = false,
+  onModelChange,
+  onChange,
+}: {
+  models: ModelConfig | null;
+  model: string;
+  value: ImageSettingsValue;
+  className?: string;
+  readOnly?: boolean;
+  onModelChange?: (model: string) => void;
+  onChange?: (patch: Partial<ImageSettingsValue>) => void;
+}) {
+  const modelOptions = models?.image_models.includes(model)
+    ? models.image_models
+    : [model, ...(models?.image_models || [])].filter(Boolean);
+  return (
+    <section data-workbench-generation-settings data-read-only={readOnly || undefined} className={cn("space-y-3", className)}>
+      <h3 className="flex items-center gap-2 text-sm font-semibold">
+        <Settings2 className="size-4" />
+        创作参数
+      </h3>
+      <div className="space-y-1.5">
+        <ImageParameterLabel>图片模型</ImageParameterLabel>
+        <Select value={model} disabled={readOnly} onValueChange={(next) => onModelChange?.(next)}>
+          <SelectTrigger aria-label="图片模型"><SelectValue placeholder="选择图片模型" /></SelectTrigger>
+          <SelectContent>
+            {modelOptions.map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}
+          </SelectContent>
+        </Select>
+      </div>
+      <fieldset disabled={readOnly} className={cn(readOnly && "[&_button]:cursor-default [&_input]:cursor-default")}>
+        <ImageSettingsPanel disabled={readOnly} model={model} value={value} showSnapToMultiple16={false} onChange={(patch) => onChange?.(patch)} />
+      </fieldset>
+    </section>
+  );
+}
+
+function WorkflowTaskDialog({ task, now, onClose }: { task: WorkflowTask | null; now: number; onClose: () => void }) {
+  const [selectedImage, setSelectedImage] = useState(0);
+  useEffect(() => setSelectedImage(0), [task?.id]);
+  if (!task) return null;
+  const duration = workflowTaskDuration(task, now);
+  const activeImage = task.images[selectedImage] || task.images[0];
+  const inputEntries = Object.entries(task.inputs).filter(([, value]) => String(value).trim());
+  const title = task.series_title ? `${task.workflow_name} · ${task.series_title}` : task.workflow_name;
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent scrollable={false} className="h-[min(92dvh,920px)] w-[min(96vw,1180px)] max-w-none gap-0 p-0">
+        <DialogHeader className="border-b border-border px-5 py-4 sm:px-6">
+          <div className="flex flex-wrap items-center gap-2 pr-8">
+            <DialogTitle className="text-lg">{title}</DialogTitle>
+            <WorkflowTaskStatus task={task} />
+          </div>
+          <DialogDescription>{new Date(task.started_at).toLocaleString("zh-CN")} · 耗时 {duration} · {task.count} 张</DialogDescription>
+        </DialogHeader>
+        <ScrollArea className="min-h-0 flex-1" viewportClassName="overscroll-contain">
+          <div className="grid min-h-full lg:grid-cols-[minmax(0,1.35fr)_minmax(340px,0.65fr)]">
+            <section className="min-w-0 border-b border-border p-4 sm:p-6 lg:border-r lg:border-b-0">
+              {activeImage ? (
+                <>
+                  <div className="flex min-h-72 items-center justify-center overflow-hidden rounded-lg border border-border bg-muted/50 lg:min-h-[520px]">
+                    <img src={activeImage.url} alt={`${title} 结果 ${selectedImage + 1}`} className="max-h-[62dvh] w-full object-contain" />
+                  </div>
+                  <div className="mt-2 flex min-h-16 gap-2 overflow-x-auto pb-1">
+                    {task.images.map((image, index) => (
+                      <button key={`${image.url}-${index}`} type="button" aria-label={`查看第 ${index + 1} 张结果`} onClick={() => setSelectedImage(index)} className={cn("relative aspect-square size-16 shrink-0 overflow-hidden rounded-md border bg-muted", selectedImage === index ? "border-primary ring-2 ring-primary/20" : "border-border")}>
+                        <img src={image.url} alt="" className="size-full object-cover" />
+                        <span className="absolute right-1 bottom-1 rounded bg-black/70 px-1 text-[10px] text-white">{index + 1}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">{activeImage.width && activeImage.height ? `${activeImage.width} × ${activeImage.height}` : "尺寸未记录"}{activeImage.bytes ? ` · ${formatWorkflowBytes(activeImage.bytes)}` : ""}</p>
+                </>
+              ) : (
+                <div className="grid min-h-72 place-items-center rounded-lg border border-dashed border-border text-center text-sm text-muted-foreground lg:min-h-[520px]">
+                  <div>{task.status === "running" ? <LoaderCircle className="mx-auto mb-3 size-6 animate-spin" /> : <ImageIcon className="mx-auto mb-3 size-6" />}<p>{task.status === "running" ? `任务生成中，已运行 ${duration}` : "任务没有返回图片"}</p></div>
+                </div>
+              )}
+            </section>
+            <aside className="min-w-0 p-4 sm:p-6">
+              {task.error ? <section className="mb-5 border-l-2 border-rose-500 bg-rose-50 px-3 py-2.5 text-sm text-rose-700 dark:bg-rose-950/30 dark:text-rose-300"><h3 className="font-semibold">失败原因</h3><p className="mt-1 whitespace-pre-wrap text-xs leading-5">{task.error}</p></section> : null}
+              <section className="border-b border-border pb-5">
+                <div className="flex items-center justify-between gap-3"><h3 className="text-sm font-semibold">完整提示词</h3><Button size="icon" variant="ghost" title="复制提示词" onClick={() => void navigator.clipboard.writeText(task.prompt)}><Copy /></Button></div>
+                <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-foreground/85">{task.prompt || "未记录"}</p>
+              </section>
+              <section className="border-b border-border py-5">
+                <h3 className="text-sm font-semibold">输入变量</h3>
+                {inputEntries.length ? <dl className="mt-3 divide-y divide-border/70">{inputEntries.map(([key, value]) => <div key={key} className="grid grid-cols-[minmax(90px,0.35fr)_minmax(0,1fr)] gap-3 py-2 text-xs"><dt className="break-words text-muted-foreground">{key}</dt><dd className="whitespace-pre-wrap break-words text-foreground">{value}</dd></div>)}</dl> : <p className="mt-2 text-xs text-muted-foreground">没有输入变量</p>}
+              </section>
+              {task.references.length ? <section className="border-b border-border py-5"><h3 className="text-sm font-semibold">参考图</h3><div className="mt-3 grid grid-cols-4 gap-2">{task.references.map((reference) => <a key={reference.id} href={reference.url} target="_blank" rel="noreferrer" className="group min-w-0"><div className="aspect-square overflow-hidden rounded-md border border-border bg-muted"><img src={reference.url} alt={reference.name} className="size-full object-cover" /></div><p className="mt-1 truncate text-[11px] text-muted-foreground">{reference.name}</p></a>)}</div></section> : null}
+              <section className="border-b border-border py-5">
+                <h3 className="text-sm font-semibold">创作参数快照</h3>
+                <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 text-xs">
+                  {[["图片模型", task.model || "默认"], ["尺寸", task.config.size || "auto"], ["质量", generationQualityLabel(task.config.quality)], ["数量", `${task.count} 张`], ["接口", task.api_mode], ["超时", `${task.config.timeout || "600"} 秒`]].map(([label, value]) => <div key={label} className="min-w-0"><dt className="text-muted-foreground">{label}</dt><dd className="mt-0.5 break-words font-medium">{value}</dd></div>)}
+                </dl>
+              </section>
+              <section className="pt-5">
+                <h3 className="text-sm font-semibold">执行信息</h3>
+                <dl className="mt-3 space-y-2 text-xs text-muted-foreground">
+                  <div className="flex justify-between gap-4"><dt>流式返回</dt><dd className="text-foreground">{task.execution.stream ? "开启" : "关闭"}</dd></div>
+                  <div className="flex justify-between gap-4"><dt>部分图片</dt><dd className="text-foreground">{task.execution.partial_images}</dd></div>
+                  <div className="flex justify-between gap-4"><dt>Base64 返回</dt><dd className="text-foreground">{task.execution.response_format_b64_json ? "开启" : "关闭"}</dd></div>
+                  <div className="flex justify-between gap-4"><dt>后端任务</dt><dd className="max-w-[65%] break-all text-right text-foreground">{task.backend_task_ids.join(", ") || "提交中"}</dd></div>
+                </dl>
+              </section>
+            </aside>
+          </div>
+        </ScrollArea>
+        <DialogFooter className={cn("shrink-0 flex-row border-t border-border bg-background px-5 py-3 sm:px-6", activeImage ? "justify-between sm:justify-between" : "justify-end")}>
+          {activeImage ? <Button variant="outline" onClick={() => void downloadWorkflowImage(activeImage.url, `workflow-task-${selectedImage + 1}.png`).catch((error) => toast.error(error instanceof Error ? error.message : "图片下载失败"))}><Download />下载</Button> : null}
+          <Button variant="outline" onClick={onClose}>关闭</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 function WorkflowEditor({ workflow, models, preferences, onChange, onSave, onClose }: { workflow: CreativeWorkflow | null; models: ModelConfig | null; preferences: ImageGenerationPreferences; onChange: (workflow: CreativeWorkflow | null) => void; onSave: (workflow: CreativeWorkflow) => void; onClose: () => void }) {
   if (!workflow) return null;
   const patch = (value: Partial<CreativeWorkflow>) => onChange({ ...workflow, ...value });
   const patchConfig = (value: Partial<WorkflowGenerationConfig>) => patch({ config: { ...workflow.config, ...value } });
   const patchSeries = (value: Partial<WorkflowSeriesConfig>) => patch({ series_config: { ...workflow.series_config, ...value } });
   const patchVariable = (id: string, value: Partial<WorkflowVariable>) => patch({ variables: workflow.variables.map((item) => item.id === id ? { ...item, ...value } : item) });
+  const imageModel = workflow.config.image_model || workflow.config.model || models?.default_image_model || models?.image_models[0] || "";
+  const imageSettings = workflowImageSettings(workflow.config);
+  const patchImageSettings = (value: Partial<ImageSettingsValue>) => {
+    const next = { ...imageSettings, ...value };
+    const size = buildImageSize(next, { preserveAspectRatio: true, snapToMultiple16: true });
+    patchConfig({
+      quality: next.quality || "auto",
+      size: size || "auto",
+      count: String(Math.max(1, Math.min(10, Math.round(Number(next.count) || 1)))),
+    });
+  };
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="w-[min(96vw,1100px)]">
-        <DialogHeader><DialogTitle>{workflow.id ? "编辑工作流" : "新建工作流"}</DialogTitle><DialogDescription>把固定提示词和生成参数沉淀为模板，运行时只填写变量。</DialogDescription></DialogHeader>
-        <div className="grid gap-4 pr-1 lg:grid-cols-[minmax(0,1fr)_360px]">
+      <DialogContent scrollable={false} className="h-[min(92dvh,900px)] w-[min(96vw,1100px)] max-w-none gap-0 p-0">
+        <DialogHeader className="border-b border-border px-5 py-4 sm:px-6"><DialogTitle>{workflow.id ? "编辑工作流" : "新建工作流"}</DialogTitle><DialogDescription>模板、变量与流程规则</DialogDescription></DialogHeader>
+        <ScrollArea className="min-h-0 flex-1" viewportClassName="overscroll-contain p-5 sm:p-6" viewClass="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
           <div className="space-y-4">
             <section className="grid gap-3 rounded-lg border border-border p-3 sm:grid-cols-2">
               <Input value={workflow.name} onChange={(event) => patch({ name: event.target.value })} placeholder="工作流名称" />
@@ -1181,15 +1393,13 @@ function WorkflowEditor({ workflow, models, preferences, onChange, onSave, onClo
               <Textarea rows={2} value={workflow.config.negative_prompt} onChange={(event) => patchConfig({ negative_prompt: event.target.value })} placeholder="负面约束，可选" />
             </section>
           </div>
-          <aside className="space-y-3 rounded-lg border border-border p-3">
-            <h3 className="text-sm font-semibold">生成配置</h3>
-            <Field label="图片模型"><Select value={workflow.config.image_model || "__default"} onValueChange={(value) => patchConfig({ image_model: value === "__default" ? "" : value, model: value === "__default" ? "" : value })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="__default">默认图片模型</SelectItem>{(models?.image_models || []).map((model) => <SelectItem key={model} value={model}>{model}</SelectItem>)}</SelectContent></Select></Field>
-            {workflow.mode === "multi_image_series" ? <section className="space-y-3 rounded-lg bg-muted/50 p-3"><h4 className="flex items-center gap-2 text-xs font-semibold"><Layers3 className="size-4" />多图提示词规划</h4><Field label="文本模型"><Select value={workflow.series_config.prompt_model || "__default"} onValueChange={(value) => patchSeries({ prompt_model: value === "__default" ? "" : value })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="__default">默认文本模型</SelectItem>{(models?.text_models || []).map((model) => <SelectItem key={model} value={model}>{model}</SelectItem>)}</SelectContent></Select></Field><Field label="文本渠道 / Token 名"><Input value={workflow.series_config.prompt_channel_id} onChange={(event) => patchSeries({ prompt_channel_id: event.target.value })} placeholder="留空使用个人默认" /></Field><div className="grid grid-cols-2 gap-2"><Field label="张数"><Input type="number" min={1} max={20} value={workflow.series_config.target_count} onChange={(event) => patchSeries({ target_count: event.target.value })} /></Field><Field label="并发"><Input type="number" min={1} max={6} value={workflow.series_config.concurrency} onChange={(event) => patchSeries({ concurrency: event.target.value })} /></Field></div><Textarea rows={4} value={workflow.series_config.prompt_instruction} onChange={(event) => patchSeries({ prompt_instruction: event.target.value })} placeholder="系列拆分说明" /><Toggle label="先审核提示词" checked={workflow.series_config.review_required} onChange={(checked) => patchSeries({ review_required: checked })} /></section> : null}
-            <div className="grid grid-cols-2 gap-2"><Field label="尺寸"><Input value={workflow.config.size} onChange={(event) => patchConfig({ size: event.target.value })} placeholder="auto / 1024x1024" /></Field><Field label="质量"><Select value={workflow.config.quality} onValueChange={(quality) => patchConfig({ quality })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="auto">自动</SelectItem><SelectItem value="low">低</SelectItem><SelectItem value="medium">中</SelectItem><SelectItem value="high">高</SelectItem></SelectContent></Select></Field><Field label="数量"><Input type="number" min={1} max={10} value={workflow.config.count} onChange={(event) => patchConfig({ count: event.target.value })} /></Field><Field label="超时（秒）"><Input type="number" min={1} max={3600} value={workflow.config.timeout} onChange={(event) => patchConfig({ timeout: event.target.value })} /></Field></div>
+          <aside className="space-y-4 rounded-lg border border-border p-3">
+            <WorkflowImageSettings models={models} model={imageModel} value={imageSettings} onModelChange={(model) => patchConfig({ model, image_model: model })} onChange={patchImageSettings} />
+            {workflow.mode === "multi_image_series" ? <section className="space-y-3"><h3 className="flex items-center gap-2 text-sm font-semibold"><Layers3 className="size-4" />多图提示词规划</h3><div className="grid grid-cols-2 gap-2"><Field label="草稿张数"><Input type="number" min={1} max={20} value={workflow.series_config.target_count} onChange={(event) => patchSeries({ target_count: event.target.value })} /></Field><Field label="图片并发"><Input type="number" min={1} max={6} value={workflow.series_config.concurrency} onChange={(event) => patchSeries({ concurrency: event.target.value })} /></Field></div><Textarea rows={5} value={workflow.series_config.prompt_instruction} onChange={(event) => patchSeries({ prompt_instruction: event.target.value })} placeholder="系列拆分说明" /><Toggle label="生成图片前审核提示词" checked={workflow.series_config.review_required} onChange={(checked) => patchSeries({ review_required: checked })} /></section> : null}
             {!workflow.config.system_prompt && preferences.system_prompt ? <Button size="sm" variant="outline" onClick={() => patchConfig({ system_prompt: preferences.system_prompt })}>使用当前系统提示词</Button> : null}
           </aside>
-        </div>
-        <DialogFooter><Button variant="outline" onClick={onClose}>取消</Button><Button disabled={!workflow.name.trim() || !workflow.config.prompt_template.trim()} onClick={() => onSave(workflow)}><Save />保存</Button></DialogFooter>
+        </ScrollArea>
+        <DialogFooter className="shrink-0 border-t border-border bg-background px-5 py-4 sm:px-6"><Button variant="outline" onClick={onClose}>取消</Button><Button disabled={!workflow.name.trim() || !workflow.config.prompt_template.trim()} onClick={() => onSave(workflow)}><Save />保存</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   );
@@ -1206,10 +1416,138 @@ function VariableEditor({ variable, onChange, onDelete }: { variable: WorkflowVa
   </div>;
 }
 
-function WorkflowRunner({ workflow, values, prompt, references, referenceBusy, drafts, draftLoading, batchAppend, onValuesChange, onAssetsOpen, onReferencesAdd, onReferenceRemove, onRun, onGenerateDrafts, onRunAll, onRunDraft, onDraftChange, onDraftMove, onDraftDelete, onBatchAppendChange, onBatchAppend, onClose }: { workflow: CreativeWorkflow | null; values: Record<string, string>; prompt: string; references: WorkflowReference[]; referenceBusy: boolean; drafts: WorkflowSeriesDraft[]; draftLoading: boolean; batchAppend: string; onValuesChange: (values: Record<string, string>) => void; onAssetsOpen: () => void; onReferencesAdd: (files: FileList | null) => void; onReferenceRemove: (id: string) => void; onRun: () => void; onGenerateDrafts: () => void; onRunAll: () => void; onRunDraft: (draft: WorkflowSeriesDraft, index: number) => void; onDraftChange: (id: string, patch: Partial<WorkflowSeriesDraft>) => void; onDraftMove: (id: string, direction: -1 | 1) => void; onDraftDelete: (id: string) => void; onBatchAppendChange: (value: string) => void; onBatchAppend: () => void; onClose: () => void }) {
+function WorkflowRunner({ workflow, values, prompt, references, referenceBusy, drafts, draftLoading, batchAppend, models, onValuesChange, onAssetsOpen, onReferencesAdd, onReferenceRemove, onRun, onGenerateDrafts, onRunAll, onRunDraft, onDraftChange, onDraftMove, onDraftDelete, onBatchAppendChange, onBatchAppend, onClose }: { workflow: CreativeWorkflow | null; values: Record<string, string>; prompt: string; references: WorkflowReference[]; referenceBusy: boolean; drafts: WorkflowSeriesDraft[]; draftLoading: boolean; batchAppend: string; models: ModelConfig | null; onValuesChange: (values: Record<string, string>) => void; onAssetsOpen: () => void; onReferencesAdd: (files: FileList | null) => void; onReferenceRemove: (id: string) => void; onRun: () => void; onGenerateDrafts: () => void; onRunAll: () => void; onRunDraft: (draft: WorkflowSeriesDraft, index: number) => void; onDraftChange: (id: string, patch: Partial<WorkflowSeriesDraft>) => void; onDraftMove: (id: string, direction: -1 | 1) => void; onDraftDelete: (id: string) => void; onBatchAppendChange: (value: string) => void; onBatchAppend: () => void; onClose: () => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
   if (!workflow) return null;
-  return <Dialog open onOpenChange={(open) => !open && onClose()}><DialogContent className="w-[min(96vw,1000px)]"><DialogHeader><DialogTitle>{workflow.name}</DialogTitle><DialogDescription>{workflow.description || "填写变量后生成图片。"}</DialogDescription></DialogHeader><div className="grid gap-4 lg:grid-cols-[340px_minmax(0,1fr)]"><div className="space-y-3"><section className="space-y-3 rounded-lg border border-border p-3"><h3 className="text-sm font-semibold">变量输入</h3>{workflow.variables.map((variable) => <WorkflowVariableInput key={variable.id} variable={variable} value={values[variable.key] || ""} onChange={(value) => onValuesChange({ ...values, [variable.key]: value })} />)}</section><section className="rounded-lg border border-border p-3"><div className="flex items-center justify-between"><h3 className="text-sm font-semibold">参考图</h3><div className="flex gap-2"><Button size="sm" variant="outline" onClick={onAssetsOpen}>我的素材</Button><Button size="sm" variant="outline" disabled={referenceBusy} onClick={() => inputRef.current?.click()}>{referenceBusy ? <LoaderCircle className="animate-spin" /> : <Upload />}上传</Button></div><input ref={inputRef} type="file" accept="image/*" multiple className="hidden" onChange={(event) => { onReferencesAdd(event.currentTarget.files); event.currentTarget.value = ""; }} /></div>{references.length ? <div className="mt-3 grid grid-cols-4 gap-2">{references.map((reference) => <div key={reference.id} className="group relative aspect-square overflow-hidden rounded-lg border"><img src={reference.url} alt={reference.name} className="size-full object-cover" /><button type="button" className="absolute top-1 right-1 grid size-6 place-items-center rounded-md bg-black/70 text-white" onClick={() => onReferenceRemove(reference.id)}><X className="size-3" /></button></div>)}</div> : <div className="mt-3 rounded-lg border border-dashed py-5 text-center text-xs text-muted-foreground">未添加参考图</div>}</section><Button className="w-full" onClick={onRun}>{workflow.mode === "multi_image_series" ? <Layers3 /> : <Play />}{workflow.mode === "multi_image_series" ? "生成提示词" : "启动任务"}</Button></div><div className="space-y-3"><section className="rounded-lg border border-border p-3"><div className="mb-2 flex items-center justify-between"><h3 className="text-sm font-semibold">生成提示词预览</h3><Button size="sm" variant="outline" onClick={() => void navigator.clipboard.writeText(prompt)}><Copy />复制</Button></div><ScrollArea maxHeight="14rem" className="rounded-lg bg-muted/50" viewportClassName="p-3" viewClass="text-xs leading-5 whitespace-pre-wrap">{prompt || "填写变量后会在这里预览最终提示词"}</ScrollArea></section><div className="grid grid-cols-2 gap-2 text-xs"><Info label="模型" value={workflow.config.image_model || workflow.config.model || "默认"} /><Info label="尺寸" value={workflow.config.size} /><Info label={workflow.mode === "multi_image_series" ? "草稿数量" : "数量"} value={workflow.mode === "multi_image_series" ? workflow.series_config.target_count : workflow.config.count} /></div>{workflow.mode === "multi_image_series" ? <section className="rounded-lg border border-border p-3"><div className="flex flex-wrap items-center justify-between gap-2"><h3 className="flex items-center gap-2 text-sm font-semibold"><Layers3 className="size-4" />多图提示词 · {drafts.length} 条</h3><div className="flex gap-2"><Button size="sm" variant="outline" disabled={draftLoading} onClick={onGenerateDrafts}>{draftLoading ? <LoaderCircle className="animate-spin" /> : null}重新生成</Button><Button size="sm" disabled={!drafts.some((draft) => draft.status !== "success" && draft.prompt.trim())} onClick={onRunAll}>全部生成</Button></div></div>{drafts.length ? <><div className="mt-3 flex gap-2"><Input value={batchAppend} onChange={(event) => onBatchAppendChange(event.target.value)} placeholder="批量追加统一要求" /><Button variant="outline" onClick={onBatchAppend}>批量追加</Button></div><ScrollArea maxHeight="420px" className="mt-3" viewportClassName="pr-2" viewClass="space-y-2">{drafts.map((draft, index) => <SeriesDraftCard key={draft.id} draft={draft} index={index} first={index === 0} last={index === drafts.length - 1} onChange={(patch) => onDraftChange(draft.id, patch)} onMove={(direction) => onDraftMove(draft.id, direction)} onDelete={() => onDraftDelete(draft.id)} onRun={() => onRunDraft(draft, index)} />)}</ScrollArea></> : <div className="mt-3 rounded-lg border border-dashed py-10 text-center text-xs text-muted-foreground">点击“生成提示词”后在这里审核每张图的提示词</div>}</section> : null}</div></div></DialogContent></Dialog>;
+  const imageModel = workflow.config.image_model || workflow.config.model || models?.default_image_model || models?.image_models[0] || "";
+  const imageSettings = workflowImageSettings(workflow.config);
+  return (
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="w-[min(96vw,1000px)]">
+        <DialogHeader>
+          <DialogTitle>{workflow.name}</DialogTitle>
+          <DialogDescription>{workflow.description || "填写变量后生成图片。"}</DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-4 lg:grid-cols-[340px_minmax(0,1fr)]">
+          <div className="space-y-3">
+            <section className="space-y-3 rounded-lg border border-border p-3">
+              <h3 className="text-sm font-semibold">变量输入</h3>
+              {workflow.variables.map((variable) => (
+                <WorkflowVariableInput
+                  key={variable.id}
+                  variable={variable}
+                  value={values[variable.key] || ""}
+                  onChange={(value) => onValuesChange({ ...values, [variable.key]: value })}
+                />
+              ))}
+            </section>
+            <section className="rounded-lg border border-border p-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold">参考图</h3>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" onClick={onAssetsOpen}>我的素材</Button>
+                  <Button size="sm" variant="outline" disabled={referenceBusy} onClick={() => inputRef.current?.click()}>
+                    {referenceBusy ? <LoaderCircle className="animate-spin" /> : <Upload />}
+                    上传
+                  </Button>
+                </div>
+                <input
+                  ref={inputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={(event) => {
+                    onReferencesAdd(event.currentTarget.files);
+                    event.currentTarget.value = "";
+                  }}
+                />
+              </div>
+              {references.length ? (
+                <div className="mt-3 grid grid-cols-4 gap-2">
+                  {references.map((reference) => (
+                    <div key={reference.id} className="group relative aspect-square overflow-hidden rounded-lg border">
+                      <img src={reference.url} alt={reference.name} className="size-full object-cover" />
+                      <button
+                        type="button"
+                        className="absolute top-1 right-1 grid size-6 place-items-center rounded-md bg-black/70 text-white"
+                        onClick={() => onReferenceRemove(reference.id)}
+                      >
+                        <X className="size-3" />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="mt-3 rounded-lg border border-dashed py-5 text-center text-xs text-muted-foreground">未添加参考图</div>
+              )}
+            </section>
+            <Button className="w-full" onClick={onRun}>
+              {workflow.mode === "multi_image_series" ? <Layers3 /> : <Play />}
+              {workflow.mode === "multi_image_series" ? "生成提示词" : "启动任务"}
+            </Button>
+          </div>
+          <div className="space-y-3">
+            <WorkflowImageSettings
+              models={models}
+              model={imageModel}
+              value={imageSettings}
+              readOnly
+              className="rounded-lg border border-border p-3"
+            />
+            <section className="rounded-lg border border-border p-3">
+              <div className="mb-2 flex items-center justify-between">
+                <h3 className="text-sm font-semibold">生成提示词预览</h3>
+                <Button size="sm" variant="outline" onClick={() => void navigator.clipboard.writeText(prompt)}><Copy />复制</Button>
+              </div>
+              <ScrollArea maxHeight="14rem" className="rounded-lg bg-muted/50" viewportClassName="p-3" viewClass="text-xs leading-5 whitespace-pre-wrap">
+                {prompt || "填写变量后会在这里预览最终提示词"}
+              </ScrollArea>
+            </section>
+            {workflow.mode === "multi_image_series" ? (
+              <section className="rounded-lg border border-border p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h3 className="flex items-center gap-2 text-sm font-semibold"><Layers3 className="size-4" />多图提示词 · {drafts.length} 条</h3>
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="outline" disabled={draftLoading} onClick={onGenerateDrafts}>
+                      {draftLoading ? <LoaderCircle className="animate-spin" /> : null}
+                      重新生成
+                    </Button>
+                    <Button size="sm" disabled={!drafts.some((draft) => draft.status !== "success" && draft.prompt.trim())} onClick={onRunAll}>全部生成</Button>
+                  </div>
+                </div>
+                {drafts.length ? (
+                  <>
+                    <div className="mt-3 flex gap-2">
+                      <Input value={batchAppend} onChange={(event) => onBatchAppendChange(event.target.value)} placeholder="批量追加统一要求" />
+                      <Button variant="outline" onClick={onBatchAppend}>批量追加</Button>
+                    </div>
+                    <ScrollArea maxHeight="420px" className="mt-3" viewportClassName="pr-2" viewClass="space-y-2">
+                      {drafts.map((draft, index) => (
+                        <SeriesDraftCard
+                          key={draft.id}
+                          draft={draft}
+                          index={index}
+                          first={index === 0}
+                          last={index === drafts.length - 1}
+                          onChange={(patch) => onDraftChange(draft.id, patch)}
+                          onMove={(direction) => onDraftMove(draft.id, direction)}
+                          onDelete={() => onDraftDelete(draft.id)}
+                          onRun={() => onRunDraft(draft, index)}
+                        />
+                      ))}
+                    </ScrollArea>
+                  </>
+                ) : (
+                  <div className="mt-3 rounded-lg border border-dashed py-10 text-center text-xs text-muted-foreground">点击“生成提示词”后在这里审核每张图的提示词</div>
+                )}
+              </section>
+            ) : null}
+          </div>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 function SeriesDraftCard({ draft, index, first, last, onChange, onMove, onDelete, onRun }: { draft: WorkflowSeriesDraft; index: number; first: boolean; last: boolean; onChange: (patch: Partial<WorkflowSeriesDraft>) => void; onMove: (direction: -1 | 1) => void; onDelete: () => void; onRun: () => void }) {
@@ -1401,8 +1739,4 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 
 function Toggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
   return <label className="flex items-center justify-between gap-2 text-xs"><span>{label}</span><Checkbox checked={checked} onCheckedChange={(value) => onChange(value === true)} /></label>;
-}
-
-function Info({ label, value }: { label: string; value: string }) {
-  return <div className="rounded-lg bg-muted/50 px-3 py-2"><span className="text-muted-foreground">{label}</span><p className="mt-1 truncate font-medium">{value}</p></div>;
 }

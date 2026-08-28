@@ -50,6 +50,7 @@ func (a *App) routes() []appRoute {
 		subtree("/api/profile/storage-provider", a.handleProfileStorageProvider),
 		exact(http.MethodPost, "/api/profile/image-conversation-assets", a.handleImageConversationAssetUpload),
 		exact("", "/api/profile/relay-key", a.handleProfileRelayKey),
+		subtree("/api/profile/custom-relay-configs", a.handleProfileCustomRelayConfigs),
 		exact("", "/api/profile/balance", a.handleProfileBalance),
 		subtree("/api/profile/prompt-favorites", a.handleProfilePromptFavorites),
 		exact("", "/api/profile/assets", a.handleProfileAssets),
