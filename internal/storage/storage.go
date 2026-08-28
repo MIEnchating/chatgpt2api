@@ -188,7 +188,24 @@ func (b *DatabaseBackend) init() error {
 			`CREATE TABLE IF NOT EXISTS json_documents (name VARCHAR(512) PRIMARY KEY, data LONGTEXT NOT NULL, updated_at TEXT NOT NULL)`,
 			`CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY AUTO_INCREMENT, created_at TEXT NOT NULL, type VARCHAR(64) NOT NULL, day VARCHAR(10) NOT NULL, data LONGTEXT NOT NULL)`,
 			`CREATE INDEX idx_logs_day_id ON logs (day, id)`,
-			`CREATE TABLE IF NOT EXISTS storage_objects (id VARCHAR(64) PRIMARY KEY, provider_id VARCHAR(128) NOT NULL, bucket VARCHAR(512) NOT NULL, object_key VARCHAR(1024) NOT NULL UNIQUE, public_url LONGTEXT NOT NULL, mime_type VARCHAR(255) NOT NULL, bytes BIGINT NOT NULL, width INTEGER NOT NULL, height INTEGER NOT NULL, sha256 VARCHAR(64) NOT NULL, direct BOOLEAN NOT NULL, created_by VARCHAR(255) NOT NULL, created_at TEXT NOT NULL, deleted_at TEXT NOT NULL)`,
+			`CREATE TABLE IF NOT EXISTS storage_objects (
+				id VARCHAR(64) PRIMARY KEY,
+				provider_id VARCHAR(128) NOT NULL,
+				bucket VARCHAR(512) NOT NULL,
+				object_key VARCHAR(1024) NOT NULL,
+				object_key_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin GENERATED ALWAYS AS (SHA2(object_key, 256)) STORED,
+				public_url LONGTEXT NOT NULL,
+				mime_type VARCHAR(255) NOT NULL,
+				bytes BIGINT NOT NULL,
+				width INTEGER NOT NULL,
+				height INTEGER NOT NULL,
+				sha256 VARCHAR(64) NOT NULL,
+				direct BOOLEAN NOT NULL,
+				created_by VARCHAR(255) NOT NULL,
+				created_at TEXT NOT NULL,
+				deleted_at TEXT NOT NULL,
+				UNIQUE KEY uq_storage_objects_object_key_hash (object_key_hash)
+			)`,
 			`CREATE INDEX idx_storage_objects_created_by ON storage_objects (created_by)`,
 		}
 	}

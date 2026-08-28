@@ -9,6 +9,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"chatgpt2api/internal/model"
 )
 
 const (
@@ -68,6 +70,7 @@ func runDatabaseBackendIntegration(t *testing.T, databaseURL, wantDriver string)
 	resetIntegrationDatabase(t, initial)
 
 	writeIntegrationCoreData(t, initial, wantDriver)
+	exerciseStorageObjectIntegration(t, initial, wantDriver)
 	if err := initial.Close(); err != nil {
 		t.Fatalf("Close(initial backend) error = %v", err)
 	}
@@ -122,6 +125,7 @@ func resetIntegrationDatabase(t *testing.T, backend *DatabaseBackend) {
 	t.Helper()
 	dropIntegrationFailureConstraint(t, backend)
 	for _, table := range []string{
+		"storage_objects",
 		"image_conversations",
 		"image_conversation_owners",
 		"accounts",
@@ -132,6 +136,37 @@ func resetIntegrationDatabase(t *testing.T, backend *DatabaseBackend) {
 		if _, err := backend.db.Exec("DELETE FROM " + table); err != nil {
 			t.Fatalf("clear integration table %s: %v", table, err)
 		}
+	}
+}
+
+func exerciseStorageObjectIntegration(t *testing.T, backend *DatabaseBackend, driver string) {
+	t.Helper()
+	object := model.StorageObject{
+		ID:         "storage-object-" + driver,
+		ProviderID: "provider-" + driver,
+		Bucket:     "integration",
+		ObjectKey:  "素材/" + strings.Repeat("长路径/", 250) + "result.png",
+		PublicURL:  "https://cdn.example.test/integration/result.png",
+		MIMEType:   "image/png",
+		Bytes:      4_096,
+		Width:      1_024,
+		Height:     1_024,
+		SHA256:     strings.Repeat("a", 64),
+		Direct:     true,
+		CreatedBy:  "integration-user",
+		CreatedAt:  "2098-01-01T00:00:00Z",
+	}
+	if err := backend.SaveStorageObject(object); err != nil {
+		t.Fatalf("SaveStorageObject(long unicode key) error = %v", err)
+	}
+	loaded, err := backend.LoadStorageObject(object.ID)
+	if err != nil || loaded != object {
+		t.Fatalf("LoadStorageObject(long unicode key) = (%#v, %v), want %#v", loaded, err, object)
+	}
+	duplicate := object
+	duplicate.ID += "-duplicate"
+	if err := backend.SaveStorageObject(duplicate); err == nil {
+		t.Fatal("SaveStorageObject(duplicate object key) error = nil, want unique constraint error")
 	}
 }
 
