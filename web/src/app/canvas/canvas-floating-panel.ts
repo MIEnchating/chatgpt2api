@@ -5,13 +5,6 @@ export type CanvasFloatingPanelPlacement = {
   maxHeight: number;
 };
 
-export type CanvasNodeToolbarPlacement = {
-  compact: boolean;
-  left: number;
-  right?: number;
-  top: number;
-};
-
 export function canvasFloatingPanelPlacement({
   anchor,
   viewportWidth,
@@ -40,11 +33,4 @@ export function canvasFloatingPanelPlacement({
     width,
     maxHeight: direction === "above" ? availableAbove : availableBelow,
   };
-}
-
-export function canvasNodeToolbarPlacement({ nodeCenterX, nodeTopY, viewportWidth }: { nodeCenterX: number; nodeTopY: number; viewportWidth: number }): CanvasNodeToolbarPlacement {
-  const compact = viewportWidth > 0 && viewportWidth < 640;
-  return compact
-    ? { compact, left: 12, right: 12, top: Math.max(116, nodeTopY) }
-    : { compact, left: nodeCenterX, top: Math.max(72, nodeTopY) };
 }

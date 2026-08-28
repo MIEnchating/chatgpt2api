@@ -17,7 +17,7 @@ func TestLogServiceStoresLogsInDatabase(t *testing.T) {
 		t.Fatalf("Add() error = %v", err)
 	}
 
-	items := logs.List("", "", 10)
+	items := logs.Search(LogQuery{Limit: 10})
 	if len(items) != 1 {
 		t.Fatalf("List() length = %d, want 1", len(items))
 	}
@@ -126,7 +126,7 @@ func TestLogServiceSearchFiltersUnifiedLogs(t *testing.T) {
 		t.Fatalf("Search(business) summaries = %#v", summaries)
 	}
 
-	usage := logs.UserUsageStats(1)["alice-key"]
+	usage := logs.UserUsageStatsForUsers(1, []string{"alice-key"})["alice-key"]
 	if usage == nil || usage["call_count"] != 1 || usage["success_count"] != 1 || usage["quota_used"] != 1 {
 		t.Fatalf("UserUsageStats(new call log shape) = %#v", usage)
 	}

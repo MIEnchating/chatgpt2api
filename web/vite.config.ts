@@ -2,12 +2,30 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
+import type { Plugin } from "vite";
 
 const webRoot = path.dirname(fileURLToPath(import.meta.url));
 const backendTarget = process.env.VITE_BACKEND_URL || "http://127.0.0.1:8001";
 
+function rejectLocalV1Routes(): Plugin {
+  return {
+    name: "reject-local-v1-routes",
+    configureServer(server) {
+      server.middlewares.use((request, response, next) => {
+        const pathname = new URL(request.url || "/", "http://localhost").pathname;
+        if (pathname === "/v1" || pathname.startsWith("/v1/")) {
+          response.statusCode = 404;
+          response.end("Not Found");
+          return;
+        }
+        next();
+      });
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [rejectLocalV1Routes(), react()],
   resolve: {
     alias: {
       "@": path.resolve(webRoot, "src"),
@@ -26,10 +44,6 @@ export default defineConfig({
         target: backendTarget,
         changeOrigin: true,
       },
-      "/v1": {
-        target: backendTarget,
-        changeOrigin: true,
-      },
       "/images": {
         target: backendTarget,
         changeOrigin: true,
@@ -43,6 +57,18 @@ export default defineConfig({
         changeOrigin: true,
       },
       "/conversation-assets": {
+        target: backendTarget,
+        changeOrigin: true,
+      },
+      "/video-image-references": {
+        target: backendTarget,
+        changeOrigin: true,
+      },
+      "/video-references": {
+        target: backendTarget,
+        changeOrigin: true,
+      },
+      "/audio-references": {
         target: backendTarget,
         changeOrigin: true,
       },
@@ -87,7 +113,7 @@ export default defineConfig({
             },
             {
               name: "data-vendor",
-              test: /node_modules[\\/](?:axios|localforage|immer|zustand|date-fns)[\\/]/,
+              test: /node_modules[\\/](?:axios|immer|zustand|date-fns)[\\/]/,
               priority: 15,
               minSize: 0,
             },

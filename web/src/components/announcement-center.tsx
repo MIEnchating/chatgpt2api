@@ -5,6 +5,7 @@ import { Bell, BellOff, CalendarClock, ChevronRight, LoaderCircle } from "lucide
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Dialog,
   DialogContent,
@@ -196,7 +197,7 @@ export function AnnouncementCenter({ className }: { className?: string }) {
             <div className="text-sm font-semibold text-foreground">系统公告</div>
             <div className="text-xs text-muted-foreground">{announcements.length} 条</div>
           </div>
-          <div className="max-h-[min(420px,65dvh)] overflow-y-auto">
+          <ScrollArea className="max-h-[min(420px,65dvh)]">
             {!isLoaded ? (
               <div className="flex items-center justify-center gap-2 px-4 py-10 text-sm text-muted-foreground">
                 <LoaderCircle className="size-4 animate-spin" />
@@ -233,7 +234,7 @@ export function AnnouncementCenter({ className }: { className?: string }) {
                 );
               })
             )}
-          </div>
+          </ScrollArea>
         </PopoverContent>
       </Popover>
 
@@ -245,9 +246,9 @@ export function AnnouncementCenter({ className }: { className?: string }) {
               系统公告{selected?.updated_at ? ` · ${announcementTime(selected.updated_at)}` : ""}
             </DialogDescription>
           </DialogHeader>
-          <div className="max-h-[50dvh] overflow-y-auto whitespace-pre-wrap break-words pr-1 text-sm leading-7 text-foreground">
+          <ScrollArea className="max-h-[50dvh] whitespace-pre-wrap break-words pr-1 text-sm leading-7 text-foreground">
             {selected?.content || ""}
-          </div>
+          </ScrollArea>
           <DialogFooter className="gap-2 sm:justify-end">
             {isAutomaticPrompt ? (
               <>

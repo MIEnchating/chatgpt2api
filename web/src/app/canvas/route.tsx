@@ -1,11 +1,15 @@
 import { LoaderCircle } from "lucide-react";
 import { lazy, Suspense } from "react";
+import { useParams } from "react-router-dom";
 
+import { canvasProjectIDFromRoute } from "@/app/canvas/canvas-project-route";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 
 const CanvasPage = lazy(() => import("@/app/canvas/page"));
 
 export default function CanvasRoute() {
+  const { projectID: routeProjectID } = useParams<{ projectID?: string }>();
+  const projectID = canvasProjectIDFromRoute(routeProjectID);
   const { isCheckingAuth, session } = useAuthGuard(undefined, "/canvas");
 
   if (isCheckingAuth || !session) {
@@ -24,7 +28,7 @@ export default function CanvasRoute() {
         </div>
       )}
     >
-      <CanvasPage session={session} />
+      <CanvasPage session={session} projectID={projectID} />
     </Suspense>
   );
 }

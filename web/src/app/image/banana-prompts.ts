@@ -1,12 +1,13 @@
 export type BananaPromptMode = "generate" | "edit";
 export type PromptMarketSourceId = string;
 export type PromptMarketLanguage = "zh-CN" | "en";
-export type PromptMarketSourceFormat = "banana-json" | "awesome-gpt-image-2-markdown" | "generic-json";
+type PromptMarketSourceFormat = "reference-project" | "banana-json" | "awesome-gpt-image-2-markdown" | "generic-json";
 
 export type PromptMarketSourceConfig = {
   id: string;
   label: string;
   url: string;
+  homepage?: string;
   format: PromptMarketSourceFormat;
   enabled: boolean;
   builtin?: boolean;
@@ -27,7 +28,7 @@ export type BananaPrompt = {
   prompt: string;
   author: string;
   link?: string;
-  mode: BananaPromptMode;
+  mode?: BananaPromptMode;
   category: string;
   subCategory?: string;
   tags: string[];
@@ -38,52 +39,137 @@ export type BananaPrompt = {
   localizations?: Partial<Record<PromptMarketLanguage, PromptMarketLocalization>>;
 };
 
-export const BANANA_PROMPTS_URL =
+export function promptMatchesKeyword(prompt: Pick<BananaPrompt, "title" | "prompt">, keyword: string) {
+  const normalizedKeyword = keyword.trim().toLowerCase();
+  if (!normalizedKeyword) return true;
+  return prompt.title.toLowerCase().includes(normalizedKeyword) || prompt.prompt.toLowerCase().includes(normalizedKeyword);
+}
+
+export function sortPromptMarketPrompts(prompts: BananaPrompt[]) {
+  return prompts
+    .map((prompt, index) => ({ prompt, index, timestamp: Date.parse(prompt.created || "") }))
+    .sort((left, right) => {
+      const leftTimestamp = Number.isFinite(left.timestamp) ? left.timestamp : Number.NEGATIVE_INFINITY;
+      const rightTimestamp = Number.isFinite(right.timestamp) ? right.timestamp : Number.NEGATIVE_INFINITY;
+      return rightTimestamp - leftTimestamp || left.index - right.index;
+    })
+    .map(({ prompt }) => prompt);
+}
+
+const BANANA_PROMPTS_URL =
   "https://raw.githubusercontent.com/glidea/banana-prompt-quicker/main/prompts.json";
 const AWESOME_GPT_IMAGE_2_PROMPTS_RAW_BASE_URL =
   "https://raw.githubusercontent.com/shalinda-j/awesome-gpt-image-2-prompts/main/";
-export const AWESOME_GPT_IMAGE_2_PROMPTS_ZH_README_URL =
-  `${AWESOME_GPT_IMAGE_2_PROMPTS_RAW_BASE_URL}README_zh-CN.md`;
-export const AWESOME_GPT_IMAGE_2_PROMPTS_EN_README_URL =
-  `${AWESOME_GPT_IMAGE_2_PROMPTS_RAW_BASE_URL}README.md`;
 
 export const DEFAULT_PROMPT_MARKET_SOURCES: PromptMarketSourceConfig[] = [
   {
-    id: "banana-prompt-quicker",
-    label: "Banana 提示词",
-    url: "https://raw.githubusercontent.com/glidea/banana-prompt-quicker/main/prompts.json",
-    format: "banana-json",
+    id: "gpt-image-2-prompts",
+    label: "GPT Image 2 Prompts",
+    url: "https://raw.githubusercontent.com/tigerowo/awesome-gpt-image-2-prompts/main",
+    homepage: "https://github.com/tigerowo/awesome-gpt-image-2-prompts",
+    format: "reference-project",
     enabled: true,
     builtin: true,
   },
   {
-    id: "awesome-gpt-image-2-prompts",
-    label: "GPT Image 2 案例",
-    url: AWESOME_GPT_IMAGE_2_PROMPTS_RAW_BASE_URL,
-    format: "awesome-gpt-image-2-markdown",
+    id: "awesome-gpt-image",
+    label: "Awesome GPT Image",
+    url: "https://raw.githubusercontent.com/ZeroLu/awesome-gpt-image/main",
+    homepage: "https://github.com/ZeroLu/awesome-gpt-image",
+    format: "reference-project",
+    enabled: true,
+    builtin: true,
+  },
+  {
+    id: "awesome-gpt4o-image-prompts",
+    label: "Awesome GPT4o Image Prompts",
+    url: "https://raw.githubusercontent.com/ImgEdify/Awesome-GPT4o-Image-Prompts/main",
+    homepage: "https://github.com/ImgEdify/Awesome-GPT4o-Image-Prompts",
+    format: "reference-project",
+    enabled: true,
+    builtin: true,
+  },
+  {
+    id: "xianyu-awesome-gptimage2",
+    label: "Xianyu Awesome GPT Image 2",
+    url: "https://raw.githubusercontent.com/xianyu110/awesome-gptimage2/main",
+    homepage: "https://github.com/xianyu110/awesome-gptimage2",
+    format: "reference-project",
+    enabled: true,
+    builtin: true,
+  },
+  {
+    id: "youmind-gpt-image-2",
+    label: "YouMind GPT Image 2",
+    url: "https://raw.githubusercontent.com/YouMind-OpenLab/awesome-gpt-image-2/main",
+    homepage: "https://github.com/YouMind-OpenLab/awesome-gpt-image-2",
+    format: "reference-project",
+    enabled: true,
+    builtin: true,
+  },
+  {
+    id: "youmind-nano-banana-pro",
+    label: "YouMind Nano Banana Pro",
+    url: "https://raw.githubusercontent.com/YouMind-OpenLab/awesome-nano-banana-pro-prompts/main",
+    homepage: "https://github.com/YouMind-OpenLab/awesome-nano-banana-pro-prompts",
+    format: "reference-project",
+    enabled: true,
+    builtin: true,
+  },
+  {
+    id: "davidwu-gpt-image2-prompts",
+    label: "awesome-gpt-image2-prompts",
+    url: "https://raw.githubusercontent.com/davidwuw0811-boop/awesome-gpt-image2-prompts/main",
+    homepage: "https://github.com/davidwuw0811-boop/awesome-gpt-image2-prompts",
+    format: "reference-project",
     enabled: true,
     builtin: true,
   },
 ];
 
-export const PROMPT_MARKET_SOURCE_OPTIONS = DEFAULT_PROMPT_MARKET_SOURCES.map((source) => ({ value: source.id, label: source.label }));
+const BANANA_SOURCE: PromptMarketSourceConfig = {
+  id: "banana-prompt-quicker",
+  label: "Banana 提示词",
+  url: BANANA_PROMPTS_URL,
+  format: "banana-json",
+  enabled: true,
+};
+const AWESOME_GPT_IMAGE_2_SOURCE: PromptMarketSourceConfig = {
+  id: "awesome-gpt-image-2-prompts",
+  label: "GPT Image 2 案例",
+  url: AWESOME_GPT_IMAGE_2_PROMPTS_RAW_BASE_URL,
+  format: "awesome-gpt-image-2-markdown",
+  enabled: true,
+};
+
 
 export function normalizePromptMarketSources(value: unknown): PromptMarketSourceConfig[] {
-  if (!Array.isArray(value)) return DEFAULT_PROMPT_MARKET_SOURCES.map((source) => ({ ...source }));
-  const sources: PromptMarketSourceConfig[] = [];
-  const seen = new Set<string>();
-  value.forEach((item) => {
+  const configuredByID = new Map<string, Record<string, unknown>>();
+  if (Array.isArray(value)) value.forEach((item) => {
     if (!item || typeof item !== "object") return;
     const raw = item as Record<string, unknown>;
     const id = String(raw.id || "").trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-+|-+$/g, "");
+    if (id && !configuredByID.has(id)) configuredByID.set(id, raw);
+  });
+
+  const builtinIDs = new Set(DEFAULT_PROMPT_MARKET_SOURCES.map((source) => source.id));
+  const sources = DEFAULT_PROMPT_MARKET_SOURCES.map((source) => ({
+    ...source,
+    enabled: configuredByID.get(source.id)?.enabled !== false,
+  }));
+  const seen = new Set(builtinIDs);
+  configuredByID.forEach((raw, id) => {
+    if (seen.has(id) || raw.builtin === true) return;
     const label = String(raw.label || "").trim();
     const url = String(raw.url || "").trim();
+    const homepageValue = String(raw.homepage || "").trim();
+    const homepage = /^https?:\/\//i.test(homepageValue) ? homepageValue : undefined;
     const format = String(raw.format || "") as PromptMarketSourceFormat;
-    if (!id || seen.has(id) || !label || !/^https?:\/\//i.test(url) || !["banana-json", "awesome-gpt-image-2-markdown", "generic-json"].includes(format)) return;
+    if (!label || !/^https?:\/\//i.test(url) || format !== "generic-json") return;
     seen.add(id);
-    sources.push({ id, label, url, format, enabled: raw.enabled !== false, builtin: Boolean(raw.builtin) });
+    sources.push({ id, label, url, ...(homepage ? { homepage } : {}), format, enabled: raw.enabled !== false });
   });
-  return sources.length ? sources : DEFAULT_PROMPT_MARKET_SOURCES.map((source) => ({ ...source }));
+  return sources;
 }
 
 type BananaPromptSourceItem = {
@@ -91,9 +177,12 @@ type BananaPromptSourceItem = {
   title?: unknown;
   title_cn?: unknown;
   cover_url?: unknown;
+  coverUrl?: unknown;
   image?: unknown;
   preview?: unknown;
   reference_image_urls?: unknown;
+  referenceImageUrls?: unknown;
+  description?: unknown;
   prompt?: unknown;
   author?: unknown;
   link?: unknown;
@@ -120,8 +209,8 @@ type AwesomePromptDraft = BananaPrompt & {
 
 const EMPTY_PROMPT_PREVIEW = "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=";
 
-function normalizePromptMode(value: unknown): BananaPromptMode {
-  return value === "edit" ? "edit" : "generate";
+function normalizePromptMode(value: unknown): BananaPromptMode | undefined {
+  return value === "edit" || value === "generate" ? value : undefined;
 }
 
 function buildPromptId(item: BananaPromptSourceItem, index: number) {
@@ -148,18 +237,23 @@ function normalizeTags(...values: unknown[]) {
     new Set(
       tags
         .map((tag) => String(tag).trim())
-        .filter((tag) => tag && !tag.includes("@")),
+        .filter(Boolean),
     ),
   ).slice(0, 24);
 }
 
 function normalizePrompt(item: BananaPromptSourceItem, index: number, source: PromptMarketSourceConfig): BananaPrompt | null {
   const title = String(item.title_cn || item.title || "").trim();
-  const preview = String(item.preview || item.cover_url || item.image || EMPTY_PROMPT_PREVIEW).trim();
+  const preview = String(
+    source.format === "generic-json"
+      ? item.coverUrl || EMPTY_PROMPT_PREVIEW
+      : item.preview || item.cover_url || item.image || EMPTY_PROMPT_PREVIEW,
+  ).trim();
   const prompt = String(item.prompt || "").trim();
   const author = String(item.author || source.label).trim();
   const category =
     typeof item.category === "string" && item.category.trim() ? item.category.trim() : "未分类";
+  const mode = normalizePromptMode(item.mode);
   if (!title || !prompt || !author) {
     return null;
   }
@@ -170,12 +264,14 @@ function normalizePrompt(item: BananaPromptSourceItem, index: number, source: Pr
     preview,
     prompt,
     author,
-    referenceImageUrls: normalizeReferenceImageUrls(item.reference_image_urls),
+    referenceImageUrls: normalizeReferenceImageUrls(
+      source.format === "generic-json" ? item.referenceImageUrls : item.reference_image_urls,
+    ),
     link: typeof item.link === "string" && item.link.trim() ? item.link.trim() : undefined,
-    mode: normalizePromptMode(item.mode),
+    ...(mode ? { mode } : {}),
     category,
     subCategory: typeof item.sub_category === "string" && item.sub_category.trim() ? item.sub_category.trim() : undefined,
-    tags: normalizeTags(item.tags, category, item.sub_category),
+    tags: normalizeTags(item.tags),
     created: typeof item.created === "string" && item.created.trim() ? item.created.trim() : undefined,
     source: source.id,
     sourceLabel: source.label,
@@ -209,7 +305,6 @@ function normalizeAwesomePromptSection(
   section: string,
   category: string,
   language: PromptMarketLanguage,
-  index: number,
   source: PromptMarketSourceConfig,
 ): AwesomePromptDraft | null {
   const heading = section.match(MARKDOWN_CASE_HEADING_PATTERN);
@@ -237,7 +332,6 @@ function normalizeAwesomePromptSection(
     prompt,
     author,
     link,
-    mode: "generate",
     category,
     subCategory: `Case ${caseNumber}`,
     tags: normalizeTags(category),
@@ -257,7 +351,7 @@ function normalizeAwesomePromptSection(
   };
 }
 
-function parseAwesomePrompts(markdown: string, language: PromptMarketLanguage) {
+function parseAwesomePrompts(markdown: string, language: PromptMarketLanguage, source: PromptMarketSourceConfig) {
   const lines = markdown.split(/\r?\n/);
   const prompts: AwesomePromptDraft[] = [];
   let activeCategory = "未分类";
@@ -288,8 +382,7 @@ function parseAwesomePrompts(markdown: string, language: PromptMarketLanguage) {
       lines.slice(sectionStart, sectionEnd).join("\n"),
       activeCategory,
       language,
-      prompts.length,
-      DEFAULT_PROMPT_MARKET_SOURCES[1],
+      source,
     );
     if (prompt) {
       prompts.push(prompt);
@@ -327,7 +420,7 @@ function mergeAwesomePrompts(...groups: AwesomePromptDraft[][]) {
   return [...promptsByKey.values()].map(({ language: _language, mergeKey: _mergeKey, ...prompt }) => prompt);
 }
 
-export async function fetchBananaPrompts(signal?: AbortSignal, source: PromptMarketSourceConfig = DEFAULT_PROMPT_MARKET_SOURCES[0]) {
+async function fetchBananaPrompts(signal?: AbortSignal, source: PromptMarketSourceConfig = BANANA_SOURCE) {
   const response = await fetch(source.url || BANANA_PROMPTS_URL, {
     signal,
     headers: {
@@ -349,7 +442,7 @@ export async function fetchBananaPrompts(signal?: AbortSignal, source: PromptMar
   });
 }
 
-export async function fetchAwesomeGptImage2Prompts(signal?: AbortSignal, source: PromptMarketSourceConfig = DEFAULT_PROMPT_MARKET_SOURCES[1]) {
+async function fetchAwesomeGptImage2Prompts(signal?: AbortSignal, source: PromptMarketSourceConfig = AWESOME_GPT_IMAGE_2_SOURCE) {
   const baseURL = source.url.endsWith("/") ? source.url : `${source.url}/`;
   const fetchMarkdown = async (url: string, languageLabel: string) => {
     const response = await fetch(url, {
@@ -369,8 +462,8 @@ export async function fetchAwesomeGptImage2Prompts(signal?: AbortSignal, source:
     fetchMarkdown(`${baseURL}README.md`, "英文"),
   ]);
 
-  const zhPrompts = zhResult.status === "fulfilled" ? parseAwesomePrompts(zhResult.value, "zh-CN").map((prompt) => ({ ...prompt, id: prompt.id.replace(`${DEFAULT_PROMPT_MARKET_SOURCES[1].id}:`, `${source.id}:`), source: source.id, sourceLabel: source.label })) : [];
-  const enPrompts = enResult.status === "fulfilled" ? parseAwesomePrompts(enResult.value, "en").map((prompt) => ({ ...prompt, id: prompt.id.replace(`${DEFAULT_PROMPT_MARKET_SOURCES[1].id}:`, `${source.id}:`), source: source.id, sourceLabel: source.label })) : [];
+  const zhPrompts = zhResult.status === "fulfilled" ? parseAwesomePrompts(zhResult.value, "zh-CN", source) : [];
+  const enPrompts = enResult.status === "fulfilled" ? parseAwesomePrompts(enResult.value, "en", source) : [];
   if (zhPrompts.length === 0 && enPrompts.length === 0) {
     const failure = zhResult.status === "rejected" ? zhResult.reason : enResult.status === "rejected" ? enResult.reason : null;
     throw failure instanceof Error ? failure : new Error("awesome-gpt-image-2-prompts 数据格式无效");
@@ -391,13 +484,19 @@ async function fetchGenericJSONPrompts(source: PromptMarketSourceConfig, signal?
   });
 }
 
+export async function fetchPromptMarketSourcePrompts(source: PromptMarketSourceConfig, signal?: AbortSignal) {
+  if (source.format === "reference-project") {
+    const { fetchReferencePromptSource } = await import("@/app/image/reference-prompt-sources");
+    return fetchReferencePromptSource(source, signal);
+  }
+  if (source.format === "banana-json") return fetchBananaPrompts(signal, source);
+  if (source.format === "awesome-gpt-image-2-markdown") return fetchAwesomeGptImage2Prompts(signal, source);
+  return fetchGenericJSONPrompts(source, signal);
+}
+
 export async function fetchPromptMarketPrompts(signal?: AbortSignal, configuredSources: PromptMarketSourceConfig[] = DEFAULT_PROMPT_MARKET_SOURCES) {
   const sources = normalizePromptMarketSources(configuredSources).filter((source) => source.enabled);
-  const results = await Promise.allSettled(sources.map((source) => {
-    if (source.format === "banana-json") return fetchBananaPrompts(signal, source);
-    if (source.format === "awesome-gpt-image-2-markdown") return fetchAwesomeGptImage2Prompts(signal, source);
-    return fetchGenericJSONPrompts(source, signal);
-  }));
+  const results = await Promise.allSettled(sources.map((source) => fetchPromptMarketSourcePrompts(source, signal)));
   const prompts = results.flatMap((result) => result.status === "fulfilled" ? result.value : []);
   if (prompts.length > 0) {
     return prompts;

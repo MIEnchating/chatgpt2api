@@ -35,37 +35,41 @@ func (a *App) Handler() http.Handler {
 
 func (a *App) routes() []appRoute {
 	return []appRoute{
-		exact(http.MethodGet, "/v1/models", a.handleModels),
-		exact(http.MethodPost, "/v1/images/generations", a.handleImageGenerations),
-		exact(http.MethodPost, "/v1/images/edits", a.handleImageEdits),
-
 		exact(http.MethodPost, "/auth/login", a.handleLogin),
 		exact(http.MethodPost, "/auth/logout", a.handleLogout),
 		exact(http.MethodGet, "/auth/session", a.handleSession),
 		exact(http.MethodGet, "/health", a.handleHealth),
+		exact(http.MethodGet, "/api/storage/config", a.handleStorageConfig),
 
 		subtree("/api/admin/roles", a.handleAdminRoles),
 		subtree("/api/admin/users", a.handleAdminUsers),
 		subtree("/api/admin/announcements", a.handleAdminAnnouncements),
 		exact(http.MethodGet, "/api/announcements", a.handleAnnouncements),
 		exact("", "/api/profile/announcement-preferences", a.handleAnnouncementPreferences),
-		exact("", "/api/profile", a.handleProfile),
+		exact("", "/api/profile/image-generation-preferences", a.handleImageGenerationPreferences),
+		subtree("/api/profile/storage-provider", a.handleProfileStorageProvider),
 		exact(http.MethodPost, "/api/profile/image-conversation-assets", a.handleImageConversationAssetUpload),
-		exact(http.MethodPost, "/api/profile/password", a.handleProfilePassword),
 		exact("", "/api/profile/relay-key", a.handleProfileRelayKey),
 		exact("", "/api/profile/balance", a.handleProfileBalance),
-		subtree("/api/profile/api-key", a.handleProfileAPIKey),
 		subtree("/api/profile/prompt-favorites", a.handleProfilePromptFavorites),
+		exact("", "/api/profile/assets", a.handleProfileAssets),
 		subtree("/api/profile/image-conversations", a.handleProfileImageConversations),
+		subtree("/api/workflows", a.handleWorkflows),
 		exact("", "/api/canvas", a.handleCanvasDocument),
 		exact(http.MethodPost, "/api/canvas/images", a.handleCanvasImageUpload),
 		exact(http.MethodPost, "/api/creation-tasks/video-reference-uploads", a.handleVideoReferenceUpload),
-		subtree("/api/auth/users", a.handleUserKeys),
+		exact(http.MethodPost, "/api/creation-tasks/video-image-reference-uploads", a.handleVideoImageReferenceUpload),
+		exact(http.MethodPost, "/api/creation-tasks/audio-reference-uploads", a.handleAudioReferenceUpload),
 		subtree("/api/creation-tasks", a.handleCreationTasks),
 		exact("", "/api/settings", a.handleSettings),
 		exact("", "/api/settings/login-page-image", a.handleLoginPageImageSettings),
 		exact("", "/api/settings/site-icon", a.handleSiteIconSettings),
+		exact(http.MethodPost, "/api/settings/storage/measure", a.handleAdminStorageMeasure),
+		exact(http.MethodPost, "/api/files/direct", a.handleStorageFileDirect),
+		exact(http.MethodGet, "/api/proxy-image", a.handleImageProxy),
+		subtree("/api/files", a.handleStorageFiles),
 		exact(http.MethodGet, "/api/model-config", a.handleModelConfig),
+		exact(http.MethodGet, "/api/profile/upstream-models", a.handleUpstreamModels),
 		exact(http.MethodGet, "/api/app-meta", a.handleAppMeta),
 		exact(http.MethodGet, "/api/admin/permissions", a.handlePermissionCatalog),
 		exact("", "/api/images/visibility", a.handleImageVisibility),
@@ -73,13 +77,15 @@ func (a *App) routes() []appRoute {
 		exact("", "/api/images/storage-governance", a.handleImageStorageGovernance),
 		exact("", "/api/logs/governance", a.handleLogGovernance),
 		exact(http.MethodGet, "/api/logs", a.handleLogs),
-		exact("", "/api/proxy", a.handleProxy),
-		exact("", "/api/proxy/test", a.handleProxy),
+		exact(http.MethodPost, "/api/proxy/test", a.handleProxyTest),
 		exact(http.MethodGet, "/api/storage/info", a.handleStorageInfo),
 
 		prefix("/images/", a.handleImageFile),
 		prefix("/videos/", a.handleVideoFile),
+		prefix("/audios/", a.handleAudioFile),
 		prefix("/video-references/", a.handleVideoReferenceFile),
+		prefix("/video-image-references/", a.handleVideoImageReferenceFile),
+		prefix("/audio-references/", a.handleAudioReferenceFile),
 		prefix(service.ImageConversationAssetURLPrefix, a.handleImageConversationAssetFile),
 		prefix("/image-references/", a.handleImageReferenceFile),
 		prefix("/image-thumbnails/", a.handleImageThumbnail),
@@ -152,13 +158,12 @@ func isAPISpace(path string) bool {
 
 func applyCORS(w http.ResponseWriter, r *http.Request) {
 	origin := strings.TrimSpace(r.Header.Get("Origin"))
-	if origin != "" && isAllowedCredentialedOrigin(origin, r.Host) {
-		w.Header().Set("Access-Control-Allow-Origin", origin)
-		w.Header().Set("Access-Control-Allow-Credentials", "true")
-		w.Header().Add("Vary", "Origin")
-	} else {
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+	if origin == "" || !isAllowedCredentialedOrigin(origin, r.Host) {
+		return
 	}
+	w.Header().Set("Access-Control-Allow-Origin", origin)
+	w.Header().Set("Access-Control-Allow-Credentials", "true")
+	w.Header().Add("Vary", "Origin")
 	if requestedMethod := strings.TrimSpace(r.Header.Get("Access-Control-Request-Method")); requestedMethod != "" {
 		w.Header().Set("Access-Control-Allow-Methods", requestedMethod)
 		w.Header().Add("Vary", "Access-Control-Request-Method")
@@ -175,7 +180,8 @@ func applyCORS(w http.ResponseWriter, r *http.Request) {
 
 func isAllowedCredentialedOrigin(origin, requestHost string) bool {
 	originURL, err := url.Parse(origin)
-	if err != nil || originURL.Scheme == "" || originURL.Hostname() == "" {
+	if err != nil || originURL.Hostname() == "" ||
+		originURL.Scheme != "http" && originURL.Scheme != "https" {
 		return false
 	}
 	requestHostname := requestHost

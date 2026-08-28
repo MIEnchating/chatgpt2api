@@ -23,7 +23,7 @@ func TestProfileImageConversationsSyncAndIsolateUsers(t *testing.T) {
 
 	postBody := `{"items":[{"id":"conversation-1","title":"Alice image","createdAt":"2026-07-15T10:00:00Z","updatedAt":"2026-07-15T10:00:00Z","turns":[{"id":"turn-1","prompt":"draw a cat"}]}]}`
 	req := httptest.NewRequest(http.MethodPost, "/api/profile/image-conversations", strings.NewReader(postBody))
-	req.Header.Set("Authorization", "Bearer "+aliceToken)
+	setRequestAuthCookie(req, "Bearer "+aliceToken)
 	res := httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
 	if res.Code != http.StatusOK {
@@ -35,7 +35,7 @@ func TestProfileImageConversationsSyncAndIsolateUsers(t *testing.T) {
 	}
 
 	req = httptest.NewRequest(http.MethodGet, "/api/profile/image-conversations", nil)
-	req.Header.Set("Authorization", "Bearer "+bobToken)
+	setRequestAuthCookie(req, "Bearer "+bobToken)
 	res = httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
 	if res.Code != http.StatusOK {
@@ -46,7 +46,7 @@ func TestProfileImageConversationsSyncAndIsolateUsers(t *testing.T) {
 	olderBody := strings.Replace(postBody, "Alice image", "stale title", 1)
 	olderBody = strings.Replace(olderBody, "2026-07-15T10:00:00Z\",\"turns", "2026-07-15T09:00:00Z\",\"turns", 1)
 	req = httptest.NewRequest(http.MethodPost, "/api/profile/image-conversations", strings.NewReader(olderBody))
-	req.Header.Set("Authorization", "Bearer "+aliceToken)
+	setRequestAuthCookie(req, "Bearer "+aliceToken)
 	res = httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
 	if res.Code != http.StatusConflict {
@@ -54,13 +54,13 @@ func TestProfileImageConversationsSyncAndIsolateUsers(t *testing.T) {
 	}
 
 	req = httptest.NewRequest(http.MethodGet, "/api/profile/image-conversations?limit=10", nil)
-	req.Header.Set("Authorization", "Bearer "+aliceToken)
+	setRequestAuthCookie(req, "Bearer "+aliceToken)
 	res = httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
 	assertImageConversationHistoryCount(t, res, 1, "Alice image")
 
 	req = httptest.NewRequest(http.MethodDelete, "/api/profile/image-conversations/conversation-1", nil)
-	req.Header.Set("Authorization", "Bearer "+bobToken)
+	setRequestAuthCookie(req, "Bearer "+bobToken)
 	res = httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
 	if res.Code != http.StatusOK {
@@ -72,7 +72,7 @@ func TestProfileImageConversationsSyncAndIsolateUsers(t *testing.T) {
 	}
 
 	req = httptest.NewRequest(http.MethodDelete, "/api/profile/image-conversations/conversation-1", nil)
-	req.Header.Set("Authorization", "Bearer "+aliceToken)
+	setRequestAuthCookie(req, "Bearer "+aliceToken)
 	res = httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
 	if res.Code != http.StatusOK {
@@ -83,7 +83,7 @@ func TestProfileImageConversationsSyncAndIsolateUsers(t *testing.T) {
 		t.Fatalf("alice delete response = %#v error = %v", aliceDelete, err)
 	}
 	req = httptest.NewRequest(http.MethodGet, "/api/profile/image-conversations?limit=10", nil)
-	req.Header.Set("Authorization", "Bearer "+aliceToken)
+	setRequestAuthCookie(req, "Bearer "+aliceToken)
 	res = httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
 	assertImageConversationHistoryCount(t, res, 0, "")
@@ -96,7 +96,7 @@ func TestProfileImageConversationsMinimalResponse(t *testing.T) {
 	_, token := createPasswordUserSession(t, app, "history-minimal", "Password123", "Minimal")
 	body := `{"items":[{"id":"conversation-minimal","title":"Minimal","updatedAt":"2026-07-15T10:00:00Z","turns":[]}]}`
 	req := httptest.NewRequest(http.MethodPost, "/api/profile/image-conversations?response=minimal", strings.NewReader(body))
-	req.Header.Set("Authorization", "Bearer "+token)
+	setRequestAuthCookie(req, "Bearer "+token)
 	res := httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
 	if res.Code != http.StatusOK {
@@ -114,7 +114,7 @@ func TestProfileImageConversationsMinimalResponse(t *testing.T) {
 	}
 
 	req = httptest.NewRequest(http.MethodGet, "/api/profile/image-conversations", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
+	setRequestAuthCookie(req, "Bearer "+token)
 	res = httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
 	if res.Code != http.StatusOK {
@@ -138,7 +138,7 @@ func TestProfileImageConversationsBaseRoutesStayBoundedAndMinimal(t *testing.T) 
 			reader = strings.NewReader(string(data))
 		}
 		req := httptest.NewRequest(method, path, reader)
-		req.Header.Set("Authorization", "Bearer "+token)
+		setRequestAuthCookie(req, "Bearer "+token)
 		res := httptest.NewRecorder()
 		app.Handler().ServeHTTP(res, req)
 		return res
@@ -193,7 +193,7 @@ func TestProfileImageConversationsMinimalRejectsStaleAndGoneSnapshots(t *testing
 	_, token := createPasswordUserSession(t, app, "history-ack", "Password123", "History ACK")
 	request := func(method, path, body string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(method, path, strings.NewReader(body))
-		req.Header.Set("Authorization", "Bearer "+token)
+		setRequestAuthCookie(req, "Bearer "+token)
 		res := httptest.NewRecorder()
 		app.Handler().ServeHTTP(res, req)
 		return res
@@ -252,7 +252,7 @@ func TestProfileImageConversationsBulkMinimalReportsPartialStaleWithoutFailingRe
 	_, token := createPasswordUserSession(t, app, "history-bulk-ack", "Password123", "Bulk ACK")
 	request := func(body string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodPost, "/api/profile/image-conversations?response=minimal", strings.NewReader(body))
-		req.Header.Set("Authorization", "Bearer "+token)
+		setRequestAuthCookie(req, "Bearer "+token)
 		res := httptest.NewRecorder()
 		app.Handler().ServeHTTP(res, req)
 		return res
@@ -294,7 +294,7 @@ func TestProfileImageConversationsBulkMinimalReportsPartialStaleWithoutFailingRe
 	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/profile/image-conversations", nil)
-	req.Header.Set("Authorization", "Bearer "+token)
+	setRequestAuthCookie(req, "Bearer "+token)
 	res = httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
 	if res.Code != http.StatusOK {
@@ -329,7 +329,7 @@ func TestProfileImageConversationsRejectsOversizedBody(t *testing.T) {
 		strings.NewReader(`"}]}`),
 	)
 	req := httptest.NewRequest(http.MethodPost, "/api/profile/image-conversations", body)
-	req.Header.Set("Authorization", "Bearer "+token)
+	setRequestAuthCookie(req, "Bearer "+token)
 	res := httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
 	if res.Code != http.StatusRequestEntityTooLarge {
@@ -357,7 +357,7 @@ func TestProfileImageConversationsReturnsServiceUnavailableOnDatabaseFailure(t *
 
 	body := `{"items":[{"id":"conversation-database-failure","revision":1,"createdAt":"2026-07-19T10:00:00Z","updatedAt":"2026-07-19T10:00:00Z","turns":[]}]}`
 	req := httptest.NewRequest(http.MethodPost, "/api/profile/image-conversations?response=minimal", strings.NewReader(body))
-	req.Header.Set("Authorization", "Bearer "+token)
+	setRequestAuthCookie(req, "Bearer "+token)
 	res := httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
 	if res.Code != http.StatusServiceUnavailable {
@@ -372,7 +372,7 @@ func TestProfileImageConversationsReturnsBadRequestForInvalidItem(t *testing.T) 
 	_, token := createPasswordUserSession(t, app, "history-invalid-item", "Password123", "Invalid Item")
 	body := `{"items":[{"revision":1,"updatedAt":"2026-07-19T10:00:00Z","turns":[]}]}`
 	req := httptest.NewRequest(http.MethodPost, "/api/profile/image-conversations?response=minimal", strings.NewReader(body))
-	req.Header.Set("Authorization", "Bearer "+token)
+	setRequestAuthCookie(req, "Bearer "+token)
 	res := httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
 	if res.Code != http.StatusBadRequest {

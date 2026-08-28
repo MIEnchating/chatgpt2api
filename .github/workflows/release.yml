@@ -145,7 +145,7 @@ jobs:
           cache-dependency-path: go.sum
 
       - name: Verify Go version
-        run: go version | grep -q 'go1.26.2'
+        run: go version | grep -q 'go1.26.6'
 
       - name: Check backend formatting
         run: |

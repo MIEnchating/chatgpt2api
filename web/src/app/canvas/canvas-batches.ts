@@ -1,10 +1,4 @@
-import type { CanvasConnection, CanvasNode } from "@/lib/api";
-
-export type CanvasBatchDuplicate = {
-  nodes: CanvasNode[];
-  connections: CanvasConnection[];
-  selectedNodeID: string;
-};
+import type { CanvasConnection, CanvasNode } from "@/services/api/canvas";
 
 export type CanvasBatchRootReplacement = {
   nodes: CanvasNode[];
@@ -12,11 +6,11 @@ export type CanvasBatchRootReplacement = {
   removedNodeIDs: Set<string>;
 };
 
-export function canvasBatchChildIDs(node: CanvasNode) {
+function canvasBatchChildIDs(node: CanvasNode) {
   return Array.from(new Set((node.batch_child_ids || []).filter(Boolean)));
 }
 
-export function canvasBatchRoot(node: CanvasNode, nodes: readonly CanvasNode[]) {
+function canvasBatchRoot(node: CanvasNode, nodes: readonly CanvasNode[]) {
   if (!node.batch_root_id) return null;
   return nodes.find((item) => item.id === node.batch_root_id) || null;
 }
@@ -131,46 +125,5 @@ export function detachCanvasBatchRootForReplacement(
     nodes: nodes.filter((node) => !removedNodeIDs.has(node.id)),
     connections: connections.filter((connection) => !removedNodeIDs.has(connection.from_node_id) && !removedNodeIDs.has(connection.to_node_id)),
     removedNodeIDs,
-  };
-}
-
-export function duplicateCanvasNodeGroup(
-  sourceID: string,
-  nodes: readonly CanvasNode[],
-  connections: readonly CanvasConnection[],
-  createID: (prefix: CanvasNode["type"] | "connection") => string,
-  createdAt: () => string,
-): CanvasBatchDuplicate | null {
-  const source = nodes.find((node) => node.id === sourceID);
-  if (!source) return null;
-  const sourceIDs = new Set([source.id, ...canvasBatchChildIDs(source)]);
-  const originals = nodes.filter((node) => sourceIDs.has(node.id));
-  const idBySourceID = new Map(originals.map((node) => [node.id, createID(node.type)]));
-  const copies = originals.map((node): CanvasNode => ({
-    ...node,
-    id: idBySourceID.get(node.id) || node.id,
-    x: node.x + 36,
-    y: node.y + 36,
-    title: node.id === source.id
-      ? `${node.title || (node.type === "image" ? "图片" : node.type === "video" ? "视频" : node.type === "config" ? "生成配置" : "想法")} Copy`
-      : node.title,
-    batch_child_ids: node.batch_child_ids?.flatMap((childID) => idBySourceID.get(childID) || []),
-    batch_root_id: node.batch_root_id ? idBySourceID.get(node.batch_root_id) : undefined,
-    batch_primary_id: node.batch_primary_id ? idBySourceID.get(node.batch_primary_id) : undefined,
-    created_at: createdAt(),
-  }));
-  const copiedConnections = connections.flatMap((connection): CanvasConnection[] => {
-    const fromNodeID = idBySourceID.get(connection.from_node_id);
-    const toNodeID = idBySourceID.get(connection.to_node_id);
-    return fromNodeID && toNodeID ? [{
-      id: createID("connection"),
-      from_node_id: fromNodeID,
-      to_node_id: toNodeID,
-    }] : [];
-  });
-  return {
-    nodes: copies,
-    connections: copiedConnections,
-    selectedNodeID: idBySourceID.get(source.id) || source.id,
   };
 }

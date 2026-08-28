@@ -3,81 +3,233 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
+	"chatgpt2api/internal/model"
 	"chatgpt2api/internal/util"
 )
 
-func TestStoreImageObjectStorageConfigDoesNotExposeCredentials(t *testing.T) {
+func TestDefaultVideoModelsMatchReferenceWorkbenchDefault(t *testing.T) {
+	if len(defaultVideoModels) == 0 || defaultVideoModels[0] != "grok-imagine-video" {
+		t.Fatalf("default video models = %#v, want grok-imagine-video first", defaultVideoModels)
+	}
+}
+
+func TestEnvExampleMatchesSupportedEnvironmentContract(t *testing.T) {
+	root := findAncestorWithProjectGoMod(".")
+	if root == "" {
+		t.Fatal("project root not found")
+	}
+	data, err := os.ReadFile(filepath.Join(root, ".env.example"))
+	if err != nil {
+		t.Fatalf("read .env.example: %v", err)
+	}
+	contents := string(data)
+	supported := map[string]struct{}{}
+	for _, envKey := range settingEnvKeys {
+		if envKey != "OBJECT_STORAGE_SETTINGS" && envKey != "PROMPT_SOURCES" {
+			supported[envKey] = struct{}{}
+		}
+	}
+	for _, envKey := range []string{
+		"ADMIN_USERNAME", "ADMIN_PASSWORD", "STORAGE_BACKEND", "STORAGE_DATABASE_URL",
+		"DOCKER_IMAGE", "DOCKER_NETWORK", "TZ", "PORT", "ROOT_DIR",
+	} {
+		supported[envKey] = struct{}{}
+	}
+	for envKey := range supported {
+		pattern := regexp.MustCompile(`(?m)^#?\s*` + regexp.QuoteMeta(envKey) + `=`)
+		if !pattern.MatchString(contents) {
+			t.Errorf(".env.example does not document %s", envKey)
+		}
+	}
+	for _, removed := range []string{
+		"RELAY_DATABASE_URL", "RELAY_DATABASE_TYPE", "RELAY_DATABASE_DRIVER",
+		"IMAGE_STORAGE_BACKEND", "S3_ENDPOINT", "S3_BUCKET", "S3_PREFIX",
+		"AUTO_REMOVE_INVALID_ACCOUNTS", "AUTO_REMOVE_RATE_LIMITED_ACCOUNTS",
+		"REFRESH_ACCOUNT_INTERVAL_MINUTE", "IMAGE_ACCOUNT_SCHEDULE_MODE", "TEXT_ACCOUNT_SCHEDULE_MODE",
+	} {
+		pattern := regexp.MustCompile(`(?m)^#?\s*` + regexp.QuoteMeta(removed) + `=`)
+		if pattern.MatchString(contents) {
+			t.Errorf(".env.example still contains removed variable %s", removed)
+		}
+	}
+}
+
+func TestStoreGenericStorageProvidersKeepSecretsAndRejectMixedEnabledTypes(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("ROOT_DIR", root)
+	unsetEnv(t, "OBJECT_STORAGE_SETTINGS")
+	store, err := NewStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	setting := model.StorageSetting{
+		Mode: "server_sqlite_s3", AllowUserProvider: true, AllowUserGlobalProvider: true,
+		Providers: []model.StorageProvider{{
+			ID: "primary", Name: "R2", Type: "s3", Endpoint: "https://account.r2.cloudflarestorage.com",
+			Region: "auto", Bucket: "canvas", AccessKeyID: "access", SecretAccessKey: "secret",
+			PathPrefix: "canvas", Weight: 3, Enabled: true,
+		}},
+		CapacityCheck:           model.StorageCapacityCheckSetting{Enabled: true, Cron: "0 */6 * * *"},
+		CapacityLimitBytes:      12 * 1024 * 1024 * 1024,
+		LocalCapacityLimitBytes: 6 * 1024 * 1024 * 1024,
+	}
+	updated, err := store.Update(map[string]any{"storage": setting})
+	if err != nil {
+		t.Fatal(err)
+	}
+	publicSetting, ok := updated["storage"].(model.StorageSetting)
+	if !ok || len(publicSetting.Providers) != 1 {
+		t.Fatalf("public storage setting = %#v", updated["storage"])
+	}
+	if publicSetting.Providers[0].SecretAccessKey != "" {
+		t.Fatal("storage provider secret leaked through settings response")
+	}
+	if got := store.StorageSettings().Providers[0].SecretAccessKey; got != "secret" {
+		t.Fatalf("stored secret = %q", got)
+	}
+	if got := store.StorageSettings().LocalCapacityLimitBytes; got != 6*1024*1024*1024 {
+		t.Fatalf("local capacity limit = %d", got)
+	}
+
+	redacted := publicSetting
+	redacted.Providers[0].Name = "Renamed R2"
+	if _, err := store.Update(map[string]any{"storage": redacted}); err != nil {
+		t.Fatal(err)
+	}
+	if got := store.StorageSettings().Providers[0].SecretAccessKey; got != "secret" {
+		t.Fatalf("redacted update replaced secret with %q", got)
+	}
+
+	mixed := store.StorageSettings()
+	mixed.Providers = append(mixed.Providers, model.StorageProvider{
+		ID: "dav", Name: "DAV", Type: "webdav", Endpoint: "https://dav.example.test/root",
+		PathPrefix: "canvas", Username: "user", Password: "password", Weight: 1, Enabled: true,
+	})
+	if _, err := store.Update(map[string]any{"storage": mixed}); err == nil || !strings.Contains(err.Error(), "cannot be enabled") {
+		t.Fatalf("mixed enabled storage providers error = %v", err)
+	}
+
+	reloaded, err := NewStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	providers := reloaded.StorageSettings().Providers
+	if len(providers) != 1 || providers[0].Name != "Renamed R2" || providers[0].SecretAccessKey != "secret" {
+		t.Fatalf("reloaded storage providers = %#v", providers)
+	}
+	if got := reloaded.StorageSettings().LocalCapacityLimitBytes; got != 6*1024*1024*1024 {
+		t.Fatalf("reloaded local capacity limit = %d", got)
+	}
+}
+
+func TestStoreIgnoresRemovedImageObjectStorageSettings(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("ROOT_DIR", root)
 	t.Setenv("IMAGE_STORAGE_BACKEND", "s3")
 	t.Setenv("S3_ENDPOINT", "https://s3.example.test")
-	t.Setenv("S3_BUCKET", "private-images")
-	t.Setenv("S3_PREFIX", "cloud-cotton/images")
-	t.Setenv("S3_ACCESS_KEY", "test-access-key")
-	t.Setenv("S3_SECRET_KEY", "test-secret-key")
-	t.Setenv("S3_SESSION_TOKEN", "test-session-token")
+	t.Setenv("S3_ACCESS_KEY", "legacy-access")
+
+	store, err := NewStore()
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	updated, err := store.Update(map[string]any{
+		"image_storage_backend": "s3",
+		"s3_endpoint":           "https://s3.example.test",
+		"s3_access_key":         "browser-access",
+	})
+	if err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	for _, key := range []string{"image_storage_backend", "s3_endpoint", "s3_access_key"} {
+		if _, ok := updated[key]; ok {
+			t.Fatalf("removed setting %q is still active: %#v", key, updated)
+		}
+	}
+}
+
+func TestStoreRelayDatabaseConfigDoesNotExposeCredentials(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("ROOT_DIR", root)
+	for _, key := range []string{
+		"DATABASE_URL",
+		"DATABASE_DRIVER",
+		"DATABASE_HOST",
+		"DATABASE_PORT",
+		"DATABASE_NAME",
+		"DATABASE_USER",
+		"DATABASE_PASSWORD",
+	} {
+		unsetEnv(t, key)
+	}
+
+	store, err := NewStore()
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	config, err := store.Update(map[string]any{
+		"relay_database_driver":   "postgres",
+		"relay_database_host":     "db.internal",
+		"relay_database_port":     "5433",
+		"relay_database_name":     "newapi",
+		"relay_database_user":     "reader",
+		"relay_database_password": "top-secret",
+	})
+	if err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	for _, key := range []string{"relay_database_url", "relay_database_password"} {
+		if _, ok := config[key]; ok {
+			t.Fatalf("%s leaked in config response: %#v", key, config)
+		}
+	}
+	assertConfigValue(t, config, "relay_database_host", "db.internal")
+	assertConfigValue(t, config, "relay_database_port", "5433")
+	assertConfigValue(t, config, "relay_database_name", "newapi")
+	assertConfigValue(t, config, "relay_database_user", "reader")
+	assertConfigValue(t, config, "relay_database_password_configured", true)
+
+	if _, err := store.Update(map[string]any{"proxy": ""}); err != nil {
+		t.Fatalf("Update(without password) error = %v", err)
+	}
+	if got := store.RelayDatabaseConnectionURL(); !strings.Contains(got, "reader:top-secret@db.internal:5433") {
+		t.Fatalf("RelayDatabaseConnectionURL() lost the write-only password: %q", got)
+	}
+}
+
+func TestStoreRelayDatabaseURLCredentialsAreWriteOnly(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("ROOT_DIR", root)
+	t.Setenv("DATABASE_URL", "postgresql://reader:p%40ss@db.internal:5434/sub2api")
 
 	store, err := NewStore()
 	if err != nil {
 		t.Fatalf("NewStore() error = %v", err)
 	}
 	config := store.Get()
-	assertConfigValue(t, config, "image_storage_backend", "s3")
-	assertConfigValue(t, config, "s3_endpoint", "https://s3.example.test")
-	assertConfigValue(t, config, "s3_bucket", "private-images")
-	assertConfigValue(t, config, "s3_prefix", "cloud-cotton/images")
-	assertConfigValue(t, config, "s3_endpoint_configured", true)
-	assertConfigValue(t, config, "s3_credentials_configured", true)
-	for _, key := range []string{"s3_access_key", "s3_secret_key", "s3_session_token"} {
+	for _, key := range []string{"relay_database_url", "relay_database_password"} {
 		if _, ok := config[key]; ok {
 			t.Fatalf("%s leaked in config response: %#v", key, config)
 		}
 	}
-
-	updated, err := store.Update(map[string]any{
-		"image_storage_backend": "local",
-		"s3_endpoint":           "http://minio:9000",
-		"s3_region":             "us-east-1",
-		"s3_bucket":             "next-images",
-		"s3_prefix":             "/gallery/",
-		"s3_use_path_style":     true,
-		"s3_access_key":         "browser-access-key",
-		"s3_secret_key":         "browser-secret-key",
-		"s3_session_token":      "browser-session-token",
-	})
-	if err != nil {
-		t.Fatalf("Update() error = %v", err)
-	}
-	assertConfigValue(t, updated, "image_storage_backend", "local")
-	assertConfigValue(t, updated, "s3_endpoint", "http://minio:9000")
-	assertConfigValue(t, updated, "s3_region", "us-east-1")
-	assertConfigValue(t, updated, "s3_bucket", "next-images")
-	assertConfigValue(t, updated, "s3_prefix", "gallery")
-	assertConfigValue(t, updated, "s3_use_path_style", true)
-	if store.S3AccessKey() != "test-access-key" || store.S3SecretKey() != "test-secret-key" || store.S3SessionToken() != "test-session-token" {
-		t.Fatal("browser-submitted S3 credentials replaced server credentials")
-	}
-	envData, err := os.ReadFile(filepath.Join(root, ".env"))
-	if err != nil {
-		t.Fatalf("read .env: %v", err)
-	}
-	envText := string(envData)
-	for _, forbidden := range []string{"browser-access-key", "browser-secret-key", "browser-session-token"} {
-		if strings.Contains(envText, forbidden) {
-			t.Fatalf("browser credential %q persisted in .env", forbidden)
-		}
-	}
+	assertConfigValue(t, config, "relay_database_driver", "postgres")
+	assertConfigValue(t, config, "relay_database_host", "db.internal")
+	assertConfigValue(t, config, "relay_database_port", "5434")
+	assertConfigValue(t, config, "relay_database_name", "sub2api")
+	assertConfigValue(t, config, "relay_database_user", "reader")
+	assertConfigValue(t, config, "relay_database_password_configured", true)
 }
 
-func TestStoreReadsLegacyEnvironmentNamesWhenNewNamesAreUnset(t *testing.T) {
+func TestStoreIgnoresRemovedEnvironmentNames(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("ROOT_DIR", root)
 	for _, key := range []string{
 		"ADMIN_USERNAME", "ADMIN_PASSWORD", "IMAGE_BASE_URL", "API_BASE_URL", "IMAGE_MODELS",
-		"CREATION_TASK_TIMEOUT_SECONDS", "S3_ENDPOINT", "S3_ACCESS_KEY", "S3_SECRET_KEY",
+		"CREATION_TASK_TIMEOUT_SECONDS",
 	} {
 		unsetEnv(t, key)
 	}
@@ -87,100 +239,22 @@ func TestStoreReadsLegacyEnvironmentNamesWhenNewNamesAreUnset(t *testing.T) {
 	t.Setenv("CHATGPT2API_RELAY_BASE_URL", "https://legacy-api.example")
 	t.Setenv("CHATGPT2API_IMAGE_MODELS", "legacy-image,legacy-image-2")
 	t.Setenv("CHATGPT2API_IMAGE_TASK_TIMEOUT_SECONDS", "420")
-	t.Setenv("CHATGPT2API_S3_ENDPOINT", "https://legacy-s3.example")
-	t.Setenv("CHATGPT2API_S3_ACCESS_KEY", "legacy-access")
-	t.Setenv("CHATGPT2API_S3_SECRET_KEY", "legacy-secret")
 
 	store, err := NewStore()
 	if err != nil {
 		t.Fatalf("NewStore() error = %v", err)
 	}
-	if store.AdminUsername() != "legacy-admin" || store.AdminPassword() != "legacy-password" {
-		t.Fatalf("legacy admin settings were not read: %q / %q", store.AdminUsername(), store.AdminPassword())
+	if store.AdminUsername() != "admin" || store.AdminPassword() != "" {
+		t.Fatalf("removed admin variables are still active: %q / %q", store.AdminUsername(), store.AdminPassword())
 	}
-	if store.BaseURL() != "https://legacy-images.example" || store.RelayBaseURL() != "https://legacy-api.example" {
-		t.Fatalf("legacy URLs were not read: %q / %q", store.BaseURL(), store.RelayBaseURL())
+	if store.BaseURL() != defaultBaseURL || store.RelayBaseURL() != defaultRelayBaseURL {
+		t.Fatalf("removed URL variables are still active: %q / %q", store.BaseURL(), store.RelayBaseURL())
 	}
-	if got := strings.Join(store.ImageModels(), ","); got != "legacy-image,legacy-image-2" {
-		t.Fatalf("legacy image models = %q", got)
+	if got := strings.Join(store.ImageModels(), ","); got == "legacy-image,legacy-image-2" {
+		t.Fatalf("removed image model variable is still active: %q", got)
 	}
-	if store.ImageTaskTimeoutSeconds() != 420 || store.S3Endpoint() != "https://legacy-s3.example" {
-		t.Fatalf("legacy runtime settings were not read")
-	}
-	if store.S3AccessKey() != "legacy-access" || store.S3SecretKey() != "legacy-secret" {
-		t.Fatalf("legacy S3 credentials were not read")
-	}
-}
-
-func TestStorePrefersNewEnvironmentNameOverLegacyName(t *testing.T) {
-	root := t.TempDir()
-	t.Setenv("ROOT_DIR", root)
-	t.Setenv("IMAGE_BASE_URL", "https://new.example")
-	t.Setenv("CHATGPT2API_BASE_URL", "https://legacy.example")
-	store, err := NewStore()
-	if err != nil {
-		t.Fatalf("NewStore() error = %v", err)
-	}
-	if store.BaseURL() != "https://new.example" {
-		t.Fatalf("BaseURL() = %q, want new value", store.BaseURL())
-	}
-}
-
-func TestStorePrefersNewProcessEnvironmentOverLegacyEnvFile(t *testing.T) {
-	root := t.TempDir()
-	unsetEnv(t, "CHATGPT2API_BASE_URL")
-	if err := os.WriteFile(filepath.Join(root, ".env"), []byte("CHATGPT2API_BASE_URL=https://legacy-file.example\n"), 0o644); err != nil {
-		t.Fatalf("write .env: %v", err)
-	}
-	t.Setenv("ROOT_DIR", root)
-	t.Setenv("IMAGE_BASE_URL", "https://new-process.example")
-	store, err := NewStore()
-	if err != nil {
-		t.Fatalf("NewStore() error = %v", err)
-	}
-	if store.BaseURL() != "https://new-process.example" {
-		t.Fatalf("BaseURL() = %q, want new process value", store.BaseURL())
-	}
-}
-
-func TestStoreMigratesLegacyEnvFileSettingsWhenSaved(t *testing.T) {
-	root := t.TempDir()
-	envText := strings.Join([]string{
-		"CHATGPT2API_BASE_URL=https://legacy.example",
-		"CHATGPT2API_IMAGE_MODELS=legacy-image",
-		"CHATGPT2API_IMAGE_TASK_TIMEOUT_SECONDS=420",
-		"",
-	}, "\n")
-	if err := os.WriteFile(filepath.Join(root, ".env"), []byte(envText), 0o644); err != nil {
-		t.Fatalf("write .env: %v", err)
-	}
-	t.Setenv("ROOT_DIR", root)
-	for _, key := range []string{
-		"IMAGE_BASE_URL", "IMAGE_MODELS", "CREATION_TASK_TIMEOUT_SECONDS",
-		"CHATGPT2API_BASE_URL", "CHATGPT2API_IMAGE_MODELS", "CHATGPT2API_IMAGE_TASK_TIMEOUT_SECONDS",
-	} {
-		unsetEnv(t, key)
-	}
-	store, err := NewStore()
-	if err != nil {
-		t.Fatalf("NewStore() error = %v", err)
-	}
-	if _, err := store.Update(map[string]any{"base_url": "https://saved.example"}); err != nil {
-		t.Fatalf("Update() error = %v", err)
-	}
-	data, err := os.ReadFile(filepath.Join(root, ".env"))
-	if err != nil {
-		t.Fatalf("read .env: %v", err)
-	}
-	text := string(data)
-	for _, want := range []string{
-		"IMAGE_BASE_URL=https://saved.example",
-		"IMAGE_MODELS=legacy-image",
-		"CREATION_TASK_TIMEOUT_SECONDS=420",
-	} {
-		if !strings.Contains(text, want) {
-			t.Fatalf("migrated .env missing %q:\n%s", want, text)
-		}
+	if store.ImageTaskTimeoutSeconds() != defaultImageTaskTimeoutSeconds {
+		t.Fatalf("removed timeout variable is still active: %d", store.ImageTaskTimeoutSeconds())
 	}
 }
 
@@ -196,14 +270,19 @@ func TestStorePersistsPromptSourcesAsJSON(t *testing.T) {
 	}
 	sources := []any{
 		map[string]any{
-			"id":      "custom-source",
-			"label":   "自定义来源",
-			"url":     "https://example.test/prompts.json",
-			"format":  "generic-json",
-			"enabled": true,
+			"id":       "custom-source",
+			"label":    "自定义来源",
+			"url":      "https://example.test/prompts.json",
+			"homepage": "https://example.test/prompts",
+			"format":   "generic-json",
+			"enabled":  true,
 		},
 	}
-	updated, err := store.Update(map[string]any{"prompt_sources": sources})
+	updated, err := store.Update(map[string]any{
+		"prompt_sources":               sources,
+		"prompt_pull_schedule_enabled": true,
+		"prompt_pull_interval_minutes": 360,
+	})
 	if err != nil {
 		t.Fatalf("Update() error = %v", err)
 	}
@@ -211,12 +290,18 @@ func TestStorePersistsPromptSourcesAsJSON(t *testing.T) {
 	if !ok || len(updatedSources) != 1 {
 		t.Fatalf("updated prompt_sources = %#v", updated["prompt_sources"])
 	}
+	if updated["prompt_pull_schedule_enabled"] != true || updated["prompt_pull_interval_minutes"] != 360 {
+		t.Fatalf("updated prompt pull schedule = %#v, %#v", updated["prompt_pull_schedule_enabled"], updated["prompt_pull_interval_minutes"])
+	}
 	envData, err := os.ReadFile(filepath.Join(root, ".env"))
 	if err != nil {
 		t.Fatalf("read .env: %v", err)
 	}
 	if !strings.Contains(string(envData), "PROMPT_SOURCES=") || !strings.Contains(string(envData), "custom-source") {
 		t.Fatalf("prompt sources were not persisted as JSON: %s", envData)
+	}
+	if !strings.Contains(string(envData), "PROMPT_PULL_SCHEDULE_ENABLED=true") || !strings.Contains(string(envData), "PROMPT_PULL_INTERVAL_MINUTES=360") {
+		t.Fatalf("prompt pull schedule was not persisted: %s", envData)
 	}
 
 	reloaded, err := NewStore()
@@ -231,39 +316,27 @@ func TestStorePersistsPromptSourcesAsJSON(t *testing.T) {
 	if !ok || reloadedSource["url"] != "https://example.test/prompts.json" {
 		t.Fatalf("reloaded source = %#v", reloadedSources[0])
 	}
+	if reloadedSource["homepage"] != "https://example.test/prompts" {
+		t.Fatalf("reloaded source homepage = %#v", reloadedSource["homepage"])
+	}
+	if reloaded.Get()["prompt_pull_schedule_enabled"] != true || reloaded.Get()["prompt_pull_interval_minutes"] != 360 {
+		t.Fatalf("reloaded prompt pull schedule = %#v, %#v", reloaded.Get()["prompt_pull_schedule_enabled"], reloaded.Get()["prompt_pull_interval_minutes"])
+	}
 }
 
-func TestStoreRejectsInvalidImageObjectStorageSettings(t *testing.T) {
+func TestStoreNormalizesPromptPullInterval(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("ROOT_DIR", root)
-	t.Setenv("S3_ACCESS_KEY", "access")
-	t.Setenv("S3_SECRET_KEY", "secret")
 	store, err := NewStore()
 	if err != nil {
 		t.Fatalf("NewStore() error = %v", err)
 	}
-	for _, update := range []map[string]any{
-		{"image_storage_backend": "ftp"},
-		{"image_storage_backend": "s3", "s3_endpoint": "https://s3.example.test/path", "s3_bucket": "images"},
-		{"image_storage_backend": "s3", "s3_endpoint": "https://s3.example.test", "s3_bucket": ""},
-		{"image_storage_backend": "local", "s3_prefix": "../images"},
-	} {
-		if _, err := store.Update(update); err == nil {
-			t.Fatalf("Update(%#v) accepted invalid object storage settings", update)
-		}
-	}
-}
-
-func TestStoreImageStorageBackendDefaultsToLocal(t *testing.T) {
-	root := t.TempDir()
-	t.Setenv("ROOT_DIR", root)
-	unsetEnv(t, "IMAGE_STORAGE_BACKEND")
-	store, err := NewStore()
+	updated, err := store.Update(map[string]any{"prompt_pull_interval_minutes": 45})
 	if err != nil {
-		t.Fatalf("NewStore() error = %v", err)
+		t.Fatalf("Update() error = %v", err)
 	}
-	if got := store.ImageStorageBackend(); got != "local" {
-		t.Fatalf("ImageStorageBackend() = %q", got)
+	if updated["prompt_pull_interval_minutes"] != 30 {
+		t.Fatalf("prompt_pull_interval_minutes = %#v, want 30", updated["prompt_pull_interval_minutes"])
 	}
 }
 
@@ -293,7 +366,6 @@ func TestStoreUpdatePersistsRuntimeSettings(t *testing.T) {
 	unsetEnv(t, "PROXY")
 	unsetEnv(t, "IMAGE_MODELS")
 	unsetEnv(t, "CHAT_MODELS")
-	unsetEnv(t, "REFRESH_ACCOUNT_INTERVAL_MINUTE")
 	unsetEnv(t, "CREATION_TASK_TIMEOUT_SECONDS")
 	unsetEnv(t, "USER_DEFAULT_CONCURRENT_LIMIT")
 	unsetEnv(t, "USER_DEFAULT_RPM_LIMIT")
@@ -301,15 +373,13 @@ func TestStoreUpdatePersistsRuntimeSettings(t *testing.T) {
 	unsetEnv(t, "IMAGE_STORAGE_LIMIT_MB")
 	unsetEnv(t, "LOG_RETENTION_DAYS")
 	unsetEnv(t, "DEFAULT_LOG_VIEW")
-	unsetEnv(t, "AUTO_REMOVE_INVALID_ACCOUNTS")
-	unsetEnv(t, "AUTO_REMOVE_RATE_LIMITED_ACCOUNTS")
 	unsetEnv(t, "LOG_LEVELS")
 
 	store, err := NewStore()
 	if err != nil {
 		t.Fatalf("NewStore() error = %v", err)
 	}
-	if store.BaseURL() != "https://image.yunmian.tech" {
+	if store.BaseURL() != "" {
 		t.Fatalf("BaseURL() default = %q", store.BaseURL())
 	}
 	if store.RelayBaseURL() != "https://www.yunmian.tech" {
@@ -317,18 +387,19 @@ func TestStoreUpdatePersistsRuntimeSettings(t *testing.T) {
 	}
 
 	got, err := store.Update(map[string]any{
-		"base_url":                        "https://example.test/root/",
-		"proxy":                           "http://127.0.0.1:8080",
-		"image_models":                    []any{"gpt-image-2"},
-		"refresh_account_interval_minute": 7,
-		"image_concurrent_limit":          3,
-		"image_task_timeout_seconds":      420,
-		"user_default_concurrent_limit":   2,
-		"user_default_rpm_limit":          30,
-		"image_retention_days":            14,
-		"image_storage_limit_mb":          512,
-		"log_retention_days":              21,
-		"log_levels":                      []any{"debug", "error"},
+		"base_url":                      "https://example.test/root/",
+		"proxy":                         "http://127.0.0.1:8080",
+		"image_models":                  []any{"gpt-image-2"},
+		"text_models":                   []any{"gpt-5.5"},
+		"audio_models":                  []any{"gpt-4o-mini-tts"},
+		"image_concurrent_limit":        3,
+		"image_task_timeout_seconds":    420,
+		"user_default_concurrent_limit": 2,
+		"user_default_rpm_limit":        30,
+		"image_retention_days":          14,
+		"image_storage_limit_mb":        512,
+		"log_retention_days":            21,
+		"log_levels":                    []any{"debug", "error"},
 	})
 	if err != nil {
 		t.Fatalf("Update() error = %v", err)
@@ -338,6 +409,12 @@ func TestStoreUpdatePersistsRuntimeSettings(t *testing.T) {
 	}
 	if models := strings.Join(store.ImageModels(), ","); models != "gpt-image-2" {
 		t.Fatalf("ImageModels() = %q, want gpt-image-2", models)
+	}
+	if models := strings.Join(store.TextModels(), ","); models != "gpt-5.5" {
+		t.Fatalf("TextModels() = %q, want gpt-5.5", models)
+	}
+	if models := strings.Join(store.AudioModels(), ","); models != "gpt-4o-mini-tts" {
+		t.Fatalf("AudioModels() = %q, want gpt-4o-mini-tts", models)
 	}
 	assertConfigValue(t, got, "default_image_model", "gpt-image-2")
 	if _, ok := got["chat_models"]; ok {
@@ -359,7 +436,6 @@ func TestStoreUpdatePersistsRuntimeSettings(t *testing.T) {
 		"IMAGE_BASE_URL=https://example.test/root/",
 		"PROXY=http://127.0.0.1:8080",
 		"IMAGE_MODELS=gpt-image-2",
-		"REFRESH_ACCOUNT_INTERVAL_MINUTE=7",
 		"CREATION_TASK_TIMEOUT_SECONDS=420",
 		"USER_DEFAULT_CONCURRENT_LIMIT=2",
 		"USER_DEFAULT_RPM_LIMIT=30",
@@ -394,82 +470,61 @@ func TestStoreReadsRelayDatabaseConfig(t *testing.T) {
 	}
 }
 
-func TestStorePreservesLegacyUpstreamAndStorageDatabaseLayout(t *testing.T) {
+func TestStoreKeepsUpstreamAndStorageDatabaseURLsSeparate(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("ROOT_DIR", root)
-	t.Setenv("STORAGE_BACKEND", "postgres")
-	unsetEnv(t, "STORAGE_DATABASE_URL")
-	t.Setenv("DATABASE_URL", "postgresql://business.example/chatgpt2api")
-	t.Setenv("CHATGPT2API_NEWAPI_DATABASE_URL", "postgresql://upstream.example/newapi")
+	t.Setenv("DATABASE_URL", "postgresql://upstream.example/newapi")
+	t.Setenv("STORAGE_DATABASE_URL", "postgresql://business.example/chatgpt2api")
 	store, err := NewStore()
 	if err != nil {
 		t.Fatalf("NewStore() error = %v", err)
 	}
 	if got := store.RelayDatabaseURL(); got != "postgresql://upstream.example/newapi" {
-		t.Fatalf("RelayDatabaseURL() = %q, want legacy upstream database", got)
+		t.Fatalf("RelayDatabaseURL() = %q, want upstream database", got)
 	}
 }
 
-func TestStoreUsesNewDatabaseURLAfterStorageDatabaseMigration(t *testing.T) {
+func TestStoreBuildsRelayDatabaseURLsFromStructuredFields(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("ROOT_DIR", root)
-	t.Setenv("DATABASE_URL", "postgresql://new-upstream.example/newapi")
-	t.Setenv("STORAGE_DATABASE_URL", "postgresql://business.example/chatgpt2api")
-	t.Setenv("CHATGPT2API_NEWAPI_DATABASE_URL", "postgresql://legacy-upstream.example/newapi")
 	store, err := NewStore()
 	if err != nil {
 		t.Fatalf("NewStore() error = %v", err)
 	}
-	if got := store.RelayDatabaseURL(); got != "postgresql://new-upstream.example/newapi" {
-		t.Fatalf("RelayDatabaseURL() = %q, want new upstream database", got)
-	}
-}
-
-func TestStoreNormalizesAccountScheduleModes(t *testing.T) {
-	root := t.TempDir()
-	t.Setenv("ROOT_DIR", root)
-	unsetEnv(t, "TEXT_ACCOUNT_SCHEDULE_MODE")
-	unsetEnv(t, "IMAGE_ACCOUNT_SCHEDULE_MODE")
-
-	store, err := NewStore()
-	if err != nil {
-		t.Fatalf("NewStore() error = %v", err)
-	}
-	if store.TextAccountScheduleMode() != "load_balance" {
-		t.Fatalf("TextAccountScheduleMode() = %q, want load_balance", store.TextAccountScheduleMode())
-	}
-	if store.ImageAccountScheduleMode() != "load_balance" {
-		t.Fatalf("ImageAccountScheduleMode() = %q, want load_balance", store.ImageAccountScheduleMode())
-	}
-
-	got, err := store.Update(map[string]any{
-		"text_account_schedule_mode":  "fill_first",
-		"image_account_schedule_mode": "invalid",
+	_, err = store.Update(map[string]any{
+		"relay_database_driver":   "postgres",
+		"relay_database_host":     "db.internal",
+		"relay_database_port":     "5433",
+		"relay_database_name":     "newapi",
+		"relay_database_user":     "app",
+		"relay_database_password": "p@ss",
 	})
 	if err != nil {
 		t.Fatalf("Update() error = %v", err)
 	}
-	assertConfigValue(t, got, "text_account_schedule_mode", "fill_first")
-	assertConfigValue(t, got, "image_account_schedule_mode", "load_balance")
-	if store.TextAccountScheduleMode() != "fill_first" {
-		t.Fatalf("TextAccountScheduleMode() = %q, want fill_first", store.TextAccountScheduleMode())
+	if got := store.RelayDatabaseConnectionURL(); got != "postgresql://app:p%40ss@db.internal:5433/newapi?sslmode=disable" {
+		t.Fatalf("RelayDatabaseConnectionURL() = %q", got)
 	}
-	if store.ImageAccountScheduleMode() != "load_balance" {
-		t.Fatalf("ImageAccountScheduleMode() = %q, want load_balance", store.ImageAccountScheduleMode())
-	}
-
-	envData, err := os.ReadFile(filepath.Join(root, ".env"))
+	_, err = store.Update(map[string]any{"relay_database_driver": "sqlite", "relay_database_name": "/app/data/newapi.db"})
 	if err != nil {
-		t.Fatalf("read .env: %v", err)
+		t.Fatalf("Update(sqlite) error = %v", err)
 	}
-	envText := string(envData)
-	for _, want := range []string{
-		"TEXT_ACCOUNT_SCHEDULE_MODE=fill_first",
-		"IMAGE_ACCOUNT_SCHEDULE_MODE=load_balance",
-	} {
-		if !strings.Contains(envText, want) {
-			t.Fatalf(".env missing %q in:\n%s", want, envText)
-		}
+	if got := store.RelayDatabaseConnectionURL(); got != "sqlite:////app/data/newapi.db" {
+		t.Fatalf("RelayDatabaseConnectionURL(sqlite) = %q", got)
+	}
+	_, err = store.Update(map[string]any{
+		"relay_database_driver":   "mysql",
+		"relay_database_host":     "mysql.internal",
+		"relay_database_port":     "3307",
+		"relay_database_name":     "sub2api",
+		"relay_database_user":     "reader",
+		"relay_database_password": "secret",
+	})
+	if err != nil {
+		t.Fatalf("Update(mysql) error = %v", err)
+	}
+	if got := store.RelayDatabaseConnectionURL(); got != "mysql://reader:secret@mysql.internal:3307/sub2api" {
+		t.Fatalf("RelayDatabaseConnectionURL(mysql) = %q", got)
 	}
 }
 
@@ -546,15 +601,12 @@ func TestStoreUpdateRefreshesEnvFileBackedRuntimeSettings(t *testing.T) {
 	envText := strings.Join([]string{
 		"IMAGE_BASE_URL=https://old.example/root",
 		"PROXY=http://127.0.0.1:8080",
-		"REFRESH_ACCOUNT_INTERVAL_MINUTE=5",
 		"CREATION_TASK_TIMEOUT_SECONDS=300",
 		"USER_DEFAULT_CONCURRENT_LIMIT=2",
 		"USER_DEFAULT_RPM_LIMIT=30",
 		"IMAGE_RETENTION_DAYS=30",
 		"IMAGE_STORAGE_LIMIT_MB=2048",
 		"LOG_RETENTION_DAYS=7",
-		"AUTO_REMOVE_INVALID_ACCOUNTS=true",
-		"AUTO_REMOVE_RATE_LIMITED_ACCOUNTS=false",
 		"LOG_LEVELS=warning,error",
 		"",
 	}, "\n")
@@ -564,15 +616,12 @@ func TestStoreUpdateRefreshesEnvFileBackedRuntimeSettings(t *testing.T) {
 	t.Setenv("ROOT_DIR", root)
 	t.Setenv("IMAGE_BASE_URL", "https://old.example/root")
 	t.Setenv("PROXY", "http://127.0.0.1:8080")
-	t.Setenv("REFRESH_ACCOUNT_INTERVAL_MINUTE", "5")
 	t.Setenv("CREATION_TASK_TIMEOUT_SECONDS", "300")
 	t.Setenv("USER_DEFAULT_CONCURRENT_LIMIT", "2")
 	t.Setenv("USER_DEFAULT_RPM_LIMIT", "30")
 	t.Setenv("IMAGE_RETENTION_DAYS", "30")
 	t.Setenv("IMAGE_STORAGE_LIMIT_MB", "2048")
 	t.Setenv("LOG_RETENTION_DAYS", "7")
-	t.Setenv("AUTO_REMOVE_INVALID_ACCOUNTS", "true")
-	t.Setenv("AUTO_REMOVE_RATE_LIMITED_ACCOUNTS", "false")
 	t.Setenv("LOG_LEVELS", "warning,error")
 
 	store, err := NewStore()
@@ -580,18 +629,15 @@ func TestStoreUpdateRefreshesEnvFileBackedRuntimeSettings(t *testing.T) {
 		t.Fatalf("NewStore() error = %v", err)
 	}
 	got, err := store.Update(map[string]any{
-		"base_url":                          "https://new.example/root/",
-		"proxy":                             "http://127.0.0.1:9090",
-		"refresh_account_interval_minute":   9,
-		"image_task_timeout_seconds":        480,
-		"user_default_concurrent_limit":     3,
-		"user_default_rpm_limit":            45,
-		"image_retention_days":              12,
-		"image_storage_limit_mb":            1024,
-		"log_retention_days":                30,
-		"auto_remove_invalid_accounts":      false,
-		"auto_remove_rate_limited_accounts": true,
-		"log_levels":                        []any{"debug", "info"},
+		"base_url":                      "https://new.example/root/",
+		"proxy":                         "http://127.0.0.1:9090",
+		"image_task_timeout_seconds":    480,
+		"user_default_concurrent_limit": 3,
+		"user_default_rpm_limit":        45,
+		"image_retention_days":          12,
+		"image_storage_limit_mb":        1024,
+		"log_retention_days":            30,
+		"log_levels":                    []any{"debug", "info"},
 	})
 	if err != nil {
 		t.Fatalf("Update() error = %v", err)
@@ -599,7 +645,6 @@ func TestStoreUpdateRefreshesEnvFileBackedRuntimeSettings(t *testing.T) {
 
 	assertConfigValue(t, got, "base_url", "https://new.example/root")
 	assertConfigValue(t, got, "proxy", "http://127.0.0.1:9090")
-	assertConfigValue(t, got, "refresh_account_interval_minute", 9)
 	assertConfigValue(t, got, "image_task_timeout_seconds", 480)
 	assertConfigValue(t, got, "user_default_concurrent_limit", 3)
 	assertConfigValue(t, got, "user_default_rpm_limit", 45)
@@ -609,25 +654,20 @@ func TestStoreUpdateRefreshesEnvFileBackedRuntimeSettings(t *testing.T) {
 		t.Fatalf("ImageStorageLimitBytes() = %d, want 1GiB", store.ImageStorageLimitBytes())
 	}
 	assertConfigValue(t, got, "log_retention_days", 30)
-	assertConfigValue(t, got, "auto_remove_invalid_accounts", false)
-	assertConfigValue(t, got, "auto_remove_rate_limited_accounts", true)
 	if levels := strings.Join(store.LogLevels(), ","); levels != "debug,info" {
 		t.Fatalf("LogLevels() = %q, want debug,info", levels)
 	}
 
 	for key, want := range map[string]string{
-		"IMAGE_BASE_URL":                    "https://new.example/root/",
-		"PROXY":                             "http://127.0.0.1:9090",
-		"REFRESH_ACCOUNT_INTERVAL_MINUTE":   "9",
-		"CREATION_TASK_TIMEOUT_SECONDS":     "480",
-		"USER_DEFAULT_CONCURRENT_LIMIT":     "3",
-		"USER_DEFAULT_RPM_LIMIT":            "45",
-		"IMAGE_RETENTION_DAYS":              "12",
-		"IMAGE_STORAGE_LIMIT_MB":            "1024",
-		"LOG_RETENTION_DAYS":                "30",
-		"AUTO_REMOVE_INVALID_ACCOUNTS":      "false",
-		"AUTO_REMOVE_RATE_LIMITED_ACCOUNTS": "true",
-		"LOG_LEVELS":                        "debug,info",
+		"IMAGE_BASE_URL":                "https://new.example/root/",
+		"PROXY":                         "http://127.0.0.1:9090",
+		"CREATION_TASK_TIMEOUT_SECONDS": "480",
+		"USER_DEFAULT_CONCURRENT_LIMIT": "3",
+		"USER_DEFAULT_RPM_LIMIT":        "45",
+		"IMAGE_RETENTION_DAYS":          "12",
+		"IMAGE_STORAGE_LIMIT_MB":        "1024",
+		"LOG_RETENTION_DAYS":            "30",
+		"LOG_LEVELS":                    "debug,info",
 	} {
 		if gotEnv := os.Getenv(key); gotEnv != want {
 			t.Fatalf("%s = %q, want %q", key, gotEnv, want)
@@ -639,23 +679,20 @@ func TestStoreUpdateOverridesEnvOnlyRuntimeSettings(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("ROOT_DIR", root)
 	for key, value := range map[string]string{
-		"IMAGE_BASE_URL":                    "https://old.example/root",
-		"PROXY":                             "http://127.0.0.1:8080",
-		"REFRESH_ACCOUNT_INTERVAL_MINUTE":   "5",
-		"CREATION_TASK_TIMEOUT_SECONDS":     "300",
-		"USER_DEFAULT_CONCURRENT_LIMIT":     "2",
-		"USER_DEFAULT_RPM_LIMIT":            "30",
-		"IMAGE_RETENTION_DAYS":              "30",
-		"IMAGE_STORAGE_LIMIT_MB":            "2048",
-		"LOG_RETENTION_DAYS":                "7",
-		"AUTO_REMOVE_INVALID_ACCOUNTS":      "true",
-		"AUTO_REMOVE_RATE_LIMITED_ACCOUNTS": "false",
-		"LOG_LEVELS":                        "warning,error",
-		"LOGIN_PAGE_IMAGE_URL":              "https://old.example/login.png",
-		"LOGIN_PAGE_IMAGE_MODE":             "contain",
-		"LOGIN_PAGE_IMAGE_ZOOM":             "1",
-		"LOGIN_PAGE_IMAGE_POSITION_X":       "50",
-		"LOGIN_PAGE_IMAGE_POSITION_Y":       "50",
+		"IMAGE_BASE_URL":                "https://old.example/root",
+		"PROXY":                         "http://127.0.0.1:8080",
+		"CREATION_TASK_TIMEOUT_SECONDS": "300",
+		"USER_DEFAULT_CONCURRENT_LIMIT": "2",
+		"USER_DEFAULT_RPM_LIMIT":        "30",
+		"IMAGE_RETENTION_DAYS":          "30",
+		"IMAGE_STORAGE_LIMIT_MB":        "2048",
+		"LOG_RETENTION_DAYS":            "7",
+		"LOG_LEVELS":                    "warning,error",
+		"LOGIN_PAGE_IMAGE_URL":          "https://old.example/login.png",
+		"LOGIN_PAGE_IMAGE_MODE":         "contain",
+		"LOGIN_PAGE_IMAGE_ZOOM":         "1",
+		"LOGIN_PAGE_IMAGE_POSITION_X":   "50",
+		"LOGIN_PAGE_IMAGE_POSITION_Y":   "50",
 	} {
 		t.Setenv(key, value)
 	}
@@ -665,23 +702,20 @@ func TestStoreUpdateOverridesEnvOnlyRuntimeSettings(t *testing.T) {
 		t.Fatalf("NewStore() error = %v", err)
 	}
 	got, err := store.Update(map[string]any{
-		"base_url":                          "https://new.example/root/",
-		"proxy":                             "http://127.0.0.1:9090",
-		"refresh_account_interval_minute":   9,
-		"image_task_timeout_seconds":        480,
-		"user_default_concurrent_limit":     3,
-		"user_default_rpm_limit":            45,
-		"image_retention_days":              12,
-		"image_storage_limit_mb":            1024,
-		"log_retention_days":                30,
-		"auto_remove_invalid_accounts":      false,
-		"auto_remove_rate_limited_accounts": true,
-		"log_levels":                        []any{"debug", "info"},
-		"login_page_image_url":              "https://new.example/login.png",
-		"login_page_image_mode":             "cover",
-		"login_page_image_zoom":             2,
-		"login_page_image_position_x":       25,
-		"login_page_image_position_y":       75,
+		"base_url":                      "https://new.example/root/",
+		"proxy":                         "http://127.0.0.1:9090",
+		"image_task_timeout_seconds":    480,
+		"user_default_concurrent_limit": 3,
+		"user_default_rpm_limit":        45,
+		"image_retention_days":          12,
+		"image_storage_limit_mb":        1024,
+		"log_retention_days":            30,
+		"log_levels":                    []any{"debug", "info"},
+		"login_page_image_url":          "https://new.example/login.png",
+		"login_page_image_mode":         "cover",
+		"login_page_image_zoom":         2,
+		"login_page_image_position_x":   25,
+		"login_page_image_position_y":   75,
 	})
 	if err != nil {
 		t.Fatalf("Update() error = %v", err)
@@ -689,15 +723,12 @@ func TestStoreUpdateOverridesEnvOnlyRuntimeSettings(t *testing.T) {
 
 	assertConfigValue(t, got, "base_url", "https://new.example/root")
 	assertConfigValue(t, got, "proxy", "http://127.0.0.1:9090")
-	assertConfigValue(t, got, "refresh_account_interval_minute", 9)
 	assertConfigValue(t, got, "image_task_timeout_seconds", 480)
 	assertConfigValue(t, got, "user_default_concurrent_limit", 3)
 	assertConfigValue(t, got, "user_default_rpm_limit", 45)
 	assertConfigValue(t, got, "image_retention_days", 12)
 	assertConfigValue(t, got, "image_storage_limit_mb", 1024)
 	assertConfigValue(t, got, "log_retention_days", 30)
-	assertConfigValue(t, got, "auto_remove_invalid_accounts", false)
-	assertConfigValue(t, got, "auto_remove_rate_limited_accounts", true)
 	assertConfigValue(t, got, "login_page_image_url", "https://new.example/login.png")
 	assertConfigValue(t, got, "login_page_image_mode", "cover")
 	assertConfigValue(t, got, "login_page_image_zoom", float64(2))
@@ -708,23 +739,20 @@ func TestStoreUpdateOverridesEnvOnlyRuntimeSettings(t *testing.T) {
 	}
 
 	for key, want := range map[string]string{
-		"IMAGE_BASE_URL":                    "https://new.example/root/",
-		"PROXY":                             "http://127.0.0.1:9090",
-		"REFRESH_ACCOUNT_INTERVAL_MINUTE":   "9",
-		"CREATION_TASK_TIMEOUT_SECONDS":     "480",
-		"USER_DEFAULT_CONCURRENT_LIMIT":     "3",
-		"USER_DEFAULT_RPM_LIMIT":            "45",
-		"IMAGE_RETENTION_DAYS":              "12",
-		"IMAGE_STORAGE_LIMIT_MB":            "1024",
-		"LOG_RETENTION_DAYS":                "30",
-		"AUTO_REMOVE_INVALID_ACCOUNTS":      "false",
-		"AUTO_REMOVE_RATE_LIMITED_ACCOUNTS": "true",
-		"LOG_LEVELS":                        "debug,info",
-		"LOGIN_PAGE_IMAGE_URL":              "https://new.example/login.png",
-		"LOGIN_PAGE_IMAGE_MODE":             "cover",
-		"LOGIN_PAGE_IMAGE_ZOOM":             "2",
-		"LOGIN_PAGE_IMAGE_POSITION_X":       "25",
-		"LOGIN_PAGE_IMAGE_POSITION_Y":       "75",
+		"IMAGE_BASE_URL":                "https://new.example/root/",
+		"PROXY":                         "http://127.0.0.1:9090",
+		"CREATION_TASK_TIMEOUT_SECONDS": "480",
+		"USER_DEFAULT_CONCURRENT_LIMIT": "3",
+		"USER_DEFAULT_RPM_LIMIT":        "45",
+		"IMAGE_RETENTION_DAYS":          "12",
+		"IMAGE_STORAGE_LIMIT_MB":        "1024",
+		"LOG_RETENTION_DAYS":            "30",
+		"LOG_LEVELS":                    "debug,info",
+		"LOGIN_PAGE_IMAGE_URL":          "https://new.example/login.png",
+		"LOGIN_PAGE_IMAGE_MODE":         "cover",
+		"LOGIN_PAGE_IMAGE_ZOOM":         "2",
+		"LOGIN_PAGE_IMAGE_POSITION_X":   "25",
+		"LOGIN_PAGE_IMAGE_POSITION_Y":   "75",
 	} {
 		if gotEnv := os.Getenv(key); gotEnv != want {
 			t.Fatalf("%s = %q, want %q", key, gotEnv, want)
@@ -825,6 +853,26 @@ func TestStoreUpdateRejectsInvalidRelayBaseURL(t *testing.T) {
 	}
 	if _, err := store.Update(map[string]any{"relay_base_url": "relay.invalid"}); err == nil {
 		t.Fatal("Update() accepted invalid relay_base_url")
+	}
+}
+
+func TestStoreAllowsEmptyImageBaseURLAndRejectsInvalidOverride(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("ROOT_DIR", root)
+	unsetEnv(t, "IMAGE_BASE_URL")
+
+	store, err := NewStore()
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	if _, err := store.Update(map[string]any{"base_url": ""}); err != nil {
+		t.Fatalf("Update(empty base_url) error = %v", err)
+	}
+	if store.BaseURL() != "" {
+		t.Fatalf("BaseURL() = %q, want same-origin mode", store.BaseURL())
+	}
+	if _, err := store.Update(map[string]any{"base_url": "files.invalid"}); err == nil {
+		t.Fatal("Update() accepted invalid image base URL")
 	}
 }
 

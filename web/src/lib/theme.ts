@@ -1,6 +1,7 @@
 export type ColorTheme = "light" | "dark";
 
-export const COLOR_THEME_STORAGE_KEY = "chatgpt2api:color-theme";
+const COLOR_THEME_STORAGE_KEY = "chatgpt2api:color-theme";
+export const COLOR_THEME_CHANGE_EVENT = "chatgpt2api:color-theme-change";
 
 type ThemeTransitionOptions = {
   force?: boolean;
@@ -39,6 +40,7 @@ function applyColorThemeToRoot(theme: ColorTheme) {
   root.classList.remove("light", "dark");
   root.classList.add(theme);
   root.style.colorScheme = theme;
+  window.dispatchEvent(new CustomEvent<ColorTheme>(COLOR_THEME_CHANGE_EVENT, { detail: theme }));
 }
 
 function shouldAnimateThemeTransition() {

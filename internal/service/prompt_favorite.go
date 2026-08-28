@@ -16,6 +16,17 @@ const (
 	promptFavoriteSaveAttempts = 3
 )
 
+var referenceProjectPromptFavoriteSources = map[string]struct{}{
+	"gpt-image-2-prompts":         {},
+	"awesome-gpt-image":           {},
+	"awesome-gpt4o-image-prompts": {},
+	"xianyu-awesome-gptimage2":    {},
+	"youmind-gpt-image-2":         {},
+	"youmind-nano-banana-pro":     {},
+	"davidwu-gpt-image2-prompts":  {},
+	"freestylefly-gpt-image-2":    {},
+}
+
 type PromptFavoriteService struct {
 	mu    sync.Mutex
 	store storage.JSONDocumentBackend
@@ -23,11 +34,6 @@ type PromptFavoriteService struct {
 
 func NewPromptFavoriteService(backend ...storage.Backend) *PromptFavoriteService {
 	return &PromptFavoriteService{store: firstJSONDocumentStore(backend)}
-}
-
-func (s *PromptFavoriteService) List(ownerID string) []map[string]any {
-	items, _ := s.ListWithError(ownerID)
-	return items
 }
 
 func (s *PromptFavoriteService) ListWithError(ownerID string) ([]map[string]any, error) {
@@ -41,7 +47,15 @@ func (s *PromptFavoriteService) ListWithError(ownerID string) ([]map[string]any,
 	if err != nil {
 		return nil, err
 	}
-	return copyMaps(items), nil
+	return copyPromptFavorites(items), nil
+}
+
+func copyPromptFavorites(items []map[string]any) []map[string]any {
+	out := make([]map[string]any, len(items))
+	for index, item := range items {
+		out[index] = util.CopyMap(item)
+	}
+	return out
 }
 
 func (s *PromptFavoriteService) Upsert(ownerID string, body map[string]any) (map[string]any, error) {
@@ -186,6 +200,11 @@ func normalizePromptFavoriteInput(body map[string]any, now, existingFavoritedAt 
 		category = "未分类"
 	}
 	mode := normalizePromptFavoriteMode(util.Clean(body["mode"]))
+	referenceImageURLs := normalizePromptFavoriteStringList(body["reference_image_urls"])
+	if isReferenceProjectPromptFavoriteSource(source) {
+		mode = ""
+		referenceImageURLs = []string{}
+	}
 	sourceLabel := util.Clean(body["source_label"])
 	if sourceLabel == "" {
 		sourceLabel = source
@@ -201,16 +220,18 @@ func normalizePromptFavoriteInput(body map[string]any, now, existingFavoritedAt 
 		"source":               source,
 		"title":                title,
 		"preview":              preview,
-		"reference_image_urls": normalizePromptFavoriteStringList(body["reference_image_urls"]),
+		"reference_image_urls": referenceImageURLs,
 		"prompt":               prompt,
 		"author":               author,
-		"mode":                 mode,
 		"category":             category,
 		"tags":                 normalizePromptFavoriteStringList(body["tags"]),
 		"source_label":         sourceLabel,
 		"is_nsfw":              util.ToBool(body["is_nsfw"]),
 		"favorited_at":         favoritedAt,
 		"updated_at":           now,
+	}
+	if mode != "" {
+		item["mode"] = mode
 	}
 	if link := util.Clean(body["link"]); link != "" {
 		item["link"] = link
@@ -247,7 +268,7 @@ func normalizePromptFavoriteSource(source string) string {
 	if source == "" || len(source) > 96 {
 		return ""
 	}
-	if source != "banana-prompt-quicker" && source != "awesome-gpt-image-2-prompts" && !strings.HasPrefix(source, "prompt-source-") {
+	if source != "banana-prompt-quicker" && source != "awesome-gpt-image-2-prompts" && !isReferenceProjectPromptFavoriteSource(source) && !strings.HasPrefix(source, "prompt-source-") {
 		return ""
 	}
 	for _, r := range source {
@@ -259,11 +280,16 @@ func normalizePromptFavoriteSource(source string) string {
 	return source
 }
 
+func isReferenceProjectPromptFavoriteSource(source string) bool {
+	_, ok := referenceProjectPromptFavoriteSources[source]
+	return ok
+}
+
 func normalizePromptFavoriteMode(mode string) string {
-	if mode == "edit" {
-		return "edit"
+	if mode == "edit" || mode == "generate" {
+		return mode
 	}
-	return "generate"
+	return ""
 }
 
 func normalizePromptFavoriteStringList(value any) []string {

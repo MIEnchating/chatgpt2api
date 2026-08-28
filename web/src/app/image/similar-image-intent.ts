@@ -1,4 +1,4 @@
-export const SIMILAR_IMAGE_INTENT_STORAGE_KEY = "chatgpt2api:image_similar_intent";
+const SIMILAR_IMAGE_INTENT_STORAGE_KEY = "chatgpt2api:image_similar_intent";
 
 export type SimilarImageIntent = {
   id: string;
@@ -16,11 +16,6 @@ export type SimilarImageIntent = {
   outputCompression?: number;
 };
 
-type SimilarImageIntentInput = Omit<SimilarImageIntent, "id" | "createdAt" | "sourceImageUrl" | "sourceImageUrls"> & {
-  sourceImageUrl?: string;
-  sourceImageUrls?: string[];
-};
-
 function normalizeSourceImageUrls(sourceImageUrls?: string[], sourceImageUrl?: string) {
   return Array.from(
     new Set(
@@ -28,26 +23,6 @@ function normalizeSourceImageUrls(sourceImageUrls?: string[], sourceImageUrl?: s
         .map((url) => url.trim())
         .filter(Boolean),
     ),
-  );
-}
-
-export function writeSimilarImageIntent(intent: SimilarImageIntentInput) {
-  const sourceImageUrls = normalizeSourceImageUrls(intent.sourceImageUrls, intent.sourceImageUrl);
-  if (sourceImageUrls.length === 0) {
-    return;
-  }
-  window.localStorage.setItem(
-    SIMILAR_IMAGE_INTENT_STORAGE_KEY,
-    JSON.stringify({
-      ...intent,
-      sourceImageUrl: sourceImageUrls[0],
-      sourceImageUrls,
-      sourceKind: intent.sourceKind === "original_references" ? "original_references" : "public_image",
-      id: typeof crypto !== "undefined" && "randomUUID" in crypto
-        ? crypto.randomUUID()
-        : `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-      createdAt: new Date().toISOString(),
-    }),
   );
 }
 

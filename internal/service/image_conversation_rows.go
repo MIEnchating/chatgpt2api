@@ -78,8 +78,8 @@ func (s *ImageConversationHistoryService) ListPage(ctx context.Context, ownerID,
 	if limit < 1 || limit > imageConversationMaximumLimit {
 		return ImageConversationHistoryPage{}, ImageConversationHistoryCursorError{Err: fmt.Errorf("limit must be between 1 and %d", imageConversationMaximumLimit)}
 	}
-	if s.rows == nil {
-		return s.listLegacyImageConversationPage(ownerID, cursor, limit)
+	if s == nil || s.rows == nil {
+		return ImageConversationHistoryPage{}, fmt.Errorf("image conversation row backend is required")
 	}
 
 	storageCursor, _, err := decodeImageConversationCursor(cursor)
@@ -149,17 +149,8 @@ func (s *ImageConversationHistoryService) GetItem(ctx context.Context, ownerID, 
 	if ownerID == "" || conversationID == "" {
 		return nil, false, 0, fmt.Errorf("owner_id and conversation id are required")
 	}
-	if s.rows == nil {
-		items, err := s.List(ownerID)
-		if err != nil {
-			return nil, false, 1, err
-		}
-		for _, item := range items {
-			if util.Clean(item["id"]) == conversationID {
-				return item, true, 1, nil
-			}
-		}
-		return nil, false, 1, nil
+	if s == nil || s.rows == nil {
+		return nil, false, 0, fmt.Errorf("image conversation row backend is required")
 	}
 	for attempt := 0; attempt < 3; attempt++ {
 		state, err := s.ensureImageConversationRows(ctx, ownerID)
@@ -209,21 +200,8 @@ func (s *ImageConversationHistoryService) ListActive(ctx context.Context, ownerI
 	if limit < 0 || limit > imageConversationInternalLimit {
 		return nil, 0, ImageConversationHistoryCursorError{Err: fmt.Errorf("active limit must not exceed %d", imageConversationInternalLimit)}
 	}
-	if s.rows == nil {
-		items, err := s.List(ownerID)
-		if err != nil {
-			return nil, 1, err
-		}
-		active := make([]map[string]any, 0)
-		for _, item := range items {
-			if imageConversationHasActiveTasks(item) {
-				active = append(active, item)
-				if len(active) == limit {
-					break
-				}
-			}
-		}
-		return active, 1, nil
+	if s == nil || s.rows == nil {
+		return nil, 0, fmt.Errorf("image conversation row backend is required")
 	}
 	for attempt := 0; attempt < 3; attempt++ {
 		state, err := s.ensureImageConversationRows(ctx, ownerID)
@@ -268,9 +246,8 @@ func (s *ImageConversationHistoryService) MergeWithAcknowledgementsMinimal(ctx c
 	if ownerID == "" {
 		return nil, 0, fmt.Errorf("owner_id is required")
 	}
-	if s.rows == nil {
-		_, acknowledgements, err := s.MergeWithAcknowledgements(ownerID, incoming)
-		return acknowledgements, 1, err
+	if s == nil || s.rows == nil {
+		return nil, 0, fmt.Errorf("image conversation row backend is required")
 	}
 	return s.mergeImageConversationRowsContext(ctx, ownerID, incoming, expectedGeneration, true)
 }
@@ -281,9 +258,8 @@ func (s *ImageConversationHistoryService) DeleteMinimal(ctx context.Context, own
 	if ownerID == "" || conversationID == "" {
 		return false, 0, fmt.Errorf("owner_id and conversation id are required")
 	}
-	if s.rows == nil {
-		_, removed, err := s.Delete(ownerID, conversationID)
-		return removed, 1, err
+	if s == nil || s.rows == nil {
+		return false, 0, fmt.Errorf("image conversation row backend is required")
 	}
 	if _, err := s.ensureImageConversationRows(ctx, ownerID); err != nil {
 		return false, 0, err
@@ -301,68 +277,12 @@ func (s *ImageConversationHistoryService) ClearMinimal(ctx context.Context, owne
 	if ownerID == "" {
 		return 0, fmt.Errorf("owner_id is required")
 	}
-	if s.rows == nil {
-		if err := s.Clear(ownerID); err != nil {
-			return 0, err
-		}
-		return 1, nil
+	if s == nil || s.rows == nil {
+		return 0, fmt.Errorf("image conversation row backend is required")
 	}
 	now := time.Now().UTC()
 	state, err := s.rows.Clear(ctx, ownerID, now.Format(time.RFC3339Nano), now.UnixMilli())
 	return state.CursorGeneration, err
-}
-
-func (s *ImageConversationHistoryService) listAllImageConversationRows(ownerID string) ([]map[string]any, error) {
-	ctx := context.Background()
-attemptLoop:
-	for attempt := 0; attempt < 3; attempt++ {
-		state, err := s.ensureImageConversationRows(ctx, ownerID)
-		if err != nil {
-			return nil, err
-		}
-		items := make([]map[string]any, 0)
-		var cursor *storage.ImageConversationCursor
-		for {
-			page, listErr := s.rows.List(ctx, ownerID, state.Generation, cursor, imageConversationInternalLimit)
-			if errors.Is(listErr, storage.ErrImageConversationGenerationStale) || errors.Is(listErr, storage.ErrImageConversationCursorStale) {
-				break
-			}
-			if listErr != nil {
-				return nil, listErr
-			}
-			fullRecords := make([]storage.ImageConversationRecord, 0, len(page.Records))
-			for _, summaryRecord := range page.Records {
-				record, exists, loadErr := s.rows.Load(ctx, ownerID, summaryRecord.ID)
-				if loadErr != nil {
-					return nil, loadErr
-				}
-				if !exists || record.DeletedAtMillis > 0 || len(record.Data) == 0 {
-					continue
-				}
-				fullRecords = append(fullRecords, record)
-			}
-			pageItems, _, decodeErr := s.assetizeImageConversationRecords(ctx, ownerID, state.Generation, fullRecords)
-			if errors.Is(decodeErr, storage.ErrImageConversationCASConflict) || errors.Is(decodeErr, storage.ErrImageConversationGenerationStale) || errors.Is(decodeErr, storage.ErrImageConversationGone) {
-				continue attemptLoop
-			}
-			if decodeErr != nil {
-				return nil, decodeErr
-			}
-			items = append(items, pageItems...)
-			if page.NextCursor == nil {
-				latest, stateErr := s.rows.LoadOwnerState(ctx, ownerID)
-				if stateErr != nil {
-					return nil, stateErr
-				}
-				if latest.Generation != state.Generation || latest.CursorGeneration != state.CursorGeneration {
-					continue attemptLoop
-				}
-				return items, nil
-			}
-			cursor = page.NextCursor
-		}
-	}
-	return nil, storage.ErrImageConversationGenerationStale
 }
 
 func (s *ImageConversationHistoryService) conversationAssetReferencesFromRows(ctx context.Context, ownerID string) (map[string]struct{}, error) {
@@ -377,14 +297,6 @@ attemptLoop:
 		}
 		if err := ctx.Err(); err != nil {
 			return nil, err
-		}
-		// Asset governance must remain a lightweight background read. A user's
-		// normal history request owns legacy document migration; GC relies on the
-		// orphan grace period until that migration has completed. Report the
-		// reference set as unavailable so cleanup fails closed instead of treating
-		// an unmigrated legacy document as an authoritative empty history.
-		if !state.LegacyMigrated {
-			return nil, ErrImageConversationAssetReferencesUnavailable
 		}
 		references := make(map[string]struct{})
 		var cursor *storage.ImageConversationCursor
@@ -538,20 +450,6 @@ func mergeImageConversationAssetReferenceSets(destination, source map[string]str
 	for assetPath := range source {
 		destination[assetPath] = struct{}{}
 	}
-}
-
-func (s *ImageConversationHistoryService) deleteImageConversationRow(ownerID, conversationID string) (bool, error) {
-	removed, _, err := s.DeleteMinimal(context.Background(), ownerID, conversationID)
-	return removed, err
-}
-
-func (s *ImageConversationHistoryService) clearImageConversationRows(ownerID string) (storage.ImageConversationOwnerState, error) {
-	generation, err := s.ClearMinimal(context.Background(), ownerID)
-	return storage.ImageConversationOwnerState{CursorGeneration: generation, LegacyMigrated: err == nil}, err
-}
-
-func (s *ImageConversationHistoryService) mergeImageConversationRows(ownerID string, incoming []map[string]any, expectedGeneration *int64) ([]ImageConversationMergeAcknowledgement, int64, error) {
-	return s.mergeImageConversationRowsContext(context.Background(), ownerID, incoming, expectedGeneration, false)
 }
 
 type imageConversationRowSnapshot struct {
@@ -786,46 +684,10 @@ func planImageConversationRowWrite(
 }
 
 func (s *ImageConversationHistoryService) ensureImageConversationRows(ctx context.Context, ownerID string) (storage.ImageConversationOwnerState, error) {
-	lock := s.lockForOwner(ownerID)
-	lock.Lock()
-	defer lock.Unlock()
-
-	state, err := s.rows.LoadOwnerState(ctx, ownerID)
-	if err != nil || state.LegacyMigrated {
-		return state, err
+	if s == nil || s.rows == nil {
+		return storage.ImageConversationOwnerState{}, fmt.Errorf("image conversation row backend is required")
 	}
-	records := make([]storage.ImageConversationRecord, 0)
-	if s.store != nil {
-		items, deleted, clearedAt, removedActiveOutput, loadErr := s.loadDocumentLocked(ownerID)
-		if loadErr != nil {
-			return state, loadErr
-		}
-		for _, item := range items {
-			record, recordErr := imageConversationRecordFromItem(item, "")
-			if recordErr != nil {
-				return state, recordErr
-			}
-			records = append(records, record)
-		}
-		for id, deletedAt := range deleted {
-			deletedAtMillis := imageConversationTimestampMillis(deletedAt)
-			if deletedAtMillis == 0 {
-				deletedAtMillis = 1
-			}
-			records = append(records, storage.ImageConversationRecord{ID: id, DeletedAtMillis: deletedAtMillis})
-		}
-		state.ClearedAt = clearedAt
-		state.ClearedAtMillis = imageConversationTimestampMillis(clearedAt)
-		migrated, migrateErr := s.rows.MigrateLegacy(ctx, ownerID, records, state)
-		if migrateErr != nil {
-			return state, migrateErr
-		}
-		if removedActiveOutput {
-			_ = s.saveLocked(ownerID, items, deleted, clearedAt)
-		}
-		return migrated, nil
-	}
-	return s.rows.MigrateLegacy(ctx, ownerID, records, state)
+	return s.rows.LoadOwnerState(ctx, ownerID)
 }
 
 func imageConversationRecordFromItem(item map[string]any, acceptedHash string) (storage.ImageConversationRecord, error) {
@@ -926,18 +788,6 @@ func (s *ImageConversationHistoryService) assetizeImageConversationRecords(
 		return nil, false, err
 	}
 	return items, changed, nil
-}
-
-func imageConversationItemsFromRecords(records []storage.ImageConversationRecord) ([]map[string]any, error) {
-	items := make([]map[string]any, 0, len(records))
-	for _, record := range records {
-		item, err := imageConversationItemFromRecord(record)
-		if err != nil {
-			return nil, err
-		}
-		items = append(items, item)
-	}
-	return items, nil
 }
 
 func imageConversationSummariesFromRecords(records []storage.ImageConversationRecord) ([]map[string]any, error) {
@@ -1125,65 +975,4 @@ func validImageConversationKey(value string) bool {
 	}
 	_, err := hex.DecodeString(value)
 	return err == nil
-}
-
-func (s *ImageConversationHistoryService) listLegacyImageConversationPage(ownerID, cursor string, limit int) (ImageConversationHistoryPage, error) {
-	items, err := s.List(ownerID)
-	if err != nil {
-		return ImageConversationHistoryPage{}, err
-	}
-	records := make([]storage.ImageConversationRecord, 0, len(items))
-	for _, item := range items {
-		record, recordErr := imageConversationRecordFromItem(item, "")
-		if recordErr != nil {
-			return ImageConversationHistoryPage{}, recordErr
-		}
-		records = append(records, record)
-	}
-	sort.SliceStable(records, func(i, j int) bool {
-		if records[i].UpdatedAtMillis != records[j].UpdatedAtMillis {
-			return records[i].UpdatedAtMillis > records[j].UpdatedAtMillis
-		}
-		return util.SHA256Hex(records[i].ID) > util.SHA256Hex(records[j].ID)
-	})
-	storageCursor, generation, err := decodeImageConversationCursor(cursor)
-	if err != nil {
-		return ImageConversationHistoryPage{}, err
-	}
-	if storageCursor != nil && generation != 1 {
-		return ImageConversationHistoryPage{}, ImageConversationHistoryCursorInvalidatedError{Generation: 1}
-	}
-	start := 0
-	if storageCursor != nil {
-		start = len(records)
-		for index, record := range records {
-			key := util.SHA256Hex(record.ID)
-			if record.UpdatedAtMillis < storageCursor.UpdatedAtMillis || (record.UpdatedAtMillis == storageCursor.UpdatedAtMillis && key < storageCursor.ConversationKey) {
-				start = index
-				break
-			}
-		}
-	}
-	end := start + limit
-	if end > len(records) {
-		end = len(records)
-	}
-	pageRecords := records[start:end]
-	pageItems, err := imageConversationSummariesFromRecords(pageRecords)
-	if err != nil {
-		return ImageConversationHistoryPage{}, err
-	}
-	next := ""
-	if end < len(records) && len(pageRecords) > 0 {
-		last := pageRecords[len(pageRecords)-1]
-		next, err = encodeImageConversationCursor(&storage.ImageConversationCursor{
-			Generation:      1,
-			UpdatedAtMillis: last.UpdatedAtMillis,
-			ConversationKey: util.SHA256Hex(last.ID),
-		})
-		if err != nil {
-			return ImageConversationHistoryPage{}, err
-		}
-	}
-	return ImageConversationHistoryPage{Items: pageItems, NextCursor: next, HasMore: next != "", Generation: 1}, nil
 }

@@ -1,6 +1,10 @@
 package util
 
-import "strings"
+import (
+	"math"
+	"strconv"
+	"strings"
+)
 
 // ImageModelRoute identifies the upstream protocol needed by an image model.
 type ImageModelRoute string
@@ -9,19 +13,13 @@ const (
 	ImageModelRouteOpenAI       ImageModelRoute = "openai-image"
 	ImageModelRouteGoogleGemini ImageModelRoute = "google-gemini-image"
 	ImageModelRouteXAI          ImageModelRoute = "xai-image"
+	ImageModelRouteZhipu        ImageModelRoute = "zhipu-image"
+	ImageModelRouteAgnes        ImageModelRoute = "agnes-image"
 )
 
 const (
-	// Gemini 3 image models support up to 14 reference images according to the
-	// current Google API documentation. GPT Image models support up to 10 input
-	// images. Unknown OpenAI-compatible models keep the conservative four-image
-	// application limit.
-	maxGemini3ReferenceImages  = 14
-	maxGemini25ReferenceImages = 3
-	maxGPTImageReferenceImages = 10
-	maxGPTImageOutputCount     = 10
-	maxDefaultReferenceImages  = 4
-	maxDefaultImageOutputCount = 4
+	maxImageOutputCount     = 15
+	maxImageReferenceImages = int(^uint(0) >> 1)
 )
 
 // ImageModelRouteFor returns the protocol family for a configured image model.
@@ -34,6 +32,12 @@ func ImageModelRouteFor(model string) ImageModelRoute {
 	}
 	if isGoogleGeminiImageModelName(value) {
 		return ImageModelRouteGoogleGemini
+	}
+	if isZhipuImageModelName(value) {
+		return ImageModelRouteZhipu
+	}
+	if isAgnesImageModelName(value) {
+		return ImageModelRouteAgnes
 	}
 	return ImageModelRouteOpenAI
 }
@@ -66,19 +70,17 @@ func isXAIImageModelName(value string) bool {
 	}
 }
 
-func IsGoogleGeminiImageModel(model string) bool {
-	return ImageModelRouteFor(model) == ImageModelRouteGoogleGemini
+func isZhipuImageModelName(value string) bool {
+	return value == "glm-image" || strings.HasPrefix(value, "cogview-")
 }
 
-// IsGoogleGemini3ImageModel identifies current official Gemini 3 image IDs.
-func IsGoogleGemini3ImageModel(model string) bool {
-	value := strings.ToLower(strings.TrimSpace(model))
-	switch value {
-	case "gemini-3.1-flash-lite-image", "gemini-3.1-flash-image", "gemini-3-pro-image":
-		return true
-	default:
-		return false
-	}
+func isAgnesImageModelName(value string) bool {
+	value = strings.NewReplacer("_", "-", " ", "-").Replace(value)
+	return strings.HasPrefix(value, "agnes-image") || strings.HasPrefix(value, "agens-image")
+}
+
+func IsGoogleGeminiImageModel(model string) bool {
+	return ImageModelRouteFor(model) == ImageModelRouteGoogleGemini
 }
 
 // IsGoogleGemini31FlashImageModel identifies Gemini 3.1 Flash Image.
@@ -86,13 +88,31 @@ func IsGoogleGemini31FlashImageModel(model string) bool {
 	return strings.EqualFold(strings.TrimSpace(model), "gemini-3.1-flash-image")
 }
 
-// IsGoogleGeminiFlashLiteImageModel identifies Gemini 3.1 Flash Lite Image.
-func IsGoogleGeminiFlashLiteImageModel(model string) bool {
-	return strings.EqualFold(strings.TrimSpace(model), "gemini-3.1-flash-lite-image")
-}
-
 func IsXAIImageModel(model string) bool {
 	return ImageModelRouteFor(model) == ImageModelRouteXAI
+}
+
+func IsAgnesImageModel(model string) bool {
+	return ImageModelRouteFor(model) == ImageModelRouteAgnes
+}
+
+// NormalizeZhipuImageQuality maps the application's quality vocabulary to
+// the values accepted by GLM-Image and CogView adapters.
+func NormalizeZhipuImageQuality(model, quality string) string {
+	quality = strings.ToLower(strings.TrimSpace(quality))
+	if strings.EqualFold(strings.TrimSpace(model), "glm-image") {
+		return "hd"
+	}
+	if quality == "" || quality == "auto" {
+		return quality
+	}
+	if quality == "high" || quality == "hd" {
+		return "hd"
+	}
+	if quality == "low" || quality == "medium" || quality == "standard" {
+		return "standard"
+	}
+	return ""
 }
 
 // IsOfficialXAIImageModel identifies the image model IDs and aliases listed
@@ -106,6 +126,14 @@ func IsOfficialXAIImageModel(model string) bool {
 // current xAI image generation API.
 func NormalizeXAIImageAspectRatio(value string) (string, bool) {
 	normalized := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(value), " ", ""))
+	normalized = strings.ReplaceAll(normalized, "×", "x")
+	if parts := strings.Split(normalized, "x"); len(parts) == 2 {
+		width, widthErr := strconv.ParseFloat(parts[0], 64)
+		height, heightErr := strconv.ParseFloat(parts[1], 64)
+		if widthErr == nil && heightErr == nil && width > 0 && height > 0 {
+			normalized = closestXAIImageAspectRatio(width / height)
+		}
+	}
 	switch normalized {
 	case "", "auto", "1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3",
 		"2:1", "1:2", "19.5:9", "9:19.5", "20:9", "9:20":
@@ -113,6 +141,20 @@ func NormalizeXAIImageAspectRatio(value string) (string, bool) {
 	default:
 		return "", false
 	}
+}
+
+func closestXAIImageAspectRatio(target float64) string {
+	best := "1:1"
+	bestDistance := math.Inf(1)
+	for _, candidate := range []string{"1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "2:1", "1:2", "19.5:9", "9:19.5", "20:9", "9:20"} {
+		parts := strings.Split(candidate, ":")
+		width, _ := strconv.ParseFloat(parts[0], 64)
+		height, _ := strconv.ParseFloat(parts[1], 64)
+		if distance := math.Abs(width/height - target); distance < bestDistance {
+			best, bestDistance = candidate, distance
+		}
+	}
+	return best
 }
 
 // NormalizeXAIImageResolution returns a resolution accepted by the current
@@ -127,49 +169,18 @@ func NormalizeXAIImageResolution(value string) (string, bool) {
 	}
 }
 
-// SupportsXAIImageQuality reports whether the model accepts xAI's quality
-// request field. The official API currently limits it to image 2.0.
-func SupportsXAIImageQuality(model string) bool {
-	return strings.EqualFold(strings.TrimSpace(model), "grok-imagine-image-2.0")
-}
-
-func isOfficialGPTImageModelName(value string) bool {
-	return strings.HasPrefix(value, "gpt-image-") || value == "chatgpt-image-latest"
-}
-
 // MaxImageOutputCount returns the maximum number of images accepted for one
 // request by this application for the selected model.
 func MaxImageOutputCount(model string) int {
-	value := strings.ToLower(strings.TrimSpace(model))
-	if isOfficialGPTImageModelName(value) {
-		return maxGPTImageOutputCount
-	}
-	return maxDefaultImageOutputCount
+	_ = model
+	return maxImageOutputCount
 }
 
-// MaxImageReferenceImages returns the number of reference images that this
-// application can safely send for a model through the configured upstream
-// route. This deliberately describes the NewAPI-backed capability, rather
-// than exposing provider features that NewAPI currently drops.
+// MaxImageReferenceImages follows the reference workbench: generic image
+// requests do not guess provider limits before the provider adapter runs.
 func MaxImageReferenceImages(model string) int {
-	value := strings.ToLower(strings.TrimSpace(model))
-	switch ImageModelRouteFor(value) {
-	case ImageModelRouteGoogleGemini:
-		if IsGoogleGemini3ImageModel(value) {
-			return maxGemini3ReferenceImages
-		}
-		if value == "gemini-2.5-flash-image" {
-			return maxGemini25ReferenceImages
-		}
-		return maxDefaultReferenceImages
-	case ImageModelRouteXAI:
-		// The current NewAPI xAI adaptor only forwards generation fields and
-		// does not forward image edit requests or reference images.
+	if ImageModelRouteFor(model) == ImageModelRouteZhipu {
 		return 0
-	default:
-		if isOfficialGPTImageModelName(value) {
-			return maxGPTImageReferenceImages
-		}
-		return maxDefaultReferenceImages
 	}
+	return maxImageReferenceImages
 }

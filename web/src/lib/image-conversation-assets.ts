@@ -1,5 +1,5 @@
-export const MAX_IMAGE_CONVERSATION_REFERENCE_IMAGES = 4;
-export const MAX_IMAGE_CONVERSATION_ASSET_FILE_BYTES = 40 * 1024 * 1024;
+const MAX_IMAGE_CONVERSATION_REFERENCE_IMAGES = 4;
+const MAX_IMAGE_CONVERSATION_ASSET_FILE_BYTES = 40 * 1024 * 1024;
 export const MAX_IMAGE_CONVERSATION_ASSET_BATCH_BYTES = 80 * 1024 * 1024;
 export const IMAGE_CONVERSATION_ASSET_URL_PREFIX = "/conversation-assets/";
 
@@ -95,8 +95,8 @@ export function normalizeImageConversationAssetReference(value: unknown): ImageC
     return null;
   }
   const source = value as Record<string, unknown>;
-  const explicitAssetPath = textValue(source.assetPath) || textValue(source.asset_path);
-  const explicitDataURL = textValue(source.dataUrl) || textValue(source.data_url);
+  const explicitAssetPath = textValue(source.assetPath);
+  const explicitDataURL = textValue(source.dataUrl);
   const explicitURL = textValue(source.url);
   const assetPath = explicitAssetPath || assetPathFromURL(explicitURL) || assetPathFromURL(explicitDataURL);
   const managedURL = assetPath ? explicitURL || assetURLFromPath(assetPath) : "";

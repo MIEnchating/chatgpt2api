@@ -19,8 +19,6 @@ export type RetainedAuthenticatedImage = {
 
 const authenticatedImageCache = new Map<string, CachedAuthenticatedImage>();
 const pendingAuthenticatedImageFetches = new Map<string, Promise<{ key: string; objectURL: string; byteSize: number }>>();
-const authenticatedImageCacheKeyGenerations = new Map<string, number>();
-const authenticatedImageKeyOperations = new Map<string, number>();
 let authenticatedImageCacheBytes = 0;
 let authenticatedImageCacheGeneration = 0;
 
@@ -42,42 +40,6 @@ function apiBaseURL() {
 
 function isManagedImagePath(pathname: string) {
   return MANAGED_IMAGE_PREFIXES.some((prefix) => pathname.startsWith(prefix));
-}
-
-function normalizeManagedCachePath(value: string) {
-  return value.replace(/\\/g, "/").replace(/^\/+/, "");
-}
-
-function decodedPathSegment(value: string) {
-  try {
-    return decodeURIComponent(value);
-  } catch {
-    return value;
-  }
-}
-
-function managedImageSourcePathFromURL(value: string) {
-  try {
-    const pathname = new URL(value).pathname;
-    if (pathname.startsWith("/images/")) {
-      return normalizeManagedCachePath(decodedPathSegment(pathname.slice("/images/".length)));
-    }
-    if (pathname.startsWith("/image-thumbnails/")) {
-      const thumbnailPath = decodedPathSegment(pathname.slice("/image-thumbnails/".length));
-      return normalizeManagedCachePath(thumbnailPath.replace(/\.jpg$/i, ""));
-    }
-    if (pathname.startsWith("/image-references/")) {
-      const referencePath = normalizeManagedCachePath(decodedPathSegment(pathname.slice("/image-references/".length)));
-      const markerIndex = referencePath.lastIndexOf(".refs/");
-      return markerIndex > 0 ? referencePath.slice(0, markerIndex) : referencePath;
-    }
-    if (pathname.startsWith("/conversation-assets/")) {
-      return normalizeManagedCachePath(decodedPathSegment(pathname.slice("/conversation-assets/".length)));
-    }
-  } catch {
-    // Ignore invalid cache keys; they cannot match managed image paths.
-  }
-  return "";
 }
 
 function touchCachedAuthenticatedImage(entry: CachedAuthenticatedImage) {
@@ -132,34 +94,6 @@ function storeAuthenticatedImageCacheEntry(key: string, objectURL: string, byteS
   authenticatedImageCacheBytes += byteSize;
   trimAuthenticatedImageCache();
   return entry;
-}
-
-function authenticatedImageKeyGeneration(key: string) {
-  return authenticatedImageCacheKeyGenerations.get(key) ?? 0;
-}
-
-function beginAuthenticatedImageKeyOperation(key: string) {
-  authenticatedImageKeyOperations.set(key, (authenticatedImageKeyOperations.get(key) ?? 0) + 1);
-  return authenticatedImageKeyGeneration(key);
-}
-
-function finishAuthenticatedImageKeyOperation(key: string) {
-  const remaining = (authenticatedImageKeyOperations.get(key) ?? 1) - 1;
-  if (remaining > 0) {
-    authenticatedImageKeyOperations.set(key, remaining);
-    return;
-  }
-  authenticatedImageKeyOperations.delete(key);
-  authenticatedImageCacheKeyGenerations.delete(key);
-}
-
-function invalidateAuthenticatedImageKey(key: string) {
-  if ((authenticatedImageKeyOperations.get(key) ?? 0) > 0) {
-    authenticatedImageCacheKeyGenerations.set(key, authenticatedImageKeyGeneration(key) + 1);
-  } else {
-    authenticatedImageCacheKeyGenerations.delete(key);
-  }
-  pendingAuthenticatedImageFetches.delete(key);
 }
 
 async function decodeAuthenticatedImage(objectURL: string) {
@@ -244,13 +178,12 @@ export async function fetchCachedAuthenticatedImage(src: string): Promise<Retain
   const generation = authenticatedImageCacheGeneration;
   let pending = pendingAuthenticatedImageFetches.get(key);
   if (!pending) {
-    const keyGeneration = beginAuthenticatedImageKeyOperation(key);
     const fetchPromise = fetchAuthenticatedImageBlob(src)
       .then(async (blob) => {
         const objectURL = URL.createObjectURL(blob);
         try {
           await decodeAuthenticatedImage(objectURL);
-          if (generation !== authenticatedImageCacheGeneration || keyGeneration !== authenticatedImageKeyGeneration(key)) {
+          if (generation !== authenticatedImageCacheGeneration) {
             throw new Error("图片缓存已重置");
           }
           storeAuthenticatedImageCacheEntry(key, objectURL, blob.size);
@@ -264,7 +197,6 @@ export async function fetchCachedAuthenticatedImage(src: string): Promise<Retain
       if (pendingAuthenticatedImageFetches.get(key) === pending) {
         pendingAuthenticatedImageFetches.delete(key);
       }
-      finishAuthenticatedImageKeyOperation(key);
     });
     pendingAuthenticatedImageFetches.set(key, pending);
   }
@@ -281,20 +213,17 @@ export async function primeAuthenticatedImageCache(src: string, blob: Blob) {
   const key = resolveImageRequestURL(src);
   if (!key || authenticatedImageCache.has(key)) return;
   const generation = authenticatedImageCacheGeneration;
-  const keyGeneration = beginAuthenticatedImageKeyOperation(key);
   let objectURL = "";
   try {
     objectURL = URL.createObjectURL(blob);
     await decodeAuthenticatedImage(objectURL);
-    if (generation !== authenticatedImageCacheGeneration || keyGeneration !== authenticatedImageKeyGeneration(key)) {
+    if (generation !== authenticatedImageCacheGeneration) {
       throw new Error("图片缓存已重置");
     }
     storeAuthenticatedImageCacheEntry(key, objectURL, blob.size);
   } catch (error) {
     if (objectURL) URL.revokeObjectURL(objectURL);
     throw error;
-  } finally {
-    finishAuthenticatedImageKeyOperation(key);
   }
 }
 
@@ -308,7 +237,8 @@ export function releaseCachedAuthenticatedImage(key: string) {
   trimAuthenticatedImageCache();
 }
 
-export function getCachedAuthenticatedImageByteSize(src: string) {
+export function getCachedAuthenticatedImageByteSize(src?: string) {
+  if (!src) return 0;
   try {
     const entry = authenticatedImageCache.get(resolveImageRequestURL(src));
     if (!entry) {
@@ -321,43 +251,9 @@ export function getCachedAuthenticatedImageByteSize(src: string) {
   }
 }
 
-export function invalidateAuthenticatedImageCacheForPaths(paths: string[]) {
-  const pathSet = new Set(paths.map(normalizeManagedCachePath));
-  const keys = new Set<string>();
-  for (const key of authenticatedImageCache.keys()) {
-    const sourcePath = managedImageSourcePathFromURL(key);
-    if (sourcePath && pathSet.has(sourcePath)) {
-      keys.add(key);
-    }
-  }
-  for (const key of pendingAuthenticatedImageFetches.keys()) {
-    const sourcePath = managedImageSourcePathFromURL(key);
-    if (sourcePath && pathSet.has(sourcePath)) {
-      keys.add(key);
-    }
-  }
-  for (const key of authenticatedImageKeyOperations.keys()) {
-    const sourcePath = managedImageSourcePathFromURL(key);
-    if (sourcePath && pathSet.has(sourcePath)) {
-      keys.add(key);
-    }
-  }
-
-  for (const key of keys) {
-    invalidateAuthenticatedImageKey(key);
-    const entry = authenticatedImageCache.get(key);
-    if (entry) {
-      URL.revokeObjectURL(entry.objectURL);
-      authenticatedImageCacheBytes -= entry.byteSize;
-      authenticatedImageCache.delete(key);
-    }
-  }
-}
-
 export function clearAuthenticatedImageCache() {
   authenticatedImageCacheGeneration += 1;
   pendingAuthenticatedImageFetches.clear();
-  authenticatedImageCacheKeyGenerations.clear();
   for (const entry of authenticatedImageCache.values()) {
     URL.revokeObjectURL(entry.objectURL);
   }

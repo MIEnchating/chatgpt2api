@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -15,7 +16,6 @@ import (
 )
 
 const (
-	canvasDocumentDir                          = "canvas_documents"
 	canvasWorkspaceDir                         = "canvas_workspaces"
 	canvasActiveProjectDir                     = "canvas_active_projects"
 	canvasDocumentVersion                      = 1
@@ -30,6 +30,9 @@ const (
 	canvasDocumentMaxTitle                     = 200
 	canvasDocumentMaxNodeDim                   = 20000
 	canvasDocumentMaxGenerationReferenceImages = 14
+	canvasDocumentMaxAgentMessages             = 100
+	canvasDocumentMaxAgentSessions             = 24
+	canvasDocumentMaxAgentDataBytes            = 512 << 10
 	canvasWorkspaceSaveAttempts                = 3
 )
 
@@ -57,52 +60,111 @@ type CanvasViewport struct {
 	Y    float64 `json:"y"`
 }
 
+type CanvasCameraControl struct {
+	Enabled     bool    `json:"enabled"`
+	Camera      string  `json:"camera,omitempty"`
+	Lens        string  `json:"lens,omitempty"`
+	FocalLength float64 `json:"focal_length,omitempty"`
+	Aperture    float64 `json:"aperture,omitempty"`
+}
+
 type CanvasNode struct {
-	ID                           string   `json:"id"`
-	Type                         string   `json:"type"`
-	X                            float64  `json:"x"`
-	Y                            float64  `json:"y"`
-	Width                        float64  `json:"width"`
-	Height                       float64  `json:"height"`
-	FontSize                     int      `json:"font_size,omitempty"`
-	NaturalWidth                 int      `json:"natural_width,omitempty"`
-	NaturalHeight                int      `json:"natural_height,omitempty"`
-	FreeResize                   bool     `json:"free_resize,omitempty"`
-	ScaleX                       float64  `json:"scale_x"`
-	ScaleY                       float64  `json:"scale_y"`
-	Angle                        float64  `json:"angle,omitempty"`
-	URL                          string   `json:"url,omitempty"`
-	ThumbnailURL                 string   `json:"thumbnail_url,omitempty"`
-	Title                        string   `json:"title,omitempty"`
-	Prompt                       string   `json:"prompt,omitempty"`
-	ComposerContent              *string  `json:"composer_content,omitempty"`
-	ParentID                     string   `json:"parent_id,omitempty"`
-	TaskID                       string   `json:"task_id,omitempty"`
-	GenerationModel              string   `json:"generation_model,omitempty"`
-	GenerationSize               string   `json:"generation_size,omitempty"`
-	GenerationResolution         string   `json:"generation_resolution,omitempty"`
-	GenerationQuality            string   `json:"generation_quality,omitempty"`
-	GenerationCount              int      `json:"generation_count,omitempty"`
-	GenerationOutputFormat       string   `json:"generation_output_format,omitempty"`
-	GenerationOutputCompression  *int     `json:"generation_output_compression,omitempty"`
-	GenerationStream             *bool    `json:"generation_stream,omitempty"`
-	GenerationPartialImages      int      `json:"generation_partial_images,omitempty"`
-	GenerationStatus             string   `json:"generation_status,omitempty"`
-	GenerationError              string   `json:"generation_error,omitempty"`
-	GenerationType               string   `json:"generation_type,omitempty"`
-	GenerationReferenceURLs      []string `json:"generation_reference_urls,omitempty"`
-	GenerationVideoModel         string   `json:"generation_video_model,omitempty"`
-	GenerationVideoSize          string   `json:"generation_video_size,omitempty"`
-	GenerationVideoSeconds       int      `json:"generation_video_seconds,omitempty"`
-	GenerationVideoResolution    string   `json:"generation_video_resolution,omitempty"`
-	GenerationVideoAudio         *bool    `json:"generation_video_audio,omitempty"`
-	GenerationVideoWatermark     *bool    `json:"generation_video_watermark,omitempty"`
-	GenerationVideoReferenceURLs []string `json:"generation_video_reference_urls,omitempty"`
-	BatchChildIDs                []string `json:"batch_child_ids,omitempty"`
-	BatchRootID                  string   `json:"batch_root_id,omitempty"`
-	BatchPrimaryID               string   `json:"batch_primary_id,omitempty"`
-	BatchExpanded                *bool    `json:"batch_expanded,omitempty"`
-	CreatedAt                    string   `json:"created_at,omitempty"`
+	ID                                   string               `json:"id"`
+	Type                                 string               `json:"type"`
+	X                                    float64              `json:"x"`
+	Y                                    float64              `json:"y"`
+	Width                                float64              `json:"width"`
+	Height                               float64              `json:"height"`
+	FontSize                             int                  `json:"font_size,omitempty"`
+	NaturalWidth                         int                  `json:"natural_width,omitempty"`
+	NaturalHeight                        int                  `json:"natural_height,omitempty"`
+	Bytes                                int64                `json:"bytes,omitempty"`
+	FreeResize                           bool                 `json:"free_resize,omitempty"`
+	ScaleX                               float64              `json:"scale_x"`
+	ScaleY                               float64              `json:"scale_y"`
+	Angle                                float64              `json:"angle,omitempty"`
+	URL                                  string               `json:"url,omitempty"`
+	StorageKey                           string               `json:"storage_key,omitempty"`
+	ThumbnailURL                         string               `json:"thumbnail_url,omitempty"`
+	Title                                string               `json:"title,omitempty"`
+	Prompt                               string               `json:"prompt,omitempty"`
+	ComposerContent                      *string              `json:"composer_content,omitempty"`
+	ExcludeUpstreamText                  bool                 `json:"exclude_upstream_text,omitempty"`
+	GroupID                              string               `json:"group_id,omitempty"`
+	TaskID                               string               `json:"task_id,omitempty"`
+	GenerationModel                      string               `json:"generation_model,omitempty"`
+	GenerationSize                       string               `json:"generation_size,omitempty"`
+	GenerationResolution                 string               `json:"generation_resolution,omitempty"`
+	GenerationQuality                    string               `json:"generation_quality,omitempty"`
+	GenerationCount                      int                  `json:"generation_count,omitempty"`
+	GenerationOutputFormat               string               `json:"generation_output_format,omitempty"`
+	GenerationOutputCompression          *int                 `json:"generation_output_compression,omitempty"`
+	GenerationStream                     *bool                `json:"generation_stream,omitempty"`
+	GenerationPartialImages              int                  `json:"generation_partial_images,omitempty"`
+	GenerationSnapToMultiple16           *bool                `json:"generation_snap_to_multiple_16,omitempty"`
+	GenerationResponseFormatB64JSON      bool                 `json:"generation_response_format_b64_json,omitempty"`
+	GenerationCodexCLICompatibility      bool                 `json:"generation_codex_cli_compatibility,omitempty"`
+	GenerationStatus                     string               `json:"generation_status,omitempty"`
+	GenerationStartedAt                  int64                `json:"generation_started_at,omitempty"`
+	GenerationProgress                   float64              `json:"generation_progress,omitempty"`
+	GenerationError                      string               `json:"generation_error,omitempty"`
+	GenerationType                       string               `json:"generation_type,omitempty"`
+	GenerationReferenceURLs              []string             `json:"generation_reference_urls,omitempty"`
+	GenerationVideoModel                 string               `json:"generation_video_model,omitempty"`
+	GenerationVideoSize                  string               `json:"generation_video_size,omitempty"`
+	GenerationVideoSeconds               int                  `json:"generation_video_seconds,omitempty"`
+	GenerationVideoResolution            string               `json:"generation_video_resolution,omitempty"`
+	GenerationVideoAudio                 *bool                `json:"generation_video_audio,omitempty"`
+	GenerationVideoWatermark             *bool                `json:"generation_video_watermark,omitempty"`
+	GenerationVideoMode                  string               `json:"generation_video_mode,omitempty"`
+	GenerationVideoNegativePrompt        string               `json:"generation_video_negative_prompt,omitempty"`
+	GenerationVideoMultiShot             *bool                `json:"generation_video_multi_shot,omitempty"`
+	GenerationVideoShotType              string               `json:"generation_video_shot_type,omitempty"`
+	GenerationVideoMultiPrompt           []map[string]any     `json:"generation_video_multi_prompt,omitempty"`
+	GenerationVideoElementList           []map[string]any     `json:"generation_video_element_list,omitempty"`
+	GenerationVideoCharacterOrientation  string               `json:"generation_video_character_orientation,omitempty"`
+	GenerationVideoReferenceMode         string               `json:"generation_video_reference_mode,omitempty"`
+	GenerationVideoReferenceImages       []string             `json:"generation_video_reference_image_urls,omitempty"`
+	GenerationVideoReferenceURLs         []string             `json:"generation_video_reference_urls,omitempty"`
+	GenerationVideoReferenceAudio        []string             `json:"generation_video_reference_audio_urls,omitempty"`
+	GenerationVideoFirstFrameNodeID      string               `json:"generation_video_first_frame_node_id,omitempty"`
+	GenerationVideoLastFrameNodeID       string               `json:"generation_video_last_frame_node_id,omitempty"`
+	GenerationVideoKlingImageNodeIDs     []string             `json:"generation_video_kling_image_node_ids,omitempty"`
+	GenerationVideoKlingMultiPrompt      []map[string]any     `json:"generation_video_kling_multi_prompt,omitempty"`
+	GenerationVideoKlingElementList      []map[string]any     `json:"generation_video_kling_element_list,omitempty"`
+	GenerationMode                       string               `json:"generation_mode,omitempty"`
+	GenerationTextModel                  string               `json:"generation_text_model,omitempty"`
+	GenerationAudioModel                 string               `json:"generation_audio_model,omitempty"`
+	GenerationAudioVoice                 string               `json:"generation_audio_voice,omitempty"`
+	GenerationAudioFormat                string               `json:"generation_audio_format,omitempty"`
+	GenerationAudioSpeed                 float64              `json:"generation_audio_speed,omitempty"`
+	GenerationAudioInstructions          string               `json:"generation_audio_instructions,omitempty"`
+	GenerationAudioGrokVoice             string               `json:"generation_audio_grok_voice,omitempty"`
+	GenerationAudioGrokLanguage          string               `json:"generation_audio_grok_language,omitempty"`
+	GenerationAudioGrokFormat            string               `json:"generation_audio_grok_format,omitempty"`
+	GenerationAudioGrokSpeed             float64              `json:"generation_audio_grok_speed,omitempty"`
+	GenerationAudioGLMVoice              string               `json:"generation_audio_glm_voice,omitempty"`
+	GenerationAudioGLMFormat             string               `json:"generation_audio_glm_format,omitempty"`
+	GenerationAudioGLMSpeed              float64              `json:"generation_audio_glm_speed,omitempty"`
+	GenerationAudioMiMoVoice             string               `json:"generation_audio_mimo_voice,omitempty"`
+	GenerationAudioMiMoFormat            string               `json:"generation_audio_mimo_format,omitempty"`
+	GenerationAudioMiMoVoiceDesignPrompt string               `json:"generation_audio_mimo_voice_design_prompt,omitempty"`
+	GenerationAudioMiMoVoiceCloneNodeID  string               `json:"generation_audio_mimo_voice_clone_node_id,omitempty"`
+	GenerationAudioGeminiVoice           string               `json:"generation_audio_gemini_voice,omitempty"`
+	AudioTaskID                          string               `json:"audio_task_id,omitempty"`
+	AudioTaskResultID                    string               `json:"audio_task_result_id,omitempty"`
+	DurationMS                           int64                `json:"duration_ms,omitempty"`
+	MimeType                             string               `json:"mime_type,omitempty"`
+	PanoramaSourcePrompt                 string               `json:"panorama_source_prompt,omitempty"`
+	PanoramaFinalPrompt                  string               `json:"panorama_final_prompt,omitempty"`
+	PanoramaProjection                   string               `json:"panorama_projection,omitempty"`
+	DirectorProject                      json.RawMessage      `json:"director_project,omitempty"`
+	CameraControl                        *CanvasCameraControl `json:"camera_control,omitempty"`
+	BatchChildIDs                        []string             `json:"batch_child_ids,omitempty"`
+	BatchRootID                          string               `json:"batch_root_id,omitempty"`
+	BatchPrimaryID                       string               `json:"batch_primary_id,omitempty"`
+	BatchExpanded                        *bool                `json:"batch_expanded,omitempty"`
+	CreatedAt                            string               `json:"created_at,omitempty"`
 }
 
 type CanvasConnection struct {
@@ -111,23 +173,44 @@ type CanvasConnection struct {
 	ToNodeID   string `json:"to_node_id"`
 }
 
+type CanvasAgentMessage struct {
+	ID        string `json:"id"`
+	Role      string `json:"role"`
+	Content   string `json:"content"`
+	CreatedAt string `json:"created_at"`
+}
+
+type CanvasAgentPanel struct {
+	Open  bool `json:"open"`
+	Width int  `json:"width"`
+}
+
 type CanvasDocument struct {
-	Version     int                `json:"version"`
-	ID          string             `json:"id"`
-	Revision    int64              `json:"revision"`
-	Title       string             `json:"title"`
-	Background  string             `json:"background"`
-	Nodes       []CanvasNode       `json:"nodes"`
-	Connections []CanvasConnection `json:"connections"`
-	Viewport    CanvasViewport     `json:"viewport"`
-	CreatedAt   string             `json:"created_at,omitempty"`
-	UpdatedAt   string             `json:"updated_at,omitempty"`
+	Version               int                  `json:"version"`
+	ID                    string               `json:"id"`
+	Revision              int64                `json:"revision"`
+	Title                 string               `json:"title"`
+	Background            string               `json:"background"`
+	ShowImageInfo         bool                 `json:"show_image_info,omitempty"`
+	Nodes                 []CanvasNode         `json:"nodes"`
+	Connections           []CanvasConnection   `json:"connections"`
+	AgentMessages         []CanvasAgentMessage `json:"agent_messages,omitempty"`
+	AgentSessions         json.RawMessage      `json:"agent_sessions,omitempty"`
+	ActiveAgentSessionID  string               `json:"active_agent_session_id,omitempty"`
+	AgentConfig           json.RawMessage      `json:"agent_config,omitempty"`
+	AgentPanel            *CanvasAgentPanel    `json:"agent_panel,omitempty"`
+	AgentAutoTitlePending bool                 `json:"agent_auto_title_pending,omitempty"`
+	PendingAgentRequest   json.RawMessage      `json:"pending_agent_request,omitempty"`
+	Viewport              CanvasViewport       `json:"viewport"`
+	CreatedAt             string               `json:"created_at,omitempty"`
+	UpdatedAt             string               `json:"updated_at,omitempty"`
 }
 
 type CanvasProjectSummary struct {
 	ID        string `json:"id"`
 	Title     string `json:"title"`
 	NodeCount int    `json:"node_count"`
+	Revision  int64  `json:"revision"`
 	CreatedAt string `json:"created_at,omitempty"`
 	UpdatedAt string `json:"updated_at,omitempty"`
 }
@@ -163,15 +246,17 @@ func NewCanvasDocumentService(backend storage.Backend) *CanvasDocumentService {
 func DefaultCanvasDocument() CanvasDocument {
 	now := util.NowISO()
 	return CanvasDocument{
-		Version:     canvasDocumentVersion,
-		ID:          newCanvasProjectID(),
-		Title:       "我的画布",
-		Background:  "dots",
-		Nodes:       []CanvasNode{},
-		Connections: []CanvasConnection{},
-		Viewport:    CanvasViewport{Zoom: 1},
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		Version:               canvasDocumentVersion,
+		ID:                    newCanvasProjectID(),
+		Title:                 "我的画布",
+		Background:            "dots",
+		AgentPanel:            &CanvasAgentPanel{Width: 390},
+		AgentAutoTitlePending: true,
+		Nodes:                 []CanvasNode{},
+		Connections:           []CanvasConnection{},
+		Viewport:              CanvasViewport{Zoom: 1},
+		CreatedAt:             now,
+		UpdatedAt:             now,
 	}
 }
 
@@ -192,13 +277,31 @@ func (s *CanvasDocumentService) Workspace(ownerID string) (CanvasWorkspaceResult
 	return canvasWorkspaceResult(workspace), nil
 }
 
-func (s *CanvasDocumentService) Load(ownerID string) (CanvasDocument, error) {
-	workspace, err := s.Workspace(ownerID)
-	return workspace.Document, err
-}
-
-func (s *CanvasDocumentService) Save(ownerID string, input CanvasDocument) (CanvasDocument, error) {
-	return s.save(ownerID, input, nil)
+// Project returns one project without changing the workspace's active project.
+// It is used by the canvas library for project-specific export and deep links.
+func (s *CanvasDocumentService) Project(ownerID, projectID string) (CanvasDocument, error) {
+	ownerID = util.Clean(ownerID)
+	projectID = util.Clean(projectID)
+	if ownerID == "" {
+		return CanvasDocument{}, invalidCanvasDocument("owner_id is required")
+	}
+	if projectID == "" {
+		return CanvasDocument{}, invalidCanvasDocument("canvas project id is required")
+	}
+	if s.store == nil {
+		return CanvasDocument{}, fmt.Errorf("storage document backend is required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	workspace, err := s.loadWorkspaceLocked(ownerID)
+	if err != nil {
+		return CanvasDocument{}, err
+	}
+	index := canvasProjectIndex(workspace, projectID)
+	if index < 0 {
+		return CanvasDocument{}, invalidCanvasDocument("canvas project does not exist")
+	}
+	return workspace.Projects[index], nil
 }
 
 func (s *CanvasDocumentService) SaveAtRevision(ownerID string, input CanvasDocument) (CanvasDocument, error) {
@@ -303,10 +406,6 @@ func (s *CanvasDocumentService) Import(ownerID string, input CanvasDocument) (Ca
 	return CanvasWorkspaceResult{}, fmt.Errorf("failed to import canvas workspace")
 }
 
-func (s *CanvasDocumentService) Clear(ownerID, projectID string) (CanvasDocument, error) {
-	return s.clear(ownerID, projectID, nil)
-}
-
 func (s *CanvasDocumentService) ClearAtRevision(ownerID, projectID string, expectedRevision int64) (CanvasDocument, error) {
 	return s.clear(ownerID, projectID, &expectedRevision)
 }
@@ -342,6 +441,7 @@ func (s *CanvasDocumentService) clear(ownerID, projectID string, expectedRevisio
 		cleared.ID = current.ID
 		cleared.Title = current.Title
 		cleared.Background = current.Background
+		cleared.AgentAutoTitlePending = current.AgentAutoTitlePending
 		cleared.Viewport = current.Viewport
 		cleared.CreatedAt = current.CreatedAt
 		cleared.Revision = current.Revision + 1
@@ -430,6 +530,7 @@ func (s *CanvasDocumentService) updateProject(ownerID, action, projectID, title 
 				return CanvasWorkspaceResult{}, invalidCanvasDocument("canvas title is invalid")
 			}
 			workspace.Projects[index].Title = title
+			workspace.Projects[index].AgentAutoTitlePending = false
 			workspace.Projects[index].Revision++
 			workspace.Projects[index].UpdatedAt = util.NowISO()
 		case "delete":
@@ -441,11 +542,12 @@ func (s *CanvasDocumentService) updateProject(ownerID, action, projectID, title 
 				return CanvasWorkspaceResult{}, CanvasRevisionConflictError{Expected: *expectedRevision, Actual: workspace.Projects[index].Revision}
 			}
 			workspace.Projects = append(workspace.Projects[:index], workspace.Projects[index+1:]...)
-			if len(workspace.Projects) == 0 {
-				workspace.Projects = []CanvasDocument{DefaultCanvasDocument()}
-			}
 			if workspace.ActiveProjectID == projectID {
-				workspace.ActiveProjectID = workspace.Projects[0].ID
+				if len(workspace.Projects) > 0 {
+					workspace.ActiveProjectID = workspace.Projects[0].ID
+				} else {
+					workspace.ActiveProjectID = ""
+				}
 			}
 		}
 		if err := s.saveWorkspaceLocked(ownerID, workspace); err != nil {
@@ -491,24 +593,7 @@ func (s *CanvasDocumentService) loadWorkspaceLocked(ownerID string) (canvasWorks
 		return workspace, nil
 	}
 
-	legacyRaw, err := s.store.LoadJSONDocument(canvasDocumentName(ownerID))
-	if err != nil {
-		return canvasWorkspace{}, err
-	}
 	document := DefaultCanvasDocument()
-	if legacyRaw != nil {
-		data, err := json.Marshal(legacyRaw)
-		if err != nil {
-			return canvasWorkspace{}, err
-		}
-		if err := json.Unmarshal(data, &document); err != nil {
-			return canvasWorkspace{}, err
-		}
-		document, err = normalizeCanvasDocument(document)
-		if err != nil {
-			return canvasWorkspace{}, err
-		}
-	}
 	workspace := canvasWorkspace{
 		Version:         canvasWorkspaceVersion,
 		ActiveProjectID: document.ID,
@@ -561,9 +646,6 @@ func (s *CanvasDocumentService) saveWorkspaceLocked(ownerID string, workspace ca
 
 func normalizeCanvasWorkspace(workspace canvasWorkspace) (canvasWorkspace, error) {
 	workspace.Version = canvasWorkspaceVersion
-	if len(workspace.Projects) == 0 {
-		workspace.Projects = []CanvasDocument{DefaultCanvasDocument()}
-	}
 	if len(workspace.Projects) > canvasWorkspaceMaxProjects {
 		return canvasWorkspace{}, invalidCanvasDocument("canvas contains too many projects")
 	}
@@ -579,7 +661,9 @@ func normalizeCanvasWorkspace(workspace canvasWorkspace) (canvasWorkspace, error
 		seen[document.ID] = struct{}{}
 		workspace.Projects[index] = document
 	}
-	if _, exists := seen[workspace.ActiveProjectID]; !exists {
+	if len(workspace.Projects) == 0 {
+		workspace.ActiveProjectID = ""
+	} else if _, exists := seen[workspace.ActiveProjectID]; !exists {
 		workspace.ActiveProjectID = workspace.Projects[0].ID
 	}
 	data, err := json.Marshal(workspace)
@@ -593,6 +677,9 @@ func normalizeCanvasWorkspace(workspace canvasWorkspace) (canvasWorkspace, error
 }
 
 func canvasWorkspaceResult(workspace canvasWorkspace) CanvasWorkspaceResult {
+	if len(workspace.Projects) == 0 {
+		return CanvasWorkspaceResult{Document: CanvasDocument{}, Projects: []CanvasProjectSummary{}, ActiveProjectID: ""}
+	}
 	index := activeCanvasProjectIndex(workspace)
 	if index < 0 {
 		index = 0
@@ -603,6 +690,7 @@ func canvasWorkspaceResult(workspace canvasWorkspace) CanvasWorkspaceResult {
 			ID:        project.ID,
 			Title:     project.Title,
 			NodeCount: len(project.Nodes),
+			Revision:  project.Revision,
 			CreatedAt: project.CreatedAt,
 			UpdatedAt: project.UpdatedAt,
 		})
@@ -664,6 +752,38 @@ func normalizeCanvasDocument(input CanvasDocument) (CanvasDocument, error) {
 	if len(input.Connections) > canvasDocumentMaxConnections {
 		return CanvasDocument{}, invalidCanvasDocument("canvas contains too many connections")
 	}
+	if len(input.AgentMessages) > canvasDocumentMaxAgentMessages {
+		return CanvasDocument{}, invalidCanvasDocument("canvas contains too many agent messages")
+	}
+	for index := range input.AgentMessages {
+		message := input.AgentMessages[index]
+		message.ID = strings.TrimSpace(message.ID)
+		message.Role = strings.ToLower(strings.TrimSpace(message.Role))
+		message.Content = strings.TrimSpace(message.Content)
+		message.CreatedAt = strings.TrimSpace(message.CreatedAt)
+		if message.ID == "" || len(message.ID) > 128 || message.Role != "user" && message.Role != "assistant" || message.Content == "" || len(message.Content) > canvasDocumentMaxPrompt {
+			return CanvasDocument{}, invalidCanvasDocument("canvas agent message is invalid")
+		}
+		input.AgentMessages[index] = message
+	}
+	input.ActiveAgentSessionID = strings.TrimSpace(input.ActiveAgentSessionID)
+	if len(input.ActiveAgentSessionID) > 128 {
+		return CanvasDocument{}, invalidCanvasDocument("active canvas agent session id is too long")
+	}
+	if err := validateCanvasAgentJSON(input.AgentSessions, true); err != nil {
+		return CanvasDocument{}, err
+	}
+	if err := validateCanvasAgentJSON(input.AgentConfig, false); err != nil {
+		return CanvasDocument{}, err
+	}
+	if input.AgentPanel == nil {
+		input.AgentPanel = &CanvasAgentPanel{Width: 390}
+	} else if input.AgentPanel.Width < 320 || input.AgentPanel.Width > 760 {
+		return CanvasDocument{}, invalidCanvasDocument("canvas agent panel width is invalid")
+	}
+	if err := validateCanvasPendingAgentRequest(input.PendingAgentRequest); err != nil {
+		return CanvasDocument{}, err
+	}
 	input.Viewport = normalizeCanvasViewport(input.Viewport)
 	seen := make(map[string]struct{}, len(input.Nodes))
 	for index := range input.Nodes {
@@ -682,6 +802,12 @@ func normalizeCanvasDocument(input CanvasDocument) (CanvasDocument, error) {
 		nodeByID[node.ID] = node
 	}
 	for _, node := range input.Nodes {
+		if node.GroupID != "" {
+			group, exists := nodeByID[node.GroupID]
+			if !exists || group.Type != "group" {
+				return CanvasDocument{}, invalidCanvasDocument("node group does not exist")
+			}
+		}
 		if node.BatchRootID != "" {
 			root, exists := nodeByID[node.BatchRootID]
 			if !exists || !canvasNodeIDListContains(root.BatchChildIDs, node.ID) {
@@ -696,13 +822,6 @@ func normalizeCanvasDocument(input CanvasDocument) (CanvasDocument, error) {
 		}
 		if node.BatchPrimaryID != "" && !canvasNodeIDListContains(node.BatchChildIDs, node.BatchPrimaryID) {
 			return CanvasDocument{}, invalidCanvasDocument("batch primary image is invalid")
-		}
-	}
-	if len(input.Connections) == 0 {
-		for _, node := range input.Nodes {
-			if node.ParentID != "" {
-				input.Connections = append(input.Connections, CanvasConnection{ID: "connection-" + node.ID, FromNodeID: node.ParentID, ToNodeID: node.ID})
-			}
 		}
 	}
 	connectionIDs := make(map[string]struct{}, len(input.Connections))
@@ -724,7 +843,21 @@ func normalizeCanvasDocument(input CanvasDocument) (CanvasDocument, error) {
 		if _, exists := seen[connection.ToNodeID]; !exists {
 			return CanvasDocument{}, invalidCanvasDocument("connection target does not exist")
 		}
-		if nodeByID[connection.FromNodeID].Type == "config" && nodeByID[connection.ToNodeID].Type == "config" {
+		fromNode := nodeByID[connection.FromNodeID]
+		toNode := nodeByID[connection.ToNodeID]
+		if fromNode.Type == "group" || toNode.Type == "group" {
+			return CanvasDocument{}, invalidCanvasDocument("group nodes cannot be connected")
+		}
+		if fromNode.Type == "director" || toNode.Type == "director" {
+			other := fromNode
+			if other.Type == "director" {
+				other = toNode
+			}
+			if other.Type != "image" && other.Type != "panorama" {
+				return CanvasDocument{}, invalidCanvasDocument("director nodes only accept image or panorama connections")
+			}
+		}
+		if fromNode.Type == "config" && toNode.Type == "config" {
 			return CanvasDocument{}, invalidCanvasDocument("configuration nodes cannot be connected")
 		}
 		if _, exists := connectionIDs[connection.ID]; exists {
@@ -737,9 +870,6 @@ func normalizeCanvasDocument(input CanvasDocument) (CanvasDocument, error) {
 		connectionIDs[connection.ID] = struct{}{}
 		connectionPairs[pair] = struct{}{}
 		input.Connections[index] = connection
-	}
-	for index := range input.Nodes {
-		input.Nodes[index].ParentID = ""
 	}
 	if input.Nodes == nil {
 		input.Nodes = []CanvasNode{}
@@ -755,6 +885,49 @@ func normalizeCanvasDocument(input CanvasDocument) (CanvasDocument, error) {
 		return CanvasDocument{}, invalidCanvasDocument("canvas document is too large")
 	}
 	return input, nil
+}
+
+func validateCanvasAgentJSON(value json.RawMessage, sessions bool) error {
+	if len(value) == 0 || string(value) == "null" {
+		return nil
+	}
+	if len(value) > canvasDocumentMaxAgentDataBytes || !json.Valid(value) {
+		return invalidCanvasDocument("canvas agent data is invalid")
+	}
+	if sessions {
+		var items []json.RawMessage
+		if err := json.Unmarshal(value, &items); err != nil || len(items) > canvasDocumentMaxAgentSessions {
+			return invalidCanvasDocument("canvas agent sessions are invalid")
+		}
+		return nil
+	}
+	var object map[string]json.RawMessage
+	if err := json.Unmarshal(value, &object); err != nil {
+		return invalidCanvasDocument("canvas agent config is invalid")
+	}
+	return nil
+}
+
+func validateCanvasPendingAgentRequest(value json.RawMessage) error {
+	if len(value) == 0 || string(value) == "null" {
+		return nil
+	}
+	if len(value) > canvasDocumentMaxAgentDataBytes || !json.Valid(value) {
+		return invalidCanvasDocument("canvas pending agent request is invalid")
+	}
+	var request struct {
+		Prompt string            `json:"prompt"`
+		Assets []json.RawMessage `json:"assets"`
+	}
+	if err := json.Unmarshal(value, &request); err != nil || strings.TrimSpace(request.Prompt) == "" || len(request.Prompt) > canvasDocumentMaxPrompt || len(request.Assets) > 50 {
+		return invalidCanvasDocument("canvas pending agent request is invalid")
+	}
+	for _, asset := range request.Assets {
+		if len(asset) == 0 || !json.Valid(asset) || string(asset) == "null" {
+			return invalidCanvasDocument("canvas pending agent request is invalid")
+		}
+	}
+	return nil
 }
 
 func normalizeCanvasViewport(viewport CanvasViewport) CanvasViewport {
@@ -776,8 +949,8 @@ func normalizeCanvasNode(node CanvasNode) (CanvasNode, error) {
 		return CanvasNode{}, invalidCanvasDocument("node id is required")
 	}
 	node.Type = strings.ToLower(strings.TrimSpace(node.Type))
-	if node.Type != "image" && node.Type != "video" && node.Type != "text" && node.Type != "config" {
-		return CanvasNode{}, invalidCanvasDocument("node type must be image, video, text, or config")
+	if node.Type != "image" && node.Type != "video" && node.Type != "text" && node.Type != "config" && node.Type != "audio" && node.Type != "panorama" && node.Type != "director" && node.Type != "group" {
+		return CanvasNode{}, invalidCanvasDocument("node type must be image, video, audio, panorama, director, group, text, or config")
 	}
 	if !finiteCanvasNumber(node.X) || !finiteCanvasNumber(node.Y) || math.Abs(node.X) > 1e7 || math.Abs(node.Y) > 1e7 {
 		return CanvasNode{}, invalidCanvasDocument("node position is invalid")
@@ -803,12 +976,7 @@ func normalizeCanvasNode(node CanvasNode) (CanvasNode, error) {
 	node.URL = strings.TrimSpace(node.URL)
 	node.ThumbnailURL = strings.TrimSpace(node.ThumbnailURL)
 	node.Title = strings.TrimSpace(node.Title)
-	node.Prompt = strings.TrimSpace(node.Prompt)
-	if node.ComposerContent != nil {
-		composerContent := strings.TrimSpace(*node.ComposerContent)
-		node.ComposerContent = &composerContent
-	}
-	node.ParentID = strings.TrimSpace(node.ParentID)
+	node.GroupID = strings.TrimSpace(node.GroupID)
 	node.TaskID = strings.TrimSpace(node.TaskID)
 	node.GenerationModel = strings.TrimSpace(node.GenerationModel)
 	node.GenerationSize = strings.ToLower(strings.TrimSpace(node.GenerationSize))
@@ -821,6 +989,34 @@ func normalizeCanvasNode(node CanvasNode) (CanvasNode, error) {
 	node.GenerationVideoModel = strings.TrimSpace(node.GenerationVideoModel)
 	node.GenerationVideoSize = strings.ToLower(strings.TrimSpace(node.GenerationVideoSize))
 	node.GenerationVideoResolution = strings.ToLower(strings.TrimSpace(node.GenerationVideoResolution))
+	node.GenerationVideoMode = strings.TrimSpace(node.GenerationVideoMode)
+	node.GenerationVideoShotType = strings.ToLower(strings.TrimSpace(node.GenerationVideoShotType))
+	node.GenerationVideoCharacterOrientation = strings.ToLower(strings.TrimSpace(node.GenerationVideoCharacterOrientation))
+	node.GenerationVideoReferenceMode = strings.ToLower(strings.TrimSpace(node.GenerationVideoReferenceMode))
+	node.GenerationVideoFirstFrameNodeID = strings.TrimSpace(node.GenerationVideoFirstFrameNodeID)
+	node.GenerationVideoLastFrameNodeID = strings.TrimSpace(node.GenerationVideoLastFrameNodeID)
+	node.GenerationMode = strings.ToLower(strings.TrimSpace(node.GenerationMode))
+	node.GenerationTextModel = strings.TrimSpace(node.GenerationTextModel)
+	node.GenerationAudioModel = strings.TrimSpace(node.GenerationAudioModel)
+	node.GenerationAudioVoice = strings.TrimSpace(node.GenerationAudioVoice)
+	node.GenerationAudioFormat = strings.ToLower(strings.TrimSpace(node.GenerationAudioFormat))
+	node.GenerationAudioInstructions = strings.TrimSpace(node.GenerationAudioInstructions)
+	node.GenerationAudioGrokVoice = strings.TrimSpace(node.GenerationAudioGrokVoice)
+	node.GenerationAudioGrokLanguage = strings.TrimSpace(node.GenerationAudioGrokLanguage)
+	node.GenerationAudioGrokFormat = strings.ToLower(strings.TrimSpace(node.GenerationAudioGrokFormat))
+	node.GenerationAudioGLMVoice = strings.TrimSpace(node.GenerationAudioGLMVoice)
+	node.GenerationAudioGLMFormat = strings.ToLower(strings.TrimSpace(node.GenerationAudioGLMFormat))
+	node.GenerationAudioMiMoVoice = strings.TrimSpace(node.GenerationAudioMiMoVoice)
+	node.GenerationAudioMiMoFormat = strings.ToLower(strings.TrimSpace(node.GenerationAudioMiMoFormat))
+	node.GenerationAudioMiMoVoiceDesignPrompt = strings.TrimSpace(node.GenerationAudioMiMoVoiceDesignPrompt)
+	node.GenerationAudioMiMoVoiceCloneNodeID = strings.TrimSpace(node.GenerationAudioMiMoVoiceCloneNodeID)
+	node.GenerationAudioGeminiVoice = strings.TrimSpace(node.GenerationAudioGeminiVoice)
+	node.AudioTaskID = strings.TrimSpace(node.AudioTaskID)
+	node.AudioTaskResultID = strings.TrimSpace(node.AudioTaskResultID)
+	node.MimeType = strings.ToLower(strings.TrimSpace(node.MimeType))
+	node.PanoramaSourcePrompt = strings.TrimSpace(node.PanoramaSourcePrompt)
+	node.PanoramaFinalPrompt = strings.TrimSpace(node.PanoramaFinalPrompt)
+	node.PanoramaProjection = strings.ToLower(strings.TrimSpace(node.PanoramaProjection))
 	node.BatchRootID = strings.TrimSpace(node.BatchRootID)
 	node.BatchPrimaryID = strings.TrimSpace(node.BatchPrimaryID)
 	node.CreatedAt = strings.TrimSpace(node.CreatedAt)
@@ -829,6 +1025,15 @@ func normalizeCanvasNode(node CanvasNode) (CanvasNode, error) {
 	}
 	for index := range node.GenerationVideoReferenceURLs {
 		node.GenerationVideoReferenceURLs[index] = strings.TrimSpace(node.GenerationVideoReferenceURLs[index])
+	}
+	for index := range node.GenerationVideoReferenceImages {
+		node.GenerationVideoReferenceImages[index] = strings.TrimSpace(node.GenerationVideoReferenceImages[index])
+	}
+	for index := range node.GenerationVideoReferenceAudio {
+		node.GenerationVideoReferenceAudio[index] = strings.TrimSpace(node.GenerationVideoReferenceAudio[index])
+	}
+	for index := range node.GenerationVideoKlingImageNodeIDs {
+		node.GenerationVideoKlingImageNodeIDs[index] = strings.TrimSpace(node.GenerationVideoKlingImageNodeIDs[index])
 	}
 	for index := range node.BatchChildIDs {
 		node.BatchChildIDs[index] = strings.TrimSpace(node.BatchChildIDs[index])
@@ -839,23 +1044,146 @@ func normalizeCanvasNode(node CanvasNode) (CanvasNode, error) {
 	if len(node.Title) > canvasDocumentMaxTitle || len(node.Prompt) > canvasDocumentMaxPrompt || node.ComposerContent != nil && len(*node.ComposerContent) > canvasDocumentMaxPrompt {
 		return CanvasNode{}, invalidCanvasDocument("node text is too long")
 	}
+	if len(node.GenerationVideoMode) > 128 || len(node.GenerationVideoNegativePrompt) > canvasDocumentMaxPrompt || len(node.GenerationAudioInstructions) > canvasDocumentMaxPrompt || len(node.GenerationAudioMiMoVoiceDesignPrompt) > canvasDocumentMaxPrompt || len(node.PanoramaSourcePrompt) > canvasDocumentMaxPrompt || len(node.PanoramaFinalPrompt) > canvasDocumentMaxPrompt {
+		return CanvasNode{}, invalidCanvasDocument("node media generation text is too long")
+	}
+	if node.GenerationMode != "" && node.GenerationMode != "image" && node.GenerationMode != "text" && node.GenerationMode != "video" && node.GenerationMode != "audio" {
+		return CanvasNode{}, invalidCanvasDocument("node generation mode is invalid")
+	}
+	if node.Type == "config" && node.GenerationMode == "text" && (node.GenerationTextModel == "" || len(node.GenerationTextModel) > 256) {
+		return CanvasNode{}, invalidCanvasDocument("text node generation model is invalid")
+	}
+	if node.GenerationVideoShotType != "" && node.GenerationVideoShotType != "intelligence" && node.GenerationVideoShotType != "customize" {
+		return CanvasNode{}, invalidCanvasDocument("video node shot type is invalid")
+	}
+	if node.GenerationVideoCharacterOrientation != "" && node.GenerationVideoCharacterOrientation != "image" && node.GenerationVideoCharacterOrientation != "video" {
+		return CanvasNode{}, invalidCanvasDocument("video node character orientation is invalid")
+	}
+	if len(node.GenerationVideoMultiPrompt) > 20 || len(node.GenerationVideoElementList) > 20 || len(node.GenerationVideoKlingMultiPrompt) > 20 || len(node.GenerationVideoKlingElementList) > 3 {
+		return CanvasNode{}, invalidCanvasDocument("video node structured parameters are too large")
+	}
+	if len(node.GenerationVideoFirstFrameNodeID) > 128 || len(node.GenerationVideoLastFrameNodeID) > 128 || len(node.GenerationVideoKlingImageNodeIDs) > 2 {
+		return CanvasNode{}, invalidCanvasDocument("video node frame references are invalid")
+	}
+	for _, nodeID := range node.GenerationVideoKlingImageNodeIDs {
+		if nodeID == "" || len(nodeID) > 128 {
+			return CanvasNode{}, invalidCanvasDocument("video node frame references are invalid")
+		}
+	}
+	for _, item := range node.GenerationVideoKlingMultiPrompt {
+		nodeID, nodeIDOK := item["text_node_id"].(string)
+		duration, durationOK := item["duration"].(string)
+		if !nodeIDOK || len(strings.TrimSpace(nodeID)) > 128 || !durationOK || len(strings.TrimSpace(duration)) > 16 {
+			return CanvasNode{}, invalidCanvasDocument("video node multi prompt bindings are invalid")
+		}
+		item["text_node_id"] = strings.TrimSpace(nodeID)
+		item["duration"] = strings.TrimSpace(duration)
+	}
+	for _, item := range node.GenerationVideoKlingElementList {
+		name, nameOK := item["name"].(string)
+		description, descriptionOK := item["description"].(string)
+		nodeIDs, nodeIDsOK := canvasStringSlice(item["node_ids"])
+		if !nameOK || !descriptionOK || len(name) > canvasDocumentMaxTitle || len(description) > canvasDocumentMaxPrompt || !nodeIDsOK || len(nodeIDs) > 4 {
+			return CanvasNode{}, invalidCanvasDocument("video node element bindings are invalid")
+		}
+		for index := range nodeIDs {
+			nodeIDs[index] = strings.TrimSpace(nodeIDs[index])
+			if nodeIDs[index] == "" || len(nodeIDs[index]) > 128 {
+				return CanvasNode{}, invalidCanvasDocument("video node element bindings are invalid")
+			}
+		}
+		item["name"] = strings.TrimSpace(name)
+		item["description"] = strings.TrimSpace(description)
+		item["node_ids"] = nodeIDs
+	}
+	if node.Type == "audio" || node.Type == "config" && node.GenerationMode == "audio" {
+		if node.GenerationAudioModel == "" || len(node.GenerationAudioModel) > 256 {
+			return CanvasNode{}, invalidCanvasDocument("audio node generation model is invalid")
+		}
+		if len(node.GenerationAudioVoice) > 256 || len(node.GenerationAudioGrokVoice) > 256 || len(node.GenerationAudioGLMVoice) > 256 || len(node.GenerationAudioMiMoVoice) > 256 || len(node.GenerationAudioGeminiVoice) > 256 {
+			return CanvasNode{}, invalidCanvasDocument("audio node generation voice is invalid")
+		}
+		if node.GenerationAudioVoice != "" && !validCanvasOpenAITTSVoice(node.GenerationAudioVoice) {
+			return CanvasNode{}, invalidCanvasDocument("audio node generation voice is invalid")
+		}
+		if node.GenerationAudioFormat != "" && node.GenerationAudioFormat != "mp3" && node.GenerationAudioFormat != "wav" && node.GenerationAudioFormat != "opus" && node.GenerationAudioFormat != "aac" && node.GenerationAudioFormat != "flac" && node.GenerationAudioFormat != "pcm" {
+			return CanvasNode{}, invalidCanvasDocument("audio node generation format is invalid")
+		}
+		if node.GenerationAudioSpeed != 0 && (node.GenerationAudioSpeed < 0.25 || node.GenerationAudioSpeed > 4) {
+			return CanvasNode{}, invalidCanvasDocument("audio node generation speed is invalid")
+		}
+		if node.GenerationAudioGrokLanguage != "" && !validCanvasGrokTTSLanguage(node.GenerationAudioGrokLanguage) {
+			return CanvasNode{}, invalidCanvasDocument("audio node Grok language is invalid")
+		}
+		if node.GenerationAudioGrokFormat != "" && node.GenerationAudioGrokFormat != "mp3" && node.GenerationAudioGrokFormat != "wav" {
+			return CanvasNode{}, invalidCanvasDocument("audio node Grok format is invalid")
+		}
+		if node.GenerationAudioGrokSpeed != 0 && (node.GenerationAudioGrokSpeed < 0.7 || node.GenerationAudioGrokSpeed > 1.5) {
+			return CanvasNode{}, invalidCanvasDocument("audio node Grok speed is invalid")
+		}
+		if node.GenerationAudioGLMFormat != "" && node.GenerationAudioGLMFormat != "wav" && node.GenerationAudioGLMFormat != "pcm" {
+			return CanvasNode{}, invalidCanvasDocument("audio node GLM format is invalid")
+		}
+		if node.GenerationAudioGLMVoice != "" && !validCanvasGLMTTSVoice(node.GenerationAudioGLMVoice) {
+			return CanvasNode{}, invalidCanvasDocument("audio node GLM voice is invalid")
+		}
+		if node.GenerationAudioGLMSpeed != 0 && (node.GenerationAudioGLMSpeed < 0.5 || node.GenerationAudioGLMSpeed > 2) {
+			return CanvasNode{}, invalidCanvasDocument("audio node GLM speed is invalid")
+		}
+		if node.GenerationAudioMiMoFormat != "" && node.GenerationAudioMiMoFormat != "wav" && node.GenerationAudioMiMoFormat != "mp3" {
+			return CanvasNode{}, invalidCanvasDocument("audio node MiMo format is invalid")
+		}
+		if node.GenerationAudioMiMoVoice != "" && !validCanvasMiMoTTSVoice(node.GenerationAudioMiMoVoice) {
+			return CanvasNode{}, invalidCanvasDocument("audio node MiMo voice is invalid")
+		}
+		if node.GenerationAudioGeminiVoice != "" && !validCanvasGeminiTTSVoice(node.GenerationAudioGeminiVoice) {
+			return CanvasNode{}, invalidCanvasDocument("audio node Gemini voice is invalid")
+		}
+		if len(node.GenerationAudioMiMoVoiceCloneNodeID) > 256 || len(node.AudioTaskID) > 256 || len(node.AudioTaskResultID) > 256 {
+			return CanvasNode{}, invalidCanvasDocument("audio node task metadata is invalid")
+		}
+	}
+	if node.DurationMS < 0 || node.DurationMS > 24*60*60*1000 {
+		return CanvasNode{}, invalidCanvasDocument("node media duration is invalid")
+	}
+	if node.Type == "panorama" && node.PanoramaProjection != "" && node.PanoramaProjection != "equirectangular" {
+		return CanvasNode{}, invalidCanvasDocument("panorama projection is invalid")
+	}
+	if len(node.DirectorProject) > 512<<10 || len(node.MimeType) > 128 {
+		return CanvasNode{}, invalidCanvasDocument("node media metadata is too large")
+	}
+	if len(node.DirectorProject) > 0 && !json.Valid(node.DirectorProject) {
+		return CanvasNode{}, invalidCanvasDocument("director project is invalid")
+	}
+	if node.CameraControl != nil {
+		node.CameraControl.Camera = strings.TrimSpace(node.CameraControl.Camera)
+		node.CameraControl.Lens = strings.TrimSpace(node.CameraControl.Lens)
+		if len(node.CameraControl.Camera) > 128 || len(node.CameraControl.Lens) > 128 || !finiteCanvasNumber(node.CameraControl.FocalLength) || !finiteCanvasNumber(node.CameraControl.Aperture) || node.CameraControl.FocalLength < 0 || node.CameraControl.FocalLength > 2000 || node.CameraControl.Aperture < 0 || node.CameraControl.Aperture > 128 {
+			return CanvasNode{}, invalidCanvasDocument("node camera control is invalid")
+		}
+	}
 	if len(node.GenerationModel) > 256 {
 		return CanvasNode{}, invalidCanvasDocument("node generation model is invalid")
 	}
-	if node.Type == "video" {
+	if node.Type == "video" || node.Type == "config" && node.GenerationMode == "video" {
 		if node.GenerationVideoModel == "" || len(node.GenerationVideoModel) > 256 {
 			return CanvasNode{}, invalidCanvasDocument("video node generation model is invalid")
 		}
-		if node.GenerationVideoSize != "1280x720" && node.GenerationVideoSize != "720x1280" && node.GenerationVideoSize != "1024x1024" && node.GenerationVideoSize != "16:9" && node.GenerationVideoSize != "9:16" && node.GenerationVideoSize != "1:1" && node.GenerationVideoSize != "4:3" && node.GenerationVideoSize != "3:4" && node.GenerationVideoSize != "21:9" && node.GenerationVideoSize != "adaptive" {
+		// Some providers (for example MiniMax Hailuo) derive the output frame
+		// from the input and do not expose a size/aspect-ratio parameter.
+		if !validCanvasVideoSize(node.GenerationVideoSize) {
 			return CanvasNode{}, invalidCanvasDocument("video node generation size is invalid")
 		}
-		if node.GenerationVideoSeconds != -1 && node.GenerationVideoSeconds != 4 && node.GenerationVideoSeconds != 5 && node.GenerationVideoSeconds != 6 && node.GenerationVideoSeconds != 8 && node.GenerationVideoSeconds != 10 && node.GenerationVideoSeconds != 12 && node.GenerationVideoSeconds != 15 {
+		if !validCanvasVideoDuration(node.GenerationVideoModel, node.GenerationVideoSeconds) {
 			return CanvasNode{}, invalidCanvasDocument("video node generation duration is invalid")
 		}
 		// Sora selects its output size through generation_video_size and does not
 		// send an independent resolution. Other providers may expose 2K/4K.
 		if node.GenerationVideoResolution != "" && node.GenerationVideoResolution != "480p" && node.GenerationVideoResolution != "512p" && node.GenerationVideoResolution != "720p" && node.GenerationVideoResolution != "768p" && node.GenerationVideoResolution != "1080p" && node.GenerationVideoResolution != "2k" && node.GenerationVideoResolution != "4k" {
 			return CanvasNode{}, invalidCanvasDocument("video node generation resolution is invalid")
+		}
+		if node.GenerationVideoReferenceMode != "" && node.GenerationVideoReferenceMode != "first-frame" && node.GenerationVideoReferenceMode != "reference" {
+			return CanvasNode{}, invalidCanvasDocument("video node generation reference mode is invalid")
 		}
 	}
 	if len(node.GenerationSize) > 64 || len(node.GenerationResolution) > 16 {
@@ -864,7 +1192,7 @@ func normalizeCanvasNode(node CanvasNode) (CanvasNode, error) {
 	if node.GenerationQuality != "" && node.GenerationQuality != "low" && node.GenerationQuality != "medium" && node.GenerationQuality != "high" {
 		return CanvasNode{}, invalidCanvasDocument("node generation quality is invalid")
 	}
-	if node.GenerationCount < 0 || node.GenerationCount > 10 {
+	if node.GenerationCount < 0 || node.GenerationCount > 15 {
 		return CanvasNode{}, invalidCanvasDocument("node generation count is invalid")
 	}
 	if node.GenerationOutputFormat != "" && node.GenerationOutputFormat != "png" && node.GenerationOutputFormat != "jpeg" && node.GenerationOutputFormat != "webp" {
@@ -876,10 +1204,16 @@ func normalizeCanvasNode(node CanvasNode) (CanvasNode, error) {
 	if node.GenerationStatus != "" && node.GenerationStatus != "idle" && node.GenerationStatus != "loading" && node.GenerationStatus != "success" && node.GenerationStatus != "error" {
 		return CanvasNode{}, invalidCanvasDocument("node generation status is invalid")
 	}
+	if node.GenerationStartedAt < 0 {
+		return CanvasNode{}, invalidCanvasDocument("node generation start time is invalid")
+	}
+	if !finiteCanvasNumber(node.GenerationProgress) || node.GenerationProgress < 0 || node.GenerationProgress > 100 {
+		return CanvasNode{}, invalidCanvasDocument("node generation progress is invalid")
+	}
 	if len(node.GenerationError) > 4096 {
 		return CanvasNode{}, invalidCanvasDocument("node generation error is too long")
 	}
-	if node.GenerationType != "" && node.GenerationType != "generate" && node.GenerationType != "edit" {
+	if node.GenerationType != "" && node.GenerationType != "generation" && node.GenerationType != "edit" {
 		return CanvasNode{}, invalidCanvasDocument("node generation type is invalid")
 	}
 	if len(node.GenerationReferenceURLs) > canvasDocumentMaxGenerationReferenceImages {
@@ -897,6 +1231,25 @@ func normalizeCanvasNode(node CanvasNode) (CanvasNode, error) {
 		if referenceURL == "" || len(referenceURL) > canvasDocumentMaxURL {
 			return CanvasNode{}, invalidCanvasDocument("node generation reference video is invalid")
 		}
+	}
+	if len(node.GenerationVideoReferenceImages) > 9 {
+		return CanvasNode{}, invalidCanvasDocument("node has too many generation reference images")
+	}
+	for _, referenceURL := range node.GenerationVideoReferenceImages {
+		if referenceURL == "" || len(referenceURL) > canvasDocumentMaxURL {
+			return CanvasNode{}, invalidCanvasDocument("node generation reference image is invalid")
+		}
+	}
+	if len(node.GenerationVideoReferenceAudio) > 3 {
+		return CanvasNode{}, invalidCanvasDocument("node has too many generation reference audio files")
+	}
+	for _, referenceURL := range node.GenerationVideoReferenceAudio {
+		if referenceURL == "" || len(referenceURL) > canvasDocumentMaxURL {
+			return CanvasNode{}, invalidCanvasDocument("node generation reference audio is invalid")
+		}
+	}
+	if len(node.GroupID) > 128 || node.GroupID == node.ID || node.Type == "group" && node.GroupID != "" {
+		return CanvasNode{}, invalidCanvasDocument("node group relationship is invalid")
 	}
 	if len(node.BatchChildIDs) > 10 || len(node.BatchRootID) > 128 || len(node.BatchPrimaryID) > 128 {
 		return CanvasNode{}, invalidCanvasDocument("node batch relationship is invalid")
@@ -917,6 +1270,55 @@ func normalizeCanvasNode(node CanvasNode) (CanvasNode, error) {
 	return node, nil
 }
 
+func validCanvasVideoDuration(model string, seconds int) bool {
+	_ = model
+	// Persistence should not duplicate every provider's duration enum. The
+	// generation endpoint performs the authoritative model-specific validation.
+	return seconds == -1 || (seconds >= 1 && seconds <= 60)
+}
+
+func validCanvasVideoSize(value string) bool {
+	if value == "" || canvasStringIn(value, "auto", "adaptive", "16:9", "9:16", "1:1", "4:3", "3:4", "3:2", "2:3", "21:9") {
+		return true
+	}
+	parts := strings.Split(value, "x")
+	if len(parts) != 2 {
+		return false
+	}
+	width, widthErr := strconv.Atoi(parts[0])
+	height, heightErr := strconv.Atoi(parts[1])
+	return widthErr == nil && heightErr == nil && width > 0 && height > 0 && width <= canvasDocumentMaxNodeDim && height <= canvasDocumentMaxNodeDim
+}
+
+func validCanvasOpenAITTSVoice(value string) bool {
+	return canvasStringIn(value, "alloy", "ash", "ballad", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer", "verse", "marin", "cedar")
+}
+
+func validCanvasGLMTTSVoice(value string) bool {
+	return canvasStringIn(value, "tongtong", "chuichui", "xiaochen", "jam", "kazi", "douji", "luodo")
+}
+
+func validCanvasMiMoTTSVoice(value string) bool {
+	return canvasStringIn(value, "冰糖", "茉莉", "苏打", "白桦", "Mia", "Chloe", "Milo", "Dean")
+}
+
+func validCanvasGrokTTSLanguage(value string) bool {
+	return canvasStringIn(value, "auto", "en", "zh", "ja", "ko", "fr", "de", "hi", "id", "it", "ru", "tr", "vi", "bn", "pt-BR", "pt-PT", "es-MX", "es-ES", "ar-EG", "ar-SA", "ar-AE")
+}
+
+func validCanvasGeminiTTSVoice(value string) bool {
+	return canvasStringIn(value, "Zephyr", "Puck", "Charon", "Kore", "Fenrir", "Leda", "Orus", "Aoede", "Callirrhoe", "Autonoe", "Enceladus", "Iapetus", "Umbriel", "Algieba", "Despina", "Erinome", "Algenib", "Rasalgethi", "Laomedeia", "Achernar", "Alnilam", "Schedar", "Gacrux", "Pulcherrima", "Achird", "Zubenelgenubi", "Vindemiatrix", "Sadachbia", "Sadaltager", "Sulafat")
+}
+
+func canvasStringIn(value string, options ...string) bool {
+	for _, option := range options {
+		if value == option {
+			return true
+		}
+	}
+	return false
+}
+
 func canvasNodeIDListContains(ids []string, target string) bool {
 	for _, id := range ids {
 		if id == target {
@@ -926,8 +1328,23 @@ func canvasNodeIDListContains(ids []string, target string) bool {
 	return false
 }
 
-func canvasDocumentName(ownerID string) string {
-	return canvasDocumentDir + "/" + util.SHA256Hex(ownerID) + ".json"
+func canvasStringSlice(value any) ([]string, bool) {
+	switch values := value.(type) {
+	case []string:
+		return append([]string(nil), values...), true
+	case []any:
+		result := make([]string, 0, len(values))
+		for _, value := range values {
+			text, ok := value.(string)
+			if !ok {
+				return nil, false
+			}
+			result = append(result, text)
+		}
+		return result, true
+	default:
+		return nil, false
+	}
 }
 
 func canvasWorkspaceName(ownerID string) string {

@@ -60,13 +60,11 @@ func runDatabaseBackendIntegration(t *testing.T, databaseURL, wantDriver string)
 		defer cleanup.Close()
 		resetIntegrationDatabase(t, cleanup)
 	})
-	prepareIntegrationLegacyImageConversationSchema(t, initial, wantDriver)
 	if err := initial.Close(); err != nil {
-		t.Fatalf("Close(legacy schema backend) error = %v", err)
+		t.Fatalf("Close(initial backend) error = %v", err)
 	}
 
 	initial = openIntegrationBackend(t, wantDriver)
-	verifyIntegrationLegacyImageConversationUpgrade(t, initial, wantDriver)
 	resetIntegrationDatabase(t, initial)
 
 	writeIntegrationCoreData(t, initial, wantDriver)
@@ -91,8 +89,8 @@ func runDatabaseBackendIntegration(t *testing.T, databaseURL, wantDriver string)
 	if err != nil {
 		t.Fatalf("LoadOwnerState(after final reopen) error = %v", err)
 	}
-	if state.Generation != 3 || !state.LegacyMigrated {
-		t.Fatalf("owner state after final reopen = %#v, want generation 3 and migrated", state)
+	if state.Generation != 3 {
+		t.Fatalf("owner state after final reopen = %#v, want generation 3", state)
 	}
 	page, err := finalBackend.List(ctx, integrationOwnerID(wantDriver), state.Generation, nil, 10)
 	if err != nil {
@@ -133,183 +131,6 @@ func resetIntegrationDatabase(t *testing.T, backend *DatabaseBackend) {
 	} {
 		if _, err := backend.db.Exec("DELETE FROM " + table); err != nil {
 			t.Fatalf("clear integration table %s: %v", table, err)
-		}
-	}
-}
-
-func prepareIntegrationLegacyImageConversationSchema(t *testing.T, backend *DatabaseBackend, driver string) {
-	t.Helper()
-	dropIntegrationFailureConstraint(t, backend)
-	for _, statement := range []string{
-		"DROP TABLE image_conversations",
-		"DROP TABLE image_conversation_owners",
-	} {
-		if _, err := backend.db.Exec(statement); err != nil {
-			t.Fatalf("drop current %s schema: %v", driver, err)
-		}
-	}
-
-	var schema []string
-	switch driver {
-	case "postgres":
-		schema = []string{
-			`CREATE TABLE image_conversation_owners (
-				owner_key TEXT PRIMARY KEY,
-				cleared_at TEXT NOT NULL DEFAULT '',
-				cleared_at_ms BIGINT NOT NULL DEFAULT 0,
-				generation BIGINT NOT NULL DEFAULT 1,
-				legacy_migrated SMALLINT NOT NULL DEFAULT 0
-			)`,
-			`CREATE TABLE image_conversations (
-				owner_key TEXT NOT NULL,
-				conversation_key TEXT NOT NULL,
-				conversation_id TEXT NOT NULL,
-				revision BIGINT NOT NULL DEFAULT 0,
-				storage_version BIGINT NOT NULL DEFAULT 1,
-				accepted_hash TEXT NOT NULL,
-				created_at_ms BIGINT NOT NULL DEFAULT 0,
-				updated_at_ms BIGINT NOT NULL DEFAULT 0,
-				active SMALLINT NOT NULL DEFAULT 0,
-				deleted_at_ms BIGINT NOT NULL DEFAULT 0,
-				data TEXT,
-				PRIMARY KEY (owner_key, conversation_key)
-			)`,
-		}
-	case "mysql":
-		schema = []string{
-			`CREATE TABLE image_conversation_owners (
-				owner_key CHAR(64) CHARACTER SET ascii COLLATE ascii_bin PRIMARY KEY,
-				cleared_at TEXT NOT NULL,
-				cleared_at_ms BIGINT NOT NULL DEFAULT 0,
-				generation BIGINT NOT NULL DEFAULT 1,
-				legacy_migrated TINYINT(1) NOT NULL DEFAULT 0
-			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin`,
-			`CREATE TABLE image_conversations (
-				owner_key CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
-				conversation_key CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
-				conversation_id TEXT NOT NULL,
-				revision BIGINT NOT NULL DEFAULT 0,
-				storage_version BIGINT NOT NULL DEFAULT 1,
-				accepted_hash CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
-				created_at_ms BIGINT NOT NULL DEFAULT 0,
-				updated_at_ms BIGINT NOT NULL DEFAULT 0,
-				active TINYINT(1) NOT NULL DEFAULT 0,
-				deleted_at_ms BIGINT NOT NULL DEFAULT 0,
-				data LONGTEXT,
-				PRIMARY KEY (owner_key, conversation_key)
-			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin`,
-		}
-	default:
-		t.Fatalf("unsupported integration legacy schema driver %q", driver)
-	}
-	for _, statement := range schema {
-		if _, err := backend.db.Exec(statement); err != nil {
-			t.Fatalf("create legacy %s schema: %v", driver, err)
-		}
-	}
-
-	ownerID := "integration-upgrade-owner-" + driver
-	conversationID := "integration-upgrade-conversation-" + driver
-	ownerKey, _ := imageConversationStorageKey(ownerID)
-	conversationKey, _ := imageConversationStorageKey(conversationID)
-	data, _ := json.Marshal(map[string]any{
-		"id":        conversationID,
-		"revision":  1,
-		"title":     "Legacy integration conversation",
-		"createdAt": "2098-01-01T00:00:00Z",
-		"updatedAt": "2098-01-02T00:00:00Z",
-		"turns":     []any{},
-	})
-	ownerInsert := `INSERT INTO image_conversation_owners
-		(owner_key, cleared_at, cleared_at_ms, generation, legacy_migrated) VALUES (` + backend.imageConversationPlaceholders(5) + `)`
-	if _, err := backend.db.Exec(ownerInsert, ownerKey, "", 0, 4, 1); err != nil {
-		t.Fatalf("insert legacy %s owner: %v", driver, err)
-	}
-	conversationInsert := `INSERT INTO image_conversations (
-		owner_key, conversation_key, conversation_id, revision, storage_version,
-		accepted_hash, created_at_ms, updated_at_ms, active, deleted_at_ms, data
-	) VALUES (` + backend.imageConversationPlaceholders(11) + `)`
-	if _, err := backend.db.Exec(
-		conversationInsert,
-		ownerKey,
-		conversationKey,
-		conversationID,
-		1,
-		1,
-		imageConversationDataHash(data),
-		1_000,
-		2_000,
-		0,
-		0,
-		string(data),
-	); err != nil {
-		t.Fatalf("insert legacy %s conversation: %v", driver, err)
-	}
-}
-
-func verifyIntegrationLegacyImageConversationUpgrade(t *testing.T, backend *DatabaseBackend, driver string) {
-	t.Helper()
-	ownerID := "integration-upgrade-owner-" + driver
-	conversationID := "integration-upgrade-conversation-" + driver
-	record, exists, err := backend.Load(context.Background(), ownerID, conversationID)
-	if err != nil || !exists || len(record.Data) == 0 || !strings.Contains(string(record.Summary), "Legacy integration conversation") {
-		t.Fatalf("Load(upgraded %s conversation) = (%#v, %v, %v)", driver, record, exists, err)
-	}
-	state, err := backend.LoadOwnerState(context.Background(), ownerID)
-	if err != nil || state.Generation != 4 || state.CursorGeneration != state.Generation {
-		t.Fatalf("LoadOwnerState(upgraded %s) = (%#v, %v)", driver, state, err)
-	}
-
-	var summaryColumns int
-	var cursorGenerationColumns int
-	var indexCount func(string) int
-	switch driver {
-	case "postgres":
-		if err := backend.db.QueryRow(`SELECT COUNT(*) FROM information_schema.columns
-			WHERE table_schema = current_schema() AND table_name = 'image_conversations' AND column_name = 'summary'`).Scan(&summaryColumns); err != nil {
-			t.Fatalf("inspect upgraded postgres summary column: %v", err)
-		}
-		if err := backend.db.QueryRow(`SELECT COUNT(*) FROM information_schema.columns
-			WHERE table_schema = current_schema() AND table_name = 'image_conversation_owners' AND column_name = 'cursor_generation'`).Scan(&cursorGenerationColumns); err != nil {
-			t.Fatalf("inspect upgraded postgres cursor generation column: %v", err)
-		}
-		indexCount = func(name string) int {
-			var count int
-			if err := backend.db.QueryRow(`SELECT COUNT(*) FROM pg_indexes
-				WHERE schemaname = current_schema() AND tablename = 'image_conversations' AND indexname = $1`, name).Scan(&count); err != nil {
-				t.Fatalf("inspect upgraded postgres index %s: %v", name, err)
-			}
-			return count
-		}
-	case "mysql":
-		if err := backend.db.QueryRow(`SELECT COUNT(*) FROM information_schema.columns
-			WHERE table_schema = DATABASE() AND table_name = 'image_conversations' AND column_name = 'summary'`).Scan(&summaryColumns); err != nil {
-			t.Fatalf("inspect upgraded mysql summary column: %v", err)
-		}
-		if err := backend.db.QueryRow(`SELECT COUNT(*) FROM information_schema.columns
-			WHERE table_schema = DATABASE() AND table_name = 'image_conversation_owners' AND column_name = 'cursor_generation'`).Scan(&cursorGenerationColumns); err != nil {
-			t.Fatalf("inspect upgraded mysql cursor generation column: %v", err)
-		}
-		indexCount = func(name string) int {
-			var count int
-			if err := backend.db.QueryRow(`SELECT COUNT(DISTINCT index_name) FROM information_schema.statistics
-				WHERE table_schema = DATABASE() AND table_name = 'image_conversations' AND index_name = ?`, name).Scan(&count); err != nil {
-				t.Fatalf("inspect upgraded mysql index %s: %v", name, err)
-			}
-			return count
-		}
-	default:
-		t.Fatalf("unsupported integration upgrade driver %q", driver)
-	}
-	if summaryColumns != 1 {
-		t.Fatalf("upgraded %s summary column count = %d, want 1", driver, summaryColumns)
-	}
-	if cursorGenerationColumns != 1 {
-		t.Fatalf("upgraded %s cursor generation column count = %d, want 1", driver, cursorGenerationColumns)
-	}
-	for _, name := range []string{"idx_image_conversations_owner_list", "idx_image_conversations_owner_active"} {
-		if count := indexCount(name); count != 1 {
-			t.Fatalf("upgraded %s index %s count = %d, want 1", driver, name, count)
 		}
 	}
 }
@@ -523,7 +344,7 @@ func exerciseImageConversationIntegration(t *testing.T, ctx context.Context, bac
 	}
 
 	cleared, err := backend.Clear(ctx, ownerID, "2098-01-03T00:00:00Z", 6_000)
-	if err != nil || cleared.Generation != 3 || !cleared.LegacyMigrated {
+	if err != nil || cleared.Generation != 3 {
 		t.Fatalf("Clear() = (%#v, %v)", cleared, err)
 	}
 	page, err = backend.List(ctx, ownerID, cleared.Generation, nil, 10)

@@ -6,7 +6,7 @@ export type ImageTurnProgress = {
   startedAt: number;
 };
 
-export const IMAGE_TURN_PROGRESS_CHANGED_EVENT = "chatgpt2api:image-turn-progress-changed";
+const IMAGE_TURN_PROGRESS_CHANGED_EVENT = "chatgpt2api:image-turn-progress-changed";
 
 let imageTurnProgressByKey: Record<string, ImageTurnProgress> = {};
 

@@ -42,20 +42,25 @@ test("preserves video nodes and their generation settings in copied graphs", () 
   assert.equal(result?.nodes[0].generation_video_seconds, 8);
 });
 
-test("drops legacy parent ids because connections are the current graph source", () => {
-  const result = normalizeCanvasClipboard({
+test("rejects removed parent ids because connections are the current graph source", () => {
+  assert.equal(normalizeCanvasClipboard({
     nodes: [node("parent"), node("child", { parent_id: "parent" })],
     connections: [{ id: "parent-child", from_node_id: "parent", to_node_id: "child" }],
-  });
-  assert.equal("parent_id" in result.nodes[1], false);
-  assert.equal("parent_id" in remapCanvasNodeReferences({ ...result.nodes[1], parent_id: "parent" }, new Map([["parent", "copy"]])), false);
+  }), null);
+});
+
+test("rejects fields outside the current clipboard schema", () => {
+  assert.equal(normalizeCanvasClipboard({ nodes: [node("old", { legacy_state: true })] }), null);
+  assert.equal(normalizeCanvasClipboard({ nodes: [node("a"), node("b")], connections: [{ id: "a-b", from_node_id: "a", to_node_id: "b", metadata: {} }] }), null);
+  assert.equal(normalizeCanvasClipboard({ type: "other-canvas", nodes: [node("a")] }), null);
+  assert.equal(normalizeCanvasClipboard({ nodes: [node("a")], version: 1 }), null);
 });
 
 test("rejects malformed nodes instead of allowing invalid canvas state", () => {
   assert.equal(normalizeCanvasClipboard({ nodes: [node("bad", { width: 0 })] }), null);
   assert.equal(normalizeCanvasClipboard({ nodes: [node("bad", { type: "text", font_size: 40 })] }), null);
   assert.equal(normalizeCanvasClipboard({ nodes: [node("bad", { type: "video", generation_video_seconds: 0 })] }), null);
-  assert.equal(normalizeCanvasClipboard({ nodes: [node("bad", { type: "video", generation_video_size: "800x600" })] }), null);
+  assert.ok(normalizeCanvasClipboard({ nodes: [node("custom-size", { type: "video", generation_video_size: "800x600" })] }));
   assert.ok(normalizeCanvasClipboard({ nodes: [node("seedance", { type: "video", generation_video_resolution: "4k" })] }));
   assert.equal(normalizeCanvasClipboard({ nodes: [node("bad", { batch_child_ids: "child" })] }), null);
   assert.equal(normalizeCanvasClipboard({ nodes: [node("bad", { type: "config", composer_content: 42 })] }), null);
@@ -69,7 +74,7 @@ test("rejects dangling, duplicate, and self connections", () => {
   assert.equal(normalizeCanvasClipboard({ nodes, connections: [{ id: "x", from_node_id: "a", to_node_id: "a" }] }), null);
 });
 
-test("remaps composer and batch references when nodes are pasted", () => {
+test("preserves prompt and batch references when nodes are pasted", () => {
   const mapped = remapCanvasNodeReferences(node("config-copy", {
     type: "config",
     composer_content: "让 @[node:image-old] 参考 @[node:text-old]，保留 @[node:not-copied]",
@@ -81,13 +86,52 @@ test("remaps composer and batch references when nodes are pasted", () => {
     ["text-old", "text-new"],
     ["root-old", "root-new"],
   ]));
-  assert.equal(mapped.composer_content, "让 @[node:image-new] 参考 @[node:text-new]，保留 @[node:not-copied]");
-  assert.deepEqual(mapped.batch_child_ids, ["image-new"]);
-  assert.equal(mapped.batch_root_id, "root-new");
-  assert.equal(mapped.batch_primary_id, "image-new");
+  assert.equal(mapped.composer_content, "让 @[node:image-old] 参考 @[node:text-old]，保留 @[node:not-copied]");
+  assert.deepEqual(mapped.batch_child_ids, ["image-old", "not-copied"]);
+  assert.equal(mapped.batch_root_id, "root-old");
+  assert.equal(mapped.batch_primary_id, "image-old");
 });
 
-test("clears batch links that point outside the copied graph", () => {
+test("preserves batch links that point outside the copied graph", () => {
   const mapped = remapCanvasNodeReferences(node("child-copy", { batch_root_id: "outside" }), new Map());
-  assert.equal(mapped.batch_root_id, undefined);
+  assert.equal(mapped.batch_root_id, "outside");
+});
+
+test("preserves video, element, frame, and audio clone node bindings", () => {
+  const mapped = remapCanvasNodeReferences(node("video-copy", {
+    type: "video",
+    generation_video_first_frame_node_id: "first-old",
+    generation_video_last_frame_node_id: "last-old",
+    generation_video_kling_image_node_ids: ["first-old", "outside"],
+    generation_video_kling_multi_prompt: [{ text_node_id: "text-old", duration: "3" }, { text_node_id: "outside", duration: "2" }],
+    generation_video_kling_element_list: [{ name: "角色", description: "主角", node_ids: ["image-old", "video-old", "outside"] }],
+    generation_audio_mimo_voice_clone_node_id: "audio-old",
+  }), new Map([
+    ["first-old", "first-new"],
+    ["last-old", "last-new"],
+    ["text-old", "text-new"],
+    ["image-old", "image-new"],
+    ["video-old", "video-new"],
+    ["audio-old", "audio-new"],
+  ]));
+  assert.equal(mapped.generation_video_first_frame_node_id, "first-old");
+  assert.equal(mapped.generation_video_last_frame_node_id, "last-old");
+  assert.deepEqual(mapped.generation_video_kling_image_node_ids, ["first-old", "outside"]);
+  assert.deepEqual(mapped.generation_video_kling_multi_prompt, [{ text_node_id: "text-old", duration: "3" }, { text_node_id: "outside", duration: "2" }]);
+  assert.deepEqual(mapped.generation_video_kling_element_list, [{ name: "角色", description: "主角", node_ids: ["image-old", "video-old", "outside"] }]);
+  assert.equal(mapped.generation_audio_mimo_voice_clone_node_id, "audio-old");
+});
+
+test("preserves valid groups and remaps membership when pasted", () => {
+  const result = normalizeCanvasClipboard({
+    nodes: [node("group", { type: "group", width: 400, height: 300 }), node("child", { group_id: "group" })],
+  });
+  assert.equal(result?.nodes[1].group_id, "group");
+  const mapped = remapCanvasNodeReferences(result.nodes[1], new Map([["group", "group-copy"]]));
+  assert.equal(mapped.group_id, "group-copy");
+});
+
+test("rejects dangling and nested group membership", () => {
+  assert.equal(normalizeCanvasClipboard({ nodes: [node("child", { group_id: "missing" })] }), null);
+  assert.equal(normalizeCanvasClipboard({ nodes: [node("group", { type: "group", group_id: "other" }), node("other", { type: "group" })] }), null);
 });

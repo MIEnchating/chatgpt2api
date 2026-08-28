@@ -3,6 +3,7 @@
 import * as React from "react";
 import * as PopoverPrimitive from "@radix-ui/react-popover";
 
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 
 function Popover(props: React.ComponentProps<typeof PopoverPrimitive.Root>) {
@@ -28,12 +29,14 @@ function PopoverContent({
         sideOffset={sideOffset}
         collisionPadding={8}
         className={cn(
-          "z-50 max-h-[var(--radix-popover-content-available-height)] max-w-[calc(100vw-1rem)] overflow-auto overscroll-contain rounded-xl border border-border bg-popover p-3 text-popover-foreground shadow-[0_20px_60px_-30px_rgba(15,23,42,0.35)] outline-none",
+          "z-50 max-h-[var(--radix-popover-content-available-height)] max-w-[calc(100vw-1rem)] overscroll-contain rounded-xl border border-border bg-popover p-3 text-popover-foreground shadow-[0_20px_60px_-30px_rgba(15,23,42,0.35)] outline-none",
           className,
         )}
         {...props}
       >
-        {children}
+        <ScrollArea className="max-h-[var(--radix-popover-content-available-height)]" viewportClassName="max-h-[var(--radix-popover-content-available-height)]">
+          {children}
+        </ScrollArea>
       </PopoverPrimitive.Content>
     </PopoverPrimitive.Portal>
   );

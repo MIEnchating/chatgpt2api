@@ -1,9 +1,10 @@
-import type { CanvasDocument } from "@/lib/api";
+import type { CanvasDocument } from "@/services/api/canvas";
 
 export function canvasHistoryKey(document: CanvasDocument) {
   return JSON.stringify({
     title: document.title,
     background: document.background,
+    show_image_info: document.show_image_info,
     nodes: document.nodes,
     connections: document.connections,
   });

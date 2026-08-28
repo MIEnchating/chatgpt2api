@@ -17,7 +17,7 @@ export type PromptFavorite = {
   prompt: string;
   author: string;
   link?: string;
-  mode: BananaPromptMode;
+  mode?: BananaPromptMode;
   category: string;
   sub_category?: string;
   tags: string[];
@@ -65,7 +65,7 @@ export function promptFavoriteToBananaPrompt(favorite: PromptFavorite): BananaPr
   };
 }
 
-export function bananaPromptToFavoritePayload(prompt: BananaPrompt) {
+function bananaPromptToFavoritePayload(prompt: BananaPrompt) {
   return {
     prompt_id: prompt.id,
     source: prompt.source,

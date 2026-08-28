@@ -159,14 +159,6 @@ func NewImageConversationAssetService(root string) *ImageConversationAssetServic
 	}
 }
 
-func (s *ImageConversationAssetService) StoreReader(ctx context.Context, ownerID, filename string, reader io.Reader) (ImageConversationAsset, error) {
-	validated, err := s.ReadValidatedReader(ctx, reader)
-	if err != nil {
-		return ImageConversationAsset{}, err
-	}
-	return s.StoreValidatedContext(ctx, ownerID, filename, validated)
-}
-
 // ReadValidatedReader bounds and validates an upload without mutating storage.
 // Callers accepting a batch can validate every member before committing any of
 // them, so a malformed trailing file cannot leave earlier files orphaned.
@@ -193,20 +185,6 @@ func (s *ImageConversationAssetService) ReadValidatedReader(ctx context.Context,
 	return &ValidatedImageConversationAsset{service: s, data: data, contentType: contentType, extension: extension}, nil
 }
 
-func (s *ImageConversationAssetService) Store(ownerID, filename string, data []byte) (ImageConversationAsset, error) {
-	contentType, extension, err := validateImageConversationAsset(data)
-	if err != nil {
-		return ImageConversationAsset{}, err
-	}
-	return s.StoreValidated(ownerID, filename, &ValidatedImageConversationAsset{
-		service: s, data: data, contentType: contentType, extension: extension,
-	})
-}
-
-func (s *ImageConversationAssetService) StoreValidated(ownerID, filename string, validated *ValidatedImageConversationAsset) (ImageConversationAsset, error) {
-	return s.StoreValidatedContext(context.Background(), ownerID, filename, validated)
-}
-
 func (s *ImageConversationAssetService) StoreValidatedContext(ctx context.Context, ownerID, filename string, validated *ValidatedImageConversationAsset) (ImageConversationAsset, error) {
 	items, err := s.StoreValidatedBatchContext(ctx, ownerID, []string{filename}, []*ValidatedImageConversationAsset{validated})
 	if err != nil {
@@ -216,10 +194,6 @@ func (s *ImageConversationAssetService) StoreValidatedContext(ctx context.Contex
 		return ImageConversationAsset{}, ErrInvalidImageConversationAsset
 	}
 	return items[0], nil
-}
-
-func (s *ImageConversationAssetService) StoreValidatedBatch(ownerID string, filenames []string, validated []*ValidatedImageConversationAsset) ([]ImageConversationAsset, error) {
-	return s.StoreValidatedBatchContext(context.Background(), ownerID, filenames, validated)
 }
 
 func (s *ImageConversationAssetService) StoreValidatedBatchContext(ctx context.Context, ownerID string, filenames []string, validated []*ValidatedImageConversationAsset) ([]ImageConversationAsset, error) {
@@ -555,10 +529,6 @@ func (s *ImageConversationAssetService) Owners() []string {
 	return owners
 }
 
-func (s *ImageConversationAssetService) CleanupOrphans(ownerID string, referenced map[string]struct{}, grace time.Duration, limitBytes int64) (ImageConversationAssetGovernance, error) {
-	return s.CleanupOrphansContext(context.Background(), ownerID, referenced, grace, limitBytes)
-}
-
 func (s *ImageConversationAssetService) CleanupOrphansContext(ctx context.Context, ownerID string, referenced map[string]struct{}, grace time.Duration, limitBytes int64) (ImageConversationAssetGovernance, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -787,18 +757,11 @@ func (s *ImageConversationAssetService) governanceLockedContext(ctx context.Cont
 	return result, nil
 }
 
-func (s *ImageConversationAssetService) AssetizeReference(ctx context.Context, ownerID string, item map[string]any) (map[string]any, bool, error) {
-	return s.assetizeReference(ctx, ownerID, item, true, nil)
-}
-
 func (s *ImageConversationAssetService) assetizeReference(ctx context.Context, ownerID string, item map[string]any, touchManaged bool, preparation *ImageConversationAssetPreparation) (map[string]any, bool, error) {
 	if item == nil {
 		return nil, false, ErrInvalidImageConversationAsset
 	}
 	dataURL := strings.TrimSpace(toString(item["dataUrl"]))
-	if dataURL == "" {
-		dataURL = strings.TrimSpace(toString(item["data_url"]))
-	}
 	if strings.HasPrefix(strings.ToLower(dataURL), "data:") {
 		var asset ImageConversationAsset
 		if preparation != nil {
@@ -834,7 +797,6 @@ func (s *ImageConversationAssetService) assetizeReference(ctx context.Context, o
 		}
 		next := cloneImageConversationAssetMap(item)
 		delete(next, "dataUrl")
-		delete(next, "data_url")
 		applyImageConversationAsset(next, asset)
 		return next, true, nil
 	}
@@ -861,7 +823,6 @@ func (s *ImageConversationAssetService) assetizeReference(ctx context.Context, o
 		Size:      access.Info.Size(),
 	}
 	next := cloneImageConversationAssetMap(item)
-	delete(next, "data_url")
 	applyImageConversationAsset(next, asset)
 	changed := toString(item["assetPath"]) != asset.AssetPath ||
 		toString(item["url"]) != asset.URL ||
@@ -883,10 +844,6 @@ func (s *ImageConversationAssetService) touch(access ImageConversationAssetAcces
 	}
 	now := time.Now()
 	return os.Chtimes(access.Path, now, now)
-}
-
-func (s *ImageConversationAssetService) AssetizeConversation(ctx context.Context, ownerID string, item map[string]any) (map[string]any, map[string]struct{}, bool, error) {
-	return s.assetizeConversation(ctx, ownerID, item, true, nil)
 }
 
 // PrepareConversations checks a complete batch without touching or creating
@@ -933,9 +890,6 @@ func (s *ImageConversationAssetService) PrepareConversations(ctx context.Context
 
 func (s *ImageConversationAssetService) prepareReference(ctx context.Context, ownerID string, item map[string]any, preparation *ImageConversationAssetPreparation) error {
 	dataURL := strings.TrimSpace(toString(item["dataUrl"]))
-	if dataURL == "" {
-		dataURL = strings.TrimSpace(toString(item["data_url"]))
-	}
 	if strings.HasPrefix(strings.ToLower(dataURL), "data:") {
 		if _, ok := preparation.embedded[dataURL]; ok {
 			return nil
@@ -1113,10 +1067,13 @@ func validateImageConversationDataURLBudget(item map[string]any) error {
 		references, _ := imageConversationAssetAnySlice(turn["referenceImages"])
 		for _, rawReference := range references {
 			reference, _ := rawReference.(map[string]any)
-			dataURL := strings.TrimSpace(toString(reference["dataUrl"]))
-			if dataURL == "" {
-				dataURL = strings.TrimSpace(toString(reference["data_url"]))
+			if _, exists := reference["asset_path"]; exists {
+				return fmt.Errorf("%w: unsupported asset_path field", ErrInvalidImageConversationAsset)
 			}
+			if _, exists := reference["data_url"]; exists {
+				return fmt.Errorf("%w: unsupported data_url field", ErrInvalidImageConversationAsset)
+			}
+			dataURL := strings.TrimSpace(toString(reference["dataUrl"]))
 			if !strings.HasPrefix(strings.ToLower(dataURL), "data:") {
 				continue
 			}
@@ -1174,13 +1131,10 @@ func imageConversationReferenceNeedsAssetization(item map[string]any) bool {
 		return false
 	}
 	dataURL := strings.TrimSpace(toString(item["dataUrl"]))
-	if dataURL == "" {
-		dataURL = strings.TrimSpace(toString(item["data_url"]))
-	}
 	if strings.HasPrefix(strings.ToLower(dataURL), "data:") {
 		return true
 	}
-	for _, key := range []string{"assetPath", "asset_path", "dataUrl", "data_url", "url"} {
+	for _, key := range []string{"assetPath", "dataUrl", "url"} {
 		value := strings.TrimSpace(toString(item[key]))
 		if value == "" {
 			continue
@@ -1188,7 +1142,7 @@ func imageConversationReferenceNeedsAssetization(item map[string]any) bool {
 		if _, _, _, _, err := parseImageConversationAssetPath(value); err == nil {
 			return true
 		}
-		if key == "assetPath" || key == "asset_path" {
+		if key == "assetPath" {
 			return true
 		}
 	}
@@ -1277,13 +1231,6 @@ func (s *ImageConversationAssetService) Access(value, ownerID string, allowAll b
 	}, nil
 }
 
-func (s *ImageConversationAssetService) Root() string {
-	if s == nil {
-		return ""
-	}
-	return s.root
-}
-
 func validateImageConversationAsset(data []byte) (string, string, error) {
 	if len(data) == 0 {
 		return "", "", fmt.Errorf("%w: image file is empty", ErrInvalidImageConversationAsset)
@@ -1313,19 +1260,6 @@ func normalizeImageConversationAssetContentType(value string) string {
 	switch value {
 	case "image/png", "image/jpeg", "image/webp":
 		return value
-	default:
-		return ""
-	}
-}
-
-func normalizeImageConversationAssetFormat(value string) string {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "png":
-		return "image/png"
-	case "jpeg", "jpg":
-		return "image/jpeg"
-	case "webp":
-		return "image/webp"
 	default:
 		return ""
 	}
@@ -1602,7 +1536,7 @@ func imageConversationAssetFilename(value, extension string) string {
 }
 
 func firstImageConversationAssetValue(item map[string]any) string {
-	for _, key := range []string{"assetPath", "asset_path", "dataUrl", "data_url", "url"} {
+	for _, key := range []string{"assetPath", "dataUrl", "url"} {
 		if value := strings.TrimSpace(toString(item[key])); value != "" {
 			return value
 		}
@@ -1619,8 +1553,6 @@ func cloneImageConversationAssetMap(item map[string]any) map[string]any {
 }
 
 func applyImageConversationAsset(item map[string]any, asset ImageConversationAsset) {
-	delete(item, "asset_path")
-	delete(item, "data_url")
 	item["assetPath"] = asset.AssetPath
 	item["url"] = asset.URL
 	item["dataUrl"] = asset.DataURL

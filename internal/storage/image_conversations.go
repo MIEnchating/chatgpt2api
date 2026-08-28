@@ -39,9 +39,6 @@ var (
 
 // ImageConversationRecord is one independently persisted conversation snapshot.
 // StorageVersion is managed by the backend and is separate from the client revision.
-// During legacy migration, an empty Data value represents a tombstone when
-// DeletedAtMillis is non-zero. MigrateLegacy also accepts a zero deletion time
-// when the legacy timestamp was malformed and supplies a safe server timestamp.
 type ImageConversationRecord struct {
 	ID              string          `json:"id"`
 	Revision        int64           `json:"revision"`
@@ -88,7 +85,6 @@ type ImageConversationOwnerState struct {
 	ClearedAtMillis  int64  `json:"cleared_at_millis,omitempty"`
 	Generation       int64  `json:"generation"`
 	CursorGeneration int64  `json:"cursor_generation"`
-	LegacyMigrated   bool   `json:"legacy_migrated"`
 }
 
 // ImageConversationCursor is a stable keyset cursor ordered newest first.
@@ -109,7 +105,6 @@ type ImageConversationPage struct {
 // advanced by every mutation so keyset cursors cannot skip reordered rows.
 type ImageConversationBackend interface {
 	LoadOwnerState(ctx context.Context, ownerID string) (ImageConversationOwnerState, error)
-	MigrateLegacy(ctx context.Context, ownerID string, records []ImageConversationRecord, state ImageConversationOwnerState) (ImageConversationOwnerState, error)
 	Load(ctx context.Context, ownerID, conversationID string) (ImageConversationRecord, bool, error)
 	List(ctx context.Context, ownerID string, generation int64, cursor *ImageConversationCursor, limit int) (ImageConversationPage, error)
 	ListActive(ctx context.Context, ownerID string, generation int64, limit int) ([]ImageConversationRecord, error)
@@ -135,8 +130,7 @@ func (b *DatabaseBackend) initImageConversationSchema() error {
 				cleared_at TEXT NOT NULL DEFAULT '',
 				cleared_at_ms BIGINT NOT NULL DEFAULT 0,
 				generation BIGINT NOT NULL DEFAULT 1,
-				cursor_generation BIGINT NOT NULL DEFAULT 1,
-				legacy_migrated SMALLINT NOT NULL DEFAULT 0
+				cursor_generation BIGINT NOT NULL DEFAULT 1
 			)`,
 			`CREATE TABLE IF NOT EXISTS image_conversations (
 				owner_key TEXT NOT NULL,
@@ -163,8 +157,7 @@ func (b *DatabaseBackend) initImageConversationSchema() error {
 				cleared_at TEXT NOT NULL,
 				cleared_at_ms BIGINT NOT NULL DEFAULT 0,
 				generation BIGINT NOT NULL DEFAULT 1,
-				cursor_generation BIGINT NOT NULL DEFAULT 1,
-				legacy_migrated TINYINT(1) NOT NULL DEFAULT 0
+				cursor_generation BIGINT NOT NULL DEFAULT 1
 			) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin`,
 			`CREATE TABLE IF NOT EXISTS image_conversations (
 				owner_key CHAR(64) CHARACTER SET ascii COLLATE ascii_bin NOT NULL,
@@ -191,8 +184,7 @@ func (b *DatabaseBackend) initImageConversationSchema() error {
 				cleared_at TEXT NOT NULL DEFAULT '',
 				cleared_at_ms INTEGER NOT NULL DEFAULT 0,
 				generation INTEGER NOT NULL DEFAULT 1,
-				cursor_generation INTEGER NOT NULL DEFAULT 1,
-				legacy_migrated INTEGER NOT NULL DEFAULT 0
+				cursor_generation INTEGER NOT NULL DEFAULT 1
 			)`,
 			`CREATE TABLE IF NOT EXISTS image_conversations (
 				owner_key TEXT NOT NULL,
@@ -222,244 +214,7 @@ func (b *DatabaseBackend) initImageConversationSchema() error {
 			return fmt.Errorf("initialize image conversation schema: %w", err)
 		}
 	}
-	if err := b.ensureImageConversationCursorGenerationColumn(); err != nil {
-		return err
-	}
-	if err := b.backfillImageConversationCursorGeneration(); err != nil {
-		return err
-	}
-	if err := b.ensureImageConversationSummaryColumn(); err != nil {
-		return err
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-	_, _ = b.backfillImageConversationSummaryBatch(ctx, 100)
 	return nil
-}
-
-func (b *DatabaseBackend) backfillImageConversationCursorGeneration() error {
-	_, err := b.db.Exec(`UPDATE image_conversation_owners
-		SET cursor_generation = generation
-		WHERE cursor_generation < generation`)
-	if err != nil {
-		return fmt.Errorf("backfill image conversation cursor generation: %w", err)
-	}
-	return nil
-}
-
-func (b *DatabaseBackend) ensureImageConversationCursorGenerationColumn() error {
-	switch b.driver {
-	case "postgres":
-		_, err := b.db.Exec(`ALTER TABLE image_conversation_owners ADD COLUMN IF NOT EXISTS cursor_generation BIGINT NOT NULL DEFAULT 1`)
-		if err != nil {
-			return fmt.Errorf("add image conversation cursor generation column: %w", err)
-		}
-		return nil
-	case "mysql":
-		var count int
-		if err := b.db.QueryRow(`SELECT COUNT(*) FROM information_schema.columns
-			WHERE table_schema = DATABASE() AND table_name = 'image_conversation_owners' AND column_name = 'cursor_generation'`).Scan(&count); err != nil {
-			return fmt.Errorf("inspect image conversation cursor generation column: %w", err)
-		}
-		if count > 0 {
-			return nil
-		}
-		_, err := b.db.Exec(`ALTER TABLE image_conversation_owners ADD COLUMN cursor_generation BIGINT NOT NULL DEFAULT 1 AFTER generation`)
-		if isDuplicateImageConversationColumnError(err) {
-			return nil
-		}
-		if err != nil {
-			return fmt.Errorf("add image conversation cursor generation column: %w", err)
-		}
-		return nil
-	default:
-		rows, err := b.db.Query(`PRAGMA table_info(image_conversation_owners)`)
-		if err != nil {
-			return fmt.Errorf("inspect image conversation cursor generation column: %w", err)
-		}
-		hasColumn := false
-		for rows.Next() {
-			var columnID, notNull, primaryKey int
-			var name, columnType string
-			var defaultValue any
-			if err := rows.Scan(&columnID, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
-				_ = rows.Close()
-				return fmt.Errorf("inspect image conversation cursor generation column: %w", err)
-			}
-			if strings.EqualFold(name, "cursor_generation") {
-				hasColumn = true
-			}
-		}
-		if err := rows.Close(); err != nil {
-			return fmt.Errorf("inspect image conversation cursor generation column: %w", err)
-		}
-		if err := rows.Err(); err != nil {
-			return fmt.Errorf("inspect image conversation cursor generation column: %w", err)
-		}
-		if hasColumn {
-			return nil
-		}
-		_, err = b.db.Exec(`ALTER TABLE image_conversation_owners ADD COLUMN cursor_generation INTEGER NOT NULL DEFAULT 1`)
-		if isDuplicateImageConversationColumnError(err) {
-			return nil
-		}
-		if err != nil {
-			return fmt.Errorf("add image conversation cursor generation column: %w", err)
-		}
-		return nil
-	}
-}
-
-func (b *DatabaseBackend) ensureImageConversationSummaryColumn() error {
-	switch b.driver {
-	case "postgres":
-		_, err := b.db.Exec(`ALTER TABLE image_conversations ADD COLUMN IF NOT EXISTS summary TEXT`)
-		if err != nil {
-			return fmt.Errorf("add image conversation summary column: %w", err)
-		}
-		return nil
-	case "mysql":
-		var count int
-		if err := b.db.QueryRow(`SELECT COUNT(*) FROM information_schema.columns
-			WHERE table_schema = DATABASE() AND table_name = 'image_conversations' AND column_name = 'summary'`).Scan(&count); err != nil {
-			return fmt.Errorf("inspect image conversation summary column: %w", err)
-		}
-		if count > 0 {
-			return nil
-		}
-		_, err := b.db.Exec(`ALTER TABLE image_conversations ADD COLUMN summary LONGTEXT NULL AFTER deleted_at_ms`)
-		if isDuplicateImageConversationColumnError(err) {
-			return nil
-		}
-		if err != nil {
-			return fmt.Errorf("add image conversation summary column: %w", err)
-		}
-		return nil
-	default:
-		rows, err := b.db.Query(`PRAGMA table_info(image_conversations)`)
-		if err != nil {
-			return fmt.Errorf("inspect image conversation summary column: %w", err)
-		}
-		hasSummary := false
-		for rows.Next() {
-			var columnID, notNull, primaryKey int
-			var name, columnType string
-			var defaultValue any
-			if err := rows.Scan(&columnID, &name, &columnType, &notNull, &defaultValue, &primaryKey); err != nil {
-				_ = rows.Close()
-				return fmt.Errorf("inspect image conversation summary column: %w", err)
-			}
-			if strings.EqualFold(name, "summary") {
-				hasSummary = true
-			}
-		}
-		if err := rows.Close(); err != nil {
-			return fmt.Errorf("inspect image conversation summary column: %w", err)
-		}
-		if err := rows.Err(); err != nil {
-			return fmt.Errorf("inspect image conversation summary column: %w", err)
-		}
-		if hasSummary {
-			return nil
-		}
-		_, err = b.db.Exec(`ALTER TABLE image_conversations ADD COLUMN summary TEXT`)
-		if isDuplicateImageConversationColumnError(err) {
-			return nil
-		}
-		if err != nil {
-			return fmt.Errorf("add image conversation summary column: %w", err)
-		}
-		return nil
-	}
-}
-
-func isDuplicateImageConversationColumnError(err error) bool {
-	if err == nil {
-		return false
-	}
-	var mysqlError *mysqlDriver.MySQLError
-	if errors.As(err, &mysqlError) && mysqlError.Number == 1060 {
-		return true
-	}
-	message := strings.ToLower(err.Error())
-	return strings.Contains(message, "duplicate column") || strings.Contains(message, "already exists")
-}
-
-type imageConversationSummaryBackfillRow struct {
-	ownerKey        string
-	conversationKey string
-	data            []byte
-}
-
-func (b *DatabaseBackend) backfillImageConversationSummaryBatch(ctx context.Context, limit int) (int, error) {
-	if limit <= 0 {
-		return 0, nil
-	}
-	query := `SELECT owner_key, conversation_key, data FROM image_conversations
-		WHERE (summary IS NULL OR summary = '') AND data IS NOT NULL
-		ORDER BY owner_key, conversation_key LIMIT ` + b.placeholder(1)
-	rows, err := b.db.QueryContext(ctx, query, limit)
-	if err != nil {
-		return 0, fmt.Errorf("query image conversation summary backfill: %w", err)
-	}
-	batch := make([]imageConversationSummaryBackfillRow, 0, limit)
-	for rows.Next() {
-		var row imageConversationSummaryBackfillRow
-		if err := rows.Scan(&row.ownerKey, &row.conversationKey, &row.data); err != nil {
-			_ = rows.Close()
-			return 0, fmt.Errorf("scan image conversation summary backfill: %w", err)
-		}
-		batch = append(batch, row)
-	}
-	if err := rows.Close(); err != nil {
-		return 0, fmt.Errorf("close image conversation summary backfill: %w", err)
-	}
-	if err := rows.Err(); err != nil {
-		return 0, fmt.Errorf("scan image conversation summary backfill: %w", err)
-	}
-	if len(batch) == 0 {
-		return 0, nil
-	}
-	tx, err := b.db.BeginTx(ctx, nil)
-	if err != nil {
-		return 0, fmt.Errorf("begin image conversation summary backfill: %w", err)
-	}
-	for _, row := range batch {
-		summary := deriveImageConversationSummary(row.data)
-		statement := `UPDATE image_conversations SET summary = ` + b.placeholder(1) + `
-			WHERE owner_key = ` + b.placeholder(2) + ` AND conversation_key = ` + b.placeholder(3) + `
-				AND (summary IS NULL OR summary = '')`
-		if _, err := tx.ExecContext(ctx, statement, string(summary), row.ownerKey, row.conversationKey); err != nil {
-			_ = tx.Rollback()
-			return 0, fmt.Errorf("backfill image conversation summary: %w", err)
-		}
-	}
-	if err := tx.Commit(); err != nil {
-		_ = tx.Rollback()
-		return 0, fmt.Errorf("commit image conversation summary backfill: %w", err)
-	}
-	return len(batch), nil
-}
-
-func (b *DatabaseBackend) loadAndBackfillImageConversationSummary(ctx context.Context, ownerKey, conversationKey string) (json.RawMessage, error) {
-	query := `SELECT storage_version, data FROM image_conversations
-		WHERE owner_key = ` + b.placeholder(1) + ` AND conversation_key = ` + b.placeholder(2) + `
-			AND deleted_at_ms = 0 AND data IS NOT NULL`
-	var storageVersion int64
-	var data []byte
-	if err := b.db.QueryRowContext(ctx, query, ownerKey, conversationKey).Scan(&storageVersion, &data); errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	} else if err != nil {
-		return nil, err
-	}
-	summary := deriveImageConversationSummary(data)
-	statement := `UPDATE image_conversations SET summary = ` + b.placeholder(1) + `
-		WHERE owner_key = ` + b.placeholder(2) + ` AND conversation_key = ` + b.placeholder(3) + `
-			AND storage_version = ` + b.placeholder(4) + ` AND deleted_at_ms = 0 AND data IS NOT NULL`
-	if _, err := b.db.ExecContext(ctx, statement, string(summary), ownerKey, conversationKey, storageVersion); err != nil {
-		return nil, err
-	}
-	return summary, nil
 }
 
 func imageConversationStorageKey(value string) (string, error) {
@@ -702,30 +457,6 @@ func normalizeLiveImageConversationRecord(record ImageConversationRecord) (Image
 	return record, key, nil
 }
 
-func normalizeMigratedImageConversationRecord(record ImageConversationRecord, fallbackDeletedAt int64) (ImageConversationRecord, string, error) {
-	if len(record.Data) > 0 {
-		record.StorageVersion = 1
-		return normalizeLiveImageConversationRecord(record)
-	}
-	record.ID = strings.TrimSpace(record.ID)
-	key, err := imageConversationStorageKey(record.ID)
-	if err != nil {
-		return ImageConversationRecord{}, "", err
-	}
-	if record.DeletedAtMillis <= 0 {
-		record.DeletedAtMillis = fallbackDeletedAt
-	}
-	if record.DeletedAtMillis <= 0 {
-		record.DeletedAtMillis = time.Now().UTC().UnixMilli()
-	}
-	record.StorageVersion = 1
-	record.Active = false
-	record.Summary = nil
-	record.Data = nil
-	record.AcceptedHash = imageConversationDataHash(nil)
-	return record, key, nil
-}
-
 func boolDatabaseValue(value bool) int64 {
 	if value {
 		return 1
@@ -737,21 +468,21 @@ func (b *DatabaseBackend) ensureImageConversationOwnerTx(ctx context.Context, tx
 	var statement string
 	switch b.driver {
 	case "postgres":
-		statement = `INSERT INTO image_conversation_owners (owner_key, cleared_at, cleared_at_ms, generation, cursor_generation, legacy_migrated)
-			VALUES ($1, '', 0, 1, 1, 0) ON CONFLICT (owner_key) DO NOTHING`
+		statement = `INSERT INTO image_conversation_owners (owner_key, cleared_at, cleared_at_ms, generation, cursor_generation)
+			VALUES ($1, '', 0, 1, 1) ON CONFLICT (owner_key) DO NOTHING`
 	case "mysql":
-		statement = `INSERT IGNORE INTO image_conversation_owners (owner_key, cleared_at, cleared_at_ms, generation, cursor_generation, legacy_migrated)
-			VALUES (?, '', 0, 1, 1, 0)`
+		statement = `INSERT IGNORE INTO image_conversation_owners (owner_key, cleared_at, cleared_at_ms, generation, cursor_generation)
+			VALUES (?, '', 0, 1, 1)`
 	default:
-		statement = `INSERT INTO image_conversation_owners (owner_key, cleared_at, cleared_at_ms, generation, cursor_generation, legacy_migrated)
-			VALUES (?, '', 0, 1, 1, 0) ON CONFLICT(owner_key) DO NOTHING`
+		statement = `INSERT INTO image_conversation_owners (owner_key, cleared_at, cleared_at_ms, generation, cursor_generation)
+			VALUES (?, '', 0, 1, 1) ON CONFLICT(owner_key) DO NOTHING`
 	}
 	_, err := tx.ExecContext(ctx, statement, ownerKey)
 	return err
 }
 
 func (b *DatabaseBackend) loadImageConversationOwnerTx(ctx context.Context, tx *sql.Tx, ownerKey string, lock bool) (ImageConversationOwnerState, error) {
-	query := `SELECT cleared_at, cleared_at_ms, generation, cursor_generation, legacy_migrated
+	query := `SELECT cleared_at, cleared_at_ms, generation, cursor_generation
 		FROM image_conversation_owners WHERE owner_key = ` + b.placeholder(1)
 	if lock && b.driver != "sqlite" {
 		query += " FOR UPDATE"
@@ -761,17 +492,14 @@ func (b *DatabaseBackend) loadImageConversationOwnerTx(ctx context.Context, tx *
 
 func scanImageConversationOwnerState(scanner imageConversationScanner) (ImageConversationOwnerState, error) {
 	var state ImageConversationOwnerState
-	var legacyMigrated int64
 	if err := scanner.Scan(
 		&state.ClearedAt,
 		&state.ClearedAtMillis,
 		&state.Generation,
 		&state.CursorGeneration,
-		&legacyMigrated,
 	); err != nil {
 		return ImageConversationOwnerState{}, err
 	}
-	state.LegacyMigrated = legacyMigrated != 0
 	if state.Generation <= 0 {
 		return ImageConversationOwnerState{}, fmt.Errorf("invalid image conversation owner generation")
 	}
@@ -803,7 +531,7 @@ func (b *DatabaseBackend) LoadOwnerState(ctx context.Context, ownerID string) (I
 	if err != nil {
 		return ImageConversationOwnerState{}, err
 	}
-	query := `SELECT cleared_at, cleared_at_ms, generation, cursor_generation, legacy_migrated
+	query := `SELECT cleared_at, cleared_at_ms, generation, cursor_generation
 		FROM image_conversation_owners WHERE owner_key = ` + b.placeholder(1)
 	state, err := scanImageConversationOwnerState(b.db.QueryRowContext(ctx, query, ownerKey))
 	if err == nil {
@@ -1310,17 +1038,10 @@ func (b *DatabaseBackend) List(
 	if err := rows.Close(); err != nil {
 		return ImageConversationPage{}, err
 	}
-	missingSummary := false
 	for index := range records {
-		if len(records[index].Summary) > 0 {
-			continue
+		if len(records[index].Summary) == 0 {
+			return ImageConversationPage{}, fmt.Errorf("image conversation %q has no summary", records[index].ID)
 		}
-		summary, backfillErr := b.loadAndBackfillImageConversationSummary(ctx, ownerKey, keys[index])
-		if backfillErr != nil {
-			return ImageConversationPage{}, backfillErr
-		}
-		records[index].Summary = summary
-		missingSummary = missingSummary || len(summary) == 0
 	}
 	_, latest, err := b.validateImageConversationGeneration(ctx, ownerID, generation)
 	if err != nil {
@@ -1333,9 +1054,6 @@ func (b *DatabaseBackend) List(
 			cursorGeneration,
 			latest.CursorGeneration,
 		)
-	}
-	if missingSummary {
-		return ImageConversationPage{}, fmt.Errorf("image conversation summary data is unavailable")
 	}
 	page := ImageConversationPage{Records: records}
 	if len(records) > limit {
@@ -1562,8 +1280,7 @@ func (b *DatabaseBackend) Clear(
 		cleared_at = ` + b.placeholder(1) + `,
 		cleared_at_ms = ` + b.placeholder(2) + `,
 		generation = ` + b.placeholder(3) + `,
-		cursor_generation = ` + b.placeholder(4) + `,
-		legacy_migrated = 1
+		cursor_generation = ` + b.placeholder(4) + `
 		WHERE owner_key = ` + b.placeholder(5)
 	if _, err := tx.ExecContext(ctx, statement, clearedAt, clearedAtMillis, nextGeneration, nextCursorGeneration, ownerKey); err != nil {
 		return ImageConversationOwnerState{}, err
@@ -1576,99 +1293,5 @@ func (b *DatabaseBackend) Clear(
 		ClearedAtMillis:  clearedAtMillis,
 		Generation:       nextGeneration,
 		CursorGeneration: nextCursorGeneration,
-		LegacyMigrated:   true,
 	}, nil
-}
-
-type normalizedMigratedImageConversation struct {
-	key    string
-	record ImageConversationRecord
-}
-
-func normalizeMigratedImageConversations(
-	records []ImageConversationRecord,
-	fallbackDeletedAt int64,
-) ([]normalizedMigratedImageConversation, error) {
-	byKey := make(map[string]normalizedMigratedImageConversation, len(records))
-	for _, raw := range records {
-		record, key, err := normalizeMigratedImageConversationRecord(raw, fallbackDeletedAt)
-		if err != nil {
-			return nil, err
-		}
-		current, exists := byKey[key]
-		if exists && current.record.ID != record.ID {
-			return nil, ErrImageConversationHashCollision
-		}
-		if !exists || record.DeletedAtMillis > 0 || (current.record.DeletedAtMillis == 0 && record.UpdatedAtMillis > current.record.UpdatedAtMillis) {
-			byKey[key] = normalizedMigratedImageConversation{key: key, record: record}
-		}
-	}
-	normalized := make([]normalizedMigratedImageConversation, 0, len(byKey))
-	for _, item := range byKey {
-		normalized = append(normalized, item)
-	}
-	return normalized, nil
-}
-
-func (b *DatabaseBackend) MigrateLegacy(
-	ctx context.Context,
-	ownerID string,
-	records []ImageConversationRecord,
-	legacyState ImageConversationOwnerState,
-) (ImageConversationOwnerState, error) {
-	ownerKey, err := imageConversationStorageKey(ownerID)
-	if err != nil {
-		return ImageConversationOwnerState{}, err
-	}
-	fallbackDeletedAt := legacyState.ClearedAtMillis
-	normalized, err := normalizeMigratedImageConversations(records, fallbackDeletedAt)
-	if err != nil {
-		return ImageConversationOwnerState{}, err
-	}
-	tx, state, err := b.beginImageConversationOwnerTx(ctx, ownerKey)
-	if err != nil {
-		return ImageConversationOwnerState{}, err
-	}
-	defer func() { _ = tx.Rollback() }()
-	if state.LegacyMigrated {
-		return state, tx.Commit()
-	}
-	for _, item := range normalized {
-		inserted, err := b.insertImageConversationRecordTx(ctx, tx, ownerKey, item.key, item.record, true)
-		if err != nil {
-			return ImageConversationOwnerState{}, err
-		}
-		if inserted {
-			continue
-		}
-		current, exists, err := b.loadImageConversationRecordTx(ctx, tx, ownerKey, item.key, true)
-		if err != nil {
-			return ImageConversationOwnerState{}, err
-		}
-		if exists && current.ID != item.record.ID {
-			return ImageConversationOwnerState{}, ErrImageConversationHashCollision
-		}
-		if exists && current.DeletedAtMillis == 0 && item.record.DeletedAtMillis > 0 {
-			if err := b.tombstoneImageConversationTx(ctx, tx, ownerKey, item.key, item.record.DeletedAtMillis); err != nil {
-				return ImageConversationOwnerState{}, err
-			}
-		}
-	}
-	if legacyState.ClearedAtMillis > state.ClearedAtMillis {
-		state.ClearedAt = strings.TrimSpace(legacyState.ClearedAt)
-		state.ClearedAtMillis = legacyState.ClearedAtMillis
-	}
-	statement := `UPDATE image_conversation_owners SET
-		cleared_at = ` + b.placeholder(1) + `,
-		cleared_at_ms = ` + b.placeholder(2) + `,
-		legacy_migrated = 1
-		WHERE owner_key = ` + b.placeholder(3)
-	if _, err := tx.ExecContext(ctx, statement, state.ClearedAt, state.ClearedAtMillis, ownerKey); err != nil {
-		return ImageConversationOwnerState{}, err
-	}
-	if err := tx.Commit(); err != nil {
-		return ImageConversationOwnerState{}, err
-	}
-	state.LegacyMigrated = true
-	return state, nil
 }

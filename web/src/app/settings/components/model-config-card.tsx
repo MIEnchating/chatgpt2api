@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import {
+  AudioLines,
   ArrowDown,
   ArrowUp,
   Clapperboard,
@@ -16,6 +17,7 @@ import {
   Search,
   Save,
   Settings2,
+  TextCursorInput,
   Trash2,
   WandSparkles,
 } from "lucide-react";
@@ -35,6 +37,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { TooltipHint } from "@/components/ui/tooltip";
 import {
   fetchProfileRelayKey,
   fetchRelayModels,
@@ -42,14 +45,22 @@ import {
   relayModelOptionsFromList,
 } from "@/lib/api";
 import { getStoredRelayTokenName } from "@/lib/relay-token-selection";
+import { filterModelsByCapability } from "@/lib/model-capabilities";
 import { cn } from "@/lib/utils";
 import type { StoredAuthSession } from "@/store/auth";
 
 import { useSettingsStore } from "../store";
 import { SettingsCard, settingsDialogInputClassName } from "./settings-ui";
 
-type ModelKind = "image" | "video";
+type ModelKind = "text" | "image" | "video" | "audio";
 type AddMode = "automatic" | "custom";
+
+const modelKindMetadata = {
+  text: { title: "文本模型", label: "文本", icon: TextCursorInput, placeholder: "例如：gpt-5.5" },
+  image: { title: "图片生成模型", label: "图片", icon: ImageIcon, placeholder: "例如：gpt-image-2" },
+  video: { title: "视频生成模型", label: "视频", icon: Clapperboard, placeholder: "例如：sora-2" },
+  audio: { title: "音频模型", label: "音频", icon: AudioLines, placeholder: "例如：gpt-4o-mini-tts" },
+} satisfies Record<ModelKind, { title: string; label: string; icon: typeof ImageIcon; placeholder: string }>;
 
 function normalizeTokenNames(values: unknown) {
   return Array.isArray(values)
@@ -78,7 +89,7 @@ function GlobalModelList({
   onChange: (models: string[]) => void;
   onAdd: () => void;
 }) {
-  const title = kind === "image" ? "图片生成模型" : "视频生成模型";
+  const title = modelKindMetadata[kind].title;
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dropIndex, setDropIndex] = useState<number | null>(null);
 
@@ -148,7 +159,7 @@ function GlobalModelList({
             >
               <GripVertical className="size-4 shrink-0 cursor-grab text-muted-foreground/60 active:cursor-grabbing" aria-label="拖拽排序" />
               <span className="w-5 shrink-0 text-center font-mono text-xs text-muted-foreground">{index + 1}</span>
-              <code className="min-w-0 flex-1 truncate text-xs text-foreground sm:text-sm" title={model}>{model}</code>
+              <TooltipHint content={model}><code className="min-w-0 flex-1 truncate text-xs text-foreground sm:text-sm">{model}</code></TooltipHint>
               {index === 0 ? <Badge className="shrink-0 rounded-md px-1.5 text-[11px]">全局默认</Badge> : null}
               <div className="flex shrink-0 items-center">
                 <Button
@@ -197,20 +208,18 @@ function GlobalModelList({
 }
 
 function AddModelDialog({
-  imageModels,
+  modelsByKind,
   onAdd,
   open,
   onOpenChange,
   session,
-  videoModels,
   initialKind,
 }: {
-  imageModels: string[];
+  modelsByKind: Record<ModelKind, string[]>;
   onAdd: (kind: ModelKind, models: string[]) => void;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   session: StoredAuthSession;
-  videoModels: string[];
   initialKind: ModelKind;
 }) {
   const [mode, setMode] = useState<AddMode>("automatic");
@@ -224,7 +233,7 @@ function AddModelDialog({
   const [search, setSearch] = useState("");
   const [customModels, setCustomModels] = useState("");
 
-  const configuredModels = kind === "image" ? imageModels : videoModels;
+  const configuredModels = modelsByKind[kind];
   const configuredSet = useMemo(() => new Set(configuredModels), [configuredModels]);
   const filteredModels = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -294,7 +303,10 @@ function AddModelDialog({
     setIsLoadingModels(true);
     try {
       const response = await fetchRelayModels({ tokenName: selectedTokenName });
-      const models = relayModelOptionsFromList(response.data).map((option) => option.value);
+      const models = filterModelsByCapability(
+        relayModelOptionsFromList(response.data).map((option) => option.value),
+        kind,
+      );
       setFetchedModels(models);
       setSelectedModels(new Set());
       setSearch("");
@@ -371,8 +383,11 @@ function AddModelDialog({
             >
               <SelectTrigger className="h-11"><SelectValue /></SelectTrigger>
               <SelectContent>
-                <SelectItem value="image"><span className="flex items-center gap-2"><ImageIcon className="size-4" />图片生成模型</span></SelectItem>
-                <SelectItem value="video"><span className="flex items-center gap-2"><Clapperboard className="size-4" />视频生成模型</span></SelectItem>
+                {(Object.keys(modelKindMetadata) as ModelKind[]).map((modelKind) => {
+                  const metadata = modelKindMetadata[modelKind];
+                  const Icon = metadata.icon;
+                  return <SelectItem key={modelKind} value={modelKind}><span className="flex items-center gap-2"><Icon className="size-4" />{metadata.title}</span></SelectItem>;
+                })}
               </SelectContent>
             </Select>
           </label>
@@ -398,7 +413,7 @@ function AddModelDialog({
         {mode === "automatic" ? (
           <div className="grid gap-3">
             <div className="flex items-center justify-between gap-3 rounded-lg border border-border/70 bg-muted/40 px-3 py-2.5 text-xs text-muted-foreground">
-              <span>默认使用个人中心的{kind === "image" ? "图片" : "视频"} Key；在此切换不会修改个人中心。</span>
+              <span>默认使用个人中心的{modelKindMetadata[kind].label} Key；在此切换不会修改个人中心。</span>
               <Button type="button" size="sm" onClick={() => void loadModels()} disabled={!selectedTokenName || isLoadingModels}>
                 {isLoadingModels ? <LoaderCircle className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
                 获取模型
@@ -419,7 +434,7 @@ function AddModelDialog({
                       return (
                         <label key={model} className={cn("flex min-h-10 items-center gap-3 rounded-md px-2.5 py-2 text-sm", configured ? "cursor-not-allowed text-muted-foreground" : "cursor-pointer hover:bg-muted/60")}>
                           <Checkbox checked={checked} disabled={configured} onCheckedChange={() => toggleFetchedModel(model)} />
-                          <code className="min-w-0 flex-1 truncate" title={model}>{model}</code>
+                          <TooltipHint content={model}><code className="min-w-0 flex-1 truncate">{model}</code></TooltipHint>
                           {configured ? <span className="shrink-0 text-xs">已添加</span> : null}
                         </label>
                       );
@@ -448,7 +463,7 @@ function AddModelDialog({
                   submitModels();
                 }
               }}
-              placeholder={kind === "image" ? "例如：gpt-image-2" : "例如：sora-2"}
+              placeholder={modelKindMetadata[kind].placeholder}
               className={settingsDialogInputClassName}
             />
             <span className="font-normal text-muted-foreground">可输入一个或多个模型 ID，多个模型使用英文逗号分隔。</span>
@@ -474,15 +489,20 @@ export function ModelConfigCard({ session }: { session: StoredAuthSession }) {
   const saveConfig = useSettingsStore((state) => state.saveConfig);
   const setImageModels = useSettingsStore((state) => state.setImageModels);
   const setVideoModels = useSettingsStore((state) => state.setVideoModels);
+  const setTextModels = useSettingsStore((state) => state.setTextModels);
+  const setAudioModels = useSettingsStore((state) => state.setAudioModels);
   const [addDialogOpen, setAddDialogOpen] = useState(false);
   const [addDialogKind, setAddDialogKind] = useState<ModelKind>("image");
 
   const imageModels = normalizeModelNames(config?.image_models, []);
   const videoModels = normalizeModelNames(config?.video_models, []);
+  const textModels = normalizeModelNames(config?.text_models, []);
+  const audioModels = normalizeModelNames(config?.audio_models, []);
+  const modelsByKind: Record<ModelKind, string[]> = { text: textModels, image: imageModels, video: videoModels, audio: audioModels };
 
   if (isLoadingConfig || !config) {
     return (
-      <SettingsCard icon={Settings2} title="全局模型配置" description="配置全站统一使用的图片与视频生成模型。">
+      <SettingsCard icon={Settings2} title="全局模型配置" description="配置全站统一使用的文本、图片、视频与音频模型。">
         <div className="flex items-center justify-center py-10"><LoaderCircle className="size-5 animate-spin text-muted-foreground" /></div>
       </SettingsCard>
     );
@@ -491,13 +511,15 @@ export function ModelConfigCard({ session }: { session: StoredAuthSession }) {
   function updateModels(kind: ModelKind, models: string[]) {
     const normalized = normalizeModelNames(models, []);
     if (normalized.length === 0) return;
-    if (kind === "image") setImageModels(normalized.join(", "));
-    else setVideoModels(normalized.join(", "));
+    const serialized = normalized.join(", ");
+    if (kind === "text") setTextModels(serialized);
+    if (kind === "image") setImageModels(serialized);
+    if (kind === "video") setVideoModels(serialized);
+    if (kind === "audio") setAudioModels(serialized);
   }
 
   function addModels(kind: ModelKind, additions: string[]) {
-    const current = kind === "image" ? imageModels : videoModels;
-    updateModels(kind, [...current, ...additions]);
+    updateModels(kind, [...modelsByKind[kind], ...additions]);
   }
 
   function openAddDialog(kind: ModelKind) {
@@ -510,7 +532,7 @@ export function ModelConfigCard({ session }: { session: StoredAuthSession }) {
       <SettingsCard
         icon={Settings2}
         title="全局模型配置"
-        description="图片与视频模型在全站统一生效。"
+        description="文本、图片、视频与音频模型在全站统一生效。"
         action={
           <Button type="button" size="sm" onClick={() => void saveConfig()} disabled={isSavingConfig}>
             {isSavingConfig ? <LoaderCircle className="size-4 animate-spin" /> : <Save className="size-4" />}
@@ -520,6 +542,13 @@ export function ModelConfigCard({ session }: { session: StoredAuthSession }) {
       >
         <div className="flex flex-col gap-4">
           <div className="grid min-w-0 gap-4">
+            <GlobalModelList
+              icon={TextCursorInput}
+              kind="text"
+              models={textModels}
+              onChange={(models) => updateModels("text", models)}
+              onAdd={() => openAddDialog("text")}
+            />
             <GlobalModelList
               icon={ImageIcon}
               kind="image"
@@ -534,12 +563,18 @@ export function ModelConfigCard({ session }: { session: StoredAuthSession }) {
               onChange={(models) => updateModels("video", models)}
               onAdd={() => openAddDialog("video")}
             />
+            <GlobalModelList
+              icon={AudioLines}
+              kind="audio"
+              models={audioModels}
+              onChange={(models) => updateModels("audio", models)}
+              onAdd={() => openAddDialog("audio")}
+            />
           </div>
         </div>
       </SettingsCard>
       <AddModelDialog
-        imageModels={imageModels}
-        videoModels={videoModels}
+        modelsByKind={modelsByKind}
         onAdd={addModels}
         open={addDialogOpen}
         onOpenChange={setAddDialogOpen}

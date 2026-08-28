@@ -33,10 +33,10 @@ test("conversation asset responses normalize to the stored reference shape", () 
   assert.equal(isImageConversationAssetURL(url), true);
 });
 
-test("reference normalization supports assetPath-only, snake case and legacy data URLs", () => {
+test("reference normalization supports assetPath-only and data URLs", () => {
   const assetPath = `${"c".repeat(64)}/${"d".repeat(64)}.webp`;
   const expectedURL = `${IMAGE_CONVERSATION_ASSET_URL_PREFIX}${assetPath}`;
-  assert.deepEqual(normalizeImageConversationAssetReference({ asset_path: assetPath }), {
+  assert.deepEqual(normalizeImageConversationAssetReference({ assetPath }), {
     assetPath,
     url: expectedURL,
     dataUrl: expectedURL,
@@ -50,15 +50,17 @@ test("reference normalization supports assetPath-only, snake case and legacy dat
     dataUrl: "data:image/webp;base64,stale",
   })?.dataUrl, expectedURL);
 
-  const legacyDataURL = "data:image/jpeg;base64,AA==";
-  assert.deepEqual(normalizeImageConversationAssetReference({ data_url: legacyDataURL, name: "old.jpg" }), {
+  const dataURL = "data:image/jpeg;base64,AA==";
+  assert.deepEqual(normalizeImageConversationAssetReference({ dataUrl: dataURL, name: "reference.jpg" }), {
     assetPath: "",
-    url: legacyDataURL,
-    dataUrl: legacyDataURL,
-    name: "old.jpg",
+    url: dataURL,
+    dataUrl: dataURL,
+    name: "reference.jpg",
     type: "image/jpeg",
   });
-  assert.equal(normalizeImageConversationAssetReference({ dataUrl: legacyDataURL })?.name, "reference.png");
+  assert.equal(normalizeImageConversationAssetReference({ dataUrl: dataURL })?.name, "reference.png");
+  assert.equal(normalizeImageConversationAssetReference({ asset_path: assetPath }), null);
+  assert.equal(normalizeImageConversationAssetReference({ data_url: dataURL }), null);
 });
 
 test("reference count validation accepts four and clearly rejects overflow", () => {

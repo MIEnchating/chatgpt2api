@@ -104,11 +104,18 @@ func TestPromptFavoriteServiceUpsertListAndDelete(t *testing.T) {
 		t.Fatalf("localizations were not normalized: %#v", item["localizations"])
 	}
 
-	items := service.List("user_1")
-	if len(items) != 1 || items[0]["title"] != "Prompt A" {
-		t.Fatalf("List() = %#v", items)
+	items, err := service.ListWithError("user_1")
+	if err != nil {
+		t.Fatalf("ListWithError() error = %v", err)
 	}
-	if otherItems := service.List("user_2"); len(otherItems) != 0 {
+	if len(items) != 1 || items[0]["title"] != "Prompt A" {
+		t.Fatalf("ListWithError() = %#v", items)
+	}
+	otherItems, err := service.ListWithError("user_2")
+	if err != nil {
+		t.Fatalf("ListWithError(other owner) error = %v", err)
+	}
+	if len(otherItems) != 0 {
 		t.Fatalf("other owner saw favorites: %#v", otherItems)
 	}
 
@@ -129,7 +136,10 @@ func TestPromptFavoriteServiceUpsertListAndDelete(t *testing.T) {
 	if updated["id"] != item["id"] || updated["favorited_at"] != item["favorited_at"] {
 		t.Fatalf("duplicate upsert changed identity fields: first=%#v second=%#v", item, updated)
 	}
-	items = service.List("user_1")
+	items, err = service.ListWithError("user_1")
+	if err != nil {
+		t.Fatalf("ListWithError(after update) error = %v", err)
+	}
 	if len(items) != 1 || items[0]["title"] != "Prompt A Updated" {
 		t.Fatalf("duplicate upsert did not update in place: %#v", items)
 	}
@@ -137,7 +147,11 @@ func TestPromptFavoriteServiceUpsertListAndDelete(t *testing.T) {
 	if deleted, err := service.Delete("user_1", item["id"].(string)); err != nil || !deleted {
 		t.Fatalf("Delete() = %v, %v", deleted, err)
 	}
-	if items = service.List("user_1"); len(items) != 0 {
+	items, err = service.ListWithError("user_1")
+	if err != nil {
+		t.Fatalf("ListWithError(after delete) error = %v", err)
+	}
+	if len(items) != 0 {
 		t.Fatalf("favorite remained after delete: %#v", items)
 	}
 	if deleted, err := service.Delete("user_1", item["id"].(string)); err != nil || deleted {
@@ -159,6 +173,30 @@ func TestPromptFavoriteServiceRejectsInvalidInput(t *testing.T) {
 		if _, err := service.Upsert("user_1", body); err == nil {
 			t.Fatalf("case %d Upsert() error = nil", index)
 		}
+	}
+}
+
+func TestPromptFavoriteServiceDoesNotInventReferenceProjectModeOrReferences(t *testing.T) {
+	service := NewPromptFavoriteService(newTestStorageBackend(t))
+	item, err := service.Upsert("user_1", map[string]any{
+		"prompt_id":            "gpt-image-2-prompts:0001",
+		"source":               "gpt-image-2-prompts",
+		"title":                "Prompt",
+		"preview":              "https://example.test/cover.png",
+		"reference_image_urls": []any{"https://example.test/cover.png"},
+		"prompt":               "draw",
+		"author":               "Source",
+		"mode":                 "generate",
+		"category":             "Portrait",
+	})
+	if err != nil {
+		t.Fatalf("Upsert() error = %v", err)
+	}
+	if _, ok := item["mode"]; ok {
+		t.Fatalf("reference project favorite mode = %#v, want absent", item["mode"])
+	}
+	if refs := item["reference_image_urls"].([]string); len(refs) != 0 {
+		t.Fatalf("reference project favorite references = %#v, want empty", refs)
 	}
 }
 

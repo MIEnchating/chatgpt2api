@@ -5,9 +5,10 @@ import { CheckCircle2, Clock3, ClipboardList, LoaderCircle, Sparkles } from "luc
 import { useNavigate } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { formatImageSizeDisplay, getImageSizeRequirementLabel, isHighResolutionImageSize } from "@/app/image/image-options";
-import { cn } from "@/lib/utils";
+import { cn, formatElapsedClock } from "@/lib/utils";
 import {
   ACTIVE_IMAGE_CONVERSATION_STORAGE_KEY,
   IMAGE_ACTIVE_CONVERSATION_REQUEST_EVENT,
@@ -54,17 +55,6 @@ function isTurnBusy(turn: ImageTurn) {
 
 function isTerminalTurnStatus(status: ImageTurnStatus) {
   return status === "success" || status === "message" || status === "error" || status === "cancelled";
-}
-
-function formatElapsedClock(totalSeconds: number) {
-  const safeSeconds = Math.max(0, totalSeconds);
-  const hours = Math.floor(safeSeconds / 3600);
-  const minutes = Math.floor((safeSeconds % 3600) / 60);
-  const seconds = safeSeconds % 60;
-  if (hours > 0) {
-    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-  }
-  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
 function formatQueueTime(value: string) {
@@ -557,7 +547,7 @@ export function ImageTaskQueue({ className }: { className?: string }) {
         </div>
 
         {queueItems.length > 0 || recentCompletions.length > 0 ? (
-          <div aria-live="polite" className="max-h-[min(68vh,560px)] overflow-y-auto bg-[#fbfcfe] p-3 dark:bg-background">
+          <ScrollArea aria-live="polite" className="max-h-[min(68vh,560px)] bg-[#fbfcfe] p-3 dark:bg-background">
             <div className="flex flex-col gap-3">
               {recentCompletions.map((item) => (
                 <CompletionItem
@@ -575,7 +565,7 @@ export function ImageTaskQueue({ className }: { className?: string }) {
                 />
               ))}
             </div>
-          </div>
+          </ScrollArea>
         ) : (
           <div className="flex flex-col items-center justify-center px-6 py-10 text-center">
             <span className="flex size-12 items-center justify-center rounded-full bg-[#f0f0f0] text-[#45515e] dark:bg-muted dark:text-muted-foreground">

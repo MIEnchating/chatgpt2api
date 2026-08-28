@@ -4,6 +4,7 @@ import { useMemo } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import type { ApiPermission, PermissionMenu } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -107,7 +108,7 @@ export function PermissionEditor({
             </Button>
           </div>
         </div>
-        <div className="min-h-0 flex-1 divide-y divide-border overflow-y-auto overscroll-contain [scrollbar-color:rgba(142,142,147,.45)_transparent] [scrollbar-gutter:stable] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#8e8e93]/45 [&::-webkit-scrollbar-track]:bg-transparent">
+        <ScrollArea className="min-h-0 flex-1 divide-y divide-border">
           {menuPermissions.length > 0 ? (
             menuPermissions.map((item) => (
               <label
@@ -129,13 +130,13 @@ export function PermissionEditor({
           ) : (
             <div className="px-4 py-8 text-center text-sm text-muted-foreground">暂无菜单权限</div>
           )}
-        </div>
+        </ScrollArea>
       </section>
 
       <section className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-border">
         <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
           <div className="min-w-0">
-            <h3 className="text-sm font-semibold text-foreground">API</h3>
+            <h3 className="text-sm font-semibold text-foreground">内部接口</h3>
             <p className="text-xs text-muted-foreground">
               {selectedApiPermissions.length} / {allApiPermissionKeys.length}
             </p>
@@ -159,7 +160,7 @@ export function PermissionEditor({
             </Button>
           </div>
         </div>
-        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain p-4 [scrollbar-color:rgba(142,142,147,.45)_transparent] [scrollbar-gutter:stable] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#8e8e93]/45 [&::-webkit-scrollbar-track]:bg-transparent">
+        <ScrollArea className="min-h-0 flex-1 space-y-4 p-4">
           {apiPermissionGroups.length > 0 ? (
             apiPermissionGroups.map((group) => (
               <article key={group.group} className="min-w-0">
@@ -167,7 +168,7 @@ export function PermissionEditor({
                   <h4 className="text-xs font-semibold uppercase text-muted-foreground">{group.group}</h4>
                   <span className="text-xs text-muted-foreground">{group.items.length}</span>
                 </div>
-                <div className="grid gap-2 md:grid-cols-2">
+                <div className="grid gap-2 md:grid-cols-2 2xl:grid-cols-3">
                   {group.items.map((permission) => (
                     <label
                       key={permission.key}
@@ -205,9 +206,9 @@ export function PermissionEditor({
               </article>
             ))
           ) : (
-            <div className="px-4 py-8 text-center text-sm text-muted-foreground">暂无 API 权限</div>
+            <div className="px-4 py-8 text-center text-sm text-muted-foreground">暂无内部接口权限</div>
           )}
-        </div>
+        </ScrollArea>
       </section>
     </div>
   );

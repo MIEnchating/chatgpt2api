@@ -33,16 +33,16 @@ func TestUploadedImageContentTypeUsesDecodedFormat(t *testing.T) {
 	}
 }
 
-func TestReadMultipartImageBodyRejectsMoreThanFourteenImages(t *testing.T) {
+func TestReadMultipartImageBodyDoesNotApplyAProviderReferenceLimit(t *testing.T) {
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
-	for index := 0; index < maxRelayInputImages+1; index++ {
+	for index := 0; index < 15; index++ {
 		part, err := writer.CreateFormFile("image[]", "reference.png")
 		if err != nil {
 			t.Fatalf("CreateFormFile() error = %v", err)
 		}
-		if _, err := part.Write([]byte("not read after count validation")); err != nil {
-			t.Fatalf("write multipart file: %v", err)
+		if err := encodeHTTPTestPNG(part); err != nil {
+			t.Fatalf("encodeHTTPTestPNG() error = %v", err)
 		}
 	}
 	if err := writer.Close(); err != nil {
@@ -52,7 +52,7 @@ func TestReadMultipartImageBodyRejectsMoreThanFourteenImages(t *testing.T) {
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	res := httptest.NewRecorder()
 	_, images, err := readMultipartImageBody(res, req)
-	if !errors.Is(err, errTooManyRelayImages) || images != nil {
+	if err != nil || len(images) != 15 {
 		t.Fatalf("readMultipartImageBody() images=%#v error=%v", images, err)
 	}
 }

@@ -20,10 +20,9 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
+import { NumberInput } from "@/components/ui/number-input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { LogView } from "@/lib/api";
-import { cn } from "@/lib/utils";
 
 import { useSettingsStore } from "../store";
 import {
@@ -85,23 +84,19 @@ function LogRetentionInput({
   value: number | string;
 }) {
   return (
-    <div className="relative min-w-0">
-      <Input
-        id="settings-log-retention-days"
-        type="number"
-        min={1}
-        max={3650}
-        step={1}
-        inputMode="numeric"
-        value={String(value)}
-        onChange={(event) => onChange(event.target.value)}
-        placeholder="7"
-        className={cn(settingsInputClassName, "pr-12")}
-      />
-      <span className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-xs font-medium text-muted-foreground">
-        天
-      </span>
-    </div>
+    <NumberInput
+      id="settings-log-retention-days"
+      min={1}
+      max={3650}
+      step={1}
+      inputMode="numeric"
+      value={String(value)}
+      onValueChange={onChange}
+      placeholder="7"
+      controlsLayout="split"
+      suffix="天"
+      className={settingsInputClassName}
+    />
   );
 }
 

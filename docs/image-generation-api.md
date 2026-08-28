@@ -1,21 +1,26 @@
-# 生图接口文档
+# 内部生图任务文档
 
-本文档描述当前服务已实现的图片生成、图片编辑和异步创作任务接口。接口分为两组：
+本文档描述 Web 创作台、无限画布和工作流使用的登录态内部图片任务接口：
 
-- OpenAI 兼容同步接口：`/v1/images/generations`、`/v1/images/edits`。
-- Web 端异步任务接口：`/api/creation-tasks/image-generations`、`/api/creation-tasks/image-edits`、查询与取消任务接口。
+- `POST /api/creation-tasks/image-generations`
+- `POST /api/creation-tasks/image-edits`
+- `GET /api/creation-tasks` 与任务取消接口
 
-同步接口适合外部 OpenAI SDK 或简单脚本直接调用；异步任务接口适合 Web 创作台、轮询进度、多图并发、任务取消和结果留存。
+本项目不提供面向第三方的 OpenAI 兼容 API，也不签发个人 API Key；本地 `/v1/images/generations`、`/v1/images/edits`、`/v1/models` 及其他 `/v1/*` 路由均不开放。文中出现的 `/v1/*` 仅表示服务端调用 NewAPI / Sub2API 时使用的上游协议路径。
+
+本文档是仓库内部开发与验收使用的任务合同，不是第三方接入文档；生产部署不会为未知跨域 Origin 返回 CORS 放行头。
 
 ## 认证
 
-所有受保护的 AI 接口都需要认证。推荐使用请求头：
+所有受保护的内部接口只接受登录接口签发的 HttpOnly Cookie，不接受 `Authorization` 或 `x-api-key` 请求头。正常使用时 Cookie 由同源 Web 应用自动携带；本地调试可先登录并保存 Cookie：
 
-```http
-Authorization: Bearer <session-or-api-token>
+```bash
+curl -c ./cloud-cotton.cookies http://localhost:8000/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"username":"<username>","password":"<password>"}'
 ```
 
-也可以由浏览器会话 Cookie 完成认证。普通用户还需要具备对应 API 权限；异步创作任务的权限入口是 `GET /api/creation-tasks` 和 `POST /api/creation-tasks`，子路径按同一资源权限生效。
+普通用户还需要具备对应内部接口权限；异步创作任务的权限入口是 `GET /api/creation-tasks` 和 `POST /api/creation-tasks`，子路径按同一资源权限生效。
 
 ## 模型与链路
 
@@ -31,41 +36,23 @@ Authorization: Bearer <session-or-api-token>
 | `grok-imagine-image-quality` | NewAPI `/v1/images/generations` | xAI 官方质量模型；NewAPI 当前内置其 `grok-imagine-image-pro` 别名，使用规范名称前需要配置模型映射。 |
 | `grok-imagine-image-2.0` | NewAPI `/v1/images/generations` | xAI 官方新模型；当前 NewAPI 使用前需要配置自定义模型映射。 |
 
-云棉从当前登录用户可用的 NewAPI Key 名称中读取选择，并按该名称精确取得密钥。请求随后发送到 `API_BASE_URL`；模型对应的账号、额度和最终上游协议由 NewAPI 决定。`/v1/models` 可能返回更多文本模型，但图片生成/图片编辑接口只应使用 NewAPI 图片渠道实际支持的模型。
+云棉从当前登录用户可用的 NewAPI Key 名称中读取选择，并按该名称精确取得密钥。请求随后发送到 `API_BASE_URL`；模型对应的账号、额度和最终上游协议由 NewAPI 决定。内部 `GET /api/profile/upstream-models` 会读取上游模型目录，但图片生成/图片编辑任务只应使用 NewAPI 图片渠道实际支持的模型。
 
-默认模型列表为 `gpt-image-2`、`gemini-3.1-flash-image` 和 `grok-imagine-image`。Google 链路只识别官方当前模型 ID：`gemini-3.1-flash-lite-image`、`gemini-3.1-flash-image`、`gemini-3-pro-image`、`gemini-2.5-flash-image`，不再把旧 Nano Banana 别名当作正式 ID。图片生成可用模型通过 `IMAGE_MODELS` 或设置页统一配置，供创作台、无限画布和图片生成接口共用；模型必须已在 NewAPI / Sub2API 中存在可用渠道。
+默认模型列表为 `gpt-image-2`、`gemini-3.1-flash-image` 和 `grok-imagine-image`。Google 链路只识别官方当前模型 ID：`gemini-3.1-flash-lite-image`、`gemini-3.1-flash-image`、`gemini-3-pro-image`、`gemini-2.5-flash-image`，不再把旧 Nano Banana 别名当作正式 ID。图片生成可用模型通过 `IMAGE_MODELS` 或设置页统一配置，供创作台、无限画布和工作流内部任务共用；模型必须已在 NewAPI / Sub2API 中存在可用渠道。
 
-图片参数能力以各厂商官方文档为准：
+图片创作台的行为以参考项目 `web/src/services/api/image.ts` 和 `web/src/app/(user)/image/page.tsx` 为合同来源，不再由本项目自行根据厂商名称隐藏工作台参数。不同上游的差异只在请求适配层处理：
 
-- [Google Gemini 图片生成官方文档](https://ai.google.dev/gemini-api/docs/image-generation)：Gemini 3 图片模型最多可混合 14 张参考图；`gemini-3.1-flash-image` 支持 512/1K/2K/4K 和 14 种画幅比例，Flash Lite 仅支持 1K 和常规 10 种画幅比例。
-- [Google Imagen 官方模型文档](https://ai.google.dev/gemini-api/docs/models/imagen)：Imagen 4 已弃用并将于 2026-08-17 关闭，因此项目不再新增 Imagen 路由。
-- [xAI 图片生成官方文档](https://docs.x.ai/developers/model-capabilities/images/generation)：当前列出 `grok-imagine-image`、`grok-imagine-image-quality` 和 `grok-imagine-image-2.0`；这些模型支持画幅比例和 1K/2K，2.0 还支持 `low`、`medium` 质量。
-- [xAI 图片编辑官方文档](https://docs.x.ai/developers/model-capabilities/images/editing)：Grok 官方编辑接口是 JSON `/v1/images/edits`，图片通过 URL、data URI 或文件 ID 提交，一次最多使用 3 张输入图。
-- [OpenAI 图片生成官方文档](https://developers.openai.com/api/docs/guides/image-generation)：Image API 编辑遮罩使用 multipart 文件字段 `mask`；遮罩和首张输入图必须同格式、同尺寸且小于 50 MB，遮罩必须包含 alpha 通道。
-
-Grok 生图参数按 xAI 官方协议原样发送：画幅使用 `aspect_ratio`，分辨率使用 `resolution`，质量使用 `quality`。中间代理或渠道必须支持这些官方字段；本服务不会因为代理实现滞后而隐藏或删除官方参数。
-
-xAI 官方生成文档展示了 `n=4` 的批量请求，但未在当前能力页声明更高的固定上限。云棉因此对 Grok 保持保守的 `1-4` 限制。
-
-当前项目经 NewAPI 的实际能力：
-
-| 能力 | GPT 图片 | Gemini | Grok |
-| --- | --- | --- | --- |
-| 文生图 | 支持 | 支持 | 支持 |
-| 参考图编辑 | 支持 | 支持 | 当前不支持 |
-| 流式图片 | 取决于 NewAPI 渠道 | 不支持 | 不支持 |
-| 尺寸/比例 | 支持 | 通过 Google `image_config` | 官方 `aspect_ratio`、`resolution` |
-| 质量 | 支持 | 官方不提供质量档位 | 仅 2.0 支持 `low`、`medium` |
-
-参考图数量按实际链路校验：
-
-| 模型系列 | 本服务上限 | 限制来源 |
+| 分支 | 上游请求 | 参考项目合同 |
 | --- | --- | --- |
-| Gemini 3 图片模型 | 14 张 | Google 官方总参考图上限 |
-| Gemini 2.5 Flash Image | 3 张 | Google 官方建议该模型最多使用 3 张输入图时效果最佳 |
-| OpenAI GPT Image 模型 | 10 张 | OpenAI 官方输入图上限 |
-| 其他 OpenAI 兼容图片模型 | 4 张 | 未知渠道采用保守上限 |
-| Grok | 0 张 | xAI 官方最多支持 3 张编辑输入，但当前 NewAPI xAI 适配器不会转发参考图 |
+| Images | `/v1/images/generations` 或 multipart `/v1/images/edits` | 发送当前提示词、当前参考图、尺寸、质量、流式、`partial_images` 和 Base64 选项。 |
+| Responses | `/v1/responses` | 使用 `image_generation` tool；参考图放入本次 `input`，不附加创作台历史对话。 |
+| Chat | `/v1/chat/completions` | 使用当前提示词和当前参考图构造单条 user message，并请求图片模态。 |
+| Gemini | 经 NewAPI 转为 Google 图片配置 | 强制使用 Images 分支；`low/medium/high` 分别映射 `1K/2K/4K`，`auto` 只从精确 2K/4K 预设识别档位；模型名包含 `2.5` 时省略 `image_size`。 |
+| Grok2API | 生成用 JSON `/v1/images/generations`；编辑用 JSON `/v1/images/edits` | `size` 转为 `aspect_ratio`；`low` 转 `1k`，`medium/high` 转 `2k`；编辑图片为 `images: [{"url":"data:..."}]`；保留 `stream`、`partial_images` 和 `response_format=b64_json`。 |
+| 智谱 | `/v1/images/generations` | 只支持文生图；GLM/CogView 质量按参考项目转换，不发送流式和输出格式选项。 |
+| Agnes/KIE/APIMart | 各自适配器 | 字段名、尺寸、数量和参考素材按参考项目对应适配器转换。 |
+
+图片工作台的总生成数量为 `1-10`。每张输出创建一个独立的 `count=1` 异步任务，单张失败不会抹掉同批次中已经成功的结果；无限画布和工作流的底层设置组件可按各自场景使用参考项目的 `1-15` 服务层边界。
 
 ## 通用参数
 
@@ -73,10 +60,10 @@ xAI 官方生成文档展示了 `n=4` 的批量请求，但未在当前能力页
 | --- | --- | --- | --- | --- |
 | `prompt` | string | 无 | 全部 | 生图或编辑提示词。生成接口必填；编辑接口也建议必填。 |
 | `model` | string | `auto` | 全部 | 图片任务模型；默认提供 GPT 图片、Gemini 和 Grok，实际可用性取决于 NewAPI 渠道。 |
-| `n` | number | `1` | 全部 | 生成数量。OpenAI GPT Image 模型接受整数 `1-10`；Gemini、Grok 和未知兼容模型接受整数 `1-4`。超出当前模型范围直接返回 `400`，不会静默改写。 |
+| `n` | number | `1` | 全部 | 单个内部任务的输出数量，服务层合同为整数 `1-15`。图片工作台不会批量发送该值，而是把界面选择的 `1-10` 张拆成多个 `n=1` 任务。 |
 | `size` | string | 空 | 全部 | 支持 `auto`、比例值、档位和显式尺寸。详见“尺寸”。 |
-| `quality` | string | 空 | 全部 | GPT 图片链路可传 `low`、`medium`、`high`；Gemini 没有质量档位；仅 `grok-imagine-image-2.0` 支持 `low`、`medium`，省略时官方默认 `medium`。 |
-| `response_format` | string | 同步为 `b64_json`，异步为 `url` | 本地响应格式 | 控制本服务响应是否附带 `b64_json`；GPT 图片模型不会转发。xAI 模型会按官方允许值 `url`/`b64_json` 转发给最新 NewAPI 适配器。 |
+| `quality` | string | `auto` | 全部 | 工作台始终提供 `auto`、`high`、`medium`、`low`，不按模型隐藏；适配层按上表转换或删除不适用字段。 |
+| `response_format` | string | `url` | 内部任务结果格式 | 开启参考项目的 Base64 选项时发送 `b64_json`；Images 和 Grok2API 分支保留该字段，最终结果仍会进入统一任务存储。 |
 | `output_format` | string | 空（不指定） | 全部 | 输出保存格式。支持 `png`、`jpeg`、`webp`，`jpg` 会归一化为 `jpeg`，非法值归一化为 `png`。省略时不会自行向上游补 `png`，保存后按图片实际内容记录格式。 |
 | `output_compression` | number | 空 | 全部 | 仅 `output_format=jpeg` 或 `webp` 时生效，必须是 `0-100` 的整数；非法值返回 `400`。 |
 | `moderation` | string | 空 | 全部 | 透传给图片工具的审核参数。实际支持取决于上游链路。 |
@@ -85,12 +72,12 @@ xAI 官方生成文档展示了 `n=4` 的批量请求，但未在当前能力页
 | `input_image_mask` | string | 空 | multipart 编辑接口 | 旧客户端兼容字段，可传 PNG data URL 或纯 base64；服务校验后会转换为上游 multipart `mask` 文件，不会把原始 base64 写入任务或图片元数据。新调用应使用 `mask`。 |
 | `input_fidelity` | string | 空 | 编辑接口 | 官方编辑接口用于控制输入图保真度；当前 `gpt-image-2` 链路不下发该参数。 |
 | `visibility` | string | `private` | 全部 | 生成图片入库可见性。支持 `private`、`public`。影响图库展示，不影响上游生成语义。 |
-| `messages` | array | 空 | 全部 | 当前会被透传/归一化，但不要把它理解为可靠的“图片上下文记忆”。详见“上下文边界”。 |
-| `stream` | boolean | `false` | 同步接口 | GPT 图片链路为 `true` 时返回 SSE；Gemini 和 Grok 会自动关闭流式参数。 |
+| `messages` | array | 空 | 低层内部字段 | 图片工作台不提交历史 messages；每次请求只包含当前提示词和当前参考图。 |
+| `stream` | boolean | `false` | 上游执行参数 | Images、Responses 和 Grok2API 分支按参考项目保留流式选项；Gemini、智谱及不支持该字段的专用适配器在适配层删除。内部任务接口通过轮询返回状态，不向浏览器开放第三方 SSE 路由。 |
 
-## 流式图片生成
+## 上游流式图片生成
 
-GPT 图片链路的 `/v1/images/generations` 和 `/v1/images/edits` 支持流式响应。Gemini 和 Grok 当前使用非流式响应。请求中设置：
+服务端调用 NewAPI 的 Images 或 Grok2API 图片链路时可以使用 `/v1/images/generations` 或 `/v1/images/edits` 流式响应；Responses 分支也可请求流式事件。内部任务参数中设置：
 
 ```json
 {
@@ -99,7 +86,7 @@ GPT 图片链路的 `/v1/images/generations` 和 `/v1/images/edits` 支持流式
 }
 ```
 
-服务返回 `Content-Type: text/event-stream`。SSE 数据帧中的 JSON 通常包含以下事件类型：
+这是服务端与上游之间的 SSE 协议，不是本项目公开路由。内部任务会把已完成结果和可用进度归一化到任务对象。上游 SSE 数据帧通常包含以下事件类型：
 
 | `type` | 说明 |
 | --- | --- |
@@ -133,131 +120,17 @@ data: [DONE]
 | 写法 | 说明 |
 | --- | --- |
 | `auto` | 不强制尺寸，由上游决定。 |
-| `1080p` | 通用图片链路的正方形归一化为 `1088x1088`。 |
-| `2k` | 归一化为 `2048x2048`。 |
-| `4k` | 归一化为 `2880x2880`。 |
-| `512`、`1k` | Gemini 分辨率档位；`512` 仅 Gemini 3.1 Flash Image 支持。 |
-| `1:1`、`3:2`、`2:3`、`16:9`、`21:9`、`9:16`、`4:3`、`3:4` | 作为构图比例提示。 |
-| `1:4`、`1:8`、`4:1`、`8:1` | 仅 Gemini 3.1 Flash Image 支持的扩展画幅。 |
-| `1024x1024`、`1536x2048` | 显式宽高。服务归一化后转发给 NewAPI，实际像素仍以上游返回为准。 |
+| `1:1`、`3:2`、`2:3`、`4:3`、`3:4`、`16:9`、`9:16`、`21:9` | 参考工作台的八个基础比例。只选择比例时，按参考项目的质量基准换算成像素尺寸。 |
+| `2048x2048`、`2048x1152`、`1152x2048`、`3136x1344` | 参考工作台的 2K 预设。 |
+| `3840x2160`、`2160x3840`、`6272x2688` | 参考工作台的 4K 预设。 |
+| `1024x1024`、`1536x2048` 等 | 自定义宽高；默认在输入完成后向上补齐为 16 的倍数，也可关闭补齐。 |
 
-异步任务还支持 `image_resolution` 元数据字段。通用 GPT 图片链路取值为 `1080p`、`2k`、`4k`；Gemini 3.1 Flash Image 支持 `512`、`1k`、`2k`、`4k`，Gemini 3 Pro Image 支持 `1k`、`2k`、`4k`，Gemini 3.1 Flash Lite Image 和 Gemini 2.5 Flash Image 仅使用 `1k`；Grok 官方图片模型支持 `1k`、`2k`。
+只选择比例时，参考项目使用以下质量基准计算目标尺寸：`low=1024`、`medium=2048`、`high=2880`，`auto` 按 `low` 计算。显式像素预设保持原值，不再次换算。
 
 模型特例：
 
-- Gemini 会把显式尺寸转换为最接近的官方 `aspect_ratio`，并按像素总量推断 `image_size` 档位；Google 返回的是对应比例/档位，不保证精确复现请求的宽高像素。GPT 的质量档位不会伪装成 Gemini 参数。
-- Grok 会把界面中的画幅和分辨率分别映射为 xAI 官方的 `aspect_ratio` 与 `resolution`。官方画幅包括 `1:1`、`16:9`、`9:16`、`4:3`、`3:4`、`3:2`、`2:3`、`2:1`、`1:2`、`19.5:9`、`9:19.5`、`20:9`、`9:20`。
-
-## 同步文生图
-
-### `POST /v1/images/generations`
-
-请求体格式：`application/json`
-
-必填字段：
-
-- `prompt`
-
-示例：
-
-```bash
-curl http://localhost:8000/v1/images/generations \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <session-or-api-token>" \
-  -d '{
-    "model": "auto",
-    "prompt": "一张雨夜东京街头的赛博朋克猫，霓虹灯反射在地面",
-    "n": 1,
-    "size": "16:9",
-    "output_format": "png",
-    "response_format": "b64_json"
-  }'
-```
-
-成功响应：
-
-```json
-{
-  "created": 1778470000,
-  "data": [
-    {
-      "url": "http://localhost:8000/images/2026/05/11/example.png",
-      "b64_json": "<base64-image>",
-      "revised_prompt": "一张雨夜东京街头的赛博朋克猫，霓虹灯反射在地面",
-      "output_format": "png"
-    }
-  ]
-}
-```
-
-说明：
-
-- `response_format=b64_json` 时返回 `b64_json`，同时仍会保存图片并返回 `url`。
-- `response_format` 不为 `b64_json` 时，响应项通常只有 `url`、`revised_prompt`、`output_format`。
-- `output_format` 以服务对图片字节的实际检测结果为准；上游响应头或请求元数据与图片内容不一致时，不会覆盖真实格式。
-- 请求会记录生成图片；`visibility` 控制这些图片在图库中的默认可见性。
-
-## 同步图生图
-
-### `POST /v1/images/edits`
-
-请求体格式：`multipart/form-data`
-
-必填字段：
-
-- `image` 或 `image[]`：至少一个图片文件。
-- `prompt`：编辑提示词。
-
-上传限制：
-
-- 参考图数量按模型校验：Gemini 3 最多 14 张、Gemini 2.5 Flash Image 最多 3 张、GPT Image 最多 10 张、未知 OpenAI 兼容模型最多 4 张；Grok 经当前 NewAPI 链路为 0 张。
-- 单张图片及遮罩在本服务中最大 40 MiB，整个 multipart 请求最大 192 MiB。
-- 参考图支持 PNG、JPEG、WebP 和 GIF；服务端会校验实际文件内容，不依赖客户端声明的 MIME 类型。
-- 使用 `mask` 时，遮罩与第一张输入图必须都是同尺寸 PNG，遮罩必须包含 alpha 通道；同一请求只能上传一个遮罩。
-
-示例：
-
-```bash
-curl http://localhost:8000/v1/images/edits \
-  -H "Authorization: Bearer <session-or-api-token>" \
-  -F "model=auto" \
-  -F "prompt=把这张图改成赛博朋克夜景风格，保留主体轮廓" \
-  -F "n=1" \
-  -F "size=1024x1024" \
-  -F "output_format=jpeg" \
-  -F "output_compression=85" \
-  -F "image=@./input.png"
-```
-
-多图参考：
-
-```bash
-curl http://localhost:8000/v1/images/edits \
-  -H "Authorization: Bearer <session-or-api-token>" \
-  -F "model=gpt-image-2" \
-  -F "prompt=融合两张参考图的产品外观，生成一张干净的广告图" \
-  -F "image[]=@./reference-a.png" \
-  -F "image[]=@./reference-b.png"
-```
-
-GPT 图片遮罩编辑：
-
-```bash
-curl http://localhost:8000/v1/images/edits \
-  -H "Authorization: Bearer <session-or-api-token>" \
-  -F "model=gpt-image-2" \
-  -F "prompt=只替换透明遮罩区域中的背景，保留主体" \
-  -F "image=@./input.png" \
-  -F "mask=@./mask.png"
-```
-
-Google Gemini 可使用相同的 multipart 编辑接口，例如把 `model` 改为 `gemini-3.1-flash-image`。Grok 官方已经支持 JSON 图片编辑，但当前 NewAPI 的 xAI 适配器尚未转换该协议；Grok 请求会直接返回 `400`，不会静默忽略上传的图片。
-
-`messages` 如果通过表单传入，必须是 JSON 字符串：
-
-```bash
--F 'messages=[{"role":"user","content":"参考上一轮风格继续生成"}]'
-```
+- Gemini 把工作台尺寸转换为参考项目的八种比例之一；质量优先决定 `image_size`，`auto` 只识别上述精确 2K/4K 预设，模型名包含 `2.5` 时不发送 `image_size`。
+- Grok2API 把像素尺寸约分为 `aspect_ratio`；质量映射为 `resolution` 后删除 `quality`，不再同时发送两套互相冲突的字段。
 
 ## 异步文生图任务
 
@@ -274,8 +147,8 @@ Google Gemini 可使用相同的 multipart 编辑接口，例如把 `model` 改�
 
 ```bash
 curl http://localhost:8000/api/creation-tasks/image-generations \
+  -b ./cloud-cotton.cookies \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <session-or-api-token>" \
   -d '{
     "client_task_id": "img-task-20260511-001",
     "model": "gpt-image-2",
@@ -297,6 +170,7 @@ curl http://localhost:8000/api/creation-tasks/image-generations \
   "mode": "generate",
   "model": "gpt-image-2",
   "size": "21:9",
+  "count": 2,
   "created_at": "2026-05-11 13:44:41",
   "updated_at": "2026-05-11 13:44:41",
   "output_format": "webp",
@@ -323,7 +197,7 @@ curl http://localhost:8000/api/creation-tasks/image-generations \
 
 ```bash
 curl http://localhost:8000/api/creation-tasks/image-edits \
-  -H "Authorization: Bearer <session-or-api-token>" \
+  -b ./cloud-cotton.cookies \
   -F "client_task_id=edit-task-20260511-001" \
   -F "model=auto" \
   -F "prompt=保留人物姿态，改成电影海报质感" \
@@ -339,7 +213,7 @@ curl http://localhost:8000/api/creation-tasks/image-edits \
 
 ```bash
 curl http://localhost:8000/api/creation-tasks/image-edits \
-  -H "Authorization: Bearer <session-or-api-token>" \
+  -b ./cloud-cotton.cookies \
   -F "client_task_id=edit-task-mask-001" \
   -F "model=gpt-image-2" \
   -F "prompt=只替换背景为雪山，主体不变" \
@@ -355,14 +229,14 @@ curl http://localhost:8000/api/creation-tasks/image-edits \
 
 ```bash
 curl "http://localhost:8000/api/creation-tasks" \
-  -H "Authorization: Bearer <session-or-api-token>"
+  -b ./cloud-cotton.cookies
 ```
 
 按任务 ID 查询：
 
 ```bash
 curl "http://localhost:8000/api/creation-tasks?ids=img-task-20260511-001,edit-task-20260511-001" \
-  -H "Authorization: Bearer <session-or-api-token>"
+  -b ./cloud-cotton.cookies
 ```
 
 响应示例：
@@ -407,8 +281,8 @@ curl "http://localhost:8000/api/creation-tasks?ids=img-task-20260511-001,edit-ta
 
 ```bash
 curl http://localhost:8000/api/creation-tasks/img-task-20260511-001/cancel \
+  -b ./cloud-cotton.cookies \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer <session-or-api-token>" \
   -d '{}'
 ```
 
@@ -449,11 +323,12 @@ curl http://localhost:8000/api/creation-tasks/img-task-20260511-001/cancel \
 | `mode` | string | `generate`、`edit` 或 `chat`。本文档关注 `generate` 和 `edit`。 |
 | `model` | string | 实际记录的模型。 |
 | `size` | string | 请求尺寸或比例。 |
+| `count` | number | 任务占用的输出单位；图片为请求数量，视频、音频和文本固定为 1。 |
 | `quality` | string | 请求质量，未传时可能省略。 |
 | `output_format` | string | 请求明确指定时为归一化后的格式；未指定时任务级字段可能省略。 |
 | `output_compression` | number | JPEG/WebP 压缩率，仅 JPEG/WebP 时可能出现。 |
 | `moderation` | string | 审核参数，传入时可能出现。 |
-| `partial_images` | number | 流式中间图参数，`stream=true` 且传入 `1-3` 时可能出现。 |
+| `partial_images` | number | 流式中间图参数，`stream=true` 时保留 `0-3`；显式 `0` 不会被当成缺省值。 |
 | `output_statuses` | string[] | 单张输出状态。 |
 | `data` | array | 输出结果数组。成功后出现。 |
 | `error` | string | 失败原因。失败或取消时可能出现。 |
@@ -467,7 +342,7 @@ curl http://localhost:8000/api/creation-tasks/img-task-20260511-001/cancel \
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `url` | string | 服务保存后的图片 URL。 |
-| `b64_json` | string | base64 图片。同步接口且 `response_format=b64_json` 时返回。 |
+| `b64_json` | string | 上游返回并被任务保留的 base64 图片；内部 Web 工作流通常使用保存后的 `url`。 |
 | `revised_prompt` | string | 上游或服务记录的最终提示词。 |
 | `output_format` | string | 根据保存图片实际内容识别的输出格式。 |
 
@@ -490,10 +365,7 @@ curl http://localhost:8000/api/creation-tasks/img-task-20260511-001/cancel \
 
 图片接口调用上游后，可能得到文本回复而不是图片。例如用户输入“你好，你是什么模型？”时，上游可能按聊天问题回答而不是调用图片工具。
 
-当前处理方式：
-
-- 同步 `/v1/images/generations` 和 `/v1/images/edits`：返回 OpenAI 风格错误，`code` 为 `image_generation_text_response`，HTTP 状态通常为 `400`。
-- 异步 `/api/creation-tasks/image-generations` 和 `/api/creation-tasks/image-edits`：任务会被标记为 `success`，同时返回 `output_type=text` 和 `data[].text_response`，避免 Web 端只显示泛化的失败提示。
+内部 `/api/creation-tasks/image-generations` 和 `/api/creation-tasks/image-edits` 任务会被标记为 `success`，同时返回 `output_type=text` 和 `data[].text_response`，避免 Web 端只显示泛化的失败提示。
 
 调用方如果只接受图片，需要在任务成功后检查：
 
@@ -522,19 +394,6 @@ curl http://localhost:8000/api/creation-tasks/img-task-20260511-001/cancel \
 }
 ```
 
-OpenAI 风格图片错误：
-
-```json
-{
-  "error": {
-    "message": "Image generation returned a text response instead of image data.",
-    "type": "invalid_request_error",
-    "param": null,
-    "code": "image_generation_text_response"
-  }
-}
-```
-
 图片额度不足：
 
 ```json
@@ -555,7 +414,7 @@ OpenAI 风格图片错误：
 | `400` | JSON 解析失败 | `invalid json body` |
 | `400` | 缺少提示词 | `prompt is required` |
 | `400` | 异步任务缺少 ID | `client_task_id is required` |
-| `400` | `n` 不是整数或超出当前模型范围 | `n must be between 1 and 10`（GPT Image）或 `n must be between 1 and 4`（Gemini、Grok 和未知兼容模型） |
+| `400` | `n` 不是整数或超出服务层范围 | `n must be between 1 and 15` |
 | `400` | `partial_images` 或 `output_compression` 不是整数或越界 | `partial_images must be an integer between 0 and 3` 或 `output_compression must be an integer between 0 and 100` |
 | `400` | 图生图缺少图片 | `image file is required` 或 `image is required` |
 | `400` | 遮罩接口、模型、格式、alpha 或尺寸不合法 | `mask is only supported by the image edits endpoint`、`does not support mask editing through NewAPI` 或具体 PNG 校验错误 |
@@ -569,28 +428,27 @@ OpenAI 风格图片错误：
 
 ## 上下文边界
 
-OpenAI 兼容图片接口默认是无状态的：
+内部图片任务默认是无状态的：
 
-- 每次 `/v1/images/generations` 请求只应依赖本次请求体。
 - 每个 `/api/creation-tasks/image-generations` 任务只应依赖本次任务 payload。
-- `messages` 字段会被接收和透传，但当前不保证它等价于 ChatGPT Web 端“对话作画记忆”。
+- 低层任务仍能承载某些模式需要的结构化输入，但图片工作台不会把历史对话作为 `messages` 附加到新任务。
 - `visibility`、任务历史、图库记录只用于本地管理，不会自动变成下一次官方图片链路的上下文。
 
-云棉 Web 创作台使用独立的服务端会话历史：同一用户可以跨设备读取对话，并由前端按当前轮次显式提交提示词和参考图。无限画布项目也保存在服务端。两者都不会让外部 OpenAI 兼容 API 自动继承上一次请求的上下文。
+云棉 Web 创作台使用独立的服务端会话历史：同一用户可以跨设备读取对话，并由前端按当前轮次显式提交提示词和参考图。无限画布项目也保存在服务端。两者都不会让新的内部任务自动继承上一次请求的上下文。
 
 ## 图片保存与清理
 
-- 同步和异步接口的正式生成结果都会保存到服务端图片库；`visibility` 决定图片是 `private` 还是 `public`。
-- `IMAGE_STORAGE_BACKEND=local` 时原图保存在本地数据目录；设为 `s3` 时，正式生成结果、图片库图片、无限画布上传和画布工具结果会保存到 S3 兼容对象存储。
-- S3 模式支持 AWS S3、Cloudflare R2、MinIO 和提供 S3 API 的对象存储。Bucket 应预先创建并设为私有，图片仍通过 `/images/...` 鉴权接口访问。
-- `partial_images` 渐进预览只用于当前响应，不写入对象存储；仅最终完成的图片会持久化。
+- 内部任务的正式生成结果都会保存到服务端图片库；`visibility` 决定图片是 `private` 还是 `public`。
+- 服务端图片库只使用本地存储，图片通过 `/images/...` 登录态鉴权接口访问。
+- Web 创作台、无限画布和工作流会把最终图片通过统一 `/api/files` 合同写入管理员或用户配置的 S3/R2、WebDAV Provider；未配置 Provider 时回退浏览器 IndexedDB。
+- `partial_images` 渐进预览只用于当前响应；只有最终完成的图片会进入图库和统一结果存储。
 - 生成结果关联的缩略图、元数据和参考图会随原图作为一组治理。
 - Web 创作台上传的图生图参考图保存到 `/app/data/image_conversation_assets/`，访问时校验所属用户。
 - `IMAGE_RETENTION_DAYS` 同时作用于生成结果和创作台会话参考图。参考图文件过期后，历史对话文字、参数和任务元数据仍会保留，但图片将不可访问。
 - `IMAGE_STORAGE_LIMIT_MB` 按治理页口径统计生成原图、缩略图、元数据和会话参考图；清理原图时会同步删除其关联参考图。`0` 表示不按容量自动清理。
 - 公开图片默认不参与普通自动清理；管理员执行存储清理时可以明确选择包含公开图片。
-- 管理端可以在线修改对象存储后端、Endpoint、Region、Bucket、前缀和 Path Style，保存后立即生效；Access Key、Secret Key 和 Session Token 仍只从服务端环境变量读取，修改凭据后需要重启。
-- 切换本地/S3只影响新图片写入位置，不会自动迁移已有原图。历史 S3 图片仍通过对象存储读客户端访问；存在历史 S3 图片时，系统会拒绝在线修改 Endpoint、Region、Bucket、前缀或 Path Style，避免旧图片失联。
+- 管理员在设置页维护统一 S3/R2、WebDAV Provider、容量上限和统计 Cron；普通用户可以在个人资料页维护个人 Provider，敏感凭据不会由设置接口返回明文。
+- 登录后会自动迁移浏览器 IndexedDB 中尚未进入 Provider 的图片、视频和音频；容量统计可由管理员手动执行，也可按 Cron 自动执行。
 
 ## 推荐调用流程
 
@@ -603,8 +461,4 @@ Web 端推荐使用异步任务接口：
 5. 当 `status=success` 且 `output_type=text` 时展示 `data[].text_response` 或提示用户改用明确的绘图提示词。
 6. 当 `status=error` 或 `cancelled` 时展示 `error`。
 
-外部兼容客户端推荐使用同步接口：
-
-1. 调用 `/v1/images/generations` 或 `/v1/images/edits`。
-2. 按 OpenAI 图片响应读取 `data[]`。
-3. 对 `error.code=image_generation_text_response` 做单独提示，说明当前提示词没有触发图片输出。
+这些接口仅供本项目登录后的 Web 前端使用，不承诺第三方 SDK 兼容性或长期公共协议稳定性。

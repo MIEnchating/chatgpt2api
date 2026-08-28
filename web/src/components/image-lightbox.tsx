@@ -5,6 +5,7 @@ import { ChevronLeft, ChevronRight, Download, RotateCcw, X, ZoomIn, ZoomOut } fr
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AuthenticatedImage } from "@/components/authenticated-image";
+import { TooltipButton } from "@/components/ui/tooltip";
 import { fetchAuthenticatedImageBlob, shouldUseAuthenticatedImageFallback } from "@/lib/authenticated-image";
 import { cn } from "@/lib/utils";
 
@@ -28,6 +29,7 @@ type ImageLightboxProps = {
 const MIN_ZOOM = 1;
 const MAX_ZOOM = 4;
 const ZOOM_STEP = 0.25;
+const WHEEL_ZOOM_SENSITIVITY = 0.002;
 
 function normalizeImageExtension(value?: string) {
   const extension = String(value || "").toLowerCase().trim().replace(/^image\//, "").replace(/^\./, "");
@@ -180,6 +182,7 @@ export function ImageLightbox({
       if (zoom <= MIN_ZOOM) {
         return;
       }
+      event.preventDefault();
       event.currentTarget.setPointerCapture(event.pointerId);
       dragRef.current = {
         pointerId: event.pointerId,
@@ -210,6 +213,44 @@ export function ImageLightbox({
     }
   }, []);
 
+  const handleWheel = useCallback(
+    (event: React.WheelEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const deltaMultiplier = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? event.currentTarget.clientHeight : 1;
+      const delta = Math.max(-200, Math.min(200, event.deltaY * deltaMultiplier));
+      const nextZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom * Math.exp(-delta * WHEEL_ZOOM_SENSITIVITY)));
+
+      if (nextZoom === zoom) {
+        return;
+      }
+      if (nextZoom === MIN_ZOOM) {
+        setPan({ x: 0, y: 0 });
+        setZoom(nextZoom);
+        return;
+      }
+
+      const bounds = event.currentTarget.getBoundingClientRect();
+      const styles = window.getComputedStyle(event.currentTarget);
+      const paddingLeft = Number.parseFloat(styles.paddingLeft) || 0;
+      const paddingRight = Number.parseFloat(styles.paddingRight) || 0;
+      const paddingTop = Number.parseFloat(styles.paddingTop) || 0;
+      const paddingBottom = Number.parseFloat(styles.paddingBottom) || 0;
+      const imageCenterX = paddingLeft + (bounds.width - paddingLeft - paddingRight) / 2;
+      const imageCenterY = paddingTop + (bounds.height - paddingTop - paddingBottom) / 2;
+      const cursorX = event.clientX - bounds.left - imageCenterX;
+      const cursorY = event.clientY - bounds.top - imageCenterY;
+      const zoomRatio = nextZoom / zoom;
+      setPan({
+        x: cursorX - (cursorX - pan.x) * zoomRatio,
+        y: cursorY - (cursorY - pan.y) * zoomRatio,
+      });
+      setZoom(nextZoom);
+    },
+    [pan.x, pan.y, zoom],
+  );
+
   if (!current) return null;
 
   return (
@@ -239,37 +280,37 @@ export function ImageLightbox({
               </span>
             )}
             <div className="flex items-center rounded-full bg-black/50 text-white/90">
-              <button
+              <TooltipButton
                 type="button"
                 onClick={zoomOut}
                 disabled={zoom <= MIN_ZOOM}
                 className="inline-flex size-9 items-center justify-center rounded-l-full transition hover:bg-black/40 disabled:cursor-not-allowed disabled:opacity-40"
                 aria-label="缩小图片"
-                title="缩小图片"
+                tooltip="缩小图片"
               >
                 <ZoomOut className="size-4" />
-              </button>
+              </TooltipButton>
               <span className="min-w-12 text-center text-xs font-medium tabular-nums">{zoomPercent}%</span>
-              <button
+              <TooltipButton
                 type="button"
                 onClick={zoomIn}
                 disabled={zoom >= MAX_ZOOM}
                 className="inline-flex size-9 items-center justify-center transition hover:bg-black/40 disabled:cursor-not-allowed disabled:opacity-40"
                 aria-label="放大图片"
-                title="放大图片"
+                tooltip="放大图片"
               >
                 <ZoomIn className="size-4" />
-              </button>
-              <button
+              </TooltipButton>
+              <TooltipButton
                 type="button"
                 onClick={resetZoom}
                 disabled={zoom === MIN_ZOOM && pan.x === 0 && pan.y === 0}
                 className="inline-flex size-9 items-center justify-center rounded-r-full transition hover:bg-black/40 disabled:cursor-not-allowed disabled:opacity-40"
                 aria-label="重置缩放"
-                title="重置缩放"
+                tooltip="重置缩放"
               >
                 <RotateCcw className="size-4" />
-              </button>
+              </TooltipButton>
             </div>
             <button
               type="button"
@@ -299,13 +340,14 @@ export function ImageLightbox({
           <div
             className="flex h-full w-full items-center justify-center overflow-hidden p-4 pt-24 sm:p-8 sm:pt-20"
             onClick={() => onOpenChange(false)}
+            onWheel={handleWheel}
           >
             <AuthenticatedImage
               src={current.src}
               alt=""
               className={cn(
-                "max-h-[90vh] max-w-[90vw] rounded-lg object-contain transition-transform duration-100",
-                zoom > MIN_ZOOM ? "cursor-grab touch-none active:cursor-grabbing" : "cursor-zoom-in",
+                "max-h-[90vh] max-w-[90vw] rounded-lg object-contain",
+                zoom > MIN_ZOOM ? "cursor-grab touch-none will-change-transform active:cursor-grabbing" : "cursor-zoom-in",
               )}
               style={{ transform: `translate3d(${pan.x}px, ${pan.y}px, 0) scale(${zoom})` }}
               onClick={(event) => {
@@ -318,6 +360,7 @@ export function ImageLightbox({
               onPointerMove={handleImagePointerMove}
               onPointerUp={handleImagePointerEnd}
               onPointerCancel={handleImagePointerEnd}
+              onLostPointerCapture={handleImagePointerEnd}
               draggable={false}
             />
           </div>

@@ -11,7 +11,7 @@ func TestMatchAppRoute(t *testing.T) {
 	routes := []appRoute{
 		exact(http.MethodGet, "/health", nil),
 		exact("", "/api/settings", nil),
-		subtree("/api/auth/users", nil),
+		subtree("/api/workflows", nil),
 		prefix("/images/", nil),
 	}
 
@@ -24,9 +24,9 @@ func TestMatchAppRoute(t *testing.T) {
 		{name: "exact method", method: http.MethodGet, path: "/health", want: "/health"},
 		{name: "exact method mismatch", method: http.MethodPost, path: "/health", want: ""},
 		{name: "methodless exact", method: http.MethodPost, path: "/api/settings", want: "/api/settings"},
-		{name: "subtree base", method: http.MethodGet, path: "/api/auth/users", want: "/api/auth/users"},
-		{name: "subtree child", method: http.MethodGet, path: "/api/auth/users/123/key", want: "/api/auth/users"},
-		{name: "subtree boundary", method: http.MethodGet, path: "/api/auth/users123", want: ""},
+		{name: "subtree base", method: http.MethodGet, path: "/api/workflows", want: "/api/workflows"},
+		{name: "subtree child", method: http.MethodPost, path: "/api/workflows/123/runs", want: "/api/workflows"},
+		{name: "subtree boundary", method: http.MethodGet, path: "/api/workflows-old", want: ""},
 		{name: "static prefix", method: http.MethodHead, path: "/images/2026/04/a.png", want: "/images/"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

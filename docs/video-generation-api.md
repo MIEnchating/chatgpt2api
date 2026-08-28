@@ -27,7 +27,7 @@ MiniMax 官方 V2 协议把自适应画幅写作 `adaptive`。当前上游 `/v1/
 | 提示词和一张首帧图 | `image-to-video` | `image_url.role=first_frame` |
 | 图片、视频或音频参考 URL | `reference-to-video` | `reference_image` / `reference_video` / `reference_audio` |
 
-首帧图片的 Base64 Data URL 不作为 URL 字符串传给中转。服务会校验图片后，将其转换为 multipart 的 `input_reference` 文件字段，避免 URL 长度校验失败。多模态参考则使用独立 URL 数组，不会压缩成首帧 `input_reference`。
+单张首帧图片的 Base64 Data URL 不作为 URL 字符串传给中转。服务会校验图片后，将其转换为 multipart 的 `input_reference` 文件字段，并删除重复的 `first_frame_url` / `image_url` 内联别名，避免 URL 长度校验失败。一次任务需要多张图片时，其余图片必须先转换为公网 URL；多模态参考使用独立 URL 数组，不会压缩成首帧 `input_reference`。
 
 ## 图片编辑参考输入
 
@@ -42,7 +42,7 @@ MiniMax 官方 V2 协议把自适应画幅写作 `adaptive`。当前上游 `/v1/
 - Seedance 2.0 fast/mini：`duration` 为 4-15 秒或 `-1`，分辨率仅为 `480p`、`720p`。
 - Seedance 1.5 pro：`duration` 为 4-12 秒或 `-1`；Seedance 1.0 系列为 2-12 秒且不支持 `-1`。
 - 画幅为 `16:9`、`4:3`、`1:1`、`3:4`、`9:16`、`21:9`、`adaptive`。
-- 单张参考图必须小于 30 MB，宽高比为 2:5 到 5:2。当前产品入口只建模一张首帧图，因此没有开放官方全模态参考任务的多图、视频和音频输入。
+- 单张参考图必须小于 30 MB，宽高比为 2:5 到 5:2。创作台按参考项目开放多模态素材入口：最多 9 张参考图、3 个参考视频和 3 个参考音频；纯图生视频仍使用一张首帧图。
 - 2.5、2.0 系列和 1.5 pro 支持 `generate_audio`；所有已识别版本支持 `watermark`。
 
 模型能力按明确版本识别。自动获取到但尚未录入规则的新 Seedance 型号不显示画幅和清晰度选项，由上游使用默认值，不会被猜测成 2.0 或 2.5。
@@ -76,7 +76,7 @@ Kling 1.x/2.x 仍使用旧版兼容选项（5 秒或 10 秒、`720p`/`1080p`）�
 - Hailuo 2.3 支持 6 秒或 10 秒；10 秒仅支持 `768P`，6 秒支持 `768P`、`1080P`。
 - Hailuo v1 接口没有独立画幅参数。
 - `MiniMax-Hailuo-2.3-Fast` 和 `I2V-*` 模型必须提供首帧参考图。
-- 水印字段映射为 `aigc_watermark`。
+- 统一创作台不提供水印开关；请求不会向 Hailuo 发送水印字段。
 
 ## Sora 2
 
@@ -93,11 +93,11 @@ Kling 1.x/2.x 仍使用旧版兼容选项（5 秒或 10 秒、`720p`/`1080p`）�
 本项目调用的是统一中转 `/v1/videos`，不是分别直连每家厂商。请求会保留统一接口需要的 `model`、`prompt`、`duration`/`seconds`、`size`，并按厂商添加扁平兼容字段：
 
 - Seedance：`ratio`、`resolution`、`generate_audio`、`watermark`。
-- Kling：`aspect_ratio`、`resolution`、`sound`、`watermark`；其中 `sound` 对应官方 `settings.audio` 的 `native`/`off` 语义。
+- Kling：`aspect_ratio`、`resolution`、`sound`；其中 `sound` 对应官方 `settings.audio` 的 `native`/`off` 语义。
 - Grok：`aspect_ratio`、`resolution`。
-- Hailuo：`resolution`、`aigc_watermark`。
+- Hailuo：`resolution`。
 
-Seedance、Kling、Grok 和 Hailuo 的非通用参数还会写入 `metadata`，供 NewAPI 类型的兼容中转读取。不会把可灵直连接口的 `settings`/`options` 对象原样发送给统一 `/v1/videos`，否则会破坏该中转协议。H3 是单独的兼容模式：首帧图使用 multipart `input_reference`，多模态参考使用 `reference_*_urls` 数组和 `generation_mode=reference-to-video`。
+Seedance、Kling、Grok 和 Hailuo 的非通用参数还会写入 `metadata`，供 NewAPI 类型的兼容中转读取；水印仅保留在 Seedance 合同中。不会把可灵直连接口的 `settings`/`options` 对象原样发送给统一 `/v1/videos`，否则会破坏该中转协议。H3 是单独的兼容模式：首帧图使用 multipart `input_reference`，多模态参考使用 `reference_*_urls` 数组和 `generation_mode=reference-to-video`。
 
 ## 维护要求
 

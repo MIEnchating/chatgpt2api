@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { canvasFloatingPanelPlacement, canvasNodeToolbarPlacement } from "../src/app/canvas/canvas-floating-panel.ts";
+import { canvasFloatingPanelPlacement } from "../src/app/canvas/canvas-floating-panel.ts";
 
 test("keeps the parameter panel inside a narrow viewport", () => {
   const placement = canvasFloatingPanelPlacement({
@@ -37,21 +37,4 @@ test("uses the side with more room when neither side fits the preferred height",
 
   assert.equal(placement.direction, "above");
   assert.equal(placement.maxHeight, 190);
-});
-
-test("mobile node toolbar spans the viewport and clears the top controls", () => {
-  assert.deepEqual(canvasNodeToolbarPlacement({ nodeCenterX: -200, nodeTopY: 40, viewportWidth: 390 }), {
-    compact: true,
-    left: 12,
-    right: 12,
-    top: 116,
-  });
-});
-
-test("desktop node toolbar keeps following the node", () => {
-  assert.deepEqual(canvasNodeToolbarPlacement({ nodeCenterX: 860, nodeTopY: 320, viewportWidth: 1440 }), {
-    compact: false,
-    left: 860,
-    top: 320,
-  });
 });

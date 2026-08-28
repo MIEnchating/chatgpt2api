@@ -27,9 +27,6 @@ func main() {
 
 	port := os.Getenv("PORT")
 	if port == "" {
-		port = os.Getenv("CHATGPT2API_PORT")
-	}
-	if port == "" {
 		port = "8000"
 	}
 	logger := app.Logger()

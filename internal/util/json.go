@@ -1,7 +1,6 @@
 package util
 
 import (
-	"bytes"
 	"crypto/rand"
 	"crypto/sha1"
 	"crypto/sha256"
@@ -292,27 +291,11 @@ func RandomTokenURL(n int) string {
 	return base64.RawURLEncoding.EncodeToString(buf)
 }
 
-func B64Encode(data []byte) string {
-	return base64.StdEncoding.EncodeToString(data)
-}
-
 func B64Decode(text string) ([]byte, error) {
 	if idx := strings.Index(text, ","); strings.HasPrefix(text, "data:") && idx >= 0 {
 		text = text[idx+1:]
 	}
 	return base64.StdEncoding.DecodeString(strings.TrimSpace(text))
-}
-
-func CompactJSON(v any) string {
-	data, err := json.Marshal(v)
-	if err != nil {
-		return "{}"
-	}
-	var buf bytes.Buffer
-	if err := json.Compact(&buf, data); err != nil {
-		return string(data)
-	}
-	return buf.String()
 }
 
 func NowLocal() string {
@@ -340,31 +323,4 @@ func ParseCommaList(value string) []string {
 		}
 	}
 	return out
-}
-
-func IsImageModel(model string) bool {
-	_, ok := ImageModels[strings.TrimSpace(model)]
-	return ok
-}
-
-func IsImageGenerationModel(model string) bool {
-	_, ok := ImageGenerationModels[strings.TrimSpace(model)]
-	return ok
-}
-
-func IsResponsesImageToolModel(model string) bool {
-	_, ok := ResponsesImageToolModels[strings.TrimSpace(model)]
-	return ok
-}
-
-func ModelList() []string {
-	return append([]string(nil), ModelIDs...)
-}
-
-func ImageGenerationModelList() []string {
-	return append([]string(nil), ImageGenerationModelIDs...)
-}
-
-func ImageGenerationModelNames() string {
-	return strings.Join(ImageGenerationModelIDs, ", ")
 }

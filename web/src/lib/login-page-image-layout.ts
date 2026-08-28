@@ -35,7 +35,7 @@ function roundTo(value: number, digits = 2) {
   return Math.round(value * factor) / factor;
 }
 
-export function isLoginPageImageMode(value: unknown): value is LoginPageImageMode {
+function isLoginPageImageMode(value: unknown): value is LoginPageImageMode {
   return typeof value === "string" && LOGIN_PAGE_IMAGE_MODES.includes(value as LoginPageImageMode);
 }
 

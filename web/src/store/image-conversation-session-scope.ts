@@ -314,7 +314,7 @@ export function isImageConversationScopeChangedError(error: unknown) {
       (error as { code?: unknown }).code === "IMAGE_CONVERSATION_SCOPE_CHANGED");
 }
 
-export function createScopedWriteQueue(): ScopedWriteQueue {
+function createScopedWriteQueue(): ScopedWriteQueue {
   return {
     retired: false,
     running: false,
@@ -372,7 +372,7 @@ export function waitForScopedWrites(queue: ScopedWriteQueue) {
   });
 }
 
-export function retireScopedWriteQueue(queue: ScopedWriteQueue) {
+function retireScopedWriteQueue(queue: ScopedWriteQueue) {
   if (queue.retired) {
     return;
   }

@@ -54,19 +54,12 @@ func (a *App) attachRelayAPIKeyForIdentity(ctx context.Context, identity service
 	return nil
 }
 
-func (a *App) relayAPIKeyForIdentity(ctx context.Context, identity service.Identity) (string, error) {
-	return a.relayAPIKeyForIdentitySelection(ctx, identity, "", "")
-}
-
-func (a *App) relayAPIKeyForIdentityGroup(ctx context.Context, identity service.Identity, group string) (string, error) {
-	return a.relayAPIKeyForIdentitySelection(ctx, identity, group, "")
-}
-
 func (a *App) relayAPIKeyForIdentitySelection(ctx context.Context, identity service.Identity, group, name string) (string, error) {
-	if a == nil || a.newAPIKeys == nil {
-		return "", protocol.HTTPError{Status: http.StatusBadRequest, Message: "请先配置云棉数据库连接，并在云棉创建指定分组的令牌"}
+	reader := a.relayTokenReader()
+	if reader == nil {
+		return "", protocol.HTTPError{Status: http.StatusBadRequest, Message: "请先配置数据库连接，并创建指定分组的令牌"}
 	}
-	key, err := a.newAPIKeys.KeyForIdentityGroupAndName(ctx, identity, group, name)
+	key, err := reader.KeyForIdentityGroupAndName(ctx, identity, group, name)
 	if err != nil {
 		return "", protocol.HTTPError{Status: http.StatusBadRequest, Message: err.Error()}
 	}
@@ -81,30 +74,15 @@ func (a *App) relayBaseURL() string {
 }
 
 func relayAPIKeyFromPayload(payload map[string]any) string {
-	for _, key := range []string{"api_key", "relay_api_key", "relayai_api_key", "upstream_api_key"} {
-		if value := util.Clean(payload[key]); value != "" {
-			return value
-		}
-	}
-	return ""
+	return util.Clean(payload["api_key"])
 }
 
 func selectedRelayTokenGroupFromPayload(payload map[string]any) string {
-	for _, key := range []string{"token_group", "newapi_token_group", "relay_token_group"} {
-		if value := util.Clean(payload[key]); value != "" {
-			return value
-		}
-	}
-	return ""
+	return util.Clean(payload["token_group"])
 }
 
 func selectedRelayTokenNameFromPayload(payload map[string]any) string {
-	for _, key := range []string{"token_name", "newapi_token_name", "relay_token_name"} {
-		if value := util.Clean(payload[key]); value != "" {
-			return value
-		}
-	}
-	return ""
+	return util.Clean(payload["token_name"])
 }
 
 func (a *App) relayListModels(ctx context.Context, apiKey string) (map[string]any, error) {
@@ -130,6 +108,7 @@ func (a *App) relayImageGenerations(ctx context.Context, payload map[string]any)
 	if err := validateRelayImageRequest("/v1/images/generations", util.Clean(payload["model"]), payload, nil); err != nil {
 		return nil, nil, err
 	}
+	normalizeImagePayloadForModel(payload)
 	var release func()
 	var err error
 	if !relayImageTaskSlotIsManaged(payload) {
@@ -175,7 +154,8 @@ func (a *App) relayImageEdits(ctx context.Context, payload map[string]any, image
 	if err := validateRelayImageRequest("/v1/images/edits", model, payload, images); err != nil {
 		return nil, nil, err
 	}
-	if err := validateRelayImageReferenceCount(model, len(images)); err != nil {
+	normalizeImagePayloadForModel(payload)
+	if err := validateRelayImageReferenceCount(model, len(images), payload); err != nil {
 		return nil, nil, err
 	}
 	var release func()
@@ -193,7 +173,77 @@ func (a *App) relayImageEdits(ctx context.Context, payload map[string]any, image
 		}
 		return result, nil, err
 	}
-	result, stream, err := a.relayMultipartMaybeStream(ctx, "/v1/images/edits", payload, images)
+	if util.IsXAIImageModel(model) {
+		// Grok2API uses a JSON edit envelope instead of OpenAI's multipart
+		// image upload contract. Keep the reference images as data URLs.
+		editPayload := make(map[string]any, len(payload)+1)
+		for key, value := range payload {
+			if key != "images" {
+				editPayload[key] = value
+			}
+		}
+		imageURLs := make([]map[string]any, 0, len(images))
+		for _, image := range images {
+			if value := uploadedImageDataURL(image); value != "" {
+				imageURLs = append(imageURLs, map[string]any{"url": value})
+			}
+		}
+		editPayload["images"] = imageURLs
+		result, stream, err := a.relayJSONMaybeStream(ctx, "/v1/images/edits", editPayload)
+		if err != nil {
+			if release != nil {
+				release()
+			}
+			return result, stream, err
+		}
+		if stream != nil {
+			stream = a.localizeRelayImageStream(ctx, editPayload, stream)
+		}
+		if stream != nil && release != nil {
+			return result, relayImageStreamWithSlotRelease(ctx, stream, release), nil
+		}
+		if release != nil {
+			release()
+		}
+		return result, stream, nil
+	}
+	if util.IsAgnesImageModel(model) {
+		// Agnes follows the reference project's image-edit contract: reference
+		// images are sent in extra_body.image while the endpoint remains image
+		// generations. Uploaded inputs fall back to data URLs when no public URL
+		// is available to this server.
+		generationPayload := make(map[string]any, len(payload)+1)
+		for key, value := range payload {
+			if key != "images" {
+				generationPayload[key] = value
+			}
+		}
+		imageURLs := make([]string, 0, len(images))
+		for _, image := range images {
+			if value := uploadedImageDataURL(image); value != "" {
+				imageURLs = append(imageURLs, value)
+			}
+		}
+		generationPayload["extra_body"] = map[string]any{"image": imageURLs}
+		result, stream, err := a.relayJSONMaybeStream(ctx, "/v1/images/generations", generationPayload)
+		if err != nil {
+			if release != nil {
+				release()
+			}
+			return result, stream, err
+		}
+		if stream != nil {
+			stream = a.localizeRelayImageStream(ctx, generationPayload, stream)
+		}
+		if stream != nil && release != nil {
+			return result, relayImageStreamWithSlotRelease(ctx, stream, release), nil
+		}
+		if release != nil {
+			release()
+		}
+		return result, stream, nil
+	}
+	result, stream, err := a.relayMultipartMaybeStream(ctx, relayImageEditPath(payload), payload, images)
 	if err != nil {
 		if release != nil {
 			release()
@@ -219,7 +269,100 @@ func validateRelayImageRequest(pathValue, model string, payload map[string]any, 
 	if err := validateRelayImageIntegerParameter(payload, "output_compression", 0, 100); err != nil {
 		return err
 	}
+	if err := validateKIEImageRequiredInput(model, payload, len(images)); err != nil {
+		return err
+	}
+	if err := validateKIEImageReferenceURLs(model, payload); err != nil {
+		return err
+	}
+	if err := validateAPIMartImageRequiredInput(model, payload, len(images)); err != nil {
+		return err
+	}
 	return validateRelayImageMask(pathValue, model, payload, images)
+}
+
+// KIE image endpoints dereference reference fields server-side. Inline data
+// URLs, localhost, private-network URLs, and overlong URLs therefore cannot
+// work even when the surrounding OpenAI-compatible request accepts them.
+func validateKIEImageReferenceURLs(model string, payload map[string]any) error {
+	if !isKnownKIEImageModel(model) || payload == nil || isAPIMartImagePayload(payload) {
+		return nil
+	}
+	for _, key := range []string{
+		"image_url", "image_urls", "input_url", "input_urls", "images", "image", "image_input",
+		"reference_image_url", "reference_image_urls", "mask_url", "mask_urls", "video_url", "video_urls",
+	} {
+		for _, value := range normalizeKIEReferenceArrayValue(payload[key]) {
+			if !isPublicReferenceURL(value) {
+				return protocol.HTTPError{Status: http.StatusBadRequest, Message: fmt.Sprintf("模型 %s 的 %s 必须使用公网可访问的 http:// 或 https:// URL", model, key)}
+			}
+		}
+	}
+	return nil
+}
+
+func validateKIEImageRequiredInput(model string, payload map[string]any, uploaded int) error {
+	name := strings.ToLower(strings.TrimSpace(model))
+	if !isKnownKIEImageModel(name) || isAPIMartImagePayload(payload) {
+		return nil
+	}
+	has := func(fields ...string) bool {
+		for _, field := range fields {
+			if len(normalizeKIEReferenceArrayValue(payload[field])) > 0 {
+				return true
+			}
+		}
+		return false
+	}
+	// A multipart upload satisfies the model's primary image input, but it does
+	// not satisfy additional provider-native inputs such as a mask or a
+	// character reference image. Keep those requirements explicit so strict
+	// KIE schemas fail locally with an actionable message instead of returning
+	// a generic upstream 422.
+	hasBaseImage := uploaded > 0 || has("image_url", "image_urls", "input_urls", "input_url", "images", "image", "image_input", "reference_image")
+	requireBase := func() error {
+		if hasBaseImage {
+			return nil
+		}
+		return protocol.HTTPError{Status: http.StatusBadRequest, Message: fmt.Sprintf("模型 %s 必须提供参考图片 URL 或上传图片", model)}
+	}
+	requireField := func(label string, fields ...string) error {
+		if has(fields...) {
+			return nil
+		}
+		return protocol.HTTPError{Status: http.StatusBadRequest, Message: fmt.Sprintf("模型 %s 必须提供 %s", model, label)}
+	}
+	switch {
+	case name == "ideogram/v3-edit":
+		if err := requireBase(); err != nil {
+			return err
+		}
+		// The KIE endpoint requires a public mask_url. OpenAI's
+		// input_image_mask multipart field is a different contract and is
+		// intentionally not accepted as a substitute here.
+		return requireField("mask_url", "mask_url", "mask_urls")
+	case name == "ideogram/character-edit":
+		if err := requireBase(); err != nil {
+			return err
+		}
+		if err := requireField("mask_url", "mask_url", "mask_urls"); err != nil {
+			return err
+		}
+		return requireField("reference_image_urls", "reference_image_urls")
+	case name == "ideogram/character-remix":
+		if err := requireBase(); err != nil {
+			return err
+		}
+		return requireField("reference_image_urls", "reference_image_urls")
+	case name == "ideogram/character":
+		return requireField("reference_image_urls", "reference_image_urls")
+	case strings.Contains(name, "qwen/image-to-image"), strings.Contains(name, "qwen/image-edit"), strings.Contains(name, "qwen2/image-edit"), strings.Contains(name, "ideogram/v3-remix"), strings.Contains(name, "seedream/5-pro-layer-decomposition"), strings.Contains(name, "image-to-image"), strings.Contains(name, "image-edit"), strings.Contains(name, "remix"):
+		return requireBase()
+	case strings.HasSuffix(name, "/extend"), strings.Contains(name, "upscale"), strings.Contains(name, "remove-background"):
+		return requireBase()
+	default:
+		return nil
+	}
 }
 
 func validateRelayImageIntegerParameter(payload map[string]any, key string, minimum, maximum int) error {
@@ -317,9 +460,19 @@ func pngHasAlphaChannel(data []byte) bool {
 		(data[25] == 4 || data[25] == 6)
 }
 
-func validateRelayImageReferenceCount(model string, count int) error {
+func validateRelayImageReferenceCount(model string, count int, payloads ...map[string]any) error {
 	if count <= 0 {
 		return nil
+	}
+	if len(payloads) > 0 && isAPIMartImagePayload(payloads[0]) {
+		contract := apimartImageContractForModel(model)
+		if contract.imageRefField != "" && (contract.maxImageRefs == 0 || count <= contract.maxImageRefs) {
+			return nil
+		}
+		if contract.imageRefField == "" {
+			return protocol.HTTPError{Status: http.StatusBadRequest, Message: fmt.Sprintf("model %s does not support APIMart reference images", model)}
+		}
+		return protocol.HTTPError{Status: http.StatusBadRequest, Message: fmt.Sprintf("model %s supports at most %d APIMart reference images", model, contract.maxImageRefs)}
 	}
 	limit := util.MaxImageReferenceImages(model)
 	if count <= limit {
@@ -614,46 +767,26 @@ func closestImageAspectRatio(target float64, supported []string) string {
 
 func googleGeminiImageSize(model string, payload map[string]any) string {
 	value := strings.ToLower(strings.TrimSpace(model))
-	if !util.IsGoogleGemini3ImageModel(value) {
+	if strings.Contains(value, "2.5") {
 		return ""
 	}
-	isFlashLiteImage := util.IsGoogleGeminiFlashLiteImageModel(value)
-	isFlash31Image := util.IsGoogleGemini31FlashImageModel(value)
-	for _, candidate := range []string{util.Clean(payload["image_resolution"]), util.Clean(payload["size"])} {
-		switch strings.ToLower(strings.TrimSpace(candidate)) {
-		case "4k":
-			if isFlashLiteImage {
-				return "1K"
-			}
-			return "4K"
-		case "2k":
-			if isFlashLiteImage {
-				return "1K"
-			}
-			return "2K"
-		case "1080p", "1k":
-			return "1K"
-		case "512", "512px", "0.5k":
-			if isFlash31Image {
-				return "512"
-			}
-			return "1K"
-		}
+	switch strings.ToLower(strings.TrimSpace(util.Clean(payload["quality"]))) {
+	case "low":
+		return "1K"
+	case "medium":
+		return "2K"
+	case "high":
+		return "4K"
 	}
-	if width, height, ok := parseRelayImageDimensions(strings.ToLower(util.Clean(payload["size"]))); ok {
-		pixels := int64(width) * int64(height)
-		switch {
-		case isFlashLiteImage:
-			return "1K"
-		case pixels <= int64(768*768) && isFlash31Image:
-			return "512"
-		case pixels <= int64(1536*1536):
-			return "1K"
-		case pixels <= int64(3072*3072):
-			return "2K"
-		default:
-			return "4K"
-		}
+	preset := strings.ToLower(strings.Join([]string{
+		util.Clean(payload["requested_size"]),
+		util.Clean(payload["size"]),
+	}, " "))
+	if strings.Contains(preset, "6272x2688") || strings.Contains(preset, "3840x2160") || strings.Contains(preset, "2160x3840") {
+		return "4K"
+	}
+	if strings.Contains(preset, "2048x") || strings.Contains(preset, "3136x1344") {
+		return "2K"
 	}
 	return ""
 }
@@ -664,10 +797,6 @@ func (a *App) relayChatCompletions(ctx context.Context, payload map[string]any) 
 
 func (a *App) relayResponses(ctx context.Context, payload map[string]any) (map[string]any, *protocol.StreamResult, error) {
 	return a.relayJSONMaybeStream(ctx, "/v1/responses", payload)
-}
-
-func (a *App) relayMessages(ctx context.Context, payload map[string]any) (map[string]any, *protocol.StreamResult, error) {
-	return a.relayJSONMaybeStream(ctx, "/v1/messages", payload)
 }
 
 func (a *App) relayJSONMaybeStream(ctx context.Context, path string, payload map[string]any) (map[string]any, *protocol.StreamResult, error) {
@@ -747,7 +876,17 @@ func (a *App) relayVideoTask(ctx context.Context, payload map[string]any) (map[s
 	if apiKey == "" {
 		return nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: "视频任务缺少上游令牌"}
 	}
+	// Gemini Omni's `audio_ids` are KIE-issued asset identifiers, not public
+	// audio URLs. The shared creation API intentionally exposes URL references,
+	// so fail early instead of forwarding a URL that the provider validates as
+	// an ID and returns a confusing 422 response.
+	if isGeminiOmniVideoModel(util.Clean(payload["model"])) && len(util.AsStringSlice(payload["reference_audio_urls"])) > 0 {
+		return nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: "Gemini Omni 参考音频必须使用已上传的 audio_* 音频 ID，当前视频接口仅支持公网音频 URL，因此暂不支持参考音频"}
+	}
 	request := officialVideoRequestPayload(payload)
+	if err := validateVideoReferencePayloadURLs(request); err != nil {
+		return nil, err
+	}
 	created, err := a.relayVideoSubmit(ctx, apiKey, request)
 	if err != nil {
 		return created, err
@@ -800,10 +939,175 @@ func (a *App) relayVideoTask(ctx context.Context, payload map[string]any) (map[s
 	return nil, protocol.HTTPError{Status: http.StatusGatewayTimeout, Message: "视频生成超时，请稍后重试"}
 }
 
+func isGeminiOmniVideoModel(model string) bool {
+	name := strings.ToLower(strings.TrimSpace(model))
+	return strings.Contains(name, "gemini-omni") || strings.Contains(name, "omni-flash")
+}
+
+// Reference arrays are provider-native URL lists and cannot be represented by
+// the single-file multipart compatibility field. Reject inline data URLs here
+// with a useful client error instead of forwarding a multi-megabyte value that
+// the official endpoint will reject as an overlong URL.
+func validateVideoReferencePayloadURLs(request map[string]any) error {
+	// Provider-native URL fields must stay URLs as well. In particular, KIE's
+	// named-frame fields (`first_frame_url`/`last_frame_url`) are not the same
+	// as the legacy multipart `input_reference` field and reject data URLs.
+	// Keep `first_frame_image`/`last_frame_image` out of this list because the
+	// official Veo adapter intentionally converts those local uploads to the
+	// provider's inline image representation.
+	for _, key := range []string{
+		"reference_image_urls", "reference_video_urls", "reference_audio_urls",
+		"image_url", "image_urls", "video_url", "video_urls", "audio_url", "audio_urls", "audio_ids",
+		"first_frame_url", "last_frame_url", "end_image_url", "tail_image_url",
+		"first_clip_url", "reference_image", "reference_video", "reference_voice",
+		// Native APIMart/Wan adapters use these aliases instead of the
+		// OpenAI-compatible *_urls names. They must receive the same public URL
+		// validation or a data URL can bypass the guard and reach the provider.
+		"image", "images", "input_urls", "video", "videos", "audio", "audios",
+		"ref_images", "ref_videos", "reference_images",
+		"image_with_roles", "video_list", "element_list",
+	} {
+		_, imageObject := request[key].(map[string]any)
+		if key == "image_with_roles" || key == "video_list" || key == "ref_images" || key == "ref_videos" || key == "reference_images" || key == "element_list" || key == "image" && imageObject {
+			if err := validateNestedVideoReferenceURLs(request[key]); err != nil {
+				return err
+			}
+			continue
+		}
+		values := util.AsStringSlice(request[key])
+		if value := util.Clean(request[key]); value != "" && len(values) == 0 {
+			values = []string{value}
+		}
+		for _, value := range values {
+			// A single local upload is carried separately as multipart
+			// `input_reference`; the named frame alias is retained only for
+			// compatibility and will not be used as the provider URL.
+			inlineReference := strings.TrimSpace(util.Clean(request["input_reference"]))
+			if strings.HasPrefix(strings.ToLower(inlineReference), "data:") {
+				// A single local image is converted to multipart by
+				// relayVideoSubmit. Do not reject the matching provider alias,
+				// but still reject any additional data-URL references.
+				if len(values) == 1 && strings.TrimSpace(values[0]) == inlineReference && isInlineFirstFrameReference(request) && (key == "image" || key == "image_url" || key == "first_frame_url" || key == "reference_image_urls") {
+					continue
+				}
+			}
+			if key == "audio_ids" {
+				if !strings.HasPrefix(strings.TrimSpace(value), "audio_") {
+					return protocol.HTTPError{Status: http.StatusBadRequest, Message: "Gemini Omni 参考音频必须使用 audio_ 开头的已上传音频 ID"}
+				}
+				continue
+			}
+			if !isPublicReferenceURL(value) {
+				return protocol.HTTPError{Status: http.StatusBadRequest, Message: "视频参考素材列表必须使用公网可访问的 http:// 或 https:// URL；单首帧图片可使用上传文件"}
+			}
+		}
+	}
+	// Provider adapters mirror native reference fields into metadata for
+	// compatibility with older relays. Validate that copy as well; otherwise a
+	// stale caller could bypass the URL guard by placing a Base64 reference only
+	// in metadata and the upstream would return a confusing 422 URL-too-long
+	// error.
+	if metadata, ok := request["metadata"].(map[string]any); ok && !strings.HasPrefix(strings.ToLower(strings.TrimSpace(util.Clean(request["input_reference"]))), "data:") {
+		if err := validateNestedVideoReferenceURLs(metadata); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateNestedVideoReferenceURLs(value any) error {
+	var walk func(any, string) error
+	walk = func(current any, field string) error {
+		switch typed := current.(type) {
+		case []any:
+			for _, item := range typed {
+				if err := walk(item, field); err != nil {
+					return err
+				}
+			}
+		case []map[string]string:
+			for _, item := range typed {
+				if err := walk(item, field); err != nil {
+					return err
+				}
+			}
+		case []map[string]any:
+			for _, item := range typed {
+				if err := walk(item, field); err != nil {
+					return err
+				}
+			}
+		case []string:
+			for _, item := range typed {
+				if err := walk(item, field); err != nil {
+					return err
+				}
+			}
+		case map[string]string:
+			for key, item := range typed {
+				if err := walk(item, key); err != nil {
+					return err
+				}
+			}
+		case map[string]any:
+			for key, item := range typed {
+				if err := walk(item, key); err != nil {
+					return err
+				}
+			}
+		case string:
+			if field == "url" || strings.Contains(field, "_url") || strings.HasSuffix(field, "urls") || field == "reference_voice" {
+				if !isPublicReferenceURL(typed) {
+					return protocol.HTTPError{Status: http.StatusBadRequest, Message: "视频参考素材列表必须使用公网可访问的 http:// 或 https:// URL；单首帧图片可使用上传文件"}
+				}
+			}
+		}
+		return nil
+	}
+	return walk(value, "")
+}
+
 func (a *App) relayVideoSubmit(ctx context.Context, apiKey string, request map[string]any) (map[string]any, error) {
+	if videoProviderAdapterForModel(strings.ToLower(util.Clean(request["model"]))).name == "veo" {
+		if err := a.inlineVeoReferenceImage(ctx, request); err != nil {
+			return nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: err.Error()}
+		}
+	}
 	inputReference := strings.TrimSpace(util.Clean(request["input_reference"]))
+	// Provider-native URL fields must never carry an inline data URL. For
+	// direct API callers (legacy clients may still send one), reuse the
+	// multipart upload path and remove the inline field from the form so the
+	// upstream sees a real uploaded file instead of a 2K+ URL.
+	inlineField := ""
+	if inputReference == "" {
+		for _, key := range []string{"first_frame_url", "first_frame_image", "image_url", "image"} {
+			candidate := strings.TrimSpace(util.Clean(request[key]))
+			if strings.HasPrefix(strings.ToLower(candidate), "data:") {
+				inputReference = candidate
+				inlineField = key
+				break
+			}
+		}
+	}
+	// Some canvas/API callers only populate the canonical image array. Treat a
+	// single data URL there as the same local first-frame upload, but never
+	// reinterpret a multimodal reference request this way: those references
+	// must remain public URLs because the provider expects URL arrays.
+	if inputReference == "" && isInlineFirstFrameReference(request) {
+		values := util.AsStringSlice(request["reference_image_urls"])
+		if len(values) == 1 && strings.HasPrefix(strings.ToLower(strings.TrimSpace(values[0])), "data:") {
+			inputReference = strings.TrimSpace(values[0])
+		}
+	}
 	if !strings.HasPrefix(strings.ToLower(inputReference), "data:") {
 		return a.relayJSON(ctx, http.MethodPost, "/v1/videos", apiKey, request)
+	}
+	// The compatibility payload may contain both input_reference and a
+	// provider-native alias for the same image. Once the image is uploaded as a
+	// multipart file, retaining that alias would send the complete Base64 value
+	// as a URL and trigger the provider's 2083-character URL validation.
+	if err := removeMultipartVideoReferenceAliases(request, inputReference); err != nil {
+		return nil, err
 	}
 	data, contentType, err := imageDataURLBytes(inputReference)
 	if err != nil {
@@ -813,6 +1117,9 @@ func (a *App) relayVideoSubmit(ctx context.Context, apiKey string, request map[s
 		return nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: err.Error()}
 	}
 	delete(request, "input_reference")
+	if inlineField != "" {
+		delete(request, inlineField)
+	}
 	req, err := relayVideoMultipartRequest(ctx, a.relayBaseURL(), apiKey, request, protocol.UploadedImage{
 		Data:        data,
 		Filename:    "input-reference." + videoReferenceImageExtension(contentType),
@@ -829,13 +1136,108 @@ func (a *App) relayVideoSubmit(ctx context.Context, apiKey string, request map[s
 	return relayDecodeJSONResponse(resp)
 }
 
+func removeMultipartVideoReferenceAliases(request map[string]any, inputReference string) error {
+	clean := func(fields map[string]any) error {
+		for _, key := range []string{"first_frame_url", "first_frame_image", "last_frame_url", "last_frame_image", "end_image_url", "tail_image_url", "image_url", "image"} {
+			value := strings.TrimSpace(util.Clean(fields[key]))
+			if !strings.HasPrefix(strings.ToLower(value), "data:") {
+				continue
+			}
+			if value != inputReference {
+				return protocol.HTTPError{Status: http.StatusBadRequest, Message: "一次视频任务只能直接上传一张本地参考图；其他图片请先转换为公网可访问 URL"}
+			}
+			delete(fields, key)
+		}
+		if references := util.AsStringSlice(fields["reference_image_urls"]); len(references) > 0 {
+			for _, value := range references {
+				if strings.HasPrefix(strings.ToLower(strings.TrimSpace(value)), "data:") && strings.TrimSpace(value) != inputReference {
+					return protocol.HTTPError{Status: http.StatusBadRequest, Message: "一次视频任务只能直接上传一张本地参考图；其他图片请先转换为公网可访问 URL"}
+				}
+			}
+			if len(references) == 1 && strings.TrimSpace(references[0]) == inputReference {
+				delete(fields, "reference_image_urls")
+			}
+		}
+		return nil
+	}
+	if err := clean(request); err != nil {
+		return err
+	}
+	if metadata, ok := request["metadata"].(map[string]any); ok {
+		if err := clean(metadata); err != nil {
+			return err
+		}
+		if len(metadata) == 0 {
+			delete(request, "metadata")
+		}
+	}
+	return nil
+}
+
+func isInlineFirstFrameReference(request map[string]any) bool {
+	if request == nil {
+		return false
+	}
+	if strings.EqualFold(strings.TrimSpace(util.Clean(request["reference_mode"])), "reference") {
+		return false
+	}
+	mode := strings.ToLower(strings.TrimSpace(util.Clean(request["generation_mode"])))
+	return mode == "" || mode == "image-to-video" || mode == "image" || mode == "first-frame"
+}
+
+func (a *App) inlineVeoReferenceImage(ctx context.Context, request map[string]any) error {
+	metadata, _ := request["metadata"].(map[string]any)
+	if metadata == nil {
+		return nil
+	}
+	inline := func(value string) (string, error) {
+		value = strings.TrimSpace(value)
+		if value == "" || strings.HasPrefix(strings.ToLower(value), "data:") {
+			return value, nil
+		}
+		data, contentType, err := relayImageItemBytes(ctx, a, map[string]any{"url": value})
+		if err != nil {
+			return "", fmt.Errorf("Veo 参考图下载失败：%w", err)
+		}
+		if len(data) > maxGoogleGeminiInlineRequestBytes {
+			return "", fmt.Errorf("Veo 参考图不能超过 20 MiB")
+		}
+		return "data:" + contentType + ";base64," + base64.StdEncoding.EncodeToString(data), nil
+	}
+	for _, field := range []string{"firstFrame", "lastFrame"} {
+		value := util.Clean(metadata[field])
+		if value == "" {
+			continue
+		}
+		converted, err := inline(value)
+		if err != nil {
+			return err
+		}
+		metadata[field] = converted
+	}
+	images := util.AsStringSlice(metadata["referenceImages"])
+	for index, value := range images {
+		converted, err := inline(value)
+		if err != nil {
+			return err
+		}
+		images[index] = converted
+	}
+	if len(images) > 0 {
+		metadata["referenceImages"] = images
+	}
+	return nil
+}
+
 // officialVideoRequestPayload maps official provider semantics onto the
 // flattened /v1/videos compatibility contract exposed by the relay.
 func officialVideoRequestPayload(payload map[string]any) map[string]any {
-	model := util.Clean(payload["model"])
+	model := protocol.CanonicalVideoModel(util.Clean(payload["model"]))
 	name := strings.ToLower(model)
 	seconds := util.ToInt(payload["seconds"], 0)
 	refs := util.AsStringSlice(payload["reference_image_urls"])
+	frameRefs := videoFrameAliases(payload)
+	refs = removeVideoFrameAliases(refs, frameRefs)
 	referenceVideoURLs := util.AsStringSlice(payload["reference_video_urls"])
 	referenceAudioURLs := util.AsStringSlice(payload["reference_audio_urls"])
 	referenceMode := normalizeVideoReferenceMode(util.Clean(payload["reference_mode"]))
@@ -846,137 +1248,557 @@ func officialVideoRequestPayload(payload map[string]any) map[string]any {
 			referenceMode = "first-frame"
 		}
 	}
+	if strings.Contains(name, "reference-to-video") || strings.Contains(name, "-r2v") || strings.HasSuffix(name, "/r2v") {
+		referenceMode = "reference"
+	}
+	// Keep direct /v1/videos callers consistent with the creation-task route.
+	// A stale reference toggle is harmless for image-only models when it only
+	// contains images, but must not force an unsupported multimodal payload.
+	capability := protocol.VideoCapability(model)
+	if referenceMode == "reference" && !capability.ReferenceMode && len(referenceVideoURLs) == 0 && len(referenceAudioURLs) == 0 && capability.FirstFrameImageLimit > 0 {
+		referenceMode = "first-frame"
+	}
+	size := util.Clean(payload["size"])
+	if strings.Contains(name, "/") {
+		size = normalizeKIEAspectRatio(size)
+	}
 	request := map[string]any{
 		"model":    model,
 		"prompt":   payload["prompt"],
 		"seconds":  payload["seconds"],
 		"duration": seconds,
-		"size":     payload["size"],
+	}
+	if size != "" {
+		request["size"] = size
+	}
+	if len(frameRefs) > 0 {
+		request["first_frame_url"] = frameRefs[0]
+	}
+	if len(frameRefs) > 1 {
+		request["last_frame_url"] = frameRefs[1]
+	}
+	// Creation tasks persist the shared audio toggle as video_generate_audio
+	// in metadata, while direct /v1 callers use generate_audio. Adapters should
+	// see one vocabulary regardless of whether the request came from the
+	// creator, canvas, or a queued task.
+	adapterPayload := payload
+	if _, hasGenerateAudio := payload["generate_audio"]; !hasGenerateAudio {
+		if value, ok := payload["video_generate_audio"].(bool); ok {
+			adapterPayload = make(map[string]any, len(payload)+1)
+			for key, item := range payload {
+				adapterPayload[key] = item
+			}
+			adapterPayload["generate_audio"] = value
+		}
 	}
 	metadata := map[string]any{}
 	if resolution := util.Clean(payload["resolution"]); resolution != "" {
 		request["resolution"] = resolution
 	}
-	size := util.Clean(payload["size"])
-	switch {
-	case isSora2Model(name):
-		// OpenAI's Videos API uses size and seconds. It does not accept the
-		// provider-neutral resolution, duration, audio, or watermark fields.
-		request["seconds"] = strconv.Itoa(seconds)
-		delete(request, "duration")
-		delete(request, "resolution")
-	case strings.Contains(name, "grok"):
-		if size != "" {
-			request["aspect_ratio"] = size
-			metadata["aspect_ratio"] = size
-		}
-		if resolution := util.Clean(payload["resolution"]); resolution != "" {
-			metadata["resolution"] = resolution
-		}
-		// xAI's video API does not expose audio or watermark controls.
-	case strings.Contains(name, "kling"):
-		if len(refs) == 0 && size != "" {
-			request["aspect_ratio"] = size
-			metadata["aspect_ratio"] = size
-		}
-		if resolution := util.Clean(payload["resolution"]); resolution != "" {
-			metadata["resolution"] = resolution
-		}
-		if value, ok := payload["generate_audio"].(bool); ok {
-			// The shared relay currently uses the legacy flattened `sound`
-			// compatibility field. Kling 3.0's direct API expresses the same
-			// setting as settings.audio = native/off.
-			request["sound"] = value
-			metadata["sound"] = value
-			if value {
-				metadata["audio"] = "native"
-			} else {
-				metadata["audio"] = "off"
-			}
-		}
-		if value, ok := payload["watermark"].(bool); ok && isKling3Model(model) {
-			request["watermark"] = value
-			metadata["watermark"] = value
-		}
-	case strings.Contains(name, "minimax") || strings.Contains(name, "hailuo") || strings.HasPrefix(name, "t2v-") || strings.HasPrefix(name, "i2v-") || strings.HasPrefix(name, "s2v-"):
-		if isMiniMaxH3Model(model) {
-			delete(request, "seconds")
-			delete(request, "size")
-			if referenceMode == "reference" {
-				request["generation_mode"] = "reference-to-video"
-				if size == "" || strings.EqualFold(size, "adaptive") {
-					request["ratio"] = "auto"
-				} else {
-					request["ratio"] = size
-				}
-				if len(refs) > 0 {
-					request["reference_image_urls"] = refs
-					metadata["reference_image_urls"] = refs
-				}
-				if len(referenceVideoURLs) > 0 {
-					request["reference_video_urls"] = referenceVideoURLs
-					metadata["reference_video_urls"] = referenceVideoURLs
-				}
-				if len(referenceAudioURLs) > 0 {
-					request["reference_audio_urls"] = referenceAudioURLs
-					metadata["reference_audio_urls"] = referenceAudioURLs
-				}
-			} else if len(refs) > 0 {
-				request["generation_mode"] = "image-to-video"
-				// The relay's H3 compatibility schema names the provider's
-				// adaptive image-to-video ratio "auto".
-				request["ratio"] = "auto"
-			} else {
-				request["generation_mode"] = "text-to-video"
-				if size == "" || strings.EqualFold(size, "adaptive") || strings.EqualFold(size, "auto") {
-					request["ratio"] = "16:9"
-				} else {
-					request["ratio"] = size
-				}
-			}
-		} else if size != "" {
-			request["ratio"] = size
-		}
-		if !isMiniMaxH3Model(model) {
-			if resolution := util.Clean(payload["resolution"]); resolution != "" {
-				metadata["resolution"] = resolution
-			}
-			if value, ok := payload["watermark"].(bool); ok {
-				request["aigc_watermark"] = value
-				metadata["aigc_watermark"] = value
-			}
-		}
-	case strings.Contains(name, "seedance") || strings.Contains(name, "doubao-seedance"):
-		if size != "" {
-			request["ratio"] = size
-			metadata["ratio"] = size
-		}
-		if resolution := util.Clean(payload["resolution"]); resolution != "" {
-			metadata["resolution"] = resolution
-		}
-		if value, ok := payload["generate_audio"].(bool); ok {
-			request["generate_audio"] = value
-			metadata["generate_audio"] = value
-		}
-		if value, ok := payload["watermark"].(bool); ok {
-			request["watermark"] = value
-			metadata["watermark"] = value
-		}
-	default:
-		if value, ok := payload["generate_audio"].(bool); ok {
-			request["generate_audio"] = value
-		}
-		if value, ok := payload["watermark"].(bool); ok {
-			request["watermark"] = value
-		}
+	adapter := videoProviderAdapterForModel(name)
+	adapterRefs := refs
+	if len(frameRefs) > 0 && (referenceMode == "first-frame" || len(refs) == 0) {
+		adapterRefs = frameRefs
 	}
-	if len(refs) > 0 && referenceMode != "reference" {
-		request["input_reference"] = refs[0]
+	adapter.apply(videoProviderAdapterInput{
+		request: request, metadata: metadata, payload: adapterPayload,
+		refs: adapterRefs, referenceVideoURLs: referenceVideoURLs, referenceAudioURLs: referenceAudioURLs,
+		referenceMode: referenceMode, size: size, resolution: util.Clean(payload["resolution"]), model: model, seconds: seconds,
+	})
+	// KIE endpoints expose provider-native aspect/reference fields; the shared
+	// `size` and multipart `input_reference` aliases are not part of their
+	// schemas and must never survive the adapter boundary.
+	if isKIEVideoModelName(name) {
+		delete(request, "size")
+		delete(request, "input_reference")
+	}
+	applyKIEVideoDefaults(request, name)
+	applyAPIMartVideoDefaults(request, name)
+	if isKIEVideoModelName(name) {
+		normalizeKIEDurationRequest(request, name, seconds)
+		normalizeKIEVideoDurationBounds(request, name)
+		normalizeKIEVideoAspectRequest(request, name)
+	}
+	normalizeAPIMartVideoRequest(request, metadata, payload, name, seconds)
+	if len(adapterRefs) > 0 && referenceMode != "reference" && !isKIEVideoModelName(name) && adapter.name != "sora" && adapter.name != "veo" && adapter.name != "wan" && adapter.name != "vidu" && adapter.name != "jimeng" && adapter.name != "cogvideox" && adapter.name != "agnes" && adapter.name != "kling" && adapter.name != "gemini-omni" && adapter.name != "pixverse" && adapter.name != "skyreels" && adapter.name != "happyhorse" && adapter.name != "infinitalk" && adapter.name != "flux-3-video" && adapter.name != "seedance" && adapter.name != "bytedance-v1" && adapter.name != "minimax" {
+		request["input_reference"] = adapterRefs[0]
 	}
 	if len(metadata) > 0 {
 		request["metadata"] = metadata
 	}
 	return request
+}
+
+// normalizeAPIMartVideoRequest removes compatibility-only fields after the
+// provider adapter has shaped the request. APIMart's strict schemas use
+// `duration` and provider-specific aspect fields; forwarding the shared
+// `seconds`/`size` aliases can otherwise trigger validation errors.
+func normalizeAPIMartVideoRequest(request, metadata, payload map[string]any, model string, seconds int) {
+	if !isAPIMartVideoPayload(payload) || strings.Contains(model, "/") {
+		return
+	}
+	name := strings.ToLower(strings.TrimSpace(model))
+	delete(request, "seconds")
+	if strings.Contains(name, "sora-2") {
+		if reference := strings.TrimSpace(util.Clean(request["input_reference"])); reference != "" && !strings.HasPrefix(strings.ToLower(reference), "data:") {
+			request["image_urls"] = []string{reference}
+			delete(request, "input_reference")
+		}
+	}
+	// APIMart has a per-model input contract. Normalize the shared aliases
+	// only after the provider adapter has populated its native fields.
+	contract := apimartVideoContractForModel(name)
+	normalizeAPIMartKlingV3Advanced(request, metadata, payload, name)
+	normalizeAPIMartAspectRequest(request, payload, contract)
+	normalizeAPIMartResolutionRequest(request, payload, contract)
+	normalizeAPIMartAudioRequest(request, payload, name)
+	normalizeAPIMartVideoModeRequest(request, payload, contract)
+	clearAPIMartConflictingReferences(request, name)
+	clearAPIMartUnsupportedReferences(request, contract)
+	if len(metadata) > 0 {
+		normalizeAPIMartAspectRequest(metadata, nil, contract)
+		normalizeAPIMartResolutionRequest(metadata, nil, contract)
+		normalizeAPIMartAudioRequest(metadata, payload, name)
+		normalizeAPIMartVideoModeRequest(metadata, payload, contract)
+		clearAPIMartConflictingReferences(metadata, name)
+		clearAPIMartUnsupportedReferences(metadata, contract)
+	}
+
+	noDuration := strings.Contains(name, "motion-control") ||
+		name == "gemini-omni-flash-preview" ||
+		strings.Contains(name, "ai-avatar") ||
+		strings.Contains(name, "infinitalk") ||
+		(strings.Contains(name, "omni-flash-ext") && hasAPIMartReferenceValue(request, "video_urls")) ||
+		(strings.Contains(name, "topaz") && strings.Contains(name, "video"))
+	if noDuration {
+		delete(request, "duration")
+	} else if _, ok := request["duration"]; !ok && seconds > 0 {
+		request["duration"] = seconds
+	}
+
+	if name == "minimax-h3" {
+		// Generic APIMart normalization lower-cases video resolutions. H3 has a
+		// stricter enum and also requires one of its three generation modes, so
+		// make this the final provider-specific guard after aliases are removed.
+		normalizeMiniMaxH3Request(request, false)
+	}
+	if strings.HasPrefix(name, "sora-2") {
+		if resolution := strings.TrimSpace(util.Clean(request["resolution"])); resolution != "" {
+			switch strings.ToLower(resolution) {
+			case "360", "360p", "480", "480p":
+				request["quality"] = "480p"
+			case "1080", "1080p", "2k", "4k":
+				request["quality"] = "1080p"
+			default:
+				request["quality"] = "720p"
+			}
+		}
+		delete(request, "resolution")
+	}
+	if (strings.Contains(name, "wan2-7") || strings.Contains(name, "wan2.7")) && !strings.Contains(name, "r2v") && !strings.Contains(name, "videoedit") && request["video_urls"] != nil {
+		delete(request, "audio_url")
+		if len(metadata) > 0 {
+			delete(metadata, "audio_url")
+		}
+	}
+	// The reference APIMart adapter submits one flat provider-native payload.
+	// Metadata is only an internal compatibility staging area for the shared
+	// relay adapters and must not become an extra APIMart request field.
+	for key := range metadata {
+		delete(metadata, key)
+	}
+}
+
+// normalizeAPIMartKlingV3Advanced mirrors the reference project's APIMart
+// adapter. The creator stores shared Kling controls in the compatibility
+// envelope, but APIMart's kling-v3 schema expects the native top-level fields.
+func normalizeAPIMartKlingV3Advanced(request, metadata, payload map[string]any, model string) {
+	if strings.ToLower(strings.TrimSpace(model)) != "kling-v3" {
+		return
+	}
+	if elements := normalizeAPIMartKlingV3Elements(firstNonNilRelayValue(payload["element_list"], metadata["element_list"])); len(elements) > 0 {
+		request["element_list"] = elements
+	} else {
+		delete(request, "element_list")
+	}
+	value := payload["multi_shot"]
+	if value == nil {
+		value = payload["multi_shots"]
+	}
+	if value == nil {
+		value = metadata["multi_shot"]
+	}
+	if value == nil {
+		value = metadata["multi_shots"]
+	}
+	if !util.ToBool(value) {
+		for _, key := range []string{"multi_shot", "multi_shots", "shot_type", "multi_prompt"} {
+			delete(request, key)
+		}
+		return
+	}
+	request["multi_shot"] = true
+	shotType := strings.ToLower(strings.TrimSpace(firstNonEmpty(util.Clean(payload["shot_type"]), util.Clean(metadata["shot_type"]))))
+	if shotType != "customize" {
+		request["shot_type"] = "intelligence"
+		delete(request, "multi_prompt")
+	} else {
+		request["shot_type"] = "customize"
+		if prompts := normalizeAPIMartKlingV3MultiPrompt(firstNonNilRelayValue(payload["multi_prompt"], metadata["multi_prompt"])); len(prompts) > 0 {
+			request["multi_prompt"] = prompts
+		} else {
+			delete(request, "multi_prompt")
+		}
+	}
+}
+
+func normalizeAPIMartKlingV3MultiPrompt(value any) []map[string]any {
+	items := util.AsMapSlice(value)
+	if len(items) == 0 {
+		items = []map[string]any{{"prompt": "", "duration": 1}}
+	}
+	result := make([]map[string]any, 0, len(items))
+	for index, item := range items {
+		duration := util.ToInt(item["duration"], 1)
+		if duration < 1 {
+			duration = 1
+		}
+		if duration > 15 {
+			duration = 15
+		}
+		result = append(result, map[string]any{
+			"index":    index + 1,
+			"prompt":   strings.TrimSpace(util.Clean(item["prompt"])),
+			"duration": duration,
+		})
+	}
+	return result
+}
+
+func normalizeAPIMartKlingV3Elements(value any) []map[string]any {
+	items := util.AsMapSlice(value)
+	if len(items) == 0 {
+		return nil
+	}
+	result := make([]map[string]any, 0, len(items))
+	for _, item := range items {
+		urls := util.AsStringSlice(item["element_input_urls"])
+		for _, reference := range util.AsMapSlice(item["references"]) {
+			if url := strings.TrimSpace(util.Clean(reference["url"])); url != "" {
+				urls = append(urls, url)
+			}
+		}
+		if len(urls) == 0 {
+			continue
+		}
+		if len(urls) > 4 {
+			urls = urls[:4]
+		}
+		result = append(result, map[string]any{
+			"name":               strings.TrimSpace(util.Clean(item["name"])),
+			"description":        strings.TrimSpace(util.Clean(item["description"])),
+			"element_input_urls": urls,
+		})
+		if len(result) >= 3 {
+			break
+		}
+	}
+	return result
+}
+
+func normalizeAPIMartVideoModeRequest(request, payload map[string]any, contract apimartVideoContract) {
+	if !contract.modeFromResolution {
+		return
+	}
+	mode := strings.ToLower(strings.TrimSpace(util.Clean(request["mode"])))
+	if mode != "" && mode != "normal" {
+		return
+	}
+	resolution := firstNonEmpty(util.Clean(request["resolution"]), util.Clean(payload["resolution"]), util.Clean(payload["resolution_name"]))
+	switch strings.ToLower(strings.TrimSpace(resolution)) {
+	case "1080", "1080p", "2160", "2160p", "4k", "uhd", "pro":
+		request["mode"] = "pro"
+	default:
+		request["mode"] = "std"
+	}
+}
+
+type apimartVideoContract struct {
+	aspectField        string
+	dropAspectWithRefs bool
+	hasResolution      bool
+	maxResolution      string
+	upperResolution    bool
+	hasQuality         bool
+	modeFromResolution bool
+}
+
+func apimartVideoContractForModel(name string) apimartVideoContract {
+	c := apimartVideoContract{aspectField: "aspect_ratio", hasResolution: true}
+	switch {
+	case strings.Contains(name, "doubao-seedance-2"):
+		c.aspectField = "size"
+	case strings.Contains(name, "doubao-seedance-1-0"), strings.Contains(name, "doubao-seedance-1-5"), strings.Contains(name, "seedance-1"):
+		c.aspectField = "aspect_ratio"
+	case strings.Contains(name, "sora-2"):
+		c.dropAspectWithRefs = true
+		if !strings.Contains(name, "pro") {
+			c.maxResolution = "720p"
+		}
+	case strings.Contains(name, "veo"):
+		c.aspectField = "aspect_ratio"
+	case name == "minimax-h3":
+		c.aspectField = "aspect_ratio"
+	case strings.Contains(name, "minimax"), strings.Contains(name, "hailuo"):
+		c.aspectField = ""
+	case strings.Contains(name, "skyreels"):
+		c.aspectField = "aspect_ratio"
+	case name == "kling-3-0-turbo":
+		c.dropAspectWithRefs = true
+	case strings.Contains(name, "happyhorse"):
+		c.aspectField = "size"
+		c.upperResolution = true
+	case strings.Contains(name, "gemini-omni-flash-preview"):
+		c.maxResolution = "720p"
+	case strings.Contains(name, "wan2-7"), strings.Contains(name, "wan2.7"):
+		c.aspectField = "size"
+		c.upperResolution = true
+	case strings.Contains(name, "wan2-6-i2v-flash"), strings.Contains(name, "wan2.6-i2v-flash"):
+		c.aspectField = ""
+	case strings.Contains(name, "wan2-5"), strings.Contains(name, "wan2.5"):
+		c.aspectField = "size"
+		c.dropAspectWithRefs = true
+	case strings.Contains(name, "wan2-6"), strings.Contains(name, "wan2.6"):
+		c.dropAspectWithRefs = true
+	case strings.Contains(name, "motion-control"):
+		c.aspectField = ""
+		c.hasResolution = false
+	case strings.Contains(name, "kling-v2-6"), strings.Contains(name, "kling-2-6"), strings.Contains(name, "kling-v3"), strings.Contains(name, "kling-video-o1"), strings.Contains(name, "kling"):
+		c.hasResolution = false
+		c.modeFromResolution = strings.Contains(name, "kling-v3-omni") || strings.Contains(name, "kling-video-o1")
+	case strings.Contains(name, "vidu"):
+		c.dropAspectWithRefs = name != "viduq3" && name != "viduq3-mix"
+	case strings.Contains(name, "grok-imagine"):
+		c.aspectField = "size"
+		c.hasResolution = false
+		c.hasQuality = true
+	case strings.Contains(name, "pixverse"):
+		c.aspectField = "size"
+	case strings.Contains(name, "omni-flash"):
+		c.aspectField = "aspect_ratio"
+	case strings.Contains(name, "flux-3-video"):
+		c.aspectField = "aspect_ratio"
+	}
+	return c
+}
+
+func normalizeAPIMartAspectRequest(request, payload map[string]any, contract apimartVideoContract) {
+	if contract.aspectField == "" {
+		for _, key := range []string{"size", "ratio", "aspect_ratio", "image_size"} {
+			delete(request, key)
+		}
+		return
+	}
+	value := firstNonEmpty(util.Clean(request[contract.aspectField]), util.Clean(request["size"]), util.Clean(request["aspect_ratio"]), util.Clean(request["ratio"]), util.Clean(payload["size"]))
+	if value != "" {
+		value = normalizeKIEAspectRatio(value)
+		request[contract.aspectField] = value
+	}
+	for _, key := range []string{"size", "ratio", "aspect_ratio", "image_size"} {
+		if key != contract.aspectField {
+			delete(request, key)
+		}
+	}
+	if contract.dropAspectWithRefs && hasAPIMartRequestImageReference(request) {
+		delete(request, contract.aspectField)
+	}
+}
+
+func normalizeAPIMartResolutionRequest(request, payload map[string]any, contract apimartVideoContract) {
+	value := firstNonEmpty(util.Clean(request["resolution"]), util.Clean(payload["resolution"]), util.Clean(payload["resolution_name"]), util.Clean(payload["image_resolution"]))
+	if contract.hasQuality {
+		if value != "" {
+			request["quality"] = normalizeAPIMartVideoQuality(value)
+		}
+		delete(request, "resolution")
+		return
+	}
+	if !contract.hasResolution {
+		delete(request, "resolution")
+		return
+	}
+	if value == "" {
+		return
+	}
+	normalized := normalizeAPIMartVideoQuality(value)
+	if contract.maxResolution == "720p" && (normalized == "1080p" || normalized == "4k") {
+		normalized = "720p"
+	}
+	if contract.upperResolution {
+		normalized = strings.ToUpper(normalized)
+	}
+	request["resolution"] = normalized
+}
+
+func normalizeAPIMartAudioRequest(request, payload map[string]any, name string) {
+	value, ok := payload["generate_audio"].(bool)
+	if !ok {
+		if candidate, exists := payload["video_generate_audio"]; exists {
+			value = util.ToBool(candidate)
+			ok = true
+		}
+	}
+	if !ok {
+		return
+	}
+	switch {
+	case strings.Contains(name, "doubao-seedance-2") || strings.Contains(name, "veo") && strings.Contains(name, "official"):
+		request["generate_audio"] = value
+	case strings.Contains(name, "kling-v3-omni"):
+		if request["video_list"] == nil {
+			request["audio"] = value
+		} else {
+			delete(request, "audio")
+		}
+	case strings.Contains(name, "doubao-seedance-1-5"), strings.Contains(name, "seedance-1-5"), isAPIMartWan26AudioModel(name), strings.Contains(name, "pixverse-v6"), isAPIMartViduQ3AudioModel(name):
+		request["audio"] = value
+	case strings.Contains(name, "kling-v3") && !strings.Contains(name, "omni"):
+		request["audio"] = value
+	case (strings.Contains(name, "kling-v2-6") || strings.Contains(name, "kling-2-6")) && !strings.Contains(name, "motion"):
+		if !hasAPIMartRequestLastFrame(request) || !value {
+			request["audio"] = value
+			if value && util.Clean(request["mode"]) == "" {
+				request["mode"] = "pro"
+			}
+		}
+	}
+	delete(request, "sound")
+	delete(request, "video_generate_audio")
+}
+
+func isAPIMartWan26AudioModel(name string) bool {
+	name = strings.ToLower(strings.TrimSpace(name))
+	switch name {
+	case "wan2-6", "wan2.6", "wan2-6-i2v-flash", "wan2.6-i2v-flash":
+		return true
+	default:
+		return false
+	}
+}
+
+func isAPIMartViduQ3AudioModel(name string) bool {
+	name = strings.ToLower(strings.TrimSpace(name))
+	return strings.Contains(name, "viduq3-pro") ||
+		strings.Contains(name, "vidu-q3-pro") ||
+		strings.Contains(name, "viduq3-turbo")
+}
+
+func hasAPIMartRequestImageReference(request map[string]any) bool {
+	for _, key := range []string{"image_urls", "image_with_roles", "first_frame_image", "last_frame_image", "img_references", "ref_images", "image_url", "image"} {
+		if value := request[key]; value != nil && strings.TrimSpace(util.Clean(value)) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func hasAPIMartRequestLastFrame(request map[string]any) bool {
+	for _, key := range []string{"last_frame_image", "last_frame_url", "tail_image_url", "image_tail"} {
+		if value := request[key]; value != nil && strings.TrimSpace(util.Clean(value)) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// clearAPIMartConflictingReferences mirrors the provider-specific exclusions
+// in the reference workbench. These fields are individually valid, but some
+// APIMart endpoints reject a request when two reference modes are combined.
+func clearAPIMartConflictingReferences(request map[string]any, model string) {
+	name := strings.ToLower(strings.TrimSpace(model))
+	if strings.Contains(name, "happyhorse-1-1") && hasAPIMartReferenceValue(request, "first_frame_image") {
+		delete(request, "image_urls")
+	}
+	if strings.Contains(name, "doubao-seedance-2") && hasAPIMartReferenceValue(request, "image_with_roles") {
+		delete(request, "image_urls")
+		if hasAPIMartFirstLastImageRole(request) {
+			delete(request, "video_urls")
+			delete(request, "audio_urls")
+		}
+	}
+	if (strings.Contains(name, "wan2-7") || strings.Contains(name, "wan2.7")) &&
+		!strings.Contains(name, "r2v") && !strings.Contains(name, "videoedit") &&
+		hasAPIMartReferenceValue(request, "video_urls") {
+		delete(request, "audio_url")
+	}
+	if strings.Contains(name, "omni-flash-ext") && hasAPIMartReferenceValue(request, "video_urls") {
+		delete(request, "duration")
+	}
+}
+
+func hasAPIMartReferenceValue(request map[string]any, key string) bool {
+	value, ok := request[key]
+	if !ok || value == nil {
+		return false
+	}
+	switch typed := value.(type) {
+	case string:
+		return strings.TrimSpace(typed) != ""
+	case []string:
+		for _, item := range typed {
+			if strings.TrimSpace(item) != "" {
+				return true
+			}
+		}
+		return false
+	case []any:
+		return len(typed) > 0
+	case []map[string]string:
+		return len(typed) > 0
+	case []map[string]any:
+		return len(typed) > 0
+	case map[string]any, map[string]string:
+		return true
+	default:
+		return strings.TrimSpace(util.Clean(value)) != ""
+	}
+}
+
+func hasAPIMartFirstLastImageRole(request map[string]any) bool {
+	check := func(role string) bool {
+		role = strings.TrimSpace(role)
+		return role == "first_frame" || role == "last_frame"
+	}
+	switch typed := request["image_with_roles"].(type) {
+	case []map[string]string:
+		for _, item := range typed {
+			if check(item["role"]) {
+				return true
+			}
+		}
+	case []map[string]any:
+		for _, item := range typed {
+			if check(util.Clean(item["role"])) {
+				return true
+			}
+		}
+	case []any:
+		for _, item := range typed {
+			if record, ok := item.(map[string]any); ok && check(util.Clean(record["role"])) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func clearAPIMartUnsupportedReferences(request map[string]any, contract apimartVideoContract) {
+	// The adapter writes native fields; remove only shared aliases that the
+	// APIMart schema never documents. Native fields remain model-specific.
+	for _, key := range []string{"input_reference", "input_reference[]", "reference_image_urls", "reference_video_urls", "reference_audio_urls", "images", "image", "videos", "video", "audios", "input_urls", "input_url", "image_input", "reference_images", "reference_image_url", "first_frame_url", "last_frame_url", "end_image_url", "tail_image_url", "reference_video_url", "reference_audio_url", "input_video_url", "input_video_urls", "input_audio_url", "input_audio_urls", "video_reference", "video_reference[]", "audio_reference", "audio_reference[]", "image_tail"} {
+		delete(request, key)
+	}
+	_ = contract
 }
 
 func isMiniMaxH3Model(model string) bool {
@@ -1024,17 +1846,6 @@ func validateVideoReferenceImage(model, size string, data []byte) error {
 		ratio := float64(info.Width) / float64(info.Height)
 		if ratio < 0.4 || ratio > 2.5 {
 			return fmt.Errorf("Kling 3.0 官方参考图宽高比必须在 1:2.5 到 2.5:1 之间")
-		}
-	}
-	if isSora2Model(name) {
-		width, height, ok := strings.Cut(strings.ToLower(strings.TrimSpace(size)), "x")
-		if !ok {
-			return fmt.Errorf("Sora 图生视频必须指定官方 size")
-		}
-		targetWidth, widthErr := strconv.Atoi(width)
-		targetHeight, heightErr := strconv.Atoi(height)
-		if widthErr != nil || heightErr != nil || info.Width != targetWidth || info.Height != targetHeight {
-			return fmt.Errorf("Sora 官方要求首帧参考图尺寸与视频 size 完全一致，当前图片为 %dx%d，目标为 %s", info.Width, info.Height, size)
 		}
 	}
 	return nil
@@ -1312,8 +2123,9 @@ func (a *App) relayHTTPClient() *http.Client {
 
 func relayPayloadForPath(pathValue string, payload map[string]any) map[string]any {
 	out := map[string]any{}
+	preserveXAIEditImages := pathValue == "/v1/images/edits" && util.IsXAIImageModel(util.Clean(payload["model"]))
 	for key, value := range payload {
-		if shouldDropRelayPayloadKey(key) || value == nil {
+		if (shouldDropRelayPayloadKey(key) && !(preserveXAIEditImages && key == "images")) || value == nil {
 			continue
 		}
 		if text, ok := value.(string); ok && strings.TrimSpace(text) == "" {
@@ -1332,14 +2144,33 @@ func relayPayloadForPath(pathValue string, payload map[string]any) map[string]an
 	case "/v1/images/generations", "/v1/images/edits":
 		sanitizeRelayImagePayload(out)
 	}
+	for _, key := range []string{"provider", "image_provider", "video_provider", "channel_protocol", "protocol", "channel_base_url", "provider_base_url"} {
+		delete(out, key)
+	}
 	return out
 }
 
 func sanitizeRelayImagePayload(payload map[string]any) {
 	delete(payload, "messages")
 	model := util.Clean(payload["model"])
+	isAPIMartImage := isAPIMartImagePayload(payload)
+	isKIEImage := isKnownKIEImageModel(model)
 	route := util.ImageModelRouteFor(model)
+	if isKIEImage || isAPIMartImage {
+		// KIE schemas are strict and each model has its own field contract. The
+		// model normalizer has already selected those fields; do not run the
+		// generic OpenAI size/stream cleanup over them.
+		delete(payload, "stream")
+		delete(payload, "partial_images")
+		delete(payload, "response_format")
+		delete(payload, "input_image_mask")
+		delete(payload, "background")
+		delete(payload, "moderation")
+		delete(payload, "output_compression")
+		return
+	}
 	if route == util.ImageModelRouteGoogleGemini {
+		delete(payload, "image_resolution")
 		delete(payload, "stream")
 		delete(payload, "partial_images")
 		delete(payload, "output_format")
@@ -1347,22 +2178,74 @@ func sanitizeRelayImagePayload(payload map[string]any) {
 		delete(payload, "response_format")
 		return
 	}
+	if route == util.ImageModelRouteZhipu {
+		delete(payload, "image_resolution")
+		// GLM-Image/CogView use the OpenAI image envelope for size and
+		// quality, but their adapters do not accept streaming, output-format,
+		// mask, or response-format controls.
+		if _, ok := payload["size"]; ok {
+			if normalizedSize, ok := normalizeRelayImageSize(util.Clean(payload["size"])); ok && normalizedSize != "" {
+				payload["size"] = normalizedSize
+			} else {
+				delete(payload, "size")
+			}
+		}
+		if quality := util.NormalizeZhipuImageQuality(util.Clean(payload["model"]), util.Clean(payload["quality"])); quality != "" && quality != "auto" {
+			payload["quality"] = quality
+		} else {
+			delete(payload, "quality")
+		}
+		for _, key := range []string{"stream", "partial_images", "output_format", "output_compression", "response_format", "input_image_mask"} {
+			delete(payload, key)
+		}
+		return
+	}
+	if route == util.ImageModelRouteAgnes {
+		delete(payload, "image_resolution")
+		ratioSource := firstNonEmpty(util.Clean(payload["ratio"]), util.Clean(payload["aspect_ratio"]), util.Clean(payload["size"]))
+		if strings.EqualFold(strings.ReplaceAll(strings.ReplaceAll(util.Clean(payload["model"]), "_", "-"), " ", "-"), "agnes-image-2.1-flash") {
+			payload["size"] = agnesImageSize(util.Clean(payload["size"]), util.Clean(payload["image_resolution"]), util.Clean(payload["quality"]))
+			if ratioSource != "" {
+				if normalizedRatio := normalizeAgnesImageRatio(ratioSource); normalizedRatio != "" {
+					payload["ratio"] = normalizedRatio
+				}
+			}
+		}
+		delete(payload, "quality")
+		delete(payload, "stream")
+		delete(payload, "partial_images")
+		delete(payload, "output_format")
+		delete(payload, "output_compression")
+		delete(payload, "response_format")
+		delete(payload, "input_image_mask")
+		return
+	}
 	if route == util.ImageModelRouteXAI {
+		delete(payload, "image_resolution")
 		normalizeRelayImageEnum(payload, "response_format", map[string]string{"url": "url", "b64_json": "b64_json"})
-		if aspectRatio, ok := util.NormalizeXAIImageAspectRatio(util.Clean(payload["aspect_ratio"])); ok && aspectRatio != "" && aspectRatio != "auto" {
+		aspectRatioSource := firstNonEmpty(util.Clean(payload["aspect_ratio"]), util.Clean(payload["size"]))
+		if aspectRatio, ok := util.NormalizeXAIImageAspectRatio(aspectRatioSource); ok && aspectRatio != "" && aspectRatio != "auto" {
 			payload["aspect_ratio"] = aspectRatio
 		} else {
 			delete(payload, "aspect_ratio")
 		}
-		if resolution, ok := util.NormalizeXAIImageResolution(util.Clean(payload["resolution"])); ok && resolution != "" && resolution != "auto" {
+		resolutionSource := firstNonEmpty(referenceGrokImageResolution(model, util.Clean(payload["quality"])), util.Clean(payload["resolution"]))
+		if resolution, ok := util.NormalizeXAIImageResolution(resolutionSource); ok && resolution != "" && resolution != "auto" {
 			payload["resolution"] = resolution
 		} else {
 			delete(payload, "resolution")
 		}
-		if util.SupportsXAIImageQuality(model) {
-			normalizeRelayImageEnum(payload, "quality", map[string]string{"low": "low", "medium": "medium"})
+		delete(payload, "quality")
+		if util.ToBool(payload["stream"]) {
+			payload["stream"] = true
+			if partialImages, ok := normalizeRelayImagePartialImages(payload["partial_images"]); ok {
+				payload["partial_images"] = partialImages
+			} else {
+				payload["partial_images"] = 1
+			}
 		} else {
-			delete(payload, "quality")
+			delete(payload, "stream")
+			delete(payload, "partial_images")
 		}
 		allowed := map[string]struct{}{
 			"model":           {},
@@ -1371,7 +2254,9 @@ func sanitizeRelayImagePayload(payload map[string]any) {
 			"response_format": {},
 			"aspect_ratio":    {},
 			"resolution":      {},
-			"quality":         {},
+			"stream":          {},
+			"partial_images":  {},
+			"images":          {},
 		}
 		for key := range payload {
 			if _, ok := allowed[key]; !ok {
@@ -1379,6 +2264,9 @@ func sanitizeRelayImagePayload(payload map[string]any) {
 			}
 		}
 		return
+	}
+	if !isKIEImage {
+		delete(payload, "image_resolution")
 	}
 	if util.ToBool(payload["stream"]) {
 		payload["stream"] = true
@@ -1402,7 +2290,7 @@ func sanitizeRelayImagePayload(payload map[string]any) {
 	normalizeRelayImageEnum(payload, "quality", map[string]string{"auto": "auto", "low": "low", "medium": "medium", "high": "high"})
 	normalizeRelayImageEnum(payload, "background", map[string]string{"auto": "auto", "opaque": "opaque"})
 	normalizeRelayImageEnum(payload, "moderation", map[string]string{"auto": "auto", "low": "low"})
-	delete(payload, "response_format")
+	normalizeRelayImageEnum(payload, "response_format", map[string]string{"b64_json": "b64_json"})
 
 	outputFormat := ""
 	if _, ok := payload["output_format"]; ok {
@@ -1420,10 +2308,32 @@ func sanitizeRelayImagePayload(payload map[string]any) {
 	}
 }
 
+func isKnownKIEImageModel(model string) bool {
+	value := strings.ToLower(strings.TrimSpace(model))
+	if value == "z-image" || strings.Contains(value, "nano-banana") || strings.HasPrefix(value, "gpt-image-2-") {
+		return true
+	}
+	if !strings.Contains(value, "/") {
+		return false
+	}
+	for _, prefix := range []string{"bytedance/", "flux-2/", "google/", "gpt-image/", "grok-imagine/", "ideogram/", "qwen/", "qwen2/", "recraft/", "seedream/", "topaz/", "wan/2-7-image", "z-image"} {
+		if strings.HasPrefix(value, prefix) || value == prefix[:len(prefix)-1] {
+			return true
+		}
+	}
+	return strings.Contains(value, "nano-banana") || strings.Contains(value, "imagen4")
+}
+
 // normalizeImagePayloadForModel keeps only fields supported by the selected
 // provider API and maps application size metadata to provider-native fields.
 func normalizeImagePayloadForModel(payload map[string]any) {
 	if payload == nil {
+		return
+	}
+	if normalizeAPIMartImagePayload(payload) {
+		return
+	}
+	if normalizeKIEImagePayload(payload) {
 		return
 	}
 	switch util.ImageModelRouteFor(util.Clean(payload["model"])) {
@@ -1454,35 +2364,692 @@ func normalizeImagePayloadForModel(payload map[string]any) {
 		} else {
 			delete(payload, "aspect_ratio")
 		}
-		resolutionSource := firstNonEmpty(util.Clean(payload["resolution"]), util.Clean(payload["image_resolution"]))
+		resolutionSource := firstNonEmpty(referenceGrokImageResolution(util.Clean(payload["model"]), util.Clean(payload["quality"])), util.Clean(payload["resolution"]), util.Clean(payload["image_resolution"]))
 		if resolution, ok := util.NormalizeXAIImageResolution(resolutionSource); ok && resolution != "" && resolution != "auto" {
 			payload["resolution"] = resolution
 			payload["image_resolution"] = resolution
 		} else {
 			delete(payload, "resolution")
 		}
-		if util.SupportsXAIImageQuality(util.Clean(payload["model"])) {
-			normalizeRelayImageEnum(payload, "quality", map[string]string{"low": "low", "medium": "medium"})
-		} else {
-			delete(payload, "quality")
-		}
+		delete(payload, "quality")
 		for _, key := range []string{
-			"background", "moderation", "stream", "partial_images", "output_format",
+			"background", "moderation", "output_format",
 			"output_compression", "input_image_mask",
 			"image_format", "storage_options", "user",
 		} {
 			delete(payload, key)
 		}
+		if util.ToBool(payload["stream"]) {
+			payload["stream"] = true
+			if partialImages, ok := normalizeRelayImagePartialImages(payload["partial_images"]); ok {
+				payload["partial_images"] = partialImages
+			} else {
+				payload["partial_images"] = 1
+			}
+		} else {
+			delete(payload, "stream")
+			delete(payload, "partial_images")
+		}
 		normalizeRelayImageEnum(payload, "response_format", map[string]string{"url": "url", "b64_json": "b64_json"})
+	case util.ImageModelRouteZhipu:
+		if quality := util.NormalizeZhipuImageQuality(util.Clean(payload["model"]), util.Clean(payload["quality"])); quality != "" && quality != "auto" {
+			payload["quality"] = quality
+		} else {
+			delete(payload, "quality")
+		}
+		for _, key := range []string{"stream", "partial_images", "output_format", "output_compression", "response_format", "input_image_mask"} {
+			delete(payload, key)
+		}
+	case util.ImageModelRouteAgnes:
+		if ratio := firstNonEmpty(util.Clean(payload["ratio"]), util.Clean(payload["aspect_ratio"]), util.Clean(payload["size"])); ratio != "" {
+			if normalizedRatio := normalizeAgnesImageRatio(ratio); normalizedRatio != "" {
+				payload["ratio"] = normalizedRatio
+			}
+		}
+		if strings.EqualFold(strings.ReplaceAll(strings.ReplaceAll(util.Clean(payload["model"]), "_", "-"), " ", "-"), "agnes-image-2.1-flash") {
+			payload["size"] = agnesImageSize(util.Clean(payload["size"]), util.Clean(payload["image_resolution"]), util.Clean(payload["quality"]))
+		}
+		delete(payload, "quality")
+		for _, key := range []string{"stream", "partial_images", "output_format", "output_compression", "response_format", "input_image_mask"} {
+			delete(payload, key)
+		}
 	}
+}
+
+// normalizeKIEImagePayload mirrors the reference project's model-specific
+// image input contract. Only known KIE model IDs are handled here; unknown
+// slash-qualified custom models retain the generic OpenAI-compatible payload.
+func normalizeKIEImagePayload(payload map[string]any) bool {
+	name := strings.ToLower(strings.TrimSpace(util.Clean(payload["model"])))
+	// Bare `gpt-image-2` is the official OpenAI route. Only the KIE
+	// `gpt-image-2-*` task IDs should enter this strict normalizer.
+	if !strings.Contains(name, "/") && name != "z-image" && !strings.Contains(name, "nano-banana") && !strings.HasPrefix(name, "gpt-image-2-") {
+		return false
+	}
+	imageSize := firstNonEmpty(util.Clean(payload["image_size"]), util.Clean(payload["size"]))
+	resolution := firstNonEmpty(util.Clean(payload["image_resolution"]), util.Clean(payload["resolution"]))
+	count := firstNonNilRelayValue(payload["n"], payload["num_images"], payload["max_images"], payload["actual_image_count"])
+	delete(payload, "resolution")
+	delete(payload, "image_resolution")
+	delete(payload, "n")
+	delete(payload, "num_images")
+	delete(payload, "max_images")
+	delete(payload, "actual_image_count")
+	mapAspectRatio := func() {
+		if imageSize == "" {
+			return
+		}
+		if ratio := normalizeKIEAspectRatio(imageSize); ratio != "" {
+			payload["aspect_ratio"] = ratio
+		}
+		delete(payload, "size")
+	}
+	mapImageSize := func() {
+		if imageSize != "" {
+			payload["image_size"] = normalizeKIEImageSizeName(imageSize)
+		}
+		delete(payload, "size")
+	}
+	mapResolution := func(field string) {
+		if resolution != "" {
+			payload[field] = normalizeKIEImageResolutionValue(resolution)
+		}
+		if field != "resolution" {
+			delete(payload, "resolution")
+		}
+		if field != "image_resolution" {
+			delete(payload, "image_resolution")
+		}
+	}
+	mapImageResolutionFromSize := func(field string, maxResolution string) {
+		if resolution != "" || imageSize == "" {
+			return
+		}
+		derived := normalizeKIEImageResolutionFromSize(imageSize)
+		if derived == "" {
+			return
+		}
+		if maxResolution == "2K" && derived == "4K" {
+			derived = "2K"
+		}
+		payload[field] = derived
+	}
+	mapQuality := func(allowed bool, modelPrefix string) {
+		quality := strings.ToLower(strings.TrimSpace(util.Clean(payload["quality"])))
+		if quality == "" {
+			return
+		}
+		if !allowed {
+			resolutionValue := normalizeKIEQualityResolutionValue(quality)
+			if resolutionValue != "" && resolution == "" {
+				mapResolution("resolution")
+				payload["resolution"] = resolutionValue
+			}
+			delete(payload, "quality")
+			return
+		}
+		switch modelPrefix {
+		case "gpt-image/1.5":
+			if quality != "high" {
+				quality = "medium"
+			}
+		case "seedream/4.5", "seedream/5-lite":
+			if quality == "high" || quality == "4k" {
+				quality = "high"
+			} else {
+				quality = "basic"
+			}
+		case "seedream/5-pro":
+			if quality == "high" || quality == "2k" {
+				quality = "high"
+			} else {
+				quality = "basic"
+			}
+		}
+		payload["quality"] = quality
+	}
+	mapCount := func(field string, asString bool) {
+		if count == nil {
+			return
+		}
+		if asString {
+			payload[field] = util.Clean(count)
+		} else {
+			payload[field] = count
+		}
+		if field != "n" {
+			delete(payload, "n")
+		}
+	}
+	mapReferenceFrom := func(field string, sources []string) {
+		if _, exists := payload[field]; exists {
+			return
+		}
+		for _, source := range sources {
+			if value, ok := payload[source]; ok {
+				if isKIEImageReferenceArrayFieldName(field) {
+					payload[field] = normalizeKIEReferenceArrayValue(value)
+				} else {
+					values := normalizeKIEReferenceArrayValue(value)
+					if len(values) > 0 {
+						payload[field] = values[0]
+					}
+				}
+				if source != field {
+					delete(payload, source)
+				}
+				return
+			}
+		}
+	}
+	mapReference := func(field string) {
+		mapReferenceFrom(field, []string{"input_urls", "image_urls", "input_url", "image_url", "images"})
+	}
+
+	switch {
+	case name == "seedream/5-pro-layer-decomposition":
+		// This endpoint is intentionally different from the other Seedream
+		// variants in the reference project: it accepts one image_url, a
+		// dedicated size enum, and always returns PNG layers.
+		mapReference("image_url")
+		layerSize := firstNonEmpty(imageSize, resolution)
+		switch strings.ToLower(strings.TrimSpace(layerSize)) {
+		case "1k", "1.5k", "2k":
+			payload["size"] = strings.ToUpper(layerSize)
+		case "auto":
+			payload["size"] = "auto"
+		default:
+			switch strings.ToLower(strings.TrimSpace(util.Clean(payload["quality"]))) {
+			case "low":
+				payload["size"] = "1K"
+			case "medium":
+				payload["size"] = "1.5K"
+			case "high":
+				payload["size"] = "2K"
+			default:
+				payload["size"] = "auto"
+			}
+		}
+		payload["output_format"] = "png"
+		for _, key := range []string{"quality", "ratio", "aspect_ratio", "image_size", "resolution", "image_resolution", "n", "num_images", "max_images", "actual_image_count", "requested_size"} {
+			delete(payload, key)
+		}
+	case strings.Contains(name, "seedream/4.5"), strings.Contains(name, "gpt-image/1.5"):
+		mapAspectRatio()
+		// These endpoints expose quality, not a separate resolution field.
+		// The reference project sends only aspect_ratio and quality here.
+		delete(payload, "resolution")
+		if strings.Contains(name, "seedream/4.5") && strings.Contains(name, "edit") {
+			mapReference("image_urls")
+		}
+		if strings.Contains(name, "gpt-image/1.5") && strings.Contains(name, "image-to-image") {
+			mapReference("input_urls")
+		}
+		if strings.Contains(name, "seedream/4.5") {
+			mapQuality(true, "seedream/4.5")
+		} else {
+			mapQuality(true, "gpt-image/1.5")
+		}
+	case strings.Contains(name, "seedream"), strings.Contains(name, "seedance-4"):
+		if name == "bytedance/seedream" {
+			// The legacy Seedream endpoint accepts only the named image_size
+			// enum; unlike v4 it has no image_resolution field.
+			mapImageSize()
+			delete(payload, "image_resolution")
+		} else if strings.Contains(name, "seedream-v4") {
+			mapImageSize()
+			mapResolution("image_resolution")
+			mapImageResolutionFromSize("image_resolution", "")
+		} else if strings.Contains(name, "seedream/4") {
+			mapAspectRatio()
+		} else if strings.Contains(name, "seedream/5") {
+			mapAspectRatio()
+		}
+		if strings.Contains(name, "layer-decomposition") {
+			mapReference("image_url")
+		} else if strings.Contains(name, "edit") || strings.Contains(name, "image-to-image") {
+			mapReference("image_urls")
+		}
+		if strings.Contains(name, "v4") {
+			mapCount("max_images", false)
+		}
+		if strings.Contains(name, "seedream/5-lite") {
+			mapQuality(true, "seedream/5-lite")
+		} else if strings.Contains(name, "seedream/5-pro") {
+			mapQuality(true, "seedream/5-pro")
+		} else if name == "bytedance/seedream" {
+			// Legacy Seedream has neither quality nor resolution controls.
+			delete(payload, "quality")
+		} else {
+			mapQuality(false, "")
+		}
+		if name == "bytedance/seedream" || strings.Contains(name, "seedream-v4") {
+			delete(payload, "aspect_ratio")
+		}
+	case strings.Contains(name, "flux-2"), strings.Contains(name, "gpt-image-2"):
+		mapAspectRatio()
+		mapResolution("resolution")
+		if strings.Contains(name, "flux-2") {
+			mapImageResolutionFromSize("resolution", "2K")
+			if value := normalizeKIEImageResolutionValue(util.Clean(payload["resolution"])); value == "4K" {
+				payload["resolution"] = "2K"
+			}
+		} else {
+			mapImageResolutionFromSize("resolution", "")
+		}
+		if strings.Contains(name, "image-to-image") {
+			mapReference("input_urls")
+		}
+	case strings.Contains(name, "nano-banana"), strings.Contains(name, "google/nano-banana"):
+		mapAspectRatio()
+		if (strings.Contains(name, "nano-banana-2") && !strings.Contains(name, "nano-banana-2-lite")) || strings.Contains(name, "nano-banana-pro") {
+			mapResolution("resolution")
+			mapImageResolutionFromSize("resolution", "")
+		} else {
+			delete(payload, "resolution")
+		}
+		if strings.Contains(name, "nano-banana-2-lite") {
+			mapReference("image_urls")
+		} else if strings.Contains(name, "nano-banana-2") || strings.Contains(name, "nano-banana-pro") {
+			mapReference("image_input")
+		} else if strings.Contains(name, "edit") {
+			mapReference("image_urls")
+		}
+		delete(payload, "size")
+	case strings.Contains(name, "wan/2-7-image"):
+		mapAspectRatio()
+		mapResolution("resolution")
+		mapImageResolutionFromSize("resolution", "")
+		mapCount("n", false)
+		mapReference("input_urls")
+	case strings.Contains(name, "ideogram/"):
+		if !strings.Contains(name, "character-edit") && !strings.Contains(name, "v3-edit") {
+			mapImageSize()
+		} else {
+			delete(payload, "size")
+		}
+		if strings.Contains(name, "character") || strings.Contains(name, "v3-remix") {
+			mapCount("num_images", true)
+		}
+		if strings.Contains(name, "v3-remix") {
+			// Ideogram v3 Remix uses one source image under image_url. The
+			// character-remix endpoint is the separate variant that accepts
+			// reference_image_urls.
+			mapReferenceFrom("image_url", []string{"input_urls", "image_urls", "input_url", "image_url", "images", "reference_image_urls"})
+		} else if strings.Contains(name, "character-remix") {
+			// Character Remix has two independent image inputs: the base
+			// image_url and one or more character reference images. Do not
+			// consume reference_image_urls as the base image when image_url is
+			// absent; the provider validates both fields separately.
+			mapReferenceFrom("image_url", []string{"input_urls", "image_urls", "input_url", "image_url", "images"})
+			if values := normalizeKIEReferenceArrayValue(payload["reference_image_urls"]); len(values) > 0 {
+				payload["reference_image_urls"] = values
+			}
+		} else if strings.Contains(name, "edit") {
+			mapReference("image_url")
+			mapReferenceFrom("mask_url", []string{"mask_urls", "mask_url", "mask"})
+			// Character Edit has a second, independent reference_image_urls
+			// input. Preserve it instead of consuming it as the base image.
+			if strings.Contains(name, "character-edit") {
+				if values := normalizeKIEReferenceArrayValue(payload["reference_image_urls"]); len(values) > 0 {
+					payload["reference_image_urls"] = values
+				}
+			}
+		} else if strings.Contains(name, "character") || strings.Contains(name, "remix") {
+			mapReference("reference_image_urls")
+		}
+	case strings.Contains(name, "qwen"):
+		if !strings.Contains(name, "image-to-image") {
+			mapImageSize()
+		} else {
+			delete(payload, "size")
+		}
+		if strings.Contains(name, "image-to-image") || strings.Contains(name, "edit") {
+			mapReferenceFrom("image_url", []string{"input_urls", "image_urls", "input_url", "image_url", "images", "reference_image_urls"})
+		}
+		if name == "qwen/image-edit" {
+			mapCount("num_images", true)
+		}
+		// Qwen's image_size is an aspect-ratio enum. A generic resolution
+		// value must not be coerced into that field.
+		delete(payload, "resolution")
+	case strings.Contains(name, "imagen4"), strings.Contains(name, "grok-imagine"):
+		if strings.Contains(name, "imagen4") || strings.Contains(name, "text-to-image") {
+			mapAspectRatio()
+		} else {
+			delete(payload, "size")
+			delete(payload, "aspect_ratio")
+		}
+		if strings.Contains(name, "grok-imagine") {
+			switch {
+			case strings.Contains(name, "extend"):
+				mapReference("image_url")
+			case strings.Contains(name, "image-to-image"):
+				mapReference("image_urls")
+			}
+		}
+		delete(payload, "size")
+	case strings.Contains(name, "recraft/"):
+		mapReference("image")
+		delete(payload, "size")
+		delete(payload, "aspect_ratio")
+	case strings.Contains(name, "topaz/"):
+		if strings.Contains(name, "video-upscale") {
+			mapReferenceFrom("video_url", []string{"video_urls", "video_url", "input_video_urls", "reference_video_urls"})
+		} else {
+			mapReference("image_url")
+		}
+		delete(payload, "size")
+		delete(payload, "aspect_ratio")
+	case name == "z-image":
+		mapAspectRatio()
+		delete(payload, "size")
+	default:
+		return false
+	}
+	clearKIEImageReferenceAliases(payload, name)
+	if !supportsKIEImageOutputFormat(name) {
+		delete(payload, "output_format")
+	} else if format := strings.TrimSpace(util.Clean(payload["output_format"])); format != "" {
+		payload["output_format"] = normalizeKIEOutputFormatValue(format)
+	}
+	if !supportsKIEImageQuality(name) {
+		delete(payload, "quality")
+	}
+	delete(payload, "requested_size")
+	return true
+}
+
+// KIE accepts one provider-native reference field per image model. Remove
+// stale compatibility aliases after mapping so a caller that reuses a payload
+// cannot accidentally send unrelated image/video/audio fields to a strict
+// endpoint. This mirrors the reference handler's clearKIEReferenceAliases.
+func clearKIEImageReferenceAliases(payload map[string]any, model string) {
+	keep := map[string]bool{}
+	name := strings.ToLower(strings.TrimSpace(model))
+	keepField := func(fields ...string) {
+		for _, field := range fields {
+			keep[field] = true
+		}
+	}
+	switch {
+	case strings.Contains(name, "topaz/") && strings.Contains(name, "video-upscale"):
+		keepField("video_url")
+	case strings.Contains(name, "recraft/"):
+		keepField("image")
+	case strings.HasPrefix(name, "ideogram/"):
+		switch {
+		case strings.Contains(name, "v3-edit"):
+			keepField("image_url", "mask_url")
+		case strings.Contains(name, "character-edit"):
+			keepField("image_url", "reference_image_urls", "mask_url")
+		case strings.Contains(name, "character-remix"):
+			keepField("image_url", "reference_image_urls")
+		case strings.HasSuffix(name, "/character"):
+			keepField("reference_image_urls")
+		case strings.Contains(name, "v3-remix"):
+			keepField("image_url")
+		}
+	case strings.Contains(name, "qwen"):
+		if strings.Contains(name, "image-to-image") || strings.Contains(name, "edit") {
+			keepField("image_url")
+		}
+	case strings.Contains(name, "nano-banana") || strings.Contains(name, "google/nano-banana"):
+		if (strings.Contains(name, "nano-banana-2") && !strings.Contains(name, "nano-banana-2-lite")) || strings.Contains(name, "nano-banana-pro") {
+			keepField("image_input")
+		} else if strings.Contains(name, "nano-banana-2-lite") || strings.Contains(name, "edit") {
+			keepField("image_urls")
+		}
+	case strings.Contains(name, "grok-imagine"):
+		if strings.Contains(name, "extend") {
+			keepField("image_url")
+		} else if strings.Contains(name, "image-to-image") {
+			keepField("image_urls")
+		}
+	case strings.Contains(name, "flux-2"), strings.Contains(name, "gpt-image-2"):
+		if strings.Contains(name, "image-to-image") {
+			keepField("input_urls")
+		}
+	case strings.Contains(name, "seedream/4.5"):
+		if strings.Contains(name, "edit") {
+			keepField("image_urls")
+		}
+	case strings.Contains(name, "seedream"):
+		if strings.Contains(name, "layer-decomposition") {
+			keepField("image_url")
+		} else if strings.Contains(name, "edit") || strings.Contains(name, "image-to-image") {
+			keepField("image_urls")
+		}
+	case strings.Contains(name, "wan/2-7-image"):
+		keepField("input_urls")
+	case strings.Contains(name, "topaz/"):
+		keepField("image_url")
+	}
+	for _, key := range []string{
+		"image", "images", "image_url", "image_urls", "input_url", "input_urls", "input_reference", "input_reference[]", "image_input",
+		"reference_image", "reference_images", "reference_image_url", "reference_image_urls", "first_frame_url", "last_frame_url", "end_image_url", "tail_image_url",
+		"video", "videos", "video_url", "video_urls", "input_video_url", "input_video_urls", "video_reference", "video_reference[]", "first_clip_url", "reference_video", "reference_videos", "reference_video_url", "reference_video_urls",
+		"audio", "audios", "audio_url", "audio_urls", "input_audio_url", "input_audio_urls", "reference_audio", "reference_audios", "reference_audio_url", "reference_audio_urls", "audio_reference", "audio_reference[]", "driving_audio_url", "reference_voice", "audio_ids",
+		"mask", "mask_url", "mask_urls",
+	} {
+		if !keep[key] {
+			delete(payload, key)
+		}
+	}
+}
+
+func normalizeKIEImageSizeName(value string) string {
+	ratio := normalizeKIEAspectRatio(value)
+	switch ratio {
+	case "", "auto":
+		return ratio
+	case "1:1":
+		return "square_hd"
+	case "16:9":
+		return "landscape_16_9"
+	case "9:16":
+		return "portrait_16_9"
+	case "4:3":
+		return "landscape_4_3"
+	case "3:4":
+		return "portrait_4_3"
+	default:
+		return ratio
+	}
+}
+
+func firstNonNilRelayValue(values ...any) any {
+	for _, value := range values {
+		if value != nil {
+			return value
+		}
+	}
+	return nil
+}
+
+func normalizeKIEImageResolutionValue(value string) string {
+	normalized := strings.ReplaceAll(strings.TrimSpace(value), " ", "")
+	switch strings.ToLower(normalized) {
+	case "":
+		return ""
+	case "auto":
+		return "auto"
+	case "1", "1k", "1024", "1024p":
+		return "1K"
+	case "2", "2k", "2048", "2048p":
+		return "2K"
+	case "4", "4k", "4096", "4096p":
+		return "4K"
+	default:
+		if strings.HasSuffix(strings.ToLower(normalized), "k") {
+			return strings.ToUpper(normalized)
+		}
+		return normalized
+	}
+}
+
+// Reference image models derive their resolution tier from a pixel size when
+// the caller did not provide an explicit quality/resolution value. This is
+// the same longest-edge bucketing used by the reference project's KIE
+// handler: at least 900px is 1K, 1700px is 2K, and 3500px is 4K.
+func normalizeKIEImageResolutionFromSize(value string) string {
+	normalized := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(value), " ", ""))
+	separator := "x"
+	if strings.Contains(normalized, "*") {
+		separator = "*"
+	}
+	parts := strings.Split(normalized, separator)
+	if len(parts) != 2 {
+		return ""
+	}
+	width, errWidth := strconv.Atoi(parts[0])
+	height, errHeight := strconv.Atoi(parts[1])
+	if errWidth != nil || errHeight != nil || width <= 0 || height <= 0 {
+		return ""
+	}
+	longSide := width
+	if height > longSide {
+		longSide = height
+	}
+	switch {
+	case longSide >= 3500:
+		return "4K"
+	case longSide >= 1700:
+		return "2K"
+	case longSide >= 900:
+		return "1K"
+	default:
+		return ""
+	}
+}
+
+func normalizeKIEQualityResolutionValue(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "low", "standard", "1k":
+		return "1K"
+	case "medium", "hd", "2k":
+		return "2K"
+	case "high", "4k":
+		return "4K"
+	default:
+		return ""
+	}
+}
+
+func supportsKIEImageOutputFormat(model string) bool {
+	value := strings.ToLower(strings.TrimSpace(model))
+	return (strings.Contains(value, "nano-banana-2") && !strings.Contains(value, "nano-banana-2-lite")) || strings.Contains(value, "nano-banana-pro") ||
+		value == "google/nano-banana" || value == "google/nano-banana-edit" ||
+		value == "seedream/5-pro-layer-decomposition" ||
+		strings.HasPrefix(value, "qwen/") || strings.HasPrefix(value, "qwen2/")
+}
+
+func supportsKIEImageQuality(model string) bool {
+	value := strings.ToLower(strings.TrimSpace(model))
+	return strings.HasPrefix(value, "gpt-image/1.5") || strings.HasPrefix(value, "seedream/4.5") || strings.HasPrefix(value, "seedream/5-lite") || strings.HasPrefix(value, "seedream/5-pro")
+}
+
+func normalizeKIEOutputFormatValue(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "jpg", "jpeg":
+		return "jpg"
+	case "png":
+		return "png"
+	case "webp":
+		return "png"
+	default:
+		return value
+	}
+}
+
+func isKIEImageReferenceArrayFieldName(field string) bool {
+	switch field {
+	case "image_urls", "input_urls", "image_input", "reference_image_urls":
+		return true
+	default:
+		return false
+	}
+}
+
+func normalizeKIEReferenceArrayValue(value any) []string {
+	values := make([]string, 0)
+	appendValue := func(item any) {
+		if text := strings.TrimSpace(util.Clean(item)); text != "" {
+			values = append(values, text)
+		}
+	}
+	switch typed := value.(type) {
+	case []string:
+		for _, item := range typed {
+			appendValue(item)
+		}
+	case []any:
+		for _, item := range typed {
+			appendValue(item)
+		}
+	default:
+		appendValue(value)
+	}
+	return values
+}
+
+func agnesImageSize(currentSize, resolution, quality string) string {
+	for _, value := range []string{currentSize, resolution} {
+		switch strings.ToLower(strings.TrimSpace(value)) {
+		case "1k", "2k", "3k", "4k":
+			return strings.ToUpper(strings.TrimSpace(value))
+		}
+	}
+	switch strings.ToLower(strings.TrimSpace(quality)) {
+	case "low":
+		return "2K"
+	case "medium":
+		return "3K"
+	case "high":
+		return "4K"
+	default:
+		return "1K"
+	}
+}
+
+func normalizeAgnesImageRatio(value string) string {
+	normalized := strings.ToLower(strings.TrimSpace(strings.ReplaceAll(value, "×", "x")))
+	if normalized == "auto" || normalized == "" {
+		return "1:1"
+	}
+	if width, height, ok := parseRelayImageRatio(normalized); ok {
+		return closestImageAspectRatio(width/height, []string{"1:1", "3:4", "4:3", "16:9", "9:16", "2:3", "3:2", "21:9"})
+	}
+	if width, height, ok := parseRelayImageDimensions(normalized); ok {
+		return closestImageAspectRatio(float64(width)/float64(height), []string{"1:1", "3:4", "4:3", "16:9", "9:16", "2:3", "3:2", "21:9"})
+	}
+	return ""
 }
 
 func normalizeRelayImagePartialImages(value any) (int, bool) {
 	partialImages, ok := util.StrictInt(value)
-	if !ok || partialImages < 1 || partialImages > 3 {
+	if !ok || partialImages < 0 || partialImages > 3 {
 		return 0, false
 	}
 	return partialImages, true
+}
+
+func referenceGrokImageResolution(model, quality string) string {
+	model = strings.ToLower(strings.TrimSpace(model))
+	if !strings.HasPrefix(model, "grok-imagine-image") {
+		return ""
+	}
+	switch strings.ToLower(strings.TrimSpace(quality)) {
+	case "low":
+		return "1k"
+	case "medium", "high":
+		if strings.Contains(model, "edit") {
+			return "1k"
+		}
+		return "2k"
+	default:
+		return ""
+	}
 }
 
 func normalizeRelayImageEnum(payload map[string]any, key string, allowed map[string]string) {
@@ -1547,6 +3114,11 @@ func normalizeRelayImageSize(size string) (string, bool) {
 		return normalizeRelayImageDimensions(2048, 2048), true
 	case "4k":
 		return normalizeRelayImageDimensions(3840, 3840), true
+	case "2048x2048", "2048x1152", "1152x2048", "3136x1344",
+		"3840x2160", "2160x3840", "6272x2688":
+		// Preserve the exact high-resolution presets used by the reference
+		// project. Generic dimensions still pass through the safety normalizer.
+		return normalized, true
 	}
 	if width, height, ok := parseRelayImageDimensions(normalized); ok {
 		if width < 128 && height < 128 {
@@ -1662,7 +3234,7 @@ func shouldDropRelayPayloadKey(key string) bool {
 		"token_group", "newapi_token_group", "relay_token_group",
 		"token_name", "newapi_token_name", "relay_token_name",
 		"owner_id", "owner_name", "base_url", "visibility", "client_task_id",
-		"image_resolution", "requested_size", "images",
+		"requested_size", "images", "api_mode",
 		"share_prompt_parameters", "share_reference_images",
 		relayImageTaskSlotManagedPayloadKey,
 		service.ImageOutputCompletionReleasePayloadKey,
@@ -1958,7 +3530,19 @@ func relayStreamItemError(item map[string]any) error {
 func relayErrorMessageFromValue(value any) string {
 	switch typed := value.(type) {
 	case string:
-		return strings.TrimSpace(typed)
+		message := strings.TrimSpace(typed)
+		// Some providers encode the useful validation object inside the
+		// outer `message` string. Parse it once more so callers see the
+		// actionable detail instead of the wrapper (`fail_to_fetch_task`).
+		if strings.HasPrefix(message, "{") || strings.HasPrefix(message, "[") {
+			var nested any
+			if err := json.Unmarshal([]byte(message), &nested); err == nil {
+				if extracted := relayErrorMessageFromValue(nested); extracted != "" {
+					return extracted
+				}
+			}
+		}
+		return message
 	case map[string]any:
 		return firstNonEmpty(
 			relayErrorMessageFromValue(typed["message"]),
@@ -1983,18 +3567,6 @@ func relayAcquireImageTaskSlot(ctx context.Context, payload map[string]any) (fun
 		return nil, nil
 	}
 	return acquire(ctx, 0)
-}
-
-func relayAcquireDirectImageTaskSlot(ctx context.Context, payload map[string]any) (func(), error) {
-	release, err := relayAcquireImageTaskSlot(ctx, payload)
-	if err != nil || release == nil {
-		return release, err
-	}
-	payload[relayImageTaskSlotManagedPayloadKey] = relayImageTaskSlotManagedMarker{}
-	return func() {
-		delete(payload, relayImageTaskSlotManagedPayloadKey)
-		release()
-	}, nil
 }
 
 func relayImageTaskSlotIsManaged(payload map[string]any) bool {

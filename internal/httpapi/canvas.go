@@ -11,7 +11,7 @@ import (
 )
 
 func (a *App) handleCanvasDocument(w http.ResponseWriter, r *http.Request) {
-	identity, ok := a.requireIdentity(w, r, "")
+	identity, ok := a.requireIdentity(w, r)
 	if !ok {
 		return
 	}
@@ -22,6 +22,19 @@ func (a *App) handleCanvasDocument(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			util.WriteError(w, http.StatusInternalServerError, "failed to load canvas")
 			return
+		}
+		if projectID := strings.TrimSpace(r.URL.Query().Get("project_id")); projectID != "" {
+			document, projectErr := a.canvas.Project(ownerID, projectID)
+			if projectErr != nil {
+				if errors.Is(projectErr, service.ErrInvalidCanvasDocument) {
+					util.WriteError(w, http.StatusBadRequest, projectErr.Error())
+					return
+				}
+				util.WriteError(w, http.StatusInternalServerError, "failed to load canvas project")
+				return
+			}
+			workspace.Document = document
+			workspace.ActiveProjectID = document.ID
 		}
 		util.WriteJSON(w, http.StatusOK, workspace)
 	case http.MethodPost:
@@ -113,7 +126,7 @@ func (a *App) handleCanvasDocument(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleCanvasImageUpload(w http.ResponseWriter, r *http.Request) {
-	identity, ok := a.requireIdentity(w, r, "")
+	identity, ok := a.requireIdentity(w, r)
 	if !ok {
 		return
 	}
@@ -159,5 +172,5 @@ func (a *App) handleCanvasImageUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	a.images.EnsureThumbnails([]string{url})
-	util.WriteJSON(w, http.StatusCreated, map[string]any{"url": url, "name": header.Filename, "content_type": upload.ContentType})
+	util.WriteJSON(w, http.StatusCreated, map[string]any{"url": url, "name": header.Filename, "content_type": upload.ContentType, "size": len(upload.Data), "width": info.Width, "height": info.Height})
 }

@@ -3,7 +3,6 @@ import test from "node:test";
 
 import {
   canvasBatchMotion,
-  duplicateCanvasNodeGroup,
   detachCanvasBatchRootForReplacement,
   expandCanvasBatchNodeIDs,
   isCanvasBatchChildHidden,
@@ -134,35 +133,4 @@ test("replacing a batch root removes stale children and their internal edges", (
   assert.deepEqual(result.nodes.map((item) => item.id), ["source", "root"]);
   assert.deepEqual(result.connections.map((item) => item.id), ["source-root"]);
   assert.deepEqual([...result.removedNodeIDs], ["a", "b"]);
-});
-
-test("duplicating a batch remaps the complete group and its internal connections", () => {
-  const root = node("root", { title: "结果组", batch_child_ids: ["a", "b"], batch_primary_id: "b", batch_expanded: false });
-  const childA = node("a", { batch_root_id: "root" });
-  const childB = node("b", { batch_root_id: "root" });
-  let index = 0;
-  const duplicated = duplicateCanvasNodeGroup("root", [root, childA, childB], [
-    { id: "root-a", from_node_id: "root", to_node_id: "a" },
-    { id: "root-b", from_node_id: "root", to_node_id: "b" },
-  ], (type) => `${type}-copy-${++index}`, () => "now");
-
-  assert.ok(duplicated);
-  const [rootCopy, childACopy, childBCopy] = duplicated.nodes;
-  assert.equal(rootCopy.title, "结果组 Copy");
-  assert.deepEqual(rootCopy.batch_child_ids, [childACopy.id, childBCopy.id]);
-  assert.equal(rootCopy.batch_primary_id, childBCopy.id);
-  assert.equal(childACopy.batch_root_id, rootCopy.id);
-  assert.equal(childBCopy.batch_root_id, rootCopy.id);
-  assert.deepEqual(duplicated.connections.map((connection) => [connection.from_node_id, connection.to_node_id]), [
-    [rootCopy.id, childACopy.id],
-    [rootCopy.id, childBCopy.id],
-  ]);
-  assert.equal(duplicated.selectedNodeID, rootCopy.id);
-});
-
-test("duplicating one batch child produces a valid standalone node", () => {
-  const child = node("child", { batch_root_id: "root" });
-  const duplicated = duplicateCanvasNodeGroup("child", [child], [], () => "child-copy", () => "now");
-  assert.ok(duplicated);
-  assert.equal(duplicated.nodes[0].batch_root_id, undefined);
 });

@@ -25,6 +25,7 @@ archives:
       {{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}
     files:
       - README.md
+      - CHANGELOG.md
       - .env.example
       - docker-compose.yml
 

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"image"
 	"image/color"
 	"image/jpeg"
@@ -49,16 +50,22 @@ func (c testImageConfig) ImageStorageLimitBytes() int64 { return 0 }
 
 var allImages = ImageAccessScope{All: true}
 
-type memoryImageObjectStore struct {
-	mu            sync.Mutex
-	objects       map[string][]byte
-	failPut       error
-	putStarted    chan struct{}
-	allowPut      chan struct{}
-	putOnce       sync.Once
-	deleteStarted chan struct{}
-	allowDelete   chan struct{}
-	deleteOnce    sync.Once
+func (s *ImageService) RecordImageOwners(values []string, ownerID string) error {
+	ownerID = strings.TrimSpace(ownerID)
+	if ownerID == "" {
+		return nil
+	}
+	var writeErrors []error
+	for _, ref := range s.imageFileRefs(values) {
+		if err := s.writeImageMetadataForRef(ref, ownerID, "", ""); err != nil {
+			writeErrors = append(writeErrors, fmt.Errorf("record image owner for %s: %w", ref.rel, err))
+		}
+	}
+	return errors.Join(writeErrors...)
+}
+
+func (s *ImageService) RecordGeneratedImages(values []string, ownerID, ownerName, visibility string, metadataValues ...GeneratedImageMetadata) error {
+	return s.recordGeneratedImages(values, ownerID, ownerName, visibility, true, metadataValues...)
 }
 
 type firstImageMetadataSaveGate struct {
@@ -115,121 +122,6 @@ func (b *firstImageMetadataSaveGate) DeleteJSONDocument(name string) error {
 	return b.documents.DeleteJSONDocument(name)
 }
 
-func (s *memoryImageObjectStore) Backend() string { return "s3" }
-func (s *memoryImageObjectStore) Bucket() string  { return "test-images" }
-func (s *memoryImageObjectStore) Prefix() string  { return "cloud-cotton" }
-
-func (s *memoryImageObjectStore) Put(_ context.Context, key string, data []byte, _ string) error {
-	if s.failPut != nil {
-		return s.failPut
-	}
-	if s.putStarted != nil {
-		s.putOnce.Do(func() { close(s.putStarted) })
-	}
-	if s.allowPut != nil {
-		<-s.allowPut
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.objects == nil {
-		s.objects = make(map[string][]byte)
-	}
-	s.objects[key] = append([]byte(nil), data...)
-	return nil
-}
-
-func (s *memoryImageObjectStore) Get(_ context.Context, key string) ([]byte, string, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	data, ok := s.objects[key]
-	if !ok {
-		return nil, "", errors.New("object not found")
-	}
-	return append([]byte(nil), data...), "image/png", nil
-}
-
-func (s *memoryImageObjectStore) Delete(_ context.Context, key string) error {
-	if s.deleteStarted != nil {
-		s.deleteOnce.Do(func() { close(s.deleteStarted) })
-	}
-	if s.allowDelete != nil {
-		<-s.allowDelete
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	delete(s.objects, key)
-	return nil
-}
-
-func TestImageServiceDeletionTombstoneBlocksConcurrentMetadataUpdates(t *testing.T) {
-	databaseURL := "sqlite:///" + filepath.ToSlash(filepath.Join(t.TempDir(), "shared-images.db"))
-	backendA, err := storage.NewDatabaseBackend(databaseURL)
-	if err != nil {
-		t.Fatalf("NewDatabaseBackend(A) error = %v", err)
-	}
-	t.Cleanup(func() { _ = backendA.Close() })
-	backendB, err := storage.NewDatabaseBackend(databaseURL)
-	if err != nil {
-		t.Fatalf("NewDatabaseBackend(B) error = %v", err)
-	}
-	t.Cleanup(func() { _ = backendB.Close() })
-
-	config := testImageConfig{root: t.TempDir()}
-	store := &memoryImageObjectStore{deleteStarted: make(chan struct{}), allowDelete: make(chan struct{})}
-	serviceA := NewImageService(config, backendA)
-	serviceB := NewImageService(config, backendB)
-	if err := serviceA.ConfigureObjectStore(store, true); err != nil {
-		t.Fatalf("ConfigureObjectStore(A) error = %v", err)
-	}
-	if err := serviceB.ConfigureObjectStore(store, true); err != nil {
-		t.Fatalf("ConfigureObjectStore(B) error = %v", err)
-	}
-	imageURL, err := serviceA.SaveImageBytes(context.Background(), testPNGBytes(t, 16, 16), "https://image.example.test", "owner", "Owner", "png")
-	if err != nil {
-		t.Fatalf("SaveImageBytes() error = %v", err)
-	}
-	rel, err := imageRelativePathFromValue(imageURL)
-	if err != nil {
-		t.Fatalf("imageRelativePathFromValue() error = %v", err)
-	}
-
-	deleteResult := make(chan error, 1)
-	go func() {
-		_, deleteErr := serviceA.DeleteImages([]string{rel}, ImageAccessScope{OwnerID: "owner"})
-		deleteResult <- deleteErr
-	}()
-	select {
-	case <-store.deleteStarted:
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for object deletion")
-	}
-	if _, err := serviceB.UpdateImageVisibility(rel, ImageVisibilityPublic, ImageAccessScope{OwnerID: "owner"}); err == nil {
-		t.Fatal("UpdateImageVisibility() succeeded after deletion started")
-	}
-	close(store.allowDelete)
-	select {
-	case err := <-deleteResult:
-		if err != nil {
-			t.Fatalf("DeleteImages() error = %v", err)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for image deletion")
-	}
-	if store.has(rel) {
-		t.Fatal("object still exists after deletion")
-	}
-	if value, err := backendB.LoadJSONDocument(imageOwnerDocumentName(rel)); err != nil || value != nil {
-		t.Fatalf("image metadata after deletion = %#v, error = %v", value, err)
-	}
-}
-
-func (s *memoryImageObjectStore) has(key string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	_, ok := s.objects[key]
-	return ok
-}
-
 func TestImageServiceListImagesReturnsEmptyArrays(t *testing.T) {
 	service := NewImageService(testImageConfig{root: t.TempDir()})
 	result := service.ListImages("http://127.0.0.1:8000", "", "", allImages)
@@ -243,196 +135,18 @@ func TestImageServiceListImagesReturnsEmptyArrays(t *testing.T) {
 	}
 }
 
-func TestImageServiceObjectStorageLifecycleAndIndexRecovery(t *testing.T) {
-	backend := newTestStorageBackend(t)
-	store := &memoryImageObjectStore{}
-	firstConfig := testImageConfig{root: t.TempDir()}
-	first := NewImageService(firstConfig, backend)
-	if err := first.ConfigureObjectStore(store, true); err != nil {
-		t.Fatalf("ConfigureObjectStore() error = %v", err)
-	}
-	imageData := testPNGBytes(t, 32, 24)
-
-	imageURL, err := first.SaveImageBytes(context.Background(), imageData, "https://image.example.test", "user-1", "User", "png")
+func TestImageServiceUsesSameOriginPathsWhenBaseURLIsEmpty(t *testing.T) {
+	service := NewImageService(testImageConfig{root: t.TempDir()})
+	imageURL, err := service.SaveImageBytes(context.Background(), testPNGBytes(t, 8, 8), "", "owner", "Owner", "png")
 	if err != nil {
 		t.Fatalf("SaveImageBytes() error = %v", err)
 	}
-	rel, err := imageRelativePathFromValue(imageURL)
-	if err != nil {
-		t.Fatalf("imageRelativePathFromValue() error = %v", err)
+	if !strings.HasPrefix(imageURL, "/images/") {
+		t.Fatalf("SaveImageBytes() URL = %q, want same-origin path", imageURL)
 	}
-	marker := filepath.Join(firstConfig.ImagesDir(), filepath.FromSlash(rel))
-	info, err := os.Stat(marker)
-	if err != nil || info.Size() != 0 {
-		t.Fatalf("object-storage marker info = %#v, error = %v", info, err)
-	}
-	if !store.has(rel) {
-		t.Fatalf("object store does not contain %q", rel)
-	}
-	data, contentType, err := first.ImageBytes(rel, ImageAccessScope{OwnerID: "user-1"})
-	if err != nil || !bytes.Equal(data, imageData) || contentType != "image/png" {
-		t.Fatalf("ImageBytes() bytes=%d contentType=%q error=%v", len(data), contentType, err)
-	}
-	if _, _, err := first.ImageBytes(rel, ImageAccessScope{OwnerID: "user-2"}); err == nil {
-		t.Fatal("ImageBytes() allowed another owner")
-	}
-
-	secondConfig := testImageConfig{root: t.TempDir()}
-	second := NewImageService(secondConfig, backend)
-	if err := second.ConfigureObjectStore(store, true); err != nil {
-		t.Fatalf("ConfigureObjectStore() error = %v", err)
-	}
-	items := second.ListImages("https://image.example.test", "", "", ImageAccessScope{OwnerID: "user-1"})["items"].([]map[string]any)
-	if len(items) != 1 || toString(items[0]["path"]) != rel || numericMetaValue(items[0]["width"]) != 32 || numericMetaValue(items[0]["height"]) != 24 {
-		t.Fatalf("recovered object-storage image list = %#v", items)
-	}
-	recoveredMarker := filepath.Join(secondConfig.ImagesDir(), filepath.FromSlash(rel))
-	if info, err := os.Stat(recoveredMarker); err != nil || info.Size() != 0 {
-		t.Fatalf("recovered marker info = %#v, error = %v", info, err)
-	}
-	second.EnsureThumbnails([]string{rel})
-	thumbnail := filepath.Join(secondConfig.ImageThumbnailsDir(), filepath.FromSlash(rel+thumbnailExtension))
-	if info, err := os.Stat(thumbnail); err != nil || info.Size() == 0 {
-		t.Fatalf("object-storage thumbnail info = %#v, error = %v", info, err)
-	}
-
-	result, err := second.DeleteImages([]string{rel}, ImageAccessScope{OwnerID: "user-1"})
-	if err != nil || result["deleted"] != 1 || store.has(rel) {
-		t.Fatalf("DeleteImages() result=%#v remoteExists=%v error=%v", result, store.has(rel), err)
-	}
-	if err := os.MkdirAll(filepath.Dir(recoveredMarker), 0o755); err != nil {
-		t.Fatalf("restore stale marker directory: %v", err)
-	}
-	if err := os.WriteFile(recoveredMarker, nil, 0o644); err != nil {
-		t.Fatalf("restore stale marker: %v", err)
-	}
-	staleAt := time.Now().Add(-objectIndexStaleAfter - time.Minute)
-	if err := os.Chtimes(recoveredMarker, staleAt, staleAt); err != nil {
-		t.Fatalf("age stale marker: %v", err)
-	}
-	if err := second.SyncObjectStoreIndex(); err != nil {
-		t.Fatalf("SyncObjectStoreIndex() error = %v", err)
-	}
-	if _, err := os.Stat(recoveredMarker); !os.IsNotExist(err) {
-		t.Fatalf("stale object-storage marker still exists: %v", err)
-	}
-}
-
-func TestImageServiceValidatesObjectStorageBytesOnRead(t *testing.T) {
-	store := &memoryImageObjectStore{}
-	service := NewImageService(testImageConfig{root: t.TempDir()}, newTestStorageBackend(t))
-	if err := service.ConfigureObjectStore(store, true); err != nil {
-		t.Fatalf("ConfigureObjectStore() error = %v", err)
-	}
-	imageURL, err := service.SaveImageBytes(context.Background(), testPNGBytes(t, 8, 8), "https://image.example.test", "user", "User", "png")
-	if err != nil {
-		t.Fatalf("SaveImageBytes() error = %v", err)
-	}
-	rel, err := imageRelativePathFromValue(imageURL)
-	if err != nil {
-		t.Fatalf("imageRelativePathFromValue() error = %v", err)
-	}
-
-	store.mu.Lock()
-	store.objects[rel] = []byte("not an image")
-	store.mu.Unlock()
-	if _, _, err := service.ImageBytes(rel, ImageAccessScope{OwnerID: "user"}); err == nil {
-		t.Fatal("ImageBytes() accepted corrupt object storage bytes")
-	}
-
-	var encoded bytes.Buffer
-	if err := jpeg.Encode(&encoded, image.NewRGBA(image.Rect(0, 0, 8, 8)), nil); err != nil {
-		t.Fatalf("encode JPEG: %v", err)
-	}
-	store.mu.Lock()
-	store.objects[rel] = append([]byte(nil), encoded.Bytes()...)
-	store.mu.Unlock()
-	data, contentType, err := service.ImageBytes(rel, ImageAccessScope{OwnerID: "user"})
-	if err != nil || len(data) == 0 || contentType != "image/jpeg" {
-		t.Fatalf("ImageBytes() bytes=%d contentType=%q error=%v", len(data), contentType, err)
-	}
-}
-
-func TestImageServiceObjectStoragePutFailureDoesNotCreateImage(t *testing.T) {
-	config := testImageConfig{root: t.TempDir()}
-	service := NewImageService(config, newTestStorageBackend(t))
-	if err := service.ConfigureObjectStore(&memoryImageObjectStore{failPut: errors.New("bucket unavailable")}, true); err != nil {
-		t.Fatalf("ConfigureObjectStore() error = %v", err)
-	}
-	if value, err := service.SaveImageBytes(context.Background(), testPNGBytes(t, 8, 8), "https://image.example.test", "user", "User", "png"); err == nil || value != "" {
-		t.Fatalf("SaveImageBytes() value=%q error=%v", value, err)
-	}
-	items := service.ListImages("https://image.example.test", "", "", allImages)["items"].([]map[string]any)
-	if len(items) != 0 {
-		t.Fatalf("failed object upload entered image list: %#v", items)
-	}
-}
-
-func TestImageServiceObjectStorageReadClientSurvivesLocalWriteSwitch(t *testing.T) {
-	backend := newTestStorageBackend(t)
-	store := &memoryImageObjectStore{}
-	config := testImageConfig{root: t.TempDir()}
-	service := NewImageService(config, backend)
-	if err := service.ConfigureObjectStore(store, true); err != nil {
-		t.Fatalf("ConfigureObjectStore(write) error = %v", err)
-	}
-	remoteURL, err := service.SaveImageBytes(context.Background(), testPNGBytes(t, 12, 10), "https://image.example.test", "user", "User", "png")
-	if err != nil {
-		t.Fatalf("SaveImageBytes(remote) error = %v", err)
-	}
-	remoteRel, _ := imageRelativePathFromValue(remoteURL)
-
-	if err := service.ConfigureObjectStore(store, false); err != nil {
-		t.Fatalf("ConfigureObjectStore(read-only) error = %v", err)
-	}
-	if service.StorageBackend() != "local" {
-		t.Fatalf("StorageBackend() = %q", service.StorageBackend())
-	}
-	if data, _, err := service.ImageBytes(remoteRel, ImageAccessScope{OwnerID: "user"}); err != nil || len(data) == 0 {
-		t.Fatalf("read remote image after local switch: bytes=%d error=%v", len(data), err)
-	}
-	localURL, err := service.SaveImageBytes(context.Background(), testPNGBytes(t, 9, 7), "https://image.example.test", "user", "User", "png")
-	if err != nil {
-		t.Fatalf("SaveImageBytes(local) error = %v", err)
-	}
-	localRel, _ := imageRelativePathFromValue(localURL)
-	if store.has(localRel) {
-		t.Fatalf("local image %q was uploaded to object storage", localRel)
-	}
-	if info, err := os.Stat(filepath.Join(config.ImagesDir(), filepath.FromSlash(localRel))); err != nil || info.Size() == 0 {
-		t.Fatalf("local image file info=%#v error=%v", info, err)
-	}
-}
-
-func TestImageServiceObjectStorageSwitchWaitsForActiveSave(t *testing.T) {
-	store := &memoryImageObjectStore{putStarted: make(chan struct{}), allowPut: make(chan struct{})}
-	service := NewImageService(testImageConfig{root: t.TempDir()}, newTestStorageBackend(t))
-	if err := service.ConfigureObjectStore(store, true); err != nil {
-		t.Fatalf("ConfigureObjectStore(write) error = %v", err)
-	}
-	saveDone := make(chan error, 1)
-	go func() {
-		_, err := service.SaveImageBytes(context.Background(), testPNGBytes(t, 10, 10), "https://image.example.test", "user", "User", "png")
-		saveDone <- err
-	}()
-	select {
-	case <-store.putStarted:
-	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for object upload")
-	}
-	switchDone := make(chan error, 1)
-	go func() { switchDone <- service.ConfigureObjectStore(store, false) }()
-	select {
-	case err := <-switchDone:
-		t.Fatalf("object storage switched before active save completed: %v", err)
-	case <-time.After(50 * time.Millisecond):
-	}
-	close(store.allowPut)
-	if err := <-saveDone; err != nil {
-		t.Fatalf("SaveImageBytes() error = %v", err)
-	}
-	if err := <-switchDone; err != nil {
-		t.Fatalf("ConfigureObjectStore(read-only) error = %v", err)
+	items := service.ListImages("", "", "", allImages)["items"].([]map[string]any)
+	if len(items) != 1 || !strings.HasPrefix(toString(items[0]["url"]), "/images/") {
+		t.Fatalf("ListImages() = %#v, want same-origin URL", items)
 	}
 }
 

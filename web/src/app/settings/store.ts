@@ -19,10 +19,11 @@ import {
   type LogCleanupResult,
   type LogGovernanceSummary,
   type LogView,
-  type AccountScheduleMode,
   type LoginPageImageSettings,
   type SettingsConfig,
+	type StorageSettingConfig,
 } from "@/lib/api";
+import { DEFAULT_VIDEO_MODEL } from "@/lib/video-model-capabilities";
 import { dispatchAppMetaUpdated } from "@/lib/app-meta";
 import { normalizePromptMarketSources, type PromptMarketSourceConfig } from "@/app/image/banana-prompts";
 import {
@@ -39,8 +40,20 @@ function normalizeDefaultLogView(value: unknown): LogView {
   return "meaningful";
 }
 
-function normalizeAccountScheduleMode(value: unknown): AccountScheduleMode {
-  return value === "fill_first" ? "fill_first" : "load_balance";
+function normalizePromptPullInterval(value: unknown) {
+  const minutes = Number(value);
+  return [30, 60, 360, 1440].includes(minutes) ? minutes : 30;
+}
+
+function databaseFieldsFromConfig(config: SettingsConfig) {
+  return {
+    driver: config.relay_database_driver === "sqlite" ? "sqlite" : config.relay_database_driver === "mysql" ? "mysql" : "postgres",
+    host: String(config.relay_database_host || "").trim(),
+    port: String(config.relay_database_port || "").trim(),
+    name: String(config.relay_database_name || "").trim(),
+    user: String(config.relay_database_user || "").trim(),
+    password: String(config.relay_database_password || ""),
+  } as const;
 }
 
 function normalizeConfig(config: SettingsConfig): SettingsConfig {
@@ -51,50 +64,85 @@ function normalizeConfig(config: SettingsConfig): SettingsConfig {
   });
   const appTitle = typeof config.app_title === "string" && config.app_title.trim() ? config.app_title.trim() : "云棉";
   const projectName = typeof config.project_name === "string" && config.project_name.trim() ? config.project_name.trim() : appTitle;
+  const relayDatabaseFields = databaseFieldsFromConfig(config);
   return {
     ...config,
     app_title: appTitle,
     project_name: projectName,
     site_icon_url: typeof config.site_icon_url === "string" ? config.site_icon_url.trim() : "",
-    refresh_account_interval_minute: Number(config.refresh_account_interval_minute || 5),
     image_task_timeout_seconds: Number(config.image_task_timeout_seconds || 300),
     image_models: normalizeModelNames(config.image_models, DEFAULT_IMAGE_MODELS),
     default_image_model: String(config.default_image_model || DEFAULT_IMAGE_MODELS[0]),
-    video_models: normalizeModelNames(config.video_models, ["sora-2"]),
-    default_video_model: String(config.default_video_model || config.video_models?.[0] || "sora-2"),
+    video_models: normalizeModelNames(config.video_models, [DEFAULT_VIDEO_MODEL]),
+    default_video_model: String(config.default_video_model || config.video_models?.[0] || DEFAULT_VIDEO_MODEL),
+    text_models: normalizeModelNames(config.text_models, ["gpt-5.5", "gpt-5.4"]),
+    default_text_model: String(config.default_text_model || config.text_models?.[0] || "gpt-5.5"),
+    audio_models: normalizeModelNames(config.audio_models, ["gpt-4o-mini-tts"]),
+    default_audio_model: String(config.default_audio_model || config.audio_models?.[0] || "gpt-4o-mini-tts"),
     user_default_concurrent_limit: Number(config.user_default_concurrent_limit || 0),
     user_default_rpm_limit: Number(config.user_default_rpm_limit || 0),
     image_retention_days: Number(config.image_retention_days || 30),
     image_storage_limit_mb: Math.max(0, Number(config.image_storage_limit_mb) || 0),
-    image_storage_backend: config.image_storage_backend === "s3" ? "s3" : "local",
-    s3_endpoint: typeof config.s3_endpoint === "string" ? config.s3_endpoint.trim() : "",
-    s3_region: typeof config.s3_region === "string" ? config.s3_region.trim() : "",
-    s3_bucket: typeof config.s3_bucket === "string" ? config.s3_bucket.trim() : "",
-    s3_prefix: typeof config.s3_prefix === "string" ? config.s3_prefix.trim() : "",
-    s3_use_path_style: Boolean(config.s3_use_path_style),
+			storage: normalizeStorageSetting(config.storage),
     log_retention_days: Number(config.log_retention_days || 7),
     default_log_view: normalizeDefaultLogView(config.default_log_view),
-    auto_remove_invalid_accounts: Boolean(config.auto_remove_invalid_accounts),
-    auto_remove_rate_limited_accounts: Boolean(config.auto_remove_rate_limited_accounts),
-    text_account_schedule_mode: normalizeAccountScheduleMode(config.text_account_schedule_mode),
-    image_account_schedule_mode: normalizeAccountScheduleMode(config.image_account_schedule_mode),
     log_levels: Array.isArray(config.log_levels) ? config.log_levels : [],
     proxy: typeof config.proxy === "string" ? config.proxy : "",
     base_url:
-      typeof config.base_url === "string" && config.base_url.trim()
-        ? config.base_url
-        : "https://image.yunmian.tech",
+      typeof config.base_url === "string" ? config.base_url.trim() : "",
     relay_base_url:
       typeof config.relay_base_url === "string" && config.relay_base_url.trim()
         ? config.relay_base_url
         : "https://www.yunmian.tech",
+    relay_database_url: "",
+    relay_database_type: config.relay_database_type === "sub2api" ? "sub2api" : "newapi",
+    relay_database_driver: relayDatabaseFields.driver,
+    relay_database_host: relayDatabaseFields.host,
+    relay_database_port: relayDatabaseFields.port,
+    relay_database_name: relayDatabaseFields.name,
+    relay_database_user: relayDatabaseFields.user,
+    relay_database_password: relayDatabaseFields.password,
     login_page_image_url: typeof config.login_page_image_url === "string" ? config.login_page_image_url : "",
     login_page_image_mode: normalizeLoginPageImageMode(config.login_page_image_mode),
     login_page_image_zoom: loginImageTransform.zoom,
     login_page_image_position_x: loginImageTransform.positionX,
     login_page_image_position_y: loginImageTransform.positionY,
     prompt_sources: normalizePromptMarketSources(config.prompt_sources),
+    prompt_pull_schedule_enabled: Boolean(config.prompt_pull_schedule_enabled),
+    prompt_pull_interval_minutes: normalizePromptPullInterval(config.prompt_pull_interval_minutes),
   };
+}
+
+function normalizeStorageSetting(value: SettingsConfig["storage"]): StorageSettingConfig {
+	return {
+		mode: value?.mode === "server_external" || value?.mode === "server_user_or_local" ? value.mode : "server_local",
+		allowUserProvider: value?.allowUserProvider === true,
+		allowUserGlobalProvider: value?.allowUserGlobalProvider !== false,
+		providers: Array.isArray(value?.providers) ? value.providers.map((provider, index) => ({
+			id: provider.id || `storage-${index + 1}`,
+			name: String(provider.name || "").trim(),
+			type: provider.type === "webdav" ? "webdav" : "s3",
+			endpoint: String(provider.endpoint || "").trim(),
+			region: String(provider.region || "auto").trim() || "auto",
+			bucket: String(provider.bucket || "").trim(),
+			accessKeyId: String(provider.accessKeyId || ""),
+			secretAccessKey: "",
+			publicBaseUrl: String(provider.publicBaseUrl || "").trim(),
+			pathPrefix: String(provider.pathPrefix || "assets").trim() || "assets",
+			username: String(provider.username || ""),
+			password: "",
+			weight: Math.max(1, Number(provider.weight) || 1),
+			enabled: provider.enabled === true,
+			ownerUserId: String(provider.ownerUserId || ""),
+			capacityBytes: Math.max(0, Number(provider.capacityBytes) || 0),
+			capacityCheckedAt: String(provider.capacityCheckedAt || ""),
+			capacityExceeded: provider.capacityExceeded === true,
+		})) : [],
+		roundRobinCursor: Math.max(0, Number(value?.roundRobinCursor) || 0),
+		capacityCheck: { enabled: value?.capacityCheck?.enabled === true, cron: value?.capacityCheck?.cron || "0 */6 * * *" },
+		capacityLimitBytes: Math.max(1, Number(value?.capacityLimitBytes) || 9 * 1024 ** 3),
+		localCapacityLimitBytes: Math.max(0, Number(value?.localCapacityLimitBytes) || 0),
+	};
 }
 
 type SettingsStore = {
@@ -113,32 +161,30 @@ type SettingsStore = {
   initialize: () => Promise<void>;
   loadConfig: () => Promise<void>;
   saveConfig: () => Promise<void>;
-  setRefreshAccountIntervalMinute: (value: string) => void;
   setImageTaskTimeoutSeconds: (value: string) => void;
   setImageModels: (value: string) => void;
   setVideoModels: (value: string) => void;
+  setTextModels: (value: string) => void;
+  setAudioModels: (value: string) => void;
   setUserDefaultConcurrentLimit: (value: string) => void;
   setUserDefaultRpmLimit: (value: string) => void;
   setImageRetentionDays: (value: string) => void;
   setImageStorageLimitMb: (value: string) => void;
-  setImageStorageBackend: (value: "local" | "s3") => void;
-  setS3Endpoint: (value: string) => void;
-  setS3Region: (value: string) => void;
-  setS3Bucket: (value: string) => void;
-  setS3Prefix: (value: string) => void;
-  setS3UsePathStyle: (value: boolean) => void;
+	setStorage: (value: NonNullable<SettingsConfig["storage"]>) => void;
   setLogRetentionDays: (value: string) => void;
   setDefaultLogView: (value: LogView) => void;
-  setAutoRemoveInvalidAccounts: (value: boolean) => void;
-  setAutoRemoveRateLimitedAccounts: (value: boolean) => void;
-  setTextAccountScheduleMode: (value: AccountScheduleMode) => void;
-  setImageAccountScheduleMode: (value: AccountScheduleMode) => void;
   setLogLevel: (level: string, enabled: boolean) => void;
   setProxy: (value: string) => void;
   setBaseUrl: (value: string) => void;
   setRelayBaseUrl: (value: string) => void;
+  setRelayDatabaseUrl: (value: string) => void;
+  setRelayDatabaseType: (value: "newapi" | "sub2api") => void;
+  setRelayDatabaseDriver: (value: "sqlite" | "postgres" | "mysql") => void;
+  setRelayDatabaseField: (field: "host" | "port" | "name" | "user" | "password", value: string) => void;
   setAppTitle: (value: string) => void;
   setPromptSources: (value: PromptMarketSourceConfig[]) => void;
+  setPromptPullScheduleEnabled: (value: boolean) => void;
+  setPromptPullIntervalMinutes: (value: number) => void;
   saveSiteIcon: (options: { file?: File | null; action: "keep" | "replace" | "remove" }) => Promise<boolean>;
   setLoginPageImageUrl: (value: string) => void;
   setLoginPageImageMode: (value: LoginPageImageMode) => void;
@@ -189,41 +235,57 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     if (!config) {
       return;
     }
+    const canConfigureRelayDatabase = typeof config.relay_database_password_configured === "boolean";
 
     set({ isSavingConfig: true });
     try {
       const payload: SettingsConfig = {
         ...config,
-        refresh_account_interval_minute: Math.max(1, Number(config.refresh_account_interval_minute) || 1),
         image_task_timeout_seconds: Math.min(3600, Math.max(30, Number(config.image_task_timeout_seconds) || 300)),
         image_models: normalizeModelNames(config.image_models, DEFAULT_IMAGE_MODELS),
-        video_models: normalizeModelNames(config.video_models, ["sora-2"]),
+        video_models: normalizeModelNames(config.video_models, [DEFAULT_VIDEO_MODEL]),
+        text_models: normalizeModelNames(config.text_models, ["gpt-5.5", "gpt-5.4"]),
+        audio_models: normalizeModelNames(config.audio_models, ["gpt-4o-mini-tts"]),
         user_default_concurrent_limit: Math.max(0, Number(config.user_default_concurrent_limit) || 0),
         user_default_rpm_limit: Math.max(0, Number(config.user_default_rpm_limit) || 0),
         image_retention_days: Math.max(1, Number(config.image_retention_days) || 30),
         image_storage_limit_mb: Math.max(0, Number(config.image_storage_limit_mb) || 0),
-        image_storage_backend: config.image_storage_backend === "s3" ? "s3" : "local",
-        s3_endpoint: String(config.s3_endpoint || "").trim(),
-        s3_region: String(config.s3_region || "").trim(),
-        s3_bucket: String(config.s3_bucket || "").trim(),
-        s3_prefix: String(config.s3_prefix || "").trim(),
-        s3_use_path_style: Boolean(config.s3_use_path_style),
+			storage: config.storage,
         log_retention_days: Math.min(3650, Math.max(1, Number(config.log_retention_days) || 7)),
         default_log_view: normalizeDefaultLogView(config.default_log_view),
-        auto_remove_invalid_accounts: Boolean(config.auto_remove_invalid_accounts),
-        auto_remove_rate_limited_accounts: Boolean(config.auto_remove_rate_limited_accounts),
-        text_account_schedule_mode: normalizeAccountScheduleMode(config.text_account_schedule_mode),
-        image_account_schedule_mode: normalizeAccountScheduleMode(config.image_account_schedule_mode),
+        prompt_pull_schedule_enabled: Boolean(config.prompt_pull_schedule_enabled),
+        prompt_pull_interval_minutes: normalizePromptPullInterval(config.prompt_pull_interval_minutes),
         proxy: config.proxy.trim(),
         base_url: String(config.base_url || "").trim(),
         app_title: String(config.app_title || "云棉").trim() || "云棉",
         project_name: String(config.app_title || "云棉").trim() || "云棉",
         relay_base_url: String(config.relay_base_url || "").trim(),
+        relay_database_type: config.relay_database_type === "sub2api" ? "sub2api" : "newapi",
+        relay_database_driver: config.relay_database_driver === "sqlite" ? "sqlite" : config.relay_database_driver === "mysql" ? "mysql" : "postgres",
+        relay_database_host: String(config.relay_database_host || "").trim(),
+        relay_database_port: String(config.relay_database_port || "").trim(),
+        relay_database_name: String(config.relay_database_name || "").trim(),
+        relay_database_user: String(config.relay_database_user || "").trim(),
       };
       delete payload.chat_models;
       delete payload.default_chat_model;
-      delete payload.s3_endpoint_configured;
-      delete payload.s3_credentials_configured;
+      delete payload.relay_database_url;
+      delete payload.relay_database_configured;
+      delete payload.relay_database_password_configured;
+      if (String(config.relay_database_password || "") === "") {
+        delete payload.relay_database_password;
+      } else {
+        payload.relay_database_password = String(config.relay_database_password);
+      }
+      if (!canConfigureRelayDatabase) {
+        delete payload.relay_database_type;
+        delete payload.relay_database_driver;
+        delete payload.relay_database_host;
+        delete payload.relay_database_port;
+        delete payload.relay_database_name;
+        delete payload.relay_database_user;
+        delete payload.relay_database_password;
+      }
 
       const data = await updateSettingsConfig(payload);
       set({
@@ -242,20 +304,6 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     }
   },
 
-  setRefreshAccountIntervalMinute: (value) => {
-    set((state) => {
-      if (!state.config) {
-        return {};
-      }
-      return {
-        config: {
-          ...state.config,
-          refresh_account_interval_minute: value,
-        },
-      };
-    });
-  },
-
   setImageRetentionDays: (value) => {
     set((state) => state.config ? { config: { ...state.config, image_retention_days: value } } : {});
   },
@@ -264,29 +312,9 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     set((state) => state.config ? { config: { ...state.config, image_storage_limit_mb: value } } : {});
   },
 
-  setImageStorageBackend: (value) => {
-    set((state) => state.config ? { config: { ...state.config, image_storage_backend: value } } : {});
-  },
-
-  setS3Endpoint: (value) => {
-    set((state) => state.config ? { config: { ...state.config, s3_endpoint: value } } : {});
-  },
-
-  setS3Region: (value) => {
-    set((state) => state.config ? { config: { ...state.config, s3_region: value } } : {});
-  },
-
-  setS3Bucket: (value) => {
-    set((state) => state.config ? { config: { ...state.config, s3_bucket: value } } : {});
-  },
-
-  setS3Prefix: (value) => {
-    set((state) => state.config ? { config: { ...state.config, s3_prefix: value } } : {});
-  },
-
-  setS3UsePathStyle: (value) => {
-    set((state) => state.config ? { config: { ...state.config, s3_use_path_style: value } } : {});
-  },
+	setStorage: (value) => {
+		set((state) => state.config ? { config: { ...state.config, storage: value } } : {});
+	},
 
   setLogRetentionDays: (value) => {
     set((state) => state.config ? { config: { ...state.config, log_retention_days: value } } : {});
@@ -308,28 +336,20 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     set((state) => state.config ? { config: { ...state.config, video_models: value } } : {});
   },
 
+  setTextModels: (value) => {
+    set((state) => state.config ? { config: { ...state.config, text_models: value } } : {});
+  },
+
+  setAudioModels: (value) => {
+    set((state) => state.config ? { config: { ...state.config, audio_models: value } } : {});
+  },
+
   setUserDefaultConcurrentLimit: (value) => {
     set((state) => state.config ? { config: { ...state.config, user_default_concurrent_limit: value } } : {});
   },
 
   setUserDefaultRpmLimit: (value) => {
     set((state) => state.config ? { config: { ...state.config, user_default_rpm_limit: value } } : {});
-  },
-
-  setAutoRemoveInvalidAccounts: (value) => {
-    set((state) => state.config ? { config: { ...state.config, auto_remove_invalid_accounts: value } } : {});
-  },
-
-  setAutoRemoveRateLimitedAccounts: (value) => {
-    set((state) => state.config ? { config: { ...state.config, auto_remove_rate_limited_accounts: value } } : {});
-  },
-
-  setTextAccountScheduleMode: (value) => {
-    set((state) => state.config ? { config: { ...state.config, text_account_schedule_mode: normalizeAccountScheduleMode(value) } } : {});
-  },
-
-  setImageAccountScheduleMode: (value) => {
-    set((state) => state.config ? { config: { ...state.config, image_account_schedule_mode: normalizeAccountScheduleMode(value) } } : {});
   },
 
   setLogLevel: (level, enabled) => {
@@ -384,6 +404,22 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     });
   },
 
+  setRelayDatabaseUrl: (value) => {
+    set((state) => state.config ? { config: { ...state.config, relay_database_url: value } } : {});
+  },
+
+  setRelayDatabaseType: (value) => {
+    set((state) => state.config ? { config: { ...state.config, relay_database_type: value } } : {});
+  },
+
+  setRelayDatabaseDriver: (value) => {
+    set((state) => state.config ? { config: { ...state.config, relay_database_driver: value } } : {});
+  },
+
+  setRelayDatabaseField: (field, value) => {
+    set((state) => state.config ? { config: { ...state.config, [`relay_database_${field}`]: value } } : {});
+  },
+
   setAppTitle: (value) => {
     set((state) => {
       if (!state.config) {
@@ -400,6 +436,14 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   },
   setPromptSources: (value) => {
     set((state) => state.config ? { config: { ...state.config, prompt_sources: normalizePromptMarketSources(value) } } : {});
+  },
+
+  setPromptPullScheduleEnabled: (value) => {
+    set((state) => state.config ? { config: { ...state.config, prompt_pull_schedule_enabled: value } } : {});
+  },
+
+  setPromptPullIntervalMinutes: (value) => {
+    set((state) => state.config ? { config: { ...state.config, prompt_pull_interval_minutes: normalizePromptPullInterval(value) } } : {});
   },
 
   saveSiteIcon: async ({ file, action }) => {
@@ -534,7 +578,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       const data = await fetchImageStorageGovernance();
       set({ imageStorageGovernance: data.governance });
     } catch (error) {
-      if (!silent) toast.error(error instanceof Error ? error.message : "加载图片存储数据失败");
+      if (!silent) toast.error(error instanceof Error ? error.message : "加载媒体存储数据失败");
     } finally {
       if (!silent) set({ isLoadingImageStorageGovernance: false });
     }

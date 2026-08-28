@@ -18,16 +18,38 @@ import (
 	"chatgpt2api/internal/storage"
 )
 
+func storeConversationAsset(assets *ImageConversationAssetService, ownerID, filename string, data []byte) (ImageConversationAsset, error) {
+	contentType, extension, err := validateImageConversationAsset(data)
+	if err != nil {
+		return ImageConversationAsset{}, err
+	}
+	return assets.StoreValidatedContext(context.Background(), ownerID, filename, &ValidatedImageConversationAsset{
+		service: assets, data: data, contentType: contentType, extension: extension,
+	})
+}
+
+func assetizeConversationReference(assets *ImageConversationAssetService, ctx context.Context, ownerID string, item map[string]any) (map[string]any, bool, error) {
+	return assets.assetizeReference(ctx, ownerID, item, true, nil)
+}
+
+func storeConversationAssetReader(assets *ImageConversationAssetService, ctx context.Context, ownerID, filename string, reader *bytes.Reader) (ImageConversationAsset, error) {
+	validated, err := assets.ReadValidatedReader(ctx, reader)
+	if err != nil {
+		return ImageConversationAsset{}, err
+	}
+	return assets.StoreValidatedContext(ctx, ownerID, filename, validated)
+}
+
 func TestImageConversationAssetServiceStoresPrivateContentAddressedAsset(t *testing.T) {
 	root := t.TempDir()
 	assets := NewImageConversationAssetService(root)
 	data := imageConversationAssetTestPNG(t)
 
-	first, err := assets.Store("owner-a", "first.png", data)
+	first, err := storeConversationAsset(assets, "owner-a", "first.png", data)
 	if err != nil {
 		t.Fatalf("Store(first) error = %v", err)
 	}
-	second, err := assets.Store("owner-a", "renamed.png", data)
+	second, err := storeConversationAsset(assets, "owner-a", "renamed.png", data)
 	if err != nil {
 		t.Fatalf("Store(second) error = %v", err)
 	}
@@ -61,7 +83,7 @@ func TestImageConversationAssetServiceAssetizesDataURLAndKeepsCompatibilityField
 		"name": "reference.png", "type": "image/png", "source": "upload", "dataUrl": dataURL,
 	}
 
-	next, changed, err := assets.AssetizeReference(context.Background(), "owner-a", item)
+	next, changed, err := assetizeConversationReference(assets, context.Background(), "owner-a", item)
 	if err != nil || !changed {
 		t.Fatalf("AssetizeReference(data URL) = %#v, %v, %v", next, changed, err)
 	}
@@ -73,30 +95,30 @@ func TestImageConversationAssetServiceAssetizesDataURLAndKeepsCompatibilityField
 		t.Fatalf("assetized dataUrl still embeds data: %q", managedURL)
 	}
 
-	replayed, replayChanged, err := assets.AssetizeReference(context.Background(), "owner-a", next)
+	replayed, replayChanged, err := assetizeConversationReference(assets, context.Background(), "owner-a", next)
 	if err != nil || replayChanged || replayed["dataUrl"] != managedURL {
 		t.Fatalf("AssetizeReference(replay) = %#v, %v, %v", replayed, replayChanged, err)
 	}
-	if _, _, err := assets.AssetizeReference(context.Background(), "owner-b", next); !errors.Is(err, ErrImageConversationAssetNotFound) {
+	if _, _, err := assetizeConversationReference(assets, context.Background(), "owner-b", next); !errors.Is(err, ErrImageConversationAssetNotFound) {
 		t.Fatalf("AssetizeReference(other owner) error = %v", err)
 	}
 }
 
 func TestImageConversationAssetServiceRejectsInvalidFilesAndDeclaredTypeMismatch(t *testing.T) {
 	assets := NewImageConversationAssetService(t.TempDir())
-	if _, err := assets.Store("owner", "fake.png", []byte("not an image")); !errors.Is(err, ErrInvalidImageConversationAsset) {
+	if _, err := storeConversationAsset(assets, "owner", "fake.png", []byte("not an image")); !errors.Is(err, ErrInvalidImageConversationAsset) {
 		t.Fatalf("Store(fake) error = %v", err)
 	}
 	pngData := imageConversationAssetTestPNG(t)
 	badDataURL := "data:image/jpeg;base64," + base64.StdEncoding.EncodeToString(pngData)
-	if _, _, err := assets.AssetizeReference(context.Background(), "owner", map[string]any{"dataUrl": badDataURL}); !errors.Is(err, ErrInvalidImageConversationAsset) {
+	if _, _, err := assetizeConversationReference(assets, context.Background(), "owner", map[string]any{"dataUrl": badDataURL}); !errors.Is(err, ErrInvalidImageConversationAsset) {
 		t.Fatalf("AssetizeReference(mismatch) error = %v", err)
 	}
 	if usage := assets.Governance(); usage.FileCount != 0 {
 		t.Fatalf("invalid asset left files behind: %#v", usage)
 	}
 	tooLarge := bytes.NewReader(make([]byte, ImageConversationAssetMaxBytes+1))
-	if _, err := assets.StoreReader(context.Background(), "owner", "large.png", tooLarge); !errors.Is(err, ErrImageConversationAssetTooLarge) {
+	if _, err := storeConversationAssetReader(assets, context.Background(), "owner", "large.png", tooLarge); !errors.Is(err, ErrImageConversationAssetTooLarge) {
 		t.Fatalf("StoreReader(too large) error = %v", err)
 	}
 }
@@ -109,11 +131,25 @@ func TestImageConversationAssetServiceRejectsExcessEmbeddedReferenceCountBeforeW
 		references[index] = map[string]any{"name": "reference.png", "type": "image/png", "dataUrl": dataURL}
 	}
 	item := map[string]any{"turns": []any{map[string]any{"referenceImages": references}}}
-	if _, _, _, err := assets.AssetizeConversation(context.Background(), "owner", item); !errors.Is(err, ErrInvalidImageConversationAsset) {
-		t.Fatalf("AssetizeConversation(excess references) error = %v", err)
+	if _, err := assets.PrepareConversations(context.Background(), "owner", []map[string]any{item}); !errors.Is(err, ErrInvalidImageConversationAsset) {
+		t.Fatalf("PrepareConversations(excess references) error = %v", err)
 	}
 	if usage := assets.Governance(); usage.FileCount != 0 {
 		t.Fatalf("rejected conversation wrote files: %#v", usage)
+	}
+}
+
+func TestImageConversationAssetServiceRejectsRemovedReferenceFields(t *testing.T) {
+	assets := NewImageConversationAssetService(t.TempDir())
+	for _, field := range []string{"asset_path", "data_url"} {
+		t.Run(field, func(t *testing.T) {
+			item := map[string]any{"turns": []any{map[string]any{
+				"referenceImages": []any{map[string]any{field: "removed"}},
+			}}}
+			if _, err := assets.PrepareConversations(context.Background(), "owner", []map[string]any{item}); !errors.Is(err, ErrInvalidImageConversationAsset) {
+				t.Fatalf("PrepareConversations(%s) error = %v", field, err)
+			}
+		})
 	}
 }
 
@@ -128,7 +164,7 @@ func TestImageConversationAssetServiceConcurrentStoresDeduplicate(t *testing.T) 
 		group.Add(1)
 		go func() {
 			defer group.Done()
-			asset, err := assets.Store("owner", "reference.png", data)
+			asset, err := storeConversationAsset(assets, "owner", "reference.png", data)
 			if err != nil {
 				errorsCh <- err
 				return
@@ -160,7 +196,7 @@ func TestImageConversationAssetServiceEnforcesCombinedStorageBudget(t *testing.T
 	assets := NewImageConversationAssetService(t.TempDir())
 	data := imageConversationAssetTestPNG(t)
 	assets.SetStorageBudget(func() int64 { return int64(len(data) - 1) }, func() int64 { return 0 })
-	if _, err := assets.Store("owner", "reference.png", data); !errors.Is(err, ErrImageConversationAssetStorageLimit) {
+	if _, err := storeConversationAsset(assets, "owner", "reference.png", data); !errors.Is(err, ErrImageConversationAssetStorageLimit) {
 		t.Fatalf("Store(over budget) error = %v", err)
 	}
 	if usage := assets.Governance(); usage.FileCount != 0 || len(assets.Owners()) != 0 {
@@ -186,7 +222,7 @@ func TestImageConversationAssetServiceChecksBatchStorageBudgetOnce(t *testing.T)
 		return 0
 	})
 
-	stored, err := assets.StoreValidatedBatch(
+	stored, err := assets.StoreValidatedBatchContext(context.Background(),
 		"batch-budget-owner",
 		[]string{"first.png", "second.png"},
 		[]*ValidatedImageConversationAsset{first, second},
@@ -219,7 +255,7 @@ func TestImageConversationAssetServiceRejectsCombinedBatchBeforeWriting(t *testi
 	}
 	assets.SetStorageBudget(func() int64 { return int64(len(firstData) + len(secondData) - 1) }, func() int64 { return 0 })
 
-	_, err = assets.StoreValidatedBatch(
+	_, err = assets.StoreValidatedBatchContext(context.Background(),
 		"batch-over-budget-owner",
 		[]string{"first.png", "second.png"},
 		[]*ValidatedImageConversationAsset{first, second},
@@ -244,7 +280,7 @@ func TestImageConversationAssetServiceDeduplicatesDestinationsWithinBatch(t *tes
 	}
 	assets.SetStorageBudget(func() int64 { return int64(len(data)) }, func() int64 { return 0 })
 
-	stored, err := assets.StoreValidatedBatch(
+	stored, err := assets.StoreValidatedBatchContext(context.Background(),
 		"duplicate-batch-owner",
 		[]string{"first.png", "second.png"},
 		[]*ValidatedImageConversationAsset{validated, validated},
@@ -267,7 +303,7 @@ func TestImageConversationAssetServiceBatchBudgetCountsOnlyNewDestinations(t *te
 	assets := NewImageConversationAssetService(t.TempDir())
 	firstData := imageConversationAssetTestPNG(t)
 	secondData := append(append([]byte(nil), firstData...), 0)
-	if _, err := assets.Store("mixed-batch-owner", "existing.png", firstData); err != nil {
+	if _, err := storeConversationAsset(assets, "mixed-batch-owner", "existing.png", firstData); err != nil {
 		t.Fatalf("Store(existing) error = %v", err)
 	}
 	first, err := assets.ReadValidatedReader(context.Background(), bytes.NewReader(firstData))
@@ -284,7 +320,7 @@ func TestImageConversationAssetServiceBatchBudgetCountsOnlyNewDestinations(t *te
 		return 0
 	})
 
-	stored, err := assets.StoreValidatedBatch(
+	stored, err := assets.StoreValidatedBatchContext(context.Background(),
 		"mixed-batch-owner",
 		[]string{"existing.png", "new.png"},
 		[]*ValidatedImageConversationAsset{first, second},
@@ -324,7 +360,7 @@ func TestImageConversationAssetServiceRollsBackPartialBatchWrite(t *testing.T) {
 		t.Fatalf("MkdirAll(invalid destination) error = %v", err)
 	}
 
-	_, err = assets.StoreValidatedBatch(
+	_, err = assets.StoreValidatedBatchContext(context.Background(),
 		ownerID,
 		[]string{"first.png", "second.png"},
 		[]*ValidatedImageConversationAsset{first, second},
@@ -352,7 +388,7 @@ func TestImageConversationAssetServiceKeepsRepairedOwnerMarkerWhenRollbackLeaves
 	assets := NewImageConversationAssetService(root)
 	ownerID := "existing-owner-marker"
 	oldData := imageConversationAssetTestPNG(t)
-	oldAsset, err := assets.Store(ownerID, "old.png", oldData)
+	oldAsset, err := storeConversationAsset(assets, ownerID, "old.png", oldData)
 	if err != nil {
 		t.Fatalf("Store(old) error = %v", err)
 	}
@@ -378,7 +414,7 @@ func TestImageConversationAssetServiceKeepsRepairedOwnerMarkerWhenRollbackLeaves
 		t.Fatalf("MkdirAll(invalid destination) error = %v", err)
 	}
 
-	_, err = assets.StoreValidatedBatch(
+	_, err = assets.StoreValidatedBatchContext(context.Background(),
 		ownerID,
 		[]string{"first.png", "second.png"},
 		[]*ValidatedImageConversationAsset{first, second},
@@ -463,11 +499,11 @@ func TestImageConversationAssetServiceCleanupOnlyRemovesExpiredOrphans(t *testin
 	firstData := imageConversationAssetTestPNG(t)
 	secondData := append([]byte(nil), firstData...)
 	secondData[len(secondData)-1] ^= 1
-	first, err := assets.Store("owner", "referenced.png", firstData)
+	first, err := storeConversationAsset(assets, "owner", "referenced.png", firstData)
 	if err != nil {
 		t.Fatalf("Store(referenced) error = %v", err)
 	}
-	second, err := assets.Store("owner", "orphan.png", secondData)
+	second, err := storeConversationAsset(assets, "owner", "orphan.png", secondData)
 	if err != nil {
 		t.Fatalf("Store(orphan) error = %v", err)
 	}
@@ -482,7 +518,7 @@ func TestImageConversationAssetServiceCleanupOnlyRemovesExpiredOrphans(t *testin
 		}
 	}
 
-	result, err := assets.CleanupOrphans("owner", map[string]struct{}{first.AssetPath: {}}, time.Hour, 0)
+	result, err := assets.CleanupOrphansContext(context.Background(), "owner", map[string]struct{}{first.AssetPath: {}}, time.Hour, 0)
 	if err != nil {
 		t.Fatalf("CleanupOrphans() error = %v", err)
 	}
@@ -499,13 +535,13 @@ func TestImageConversationAssetServiceCleanupOnlyRemovesExpiredOrphans(t *testin
 
 func TestImageConversationAssetServiceCleanupExpiredIncludesReferencedAssets(t *testing.T) {
 	assets := NewImageConversationAssetService(t.TempDir())
-	oldAsset, err := assets.Store("owner", "old.png", imageConversationAssetTestPNG(t))
+	oldAsset, err := storeConversationAsset(assets, "owner", "old.png", imageConversationAssetTestPNG(t))
 	if err != nil {
 		t.Fatalf("Store(old) error = %v", err)
 	}
 	newData := append([]byte(nil), imageConversationAssetTestPNG(t)...)
 	newData[len(newData)-1] ^= 1
-	newAsset, err := assets.Store("owner", "new.png", newData)
+	newAsset, err := storeConversationAsset(assets, "owner", "new.png", newData)
 	if err != nil {
 		t.Fatalf("Store(new) error = %v", err)
 	}
@@ -535,13 +571,13 @@ func TestImageConversationAssetServiceCleanupExpiredIncludesReferencedAssets(t *
 
 func TestImageConversationAssetServiceCleanupToMaxBytesRemovesOldestFirst(t *testing.T) {
 	assets := NewImageConversationAssetService(t.TempDir())
-	oldAsset, err := assets.Store("owner", "old.png", imageConversationAssetTestPNG(t))
+	oldAsset, err := storeConversationAsset(assets, "owner", "old.png", imageConversationAssetTestPNG(t))
 	if err != nil {
 		t.Fatalf("Store(old) error = %v", err)
 	}
 	newData := append([]byte(nil), imageConversationAssetTestPNG(t)...)
 	newData[len(newData)-1] ^= 1
-	newAsset, err := assets.Store("owner", "new.png", newData)
+	newAsset, err := storeConversationAsset(assets, "owner", "new.png", newData)
 	if err != nil {
 		t.Fatalf("Store(new) error = %v", err)
 	}
@@ -606,7 +642,7 @@ func TestImageConversationAssetFilesystemScansAllowMissingDirectories(t *testing
 	if err != nil || usage.FileCount != 0 || usage.TotalBytes != 0 {
 		t.Fatalf("governanceLockedContext(missing) = %#v, error = %v", usage, err)
 	}
-	result, err := assets.CleanupOrphans("owner", map[string]struct{}{}, time.Hour, 0)
+	result, err := assets.CleanupOrphansContext(context.Background(), "owner", map[string]struct{}{}, time.Hour, 0)
 	if err != nil || result.FileCount != 0 || result.DeletedCount != 0 {
 		t.Fatalf("CleanupOrphans(missing) = %#v, error = %v", result, err)
 	}
@@ -711,28 +747,6 @@ func TestImageConversationHistoryDetailLazyAssetizationUpdatesAcceptedHash(t *te
 	}
 }
 
-func TestImageConversationHistoryActiveAndLegacyMigrationAssetizeReferences(t *testing.T) {
-	backend := newTestStorageBackend(t)
-	rows := backend.(storage.ImageConversationBackend)
-	documents := backend.(storage.JSONDocumentBackend)
-	assets := NewImageConversationAssetService(t.TempDir())
-	ownerID := "legacy-asset-owner"
-	legacy := imageConversationAssetHistoryItem(t, "legacy-asset", 2, "queued")
-	if err := documents.SaveJSONDocument(imageConversationHistoryDocumentName(ownerID), map[string]any{"items": []any{legacy}}); err != nil {
-		t.Fatalf("SaveJSONDocument() error = %v", err)
-	}
-	history := NewImageConversationHistoryService(backend)
-	history.SetConversationAssetService(assets)
-	active, generation, err := history.ListActive(context.Background(), ownerID, 0)
-	if err != nil || len(active) != 1 || generation < 1 {
-		t.Fatalf("ListActive() items=%#v generation=%d error=%v", active, generation, err)
-	}
-	record, exists, err := rows.Load(context.Background(), ownerID, "legacy-asset")
-	if err != nil || !exists || bytes.Contains(record.Data, []byte("data:image")) || !bytes.Contains(record.Data, []byte(ImageConversationAssetURLPrefix)) {
-		t.Fatalf("legacy migrated record=%#v exists=%v error=%v", record, exists, err)
-	}
-}
-
 func TestImageConversationAssetReferencesRebuildAcrossUpdateDeleteAndClear(t *testing.T) {
 	backend := newTestStorageBackend(t)
 	assets := NewImageConversationAssetService(t.TempDir())
@@ -743,7 +757,7 @@ func TestImageConversationAssetReferencesRebuildAcrossUpdateDeleteAndClear(t *te
 	if acknowledgements, _, err := history.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, []map[string]any{first}, nil); err != nil || !acknowledgements[0].Accepted {
 		t.Fatalf("first merge acknowledgements=%#v error=%v", acknowledgements, err)
 	}
-	firstReferences, err := history.ConversationAssetReferences(ownerID)
+	firstReferences, err := history.ConversationAssetReferencesContext(context.Background(), ownerID)
 	if err != nil || len(firstReferences) != 1 {
 		t.Fatalf("first references=%#v error=%v", firstReferences, err)
 	}
@@ -762,7 +776,7 @@ func TestImageConversationAssetReferencesRebuildAcrossUpdateDeleteAndClear(t *te
 	if acknowledgements, _, err := history.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, []map[string]any{second}, nil); err != nil || !acknowledgements[0].Accepted {
 		t.Fatalf("second merge acknowledgements=%#v error=%v", acknowledgements, err)
 	}
-	secondReferences, err := history.ConversationAssetReferences(ownerID)
+	secondReferences, err := history.ConversationAssetReferencesContext(context.Background(), ownerID)
 	if err != nil || len(secondReferences) != 1 {
 		t.Fatalf("second references=%#v error=%v", secondReferences, err)
 	}
@@ -777,7 +791,7 @@ func TestImageConversationAssetReferencesRebuildAcrossUpdateDeleteAndClear(t *te
 	if err := os.Chtimes(firstAccess.Path, old, old); err != nil {
 		t.Fatalf("Chtimes(firstPath) error = %v", err)
 	}
-	if _, err := assets.CleanupOrphans(ownerID, secondReferences, time.Hour, 0); err != nil {
+	if _, err := assets.CleanupOrphansContext(context.Background(), ownerID, secondReferences, time.Hour, 0); err != nil {
 		t.Fatalf("CleanupOrphans(replaced) error = %v", err)
 	}
 	if _, err := assets.Access(firstPath, ownerID, false); !errors.Is(err, ErrImageConversationAssetNotFound) {
@@ -787,7 +801,7 @@ func TestImageConversationAssetReferencesRebuildAcrossUpdateDeleteAndClear(t *te
 	if _, _, err := history.DeleteMinimal(context.Background(), ownerID, "reference-lifecycle"); err != nil {
 		t.Fatalf("DeleteMinimal() error = %v", err)
 	}
-	if references, err := history.ConversationAssetReferences(ownerID); err != nil || len(references) != 0 {
+	if references, err := history.ConversationAssetReferencesContext(context.Background(), ownerID); err != nil || len(references) != 0 {
 		t.Fatalf("references after delete=%#v error=%v", references, err)
 	}
 
@@ -795,7 +809,7 @@ func TestImageConversationAssetReferencesRebuildAcrossUpdateDeleteAndClear(t *te
 	if acknowledgements, _, err := history.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, []map[string]any{third}, nil); err != nil || !acknowledgements[0].Accepted {
 		t.Fatalf("third merge acknowledgements=%#v error=%v", acknowledgements, err)
 	}
-	thirdReferences, err := history.ConversationAssetReferences(ownerID)
+	thirdReferences, err := history.ConversationAssetReferencesContext(context.Background(), ownerID)
 	if err != nil || len(thirdReferences) != 1 {
 		t.Fatalf("third references=%#v error=%v", thirdReferences, err)
 	}
@@ -813,11 +827,11 @@ func TestImageConversationAssetReferencesRebuildAcrossUpdateDeleteAndClear(t *te
 	if _, err := history.ClearMinimal(context.Background(), ownerID); err != nil {
 		t.Fatalf("ClearMinimal() error = %v", err)
 	}
-	referencesAfterClear, err := history.ConversationAssetReferences(ownerID)
+	referencesAfterClear, err := history.ConversationAssetReferencesContext(context.Background(), ownerID)
 	if err != nil || len(referencesAfterClear) != 0 {
 		t.Fatalf("references after clear=%#v error=%v", referencesAfterClear, err)
 	}
-	if _, err := assets.CleanupOrphans(ownerID, referencesAfterClear, time.Hour, 0); err != nil {
+	if _, err := assets.CleanupOrphansContext(context.Background(), ownerID, referencesAfterClear, time.Hour, 0); err != nil {
 		t.Fatalf("CleanupOrphans(clear) error = %v", err)
 	}
 	if _, err := assets.Access(thirdPath, ownerID, false); !errors.Is(err, ErrImageConversationAssetNotFound) {

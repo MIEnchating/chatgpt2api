@@ -25,7 +25,7 @@ const (
 	// Keep one browser restart or an administrator account from starting an
 	// unbounded number of memory-heavy image outputs at once. Per-user limits
 	// still apply independently below this process-wide ceiling.
-	defaultGlobalImageTaskConcurrentUnits = 10
+	defaultGlobalImageTaskConcurrentUnits = 15
 
 	imageOutputCallbackPayloadKey     = "image_output_callback"
 	imageOutputSlotAcquirerPayloadKey = "image_output_slot_acquirer"
@@ -52,10 +52,12 @@ type ImageOutputOptions struct {
 }
 
 type ImageToolOptions struct {
-	Moderation     string
-	InputImageMask string
-	Stream         bool
-	PartialImages  int
+	Moderation       string
+	InputImageMask   string
+	Stream           bool
+	PartialImages    int
+	PartialImagesSet bool
+	ResponseFormat   string
 }
 
 type ImageTaskService struct {
@@ -70,6 +72,7 @@ type ImageTaskService struct {
 	edit                 ImageTaskHandler
 	chat                 ImageTaskHandler
 	video                ImageTaskHandler
+	audio                ImageTaskHandler
 	retentionGetter      func() int
 	taskTimeoutGetter    func() time.Duration
 	userConcurrentLimit  func() int
@@ -174,6 +177,10 @@ func (s *ImageTaskService) SetVideoHandler(handler ImageTaskHandler) {
 	s.video = handler
 }
 
+func (s *ImageTaskService) SetAudioHandler(handler ImageTaskHandler) {
+	s.audio = handler
+}
+
 // Close cancels active tasks and waits for all task, persistence, and monitor workers.
 // Callers may close the shared storage backend after this method returns.
 func (s *ImageTaskService) Close() {
@@ -209,56 +216,12 @@ func (s *ImageTaskService) Close() {
 	})
 }
 
-func (s *ImageTaskService) SubmitGeneration(ctx context.Context, identity Identity, clientTaskID, prompt, model, size, quality, baseURL string, n int, messages any, visibilityValues ...string) (map[string]any, error) {
-	prompt = strings.TrimSpace(prompt)
-	if prompt == "" {
-		return nil, fmt.Errorf("prompt is required")
-	}
-	visibility, err := imageTaskVisibility(visibilityValues...)
-	if err != nil {
-		return nil, err
-	}
-	payload := map[string]any{"prompt": prompt, "model": model, "n": normalizedImageTaskCount(n, model), "size": size, "quality": quality, "base_url": baseURL, "visibility": visibility}
-	if messages != nil {
-		payload["messages"] = messages
-	}
-	return s.submit(ctx, identity, clientTaskID, "generate", payload)
+func (s *ImageTaskService) SubmitGenerationWithOptions(ctx context.Context, identity Identity, clientTaskID, prompt, model, size, quality, baseURL string, n int, _ any, metadata map[string]any, options ImageOutputOptions, toolOptions ImageToolOptions, visibilityValues ...string) (map[string]any, error) {
+	return s.submitImageWithMetadataAndOptions(ctx, identity, clientTaskID, prompt, model, size, quality, baseURL, n, metadata, "generate", nil, options, toolOptions, visibilityValues...)
 }
 
-func (s *ImageTaskService) SubmitGenerationWithMetadata(ctx context.Context, identity Identity, clientTaskID, prompt, model, size, quality, baseURL string, n int, messages any, metadata map[string]any, visibilityValues ...string) (map[string]any, error) {
-	return s.submitImageWithMetadata(ctx, identity, clientTaskID, prompt, model, size, quality, baseURL, n, messages, metadata, "generate", nil, visibilityValues...)
-}
-
-func (s *ImageTaskService) SubmitGenerationWithOptions(ctx context.Context, identity Identity, clientTaskID, prompt, model, size, quality, baseURL string, n int, messages any, metadata map[string]any, options ImageOutputOptions, toolOptions ImageToolOptions, visibilityValues ...string) (map[string]any, error) {
-	return s.submitImageWithMetadataAndOptions(ctx, identity, clientTaskID, prompt, model, size, quality, baseURL, n, messages, metadata, "generate", nil, options, toolOptions, visibilityValues...)
-}
-
-func (s *ImageTaskService) SubmitEdit(ctx context.Context, identity Identity, clientTaskID, prompt, model, size, quality, baseURL string, images any, n int, messages any, visibilityValues ...string) (map[string]any, error) {
-	prompt = strings.TrimSpace(prompt)
-	if prompt == "" {
-		return nil, fmt.Errorf("prompt is required")
-	}
-	visibility, err := imageTaskVisibility(visibilityValues...)
-	if err != nil {
-		return nil, err
-	}
-	payload := map[string]any{"prompt": prompt, "images": images, "model": model, "n": normalizedImageTaskCount(n, model), "size": size, "quality": quality, "base_url": baseURL, "visibility": visibility}
-	if messages != nil {
-		payload["messages"] = messages
-	}
-	return s.submit(ctx, identity, clientTaskID, "edit", payload)
-}
-
-func (s *ImageTaskService) SubmitEditWithMetadata(ctx context.Context, identity Identity, clientTaskID, prompt, model, size, quality, baseURL string, images any, n int, messages any, metadata map[string]any, visibilityValues ...string) (map[string]any, error) {
-	return s.submitImageWithMetadata(ctx, identity, clientTaskID, prompt, model, size, quality, baseURL, n, messages, metadata, "edit", images, visibilityValues...)
-}
-
-func (s *ImageTaskService) SubmitEditWithOptions(ctx context.Context, identity Identity, clientTaskID, prompt, model, size, quality, baseURL string, images any, n int, messages any, metadata map[string]any, options ImageOutputOptions, toolOptions ImageToolOptions, visibilityValues ...string) (map[string]any, error) {
-	return s.submitImageWithMetadataAndOptions(ctx, identity, clientTaskID, prompt, model, size, quality, baseURL, n, messages, metadata, "edit", images, options, toolOptions, visibilityValues...)
-}
-
-func (s *ImageTaskService) SubmitChat(ctx context.Context, identity Identity, clientTaskID, prompt, model string, messages any, billable bool, nValues ...int) (map[string]any, error) {
-	return s.submitChatWithMetadata(ctx, identity, clientTaskID, prompt, model, messages, billable, nil, nValues...)
+func (s *ImageTaskService) SubmitEditWithOptions(ctx context.Context, identity Identity, clientTaskID, prompt, model, size, quality, baseURL string, images any, n int, _ any, metadata map[string]any, options ImageOutputOptions, toolOptions ImageToolOptions, visibilityValues ...string) (map[string]any, error) {
+	return s.submitImageWithMetadataAndOptions(ctx, identity, clientTaskID, prompt, model, size, quality, baseURL, n, metadata, "edit", images, options, toolOptions, visibilityValues...)
 }
 
 func (s *ImageTaskService) SubmitChatWithMetadata(ctx context.Context, identity Identity, clientTaskID, prompt, model string, messages any, billable bool, metadata map[string]any, nValues ...int) (map[string]any, error) {
@@ -299,6 +262,22 @@ func (s *ImageTaskService) SubmitVideo(ctx context.Context, identity Identity, c
 	return s.submit(ctx, identity, clientTaskID, "video", payload)
 }
 
+func (s *ImageTaskService) SubmitAudio(ctx context.Context, identity Identity, clientTaskID string, request map[string]any, metadata map[string]any) (map[string]any, error) {
+	payload := util.CopyMap(request)
+	input := firstNonEmpty(strings.TrimSpace(util.Clean(payload["input"])), strings.TrimSpace(util.Clean(payload["prompt"])))
+	if input == "" {
+		return nil, fmt.Errorf("input is required")
+	}
+	payload["client_task_id"] = clientTaskID
+	payload["input"] = input
+	payload["prompt"] = input
+	payload["model"] = strings.TrimSpace(util.Clean(payload["model"]))
+	payload["visibility"] = ImageVisibilityPrivate
+	payload["n"] = 1
+	mergeTaskRoutingMetadata(payload, metadata)
+	return s.submit(ctx, identity, clientTaskID, "audio", payload)
+}
+
 func (s *ImageTaskService) submitChatWithMetadata(ctx context.Context, identity Identity, clientTaskID, prompt, model string, messages any, billable bool, metadata map[string]any, nValues ...int) (map[string]any, error) {
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
@@ -312,16 +291,22 @@ func (s *ImageTaskService) submitChatWithMetadata(ctx context.Context, identity 
 		n = normalizedImageTaskCount(nValues[0], model)
 	}
 	payload := map[string]any{"prompt": prompt, "model": model, "messages": messages, "n": n, "visibility": ImageVisibilityPrivate}
-	mergeTaskRoutingMetadata(payload, metadata)
+	mergeChatTaskMetadata(payload, metadata)
 	_ = billable
 	return s.submit(ctx, identity, clientTaskID, "chat", payload)
 }
 
-func (s *ImageTaskService) submitImageWithMetadata(ctx context.Context, identity Identity, clientTaskID, prompt, model, size, quality, baseURL string, n int, messages any, metadata map[string]any, mode string, images any, visibilityValues ...string) (map[string]any, error) {
-	return s.submitImageWithMetadataAndOptions(ctx, identity, clientTaskID, prompt, model, size, quality, baseURL, n, messages, metadata, mode, images, ImageOutputOptions{}, ImageToolOptions{}, visibilityValues...)
+func mergeChatTaskMetadata(payload map[string]any, metadata map[string]any) {
+	mergeTaskRoutingMetadata(payload, metadata)
+	if tools := util.AsMapSlice(metadata["tools"]); len(tools) > 0 {
+		payload["tools"] = tools
+	}
+	if choice, ok := metadata["tool_choice"]; ok && choice != nil {
+		payload["tool_choice"] = choice
+	}
 }
 
-func (s *ImageTaskService) submitImageWithMetadataAndOptions(ctx context.Context, identity Identity, clientTaskID, prompt, model, size, quality, baseURL string, n int, messages any, metadata map[string]any, mode string, images any, options ImageOutputOptions, toolOptions ImageToolOptions, visibilityValues ...string) (map[string]any, error) {
+func (s *ImageTaskService) submitImageWithMetadataAndOptions(ctx context.Context, identity Identity, clientTaskID, prompt, model, size, quality, baseURL string, n int, metadata map[string]any, mode string, images any, options ImageOutputOptions, toolOptions ImageToolOptions, visibilityValues ...string) (map[string]any, error) {
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
 		return nil, fmt.Errorf("prompt is required")
@@ -334,21 +319,10 @@ func (s *ImageTaskService) submitImageWithMetadataAndOptions(ctx context.Context
 	if images != nil {
 		payload["images"] = images
 	}
-	if messages != nil {
-		payload["messages"] = messages
-	}
 	mergeImageTaskMetadata(payload, metadata)
 	mergeImageOutputOptions(payload, options)
 	mergeImageToolOptions(payload, toolOptions)
 	return s.submit(ctx, identity, clientTaskID, mode, payload)
-}
-
-func (s *ImageTaskService) ListTasks(identity Identity, taskIDs []string) map[string]any {
-	result, _ := s.ListTasksWithError(identity, taskIDs)
-	if result == nil {
-		return map[string]any{"items": []map[string]any{}, "missing_ids": []string{}}
-	}
-	return result
 }
 
 func (s *ImageTaskService) ListTasksWithError(identity Identity, taskIDs []string) (map[string]any, error) {
@@ -502,6 +476,15 @@ func (s *ImageTaskService) submit(ctx context.Context, identity Identity, client
 				task[key] = payload[key]
 			}
 		}
+	} else if mode == "audio" {
+		for _, key := range []string{"voice", "response_format", "speed", "instructions"} {
+			if payload[key] != nil {
+				task[key] = payload[key]
+			}
+		}
+	}
+	if workflowContext := util.StringMap(payload["workflow_context"]); len(workflowContext) > 0 {
+		task["workflow_context"] = workflowContext
 	}
 	if outputFormat != "" {
 		task["output_format"] = outputFormat
@@ -557,6 +540,8 @@ func (s *ImageTaskService) runTask(ctx context.Context, key, mode string, identi
 		handler = s.chat
 	} else if mode == "video" {
 		handler = s.video
+	} else if mode == "audio" {
+		handler = s.audio
 	}
 	if mode == "generate" || mode == "edit" {
 		payload[imageOutputCallbackPayloadKey] = func(data []map[string]any) {
@@ -580,7 +565,7 @@ func (s *ImageTaskService) runTask(ctx context.Context, key, mode string, identi
 			}
 			return release, nil
 		}
-	} else if mode == "chat" || mode == "video" {
+	} else if mode == "chat" || mode == "video" || mode == "audio" {
 		release, err := s.AcquireCreationUnit(runCtx, identity)
 		if err != nil {
 			status := TaskStatusError
@@ -591,6 +576,8 @@ func (s *ImageTaskService) runTask(ctx context.Context, key, mode string, identi
 			} else if runCtx.Err() == context.DeadlineExceeded {
 				if mode == "video" {
 					message = "视频生成超时，请稍后重试"
+				} else if mode == "audio" {
+					message = "音频生成超时，请稍后重试"
 				} else {
 					message = "图片生成超时，请稍后重试或降低分辨率"
 				}
@@ -610,6 +597,10 @@ func (s *ImageTaskService) runTask(ctx context.Context, key, mode string, identi
 		}
 		defer release()
 	}
+	if handler == nil {
+		s.updateActiveTask(key, map[string]any{"status": TaskStatusError, "error": "任务处理器未配置", "data": []any{}})
+		return
+	}
 	result, err := handler(runCtx, identity, payload)
 	completionRelease, _ := payload[ImageOutputCompletionReleasePayloadKey].(func())
 	if completionRelease != nil {
@@ -627,6 +618,8 @@ func (s *ImageTaskService) runTask(ctx context.Context, key, mode string, identi
 		} else if runCtx.Err() == context.DeadlineExceeded {
 			if mode == "video" {
 				message = "视频生成超时，请稍后重试"
+			} else if mode == "audio" {
+				message = "音频生成超时，请稍后重试"
 			} else {
 				message = "图片生成超时，请稍后重试或降低分辨率"
 			}
@@ -661,6 +654,8 @@ func (s *ImageTaskService) runTask(ctx context.Context, key, mode string, identi
 		fallback := "任务没有返回图片数据，请检查上游返回、模型参数和日志详情"
 		if mode == "video" {
 			fallback = "视频任务没有返回可播放结果，请检查上游返回和日志详情"
+		} else if mode == "audio" {
+			fallback = "音频任务没有返回可播放结果，请检查上游返回和日志详情"
 		}
 		message := firstNonEmpty(util.Clean(result["message"]), fallback)
 		updates := map[string]any{"status": TaskStatusError, "error": message, "data": []any{}}
@@ -846,8 +841,6 @@ func (s *ImageTaskService) AcquireCreationUnits(ctx context.Context, identity Id
 	}
 }
 
-func noopCreationUnitRelease() {}
-
 func (s *ImageTaskService) ensureTaskRunning(key string) bool {
 	return s.activateTaskRunning(key, 0, false)
 }
@@ -906,66 +899,6 @@ func (s *ImageTaskService) activateTaskRunning(key string, outputIndex int, acti
 	if becameRunning {
 		_ = s.saveWithRetryLocked()
 	}
-	return true
-}
-
-func (s *ImageTaskService) markImageOutputStatus(key string, index int, status string) bool {
-	if index < 1 {
-		return false
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	task := s.tasks[key]
-	if task == nil || !isActiveTaskStatus(util.Clean(task["status"])) {
-		return false
-	}
-	count := storedImageOutputCount(task)
-	if index > count {
-		return false
-	}
-	statuses := normalizedImageOutputStatuses(util.Clean(task["mode"]), count, task["output_statuses"])
-	if len(statuses) == 0 {
-		return true
-	}
-	if !isActiveTaskStatus(statuses[index-1]) {
-		return true
-	}
-	if statuses[index-1] == status {
-		return true
-	}
-	statuses[index-1] = status
-	task["output_statuses"] = statuses
-	bumpImageTaskRevision(task)
-	return true
-}
-
-func (s *ImageTaskService) markAllImageOutputStatuses(key string, status string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	task := s.tasks[key]
-	if task == nil || !isActiveTaskStatus(util.Clean(task["status"])) {
-		return false
-	}
-	count := storedImageOutputCount(task)
-	statuses := normalizedImageOutputStatuses(util.Clean(task["mode"]), count, task["output_statuses"])
-	if len(statuses) == 0 {
-		return true
-	}
-	changed := false
-	for index := range statuses {
-		if !isActiveTaskStatus(statuses[index]) {
-			continue
-		}
-		if statuses[index] != status {
-			statuses[index] = status
-			changed = true
-		}
-	}
-	if !changed {
-		return true
-	}
-	task["output_statuses"] = statuses
-	bumpImageTaskRevision(task)
 	return true
 }
 
@@ -1088,6 +1021,8 @@ func (s *ImageTaskService) loadLocked() (map[string]map[string]any, error) {
 			mode = "chat"
 		} else if task["mode"] == "video" {
 			mode = "video"
+		} else if task["mode"] == "audio" {
+			mode = "audio"
 		}
 		count := taskCount(mode, task)
 		visibility, _ := NormalizeImageVisibility(util.Clean(task["visibility"]))
@@ -1104,6 +1039,15 @@ func (s *ImageTaskService) loadLocked() (map[string]map[string]any, error) {
 					normalized[key] = task[key]
 				}
 			}
+		} else if mode == "audio" {
+			for _, key := range []string{"voice", "response_format", "speed", "instructions"} {
+				if task[key] != nil {
+					normalized[key] = task[key]
+				}
+			}
+		}
+		if workflowContext := util.StringMap(task["workflow_context"]); len(workflowContext) > 0 {
+			normalized["workflow_context"] = workflowContext
 		}
 		if outputFormat != "" {
 			normalized["output_format"] = outputFormat
@@ -1483,7 +1427,8 @@ func (s *ImageTaskService) cleanupLocked() bool {
 }
 
 func publicTask(task map[string]any) map[string]any {
-	item := map[string]any{"id": task["id"], "status": task["status"], "mode": task["mode"], "model": task["model"], "size": task["size"], "revision": task["revision"], "created_at": task["created_at"], "updated_at": task["updated_at"]}
+	mode := util.Clean(task["mode"])
+	item := map[string]any{"id": task["id"], "status": task["status"], "mode": task["mode"], "model": task["model"], "size": task["size"], "count": taskCount(mode, task), "revision": task["revision"], "created_at": task["created_at"], "updated_at": task["updated_at"]}
 	if quality := util.Clean(task["quality"]); quality != "" {
 		item["quality"] = quality
 	}
@@ -1496,12 +1441,21 @@ func publicTask(task map[string]any) map[string]any {
 		}
 	}
 	mergePublicImageToolTaskFields(item, task)
-	if util.Clean(task["mode"]) == "video" {
+	if mode == "video" {
 		for _, key := range []string{"seconds", "resolution", "generate_audio", "watermark"} {
 			if task[key] != nil {
 				item[key] = task[key]
 			}
 		}
+	} else if mode == "audio" {
+		for _, key := range []string{"voice", "response_format", "speed", "instructions"} {
+			if task[key] != nil {
+				item[key] = task[key]
+			}
+		}
+	}
+	if workflowContext := util.StringMap(task["workflow_context"]); len(workflowContext) > 0 {
+		item["workflow_context"] = workflowContext
 	}
 	if statuses := util.AsStringSlice(task["output_statuses"]); len(statuses) > 0 {
 		item["output_statuses"] = append([]string(nil), statuses...)
@@ -1618,11 +1572,22 @@ func mergeImageTaskMetadata(payload map[string]any, metadata map[string]any) {
 		return
 	}
 	mergeTaskRoutingMetadata(payload, metadata)
+	if workflowContext := util.StringMap(metadata["workflow_context"]); len(workflowContext) > 0 {
+		payload["workflow_context"] = workflowContext
+	}
+	if apiMode := strings.ToLower(strings.TrimSpace(util.Clean(metadata["api_mode"]))); apiMode == "images" || apiMode == "responses" || apiMode == "chat" {
+		payload["api_mode"] = apiMode
+	}
 	if preset := NormalizeImageResolutionPreset(util.Clean(metadata["image_resolution"])); preset != "" {
 		payload["image_resolution"] = preset
 	}
 	if requestedSize := strings.TrimSpace(util.Clean(metadata["requested_size"])); requestedSize != "" {
 		payload["requested_size"] = requestedSize
+	}
+	for _, key := range []string{"aspect_ratio", "ratio"} {
+		if value := strings.TrimSpace(util.Clean(metadata[key])); value != "" {
+			payload[key] = value
+		}
 	}
 	if util.ToBool(metadata["share_prompt_parameters"]) {
 		payload["share_prompt_parameters"] = true
@@ -1658,6 +1623,24 @@ func mergeTaskRoutingMetadata(payload map[string]any, metadata map[string]any) {
 	}
 	if tokenName := strings.TrimSpace(util.Clean(metadata["token_name"])); tokenName != "" {
 		payload["token_name"] = tokenName
+	}
+	if videoMode := strings.TrimSpace(util.Clean(metadata["video_mode"])); videoMode != "" {
+		payload["video_mode"] = videoMode
+	}
+	for _, key := range []string{"provider", "image_provider", "video_provider", "channel_protocol", "protocol", "channel_base_url", "provider_base_url"} {
+		if value := strings.TrimSpace(util.Clean(metadata[key])); value != "" {
+			payload[key] = value
+		}
+	}
+	for _, key := range []string{"first_frame_url", "last_frame_url"} {
+		if value := strings.TrimSpace(util.Clean(metadata[key])); value != "" {
+			payload[key] = value
+		}
+	}
+	for _, key := range []string{"negative_prompt", "multi_shot", "shot_type", "multi_prompt", "element_list", "character_orientation", "video_generate_audio", "preset", "mode"} {
+		if value, ok := metadata[key]; ok {
+			payload[key] = value
+		}
 	}
 }
 
@@ -1696,9 +1679,16 @@ func mergeImageToolOptions(payload map[string]any, options ImageToolOptions) {
 	}
 	if options.Stream {
 		payload["stream"] = true
-		if options.PartialImages >= 1 && options.PartialImages <= 3 {
-			payload["partial_images"] = options.PartialImages
+		partialImages := 1
+		if options.PartialImagesSet || options.PartialImages != 0 {
+			partialImages = options.PartialImages
 		}
+		if partialImages >= 0 && partialImages <= 3 {
+			payload["partial_images"] = partialImages
+		}
+	}
+	if strings.EqualFold(strings.TrimSpace(options.ResponseFormat), "b64_json") {
+		payload["response_format"] = "b64_json"
 	}
 }
 
@@ -1752,7 +1742,7 @@ func NormalizeImageModeration(moderation string) string {
 
 func normalizedPublicImagePartialImages(value any) (int, bool) {
 	partialImages := util.ToInt(value, 0)
-	if partialImages < 1 || partialImages > 3 {
+	if partialImages < 0 || partialImages > 3 {
 		return 0, false
 	}
 	return partialImages, true

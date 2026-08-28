@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>3D导演台</title>
+    <style>
+      html,
+      body,
+      #root {
+        height: 100%;
+        margin: 0;
+        background: #090909;
+      }
+
+    </style>
+    <script type="module" crossorigin src="/director/assets/index-oQuo7db8.js"></script>
+    <link rel="stylesheet" crossorigin href="/director/assets/index-BaMsYsAL.css">
+    <style>
+      @media (max-width: 600px) {
+        .top-bar {
+          grid-template-columns: minmax(0, 1fr) auto;
+          padding-inline: 12px;
+        }
+
+        .top-bar-left {
+          display: none;
+        }
+
+        .top-bar-center {
+          justify-content: flex-start;
+        }
+
+        .top-bar-actions {
+          display: flex;
+        }
+
+        .top-bar-actions .top-bar-action-button:first-child,
+        .left-sidebar {
+          display: none;
+        }
+
+        .viewport-toolbar {
+          right: 16px;
+          left: 16px;
+          width: auto;
+          max-width: none;
+          justify-content: flex-start;
+          overflow-x: auto;
+          transform: none;
+          scrollbar-width: none;
+        }
+
+        .viewport-toolbar::-webkit-scrollbar {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+  </html>

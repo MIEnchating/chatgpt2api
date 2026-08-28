@@ -14,66 +14,6 @@ import (
 	"chatgpt2api/internal/storage"
 )
 
-func TestImageConversationRowsMigratesLegacyDocumentAndTombstones(t *testing.T) {
-	backend := newTestStorageBackend(t)
-	documents := backend.(storage.JSONDocumentBackend)
-	rows := backend.(storage.ImageConversationBackend)
-	ownerID := "legacy-row-owner"
-	deletedAt := "2026-07-19T10:00:00Z"
-	live := imageConversationRowTestItem("legacy-live", 3, "2026-07-19T11:00:00Z", "success")
-	if err := documents.SaveJSONDocument(imageConversationHistoryDocumentName(ownerID), map[string]any{
-		"items":   []any{live},
-		"deleted": map[string]any{"legacy-deleted": deletedAt},
-	}); err != nil {
-		t.Fatalf("SaveJSONDocument() error = %v", err)
-	}
-
-	history := NewImageConversationHistoryService(backend)
-	page, err := history.ListPage(context.Background(), ownerID, "", 10)
-	if err != nil || len(page.Items) != 1 || page.Items[0]["id"] != "legacy-live" {
-		t.Fatalf("ListPage() page=%#v error=%v", page, err)
-	}
-	state, err := rows.LoadOwnerState(context.Background(), ownerID)
-	if err != nil || !state.LegacyMigrated || state.CursorGeneration != page.Generation {
-		t.Fatalf("LoadOwnerState() state=%#v error=%v", state, err)
-	}
-	legacy, err := documents.LoadJSONDocument(imageConversationHistoryDocumentName(ownerID))
-	if err != nil || legacy == nil {
-		t.Fatalf("legacy document was deleted: value=%#v error=%v", legacy, err)
-	}
-
-	delayed := imageConversationRowTestItem("legacy-deleted", 99, "2099-01-01T00:00:00Z", "success")
-	acknowledgements, generation, err := history.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, []map[string]any{delayed}, nil)
-	if err != nil || generation != state.CursorGeneration || len(acknowledgements) != 1 || !acknowledgements[0].Gone || acknowledgements[0].Accepted {
-		t.Fatalf("deleted legacy acknowledgement=%#v generation=%d error=%v", acknowledgements, generation, err)
-	}
-}
-
-func TestImageConversationRowsMigrationFailureDoesNotMarkOwnerMigrated(t *testing.T) {
-	backend := newTestStorageBackend(t)
-	documents := backend.(storage.JSONDocumentBackend)
-	rows := backend.(storage.ImageConversationBackend)
-	ownerID := "legacy-migration-failure"
-	if err := documents.SaveJSONDocument(imageConversationHistoryDocumentName(ownerID), map[string]any{
-		"items": []any{imageConversationRowTestItem("legacy-item", 1, "2026-07-19T11:00:00Z", "success")},
-	}); err != nil {
-		t.Fatalf("SaveJSONDocument() error = %v", err)
-	}
-	failing := &failingImageConversationMigrationBackend{
-		Backend:                  backend,
-		JSONDocumentBackend:      documents,
-		ImageConversationBackend: rows,
-	}
-	history := NewImageConversationHistoryService(failing)
-	if _, err := history.List(ownerID); err == nil {
-		t.Fatal("List() error = nil, want migration failure")
-	}
-	state, err := rows.LoadOwnerState(context.Background(), ownerID)
-	if err != nil || state.LegacyMigrated {
-		t.Fatalf("owner migration state=%#v error=%v", state, err)
-	}
-}
-
 func TestImageConversationRowsPaginationActiveDetailAndClearInvalidation(t *testing.T) {
 	history := NewImageConversationHistoryService(newTestStorageBackend(t))
 	ownerID := "row-pagination-owner"
@@ -428,12 +368,6 @@ func imageConversationRowTestItem(id string, revision int64, updatedAt, status s
 	}
 }
 
-type failingImageConversationMigrationBackend struct {
-	storage.Backend
-	storage.JSONDocumentBackend
-	storage.ImageConversationBackend
-}
-
 type deleteImageConversationAfterLoadBackend struct {
 	storage.Backend
 	storage.JSONDocumentBackend
@@ -502,12 +436,6 @@ func (b *deleteImageConversationAfterLoadBackend) Load(ctx context.Context, owne
 	return record, ok, deleteErr
 }
 
-func (b *failingImageConversationMigrationBackend) MigrateLegacy(context.Context, string, []storage.ImageConversationRecord, storage.ImageConversationOwnerState) (storage.ImageConversationOwnerState, error) {
-	return storage.ImageConversationOwnerState{}, errors.New("migration unavailable")
-}
-
-var _ storage.Backend = (*failingImageConversationMigrationBackend)(nil)
-var _ storage.ImageConversationBackend = (*failingImageConversationMigrationBackend)(nil)
 var _ storage.Backend = (*deleteImageConversationAfterLoadBackend)(nil)
 var _ storage.ImageConversationBackend = (*deleteImageConversationAfterLoadBackend)(nil)
 var _ storage.ImageConversationBackend = (*tracingImageConversationBatchBackend)(nil)

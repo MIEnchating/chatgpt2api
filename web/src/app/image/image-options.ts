@@ -1,34 +1,68 @@
 export const CUSTOM_IMAGE_ASPECT_RATIO = "custom";
 export const DEFAULT_IMAGE_CUSTOM_RATIO = "16:9";
 
+export const IMAGE_MODEL_STORAGE_KEY = "chatgpt2api:image_last_model";
+export const IMAGE_SIZE_STORAGE_KEY = "chatgpt2api:image_last_size";
+export const IMAGE_SIZE_MODE_STORAGE_KEY = "chatgpt2api:image_last_size_mode";
+export const IMAGE_ASPECT_RATIO_STORAGE_KEY = "chatgpt2api:image_last_aspect_ratio";
+export const IMAGE_RESOLUTION_STORAGE_KEY = "chatgpt2api:image_last_resolution";
+export const IMAGE_CUSTOM_RATIO_STORAGE_KEY = "chatgpt2api:image_last_custom_ratio";
+export const IMAGE_CUSTOM_WIDTH_STORAGE_KEY = "chatgpt2api:image_last_custom_width";
+export const IMAGE_CUSTOM_HEIGHT_STORAGE_KEY = "chatgpt2api:image_last_custom_height";
+export const IMAGE_QUALITY_STORAGE_KEY = "chatgpt2api:image_last_quality";
+export const IMAGE_COUNT_STORAGE_KEY = "chatgpt2api:image_last_count";
+export const IMAGE_OUTPUT_FORMAT_STORAGE_KEY = "chatgpt2api:image_last_output_format";
+export const IMAGE_OUTPUT_COMPRESSION_STORAGE_KEY = "chatgpt2api:image_last_output_compression";
+export const IMAGE_STREAM_STORAGE_KEY = "chatgpt2api:image_last_stream_v3";
+export const IMAGE_PARTIAL_IMAGES_STORAGE_KEY = "chatgpt2api:image_last_partial_images";
+
 export const IMAGE_ASPECT_RATIO_OPTIONS = [
   { value: "", label: "自动" },
   { value: "1:1", label: "1:1 (正方形)" },
-  { value: "1:4", label: "1:4 (长竖版)" },
-  { value: "1:8", label: "1:8 (超长竖版)" },
+  { value: "16:9", label: "16:9 (横版)" },
+  { value: "9:16", label: "9:16 (竖版)" },
+  { value: "4:3", label: "4:3 (横版)" },
+  { value: "3:4", label: "3:4 (竖版)" },
   { value: "3:2", label: "3:2 (横版)" },
   { value: "2:3", label: "2:3 (竖版)" },
+  { value: "4:5", label: "4:5 (竖版)" },
+  { value: "5:4", label: "5:4 (横版)" },
+  { value: "21:9", label: "21:9 (超宽横版)" },
   { value: "2:1", label: "2:1 (宽幅横版)" },
   { value: "1:2", label: "1:2 (长竖版)" },
-  { value: "16:9", label: "16:9 (横版)" },
   { value: "19.5:9", label: "19.5:9 (手机宽屏)" },
   { value: "9:19.5", label: "9:19.5 (手机竖屏)" },
   { value: "20:9", label: "20:9 (超宽屏)" },
   { value: "9:20", label: "9:20 (超长竖屏)" },
-  { value: "21:9", label: "21:9 (超宽横版)" },
+  { value: "1:4", label: "1:4 (长竖版)" },
+  { value: "1:8", label: "1:8 (超长竖版)" },
   { value: "4:1", label: "4:1 (长横版)" },
   { value: "8:1", label: "8:1 (超长横版)" },
-  { value: "4:3", label: "4:3 (横版)" },
-  { value: "3:4", label: "3:4 (竖版)" },
-  { value: "4:5", label: "4:5 (竖版)" },
-  { value: "5:4", label: "5:4 (横版)" },
-  { value: "9:16", label: "9:16 (竖版)" },
-  { value: CUSTOM_IMAGE_ASPECT_RATIO, label: "自定义比例" },
 ] as const;
 
-export type ImageAspectRatio = (typeof IMAGE_ASPECT_RATIO_OPTIONS)[number]["value"];
+export type ImageAspectRatio = (typeof IMAGE_ASPECT_RATIO_OPTIONS)[number]["value"] | typeof CUSTOM_IMAGE_ASPECT_RATIO;
 
-export const IMAGE_SIZE_MODE_OPTIONS = [
+const REFERENCE_IMAGE_ASPECT_RATIOS = ["1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16", "21:9"] as const;
+
+export const IMAGE_ASPECT_RATIO_PRESET_OPTIONS = [
+  ...REFERENCE_IMAGE_ASPECT_RATIOS.map((aspectRatio) => ({
+    value: `${aspectRatio}-auto`,
+    label: aspectRatio,
+    aspectRatio,
+    resolution: "auto" as const,
+    size: aspectRatio,
+  })),
+  { value: "1:1-2k", label: "1:1(2k)", aspectRatio: "1:1", resolution: "2k" as const, size: "2048x2048" },
+  { value: "16:9-2k", label: "16:9(2k)", aspectRatio: "16:9", resolution: "2k" as const, size: "2048x1152" },
+  { value: "9:16-2k", label: "9:16(2k)", aspectRatio: "9:16", resolution: "2k" as const, size: "1152x2048" },
+  { value: "21:9-2k", label: "21:9(2k)", aspectRatio: "21:9", resolution: "2k" as const, size: "3136x1344" },
+  { value: "16:9-4k", label: "16:9(4k)", aspectRatio: "16:9", resolution: "4k" as const, size: "3840x2160" },
+  { value: "9:16-4k", label: "9:16(4k)", aspectRatio: "9:16", resolution: "4k" as const, size: "2160x3840" },
+  { value: "21:9-4k", label: "21:9(4k)", aspectRatio: "21:9", resolution: "4k" as const, size: "6272x2688" },
+  { value: "auto", label: "auto", aspectRatio: "" as const, resolution: "auto" as const, size: "auto" },
+] as const;
+
+const IMAGE_SIZE_MODE_OPTIONS = [
   { value: "auto", label: "自动" },
   { value: "ratio", label: "按比例" },
   { value: "custom", label: "手动宽高" },
@@ -36,25 +70,25 @@ export const IMAGE_SIZE_MODE_OPTIONS = [
 
 export type ImageSizeMode = (typeof IMAGE_SIZE_MODE_OPTIONS)[number]["value"];
 
-export const IMAGE_RESOLUTION_OPTIONS = [
+const IMAGE_RESOLUTION_OPTIONS = [
   { value: "auto", label: "自动", description: "不指定固定像素，交给图片工具决定" },
   { value: "1080p", label: "1080P", description: "正方形为 1088×1088，宽高按所选比例计算" },
   { value: "2k", label: "2K", description: "2K 正方形为 2048×2048，实际结果按模型能力生成" },
   { value: "4k", label: "4K", description: "按链路像素上限收敛，实际结果按模型能力生成" },
 ] as const;
 
-export const GEMINI_IMAGE_RESOLUTION_OPTIONS = [
-  { value: "auto", label: "自动", description: "使用 Gemini 默认的 1K 分辨率" },
+const GEMINI_IMAGE_RESOLUTION_OPTIONS = [
+  { value: "auto", label: "自动", description: "使用 Gemini 默认的图片尺寸" },
   { value: "512", label: "512", description: "仅 Gemini 3.1 Flash Image 支持" },
-  { value: "1k", label: "1K", description: "Gemini 默认图片分辨率" },
-  { value: "2k", label: "2K", description: "Gemini 高分辨率图片" },
-  { value: "4k", label: "4K", description: "Gemini 最高图片分辨率" },
+  { value: "1k", label: "1K", description: "Gemini 默认图片尺寸" },
+  { value: "2k", label: "2K", description: "Gemini 大尺寸图片" },
+  { value: "4k", label: "4K", description: "Gemini 最大图片尺寸" },
 ] as const;
 
-export const XAI_IMAGE_RESOLUTION_OPTIONS = [
-  { value: "auto", label: "自动", description: "不指定分辨率，使用 Grok 默认设置" },
-  { value: "1k", label: "1K", description: "xAI 官方 1K 分辨率" },
-  { value: "2k", label: "2K", description: "xAI 官方 2K 分辨率" },
+const XAI_IMAGE_RESOLUTION_OPTIONS = [
+  { value: "auto", label: "自动", description: "不指定固定尺寸，使用 Grok 默认设置" },
+  { value: "1k", label: "1K", description: "xAI 官方 1K 图片尺寸" },
+  { value: "2k", label: "2K", description: "xAI 官方 2K 图片尺寸" },
 ] as const;
 
 export type ImageResolution =
@@ -70,7 +104,10 @@ export type ImageSizeSelection = {
   customHeight: string;
 };
 
-const IMAGE_ASPECT_RATIO_VALUES = new Set<string>(IMAGE_ASPECT_RATIO_OPTIONS.map((option) => option.value));
+const IMAGE_ASPECT_RATIO_VALUES = new Set<string>([
+  ...IMAGE_ASPECT_RATIO_OPTIONS.map((option) => option.value),
+  CUSTOM_IMAGE_ASPECT_RATIO,
+]);
 const IMAGE_SIZE_MODE_VALUES = new Set<string>(IMAGE_SIZE_MODE_OPTIONS.map((option) => option.value));
 const IMAGE_RESOLUTION_VALUES = new Set<string>([
   ...IMAGE_RESOLUTION_OPTIONS.map((option) => option.value),
@@ -81,29 +118,122 @@ const SIZE_PATTERN = /^\s*(\d+)\s*[xX×]\s*(\d+)\s*$/;
 const RATIO_PATTERN = /^\s*(\d+(?:\.\d+)?)\s*[:xX×]\s*(\d+(?:\.\d+)?)\s*$/;
 const SIZE_MULTIPLE = 16;
 const MAX_EDGE = 3840;
-const MAX_ASPECT_RATIO = 3;
+// Gemini supports extended 1:8 and 8:1 canvases; keep the client-side
+// normalization wide enough to represent every advertised ratio.
+const MAX_ASPECT_RATIO = 8;
 const MIN_PIXELS = 655_360;
 const MAX_PIXELS = 8_294_400;
 const HIGH_RESOLUTION_EDGE_THRESHOLD = 2048;
+const REFERENCE_IMAGE_SIZE_PRESETS: Partial<Record<Exclude<ImageResolution, "auto">, Partial<Record<ImageAspectRatio, string>>>> = {
+  "2k": {
+    "1:1": "2048x2048",
+    "16:9": "2048x1152",
+    "9:16": "1152x2048",
+    "21:9": "3136x1344",
+  },
+  "4k": {
+    "16:9": "3840x2160",
+    "9:16": "2160x3840",
+    "21:9": "6272x2688",
+  },
+};
+const REFERENCE_IMAGE_DEFAULT_SIZES: Record<string, string> = {
+  "1:1": "1024x1024",
+  "3:2": "1536x1024",
+  "2:3": "1024x1536",
+  "4:3": "1024x768",
+  "3:4": "768x1024",
+  "16:9": "1920x1080",
+  "9:16": "1080x1920",
+  "21:9": "1568x672",
+};
+const EXACT_REFERENCE_IMAGE_SIZES = new Set([
+  "2048x2048",
+  "2048x1152",
+  "1152x2048",
+  "3136x1344",
+  "3840x2160",
+  "2160x3840",
+  "6272x2688",
+]);
 export const DEFAULT_IMAGE_CUSTOM_WIDTH = "1024";
 export const DEFAULT_IMAGE_CUSTOM_HEIGHT = "1024";
-
-export const IMAGE_SIZE_PRESET_DETAILS = [
-  { label: "1:1", requestValue: "1:1", normalizedSize: "1024x1024", highResolution: false },
-  { label: "3:2", requestValue: "3:2", normalizedSize: "1536x1024", highResolution: false },
-  { label: "2:3", requestValue: "2:3", normalizedSize: "1024x1536", highResolution: false },
-  { label: "16:9", requestValue: "16:9", normalizedSize: "1536x864", highResolution: false },
-  { label: "9:16", requestValue: "9:16", normalizedSize: "864x1536", highResolution: false },
-  { label: "1080P 正方形", requestValue: "1080p", normalizedSize: "1088x1088", highResolution: false },
-  { label: "2K 正方形", requestValue: "2k", normalizedSize: "2048x2048", highResolution: true },
-  { label: "4K", requestValue: "4k", normalizedSize: "2880x2880", highResolution: true },
-] as const;
 
 export const IMAGE_QUALITY_OPTIONS = [
   { value: "low", label: "低", description: "低质量，速度更快，适合草稿测试" },
   { value: "medium", label: "中", description: "均衡质量与速度，适合日常生成" },
   { value: "high", label: "高", description: "高质量，耗时更长，适合最终出图" },
 ] as const;
+
+export const IMAGE_WORKBENCH_QUALITY_OPTIONS = [
+  { value: "", label: "自动" },
+  { value: "high", label: "高" },
+  { value: "medium", label: "中" },
+  { value: "low", label: "低" },
+] as const;
+
+export function imageWorkbenchAcceptsReferenceImages(model: string) {
+  void model;
+  return true;
+}
+
+export function imageWorkbenchReferenceImageLimit(model: string) {
+  void model;
+  return Number.POSITIVE_INFINITY;
+}
+
+export function imageWorkbenchSupportsSize(model: string) {
+  void model;
+  return true;
+}
+
+const REFERENCE_IMAGE_QUALITY_BASE: Record<string, number> = {
+  low: 1024,
+  medium: 2048,
+  high: 2880,
+  standard: 1024,
+  hd: 2048,
+};
+
+const REFERENCE_IMAGE_QUALITY_ALIASES: Record<string, string> = {
+  "1k": "low",
+  "2k": "medium",
+  "4k": "high",
+};
+
+export function normalizeReferenceImageQuality(value: unknown) {
+  const quality = String(value || "").trim().toLowerCase();
+  if (!quality || quality === "auto") return "auto";
+  const normalized = REFERENCE_IMAGE_QUALITY_ALIASES[quality] || quality;
+  return REFERENCE_IMAGE_QUALITY_BASE[normalized] ? normalized : "auto";
+}
+
+function greatestCommonDivisor(first: number, second: number) {
+  let a = Math.round(first);
+  let b = Math.round(second);
+  while (b) {
+    const remainder = a % b;
+    a = b;
+    b = remainder;
+  }
+  return a;
+}
+
+export function resolveReferenceImageRequestSize(qualityValue: unknown, sizeValue: string) {
+  const size = sizeValue.trim().toLowerCase();
+  if (!size || size === "auto") return undefined;
+  if (/^\d+x\d+$/.test(size)) return size;
+  const parts = size.split(":");
+  if (parts.length !== 2) return undefined;
+  const width = Number(parts[0]);
+  const height = Number(parts[1]);
+  if (!width || !height) return undefined;
+  const quality = normalizeReferenceImageQuality(qualityValue);
+  const basePixels = REFERENCE_IMAGE_QUALITY_BASE[quality] || REFERENCE_IMAGE_QUALITY_BASE.low;
+  const divisor = greatestCommonDivisor(width, height);
+  const unit = Math.round(Math.sqrt((basePixels * basePixels) / ((width / divisor) * (height / divisor))) / 16) * 16;
+  return `${(width / divisor) * unit}x${(height / divisor) * unit}`;
+}
 
 function roundToMultiple(value: number, multiple: number) {
   return Math.max(multiple, Math.round(value / multiple) * multiple);
@@ -153,8 +283,12 @@ function normalizeDimensions(width: number, height: number) {
   return { width: normalizedWidth, height: normalizedHeight };
 }
 
-export function normalizeImageSize(size: string) {
+function normalizeImageSize(size: string) {
   const trimmed = size.trim();
+  const canonical = trimmed.toLowerCase().replace(/\s+/g, "").replace(/×/g, "x");
+  if (EXACT_REFERENCE_IMAGE_SIZES.has(canonical)) {
+    return canonical;
+  }
   const match = trimmed.match(SIZE_PATTERN);
   if (!match) {
     return trimmed;
@@ -176,14 +310,6 @@ export function parseImageSizeDimensions(size: string) {
     return null;
   }
   return { width: match[1], height: match[2] };
-}
-
-export function imageSizePixels(size: string) {
-  const dimensions = parseImageSizeDimensions(size);
-  if (!dimensions) {
-    return 0;
-  }
-  return Number(dimensions.width) * Number(dimensions.height);
 }
 
 export function isHighResolutionImageSize(
@@ -225,7 +351,7 @@ export function parseImageRatio(ratio: string) {
   return { width, height };
 }
 
-export function getActiveImageAspectRatio({
+function getActiveImageAspectRatio({
   aspectRatio,
   customRatio,
 }: Pick<ImageSizeSelection, "aspectRatio" | "customRatio">) {
@@ -236,6 +362,10 @@ export function getActiveImageAspectRatio({
 }
 
 export function calculateImageSize(resolution: Exclude<ImageResolution, "auto">, ratio: string) {
+  const preset = REFERENCE_IMAGE_SIZE_PRESETS[resolution]?.[ratio as ImageAspectRatio];
+  if (preset) {
+    return preset;
+  }
   const parsed = parseImageRatio(ratio);
   if (!parsed) {
     return "";
@@ -287,6 +417,10 @@ export function calculateImageSize(resolution: Exclude<ImageResolution, "auto">,
 }
 
 export function calculateDefaultImageSize(ratio: string) {
+  const referenceSize = REFERENCE_IMAGE_DEFAULT_SIZES[ratio];
+  if (referenceSize) {
+    return referenceSize;
+  }
   const parsed = parseImageRatio(ratio);
   if (!parsed) {
     return "";
@@ -309,13 +443,21 @@ export function calculateDefaultImageSize(ratio: string) {
   return normalizeImageSize(`${width}x${height}`);
 }
 
-export function buildCustomImageSize(width: string, height: string) {
+function alignImageDimension(value: number, enabled = true) {
+  if (!enabled) return Math.max(1, Math.floor(value));
+  return Math.max(16, Math.ceil(value / SIZE_MULTIPLE) * SIZE_MULTIPLE);
+}
+
+export function buildCustomImageSize(width: string, height: string, snapToMultiple16 = true) {
   const parsedWidth = Number.parseInt(width, 10);
   const parsedHeight = Number.parseInt(height, 10);
   if (!Number.isFinite(parsedWidth) || !Number.isFinite(parsedHeight) || parsedWidth <= 0 || parsedHeight <= 0) {
     return "";
   }
-  return normalizeImageSize(`${parsedWidth}x${parsedHeight}`);
+  if (!snapToMultiple16) {
+    return `${Math.floor(parsedWidth)}x${Math.floor(parsedHeight)}`;
+  }
+  return `${alignImageDimension(parsedWidth)}x${alignImageDimension(parsedHeight)}`;
 }
 
 export function formatImageSizeDisplay(size: string) {
@@ -329,7 +471,7 @@ export function getImageSizeRequirementLabel(
   if (!size || size === "auto") {
     return "自动";
   }
-  return isHighResolutionImageSize(size, selection) ? "高分辨率" : "常规分辨率";
+  return isHighResolutionImageSize(size, selection) ? "大尺寸" : "常规尺寸";
 }
 
 export function isImageAspectRatio(value: unknown): value is ImageAspectRatio {
@@ -353,19 +495,19 @@ export function buildImageSize(
     customWidth,
     customHeight,
   }: ImageSizeSelection,
-  options: { preserveAspectRatio?: boolean } = {},
+  options: { preserveAspectRatio?: boolean; snapToMultiple16?: boolean } = {},
 ) {
   if (mode === "auto") {
     return "";
   }
   if (mode === "custom") {
-    return buildCustomImageSize(customWidth, customHeight);
+    return buildCustomImageSize(customWidth, customHeight, options.snapToMultiple16 ?? true);
   }
   const activeAspectRatio = getActiveImageAspectRatio({ aspectRatio, customRatio });
   if (aspectRatio === CUSTOM_IMAGE_ASPECT_RATIO && !activeAspectRatio) {
     return "";
   }
-  if (options.preserveAspectRatio && aspectRatio !== CUSTOM_IMAGE_ASPECT_RATIO && activeAspectRatio) {
+  if (options.preserveAspectRatio && resolution === "auto" && aspectRatio !== CUSTOM_IMAGE_ASPECT_RATIO && activeAspectRatio) {
     return activeAspectRatio;
   }
   if (resolution === "auto") {
@@ -377,14 +519,14 @@ export function buildImageSize(
   return calculateImageSize(resolution, activeAspectRatio) || activeAspectRatio;
 }
 
-export function getImageAspectRatioFromSize(size: string): ImageAspectRatio {
+function getImageAspectRatioFromSize(size: string): ImageAspectRatio {
   const normalized = normalizeImageSize(size);
   if (isImageAspectRatio(normalized) && normalized !== CUSTOM_IMAGE_ASPECT_RATIO) {
     return normalized;
   }
   const isDimensionSize = SIZE_PATTERN.test(normalized);
   for (const aspectRatio of IMAGE_ASPECT_RATIO_OPTIONS.map((option) => option.value)) {
-    if (!aspectRatio || aspectRatio === CUSTOM_IMAGE_ASPECT_RATIO) {
+    if (!aspectRatio) {
       continue;
     }
     if (calculateDefaultImageSize(aspectRatio) === normalized) {
@@ -405,13 +547,13 @@ export function getImageAspectRatioFromSize(size: string): ImageAspectRatio {
   return "";
 }
 
-export function getImageResolutionFromSize(size: string): ImageResolution {
+function getImageResolutionFromSize(size: string): ImageResolution {
   const normalized = normalizeImageSize(size);
   if (isImageResolution(normalized)) {
     return normalized;
   }
   for (const aspectRatio of IMAGE_ASPECT_RATIO_OPTIONS.map((option) => option.value)) {
-    if (!aspectRatio || aspectRatio === CUSTOM_IMAGE_ASPECT_RATIO) {
+    if (!aspectRatio) {
       continue;
     }
     for (const resolution of IMAGE_RESOLUTION_OPTIONS.map((option) => option.value)) {

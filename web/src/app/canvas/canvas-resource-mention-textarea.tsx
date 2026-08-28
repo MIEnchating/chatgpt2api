@@ -12,6 +12,7 @@ import {
 } from "react";
 
 import { AuthenticatedImage } from "@/components/authenticated-image";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   filterCanvasResourceMentions,
   findCanvasResourceMention,
@@ -232,9 +233,10 @@ function CanvasResourceMentionMenu({ textarea, references, activeIndex, onSelect
   };
 
   return createPortal(
-    <div
+    <ScrollArea
       data-canvas-resource-mention-menu
-      className="fixed z-[120] max-h-56 w-64 overflow-y-auto rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-2xl"
+      className="fixed z-[120] max-h-56 w-64 rounded-xl border border-border bg-popover text-popover-foreground shadow-2xl"
+      viewportClassName="p-1"
       style={{ left, top }}
       onPointerDown={stop}
       onMouseDown={stop}
@@ -267,7 +269,7 @@ function CanvasResourceMentionMenu({ textarea, references, activeIndex, onSelect
           </span>
         </button>
       ))}
-    </div>,
+    </ScrollArea>,
     document.body,
   );
 }

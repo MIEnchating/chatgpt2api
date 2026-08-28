@@ -1,25 +1,30 @@
-import { FileText, Image as ImageIcon, X } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { FileText, Image as ImageIcon, Music2, Video, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 
-import { CANVAS_CONFIG_REFERENCE_PATTERN, canvasConfigInputLabel, type CanvasConfigInput } from "@/app/canvas/canvas-config-inputs";
+import { CANVAS_CONFIG_REFERENCE_PATTERN, canvasConfigInputLabel, canvasConfigUsesConnectedText, type CanvasConfigInput } from "@/app/canvas/canvas-config-inputs";
 import { ImageLightbox } from "@/components/image-lightbox";
 import { Button } from "@/components/ui/button";
-import type { CanvasNode } from "@/lib/api";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import type { CanvasNode } from "@/services/api/canvas";
 import { cn } from "@/lib/utils";
 
 type ComposerToken =
   | { type: "text"; value: string }
   | { type: "reference"; nodeID: string };
 
-export function CanvasConfigComposer({ node, inputs, onComposerChange, onClose }: {
+export function CanvasConfigComposer({ node, inputs, children, promptTools, onComposerChange, onClose }: {
   node: CanvasNode;
   inputs: CanvasConfigInput[];
+  children?: ReactNode;
+  promptTools?: ReactNode;
   onComposerChange: (value: string, commit?: boolean) => void;
   onClose: () => void;
 }) {
   const editorRef = useRef<HTMLDivElement | null>(null);
   const composingRef = useRef(false);
   const value = node.composer_content ?? node.prompt ?? "";
+  const connectedTextInputs = useMemo(() => inputs.filter((input) => input.type === "text" && Boolean(input.text?.trim())), [inputs]);
+  const usesConnectedText = canvasConfigUsesConnectedText(inputs);
   const tokens = useMemo(() => parseComposerTokens(value), [value]);
   const inputByID = useMemo(() => new Map(inputs.map((input) => [input.nodeID, input])), [inputs]);
   const [mention, setMention] = useState<{ query: string } | null>(null);
@@ -36,15 +41,25 @@ export function CanvasConfigComposer({ node, inputs, onComposerChange, onClose }
     const editor = editorRef.current;
     if (!editor) return;
     editor.textContent = "";
+    if (node.composer_content === undefined && !tokens.length && connectedTextInputs.length) {
+      connectedTextInputs.forEach((input) => {
+        const chip = createReferenceChip(input, inputs, setPreviewInput, () => removeReferenceChip(chip, editor, onComposerChange));
+        editor.append(chip, document.createTextNode(" "));
+      });
+      return;
+    }
     tokens.forEach((token) => {
       if (token.type === "text") {
         editor.append(document.createTextNode(token.value));
         return;
       }
       const input = inputByID.get(token.nodeID);
-      if (input) editor.append(createReferenceChip(input, inputs, setPreviewInput));
+      if (input) {
+        const chip = createReferenceChip(input, inputs, setPreviewInput, () => removeReferenceChip(chip, editor, onComposerChange));
+        editor.append(chip);
+      }
     });
-  }, [inputByID, inputs, tokens]);
+  }, [connectedTextInputs, inputByID, inputs, node.composer_content, onComposerChange, tokens]);
 
   function closeMention() {
     setMention(null);
@@ -68,19 +83,24 @@ export function CanvasConfigComposer({ node, inputs, onComposerChange, onClose }
   function insertReference(input: CanvasConfigInput) {
     const editor = editorRef.current;
     if (!editor) return;
+    const textBeforeMention = textBeforeCaret();
     removeActiveMention();
-    const chip = createReferenceChip(input, inputs, setPreviewInput);
+    const chip = createReferenceChip(input, inputs, setPreviewInput, () => removeReferenceChip(chip, editor, onComposerChange));
+    const beforeMention = textBeforeMention.replace(/@([^\s@]*)$/, "");
+    const needsLeadingSpace = Boolean(beforeMention && !/\s$/.test(beforeMention));
     const space = document.createTextNode(" ");
     const selection = window.getSelection();
     const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
-    if (range && editor.contains(range.startContainer)) {
+    if (range) {
       range.insertNode(space);
       range.insertNode(chip);
+      if (needsLeadingSpace) range.insertNode(document.createTextNode(" "));
       range.setStartAfter(space);
       range.collapse(true);
       selection?.removeAllRanges();
       selection?.addRange(range);
     } else {
+      if (needsLeadingSpace) editor.append(document.createTextNode(" "));
       editor.append(chip, space);
       placeCaretAtEnd(editor);
     }
@@ -106,60 +126,80 @@ export function CanvasConfigComposer({ node, inputs, onComposerChange, onClose }
         <Button variant="ghost" size="icon" className="size-7 shrink-0" aria-label="关闭提示词面板" onClick={onClose}><X className="size-3.5" /></Button>
       </div>
       <div className="relative rounded-xl border border-border bg-background">
-        {!value.trim() ? <div className="pointer-events-none absolute top-2 left-3 text-sm leading-7 text-muted-foreground">输入提示词，按 @ 引用连接的图片或文本</div> : null}
-        <div
-          ref={editorRef}
-          contentEditable
-          suppressContentEditableWarning
-          className="hide-scrollbar min-h-28 w-full overflow-y-auto whitespace-pre-wrap break-words px-3 py-2 text-sm leading-7 outline-none"
-          onInput={() => { if (!composingRef.current) syncFromEditor(); }}
-          onCompositionStart={() => { composingRef.current = true; }}
-          onCompositionEnd={() => { composingRef.current = false; syncFromEditor(); }}
-          onKeyDown={(event: KeyboardEvent<HTMLDivElement>) => {
-            event.stopPropagation();
-            if (mention && candidates.length) {
-              if (event.key === "ArrowDown") {
-                event.preventDefault();
-                setActiveIndex((index) => (index + 1) % candidates.length);
-                return;
-              }
-              if (event.key === "ArrowUp") {
-                event.preventDefault();
-                setActiveIndex((index) => (index - 1 + candidates.length) % candidates.length);
-                return;
-              }
-              if (event.key === "Enter") {
-                event.preventDefault();
-                insertReference(candidates[Math.min(activeIndex, candidates.length - 1)]);
-                return;
-              }
-              if (event.key === "Escape") {
-                event.preventDefault();
-                closeMention();
-                return;
-              }
-            }
-            if ((event.key === "Backspace" || event.key === "Delete") && deleteAdjacentReference(event.key)) {
+          {!value.trim() && !usesConnectedText ? <div className="pointer-events-none absolute top-2 left-3 text-sm leading-7 text-muted-foreground">输入提示词，按 @ 引用连接的图片或文本</div> : null}
+          <ScrollArea className="max-h-56" viewportClassName="max-h-56" viewClass="min-h-28 w-full">
+          <div
+            ref={editorRef}
+            contentEditable
+            suppressContentEditableWarning
+            className="min-h-28 w-full whitespace-pre-wrap break-words px-3 py-2 text-sm leading-7 outline-none"
+            onInput={() => { if (!composingRef.current) syncFromEditor(); }}
+            onPaste={(event) => {
+              const text = event.clipboardData.getData("text/plain");
+              if (!text) return;
               event.preventDefault();
-              requestAnimationFrame(() => syncFromEditor());
-              return;
-            }
-            requestAnimationFrame(syncMention);
-          }}
-          onBlur={() => {
-            syncFromEditor(true);
-            window.setTimeout(closeMention, 120);
-          }}
-        />
-        {mention && candidates.length ? (
-          <ComposerMentionMenu
-            inputs={candidates}
-            allInputs={inputs}
-            activeIndex={Math.min(activeIndex, candidates.length - 1)}
-            onSelect={insertReference}
+              const selection = window.getSelection();
+              const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
+              if (!range) return;
+              range.deleteContents();
+              const textNode = document.createTextNode(text);
+              range.insertNode(textNode);
+              range.setStartAfter(textNode);
+              range.collapse(true);
+              selection?.removeAllRanges();
+              selection?.addRange(range);
+              syncFromEditor();
+            }}
+            onCompositionStart={() => { composingRef.current = true; }}
+            onCompositionEnd={() => { composingRef.current = false; syncFromEditor(); }}
+            onKeyDown={(event: KeyboardEvent<HTMLDivElement>) => {
+              event.stopPropagation();
+              if (mention && candidates.length) {
+                if (event.key === "ArrowDown") {
+                  event.preventDefault();
+                  setActiveIndex((index) => (index + 1) % candidates.length);
+                  return;
+                }
+                if (event.key === "ArrowUp") {
+                  event.preventDefault();
+                  setActiveIndex((index) => (index - 1 + candidates.length) % candidates.length);
+                  return;
+                }
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  insertReference(candidates[Math.min(activeIndex, candidates.length - 1)]);
+                  return;
+                }
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  closeMention();
+                  return;
+                }
+              }
+              if ((event.key === "Backspace" || event.key === "Delete") && deleteAdjacentReference(event.key)) {
+                event.preventDefault();
+                requestAnimationFrame(() => syncFromEditor());
+                return;
+              }
+              requestAnimationFrame(syncMention);
+            }}
+            onBlur={() => {
+              syncFromEditor(true);
+              window.setTimeout(closeMention, 120);
+            }}
           />
-        ) : null}
+          </ScrollArea>
+          {mention && candidates.length ? (
+            <ComposerMentionMenu
+              inputs={candidates}
+              allInputs={inputs}
+              activeIndex={Math.min(activeIndex, candidates.length - 1)}
+              onSelect={insertReference}
+            />
+          ) : null}
       </div>
+      {promptTools ? <div className="mt-2 flex min-w-0 items-center border-t border-border/70 pt-2">{promptTools}</div> : null}
+      {children ? <div className="mt-3 space-y-3 border-t border-border pt-3">{children}</div> : null}
       <ImageLightbox images={previewImages} currentIndex={0} open={Boolean(previewInput?.url)} onOpenChange={(open) => { if (!open) setPreviewInput(null); }} onIndexChange={() => undefined} />
     </div>
   );
@@ -185,7 +225,7 @@ function ComposerMentionMenu({ inputs, allInputs, activeIndex, onSelect }: {
   }
 
   return (
-    <div className="absolute top-[calc(100%+6px)] left-2 z-[90] max-h-56 w-64 overflow-y-auto rounded-xl border border-border bg-popover p-1 text-popover-foreground shadow-2xl">
+    <ScrollArea className="absolute top-[calc(100%+6px)] left-2 z-[90] max-h-56 w-64 rounded-xl border border-border bg-popover text-popover-foreground shadow-2xl" viewportClassName="p-1">
       {inputs.map((input, index) => (
         <button
           key={input.nodeID}
@@ -198,24 +238,29 @@ function ComposerMentionMenu({ inputs, allInputs, activeIndex, onSelect }: {
             select(input);
           }}
         >
-          <span className="grid size-9 shrink-0 place-items-center rounded-md bg-muted">
-            {input.type === "image" ? <ImageIcon className="size-4" /> : <FileText className="size-4" />}
-          </span>
+          <ResourcePreview input={input} />
           <span className="min-w-0 flex-1">
             <span className="block font-medium">{canvasConfigInputLabel(input, allInputs)}</span>
             <span className="block truncate text-muted-foreground">{input.text || input.title}</span>
           </span>
         </button>
       ))}
-    </div>
+    </ScrollArea>
   );
 }
 
-function createReferenceChip(input: CanvasConfigInput, inputs: CanvasConfigInput[], onPreview: (input: CanvasConfigInput) => void) {
+function ResourcePreview({ input }: { input: CanvasConfigInput }) {
+  if (input.type === "image" && input.url) return <img src={input.url} alt="" className="size-9 shrink-0 rounded-md object-cover" />;
+  if (input.type === "video" && input.url) return <video src={input.url} className="size-9 shrink-0 rounded-md bg-black object-cover" muted preload="metadata" />;
+  const Icon = input.type === "audio" ? Music2 : input.type === "video" ? Video : input.type === "image" ? ImageIcon : FileText;
+  return <span className="grid size-9 shrink-0 place-items-center rounded-md bg-muted"><Icon className="size-4" /></span>;
+}
+
+function createReferenceChip(input: CanvasConfigInput, inputs: CanvasConfigInput[], onPreview: (input: CanvasConfigInput) => void, onDelete?: () => void) {
   const chip = document.createElement("span");
   chip.contentEditable = "false";
   chip.dataset.referenceNodeId = input.nodeID;
-  chip.title = input.text || input.title;
+  chip.dataset.tooltip = input.text || input.title;
   chip.className = "mx-px inline-flex h-7 max-w-40 items-center gap-1 overflow-hidden rounded-md border border-border bg-card px-2 text-xs leading-none align-middle text-foreground";
 
   const icon = document.createElement("span");
@@ -225,6 +270,20 @@ function createReferenceChip(input: CanvasConfigInput, inputs: CanvasConfigInput
   label.className = "block truncate";
   label.textContent = `${canvasConfigInputLabel(input, inputs)} · ${input.type === "text" ? input.text || input.title : input.title}`;
   chip.append(icon, label);
+  if (onDelete) {
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.ariaLabel = `删除${canvasConfigInputLabel(input, inputs)}引用`;
+    remove.dataset.tooltip = "删除引用";
+    remove.textContent = "×";
+    remove.className = "ml-0.5 grid size-4 shrink-0 place-items-center rounded text-sm leading-none text-muted-foreground hover:bg-muted hover:text-foreground";
+    remove.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      onDelete();
+    });
+    chip.append(remove);
+  }
   if (input.type === "image" && input.url) {
     chip.className += " cursor-pointer";
     chip.addEventListener("click", (event) => {
@@ -236,6 +295,14 @@ function createReferenceChip(input: CanvasConfigInput, inputs: CanvasConfigInput
   return chip;
 }
 
+function removeReferenceChip(chip: HTMLElement, editor: HTMLElement, onChange: (value: string) => void) {
+  const next = chip.nextSibling;
+  if (next?.nodeType === Node.TEXT_NODE && next.textContent?.startsWith(" ")) next.textContent = next.textContent.slice(1);
+  chip.remove();
+  onChange(serializeEditor(editor));
+  placeCaretAtEnd(editor);
+}
+
 function serializeEditor(editor: HTMLElement) {
   return serializeNodes(editor.childNodes).replace(/\uFEFF/g, "");
 }
@@ -243,12 +310,25 @@ function serializeEditor(editor: HTMLElement) {
 function serializeNodes(nodes: NodeListOf<ChildNode>) {
   let result = "";
   nodes.forEach((node) => {
-    if (node.nodeType === Node.TEXT_NODE) result += node.textContent || "";
+    if (node.nodeType === Node.TEXT_NODE) {
+      result += node.textContent || "";
+      return;
+    }
     if (!(node instanceof HTMLElement)) return;
+    if (node.tagName === "BR") {
+      result += "\n";
+      return;
+    }
     const nodeID = node.dataset.referenceNodeId;
-    if (nodeID) result += `@[node:${nodeID}]`;
-    else if (node.tagName === "BR") result += "\n";
-    else result += serializeNodes(node.childNodes);
+    if (nodeID) {
+      result += `@[node:${nodeID}]`;
+      return;
+    }
+    const content = serializeNodes(node.childNodes);
+    const isBlock = node.tagName === "DIV" || node.tagName === "P";
+    if (isBlock && result && !result.endsWith("\n")) result += "\n";
+    result += content;
+    if (isBlock && !content) result += "\n";
   });
   return result;
 }

@@ -34,6 +34,8 @@ Use `gofmt` for Go code and keep package names short, lowercase, and domain-orie
 
 Admin async creation-task routes use `/api/creation-tasks` as the resource root. Submit task-type-specific work through explicit child resources: `image-generations`, `image-edits`, and `chat-completions`. Do not introduce image-named task aliases or chat routes under image-named resources.
 
+Keep backend dependencies directed from transport to application to persistence: `httpapi` handles routing, authentication, request decoding, and responses; `service` owns business workflows; `storage` owns persistence; `protocol` owns upstream contracts and clients. Split HTTP handlers by business domain instead of adding unrelated handlers to shared route files.
+
 ## jshook Reverse-Engineering Notes
 
 Use `jshook/README.md` as the index for ChatGPT web protocol research. Keep endpoint inventories, content-type mappings, request-flow notes, internal codename mappings, and authenticated API schema notes in `jshook/docs/*.md` rather than duplicating them elsewhere.

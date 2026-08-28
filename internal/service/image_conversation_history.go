@@ -3,29 +3,16 @@ package service
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"hash/fnv"
-	"reflect"
-	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"chatgpt2api/internal/storage"
 	"chatgpt2api/internal/util"
 )
 
-const imageConversationHistoryDocumentDir = "image_conversations"
-const imageConversationHistoryDeletedKey = "deleted"
-const imageConversationHistoryClearedAtKey = "cleared_at"
-
-const imageConversationHistoryLockStripes = 64
-
 type ImageConversationHistoryService struct {
-	locks              [imageConversationHistoryLockStripes]sync.Mutex
-	store              storage.JSONDocumentBackend
 	rows               storage.ImageConversationBackend
 	conversationAssets *ImageConversationAssetService
 }
@@ -56,29 +43,11 @@ func (e ImageConversationHistoryValidationError) Unwrap() error {
 }
 
 func NewImageConversationHistoryService(backend storage.Backend) *ImageConversationHistoryService {
-	service := &ImageConversationHistoryService{store: jsonDocumentStoreFromBackend(backend)}
+	service := &ImageConversationHistoryService{}
 	if rows, ok := backend.(storage.ImageConversationBackend); ok {
 		service.rows = rows
 	}
 	return service
-}
-
-func (s *ImageConversationHistoryService) List(ownerID string) ([]map[string]any, error) {
-	ownerID = util.Clean(ownerID)
-	if ownerID == "" {
-		return nil, fmt.Errorf("owner_id is required")
-	}
-	if s.rows != nil {
-		return s.listAllImageConversationRows(ownerID)
-	}
-	lock := s.lockForOwner(ownerID)
-	lock.Lock()
-	defer lock.Unlock()
-	return s.loadLocked(ownerID)
-}
-
-func (s *ImageConversationHistoryService) ConversationAssetReferences(ownerID string) (map[string]struct{}, error) {
-	return s.ConversationAssetReferencesContext(context.Background(), ownerID)
 }
 
 func (s *ImageConversationHistoryService) ConversationAssetReferencesContext(ctx context.Context, ownerID string) (map[string]struct{}, error) {
@@ -96,283 +65,10 @@ func (s *ImageConversationHistoryService) ConversationAssetReferencesContext(ctx
 	if ownerID == "" {
 		return nil, fmt.Errorf("owner_id is required")
 	}
-	if s.rows != nil {
-		return s.conversationAssetReferencesFromRows(ctx, ownerID)
+	if s.rows == nil {
+		return nil, fmt.Errorf("image conversation row backend is required")
 	}
-	items, err := s.List(ownerID)
-	if err != nil {
-		return nil, err
-	}
-	for _, item := range items {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		for assetPath := range s.conversationAssets.ReferencedAssetPaths(item) {
-			result[assetPath] = struct{}{}
-		}
-	}
-	return result, nil
-}
-
-func (s *ImageConversationHistoryService) Merge(ownerID string, incoming []map[string]any) ([]map[string]any, error) {
-	items, _, err := s.MergeWithAcknowledgements(ownerID, incoming)
-	return items, err
-}
-
-func (s *ImageConversationHistoryService) MergeWithAcknowledgements(ownerID string, incoming []map[string]any) ([]map[string]any, []ImageConversationMergeAcknowledgement, error) {
-	ownerID = util.Clean(ownerID)
-	if ownerID == "" {
-		return nil, nil, fmt.Errorf("owner_id is required")
-	}
-	if s.rows != nil {
-		acknowledgements, _, err := s.mergeImageConversationRows(ownerID, incoming, nil)
-		if err != nil {
-			return nil, nil, err
-		}
-		items, err := s.listAllImageConversationRows(ownerID)
-		return items, acknowledgements, err
-	}
-	lock := s.lockForOwner(ownerID)
-	lock.Lock()
-	defer lock.Unlock()
-
-	items, deleted, clearedAt, _, err := s.loadDocumentLocked(ownerID)
-	if err != nil {
-		return nil, nil, err
-	}
-	byID := make(map[string]map[string]any, len(items)+len(incoming))
-	for _, item := range items {
-		byID[util.Clean(item["id"])] = item
-	}
-	prepared := make([]normalizedImageConversationRowInput, 0, len(incoming))
-	for _, raw := range incoming {
-		incomingRevision, hasRevision := raw["revision"]
-		item, normalizeErr := normalizeImageConversationHistoryItem(raw)
-		if normalizeErr != nil {
-			return nil, nil, ImageConversationHistoryValidationError{Err: normalizeErr}
-		}
-		if hasRevision {
-			item["revision"] = normalizeImageConversationRevision(incomingRevision)
-		}
-		prepared = append(prepared, normalizedImageConversationRowInput{item: item, hasRevision: hasRevision})
-	}
-	var assetPreparation *ImageConversationAssetPreparation
-	if s.conversationAssets != nil {
-		items := make([]map[string]any, len(prepared))
-		for index := range prepared {
-			items[index] = prepared[index].item
-		}
-		var assetErr error
-		assetPreparation, assetErr = s.conversationAssets.PrepareConversations(context.Background(), ownerID, items)
-		if assetErr != nil {
-			return nil, nil, ImageConversationHistoryValidationError{Err: assetErr}
-		}
-	}
-	acknowledgements := make([]ImageConversationMergeAcknowledgement, 0, len(prepared))
-	for _, input := range prepared {
-		item := input.item
-		hasRevision := input.hasRevision
-		if s.conversationAssets != nil {
-			assetized, _, _, assetErr := s.conversationAssets.AssetizePreparedConversation(context.Background(), ownerID, item, assetPreparation)
-			if assetErr != nil {
-				if errors.Is(assetErr, ErrImageConversationAssetStorageLimit) {
-					return nil, nil, assetErr
-				}
-				return nil, nil, ImageConversationHistoryValidationError{Err: assetErr}
-			}
-			item = assetized
-		}
-		id := util.Clean(item["id"])
-		acknowledgement := ImageConversationMergeAcknowledgement{ID: id}
-		if _, wasDeleted := deleted[id]; wasDeleted {
-			acknowledgement.Gone = true
-			acknowledgements = append(acknowledgements, acknowledgement)
-			continue
-		}
-		if imageConversationWasCleared(item, clearedAt) {
-			acknowledgement.Gone = true
-			acknowledgements = append(acknowledgements, acknowledgement)
-			continue
-		}
-		current := byID[id]
-		if current == nil {
-			byID[id] = item
-			acknowledgement.Accepted = true
-			acknowledgement.ActualRevision = imageConversationRevision(item)
-			acknowledgements = append(acknowledgements, acknowledgement)
-			continue
-		}
-		currentRevision := imageConversationRevision(current)
-		itemRevision := imageConversationRevision(item)
-		if hasRevision && currentRevision > 0 && itemRevision == currentRevision {
-			// Explicit revisions are optimistic-concurrency tokens. The same
-			// revision may only be replayed idempotently; otherwise two devices
-			// could both pass the durable barrier and start different upstream jobs.
-			acknowledgement.Accepted = reflect.DeepEqual(current, item)
-			acknowledgement.ActualRevision = currentRevision
-			acknowledgements = append(acknowledgements, acknowledgement)
-			continue
-		}
-		version := compareImageConversationVersion(current, item, hasRevision)
-		byID[id] = mergeImageConversationHistoryItem(current, item, hasRevision)
-		acknowledgement.Accepted = version > 0 || (version == 0 && reflect.DeepEqual(current, item))
-		acknowledgement.ActualRevision = imageConversationRevision(byID[id])
-		acknowledgements = append(acknowledgements, acknowledgement)
-	}
-	merged := make([]map[string]any, 0, len(byID))
-	for _, item := range byID {
-		merged = append(merged, item)
-	}
-	sortImageConversationHistory(merged)
-	if err := s.saveLocked(ownerID, merged, deleted, clearedAt); err != nil {
-		return nil, nil, err
-	}
-	for index := range acknowledgements {
-		if item := byID[acknowledgements[index].ID]; item != nil {
-			acknowledgements[index].ActualRevision = imageConversationRevision(item)
-		}
-	}
-	return merged, acknowledgements, nil
-}
-
-func (s *ImageConversationHistoryService) Delete(ownerID, conversationID string) ([]map[string]any, bool, error) {
-	ownerID = util.Clean(ownerID)
-	conversationID = util.Clean(conversationID)
-	if ownerID == "" || conversationID == "" {
-		return nil, false, fmt.Errorf("owner_id and conversation id are required")
-	}
-	if s.rows != nil {
-		removed, err := s.deleteImageConversationRow(ownerID, conversationID)
-		if err != nil {
-			return nil, false, err
-		}
-		items, err := s.listAllImageConversationRows(ownerID)
-		return items, removed, err
-	}
-	lock := s.lockForOwner(ownerID)
-	lock.Lock()
-	defer lock.Unlock()
-
-	items, deleted, clearedAt, _, err := s.loadDocumentLocked(ownerID)
-	if err != nil {
-		return nil, false, err
-	}
-	next := make([]map[string]any, 0, len(items))
-	removed := false
-	for _, item := range items {
-		if util.Clean(item["id"]) == conversationID {
-			removed = true
-			continue
-		}
-		next = append(next, item)
-	}
-	deleted[conversationID] = util.NowISO()
-	if err := s.saveLocked(ownerID, next, deleted, clearedAt); err != nil {
-		return nil, false, err
-	}
-	return next, removed, nil
-}
-
-func (s *ImageConversationHistoryService) Clear(ownerID string) error {
-	ownerID = util.Clean(ownerID)
-	if ownerID == "" {
-		return fmt.Errorf("owner_id is required")
-	}
-	if s.rows != nil {
-		_, err := s.clearImageConversationRows(ownerID)
-		return err
-	}
-	lock := s.lockForOwner(ownerID)
-	lock.Lock()
-	defer lock.Unlock()
-	items, deleted, clearedAt, _, err := s.loadDocumentLocked(ownerID)
-	if err != nil {
-		return err
-	}
-	now := util.NowISO()
-	if compareImageConversationUpdatedAt(clearedAt, now) > 0 {
-		now = clearedAt
-	}
-	for _, item := range items {
-		if id := util.Clean(item["id"]); id != "" {
-			deleted[id] = now
-		}
-	}
-	return s.saveLocked(ownerID, []map[string]any{}, deleted, now)
-}
-
-func (s *ImageConversationHistoryService) loadLocked(ownerID string) ([]map[string]any, error) {
-	items, deleted, clearedAt, removedActiveOutput, err := s.loadDocumentLocked(ownerID)
-	if err == nil && removedActiveOutput {
-		_ = s.saveLocked(ownerID, items, deleted, clearedAt)
-	}
-	return items, err
-}
-
-func (s *ImageConversationHistoryService) loadDocumentLocked(ownerID string) ([]map[string]any, map[string]string, string, bool, error) {
-	if s.store == nil {
-		return nil, nil, "", false, fmt.Errorf("storage document backend is required")
-	}
-	raw, err := s.store.LoadJSONDocument(imageConversationHistoryDocumentName(ownerID))
-	if err != nil {
-		return nil, nil, "", false, err
-	}
-	document := util.StringMap(raw)
-	items := make([]map[string]any, 0)
-	removedActiveOutput := false
-	for _, candidate := range util.AsMapSlice(document["items"]) {
-		if stripImageConversationActiveOutputs(candidate) {
-			removedActiveOutput = true
-		}
-		item, normalizeErr := normalizeImageConversationHistoryItem(candidate)
-		if normalizeErr != nil {
-			continue
-		}
-		if s.conversationAssets != nil {
-			assetized, _, changed, assetErr := s.conversationAssets.AssetizeConversation(context.Background(), ownerID, item)
-			if assetErr != nil {
-				return nil, nil, "", false, assetErr
-			}
-			item = assetized
-			removedActiveOutput = removedActiveOutput || changed
-		}
-		items = append(items, item)
-	}
-	deleted := make(map[string]string)
-	for id, value := range util.StringMap(document[imageConversationHistoryDeletedKey]) {
-		id = util.Clean(id)
-		if id == "" {
-			continue
-		}
-		deleted[id] = util.Clean(value)
-	}
-	clearedAt := strings.TrimSpace(util.Clean(document[imageConversationHistoryClearedAtKey]))
-	sortImageConversationHistory(items)
-	return items, deleted, clearedAt, removedActiveOutput, nil
-}
-
-func (s *ImageConversationHistoryService) saveLocked(ownerID string, items []map[string]any, deleted map[string]string, clearedAt string) error {
-	if s.store == nil {
-		return fmt.Errorf("storage document backend is required")
-	}
-	document := map[string]any{"items": items}
-	if len(deleted) > 0 {
-		document[imageConversationHistoryDeletedKey] = deleted
-	}
-	if clearedAt = strings.TrimSpace(clearedAt); clearedAt != "" {
-		document[imageConversationHistoryClearedAtKey] = clearedAt
-	}
-	return s.store.SaveJSONDocument(imageConversationHistoryDocumentName(ownerID), document)
-}
-
-func (s *ImageConversationHistoryService) lockForOwner(ownerID string) *sync.Mutex {
-	hasher := fnv.New32a()
-	_, _ = hasher.Write([]byte(ownerID))
-	return &s.locks[hasher.Sum32()%imageConversationHistoryLockStripes]
-}
-
-func imageConversationHistoryDocumentName(ownerID string) string {
-	return imageConversationHistoryDocumentDir + "/" + util.SHA256Hex(ownerID) + ".json"
+	return s.conversationAssetReferencesFromRows(ctx, ownerID)
 }
 
 func normalizeImageConversationHistoryItem(raw map[string]any) (map[string]any, error) {
@@ -642,9 +338,7 @@ func sameImageTask(left, right map[string]any) bool {
 	leftTask := strings.TrimSpace(util.Clean(left["taskId"]))
 	rightTask := strings.TrimSpace(util.Clean(right["taskId"]))
 	if leftTask == "" || rightTask == "" {
-		// Legacy snapshots may not carry taskId. Treat the missing value as
-		// unknown, while still separating two explicit task identities.
-		return true
+		return leftTask == rightTask
 	}
 	return leftTask == rightTask
 }
@@ -883,10 +577,4 @@ func cloneImageConversationMap(source map[string]any) map[string]any {
 		return map[string]any{}
 	}
 	return clone
-}
-
-func sortImageConversationHistory(items []map[string]any) {
-	sort.SliceStable(items, func(i, j int) bool {
-		return imageConversationUpdatedAt(items[i]) > imageConversationUpdatedAt(items[j])
-	})
 }

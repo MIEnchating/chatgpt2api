@@ -13,6 +13,28 @@ test("canvas task images preserve output order and support base64 results", () =
   ]);
 });
 
+test("canvas task images carry persisted storage keys into result nodes", () => {
+  const progress = applyCanvasTaskProgressNodes([{
+    id: "result",
+    type: "image",
+    x: 0,
+    y: 0,
+    width: 320,
+    height: 240,
+    generation_status: "loading",
+  }], {
+    id: "task-storage",
+    status: "success",
+    mode: "generate",
+    created_at: "2026-01-01T00:00:00Z",
+    updated_at: "2026-01-01T00:00:01Z",
+    data: [{ url: "/api/files/object/content", storageKey: "server:object", width: 800, height: 600 }],
+    output_statuses: ["success"],
+  }, { outputNodeIDs: ["result"], taskID: "task-storage" });
+
+  assert.equal(progress.nodes[0].storage_key, "server:object");
+});
+
 test("partial task errors retain completed images and report missing slots", () => {
   assert.deepEqual(summarizeCanvasTaskResult({ id: "task", status: "error", error: "partial failure", data: [{ url: "/images/a.png" }], output_statuses: ["success", "error", "error"] }, 3), {
     slots: [
@@ -243,9 +265,43 @@ test("persisted canvas tasks restore completed images after the page reloads", (
   assert.equal(result.nodes[1].url, "/images/restored.png");
 });
 
+test("persisted panorama tasks restore the fixed frame and projection after reload", () => {
+  const startedAt = Date.now() - 2200;
+  const result = reconcilePersistedCanvasTaskNodes([{
+    id: "panorama",
+    type: "panorama",
+    task_id: "panorama-task",
+    generation_status: "loading",
+    generation_started_at: startedAt,
+    x: 0,
+    y: 0,
+    width: 500,
+    height: 300,
+    scale_x: 1,
+    scale_y: 1,
+  }], {
+    id: "panorama-task",
+    status: "success",
+    data: [{ url: "/images/panorama.png", width: 2048, height: 1024, mime_type: "image/webp" }],
+    output_statuses: ["success"],
+  });
+  assert.equal(result.completedImageCount, 1);
+  assert.equal(result.nodes[0].generation_status, "success");
+  assert.equal(result.nodes[0].url, "/images/panorama.png");
+  assert.equal(result.nodes[0].width, 340);
+  assert.equal(result.nodes[0].height, 170);
+  assert.equal(result.nodes[0].panorama_projection, "equirectangular");
+  assert.equal(result.nodes[0].mime_type, "image/webp");
+  assert.equal(result.nodes[0].generation_progress, 100);
+  assert.ok(result.nodes[0].duration_ms >= 2200);
+  assert.ok(result.nodes[0].duration_ms < 4700);
+});
+
 test("persisted video tasks restore completed video nodes after the page reloads", () => {
+  const startedAt = Date.now() - 2500;
   const result = reconcilePersistedCanvasTaskNodes([{
     id: "video", type: "video", task_id: "video-task", generation_status: "loading",
+    generation_started_at: startedAt,
     x: 0, y: 0, width: 420, height: 236, scale_x: 1, scale_y: 1,
   }], {
     id: "video-task",
@@ -256,6 +312,98 @@ test("persisted video tasks restore completed video nodes after the page reloads
   assert.equal(result.completedImageCount, 1);
   assert.equal(result.nodes[0].generation_status, "success");
   assert.equal(result.nodes[0].url, "/videos/restored.mp4");
+  assert.equal(result.nodes[0].mime_type, "video/mp4");
+  assert.equal(result.nodes[0].natural_width, 1280);
+  assert.equal(result.nodes[0].natural_height, 720);
+  assert.ok(result.nodes[0].duration_ms >= 2500);
+  assert.ok(result.nodes[0].duration_ms < 5000);
+});
+
+test("persisted image task terminal states save generation duration", () => {
+  const startedAt = Date.now() - 1800;
+  const result = reconcilePersistedCanvasTaskNodes([{
+    id: "image", type: "image", task_id: "image-task", generation_status: "loading",
+    generation_started_at: startedAt,
+    x: 0, y: 0, width: 340, height: 240, scale_x: 1, scale_y: 1,
+  }], {
+    id: "image-task",
+    status: "success",
+    data: [{ url: "/images/result.png", width: 1024, height: 1024 }],
+    output_statuses: ["success"],
+  });
+  assert.ok(result.nodes[0].duration_ms >= 1800);
+  assert.ok(result.nodes[0].duration_ms < 4300);
+});
+
+test("persisted successful image tasks repair serialized blob URLs", () => {
+  const node = {
+    id: "result",
+    type: "image",
+    x: 0,
+    y: 0,
+    width: 320,
+    height: 240,
+    scale_x: 1,
+    scale_y: 1,
+    url: "blob:http://example.test/expired",
+    storage_key: "image:local-only",
+    task_id: "task-durable-image",
+    generation_status: "success",
+  };
+  const result = reconcilePersistedCanvasTaskNodes([node], {
+    id: "task-durable-image",
+    status: "success",
+    data: [{ url: "/images/2026/08/27/final.png", width: 1024, height: 1024 }],
+    output_statuses: ["success"],
+  });
+
+  assert.equal(result.changed, true);
+  assert.equal(result.nodes[0].url, "/images/2026/08/27/final.png");
+  assert.equal(result.nodes[0].storage_key, undefined);
+  assert.equal(result.nodes[0].generation_status, "success");
+});
+
+test("persisted audio tasks restore audio nodes and synchronize task metadata", () => {
+  const startedAt = Date.now() - 1400;
+  const result = reconcilePersistedCanvasTaskNodes([{
+    id: "audio", type: "audio", audio_task_id: "audio-task", generation_status: "loading",
+    generation_started_at: startedAt,
+    x: 0, y: 0, width: 420, height: 160, scale_x: 1, scale_y: 1,
+  }], {
+    id: "audio-task",
+    status: "success",
+    output_type: "audio",
+    data: [{ type: "audio", audio_url: "/audios/restored.wav", mime_type: "audio/wav", bytes: 1234 }],
+  });
+  assert.equal(result.terminal, true);
+  assert.equal(result.completedImageCount, 1);
+  assert.equal(result.nodes[0].generation_status, "success");
+  assert.equal(result.nodes[0].url, "/audios/restored.wav");
+  assert.equal(result.nodes[0].mime_type, "audio/wav");
+  assert.equal(result.nodes[0].bytes, 1234);
+  assert.equal(result.nodes[0].task_id, "audio-task");
+  assert.equal(result.nodes[0].audio_task_id, "audio-task");
+  assert.equal(result.nodes[0].audio_task_result_id, "audio-task");
+  assert.equal(result.nodes[0].generation_progress, 100);
+  assert.ok(result.nodes[0].duration_ms >= 1400);
+  assert.ok(result.nodes[0].duration_ms < 3900);
+});
+
+test("persisted text tasks restore generated text nodes after the page reloads", () => {
+  const result = reconcilePersistedCanvasTaskNodes([{
+    id: "text", type: "text", task_id: "text-task", generation_status: "loading",
+    x: 0, y: 0, width: 340, height: 240, scale_x: 1, scale_y: 1,
+  }], {
+    id: "text-task",
+    status: "success",
+    output_type: "text",
+    data: [{ text_response: "恢复后的文本" }],
+  });
+  assert.equal(result.terminal, true);
+  assert.equal(result.completedImageCount, 1);
+  assert.equal(result.nodes[0].generation_status, "success");
+  assert.equal(result.nodes[0].prompt, "恢复后的文本");
+  assert.equal(result.nodes[0].task_id, "text-task");
 });
 
 test("previously interrupted canvas nodes can be recovered on a later reload", () => {

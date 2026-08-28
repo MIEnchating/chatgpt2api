@@ -14,7 +14,7 @@ test("1080P requests remain regular resolution across aspect ratios", () => {
   assert.equal(fullHD, "1920x1088");
   assert.equal(isHighResolutionImageSize(fullHD, { mode: "ratio", resolution: "1080p" }), false);
   assert.equal(isHighResolutionImageSize(ultrawide, { mode: "ratio", resolution: "1080p" }), false);
-  assert.equal(getImageSizeRequirementLabel(fullHD, { mode: "ratio", resolution: "1080p" }), "常规分辨率");
+  assert.equal(getImageSizeRequirementLabel(fullHD, { mode: "ratio", resolution: "1080p" }), "常规尺寸");
 });
 
 test("2K and 4K presets are high resolution even for wide aspect ratios", () => {

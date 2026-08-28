@@ -53,19 +53,13 @@ type LogMaintenanceBackend interface {
 }
 
 func NewBackendFromEnv(dataDir string) (Backend, error) {
-	backendType := strings.ToLower(strings.TrimSpace(firstConfiguredEnv("STORAGE_BACKEND", "CHATGPT2API_STORAGE_BACKEND")))
+	backendType := strings.ToLower(strings.TrimSpace(os.Getenv("STORAGE_BACKEND")))
 	if backendType == "" {
 		backendType = "sqlite"
 	}
 	switch backendType {
 	case "sqlite", "postgres", "postgresql", "mysql", "database":
-		dsnValue, dsnConfigured := lookupConfiguredEnv("STORAGE_DATABASE_URL", "CHATGPT2API_STORAGE_DATABASE_URL")
-		dsn := strings.TrimSpace(dsnValue)
-		if !dsnConfigured && legacyDatabaseURLBelongsToStorage(backendType) {
-			// Before the upstream database was renamed to DATABASE_URL, this name
-			// belonged to the service's own storage database.
-			dsn = strings.TrimSpace(os.Getenv("DATABASE_URL"))
-		}
+		dsn := strings.TrimSpace(os.Getenv("STORAGE_DATABASE_URL"))
 		if dsn == "" {
 			if backendType != "sqlite" {
 				return nil, fmt.Errorf("STORAGE_DATABASE_URL is required for %s storage", backendType)
@@ -76,34 +70,6 @@ func NewBackendFromEnv(dataDir string) (Backend, error) {
 	default:
 		return nil, fmt.Errorf("unknown storage backend: %s", backendType)
 	}
-}
-
-func legacyDatabaseURLBelongsToStorage(backendType string) bool {
-	if strings.TrimSpace(os.Getenv("CHATGPT2API_NEWAPI_DATABASE_URL")) == "" {
-		return false
-	}
-	switch backendType {
-	case "postgres", "postgresql", "mysql", "database":
-		return true
-	case "sqlite":
-		return strings.HasPrefix(strings.ToLower(strings.TrimSpace(os.Getenv("DATABASE_URL"))), "sqlite:")
-	default:
-		return false
-	}
-}
-
-func firstConfiguredEnv(names ...string) string {
-	value, _ := lookupConfiguredEnv(names...)
-	return value
-}
-
-func lookupConfiguredEnv(names ...string) (string, bool) {
-	for _, name := range names {
-		if value, ok := os.LookupEnv(name); ok {
-			return value, true
-		}
-	}
-	return "", false
 }
 
 type DatabaseBackend struct {
@@ -195,6 +161,8 @@ func (b *DatabaseBackend) init() error {
 		`CREATE TABLE IF NOT EXISTS json_documents (name TEXT PRIMARY KEY, data TEXT NOT NULL, updated_at TEXT NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL, type TEXT NOT NULL, day TEXT NOT NULL, data TEXT NOT NULL)`,
 		`CREATE INDEX IF NOT EXISTS idx_logs_day_id ON logs (day, id)`,
+		`CREATE TABLE IF NOT EXISTS storage_objects (id TEXT PRIMARY KEY, provider_id TEXT NOT NULL, bucket TEXT NOT NULL, object_key TEXT NOT NULL UNIQUE, public_url TEXT NOT NULL, mime_type TEXT NOT NULL, bytes INTEGER NOT NULL, width INTEGER NOT NULL, height INTEGER NOT NULL, sha256 TEXT NOT NULL, direct BOOLEAN NOT NULL, created_by TEXT NOT NULL, created_at TEXT NOT NULL, deleted_at TEXT NOT NULL)`,
+		`CREATE INDEX IF NOT EXISTS idx_storage_objects_created_by ON storage_objects (created_by)`,
 	}
 	if b.driver == "postgres" {
 		schema = []string{
@@ -203,6 +171,8 @@ func (b *DatabaseBackend) init() error {
 			`CREATE TABLE IF NOT EXISTS json_documents (name TEXT PRIMARY KEY, data TEXT NOT NULL, updated_at TEXT NOT NULL)`,
 			`CREATE TABLE IF NOT EXISTS logs (id SERIAL PRIMARY KEY, created_at TEXT NOT NULL, type TEXT NOT NULL, day TEXT NOT NULL, data TEXT NOT NULL)`,
 			`CREATE INDEX IF NOT EXISTS idx_logs_day_id ON logs (day, id)`,
+			`CREATE TABLE IF NOT EXISTS storage_objects (id TEXT PRIMARY KEY, provider_id TEXT NOT NULL, bucket TEXT NOT NULL, object_key TEXT NOT NULL UNIQUE, public_url TEXT NOT NULL, mime_type TEXT NOT NULL, bytes BIGINT NOT NULL, width INTEGER NOT NULL, height INTEGER NOT NULL, sha256 TEXT NOT NULL, direct BOOLEAN NOT NULL, created_by TEXT NOT NULL, created_at TEXT NOT NULL, deleted_at TEXT NOT NULL)`,
+			`CREATE INDEX IF NOT EXISTS idx_storage_objects_created_by ON storage_objects (created_by)`,
 		}
 	}
 	if b.driver == "mysql" {
@@ -218,6 +188,8 @@ func (b *DatabaseBackend) init() error {
 			`CREATE TABLE IF NOT EXISTS json_documents (name VARCHAR(512) PRIMARY KEY, data LONGTEXT NOT NULL, updated_at TEXT NOT NULL)`,
 			`CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY AUTO_INCREMENT, created_at TEXT NOT NULL, type VARCHAR(64) NOT NULL, day VARCHAR(10) NOT NULL, data LONGTEXT NOT NULL)`,
 			`CREATE INDEX idx_logs_day_id ON logs (day, id)`,
+			`CREATE TABLE IF NOT EXISTS storage_objects (id VARCHAR(64) PRIMARY KEY, provider_id VARCHAR(128) NOT NULL, bucket VARCHAR(512) NOT NULL, object_key VARCHAR(1024) NOT NULL UNIQUE, public_url LONGTEXT NOT NULL, mime_type VARCHAR(255) NOT NULL, bytes BIGINT NOT NULL, width INTEGER NOT NULL, height INTEGER NOT NULL, sha256 VARCHAR(64) NOT NULL, direct BOOLEAN NOT NULL, created_by VARCHAR(255) NOT NULL, created_at TEXT NOT NULL, deleted_at TEXT NOT NULL)`,
+			`CREATE INDEX idx_storage_objects_created_by ON storage_objects (created_by)`,
 		}
 	}
 	for _, stmt := range schema {

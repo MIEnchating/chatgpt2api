@@ -162,34 +162,6 @@ func (s *AuthService) CreatePasswordUser(username, password, name, roleID string
 	return item, nil
 }
 
-func (s *AuthService) LoginPassword(username, password string) (*Identity, string, error) {
-	username, err := normalizeAccountUsername(username)
-	if err != nil {
-		return nil, "", authError("用户名或密码错误")
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	index, account, ok := passwordAccountIndexByUsernameLocked(s.accounts, username)
-	if !ok || !verifyAccountPassword(password, account.PasswordHash) {
-		return nil, "", authError("用户名或密码错误")
-	}
-	if !account.Enabled {
-		return nil, "", authError("用户已被禁用")
-	}
-	now := util.NowISO()
-	previousAccounts := append([]PasswordAccount(nil), s.accounts...)
-	previousItems := cloneAuthItems(s.items)
-	account.LastLoginAt = now
-	account.UpdatedAt = now
-	s.accounts[index] = account
-	item, raw := s.issuePasswordSessionLocked(account, now)
-	if err := s.saveAuthAndPasswordAccountsLocked(); err != nil {
-		s.restoreAuthAccountsAfterSaveFailureLocked(previousAccounts, previousItems, err)
-		return nil, "", err
-	}
-	return identityForAuthItem(item), raw, nil
-}
-
 func (s *AuthService) LoginAdminPassword(username, password string) (*Identity, string, error) {
 	username, err := normalizeAccountUsername(username)
 	if err != nil {
@@ -216,126 +188,6 @@ func (s *AuthService) LoginAdminPassword(username, password string) (*Identity, 
 		return nil, "", err
 	}
 	return identityForAuthItem(item), raw, nil
-}
-
-func (s *AuthService) UpdateProfileName(identity Identity, name string) (*Identity, error) {
-	ownerID := util.Clean(identity.OwnerID)
-	if ownerID == "" {
-		return nil, errAuthOwnerRequired()
-	}
-	now := util.NowISO()
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	previousAccounts := append([]PasswordAccount(nil), s.accounts...)
-	previousItems := cloneAuthItems(s.items)
-
-	displayName := ""
-	accountFound := false
-	for index, account := range s.accounts {
-		if account.ID != ownerID {
-			continue
-		}
-		account.Name = normalizeAccountDisplayName(name, account.Username)
-		account.UpdatedAt = now
-		s.accounts[index] = account
-		displayName = account.DisplayName()
-		accountFound = true
-		break
-	}
-	if displayName == "" {
-		displayName = normalizeAccountDisplayName(name, ownerID)
-	}
-
-	changedItems := false
-	for _, item := range s.items {
-		if util.Clean(item["owner_id"]) != ownerID {
-			continue
-		}
-		item["owner_name"] = displayName
-		item["updated_at"] = now
-		changedItems = true
-	}
-	if accountFound {
-		s.syncPasswordAccountsToItems()
-		for _, item := range s.items {
-			if util.Clean(item["owner_id"]) == ownerID {
-				item["updated_at"] = now
-			}
-		}
-	}
-	var saveErr error
-	switch {
-	case accountFound && changedItems:
-		saveErr = s.saveAuthAndPasswordAccountsLocked()
-	case accountFound:
-		saveErr = s.savePasswordAccountsLocked()
-	case changedItems:
-		saveErr = s.saveLocked()
-	}
-	if saveErr != nil {
-		s.restoreAuthAccountsAfterSaveFailureLocked(previousAccounts, previousItems, saveErr)
-		return nil, saveErr
-	}
-
-	nextIdentity := identity
-	nextIdentity.Name = displayName
-	for _, item := range s.items {
-		if util.Clean(item["id"]) == identity.CredentialID {
-			if updated := identityForAuthItem(item); updated != nil {
-				return updated, nil
-			}
-		}
-	}
-	return &nextIdentity, nil
-}
-
-func (s *AuthService) ChangeProfilePassword(identity Identity, currentPassword, nextPassword string) error {
-	ownerID := util.Clean(identity.OwnerID)
-	if ownerID == "" {
-		return errAuthOwnerRequired()
-	}
-	if strings.TrimSpace(currentPassword) == "" {
-		return authError("current password is required")
-	}
-	if err := validateAccountPassword(nextPassword); err != nil {
-		return err
-	}
-	now := util.NowISO()
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	for index, account := range s.accounts {
-		if account.ID != ownerID {
-			continue
-		}
-		if !verifyAccountPassword(currentPassword, account.PasswordHash) {
-			return authError("当前密码错误")
-		}
-		hash, err := hashAccountPassword(nextPassword)
-		if err != nil {
-			return err
-		}
-		previousAccounts := append([]PasswordAccount(nil), s.accounts...)
-		previousItems := cloneAuthItems(s.items)
-		account.PasswordHash = hash
-		account.UpdatedAt = now
-		s.accounts[index] = account
-		nextItems := make([]map[string]any, 0, len(s.items))
-		for _, item := range s.items {
-			if util.Clean(item["kind"]) == AuthKindSession && util.Clean(item["owner_id"]) == ownerID {
-				continue
-			}
-			nextItems = append(nextItems, item)
-		}
-		s.items = nextItems
-		if err := s.saveAuthAndPasswordAccountsLocked(); err != nil {
-			s.restoreAuthAccountsAfterSaveFailureLocked(previousAccounts, previousItems, err)
-			return err
-		}
-		return nil
-	}
-	return authError("password account not found")
 }
 
 func (s *AuthService) issuePasswordSessionLocked(account PasswordAccount, now string) (map[string]any, string) {
@@ -374,7 +226,7 @@ func (s *AuthService) issuePasswordSessionLocked(account PasswordAccount, now st
 		return next, raw
 	}
 
-	item := newAuthItem(account.Role, AuthKindSession, passwordSessionName, owner, raw)
+	item := newAuthItem(account.Role, passwordSessionName, owner, raw)
 	item["username"] = account.Username
 	item["enabled"] = account.Enabled
 	item["updated_at"] = now

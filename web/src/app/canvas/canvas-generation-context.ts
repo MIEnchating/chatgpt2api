@@ -1,28 +1,44 @@
-import type { CanvasConnection, CanvasNode } from "@/lib/api";
-import { getImageSizeSelectionFromSize } from "../image/image-options.ts";
-import { imageOutputCountLimit, supportsImageAspectRatio, supportsImageExactDimensions, supportsImageSize } from "../../lib/image-model-capabilities.ts";
-import { CANVAS_CONFIG_REFERENCE_PATTERN, canvasGenerationInputs } from "./canvas-config-inputs.ts";
+import type { CanvasConnection, CanvasNode } from "@/services/api/canvas";
+import { imageOutputCountLimit, supportsImageSize } from "../../lib/image-model-capabilities.ts";
+import { CANVAS_CONFIG_REFERENCE_PATTERN, canvasConfigUsesConnectedText, canvasGenerationInputs } from "./canvas-config-inputs.ts";
 
 export type CanvasGenerationContext = {
   prompt: string;
   referenceImageURLs: string[];
+  firstFrameURL: string | null;
+  lastFrameURL: string | null;
+  referenceVideoURLs: string[];
+  referenceAudioURLs: string[];
+  videoMultiPrompt: Array<Record<string, unknown>>;
+  videoElementList: Array<Record<string, unknown>>;
   textCount: number;
   imageCount: number;
+  videoCount: number;
+  audioCount: number;
 };
 
 export const INTERRUPTED_CANVAS_GENERATION_ERROR = "页面刷新后生成已中断，请重新生成。";
 export const PENDING_CANVAS_GENERATION_RECOVERY_ERROR = "暂时无法同步后台任务，重新进入画布后将继续恢复。";
 
 export function canvasGenerationNeedsRecovery(node: CanvasNode) {
-  return Boolean(node.task_id) && (
+  return Boolean(canvasGenerationRecoveryTaskID(node)) && (
     node.generation_status === "loading" ||
     node.generation_error === INTERRUPTED_CANVAS_GENERATION_ERROR ||
-    node.generation_error === PENDING_CANVAS_GENERATION_RECOVERY_ERROR
+    node.generation_error === PENDING_CANVAS_GENERATION_RECOVERY_ERROR ||
+    (node.generation_status === "success" && canvasURLIsStaleBlob(node.url))
   );
 }
 
+export function canvasURLIsStaleBlob(url: string | undefined) {
+  return String(url || "").trim().toLowerCase().startsWith("blob:");
+}
+
+export function canvasGenerationRecoveryTaskID(node: CanvasNode) {
+  return String(node.task_id || node.audio_task_id || "").trim();
+}
+
 export function markCanvasGenerationRecoveryPending(nodes: readonly CanvasNode[], taskID: string) {
-  return nodes.map((node): CanvasNode => node.task_id === taskID && canvasGenerationNeedsRecovery(node) ? {
+  return nodes.map((node): CanvasNode => canvasGenerationRecoveryTaskID(node) === taskID && canvasGenerationNeedsRecovery(node) ? {
     ...node,
     generation_status: "error",
     generation_error: PENDING_CANVAS_GENERATION_RECOVERY_ERROR,
@@ -35,16 +51,16 @@ export function canvasGenerationCount(model: string, configured: number | undefi
 }
 
 export function canvasGenerationModel(currentModel: string, sourceNode: CanvasNode, retryConfiguration: CanvasNode | null, retrying: boolean) {
-  if (!retrying) return currentModel.trim();
+  if (!retrying) return sourceNode.generation_model?.trim() || currentModel.trim();
   return sourceNode.generation_model?.trim() || retryConfiguration?.generation_model?.trim() || currentModel.trim();
 }
 
 export function canvasGenerationRequestSize(model: string, size: string | undefined, resolution: string | undefined) {
   const value = String(size || "").trim();
   if (!value || !supportsImageSize(model)) return undefined;
-  const selection = getImageSizeSelectionFromSize(value, resolution);
-  if (selection.mode === "ratio" && !supportsImageAspectRatio(model, selection.aspectRatio)) return undefined;
-  if (selection.mode === "custom" && !supportsImageExactDimensions(model)) return undefined;
+  // The UI follows the reference project's complete size contract. Provider
+  // adapters perform model-specific normalization after this shared request.
+  void resolution;
   return value;
 }
 
@@ -64,51 +80,84 @@ export function buildCanvasGenerationContext(
 ): CanvasGenerationContext {
   const sourceNode = nodes.find((node) => node.id === nodeID);
   const inputs = canvasGenerationInputs(nodeID, nodes, connections);
-  const currentPrompt = prompt.trim();
-  if (sourceNode?.type === "config" && Boolean(sourceNode.composer_content?.trim())) {
-    return buildExplicitCanvasGenerationContext(currentPrompt, inputs);
+  const usesConnectedText = sourceNode?.type === "config" && canvasConfigUsesConnectedText(inputs);
+  if (sourceNode?.type === "config" && sourceNode.composer_content !== undefined) {
+    return buildExplicitCanvasGenerationContext(prompt, inputs, sourceNode);
   }
 
+  const advanced = buildCanvasVideoAdvancedContext(sourceNode, inputs);
   const textInputs: string[] = [];
-  const referenceImageURLs: string[] = [];
+  const referenceImageURLs: string[] = [...advanced.klingImageReferenceURLs];
+  const referenceVideoURLs: string[] = [];
+  const referenceAudioURLs: string[] = [];
 
   inputs.forEach((input) => {
-    if (input.type === "image" && input.url) {
-      referenceImageURLs.push(input.url);
+    if (advanced.textNodeIDs.has(input.nodeID) || advanced.referenceNodeIDs.has(input.nodeID)) return;
+    if (input.url) {
+      if (input.type === "image") referenceImageURLs.push(input.url);
+      if (input.type === "video") referenceVideoURLs.push(input.url);
+      if (input.type === "audio") referenceAudioURLs.push(input.url);
       return;
     }
-    if (input.text) textInputs.push(input.text);
+    if (!sourceNode?.exclude_upstream_text && input.text) textInputs.push(input.text);
   });
 
+  const frames = canvasVideoFrameReferences(sourceNode, inputs);
+  const frameURLs = new Set([frames.firstFrameURL, frames.lastFrameURL].filter((url): url is string => Boolean(url)));
+  const effectiveReferenceImageURLs = referenceImageURLs.filter((url) => !frameURLs.has(url));
   const upstreamText = textInputs.join("\n\n");
+  const localPrompt = prompt;
   return {
-    prompt: upstreamText ? `${currentPrompt}\n\n${upstreamText}`.trim() : currentPrompt,
-    referenceImageURLs,
-    textCount: textInputs.length,
-    imageCount: referenceImageURLs.length,
+    prompt: upstreamText ? localPrompt ? `${localPrompt}\n\n${upstreamText}` : usesConnectedText ? upstreamText : `\n\n${upstreamText}` : localPrompt,
+    referenceImageURLs: effectiveReferenceImageURLs,
+    firstFrameURL: frames.firstFrameURL,
+    lastFrameURL: frames.lastFrameURL,
+    referenceVideoURLs,
+    referenceAudioURLs,
+    videoMultiPrompt: advanced.videoMultiPrompt,
+    videoElementList: advanced.videoElementList,
+    textCount: inputs.filter((input) => input.type === "text").length,
+    imageCount: inputs.filter((input) => input.type === "image" && Boolean(input.url) && !advanced.referenceNodeIDs.has(input.nodeID)).length,
+    videoCount: referenceVideoURLs.length,
+    audioCount: referenceAudioURLs.length,
   };
 }
 
 function buildExplicitCanvasGenerationContext(
   prompt: string,
   inputs: ReturnType<typeof canvasGenerationInputs>,
+  sourceNode: CanvasNode,
 ): CanvasGenerationContext {
+  const advanced = buildCanvasVideoAdvancedContext(sourceNode, inputs);
   const inputByID = new Map(inputs.map((input) => [input.nodeID, input]));
   const labelByID = new Map<string, string>();
   const textBlocks: string[] = [];
   const referenceImageURLs: string[] = [];
+  const referenceVideoURLs: string[] = [];
+  const referenceAudioURLs: string[] = [];
   let textCount = 0;
   let imageCount = 0;
+  let videoCount = 0;
+  let audioCount = 0;
   const resolvedPrompt = prompt.replace(CANVAS_CONFIG_REFERENCE_PATTERN, (_token, nodeID: string) => {
     const input = inputByID.get(nodeID);
-    if (!input) return "";
+    if (!input || advanced.textNodeIDs.has(input.nodeID) || advanced.referenceNodeIDs.has(input.nodeID)) return "";
     const existing = labelByID.get(input.nodeID);
     if (existing) return input.type === "text" ? `【${existing}】` : existing;
-    if (input.type === "image" && input.url) {
-      const label = `图片${imageCount + 1}`;
-      imageCount += 1;
+    if (input.type !== "text" && input.url) {
+      const count = input.type === "image" ? imageCount : input.type === "video" ? videoCount : audioCount;
+      const label = `${input.type === "image" ? "图片" : input.type === "video" ? "视频" : "音频"}${count + 1}`;
+      if (input.type === "image") {
+        imageCount += 1;
+        referenceImageURLs.push(input.url);
+      } else if (input.type === "video") {
+        videoCount += 1;
+        referenceVideoURLs.push(input.url);
+      } else {
+        audioCount += 1;
+        referenceAudioURLs.push(input.url);
+      }
       labelByID.set(input.nodeID, label);
-      referenceImageURLs.push(input.url);
       return label;
     }
     const label = `文本${textCount + 1}`;
@@ -117,12 +166,86 @@ function buildExplicitCanvasGenerationContext(
     textBlocks.push(`【${label}】\n${input.text || ""}`);
     return `【${label}】`;
   });
-  const text = resolvedPrompt.trim();
+  const frames = canvasVideoFrameReferences(sourceNode, inputs);
+  const frameURLs = new Set([frames.firstFrameURL, frames.lastFrameURL].filter((url): url is string => Boolean(url)));
+  const effectiveReferenceImageURLs = referenceImageURLs.filter((url) => !frameURLs.has(url));
   return {
-    prompt: textBlocks.length ? `${text}\n\n${textBlocks.join("\n\n")}`.trim() : text,
-    referenceImageURLs,
+    prompt: textBlocks.length ? `${resolvedPrompt.trim()}\n\n${textBlocks.join("\n\n")}` : resolvedPrompt,
+    referenceImageURLs: [...advanced.klingImageReferenceURLs, ...effectiveReferenceImageURLs],
+    firstFrameURL: frames.firstFrameURL,
+    lastFrameURL: frames.lastFrameURL,
+    referenceVideoURLs,
+    referenceAudioURLs,
+    videoMultiPrompt: advanced.videoMultiPrompt,
+    videoElementList: advanced.videoElementList,
     textCount,
     imageCount,
+    videoCount,
+    audioCount,
+  };
+}
+
+type CanvasVideoAdvancedContext = {
+  textNodeIDs: Set<string>;
+  referenceNodeIDs: Set<string>;
+  klingImageReferenceURLs: string[];
+  videoMultiPrompt: Array<Record<string, unknown>>;
+  videoElementList: Array<Record<string, unknown>>;
+};
+
+function buildCanvasVideoAdvancedContext(
+  sourceNode: CanvasNode | undefined,
+  inputs: ReturnType<typeof canvasGenerationInputs>,
+): CanvasVideoAdvancedContext {
+  const inputByID = new Map(inputs.map((input) => [input.nodeID, input]));
+  const textNodeIDs = new Set<string>();
+  const referenceNodeIDs = new Set<string>();
+  const klingImageReferenceURLs = (sourceNode?.generation_video_kling_image_node_ids || [])
+    .map((nodeID) => {
+      referenceNodeIDs.add(nodeID);
+      const input = inputByID.get(nodeID);
+      return input?.type === "image" ? input.url || null : null;
+    })
+    .filter((url): url is string => Boolean(url));
+  const videoMultiPrompt = (sourceNode?.generation_video_kling_multi_prompt || [])
+    .map((item) => {
+      const nodeID = String(item.text_node_id || "").trim();
+      const input = inputByID.get(nodeID);
+      if (!nodeID || input?.type !== "text" || !input.text) return null;
+      textNodeIDs.add(nodeID);
+      return { prompt: input.text, duration: item.duration || "1" };
+    })
+    .filter((item): item is { prompt: string; duration: string } => Boolean(item));
+  const videoElementList = (sourceNode?.generation_video_kling_element_list || [])
+    .slice(0, 3)
+    .map((item) => {
+      const references = (item.node_ids || [])
+        .slice(0, 4)
+        .map((nodeID) => {
+          referenceNodeIDs.add(nodeID);
+          const input = inputByID.get(nodeID);
+          if (!input?.url || input.type === "text") return null;
+          return { kind: input.type, url: input.url };
+        })
+        .filter((reference): reference is { kind: "image" | "video" | "audio"; url: string } => Boolean(reference));
+      return references.length ? { name: item.name || "", description: item.description || "", references } : null;
+    })
+    .filter((item): item is { name: string; description: string; references: Array<{ kind: "image" | "video" | "audio"; url: string }> } => Boolean(item));
+  return { textNodeIDs, referenceNodeIDs, klingImageReferenceURLs, videoMultiPrompt, videoElementList };
+}
+
+function canvasVideoFrameReferences(
+  sourceNode: CanvasNode | undefined,
+  inputs: ReturnType<typeof canvasGenerationInputs>,
+) {
+  const imageURLByNodeID = new Map(inputs.filter((input) => input.type === "image" && input.url).map((input) => [input.nodeID, input.url as string]));
+  return {
+    firstFrameURL: sourceNode?.generation_video_first_frame_node_id
+      ? imageURLByNodeID.get(sourceNode.generation_video_first_frame_node_id) || null
+      : null,
+    lastFrameURL: sourceNode?.generation_video_last_frame_node_id
+      ? imageURLByNodeID.get(sourceNode.generation_video_last_frame_node_id) || null
+      : null,
   };
 }
 
@@ -136,34 +259,23 @@ export function canvasGenerationReferenceImageURLs(
   return upstreamURLs.slice(0, Math.max(0, maximum));
 }
 
-export function canvasGenerationVideoReferenceURLs(
-  nodeID: string,
-  nodes: readonly CanvasNode[],
-  connections: readonly CanvasConnection[],
+export function canvasVideoGenerationReferences(
+  context: Pick<CanvasGenerationContext, "referenceImageURLs" | "firstFrameURL" | "lastFrameURL">,
+  configuredImageURLs: readonly string[],
+  frameReferencesEnabled: boolean,
 ) {
-  const nodeByID = new Map(nodes.map((node) => [node.id, node]));
-  const references: string[] = [];
-  const visited = new Set<string>();
-
-  function collect(targetID: string) {
-    connections
-      .filter((connection) => connection.to_node_id === targetID)
-      .forEach((connection) => {
-        const sourceID = connection.from_node_id;
-        if (visited.has(sourceID)) return;
-        visited.add(sourceID);
-        const source = nodeByID.get(sourceID);
-        if (!source) return;
-        if (source.type === "video" && String(source.url || "").trim()) {
-          references.push(String(source.url).trim());
-        } else if (source.type === "config") {
-          collect(sourceID);
-        }
-      });
-  }
-
-  collect(nodeID);
-  return Array.from(new Set(references));
+  const firstFrameURL = String(context.firstFrameURL || "").trim();
+  const lastFrameURL = String(context.lastFrameURL || "").trim();
+  const fallbackFrameURLs = frameReferencesEnabled ? [] : [firstFrameURL, lastFrameURL].filter(Boolean);
+  return {
+    referenceImageURLs: Array.from(new Set([
+      ...configuredImageURLs.map((url) => url.trim()).filter(Boolean),
+      ...context.referenceImageURLs.map((url) => url.trim()).filter(Boolean),
+      ...fallbackFrameURLs,
+    ])),
+    firstFrameURL: frameReferencesEnabled ? firstFrameURL : "",
+    lastFrameURL: frameReferencesEnabled ? lastFrameURL : "",
+  };
 }
 
 export function restoreInterruptedCanvasGenerations(nodes: readonly CanvasNode[]) {

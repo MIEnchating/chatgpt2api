@@ -1,4 +1,4 @@
-import type { CanvasNode } from "@/lib/api";
+import type { CanvasNode } from "@/services/api/canvas";
 
 export function canvasGenerationActiveNodeID(
   sourceNodeID: string,

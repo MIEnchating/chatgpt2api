@@ -8,12 +8,12 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
-	"net"
 	"net/http"
 	"net/url"
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -25,36 +25,31 @@ import (
 	"chatgpt2api/internal/storage"
 	"chatgpt2api/internal/util"
 	frontend "chatgpt2api/internal/web"
-
-	"golang.org/x/net/publicsuffix"
 )
 
 const (
-	maxLoginPageImageSize        = 10 << 20
-	maxSiteIconSize              = 2 << 20
-	maxRelayImageBytes           = 40 << 20
-	maxRelayInputImages          = 14
-	maxRelayImageMultipartMemory = 1 << 20
-	// Gemini 3 image editing accepts up to 14 references. Keep a finite total
-	// request cap even though each individual image has its own limit.
+	maxLoginPageImageSize         = 10 << 20
+	maxSiteIconSize               = 2 << 20
+	maxRelayImageBytes            = 40 << 20
+	maxRelayImageMultipartMemory  = 1 << 20
 	maxRelayImageEditRequestBytes = 192 << 20
 	maxLoginRequestBodyBytes      = 64 << 10
 	imageThumbnailCacheControl    = "public, max-age=31536000, immutable"
 	relayImageLocalizationTimeout = time.Minute
 	authSessionCookieName         = "chatgpt2api_session"
+	defaultVideoModel             = "grok-imagine-video"
 )
 
 var (
 	errRelayImageTooLarge    = errors.New("image file is too large")
-	errTooManyRelayImages    = errors.New("too many image files")
 	errTooManyRelayMasks     = errors.New("only one mask file is allowed")
 	errUnsupportedRelayImage = errors.New("unsupported image format")
 )
 
 type App struct {
+	ctx                 context.Context
 	config              *config.Store
 	auth                *service.AuthService
-	accounts            *service.AccountService
 	logs                *service.LogService
 	logger              *service.Logger
 	proxy               *service.ProxyService
@@ -63,14 +58,21 @@ type App struct {
 	conversationAssets  *service.ImageConversationAssetService
 	tasks               *service.ImageTaskService
 	prompts             *service.PromptFavoriteService
+	myAssets            *service.MyAssetService
 	history             *service.ImageConversationHistoryService
 	canvas              *service.CanvasDocumentService
 	announce            *service.AnnouncementService
+	imagePreferences    *service.ImageGenerationPreferenceService
+	workflows           *service.WorkflowService
+	storageFiles        *service.GenericStorageService
 	newAPIKeys          *service.NewAPITokenReader
+	newAPIKeysMu        sync.RWMutex
+	retiredNewAPIKeys   []*service.NewAPITokenReader
 	cancel              context.CancelFunc
 	historyWriteLimiter *imageConversationHistoryWriteLimiter
 	imageUploadSlots    chan struct{}
 	videoDir            string
+	audioDir            string
 	videoReferenceDir   string
 	loginLimiter        *loginRateLimiter
 	settingsMu          sync.Mutex
@@ -155,14 +157,9 @@ func NewApp() (*App, error) {
 	}
 	proxy := service.NewProxyService(cfg)
 	newAPIKeys, err := service.NewNewAPITokenReader(service.NewAPITokenReaderConfig{
-		DatabaseURL:  cfg.RelayDatabaseURL(),
+		DatabaseURL:  cfg.RelayDatabaseConnectionURL(),
 		DatabaseType: cfg.RelayDatabaseType(),
 	})
-	if err != nil {
-		cancel()
-		return nil, err
-	}
-	accounts, err := service.NewAccountService(storageBackend, cfg, proxy, logs)
 	if err != nil {
 		cancel()
 		return nil, err
@@ -171,6 +168,15 @@ func NewApp() (*App, error) {
 	if err != nil {
 		cancel()
 		return nil, err
+	}
+	storageFiles, err := service.NewGenericStorageService(storageBackend, cfg, filepath.Join(cfg.DataDir, "storage_files"))
+	if err != nil {
+		cancel()
+		return nil, err
+	}
+	if err := storageFiles.RefreshCapacityScheduler(ctx); err != nil {
+		cancel()
+		return nil, fmt.Errorf("initialize storage capacity scheduler: %w", err)
 	}
 	bootstrap, err := auth.EnsureBootstrapAdmin(cfg.AdminUsername(), cfg.AdminPassword())
 	if err != nil {
@@ -182,13 +188,8 @@ func NewApp() (*App, error) {
 		logger.Warning("bootstrap admin password generated", "username", bootstrap.Username)
 	}
 	documentStore, _ := storageBackend.(storage.JSONDocumentBackend)
-	imageSessions := service.NewImageConversationSessionService(filepath.Join(cfg.DataDir, "image_conversation_sessions.json"), storageBackend)
 	images := service.NewImageService(cfg, storageBackend)
-	if storeErr := configureImageObjectStorage(cfg, images); storeErr != nil {
-		cancel()
-		return nil, fmt.Errorf("initialize image object storage: %w", storeErr)
-	}
-	engine := &protocol.Engine{Accounts: accounts, Config: cfg, Storage: documentStore, Proxy: proxy, Logger: logger, ImageConversationSessions: imageSessions, Images: images}
+	engine := &protocol.Engine{Config: cfg, Storage: documentStore, Images: images}
 	videoDir := filepath.Join(cfg.DataDir, "videos")
 	if err := os.MkdirAll(videoDir, 0o755); err != nil {
 		cancel()
@@ -199,7 +200,12 @@ func NewApp() (*App, error) {
 		cancel()
 		return nil, fmt.Errorf("initialize video reference storage: %w", err)
 	}
-	app := &App{config: cfg, auth: auth, accounts: accounts, logs: logs, logger: logger, proxy: proxy, engine: engine, images: images, videoDir: videoDir, videoReferenceDir: videoReferenceDir, conversationAssets: service.NewImageConversationAssetService(filepath.Join(cfg.DataDir, "image_conversation_assets")), prompts: service.NewPromptFavoriteService(storageBackend), history: service.NewImageConversationHistoryService(storageBackend), canvas: service.NewCanvasDocumentService(storageBackend), announce: service.NewAnnouncementService(storageBackend), newAPIKeys: newAPIKeys, cancel: cancel, historyWriteLimiter: newImageConversationHistoryWriteLimiter(imageConversationHistoryWriteParallelism), imageUploadSlots: make(chan struct{}, 2), loginLimiter: newLoginRateLimiter()}
+	audioDir := filepath.Join(cfg.DataDir, "audio")
+	if err := os.MkdirAll(audioDir, 0o755); err != nil {
+		cancel()
+		return nil, fmt.Errorf("initialize audio storage: %w", err)
+	}
+	app := &App{ctx: ctx, config: cfg, auth: auth, logs: logs, logger: logger, proxy: proxy, engine: engine, images: images, videoDir: videoDir, audioDir: audioDir, videoReferenceDir: videoReferenceDir, conversationAssets: service.NewImageConversationAssetService(filepath.Join(cfg.DataDir, "image_conversation_assets")), prompts: service.NewPromptFavoriteService(storageBackend), myAssets: service.NewMyAssetService(storageBackend, storageFiles), history: service.NewImageConversationHistoryService(storageBackend), canvas: service.NewCanvasDocumentService(storageBackend), announce: service.NewAnnouncementService(storageBackend), imagePreferences: service.NewImageGenerationPreferenceService(storageBackend), workflows: service.NewWorkflowService(storageBackend), storageFiles: storageFiles, newAPIKeys: newAPIKeys, cancel: cancel, historyWriteLimiter: newImageConversationHistoryWriteLimiter(imageConversationHistoryWriteParallelism), imageUploadSlots: make(chan struct{}, 2), loginLimiter: newLoginRateLimiter()}
 	app.conversationAssets.SetStorageBudget(cfg.ImageStorageLimitBytes, func() int64 {
 		return app.images.StorageGovernance().TotalBytes
 	})
@@ -210,8 +216,7 @@ func NewApp() (*App, error) {
 				if err := app.attachRelayAPIKeyForIdentity(ctx, identity, payload); err != nil {
 					return nil, err
 				}
-				result, stream, err := app.relayImageGenerations(ctx, payload)
-				return relayImageTaskResult(payload, result, stream, err)
+				return app.relayImageCreationTask(ctx, payload, nil, false)
 			})
 		},
 		func(ctx context.Context, identity service.Identity, payload map[string]any) (map[string]any, error) {
@@ -220,8 +225,7 @@ func NewApp() (*App, error) {
 					return nil, err
 				}
 				images, _ := payload["images"].([]protocol.UploadedImage)
-				result, stream, err := app.relayImageEdits(ctx, payload, images)
-				return relayImageTaskResult(payload, result, stream, err)
+				return app.relayImageCreationTask(ctx, payload, images, true)
 			})
 		},
 		func(ctx context.Context, identity service.Identity, payload map[string]any) (map[string]any, error) {
@@ -234,10 +238,12 @@ func NewApp() (*App, error) {
 	app.tasks.SetVideoHandler(func(ctx context.Context, identity service.Identity, payload map[string]any) (map[string]any, error) {
 		return app.runLoggedVideoTask(ctx, identity, payload)
 	})
+	app.tasks.SetAudioHandler(func(ctx context.Context, identity service.Identity, payload map[string]any) (map[string]any, error) {
+		return app.runLoggedAudioTask(ctx, identity, payload)
+	})
 	app.tasks.SetTaskTimeoutGetter(func() time.Duration {
 		return time.Duration(app.config.ImageTaskTimeoutSeconds()) * time.Second
 	})
-	accounts.StartLimitedWatcher(ctx, time.Duration(cfg.RefreshAccountIntervalMinute())*time.Minute)
 	logs.StartRetentionCleaner(ctx, cfg.LogRetentionDays, 24*time.Hour, logger)
 	_, _ = app.images.CleanupStorage(service.ImageStorageCleanupOptions{
 		RetentionDays: cfg.ImageRetentionDays(),
@@ -252,7 +258,7 @@ func (a *App) runLoggedVideoTask(ctx context.Context, identity service.Identity,
 	start := time.Now()
 	payload["owner_id"] = identityScope(identity)
 	payload["owner_name"] = identityDisplayName(identity)
-	model := firstNonEmpty(util.Clean(payload["model"]), firstString(a.config.VideoModels(), "sora-2"))
+	model := firstNonEmpty(util.Clean(payload["model"]), firstString(a.config.VideoModels(), defaultVideoModel))
 	payload["model"] = model
 	if err := a.attachRelayAPIKeyForIdentity(ctx, identity, payload); err != nil {
 		return nil, err
@@ -446,9 +452,7 @@ func isRelayImagePartialEvent(event map[string]any) bool {
 
 func isRelayImageCompletedEvent(event map[string]any) bool {
 	eventType := strings.ToLower(strings.TrimSpace(util.Clean(event["type"])))
-	// Some compatible relays use the legacy indexed data shape without an
-	// event type. Typed image streams are final only on a completed event.
-	return eventType == "" || strings.HasSuffix(eventType, ".completed")
+	return strings.HasSuffix(eventType, ".completed")
 }
 
 func relayImageTaskProgressCallback(payload map[string]any) protocol.ImageOutputProgressCallback {
@@ -478,49 +482,6 @@ func relayImageStreamItemData(item map[string]any) []map[string]any {
 	return []map[string]any{data}
 }
 
-func relayImageStreamData(indexed map[int][]map[string]any, unindexed []map[string]any, outputLimit int) []map[string]any {
-	outputLimit = normalizedRelayImageStreamOutputLimit(outputLimit)
-	if len(unindexed) > 0 {
-		data := cloneRelayImageData(unindexed)
-		if len(data) > outputLimit {
-			data = data[:outputLimit]
-		}
-		return data
-	}
-	if len(indexed) == 0 {
-		return []map[string]any{}
-	}
-	length := 0
-	for index, items := range indexed {
-		if index < 0 || index >= outputLimit {
-			continue
-		}
-		itemCount := len(items)
-		if available := outputLimit - index; itemCount > available {
-			itemCount = available
-		}
-		if end := index + itemCount; end > length {
-			length = end
-		}
-	}
-	data := make([]map[string]any, length)
-	for index := range data {
-		data[index] = map[string]any{}
-	}
-	for index, items := range indexed {
-		if index < 0 || index >= len(data) {
-			continue
-		}
-		for offset, item := range cloneRelayImageData(items) {
-			if index+offset >= len(data) {
-				break
-			}
-			data[index+offset] = item
-		}
-	}
-	return data
-}
-
 func cloneRelayImageData(items []map[string]any) []map[string]any {
 	if len(items) == 0 {
 		return nil
@@ -540,6 +501,9 @@ func cloneRelayImageData(items []map[string]any) []map[string]any {
 }
 
 func (a *App) Close() {
+	if a.storageFiles != nil {
+		a.storageFiles.Close()
+	}
 	if a.cancel != nil {
 		a.cancel()
 	}
@@ -551,9 +515,7 @@ func (a *App) Close() {
 	if a.logger != nil {
 		_ = a.logger.Close()
 	}
-	if a.newAPIKeys != nil {
-		_ = a.newAPIKeys.Close()
-	}
+	a.closeRelayTokenReaders()
 	if a.config != nil {
 		if backend, err := a.config.StorageBackend(); err == nil {
 			if closer, ok := backend.(interface{ Close() error }); ok {
@@ -567,226 +529,29 @@ func (a *App) Logger() *service.Logger {
 	return a.logger
 }
 
-func (a *App) handleModels(w http.ResponseWriter, r *http.Request) {
-	identity, ok := a.requireIdentity(w, r, "")
+func (a *App) handleUpstreamModels(w http.ResponseWriter, r *http.Request) {
+	identity, ok := a.requireIdentity(w, r)
 	if !ok {
 		return
 	}
 	relayAPIKey := ""
-	if a.newAPIKeys != nil {
+	newAPIKeys := a.relayTokenReader()
+	if newAPIKeys != nil {
 		group := strings.TrimSpace(r.URL.Query().Get("group"))
 		tokenName := strings.TrimSpace(r.URL.Query().Get("token_name"))
 		if group != "" || tokenName != "" {
 			var err error
-			relayAPIKey, err = a.newAPIKeys.KeyForIdentityGroupAndName(r.Context(), identity, group, tokenName)
+			relayAPIKey, err = newAPIKeys.KeyForIdentityGroupAndName(r.Context(), identity, group, tokenName)
 			if err != nil {
-				a.writeProtocol(w, r, nil, nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: err.Error()}, "openai", "/v1/models", "models", identity, "模型列表", service.ImageVisibilityPrivate)
+				a.writeProtocol(w, r, nil, nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: err.Error()}, "openai", "/api/profile/upstream-models", "models", identity, "上游模型列表", service.ImageVisibilityPrivate)
 				return
 			}
 		} else {
-			relayAPIKey, _ = a.newAPIKeys.KeyForIdentity(r.Context(), identity)
+			relayAPIKey, _ = newAPIKeys.KeyForIdentity(r.Context(), identity)
 		}
 	}
 	result, err := a.relayListModels(r.Context(), relayAPIKey)
-	a.writeProtocol(w, r, result, nil, err, "openai", "/v1/models", "models", identity, "模型列表", service.ImageVisibilityPrivate)
-}
-
-func (a *App) handleImageGenerations(w http.ResponseWriter, r *http.Request) {
-	identity, ok := a.requireIdentity(w, r, "")
-	if !ok {
-		return
-	}
-	body, err := readJSONMap(r)
-	if err != nil {
-		util.WriteError(w, http.StatusBadRequest, "invalid json body")
-		return
-	}
-	model := a.applyDefaultImageModel(body)
-	if err := validateRelayImageRequest("/v1/images/generations", model, body, nil); err != nil {
-		a.writeProtocol(w, r, nil, nil, err, "openai", "/v1/images/generations", model, identity, "文生图", service.ImageVisibilityPrivate, body)
-		return
-	}
-	normalizeImagePayloadForModel(body)
-	if !validProtocolImageCount(body["n"], model) {
-		util.WriteError(w, http.StatusBadRequest, protocolImageCountRangeMessage(model))
-		return
-	}
-	body["owner_id"] = identityScope(identity)
-	body["owner_name"] = identityDisplayName(identity)
-	body["base_url"] = a.relayBaseURL()
-	a.attachCreationTaskLimiter(body, identity)
-	visibility, err := service.NormalizeImageVisibility(util.Clean(body["visibility"]))
-	if err != nil {
-		util.WriteError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	if err := validateGoogleGeminiInlineRequest(body, nil); err != nil {
-		a.writeProtocol(w, r, nil, nil, err, "openai", "/v1/images/generations", model, identity, "文生图", visibility, body)
-		return
-	}
-	if err := a.attachRelayAPIKeyForIdentity(r.Context(), identity, body); err != nil {
-		a.writeProtocol(w, r, nil, nil, err, "openai", "/v1/images/generations", model, identity, "文生图", visibility)
-		return
-	}
-	release, err := relayAcquireDirectImageTaskSlot(r.Context(), body)
-	if err != nil {
-		a.writeProtocol(w, r, nil, nil, err, "openai", "/v1/images/generations", model, identity, "文生图", visibility, body)
-		return
-	}
-	if release != nil {
-		defer release()
-	}
-	result, stream, err := a.relayImageGenerations(r.Context(), body)
-	if stream == nil && result != nil {
-		if localizeErr := a.localizeRelayImageResult(r.Context(), identity, result, body); localizeErr != nil {
-			if err == nil {
-				err = localizeErr
-			} else {
-				err = errors.Join(err, localizeErr)
-			}
-		}
-	}
-	a.writeProtocol(w, r, result, stream, err, "openai", "/v1/images/generations", model, identity, "文生图", visibility, body)
-}
-
-func (a *App) handleImageEdits(w http.ResponseWriter, r *http.Request) {
-	identity, ok := a.requireIdentity(w, r, "")
-	if !ok {
-		return
-	}
-	release, acquired := a.acquireImageUpload(r.Context())
-	if !acquired {
-		util.WriteError(w, http.StatusRequestTimeout, "image upload was canceled")
-		return
-	}
-	defer release()
-	body, images, err := readMultipartImageBody(w, r)
-	if err != nil {
-		writeMultipartImageBodyError(w, err)
-		return
-	}
-	if len(images) == 0 {
-		util.WriteError(w, http.StatusBadRequest, "image file is required")
-		return
-	}
-	body["owner_id"] = identityScope(identity)
-	body["owner_name"] = identityDisplayName(identity)
-	body["base_url"] = a.relayBaseURL()
-	a.attachCreationTaskLimiter(body, identity)
-	body["images"] = images
-	visibility, err := service.NormalizeImageVisibility(util.Clean(body["visibility"]))
-	if err != nil {
-		util.WriteError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	model := a.applyDefaultImageModel(body)
-	if err := validateRelayImageRequest("/v1/images/edits", model, body, images); err != nil {
-		a.writeProtocol(w, r, nil, nil, err, "openai", "/v1/images/edits", model, identity, "图生图", visibility, body)
-		return
-	}
-	normalizeImagePayloadForModel(body)
-	if !validProtocolImageCount(body["n"], model) {
-		util.WriteError(w, http.StatusBadRequest, protocolImageCountRangeMessage(model))
-		return
-	}
-	if err := validateRelayImageReferenceCount(model, len(images)); err != nil {
-		a.writeProtocol(w, r, nil, nil, err, "openai", "/v1/images/edits", model, identity, "图生图", visibility, body)
-		return
-	}
-	if err := validateGoogleGeminiInlineRequest(body, images); err != nil {
-		a.writeProtocol(w, r, nil, nil, err, "openai", "/v1/images/edits", model, identity, "图生图", visibility, body)
-		return
-	}
-	if err := a.attachRelayAPIKeyForIdentity(r.Context(), identity, body); err != nil {
-		a.writeProtocol(w, r, nil, nil, err, "openai", "/v1/images/edits", model, identity, "图生图", visibility)
-		return
-	}
-	imageTaskRelease, err := relayAcquireDirectImageTaskSlot(r.Context(), body)
-	if err != nil {
-		a.writeProtocol(w, r, nil, nil, err, "openai", "/v1/images/edits", model, identity, "图生图", visibility, body)
-		return
-	}
-	if imageTaskRelease != nil {
-		defer imageTaskRelease()
-	}
-	result, stream, err := a.relayImageEdits(r.Context(), body, images)
-	if stream == nil && result != nil {
-		if localizeErr := a.localizeRelayImageResult(r.Context(), identity, result, body); localizeErr != nil {
-			if err == nil {
-				err = localizeErr
-			} else {
-				err = errors.Join(err, localizeErr)
-			}
-		}
-	}
-	a.writeProtocol(w, r, result, stream, err, "openai", "/v1/images/edits", model, identity, "图生图", visibility, body)
-}
-
-func (a *App) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
-	identity, ok := a.requireIdentity(w, r, "")
-	if !ok {
-		return
-	}
-	body, err := readJSONMap(r)
-	if err != nil {
-		util.WriteError(w, http.StatusBadRequest, "invalid json body")
-		return
-	}
-	body["owner_id"] = identityScope(identity)
-	body["owner_name"] = identityDisplayName(identity)
-	a.attachCreationTaskLimiter(body, identity)
-	model := a.applyDefaultChatCompletionModel(body)
-	if err := a.attachRelayAPIKeyForIdentity(r.Context(), identity, body); err != nil {
-		a.writeProtocol(w, r, nil, nil, err, "openai", "/v1/chat/completions", model, identity, "文本生成", service.ImageVisibilityPrivate)
-		return
-	}
-	result, stream, err := a.relayChatCompletions(r.Context(), body)
-	a.writeProtocol(w, r, result, stream, err, "openai", "/v1/chat/completions", model, identity, "文本生成", service.ImageVisibilityPrivate)
-}
-
-func (a *App) handleResponses(w http.ResponseWriter, r *http.Request) {
-	identity, ok := a.requireIdentity(w, r, "")
-	if !ok {
-		return
-	}
-	body, err := readJSONMap(r)
-	if err != nil {
-		util.WriteError(w, http.StatusBadRequest, "invalid json body")
-		return
-	}
-	body["owner_id"] = identityScope(identity)
-	body["owner_name"] = identityDisplayName(identity)
-	a.attachCreationTaskLimiter(body, identity)
-	model := a.applyDefaultResponsesModel(body)
-	if err := a.attachRelayAPIKeyForIdentity(r.Context(), identity, body); err != nil {
-		a.writeProtocol(w, r, nil, nil, err, "openai", "/v1/responses", model, identity, "Responses", service.ImageVisibilityPrivate)
-		return
-	}
-	result, stream, err := a.relayResponses(r.Context(), body)
-	a.writeProtocol(w, r, result, stream, err, "openai", "/v1/responses", model, identity, "Responses", service.ImageVisibilityPrivate)
-}
-
-func (a *App) handleMessages(w http.ResponseWriter, r *http.Request) {
-	authHeader := r.Header.Get("Authorization")
-	if authHeader == "" && r.Header.Get("x-api-key") != "" {
-		authHeader = "Bearer " + r.Header.Get("x-api-key")
-	}
-	identity, ok := a.requireIdentity(w, r, authHeader)
-	if !ok {
-		return
-	}
-	body, err := readJSONMap(r)
-	if err != nil {
-		util.WriteError(w, http.StatusBadRequest, "invalid json body")
-		return
-	}
-	model := a.applyDefaultChatModel(body)
-	if err := a.attachRelayAPIKeyForIdentity(r.Context(), identity, body); err != nil {
-		a.writeProtocol(w, r, nil, nil, err, "anthropic", "/v1/messages", model, identity, "Messages", service.ImageVisibilityPrivate)
-		return
-	}
-	result, stream, err := a.relayMessages(r.Context(), body)
-	a.writeProtocol(w, r, result, stream, err, "anthropic", "/v1/messages", model, identity, "Messages", service.ImageVisibilityPrivate)
+	a.writeProtocol(w, r, result, nil, err, "openai", "/api/profile/upstream-models", "models", identity, "上游模型列表", service.ImageVisibilityPrivate)
 }
 
 func (a *App) writeProtocol(w http.ResponseWriter, r *http.Request, result map[string]any, stream *protocol.StreamResult, err error, sseKind, endpoint, model string, identity service.Identity, summary, visibility string, imagePayloads ...map[string]any) {
@@ -957,12 +722,13 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 		if a.writeAuthPersistenceError(w, err) {
 			return
 		}
-		if strings.EqualFold(username, a.config.AdminUsername()) || a.newAPIKeys == nil {
+		newAPIKeys := a.relayTokenReader()
+		if strings.EqualFold(username, a.config.AdminUsername()) || newAPIKeys == nil {
 			loginLimiter.recordFailure(requestIP, username)
 			util.WriteError(w, http.StatusUnauthorized, "用户名或密码错误")
 			return
 		}
-		newAPIUser, newAPIErr := a.newAPIKeys.AuthenticatePassword(r.Context(), username, password)
+		newAPIUser, newAPIErr := newAPIKeys.AuthenticatePassword(r.Context(), username, password)
 		if newAPIErr != nil {
 			loginLimiter.recordFailure(requestIP, username)
 			util.WriteError(w, http.StatusUnauthorized, newAPIErr.Error())
@@ -982,7 +748,7 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleSession(w http.ResponseWriter, r *http.Request) {
-	identity, ok := a.requireIdentity(w, r, "")
+	identity, ok := a.requireIdentity(w, r)
 	if !ok {
 		return
 	}
@@ -997,7 +763,7 @@ func (a *App) handleLogout(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	if _, err := a.auth.RevokeSessions(requestBearerToken(r), requestAuthCookieToken(r)); err != nil {
+	if _, err := a.auth.RevokeSessions(requestAuthCookieToken(r)); err != nil {
 		if !a.writeAuthPersistenceError(w, err) {
 			util.WriteError(w, http.StatusInternalServerError, "failed to revoke session")
 		}
@@ -1044,12 +810,13 @@ func (a *App) identityCreationRPMLimit(identity service.Identity) int {
 }
 
 func (a *App) handleSettings(w http.ResponseWriter, r *http.Request) {
-	if _, ok := a.requireIdentity(w, r, ""); !ok {
+	identity, ok := a.requireIdentity(w, r)
+	if !ok {
 		return
 	}
 	switch r.Method {
 	case http.MethodGet:
-		util.WriteJSON(w, http.StatusOK, map[string]any{"config": a.settingsConfig(r.Context())})
+		util.WriteJSON(w, http.StatusOK, map[string]any{"config": a.settingsConfig(r.Context(), identity.Role == service.AuthRoleAdmin)})
 	case http.MethodPost:
 		a.settingsMu.Lock()
 		defer a.settingsMu.Unlock()
@@ -1058,21 +825,48 @@ func (a *App) handleSettings(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusBadRequest, "invalid json body")
 			return
 		}
-		previousImageStorage := a.config.ImageStorageSettings()
-		nextImageStorage := a.config.ImageStorageSettingsWithUpdate(body)
-		objectStore, objectWrites, err := a.prepareImageObjectStorageChange(previousImageStorage, nextImageStorage)
-		if err != nil {
-			util.WriteError(w, http.StatusBadRequest, err.Error())
-			return
+		if identity.Role != service.AuthRoleAdmin {
+			for key := range body {
+				if strings.HasPrefix(key, "relay_database_") || isObjectStorageCredentialKey(key) {
+					util.WriteError(w, http.StatusForbidden, "仅管理员可以配置数据库或存储凭据")
+					return
+				}
+			}
+		}
+		var nextRelayTokenReader *service.NewAPITokenReader
+		if _, hasURL := body["relay_database_url"]; hasURL || body["relay_database_type"] != nil || body["relay_database_driver"] != nil || body["relay_database_host"] != nil || body["relay_database_name"] != nil {
+			databaseURL := a.config.RelayDatabaseConnectionURLWithUpdate(body)
+			databaseType := a.config.RelayDatabaseType()
+			if value, ok := body["relay_database_type"]; ok {
+				databaseType = strings.ToLower(strings.TrimSpace(fmt.Sprint(value)))
+			}
+			nextRelayTokenReader, err = service.NewNewAPITokenReader(service.NewAPITokenReaderConfig{
+				DatabaseURL: databaseURL, DatabaseType: databaseType,
+			})
+			if err != nil {
+				util.WriteError(w, http.StatusBadRequest, fmt.Sprintf("数据库连接配置无效: %v", err))
+				return
+			}
+			if err := nextRelayTokenReader.ValidateConnection(r.Context()); err != nil {
+				_ = nextRelayTokenReader.Close()
+				util.WriteError(w, http.StatusBadRequest, fmt.Sprintf("数据库连接失败: %v", err))
+				return
+			}
 		}
 		updated, err := a.config.Update(body)
 		if err != nil {
+			if nextRelayTokenReader != nil {
+				_ = nextRelayTokenReader.Close()
+			}
 			util.WriteError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		if err := a.images.ConfigureObjectStore(objectStore, objectWrites); err != nil {
-			util.WriteError(w, http.StatusInternalServerError, "failed to activate object storage configuration")
+		if err := a.storageFiles.RefreshCapacityScheduler(a.ctx); err != nil {
+			util.WriteError(w, http.StatusInternalServerError, "failed to refresh storage capacity scheduler")
 			return
+		}
+		if nextRelayTokenReader != nil {
+			a.swapRelayTokenReader(nextRelayTokenReader)
 		}
 		util.WriteJSON(w, http.StatusOK, map[string]any{"config": updated})
 	default:
@@ -1080,85 +874,55 @@ func (a *App) handleSettings(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func configureImageObjectStorage(cfg *config.Store, images *service.ImageService) error {
-	if cfg == nil || images == nil {
-		return errors.New("image service is not configured")
+func (a *App) relayTokenReader() *service.NewAPITokenReader {
+	if a == nil {
+		return nil
 	}
-	settings := cfg.ImageStorageSettings()
-	count, err := images.ObjectStoredImageCount()
-	if err != nil {
-		return fmt.Errorf("read object-stored image metadata: %w", err)
-	}
-	store, writes, err := imageObjectStoreForSettings(cfg, settings)
-	if err != nil {
-		return err
-	}
-	if count > 0 && store == nil {
-		return errors.New("existing S3 images require the server S3 endpoint and credentials")
-	}
-	if err := images.ConfigureObjectStore(store, writes); err != nil {
-		return err
-	}
-	return images.SyncObjectStoreIndex()
+	a.newAPIKeysMu.RLock()
+	defer a.newAPIKeysMu.RUnlock()
+	return a.newAPIKeys
 }
 
-func (a *App) prepareImageObjectStorageChange(previous, next config.ImageStorageSettings) (service.ImageObjectStore, bool, error) {
-	if a == nil || a.config == nil || a.images == nil {
-		return nil, false, errors.New("image service is not configured")
+func (a *App) swapRelayTokenReader(reader *service.NewAPITokenReader) {
+	a.newAPIKeysMu.Lock()
+	if a.newAPIKeys != nil {
+		a.retiredNewAPIKeys = append(a.retiredNewAPIKeys, a.newAPIKeys)
 	}
-	count, err := a.images.ObjectStoredImageCount()
-	if err != nil {
-		return nil, false, fmt.Errorf("read object-stored image metadata: %w", err)
-	}
-	locationChanged := !sameImageObjectStorageLocation(previous, next)
-	if locationChanged && previous.Backend != "local" {
-		return nil, false, errors.New("switch image storage to local before changing endpoint, region, bucket, prefix, or path style")
-	}
-	if count > 0 && locationChanged {
-		return nil, false, errors.New("existing S3 images prevent changing endpoint, region, bucket, prefix, or path style; migrate or delete those images first")
-	}
-	store, writes, err := imageObjectStoreForSettings(a.config, next)
-	if err != nil {
-		return nil, false, err
-	}
-	if count > 0 && store == nil {
-		return nil, false, errors.New("existing S3 images require the server S3 endpoint and credentials")
-	}
-	return store, writes, nil
+	a.newAPIKeys = reader
+	a.newAPIKeysMu.Unlock()
 }
 
-func imageObjectStoreForSettings(cfg *config.Store, settings config.ImageStorageSettings) (service.ImageObjectStore, bool, error) {
-	if settings.Backend != "local" && settings.Backend != "s3" {
-		return nil, false, errors.New("image storage backend must be local or s3")
+func (a *App) closeRelayTokenReaders() {
+	a.newAPIKeysMu.Lock()
+	readers := append(a.retiredNewAPIKeys, a.newAPIKeys)
+	a.retiredNewAPIKeys = nil
+	a.newAPIKeys = nil
+	a.newAPIKeysMu.Unlock()
+	for _, reader := range readers {
+		if reader != nil {
+			_ = reader.Close()
+		}
 	}
-	writes := settings.Backend == "s3"
-	hasLocation := settings.Endpoint != "" && settings.Bucket != ""
-	hasCredentials := cfg.S3AccessKey() != "" && cfg.S3SecretKey() != ""
-	if !writes && (!hasLocation || !hasCredentials) {
-		return nil, false, nil
-	}
-	store, err := service.NewS3ImageObjectStore(service.S3ImageObjectStoreConfig{
-		Endpoint: settings.Endpoint, Bucket: settings.Bucket, Region: settings.Region, Prefix: settings.Prefix,
-		AccessKey: cfg.S3AccessKey(), SecretKey: cfg.S3SecretKey(), SessionToken: cfg.S3SessionToken(),
-		UsePathStyle: settings.UsePathStyle,
-	})
-	if err != nil {
-		return nil, false, err
-	}
-	return store, writes, nil
 }
 
-func sameImageObjectStorageLocation(left, right config.ImageStorageSettings) bool {
-	return left.Endpoint == right.Endpoint && left.Region == right.Region && left.Bucket == right.Bucket && left.Prefix == right.Prefix && left.UsePathStyle == right.UsePathStyle
+func isObjectStorageCredentialKey(key string) bool {
+	return key == "storage"
 }
 
-func (a *App) settingsConfig(ctx context.Context) map[string]any {
+func (a *App) settingsConfig(ctx context.Context, includeDatabaseCredentials bool) map[string]any {
 	config := a.config.Get()
+	if !includeDatabaseCredentials {
+		for key := range config {
+			if strings.HasPrefix(key, "relay_database_") && key != "relay_database_configured" {
+				delete(config, key)
+			}
+		}
+	}
 	return config
 }
 
 func (a *App) handleModelConfig(w http.ResponseWriter, r *http.Request) {
-	if _, ok := a.requireIdentity(w, r, ""); !ok {
+	if _, ok := a.requireIdentity(w, r); !ok {
 		return
 	}
 	util.WriteJSON(w, http.StatusOK, map[string]any{"config": a.modelConfig()})
@@ -1170,7 +934,11 @@ func (a *App) modelConfig() map[string]any {
 		"image_models":        imageModels,
 		"default_image_model": a.defaultImageModel(),
 		"video_models":        a.config.VideoModels(),
-		"default_video_model": firstString(a.config.VideoModels(), "sora-2"),
+		"default_video_model": firstString(a.config.VideoModels(), defaultVideoModel),
+		"text_models":         a.config.TextModels(),
+		"default_text_model":  a.config.DefaultTextModel(),
+		"audio_models":        a.config.AudioModels(),
+		"default_audio_model": a.config.DefaultAudioModel(),
 		"relay_base_url":      a.relayBaseURL(),
 	}
 }
@@ -1217,49 +985,6 @@ func (a *App) applyDefaultImageModel(body map[string]any) string {
 	return model
 }
 
-func (a *App) applyDefaultChatModel(body map[string]any) string {
-	model := util.Clean(body["model"])
-	if model == "" {
-		model = a.defaultChatModel()
-		body["model"] = model
-	}
-	return model
-}
-
-func (a *App) applyDefaultChatCompletionModel(body map[string]any) string {
-	model := util.Clean(body["model"])
-	if model != "" {
-		return model
-	}
-	if protocol.IsImageChatRequest(body) {
-		model = a.defaultImageModel()
-	} else {
-		model = a.defaultChatModel()
-	}
-	body["model"] = model
-	return model
-}
-
-func (a *App) applyDefaultResponsesModel(body map[string]any) string {
-	if protocol.HasResponseImageGenerationTool(body) {
-		a.applyDefaultResponseImageToolModel(body)
-	}
-	return a.applyDefaultChatModel(body)
-}
-
-func (a *App) applyDefaultResponseImageToolModel(body map[string]any) {
-	defaultModel := a.defaultImageModel()
-	for _, raw := range anyList(body["tools"]) {
-		tool := util.StringMap(raw)
-		if strings.TrimSpace(strings.ToLower(util.Clean(tool["type"]))) != "image_generation" {
-			continue
-		}
-		if model := util.Clean(tool["model"]); model == "" {
-			tool["model"] = defaultModel
-		}
-	}
-}
-
 func (a *App) handleAppMeta(w http.ResponseWriter, r *http.Request) {
 	util.WriteJSON(w, http.StatusOK, map[string]any{
 		"app_title":                   a.config.AppTitle(),
@@ -1274,7 +999,7 @@ func (a *App) handleAppMeta(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleSiteIconSettings(w http.ResponseWriter, r *http.Request) {
-	identity, ok := a.requireIdentity(w, r, "")
+	identity, ok := a.requireIdentity(w, r)
 	if !ok {
 		return
 	}
@@ -1442,14 +1167,14 @@ func (a *App) serveUploadedRasterFile(w http.ResponseWriter, r *http.Request, ro
 }
 
 func (a *App) handlePermissionCatalog(w http.ResponseWriter, r *http.Request) {
-	if _, ok := a.requireIdentity(w, r, ""); !ok {
+	if _, ok := a.requireIdentity(w, r); !ok {
 		return
 	}
 	util.WriteJSON(w, http.StatusOK, a.auth.PermissionCatalog())
 }
 
 func (a *App) handleLoginPageImageSettings(w http.ResponseWriter, r *http.Request) {
-	if _, ok := a.requireIdentity(w, r, ""); !ok {
+	if _, ok := a.requireIdentity(w, r); !ok {
 		return
 	}
 	if r.Method != http.MethodPost {
@@ -1595,7 +1320,7 @@ func safeUploadStem(filename string) string {
 }
 
 func (a *App) handleImages(w http.ResponseWriter, r *http.Request) {
-	identity, ok := a.requireIdentity(w, r, "")
+	identity, ok := a.requireIdentity(w, r)
 	if !ok {
 		return
 	}
@@ -1635,7 +1360,7 @@ func (a *App) handleImageVisibility(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	identity, ok := a.requireIdentity(w, r, "")
+	identity, ok := a.requireIdentity(w, r)
 	if !ok {
 		return
 	}
@@ -1707,21 +1432,7 @@ func (a *App) handleImageFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	setRasterResponseSecurityHeaders(w)
-	if !ref.Remote {
-		http.ServeFile(w, r, ref.Path)
-		return
-	}
-	data, contentType, err := a.images.ImageBytes(rel, service.ImageAccessScope{All: true})
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	w.Header().Set("Content-Type", contentType)
-	w.Header().Set("Content-Length", strconv.Itoa(len(data)))
-	w.Header().Set("Cache-Control", "private, max-age=3600")
-	if r.Method == http.MethodGet {
-		_, _ = w.Write(data)
-	}
+	http.ServeFile(w, r, ref.Path)
 }
 
 func (a *App) handleVideoFile(w http.ResponseWriter, r *http.Request) {
@@ -1729,7 +1440,7 @@ func (a *App) handleVideoFile(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	if _, ok := a.requireIdentity(w, r, ""); !ok {
+	if _, ok := a.requireIdentity(w, r); !ok {
 		return
 	}
 	name := strings.TrimPrefix(r.URL.Path, "/videos/")
@@ -1886,7 +1597,7 @@ func imageThumbnailRequestPath(r *http.Request) (string, error) {
 }
 
 func (a *App) handleLogs(w http.ResponseWriter, r *http.Request) {
-	if _, ok := a.requireIdentity(w, r, ""); !ok {
+	if _, ok := a.requireIdentity(w, r); !ok {
 		return
 	}
 	query, err := parseLogQuery(r)
@@ -1903,7 +1614,7 @@ func (a *App) handleLogs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleLogGovernance(w http.ResponseWriter, r *http.Request) {
-	if _, ok := a.requireIdentity(w, r, ""); !ok {
+	if _, ok := a.requireIdentity(w, r); !ok {
 		return
 	}
 	switch r.Method {
@@ -1931,12 +1642,13 @@ func (a *App) handleLogGovernance(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleImageStorageGovernance(w http.ResponseWriter, r *http.Request) {
-	if _, ok := a.requireIdentity(w, r, ""); !ok {
+	identity, ok := a.requireIdentity(w, r)
+	if !ok {
 		return
 	}
 	switch r.Method {
 	case http.MethodGet:
-		util.WriteJSON(w, http.StatusOK, map[string]any{"governance": a.imageStorageGovernance()})
+		util.WriteJSON(w, http.StatusOK, map[string]any{"governance": a.imageStorageGovernance(identity)})
 	case http.MethodPost:
 		body, err := readJSONMap(r)
 		if err != nil {
@@ -1969,7 +1681,7 @@ func (a *App) handleImageStorageGovernance(w http.ResponseWriter, r *http.Reques
 		}
 		util.WriteJSON(w, http.StatusOK, map[string]any{
 			"cleanup":    result,
-			"governance": a.imageStorageGovernance(),
+			"governance": a.imageStorageGovernance(identity),
 		})
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -2033,7 +1745,7 @@ func (a *App) cleanupImageStorageWithOptions(options service.ImageStorageCleanup
 }
 
 func (a *App) handleStorageInfo(w http.ResponseWriter, r *http.Request) {
-	if _, ok := a.requireIdentity(w, r, ""); !ok {
+	if _, ok := a.requireIdentity(w, r); !ok {
 		return
 	}
 	backend, err := a.config.StorageBackend()
@@ -2044,46 +1756,24 @@ func (a *App) handleStorageInfo(w http.ResponseWriter, r *http.Request) {
 	util.WriteJSON(w, http.StatusOK, map[string]any{"backend": backend.Info(), "health": backend.HealthCheck()})
 }
 
-func (a *App) handleProxy(w http.ResponseWriter, r *http.Request) {
-	if _, ok := a.requireIdentity(w, r, ""); !ok {
+func (a *App) handleProxyTest(w http.ResponseWriter, r *http.Request) {
+	if _, ok := a.requireIdentity(w, r); !ok {
 		return
 	}
-	if r.URL.Path == "/api/proxy/test" {
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		body, _ := readJSONMap(r)
-		candidate := strings.TrimSpace(util.Clean(body["url"]))
-		if candidate == "" {
-			candidate = a.config.Proxy()
-		}
-		if candidate == "" {
-			util.WriteError(w, http.StatusBadRequest, "proxy url is required")
-			return
-		}
-		util.WriteJSON(w, http.StatusOK, map[string]any{"result": a.proxy.Test(candidate, 15*time.Second)})
+	body, _ := readJSONMap(r)
+	candidate := strings.TrimSpace(util.Clean(body["url"]))
+	if candidate == "" {
+		candidate = a.config.Proxy()
+	}
+	if candidate == "" {
+		util.WriteError(w, http.StatusBadRequest, "proxy url is required")
 		return
 	}
-	switch r.Method {
-	case http.MethodGet:
-		util.WriteJSON(w, http.StatusOK, map[string]any{"proxy": map[string]any{"url": a.config.Proxy()}})
-	case http.MethodPost:
-		body, _ := readJSONMap(r)
-		url := util.Clean(body["url"])
-		updated, err := a.config.Update(map[string]any{"proxy": url})
-		if err != nil {
-			util.WriteError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		util.WriteJSON(w, http.StatusOK, map[string]any{"proxy": map[string]any{"url": updated["proxy"]}})
-	default:
-		w.WriteHeader(http.StatusMethodNotAllowed)
-	}
+	util.WriteJSON(w, http.StatusOK, map[string]any{"result": a.proxy.Test(candidate, 15*time.Second)})
 }
 
-func (a *App) requireIdentity(w http.ResponseWriter, r *http.Request, overrideAuth string) (service.Identity, bool) {
-	token := overrideAuthToken(overrideAuth, r)
+func (a *App) requireIdentity(w http.ResponseWriter, r *http.Request) (service.Identity, bool) {
+	token := requestAuthCookieToken(r)
 	if identity := a.auth.Authenticate(token); identity != nil {
 		if !a.identityCanAccessRequest(*identity, r) {
 			util.WriteError(w, http.StatusForbidden, "permission denied")
@@ -2096,24 +1786,6 @@ func (a *App) requireIdentity(w http.ResponseWriter, r *http.Request, overrideAu
 	return service.Identity{}, false
 }
 
-func overrideAuthToken(overrideAuth string, r *http.Request) string {
-	if overrideAuth != "" {
-		return extractBearerToken(overrideAuth)
-	}
-	return requestAuthToken(r)
-}
-
-func requestAuthToken(r *http.Request) string {
-	if token := requestBearerToken(r); token != "" {
-		return token
-	}
-	return requestAuthCookieToken(r)
-}
-
-func requestBearerToken(r *http.Request) string {
-	return extractBearerToken(r.Header.Get("Authorization"))
-}
-
 func requestAuthCookieToken(r *http.Request) string {
 	cookie, err := r.Cookie(authSessionCookieName)
 	if err != nil {
@@ -2123,7 +1795,7 @@ func requestAuthCookieToken(r *http.Request) string {
 }
 
 func (a *App) imageRequestIdentity(w http.ResponseWriter, r *http.Request) (service.Identity, bool) {
-	token := requestAuthToken(r)
+	token := requestAuthCookieToken(r)
 	if token == "" {
 		util.WriteError(w, http.StatusUnauthorized, "authorization is invalid")
 		return service.Identity{}, false
@@ -2146,7 +1818,7 @@ func (a *App) identityPermissions(identity service.Identity) service.PermissionS
 }
 
 func (a *App) identityCanAccessRequest(identity service.Identity, r *http.Request) bool {
-	if identity.Role == service.AuthRoleAdmin || isPermissionCheckSkipped(r.URL.Path) {
+	if identity.Role == service.AuthRoleAdmin || isPermissionCheckSkipped(r.Method, r.URL.Path) {
 		return true
 	}
 	return a.identityCanAccessAPI(identity, r.Method, r.URL.Path)
@@ -2159,7 +1831,7 @@ func (a *App) identityCanAccessAPI(identity service.Identity, method, path strin
 	return service.HasAPIPermission(a.identityPermissions(identity), method, path)
 }
 
-func isPermissionCheckSkipped(path string) bool {
+func isPermissionCheckSkipped(method, path string) bool {
 	switch path {
 	case "/auth/login":
 		return true
@@ -2167,39 +1839,37 @@ func isPermissionCheckSkipped(path string) bool {
 		return true
 	case "/auth/session":
 		return true
-	case "/api/profile":
-		return true
-	case "/api/profile/password":
-		return true
 	case "/api/profile/relay-key":
 		return true
 	case "/api/profile/balance":
 		return true
 	case "/api/model-config":
 		return true
+	case "/api/storage/config":
+		return true
 	case "/api/announcements":
 		return true
 	case "/api/profile/announcement-preferences":
 		return true
-	case "/api/profile/api-key":
+	case "/api/profile/image-generation-preferences":
+		return true
+	case "/api/profile/storage-provider":
+		return true
+	case "/api/profile/storage-provider/measure":
+		return true
+	case "/api/profile/upstream-models":
 		return true
 	case "/api/profile/prompt-favorites":
+		return true
+	case "/api/profile/assets":
 		return true
 	case "/api/profile/image-conversations":
 		return true
 	default:
-		return strings.HasPrefix(path, "/api/profile/api-key/") ||
-			strings.HasPrefix(path, "/api/profile/prompt-favorites/") ||
-			strings.HasPrefix(path, "/api/profile/image-conversations/")
+		return strings.HasPrefix(path, "/api/profile/prompt-favorites/") ||
+			strings.HasPrefix(path, "/api/profile/image-conversations/") ||
+			(method == http.MethodGet || method == http.MethodHead) && strings.HasPrefix(path, "/api/files/")
 	}
-}
-
-func extractBearerToken(auth string) string {
-	scheme, value, ok := strings.Cut(strings.TrimSpace(auth), " ")
-	if !ok || strings.ToLower(scheme) != "bearer" {
-		return ""
-	}
-	return strings.TrimSpace(value)
 }
 
 func isHTTPSRequest(r *http.Request) bool {
@@ -2215,7 +1885,6 @@ func setAuthSessionCookie(w http.ResponseWriter, r *http.Request, token string) 
 	if token == "" {
 		return
 	}
-	expireLegacyAuthSessionCookie(w, r)
 	setAuthSessionCookieValue(w, r, token, int(service.AuthSessionLifetime/time.Second))
 }
 
@@ -2233,71 +1902,11 @@ func setAuthSessionCookieValue(w http.ResponseWriter, r *http.Request, value str
 }
 
 func clearAuthSessionCookie(w http.ResponseWriter, r *http.Request) {
-	expireLegacyAuthSessionCookie(w, r)
 	setAuthSessionCookieValue(w, r, "", -1)
 }
 
-func expireLegacyAuthSessionCookie(w http.ResponseWriter, r *http.Request) {
-	host := requestCookieHost(r)
-	if host == "" || net.ParseIP(host) != nil || host == "localhost" {
-		return
-	}
-	parent, err := publicsuffix.EffectiveTLDPlusOne(host)
-	if err != nil || parent == "" {
-		return
-	}
-	cookie := &http.Cookie{
-		Name:     authSessionCookieName,
-		Value:    "",
-		Path:     "/",
-		Domain:   "." + parent,
-		MaxAge:   -1,
-		Expires:  time.Unix(1, 0),
-		HttpOnly: true,
-		Secure:   isHTTPSRequest(r),
-		SameSite: http.SameSiteLaxMode,
-	}
-	http.SetCookie(w, cookie)
-}
-
-func requestCookieHost(r *http.Request) string {
-	if r == nil {
-		return ""
-	}
-	host := strings.TrimSpace(r.Header.Get("X-Forwarded-Host"))
-	if host != "" {
-		host = strings.TrimSpace(strings.Split(host, ",")[0])
-	}
-	if host == "" {
-		host = strings.TrimSpace(r.Header.Get("Host"))
-	}
-	if host == "" {
-		host = strings.TrimSpace(r.Host)
-	}
-	if parsed, _, err := net.SplitHostPort(host); err == nil {
-		host = parsed
-	} else if strings.Count(host, ":") == 1 {
-		host = strings.Split(host, ":")[0]
-	}
-	return strings.ToLower(strings.Trim(host, "[]"))
-}
-
-func (a *App) resolveImageBaseURL(r *http.Request) string {
-	if base := a.config.BaseURL(); base != "" {
-		return base
-	}
-	scheme := "http"
-	if r.TLS != nil {
-		scheme = "https"
-	}
-	if forwarded := r.Header.Get("x-forwarded-proto"); forwarded != "" {
-		scheme = strings.Split(forwarded, ",")[0]
-	}
-	host := r.Host
-	if value := r.Header.Get("host"); value != "" {
-		host = value
-	}
-	return scheme + "://" + host
+func (a *App) resolveImageBaseURL(_ *http.Request) string {
+	return a.config.BaseURL()
 }
 
 func readJSONMap(r *http.Request) (map[string]any, error) {
@@ -2336,7 +1945,7 @@ func readMultipartImageBody(w http.ResponseWriter, r *http.Request) (map[string]
 		"token_group":             firstForm(r.MultipartForm, "token_group"),
 		"token_name":              firstForm(r.MultipartForm, "token_name"),
 		"api_key":                 firstForm(r.MultipartForm, "api_key"),
-		"response_format":         firstNonEmpty(firstForm(r.MultipartForm, "response_format"), "b64_json"),
+		"response_format":         firstForm(r.MultipartForm, "response_format"),
 	}
 	maskHeaders := r.MultipartForm.File["mask"]
 	if len(maskHeaders) > 1 {
@@ -2352,13 +1961,6 @@ func readMultipartImageBody(w http.ResponseWriter, r *http.Request) (map[string]
 		}
 		body["input_image_mask"] = uploadedImageDataURL(mask)
 	}
-	if rawMessages := strings.TrimSpace(firstForm(r.MultipartForm, "messages")); rawMessages != "" {
-		var messages any
-		if err := json.Unmarshal([]byte(rawMessages), &messages); err != nil {
-			return nil, nil, fmt.Errorf("invalid messages")
-		}
-		body["messages"] = messages
-	}
 	if rawFallback := strings.TrimSpace(firstForm(r.MultipartForm, "fallback_reference_image")); rawFallback != "" {
 		var fallback any
 		if err := json.Unmarshal([]byte(rawFallback), &fallback); err != nil {
@@ -2366,10 +1968,14 @@ func readMultipartImageBody(w http.ResponseWriter, r *http.Request) (map[string]
 		}
 		body["fallback_reference_image"] = fallback
 	}
-	headers := multipartImageFileHeaders(r.MultipartForm)
-	if len(headers) > maxRelayInputImages {
-		return nil, nil, errTooManyRelayImages
+	if rawContext := strings.TrimSpace(firstForm(r.MultipartForm, "workflow_context")); rawContext != "" {
+		var workflowContext map[string]any
+		if err := json.Unmarshal([]byte(rawContext), &workflowContext); err != nil {
+			return nil, nil, fmt.Errorf("invalid workflow_context")
+		}
+		body["workflow_context"] = workflowContext
 	}
+	headers := multipartImageFileHeaders(r.MultipartForm)
 	images := make([]protocol.UploadedImage, 0, len(headers))
 	for _, header := range headers {
 		image, err := readUpload(header)
@@ -2645,61 +2251,6 @@ func imageAccessScope(identity service.Identity) service.ImageAccessScope {
 	return service.ImageAccessScope{OwnerID: identityScope(identity)}
 }
 
-func (a *App) attachFallbackReferenceImage(identity service.Identity, payload map[string]any) {
-	if a == nil || a.images == nil || payload == nil || util.Clean(payload["fallback_reference_image_b64"]) != "" {
-		return
-	}
-	fallback := util.StringMap(payload["fallback_reference_image"])
-	if len(fallback) == 0 {
-		return
-	}
-	if dataURL := fallbackReferenceDataURL(util.Clean(fallback["b64_json"])); dataURL != "" {
-		payload["fallback_reference_image_b64"] = dataURL
-		return
-	}
-	for _, key := range []string{"path", "url"} {
-		value := util.Clean(fallback[key])
-		if value == "" {
-			continue
-		}
-		data, mimeType, err := a.images.ImageBytes(value, imageAccessScope(identity))
-		if err != nil || len(data) == 0 {
-			continue
-		}
-		payload["fallback_reference_image_b64"] = "data:" + mimeType + ";base64," + base64.StdEncoding.EncodeToString(data)
-		return
-	}
-}
-
-func fallbackReferenceDataURL(value string) string {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return ""
-	}
-	contentType := ""
-	dataPart := value
-	if strings.HasPrefix(value, "data:") {
-		header, data, ok := strings.Cut(value, ",")
-		if !ok {
-			return ""
-		}
-		dataPart = data
-		contentType = strings.TrimPrefix(strings.Split(header, ";")[0], "data:")
-	}
-	data, err := base64.StdEncoding.DecodeString(strings.TrimSpace(dataPart))
-	if err != nil || len(data) == 0 {
-		return ""
-	}
-	detected := http.DetectContentType(data)
-	if !strings.HasPrefix(contentType, "image/") {
-		contentType = detected
-	}
-	if !strings.HasPrefix(contentType, "image/") {
-		return ""
-	}
-	return "data:" + contentType + ";base64," + base64.StdEncoding.EncodeToString(data)
-}
-
 func imageListAccessScope(identity service.Identity, value string) (service.ImageAccessScope, int, string) {
 	switch strings.TrimSpace(value) {
 	case "":
@@ -2904,7 +2455,9 @@ func (a *App) runLoggedImageTask(ctx context.Context, identity service.Identity,
 		a.logCall(ctx, identity, summary, http.MethodPost, endpoint, model, start, "failed", protocolErrorHTTPStatus(err), err.Error(), nil, payloadAuditCapture(payload))
 		return nil, err
 	}
-	normalizeImagePayloadForModel(payload)
+	if util.Clean(payload["api_mode"]) == "" || util.Clean(payload["api_mode"]) == "images" {
+		normalizeImagePayloadForModel(payload)
+	}
 	requestCapture := payloadAuditCapture(payload)
 	managedSlot := relayImageOutputSlotAcquirer(payload) != nil
 	release, err := relayAcquireImageTaskSlot(ctx, payload)
@@ -3420,29 +2973,24 @@ func parseImageQualityDimensions(value string) (int, int, bool) {
 	return width, height, width > 0 && height > 0
 }
 
-func (a *App) attachCreationTaskLimiter(body map[string]any, identity service.Identity) {
-	if a == nil || a.tasks == nil || body == nil {
-		return
-	}
-	body[protocol.ImageOutputSlotAcquirerPayloadKey] = func(ctx context.Context, index int) (func(), error) {
-		units := 1
-		if index <= 0 {
-			units = normalizedProtocolImageCount(body["n"], util.Clean(body["model"]))
-		}
-		return a.tasks.AcquireCreationUnits(ctx, identity, units)
-	}
+func (a *App) runLoggedChatTask(ctx context.Context, identity service.Identity, payload map[string]any) (map[string]any, error) {
+	return a.runLoggedChatTaskWithContext(ctx, identity, payload, "/api/creation-tasks/chat-completions", "文本生成")
 }
 
-func (a *App) runLoggedChatTask(ctx context.Context, identity service.Identity, payload map[string]any) (map[string]any, error) {
+func (a *App) runLoggedChatTaskWithContext(ctx context.Context, identity service.Identity, payload map[string]any, endpoint, summary string) (map[string]any, error) {
 	ctx, _ = protocol.WithAccountUsageTracker(ctx)
 	start := time.Now()
 	requestCapture := payloadAuditCapture(payload)
 	payload["owner_id"] = identityScope(identity)
 	payload["owner_name"] = identityDisplayName(identity)
-	payload["stream"] = true
+	if len(util.AsMapSlice(payload["tools"])) > 0 {
+		payload["stream"] = false
+	} else {
+		payload["stream"] = true
+	}
 	model := firstNonEmpty(util.Clean(payload["model"]), a.defaultChatModel())
 	if err := a.attachRelayAPIKeyForIdentity(ctx, identity, payload); err != nil {
-		a.logCall(ctx, identity, "文本生成", http.MethodPost, "/api/creation-tasks/chat-completions", model, start, "failed", protocolErrorHTTPStatus(err), err.Error(), nil, requestCapture)
+		a.logCall(ctx, identity, summary, http.MethodPost, endpoint, model, start, "failed", protocolErrorHTTPStatus(err), err.Error(), nil, requestCapture)
 		return nil, err
 	}
 	result, stream, err := a.relayChatCompletions(ctx, payload)
@@ -3450,27 +2998,64 @@ func (a *App) runLoggedChatTask(ctx context.Context, identity service.Identity, 
 		result, err = collectRelayChatTaskStream(payload, stream)
 	}
 	if err != nil {
-		a.logCall(ctx, identity, "文本生成", http.MethodPost, "/api/creation-tasks/chat-completions", model, start, "failed", protocolErrorHTTPStatus(err), err.Error(), nil, requestCapture)
+		a.logCall(ctx, identity, summary, http.MethodPost, endpoint, model, start, "failed", protocolErrorHTTPStatus(err), err.Error(), nil, requestCapture)
 		return result, err
 	}
-	text := chatCompletionResultText(result)
-	if text == "" {
-		err = errors.New("模型没有返回文本内容")
-		a.logCall(ctx, identity, "文本生成", http.MethodPost, "/api/creation-tasks/chat-completions", model, start, "failed", http.StatusBadGateway, err.Error(), nil, requestCapture)
+	data := chatCompletionTaskData(result)
+	if util.Clean(data["text_response"]) == "" && len(util.AsMapSlice(data["tool_calls"])) == 0 {
+		err = errors.New("模型没有返回文本内容或工具调用")
+		a.logCall(ctx, identity, summary, http.MethodPost, endpoint, model, start, "failed", http.StatusBadGateway, err.Error(), nil, requestCapture)
 		return result, err
 	}
-	a.logCall(ctx, identity, "文本生成", http.MethodPost, "/api/creation-tasks/chat-completions", model, start, "success", http.StatusOK, "", nil, requestCapture)
+	a.logCall(ctx, identity, summary, http.MethodPost, endpoint, model, start, "success", http.StatusOK, "", nil, requestCapture)
 	return map[string]any{
 		"created":     result["created"],
 		"output_type": "text",
-		"data":        []map[string]any{{"text_response": text}},
+		"data":        []map[string]any{data},
 	}, nil
+}
+
+func chatCompletionTaskData(result map[string]any) map[string]any {
+	for _, item := range util.AsMapSlice(result["data"]) {
+		data := map[string]any{}
+		if text, ok := item["text_response"].(string); ok && text != "" {
+			data["text_response"] = text
+		}
+		if reasoning, ok := item["reasoning_content"].(string); ok {
+			data["reasoning_content"] = reasoning
+		}
+		if calls := util.AsMapSlice(item["tool_calls"]); len(calls) > 0 {
+			data["tool_calls"] = calls
+		}
+		if len(data) > 0 {
+			return data
+		}
+	}
+	for _, choice := range util.AsMapSlice(result["choices"]) {
+		message := util.StringMap(choice["message"])
+		data := map[string]any{}
+		if text := chatCompletionContentRawText(message["content"]); text != "" {
+			data["text_response"] = text
+		}
+		if reasoning, ok := message["reasoning_content"].(string); ok {
+			data["reasoning_content"] = reasoning
+		}
+		if calls := util.AsMapSlice(message["tool_calls"]); len(calls) > 0 {
+			data["tool_calls"] = calls
+		}
+		if len(data) > 0 {
+			return data
+		}
+	}
+	return map[string]any{}
 }
 
 func collectRelayChatTaskStream(payload map[string]any, stream *protocol.StreamResult) (map[string]any, error) {
 	created := time.Now().Unix()
 	model := ""
 	var text strings.Builder
+	var reasoning strings.Builder
+	toolCalls := map[int]*chatCompletionToolCallParts{}
 	onProgress := relayTextTaskProgressCallback(payload)
 
 	for item := range stream.Items {
@@ -3489,20 +3074,111 @@ func collectRelayChatTaskStream(payload map[string]any, stream *protocol.StreamR
 				onProgress(text.String())
 			}
 		}
+		for _, choice := range util.AsMapSlice(item["choices"]) {
+			delta := util.StringMap(choice["delta"])
+			if value, ok := delta["reasoning_content"].(string); ok {
+				reasoning.WriteString(value)
+			}
+			appendChatCompletionToolCallParts(toolCalls, delta["tool_calls"], false)
+			message := util.StringMap(choice["message"])
+			if value, ok := message["reasoning_content"].(string); ok && reasoning.Len() == 0 {
+				reasoning.WriteString(value)
+			}
+			appendChatCompletionToolCallParts(toolCalls, message["tool_calls"], true)
+		}
 	}
 	if err := <-stream.Err; err != nil {
 		return nil, err
 	}
 	content := text.String()
-	if strings.TrimSpace(content) == "" {
-		return nil, errors.New("模型没有返回文本内容")
+	data := map[string]any{}
+	if content != "" {
+		data["text_response"] = content
+	}
+	if reasoning.Len() > 0 {
+		data["reasoning_content"] = reasoning.String()
+	}
+	if calls := completedChatCompletionToolCalls(toolCalls); len(calls) > 0 {
+		data["tool_calls"] = calls
+	}
+	if strings.TrimSpace(content) == "" && len(util.AsMapSlice(data["tool_calls"])) == 0 {
+		return nil, errors.New("模型没有返回文本内容或工具调用")
 	}
 	return map[string]any{
 		"created":     created,
 		"model":       model,
 		"output_type": "text",
-		"data":        []map[string]any{{"text_response": content}},
+		"data":        []map[string]any{data},
 	}, nil
+}
+
+type chatCompletionToolCallParts struct {
+	id        string
+	typeName  string
+	name      string
+	arguments strings.Builder
+}
+
+func appendChatCompletionToolCallParts(target map[int]*chatCompletionToolCallParts, value any, replace bool) {
+	for fallbackIndex, raw := range util.AsMapSlice(value) {
+		index := util.ToInt(raw["index"], fallbackIndex)
+		parts := target[index]
+		if parts == nil {
+			parts = &chatCompletionToolCallParts{}
+			target[index] = parts
+		}
+		if id := util.Clean(raw["id"]); id != "" {
+			parts.id = id
+		}
+		if typeName := util.Clean(raw["type"]); typeName != "" {
+			parts.typeName = typeName
+		}
+		function := util.StringMap(raw["function"])
+		if name := util.Clean(function["name"]); name != "" {
+			parts.name = name
+		}
+		if arguments, ok := function["arguments"].(string); ok {
+			if replace {
+				parts.arguments.Reset()
+			}
+			parts.arguments.WriteString(arguments)
+		}
+	}
+}
+
+func completedChatCompletionToolCalls(parts map[int]*chatCompletionToolCallParts) []map[string]any {
+	if len(parts) == 0 {
+		return nil
+	}
+	indexes := make([]int, 0, len(parts))
+	for index := range parts {
+		indexes = append(indexes, index)
+	}
+	sort.Ints(indexes)
+	calls := make([]map[string]any, 0, len(indexes))
+	for _, index := range indexes {
+		item := parts[index]
+		if item == nil || strings.TrimSpace(item.name) == "" {
+			continue
+		}
+		id := item.id
+		if id == "" {
+			id = fmt.Sprintf("tool-call-%d", index)
+		}
+		typeName := item.typeName
+		if typeName == "" {
+			typeName = "function"
+		}
+		calls = append(calls, map[string]any{
+			"id":   id,
+			"type": typeName,
+			"function": map[string]any{
+				"name":      item.name,
+				"arguments": item.arguments.String(),
+			},
+		})
+	}
+	return calls
 }
 
 func relayTextTaskProgressCallback(payload map[string]any) func(string) {
@@ -3533,21 +3209,6 @@ func chatCompletionStreamTextDelta(item map[string]any) string {
 	return strings.Join(parts, "")
 }
 
-func chatCompletionResultText(result map[string]any) string {
-	for _, item := range util.AsMapSlice(result["data"]) {
-		if text := util.Clean(item["text_response"]); text != "" {
-			return text
-		}
-	}
-	for _, choice := range util.AsMapSlice(result["choices"]) {
-		message := util.StringMap(choice["message"])
-		if text := chatCompletionContentText(message["content"]); text != "" {
-			return text
-		}
-	}
-	return ""
-}
-
 func chatCompletionContentRawText(content any) string {
 	if text, ok := content.(string); ok {
 		return text
@@ -3560,20 +3221,6 @@ func chatCompletionContentRawText(content any) string {
 		}
 	}
 	return strings.Join(parts, "")
-}
-
-func chatCompletionContentText(content any) string {
-	if text, ok := content.(string); ok {
-		return strings.TrimSpace(text)
-	}
-	var parts []string
-	for _, item := range anyList(content) {
-		block := util.StringMap(item)
-		if text := util.Clean(block["text"]); text != "" {
-			parts = append(parts, text)
-		}
-	}
-	return strings.TrimSpace(strings.Join(parts, "\n"))
 }
 
 func collectURLs(v any) []string {
@@ -3646,112 +3293,6 @@ func normalizedRelayImageStreamOutputLimit(value int) int {
 		return limit
 	}
 	return value
-}
-
-func billableProtocolOutputCount(endpoint string, result map[string]any) int {
-	if len(result) == 0 {
-		return 0
-	}
-	switch endpoint {
-	case "/v1/images/generations", "/v1/images/edits":
-		return billableImageDataCount(result["data"])
-	case "/v1/chat/completions":
-		return countChatCompletionImages(result)
-	case "/v1/responses":
-		return countResponseOutputImages(result)
-	default:
-		return billableURLCount(collectURLs(result))
-	}
-}
-
-func billableProtocolStreamItemCount(endpoint string, item map[string]any) int {
-	if len(item) == 0 {
-		return 0
-	}
-	switch endpoint {
-	case "/v1/images/generations", "/v1/images/edits":
-		if util.Clean(item["object"]) == "image.generation.result" {
-			return billableImageDataCount(item["data"])
-		}
-	case "/v1/chat/completions":
-		for _, choice := range util.AsMapSlice(item["choices"]) {
-			delta := util.StringMap(choice["delta"])
-			if len(delta) == 0 {
-				delta = util.StringMap(choice["message"])
-			}
-			if count := countImagesInChatContent(delta["content"]); count > 0 {
-				return count
-			}
-		}
-	case "/v1/responses":
-		eventType := util.Clean(item["type"])
-		switch eventType {
-		case "response.output_item.done", "response.output_item.added":
-			if count := countResponseOutputItemImages(util.StringMap(item["item"])); count > 0 {
-				return count
-			}
-		}
-	}
-	return 0
-}
-
-func billableImageDataCount(value any) int {
-	count := 0
-	for _, item := range util.AsMapSlice(value) {
-		if util.Clean(item["url"]) != "" || util.Clean(item["b64_json"]) != "" {
-			count++
-		}
-	}
-	return count
-}
-
-func countChatCompletionImages(result map[string]any) int {
-	count := 0
-	for _, choice := range util.AsMapSlice(result["choices"]) {
-		message := util.StringMap(choice["message"])
-		count += countImagesInChatContent(message["content"])
-	}
-	return count
-}
-
-func countImagesInChatContent(content any) int {
-	switch value := content.(type) {
-	case string:
-		return strings.Count(value, "![")
-	case []any:
-		count := 0
-		for _, raw := range value {
-			item := util.StringMap(raw)
-			if util.Clean(item["type"]) == "image_url" || util.Clean(item["image_url"]) != "" {
-				count++
-			}
-			if util.Clean(item["type"]) == "text" {
-				count += strings.Count(util.Clean(item["text"]), "![")
-			}
-		}
-		return count
-	default:
-		return 0
-	}
-}
-
-func countResponseOutputImages(result map[string]any) int {
-	count := 0
-	for _, item := range util.AsMapSlice(result["output"]) {
-		count += countResponseOutputItemImages(item)
-	}
-	return count
-}
-
-func countResponseOutputItemImages(item map[string]any) int {
-	if util.Clean(item["type"]) == "image_generation_call" && util.Clean(item["result"]) != "" {
-		return 1
-	}
-	return 0
-}
-
-func billableURLCount(urls []string) int {
-	return len(dedupe(urls))
 }
 
 func dedupe(items []string) []string {

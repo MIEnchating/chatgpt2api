@@ -1,11 +1,22 @@
-import type { CanvasNode, CreationTask } from "@/lib/api";
+import type { CreationTask } from "@/lib/api";
+import type { CanvasNode } from "@/services/api/canvas";
 import { canvasGenerationNeedsRecovery } from "./canvas-generation-context.ts";
-import { taskDataIsPreview } from "../image/image-task-state.ts";
+import { taskDataIsPreview } from "../../lib/image-task-state.ts";
 
 export type CanvasTaskImage = {
   url: string;
+  storageKey?: string;
   width?: number;
   height?: number;
+  bytes?: number;
+  mimeType?: string;
+};
+
+export type CanvasTaskAudio = {
+  url: string;
+  storageKey?: string;
+  bytes?: number;
+  mimeType?: string;
 };
 
 export type CanvasTaskImageSlot = {
@@ -20,13 +31,42 @@ export type CanvasTaskInitialImage = {
 
 function canvasTaskVideo(item: NonNullable<CreationTask["data"]>[number] | undefined): CanvasTaskImage | undefined {
   const url = String(item?.video_url || item?.url || "").trim();
-  return url ? { url, width: item?.width, height: item?.height } : undefined;
+  return url ? {
+    url,
+    ...((item?.storageKey || item?.storage_key) ? { storageKey: item.storageKey || item.storage_key } : {}),
+    width: item?.width,
+    height: item?.height,
+    ...((item?.bytes || item?.size) ? { bytes: item.bytes || item.size } : {}),
+    mimeType: item?.mime_type || "video/mp4",
+  } : undefined;
+}
+
+function canvasTaskAudio(item: NonNullable<CreationTask["data"]>[number] | undefined): CanvasTaskAudio | undefined {
+  const url = String(item?.audio_url || item?.url || "").trim();
+  return url ? {
+    url,
+    ...((item?.storageKey || item?.storage_key) ? { storageKey: item.storageKey || item.storage_key } : {}),
+    ...((item?.bytes || item?.size) ? { bytes: item.bytes || item.size } : {}),
+    ...(item?.mime_type ? { mimeType: item.mime_type } : {}),
+  } : undefined;
+}
+
+function canvasTaskText(item: NonNullable<CreationTask["data"]>[number] | undefined) {
+  const content = String(item?.text_response || "").trim();
+  return content || undefined;
 }
 
 function canvasTaskImage(item: NonNullable<CreationTask["data"]>[number] | undefined, includePreview = true): CanvasTaskImage | undefined {
   if (!includePreview && taskDataIsPreview(item)) return undefined;
   const url = String(item?.url || item?.video_url || "").trim();
-  if (url) return { url, width: item?.width, height: item?.height };
+  if (url) return {
+    url,
+    ...((item?.storageKey || item?.storage_key) ? { storageKey: item.storageKey || item.storage_key } : {}),
+    width: item?.width,
+    height: item?.height,
+    ...((item?.bytes || item?.size) ? { bytes: item.bytes || item.size } : {}),
+    ...(item?.mime_type ? { mimeType: item.mime_type } : {}),
+  };
   const b64 = String(item?.b64_json || "").trim();
   return b64 ? { url: `data:image/png;base64,${b64}`, width: item?.width, height: item?.height } : undefined;
 }
@@ -84,6 +124,9 @@ export function applyCanvasTaskProgressNodes(
     ? batchRoot.batch_primary_id
     : options.outputNodeIDs.find((nodeID) => completedImageByNodeID.has(nodeID));
   const firstPreview = options.outputNodeIDs.map((nodeID) => previewImageByNodeID.get(nodeID)).find(Boolean);
+  const progress = options.outputNodeIDs.length
+    ? Math.round((completedImageByNodeID.size / options.outputNodeIDs.length) * 100)
+    : 0;
 
   const nextNodes = nodes.map((node): CanvasNode => {
     if (node.id === options.batchRootID) {
@@ -92,21 +135,23 @@ export function applyCanvasTaskProgressNodes(
         ...applyCanvasTaskImage(node, primaryImage, options.taskID),
         batch_primary_id: node.batch_child_ids?.includes(completedPrimaryID || "") ? completedPrimaryID : undefined,
       };
-      if (node.generation_status !== "success" && firstPreview) return { ...node, url: firstPreview.url, thumbnail_url: "" };
-      return node;
+      if (node.generation_status !== "success" && firstPreview) return { ...node, url: firstPreview.url, thumbnail_url: "", generation_progress: progress };
+      return node.generation_status === "loading" ? { ...node, generation_progress: progress } : node;
     }
     const completedImage = completedImageByNodeID.get(node.id);
     if (completedImage) return applyCanvasTaskImage(node, completedImage, options.taskID);
     const previewImage = previewImageByNodeID.get(node.id);
-    if (previewImage && node.generation_status !== "success") return { ...node, url: previewImage.url, thumbnail_url: "" };
-    return node;
+    if (previewImage && node.generation_status !== "success") return { ...node, url: previewImage.url, thumbnail_url: "", generation_progress: progress };
+    return options.outputNodeIDs.includes(node.id) && node.generation_status === "loading" ? { ...node, generation_progress: progress } : node;
   });
 
   return { nodes: nextNodes, completedImageByNodeID };
 }
 
 export function applyCanvasTaskImage(node: CanvasNode, image: CanvasTaskImage, taskID: string): CanvasNode {
-  const dimensions = image.width && image.height
+  const dimensions = node.type === "panorama"
+    ? { width: 340, height: 170 }
+    : image.width && image.height
     ? fitCanvasTaskImageSize(image.width, image.height, node.width, node.height)
     : { width: node.width, height: node.height };
   return {
@@ -117,11 +162,34 @@ export function applyCanvasTaskImage(node: CanvasNode, image: CanvasTaskImage, t
     height: dimensions.height,
     natural_width: image.width,
     natural_height: image.height,
+    bytes: image.bytes,
+    mime_type: image.mimeType || node.mime_type || (node.type === "video" ? "video/mp4" : "image/png"),
     free_resize: false,
     url: image.url,
+    storage_key: image.storageKey,
     thumbnail_url: "",
     task_id: taskID,
+    duration_ms: canvasTaskDurationMS(node),
     generation_status: "success",
+    generation_progress: 100,
+    generation_error: "",
+    ...(node.type === "panorama" ? { panorama_projection: "equirectangular" as const } : {}),
+  };
+}
+
+function applyCanvasTaskAudio(node: CanvasNode, audio: CanvasTaskAudio, taskID: string): CanvasNode {
+  return {
+    ...node,
+    url: audio.url,
+    storage_key: audio.storageKey,
+    bytes: audio.bytes,
+    mime_type: audio.mimeType || node.mime_type || "audio/mpeg",
+    task_id: taskID,
+    audio_task_id: taskID,
+    audio_task_result_id: taskID,
+    duration_ms: canvasTaskDurationMS(node),
+    generation_status: "success",
+    generation_progress: 100,
     generation_error: "",
   };
 }
@@ -175,7 +243,7 @@ export function reconcileCancelledCanvasTaskNodes(
 
 export function reconcilePersistedCanvasTaskNodes(nodes: readonly CanvasNode[], task: CreationTask) {
   const taskNodeIDs = new Set(nodes.flatMap((node) => (
-    node.task_id === task.id
+    (node.task_id === task.id || node.audio_task_id === task.id)
       && canvasGenerationNeedsRecovery(node)
       ? [node.id]
       : []
@@ -186,16 +254,26 @@ export function reconcilePersistedCanvasTaskNodes(nodes: readonly CanvasNode[], 
 
   const batchRoot = nodes.find((node) => (
     taskNodeIDs.has(node.id)
-    && node.type === "image"
+    && (node.type === "image" || node.type === "panorama")
     && node.batch_child_ids?.some((childID) => taskNodeIDs.has(childID))
   ));
   const outputNodeIDs = batchRoot
     ? (batchRoot.batch_child_ids || []).filter((nodeID) => taskNodeIDs.has(nodeID))
-    : nodes.flatMap((node) => taskNodeIDs.has(node.id) && (node.type === "image" || node.type === "video") ? [node.id] : []);
+    : nodes.flatMap((node) => taskNodeIDs.has(node.id) && (node.type === "image" || node.type === "panorama" || node.type === "video") ? [node.id] : []);
   const videoNodeIDs = nodes.flatMap((node) => taskNodeIDs.has(node.id) && node.type === "video" ? [node.id] : []);
   const videoByNodeID = new Map(videoNodeIDs.flatMap((nodeID, index) => {
     const video = canvasTaskVideo(task.data?.[index]);
     return video ? [[nodeID, video] as const] : [];
+  }));
+  const audioNodeIDs = nodes.flatMap((node) => taskNodeIDs.has(node.id) && node.type === "audio" ? [node.id] : []);
+  const audioByNodeID = new Map(audioNodeIDs.flatMap((nodeID, index) => {
+    const audio = canvasTaskAudio(task.data?.[index]);
+    return audio ? [[nodeID, audio] as const] : [];
+  }));
+  const textNodeIDs = nodes.flatMap((node) => taskNodeIDs.has(node.id) && node.type === "text" ? [node.id] : []);
+  const textByNodeID = new Map(textNodeIDs.flatMap((nodeID, index) => {
+    const content = canvasTaskText(task.data?.[index]);
+    return content ? [[nodeID, content] as const] : [];
   }));
   const progress = applyCanvasTaskProgressNodes(nodes, task, {
     outputNodeIDs,
@@ -204,16 +282,20 @@ export function reconcilePersistedCanvasTaskNodes(nodes: readonly CanvasNode[], 
   });
   const terminal = isTerminalCanvasTask(task);
   if (!terminal) {
+    const progressNodes = progress.nodes.map((node): CanvasNode => {
+      const content = textByNodeID.get(node.id);
+      return content ? { ...node, prompt: content } : node;
+    });
     return {
-      nodes: progress.nodes,
-      changed: progress.nodes.some((node, index) => node !== nodes[index]),
+      nodes: progressNodes,
+      changed: progressNodes.some((node, index) => node !== nodes[index]),
       terminal: false,
-      completedImageCount: progress.completedImageByNodeID.size + videoByNodeID.size,
+      completedImageCount: progress.completedImageByNodeID.size + videoByNodeID.size + audioByNodeID.size + textByNodeID.size,
     };
   }
 
   const completedImageByNodeID = successfulCanvasTaskImagesByNodeID(task, outputNodeIDs);
-  const completedOutputCount = completedImageByNodeID.size + videoByNodeID.size;
+  const completedOutputCount = completedImageByNodeID.size + videoByNodeID.size + audioByNodeID.size + textByNodeID.size;
   const completedPrimaryID = batchRoot?.batch_primary_id && completedImageByNodeID.has(batchRoot.batch_primary_id)
     ? batchRoot.batch_primary_id
     : outputNodeIDs.find((nodeID) => completedImageByNodeID.has(nodeID));
@@ -225,11 +307,31 @@ export function reconcilePersistedCanvasTaskNodes(nodes: readonly CanvasNode[], 
       const video = videoByNodeID.get(node.id);
       return video
         ? applyCanvasTaskImage(node, video, task.id)
-        : { ...node, generation_status: cancelled ? "idle" : "error", generation_error: cancelled ? "" : terminalError };
+        : { ...node, duration_ms: canvasTaskDurationMS(node), generation_status: cancelled ? "idle" : "error", generation_error: cancelled ? "" : terminalError };
+    }
+    if (node.type === "audio") {
+      const audio = audioByNodeID.get(node.id);
+      return audio
+        ? applyCanvasTaskAudio(node, audio, task.id)
+        : {
+          ...node,
+          task_id: task.id,
+          audio_task_id: task.id,
+          duration_ms: canvasTaskDurationMS(node),
+          generation_status: cancelled ? "idle" : "error",
+          generation_error: cancelled ? "" : terminalError,
+        };
+    }
+    if (node.type === "text") {
+      const content = textByNodeID.get(node.id);
+      return content
+        ? { ...node, prompt: content, task_id: task.id, duration_ms: canvasTaskDurationMS(node), generation_status: "success", generation_error: "" }
+        : { ...node, task_id: task.id, duration_ms: canvasTaskDurationMS(node), generation_status: cancelled ? "idle" : "error", generation_error: cancelled ? "" : terminalError };
     }
     if (node.type === "config") {
       return {
         ...node,
+        duration_ms: canvasTaskDurationMS(node),
         generation_status: completedOutputCount ? "success" : cancelled ? "idle" : "error",
         generation_error: completedOutputCount || cancelled ? "" : terminalError,
       };
@@ -244,6 +346,7 @@ export function reconcilePersistedCanvasTaskNodes(nodes: readonly CanvasNode[], 
       }
       return {
         ...node,
+        duration_ms: canvasTaskDurationMS(node),
         generation_status: cancelled ? "idle" : "error",
         generation_error: cancelled ? "" : terminalError,
         batch_primary_id: undefined,
@@ -253,6 +356,7 @@ export function reconcilePersistedCanvasTaskNodes(nodes: readonly CanvasNode[], 
     if (completedImage) return applyCanvasTaskImage(node, completedImage, task.id);
     return {
       ...node,
+      duration_ms: canvasTaskDurationMS(node),
       generation_status: cancelled ? "idle" : "error",
       generation_error: cancelled ? "" : terminalError,
     };
@@ -263,6 +367,11 @@ export function reconcilePersistedCanvasTaskNodes(nodes: readonly CanvasNode[], 
     terminal: true,
     completedImageCount: completedOutputCount,
   };
+}
+
+function canvasTaskDurationMS(node: CanvasNode) {
+  const startedAt = Number(node.generation_started_at);
+  return Number.isFinite(startedAt) && startedAt > 0 ? Math.max(0, Date.now() - startedAt) : node.duration_ms;
 }
 
 function isTerminalCanvasTask(task: CreationTask) {

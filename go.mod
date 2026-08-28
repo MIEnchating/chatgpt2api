@@ -1,16 +1,18 @@
 module chatgpt2api
 
-go 1.26.2
+go 1.26.6
 
 require (
 	github.com/HugoSmits86/nativewebp v1.2.1
 	github.com/enetx/g v1.0.224
 	github.com/enetx/surf v1.0.199
 	github.com/go-sql-driver/mysql v1.9.3
+	github.com/google/uuid v1.6.0
 	github.com/lib/pq v1.10.9
 	github.com/minio/minio-go/v7 v7.2.1
+	github.com/robfig/cron/v3 v3.0.1
+	github.com/studio-b12/gowebdav v0.12.0
 	golang.org/x/crypto v0.51.0
-	golang.org/x/net v0.53.0
 	modernc.org/sqlite v1.40.1
 )
 
@@ -23,7 +25,6 @@ require (
 	github.com/enetx/http2 v1.0.26 // indirect
 	github.com/enetx/http3 v1.0.7 // indirect
 	github.com/enetx/iter v0.0.0-20250912135656-f1583323588f // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/klauspost/compress v1.18.6 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.11 // indirect
 	github.com/klauspost/crc32 v1.3.0 // indirect
@@ -43,9 +44,10 @@ require (
 	github.com/zeebo/xxh3 v1.1.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/exp v0.0.0-20250620022241-b7579e27df2b // indirect
-	golang.org/x/image v0.24.0 // indirect
-	golang.org/x/sys v0.44.0 // indirect
-	golang.org/x/text v0.37.0 // indirect
+	golang.org/x/image v0.45.0 // indirect
+	golang.org/x/net v0.55.0 // indirect
+	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/text v0.41.0 // indirect
 	gopkg.in/ini.v1 v1.67.2 // indirect
 	modernc.org/libc v1.66.10 // indirect
 	modernc.org/mathutil v1.7.1 // indirect

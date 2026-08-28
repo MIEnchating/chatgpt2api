@@ -1,11 +1,13 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
 	"net/http"
 	"net/url"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -19,460 +21,188 @@ import (
 
 const maxImageConversationHistoryBodyBytes = 96 << 20
 
-func (a *App) handleAnnouncements(w http.ResponseWriter, r *http.Request) {
-	if _, ok := a.requireIdentity(w, r, ""); !ok {
-		return
-	}
-	items, err := a.announce.ListVisible()
-	if err != nil {
-		util.WriteError(w, http.StatusInternalServerError, "failed to load announcements")
-		return
-	}
-	util.WriteJSON(w, http.StatusOK, map[string]any{"items": items})
-}
-
-func (a *App) handleAnnouncementPreferences(w http.ResponseWriter, r *http.Request) {
-	identity, ok := a.requireIdentity(w, r, "")
+func (a *App) handleImageGenerationPreferences(w http.ResponseWriter, r *http.Request) {
+	identity, ok := a.requireIdentity(w, r)
 	if !ok {
 		return
 	}
 	ownerID := identityScope(identity)
 	switch r.Method {
 	case http.MethodGet:
-		preferences, err := a.announce.Preferences(ownerID)
+		preferences, err := a.imagePreferences.Preferences(ownerID)
 		if err != nil {
-			util.WriteError(w, http.StatusInternalServerError, "failed to load announcement preferences")
+			util.WriteError(w, http.StatusInternalServerError, "failed to load image generation preferences")
+			return
+		}
+		preferences.DefaultTextModel = allowedPersonalModel(preferences.DefaultTextModel, a.config.TextModels())
+		preferences.DefaultImageModel = allowedPersonalModel(preferences.DefaultImageModel, a.config.ImageModels())
+		preferences.DefaultVideoModel = allowedPersonalModel(preferences.DefaultVideoModel, a.config.VideoModels())
+		preferences.DefaultAudioModel = allowedPersonalModel(preferences.DefaultAudioModel, a.config.AudioModels())
+		util.WriteJSON(w, http.StatusOK, map[string]any{"preferences": preferences})
+	case http.MethodPut, http.MethodPost:
+		body, err := readJSONMap(r)
+		if err != nil {
+			util.WriteError(w, http.StatusBadRequest, "invalid json body")
+			return
+		}
+		partialImages, valid := imagePreferencePartialImages(body["partial_images"])
+		if !valid {
+			util.WriteError(w, http.StatusBadRequest, "partial_images must be an integer between 0 and 3")
+			return
+		}
+		canvasDefaultImageCount, valid := imagePreferenceCanvasDefaultImageCount(body["canvas_default_image_count"])
+		if !valid {
+			util.WriteError(w, http.StatusBadRequest, "canvas_default_image_count must be an integer between 1 and 15")
+			return
+		}
+		defaultAudioSpeed, valid := imagePreferenceAudioSpeed(body["default_audio_speed"])
+		if !valid {
+			util.WriteError(w, http.StatusBadRequest, "default_audio_speed must be between 0.25 and 4")
+			return
+		}
+		defaultAudioFormat := strings.ToLower(strings.TrimSpace(util.Clean(body["default_audio_format"])))
+		if defaultAudioFormat == "" {
+			defaultAudioFormat = "mp3"
+		}
+		requestedModels := []struct {
+			field   string
+			model   string
+			allowed []string
+		}{
+			{field: "default_text_model", model: util.Clean(body["default_text_model"]), allowed: a.config.TextModels()},
+			{field: "default_image_model", model: util.Clean(body["default_image_model"]), allowed: a.config.ImageModels()},
+			{field: "default_video_model", model: util.Clean(body["default_video_model"]), allowed: a.config.VideoModels()},
+			{field: "default_audio_model", model: util.Clean(body["default_audio_model"]), allowed: a.config.AudioModels()},
+		}
+		for _, requested := range requestedModels {
+			if strings.TrimSpace(requested.model) != "" && allowedPersonalModel(requested.model, requested.allowed) == "" {
+				util.WriteError(w, http.StatusBadRequest, requested.field+" is not enabled by the administrator")
+				return
+			}
+		}
+		preferences, err := a.imagePreferences.Update(ownerID, service.ImageGenerationPreferences{
+			APIMode:                 util.Clean(body["api_mode"]),
+			Stream:                  util.ToBool(body["stream"]),
+			PartialImages:           partialImages,
+			ResponseFormatB64JSON:   util.ToBool(body["response_format_b64_json"]),
+			CodexCLICompatibility:   util.ToBool(body["codex_cli_compatibility"]),
+			SystemPrompt:            util.Clean(body["system_prompt"]),
+			VideoSystemPrompt:       util.Clean(body["video_system_prompt"]),
+			AudioInstructions:       util.Clean(body["audio_instructions"]),
+			DefaultTextModel:        strings.TrimSpace(requestedModels[0].model),
+			DefaultImageModel:       strings.TrimSpace(requestedModels[1].model),
+			DefaultVideoModel:       strings.TrimSpace(requestedModels[2].model),
+			DefaultAudioModel:       strings.TrimSpace(requestedModels[3].model),
+			CanvasDefaultImageCount: canvasDefaultImageCount,
+			DefaultAudioVoice:       strings.TrimSpace(util.Clean(body["default_audio_voice"])),
+			DefaultAudioFormat:      defaultAudioFormat,
+			DefaultAudioSpeed:       defaultAudioSpeed,
+		})
+		if err != nil {
+			util.WriteError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 		util.WriteJSON(w, http.StatusOK, map[string]any{"preferences": preferences})
-	case http.MethodPost:
-		body, err := readJSONMap(r)
-		if err != nil {
-			util.WriteError(w, http.StatusBadRequest, "invalid json body")
-			return
-		}
-		preferences, err := a.announce.UpdatePreferences(
-			ownerID,
-			util.Clean(body["version"]),
-			util.Clean(body["action"]),
-			util.Clean(body["local_date"]),
-		)
-		if err != nil {
-			util.WriteError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		util.WriteJSON(w, http.StatusOK, map[string]any{"preferences": preferences})
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
 }
 
-func (a *App) handleAdminAnnouncements(w http.ResponseWriter, r *http.Request) {
-	identity, ok := a.requireIdentity(w, r, "")
-	if !ok {
-		return
+func allowedPersonalModel(model string, allowed []string) string {
+	model = strings.TrimSpace(model)
+	for _, candidate := range allowed {
+		if model == strings.TrimSpace(candidate) {
+			return model
+		}
 	}
-	if identity.Role != service.AuthRoleAdmin {
-		util.WriteError(w, http.StatusForbidden, "admin permission required")
-		return
-	}
-
-	base := "/api/admin/announcements"
-	if r.URL.Path == base {
-		switch r.Method {
-		case http.MethodGet:
-			a.writeAdminAnnouncements(w, nil)
-		case http.MethodPost:
-			body, err := readJSONMap(r)
-			if err != nil {
-				util.WriteError(w, http.StatusBadRequest, "invalid json body")
-				return
-			}
-			item, err := a.announce.Create(body)
-			if err != nil {
-				util.WriteError(w, http.StatusBadRequest, err.Error())
-				return
-			}
-			a.writeAdminAnnouncements(w, &item)
-		default:
-			w.WriteHeader(http.StatusMethodNotAllowed)
-		}
-		return
-	}
-
-	parts := splitPath(r.URL.Path)
-	if len(parts) != 4 || parts[0] != "api" || parts[1] != "admin" || parts[2] != "announcements" {
-		http.NotFound(w, r)
-		return
-	}
-	id := parts[3]
-	switch r.Method {
-	case http.MethodPost:
-		body, err := readJSONMap(r)
-		if err != nil {
-			util.WriteError(w, http.StatusBadRequest, "invalid json body")
-			return
-		}
-		item, err := a.announce.Update(id, body)
-		if err != nil {
-			util.WriteError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		if item == nil {
-			util.WriteError(w, http.StatusNotFound, "announcement not found")
-			return
-		}
-		a.writeAdminAnnouncements(w, item)
-	case http.MethodDelete:
-		deleted, err := a.announce.Delete(id)
-		if err != nil {
-			util.WriteError(w, http.StatusInternalServerError, "failed to delete announcement")
-			return
-		}
-		if !deleted {
-			util.WriteError(w, http.StatusNotFound, "announcement not found")
-			return
-		}
-		a.writeAdminAnnouncements(w, nil)
-	default:
-		w.WriteHeader(http.StatusMethodNotAllowed)
-	}
+	return ""
 }
 
-func (a *App) writeAdminAnnouncements(w http.ResponseWriter, item *service.Announcement) {
-	items, err := a.announce.ListAll()
-	if err != nil {
-		util.WriteError(w, http.StatusInternalServerError, "failed to load announcements")
-		return
+func imagePreferencePartialImages(value any) (int, bool) {
+	if value == nil {
+		return 0, true
 	}
-	payload := map[string]any{"items": items}
-	if item != nil {
-		payload["item"] = item
-	}
-	util.WriteJSON(w, http.StatusOK, payload)
+	partialImages, ok := util.StrictInt(value)
+	return partialImages, ok && partialImages >= 0 && partialImages <= 3
 }
 
-func (a *App) handleUserKeys(w http.ResponseWriter, r *http.Request) {
-	identity, ok := a.requireIdentity(w, r, "")
-	if !ok {
-		return
+func imagePreferenceCanvasDefaultImageCount(value any) (int, bool) {
+	if value == nil {
+		return 1, true
 	}
-	filter, owner, canManage := userKeyScope(identity)
-	if !canManage {
-		util.WriteError(w, http.StatusForbidden, "Linuxdo login or admin permission required")
-		return
-	}
-	base := "/api/auth/users"
-	if r.URL.Path == base {
-		switch r.Method {
-		case http.MethodGet:
-			items := a.auth.ListKeys(filter)
-			if identity.Role != service.AuthRoleAdmin {
-				items = a.auth.ListSingleAPIKeyForOwner(identity.OwnerID)
-			}
-			util.WriteJSON(w, http.StatusOK, map[string]any{"items": items})
-		case http.MethodPost:
-			body, _ := readJSONMap(r)
-			var item map[string]any
-			var raw string
-			var err error
-			if identity.Role == service.AuthRoleAdmin {
-				item, raw, err = a.auth.CreateAPIKey(service.AuthRoleUser, util.Clean(body["name"]), owner)
-			} else {
-				item, raw, err = a.auth.UpsertAPIKeyForOwner(util.Clean(body["name"]), owner)
-			}
-			if err != nil {
-				if a.writeAuthPersistenceError(w, err) {
-					return
-				}
-				util.WriteError(w, http.StatusBadRequest, err.Error())
-				return
-			}
-			util.WriteJSON(w, http.StatusOK, map[string]any{"item": item, "key": raw, "items": a.auth.ListKeys(filter)})
-		default:
-			w.WriteHeader(http.StatusMethodNotAllowed)
-		}
-		return
-	}
-	parts := splitPath(r.URL.Path)
-	if len(parts) < 4 || parts[0] != "api" || parts[1] != "auth" || parts[2] != "users" {
-		http.NotFound(w, r)
-		return
-	}
-	keyID := parts[3]
-	if len(parts) == 5 && parts[4] == "key" {
-		if r.Method != http.MethodGet {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		key, found := a.auth.RevealKey(keyID, filter)
-		if !found {
-			util.WriteError(w, http.StatusNotFound, "user key not found")
-			return
-		}
-		util.WriteJSON(w, http.StatusOK, map[string]any{"key": key})
-		return
-	}
-	if len(parts) != 4 {
-		http.NotFound(w, r)
-		return
-	}
-	switch r.Method {
-	case http.MethodPost:
-		body, _ := readJSONMap(r)
-		updates := map[string]any{}
-		if value, ok := body["name"]; ok {
-			updates["name"] = value
-		}
-		if value, ok := body["enabled"]; ok {
-			updates["enabled"] = value
-		}
-		if len(updates) == 0 {
-			util.WriteError(w, http.StatusBadRequest, "no updates provided")
-			return
-		}
-		item, err := a.auth.UpdateKey(keyID, updates, filter)
-		if err != nil {
-			if a.writeAuthPersistenceError(w, err) {
-				return
-			}
-			util.WriteError(w, http.StatusInternalServerError, "failed to update user key")
-			return
-		}
-		if item == nil {
-			util.WriteError(w, http.StatusNotFound, "user key not found")
-			return
-		}
-		util.WriteJSON(w, http.StatusOK, map[string]any{"item": item, "items": a.auth.ListKeys(filter)})
-	case http.MethodDelete:
-		deleted, err := a.auth.DeleteKey(keyID, filter)
-		if err != nil {
-			if a.writeAuthPersistenceError(w, err) {
-				return
-			}
-			util.WriteError(w, http.StatusInternalServerError, "failed to delete user key")
-			return
-		}
-		if !deleted {
-			util.WriteError(w, http.StatusNotFound, "user key not found")
-			return
-		}
-		util.WriteJSON(w, http.StatusOK, map[string]any{"items": a.auth.ListKeys(filter)})
-	default:
-		w.WriteHeader(http.StatusMethodNotAllowed)
-	}
+	count, ok := util.StrictInt(value)
+	return count, ok && count >= 1 && count <= 15
 }
 
-func userKeyScope(identity service.Identity) (service.AuthKeyFilter, service.AuthOwner, bool) {
-	filter := service.AuthKeyFilter{Role: service.AuthRoleUser, Kind: service.AuthKindAPIKey}
-	if identity.Role == service.AuthRoleAdmin {
-		return filter, service.AuthOwner{}, true
+func imagePreferenceAudioSpeed(value any) (float64, bool) {
+	if value == nil {
+		return 1, true
 	}
-	if identity.Role != service.AuthRoleUser || identity.OwnerID == "" {
-		return service.AuthKeyFilter{}, service.AuthOwner{}, false
-	}
-	filter.OwnerID = identity.OwnerID
-	return filter, service.AuthOwner{ID: identity.OwnerID, Name: identity.Name, Provider: identity.Provider}, true
-}
-
-func (a *App) handleProfile(w http.ResponseWriter, r *http.Request) {
-	identity, ok := a.requireIdentity(w, r, "")
-	if !ok {
-		return
-	}
-	switch r.Method {
-	case http.MethodGet:
-		a.writeLoginResponse(w, identity)
-	case http.MethodPost:
-		body, err := readJSONMap(r)
-		if err != nil {
-			util.WriteError(w, http.StatusBadRequest, "invalid json body")
-			return
-		}
-		updated, err := a.auth.UpdateProfileName(identity, util.Clean(body["name"]))
-		if err != nil {
-			if a.writeAuthPersistenceError(w, err) {
-				return
-			}
-			util.WriteError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		a.writeLoginResponse(w, *updated)
-	default:
-		w.WriteHeader(http.StatusMethodNotAllowed)
-	}
-}
-
-func (a *App) handleProfilePassword(w http.ResponseWriter, r *http.Request) {
-	identity, ok := a.requireIdentity(w, r, "")
-	if !ok {
-		return
-	}
-	body, err := readJSONMap(r)
-	if err != nil {
-		util.WriteError(w, http.StatusBadRequest, "invalid json body")
-		return
-	}
-	if err := a.auth.ChangeProfilePassword(identity, util.Clean(body["current_password"]), util.Clean(body["new_password"])); err != nil {
-		if a.writeAuthPersistenceError(w, err) {
-			return
-		}
-		util.WriteError(w, http.StatusBadRequest, err.Error())
-		return
-	}
-	clearAuthSessionCookie(w, r)
-	util.WriteJSON(w, http.StatusOK, map[string]any{"ok": true})
+	speed, err := strconv.ParseFloat(strings.TrimSpace(util.Clean(value)), 64)
+	return speed, err == nil && speed >= 0.25 && speed <= 4
 }
 
 func (a *App) handleProfileRelayKey(w http.ResponseWriter, r *http.Request) {
-	identity, ok := a.requireIdentity(w, r, "")
+	identity, ok := a.requireIdentity(w, r)
 	if !ok {
 		return
 	}
 	switch r.Method {
 	case http.MethodGet:
-		if a.newAPIKeys == nil {
-			util.WriteJSON(w, http.StatusOK, map[string]any{"has_key": false, "key_preview": "", "source": "newapi", "message": "请先配置云棉数据库连接，并在云棉创建指定分组的令牌"})
+		reader := a.relayTokenReader()
+		if reader == nil {
+			message := "数据库连接未配置，请联系管理员"
+			if identity.Role == service.AuthRoleAdmin {
+				message = "请先配置数据库连接"
+			}
+			util.WriteJSON(w, http.StatusOK, map[string]any{"has_key": false, "key_preview": "", "source": "newapi", "message": message, "token_names": []string{}})
 			return
 		}
-		util.WriteJSON(w, http.StatusOK, a.newAPIKeys.StatusForGroupAndName(r.Context(), identity, r.URL.Query().Get("group"), r.URL.Query().Get("token_name")))
+		status := reader.StatusForGroupAndName(r.Context(), identity, r.URL.Query().Get("group"), r.URL.Query().Get("token_name"))
+		applyDatabaseStatusMessage(status, identity)
+		util.WriteJSON(w, http.StatusOK, status)
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
 }
 
 func (a *App) handleProfileBalance(w http.ResponseWriter, r *http.Request) {
-	identity, ok := a.requireIdentity(w, r, "")
+	identity, ok := a.requireIdentity(w, r)
 	if !ok {
 		return
 	}
 	switch r.Method {
 	case http.MethodGet:
-		if a.newAPIKeys == nil {
-			util.WriteJSON(w, http.StatusOK, map[string]any{"has_balance": false, "source": "newapi", "message": "请先配置云棉数据库连接"})
+		reader := a.relayTokenReader()
+		if reader == nil {
+			message := "数据库连接未配置，请联系管理员"
+			if identity.Role == service.AuthRoleAdmin {
+				message = "请先配置数据库连接"
+			}
+			util.WriteJSON(w, http.StatusOK, map[string]any{"has_balance": false, "source": "newapi", "message": message, "token_names": []string{}})
 			return
 		}
-		util.WriteJSON(w, http.StatusOK, a.newAPIKeys.BalanceStatus(r.Context(), identity))
+		status := reader.BalanceStatus(r.Context(), identity)
+		applyDatabaseStatusMessage(status, identity)
+		util.WriteJSON(w, http.StatusOK, status)
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
 }
 
-func (a *App) handleProfileAPIKey(w http.ResponseWriter, r *http.Request) {
-	identity, ok := a.requireIdentity(w, r, "")
-	if !ok {
+func applyDatabaseStatusMessage(status map[string]any, identity service.Identity) {
+	configured, present := status["database_configured"].(bool)
+	if !present || configured {
 		return
 	}
-	filter, ok := profileAPIKeyFilter(identity)
-	if !ok {
-		util.WriteError(w, http.StatusForbidden, "profile API key requires a bound user account")
-		return
+	status["message"] = "数据库连接未配置，请联系管理员"
+	if identity.Role == service.AuthRoleAdmin {
+		status["message"] = "请先配置数据库连接"
 	}
-	base := "/api/profile/api-key"
-	if r.URL.Path == base {
-		switch r.Method {
-		case http.MethodGet:
-			util.WriteJSON(w, http.StatusOK, map[string]any{"items": a.auth.ListPersonalAPIKey(identity)})
-		case http.MethodPost:
-			body, _ := readJSONMap(r)
-			item, raw, err := a.auth.UpsertPersonalAPIKey(identity, util.Clean(body["name"]))
-			if err != nil {
-				if a.writeAuthPersistenceError(w, err) {
-					return
-				}
-				util.WriteError(w, http.StatusBadRequest, err.Error())
-				return
-			}
-			util.WriteJSON(w, http.StatusOK, map[string]any{"item": item, "key": raw, "items": a.auth.ListPersonalAPIKey(identity)})
-		default:
-			w.WriteHeader(http.StatusMethodNotAllowed)
-		}
-		return
-	}
-
-	parts := splitPath(r.URL.Path)
-	if len(parts) < 4 || parts[0] != "api" || parts[1] != "profile" || parts[2] != "api-key" {
-		http.NotFound(w, r)
-		return
-	}
-	keyID := parts[3]
-	if len(parts) == 5 && parts[4] == "key" {
-		if r.Method != http.MethodGet {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		key, found := a.auth.RevealKey(keyID, filter)
-		if !found {
-			util.WriteError(w, http.StatusNotFound, "profile API key not found")
-			return
-		}
-		util.WriteJSON(w, http.StatusOK, map[string]any{"key": key})
-		return
-	}
-	if len(parts) != 4 {
-		http.NotFound(w, r)
-		return
-	}
-	switch r.Method {
-	case http.MethodPost:
-		body, _ := readJSONMap(r)
-		updates := map[string]any{}
-		if value, ok := body["name"]; ok {
-			updates["name"] = value
-		}
-		if value, ok := body["enabled"]; ok {
-			updates["enabled"] = value
-		}
-		if len(updates) == 0 {
-			util.WriteError(w, http.StatusBadRequest, "no updates provided")
-			return
-		}
-		item, err := a.auth.UpdateKey(keyID, updates, filter)
-		if err != nil {
-			if a.writeAuthPersistenceError(w, err) {
-				return
-			}
-			util.WriteError(w, http.StatusInternalServerError, "failed to update profile API key")
-			return
-		}
-		if item == nil {
-			util.WriteError(w, http.StatusNotFound, "profile API key not found")
-			return
-		}
-		util.WriteJSON(w, http.StatusOK, map[string]any{"item": item, "items": a.auth.ListPersonalAPIKey(identity)})
-	case http.MethodDelete:
-		deleted, err := a.auth.DeleteKey(keyID, filter)
-		if err != nil {
-			if a.writeAuthPersistenceError(w, err) {
-				return
-			}
-			util.WriteError(w, http.StatusInternalServerError, "failed to delete profile API key")
-			return
-		}
-		if !deleted {
-			util.WriteError(w, http.StatusNotFound, "profile API key not found")
-			return
-		}
-		util.WriteJSON(w, http.StatusOK, map[string]any{"items": a.auth.ListPersonalAPIKey(identity)})
-	default:
-		w.WriteHeader(http.StatusMethodNotAllowed)
-	}
-}
-
-func profileAPIKeyFilter(identity service.Identity) (service.AuthKeyFilter, bool) {
-	role := identity.Role
-	if role != service.AuthRoleAdmin && role != service.AuthRoleUser {
-		return service.AuthKeyFilter{}, false
-	}
-	ownerID := util.Clean(identity.OwnerID)
-	if ownerID == "" {
-		return service.AuthKeyFilter{}, false
-	}
-	return service.AuthKeyFilter{Role: role, Kind: service.AuthKindAPIKey, OwnerID: ownerID}, true
 }
 
 func (a *App) handleProfilePromptFavorites(w http.ResponseWriter, r *http.Request) {
-	identity, ok := a.requireIdentity(w, r, "")
+	identity, ok := a.requireIdentity(w, r)
 	if !ok {
 		return
 	}
@@ -486,7 +216,7 @@ func (a *App) handleProfilePromptFavorites(w http.ResponseWriter, r *http.Reques
 	if r.URL.Path == base {
 		switch r.Method {
 		case http.MethodGet:
-			items, err := a.promptFavoritesForIdentity(ownerID, identity)
+			items, err := a.promptFavoritesForIdentity(ownerID)
 			if err != nil {
 				util.WriteError(w, http.StatusInternalServerError, "failed to load prompt favorites")
 				return
@@ -498,8 +228,8 @@ func (a *App) handleProfilePromptFavorites(w http.ResponseWriter, r *http.Reques
 				util.WriteError(w, http.StatusBadRequest, "invalid json body")
 				return
 			}
-			if util.ToBool(body["is_nsfw"]) && !a.identityCanAccessAPI(identity, http.MethodGet, service.PromptMarketAdultPermissionPath) {
-				util.WriteError(w, http.StatusForbidden, "adult prompt market access is not enabled for this user")
+			if util.ToBool(body["is_nsfw"]) {
+				util.WriteError(w, http.StatusForbidden, "adult prompts are not supported")
 				return
 			}
 			item, err := a.prompts.Upsert(ownerID, body)
@@ -507,7 +237,7 @@ func (a *App) handleProfilePromptFavorites(w http.ResponseWriter, r *http.Reques
 				util.WriteError(w, http.StatusBadRequest, err.Error())
 				return
 			}
-			items, err := a.promptFavoritesForIdentity(ownerID, identity)
+			items, err := a.promptFavoritesForIdentity(ownerID)
 			if err != nil {
 				util.WriteError(w, http.StatusInternalServerError, "failed to load prompt favorites")
 				return
@@ -537,7 +267,7 @@ func (a *App) handleProfilePromptFavorites(w http.ResponseWriter, r *http.Reques
 		util.WriteError(w, http.StatusNotFound, "prompt favorite not found")
 		return
 	}
-	items, err := a.promptFavoritesForIdentity(ownerID, identity)
+	items, err := a.promptFavoritesForIdentity(ownerID)
 	if err != nil {
 		util.WriteError(w, http.StatusInternalServerError, "failed to load prompt favorites")
 		return
@@ -545,13 +275,72 @@ func (a *App) handleProfilePromptFavorites(w http.ResponseWriter, r *http.Reques
 	util.WriteJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
-func (a *App) promptFavoritesForIdentity(ownerID string, identity service.Identity) ([]map[string]any, error) {
+func (a *App) handleProfileAssets(w http.ResponseWriter, r *http.Request) {
+	identity, ok := a.requireIdentity(w, r)
+	if !ok {
+		return
+	}
+	ownerID := identityScope(identity)
+	switch r.Method {
+	case http.MethodGet:
+		items, err := a.myAssets.EnsureTextStorage(r.Context(), ownerID, identity.Role == service.AuthRoleAdmin)
+		if err != nil {
+			a.logger.Warning("text asset storage migration failed", "owner_id", ownerID, "error", err)
+			items, err = a.myAssets.List(ownerID)
+		}
+		if err != nil {
+			util.WriteError(w, http.StatusInternalServerError, "failed to load assets")
+			return
+		}
+		if r.URL.Query().Get("scope") == "visible" {
+			items, err = a.myAssets.ListVisible(ownerID, identity.Role == service.AuthRoleAdmin, a.myAssetOwners(identity))
+		}
+		if err != nil {
+			util.WriteError(w, http.StatusInternalServerError, "failed to load assets")
+			return
+		}
+		util.WriteJSON(w, http.StatusOK, map[string]any{"items": items})
+	case http.MethodPut:
+		var body struct {
+			Items []service.MyAsset `json:"items"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			util.WriteError(w, http.StatusBadRequest, "invalid json body")
+			return
+		}
+		items, err := a.myAssets.Replace(r.Context(), ownerID, identity.Role == service.AuthRoleAdmin, body.Items)
+		if err != nil {
+			util.WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		util.WriteJSON(w, http.StatusOK, map[string]any{"items": items})
+	default:
+		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
+}
+
+func (a *App) myAssetOwners(identity service.Identity) []service.MyAssetOwner {
+	owners := map[string]string{"admin": "管理员"}
+	viewerID := identityScope(identity)
+	owners[viewerID] = firstNonEmpty(identityDisplayName(identity), util.Clean(identity.Username))
+	for _, item := range a.auth.ListUsers() {
+		ownerID := firstNonEmpty(util.Clean(item["owner_id"]), util.Clean(item["id"]))
+		if ownerID == "" {
+			continue
+		}
+		owners[ownerID] = firstNonEmpty(util.Clean(item["name"]), util.Clean(item["owner_name"]), util.Clean(item["username"]))
+	}
+	result := make([]service.MyAssetOwner, 0, len(owners))
+	for id, name := range owners {
+		result = append(result, service.MyAssetOwner{ID: id, Name: name})
+	}
+	return result
+}
+
+func (a *App) promptFavoritesForIdentity(ownerID string) ([]map[string]any, error) {
 	items, err := a.prompts.ListWithError(ownerID)
 	if err != nil {
 		return nil, err
-	}
-	if a.identityCanAccessAPI(identity, http.MethodGet, service.PromptMarketAdultPermissionPath) {
-		return items, nil
 	}
 	filtered := make([]map[string]any, 0, len(items))
 	for _, item := range items {
@@ -564,7 +353,7 @@ func (a *App) promptFavoritesForIdentity(ownerID string, identity service.Identi
 }
 
 func (a *App) handleProfileImageConversations(w http.ResponseWriter, r *http.Request) {
-	identity, ok := a.requireIdentity(w, r, "")
+	identity, ok := a.requireIdentity(w, r)
 	if !ok {
 		return
 	}
@@ -791,7 +580,7 @@ func writeImageConversationHistoryError(w http.ResponseWriter, err error) {
 }
 
 func (a *App) handleAdminRoles(w http.ResponseWriter, r *http.Request) {
-	if _, ok := a.requireIdentity(w, r, ""); !ok {
+	if _, ok := a.requireIdentity(w, r); !ok {
 		return
 	}
 	base := "/api/admin/roles"
@@ -862,7 +651,7 @@ func (a *App) handleAdminRoles(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
-	_, ok := a.requireIdentity(w, r, "")
+	_, ok := a.requireIdentity(w, r)
 	if !ok {
 		return
 	}
@@ -922,81 +711,11 @@ func (a *App) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	userID := parts[3]
-	if len(parts) == 5 && parts[4] == "key" {
-		if r.Method != http.MethodGet {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		user := findManagedUser(a.auth.ListUsers(), userID)
-		if user == nil {
-			util.WriteError(w, http.StatusNotFound, "user not found")
-			return
-		}
-		if util.Clean(user["provider"]) == service.AuthProviderLinuxDo {
-			util.WriteError(w, http.StatusForbidden, "Linuxdo user tokens are not managed by administrators")
-			return
-		}
-		key, found := a.auth.RevealUserAPIKey(userID)
-		if !found {
-			util.WriteError(w, http.StatusNotFound, "user API key not found")
-			return
-		}
-		util.WriteJSON(w, http.StatusOK, map[string]any{"key": key})
-		return
-	}
-	if len(parts) == 5 && parts[4] == "reset-key" {
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		body, _ := readJSONMap(r)
-		user := findManagedUser(a.auth.ListUsers(), userID)
-		if user == nil {
-			util.WriteError(w, http.StatusNotFound, "user not found")
-			return
-		}
-		if util.Clean(user["provider"]) == service.AuthProviderLinuxDo {
-			util.WriteError(w, http.StatusForbidden, "Linuxdo user tokens are not managed by administrators")
-			return
-		}
-		item, apiKey, raw, found, err := a.auth.ResetUserAPIKey(userID, util.Clean(body["name"]))
-		if err != nil {
-			if a.writeAuthPersistenceError(w, err) {
-				return
-			}
-			util.WriteError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		if !found {
-			util.WriteError(w, http.StatusNotFound, "user not found")
-			return
-		}
-		response, err := a.managedUsersResponse(r)
-		if err != nil {
-			util.WriteError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		if current := a.managedUser(userID); current != nil {
-			item = current
-		}
-		response["item"] = item
-		response["api_key"] = apiKey
-		response["key"] = raw
-		util.WriteJSON(w, http.StatusOK, response)
-		return
-	}
 	if len(parts) != 4 {
 		http.NotFound(w, r)
 		return
 	}
 	switch r.Method {
-	case http.MethodGet:
-		item := a.managedUser(userID)
-		if item == nil {
-			util.WriteError(w, http.StatusNotFound, "user not found")
-			return
-		}
-		util.WriteJSON(w, http.StatusOK, map[string]any{"item": item})
 	case http.MethodPost:
 		body, _ := readJSONMap(r)
 		updates := map[string]any{}
@@ -1381,217 +1100,6 @@ func findManagedUser(items []map[string]any, id string) map[string]any {
 	return nil
 }
 
-func (a *App) handleAccounts(w http.ResponseWriter, r *http.Request) {
-	identity, ok := a.requireIdentity(w, r, "")
-	if !ok {
-		return
-	}
-	switch {
-	case r.URL.Path == "/api/accounts" && r.Method == http.MethodGet:
-		util.WriteJSON(w, http.StatusOK, map[string]any{"items": a.accountItemsForIdentity(identity)})
-	case r.URL.Path == "/api/accounts/tokens" && r.Method == http.MethodGet:
-		util.WriteJSON(w, http.StatusOK, map[string]any{"tokens": a.accounts.ListTokens()})
-	case r.URL.Path == "/api/accounts/session" && r.Method == http.MethodPost:
-		body, err := readJSONMap(r)
-		if err != nil {
-			util.WriteError(w, http.StatusBadRequest, "invalid json body")
-			return
-		}
-		sessionJSON := util.Clean(body["session_json"])
-		if sessionJSON == "" {
-			util.WriteError(w, http.StatusBadRequest, "session_json is required")
-			return
-		}
-		result, err := a.accounts.AddAccountFromSession(sessionJSON)
-		if err != nil {
-			if a.writeAccountPersistenceError(w, err) {
-				return
-			}
-			util.WriteError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		delete(result, "tokens")
-		a.redactAccountPayloadForIdentity(identity, result)
-		util.WriteJSON(w, http.StatusOK, result)
-	case r.URL.Path == "/api/accounts" && r.Method == http.MethodPost:
-		body, _ := readJSONMap(r)
-		tokens := util.AsStringSlice(body["tokens"])
-		if len(tokens) == 0 {
-			util.WriteError(w, http.StatusBadRequest, "tokens is required")
-			return
-		}
-		result, err := a.accounts.AddAccounts(tokens)
-		if err != nil {
-			a.writeAccountPersistenceError(w, err)
-			return
-		}
-		refresh := a.accounts.RefreshAccounts(r.Context(), tokens)
-		for key, value := range refresh {
-			if key == "refreshed" || key == "errors" || key == "items" {
-				result[key] = value
-			}
-		}
-		a.redactAccountPayloadForIdentity(identity, result)
-		util.WriteJSON(w, http.StatusOK, result)
-	case r.URL.Path == "/api/accounts" && r.Method == http.MethodDelete:
-		body, _ := readJSONMap(r)
-		tokens := util.AsStringSlice(body["tokens"])
-		accountIDs := util.AsStringSlice(body["account_ids"])
-		if len(tokens) == 0 {
-			tokens = a.accounts.ListTokensByIDs(accountIDs)
-		}
-		if len(tokens) == 0 {
-			if len(accountIDs) > 0 {
-				util.WriteError(w, http.StatusNotFound, "account not found")
-				return
-			}
-			util.WriteError(w, http.StatusBadRequest, "tokens or account_ids is required")
-			return
-		}
-		result, err := a.accounts.DeleteAccounts(tokens)
-		if err != nil {
-			a.writeAccountPersistenceError(w, err)
-			return
-		}
-		a.redactAccountPayloadForIdentity(identity, result)
-		util.WriteJSON(w, http.StatusOK, result)
-	case r.URL.Path == "/api/accounts/refresh" && r.Method == http.MethodPost:
-		body, _ := readJSONMap(r)
-		tokens := util.AsStringSlice(body["access_tokens"])
-		accountIDs := util.AsStringSlice(body["account_ids"])
-		if len(tokens) == 0 && len(accountIDs) > 0 {
-			tokens = a.accounts.ListTokensByIDs(accountIDs)
-		}
-		if len(tokens) == 0 && len(accountIDs) == 0 {
-			tokens = a.accounts.ListTokens()
-		}
-		if len(tokens) == 0 {
-			if len(accountIDs) > 0 {
-				util.WriteError(w, http.StatusNotFound, "account not found")
-				return
-			}
-			util.WriteError(w, http.StatusBadRequest, "access_tokens or account_ids is required")
-			return
-		}
-		result := a.accounts.RefreshAccounts(r.Context(), tokens)
-		a.redactAccountPayloadForIdentity(identity, result)
-		util.WriteJSON(w, http.StatusOK, result)
-	case r.URL.Path == "/api/accounts/upstream-actions" && r.Method == http.MethodPost:
-		body, err := readJSONMap(r)
-		if err != nil {
-			util.WriteError(w, http.StatusBadRequest, "invalid json body")
-			return
-		}
-		tokens := util.AsStringSlice(body["access_tokens"])
-		accountIDs := util.AsStringSlice(body["account_ids"])
-		if len(tokens) == 0 && len(accountIDs) > 0 {
-			tokens = a.accounts.ListTokensByIDs(accountIDs)
-		}
-		if len(tokens) == 0 {
-			if len(accountIDs) > 0 {
-				util.WriteError(w, http.StatusNotFound, "account not found")
-				return
-			}
-			util.WriteError(w, http.StatusBadRequest, "access_tokens or account_ids is required")
-			return
-		}
-		options := service.UpstreamAccountActionOptions{
-			DisableMemory:     util.ToBool(body["disable_memory"]),
-			HideConversations: util.ToBool(body["hide_conversations"]),
-			DeleteFiles:       util.ToBool(body["delete_files"]),
-			FilePageLimit:     util.ToInt(body["file_page_limit"], 100),
-		}
-		if !options.DisableMemory && !options.HideConversations && !options.DeleteFiles {
-			util.WriteError(w, http.StatusBadRequest, "at least one upstream action is required")
-			return
-		}
-		result := a.accounts.RunUpstreamAccountActions(r.Context(), tokens, options)
-		a.redactAccountPayloadForIdentity(identity, result)
-		util.WriteJSON(w, http.StatusOK, result)
-	case r.URL.Path == "/api/accounts/toggle-enabled" && r.Method == http.MethodPost:
-		body, err := readJSONMap(r)
-		if err != nil {
-			util.WriteError(w, http.StatusBadRequest, "invalid json body")
-			return
-		}
-		accountIDs := util.AsStringSlice(body["account_ids"])
-		if accountID := util.Clean(body["account_id"]); accountID != "" {
-			accountIDs = append(accountIDs, accountID)
-		}
-		if len(accountIDs) == 0 {
-			util.WriteError(w, http.StatusBadRequest, "account_id or account_ids is required")
-			return
-		}
-		enabledRaw, ok := body["enabled"]
-		if !ok {
-			util.WriteError(w, http.StatusBadRequest, "enabled is required")
-			return
-		}
-		result, err := a.accounts.SetAccountsEnabledByIDs(accountIDs, util.ToBool(enabledRaw))
-		if err != nil {
-			a.writeAccountPersistenceError(w, err)
-			return
-		}
-		a.redactAccountPayloadForIdentity(identity, result)
-		util.WriteJSON(w, http.StatusOK, result)
-	case r.URL.Path == "/api/accounts/update" && r.Method == http.MethodPost:
-		body, _ := readJSONMap(r)
-		token := util.Clean(body["access_token"])
-		accountID := util.Clean(body["account_id"])
-		if token == "" && accountID != "" {
-			token = a.accounts.GetTokenByID(accountID)
-			if token == "" {
-				util.WriteError(w, http.StatusNotFound, "account not found")
-				return
-			}
-		}
-		if token == "" {
-			util.WriteError(w, http.StatusBadRequest, "access_token or account_id is required")
-			return
-		}
-		updates := map[string]any{}
-		for _, key := range []string{"type", "status", "quota"} {
-			if value, ok := body[key]; ok && value != nil {
-				updates[key] = value
-			}
-		}
-		if len(updates) == 0 {
-			util.WriteError(w, http.StatusBadRequest, "no updates provided")
-			return
-		}
-		item, err := a.accounts.UpdateAccount(token, updates)
-		if err != nil {
-			a.writeAccountPersistenceError(w, err)
-			return
-		}
-		if item == nil {
-			util.WriteError(w, http.StatusNotFound, "account not found")
-			return
-		}
-		result := map[string]any{"item": item, "items": a.accounts.ListAccounts()}
-		a.redactAccountPayloadForIdentity(identity, result)
-		util.WriteJSON(w, http.StatusOK, result)
-	default:
-		http.NotFound(w, r)
-	}
-}
-
-func (a *App) writeAccountPersistenceError(w http.ResponseWriter, err error) bool {
-	var persistenceErr service.AccountPersistenceError
-	if !errors.As(err, &persistenceErr) {
-		return false
-	}
-	if a != nil && a.logger != nil {
-		a.logger.Error("account persistence failed", "error", persistenceErr.Err)
-	}
-	if errors.Is(err, storage.ErrConcurrentRowUpdate) {
-		util.WriteError(w, http.StatusConflict, "账号数据已被其他实例更新，请重试")
-		return true
-	}
-	util.WriteError(w, http.StatusServiceUnavailable, "账号数据库暂时不可用，请稍后重试")
-	return true
-}
-
 func (a *App) writeAuthPersistenceError(w http.ResponseWriter, err error) bool {
 	var persistenceErr service.AuthPersistenceError
 	if !errors.As(err, &persistenceErr) {
@@ -1608,58 +1116,10 @@ func (a *App) writeAuthPersistenceError(w http.ResponseWriter, err error) bool {
 	return true
 }
 
-func (a *App) accountItemsForIdentity(identity service.Identity) []map[string]any {
-	items := a.accounts.ListAccounts()
-	if !a.identityCanAccessAPI(identity, http.MethodGet, "/api/accounts/tokens") {
-		redactAccountTokens(items)
-	}
-	return items
-}
-
-func (a *App) redactAccountPayloadForIdentity(identity service.Identity, payload map[string]any) {
-	if a.identityCanAccessAPI(identity, http.MethodGet, "/api/accounts/tokens") {
-		return
-	}
-	if item, ok := payload["item"].(map[string]any); ok {
-		redactAccountToken(item)
-	}
-	if items, ok := payload["items"].([]map[string]any); ok {
-		redactAccountTokens(items)
-	}
-	if errors, ok := payload["errors"].([]map[string]string); ok {
-		for _, item := range errors {
-			token := item["access_token"]
-			delete(item, "access_token")
-			if token != "" {
-				item["account_id"] = util.SHA1Short(token, 16)
-			}
-		}
-	}
-	if results, ok := payload["results"].([]map[string]any); ok {
-		for _, item := range results {
-			token := util.Clean(item["access_token"])
-			delete(item, "access_token")
-			if token != "" {
-				item["account_id"] = util.SHA1Short(token, 16)
-			}
-		}
-	}
-}
-
-func redactAccountTokens(items []map[string]any) {
-	for _, item := range items {
-		redactAccountToken(item)
-	}
-}
-
-func redactAccountToken(item map[string]any) {
-	delete(item, "access_token")
-}
-
 func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Pragma", "no-cache")
-	identity, ok := a.requireIdentity(w, r, "")
+	identity, ok := a.requireIdentity(w, r)
 	if !ok {
 		return
 	}
@@ -1671,6 +1131,25 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		util.WriteJSON(w, http.StatusOK, tasks)
+		return
+	}
+	if r.URL.Path == "/api/creation-tasks/audio-voices" && r.Method == http.MethodGet {
+		model := strings.TrimSpace(r.URL.Query().Get("model"))
+		if audioProtocolForModel(model) != "grok" || allowedPersonalModel(model, a.config.AudioModels()) == "" {
+			util.WriteError(w, http.StatusBadRequest, "Grok TTS 模型不可用")
+			return
+		}
+		apiKey, err := a.relayAPIKeyForIdentitySelection(r.Context(), identity, strings.TrimSpace(r.URL.Query().Get("token_group")), strings.TrimSpace(r.URL.Query().Get("token_name")))
+		if err != nil {
+			a.writeCreationTaskSubmitError(w, err)
+			return
+		}
+		voices, err := a.fetchGrokTTSVoices(r.Context(), apiKey, model)
+		if err != nil {
+			a.writeCreationTaskSubmitError(w, err)
+			return
+		}
+		util.WriteJSON(w, http.StatusOK, map[string]any{"voices": voices})
 		return
 	}
 	if len(parts) == 4 && parts[0] == "api" && parts[1] == "creation-tasks" && parts[3] == "cancel" {
@@ -1696,11 +1175,24 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		model := a.applyDefaultImageModel(body)
+		apiMode := normalizeImageTaskAPIMode(util.Clean(body["api_mode"]), model)
+		if apiMode == "" {
+			util.WriteError(w, http.StatusBadRequest, "api_mode must be images, responses, or chat")
+			return
+		}
+		body["api_mode"] = apiMode
 		if err := validateRelayImageRequest("/api/creation-tasks/image-generations", model, body, nil); err != nil {
 			a.writeCreationTaskSubmitError(w, err)
 			return
 		}
-		normalizeImagePayloadForModel(body)
+		// Keep the application's quality vocabulary in the persisted task.
+		// Provider normalization below may replace it with a native value (for
+		// example Agnes 3K), but the worker needs the original value when it
+		// builds the upstream request later.
+		taskQuality := util.Clean(body["quality"])
+		if apiMode == "images" {
+			normalizeImagePayloadForModel(body)
+		}
 		if !validProtocolImageCount(body["n"], model) {
 			util.WriteError(w, http.StatusBadRequest, protocolImageCountRangeMessage(model))
 			return
@@ -1713,7 +1205,7 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 			a.writeCreationTaskSubmitError(w, err)
 			return
 		}
-		task, err := a.tasks.SubmitGenerationWithOptions(r.Context(), identity, util.Clean(body["client_task_id"]), util.Clean(body["prompt"]), model, util.Clean(body["size"]), util.Clean(body["quality"]), a.relayBaseURL(), util.ToInt(body["n"], 1), body["messages"], imageTaskRequestMetadata(body), imageOutputOptionsFromBody(body), imageToolOptionsFromBody(body), util.Clean(body["visibility"]))
+		task, err := a.tasks.SubmitGenerationWithOptions(r.Context(), identity, util.Clean(body["client_task_id"]), util.Clean(body["prompt"]), model, util.Clean(body["size"]), taskQuality, a.relayBaseURL(), util.ToInt(body["n"], 1), nil, imageTaskRequestMetadata(body), imageOutputOptionsFromBody(body), imageToolOptionsFromBody(body), util.Clean(body["visibility"]))
 		if err != nil {
 			a.writeCreationTaskSubmitError(w, err)
 			return
@@ -1729,7 +1221,7 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 		}
 		model := util.Clean(body["model"])
 		if model == "" {
-			model = firstString(a.config.VideoModels(), "sora-2")
+			model = firstString(a.config.VideoModels(), defaultVideoModel)
 			body["model"] = model
 		}
 		allowed := false
@@ -1745,6 +1237,8 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 		}
 		seconds := util.ToInt(body["seconds"], videoDefaultSeconds(model))
 		refs := util.AsStringSlice(body["reference_image_urls"])
+		frameRefs := videoFrameAliases(body)
+		refs = removeVideoFrameAliases(refs, frameRefs)
 		referenceVideoURLs := util.AsStringSlice(body["reference_video_urls"])
 		referenceAudioURLs := util.AsStringSlice(body["reference_audio_urls"])
 		referenceMode := normalizeVideoReferenceMode(util.Clean(body["reference_mode"]))
@@ -1755,22 +1249,68 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 				referenceMode = "first-frame"
 			}
 		}
+		// Endpoint names that explicitly represent reference-to-video always use
+		// the multimodal reference fields, even for a request containing only
+		// images. This prevents silently dropping the image when callers omit the
+		// UI's mode toggle.
+		if strings.Contains(strings.ToLower(model), "reference-to-video") || strings.Contains(strings.ToLower(model), "-r2v") || strings.HasSuffix(strings.ToLower(model), "/r2v") {
+			referenceMode = "reference"
+		}
+		if len(frameRefs) > 0 && len(refs)+len(referenceVideoURLs)+len(referenceAudioURLs) == 0 {
+			// Named first/last-frame slots define keyframe mode even when an old
+			// persisted task retained the reference-mode toggle.
+			referenceMode = "first-frame"
+		}
+		// A persisted canvas node may retain the multimodal toggle after the
+		// model is changed to a first-frame image-to-video endpoint. Preserve the
+		// useful image-only request by normalizing it to first-frame mode; mixed
+		// video/audio references still fail with the provider-specific validation
+		// below instead of being silently discarded.
+		capability := protocol.VideoCapability(model)
+		if referenceMode == "reference" && !capability.ReferenceMode && len(referenceVideoURLs) == 0 && len(referenceAudioURLs) == 0 && capability.FirstFrameImageLimit > 0 {
+			referenceMode = "first-frame"
+		}
 		body["reference_mode"] = referenceMode
+		normalizeVideoControlParameters(body, model)
+		if err := validateVideoAdvancedParameters(body, model); err != nil {
+			util.WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		if err := validateVideoPrompt(model, util.Clean(body["prompt"])); err != nil {
 			util.WriteError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		firstFrameCount := len(refs)
-		multimodalReferenceCount := 0
-		if referenceMode == "reference" {
-			firstFrameCount = 0
-			multimodalReferenceCount = len(refs) + len(referenceVideoURLs) + len(referenceAudioURLs)
-		}
-		if err := validateVideoParameters(model, util.Clean(body["size"]), seconds, util.Clean(body["resolution"]), firstFrameCount, multimodalReferenceCount); err != nil {
+		allImageRefs := append(append([]string{}, frameRefs...), refs...)
+		if err := validateVideoAudioGeneration(model, util.ToBool(body["generate_audio"]), firstNonEmpty(util.Clean(body["video_mode"]), util.Clean(body["mode"])), len(allImageRefs)); err != nil {
 			util.WriteError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		if err := validateVideoReferences(model, referenceMode, refs, referenceVideoURLs, referenceAudioURLs); err != nil {
+		if err := validateVideoRequiredInputs(model, util.Clean(body["prompt"]), allImageRefs, referenceVideoURLs, referenceAudioURLs); err != nil {
+			util.WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if err := validateVideoReferencesWithFrameSlots(
+			model,
+			referenceMode,
+			videoFirstFrameAlias(body),
+			videoLastFrameAlias(body),
+			refs,
+			referenceVideoURLs,
+			referenceAudioURLs,
+			hasKlingElementReferences(body["element_list"]),
+		); err != nil {
+			util.WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		firstFrameCount := len(frameRefs)
+		if firstFrameCount == 0 && referenceMode == "first-frame" {
+			firstFrameCount = len(refs)
+		}
+		multimodalReferenceCount := 0
+		if referenceMode == "reference" {
+			multimodalReferenceCount = len(refs) + len(referenceVideoURLs) + len(referenceAudioURLs)
+		}
+		if err := validateVideoParameters(model, util.Clean(body["size"]), seconds, util.Clean(body["resolution"]), firstFrameCount, multimodalReferenceCount); err != nil {
 			util.WriteError(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -1778,7 +1318,35 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 			a.writeCreationTaskSubmitError(w, err)
 			return
 		}
-		task, err := a.tasks.SubmitVideo(r.Context(), identity, util.Clean(body["client_task_id"]), util.Clean(body["prompt"]), model, util.Clean(body["size"]), seconds, util.Clean(body["resolution"]), util.ToBool(body["generate_audio"]), util.ToBool(body["watermark"]), referenceMode, refs, referenceVideoURLs, referenceAudioURLs, creationTaskRequestMetadata(body))
+		task, err := a.tasks.SubmitVideo(r.Context(), identity, util.Clean(body["client_task_id"]), util.Clean(body["prompt"]), model, util.Clean(body["size"]), seconds, util.Clean(body["resolution"]), util.ToBool(body["generate_audio"]), util.ToBool(body["watermark"]), referenceMode, refs, referenceVideoURLs, referenceAudioURLs, videoTaskRequestMetadata(body))
+		if err != nil {
+			a.writeCreationTaskSubmitError(w, err)
+			return
+		}
+		util.WriteJSON(w, http.StatusOK, task)
+		return
+	}
+	if r.URL.Path == "/api/creation-tasks/audio-generations" && r.Method == http.MethodPost {
+		body, err := readJSONMap(r)
+		if err != nil {
+			util.WriteError(w, http.StatusBadRequest, "invalid json body")
+			return
+		}
+		model := firstNonEmpty(util.Clean(body["model"]), a.config.DefaultAudioModel(), firstString(a.config.AudioModels(), "tts-1"))
+		if allowedPersonalModel(model, a.config.AudioModels()) == "" {
+			util.WriteError(w, http.StatusBadRequest, "音频模型不可用")
+			return
+		}
+		body["model"] = model
+		if err := validateAudioGenerationPayload(body); err != nil {
+			util.WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if _, err := a.relayAPIKeyForIdentitySelection(r.Context(), identity, selectedRelayTokenGroupFromPayload(body), selectedRelayTokenNameFromPayload(body)); err != nil {
+			a.writeCreationTaskSubmitError(w, err)
+			return
+		}
+		task, err := a.tasks.SubmitAudio(r.Context(), identity, util.Clean(body["client_task_id"]), body, creationTaskRequestMetadata(body))
 		if err != nil {
 			a.writeCreationTaskSubmitError(w, err)
 			return
@@ -1787,7 +1355,38 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.URL.Path == "/api/creation-tasks/chat-completions" && r.Method == http.MethodPost {
-		util.WriteError(w, http.StatusNotFound, "chat creation tasks are disabled")
+		body, err := readJSONMap(r)
+		if err != nil {
+			util.WriteError(w, http.StatusBadRequest, "invalid json body")
+			return
+		}
+		model := firstNonEmpty(util.Clean(body["model"]), a.config.DefaultTextModel(), firstString(a.config.TextModels(), a.defaultChatModel()))
+		if allowedPersonalModel(model, a.config.TextModels()) == "" {
+			util.WriteError(w, http.StatusBadRequest, "文本模型不可用")
+			return
+		}
+		messages := util.AsMapSlice(body["messages"])
+		prompt := util.Clean(body["prompt"])
+		if len(messages) == 0 && prompt != "" {
+			messages = []map[string]any{{"role": "user", "content": prompt}}
+		}
+		if len(messages) == 0 {
+			util.WriteError(w, http.StatusBadRequest, "messages are required")
+			return
+		}
+		if prompt == "" {
+			prompt = util.Clean(messages[len(messages)-1]["content"])
+		}
+		if _, err := a.relayAPIKeyForIdentitySelection(r.Context(), identity, selectedRelayTokenGroupFromPayload(body), selectedRelayTokenNameFromPayload(body)); err != nil {
+			a.writeCreationTaskSubmitError(w, err)
+			return
+		}
+		task, err := a.tasks.SubmitChatWithMetadata(r.Context(), identity, util.Clean(body["client_task_id"]), prompt, model, messages, true, chatTaskRequestMetadata(body))
+		if err != nil {
+			a.writeCreationTaskSubmitError(w, err)
+			return
+		}
+		util.WriteJSON(w, http.StatusOK, task)
 		return
 	}
 	if r.URL.Path == "/api/creation-tasks/image-edits" && r.Method == http.MethodPost {
@@ -1803,11 +1402,20 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		model := a.applyDefaultImageModel(body)
+		apiMode := normalizeImageTaskAPIMode(util.Clean(body["api_mode"]), model)
+		if apiMode == "" {
+			util.WriteError(w, http.StatusBadRequest, "api_mode must be images, responses, or chat")
+			return
+		}
+		body["api_mode"] = apiMode
 		if err := validateRelayImageRequest("/api/creation-tasks/image-edits", model, body, images); err != nil {
 			a.writeCreationTaskSubmitError(w, err)
 			return
 		}
-		normalizeImagePayloadForModel(body)
+		taskQuality := util.Clean(body["quality"])
+		if apiMode == "images" {
+			normalizeImagePayloadForModel(body)
+		}
 		if !validProtocolImageCount(body["n"], model) {
 			util.WriteError(w, http.StatusBadRequest, protocolImageCountRangeMessage(model))
 			return
@@ -1816,7 +1424,7 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 			a.writeCreationTaskSubmitError(w, err)
 			return
 		}
-		if err := validateRelayImageReferenceCount(model, len(images)); err != nil {
+		if err := validateRelayImageReferenceCount(model, len(images), body); err != nil {
 			a.writeCreationTaskSubmitError(w, err)
 			return
 		}
@@ -1824,7 +1432,7 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 			a.writeCreationTaskSubmitError(w, err)
 			return
 		}
-		task, err := a.tasks.SubmitEditWithOptions(r.Context(), identity, util.Clean(body["client_task_id"]), util.Clean(body["prompt"]), model, util.Clean(body["size"]), util.Clean(body["quality"]), a.relayBaseURL(), images, util.ToInt(body["n"], 1), body["messages"], imageTaskRequestMetadata(body), imageOutputOptionsFromBody(body), imageToolOptionsFromBody(body), util.Clean(body["visibility"]))
+		task, err := a.tasks.SubmitEditWithOptions(r.Context(), identity, util.Clean(body["client_task_id"]), util.Clean(body["prompt"]), model, util.Clean(body["size"]), taskQuality, a.relayBaseURL(), images, util.ToInt(body["n"], 1), nil, imageTaskRequestMetadata(body), imageOutputOptionsFromBody(body), imageToolOptionsFromBody(body), util.Clean(body["visibility"]))
 		if err != nil {
 			a.writeCreationTaskSubmitError(w, err)
 			return
@@ -1835,28 +1443,139 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 	http.NotFound(w, r)
 }
 
-func validateVideoReferences(model, mode string, imageURLs, videoURLs, audioURLs []string) error {
+func videoFrameAliases(body map[string]any) []string {
+	frames := make([]string, 0, 2)
+	if value := videoFirstFrameAlias(body); value != "" {
+		frames = append(frames, value)
+	}
+	if value := videoLastFrameAlias(body); value != "" {
+		frames = append(frames, value)
+	}
+	return frames
+}
+
+func videoFirstFrameAlias(body map[string]any) string {
+	for _, key := range []string{"first_frame_url", "first_frame_image"} {
+		if value := strings.TrimSpace(util.Clean(body[key])); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func videoLastFrameAlias(body map[string]any) string {
+	for _, key := range []string{"last_frame_url", "last_frame_image", "end_image_url", "tail_image_url"} {
+		if value := strings.TrimSpace(util.Clean(body[key])); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func removeVideoFrameAliases(refs, frames []string) []string {
+	frameSet := make(map[string]struct{}, len(frames))
+	for _, value := range frames {
+		frameSet[strings.TrimSpace(value)] = struct{}{}
+	}
+	filtered := make([]string, 0, len(refs))
+	for _, value := range refs {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, isFrame := frameSet[value]; !isFrame {
+			filtered = append(filtered, value)
+		}
+	}
+	return filtered
+}
+
+func validateVideoReferencesWithFrameSlots(model, mode, firstFrameURL, lastFrameURL string, imageURLs, videoURLs, audioURLs []string, hasElementReferences bool) error {
 	mode = normalizeVideoReferenceMode(mode)
 	if mode != "first-frame" && mode != "reference" {
 		return fmt.Errorf("视频参考模式仅支持 first-frame 或 reference")
 	}
-	if mode == "first-frame" {
-		if len(videoURLs) > 0 || len(audioURLs) > 0 {
-			return fmt.Errorf("首帧图生视频不能同时传入参考视频或参考音频")
-		}
-		if len(imageURLs) > 1 {
-			return fmt.Errorf("当前视频图生视频入口只支持一张首帧参考图")
-		}
+	firstFrameURL = strings.TrimSpace(firstFrameURL)
+	lastFrameURL = strings.TrimSpace(lastFrameURL)
+	hasFrames := firstFrameURL != "" || lastFrameURL != ""
+	ordinaryImageURLs := imageURLs
+	if !hasFrames && mode == "first-frame" {
+		// First-frame mode uses the ordered image array for frame slots when
+		// explicit named slots are absent.
+		ordinaryImageURLs = nil
+	}
+	if err := validateVideoReferenceCombination(model, firstFrameURL != "", lastFrameURL != "", ordinaryImageURLs, videoURLs, audioURLs); err != nil {
+		return err
+	}
+	if !hasFrames {
+		return validateVideoReferences(model, mode, imageURLs, videoURLs, audioURLs, hasElementReferences)
+	}
+	frames := make([]string, 0, 2)
+	if firstFrameURL != "" {
+		frames = append(frames, firstFrameURL)
+	}
+	if lastFrameURL != "" {
+		frames = append(frames, lastFrameURL)
+	}
+	if err := validateVideoReferences(model, "first-frame", frames, nil, nil); err != nil {
+		return err
+	}
+	hasOrdinaryReferences := len(imageURLs)+len(videoURLs)+len(audioURLs) > 0
+	if !hasOrdinaryReferences {
 		return nil
 	}
-	if !isMiniMaxH3Model(model) {
-		return fmt.Errorf("当前模型尚未接入多模态参考生视频")
+	return validateVideoReferences(model, "reference", imageURLs, videoURLs, audioURLs, hasElementReferences)
+}
+
+func validateVideoReferenceCombination(model string, hasFirstFrame, hasLastFrame bool, imageURLs, videoURLs, audioURLs []string) error {
+	profileName := protocol.VideoModelProfile(model)
+	hasFrames := hasFirstFrame || hasLastFrame
+	hasOrdinaryReferences := len(imageURLs)+len(videoURLs)+len(audioURLs) > 0
+	switch profileName {
+	case "veo", "veo-31":
+		if len(videoURLs) > 0 {
+			return fmt.Errorf("Gemini Veo 不支持普通参考视频，请移除后重试")
+		}
+		if len(audioURLs) > 0 {
+			return fmt.Errorf("Gemini Veo 不支持参考音频，请移除后重试")
+		}
+		if hasLastFrame && !hasFirstFrame {
+			return fmt.Errorf("请先添加首帧图片")
+		}
+		if hasFrames && len(imageURLs) > 0 {
+			return fmt.Errorf("首尾帧模式不能与普通参考图同时使用")
+		}
+		if profileName != "veo-31" && (hasLastFrame || len(imageURLs) > 0) {
+			return fmt.Errorf("当前 Veo 模型不支持尾帧或普通参考图")
+		}
+		if len(imageURLs) > 3 {
+			return fmt.Errorf("Veo 3.1 参考图最多 3 张")
+		}
+	case "agnes-25":
+		if hasFrames && hasOrdinaryReferences {
+			return fmt.Errorf("Agnes Video 2.5 的首尾帧不能和普通参考素材同时使用")
+		}
+	case "minimax-h3":
+		if hasFrames && hasOrdinaryReferences {
+			return fmt.Errorf("MiniMax H3 首尾帧不能与参考图片、视频或音频同时使用")
+		}
+		if len(audioURLs) > 0 && len(imageURLs)+len(videoURLs) == 0 {
+			return fmt.Errorf("MiniMax H3 参考音频需要同时提供参考图片或参考视频")
+		}
+	case "cogvideox-3":
+		if len(videoURLs)+len(audioURLs) > 0 {
+			return fmt.Errorf("CogVideoX-3 不支持参考视频或参考音频")
+		}
 	}
-	if len(imageURLs)+len(videoURLs)+len(audioURLs) == 0 {
-		return fmt.Errorf("多模态参考生视频至少需要一个参考图片、视频或音频 URL")
-	}
-	if len(imageURLs) > 9 || len(videoURLs) > 3 || len(audioURLs) > 3 {
-		return fmt.Errorf("MiniMax H3 最多支持 9 张参考图片、3 个参考视频和 3 个参考音频")
+	return nil
+}
+
+func validateVideoReferences(model, mode string, imageURLs, videoURLs, audioURLs []string, elementReferenceValues ...bool) error {
+	model = protocol.CanonicalVideoModel(model)
+	mode = normalizeVideoReferenceMode(mode)
+	capability := protocol.VideoCapability(model)
+	if mode != "first-frame" && mode != "reference" {
+		return fmt.Errorf("视频参考模式仅支持 first-frame 或 reference")
 	}
 	for kind, values := range map[string][]string{"图片": imageURLs, "视频": videoURLs, "音频": audioURLs} {
 		for _, value := range values {
@@ -1865,22 +1584,347 @@ func validateVideoReferences(model, mode string, imageURLs, videoURLs, audioURLs
 			}
 		}
 	}
+	profileName := protocol.VideoModelProfile(model)
+	hasElementReferences := len(elementReferenceValues) > 0 && elementReferenceValues[0]
+	name := strings.ToLower(strings.TrimSpace(model))
+	wan27VisualInput := profileName == "wan-27-i2v" || profileName == "wan-27-kie-i2v"
+	if !wan27VisualInput && (strings.Contains(name, "image-to-video") || strings.Contains(name, "image_to_video") || name == "kling/v2-1-pro" || name == "kling/v2-1-standard") && len(imageURLs) == 0 {
+		return fmt.Errorf("当前图生视频模型必须提供至少一张参考图片")
+	}
+	if wan27VisualInput && len(imageURLs)+len(videoURLs) == 0 {
+		return fmt.Errorf("Wan 2.7 图生视频或视频生视频必须提供参考图片或参考视频")
+	}
+	if (profileName == "wan-i2v" || profileName == "bytedance-v1-i2v" || profileName == "grok-i2v") && len(imageURLs) == 0 {
+		return fmt.Errorf("当前图生视频模型必须提供至少一张参考图片")
+	}
+	if profileName == "minimax-hailuo" && strings.Contains(strings.ToLower(model), "image-to-video") && len(imageURLs) == 0 {
+		return fmt.Errorf("Hailuo 图生视频模型必须提供至少一张参考图片")
+	}
+	if profileName == "wan-speech" && (len(imageURLs) == 0 || len(audioURLs) == 0) {
+		return fmt.Errorf("Wan 语音驱动视频必须同时提供参考图片和参考音频")
+	}
+	if profileName == "wan-animate" && (len(imageURLs) == 0 || len(videoURLs) == 0) {
+		return fmt.Errorf("Wan 动作迁移必须同时提供参考图片和参考视频")
+	}
+	if profileName == "kling-avatar" && (len(imageURLs) == 0 || len(audioURLs) == 0) {
+		return fmt.Errorf("Kling AI Avatar 必须同时提供参考图片和参考音频")
+	}
+	if profileName == "vidu-q3" && len(imageURLs) == 0 {
+		return fmt.Errorf("Vidu Q3 当前模式必须提供至少一张参考图片")
+	}
+	if profileName == "kling-motion" && (len(imageURLs) == 0 || len(videoURLs) == 0) {
+		return fmt.Errorf("Kling Motion Control 必须同时提供参考图片和参考视频")
+	}
+	if profileName == "kling-omni-image" && len(imageURLs) == 0 {
+		return fmt.Errorf("Kling Omni 图生视频必须提供至少一张参考图片")
+	}
+	if profileName == "kling-omni-reference" && len(imageURLs)+len(videoURLs) == 0 && !hasElementReferences {
+		return fmt.Errorf("Kling Omni 参考生视频至少需要参考图片或参考视频")
+	}
+	if profileName == "kling-omni-transformation" && len(videoURLs) == 0 {
+		return fmt.Errorf("Kling Omni Transformation 必须提供一个参考视频")
+	}
+	if profileName == "infinitalk" && (len(imageURLs) == 0 || len(audioURLs) == 0) {
+		return fmt.Errorf("Infinitalk 必须同时提供参考图片和参考音频")
+	}
+	if profileName == "topaz-video" && len(videoURLs) == 0 {
+		return fmt.Errorf("Topaz Video 必须提供一个参考视频")
+	}
+	if profileName == "happyhorse" {
+		switch {
+		case strings.Contains(name, "video-edit") && len(videoURLs) == 0:
+			return fmt.Errorf("HappyHorse 视频编辑必须提供参考视频")
+		case strings.Contains(name, "image-to-video") && len(imageURLs) == 0:
+			return fmt.Errorf("HappyHorse 图生视频必须提供参考图片")
+		case strings.Contains(name, "reference-to-video") && len(imageURLs) == 0:
+			return fmt.Errorf("HappyHorse 参考生视频必须提供参考图片")
+		}
+	}
+	if (profileName == "wan-videoedit" || profileName == "wan-v2v") && len(videoURLs) == 0 {
+		return fmt.Errorf("当前 Wan 视频编辑模型必须提供一个公网参考视频 URL")
+	}
+	if profileName == "wan-27-r2v" && len(imageURLs)+len(videoURLs) == 0 {
+		return fmt.Errorf("Wan R2V 至少需要参考图片或参考视频")
+	}
+	if profileName == "wan-27-i2v" && len(videoURLs) > 0 && len(audioURLs) > 0 {
+		return fmt.Errorf("Wan 2.7 参考视频和参考音频不能同时使用")
+	}
+	if profileName == "skyreels" && len(audioURLs) > 0 && len(imageURLs) == 0 {
+		return fmt.Errorf("SkyReels 参考音频必须和至少一张参考图片一起使用")
+	}
+	if mode == "first-frame" {
+		if len(videoURLs) > 0 || len(audioURLs) > 0 {
+			return fmt.Errorf("首帧图生视频不能同时传入参考视频或参考音频")
+		}
+		if len(imageURLs) > capability.FirstFrameImageLimit {
+			return fmt.Errorf("当前视频模型最多支持 %d 张帧参考图", capability.FirstFrameImageLimit)
+		}
+		return nil
+	}
+	genericWorkbench := !usesReferenceSpecialVideoPanelModel(model)
+	if !genericWorkbench && !capability.ReferenceMode {
+		return fmt.Errorf("当前模型尚未接入多模态参考生视频")
+	}
+	if len(imageURLs)+len(videoURLs)+len(audioURLs) == 0 && !hasElementReferences {
+		return fmt.Errorf("多模态参考生视频至少需要一个参考图片、视频或音频 URL")
+	}
+	imageLimit, videoLimit, audioLimit := capability.References.Image, capability.References.Video, capability.References.Audio
+	if genericWorkbench {
+		// The reference workbench accepts one shared material envelope and leaves
+		// provider-specific truncation/removal to the final adapter.
+		imageLimit, videoLimit, audioLimit = 9, 3, 3
+	}
+	if len(imageURLs) > imageLimit || len(videoURLs) > videoLimit || len(audioURLs) > audioLimit {
+		return fmt.Errorf("当前模型最多支持 %d 张参考图片、%d 个参考视频和 %d 个参考音频", imageLimit, videoLimit, audioLimit)
+	}
+	if protocol.VideoModelProfile(model) == "minimax-h3" && len(audioURLs) > 0 && len(imageURLs)+len(videoURLs) == 0 {
+		return fmt.Errorf("MiniMax H3 参考音频需要同时提供参考图片或参考视频")
+	}
 	return nil
 }
 
-// normalizeVideoReferenceMode keeps the public API aligned with the provider
-// vocabulary: MiniMax calls mixed media and video-to-video reference-to-video.
-func normalizeVideoReferenceMode(value string) string {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "first-frame", "image-to-video":
-		return "first-frame"
-	case "":
-		return ""
-	case "reference", "reference-generation", "reference-to-video", "video-to-video", "multimodal":
-		return "reference"
-	default:
-		return strings.ToLower(strings.TrimSpace(value))
+func validateVideoAudioGeneration(model string, enabled bool, mode string, imageCount int) error {
+	name := strings.NewReplacer("_", "-", ".", "-", "/", "-").Replace(strings.ToLower(strings.TrimSpace(protocol.CanonicalVideoModel(model))))
+	if !enabled || name != "kling-v2-6" {
+		return nil
 	}
+	if strings.ToLower(strings.TrimSpace(mode)) != "pro" {
+		return fmt.Errorf("Kling v2.6 音频生成需要 pro 模式")
+	}
+	if imageCount > 1 {
+		return fmt.Errorf("Kling v2.6 开启音频时最多 1 张参考图")
+	}
+	return nil
+}
+
+// Normalize controls before persistence so direct API callers receive the
+// same provider-safe envelope as the web client.
+func normalizeVideoControlParameters(body map[string]any, model string) {
+	model = protocol.CanonicalVideoModel(model)
+	capability := protocol.VideoCapability(model)
+	profile := protocol.VideoModelProfile(model)
+	if size := normalizeVideoWorkbenchSizeForModel(model, util.Clean(body["size"])); size != "" {
+		body["size"] = size
+	} else {
+		delete(body, "size")
+	}
+	switch capability.AudioControl {
+	case "none":
+		delete(body, "generate_audio")
+	case "always":
+		body["generate_audio"] = true
+	}
+	if !capability.Watermark || !strings.HasPrefix(profile, "seedance-") {
+		delete(body, "watermark")
+	}
+	if profile == "grok-kie" || profile == "grok-i2v" {
+		mode := strings.ToLower(strings.TrimSpace(util.Clean(body["video_mode"])))
+		if mode != "fun" && mode != "spicy" {
+			mode = "normal"
+		}
+		body["video_mode"] = mode
+	} else if supportsKlingMode(model) {
+		mode := strings.ToLower(strings.TrimSpace(util.Clean(body["video_mode"])))
+		if mode != "pro" && mode != "4k" {
+			mode = "std"
+		}
+		if profile == "kling-legacy" && mode == "4k" {
+			mode = "pro"
+		}
+		body["video_mode"] = mode
+	} else {
+		delete(body, "video_mode")
+	}
+	if !supportsKlingNegativePrompt(model) {
+		delete(body, "negative_prompt")
+	}
+	if !supportsKlingMultiShot(model) {
+		for _, key := range []string{"multi_shot", "shot_type", "multi_prompt", "element_list"} {
+			delete(body, key)
+		}
+	}
+	if !supportsKlingShotType(model) {
+		delete(body, "shot_type")
+	}
+	if !supportsKlingElements(model) {
+		delete(body, "element_list")
+	}
+	if profile != "kling-motion" {
+		delete(body, "character_orientation")
+	}
+}
+
+func klingOmniVariant(model string) string {
+	name := strings.ToLower(strings.TrimSpace(model))
+	const prefix = "kling-3.0-omni/"
+	if !strings.HasPrefix(name, prefix) {
+		return ""
+	}
+	variant := strings.TrimPrefix(name, prefix)
+	switch variant {
+	case "text-to-video", "image-to-video", "reference-to-video", "transformation":
+		return variant
+	default:
+		return ""
+	}
+}
+
+func supportsKlingNegativePrompt(model string) bool {
+	name := strings.ToLower(strings.TrimSpace(model))
+	if name == "kling-3-0-turbo" {
+		return false
+	}
+	profile := protocol.VideoModelProfile(name)
+	return !strings.Contains(name, "/") && (profile == "kling-3" || profile == "kling-legacy")
+}
+
+func supportsKlingMultiShot(model string) bool {
+	name := strings.ToLower(strings.TrimSpace(model))
+	if name == "kling-3-0-turbo" {
+		return false
+	}
+	if variant := klingOmniVariant(name); variant != "" {
+		return variant != "transformation"
+	}
+	return name == "kling-3.0/video" || (!strings.Contains(name, "/") && protocol.VideoModelProfile(name) == "kling-3")
+}
+
+func supportsKlingShotType(model string) bool {
+	name := strings.ToLower(strings.TrimSpace(model))
+	if name == "kling-3-0-turbo" {
+		return false
+	}
+	if variant := klingOmniVariant(name); variant != "" {
+		return variant == "text-to-video" || variant == "image-to-video"
+	}
+	return !strings.Contains(name, "/") && protocol.VideoModelProfile(name) == "kling-3"
+}
+
+func supportsKlingElements(model string) bool {
+	return supportsKlingMultiShot(model)
+}
+
+func supportsKlingMode(model string) bool {
+	name := strings.ToLower(strings.TrimSpace(model))
+	if name == "kling-3-0-turbo" {
+		return false
+	}
+	profile := protocol.VideoModelProfile(name)
+	return name == "kling-3.0/video" || klingOmniVariant(name) != "" || (!strings.Contains(name, "/") && (profile == "kling-3" || profile == "kling-legacy"))
+}
+
+func validateVideoAdvancedParameters(body map[string]any, model string) error {
+	profile := protocol.VideoModelProfile(model)
+	if value := util.Clean(body["shot_type"]); value != "" && value != "intelligence" && value != "customize" {
+		return fmt.Errorf("Kling 分镜类型仅支持 intelligence 或 customize")
+	}
+	if value := util.Clean(body["character_orientation"]); value != "" && value != "image" && value != "video" {
+		return fmt.Errorf("Kling Motion Control 角色朝向仅支持 image 或 video")
+	}
+	if util.ToBool(body["multi_shot"]) && (!supportsKlingShotType(model) || util.Clean(body["shot_type"]) == "customize") && len(util.AsMapSlice(body["multi_prompt"])) == 0 {
+		return fmt.Errorf("Kling 自定义多镜头必须提供 multi_prompt 分镜列表")
+	}
+	if value, ok := body["multi_prompt"]; ok && value != nil {
+		if _, ok := value.([]any); !ok {
+			return fmt.Errorf("multi_prompt 必须是 JSON 数组")
+		}
+	}
+	if value, ok := body["element_list"]; ok && value != nil {
+		if _, ok := value.([]any); !ok {
+			return fmt.Errorf("element_list 必须是 JSON 数组")
+		}
+		if err := validateKlingElementList(value); err != nil {
+			return err
+		}
+	}
+	if profile == "kling-motion" && util.Clean(body["character_orientation"]) == "" {
+		body["character_orientation"] = "video"
+	}
+	return nil
+}
+
+func validateKlingElementList(value any) error {
+	rawItems, _ := value.([]any)
+	if len(rawItems) > 3 {
+		return fmt.Errorf("Kling 元素列表最多支持 3 个元素")
+	}
+	for index, rawItem := range rawItems {
+		item, ok := rawItem.(map[string]any)
+		if !ok {
+			return fmt.Errorf("Kling 元素 %d 必须是 JSON 对象", index+1)
+		}
+		type elementReference struct {
+			kind string
+			url  string
+		}
+		references := make([]elementReference, 0, 4)
+		if rawReferences, exists := item["references"]; exists {
+			items, ok := rawReferences.([]any)
+			if !ok {
+				return fmt.Errorf("Kling 元素 %d 的 references 必须是 JSON 数组", index+1)
+			}
+			for _, rawReference := range items {
+				reference, ok := rawReference.(map[string]any)
+				if !ok {
+					return fmt.Errorf("Kling 元素 %d 的资源必须是 JSON 对象", index+1)
+				}
+				references = append(references, elementReference{kind: strings.ToLower(strings.TrimSpace(util.Clean(reference["kind"]))), url: strings.TrimSpace(util.Clean(reference["url"]))})
+			}
+		}
+		for _, key := range []string{"element_input_urls", "element_input_audio_urls"} {
+			if rawURLs, exists := item[key]; exists {
+				items, ok := rawURLs.([]any)
+				if !ok {
+					return fmt.Errorf("Kling 元素 %d 的 %s 必须是 JSON 数组", index+1, key)
+				}
+				kind := "image"
+				if key == "element_input_audio_urls" {
+					kind = "audio"
+				}
+				for _, rawURL := range items {
+					url, ok := rawURL.(string)
+					if !ok {
+						return fmt.Errorf("Kling 元素 %d 的资源 URL 必须是字符串", index+1)
+					}
+					references = append(references, elementReference{kind: kind, url: strings.TrimSpace(url)})
+				}
+			}
+		}
+		if len(references) == 0 {
+			continue
+		}
+		if strings.TrimSpace(util.Clean(item["name"])) == "" {
+			return fmt.Errorf("Kling 元素 %d 需要填写名称", index+1)
+		}
+		if strings.TrimSpace(util.Clean(item["description"])) == "" {
+			return fmt.Errorf("Kling 元素 %d 需要填写描述", index+1)
+		}
+		if len(references) < 2 || len(references) > 4 {
+			return fmt.Errorf("Kling 元素 %d 的资源数量需要 2-4 个", index+1)
+		}
+		for _, reference := range references {
+			if reference.kind != "image" && reference.kind != "video" && reference.kind != "audio" {
+				return fmt.Errorf("Kling 元素 %d 的资源类型仅支持 image、video 或 audio", index+1)
+			}
+			if !isPublicReferenceURL(reference.url) {
+				return fmt.Errorf("Kling 元素 %d 的资源必须使用公网可访问的 http:// 或 https:// URL", index+1)
+			}
+		}
+	}
+	return nil
+}
+
+func hasKlingElementReferences(value any) bool {
+	for _, item := range util.AsMapSlice(value) {
+		if len(util.AsMapSlice(item["references"])) > 0 || len(util.AsStringSlice(item["element_input_urls"])) > 0 || len(util.AsStringSlice(item["element_input_audio_urls"])) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizeVideoReferenceMode(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
 }
 
 func isPublicReferenceURL(value string) bool {
@@ -1925,9 +1969,16 @@ func isPublicReferenceIP(ip net.IP) bool {
 }
 
 func validateVideoParameters(model, size string, seconds int, resolution string, referenceCountValues ...int) error {
+	model = protocol.CanonicalVideoModel(model)
 	name := strings.ToLower(strings.TrimSpace(model))
-	size = strings.ToLower(strings.TrimSpace(size))
+	size = normalizeVideoWorkbenchSizeForModel(model, size)
 	resolution = strings.ToLower(strings.TrimSpace(resolution))
+	// The reference workbench deliberately exposes 480p and 720p for every
+	// generic panel, even when a provider advertises a different native enum.
+	// Validate those shared choices against the closest provider value while
+	// leaving the original request value available to the adapter for shaping.
+	validationResolution := normalizeGenericWorkbenchResolutionForValidation(model, resolution)
+	manualResolution := videoAllowsArbitraryResolutionModel(name) && regexp.MustCompile(`^(\d{3,5})(p|k)$`).MatchString(validationResolution)
 	referenceCount := 0
 	multimodalReferenceCount := 0
 	if len(referenceCountValues) > 0 {
@@ -1937,8 +1988,52 @@ func validateVideoParameters(model, size string, seconds int, resolution string,
 		multimodalReferenceCount = referenceCountValues[1]
 	}
 	hasH3Reference := referenceCount > 0 || multimodalReferenceCount > 0
-	if referenceCount > 1 {
-		return fmt.Errorf("当前视频图生视频入口只支持一张首帧参考图")
+	if referenceCount > protocol.VideoCapability(model).FirstFrameImageLimit {
+		return fmt.Errorf("当前视频模型最多支持 %d 张帧参考图", protocol.VideoCapability(model).FirstFrameImageLimit)
+	}
+	// The shared protocol is the first line of validation. Provider-specific
+	// rules below add semantic constraints such as Hailuo's 10-second limit.
+	if profileName := protocol.VideoModelProfile(model); profileName != "vendor-unknown" && profileName != "generic" {
+		capability := protocol.VideoCapability(model)
+		validationSeconds := seconds
+		genericWorkbenchDuration := !usesReferenceSpecialVideoPanelModel(model) && profileName != "cogvideox-3" && videoDurationSupportedProfile(profileName)
+		seedanceWorkbenchDuration := strings.HasPrefix(profileName, "seedance-")
+		if genericWorkbenchDuration || seedanceWorkbenchDuration ||
+			!videoDurationSupportedProfile(profileName) ||
+			strings.HasPrefix(name, "wan/2-2-a14b-") ||
+			strings.HasPrefix(name, "wan/2-2-animate-") ||
+			name == "gemini-omni-flash-preview" ||
+			(profileName == "happyhorse" && strings.Contains(name, "video-edit")) {
+			validationSeconds = capability.DefaultSeconds
+		}
+		isAPIMartKlingMotion := strings.Contains(name, "kling-v2-6-motion-control") || strings.Contains(name, "kling-v3-motion-control")
+		// KIE's v3 turbo image endpoint has no size/aspect field at all;
+		// unlike the text endpoint, a custom pixel size would be silently
+		// discarded by the provider adapter and must be rejected here.
+		customSize := videoAllowsCustomDimensionsModel(name) && regexp.MustCompile(`^\d+x\d+$`).MatchString(size)
+		if size != "" && !customSize && !(profileName == "minimax-h3" && hasH3Reference && size == "adaptive") && !protocol.VideoCapabilitySupports(capability, size, validationSeconds, "") {
+			return fmt.Errorf("当前视频模型不支持所选尺寸")
+		}
+		apimartKlingMotionResolution := isAPIMartKlingMotion && stringIn(resolution, "720p", "1080p")
+		customResolution := manualResolution || isGenericWorkbenchResolutionPreset(model, resolution) || apimartKlingMotionResolution
+		if !customResolution && !protocol.VideoCapabilitySupports(capability, "", validationSeconds, validationResolution) {
+			return fmt.Errorf("当前视频模型不支持所选视频参数")
+		}
+		switch profileName {
+		case "veo-31", "veo":
+			if ((validationResolution != "" && validationResolution != "720p") || referenceCount > 0 || multimodalReferenceCount > 0) && seconds != 8 {
+				return fmt.Errorf("Veo 使用 1080p、4K 或参考图时固定生成 8 秒视频")
+			}
+			return nil
+		case "bytedance-v1-i2v", "bytedance-v1-t2v", "agnes-25", "agnes", "wan-27-i2v", "wan-27-kie-i2v", "wan-27-r2v", "wan-videoedit", "wan-v2v", "wan-speech", "wan-animate", "wan-i2v", "wan-t2v", "wan-kie-t2v", "vidu-q3", "vidu", "jimeng", "cogvideox-3", "kling-motion", "kling-avatar", "kling-kie-v3", "kling-kie-26", "kling-kie-legacy", "kling-omni-text", "kling-omni-image", "kling-omni-reference", "kling-omni-transformation", "kling-omni", "grok-i2v", "gemini-omni", "pixverse", "skyreels", "happyhorse", "infinitalk", "topaz-video", "flux-3-video":
+			return nil
+		}
+		// These KIE configurations declare a duration type but no duration
+		// bounds in the reference project. Their creator controls therefore use
+		// the generic manual range instead of a provider-family preset enum.
+		if genericWorkbenchDuration && isKIEVideoModelName(name) && profileName != "minimax-h3" && profileName != "grok-kie" {
+			return nil
+		}
 	}
 	contains := func(values ...string) bool {
 		for _, value := range values {
@@ -1953,24 +2048,20 @@ func validateVideoParameters(model, size string, seconds int, resolution string,
 		if !contains("", "adaptive", "16:9", "4:3", "1:1", "3:4", "9:16", "21:9") {
 			return fmt.Errorf("Seedance 官方画幅仅支持 adaptive、16:9、4:3、1:1、3:4、9:16、21:9")
 		}
-		min, max, smart := 4, 15, true
+		// The reference Seedance panel exposes smart duration plus a manual
+		// 4-15 second range for every displayed version. Its submission helper
+		// serializes smart duration as 1 before this route receives the request.
 		resolutionValues := []string{"480p", "720p", "1080p"}
 		switch profile {
-		case "2.5":
-			max = 30
-		case "1.5":
-			max = 12
-		case "1.0":
-			min, smart = 2, false
 		case "2.0":
-			resolutionValues = []string{"480p", "720p", "1080p", "4k"}
+			resolutionValues = []string{"480p", "720p", "1080p"}
 		case "2.0-fast", "2.0-mini":
 			resolutionValues = []string{"480p", "720p"}
 		}
-		if (seconds == -1 && !smart) || (seconds != -1 && !validRange(min, max)) {
-			return fmt.Errorf("Seedance 官方视频时长不在当前模型支持范围内")
+		if seconds != 1 && !validRange(4, 15) {
+			return fmt.Errorf("Seedance 创作台视频时长支持智能时长或 4-15 秒")
 		}
-		if resolution != "" && !stringIn(resolution, resolutionValues...) {
+		if validationResolution != "" && !stringIn(validationResolution, resolutionValues...) {
 			return fmt.Errorf("Seedance 官方清晰度不受支持")
 		}
 		return nil
@@ -1982,10 +2073,10 @@ func validateVideoParameters(model, size string, seconds int, resolution string,
 		if !contains("", "1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3") || !validRange(1, 15) {
 			return fmt.Errorf("Grok 官方视频支持 1-15 秒及 1:1、16:9、9:16、4:3、3:4、3:2、2:3 画幅")
 		}
-		if resolution != "" && !stringIn(resolution, "480p", "720p", "1080p") {
+		if validationResolution != "" && !manualResolution && !stringIn(validationResolution, "480p", "720p", "1080p") {
 			return fmt.Errorf("Grok 官方清晰度仅支持 480p、720p、1080p")
 		}
-		if !strings.Contains(name, "1.5") && !strings.Contains(name, "1-5") && resolution == "1080p" {
+		if !manualResolution && !strings.Contains(name, "1.5") && !strings.Contains(name, "1-5") && validationResolution == "1080p" {
 			return fmt.Errorf("Grok 官方 1080p 仅支持 grok-imagine-video-1.5")
 		}
 		return nil
@@ -2005,7 +2096,7 @@ func validateVideoParameters(model, size string, seconds int, resolution string,
 		if isKling3Model(name) {
 			resolutionValues = append(resolutionValues, "4k")
 		}
-		if resolution != "" && !stringIn(resolution, resolutionValues...) {
+		if validationResolution != "" && !stringIn(validationResolution, resolutionValues...) {
 			return fmt.Errorf("Kling 官方清晰度不支持当前选择")
 		}
 		return nil
@@ -2024,7 +2115,7 @@ func validateVideoParameters(model, size string, seconds int, resolution string,
 			if !validRange(4, 15) {
 				return fmt.Errorf("MiniMax H3 官方视频时长仅支持 4-15 秒")
 			}
-			if !stringIn(resolution, "768p", "2k") {
+			if !manualResolution && !stringIn(validationResolution, "768p", "2k") {
 				return fmt.Errorf("MiniMax H3 官方清晰度仅支持 768P、2K")
 			}
 			return nil
@@ -2032,18 +2123,22 @@ func validateVideoParameters(model, size string, seconds int, resolution string,
 		if size != "" {
 			return fmt.Errorf("MiniMax v1 官方接口没有画幅参数")
 		}
-		if seconds != 6 && seconds != 10 {
-			return fmt.Errorf("MiniMax 官方视频时长支持 6 秒或 10 秒")
+		validDurations := []string{"6", "10"}
+		if strings.HasPrefix(name, "hailuo/02-") {
+			validDurations = []string{"5", "10"}
+		}
+		if !stringIn(strconv.Itoa(seconds), validDurations...) {
+			return fmt.Errorf("MiniMax 当前模型不支持所选视频时长")
 		}
 		if resolution != "" {
-			if strings.Contains(name, "hailuo") && !stringIn(resolution, "768p", "1080p") {
+			if strings.Contains(name, "hailuo") && !manualResolution && !stringIn(validationResolution, "768p", "1080p") {
 				return fmt.Errorf("MiniMax Hailuo 官方清晰度仅支持 768P、1080P")
 			}
-			if !strings.Contains(name, "hailuo") && resolution != "720p" {
+			if !strings.Contains(name, "hailuo") && !manualResolution && validationResolution != "720p" {
 				return fmt.Errorf("MiniMax 旧版官方清晰度仅支持 720P")
 			}
 		}
-		if strings.Contains(name, "hailuo") && seconds == 10 && resolution == "1080p" {
+		if strings.Contains(name, "hailuo") && seconds == 10 && validationResolution == "1080p" {
 			return fmt.Errorf("MiniMax Hailuo 官方 10 秒视频仅支持 768P")
 		}
 		if strings.Contains(name, "hailuo-2.3-fast") && referenceCount == 0 {
@@ -2059,39 +2154,168 @@ func validateVideoParameters(model, size string, seconds int, resolution string,
 		if strings.Contains(name, "pro") {
 			allowedSizes = append(allowedSizes, "1792x1024", "1024x1792", "1920x1080", "1080x1920")
 		}
-		if !stringIn(size, allowedSizes...) {
+		if !stringIn(size, allowedSizes...) && !videoAllowsCustomDimensionsModel(name) {
 			return fmt.Errorf("Sora 官方视频尺寸不支持当前选择")
 		}
 		if !stringIn(strconv.Itoa(seconds), "4", "8", "12", "16", "20") {
 			return fmt.Errorf("Sora 官方视频时长仅支持 4、8、12、16、20 秒")
 		}
-		if resolution != "" {
-			return fmt.Errorf("Sora 官方接口使用 size 指定尺寸，不支持独立 resolution 参数")
+		if validationResolution != "" && !regexp.MustCompile(`^(\d{3,5})(p|k)$`).MatchString(validationResolution) {
+			return fmt.Errorf("Sora 清晰度必须使用 720p、1080p、2k 等格式")
 		}
 		if referenceCount > 1 {
 			return fmt.Errorf("Sora 官方 input_reference 只支持一张首帧参考图")
 		}
 		return nil
 	}
-	if size != "" && !contains("", "1280x720", "720x1280") {
-		return fmt.Errorf("视频画幅仅支持 16:9 或 9:16")
+	if size != "" && size != "auto" && size != "adaptive" && !regexp.MustCompile(`^\d+x\d+$`).MatchString(size) {
+		return fmt.Errorf("视频尺寸必须使用 宽x高 格式")
 	}
-	if seconds != 4 && seconds != 8 && seconds != 12 {
-		return fmt.Errorf("视频时长支持 4 秒、8 秒或 12 秒")
+	if !validRange(1, 30) {
+		return fmt.Errorf("视频时长支持 1-30 秒")
 	}
-	if resolution != "" && resolution != "720p" && resolution != "1080p" {
-		return fmt.Errorf("视频清晰度仅支持 720p 或 1080p")
+	if validationResolution != "" && !regexp.MustCompile(`^(\d+p|\d+k)$`).MatchString(validationResolution) {
+		return fmt.Errorf("视频清晰度必须使用 720p、1080p、2k 等格式")
 	}
 	return nil
 }
 
+func videoAllowsCustomDimensionsModel(model string) bool {
+	return !usesReferenceSpecialVideoPanelModel(model)
+}
+
+func usesReferenceSpecialVideoPanelModel(model string) bool {
+	value := strings.ToLower(protocol.CanonicalVideoModel(model))
+	value = strings.NewReplacer(".", "-", "_", "-", "/", "-").Replace(value)
+	if strings.HasPrefix(value, "seedance-") || strings.HasPrefix(value, "doubao-seedance-") {
+		return true
+	}
+	return value == "kling-v2-6" || value == "kling-v3" || value == "kling-3-0-video" || strings.HasPrefix(value, "kling-3-0-omni-")
+}
+
+// isGenericWorkbenchResolutionPreset identifies the two shared quality
+// buttons rendered by the reference project's generic video panel. They are
+// intentionally accepted across generic providers even when a provider uses
+// a different native enum (for example 768P instead of 720p).
+func isGenericWorkbenchResolutionPreset(model, resolution string) bool {
+	return !usesReferenceSpecialVideoPanelModel(model) &&
+		stringIn(strings.ToLower(strings.TrimSpace(resolution)), "480p", "720p")
+}
+
+// normalizeGenericWorkbenchResolutionForValidation converts a generic panel
+// preset to the closest documented provider value for server-side capability
+// checks. The original value is still passed to the adapter, which performs
+// the final provider-specific serialization (such as 480p -> 512P for
+// Hailuo). Empty capability lists are left untouched because those endpoints
+// deliberately omit resolution after the adapter runs.
+func normalizeGenericWorkbenchResolutionForValidation(model, resolution string) string {
+	requested := strings.ToLower(strings.TrimSpace(resolution))
+	if requested == "" || !isGenericWorkbenchResolutionPreset(model, requested) {
+		return requested
+	}
+	capability := protocol.VideoCapability(model)
+	for _, supported := range capability.Resolutions {
+		if strings.EqualFold(supported, requested) {
+			return requested
+		}
+	}
+	for _, preferred := range []string{"768p", "720p", "1080p", "2k", "4k"} {
+		for _, supported := range capability.Resolutions {
+			if strings.EqualFold(supported, preferred) {
+				return preferred
+			}
+		}
+	}
+	return requested
+}
+
+// The generic reference workbench stores pixel dimensions even when a
+// provider accepts a ratio enum. Normalize that value before validation and
+// persistence so browser and direct API submissions use the same contract.
+func normalizeVideoWorkbenchSizeForModel(model, size string) string {
+	requested := strings.ToLower(strings.TrimSpace(size))
+	if requested == "" || !videoAllowsCustomDimensionsModel(model) || !regexp.MustCompile(`^\d+x\d+$`).MatchString(requested) {
+		return requested
+	}
+	capability := protocol.VideoCapability(model)
+	for _, supported := range capability.Sizes {
+		if strings.EqualFold(supported, requested) {
+			return requested
+		}
+	}
+	ratio := normalizeKIEAspectRatio(requested)
+	for _, supported := range capability.Sizes {
+		if strings.EqualFold(supported, ratio) {
+			return strings.ToLower(supported)
+		}
+	}
+	if len(capability.Sizes) == 0 {
+		switch protocol.VideoModelProfile(model) {
+		case "generic", "agnes", "sora", "sora-pro":
+			return requested
+		default:
+			return ""
+		}
+	}
+	return requested
+}
+
+// The workbench keeps a manual quality input for parity with the reference
+// project, but only these profiles can safely carry a non-enumerated value.
+// Other providers expose an enum and must be validated against it before the
+// request reaches their API.
+func videoAllowsArbitraryResolutionModel(model string) bool {
+	if !usesReferenceSpecialVideoPanelModel(model) {
+		return true
+	}
+	name := strings.ToLower(strings.TrimSpace(model))
+	if name == "kling/v3-turbo-text-to-video" || name == "kling-3-0-turbo" {
+		return true
+	}
+	switch protocol.VideoModelProfile(model) {
+	case "generic", "sora", "sora-pro", "veo", "veo-31", "minimax-h3":
+		return true
+	default:
+		return false
+	}
+}
+
+func videoDurationSupportedProfile(profile string) bool {
+	switch profile {
+	case "kling-motion", "kling-avatar", "wan-speech", "wan-animate", "infinitalk", "topaz-video":
+		return false
+	default:
+		return true
+	}
+}
+
 func validateVideoPrompt(model, prompt string) error {
+	if strings.TrimSpace(prompt) == "" {
+		return fmt.Errorf("请输入视频提示词")
+	}
 	characters := utf8.RuneCountInString(prompt)
 	if isMiniMaxH3Model(model) && characters > 7000 {
 		return fmt.Errorf("MiniMax H3 官方提示词最多支持 7000 个字符")
 	}
 	if isKling3Model(model) && characters > 3072 {
 		return fmt.Errorf("Kling 3.0 官方提示词最多支持 3072 个字符")
+	}
+	return nil
+}
+
+func validateVideoRequiredInputs(model, prompt string, imageURLs, videoURLs, audioURLs []string) error {
+	name := strings.ToLower(strings.TrimSpace(model))
+	normalized := strings.NewReplacer("_", "-", ".", "-", "/", "-").Replace(name)
+	if normalized == "kling-3-0-turbo" || normalized == "happyhorse-1-1" {
+		if strings.TrimSpace(prompt) == "" && len(imageURLs) == 0 {
+			return fmt.Errorf("当前视频模型至少需要提示词或一张参考图片")
+		}
+	}
+	switch name {
+	case "kling-3.0-omni/text-to-video", "kling/v3-turbo-text-to-video", "bytedance/seedance-2-mini", "happyhorse-1-1/text-to-video":
+		if strings.TrimSpace(prompt) == "" {
+			return fmt.Errorf("当前文生视频模型必须提供提示词")
+		}
 	}
 	return nil
 }
@@ -2117,7 +2341,13 @@ func seedanceVideoProfile(model string) string {
 	case strings.Contains(name, "1-0") || strings.Contains(name, "1.0"):
 		return "1.0"
 	default:
-		return ""
+		if strings.Contains(name, "fast") {
+			return "2.0-fast"
+		}
+		if strings.Contains(name, "mini") {
+			return "2.0-mini"
+		}
+		return "2.0"
 	}
 }
 
@@ -2128,7 +2358,7 @@ func isKling3Model(model string) bool {
 
 func isKnownGrokVideoModel(model string) bool {
 	name := strings.ToLower(strings.TrimSpace(model))
-	return name == "grok-imagine-video" || name == "grok-imagine-video-latest" || strings.Contains(name, "grok-imagine-video-1.5") || strings.Contains(name, "grok-imagine-video-1-5")
+	return name == "grok-imagine" || name == "grok-imagine-video" || name == "grok-imagine-video-latest" || strings.Contains(name, "grok-imagine-video-1.5") || strings.Contains(name, "grok-imagine-video-1-5")
 }
 
 func isKlingLegacyModel(model string) bool {
@@ -2154,24 +2384,8 @@ func stringIn(value string, values ...string) bool {
 }
 
 func videoDefaultSeconds(model string) int {
-	name := strings.ToLower(strings.TrimSpace(model))
-	if strings.Contains(name, "grok") {
-		return 10
-	}
-	if strings.Contains(name, "minimax") || strings.Contains(name, "hailuo") || strings.HasPrefix(name, "t2v-") || strings.HasPrefix(name, "i2v-") || strings.HasPrefix(name, "s2v-") {
-		if strings.Contains(name, "h3") {
-			return 5
-		}
-		return 6
-	}
-	if strings.Contains(name, "kling") {
-		if strings.Contains(name, "v3") || strings.Contains(name, "3-0") {
-			return 5
-		}
-		return 5
-	}
-	if strings.Contains(name, "seedance") || strings.Contains(name, "doubao-seedance") {
-		return 5
+	if value := protocol.VideoCapability(model).DefaultSeconds; value != 0 {
+		return value
 	}
 	return 4
 }
@@ -2184,17 +2398,71 @@ func creationTaskRequestMetadata(body map[string]any) map[string]any {
 	if tokenName := selectedRelayTokenNameFromPayload(body); tokenName != "" {
 		metadata["token_name"] = tokenName
 	}
+	if videoMode := util.Clean(body["video_mode"]); videoMode != "" {
+		metadata["video_mode"] = videoMode
+	}
+	// Advanced video controls are kept in metadata so the task service can
+	// carry them through the shared envelope and let each provider adapter
+	// map only the fields its model actually supports.
+	for _, key := range []string{"negative_prompt", "multi_shot", "shot_type", "multi_prompt", "element_list", "character_orientation", "video_generate_audio", "preset", "mode"} {
+		if value, ok := body[key]; ok {
+			metadata[key] = value
+		}
+	}
+	return metadata
+}
+
+func chatTaskRequestMetadata(body map[string]any) map[string]any {
+	metadata := creationTaskRequestMetadata(body)
+	if tools := util.AsMapSlice(body["tools"]); len(tools) > 0 {
+		metadata["tools"] = tools
+	}
+	if choice, ok := body["tool_choice"]; ok && choice != nil {
+		metadata["tool_choice"] = choice
+	}
+	return metadata
+}
+
+func videoTaskRequestMetadata(body map[string]any) map[string]any {
+	metadata := creationTaskRequestMetadata(body)
+	for _, key := range []string{"first_frame_url", "last_frame_url"} {
+		if value := strings.TrimSpace(util.Clean(body[key])); value != "" {
+			metadata[key] = value
+		}
+	}
+	// Preserve an explicit channel hint for model families whose bare name is
+	// shared by KIE and APIMart (for example `minimax-h3`). The normal route
+	// does not guess a provider from an ambiguous model string.
+	for _, key := range []string{"provider", "video_provider", "channel_protocol", "protocol", "channel_base_url", "provider_base_url"} {
+		if value := util.Clean(body[key]); value != "" {
+			metadata[key] = value
+		}
+	}
 	return metadata
 }
 
 func imageTaskRequestMetadata(body map[string]any) map[string]any {
 	requestedSize := firstNonEmpty(util.Clean(body["requested_size"]), util.Clean(body["size"]))
 	metadata := creationTaskRequestMetadata(body)
-	if preset := service.NormalizeImageResolutionPreset(util.Clean(body["image_resolution"])); preset != "" {
+	if workflowContext := util.StringMap(body["workflow_context"]); len(workflowContext) > 0 {
+		metadata["workflow_context"] = workflowContext
+	}
+	metadata["api_mode"] = normalizeImageTaskAPIMode(util.Clean(body["api_mode"]), util.Clean(body["model"]))
+	if preset := service.NormalizeImageResolutionPreset(firstNonEmpty(util.Clean(body["image_resolution"]), util.Clean(body["resolution"]))); preset != "" {
 		metadata["image_resolution"] = preset
 	}
 	if requestedSize != "" {
 		metadata["requested_size"] = requestedSize
+	}
+	for _, key := range []string{"aspect_ratio", "ratio"} {
+		if value := util.Clean(body[key]); value != "" {
+			metadata[key] = value
+		}
+	}
+	for _, key := range []string{"provider", "image_provider", "channel_protocol", "protocol", "channel_base_url", "provider_base_url"} {
+		if value := util.Clean(body[key]); value != "" {
+			metadata[key] = value
+		}
 	}
 	if util.ToBool(body["share_prompt_parameters"]) {
 		metadata["share_prompt_parameters"] = true
@@ -2209,6 +2477,21 @@ func imageTaskRequestMetadata(body map[string]any) map[string]any {
 		metadata["fallback_reference_image"] = fallback
 	}
 	return metadata
+}
+
+func normalizeImageTaskAPIMode(value, model string) string {
+	value = strings.ToLower(strings.TrimSpace(value))
+	if value == "" {
+		value = "images"
+	}
+	if value != "images" && value != "responses" && value != "chat" {
+		return ""
+	}
+	route := util.ImageModelRouteFor(model)
+	if route == util.ImageModelRouteGoogleGemini || route == util.ImageModelRouteZhipu {
+		return "images"
+	}
+	return value
 }
 
 func imageOutputOptionsFromBody(body map[string]any) service.ImageOutputOptions {
@@ -2231,9 +2514,11 @@ func imageToolOptionsFromBody(body map[string]any) service.ImageToolOptions {
 		Moderation:     util.Clean(body["moderation"]),
 		InputImageMask: util.Clean(body["input_image_mask"]),
 		Stream:         util.ToBool(body["stream"]),
+		ResponseFormat: util.Clean(body["response_format"]),
 	}
 	if partialImages, ok := imagePartialImagesFromBody(body["partial_images"]); ok {
 		options.PartialImages = partialImages
+		options.PartialImagesSet = true
 	}
 	return options
 }
@@ -2243,7 +2528,7 @@ func imagePartialImagesFromBody(value any) (int, bool) {
 	if !ok {
 		return 0, false
 	}
-	if partialImages < 1 || partialImages > 3 {
+	if partialImages < 0 || partialImages > 3 {
 		return 0, false
 	}
 	return partialImages, true

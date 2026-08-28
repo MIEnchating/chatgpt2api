@@ -108,10 +108,6 @@ func (s *LogService) Add(summary string, detail map[string]any) error {
 	return fmt.Errorf("log storage backend is required")
 }
 
-func (s *LogService) List(startDate, endDate string, limit int) []map[string]any {
-	return s.Search(LogQuery{StartDate: startDate, EndDate: endDate, Limit: limit})
-}
-
 func (s *LogService) Search(query LogQuery) []map[string]any {
 	limit := normalizedLogLimit(query.Limit)
 	startDate, endDate := logQueryDateBounds(query)
@@ -271,7 +267,7 @@ func matchLogQuery(item map[string]any, query LogQuery) bool {
 	if !containsFold(util.Clean(item["summary"]), query.Summary) {
 		return false
 	}
-	if method := strings.TrimSpace(query.Method); method != "" && strings.ToUpper(logDetailString(item, "method")) != strings.ToUpper(method) {
+	if method := strings.TrimSpace(query.Method); method != "" && !strings.EqualFold(logDetailString(item, "method"), method) {
 		return false
 	}
 	if status := strings.TrimSpace(query.Status); status != "" && logStatus(item) != status {
@@ -436,10 +432,6 @@ func containsFold(value, filter string) bool {
 	return strings.Contains(strings.ToLower(value), strings.ToLower(filter))
 }
 
-func (s *LogService) UserUsageStats(days int) map[string]map[string]any {
-	return cloneUserUsageStats(s.cachedUserUsageStats(days))
-}
-
 func (s *LogService) UserUsageStatsForUsers(days int, userIDs []string) map[string]map[string]any {
 	targets := userUsageTargetSet(userIDs)
 	if len(targets) == 0 {
@@ -521,14 +513,6 @@ func userUsageTargetSet(userIDs []string) map[string]struct{} {
 			continue
 		}
 		out[userID] = struct{}{}
-	}
-	return out
-}
-
-func cloneUserUsageStats(stats map[string]map[string]any) map[string]map[string]any {
-	out := make(map[string]map[string]any, len(stats))
-	for userID, usage := range stats {
-		out[userID] = cloneUserUsageMap(usage)
 	}
 	return out
 }

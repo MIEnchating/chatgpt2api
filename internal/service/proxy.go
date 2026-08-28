@@ -39,14 +39,6 @@ func (s *ProxyService) HTTPClient(timeout time.Duration) *http.Client {
 	return HTTPClientForProxy(s.config.Proxy(), timeout)
 }
 
-func (s *ProxyService) BrowserHTTPClient(timeout time.Duration) *http.Client {
-	return browserHTTPClient(s.config.Proxy(), timeout)
-}
-
-func (s *ProxyService) BrowserHTTPClientWithProfile(profile string, timeout time.Duration) *http.Client {
-	return browserHTTPClientForProfile(s.config.Proxy(), profile, timeout)
-}
-
 func (s *ProxyService) Test(candidate string, timeout time.Duration) map[string]any {
 	candidate = strings.TrimSpace(candidate)
 	if candidate == "" {
@@ -82,10 +74,6 @@ func (s *ProxyService) Test(candidate string, timeout time.Duration) map[string]
 		message = resp.Status
 	}
 	return map[string]any{"ok": ok, "status": resp.StatusCode, "latency_ms": latency, "error": message}
-}
-
-func browserHTTPClient(proxy string, timeout time.Duration) *http.Client {
-	return browserHTTPClientForProfile(proxy, "", timeout)
 }
 
 func browserHTTPClientForProfile(proxy, profile string, timeout time.Duration) *http.Client {

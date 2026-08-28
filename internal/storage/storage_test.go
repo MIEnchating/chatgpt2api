@@ -375,13 +375,14 @@ func TestNewBackendFromEnvDefaultsToSQLiteProjectDatabase(t *testing.T) {
 	}
 }
 
-func TestNewBackendFromEnvReadsLegacyStorageNames(t *testing.T) {
+func TestNewBackendFromEnvIgnoresRemovedStorageNamesAndUpstreamURL(t *testing.T) {
 	dir := t.TempDir()
 	unsetStorageEnv(t, "STORAGE_BACKEND")
 	unsetStorageEnv(t, "STORAGE_DATABASE_URL")
 	t.Setenv("CHATGPT2API_STORAGE_BACKEND", "sqlite")
-	databasePath := filepath.Join(dir, "legacy.db")
-	t.Setenv("CHATGPT2API_STORAGE_DATABASE_URL", "sqlite:///"+filepath.ToSlash(databasePath))
+	removedDatabasePath := filepath.Join(dir, "removed.db")
+	t.Setenv("CHATGPT2API_STORAGE_DATABASE_URL", "sqlite:///"+filepath.ToSlash(removedDatabasePath))
+	t.Setenv("DATABASE_URL", "sqlite:///"+filepath.ToSlash(filepath.Join(dir, "upstream.db")))
 
 	backend, err := NewBackendFromEnv(dir)
 	if err != nil {
@@ -392,27 +393,9 @@ func TestNewBackendFromEnvReadsLegacyStorageNames(t *testing.T) {
 		t.Fatalf("NewBackendFromEnv() returned %T, want *DatabaseBackend", backend)
 	}
 	defer database.db.Close()
-	if database.driver != "sqlite" || database.dsn != filepath.ToSlash(databasePath) {
-		t.Fatalf("database = (%q, %q), want legacy SQLite path", database.driver, database.dsn)
-	}
-}
-
-func TestNewBackendFromEnvPreservesLegacyDatabaseURLMeaning(t *testing.T) {
-	dir := t.TempDir()
-	databasePath := filepath.Join(dir, "legacy-layout.db")
-	t.Setenv("STORAGE_BACKEND", "sqlite")
-	unsetStorageEnv(t, "STORAGE_DATABASE_URL")
-	t.Setenv("DATABASE_URL", "sqlite:///"+filepath.ToSlash(databasePath))
-	t.Setenv("CHATGPT2API_NEWAPI_DATABASE_URL", "postgresql://upstream.example/newapi")
-
-	backend, err := NewBackendFromEnv(dir)
-	if err != nil {
-		t.Fatalf("NewBackendFromEnv() error = %v", err)
-	}
-	database := backend.(*DatabaseBackend)
-	defer database.db.Close()
-	if database.dsn != filepath.ToSlash(databasePath) {
-		t.Fatalf("database dsn = %q, want legacy DATABASE_URL", database.dsn)
+	want := filepath.ToSlash(filepath.Join(dir, "chatgpt2api.db"))
+	if database.driver != "sqlite" || database.dsn != want {
+		t.Fatalf("database = (%q, %q), want current default SQLite path %q", database.driver, database.dsn, want)
 	}
 }
 

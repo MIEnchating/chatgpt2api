@@ -10,15 +10,15 @@ import {
   type ImageConversationHistoryMergeResponse,
   type ImageConversationHistoryPageOptions,
   type ImageConversationHistoryRequestOptions,
-} from "@/app/image/image-conversation-history-api";
+} from "@/services/api/image-conversations";
 import {
   DEFAULT_IMAGE_MODEL,
   isImageCreationModel,
   isImageModeration,
-  isImageModel,
   isImageOutputFormat,
   isImageQuality,
   supportsImageOutputCompression,
+  type ImageAPIMode,
   type ImageModel,
   type ImageModeration,
   type ImageOutputFormat,
@@ -31,15 +31,17 @@ import {
   mergeImageConversationLists,
   mergeImageConversationSnapshot,
   rebaseImageConversationSnapshot,
-} from "@/app/image/image-task-state";
+} from "@/lib/image-task-state";
 import {
   imageConversationHistoryGenerationsMatch,
   imageConversationHistoryGenerationAtLeast,
   maxImageConversationHistoryGeneration,
   normalizeImageConversationHistoryGeneration,
-} from "@/app/image/image-history-pagination";
+} from "@/lib/image-conversation-history";
 import { getManagedImagePathFromUrl } from "@/lib/image-path";
 import { normalizeImageConversationAssetReference } from "@/lib/image-conversation-assets";
+import type { GenerationMediaType, GenerationTaskStatus } from "@/lib/generation-task-contract";
+import { normalizeStoredVideoSeconds } from "@/lib/video-request-normalizer";
 import { AUTH_SESSION_CHANGE_EVENT, getCachedAuthSession, getVerifiedAuthSession } from "@/lib/session";
 import {
   classifyImageConversationMergeAcknowledgements,
@@ -59,7 +61,7 @@ import {
 } from "@/store/image-conversation-session-scope";
 
 export type ImageConversationMode = "chat" | "generate" | "image" | "edit" | "video";
-export type StoredReferenceImageSource = "upload" | "conversation";
+type StoredReferenceImageSource = "upload" | "conversation";
 
 export type StoredReferenceImage = {
   name: string;
@@ -75,12 +77,13 @@ export type StoredImage = {
   taskId?: string;
   taskRevision?: number;
   status?: "loading" | "success" | "error" | "cancelled" | "message";
-  taskStatus?: "queued" | "running" | "success" | "error" | "cancelled";
+  taskStatus?: GenerationTaskStatus;
   path?: string;
   visibility?: ImageVisibility;
   b64_json?: string;
   url?: string;
-  mediaType?: "image" | "video";
+  storageKey?: string;
+  mediaType?: GenerationMediaType;
   videoUrl?: string;
   mimeType?: string;
   width?: number;
@@ -109,6 +112,11 @@ export type StoredImageSizeSelection = {
 
 export type ImageTurn = {
   id: string;
+  source?: "image-workbench" | "workflow";
+  workflowId?: string;
+  workflowName?: string;
+  workflowInputs?: Record<string, string>;
+  workflowTaskId?: string;
   prompt: string;
   model: ImageModel;
   mode: ImageConversationMode;
@@ -119,16 +127,30 @@ export type ImageTurn = {
   quality?: ImageQuality;
   outputFormat?: ImageOutputFormat;
   outputCompression?: number;
+  apiMode?: ImageAPIMode;
+  imageSystemPrompt?: string;
   stream?: boolean;
   partialImages?: number;
+  responseFormatB64JSON?: boolean;
+  codexCLICompatibility?: boolean;
   videoSeconds?: number;
   videoResolution?: string;
   videoGenerateAudio?: boolean;
   videoWatermark?: boolean;
   videoReferenceMode?: "first-frame" | "reference";
+  videoFirstFrameURL?: string;
+  videoLastFrameURL?: string;
   videoReferenceImageURLs?: string[];
   videoReferenceVideoURLs?: string[];
   videoReferenceAudioURLs?: string[];
+  videoSystemPrompt?: string;
+  videoMode?: string;
+  videoNegativePrompt?: string;
+  videoMultiShot?: boolean;
+  videoShotType?: "intelligence" | "customize";
+  videoMultiPrompt?: Array<Record<string, unknown>>;
+  videoElementList?: Array<Record<string, unknown>>;
+  videoCharacterOrientation?: "image" | "video";
   moderation?: ImageModeration;
   tokenGroup?: string;
   tokenName?: string;
@@ -152,7 +174,7 @@ export type ImageConversation = {
   historySummary?: ImageConversationHistorySummary;
 };
 
-export type ImageConversationHistorySummary = {
+type ImageConversationHistorySummary = {
   turnCount: number;
   queued: number;
   running: number;
@@ -173,7 +195,7 @@ export type ImageConversationHistoryWindow = {
 
 export type ImageConversationHistoryPageRequestOptions = Omit<
   ImageConversationHistoryPageOptions,
-  "authorization" | "redirectOnUnauthorized"
+  "redirectOnUnauthorized"
 > & ImageConversationHistoryRequestOptions;
 
 export type ImageConversationStats = {
@@ -191,7 +213,7 @@ export type ImageTurnLoadingPhase = "queued" | "running" | "idle";
 export const IMAGE_CONVERSATIONS_CHANGED_EVENT = "chatgpt2api:image-conversations-changed";
 export const ACTIVE_IMAGE_CONVERSATION_STORAGE_KEY = "chatgpt2api:image_active_conversation_id";
 export const IMAGE_ACTIVE_CONVERSATION_REQUEST_EVENT = "chatgpt2api:image-open-conversation";
-export class ImageConversationHistoryRequestStaleError extends Error {
+class ImageConversationHistoryRequestStaleError extends Error {
   readonly code = "IMAGE_CONVERSATION_HISTORY_REQUEST_STALE";
 
   constructor() {
@@ -200,7 +222,7 @@ export class ImageConversationHistoryRequestStaleError extends Error {
   }
 }
 
-export class ImageConversationHistoryGenerationMismatchError extends Error {
+class ImageConversationHistoryGenerationMismatchError extends Error {
   readonly code = "IMAGE_CONVERSATION_HISTORY_GENERATION_MISMATCH";
 
   constructor() {
@@ -542,7 +564,7 @@ export function getImageTurnLoadingCounts(turn: { images: StoredImage[]; status?
   };
 }
 
-export function getImageTurnLoadingPhase(turn: { images: StoredImage[]; status?: unknown }): ImageTurnLoadingPhase {
+function getImageTurnLoadingPhase(turn: { images: StoredImage[]; status?: unknown }): ImageTurnLoadingPhase {
   const { queued, running } = getImageTurnLoadingCounts(turn);
   if (running > 0) {
     return "running";
@@ -772,48 +794,35 @@ export function isImageConversationHistorySummaryOnly(
   return conversation?.historySummaryOnly === true;
 }
 
-function dataUrlMimeType(dataUrl: string) {
-  const match = dataUrl.match(/^data:(.*?);base64,/);
-  return match?.[1] || "image/png";
-}
-
 function normalizeStringList(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((item) => typeof item === "string" && item.trim() ? [item.trim()] : []);
 }
 
-function getLegacyReferenceImages(source: Record<string, unknown>): StoredReferenceImage[] {
-  if (Array.isArray(source.referenceImages)) {
-    return source.referenceImages
-      .flatMap((image) => {
-        if (!image || typeof image !== "object") {
-          return [];
-        }
-        const normalized = normalizeReferenceImage(image as Record<string, unknown>);
-        return normalized ? [normalized] : [];
-      });
-  }
+function normalizeRecordList(value: unknown): Array<Record<string, unknown>> {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => item && typeof item === "object" && !Array.isArray(item) ? [item as Record<string, unknown>] : []);
+}
 
-  if (source.sourceImage && typeof source.sourceImage === "object") {
-    const image = source.sourceImage as Record<string, unknown>;
-    const dataUrl = typeof image.dataUrl === "string" ? image.dataUrl : "";
-    const normalized = normalizeReferenceImage({
-      ...image,
-      name: typeof image.fileName === "string" && image.fileName ? image.fileName : image.name,
-      type: image.type || (dataUrl ? dataUrlMimeType(dataUrl) : undefined),
-      source: "upload",
-    });
-    if (normalized) {
-      return [normalized];
-    }
-  }
+function normalizeStringRecord(value: unknown): Record<string, string> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const entries = Object.entries(value as Record<string, unknown>)
+    .flatMap(([key, item]) => key.trim() ? [[key, String(item ?? "")] as const] : []);
+  return entries.length ? Object.fromEntries(entries) : undefined;
+}
 
-  return [];
+function normalizeReferenceImages(value: unknown): StoredReferenceImage[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((image) => {
+    if (!image || typeof image !== "object") return [];
+    const normalized = normalizeReferenceImage(image as Record<string, unknown>);
+    return normalized ? [normalized] : [];
+  });
 }
 
 function normalizeTurn(turn: ImageTurn & Record<string, unknown>): ImageTurn {
   const normalizedImages = Array.isArray(turn.images) ? turn.images.map(normalizeStoredImage) : [];
-  const referenceImages = getLegacyReferenceImages(turn);
+  const referenceImages = normalizeReferenceImages(turn.referenceImages);
   const mode = normalizeImageMode(turn.mode, referenceImages);
   const sizeSelection = normalizeSizeSelection(turn.sizeSelection);
   const visibility: ImageVisibility = turn.visibility === "public" ? "public" : "private";
@@ -826,6 +835,11 @@ function normalizeTurn(turn: ImageTurn & Record<string, unknown>): ImageTurn {
         : DEFAULT_IMAGE_MODEL;
   return {
     id: String(turn.id || `${Date.now()}`),
+    source: turn.source === "workflow" ? "workflow" : turn.source === "image-workbench" ? "image-workbench" : undefined,
+    workflowId: typeof turn.workflowId === "string" && turn.workflowId.trim() ? turn.workflowId.trim() : undefined,
+    workflowName: typeof turn.workflowName === "string" && turn.workflowName.trim() ? turn.workflowName.trim() : undefined,
+    workflowInputs: normalizeStringRecord(turn.workflowInputs),
+    workflowTaskId: typeof turn.workflowTaskId === "string" && turn.workflowTaskId.trim() ? turn.workflowTaskId.trim() : undefined,
     prompt: String(turn.prompt || ""),
     model,
     mode,
@@ -839,16 +853,30 @@ function normalizeTurn(turn: ImageTurn & Record<string, unknown>): ImageTurn {
       isImageOutputFormat(turn.outputFormat) && supportsImageOutputCompression(turn.outputFormat)
         ? normalizeOutputCompression(turn.outputCompression)
         : undefined,
+    apiMode: turn.apiMode === "responses" || turn.apiMode === "chat" ? turn.apiMode : "images",
+    imageSystemPrompt: typeof turn.imageSystemPrompt === "string" && turn.imageSystemPrompt.trim() ? turn.imageSystemPrompt.trim() : undefined,
     stream: Boolean(turn.stream),
     partialImages: normalizePartialImages(turn.partialImages),
-    videoSeconds: Number.isFinite(Number(turn.videoSeconds)) ? Math.max(1, Math.min(60, Math.round(Number(turn.videoSeconds)))) : undefined,
+    responseFormatB64JSON: typeof turn.responseFormatB64JSON === "boolean" ? turn.responseFormatB64JSON : undefined,
+    codexCLICompatibility: typeof turn.codexCLICompatibility === "boolean" ? turn.codexCLICompatibility : undefined,
+    videoSeconds: normalizeStoredVideoSeconds(turn.videoSeconds),
     videoResolution: typeof turn.videoResolution === "string" && turn.videoResolution ? turn.videoResolution : undefined,
     videoGenerateAudio: typeof turn.videoGenerateAudio === "boolean" ? turn.videoGenerateAudio : undefined,
     videoWatermark: typeof turn.videoWatermark === "boolean" ? turn.videoWatermark : undefined,
     videoReferenceMode: turn.videoReferenceMode === "reference" ? "reference" : "first-frame",
+    videoFirstFrameURL: typeof turn.videoFirstFrameURL === "string" && turn.videoFirstFrameURL.trim() ? turn.videoFirstFrameURL.trim() : undefined,
+    videoLastFrameURL: typeof turn.videoLastFrameURL === "string" && turn.videoLastFrameURL.trim() ? turn.videoLastFrameURL.trim() : undefined,
     videoReferenceImageURLs: normalizeStringList(turn.videoReferenceImageURLs),
     videoReferenceVideoURLs: normalizeStringList(turn.videoReferenceVideoURLs),
     videoReferenceAudioURLs: normalizeStringList(turn.videoReferenceAudioURLs),
+    videoSystemPrompt: typeof turn.videoSystemPrompt === "string" && turn.videoSystemPrompt.trim() ? turn.videoSystemPrompt.trim() : undefined,
+    videoMode: typeof turn.videoMode === "string" && turn.videoMode.trim() ? turn.videoMode.trim() : undefined,
+    videoNegativePrompt: typeof turn.videoNegativePrompt === "string" && turn.videoNegativePrompt.trim() ? turn.videoNegativePrompt.trim() : undefined,
+    videoMultiShot: typeof turn.videoMultiShot === "boolean" ? turn.videoMultiShot : undefined,
+    videoShotType: turn.videoShotType === "customize" ? "customize" : turn.videoShotType === "intelligence" ? "intelligence" : undefined,
+    videoMultiPrompt: normalizeRecordList(turn.videoMultiPrompt),
+    videoElementList: normalizeRecordList(turn.videoElementList),
+    videoCharacterOrientation: turn.videoCharacterOrientation === "image" ? "image" : turn.videoCharacterOrientation === "video" ? "video" : undefined,
     moderation: isImageModeration(turn.moderation) ? turn.moderation : undefined,
     tokenGroup: typeof turn.tokenGroup === "string" && turn.tokenGroup.trim() ? turn.tokenGroup.trim() : undefined,
     tokenName: typeof turn.tokenName === "string" && turn.tokenName.trim() ? turn.tokenName.trim() : undefined,
@@ -867,46 +895,11 @@ function normalizeConversation(conversation: ImageConversation & Record<string, 
   const historySummary = normalizeHistorySummary(
     conversation.historySummary ?? conversation.history_summary,
   );
-  const legacyReferenceImages = getLegacyReferenceImages(conversation);
-  const legacyMode = normalizeImageMode(conversation.mode, legacyReferenceImages);
   const turns = historySummaryOnly
     ? []
     : Array.isArray(conversation.turns)
       ? conversation.turns.map((turn) => normalizeTurn(turn as ImageTurn & Record<string, unknown>))
-      : [
-        normalizeTurn({
-          id: String(conversation.id || `${Date.now()}`),
-          prompt: String(conversation.prompt || ""),
-          model: isImageModel(conversation.model)
-            ? conversation.model
-            : DEFAULT_IMAGE_MODEL,
-          mode: legacyMode,
-          referenceImages: legacyReferenceImages,
-          count: Number(conversation.count || 1),
-          size: typeof conversation.size === "string" ? conversation.size : "",
-          quality: isImageQuality(conversation.quality) ? conversation.quality : undefined,
-          outputFormat: isImageOutputFormat(conversation.outputFormat) ? conversation.outputFormat : undefined,
-          outputCompression: normalizeOutputCompression(conversation.outputCompression),
-          stream: Boolean(conversation.stream),
-          partialImages: normalizePartialImages(conversation.partialImages),
-          moderation: isImageModeration(conversation.moderation) ? conversation.moderation : undefined,
-          tokenGroup:
-            typeof conversation.tokenGroup === "string" && conversation.tokenGroup.trim()
-              ? conversation.tokenGroup.trim()
-              : undefined,
-          tokenName:
-            typeof conversation.tokenName === "string" && conversation.tokenName.trim()
-              ? conversation.tokenName.trim()
-              : undefined,
-          images: Array.isArray(conversation.images) ? (conversation.images as StoredImage[]) : [],
-          createdAt: String(conversation.createdAt || new Date().toISOString()),
-          status:
-            conversation.status === "generating" || conversation.status === "success" || conversation.status === "error" || conversation.status === "message"
-              ? conversation.status
-              : "success",
-          error: normalizeStoredError(conversation.error),
-        }),
-      ];
+      : [];
   const lastTurn = turns.length > 0 ? turns[turns.length - 1] : null;
 
   return {
@@ -1213,7 +1206,7 @@ export async function listImageConversationPage(
 }
 
 /** Fetch all currently active conversations, independent of pagination. */
-export async function listActiveImageConversations(): Promise<ImageConversationHistoryPage> {
+async function listActiveImageConversations(): Promise<ImageConversationHistoryPage> {
   const state = await getCurrentImageConversationScopeState();
   const cached = state.activeRequest;
   if (cached?.epoch === state.paginationEpoch) {
@@ -1309,52 +1302,6 @@ export async function getImageConversation(id: string): Promise<ImageConversatio
     });
   state.detailRequests.set(conversationID, { epoch: requestEpoch, promise });
   return promise;
-}
-
-export async function saveImageConversations(conversations: ImageConversation[]): Promise<void> {
-  const state = await getCurrentImageConversationScopeState();
-  const items = conversations.map(normalizeConversation);
-  if (items.length === 0) {
-    return;
-  }
-  let result: Awaited<ReturnType<typeof mergeImageConversationBatchWithRebase>>;
-  try {
-    result = await queueImageConversationWrite(
-      state,
-      () => mergeImageConversationBatchWithRebase(state, items),
-    );
-    for (const [index, acknowledgement] of result.acknowledgements.entries()) {
-      if (acknowledgement.outcome !== "accepted") {
-        continue;
-      }
-      const item = result.conversations[index];
-      state.failedSnapshots.delete(item.id);
-      state.coalescedFailures.delete(item.id);
-      state.durableFailures.delete(item.id);
-    }
-    dispatchImageConversationsChanged(state, {
-      requiresRefresh:
-        result.rebased || imageConversationAcknowledgementsRequireRefresh(result.acknowledgements),
-    });
-  } catch (error) {
-    for (const item of items) {
-      rememberFailedConversationSnapshot(state, item, error);
-    }
-    throw error;
-  }
-
-  let firstFailure: unknown;
-  for (const [index, acknowledgement] of result.acknowledgements.entries()) {
-    if (acknowledgement.outcome === "accepted") {
-      continue;
-    }
-    const error = imageConversationAcknowledgementError(acknowledgement);
-    rememberFailedConversationSnapshot(state, result.conversations[index], error);
-    firstFailure ??= error;
-  }
-  if (firstFailure) {
-    throw firstFailure;
-  }
 }
 
 export async function saveImageConversation(conversation: ImageConversation): Promise<ImageConversation> {

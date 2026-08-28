@@ -1,4 +1,4 @@
-import type { CanvasConnection, CanvasNode } from "@/lib/api";
+import type { CanvasConnection, CanvasNode } from "@/services/api/canvas";
 
 export type CanvasConnectionHandleType = "source" | "target";
 export type CanvasConnectionOrigin = { nodeID: string; handleType: CanvasConnectionHandleType };
@@ -26,6 +26,15 @@ export function resolveCanvasConnection(
   const first = nodes.find((node) => node.id === origin.nodeID);
   const second = nodes.find((node) => node.id === otherNodeID);
   if (!first || !second || first.id === second.id) return null;
+  if (first.type === "group" || second.type === "group") return null;
+  if (second.type === "director") {
+    if (first.type !== "image" && first.type !== "panorama") return null;
+    return origin.handleType === "target" ? { sourceID: second.id, targetID: first.id } : { sourceID: first.id, targetID: second.id };
+  }
+  if (first.type === "director") {
+    if (second.type !== "image" && second.type !== "panorama") return null;
+    return origin.handleType === "target" ? { sourceID: second.id, targetID: first.id } : { sourceID: first.id, targetID: second.id };
+  }
   if (first.type === "config" && second.type === "config") return null;
   if (second.type === "config") return { sourceID: first.id, targetID: second.id };
   if (first.type === "config" && origin.handleType === "target") return { sourceID: second.id, targetID: first.id };
@@ -41,6 +50,11 @@ export function canCreateCanvasConnection(
   if (!sourceID || !targetID || sourceID === targetID) return false;
   const source = nodes.find((node) => node.id === sourceID);
   const target = nodes.find((node) => node.id === targetID);
+  if (source?.type === "group" || target?.type === "group") return false;
+  if (source?.type === "director" || target?.type === "director") {
+    const other = source?.type === "director" ? target : source;
+    if (other?.type !== "image" && other?.type !== "panorama") return false;
+  }
   if (source?.type === "config" && target?.type === "config") return false;
   return !connections.some((connection) => connection.from_node_id === sourceID && connection.to_node_id === targetID);
 }

@@ -2,7 +2,7 @@
 
 export type AuthRole = "admin" | "user";
 
-export type AuthMenuItem = {
+type AuthMenuItem = {
   id: string;
   label: string;
   path: string;
@@ -55,7 +55,18 @@ export function getDefaultRouteForSession(session: StoredAuthSession) {
   if (session.role === "admin") {
     return "/image";
   }
-  for (const path of ["/image", "/image-manager", "/settings", ...session.menuPaths, "/profile"]) {
+  for (const path of [
+    "/image",
+    "/canvas",
+    "/workflows",
+    "/prompt-library",
+    "/assets",
+    "/users",
+    "/rbac",
+    "/logs",
+    "/settings",
+    "/profile",
+  ]) {
     if (canAccessPath(session, path)) {
       return path;
     }

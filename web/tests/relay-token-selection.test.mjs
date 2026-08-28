@@ -47,24 +47,6 @@ test("stores image and video selections independently", (t) => {
   assert.equal(getStoredRelayTokenName(identity, "video"), "video-key");
 });
 
-test("uses the previous single selection until each kind is explicitly saved", (t) => {
-  const values = installLocalStorage(t);
-  const identity = { provider: "newapi", subjectId: "newapi:42" };
-  values.set("chatgpt2api:profile_relay_token_name:v2:newapi%3Anewapi%3A42", "legacy-key");
-  storeRelayTokenName(identity, "image", "image-key");
-  assert.equal(getStoredRelayTokenName(identity, "image"), "image-key");
-  assert.equal(getStoredRelayTokenName(identity, "video"), "legacy-key");
-});
-
-test("an explicitly cleared kind does not fall back to the previous single selection", (t) => {
-  const values = installLocalStorage(t);
-  const identity = { provider: "newapi", subjectId: "newapi:42" };
-  values.set("chatgpt2api:profile_relay_token_name:v2:newapi%3Anewapi%3A42", "legacy-key");
-  storeRelayTokenName(identity, "video", "");
-  assert.equal(getStoredRelayTokenName(identity, "video"), "");
-  assert.equal(getStoredRelayTokenName(identity, "image"), "legacy-key");
-});
-
 test("does not select the first relay token when the user has not chosen one", () => {
   assert.equal(retainSelectedRelayTokenName("", ["image-key", "video-key"]), "");
 });

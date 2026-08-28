@@ -13,7 +13,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-export type RelayTokenCreationKind = "image" | "video";
+export type RelayTokenCreationKind = "text" | "image" | "video" | "audio";
 
 export function RelayTokenRequiredDialog({
   kind,
@@ -25,7 +25,7 @@ export function RelayTokenRequiredDialog({
   onOpenChange: (open: boolean) => void;
 }) {
   const navigate = useNavigate();
-  const creationLabel = kind === "video" ? "生视频" : "生图";
+  const creationLabel = kind === "text" ? "文本生成" : kind === "video" ? "生视频" : kind === "audio" ? "生音频" : "生图";
 
   const openProfile = () => {
     onOpenChange(false);

@@ -6,6 +6,7 @@ import {
   canGenerateCanvasConfig,
   canvasConfigInputLabel,
   canvasConfigInputs,
+  canvasConfigUsesConnectedText,
   canvasGenerationInputsFromIndex,
   canvasConfigPromptDisplay,
   canvasConfigPromptValue,
@@ -34,9 +35,20 @@ test("configuration inputs follow connection order and ignore empty nodes", () =
   assert.equal(canvasConfigInputLabel(inputs[1], inputs), "文本1");
 });
 
-test("video nodes are not coerced into image configuration text inputs", () => {
-  const nodes = [node("config", "config"), node("video", "video", { prompt: "视频描述" })];
-  const inputs = canvasConfigInputs("config", nodes, [{ id: "video-config", from_node_id: "video", to_node_id: "config" }]);
+test("empty media nodes are not coerced into configuration text inputs", () => {
+  const nodes = [
+    node("config", "config"),
+    node("video", "video", { prompt: "视频描述" }),
+    node("audio", "audio", { prompt: "音频描述" }),
+    node("panorama", "panorama", { prompt: "全景描述" }),
+    node("image", "image", { prompt: "图片描述" }),
+  ];
+  const inputs = canvasConfigInputs("config", nodes, [
+    { id: "video-config", from_node_id: "video", to_node_id: "config" },
+    { id: "audio-config", from_node_id: "audio", to_node_id: "config" },
+    { id: "panorama-config", from_node_id: "panorama", to_node_id: "config" },
+    { id: "image-config", from_node_id: "image", to_node_id: "config" },
+  ]);
   assert.deepEqual(inputs, []);
 });
 
@@ -84,4 +96,18 @@ test("configuration generation requires prompt text or at least one usable input
   assert.equal(canGenerateCanvasConfig(config, []), false);
   assert.equal(canGenerateCanvasConfig({ ...config, composer_content: "生成海报" }, []), true);
   assert.equal(canGenerateCanvasConfig(config, [{ nodeID: "image", type: "image", title: "参考", url: "/a.png" }]), true);
+  assert.equal(canGenerateCanvasConfig({ ...config, generation_mode: "audio" }, [{ nodeID: "audio", type: "audio", title: "参考音频", url: "/a.mp3" }]), false);
+  assert.equal(canGenerateCanvasConfig({ ...config, generation_mode: "audio" }, [{ nodeID: "text", type: "text", title: "台词", text: "你好" }]), true);
+});
+
+test("an explicitly cleared composer cannot generate from deleted references", () => {
+  const inputs = [{ nodeID: "text", type: "text", title: "文字", text: "已连接文字" }];
+  assert.equal(canGenerateCanvasConfig(node("config", "config", { composer_content: "" }), inputs), false);
+  assert.equal(canGenerateCanvasConfig(node("config", "config", { composer_content: "继续生成" }), inputs), true);
+});
+
+test("configuration prompt ownership switches only for non-empty connected text", () => {
+  assert.equal(canvasConfigUsesConnectedText([]), false);
+  assert.equal(canvasConfigUsesConnectedText([{ nodeID: "empty", type: "text", title: "空文字", text: "  " }]), false);
+  assert.equal(canvasConfigUsesConnectedText([{ nodeID: "idea", type: "text", title: "创意", text: "白猫" }]), true);
 });

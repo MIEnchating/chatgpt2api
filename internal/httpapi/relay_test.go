@@ -20,6 +20,35 @@ import (
 	"chatgpt2api/internal/util"
 )
 
+func TestRelayCredentialsUseCurrentPayloadFieldsOnly(t *testing.T) {
+	payload := map[string]any{
+		"api_key":            "current-key",
+		"relay_api_key":      "removed-key",
+		"token_group":        "current-group",
+		"newapi_token_group": "removed-group",
+		"token_name":         "current-name",
+		"relay_token_name":   "removed-name",
+	}
+	if got := relayAPIKeyFromPayload(payload); got != "current-key" {
+		t.Fatalf("relayAPIKeyFromPayload() = %q, want current-key", got)
+	}
+	if got := selectedRelayTokenGroupFromPayload(payload); got != "current-group" {
+		t.Fatalf("selectedRelayTokenGroupFromPayload() = %q, want current-group", got)
+	}
+	if got := selectedRelayTokenNameFromPayload(payload); got != "current-name" {
+		t.Fatalf("selectedRelayTokenNameFromPayload() = %q, want current-name", got)
+	}
+
+	removed := map[string]any{
+		"relay_api_key":      "removed-key",
+		"newapi_token_group": "removed-group",
+		"relay_token_name":   "removed-name",
+	}
+	if relayAPIKeyFromPayload(removed) != "" || selectedRelayTokenGroupFromPayload(removed) != "" || selectedRelayTokenNameFromPayload(removed) != "" {
+		t.Fatalf("removed credential fields must not be accepted: %#v", removed)
+	}
+}
+
 func TestRelayAcquireImageTaskSlotUsesWholeRequestSlot(t *testing.T) {
 	called := 0
 	released := false
@@ -46,36 +75,6 @@ func TestRelayAcquireImageTaskSlotUsesWholeRequestSlot(t *testing.T) {
 	release()
 	if !released {
 		t.Fatal("release was not called")
-	}
-}
-
-func TestRelayAcquireDirectImageTaskSlotDefersReleaseAndMarksPayloadManaged(t *testing.T) {
-	released := false
-	payload := map[string]any{
-		protocol.ImageOutputSlotAcquirerPayloadKey: func(context.Context, int) (func(), error) {
-			return func() { released = true }, nil
-		},
-	}
-
-	release, err := relayAcquireDirectImageTaskSlot(context.Background(), payload)
-	if err != nil {
-		t.Fatalf("relayAcquireDirectImageTaskSlot() error = %v", err)
-	}
-	if release == nil {
-		t.Fatal("relayAcquireDirectImageTaskSlot() release = nil")
-	}
-	if released {
-		t.Fatal("slot released before direct request completed")
-	}
-	if !relayImageTaskSlotIsManaged(payload) {
-		t.Fatal("direct request payload was not marked as managed")
-	}
-	release()
-	if !released {
-		t.Fatal("slot was not released after direct request completed")
-	}
-	if relayImageTaskSlotIsManaged(payload) {
-		t.Fatal("managed marker leaked after direct request completed")
 	}
 }
 
@@ -243,7 +242,7 @@ func TestRelayPayloadForGrokUsesOfficialGenerationParameters(t *testing.T) {
 		"output_compression": 80,
 	})
 	for _, key := range []string{
-		"size", "stream", "partial_images",
+		"size", "quality",
 		"image_format", "storage_options", "user", "output_format", "background",
 		"moderation", "output_compression",
 	} {
@@ -254,77 +253,93 @@ func TestRelayPayloadForGrokUsesOfficialGenerationParameters(t *testing.T) {
 	if grok["model"] != "grok-imagine-image-2.0" || grok["prompt"] != "draw" || grok["n"] != 2 {
 		t.Fatalf("Grok dropped a supported field: %#v", grok)
 	}
-	if grok["response_format"] != "b64_json" || grok["aspect_ratio"] != "16:9" || grok["resolution"] != "2k" || grok["quality"] != "medium" {
+	if grok["response_format"] != "b64_json" || grok["aspect_ratio"] != "16:9" || grok["resolution"] != "2k" || grok["stream"] != true || grok["partial_images"] != 2 {
 		t.Fatalf("Grok official parameters were not retained: %#v", grok)
 	}
 }
 
 func TestOfficialVideoRequestPayloadUsesProviderFields(t *testing.T) {
 	tests := []struct {
-		name     string
-		model    string
-		input    map[string]any
-		want     map[string]any
-		metadata map[string]any
-		absent   []string
+		name   string
+		model  string
+		input  map[string]any
+		want   map[string]any
+		absent []string
 	}{
 		{
-			name:     "grok",
-			model:    "grok-imagine-video-1.5",
-			input:    map[string]any{"seconds": 10, "size": "16:9", "resolution": "1080p", "generate_audio": true, "watermark": true},
-			want:     map[string]any{"duration": 10, "aspect_ratio": "16:9", "resolution": "1080p"},
-			metadata: map[string]any{"aspect_ratio": "16:9", "resolution": "1080p"},
-			absent:   []string{"generate_audio", "watermark"},
+			name:   "grok",
+			model:  "grok-imagine-video-1.5",
+			input:  map[string]any{"seconds": 10, "size": "16:9", "resolution": "1080p", "generate_audio": true, "watermark": true},
+			want:   map[string]any{"duration": 10, "aspect_ratio": "16:9", "resolution": "1080p"},
+			absent: []string{"generate_audio", "watermark", "metadata"},
 		},
 		{
-			name:     "minimax",
-			model:    "MiniMax-Hailuo-2.3",
-			input:    map[string]any{"seconds": 6, "resolution": "768P", "watermark": true},
-			want:     map[string]any{"duration": 6, "resolution": "768P", "aigc_watermark": true},
-			metadata: map[string]any{"resolution": "768P", "aigc_watermark": true},
-			absent:   []string{"ratio", "generate_audio"},
+			name:   "minimax",
+			model:  "MiniMax-Hailuo-2.3",
+			input:  map[string]any{"seconds": 6, "resolution": "768P", "watermark": true},
+			want:   map[string]any{"duration": 6, "resolution": "768p"},
+			absent: []string{"ratio", "generate_audio", "aigc_watermark"},
 		},
 		{
 			name:   "minimax h3 text",
 			model:  "MiniMax-H3",
 			input:  map[string]any{"seconds": 6, "size": "adaptive", "resolution": "2K", "watermark": true},
-			want:   map[string]any{"duration": 6, "ratio": "16:9", "resolution": "2K", "generation_mode": "text-to-video"},
+			want:   map[string]any{"duration": 6, "aspect_ratio": "16:9", "resolution": "2K", "generation_mode": "text-to-video"},
 			absent: []string{"aigc_watermark"},
 		},
 		{
 			name:  "minimax h3 reference",
 			model: "MiniMax-H3",
 			input: map[string]any{"seconds": 6, "size": "adaptive", "reference_image_urls": []string{"data:image/png;base64,reference"}},
-			want:  map[string]any{"duration": 6, "ratio": "auto", "generation_mode": "image-to-video", "input_reference": "data:image/png;base64,reference"},
+			want:  map[string]any{"duration": 6, "aspect_ratio": "auto", "generation_mode": "image-to-video", "first_frame_image": "data:image/png;base64,reference"},
 		},
 		{
 			name:   "sora official fields only",
 			model:  "sora-2-pro",
 			input:  map[string]any{"seconds": 20, "size": "1920x1080", "resolution": "1080p", "generate_audio": true, "watermark": true},
-			want:   map[string]any{"seconds": "20", "size": "1920x1080"},
-			absent: []string{"duration", "resolution", "generate_audio", "watermark"},
+			want:   map[string]any{"duration": 20, "aspect_ratio": "16:9", "quality": "1080p"},
+			absent: []string{"seconds", "size", "resolution", "generate_audio", "watermark"},
 		},
 		{
-			name:     "seedance",
-			model:    "doubao-seedance-2-5-260628",
-			input:    map[string]any{"seconds": 30, "size": "adaptive", "resolution": "1080p", "generate_audio": true, "watermark": false},
-			want:     map[string]any{"duration": 30, "ratio": "adaptive", "resolution": "1080p", "generate_audio": true, "watermark": false},
-			metadata: map[string]any{"ratio": "adaptive", "resolution": "1080p", "generate_audio": true, "watermark": false},
+			name:   "cogvideox 3",
+			model:  "CogVideoX-3",
+			input:  map[string]any{"seconds": 10, "size": "1920x1080", "resolution": "4k", "generate_audio": true, "reference_image_urls": []string{"data:image/png;base64,reference"}},
+			want:   map[string]any{"duration": 10, "size": "1920x1080", "quality": "quality", "with_audio": true, "image_url": "data:image/png;base64,reference"},
+			absent: []string{"resolution", "input_reference"},
 		},
 		{
-			name:     "kling",
-			model:    "kling-v3",
-			input:    map[string]any{"seconds": 5, "size": "1:1", "resolution": "4k", "generate_audio": true, "watermark": false},
-			want:     map[string]any{"duration": 5, "aspect_ratio": "1:1", "resolution": "4k", "sound": true, "watermark": false},
-			metadata: map[string]any{"aspect_ratio": "1:1", "resolution": "4k", "sound": true, "audio": "native", "watermark": false},
+			name:   "cogvideox 3 derives size from resolution",
+			model:  "CogVideoX-3",
+			input:  map[string]any{"seconds": 10, "resolution": "1080p"},
+			want:   map[string]any{"duration": 10, "size": "1920x1080", "quality": "quality"},
+			absent: []string{"resolution", "input_reference"},
 		},
 		{
-			name:     "kling reference follows first frame ratio",
-			model:    "kling-v3",
-			input:    map[string]any{"seconds": 5, "size": "16:9", "resolution": "1080p", "reference_image_urls": []string{"https://example.com/frame.png"}},
-			want:     map[string]any{"duration": 5, "resolution": "1080p", "input_reference": "https://example.com/frame.png"},
-			metadata: map[string]any{"resolution": "1080p"},
-			absent:   []string{"aspect_ratio"},
+			name:  "seedance",
+			model: "doubao-seedance-2-5-260628",
+			input: map[string]any{"seconds": 30, "size": "adaptive", "resolution": "1080p", "generate_audio": true, "watermark": false},
+			want:  map[string]any{"duration": 30, "size": "adaptive", "resolution": "1080p", "generate_audio": true, "watermark": false},
+		},
+		{
+			name:   "kling",
+			model:  "kling-v3",
+			input:  map[string]any{"seconds": 5, "size": "1:1", "resolution": "4k", "generate_audio": true, "watermark": false},
+			want:   map[string]any{"duration": 5, "aspect_ratio": "1:1", "mode": "4k", "audio": true},
+			absent: []string{"watermark"},
+		},
+		{
+			name:   "kling reference follows first frame ratio",
+			model:  "kling-v3",
+			input:  map[string]any{"seconds": 5, "size": "16:9", "resolution": "1080p", "reference_image_urls": []string{"https://example.com/first.png", "https://example.com/last.png"}},
+			want:   map[string]any{"duration": 5, "mode": "pro", "aspect_ratio": "16:9", "image_urls": []string{"https://example.com/first.png", "https://example.com/last.png"}},
+			absent: []string{"image", "image_tail", "input_reference"},
+		},
+		{
+			name:   "hailuo image to video",
+			model:  "MiniMax-Hailuo-2.3-Fast",
+			input:  map[string]any{"seconds": 6, "resolution": "768P", "reference_image_urls": []string{"https://example.com/frame.png"}},
+			want:   map[string]any{"duration": 6, "resolution": "768p", "first_frame_image": "https://example.com/frame.png"},
+			absent: []string{"input_reference"},
 		},
 	}
 	for _, test := range tests {
@@ -335,7 +350,7 @@ func TestOfficialVideoRequestPayloadUsesProviderFields(t *testing.T) {
 			}
 			got := officialVideoRequestPayload(payload)
 			for key, value := range test.want {
-				if got[key] != value {
+				if !reflect.DeepEqual(got[key], value) {
 					t.Fatalf("%s = %#v, want %#v (payload %#v)", key, got[key], value, got)
 				}
 			}
@@ -344,8 +359,10 @@ func TestOfficialVideoRequestPayloadUsesProviderFields(t *testing.T) {
 					t.Fatalf("unexpected provider field %q in %#v", key, got)
 				}
 			}
-			if test.metadata != nil && !reflect.DeepEqual(got["metadata"], test.metadata) {
-				t.Fatalf("metadata = %#v, want %#v", got["metadata"], test.metadata)
+			if isAPIMartVideoPayload(payload) {
+				if _, ok := got["metadata"]; ok {
+					t.Fatalf("APIMart request retained compatibility metadata: %#v", got)
+				}
 			}
 		})
 	}
@@ -366,42 +383,531 @@ func TestOfficialVideoRequestPayloadMapsMiniMaxH3MultimodalReferences(t *testing
 		"reference_video_urls": videos,
 		"reference_audio_urls": audios,
 	})
-	if got["generation_mode"] != "reference-to-video" || got["ratio"] != "16:9" {
+	if got["generation_mode"] != "reference-to-video" || got["aspect_ratio"] != "16:9" {
 		t.Fatalf("unexpected H3 reference mode payload: %#v", got)
 	}
 	if _, ok := got["input_reference"]; ok {
 		t.Fatalf("multimodal references must not be reduced to input_reference: %#v", got)
 	}
 	for key, want := range map[string]any{
-		"reference_image_urls": images,
-		"reference_video_urls": videos,
-		"reference_audio_urls": audios,
+		"image_urls": images,
+		"video_urls": videos,
+		"audio_urls": audios,
 	} {
 		if !reflect.DeepEqual(got[key], want) {
 			t.Fatalf("%s = %#v, want %#v", key, got[key], want)
 		}
-		metadata := got["metadata"].(map[string]any)
-		if !reflect.DeepEqual(metadata[key], want) {
-			t.Fatalf("metadata.%s = %#v, want %#v", key, metadata[key], want)
-		}
+	}
+	if _, ok := got["metadata"]; ok {
+		t.Fatalf("APIMart MiniMax H3 retained compatibility metadata: %#v", got)
 	}
 }
 
-func TestOfficialVideoRequestPayloadMapsVideoToVideoAlias(t *testing.T) {
+func TestOfficialVideoRequestPayloadNormalizesMiniMaxH3Values(t *testing.T) {
+	reference := officialVideoRequestPayload(map[string]any{
+		"model": "MiniMax-H3", "prompt": "follow references", "seconds": 8,
+		"size": "adaptive", "resolution": "2K", "reference_mode": "reference",
+		"reference_image_urls": []string{"https://cdn.example.com/character.png"},
+	})
+	if reference["generation_mode"] != "reference-to-video" || reference["aspect_ratio"] != "auto" {
+		t.Fatalf("H3 adaptive reference payload = %#v", reference)
+	}
+
+	textOnly := officialVideoRequestPayload(map[string]any{
+		"model": "MiniMax-H3", "prompt": "text only", "seconds": 8,
+		"size": "adaptive", "resolution": "768P",
+	})
+	if textOnly["generation_mode"] != "text-to-video" || textOnly["aspect_ratio"] != "16:9" {
+		t.Fatalf("H3 adaptive text payload = %#v", textOnly)
+	}
+}
+
+func TestOfficialVideoRequestPayloadNormalizesInvalidMiniMaxH3Enums(t *testing.T) {
+	textOnly := officialVideoRequestPayload(map[string]any{
+		"model": "MiniMax-H3", "prompt": "text", "seconds": 8,
+		"size": "2:1", "resolution": "1080p",
+	})
+	if textOnly["aspect_ratio"] != "16:9" || textOnly["resolution"] != "2K" {
+		t.Fatalf("H3 text enums were not normalized: %#v", textOnly)
+	}
+
+	reference := officialVideoRequestPayload(map[string]any{
+		"model": "MiniMax-H3", "prompt": "reference", "seconds": 8,
+		"size": "2:1", "resolution": "720p", "reference_mode": "reference",
+		"reference_image_urls": []string{"https://cdn.example.com/reference.png"},
+	})
+	if reference["aspect_ratio"] != "auto" || reference["resolution"] != "768P" {
+		t.Fatalf("H3 reference enums were not normalized: %#v", reference)
+	}
+}
+
+func TestOfficialVideoRequestPayloadCanonicalizesReferenceProjectAliases(t *testing.T) {
+	payload := officialVideoRequestPayload(map[string]any{
+		"model":                "kling/text-to-video",
+		"prompt":               "a quiet street",
+		"seconds":              5,
+		"size":                 "16:9",
+		"reference_image_urls": []string(nil),
+		"reference_video_urls": []string(nil),
+		"reference_audio_urls": []string(nil),
+		"resolution":           "720p",
+	})
+	if payload["model"] != "kling-2.6/text-to-video" {
+		t.Fatalf("canonical model = %#v, payload=%#v", payload["model"], payload)
+	}
+	if payload["aspect_ratio"] != "16:9" {
+		t.Fatalf("canonical alias did not retain its KIE aspect ratio: %#v", payload)
+	}
+}
+
+func TestOfficialVideoRequestPayloadMapsSeedanceMultimodalReferences(t *testing.T) {
+	images := []string{"https://cdn.example.com/character.png"}
+	videos := []string{"https://cdn.example.com/motion.mp4"}
+	audios := []string{"https://cdn.example.com/voice.mp3"}
+	got := officialVideoRequestPayload(map[string]any{
+		"model":                "doubao-seedance-2-0-260128",
+		"prompt":               "follow the references",
+		"seconds":              8,
+		"size":                 "16:9",
+		"resolution":           "1080p",
+		"reference_mode":       "reference",
+		"reference_image_urls": images,
+		"reference_video_urls": videos,
+		"reference_audio_urls": audios,
+	})
+	if _, ok := got["input_reference"]; ok {
+		t.Fatalf("Seedance multimodal references must not be reduced to input_reference: %#v", got)
+	}
+	for key, want := range map[string]any{
+		"image_urls": images,
+		"video_urls": videos,
+		"audio_urls": audios,
+	} {
+		if !reflect.DeepEqual(got[key], want) {
+			t.Fatalf("%s = %#v, want %#v", key, got[key], want)
+		}
+	}
+	if _, ok := got["metadata"]; ok {
+		t.Fatalf("APIMart Seedance retained compatibility metadata: %#v", got)
+	}
+}
+
+func TestOfficialVideoRequestPayloadMapsAdditionalProviders(t *testing.T) {
+	imageURLs := []string{"https://cdn.example.com/first.png", "https://cdn.example.com/last.png"}
+	tests := []struct {
+		name     string
+		payload  map[string]any
+		want     map[string]any
+		metadata map[string]any
+		absent   []string
+	}{
+		{
+			name: "Veo",
+			payload: map[string]any{
+				"model": "veo-3.1-generate-preview", "prompt": "make a video", "seconds": 8,
+				"size": "9:16", "resolution": "4k", "generate_audio": true,
+				"reference_image_urls": imageURLs[:1],
+			},
+			want: map[string]any{"duration": 8, "size": "9:16"},
+			metadata: map[string]any{
+				"aspectRatio": "9:16", "resolution": "4k", "durationSeconds": 8, "generateAudio": true, "firstFrame": imageURLs[0],
+			},
+			absent: []string{"resolution", "input_reference", "images"},
+		},
+		{
+			name: "APIMart official Veo named frames",
+			payload: map[string]any{
+				"model": "veo3.1-official", "prompt": "keep the subject", "seconds": 8,
+				"size": "16:9", "reference_mode": "reference", "reference_image_urls": imageURLs,
+			},
+			want:   map[string]any{"duration": 8, "aspect_ratio": "16:9", "first_frame_image": imageURLs[0], "last_frame_image": imageURLs[1]},
+			absent: []string{"seconds", "size", "resolution", "input_reference", "images"},
+		},
+		{
+			name: "Veo 3.1 asset references",
+			payload: map[string]any{
+				"model": "veo-3.1-generate-preview", "prompt": "keep the products", "seconds": 8,
+				"size": "16:9", "resolution": "720p", "reference_mode": "reference",
+				"reference_image_urls": imageURLs,
+			},
+			want: map[string]any{"duration": 8, "size": "16:9"},
+			metadata: map[string]any{
+				"aspectRatio": "16:9", "resolution": "720p", "durationSeconds": 8, "referenceImages": imageURLs,
+			},
+			absent: []string{"resolution", "input_reference", "images"},
+		},
+		{
+			name: "Agnes Video 2.5 keyframes",
+			payload: map[string]any{
+				"model": "agnes-video-2.5", "prompt": "interpolate", "seconds": 8,
+				"size": "16:9", "resolution": "720P", "reference_image_urls": imageURLs,
+			},
+			want:   map[string]any{"seconds": "8", "size": "720P", "mode": "keyframe", "first_frame": imageURLs[0], "last_frame": imageURLs[1], "aspect_ratio": "16:9"},
+			absent: []string{"duration", "resolution", "input_reference"},
+		},
+		{
+			name: "Agnes Video 2.5 multimodal references",
+			payload: map[string]any{
+				"model": "agnes-video-2.5", "prompt": "follow assets", "seconds": 5,
+				"size": "9:16", "reference_mode": "reference", "reference_image_urls": imageURLs[:1],
+				"reference_video_urls": []string{"https://cdn.example.com/source.mp4"}, "reference_audio_urls": []string{"https://cdn.example.com/voice.mp3"},
+			},
+			want:   map[string]any{"seconds": "5", "size": "720P", "mode": "reference", "images": imageURLs[:1], "aspect_ratio": "9:16"},
+			absent: []string{"duration", "resolution", "input_reference"},
+		},
+		{
+			name: "Agnes legacy keyframes",
+			payload: map[string]any{
+				"model": "agnes-video", "prompt": "animate", "seconds": 6, "size": "1280x720", "reference_image_urls": imageURLs,
+			},
+			want:   map[string]any{"num_frames": 145, "frame_rate": 24, "width": 1280, "height": 720},
+			absent: []string{"duration", "seconds", "size", "input_reference"},
+		},
+		{
+			name: "Wan 2.7 image to video",
+			payload: map[string]any{
+				"model": "wan2.7-i2v-plus", "prompt": "make a video", "seconds": 10,
+				"resolution": "1080p", "generate_audio": true, "watermark": true,
+				"reference_image_urls": imageURLs,
+				"reference_audio_urls": []string{"https://cdn.example.com/voice.mp3"},
+			},
+			want:   map[string]any{"duration": 10, "resolution": "1080P", "image_with_roles": []map[string]string{{"url": imageURLs[0], "role": "first_frame"}, {"url": imageURLs[1], "role": "last_frame"}}},
+			absent: []string{"input_reference"},
+		},
+		{
+			name: "Wan text to video",
+			payload: map[string]any{
+				"model": "wan2.6-t2v", "prompt": "make a video", "seconds": 5,
+				"size": "1280x720", "watermark": false,
+			},
+			want:   map[string]any{"duration": 5, "aspect_ratio": "16:9"},
+			absent: []string{"input_reference"},
+		},
+		{
+			name: "Vidu",
+			payload: map[string]any{
+				"model": "viduq1", "prompt": "make a video", "seconds": 12,
+				"size": "16:9", "resolution": "1080p", "reference_image_urls": imageURLs,
+			},
+			want:   map[string]any{"duration": 12, "resolution": "1080p", "image_urls": imageURLs},
+			absent: []string{"size", "input_reference"},
+		},
+		{
+			name: "Jimeng",
+			payload: map[string]any{
+				"model": "jimeng_v30", "prompt": "make a video", "seconds": 10,
+				"size": "9:16", "reference_image_urls": imageURLs,
+			},
+			want:     map[string]any{"duration": 10, "size": "9:16", "images": imageURLs},
+			metadata: map[string]any{"aspect_ratio": "9:16"},
+			absent:   []string{"input_reference"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := officialVideoRequestPayload(test.payload)
+			for key, want := range test.want {
+				if !reflect.DeepEqual(got[key], want) {
+					t.Fatalf("%s = %#v, want %#v in %#v", key, got[key], want, got)
+				}
+			}
+			for _, key := range test.absent {
+				if _, ok := got[key]; ok {
+					t.Fatalf("unexpected provider field %q in %#v", key, got)
+				}
+			}
+			if isAPIMartVideoPayload(test.payload) {
+				if _, ok := got["metadata"]; ok {
+					t.Fatalf("APIMart request retained compatibility metadata: %#v", got)
+				}
+			} else if test.metadata != nil && !reflect.DeepEqual(got["metadata"], test.metadata) {
+				t.Fatalf("metadata = %#v, want %#v", got["metadata"], test.metadata)
+			}
+		})
+	}
+}
+
+func TestInlineVeoReferenceImageConvertsPublicURLForNewAPI(t *testing.T) {
+	imageData := httpTestPNGBytes(t)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "image/png")
+		_, _ = w.Write(imageData)
+	}))
+	defer server.Close()
+
+	app := newTestApp(t)
+	defer app.Close()
+	request := map[string]any{"metadata": map[string]any{
+		"firstFrame":      server.URL + "/first.png",
+		"lastFrame":       server.URL + "/last.png",
+		"referenceImages": []string{server.URL + "/reference.png"},
+	}}
+	if err := app.inlineVeoReferenceImage(context.Background(), request); err != nil {
+		t.Fatalf("inlineVeoReferenceImage() error = %v", err)
+	}
+	metadata := request["metadata"].(map[string]any)
+	for _, field := range []string{"firstFrame", "lastFrame"} {
+		if !strings.HasPrefix(util.Clean(metadata[field]), "data:image/png;base64,") {
+			t.Fatalf("Veo metadata.%s = %#v, want inline PNG", field, metadata[field])
+		}
+	}
+	images := util.AsStringSlice(metadata["referenceImages"])
+	if len(images) != 1 || !strings.HasPrefix(images[0], "data:image/png;base64,") {
+		t.Fatalf("Veo referenceImages = %#v, want one inline PNG", images)
+	}
+}
+
+func TestOfficialVideoRequestPayloadMapsReferenceVideo(t *testing.T) {
 	got := officialVideoRequestPayload(map[string]any{
 		"model":                "MiniMax-H3",
 		"prompt":               "restyle the source video",
 		"seconds":              8,
 		"size":                 "adaptive",
 		"resolution":           "2K",
-		"reference_mode":       "video-to-video",
+		"reference_mode":       "reference",
 		"reference_video_urls": []string{"https://media.example.com/source.mp4"},
 	})
-	if got["generation_mode"] != "reference-to-video" || got["ratio"] != "auto" {
-		t.Fatalf("video-to-video alias was not mapped to H3 reference-to-video: %#v", got)
+	if got["generation_mode"] != "reference-to-video" || got["aspect_ratio"] != "auto" {
+		t.Fatalf("reference video was not mapped to H3 reference-to-video: %#v", got)
 	}
 	if _, ok := got["input_reference"]; ok {
-		t.Fatalf("video-to-video must use reference_video_urls, not input_reference: %#v", got)
+		t.Fatalf("reference video must use reference_video_urls, not input_reference: %#v", got)
+	}
+}
+
+func TestOfficialVideoRequestPayloadNormalizesMiniMaxH3Resolution(t *testing.T) {
+	for input, want := range map[string]string{"768p": "768P", "768": "768P", "2k": "2K", "2048p": "2K"} {
+		got := officialVideoRequestPayload(map[string]any{
+			"model": "minimax-h3/text-to-video", "prompt": "animate", "seconds": 6,
+			"size": "16:9", "resolution": input,
+		})
+		if got["resolution"] != want {
+			t.Fatalf("resolution %q = %#v, want %q; payload=%#v", input, got["resolution"], want, got)
+		}
+	}
+}
+
+func TestValidateVideoReferencePayloadURLsAllowsSingleInlineFirstFrameAlias(t *testing.T) {
+	inline := "data:image/png;base64,AAAA"
+	err := validateVideoReferencePayloadURLs(map[string]any{
+		"generation_mode":      "image-to-video",
+		"input_reference":      inline,
+		"reference_image_urls": []string{inline},
+	})
+	if err != nil {
+		t.Fatalf("single inline first frame validation error = %v", err)
+	}
+}
+
+func TestValidateVideoReferencePayloadURLsRejectsInlineReferenceArrays(t *testing.T) {
+	err := validateVideoReferencePayloadURLs(map[string]any{
+		"reference_image_urls": []string{"data:image/png;base64,AAAA"},
+	})
+	if err == nil || !strings.Contains(err.Error(), "公网") {
+		t.Fatalf("inline reference validation error = %v, want public URL message", err)
+	}
+}
+
+func TestValidateVideoReferencePayloadURLsRejectsInlineNamedFrames(t *testing.T) {
+	err := validateVideoReferencePayloadURLs(map[string]any{
+		"first_frame_url": "data:image/png;base64,AAAA",
+	})
+	if err == nil || !strings.Contains(err.Error(), "公网") {
+		t.Fatalf("inline named-frame validation error = %v, want public URL message", err)
+	}
+}
+
+func TestValidateVideoReferencePayloadURLsRejectsPrivateSingleURL(t *testing.T) {
+	err := validateVideoReferencePayloadURLs(map[string]any{
+		"video_url": "http://127.0.0.1/source.mp4",
+	})
+	if err == nil || !strings.Contains(err.Error(), "公网") {
+		t.Fatalf("private single URL validation error = %v, want public URL message", err)
+	}
+}
+
+func TestValidateVideoReferencePayloadURLsRejectsNestedProviderReferences(t *testing.T) {
+	err := validateVideoReferencePayloadURLs(map[string]any{
+		"image_with_roles": []map[string]string{{"url": "data:image/png;base64,AAAA", "role": "first_frame"}},
+	})
+	if err == nil || !strings.Contains(err.Error(), "公网") {
+		t.Fatalf("nested reference validation error = %v, want public URL message", err)
+	}
+}
+
+func TestValidateVideoReferencePayloadURLsAcceptsPublicGrok2APIReferences(t *testing.T) {
+	for _, payload := range []map[string]any{
+		{"image": map[string]any{"url": "https://cdn.example.com/first.png"}},
+		{"reference_images": []map[string]any{
+			{"url": "https://cdn.example.com/one.png"},
+			{"url": "https://cdn.example.com/two.png"},
+		}},
+	} {
+		if err := validateVideoReferencePayloadURLs(payload); err != nil {
+			t.Fatalf("public Grok2API reference rejected: payload=%#v error=%v", payload, err)
+		}
+	}
+}
+
+func TestValidateVideoReferencePayloadURLsRejectsNonPublicGrok2APIReferences(t *testing.T) {
+	for _, payload := range []map[string]any{
+		{"image": map[string]any{"url": "data:image/png;base64,AAAA"}},
+		{"image": map[string]any{"url": "http://127.0.0.1/first.png"}},
+		{"reference_images": []map[string]any{{"url": "data:image/png;base64,AAAA"}}},
+		{"reference_images": []map[string]any{{"url": "http://10.0.0.1/one.png"}}},
+	} {
+		err := validateVideoReferencePayloadURLs(payload)
+		if err == nil || !strings.Contains(err.Error(), "公网") {
+			t.Fatalf("non-public Grok2API reference validation error = %v, payload=%#v", err, payload)
+		}
+	}
+}
+
+func TestValidateVideoReferencePayloadURLsRejectsMetadataBase64References(t *testing.T) {
+	err := validateVideoReferencePayloadURLs(map[string]any{
+		"metadata": map[string]any{
+			"reference_image_urls": []string{"data:image/png;base64,AAAA"},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "公网") {
+		t.Fatalf("metadata reference validation error = %v, want public URL message", err)
+	}
+}
+
+func TestOfficialVideoRequestPayloadMapsWanSpecializedModes(t *testing.T) {
+	tests := []struct {
+		name   string
+		model  string
+		images []string
+		videos []string
+		audios []string
+		want   map[string]any
+	}{
+		{
+			name: "KIE image to video", model: "wan/2-7-image-to-video",
+			images: []string{"https://cdn.example.com/first.png"}, videos: []string{"https://cdn.example.com/clip.mp4"}, audios: []string{"https://cdn.example.com/drive.mp3"},
+			want: map[string]any{"first_frame_url": "https://cdn.example.com/first.png", "first_clip_url": "https://cdn.example.com/clip.mp4", "driving_audio_url": "https://cdn.example.com/drive.mp3"},
+		},
+		{
+			name: "KIE R2V", model: "wan/2-7-r2v",
+			images: []string{"https://cdn.example.com/character.png"}, videos: []string{"https://cdn.example.com/motion.mp4"}, audios: []string{"https://cdn.example.com/voice.mp3"},
+			want: map[string]any{"reference_image": []string{"https://cdn.example.com/character.png"}, "reference_video": []string{"https://cdn.example.com/motion.mp4"}, "reference_voice": "https://cdn.example.com/voice.mp3"},
+		},
+		{
+			name: "KIE video edit", model: "wan/2-7-videoedit",
+			images: []string{"https://cdn.example.com/style.png"}, videos: []string{"https://cdn.example.com/source.mp4"},
+			want: map[string]any{"reference_image": "https://cdn.example.com/style.png", "video_url": "https://cdn.example.com/source.mp4"},
+		},
+		{
+			name: "KIE video to video", model: "wan/2-6-video-to-video",
+			videos: []string{"https://cdn.example.com/source.mp4"},
+			want:   map[string]any{"video_urls": []string{"https://cdn.example.com/source.mp4"}},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := officialVideoRequestPayload(map[string]any{
+				"model": test.model, "prompt": "make a video", "seconds": 5, "resolution": "720p", "reference_mode": "reference",
+				"reference_image_urls": test.images, "reference_video_urls": test.videos, "reference_audio_urls": test.audios,
+			})
+			metadata, _ := got["metadata"].(map[string]any)
+			for key, want := range test.want {
+				if !reflect.DeepEqual(got[key], want) || !reflect.DeepEqual(metadata[key], want) {
+					t.Fatalf("%s not mapped consistently: request=%#v metadata=%#v want=%#v", key, got[key], metadata[key], want)
+				}
+			}
+		})
+	}
+}
+
+func TestOfficialVideoRequestPayloadMapsSpecialProviderReferences(t *testing.T) {
+	tests := []struct {
+		name, model string
+		images      []string
+		videos      []string
+		audios      []string
+		want        map[string]any
+	}{
+		{
+			name: "Kling motion", model: "kling-2.6/motion-control",
+			images: []string{"https://cdn.example.com/character.png"}, videos: []string{"https://cdn.example.com/motion.mp4"},
+			want: map[string]any{"input_urls": []string{"https://cdn.example.com/character.png"}, "video_urls": []string{"https://cdn.example.com/motion.mp4"}},
+		},
+		{
+			name: "Kling omni transformation", model: "kling-3.0-omni/transformation",
+			videos: []string{"https://cdn.example.com/source.mp4"},
+			want:   map[string]any{"video_urls": []string{"https://cdn.example.com/source.mp4"}},
+		},
+		{
+			name: "Gemini omni", model: "gemini-omni-video",
+			images: []string{"https://cdn.example.com/style.png"}, videos: []string{"https://cdn.example.com/source.mp4"},
+			want: map[string]any{"image_urls": []string{"https://cdn.example.com/style.png"}, "video_list": []map[string]any{{"url": "https://cdn.example.com/source.mp4", "start": 0, "ends": 10}}},
+		},
+		{
+			name: "SkyReels", model: "skyreels-v4",
+			images: []string{"https://cdn.example.com/style.png"}, videos: []string{"https://cdn.example.com/source.mp4"}, audios: []string{"https://cdn.example.com/voice.mp3"},
+			want: map[string]any{
+				"ref_images": []map[string]any{{"tag": "@image1", "type": "image", "image_urls": []string{"https://cdn.example.com/style.png"}, "audio_url": "https://cdn.example.com/voice.mp3"}},
+				"ref_videos": []map[string]string{{"tag": "@video1", "type": "reference", "video_url": "https://cdn.example.com/source.mp4"}},
+			},
+		},
+		{
+			name: "Infinitalk", model: "infinitalk/from-audio",
+			images: []string{"https://cdn.example.com/avatar.png"}, audios: []string{"https://cdn.example.com/voice.mp3"},
+			want: map[string]any{"image_url": "https://cdn.example.com/avatar.png", "audio_url": "https://cdn.example.com/voice.mp3"},
+		},
+		{
+			name: "Topaz video", model: "topaz/video-upscale",
+			videos: []string{"https://cdn.example.com/source.mp4"},
+			want:   map[string]any{"video_url": "https://cdn.example.com/source.mp4"},
+		},
+		{
+			name: "Flux 3 video", model: "flux-3-video",
+			images: []string{"https://cdn.example.com/style.png"}, videos: []string{"https://cdn.example.com/source.mp4"},
+			want: map[string]any{"image_urls": []string{"https://cdn.example.com/style.png"}, "video_url": "https://cdn.example.com/source.mp4"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			payload := map[string]any{
+				"model": test.model, "prompt": "make a video", "seconds": 5, "size": "16:9", "resolution": "720p", "reference_mode": "reference",
+				"reference_image_urls": test.images, "reference_video_urls": test.videos, "reference_audio_urls": test.audios,
+			}
+			got := officialVideoRequestPayload(payload)
+			metadata, _ := got["metadata"].(map[string]any)
+			for key, want := range test.want {
+				if !reflect.DeepEqual(got[key], want) {
+					t.Fatalf("%s = %#v, want %#v; payload=%#v", key, got[key], want, got)
+				}
+				if !isAPIMartVideoPayload(payload) && !reflect.DeepEqual(metadata[key], want) {
+					t.Fatalf("%s not mapped into KIE metadata: metadata=%#v want=%#v", key, metadata[key], want)
+				}
+			}
+			if isAPIMartVideoPayload(payload) {
+				if _, ok := got["metadata"]; ok {
+					t.Fatalf("APIMart request retained compatibility metadata: %#v", got)
+				}
+			}
+		})
+	}
+}
+
+func TestOfficialVideoRequestPayloadForwardsReferenceWorkbenchAudioControls(t *testing.T) {
+	for _, model := range []string{"viduq3-pro", "viduq3-turbo", "pixverse-v6"} {
+		got := officialVideoRequestPayload(map[string]any{
+			"model": model, "prompt": "animate", "seconds": 5,
+			"size": "16:9", "resolution": "720p", "generate_audio": true,
+		})
+		if got["audio"] != true {
+			t.Fatalf("%s audio = %#v; payload=%#v", model, got["audio"], got)
+		}
+	}
+	got := officialVideoRequestPayload(map[string]any{
+		"model": "kling-3.0-omni/transformation", "prompt": "transform", "seconds": 5,
+		"generate_audio": true, "reference_video_urls": []string{"https://cdn.example.com/source.mp4"},
+	})
+	if got["audio"] != true {
+		t.Fatalf("Kling Omni transformation audio = %#v; payload=%#v", got["audio"], got)
 	}
 }
 
@@ -482,8 +988,13 @@ func TestRelayVideoSubmitConvertsDataURLToMultipart(t *testing.T) {
 			w.WriteHeader(http.StatusBadRequest)
 			return
 		}
-		if r.FormValue("ratio") != "auto" || r.FormValue("generation_mode") != "image-to-video" {
+		if r.FormValue("aspect_ratio") != "auto" || r.FormValue("generation_mode") != "image-to-video" {
 			t.Errorf("multipart form = %#v", r.MultipartForm.Value)
+		}
+		for _, field := range []string{"first_frame_url", "first_frame_image"} {
+			if value := r.FormValue(field); value != "" {
+				t.Errorf("multipart request leaked Base64 %s: %q", field, value)
+			}
 		}
 		file, header, err := r.FormFile("input_reference")
 		if err != nil {
@@ -527,6 +1038,22 @@ func TestRelayVideoSubmitConvertsDataURLToMultipart(t *testing.T) {
 	}
 }
 
+func TestRemoveMultipartVideoReferenceAliasesRejectsSecondInlineFrame(t *testing.T) {
+	first := "data:image/png;base64,AAAA"
+	request := map[string]any{
+		"first_frame_image": first,
+		"last_frame_image":  "data:image/png;base64,BBBB",
+		"metadata": map[string]any{
+			"first_frame_image": first,
+			"last_frame_image":  "data:image/png;base64,BBBB",
+		},
+	}
+	err := removeMultipartVideoReferenceAliases(request, first)
+	if err == nil || !strings.Contains(err.Error(), "公网") {
+		t.Fatalf("second inline frame error = %v, want public URL guidance", err)
+	}
+}
+
 func TestValidateVideoReferenceImageUsesOfficialLimits(t *testing.T) {
 	tests := []struct {
 		name      string
@@ -545,7 +1072,7 @@ func TestValidateVideoReferenceImageUsesOfficialLimits(t *testing.T) {
 		{name: "kling 3 rejects short edge", model: "kling-v3", width: 299, height: 300, wantError: true},
 		{name: "kling 3 rejects extreme ratio", model: "kling-v3", width: 300, height: 751, wantError: true},
 		{name: "sora matching size", model: "sora-2", size: "1280x720", width: 1280, height: 720},
-		{name: "sora rejects mismatched size", model: "sora-2", size: "1280x720", width: 720, height: 1280, wantError: true},
+		{name: "sora accepts a reference with a different output size", model: "sora-2", size: "1280x720", width: 720, height: 1280},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -594,8 +1121,6 @@ func TestRelayGrokImageGenerationUsesNewAPIImageRouteAndAllowlist(t *testing.T) 
 		"response_format": "b64_json",
 		"aspect_ratio":    "16:9",
 		"resolution":      "2k",
-		"quality":         "medium",
-		"stream":          true,
 	})
 	if err != nil || stream != nil {
 		t.Fatalf("relayImageGenerations() result=%#v stream=%#v error=%v", result, stream, err)
@@ -610,10 +1135,63 @@ func TestRelayGrokImageGenerationUsesNewAPIImageRouteAndAllowlist(t *testing.T) 
 		"response_format": "b64_json",
 		"aspect_ratio":    "16:9",
 		"resolution":      "2k",
-		"quality":         "medium",
 	}
 	if !reflect.DeepEqual(received, want) {
 		t.Fatalf("Grok upstream payload = %#v, want %#v", received, want)
+	}
+}
+
+func TestRelayAgnesImageEditsUsesGenerationExtraBody(t *testing.T) {
+	var received map[string]any
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/images/generations" {
+			t.Errorf("upstream path = %q, want /v1/images/generations", r.URL.Path)
+		}
+		if r.Header.Get("Content-Type") != "application/json" {
+			t.Errorf("Content-Type = %q, want application/json", r.Header.Get("Content-Type"))
+		}
+		if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
+			t.Errorf("decode Agnes request: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"created": 123,
+			"data":    []map[string]any{{"url": "https://image.example/agnes.jpg"}},
+		})
+	}))
+	defer upstream.Close()
+
+	app := newTestApp(t)
+	defer app.Close()
+	if _, err := app.config.Update(map[string]any{"relay_base_url": upstream.URL}); err != nil {
+		t.Fatalf("update relay URL: %v", err)
+	}
+	payload := map[string]any{
+		"api_key":          "sk-test",
+		"model":            "agnes-image-2.1-flash",
+		"prompt":           "edit",
+		"size":             "2048x1152",
+		"image_resolution": "2k",
+		"quality":          "medium",
+		"n":                1,
+	}
+	normalizeImagePayloadForModel(payload)
+	result, stream, err := app.relayImageEdits(context.Background(), payload, []protocol.UploadedImage{{Data: httpTestAlphaPNGBytes(t, 1, 1), Filename: "source.png", ContentType: "image/png"}})
+	if err != nil || stream != nil {
+		t.Fatalf("relayImageEdits() result=%#v stream=%#v error=%v", result, stream, err)
+	}
+	extraBody, ok := received["extra_body"].(map[string]any)
+	if !ok {
+		t.Fatalf("Agnes extra_body = %#v", received["extra_body"])
+	}
+	images, ok := extraBody["image"].([]any)
+	if !ok || len(images) != 1 || !strings.HasPrefix(util.Clean(images[0]), "data:image/png;base64,") {
+		t.Fatalf("Agnes reference images = %#v", extraBody["image"])
+	}
+	if received["size"] != "2K" || received["ratio"] != "16:9" {
+		t.Fatalf("Agnes native parameters = %#v", received)
 	}
 }
 
@@ -861,6 +1439,7 @@ func TestRelayErrorMessageSupportsNewAPIShapes(t *testing.T) {
 		{name: "detail object", body: `{"detail":{"message":"invalid image"}}`, want: "invalid image"},
 		{name: "top-level message", body: `{"message":"quota exhausted"}`, want: "quota exhausted"},
 		{name: "detail list", body: `{"detail":[{"message":"field is required"}]}`, want: "field is required"},
+		{name: "nested task validation", body: `{"code":"fail_to_fetch_task","message":"{\"detail\":\"3 validation errors for MiniMaxH3Request\\nratio\\nInput should be 'auto' or '16:9'\"}"}`, want: "3 validation errors for MiniMaxH3Request\nratio\nInput should be 'auto' or '16:9'"},
 		{name: "SSE error", body: "event: error\ndata: {\"error\":{\"message\":\"stream rejected\"}}\n\n", want: "stream rejected"},
 	}
 	for _, test := range tests {
@@ -888,12 +1467,12 @@ func TestRelayStreamResultRecognizesTypedUpstreamErrorMessage(t *testing.T) {
 
 func TestGoogleGeminiImagePayloadBuildsNewAPIChatRequest(t *testing.T) {
 	body, err := googleGeminiImagePayload(map[string]any{
-		"model":            "gemini-3.1-flash-image",
-		"prompt":           "edit this image",
-		"size":             "1536x864",
-		"image_resolution": "2k",
-		"stream":           true,
-		"partial_images":   2,
+		"model":          "gemini-3.1-flash-image",
+		"prompt":         "edit this image",
+		"size":           "2048x1152",
+		"quality":        "medium",
+		"stream":         true,
+		"partial_images": 2,
 	}, []protocol.UploadedImage{{Data: []byte("image-bytes"), ContentType: "image/png"}})
 	if err != nil {
 		t.Fatalf("googleGeminiImagePayload() error = %v", err)
@@ -922,57 +1501,24 @@ func TestGoogleGeminiImagePayloadBuildsNewAPIChatRequest(t *testing.T) {
 	}
 }
 
-func TestGoogleGeminiImageSizePrefersExplicitResolution(t *testing.T) {
-	payload := map[string]any{
-		"image_resolution": "2k",
-		"quality":          "high",
-	}
-	if got := googleGeminiImageSize("gemini-3.1-flash-image", payload); got != "2K" {
-		t.Fatalf("googleGeminiImageSize() = %q, want explicit 2K resolution", got)
-	}
-}
-
-func TestGoogleGeminiImageSizeIgnoresQuality(t *testing.T) {
-	payload := map[string]any{"quality": "high"}
-	if got := googleGeminiImageSize("gemini-3.1-flash-image", payload); got != "" {
-		t.Fatalf("googleGeminiImageSize() = %q, want quality to be ignored", got)
-	}
-}
-
-func TestGoogleGeminiFlashLiteImageSizeStaysAt1K(t *testing.T) {
-	payload := map[string]any{"image_resolution": "4k"}
-	if got := googleGeminiImageSize("gemini-3.1-flash-lite-image", payload); got != "1K" {
-		t.Fatalf("googleGeminiImageSize() = %q, want 1K", got)
-	}
-}
-
-func TestGoogleGeminiImageSizeLimits512ToFlash31(t *testing.T) {
-	payload := map[string]any{"size": "512x512"}
-	if got := googleGeminiImageSize("gemini-3.1-flash-image", payload); got != "512" {
-		t.Fatalf("Gemini 3.1 Flash image size = %q, want 512", got)
-	}
-	if got := googleGeminiImageSize("gemini-3-pro-image", payload); got != "1K" {
-		t.Fatalf("Gemini 3 Pro image size = %q, want 1K", got)
-	}
-}
-
-func TestGoogleGeminiImageSizeUsesPixelAreaForOfficialPanoramicDimensions(t *testing.T) {
+func TestGoogleGeminiImageSizeMatchesReferenceQualityAndPresetMapping(t *testing.T) {
 	tests := []struct {
-		name  string
-		model string
-		size  string
-		want  string
+		name    string
+		model   string
+		payload map[string]any
+		want    string
 	}{
-		{name: "1K 1:8", model: "gemini-3.1-flash-image", size: "384x3072", want: "1K"},
-		{name: "1K 1:4", model: "gemini-3.1-flash-image", size: "512x2048", want: "1K"},
-		{name: "1K 21:9", model: "gemini-3.1-flash-image", size: "1584x672", want: "1K"},
-		{name: "2K 21:9", model: "gemini-3.1-flash-image", size: "3168x1344", want: "2K"},
-		{name: "Pro 1K 21:9", model: "gemini-3-pro-image", size: "1584x672", want: "1K"},
+		{name: "low quality", model: "gemini-3.1-flash-image", payload: map[string]any{"quality": "low"}, want: "1K"},
+		{name: "medium quality", model: "gemini-3.1-flash-image", payload: map[string]any{"quality": "medium"}, want: "2K"},
+		{name: "high quality wins over preset", model: "gemini-3.1-flash-image", payload: map[string]any{"quality": "high", "size": "2048x1152"}, want: "4K"},
+		{name: "2K preset", model: "gemini-3-pro-image", payload: map[string]any{"quality": "auto", "size": "3136x1344"}, want: "2K"},
+		{name: "4K preset", model: "gemini-3-pro-image", payload: map[string]any{"quality": "auto", "size": "6272x2688"}, want: "4K"},
+		{name: "2.5 omits image size", model: "gemini-2.5-flash-image", payload: map[string]any{"quality": "high", "size": "6272x2688"}, want: ""},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			if got := googleGeminiImageSize(test.model, map[string]any{"size": test.size}); got != test.want {
-				t.Fatalf("googleGeminiImageSize(%q, %q) = %q, want %q", test.model, test.size, got, test.want)
+			if got := googleGeminiImageSize(test.model, test.payload); got != test.want {
+				t.Fatalf("googleGeminiImageSize(%q, %#v) = %q, want %q", test.model, test.payload, got, test.want)
 			}
 		})
 	}
@@ -995,13 +1541,25 @@ func TestNormalizeImagePayloadForModelDropsUnforwardedProviderMetadata(t *testin
 		{
 			name:     "Grok maps application settings to official xAI fields",
 			model:    "GROK-IMAGINE-IMAGE-2.0",
-			retained: []string{"size", "image_resolution", "requested_size", "messages", "token_name", "response_format", "aspect_ratio", "resolution"},
+			retained: []string{"size", "image_resolution", "requested_size", "messages", "token_name", "response_format", "aspect_ratio", "resolution", "stream", "partial_images"},
 			dropped: []string{
-				"background", "moderation",
-				"stream", "partial_images", "output_format", "output_compression", "input_image_mask",
+				"background", "moderation", "quality",
+				"output_format", "output_compression", "input_image_mask",
 				"image_format", "storage_options", "user",
 			},
 			response: "b64_json",
+		},
+		{
+			name:     "Zhipu drops unsupported OpenAI controls",
+			model:    "GLM-Image",
+			retained: []string{"size", "quality", "messages", "token_name"},
+			dropped:  []string{"stream", "partial_images", "output_format", "output_compression", "response_format", "input_image_mask"},
+		},
+		{
+			name:     "Agnes maps quality and ratio to native fields",
+			model:    "agnes-image-2.1-flash",
+			retained: []string{"size", "ratio", "messages", "token_name"},
+			dropped:  []string{"quality", "stream", "partial_images", "output_format", "output_compression", "response_format", "input_image_mask"},
 		},
 	}
 	for _, test := range tests {
@@ -1029,8 +1587,16 @@ func TestNormalizeImagePayloadForModelDropsUnforwardedProviderMetadata(t *testin
 				t.Errorf("response_format = %#v, want %#v", payload["response_format"], test.response)
 			}
 			if test.name == "Grok maps application settings to official xAI fields" {
-				if payload["aspect_ratio"] != "16:9" || payload["resolution"] != "2k" || payload["quality"] != "medium" {
+				if payload["aspect_ratio"] != "16:9" || payload["resolution"] != "2k" || payload["stream"] != true || payload["partial_images"] != 2 {
 					t.Errorf("Grok official parameters = %#v", payload)
+				}
+			}
+			if test.name == "Zhipu drops unsupported OpenAI controls" && payload["quality"] != "hd" {
+				t.Errorf("Zhipu quality = %#v, want hd", payload["quality"])
+			}
+			if test.name == "Agnes maps quality and ratio to native fields" {
+				if payload["size"] != "2K" || payload["ratio"] != "16:9" {
+					t.Errorf("Agnes native parameters = %#v", payload)
 				}
 			}
 		})
@@ -1094,18 +1660,18 @@ func TestGoogleGeminiImageItemsReportsBlockedResponse(t *testing.T) {
 }
 
 func TestValidProtocolImageCountUsesModelLimit(t *testing.T) {
-	for _, value := range []any{nil, 1, float64(10), "2"} {
+	for _, value := range []any{nil, 1, float64(15), "2"} {
 		if !validProtocolImageCount(value, "gpt-image-2") {
 			t.Errorf("validProtocolImageCount(%#v, gpt-image-2) = false, want true", value)
 		}
 	}
-	for _, value := range []any{0, 11, 1.5, "invalid"} {
+	for _, value := range []any{0, 16, 1.5, "invalid"} {
 		if validProtocolImageCount(value, "gpt-image-2") {
 			t.Errorf("validProtocolImageCount(%#v, gpt-image-2) = true, want false", value)
 		}
 	}
-	if validProtocolImageCount(5, "gemini-3.1-flash-image") {
-		t.Fatal("Gemini image request accepted more than the application limit")
+	if !validProtocolImageCount(15, "gemini-3.1-flash-image") || validProtocolImageCount(16, "gemini-3.1-flash-image") {
+		t.Fatal("Gemini image request did not enforce the reference workbench API limit")
 	}
 }
 
@@ -1285,32 +1851,46 @@ func TestRelayImageEditsSendsFourteenGeminiReferencesThroughNewAPIChat(t *testin
 	}
 }
 
-func TestRelayImageEditsRejectsProviderModelsWithoutEditSupport(t *testing.T) {
-	model := "grok-imagine-image-2.0"
-	_, _, err := (&App{}).relayImageEdits(context.Background(), map[string]any{
-		"model":  model,
-		"prompt": "edit",
-	}, []protocol.UploadedImage{{Data: []byte("image")}})
-	var httpErr protocol.HTTPError
-	if !errors.As(err, &httpErr) || httpErr.Status != http.StatusBadRequest {
-		t.Fatalf("relayImageEdits(%q) error = %T %v, want 400", model, err, err)
+func TestRelayGrokImageEditsUsesReferenceJSONContract(t *testing.T) {
+	var received map[string]any
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/images/edits" || !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
+			t.Fatalf("Grok edit request = %s %s content-type=%q", r.Method, r.URL.Path, r.Header.Get("Content-Type"))
+		}
+		if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
+			t.Fatalf("decode Grok edit body: %v", err)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"data": []map[string]any{{"url": "https://image.example/edit.png"}}})
+	}))
+	defer upstream.Close()
+	app := newTestApp(t)
+	defer app.Close()
+	if _, err := app.config.Update(map[string]any{"relay_base_url": upstream.URL}); err != nil {
+		t.Fatalf("update relay URL: %v", err)
+	}
+	result, stream, err := app.relayImageEdits(context.Background(), map[string]any{
+		"api_key": "sk-test", "model": "grok-imagine-image", "prompt": "edit", "size": "16:9", "quality": "high",
+	}, []protocol.UploadedImage{{Data: []byte("image"), ContentType: "image/png"}})
+	if err != nil || stream != nil || len(util.AsMapSlice(result["data"])) != 1 {
+		t.Fatalf("Grok edit result=%#v stream=%#v error=%v", result, stream, err)
+	}
+	images := util.AsMapSlice(received["images"])
+	if len(images) != 1 || !strings.HasPrefix(util.Clean(images[0]["url"]), "data:image/png;base64,") || received["resolution"] != "2k" {
+		t.Fatalf("Grok edit payload = %#v", received)
 	}
 }
 
-func TestValidateRelayImageReferenceCountUsesModelCapabilities(t *testing.T) {
+func TestValidateRelayImageReferenceCountLeavesGenericLimitsToProviderAdapters(t *testing.T) {
 	tests := []struct {
 		name    string
 		model   string
 		count   int
 		wantErr bool
 	}{
-		{name: "Gemini accepts fourteen", model: "gemini-3.1-flash-image", count: 14},
-		{name: "Gemini rejects fifteen", model: "gemini-3.1-flash-image", count: 15, wantErr: true},
-		{name: "OpenAI accepts ten", model: "gpt-image-2", count: 10},
-		{name: "OpenAI rejects eleven", model: "gpt-image-2", count: 11, wantErr: true},
-		{name: "NewAPI legacy Grok rejects references", model: "grok-2-image-1212", count: 1, wantErr: true},
-		{name: "NewAPI built-in Grok rejects references", model: "grok-imagine-image", count: 1, wantErr: true},
-		{name: "Grok rejects references through NewAPI", model: "grok-imagine-image-2.0", count: 1, wantErr: true},
+		{name: "Gemini generic request is not capped", model: "gemini-3.1-flash-image", count: 15},
+		{name: "OpenAI generic request is not capped", model: "gpt-image-2", count: 15},
+		{name: "Grok generic request is not capped", model: "grok-imagine-image-2.0", count: 15},
+		{name: "Zhipu remains text only", model: "glm-image", count: 1, wantErr: true},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -1386,6 +1966,7 @@ func TestVideoErrorMessageSupportsUpstreamShapes(t *testing.T) {
 		{state: map[string]any{"detail": map[string]any{"error": map[string]any{"message": "content blocked"}}}, want: "content blocked"},
 		{state: map[string]any{"last_error": map[string]any{"message": "polling failed"}}, want: "polling failed"},
 		{state: map[string]any{"failure_reason": "invalid reference image"}, want: "invalid reference image"},
+		{state: map[string]any{"message": `{"detail":"ratio must be 16:9"}`}, want: "ratio must be 16:9"},
 	}
 	for _, test := range tests {
 		if got := videoErrorMessage(test.state); got != test.want {
@@ -1632,5 +2213,1066 @@ func TestRelayDecodeJSONResponseLimitsErrorBody(t *testing.T) {
 	}
 	if httpErr.Status != http.StatusTooManyRequests || httpErr.Message != "upstream error response is too large" {
 		t.Fatalf("oversized upstream error = %#v", httpErr)
+	}
+}
+
+func TestOfficialVideoRequestPayloadMapsReferenceProjectKIEUtilityModels(t *testing.T) {
+	tests := []struct {
+		name   string
+		model  string
+		images []string
+		videos []string
+		audios []string
+		want   map[string]any
+		absent []string
+	}{
+		{name: "wan speech", model: "wan/2-2-a14b-speech-to-video-turbo", images: []string{"https://cdn.example.com/face.png"}, audios: []string{"https://cdn.example.com/voice.mp3"}, want: map[string]any{"image_url": "https://cdn.example.com/face.png", "audio_url": "https://cdn.example.com/voice.mp3"}},
+		{name: "wan animate", model: "wan/2-2-animate-move", images: []string{"https://cdn.example.com/subject.png"}, videos: []string{"https://cdn.example.com/motion.mp4"}, want: map[string]any{"image_url": "https://cdn.example.com/subject.png", "video_url": "https://cdn.example.com/motion.mp4"}},
+		{name: "kling avatar", model: "kling/ai-avatar-pro", images: []string{"https://cdn.example.com/avatar.png"}, audios: []string{"https://cdn.example.com/speech.mp3"}, want: map[string]any{"image_url": "https://cdn.example.com/avatar.png", "audio_url": "https://cdn.example.com/speech.mp3"}, absent: []string{"duration", "seconds", "size", "resolution"}},
+		{name: "topaz", model: "topaz/video-upscale", videos: []string{"https://cdn.example.com/source.mp4"}, want: map[string]any{"video_url": "https://cdn.example.com/source.mp4"}, absent: []string{"duration", "seconds", "size", "resolution"}},
+		{name: "infinitalk", model: "infinitalk/from-audio", images: []string{"https://cdn.example.com/portrait.png"}, audios: []string{"https://cdn.example.com/voice.mp3"}, want: map[string]any{"image_url": "https://cdn.example.com/portrait.png", "audio_url": "https://cdn.example.com/voice.mp3"}, absent: []string{"duration", "seconds", "size"}},
+		{name: "grok image video", model: "grok-imagine/image-to-video", images: []string{"https://cdn.example.com/frame.png"}, want: map[string]any{"image_urls": []string{"https://cdn.example.com/frame.png"}, "mode": "normal"}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got := officialVideoRequestPayload(map[string]any{"model": test.model, "prompt": "animate", "seconds": 5, "size": "16:9", "resolution": "720p", "reference_mode": "reference", "reference_image_urls": test.images, "reference_video_urls": test.videos, "reference_audio_urls": test.audios})
+			metadata, _ := got["metadata"].(map[string]any)
+			for key, want := range test.want {
+				if !reflect.DeepEqual(metadata[key], want) && !reflect.DeepEqual(got[key], want) {
+					t.Errorf("%s = %#v, want %#v; payload=%#v", key, metadata[key], want, got)
+				}
+			}
+			for _, key := range test.absent {
+				if _, ok := got[key]; ok {
+					t.Errorf("unexpected %s in payload: %#v", key, got)
+				}
+			}
+		})
+	}
+}
+
+func TestOfficialVideoRequestPayloadForwardsKIEGrokMode(t *testing.T) {
+	got := officialVideoRequestPayload(map[string]any{
+		"model": "grok-imagine/text-to-video", "prompt": "animate", "seconds": 30,
+		"size": "16:9", "resolution": "1080p", "video_mode": "spicy",
+	})
+	if got["mode"] != "spicy" {
+		t.Fatalf("mode = %#v, want spicy; payload=%#v", got["mode"], got)
+	}
+}
+
+func TestOfficialVideoRequestPayloadMapsKIEGrokImageReferences(t *testing.T) {
+	images := make([]string, 10)
+	for index := range images {
+		images[index] = fmt.Sprintf("https://cdn.example.com/grok-%d.png", index)
+	}
+	got := officialVideoRequestPayload(map[string]any{
+		"model": "grok-imagine/image-to-video", "prompt": "animate", "seconds": 8,
+		"size": "16:9", "resolution": "1080p", "reference_image_urls": images,
+	})
+	metadata, _ := got["metadata"].(map[string]any)
+	refs, _ := metadata["image_urls"].([]string)
+	if len(refs) != 9 {
+		t.Fatalf("image_urls length = %d, want 9; payload=%#v", len(refs), got)
+	}
+}
+
+func TestOfficialVideoRequestPayloadUsesModelSpecificReferenceFields(t *testing.T) {
+	image := "https://cdn.example.com/frame.png"
+	video := "https://cdn.example.com/source.mp4"
+	audio := "https://cdn.example.com/voice.mp3"
+
+	h3Image := officialVideoRequestPayload(map[string]any{
+		"model": "minimax-h3/image-to-video", "prompt": "animate", "seconds": 5,
+		"size": "16:9", "resolution": "768P", "reference_image_urls": []string{image, "https://cdn.example.com/last.png"},
+	})
+	if h3Image["generation_mode"] != "image-to-video" || h3Image["first_frame_url"] != image || h3Image["last_frame_url"] != nil || h3Image["aspect_ratio"] != nil {
+		t.Fatalf("MiniMax H3 image payload = %#v", h3Image)
+	}
+
+	h3Reference := officialVideoRequestPayload(map[string]any{
+		"model": "minimax-h3/reference-to-video", "prompt": "animate", "seconds": 5,
+		"size": "16:9", "resolution": "768P", "reference_mode": "first-frame",
+		"reference_image_urls": []string{image}, "reference_video_urls": []string{video},
+		"reference_audio_urls": []string{audio},
+	})
+	if h3Reference["generation_mode"] != "reference-to-video" || h3Reference["first_frame_url"] != nil {
+		t.Fatalf("MiniMax H3 reference payload = %#v", h3Reference)
+	}
+	if refs, _ := h3Reference["reference_image_urls"].([]string); len(refs) != 1 {
+		t.Fatalf("MiniMax H3 reference images = %#v", h3Reference)
+	}
+
+	happyHorse := officialVideoRequestPayload(map[string]any{
+		"model": "happyhorse/image-to-video", "prompt": "animate", "seconds": 5,
+		"reference_image_urls": []string{image, "https://cdn.example.com/second.png"},
+	})
+	if refs, _ := happyHorse["image_urls"].([]string); len(refs) != 2 {
+		t.Fatalf("HappyHorse image references = %#v", happyHorse)
+	}
+
+	gemini := officialVideoRequestPayload(map[string]any{
+		"model": "gemini-omni-video", "prompt": "animate", "seconds": 6,
+		"reference_audio_urls": []string{audio},
+	})
+	if _, ok := gemini["audio_ids"]; ok {
+		t.Fatalf("Gemini Omni must not map public audio URLs to audio_ids: %#v", gemini)
+	}
+}
+
+func TestOfficialVideoRequestPayloadNormalizesStaleReferenceModeForImageModels(t *testing.T) {
+	image := "https://cdn.example.com/frame.png"
+	got := officialVideoRequestPayload(map[string]any{
+		"model": "sora-2", "prompt": "animate", "seconds": 8,
+		"reference_mode": "reference", "reference_image_urls": []string{image},
+	})
+	if !reflect.DeepEqual(got["image_urls"], []string{image}) {
+		t.Fatalf("Sora image reference = %#v, payload=%#v", got["image_urls"], got)
+	}
+	if _, ok := got["referenceImages"]; ok {
+		t.Fatalf("Sora retained multimodal reference metadata: %#v", got)
+	}
+}
+
+func TestOfficialVideoRequestPayloadOmitsDurationForGeminiOmniFlashPreview(t *testing.T) {
+	got := officialVideoRequestPayload(map[string]any{
+		"model": "gemini-omni-flash-preview", "prompt": "animate", "seconds": 8,
+		"size": "16:9", "resolution": "720p",
+	})
+	if _, ok := got["seconds"]; ok {
+		t.Fatalf("Gemini Omni Flash leaked compatibility seconds: %#v", got)
+	}
+	if _, ok := got["duration"]; ok {
+		t.Fatalf("Gemini Omni Flash leaked unsupported duration: %#v", got)
+	}
+	if got["aspect_ratio"] != "16:9" || got["resolution"] != "720p" {
+		t.Fatalf("Gemini Omni Flash controls = %#v", got)
+	}
+
+	kie := officialVideoRequestPayload(map[string]any{
+		"model": "gemini-omni-video", "prompt": "animate", "seconds": 8,
+	})
+	if kie["duration"] != "8" {
+		t.Fatalf("KIE Gemini Omni duration = %#v, want string 8; payload=%#v", kie["duration"], kie)
+	}
+}
+
+func TestOfficialVideoRequestPayloadOmitsDurationForOmniFlashExtVideoReference(t *testing.T) {
+	video := "https://cdn.example.com/source.mp4"
+	withVideo := officialVideoRequestPayload(map[string]any{
+		"model": "omni-flash-ext", "prompt": "restyle", "seconds": 8,
+		"reference_video_urls": []string{video},
+	})
+	for _, key := range []string{"duration", "seconds"} {
+		if _, ok := withVideo[key]; ok {
+			t.Fatalf("Omni Flash Ext retained %s with a video reference: %#v", key, withVideo)
+		}
+	}
+	if !reflect.DeepEqual(withVideo["video_urls"], []string{video}) {
+		t.Fatalf("Omni Flash Ext video_urls = %#v, payload=%#v", withVideo["video_urls"], withVideo)
+	}
+	if _, ok := withVideo["metadata"]; ok {
+		t.Fatalf("APIMart Omni Flash Ext retained compatibility metadata: %#v", withVideo)
+	}
+
+	textOnly := officialVideoRequestPayload(map[string]any{
+		"model": "omni-flash-ext", "prompt": "animate", "seconds": 8,
+	})
+	if textOnly["duration"] != 8 {
+		t.Fatalf("Omni Flash Ext text duration = %#v, payload=%#v", textOnly["duration"], textOnly)
+	}
+}
+
+func TestOfficialVideoRequestPayloadUsesAPIMartVeoAudioField(t *testing.T) {
+	got := officialVideoRequestPayload(map[string]any{
+		"model": "veo3.1-official", "prompt": "animate", "seconds": 8,
+		"generate_audio": true,
+	})
+	if got["generate_audio"] != true {
+		t.Fatalf("APIMart Veo generate_audio = %#v, payload=%#v", got["generate_audio"], got)
+	}
+	if _, ok := got["metadata"]; ok {
+		t.Fatalf("APIMart Veo retained compatibility metadata: %#v", got)
+	}
+}
+
+func TestOfficialVideoRequestPayloadNormalizesVeoResolution(t *testing.T) {
+	for _, test := range []struct {
+		model, resolution, want string
+	}{
+		{"veo-3.1-generate-preview", "1440p", "720p"},
+		{"veo-3.1-generate-preview", "2k", "1080p"},
+		{"veo-3.1-generate-preview", "4k", "4k"},
+		{"veo-3-generate-preview", "4k", "1080p"},
+	} {
+		t.Run(test.model+"/"+test.resolution, func(t *testing.T) {
+			got := officialVideoRequestPayload(map[string]any{
+				"model": test.model, "prompt": "animate", "seconds": 8, "resolution": test.resolution,
+			})
+			metadata, _ := got["metadata"].(map[string]any)
+			if metadata["resolution"] != test.want {
+				t.Fatalf("resolution = %#v, want %q; payload=%#v", metadata["resolution"], test.want, got)
+			}
+		})
+	}
+}
+
+func TestOfficialVideoRequestPayloadMapsAPIMartKlingOmniReferences(t *testing.T) {
+	images := []string{"https://cdn.example.com/character.png"}
+	videos := []string{"https://cdn.example.com/source.mp4"}
+	wantVideos := []map[string]string{{
+		"video_url": videos[0], "refer_type": "base", "keep_original_sound": "no",
+	}}
+	for _, model := range []string{"kling-v3-omni", "kling-video-o1"} {
+		t.Run(model, func(t *testing.T) {
+			got := officialVideoRequestPayload(map[string]any{
+				"model": model, "prompt": "follow the references", "seconds": 5,
+				"reference_image_urls": images, "reference_video_urls": videos,
+			})
+			if !reflect.DeepEqual(got["image_urls"], images) {
+				t.Fatalf("%s image references were not mapped: %#v", model, got)
+			}
+			if !reflect.DeepEqual(got["video_list"], wantVideos) {
+				t.Fatalf("%s video references were not mapped: %#v", model, got)
+			}
+			if _, ok := got["metadata"]; ok {
+				t.Fatalf("APIMart Kling Omni retained compatibility metadata: %#v", got)
+			}
+		})
+	}
+}
+
+func TestOfficialVideoRequestPayloadMapsKlingMotionControlModes(t *testing.T) {
+	base := map[string]any{
+		"prompt": "follow motion", "seconds": 5,
+		"reference_image_urls": []string{"https://cdn.example.com/character.png"},
+		"reference_video_urls": []string{"https://cdn.example.com/motion.mp4"},
+	}
+	tests := []struct {
+		model, resolution, want string
+	}{
+		{"kling-v3-motion-control", "720p", "std"},
+		{"kling-v3-motion-control", "1080p", "pro"},
+		{"kling-3.0/motion-control", "720p", "720p"},
+		{"kling-3.0/motion-control", "1080p", "1080p"},
+	}
+	for _, test := range tests {
+		t.Run(test.model+"/"+test.resolution, func(t *testing.T) {
+			payload := make(map[string]any, len(base)+2)
+			for key, value := range base {
+				payload[key] = value
+			}
+			payload["model"] = test.model
+			payload["resolution"] = test.resolution
+			got := officialVideoRequestPayload(payload)
+			if got["mode"] != test.want {
+				t.Fatalf("mode = %#v, want %q; payload=%#v", got["mode"], test.want, got)
+			}
+			if _, ok := got["duration"]; ok {
+				t.Fatalf("motion control retained duration: %#v", got)
+			}
+		})
+	}
+}
+
+func TestGeminiOmniPublicAudioIsRejectedBeforeRelay(t *testing.T) {
+	if !isGeminiOmniVideoModel("gemini-omni-video") || !isGeminiOmniVideoModel("omni-flash-ext") {
+		t.Fatal("Gemini Omni model detection should include KIE and APIMart variants")
+	}
+	if isGeminiOmniVideoModel("kling-v3") {
+		t.Fatal("Kling must not be classified as Gemini Omni")
+	}
+}
+
+func TestOfficialVideoRequestPayloadKeepsSoraAndAPIMartHappyHorseImages(t *testing.T) {
+	image := "https://cdn.example.com/frame.png"
+	sora := officialVideoRequestPayload(map[string]any{
+		"model": "sora-2", "prompt": "animate", "seconds": 4,
+		"size": "1280x720", "reference_image_urls": []string{image},
+	})
+	if !reflect.DeepEqual(sora["image_urls"], []string{image}) {
+		t.Fatalf("Sora reference image was discarded: %#v", sora)
+	}
+
+	grok := officialVideoRequestPayload(map[string]any{
+		"model": "grok-imagine-video-1.5", "prompt": "animate", "seconds": 6,
+		"size": "16:9", "resolution": "1080p", "reference_image_urls": []string{image},
+	})
+	grokImage, _ := grok["image"].(map[string]any)
+	if grokImage["url"] != image {
+		t.Fatalf("Grok 1.5 reference image was discarded: %#v", grok)
+	}
+	if _, ok := grok["image_urls"]; ok {
+		t.Fatalf("Grok2API request leaked KIE image_urls: %#v", grok)
+	}
+
+	grokMulti := officialVideoRequestPayload(map[string]any{
+		"model": "grok-imagine-video", "prompt": "animate", "seconds": 6,
+		"size": "16:9", "resolution": "720p", "reference_image_urls": []string{image, "https://cdn.example.com/second.png"},
+	})
+	wantGrokMulti := []map[string]any{{"url": image}, {"url": "https://cdn.example.com/second.png"}}
+	if !reflect.DeepEqual(grokMulti["reference_images"], wantGrokMulti) {
+		t.Fatalf("Grok2API reference_images = %#v, want %#v; payload=%#v", grokMulti["reference_images"], wantGrokMulti, grokMulti)
+	}
+
+	happyHorse := officialVideoRequestPayload(map[string]any{
+		"model": "happyhorse-1-1", "prompt": "", "seconds": 5,
+		"size": "16:9", "resolution": "720p", "reference_image_urls": []string{image},
+	})
+	refs, _ := happyHorse["image_urls"].([]string)
+	if len(refs) != 1 || refs[0] != image || happyHorse["size"] != "16:9" || happyHorse["resolution"] != "720P" {
+		t.Fatalf("HappyHorse 1.1 APIMart payload = %#v", happyHorse)
+	}
+}
+
+func TestOfficialVideoRequestPayloadMapsNamedAndTailFrames(t *testing.T) {
+	first := "https://cdn.example.com/first.png"
+	last := "https://cdn.example.com/last.png"
+	tests := []struct {
+		model, firstField, lastField string
+	}{
+		{"bytedance/v1-lite-image-to-video", "image_url", "end_image_url"},
+		{"hailuo/02-image-to-video-standard", "image_url", "end_image_url"},
+		{"wan/2-7-image-to-video", "first_frame_url", "last_frame_url"},
+		{"kling/v2-1-pro", "image_url", "tail_image_url"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.model, func(t *testing.T) {
+			got := officialVideoRequestPayload(map[string]any{
+				"model": tt.model, "prompt": "animate", "seconds": 5,
+				"reference_mode": "first-frame", "reference_image_urls": []string{first, last},
+			})
+			if got[tt.firstField] != first || got[tt.lastField] != last {
+				t.Fatalf("frame fields not mapped: %#v", got)
+			}
+		})
+	}
+	seedance := officialVideoRequestPayload(map[string]any{
+		"model": "bytedance/seedance-2", "prompt": "animate", "seconds": 5,
+		"reference_mode": "first-frame", "reference_image_urls": []string{first, last},
+	})
+	if _, ok := seedance["first_frame_url"]; ok {
+		t.Fatalf("Seedance 2 leaked first_frame_url: %#v", seedance)
+	}
+	if _, ok := seedance["last_frame_url"]; ok {
+		t.Fatalf("Seedance 2 leaked last_frame_url: %#v", seedance)
+	}
+	if refs, ok := seedance["reference_image_urls"].([]string); !ok || len(refs) != 2 {
+		t.Fatalf("Seedance 2 reference_image_urls = %#v", seedance["reference_image_urls"])
+	}
+}
+
+func TestOfficialVideoRequestPayloadKeepsKling30Images(t *testing.T) {
+	images := []string{"https://cdn.example.com/first.png", "https://cdn.example.com/second.png"}
+	got := officialVideoRequestPayload(map[string]any{
+		"model": "kling-3.0/video", "prompt": "animate", "seconds": 5,
+		"reference_image_urls": images,
+	})
+	if !reflect.DeepEqual(got["image_urls"], images) {
+		t.Fatalf("Kling 3.0 image_urls = %#v, want %#v; payload=%#v", got["image_urls"], images, got)
+	}
+}
+
+func TestOfficialVideoRequestPayloadMapsAPIMartKling30Turbo(t *testing.T) {
+	image := "https://cdn.example.com/frame.png"
+	withImage := officialVideoRequestPayload(map[string]any{
+		"model": "kling-3-0-turbo", "prompt": "animate", "seconds": 17,
+		"size": "1536x864", "resolution": "1440p",
+		"reference_image_urls": []string{image, "https://cdn.example.com/ignored.png"},
+		"negative_prompt":      "blur", "multi_shot": true, "generate_audio": true,
+	})
+	if withImage["first_frame_image"] != image {
+		t.Fatalf("Kling 3.0 Turbo first frame = %#v; payload=%#v", withImage["first_frame_image"], withImage)
+	}
+	for _, key := range []string{"size", "aspect_ratio", "image_tail", "negative_prompt", "multi_shot", "sound"} {
+		if _, ok := withImage[key]; ok {
+			t.Fatalf("Kling 3.0 Turbo retained unsupported %s: %#v", key, withImage)
+		}
+	}
+
+	textOnly := officialVideoRequestPayload(map[string]any{
+		"model": "kling-3-0-turbo", "prompt": "animate", "seconds": 17,
+		"size": "1536x864", "resolution": "1440p",
+	})
+	for key, want := range map[string]any{"duration": 17, "aspect_ratio": "16:9", "resolution": "1440p"} {
+		if !reflect.DeepEqual(textOnly[key], want) {
+			t.Fatalf("%s = %#v, want %#v; payload=%#v", key, textOnly[key], want, textOnly)
+		}
+	}
+}
+
+func TestOfficialVideoRequestPayloadUsesExplicitKlingMode(t *testing.T) {
+	got := officialVideoRequestPayload(map[string]any{
+		"model": "kling-3.0/video", "prompt": "animate", "seconds": 5,
+		"resolution": "720p", "video_mode": "4k",
+	})
+	if got["mode"] != "4K" {
+		t.Fatalf("Kling mode = %#v, want 4K; payload=%#v", got["mode"], got)
+	}
+}
+
+func TestOfficialVideoRequestPayloadPreservesKIEKlingTurboWorkbenchControls(t *testing.T) {
+	got := officialVideoRequestPayload(map[string]any{
+		"model": "kling/v3-turbo-text-to-video", "prompt": "animate", "seconds": 17,
+		"size": "16:9", "resolution": "1440p",
+	})
+	for key, want := range map[string]any{"duration": "17", "aspect_ratio": "16:9", "resolution": "1440p"} {
+		if !reflect.DeepEqual(got[key], want) {
+			t.Fatalf("%s = %#v, want %#v; payload=%#v", key, got[key], want, got)
+		}
+	}
+}
+
+func TestOfficialVideoRequestPayloadMapsKIEKling26Controls(t *testing.T) {
+	got := officialVideoRequestPayload(map[string]any{
+		"model": "kling-2.6/text-to-video", "prompt": "animate", "seconds": 17,
+		"size": "1536x864", "resolution": "1440p", "generate_audio": true,
+	})
+	for key, want := range map[string]any{"duration": "17", "aspect_ratio": "16:9", "sound": true} {
+		if !reflect.DeepEqual(got[key], want) {
+			t.Fatalf("%s = %#v, want %#v; payload=%#v", key, got[key], want, got)
+		}
+	}
+}
+
+func TestOfficialVideoRequestPayloadOmitsKIEHailuoTextOnlyControls(t *testing.T) {
+	got := officialVideoRequestPayload(map[string]any{
+		"model": "hailuo/02-text-to-video-standard", "prompt": "animate", "seconds": 5,
+	})
+	if _, ok := got["ratio"]; ok {
+		t.Fatalf("Hailuo text payload retained ratio: %#v", got)
+	}
+	if _, ok := got["resolution"]; ok {
+		t.Fatalf("Hailuo text payload retained resolution: %#v", got)
+	}
+}
+
+func TestOfficialVideoRequestPayloadKeepsWan25AndWan26Duration(t *testing.T) {
+	for _, model := range []string{"wan/2-5-image-to-video", "wan/2-6-image-to-video"} {
+		got := officialVideoRequestPayload(map[string]any{
+			"model": model, "prompt": "animate", "seconds": 10,
+			"resolution": "720p", "reference_image_urls": []string{"https://cdn.example.com/frame.png"},
+		})
+		if got["duration"] != "10" {
+			t.Fatalf("%s duration = %#v, want string 10; payload=%#v", model, got["duration"], got)
+		}
+	}
+	got := officialVideoRequestPayload(map[string]any{
+		"model": "wan/2-2-a14b-image-to-video-turbo", "prompt": "animate", "seconds": 10,
+		"resolution": "720p", "reference_image_urls": []string{"https://cdn.example.com/frame.png"},
+	})
+	if _, ok := got["duration"]; ok {
+		t.Fatalf("Wan 2.2 retained unsupported duration: %#v", got)
+	}
+}
+
+func TestOfficialVideoRequestPayloadKeepsNativeWanImageResolution(t *testing.T) {
+	for _, model := range []string{"wan2-5-image-to-video", "wan2-6-i2v-flash"} {
+		t.Run(model, func(t *testing.T) {
+			got := officialVideoRequestPayload(map[string]any{
+				"model": model, "prompt": "animate", "seconds": 10,
+				"resolution": "1080p", "reference_image_urls": []string{"https://cdn.example.com/frame.png"},
+			})
+			if got["resolution"] != "1080p" {
+				t.Fatalf("%s resolution = %#v, payload=%#v", model, got["resolution"], got)
+			}
+			if got["size"] != nil {
+				t.Fatalf("%s used size for resolution: %#v", model, got)
+			}
+		})
+	}
+}
+
+func TestOfficialVideoRequestPayloadUsesWan27KIENamedFrames(t *testing.T) {
+	got := officialVideoRequestPayload(map[string]any{
+		"model": "wan/2-7-image-to-video", "prompt": "animate", "seconds": 10,
+		"resolution": "1080p", "reference_image_urls": []string{"https://cdn.example.com/first.png", "https://cdn.example.com/ignored-tail.png"},
+	})
+	metadata, _ := got["metadata"].(map[string]any)
+	if metadata["first_frame_url"] != "https://cdn.example.com/first.png" {
+		t.Fatalf("Wan 2.7 KIE first frame = %#v, payload=%#v", metadata["first_frame_url"], got)
+	}
+	if metadata["last_frame_url"] != "https://cdn.example.com/ignored-tail.png" {
+		t.Fatalf("Wan 2.7 KIE last frame = %#v, payload=%#v", metadata["last_frame_url"], got)
+	}
+}
+
+func TestOfficialVideoRequestPayloadMapsNativeWanAudioReference(t *testing.T) {
+	audio := "https://cdn.example.com/voice.mp3"
+	for _, model := range []string{"wan2-5-image-to-video", "wan2-6-i2v-flash"} {
+		t.Run(model, func(t *testing.T) {
+			got := officialVideoRequestPayload(map[string]any{
+				"model": model, "prompt": "animate", "seconds": 10,
+				"reference_image_urls": []string{"https://cdn.example.com/frame.png"},
+				"reference_audio_urls": []string{audio},
+			})
+			if got["audio_url"] != audio {
+				t.Fatalf("%s audio_url = %#v, payload=%#v", model, got["audio_url"], got)
+			}
+			if _, ok := got["metadata"]; ok {
+				t.Fatalf("APIMart Wan retained compatibility metadata: %#v", got)
+			}
+		})
+	}
+}
+
+func TestOfficialVideoRequestPayloadMapsNativeWan27VideoReference(t *testing.T) {
+	video := "https://cdn.example.com/source.mp4"
+	got := officialVideoRequestPayload(map[string]any{
+		"model": "wan2.7-i2v-plus", "prompt": "animate", "seconds": 10,
+		"reference_image_urls": []string{"https://cdn.example.com/frame.png"},
+		"reference_video_urls": []string{video},
+	})
+	if !reflect.DeepEqual(got["video_urls"], []string{video}) {
+		t.Fatalf("Wan 2.7 video_urls = %#v, payload=%#v", got["video_urls"], got)
+	}
+	if _, ok := got["metadata"]; ok {
+		t.Fatalf("APIMart Wan 2.7 retained compatibility metadata: %#v", got)
+	}
+}
+
+func TestNormalizeKIEImagePayloadUsesReferenceProjectFields(t *testing.T) {
+	tests := []struct {
+		name  string
+		model string
+		input map[string]any
+		want  map[string]any
+	}{
+		{
+			name:  "Seedream named size and resolution",
+			model: "bytedance/seedream-v4-text-to-image",
+			input: map[string]any{"size": "16:9", "resolution": "2k", "n": 2, "requested_size": "16:9"},
+			want:  map[string]any{"image_size": "landscape_16_9", "image_resolution": "2K", "max_images": 2},
+		},
+		{
+			name:  "Flux ratio and resolution",
+			model: "flux-2/pro-text-to-image",
+			input: map[string]any{"size": "1280x720", "resolution": "2k"},
+			want:  map[string]any{"aspect_ratio": "16:9", "resolution": "2K"},
+		},
+		{
+			name:  "Ideogram string count",
+			model: "ideogram/v3-text-to-image",
+			input: map[string]any{"size": "1:1", "n": 1},
+			want:  map[string]any{"image_size": "square_hd"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			payload := map[string]any{"model": test.model}
+			for key, value := range test.input {
+				payload[key] = value
+			}
+			normalizeImagePayloadForModel(payload)
+			for key, want := range test.want {
+				if !reflect.DeepEqual(payload[key], want) {
+					t.Fatalf("%s = %#v, want %#v; payload=%#v", key, payload[key], want, payload)
+				}
+			}
+			if _, ok := payload["requested_size"]; ok {
+				t.Fatalf("requested_size leaked: %#v", payload)
+			}
+		})
+	}
+}
+
+func TestRelayPayloadKeepsKIEImageResolutionAndDropsCompatibilityFields(t *testing.T) {
+	payload := map[string]any{
+		"model":            "bytedance/seedream-v4-text-to-image",
+		"prompt":           "a lighthouse",
+		"image_size":       "16:9",
+		"image_resolution": "2k",
+		"stream":           true,
+		"response_format":  "url",
+	}
+	normalizeImagePayloadForModel(payload)
+	got := relayPayloadForPath("/v1/images/generations", payload)
+	if got["image_resolution"] != "2K" {
+		t.Fatalf("image_resolution = %#v, want 2K", got["image_resolution"])
+	}
+	if _, ok := got["stream"]; ok {
+		t.Fatalf("KIE stream compatibility field leaked: %#v", got)
+	}
+	if _, ok := got["response_format"]; ok {
+		t.Fatalf("KIE response_format compatibility field leaked: %#v", got)
+	}
+	if _, ok := got["size"]; ok {
+		t.Fatalf("generic size field leaked into KIE payload: %#v", got)
+	}
+}
+
+func TestNormalizeKIEImagePayloadReferenceFieldVariants(t *testing.T) {
+	tests := []struct {
+		model string
+		want  string
+	}{
+		{"google/nano-banana-edit", "image_urls"},
+		{"grok-imagine/extend", "image_url"},
+		{"recraft/remove-background", "image"},
+		{"topaz/image-upscale", "image_url"},
+		{"topaz/video-upscale", "video_url"},
+		{"ideogram/v3-remix", "image_url"},
+	}
+	for _, test := range tests {
+		payload := map[string]any{"model": test.model, "image_url": "https://cdn.example.com/source.png", "video_url": "https://cdn.example.com/source.mp4", "prompt": "edit"}
+		normalizeImagePayloadForModel(payload)
+		if _, ok := payload[test.want]; !ok {
+			t.Fatalf("%s missing %s in %#v", test.model, test.want, payload)
+		}
+	}
+}
+
+func TestNormalizeKIEImagePayloadMapsArrayReferencesToSingleImageContracts(t *testing.T) {
+	const source = "https://cdn.example.com/source.png"
+	for _, model := range []string{"qwen/image-to-image", "ideogram/v3-remix"} {
+		payload := map[string]any{
+			"model":      model,
+			"image_urls": []string{source},
+		}
+		normalizeImagePayloadForModel(payload)
+		if got := payload["image_url"]; got != source {
+			t.Fatalf("%s image_url = %#v, want %q; payload=%#v", model, got, source, payload)
+		}
+		if _, ok := payload["image_urls"]; ok {
+			t.Fatalf("%s leaked image_urls: %#v", model, payload)
+		}
+	}
+	characterEdit := map[string]any{
+		"model":                "ideogram/character-edit",
+		"image_url":            source,
+		"reference_image_urls": []string{"https://cdn.example.com/character.png"},
+	}
+	normalizeImagePayloadForModel(characterEdit)
+	if characterEdit["image_url"] != source {
+		t.Fatalf("character edit base image = %#v, want %q; payload=%#v", characterEdit["image_url"], source, characterEdit)
+	}
+	if refs, ok := characterEdit["reference_image_urls"].([]string); !ok || len(refs) != 1 {
+		t.Fatalf("character edit reference images = %#v, want one preserved reference; payload=%#v", characterEdit["reference_image_urls"], characterEdit)
+	}
+}
+
+func TestValidateKIEImageRequiredInputKeepsAdditionalInputsStrict(t *testing.T) {
+	tests := []struct {
+		name     string
+		model    string
+		payload  map[string]any
+		uploaded int
+		wantErr  string
+	}{
+		{name: "v3 edit requires mask", model: "ideogram/v3-edit", uploaded: 1, wantErr: "mask_url"},
+		{name: "character edit requires mask", model: "ideogram/character-edit", uploaded: 1, payload: map[string]any{"reference_image_urls": []string{"https://cdn.example.com/character.png"}}, wantErr: "mask_url"},
+		{name: "character edit requires independent reference", model: "ideogram/character-edit", uploaded: 1, payload: map[string]any{"mask_url": "https://cdn.example.com/mask.png"}, wantErr: "reference_image_urls"},
+		{name: "character remix requires base image", model: "ideogram/character-remix", payload: map[string]any{"reference_image_urls": []string{"https://cdn.example.com/character.png"}}, wantErr: "参考图片"},
+		{name: "character remix requires reference", model: "ideogram/character-remix", payload: map[string]any{"image_url": "https://cdn.example.com/source.png"}, wantErr: "reference_image_urls"},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := validateKIEImageRequiredInput(test.model, test.payload, test.uploaded)
+			if err == nil || !strings.Contains(err.Error(), test.wantErr) {
+				t.Fatalf("error = %v, want message containing %q", err, test.wantErr)
+			}
+		})
+	}
+	if err := validateKIEImageRequiredInput("ideogram/v3-edit", map[string]any{"mask_url": "https://cdn.example.com/mask.png"}, 1); err != nil {
+		t.Fatalf("v3 edit with uploaded base and mask should pass: %v", err)
+	}
+	if err := validateKIEImageRequiredInput("ideogram/character-edit", map[string]any{
+		"mask_url":             "https://cdn.example.com/mask.png",
+		"reference_image_urls": []string{"https://cdn.example.com/character.png"},
+	}, 1); err != nil {
+		t.Fatalf("character edit with all required inputs should pass: %v", err)
+	}
+}
+
+func TestValidateKIEImageReferenceURLsRejectsInlineAndPrivateSources(t *testing.T) {
+	tests := []map[string]any{
+		{"model": "qwen/image-to-image", "image_url": "data:image/png;base64,AAAA"},
+		{"model": "topaz/image-upscale", "image_url": "http://127.0.0.1/source.png"},
+		{"model": "ideogram/v3-edit", "image_url": "https://cdn.example.com/source.png", "mask_url": "https://cdn.example.com/mask.png", "reference_image_urls": []string{"https://cdn.example.com/ref.png"}},
+	}
+	for index, payload := range tests {
+		if index == 2 {
+			payload["mask_url"] = "data:image/png;base64,AAAA"
+		}
+		if err := validateKIEImageReferenceURLs(util.Clean(payload["model"]), payload); err == nil {
+			t.Fatalf("case %d unexpectedly accepted non-public image reference: %#v", index, payload)
+		}
+	}
+	if err := validateKIEImageReferenceURLs("qwen/image-to-image", map[string]any{"image_url": "https://cdn.example.com/source.png"}); err != nil {
+		t.Fatalf("public KIE image reference rejected: %v", err)
+	}
+}
+
+func TestNormalizeKIEIdeogramCharacterRemixKeepsBaseAndReferenceImages(t *testing.T) {
+	payload := map[string]any{
+		"model":                "ideogram/character-remix",
+		"image_url":            "https://cdn.example.com/source.png",
+		"reference_image_urls": []string{"https://cdn.example.com/character.png"},
+	}
+	normalizeImagePayloadForModel(payload)
+	if payload["image_url"] != "https://cdn.example.com/source.png" {
+		t.Fatalf("base image_url = %#v", payload["image_url"])
+	}
+	refs, ok := payload["reference_image_urls"].([]string)
+	if !ok || len(refs) != 1 || refs[0] != "https://cdn.example.com/character.png" {
+		t.Fatalf("reference_image_urls = %#v", payload["reference_image_urls"])
+	}
+}
+
+func TestNormalizeKIEIdeogramEditMapsMaskAlias(t *testing.T) {
+	payload := map[string]any{
+		"model":     "ideogram/v3-edit",
+		"image_url": "https://cdn.example.com/source.png",
+		"mask_urls": []string{"https://cdn.example.com/mask.png"},
+	}
+	normalizeImagePayloadForModel(payload)
+	if payload["mask_url"] != "https://cdn.example.com/mask.png" {
+		t.Fatalf("mask_url = %#v", payload["mask_url"])
+	}
+	if _, ok := payload["mask_urls"]; ok {
+		t.Fatalf("mask_urls alias leaked: %#v", payload)
+	}
+}
+
+func TestNormalizeKIEImagePayloadStrictModelDifferences(t *testing.T) {
+	const source = "https://cdn.example.com/source.png"
+	tests := []struct {
+		name   string
+		model  string
+		input  map[string]any
+		want   map[string]any
+		absent []string
+	}{
+		{
+			name:   "Grok image to image has only image URLs",
+			model:  "grok-imagine/image-to-image",
+			input:  map[string]any{"size": "16:9", "image_url": source},
+			want:   map[string]any{"image_urls": []string{source}},
+			absent: []string{"size", "aspect_ratio"},
+		},
+		{
+			name:   "Qwen image to image has no image size",
+			model:  "qwen/image-to-image",
+			input:  map[string]any{"size": "16:9", "image_url": source},
+			want:   map[string]any{"image_url": source},
+			absent: []string{"size", "image_size"},
+		},
+		{
+			name:   "Nano Banana lite uses image URLs",
+			model:  "nano-banana-2-lite",
+			input:  map[string]any{"image_url": source},
+			want:   map[string]any{"image_urls": []string{source}},
+			absent: []string{"image_input"},
+		},
+		{
+			name:  "Auto resolution remains lowercase",
+			model: "bytedance/seedream-v4-text-to-image",
+			input: map[string]any{"resolution": "auto"},
+			want:  map[string]any{"image_resolution": "auto"},
+		},
+		{
+			name:  "Seedream layer decomposition uses dedicated contract",
+			model: "seedream/5-pro-layer-decomposition",
+			input: map[string]any{
+				"image_urls":   []string{"https://cdn.example.com/source.png"},
+				"quality":      "medium",
+				"aspect_ratio": "16:9",
+			},
+			want: map[string]any{
+				"image_url":     "https://cdn.example.com/source.png",
+				"size":          "1.5K",
+				"output_format": "png",
+			},
+			absent: []string{"image_urls", "quality", "aspect_ratio", "image_size", "resolution"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			payload := map[string]any{"model": test.model, "prompt": "edit"}
+			for key, value := range test.input {
+				payload[key] = value
+			}
+			normalizeImagePayloadForModel(payload)
+			for key, want := range test.want {
+				if !reflect.DeepEqual(payload[key], want) {
+					t.Fatalf("%s = %#v, want %#v; payload=%#v", key, payload[key], want, payload)
+				}
+			}
+			for _, key := range test.absent {
+				if _, ok := payload[key]; ok {
+					t.Fatalf("unexpected %s in payload %#v", key, payload)
+				}
+			}
+		})
+	}
+}
+
+func TestNormalizeKIEImagePayloadDerivesImageResolutionFromSize(t *testing.T) {
+	tests := []struct {
+		model string
+		size  string
+		want  string
+	}{
+		{model: "bytedance/seedream-v4-text-to-image", size: "1920x1080", want: "2K"},
+		{model: "flux-2/pro-text-to-image", size: "4096x4096", want: "2K"},
+		{model: "gpt-image-2-text-to-image", size: "1024x1024", want: "1K"},
+		{model: "nano-banana-2", size: "2048x2048", want: "2K"},
+		{model: "wan/2-7-image", size: "3840x2160", want: "4K"},
+	}
+	for _, test := range tests {
+		t.Run(test.model, func(t *testing.T) {
+			payload := map[string]any{"model": test.model, "size": test.size}
+			normalizeImagePayloadForModel(payload)
+			field := "resolution"
+			if strings.Contains(test.model, "seedream") {
+				field = "image_resolution"
+			}
+			if got := payload[field]; got != test.want {
+				t.Fatalf("%s = %#v, want %q; payload=%#v", field, got, test.want, payload)
+			}
+		})
+	}
+	legacy := map[string]any{"model": "bytedance/seedream", "size": "16:9"}
+	normalizeImagePayloadForModel(legacy)
+	if legacy["image_size"] != "landscape_16_9" {
+		t.Fatalf("bytedance/seedream image_size = %#v", legacy["image_size"])
+	}
+}
+
+func TestNormalizeKIEImagePayloadClearsStaleReferenceAliases(t *testing.T) {
+	payload := map[string]any{
+		"model":                "qwen/image-to-image",
+		"image_url":            "https://cdn.example.com/source.png",
+		"reference_video_urls": []string{"https://cdn.example.com/video.mp4"},
+		"reference_audio_urls": []string{"https://cdn.example.com/audio.mp3"},
+		"input_urls":           []string{"https://cdn.example.com/other.png"},
+	}
+	normalizeImagePayloadForModel(payload)
+	if payload["image_url"] != "https://cdn.example.com/source.png" {
+		t.Fatalf("image_url = %#v", payload["image_url"])
+	}
+	for _, key := range []string{"reference_video_urls", "reference_audio_urls", "input_urls"} {
+		if _, ok := payload[key]; ok {
+			t.Fatalf("stale alias %s leaked: %#v", key, payload)
+		}
+	}
+}
+
+func TestNormalizeKIEImagePayloadMatchesReferenceImageContracts(t *testing.T) {
+	source := "https://cdn.example.com/source.png"
+	tests := []struct {
+		name   string
+		model  string
+		input  map[string]any
+		want   map[string]any
+		absent []string
+	}{
+		{
+			name:   "legacy Seedream has named size only",
+			model:  "bytedance/seedream",
+			input:  map[string]any{"size": "16:9", "resolution": "4K", "quality": "high"},
+			want:   map[string]any{"image_size": "landscape_16_9"},
+			absent: []string{"size", "resolution", "image_resolution", "quality", "aspect_ratio"},
+		},
+		{
+			name:   "Seedream 5 keeps aspect ratio and quality",
+			model:  "seedream/5-pro-text-to-image",
+			input:  map[string]any{"size": "21:9", "quality": "high", "resolution": "4K"},
+			want:   map[string]any{"aspect_ratio": "21:9", "quality": "high"},
+			absent: []string{"size", "resolution", "image_resolution", "image_size"},
+		},
+		{
+			name:   "Seedream 5 image edit uses image URLs",
+			model:  "seedream/5-lite-image-to-image",
+			input:  map[string]any{"size": "4:3", "image_url": source},
+			want:   map[string]any{"aspect_ratio": "4:3", "image_urls": []string{source}},
+			absent: []string{"size", "image_url", "image_size", "resolution"},
+		},
+		{
+			name:   "Seedream 4.5 uses quality without resolution",
+			model:  "seedream/4.5-text-to-image",
+			input:  map[string]any{"size": "16:9", "quality": "high", "resolution": "4K"},
+			want:   map[string]any{"aspect_ratio": "16:9", "quality": "high"},
+			absent: []string{"size", "resolution", "image_resolution", "image_size"},
+		},
+		{
+			name:   "GPT Image 1.5 uses quality without resolution",
+			model:  "gpt-image/1.5-text-to-image",
+			input:  map[string]any{"size": "1:1", "quality": "high", "resolution": "4K"},
+			want:   map[string]any{"aspect_ratio": "1:1", "quality": "high"},
+			absent: []string{"size", "resolution", "image_resolution", "image_size"},
+		},
+		{
+			name:   "Qwen image edit maps count and image",
+			model:  "qwen/image-edit",
+			input:  map[string]any{"size": "1:1", "n": 2, "image_urls": []string{source}},
+			want:   map[string]any{"image_size": "square_hd", "num_images": "2", "image_url": source},
+			absent: []string{"size", "n", "image_urls", "resolution"},
+		},
+		{
+			name:   "Qwen2 image edit does not invent count or resolution",
+			model:  "qwen2/image-edit",
+			input:  map[string]any{"size": "1:1", "n": 2, "resolution": "2K", "image_urls": []string{source}},
+			want:   map[string]any{"image_size": "square_hd", "image_url": source},
+			absent: []string{"size", "n", "num_images", "resolution"},
+		},
+		{
+			name:   "Nano Banana lite has no resolution control",
+			model:  "nano-banana-2-lite",
+			input:  map[string]any{"size": "16:9", "resolution": "4K", "image_url": source},
+			want:   map[string]any{"aspect_ratio": "16:9", "image_urls": []string{source}},
+			absent: []string{"size", "resolution", "image_resolution", "image_input"},
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			payload := map[string]any{"model": test.model, "prompt": "test"}
+			for key, value := range test.input {
+				payload[key] = value
+			}
+			normalizeImagePayloadForModel(payload)
+			for key, want := range test.want {
+				if !reflect.DeepEqual(payload[key], want) {
+					t.Fatalf("%s = %#v, want %#v; payload=%#v", key, payload[key], want, payload)
+				}
+			}
+			for _, key := range test.absent {
+				if _, ok := payload[key]; ok {
+					t.Fatalf("unexpected %s in payload %#v", key, payload)
+				}
+			}
+		})
+	}
+}
+
+func TestNormalizeKIEImagePayloadCoversEveryReferenceImageModel(t *testing.T) {
+	type contract struct {
+		model, aspect, resolution, count, reference string
+		quality, outputFormat                       bool
+	}
+	contracts := []contract{
+		{model: "bytedance/seedream", aspect: "image_size"},
+		{model: "bytedance/seedream-v4-edit", aspect: "image_size", resolution: "image_resolution", count: "max_images", reference: "image_urls"},
+		{model: "bytedance/seedream-v4-text-to-image", aspect: "image_size", resolution: "image_resolution", count: "max_images"},
+		{model: "flux-2/flex-image-to-image", aspect: "aspect_ratio", resolution: "resolution", reference: "input_urls"},
+		{model: "flux-2/flex-text-to-image", aspect: "aspect_ratio", resolution: "resolution"},
+		{model: "flux-2/pro-image-to-image", aspect: "aspect_ratio", resolution: "resolution", reference: "input_urls"},
+		{model: "flux-2/pro-text-to-image", aspect: "aspect_ratio", resolution: "resolution"},
+		{model: "gpt-image-2-image-to-image", aspect: "aspect_ratio", resolution: "resolution", reference: "input_urls"},
+		{model: "gpt-image-2-text-to-image", aspect: "aspect_ratio", resolution: "resolution"},
+		{model: "nano-banana-2", aspect: "aspect_ratio", resolution: "resolution", reference: "image_input", outputFormat: true},
+		{model: "nano-banana-2-lite", aspect: "aspect_ratio", reference: "image_urls"},
+		{model: "nano-banana-pro", aspect: "aspect_ratio", resolution: "resolution", reference: "image_input", outputFormat: true},
+		{model: "wan/2-7-image", aspect: "aspect_ratio", resolution: "resolution", count: "n", reference: "input_urls"},
+		{model: "wan/2-7-image-pro", aspect: "aspect_ratio", resolution: "resolution", count: "n", reference: "input_urls"},
+		{model: "google/imagen4", aspect: "aspect_ratio"},
+		{model: "google/imagen4-fast", aspect: "aspect_ratio"},
+		{model: "google/imagen4-ultra", aspect: "aspect_ratio"},
+		{model: "google/nano-banana", aspect: "aspect_ratio", outputFormat: true},
+		{model: "google/nano-banana-edit", aspect: "aspect_ratio", reference: "image_urls", outputFormat: true},
+		{model: "gpt-image/1.5-image-to-image", aspect: "aspect_ratio", reference: "input_urls", quality: true},
+		{model: "gpt-image/1.5-text-to-image", aspect: "aspect_ratio", quality: true},
+		{model: "grok-imagine-image-2-0/text-to-image", aspect: "aspect_ratio"},
+		{model: "grok-imagine/text-to-image", aspect: "aspect_ratio"},
+		{model: "grok-imagine/image-to-image", reference: "image_urls"},
+		{model: "grok-imagine/extend", reference: "image_url"},
+		{model: "ideogram/character", aspect: "image_size", count: "num_images", reference: "reference_image_urls"},
+		{model: "ideogram/character-edit", count: "num_images", reference: "image_url"},
+		{model: "ideogram/character-remix", aspect: "image_size", count: "num_images", reference: "image_url"},
+		{model: "ideogram/v3-edit", reference: "image_url"},
+		{model: "ideogram/v3-remix", aspect: "image_size", count: "num_images", reference: "image_url"},
+		{model: "ideogram/v3-text-to-image", aspect: "image_size"},
+		{model: "qwen/text-to-image", aspect: "image_size", outputFormat: true},
+		{model: "qwen/image-edit", aspect: "image_size", count: "num_images", reference: "image_url", outputFormat: true},
+		{model: "qwen/image-to-image", reference: "image_url", outputFormat: true},
+		{model: "qwen2/image-edit", aspect: "image_size", reference: "image_url", outputFormat: true},
+		{model: "qwen2/text-to-image", aspect: "image_size", outputFormat: true},
+		{model: "recraft/crisp-upscale", reference: "image"},
+		{model: "recraft/remove-background", reference: "image"},
+		{model: "seedream/4.5-edit", aspect: "aspect_ratio", reference: "image_urls", quality: true},
+		{model: "seedream/4.5-text-to-image", aspect: "aspect_ratio", quality: true},
+		{model: "seedream/5-lite-image-to-image", aspect: "aspect_ratio", reference: "image_urls", quality: true},
+		{model: "seedream/5-lite-text-to-image", aspect: "aspect_ratio", quality: true},
+		{model: "seedream/5-pro-text-to-image", aspect: "aspect_ratio", quality: true},
+		{model: "seedream/5-pro-image-to-image", aspect: "aspect_ratio", reference: "image_urls", quality: true},
+		{model: "seedream/5-pro-layer-decomposition", reference: "image_url", outputFormat: true},
+		{model: "topaz/image-upscale", reference: "image_url"},
+		{model: "z-image", aspect: "aspect_ratio"},
+	}
+	const source = "https://cdn.example.com/source.png"
+	for _, test := range contracts {
+		t.Run(test.model, func(t *testing.T) {
+			payload := map[string]any{
+				"model":                test.model,
+				"size":                 "16:9",
+				"resolution":           "4K",
+				"quality":              "high",
+				"n":                    2,
+				"output_format":        "jpeg",
+				"image_url":            source,
+				"image_urls":           []string{source},
+				"input_urls":           []string{source},
+				"reference_image_urls": []string{source},
+				"mask_url":             "https://cdn.example.com/mask.png",
+				"video_url":            "https://cdn.example.com/source.mp4",
+				"audio_url":            "https://cdn.example.com/source.mp3",
+			}
+			normalizeImagePayloadForModel(payload)
+			if test.aspect != "" {
+				if _, ok := payload[test.aspect]; !ok {
+					t.Fatalf("missing aspect field %s: %#v", test.aspect, payload)
+				}
+			} else if test.model != "seedream/5-pro-layer-decomposition" {
+				for _, field := range []string{"size", "image_size", "aspect_ratio"} {
+					if _, ok := payload[field]; ok {
+						t.Fatalf("unsupported aspect field %s leaked: %#v", field, payload)
+					}
+				}
+			}
+			for _, field := range []string{"resolution", "image_resolution"} {
+				if field == test.resolution {
+					if _, ok := payload[field]; !ok {
+						t.Fatalf("missing resolution field %s: %#v", field, payload)
+					}
+				} else if _, ok := payload[field]; ok {
+					t.Fatalf("unsupported resolution field %s leaked: %#v", field, payload)
+				}
+			}
+			for _, field := range []string{"n", "max_images", "num_images"} {
+				if field == test.count {
+					if _, ok := payload[field]; !ok {
+						t.Fatalf("missing count field %s: %#v", field, payload)
+					}
+				} else if _, ok := payload[field]; ok {
+					t.Fatalf("unsupported count field %s leaked: %#v", field, payload)
+				}
+			}
+			if test.quality {
+				if _, ok := payload["quality"]; !ok {
+					t.Fatalf("missing quality: %#v", payload)
+				}
+			} else if _, ok := payload["quality"]; ok {
+				t.Fatalf("unsupported quality leaked: %#v", payload)
+			}
+			if test.outputFormat {
+				wantFormat := "jpg"
+				if test.model == "seedream/5-pro-layer-decomposition" {
+					wantFormat = "png"
+				}
+				if payload["output_format"] != wantFormat {
+					t.Fatalf("output_format = %#v, want %s: %#v", payload["output_format"], wantFormat, payload)
+				}
+			} else if _, ok := payload["output_format"]; ok {
+				t.Fatalf("unsupported output_format leaked: %#v", payload)
+			}
+			for _, field := range []string{"image_url", "image_urls", "input_urls", "reference_image_urls", "image", "mask_url", "video_url", "audio_url"} {
+				if field == test.reference || (test.model == "ideogram/character-remix" && field == "reference_image_urls") || (test.model == "ideogram/character-edit" && (field == "reference_image_urls" || field == "mask_url")) || (test.model == "ideogram/v3-edit" && field == "mask_url") {
+					continue
+				}
+				if _, ok := payload[field]; ok {
+					t.Fatalf("unsupported reference field %s leaked: %#v", field, payload)
+				}
+			}
+		})
 	}
 }

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { canvasCenteredNodePosition, canvasCroppedNodeSize, canvasEmptyImageFrameFromSize, canvasImageReplacementFrame, canvasNodeAspectRatio } from "../src/app/canvas/canvas-node-geometry.ts";
+import { canvasCenteredNodePosition, canvasCroppedNodeSize, canvasEmptyImageFrameFromSize, canvasImageReplacementFrame, canvasNodeAspectRatio, canvasNodeSizeFromRatio } from "../src/app/canvas/canvas-node-geometry.ts";
 
 test("locked resizing follows natural image dimensions", () => {
   assert.equal(canvasNodeAspectRatio({ width: 400, height: 400, natural_width: 1600, natural_height: 900 }), 1600 / 900);
@@ -44,4 +44,11 @@ test("empty image parameter changes resize around the current center", () => {
     height: 240,
   });
   assert.equal(canvasEmptyImageFrameFromSize({ x: 0, y: 0, width: 340, height: 240 }, ""), null);
+});
+
+test("generated media frames follow the reference aspect-ratio sizing contract", () => {
+  assert.deepEqual(canvasNodeSizeFromRatio("16:9", 420, 236), { width: 419.55555555555554, height: 236 });
+  assert.deepEqual(canvasNodeSizeFromRatio("9:16", 420, 236), { width: 132.75, height: 236 });
+  assert.deepEqual(canvasNodeSizeFromRatio("1536x1024", 340, 240), { width: 340, height: 226.66666666666666 });
+  assert.deepEqual(canvasNodeSizeFromRatio("auto", 340, 240), null);
 });

@@ -27,7 +27,7 @@ export function ImageParameterLabel({ children, help }: { children: ReactNode; h
   );
 }
 
-export function ImageAspectRatioGlyph({ ratio }: { ratio: string }) {
+function ImageAspectRatioGlyph({ ratio }: { ratio: string }) {
   const parsed = parseImageRatio(ratio) || { width: 1, height: 1 };
   const landscape = parsed.width >= parsed.height;
   const square = parsed.width === parsed.height;
@@ -48,11 +48,13 @@ export function ImageAspectRatioOptionButton({
   active,
   label,
   ratio,
+  description,
   onClick,
 }: {
   active: boolean;
   label: string;
   ratio?: string;
+  description?: string;
   onClick: () => void;
 }) {
   return (
@@ -60,18 +62,26 @@ export function ImageAspectRatioOptionButton({
       type="button"
       aria-pressed={active}
       className={cn(
-        "flex h-9 min-w-0 items-center justify-center gap-1 rounded-md border border-transparent bg-[#f4f4f5] px-1.5 text-[10px] font-medium text-[#686b73] transition-colors hover:bg-[#eceef1] hover:text-[#222222] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1456f0]/30 dark:bg-muted/55 dark:text-muted-foreground dark:hover:bg-muted dark:hover:text-foreground",
+        "flex min-w-0 items-center justify-center rounded-md border border-transparent bg-[#f4f4f5] px-1.5 text-[10px] font-medium text-[#686b73] transition-colors hover:bg-[#eceef1] hover:text-[#222222] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1456f0]/30 dark:bg-muted/55 dark:text-muted-foreground dark:hover:bg-muted dark:hover:text-foreground",
+        description ? "h-14 flex-col gap-0.5" : "h-9 gap-1",
         active &&
           "border-[#a9c1ff] bg-[#edf3ff] text-[#1456f0] shadow-[inset_0_0_0_1px_rgba(20,86,240,0.04)] hover:bg-[#edf3ff] hover:text-[#1456f0] dark:border-sky-800 dark:bg-sky-950/35 dark:text-sky-300 dark:hover:bg-sky-950/45 dark:hover:text-sky-200",
       )}
       onClick={onClick}
     >
-      {ratio ? <ImageAspectRatioGlyph ratio={ratio} /> : (
-        <span className="flex h-5 w-6 shrink-0 items-center justify-center" aria-hidden="true">
-          <SlidersHorizontal className="size-3.5" />
+      <span className="flex min-w-0 items-center justify-center gap-1">
+        {ratio ? <ImageAspectRatioGlyph ratio={ratio} /> : (
+          <span className="flex h-5 w-6 shrink-0 items-center justify-center" aria-hidden="true">
+            <SlidersHorizontal className="size-3.5" />
+          </span>
+        )}
+        <span className="whitespace-nowrap leading-none">{label}</span>
+      </span>
+      {description ? (
+        <span className="max-w-full truncate text-[9px] font-normal leading-none text-[#92959c] dark:text-muted-foreground">
+          {description}
         </span>
-      )}
-      <span className="whitespace-nowrap leading-none">{label}</span>
+      ) : null}
     </button>
   );
 }

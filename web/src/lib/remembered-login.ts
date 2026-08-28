@@ -1,4 +1,4 @@
-export const REMEMBERED_LOGIN_STORAGE_KEY = "chatgpt2api:remembered-login";
+const REMEMBERED_LOGIN_STORAGE_KEY = "chatgpt2api:remembered-login";
 
 export type RememberedLogin = {
   username: string;

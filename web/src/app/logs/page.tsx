@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { ChevronDown, ChevronLeft, ChevronRight, Copy, LoaderCircle, RefreshCw, Search, X } from "lucide-react";
+import { ChevronDown, ChevronLeft, ChevronRight, Copy, Eye, ListFilter, LoaderCircle, RefreshCw, Search, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { AuthenticatedImage } from "@/components/authenticated-image";
@@ -9,17 +9,23 @@ import { DateRangeFilter } from "@/components/date-range-filter";
 import { ImageLightbox } from "@/components/image-lightbox";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { fetchSettingsConfig, fetchSystemLogs, type LogView, type SystemLog, type SystemLogFilters } from "@/lib/api";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 
 const methodOptions = ["GET", "POST", "PUT", "PATCH", "DELETE"];
-const statusOptions = ["200", "201", "400", "401", "403", "404", "422", "429", "500", "502"];
+const statusOptions = [
+  { value: "success", label: "成功" },
+  { value: "failed", label: "失败" },
+  ...["200", "201", "400", "401", "403", "404", "422", "429", "500", "502"].map((value) => ({ value, label: value })),
+];
 const logLevelOptions = ["info", "warning", "error"];
+const pageSizeOptions = [15, 30, 50];
 const logViewOptions: Array<{ value: LogView; label: string }> = [
   { value: "meaningful", label: "有意义日志" },
   { value: "business", label: "仅业务日志" },
@@ -140,6 +146,27 @@ function pathText(item: SystemLog | null) {
   return detailText(item, "path") || detailText(item, "endpoint") || "-";
 }
 
+function eventText(item: SystemLog | null) {
+  const summary = item?.summary?.trim() || "";
+  const method = detailText(item, "method").toUpperCase();
+  const path = pathText(item);
+  if (summary && method && path !== "-" && summary.toUpperCase() === `${method} ${path}`.toUpperCase()) {
+    return path;
+  }
+  return summary || path;
+}
+
+function eventPathText(item: SystemLog | null) {
+  const path = pathText(item);
+  return path !== "-" && path !== eventText(item) ? path : "";
+}
+
+function logTimeParts(item: SystemLog | null) {
+  const value = item?.time?.trim() || "-";
+  const [date, time] = value.split(/\s+/, 2);
+  return time ? { date, time } : { date: "", time: date };
+}
+
 function logLevel(item: SystemLog | null) {
   const explicit = detailText(item, "log_level");
   if (explicit) return explicit;
@@ -159,7 +186,14 @@ function statusText(item: SystemLog | null) {
 
 function formatDuration(item: SystemLog | null) {
   const value = detailValue(item, "duration_ms") ?? detailValue(item, "response_time");
-  return typeof value === "number" ? `${(value / 1000).toFixed(2)} s` : "-";
+  const duration = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(duration) ? `${(duration / 1000).toFixed(2)} s` : "-";
+}
+
+function durationMs(item: SystemLog | null) {
+  const value = detailValue(item, "duration_ms") ?? detailValue(item, "response_time");
+  const duration = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(duration) ? duration : 0;
 }
 
 function statusBadgeVariant(item: SystemLog | null) {
@@ -182,6 +216,18 @@ function levelBadgeVariant(level: string) {
   if (level === "error") return "danger";
   if (level === "warning") return "warning";
   return "secondary";
+}
+
+function levelLabel(level: string) {
+  if (level === "error") return "错误";
+  if (level === "warning") return "警告";
+  return "信息";
+}
+
+function levelDotClass(level: string) {
+  if (level === "error") return "bg-rose-500";
+  if (level === "warning") return "bg-amber-500";
+  return "bg-sky-500";
 }
 
 function methodBadgeVariant(method: string) {
@@ -312,17 +358,22 @@ function LogsContent() {
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(15);
   const [isLoading, setIsLoading] = useState(true);
   const [isFiltersExpanded, setIsFiltersExpanded] = useState(false);
   const detailUrls = getUrls(detailLog);
   const detailImages = detailUrls.map((url, index) => ({ id: `${index}`, src: url }));
   const detailMethod = detailText(detailLog, "method");
   const detailFieldSections = getDetailFieldSections(detailLog);
-  const pageSize = 15;
   const pageCount = Math.max(1, Math.ceil(items.length / pageSize));
   const safePage = Math.min(page, pageCount);
   const currentRows = items.slice((safePage - 1) * pageSize, safePage * pageSize);
   const activeFilters = activeFilterCount(filters, defaultLogView);
+  const errorCount = items.filter((item) => logLevel(item) === "error" || statusBadgeVariant(item) === "danger").length;
+  const warningCount = items.filter((item) => logLevel(item) === "warning").length;
+  const slowRequestCount = items.filter((item) => durationMs(item) >= 3000).length;
+  const startIndex = items.length === 0 ? 0 : (safePage - 1) * pageSize + 1;
+  const endIndex = Math.min(safePage * pageSize, items.length);
 
   const loadLogs = useCallback(async (nextQuery: SystemLogFilters) => {
     setIsLoading(true);
@@ -399,163 +450,250 @@ function LogsContent() {
   }, [isDefaultLogViewReady, loadLogs, query]);
 
   return (
-    <section className="flex h-full min-h-0 flex-col gap-5 overflow-hidden">
-      <Card>
-        <CardHeader className={isFiltersExpanded ? "pb-4" : "py-3.5"}>
-          <div className="flex min-h-9 items-center justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-2.5">
-              <Search className="size-4 shrink-0 text-muted-foreground" />
-              <CardTitle className="text-base">搜索筛选</CardTitle>
-              {activeFilters > 0 ? (
-                <Badge variant="secondary" className="shrink-0 rounded-md">
-                  {activeFilters} 项
-                </Badge>
-              ) : null}
+    <section data-logs-layout className="flex h-full min-h-0 flex-col overflow-hidden">
+      <Card className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <CardHeader className="shrink-0 border-b border-border p-3 sm:p-4">
+          <form className="space-y-3" onSubmit={handleSearch}>
+            <div className="flex flex-col gap-2 xl:flex-row xl:items-center">
+              <div className="relative min-w-[220px] flex-1">
+                <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  aria-label="搜索日志摘要或接口"
+                  className="pl-9"
+                  placeholder="搜索摘要或接口"
+                  value={filters.summary || ""}
+                  onChange={(event) => updateFilter("summary", event.target.value)}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
+                <Select value={normalizeLogView(filters.view)} onValueChange={(value) => updateFilter("view", value)}>
+                  <SelectTrigger className="w-full sm:w-[150px]" aria-label="日志视图"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {logViewOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Select value={filters.log_level || "all"} onValueChange={(value) => updateFilter("log_level", value)}>
+                  <SelectTrigger className="w-full sm:w-[128px]" aria-label="日志级别"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">全部级别</SelectItem>
+                    {logLevelOptions.map((level) => <SelectItem key={level} value={level}>{level}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <DateRangeFilter
+                  className="col-span-2 sm:w-[240px]"
+                  startDate={filters.start_date || ""}
+                  endDate={filters.end_date || ""}
+                  onChange={(startDate, endDate) => {
+                    updateFilter("start_date", startDate);
+                    updateFilter("end_date", endDate);
+                  }}
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <Button type="submit" disabled={isLoading} className="h-10 flex-1 rounded-lg px-4 xl:flex-none">
+                  {isLoading ? <LoaderCircle className="size-4 animate-spin" /> : <Search className="size-4" />}
+                  查询
+                </Button>
+                <Button
+                  type="button"
+                  variant={isFiltersExpanded ? "secondary" : "outline"}
+                  className="h-10 flex-1 rounded-lg px-3 xl:flex-none"
+                  aria-expanded={isFiltersExpanded}
+                  aria-controls="log-advanced-filters"
+                  onClick={() => setIsFiltersExpanded((expanded) => !expanded)}
+                >
+                  <ListFilter className="size-4" />
+                  更多筛选
+                  {activeFilters > 0 ? <Badge variant="secondary" className="min-w-5 px-1.5">{activeFilters}</Badge> : null}
+                  <ChevronDown className={`size-4 transition-transform ${isFiltersExpanded ? "rotate-180" : ""}`} />
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="icon"
+                  className="size-10 shrink-0 rounded-lg"
+                  aria-label="刷新日志"
+                  data-tooltip="刷新日志"
+                  disabled={isLoading}
+                  onClick={() => void loadLogs(query)}
+                >
+                  <RefreshCw className={`size-4 ${isLoading ? "animate-spin" : ""}`} />
+                </Button>
+              </div>
             </div>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="h-8 shrink-0 rounded-lg px-2.5 text-muted-foreground"
-              aria-expanded={isFiltersExpanded}
-              aria-controls="log-search-filters"
-              onClick={() => setIsFiltersExpanded((expanded) => !expanded)}
+
+            <div
+              id="log-advanced-filters"
+              className={`grid transition-[grid-template-rows,opacity] duration-200 ${isFiltersExpanded ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"}`}
             >
-              {isFiltersExpanded ? "收起" : "展开"}
-              <ChevronDown className={`size-4 transition-transform ${isFiltersExpanded ? "rotate-180" : ""}`} />
-            </Button>
-          </div>
-        </CardHeader>
-        {isFiltersExpanded ? <CardContent id="log-search-filters">
-          <form className="grid gap-3 md:grid-cols-2 xl:grid-cols-4" onSubmit={handleSearch}>
-            <Select value={normalizeLogView(filters.view)} onValueChange={(value) => updateFilter("view", value)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {logViewOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Input placeholder="操作人" value={filters.username || ""} onChange={(event) => updateFilter("username", event.target.value)} />
-            <Input placeholder="模块" value={filters.module || ""} onChange={(event) => updateFilter("module", event.target.value)} />
-            <Input placeholder="摘要或接口" value={filters.summary || ""} onChange={(event) => updateFilter("summary", event.target.value)} />
-            <Input placeholder="IP 地址" value={filters.ip_address || ""} onChange={(event) => updateFilter("ip_address", event.target.value)} />
-            <Input placeholder="操作类型" value={filters.operation_type || ""} onChange={(event) => updateFilter("operation_type", event.target.value)} />
-            <Select value={filters.method || "all"} onValueChange={(value) => updateFilter("method", value)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部方法</SelectItem>
-                {methodOptions.map((method) => <SelectItem key={method} value={method}>{method}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Select value={filters.status || "all"} onValueChange={(value) => updateFilter("status", value)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部状态码</SelectItem>
-                {statusOptions.map((status) => <SelectItem key={status} value={status}>{status}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Select value={filters.log_level || "all"} onValueChange={(value) => updateFilter("log_level", value)}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部级别</SelectItem>
-                {logLevelOptions.map((level) => <SelectItem key={level} value={level}>{level}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <div className="md:col-span-2 xl:col-span-2">
-              <DateRangeFilter
-                startDate={filters.start_date || ""}
-                endDate={filters.end_date || ""}
-                onChange={(startDate, endDate) => {
-                  updateFilter("start_date", startDate);
-                  updateFilter("end_date", endDate);
-                }}
-              />
-            </div>
-            <div className="flex gap-2 md:col-span-2 xl:col-span-2">
-              <Button type="submit" disabled={isLoading} className="h-10 rounded-lg">
-                {isLoading ? <LoaderCircle className="size-4 animate-spin" /> : <Search className="size-4" />}
-                查询
-              </Button>
-              <Button type="button" variant="outline" onClick={clearFilters} className="h-10 rounded-lg">
-                <X className="size-4" />
-                清空
-              </Button>
+              <div className="overflow-hidden">
+                <div className="grid gap-2 border-t border-border pt-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-6">
+                  <Input placeholder="操作人" value={filters.username || ""} onChange={(event) => updateFilter("username", event.target.value)} />
+                  <Input placeholder="模块" value={filters.module || ""} onChange={(event) => updateFilter("module", event.target.value)} />
+                  <Input placeholder="IP 地址" value={filters.ip_address || ""} onChange={(event) => updateFilter("ip_address", event.target.value)} />
+                  <Input placeholder="操作类型" value={filters.operation_type || ""} onChange={(event) => updateFilter("operation_type", event.target.value)} />
+                  <Select value={filters.method || "all"} onValueChange={(value) => updateFilter("method", value)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">全部方法</SelectItem>
+                      {methodOptions.map((method) => <SelectItem key={method} value={method}>{method}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <div className="flex gap-2">
+                    <Select value={filters.status || "all"} onValueChange={(value) => updateFilter("status", value)}>
+                      <SelectTrigger className="min-w-0 flex-1"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">全部状态</SelectItem>
+                        {statusOptions.map((status) => <SelectItem key={status.value} value={status.value}>{status.label}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                    <Button type="button" variant="ghost" onClick={clearFilters} className="h-10 shrink-0 rounded-lg px-3 text-muted-foreground">
+                      <X className="size-4" />
+                      清空
+                    </Button>
+                  </div>
+                </div>
+              </div>
             </div>
           </form>
-        </CardContent> : null}
-      </Card>
+        </CardHeader>
 
-      <Card className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <CardContent className="flex min-h-0 flex-1 flex-col p-0">
-          <div className="flex items-center justify-between border-b border-border px-5 py-4 text-sm text-muted-foreground">
-            <span>共 {items.length} 条</span>
-            <Button variant="ghost" className="h-8 rounded-lg px-3" onClick={() => void loadLogs(query)} disabled={isLoading}>
-              <RefreshCw className={`size-4 ${isLoading ? "animate-spin" : ""}`} />
-              刷新
-            </Button>
+        <div className="flex min-h-11 shrink-0 flex-wrap items-center gap-x-5 gap-y-2 border-b border-border bg-muted/15 px-4 py-2 text-xs text-muted-foreground sm:px-5">
+          <div className="flex items-baseline gap-1.5">
+            <span className="text-base font-semibold tabular-nums text-foreground">{isLoading && items.length === 0 ? "—" : items.length}</span>
+            <span>条结果</span>
           </div>
-          <div className="min-h-0 flex-1 overflow-auto">
-            <Table className="min-w-[1040px]">
-              <TableHeader className="sticky top-0 z-10">
+          <div className="hidden h-4 w-px bg-border sm:block" />
+          <div className="flex items-center gap-1.5">
+            <span className="size-1.5 rounded-full bg-rose-500" />
+            <span>错误</span>
+            <span className="font-medium tabular-nums text-foreground">{errorCount}</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="size-1.5 rounded-full bg-amber-500" />
+            <span>警告</span>
+            <span className="font-medium tabular-nums text-foreground">{warningCount}</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <span className="size-1.5 rounded-full bg-muted-foreground/60" />
+            <span>慢请求（≥ 3 秒）</span>
+            <span className="font-medium tabular-nums text-foreground">{slowRequestCount}</span>
+          </div>
+        </div>
+
+        <CardContent className="flex min-h-0 flex-1 flex-col p-0">
+          <ScrollArea className="min-h-0 flex-1">
+            <Table className="min-w-[1040px] table-fixed">
+              <TableHeader className="sticky top-0 z-10 shadow-sm">
                 <TableRow>
-                  <TableHead>时间</TableHead>
-                  <TableHead>操作人</TableHead>
-                  <TableHead>模块</TableHead>
-                  <TableHead>接口</TableHead>
-                  <TableHead>状态</TableHead>
-                  <TableHead>耗时</TableHead>
-                  <TableHead>摘要</TableHead>
-                  <TableHead className="w-28">详情</TableHead>
+                  <TableHead className="w-[150px]">时间</TableHead>
+                  <TableHead>事件</TableHead>
+                  <TableHead className="w-[170px]">操作人</TableHead>
+                  <TableHead className="w-[130px]">模块</TableHead>
+                  <TableHead className="w-[150px]">状态</TableHead>
+                  <TableHead className="w-[86px]">耗时</TableHead>
+                  <TableHead className="w-14"><span className="sr-only">详情</span></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {currentRows.map((item, index) => {
                   const method = detailText(item, "method");
                   const level = logLevel(item);
+                  const eventPath = eventPathText(item);
+                  const time = logTimeParts(item);
                   return (
-                    <TableRow key={`${item.time}-${index}`} className="text-muted-foreground">
-                      <TableCell className="whitespace-nowrap">{item.time}</TableCell>
-                      <TableCell className="max-w-[150px] truncate text-foreground">{actorText(item)}</TableCell>
-                      <TableCell><Badge variant="secondary" className="rounded-md">{moduleText(item)}</Badge></TableCell>
-                      <TableCell className="max-w-[260px]">
+                    <TableRow key={`${item.time}-${index}`} className="cursor-pointer text-muted-foreground" onClick={() => openDetail(item)}>
+                      <TableCell>
+                        <div className="font-mono text-xs tabular-nums text-foreground">{time.time}</div>
+                        {time.date ? <div className="mt-0.5 font-mono text-[11px] tabular-nums text-muted-foreground">{time.date}</div> : null}
+                      </TableCell>
+                      <TableCell className="min-w-0">
                         <div className="flex min-w-0 items-center gap-2">
-                          {method ? <Badge variant={methodBadgeVariant(method)} className="rounded-md">{method}</Badge> : null}
-                          <span className="truncate">{pathText(item)}</span>
+                          {method ? <Badge variant={methodBadgeVariant(method)} className="shrink-0 rounded-md">{method}</Badge> : null}
+                          <span className="truncate font-medium text-foreground">{eventText(item)}</span>
                         </div>
+                        {eventPath ? <div className="mt-1 truncate font-mono text-[11px] text-muted-foreground">{eventPath}</div> : null}
                       </TableCell>
+                      <TableCell className="min-w-0">
+                        <div className="truncate text-foreground">{actorText(item)}</div>
+                        {detailText(item, "ip_address") ? <div className="mt-0.5 truncate font-mono text-[11px] text-muted-foreground">{detailText(item, "ip_address")}</div> : null}
+                      </TableCell>
+                      <TableCell><Badge variant="secondary" className="max-w-full truncate rounded-md">{moduleText(item)}</Badge></TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           <Badge variant={statusBadgeVariant(item)} className="rounded-md">{statusText(item)}</Badge>
-                          <Badge variant={levelBadgeVariant(level)} className="rounded-md">{level}</Badge>
+                          <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-xs text-muted-foreground">
+                            <span className={`size-1.5 rounded-full ${levelDotClass(level)}`} />
+                            {levelLabel(level)}
+                          </span>
                         </div>
                       </TableCell>
-                      <TableCell>{formatDuration(item)}</TableCell>
-                      <TableCell className="max-w-[300px] truncate text-muted-foreground">{item.summary || "-"}</TableCell>
-                      <TableCell>
-                        <Button variant="ghost" className="h-8 rounded-lg px-3" onClick={() => openDetail(item)}>
-                          查看详情
+                      <TableCell className="whitespace-nowrap font-mono text-xs tabular-nums">{formatDuration(item)}</TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-8 rounded-lg"
+                          aria-label="查看日志详情"
+                          data-tooltip="查看详情"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            openDetail(item);
+                          }}
+                        >
+                          <Eye className="size-4" />
                         </Button>
                       </TableCell>
                     </TableRow>
                   );
                 })}
+                {isLoading && items.length === 0 ? (
+                  <TableRow className="hover:bg-transparent">
+                    <TableCell colSpan={7} className="h-44 text-center">
+                      <LoaderCircle className="mx-auto size-5 animate-spin text-muted-foreground" />
+                      <div className="mt-2 text-sm text-muted-foreground">正在加载日志</div>
+                    </TableCell>
+                  </TableRow>
+                ) : null}
+                {!isLoading && items.length === 0 ? (
+                  <TableRow className="hover:bg-transparent">
+                    <TableCell colSpan={7} className="h-44 text-center text-sm text-muted-foreground">
+                      {activeFilters > 0 ? "没有匹配的日志" : "暂无日志"}
+                    </TableCell>
+                  </TableRow>
+                ) : null}
               </TableBody>
             </Table>
-          </div>
-          <div className="flex items-center justify-end gap-2 border-t border-border px-4 py-3 text-sm text-muted-foreground">
-            <span>第 {safePage} / {pageCount} 页，共 {items.length} 条</span>
-            <Button variant="outline" size="icon" className="size-9 rounded-lg" disabled={safePage <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}>
+          </ScrollArea>
+          <div className="flex shrink-0 flex-col gap-3 border-t border-border px-4 py-3 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+            <span>显示第 {startIndex} - {endIndex} 条，共 {items.length} 条</span>
+            <div className="flex items-center gap-2">
+              <span className="mr-1 whitespace-nowrap">{safePage} / {pageCount} 页</span>
+              <Select
+                value={String(pageSize)}
+                onValueChange={(value) => {
+                  setPageSize(Number(value));
+                  setPage(1);
+                }}
+              >
+                <SelectTrigger className="h-9 w-[94px] shrink-0 rounded-lg"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {pageSizeOptions.map((option) => <SelectItem key={option} value={String(option)}>{option} / 页</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Button variant="outline" size="icon" className="size-9 rounded-lg" aria-label="上一页" disabled={safePage <= 1 || isLoading} onClick={() => setPage((value) => Math.max(1, value - 1))}>
               <ChevronLeft className="size-4" />
-            </Button>
-            <Button variant="outline" size="icon" className="size-9 rounded-lg" disabled={safePage >= pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))}>
-              <ChevronRight className="size-4" />
-            </Button>
+              </Button>
+              <Button variant="outline" size="icon" className="size-9 rounded-lg" aria-label="下一页" disabled={safePage >= pageCount || isLoading} onClick={() => setPage((value) => Math.min(pageCount, value + 1))}>
+                <ChevronRight className="size-4" />
+              </Button>
+            </div>
           </div>
-          {!isLoading && items.length === 0 ? <div className="px-6 py-14 text-center text-sm text-stone-500">没有找到日志</div> : null}
         </CardContent>
       </Card>
 
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent className="flex max-h-[90vh] w-[min(94vw,980px)] grid-rows-none flex-col gap-0 overflow-hidden rounded-2xl p-0">
+        <DialogContent scrollable={false} className="flex max-h-[90vh] w-[min(94vw,980px)] grid-rows-none flex-col gap-0 overflow-hidden rounded-2xl p-0">
           <DialogHeader className="border-b border-border px-6 py-5 pr-12">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0 space-y-2">
@@ -573,7 +711,7 @@ function LogsContent() {
               </Button>
             </div>
           </DialogHeader>
-          <div className="min-h-0 overflow-y-auto px-6 py-5">
+          <ScrollArea className="min-h-0 px-6 py-5">
             <div className="space-y-5">
               <section className="space-y-3">
                 <div className="text-sm font-semibold text-foreground">摘要</div>
@@ -627,9 +765,9 @@ function LogsContent() {
               {typeof detailLog?.detail?.error === "string" && detailLog.detail.error ? (
                 <section className="space-y-3">
                   <div className="text-sm font-semibold text-foreground">错误信息</div>
-                  <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-xl border border-rose-200 bg-rose-50 p-4 text-xs leading-6 text-rose-700 dark:border-rose-800 dark:bg-rose-950/30 dark:text-rose-200">
+                  <ScrollArea className="max-h-48 whitespace-pre-wrap rounded-xl border border-rose-200 bg-rose-50 p-4 text-xs leading-6 text-rose-700 dark:border-rose-800 dark:bg-rose-950/30 dark:text-rose-200">
                     {detailLog.detail.error}
-                  </pre>
+                  </ScrollArea>
                 </section>
               ) : null}
 
@@ -660,7 +798,7 @@ function LogsContent() {
                 </section>
               ) : null}
             </div>
-          </div>
+          </ScrollArea>
         </DialogContent>
       </Dialog>
       <ImageLightbox

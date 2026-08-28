@@ -1,22 +1,50 @@
 package service
 
 import (
-	"encoding/json"
+	"context"
 	"errors"
-	"fmt"
-	"sync"
 	"testing"
 	"time"
 
-	"chatgpt2api/internal/storage"
 	"chatgpt2api/internal/util"
 )
+
+func mergeConversationHistory(history *ImageConversationHistoryService, ownerID string, incoming []map[string]any) ([]map[string]any, error) {
+	if _, _, err := history.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, incoming, nil); err != nil {
+		return nil, err
+	}
+	return listImageConversationHistoryForTest(history, ownerID)
+}
+
+func listImageConversationHistoryForTest(history *ImageConversationHistoryService, ownerID string) ([]map[string]any, error) {
+	items := make([]map[string]any, 0)
+	cursor := ""
+	for {
+		page, err := history.ListPage(context.Background(), ownerID, cursor, imageConversationMaximumLimit)
+		if err != nil {
+			return nil, err
+		}
+		for _, summary := range page.Items {
+			item, found, _, err := history.GetItem(context.Background(), ownerID, util.Clean(summary["id"]))
+			if err != nil {
+				return nil, err
+			}
+			if found {
+				items = append(items, item)
+			}
+		}
+		if !page.HasMore {
+			return items, nil
+		}
+		cursor = page.NextCursor
+	}
+}
 
 func TestImageConversationHistoryServicePersistsAndIsolatesOwners(t *testing.T) {
 	backend := newTestStorageBackend(t)
 	history := NewImageConversationHistoryService(backend)
 
-	items, err := history.Merge("user-a", []map[string]any{
+	items, err := mergeConversationHistory(history, "user-a", []map[string]any{
 		{
 			"id":        "conversation-1",
 			"title":     "first",
@@ -31,7 +59,7 @@ func TestImageConversationHistoryServicePersistsAndIsolatesOwners(t *testing.T) 
 		t.Fatalf("Merge() items = %#v", items)
 	}
 
-	items, err = history.Merge("user-a", []map[string]any{
+	items, err = mergeConversationHistory(history, "user-a", []map[string]any{
 		{
 			"id":        "conversation-1",
 			"title":     "older",
@@ -52,7 +80,7 @@ func TestImageConversationHistoryServicePersistsAndIsolatesOwners(t *testing.T) 
 		t.Fatalf("second Merge() items = %#v", items)
 	}
 
-	other, err := history.List("user-b")
+	other, err := listImageConversationHistoryForTest(history, "user-b")
 	if err != nil {
 		t.Fatalf("List(other) error = %v", err)
 	}
@@ -61,29 +89,30 @@ func TestImageConversationHistoryServicePersistsAndIsolatesOwners(t *testing.T) 
 	}
 
 	reloaded := NewImageConversationHistoryService(backend)
-	items, err = reloaded.List("user-a")
+	items, err = listImageConversationHistoryForTest(reloaded, "user-a")
 	if err != nil || len(items) != 2 {
 		t.Fatalf("reloaded List() items=%#v error=%v", items, err)
 	}
 
-	items, removed, err := reloaded.Delete("user-a", "conversation-1")
-	if err != nil || !removed || len(items) != 1 {
-		t.Fatalf("Delete() items=%#v removed=%v error=%v", items, removed, err)
+	removed, _, err := reloaded.DeleteMinimal(context.Background(), "user-a", "conversation-1")
+	items, listErr := listImageConversationHistoryForTest(reloaded, "user-a")
+	if err != nil || listErr != nil || !removed || len(items) != 1 {
+		t.Fatalf("DeleteMinimal() items=%#v removed=%v error=%v listError=%v", items, removed, err, listErr)
 	}
-	items, err = reloaded.Merge("user-a", []map[string]any{{
+	items, err = mergeConversationHistory(reloaded, "user-a", []map[string]any{{
 		"id": "conversation-1", "revision": 99, "title": "stale device", "updatedAt": "2099-01-01T00:00:00Z", "turns": []any{},
 	}})
 	if err != nil || len(items) != 1 {
 		t.Fatalf("deleted conversation was resurrected: items=%#v error=%v", items, err)
 	}
-	if err := reloaded.Clear("user-a"); err != nil {
-		t.Fatalf("Clear() error = %v", err)
+	if _, err := reloaded.ClearMinimal(context.Background(), "user-a"); err != nil {
+		t.Fatalf("ClearMinimal() error = %v", err)
 	}
-	items, err = reloaded.List("user-a")
+	items, err = listImageConversationHistoryForTest(reloaded, "user-a")
 	if err != nil || len(items) != 0 {
 		t.Fatalf("List() after Clear items=%#v error=%v", items, err)
 	}
-	items, err = reloaded.Merge("user-a", []map[string]any{{
+	items, err = mergeConversationHistory(reloaded, "user-a", []map[string]any{{
 		"id": "conversation-2", "revision": 100, "title": "stale after clear", "updatedAt": "2099-01-01T00:00:00Z", "turns": []any{},
 	}})
 	if err != nil || len(items) != 0 {
@@ -98,7 +127,7 @@ func TestImageConversationHistoryServiceRejectsInvalidItems(t *testing.T) {
 		{"id": "conversation-1", "turns": []any{}},
 		{"id": "conversation-1", "updatedAt": "2026-07-15T10:00:00Z"},
 	} {
-		if _, err := history.Merge("user-a", []map[string]any{item}); err == nil {
+		if _, err := mergeConversationHistory(history, "user-a", []map[string]any{item}); err == nil {
 			t.Fatalf("case %d Merge() error = nil", index)
 		} else {
 			var validationErr ImageConversationHistoryValidationError
@@ -111,12 +140,13 @@ func TestImageConversationHistoryServiceRejectsInvalidItems(t *testing.T) {
 
 func TestImageConversationHistoryDeleteMissingItemPersistsTombstone(t *testing.T) {
 	history := NewImageConversationHistoryService(newTestStorageBackend(t))
-	items, removed, err := history.Delete("user-a", "conversation-delayed")
-	if err != nil || removed || len(items) != 0 {
-		t.Fatalf("Delete(missing) items=%#v removed=%v error=%v", items, removed, err)
+	removed, _, err := history.DeleteMinimal(context.Background(), "user-a", "conversation-delayed")
+	items, listErr := listImageConversationHistoryForTest(history, "user-a")
+	if err != nil || listErr != nil || removed || len(items) != 0 {
+		t.Fatalf("DeleteMinimal(missing) items=%#v removed=%v error=%v listError=%v", items, removed, err, listErr)
 	}
 
-	items, err = history.Merge("user-a", []map[string]any{{
+	items, err = mergeConversationHistory(history, "user-a", []map[string]any{{
 		"id":        "conversation-delayed",
 		"revision":  99,
 		"updatedAt": "2099-01-01T00:00:00Z",
@@ -130,11 +160,11 @@ func TestImageConversationHistoryDeleteMissingItemPersistsTombstone(t *testing.T
 func TestImageConversationHistoryClearWatermarkRejectsDelayedUnknownItems(t *testing.T) {
 	history := NewImageConversationHistoryService(newTestStorageBackend(t))
 	delayedAt := time.Now().UTC().Add(-time.Minute).Format(time.RFC3339Nano)
-	if err := history.Clear("user-a"); err != nil {
-		t.Fatalf("Clear() error = %v", err)
+	if _, err := history.ClearMinimal(context.Background(), "user-a"); err != nil {
+		t.Fatalf("ClearMinimal() error = %v", err)
 	}
 
-	items, err := history.Merge("user-a", []map[string]any{{
+	items, err := mergeConversationHistory(history, "user-a", []map[string]any{{
 		"id":        "conversation-delayed",
 		"revision":  1,
 		"createdAt": delayedAt,
@@ -146,7 +176,7 @@ func TestImageConversationHistoryClearWatermarkRejectsDelayedUnknownItems(t *tes
 	}
 
 	createdAfterClear := time.Now().UTC().Add(time.Minute).Format(time.RFC3339Nano)
-	items, err = history.Merge("user-a", []map[string]any{{
+	items, err = mergeConversationHistory(history, "user-a", []map[string]any{{
 		"id":        "conversation-new",
 		"revision":  1,
 		"createdAt": createdAfterClear,
@@ -168,12 +198,12 @@ func TestImageConversationHistoryMergeAcknowledgements(t *testing.T) {
 		"updatedAt": "2026-07-15T10:00:00Z",
 		"turns":     []any{},
 	}
-	_, acknowledgements, err := history.MergeWithAcknowledgements("user-a", []map[string]any{current})
+	acknowledgements, _, err := history.MergeWithAcknowledgementsMinimal(context.Background(), "user-a", []map[string]any{current}, nil)
 	if err != nil || len(acknowledgements) != 1 || !acknowledgements[0].Accepted || acknowledgements[0].Gone || acknowledgements[0].ActualRevision != 7 {
 		t.Fatalf("initial acknowledgement = %#v, error=%v", acknowledgements, err)
 	}
 
-	_, acknowledgements, err = history.MergeWithAcknowledgements("user-a", []map[string]any{current})
+	acknowledgements, _, err = history.MergeWithAcknowledgementsMinimal(context.Background(), "user-a", []map[string]any{current}, nil)
 	if err != nil || len(acknowledgements) != 1 || !acknowledgements[0].Accepted || acknowledgements[0].ActualRevision != 7 {
 		t.Fatalf("idempotent acknowledgement = %#v, error=%v", acknowledgements, err)
 	}
@@ -181,14 +211,14 @@ func TestImageConversationHistoryMergeAcknowledgements(t *testing.T) {
 	staleRevision := cloneImageConversationMap(current)
 	staleRevision["revision"] = 6
 	staleRevision["updatedAt"] = "2099-01-01T00:00:00Z"
-	_, acknowledgements, err = history.MergeWithAcknowledgements("user-a", []map[string]any{staleRevision})
+	acknowledgements, _, err = history.MergeWithAcknowledgementsMinimal(context.Background(), "user-a", []map[string]any{staleRevision}, nil)
 	if err != nil || len(acknowledgements) != 1 || acknowledgements[0].Accepted || acknowledgements[0].Gone || acknowledgements[0].ActualRevision != 7 {
 		t.Fatalf("stale revision acknowledgement = %#v, error=%v", acknowledgements, err)
 	}
 
 	staleTimestamp := cloneImageConversationMap(current)
 	staleTimestamp["updatedAt"] = "2026-07-15T09:30:00Z"
-	_, acknowledgements, err = history.MergeWithAcknowledgements("user-a", []map[string]any{staleTimestamp})
+	acknowledgements, _, err = history.MergeWithAcknowledgementsMinimal(context.Background(), "user-a", []map[string]any{staleTimestamp}, nil)
 	if err != nil || len(acknowledgements) != 1 || acknowledgements[0].Accepted || acknowledgements[0].Gone || acknowledgements[0].ActualRevision != 7 {
 		t.Fatalf("stale timestamp acknowledgement = %#v, error=%v", acknowledgements, err)
 	}
@@ -196,28 +226,28 @@ func TestImageConversationHistoryMergeAcknowledgements(t *testing.T) {
 	concurrentSameRevision := cloneImageConversationMap(current)
 	concurrentSameRevision["title"] = "conflicting concurrent update"
 	concurrentSameRevision["updatedAt"] = "2026-07-15T11:00:00Z"
-	_, acknowledgements, err = history.MergeWithAcknowledgements("user-a", []map[string]any{concurrentSameRevision})
+	acknowledgements, _, err = history.MergeWithAcknowledgementsMinimal(context.Background(), "user-a", []map[string]any{concurrentSameRevision}, nil)
 	if err != nil || len(acknowledgements) != 1 || acknowledgements[0].Accepted || acknowledgements[0].Gone || acknowledgements[0].ActualRevision != 7 {
 		t.Fatalf("same-revision conflict acknowledgement = %#v, error=%v", acknowledgements, err)
 	}
-	items, err := history.List("user-a")
+	items, err := listImageConversationHistoryForTest(history, "user-a")
 	if err != nil || len(items) != 1 || items[0]["title"] != "current" {
 		t.Fatalf("same-revision conflict changed history: items=%#v error=%v", items, err)
 	}
 
-	if _, _, err := history.Delete("user-a", "conversation-ack"); err != nil {
-		t.Fatalf("Delete() error = %v", err)
+	if _, _, err := history.DeleteMinimal(context.Background(), "user-a", "conversation-ack"); err != nil {
+		t.Fatalf("DeleteMinimal() error = %v", err)
 	}
 	deleted := cloneImageConversationMap(current)
 	deleted["revision"] = 8
 	deleted["updatedAt"] = "2099-01-01T00:00:00Z"
-	_, acknowledgements, err = history.MergeWithAcknowledgements("user-a", []map[string]any{deleted})
+	acknowledgements, _, err = history.MergeWithAcknowledgementsMinimal(context.Background(), "user-a", []map[string]any{deleted}, nil)
 	if err != nil || len(acknowledgements) != 1 || acknowledgements[0].Accepted || !acknowledgements[0].Gone {
 		t.Fatalf("deleted acknowledgement = %#v, error=%v", acknowledgements, err)
 	}
 
-	if err := history.Clear("user-b"); err != nil {
-		t.Fatalf("Clear() error = %v", err)
+	if _, err := history.ClearMinimal(context.Background(), "user-b"); err != nil {
+		t.Fatalf("ClearMinimal() error = %v", err)
 	}
 	cleared := map[string]any{
 		"id":        "conversation-before-clear",
@@ -226,7 +256,7 @@ func TestImageConversationHistoryMergeAcknowledgements(t *testing.T) {
 		"updatedAt": "2099-01-01T00:00:00Z",
 		"turns":     []any{},
 	}
-	_, acknowledgements, err = history.MergeWithAcknowledgements("user-b", []map[string]any{cleared})
+	acknowledgements, _, err = history.MergeWithAcknowledgementsMinimal(context.Background(), "user-b", []map[string]any{cleared}, nil)
 	if err != nil || len(acknowledgements) != 1 || acknowledgements[0].Accepted || !acknowledgements[0].Gone {
 		t.Fatalf("cleared acknowledgement = %#v, error=%v", acknowledgements, err)
 	}
@@ -235,7 +265,7 @@ func TestImageConversationHistoryMergeAcknowledgements(t *testing.T) {
 func TestImageConversationHistoryMergeKeepsTerminalImageAgainstStaleRunningSnapshots(t *testing.T) {
 	history := NewImageConversationHistoryService(newTestStorageBackend(t))
 	terminal := imageConversationHistoryTestItem(7, "2026-07-15T10:00:00Z", "success", "task-1", "https://example.test/image.png")
-	if _, err := history.Merge("user-a", []map[string]any{terminal}); err != nil {
+	if _, err := mergeConversationHistory(history, "user-a", []map[string]any{terminal}); err != nil {
 		t.Fatalf("terminal Merge() error = %v", err)
 	}
 
@@ -248,15 +278,15 @@ func TestImageConversationHistoryMergeKeepsTerminalImageAgainstStaleRunningSnaps
 		{name: "lower revision", revision: 6, at: "2026-07-15T12:00:00Z", taskID: "task-1"},
 		{name: "same version", revision: 7, at: "2026-07-15T10:00:00Z", taskID: "task-1"},
 		{name: "future timestamp lower revision", revision: 5, at: "2099-01-01T00:00:00Z", taskID: "task-1"},
-		{name: "legacy missing task id", revision: 6, at: "2026-07-15T12:00:00Z", taskID: ""},
+		{name: "missing task id", revision: 6, at: "2026-07-15T12:00:00Z", taskID: ""},
 	}
 	for _, testCase := range cases {
 		t.Run(testCase.name, func(t *testing.T) {
 			stale := imageConversationHistoryTestItem(testCase.revision, testCase.at, "loading", testCase.taskID, "")
-			if _, err := history.Merge("user-a", []map[string]any{stale}); err != nil {
+			if _, err := mergeConversationHistory(history, "user-a", []map[string]any{stale}); err != nil {
 				t.Fatalf("stale Merge() error = %v", err)
 			}
-			items, err := history.List("user-a")
+			items, err := listImageConversationHistoryForTest(history, "user-a")
 			if err != nil {
 				t.Fatalf("List() error = %v", err)
 			}
@@ -268,23 +298,27 @@ func TestImageConversationHistoryMergeKeepsTerminalImageAgainstStaleRunningSnaps
 	}
 }
 
-func TestImageConversationHistoryMergeAllowsTerminalUpgradeAndNormalizesRevision(t *testing.T) {
-	history := NewImageConversationHistoryService(newTestStorageBackend(t))
-	active := imageConversationHistoryTestItem("2", "2026-07-15T10:00:00Z", "loading", "task-2", "")
-	if _, err := history.Merge("user-a", []map[string]any{active}); err != nil {
-		t.Fatalf("active Merge() error = %v", err)
+func TestSameImageTaskRequiresMatchingTaskIdentity(t *testing.T) {
+	tests := []struct {
+		name  string
+		left  string
+		right string
+		want  bool
+	}{
+		{name: "same explicit task", left: "task-1", right: "task-1", want: true},
+		{name: "different explicit task", left: "task-1", right: "task-2"},
+		{name: "both taskless", want: true},
+		{name: "left taskless", right: "task-1"},
+		{name: "right taskless", left: "task-1"},
 	}
-	terminal := imageConversationHistoryTestItem(1, "2026-07-15T09:00:00Z", "success", "task-2", "https://example.test/image-2.png")
-	items, err := history.Merge("user-a", []map[string]any{terminal})
-	if err != nil {
-		t.Fatalf("terminal upgrade Merge() error = %v", err)
-	}
-	if got, ok := items[0]["revision"].(int64); !ok || got != 2 {
-		t.Fatalf("revision = %#v (%T), want normalized current revision 2", items[0]["revision"], items[0]["revision"])
-	}
-	image := imageFromHistoryItem(t, items[0])
-	if image["status"] != "success" || image["url"] != "https://example.test/image-2.png" {
-		t.Fatalf("terminal upgrade was not retained: %#v", image)
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			left := map[string]any{"taskId": testCase.left}
+			right := map[string]any{"taskId": testCase.right}
+			if got := sameImageTask(left, right); got != testCase.want {
+				t.Fatalf("sameImageTask() = %v, want %v", got, testCase.want)
+			}
+		})
 	}
 }
 
@@ -293,13 +327,13 @@ func TestImageConversationHistoryMergeUsesTaskRevisionBeforeSnapshotStatus(t *te
 	history := NewImageConversationHistoryService(backend)
 	newerRunning := imageConversationHistoryTestItem(1, "2026-07-15T10:00:00Z", "loading", "task-revision", "")
 	setImageConversationTaskState(t, newerRunning, 20, "running")
-	if _, err := history.Merge("user-a", []map[string]any{newerRunning}); err != nil {
+	if _, err := mergeConversationHistory(history, "user-a", []map[string]any{newerRunning}); err != nil {
 		t.Fatalf("newer running Merge() error = %v", err)
 	}
 
 	olderQueued := imageConversationHistoryTestItem(2, "2026-07-15T11:00:00Z", "loading", "task-revision", "")
 	setImageConversationTaskState(t, olderQueued, 19, "queued")
-	if _, err := history.Merge("user-a", []map[string]any{olderQueued}); err != nil {
+	if _, err := mergeConversationHistory(history, "user-a", []map[string]any{olderQueued}); err != nil {
 		t.Fatalf("older queued Merge() error = %v", err)
 	}
 	image := imageFromHistoryItem(t, mustListImageConversationHistory(t, history, "user-a"))
@@ -309,12 +343,12 @@ func TestImageConversationHistoryMergeUsesTaskRevisionBeforeSnapshotStatus(t *te
 
 	terminal := imageConversationHistoryTestItem(3, "2026-07-15T12:00:00Z", "success", "task-revision", "https://example.test/final.png")
 	setImageConversationTaskState(t, terminal, 21, "success")
-	if _, err := history.Merge("user-a", []map[string]any{terminal}); err != nil {
+	if _, err := mergeConversationHistory(history, "user-a", []map[string]any{terminal}); err != nil {
 		t.Fatalf("terminal Merge() error = %v", err)
 	}
 	staleRunning := imageConversationHistoryTestItem(4, "2026-07-15T13:00:00Z", "loading", "task-revision", "")
 	setImageConversationTaskState(t, staleRunning, 20, "running")
-	if _, err := history.Merge("user-a", []map[string]any{staleRunning}); err != nil {
+	if _, err := mergeConversationHistory(history, "user-a", []map[string]any{staleRunning}); err != nil {
 		t.Fatalf("stale running Merge() error = %v", err)
 	}
 
@@ -379,7 +413,7 @@ func TestImageConversationHistoryDropsActivePreviewOutputAndKeepsTerminalOutput(
 	activeImage["path"] = "images/preview.png"
 	activeImage["text_response"] = "partial response"
 	activeImage["videoUrl"] = "/videos/preview.mp4"
-	items, err := history.Merge("user-a", []map[string]any{active})
+	items, err := mergeConversationHistory(history, "user-a", []map[string]any{active})
 	if err != nil {
 		t.Fatalf("active preview Merge() error = %v", err)
 	}
@@ -398,7 +432,7 @@ func TestImageConversationHistoryDropsActivePreviewOutputAndKeepsTerminalOutput(
 	terminalImage["path"] = "images/final.png"
 	terminalImage["text_response"] = "final response"
 	terminalImage["videoUrl"] = "/videos/final.mp4"
-	items, err = reloaded.Merge("user-a", []map[string]any{terminal})
+	items, err = mergeConversationHistory(reloaded, "user-a", []map[string]any{terminal})
 	if err != nil {
 		t.Fatalf("terminal Merge() error = %v", err)
 	}
@@ -413,7 +447,7 @@ func TestImageConversationHistoryDropsActivePreviewOutputAndKeepsTerminalOutput(
 	newTaskImage["b64_json"] = "new-base64"
 	newTaskImage["path"] = "images/new.png"
 	newTaskImage["text_response"] = "new response"
-	items, err = reloaded.Merge("user-a", []map[string]any{newTask})
+	items, err = mergeConversationHistory(reloaded, "user-a", []map[string]any{newTask})
 	if err != nil {
 		t.Fatalf("new terminal task Merge() error = %v", err)
 	}
@@ -424,52 +458,20 @@ func TestImageConversationHistoryDropsActivePreviewOutputAndKeepsTerminalOutput(
 	assertImageConversationOutputFields(t, image, true)
 }
 
-func TestImageConversationHistoryListMigratesStoredActivePreviewOutput(t *testing.T) {
-	backend := newTestStorageBackend(t)
-	history := NewImageConversationHistoryService(backend)
-	ownerID := "legacy-preview-user"
-	active := imageConversationHistoryTestItem(1, "2026-07-15T10:00:00Z", "loading", "task-preview", "https://example.test/preview.png")
-	setImageConversationTaskState(t, active, 10, "running")
-	image := imageFromHistoryItem(t, active)
-	image["b64_json"] = "preview-base64"
-	image["path"] = "images/preview.png"
-	image["text_response"] = "partial response"
-	documentName := imageConversationHistoryDocumentName(ownerID)
-	if err := history.store.SaveJSONDocument(documentName, map[string]any{"items": []any{active}}); err != nil {
-		t.Fatalf("SaveJSONDocument() error = %v", err)
-	}
-
-	items, err := history.List(ownerID)
-	if err != nil {
-		t.Fatalf("List() error = %v", err)
-	}
-	assertImageConversationOutputFields(t, imageFromHistoryItem(t, items[0]), false)
-
-	raw, err := history.store.LoadJSONDocument(documentName)
-	if err != nil {
-		t.Fatalf("LoadJSONDocument() error = %v", err)
-	}
-	storedItems := util.AsMapSlice(util.StringMap(raw)["items"])
-	if len(storedItems) != 1 {
-		t.Fatalf("stored items = %#v, want one conversation", storedItems)
-	}
-	assertImageConversationOutputFields(t, imageFromHistoryItem(t, storedItems[0]), false)
-}
-
 func TestImageConversationHistoryMergePreservesTurnsMissingFromNewerDeviceSnapshot(t *testing.T) {
 	history := NewImageConversationHistoryService(newTestStorageBackend(t))
 	base := map[string]any{
 		"id": "conversation-shared", "revision": 7, "updatedAt": "2026-07-15T10:00:00Z",
 		"turns": []any{map[string]any{"id": "turn-device-a", "status": "success", "images": []any{}}},
 	}
-	if _, err := history.Merge("user-a", []map[string]any{base}); err != nil {
+	if _, err := mergeConversationHistory(history, "user-a", []map[string]any{base}); err != nil {
 		t.Fatalf("initial Merge() error = %v", err)
 	}
 	newer := map[string]any{
 		"id": "conversation-shared", "revision": 8, "updatedAt": "2026-07-15T11:00:00Z",
 		"turns": []any{map[string]any{"id": "turn-device-b", "status": "success", "images": []any{}}},
 	}
-	items, err := history.Merge("user-a", []map[string]any{newer})
+	items, err := mergeConversationHistory(history, "user-a", []map[string]any{newer})
 	if err != nil {
 		t.Fatalf("newer Merge() error = %v", err)
 	}
@@ -493,7 +495,7 @@ func TestImageConversationHistoryMergeEqualVersionDoesNotResurrectOldImages(t *t
 			},
 		}},
 	}
-	if _, err := history.Merge("user-a", []map[string]any{current}); err != nil {
+	if _, err := mergeConversationHistory(history, "user-a", []map[string]any{current}); err != nil {
 		t.Fatalf("current Merge() error = %v", err)
 	}
 	stale := map[string]any{
@@ -508,51 +510,13 @@ func TestImageConversationHistoryMergeEqualVersionDoesNotResurrectOldImages(t *t
 			},
 		}},
 	}
-	items, err := history.Merge("user-a", []map[string]any{stale})
+	items, err := mergeConversationHistory(history, "user-a", []map[string]any{stale})
 	if err != nil {
 		t.Fatalf("stale Merge() error = %v", err)
 	}
 	images := imagesFromHistoryItem(t, items[0])
 	if len(images) != 1 || images[0]["id"] != "image-new" || images[0]["status"] != "success" {
 		t.Fatalf("equal-version stale image changed current result: %#v", images)
-	}
-}
-
-func TestImageConversationHistoryMergeFillsAnEmptyTurnFromMatchingSnapshot(t *testing.T) {
-	history := NewImageConversationHistoryService(newTestStorageBackend(t))
-	current := map[string]any{
-		"id":        "conversation-empty-turn",
-		"updatedAt": "2026-07-15T10:00:00Z",
-		"turns": []any{map[string]any{
-			"id":     "turn-1",
-			"status": "generating",
-			"images": []any{},
-		}},
-	}
-	if _, err := history.Merge("user-a", []map[string]any{current}); err != nil {
-		t.Fatalf("current Merge() error = %v", err)
-	}
-	incoming := map[string]any{
-		"id":        "conversation-empty-turn",
-		"updatedAt": "2026-07-15T10:00:00Z",
-		"turns": []any{map[string]any{
-			"id":     "turn-1",
-			"status": "success",
-			"images": []any{map[string]any{
-				"id":     "image-new",
-				"taskId": "task-new",
-				"status": "success",
-				"url":    "https://example.test/new.png",
-			}},
-		}},
-	}
-	items, err := history.Merge("user-a", []map[string]any{incoming})
-	if err != nil {
-		t.Fatalf("incoming Merge() error = %v", err)
-	}
-	images := imagesFromHistoryItem(t, items[0])
-	if len(images) != 1 || images[0]["id"] != "image-new" || images[0]["url"] != "https://example.test/new.png" {
-		t.Fatalf("empty turn was not filled from matching snapshot: %#v", images)
 	}
 }
 
@@ -568,7 +532,7 @@ func TestImageConversationHistoryStatusDerivesQueuedBeforeRunning(t *testing.T) 
 			want:  "queued",
 		},
 		{
-			name:  "legacy loading task",
+			name:  "loading task without task status",
 			image: map[string]any{"status": "loading"},
 			want:  "queued",
 		},
@@ -590,28 +554,6 @@ func TestImageConversationHistoryStatusDerivesQueuedBeforeRunning(t *testing.T) 
 				t.Fatalf("mergeImageConversationStatus() = %q, want %q", got, testCase.want)
 			}
 		})
-	}
-}
-
-func TestImageConversationHistoryServiceDifferentOwnersCanMergeConcurrently(t *testing.T) {
-	backend := newConcurrentHistoryBackend()
-	history := NewImageConversationHistoryService(backend)
-	const ownerCount = 8
-	var waitGroup sync.WaitGroup
-	for index := 0; index < ownerCount; index++ {
-		waitGroup.Add(1)
-		go func(index int) {
-			defer waitGroup.Done()
-			owner := fmt.Sprintf("owner-%d", index)
-			item := imageConversationHistoryTestItem(1, "2026-07-15T10:00:00Z", "success", fmt.Sprintf("task-%d", index), "https://example.test/image.png")
-			if _, err := history.Merge(owner, []map[string]any{item}); err != nil {
-				t.Errorf("Merge(%s) error = %v", owner, err)
-			}
-		}(index)
-	}
-	waitGroup.Wait()
-	if backend.maxActive < 2 {
-		t.Fatalf("different-owner operations never overlapped; max active storage calls = %d", backend.maxActive)
 	}
 }
 
@@ -655,7 +597,7 @@ func imageConversationTaskStatusTestImage(taskStatus string, taskRevision any) m
 
 func mustListImageConversationHistory(t *testing.T, history *ImageConversationHistoryService, ownerID string) map[string]any {
 	t.Helper()
-	items, err := history.List(ownerID)
+	items, err := listImageConversationHistoryForTest(history, ownerID)
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
 	}
@@ -692,76 +634,3 @@ func imagesFromHistoryItem(t *testing.T, item map[string]any) []map[string]any {
 	}
 	return util.AsMapSlice(turns[0]["images"])
 }
-
-type concurrentHistoryBackend struct {
-	mu        sync.Mutex
-	documents map[string]any
-	active    int
-	maxActive int
-}
-
-func newConcurrentHistoryBackend() *concurrentHistoryBackend {
-	return &concurrentHistoryBackend{documents: map[string]any{}}
-}
-
-func (b *concurrentHistoryBackend) LoadAccounts() ([]map[string]any, error) { return nil, nil }
-func (b *concurrentHistoryBackend) SaveAccounts([]map[string]any) error     { return nil }
-func (b *concurrentHistoryBackend) LoadAuthKeys() ([]map[string]any, error) { return nil, nil }
-func (b *concurrentHistoryBackend) SaveAuthKeys([]map[string]any) error     { return nil }
-func (b *concurrentHistoryBackend) HealthCheck() map[string]any             { return map[string]any{} }
-func (b *concurrentHistoryBackend) Info() map[string]any                    { return map[string]any{} }
-
-func (b *concurrentHistoryBackend) LoadJSONDocument(name string) (any, error) {
-	b.enter()
-	defer b.exit()
-	time.Sleep(time.Millisecond)
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return cloneHistoryTestValue(b.documents[name]), nil
-}
-
-func (b *concurrentHistoryBackend) SaveJSONDocument(name string, value any) error {
-	b.enter()
-	defer b.exit()
-	time.Sleep(time.Millisecond)
-	b.mu.Lock()
-	b.documents[name] = cloneHistoryTestValue(value)
-	b.mu.Unlock()
-	return nil
-}
-
-func (b *concurrentHistoryBackend) DeleteJSONDocument(name string) error {
-	b.enter()
-	defer b.exit()
-	b.mu.Lock()
-	delete(b.documents, name)
-	b.mu.Unlock()
-	return nil
-}
-
-func (b *concurrentHistoryBackend) enter() {
-	b.mu.Lock()
-	b.active++
-	if b.active > b.maxActive {
-		b.maxActive = b.active
-	}
-	b.mu.Unlock()
-}
-
-func (b *concurrentHistoryBackend) exit() {
-	b.mu.Lock()
-	b.active--
-	b.mu.Unlock()
-}
-
-func cloneHistoryTestValue(value any) any {
-	if value == nil {
-		return nil
-	}
-	data, _ := json.Marshal(value)
-	var clone any
-	_ = json.Unmarshal(data, &clone)
-	return clone
-}
-
-var _ storage.Backend = (*concurrentHistoryBackend)(nil)

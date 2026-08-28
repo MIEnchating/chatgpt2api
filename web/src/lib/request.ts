@@ -2,6 +2,7 @@ import axios, {AxiosError, type AxiosRequestConfig} from "axios";
 
 import webConfig from "@/constants/common-env";
 import {clearAuthenticatedImageCache} from "@/lib/authenticated-image";
+import {extractRequestErrorMessage} from "@/lib/request-error";
 
 type RequestConfig = AxiosRequestConfig & {
     redirectOnUnauthorized?: boolean;
@@ -12,21 +13,6 @@ type ErrorPayload = {
     error?: string | { message?: string; code?: string; type?: string };
     message?: string;
 };
-
-function errorMessageFromValue(value: unknown): string {
-    if (typeof value === "string") {
-        return value;
-    }
-    if (!value || typeof value !== "object") {
-        return "";
-    }
-
-    const item = value as { error?: unknown; message?: unknown };
-    if (typeof item.message === "string") {
-        return item.message;
-    }
-    return errorMessageFromValue(item.error);
-}
 
 function errorCodeFromValue(value: unknown): string {
     if (!value || typeof value !== "object") {
@@ -42,7 +28,7 @@ function errorCodeFromValue(value: unknown): string {
     return errorCodeFromValue(item.error);
 }
 
-export type AppRequestError = Error & {
+type AppRequestError = Error & {
     status?: number;
     code?: string;
     errorType?: string;
@@ -81,9 +67,9 @@ request.interceptors.response.use(
                 ? String((errorValue as { type?: unknown }).type || "")
                 : "";
         const message =
-            errorMessageFromValue(payload?.detail) ||
-            errorMessageFromValue(payload?.error) ||
-            payload?.message ||
+            extractRequestErrorMessage(payload?.detail) ||
+            extractRequestErrorMessage(payload?.error) ||
+            extractRequestErrorMessage(payload?.message) ||
             error.message ||
             `请求失败 (${status || 500})`;
         const appError = new Error(message) as AppRequestError;

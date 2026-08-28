@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/url"
 	"os"
-	"path"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -15,81 +14,48 @@ import (
 	"sync"
 	"time"
 
+	"chatgpt2api/internal/model"
 	"chatgpt2api/internal/storage"
 	"chatgpt2api/internal/util"
 )
 
 var settingEnvKeys = map[string]string{
-	"base_url":                          "IMAGE_BASE_URL",
-	"app_title":                         "APP_TITLE",
-	"project_name":                      "PROJECT_NAME",
-	"site_icon_url":                     "SITE_ICON_URL",
-	"relay_base_url":                    "API_BASE_URL",
-	"proxy":                             "PROXY",
-	"image_models":                      "IMAGE_MODELS",
-	"video_models":                      "VIDEO_MODELS",
-	"chat_models":                       "CHAT_MODELS",
-	"refresh_account_interval_minute":   "REFRESH_ACCOUNT_INTERVAL_MINUTE",
-	"image_task_timeout_seconds":        "CREATION_TASK_TIMEOUT_SECONDS",
-	"user_default_concurrent_limit":     "USER_DEFAULT_CONCURRENT_LIMIT",
-	"user_default_rpm_limit":            "USER_DEFAULT_RPM_LIMIT",
-	"image_retention_days":              "IMAGE_RETENTION_DAYS",
-	"image_storage_limit_mb":            "IMAGE_STORAGE_LIMIT_MB",
-	"image_storage_backend":             "IMAGE_STORAGE_BACKEND",
-	"s3_endpoint":                       "S3_ENDPOINT",
-	"s3_region":                         "S3_REGION",
-	"s3_bucket":                         "S3_BUCKET",
-	"s3_prefix":                         "S3_PREFIX",
-	"s3_use_path_style":                 "S3_USE_PATH_STYLE",
-	"auto_remove_invalid_accounts":      "AUTO_REMOVE_INVALID_ACCOUNTS",
-	"auto_remove_rate_limited_accounts": "AUTO_REMOVE_RATE_LIMITED_ACCOUNTS",
-	"log_retention_days":                "LOG_RETENTION_DAYS",
-	"default_log_view":                  "DEFAULT_LOG_VIEW",
-	"log_levels":                        "LOG_LEVELS",
-	"login_page_image_url":              "LOGIN_PAGE_IMAGE_URL",
-	"login_page_image_mode":             "LOGIN_PAGE_IMAGE_MODE",
-	"login_page_image_zoom":             "LOGIN_PAGE_IMAGE_ZOOM",
-	"login_page_image_position_x":       "LOGIN_PAGE_IMAGE_POSITION_X",
-	"login_page_image_position_y":       "LOGIN_PAGE_IMAGE_POSITION_Y",
-	"text_account_schedule_mode":        "TEXT_ACCOUNT_SCHEDULE_MODE",
-	"image_account_schedule_mode":       "IMAGE_ACCOUNT_SCHEDULE_MODE",
-	"prompt_sources":                    "PROMPT_SOURCES",
-}
-
-var legacySettingEnvKeys = map[string][]string{
-	"base_url":                          {"CHATGPT2API_BASE_URL"},
-	"app_title":                         {"CHATGPT2API_APP_TITLE"},
-	"project_name":                      {"CHATGPT2API_PROJECT_NAME"},
-	"site_icon_url":                     {"CHATGPT2API_SITE_ICON_URL"},
-	"relay_base_url":                    {"RELAY_BASE_URL", "CHATGPT2API_RELAY_BASE_URL"},
-	"proxy":                             {"CHATGPT2API_PROXY"},
-	"image_models":                      {"CHATGPT2API_IMAGE_MODELS"},
-	"video_models":                      {"CHATGPT2API_VIDEO_MODELS"},
-	"chat_models":                       {"CHATGPT2API_CHAT_MODELS"},
-	"refresh_account_interval_minute":   {"CHATGPT2API_REFRESH_ACCOUNT_INTERVAL_MINUTE"},
-	"image_task_timeout_seconds":        {"IMAGE_TASK_TIMEOUT_SECONDS", "CHATGPT2API_IMAGE_TASK_TIMEOUT_SECONDS"},
-	"user_default_concurrent_limit":     {"CHATGPT2API_USER_DEFAULT_CONCURRENT_LIMIT"},
-	"user_default_rpm_limit":            {"CHATGPT2API_USER_DEFAULT_RPM_LIMIT"},
-	"image_retention_days":              {"CHATGPT2API_IMAGE_RETENTION_DAYS"},
-	"image_storage_limit_mb":            {"CHATGPT2API_IMAGE_STORAGE_LIMIT_MB"},
-	"image_storage_backend":             {"CHATGPT2API_IMAGE_STORAGE_BACKEND"},
-	"s3_endpoint":                       {"CHATGPT2API_S3_ENDPOINT"},
-	"s3_region":                         {"CHATGPT2API_S3_REGION"},
-	"s3_bucket":                         {"CHATGPT2API_S3_BUCKET"},
-	"s3_prefix":                         {"CHATGPT2API_S3_PREFIX"},
-	"s3_use_path_style":                 {"CHATGPT2API_S3_USE_PATH_STYLE"},
-	"auto_remove_invalid_accounts":      {"CHATGPT2API_AUTO_REMOVE_INVALID_ACCOUNTS"},
-	"auto_remove_rate_limited_accounts": {"CHATGPT2API_AUTO_REMOVE_RATE_LIMITED_ACCOUNTS"},
-	"log_retention_days":                {"CHATGPT2API_LOG_RETENTION_DAYS"},
-	"default_log_view":                  {"CHATGPT2API_DEFAULT_LOG_VIEW"},
-	"log_levels":                        {"CHATGPT2API_LOG_LEVELS"},
-	"login_page_image_url":              {"CHATGPT2API_LOGIN_PAGE_IMAGE_URL"},
-	"login_page_image_mode":             {"CHATGPT2API_LOGIN_PAGE_IMAGE_MODE"},
-	"login_page_image_zoom":             {"CHATGPT2API_LOGIN_PAGE_IMAGE_ZOOM"},
-	"login_page_image_position_x":       {"CHATGPT2API_LOGIN_PAGE_IMAGE_POSITION_X"},
-	"login_page_image_position_y":       {"CHATGPT2API_LOGIN_PAGE_IMAGE_POSITION_Y"},
-	"text_account_schedule_mode":        {"CHATGPT2API_TEXT_ACCOUNT_SCHEDULE_MODE"},
-	"image_account_schedule_mode":       {"CHATGPT2API_IMAGE_ACCOUNT_SCHEDULE_MODE"},
+	"base_url":                      "IMAGE_BASE_URL",
+	"app_title":                     "APP_TITLE",
+	"project_name":                  "PROJECT_NAME",
+	"site_icon_url":                 "SITE_ICON_URL",
+	"relay_base_url":                "API_BASE_URL",
+	"relay_database_url":            "DATABASE_URL",
+	"relay_database_type":           "DATABASE_TYPE",
+	"relay_database_driver":         "DATABASE_DRIVER",
+	"relay_database_host":           "DATABASE_HOST",
+	"relay_database_port":           "DATABASE_PORT",
+	"relay_database_name":           "DATABASE_NAME",
+	"relay_database_user":           "DATABASE_USER",
+	"relay_database_password":       "DATABASE_PASSWORD",
+	"proxy":                         "PROXY",
+	"image_models":                  "IMAGE_MODELS",
+	"video_models":                  "VIDEO_MODELS",
+	"text_models":                   "TEXT_MODELS",
+	"audio_models":                  "AUDIO_MODELS",
+	"chat_models":                   "CHAT_MODELS",
+	"image_task_timeout_seconds":    "CREATION_TASK_TIMEOUT_SECONDS",
+	"user_default_concurrent_limit": "USER_DEFAULT_CONCURRENT_LIMIT",
+	"user_default_rpm_limit":        "USER_DEFAULT_RPM_LIMIT",
+	"image_retention_days":          "IMAGE_RETENTION_DAYS",
+	"image_storage_limit_mb":        "IMAGE_STORAGE_LIMIT_MB",
+	"storage":                       "OBJECT_STORAGE_SETTINGS",
+	"log_retention_days":            "LOG_RETENTION_DAYS",
+	"default_log_view":              "DEFAULT_LOG_VIEW",
+	"log_levels":                    "LOG_LEVELS",
+	"login_page_image_url":          "LOGIN_PAGE_IMAGE_URL",
+	"login_page_image_mode":         "LOGIN_PAGE_IMAGE_MODE",
+	"login_page_image_zoom":         "LOGIN_PAGE_IMAGE_ZOOM",
+	"login_page_image_position_x":   "LOGIN_PAGE_IMAGE_POSITION_X",
+	"login_page_image_position_y":   "LOGIN_PAGE_IMAGE_POSITION_Y",
+	"prompt_sources":                "PROMPT_SOURCES",
+	"prompt_pull_schedule_enabled":  "PROMPT_PULL_SCHEDULE_ENABLED",
+	"prompt_pull_interval_minutes":  "PROMPT_PULL_INTERVAL_MINUTES",
 }
 
 var envKeyRE = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
@@ -98,14 +64,97 @@ const (
 	defaultImageTaskTimeoutSeconds = 300
 	minImageTaskTimeoutSeconds     = 30
 	maxImageTaskTimeoutSeconds     = 3600
-	defaultBaseURL                 = "https://image.yunmian.tech"
+	defaultBaseURL                 = ""
 	defaultRelayBaseURL            = "https://www.yunmian.tech"
 	defaultAppTitle                = "云棉"
 )
 
 var (
 	defaultImageModels = []string{util.ImageModelGPT, util.ImageModelGemini, util.ImageModelGrok}
-	defaultVideoModels = []string{"sora-2", "grok-imagine-video-1.5", "kling-v3", "MiniMax-Hailuo-2.3", "doubao-seedance-2-5-260628"}
+	// Keep the built-in video catalog aligned with the reference workbench's
+	// video market. Administrators can still replace this list through the
+	// existing video_models setting; these values are only the empty-config
+	// fallback used by the global model picker.
+	defaultVideoModels = []string{
+		"grok-imagine-video",
+		"sora-2",
+		"sora-2-pro",
+		"grok-imagine-video-1.5",
+		"grok-imagine-video-1-5-preview",
+		"grok-imagine",
+		"kling-v3",
+		"kling-3-0-turbo",
+		"minimax-h3",
+		"MiniMax-Hailuo-2.3",
+		"doubao-seedance-2-5-260628",
+		"grok-imagine/text-to-video",
+		"grok-imagine/image-to-video",
+		"minimax-h3/text-to-video",
+		"minimax-h3/image-to-video",
+		"minimax-h3/reference-to-video",
+		"kling-2.6/text-to-video",
+		"kling-2.6/image-to-video",
+		"kling/v2-5-turbo-image-to-video-pro",
+		"kling/v2-5-turbo-text-to-video-pro",
+		"kling/ai-avatar-standard",
+		"kling/ai-avatar-pro",
+		"kling/v2-1-master-image-to-video",
+		"kling/v2-1-master-text-to-video",
+		"kling/v2-1-pro",
+		"kling/v2-1-standard",
+		"kling-2.6/motion-control",
+		"kling-3.0/motion-control",
+		"kling-3.0/video",
+		"kling-3.0-omni/text-to-video",
+		"kling-3.0-omni/image-to-video",
+		"kling-3.0-omni/reference-to-video",
+		"kling-3.0-omni/transformation",
+		"kling/v3-turbo-text-to-video",
+		"kling/v3-turbo-image-to-video",
+		"bytedance/seedance-2",
+		"bytedance/seedance-2-fast",
+		"bytedance/seedance-2-mini",
+		"bytedance/seedance-1.5-pro",
+		"bytedance/v1-pro-fast-image-to-video",
+		"bytedance/v1-pro-image-to-video",
+		"bytedance/v1-pro-text-to-video",
+		"bytedance/v1-lite-image-to-video",
+		"bytedance/v1-lite-text-to-video",
+		"hailuo/2-3-image-to-video-pro",
+		"hailuo/2-3-image-to-video-standard",
+		"hailuo/02-text-to-video-pro",
+		"hailuo/02-image-to-video-pro",
+		"hailuo/02-text-to-video-standard",
+		"hailuo/02-image-to-video-standard",
+		"wan/2-2-a14b-image-to-video-turbo",
+		"wan/2-2-a14b-speech-to-video-turbo",
+		"wan/2-2-a14b-text-to-video-turbo",
+		"wan/2-2-animate-move",
+		"wan/2-2-animate-replace",
+		"wan/2-6-image-to-video",
+		"wan/2-6-text-to-video",
+		"wan/2-6-video-to-video",
+		"wan/2-6-flash-image-to-video",
+		"wan/2-6-flash-video-to-video",
+		"wan/2-5-image-to-video",
+		"wan/2-5-text-to-video",
+		"wan/2-7-text-to-video",
+		"wan/2-7-image-to-video",
+		"wan/2-7-videoedit",
+		"wan/2-7-r2v",
+		"topaz/video-upscale",
+		"infinitalk/from-audio",
+		"happyhorse/text-to-video",
+		"happyhorse/image-to-video",
+		"happyhorse/reference-to-video",
+		"happyhorse/video-edit",
+		"happyhorse-1-1/text-to-video",
+		"happyhorse-1-1/image-to-video",
+		"happyhorse-1-1/reference-to-video",
+		"gemini-omni-video",
+	}
+	defaultTextModels  = []string{util.ImageModelGPT55, util.ImageModelGPT54}
+	defaultAudioModels = []string{"gpt-4o-mini-tts"}
 	defaultChatModels  = []string{util.ImageModelGPT55, util.ImageModelGPT54}
 )
 
@@ -116,15 +165,6 @@ type Store struct {
 	EnvFile        string
 	data           map[string]any
 	storageBackend storage.Backend
-}
-
-type ImageStorageSettings struct {
-	Backend      string
-	Endpoint     string
-	Region       string
-	Bucket       string
-	Prefix       string
-	UsePathStyle bool
 }
 
 func NewStore() (*Store, error) {
@@ -158,7 +198,7 @@ func resolveRootDir() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if configured := strings.TrimSpace(envValue("ROOT_DIR", "CHATGPT2API_ROOT")); configured != "" {
+	if configured := strings.TrimSpace(os.Getenv("ROOT_DIR")); configured != "" {
 		return filepath.Abs(configured)
 	}
 	if root := findAncestorWithFile(cwd, ".env"); root != "" {
@@ -207,7 +247,7 @@ func findAncestorWithProjectGoMod(start string) string {
 }
 
 func (s *Store) AdminUsername() string {
-	value := strings.TrimSpace(envValue("ADMIN_USERNAME", "CHATGPT2API_ADMIN_USERNAME"))
+	value := strings.TrimSpace(os.Getenv("ADMIN_USERNAME"))
 	if value == "" {
 		return "admin"
 	}
@@ -215,11 +255,7 @@ func (s *Store) AdminUsername() string {
 }
 
 func (s *Store) AdminPassword() string {
-	return strings.TrimSpace(envValue("ADMIN_PASSWORD", "CHATGPT2API_ADMIN_PASSWORD"))
-}
-
-func (s *Store) RefreshAccountIntervalMinute() int {
-	return intSetting(s.settingValue("refresh_account_interval_minute", 5), 5)
+	return strings.TrimSpace(os.Getenv("ADMIN_PASSWORD"))
 }
 
 func (s *Store) ImageRetentionDays() int {
@@ -246,74 +282,18 @@ func (s *Store) ImageStorageLimitBytes() int64 {
 	return int64(mb) * 1024 * 1024
 }
 
-func (s *Store) ImageStorageBackend() string {
-	value := strings.ToLower(strings.TrimSpace(fmt.Sprint(s.settingValue("image_storage_backend", "local"))))
-	if value == "" {
-		return "local"
-	}
-	return value
+func (s *Store) StorageSettings() model.StorageSetting {
+	return normalizeStorageSetting(s.settingValue("storage", nil))
 }
 
-func (s *Store) S3Endpoint() string {
-	return strings.TrimSpace(fmt.Sprint(s.settingValue("s3_endpoint", "")))
-}
-func (s *Store) S3Region() string {
-	return strings.TrimSpace(fmt.Sprint(s.settingValue("s3_region", "")))
-}
-func (s *Store) S3Bucket() string {
-	return strings.TrimSpace(fmt.Sprint(s.settingValue("s3_bucket", "")))
-}
-func (s *Store) S3AccessKey() string {
-	return strings.TrimSpace(envValue("S3_ACCESS_KEY", "CHATGPT2API_S3_ACCESS_KEY"))
-}
-func (s *Store) S3SecretKey() string {
-	return strings.TrimSpace(envValue("S3_SECRET_KEY", "CHATGPT2API_S3_SECRET_KEY"))
-}
-func (s *Store) S3SessionToken() string {
-	return strings.TrimSpace(envValue("S3_SESSION_TOKEN", "CHATGPT2API_S3_SESSION_TOKEN"))
-}
-func (s *Store) S3Prefix() string {
-	return strings.Trim(strings.TrimSpace(fmt.Sprint(s.settingValue("s3_prefix", ""))), "/")
-}
-func (s *Store) S3UsePathStyle() bool {
-	return util.ToBool(s.settingValue("s3_use_path_style", false))
-}
-
-func (s *Store) ImageStorageSettings() ImageStorageSettings {
-	return ImageStorageSettings{
-		Backend:      s.ImageStorageBackend(),
-		Endpoint:     s.S3Endpoint(),
-		Region:       s.S3Region(),
-		Bucket:       s.S3Bucket(),
-		Prefix:       s.S3Prefix(),
-		UsePathStyle: s.S3UsePathStyle(),
+func (s *Store) UpdateStorageProvider(index int, provider model.StorageProvider) error {
+	setting := s.StorageSettings()
+	if index < 0 || index >= len(setting.Providers) {
+		return errors.New("storage provider does not exist")
 	}
-}
-
-func (s *Store) ImageStorageSettingsWithUpdate(data map[string]any) ImageStorageSettings {
-	settings := s.ImageStorageSettings()
-	if value, ok := data["image_storage_backend"]; ok {
-		settings.Backend = strings.ToLower(strings.TrimSpace(fmt.Sprint(value)))
-		if settings.Backend == "" {
-			settings.Backend = "local"
-		}
-	}
-	if value, ok := data["s3_endpoint"]; ok {
-		settings.Endpoint = strings.TrimSpace(fmt.Sprint(value))
-	}
-	if value, ok := data["s3_region"]; ok {
-		settings.Region = strings.TrimSpace(fmt.Sprint(value))
-	}
-	if value, ok := data["s3_bucket"]; ok {
-		settings.Bucket = strings.TrimSpace(fmt.Sprint(value))
-	}
-	if value, ok := data["s3_prefix"]; ok {
-		settings.Prefix = strings.Trim(strings.TrimSpace(fmt.Sprint(value)), "/")
-	}
-	if value, ok := data["s3_use_path_style"]; ok {
-		settings.UsePathStyle = util.ToBool(value)
-	}
-	return settings
+	setting.Providers[index] = provider
+	_, err := s.Update(map[string]any{"storage": setting})
+	return err
 }
 
 func (s *Store) LogRetentionDays() int {
@@ -335,14 +315,6 @@ func (s *Store) ImageTaskTimeoutSeconds() int {
 	return normalizeImageTaskTimeoutSeconds(s.settingValue("image_task_timeout_seconds", defaultImageTaskTimeoutSeconds))
 }
 
-func (s *Store) TextAccountScheduleMode() string {
-	return normalizeAccountScheduleMode(s.settingValue("text_account_schedule_mode", "load_balance"))
-}
-
-func (s *Store) ImageAccountScheduleMode() string {
-	return normalizeAccountScheduleMode(s.settingValue("image_account_schedule_mode", "load_balance"))
-}
-
 func (s *Store) UserDefaultConcurrentLimit() int {
 	value := intSetting(s.settingValue("user_default_concurrent_limit", 0), 0)
 	if value < 0 {
@@ -359,21 +331,13 @@ func (s *Store) UserDefaultRPMLimit() int {
 	return value
 }
 
-func (s *Store) AutoRemoveInvalidAccounts() bool {
-	return util.ToBool(s.settingValue("auto_remove_invalid_accounts", false))
-}
-
-func (s *Store) AutoRemoveRateLimitedAccounts() bool {
-	return util.ToBool(s.settingValue("auto_remove_rate_limited_accounts", false))
-}
-
 func (s *Store) BaseURL() string {
 	return strings.TrimRight(strings.TrimSpace(fmt.Sprint(s.settingValue("base_url", defaultBaseURL))), "/")
 }
 
 func (s *Store) AppTitle() string {
 	value := strings.TrimSpace(fmt.Sprint(s.settingValue("app_title", defaultAppTitle)))
-	if value == "" || isLegacyDefaultAppTitle(value) {
+	if value == "" {
 		return defaultAppTitle
 	}
 	return value
@@ -381,19 +345,10 @@ func (s *Store) AppTitle() string {
 
 func (s *Store) ProjectName() string {
 	value := strings.TrimSpace(fmt.Sprint(s.settingValue("project_name", s.AppTitle())))
-	if value == "" || isLegacyDefaultAppTitle(value) {
+	if value == "" {
 		return s.AppTitle()
 	}
 	return value
-}
-
-func isLegacyDefaultAppTitle(value string) bool {
-	switch strings.ToLower(strings.TrimSpace(value)) {
-	case "chatgpt2api":
-		return true
-	default:
-		return false
-	}
 }
 
 func (s *Store) RelayBaseURL() string {
@@ -401,24 +356,115 @@ func (s *Store) RelayBaseURL() string {
 }
 
 func (s *Store) RelayDatabaseURL() string {
-	legacyURL := strings.TrimSpace(envValue("CHATGPT2API_NEWAPI_DATABASE_URL"))
-	currentValue, currentConfigured := lookupEnvValue("DATABASE_URL", "RELAY_DATABASE_URL", "CHATGPT2API_RELAY_DATABASE_URL")
-	currentURL := strings.TrimSpace(currentValue)
-	if legacyURL != "" && legacyDatabaseURLBelongsToStorage() {
-		return legacyURL
-	}
-	if !currentConfigured {
-		return legacyURL
-	}
-	return currentURL
+	return strings.TrimSpace(fmt.Sprint(s.settingValue("relay_database_url", "")))
 }
 
 func (s *Store) RelayDatabaseType() string {
-	value := strings.ToLower(strings.TrimSpace(envValue("DATABASE_TYPE", "RELAY_DATABASE_TYPE", "CHATGPT2API_DATABASE_TYPE")))
+	value := strings.ToLower(strings.TrimSpace(fmt.Sprint(s.settingValue("relay_database_type", "newapi"))))
 	if value == "" {
 		return "newapi"
 	}
 	return value
+}
+
+func (s *Store) RelayDatabaseDriver() string {
+	value := strings.ToLower(strings.TrimSpace(fmt.Sprint(s.settingValue("relay_database_driver", "postgres"))))
+	if value == "pgsql" {
+		value = "postgres"
+	}
+	if value != "sqlite" && value != "postgres" && value != "mysql" {
+		return "postgres"
+	}
+	return value
+}
+
+func (s *Store) RelayDatabaseConnectionURL() string {
+	driver := s.RelayDatabaseDriver()
+	host := strings.TrimSpace(fmt.Sprint(s.settingValue("relay_database_host", "")))
+	port := strings.TrimSpace(fmt.Sprint(s.settingValue("relay_database_port", "")))
+	name := strings.TrimSpace(fmt.Sprint(s.settingValue("relay_database_name", "")))
+	user := strings.TrimSpace(fmt.Sprint(s.settingValue("relay_database_user", "")))
+	password := s.relayDatabasePassword()
+	return buildRelayDatabaseConnectionURL(driver, host, port, name, user, password, s.RelayDatabaseURL())
+}
+
+func (s *Store) RelayDatabaseConnectionURLWithUpdate(update map[string]any) string {
+	driver := s.RelayDatabaseDriver()
+	host := strings.TrimSpace(fmt.Sprint(s.settingValue("relay_database_host", "")))
+	port := strings.TrimSpace(fmt.Sprint(s.settingValue("relay_database_port", "")))
+	name := strings.TrimSpace(fmt.Sprint(s.settingValue("relay_database_name", "")))
+	user := strings.TrimSpace(fmt.Sprint(s.settingValue("relay_database_user", "")))
+	password := s.relayDatabasePassword()
+	if value, ok := update["relay_database_driver"]; ok {
+		driver = strings.ToLower(strings.TrimSpace(fmt.Sprint(value)))
+	}
+	if value, ok := update["relay_database_host"]; ok {
+		host = strings.TrimSpace(fmt.Sprint(value))
+	}
+	if value, ok := update["relay_database_port"]; ok {
+		port = strings.TrimSpace(fmt.Sprint(value))
+	}
+	if value, ok := update["relay_database_name"]; ok {
+		name = strings.TrimSpace(fmt.Sprint(value))
+	}
+	if value, ok := update["relay_database_user"]; ok {
+		user = strings.TrimSpace(fmt.Sprint(value))
+	}
+	if value, ok := update["relay_database_password"]; ok {
+		password = fmt.Sprint(value)
+	}
+	fallback := s.RelayDatabaseURL()
+	if value, ok := update["relay_database_url"]; ok {
+		fallback = strings.TrimSpace(fmt.Sprint(value))
+	}
+	return buildRelayDatabaseConnectionURL(driver, host, port, name, user, password, fallback)
+}
+
+func (s *Store) relayDatabasePassword() string {
+	if password := fmt.Sprint(s.settingValue("relay_database_password", "")); password != "" {
+		return password
+	}
+	databaseURL, err := url.Parse(s.RelayDatabaseURL())
+	if err != nil || databaseURL.User == nil {
+		return ""
+	}
+	password, _ := databaseURL.User.Password()
+	return password
+}
+
+func buildRelayDatabaseConnectionURL(driver, host, port, name, user, password, fallback string) string {
+	if driver == "pgsql" {
+		driver = "postgres"
+	}
+	if driver == "sqlite" {
+		if name != "" {
+			return "sqlite:////" + strings.TrimLeft(name, "/")
+		}
+		return fallback
+	}
+	if host == "" || name == "" || user == "" {
+		return fallback
+	}
+	if port == "" {
+		if driver == "mysql" {
+			port = "3306"
+		} else {
+			port = "5432"
+		}
+	}
+	scheme := "postgresql"
+	if driver == "mysql" {
+		scheme = "mysql"
+	}
+	credentials := url.User(user)
+	if password != "" {
+		credentials = url.UserPassword(user, password)
+	}
+	connection := &url.URL{Scheme: scheme, User: credentials, Host: host + ":" + port, Path: "/" + name}
+	if driver == "postgres" {
+		connection.RawQuery = "sslmode=disable"
+	}
+	return connection.String()
 }
 
 func (s *Store) Proxy() string {
@@ -511,12 +557,28 @@ func (s *Store) VideoModels() []string {
 	return normalizeModelList(s.settingValue("video_models", defaultVideoModels), defaultVideoModels)
 }
 
+func (s *Store) TextModels() []string {
+	return normalizeModelList(s.settingValue("text_models", defaultTextModels), defaultTextModels)
+}
+
+func (s *Store) AudioModels() []string {
+	return normalizeModelList(s.settingValue("audio_models", defaultAudioModels), defaultAudioModels)
+}
+
 func (s *Store) ChatModels() []string {
 	return normalizeModelList(s.settingValue("chat_models", defaultChatModels), defaultChatModels)
 }
 
 func (s *Store) DefaultImageModel() string {
 	return firstString(s.ImageModels(), util.ImageModelGPT)
+}
+
+func (s *Store) DefaultTextModel() string {
+	return firstString(s.TextModels(), util.ImageModelGPT55)
+}
+
+func (s *Store) DefaultAudioModel() string {
+	return firstString(s.AudioModels(), "gpt-4o-mini-tts")
 }
 
 func (s *Store) DefaultChatModel() string {
@@ -530,27 +592,27 @@ func (s *Store) Get() map[string]any {
 	delete(data, "image_concurrent_limit")
 	delete(data, "chat_models")
 	delete(data, "default_chat_model")
-	data["refresh_account_interval_minute"] = s.RefreshAccountIntervalMinute()
 	data["image_task_timeout_seconds"] = s.ImageTaskTimeoutSeconds()
 	data["image_models"] = s.ImageModels()
 	data["video_models"] = s.VideoModels()
+	data["text_models"] = s.TextModels()
+	data["audio_models"] = s.AudioModels()
 	data["default_image_model"] = s.DefaultImageModel()
+	data["default_text_model"] = s.DefaultTextModel()
+	data["default_audio_model"] = s.DefaultAudioModel()
 	data["user_default_concurrent_limit"] = s.UserDefaultConcurrentLimit()
 	data["user_default_rpm_limit"] = s.UserDefaultRPMLimit()
 	data["image_retention_days"] = s.ImageRetentionDays()
 	data["image_storage_limit_mb"] = s.ImageStorageLimitMB()
-	data["image_storage_backend"] = s.ImageStorageBackend()
-	data["s3_endpoint"] = s.S3Endpoint()
-	data["s3_region"] = s.S3Region()
-	data["s3_bucket"] = s.S3Bucket()
-	data["s3_prefix"] = s.S3Prefix()
-	data["s3_use_path_style"] = s.S3UsePathStyle()
-	data["s3_endpoint_configured"] = s.S3Endpoint() != ""
-	data["s3_credentials_configured"] = s.S3AccessKey() != "" && s.S3SecretKey() != ""
+	storageSetting := s.StorageSettings()
+	storageSetting.Providers = append([]model.StorageProvider(nil), storageSetting.Providers...)
+	for index := range storageSetting.Providers {
+		storageSetting.Providers[index].SecretAccessKey = ""
+		storageSetting.Providers[index].Password = ""
+	}
+	data["storage"] = storageSetting
 	data["log_retention_days"] = s.LogRetentionDays()
 	data["default_log_view"] = s.DefaultLogView()
-	data["auto_remove_invalid_accounts"] = s.AutoRemoveInvalidAccounts()
-	data["auto_remove_rate_limited_accounts"] = s.AutoRemoveRateLimitedAccounts()
 	data["log_levels"] = s.LogLevels()
 	data["proxy"] = s.Proxy()
 	data["base_url"] = s.BaseURL()
@@ -558,25 +620,60 @@ func (s *Store) Get() map[string]any {
 	data["project_name"] = s.ProjectName()
 	data["site_icon_url"] = s.SiteIconURL()
 	data["relay_base_url"] = s.RelayBaseURL()
+	data["relay_database_type"] = s.RelayDatabaseType()
+	driver, host, port, name, user := relayDatabasePublicFields(s.RelayDatabaseConnectionURL(), s.RelayDatabaseDriver())
+	data["relay_database_driver"] = driver
+	data["relay_database_host"] = host
+	data["relay_database_port"] = port
+	data["relay_database_name"] = name
+	data["relay_database_user"] = user
+	delete(data, "relay_database_url")
+	delete(data, "relay_database_password")
+	data["relay_database_configured"] = s.RelayDatabaseConnectionURL() != ""
+	data["relay_database_password_configured"] = s.relayDatabasePassword() != ""
 	data["login_page_image_url"] = s.LoginPageImageURL()
 	data["login_page_image_mode"] = s.LoginPageImageMode()
 	data["login_page_image_zoom"] = s.LoginPageImageZoom()
 	data["login_page_image_position_x"] = s.LoginPageImagePositionX()
 	data["login_page_image_position_y"] = s.LoginPageImagePositionY()
+	data["prompt_pull_schedule_enabled"] = util.ToBool(s.settingValue("prompt_pull_schedule_enabled", false))
+	data["prompt_pull_interval_minutes"] = normalizePromptPullIntervalMinutes(s.settingValue("prompt_pull_interval_minutes", 30))
 	if value, ok := data["prompt_sources"]; ok {
 		data["prompt_sources"] = normalizePromptSourcesValue(value)
 	}
 	return data
 }
 
+func relayDatabasePublicFields(databaseURL, fallbackDriver string) (driver, host, port, name, user string) {
+	driver = fallbackDriver
+	parsed, err := url.Parse(strings.TrimSpace(databaseURL))
+	if err != nil {
+		return driver, "", "", "", ""
+	}
+	switch strings.ToLower(parsed.Scheme) {
+	case "sqlite":
+		driver = "sqlite"
+		name = "/" + strings.TrimLeft(parsed.Path, "/")
+		return driver, "", "", name, ""
+	case "mysql":
+		driver = "mysql"
+	case "postgres", "postgresql":
+		driver = "postgres"
+	}
+	host = parsed.Hostname()
+	port = parsed.Port()
+	name = strings.TrimPrefix(parsed.Path, "/")
+	if parsed.User != nil {
+		user = parsed.User.Username()
+	}
+	return driver, host, port, name, user
+}
+
 func (s *Store) Update(data map[string]any) (map[string]any, error) {
 	s.mu.Lock()
 	next := util.CopyMap(s.data)
 	for key, value := range data {
-		if key == "s3_endpoint_configured" || key == "s3_credentials_configured" {
-			continue
-		}
-		if key == "s3_access_key" || key == "s3_secret_key" || key == "s3_session_token" {
+		if _, configurable := settingEnvKeys[key]; !configurable {
 			continue
 		}
 		next[key] = value
@@ -588,28 +685,14 @@ func (s *Store) Update(data map[string]any) (map[string]any, error) {
 	if value, ok := next["image_task_timeout_seconds"]; ok {
 		next["image_task_timeout_seconds"] = normalizeImageTaskTimeoutSeconds(value)
 	}
-	if value, ok := next["text_account_schedule_mode"]; ok {
-		next["text_account_schedule_mode"] = normalizeAccountScheduleMode(value)
-	}
-	if value, ok := next["image_account_schedule_mode"]; ok {
-		next["image_account_schedule_mode"] = normalizeAccountScheduleMode(value)
-	}
 	if value, ok := next["image_storage_limit_mb"]; ok {
 		next["image_storage_limit_mb"] = normalizeNonNegativeInt(value)
 	}
-	if value, ok := next["image_storage_backend"]; ok {
-		next["image_storage_backend"] = strings.ToLower(strings.TrimSpace(fmt.Sprint(value)))
-	}
-	for _, key := range []string{"s3_endpoint", "s3_region", "s3_bucket"} {
-		if value, ok := next[key]; ok {
-			next[key] = strings.TrimSpace(fmt.Sprint(value))
-		}
-	}
-	if value, ok := next["s3_prefix"]; ok {
-		next["s3_prefix"] = strings.Trim(strings.TrimSpace(fmt.Sprint(value)), "/")
-	}
-	if value, ok := next["s3_use_path_style"]; ok {
-		next["s3_use_path_style"] = util.ToBool(value)
+	if value, ok := next["storage"]; ok {
+		incoming := normalizeStorageSetting(value)
+		saved := normalizeStorageSetting(s.data["storage"])
+		keepStorageProviderSecrets(&incoming, saved)
+		next["storage"] = incoming
 	}
 	if value, ok := next["image_models"]; ok {
 		next["image_models"] = normalizeModelList(value, defaultImageModels)
@@ -617,8 +700,38 @@ func (s *Store) Update(data map[string]any) (map[string]any, error) {
 	if value, ok := next["video_models"]; ok {
 		next["video_models"] = normalizeModelList(value, defaultVideoModels)
 	}
+	if value, ok := next["text_models"]; ok {
+		next["text_models"] = normalizeModelList(value, defaultTextModels)
+	}
+	if value, ok := next["audio_models"]; ok {
+		next["audio_models"] = normalizeModelList(value, defaultAudioModels)
+	}
+	if value, ok := next["relay_database_url"]; ok {
+		next["relay_database_url"] = strings.TrimSpace(fmt.Sprint(value))
+	}
+	if value, ok := next["relay_database_type"]; ok {
+		next["relay_database_type"] = strings.ToLower(strings.TrimSpace(fmt.Sprint(value)))
+	}
+	if value, ok := next["relay_database_driver"]; ok {
+		driver := strings.ToLower(strings.TrimSpace(fmt.Sprint(value)))
+		if driver == "pgsql" {
+			driver = "postgres"
+		}
+		next["relay_database_driver"] = driver
+	}
+	for _, key := range []string{"relay_database_host", "relay_database_port", "relay_database_name", "relay_database_user", "relay_database_password"} {
+		if value, ok := next[key]; ok {
+			next[key] = strings.TrimSpace(fmt.Sprint(value))
+		}
+	}
 	if value, ok := next["prompt_sources"]; ok {
 		next["prompt_sources"] = normalizePromptSourcesValue(value)
+	}
+	if value, ok := next["prompt_pull_schedule_enabled"]; ok {
+		next["prompt_pull_schedule_enabled"] = util.ToBool(value)
+	}
+	if value, ok := next["prompt_pull_interval_minutes"]; ok {
+		next["prompt_pull_interval_minutes"] = normalizePromptPullIntervalMinutes(value)
 	}
 	delete(next, "chat_models")
 	delete(next, "default_chat_model")
@@ -687,7 +800,7 @@ func (s *Store) settingValue(key string, fallback any) any {
 		return value
 	}
 	s.mu.RUnlock()
-	if value, ok := lookupEnvValue(settingEnvNames(key)...); ok {
+	if value, ok := os.LookupEnv(settingEnvKeys[key]); ok {
 		return value
 	}
 	return fallback
@@ -699,13 +812,19 @@ func (s *Store) settingValueFromData(data map[string]any, key string, fallback a
 			return value
 		}
 	}
-	if value, ok := lookupEnvValue(settingEnvNames(key)...); ok {
+	if value, ok := os.LookupEnv(settingEnvKeys[key]); ok {
 		return value
 	}
 	return fallback
 }
 
 func (s *Store) validateSettingsUpdateLocked(data map[string]any) error {
+	imageBaseURL := strings.TrimSpace(fmt.Sprint(util.ValueOr(data["base_url"], defaultBaseURL)))
+	if imageBaseURL != "" {
+		if err := validateAbsoluteHTTPURL(imageBaseURL); err != nil {
+			return errors.New("image base URL must be an absolute http(s) URL")
+		}
+	}
 	relayBaseURL := strings.TrimSpace(fmt.Sprint(util.ValueOr(data["relay_base_url"], defaultRelayBaseURL)))
 	if relayBaseURL == "" {
 		return errors.New("baseurl is required")
@@ -713,36 +832,36 @@ func (s *Store) validateSettingsUpdateLocked(data map[string]any) error {
 	if err := validateAbsoluteHTTPURL(relayBaseURL); err != nil {
 		return errors.New("baseurl must be an absolute http(s) URL")
 	}
-	imageStorageBackend := strings.ToLower(strings.TrimSpace(fmt.Sprint(s.settingValueFromData(data, "image_storage_backend", "local"))))
-	if imageStorageBackend == "" {
-		imageStorageBackend = "local"
+	relayDatabaseType := strings.ToLower(strings.TrimSpace(fmt.Sprint(s.settingValueFromData(data, "relay_database_type", "newapi"))))
+	if relayDatabaseType != "newapi" && relayDatabaseType != "sub2api" {
+		return errors.New("relay database type must be newapi or sub2api")
 	}
-	if imageStorageBackend != "local" && imageStorageBackend != "s3" {
-		return errors.New("image storage backend must be local or s3")
+	relayDatabaseDriver := strings.ToLower(strings.TrimSpace(fmt.Sprint(s.settingValueFromData(data, "relay_database_driver", "postgres"))))
+	if relayDatabaseDriver == "pgsql" {
+		relayDatabaseDriver = "postgres"
 	}
-	s3Endpoint := strings.TrimSpace(fmt.Sprint(s.settingValueFromData(data, "s3_endpoint", "")))
-	s3Bucket := strings.TrimSpace(fmt.Sprint(s.settingValueFromData(data, "s3_bucket", "")))
-	s3Prefix := strings.Trim(strings.TrimSpace(fmt.Sprint(s.settingValueFromData(data, "s3_prefix", ""))), "/")
-	if s3Endpoint != "" {
-		if err := validateS3Endpoint(s3Endpoint); err != nil {
-			return err
-		}
+	if relayDatabaseDriver != "sqlite" && relayDatabaseDriver != "postgres" && relayDatabaseDriver != "mysql" {
+		return errors.New("relay database driver must be sqlite, postgres, or mysql")
 	}
-	if s3Prefix != "" {
-		if err := validateS3Prefix(s3Prefix); err != nil {
-			return err
+	relayDatabaseURL := strings.TrimSpace(fmt.Sprint(s.settingValueFromData(data, "relay_database_url", "")))
+	if relayDatabaseURL != "" {
+		if _, _, err := storage.ParseDatabaseURL(relayDatabaseURL); err != nil {
+			return fmt.Errorf("relay database URL is invalid: %w", err)
 		}
 	}
-	if imageStorageBackend == "s3" {
-		if s3Endpoint == "" {
-			return errors.New("S3 endpoint is required")
-		}
-		if s3Bucket == "" {
-			return errors.New("S3 bucket is required")
-		}
-		if s.S3AccessKey() == "" || s.S3SecretKey() == "" {
-			return errors.New("S3 access key and secret key must be configured on the server")
-		}
+	if err := validateStorageSetting(normalizeStorageSetting(data["storage"])); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateWebDAVEndpoint(value string) error {
+	parsed, err := url.Parse(strings.TrimSpace(value))
+	if err != nil || parsed.Host == "" || parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return errors.New("WebDAV endpoint must be a valid http(s) URL")
+	}
+	if parsed.User != nil || parsed.Fragment != "" {
+		return errors.New("WebDAV endpoint must not contain credentials or a fragment")
 	}
 	return nil
 }
@@ -761,14 +880,6 @@ func validateS3Endpoint(value string) error {
 	}
 	if parsed.User != nil || parsed.Path != "" && parsed.Path != "/" || parsed.RawQuery != "" || parsed.Fragment != "" {
 		return errors.New("S3 endpoint must not contain user info, a path, query, or fragment")
-	}
-	return nil
-}
-
-func validateS3Prefix(value string) error {
-	cleaned := path.Clean(strings.Trim(strings.TrimSpace(value), "/"))
-	if cleaned == "." || cleaned == ".." || strings.HasPrefix(cleaned, "../") || strings.Contains(cleaned, ":") {
-		return errors.New("S3 prefix is invalid")
 	}
 	return nil
 }
@@ -812,6 +923,9 @@ func (s *Store) saveLocked() error {
 		return err
 	}
 	for key, value := range updates {
+		if key == settingEnvKeys["relay_database_url"] || key == settingEnvKeys["relay_database_type"] {
+			continue
+		}
 		_ = os.Setenv(key, value)
 	}
 	return nil
@@ -827,15 +941,14 @@ func (s *Store) loadEnvFile() {
 
 func settingsFromEnvValues(values map[string]string) map[string]any {
 	settings := map[string]any{}
-	for settingKey := range settingEnvKeys {
-		for _, envKey := range settingEnvNames(settingKey) {
-			if value, ok := values[envKey]; ok {
-				if settingKey == "prompt_sources" {
-					settings[settingKey] = normalizePromptSourcesValue(value)
-				} else {
-					settings[settingKey] = value
-				}
-				break
+	for settingKey, envKey := range settingEnvKeys {
+		if value, ok := values[envKey]; ok {
+			if settingKey == "prompt_sources" {
+				settings[settingKey] = normalizePromptSourcesValue(value)
+			} else if settingKey == "storage" {
+				settings[settingKey] = normalizeStorageSetting(value)
+			} else {
+				settings[settingKey] = value
 			}
 		}
 	}
@@ -844,52 +957,12 @@ func settingsFromEnvValues(values map[string]string) map[string]any {
 
 func currentSettingEnvValues() map[string]string {
 	values := map[string]string{}
-	for settingKey := range settingEnvKeys {
-		for _, envKey := range settingEnvNames(settingKey) {
-			if value, ok := os.LookupEnv(envKey); ok {
-				values[envKey] = value
-			}
+	for _, envKey := range settingEnvKeys {
+		if value, ok := os.LookupEnv(envKey); ok {
+			values[envKey] = value
 		}
 	}
 	return values
-}
-
-func settingEnvNames(settingKey string) []string {
-	primary := settingEnvKeys[settingKey]
-	aliases := legacySettingEnvKeys[settingKey]
-	if primary == "" {
-		return aliases
-	}
-	return append([]string{primary}, aliases...)
-}
-
-func envValue(names ...string) string {
-	value, _ := lookupEnvValue(names...)
-	return value
-}
-
-func lookupEnvValue(names ...string) (string, bool) {
-	for _, name := range names {
-		if name == "" {
-			continue
-		}
-		if value, ok := os.LookupEnv(name); ok {
-			return value, true
-		}
-	}
-	return "", false
-}
-
-func legacyDatabaseURLBelongsToStorage() bool {
-	if _, configured := os.LookupEnv("STORAGE_DATABASE_URL"); configured {
-		return false
-	}
-	backend := strings.ToLower(strings.TrimSpace(envValue("STORAGE_BACKEND")))
-	if backend == "postgres" || backend == "postgresql" || backend == "mysql" || backend == "database" {
-		return true
-	}
-	databaseURL := strings.ToLower(strings.TrimSpace(envValue("DATABASE_URL")))
-	return backend == "sqlite" && strings.HasPrefix(databaseURL, "sqlite:")
 }
 
 func intSetting(value any, fallback int) int {
@@ -974,29 +1047,12 @@ func normalizeImageTaskTimeoutSeconds(value any) int {
 	return seconds
 }
 
-func normalizeAccountScheduleMode(value any) string {
-	mode := strings.ToLower(strings.TrimSpace(fmt.Sprint(value)))
-	if mode == "fill_first" {
-		return "fill_first"
-	}
-	return "load_balance"
-}
-
 func normalizeNonNegativeInt(value any) int {
 	n := intSetting(value, 0)
 	if n < 0 {
 		return 0
 	}
 	return n
-}
-
-func normalizeDefaultSubscriptionPeriod(value any) string {
-	switch strings.ToLower(strings.TrimSpace(fmt.Sprint(value))) {
-	case "daily", "weekly", "monthly":
-		return strings.ToLower(strings.TrimSpace(fmt.Sprint(value)))
-	default:
-		return "monthly"
-	}
 }
 
 func normalizeModelList(value any, fallback []string) []string {
@@ -1130,14 +1186,163 @@ func stringifyEnvValue(value any) string {
 }
 
 func stringifySettingEnvValue(settingKey string, value any) string {
-	if settingKey == "prompt_sources" {
+	if settingKey == "prompt_sources" || settingKey == "storage" {
+		if settingKey == "storage" {
+			value = normalizeStorageSetting(value)
+		}
 		encoded, err := json.Marshal(normalizePromptSourcesValue(value))
+		if settingKey == "storage" {
+			encoded, err = json.Marshal(value)
+		}
 		if err == nil {
 			return string(encoded)
 		}
 		return "[]"
 	}
 	return stringifyEnvValue(value)
+}
+
+func normalizeStorageSetting(value any) model.StorageSetting {
+	var setting model.StorageSetting
+	switch typed := value.(type) {
+	case model.StorageSetting:
+		setting = typed
+	case *model.StorageSetting:
+		if typed != nil {
+			setting = *typed
+		}
+	default:
+		if text, ok := value.(string); ok {
+			_ = json.Unmarshal([]byte(strings.TrimSpace(text)), &setting)
+		} else if value != nil {
+			if encoded, err := json.Marshal(value); err == nil {
+				_ = json.Unmarshal(encoded, &setting)
+			}
+		}
+	}
+	if setting.Mode == "" {
+		setting.AllowUserGlobalProvider = true
+	}
+	if setting.CapacityLimitBytes <= 0 {
+		setting.CapacityLimitBytes = 9 * 1024 * 1024 * 1024
+	}
+	if setting.LocalCapacityLimitBytes < 0 {
+		setting.LocalCapacityLimitBytes = 0
+	}
+	if setting.CapacityCheck.Cron == "" {
+		setting.CapacityCheck.Cron = "0 */6 * * *"
+	}
+	if setting.Providers == nil {
+		setting.Providers = []model.StorageProvider{}
+	}
+	for index := range setting.Providers {
+		setting.Providers[index] = normalizeStorageProvider(setting.Providers[index])
+	}
+	setting.Mode = "server_local"
+	if setting.AllowUserProvider {
+		setting.Mode = "server_user_or_local"
+	}
+	for _, provider := range setting.Providers {
+		if provider.Enabled {
+			setting.Mode = "server_external"
+			break
+		}
+	}
+	return setting
+}
+
+func normalizeStorageProvider(provider model.StorageProvider) model.StorageProvider {
+	provider.Name = strings.TrimSpace(provider.Name)
+	provider.Type = strings.ToLower(strings.TrimSpace(provider.Type))
+	if provider.Type == "" {
+		provider.Type = model.StorageProviderTypeS3
+	}
+	provider.Endpoint = strings.TrimRight(strings.TrimSpace(provider.Endpoint), "/")
+	provider.Bucket = strings.TrimSpace(provider.Bucket)
+	provider.AccessKeyID = strings.TrimSpace(provider.AccessKeyID)
+	provider.Username = strings.TrimSpace(provider.Username)
+	provider.PathPrefix = strings.Trim(strings.TrimSpace(provider.PathPrefix), "/")
+	if provider.Type == model.StorageProviderTypeWebDAV && provider.PathPrefix == "" {
+		provider.PathPrefix = "assets"
+	}
+	if provider.Type == model.StorageProviderTypeS3 && strings.TrimSpace(provider.Region) == "" {
+		provider.Region = "auto"
+	}
+	if provider.ID == "" {
+		provider.ID = "storage-" + util.SHA256Hex(strings.Join([]string{
+			provider.OwnerUserID, provider.Type, provider.Name, provider.Endpoint, provider.Bucket, provider.PathPrefix,
+		}, "\x00"))[:16]
+	}
+	if provider.Weight <= 0 {
+		provider.Weight = 1
+	}
+	return provider
+}
+
+func keepStorageProviderSecrets(setting *model.StorageSetting, saved model.StorageSetting) {
+	if setting == nil {
+		return
+	}
+	for index := range setting.Providers {
+		provider := &setting.Providers[index]
+		var previous *model.StorageProvider
+		for savedIndex := range saved.Providers {
+			if provider.ID != "" && provider.ID == saved.Providers[savedIndex].ID {
+				previous = &saved.Providers[savedIndex]
+				break
+			}
+		}
+		if previous == nil && index < len(saved.Providers) {
+			previous = &saved.Providers[index]
+		}
+		if previous == nil {
+			continue
+		}
+		if strings.TrimSpace(provider.SecretAccessKey) == "" {
+			provider.SecretAccessKey = previous.SecretAccessKey
+		}
+		if provider.Password == "" {
+			provider.Password = previous.Password
+		}
+	}
+}
+
+func validateStorageSetting(setting model.StorageSetting) error {
+	enabledType := ""
+	for _, provider := range setting.Providers {
+		if provider.Type != model.StorageProviderTypeS3 && provider.Type != model.StorageProviderTypeWebDAV {
+			return errors.New("storage provider type must be s3 or webdav")
+		}
+		if provider.Endpoint != "" {
+			if provider.Type == model.StorageProviderTypeS3 {
+				if err := validateS3Endpoint(provider.Endpoint); err != nil {
+					return err
+				}
+			} else if err := validateWebDAVEndpoint(provider.Endpoint); err != nil {
+				return err
+			}
+		}
+		if provider.PublicBaseURL != "" {
+			if err := validateAbsoluteHTTPURL(provider.PublicBaseURL); err != nil {
+				return errors.New("storage provider public base URL must be an absolute http(s) URL")
+			}
+		}
+		if !provider.Enabled {
+			continue
+		}
+		if provider.Type == model.StorageProviderTypeS3 && (provider.Endpoint == "" || provider.Bucket == "" || provider.AccessKeyID == "" || provider.SecretAccessKey == "") {
+			return errors.New("enabled S3 provider is incomplete")
+		}
+		if provider.Type == model.StorageProviderTypeWebDAV && (provider.Endpoint == "" || provider.Username == "" || provider.Password == "") {
+			return errors.New("enabled WebDAV provider is incomplete")
+		}
+		if enabledType == "" {
+			enabledType = provider.Type
+		} else if enabledType != provider.Type {
+			return errors.New("S3/R2 and WebDAV providers cannot be enabled at the same time")
+		}
+	}
+	return nil
 }
 
 func normalizePromptSourcesValue(value any) []any {
@@ -1157,6 +1362,16 @@ func normalizePromptSourcesValue(value any) []any {
 		}
 	}
 	return []any{}
+}
+
+func normalizePromptPullIntervalMinutes(value any) int {
+	minutes := intSetting(value, 30)
+	for _, allowed := range []int{30, 60, 360, 1440} {
+		if minutes == allowed {
+			return minutes
+		}
+	}
+	return 30
 }
 
 func writeEnvUpdates(path string, updates map[string]string) error {

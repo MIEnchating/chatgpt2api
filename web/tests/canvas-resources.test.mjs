@@ -31,6 +31,30 @@ test("a resource activates itself when it has no connected input", () => {
   assert.deepEqual(canvasResourceLabels([image], [], image.id).get(image.id), { label: "图片1", active: true });
 });
 
+test("video, audio, and panorama resources match the reference canvas index", () => {
+  const nodes = [
+    node("panorama", "panorama", { url: "panorama.png", title: "场景" }),
+    node("image", "image", { url: "image.png" }),
+    node("video", "video", { url: "video.mp4", title: "动作" }),
+    node("audio", "audio", { url: "audio.mp3", title: "对白" }),
+  ];
+  const labels = canvasResourceLabels(nodes, [], "");
+
+  assert.deepEqual(labels.get("panorama"), { label: "图片1", active: false });
+  assert.deepEqual(labels.get("image"), { label: "图片2", active: false });
+  assert.deepEqual(labels.get("video"), { label: "视频1", active: false });
+  assert.deepEqual(labels.get("audio"), { label: "音频1", active: false });
+  assert.deepEqual(canvasNodeMentionReferences("panorama", nodes, []), [
+    { id: "panorama", nodeID: "panorama", kind: "image", label: "图片1", title: "场景", text: undefined, previewURL: "panorama.png", active: true },
+  ]);
+  assert.deepEqual(canvasNodeMentionReferences("video", nodes, []), [
+    { id: "video", nodeID: "video", kind: "video", label: "视频1", title: "动作", text: undefined, previewURL: "video.mp4", active: true },
+  ]);
+  assert.deepEqual(canvasNodeMentionReferences("audio", nodes, []), [
+    { id: "audio", nodeID: "audio", kind: "audio", label: "音频1", title: "对白", text: undefined, previewURL: "audio.mp3", active: true },
+  ]);
+});
+
 test("active inputs are renumbered in request order like the reference project", () => {
   const nodes = [
     node("unused-image", "image", { url: "unused.png" }),

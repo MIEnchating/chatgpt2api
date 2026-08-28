@@ -15,6 +15,135 @@ import (
 	"chatgpt2api/internal/util"
 )
 
+func (s *ImageTaskService) SubmitGeneration(ctx context.Context, identity Identity, clientTaskID, prompt, model, size, quality, baseURL string, n int, messages any, visibilityValues ...string) (map[string]any, error) {
+	return s.SubmitGenerationWithOptions(ctx, identity, clientTaskID, prompt, model, size, quality, baseURL, n, messages, nil, ImageOutputOptions{}, ImageToolOptions{}, visibilityValues...)
+}
+
+func (s *ImageTaskService) SubmitGenerationWithMetadata(ctx context.Context, identity Identity, clientTaskID, prompt, model, size, quality, baseURL string, n int, messages any, metadata map[string]any, visibilityValues ...string) (map[string]any, error) {
+	return s.SubmitGenerationWithOptions(ctx, identity, clientTaskID, prompt, model, size, quality, baseURL, n, messages, metadata, ImageOutputOptions{}, ImageToolOptions{}, visibilityValues...)
+}
+
+func (s *ImageTaskService) SubmitEdit(ctx context.Context, identity Identity, clientTaskID, prompt, model, size, quality, baseURL string, images any, n int, messages any, visibilityValues ...string) (map[string]any, error) {
+	return s.SubmitEditWithOptions(ctx, identity, clientTaskID, prompt, model, size, quality, baseURL, images, n, messages, nil, ImageOutputOptions{}, ImageToolOptions{}, visibilityValues...)
+}
+
+func (s *ImageTaskService) SubmitChat(ctx context.Context, identity Identity, clientTaskID, prompt, model string, messages any, billable bool, nValues ...int) (map[string]any, error) {
+	return s.SubmitChatWithMetadata(ctx, identity, clientTaskID, prompt, model, messages, billable, nil, nValues...)
+}
+
+func (s *ImageTaskService) ListTasks(identity Identity, taskIDs []string) map[string]any {
+	result, _ := s.ListTasksWithError(identity, taskIDs)
+	if result == nil {
+		return map[string]any{"items": []map[string]any{}, "missing_ids": []string{}}
+	}
+	return result
+}
+
+func (s *ImageTaskService) markImageOutputStatus(key string, index int, status string) bool {
+	if index < 1 {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	task := s.tasks[key]
+	if task == nil || !isActiveTaskStatus(util.Clean(task["status"])) {
+		return false
+	}
+	count := storedImageOutputCount(task)
+	if index > count {
+		return false
+	}
+	statuses := normalizedImageOutputStatuses(util.Clean(task["mode"]), count, task["output_statuses"])
+	if len(statuses) == 0 || !isActiveTaskStatus(statuses[index-1]) || statuses[index-1] == status {
+		return true
+	}
+	statuses[index-1] = status
+	task["output_statuses"] = statuses
+	bumpImageTaskRevision(task)
+	return true
+}
+
+func (s *ImageTaskService) markAllImageOutputStatuses(key string, status string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	task := s.tasks[key]
+	if task == nil || !isActiveTaskStatus(util.Clean(task["status"])) {
+		return false
+	}
+	count := storedImageOutputCount(task)
+	statuses := normalizedImageOutputStatuses(util.Clean(task["mode"]), count, task["output_statuses"])
+	changed := false
+	for index := range statuses {
+		if isActiveTaskStatus(statuses[index]) && statuses[index] != status {
+			statuses[index] = status
+			changed = true
+		}
+	}
+	if changed {
+		task["output_statuses"] = statuses
+		bumpImageTaskRevision(task)
+	}
+	return true
+}
+
+func TestImageTaskServiceRequiresVideoPromptForEveryModel(t *testing.T) {
+	handlerCalls := make(chan map[string]any, 8)
+	handler := func(ctx context.Context, identity Identity, payload map[string]any) (map[string]any, error) {
+		handlerCalls <- payload
+		return map[string]any{"data": []map[string]any{{"url": "https://example.test/video.mp4"}}}, nil
+	}
+	svc := newTestImageTaskService(t, handler, handler, handler, func() int { return 30 })
+	svc.SetVideoHandler(handler)
+	identity := Identity{ID: "alice", Name: "Alice", Role: "user"}
+
+	for _, testCase := range []struct {
+		model  string
+		images any
+		videos any
+		audios any
+	}{
+		{model: "sora-2"},
+		{model: "topaz/video-upscale", videos: []string{"https://cdn.example.com/source.mp4"}},
+		{model: "infinitalk/from-audio", images: []string{"https://cdn.example.com/avatar.png"}, audios: []string{"https://cdn.example.com/voice.mp3"}},
+		{model: "kling-3-0-turbo", images: []string{"https://cdn.example.com/reference.png"}},
+		{model: "i2v-01", images: []string{"https://cdn.example.com/reference.png"}},
+	} {
+		if _, err := svc.SubmitVideo(context.Background(), identity, testCase.model+"-task", "", testCase.model, "", 5, "", false, false, "reference", testCase.images, testCase.videos, testCase.audios, nil); err == nil || err.Error() != "prompt is required" {
+			t.Fatalf("%s error = %v, want prompt is required", testCase.model, err)
+		}
+	}
+	select {
+	case payload := <-handlerCalls:
+		t.Fatalf("promptless video reached handler: %#v", payload)
+	default:
+	}
+}
+
+func TestImageTaskServiceSubmitsSingleAudioOutput(t *testing.T) {
+	handlerCalls := make(chan map[string]any, 1)
+	handler := func(_ context.Context, _ Identity, payload map[string]any) (map[string]any, error) {
+		handlerCalls <- payload
+		return map[string]any{"output_type": "audio", "data": []map[string]any{{"url": "/audios/result.mp3"}}}, nil
+	}
+	svc := newTestImageTaskService(t, handler, handler, handler, func() int { return 30 })
+	svc.SetAudioHandler(handler)
+	identity := Identity{ID: "alice", Name: "Alice", Role: "user"}
+	task, err := svc.SubmitAudio(context.Background(), identity, "audio-1", map[string]any{
+		"input": "read this", "model": "gpt-4o-mini-tts", "voice": "verse", "response_format": "mp3", "speed": 1.25, "instructions": "calm",
+	}, nil)
+	if err != nil {
+		t.Fatalf("SubmitAudio() error = %v", err)
+	}
+	if task["mode"] != "audio" || task["count"] != 1 {
+		t.Fatalf("submitted audio task = %#v", task)
+	}
+	waitForTaskStatus(t, svc, identity, "audio-1", TaskStatusSuccess)
+	payload := <-handlerCalls
+	if payload["n"] != 1 || payload["voice"] != "verse" || payload["response_format"] != "mp3" || payload["speed"] != 1.25 || payload["instructions"] != "calm" {
+		t.Fatalf("audio handler payload = %#v", payload)
+	}
+}
+
 func TestImageTaskServiceIdempotencyOwnerIsolationAndCompletion(t *testing.T) {
 	handlerCalls := make(chan map[string]any, 4)
 	handler := func(ctx context.Context, identity Identity, payload map[string]any) (map[string]any, error) {
@@ -146,7 +275,7 @@ func TestImageTaskServiceRejectsBlankPromptBeforeQueueing(t *testing.T) {
 	}
 }
 
-func TestImageTaskServicePassesMessagesToHandler(t *testing.T) {
+func TestImageTaskServiceUsesOnlyCurrentPromptForImageRequests(t *testing.T) {
 	handlerCalls := make(chan map[string]any, 1)
 	handler := func(ctx context.Context, identity Identity, payload map[string]any) (map[string]any, error) {
 		handlerCalls <- payload
@@ -170,8 +299,8 @@ func TestImageTaskServicePassesMessagesToHandler(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for handler payload")
 	}
-	if got := payload["messages"]; got == nil {
-		t.Fatalf("payload messages missing: %#v", payload)
+	if _, ok := payload["messages"]; ok {
+		t.Fatalf("payload retained image history: %#v", payload)
 	}
 	if got := payload["prompt"]; got != "我之前说了什么？" {
 		t.Fatalf("payload prompt = %#v, want current prompt", got)
@@ -180,6 +309,45 @@ func TestImageTaskServicePassesMessagesToHandler(t *testing.T) {
 		t.Fatalf("payload quality = %#v, want high", got)
 	}
 	waitForTaskStatus(t, svc, identity, "task-1", TaskStatusSuccess)
+}
+
+func TestImageTaskServicePersistsWorkflowContext(t *testing.T) {
+	handler := func(context.Context, Identity, map[string]any) (map[string]any, error) {
+		return map[string]any{"data": []map[string]any{{"url": "https://example.test/workflow.png"}}}, nil
+	}
+	backend := newTestStorageBackend(t)
+	svc := NewStoredImageTaskService(backend, handler, handler, handler, func() int { return 30 })
+	identity := Identity{ID: "alice", Name: "Alice", Role: "user"}
+	workflowContext := map[string]any{
+		"workflow_id":   "workflow-1",
+		"workflow_name": "商品海报",
+		"prompt":        "生成商品海报",
+		"inputs":        map[string]any{"product": "背包"},
+		"references":    []map[string]any{{"id": "reference-1", "name": "参考图", "url": "/images/reference.png", "temporary": true}},
+		"config":        map[string]any{"image_model": "gpt-image-1.5", "size": "1024x1024", "quality": "high", "count": "1", "api_mode": "responses"},
+		"count":         1,
+		"series_title":  "封面",
+		"series_index":  1,
+		"batch_task_id": "workflow-batch-1",
+		"batch_index":   1,
+		"batch_count":   2,
+	}
+	if _, err := svc.SubmitGenerationWithMetadata(context.Background(), identity, "workflow-task-1", "生成商品海报", "auto", "", "high", "https://base.test", 1, nil, map[string]any{"workflow_context": workflowContext}); err != nil {
+		t.Fatalf("SubmitGenerationWithMetadata() error = %v", err)
+	}
+	waitForTaskStatus(t, svc, identity, "workflow-task-1", TaskStatusSuccess)
+	reloaded := NewStoredImageTaskService(backend, failingImageTaskHandler, failingImageTaskHandler, failingImageTaskHandler, func() int { return 30 })
+	item := reloaded.ListTasks(identity, []string{"workflow-task-1"})["items"].([]map[string]any)[0]
+	stored := util.StringMap(item["workflow_context"])
+	if stored["workflow_id"] != "workflow-1" || stored["workflow_name"] != "商品海报" || stored["batch_task_id"] != "workflow-batch-1" || util.ToInt(stored["batch_count"], 0) != 2 || util.ToInt(stored["series_index"], 0) != 1 {
+		t.Fatalf("workflow context = %#v", stored)
+	}
+	if references := util.AsMapSlice(stored["references"]); len(references) != 1 || util.Clean(references[0]["url"]) != "/images/reference.png" || !util.ToBool(references[0]["temporary"]) {
+		t.Fatalf("workflow references = %#v", stored["references"])
+	}
+	if config := util.StringMap(stored["config"]); config["image_model"] != "gpt-image-1.5" || config["api_mode"] != "responses" {
+		t.Fatalf("workflow config = %#v", stored["config"])
+	}
 }
 
 func TestImageTaskServicePassesImageRequestMetadataToHandler(t *testing.T) {
@@ -191,7 +359,7 @@ func TestImageTaskServicePassesImageRequestMetadataToHandler(t *testing.T) {
 	svc := newTestImageTaskService(t, handler, handler, handler, func() int { return 30 })
 	identity := Identity{ID: "alice", Name: "Alice", Role: "user"}
 
-	if _, err := svc.SubmitGenerationWithMetadata(context.Background(), identity, "task-1", "draw", "gemini-3.1-flash-image", "1:1", "", "https://base.test", 1, nil, map[string]any{"image_resolution": "512", "requested_size": "1:1", "token_group": "draw", "token_name": "image"}); err != nil {
+	if _, err := svc.SubmitGenerationWithMetadata(context.Background(), identity, "task-1", "draw", "gemini-3.1-flash-image", "1:1", "", "https://base.test", 1, nil, map[string]any{"image_resolution": "512", "requested_size": "1:1", "token_group": "draw", "token_name": "image", "provider": "apimart", "image_provider": "apimart", "channel_protocol": "apimart", "provider_base_url": "https://api.apimart.ai"}); err != nil {
 		t.Fatalf("SubmitGenerationWithMetadata() error = %v", err)
 	}
 
@@ -211,6 +379,14 @@ func TestImageTaskServicePassesImageRequestMetadataToHandler(t *testing.T) {
 		}
 		if got := payload["token_name"]; got != "image" {
 			t.Fatalf("payload token_name = %#v, want image in %#v", got, payload)
+		}
+		for _, key := range []string{"provider", "image_provider", "channel_protocol"} {
+			if got := payload[key]; got != "apimart" {
+				t.Fatalf("payload %s = %#v, want apimart in %#v", key, got, payload)
+			}
+		}
+		if got := payload["provider_base_url"]; got != "https://api.apimart.ai" {
+			t.Fatalf("payload provider_base_url = %#v in %#v", got, payload)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("timed out waiting for handler payload")
@@ -248,6 +424,30 @@ func TestImageTaskServicePassesImageToolOptionsToHandler(t *testing.T) {
 		t.Fatal("timed out waiting for handler payload")
 	}
 	waitForTaskStatus(t, svc, identity, "task-1", TaskStatusSuccess)
+}
+
+func TestImageTaskServicePreservesExplicitZeroPartialImages(t *testing.T) {
+	handlerCalls := make(chan map[string]any, 1)
+	handler := func(ctx context.Context, identity Identity, payload map[string]any) (map[string]any, error) {
+		handlerCalls <- payload
+		return map[string]any{"data": []map[string]any{{"url": "https://example.test/image.png"}}}, nil
+	}
+	svc := newTestImageTaskService(t, handler, handler, handler, func() int { return 30 })
+	identity := Identity{ID: "alice", Name: "Alice", Role: "user"}
+
+	if _, err := svc.SubmitGenerationWithOptions(context.Background(), identity, "task-zero-partials", "draw", "gpt-image-2", "1:1", "auto", "https://base.test", 1, nil, nil, ImageOutputOptions{}, ImageToolOptions{Stream: true, PartialImages: 0, PartialImagesSet: true}); err != nil {
+		t.Fatalf("SubmitGenerationWithOptions() error = %v", err)
+	}
+
+	select {
+	case payload := <-handlerCalls:
+		if got, ok := payload["partial_images"]; !ok || got != 0 {
+			t.Fatalf("payload partial_images = %#v, present = %v; want explicit 0 in %#v", got, ok, payload)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for handler payload")
+	}
+	waitForTaskStatus(t, svc, identity, "task-zero-partials", TaskStatusSuccess)
 }
 
 func TestImageTaskServiceDoesNotPersistRawMaskData(t *testing.T) {
@@ -496,8 +696,9 @@ func TestImageTaskServiceSubmitsChatTasks(t *testing.T) {
 	svc := newTestImageTaskService(t, imageHandler, imageHandler, chatHandler, func() int { return 30 })
 	identity := Identity{ID: "alice", Name: "Alice", Role: "user"}
 	messages := []map[string]any{{"role": "user", "content": "hello"}}
+	tools := []map[string]any{{"type": "function", "function": map[string]any{"name": "get_canvas_summary"}}}
 
-	if _, err := svc.SubmitChatWithMetadata(context.Background(), identity, "chat-1", "hello", "auto", messages, false, map[string]any{"token_group": "draw", "token_name": "codex"}); err != nil {
+	if _, err := svc.SubmitChatWithMetadata(context.Background(), identity, "chat-1", "hello", "auto", messages, false, map[string]any{"token_group": "draw", "token_name": "codex", "tools": tools, "tool_choice": "auto"}); err != nil {
 		t.Fatalf("SubmitChatWithMetadata() error = %v", err)
 	}
 	waitForTaskStatus(t, svc, identity, "chat-1", TaskStatusSuccess)
@@ -523,6 +724,12 @@ func TestImageTaskServiceSubmitsChatTasks(t *testing.T) {
 		}
 		if got := payload["token_name"]; got != "codex" {
 			t.Fatalf("chat payload token_name = %#v, want codex in %#v", got, payload)
+		}
+		if got := util.AsMapSlice(payload["tools"]); len(got) != 1 || util.Clean(util.StringMap(got[0]["function"])["name"]) != "get_canvas_summary" {
+			t.Fatalf("chat payload tools = %#v", payload["tools"])
+		}
+		if got := payload["tool_choice"]; got != "auto" {
+			t.Fatalf("chat payload tool_choice = %#v, want auto in %#v", got, payload)
 		}
 	default:
 		t.Fatal("chat handler was not called")
@@ -886,10 +1093,10 @@ func TestImageTaskCountUsesSelectedModelLimit(t *testing.T) {
 		payload map[string]any
 		want    int
 	}{
-		{name: "GPT permits ten outputs", payload: map[string]any{"model": "gpt-image-2", "n": 10}, want: 10},
-		{name: "GPT clamps oversized count", payload: map[string]any{"model": "gpt-image-2", "n": 11}, want: 10},
-		{name: "Gemini keeps conservative limit", payload: map[string]any{"model": "gemini-3.1-flash-image", "n": 10}, want: 4},
-		{name: "stored count uses task model", payload: map[string]any{"model": "gpt-image-2", "count": 10}, want: 10},
+		{name: "GPT permits fifteen outputs", payload: map[string]any{"model": "gpt-image-2", "n": 15}, want: 15},
+		{name: "GPT clamps oversized count", payload: map[string]any{"model": "gpt-image-2", "n": 16}, want: 15},
+		{name: "Gemini uses the shared canvas limit", payload: map[string]any{"model": "gemini-3.1-flash-image", "n": 15}, want: 15},
+		{name: "stored count uses task model", payload: map[string]any{"model": "gpt-image-2", "count": 15}, want: 15},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

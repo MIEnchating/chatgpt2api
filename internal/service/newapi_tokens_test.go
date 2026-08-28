@@ -35,7 +35,7 @@ func TestNewAPITokenReaderSelectsFirstGroupAndAllowsSafeOverride(t *testing.T) {
 		t.Fatalf("KeyForIdentity() = %q, want first available key", key)
 	}
 
-	status := reader.Status(context.Background(), Identity{Username: "alice"})
+	status := reader.StatusForGroupAndName(context.Background(), Identity{Username: "alice"}, "", "")
 	if status["has_key"] != true || status["group"] != "wrong-group" {
 		t.Fatalf("Status() = %#v", status)
 	}
@@ -43,7 +43,7 @@ func TestNewAPITokenReaderSelectsFirstGroupAndAllowsSafeOverride(t *testing.T) {
 	if !ok || strings.Join(groups, ",") != "wrong-group,draw" {
 		t.Fatalf("Status() groups = %#v, want wrong-group,draw", status["groups"])
 	}
-	overridden, err := reader.TokenForIdentityGroup(context.Background(), Identity{Username: "alice"}, "wrong-group")
+	overridden, err := reader.TokenForIdentityGroupAndName(context.Background(), Identity{Username: "alice"}, "wrong-group", "")
 	if err != nil {
 		t.Fatalf("TokenForIdentityGroup() error = %v", err)
 	}
@@ -51,7 +51,7 @@ func TestNewAPITokenReaderSelectsFirstGroupAndAllowsSafeOverride(t *testing.T) {
 		t.Fatalf("TokenForIdentityGroup() = %#v, want explicit wrong-group token", overridden)
 	}
 
-	missing, err := reader.TokenForIdentityGroup(context.Background(), Identity{Username: "alice"}, "missing")
+	missing, err := reader.TokenForIdentityGroupAndName(context.Background(), Identity{Username: "alice"}, "missing", "")
 	if err == nil || !strings.Contains(err.Error(), "可用分组：wrong-group, draw") {
 		t.Fatalf("TokenForIdentityGroup(missing) error = %v", err)
 	}
@@ -79,7 +79,7 @@ func TestNewAPITokenReaderSelectsFirstSafeGroupWithoutConfiguredDefault(t *testi
 	if selection.Group != "other" || selection.Key != "sk-other-key" || strings.Join(selection.Groups, ",") != "other,draw" {
 		t.Fatalf("TokenForIdentity() = %#v, want first safe group", selection)
 	}
-	key, err := reader.KeyForIdentityGroup(context.Background(), Identity{Username: "alice"}, "draw")
+	key, err := reader.KeyForIdentityGroupAndName(context.Background(), Identity{Username: "alice"}, "draw", "")
 	if err != nil || key != "sk-draw-key" {
 		t.Fatalf("KeyForIdentityGroup(draw) = %q, %v", key, err)
 	}
@@ -188,9 +188,9 @@ func TestNewAPITokenReaderUsesStableNewAPIUserID(t *testing.T) {
 	if err != nil || key != "sk-draw-key" {
 		t.Fatalf("KeyForIdentity() = %q, %v", key, err)
 	}
-	balance, err := reader.BalanceForIdentity(context.Background(), identity)
-	if err != nil || balance.Username != "alice-renamed" {
-		t.Fatalf("BalanceForIdentity() = %#v, %v", balance, err)
+	balance := reader.BalanceStatus(context.Background(), identity)
+	if balance["has_balance"] != true || balance["username"] != "alice-renamed" {
+		t.Fatalf("BalanceStatus() = %#v", balance)
 	}
 }
 
@@ -212,7 +212,7 @@ func TestNewAPITokenReaderUsesAvailableGroup(t *testing.T) {
 	if selection.Group != "other" || selection.Key != "sk-other-key" || strings.Join(selection.Groups, ",") != "other" {
 		t.Fatalf("TokenForIdentity() = %#v, want fallback other token", selection)
 	}
-	status := reader.Status(context.Background(), Identity{Username: "alice"})
+	status := reader.StatusForGroupAndName(context.Background(), Identity{Username: "alice"}, "", "")
 	if status["has_key"] != true || status["group"] != "other" {
 		t.Fatalf("Status() = %#v", status)
 	}
@@ -369,15 +369,8 @@ func TestNewAPITokenReaderReadsUserBalance(t *testing.T) {
 	}
 	defer reader.Close()
 
-	balance, err := reader.BalanceForIdentity(context.Background(), Identity{Username: "alice"})
-	if err != nil {
-		t.Fatalf("BalanceForIdentity() error = %v", err)
-	}
-	if balance.ID != 9 || balance.Quota != 123456 || balance.UsedQuota != 789 || balance.RequestCount != 42 || balance.Group != "codex" {
-		t.Fatalf("BalanceForIdentity() = %#v", balance)
-	}
 	status := reader.BalanceStatus(context.Background(), Identity{Username: "alice"})
-	if status["has_balance"] != true || status["quota"] != float64(123456) || status["user_group"] != "codex" {
+	if status["has_balance"] != true || status["user_id"] != int64(9) || status["quota"] != float64(123456) || status["used_quota"] != float64(789) || status["request_count"] != int64(42) || status["user_group"] != "codex" {
 		t.Fatalf("BalanceStatus() = %#v", status)
 	}
 }
@@ -431,15 +424,8 @@ func TestNewAPITokenReaderSupportsSub2API(t *testing.T) {
 		t.Fatalf("rename Sub2API user: %v", err)
 	}
 	db.Close()
-	balance, err := reader.BalanceForIdentity(context.Background(), identity)
-	if err != nil {
-		t.Fatalf("BalanceForIdentity() error = %v", err)
-	}
-	if balance.Username != "alice-renamed" || balance.Quota != 6_250_000 || balance.UsedQuota != 1_500_000 || balance.RequestCount != 2 {
-		t.Fatalf("BalanceForIdentity() = %#v", balance)
-	}
 	status := reader.BalanceStatus(context.Background(), identity)
-	if status["source"] != "sub2api" || status["has_balance"] != true {
+	if status["source"] != "sub2api" || status["has_balance"] != true || status["username"] != "alice-renamed" || status["quota"] != float64(6_250_000) || status["used_quota"] != float64(1_500_000) || status["request_count"] != int64(2) {
 		t.Fatalf("BalanceStatus() = %#v", status)
 	}
 }

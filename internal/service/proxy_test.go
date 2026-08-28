@@ -40,7 +40,7 @@ func TestSOCKS5AddressModes(t *testing.T) {
 }
 
 func TestBrowserHTTPClientKeepsSessionAndTimeout(t *testing.T) {
-	client := browserHTTPClient("", 2*time.Second)
+	client := browserHTTPClientForProfile("", "", 2*time.Second)
 	if client == nil {
 		t.Fatal("browserHTTPClient() returned nil")
 	}
@@ -70,7 +70,7 @@ func TestBrowserHTTPClientPreservesCallerAuthHeaders(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := browserHTTPClient("", 2*time.Second)
+	client := browserHTTPClientForProfile("", "", 2*time.Second)
 	req, err := http.NewRequest(http.MethodGet, server.URL, nil)
 	if err != nil {
 		t.Fatal(err)

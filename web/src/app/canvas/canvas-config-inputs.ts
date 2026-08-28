@@ -1,10 +1,10 @@
-import type { CanvasConnection, CanvasNode } from "@/lib/api";
+import type { CanvasConnection, CanvasNode } from "@/services/api/canvas";
 
 export const CANVAS_CONFIG_REFERENCE_PATTERN = /@\[node:([^\]]+)\]/g;
 
 export type CanvasConfigInput = {
   nodeID: string;
-  type: "image" | "text";
+  type: "image" | "video" | "audio" | "text";
   title: string;
   text?: string;
   url?: string;
@@ -32,8 +32,12 @@ export function buildCanvasInputIndex(
     let input: CanvasConfigInput | null = null;
     if (source?.type === "image" && String(source.url || "").trim()) {
       input = { nodeID: source.id, type: "image", title: source.title || "图片", url: String(source.url).trim() };
-    } else if (source && source.type !== "config" && source.type !== "video" && String(source.prompt || "").trim()) {
-      input = { nodeID: source.id, type: "text", title: source.title || "想法", text: String(source.prompt).trim() };
+    } else if (source?.type === "panorama" && String(source.url || "").trim()) {
+      input = { nodeID: source.id, type: "image", title: source.title || "全景图", url: String(source.url).trim() };
+    } else if ((source?.type === "video" || source?.type === "audio") && String(source.url || "").trim()) {
+      input = { nodeID: source.id, type: source.type, title: source.title || (source.type === "video" ? "视频" : "音频"), url: String(source.url).trim() };
+    } else if (source?.type === "text" && String(source.prompt || "").trim()) {
+      input = { nodeID: source.id, type: "text", title: source.title || "文字", text: String(source.prompt).trim() };
     }
     if (!input) return;
     const inputs = configInputsByNodeID.get(connection.to_node_id);
@@ -70,14 +74,20 @@ export function canvasGenerationInputs(
 
 export function canvasConfigInputLabel(input: CanvasConfigInput, inputs: readonly CanvasConfigInput[]) {
   const index = inputs.filter((candidate) => candidate.type === input.type).findIndex((candidate) => candidate.nodeID === input.nodeID);
-  return `${input.type === "image" ? "图片" : "文本"}${Math.max(0, index) + 1}`;
+  return `${{ image: "图片", video: "视频", audio: "音频", text: "文本" }[input.type]}${Math.max(0, index) + 1}`;
+}
+
+export function canvasConfigUsesConnectedText(inputs: readonly CanvasConfigInput[]) {
+  return inputs.some((input) => input.type === "text" && Boolean(input.text?.trim()));
 }
 
 export function canGenerateCanvasConfig(node: CanvasNode, inputs: readonly CanvasConfigInput[]) {
-  return Boolean(
-    String(node.composer_content ?? node.prompt ?? "").trim()
-    || inputs.some((input) => Boolean(input.text || input.url)),
-  );
+  const hasComposerContent = Boolean(String(node.composer_content ?? node.prompt ?? "").trim());
+  if (node.composer_content !== undefined) return hasComposerContent;
+  if (node.generation_mode === "audio") {
+    return hasComposerContent || inputs.some((input) => input.type === "text" && Boolean(input.text));
+  }
+  return hasComposerContent || inputs.some((input) => Boolean(input.text || input.url));
 }
 
 export function canvasConfigPromptDisplay(value: string, inputs: readonly CanvasConfigInput[]) {
@@ -90,7 +100,7 @@ export function canvasConfigPromptDisplay(value: string, inputs: readonly Canvas
 
 export function canvasConfigPromptValue(value: string, inputs: readonly CanvasConfigInput[]) {
   const idByLabel = new Map(inputs.map((input) => [canvasConfigInputLabel(input, inputs), input.nodeID]));
-  return value.replace(/@(图片|文本)\d+/g, (label) => {
+  return value.replace(/@(图片|视频|音频|文本)\d+/g, (label) => {
     const nodeID = idByLabel.get(label.slice(1));
     return nodeID ? `@[node:${nodeID}]` : label;
   });

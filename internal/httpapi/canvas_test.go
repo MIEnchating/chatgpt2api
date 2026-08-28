@@ -16,10 +16,10 @@ import (
 func TestCanvasClearRequiresExplicitProjectID(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()
-	authorization := adminAuthHeader(t, app)
+	authorization := adminSessionToken(t, app)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/canvas", nil)
-	req.Header.Set("Authorization", authorization)
+	setRequestAuthCookie(req, authorization)
 	res := httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
 	if res.Code != http.StatusOK {
@@ -31,7 +31,7 @@ func TestCanvasClearRequiresExplicitProjectID(t *testing.T) {
 	}
 
 	req = httptest.NewRequest(http.MethodDelete, "/api/canvas", nil)
-	req.Header.Set("Authorization", authorization)
+	setRequestAuthCookie(req, authorization)
 	res = httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
 	if res.Code != http.StatusBadRequest {
@@ -39,7 +39,7 @@ func TestCanvasClearRequiresExplicitProjectID(t *testing.T) {
 	}
 
 	req = httptest.NewRequest(http.MethodDelete, "/api/canvas?project_id="+url.QueryEscape(workspace.Document.ID)+"&revision="+strconv.FormatInt(workspace.Document.Revision, 10), nil)
-	req.Header.Set("Authorization", authorization)
+	setRequestAuthCookie(req, authorization)
 	res = httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
 	if res.Code != http.StatusOK {
@@ -59,10 +59,10 @@ func TestCanvasClearRequiresExplicitProjectID(t *testing.T) {
 func TestCanvasClearRejectsStaleRevision(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()
-	authorization := adminAuthHeader(t, app)
+	authorization := adminSessionToken(t, app)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/canvas", nil)
-	req.Header.Set("Authorization", authorization)
+	setRequestAuthCookie(req, authorization)
 	res := httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
 	if res.Code != http.StatusOK {
@@ -80,7 +80,7 @@ func TestCanvasClearRejectsStaleRevision(t *testing.T) {
 		t.Fatalf("Marshal(canvas) error = %v", err)
 	}
 	req = httptest.NewRequest(http.MethodPut, "/api/canvas", bytes.NewReader(data))
-	req.Header.Set("Authorization", authorization)
+	setRequestAuthCookie(req, authorization)
 	req.Header.Set("Content-Type", "application/json")
 	res = httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
@@ -89,7 +89,7 @@ func TestCanvasClearRejectsStaleRevision(t *testing.T) {
 	}
 
 	req = httptest.NewRequest(http.MethodDelete, "/api/canvas?project_id="+url.QueryEscape(workspace.Document.ID)+"&revision="+strconv.FormatInt(workspace.Document.Revision, 10), nil)
-	req.Header.Set("Authorization", authorization)
+	setRequestAuthCookie(req, authorization)
 	res = httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
 	if res.Code != http.StatusConflict {
@@ -100,10 +100,10 @@ func TestCanvasClearRejectsStaleRevision(t *testing.T) {
 func TestCanvasSaveRejectsStaleRevision(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()
-	authorization := adminAuthHeader(t, app)
+	authorization := adminSessionToken(t, app)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/canvas", nil)
-	req.Header.Set("Authorization", authorization)
+	setRequestAuthCookie(req, authorization)
 	res := httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
 	if res.Code != http.StatusOK {
@@ -120,7 +120,7 @@ func TestCanvasSaveRejectsStaleRevision(t *testing.T) {
 			t.Fatalf("Marshal(canvas) error = %v", err)
 		}
 		req := httptest.NewRequest(http.MethodPut, "/api/canvas", bytes.NewReader(data))
-		req.Header.Set("Authorization", authorization)
+		setRequestAuthCookie(req, authorization)
 		req.Header.Set("Content-Type", "application/json")
 		res := httptest.NewRecorder()
 		app.Handler().ServeHTTP(res, req)
@@ -144,9 +144,9 @@ func TestCanvasSaveRejectsStaleRevision(t *testing.T) {
 func TestDefaultUserCanvasImageUploadStoresPrivateGalleryImage(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()
-	_, rawKey, err := app.auth.CreateAPIKey(service.AuthRoleUser, "canvas-user", service.AuthOwner{})
+	_, rawKey, err := createTestUserSession(app, "canvas-user", service.AuthOwner{})
 	if err != nil {
-		t.Fatalf("CreateAPIKey() error = %v", err)
+		t.Fatalf("CreateSession() error = %v", err)
 	}
 	authorization := "Bearer " + rawKey
 
@@ -164,7 +164,7 @@ func TestDefaultUserCanvasImageUploadStoresPrivateGalleryImage(t *testing.T) {
 	}
 
 	req := httptest.NewRequest(http.MethodPost, "/api/canvas/images", body)
-	req.Header.Set("Authorization", authorization)
+	setRequestAuthCookie(req, authorization)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	res := httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
@@ -189,7 +189,7 @@ func TestDefaultUserCanvasImageUploadStoresPrivateGalleryImage(t *testing.T) {
 		t.Fatalf("parse image url: %v", err)
 	}
 	req = httptest.NewRequest(http.MethodGet, parsed.Path, nil)
-	req.Header.Set("Authorization", authorization)
+	setRequestAuthCookie(req, authorization)
 	res = httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
 	if res.Code != http.StatusOK || res.Body.Len() == 0 {
@@ -197,7 +197,7 @@ func TestDefaultUserCanvasImageUploadStoresPrivateGalleryImage(t *testing.T) {
 	}
 
 	req = httptest.NewRequest(http.MethodGet, "/api/images?scope=mine", nil)
-	req.Header.Set("Authorization", authorization)
+	setRequestAuthCookie(req, authorization)
 	res = httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
 	if res.Code != http.StatusOK {

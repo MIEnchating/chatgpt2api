@@ -1,19 +1,19 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { AppWindow, LoaderCircle, RotateCcw, Save, Upload } from "lucide-react";
+import { ImageUp, LoaderCircle, RotateCcw, Save } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
+import { TooltipHint } from "@/components/ui/tooltip";
 import { DEFAULT_SITE_ICON, resolveSiteIconSrc } from "@/lib/app-meta";
 
 import { useSettingsStore } from "../store";
-import { SettingsCard } from "./settings-ui";
 
 const maxSiteIconSize = 2 * 1024 * 1024;
 const supportedSiteIconTypes = new Set(["image/png", "image/jpeg", "image/webp", "image/gif"]);
 
-export function SiteIconCard() {
+export function SiteIconSettings() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [pendingPreviewUrl, setPendingPreviewUrl] = useState("");
@@ -41,48 +41,21 @@ export function SiteIconCard() {
   };
 
   if (isLoadingConfig || !config) {
-    return (
-      <SettingsCard icon={AppWindow} title="网站图标" description="配置浏览器和站内品牌图标。" tone="violet">
-        <div className="flex items-center justify-center py-10">
-          <LoaderCircle className="size-5 animate-spin text-muted-foreground" />
-        </div>
-      </SettingsCard>
-    );
+    return <div className="flex items-center justify-center py-8"><LoaderCircle className="size-5 animate-spin text-muted-foreground" /></div>;
   }
 
   const currentIconUrl = String(config.site_icon_url || "").trim();
   const previewUrl = pendingPreviewUrl || resolveSiteIconSrc(currentIconUrl) || DEFAULT_SITE_ICON;
 
   return (
-    <SettingsCard
-      icon={AppWindow}
-      title="网站图标"
-      description="配置浏览器和站内品牌图标。"
-      tone="violet"
-      action={
-        <Button
-          type="button"
-          size="sm"
-          disabled={!pendingFile || isSavingConfig}
-          onClick={() => {
-            if (!pendingFile) {
-              return;
-            }
-            void saveSiteIcon({ file: pendingFile, action: "replace" }).then((saved) => {
-              if (saved) {
-                clearPendingFile();
-              }
-            });
-          }}
-        >
-          {isSavingConfig ? <LoaderCircle className="size-4 animate-spin" /> : <Save className="size-4" />}
-          保存
-        </Button>
-      }
-    >
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-        <div className="flex size-20 shrink-0 items-center justify-center rounded-xl border border-border bg-muted/35 p-2">
-          <img src={previewUrl} alt="网站图标预览" className="size-full rounded-lg object-cover" />
+    <div className="min-w-0 border-t border-border/70 pt-5 md:border-t-0 md:border-l md:pt-0 md:pl-5">
+      <div>
+        <p className="text-sm leading-6 font-medium text-foreground">网站图标</p>
+        <p className="text-xs leading-5 text-muted-foreground">PNG、JPEG、WebP 或 GIF，最大 2MB</p>
+      </div>
+      <div className="mt-3 flex min-w-0 items-center gap-4">
+        <div className="flex size-[72px] shrink-0 items-center justify-center rounded-lg border border-border bg-background p-2 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+          <img src={previewUrl} alt="网站图标预览" className="size-full rounded-md object-contain" />
         </div>
         <div className="min-w-0 flex-1">
           <input
@@ -114,12 +87,30 @@ export function SiteIconCard() {
             }}
           />
           <div className="flex flex-wrap gap-2">
-            <Button type="button" variant="outline" onClick={() => fileInputRef.current?.click()} disabled={isSavingConfig}>
-              <Upload className="size-4" />
-              选择图片
+            <Button type="button" size="sm" variant="outline" onClick={() => fileInputRef.current?.click()} disabled={isSavingConfig}>
+              <ImageUp className="size-4" />
+              更换
             </Button>
+            {pendingFile ? (
+              <Button
+                type="button"
+                size="sm"
+                disabled={isSavingConfig}
+                onClick={() => {
+                  void saveSiteIcon({ file: pendingFile, action: "replace" }).then((saved) => {
+                    if (saved) {
+                      clearPendingFile();
+                    }
+                  });
+                }}
+              >
+                {isSavingConfig ? <LoaderCircle className="size-4 animate-spin" /> : <Save className="size-4" />}
+                应用
+              </Button>
+            ) : null}
             <Button
               type="button"
+              size="sm"
               variant="outline"
               disabled={isSavingConfig || (!currentIconUrl && !pendingFile)}
               onClick={() => {
@@ -132,14 +123,14 @@ export function SiteIconCard() {
               }}
             >
               <RotateCcw className="size-4" />
-              恢复默认
+              默认
             </Button>
           </div>
-          <p className="mt-2 truncate text-xs text-muted-foreground">
-            {pendingFile ? pendingFile.name : currentIconUrl ? "已使用自定义图标" : "当前使用默认图标"}
-          </p>
+          <TooltipHint content={pendingFile?.name || (currentIconUrl ? "当前为自定义图标" : "当前为默认图标")}><p className="mt-2 max-w-full truncate text-xs leading-5 text-muted-foreground">
+            {pendingFile ? `待应用：${pendingFile.name}` : currentIconUrl ? "当前为自定义图标" : "当前为默认图标"}
+          </p></TooltipHint>
         </div>
       </div>
-    </SettingsCard>
+    </div>
   );
 }

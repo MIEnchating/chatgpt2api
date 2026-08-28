@@ -55,6 +55,23 @@ test("generation configuration nodes accept inputs but cannot connect to each ot
   assert.equal(canCreateCanvasConnection("config-a", "config-b", connections, nodes), false);
 });
 
+test("groups cannot connect and directors only connect to image-like nodes", () => {
+  const nodes = [
+    { ...node("group", 0, 0), type: "group" },
+    { ...node("director", 200, 0), type: "director" },
+    { ...node("text", 400, 0), type: "text" },
+    { ...node("image", 600, 0), type: "image" },
+    { ...node("panorama", 800, 0), type: "panorama" },
+  ];
+  assert.equal(resolveCanvasConnection({ nodeID: "group", handleType: "source" }, "image", nodes), null);
+  assert.equal(resolveCanvasConnection({ nodeID: "director", handleType: "source" }, "text", nodes), null);
+  assert.deepEqual(resolveCanvasConnection({ nodeID: "image", handleType: "source" }, "director", nodes), { sourceID: "image", targetID: "director" });
+  assert.deepEqual(resolveCanvasConnection({ nodeID: "panorama", handleType: "target" }, "director", nodes), { sourceID: "director", targetID: "panorama" });
+  assert.equal(canCreateCanvasConnection("group", "image", [], nodes), false);
+  assert.equal(canCreateCanvasConnection("text", "director", [], nodes), false);
+  assert.equal(canCreateCanvasConnection("panorama", "director", [], nodes), true);
+});
+
 test("hover relations include only directly connected nodes and edges", () => {
   const connections = [
     { id: "ab", from_node_id: "a", to_node_id: "b" },

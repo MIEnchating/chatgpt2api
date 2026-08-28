@@ -5,45 +5,36 @@ import {
   type ImageConversationAssetUploadItem,
 } from "@/lib/image-conversation-assets";
 import type { LoginPageImageMode } from "@/lib/login-page-image-layout";
+import {
+  videoGenerationTaskRequestBody,
+  type VideoGenerationTaskRequestInput,
+} from "@/lib/video-request-normalizer";
+import type {
+  GenerationMediaType,
+  GenerationTaskMode,
+  GenerationTaskStatus,
+  GenerationOutputStatus,
+} from "@/lib/generation-task-contract";
+import {
+  composeImageGenerationPrompt,
+  normalizedImagePartialImages,
+} from "@/lib/image-api-contract";
 
 export type ImageModel = string;
 export type ImageModelOption = { value: ImageModel; label: string };
-export const CODEX_IMAGE_MODEL: ImageModel = "codex-gpt-image-2";
 export const DEFAULT_IMAGE_MODELS: ImageModel[] = [
   "gpt-image-2",
   "gemini-3.1-flash-image",
   "grok-imagine-image",
 ];
 export const DEFAULT_IMAGE_MODEL: ImageModel = DEFAULT_IMAGE_MODELS[0];
-export const IMAGE_MODEL_OPTIONS = [
-  { value: "auto", label: "自动" },
-  { value: "codex-gpt-image-2", label: "codex-gpt-image-2" },
-  { value: "gpt-image-2", label: "gpt-image-2" },
-  { value: "gemini-3.1-flash-image", label: "Google Gemini Image" },
-  { value: "grok-imagine-image", label: "Grok Imagine" },
-  { value: "gpt-5-mini", label: "gpt-5-mini" },
-  { value: "gpt-5-3-mini", label: "gpt-5-3-mini" },
-  { value: "gpt-5", label: "gpt-5" },
-  { value: "gpt-5-1", label: "gpt-5-1" },
-  { value: "gpt-5-2", label: "gpt-5-2" },
-  { value: "gpt-5-3", label: "gpt-5-3" },
-  { value: "gpt-5.4", label: "gpt-5.4" },
-  { value: "gpt-5.5", label: "gpt-5.5" },
-] as const satisfies ReadonlyArray<ImageModelOption>;
-const IMAGE_TASK_MODEL_VALUES = new Set<ImageModel>(["gpt-image-2", "codex-gpt-image-2"]);
-const KNOWN_CHAT_MODEL_VALUES = new Set<ImageModel>([
-  "auto",
-  "gpt-5-mini",
-  "gpt-5-3-mini",
-  "gpt-5",
-  "gpt-5-1",
-  "gpt-5-2",
-  "gpt-5-3",
-  "gpt-5.4",
-  "gpt-5.5",
-]);
-export function normalizeModelNames(value: unknown, fallback: ReadonlyArray<ImageModel>): ImageModel[] {
-  const rawItems = Array.isArray(value) ? value : String(value ?? "").split(",");
+export function normalizeModelNames(
+  value: unknown,
+  fallback: ReadonlyArray<ImageModel>,
+): ImageModel[] {
+  const rawItems = Array.isArray(value)
+    ? value
+    : String(value ?? "").split(",");
   const seen = new Set<string>();
   const models: ImageModel[] = [];
   for (const item of rawItems) {
@@ -57,18 +48,19 @@ export function normalizeModelNames(value: unknown, fallback: ReadonlyArray<Imag
   return models.length > 0 ? models : [...fallback];
 }
 
-export function modelOptionsFromNames(names: ReadonlyArray<ImageModel>): ImageModelOption[] {
-  return normalizeModelNames(names, []).map((model) => ({ value: model, label: model }));
+export function modelOptionsFromNames(
+  names: ReadonlyArray<ImageModel>,
+): ImageModelOption[] {
+  return normalizeModelNames(names, []).map((model) => ({
+    value: model,
+    label: model,
+  }));
 }
 
-export const IMAGE_TASK_MODEL_OPTIONS = IMAGE_MODEL_OPTIONS.filter((option) => IMAGE_TASK_MODEL_VALUES.has(option.value));
-export const IMAGE_CREATION_MODEL_OPTIONS = modelOptionsFromNames(DEFAULT_IMAGE_MODELS);
+export const IMAGE_CREATION_MODEL_OPTIONS =
+  modelOptionsFromNames(DEFAULT_IMAGE_MODELS);
 export function isImageModel(value: unknown): value is ImageModel {
   return typeof value === "string" && value.trim() !== "";
-}
-
-export function isImageTaskModel(value: unknown): value is ImageModel {
-  return isImageModel(value) && (IMAGE_TASK_MODEL_VALUES.has(value) || !KNOWN_CHAT_MODEL_VALUES.has(value));
 }
 
 export function isImageCreationModel(value: unknown): value is ImageModel {
@@ -76,26 +68,18 @@ export function isImageCreationModel(value: unknown): value is ImageModel {
 }
 
 export {
-  imageModelRoute,
   imageOutputCountLimit,
   imageReferenceImageLimit,
-  supportsImageAspectRatio,
   supportsImageEditing,
-  supportsImageExactDimensions,
-  supportsImageMask,
   supportsImageOutputControls,
-  supportsImageQuality,
   supportsImageQualityValue,
   supportsImageResolution,
-  supportsImageSize,
   supportsImageStreaming,
   supportsStructuredImageParameters,
-  usesCodexImageRoute,
-  usesOfficialImageRoute,
-  type ImageModelRoute,
 } from "@/lib/image-model-capabilities";
 
 export type ImageQuality = "low" | "medium" | "high";
+export type ImageRequestQuality = "auto" | ImageQuality;
 export type ImageOutputFormat = "png" | "jpeg" | "webp";
 export type ImageModeration = "auto" | "low";
 export type ImageVisibility = "private" | "public";
@@ -106,7 +90,9 @@ export type RelayModelListItem = {
   owned_by?: string;
 };
 
-export function relayModelOptionsFromList(items: RelayModelListItem[] | null | undefined): ImageModelOption[] {
+export function relayModelOptionsFromList(
+  items: RelayModelListItem[] | null | undefined,
+): ImageModelOption[] {
   const seen = new Set<string>();
   const options: ImageModelOption[] = [];
   for (const item of items || []) {
@@ -124,22 +110,13 @@ const IMAGE_QUALITY_VALUES = new Set<string>(["low", "medium", "high"]);
 const IMAGE_OUTPUT_FORMAT_VALUES = new Set<string>(["png", "jpeg", "webp"]);
 const IMAGE_MODERATION_VALUES = new Set<string>(["auto", "low"]);
 
-export const IMAGE_OUTPUT_FORMAT_OPTIONS = [
-  { value: "png", label: "PNG" },
-  { value: "jpeg", label: "JPEG" },
-  { value: "webp", label: "WebP" },
-] as const satisfies ReadonlyArray<{ value: ImageOutputFormat; label: string }>;
-
-export const IMAGE_MODERATION_OPTIONS = [
-  { value: "auto", label: "自动" },
-  { value: "low", label: "低限制" },
-] as const satisfies ReadonlyArray<{ value: ImageModeration; label: string }>;
-
 export function isImageQuality(value: unknown): value is ImageQuality {
   return typeof value === "string" && IMAGE_QUALITY_VALUES.has(value);
 }
 
-export function isImageOutputFormat(value: unknown): value is ImageOutputFormat {
+export function isImageOutputFormat(
+  value: unknown,
+): value is ImageOutputFormat {
   return typeof value === "string" && IMAGE_OUTPUT_FORMAT_VALUES.has(value);
 }
 
@@ -151,18 +128,8 @@ export function supportsImageOutputCompression(format: ImageOutputFormat) {
   return format === "jpeg" || format === "webp";
 }
 
-function normalizedImagePartialImages(value: number | undefined) {
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    return undefined;
-  }
-  const normalized = Math.round(value);
-  return normalized >= 1 && normalized <= 3 ? normalized : undefined;
-}
-
-export type AuthRole = "admin" | "user";
+type AuthRole = "admin" | "user";
 export type LogView = "all" | "meaningful" | "business";
-export type AccountScheduleMode = "load_balance" | "fill_first";
-
 export type PermissionMenu = {
   id: string;
   label: string;
@@ -203,36 +170,38 @@ export type AnnouncementPreferences = {
 };
 
 export type SettingsConfig = {
+	storage?: StorageSettingConfig;
   proxy: string;
   base_url?: string;
   app_title?: string;
   project_name?: string;
   site_icon_url?: string;
   relay_base_url?: string;
+  relay_database_url?: string;
+  relay_database_type?: "newapi" | "sub2api" | string;
+  relay_database_driver?: "sqlite" | "postgres" | "mysql" | string;
+  relay_database_host?: string;
+  relay_database_port?: string;
+  relay_database_name?: string;
+  relay_database_user?: string;
+  relay_database_password?: string;
+  relay_database_configured?: boolean;
+  relay_database_password_configured?: boolean;
   image_models?: string[] | string;
   default_image_model?: string;
   video_models?: string[] | string;
   default_video_model?: string;
-  refresh_account_interval_minute?: number | string;
+  text_models?: string[] | string;
+  default_text_model?: string;
+  audio_models?: string[] | string;
+  default_audio_model?: string;
   image_task_timeout_seconds?: number | string;
   user_default_concurrent_limit?: number | string;
   user_default_rpm_limit?: number | string;
   image_retention_days?: number | string;
   image_storage_limit_mb?: number | string;
-  image_storage_backend?: "local" | "s3" | string;
-  s3_endpoint?: string;
-  s3_region?: string;
-  s3_bucket?: string;
-  s3_prefix?: string;
-  s3_use_path_style?: boolean;
-  s3_endpoint_configured?: boolean;
-  s3_credentials_configured?: boolean;
   log_retention_days?: number | string;
   default_log_view?: LogView | string;
-  auto_remove_invalid_accounts?: boolean;
-  auto_remove_rate_limited_accounts?: boolean;
-  text_account_schedule_mode?: AccountScheduleMode | string;
-  image_account_schedule_mode?: AccountScheduleMode | string;
   log_levels?: string[];
   login_page_image_url?: string;
   login_page_image_mode?: LoginPageImageMode | string;
@@ -243,11 +212,51 @@ export type SettingsConfig = {
     id: string;
     label: string;
     url: string;
-    format: "banana-json" | "awesome-gpt-image-2-markdown" | "generic-json" | string;
+    homepage?: string;
+    format:
+      | "reference-project"
+      | "banana-json"
+      | "awesome-gpt-image-2-markdown"
+      | "generic-json"
+      | string;
     enabled?: boolean;
     builtin?: boolean;
   }>;
+  prompt_pull_schedule_enabled?: boolean;
+  prompt_pull_interval_minutes?: number | string;
   [key: string]: unknown;
+};
+
+export type StorageProviderConfig = {
+	id: string;
+	name: string;
+	type: "s3" | "webdav";
+	endpoint: string;
+	region: string;
+	bucket: string;
+	accessKeyId: string;
+	secretAccessKey: string;
+	publicBaseUrl: string;
+	pathPrefix: string;
+	username: string;
+	password: string;
+	weight: number;
+	enabled: boolean;
+	ownerUserId: string;
+	capacityBytes: number;
+	capacityCheckedAt: string;
+	capacityExceeded: boolean;
+};
+
+export type StorageSettingConfig = {
+	mode: string;
+	allowUserProvider: boolean;
+	allowUserGlobalProvider: boolean;
+	providers: StorageProviderConfig[];
+	roundRobinCursor: number;
+	capacityCheck: { enabled: boolean; cron: string };
+	capacityLimitBytes: number;
+	localCapacityLimitBytes: number;
 };
 
 export type ModelConfig = {
@@ -255,6 +264,10 @@ export type ModelConfig = {
   default_image_model: ImageModel;
   video_models: string[];
   default_video_model: string;
+  text_models: string[];
+  default_text_model: string;
+  audio_models: string[];
+  default_audio_model: string;
   relay_base_url: string;
 };
 
@@ -264,6 +277,37 @@ export type LoginPageImageSettings = {
   login_page_image_zoom: number;
   login_page_image_position_x: number;
   login_page_image_position_y: number;
+};
+
+export type ImageGenerationPreferences = {
+  api_mode: ImageAPIMode;
+  stream: boolean;
+  partial_images: number;
+  response_format_b64_json: boolean;
+  codex_cli_compatibility: boolean;
+  system_prompt: string;
+  video_system_prompt: string;
+  audio_instructions: string;
+  default_text_model: string;
+  default_image_model: string;
+  default_video_model: string;
+  default_audio_model: string;
+  canvas_default_image_count: number;
+  default_audio_voice: string;
+  default_audio_format: "" | "mp3" | "wav" | "opus" | "aac" | "flac" | "pcm";
+  default_audio_speed: number;
+};
+
+export type ImageAPIMode = "images" | "responses" | "chat";
+
+export type ImageTaskToolOptions = {
+  apiMode?: ImageAPIMode;
+  moderation?: string;
+  inputImageMask?: string;
+  responseFormatB64JSON?: boolean;
+  codexCLICompatibility?: boolean;
+  systemPrompt?: string;
+  workflowContext?: unknown;
 };
 
 export type ManagedImage = {
@@ -286,9 +330,9 @@ export type ManagedImage = {
   requested_size?: string;
   output_format?: ImageOutputFormat;
   output_compression?: number;
-	partial_images?: number;
-	moderation?: string;
-	reference_image_urls?: string[];
+  partial_images?: number;
+  moderation?: string;
+  reference_image_urls?: string[];
   reference_images?: Array<{
     path: string;
     url?: string;
@@ -303,92 +347,6 @@ export type ManagedImage = {
   megapixels?: number;
   created_at: string;
   published_at?: string;
-};
-
-export type CanvasViewport = {
-  zoom: number;
-  x: number;
-  y: number;
-};
-
-export type CanvasNode = {
-  id: string;
-  type: "image" | "video" | "text" | "config";
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  font_size?: number;
-  natural_width?: number;
-  natural_height?: number;
-  free_resize?: boolean;
-  scale_x: number;
-  scale_y: number;
-  angle?: number;
-  url?: string;
-  thumbnail_url?: string;
-  title?: string;
-  prompt?: string;
-  composer_content?: string;
-  task_id?: string;
-  generation_model?: string;
-  generation_size?: string;
-  generation_resolution?: string;
-  generation_quality?: ImageQuality;
-  generation_count?: number;
-  generation_output_format?: ImageOutputFormat;
-  generation_output_compression?: number;
-  generation_stream?: boolean;
-  generation_partial_images?: number;
-  generation_status?: "idle" | "loading" | "success" | "error";
-  generation_error?: string;
-  generation_type?: "generate" | "edit";
-  generation_reference_urls?: string[];
-  generation_video_model?: string;
-  generation_video_size?: string;
-  generation_video_seconds?: number;
-  generation_video_resolution?: string;
-  generation_video_audio?: boolean;
-  generation_video_watermark?: boolean;
-  generation_video_reference_urls?: string[];
-  batch_child_ids?: string[];
-  batch_root_id?: string;
-  batch_primary_id?: string;
-  batch_expanded?: boolean;
-  created_at?: string;
-};
-
-export type CanvasConnection = {
-  id: string;
-  from_node_id: string;
-  to_node_id: string;
-};
-
-export type CanvasDocument = {
-  version: number;
-  id: string;
-  revision: number;
-  title: string;
-  background: "dots" | "grid" | "plain";
-  nodes: CanvasNode[];
-  connections: CanvasConnection[];
-  viewport: CanvasViewport;
-  created_at?: string;
-  updated_at?: string;
-};
-
-export type CanvasProjectSummary = {
-  id: string;
-  title: string;
-  node_count: number;
-  created_at?: string;
-  updated_at?: string;
-};
-
-export type CanvasWorkspaceResponse = {
-  document: CanvasDocument;
-  projects: CanvasProjectSummary[];
-  active_project_id: string;
 };
 
 export type SystemLog = {
@@ -429,9 +387,6 @@ export type LogCleanupResult = {
 };
 
 export type ImageStorageGovernanceSummary = {
-  storage_backend?: "local" | "s3" | string;
-  object_storage_bucket?: string;
-  object_storage_prefix?: string;
   total_bytes: number;
   images_bytes: number;
   thumbnails_bytes: number;
@@ -449,6 +404,28 @@ export type ImageStorageGovernanceSummary = {
   over_limit_bytes: number;
   oldest_image_at?: string;
   latest_image_at?: string;
+  text_assets?: {
+    count: number;
+    bytes: number;
+  };
+  local_media?: {
+    total_bytes: number;
+    indexed_bytes: number;
+    untracked_bytes: number;
+    total_count: number;
+    text_bytes: number;
+    text_count: number;
+    image_bytes: number;
+    image_count: number;
+    video_bytes: number;
+    video_count: number;
+    audio_bytes: number;
+    audio_count: number;
+    other_bytes: number;
+    other_count: number;
+    limit_bytes: number;
+    over_limit_bytes: number;
+  };
 };
 
 export type ImageStorageCleanupResult = {
@@ -467,11 +444,6 @@ export type ImageStorageCleanupResult = {
   action?: string;
 };
 
-export type ImageResponse = {
-  created: number;
-  data: Array<{ b64_json?: string; url?: string; revised_prompt?: string }>;
-};
-
 export type ImageQualityCheck = {
   requested_size?: string;
   actual_size?: string;
@@ -487,6 +459,8 @@ export type CreationTaskData = {
   url?: string;
   revised_prompt?: string;
   text_response?: string;
+  reasoning_content?: string;
+  tool_calls?: CreationTaskToolCall[];
   width?: number;
   height?: number;
   resolution?: string;
@@ -495,16 +469,21 @@ export type CreationTaskData = {
   actual_output_format?: ImageOutputFormat | string;
   quality_check?: ImageQualityCheck;
   video_url?: string;
-  type?: string;
+  audio_url?: string;
+  type?: GenerationMediaType | "text" | string;
   mime_type?: string;
+  bytes?: number;
+  size?: number;
+  storageKey?: string;
+  storage_key?: string;
 };
 
 export type CreationTask = {
   id: string;
   /** Monotonic server-side task revision when available. */
   revision?: number | string;
-  status: "queued" | "running" | "success" | "error" | "cancelled";
-  mode: "generate" | "edit" | "chat" | "video";
+  status: GenerationTaskStatus;
+  mode: GenerationTaskMode;
   model?: ImageModel;
   size?: string;
   quality?: ImageQuality;
@@ -515,23 +494,20 @@ export type CreationTask = {
   created_at: string;
   updated_at: string;
   data?: CreationTaskData[];
-  output_statuses?: ("queued" | "running" | "success" | "error" | "cancelled")[];
+  output_statuses?: GenerationOutputStatus[];
   error?: string;
-  output_type?: "text" | "image" | "video";
+  output_type?: "text" | "image" | "video" | "audio";
   visibility?: ImageVisibility;
+  workflow_context?: unknown;
 };
 
 export type CreationTaskRequestOptions = {
-  authorization?: string;
   redirectOnUnauthorized?: boolean;
   signal?: AbortSignal;
 };
 
 function creationTaskRequestAuth(options?: CreationTaskRequestOptions) {
   return {
-    ...(options?.authorization
-      ? { headers: { Authorization: options.authorization } }
-      : {}),
     ...(options?.redirectOnUnauthorized === undefined
       ? {}
       : { redirectOnUnauthorized: options.redirectOnUnauthorized }),
@@ -541,7 +517,32 @@ function creationTaskRequestAuth(options?: CreationTaskRequestOptions) {
 
 export type CreationTaskMessage = {
   role: "system" | "user" | "assistant" | "tool";
-  content: string;
+  content: string | null | Array<
+    | { type: "text"; text: string }
+    | { type: "image_url"; image_url: { url: string } }
+  >;
+  reasoning_content?: string;
+  tool_calls?: CreationTaskToolCall[];
+  tool_call_id?: string;
+  name?: string;
+};
+
+export type CreationTaskToolCall = {
+  id: string;
+  type: "function";
+  function: {
+    name: string;
+    arguments: string;
+  };
+};
+
+type CreationTaskToolDefinition = {
+  type: "function";
+  function: {
+    name: string;
+    description: string;
+    parameters: Record<string, unknown>;
+  };
 };
 
 export type FallbackReferenceImage = {
@@ -582,12 +583,14 @@ export type ProfileRelayKeyStatus = {
   groups?: string[];
   token_names?: string[];
   source?: "newapi" | "sub2api" | string;
+  database_configured?: boolean;
   message?: string;
 };
 
 export type ProfileBalanceStatus = {
   has_balance: boolean;
   source?: "newapi" | "sub2api" | string;
+  database_configured?: boolean;
   token_group?: string;
   token_name?: string;
   token_groups?: string[];
@@ -604,23 +607,6 @@ export type ProfileBalanceStatus = {
   message?: string;
 };
 
-export type UserKey = {
-  id: string;
-  name: string;
-  role: AuthRole;
-  role_id?: string;
-  role_name?: string;
-  kind?: "api_key";
-  provider?: "local" | "newapi" | "sub2api" | string;
-  owner_id?: string;
-  owner_name?: string;
-  enabled: boolean;
-  created_at: string | null;
-  last_used_at: string | null;
-  menu_paths?: string[];
-  api_permissions?: string[];
-};
-
 export type ManagedUser = {
   id: string;
   username?: string;
@@ -632,10 +618,7 @@ export type ManagedUser = {
   owner_id?: string;
   owner_name?: string;
   enabled: boolean;
-  has_api_key: boolean;
   has_session: boolean;
-  api_key_id?: string;
-  api_key_name?: string;
   session_id?: string;
   session_name?: string;
   credential_count: number;
@@ -711,12 +694,10 @@ export async function verifySession() {
   });
 }
 
-export async function fetchProfile() {
-  return httpRequest<LoginResponse>("/api/profile");
-}
-
-export { PROFILE_RELAY_TOKEN_NAME_STORAGE_KEY } from "@/lib/relay-token-selection";
-export const PROFILE_RELAY_TOKEN_NAME_CHANGED_EVENT = "chatgpt2api:profile-relay-token-name-changed";
+export const PROFILE_RELAY_TOKEN_NAME_CHANGED_EVENT =
+  "chatgpt2api:profile-relay-token-name-changed";
+export const IMAGE_GENERATION_PREFERENCES_CHANGED_EVENT =
+  "chatgpt2api:image-generation-preferences-changed";
 
 export async function fetchProfileRelayKey(group?: string, tokenName?: string) {
   const params = new URLSearchParams();
@@ -726,11 +707,31 @@ export async function fetchProfileRelayKey(group?: string, tokenName?: string) {
   if (tokenName?.trim()) {
     params.set("token_name", tokenName.trim());
   }
-  return httpRequest<ProfileRelayKeyStatus>(`/api/profile/relay-key${params.toString() ? `?${params.toString()}` : ""}`);
+  return httpRequest<ProfileRelayKeyStatus>(
+    `/api/profile/relay-key${params.toString() ? `?${params.toString()}` : ""}`,
+  );
 }
 
 export async function fetchProfileBalance() {
   return httpRequest<ProfileBalanceStatus>("/api/profile/balance");
+}
+
+export async function fetchImageGenerationPreferences() {
+  return httpRequest<{ preferences: ImageGenerationPreferences }>(
+    "/api/profile/image-generation-preferences",
+  );
+}
+
+export async function updateImageGenerationPreferences(
+  preferences: ImageGenerationPreferences,
+) {
+  return httpRequest<{ preferences: ImageGenerationPreferences }>(
+    "/api/profile/image-generation-preferences",
+    {
+      method: "PUT",
+      body: preferences,
+    },
+  );
 }
 
 export async function logout() {
@@ -740,137 +741,166 @@ export async function logout() {
   });
 }
 
-export async function generateImage(prompt: string, model?: ImageModel, size?: string, quality?: ImageQuality) {
-  return httpRequest<ImageResponse>(
-    "/v1/images/generations",
-    {
-      method: "POST",
-      body: {
-        prompt,
-        ...(model ? { model } : {}),
-        ...(size ? { size } : {}),
-        ...(quality ? { quality } : {}),
-        n: 1,
-      },
-    },
-  );
-}
-
-export async function editImage(files: File | File[], prompt: string, model?: ImageModel, size?: string, quality?: ImageQuality) {
-  const formData = new FormData();
-  const uploadFiles = Array.isArray(files) ? files : [files];
-
-  uploadFiles.forEach((file) => {
-    formData.append("image", file);
-  });
-  formData.append("prompt", prompt);
-  if (model) {
-    formData.append("model", model);
-  }
-  if (size) {
-    formData.append("size", size);
-  }
-  if (quality) {
-    formData.append("quality", quality);
-  }
-  formData.append("n", "1");
-
-  return httpRequest<ImageResponse>(
-    "/v1/images/edits",
-    {
-      method: "POST",
-      body: formData,
-    },
-  );
-}
-
 export async function createImageGenerationTask(
   clientTaskId: string,
   prompt: string,
   model?: ImageModel,
   size?: string,
   requestedSize?: string,
-  quality?: ImageQuality,
+  quality?: ImageRequestQuality,
   count = 1,
-  messages?: CreationTaskMessage[],
   visibility: ImageVisibility = "private",
   imageResolution?: string,
   outputFormat?: ImageOutputFormat,
   outputCompression?: number,
   stream?: boolean,
   partialImages?: number,
-  toolOptions?: {
-    moderation?: string;
-  },
+  toolOptions?: ImageTaskToolOptions,
   relayTokenGroup?: string,
   relayTokenName?: string,
   frontendConversationId?: string,
   fallbackReferenceImage?: FallbackReferenceImage,
   requestOptions?: CreationTaskRequestOptions,
 ) {
-  const normalizedPartialImages = stream ? normalizedImagePartialImages(partialImages) : undefined;
+  const normalizedPartialImages = stream
+    ? normalizedImagePartialImages(partialImages)
+    : undefined;
+  const requestPrompt = composeImageGenerationPrompt(
+    prompt,
+    toolOptions?.systemPrompt,
+    toolOptions?.codexCLICompatibility,
+  );
   return httpRequest<CreationTask>("/api/creation-tasks/image-generations", {
     ...creationTaskRequestAuth(requestOptions),
     method: "POST",
     timeout: 30_000,
     body: {
       client_task_id: clientTaskId,
-      prompt,
+      prompt: requestPrompt,
+      api_mode: toolOptions?.apiMode || "images",
       ...(model ? { model } : {}),
       ...(size ? { size } : {}),
       ...(requestedSize ? { requested_size: requestedSize } : {}),
       ...(imageResolution ? { image_resolution: imageResolution } : {}),
-      ...(quality ? { quality } : {}),
+      ...(quality && !toolOptions?.codexCLICompatibility ? { quality } : {}),
       ...(outputFormat ? { output_format: outputFormat } : {}),
-      ...(typeof outputCompression === "number" ? { output_compression: outputCompression } : {}),
+      ...(typeof outputCompression === "number"
+        ? { output_compression: outputCompression }
+        : {}),
       ...(stream ? { stream: true } : {}),
-      ...(normalizedPartialImages ? { partial_images: normalizedPartialImages } : {}),
-      ...(toolOptions?.moderation ? { moderation: toolOptions.moderation } : {}),
+      ...(normalizedPartialImages !== undefined
+        ? { partial_images: normalizedPartialImages }
+        : {}),
+      ...(toolOptions?.responseFormatB64JSON
+        ? { response_format: "b64_json" }
+        : {}),
+      ...(toolOptions?.moderation
+        ? { moderation: toolOptions.moderation }
+        : {}),
+      ...(toolOptions?.workflowContext
+        ? { workflow_context: toolOptions.workflowContext }
+        : {}),
       ...(relayTokenGroup ? { token_group: relayTokenGroup } : {}),
       ...(relayTokenName ? { token_name: relayTokenName } : {}),
-      ...(messages?.length ? { messages } : {}),
-      ...(frontendConversationId ? { frontend_conversation_id: frontendConversationId } : {}),
-      ...(fallbackReferenceImage ? { fallback_reference_image: fallbackReferenceImage } : {}),
+      ...(frontendConversationId
+        ? { frontend_conversation_id: frontendConversationId }
+        : {}),
+      ...(fallbackReferenceImage
+        ? { fallback_reference_image: fallbackReferenceImage }
+        : {}),
       visibility,
       n: count,
     },
   });
 }
 
+export type CreateVideoGenerationTaskInput = VideoGenerationTaskRequestInput & {
+  requestOptions?: CreationTaskRequestOptions;
+};
+
 export async function createVideoGenerationTask(
-  clientTaskId: string,
-  prompt: string,
-  model?: string,
-  size?: string,
-  seconds = 4,
-  resolution?: string,
-  generateAudio = true,
-  watermark = false,
-  referenceImageURLs?: string[],
-  referenceVideoURLs?: string[],
-  referenceAudioURLs?: string[],
-  referenceMode: "first-frame" | "reference" = "first-frame",
-  relayTokenName?: string,
-  requestOptions?: CreationTaskRequestOptions,
+  input: CreateVideoGenerationTaskInput,
 ) {
   return httpRequest<CreationTask>("/api/creation-tasks/video-generations", {
-    ...creationTaskRequestAuth(requestOptions),
+    ...creationTaskRequestAuth(input.requestOptions),
+    method: "POST",
+    timeout: 30_000,
+    body: videoGenerationTaskRequestBody(input),
+  });
+}
+
+export type CreateAudioGenerationTaskInput = {
+  clientTaskId: string;
+  request: Record<string, unknown>;
+  relayTokenName?: string;
+  requestOptions?: CreationTaskRequestOptions;
+};
+
+export type GrokTTSVoice = {
+  voice_id: string;
+  name?: string;
+  language?: string;
+};
+
+const grokTTSVoiceRequests = new Map<string, Promise<GrokTTSVoice[]>>();
+
+export function fetchGrokTTSVoices(model: string, relayTokenName: string) {
+  const query = new URLSearchParams({ model });
+  if (relayTokenName.trim()) query.set("token_name", relayTokenName.trim());
+  const requestKey = query.toString();
+  const existing = grokTTSVoiceRequests.get(requestKey);
+  if (existing) return existing;
+  const request = httpRequest<{ voices?: GrokTTSVoice[] }>(`/api/creation-tasks/audio-voices?${query.toString()}`, { timeout: 30_000 })
+    .then((response) => Array.isArray(response.voices) ? response.voices.filter((voice) => Boolean(voice.voice_id?.trim())) : [])
+    .finally(() => grokTTSVoiceRequests.delete(requestKey));
+  grokTTSVoiceRequests.set(requestKey, request);
+  return request;
+}
+
+export async function createAudioGenerationTask(
+  input: CreateAudioGenerationTaskInput,
+) {
+  return httpRequest<CreationTask>("/api/creation-tasks/audio-generations", {
+    ...creationTaskRequestAuth(input.requestOptions),
     method: "POST",
     timeout: 30_000,
     body: {
-      client_task_id: clientTaskId,
-      prompt,
-      ...(model ? { model } : {}),
-      ...(size ? { size } : {}),
-      seconds,
-      ...(resolution ? { resolution } : {}),
-      generate_audio: generateAudio,
-      watermark,
-      reference_mode: referenceMode,
-      ...(referenceImageURLs?.length ? { reference_image_urls: referenceImageURLs } : {}),
-      ...(referenceVideoURLs?.length ? { reference_video_urls: referenceVideoURLs } : {}),
-      ...(referenceAudioURLs?.length ? { reference_audio_urls: referenceAudioURLs } : {}),
-      ...(relayTokenName ? { token_name: relayTokenName } : {}),
+      ...input.request,
+      client_task_id: input.clientTaskId,
+      ...(input.relayTokenName ? { token_name: input.relayTokenName } : {}),
+    },
+  });
+}
+
+export type CreateChatGenerationTaskInput = {
+  clientTaskId: string;
+  prompt: string;
+  model?: string;
+  messages?: CreationTaskMessage[];
+  tools?: CreationTaskToolDefinition[];
+  toolChoice?: "none" | "auto" | "required" | Record<string, unknown>;
+  relayTokenName?: string;
+  requestOptions?: CreationTaskRequestOptions;
+};
+
+export async function createChatGenerationTask(
+  input: CreateChatGenerationTaskInput,
+) {
+  const messages = input.messages?.length
+    ? input.messages
+    : [{ role: "user" as const, content: input.prompt }];
+  return httpRequest<CreationTask>("/api/creation-tasks/chat-completions", {
+    ...creationTaskRequestAuth(input.requestOptions),
+    method: "POST",
+    timeout: 30_000,
+    body: {
+      client_task_id: input.clientTaskId,
+      prompt: input.prompt,
+      messages,
+      ...(input.tools?.length ? { tools: input.tools } : {}),
+      ...(input.toolChoice !== undefined ? { tool_choice: input.toolChoice } : {}),
+      ...(input.model ? { model: input.model } : {}),
+      ...(input.relayTokenName ? { token_name: input.relayTokenName } : {}),
     },
   });
 }
@@ -878,7 +908,42 @@ export async function createVideoGenerationTask(
 export async function uploadVideoReference(file: File) {
   const formData = new FormData();
   formData.append("video", file);
-  return httpRequest<{ url: string; name?: string; content_type?: string; size?: number }>("/api/creation-tasks/video-reference-uploads", {
+  return httpRequest<{
+    url: string;
+    name?: string;
+    content_type?: string;
+    size?: number;
+  }>("/api/creation-tasks/video-reference-uploads", {
+    method: "POST",
+    body: formData,
+    timeout: 120_000,
+  });
+}
+
+export async function uploadVideoImageReference(file: File) {
+  const formData = new FormData();
+  formData.append("image", file);
+  return httpRequest<{
+    url: string;
+    name?: string;
+    content_type?: string;
+    size?: number;
+  }>("/api/creation-tasks/video-image-reference-uploads", {
+    method: "POST",
+    body: formData,
+    timeout: 120_000,
+  });
+}
+
+export async function uploadAudioReference(file: File) {
+  const formData = new FormData();
+  formData.append("audio", file);
+  return httpRequest<{
+    url: string;
+    name?: string;
+    content_type?: string;
+    size?: number;
+  }>("/api/creation-tasks/audio-reference-uploads", {
     method: "POST",
     body: formData,
     timeout: 120_000,
@@ -892,48 +957,52 @@ export async function createImageEditTask(
   model?: ImageModel,
   size?: string,
   requestedSize?: string,
-  quality?: ImageQuality,
+  quality?: ImageRequestQuality,
   count = 1,
-  messages?: CreationTaskMessage[],
   visibility: ImageVisibility = "private",
   imageResolution?: string,
   outputFormat?: ImageOutputFormat,
   outputCompression?: number,
   stream?: boolean,
   partialImages?: number,
-  toolOptions?: {
-    moderation?: string;
-    inputImageMask?: string;
-  },
+  toolOptions?: ImageTaskToolOptions,
   relayTokenGroup?: string,
   relayTokenName?: string,
   frontendConversationId?: string,
   fallbackReferenceImage?: FallbackReferenceImage,
   requestOptions?: CreationTaskRequestOptions,
 ) {
-	const formData = new FormData();
-	const uploadFiles = Array.isArray(files) ? files : [files];
-	let maskFile: File | undefined;
-	if (toolOptions?.inputImageMask) {
-		const response = await fetch(toolOptions.inputImageMask);
-		if (!response.ok) {
-			throw new Error("无法读取局部编辑遮罩");
-		}
-		const blob = await response.blob();
-		if (blob.type && blob.type.toLowerCase() !== "image/png") {
-			throw new Error("局部编辑遮罩必须是 PNG 图片");
-		}
-		maskFile = new File([blob], "mask.png", { type: "image/png" });
-	}
+  const formData = new FormData();
+  const uploadFiles = Array.isArray(files) ? files : [files];
+  let maskFile: File | undefined;
+  if (toolOptions?.inputImageMask) {
+    const response = await fetch(toolOptions.inputImageMask);
+    if (!response.ok) {
+      throw new Error("无法读取局部编辑遮罩");
+    }
+    const blob = await response.blob();
+    if (blob.type && blob.type.toLowerCase() !== "image/png") {
+      throw new Error("局部编辑遮罩必须是 PNG 图片");
+    }
+    maskFile = new File([blob], "mask.png", { type: "image/png" });
+  }
 
-	uploadFiles.forEach((file) => {
-		formData.append("image", file);
-	});
-	if (maskFile) {
-		formData.append("mask", maskFile);
-	}
+  uploadFiles.forEach((file) => {
+    formData.append("image", file);
+  });
+  if (maskFile) {
+    formData.append("mask", maskFile);
+  }
   formData.append("client_task_id", clientTaskId);
-  formData.append("prompt", prompt);
+  formData.append(
+    "prompt",
+    composeImageGenerationPrompt(
+      prompt,
+      toolOptions?.systemPrompt,
+      toolOptions?.codexCLICompatibility,
+    ),
+  );
+  formData.append("api_mode", toolOptions?.apiMode || "images");
   if (model) {
     formData.append("model", model);
   }
@@ -946,7 +1015,7 @@ export async function createImageEditTask(
   if (imageResolution) {
     formData.append("image_resolution", imageResolution);
   }
-  if (quality) {
+  if (quality && !toolOptions?.codexCLICompatibility) {
     formData.append("quality", quality);
   }
   if (outputFormat) {
@@ -958,12 +1027,18 @@ export async function createImageEditTask(
   if (stream) {
     formData.append("stream", "true");
     const normalizedPartialImages = normalizedImagePartialImages(partialImages);
-    if (normalizedPartialImages) {
+    if (normalizedPartialImages !== undefined) {
       formData.append("partial_images", String(normalizedPartialImages));
     }
   }
+  if (toolOptions?.responseFormatB64JSON) {
+    formData.append("response_format", "b64_json");
+  }
   if (toolOptions?.moderation) {
     formData.append("moderation", toolOptions.moderation);
+  }
+  if (toolOptions?.workflowContext) {
+    formData.append("workflow_context", JSON.stringify(toolOptions.workflowContext));
   }
   if (relayTokenGroup) {
     formData.append("token_group", relayTokenGroup);
@@ -971,14 +1046,14 @@ export async function createImageEditTask(
   if (relayTokenName) {
     formData.append("token_name", relayTokenName);
   }
-  if (messages?.length) {
-    formData.append("messages", JSON.stringify(messages));
-  }
   if (frontendConversationId) {
     formData.append("frontend_conversation_id", frontendConversationId);
   }
   if (fallbackReferenceImage) {
-    formData.append("fallback_reference_image", JSON.stringify(fallbackReferenceImage));
+    formData.append(
+      "fallback_reference_image",
+      JSON.stringify(fallbackReferenceImage),
+    );
   }
   formData.append("visibility", visibility);
   formData.append("n", String(count));
@@ -991,33 +1066,44 @@ export async function createImageEditTask(
   });
 }
 
-export async function fetchCreationTasks(ids: string[], requestOptions?: CreationTaskRequestOptions) {
+export async function fetchCreationTasks(
+  ids: string[],
+  requestOptions?: CreationTaskRequestOptions,
+) {
   const params = new URLSearchParams();
   if (ids.length > 0) {
     params.set("ids", ids.join(","));
   }
-  const data = await httpRequest<CreationTaskListResponse>(`/api/creation-tasks${params.toString() ? `?${params.toString()}` : ""}`, {
-    ...creationTaskRequestAuth(requestOptions),
-    timeout: 15_000,
-    headers: {
-      ...(requestOptions?.authorization ? { Authorization: requestOptions.authorization } : {}),
-      "Cache-Control": "no-cache",
-      Pragma: "no-cache",
+  const data = await httpRequest<CreationTaskListResponse>(
+    `/api/creation-tasks${params.toString() ? `?${params.toString()}` : ""}`,
+    {
+      ...creationTaskRequestAuth(requestOptions),
+      timeout: 15_000,
+      headers: {
+        "Cache-Control": "no-cache",
+        Pragma: "no-cache",
+      },
     },
-  });
+  );
   return {
     items: Array.isArray(data.items) ? data.items : [],
     missing_ids: Array.isArray(data.missing_ids) ? data.missing_ids : [],
   };
 }
 
-export async function cancelCreationTask(clientTaskId: string, requestOptions?: CreationTaskRequestOptions) {
-  return httpRequest<CreationTask>(`/api/creation-tasks/${encodeURIComponent(clientTaskId)}/cancel`, {
-    ...creationTaskRequestAuth(requestOptions),
-    method: "POST",
-    body: {},
-    timeout: 20_000,
-  });
+export async function cancelCreationTask(
+  clientTaskId: string,
+  requestOptions?: CreationTaskRequestOptions,
+) {
+  return httpRequest<CreationTask>(
+    `/api/creation-tasks/${encodeURIComponent(clientTaskId)}/cancel`,
+    {
+      ...creationTaskRequestAuth(requestOptions),
+      method: "POST",
+      body: {},
+      timeout: 20_000,
+    },
+  );
 }
 
 export async function fetchSettingsConfig() {
@@ -1029,7 +1115,9 @@ export async function fetchAnnouncements() {
 }
 
 export async function fetchAnnouncementPreferences() {
-  return httpRequest<{ preferences: AnnouncementPreferences }>("/api/profile/announcement-preferences");
+  return httpRequest<{ preferences: AnnouncementPreferences }>(
+    "/api/profile/announcement-preferences",
+  );
 }
 
 export async function updateAnnouncementPreferences(
@@ -1037,10 +1125,13 @@ export async function updateAnnouncementPreferences(
   action: "seen" | "today" | "forever",
   localDate = "",
 ) {
-  return httpRequest<{ preferences: AnnouncementPreferences }>("/api/profile/announcement-preferences", {
-    method: "POST",
-    body: { version, action, local_date: localDate },
-  });
+  return httpRequest<{ preferences: AnnouncementPreferences }>(
+    "/api/profile/announcement-preferences",
+    {
+      method: "POST",
+      body: { version, action, local_date: localDate },
+    },
+  );
 }
 
 export async function fetchAdminAnnouncements() {
@@ -1048,13 +1139,19 @@ export async function fetchAdminAnnouncements() {
 }
 
 export async function createAnnouncement(input: AnnouncementInput) {
-  return httpRequest<{ item: Announcement; items: Announcement[] }>("/api/admin/announcements", {
-    method: "POST",
-    body: input,
-  });
+  return httpRequest<{ item: Announcement; items: Announcement[] }>(
+    "/api/admin/announcements",
+    {
+      method: "POST",
+      body: input,
+    },
+  );
 }
 
-export async function updateAnnouncement(id: string, updates: Partial<AnnouncementInput>) {
+export async function updateAnnouncement(
+  id: string,
+  updates: Partial<AnnouncementInput>,
+) {
   return httpRequest<{ item: Announcement; items: Announcement[] }>(
     `/api/admin/announcements/${encodeURIComponent(id)}`,
     {
@@ -1065,9 +1162,12 @@ export async function updateAnnouncement(id: string, updates: Partial<Announceme
 }
 
 export async function deleteAnnouncement(id: string) {
-  return httpRequest<{ items: Announcement[] }>(`/api/admin/announcements/${encodeURIComponent(id)}`, {
-    method: "DELETE",
-  });
+  return httpRequest<{ items: Announcement[] }>(
+    `/api/admin/announcements/${encodeURIComponent(id)}`,
+    {
+      method: "DELETE",
+    },
+  );
 }
 
 export async function updateSettingsConfig(settings: SettingsConfig) {
@@ -1075,6 +1175,13 @@ export async function updateSettingsConfig(settings: SettingsConfig) {
     method: "POST",
     body: settings,
   });
+}
+
+export function measureAdminStorageProvider(index: number, provider?: StorageProviderConfig) {
+	return httpRequest<{ result: { bytes: number; limitBytes: number; overLimit: boolean; checkedAt: string; providerName: string } }>(
+		"/api/settings/storage/measure",
+		{ method: "POST", body: { index, provider } },
+	);
 }
 
 export async function fetchModelConfig() {
@@ -1088,17 +1195,29 @@ export async function updateLoginPageImageSettings(
   const formData = new FormData();
   formData.append("login_page_image_url", settings.login_page_image_url);
   formData.append("login_page_image_mode", settings.login_page_image_mode);
-  formData.append("login_page_image_zoom", String(settings.login_page_image_zoom));
-  formData.append("login_page_image_position_x", String(settings.login_page_image_position_x));
-  formData.append("login_page_image_position_y", String(settings.login_page_image_position_y));
+  formData.append(
+    "login_page_image_zoom",
+    String(settings.login_page_image_zoom),
+  );
+  formData.append(
+    "login_page_image_position_x",
+    String(settings.login_page_image_position_x),
+  );
+  formData.append(
+    "login_page_image_position_y",
+    String(settings.login_page_image_position_y),
+  );
   formData.append("login_page_image_action", options.action);
   if (options.file) {
     formData.append("login_page_image_file", options.file);
   }
-  return httpRequest<{ config: SettingsConfig }>("/api/settings/login-page-image", {
-    method: "POST",
-    body: formData,
-  });
+  return httpRequest<{ config: SettingsConfig }>(
+    "/api/settings/login-page-image",
+    {
+      method: "POST",
+      body: formData,
+    },
+  );
 }
 
 export async function updateSiteIconSettings(options: {
@@ -1117,34 +1236,27 @@ export async function updateSiteIconSettings(options: {
 }
 
 export async function fetchManagedImages(
-  filters: { start_date?: string; end_date?: string; scope?: "mine" | "public" | "all" },
+  filters: {
+    start_date?: string;
+    end_date?: string;
+    scope?: "mine" | "public" | "all";
+  },
   options: { signal?: AbortSignal } = {},
 ) {
   const params = new URLSearchParams();
   if (filters.scope) params.set("scope", filters.scope);
   if (filters.start_date) params.set("start_date", filters.start_date);
   if (filters.end_date) params.set("end_date", filters.end_date);
-  const data = await httpRequest<{ items?: ManagedImage[] | null; groups?: Array<{ date: string; items: ManagedImage[] }> | null }>(
-    `/api/images${params.toString() ? `?${params.toString()}` : ""}`,
-    { signal: options.signal },
-  );
+  const data = await httpRequest<{
+    items?: ManagedImage[] | null;
+    groups?: Array<{ date: string; items: ManagedImage[] }> | null;
+  }>(`/api/images${params.toString() ? `?${params.toString()}` : ""}`, {
+    signal: options.signal,
+  });
   return {
     items: Array.isArray(data.items) ? data.items : [],
     groups: Array.isArray(data.groups) ? data.groups : [],
   };
-}
-
-export async function fetchCanvasDocument() {
-  return httpRequest<CanvasWorkspaceResponse>("/api/canvas");
-}
-
-export async function uploadCanvasImage(file: File) {
-  const formData = new FormData();
-  formData.append("image", file);
-  return httpRequest<{ url: string; name?: string; content_type?: string }>("/api/canvas/images", {
-    method: "POST",
-    body: formData,
-  });
 }
 
 export async function uploadImageConversationAssets(files: readonly File[]) {
@@ -1152,13 +1264,20 @@ export async function uploadImageConversationAssets(files: readonly File[]) {
   for (const batch of planImageConversationAssetUploadBatches(files)) {
     const formData = new FormData();
     batch.forEach((file) => formData.append("images", file));
-    const response = await httpRequest<{ items?: unknown[] }>("/api/profile/image-conversation-assets", {
-      method: "POST",
-      body: formData,
-      timeout: 120_000,
-    });
+    const response = await httpRequest<{ items?: unknown[] }>(
+      "/api/profile/image-conversation-assets",
+      {
+        method: "POST",
+        body: formData,
+        timeout: 120_000,
+      },
+    );
     const normalized = Array.isArray(response.items)
-      ? response.items.map(normalizeImageConversationAssetReference).filter((item): item is ImageConversationAssetUploadItem => item !== null)
+      ? response.items
+          .map(normalizeImageConversationAssetReference)
+          .filter(
+            (item): item is ImageConversationAssetUploadItem => item !== null,
+          )
       : [];
     if (normalized.length !== batch.length) {
       throw new Error("参考图上传响应不完整，请重试");
@@ -1168,88 +1287,81 @@ export async function uploadImageConversationAssets(files: readonly File[]) {
   return items;
 }
 
-export async function saveCanvasDocument(document: CanvasDocument) {
-  return httpRequest<{ document: CanvasDocument }>("/api/canvas", {
-    method: "PUT",
-    body: document,
-  });
-}
-
-export async function clearCanvasDocument(projectID: string, revision: number) {
-  return httpRequest<{ document: CanvasDocument }>(`/api/canvas?project_id=${encodeURIComponent(projectID)}&revision=${encodeURIComponent(String(revision))}`, {
-    method: "DELETE",
-  });
-}
-
-export async function updateCanvasProject(input: {
-  action: "create" | "activate" | "rename" | "delete";
-  project_id?: string;
-  title?: string;
-  revision?: number;
-}) {
-  return httpRequest<CanvasWorkspaceResponse>("/api/canvas", {
-    method: "POST",
-    body: input,
-  });
-}
-
-export async function importCanvasProject(document: CanvasDocument) {
-  return httpRequest<CanvasWorkspaceResponse>("/api/canvas", {
-    method: "POST",
-    body: { action: "import", document },
-  });
-}
-
 export async function updateManagedImageVisibility(
   path: string,
   visibility: ImageVisibility,
-  options: { sharePromptParameters?: boolean; shareReferenceImages?: boolean } = {},
+  options: {
+    sharePromptParameters?: boolean;
+    shareReferenceImages?: boolean;
+  } = {},
 ) {
-  return httpRequest<{ item: Partial<ManagedImage> & { path: string; visibility: ImageVisibility } }>(
-    "/api/images/visibility",
-    {
-      method: "PATCH",
-      body: {
-        path,
-        visibility,
-        ...(visibility === "public" && options.sharePromptParameters ? { share_prompt_parameters: true } : {}),
-        ...(visibility === "public" && options.sharePromptParameters && options.shareReferenceImages ? { share_reference_images: true } : {}),
-      },
+  return httpRequest<{
+    item: Partial<ManagedImage> & { path: string; visibility: ImageVisibility };
+  }>("/api/images/visibility", {
+    method: "PATCH",
+    body: {
+      path,
+      visibility,
+      ...(visibility === "public" && options.sharePromptParameters
+        ? { share_prompt_parameters: true }
+        : {}),
+      ...(visibility === "public" &&
+      options.sharePromptParameters &&
+      options.shareReferenceImages
+        ? { share_reference_images: true }
+        : {}),
     },
-  );
+  });
 }
 
 export async function deleteManagedImages(paths: string[]) {
-  return httpRequest<{ deleted: number; missing: number; paths: string[] }>("/api/images", {
-    method: "DELETE",
-    body: { paths },
-  });
+  return httpRequest<{ deleted: number; missing: number; paths: string[] }>(
+    "/api/images",
+    {
+      method: "DELETE",
+      body: { paths },
+    },
+  );
 }
 
 export async function fetchSystemLogs(filters: SystemLogFilters) {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(filters)) {
-    if (value === undefined || value === null || value === "" || (key !== "view" && value === "all")) {
+    if (
+      value === undefined ||
+      value === null ||
+      value === "" ||
+      (key !== "view" && value === "all")
+    ) {
       continue;
     }
     params.set(key, String(value));
   }
-  return httpRequest<{ items: SystemLog[]; view?: LogView | string }>(`/api/logs${params.toString() ? `?${params.toString()}` : ""}`);
+  return httpRequest<{ items: SystemLog[]; view?: LogView | string }>(
+    `/api/logs${params.toString() ? `?${params.toString()}` : ""}`,
+  );
 }
 
 export async function fetchLogGovernance() {
-  return httpRequest<{ governance: LogGovernanceSummary }>("/api/logs/governance");
+  return httpRequest<{ governance: LogGovernanceSummary }>(
+    "/api/logs/governance",
+  );
 }
 
 export async function cleanupLogs(retentionDays: number) {
-  return httpRequest<{ cleanup: LogCleanupResult; governance: LogGovernanceSummary }>("/api/logs/governance", {
+  return httpRequest<{
+    cleanup: LogCleanupResult;
+    governance: LogGovernanceSummary;
+  }>("/api/logs/governance", {
     method: "POST",
     body: { retention_days: retentionDays },
   });
 }
 
 export async function fetchImageStorageGovernance() {
-  return httpRequest<{ governance: ImageStorageGovernanceSummary }>("/api/images/storage-governance");
+  return httpRequest<{ governance: ImageStorageGovernanceSummary }>(
+    "/api/images/storage-governance",
+  );
 }
 
 export async function cleanupImageStorage(body: {
@@ -1259,89 +1371,12 @@ export async function cleanupImageStorage(body: {
   include_public?: boolean;
   clear_thumbnails?: boolean;
 }) {
-  return httpRequest<{ cleanup: ImageStorageCleanupResult; governance: ImageStorageGovernanceSummary }>(
-    "/api/images/storage-governance",
-    {
-      method: "POST",
-      body,
-    },
-  );
-}
-
-export async function fetchUserKeys() {
-  return httpRequest<{ items: UserKey[] }>("/api/auth/users");
-}
-
-export async function createUserKey(name: string) {
-  return httpRequest<{ item: UserKey; key: string; items: UserKey[] }>("/api/auth/users", {
+  return httpRequest<{
+    cleanup: ImageStorageCleanupResult;
+    governance: ImageStorageGovernanceSummary;
+  }>("/api/images/storage-governance", {
     method: "POST",
-    body: { name },
-  });
-}
-
-export async function revealUserKey(keyId: string) {
-  return httpRequest<{ key: string }>(`/api/auth/users/${keyId}/key`);
-}
-
-export async function updateUserKey(keyId: string, updates: { enabled?: boolean; name?: string }) {
-  return httpRequest<{ item: UserKey; items: UserKey[] }>(`/api/auth/users/${keyId}`, {
-    method: "POST",
-    body: updates,
-  });
-}
-
-export async function deleteUserKey(keyId: string) {
-  return httpRequest<{ items: UserKey[] }>(`/api/auth/users/${keyId}`, {
-    method: "DELETE",
-  });
-}
-
-function profileAPIKeyPath(keyId: string) {
-  return `/api/profile/api-key/${encodeURIComponent(keyId)}`;
-}
-
-export async function fetchProfileAPIKey() {
-  return httpRequest<{ items: UserKey[] }>("/api/profile/api-key");
-}
-
-export async function upsertProfileAPIKey(name: string) {
-  return httpRequest<{ item: UserKey; key: string; items: UserKey[] }>("/api/profile/api-key", {
-    method: "POST",
-    body: { name },
-  });
-}
-
-export async function revealProfileAPIKey(keyId: string) {
-  return httpRequest<{ key: string }>(`${profileAPIKeyPath(keyId)}/key`);
-}
-
-export async function updateProfileAPIKey(keyId: string, updates: { enabled?: boolean; name?: string }) {
-  return httpRequest<{ item: UserKey; items: UserKey[] }>(profileAPIKeyPath(keyId), {
-    method: "POST",
-    body: updates,
-  });
-}
-
-export async function deleteProfileAPIKey(keyId: string) {
-  return httpRequest<{ items: UserKey[] }>(profileAPIKeyPath(keyId), {
-    method: "DELETE",
-  });
-}
-
-export async function updateProfileName(name: string) {
-  return httpRequest<LoginResponse>("/api/profile", {
-    method: "POST",
-    body: { name },
-  });
-}
-
-export async function changeProfilePassword(currentPassword: string, newPassword: string) {
-  return httpRequest<{ ok: boolean }>("/api/profile/password", {
-    method: "POST",
-    body: {
-      current_password: currentPassword,
-      new_password: newPassword,
-    },
+    body,
   });
 }
 
@@ -1354,8 +1389,10 @@ export async function fetchManagedUsers(query: ManagedUsersQuery = {}) {
   if (query.page) params.set("page", String(query.page));
   if (query.page_size) params.set("page_size", String(query.page_size));
   if (query.search?.trim()) params.set("search", query.search.trim());
-  if (query.provider && query.provider !== "all") params.set("provider", query.provider);
-  if (query.status && query.status !== "all") params.set("status", query.status);
+  if (query.provider && query.provider !== "all")
+    params.set("provider", query.provider);
+  if (query.status && query.status !== "all")
+    params.set("status", query.status);
   if (query.sort_by) params.set("sort_by", query.sort_by);
   if (query.sort_order) params.set("sort_order", query.sort_order);
   const data = await httpRequest<Partial<ManagedUsersResponse>>(
@@ -1371,12 +1408,10 @@ export async function fetchManagedUsers(query: ManagedUsersQuery = {}) {
   };
 }
 
-export async function fetchManagedUser(userId: string) {
-  return httpRequest<{ item: ManagedUser }>(managedUserPath(userId));
-}
-
 export async function fetchPermissionCatalog() {
-  return httpRequest<{ menus: PermissionMenu[]; apis: ApiPermission[] }>("/api/admin/permissions");
+  return httpRequest<{ menus: PermissionMenu[]; apis: ApiPermission[] }>(
+    "/api/admin/permissions",
+  );
 }
 
 function managedRolePath(roleId: string) {
@@ -1393,20 +1428,31 @@ export async function createManagedRole(updates: {
   menu_paths?: string[];
   api_permissions?: string[];
 }) {
-  return httpRequest<{ item: ManagedRole; items: ManagedRole[] }>("/api/admin/roles", {
-    method: "POST",
-    body: updates,
-  });
+  return httpRequest<{ item: ManagedRole; items: ManagedRole[] }>(
+    "/api/admin/roles",
+    {
+      method: "POST",
+      body: updates,
+    },
+  );
 }
 
 export async function updateManagedRole(
   roleId: string,
-  updates: { name?: string; description?: string; menu_paths?: string[]; api_permissions?: string[] },
+  updates: {
+    name?: string;
+    description?: string;
+    menu_paths?: string[];
+    api_permissions?: string[];
+  },
 ) {
-  return httpRequest<{ item: ManagedRole; items: ManagedRole[] }>(managedRolePath(roleId), {
-    method: "POST",
-    body: updates,
-  });
+  return httpRequest<{ item: ManagedRole; items: ManagedRole[] }>(
+    managedRolePath(roleId),
+    {
+      method: "POST",
+      body: updates,
+    },
+  );
 }
 
 export async function deleteManagedRole(roleId: string) {
@@ -1416,7 +1462,9 @@ export async function deleteManagedRole(roleId: string) {
 }
 
 export async function createManagedUser(payload: CreateManagedUserPayload) {
-  return httpRequest<{ item: ManagedUser; items?: ManagedUser[] } & Partial<ManagedUsersResponse>>("/api/admin/users", {
+  return httpRequest<
+    { item: ManagedUser; items?: ManagedUser[] } & Partial<ManagedUsersResponse>
+  >("/api/admin/users", {
     method: "POST",
     body: payload,
   });
@@ -1426,38 +1474,24 @@ export async function updateManagedUser(
   userId: string,
   updates: { enabled?: boolean; name?: string; role_id?: string },
 ) {
-  return httpRequest<{ item: ManagedUser; items?: ManagedUser[] } & Partial<ManagedUsersResponse>>(managedUserPath(userId), {
+  return httpRequest<
+    { item: ManagedUser; items?: ManagedUser[] } & Partial<ManagedUsersResponse>
+  >(managedUserPath(userId), {
     method: "POST",
     body: updates,
   });
 }
 
-export async function revealManagedUserKey(userId: string) {
-  return httpRequest<{ key: string }>(`${managedUserPath(userId)}/key`);
-}
-
-export async function resetManagedUserKey(userId: string, name?: string) {
-  return httpRequest<{ item: ManagedUser; api_key: UserKey; key: string; items?: ManagedUser[] } & Partial<ManagedUsersResponse>>(
-    `${managedUserPath(userId)}/reset-key`,
+export async function deleteManagedUser(userId: string) {
+  return httpRequest<{ items?: ManagedUser[] } & Partial<ManagedUsersResponse>>(
+    managedUserPath(userId),
     {
-      method: "POST",
-      body: { name: name ?? "" },
+      method: "DELETE",
     },
   );
 }
 
-export async function deleteManagedUser(userId: string) {
-  return httpRequest<{ items?: ManagedUser[] } & Partial<ManagedUsersResponse>>(managedUserPath(userId), {
-    method: "DELETE",
-  });
-}
-
 // ── Upstream proxy ────────────────────────────────────────────────
-
-export type ProxySettings = {
-  enabled: boolean;
-  url: string;
-};
 
 export type ProxyTestResult = {
   ok: boolean;
@@ -1466,25 +1500,17 @@ export type ProxyTestResult = {
   error: string | null;
 };
 
-export async function fetchRelayModels(options: { group?: string; tokenName?: string; signal?: AbortSignal } = {}) {
+export async function fetchRelayModels(
+  options: { group?: string; tokenName?: string; signal?: AbortSignal } = {},
+) {
   const params = new URLSearchParams();
   if (options.group?.trim()) params.set("group", options.group.trim());
-  if (options.tokenName?.trim()) params.set("token_name", options.tokenName.trim());
+  if (options.tokenName?.trim())
+    params.set("token_name", options.tokenName.trim());
   return httpRequest<{ object?: string; data?: RelayModelListItem[] | null }>(
-    `/v1/models${params.toString() ? `?${params.toString()}` : ""}`,
+    `/api/profile/upstream-models${params.toString() ? `?${params.toString()}` : ""}`,
     { signal: options.signal },
   );
-}
-
-export async function fetchProxy() {
-  return httpRequest<{ proxy: ProxySettings }>("/api/proxy");
-}
-
-export async function updateProxy(updates: { enabled?: boolean; url?: string }) {
-  return httpRequest<{ proxy: ProxySettings }>("/api/proxy", {
-    method: "POST",
-    body: updates,
-  });
 }
 
 export async function testProxy(url?: string) {

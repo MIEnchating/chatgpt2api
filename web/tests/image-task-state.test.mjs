@@ -16,7 +16,7 @@ import {
   nextImageConversationRevision,
   rebaseImageConversationSnapshot,
   taskSnapshotIsOlder,
-} from "../src/app/image/image-task-state.ts";
+} from "../src/lib/image-task-state.ts";
 
 test("conversation queue runners are bounded and deduplicated", () => {
   const active = new Set(["conversation-1", "conversation-2", "conversation-3"]);
@@ -169,9 +169,8 @@ test("duplicate task snapshots merge by task id and keep output data", () => {
   assert.equal(merged[0].output_statuses?.[0], "success");
 });
 
-test("a single running task reconciles a stale queued output status", () => {
-  assert.equal(effectiveTaskOutputStatus("running", "queued", 1), "running");
-  assert.equal(effectiveTaskOutputStatus("running", "queued", 2), "queued");
+test("an explicit output status wins over the task status", () => {
+  assert.equal(effectiveTaskOutputStatus("running", "queued"), "queued");
   assert.equal(effectiveTaskOutputStatus("running"), "running");
   assert.equal(effectiveTaskOutputStatus("running", "running"), "running");
   assert.equal(effectiveTaskOutputStatus("running", "success"), "success");
@@ -180,25 +179,25 @@ test("a single running task reconciles a stale queued output status", () => {
 test("an active task exposes a completed output slot immediately", () => {
   const finalImage = { url: "https://example.test/final.png" };
   assert.equal(hasFinalTaskOutput(finalImage), true);
-  assert.equal(effectiveTaskSlotStatus("running", "success", finalImage, 2), "success");
+  assert.equal(effectiveTaskSlotStatus("running", "success", finalImage), "success");
 });
 
 test("partial image data remains active even with a premature success status", () => {
   const preview = { b64_json: "partial", preview: true };
   assert.equal(hasFinalTaskOutput(preview), false);
-  assert.equal(effectiveTaskSlotStatus("running", "success", preview, 2), "running");
+  assert.equal(effectiveTaskSlotStatus("running", "success", preview), "running");
 });
 
 test("active task output failures and cancellation are terminal per slot", () => {
-  assert.equal(effectiveTaskSlotStatus("running", "error", undefined, 2), "error");
-  assert.equal(effectiveTaskSlotStatus("running", "cancelled", undefined, 2), "cancelled");
+  assert.equal(effectiveTaskSlotStatus("running", "error", undefined), "error");
+  assert.equal(effectiveTaskSlotStatus("running", "cancelled", undefined), "cancelled");
 });
 
 test("queued and running output slots stay active without final data", () => {
-  assert.equal(effectiveTaskSlotStatus("queued", "running", undefined, 2), "running");
-  assert.equal(effectiveTaskSlotStatus("running", "queued", undefined, 2), "queued");
-  assert.equal(effectiveTaskSlotStatus("running", "running", undefined, 2), "running");
-  assert.equal(effectiveTaskSlotStatus("running", "success", undefined, 2), "running");
+  assert.equal(effectiveTaskSlotStatus("queued", "running", undefined), "running");
+  assert.equal(effectiveTaskSlotStatus("running", "queued", undefined), "queued");
+  assert.equal(effectiveTaskSlotStatus("running", "running", undefined), "running");
+  assert.equal(effectiveTaskSlotStatus("running", "success", undefined), "running");
 });
 
 test("a persisted single-image generating turn cannot render as queued", () => {
@@ -322,6 +321,26 @@ test("an explicit regeneration with a different task id may enter queued again",
   }, { revision: 6, updatedAt: "2026-07-19T10:01:00Z" });
 
   const merged = mergeImageConversationSnapshot(completed, regenerated);
+  assert.equal(merged.turns[0].status, "queued");
+  assert.equal(merged.turns[0].images[0].taskId, "task-new");
+  assert.equal(merged.turns[0].images[0].status, "loading");
+});
+
+test("a snapshot with a task id does not merge into an unassigned image slot", () => {
+  const unassigned = conversation({
+    id: "image-1",
+    taskStatus: "success",
+    status: "success",
+    url: "https://example.test/old.png",
+  }, { revision: 5 });
+  const assigned = conversation({
+    id: "image-1",
+    taskId: "task-new",
+    taskStatus: "queued",
+    status: "loading",
+  }, { revision: 6, updatedAt: "2026-07-19T10:01:00Z" });
+
+  const merged = mergeImageConversationSnapshot(unassigned, assigned);
   assert.equal(merged.turns[0].status, "queued");
   assert.equal(merged.turns[0].images[0].taskId, "task-new");
   assert.equal(merged.turns[0].images[0].status, "loading");

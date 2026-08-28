@@ -30,12 +30,12 @@ type PermissionSet struct {
 	APIPermissions []string `json:"api_permissions"`
 }
 
-const PromptMarketAdultPermissionPath = "/api/prompt-market/adult-content"
-
 var fullMenuPermissions = []MenuPermission{
 	{ID: "image", Label: "创作台", Path: "/image", Icon: "image", Order: 10},
 	{ID: "canvas", Label: "无限画布", Path: "/canvas", Icon: "panels-top-left", Order: 15},
-	{ID: "image-manager", Label: "图片库", Path: "/image-manager", Icon: "images", Order: 20},
+	{ID: "workflows", Label: "工作流", Path: "/workflows", Icon: "workflow", Order: 18},
+	{ID: "prompt-library", Label: "提示词库", Path: "/prompt-library", Icon: "book-open", Order: 20},
+	{ID: "assets", Label: "我的素材", Path: "/assets", Icon: "images", Order: 25},
 	{ID: "users", Label: "用户管理", Path: "/users", Icon: "users", Order: 50},
 	{ID: "rbac", Label: "角色权限", Path: "/rbac", Icon: "shield-check", Order: 60},
 	{ID: "logs", Label: "日志管理", Path: "/logs", Icon: "scroll-text", Order: 70},
@@ -43,33 +43,32 @@ var fullMenuPermissions = []MenuPermission{
 }
 
 var apiPermissionCatalog = []APIPermission{
-	apiPermission("GET", "/v1/models", "模型列表", "创作", false),
-	apiPermission("POST", "/v1/images/generations", "文生图", "创作", false),
-	apiPermission("POST", "/v1/images/edits", "图生图", "创作", false),
 	apiPermission("GET", "/api/creation-tasks", "查看创作任务", "创作", true),
 	apiPermission("POST", "/api/creation-tasks", "提交/取消创作任务", "创作", true),
+	apiPermission("GET", "/api/proxy-image", "代理读取创作参考图", "创作", false),
 	apiPermission("GET", "/api/canvas", "读取画布", "无限画布", false),
 	apiPermission("POST", "/api/canvas", "管理画布及上传图片", "无限画布", true),
 	apiPermission("PUT", "/api/canvas", "保存画布", "无限画布", false),
 	apiPermission("DELETE", "/api/canvas", "清空画布", "无限画布", false),
-	apiPermission("GET", PromptMarketAdultPermissionPath, "开放成人提示词市场", "创作", false),
-	apiPermission("GET", "/api/images", "查看图片库", "图片库", false),
-	apiPermission("PATCH", "/api/images/visibility", "发布/收回图片", "图片库", false),
-	apiPermission("DELETE", "/api/images", "删除图片", "图片库", false),
-	apiPermission("GET", "/api/images/storage-governance", "查看图片存储治理", "图片库", false),
-	apiPermission("POST", "/api/images/storage-governance", "清理图片存储", "图片库", false),
-	apiPermission("GET", "/api/auth/users", "查看个人访问凭据", "账号凭据", true),
-	apiPermission("POST", "/api/auth/users", "创建/更新个人访问凭据", "账号凭据", true),
-	apiPermission("DELETE", "/api/auth/users", "删除个人访问凭据", "账号凭据", true),
-
+	apiPermission("GET", "/api/workflows", "查看工作流", "工作流", true),
+	apiPermission("POST", "/api/workflows", "创建和运行工作流", "工作流", true),
+	apiPermission("PUT", "/api/workflows", "更新工作流", "工作流", true),
+	apiPermission("DELETE", "/api/workflows", "删除工作流", "工作流", true),
+	apiPermission("GET", "/api/images", "查看生成图片", "我的素材", false),
+	apiPermission("PATCH", "/api/images/visibility", "发布/收回生成图片", "我的素材", false),
+	apiPermission("DELETE", "/api/images", "删除生成图片", "我的素材", false),
+	apiPermission("GET", "/api/images/storage-governance", "查看媒体存储治理", "我的素材", false),
+	apiPermission("POST", "/api/images/storage-governance", "清理媒体存储", "我的素材", false),
+	apiPermission("POST", "/api/files", "上传存储文件", "创作", true),
+	apiPermission("DELETE", "/api/files", "删除存储文件", "创作", true),
+	apiPermission("POST", "/api/settings/storage/measure", "统计存储容量", "设置", false),
 	apiPermission("GET", "/api/logs", "查看日志", "日志管理", false),
 	apiPermission("GET", "/api/logs/governance", "查看日志治理", "日志管理", false),
 	apiPermission("POST", "/api/logs/governance", "清理日志数据", "日志管理", false),
 	apiPermission("GET", "/api/settings", "查看设置", "设置", false),
 	apiPermission("POST", "/api/settings", "修改设置", "设置", false),
 	apiPermission("POST", "/api/settings/login-page-image", "修改登录页图片", "设置", false),
-	apiPermission("GET", "/api/proxy", "查看代理", "设置", true),
-	apiPermission("POST", "/api/proxy", "修改/测试代理", "设置", true),
+	apiPermission("POST", "/api/proxy/test", "测试代理", "设置", false),
 	apiPermission("GET", "/api/storage/info", "查看存储状态", "设置", false),
 	apiPermission("GET", "/api/admin/users", "查看用户", "用户管理", true),
 	apiPermission("POST", "/api/admin/users", "创建/修改用户", "用户管理", true),
@@ -117,23 +116,26 @@ func DefaultPermissionSetForRole(role string) PermissionSet {
 		MenuPaths: NormalizeMenuPermissions([]string{
 			"/image",
 			"/canvas",
-			"/image-manager",
+			"/workflows",
+			"/prompt-library",
+			"/assets",
 		}),
 		APIPermissions: NormalizeAPIPermissions([]string{
-			APIPermissionKey("GET", "/v1/models"),
-			APIPermissionKey("POST", "/v1/images/generations"),
-			APIPermissionKey("POST", "/v1/images/edits"),
 			APIPermissionKey("GET", "/api/creation-tasks"),
 			APIPermissionKey("POST", "/api/creation-tasks"),
+			APIPermissionKey("GET", "/api/proxy-image"),
 			APIPermissionKey("GET", "/api/canvas"),
 			APIPermissionKey("POST", "/api/canvas"),
 			APIPermissionKey("PUT", "/api/canvas"),
 			APIPermissionKey("DELETE", "/api/canvas"),
+			APIPermissionKey("GET", "/api/workflows"),
+			APIPermissionKey("POST", "/api/workflows"),
+			APIPermissionKey("PUT", "/api/workflows"),
+			APIPermissionKey("DELETE", "/api/workflows"),
 			APIPermissionKey("GET", "/api/images"),
 			APIPermissionKey("PATCH", "/api/images/visibility"),
-			APIPermissionKey("GET", "/api/auth/users"),
-			APIPermissionKey("POST", "/api/auth/users"),
-			APIPermissionKey("DELETE", "/api/auth/users"),
+			APIPermissionKey("POST", "/api/files"),
+			APIPermissionKey("DELETE", "/api/files"),
 		}),
 	}
 }
@@ -175,10 +177,9 @@ func APIPermissionKey(method, path string) string {
 func MatchAPIPermissionKey(method, path string) (string, bool) {
 	method = strings.ToUpper(strings.TrimSpace(method))
 	path = normalizePermissionPath(path)
-	// Reference-asset upload is part of image editing. Reuse that permission so
-	// existing custom creator roles keep working without an RBAC data migration.
+	// Reference-asset upload belongs to the authenticated creation workflow.
 	if method == "POST" && path == "/api/profile/image-conversation-assets" {
-		path = "/v1/images/edits"
+		path = "/api/creation-tasks"
 	}
 	for _, permission := range apiPermissionCatalog {
 		if permission.Method != method {
@@ -234,25 +235,14 @@ func normalizeAPIPermissionKey(key string) string {
 	}
 	if strings.Contains(key, " ") {
 		method, path, _ := strings.Cut(key, " ")
-		return migrateAPIPermissionKey(APIPermissionKey(method, path))
+		return APIPermissionKey(method, path)
 	}
 	for _, method := range []string{"delete", "patch", "post", "put", "get"} {
 		if strings.HasPrefix(strings.ToLower(key), method+"/") {
-			return migrateAPIPermissionKey(method + normalizePermissionPath(key[len(method):]))
+			return method + normalizePermissionPath(key[len(method):])
 		}
 	}
-	return migrateAPIPermissionKey(strings.ToLower(key))
-}
-
-func migrateAPIPermissionKey(key string) string {
-	switch key {
-	case APIPermissionKey("GET", "/api/image-tasks"):
-		return APIPermissionKey("GET", "/api/creation-tasks")
-	case APIPermissionKey("POST", "/api/image-tasks"):
-		return APIPermissionKey("POST", "/api/creation-tasks")
-	default:
-		return key
-	}
+	return strings.ToLower(key)
 }
 
 func allMenuPaths() []string {

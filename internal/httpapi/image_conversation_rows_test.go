@@ -28,7 +28,7 @@ func TestProfileImageConversationRowsPaginationDetailActiveAndGeneration(t *test
 			text = string(data)
 		}
 		req := httptest.NewRequest(method, path, strings.NewReader(text))
-		req.Header.Set("Authorization", "Bearer "+token)
+		setRequestAuthCookie(req, "Bearer "+token)
 		res := httptest.NewRecorder()
 		app.Handler().ServeHTTP(res, req)
 		return res
@@ -224,7 +224,7 @@ func TestProfileImageConversationRowsReturnsServiceUnavailableOnSaveFailure(t *t
 	body := map[string]any{"item": imageConversationHTTPTestItem("row-save-failure", 1, "2026-07-19T12:00:00Z", "success", "success")}
 	data, _ := json.Marshal(body)
 	req := httptest.NewRequest(http.MethodPost, "/api/profile/image-conversations?response=minimal", strings.NewReader(string(data)))
-	req.Header.Set("Authorization", "Bearer "+token)
+	setRequestAuthCookie(req, "Bearer "+token)
 	res := httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
 	if res.Code != http.StatusServiceUnavailable || strings.Contains(res.Body.String(), "row database unavailable") {

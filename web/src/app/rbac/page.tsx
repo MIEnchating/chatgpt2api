@@ -26,6 +26,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   createManagedRole,
   deleteManagedRole,
@@ -219,7 +220,7 @@ function RBACContent() {
   };
 
   return (
-    <section className="flex h-full min-h-0 flex-col gap-5 overflow-hidden">
+    <section data-rbac-layout className="flex h-full min-h-0 flex-col gap-5 overflow-hidden">
       <PageHeader
         actions={
           <>
@@ -243,7 +244,7 @@ function RBACContent() {
         }
       />
 
-      <div className="grid min-h-0 flex-1 gap-5 overflow-y-auto overscroll-contain xl:grid-cols-[360px_1fr] xl:overflow-hidden">
+      <div className="grid min-h-0 flex-1 gap-5 xl:grid-cols-[360px_1fr] xl:overflow-hidden">
         <Card className="flex min-h-0 flex-col overflow-hidden xl:max-h-[calc(100dvh-11rem)]">
           <CardContent className="flex min-h-0 flex-1 flex-col p-0">
             <div className="border-b border-border px-5 py-4">
@@ -261,7 +262,7 @@ function RBACContent() {
                 />
               </div>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain [scrollbar-color:rgba(142,142,147,.45)_transparent] [scrollbar-gutter:stable] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#8e8e93]/45 [&::-webkit-scrollbar-track]:bg-transparent">
+            <ScrollArea className="min-h-0 flex-1">
               {isLoading ? (
                 <div className="flex min-h-[320px] items-center justify-center">
                   <LoaderCircle className="size-5 animate-spin text-stone-400" />
@@ -306,7 +307,7 @@ function RBACContent() {
                     );
                   })
                 : null}
-            </div>
+            </ScrollArea>
           </CardContent>
         </Card>
 

@@ -1,11 +1,13 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Check, CircleStop, Clock3, Download, Eye, Globe2, LoaderCircle, Lock, PencilLine, Plus, RotateCcw } from "lucide-react";
 
 import { AuthenticatedImage } from "@/components/authenticated-image";
 import { ChatMarkdown } from "@/app/image/components/chat-markdown";
 import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { TooltipButton, TooltipHint } from "@/components/ui/tooltip";
 import type { ImagePromptPreset } from "@/app/image/image-presets";
 import { formatImageSizeDisplay, isHighResolutionImageSize } from "@/app/image/image-options";
 import type { ImageVisibility } from "@/lib/api";
@@ -16,7 +18,7 @@ import {
 } from "@/lib/authenticated-image";
 import { getManagedImageUrlFromPath } from "@/lib/image-path";
 import { formatBase64ImageFileSize, formatImageFileSize } from "@/lib/image-size";
-import { cn } from "@/lib/utils";
+import { cn, formatElapsedClock } from "@/lib/utils";
 import {
   getEffectiveImageTurnStatus,
   getStoredImageLoadingPhase,
@@ -27,6 +29,8 @@ import {
   type StoredReferenceImage,
 } from "@/store/image-conversations";
 import { imageTurnStartedAtTimestamp, type ImageTurnProgress } from "@/store/image-turn-progress";
+import { resolveMediaURL } from "@/services/file-storage";
+import { resolveImageURL } from "@/services/image-storage";
 
 export type ImageLightboxItem = {
   id: string;
@@ -68,7 +72,8 @@ type ImageResultsProps = {
   formatConversationTime: (value: string) => string;
 };
 
-function getStoredImageSrc(image: StoredImage) {
+function getStoredImageSrc(image: StoredImage, resolvedStorageURLs: Readonly<Record<string, string>> = {}) {
+  if (image.storageKey && resolvedStorageURLs[image.storageKey]) return resolvedStorageURLs[image.storageKey];
   if (image.mediaType === "video" || image.videoUrl) {
     return image.videoUrl || image.url || "";
   }
@@ -167,7 +172,7 @@ function getLongTaskHint(turn: ImageTurn, elapsedSeconds: number) {
     return "";
   }
   if (isHighResolutionImageSize(turn.size, turn.sizeSelection)) {
-    return "高分辨率任务已提交，正在等待生成结果";
+    return "大尺寸任务已提交，正在等待生成结果";
   }
   return "";
 }
@@ -307,7 +312,26 @@ export function ImageResults({
   const [imageSizeLabels, setImageSizeLabels] = useState<Record<string, string>>({});
   const [selectedImageIds, setSelectedImageIds] = useState<Record<string, boolean>>({});
   const [downloadingKey, setDownloadingKey] = useState<string | null>(null);
+  const [resolvedStorageURLs, setResolvedStorageURLs] = useState<Record<string, string>>({});
   const pendingImageSizeIdsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    let cancelled = false;
+    const storedImages = selectedConversation?.turns.flatMap((turn) => turn.images).filter((image) => image.storageKey) || [];
+    void Promise.all(storedImages.map(async (image) => {
+      const storageKey = image.storageKey || "";
+      const fallback = image.videoUrl || image.url || "";
+      const url = isStoredVideo(image)
+        ? await resolveMediaURL(storageKey, fallback)
+        : await resolveImageURL(storageKey, fallback);
+      return [storageKey, url] as const;
+    })).then((entries) => {
+      if (!cancelled) setResolvedStorageURLs(Object.fromEntries(entries.filter((entry) => entry[1])));
+    }).catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedConversation]);
 
   const updateImageDimensions = (id: string, width: number, height: number) => {
     const dimensions = formatImageDimensions(width, height);
@@ -383,7 +407,7 @@ export function ImageResults({
   if (!selectedConversation) {
     return (
       <div className="flex h-full min-h-[300px] items-center justify-center px-0 py-3 text-center sm:min-h-[420px] sm:py-6">
-        <div className="mx-auto flex w-full max-w-[960px] flex-col gap-5">
+        <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-5">
           <div className="hide-scrollbar flex gap-3 overflow-x-auto px-1 pb-1 text-left sm:grid sm:grid-cols-2 sm:overflow-visible lg:grid-cols-3">
             {promptPresets.map((preset) => (
               <button
@@ -423,16 +447,21 @@ export function ImageResults({
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-[980px] flex-col gap-5 sm:gap-8">
+    <div className="mx-auto flex w-full max-w-[1180px] flex-col gap-5 sm:gap-8">
       {selectedConversation.turns.map((turn, turnIndex) => {
         const progress = progressByTurnKey[turnProgressKey(selectedConversation.id, turn.id)];
-        const referenceLightboxImages = turn.referenceImages.map((image, index) => ({
+        const displayedReferenceImages = [
+          ...(turn.videoFirstFrameURL ? [{ name: "首帧", dataUrl: turn.videoFirstFrameURL }] : []),
+          ...(turn.videoLastFrameURL ? [{ name: "尾帧", dataUrl: turn.videoLastFrameURL }] : []),
+          ...turn.referenceImages,
+        ];
+        const referenceLightboxImages = displayedReferenceImages.map((image, index) => ({
           id: `${turn.id}-reference-${index}`,
           src: image.dataUrl,
           fileName: image.name,
         }));
         const downloadableImages = turn.images.flatMap((image, index) => {
-          const src = image.status === "success" ? getStoredImageSrc(image) : "";
+          const src = image.status === "success" ? getStoredImageSrc(image, resolvedStorageURLs) : "";
           return src
             ? [
                 {
@@ -452,7 +481,7 @@ export function ImageResults({
           if (isStoredVideo(image)) {
             return [];
           }
-          const src = image.status === "success" ? getStoredImageSrc(image) : "";
+          const src = image.status === "success" ? getStoredImageSrc(image, resolvedStorageURLs) : "";
           return src
             ? [
                 {
@@ -473,7 +502,7 @@ export function ImageResults({
           .map((image, index) => ({ image, index }))
           .filter(({ image }) => !textReplyImages.some((reply) => reply.image.id === image.id));
         const successfulVisualImages = visualImages.flatMap(({ image }) =>
-          image.status === "success" && getStoredImageSrc(image) ? [image] : [],
+          image.status === "success" && getStoredImageSrc(image, resolvedStorageURLs) ? [image] : [],
         );
         const checkedImages = successfulVisualImages.filter((image) => imageQualityCheckLabel(image));
         const mismatchedImages = checkedImages.filter(
@@ -512,7 +541,7 @@ export function ImageResults({
           resultDimensions.length === 1 ? formatImageSizeDisplay(resultDimensions[0]) : resultDimensions.length > 1 ? "多尺寸" : "";
         const resultFormats = Array.from(
           new Set(
-            successfulVisualImages.map((image) => isStoredVideo(image) ? "MP4" : imageExtension(image.outputFormat, getStoredImageSrc(image)).toUpperCase()),
+            successfulVisualImages.map((image) => isStoredVideo(image) ? "MP4" : imageExtension(image.outputFormat, getStoredImageSrc(image, resolvedStorageURLs)).toUpperCase()),
           ),
         );
         const resultFormatLabel = resultFormats.length === 1 ? resultFormats[0] : resultFormats.length > 1 ? "多格式" : "";
@@ -593,6 +622,11 @@ export function ImageResults({
                 <div className="mb-3 flex items-start justify-between gap-3 border-b border-[#f2f3f5] pb-2">
                   <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-[11px] leading-5 text-[#45515e]">
                     <span className="rounded-full bg-[#f0f0f0] px-2.5 py-0.5 text-[#45515e]">第 {turnIndex + 1} 轮</span>
+                    {turn.workflowName ? (
+                      <span className="rounded-full bg-sky-50 px-2.5 py-0.5 text-sky-700 ring-1 ring-sky-100">
+                        工作流 {turn.workflowName}
+                      </span>
+                    ) : null}
                     <span className="rounded-full bg-[#f0f0f0] px-2.5 py-0.5 text-[#45515e]">{getTurnModeLabel(turn)}</span>
                     <span className="rounded-full bg-[#f0f0f0] px-2.5 py-0.5 text-[#45515e]">{turn.model}</span>
                     {turn.mode === "video" ? (
@@ -649,9 +683,9 @@ export function ImageResults({
                 </div>
                 <div>
                   <div className="whitespace-pre-wrap break-words">{turn.prompt}</div>
-                  {turn.referenceImages.length > 0 ? (
+                  {displayedReferenceImages.length > 0 ? (
                     <div className="mt-3 flex flex-wrap justify-start gap-2">
-                      {turn.referenceImages.map((image, index) => (
+                      {displayedReferenceImages.map((image, index) => (
                         <button
                           key={`${turn.id}-${image.name}-${index}`}
                           type="button"
@@ -702,17 +736,16 @@ export function ImageResults({
                         </span>
                       ) : null}
                       {successfulVisualImages.length > 0 ? (
-                        <span
+                        <TooltipHint content={resultQualityCheckImage ? imageQualityCheckTitle(resultQualityCheckImage) : "当前结果没有检测信息"}><span
                           className={cn(
                             "inline-flex items-center rounded-md px-2 py-0.5 font-medium",
                             resultQualityCheckImage
                               ? imageQualityCheckClass(resultQualityCheckImage)
                               : "bg-[#f3f4f6] text-[#6b7280] ring-1 ring-[#e5e7eb]",
                           )}
-                          title={resultQualityCheckImage ? imageQualityCheckTitle(resultQualityCheckImage) : "当前结果没有检测信息"}
                         >
                           检测：{resultQualityCheckLabel || "未检测"}
-                        </span>
+                        </span></TooltipHint>
                       ) : null}
                       {resultGenerationDuration ? (
                         <span className="font-mono font-medium tabular-nums text-[#1456f0]">
@@ -784,7 +817,7 @@ export function ImageResults({
                 {visualImages.length > 0 ? (
                   <div className={cn(turn.mode === "video" ? "grid grid-cols-1 gap-4" : "columns-1 gap-3 sm:columns-2 sm:gap-4 xl:columns-3")}>
                     {visualImages.map(({ image, index }) => {
-                    const imageSrc = getStoredImageSrc(image);
+                    const imageSrc = getStoredImageSrc(image, resolvedStorageURLs);
                     const video = isStoredVideo(image) || turn.mode === "video";
                     const isProcessingPreview =
                       image.status === "loading" &&
@@ -878,7 +911,7 @@ export function ImageResults({
                                 "pointer-events-none absolute inset-0 z-10 flex items-center justify-center",
                                 isTerminalPreview ? "bg-black/45" : "bg-black/20",
                               )}>
-                                <span className="pointer-events-auto flex max-h-[80%] max-w-[min(88%,32rem)] flex-col items-center gap-2 overflow-y-auto rounded-lg bg-black/75 px-3 py-2 text-center text-xs font-medium text-white shadow-sm backdrop-blur-sm">
+                                <ScrollArea className="pointer-events-auto max-h-[80%] max-w-[min(88%,32rem)] rounded-lg bg-black/75 text-white shadow-sm backdrop-blur-sm" viewportClassName="px-3 py-2" viewClass="flex flex-col items-center gap-2 text-center text-xs font-medium">
                                   {isProcessingPreview ? (
                                     <span className="inline-flex items-center gap-1.5"><LoaderCircle className="size-3.5 animate-spin" />正在处理</span>
                                   ) : (
@@ -895,7 +928,7 @@ export function ImageResults({
                                       重试
                                     </button>
                                   ) : null}
-                                </span>
+                                </ScrollArea>
                               </div>
                             ) : null}
                             <button
@@ -916,7 +949,7 @@ export function ImageResults({
                               {selected ? <Check className="size-3.5" /> : null}
                             </button>
                             {!isPreview ? <div className="pointer-events-none absolute top-2 right-2 z-10 flex items-center gap-1 opacity-0 transition duration-150 group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100">
-                              <button
+                              <TooltipButton
                                 type="button"
                                 onClick={(event) => {
                                   event.stopPropagation();
@@ -925,12 +958,12 @@ export function ImageResults({
                                 }}
                                 className="inline-flex h-7 items-center gap-1 rounded-full bg-white/95 px-2 text-[11px] font-medium text-stone-800 shadow-sm transition hover:bg-white hover:text-stone-950"
                                 aria-label="查看原图"
-                                title="查看原图"
+                                tooltip="查看原图"
                               >
                                 <Eye className="size-3" />
                                 查看原图
-                              </button>
-                              <button
+                              </TooltipButton>
+                              <TooltipButton
                                 type="button"
                                 onClick={(event) => {
                                   event.stopPropagation();
@@ -939,14 +972,14 @@ export function ImageResults({
                                 }}
                                 className="inline-flex size-7 items-center justify-center rounded-full bg-white/95 text-stone-800 shadow-sm transition hover:bg-white hover:text-stone-950"
                                 aria-label="加入编辑"
-                                title="加入编辑"
+                                tooltip="加入编辑"
                               >
                                 <Plus className="size-3.5" />
-                              </button>
+                              </TooltipButton>
                             </div> : null}
                             <div className="absolute right-2 bottom-2 z-20 flex items-center gap-1">
                               {canUpdateVisibility ? (
-                                <button
+                                <TooltipButton
                                   type="button"
                                   onClick={(event) => {
                                     event.stopPropagation();
@@ -964,7 +997,7 @@ export function ImageResults({
                                     imageVisibilityActionClass(visibility),
                                   )}
                                   aria-label={visibility === "public" ? "取消公开图片" : "公开图片"}
-                                  title={visibility === "public" ? "取消公开" : "公开"}
+                                  tooltip={visibility === "public" ? "取消公开" : "公开"}
                                 >
                                   {isVisibilityMutating ? (
                                     <LoaderCircle className="size-3 animate-spin" />
@@ -974,7 +1007,7 @@ export function ImageResults({
                                     <Globe2 className="size-3" />
                                   )}
                                   {visibility === "public" ? "取消公开" : "公开"}
-                                </button>
+                                </TooltipButton>
                               ) : null}
                               <div
                                 className={cn(
@@ -1097,17 +1130,6 @@ function turnProgressKey(conversationId: string, turnId: string) {
   return `${conversationId}:${turnId}`;
 }
 
-function formatElapsedClock(totalSeconds: number) {
-  const safeSeconds = Math.max(0, totalSeconds);
-  const hours = Math.floor(safeSeconds / 3600);
-  const minutes = Math.floor((safeSeconds % 3600) / 60);
-  const seconds = safeSeconds % 60;
-  if (hours > 0) {
-    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-  }
-  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
-}
-
 function getStatusChipClass(status: ImageTurnStatus) {
   if (status === "queued") {
     return "bg-amber-50 text-amber-700";
@@ -1138,7 +1160,7 @@ function getTurnModeLabel(turn: ImageTurn) {
     if (turn.videoReferenceMode === "reference") {
       return turn.videoReferenceVideoURLs?.some(Boolean) ? "视频生视频" : "参考生视频";
     }
-    return turn.referenceImages.length > 0 ? "图生视频" : "文生视频";
+    return turn.videoFirstFrameURL || turn.videoLastFrameURL || turn.referenceImages.length > 0 ? "图生视频" : "文生视频";
   }
   if (turn.mode === "edit" && turn.referenceImages.some((image) => image.source === "conversation")) {
     return "编辑图";

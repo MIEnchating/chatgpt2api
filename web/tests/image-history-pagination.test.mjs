@@ -9,7 +9,7 @@ import {
   normalizeImageConversationHistoryGeneration,
   shouldFallbackToImageConversationHistoryDetail,
   shouldResetImageConversationHistoryCursor,
-} from "../src/app/image/image-history-pagination.ts";
+} from "../src/lib/image-conversation-history.ts";
 
 test("generation is sent in the merge body only after the server provides one", () => {
   const items = [{ id: "conversation-1" }];
@@ -17,17 +17,18 @@ test("generation is sent in the merge body only after the server provides one", 
   assert.deepEqual(buildImageConversationHistoryMergeBody(items, null), { items });
   assert.deepEqual(buildImageConversationHistoryMergeBody(items, 12), {
     items,
-    generation: 12,
+    generation: "12",
   });
   assert.deepEqual(buildImageConversationHistoryMergeBody(items, " 13 "), {
     items,
-    generation: " 13 ",
+    generation: "13",
   });
 });
 
 test("history generations normalize and detect a cursor reset", () => {
   assert.equal(normalizeImageConversationHistoryGeneration(undefined), null);
   assert.equal(normalizeImageConversationHistoryGeneration(" 17 "), "17");
+  assert.equal(normalizeImageConversationHistoryGeneration("opaque"), null);
   assert.equal(imageConversationHistoryGenerationChanged(null, "17"), false);
   assert.equal(imageConversationHistoryGenerationChanged("17", "18"), true);
   assert.equal(imageConversationHistoryGenerationChanged("18", "17"), false);
@@ -39,14 +40,12 @@ test("history generations normalize and detect a cursor reset", () => {
   assert.equal(imageConversationHistoryGenerationsMatch("17", null), true);
 });
 
-test("history generation lower-bound checks reject late or unknown snapshots", () => {
+test("history generation lower-bound checks reject late snapshots", () => {
   assert.equal(imageConversationHistoryGenerationAtLeast("1", "2"), false);
   assert.equal(imageConversationHistoryGenerationAtLeast("2", "1"), true);
   assert.equal(imageConversationHistoryGenerationAtLeast(null, "1"), false);
   assert.equal(imageConversationHistoryGenerationAtLeast("1", null), true);
-  assert.equal(imageConversationHistoryGenerationAtLeast("legacy-a", "legacy-a"), true);
-  assert.equal(imageConversationHistoryGenerationAtLeast("legacy-b", "legacy-a"), false);
-  assert.equal(imageConversationHistoryGenerationAtLeast("2", "legacy-a"), false);
+  assert.equal(imageConversationHistoryGenerationAtLeast("opaque", "1"), false);
 });
 
 test("transient detail failures do not make the UI fall back to another conversation", () => {

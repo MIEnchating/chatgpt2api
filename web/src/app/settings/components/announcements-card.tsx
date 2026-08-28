@@ -18,6 +18,7 @@ import {
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { TooltipHint } from "@/components/ui/tooltip";
 import {
   createAnnouncement,
   deleteAnnouncement,
@@ -209,14 +210,15 @@ export function AnnouncementsCard() {
               return (
                 <div key={item.id} className={settingsListItemClassName}>
                   <div className="flex min-w-0 items-start gap-3">
-                    <Checkbox
-                      checked={item.enabled}
-                      disabled={pending}
-                      onCheckedChange={() => void toggleEnabled(item)}
-                      aria-label={item.enabled ? "停用公告" : "启用公告"}
-                      title={item.enabled ? "停用公告" : "启用公告"}
-                      className="mt-0.5"
-                    />
+                    <TooltipHint content={item.enabled ? "停用公告" : "启用公告"}>
+                      <Checkbox
+                        checked={item.enabled}
+                        disabled={pending}
+                        onCheckedChange={() => void toggleEnabled(item)}
+                        aria-label={item.enabled ? "停用公告" : "启用公告"}
+                        className="mt-0.5"
+                      />
+                    </TooltipHint>
                     <div className="min-w-0 flex-1">
                       <div className="flex min-w-0 flex-wrap items-center gap-2">
                         <h3 className="truncate text-sm font-semibold text-foreground">

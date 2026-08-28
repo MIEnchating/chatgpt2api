@@ -35,8 +35,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { TooltipHint } from "@/components/ui/tooltip";
 import {
   createManagedUser,
   deleteManagedUser,
@@ -155,18 +157,15 @@ function providerFilterLabel(provider?: string) {
   return provider || "未知";
 }
 
-function userSourceLabel(user: Pick<ManagedUser, "provider" | "username" | "has_api_key" | "has_session">) {
+function userSourceLabel(user: Pick<ManagedUser, "provider" | "username" | "has_session">) {
   if (user.provider === "local") {
     if (user.username) {
       return "账号用户";
     }
-    if (user.has_api_key) {
-      return "本地凭据";
-    }
     if (user.has_session) {
       return "登录会话";
     }
-    return "本地凭据";
+    return "本地账号";
   }
   if (user.provider === "newapi") {
     return "云棉用户";
@@ -651,7 +650,7 @@ function UsersContent() {
   };
 
   return (
-    <section className="flex h-full min-h-0 flex-col gap-5 overflow-hidden">
+    <section data-users-layout className="flex h-full min-h-0 flex-col gap-5 overflow-hidden">
       <PageHeader
         actions={
           <>
@@ -741,7 +740,7 @@ function UsersContent() {
               </Button>
             </div>
           </div>
-          <div className="min-h-0 flex-1 overflow-auto">
+          <ScrollArea className="min-h-0 flex-1">
             <Table className="min-w-[1320px]">
               <TableHeader className="sticky top-0 z-10">
                 <TableRow>
@@ -773,9 +772,9 @@ function UsersContent() {
                         />
                       </TableCell>
                       <TableCell>
-                        <code className="block max-w-[220px] truncate font-mono text-xs text-muted-foreground" title={user.id}>
+                        <TooltipHint content={user.id}><code className="block max-w-[220px] truncate font-mono text-xs text-muted-foreground">
                           {user.id}
-                        </code>
+                        </code></TooltipHint>
                       </TableCell>
                       <TableCell>
                         <div className="min-w-0 space-y-1.5">
@@ -872,7 +871,7 @@ function UsersContent() {
                 })}
               </TableBody>
             </Table>
-          </div>
+          </ScrollArea>
           {isLoading ? (
             <div className="flex items-center justify-center py-14">
               <LoaderCircle className="size-5 animate-spin text-stone-400" />

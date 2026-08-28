@@ -8,7 +8,7 @@
         "browser": true,
         "es2020": true
     },
-    "ignorePatterns": ["**/.next/**", "**/dist/**", "**/node_modules/**", "**/out/**"],
+    "ignorePatterns": ["**/.next/**", "**/dist/**", "**/node_modules/**", "**/out/**", "public/director/**"],
     "rules": {
         "no-unused-vars": "off",
         "typescript/no-explicit-any": "off",

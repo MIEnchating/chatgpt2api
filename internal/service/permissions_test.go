@@ -2,20 +2,13 @@ package service
 
 import "testing"
 
-func TestNormalizeAPIPermissionsMigratesCreationTaskPermissions(t *testing.T) {
+func TestNormalizeAPIPermissionsRejectsRemovedCreationTaskPermissions(t *testing.T) {
 	permissions := NormalizeAPIPermissions([]string{
 		APIPermissionKey("GET", "/api/image-tasks"),
 		"POST /api/image-tasks",
 	})
-
-	if !HasAPIPermission(PermissionSet{APIPermissions: permissions}, "GET", "/api/creation-tasks") {
-		t.Fatalf("migrated permissions missing creation task read: %#v", permissions)
-	}
-	if !HasAPIPermission(PermissionSet{APIPermissions: permissions}, "POST", "/api/creation-tasks/image-generations") {
-		t.Fatalf("migrated permissions missing image creation task submit subtree: %#v", permissions)
-	}
-	if HasAPIPermission(PermissionSet{APIPermissions: permissions}, "GET", "/api/image-tasks") {
-		t.Fatalf("old image task route should not be authorized: %#v", permissions)
+	if len(permissions) != 0 {
+		t.Fatalf("removed image task permissions should be ignored: %#v", permissions)
 	}
 }
 
@@ -32,20 +25,12 @@ func TestRemovedAccountPoolPermissionsAreIgnored(t *testing.T) {
 	}
 }
 
-func TestPromptMarketAdultPermissionIsExplicit(t *testing.T) {
-	userPermissions := DefaultPermissionSetForRole(AuthRoleUser)
-	if HasAPIPermission(userPermissions, "GET", PromptMarketAdultPermissionPath) {
-		t.Fatalf("default user permissions should not include adult prompt market access: %#v", userPermissions.APIPermissions)
-	}
-
-	adminPermissions := DefaultPermissionSetForRole(AuthRoleAdmin)
-	if !HasAPIPermission(adminPermissions, "GET", PromptMarketAdultPermissionPath) {
-		t.Fatalf("admin permissions should include adult prompt market access: %#v", adminPermissions.APIPermissions)
-	}
-
-	explicit := NormalizeAPIPermissions([]string{APIPermissionKey("GET", PromptMarketAdultPermissionPath)})
-	if !HasAPIPermission(PermissionSet{APIPermissions: explicit}, "GET", PromptMarketAdultPermissionPath) {
-		t.Fatalf("explicit adult prompt market permission was not accepted: %#v", explicit)
+func TestRemovedPromptMarketAdultPermissionIsIgnored(t *testing.T) {
+	permissions := NormalizeAPIPermissions([]string{
+		APIPermissionKey("GET", "/api/prompt-market/adult-content"),
+	})
+	if len(permissions) != 0 {
+		t.Fatalf("removed adult prompt market permission should be ignored: %#v", permissions)
 	}
 }
 
@@ -60,24 +45,52 @@ func TestDefaultUserPermissionsIncludeCanvas(t *testing.T) {
 	}
 }
 
+func TestCreativeLibrariesHaveIndependentMenus(t *testing.T) {
+	permissions := DefaultPermissionSetForRole(AuthRoleUser)
+	menuPaths := sliceSet(permissions.MenuPaths)
+	for _, path := range []string{"/prompt-library", "/assets"} {
+		if _, ok := menuPaths[path]; !ok {
+			t.Fatalf("default user menus should include %s: %#v", path, permissions.MenuPaths)
+		}
+	}
+	if normalized := NormalizeMenuPermissions([]string{"/unknown"}); len(normalized) != 0 {
+		t.Fatalf("unknown menu path should be rejected: %#v", normalized)
+	}
+}
+
 func TestDefaultUserPermissionsIncludeCreatorFlows(t *testing.T) {
 	permissions := DefaultPermissionSetForRole(AuthRoleUser)
 	requests := []struct {
 		method string
 		path   string
 	}{
-		{"GET", "/v1/models"},
-		{"POST", "/v1/images/generations"},
-		{"POST", "/v1/images/edits"},
 		{"GET", "/api/creation-tasks"},
+		{"GET", "/api/creation-tasks/audio-voices"},
 		{"POST", "/api/creation-tasks/image-generations"},
 		{"POST", "/api/creation-tasks/image-edits"},
+		{"POST", "/api/creation-tasks/chat-completions"},
+		{"POST", "/api/creation-tasks/video-generations"},
+		{"POST", "/api/creation-tasks/audio-generations"},
+		{"POST", "/api/creation-tasks/video-reference-uploads"},
+		{"POST", "/api/creation-tasks/video-image-reference-uploads"},
+		{"POST", "/api/creation-tasks/audio-reference-uploads"},
 		{"POST", "/api/creation-tasks/task-1/cancel"},
+		{"POST", "/api/profile/image-conversation-assets"},
+		{"GET", "/api/proxy-image"},
+		{"GET", "/api/canvas"},
+		{"POST", "/api/canvas/images"},
+		{"PUT", "/api/canvas"},
+		{"DELETE", "/api/canvas"},
+		{"GET", "/api/workflows"},
+		{"POST", "/api/workflows/agent-draft"},
+		{"PUT", "/api/workflows/workflow-1"},
+		{"DELETE", "/api/workflows/workflow-1"},
 		{"GET", "/api/images"},
 		{"PATCH", "/api/images/visibility"},
-		{"GET", "/api/auth/users"},
-		{"POST", "/api/auth/users"},
-		{"DELETE", "/api/auth/users/key-1"},
+		{"POST", "/api/files"},
+		{"POST", "/api/files/direct"},
+		{"DELETE", "/api/files/object-1"},
+		{"DELETE", "/api/files/object-1/record"},
 	}
 	for _, request := range requests {
 		if !HasAPIPermission(permissions, request.method, request.path) {

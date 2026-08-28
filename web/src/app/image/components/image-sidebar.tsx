@@ -3,6 +3,7 @@
 import { LoaderCircle, MessageSquarePlus, Trash2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import {
   getImageConversationStats,
@@ -59,9 +60,9 @@ export function ImageSidebar({
           </div>
         )}
 
-        <div
+        <ScrollArea
           className={cn(
-            "min-h-0 flex-1 overflow-y-auto [scrollbar-color:rgba(142,142,147,.45)_transparent] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-[#8e8e93]/45 [&::-webkit-scrollbar-track]:bg-transparent",
+            "min-h-0 flex-1",
             hideActionButtons ? "flex flex-col gap-1 pr-0" : "flex flex-col gap-2 pr-1",
           )}
         >
@@ -140,7 +141,7 @@ export function ImageSidebar({
               ) : null}
             </>
           )}
-        </div>
+        </ScrollArea>
       </div>
     </aside>
   );

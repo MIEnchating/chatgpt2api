@@ -224,7 +224,7 @@ const (
 )
 
 func (a *App) handleImageConversationAssetUpload(w http.ResponseWriter, r *http.Request) {
-	identity, ok := a.requireIdentity(w, r, "")
+	identity, ok := a.requireIdentity(w, r)
 	if !ok {
 		return
 	}
@@ -291,7 +291,7 @@ func (a *App) handleImageConversationAssetUpload(w http.ResponseWriter, r *http.
 	storageStarted := len(pending) > 0
 	defer func() {
 		if storageStarted {
-			a.scheduleImageConversationAssetCleanup(identityScope(identity))
+			a.scheduleImageConversationAssetCleanupDebounced(identityScope(identity))
 		}
 	}()
 	items, err := a.conversationAssets.StoreValidatedBatchContext(r.Context(), identityScope(identity), filenames, validated)
@@ -345,7 +345,6 @@ func (a *App) handleImageConversationAssetFile(w http.ResponseWriter, r *http.Re
 	w.Header().Set("Content-Type", access.ContentType)
 	w.Header().Set("ETag", `"sha256-`+access.ContentHash+`"`)
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Add("Vary", "Authorization")
 	w.Header().Add("Vary", "Cookie")
 	http.ServeFile(w, r, access.Path)
 }
@@ -425,7 +424,7 @@ func (a *App) closeImageConversationAssetCleaner() {
 	}
 }
 
-func (a *App) imageStorageGovernance() map[string]any {
+func (a *App) imageStorageGovernance(identity service.Identity) map[string]any {
 	if a == nil || a.images == nil {
 		return map[string]any{}
 	}
@@ -448,10 +447,16 @@ func (a *App) imageStorageGovernance() map[string]any {
 	value["conversation_asset_count"] = assets.FileCount
 	value["total_bytes"] = totalBytes
 	value["over_limit_bytes"] = overLimitBytes
-	value["storage_backend"] = a.images.StorageBackend()
-	if bucket, prefix := a.images.ObjectStoreInfo(); bucket != "" {
-		value["object_storage_bucket"] = bucket
-		value["object_storage_prefix"] = prefix
+	if a.storageFiles != nil {
+		if localMedia, err := a.storageFiles.LocalMediaGovernance(); err == nil {
+			value["local_media"] = localMedia
+			value["media_total_bytes"] = totalBytes + localMedia.TotalBytes
+		}
+	}
+	if a.myAssets != nil {
+		if textAssets, err := a.myAssets.TextGovernance(identityScope(identity), identity.Role == service.AuthRoleAdmin, a.myAssetOwners(identity)); err == nil {
+			value["text_assets"] = textAssets
+		}
 	}
 	return value
 }

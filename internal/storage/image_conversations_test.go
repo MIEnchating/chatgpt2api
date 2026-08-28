@@ -2,7 +2,6 @@ package storage
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -41,7 +40,7 @@ func TestDatabaseBackendImageConversationSaveCAS(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadOwnerState() error = %v", err)
 	}
-	if state.Generation != 1 || state.LegacyMigrated {
+	if state.Generation != 1 || state.CursorGeneration != 1 {
 		t.Fatalf("initial state = %#v", state)
 	}
 
@@ -260,7 +259,7 @@ func TestDatabaseBackendImageConversationClearInvalidatesGenerationAndData(t *te
 	if err != nil {
 		t.Fatalf("Clear() error = %v", err)
 	}
-	if cleared.Generation != state.Generation+1 || !cleared.LegacyMigrated || cleared.ClearedAtMillis != 5000 {
+	if cleared.Generation != state.Generation+1 || cleared.ClearedAtMillis != 5000 {
 		t.Fatalf("Clear() = %#v", cleared)
 	}
 	if _, err := backend.List(ctx, "owner-clear", state.Generation, nil, 10); !errors.Is(err, ErrImageConversationGenerationStale) {
@@ -278,187 +277,6 @@ func TestDatabaseBackendImageConversationClearInvalidatesGenerationAndData(t *te
 	}
 	if _, err := backend.SaveCAS(ctx, "owner-clear", cleared.Generation, 0, imageConversationTestRecord("new", 6000, false)); err != nil {
 		t.Fatalf("SaveCAS(new after clear) error = %v", err)
-	}
-}
-
-func TestDatabaseBackendImageConversationLegacyMigrationIsIdempotent(t *testing.T) {
-	backend := newImageConversationTestBackend(t)
-	ctx := context.Background()
-	legacy := []ImageConversationRecord{
-		imageConversationTestRecord("live", 2000, true),
-		{ID: "deleted", DeletedAtMillis: 1500},
-		imageConversationTestRecord("duplicate", 1000, false),
-		{ID: "duplicate", DeletedAtMillis: 1600},
-	}
-	state, err := backend.MigrateLegacy(ctx, "owner-migrate", legacy, ImageConversationOwnerState{
-		ClearedAt:       "2026-07-20T09:00:00Z",
-		ClearedAtMillis: 900,
-	})
-	if err != nil {
-		t.Fatalf("MigrateLegacy() error = %v", err)
-	}
-	if !state.LegacyMigrated || state.Generation != 1 || state.ClearedAtMillis != 900 {
-		t.Fatalf("MigrateLegacy() state = %#v", state)
-	}
-	page, err := backend.List(ctx, "owner-migrate", state.Generation, nil, 10)
-	if err != nil || len(page.Records) != 1 || page.Records[0].ID != "live" {
-		t.Fatalf("List(after migration) = (%#v, %v)", page, err)
-	}
-	for _, id := range []string{"deleted", "duplicate"} {
-		record, exists, err := backend.Load(ctx, "owner-migrate", id)
-		if err != nil || !exists || record.DeletedAtMillis == 0 || len(record.Data) != 0 {
-			t.Fatalf("Load(%q tombstone) = (%#v, %v, %v)", id, record, exists, err)
-		}
-	}
-
-	second, err := backend.MigrateLegacy(ctx, "owner-migrate", []ImageConversationRecord{
-		imageConversationTestRecord("must-not-import", 3000, false),
-	}, ImageConversationOwnerState{})
-	if err != nil || !second.LegacyMigrated || second.Generation != state.Generation {
-		t.Fatalf("MigrateLegacy(second) = (%#v, %v)", second, err)
-	}
-	if record, exists, err := backend.Load(ctx, "owner-migrate", "must-not-import"); err != nil || exists {
-		t.Fatalf("Load(must-not-import) = (%#v, %v, %v)", record, exists, err)
-	}
-}
-
-func TestDatabaseBackendImageConversationSummarySchemaUpgradeAndBackfill(t *testing.T) {
-	databasePath := filepath.ToSlash(filepath.Join(t.TempDir(), "summary-upgrade.db"))
-	rawDatabase, err := sql.Open("sqlite", databasePath)
-	if err != nil {
-		t.Fatalf("sql.Open() error = %v", err)
-	}
-	ownerKey, _ := imageConversationStorageKey("owner-upgrade")
-	conversationKey, _ := imageConversationStorageKey("legacy-row")
-	legacyData := `{"id":"legacy-row","title":"Legacy title","createdAt":"2026-07-20T00:00:00Z","updatedAt":"2026-07-20T00:00:01Z","turns":[{"id":"turn","prompt":"large detail"}]}`
-	for _, statement := range []string{
-		`CREATE TABLE image_conversation_owners (
-			owner_key TEXT PRIMARY KEY, cleared_at TEXT NOT NULL DEFAULT '', cleared_at_ms INTEGER NOT NULL DEFAULT 0,
-			generation INTEGER NOT NULL DEFAULT 1, legacy_migrated INTEGER NOT NULL DEFAULT 0
-		)`,
-		`CREATE TABLE image_conversations (
-			owner_key TEXT NOT NULL, conversation_key TEXT NOT NULL, conversation_id TEXT NOT NULL,
-			revision INTEGER NOT NULL DEFAULT 0, storage_version INTEGER NOT NULL DEFAULT 1,
-			accepted_hash TEXT NOT NULL, created_at_ms INTEGER NOT NULL DEFAULT 0, updated_at_ms INTEGER NOT NULL DEFAULT 0,
-			active INTEGER NOT NULL DEFAULT 0, deleted_at_ms INTEGER NOT NULL DEFAULT 0, data TEXT,
-			PRIMARY KEY (owner_key, conversation_key)
-		)`,
-	} {
-		if _, err := rawDatabase.Exec(statement); err != nil {
-			_ = rawDatabase.Close()
-			t.Fatalf("create legacy schema error = %v", err)
-		}
-	}
-	if _, err := rawDatabase.Exec(
-		`INSERT INTO image_conversation_owners (owner_key, generation, legacy_migrated) VALUES (?, 7, 1)`,
-		ownerKey,
-	); err != nil {
-		_ = rawDatabase.Close()
-		t.Fatalf("insert legacy owner error = %v", err)
-	}
-	if _, err := rawDatabase.Exec(
-		`INSERT INTO image_conversations (
-			owner_key, conversation_key, conversation_id, revision, storage_version, accepted_hash,
-			created_at_ms, updated_at_ms, active, deleted_at_ms, data
-		) VALUES (?, ?, ?, 1, 1, ?, 1000, 2000, 0, 0, ?)`,
-		ownerKey,
-		conversationKey,
-		"legacy-row",
-		imageConversationDataHash([]byte(legacyData)),
-		legacyData,
-	); err != nil {
-		_ = rawDatabase.Close()
-		t.Fatalf("insert legacy conversation error = %v", err)
-	}
-	for index := 1; index < 105; index++ {
-		id := fmt.Sprintf("legacy-row-%03d", index)
-		key, _ := imageConversationStorageKey(id)
-		data := fmt.Sprintf(`{"id":%q,"title":%q,"createdAt":"2026-07-20T00:00:00Z","updatedAt":"2026-07-20T00:00:01Z","turns":[]}`, id, id)
-		if _, err := rawDatabase.Exec(
-			`INSERT INTO image_conversations (
-				owner_key, conversation_key, conversation_id, revision, storage_version, accepted_hash,
-				created_at_ms, updated_at_ms, active, deleted_at_ms, data
-			) VALUES (?, ?, ?, 1, 1, ?, 1000, 2000, 0, 0, ?)`,
-			ownerKey,
-			key,
-			id,
-			imageConversationDataHash([]byte(data)),
-			data,
-		); err != nil {
-			_ = rawDatabase.Close()
-			t.Fatalf("insert legacy conversation %q error = %v", id, err)
-		}
-	}
-	if err := rawDatabase.Close(); err != nil {
-		t.Fatalf("close legacy database error = %v", err)
-	}
-
-	backend, err := NewDatabaseBackend("sqlite:///" + databasePath)
-	if err != nil {
-		t.Fatalf("NewDatabaseBackend(upgrade) error = %v", err)
-	}
-	upgradedState, err := backend.LoadOwnerState(context.Background(), "owner-upgrade")
-	if err != nil || upgradedState.Generation != 7 || upgradedState.CursorGeneration != upgradedState.Generation {
-		_ = backend.Close()
-		t.Fatalf("LoadOwnerState(upgraded) = (%#v, %v)", upgradedState, err)
-	}
-	var missingBeforeList int
-	if err := backend.db.QueryRow(`SELECT COUNT(*) FROM image_conversations WHERE summary IS NULL`).Scan(&missingBeforeList); err != nil {
-		_ = backend.Close()
-		t.Fatalf("count summaries before list error = %v", err)
-	}
-	if missingBeforeList < 5 {
-		_ = backend.Close()
-		t.Fatalf("startup backfill was not bounded: missing summaries = %d", missingBeforeList)
-	}
-	page, err := backend.List(context.Background(), "owner-upgrade", upgradedState.Generation, nil, 200)
-	if err != nil || len(page.Records) != 105 {
-		_ = backend.Close()
-		t.Fatalf("List(upgraded) = (%#v, %v)", page, err)
-	}
-	var row ImageConversationRecord
-	for _, candidate := range page.Records {
-		if candidate.ID == "legacy-row" {
-			row = candidate
-			break
-		}
-	}
-	if len(row.Data) != 0 || !strings.Contains(string(row.Summary), `"Legacy title"`) || strings.Contains(string(row.Summary), `"turns"`) {
-		_ = backend.Close()
-		t.Fatalf("upgraded summary = %#v", row)
-	}
-	loaded, exists, err := backend.Load(context.Background(), "owner-upgrade", "legacy-row")
-	if err != nil || !exists || !strings.Contains(string(loaded.Data), `"turns"`) {
-		_ = backend.Close()
-		t.Fatalf("Load(upgraded full row) = (%#v, %v, %v)", loaded, exists, err)
-	}
-	var missingAfterList int
-	if err := backend.db.QueryRow(`SELECT COUNT(*) FROM image_conversations WHERE summary IS NULL`).Scan(&missingAfterList); err != nil || missingAfterList != 0 {
-		_ = backend.Close()
-		t.Fatalf("summaries after lazy list backfill = %d, error = %v", missingAfterList, err)
-	}
-	if err := backend.Close(); err != nil {
-		t.Fatalf("Close(upgraded backend) error = %v", err)
-	}
-
-	reopened, err := NewDatabaseBackend("sqlite:///" + databasePath)
-	if err != nil {
-		t.Fatalf("NewDatabaseBackend(reopen upgraded schema) error = %v", err)
-	}
-	defer reopened.Close()
-	var summaryColumnCount int
-	if err := reopened.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('image_conversations') WHERE name = 'summary'`).Scan(&summaryColumnCount); err != nil {
-		t.Fatalf("inspect upgraded summary column error = %v", err)
-	}
-	if summaryColumnCount != 1 {
-		t.Fatalf("summary column count = %d, want 1", summaryColumnCount)
-	}
-	var cursorGenerationColumnCount int
-	if err := reopened.db.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('image_conversation_owners') WHERE name = 'cursor_generation'`).Scan(&cursorGenerationColumnCount); err != nil {
-		t.Fatalf("inspect upgraded cursor generation column error = %v", err)
-	}
-	if cursorGenerationColumnCount != 1 {
-		t.Fatalf("cursor generation column count = %d, want 1", cursorGenerationColumnCount)
 	}
 }
 
