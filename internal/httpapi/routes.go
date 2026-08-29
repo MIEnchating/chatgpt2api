@@ -1287,6 +1287,28 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 		util.WriteJSON(w, http.StatusOK, tasks)
 		return
 	}
+	if r.URL.Path == "/api/creation-tasks" && r.Method == http.MethodDelete {
+		body, err := readJSONMap(r)
+		if err != nil {
+			util.WriteError(w, http.StatusBadRequest, "invalid json body")
+			return
+		}
+		ids := util.AsStringSlice(body["ids"])
+		if len(ids) > 1000 {
+			util.WriteError(w, http.StatusBadRequest, "一次最多清理 1000 条任务")
+			return
+		}
+		result, err := a.tasks.DeleteTasks(identity, ids)
+		if err != nil {
+			if a.writeCreationTaskStorageError(w, err) {
+				return
+			}
+			util.WriteError(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		util.WriteJSON(w, http.StatusOK, result)
+		return
+	}
 	if r.URL.Path == "/api/creation-tasks/audio-voices" && r.Method == http.MethodGet {
 		model := strings.TrimSpace(r.URL.Query().Get("model"))
 		if audioProtocolForModel(model) != "grok" || allowedPersonalModel(model, a.config.AudioModels()) == "" {
@@ -2600,6 +2622,9 @@ func imageTaskRequestMetadata(body map[string]any) map[string]any {
 	metadata := creationTaskRequestMetadata(body)
 	if workflowContext := util.StringMap(body["workflow_context"]); len(workflowContext) > 0 {
 		metadata["workflow_context"] = workflowContext
+	}
+	if source := service.NormalizeImageGenerationSource(util.Clean(body["generation_source"])); source != "" {
+		metadata["generation_source"] = source
 	}
 	metadata["api_mode"] = normalizeImageTaskAPIMode(util.Clean(body["api_mode"]), util.Clean(body["model"]))
 	if preset := service.NormalizeImageResolutionPreset(firstNonEmpty(util.Clean(body["image_resolution"]), util.Clean(body["resolution"]))); preset != "" {

@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import type { BananaPrompt, PromptMarketSourceConfig } from "@/app/image/banana-prompts";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { TooltipHint } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -151,13 +151,13 @@ export function PromptSourceContentDialog({ source, open, onOpenChange, onPull }
             )}
           </ScrollArea>
 
-          <div className="flex min-h-16 items-center justify-center gap-1 border-t border-border px-4 py-3">
+          <DialogFooter flush className="flex-row justify-center gap-1 sm:justify-center">
             <Button type="button" variant="ghost" size="icon" className="size-8" disabled={page <= 1} onClick={() => setPage((value) => value - 1)} aria-label="上一页"><ChevronLeft /></Button>
             {paginationItems(page, totalPages).map((item) => typeof item === "number" ? (
               <Button key={item} type="button" variant={item === page ? "default" : "ghost"} size="icon" className="size-8" onClick={() => setPage(item)}>{item}</Button>
             ) : <span key={item} className="flex size-8 items-center justify-center text-xs text-muted-foreground">...</span>)}
             <Button type="button" variant="ghost" size="icon" className="size-8" disabled={page >= totalPages} onClick={() => setPage((value) => value + 1)} aria-label="下一页"><ChevronRight /></Button>
-          </div>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
@@ -168,7 +168,7 @@ export function PromptSourceContentDialog({ source, open, onOpenChange, onPull }
               {selectedPrompt ? <PromptCover prompt={selectedPrompt} large /> : null}
             </div>
             <div className="flex min-h-0 flex-col p-5 pr-7 sm:p-6 sm:pr-8">
-              <DialogTitle className="pr-6 text-xl leading-7">{selectedPrompt?.title}</DialogTitle>
+              <DialogTitle className="pr-20 text-xl leading-7">{selectedPrompt?.title}</DialogTitle>
               <DialogDescription className="mt-1.5">{[selectedPrompt?.category, selectedPrompt?.author].filter(Boolean).join(" · ")}</DialogDescription>
               <ScrollArea className="mt-5 min-h-0 flex-1" viewportClassName="pr-3">
                 <p className="whitespace-pre-wrap break-words text-sm leading-7 text-foreground">{selectedPrompt?.prompt}</p>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AudioLines, ChevronLeft, ChevronRight, Download, FileText, Globe2, Image as ImageIcon, LockKeyhole, MoreHorizontal, Plus, Search, Trash2, Video, X } from "lucide-react";
+import { AudioLines, Download, FileText, Globe2, Image as ImageIcon, LockKeyhole, MoreHorizontal, Plus, Search, Trash2, Video, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { AssetCard, AssetPreview } from "@/app/assets/asset-display";
@@ -9,14 +9,14 @@ import { AssetForm } from "@/app/assets/asset-form";
 import { assetListKey, canManageAsset, collectAssetStorageKeys, managedImageAsset, mergeAssetLibrary } from "@/app/assets/asset-library";
 import { downloadMyAsset } from "@/app/assets/asset-media";
 import { useMyAssets } from "@/app/assets/use-my-assets";
-import { PageHeader } from "@/components/page-header";
+import { ManagementPage, ManagementPagination, ManagementPanel } from "@/components/management-page";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { deleteManagedImages, fetchManagedImages } from "@/lib/api";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { deleteManagedImages, fetchManagedImages, updateManagedImageVisibility } from "@/lib/api";
 import { fetchVisibleMyAssets, type MyAsset, type MyAssetKind, type MyAssetVisibility } from "@/lib/my-assets";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import { cn } from "@/lib/utils";
@@ -200,6 +200,52 @@ export default function AssetsPage() {
   };
 
   const deletableSelectedAssets = selectedAssets.filter((asset) => canManageAsset(asset) && (!asset.managedPath || hasAPIPermission(session, "DELETE", "/api/images")));
+  const visibilityManageableAssets = selectedAssets.filter((asset) =>
+    canManageAsset(asset) && (!asset.managedPath || hasAPIPermission(session, "PATCH", "/api/images/visibility")),
+  );
+  const selectedVisibility = visibilityManageableAssets.length > 0 && visibilityManageableAssets.every((asset) => asset.visibility === visibilityManageableAssets[0].visibility)
+    ? visibilityManageableAssets[0].visibility
+    : "";
+
+  const updateSelectedVisibility = async (nextVisibility: MyAssetVisibility) => {
+    if (bulkActionBusy) return;
+    const targets = visibilityManageableAssets.filter((asset) => asset.visibility !== nextVisibility);
+    if (!targets.length) return;
+    setBulkActionBusy(true);
+    const customKeys = new Set(targets.filter((asset) => !asset.managedPath).map(assetListKey));
+    const managedTargets = targets.filter((asset): asset is MyAsset & { managedPath: string } => Boolean(asset.managedPath));
+    try {
+      const managedResults = await Promise.allSettled(
+        managedTargets.map((asset) => updateManagedImageVisibility(asset.managedPath, nextVisibility)),
+      );
+      const updatedManagedPaths = new Set(managedResults.flatMap((result, index) =>
+        result.status === "fulfilled" ? [managedTargets[index].managedPath] : [],
+      ));
+      const updatedAt = new Date().toISOString();
+      if (customKeys.size) {
+        setAssets((current) => current.map((asset) =>
+          customKeys.has(assetListKey(asset))
+            ? { ...asset, visibility: nextVisibility, updatedAt }
+            : asset,
+        ));
+      }
+      if (updatedManagedPaths.size) {
+        setManagedAssets((current) => current.map((asset) =>
+          asset.managedPath && updatedManagedPaths.has(asset.managedPath)
+            ? { ...asset, visibility: nextVisibility, updatedAt }
+            : asset,
+        ));
+      }
+      const updatedCount = customKeys.size + updatedManagedPaths.size;
+      const failedCount = managedTargets.length - updatedManagedPaths.size;
+      if (failedCount) toast.error(`已更新 ${updatedCount} 项，${failedCount} 张生成图片更新失败`);
+      else toast.success(`已将 ${updatedCount} 项设为${nextVisibility === "public" ? "公开" : "个人"}`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "可见范围更新失败");
+    } finally {
+      setBulkActionBusy(false);
+    }
+  };
 
   const deleteSelected = async () => {
     if (!deletableSelectedAssets.length || bulkActionBusy) return;
@@ -224,23 +270,36 @@ export default function AssetsPage() {
   };
 
   return (
-    <section className="flex h-full min-h-0 flex-col gap-[var(--page-section-gap)] overflow-hidden">
-      <PageHeader actions={<Button type="button" onClick={() => { setEditing(null); setFormOpen(true); }}><Plus />新增素材</Button>} />
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-xl border border-border bg-background">
+    <ManagementPage data-assets-layout>
+      <ManagementPanel className="flex-1">
         <div className="shrink-0 border-b border-border px-5 py-3 sm:px-8">
         <div data-asset-filter-bar className="flex w-full flex-wrap items-center gap-2">
           <div className="relative min-w-[220px] flex-1"><Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" /><Input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="搜索标题、内容、来源、所有者或备注" className="pl-9" /></div>
           <div className="hide-scrollbar flex max-w-full items-center gap-1 overflow-x-auto rounded-lg bg-muted p-1">{kindOptions.map((option) => { const Icon = option.icon; return <button key={option.value} type="button" onClick={() => setKind(option.value)} className={cn("inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium text-muted-foreground transition", kind === option.value && "bg-card text-foreground shadow-sm")}>{option.value === "all" ? null : <Icon className="size-3.5" />}{option.label}</button>; })}</div>
           <div className="hide-scrollbar flex max-w-full items-center gap-1 overflow-x-auto rounded-lg bg-muted p-1">{visibilityOptions.map((option) => { const Icon = option.icon; return <button key={option.value} type="button" onClick={() => setVisibility(option.value)} className={cn("inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium text-muted-foreground transition", visibility === option.value && "bg-card text-foreground shadow-sm")}>{Icon ? <Icon className="size-3.5" /> : null}{option.label}</button>; })}</div>
+          <Button type="button" className="ml-auto shrink-0" onClick={() => { setEditing(null); setFormOpen(true); }}><Plus />新增素材</Button>
         </div>
         </div>
         <div data-asset-selection-toolbar className="hide-scrollbar flex h-12 shrink-0 items-center gap-2 overflow-x-auto border-b border-border px-5 sm:px-8">
           <label data-disabled={!visibleAssets.length} className="selection-trigger flex shrink-0 items-center gap-2 text-xs font-medium"><Checkbox checked={allVisibleSelected ? true : selectedOnPage > 0 ? "indeterminate" : false} disabled={!visibleAssets.length} onCheckedChange={(checked) => toggleVisibleSelection(checked === true)} /><span>全选当前页</span></label>
-          <span className="min-w-16 shrink-0 text-xs text-muted-foreground tabular-nums">已选 {selectedAssets.length} 项</span>
+          {selectedAssets.length ? (
+            <div className="flex h-8 shrink-0 items-center gap-1 rounded-lg bg-muted/70 py-1 pr-1 pl-2.5 text-xs text-muted-foreground">
+              <span className="tabular-nums">已选 {selectedAssets.length} 项</span>
+              <Button type="button" variant="ghost" size="icon" className="size-6 shrink-0 rounded-md" onClick={() => setSelectedKeys(new Set())} aria-label="清空选择" title="清空选择"><X className="size-3.5" /></Button>
+            </div>
+          ) : <span className="shrink-0 px-1 text-xs text-muted-foreground">未选择素材</span>}
           <div className="ml-auto flex shrink-0 items-center gap-2">
+            <Select value={selectedVisibility} disabled={!visibilityManageableAssets.length || bulkActionBusy} onValueChange={(value: MyAssetVisibility) => void updateSelectedVisibility(value)}>
+              <SelectTrigger className="h-8 w-[116px] shrink-0" aria-label="设置所选素材可见范围">
+                <SelectValue placeholder="可见范围" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="private"><LockKeyhole className="size-3.5" />个人</SelectItem>
+                <SelectItem value="public"><Globe2 className="size-3.5" />公开</SelectItem>
+              </SelectContent>
+            </Select>
             <Button type="button" variant="outline" size="sm" className="h-8 w-[72px] shrink-0 px-2" disabled={!selectedAssets.length || bulkActionBusy} onClick={() => void downloadSelected()}><Download />下载</Button>
             <Button type="button" variant="outline" size="sm" className="h-8 w-[72px] shrink-0 px-2 text-rose-600 hover:text-rose-600" disabled={!deletableSelectedAssets.length || bulkActionBusy} onClick={() => setBulkDeleteOpen(true)}><Trash2 />删除</Button>
-            <Button type="button" variant="ghost" size="icon" className={cn("size-8 shrink-0", !selectedAssets.length && "invisible")} disabled={!selectedAssets.length} onClick={() => setSelectedKeys(new Set())} aria-label="清空选择" title="清空选择"><X /></Button>
           </div>
         </div>
         <ScrollArea className="min-h-0 flex-1" viewportClassName="px-5 py-5 sm:px-8">
@@ -248,17 +307,25 @@ export default function AssetsPage() {
           {(loading || visibleLoading) && allAssets.length === 0 ? <div className="flex min-h-80 items-center justify-center text-sm text-muted-foreground">正在同步素材...</div> : visibleAssets.length ? <div data-asset-grid className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,280px),1fr))] gap-4">{visibleAssets.map((asset) => { const key = assetListKey(asset); const canManage = canManageAsset(asset); return <AssetCard key={key} asset={asset} selected={selectedKeys.has(key)} onSelectedChange={(checked) => setSelectedKeys((current) => { const next = new Set(current); if (checked) next.add(key); else next.delete(key); return next; })} onOpen={() => setPreview(asset)} onEdit={canManage && !asset.managedPath ? () => { setEditing(asset); setFormOpen(true); } : undefined} onDelete={canManage && (!asset.managedPath || hasAPIPermission(session, "DELETE", "/api/images")) ? () => setDeleting(asset) : undefined} onCopy={() => void copyText(asset)} onDownload={() => void download(asset)} />; })}</div> : <div className="flex min-h-80 items-center justify-center text-sm text-muted-foreground">{allAssets.length ? "没有找到匹配的素材" : "还没有可用素材"}</div>}
         </div>
         </ScrollArea>
-        <div data-asset-pagination className="flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-3 border-t border-border px-5 py-2 sm:px-8">
-          <span className="text-xs text-muted-foreground">共 {filtered.length} 项</span>
-          <div className="flex items-center gap-2"><Button type="button" variant="outline" size="icon" disabled={page <= 1 || !filtered.length} onClick={() => setPage((value) => value - 1)} aria-label="上一页"><ChevronLeft /></Button><span className="min-w-24 text-center text-xs text-muted-foreground">第 {filtered.length ? page : 0} / {filtered.length ? totalPages : 0} 页</span><Button type="button" variant="outline" size="icon" disabled={page >= totalPages || !filtered.length} onClick={() => setPage((value) => value + 1)} aria-label="下一页"><ChevronRight /></Button></div>
-          <Select value={String(pageSize)} onValueChange={(value) => setPageSize(Number(value))}><SelectTrigger className="w-24"><SelectValue /></SelectTrigger><SelectContent><SelectGroup>{[12, 24, 48, 96].map((value) => <SelectItem key={value} value={String(value)}>{value} 条</SelectItem>)}</SelectGroup></SelectContent></Select>
-        </div>
-      </div>
+        <ManagementPagination
+          page={page}
+          totalPages={totalPages}
+          totalItems={filtered.length}
+          pageSize={pageSize}
+          pageSizeOptions={[12, 24, 48, 96]}
+          itemLabel="项"
+          onPageChange={setPage}
+          onPageSizeChange={(value) => {
+            setPageSize(value);
+            setPage(1);
+          }}
+        />
+      </ManagementPanel>
       <AssetForm open={formOpen} asset={editing} onClose={() => setFormOpen(false)} onSave={(next) => { setAssets((current) => current.some((item) => item.id === next.id) ? current.map((item) => item.id === next.id ? next : item) : [next, ...current]); setFormOpen(false); }} />
       <AssetPreview asset={preview} onClose={() => setPreview(null)} onCopy={() => preview && void copyText(preview)} onDownload={() => preview && void download(preview)} />
       <Dialog open={Boolean(deleting)} onOpenChange={(open) => !open && !deleteBusy && setDeleting(null)}><DialogContent className="w-[min(92vw,420px)]"><DialogHeader><DialogTitle>删除素材？</DialogTitle><DialogDescription>{deleting?.managedPath ? `确定永久删除生成图片“${deleting.title}”吗？` : `确定删除“${deleting?.title}”吗？删除后会同步到当前账号。`}</DialogDescription></DialogHeader><DialogFooter><Button type="button" variant="outline" disabled={deleteBusy} onClick={() => setDeleting(null)}>取消</Button><Button type="button" variant="destructive" disabled={deleteBusy} onClick={() => void confirmDelete()}>{deleteBusy ? "删除中" : "删除"}</Button></DialogFooter></DialogContent></Dialog>
       <Dialog open={bulkDeleteOpen} onOpenChange={(open) => !bulkActionBusy && setBulkDeleteOpen(open)}><DialogContent className="w-[min(92vw,440px)]"><DialogHeader><DialogTitle>批量删除素材？</DialogTitle><DialogDescription>将永久删除选中的 {deletableSelectedAssets.length} 个自有素材。共享素材和无删除权限的素材不会被删除。</DialogDescription></DialogHeader><DialogFooter><Button type="button" variant="outline" disabled={bulkActionBusy} onClick={() => setBulkDeleteOpen(false)}>取消</Button><Button type="button" variant="destructive" disabled={bulkActionBusy} onClick={() => void deleteSelected()}>{bulkActionBusy ? "删除中" : `删除 ${deletableSelectedAssets.length} 项`}</Button></DialogFooter></DialogContent></Dialog>
-    </section>
+    </ManagementPage>
   );
 }
 

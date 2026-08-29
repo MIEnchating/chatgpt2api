@@ -393,6 +393,7 @@ const ScrollArea = React.forwardRef<ScrollAreaHandle, ScrollAreaProps>(function 
   return (
     <div
       ref={setRootRef}
+      data-scroll-overflow-y={verticalOverflow > 0 || undefined}
       className={cn("group/scroll-area relative flex min-h-0 w-full flex-col overflow-hidden", className)}
       style={rootStyle}
       {...rootProps}

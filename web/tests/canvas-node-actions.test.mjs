@@ -13,7 +13,7 @@ const agentPanelSource = readFileSync(new URL("../src/app/canvas/canvas-agent-pa
 const canvasLibrarySource = readFileSync(new URL("../src/app/canvas/library-page.tsx", import.meta.url), "utf8");
 const canvasSidePanelSource = readFileSync(new URL("../src/app/canvas/canvas-side-panel.tsx", import.meta.url), "utf8");
 const configComposerSource = readFileSync(new URL("../src/app/canvas/canvas-config-composer.tsx", import.meta.url), "utf8");
-const promptScrollFrameSource = readFileSync(new URL("../src/app/canvas/canvas-prompt-scroll-frame.tsx", import.meta.url), "utf8");
+const promptScrollFrameSource = readFileSync(new URL("../src/components/generation/prompt-textarea-frame.tsx", import.meta.url), "utf8");
 const workflowSource = readFileSync(new URL("../src/components/workflows/creative-workflow-workspace.tsx", import.meta.url), "utf8");
 const tooltipSource = readFileSync(new URL("../src/components/ui/tooltip.tsx", import.meta.url), "utf8");
 const globalStylesSource = readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
@@ -155,8 +155,8 @@ test("the bottom node toolbar does not render a clipped light-theme shadow", () 
 
 test("every canvas prompt editor can resize without hiding its parameter panel", () => {
   assert.match(globalStylesSource, /\.canvas-prompt-scroll-frame \{[\s\S]*?max-height: max\(5rem, min\(40vh, calc\(100dvh - 26rem\)\)\);[\s\S]*?resize: vertical;/);
-  assert.ok((pageSource.match(/<CanvasPromptScrollFrame/g) || []).length >= 3);
-  assert.ok((specialNodesSource.match(/<CanvasPromptScrollFrame/g) || []).length >= 2);
+  assert.ok((pageSource.match(/<PromptTextareaFrame/g) || []).length >= 3);
+  assert.ok((specialNodesSource.match(/<PromptTextareaFrame/g) || []).length >= 2);
   assert.match(promptScrollFrameSource, /<ScrollArea className="h-full"/);
   assert.match(promptScrollFrameSource, /querySelector\("textarea"\)/);
   assert.match(promptScrollFrameSource, /Math\.max\(frame\.clientHeight, textarea\.scrollHeight\)/);

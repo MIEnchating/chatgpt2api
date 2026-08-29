@@ -12,6 +12,8 @@ type WorkflowReferenceSnapshot = WorkflowTaskContext["references"][number] & {
 export type WorkflowTaskImage = {
   url: string;
   index?: number;
+  title?: string;
+  prompt?: string;
   width?: number;
   height?: number;
   bytes?: number;
@@ -38,6 +40,8 @@ export type WorkflowTask = {
   execution: WorkflowExecutionSnapshot;
   count: number;
   backend_task_ids: string[];
+  completed_units?: number[];
+  unit_errors?: Record<string, string>;
 };
 
 export type WorkflowRunResult = {
@@ -118,19 +122,19 @@ function workflowTaskResults(task: WorkflowTask, endedAt: number): WorkflowRunRe
   return task.images.map((image, fallbackIndex) => {
     const index = image.index ?? fallbackIndex;
     return {
-    id: `${task.id}-${index + 1}`,
-    index,
-    workflowId: task.workflow_id,
-    workflowName: task.workflow_name,
-    prompt: task.prompt,
-    imageUrl: image.url,
-    storageKey: "",
-    width: image.width || 0,
-    height: image.height || 0,
-    bytes: image.bytes || 0,
-    mimeType: workflowTaskImageMimeType(image.url),
-    durationMs,
-    createdAt: endedAt,
+      id: `${task.id}-${index + 1}`,
+      index,
+      workflowId: task.workflow_id,
+      workflowName: task.workflow_name,
+      prompt: image.prompt || task.prompt,
+      imageUrl: image.url,
+      storageKey: "",
+      width: image.width || 0,
+      height: image.height || 0,
+      bytes: image.bytes || 0,
+      mimeType: workflowTaskImageMimeType(image.url),
+      durationMs,
+      createdAt: endedAt,
     };
   });
 }
@@ -202,7 +206,11 @@ export function restoreWorkflowTasks(tasks: CreationTask[]): WorkflowTask[] {
       const first = ordered[0];
       const context = first.workflow_context as WorkflowTaskContext;
       const statuses = ordered.map(creationTaskStatus);
-      const status: WorkflowTask["status"] = statuses.includes("running")
+      const expectedCount = Math.max(
+        ordered.length,
+        ...ordered.map((task) => Number((task.workflow_context as Partial<WorkflowTaskContext> | undefined)?.batch_count) || 0),
+      );
+      const status: WorkflowTask["status"] = statuses.includes("running") || ordered.length < expectedCount
         ? "running"
         : statuses.includes("failed")
           ? "failed"
@@ -218,7 +226,12 @@ export function restoreWorkflowTasks(tasks: CreationTask[]): WorkflowTask[] {
       const images = ordered.flatMap((task, fallbackIndex) => {
         const context = task.workflow_context as Partial<WorkflowTaskContext> | undefined;
         const index = Math.max(0, Number(context?.batch_index || fallbackIndex + 1) - 1);
-        return creationTaskImages(task).map((image) => ({ ...image, index }));
+        return creationTaskImages(task).map((image) => ({
+          ...image,
+          index,
+          ...(context?.series_title ? { title: context.series_title } : {}),
+          ...(context?.prompt ? { prompt: context.prompt } : {}),
+        }));
       });
       const legacyConfig = context.config as WorkflowGenerationConfig & Record<string, unknown>;
       const execution: WorkflowExecutionSnapshot = context.execution || {
@@ -252,8 +265,19 @@ export function restoreWorkflowTasks(tasks: CreationTask[]): WorkflowTask[] {
         api_mode: context.config.api_mode || "images",
         config: context.config,
         execution,
-        count: context.batch_count || context.count || ordered.length,
+        count: expectedCount || context.count || ordered.length,
         backend_task_ids: ordered.map((task) => task.id),
+        completed_units: ordered.flatMap((task, fallbackIndex) => {
+          if (creationTaskStatus(task) === "running") return [];
+          const taskContext = task.workflow_context as Partial<WorkflowTaskContext> | undefined;
+          return [Math.max(1, Number(taskContext?.batch_index || fallbackIndex + 1))];
+        }),
+        unit_errors: Object.fromEntries(ordered.flatMap((task, fallbackIndex) => {
+          if (creationTaskStatus(task) !== "failed") return [];
+          const taskContext = task.workflow_context as Partial<WorkflowTaskContext> | undefined;
+          const index = Math.max(1, Number(taskContext?.batch_index || fallbackIndex + 1));
+          return [[String(index), task.error?.trim() || "任务执行失败"]];
+        })),
       } satisfies WorkflowTask;
     })
     .sort((left, right) => right.started_at - left.started_at);

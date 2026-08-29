@@ -2026,6 +2026,7 @@ func TestRecordGeneratedImagesForPayloadStoresReusableRequestMetadata(t *testing
 		service.ImageVisibilityPublic,
 		map[string]any{
 			"prompt":             "复用这个提示词",
+			"generation_source":  service.ImageGenerationSourceCanvas,
 			"model":              "gpt-image-2",
 			"quality":            "high",
 			"image_resolution":   "2k",
@@ -2049,6 +2050,7 @@ func TestRecordGeneratedImagesForPayloadStoresReusableRequestMetadata(t *testing
 	}
 	item := items[0]
 	if item["prompt"] != "复用这个提示词" ||
+		item["generation_source"] != service.ImageGenerationSourceCanvas ||
 		item["model"] != "gpt-image-2" ||
 		item["quality"] != "high" ||
 		item["resolution_preset"] != "2k" ||
@@ -2080,6 +2082,21 @@ func TestRecordGeneratedImagesForPayloadStoresReusableRequestMetadata(t *testing
 	}
 	if got := res.Header().Get("Content-Type"); got != "image/png" {
 		t.Fatalf("reference Content-Type = %q, want image/png", got)
+	}
+}
+
+func TestImageGenerationSourceFromPayloadPrefersWorkflowContext(t *testing.T) {
+	if got := imageGenerationSourceFromPayload(map[string]any{
+		"generation_source": service.ImageGenerationSourceCanvas,
+		"workflow_context":  map[string]any{"workflow_id": "workflow-1"},
+	}); got != service.ImageGenerationSourceWorkflow {
+		t.Fatalf("workflow source = %q, want %q", got, service.ImageGenerationSourceWorkflow)
+	}
+	if got := imageGenerationSourceFromPayload(map[string]any{"generation_source": service.ImageGenerationSourceCanvas}); got != service.ImageGenerationSourceCanvas {
+		t.Fatalf("canvas source = %q, want %q", got, service.ImageGenerationSourceCanvas)
+	}
+	if got := imageGenerationSourceFromPayload(nil); got != service.ImageGenerationSourceWorkbench {
+		t.Fatalf("default source = %q, want %q", got, service.ImageGenerationSourceWorkbench)
 	}
 }
 

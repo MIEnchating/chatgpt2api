@@ -56,9 +56,9 @@ import { canvasVideoDisplaySize, canvasVideoFileError } from "@/app/canvas/canva
 import { ImageParameterLabel } from "@/app/image/components/image-parameter-ui";
 import { IMAGE_ASPECT_RATIO_OPTIONS, IMAGE_ASPECT_RATIO_PRESET_OPTIONS, IMAGE_QUALITY_OPTIONS } from "@/app/image/image-options";
 import { CanvasResourceMentionTextarea } from "@/app/canvas/canvas-resource-mention-textarea";
-import { CanvasPromptScrollFrame } from "@/app/canvas/canvas-prompt-scroll-frame";
 import { CanvasAudioPromptPanel, CanvasAudioSettingsFields, CanvasPanoramaPromptPanel, CanvasPanoramaViewer } from "@/app/canvas/canvas-special-nodes";
 import { canvasNodeMentionReferences, type CanvasResourceReference } from "@/app/canvas/canvas-resources";
+import { PromptTextareaFrame } from "@/components/generation/prompt-textarea-frame";
 import { ImageLightbox } from "@/components/image-lightbox";
 import {
   VideoSettingsPanel,
@@ -619,9 +619,9 @@ function CanvasVideoPromptPanel({ node, inputs, running, generationBusy, uploadi
   }
 	return <div className="flex h-full min-h-0 flex-col gap-4">
 			  {showPromptEditor ? <div className="overflow-hidden rounded-xl border border-border/90 bg-card/96 shadow-[0_14px_38px_rgba(15,23,42,.14)] backdrop-blur-xl transition-[border-color,box-shadow] focus-within:border-[#8eacf0] focus-within:shadow-[0_14px_38px_rgba(15,23,42,.13),0_0_0_2px_rgba(20,86,240,.07)]">
-			    <CanvasPromptScrollFrame className="h-20 min-h-20">
-			      <textarea value={prompt} onChange={(event) => { setPrompt(event.target.value); onPromptChange(event.target.value); }} onBlur={(event) => onPromptChange(event.target.value, true)} placeholder="描述你想生成的视频" className="min-h-full w-full resize-none overflow-hidden border-0 bg-transparent px-3.5 py-3 text-sm leading-5 outline-none placeholder:text-muted-foreground/55 focus:ring-0" />
-			    </CanvasPromptScrollFrame>
+			    <PromptTextareaFrame className="h-20 min-h-20">
+			      <Textarea value={prompt} onChange={(event) => { setPrompt(event.target.value); onPromptChange(event.target.value); }} onBlur={(event) => onPromptChange(event.target.value, true)} placeholder="描述你想生成的视频" className="min-h-full w-full resize-none overflow-hidden rounded-none border-0 bg-transparent px-3.5 py-3 text-sm leading-5 shadow-none outline-none placeholder:text-muted-foreground/55 focus-visible:ring-0" />
+			    </PromptTextareaFrame>
         <div className="flex min-w-0 items-center justify-between gap-2 border-t border-border/60 px-1.5 py-1"><CanvasInlineModelSelect value={params.generation_video_model} models={modelOptions} label="视频模型" onChange={(model) => onParametersChange(canvasVideoModelPatch(model))} /><CanvasPromptLibrary onSelect={(value) => { setPrompt(value); onPromptChange(value, true); }} /></div>
 			  </div> : null}
 	  <AppScrollArea className="h-0 min-h-40 flex-1" viewportClassName="pr-3">
@@ -732,7 +732,7 @@ function CanvasTextContentPanel({ node, onContentChange, onFontSizeChange }: {
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
       <div className="overflow-hidden rounded-xl border border-border/90 bg-card/96 shadow-[0_14px_38px_rgba(15,23,42,.14)] backdrop-blur-xl transition-[border-color,box-shadow] focus-within:border-[#8eacf0] focus-within:shadow-[0_14px_38px_rgba(15,23,42,.13),0_0_0_2px_rgba(20,86,240,.07)]">
-        <CanvasPromptScrollFrame className="h-48 min-h-32">
+        <PromptTextareaFrame className="h-48 min-h-32">
           <Textarea
             value={content}
             onChange={(event) => updateContent(event.target.value)}
@@ -740,7 +740,7 @@ function CanvasTextContentPanel({ node, onContentChange, onFontSizeChange }: {
             placeholder="输入文字内容"
             className="min-h-full resize-none overflow-hidden border-0 bg-transparent px-3.5 py-3 text-sm leading-6 shadow-none outline-none placeholder:text-muted-foreground/55 focus-visible:ring-0"
           />
-        </CanvasPromptScrollFrame>
+        </PromptTextareaFrame>
         <div className="flex min-w-0 items-center justify-between gap-2 border-t border-border/60 px-1.5 py-1">
           <span className="px-2 text-[11px] tabular-nums text-muted-foreground">{content.length} 字</span>
           <CanvasPromptLibrary onSelect={(value) => updateContent(value, true)} />
@@ -798,7 +798,7 @@ function CanvasNodePromptPanel({ node, mentionReferences, running, generationBus
   return (
     <div className="flex h-full min-h-0 flex-col gap-4">
       <div className="overflow-hidden rounded-xl border border-border/90 bg-card/96 shadow-[0_14px_38px_rgba(15,23,42,.14)] backdrop-blur-xl transition-[border-color,box-shadow] focus-within:border-[#8eacf0] focus-within:shadow-[0_14px_38px_rgba(15,23,42,.13),0_0_0_2px_rgba(20,86,240,.07)]">
-        <CanvasPromptScrollFrame className="h-20 min-h-20">
+        <PromptTextareaFrame className="h-20 min-h-20">
           <CanvasResourceMentionTextarea
             value={prompt}
             references={mentionReferences}
@@ -809,7 +809,7 @@ function CanvasNodePromptPanel({ node, mentionReferences, running, generationBus
             containerClassName="min-h-full"
             className="min-h-full resize-none overflow-hidden border-0 bg-transparent px-3.5 py-3 text-sm leading-5 shadow-none outline-none placeholder:text-muted-foreground/55"
           />
-        </CanvasPromptScrollFrame>
+        </PromptTextareaFrame>
         <div className="flex min-w-0 items-center justify-between gap-2 border-t border-border/60 px-1.5 py-1"><CanvasInlineModelSelect value={node.generation_model?.trim() || imageModel} models={imageModels} label="图片模型" onChange={(generation_model) => onParametersChange({ generation_model })} /><CanvasPromptLibrary onSelect={updatePrompt} /></div>
       </div>
       <AppScrollArea className="h-0 min-h-40 flex-1" viewportClassName="pr-3">
@@ -3540,8 +3540,8 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         const clientTaskID = taskIDs.get(targetID) || `canvas-panorama-${randomID()}`;
         try {
           const submitted = referenceFiles.length
-            ? await createImageEditTask(clientTaskID, referenceFiles, prompt, generationModel || undefined, PANORAMA_IMAGE_SIZE, PANORAMA_IMAGE_SIZE, quality, 1, "private", resolution, outputFormat, outputCompression, stream, partialImages, { apiMode: imageGenerationPreferences.api_mode, responseFormatB64JSON: sourceNode.generation_response_format_b64_json }, undefined, imageRelayTokenName, undefined, undefined, { signal: controller.signal })
-            : await createImageGenerationTask(clientTaskID, prompt, generationModel || undefined, PANORAMA_IMAGE_SIZE, PANORAMA_IMAGE_SIZE, quality, 1, "private", resolution, outputFormat, outputCompression, stream, partialImages, { apiMode: imageGenerationPreferences.api_mode, responseFormatB64JSON: sourceNode.generation_response_format_b64_json }, undefined, imageRelayTokenName, undefined, undefined, { signal: controller.signal });
+            ? await createImageEditTask(clientTaskID, referenceFiles, prompt, generationModel || undefined, PANORAMA_IMAGE_SIZE, PANORAMA_IMAGE_SIZE, quality, 1, "private", resolution, outputFormat, outputCompression, stream, partialImages, { apiMode: imageGenerationPreferences.api_mode, responseFormatB64JSON: sourceNode.generation_response_format_b64_json, generationSource: "canvas" }, undefined, imageRelayTokenName, undefined, undefined, { signal: controller.signal })
+            : await createImageGenerationTask(clientTaskID, prompt, generationModel || undefined, PANORAMA_IMAGE_SIZE, PANORAMA_IMAGE_SIZE, quality, 1, "private", resolution, outputFormat, outputCompression, stream, partialImages, { apiMode: imageGenerationPreferences.api_mode, responseFormatB64JSON: sourceNode.generation_response_format_b64_json, generationSource: "canvas" }, undefined, imageRelayTokenName, undefined, undefined, { signal: controller.signal });
           const serverTaskID = submitted.id || clientTaskID;
           addActiveGenerationTask(activeGeneration, serverTaskID, clientTaskID);
           replaceNodes(nodesRef.current.map((node) => node.id === targetID ? { ...node, task_id: serverTaskID } : node));
@@ -3853,6 +3853,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       apiMode: imageGenerationPreferences.api_mode,
       responseFormatB64JSON: parameters.generation_response_format_b64_json ?? false,
       codexCLICompatibility: parameters.generation_codex_cli_compatibility ?? false,
+      generationSource: "canvas" as const,
     };
     const taskRelayTokenName = imageRelayTokenName.trim() || undefined;
     const taskID = `canvas-${mode}-${randomID()}`;
@@ -4701,7 +4702,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       />
       <Dialog open={shortcutsOpen} onOpenChange={setShortcutsOpen}>
         <DialogContent scrollable={false} className="w-[min(92vw,560px)] gap-0 rounded-lg p-0">
-          <DialogHeader className="border-b px-6 py-5 pr-12">
+          <DialogHeader className="border-b px-6 py-5">
             <DialogTitle>画布快捷键</DialogTitle>
             <DialogDescription>使用键盘和鼠标快速操作画布。</DialogDescription>
           </DialogHeader>

@@ -983,8 +983,43 @@ func TestCanvasDocumentServiceUsesReferenceImageGenerationType(t *testing.T) {
 	}
 
 	document.Nodes[0].GenerationType = "generate"
+	legacySaved, err := saveCanvas(service, "owner", document)
+	if err != nil {
+		t.Fatalf("Save(generate) error = %v", err)
+	}
+	if legacySaved.Nodes[0].GenerationType != "generation" {
+		t.Fatalf("legacy generation type = %q, want generation", legacySaved.Nodes[0].GenerationType)
+	}
+
+	document.Nodes[0].GenerationType = "generate-image"
 	if _, err := saveCanvas(service, "owner", document); !errors.Is(err, ErrInvalidCanvasDocument) {
-		t.Fatalf("Save(generate) error = %v, want ErrInvalidCanvasDocument", err)
+		t.Fatalf("Save(generate-image) error = %v, want ErrInvalidCanvasDocument", err)
+	}
+}
+
+func TestCanvasDocumentServiceLoadsLegacyGenerateType(t *testing.T) {
+	backend := newTestStorageBackend(t)
+	store := jsonDocumentStoreFromBackend(backend)
+	document := DefaultCanvasDocument()
+	document.Nodes = []CanvasNode{{
+		ID: "legacy-generated-image", Type: "image", Width: 340, Height: 240, ScaleX: 1, ScaleY: 1,
+		GenerationType: "generate",
+	}}
+	workspace := canvasWorkspace{
+		Version:         canvasWorkspaceVersion,
+		ActiveProjectID: document.ID,
+		Projects:        []CanvasDocument{document},
+	}
+	if err := store.SaveJSONDocument(canvasWorkspaceName("legacy-owner"), workspace); err != nil {
+		t.Fatalf("SaveJSONDocument() error = %v", err)
+	}
+
+	loaded, err := loadCanvas(NewCanvasDocumentService(backend), "legacy-owner")
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if len(loaded.Nodes) != 1 || loaded.Nodes[0].GenerationType != "generation" {
+		t.Fatalf("legacy generation type was not normalized: %#v", loaded.Nodes)
 	}
 }
 

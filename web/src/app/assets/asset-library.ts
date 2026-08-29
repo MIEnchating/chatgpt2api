@@ -9,7 +9,7 @@ export function managedImageAsset(item: ManagedImage, owned: boolean): MyAsset {
     coverUrl: item.thumbnail_url || item.url,
     url: item.url,
     tags: [],
-    source: "生成图片",
+    source: managedImageSourceLabel(item.generation_source),
     visibility: item.visibility === "public" ? "public" : "private",
     ownerId: item.owner_id,
     ownerName: item.owner_name,
@@ -22,6 +22,12 @@ export function managedImageAsset(item: ManagedImage, owned: boolean): MyAsset {
     createdAt: item.created_at || item.date,
     updatedAt: item.created_at || item.date,
   };
+}
+
+export function managedImageSourceLabel(source: ManagedImage["generation_source"]) {
+  if (source === "workflow") return "工作流";
+  if (source === "canvas") return "无限画布";
+  return "生成图片";
 }
 
 export function mergeAssetLibrary(ownedAssets: MyAsset[], visibleAssets: MyAsset[], managedAssets: MyAsset[]) {

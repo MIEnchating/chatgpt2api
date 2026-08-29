@@ -543,7 +543,7 @@ const CanvasPromptsTab = memo(function CanvasPromptsTab({ onInsert }: { onInsert
 
       <Dialog open={Boolean(detail)} onOpenChange={(open) => !open && setDetail(null)}>
         <DialogContent scrollable={false} className="flex max-h-[min(86dvh,680px)] w-[min(92vw,600px)] flex-col overflow-hidden p-0">
-          <DialogHeader className="shrink-0 border-b border-border px-5 py-4 pr-12">
+          <DialogHeader className="shrink-0 border-b border-border px-5 py-4">
             <DialogTitle className="text-base">{detail?.title || "提示词详情"}</DialogTitle>
             <DialogDescription>{detail ? `${detail.category} · ${detail.sourceLabel}` : ""}</DialogDescription>
           </DialogHeader>
@@ -551,7 +551,7 @@ const CanvasPromptsTab = memo(function CanvasPromptsTab({ onInsert }: { onInsert
             {detail?.preview ? <img src={detail.preview} alt={detail.title} className="mb-4 max-h-72 w-full rounded-md border border-border bg-muted object-contain" /> : null}
             <p className="whitespace-pre-wrap break-words text-sm leading-6">{detail?.prompt}</p>
           </ScrollArea>
-          <DialogFooter className="shrink-0 border-t border-border px-5 py-3">
+          <DialogFooter flush>
             <Button type="button" variant="outline" onClick={() => setDetail(null)}>关闭</Button>
             <Button type="button" onClick={() => { if (detail) insert(detail); setDetail(null); }}><Plus />插入画布</Button>
           </DialogFooter>

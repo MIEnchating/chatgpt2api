@@ -61,6 +61,7 @@ type imageMetadata struct {
 	Deleting          bool
 	PublishedAt       string
 	Prompt            string
+	GenerationSource  string
 	Model             string
 	Quality           string
 	ResolutionPreset  string
@@ -79,6 +80,7 @@ type imageMetadata struct {
 
 type GeneratedImageMetadata struct {
 	Prompt            string
+	GenerationSource  string
 	Model             string
 	Quality           string
 	ResolutionPreset  string
@@ -91,6 +93,25 @@ type GeneratedImageMetadata struct {
 	ReferenceImages   []GeneratedImageReference
 	SharePromptParams bool
 	ShareReferences   bool
+}
+
+const (
+	ImageGenerationSourceWorkbench = "image-workbench"
+	ImageGenerationSourceWorkflow  = "workflow"
+	ImageGenerationSourceCanvas    = "canvas"
+)
+
+func NormalizeImageGenerationSource(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case ImageGenerationSourceWorkbench:
+		return ImageGenerationSourceWorkbench
+	case ImageGenerationSourceWorkflow:
+		return ImageGenerationSourceWorkflow
+	case ImageGenerationSourceCanvas:
+		return ImageGenerationSourceCanvas
+	default:
+		return ""
+	}
 }
 
 type GeneratedImageReference struct {
@@ -957,6 +978,7 @@ func normalizeImageMetadata(raw map[string]any) imageMetadata {
 		Deleting:          boolMetadataValue(raw["deleting"]),
 		PublishedAt:       strings.TrimSpace(toString(raw["published_at"])),
 		Prompt:            strings.TrimSpace(toString(raw["prompt"])),
+		GenerationSource:  NormalizeImageGenerationSource(toString(raw["generation_source"])),
 		Model:             strings.TrimSpace(toString(raw["model"])),
 		Quality:           strings.TrimSpace(toString(raw["quality"])),
 		ResolutionPreset:  NormalizeImageResolutionPreset(toString(raw["resolution_preset"])),
@@ -1024,6 +1046,9 @@ func (s *ImageService) writeImageMetadataForRefOnce(ref imageFileRef, ownerID, o
 		metadata := metadataValues[0]
 		if prompt := strings.TrimSpace(metadata.Prompt); prompt != "" {
 			meta.Prompt = prompt
+		}
+		if source := NormalizeImageGenerationSource(metadata.GenerationSource); source != "" {
+			meta.GenerationSource = source
 		}
 		if model := strings.TrimSpace(metadata.Model); model != "" {
 			meta.Model = model
@@ -1109,6 +1134,9 @@ func (s *ImageService) writeImageMetadata(rel string, meta imageMetadata) error 
 	}
 	if meta.Prompt != "" {
 		value["prompt"] = meta.Prompt
+	}
+	if meta.GenerationSource != "" {
+		value["generation_source"] = meta.GenerationSource
 	}
 	if meta.Model != "" {
 		value["model"] = meta.Model
@@ -1655,6 +1683,9 @@ func addImageMetadataFields(item map[string]any, meta imageMetadata, optionsValu
 	}
 	item["share_prompt_parameters"] = meta.SharePromptParams
 	item["share_reference_images"] = meta.ShareReferences
+	if meta.GenerationSource != "" {
+		item["generation_source"] = meta.GenerationSource
+	}
 	if options.IncludeReusableFields {
 		if meta.Prompt != "" {
 			item["prompt"] = meta.Prompt

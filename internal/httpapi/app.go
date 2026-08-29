@@ -2333,6 +2333,7 @@ func (a *App) recordGeneratedImagesForPayload(identity service.Identity, urls []
 	}
 	err := a.images.RecordGeneratedImageMetadata(urls, ownerID, identityDisplayName(identity), visibility, service.GeneratedImageMetadata{
 		Prompt:            util.Clean(payload["prompt"]),
+		GenerationSource:  imageGenerationSourceFromPayload(payload),
 		Model:             firstNonEmpty(util.Clean(payload["model"]), a.defaultImageModel()),
 		Quality:           util.Clean(payload["quality"]),
 		ResolutionPreset:  util.Clean(payload["image_resolution"]),
@@ -2346,6 +2347,16 @@ func (a *App) recordGeneratedImagesForPayload(identity service.Identity, urls []
 	})
 	a.scheduleImageStorageCleanup()
 	return err
+}
+
+func imageGenerationSourceFromPayload(payload map[string]any) string {
+	if len(util.StringMap(payload["workflow_context"])) > 0 {
+		return service.ImageGenerationSourceWorkflow
+	}
+	if source := service.NormalizeImageGenerationSource(util.Clean(payload["generation_source"])); source != "" {
+		return source
+	}
+	return service.ImageGenerationSourceWorkbench
 }
 
 func (a *App) startImageStorageCleaner(ctx context.Context, interval time.Duration) {

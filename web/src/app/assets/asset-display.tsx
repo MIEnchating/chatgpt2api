@@ -7,7 +7,7 @@ import { assetMediaSummary } from "@/app/assets/asset-media";
 import { AuthenticatedImage } from "@/components/authenticated-image";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import type { MyAsset, MyAssetKind } from "@/lib/my-assets";
 import { resolveMediaURL } from "@/services/file-storage";
@@ -42,7 +42,7 @@ export function AssetPreview({ asset, onClose, onCopy, onDownload }: { asset: My
   const { coverURL, mediaURL } = useResolvedAssetURLs(asset);
   return (
     <Dialog open={Boolean(asset)} onOpenChange={(value) => !value && onClose()}>
-      <DialogContent scrollable={false} className="flex max-h-[90dvh] w-[min(94vw,760px)] max-w-none flex-col overflow-hidden">
+      <DialogContent scrollable={false} className="flex max-h-[90dvh] w-[min(94vw,760px)] max-w-none flex-col gap-4 overflow-hidden">
         <DialogHeader><DialogTitle>{asset?.title}</DialogTitle><DialogDescription>{asset ? `${assetKindLabel(asset.kind)} · ${asset.source || "我的素材"}` : "素材详情"}</DialogDescription></DialogHeader>
         <ScrollArea className="min-h-0 flex-1" viewportClassName="pr-3">
           <div className="space-y-4">
@@ -50,7 +50,7 @@ export function AssetPreview({ asset, onClose, onCopy, onDownload }: { asset: My
             {asset ? <div className="grid gap-2 text-sm sm:grid-cols-2"><Info label="媒体信息" value={assetMediaSummary(asset)} /><Info label="来源" value={asset.source || "未标注"} /><Info label="可见范围" value={asset.visibility === "public" ? "公开" : "个人"} />{asset.ownerName ? <Info label="所有者" value={asset.ownerName} /> : null}{asset.note ? <Info label="备注" value={asset.note} className="sm:col-span-2" /> : null}</div> : null}
           </div>
         </ScrollArea>
-        <div className="flex justify-end gap-2 border-t border-border pt-4">{asset?.kind === "text" ? <Button type="button" variant="outline" onClick={onCopy}><Copy />复制文本</Button> : asset ? <Button type="button" variant="outline" onClick={onDownload}><Download />下载{assetKindLabel(asset.kind)}</Button> : null}<Button type="button" onClick={onClose}>关闭</Button></div>
+        <DialogFooter>{asset?.kind === "text" ? <Button type="button" variant="outline" onClick={onCopy}><Copy />复制文本</Button> : asset ? <Button type="button" variant="outline" onClick={onDownload}><Download />下载{assetKindLabel(asset.kind)}</Button> : null}<Button type="button" onClick={onClose}>关闭</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   );

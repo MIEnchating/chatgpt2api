@@ -7,6 +7,7 @@ const appShellSource = readFileSync(new URL("../src/app/app-shell.tsx", import.m
 const assetsSource = readFileSync(new URL("../src/app/assets/page.tsx", import.meta.url), "utf8");
 const usersSource = readFileSync(new URL("../src/app/users/page.tsx", import.meta.url), "utf8");
 const rbacSource = readFileSync(new URL("../src/app/rbac/page.tsx", import.meta.url), "utf8");
+const managementPageSource = readFileSync(new URL("../src/components/management-page.tsx", import.meta.url), "utf8");
 const pageHeaderSource = readFileSync(new URL("../src/components/page-header.tsx", import.meta.url), "utf8");
 const globalStylesSource = readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
 
@@ -18,8 +19,11 @@ test("every page shares the same full-width application shell", () => {
 
 test("navigation and page action rows share one vertical spacing token", () => {
   assert.match(globalStylesSource, /--page-section-gap: 1rem/);
-  for (const pageSource of [source, assetsSource, usersSource, rbacSource]) {
+  for (const pageSource of [source, managementPageSource]) {
     assert.match(pageSource, /flex h-full min-h-0 flex-col gap-\[var\(--page-section-gap\)\] overflow-hidden/);
+  }
+  for (const pageSource of [assetsSource, usersSource, rbacSource]) {
+    assert.match(pageSource, /<ManagementPage/);
   }
   assert.match(pageHeaderSource, /min-w-0 shrink-0 flex-wrap/);
 });

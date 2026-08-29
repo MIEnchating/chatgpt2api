@@ -42,6 +42,22 @@ test("managed image projection preserves visibility, owner, and ownership", () =
   assert.equal(canManageAsset(asset), false);
 });
 
+test("managed image projection uses the persisted generation source", () => {
+  const image = {
+    name: "result.png",
+    path: "2026/01/result.png",
+    visibility: "private",
+    date: "2026-01-01",
+    size: 1024,
+    url: "/images/result.png",
+    created_at: now,
+  };
+  assert.equal(managedImageAsset({ ...image, generation_source: "workflow" }, true).source, "工作流");
+  assert.equal(managedImageAsset({ ...image, generation_source: "canvas" }, true).source, "无限画布");
+  assert.equal(managedImageAsset({ ...image, generation_source: "image-workbench" }, true).source, "生成图片");
+  assert.equal(managedImageAsset(image, true).source, "生成图片");
+});
+
 test("asset storage key collection covers assets and canvas nodes", () => {
   const keys = collectAssetStorageKeys({
     assets: [

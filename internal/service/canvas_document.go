@@ -986,6 +986,10 @@ func normalizeCanvasNode(node CanvasNode) (CanvasNode, error) {
 	node.GenerationStatus = strings.ToLower(strings.TrimSpace(node.GenerationStatus))
 	node.GenerationError = strings.TrimSpace(node.GenerationError)
 	node.GenerationType = strings.ToLower(strings.TrimSpace(node.GenerationType))
+	// Canvas documents saved before the generation contract rename used "generate".
+	if node.GenerationType == "generate" {
+		node.GenerationType = "generation"
+	}
 	node.GenerationVideoModel = strings.TrimSpace(node.GenerationVideoModel)
 	node.GenerationVideoSize = strings.ToLower(strings.TrimSpace(node.GenerationVideoSize))
 	node.GenerationVideoResolution = strings.ToLower(strings.TrimSpace(node.GenerationVideoResolution))

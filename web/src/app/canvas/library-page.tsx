@@ -371,7 +371,7 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
       </ScrollArea>
       <Dialog open={agentStarterOpen} onOpenChange={(open) => !busy && setAgentStarterOpen(open)}>
         <DialogContent className="w-[min(94vw,900px)] max-w-none gap-5 sm:p-7">
-          <DialogHeader className="pr-8">
+          <DialogHeader>
             <DialogTitle className="flex items-center gap-2"><Bot className="size-5 text-[#1456f0]" />Agent</DialogTitle>
             <DialogDescription>描述创作目标，Agent 将创建画布并直接开始执行。</DialogDescription>
           </DialogHeader>

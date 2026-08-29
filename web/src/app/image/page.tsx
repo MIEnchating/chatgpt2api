@@ -5625,7 +5625,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                   ) : null}
                 </div>
               </ScrollArea>
-              <DialogFooter className="border-t border-stone-100 px-6 py-4">
+              <DialogFooter flush>
                 <Button
                   variant="outline"
                   disabled={editReferenceUploadPendingCount > 0}

@@ -35,7 +35,7 @@ type WorkflowGenerationConfig struct {
 	Timeout        string `json:"timeout"`
 	SystemPrompt   string `json:"system_prompt,omitempty"`
 	PromptTemplate string `json:"prompt_template"`
-	NegativePrompt string `json:"negative_prompt,omitempty"`
+	NegativePrompt string `json:"negative_prompt"`
 }
 
 type WorkflowSeriesConfig struct {

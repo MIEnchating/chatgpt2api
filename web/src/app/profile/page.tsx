@@ -273,7 +273,7 @@ function CustomRelayConfigDialog({
             <Input type="password" value={apiKey} onChange={(event) => setAPIKey(event.target.value)} placeholder={status?.has_key ? "已配置，留空保持原 Key" : "请输入 API Key"} autoComplete="new-password" />
           </label>
         </div>
-        <DialogFooter className="border-t border-border pt-4">
+        <DialogFooter>
           {status?.configured ? <Button type="button" variant={confirmDelete ? "destructive" : "outline"} className="sm:mr-auto" disabled={isSaving} onClick={() => void remove()}>
             <Trash2 className="size-4" />{confirmDelete ? "确认删除" : "删除配置"}
           </Button> : null}

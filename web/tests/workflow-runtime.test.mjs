@@ -138,6 +138,19 @@ test("prompt rendering formats all variable types and appends negative prompt", 
   );
 });
 
+test("prompt rendering tolerates omitted empty fields from persisted workflows", () => {
+  const workflow = createBlankWorkflow(models, preferences);
+  workflow.variables = [
+    { id: "subject", key: "subject", label: "主题", type: "text", required: true, default_value: "", options: [] },
+  ];
+  workflow.config.prompt_template = "为 {{subject}} 生成海报";
+  delete workflow.config.negative_prompt;
+  assert.equal(renderWorkflowPrompt(workflow, { subject: "咖啡" }), "为 咖啡 生成海报");
+
+  delete workflow.config.prompt_template;
+  assert.equal(renderWorkflowPrompt(workflow, { subject: "咖啡" }), "");
+});
+
 test("normalization ignores removed DAG fields", () => {
   const workflow = normalizeWorkflow({
     id: "current",
@@ -257,6 +270,7 @@ test("workflow creation tasks restore as one ordered image batch", () => {
   assert.deepEqual(restored[0].images[0], {
     url: "/images/result.png",
     index: 0,
+    prompt: "生成两张商品海报",
     width: 1024,
     height: 1024,
     bytes: 2048,
@@ -288,12 +302,43 @@ test("workflow batch reports failure after all child tasks finish", () => {
   assert.equal(restored[0].error, "额度不足");
   assert.equal(restored[0].image_urls[0], "data:image/webp;base64,AAAA");
   assert.equal(restored[0].images[0].index, 0);
+  assert.deepEqual(restored[0].completed_units, [1, 2]);
+  assert.deepEqual(restored[0].unit_errors, { 2: "额度不足" });
   const start = workflowTaskStartEvent(restored[0]);
   assert.equal(start.taskId, "batch");
   assert.equal(start.count, 2);
   const failure = workflowTaskFailureEvent(restored[0]);
   assert.equal(failure.images[0].index, 0);
   assert.equal(failure.images[0].mimeType, "image/webp");
+});
+
+test("workflow batch stays running until every expected child is persisted", () => {
+  const restored = restoreWorkflowTasks([{
+    id: "child-1",
+    status: "success",
+    mode: "generation",
+    created_at: "2026-08-26T08:00:00Z",
+    updated_at: "2026-08-26T08:01:00Z",
+    data: [{ url: "/images/first.png" }],
+    workflow_context: {
+      workflow_id: "workflow-1",
+      workflow_name: "三图工作流",
+      prompt: "第一张",
+      inputs: {},
+      references: [],
+      config: { quality: "auto", size: "auto", count: "1", api_mode: "images", timeout: "600", prompt_template: "生成" },
+      count: 3,
+      batch_task_id: "series-run",
+      batch_index: 1,
+      batch_count: 3,
+    },
+  }]);
+
+  assert.equal(restored.length, 1);
+  assert.equal(restored[0].id, "series-run");
+  assert.equal(restored[0].count, 3);
+  assert.equal(restored[0].status, "running");
+  assert.deepEqual(restored[0].completed_units, [1]);
 });
 
 test("workflow normalization removes legacy personal transport settings", () => {

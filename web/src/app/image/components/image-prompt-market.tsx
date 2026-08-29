@@ -737,7 +737,7 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
                 {selectedPrompt ? <img src={selectedPrompt.preview} alt={selectedPrompt.title} className="max-h-[70dvh] size-full object-contain" /> : null}
               </div>
               <div className="flex min-h-0 flex-col p-5 pr-6 sm:p-6 sm:pr-7">
-                <DialogTitle className="pr-8 text-xl leading-7">{selectedPrompt?.title}</DialogTitle>
+                <DialogTitle className="pr-20 text-xl leading-7">{selectedPrompt?.title}</DialogTitle>
                 <DialogDescription className="mt-1.5">{selectedPrompt?.source}</DialogDescription>
                 <ScrollArea className="mt-5 min-h-0 flex-1" viewportClassName="pr-3">
                   <p className="whitespace-pre-wrap break-words text-sm leading-7 text-foreground">{selectedPrompt?.prompt}</p>

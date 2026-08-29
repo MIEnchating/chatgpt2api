@@ -692,6 +692,7 @@ func TestImageServiceRecordGeneratedImageMetadataDoesNotGenerateThumbnail(t *tes
 	service := NewImageService(config)
 	service.RecordGeneratedImageMetadata([]string{rel}, " linuxdo:123 ", " alice ", ImageVisibilityPublic, GeneratedImageMetadata{
 		Prompt:            "metadata is immediately available",
+		GenerationSource:  ImageGenerationSourceWorkflow,
 		Model:             "gpt-image-2",
 		RequestedSize:     "1024x1024",
 		SharePromptParams: true,
@@ -703,7 +704,7 @@ func TestImageServiceRecordGeneratedImageMetadataDoesNotGenerateThumbnail(t *tes
 		t.Fatalf("ListImages() = %#v", list)
 	}
 	item := items[0]
-	if item["owner_name"] != "alice" || item["visibility"] != ImageVisibilityPublic || item["prompt"] != "metadata is immediately available" || item["model"] != "gpt-image-2" || item["requested_size"] != "1024x1024" {
+	if item["owner_name"] != "alice" || item["visibility"] != ImageVisibilityPublic || item["prompt"] != "metadata is immediately available" || item["generation_source"] != ImageGenerationSourceWorkflow || item["model"] != "gpt-image-2" || item["requested_size"] != "1024x1024" {
 		t.Fatalf("metadata-only item = %#v", item)
 	}
 

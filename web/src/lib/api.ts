@@ -349,6 +349,7 @@ export type ImageTaskToolOptions = {
   codexCLICompatibility?: boolean;
   systemPrompt?: string;
   workflowContext?: unknown;
+  generationSource?: "image-workbench" | "workflow" | "canvas";
 };
 
 export type ManagedImage = {
@@ -358,6 +359,7 @@ export type ManagedImage = {
   owner_name?: string;
   visibility: ImageVisibility;
   prompt?: string;
+  generation_source?: "image-workbench" | "workflow" | "canvas";
   model?: ImageModel;
   quality?: ImageQuality;
   date: string;
@@ -891,6 +893,9 @@ export async function createImageGenerationTask(
       ...(toolOptions?.workflowContext
         ? { workflow_context: toolOptions.workflowContext }
         : {}),
+      ...(toolOptions?.generationSource
+        ? { generation_source: toolOptions.generationSource }
+        : {}),
       ...(relayTokenGroup ? { token_group: relayTokenGroup } : {}),
       ...(relayTokenName ? { token_name: relayTokenName } : {}),
       ...(frontendConversationId
@@ -1131,6 +1136,9 @@ export async function createImageEditTask(
   if (toolOptions?.workflowContext) {
     formData.append("workflow_context", JSON.stringify(toolOptions.workflowContext));
   }
+  if (toolOptions?.generationSource) {
+    formData.append("generation_source", toolOptions.generationSource);
+  }
   if (relayTokenGroup) {
     formData.append("token_group", relayTokenGroup);
   }
@@ -1195,6 +1203,22 @@ export async function cancelCreationTask(
       timeout: 20_000,
     },
   );
+}
+
+export async function deleteCreationTasks(
+  ids: string[],
+  requestOptions?: CreationTaskRequestOptions,
+) {
+  return httpRequest<{
+    deleted_ids: string[];
+    active_ids: string[];
+    missing_ids: string[];
+  }>("/api/creation-tasks", {
+    ...creationTaskRequestAuth(requestOptions),
+    method: "DELETE",
+    body: { ids },
+    timeout: 20_000,
+  });
 }
 
 export async function fetchSettingsConfig() {

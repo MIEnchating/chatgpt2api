@@ -1,15 +1,15 @@
 "use client";
 
 import { useCallback, useEffect, useState, type FormEvent } from "react";
-import { ChevronDown, ChevronLeft, ChevronRight, Copy, Eye, ListFilter, LoaderCircle, RefreshCw, Search, X } from "lucide-react";
+import { ChevronDown, Copy, Eye, ListFilter, LoaderCircle, RefreshCw, Search, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { AuthenticatedImage } from "@/components/authenticated-image";
 import { DateRangeFilter } from "@/components/date-range-filter";
 import { ImageLightbox } from "@/components/image-lightbox";
+import { ManagementPage, ManagementPagination, ManagementPanel, ManagementToolbar } from "@/components/management-page";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -372,8 +372,6 @@ function LogsContent() {
   const errorCount = items.filter((item) => logLevel(item) === "error" || statusBadgeVariant(item) === "danger").length;
   const warningCount = items.filter((item) => logLevel(item) === "warning").length;
   const slowRequestCount = items.filter((item) => durationMs(item) >= 3000).length;
-  const startIndex = items.length === 0 ? 0 : (safePage - 1) * pageSize + 1;
-  const endIndex = Math.min(safePage * pageSize, items.length);
 
   const loadLogs = useCallback(async (nextQuery: SystemLogFilters) => {
     setIsLoading(true);
@@ -450,9 +448,9 @@ function LogsContent() {
   }, [isDefaultLogViewReady, loadLogs, query]);
 
   return (
-    <section data-logs-layout className="flex h-full min-h-0 flex-col overflow-hidden">
-      <Card className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <CardHeader className="shrink-0 border-b border-border p-3 sm:p-4">
+    <ManagementPage data-logs-layout>
+      <ManagementPanel className="flex-1">
+        <ManagementToolbar>
           <form className="space-y-3" onSubmit={handleSearch}>
             <div className="flex flex-col gap-2 xl:flex-row xl:items-center">
               <div className="relative min-w-[220px] flex-1">
@@ -510,14 +508,12 @@ function LogsContent() {
                 <Button
                   type="button"
                   variant="outline"
-                  size="icon"
-                  className="size-10 shrink-0 rounded-lg"
-                  aria-label="刷新日志"
-                  data-tooltip="刷新日志"
-                  disabled={isLoading}
                   onClick={() => void loadLogs(query)}
+                  disabled={isLoading}
+                  className="h-10 flex-1 rounded-lg px-3 xl:flex-none"
                 >
                   <RefreshCw className={`size-4 ${isLoading ? "animate-spin" : ""}`} />
+                  刷新
                 </Button>
               </div>
             </div>
@@ -556,7 +552,7 @@ function LogsContent() {
               </div>
             </div>
           </form>
-        </CardHeader>
+        </ManagementToolbar>
 
         <div className="flex min-h-11 shrink-0 flex-wrap items-center gap-x-5 gap-y-2 border-b border-border bg-muted/15 px-4 py-2 text-xs text-muted-foreground sm:px-5">
           <div className="flex items-baseline gap-1.5">
@@ -581,7 +577,6 @@ function LogsContent() {
           </div>
         </div>
 
-        <CardContent className="flex min-h-0 flex-1 flex-col p-0">
           <ScrollArea className="min-h-0 flex-1">
             <Table className="min-w-[1040px] table-fixed">
               <TableHeader className="sticky top-0 z-10 shadow-sm">
@@ -665,36 +660,24 @@ function LogsContent() {
               </TableBody>
             </Table>
           </ScrollArea>
-          <div className="flex shrink-0 flex-col gap-3 border-t border-border px-4 py-3 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
-            <span>显示第 {startIndex} - {endIndex} 条，共 {items.length} 条</span>
-            <div className="flex items-center gap-2">
-              <span className="mr-1 whitespace-nowrap">{safePage} / {pageCount} 页</span>
-              <Select
-                value={String(pageSize)}
-                onValueChange={(value) => {
-                  setPageSize(Number(value));
-                  setPage(1);
-                }}
-              >
-                <SelectTrigger className="h-9 w-[94px] shrink-0 rounded-lg"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  {pageSizeOptions.map((option) => <SelectItem key={option} value={String(option)}>{option} / 页</SelectItem>)}
-                </SelectContent>
-              </Select>
-              <Button variant="outline" size="icon" className="size-9 rounded-lg" aria-label="上一页" disabled={safePage <= 1 || isLoading} onClick={() => setPage((value) => Math.max(1, value - 1))}>
-              <ChevronLeft className="size-4" />
-              </Button>
-              <Button variant="outline" size="icon" className="size-9 rounded-lg" aria-label="下一页" disabled={safePage >= pageCount || isLoading} onClick={() => setPage((value) => Math.min(pageCount, value + 1))}>
-                <ChevronRight className="size-4" />
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+          <ManagementPagination
+            page={safePage}
+            totalPages={pageCount}
+            totalItems={items.length}
+            pageSize={pageSize}
+            pageSizeOptions={pageSizeOptions}
+            disabled={isLoading}
+            onPageChange={setPage}
+            onPageSizeChange={(value) => {
+              setPageSize(value);
+              setPage(1);
+            }}
+          />
+      </ManagementPanel>
 
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
         <DialogContent scrollable={false} className="flex max-h-[90vh] w-[min(94vw,980px)] grid-rows-none flex-col gap-0 overflow-hidden rounded-2xl p-0">
-          <DialogHeader className="border-b border-border px-6 py-5 pr-12">
+          <DialogHeader className="border-b border-border px-6 py-5">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0 space-y-2">
                 <DialogTitle>日志详情</DialogTitle>
@@ -808,7 +791,7 @@ function LogsContent() {
         onOpenChange={setLightboxOpen}
         onIndexChange={setLightboxIndex}
       />
-    </section>
+    </ManagementPage>
   );
 }
 

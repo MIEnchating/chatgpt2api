@@ -9,7 +9,7 @@ import { canvasInsertPayloadFromMyAsset } from "@/app/canvas/agent/canvas-agent-
 import type { CanvasInsertAssetPayload } from "@/app/canvas/agent/canvas-agent-types";
 import { AuthenticatedImage } from "@/components/authenticated-image";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { fetchManagedImages } from "@/lib/api";
@@ -107,7 +107,7 @@ export function CanvasAssetPicker({ open, session, onInsert, onClose }: {
     <>
       <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
         <DialogContent scrollable={false} className="flex max-h-[90dvh] w-[min(94vw,900px)] max-w-none flex-col overflow-hidden p-0">
-          <DialogHeader className="shrink-0 border-b border-border px-5 py-4 pr-12 sm:px-6">
+          <DialogHeader className="shrink-0 border-b border-border px-5 py-4 sm:px-6">
             <DialogTitle>选择素材</DialogTitle>
             <DialogDescription>从我的素材或公开素材库插入文本、图片、视频和音频。</DialogDescription>
           </DialogHeader>
@@ -135,11 +135,11 @@ export function CanvasAssetPicker({ open, session, onInsert, onClose }: {
             )}
           </ScrollArea>
           {filtered.length > PAGE_SIZE ? (
-            <div className="flex shrink-0 items-center justify-center gap-2 border-t border-border px-5 py-3 text-xs text-muted-foreground">
+            <DialogFooter flush className="flex-row justify-center text-xs text-muted-foreground sm:justify-center">
               <Button type="button" variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((value) => value - 1)}>上一页</Button>
               <span>第 {page} / {totalPages} 页</span>
               <Button type="button" variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((value) => value + 1)}>下一页</Button>
-            </div>
+            </DialogFooter>
           ) : null}
         </DialogContent>
       </Dialog>

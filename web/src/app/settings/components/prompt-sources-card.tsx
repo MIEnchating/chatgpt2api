@@ -253,7 +253,7 @@ export function PromptSourcesCard() {
       <Dialog open={drawerOpen} onOpenChange={setDrawerOpen}>
         <DialogContent
           showCloseButton={false}
-          className="top-0 right-0 bottom-0 left-auto grid h-dvh max-h-none w-full max-w-[680px] translate-x-0 translate-y-0 grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden rounded-none border-y-0 border-r-0 bg-background p-0 sm:p-0"
+          className="top-0 right-0 bottom-0 left-auto grid h-dvh max-h-none w-full max-w-[680px] translate-x-0 translate-y-0 grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden rounded-none border-y-0 border-r-0 bg-background p-0"
         >
           <div className="flex min-h-16 items-center gap-3 border-b border-border px-4 sm:px-6">
             <DialogClose className="flex size-9 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground" aria-label="关闭">

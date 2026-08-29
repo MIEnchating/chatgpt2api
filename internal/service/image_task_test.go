@@ -2124,6 +2124,112 @@ func TestImageTaskServiceDoesNotPersistTerminalPreviewBase64(t *testing.T) {
 	}
 }
 
+func TestImageTaskServiceDeleteTasksPersistsOwnerScopedTerminalDeletion(t *testing.T) {
+	backend := newTestStorageBackend(t)
+	handler := func(context.Context, Identity, map[string]any) (map[string]any, error) {
+		return map[string]any{"data": []map[string]any{{"url": "https://example.test/image.png"}}}, nil
+	}
+	svc := NewStoredImageTaskService(backend, handler, handler, handler, func() int { return 30 })
+	t.Cleanup(svc.Close)
+	alice := Identity{ID: "alice"}
+	bob := Identity{ID: "bob"}
+
+	for _, item := range []struct {
+		identity Identity
+		id       string
+	}{{alice, "alice-done"}, {bob, "bob-done"}} {
+		if _, err := svc.SubmitGenerationWithOptions(context.Background(), item.identity, item.id, "draw", "gpt-image-2", "1024x1024", "high", "", 1, nil, nil, ImageOutputOptions{}, ImageToolOptions{}); err != nil {
+			t.Fatalf("SubmitGenerationWithOptions(%s) error = %v", item.id, err)
+		}
+		waitForTaskStatus(t, svc, item.identity, item.id, TaskStatusSuccess)
+	}
+	svc.mu.Lock()
+	now := util.NowISO()
+	svc.tasks[taskKey("alice", "alice-running")] = map[string]any{
+		"id": "alice-running", "owner_id": "alice", "status": TaskStatusRunning,
+		"mode": "generate", "model": "gpt-image-2", "count": 1,
+		"revision": 1, "created_at": now, "updated_at": now,
+	}
+	svc.mu.Unlock()
+
+	result, err := svc.DeleteTasks(alice, []string{"alice-done", "alice-running", "bob-done", "missing"})
+	if err != nil {
+		t.Fatalf("DeleteTasks() error = %v", err)
+	}
+	if got := util.AsStringSlice(result["deleted_ids"]); !reflect.DeepEqual(got, []string{"alice-done"}) {
+		t.Fatalf("deleted_ids = %#v", got)
+	}
+	if got := util.AsStringSlice(result["missing_ids"]); !reflect.DeepEqual(got, []string{"bob-done", "missing"}) {
+		t.Fatalf("missing_ids = %#v", got)
+	}
+	if got := util.AsStringSlice(result["active_ids"]); !reflect.DeepEqual(got, []string{"alice-running"}) {
+		t.Fatalf("active_ids = %#v", got)
+	}
+
+	reloaded := NewStoredImageTaskService(backend, handler, handler, handler, func() int { return 30 })
+	t.Cleanup(reloaded.Close)
+	if got := reloaded.ListTasks(alice, []string{"alice-done"}); len(got["items"].([]map[string]any)) != 0 {
+		t.Fatalf("deleted task returned after reload: %#v", got)
+	}
+	if got := reloaded.ListTasks(bob, []string{"bob-done"}); len(got["items"].([]map[string]any)) != 1 {
+		t.Fatalf("other owner's task was deleted: %#v", got)
+	}
+	if got := reloaded.ListTasks(alice, []string{"alice-running"}); len(got["items"].([]map[string]any)) != 1 {
+		t.Fatalf("active task was deleted: %#v", got)
+	}
+}
+
+func TestImageTaskServiceDeletionTombstonePreventsConcurrentResurrection(t *testing.T) {
+	databaseURL := "sqlite:///" + filepath.ToSlash(filepath.Join(t.TempDir(), "deleted-tasks.db"))
+	backendA, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend(A) error = %v", err)
+	}
+	t.Cleanup(func() { _ = backendA.Close() })
+	backendB, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend(B) error = %v", err)
+	}
+	t.Cleanup(func() { _ = backendB.Close() })
+
+	serviceA := newImageTaskService(backendA, nil, nil, nil, func() int { return 30 })
+	now := util.NowISO()
+	serviceA.mu.Lock()
+	serviceA.tasks[taskKey("owner", "task-a")] = map[string]any{
+		"id": "task-a", "owner_id": "owner", "status": TaskStatusSuccess,
+		"mode": "generate", "model": "gpt-image-2", "count": 1,
+		"revision": 1, "created_at": now, "updated_at": now,
+	}
+	err = serviceA.saveLocked()
+	serviceA.mu.Unlock()
+	if err != nil {
+		t.Fatalf("seed task save error = %v", err)
+	}
+	serviceB := newImageTaskService(backendB, nil, nil, nil, func() int { return 30 })
+
+	if _, err := serviceA.DeleteTasks(Identity{ID: "owner"}, []string{"task-a"}); err != nil {
+		t.Fatalf("DeleteTasks() error = %v", err)
+	}
+	serviceB.mu.Lock()
+	serviceB.tasks[taskKey("owner", "task-b")] = map[string]any{
+		"id": "task-b", "owner_id": "owner", "status": TaskStatusSuccess,
+		"mode": "generate", "model": "gpt-image-2", "count": 1,
+		"revision": 1, "created_at": now, "updated_at": now,
+	}
+	err = serviceB.saveLocked()
+	serviceB.mu.Unlock()
+	if err != nil {
+		t.Fatalf("concurrent save error = %v", err)
+	}
+
+	observer := newImageTaskService(backendA, nil, nil, nil, func() int { return 30 })
+	got := observer.ListTasks(Identity{ID: "owner"}, []string{"task-a", "task-b"})
+	items := got["items"].([]map[string]any)
+	if len(items) != 1 || util.Clean(items[0]["id"]) != "task-b" {
+		t.Fatalf("deleted task was resurrected: %#v", got)
+	}
+}
+
 func newTestImageTaskService(t *testing.T, generation ImageTaskHandler, edit ImageTaskHandler, chat ImageTaskHandler, retentionGetter func() int, limitGetters ...func() int) *ImageTaskService {
 	t.Helper()
 	return NewStoredImageTaskService(newTestStorageBackend(t), generation, edit, chat, retentionGetter, limitGetters...)

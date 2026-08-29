@@ -7,8 +7,6 @@ import {
   ArrowUpDown,
   Ban,
   CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
   KeyRound,
   LoaderCircle,
   Plus,
@@ -21,10 +19,9 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { PageHeader } from "@/components/page-header";
+import { ManagementPage, ManagementPagination, ManagementPanel, ManagementToolbar } from "@/components/management-page";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
@@ -434,27 +431,10 @@ function UsersContent() {
   }, [items]);
 
   const safePage = Math.min(page, totalPages);
-  const startIndex = total === 0 ? 0 : (safePage - 1) * Number(pageSize) + 1;
-  const endIndex = Math.min(safePage * Number(pageSize), total);
   const hasActiveFilters = searchInput.trim() !== "" || providerFilter !== "all" || statusFilter !== "all";
   const pageUserIds = useMemo(() => items.map((item) => item.id), [items]);
-  const selectedCount = selectedUserIds.size;
   const allPageSelected = pageUserIds.length > 0 && pageUserIds.every((id) => selectedUserIds.has(id));
   const somePageSelected = pageUserIds.some((id) => selectedUserIds.has(id));
-  const paginationItems = useMemo(() => {
-    const nextItems: (number | "...")[] = [];
-    const start = Math.max(1, safePage - 1);
-    const end = Math.min(totalPages, safePage + 1);
-
-    if (start > 1) nextItems.push(1);
-    if (start > 2) nextItems.push("...");
-    for (let current = start; current <= end; current += 1) nextItems.push(current);
-    if (end < totalPages - 1) nextItems.push("...");
-    if (end < totalPages) nextItems.push(totalPages);
-
-    return nextItems;
-  }, [safePage, totalPages]);
-
   const setItemPending = (id: string, isPending: boolean) => {
     setPendingIds((current) => {
       const next = new Set(current);
@@ -650,30 +630,10 @@ function UsersContent() {
   };
 
   return (
-    <section data-users-layout className="flex h-full min-h-0 flex-col gap-[var(--page-section-gap)] overflow-hidden">
-      <PageHeader
-        actions={
-          <>
-            <Button variant="outline" onClick={() => void loadUsers()} disabled={isLoading} className="h-10 rounded-lg">
-              <RefreshCw className={`size-4 ${isLoading ? "animate-spin" : ""}`} />
-              刷新
-            </Button>
-            <Button onClick={openCreateDialog} className="h-10 rounded-lg">
-              <Plus className="size-4" />
-              创建用户
-            </Button>
-          </>
-        }
-      />
-
-      <Card className="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <CardContent className="flex min-h-0 flex-1 flex-col p-0">
-          <div className="flex flex-col gap-3 border-b border-border px-5 py-4">
-            <div className="flex items-center justify-between text-sm text-muted-foreground">
-              <span>共 {total} 个用户</span>
-              <span>{selectedCount > 0 ? `已选择 ${selectedCount} 个` : "未选择用户"}</span>
-            </div>
-            <div className="grid gap-2 lg:grid-cols-[minmax(18rem,1fr)_160px_160px_auto]">
+    <ManagementPage data-users-layout>
+      <ManagementPanel className="flex-1">
+          <ManagementToolbar>
+            <div data-user-toolbar className="grid gap-2 xl:grid-cols-[minmax(18rem,1fr)_160px_160px_auto_auto]">
               <div className="relative">
                 <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
@@ -738,8 +698,18 @@ function UsersContent() {
                 <X className="size-4" />
                 清除
               </Button>
+              <div className="flex shrink-0 items-center justify-end gap-2">
+                <Button variant="outline" onClick={() => void loadUsers()} disabled={isLoading} className="h-10 rounded-lg">
+                  <RefreshCw className={`size-4 ${isLoading ? "animate-spin" : ""}`} />
+                  刷新
+                </Button>
+                <Button onClick={openCreateDialog} className="h-10 rounded-lg">
+                  <Plus className="size-4" />
+                  创建用户
+                </Button>
+              </div>
             </div>
-          </div>
+          </ManagementToolbar>
           <ScrollArea className="min-h-0 flex-1">
             <Table className="min-w-[1320px]">
               <TableHeader className="sticky top-0 z-10">
@@ -878,71 +848,20 @@ function UsersContent() {
             </div>
           ) : null}
           {!isLoading && items.length === 0 ? <div className="px-6 py-14 text-center text-sm text-stone-500">{hasActiveFilters ? "没有匹配的用户" : "暂无用户"}</div> : null}
-          <div className="border-t border-border px-4 py-4">
-            <div className="flex items-center justify-center gap-3 overflow-x-auto whitespace-nowrap">
-              <div className="shrink-0 text-sm text-muted-foreground">
-                显示第 {startIndex} - {endIndex} 条，共 {total} 条
-              </div>
-              <span className="shrink-0 text-sm leading-none text-muted-foreground">
-                {safePage} / {totalPages} 页
-              </span>
-              <Select
-                value={pageSize}
-                onValueChange={(value) => {
-                  setPageSize(value);
-                  setPage(1);
-                }}
-              >
-                <SelectTrigger className="h-10 w-[108px] shrink-0 rounded-lg">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {userPageSizeOptions.map((option) => (
-                    <SelectItem key={option} value={option}>
-                      {option} / 页
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Button
-                variant="outline"
-                size="icon"
-                className="size-10 shrink-0 rounded-lg"
-                disabled={safePage <= 1 || isLoading}
-                onClick={() => setPage((current) => Math.max(1, current - 1))}
-              >
-                <ChevronLeft className="size-4" />
-              </Button>
-              {paginationItems.map((item, index) =>
-                item === "..." ? (
-                  <span key={`ellipsis-${index}`} className="px-1 text-sm text-muted-foreground">
-                    ...
-                  </span>
-                ) : (
-                  <Button
-                    key={item}
-                    variant={item === safePage ? "default" : "outline"}
-                    className="h-10 min-w-10 shrink-0 rounded-lg px-3"
-                    disabled={isLoading}
-                    onClick={() => setPage(item)}
-                  >
-                    {item}
-                  </Button>
-                ),
-              )}
-              <Button
-                variant="outline"
-                size="icon"
-                className="size-10 shrink-0 rounded-lg"
-                disabled={safePage >= totalPages || isLoading}
-                onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
-              >
-                <ChevronRight className="size-4" />
-              </Button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+          <ManagementPagination
+            page={safePage}
+            totalPages={totalPages}
+            totalItems={total}
+            pageSize={Number(pageSize)}
+            pageSizeOptions={userPageSizeOptions.map(Number)}
+            disabled={isLoading}
+            onPageChange={setPage}
+            onPageSizeChange={(value) => {
+              setPageSize(String(value));
+              setPage(1);
+            }}
+          />
+      </ManagementPanel>
 
       <Dialog open={isCreateDialogOpen} onOpenChange={closeCreateDialog}>
         <DialogContent className="rounded-2xl p-6 sm:max-w-2xl">
@@ -1133,7 +1052,7 @@ function UsersContent() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </section>
+    </ManagementPage>
   );
 }
 

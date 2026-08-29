@@ -12,7 +12,7 @@ import { CanvasImageParameterPopover } from "@/app/canvas/canvas-image-parameter
 import { CanvasInlineModelSelect } from "@/app/canvas/canvas-inline-model-select";
 import { CanvasPromptLibrary } from "@/app/canvas/canvas-prompt-library";
 import { CanvasGenerationFooter } from "@/app/canvas/canvas-generation-footer";
-import { CanvasPromptScrollFrame } from "@/app/canvas/canvas-prompt-scroll-frame";
+import { PromptTextareaFrame } from "@/components/generation/prompt-textarea-frame";
 import {
   AUDIO_FORMAT_OPTIONS,
   AUDIO_VOICE_OPTIONS,
@@ -47,9 +47,9 @@ export function CanvasAudioPromptPanel({ node, models, audioReferences, relayTok
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
       <div className="overflow-hidden rounded-xl border border-border/90 bg-card/96 shadow-[0_14px_38px_rgba(15,23,42,.14)]">
-        <CanvasPromptScrollFrame className="h-32 min-h-24">
+        <PromptTextareaFrame className="h-32 min-h-24">
           <Textarea value={prompt} onChange={(event) => { setPrompt(event.target.value); onPromptChange(event.target.value); }} onBlur={() => onPromptChange(prompt, true)} rows={6} placeholder="输入需要合成的旁白、对白或音频内容" className="min-h-full resize-none overflow-hidden rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0" />
-        </CanvasPromptScrollFrame>
+        </PromptTextareaFrame>
         <div className="flex min-w-0 items-center justify-between gap-2 border-t border-border/60 px-1.5 py-1">
           <CanvasInlineModelSelect value={model} models={models} label="音频模型" onChange={(value) => onChange({ generation_audio_model: value })} />
           <CanvasPromptLibrary onSelect={(value) => { setPrompt(value); onPromptChange(value, true); }} />
@@ -114,9 +114,9 @@ export function CanvasPanoramaPromptPanel({ node, imageModel, imageModels, runni
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
       <div className="overflow-hidden rounded-xl border border-border/90 bg-card/96 shadow-[0_14px_38px_rgba(15,23,42,.14)]">
-        <CanvasPromptScrollFrame className="h-36 min-h-28">
+        <PromptTextareaFrame className="h-36 min-h-28">
           <Textarea value={prompt} onChange={(event) => onPromptChange(event.target.value)} onBlur={(event) => onPromptChange(event.target.value, true)} rows={8} placeholder="描述一个完整的 360 度环境，包括前后左右、地面与天空" className="min-h-full resize-none overflow-hidden rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0" />
-        </CanvasPromptScrollFrame>
+        </PromptTextareaFrame>
         <div className="flex min-w-0 items-center justify-between gap-2 border-t border-border/60 px-1.5 py-1"><CanvasInlineModelSelect value={selectedModel} models={imageModels} label="全景图模型" onChange={(value) => onChange({ generation_model: value, generation_size: "2:1" })} /><CanvasPromptLibrary onSelect={(value) => onPromptChange(value, true)} /></div>
       </div>
       <AppScrollArea className="h-0 min-h-40 flex-1" viewportClassName="pr-3">

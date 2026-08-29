@@ -9,14 +9,15 @@ import {
   Search,
   ShieldCheck,
   Trash2,
+  Undo2,
+  Users,
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { PageHeader } from "@/components/page-header";
+import { ManagementPage, ManagementPanel, ManagementToolbar } from "@/components/management-page";
 import { PermissionEditor } from "@/components/permission-editor";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
@@ -86,6 +87,7 @@ function RBACContent() {
   const [isCreating, setIsCreating] = useState(false);
   const [deletingRole, setDeletingRole] = useState<ManagedRole | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [pendingRole, setPendingRole] = useState<ManagedRole | null>(null);
 
   useEffect(() => {
     selectedRoleIdRef.current = selectedRoleId;
@@ -145,6 +147,17 @@ function RBACContent() {
       || roleDescription.trim() !== (selectedRole?.description || "")
       || !sameStringSet(selectedMenuPaths, selectedRole?.menu_paths)
       || !sameStringSet(selectedApiPermissions, selectedRole?.api_permissions));
+
+  const requestRoleSelection = (role: ManagedRole) => {
+    if (role.id === selectedRoleId) {
+      return;
+    }
+    if (isDirty) {
+      setPendingRole(role);
+      return;
+    }
+    applySelectedRole(role);
+  };
 
   const handleSave = async () => {
     if (!selectedRole || isSaving) {
@@ -220,48 +233,39 @@ function RBACContent() {
   };
 
   return (
-    <section data-rbac-layout className="flex h-full min-h-0 flex-col gap-[var(--page-section-gap)] overflow-hidden">
-      <PageHeader
-        actions={
-          <>
-            <Button variant="outline" onClick={() => void loadRBAC()} disabled={isLoading} className="h-10 rounded-lg">
-              <RefreshCw className={cn("size-4", isLoading ? "animate-spin" : "")} />
-              刷新
-            </Button>
-            <Button onClick={() => setIsCreateDialogOpen(true)} disabled={isLoading} className="h-10 rounded-lg">
-              <Plus className="size-4" />
-              创建角色
-            </Button>
-            <Button
-              onClick={() => void handleSave()}
-              disabled={!selectedRole || !isDirty || isSaving || isLoading}
-              className="h-10 rounded-lg"
-            >
-              {isSaving ? <LoaderCircle className="size-4 animate-spin" /> : <Save className="size-4" />}
-              保存
-            </Button>
-          </>
-        }
-      />
-
-      <div className="grid min-h-0 flex-1 gap-5 xl:grid-cols-[360px_1fr] xl:overflow-hidden">
-        <Card className="flex min-h-0 flex-col overflow-hidden xl:max-h-[calc(100dvh-11rem)]">
-          <CardContent className="flex min-h-0 flex-1 flex-col p-0">
-            <div className="border-b border-border px-5 py-4">
-              <div className="mb-3 flex items-center justify-between text-sm text-muted-foreground">
-                <span>角色 {filteredRoles.length} / {roles.length}</span>
-                <ShieldCheck className="size-4" />
-              </div>
-              <div className="relative">
+    <ManagementPage data-rbac-layout>
+      <div className="grid min-h-0 flex-1 gap-[var(--page-section-gap)] overflow-y-auto xl:grid-cols-[320px_minmax(0,1fr)] xl:overflow-hidden">
+        <ManagementPanel className="min-h-[420px] xl:min-h-0">
+            <ManagementToolbar className="flex items-center gap-2">
+              <div className="relative min-w-0 flex-1">
                 <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   value={searchText}
                   onChange={(event) => setSearchText(event.target.value)}
-                  placeholder="搜索角色名称或描述"
+                  placeholder="搜索角色"
                   className="h-10 rounded-lg pl-9"
                 />
               </div>
-            </div>
+            <Button
+              variant="outline"
+              size="icon"
+              title="刷新角色权限"
+              onClick={() => void loadRBAC()}
+              disabled={isLoading || isDirty}
+              className="size-10 rounded-lg"
+            >
+              <RefreshCw className={cn("size-4", isLoading ? "animate-spin" : "")} />
+            </Button>
+            <Button
+              size="icon"
+              title="创建角色"
+              onClick={() => setIsCreateDialogOpen(true)}
+              disabled={isLoading}
+              className="size-10 rounded-lg"
+            >
+              <Plus className="size-4" />
+            </Button>
+            </ManagementToolbar>
             <ScrollArea className="min-h-0 flex-1">
               {isLoading ? (
                 <div className="flex min-h-[320px] items-center justify-center">
@@ -279,10 +283,11 @@ function RBACContent() {
                         key={role.id}
                         type="button"
                         className={cn(
-                          "block w-full border-b border-border px-5 py-4 text-left transition hover:bg-muted/50",
-                          active ? "bg-[#edf4ff] dark:bg-sky-950/20" : "",
+                          "relative block w-full border-b border-border px-5 py-4 text-left transition hover:bg-muted/50",
+                          active ? "bg-primary/[0.045] before:absolute before:inset-y-3 before:left-0 before:w-0.5 before:rounded-r before:bg-primary" : "",
                         )}
-                        onClick={() => applySelectedRole(role)}
+                        aria-pressed={active}
+                        onClick={() => requestRoleSelection(role)}
                       >
                         <div className="flex min-w-0 items-start justify-between gap-3">
                           <div className="min-w-0">
@@ -295,12 +300,14 @@ function RBACContent() {
                             </Badge>
                           ) : null}
                         </div>
-                        <div className="mt-3 flex flex-wrap items-center gap-2">
-                          <span className="rounded-md bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                            {permissionCountLabel(role)}
-                          </span>
-                          <span className="rounded-md bg-muted px-2 py-0.5 text-xs text-muted-foreground">
-                            {role.user_count || 0} 用户
+                        {role.description ? (
+                          <p className="mt-2 line-clamp-2 text-xs leading-5 text-muted-foreground">{role.description}</p>
+                        ) : null}
+                        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                          <span>{permissionCountLabel(role)}</span>
+                          <span className="flex items-center gap-1">
+                            <Users className="size-3.5" />
+                            {role.user_count || 0}
                           </span>
                         </div>
                       </button>
@@ -308,12 +315,10 @@ function RBACContent() {
                   })
                 : null}
             </ScrollArea>
-          </CardContent>
-        </Card>
+        </ManagementPanel>
 
-        <Card className="flex min-h-0 flex-col overflow-hidden">
-          <CardContent className="flex min-h-0 flex-1 flex-col p-0">
-            <div className="flex flex-col gap-4 border-b border-border px-5 py-4">
+        <ManagementPanel className="min-h-[940px] lg:min-h-[720px] xl:min-h-0">
+            <ManagementToolbar className="flex flex-col gap-3">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div className="min-w-0">
                   <div className="flex min-w-0 items-center gap-2">
@@ -336,36 +341,64 @@ function RBACContent() {
                       已同步
                     </Badge>
                   )}
+                  {isDirty ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="icon"
+                      title="撤销未保存修改"
+                      className="size-9 rounded-lg"
+                      disabled={isSaving}
+                      onClick={() => applySelectedRole(selectedRole)}
+                    >
+                      <Undo2 className="size-4" />
+                    </Button>
+                  ) : null}
                   <Button
                     type="button"
                     variant="outline"
-                    className="h-9 rounded-lg border-rose-200 px-3 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                    size="icon"
+                    title={selectedRole?.builtin ? "内置角色不能删除" : selectedRole?.user_count ? "请先解除该角色绑定的用户" : "删除角色"}
+                    className="size-9 rounded-lg border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700"
                     disabled={!selectedRole || Boolean(selectedRole.builtin) || Boolean(selectedRole.user_count)}
                     onClick={() => selectedRole ? setDeletingRole(selectedRole) : null}
                   >
                     <Trash2 className="size-4" />
-                    删除
+                  </Button>
+                  <Button
+                    onClick={() => void handleSave()}
+                    disabled={!selectedRole || !isDirty || isSaving || isLoading}
+                    className="h-9 rounded-lg"
+                  >
+                    {isSaving ? <LoaderCircle className="size-4 animate-spin" /> : <Save className="size-4" />}
+                    保存
                   </Button>
                 </div>
               </div>
-              <div className="grid gap-3 lg:grid-cols-[240px_1fr]">
-                <Input
-                  value={roleName}
-                  onChange={(event) => setRoleName(event.target.value)}
-                  placeholder="角色名称"
-                  disabled={!selectedRole || isLoading}
-                  className="h-10 rounded-lg"
-                />
-                <Input
-                  value={roleDescription}
-                  onChange={(event) => setRoleDescription(event.target.value)}
-                  placeholder="角色描述"
-                  disabled={!selectedRole || isLoading}
-                  className="h-10 rounded-lg"
-                />
+              <div className="grid gap-3 lg:grid-cols-[240px_minmax(0,1fr)]">
+                <label className="grid gap-1.5 text-xs font-medium text-muted-foreground">
+                  角色名称
+                  <Input
+                    value={roleName}
+                    onChange={(event) => setRoleName(event.target.value)}
+                    placeholder="角色名称"
+                    disabled={!selectedRole || isLoading || isSaving}
+                    className="h-10 rounded-lg text-foreground"
+                  />
+                </label>
+                <label className="grid gap-1.5 text-xs font-medium text-muted-foreground">
+                  角色说明
+                  <Input
+                    value={roleDescription}
+                    onChange={(event) => setRoleDescription(event.target.value)}
+                    placeholder="说明角色职责或适用范围"
+                    disabled={!selectedRole || isLoading || isSaving}
+                    className="h-10 rounded-lg text-foreground"
+                  />
+                </label>
               </div>
-            </div>
-            <div className="min-h-0 flex-1 overflow-hidden p-5">
+            </ManagementToolbar>
+            <div className="min-h-0 flex-1 overflow-hidden">
               {isLoading ? (
                 <div className="flex min-h-[420px] items-center justify-center">
                   <LoaderCircle className="size-5 animate-spin text-stone-400" />
@@ -378,7 +411,7 @@ function RBACContent() {
                   selectedApiPermissions={selectedApiPermissions}
                   onMenuPathsChange={setSelectedMenuPaths}
                   onApiPermissionsChange={setSelectedApiPermissions}
-                  className="lg:grid-cols-[300px_1fr]"
+                  disabled={isSaving}
                 />
               ) : (
                 <div className="flex min-h-[420px] items-center justify-center text-sm text-muted-foreground">
@@ -386,12 +419,11 @@ function RBACContent() {
                 </div>
               )}
             </div>
-          </CardContent>
-        </Card>
+        </ManagementPanel>
       </div>
 
       <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-        <DialogContent className="rounded-2xl p-6">
+        <DialogContent className="rounded-lg p-6">
           <DialogHeader className="gap-2">
             <DialogTitle>创建角色</DialogTitle>
             <DialogDescription className="text-sm leading-6">新角色会复制默认用户权限，创建后可继续调整。</DialogDescription>
@@ -402,7 +434,7 @@ function RBACContent() {
               value={createName}
               onChange={(event) => setCreateName(event.target.value)}
               placeholder="例如：运营人员"
-              className="h-11 rounded-xl"
+              className="h-11 rounded-lg"
             />
           </div>
           <div className="space-y-2">
@@ -411,14 +443,14 @@ function RBACContent() {
               value={createDescription}
               onChange={(event) => setCreateDescription(event.target.value)}
               placeholder="角色职责或使用范围"
-              className="h-11 rounded-xl"
+              className="h-11 rounded-lg"
             />
           </div>
           <DialogFooter>
-            <Button type="button" variant="secondary" className="h-10 rounded-xl px-5" onClick={() => setIsCreateDialogOpen(false)} disabled={isCreating}>
+            <Button type="button" variant="secondary" className="h-10 rounded-lg px-5" onClick={() => setIsCreateDialogOpen(false)} disabled={isCreating}>
               取消
             </Button>
-            <Button type="button" className="h-10 rounded-xl px-5" onClick={() => void handleCreate()} disabled={isCreating}>
+            <Button type="button" className="h-10 rounded-lg px-5" onClick={() => void handleCreate()} disabled={isCreating}>
               {isCreating ? <LoaderCircle className="size-4 animate-spin" /> : <Plus className="size-4" />}
               创建
             </Button>
@@ -427,7 +459,7 @@ function RBACContent() {
       </Dialog>
 
       <Dialog open={Boolean(deletingRole)} onOpenChange={(open) => (!open ? setDeletingRole(null) : null)}>
-        <DialogContent className="rounded-2xl p-6">
+        <DialogContent className="rounded-lg p-6">
           <DialogHeader className="gap-2">
             <DialogTitle>删除角色</DialogTitle>
             <DialogDescription className="text-sm leading-6">
@@ -435,13 +467,13 @@ function RBACContent() {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button type="button" variant="secondary" className="h-10 rounded-xl px-5" onClick={() => setDeletingRole(null)} disabled={isDeleting}>
+            <Button type="button" variant="secondary" className="h-10 rounded-lg px-5" onClick={() => setDeletingRole(null)} disabled={isDeleting}>
               取消
             </Button>
             <Button
               type="button"
               variant="destructive"
-              className="h-10 rounded-xl px-5"
+              className="h-10 rounded-lg px-5"
               onClick={() => void handleDelete()}
               disabled={isDeleting}
             >
@@ -451,7 +483,34 @@ function RBACContent() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </section>
+
+      <Dialog open={Boolean(pendingRole)} onOpenChange={(open) => (!open ? setPendingRole(null) : null)}>
+        <DialogContent className="rounded-lg p-6">
+          <DialogHeader className="gap-2">
+            <DialogTitle>放弃未保存的修改？</DialogTitle>
+            <DialogDescription className="text-sm leading-6">
+              当前角色的名称、说明或权限已经修改。切换到「{pendingRole?.name}」后，这些修改不会保留。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="secondary" className="h-10 rounded-lg px-5" onClick={() => setPendingRole(null)}>
+              继续编辑
+            </Button>
+            <Button
+              type="button"
+              variant="destructive"
+              className="h-10 rounded-lg px-5"
+              onClick={() => {
+                applySelectedRole(pendingRole);
+                setPendingRole(null);
+              }}
+            >
+              放弃并切换
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </ManagementPage>
   );
 }
 

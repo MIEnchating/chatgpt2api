@@ -272,7 +272,7 @@ export function renderWorkflowPrompt(
   values: Record<string, string>,
 ) {
   const formatted = Object.fromEntries(
-    workflow.variables.map((variable) => {
+    (workflow.variables || []).map((variable) => {
       const value = values[variable.key] ?? variable.default_value ?? "";
       return [
         variable.key,
@@ -280,10 +280,10 @@ export function renderWorkflowPrompt(
       ];
     }),
   );
-  const prompt = workflow.config.prompt_template
+  const prompt = String(workflow.config?.prompt_template || "")
     .replace(/{{\s*([\w.-]+)\s*}}/g, (_match, key: string) => formatted[key] || "")
     .trim();
-  const negativePrompt = workflow.config.negative_prompt.trim();
+  const negativePrompt = String(workflow.config?.negative_prompt || "").trim();
   return negativePrompt ? `${prompt}\n\n避免：${negativePrompt}` : prompt;
 }
 

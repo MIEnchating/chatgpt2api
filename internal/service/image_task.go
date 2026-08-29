@@ -78,6 +78,7 @@ type ImageTaskService struct {
 	userConcurrentLimit  func() int
 	userRPMLimit         func() int
 	tasks                map[string]map[string]any
+	deletedTasks         map[string]string
 	loadErr              error
 	cancels              map[string]context.CancelFunc
 	ownerSubmitTimes     map[string][]time.Time
@@ -143,6 +144,7 @@ func newImageTaskService(store storage.JSONDocumentBackend, generation ImageTask
 		chat:              chat,
 		retentionGetter:   retentionGetter,
 		tasks:             map[string]map[string]any{},
+		deletedTasks:      map[string]string{},
 		cancels:           map[string]context.CancelFunc{},
 		ownerSubmitTimes:  map[string][]time.Time{},
 		ownerRunningUnits: map[string]int{},
@@ -423,6 +425,63 @@ func (s *ImageTaskService) CancelTask(identity Identity, clientTaskID string) (m
 		cancel()
 	}
 	return result, nil
+}
+
+// DeleteTasks permanently removes terminal tasks owned by the caller. Active
+// tasks are deliberately preserved so clearing history cannot interrupt work.
+func (s *ImageTaskService) DeleteTasks(identity Identity, taskIDs []string) (map[string]any, error) {
+	owner := ownerID(identity)
+	requested := make([]string, 0, len(taskIDs))
+	seen := make(map[string]struct{}, len(taskIDs))
+	for _, id := range taskIDs {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		requested = append(requested, id)
+	}
+	if len(requested) == 0 {
+		return map[string]any{"deleted_ids": []string{}, "active_ids": []string{}, "missing_ids": []string{}}, nil
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.ensureLoadedLocked(); err != nil {
+		return nil, ImageTaskLoadError{Err: err}
+	}
+	if err := s.refreshTasksLocked(); err != nil {
+		return nil, ImageTaskLoadError{Err: err}
+	}
+
+	deleted := make([]string, 0, len(requested))
+	active := make([]string, 0)
+	missing := make([]string, 0)
+	deletedAt := util.NowISO()
+	for _, id := range requested {
+		key := taskKey(owner, id)
+		task := s.tasks[key]
+		if task == nil {
+			missing = append(missing, id)
+			continue
+		}
+		if isActiveTaskStatus(util.Clean(task["status"])) {
+			active = append(active, id)
+			continue
+		}
+		delete(s.tasks, key)
+		s.deletedTasks[key] = deletedAt
+		deleted = append(deleted, id)
+	}
+	if len(deleted) > 0 {
+		if err := s.saveWithRetryLocked(); err != nil {
+			return nil, ImageTaskPersistenceError{Err: err, TaskStarted: true}
+		}
+	}
+	return map[string]any{"deleted_ids": deleted, "active_ids": active, "missing_ids": missing}, nil
 }
 
 func (s *ImageTaskService) submit(ctx context.Context, identity Identity, clientTaskID, mode string, payload map[string]any) (map[string]any, error) {
@@ -997,6 +1056,18 @@ func (s *ImageTaskService) loadLocked() (map[string]map[string]any, error) {
 		return map[string]map[string]any{}, err
 	}
 	if obj, ok := raw.(map[string]any); ok {
+		for _, item := range util.AsMapSlice(obj["deleted_tasks"]) {
+			id := util.Clean(item["id"])
+			owner := util.Clean(item["owner_id"])
+			if id == "" || owner == "" {
+				continue
+			}
+			key := taskKey(owner, id)
+			deletedAt := firstNonEmpty(util.Clean(item["deleted_at"]), util.NowISO())
+			if current := s.deletedTasks[key]; current == "" || parseTaskTime(deletedAt).After(parseTaskTime(current)) {
+				s.deletedTasks[key] = deletedAt
+			}
+		}
 		raw = obj["tasks"]
 	}
 	tasks := map[string]map[string]any{}
@@ -1069,7 +1140,10 @@ func (s *ImageTaskService) loadLocked() (map[string]map[string]any, error) {
 		if outputType := util.Clean(task["output_type"]); outputType != "" {
 			normalized["output_type"] = outputType
 		}
-		tasks[taskKey(owner, id)] = normalized
+		key := taskKey(owner, id)
+		if _, deleted := s.deletedTasks[key]; !deleted {
+			tasks[key] = normalized
+		}
 	}
 	return tasks, nil
 }
@@ -1233,7 +1307,19 @@ func (s *ImageTaskService) persistLocked() error {
 		items = append(items, item)
 	}
 	sort.Slice(items, func(i, j int) bool { return util.Clean(items[i]["updated_at"]) > util.Clean(items[j]["updated_at"]) })
-	value := map[string]any{"tasks": items}
+	deletedItems := make([]map[string]any, 0, len(s.deletedTasks))
+	for key, deletedAt := range s.deletedTasks {
+		separator := strings.LastIndex(key, ":")
+		if separator < 1 || separator == len(key)-1 {
+			continue
+		}
+		owner, id := key[:separator], key[separator+1:]
+		deletedItems = append(deletedItems, map[string]any{"owner_id": owner, "id": id, "deleted_at": deletedAt})
+	}
+	sort.Slice(deletedItems, func(i, j int) bool {
+		return util.Clean(deletedItems[i]["deleted_at"]) > util.Clean(deletedItems[j]["deleted_at"])
+	})
+	value := map[string]any{"tasks": items, "deleted_tasks": deletedItems}
 	if s.store != nil {
 		return s.store.SaveJSONDocument(s.docName, value)
 	}
@@ -1423,6 +1509,12 @@ func (s *ImageTaskService) cleanupLocked() bool {
 			removed = true
 		}
 	}
+	for key, deletedAt := range s.deletedTasks {
+		if parseTaskTime(deletedAt).Before(cutoff) {
+			delete(s.deletedTasks, key)
+			removed = true
+		}
+	}
 	return removed
 }
 
@@ -1574,6 +1666,9 @@ func mergeImageTaskMetadata(payload map[string]any, metadata map[string]any) {
 	mergeTaskRoutingMetadata(payload, metadata)
 	if workflowContext := util.StringMap(metadata["workflow_context"]); len(workflowContext) > 0 {
 		payload["workflow_context"] = workflowContext
+	}
+	if source := NormalizeImageGenerationSource(util.Clean(metadata["generation_source"])); source != "" {
+		payload["generation_source"] = source
 	}
 	if apiMode := strings.ToLower(strings.TrimSpace(util.Clean(metadata["api_mode"]))); apiMode == "images" || apiMode == "responses" || apiMode == "chat" {
 		payload["api_mode"] = apiMode

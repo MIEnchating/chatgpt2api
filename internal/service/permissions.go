@@ -177,6 +177,11 @@ func APIPermissionKey(method, path string) string {
 func MatchAPIPermissionKey(method, path string) (string, bool) {
 	method = strings.ToUpper(strings.TrimSpace(method))
 	path = normalizePermissionPath(path)
+	// Clearing creation history is part of the existing creation-task write
+	// permission, so previously saved roles do not need a migration.
+	if method == "DELETE" && path == "/api/creation-tasks" {
+		method = "POST"
+	}
 	// Reference-asset upload belongs to the authenticated creation workflow.
 	if method == "POST" && path == "/api/profile/image-conversation-assets" {
 		path = "/api/creation-tasks"

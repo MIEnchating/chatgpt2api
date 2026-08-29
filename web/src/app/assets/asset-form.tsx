@@ -127,7 +127,7 @@ export function AssetForm({ open, asset, onClose, onSave }: { open: boolean; ass
   return (
     <Dialog open={open} onOpenChange={(value) => !value && !busy && onClose()}>
       <DialogContent scrollable={false} className="flex max-h-[92dvh] w-[min(94vw,900px)] max-w-none flex-col overflow-hidden p-0">
-        <DialogHeader className="shrink-0 border-b border-border px-5 py-4 pr-12 sm:px-6">
+        <DialogHeader className="shrink-0 border-b border-border px-5 py-4 sm:px-6">
           <DialogTitle>{asset ? "编辑素材" : "新增素材"}</DialogTitle>
           <DialogDescription>保存可重复使用的文本、图片、视频或音频。</DialogDescription>
         </DialogHeader>
@@ -167,7 +167,7 @@ export function AssetForm({ open, asset, onClose, onSave }: { open: boolean; ass
             <AssetFormPreview asset={previewAsset} />
           </div>
         </ScrollArea>
-        <DialogFooter className="shrink-0 border-t border-border px-5 py-4 sm:px-6">
+        <DialogFooter flush>
           <Button type="button" variant="outline" disabled={busy} onClick={onClose}>取消</Button>
           <Button type="button" disabled={busy} onClick={submit}>保存</Button>
         </DialogFooter>
