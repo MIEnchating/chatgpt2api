@@ -34,6 +34,10 @@ test("asset filters and cards use the full content width", () => {
   assert.match(assetDisplaySource, /interactive-card-trigger[\s\S]*?aspect-\[4\/3\][\s\S]*?<\/button>\s*<div className="p-3\.5">/);
   assert.match(assetDisplaySource, /interactive-card/);
   assert.match(assetDisplaySource, /selection-control/);
+  assert.match(assetDisplaySource, /<OverflowMarqueeText[^>]+play="always"[^>]+delayMs=\{1500\}/);
+  assert.match(assetDisplaySource, /data-asset-preview-scroll[^>]+overflow-y-auto/);
+  assert.doesNotMatch(assetDisplaySource, /\$\{assetKindLabel\(asset\.kind\)\} · \$\{asset\.source/);
+  assert.match(assetDisplaySource, />复制提示词</);
   assert.match(globalStylesSource, /--selectable-selected-surface:/);
   assert.match(globalStylesSource, /@layer components \{[\s\S]*?\.card-surface[\s\S]*?\n\}\n\n\.interactive-card/);
   assert.match(globalStylesSource, /\.interactive-card\[data-selected="true"\]/);

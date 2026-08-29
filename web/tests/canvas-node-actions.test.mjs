@@ -84,8 +84,8 @@ test("canvas node chrome supports compact details, collapsible tools, and overfl
   assert.match(actionsSource, /grid-rows-\[0fr\]/);
   assert.match(actionsSource, /grid-rows-\[1fr\]/);
   assert.match(engineSource, /data-canvas-no-pan className="pointer-events-auto mt-16 hidden shrink-0 sm:block"/);
-  assert.ok((engineSource.match(/<HoverMarqueeText/g) || []).length >= 2);
-  assert.match(globalStylesSource, /@keyframes canvas-title-marquee/);
+  assert.ok((engineSource.match(/<OverflowMarqueeText/g) || []).length >= 2);
+  assert.match(globalStylesSource, /@keyframes overflow-marquee/);
 });
 
 test("the canvas side panel animates without unmounting and uses the material library label", () => {

@@ -2,6 +2,7 @@ import { AlertCircle, ChevronRight, ImagePlus, LoaderCircle, RefreshCw, Settings
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent as ReactWheelEvent } from "react";
 
 import { AuthenticatedImage } from "@/components/authenticated-image";
+import { OverflowMarqueeText } from "@/components/overflow-marquee-text";
 import {
   activeCanvasConnectionPath,
   canvasConnectionPath,
@@ -41,44 +42,6 @@ function formatGenerationElapsed(milliseconds: number) {
   const minutes = Math.floor(seconds / 60);
   const remainder = seconds % 60;
   return `${String(minutes).padStart(2, "0")}:${String(remainder).padStart(2, "0")}`;
-}
-
-function HoverMarqueeText({ text, className }: { text: string; className?: string }) {
-  const containerRef = useRef<HTMLSpanElement | null>(null);
-  const contentRef = useRef<HTMLSpanElement | null>(null);
-  const [overflow, setOverflow] = useState(0);
-  const [hovered, setHovered] = useState(false);
-  const measure = useCallback(() => {
-    const container = containerRef.current;
-    const content = contentRef.current;
-    if (!container || !content) return;
-    setOverflow(Math.max(0, Math.ceil(content.scrollWidth - container.clientWidth)));
-  }, []);
-
-  useEffect(() => {
-    measure();
-    const container = containerRef.current;
-    if (!container) return;
-    const observer = new ResizeObserver(measure);
-    observer.observe(container);
-    return () => observer.disconnect();
-  }, [measure, text]);
-
-  const animate = hovered && overflow > 0;
-  return (
-    <span ref={containerRef} className={cn("block min-w-0 overflow-hidden whitespace-nowrap", className)} onMouseEnter={() => { measure(); setHovered(true); }} onMouseLeave={() => setHovered(false)}>
-      <span
-        ref={contentRef}
-        className="block w-max min-w-full"
-        style={animate ? {
-          "--canvas-title-marquee-offset": `-${overflow}px`,
-          animation: `canvas-title-marquee ${Math.max(4, overflow / 24 + 3)}s ease-in-out infinite`,
-        } as CSSProperties : undefined}
-      >
-        {text}
-      </span>
-    </span>
-  );
 }
 
 type CanvasEngineProps = {
@@ -773,7 +736,7 @@ export function CanvasEngine({
                 <button type="button" className={cn("rounded-md px-2.5 py-1 text-xs font-medium transition", drawerView === "actions" ? "bg-card text-[#1456f0] shadow-sm" : "text-muted-foreground hover:text-foreground")} onClick={() => setDrawerView("actions")}>操作</button>
                 <button type="button" className={cn("rounded-md px-2.5 py-1 text-xs font-medium transition", drawerView === "info" ? "bg-card text-[#1456f0] shadow-sm" : "text-muted-foreground hover:text-foreground")} onClick={() => setDrawerView("info")}>详情</button>
               </div>
-              <HoverMarqueeText className="min-w-0 flex-1 text-xs font-medium text-muted-foreground" text={panelNode.title || (panelNode.type === "video" ? "视频" : panelNode.type === "audio" ? "音频" : panelNode.type === "panorama" ? "全景图" : panelNode.type === "director" ? "导演台" : panelNode.type === "config" ? "生成配置" : panelNode.type === "image" ? "图片" : "文字")} />
+              <OverflowMarqueeText className="min-w-0 flex-1 text-xs font-medium text-muted-foreground" text={panelNode.title || (panelNode.type === "video" ? "视频" : panelNode.type === "audio" ? "音频" : panelNode.type === "panorama" ? "全景图" : panelNode.type === "director" ? "导演台" : panelNode.type === "config" ? "生成配置" : panelNode.type === "image" ? "图片" : "文字")} />
             </div>
             <div className="flex shrink-0 items-center gap-1">
               <Tooltip><TooltipTrigger asChild><button type="button" className="inline-flex size-8 items-center justify-center rounded-lg text-rose-600 transition hover:bg-rose-50 dark:hover:bg-rose-950/30" onClick={() => onNodeDelete(panelNode.id)} aria-label="删除节点"><Trash2 className="size-4" /></button></TooltipTrigger><TooltipContent>删除节点</TooltipContent></Tooltip>
@@ -944,7 +907,7 @@ function CanvasDOMNode({ node, showImageInfo, selected, related, focusRelated, s
               setEditingTitle(true);
             }}
           >
-            <HoverMarqueeText text={node.title || (node.type === "image" ? "图片" : node.type === "video" ? "视频" : node.type === "audio" ? "音频" : node.type === "panorama" ? "全景图" : node.type === "director" ? "导演台" : node.type === "group" ? "组" : node.type === "config" ? "生成配置" : "文字")} />
+            <OverflowMarqueeText text={node.title || (node.type === "image" ? "图片" : node.type === "video" ? "视频" : node.type === "audio" ? "音频" : node.type === "panorama" ? "全景图" : node.type === "director" ? "导演台" : node.type === "group" ? "组" : node.type === "config" ? "生成配置" : "文字")} />
           </TooltipButton>
         )}
       </div>

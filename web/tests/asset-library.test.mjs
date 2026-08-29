@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { assetListKey, canManageAsset, collectAssetStorageKeys, managedImageAsset, mergeAssetLibrary } from "../src/app/assets/asset-library.ts";
+import { assetListKey, assetPrompt, canManageAsset, collectAssetStorageKeys, managedImageAsset, mergeAssetLibrary } from "../src/app/assets/asset-library.ts";
 
 const now = "2026-01-01T00:00:00Z";
 
@@ -56,6 +56,21 @@ test("managed image projection uses the persisted generation source", () => {
   assert.equal(managedImageAsset({ ...image, generation_source: "canvas" }, true).source, "无限画布");
   assert.equal(managedImageAsset({ ...image, generation_source: "image-workbench" }, true).source, "生成图片");
   assert.equal(managedImageAsset(image, true).source, "生成图片");
+});
+
+test("managed image projection preserves its generation prompt", () => {
+  const asset = managedImageAsset({
+    name: "result.png",
+    path: "2026/01/result.png",
+    visibility: "private",
+    prompt: "高端香水产品海报",
+    date: "2026-01-01",
+    size: 1024,
+    url: "/images/result.png",
+    created_at: now,
+  }, true);
+  assert.equal(assetPrompt(asset), "高端香水产品海报");
+  assert.equal(assetPrompt(textAsset("plain")), "");
 });
 
 test("asset storage key collection covers assets and canvas nodes", () => {

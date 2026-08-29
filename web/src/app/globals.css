@@ -33,14 +33,13 @@
   }
 }
 
-@keyframes canvas-title-marquee {
-  0%, 12% { transform: translateX(0); }
-  68%, 82% { transform: translateX(var(--canvas-title-marquee-offset)); }
-  100% { transform: translateX(0); }
+@keyframes overflow-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(var(--overflow-marquee-distance)); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  [style*="canvas-title-marquee"] { animation: none !important; }
+  [style*="overflow-marquee"] { animation: none !important; }
 }
 
 @keyframes scroll-area-fade-in {

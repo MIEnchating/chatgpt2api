@@ -3,12 +3,13 @@
 import { useEffect, useState } from "react";
 import { AudioLines, Copy, Download, FileText, Globe2, Image as ImageIcon, LockKeyhole, Pencil, Trash2, Video } from "lucide-react";
 
+import { assetPrompt } from "@/app/assets/asset-library";
 import { assetMediaSummary } from "@/app/assets/asset-media";
 import { AuthenticatedImage } from "@/components/authenticated-image";
+import { OverflowMarqueeText } from "@/components/overflow-marquee-text";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import type { MyAsset, MyAssetKind } from "@/lib/my-assets";
 import { resolveMediaURL } from "@/services/file-storage";
 import { resolveImageURL } from "@/services/image-storage";
@@ -38,19 +39,20 @@ export function AssetCard({ asset, selected = false, onSelectedChange, onOpen, o
   );
 }
 
-export function AssetPreview({ asset, onClose, onCopy, onDownload }: { asset: MyAsset | null; onClose: () => void; onCopy: () => void; onDownload: () => void }) {
+export function AssetPreview({ asset, onClose, onCopy, onCopyPrompt, onDownload }: { asset: MyAsset | null; onClose: () => void; onCopy: () => void; onCopyPrompt: () => void; onDownload: () => void }) {
   const { coverURL, mediaURL } = useResolvedAssetURLs(asset);
+  const prompt = assetPrompt(asset);
   return (
     <Dialog open={Boolean(asset)} onOpenChange={(value) => !value && onClose()}>
       <DialogContent scrollable={false} className="flex max-h-[90dvh] w-[min(94vw,760px)] max-w-none flex-col gap-4 overflow-hidden">
-        <DialogHeader><DialogTitle>{asset?.title}</DialogTitle><DialogDescription>{asset ? `${assetKindLabel(asset.kind)} · ${asset.source || "我的素材"}` : "素材详情"}</DialogDescription></DialogHeader>
-        <ScrollArea className="min-h-0 flex-1" viewportClassName="pr-3">
+        <DialogHeader className="pr-10"><DialogTitle className="overflow-hidden whitespace-nowrap text-base leading-6 sm:text-lg"><OverflowMarqueeText text={asset?.title || "素材详情"} play="always" delayMs={1500} /></DialogTitle><DialogDescription className="sr-only">素材详情</DialogDescription></DialogHeader>
+        <div data-asset-preview-scroll tabIndex={0} aria-label="素材详情内容" className="hide-scrollbar min-h-0 flex-1 overflow-y-auto overscroll-contain pr-1 outline-none">
           <div className="space-y-4">
             {asset?.kind === "text" ? <div className="space-y-4">{coverURL ? <AuthenticatedImage src={coverURL} alt={asset.title} className="max-h-72 w-full rounded-lg object-contain" /> : null}<p className="whitespace-pre-wrap break-words rounded-lg bg-muted/55 p-4 text-sm leading-7">{asset.content}</p></div> : asset?.kind === "image" ? <AuthenticatedImage src={mediaURL} alt={asset.title} className="max-h-[58vh] w-full rounded-lg object-contain" /> : asset?.kind === "video" ? <video src={mediaURL} controls className="max-h-[58vh] w-full rounded-lg bg-black" /> : asset?.kind === "audio" ? <audio src={mediaURL} controls className="w-full" /> : null}
             {asset ? <div className="grid gap-2 text-sm sm:grid-cols-2"><Info label="媒体信息" value={assetMediaSummary(asset)} /><Info label="来源" value={asset.source || "未标注"} /><Info label="可见范围" value={asset.visibility === "public" ? "公开" : "个人"} />{asset.ownerName ? <Info label="所有者" value={asset.ownerName} /> : null}{asset.note ? <Info label="备注" value={asset.note} className="sm:col-span-2" /> : null}</div> : null}
           </div>
-        </ScrollArea>
-        <DialogFooter>{asset?.kind === "text" ? <Button type="button" variant="outline" onClick={onCopy}><Copy />复制文本</Button> : asset ? <Button type="button" variant="outline" onClick={onDownload}><Download />下载{assetKindLabel(asset.kind)}</Button> : null}<Button type="button" onClick={onClose}>关闭</Button></DialogFooter>
+        </div>
+        <DialogFooter>{asset?.kind === "text" ? <Button type="button" variant="outline" onClick={onCopy}><Copy />复制文本</Button> : null}{asset && asset.kind !== "text" && prompt ? <Button type="button" variant="outline" onClick={onCopyPrompt}><Copy />复制提示词</Button> : null}{asset && asset.kind !== "text" ? <Button type="button" variant="outline" onClick={onDownload}><Download />下载{assetKindLabel(asset.kind)}</Button> : null}<Button type="button" onClick={onClose}>关闭</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   );

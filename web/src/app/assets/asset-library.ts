@@ -19,9 +19,15 @@ export function managedImageAsset(item: ManagedImage, owned: boolean): MyAsset {
     width: item.width,
     height: item.height,
     managedPath: item.path,
+    ...(item.prompt ? { metadata: { prompt: item.prompt } } : {}),
     createdAt: item.created_at || item.date,
     updatedAt: item.created_at || item.date,
   };
+}
+
+export function assetPrompt(asset: MyAsset | null) {
+  const prompt = asset?.metadata?.prompt;
+  return typeof prompt === "string" ? prompt.trim() : "";
 }
 
 export function managedImageSourceLabel(source: ManagedImage["generation_source"]) {

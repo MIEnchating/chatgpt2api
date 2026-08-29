@@ -6,7 +6,7 @@ import { toast } from "sonner";
 
 import { AssetCard, AssetPreview } from "@/app/assets/asset-display";
 import { AssetForm } from "@/app/assets/asset-form";
-import { assetListKey, canManageAsset, collectAssetStorageKeys, managedImageAsset, mergeAssetLibrary } from "@/app/assets/asset-library";
+import { assetListKey, assetPrompt, canManageAsset, collectAssetStorageKeys, managedImageAsset, mergeAssetLibrary } from "@/app/assets/asset-library";
 import { downloadMyAsset } from "@/app/assets/asset-media";
 import { useMyAssets } from "@/app/assets/use-my-assets";
 import { ManagementPage, ManagementPagination, ManagementPanel } from "@/components/management-page";
@@ -135,6 +135,17 @@ export default function AssetsPage() {
     try {
       await navigator.clipboard.writeText(asset.content || "");
       toast.success("文本已复制");
+    } catch {
+      toast.error("复制失败，请手动复制");
+    }
+  };
+
+  const copyPrompt = async (asset: MyAsset) => {
+    const prompt = assetPrompt(asset);
+    if (!prompt) return;
+    try {
+      await navigator.clipboard.writeText(prompt);
+      toast.success("提示词已复制");
     } catch {
       toast.error("复制失败，请手动复制");
     }
@@ -322,7 +333,7 @@ export default function AssetsPage() {
         />
       </ManagementPanel>
       <AssetForm open={formOpen} asset={editing} onClose={() => setFormOpen(false)} onSave={(next) => { setAssets((current) => current.some((item) => item.id === next.id) ? current.map((item) => item.id === next.id ? next : item) : [next, ...current]); setFormOpen(false); }} />
-      <AssetPreview asset={preview} onClose={() => setPreview(null)} onCopy={() => preview && void copyText(preview)} onDownload={() => preview && void download(preview)} />
+      <AssetPreview asset={preview} onClose={() => setPreview(null)} onCopy={() => preview && void copyText(preview)} onCopyPrompt={() => preview && void copyPrompt(preview)} onDownload={() => preview && void download(preview)} />
       <Dialog open={Boolean(deleting)} onOpenChange={(open) => !open && !deleteBusy && setDeleting(null)}><DialogContent className="w-[min(92vw,420px)]"><DialogHeader><DialogTitle>删除素材？</DialogTitle><DialogDescription>{deleting?.managedPath ? `确定永久删除生成图片“${deleting.title}”吗？` : `确定删除“${deleting?.title}”吗？删除后会同步到当前账号。`}</DialogDescription></DialogHeader><DialogFooter><Button type="button" variant="outline" disabled={deleteBusy} onClick={() => setDeleting(null)}>取消</Button><Button type="button" variant="destructive" disabled={deleteBusy} onClick={() => void confirmDelete()}>{deleteBusy ? "删除中" : "删除"}</Button></DialogFooter></DialogContent></Dialog>
       <Dialog open={bulkDeleteOpen} onOpenChange={(open) => !bulkActionBusy && setBulkDeleteOpen(open)}><DialogContent className="w-[min(92vw,440px)]"><DialogHeader><DialogTitle>批量删除素材？</DialogTitle><DialogDescription>将永久删除选中的 {deletableSelectedAssets.length} 个自有素材。共享素材和无删除权限的素材不会被删除。</DialogDescription></DialogHeader><DialogFooter><Button type="button" variant="outline" disabled={bulkActionBusy} onClick={() => setBulkDeleteOpen(false)}>取消</Button><Button type="button" variant="destructive" disabled={bulkActionBusy} onClick={() => void deleteSelected()}>{bulkActionBusy ? "删除中" : `删除 ${deletableSelectedAssets.length} 项`}</Button></DialogFooter></DialogContent></Dialog>
     </ManagementPage>
