@@ -76,6 +76,42 @@ type firstImageMetadataSaveGate struct {
 	once      sync.Once
 }
 
+type countingImageDocumentBackend struct {
+	storage.Backend
+	documents   storage.JSONDocumentBackend
+	prefixes    storage.JSONDocumentPrefixBackend
+	loadCalls   int
+	prefixCalls int
+}
+
+func newCountingImageDocumentBackend(t *testing.T, backend storage.Backend) *countingImageDocumentBackend {
+	t.Helper()
+	documents, documentsOK := backend.(storage.JSONDocumentBackend)
+	prefixes, prefixesOK := backend.(storage.JSONDocumentPrefixBackend)
+	if !documentsOK || !prefixesOK {
+		t.Fatal("test backend does not support JSON document batches")
+	}
+	return &countingImageDocumentBackend{Backend: backend, documents: documents, prefixes: prefixes}
+}
+
+func (b *countingImageDocumentBackend) LoadJSONDocument(name string) (any, error) {
+	b.loadCalls++
+	return b.documents.LoadJSONDocument(name)
+}
+
+func (b *countingImageDocumentBackend) SaveJSONDocument(name string, value any) error {
+	return b.documents.SaveJSONDocument(name, value)
+}
+
+func (b *countingImageDocumentBackend) DeleteJSONDocument(name string) error {
+	return b.documents.DeleteJSONDocument(name)
+}
+
+func (b *countingImageDocumentBackend) ListJSONDocuments(prefix string) (map[string]any, error) {
+	b.prefixCalls++
+	return b.prefixes.ListJSONDocuments(prefix)
+}
+
 type failingImageMetadataBackend struct {
 	storage.Backend
 	documents storage.JSONDocumentBackend
@@ -132,6 +168,31 @@ func TestImageServiceListImagesReturnsEmptyArrays(t *testing.T) {
 	}
 	if string(data) != `{"groups":[],"items":[]}` {
 		t.Fatalf("ListImages() JSON = %s", data)
+	}
+}
+
+func TestImageServiceListImagesLoadsMetadataInBatches(t *testing.T) {
+	root := t.TempDir()
+	config := testImageConfig{root: root}
+	backend := newCountingImageDocumentBackend(t, newTestStorageBackend(t))
+	service := NewImageService(config, backend)
+	for _, rel := range []string{"2026/04/29/one.png", "2026/04/29/two.png"} {
+		path := filepath.Join(config.ImagesDir(), filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("MkdirAll() error = %v", err)
+		}
+		if err := writeTestPNG(path); err != nil {
+			t.Fatalf("writeTestPNG() error = %v", err)
+		}
+		if err := service.RecordGeneratedImages([]string{rel}, "owner", "Owner", ImageVisibilityPrivate); err != nil {
+			t.Fatalf("RecordGeneratedImages() error = %v", err)
+		}
+	}
+	backend.loadCalls = 0
+	backend.prefixCalls = 0
+	items := service.ListImages("", "", "", allImages)["items"].([]map[string]any)
+	if len(items) != 2 || backend.prefixCalls != 2 || backend.loadCalls != 0 {
+		t.Fatalf("ListImages() items = %d, prefix calls = %d, per-document loads = %d", len(items), backend.prefixCalls, backend.loadCalls)
 	}
 }
 
@@ -541,6 +602,11 @@ func TestImageServicePublicVisibility(t *testing.T) {
 	}
 	if publicItems[0]["visibility"] != ImageVisibilityPublic || publicItems[0]["owner_name"] != "alice" || publicItems[0]["published_at"] == "" {
 		t.Fatalf("public metadata = %#v", publicItems[0])
+	}
+	visible := service.ListImages("http://127.0.0.1:8000", "", "", ImageAccessScope{OwnerID: "linuxdo:456", Visible: true})
+	visibleItems := visible["items"].([]map[string]any)
+	if len(visibleItems) != 2 {
+		t.Fatalf("visible ListImages() = %#v, want own private and shared public images", visible)
 	}
 
 	if _, err := service.UpdateImageVisibility(aliceRel, ImageVisibilityPrivate, ImageAccessScope{OwnerID: "linuxdo:456"}); err == nil {

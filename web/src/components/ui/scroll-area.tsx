@@ -62,12 +62,21 @@ const EMPTY_METRICS: ScrollMetrics = {
   contentHeight: 0,
 };
 
+const SCROLL_OVERFLOW_TOLERANCE_PX = 1;
+
 const toCssSize = (value: number | string | undefined) => {
   if (value === undefined || value === "") return undefined;
   return typeof value === "number" ? `${value}px` : value;
 };
 
 const clamp = (value: number, max: number) => Math.max(0, Math.min(value, Math.max(0, max)));
+
+const normalizedContentSize = (viewportSize: number, contentSize: number, previousSize: number) => {
+  const measuredSize = Math.max(viewportSize, contentSize || previousSize);
+  // Fractional layout values (for example a 16:9 media frame) can exceed the
+  // integer client size by less than one pixel without creating real scroll.
+  return measuredSize - viewportSize <= SCROLL_OVERFLOW_TOLERANCE_PX ? viewportSize : measuredSize;
+};
 
 const ScrollArea = React.forwardRef<ScrollAreaHandle, ScrollAreaProps>(function ScrollArea(
   {
@@ -145,8 +154,8 @@ const ScrollArea = React.forwardRef<ScrollAreaHandle, ScrollAreaProps>(function 
     const next: ScrollMetrics = {
       viewportWidth,
       viewportHeight,
-      contentWidth: Math.max(viewportWidth, measuredContentWidth || previous.contentWidth),
-      contentHeight: Math.max(viewportHeight, measuredContentHeight || previous.contentHeight),
+      contentWidth: normalizedContentSize(viewportWidth, measuredContentWidth, previous.contentWidth),
+      contentHeight: normalizedContentSize(viewportHeight, measuredContentHeight, previous.contentHeight),
     };
     const current = scrollRef.current;
     const clamped = {
@@ -202,7 +211,8 @@ const ScrollArea = React.forwardRef<ScrollAreaHandle, ScrollAreaProps>(function 
 
   const handleMouseMove = React.useCallback(() => {
     showScrollbar();
-  }, [showScrollbar]);
+    scheduleScrollbarHide();
+  }, [scheduleScrollbarHide, showScrollbar]);
 
   const handleMouseLeave = React.useCallback(() => {
     hideScrollbar();

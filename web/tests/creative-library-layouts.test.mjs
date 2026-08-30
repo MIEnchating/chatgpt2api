@@ -6,6 +6,7 @@ const assetsSource = readFileSync(new URL("../src/app/assets/page.tsx", import.m
 const assetDisplaySource = readFileSync(new URL("../src/app/assets/asset-display.tsx", import.meta.url), "utf8");
 const globalStylesSource = readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
 const promptsSource = readFileSync(new URL("../src/app/image/components/image-prompt-market.tsx", import.meta.url), "utf8");
+const canvasSidePanelSource = readFileSync(new URL("../src/app/canvas/canvas-side-panel.tsx", import.meta.url), "utf8");
 const workflowsSource = readFileSync(new URL("../src/components/workflows/creative-workflow-workspace.tsx", import.meta.url), "utf8");
 
 test("asset filters and cards use the full content width", () => {
@@ -29,15 +30,28 @@ test("asset filters and cards use the full content width", () => {
   assert.match(assetsSource, /repeat\(auto-fill,minmax\(min\(100%,280px\),1fr\)\)/);
   assert.doesNotMatch(assetsSource, /max-w-7xl/);
   assert.match(assetDisplaySource, /data-selected=\{selected\}/);
+  assert.match(assetDisplaySource, /data-asset-card/);
+  assert.match(assetDisplaySource, /data-asset-card-content/);
+  assert.doesNotMatch(assetDisplaySource, /data-asset-card-content className="[^"]*flex-1/);
+  assert.doesNotMatch(assetDisplaySource, /mt-auto flex items-center gap-1\.5 text-\[11px\] tabular-nums/);
   assert.match(assetDisplaySource, /data-interaction="trigger"/);
   assert.match(assetDisplaySource, /interactive-card-trigger block/);
-  assert.match(assetDisplaySource, /interactive-card-trigger[\s\S]*?aspect-\[4\/3\][\s\S]*?<\/button>\s*<div className="p-3\.5">/);
+  assert.match(assetDisplaySource, /interactive-card-trigger[\s\S]*?aspect-\[16\/10\][\s\S]*?<\/button>\s*<div data-asset-card-content/);
+  assert.match(assetDisplaySource, /line-clamp-2 min-h-10 break-words text-sm font-semibold/);
+  assert.doesNotMatch(assetDisplaySource, /line-clamp-2 min-h-10 break-words text-xs leading-5/);
+  assert.match(assetDisplaySource, /<Eye className="size-3\.5" \/>查看/);
   assert.match(assetDisplaySource, /interactive-card/);
   assert.match(assetDisplaySource, /selection-control/);
   assert.match(assetDisplaySource, /<OverflowMarqueeText[^>]+play="always"[^>]+delayMs=\{1500\}/);
-  assert.match(assetDisplaySource, /data-asset-preview-scroll[^>]+overflow-y-auto/);
+  assert.match(assetDisplaySource, /<ScrollArea data-asset-preview-scroll[^>]+ariaLabel="素材详情内容"/);
+  assert.doesNotMatch(assetDisplaySource, /data-asset-preview-scroll[^>]+hide-scrollbar/);
   assert.doesNotMatch(assetDisplaySource, /\$\{assetKindLabel\(asset\.kind\)\} · \$\{asset\.source/);
   assert.match(assetDisplaySource, />复制提示词</);
+  assert.match(assetDisplaySource, /Clock3/);
+  assert.match(assetDisplaySource, /label="创建时间"/);
+  assert.match(assetDisplaySource, /data-asset-video-thumbnail/);
+  assert.match(assetDisplaySource, /asset\.kind === "video" && \(coverURL === mediaURL \|\| coverURL === asset\.url\)/);
+  assert.match(assetDisplaySource, /asset\.kind === "image" && \(!fallbackCoverURL \|\| fallbackCoverURL\.startsWith\("blob:"\)\)/);
   assert.match(globalStylesSource, /--selectable-selected-surface:/);
   assert.match(globalStylesSource, /@layer components \{[\s\S]*?\.card-surface[\s\S]*?\n\}\n\n\.interactive-card/);
   assert.match(globalStylesSource, /\.interactive-card\[data-selected="true"\]/);
@@ -61,7 +75,7 @@ test("prompt and workflow libraries keep dense wide-screen layouts", () => {
   assert.match(workflowsSource, /variant=\{isSeries \? "violet" : "info"\}/);
   assert.match(workflowsSource, /isSeries \? "多图生成" : "单图生成"/);
   assert.doesNotMatch(workflowsSource, /文本渠道|Token 名|agentChannelID/);
-  assert.match(workflowsSource, /channelID: relayTokenNames\.text/);
+  assert.match(workflowsSource, /channelID: tokenNameForModel\("text", model\)/);
   assert.match(workflowsSource, /generationSource: "workflow"/);
   assert.match(workflowsSource, /<article data-interaction="controls" className="interactive-card/);
   assert.match(workflowsSource, /grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4/);
@@ -92,9 +106,17 @@ test("prompt filters match the reference category and tag taxonomy", () => {
   assert.match(promptsSource, /data-prompt-category-select/);
   assert.match(promptsSource, /placeholder="搜索分类"/);
   assert.match(promptsSource, /md:grid-cols-\[minmax\(180px,1fr\)_minmax\(220px,340px\)_150px\]/);
+  assert.match(promptsSource, /<DialogHeader className="block border-b border-border[^"]*pr-20/);
   assert.match(promptsSource, /min-w-0 flex-1 break-words/);
   assert.doesNotMatch(promptsSource, /作者：|UserRound|selectedPrompt\?\.author/);
   assert.match(promptsSource, /\{tags\.map\(\(tag\) => \(/);
   assert.match(promptsSource, /tagsExpanded \? "收起" : "展开"/);
   assert.doesNotMatch(promptsSource, /ALL_CATEGORY_VALUE|setCategory\(|placeholder="来源"|slice\(0, 60\)/);
+});
+
+test("prompt libraries load source configuration without settings permission", () => {
+  assert.match(promptsSource, /fetchPromptSourcesConfig/);
+  assert.doesNotMatch(promptsSource, /fetchSettingsConfig/);
+  assert.match(canvasSidePanelSource, /fetchPromptSourcesConfig/);
+  assert.doesNotMatch(canvasSidePanelSource, /fetchSettingsConfig/);
 });

@@ -35,7 +35,7 @@ import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TooltipHint } from "@/components/ui/tooltip";
-import { fetchSettingsConfig, type ManagedImage } from "@/lib/api";
+import { fetchPromptSourcesConfig, type ManagedImage } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import type { CanvasNode } from "@/services/api/canvas";
 
@@ -108,9 +108,9 @@ function loadSidePanelPrompts(force = false) {
   if (force) sidePanelPromptCache = null;
   if (sidePanelPromptCache) return Promise.resolve(sidePanelPromptCache);
   if (sidePanelPromptRequest) return sidePanelPromptRequest;
-  sidePanelPromptRequest = fetchSettingsConfig()
-    .then(async ({ config }) => {
-      const sources = normalizePromptMarketSources(config.prompt_sources).filter((source) => source.enabled);
+  sidePanelPromptRequest = fetchPromptSourcesConfig()
+    .then(async ({ sources: configuredSources }) => {
+      const sources = normalizePromptMarketSources(configuredSources).filter((source) => source.enabled);
       const prompts = await fetchPromptMarketPrompts(undefined, sources);
       return {
         prompts: sortPromptMarketPrompts(prompts.map(localizedPrompt)),

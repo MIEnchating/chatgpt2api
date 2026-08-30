@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 
 import {
   buildImageConversationHistoryMergeBody,
@@ -10,6 +11,8 @@ import {
   shouldFallbackToImageConversationHistoryDetail,
   shouldResetImageConversationHistoryCursor,
 } from "../src/lib/image-conversation-history.ts";
+
+const pageSource = await readFile(new URL("../src/app/image/page.tsx", import.meta.url), "utf8");
 
 test("generation is sent in the merge body only after the server provides one", () => {
   const items = [{ id: "conversation-1" }];
@@ -53,4 +56,9 @@ test("transient detail failures do not make the UI fall back to another conversa
   assert.equal(shouldFallbackToImageConversationHistoryDetail(410), true);
   assert.equal(shouldFallbackToImageConversationHistoryDetail(408), false);
   assert.equal(shouldFallbackToImageConversationHistoryDetail(503), false);
+});
+
+test("history recovery reconciles locally failed media whose server task was still active", () => {
+  assert.match(pageSource, /image\.status === "error" &&\s*image\.taskId &&\s*\(image\.taskStatus === "queued" \|\| image\.taskStatus === "running"\)/);
+  assert.match(pageSource, /const persistedTasks = await Promise\.all\(taskList\.items\.map\(\(task\) => persistCreationTaskOutputs\(task, \{\s*assetContext: assetContextByTaskID\.get\(task\.id\)/);
 });

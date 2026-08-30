@@ -58,6 +58,17 @@ func TestCreativeLibrariesHaveIndependentMenus(t *testing.T) {
 	}
 }
 
+func TestLegacyImageMenuPermissionMigratesToStudio(t *testing.T) {
+	permissions := NormalizeMenuPermissions([]string{"/image", "/studio"})
+	if len(permissions) != 1 || permissions[0] != "/studio" {
+		t.Fatalf("legacy image menu should migrate to studio: %#v", permissions)
+	}
+	menus := FilterMenuPermissions([]string{"/image"})
+	if len(menus) != 1 || menus[0].Path != "/studio" || menus[0].Label != "创作台" {
+		t.Fatalf("legacy image menu should still expose the studio: %#v", menus)
+	}
+}
+
 func TestDefaultUserPermissionsIncludeCreatorFlows(t *testing.T) {
 	permissions := DefaultPermissionSetForRole(AuthRoleUser)
 	requests := []struct {

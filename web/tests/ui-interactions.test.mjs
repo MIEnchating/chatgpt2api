@@ -5,14 +5,22 @@ import test from "node:test";
 const scrollAreaSource = await readFile(new URL("../src/components/ui/scroll-area.tsx", import.meta.url), "utf8");
 const selectSource = await readFile(new URL("../src/components/ui/select.tsx", import.meta.url), "utf8");
 const dialogSource = await readFile(new URL("../src/components/ui/dialog.tsx", import.meta.url), "utf8");
+const inputTagSource = await readFile(new URL("../src/components/ui/input-tag.tsx", import.meta.url), "utf8");
+const multiSelectSource = await readFile(new URL("../src/components/ui/multi-select.tsx", import.meta.url), "utf8");
 const workflowSource = await readFile(new URL("../src/components/workflows/creative-workflow-workspace.tsx", import.meta.url), "utf8");
 const workflowPageSource = await readFile(new URL("../src/app/workflows/page.tsx", import.meta.url), "utf8");
 const imageTaskQueueSource = await readFile(new URL("../src/components/image-task-queue.tsx", import.meta.url), "utf8");
 const globalStylesSource = await readFile(new URL("../src/app/globals.css", import.meta.url), "utf8");
 const imageParameterStylesSource = await readFile(new URL("../src/app/image/components/image-parameter-styles.ts", import.meta.url), "utf8");
-const imageParameterUISource = await readFile(new URL("../src/app/image/components/image-parameter-ui.tsx", import.meta.url), "utf8");
+const aspectRatioOptionSource = await readFile(new URL("../src/components/generation/aspect-ratio-option.tsx", import.meta.url), "utf8");
+const imageSizePresetControlsSource = await readFile(new URL("../src/components/generation/image-size-preset-controls.tsx", import.meta.url), "utf8");
 const imageSettingsPanelSource = await readFile(new URL("../src/components/generation/image-settings-panel.tsx", import.meta.url), "utf8");
+const imageSidebarSource = await readFile(new URL("../src/app/image/components/image-sidebar.tsx", import.meta.url), "utf8");
+const videoSettingsPanelSource = await readFile(new URL("../src/components/generation/video-settings-panel.tsx", import.meta.url), "utf8");
+const imageComposerSource = await readFile(new URL("../src/app/image/components/image-composer.tsx", import.meta.url), "utf8");
+const imagePageSource = await readFile(new URL("../src/app/image/page.tsx", import.meta.url), "utf8");
 const logGovernanceSource = await readFile(new URL("../src/app/settings/components/log-governance-card.tsx", import.meta.url), "utf8");
+const videoContractsSource = await readFile(new URL("../src/app/settings/components/video-model-contracts-card.tsx", import.meta.url), "utf8");
 const settingsStoreSource = await readFile(new URL("../src/app/settings/store.ts", import.meta.url), "utf8");
 const settingsConfigSource = await readFile(new URL("../src/app/settings/components/config-card.tsx", import.meta.url), "utf8");
 const profileSource = await readFile(new URL("../src/app/profile/page.tsx", import.meta.url), "utf8");
@@ -53,6 +61,8 @@ test("scrollbar tracks page like a native scrollbar and fade after input", () =>
   assert.match(scrollAreaSource, /metrics\.viewportWidth \* 0\.9/);
   assert.match(scrollAreaSource, /scheduleScrollbarHide/);
   assert.match(scrollAreaSource, /}, 700\)/);
+  assert.match(scrollAreaSource, /SCROLL_OVERFLOW_TOLERANCE_PX = 1/);
+  assert.match(scrollAreaSource, /measuredSize - viewportSize <= SCROLL_OVERFLOW_TOLERANCE_PX \? viewportSize : measuredSize/);
 });
 
 test("an open select closes when its trigger is pressed again", () => {
@@ -63,13 +73,64 @@ test("an open select closes when its trigger is pressed again", () => {
   assert.match(selectSource, /select\?\.open && "rotate-180"/);
 });
 
-test("dialog titles and close buttons stay clear of the scrollbar", () => {
+test("controlled selects remain controlled while asynchronous values are empty", () => {
+  assert.match(selectSource, /Object\.prototype\.hasOwnProperty\.call\(allProps, "value"\)/);
+  assert.match(selectSource, /hasControlledValue \? \{ value: value \?\? "" \} : \{\}/);
+});
+
+test("global selects keep the neutral selected treatment shown across settings", () => {
+  assert.match(selectSource, /data-\[state=checked\]:bg-accent/);
+  assert.match(selectSource, /data-\[state=checked\]:font-medium/);
+  assert.match(selectSource, /data-\[state=checked\]:text-accent-foreground/);
+  assert.match(selectSource, /viewportClassName="w-full overscroll-contain px-1 py-2"/);
+  assert.match(selectSource, /relative my-1 flex w-full/);
+  assert.match(selectSource, /first:mt-0 last:mb-0/);
+  assert.doesNotMatch(selectSource, /data-\[state=checked\]:bg-\[#eef4ff\]/);
+});
+
+test("global tag input supports keyboard, paste, validation, and accessible removal", () => {
+  assert.match(inputTagSource, /React\.forwardRef<HTMLInputElement, InputTagProps>/);
+  assert.match(inputTagSource, /data-slot="input-tag"/);
+  assert.match(inputTagSource, /data-slot="input-tag-item"/);
+  assert.match(inputTagSource, /event\.key === "Enter"[\s\S]*event\.key === "，"/);
+  assert.match(inputTagSource, /event\.key === "Backspace"[\s\S]*removeTag\(value\.length - 1\)/);
+  assert.match(inputTagSource, /composingRef\.current/);
+  assert.match(inputTagSource, /event\.clipboardData\.getData\("text"\)/);
+  assert.match(inputTagSource, /value\.length === 0 \? "min-w-32" : "min-w-10"/);
+  assert.match(inputTagSource, /parentElement\?\.contains\(event\.relatedTarget as Node \| null\)/);
+  assert.match(inputTagSource, /onTagRejected\?\.\(tag, "duplicate"\)/);
+  assert.match(inputTagSource, /onTagRejected\?\.\(tag, "limit"\)/);
+  assert.match(inputTagSource, /aria-label=\{`删除标签 \$\{tag\}`\}/);
+});
+
+test("multi select fills available width before collapsing selected tags", () => {
+  assert.match(multiSelectSource, /visibleTagCount/);
+  assert.match(multiSelectSource, /availableWidth = viewport\.clientWidth/);
+  assert.match(multiSelectSource, /candidateWidth \+ gap \+ collapseWidth > availableWidth/);
+  assert.match(multiSelectSource, /new ResizeObserver\(measureVisibleTags\)/);
+  assert.doesNotMatch(multiSelectSource, /selected\.slice\(0, 1\)/);
+});
+
+test("dialog close buttons stay fixed while the body scrollbar updates", () => {
   assert.match(dialogSource, /data-slot="dialog-auto-close"/);
   assert.match(dialogSource, /absolute top-4 right-4 z-30/);
-  assert.ok(dialogSource.includes("[&:has([data-scroll-overflow-y=true])>[data-slot=dialog-auto-close]]:right-10"));
+  assert.doesNotMatch(dialogSource, /data-scroll-overflow-y=true[^\n]*dialog-auto-close/);
+  assert.match(dialogSource, /transition-\[background-color,opacity\]/);
+  assert.doesNotMatch(dialogSource, /transition-\[right,background-color,opacity\]/);
   assert.match(scrollAreaSource, /data-scroll-overflow-y=\{verticalOverflow > 0 \|\| undefined\}/);
   assert.match(dialogSource, /min-w-0 shrink-0 flex flex-col gap-2 pr-20 text-left/);
   assert.match(dialogSource, /min-w-0 break-words text-xl leading-tight/);
+  assert.match(scrollAreaSource, /const effectiveAlways = always/);
+});
+
+test("dialog scrolling is limited to the body between its fixed header and footer", () => {
+  assert.match(dialogSource, /flattenDialogChildren\(children\)/);
+  assert.match(dialogSource, /dialogChildren\.filter\(isDialogHeaderElement\)/);
+  assert.match(dialogSource, /dialogChildren\.filter\(isDialogFooterElement\)/);
+  assert.match(dialogSource, /data-slot="dialog-body"/);
+  assert.match(dialogSource, /\{headers\}[\s\S]*?<ScrollArea[\s\S]*?\{body\}[\s\S]*?\{footers\}/);
+  assert.doesNotMatch(scrollAreaSource, /closest\('\[data-slot="dialog-content"\]'\)/);
+  assert.match(scrollAreaSource, /showScrollbar\(\);\s*scheduleScrollbarHide\(\)/);
 });
 
 test("dialog footers share compact inset and full-width fixed styles", () => {
@@ -78,11 +139,111 @@ test("dialog footers share compact inset and full-width fixed styles", () => {
   assert.doesNotMatch(dialogSource, /sm:p-6/);
   assert.match(dialogSource, /flush = false/);
   assert.match(dialogSource, /data-flush=\{flush \|\| undefined\}/);
-  assert.match(dialogSource, /sticky bottom-0 z-10 flex shrink-0/);
+  assert.match(dialogSource, /z-10 flex shrink-0/);
+  assert.doesNotMatch(dialogSource, /sticky bottom-0 z-10 flex shrink-0/);
   assert.match(dialogSource, /\[&>\[data-slot=button\]\]:min-w-18/);
   assert.ok(dialogSource.includes("[&:has([data-slot=dialog-footer]:not([data-flush=true]))]:pb-3"));
   assert.match(dialogSource, /min-h-15 border-t border-border bg-background px-5 py-3 sm:px-6/);
   assert.doesNotMatch(dialogSource, /mt-1 pt-1/);
+});
+
+test("video contract editor shows configuration and parameter preview side by side", () => {
+  assert.match(videoContractsSource, /h-\[min\(90dvh,860px\)\] w-\[min\(96vw,1280px\)\] max-w-none/);
+  assert.doesNotMatch(videoContractsSource, /<ScrollArea/);
+  assert.match(videoContractsSource, /contentClassName="p-0 sm:p-0"/);
+  assert.match(videoContractsSource, /divide-y divide-border\/70/);
+  assert.match(videoContractsSource, /data-video-contract-layout/);
+  assert.match(videoContractsSource, /lg:grid-cols-\[minmax\(0,1fr\)_minmax\(300px,20rem\)\]/);
+  assert.match(videoContractsSource, /data-video-contract-details[\s\S]*data-video-contract-preview/);
+  assert.doesNotMatch(videoContractsSource, /dialogView|role="tablist"|契约查看方式/);
+  assert.match(videoContractsSource, /<ContractParameterPreview key=\{parameterPreviewKey\}/);
+  assert.match(videoContractsSource, /<VideoSettingsPanel/);
+  assert.match(videoContractsSource, /data-contract-material-preview/);
+  assert.match(videoContractsSource, /contract\.capability\.first_frame_image_limit/);
+  assert.match(videoContractsSource, /referenceLimits\.image > 0 && visible\("reference_image"\) \? uploadPreview\("参考图"/);
+  assert.match(videoContractsSource, /referenceLimits\.video > 0 && visible\("reference_video"\) \? uploadPreview\("参考视频"/);
+  assert.match(videoContractsSource, /referenceLimits\.audio > 0 && visible\("reference_audio"\) \? uploadPreview\("参考音频"/);
+  assert.match(videoContractsSource, /<ContractReferenceMaterialPreview contract=\{contract\} ruleValues=\{ruleValues\} \/>[\s\S]*?<VideoSettingsPanel/);
+  assert.match(videoContractsSource, /label="命中后显示"/);
+  assert.match(videoContractsSource, /label="命中后隐藏"/);
+  assert.match(videoContractsSource, /label="命中后禁用"/);
+  assert.match(videoContractsSource, /activeVideoModelContracts\(\)\.filter\(\(item\) => !item\.models\.includes\(CONTRACT_PREVIEW_MODEL\)\)/);
+  assert.match(videoContractsSource, /import \{ InputTag \} from "@\/components\/ui\/input-tag"/);
+  for (const id of ["models", "sizes", "seconds", "resolutions", "queued-statuses", "processing-statuses", "success-statuses", "failure-statuses", "progress-fields", "result-fields"]) {
+    assert.match(videoContractsSource, new RegExp(`<TagListField id="video-contract-${id}"`));
+    assert.doesNotMatch(videoContractsSource, new RegExp(`<TextField id="video-contract-${id}"`));
+  }
+  assert.match(videoContractsSource, /models: \[\.\.\.value\.models\]/);
+  assert.match(videoContractsSource, /Array\.isArray\(value\) \? value : value\.split/);
+  assert.match(videoContractsSource, /value=\{normalizeTags\(value\)\}/);
+  assert.match(videoContractsSource, /<Field className="self-start">[\s\S]*?<InputTag[\s\S]*?className="min-h-11"/);
+  assert.match(videoContractsSource, /grid items-start gap-4 sm:grid-cols-2 xl:grid-cols-3/);
+  assert.match(videoContractsSource, /contract\.capability\.seconds = normalizeTags\(draft\.seconds\)/);
+  assert.match(videoContractsSource, /<details[^>]*>[\s\S]*原始 JSON[\s\S]*复制 JSON/);
+  assert.match(videoContractsSource, /JSON\.stringify\(normalizedContract, null, 2\)/);
+  assert.match(videoContractsSource, /navigator\.clipboard\.writeText\(contractJSON\)/);
+  assert.match(videoContractsSource, /if \(!readOnly\) return;\s*event\.preventDefault\(\);\s*contractDialogTitleRef\.current\?\.focus\(\{ preventScroll: true \}\)/);
+  assert.match(videoContractsSource, /<DialogTitle ref=\{contractDialogTitleRef\} tabIndex=\{-1\} className="outline-none">/);
+});
+
+test("video contract help icons explain only technical fields", () => {
+  assert.match(videoContractsSource, /function ContractHelpIcon/);
+  assert.match(videoContractsSource, /<TooltipHint content=\{help\}>/);
+  assert.match(videoContractsSource, /<CircleHelp className="size-3\.5" \/>/);
+  assert.doesNotMatch(videoContractsSource, /label="能力配置"/);
+  assert.match(videoContractsSource, /label="模型匹配规则" help=/);
+  assert.match(videoContractsSource, /label="接口协议" help=/);
+  assert.doesNotMatch(videoContractsSource, /Google Gemini Veo 视频协议/);
+  assert.doesNotMatch(videoContractsSource, /VIDEO_CONTRACT_DRIVERS\.find\(\(driver\) => driver\.value === draft\.contract\.driver\)\?\.description/);
+  for (const driver of ["openai-videos", "xai-videos", "gemini-veo", "vertex-veo", "dashscope-video", "volcengine-video", "kling-video", "minimax-video", "vidu-video", "kie-video", "apimart-video"]) {
+    assert.match(videoContractsSource, new RegExp(`value: "${driver}"`));
+  }
+  for (const adapter of ["OpenAI Videos / Sora", "Kling Video", "MiniMax / Hailuo", "Gemini Veo", "Vertex AI Veo", "Vidu Video", "Seedance / 即梦", "DashScope / 通义万相", "KIE Video", "APIMart Video"]) {
+    assert.match(videoContractsSource, new RegExp(adapter));
+  }
+  assert.match(videoContractsSource, /label="平台本地素材" help=/);
+  assert.match(videoContractsSource, /label="multipart 文件字段" help=/);
+  assert.match(videoContractsSource, /label="允许重复文件字段" help=/);
+  assert.match(videoContractsSource, /label="允许文件与 URL 混用" help=/);
+  assert.match(videoContractsSource, /label="默认模式" help=/);
+  assert.match(videoContractsSource, /label="模式类型" help=/);
+  assert.match(videoContractsSource, /label="允许仅使用参考音频" help=/);
+  assert.match(videoContractsSource, /label="至少提供一项"/);
+  assert.match(videoContractsSource, /help=\{REQUEST_FIELD_HELP\[key\]\}/);
+  for (const label of ["轮询间隔", "超时时间", "任务 ID 路径", "任务状态路径", "任务进度路径", "排队状态", "处理中状态", "成功状态", "失败状态", "未知状态", "错误信息路径", "结果地址路径"]) {
+    assert.match(videoContractsSource, new RegExp(`label="${label}" help=`));
+  }
+  for (const id of ["sizes", "seconds", "resolutions", "default-size", "default-seconds", "default-resolution", "prompt-limit"]) {
+    assert.match(videoContractsSource, new RegExp(`id="video-contract-${id}" label="[^"]+" (?!help=)`));
+  }
+});
+
+test("video contracts support reviewed JSON import and ID-free export", () => {
+  assert.match(videoContractsSource, /accept="\.json,application\/json"/);
+  assert.match(videoContractsSource, />\s*导入 JSON\s*</);
+  assert.match(videoContractsSource, /downloadVideoContractDocument\(videoContractTransferDocument\(items\)/);
+  assert.match(videoContractsSource, /downloadVideoContractDocument\(videoContractTransferDocument\(\[item\]\)/);
+  assert.match(videoContractsSource, /<DialogTitle>导入视频模型契约<\/DialogTitle>/);
+  assert.match(videoContractsSource, /pendingImportSummary\.created/);
+  assert.match(videoContractsSource, /pendingImportSummary\.updated/);
+  assert.match(videoContractsSource, /同名契约将更新/);
+  assert.doesNotMatch(videoContractsSource, /videoContractTransferDocument[\s\S]*created_at/);
+});
+
+test("video contracts use a responsive management list with prioritized actions", () => {
+  assert.match(videoContractsSource, /data-video-contract-toolbar/);
+  assert.match(videoContractsSource, /variant="ghost" disabled=\{isJSONImporting\}/);
+  assert.match(videoContractsSource, /variant="ghost" disabled=\{items\.length === 0\}/);
+  assert.match(videoContractsSource, /variant="outline" onClick=\{openImport\}/);
+  assert.match(videoContractsSource, /size="sm" onClick=\{openCreate\}/);
+  assert.match(videoContractsSource, /data-video-contract-list/);
+  assert.match(videoContractsSource, /契约<\/span>[\s\S]*匹配模型<\/span>[\s\S]*能力范围<\/span>[\s\S]*更新时间<\/span>[\s\S]*操作<\/span>/);
+  assert.match(videoContractsSource, /data-video-contract-row/);
+  assert.match(videoContractsSource, /xl:grid-cols-\[minmax\(220px,1\.2fr\)_minmax\(180px,0\.95fr\)_minmax\(280px,1\.35fr\)_150px_180px\]/);
+  assert.match(videoContractsSource, /<Switch[\s\S]*?onCheckedChange=\{\(\) => void toggleEnabled\(item\)\}/);
+  assert.match(videoContractsSource, /item\.contract\.models\.slice\(0, 2\)/);
+  assert.match(videoContractsSource, /formatDurationRange\(item\.contract\.capability\.seconds\)/);
+  assert.match(videoContractsSource, /<time dateTime=\{item\.updated_at\}/);
 });
 
 test("large dialog pagination and actions use the shared footer layouts", () => {
@@ -231,10 +392,48 @@ test("interactive controls share a visible global disabled state", () => {
 });
 
 test("shared generation parameter buttons expose their disabled state", () => {
+  assert.match(aspectRatioOptionSource, /export function AspectRatioOptionButton/);
   assert.match(imageParameterStylesSource, /disabled:cursor-not-allowed/);
   assert.match(imageParameterStylesSource, /disabled:opacity-50/);
-  assert.match(imageParameterUISource, /disabled:cursor-not-allowed/);
-  assert.match(imageParameterUISource, /disabled:opacity-50/);
+  assert.match(aspectRatioOptionSource, /disabled:cursor-not-allowed/);
+  assert.match(aspectRatioOptionSource, /disabled:opacity-50/);
+});
+
+test("image and video generation share one aspect ratio option", () => {
+  assert.match(imageSettingsPanelSource, /<ImageSizePresetControls/);
+  assert.match(imageSizePresetControlsSource, /<AspectRatioOptionButton/);
+  assert.match(videoSettingsPanelSource, /<AspectRatioOptionButton/);
+  assert.match(aspectRatioOptionSource, /return "自动"/);
+  assert.match(aspectRatioOptionSource, /"自动匹配"/);
+  assert.match(videoSettingsPanelSource, /画幅比例/);
+});
+
+test("video composer places reference materials before settings and uses video task copy", () => {
+  assert.doesNotMatch(imageComposerSource, /activeVideoSupportsFrames \? <section className="order-40/);
+  assert.doesNotMatch(imageComposerSource, /activeVideoMaterialSections\.image \? <section className="order-50/);
+  assert.match(imageComposerSource, /activeVideoSupportsFrames[\s\S]*activeVideoMaterialSections\.image[\s\S]*<VideoSettingsPanel/);
+  assert.match(imagePageSource, /message: "正在生成视频"/);
+  assert.match(imagePageSource, /activeTurn\.mode === "video" \? "生成视频失败" : "生成图片失败"/);
+});
+
+test("image ratio cards combine shape and resolution while video shows a size badge", () => {
+  assert.match(imageSizePresetControlsSource, />宽高比<\/ImageParameterLabel>/);
+  assert.match(imageSizePresetControlsSource, /IMAGE_ASPECT_RATIO_PRESET_OPTIONS\.map/);
+  assert.match(imageSizePresetControlsSource, /layout="visual"/);
+  assert.match(imageSizePresetControlsSource, /label=\{automatic \? "自动" : option\.label\}/);
+  assert.match(videoSettingsPanelSource, />画幅比例<\/ImageParameterLabel>/);
+  assert.match(videoSettingsPanelSource, /<GenerationSizeBadge>\{videoSizePreview\}<\/GenerationSizeBadge>/);
+  assert.match(videoSettingsPanelSource, /description=\{ratio === "adaptive" \? "自动匹配" : ratio\}/);
+  assert.doesNotMatch(videoSettingsPanelSource, /description=\{videoComposerSizeDescription/);
+  assert.doesNotMatch(videoSettingsPanelSource, /`\$\{ratio\} · \$\{size\}`/);
+});
+
+test("manual video duration keeps an editing buffer until commit", () => {
+  assert.match(videoSettingsPanelSource, /function VideoDurationInput/);
+  assert.match(videoSettingsPanelSource, /const \[draft, setDraft\] = useState\(value\)/);
+  assert.match(videoSettingsPanelSource, /onChange=\{\(event\) => setDraft\(event\.target\.value\.replace\(\/\\D\/g, ""\)\)\}/);
+  assert.match(videoSettingsPanelSource, /onBlur=\{\(\) => \{ commit\(\); setEditing\(false\); \}\}/);
+  assert.doesNotMatch(videoSettingsPanelSource, /onChange=\{\(event\) => onChange\(\{ seconds: event\.target\.value \}\)\}/);
 });
 
 test("log governance exposes a persisted daily cleanup schedule", () => {
@@ -248,10 +447,17 @@ test("log governance exposes a persisted daily cleanup schedule", () => {
 });
 
 test("key preferences expose scoped custom API configuration without revealing saved keys", () => {
-  assert.match(profileSource, /title="自定义 API 配置"/);
+  assert.match(profileSource, /<DialogTitle>\{title\}自定义 API 配置<\/DialogTitle>/);
   assert.match(profileSource, /已配置，留空保持原 Key/);
-  assert.match(profileSource, /保存并使用/);
+  assert.match(profileSource, /createCustomRelayConfig/);
+  assert.match(profileSource, /updateCustomRelayConfig/);
   assert.match(profileSource, /deleteCustomRelayConfig/);
+  assert.match(profileSource, /selectedTokenNames=\{selectedTokenNames\[kind\]\}/);
+  assert.match(profileSource, /<MultiSelect/);
+  assert.match(profileSource, /collapseTags/);
+  assert.match(profileSource, /collapseTagsTooltip/);
+  assert.match(profileSource, /aria-label="查看 Key 匹配顺序说明"/);
+  assert.match(profileSource, /<TooltipHint content="按选择顺序匹配模型，前面的 Key 优先。">/);
   assert.match(settingsConfigSource, /允许自定义 API 配置/);
   assert.match(settingsStoreSource, /allow_user_custom_relay_config/);
   assert.match(apiSource, /\/api\/profile\/custom-relay-configs/);
@@ -262,5 +468,44 @@ test("creation preferences pull each model kind with its selected key", () => {
   assert.match(profileSource, /filterModelsByCapability/);
   assert.match(profileSource, /modelConfig\[kind\]\.models\.filter/);
   assert.match(profileSource, /按当前 Key 拉取\$\{label\}/);
-  assert.match(profileSource, /relayTokenNames=\{selectedTokenNames\}/);
+  assert.match(profileSource, /Promise\.all\(tokenNames\.map\(\(tokenName\) => fetchRelayModels\(\{ tokenName \}\)\)\)/);
+  assert.match(profileSource, /tokenNameForModel\("audio", selectedAudioModel\)/);
+});
+
+test("video progress hover does not resize or shift the progress track", () => {
+  assert.match(globalStylesSource, /\.xgplayer-progress\.active \.xgplayer-progress-outer\s*\{[^}]*height:\s*4px[^}]*margin-bottom:\s*0[^}]*transition:\s*none/s);
+  assert.doesNotMatch(globalStylesSource, /\.xgplayer-progress:hover\s*\{[^}]*height:/s);
+});
+
+test("video playback rate and download controls use the localized player treatment", () => {
+  assert.match(globalStylesSource, /\.xgplayer-playbackrate \.btn-text span/);
+  assert.match(globalStylesSource, /\.xg-options-list li\.selected\s*\{[^}]*background-color:\s*rgba\(20, 86, 240, 0\.24\)/s);
+  assert.match(globalStylesSource, /\.xgplayer-download\s*\{/);
+});
+
+test("creation composer toolbar does not show redundant tooltips", () => {
+  assert.doesNotMatch(imageComposerSource, /tooltip="图片生成"/);
+  assert.doesNotMatch(imageComposerSource, /tooltip="视频生成"/);
+  assert.doesNotMatch(imageComposerSource, /tooltip=\{`模型：/);
+  assert.doesNotMatch(imageComposerSource, /tooltip="提示词"/);
+  assert.doesNotMatch(imageComposerSource, /tooltip=\{isImageSettingsOpen \? "收起参数"/);
+  assert.doesNotMatch(imageComposerSource, /tooltip=\{relayApiKeyMissing/);
+  assert.match(imageComposerSource, /aria-label=\{`选择模型，当前 \$\{imageModelLabel\}`\}/);
+  assert.match(imageComposerSource, /aria-label=\{submitLabel\}/);
+});
+
+test("creation conversation cards keep spacing inside the scroll viewport", () => {
+  assert.match(imageSidebarSource, /<ScrollArea[\s\S]*?<div className=\{cn\("flex min-h-full flex-col gap-2"/);
+  assert.doesNotMatch(imageSidebarSource, /hideActionButtons \? "flex flex-col gap-1 pr-0"/);
+});
+
+test("creation composer model picker reuses the global select treatment", () => {
+  assert.match(imageComposerSource, /<Select[\s\S]*value=\{activeModel\}/);
+  assert.match(imageComposerSource, /<SelectTrigger[\s\S]*选择模型，当前/);
+  assert.match(imageComposerSource, /<SelectContent[\s\S]*side="top"/);
+  assert.doesNotMatch(imageComposerSource, /data-\[state=checked\]:bg-\[#eef4ff\]/);
+  assert.doesNotMatch(imageComposerSource, /<SelectContent[\s\S]{0,160}className=/);
+  assert.doesNotMatch(imageComposerSource, /<SelectItem[\s\S]{0,160}className=/);
+  assert.doesNotMatch(imageComposerSource, /modelMenuRef/);
+  assert.doesNotMatch(imageComposerSource, /rounded-\[20px\][^\n]*activeModelOptions/);
 });

@@ -12,12 +12,15 @@ type SelectOpenContextValue = {
 
 const SelectOpenContext = React.createContext<SelectOpenContextValue | null>(null);
 
-function Select({
-  defaultOpen,
-  onOpenChange,
-  open,
-  ...props
-}: React.ComponentProps<typeof SelectPrimitive.Root>) {
+function Select(allProps: React.ComponentProps<typeof SelectPrimitive.Root>) {
+  const {
+    defaultOpen,
+    onOpenChange,
+    open,
+    value,
+    ...props
+  } = allProps;
+  const hasControlledValue = Object.prototype.hasOwnProperty.call(allProps, "value");
   const [internalOpen, setInternalOpen] = React.useState(defaultOpen ?? false);
   const actualOpen = open ?? internalOpen;
   const setOpen = React.useCallback((nextOpen: boolean) => {
@@ -31,6 +34,7 @@ function Select({
         data-slot="select"
         open={actualOpen}
         onOpenChange={setOpen}
+        {...(hasControlledValue ? { value: value ?? "" } : {})}
         {...props}
       />
     </SelectOpenContext.Provider>
@@ -106,7 +110,7 @@ function SelectContent({
           manageKeyboard={false}
           maxHeight="min(24rem, var(--radix-select-content-available-height))"
           className="w-full"
-          viewportClassName="w-full overscroll-contain p-1"
+          viewportClassName="w-full overscroll-contain px-1 py-2"
         >
           {children}
         </ScrollArea>
@@ -124,7 +128,7 @@ function SelectItem({
     <SelectPrimitive.Item
       data-slot="select-item"
       className={cn(
-        "relative flex w-full cursor-default items-center gap-2 rounded-lg py-2 pr-8 pl-3 text-sm outline-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 focus:bg-accent focus:text-accent-foreground",
+        "relative my-1 flex w-full cursor-default items-center gap-2 rounded-lg py-2 pr-8 pl-3 text-sm outline-none select-none first:mt-0 last:mb-0 data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[state=checked]:bg-accent data-[state=checked]:font-medium data-[state=checked]:text-accent-foreground focus:bg-accent focus:text-accent-foreground",
         className,
       )}
       {...props}

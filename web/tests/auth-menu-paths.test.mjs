@@ -29,3 +29,11 @@ test("unknown menu paths do not grant access to current libraries", () => {
   assert.equal(canAccessPath(unknown, "/prompt-library"), false);
   assert.equal(getDefaultRouteForSession(unknown), "/profile");
 });
+
+test("studio is the default creation route and accepts legacy image permissions", () => {
+  const legacy = session(["/image"]);
+  assert.equal(canAccessPath(legacy, "/studio"), true);
+  assert.equal(canAccessPath(session(["/studio"]), "/image"), true);
+  assert.equal(getDefaultRouteForSession(legacy), "/studio");
+  assert.equal(getDefaultRouteForSession({ ...legacy, role: "admin" }), "/studio");
+});

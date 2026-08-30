@@ -42,6 +42,188 @@
   [style*="overflow-marquee"] { animation: none !important; }
 }
 
+[data-app-video-player] .xgplayer {
+  background: #080b10;
+  letter-spacing: 0;
+  font-family: inherit;
+}
+
+[data-app-video-player] .xgplayer .xgplayer-controls {
+  height: 52px;
+  background-image: linear-gradient(180deg, transparent 0%, rgba(4, 7, 12, 0.56) 35%, rgba(4, 7, 12, 0.9) 100%);
+}
+
+[data-app-video-player] .xgplayer .xg-inner-controls {
+  height: 40px;
+  bottom: 2px;
+}
+
+[data-app-video-player] .xgplayer xg-icon {
+  height: 36px;
+  margin-inline: 8px;
+  border-radius: 6px;
+  transition: background-color 160ms ease, opacity 160ms ease;
+}
+
+[data-app-video-player] .xgplayer xg-icon:hover {
+  background-color: rgba(255, 255, 255, 0.12);
+}
+
+[data-app-video-player] .xgplayer .xgplayer-time {
+  min-width: 76px;
+  margin-inline: 8px;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+[data-app-video-player] .xgplayer .xg-center-grid {
+  top: -18px;
+  height: 20px;
+  padding: 0;
+}
+
+[data-app-video-player] .xgplayer .xgplayer-progress {
+  height: 20px;
+  transform: none;
+}
+
+[data-app-video-player] .xgplayer.xgplayer-pc .xgplayer-progress-outer,
+[data-app-video-player] .xgplayer.xgplayer-pc .xgplayer-progress.active .xgplayer-progress-outer {
+  height: 4px;
+  margin-bottom: 0;
+  transition: none;
+  border-radius: 999px;
+}
+
+[data-app-video-player] .xgplayer .xgplayer-progress-inner,
+[data-app-video-player] .xgplayer .xgplayer-progress-cache,
+[data-app-video-player] .xgplayer .xgplayer-progress-played {
+  border-radius: inherit;
+}
+
+[data-app-video-player] .xgplayer .xgplayer-progress-btn,
+[data-app-video-player] .xgplayer .xgplayer-progress-btn.active {
+  width: 14px;
+  height: 14px;
+  border: 0;
+  background: rgba(20, 86, 240, 0.24);
+  box-shadow: none;
+}
+
+[data-app-video-player] .xgplayer .xgplayer-progress-btn::before {
+  width: 8px;
+  height: 8px;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+
+[data-app-video-player] .xgplayer .xgplayer-start {
+  width: 56px;
+  height: 56px;
+}
+
+[data-app-video-player] .xgplayer xg-start-inner {
+  border-radius: 999px;
+  background: rgba(20, 86, 240, 0.92);
+  box-shadow: 0 10px 30px rgba(20, 86, 240, 0.3);
+}
+
+[data-app-video-player] .xgplayer .xg-options-list,
+[data-app-video-player] .xgplayer .xgplayer-slider {
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(17, 24, 39, 0.94);
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.34);
+  backdrop-filter: blur(14px);
+}
+
+[data-app-video-player] .xgplayer .xgplayer-playbackrate {
+  min-width: 42px;
+  padding-inline: 4px;
+}
+
+[data-app-video-player] .xgplayer .xgplayer-playbackrate .btn-text span {
+  min-width: 34px;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+[data-app-video-player] .xgplayer .xgplayer-playbackrate + .xg-options-list,
+[data-app-video-player] .xgplayer .xgplayer-playbackrate .xg-options-list {
+  box-sizing: border-box;
+  width: 112px;
+  max-height: none !important;
+  right: 50%;
+  bottom: calc(100% + 10px);
+  padding: 6px;
+  overflow: hidden;
+  opacity: 1;
+}
+
+[data-app-video-player] .xgplayer .xg-options-list li {
+  box-sizing: border-box;
+  width: 100%;
+  height: 32px;
+  margin: 0;
+  padding: 0 12px;
+  border-radius: 6px;
+  line-height: 32px;
+  text-align: left;
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.76);
+  transition: background-color 140ms ease, color 140ms ease;
+}
+
+[data-app-video-player] .xgplayer .xg-options-list li:first-child,
+[data-app-video-player] .xgplayer .xg-options-list li:last-child {
+  margin: 0;
+}
+
+[data-app-video-player] .xgplayer .xg-options-list li:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: #fff;
+}
+
+[data-app-video-player] .xgplayer .xg-options-list li.selected {
+  background-color: rgba(20, 86, 240, 0.24);
+  color: #8eb7ff;
+  font-weight: 600;
+}
+
+[data-app-video-player] .xgplayer .xg-options-list li.selected::after {
+  content: "✓";
+  position: absolute;
+  right: 10px;
+  color: #8eb7ff;
+}
+
+[data-app-video-player] .xgplayer .xgplayer-download {
+  width: 36px;
+}
+
+[data-app-video-player] .xgplayer .xg-tips,
+[data-app-video-player] .xgplayer .xgplayer-prompt,
+[data-app-video-player] .xgplayer .xgplayer-progress-point {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  background: rgba(17, 24, 39, 0.92);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.24);
+  backdrop-filter: blur(10px);
+}
+
+@media (max-width: 640px) {
+  [data-app-video-player] .xgplayer xg-icon {
+    margin-inline: 4px;
+  }
+
+  [data-app-video-player] .xgplayer .xgplayer-time {
+    min-width: 64px;
+    margin-inline: 4px;
+    font-size: 11px;
+  }
+}
+
 @keyframes scroll-area-fade-in {
   from {
     opacity: 0;

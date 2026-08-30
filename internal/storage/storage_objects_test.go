@@ -3,6 +3,7 @@ package storage
 import (
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"chatgpt2api/internal/model"
@@ -34,5 +35,17 @@ func TestDatabaseBackendStorageObjectLifecycle(t *testing.T) {
 	}
 	if _, err := backend.LoadStorageObject(object.ID); !errors.Is(err, ErrStorageObjectNotFound) {
 		t.Fatalf("LoadStorageObject(deleted) error = %v", err)
+	}
+}
+
+func TestStorageObjectUsageUsesProviderMIMEIndex(t *testing.T) {
+	backend := openSQLiteStorageTestBackend(t, filepath.Join(t.TempDir(), "storage.db"))
+	var plan string
+	if err := backend.db.QueryRow(`EXPLAIN QUERY PLAN SELECT mime_type, COUNT(*), COALESCE(SUM(bytes), 0)
+		FROM storage_objects WHERE provider_id = ? GROUP BY mime_type`, "provider-1").Scan(new(int), new(int), new(int), &plan); err != nil {
+		t.Fatalf("EXPLAIN QUERY PLAN error = %v", err)
+	}
+	if !strings.Contains(plan, "idx_storage_objects_provider_mime") {
+		t.Fatalf("storage usage query plan = %q", plan)
 	}
 }

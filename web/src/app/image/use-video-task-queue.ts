@@ -23,13 +23,6 @@ export type VideoTaskQueueRequest = {
   referenceAudioURLs?: string[];
   referenceMode?: "first-frame" | "reference";
   systemPrompt?: string;
-  videoMode?: string;
-  negativePrompt?: string;
-  multiShot?: boolean;
-  shotType?: "intelligence" | "customize";
-  multiPrompt?: Array<Record<string, unknown>>;
-  elementList?: Array<Record<string, unknown>>;
-  characterOrientation?: "image" | "video";
   relayTokenName?: string;
   assertDispatchAllowed?: (taskIds: string[]) => void;
 };
@@ -69,13 +62,6 @@ export function useVideoTaskQueue(options: {
         referenceAudioURLs: request.referenceAudioURLs,
         referenceMode: request.referenceMode || "first-frame",
         systemPrompt: request.systemPrompt,
-        videoMode: request.videoMode,
-        negativePrompt: request.negativePrompt,
-        multiShot: request.multiShot,
-        shotType: request.shotType,
-        multiPrompt: request.multiPrompt,
-        elementList: request.elementList,
-        characterOrientation: request.characterOrientation,
         relayTokenName: request.relayTokenName,
         requestOptions: options.requestOptions,
       });

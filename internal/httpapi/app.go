@@ -24,6 +24,7 @@ import (
 	"chatgpt2api/internal/service"
 	"chatgpt2api/internal/storage"
 	"chatgpt2api/internal/util"
+	"chatgpt2api/internal/videocontract"
 	frontend "chatgpt2api/internal/web"
 )
 
@@ -62,6 +63,7 @@ type App struct {
 	history             *service.ImageConversationHistoryService
 	canvas              *service.CanvasDocumentService
 	announce            *service.AnnouncementService
+	videoContracts      *videocontract.VideoModelContractService
 	imagePreferences    *service.ImageGenerationPreferenceService
 	customRelayConfigs  *service.CustomRelayConfigService
 	workflows           *service.WorkflowService
@@ -189,6 +191,11 @@ func NewApp() (*App, error) {
 		logger.Warning("bootstrap admin password generated", "username", bootstrap.Username)
 	}
 	documentStore, _ := storageBackend.(storage.JSONDocumentBackend)
+	videoContracts := videocontract.NewVideoModelContractService(storageBackend)
+	if err := videoContracts.Initialize(); err != nil {
+		cancel()
+		return nil, fmt.Errorf("initialize video model contracts: %w", err)
+	}
 	images := service.NewImageService(cfg, storageBackend)
 	engine := &protocol.Engine{Config: cfg, Storage: documentStore, Images: images}
 	videoDir := filepath.Join(cfg.DataDir, "videos")
@@ -206,11 +213,12 @@ func NewApp() (*App, error) {
 		cancel()
 		return nil, fmt.Errorf("initialize audio storage: %w", err)
 	}
-	app := &App{ctx: ctx, config: cfg, auth: auth, logs: logs, logger: logger, proxy: proxy, engine: engine, images: images, videoDir: videoDir, audioDir: audioDir, videoReferenceDir: videoReferenceDir, conversationAssets: service.NewImageConversationAssetService(filepath.Join(cfg.DataDir, "image_conversation_assets")), prompts: service.NewPromptFavoriteService(storageBackend), myAssets: service.NewMyAssetService(storageBackend, storageFiles), history: service.NewImageConversationHistoryService(storageBackend), canvas: service.NewCanvasDocumentService(storageBackend), announce: service.NewAnnouncementService(storageBackend), imagePreferences: service.NewImageGenerationPreferenceService(storageBackend), customRelayConfigs: service.NewCustomRelayConfigService(storageBackend), workflows: service.NewWorkflowService(storageBackend), storageFiles: storageFiles, newAPIKeys: newAPIKeys, cancel: cancel, historyWriteLimiter: newImageConversationHistoryWriteLimiter(imageConversationHistoryWriteParallelism), imageUploadSlots: make(chan struct{}, 2), loginLimiter: newLoginRateLimiter()}
+	app := &App{ctx: ctx, config: cfg, auth: auth, logs: logs, logger: logger, proxy: proxy, engine: engine, images: images, videoDir: videoDir, audioDir: audioDir, videoReferenceDir: videoReferenceDir, conversationAssets: service.NewImageConversationAssetService(filepath.Join(cfg.DataDir, "image_conversation_assets")), prompts: service.NewPromptFavoriteService(storageBackend), myAssets: service.NewMyAssetService(storageBackend, storageFiles), history: service.NewImageConversationHistoryService(storageBackend), canvas: service.NewCanvasDocumentService(storageBackend), announce: service.NewAnnouncementService(storageBackend), videoContracts: videoContracts, imagePreferences: service.NewImageGenerationPreferenceService(storageBackend), customRelayConfigs: service.NewCustomRelayConfigService(storageBackend), workflows: service.NewWorkflowService(storageBackend), storageFiles: storageFiles, newAPIKeys: newAPIKeys, cancel: cancel, historyWriteLimiter: newImageConversationHistoryWriteLimiter(imageConversationHistoryWriteParallelism), imageUploadSlots: make(chan struct{}, 2), loginLimiter: newLoginRateLimiter()}
 	app.conversationAssets.SetStorageBudget(cfg.ImageStorageLimitBytes, func() int64 {
 		return app.images.StorageGovernance().TotalBytes
 	})
 	app.history.SetConversationAssetService(app.conversationAssets)
+	app.startVideoModelContractRefresher(ctx, time.Minute)
 	app.tasks = service.NewStoredImageTaskService(storageBackend,
 		func(ctx context.Context, identity service.Identity, payload map[string]any) (map[string]any, error) {
 			return app.runLoggedImageTask(ctx, identity, payload, "/api/creation-tasks/image-generations", "文生图", func(ctx context.Context, payload map[string]any) (map[string]any, error) {
@@ -261,11 +269,31 @@ func NewApp() (*App, error) {
 	return app, nil
 }
 
+func (a *App) startVideoModelContractRefresher(ctx context.Context, interval time.Duration) {
+	if a == nil || a.videoContracts == nil || interval <= 0 {
+		return
+	}
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := a.videoContracts.Initialize(); err != nil && a.logger != nil {
+					a.logger.Warning("refresh video model contracts failed", "error", err)
+				}
+			}
+		}
+	}()
+}
+
 func (a *App) runLoggedVideoTask(ctx context.Context, identity service.Identity, payload map[string]any) (map[string]any, error) {
 	start := time.Now()
 	payload["owner_id"] = identityScope(identity)
 	payload["owner_name"] = identityDisplayName(identity)
-	model := firstNonEmpty(util.Clean(payload["model"]), firstString(a.config.VideoModels(), defaultVideoModel))
+	model := util.Clean(payload["model"])
 	payload["model"] = model
 	if err := a.attachRelayAPIKeyForIdentity(ctx, identity, payload); err != nil {
 		return nil, err
@@ -545,7 +573,7 @@ func (a *App) handleUpstreamModels(w http.ResponseWriter, r *http.Request) {
 	relayBaseURL := a.relayBaseURL()
 	group := strings.TrimSpace(r.URL.Query().Get("group"))
 	tokenName := strings.TrimSpace(r.URL.Query().Get("token_name"))
-	if service.CustomRelayKindFromTokenName(tokenName) != "" {
+	if service.CustomRelayConfigIDFromTokenName(tokenName) != "" {
 		credential, err := a.relayCredentialForIdentitySelection(r.Context(), identity, group, tokenName)
 		if err != nil {
 			a.writeProtocol(w, r, nil, nil, err, "openai", "/api/profile/upstream-models", "models", identity, "上游模型列表", service.ImageVisibilityPrivate)
@@ -952,19 +980,33 @@ func (a *App) handleModelConfig(w http.ResponseWriter, r *http.Request) {
 	util.WriteJSON(w, http.StatusOK, map[string]any{"config": config})
 }
 
+func (a *App) handlePromptSources(w http.ResponseWriter, r *http.Request) {
+	if _, ok := a.requireIdentity(w, r); !ok {
+		return
+	}
+	util.WriteJSON(w, http.StatusOK, map[string]any{
+		"sources": a.config.Get()["prompt_sources"],
+	})
+}
+
 func (a *App) modelConfig() map[string]any {
 	imageModels := a.configuredImageModels()
 	return map[string]any{
-		"image_models":        imageModels,
-		"default_image_model": a.defaultImageModel(),
-		"video_models":        a.config.VideoModels(),
-		"default_video_model": firstString(a.config.VideoModels(), defaultVideoModel),
-		"text_models":         a.config.TextModels(),
-		"default_text_model":  a.config.DefaultTextModel(),
-		"audio_models":        a.config.AudioModels(),
-		"default_audio_model": a.config.DefaultAudioModel(),
-		"relay_base_url":      a.relayBaseURL(),
+		"image_models":          imageModels,
+		"default_image_model":   a.defaultImageModel(),
+		"video_models":          a.configuredVideoModels(),
+		"default_video_model":   firstString(a.configuredVideoModels(), defaultVideoModel),
+		"video_model_contracts": protocol.ActiveVideoContracts(),
+		"text_models":           a.config.TextModels(),
+		"default_text_model":    a.config.DefaultTextModel(),
+		"audio_models":          a.config.AudioModels(),
+		"default_audio_model":   a.config.DefaultAudioModel(),
+		"relay_base_url":        a.relayBaseURL(),
 	}
+}
+
+func (a *App) configuredVideoModels() []string {
+	return append([]string(nil), a.config.VideoModels()...)
 }
 
 func (a *App) configuredImageModels() []string {
@@ -1871,6 +1913,8 @@ func isPermissionCheckSkipped(method, path string) bool {
 		return true
 	case "/api/model-config":
 		return true
+	case "/api/prompt-sources":
+		return true
 	case "/api/storage/config":
 		return true
 	case "/api/announcements":
@@ -2289,13 +2333,15 @@ func imageListAccessScope(identity service.Identity, value string) (service.Imag
 			return service.ImageAccessScope{All: true}, 0, ""
 		}
 		return service.ImageAccessScope{Public: true}, 0, ""
+	case "visible":
+		return service.ImageAccessScope{OwnerID: identityScope(identity), Visible: true}, 0, ""
 	case "all":
 		if identity.Role != service.AuthRoleAdmin {
 			return service.ImageAccessScope{}, http.StatusForbidden, "admin permission required"
 		}
 		return service.ImageAccessScope{All: true}, 0, ""
 	default:
-		return service.ImageAccessScope{}, http.StatusBadRequest, "scope must be mine, public, or all"
+		return service.ImageAccessScope{}, http.StatusBadRequest, "scope must be mine, public, visible, or all"
 	}
 }
 

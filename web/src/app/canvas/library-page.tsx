@@ -22,9 +22,11 @@ import { CanvasProjectDialog, type CanvasProjectDialogMode } from "@/app/canvas/
 import { createCanvasProjectArchive, downloadCanvasProjectArchive, readCanvasProjectArchive } from "@/app/canvas/canvas-project-transfer";
 import { CanvasAssetPicker } from "@/app/canvas/canvas-asset-picker";
 import { canvasProjectPath } from "@/app/canvas/canvas-project-route";
-import { canvasAgentStarterLabel, createCanvasPendingAgentAsset, defaultCanvasAgentStarterConfig, defaultCanvasAgentStarterVideoModel } from "@/app/canvas/agent/canvas-agent-starter";
+import { canvasAgentStarterLabel, createCanvasPendingAgentAsset, defaultCanvasAgentStarterConfig } from "@/app/canvas/agent/canvas-agent-starter";
 import type { CanvasAgentConfig, CanvasInsertAssetPayload, CanvasPendingAgentAsset } from "@/app/canvas/agent/canvas-agent-types";
-import { DEFAULT_IMAGE_MODEL } from "@/lib/api";
+import { DEFAULT_IMAGE_MODEL, fetchModelConfig } from "@/lib/api";
+import { useImageGenerationPreferences } from "@/lib/use-image-generation-preferences";
+import { resolveConfiguredVideoModel } from "@/lib/video-model-capabilities";
 import { uploadAssetMediaFile } from "@/services/file-storage";
 import { uploadImage } from "@/services/image-storage";
 import {
@@ -44,6 +46,7 @@ function projectDate(value?: string) {
 
 export default function CanvasLibraryPage({ session }: { session: StoredAuthSession }) {
   const navigate = useNavigate();
+  const { preferences: imageGenerationPreferences, isReady: imageGenerationPreferencesReady } = useImageGenerationPreferences(session.key);
   const [projects, setProjects] = useState<CanvasProjectSummary[]>([]);
   const [activeProjectID, setActiveProjectID] = useState("");
   const [loading, setLoading] = useState(true);
@@ -58,7 +61,7 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
   const [projectDialog, setProjectDialog] = useState<{ mode: CanvasProjectDialogMode; project?: CanvasProjectSummary; count?: number } | null>(null);
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const agentUploadInputRef = useRef<HTMLInputElement | null>(null);
-  const agentVideoModel = defaultCanvasAgentStarterVideoModel();
+  const [agentVideoModel, setAgentVideoModel] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -77,6 +80,31 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
       active = false;
     };
   }, [session.key]);
+
+  useEffect(() => {
+    if (!imageGenerationPreferencesReady) return;
+    let active = true;
+    void fetchModelConfig()
+      .then(({ config }) => {
+        if (!active) return;
+        const model = resolveConfiguredVideoModel(
+          config.video_models,
+          imageGenerationPreferences.workbench.video_model,
+          imageGenerationPreferences.default_video_model,
+          config.default_video_model,
+        );
+        setAgentVideoModel(model);
+        setAgentConfig(defaultCanvasAgentStarterConfig(model));
+      })
+      .catch(() => {
+        if (!active) return;
+        setAgentVideoModel("");
+        setAgentConfig(defaultCanvasAgentStarterConfig(""));
+      });
+    return () => {
+      active = false;
+    };
+  }, [imageGenerationPreferences.default_video_model, imageGenerationPreferences.workbench.video_model, imageGenerationPreferencesReady]);
 
   async function createAndOpen() {
     if (busy) return;

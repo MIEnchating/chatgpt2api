@@ -4,13 +4,15 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import {
   AudioLines,
+  CircleHelp,
   Clapperboard,
   HardDrive,
   Image as ImageIcon,
   KeyRound,
   LoaderCircle,
+  Pencil,
+  Plus,
   Save,
-  SlidersHorizontal,
   RefreshCw,
   Settings2,
   TextCursorInput,
@@ -25,11 +27,14 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { NumberInput } from "@/components/ui/number-input";
+import { MultiSelect } from "@/components/ui/multi-select";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
+import { TooltipHint } from "@/components/ui/tooltip";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
+  createCustomRelayConfig,
   fetchImageGenerationPreferences,
   fetchCustomRelayConfigs,
   fetchGrokTTSVoices,
@@ -48,7 +53,7 @@ import {
 } from "@/lib/api";
 import { DEFAULT_CREATION_WORKBENCH_PREFERENCES } from "@/lib/use-image-generation-preferences";
 import { displaySubjectId } from "@/lib/session";
-import { retainSelectedRelayTokenName, type RelayTokenKind } from "@/lib/relay-token-selection";
+import { retainSelectedRelayTokenNames, type RelayTokenKind } from "@/lib/relay-token-selection";
 import { useRelayTokenPreferences } from "@/lib/use-relay-token-preferences";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import { filterModelsByCapability } from "@/lib/model-capabilities";
@@ -135,20 +140,20 @@ function SidebarInfoRow({ label, value, code = false }: InfoRowProps) {
 }
 
 function RelayKeyPreference({
-  customConfig,
+  customConfigs,
   customConfigurable,
   kind,
   onChange,
   onEditCustom,
-  selectedTokenName,
+  selectedTokenNames,
   tokenNameOptions,
 }: {
-  customConfig?: CustomRelayConfigStatus;
+  customConfigs: CustomRelayConfigStatus[];
   customConfigurable: boolean;
   kind: RelayTokenKind;
-  onChange: (value: string) => void;
-  onEditCustom: () => void;
-  selectedTokenName: string;
+  onChange: (value: string[]) => void;
+  onEditCustom: (status?: CustomRelayConfigStatus) => void;
+  selectedTokenNames: string[];
   tokenNameOptions: string[];
 }) {
   const metadata = {
@@ -158,33 +163,47 @@ function RelayKeyPreference({
     audio: { icon: AudioLines, title: "音频模型 Key", description: "用于音频模型请求" },
   }[kind];
   const Icon = metadata.icon;
-  const options = customConfig?.configured
-    ? [...tokenNameOptions, customConfig.token_name]
-    : tokenNameOptions;
-  const activeTokenName = options.includes(selectedTokenName) ? selectedTokenName : "";
+  const matchingCustomConfigs = customConfigs.filter((config) => config.kind === kind && config.configured);
+  const options = [
+    ...tokenNameOptions.map((name) => ({ value: name, label: name, custom: undefined as CustomRelayConfigStatus | undefined })),
+    ...matchingCustomConfigs.map((config) => ({ value: config.token_name, label: config.name, custom: config })),
+  ];
+  const selected = selectedTokenNames.filter((name) => options.some((option) => option.value === name));
 
   return (
     <div className="grid min-w-0 gap-2">
       <div className="flex items-center gap-2">
         <Icon className="size-4 shrink-0 text-muted-foreground" />
         <div className="min-w-0">
-          <span className="block text-sm font-medium text-foreground">{metadata.title}</span>
+          <span className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+            {metadata.title}
+            <TooltipHint content="按选择顺序匹配模型，前面的 Key 优先。">
+              <button type="button" className="inline-flex size-4 items-center justify-center text-muted-foreground hover:text-foreground" aria-label="查看 Key 匹配顺序说明">
+                <CircleHelp className="size-3.5" />
+              </button>
+            </TooltipHint>
+          </span>
           <span className="block text-xs text-muted-foreground">{metadata.description}</span>
         </div>
       </div>
       <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
-        <Select value={activeTokenName || undefined} onValueChange={onChange} disabled={options.length === 0}>
-          <SelectTrigger className="h-9 rounded-lg bg-background shadow-none">
-            <KeyRound className="size-4 text-muted-foreground" />
-            <SelectValue placeholder={options.length ? "请选择 Key" : "暂无可用 Key"} />
-          </SelectTrigger>
-          <SelectContent>
-            {tokenNameOptions.map((name) => <SelectItem key={name} value={name}>{name}</SelectItem>)}
-            {customConfig?.configured ? <SelectItem value={customConfig.token_name}>自定义配置</SelectItem> : null}
-          </SelectContent>
-        </Select>
-        {customConfigurable ? <Button type="button" variant="outline" size="icon" className="size-9 shadow-none" title="自定义 API 配置" onClick={onEditCustom}>
-          <SlidersHorizontal className="size-4" />
+        <MultiSelect
+          value={selected}
+          options={options.map((option) => ({
+            value: option.value,
+            label: option.label,
+            meta: option.custom ? <span className="text-[10px] text-muted-foreground">自定义</span> : null,
+            action: option.custom && customConfigurable ? <Button type="button" variant="ghost" size="icon" className="mr-1 size-7" title="编辑自定义 API" onClick={() => onEditCustom(option.custom)}><Pencil className="size-3.5" /></Button> : null,
+          }))}
+          disabled={options.length === 0}
+          placeholder="请选择 Key"
+          emptyText="暂无可用 Key"
+          collapseTags
+          collapseTagsTooltip
+          onValueChange={onChange}
+        />
+        {customConfigurable ? <Button type="button" variant="outline" size="icon" className="size-9 shadow-none" title="添加自定义 API 配置" onClick={() => onEditCustom()}>
+          <Plus className="size-4" />
         </Button> : null}
       </div>
     </div>
@@ -200,33 +219,37 @@ function CustomRelayConfigDialog({
   status,
 }: {
   kind: RelayTokenKind | null;
-  onDeleted: (kind: RelayTokenKind) => void;
+  onDeleted: (status: CustomRelayConfigStatus) => void;
   onOpenChange: (open: boolean) => void;
   onSaved: (status: CustomRelayConfigStatus) => void;
   open: boolean;
   status?: CustomRelayConfigStatus;
 }) {
   const [baseURL, setBaseURL] = useState("");
+  const [name, setName] = useState("");
   const [apiKey, setAPIKey] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
     if (!open) return;
+    setName(status?.name || "");
     setBaseURL(status?.base_url || "");
     setAPIKey("");
     setConfirmDelete(false);
-  }, [open, status?.base_url]);
+  }, [open, status?.base_url, status?.name]);
 
   if (!kind) return null;
   const title = { text: "文本", image: "图片", video: "视频", audio: "音频" }[kind];
-  const canSave = baseURL.trim() !== "" && (status?.has_key || apiKey.trim() !== "");
+  const canSave = name.trim() !== "" && baseURL.trim() !== "" && (status?.has_key || apiKey.trim() !== "");
 
   const save = async () => {
     if (!canSave) return;
     setIsSaving(true);
     try {
-      const { item } = await updateCustomRelayConfig(kind, { base_url: baseURL.trim(), api_key: apiKey.trim() });
+      const { item } = status
+        ? await updateCustomRelayConfig(status.id, { name: name.trim(), base_url: baseURL.trim(), api_key: apiKey.trim() })
+        : await createCustomRelayConfig({ kind, name: name.trim(), base_url: baseURL.trim(), api_key: apiKey.trim() });
       onSaved(item);
       toast.success(`${title}自定义 API 配置已保存`);
       onOpenChange(false);
@@ -244,8 +267,9 @@ function CustomRelayConfigDialog({
     }
     setIsSaving(true);
     try {
-      await deleteCustomRelayConfig(kind);
-      onDeleted(kind);
+      if (!status) return;
+      await deleteCustomRelayConfig(status.id);
+      onDeleted(status);
       toast.success(`${title}自定义 API 配置已删除`);
       onOpenChange(false);
     } catch (error) {
@@ -264,6 +288,10 @@ function CustomRelayConfigDialog({
         </DialogHeader>
         <div className="grid gap-4 py-1">
           <label className="grid gap-1.5 text-sm font-medium text-foreground">
+            <span>配置名称</span>
+            <Input value={name} onChange={(event) => setName(event.target.value)} placeholder={`例如 ${title}备用线路`} />
+          </label>
+          <label className="grid gap-1.5 text-sm font-medium text-foreground">
             <span>Base URL</span>
             <Input type="url" value={baseURL} onChange={(event) => setBaseURL(event.target.value)} placeholder="https://api.example.com" autoComplete="url" />
             <span className="text-xs font-normal leading-5 text-muted-foreground">填写 OpenAI 兼容 API 的基础地址，不包含具体接口路径。</span>
@@ -274,7 +302,7 @@ function CustomRelayConfigDialog({
           </label>
         </div>
         <DialogFooter>
-          {status?.configured ? <Button type="button" variant={confirmDelete ? "destructive" : "outline"} className="sm:mr-auto" disabled={isSaving} onClick={() => void remove()}>
+          {status ? <Button type="button" variant={confirmDelete ? "destructive" : "outline"} className="sm:mr-auto" disabled={isSaving} onClick={() => void remove()}>
             <Trash2 className="size-4" />{confirmDelete ? "确认删除" : "删除配置"}
           </Button> : null}
           <Button type="button" variant="outline" disabled={isSaving} onClick={() => onOpenChange(false)}>取消</Button>
@@ -297,9 +325,9 @@ function AccountResourcesCard({
 }: {
   customConfigs?: CustomRelayConfigsResponse["configs"];
   customConfigurable: boolean;
-  onEditCustom: (kind: RelayTokenKind) => void;
-  onTokenNameChange: (kind: RelayTokenKind, value: string) => void;
-  selectedTokenNames: Record<RelayTokenKind, string>;
+  onEditCustom: (kind: RelayTokenKind, status?: CustomRelayConfigStatus) => void;
+  onTokenNameChange: (kind: RelayTokenKind, value: string[]) => void;
+  selectedTokenNames: Record<RelayTokenKind, string[]>;
   tokenNameOptions: string[];
 }) {
   return (
@@ -321,12 +349,12 @@ function AccountResourcesCard({
             <RelayKeyPreference
               key={kind}
               kind={kind}
-              customConfig={customConfigs?.[kind]}
+              customConfigs={customConfigs || []}
               customConfigurable={customConfigurable}
-              selectedTokenName={selectedTokenNames[kind]}
+              selectedTokenNames={selectedTokenNames[kind]}
               tokenNameOptions={tokenNameOptions}
               onChange={(value) => onTokenNameChange(kind, value)}
-              onEditCustom={() => onEditCustom(kind)}
+              onEditCustom={(status) => onEditCustom(kind, status)}
             />
           ))}
         </div>
@@ -352,10 +380,10 @@ const DEFAULT_IMAGE_GENERATION_PREFERENCES: ImageGenerationPreferences = {
   default_audio_voice: "",
   default_audio_format: "",
   default_audio_speed: 1,
-  default_text_relay_token_name: "",
-  default_image_relay_token_name: "",
-  default_video_relay_token_name: "",
-  default_audio_relay_token_name: "",
+  default_text_relay_token_names: [],
+  default_image_relay_token_names: [],
+  default_video_relay_token_names: [],
+  default_audio_relay_token_names: [],
   workbench: DEFAULT_CREATION_WORKBENCH_PREFERENCES,
 };
 
@@ -408,7 +436,8 @@ function PreferenceRow({
   );
 }
 
-function ImageGenerationPreferencesCard({ relayTokenNames, sessionKey }: { relayTokenNames: Record<RelayTokenKind, string>; sessionKey: string }) {
+function ImageGenerationPreferencesCard({ sessionKey }: { sessionKey: string }) {
+  const { tokenNames: relayTokenNames, tokenNameForModel } = useRelayTokenPreferences();
   const [preferences, setPreferences] = useState<ImageGenerationPreferences>(DEFAULT_IMAGE_GENERATION_PREFERENCES);
   const [modelConfig, setModelConfig] = useState({
     text: { models: [] as string[], fallback: "" },
@@ -455,7 +484,7 @@ function ImageGenerationPreferencesCard({ relayTokenNames, sessionKey }: { relay
 
   useEffect(() => {
     setPulledModels({ text: null, image: null, video: null, audio: null });
-  }, [relayTokenNames.text, relayTokenNames.image, relayTokenNames.video, relayTokenNames.audio]);
+  }, [relayTokenNames]);
 
   const selectedAudioModel = modelConfig.audio.models.includes(preferences.default_audio_model) ? preferences.default_audio_model : modelConfig.audio.fallback;
 
@@ -465,11 +494,16 @@ function ImageGenerationPreferencesCard({ relayTokenNames, sessionKey }: { relay
       return;
     }
     let ignore = false;
-    void fetchGrokTTSVoices(selectedAudioModel, relayTokenNames.audio)
+    const tokenName = tokenNameForModel("audio", selectedAudioModel);
+    if (!tokenName) {
+      setGrokVoices([]);
+      return;
+    }
+    void fetchGrokTTSVoices(selectedAudioModel, tokenName)
       .then((voices) => { if (!ignore) setGrokVoices(voices.map((voice) => voice.voice_id.trim()).filter(Boolean)); })
       .catch(() => { if (!ignore) setGrokVoices([]); });
     return () => { ignore = true; };
-  }, [relayTokenNames.audio, selectedAudioModel]);
+  }, [selectedAudioModel, tokenNameForModel]);
 
   const audioDefaults = audioPreferenceDefaults(selectedAudioModel);
   const audioChoices = audioPreferenceChoices(selectedAudioModel, preferences.default_audio_voice, grokVoices);
@@ -480,16 +514,16 @@ function ImageGenerationPreferencesCard({ relayTokenNames, sessionKey }: { relay
     : Math.max(audioChoices.minimumSpeed, Math.min(audioChoices.maximumSpeed, Number(preferences.default_audio_speed) || 1));
 
   const pullModels = async (kind: RelayTokenKind) => {
-    const tokenName = relayTokenNames[kind].trim();
-    if (!tokenName) {
+    const tokenNames = relayTokenNames[kind];
+    if (tokenNames.length === 0) {
       toast.error(`请先在 Key 选择中设置${{ text: "文本", image: "图片", video: "视频", audio: "音频" }[kind]}模型 Key`);
       return;
     }
     setLoadingModelKind(kind);
     try {
-      const response = await fetchRelayModels({ tokenName });
+      const responses = await Promise.all(tokenNames.map((tokenName) => fetchRelayModels({ tokenName })));
       const upstreamModels = filterModelsByCapability(
-        relayModelOptionsFromList(response.data).map((option) => option.value),
+        Array.from(new Set(responses.flatMap((response) => relayModelOptionsFromList(response.data).map((option) => option.value)))),
         kind,
       );
       const upstreamSet = new Set(upstreamModels);
@@ -528,8 +562,11 @@ function ImageGenerationPreferencesCard({ relayTokenNames, sessionKey }: { relay
   };
 
   return (
-    <Card className="overflow-hidden">
-      <CardHeader className="pb-4">
+    <Card data-profile-preferences-card className="overflow-hidden lg:h-full lg:min-h-0">
+      <CardHeader
+        data-profile-preferences-header
+        className="shrink-0 border-b border-border/80 bg-card p-5 sm:p-6"
+      >
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
             <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100 dark:bg-emerald-950/30 dark:text-emerald-300 dark:ring-emerald-900/50">
@@ -546,7 +583,12 @@ function ImageGenerationPreferencesCard({ relayTokenNames, sessionKey }: { relay
           </Button>
         </div>
       </CardHeader>
-      <CardContent className="space-y-6">
+      <ScrollArea
+        data-profile-preferences-body
+        className="min-h-0 lg:flex-1"
+        viewportClassName="pr-4"
+      >
+        <CardContent className="space-y-6 pb-6 pt-5 sm:pt-6">
         <section className="space-y-4 border-t border-border/70 pt-5 first:border-t-0 first:pt-0">
           <div>
             <h2 className="text-sm font-semibold text-foreground">默认模型</h2>
@@ -574,7 +616,7 @@ function ImageGenerationPreferencesCard({ relayTokenNames, sessionKey }: { relay
                     variant="outline"
                     size="icon"
                     className="size-9 shadow-none"
-                    disabled={isLoading || loadingModelKind !== null || !relayTokenNames[kind].trim()}
+                    disabled={isLoading || loadingModelKind !== null || relayTokenNames[kind].length === 0}
                     onClick={() => void pullModels(kind)}
                     aria-label={`按当前 Key 拉取${label}`}
                     title={`按当前 Key 拉取${label}`}
@@ -665,7 +707,8 @@ function ImageGenerationPreferencesCard({ relayTokenNames, sessionKey }: { relay
           </div>
         </section>
         {message ? <p className="text-sm text-muted-foreground">{message}</p> : null}
-      </CardContent>
+        </CardContent>
+      </ScrollArea>
     </Card>
   );
 }
@@ -721,17 +764,16 @@ function profileSectionFromHash(): ProfileSection {
 function ProfileContent({ session }: { session: StoredAuthSession }) {
   const [balance, setBalance] = useState<ProfileBalanceStatus | null>(null);
   const [customRelayConfigs, setCustomRelayConfigs] = useState<CustomRelayConfigsResponse | null>(null);
-  const [editingCustomRelayKind, setEditingCustomRelayKind] = useState<RelayTokenKind | null>(null);
-  const { tokenNames: selectedTokenNames, setTokenName } = useRelayTokenPreferences();
+  const [editingCustomRelay, setEditingCustomRelay] = useState<{ kind: RelayTokenKind; status?: CustomRelayConfigStatus } | null>(null);
+  const { tokenNames: selectedTokenNames, setTokenNames } = useRelayTokenPreferences();
   const [isLoadingBalance, setIsLoadingBalance] = useState(true);
   const [activeSection, setActiveSection] = useState<ProfileSection>(profileSectionFromHash);
 
-  const selectRelayTokenName = useCallback((kind: RelayTokenKind, value: string) => {
-    const normalizedName = value.trim();
-    void setTokenName(kind, normalizedName).catch((error) => {
+  const selectRelayTokenNames = useCallback((kind: RelayTokenKind, values: string[]) => {
+    void setTokenNames(kind, values).catch((error) => {
       toast.error(error instanceof Error ? error.message : "保存 Key 选择失败");
     });
-  }, [setTokenName]);
+  }, [setTokenNames]);
 
   const tokenNameOptions = useMemo(
     () => normalizeTokenNames([
@@ -769,15 +811,14 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
       return;
     }
     (["text", "image", "video", "audio"] as const).forEach((kind) => {
-      const customConfig = customRelayConfigs?.configs[kind];
-      const options = customConfig?.configured ? [...tokenNameOptions, customConfig.token_name] : tokenNameOptions;
-      const retainedName = retainSelectedRelayTokenName(selectedTokenNames[kind], options);
-      if (retainedName !== selectedTokenNames[kind]) selectRelayTokenName(kind, retainedName);
+      const customNames = customRelayConfigs.configs.filter((config) => config.kind === kind && config.configured).map((config) => config.token_name);
+      const retainedNames = retainSelectedRelayTokenNames(selectedTokenNames[kind], [...tokenNameOptions, ...customNames]);
+      if (retainedNames.join("\0") !== selectedTokenNames[kind].join("\0")) selectRelayTokenNames(kind, retainedNames);
     });
   }, [
     isLoadingBalance,
     customRelayConfigs,
-    selectRelayTokenName,
+    selectRelayTokenNames,
     selectedTokenNames,
     tokenNameOptions,
   ]);
@@ -806,35 +847,37 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
   ];
 
   return (
-    <ScrollArea className="h-full min-h-0">
-      <div data-profile-layout className="grid w-full grid-cols-[minmax(0,1fr)] items-start gap-4 pr-1 lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-5 2xl:grid-cols-[240px_minmax(0,1fr)]">
+    <ScrollArea
+      className="h-full min-h-0"
+      viewportClassName="pr-4 lg:pr-0"
+      viewStyle={{ height: "100%", minHeight: "100%" }}
+    >
+      <div data-profile-layout className="grid min-h-full w-full grid-cols-[minmax(0,1fr)] items-start gap-4 pr-1 lg:h-full lg:min-h-0 lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-5 2xl:grid-cols-[240px_minmax(0,1fr)]">
         <aside className="rounded-lg border border-border bg-background p-2 lg:sticky lg:top-0">
           <div className="px-2 pb-2 pt-1 lg:pb-3"><h1 className="text-base font-semibold text-foreground">个人设置</h1><p className="mt-0.5 text-xs text-muted-foreground">管理账户与创作偏好</p></div>
           <nav className="flex gap-1 overflow-x-auto pb-1 lg:grid lg:overflow-visible lg:pb-0" aria-label="个人设置分类">
             {profileItems.map((item) => { const Icon = item.icon; const active = item.id === activeSection; return <button key={item.id} type="button" onClick={() => selectSection(item.id)} className={`flex h-10 shrink-0 items-center gap-2 rounded-md px-3 text-left text-sm transition lg:w-full lg:gap-2.5 ${active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}><Icon className="size-4" /><span>{item.label}</span></button>; })}
           </nav>
         </aside>
-        <main id={activeSection} className="min-w-0">
+        <main id={activeSection} className="min-w-0 lg:h-full lg:min-h-0">
           <div hidden={activeSection !== "account"}><AccountOverviewCard balance={balance} isLoading={isLoadingBalance} onRefresh={() => void loadBalance()} session={session} /></div>
-          <div hidden={activeSection !== "keys"}><AccountResourcesCard customConfigs={customRelayConfigs?.configs} customConfigurable={customRelayConfigs?.configurable === true} selectedTokenNames={selectedTokenNames} tokenNameOptions={tokenNameOptions} onTokenNameChange={selectRelayTokenName} onEditCustom={setEditingCustomRelayKind} /></div>
-          <div hidden={activeSection !== "creation"}><ImageGenerationPreferencesCard relayTokenNames={selectedTokenNames} sessionKey={session.key} /></div>
+          <div hidden={activeSection !== "keys"}><AccountResourcesCard customConfigs={customRelayConfigs?.configs} customConfigurable={customRelayConfigs?.configurable === true} selectedTokenNames={selectedTokenNames} tokenNameOptions={tokenNameOptions} onTokenNameChange={selectRelayTokenNames} onEditCustom={(kind, status) => setEditingCustomRelay({ kind, status })} /></div>
+          <div hidden={activeSection !== "creation"} className="lg:h-full lg:min-h-0"><ImageGenerationPreferencesCard sessionKey={session.key} /></div>
           <div hidden={activeSection !== "storage"}><StorageProviderCard /></div>
         </main>
       </div>
       <CustomRelayConfigDialog
-        open={editingCustomRelayKind !== null}
-        kind={editingCustomRelayKind}
-        status={editingCustomRelayKind ? customRelayConfigs?.configs[editingCustomRelayKind] : undefined}
-        onOpenChange={(open) => { if (!open) setEditingCustomRelayKind(null); }}
+        open={editingCustomRelay !== null}
+        kind={editingCustomRelay?.kind || null}
+        status={editingCustomRelay?.status}
+        onOpenChange={(open) => { if (!open) setEditingCustomRelay(null); }}
         onSaved={(status) => {
-          setCustomRelayConfigs((current) => current ? { ...current, configs: { ...current.configs, [status.kind]: status } } : current);
-          selectRelayTokenName(status.kind, status.token_name);
+          setCustomRelayConfigs((current) => current ? { ...current, configs: [...current.configs.filter((item) => item.id !== status.id), status] } : current);
+          if (!selectedTokenNames[status.kind].includes(status.token_name)) selectRelayTokenNames(status.kind, [...selectedTokenNames[status.kind], status.token_name]);
         }}
-        onDeleted={(kind) => {
-          setCustomRelayConfigs((current) => current ? { ...current, configs: { ...current.configs, [kind]: { kind, token_name: current.configs[kind].token_name, base_url: "", has_key: false, configured: false } } } : current);
-          if (selectedTokenNames[kind] === customRelayConfigs?.configs[kind].token_name) {
-            selectRelayTokenName(kind, tokenNameOptions[0] || "");
-          }
+        onDeleted={(status) => {
+          setCustomRelayConfigs((current) => current ? { ...current, configs: current.configs.filter((item) => item.id !== status.id) } : current);
+          if (selectedTokenNames[status.kind].includes(status.token_name)) selectRelayTokenNames(status.kind, selectedTokenNames[status.kind].filter((name) => name !== status.token_name));
         }}
       />
     </ScrollArea>

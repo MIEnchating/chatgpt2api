@@ -28,6 +28,10 @@ export type StoredAuthSession = {
   menus: AuthMenuItem[];
 };
 
+function canonicalMenuPath(path: string) {
+  return path === "/image" ? "/studio" : path;
+}
+
 export function canAccessPath(session: StoredAuthSession | null | undefined, path: string) {
   if (!session) {
     return false;
@@ -38,7 +42,8 @@ export function canAccessPath(session: StoredAuthSession | null | undefined, pat
   if (session.role === "admin") {
     return true;
   }
-  return session.menuPaths.includes(path);
+  const requestedPath = canonicalMenuPath(path);
+  return session.menuPaths.some((menuPath) => canonicalMenuPath(menuPath) === requestedPath);
 }
 
 export function hasAPIPermission(session: StoredAuthSession | null | undefined, method: string, path: string) {
@@ -53,10 +58,10 @@ export function hasAPIPermission(session: StoredAuthSession | null | undefined, 
 
 export function getDefaultRouteForSession(session: StoredAuthSession) {
   if (session.role === "admin") {
-    return "/image";
+    return "/studio";
   }
   for (const path of [
-    "/image",
+    "/studio",
     "/canvas",
     "/workflows",
     "/prompt-library",
@@ -71,5 +76,5 @@ export function getDefaultRouteForSession(session: StoredAuthSession) {
       return path;
     }
   }
-  return "/image";
+  return "/studio";
 }

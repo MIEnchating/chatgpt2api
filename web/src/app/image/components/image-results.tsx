@@ -1,9 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Check, CircleStop, Clock3, Download, Eye, Globe2, LoaderCircle, Lock, PencilLine, Plus, RotateCcw } from "lucide-react";
+import { Check, CircleStop, Clock3, Clapperboard, Download, Eye, Globe2, LoaderCircle, Lock, PencilLine, Plus, RotateCcw } from "lucide-react";
 
 import { AuthenticatedImage } from "@/components/authenticated-image";
+import { MediaVideoPlayer } from "@/components/media-video-player";
 import { ChatMarkdown } from "@/app/image/components/chat-markdown";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -18,6 +19,7 @@ import {
 } from "@/lib/authenticated-image";
 import { getManagedImageUrlFromPath } from "@/lib/image-path";
 import { formatBase64ImageFileSize, formatImageFileSize } from "@/lib/image-size";
+import { generationFrameAspectRatio, videoFrameMaxWidth } from "@/lib/generation-frame-aspect";
 import { cn, formatElapsedClock } from "@/lib/utils";
 import {
   getEffectiveImageTurnStatus,
@@ -553,6 +555,9 @@ export function ImageResults({
         const resultCompletedAt = latestTaskUpdatedAt ? formatConversationTime(latestTaskUpdatedAt) : "";
         const effectiveStatus = getEffectiveImageTurnStatus(turn);
         const turnBusy = effectiveStatus === "queued" || effectiveStatus === "generating";
+        const isVideoTurn = turn.mode === "video";
+        const turnFrameAspectRatio = generationFrameAspectRatio(turn);
+        const turnVideoFrameMaxWidth = videoFrameMaxWidth(turnFrameAspectRatio);
         const resultCount = successfulVisualImages.length;
         const showResultSummary = turn.mode !== "chat" && (visualImages.length > 0 || turnBusy);
         const isQueued = effectiveStatus === "queued";
@@ -570,8 +575,24 @@ export function ImageResults({
             : progress?.message || (turnBusy ? turn.mode === "video" ? "正在处理视频" : "正在处理图片" : "");
         const requestedSizeLabel = turn.size ? formatImageSizeDisplay(turn.size) : "自动";
         const longTaskHint = getLongTaskHint(turn, elapsedSeconds);
-        const downloadActions =
-          downloadableImages.length > 0 ? (
+        const downloadActions = downloadableImages.length > 0
+          ? isVideoTurn ? downloadableImages.length > 1 ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-8 rounded-md px-3 text-xs"
+                disabled={downloadingKey !== null}
+                onClick={() => void downloadItems(`all:${selectedConversation.id}:${turn.id}`, downloadableImages)}
+              >
+                {downloadingKey === `all:${selectedConversation.id}:${turn.id}` ? (
+                  <LoaderCircle className="size-3.5 animate-spin" />
+                ) : (
+                  <Download className="size-3.5" />
+                )}
+                下载全部视频
+              </Button>
+            ) : null : (
             <>
               <Button
                 type="button"
@@ -618,7 +639,10 @@ export function ImageResults({
         return (
           <div key={turn.id} className="flex flex-col gap-3 sm:gap-4">
             <div className="flex justify-end">
-              <article className="w-full max-w-[min(94%,760px)] rounded-[24px] border border-[#f2f3f5] bg-white px-4 py-3 text-left text-[14px] leading-6 text-[#222222] shadow-[0_4px_6px_rgba(0,0,0,0.08)] sm:px-5 sm:py-4 sm:text-[15px] sm:leading-7">
+              <article className={cn(
+                "w-full rounded-xl border border-border/80 bg-card px-4 py-3 text-left text-[14px] leading-6 text-foreground shadow-[0_4px_12px_rgba(0,0,0,0.05)] sm:px-5 sm:py-4 sm:text-[15px] sm:leading-7",
+                isVideoTurn ? "max-w-[960px]" : "max-w-[min(94%,760px)]",
+              )}>
                 <div className="mb-3 flex items-start justify-between gap-3 border-b border-[#f2f3f5] pb-2">
                   <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-[11px] leading-5 text-[#45515e]">
                     <span className="rounded-full bg-[#f0f0f0] px-2.5 py-0.5 text-[#45515e]">第 {turnIndex + 1} 轮</span>
@@ -708,34 +732,51 @@ export function ImageResults({
             </div>
 
             <div className="flex justify-start">
-              <section className="w-full px-1">
+              <section className={cn("w-full px-1", isVideoTurn && "mx-auto max-w-[960px]")}>
                 {showResultSummary ? (
-                  <div className="hide-scrollbar mb-3 flex items-center gap-3 overflow-x-auto border-b border-[#eceef1] pb-3 sm:mb-4">
-                    <div className="flex shrink-0 items-center gap-3 whitespace-nowrap text-[11px] text-[#6b7280] sm:text-xs">
+                  <div
+                    data-video-result-summary={isVideoTurn || undefined}
+                    className={cn(
+                      "mb-3 flex items-center gap-3 sm:mb-4",
+                      isVideoTurn
+                        ? "flex-wrap rounded-lg border border-border/80 bg-card px-4 py-3 shadow-[0_4px_12px_rgba(0,0,0,0.04)]"
+                        : "hide-scrollbar overflow-x-auto border-b border-border pb-3",
+                    )}
+                  >
+                    <div className={cn(
+                      "flex items-center gap-3 text-[11px] text-muted-foreground sm:text-xs",
+                      isVideoTurn ? "min-w-0 flex-1 flex-wrap" : "shrink-0 whitespace-nowrap",
+                    )}>
+                      {isVideoTurn ? (
+                        <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
+                          <Clapperboard className="size-4 text-primary" />
+                          视频结果
+                        </span>
+                      ) : null}
                       {turnBusy ? (
                         <span>
-                          已完成 <strong className="font-semibold text-[#30343b]">{resultCount}</strong>
-                          {" / "}目标 <strong className="font-semibold text-[#30343b]">{turn.count}</strong> {turn.mode === "video" ? "个" : "张"}
+                          已完成 <strong className="font-semibold text-foreground">{resultCount}</strong>
+                          {" / "}目标 <strong className="font-semibold text-foreground">{turn.count}</strong> {turn.mode === "video" ? "个" : "张"}
                         </span>
                       ) : (
                         <span>
-                          生成结果：<strong className="font-semibold text-[#30343b]">{resultCount} {turn.mode === "video" ? "个视频" : "张"}</strong>
+                          {isVideoTurn ? "共" : "生成结果："}<strong className="font-semibold text-foreground">{resultCount} {turn.mode === "video" ? "个视频" : "张"}</strong>
                         </span>
                       )}
                       {!turnBusy && turn.count !== resultCount ? (
-                        <span>目标 <strong className="font-semibold text-[#30343b]">{turn.count}</strong> {turn.mode === "video" ? "个" : "张"}</span>
+                        <span>目标 <strong className="font-semibold text-foreground">{turn.count}</strong> {turn.mode === "video" ? "个" : "张"}</span>
                       ) : null}
                       {requestedSizeLabel ? (
                         <span>
-                          请求：<strong className="font-semibold text-[#30343b]">{requestedSizeLabel}</strong>
+                          {isVideoTurn ? "画幅" : "请求"}：<strong className="font-semibold text-foreground">{requestedSizeLabel}</strong>
                         </span>
                       ) : null}
                       {resultDimensionsLabel ? (
                         <span>
-                          返回：<strong className="font-semibold text-[#30343b]">{resultDimensionsLabel}</strong>
+                          返回：<strong className="font-semibold text-foreground">{resultDimensionsLabel}</strong>
                         </span>
                       ) : null}
-                      {successfulVisualImages.length > 0 ? (
+                      {!isVideoTurn && successfulVisualImages.length > 0 ? (
                         <TooltipHint content={resultQualityCheckImage ? imageQualityCheckTitle(resultQualityCheckImage) : "当前结果没有检测信息"}><span
                           className={cn(
                             "inline-flex items-center rounded-md px-2 py-0.5 font-medium",
@@ -748,19 +789,19 @@ export function ImageResults({
                         </span></TooltipHint>
                       ) : null}
                       {resultGenerationDuration ? (
-                        <span className="font-mono font-medium tabular-nums text-[#1456f0]">
+                        <span className="font-mono font-medium tabular-nums text-primary">
                           {resultGenerationDuration}
                         </span>
                       ) : null}
                       {resultSizeLabel ? (
-                        <span>大小：<strong className="font-semibold text-[#30343b]">{resultSizeLabel}</strong></span>
+                        <span>大小：<strong className="font-semibold text-foreground">{resultSizeLabel}</strong></span>
                       ) : null}
                       {resultFormatLabel ? (
                         <span className="rounded-md bg-[#18181b] px-1.5 py-0.5 text-[10px] font-semibold text-white">
                           {resultFormatLabel}
                         </span>
                       ) : null}
-                      {resultCompletedAt ? <span className="text-[#8e8e93]">{resultCompletedAt}</span> : null}
+                      {resultCompletedAt ? <span>{resultCompletedAt}</span> : null}
                       {effectiveStatus !== "success" ? (
                         <span className={cn("rounded-full px-3 py-1", getStatusChipClass(effectiveStatus))}>
                           {getTurnStatusLabel(effectiveStatus)}
@@ -829,22 +870,33 @@ export function ImageResults({
                     if (video && image.status === "success" && imageSrc) {
                       const downloadItem = downloadableImages.find((item) => item.id === image.id);
                       return (
-                        <figure key={image.id} className="group relative mx-auto w-full max-w-[820px] overflow-hidden rounded-[18px] border border-[#e5e7eb] bg-black shadow-[0_14px_40px_-28px_rgba(15,23,42,0.5)] dark:border-border">
-                          <video
+                        <figure
+                          key={image.id}
+                          data-video-result-card
+                          className="group relative mx-auto w-full max-w-[960px] overflow-hidden rounded-lg border border-border/80 bg-card shadow-[0_12px_32px_-24px_rgba(15,23,42,0.48)]"
+                          style={{ maxWidth: turnVideoFrameMaxWidth }}
+                        >
+                          <MediaVideoPlayer
+                            aspectRatio={turnFrameAspectRatio}
                             src={imageSrc}
-                            controls
-                            preload="metadata"
-                            playsInline
-                            className="block aspect-video w-full bg-black object-contain"
+                            title={`生成视频 ${index + 1}`}
                           />
-                          <div className="flex items-center justify-between gap-3 bg-white px-3 py-2.5 text-xs text-[#686b73] dark:bg-card dark:text-muted-foreground">
-                            <span className="min-w-0 truncate">{image.mimeType || "video/mp4"}</span>
+                          <figcaption className="flex min-h-12 flex-wrap items-center justify-between gap-3 border-t border-border/80 bg-card px-3 py-2 text-xs text-muted-foreground sm:px-4">
+                            <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+                              <span className="inline-flex items-center gap-1.5 font-medium text-foreground">
+                                <Clapperboard className="size-3.5 text-primary" />
+                                视频 {index + 1}
+                              </span>
+                              <span className="uppercase">{(image.mimeType || "video/mp4").replace("video/", "")}</span>
+                              <span>{turn.videoResolution || "720p"}</span>
+                              <span>{turn.videoSeconds || 4} 秒{turn.videoGenerateAudio === false ? " · 静音" : " · 含声音"}</span>
+                            </div>
                             {downloadItem ? (
                               <Button
                                 type="button"
                                 variant="outline"
                                 size="sm"
-                                className="h-8 shrink-0 rounded-full px-3 text-xs"
+                                className="h-8 shrink-0 rounded-md px-3 text-xs"
                                 disabled={downloadingKey !== null}
                                 onClick={() => void downloadItems(`video:${selectedConversation.id}:${turn.id}:${image.id}`, [downloadItem])}
                               >
@@ -852,7 +904,7 @@ export function ImageResults({
                                 下载视频
                               </Button>
                             ) : null}
-                          </div>
+                          </figcaption>
                         </figure>
                       );
                     }
@@ -1073,7 +1125,14 @@ export function ImageResults({
                     return (
                       <div
                         key={image.id}
-                        className="mb-3 inline-block h-[160px] w-full break-inside-avoid overflow-hidden rounded-[18px] border border-stone-200/80 bg-stone-100/80 sm:mb-4"
+                        className={cn(
+                          "mb-3 inline-block w-full break-inside-avoid overflow-hidden rounded-[18px] border border-stone-200/80 bg-stone-100/80 sm:mb-4",
+                          video && "mx-auto block",
+                        )}
+                        style={{
+                          aspectRatio: turnFrameAspectRatio,
+                          ...(video ? { maxWidth: turnVideoFrameMaxWidth } : {}),
+                        }}
                       >
                         <div className="flex h-full flex-col items-center justify-center gap-2 px-5 py-5 text-center text-stone-500">
                           <div className="rounded-full bg-white p-3 shadow-sm">

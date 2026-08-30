@@ -45,28 +45,42 @@ function DialogContent({
   showCloseButton?: boolean;
   scrollable?: boolean;
 }) {
+  const dialogChildren = flattenDialogChildren(children);
+  const headers = dialogChildren.filter(isDialogHeaderElement);
+  const footers = dialogChildren.filter(isDialogFooterElement);
+  const body = dialogChildren.filter(
+    (child) => !isDialogHeaderElement(child) && !isDialogFooterElement(child),
+  );
+
   return (
     <DialogPortal>
       <DialogOverlay />
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
-          "fixed top-[50%] left-[50%] z-50 flex max-h-[calc(100dvh-2rem)] w-[min(92vw,560px)] translate-x-[-50%] translate-y-[-50%] flex-col overflow-hidden rounded-xl border border-border bg-background p-[var(--dialog-padding)] [--dialog-padding:1.25rem] shadow-[0_24px_70px_-32px_rgba(15,23,42,0.42)] duration-200 data-[state=open]:animate-in sm:[--dialog-padding:1.5rem] [&:has([data-scroll-overflow-y=true])>[data-slot=dialog-auto-close]]:right-10 [&:has([data-slot=dialog-footer]:not([data-flush=true]))]:pb-3",
+          "fixed top-[50%] left-[50%] z-50 flex max-h-[calc(100dvh-2rem)] w-[min(92vw,560px)] translate-x-[-50%] translate-y-[-50%] flex-col gap-4 overflow-hidden rounded-xl border border-border bg-background p-[var(--dialog-padding)] [--dialog-padding:1.25rem] shadow-[0_24px_70px_-32px_rgba(15,23,42,0.42)] duration-200 data-[state=open]:animate-in sm:[--dialog-padding:1.5rem] [&:has([data-slot=dialog-footer]:not([data-flush=true]))]:pb-3",
           className,
         )}
         {...props}
       >
         {scrollable ? (
-          <ScrollArea
-            className="min-h-0 flex-1"
-            viewportClassName="overscroll-contain"
-            viewClass="grid gap-4"
-          >
-            {children}
-          </ScrollArea>
+          <>
+            {headers}
+            {body.length > 0 ? (
+              <ScrollArea
+                data-slot="dialog-body"
+                className="min-h-0 flex-1"
+                viewportClassName="overscroll-contain"
+                viewClass="grid gap-4"
+              >
+                {body}
+              </ScrollArea>
+            ) : null}
+            {footers}
+          </>
         ) : children}
         {showCloseButton ? (
-          <DialogPrimitive.Close data-slot="dialog-auto-close" aria-label="关闭" className="ring-offset-background focus:ring-ring data-[state=open]:bg-accent data-[state=open]:text-muted-foreground absolute top-4 right-4 z-30 rounded-full bg-background p-1.5 opacity-70 transition-[right,background-color,opacity] hover:bg-accent hover:opacity-100 focus:ring-2 focus:outline-none disabled:pointer-events-none">
+          <DialogPrimitive.Close data-slot="dialog-auto-close" aria-label="关闭" className="ring-offset-background focus:ring-ring data-[state=open]:bg-accent data-[state=open]:text-muted-foreground absolute top-4 right-4 z-30 rounded-full bg-background p-1.5 opacity-70 transition-[background-color,opacity] hover:bg-accent hover:opacity-100 focus:ring-2 focus:outline-none disabled:pointer-events-none">
             <X className="size-4" />
             <span className="sr-only">Close</span>
           </DialogPrimitive.Close>
@@ -74,6 +88,26 @@ function DialogContent({
       </DialogPrimitive.Content>
     </DialogPortal>
   );
+}
+
+function flattenDialogChildren(children: React.ReactNode): React.ReactNode[] {
+  const result: React.ReactNode[] = [];
+  React.Children.forEach(children, (child) => {
+    if (React.isValidElement<{ children?: React.ReactNode }>(child) && child.type === React.Fragment) {
+      result.push(...flattenDialogChildren(child.props.children));
+      return;
+    }
+    result.push(child);
+  });
+  return result;
+}
+
+function isDialogHeaderElement(child: React.ReactNode) {
+  return React.isValidElement(child) && child.type === DialogHeader;
+}
+
+function isDialogFooterElement(child: React.ReactNode) {
+  return React.isValidElement(child) && child.type === DialogFooter;
 }
 
 function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
@@ -96,7 +130,7 @@ function DialogFooter({
       data-slot="dialog-footer"
       data-flush={flush || undefined}
       className={cn(
-        "sticky bottom-0 z-10 flex shrink-0 flex-col-reverse gap-2 bg-background sm:flex-row sm:items-center sm:justify-end [&>[data-slot=button]]:min-w-18",
+        "z-10 flex shrink-0 flex-col-reverse gap-2 bg-background sm:flex-row sm:items-center sm:justify-end [&>[data-slot=button]]:min-w-18",
         flush && "min-h-15 border-t border-border bg-background px-5 py-3 sm:px-6",
         className,
       )}

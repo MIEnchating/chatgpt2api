@@ -19,6 +19,11 @@ import {
   composeImageGenerationPrompt,
   normalizedImagePartialImages,
 } from "@/lib/image-api-contract";
+import {
+  installVideoModelContracts,
+  type VideoModelContract,
+} from "@/lib/video-model-contracts";
+import { createExpiringRequestCache } from "@/lib/expiring-request-cache";
 
 export type ImageModel = string;
 export type ImageModelOption = { value: ImageModel; label: string };
@@ -271,10 +276,39 @@ export type ModelConfig = {
   default_audio_model: string;
   relay_base_url: string;
   custom_relay_configurable?: boolean;
+  video_model_contracts?: VideoModelContract[];
+};
+
+export type ManagedVideoModelContract = {
+  id: string;
+  contract: VideoModelContract;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+};
+
+export type VideoModelContractMutation = {
+  contract: VideoModelContract;
+  enabled: boolean;
+  existing_id?: string;
+};
+
+export type VideoModelContractImportResult = {
+  contract: VideoModelContract;
+  source: { type: "file" | "url"; name: string };
+  warnings: string[];
+  model: string;
+};
+
+export type VideoModelContractTransferDocument = {
+  version: 3;
+  contracts: Array<{ contract: VideoModelContract; enabled: boolean }>;
 };
 
 export type CustomRelayConfigStatus = {
+  id: string;
   kind: "text" | "image" | "video" | "audio";
+  name: string;
   token_name: string;
   base_url: string;
   has_key: boolean;
@@ -283,7 +317,7 @@ export type CustomRelayConfigStatus = {
 
 export type CustomRelayConfigsResponse = {
   configurable: boolean;
-  configs: Record<CustomRelayConfigStatus["kind"], CustomRelayConfigStatus>;
+  configs: CustomRelayConfigStatus[];
 };
 
 export type LoginPageImageSettings = {
@@ -295,6 +329,7 @@ export type LoginPageImageSettings = {
 };
 
 export type CreationWorkbenchPreferences = {
+  image_model: string;
   image_size: string;
   image_size_mode: "auto" | "ratio" | "custom";
   image_aspect_ratio: string;
@@ -307,10 +342,10 @@ export type CreationWorkbenchPreferences = {
   image_count: number;
   image_output_format: ImageOutputFormat;
   image_output_compression: string;
+  video_model: string;
   video_size: string;
   video_seconds: string;
   video_resolution: string;
-  video_mode: string;
   video_generate_audio: boolean;
   video_watermark: boolean;
 };
@@ -332,10 +367,10 @@ export type ImageGenerationPreferences = {
   default_audio_voice: string;
   default_audio_format: "" | "mp3" | "wav" | "opus" | "aac" | "flac" | "pcm";
   default_audio_speed: number;
-  default_text_relay_token_name: string;
-  default_image_relay_token_name: string;
-  default_video_relay_token_name: string;
-  default_audio_relay_token_name: string;
+  default_text_relay_token_names: string[];
+  default_image_relay_token_names: string[];
+  default_video_relay_token_names: string[];
+  default_audio_relay_token_names: string[];
   workbench: CreationWorkbenchPreferences;
 };
 
@@ -519,6 +554,7 @@ export type CreationTaskData = {
   size?: number;
   storageKey?: string;
   storage_key?: string;
+  duration_ms?: number;
 };
 
 export type CreationTask = {
@@ -526,6 +562,10 @@ export type CreationTask = {
   /** Monotonic server-side task revision when available. */
   revision?: number | string;
   status: GenerationTaskStatus;
+  /** Normalized status returned by the configured upstream video contract. */
+  upstream_status?: "unknown" | "queued" | "in_progress" | "completed" | "failed" | string;
+  /** Upstream video generation progress, clamped to 0-100. */
+  progress?: number;
   mode: GenerationTaskMode;
   model?: ImageModel;
   size?: string;
@@ -723,6 +763,7 @@ export type CreateManagedUserPayload = {
 };
 
 export async function login(username: string, password: string) {
+  clearImageGenerationPreferencesCache();
   return httpRequest<LoginResponse>("/auth/login", {
     method: "POST",
     body: { username, password },
@@ -739,6 +780,15 @@ export async function verifySession() {
 
 export const IMAGE_GENERATION_PREFERENCES_CHANGED_EVENT =
   "chatgpt2api:image-generation-preferences-changed";
+
+type ImageGenerationPreferencesResponse = { preferences: ImageGenerationPreferences };
+
+const imageGenerationPreferencesCache = createExpiringRequestCache<ImageGenerationPreferencesResponse>(30_000);
+const modelConfigCache = createExpiringRequestCache<{ config: ModelConfig }>(30_000);
+
+function clearImageGenerationPreferencesCache() {
+  imageGenerationPreferencesCache.clear();
+}
 
 export async function fetchProfileRelayKey(group?: string, tokenName?: string) {
   const params = new URLSearchParams();
@@ -757,19 +807,28 @@ export async function fetchCustomRelayConfigs() {
   return httpRequest<CustomRelayConfigsResponse>("/api/profile/custom-relay-configs");
 }
 
-export async function updateCustomRelayConfig(
-  kind: CustomRelayConfigStatus["kind"],
-  input: { base_url: string; api_key: string },
+export async function createCustomRelayConfig(
+  input: { kind: CustomRelayConfigStatus["kind"]; name: string; base_url: string; api_key: string },
 ) {
   return httpRequest<{ item: CustomRelayConfigStatus }>(
-    `/api/profile/custom-relay-configs/${encodeURIComponent(kind)}`,
+    "/api/profile/custom-relay-configs",
+    { method: "POST", body: input },
+  );
+}
+
+export async function updateCustomRelayConfig(
+  id: string,
+  input: { name: string; base_url: string; api_key: string },
+) {
+  return httpRequest<{ item: CustomRelayConfigStatus }>(
+    `/api/profile/custom-relay-configs/${encodeURIComponent(id)}`,
     { method: "PUT", body: input },
   );
 }
 
-export async function deleteCustomRelayConfig(kind: CustomRelayConfigStatus["kind"]) {
+export async function deleteCustomRelayConfig(id: string) {
   return httpRequest<{ ok: boolean }>(
-    `/api/profile/custom-relay-configs/${encodeURIComponent(kind)}`,
+    `/api/profile/custom-relay-configs/${encodeURIComponent(id)}`,
     { method: "DELETE" },
   );
 }
@@ -779,55 +838,58 @@ export async function fetchProfileBalance() {
 }
 
 export async function fetchImageGenerationPreferences() {
-  return httpRequest<{ preferences: ImageGenerationPreferences }>(
-    "/api/profile/image-generation-preferences",
-  );
+  return imageGenerationPreferencesCache.get(() => (
+    httpRequest<ImageGenerationPreferencesResponse>(
+      "/api/profile/image-generation-preferences",
+    )
+  ));
 }
 
 export async function updateImageGenerationPreferences(
   preferences: ImageGenerationPreferences,
 ) {
-  return httpRequest<{ preferences: ImageGenerationPreferences }>(
+  return httpRequest<ImageGenerationPreferencesResponse>(
     "/api/profile/image-generation-preferences",
     {
       method: "PUT",
       body: preferences,
     },
-  );
+  ).then(imageGenerationPreferencesCache.store);
 }
 
 export type RelayTokenPreferenceUpdate = Partial<Pick<
   ImageGenerationPreferences,
-  | "default_text_relay_token_name"
-  | "default_image_relay_token_name"
-  | "default_video_relay_token_name"
-  | "default_audio_relay_token_name"
+  | "default_text_relay_token_names"
+  | "default_image_relay_token_names"
+  | "default_video_relay_token_names"
+  | "default_audio_relay_token_names"
 >>;
 
 export async function updateRelayTokenPreferences(preferences: RelayTokenPreferenceUpdate) {
-  return httpRequest<{ preferences: ImageGenerationPreferences }>(
+  return httpRequest<ImageGenerationPreferencesResponse>(
     "/api/profile/image-generation-preferences",
     {
       method: "PATCH",
       body: preferences,
     },
-  );
+  ).then(imageGenerationPreferencesCache.store);
 }
 
 export async function updateCreationWorkbenchPreferences(
   workbench: CreationWorkbenchPreferences,
   options: Pick<ImageGenerationPreferences, "stream" | "partial_images" | "response_format_b64_json" | "codex_cli_compatibility">,
 ) {
-  return httpRequest<{ preferences: ImageGenerationPreferences }>(
+  return httpRequest<ImageGenerationPreferencesResponse>(
     "/api/profile/image-generation-preferences",
     {
       method: "PATCH",
       body: { workbench, ...options },
     },
-  );
+  ).then(imageGenerationPreferencesCache.store);
 }
 
 export async function logout() {
+  clearImageGenerationPreferencesCache();
   return httpRequest<{ ok: boolean }>("/auth/logout", {
     method: "POST",
     redirectOnUnauthorized: false,
@@ -1225,6 +1287,10 @@ export async function fetchSettingsConfig() {
   return httpRequest<{ config: SettingsConfig }>("/api/settings");
 }
 
+export async function fetchPromptSourcesConfig() {
+  return httpRequest<{ sources?: SettingsConfig["prompt_sources"] }>("/api/prompt-sources");
+}
+
 export async function fetchAnnouncements() {
   return httpRequest<{ items: Announcement[] }>("/api/announcements");
 }
@@ -1286,10 +1352,12 @@ export async function deleteAnnouncement(id: string) {
 }
 
 export async function updateSettingsConfig(settings: SettingsConfig) {
-  return httpRequest<{ config: SettingsConfig }>("/api/settings", {
+  const response = await httpRequest<{ config: SettingsConfig }>("/api/settings", {
     method: "POST",
     body: settings,
   });
+  modelConfigCache.clear();
+  return response;
 }
 
 export function measureAdminStorageProvider(index: number, provider?: StorageProviderConfig) {
@@ -1300,7 +1368,92 @@ export function measureAdminStorageProvider(index: number, provider?: StoragePro
 }
 
 export async function fetchModelConfig() {
-  return httpRequest<{ config: ModelConfig }>("/api/model-config");
+  const data = await modelConfigCache.get(() => (
+    httpRequest<{ config: ModelConfig }>("/api/model-config")
+  ));
+  installVideoModelContracts(data.config.video_model_contracts);
+  return data;
+}
+
+export async function fetchAdminVideoModelContracts() {
+  return httpRequest<{ items: ManagedVideoModelContract[] }>("/api/admin/video-model-contracts");
+}
+
+export async function importVideoModelContract(input: {
+  sourceType: "file" | "url";
+  file?: File | null;
+  url?: string;
+  model?: string;
+  tokenName?: string;
+}) {
+  const formData = new FormData();
+  formData.append("source_type", input.sourceType);
+  if (input.file) formData.append("file", input.file);
+  if (input.url?.trim()) formData.append("url", input.url.trim());
+  if (input.model?.trim()) formData.append("model", input.model.trim());
+  if (input.tokenName?.trim()) formData.append("token_name", input.tokenName.trim());
+  return httpRequest<VideoModelContractImportResult>("/api/admin/video-model-contracts/import", {
+    method: "POST",
+    body: formData,
+    timeout: 180_000,
+  });
+}
+
+export async function importVideoModelContractJSON(document: VideoModelContractTransferDocument) {
+  const response = await httpRequest<{
+    items: ManagedVideoModelContract[];
+    imported: number;
+    created: number;
+    updated: number;
+  }>("/api/admin/video-model-contracts/import-json", {
+    method: "POST",
+    body: document,
+  });
+  modelConfigCache.clear();
+  return response;
+}
+
+export async function validateVideoModelContract(input: VideoModelContractMutation) {
+  return httpRequest<{ valid: true; contract: VideoModelContract }>("/api/admin/video-model-contracts/validate", {
+    method: "POST",
+    body: input,
+  });
+}
+
+export async function createVideoModelContract(input: VideoModelContractMutation) {
+  const response = await httpRequest<{ item: ManagedVideoModelContract; items: ManagedVideoModelContract[] }>("/api/admin/video-model-contracts", {
+    method: "POST",
+    body: input,
+  });
+  modelConfigCache.clear();
+  return response;
+}
+
+export async function updateVideoModelContract(id: string, input: VideoModelContractMutation) {
+  const response = await httpRequest<{ item: ManagedVideoModelContract; items: ManagedVideoModelContract[] }>(
+    `/api/admin/video-model-contracts/${encodeURIComponent(id)}`,
+    { method: "PUT", body: input },
+  );
+  modelConfigCache.clear();
+  return response;
+}
+
+export async function setVideoModelContractEnabled(id: string, enabled: boolean) {
+  const response = await httpRequest<{ item: ManagedVideoModelContract; items: ManagedVideoModelContract[] }>(
+    `/api/admin/video-model-contracts/${encodeURIComponent(id)}`,
+    { method: "PATCH", body: { enabled, contract: {} } },
+  );
+  modelConfigCache.clear();
+  return response;
+}
+
+export async function deleteVideoModelContract(id: string) {
+  const response = await httpRequest<{ items: ManagedVideoModelContract[] }>(
+    `/api/admin/video-model-contracts/${encodeURIComponent(id)}`,
+    { method: "DELETE" },
+  );
+  modelConfigCache.clear();
+  return response;
 }
 
 export async function updateLoginPageImageSettings(
@@ -1354,7 +1507,7 @@ export async function fetchManagedImages(
   filters: {
     start_date?: string;
     end_date?: string;
-    scope?: "mine" | "public" | "all";
+    scope?: "mine" | "public" | "visible" | "all";
   },
   options: { signal?: AbortSignal } = {},
 ) {

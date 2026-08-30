@@ -562,7 +562,7 @@ export function ImageTaskQueue({ className }: { className?: string }) {
       }),
     );
     setOpen(false);
-    navigate("/image");
+    navigate("/studio");
   };
 
   const handleOpenCanvas = (canvasID: string) => {

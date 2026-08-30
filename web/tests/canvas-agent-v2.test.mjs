@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { afterAll, beforeAll, describe, mock, test } from "bun:test";
+import contractDocument from "../../internal/protocol/video_model_contracts.json" with { type: "json" };
+import { installVideoModelContracts } from "../src/lib/video-model-contracts.ts";
 
 const agentReplies = [];
 const submittedInputs = [];
@@ -30,8 +32,10 @@ mock.module("@/lib/api", () => ({
 const originalWindow = globalThis.window;
 beforeAll(() => {
   globalThis.window = { setTimeout, clearTimeout };
+  installVideoModelContracts(structuredClone(contractDocument.contracts));
 });
 afterAll(() => {
+  installVideoModelContracts([]);
   globalThis.window = originalWindow;
 });
 
@@ -90,7 +94,7 @@ describe("canvas agent v2 tool contract", () => {
     assert.deepEqual(defaultCanvasAgentStarterConfig(), {
       imageQuality: "",
       imageSize: "1:1",
-      videoQuality: "720p",
+      videoQuality: "",
       videoSize: "16:9",
     });
     assert.deepEqual(normalizeCanvasAgentConfig(
@@ -207,14 +211,13 @@ describe("canvas agent v2 tool contract", () => {
     assert.deepEqual(canvasAgentSourceNodeIDs({ sourceNodeIds: [" image-2 ", "image-2"] }, ["image-1"]), ["image-2"]);
   });
 
-  test("matches the reference Agent video duration and audio capability contract", () => {
-    assert.deepEqual(canvasAgentVideoDurationHint("cogvideox-3"), { values: [5, 10], range: "仅 5 或 10 秒" });
-    assert.deepEqual(canvasAgentVideoDurationHint("bytedance/seedance-2.0"), { values: [-1, 4, 5, 6, 8, 10, 12, 15], range: "智能或 4-15 秒" });
-    assert.match(validateCanvasAgentVideoSeconds("cogvideox-3", 6), /仅支持 5 或 10 秒/);
-    assert.match(validateCanvasAgentVideoSeconds("kling-v3/video", 2), /3-15 秒/);
-    assert.equal(validateCanvasAgentVideoSeconds("bytedance/seedance-2.0", -1), "");
-    assert.equal(canvasAgentVideoSupportsAudio("kling-3.0/video"), true);
-    assert.equal(canvasAgentVideoSupportsAudio("kling-3.0/video-turbo"), false);
+  test("uses the shared video model contract for Agent duration and audio", () => {
+    assert.deepEqual(canvasAgentVideoDurationHint("minimax-h3-768p"), { values: [4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], range: "可选 4、5、6、7、8、9、10、11、12、13、14、15 秒" });
+    assert.match(validateCanvasAgentVideoSeconds("minimax-h3-768p", 3), /仅支持 4、5、6、7、8、9、10、11、12、13、14、15 秒/);
+    assert.equal(validateCanvasAgentVideoSeconds("minimax-h3-768p", 8), "");
+    assert.match(validateCanvasAgentVideoSeconds("kling-3.0/video", 8), /未配置启用的视频模型契约/);
+    assert.equal(canvasAgentVideoSupportsAudio("minimax-h3-768p"), true);
+    assert.equal(canvasAgentVideoSupportsAudio("kling-3.0/video"), false);
   });
 
   test("matches the reference Agent node placement and primary script dimensions", () => {

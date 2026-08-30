@@ -96,3 +96,17 @@ export async function syncMyAssets(scope: string, assets: MyAsset[]) {
   }
   return normalizeMyAssets(items);
 }
+
+export async function upsertMyAsset(asset: MyAsset) {
+  const response = await httpRequest<{ items?: MyAsset[] }>("/api/profile/assets", {
+    method: "POST",
+    body: { item: asset },
+  });
+  const items = normalizeMyAssets(response.items);
+  pruneAssetCache();
+  for (const key of assetCache.keys()) {
+    if (key.endsWith(":own")) assetCache.set(key, { items, expiresAt: Date.now() + ASSET_CACHE_TTL_MS });
+    else if (key.endsWith(":visible")) assetCache.delete(key);
+  }
+  return normalizeMyAssets(items);
+}

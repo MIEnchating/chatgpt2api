@@ -118,6 +118,12 @@ export default defineConfig({
               minSize: 0,
             },
             {
+              name: "media-vendor",
+              test: /node_modules[\\/]xgplayer[\\/]/,
+              priority: 10,
+              minSize: 0,
+            },
+            {
               name: "vendor",
               test: /node_modules[\\/]/,
               priority: 1,

@@ -1,110 +1,74 @@
-# 视频生成参数约束
+# 视频生成契约
 
-视频生成请求由创作台或无限画布提交到 `/api/creation-tasks/video-generations`，后端校验后再转发到上游 `/v1/videos`。后端校验是最终边界，前端选项只用于减少无效输入。
+视频生成请求发送到配置的中转地址（通常是 NewAPI），但 NewAPI 只是网关，不是视频协议。本项目按模型契约明确选择接口协议，不根据模型名称或厂家猜测协议；NewAPI 再根据模型和渠道配置完成实际上游路由。
 
-## MiniMax H3
+## 职责边界
 
-依据 MiniMax 官方 [Video Generation V2](https://platform.minimax.io/docs/api-reference/video-generation-v2-create) 与 [Video Generation Guide](https://platform.minimax.io/docs/guides/video-generation)：
+- 全局模型设置决定用户可见、可选择的视频模型 ID。
+- 用户创作偏好只能在全局已启用的视频模型中选择默认模型。
+- 视频模型契约按模型 ID 声明参数面板、生成模式、素材约束、请求字段映射、轮询状态和结果字段。
+- NewAPI 负责 API Key、渠道、模型映射、厂家选择和故障转移。
+- 契约不会向全局模型列表注入模型。一个契约可以包含多个匹配规则，但只有全局模型设置中的模型才会出现在创作页面。
 
-- 模型名为 `MiniMax-H3`，提示词必填且最多 7000 个字符。
-- 时长为 4-15 秒，清晰度仅支持 `768P`、`2K`。
-- 文生视频必须使用 `21:9`、`16:9`、`4:3`、`1:1`、`3:4` 或 `9:16`，不能使用自适应画幅。
-- 首帧图生视频接受一张本地图片，画幅由该图片决定。
-- 多模态参考生视频可组合使用最多 9 张参考图片、3 个参考视频和 3 个参考音频；图片与首帧/尾帧图生视频不能混用。
-- 视频生视频在官方协议中属于 `reference-to-video`，只传 `reference_video_urls` 即为视频生视频；它不是独立的 `video-to-video` 生成模式。
-- 多模态参考 URL 在产品入口仅接受不超过 2083 个字符、无账号信息且主机不是 localhost、私网或保留地址的 `http://` 或 `https://` 地址。MiniMax 官方也支持 `mm_file://` 和 Data URL，但当前统一中转把这些字段校验为短 URL；长 Base64 会触发 URL 长度 422，因此不在兼容入口开放。
-- 参考视频支持 MP4/MOV、单个不超过 50 MB、2-15 秒，最多 3 个且总时长不超过 15 秒；参考音频支持 WAV/MP3、单个不超过 15 MB、2-15 秒，最多 3 个且总时长不超过 15 秒。完整请求不超过 64 MB。
-- 首帧图支持 PNG、JPEG、WebP，最大 30 MB，宽高均为 256-5760 像素，宽高比为 2:5 到 5:2。
-- H3 V2 创建接口没有水印开关，因此不会发送 `aigc_watermark`。
+## 请求流程
 
-MiniMax 官方 V2 协议把自适应画幅写作 `adaptive`。当前上游 `/v1/videos` 的 H3 兼容请求模型把同一语义写作 `auto`，因此仅在中转边界进行 `adaptive -> auto` 转换；产品内部和官方约束说明仍使用 `adaptive`。
+创作台或无限画布向 `/api/creation-tasks/video-generations` 提交模型 ID 和通用参数。服务端必须先找到启用的匹配契约；没有匹配契约时直接拒绝任务，不尝试厂家推断或通用兜底。
 
-生成模式映射：
+服务端使用契约完成以下处理：
 
-| 产品输入 | 中转 `generation_mode` | MiniMax 官方 V2 语义 |
-| --- | --- | --- |
-| 只有提示词 | `text-to-video` | `content` 仅含 `text` |
-| 提示词和一张首帧图 | `image-to-video` | `image_url.role=first_frame` |
-| 图片、视频或音频参考 URL | `reference-to-video` | `reference_image` / `reference_video` / `reference_audio` |
+1. 校验画幅、时长、清晰度、音频、水印和参考素材。
+2. 根据实际素材推断文生视频、图生视频或参考素材生视频模式。
+3. 将通用参数映射为契约声明的请求字段。
+4. 原样透传模型 ID，并按契约的接口协议创建任务。
+5. 按同一接口协议和契约声明的任务 ID、状态、错误及结果 JSON 路径轮询任务。
 
-单张首帧图片的 Base64 Data URL 不作为 URL 字符串传给中转。服务会校验图片后，将其转换为 multipart 的 `input_reference` 文件字段，并删除重复的 `first_frame_url` / `image_url` 内联别名，避免 URL 长度校验失败。一次任务需要多张图片时，其余图片必须先转换为公网 URL；多模态参考使用独立 URL 数组，不会压缩成首帧 `input_reference`。
+任务创建时会把当时匹配到的完整契约保存为任务快照。排队或执行期间即使管理员修改、禁用或删除契约，已创建任务仍使用原快照完成请求构造和响应解析。
 
-## 图片编辑参考输入
+## 模型匹配
 
-当前图生图/图片编辑入口不要求公网 URL。浏览器会上传本地图片文件到 `/api/creation-tasks/image-edits`，后端再以 multipart 或厂商要求的内联格式转发。只有厂商接口明确声明为 URL 的参考字段才需要公网地址；本节 H3 多模态参考 URL 属于这种情况。
+模型匹配不区分大小写，并忽略首尾空格。规则支持精确模型 ID 和 `*` 通配符，例如 `minimax-*`、`minimax-h3-*`。
 
-## Seedance（即梦）
+多个规则同时匹配时按以下顺序选择：
 
-依据火山引擎官方 [创建视频生成任务](https://www.volcengine.com/docs/82379/1520757)：
+1. 精确匹配优先于所有通配符。
+2. 固定字符更多的通配符优先。
+3. 固定字符相同时，通配符更少的规则优先。
+4. 前三项相同时，契约 `priority` 数值更高的规则优先。
 
-- `doubao-seedance-2-5-260628`：`duration` 为 4-30 秒或 `-1`，分辨率为 `480p`、`720p`、`1080p`。
-- Seedance 2.0 标准版：`duration` 为 4-15 秒或 `-1`，分辨率为 `480p`、`720p`、`1080p`、`4k`。
-- Seedance 2.0 fast/mini：`duration` 为 4-15 秒或 `-1`，分辨率仅为 `480p`、`720p`。
-- Seedance 1.5 pro：`duration` 为 4-12 秒或 `-1`；Seedance 1.0 系列为 2-12 秒且不支持 `-1`。
-- 画幅为 `16:9`、`4:3`、`1:1`、`3:4`、`9:16`、`21:9`、`adaptive`。
-- 单张参考图必须小于 30 MB，宽高比为 2:5 到 5:2。创作台按参考项目开放多模态素材入口：最多 9 张参考图、3 个参考视频和 3 个参考音频；纯图生视频仍使用一张首帧图。
-- 2.5、2.0 系列和 1.5 pro 支持 `generate_audio`；所有已识别版本支持 `watermark`。
+例如同时存在 `minimax-*` 和 `minimax-h3-768p` 时，`minimax-h3-768p` 必然使用精确契约，和两份契约的 `priority` 无关。两条会重叠且前三项完全相同的通配规则必须设置不同优先级，否则管理端拒绝保存，避免结果依赖录入顺序。
 
-模型能力按明确版本识别。自动获取到但尚未录入规则的新 Seedance 型号不显示画幅和清晰度选项，由上游使用默认值，不会被猜测成 2.0 或 2.5。
+## 传输
 
-## Kling（可灵）
+当前契约版本为 v3，支持以下视频驱动：`openai-videos`、`xai-videos`、`gemini-veo`、`vertex-veo`、`dashscope-video`、`volcengine-video`、`kling-video`、`minimax-video`、`vidu-video`、`kie-video`、`apimart-video`。
 
-依据可灵官方 [Kling 3.0 Text to Video](https://app.klingai.com/global/dev/document-api/api/video/3-0-omni/text-to-video) 和同版本 Image to Video 定义：
+除 Kling 原生入口外，当前 NewAPI 厂家驱动都从 `POST /v1/videos` 创建并从 `GET /v1/videos/{task_id}` 查询。驱动仍需分开声明，因为各厂家读取的请求参数不同，例如 Gemini/Vertex、火山和万相会从 `metadata` 中读取厂家参数。请求字段映射支持 `metadata.durationSeconds` 这类嵌套路径。
 
-- 提示词最多 3072 个字符。
-- 时长为 3-15 秒，画幅为 `16:9`、`9:16`、`1:1`，分辨率为 `720p`、`1080p`、`4k`。
-- 音频枚举为 `native`、`off`；水印由 `options.watermark_info.enabled` 控制。
-- 参考图仅支持 JPG/JPEG/PNG，最大 50 MB，宽高均不少于 300 像素，宽高比为 1:2.5 到 2.5:1。
-- 可灵直连接口支持首帧加可选尾帧；当前产品入口只上传一张首帧，因此没有显示尾帧控制。
-- 图生视频的输出画幅由首帧决定，中转请求不会发送文生视频专用的 `aspect_ratio`。
+- `xai-videos` 使用 NewAPI 的 `/v1/videos` 兼容入口；当前配套 NewAPI 尚未提供独立的 xAI 视频任务适配器，实际接入时需要使用已支持 Grok 视频的聚合渠道，或等待上游补齐 xAI 视频任务适配器。
+- `kling-video` 使用 `/kling/v1/videos/text2video` 或 `/kling/v1/videos/image2video` 原生入口。
+- `kie-video` 和 `apimart-video` 仍调用 NewAPI 的 `/v1/videos`，由其 Sora 任务适配器转换为聚合平台协议。
 
-Kling 1.x/2.x 仍使用旧版兼容选项（5 秒或 10 秒、`720p`/`1080p`），不会套用 3.0 的 `4k` 和连续时长规则。
+模型 ID 始终原样传输。协议完全由匹配到的契约决定，不自动选择、不做厂家推断，也没有无契约兜底。
 
-## Grok
+NewAPI 根据原样传入的模型 ID 选择渠道；本项目的驱动决定请求结构和入口，模型契约决定具体能力及字段路径。驱动不会向模型列表注入模型，也不会替代 NewAPI 的渠道配置。
 
-依据 xAI 官方 [Video Generation](https://docs.x.ai/developers/model-capabilities/video/generation)：
+NewAPI 的 `/v1/videos` 对外状态为 `unknown`、`queued`、`in_progress`、`completed`、`failed`。契约分别声明排队、处理中、成功和失败原始状态；未匹配的值统一视为 `unknown` 并继续轮询。平台任务将 `queued` 保持为排队中，将 `in_progress` 和 `unknown` 映射为处理中，并保留 `upstream_status` 与 `progress` 供任务界面展示和排查。旧契约缺少新增字段时会自动采用 `queued`、`in_progress` 和 `progress` 路径。
 
-- 时长为 1-15 秒。
-- 画幅为 `1:1`、`16:9`、`9:16`、`4:3`、`3:4`、`3:2`、`2:3`。
-- 通用模型支持 `480p`、`720p`；`1080p` 仅支持 `grok-imagine-video-1.5`。
-- xAI 视频接口不提供音频或水印开关，因此不会向上游发送这两个字段。
+契约可以把本地参考素材声明为：
 
-## MiniMax Hailuo v1
+- `url`：参考素材必须是上游可访问的 HTTP 或 HTTPS URL。
+- `multipart`：本地素材使用契约声明的文件字段上传；可配置字段是否可重复，以及是否允许和外部 URL 混用。
 
-依据 MiniMax 官方 Video Generation v1 模型说明：
+请求体只包含 `model`、`prompt` 和契约明确映射出的字段。客户端提交的厂家、渠道或其他未声明字段不会透传。
 
-- Hailuo 2.3 支持 6 秒或 10 秒；10 秒仅支持 `768P`，6 秒支持 `768P`、`1080P`。
-- Hailuo v1 接口没有独立画幅参数。
-- `MiniMax-Hailuo-2.3-Fast` 和 `I2V-*` 模型必须提供首帧参考图。
-- 统一创作台不提供水印开关；请求不会向 Hailuo 发送水印字段。
+## 管理要求
 
-## Sora 2
+视频模型契约在设置页统一管理，支持手动编辑、参数面板预览、原始 JSON 查看、导入导出，以及从文档或网页链接分析出待审核 JSON。
 
-依据 OpenAI 官方 [Video generation with Sora](https://developers.openai.com/api/docs/guides/video-generation) 与 [Sora 2 prompting guide](https://developers.openai.com/cookbook/examples/sora/sora2_prompting_guide#api-parameters)：
+新增模型时：
 
-- `sora-2` 支持 `1280x720`、`720x1280`。
-- `sora-2-pro` 额外支持 `1792x1024`、`1024x1792`、`1920x1080`、`1080x1920`。
-- 时长仅支持 4、8、12、16、20 秒，上游字段按官方字符串枚举发送。
-- `/v1/videos` 使用 `size` 指定尺寸，不发送独立的 `resolution`、`duration`、音频开关或水印字段。
-- `input_reference` 只接受一张首帧图，图片尺寸必须与请求的 `size` 完全一致。
+1. 在全局模型设置中添加 NewAPI 实际可用的模型 ID。
+2. 根据 NewAPI 对该模型暴露的请求和响应协议创建或导入 v3 契约。
+3. 在预览中确认参数面板、生成模式和素材限制。
+4. 保存并启用契约后再提交测试任务。
 
-## 中转兼容边界
-
-本项目调用的是统一中转 `/v1/videos`，不是分别直连每家厂商。请求会保留统一接口需要的 `model`、`prompt`、`duration`/`seconds`、`size`，并按厂商添加扁平兼容字段：
-
-- Seedance：`ratio`、`resolution`、`generate_audio`、`watermark`。
-- Kling：`aspect_ratio`、`resolution`、`sound`；其中 `sound` 对应官方 `settings.audio` 的 `native`/`off` 语义。
-- Grok：`aspect_ratio`、`resolution`。
-- Hailuo：`resolution`。
-
-Seedance、Kling、Grok 和 Hailuo 的非通用参数还会写入 `metadata`，供 NewAPI 类型的兼容中转读取；水印仅保留在 Seedance 合同中。不会把可灵直连接口的 `settings`/`options` 对象原样发送给统一 `/v1/videos`，否则会破坏该中转协议。H3 是单独的兼容模式：首帧图使用 multipart `input_reference`，多模态参考使用 `reference_*_urls` 数组和 `generation_mode=reference-to-video`。
-
-## 维护要求
-
-新增或更新视频模型时，必须同时完成：
-
-1. 核对厂商当前官方 API 文档，不根据模型名称或其他聚合平台猜测参数。
-2. 更新 `web/src/lib/video-model-capabilities.ts` 的可选项。
-3. 更新 `internal/httpapi/routes.go` 的后端约束。
-4. 更新 `internal/httpapi/relay.go` 的上游字段映射。
-5. 为枚举、跨字段组合、生成模式和文件输入补充测试。
+文档分析结果只是草稿，管理员必须核对模型匹配规则、字段映射、状态枚举和结果路径后才能保存。鉴权和厂家路由不属于视频模型契约。

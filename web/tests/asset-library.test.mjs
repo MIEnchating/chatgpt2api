@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { assetListKey, assetPrompt, canManageAsset, collectAssetStorageKeys, managedImageAsset, mergeAssetLibrary } from "../src/app/assets/asset-library.ts";
+import { assetListKey, assetPrompt, canManageAsset, collectAssetStorageKeys, formatAssetCreatedTime, managedImageAsset, mergeAssetLibrary } from "../src/app/assets/asset-library.ts";
 
 const now = "2026-01-01T00:00:00Z";
 
@@ -71,6 +71,12 @@ test("managed image projection preserves its generation prompt", () => {
   }, true);
   assert.equal(assetPrompt(asset), "高端香水产品海报");
   assert.equal(assetPrompt(textAsset("plain")), "");
+});
+
+test("asset creation time supports server and ISO timestamps", () => {
+  assert.equal(formatAssetCreatedTime("2026-01-02 08:05:30"), "2026-01-02 08:05");
+  assert.equal(formatAssetCreatedTime("invalid"), "时间未知");
+  assert.match(formatAssetCreatedTime("2026-01-02T08:05:30Z"), /^2026-01-02 \d{2}:\d{2}$/);
 });
 
 test("asset storage key collection covers assets and canvas nodes", () => {

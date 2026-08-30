@@ -2,6 +2,7 @@ package service
 
 import (
 	"path/filepath"
+	"reflect"
 	"testing"
 
 	"chatgpt2api/internal/storage"
@@ -40,11 +41,12 @@ func TestImageGenerationPreferencesArePersistentAndPersonal(t *testing.T) {
 		DefaultAudioVoice:       "coral",
 		DefaultAudioFormat:      "wav",
 		DefaultAudioSpeed:       1.25,
-		DefaultTextRelayToken:   "text-key",
-		DefaultImageRelayToken:  "image-key",
-		DefaultVideoRelayToken:  "video-key",
-		DefaultAudioRelayToken:  "audio-key",
+		DefaultTextRelayTokens:  []string{"text-key", "text-backup"},
+		DefaultImageRelayTokens: []string{"image-key"},
+		DefaultVideoRelayTokens: []string{"video-key"},
+		DefaultAudioRelayTokens: []string{"audio-key"},
 		Workbench: CreationWorkbenchPreferences{
+			ImageModel:             "image-workbench-model",
 			ImageSize:              "2048x1152",
 			ImageSizeMode:          "ratio",
 			ImageAspectRatio:       "16:9",
@@ -57,10 +59,10 @@ func TestImageGenerationPreferencesArePersistentAndPersonal(t *testing.T) {
 			ImageCount:             3,
 			ImageOutputFormat:      "webp",
 			ImageOutputCompression: "88",
+			VideoModel:             "video-workbench-model",
 			VideoSize:              "1920x1080",
 			VideoSeconds:           "10",
 			VideoResolution:        "1080p",
-			VideoMode:              "pro",
 			VideoGenerateAudio:     true,
 			VideoWatermark:         true,
 		},
@@ -72,14 +74,14 @@ func TestImageGenerationPreferencesArePersistentAndPersonal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Preferences(reload) error = %v", err)
 	}
-	if got != want {
+	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("reloaded preferences = %#v, want %#v", got, want)
 	}
-	updated, err := preferences.UpdateRelayTokenNames("user-a", map[string]string{"image": "image-key-2", "audio": "audio-key-2"})
+	updated, err := preferences.UpdateRelayTokenNames("user-a", map[string][]string{"image": {"image-key-2", "image-key-3"}, "audio": {"audio-key-2"}})
 	if err != nil {
 		t.Fatalf("UpdateRelayTokenNames() error = %v", err)
 	}
-	if updated.DefaultImageRelayToken != "image-key-2" || updated.DefaultAudioRelayToken != "audio-key-2" || updated.DefaultTextRelayToken != "text-key" || updated.DefaultVideoRelayToken != "video-key" {
+	if !reflect.DeepEqual(updated.DefaultImageRelayTokens, []string{"image-key-2", "image-key-3"}) || !reflect.DeepEqual(updated.DefaultAudioRelayTokens, []string{"audio-key-2"}) || !reflect.DeepEqual(updated.DefaultTextRelayTokens, []string{"text-key", "text-backup"}) || !reflect.DeepEqual(updated.DefaultVideoRelayTokens, []string{"video-key"}) {
 		t.Fatalf("updated relay token preferences = %#v", updated)
 	}
 	if updated.DefaultImageModel != want.DefaultImageModel || updated.SystemPrompt != want.SystemPrompt {
@@ -92,7 +94,7 @@ func TestImageGenerationPreferencesArePersistentAndPersonal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpdateWorkbench() error = %v", err)
 	}
-	if updated.Workbench.ImageCount != 6 || updated.Workbench.ImageQuality != "medium" || updated.DefaultTextRelayToken != "text-key" {
+	if updated.Workbench.ImageCount != 6 || updated.Workbench.ImageQuality != "medium" || !reflect.DeepEqual(updated.DefaultTextRelayTokens, []string{"text-key", "text-backup"}) {
 		t.Fatalf("updated workbench preferences = %#v", updated)
 	}
 	other, err := preferences.Preferences("user-b")

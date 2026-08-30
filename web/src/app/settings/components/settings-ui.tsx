@@ -10,6 +10,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 
 type SettingsCardTone = "blue" | "amber" | "slate" | "violet";
@@ -52,40 +53,55 @@ export function SettingsCard({
 }: SettingsCardProps) {
   return (
     <Card
+      data-settings-card
       className={cn(
-        "overflow-hidden rounded-xl border-border/80",
+        "overflow-hidden rounded-xl border-border/80 lg:h-full lg:min-h-0",
         className,
       )}
     >
-      <CardHeader className="gap-4 p-5 pb-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="flex min-w-0 items-center gap-3">
-          <div
-            className={cn(
-              "flex size-10 shrink-0 items-center justify-center rounded-lg",
-              toneClassNames[tone],
-            )}
-          >
-            <Icon className="size-5" />
+      <div
+        data-settings-card-header-frame
+        className="shrink-0 bg-card"
+      >
+        <CardHeader
+          data-settings-card-header
+          className="gap-4 border-b border-border/80 bg-card p-5 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div className="flex min-w-0 items-center gap-3">
+            <div
+              className={cn(
+                "flex size-10 shrink-0 items-center justify-center rounded-lg",
+                toneClassNames[tone],
+              )}
+            >
+              <Icon className="size-5" />
+            </div>
+            <div className="min-w-0">
+              <CardTitle className="text-lg leading-7 font-semibold">
+                {title}
+              </CardTitle>
+              <CardDescription className="mt-1 line-clamp-2 text-sm leading-5">
+                {description}
+              </CardDescription>
+            </div>
           </div>
-          <div className="min-w-0">
-            <CardTitle className="text-lg leading-7 font-semibold">
-              {title}
-            </CardTitle>
-            <CardDescription className="mt-1 line-clamp-2 text-sm leading-5">
-              {description}
-            </CardDescription>
-          </div>
-        </div>
-        {meta || action ? (
-          <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
-            {meta}
-            {action}
-          </div>
-        ) : null}
-      </CardHeader>
-      <CardContent className={cn("p-5 pt-0 sm:p-6 sm:pt-0", contentClassName)}>
-        {children}
-      </CardContent>
+          {meta || action ? (
+            <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
+              {meta}
+              {action}
+            </div>
+          ) : null}
+        </CardHeader>
+      </div>
+      <ScrollArea
+        data-settings-card-body
+        className="min-h-0 lg:flex-1"
+        viewportClassName="pr-4"
+      >
+        <CardContent className={cn("p-5 pt-0 sm:p-6 sm:pt-0", contentClassName)}>
+          {children}
+        </CardContent>
+      </ScrollArea>
     </Card>
   );
 }

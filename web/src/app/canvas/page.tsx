@@ -1,6 +1,6 @@
 import { toPng } from "html-to-image";
 import { Bot, Camera, Check, ChevronDown, CircleDot, CircleHelp, Clipboard, Compass, Copy, Download, Eraser, FileDown, FileUp, Focus, FolderOpen, Grid2X2, Hand, ImagePlus, Images, Info, LoaderCircle, Map as MapIcon, Menu, Minus, Music, PanelLeftClose, PanelLeftOpen, Pencil, Plus, Redo2, Settings2, Square, Trash2, Type, Undo2, Upload, Video, X } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent as ReactDragEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
@@ -8,9 +8,7 @@ import { CanvasEngine } from "@/app/canvas/canvas-engine";
 import { CanvasNodeActionsPanel, CanvasNodeQuickActions, type CanvasImageOperation } from "@/app/canvas/canvas-node-actions-panel";
 import { CanvasProjectDialog, type CanvasProjectDialogMode } from "@/app/canvas/canvas-project-dialog";
 import { canvasProjectPath } from "@/app/canvas/canvas-project-route";
-import { CanvasAssetPicker } from "@/app/canvas/canvas-asset-picker";
 import { CanvasSidePanel, type CanvasSidePanelTab } from "@/app/canvas/canvas-side-panel";
-import { CanvasAgentPanel } from "@/app/canvas/canvas-agent-panel";
 import { buildCanvasAgentContext, summarizeCanvasAgentNode, summarizeCanvasAgentTask } from "@/app/canvas/agent/canvas-agent-context";
 import { arrangeCanvasAgentNodes, CANVAS_AGENT_PRIMARY_SCRIPT_NODE_SIZE, canvasAgentMediaLayoutSources, canvasAgentNodePosition, canvasAgentSourceNodeIDs, canvasAgentVideoDurationHint, canvasAgentVideoSupportsAudio, validateCanvasAgentVideoSeconds } from "@/app/canvas/agent/canvas-agent-generation";
 import { clearCanvasAgentSessionReferences, syncCanvasAgentSessions } from "@/app/canvas/agent/canvas-agent-sessions";
@@ -37,7 +35,7 @@ import { canvasGenerationStatusLabel, canvasNodeInfoJSON } from "@/app/canvas/ca
 import { CANVAS_GROUP_PADDING, canvasNodeBounds, detachCanvasNodesFromRemovedGroups, expandCanvasGroupNodeIDs } from "@/app/canvas/canvas-groups";
 import { CANVAS_NODE_DEFAULT_SIZE } from "@/app/canvas/canvas-node-specs";
 import { PANORAMA_IMAGE_SIZE, PANORAMA_NODE_SIZE, buildPanoramaPrompt, isStrictPanoramaSize, panoramaGenerationCount, panoramaGenerationQuality, panoramaRetryPrompt, panoramaRetryReferenceURLs } from "@/app/canvas/canvas-panorama";
-import { CanvasAngleDialog, CanvasCropDialog, CanvasMaskDialog, CanvasSplitDialog, CanvasUpscaleDialog, type CanvasMaskEditPayload } from "@/app/canvas/canvas-image-tools";
+import type { CanvasMaskEditPayload } from "@/app/canvas/canvas-image-tools";
 import { applyCanvasTaskImage, applyCanvasTaskProgressNodes, reconcileCancelledCanvasTaskNodes, reconcilePersistedCanvasTaskNodes, restoreCanvasTaskInitialImage, summarizeCanvasTaskResult } from "@/app/canvas/canvas-task-results";
 import { canvasExportBounds } from "@/app/canvas/canvas-export";
 import { createCanvasProjectArchive, downloadCanvasProjectArchive, readCanvasProjectArchive } from "@/app/canvas/canvas-project-transfer";
@@ -59,7 +57,6 @@ import { CanvasResourceMentionTextarea } from "@/app/canvas/canvas-resource-ment
 import { CanvasAudioPromptPanel, CanvasAudioSettingsFields, CanvasPanoramaPromptPanel, CanvasPanoramaViewer } from "@/app/canvas/canvas-special-nodes";
 import { canvasNodeMentionReferences, type CanvasResourceReference } from "@/app/canvas/canvas-resources";
 import { PromptTextareaFrame } from "@/components/generation/prompt-textarea-frame";
-import { ImageLightbox } from "@/components/image-lightbox";
 import {
   VideoSettingsPanel,
   type VideoSettingsValue,
@@ -87,9 +84,9 @@ import { cn } from "@/lib/utils";
 import { COLOR_THEME_CHANGE_EVENT, getPreferredColorTheme, type ColorTheme } from "@/lib/theme";
 import { useImageGenerationPreferences } from "@/lib/use-image-generation-preferences";
 import { syncCanvasTaskQueue } from "@/store/canvas-task-queue";
-import { DEFAULT_VIDEO_MODEL, supportsKlingElements, supportsVideoFrameReferences, supportsVideoMultimodalReferences, videoAllowsCustomDimensions, videoAllowsCustomResolution, videoAudioControl, videoDefaultResolution, videoDefaultSeconds, videoDefaultSize, videoMultimodalReferenceLimits, videoRequiresReferenceImage, videoResolutionOptions, videoSecondsIsValid, videoSizeLabel, videoSizeOptions, videoWorkbenchResolutionForModelSize, videoWorkbenchResolutionOptions, videoWorkbenchSecondsOptions, videoWorkbenchSizeForModelResolution } from "@/lib/video-model-capabilities";
+import { resolveConfiguredVideoModel, supportsVideoFrameReferences, supportsVideoMultimodalReferences, videoAllowsCustomDimensions, videoAllowsCustomResolution, videoAudioControl, videoDefaultResolution, videoDefaultSeconds, videoDefaultSize, videoMultimodalReferenceLimits, videoRequiresReferenceImage, videoResolutionOptions, videoSecondsIsValid, videoSizeLabel, videoSizeOptions, videoWorkbenchResolutionForModelSize, videoWorkbenchResolutionOptions, videoWorkbenchSecondsOptions, videoWorkbenchSizeForModelResolution } from "@/lib/video-model-capabilities";
 import { normalizeVideoRequest } from "@/lib/video-request-normalizer";
-import { normalizeVideoMultiPrompts } from "@/lib/video-kling-workbench";
+import { videoContractUIState, videoModelContract } from "@/lib/video-model-contracts";
 import {
   clearCanvasDocument,
   fetchCanvasDocument,
@@ -106,6 +103,15 @@ import { resolveMediaURL, uploadMediaBlob } from "@/services/file-storage";
 import { persistCreationTaskOutputs } from "@/services/generation-result-storage";
 import { resolveImageURL, uploadImage } from "@/services/image-storage";
 import type { StoredAuthSession } from "@/store/auth";
+
+const CanvasAgentPanel = lazy(() => import("@/app/canvas/canvas-agent-panel").then((module) => ({ default: module.CanvasAgentPanel })));
+const CanvasAssetPicker = lazy(() => import("@/app/canvas/canvas-asset-picker").then((module) => ({ default: module.CanvasAssetPicker })));
+const CanvasCropDialog = lazy(() => import("@/app/canvas/canvas-image-tools").then((module) => ({ default: module.CanvasCropDialog })));
+const CanvasSplitDialog = lazy(() => import("@/app/canvas/canvas-image-tools").then((module) => ({ default: module.CanvasSplitDialog })));
+const CanvasUpscaleDialog = lazy(() => import("@/app/canvas/canvas-image-tools").then((module) => ({ default: module.CanvasUpscaleDialog })));
+const CanvasMaskDialog = lazy(() => import("@/app/canvas/canvas-image-tools").then((module) => ({ default: module.CanvasMaskDialog })));
+const CanvasAngleDialog = lazy(() => import("@/app/canvas/canvas-image-tools").then((module) => ({ default: module.CanvasAngleDialog })));
+const ImageLightbox = lazy(() => import("@/components/image-lightbox").then((module) => ({ default: module.ImageLightbox })));
 
 type SaveState = "saved" | "dirty" | "saving" | "error";
 type CanvasSwitchPhase = "switching" | "revealing" | null;
@@ -353,29 +359,6 @@ async function preparePublicVideoMediaReference(value: string, kind: "video" | "
   return uploaded.url;
 }
 
-async function prepareCanvasVideoElementList(items: Array<Record<string, unknown>>, signal?: AbortSignal) {
-  return Promise.all(items.map(async (item) => {
-    const references = Array.isArray(item.references) ? item.references : [];
-    const preparedReferences = await Promise.all(references.map(async (value) => {
-      const reference = value && typeof value === "object" ? value as Record<string, unknown> : {};
-      const kind = reference.kind === "video" || reference.kind === "audio" ? reference.kind : "image";
-      const url = String(reference.url || "").trim();
-      if (!url) return null;
-      return {
-        kind,
-        url: kind === "image"
-          ? await preparePublicVideoImageReference(url, signal)
-          : await preparePublicVideoMediaReference(url, kind, signal),
-      };
-    }));
-    return {
-      name: String(item.name || ""),
-      description: String(item.description || ""),
-      references: preparedReferences.filter((reference): reference is { kind: "image" | "video" | "audio"; url: string } => Boolean(reference)),
-    };
-  }));
-}
-
 function fitImageNodeSize(width: number, height: number, maxWidth = 640, maxHeight = 640) {
   const safeWidth = Math.max(1, width);
   const safeHeight = Math.max(1, height);
@@ -416,7 +399,7 @@ function isCanvasAccessibleReferenceURL(value: string) {
 }
 
 function canvasVideoParameters(node?: CanvasNode | null) {
-	const model = node?.generation_video_model || DEFAULT_VIDEO_MODEL;
+	const model = node?.generation_video_model || "";
 	const sizes = videoSizeOptions(model);
 	const customDimensions = videoAllowsCustomDimensions(model);
 	const selectedSeconds = node?.generation_video_seconds;
@@ -433,26 +416,16 @@ function canvasVideoParameters(node?: CanvasNode | null) {
 		generation_video_size: normalizedSize,
 		generation_video_seconds: normalizedSeconds,
 		generation_video_resolution: customResolution ? node?.generation_video_resolution || videoDefaultResolution(model, normalizedSeconds) : resolutions.includes(node?.generation_video_resolution || "") ? node?.generation_video_resolution : videoDefaultResolution(model, normalizedSeconds),
-    generation_video_audio: videoAudioControl(model) === "toggle" ? (node?.generation_video_audio ?? false) : videoAudioControl(model) === "always",
-    generation_video_watermark: node?.generation_video_watermark ?? false,
-		generation_video_mode: node?.generation_video_mode || "std",
-		generation_video_negative_prompt: node?.generation_video_negative_prompt || "",
-		generation_video_multi_shot: node?.generation_video_multi_shot ?? false,
-		generation_video_shot_type: node?.generation_video_shot_type === "customize" ? "customize" as const : "intelligence" as const,
-		generation_video_multi_prompt: Array.isArray(node?.generation_video_multi_prompt) ? node.generation_video_multi_prompt : [],
-		generation_video_element_list: Array.isArray(node?.generation_video_element_list) ? node.generation_video_element_list : [],
-		generation_video_character_orientation: node?.generation_video_character_orientation === "image" ? "image" as const : "video" as const,
-		generation_video_reference_mode: node?.generation_video_reference_mode === "reference" ? "reference" as const : "first-frame" as const,
+	    generation_video_audio: videoAudioControl(model) === "toggle" ? (node?.generation_video_audio ?? false) : videoAudioControl(model) === "always",
+	    generation_video_watermark: node?.generation_video_watermark ?? false,
+			generation_video_reference_mode: node?.generation_video_reference_mode === "reference" ? "reference" as const : "first-frame" as const,
 		generation_video_reference_image_urls: Array.isArray(node?.generation_video_reference_image_urls) ? node.generation_video_reference_image_urls : [],
     generation_video_reference_urls: Array.isArray(node?.generation_video_reference_urls) ? node.generation_video_reference_urls : [],
 			generation_video_reference_audio_urls: Array.isArray(node?.generation_video_reference_audio_urls) ? node.generation_video_reference_audio_urls : [],
-			exclude_upstream_text: node?.exclude_upstream_text ?? false,
-			generation_video_first_frame_node_id: node?.generation_video_first_frame_node_id,
-			generation_video_last_frame_node_id: node?.generation_video_last_frame_node_id,
-			generation_video_kling_image_node_ids: node?.generation_video_kling_image_node_ids || [],
-			generation_video_kling_multi_prompt: node?.generation_video_kling_multi_prompt || [],
-			generation_video_kling_element_list: node?.generation_video_kling_element_list || [],
-  };
+				exclude_upstream_text: node?.exclude_upstream_text ?? false,
+				generation_video_first_frame_node_id: node?.generation_video_first_frame_node_id,
+				generation_video_last_frame_node_id: node?.generation_video_last_frame_node_id,
+	  };
 }
 
 function canvasVideoModelPatch(model: string) {
@@ -477,26 +450,16 @@ function normalizeCanvasVideoNode(node: CanvasNode) {
     generation_video_size: params.generation_video_size,
     generation_video_seconds: params.generation_video_seconds,
     generation_video_resolution: params.generation_video_resolution,
-    generation_video_audio: params.generation_video_audio,
-    generation_video_watermark: params.generation_video_watermark,
-		generation_video_mode: params.generation_video_mode,
-		generation_video_negative_prompt: params.generation_video_negative_prompt,
-		generation_video_multi_shot: params.generation_video_multi_shot,
-		generation_video_shot_type: params.generation_video_shot_type,
-		generation_video_multi_prompt: params.generation_video_multi_prompt,
-		generation_video_element_list: params.generation_video_element_list,
-		generation_video_character_orientation: params.generation_video_character_orientation,
-    generation_video_reference_mode: params.generation_video_reference_mode,
+	    generation_video_audio: params.generation_video_audio,
+	    generation_video_watermark: params.generation_video_watermark,
+	    generation_video_reference_mode: params.generation_video_reference_mode,
     generation_video_reference_image_urls: params.generation_video_reference_image_urls,
     generation_video_reference_urls: params.generation_video_reference_urls,
     generation_video_reference_audio_urls: params.generation_video_reference_audio_urls,
-		exclude_upstream_text: params.exclude_upstream_text,
-		generation_video_first_frame_node_id: params.generation_video_first_frame_node_id,
-		generation_video_last_frame_node_id: params.generation_video_last_frame_node_id,
-		generation_video_kling_image_node_ids: params.generation_video_kling_image_node_ids,
-		generation_video_kling_multi_prompt: params.generation_video_kling_multi_prompt,
-		generation_video_kling_element_list: params.generation_video_kling_element_list,
-  };
+				exclude_upstream_text: params.exclude_upstream_text,
+				generation_video_first_frame_node_id: params.generation_video_first_frame_node_id,
+				generation_video_last_frame_node_id: params.generation_video_last_frame_node_id,
+	  };
 }
 
 function canvasErrorMessage(error: unknown) {
@@ -525,12 +488,28 @@ function CanvasVideoPromptPanel({ node, inputs, running, generationBusy, uploadi
   useEffect(() => setPrompt(node.prompt || ""), [node.id, node.prompt]);
   const params = canvasVideoParameters(node);
   const modelOptions = Array.from(new Set([...(videoModels || []), params.generation_video_model]));
-  const klingElementsSupported = supportsKlingElements(params.generation_video_model);
   const videoReferenceSupported = supportsVideoMultimodalReferences(params.generation_video_model);
   const audioReferenceSupported = videoMultimodalReferenceLimits(params.generation_video_model).audio > 0;
   const referenceImageURL = params.generation_video_reference_image_urls[0] || "";
   const referenceVideoURL = params.generation_video_reference_urls[0] || "";
   const referenceAudioURL = params.generation_video_reference_audio_urls[0] || "";
+  const videoRuleValues = {
+    first_frame: params.generation_video_reference_mode === "first-frame" ? referenceImageURL || params.generation_video_first_frame_node_id || "" : "",
+    last_frame: params.generation_video_last_frame_node_id || "",
+    reference_image: params.generation_video_reference_mode === "reference" ? params.generation_video_reference_image_urls.length : 0,
+    reference_video: params.generation_video_reference_urls.length,
+    reference_audio: params.generation_video_reference_audio_urls.length,
+    generate_audio: params.generation_video_audio,
+    size: params.generation_video_size,
+    resolution: params.generation_video_resolution,
+    duration: params.generation_video_seconds,
+    watermark: params.generation_video_watermark,
+  };
+  const videoContractUI = videoContractUIState(videoModelContract(params.generation_video_model), videoRuleValues);
+  const videoFieldVisible = (field: "first_frame" | "last_frame" | "reference_image" | "reference_video" | "reference_audio") => !videoContractUI.hidden.has(field);
+  const videoFieldDisabled = (field: "first_frame" | "last_frame" | "reference_image" | "reference_video" | "reference_audio") => videoContractUI.disabled.has(field);
+  const imageRuleField = params.generation_video_reference_mode === "reference" ? "reference_image" : "first_frame";
+  const visibleReferenceMaterials = videoFieldVisible(imageRuleField) || videoFieldVisible("reference_video") || videoFieldVisible("reference_audio");
   const [referenceUploading, setReferenceUploading] = useState<"image" | "video" | "audio" | "" >("");
   const referenceImageInputRef = useRef<HTMLInputElement>(null);
   const referenceVideoInputRef = useRef<HTMLInputElement>(null);
@@ -539,12 +518,6 @@ function CanvasVideoPromptPanel({ node, inputs, running, generationBusy, uploadi
     size: params.generation_video_size,
     seconds: String(params.generation_video_seconds),
     resolution: params.generation_video_resolution || "",
-    mode: params.generation_video_mode,
-    negativePrompt: params.generation_video_negative_prompt,
-    multiShot: params.generation_video_multi_shot,
-    shotType: params.generation_video_shot_type,
-    multiPrompt: normalizeVideoMultiPrompts(params.generation_video_multi_prompt),
-    characterOrientation: params.generation_video_character_orientation,
     generateAudio: params.generation_video_audio,
     watermark: params.generation_video_watermark,
     taskCount: 1,
@@ -560,12 +533,6 @@ function CanvasVideoPromptPanel({ node, inputs, running, generationBusy, uploadi
       ...(linkedSize !== undefined ? { generation_video_size: linkedSize } : {}),
       ...(patch.seconds !== undefined && videoSecondsIsValid(params.generation_video_model, Number(patch.seconds)) ? { generation_video_seconds: Number(patch.seconds) } : {}),
       ...(linkedResolution !== undefined ? { generation_video_resolution: linkedResolution } : {}),
-      ...(patch.mode !== undefined ? { generation_video_mode: patch.mode } : {}),
-      ...(patch.negativePrompt !== undefined ? { generation_video_negative_prompt: patch.negativePrompt } : {}),
-      ...(patch.multiShot !== undefined ? { generation_video_multi_shot: patch.multiShot } : {}),
-      ...(patch.shotType !== undefined ? { generation_video_shot_type: patch.shotType } : {}),
-      ...(patch.multiPrompt !== undefined ? { generation_video_multi_prompt: patch.multiPrompt } : {}),
-      ...(patch.characterOrientation !== undefined ? { generation_video_character_orientation: patch.characterOrientation } : {}),
       ...(patch.generateAudio !== undefined ? { generation_video_audio: patch.generateAudio } : {}),
       ...(patch.watermark !== undefined ? { generation_video_watermark: patch.watermark } : {}),
     });
@@ -634,25 +601,24 @@ function CanvasVideoPromptPanel({ node, inputs, running, generationBusy, uploadi
 				<VideoSettingsPanel
 				  model={params.generation_video_model}
 				  value={videoSettingsValue}
+				  ruleValues={videoRuleValues}
 				  onChange={updateVideoSettings}
-				  referenceImageCount={params.generation_video_reference_image_urls.filter(Boolean).length}
-				  referenceVideoCount={params.generation_video_reference_urls.filter(Boolean).length}
 				  showTaskCount={false}
 				/>
 		{videoReferenceSupported ? <label className="space-y-1.5"><ImageParameterLabel help="首帧图生视频使用一张开场图片；多模态参考可以组合图片、视频和音频。">参考模式</ImageParameterLabel><Select value={params.generation_video_reference_mode} onValueChange={(value: "first-frame" | "reference") => onParametersChange({ generation_video_reference_mode: value })}><SelectTrigger className="h-9 rounded-lg px-2.5 text-xs shadow-none"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="first-frame">首帧图生视频</SelectItem><SelectItem value="reference">多模态参考</SelectItem></SelectContent></Select></label> : null}
-		  <div className="order-40 space-y-2 rounded-xl border border-border/80 bg-muted/15 p-3 text-xs">
+		  {visibleReferenceMaterials ? <div className="order-40 space-y-2 rounded-xl border border-border/80 bg-muted/15 p-3 text-xs">
 		<div className="flex items-center justify-between"><span className="font-medium text-foreground">参考素材</span><span className="text-[11px] text-muted-foreground">按类型分别传入</span></div>
 		<p className="text-[11px] leading-4 text-muted-foreground">图片参考用于图生视频；视频参考用于视频生视频。两者共用模型、尺寸、时长和清晰度参数，但提交给厂商的参考字段不同。</p>
 		<input ref={referenceImageInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void uploadReferenceImage(file); }} />
 		<input ref={referenceVideoInputRef} type="file" accept="video/mp4,video/quicktime,.mp4,.mov" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void uploadReferenceVideo(file); }} />
 		<input ref={referenceAudioInputRef} type="file" accept="audio/mpeg,audio/wav,.mp3,.wav" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void uploadReferenceAudio(file); }} />
-		<div className="grid grid-cols-3 gap-2"><button type="button" disabled={Boolean(referenceUploading)} onClick={() => referenceImageInputRef.current?.click()} className="flex h-9 items-center justify-center gap-1.5 rounded-lg border border-dashed border-border bg-background text-xs font-medium hover:border-[#1456f0] hover:text-[#1456f0] disabled:cursor-wait disabled:opacity-50"><Upload className="size-3.5" />{referenceUploading === "image" ? "上传中…" : referenceImageURL ? "替换参考图" : "上传参考图"}</button><button type="button" disabled={!videoReferenceSupported || Boolean(referenceUploading)} onClick={() => referenceVideoInputRef.current?.click()} className="flex h-9 items-center justify-center gap-1.5 rounded-lg border border-dashed border-border bg-background text-xs font-medium hover:border-[#1456f0] hover:text-[#1456f0] disabled:cursor-not-allowed disabled:opacity-50"><Video className="size-3.5" />{referenceUploading === "video" ? "上传中…" : referenceVideoURL ? "替换参考视频" : "上传参考视频"}</button><button type="button" disabled={!audioReferenceSupported || Boolean(referenceUploading)} onClick={() => referenceAudioInputRef.current?.click()} className="flex h-9 items-center justify-center gap-1.5 rounded-lg border border-dashed border-border bg-background text-xs font-medium hover:border-[#1456f0] hover:text-[#1456f0] disabled:cursor-not-allowed disabled:opacity-50"><Music className="size-3.5" />{referenceUploading === "audio" ? "上传中…" : referenceAudioURL ? "替换参考音频" : "上传参考音频"}</button></div>
+		<div className="grid grid-cols-3 gap-2">{videoFieldVisible(imageRuleField) ? <button type="button" disabled={videoFieldDisabled(imageRuleField) || Boolean(referenceUploading)} onClick={() => referenceImageInputRef.current?.click()} className="flex h-9 items-center justify-center gap-1.5 rounded-lg border border-dashed border-border bg-background text-xs font-medium hover:border-[#1456f0] hover:text-[#1456f0] disabled:cursor-wait disabled:opacity-50"><Upload className="size-3.5" />{referenceUploading === "image" ? "上传中…" : referenceImageURL ? "替换参考图" : "上传参考图"}</button> : null}{videoFieldVisible("reference_video") ? <button type="button" disabled={videoFieldDisabled("reference_video") || !videoReferenceSupported || Boolean(referenceUploading)} onClick={() => referenceVideoInputRef.current?.click()} className="flex h-9 items-center justify-center gap-1.5 rounded-lg border border-dashed border-border bg-background text-xs font-medium hover:border-[#1456f0] hover:text-[#1456f0] disabled:cursor-not-allowed disabled:opacity-50"><Video className="size-3.5" />{referenceUploading === "video" ? "上传中…" : referenceVideoURL ? "替换参考视频" : "上传参考视频"}</button> : null}{videoFieldVisible("reference_audio") ? <button type="button" disabled={videoFieldDisabled("reference_audio") || !audioReferenceSupported || Boolean(referenceUploading)} onClick={() => referenceAudioInputRef.current?.click()} className="flex h-9 items-center justify-center gap-1.5 rounded-lg border border-dashed border-border bg-background text-xs font-medium hover:border-[#1456f0] hover:text-[#1456f0] disabled:cursor-not-allowed disabled:opacity-50"><Music className="size-3.5" />{referenceUploading === "audio" ? "上传中…" : referenceAudioURL ? "替换参考音频" : "上传参考音频"}</button> : null}</div>
 		{referenceImageURL ? <p className="truncate text-[11px] text-emerald-600 dark:text-emerald-400">已设置参考图片，也可以连接图片节点</p> : null}
 		{referenceVideoURL ? <p className="truncate text-[11px] text-emerald-600 dark:text-emerald-400">已设置参考视频，也可以连接视频节点</p> : null}
-		<div className="grid gap-2"><label className="space-y-1"><span className="text-[11px] text-muted-foreground">参考图片 URL</span><Input type="url" value={referenceImageURL} onChange={(event) => onParametersChange({ generation_video_reference_image_urls: event.target.value ? [event.target.value] : [], generation_video_reference_urls: [], generation_video_reference_audio_urls: [] })} placeholder="https://图片地址" className="h-8 rounded-lg px-2 text-xs shadow-none" /></label><label className="space-y-1"><span className="text-[11px] text-muted-foreground">参考视频 URL</span><Input type="url" value={referenceVideoURL} disabled={!videoReferenceSupported} onChange={(event) => onParametersChange({ generation_video_reference_mode: "reference", generation_video_reference_urls: event.target.value ? [event.target.value] : [] })} placeholder={videoReferenceSupported ? "https://视频地址" : "当前模型不支持"} className="h-8 rounded-lg px-2 text-xs shadow-none disabled:opacity-60" /></label></div>
-		{audioReferenceSupported ? <label className="block space-y-1"><span className="text-[11px] text-muted-foreground">参考音频 URL（可选）</span><Input type="url" value={referenceAudioURL} onChange={(event) => onParametersChange({ generation_video_reference_mode: "reference", generation_video_reference_audio_urls: event.target.value ? [event.target.value] : [] })} placeholder="https://音频地址" className="h-8 rounded-lg px-2 text-xs shadow-none" /></label> : null}
-	  </div>
-				  {(klingElementsSupported || supportsVideoFrameReferences(params.generation_video_model)) ? <CanvasVideoNodeBindings node={node} inputs={inputs} onChange={onParametersChange} /> : null}
+		<div className="grid gap-2">{videoFieldVisible(imageRuleField) ? <label className="space-y-1"><span className="text-[11px] text-muted-foreground">参考图片 URL</span><Input type="url" value={referenceImageURL} disabled={videoFieldDisabled(imageRuleField)} onChange={(event) => onParametersChange({ generation_video_reference_image_urls: event.target.value ? [event.target.value] : [], generation_video_reference_urls: [], generation_video_reference_audio_urls: [] })} placeholder="https://图片地址" className="h-8 rounded-lg px-2 text-xs shadow-none" /></label> : null}{videoFieldVisible("reference_video") ? <label className="space-y-1"><span className="text-[11px] text-muted-foreground">参考视频 URL</span><Input type="url" value={referenceVideoURL} disabled={videoFieldDisabled("reference_video") || !videoReferenceSupported} onChange={(event) => onParametersChange({ generation_video_reference_mode: "reference", generation_video_reference_urls: event.target.value ? [event.target.value] : [] })} placeholder={videoReferenceSupported ? "https://视频地址" : "当前模型不支持"} className="h-8 rounded-lg px-2 text-xs shadow-none disabled:opacity-60" /></label> : null}</div>
+		{audioReferenceSupported && videoFieldVisible("reference_audio") ? <label className="block space-y-1"><span className="text-[11px] text-muted-foreground">参考音频 URL（可选）</span><Input type="url" value={referenceAudioURL} disabled={videoFieldDisabled("reference_audio")} onChange={(event) => onParametersChange({ generation_video_reference_mode: "reference", generation_video_reference_audio_urls: event.target.value ? [event.target.value] : [] })} placeholder="https://音频地址" className="h-8 rounded-lg px-2 text-xs shadow-none" /></label> : null}
+	  </div> : null}
+				  {supportsVideoFrameReferences(params.generation_video_model) && (videoFieldVisible("first_frame") || videoFieldVisible("last_frame")) ? <CanvasVideoNodeBindings node={node} inputs={inputs} showFirstFrame={videoFieldVisible("first_frame")} showLastFrame={videoFieldVisible("last_frame")} firstFrameDisabled={videoFieldDisabled("first_frame")} lastFrameDisabled={videoFieldDisabled("last_frame")} onChange={onParametersChange} /> : null}
 	   </div>
 	  </div>
 	  </AppScrollArea>
@@ -886,6 +852,10 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
   const [sidePanel, setSidePanel] = useState(storedCanvasSidePanel);
   const [assetPickerOpen, setAssetPickerOpen] = useState(false);
   const [agentOpen, setAgentOpen] = useState(false);
+  const [agentPanelMounted, setAgentPanelMounted] = useState(false);
+  const [assetPickerMounted, setAssetPickerMounted] = useState(false);
+  const [imageToolsMounted, setImageToolsMounted] = useState(false);
+  const [imageLightboxMounted, setImageLightboxMounted] = useState(false);
   const [agentWidth, setAgentWidth] = useState(DEFAULT_AGENT_PANEL.width);
   const [agentSessions, setAgentSessions] = useState<CanvasAssistantSession[]>([]);
   const [activeAgentSessionID, setActiveAgentSessionID] = useState("");
@@ -924,15 +894,15 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
   const [imageModelReady, setImageModelReady] = useState(false);
   const [textModel, setTextModel] = useState("gpt-5.5");
   const [textModels, setTextModels] = useState<string[]>([]);
-  const [videoModel, setVideoModel] = useState(DEFAULT_VIDEO_MODEL);
-  const [videoModels, setVideoModels] = useState([DEFAULT_VIDEO_MODEL]);
+  const [videoModel, setVideoModel] = useState("");
+  const [videoModels, setVideoModels] = useState<string[]>([]);
   const [audioModel, setAudioModel] = useState("gpt-4o-mini-tts");
   const [audioModels, setAudioModels] = useState(["gpt-4o-mini-tts"]);
-  const { tokenNames: relayTokenNames } = useRelayTokenPreferences();
-  const imageRelayTokenName = relayTokenNames.image;
-  const videoRelayTokenName = relayTokenNames.video;
-  const audioRelayTokenName = relayTokenNames.audio;
-  const textRelayTokenName = relayTokenNames.text;
+  const { tokenNameForModel } = useRelayTokenPreferences();
+  const imageRelayTokenName = tokenNameForModel("image", imageModel);
+  const videoRelayTokenName = tokenNameForModel("video", videoModel);
+  const audioRelayTokenName = tokenNameForModel("audio", audioModel);
+  const textRelayTokenName = tokenNameForModel("text", textModel);
   const [relayTokenDialogKind, setRelayTokenDialogKind] = useState<RelayTokenCreationKind | null>(null);
   const [, setSaveState] = useState<SaveState>("saved");
   const [switchPhase, setSwitchPhase] = useState<CanvasSwitchPhase>(null);
@@ -944,6 +914,22 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
   useEffect(() => {
     selectedNodeIDsRef.current = selectedNodeIDs;
   }, [selectedNodeIDs]);
+
+  useEffect(() => {
+    if (agentOpen) setAgentPanelMounted(true);
+  }, [agentOpen]);
+
+  useEffect(() => {
+    if (assetPickerOpen) setAssetPickerMounted(true);
+  }, [assetPickerOpen]);
+
+  useEffect(() => {
+    if (imageTool) setImageToolsMounted(true);
+  }, [imageTool]);
+
+  useEffect(() => {
+    if (previewNodeID) setImageLightboxMounted(true);
+  }, [previewNodeID]);
 
   useEffect(() => {
     const handleThemeChange = (event: Event) => {
@@ -1034,9 +1020,12 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
           const personalImageModel = config.image_models.includes(imageGenerationPreferences.default_image_model)
             ? imageGenerationPreferences.default_image_model
             : config.default_image_model;
-          const personalVideoModel = config.video_models.includes(imageGenerationPreferences.default_video_model)
-            ? imageGenerationPreferences.default_video_model
-            : config.default_video_model;
+          const personalVideoModel = resolveConfiguredVideoModel(
+            config.video_models,
+            imageGenerationPreferences.workbench.video_model,
+            imageGenerationPreferences.default_video_model,
+            config.default_video_model,
+          );
           const personalTextModel = config.text_models.includes(imageGenerationPreferences.default_text_model)
             ? imageGenerationPreferences.default_text_model
             : config.default_text_model;
@@ -1047,8 +1036,8 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
           setImageModels(config.image_models?.length ? config.image_models : [personalImageModel || DEFAULT_IMAGE_MODEL]);
           setTextModel(resolveCanvasTextModel(personalTextModel, config.text_models));
           setTextModels(config.text_models?.length ? config.text_models : [config.default_text_model].filter(Boolean));
-          setVideoModel(personalVideoModel || config.video_models?.[0] || DEFAULT_VIDEO_MODEL);
-          setVideoModels(config.video_models?.length ? config.video_models : [DEFAULT_VIDEO_MODEL]);
+          setVideoModel(personalVideoModel);
+          setVideoModels(config.video_models || []);
           setAudioModel(resolveCanvasAudioModel(personalAudioModel, config.audio_models));
           setAudioModels(config.audio_models?.length ? config.audio_models : [config.default_audio_model || "gpt-4o-mini-tts"]);
           setImageModelReady(true);
@@ -1062,7 +1051,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     return () => {
       active = false;
     };
-  }, [imageGenerationPreferences.default_audio_model, imageGenerationPreferences.default_image_model, imageGenerationPreferences.default_text_model, imageGenerationPreferences.default_video_model]);
+  }, [imageGenerationPreferences.default_audio_model, imageGenerationPreferences.default_image_model, imageGenerationPreferences.default_text_model, imageGenerationPreferences.default_video_model, imageGenerationPreferences.workbench.video_model]);
 
   const refreshLibrary = useCallback((showLoading = false, notifyError = false) => {
     if (libraryRefreshPromiseRef.current) return libraryRefreshPromiseRef.current;
@@ -1718,7 +1707,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       generation: {
         textModel,
         imageModel: imageModel || imageGenerationPreferences.default_image_model,
-        videoModel: videoModel || imageGenerationPreferences.default_video_model,
+        videoModel,
         audioModel,
         imageQuality: resolvedAgentConfig.imageQuality,
         imageSize: resolvedAgentConfig.imageSize,
@@ -1939,7 +1928,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       if (action.name === "edit_image" && !sourceNodes.some((node) => (node.type === "image" || node.type === "panorama") && Boolean(node.url))) return { ok: false, code: "image_reference_required", message: "图片编辑需要至少一个已有内容的图片节点" };
       const type: "image" | "video" | "audio" = action.name === "generate_video" ? "video" : action.name === "generate_audio" ? "audio" : "image";
       const generationModel = type === "video"
-        ? videoModel || imageGenerationPreferences.default_video_model
+        ? videoModel
         : type === "audio"
           ? audioModel
           : imageModel || imageGenerationPreferences.default_image_model;
@@ -2401,7 +2390,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
   function createPendingNode(type: "text" | "image" | "video" | "audio" | "panorama" | "director" | "config") {
     if (!pendingConnection) return;
     const size = CANVAS_NODE_DEFAULT_SIZE[type];
-    const node: CanvasNode = { id: `${type}-${randomID()}`, type, x: pendingConnection.position.x - size.width / 2, y: pendingConnection.position.y - size.height / 2, ...size, ...(type === "text" ? { font_size: 14 } : {}), scale_x: 1, scale_y: 1, title: canvasNodeFallbackTitle(type), prompt: "", ...(type === "image" || type === "panorama" || type === "config" ? preferredCanvasImageParameters() : type === "video" ? canvasVideoParameters() : type === "audio" ? preferredCanvasAudioParameters() : {}), ...(type === "config" ? { generation_mode: "image" as const, generation_model: imageModel } : {}), ...(type === "panorama" ? { generation_size: "2:1" } : {}), created_at: createdAt() };
+    const node: CanvasNode = { id: `${type}-${randomID()}`, type, x: pendingConnection.position.x - size.width / 2, y: pendingConnection.position.y - size.height / 2, ...size, ...(type === "text" ? { font_size: 14 } : {}), scale_x: 1, scale_y: 1, title: canvasNodeFallbackTitle(type), prompt: "", ...(type === "image" || type === "panorama" || type === "config" ? preferredCanvasImageParameters() : type === "video" ? canvasVideoParameters({ generation_video_model: videoModel } as CanvasNode) : type === "audio" ? preferredCanvasAudioParameters() : {}), ...(type === "config" ? { generation_mode: "image" as const, generation_model: imageModel } : {}), ...(type === "panorama" ? { generation_size: "2:1" } : {}), created_at: createdAt() };
     const connection = resolveCanvasConnection(pendingConnection, node.id, [...nodesRef.current, node]);
     if (!connection || !canConnect(connection.sourceID, connection.targetID)) {
       return toast.error("该节点不能与生成配置节点连接");
@@ -3157,14 +3146,14 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       if (!task) return;
       try {
         const recoveredTask = task.status === "success" || task.status === "error" || task.status === "cancelled"
-          ? await persistCreationTaskOutputs(task)
+          ? await persistCreationTaskOutputs(task, { assetContext: { source: "无限画布" } })
           : task;
         const progress = applyRecoveredCanvasTask(recoveredTask, projectID, operationEpoch, signal);
         if (progress.terminal) return;
         const completedTask = await waitForTask(taskID, (nextTask) => {
           applyRecoveredCanvasTask(nextTask, projectID, operationEpoch, signal);
         }, signal);
-        applyRecoveredCanvasTask(await persistCreationTaskOutputs(completedTask), projectID, operationEpoch, signal);
+        applyRecoveredCanvasTask(await persistCreationTaskOutputs(completedTask, { assetContext: { source: "无限画布" } }), projectID, operationEpoch, signal);
       } catch (error) {
         if (!(error instanceof DOMException && error.name === "AbortError")) {
           if (error instanceof CanvasTaskPollingTimeoutError || isRetryableTaskPollError(error)) {
@@ -3391,7 +3380,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         setRunningTaskID(serverTaskID);
       }
       replaceNodes(nodesRef.current.map((node) => node.id === resultID ? { ...node, task_id: serverTaskID, audio_task_id: serverTaskID } : node));
-      const completed = await persistCreationTaskOutputs(await waitForTask(serverTaskID, undefined, controller.signal));
+      const completed = await persistCreationTaskOutputs(await waitForTask(serverTaskID, undefined, controller.signal), { assetContext: { source: "无限画布" } });
       const item = completed.data?.find((entry) => entry.audio_url || entry.url);
       const url = String(item?.audio_url || item?.url || "").trim();
       if (!url) throw new Error(completed.error || "音频任务完成但没有返回音频地址");
@@ -3545,7 +3534,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
           const serverTaskID = submitted.id || clientTaskID;
           addActiveGenerationTask(activeGeneration, serverTaskID, clientTaskID);
           replaceNodes(nodesRef.current.map((node) => node.id === targetID ? { ...node, task_id: serverTaskID } : node));
-          const completed = await persistCreationTaskOutputs(await waitForTask(serverTaskID, undefined, controller.signal));
+          const completed = await persistCreationTaskOutputs(await waitForTask(serverTaskID, undefined, controller.signal), { assetContext: { source: "无限画布" } });
           const result = summarizeCanvasTaskResult(completed, 1);
           const image = result.images[0];
           if (!image?.url) throw new Error(result.error || "全景图任务没有返回图片");
@@ -3621,6 +3610,10 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
   async function runVideoGeneration(nodeID: string, prompt?: string, concurrent = true) {
     const sourceNode = nodesRef.current.find((node) => node.id === nodeID && (node.type === "video" || node.type === "config" && node.generation_mode === "video"));
     if (!sourceNode || activeGenerationsRef.current.has(nodeID) || runningNodeID && !concurrent) return;
+    const selectedModel = String(sourceNode.generation_video_model || "").trim();
+    if (!selectedModel || !videoModels.includes(selectedModel)) {
+      return toast.error("请选择全局模型设置中已启用的视频模型");
+    }
     if (!videoRelayTokenName.trim()) {
       setRelayTokenDialogKind("video");
       return;
@@ -3640,8 +3633,6 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
 			const referenceAudioURLs = Array.from(new Set([...configuredAudioReferenceURLs, ...context.referenceAudioURLs])).slice(0, 3);
 			const firstFrameURL = videoImageReferences.firstFrameURL;
 			const lastFrameURL = videoImageReferences.lastFrameURL;
-			const multiPrompt = context.videoMultiPrompt.length ? context.videoMultiPrompt : params.generation_video_multi_prompt;
-			const elementList = context.videoElementList.length ? context.videoElementList : params.generation_video_element_list;
 		let referenceMode: "first-frame" | "reference" = params.generation_video_reference_mode === "reference" ? "reference" : "first-frame";
 		const supportsMultimodalReferences = supportsVideoMultimodalReferences(params.generation_video_model);
 		const multimodalLimits = videoMultimodalReferenceLimits(params.generation_video_model);
@@ -3707,9 +3698,6 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
 				const preparedReferenceAudioURLs = await Promise.all(
 					referenceAudioURLs.map((url) => preparePublicVideoMediaReference(url, "audio", controller.signal)),
 				);
-				const preparedElementList = context.videoElementList.length
-					? await prepareCanvasVideoElementList(elementList, controller.signal)
-					: elementList;
 				const normalizedVideo = normalizeVideoRequest({
 				model: params.generation_video_model,
 				size: params.generation_video_size,
@@ -3717,13 +3705,6 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
 				resolution: params.generation_video_resolution,
 				generateAudio: params.generation_video_audio,
 				watermark: params.generation_video_watermark,
-				videoMode: params.generation_video_mode,
-				negativePrompt: params.generation_video_negative_prompt,
-				multiShot: params.generation_video_multi_shot,
-				shotType: params.generation_video_shot_type,
-					multiPrompt,
-					elementList: preparedElementList,
-				characterOrientation: params.generation_video_character_orientation,
 					referenceImageURLs,
 					firstFrameURL: preparedFirstFrameURL,
 					lastFrameURL: preparedLastFrameURL,
@@ -3740,19 +3721,12 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
 				resolution: normalizedVideo.resolution || undefined,
 				generateAudio: normalizedVideo.generateAudio,
 				watermark: normalizedVideo.watermark,
-				videoMode: params.generation_video_mode,
-				negativePrompt: params.generation_video_negative_prompt,
-				multiShot: params.generation_video_multi_shot,
-				shotType: params.generation_video_shot_type,
-					multiPrompt: normalizedVideo.multiPrompt,
-					elementList: normalizedVideo.elementList,
-				characterOrientation: params.generation_video_character_orientation,
-					referenceImageURLs,
+					referenceImageURLs: normalizedVideo.referenceImageURLs,
 					firstFrameURL: normalizedVideo.firstFrameURL,
 					lastFrameURL: normalizedVideo.lastFrameURL,
-				referenceVideoURLs: preparedReferenceVideoURLs,
-				referenceAudioURLs: preparedReferenceAudioURLs,
-				referenceMode,
+				referenceVideoURLs: normalizedVideo.referenceVideoURLs,
+				referenceAudioURLs: normalizedVideo.referenceAudioURLs,
+				referenceMode: normalizedVideo.referenceMode,
 					systemPrompt: imageGenerationPreferences.video_system_prompt || undefined,
 				relayTokenName: videoRelayTokenName.trim() || undefined,
 				requestOptions: { signal: controller.signal },
@@ -3766,7 +3740,9 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         setRunningTaskID(serverTaskID);
       }
       replaceNodes(nodesRef.current.map((node) => node.id === resultNodeID ? { ...node, task_id: serverTaskID } : node));
-      const completed = await persistCreationTaskOutputs(await waitForTask(serverTaskID, undefined, controller.signal));
+      const completed = await persistCreationTaskOutputs(await waitForTask(serverTaskID, undefined, controller.signal), {
+        assetContext: { prompt, source: "无限画布", metadata: { projectId: documentRef.current.id, nodeId: resultNodeID } },
+      });
       const item = completed.data?.find((entry) => String(entry.type || "") === "video" || entry.video_url || entry.url);
       const url = String(item?.video_url || item?.url || "").trim();
       if (!url) throw new Error(completed.error || "视频任务完成但没有返回视频地址");
@@ -4006,7 +3982,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         if (receivedNewFinal) nextNodes = setCanvasConfigGenerationStatus(nextNodes, sourceNode.id, "success", "", activeTaskID);
         replaceNodes(nextNodes);
         if (receivedNewFinal) scheduleSave();
-      }, controller.signal));
+      }, controller.signal), { assetContext: { source: "无限画布" } });
       terminalTaskReceived = true;
       if (!generationIsCurrent()) return;
       const taskResult = summarizeCanvasTaskResult(completedTask, outputNodeIDs.length);
@@ -4068,7 +4044,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       );
       let cancelledTask: CreationTask | null = null;
       if (cancelled) {
-        try { cancelledTask = await persistCreationTaskOutputs(await cancelCreationTask(activeTaskID)); } catch { /* A request cancelled before submission has no server task. */ }
+        try { cancelledTask = await persistCreationTaskOutputs(await cancelCreationTask(activeTaskID), { assetContext: { source: "无限画布" } }); } catch { /* A request cancelled before submission has no server task. */ }
         if (!generationOwnsCanvas()) return;
       }
       const cancelledResult = cancelled ? reconcileCancelledCanvasTaskNodes(nodesRef.current, cancelledTask, {
@@ -4434,7 +4410,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     const refreshWhenVisible = () => {
       if (document.visibilityState === "visible") void refreshLibrary();
     };
-    const timer = window.setInterval(refreshWhenVisible, 4000);
+    const timer = window.setInterval(refreshWhenVisible, 30_000);
     document.addEventListener("visibilitychange", refreshWhenVisible);
     return () => {
       window.clearInterval(timer);
@@ -4624,7 +4600,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
 
       {projectMenuOpen ? <aside className="absolute top-16 left-3 z-30 w-80 rounded-xl border border-border bg-card shadow-xl"><div className="border-b p-3"><p className="text-sm font-semibold">画布项目</p><p className="text-[11px] text-muted-foreground">跨设备自动同步</p></div><ScrollArea className="max-h-56 p-1.5">{projects.map((project) => <button key={project.id} className={cn("flex w-full items-center gap-2 rounded-lg p-2 text-left text-xs hover:bg-muted", project.id === documentRef.current.id && "bg-[#e7efff] text-[#1456f0] dark:bg-blue-950/50 dark:text-blue-300")} onClick={() => project.id !== documentRef.current.id && void runProject({ action: "activate", project_id: project.id })}><span className="flex size-7 items-center justify-center rounded-md bg-muted">{project.id === documentRef.current.id ? <Check className="size-3.5" /> : project.node_count}</span><span className="truncate font-semibold">{project.title}</span></button>)}</ScrollArea><div className="space-y-2 border-t p-2.5"><div className="flex rounded-lg bg-muted p-1"><BackgroundButton active={background === "dots"} label="点阵" onClick={() => { backgroundRef.current = "dots"; setBackground("dots"); setTimeout(pushHistory); }}><CircleDot /></BackgroundButton><BackgroundButton active={background === "grid"} label="网格" onClick={() => { backgroundRef.current = "grid"; setBackground("grid"); setTimeout(pushHistory); }}><Grid2X2 /></BackgroundButton><BackgroundButton active={background === "plain"} label="空白" onClick={() => { backgroundRef.current = "plain"; setBackground("plain"); setTimeout(pushHistory); }}><Square /></BackgroundButton></div><label className="flex items-center justify-between gap-3 rounded-lg px-1.5 py-1 text-xs"><span className="flex min-w-0 items-center gap-1.5 text-muted-foreground"><Info className="size-3.5" />图片信息</span><Switch checked={showImageInfo} aria-label="显示图片信息" onCheckedChange={(enabled) => { showImageInfoRef.current = enabled; setShowImageInfo(enabled); pushHistory(); }} /></label></div></aside> : null}
 
-      <CanvasAgentPanel
+      {agentPanelMounted ? <Suspense fallback={null}><CanvasAgentPanel
         key={documentRef.current.id}
         open={agentOpen}
         nodes={nodes}
@@ -4671,9 +4647,9 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
           documentRef.current = { ...documentRef.current, agent_panel: { open: false, width: agentWidth } };
           scheduleSave();
         }}
-      />
+      /></Suspense> : null}
 
-      <CanvasAssetPicker
+      {assetPickerMounted ? <Suspense fallback={null}><CanvasAssetPicker
         open={assetPickerOpen}
         session={session}
         onInsert={(payload) => {
@@ -4681,7 +4657,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
           setAssetPickerOpen(false);
         }}
         onClose={() => setAssetPickerOpen(false)}
-      />
+      /></Suspense> : null}
 
       {miniMapOpen && nodes.length && canvasSize.width > 0 ? <CanvasMiniMap nodes={nodes} viewport={viewport} viewportSize={canvasSize} onViewportChange={(next) => updateViewport(next, true)} /> : null}
 
@@ -4756,11 +4732,13 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
           </DialogFooter>
         </DialogContent>
       </Dialog>
-      <CanvasCropDialog sourceURL={imageTool?.kind === "crop" ? imageTool.sourceURL : ""} open={imageTool?.kind === "crop"} busy={imageToolBusy} onClose={closeCanvasImageTool} onConfirm={(crop) => void cropCanvasNode(crop)} />
-      <CanvasSplitDialog sourceURL={imageTool?.kind === "split" ? imageTool.sourceURL : ""} open={imageTool?.kind === "split"} busy={imageToolBusy} onClose={closeCanvasImageTool} onConfirm={(params) => void splitCanvasNode(params)} />
-      <CanvasUpscaleDialog sourceURL={imageTool?.kind === "upscale" ? imageTool.sourceURL : ""} open={imageTool?.kind === "upscale"} busy={imageToolBusy} onClose={closeCanvasImageTool} onConfirm={(params) => void upscaleCanvasNode(params)} />
-      <CanvasMaskDialog sourceURL={imageTool?.kind === "mask" ? imageTool.sourceURL : ""} open={imageTool?.kind === "mask"} busy={imageToolBusy} model={maskEditModel || imageModel} models={imageModels} onModelChange={setMaskEditModel} onClose={closeCanvasImageTool} onConfirm={maskEditCanvasNode} />
-      <CanvasAngleDialog sourceURL={imageTool?.kind === "angle" ? imageTool.sourceURL : ""} open={imageTool?.kind === "angle"} busy={imageToolBusy} onClose={closeCanvasImageTool} onConfirm={angleCanvasNode} />
+      {imageToolsMounted ? <Suspense fallback={null}>
+        <CanvasCropDialog sourceURL={imageTool?.kind === "crop" ? imageTool.sourceURL : ""} open={imageTool?.kind === "crop"} busy={imageToolBusy} onClose={closeCanvasImageTool} onConfirm={(crop) => void cropCanvasNode(crop)} />
+        <CanvasSplitDialog sourceURL={imageTool?.kind === "split" ? imageTool.sourceURL : ""} open={imageTool?.kind === "split"} busy={imageToolBusy} onClose={closeCanvasImageTool} onConfirm={(params) => void splitCanvasNode(params)} />
+        <CanvasUpscaleDialog sourceURL={imageTool?.kind === "upscale" ? imageTool.sourceURL : ""} open={imageTool?.kind === "upscale"} busy={imageToolBusy} onClose={closeCanvasImageTool} onConfirm={(params) => void upscaleCanvasNode(params)} />
+        <CanvasMaskDialog sourceURL={imageTool?.kind === "mask" ? imageTool.sourceURL : ""} open={imageTool?.kind === "mask"} busy={imageToolBusy} model={maskEditModel || imageModel} models={imageModels} onModelChange={setMaskEditModel} onClose={closeCanvasImageTool} onConfirm={maskEditCanvasNode} />
+        <CanvasAngleDialog sourceURL={imageTool?.kind === "angle" ? imageTool.sourceURL : ""} open={imageTool?.kind === "angle"} busy={imageToolBusy} onClose={closeCanvasImageTool} onConfirm={angleCanvasNode} />
+      </Suspense> : null}
       {previewPanorama?.url ? (
         <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/80 backdrop-blur-sm" onClick={() => setPreviewNodeID("")}>
           <div className="relative h-[85vh] w-[85vw] overflow-hidden rounded-xl" onClick={(event) => event.stopPropagation()}>
@@ -4770,7 +4748,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         </div>
       ) : null}
       {previewVideo?.url ? <CanvasVideoPreview src={previewVideo.url} title={previewVideo.title || "视频"} onDownload={() => void downloadNodeImage(previewVideo.id)} onClose={() => setPreviewNodeID("")} /> : null}
-      <ImageLightbox images={previewImages} currentIndex={previewIndex} open={Boolean(previewNodeID && !previewPanorama && !previewVideo)} onOpenChange={(open) => { if (!open) setPreviewNodeID(""); }} onIndexChange={(index) => setPreviewNodeID(previewImages[index]?.id || "")} />
+      {imageLightboxMounted ? <Suspense fallback={null}><ImageLightbox images={previewImages} currentIndex={previewIndex} open={Boolean(previewNodeID && !previewPanorama && !previewVideo)} onOpenChange={(open) => { if (!open) setPreviewNodeID(""); }} onIndexChange={(index) => setPreviewNodeID(previewImages[index]?.id || "")} /></Suspense> : null}
       <Input ref={importRef} type="file" accept="application/zip,.zip" className="hidden" onChange={(event) => void importProjectArchive(event)} />
       <Input ref={imageInputRef} type="file" accept="image/*,video/mp4,video/quicktime,.mp4,.mov,audio/mpeg,audio/wav,audio/x-wav,.mp3,.wav" className="hidden" onChange={(event) => void handleNodeImageUpload(event)} />
       {loading || switchPhase ? <CanvasSwitchShell revealing={!loading && switchPhase === "revealing"} /> : null}

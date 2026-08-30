@@ -59,7 +59,6 @@ const preferences = {
     video_size: "1280x720",
     video_seconds: "6",
     video_resolution: "720p",
-    video_mode: "std",
     video_generate_audio: false,
     video_watermark: false,
   },

@@ -30,6 +30,18 @@ export function assetPrompt(asset: MyAsset | null) {
   return typeof prompt === "string" ? prompt.trim() : "";
 }
 
+export function formatAssetCreatedTime(value: string) {
+  const source = String(value || "").trim();
+  if (!source) return "时间未知";
+  const normalized = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(?::\d{2})?$/.test(source)
+    ? source.replace(" ", "T")
+    : source;
+  const date = new Date(normalized);
+  if (Number.isNaN(date.getTime())) return "时间未知";
+  const pad = (part: number) => String(part).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
 export function managedImageSourceLabel(source: ManagedImage["generation_source"]) {
   if (source === "workflow") return "工作流";
   if (source === "canvas") return "无限画布";

@@ -119,6 +119,83 @@ func TestImageTaskServiceRequiresVideoPromptForEveryModel(t *testing.T) {
 	}
 }
 
+func TestImageTaskServicePreservesDeclaredVideoGenerationMode(t *testing.T) {
+	handlerCalls := make(chan map[string]any, 1)
+	handler := func(_ context.Context, _ Identity, payload map[string]any) (map[string]any, error) {
+		handlerCalls <- payload
+		return map[string]any{"data": []map[string]any{{"url": "https://example.test/video.mp4"}}}, nil
+	}
+	svc := newTestImageTaskService(t, handler, handler, handler, func() int { return 30 })
+	svc.SetVideoHandler(handler)
+	identity := Identity{ID: "alice", Name: "Alice", Role: "user"}
+	snapshot := map[string]any{"name": "MiniMax H3 v1.8"}
+	if _, err := svc.SubmitVideo(context.Background(), identity, "video-generation-mode", "animate", "minimax-h3-768p", "16:9", 5, "768p", true, false, "reference", []string{"https://cdn.example.com/ref.png"}, nil, nil, map[string]any{
+		"generation_mode":         "reference-to-video",
+		"video_contract_snapshot": snapshot,
+	}); err != nil {
+		t.Fatalf("SubmitVideo() error = %v", err)
+	}
+	waitForTaskStatus(t, svc, identity, "video-generation-mode", TaskStatusSuccess)
+	payload := <-handlerCalls
+	if payload["generation_mode"] != "reference-to-video" {
+		t.Fatalf("video handler generation_mode = %#v", payload["generation_mode"])
+	}
+	if !reflect.DeepEqual(payload["video_contract_snapshot"], snapshot) {
+		t.Fatalf("video handler contract snapshot = %#v", payload["video_contract_snapshot"])
+	}
+}
+
+func TestImageTaskServiceTracksVideoQueueAndUpstreamProgress(t *testing.T) {
+	queued := make(chan struct{})
+	continueRunning := make(chan struct{})
+	handler := func(_ context.Context, _ Identity, payload map[string]any) (map[string]any, error) {
+		callback := payload[VideoTaskProgressCallbackPayloadKey].(func(VideoTaskProgressUpdate))
+		callback(VideoTaskProgressUpdate{Status: TaskStatusQueued, UpstreamStatus: "queued", Progress: 0, HasProgress: true})
+		close(queued)
+		<-continueRunning
+		callback(VideoTaskProgressUpdate{Status: TaskStatusRunning, UpstreamStatus: "in_progress", Progress: 42, HasProgress: true})
+		return map[string]any{"output_type": "video", "data": []map[string]any{{"video_url": "https://example.test/video.mp4"}}}, nil
+	}
+	svc := newTestImageTaskService(t, handler, handler, handler, func() int { return 30 })
+	svc.SetVideoHandler(handler)
+	identity := Identity{ID: "alice", Name: "Alice", Role: "user"}
+	if _, err := svc.SubmitVideo(context.Background(), identity, "video-progress", "animate", "video-model", "16:9", 5, "1080p", false, false, "text", nil, nil, nil, nil); err != nil {
+		t.Fatalf("SubmitVideo() error = %v", err)
+	}
+	<-queued
+	items := svc.ListTasks(identity, []string{"video-progress"})["items"].([]map[string]any)
+	if len(items) != 1 || items[0]["status"] != TaskStatusQueued || items[0]["upstream_status"] != "queued" || util.ToInt(items[0]["progress"], -1) != 0 {
+		t.Fatalf("queued video task = %#v", items)
+	}
+	close(continueRunning)
+	waitForTaskStatus(t, svc, identity, "video-progress", TaskStatusSuccess)
+	items = svc.ListTasks(identity, []string{"video-progress"})["items"].([]map[string]any)
+	if items[0]["upstream_status"] != "in_progress" || util.ToInt(items[0]["progress"], -1) != 42 {
+		t.Fatalf("completed video progress = %#v", items[0])
+	}
+}
+
+func TestImageTaskServiceDoesNotApplyLegacyVideoDurationLimit(t *testing.T) {
+	handlerCalls := make(chan map[string]any, 1)
+	handler := func(_ context.Context, _ Identity, payload map[string]any) (map[string]any, error) {
+		handlerCalls <- payload
+		return map[string]any{"data": []map[string]any{{"url": "https://example.test/video.mp4"}}}, nil
+	}
+	svc := newTestImageTaskService(t, handler, handler, handler, func() int { return 30 })
+	svc.SetVideoHandler(handler)
+	identity := Identity{ID: "alice", Name: "Alice", Role: "user"}
+	if _, err := svc.SubmitVideo(context.Background(), identity, "video-long-duration", "animate", "future-video", "16:9", 61, "1080p", false, false, "first-frame", nil, nil, nil, nil); err != nil {
+		t.Fatalf("SubmitVideo(61 seconds) error = %v", err)
+	}
+	waitForTaskStatus(t, svc, identity, "video-long-duration", TaskStatusSuccess)
+	if payload := <-handlerCalls; payload["seconds"] != 61 {
+		t.Fatalf("video handler seconds = %#v", payload["seconds"])
+	}
+	if _, err := svc.SubmitVideo(context.Background(), identity, "video-too-long", "animate", "future-video", "16:9", 3601, "1080p", false, false, "first-frame", nil, nil, nil, nil); err == nil {
+		t.Fatal("SubmitVideo(3601 seconds) was accepted")
+	}
+}
+
 func TestImageTaskServiceSubmitsSingleAudioOutput(t *testing.T) {
 	handlerCalls := make(chan map[string]any, 1)
 	handler := func(_ context.Context, _ Identity, payload map[string]any) (map[string]any, error) {
@@ -1571,6 +1648,34 @@ func TestImageTaskServiceMarksTimedOutTaskAsError(t *testing.T) {
 	if item["error"] != "图片生成超时，请稍后重试或降低分辨率" {
 		t.Fatalf("timeout error = %#v", item)
 	}
+}
+
+func TestImageTaskServiceHonorsVideoContractTimeout(t *testing.T) {
+	handler := func(ctx context.Context, identity Identity, payload map[string]any) (map[string]any, error) {
+		timer := time.NewTimer(50 * time.Millisecond)
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		case <-timer.C:
+			return map[string]any{"output_type": "video", "data": []map[string]any{{"url": "https://example.test/video.mp4"}}}, nil
+		}
+	}
+	svc := newTestImageTaskService(t, handler, handler, handler, func() int { return 30 })
+	svc.SetVideoHandler(handler)
+	svc.SetTaskTimeoutGetter(func() time.Duration { return 20 * time.Millisecond })
+	identity := Identity{ID: "alice", Name: "Alice", Role: "user"}
+
+	task, err := svc.SubmitVideo(context.Background(), identity, "video-contract-timeout", "animate", "future-video", "16:9", 5, "1080p", false, false, "text", nil, nil, nil, map[string]any{
+		VideoTaskTimeoutSecondsPayloadKey: 1,
+	})
+	if err != nil {
+		t.Fatalf("SubmitVideo() error = %v", err)
+	}
+	if task[VideoTaskTimeoutSecondsPayloadKey] != nil {
+		t.Fatalf("private timeout leaked into public task: %#v", task)
+	}
+	waitForTaskStatus(t, svc, identity, "video-contract-timeout", TaskStatusSuccess)
 }
 
 func TestImageTaskServicePreservesTextOutputType(t *testing.T) {

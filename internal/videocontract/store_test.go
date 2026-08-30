@@ -1,0 +1,249 @@
+package videocontract
+
+import (
+	"encoding/json"
+	"path/filepath"
+	"reflect"
+	"strings"
+	"testing"
+
+	"chatgpt2api/internal/protocol"
+	"chatgpt2api/internal/storage"
+)
+
+func testVideoContract(t *testing.T, id, model string) protocol.VideoModelContract {
+	t.Helper()
+	contract := protocol.DefaultVideoContracts()[0]
+	contract.Name = id
+	contract.Models = []string{model}
+	return contract
+}
+
+func TestVideoModelContractServicePersistsAndRefreshesRuntime(t *testing.T) {
+	databasePath := filepath.Join(t.TempDir(), "contracts.db")
+	backend, err := storage.NewDatabaseBackend("sqlite:///" + filepath.ToSlash(databasePath))
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend() error = %v", err)
+	}
+	defer backend.Close()
+	t.Cleanup(func() { _ = protocol.ReplaceVideoContracts(protocol.DefaultVideoContracts()) })
+
+	service := NewVideoModelContractService(backend)
+	if err := service.Initialize(); err != nil {
+		t.Fatalf("Initialize() error = %v", err)
+	}
+	created, err := service.Create(testVideoContract(t, "custom-video-v1", "custom/video-v1"), true)
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if created.ID == "" || !created.Enabled || created.CreatedAt == "" {
+		t.Fatalf("Create() = %#v", created)
+	}
+	if contract, ok := protocol.VideoContractForModel("custom/video-v1"); !ok || contract.Name != created.Contract.Name {
+		t.Fatalf("runtime contract = %#v, %v", contract, ok)
+	}
+
+	reloaded := NewVideoModelContractService(backend)
+	if err := reloaded.Initialize(); err != nil {
+		t.Fatalf("reloaded Initialize() error = %v", err)
+	}
+	items, err := reloaded.List()
+	if err != nil || len(items) != len(protocol.DefaultVideoContracts())+1 {
+		t.Fatalf("reloaded List() = %#v, error = %v", items, err)
+	}
+	if _, err := reloaded.SetEnabled(created.ID, false); err != nil {
+		t.Fatalf("SetEnabled(false) error = %v", err)
+	}
+	if _, ok := protocol.VideoContractForModel("custom/video-v1"); ok {
+		t.Fatal("disabled contract remained active")
+	}
+	deleted, err := reloaded.Delete(created.ID)
+	if err != nil || !deleted {
+		t.Fatalf("Delete() = %v, %v", deleted, err)
+	}
+}
+
+func TestVideoModelContractServiceMigratesLegacyGatewayDriver(t *testing.T) {
+	databasePath := filepath.Join(t.TempDir(), "contracts.db")
+	backend, err := storage.NewDatabaseBackend("sqlite:///" + filepath.ToSlash(databasePath))
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend() error = %v", err)
+	}
+	defer backend.Close()
+	t.Cleanup(func() { _ = protocol.ReplaceVideoContracts(protocol.DefaultVideoContracts()) })
+
+	contract := protocol.DefaultVideoContracts()[0]
+	contract.Driver = "newapi-video"
+	document := videoModelContractStoreDocument{Version: videoModelContractStoreVersion, Items: []ManagedVideoModelContract{{
+		ID: "legacy-contract", Contract: contract, Enabled: true, CreatedAt: "2026-08-30T00:00:00Z", UpdatedAt: "2026-08-30T00:00:00Z",
+	}}}
+	if err := backend.SaveJSONDocument(videoModelContractDocumentName, document); err != nil {
+		t.Fatalf("SaveJSONDocument() error = %v", err)
+	}
+
+	service := NewVideoModelContractService(backend)
+	if err := service.Initialize(); err != nil {
+		t.Fatalf("Initialize() error = %v", err)
+	}
+	items, err := service.List()
+	if err != nil || len(items) != 1 || items[0].Contract.Driver != protocol.VideoContractDriverOpenAI {
+		t.Fatalf("List() = %#v, error = %v", items, err)
+	}
+	raw, err := backend.LoadJSONDocument(videoModelContractDocumentName)
+	if err != nil {
+		t.Fatalf("LoadJSONDocument() error = %v", err)
+	}
+	data, _ := json.Marshal(raw)
+	if strings.Contains(string(data), "newapi-video") || !strings.Contains(string(data), protocol.VideoContractDriverOpenAI) {
+		t.Fatalf("legacy driver was not persisted as migrated: %s", data)
+	}
+}
+
+func TestVideoModelContractServiceMigratesDefaultMiniMaxH3RulesOnce(t *testing.T) {
+	databasePath := filepath.Join(t.TempDir(), "contracts.db")
+	backend, err := storage.NewDatabaseBackend("sqlite:///" + filepath.ToSlash(databasePath))
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend() error = %v", err)
+	}
+	defer backend.Close()
+	t.Cleanup(func() { _ = protocol.ReplaceVideoContracts(protocol.DefaultVideoContracts()) })
+
+	contract := protocol.DefaultVideoContracts()[0]
+	contract.Name = "海螺-MiniMax H3"
+	contract.Models = []string{"minimax-h3-768p"}
+	contract.Rules = nil
+	document := videoModelContractStoreDocument{Version: 4, Items: []ManagedVideoModelContract{{
+		ID: "legacy-h3", Contract: contract, Enabled: true, CreatedAt: "2026-08-30T00:00:00Z", UpdatedAt: "2026-08-30T00:00:00Z",
+	}}}
+	if err := backend.SaveJSONDocument(videoModelContractDocumentName, document); err != nil {
+		t.Fatalf("SaveJSONDocument() error = %v", err)
+	}
+
+	service := NewVideoModelContractService(backend)
+	if err := service.Initialize(); err != nil {
+		t.Fatalf("Initialize() error = %v", err)
+	}
+	items, err := service.List()
+	if err != nil || len(items) != 1 || len(items[0].Contract.Rules) != 2 {
+		t.Fatalf("List() = %#v, error = %v", items, err)
+	}
+	if got := items[0].Contract.Rules[1].Forbid; !reflect.DeepEqual(got, []string{"reference_image", "reference_video", "reference_audio"}) {
+		t.Fatalf("migrated forbid fields = %#v", got)
+	}
+
+	items[0].Contract.Rules = items[0].Contract.Rules[:1]
+	if _, err := service.Update(items[0].ID, items[0].Contract, true); err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+	reloaded := NewVideoModelContractService(backend)
+	if err := reloaded.Initialize(); err != nil {
+		t.Fatalf("reloaded Initialize() error = %v", err)
+	}
+	items, err = reloaded.List()
+	if err != nil || len(items) != 1 || len(items[0].Contract.Rules) != 1 {
+		t.Fatalf("user-edited rules were migrated again: %#v, error = %v", items, err)
+	}
+}
+
+func TestVideoModelContractServiceRejectsConflicts(t *testing.T) {
+	databasePath := filepath.Join(t.TempDir(), "contracts.db")
+	backend, err := storage.NewDatabaseBackend("sqlite:///" + filepath.ToSlash(databasePath))
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend() error = %v", err)
+	}
+	defer backend.Close()
+	service := NewVideoModelContractService(backend)
+	if err := service.Initialize(); err != nil {
+		t.Fatalf("Initialize() error = %v", err)
+	}
+	if _, err := service.Create(testVideoContract(t, "custom-video-v1", "minimax-h3-768p"), true); err == nil {
+		t.Fatal("Create() accepted a built-in model collision")
+	}
+	if _, err := service.Create(testVideoContract(t, "MiniMax H3 v1.8", "custom/video-v1"), true); err == nil {
+		t.Fatal("Create() accepted a duplicate name")
+	}
+}
+
+func TestDefaultVideoModelContractCanBeEditedAndDeleted(t *testing.T) {
+	databasePath := filepath.Join(t.TempDir(), "contracts.db")
+	backend, err := storage.NewDatabaseBackend("sqlite:///" + filepath.ToSlash(databasePath))
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend() error = %v", err)
+	}
+	defer backend.Close()
+	t.Cleanup(func() { _ = protocol.ReplaceVideoContracts(protocol.DefaultVideoContracts()) })
+
+	service := NewVideoModelContractService(backend)
+	if err := service.Initialize(); err != nil {
+		t.Fatalf("Initialize() error = %v", err)
+	}
+	items, err := service.List()
+	if err != nil || len(items) != 1 {
+		t.Fatalf("List() = %#v, error = %v", items, err)
+	}
+	contract := items[0].Contract
+	contract.Name = "可编辑的 H3 契约"
+	updated, err := service.Update(items[0].ID, contract, true)
+	if err != nil || updated == nil || updated.Contract.Name != contract.Name {
+		t.Fatalf("Update() = %#v, error = %v", updated, err)
+	}
+	if deleted, err := service.Delete(items[0].ID); err != nil || !deleted {
+		t.Fatalf("Delete() = %v, error = %v", deleted, err)
+	}
+	reloaded := NewVideoModelContractService(backend)
+	if err := reloaded.Initialize(); err != nil {
+		t.Fatalf("reloaded Initialize() error = %v", err)
+	}
+	items, err = reloaded.List()
+	if err != nil || len(items) != 0 {
+		t.Fatalf("deleted default contract was restored: %#v, error = %v", items, err)
+	}
+}
+
+func TestVideoModelContractServiceImportsBundleAtomically(t *testing.T) {
+	databasePath := filepath.Join(t.TempDir(), "contracts.db")
+	backend, err := storage.NewDatabaseBackend("sqlite:///" + filepath.ToSlash(databasePath))
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend() error = %v", err)
+	}
+	defer backend.Close()
+	t.Cleanup(func() { _ = protocol.ReplaceVideoContracts(protocol.DefaultVideoContracts()) })
+
+	service := NewVideoModelContractService(backend)
+	if err := service.Initialize(); err != nil {
+		t.Fatalf("Initialize() error = %v", err)
+	}
+	defaults, err := service.List()
+	if err != nil || len(defaults) != 1 {
+		t.Fatalf("List() = %#v, error = %v", defaults, err)
+	}
+	updatedContract := defaults[0].Contract
+	updatedContract.Models = []string{"imported/default-video"}
+	newContract := testVideoContract(t, "Imported custom video", "imported/custom-video")
+	created, updated, err := service.Import([]ImportedVideoModelContract{
+		{Contract: updatedContract, Enabled: false},
+		{Contract: newContract, Enabled: true},
+	})
+	if err != nil || created != 1 || updated != 1 {
+		t.Fatalf("Import() = created %d, updated %d, error %v", created, updated, err)
+	}
+	items, err := service.List()
+	if err != nil || len(items) != 2 {
+		t.Fatalf("List() = %#v, error = %v", items, err)
+	}
+	if _, ok := protocol.VideoContractForModel("imported/default-video"); ok {
+		t.Fatal("disabled imported contract remained active")
+	}
+	if _, ok := protocol.VideoContractForModel("imported/custom-video"); !ok {
+		t.Fatal("enabled imported contract was not installed")
+	}
+
+	conflicting := testVideoContract(t, "Conflicting video", "imported/custom-video")
+	if _, _, err := service.Import([]ImportedVideoModelContract{{Contract: conflicting, Enabled: true}}); err == nil {
+		t.Fatal("Import() accepted a model collision")
+	}
+	afterFailure, err := service.List()
+	if err != nil || len(afterFailure) != 2 {
+		t.Fatalf("failed import changed stored contracts: %#v, error = %v", afterFailure, err)
+	}
+}

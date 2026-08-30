@@ -14,6 +14,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	mysqlDriver "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
@@ -46,6 +47,24 @@ type JSONDocumentPrefixBackend interface {
 type LogBackend interface {
 	AppendLog(item map[string]any) error
 	QueryLogs(startDate, endDate string, limit int) ([]map[string]any, error)
+}
+
+type LogCursor struct {
+	Day string
+	ID  int64
+}
+
+type LogPage struct {
+	Items      []map[string]any
+	NextCursor *LogCursor
+}
+
+type LogPageBackend interface {
+	QueryLogPage(startDate, endDate string, cursor *LogCursor, limit int) (LogPage, error)
+}
+
+type LogSummaryBackend interface {
+	LogSummary() (total int, oldestTime, latestTime string, err error)
 }
 
 type LogMaintenanceBackend interface {
@@ -161,8 +180,10 @@ func (b *DatabaseBackend) init() error {
 		`CREATE TABLE IF NOT EXISTS json_documents (name TEXT PRIMARY KEY, data TEXT NOT NULL, updated_at TEXT NOT NULL)`,
 		`CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL, type TEXT NOT NULL, day TEXT NOT NULL, data TEXT NOT NULL)`,
 		`CREATE INDEX IF NOT EXISTS idx_logs_day_id ON logs (day, id)`,
+		`CREATE INDEX IF NOT EXISTS idx_logs_created_at ON logs (created_at)`,
 		`CREATE TABLE IF NOT EXISTS storage_objects (id TEXT PRIMARY KEY, provider_id TEXT NOT NULL, bucket TEXT NOT NULL, object_key TEXT NOT NULL UNIQUE, public_url TEXT NOT NULL, mime_type TEXT NOT NULL, bytes INTEGER NOT NULL, width INTEGER NOT NULL, height INTEGER NOT NULL, sha256 TEXT NOT NULL, direct BOOLEAN NOT NULL, created_by TEXT NOT NULL, created_at TEXT NOT NULL, deleted_at TEXT NOT NULL)`,
 		`CREATE INDEX IF NOT EXISTS idx_storage_objects_created_by ON storage_objects (created_by)`,
+		`CREATE INDEX IF NOT EXISTS idx_storage_objects_provider_mime ON storage_objects (provider_id, mime_type)`,
 	}
 	if b.driver == "postgres" {
 		schema = []string{
@@ -171,8 +192,10 @@ func (b *DatabaseBackend) init() error {
 			`CREATE TABLE IF NOT EXISTS json_documents (name TEXT PRIMARY KEY, data TEXT NOT NULL, updated_at TEXT NOT NULL)`,
 			`CREATE TABLE IF NOT EXISTS logs (id SERIAL PRIMARY KEY, created_at TEXT NOT NULL, type TEXT NOT NULL, day TEXT NOT NULL, data TEXT NOT NULL)`,
 			`CREATE INDEX IF NOT EXISTS idx_logs_day_id ON logs (day, id)`,
+			`CREATE INDEX IF NOT EXISTS idx_logs_created_at ON logs (created_at)`,
 			`CREATE TABLE IF NOT EXISTS storage_objects (id TEXT PRIMARY KEY, provider_id TEXT NOT NULL, bucket TEXT NOT NULL, object_key TEXT NOT NULL UNIQUE, public_url TEXT NOT NULL, mime_type TEXT NOT NULL, bytes BIGINT NOT NULL, width INTEGER NOT NULL, height INTEGER NOT NULL, sha256 TEXT NOT NULL, direct BOOLEAN NOT NULL, created_by TEXT NOT NULL, created_at TEXT NOT NULL, deleted_at TEXT NOT NULL)`,
 			`CREATE INDEX IF NOT EXISTS idx_storage_objects_created_by ON storage_objects (created_by)`,
+			`CREATE INDEX IF NOT EXISTS idx_storage_objects_provider_mime ON storage_objects (provider_id, mime_type)`,
 		}
 	}
 	if b.driver == "mysql" {
@@ -188,6 +211,7 @@ func (b *DatabaseBackend) init() error {
 			`CREATE TABLE IF NOT EXISTS json_documents (name VARCHAR(512) PRIMARY KEY, data LONGTEXT NOT NULL, updated_at TEXT NOT NULL)`,
 			`CREATE TABLE IF NOT EXISTS logs (id INTEGER PRIMARY KEY AUTO_INCREMENT, created_at TEXT NOT NULL, type VARCHAR(64) NOT NULL, day VARCHAR(10) NOT NULL, data LONGTEXT NOT NULL)`,
 			`CREATE INDEX idx_logs_day_id ON logs (day, id)`,
+			`CREATE INDEX idx_logs_created_at ON logs (created_at(64))`,
 			`CREATE TABLE IF NOT EXISTS storage_objects (
 				id VARCHAR(64) PRIMARY KEY,
 				provider_id VARCHAR(128) NOT NULL,
@@ -207,6 +231,7 @@ func (b *DatabaseBackend) init() error {
 				UNIQUE KEY uq_storage_objects_object_key_hash (object_key_hash)
 			)`,
 			`CREATE INDEX idx_storage_objects_created_by ON storage_objects (created_by)`,
+			`CREATE INDEX idx_storage_objects_provider_mime ON storage_objects (provider_id, mime_type)`,
 		}
 	}
 	for _, stmt := range schema {
@@ -703,7 +728,8 @@ func (b *DatabaseBackend) ListJSONDocuments(prefix string) (map[string]any, erro
 	if prefix == "" || strings.HasPrefix(prefix, "/") || strings.Contains(prefix, "..") {
 		return nil, errors.New("invalid document prefix")
 	}
-	rows, err := b.db.Query("SELECT name, data FROM json_documents WHERE name LIKE "+b.placeholder(1)+" ORDER BY name", prefix+"%")
+	upper := documentPrefixUpperBound(prefix)
+	rows, err := b.db.Query("SELECT name, data FROM json_documents WHERE name >= "+b.placeholder(1)+" AND name < "+b.placeholder(2)+" ORDER BY name", prefix, upper)
 	if err != nil {
 		return nil, err
 	}
@@ -721,6 +747,17 @@ func (b *DatabaseBackend) ListJSONDocuments(prefix string) (map[string]any, erro
 		out[name] = value
 	}
 	return out, rows.Err()
+}
+
+func documentPrefixUpperBound(prefix string) string {
+	runes := []rune(prefix)
+	for index := len(runes) - 1; index >= 0; index-- {
+		if runes[index] < utf8.MaxRune {
+			runes[index]++
+			return string(runes[:index+1])
+		}
+	}
+	return prefix + string(utf8.MaxRune)
 }
 
 func (b *DatabaseBackend) AppendLog(item map[string]any) error {
@@ -766,7 +803,7 @@ func (b *DatabaseBackend) QueryLogs(startDate, endDate string, limit int) ([]map
 	if len(filters) > 0 {
 		query += " WHERE " + strings.Join(filters, " AND ")
 	}
-	query += " ORDER BY id DESC"
+	query += " ORDER BY day DESC, id DESC"
 	if limit > 0 {
 		args = append(args, limit)
 		query += " LIMIT " + b.placeholder(len(args))
@@ -791,6 +828,81 @@ func (b *DatabaseBackend) QueryLogs(startDate, endDate string, limit int) ([]map
 		}
 	}
 	return out, rows.Err()
+}
+
+func (b *DatabaseBackend) QueryLogPage(startDate, endDate string, cursor *LogCursor, limit int) (LogPage, error) {
+	if limit <= 0 {
+		limit = 200
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+	query := "SELECT id, day, data FROM logs"
+	filters := make([]string, 0, 3)
+	args := make([]any, 0, 5)
+	if startDate = strings.TrimSpace(startDate); startDate != "" {
+		args = append(args, startDate)
+		filters = append(filters, "day >= "+b.placeholder(len(args)))
+	}
+	if endDate = strings.TrimSpace(endDate); endDate != "" {
+		args = append(args, endDate)
+		filters = append(filters, "day <= "+b.placeholder(len(args)))
+	}
+	if cursor != nil && strings.TrimSpace(cursor.Day) != "" && cursor.ID > 0 {
+		args = append(args, strings.TrimSpace(cursor.Day), strings.TrimSpace(cursor.Day), cursor.ID)
+		last := len(args)
+		filters = append(filters, "(day < "+b.placeholder(last-2)+" OR (day = "+b.placeholder(last-1)+" AND id < "+b.placeholder(last)+"))")
+	}
+	if len(filters) > 0 {
+		query += " WHERE " + strings.Join(filters, " AND ")
+	}
+	args = append(args, limit+1)
+	query += " ORDER BY day DESC, id DESC LIMIT " + b.placeholder(len(args))
+	rows, err := b.db.Query(query, args...)
+	if err != nil {
+		return LogPage{}, err
+	}
+	defer rows.Close()
+	page := LogPage{Items: make([]map[string]any, 0, limit)}
+	var pageCursor *LogCursor
+	rowNumber := 0
+	for rows.Next() {
+		var id int64
+		var day, text string
+		if err := rows.Scan(&id, &day, &text); err != nil {
+			return LogPage{}, err
+		}
+		rowNumber++
+		if rowNumber > limit {
+			page.NextCursor = pageCursor
+			continue
+		}
+		pageCursor = &LogCursor{Day: day, ID: id}
+		decoded, err := decodeJSONString(text)
+		if err != nil {
+			continue
+		}
+		if item, ok := decoded.(map[string]any); ok {
+			page.Items = append(page.Items, item)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return LogPage{}, err
+	}
+	return page, nil
+}
+
+func (b *DatabaseBackend) LogSummary() (int, string, string, error) {
+	var total int
+	var oldest, latest sql.NullString
+	query := `SELECT COUNT(*),
+		(SELECT created_at FROM logs ORDER BY created_at ASC LIMIT 1),
+		(SELECT created_at FROM logs ORDER BY created_at DESC LIMIT 1)
+		FROM logs`
+	if err := b.db.QueryRow(query).Scan(&total, &oldest, &latest); err != nil {
+		return 0, "", "", err
+	}
+	return total, oldest.String, latest.String, nil
 }
 
 func (b *DatabaseBackend) DeleteLogsBefore(day string) (int, error) {

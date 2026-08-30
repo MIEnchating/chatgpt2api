@@ -117,6 +117,11 @@ func (s *LogService) Add(summary string, detail map[string]any) error {
 func (s *LogService) Search(query LogQuery) []map[string]any {
 	limit := normalizedLogLimit(query.Limit)
 	startDate, endDate := logQueryDateBounds(query)
+	if pager, ok := s.store.(storage.LogPageBackend); ok {
+		if out, ok := searchLogPages(pager, query, startDate, endDate, limit); ok {
+			return out
+		}
+	}
 	items, ok := s.loadLogItems(startDate, endDate)
 	if !ok {
 		return []map[string]any{}
@@ -132,6 +137,31 @@ func (s *LogService) Search(query LogQuery) []map[string]any {
 		}
 	}
 	return out
+}
+
+func searchLogPages(pager storage.LogPageBackend, query LogQuery, startDate, endDate string, limit int) ([]map[string]any, bool) {
+	batchSize := min(max(256, limit*2), 1000)
+	out := make([]map[string]any, 0, limit)
+	var cursor *storage.LogCursor
+	for {
+		page, err := pager.QueryLogPage(startDate, endDate, cursor, batchSize)
+		if err != nil {
+			return nil, false
+		}
+		for _, item := range page.Items {
+			if !matchLogQuery(item, query) {
+				continue
+			}
+			out = append(out, publicLogItem(item))
+			if len(out) >= limit {
+				return out, true
+			}
+		}
+		if page.NextCursor == nil {
+			return out, true
+		}
+		cursor = page.NextCursor
+	}
 }
 
 func (s *LogService) GovernanceSummary() LogGovernanceSummary {
@@ -212,6 +242,12 @@ func normalizeLogRetentionSchedule(schedule LogRetentionSchedule) LogRetentionSc
 }
 
 func (s *LogService) governanceSummaryLocked() LogGovernanceSummary {
+	if summaryStore, ok := s.store.(storage.LogSummaryBackend); ok {
+		total, oldest, latest, err := summaryStore.LogSummary()
+		if err == nil {
+			return LogGovernanceSummary{Total: total, OldestTime: oldest, LatestTime: latest}
+		}
+	}
 	items, ok := s.loadLogItems("", "")
 	summary := LogGovernanceSummary{}
 	if !ok {

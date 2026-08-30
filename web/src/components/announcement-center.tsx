@@ -30,6 +30,7 @@ const emptyPreferences: AnnouncementPreferences = {
   permanent_versions: [],
   snoozed_dates: {},
 };
+const ANNOUNCEMENT_REFRESH_INTERVAL_MS = 5 * 60 * 1000;
 
 function announcementVersion(item: Announcement) {
   return `${item.id}:${item.updated_at}`;
@@ -65,28 +66,47 @@ export function AnnouncementCenter({ className }: { className?: string }) {
   const [selected, setSelected] = useState<Announcement | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
   const automaticPromptHandledRef = useRef(false);
+  const loadPromiseRef = useRef<Promise<void> | null>(null);
+  const lastLoadedAtRef = useRef(0);
 
-  const load = useCallback(async () => {
-    const [announcementResult, preferenceResult] = await Promise.allSettled([
+  const load = useCallback((force = false) => {
+    if (loadPromiseRef.current) return loadPromiseRef.current;
+    if (!force && Date.now() - lastLoadedAtRef.current < ANNOUNCEMENT_REFRESH_INTERVAL_MS) {
+      return Promise.resolve();
+    }
+    const request = Promise.allSettled([
       fetchAnnouncements(),
       fetchAnnouncementPreferences(),
-    ]);
-    if (announcementResult.status === "fulfilled") {
-      setAnnouncements(Array.isArray(announcementResult.value.items) ? announcementResult.value.items : []);
-    }
-    if (preferenceResult.status === "fulfilled") {
-      setPreferences(preferenceResult.value.preferences || emptyPreferences);
-    }
-    setIsLoaded(true);
+    ]).then(([announcementResult, preferenceResult]) => {
+      if (announcementResult.status === "fulfilled") {
+        setAnnouncements(Array.isArray(announcementResult.value.items) ? announcementResult.value.items : []);
+      }
+      if (preferenceResult.status === "fulfilled") {
+        setPreferences(preferenceResult.value.preferences || emptyPreferences);
+      }
+      lastLoadedAtRef.current = Date.now();
+      setIsLoaded(true);
+    }).finally(() => {
+      if (loadPromiseRef.current === request) loadPromiseRef.current = null;
+    });
+    loadPromiseRef.current = request;
+    return request;
   }, []);
 
   useEffect(() => {
-    void load();
-    const handleAnnouncementsUpdated = () => void load();
+    void load(true);
+    const handleAnnouncementsUpdated = () => void load(true);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") void load();
+    };
     window.addEventListener(ANNOUNCEMENTS_UPDATED_EVENT, handleAnnouncementsUpdated);
-    const refreshTimer = window.setInterval(() => void load(), 60_000);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    const refreshTimer = window.setInterval(() => {
+      if (document.visibilityState === "visible") void load();
+    }, ANNOUNCEMENT_REFRESH_INTERVAL_MS);
     return () => {
       window.removeEventListener(ANNOUNCEMENTS_UPDATED_EVENT, handleAnnouncementsUpdated);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.clearInterval(refreshTimer);
     };
   }, [load]);

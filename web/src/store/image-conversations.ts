@@ -3,9 +3,9 @@
 import {
   clearImageConversationHistory,
   deleteImageConversationHistoryItem,
-  fetchActiveImageConversationHistory,
   fetchImageConversationHistoryItem,
   fetchImageConversationHistoryPage,
+  fetchImageConversationHistoryWindow,
   mergeImageConversationHistory,
   type ImageConversationHistoryMergeResponse,
   type ImageConversationHistoryPageOptions,
@@ -145,13 +145,6 @@ export type ImageTurn = {
   videoReferenceVideoURLs?: string[];
   videoReferenceAudioURLs?: string[];
   videoSystemPrompt?: string;
-  videoMode?: string;
-  videoNegativePrompt?: string;
-  videoMultiShot?: boolean;
-  videoShotType?: "intelligence" | "customize";
-  videoMultiPrompt?: Array<Record<string, unknown>>;
-  videoElementList?: Array<Record<string, unknown>>;
-  videoCharacterOrientation?: "image" | "video";
   moderation?: ImageModeration;
   tokenGroup?: string;
   tokenName?: string;
@@ -251,7 +244,7 @@ type ImageConversationScopeState = {
   paginationEpoch: number;
   remoteGeneration: string | null;
   pageRequests: Map<string, { epoch: number; promise: Promise<ImageConversationHistoryPage> }>;
-  activeRequest: { epoch: number; promise: Promise<ImageConversationHistoryPage> } | null;
+  windowRequests: Map<number, { epoch: number; promise: Promise<ImageConversationHistoryWindow> }>;
   detailRequests: Map<string, { epoch: number; promise: Promise<ImageConversation | null> }>;
 };
 
@@ -272,7 +265,7 @@ function createImageConversationScopeState(scope: ImageConversationSessionScope)
     paginationEpoch: 0,
     remoteGeneration: null,
     pageRequests: new Map(),
-    activeRequest: null,
+    windowRequests: new Map(),
     detailRequests: new Map(),
   };
 }
@@ -301,7 +294,7 @@ function retireImageConversationScopeState(state: ImageConversationScopeState) {
   state.durableFailures.clear();
   state.paginationEpoch += 1;
   state.pageRequests.clear();
-  state.activeRequest = null;
+  state.windowRequests.clear();
   state.detailRequests.clear();
   state.remoteGeneration = null;
 }
@@ -536,7 +529,7 @@ function dispatchImageConversationsChanged(
   // from reusing their pre-write response.
   state.paginationEpoch += 1;
   state.pageRequests.clear();
-  state.activeRequest = null;
+  state.windowRequests.clear();
   if (typeof window === "undefined") {
     return;
   }
@@ -800,11 +793,6 @@ function normalizeStringList(value: unknown): string[] {
   return value.flatMap((item) => typeof item === "string" && item.trim() ? [item.trim()] : []);
 }
 
-function normalizeRecordList(value: unknown): Array<Record<string, unknown>> {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((item) => item && typeof item === "object" && !Array.isArray(item) ? [item as Record<string, unknown>] : []);
-}
-
 function normalizeStringRecord(value: unknown): Record<string, string> | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const entries = Object.entries(value as Record<string, unknown>)
@@ -871,13 +859,6 @@ function normalizeTurn(turn: ImageTurn & Record<string, unknown>): ImageTurn {
     videoReferenceVideoURLs: normalizeStringList(turn.videoReferenceVideoURLs),
     videoReferenceAudioURLs: normalizeStringList(turn.videoReferenceAudioURLs),
     videoSystemPrompt: typeof turn.videoSystemPrompt === "string" && turn.videoSystemPrompt.trim() ? turn.videoSystemPrompt.trim() : undefined,
-    videoMode: typeof turn.videoMode === "string" && turn.videoMode.trim() ? turn.videoMode.trim() : undefined,
-    videoNegativePrompt: typeof turn.videoNegativePrompt === "string" && turn.videoNegativePrompt.trim() ? turn.videoNegativePrompt.trim() : undefined,
-    videoMultiShot: typeof turn.videoMultiShot === "boolean" ? turn.videoMultiShot : undefined,
-    videoShotType: turn.videoShotType === "customize" ? "customize" : turn.videoShotType === "intelligence" ? "intelligence" : undefined,
-    videoMultiPrompt: normalizeRecordList(turn.videoMultiPrompt),
-    videoElementList: normalizeRecordList(turn.videoElementList),
-    videoCharacterOrientation: turn.videoCharacterOrientation === "image" ? "image" : turn.videoCharacterOrientation === "video" ? "video" : undefined,
     moderation: isImageModeration(turn.moderation) ? turn.moderation : undefined,
     tokenGroup: typeof turn.tokenGroup === "string" && turn.tokenGroup.trim() ? turn.tokenGroup.trim() : undefined,
     tokenName: typeof turn.tokenName === "string" && turn.tokenName.trim() ? turn.tokenName.trim() : undefined,
@@ -1207,56 +1188,37 @@ export async function listImageConversationPage(
   return promise;
 }
 
-/** Fetch all currently active conversations, independent of pagination. */
-async function listActiveImageConversations(): Promise<ImageConversationHistoryPage> {
-  const state = await getCurrentImageConversationScopeState();
-  const cached = state.activeRequest;
-  if (cached?.epoch === state.paginationEpoch) {
-    return cached.promise;
-  }
-
-  const requestEpoch = state.paginationEpoch;
-  const promise = fetchActiveImageConversationHistory(historyRequestOptions(state))
-    .then((response) => {
-      assertCurrentImageConversationRequest(state, requestEpoch);
-      return normalizeHistoryPage(state, response, true, requestEpoch);
-    })
-    .finally(() => {
-      if (state.activeRequest?.promise === promise) {
-        state.activeRequest = null;
-      }
-    });
-  state.activeRequest = { epoch: requestEpoch, promise };
-  return promise;
-}
-
-/** Load the first page and all active conversations from one server
- * generation. Any durable write can land between the two reads, so retry
- * the complete pair instead of combining incompatible snapshots. */
+/** Load the first page and active conversations in one version-consistent request. */
 export async function loadImageConversationHistoryWindow(
   limit = 24,
 ): Promise<ImageConversationHistoryWindow> {
   const state = await getCurrentImageConversationScopeState();
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const [firstPage, activePage] = await Promise.all([
-      listImageConversationPage({ limit }),
-      listActiveImageConversations(),
-    ]);
+  const normalizedLimit = normalizedHistoryPageLimit(limit);
+  const cached = state.windowRequests.get(normalizedLimit);
+  if (cached?.epoch === state.paginationEpoch) return cached.promise;
+
+  const requestEpoch = state.paginationEpoch;
+  const promise = fetchImageConversationHistoryWindow({
+    ...historyRequestOptions(state),
+    limit: normalizedLimit,
+  }).then((response) => {
+    assertCurrentImageConversationRequest(state, requestEpoch);
+    const firstPage = normalizeHistoryPage(state, response.first_page, true, requestEpoch);
+    const activePage = normalizeHistoryPage(state, response.active_page, true, requestEpoch);
     const firstGeneration = normalizeHistoryGeneration(firstPage.generation);
     const activeGeneration = normalizeHistoryGeneration(activePage.generation);
-    const pairGeneration = maxImageConversationHistoryGeneration(firstGeneration, activeGeneration);
-    if (
-      imageConversationHistoryGenerationsMatch(firstGeneration, activeGeneration) &&
-      imageConversationHistoryGenerationAtLeast(pairGeneration, state.remoteGeneration)
-    ) {
-      return {
-        firstPage,
-        activePage,
-        generation: pairGeneration,
-      };
+    const generation = maxImageConversationHistoryGeneration(firstGeneration, activeGeneration);
+    if (!imageConversationHistoryGenerationsMatch(firstGeneration, activeGeneration)) {
+      throw new ImageConversationHistoryGenerationMismatchError();
     }
-  }
-  throw new ImageConversationHistoryGenerationMismatchError();
+    return { firstPage, activePage, generation };
+  }).finally(() => {
+    if (state.windowRequests.get(normalizedLimit)?.promise === promise) {
+      state.windowRequests.delete(normalizedLimit);
+    }
+  });
+  state.windowRequests.set(normalizedLimit, { epoch: requestEpoch, promise });
+  return promise;
 }
 
 /** Fetch one full conversation when it is not present in the loaded pages. */
@@ -1494,7 +1456,7 @@ export async function deleteImageConversation(id: string): Promise<void> {
     state.coalescedSaves.delete(id);
     state.paginationEpoch += 1;
     state.pageRequests.clear();
-    state.activeRequest = null;
+    state.windowRequests.clear();
     dispatchImageConversationsChanged(state);
   });
 }
@@ -1511,7 +1473,7 @@ export async function clearImageConversations(): Promise<void> {
     state.durableFailures.clear();
     state.paginationEpoch += 1;
     state.pageRequests.clear();
-    state.activeRequest = null;
+    state.windowRequests.clear();
     if (state.retryTimer) {
       clearTimeout(state.retryTimer);
       state.retryTimer = null;

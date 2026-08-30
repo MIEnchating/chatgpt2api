@@ -34,6 +34,12 @@ const (
 	ImageOutputCompletionReleasePayloadKey = "image_output_completion_release"
 
 	TextOutputCallbackPayloadKey = "text_output_callback"
+	// VideoTaskProgressCallbackPayloadKey reports the normalized upstream
+	// queue state without exposing a provider-specific status as our task state.
+	VideoTaskProgressCallbackPayloadKey = "video_task_progress_callback"
+	// VideoTaskTimeoutSecondsPayloadKey carries the minimum task lifetime
+	// required by the immutable video contract snapshot.
+	VideoTaskTimeoutSecondsPayloadKey = "video_task_timeout_seconds"
 
 	imageTaskPersistenceRetryInitialDelay = 25 * time.Millisecond
 	imageTaskPersistenceRetryMaxDelay     = 2 * time.Second
@@ -45,6 +51,13 @@ const (
 )
 
 type ImageTaskHandler func(context.Context, Identity, map[string]any) (map[string]any, error)
+
+type VideoTaskProgressUpdate struct {
+	Status         string
+	UpstreamStatus string
+	Progress       int
+	HasProgress    bool
+}
 
 type ImageOutputOptions struct {
 	Format      string
@@ -235,8 +248,8 @@ func (s *ImageTaskService) SubmitVideo(ctx context.Context, identity Identity, c
 	if prompt == "" {
 		return nil, fmt.Errorf("prompt is required")
 	}
-	if seconds != -1 && (seconds < 1 || seconds > 60) {
-		return nil, fmt.Errorf("视频时长必须在 1 到 60 秒之间")
+	if seconds != -1 && (seconds < 1 || seconds > 3600) {
+		return nil, fmt.Errorf("视频时长必须在 1 到 3600 秒之间")
 	}
 	payload := map[string]any{
 		"client_task_id": clientTaskID,
@@ -535,6 +548,9 @@ func (s *ImageTaskService) submit(ctx context.Context, identity Identity, client
 				task[key] = payload[key]
 			}
 		}
+		if timeoutSeconds := util.ToInt(payload[VideoTaskTimeoutSecondsPayloadKey], 0); timeoutSeconds > 0 {
+			task[VideoTaskTimeoutSecondsPayloadKey] = timeoutSeconds
+		}
 	} else if mode == "audio" {
 		for _, key := range []string{"voice", "response_format", "speed", "instructions"} {
 			if payload[key] != nil {
@@ -589,7 +605,7 @@ func (s *ImageTaskService) submit(ctx context.Context, identity Identity, client
 
 func (s *ImageTaskService) runTask(ctx context.Context, key, mode string, identity Identity, payload map[string]any) {
 	defer s.removeTaskCancel(key)
-	runCtx, cancel := context.WithTimeout(ctx, s.taskTimeout())
+	runCtx, cancel := context.WithTimeout(ctx, s.taskTimeout(mode, payload))
 	defer cancel()
 
 	handler := s.generation
@@ -644,9 +660,14 @@ func (s *ImageTaskService) runTask(ctx context.Context, key, mode string, identi
 			s.updateActiveTask(key, map[string]any{"status": status, "error": message, "data": []any{}})
 			return
 		}
-		if !s.ensureTaskRunning(key) {
+		if mode != "video" && !s.ensureTaskRunning(key) {
 			release()
 			return
+		}
+		if mode == "video" {
+			payload[VideoTaskProgressCallbackPayloadKey] = func(update VideoTaskProgressUpdate) {
+				s.updateVideoTaskProgress(key, update)
+			}
 		}
 		payload[TextOutputCallbackPayloadKey] = func(text string) {
 			if strings.TrimSpace(text) == "" {
@@ -771,15 +792,30 @@ func cancelledImageOutputStatuses(task map[string]any) []string {
 	return statuses
 }
 
-func (s *ImageTaskService) taskTimeout() time.Duration {
+func (s *ImageTaskService) taskTimeout(mode string, payload map[string]any) time.Duration {
+	timeout := defaultImageTaskTimeout
 	if s.taskTimeoutGetter == nil {
-		return defaultImageTaskTimeout
+		return videoTaskTimeoutOverride(mode, payload, timeout)
 	}
-	timeout := s.taskTimeoutGetter()
-	if timeout <= 0 {
-		return defaultImageTaskTimeout
+	if configured := s.taskTimeoutGetter(); configured > 0 {
+		timeout = configured
 	}
-	return timeout
+	return videoTaskTimeoutOverride(mode, payload, timeout)
+}
+
+func videoTaskTimeoutOverride(mode string, payload map[string]any, fallback time.Duration) time.Duration {
+	if mode != "video" {
+		return fallback
+	}
+	seconds := util.ToInt(payload[VideoTaskTimeoutSecondsPayloadKey], 0)
+	if seconds <= 0 {
+		return fallback
+	}
+	required := time.Duration(seconds) * time.Second
+	if required > fallback {
+		return required
+	}
+	return fallback
 }
 
 func (s *ImageTaskService) checkUserTaskLimitsLocked(identity Identity, owner string, _ int, now time.Time) error {
@@ -991,6 +1027,45 @@ func (s *ImageTaskService) updateActiveTask(key string, updates map[string]any) 
 	return true
 }
 
+func (s *ImageTaskService) updateVideoTaskProgress(key string, update VideoTaskProgressUpdate) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_ = s.refreshTasksLocked()
+	task := s.tasks[key]
+	if task == nil || util.Clean(task["mode"]) != "video" || !isActiveTaskStatus(util.Clean(task["status"])) {
+		return false
+	}
+	changed := false
+	currentStatus := util.Clean(task["status"])
+	if update.Status == TaskStatusRunning && currentStatus != TaskStatusRunning {
+		task["status"] = TaskStatusRunning
+		task["error"] = ""
+		changed = true
+	}
+	if upstreamStatus := strings.TrimSpace(update.UpstreamStatus); upstreamStatus != "" && util.Clean(task["upstream_status"]) != upstreamStatus {
+		task["upstream_status"] = upstreamStatus
+		changed = true
+	}
+	if update.HasProgress {
+		progress := update.Progress
+		if progress < 0 {
+			progress = 0
+		} else if progress > 100 {
+			progress = 100
+		}
+		if util.ToInt(task["progress"], -1) != progress {
+			task["progress"] = progress
+			changed = true
+		}
+	}
+	if !changed {
+		return true
+	}
+	bumpImageTaskRevision(task)
+	_ = s.saveWithRetryLocked()
+	return true
+}
+
 func (s *ImageTaskService) updateImageTaskPartialData(key string, data []map[string]any) bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1109,6 +1184,12 @@ func (s *ImageTaskService) loadLocked() (map[string]map[string]any, error) {
 				if task[key] != nil {
 					normalized[key] = task[key]
 				}
+			}
+			if upstreamStatus := strings.TrimSpace(util.Clean(task["upstream_status"])); upstreamStatus != "" {
+				normalized["upstream_status"] = upstreamStatus
+			}
+			if progress := util.ToInt(task["progress"], -1); progress >= 0 && progress <= 100 {
+				normalized["progress"] = progress
 			}
 		} else if mode == "audio" {
 			for _, key := range []string{"voice", "response_format", "speed", "instructions"} {
@@ -1473,8 +1554,9 @@ func imageTaskDataForPersistence(data []map[string]any) []map[string]any {
 
 func (s *ImageTaskService) recoverUnfinishedLocked() bool {
 	changed := false
-	cutoff := time.Now().Add(-s.taskTimeout() - imageTaskRecoveryGrace)
+	now := time.Now()
 	for _, task := range s.tasks {
+		cutoff := now.Add(-s.taskTimeout(util.Clean(task["mode"]), task) - imageTaskRecoveryGrace)
 		if (task["status"] == TaskStatusQueued || task["status"] == TaskStatusRunning) && parseTaskTime(task["updated_at"]).Before(cutoff) {
 			task["status"] = TaskStatusError
 			task["error"] = "服务已重启或任务执行实例已失联，未完成的任务已中断"
@@ -1538,6 +1620,12 @@ func publicTask(task map[string]any) map[string]any {
 			if task[key] != nil {
 				item[key] = task[key]
 			}
+		}
+		if upstreamStatus := strings.TrimSpace(util.Clean(task["upstream_status"])); upstreamStatus != "" {
+			item["upstream_status"] = upstreamStatus
+		}
+		if progress := util.ToInt(task["progress"], -1); progress >= 0 && progress <= 100 {
+			item["progress"] = progress
 		}
 	} else if mode == "audio" {
 		for _, key := range []string{"voice", "response_format", "speed", "instructions"} {
@@ -1713,16 +1801,22 @@ func normalizedFallbackReferenceImage(value any) map[string]any {
 }
 
 func mergeTaskRoutingMetadata(payload map[string]any, metadata map[string]any) {
+	if snapshot, ok := metadata["video_contract_snapshot"]; ok && snapshot != nil {
+		payload["video_contract_snapshot"] = snapshot
+	}
+	if timeoutSeconds := util.ToInt(metadata[VideoTaskTimeoutSecondsPayloadKey], 0); timeoutSeconds > 0 {
+		payload[VideoTaskTimeoutSecondsPayloadKey] = timeoutSeconds
+	}
 	if tokenGroup := strings.TrimSpace(util.Clean(metadata["token_group"])); tokenGroup != "" {
 		payload["token_group"] = tokenGroup
 	}
 	if tokenName := strings.TrimSpace(util.Clean(metadata["token_name"])); tokenName != "" {
 		payload["token_name"] = tokenName
 	}
-	if videoMode := strings.TrimSpace(util.Clean(metadata["video_mode"])); videoMode != "" {
-		payload["video_mode"] = videoMode
+	if generationMode := strings.TrimSpace(util.Clean(metadata["generation_mode"])); generationMode != "" {
+		payload["generation_mode"] = generationMode
 	}
-	for _, key := range []string{"provider", "image_provider", "video_provider", "channel_protocol", "protocol", "channel_base_url", "provider_base_url"} {
+	for _, key := range []string{"provider", "image_provider", "channel_protocol", "protocol", "channel_base_url", "provider_base_url"} {
 		if value := strings.TrimSpace(util.Clean(metadata[key])); value != "" {
 			payload[key] = value
 		}
@@ -1732,7 +1826,7 @@ func mergeTaskRoutingMetadata(payload map[string]any, metadata map[string]any) {
 			payload[key] = value
 		}
 	}
-	for _, key := range []string{"negative_prompt", "multi_shot", "shot_type", "multi_prompt", "element_list", "character_orientation", "video_generate_audio", "preset", "mode"} {
+	for _, key := range []string{"preset", "mode"} {
 		if value, ok := metadata[key]; ok {
 			payload[key] = value
 		}

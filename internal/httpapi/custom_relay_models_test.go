@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -27,16 +28,24 @@ func TestProfileModelsUsesSelectedCustomRelayConfig(t *testing.T) {
 	defer upstream.Close()
 
 	token := adminSessionToken(t, app)
-	request := httptest.NewRequest(http.MethodPut, "/api/profile/custom-relay-configs/video", strings.NewReader(`{"base_url":"`+upstream.URL+`","api_key":"sk-custom-video"}`))
+	request := httptest.NewRequest(http.MethodPost, "/api/profile/custom-relay-configs", strings.NewReader(`{"kind":"video","name":"视频线路","base_url":"`+upstream.URL+`","api_key":"sk-custom-video"}`))
 	request.Header.Set("Content-Type", "application/json")
 	setRequestAuthCookie(request, token)
 	response := httptest.NewRecorder()
 	app.Handler().ServeHTTP(response, request)
-	if response.Code != http.StatusOK {
+	if response.Code != http.StatusCreated {
 		t.Fatalf("save custom relay status = %d body = %s", response.Code, response.Body.String())
 	}
+	var created struct {
+		Item struct {
+			TokenName string `json:"token_name"`
+		} `json:"item"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &created); err != nil || created.Item.TokenName == "" {
+		t.Fatalf("decode custom relay response = %#v, %v", created, err)
+	}
 
-	request = httptest.NewRequest(http.MethodGet, "/api/profile/upstream-models?token_name=__custom_relay__:video", nil)
+	request = httptest.NewRequest(http.MethodGet, "/api/profile/upstream-models?token_name="+created.Item.TokenName, nil)
 	setRequestAuthCookie(request, token)
 	response = httptest.NewRecorder()
 	app.Handler().ServeHTTP(response, request)

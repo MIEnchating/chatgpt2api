@@ -44,7 +44,7 @@ export const IMAGE_ASPECT_RATIO_PRESET_OPTIONS = [
   { value: "16:9-4k", label: "16:9(4k)", aspectRatio: "16:9", resolution: "4k" as const, size: "3840x2160" },
   { value: "9:16-4k", label: "9:16(4k)", aspectRatio: "9:16", resolution: "4k" as const, size: "2160x3840" },
   { value: "21:9-4k", label: "21:9(4k)", aspectRatio: "21:9", resolution: "4k" as const, size: "6272x2688" },
-  { value: "auto", label: "auto", aspectRatio: "" as const, resolution: "auto" as const, size: "auto" },
+  { value: "auto", label: "自动", aspectRatio: "" as const, resolution: "auto" as const, size: "auto" },
 ] as const;
 
 const IMAGE_SIZE_MODE_OPTIONS = [

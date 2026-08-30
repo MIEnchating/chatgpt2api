@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -70,11 +71,11 @@ func (a *App) relayAPIKeyForIdentitySelection(ctx context.Context, identity serv
 }
 
 func (a *App) relayCredentialForIdentitySelection(ctx context.Context, identity service.Identity, group, name string) (relayCredential, error) {
-	if kind := service.CustomRelayKindFromTokenName(name); kind != "" {
+	if configID := service.CustomRelayConfigIDFromTokenName(name); configID != "" {
 		if a.customRelayConfigs == nil {
 			return relayCredential{}, protocol.HTTPError{Status: http.StatusBadRequest, Message: "自定义 API 配置存储不可用"}
 		}
-		config, err := a.customRelayConfigs.Config(identityScope(identity), kind)
+		config, err := a.customRelayConfigs.Config(identityScope(identity), configID)
 		if err != nil {
 			return relayCredential{}, protocol.HTTPError{Status: http.StatusBadRequest, Message: err.Error()}
 		}
@@ -918,56 +919,79 @@ func (a *App) relayJSONDataAt(ctx context.Context, baseURL, method, pathValue, a
 	return relayDecodeJSONResponse(resp)
 }
 
-// relayVideoTask submits an OpenAI-compatible asynchronous video request to
-// the configured relay and polls it until a playable URL is available.
+// videoContractSnapshot keeps request construction and response parsing on
+// the same contract revision for the lifetime of a queued task.
+func videoContractSnapshot(payload map[string]any, model string) (protocol.VideoModelContract, error) {
+	raw, ok := payload[protocol.VideoContractSnapshotPayloadKey]
+	if !ok || raw == nil {
+		return protocol.VideoModelContract{}, protocol.HTTPError{Status: http.StatusBadRequest, Message: "视频任务缺少模型契约快照"}
+	}
+	data, err := json.Marshal(raw)
+	if err != nil {
+		return protocol.VideoModelContract{}, protocol.HTTPError{Status: http.StatusBadRequest, Message: "视频模型契约快照无效"}
+	}
+	var contract protocol.VideoModelContract
+	if err := json.Unmarshal(data, &contract); err != nil {
+		return protocol.VideoModelContract{}, protocol.HTTPError{Status: http.StatusBadRequest, Message: "视频模型契约快照无效"}
+	}
+	contract, err = protocol.NormalizeVideoModelContract(contract)
+	if err != nil {
+		return protocol.VideoModelContract{}, protocol.HTTPError{Status: http.StatusBadRequest, Message: "视频模型契约快照无效: " + err.Error()}
+	}
+	if !protocol.VideoContractMatchesModel(contract, model) {
+		return protocol.VideoModelContract{}, protocol.HTTPError{Status: http.StatusBadRequest, Message: fmt.Sprintf("视频模型 %q 与任务契约快照不匹配", model)}
+	}
+	return contract, nil
+}
+
+// relayVideoTask submits a contract-declared asynchronous video request to the
+// configured relay and polls it using the same protocol driver snapshot.
 func (a *App) relayVideoTask(ctx context.Context, payload map[string]any) (map[string]any, error) {
+	model := strings.TrimSpace(util.Clean(payload["model"]))
+	contract, err := videoContractSnapshot(payload, model)
+	if err != nil {
+		return nil, err
+	}
 	apiKey := relayAPIKeyFromPayload(payload)
 	if apiKey == "" {
 		return nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: "视频任务缺少上游令牌"}
 	}
-	// Gemini Omni's `audio_ids` are KIE-issued asset identifiers, not public
-	// audio URLs. The shared creation API intentionally exposes URL references,
-	// so fail early instead of forwarding a URL that the provider validates as
-	// an ID and returns a confusing 422 response.
-	if isGeminiOmniVideoModel(util.Clean(payload["model"])) && len(util.AsStringSlice(payload["reference_audio_urls"])) > 0 {
-		return nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: "Gemini Omni 参考音频必须使用已上传的 audio_* 音频 ID，当前视频接口仅支持公网音频 URL，因此暂不支持参考音频"}
-	}
-	request := newAPIVideoRequestPayload(payload)
+	request := declaredVideoContractRequestPayload(payload, contract)
 	baseURL := a.relayBaseURLFromPayload(payload)
-	if err := validateVideoReferencePayloadURLs(request); err != nil {
+	createPath, queryPath, err := videoContractDriverPaths(contract, payload)
+	if err != nil {
 		return nil, err
 	}
-	created, err := a.relayVideoSubmitAt(ctx, baseURL, apiKey, request)
+	if err := validateVideoReferencePayloadURLs(request, contract); err != nil {
+		return nil, err
+	}
+	created, err := a.relayVideoSubmitAt(ctx, baseURL, apiKey, createPath, request, contract)
 	if err != nil {
 		return created, err
 	}
-	if videoRelayTaskStatus(created) == "failed" {
-		return created, protocol.HTTPError{Status: http.StatusBadGateway, Message: videoErrorMessage(created)}
+	relayVideoTaskProgress(payload, created, contract)
+	if videoRelayTaskStatusForContract(created, contract) == "failed" {
+		return created, protocol.HTTPError{Status: http.StatusBadGateway, Message: videoContractErrorMessage(created, contract)}
 	}
-	taskID := videoCreateTaskID(created, 0)
+	taskID := videoContractFirstString(created, contract.Polling.TaskIDFields)
 	if taskID == "" {
-		if message := videoUpstreamErrorMessage(created); message != "" {
-			return created, protocol.HTTPError{Status: http.StatusBadGateway, Message: message}
-		}
 		return created, protocol.HTTPError{Status: http.StatusBadGateway, Message: "视频上游没有返回任务 ID"}
 	}
-	interval := 2 * time.Second
-	timeout := 5 * time.Minute
-	if a != nil && a.config != nil {
-		timeout = time.Duration(a.config.ImageTaskTimeoutSeconds()) * time.Second
-	}
+	interval := time.Duration(contract.Polling.IntervalSeconds) * time.Second
+	timeout := time.Duration(contract.Polling.TimeoutSeconds) * time.Second
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		state, pollErr := a.relayJSONAt(ctx, baseURL, http.MethodGet, "/v1/videos/"+url.PathEscape(taskID), apiKey, nil)
+		state, pollErr := a.relayJSONAt(ctx, baseURL, http.MethodGet, queryPath+url.PathEscape(taskID), apiKey, nil)
 		if pollErr != nil {
 			return state, pollErr
 		}
-		status := videoRelayTaskStatus(state)
+		relayVideoTaskProgress(payload, state, contract)
+		status := videoRelayTaskStatusForContract(state, contract)
 		if status == "completed" {
-			videoURL := videoResultURL(state, baseURL, taskID)
+			videoURL := videoResultURLForContract(state, baseURL, contract)
 			if videoURL == "" {
 				return state, protocol.HTTPError{Status: http.StatusBadGateway, Message: "视频已完成但上游没有返回视频地址"}
 			}
@@ -979,7 +1003,7 @@ func (a *App) relayVideoTask(ctx context.Context, payload map[string]any) (map[s
 			return map[string]any{"created": state["created_at"], "data": []map[string]any{{"url": videoURL, "type": "video", "mime_type": "video/mp4", "video_url": videoURL}}, "output_type": "video", "model": payload["model"]}, nil
 		}
 		if status == "failed" {
-			return state, protocol.HTTPError{Status: http.StatusBadGateway, Message: videoErrorMessage(state)}
+			return state, protocol.HTTPError{Status: http.StatusBadGateway, Message: videoContractErrorMessage(state, contract)}
 		}
 		timer := time.NewTimer(interval)
 		select {
@@ -992,229 +1016,150 @@ func (a *App) relayVideoTask(ctx context.Context, payload map[string]any) (map[s
 	return nil, protocol.HTTPError{Status: http.StatusGatewayTimeout, Message: "视频生成超时，请稍后重试"}
 }
 
-func videoCreateTaskID(value any, depth int) string {
-	if depth > 5 || value == nil {
-		return ""
+func videoContractDriverPaths(contract protocol.VideoModelContract, payload map[string]any) (string, string, error) {
+	switch contract.Driver {
+	case protocol.VideoContractDriverOpenAI,
+		protocol.VideoContractDriverXAI,
+		protocol.VideoContractDriverGeminiVeo,
+		protocol.VideoContractDriverVertexVeo,
+		protocol.VideoContractDriverDashScope,
+		protocol.VideoContractDriverVolcengine,
+		protocol.VideoContractDriverMiniMax,
+		protocol.VideoContractDriverVidu,
+		protocol.VideoContractDriverKIE,
+		protocol.VideoContractDriverAPIMart:
+		return "/v1/videos", "/v1/videos/", nil
+	case protocol.VideoContractDriverKling:
+		kind, valid := videoContractGenerationKind(payload, contract)
+		if !valid {
+			return "", "", protocol.HTTPError{Status: http.StatusBadRequest, Message: "视频生成模式与 Kling 契约不匹配"}
+		}
+		switch kind {
+		case "text":
+			return "/kling/v1/videos/text2video", "/kling/v1/videos/text2video/", nil
+		case "image":
+			return "/kling/v1/videos/image2video", "/kling/v1/videos/image2video/", nil
+		default:
+			return "", "", protocol.HTTPError{Status: http.StatusBadRequest, Message: "kling-video 传输驱动仅支持文生视频和图生视频"}
+		}
+	default:
+		return "", "", protocol.HTTPError{Status: http.StatusBadRequest, Message: "视频模型契约使用了不支持的传输驱动"}
 	}
-	switch typed := value.(type) {
-	case map[string]any:
-		for _, key := range []string{"id", "task_id", "taskId", "video_id", "videoId"} {
-			if taskID := strings.TrimSpace(util.Clean(typed[key])); taskID != "" {
-				return taskID
-			}
-		}
-		for _, key := range []string{"data", "task", "result", "response"} {
-			if taskID := videoCreateTaskID(typed[key], depth+1); taskID != "" {
-				return taskID
-			}
-		}
-	case []any:
-		for _, item := range typed {
-			if taskID := videoCreateTaskID(item, depth+1); taskID != "" {
-				return taskID
-			}
-		}
-	case string:
-		var decoded any
-		if json.Unmarshal([]byte(strings.TrimSpace(typed)), &decoded) == nil {
-			return videoCreateTaskID(decoded, depth+1)
-		}
-	}
-	return ""
 }
 
-func isGeminiOmniVideoModel(model string) bool {
-	name := strings.ToLower(strings.TrimSpace(model))
-	return strings.Contains(name, "gemini-omni") || strings.Contains(name, "omni-flash")
-}
-
-// Reference arrays are provider-native URL lists and cannot be represented by
-// the single-file multipart compatibility field. Reject inline data URLs here
-// with a useful client error instead of forwarding a multi-megabyte value that
-// the official endpoint will reject as an overlong URL.
-func validateVideoReferencePayloadURLs(request map[string]any) error {
-	// Provider-native URL fields must stay URLs as well. In particular, KIE's
-	// named-frame fields (`first_frame_url`/`last_frame_url`) are not the same
-	// as the legacy multipart `input_reference` field and reject data URLs.
-	// Keep `first_frame_image`/`last_frame_image` out of this list because the
-	// official Veo adapter intentionally converts those local uploads to the
-	// provider's inline image representation.
-	for _, key := range []string{
-		"reference_image_urls", "reference_video_urls", "reference_audio_urls",
-		"image_url", "image_urls", "video_url", "video_urls", "audio_url", "audio_urls", "audio_ids",
-		"first_frame_url", "last_frame_url", "end_image_url", "tail_image_url",
-		"first_clip_url", "reference_image", "reference_video", "reference_voice",
-		// Native APIMart/Wan adapters use these aliases instead of the
-		// OpenAI-compatible *_urls names. They must receive the same public URL
-		// validation or a data URL can bypass the guard and reach the provider.
-		"image", "images", "input_urls", "video", "videos", "audio", "audios",
-		"ref_images", "ref_videos", "reference_images",
-		"image_with_roles", "video_list", "element_list",
-	} {
-		_, imageObject := request[key].(map[string]any)
-		if key == "image_with_roles" || key == "video_list" || key == "ref_images" || key == "ref_videos" || key == "reference_images" || key == "element_list" || key == "image" && imageObject {
-			if err := validateNestedVideoReferenceURLs(request[key]); err != nil {
-				return err
-			}
+func validateVideoReferencePayloadURLs(request map[string]any, contract protocol.VideoModelContract) error {
+	allowLocalMaterial := contract.Transport.LocalMaterial == "multipart"
+	fields := []string{
+		contract.Request.FirstFrameField,
+		contract.Request.LastFrameField,
+		contract.Request.ReferenceImagesField,
+		contract.Request.ReferenceVideosField,
+		contract.Request.ReferenceAudiosField,
+	}
+	seen := make(map[string]struct{}, len(fields))
+	for _, field := range fields {
+		field = strings.TrimSpace(field)
+		if field == "" {
 			continue
 		}
-		values := util.AsStringSlice(request[key])
-		if value := util.Clean(request[key]); value != "" && len(values) == 0 {
-			values = []string{value}
+		if _, exists := seen[field]; exists {
+			continue
+		}
+		seen[field] = struct{}{}
+		value := videoJSONPathValue(request, field)
+		values := util.AsStringSlice(value)
+		if len(values) == 0 {
+			if scalar := strings.TrimSpace(util.Clean(value)); scalar != "" {
+				values = []string{scalar}
+			}
 		}
 		for _, value := range values {
-			// A single local upload is carried separately as multipart
-			// `input_reference`; the named frame alias is retained only for
-			// compatibility and will not be used as the provider URL.
-			inlineReference := strings.TrimSpace(util.Clean(request["input_reference"]))
-			if strings.HasPrefix(strings.ToLower(inlineReference), "data:") {
-				// A single local image is converted to multipart by
-				// relayVideoSubmit. Do not reject the matching provider alias,
-				// but still reject any additional data-URL references.
-				if len(values) == 1 && strings.TrimSpace(values[0]) == inlineReference && isInlineFirstFrameReference(request) && (key == "image" || key == "image_url" || key == "first_frame_url" || key == "reference_image_urls") {
-					continue
-				}
-			}
-			if key == "audio_ids" {
-				if !strings.HasPrefix(strings.TrimSpace(value), "audio_") {
-					return protocol.HTTPError{Status: http.StatusBadRequest, Message: "Gemini Omni 参考音频必须使用 audio_ 开头的已上传音频 ID"}
-				}
+			if isPublicReferenceURL(value) || allowLocalMaterial && isLocalVideoReferencePath(value) {
 				continue
 			}
-			if !isPublicReferenceURL(value) {
-				return protocol.HTTPError{Status: http.StatusBadRequest, Message: "视频参考素材列表必须使用公网可访问的 http:// 或 https:// URL；单首帧图片可使用上传文件"}
-			}
-		}
-	}
-	// Provider adapters mirror native reference fields into metadata for
-	// compatibility with older relays. Validate that copy as well; otherwise a
-	// stale caller could bypass the URL guard by placing a Base64 reference only
-	// in metadata and the upstream would return a confusing 422 URL-too-long
-	// error.
-	if metadata, ok := request["metadata"].(map[string]any); ok && !strings.HasPrefix(strings.ToLower(strings.TrimSpace(util.Clean(request["input_reference"]))), "data:") {
-		if err := validateNestedVideoReferenceURLs(metadata); err != nil {
-			return err
+			return protocol.HTTPError{Status: http.StatusBadRequest, Message: "视频参考素材必须使用公网可访问的 HTTP 或 HTTPS URL"}
 		}
 	}
 	return nil
 }
-
-func validateNestedVideoReferenceURLs(value any) error {
-	var walk func(any, string) error
-	walk = func(current any, field string) error {
-		switch typed := current.(type) {
-		case []any:
-			for _, item := range typed {
-				if err := walk(item, field); err != nil {
-					return err
-				}
-			}
-		case []map[string]string:
-			for _, item := range typed {
-				if err := walk(item, field); err != nil {
-					return err
-				}
-			}
-		case []map[string]any:
-			for _, item := range typed {
-				if err := walk(item, field); err != nil {
-					return err
-				}
-			}
-		case []string:
-			for _, item := range typed {
-				if err := walk(item, field); err != nil {
-					return err
-				}
-			}
-		case map[string]string:
-			for key, item := range typed {
-				if err := walk(item, key); err != nil {
-					return err
-				}
-			}
-		case map[string]any:
-			for key, item := range typed {
-				if err := walk(item, key); err != nil {
-					return err
-				}
-			}
-		case string:
-			if field == "url" || strings.Contains(field, "_url") || strings.HasSuffix(field, "urls") || field == "reference_voice" {
-				if !isPublicReferenceURL(typed) {
-					return protocol.HTTPError{Status: http.StatusBadRequest, Message: "视频参考素材列表必须使用公网可访问的 http:// 或 https:// URL；单首帧图片可使用上传文件"}
-				}
-			}
-		}
-		return nil
-	}
-	return walk(value, "")
-}
-
-func (a *App) relayVideoSubmit(ctx context.Context, apiKey string, request map[string]any) (map[string]any, error) {
-	return a.relayVideoSubmitAt(ctx, a.relayBaseURL(), apiKey, request)
-}
-
-func (a *App) relayVideoSubmitAt(ctx context.Context, baseURL, apiKey string, request map[string]any) (map[string]any, error) {
-	if videoProviderAdapterForModel(strings.ToLower(util.Clean(request["model"]))).name == "veo" {
-		if err := a.inlineVeoReferenceImage(ctx, request); err != nil {
+func (a *App) relayVideoSubmitAt(ctx context.Context, baseURL, apiKey, createPath string, request map[string]any, contract protocol.VideoModelContract) (map[string]any, error) {
+	if contract.Transport.LocalMaterial == "multipart" {
+		files, hasExternalURLs, err := a.extractContractLocalVideoMaterials(request, contract)
+		if err != nil {
 			return nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: err.Error()}
 		}
+		if len(files) > 0 {
+			if len(files) > 1 && !contract.Transport.MultipartRepeatable {
+				return nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: "当前模型契约不允许一次提交多个本地素材"}
+			}
+			if hasExternalURLs && !contract.Transport.MultipartMixedURLs {
+				return nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: "当前模型契约不允许本地素材与公网 URL 混用"}
+			}
+			return a.relayVideoMultipart(ctx, baseURL, apiKey, createPath, request, contract.Transport.MultipartFileField, files)
+		}
 	}
-	inputReference := strings.TrimSpace(util.Clean(request["input_reference"]))
-	// Provider-native URL fields must never carry an inline data URL. For
-	// direct API callers (legacy clients may still send one), reuse the
-	// multipart upload path and remove the inline field from the form so the
-	// upstream sees a real uploaded file instead of a 2K+ URL.
-	inlineField := ""
-	if inputReference == "" {
-		for _, key := range []string{"first_frame_url", "first_frame_image", "image_url", "image"} {
-			candidate := strings.TrimSpace(util.Clean(request[key]))
-			if strings.HasPrefix(strings.ToLower(candidate), "data:") {
-				inputReference = candidate
-				inlineField = key
-				break
+	return a.relayJSONAt(ctx, baseURL, http.MethodPost, createPath, apiKey, request)
+}
+
+func (a *App) extractContractLocalVideoMaterials(request map[string]any, contract protocol.VideoModelContract) ([]videoMultipartFile, bool, error) {
+	files := make([]videoMultipartFile, 0)
+	hasExternalURLs := false
+	fields := []struct {
+		name   string
+		scalar bool
+	}{
+		{contract.Request.FirstFrameField, true},
+		{contract.Request.LastFrameField, true},
+		{contract.Request.ReferenceImagesField, false},
+		{contract.Request.ReferenceVideosField, false},
+		{contract.Request.ReferenceAudiosField, false},
+	}
+	seen := make(map[string]struct{}, len(fields))
+	for _, field := range fields {
+		if field.name == "" {
+			continue
+		}
+		if _, exists := seen[field.name]; exists {
+			continue
+		}
+		seen[field.name] = struct{}{}
+		value := videoJSONPathValue(request, field.name)
+		values := util.AsStringSlice(value)
+		if len(values) == 0 {
+			if scalar := strings.TrimSpace(util.Clean(value)); scalar != "" {
+				values = []string{scalar}
 			}
 		}
-	}
-	// Some canvas/API callers only populate the canonical image array. Treat a
-	// single data URL there as the same local first-frame upload, but never
-	// reinterpret a multimodal reference request this way: those references
-	// must remain public URLs because the provider expects URL arrays.
-	if inputReference == "" && isInlineFirstFrameReference(request) {
-		values := util.AsStringSlice(request["reference_image_urls"])
-		if len(values) == 1 && strings.HasPrefix(strings.ToLower(strings.TrimSpace(values[0])), "data:") {
-			inputReference = strings.TrimSpace(values[0])
+		if len(values) == 0 {
+			continue
+		}
+		external := make([]string, 0, len(values))
+		for _, value := range values {
+			file, local, err := a.localVideoReferenceFile(value)
+			if err != nil {
+				return nil, false, err
+			}
+			if local {
+				files = append(files, file)
+				continue
+			}
+			external = append(external, value)
+			hasExternalURLs = true
+		}
+		switch {
+		case len(external) == 0:
+			videoDeleteObjectPath(request, field.name)
+		case field.scalar:
+			videoSetObjectPath(request, field.name, external[0])
+		default:
+			videoSetObjectPath(request, field.name, external)
 		}
 	}
-	if !strings.HasPrefix(strings.ToLower(inputReference), "data:") {
-		deleteVideoInternalRequestFields(request)
-		return a.relayJSONAt(ctx, baseURL, http.MethodPost, "/v1/videos", apiKey, request)
-	}
-	// The compatibility payload may contain both input_reference and a
-	// provider-native alias for the same image. Once the image is uploaded as a
-	// multipart file, retaining that alias would send the complete Base64 value
-	// as a URL and trigger the provider's 2083-character URL validation.
-	if err := removeMultipartVideoReferenceAliases(request, inputReference); err != nil {
-		return nil, err
-	}
-	data, contentType, err := imageDataURLBytes(inputReference)
-	if err != nil {
-		return nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: "视频参考图必须是有效的 PNG、JPEG 或 WebP 图片"}
-	}
-	if err := validateVideoReferenceImage(util.Clean(request["model"]), util.Clean(request["size"]), data); err != nil {
-		return nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: err.Error()}
-	}
-	delete(request, "input_reference")
-	if inlineField != "" {
-		delete(request, inlineField)
-	}
-	deleteVideoInternalRequestFields(request)
-	req, err := relayVideoMultipartRequest(ctx, baseURL, apiKey, request, protocol.UploadedImage{
-		Data:        data,
-		Filename:    "input-reference." + videoReferenceImageExtension(contentType),
-		ContentType: contentType,
-	})
+	return files, hasExternalURLs, nil
+}
+
+func (a *App) relayVideoMultipart(ctx context.Context, baseURL, apiKey, createPath string, payload map[string]any, fileField string, files []videoMultipartFile) (map[string]any, error) {
+	req, err := relayVideoMultipartRequest(ctx, baseURL, apiKey, createPath, payload, fileField, files)
 	if err != nil {
 		return nil, err
 	}
@@ -1226,870 +1171,172 @@ func (a *App) relayVideoSubmitAt(ctx context.Context, baseURL, apiKey string, re
 	return relayDecodeJSONResponse(resp)
 }
 
-func removeMultipartVideoReferenceAliases(request map[string]any, inputReference string) error {
-	clean := func(fields map[string]any) error {
-		for _, key := range []string{"first_frame_url", "first_frame_image", "last_frame_url", "last_frame_image", "end_image_url", "tail_image_url", "image_url", "image"} {
-			value := strings.TrimSpace(util.Clean(fields[key]))
-			if !strings.HasPrefix(strings.ToLower(value), "data:") {
-				continue
-			}
-			if value != inputReference {
-				return protocol.HTTPError{Status: http.StatusBadRequest, Message: "一次视频任务只能直接上传一张本地参考图；其他图片请先转换为公网可访问 URL"}
-			}
-			delete(fields, key)
-		}
-		if references := util.AsStringSlice(fields["reference_image_urls"]); len(references) > 0 {
-			for _, value := range references {
-				if strings.HasPrefix(strings.ToLower(strings.TrimSpace(value)), "data:") && strings.TrimSpace(value) != inputReference {
-					return protocol.HTTPError{Status: http.StatusBadRequest, Message: "一次视频任务只能直接上传一张本地参考图；其他图片请先转换为公网可访问 URL"}
-				}
-			}
-			if len(references) == 1 && strings.TrimSpace(references[0]) == inputReference {
-				delete(fields, "reference_image_urls")
-			}
-		}
-		return nil
-	}
-	if err := clean(request); err != nil {
-		return err
-	}
-	if metadata, ok := request["metadata"].(map[string]any); ok {
-		if err := clean(metadata); err != nil {
-			return err
-		}
-		if len(metadata) == 0 {
-			delete(request, "metadata")
-		}
-	}
-	return nil
-}
-
-func isInlineFirstFrameReference(request map[string]any) bool {
-	if request == nil {
-		return false
-	}
-	if strings.EqualFold(strings.TrimSpace(util.Clean(request["reference_mode"])), "reference") {
-		return false
-	}
-	mode := strings.ToLower(strings.TrimSpace(util.Clean(request["generation_mode"])))
-	return mode == "" || mode == "image-to-video" || mode == "image" || mode == "first-frame"
-}
-
-func (a *App) inlineVeoReferenceImage(ctx context.Context, request map[string]any) error {
-	metadata, _ := request["metadata"].(map[string]any)
-	if metadata == nil {
-		return nil
-	}
-	inline := func(value string) (string, error) {
-		value = strings.TrimSpace(value)
-		if value == "" || strings.HasPrefix(strings.ToLower(value), "data:") {
-			return value, nil
-		}
-		data, contentType, err := relayImageItemBytes(ctx, a, map[string]any{"url": value})
-		if err != nil {
-			return "", fmt.Errorf("Veo 参考图下载失败：%w", err)
-		}
-		if len(data) > maxGoogleGeminiInlineRequestBytes {
-			return "", fmt.Errorf("Veo 参考图不能超过 20 MiB")
-		}
-		return "data:" + contentType + ";base64," + base64.StdEncoding.EncodeToString(data), nil
-	}
-	for _, field := range []string{"firstFrame", "lastFrame"} {
-		value := util.Clean(metadata[field])
-		if value == "" {
-			continue
-		}
-		converted, err := inline(value)
-		if err != nil {
-			return err
-		}
-		metadata[field] = converted
-	}
-	images := util.AsStringSlice(metadata["referenceImages"])
-	for index, value := range images {
-		converted, err := inline(value)
-		if err != nil {
-			return err
-		}
-		images[index] = converted
-	}
-	if len(images) > 0 {
-		metadata["referenceImages"] = images
-	}
-	return nil
-}
-
-// newAPIVideoRequestPayload keeps the NewAPI-facing contract provider-neutral.
-// NewAPI selects the concrete channel after receiving this request, so shaping
-// KIE or APIMart fields here would apply the provider conversion twice.
-func newAPIVideoRequestPayload(payload map[string]any) map[string]any {
-	if videoUsesDedicatedRequestContract(payload) {
-		nativePayload := payload
-		if videoProtocolHint(payload) == "" && strings.TrimSpace(util.Clean(payload["model"])) == "MiniMax-H3" {
-			nativePayload = make(map[string]any, len(payload)+1)
-			for key, value := range payload {
-				nativePayload[key] = value
-			}
-			nativePayload["protocol"] = "metaso"
-		}
-		return officialVideoRequestPayload(nativePayload)
-	}
-
-	model := protocol.CanonicalVideoModel(util.Clean(payload["model"]))
+func declaredVideoContractRequestPayload(payload map[string]any, contract protocol.VideoModelContract) map[string]any {
+	ruleValues := videoContractRuleValues(payload)
+	protocol.ApplyVideoContractForcedValues(contract, ruleValues)
 	request := map[string]any{
-		"model":  model,
+		"model":  strings.TrimSpace(util.Clean(payload["model"])),
 		"prompt": payload["prompt"],
 	}
-	copyValue := func(target, source string) {
-		if value, ok := payload[source]; ok && value != nil && strings.TrimSpace(util.Clean(value)) != "" {
-			request[target] = value
+	set := func(field string, value any) {
+		if strings.TrimSpace(field) != "" && value != nil && strings.TrimSpace(util.Clean(value)) != "" {
+			videoSetObjectPath(request, field, value)
 		}
 	}
-	copyValue("size", "size")
-	copyValue("seconds", "seconds")
-	// NewAPI's shared video contract consumes `resolution`. It removes the field
-	// at the official Sora boundary and maps or drops it only after the selected
-	// KIE/APIMart model contract is known.
-	copyValue("resolution", "resolution")
-	if resolution := util.Clean(payload["resolution"]); resolution != "" && strings.EqualFold(strings.TrimSpace(model), "bytedance/seedance-2-5") {
-		request["resolution"] = normalizeSeedance25VideoResolution(resolution)
+	set(contract.Request.DurationField, util.ToInt(ruleValues["duration"], contract.Capability.DefaultSeconds))
+	set(contract.Request.AspectRatioField, firstNonEmpty(util.Clean(ruleValues["size"]), contract.Capability.DefaultSize))
+	set(contract.Request.ResolutionField, firstNonEmpty(util.Clean(ruleValues["resolution"]), contract.Capability.DefaultResolution))
+	if generateAudio, ok := ruleValues["generate_audio"].(bool); ok && contract.Request.GenerateAudioField != "" {
+		videoSetObjectPath(request, contract.Request.GenerateAudioField, generateAudio)
 	}
-	copyValue("first_frame_url", "first_frame_url")
-	copyValue("last_frame_url", "last_frame_url")
-	imageReferences := util.AsStringSlice(payload["reference_image_urls"])
+	if watermark, ok := ruleValues["watermark"].(bool); ok && contract.Request.WatermarkField != "" {
+		videoSetObjectPath(request, contract.Request.WatermarkField, watermark)
+	}
+
+	frameReferences := videoFrameAliases(payload)
+	imageReferences := removeVideoFrameAliases(util.AsStringSlice(payload["reference_image_urls"]), frameReferences)
 	videoReferences := util.AsStringSlice(payload["reference_video_urls"])
 	audioReferences := util.AsStringSlice(payload["reference_audio_urls"])
-	if !isSora2Model(model) {
-		if len(imageReferences) > 0 {
-			request["input_reference[]"] = imageReferences
-		}
-		if len(videoReferences) > 0 {
-			request["video_reference[]"] = videoReferences
-		}
-		if len(audioReferences) > 0 {
-			request["audio_reference[]"] = audioReferences
-		}
+	modeKind, validMode := videoContractGenerationKind(payload, contract)
+	if !validMode {
+		// Creation requests reject an unknown explicit value before they reach
+		// this mapper. Keep direct internal callers deterministic as well.
+		modeKind = inferredVideoContractGenerationKind(payload)
 	}
+	mode, hasMode := protocol.VideoContractModeForKind(contract, modeKind)
+	modeValue := modeKind + "-to-video"
+	if hasMode {
+		modeValue = firstNonEmpty(mode.RequestValue, mode.ID)
+	}
+	set(contract.Request.GenerationModeField, modeValue)
 
-	if value, ok := payload["generate_audio"].(bool); ok {
-		request["generate_audio"] = value
-	} else if value, ok := payload["video_generate_audio"].(bool); ok {
-		request["generate_audio"] = value
-	}
-	if value, ok := payload["watermark"].(bool); ok {
-		request["watermark"] = value
-	}
-	for _, key := range []string{
-		"negative_prompt", "multi_shot", "shot_type", "multi_prompt",
-		"element_list", "character_orientation", "preset", "mode",
-	} {
-		if value, ok := payload[key]; ok && value != nil {
-			request[key] = value
+	if modeKind == "reference" {
+		if len(imageReferences) > 0 && contract.Request.ReferenceImagesField != "" {
+			videoSetObjectPath(request, contract.Request.ReferenceImagesField, imageReferences)
 		}
-	}
-	if videoMode := strings.TrimSpace(util.Clean(payload["video_mode"])); videoMode != "" {
-		request["mode"] = videoMode
-	}
-
-	// OpenAI Sora consumes one compatibility reference. KIE and APIMart also
-	// recognize this alias and remap it only after their channel is selected.
-	if isSora2Model(model) {
-		frames := videoFrameAliases(payload)
+		if len(videoReferences) > 0 && contract.Request.ReferenceVideosField != "" {
+			videoSetObjectPath(request, contract.Request.ReferenceVideosField, videoReferences)
+		}
+		if len(audioReferences) > 0 && contract.Request.ReferenceAudiosField != "" {
+			videoSetObjectPath(request, contract.Request.ReferenceAudiosField, audioReferences)
+		}
+	} else if modeKind == "image" {
+		frames := append(append([]string(nil), frameReferences...), imageReferences...)
 		if len(frames) > 0 {
-			request["input_reference"] = frames[0]
-		} else if len(imageReferences) > 0 {
-			request["input_reference"] = imageReferences[0]
+			set(contract.Request.FirstFrameField, frames[0])
+		}
+		if len(frames) > 1 {
+			set(contract.Request.LastFrameField, frames[1])
 		}
 	}
-
-	deleteVideoInternalRequestFields(request)
 	return request
 }
 
-func videoUsesDedicatedRequestContract(payload map[string]any) bool {
-	switch videoProtocolHint(payload) {
-	case "kie", "apimart", "openai":
-		return false
-	case "gemini", "grok2api", "metaso":
-		return true
+func videoSetObjectPath(target map[string]any, path string, value any) {
+	parts := strings.Split(strings.TrimSpace(path), ".")
+	if len(parts) == 0 || parts[0] == "" {
+		return
 	}
-	model := strings.TrimSpace(util.Clean(payload["model"]))
-	name := strings.ToLower(model)
-	return model == "MiniMax-H3" ||
-		isGrok2APIVideoModel(name) ||
-		strings.Contains(name, "cogvideox-3") || strings.Contains(name, "cogvideo-x3") ||
-		strings.Contains(name, "agnes-video") ||
-		strings.HasPrefix(name, "veo-")
+	current := target
+	for _, part := range parts[:len(parts)-1] {
+		nested, ok := current[part].(map[string]any)
+		if !ok {
+			nested = map[string]any{}
+			current[part] = nested
+		}
+		current = nested
+	}
+	current[parts[len(parts)-1]] = value
 }
 
-// officialVideoRequestPayload maps official provider semantics onto a native
-// provider request. It is used only for dedicated protocols whose model name
-// or explicit protocol identifies the upstream before NewAPI channel routing.
-func officialVideoRequestPayload(payload map[string]any) map[string]any {
-	model := protocol.CanonicalVideoModel(util.Clean(payload["model"]))
-	name := strings.ToLower(model)
-	seconds := util.ToInt(payload["seconds"], 0)
-	refs := util.AsStringSlice(payload["reference_image_urls"])
-	frameRefs := videoFrameAliases(payload)
-	refs = removeVideoFrameAliases(refs, frameRefs)
-	referenceVideoURLs := util.AsStringSlice(payload["reference_video_urls"])
-	referenceAudioURLs := util.AsStringSlice(payload["reference_audio_urls"])
+func videoDeleteObjectPath(target map[string]any, path string) {
+	parts := strings.Split(strings.TrimSpace(path), ".")
+	if len(parts) == 0 || parts[0] == "" {
+		return
+	}
+	objects := []map[string]any{target}
+	current := target
+	for _, part := range parts[:len(parts)-1] {
+		nested, ok := current[part].(map[string]any)
+		if !ok {
+			return
+		}
+		objects = append(objects, nested)
+		current = nested
+	}
+	delete(current, parts[len(parts)-1])
+	for index := len(parts) - 2; index >= 0; index-- {
+		child, _ := objects[index][parts[index]].(map[string]any)
+		if len(child) > 0 {
+			break
+		}
+		delete(objects[index], parts[index])
+	}
+}
+
+func videoContractGenerationKind(payload map[string]any, contract protocol.VideoModelContract) (string, bool) {
+	explicitMode := strings.TrimSpace(util.Clean(payload["generation_mode"]))
+	if explicitMode == "" {
+		return inferredVideoContractGenerationKind(payload), true
+	}
+	for _, candidate := range contract.Generation.Modes {
+		if strings.EqualFold(explicitMode, candidate.ID) || strings.EqualFold(explicitMode, candidate.RequestValue) {
+			return candidate.Kind, true
+		}
+	}
+	return "", false
+}
+
+func inferredVideoContractGenerationKind(payload map[string]any) string {
+	frameReferences := videoFrameAliases(payload)
+	imageReferences := removeVideoFrameAliases(util.AsStringSlice(payload["reference_image_urls"]), frameReferences)
+	videoReferences := util.AsStringSlice(payload["reference_video_urls"])
+	audioReferences := util.AsStringSlice(payload["reference_audio_urls"])
 	referenceMode := normalizeVideoReferenceMode(util.Clean(payload["reference_mode"]))
-	if referenceMode == "" {
-		if len(referenceVideoURLs) > 0 || len(referenceAudioURLs) > 0 {
-			referenceMode = "reference"
-		} else {
-			referenceMode = "first-frame"
-		}
+	if referenceMode == "reference" || len(videoReferences)+len(audioReferences) > 0 {
+		return "reference"
 	}
-	if strings.Contains(name, "reference-to-video") || strings.Contains(name, "-r2v") || strings.HasSuffix(name, "/r2v") {
-		referenceMode = "reference"
+	if len(frameReferences)+len(imageReferences) > 0 {
+		return "image"
 	}
-	// Keep direct /v1/videos callers consistent with the creation-task route.
-	// A stale reference toggle is harmless for image-only models when it only
-	// contains images, but must not force an unsupported multimodal payload.
-	capability := protocol.VideoCapability(model)
-	if referenceMode == "reference" && !capability.ReferenceMode && len(referenceVideoURLs) == 0 && len(referenceAudioURLs) == 0 && capability.FirstFrameImageLimit > 0 {
-		referenceMode = "first-frame"
+	return "text"
+}
+
+func videoContractRuleValues(payload map[string]any) map[string]any {
+	values := map[string]any{
+		"first_frame":     videoFirstFrameAlias(payload),
+		"last_frame":      videoLastFrameAlias(payload),
+		"reference_image": util.AsStringSlice(payload["reference_image_urls"]),
+		"reference_video": util.AsStringSlice(payload["reference_video_urls"]),
+		"reference_audio": util.AsStringSlice(payload["reference_audio_urls"]),
 	}
-	size := util.Clean(payload["size"])
-	if strings.Contains(name, "/") {
-		size = normalizeKIEAspectRatio(size)
-	}
-	request := map[string]any{
-		"model":    model,
-		"prompt":   payload["prompt"],
-		"seconds":  payload["seconds"],
-		"duration": seconds,
-	}
-	if size != "" {
-		request["size"] = size
-	}
-	if len(frameRefs) > 0 {
-		request["first_frame_url"] = frameRefs[0]
-	}
-	if len(frameRefs) > 1 {
-		request["last_frame_url"] = frameRefs[1]
-	}
-	// Creation tasks persist the shared audio toggle as video_generate_audio
-	// in metadata, while direct /v1 callers use generate_audio. Adapters should
-	// see one vocabulary regardless of whether the request came from the
-	// creator, canvas, or a queued task.
-	adapterPayload := payload
-	if _, hasGenerateAudio := payload["generate_audio"]; !hasGenerateAudio {
-		if value, ok := payload["video_generate_audio"].(bool); ok {
-			adapterPayload = make(map[string]any, len(payload)+1)
-			for key, item := range payload {
-				adapterPayload[key] = item
+	for ruleField, requestFields := range map[string][]string{
+		"generate_audio": {"generate_audio", "video_generate_audio"},
+		"size":           {"size"},
+		"resolution":     {"resolution"},
+		"duration":       {"seconds", "duration"},
+		"watermark":      {"watermark"},
+	} {
+		for _, requestField := range requestFields {
+			value, exists := payload[requestField]
+			if !exists || value == nil {
+				continue
 			}
-			adapterPayload["generate_audio"] = value
-		}
-	}
-	metadata := map[string]any{}
-	if resolution := util.Clean(payload["resolution"]); resolution != "" {
-		request["resolution"] = resolution
-	}
-	adapter := videoProviderAdapterForModel(name)
-	adapterRefs := refs
-	if len(frameRefs) > 0 && (referenceMode == "first-frame" || len(refs) == 0) {
-		adapterRefs = frameRefs
-	}
-	adapter.apply(videoProviderAdapterInput{
-		request: request, metadata: metadata, payload: adapterPayload,
-		refs: adapterRefs, referenceVideoURLs: referenceVideoURLs, referenceAudioURLs: referenceAudioURLs,
-		referenceMode: referenceMode, size: size, resolution: util.Clean(payload["resolution"]), model: model, seconds: seconds,
-	})
-	// KIE endpoints expose provider-native aspect/reference fields; the shared
-	// `size` and multipart `input_reference` aliases are not part of their
-	// schemas and must never survive the adapter boundary.
-	if isKIEVideoModelName(name) {
-		delete(request, "size")
-		delete(request, "input_reference")
-	}
-	applyKIEVideoDefaults(request, name)
-	applyAPIMartVideoDefaults(request, name)
-	if isKIEVideoModelName(name) {
-		normalizeKIEDurationRequest(request, name, seconds)
-		normalizeKIEVideoDurationBounds(request, name)
-		normalizeKIEVideoAspectRequest(request, name)
-	}
-	normalizeAPIMartVideoRequest(request, metadata, payload, name, seconds)
-	// Only an unknown generic endpoint needs the compatibility upload alias.
-	// Every registered provider adapter owns its native reference fields; a
-	// hand-maintained exclusion list lets newly added adapters leak both shapes.
-	if len(adapterRefs) > 0 && referenceMode != "reference" && !isKIEVideoModelName(name) && adapter.name == "generic" {
-		request["input_reference"] = adapterRefs[0]
-	}
-	if len(metadata) > 0 {
-		request["metadata"] = metadata
-	}
-	deleteVideoInternalRequestFields(request)
-	if nested, ok := request["metadata"].(map[string]any); ok {
-		if len(nested) == 0 {
-			delete(request, "metadata")
-		}
-	}
-	return request
-}
-
-var videoInternalRequestFields = []string{
-	"generation_mode",
-	"reference_mode",
-	"provider",
-	"video_provider",
-	"channel_protocol",
-	"protocol",
-	"channel_base_url",
-	"provider_base_url",
-}
-
-func deleteVideoInternalRequestFields(request map[string]any) {
-	for _, field := range videoInternalRequestFields {
-		deleteVideoRequestField(request, field)
-	}
-}
-
-func deleteVideoRequestField(value any, field string) {
-	switch typed := value.(type) {
-	case map[string]any:
-		delete(typed, field)
-		for _, item := range typed {
-			deleteVideoRequestField(item, field)
-		}
-	case []any:
-		for _, item := range typed {
-			deleteVideoRequestField(item, field)
-		}
-	case []map[string]any:
-		for _, item := range typed {
-			deleteVideoRequestField(item, field)
-		}
-	}
-}
-
-// normalizeAPIMartVideoRequest removes compatibility-only fields after the
-// provider adapter has shaped the request. APIMart's strict schemas use
-// `duration` and provider-specific aspect fields; forwarding the shared
-// `seconds`/`size` aliases can otherwise trigger validation errors.
-func normalizeAPIMartVideoRequest(request, metadata, payload map[string]any, model string, seconds int) {
-	if !isAPIMartVideoPayload(payload) || strings.Contains(model, "/") {
-		return
-	}
-	name := strings.ToLower(strings.TrimSpace(model))
-	delete(request, "seconds")
-	if strings.Contains(name, "sora-2") {
-		if reference := strings.TrimSpace(util.Clean(request["input_reference"])); reference != "" && !strings.HasPrefix(strings.ToLower(reference), "data:") {
-			request["image_urls"] = []string{reference}
-			delete(request, "input_reference")
-		}
-	}
-	// APIMart has a per-model input contract. Normalize the shared aliases
-	// only after the provider adapter has populated its native fields.
-	contract := apimartVideoContractForModel(name)
-	normalizeAPIMartKlingV3Advanced(request, metadata, payload, name)
-	normalizeAPIMartAspectRequest(request, payload, contract)
-	normalizeAPIMartResolutionRequest(request, payload, contract)
-	normalizeAPIMartAudioRequest(request, payload, name)
-	normalizeAPIMartVideoModeRequest(request, payload, contract)
-	clearAPIMartConflictingReferences(request, name)
-	clearAPIMartUnsupportedReferences(request, contract)
-	if len(metadata) > 0 {
-		normalizeAPIMartAspectRequest(metadata, nil, contract)
-		normalizeAPIMartResolutionRequest(metadata, nil, contract)
-		normalizeAPIMartAudioRequest(metadata, payload, name)
-		normalizeAPIMartVideoModeRequest(metadata, payload, contract)
-		clearAPIMartConflictingReferences(metadata, name)
-		clearAPIMartUnsupportedReferences(metadata, contract)
-	}
-
-	noDuration := strings.Contains(name, "motion-control") ||
-		name == "gemini-omni-flash-preview" ||
-		strings.Contains(name, "ai-avatar") ||
-		strings.Contains(name, "infinitalk") ||
-		(strings.Contains(name, "omni-flash-ext") && hasAPIMartReferenceValue(request, "video_urls")) ||
-		(strings.Contains(name, "topaz") && strings.Contains(name, "video"))
-	if noDuration {
-		delete(request, "duration")
-	} else if _, ok := request["duration"]; !ok && seconds > 0 {
-		request["duration"] = seconds
-	}
-
-	if name == "minimax-h3" {
-		// Generic APIMart normalization lower-cases video resolutions. H3 has a
-		// stricter enum. Keep APIMart's native `adaptive` aspect value intact;
-		// KIE uses a separate final guard that maps it to `auto`.
-		normalizeMiniMaxH3APIMartRequest(request)
-	}
-	if strings.HasPrefix(name, "sora-2") {
-		if resolution := strings.TrimSpace(util.Clean(request["resolution"])); resolution != "" {
-			switch strings.ToLower(resolution) {
-			case "360", "360p", "480", "480p":
-				request["quality"] = "480p"
-			case "1080", "1080p", "2k", "4k":
-				request["quality"] = "1080p"
+			switch ruleField {
+			case "generate_audio", "watermark":
+				values[ruleField] = util.ToBool(value)
+			case "duration":
+				values[ruleField] = util.ToInt(value, 0)
 			default:
-				request["quality"] = "720p"
+				values[ruleField] = util.Clean(value)
 			}
-		}
-		delete(request, "resolution")
-	}
-	if (strings.Contains(name, "wan2-7") || strings.Contains(name, "wan2.7")) && !strings.Contains(name, "r2v") && !strings.Contains(name, "videoedit") && request["video_urls"] != nil {
-		delete(request, "audio_url")
-		if len(metadata) > 0 {
-			delete(metadata, "audio_url")
-		}
-	}
-	// The reference APIMart adapter submits one flat provider-native payload.
-	// Metadata is only an internal compatibility staging area for the shared
-	// relay adapters and must not become an extra APIMart request field.
-	for key := range metadata {
-		delete(metadata, key)
-	}
-}
-
-// normalizeAPIMartKlingV3Advanced mirrors the reference project's APIMart
-// adapter. The creator stores shared Kling controls in the compatibility
-// envelope, but APIMart's kling-v3 schema expects the native top-level fields.
-func normalizeAPIMartKlingV3Advanced(request, metadata, payload map[string]any, model string) {
-	if strings.ToLower(strings.TrimSpace(model)) != "kling-v3" {
-		return
-	}
-	if elements := normalizeAPIMartKlingV3Elements(firstNonNilRelayValue(payload["element_list"], metadata["element_list"])); len(elements) > 0 {
-		request["element_list"] = elements
-	} else {
-		delete(request, "element_list")
-	}
-	value := payload["multi_shot"]
-	if value == nil {
-		value = payload["multi_shots"]
-	}
-	if value == nil {
-		value = metadata["multi_shot"]
-	}
-	if value == nil {
-		value = metadata["multi_shots"]
-	}
-	if !util.ToBool(value) {
-		for _, key := range []string{"multi_shot", "multi_shots", "shot_type", "multi_prompt"} {
-			delete(request, key)
-		}
-		return
-	}
-	request["multi_shot"] = true
-	shotType := strings.ToLower(strings.TrimSpace(firstNonEmpty(util.Clean(payload["shot_type"]), util.Clean(metadata["shot_type"]))))
-	if shotType != "customize" {
-		request["shot_type"] = "intelligence"
-		delete(request, "multi_prompt")
-	} else {
-		request["shot_type"] = "customize"
-		if prompts := normalizeAPIMartKlingV3MultiPrompt(firstNonNilRelayValue(payload["multi_prompt"], metadata["multi_prompt"])); len(prompts) > 0 {
-			request["multi_prompt"] = prompts
-		} else {
-			delete(request, "multi_prompt")
-		}
-	}
-}
-
-func normalizeAPIMartKlingV3MultiPrompt(value any) []map[string]any {
-	items := util.AsMapSlice(value)
-	if len(items) == 0 {
-		items = []map[string]any{{"prompt": "", "duration": 1}}
-	}
-	result := make([]map[string]any, 0, len(items))
-	for index, item := range items {
-		duration := util.ToInt(item["duration"], 1)
-		if duration < 1 {
-			duration = 1
-		}
-		if duration > 15 {
-			duration = 15
-		}
-		result = append(result, map[string]any{
-			"index":    index + 1,
-			"prompt":   strings.TrimSpace(util.Clean(item["prompt"])),
-			"duration": duration,
-		})
-	}
-	return result
-}
-
-func normalizeAPIMartKlingV3Elements(value any) []map[string]any {
-	items := util.AsMapSlice(value)
-	if len(items) == 0 {
-		return nil
-	}
-	result := make([]map[string]any, 0, len(items))
-	for _, item := range items {
-		urls := util.AsStringSlice(item["element_input_urls"])
-		for _, reference := range util.AsMapSlice(item["references"]) {
-			if url := strings.TrimSpace(util.Clean(reference["url"])); url != "" {
-				urls = append(urls, url)
-			}
-		}
-		if len(urls) == 0 {
-			continue
-		}
-		if len(urls) > 4 {
-			urls = urls[:4]
-		}
-		result = append(result, map[string]any{
-			"name":               strings.TrimSpace(util.Clean(item["name"])),
-			"description":        strings.TrimSpace(util.Clean(item["description"])),
-			"element_input_urls": urls,
-		})
-		if len(result) >= 3 {
 			break
 		}
 	}
-	return result
+	return values
 }
 
-func normalizeAPIMartVideoModeRequest(request, payload map[string]any, contract apimartVideoContract) {
-	if !contract.modeFromResolution {
-		return
-	}
-	mode := strings.ToLower(strings.TrimSpace(util.Clean(request["mode"])))
-	if mode != "" && mode != "normal" {
-		return
-	}
-	resolution := firstNonEmpty(util.Clean(request["resolution"]), util.Clean(payload["resolution"]), util.Clean(payload["resolution_name"]))
-	switch strings.ToLower(strings.TrimSpace(resolution)) {
-	case "1080", "1080p", "2160", "2160p", "4k", "uhd", "pro":
-		request["mode"] = "pro"
-	default:
-		request["mode"] = "std"
-	}
-}
-
-type apimartVideoContract struct {
-	aspectField        string
-	dropAspectWithRefs bool
-	hasResolution      bool
-	maxResolution      string
-	upperResolution    bool
-	hasQuality         bool
-	modeFromResolution bool
-}
-
-func apimartVideoContractForModel(name string) apimartVideoContract {
-	c := apimartVideoContract{aspectField: "aspect_ratio", hasResolution: true}
-	switch {
-	case strings.Contains(name, "doubao-seedance-2"):
-		c.aspectField = "size"
-	case strings.Contains(name, "doubao-seedance-1-0"), strings.Contains(name, "doubao-seedance-1-5"), strings.Contains(name, "seedance-1"):
-		c.aspectField = "aspect_ratio"
-	case strings.Contains(name, "sora-2"):
-		c.dropAspectWithRefs = true
-		if !strings.Contains(name, "pro") {
-			c.maxResolution = "720p"
-		}
-	case strings.Contains(name, "veo"):
-		c.aspectField = "aspect_ratio"
-	case name == "minimax-h3":
-		c.aspectField = "aspect_ratio"
-	case strings.Contains(name, "minimax"), strings.Contains(name, "hailuo"):
-		c.aspectField = ""
-	case strings.Contains(name, "skyreels"):
-		c.aspectField = "aspect_ratio"
-	case name == "kling-3-0-turbo":
-		c.dropAspectWithRefs = true
-	case strings.Contains(name, "happyhorse"):
-		c.aspectField = "size"
-		c.upperResolution = true
-	case strings.Contains(name, "gemini-omni-flash-preview"):
-		c.maxResolution = "720p"
-	case strings.Contains(name, "wan2-7"), strings.Contains(name, "wan2.7"):
-		c.aspectField = "size"
-		c.upperResolution = true
-	case strings.Contains(name, "wan2-6-i2v-flash"), strings.Contains(name, "wan2.6-i2v-flash"):
-		c.aspectField = ""
-	case strings.Contains(name, "wan2-5"), strings.Contains(name, "wan2.5"):
-		c.aspectField = "size"
-		c.dropAspectWithRefs = true
-	case strings.Contains(name, "wan2-6"), strings.Contains(name, "wan2.6"):
-		c.dropAspectWithRefs = true
-	case strings.Contains(name, "motion-control"):
-		c.aspectField = ""
-		c.hasResolution = false
-	case strings.Contains(name, "kling-v2-6"), strings.Contains(name, "kling-2-6"), strings.Contains(name, "kling-v3"), strings.Contains(name, "kling-video-o1"), strings.Contains(name, "kling"):
-		c.hasResolution = false
-		c.modeFromResolution = strings.Contains(name, "kling-v3-omni") || strings.Contains(name, "kling-video-o1")
-	case strings.Contains(name, "vidu"):
-		c.dropAspectWithRefs = name != "viduq3" && name != "viduq3-mix"
-	case strings.Contains(name, "grok-imagine"):
-		c.aspectField = "size"
-		c.hasResolution = false
-		c.hasQuality = true
-	case strings.Contains(name, "pixverse"):
-		c.aspectField = "size"
-	case strings.Contains(name, "omni-flash"):
-		c.aspectField = "aspect_ratio"
-	case strings.Contains(name, "flux-3-video"):
-		c.aspectField = "aspect_ratio"
-	}
-	return c
-}
-
-func normalizeAPIMartAspectRequest(request, payload map[string]any, contract apimartVideoContract) {
-	if contract.aspectField == "" {
-		for _, key := range []string{"size", "ratio", "aspect_ratio", "image_size"} {
-			delete(request, key)
-		}
-		return
-	}
-	value := firstNonEmpty(util.Clean(request[contract.aspectField]), util.Clean(request["size"]), util.Clean(request["aspect_ratio"]), util.Clean(request["ratio"]), util.Clean(payload["size"]))
-	if value != "" {
-		value = normalizeKIEAspectRatio(value)
-		request[contract.aspectField] = value
-	}
-	for _, key := range []string{"size", "ratio", "aspect_ratio", "image_size"} {
-		if key != contract.aspectField {
-			delete(request, key)
-		}
-	}
-	if contract.dropAspectWithRefs && hasAPIMartRequestImageReference(request) {
-		delete(request, contract.aspectField)
-	}
-}
-
-func normalizeAPIMartResolutionRequest(request, payload map[string]any, contract apimartVideoContract) {
-	value := firstNonEmpty(util.Clean(request["resolution"]), util.Clean(payload["resolution"]), util.Clean(payload["resolution_name"]), util.Clean(payload["image_resolution"]))
-	if contract.hasQuality {
-		if value != "" {
-			request["quality"] = normalizeAPIMartVideoQuality(value)
-		}
-		delete(request, "resolution")
-		return
-	}
-	if !contract.hasResolution {
-		delete(request, "resolution")
-		return
-	}
-	if value == "" {
-		return
-	}
-	normalized := normalizeAPIMartVideoQuality(value)
-	if contract.maxResolution == "720p" && (normalized == "1080p" || normalized == "4k") {
-		normalized = "720p"
-	}
-	if contract.upperResolution {
-		normalized = strings.ToUpper(normalized)
-	}
-	request["resolution"] = normalized
-}
-
-func normalizeAPIMartAudioRequest(request, payload map[string]any, name string) {
-	value, ok := payload["generate_audio"].(bool)
-	if !ok {
-		if candidate, exists := payload["video_generate_audio"]; exists {
-			value = util.ToBool(candidate)
-			ok = true
-		}
-	}
-	if !ok {
-		return
-	}
-	switch {
-	case strings.Contains(name, "doubao-seedance-2") || strings.Contains(name, "veo") && strings.Contains(name, "official"):
-		request["generate_audio"] = value
-	case strings.Contains(name, "kling-v3-omni"):
-		if request["video_list"] == nil {
-			request["audio"] = value
-		} else {
-			delete(request, "audio")
-		}
-	case strings.Contains(name, "doubao-seedance-1-5"), strings.Contains(name, "seedance-1-5"), isAPIMartWan26AudioModel(name), strings.Contains(name, "pixverse-v6"), isAPIMartViduQ3AudioModel(name):
-		request["audio"] = value
-	case strings.Contains(name, "kling-v3") && !strings.Contains(name, "omni"):
-		request["audio"] = value
-	case (strings.Contains(name, "kling-v2-6") || strings.Contains(name, "kling-2-6")) && !strings.Contains(name, "motion"):
-		if !hasAPIMartRequestLastFrame(request) || !value {
-			request["audio"] = value
-			if value && util.Clean(request["mode"]) == "" {
-				request["mode"] = "pro"
-			}
-		}
-	}
-	delete(request, "sound")
-	delete(request, "video_generate_audio")
-}
-
-func isAPIMartWan26AudioModel(name string) bool {
-	name = strings.ToLower(strings.TrimSpace(name))
-	switch name {
-	case "wan2-6", "wan2.6", "wan2-6-i2v-flash", "wan2.6-i2v-flash":
-		return true
-	default:
-		return false
-	}
-}
-
-func isAPIMartViduQ3AudioModel(name string) bool {
-	name = strings.ToLower(strings.TrimSpace(name))
-	return strings.Contains(name, "viduq3-pro") ||
-		strings.Contains(name, "vidu-q3-pro") ||
-		strings.Contains(name, "viduq3-turbo")
-}
-
-func hasAPIMartRequestImageReference(request map[string]any) bool {
-	for _, key := range []string{"image_urls", "image_with_roles", "first_frame_image", "last_frame_image", "img_references", "ref_images", "image_url", "image"} {
-		if value := request[key]; value != nil && strings.TrimSpace(util.Clean(value)) != "" {
-			return true
-		}
-	}
-	return false
-}
-
-func hasAPIMartRequestLastFrame(request map[string]any) bool {
-	for _, key := range []string{"last_frame_image", "last_frame_url", "tail_image_url", "image_tail"} {
-		if value := request[key]; value != nil && strings.TrimSpace(util.Clean(value)) != "" {
-			return true
-		}
-	}
-	return false
-}
-
-// clearAPIMartConflictingReferences mirrors the provider-specific exclusions
-// in the reference workbench. These fields are individually valid, but some
-// APIMart endpoints reject a request when two reference modes are combined.
-func clearAPIMartConflictingReferences(request map[string]any, model string) {
-	name := strings.ToLower(strings.TrimSpace(model))
-	if strings.Contains(name, "happyhorse-1-1") && hasAPIMartReferenceValue(request, "first_frame_image") {
-		delete(request, "image_urls")
-	}
-	if strings.Contains(name, "doubao-seedance-2") && hasAPIMartReferenceValue(request, "image_with_roles") {
-		delete(request, "image_urls")
-		if hasAPIMartFirstLastImageRole(request) {
-			delete(request, "video_urls")
-			delete(request, "audio_urls")
-		}
-	}
-	if (strings.Contains(name, "wan2-7") || strings.Contains(name, "wan2.7")) &&
-		!strings.Contains(name, "r2v") && !strings.Contains(name, "videoedit") &&
-		hasAPIMartReferenceValue(request, "video_urls") {
-		delete(request, "audio_url")
-	}
-	if strings.Contains(name, "omni-flash-ext") && hasAPIMartReferenceValue(request, "video_urls") {
-		delete(request, "duration")
-	}
-}
-
-func hasAPIMartReferenceValue(request map[string]any, key string) bool {
-	value, ok := request[key]
-	if !ok || value == nil {
-		return false
-	}
-	switch typed := value.(type) {
-	case string:
-		return strings.TrimSpace(typed) != ""
-	case []string:
-		for _, item := range typed {
-			if strings.TrimSpace(item) != "" {
-				return true
-			}
-		}
-		return false
-	case []any:
-		return len(typed) > 0
-	case []map[string]string:
-		return len(typed) > 0
-	case []map[string]any:
-		return len(typed) > 0
-	case map[string]any, map[string]string:
-		return true
-	default:
-		return strings.TrimSpace(util.Clean(value)) != ""
-	}
-}
-
-func hasAPIMartFirstLastImageRole(request map[string]any) bool {
-	check := func(role string) bool {
-		role = strings.TrimSpace(role)
-		return role == "first_frame" || role == "last_frame"
-	}
-	switch typed := request["image_with_roles"].(type) {
-	case []map[string]string:
-		for _, item := range typed {
-			if check(item["role"]) {
-				return true
-			}
-		}
-	case []map[string]any:
-		for _, item := range typed {
-			if check(util.Clean(item["role"])) {
-				return true
-			}
-		}
-	case []any:
-		for _, item := range typed {
-			if record, ok := item.(map[string]any); ok && check(util.Clean(record["role"])) {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func clearAPIMartUnsupportedReferences(request map[string]any, contract apimartVideoContract) {
-	// The adapter writes native fields; remove only shared aliases that the
-	// APIMart schema never documents. Native fields remain model-specific.
-	for _, key := range []string{"input_reference", "input_reference[]", "reference_image_urls", "reference_video_urls", "reference_audio_urls", "images", "image", "videos", "video", "audios", "input_urls", "input_url", "image_input", "reference_images", "reference_image_url", "first_frame_url", "last_frame_url", "end_image_url", "tail_image_url", "reference_video_url", "reference_audio_url", "input_video_url", "input_video_urls", "input_audio_url", "input_audio_urls", "video_reference", "video_reference[]", "audio_reference", "audio_reference[]", "image_tail"} {
-		delete(request, key)
-	}
-	_ = contract
-}
-
-func isMiniMaxH3Model(model string) bool {
-	name := strings.ToLower(strings.TrimSpace(model))
-	return strings.Contains(name, "h3") && (strings.Contains(name, "minimax") || strings.Contains(name, "hailuo"))
-}
-
-func validateVideoReferenceImage(model, size string, data []byte) error {
-	info, err := util.InspectRasterImage(data, "image/png", "image/jpeg", "image/webp")
-	if err != nil {
-		return fmt.Errorf("视频参考图必须是有效的 PNG、JPEG 或 WebP 图片")
-	}
-	if isMiniMaxH3Model(model) {
-		if len(data) > 30<<20 {
-			return fmt.Errorf("MiniMax H3 官方参考图大小不能超过 30 MB")
-		}
-		if info.Width < 256 || info.Width > 5760 || info.Height < 256 || info.Height > 5760 {
-			return fmt.Errorf("MiniMax H3 官方参考图宽高必须在 256 到 5760 像素之间")
-		}
-		ratio := float64(info.Width) / float64(info.Height)
-		if ratio < 0.4 || ratio > 2.5 {
-			return fmt.Errorf("MiniMax H3 官方参考图宽高比必须在 2:5 到 5:2 之间")
-		}
-	}
-	name := strings.ToLower(strings.TrimSpace(model))
-	if seedanceVideoProfile(name) != "" {
-		if len(data) >= 30<<20 {
-			return fmt.Errorf("Seedance 官方要求单张参考图小于 30 MB")
-		}
-		ratio := float64(info.Width) / float64(info.Height)
-		if ratio < 0.4 || ratio > 2.5 {
-			return fmt.Errorf("Seedance 官方参考图宽高比必须在 2:5 到 5:2 之间")
-		}
-	}
-	if isKling3Model(name) {
-		if info.ContentType != "image/png" && info.ContentType != "image/jpeg" {
-			return fmt.Errorf("Kling 3.0 官方参考图仅支持 JPG、JPEG、PNG")
-		}
-		if len(data) > 50<<20 {
-			return fmt.Errorf("Kling 3.0 官方参考图大小不能超过 50 MB")
-		}
-		if info.Width < 300 || info.Height < 300 {
-			return fmt.Errorf("Kling 3.0 官方参考图宽高均不能小于 300 像素")
-		}
-		ratio := float64(info.Width) / float64(info.Height)
-		if ratio < 0.4 || ratio > 2.5 {
-			return fmt.Errorf("Kling 3.0 官方参考图宽高比必须在 1:2.5 到 2.5:1 之间")
-		}
-	}
-	return nil
-}
-
-func relayVideoMultipartRequest(ctx context.Context, baseURL, apiKey string, payload map[string]any, image protocol.UploadedImage) (*http.Request, error) {
+func relayVideoMultipartRequest(ctx context.Context, baseURL, apiKey, createPath string, payload map[string]any, fileField string, files []videoMultipartFile) (*http.Request, error) {
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 	for key, value := range payload {
@@ -2112,20 +1359,26 @@ func relayVideoMultipartRequest(ctx context.Context, baseURL, apiKey string, pay
 			return nil, err
 		}
 	}
-	header := make(textproto.MIMEHeader)
-	header.Set("Content-Disposition", fmt.Sprintf(`form-data; name="input_reference"; filename="%s"`, escapeMultipartQuote(image.Filename)))
-	header.Set("Content-Type", relayUploadImageContentType(image))
-	part, err := writer.CreatePart(header)
-	if err != nil {
-		return nil, err
+	fileField = strings.TrimSpace(fileField)
+	if fileField == "" {
+		return nil, errors.New("video multipart file field is required")
 	}
-	if _, err := part.Write(image.Data); err != nil {
-		return nil, err
+	for _, file := range files {
+		header := make(textproto.MIMEHeader)
+		header.Set("Content-Disposition", fmt.Sprintf(`form-data; name="%s"; filename="%s"`, escapeMultipartQuote(fileField), escapeMultipartQuote(file.Filename)))
+		header.Set("Content-Type", file.ContentType)
+		part, err := writer.CreatePart(header)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := part.Write(file.Data); err != nil {
+			return nil, err
+		}
 	}
 	if err := writer.Close(); err != nil {
 		return nil, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(baseURL, "/")+"/v1/videos", &body)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(baseURL, "/")+createPath, &body)
 	if err != nil {
 		return nil, err
 	}
@@ -2170,111 +1423,178 @@ func (a *App) downloadRelayVideo(ctx context.Context, videoURL, apiKey, owner, t
 	return "/videos/" + name, nil
 }
 
-func videoResultURL(state map[string]any, baseURL, taskID string) string {
-	if value := videoStateResultURL(state, 0); value != "" {
-		return absoluteRelayURL(baseURL, value)
-	}
-	return strings.TrimRight(baseURL, "/") + "/v1/videos/" + url.PathEscape(taskID) + "/content"
-}
-
-func videoRelayTaskStatus(state map[string]any) string {
-	status := videoStateStatus(state, 0)
-	if status == "" && videoStateResultURL(state, 0) != "" {
-		return "completed"
-	}
-	return status
-}
-
-func videoStateStatus(value any, depth int) string {
-	if depth > 7 || value == nil {
-		return ""
-	}
-	switch typed := value.(type) {
-	case map[string]any:
-		for _, key := range []string{"status", "state", "task_status", "taskStatus"} {
-			if status := normalizeVideoRelayStatus(util.Clean(typed[key])); status != "" {
-				return status
+func videoResultURLForContract(state map[string]any, baseURL string, contract protocol.VideoModelContract) string {
+	for _, field := range contract.Polling.ResultFields {
+		if value := videoJSONPathValue(state, field); value != nil {
+			if result := videoContractResultURLValue(value); result != "" {
+				return absoluteRelayURL(baseURL, result)
 			}
-		}
-		for _, key := range []string{"data", "task", "result", "output", "response", "metadata"} {
-			if status := videoStateStatus(typed[key], depth+1); status != "" {
-				return status
-			}
-		}
-	case []any:
-		for _, item := range typed {
-			if status := videoStateStatus(item, depth+1); status != "" {
-				return status
-			}
-		}
-	case string:
-		var decoded any
-		if json.Unmarshal([]byte(strings.TrimSpace(typed)), &decoded) == nil {
-			return videoStateStatus(decoded, depth+1)
 		}
 	}
 	return ""
 }
 
-func normalizeVideoRelayStatus(status string) string {
-	switch strings.ToLower(strings.TrimSpace(status)) {
-	case "completed", "complete", "done", "succeeded", "success":
-		return "completed"
-	case "failed", "fail", "error", "cancelled", "canceled":
-		return "failed"
-	case "submitted", "pending", "queued", "queue", "waiting", "queuing", "preparing", "processing", "running", "in_progress", "in-progress", "generating":
-		return "processing"
-	default:
-		return ""
+func videoRelayTaskStatusForContract(state map[string]any, contract protocol.VideoModelContract) string {
+	status := strings.ToLower(videoContractFirstString(state, contract.Polling.StatusFields))
+	for _, queued := range contract.Polling.QueuedStatuses {
+		if status == strings.ToLower(strings.TrimSpace(queued)) {
+			return "queued"
+		}
 	}
+	for _, running := range contract.Polling.RunningStatuses {
+		if status == strings.ToLower(strings.TrimSpace(running)) {
+			return "in_progress"
+		}
+	}
+	for _, success := range contract.Polling.SuccessStatuses {
+		if status == strings.ToLower(strings.TrimSpace(success)) {
+			return "completed"
+		}
+	}
+	for _, failure := range contract.Polling.FailureStatuses {
+		if status == strings.ToLower(strings.TrimSpace(failure)) {
+			return "failed"
+		}
+	}
+	return "unknown"
 }
 
-func videoStateResultURL(value any, depth int) string {
-	if depth > 8 || value == nil {
-		return ""
+func relayVideoTaskProgress(payload map[string]any, state map[string]any, contract protocol.VideoModelContract) {
+	callback, ok := payload[service.VideoTaskProgressCallbackPayloadKey].(func(service.VideoTaskProgressUpdate))
+	if !ok || callback == nil || state == nil {
+		return
 	}
+	normalizedStatus := videoRelayTaskStatusForContract(state, contract)
+	taskStatus := service.TaskStatusQueued
+	if normalizedStatus == "in_progress" || normalizedStatus == "unknown" {
+		taskStatus = service.TaskStatusRunning
+	}
+	progress, hasProgress := videoContractProgressForContract(state, contract)
+	callback(service.VideoTaskProgressUpdate{
+		Status:         taskStatus,
+		UpstreamStatus: strings.ToLower(videoContractFirstString(state, contract.Polling.StatusFields)),
+		Progress:       progress,
+		HasProgress:    hasProgress,
+	})
+}
+
+func videoContractProgressForContract(state map[string]any, contract protocol.VideoModelContract) (int, bool) {
+	for _, field := range contract.Polling.ProgressFields {
+		value := videoJSONPathValue(state, field)
+		if value == nil {
+			continue
+		}
+		text := strings.TrimSpace(strings.TrimSuffix(util.Clean(value), "%"))
+		if text == "" {
+			continue
+		}
+		progress, err := strconv.ParseFloat(text, 64)
+		if err != nil {
+			continue
+		}
+		return int(math.Round(progress)), true
+	}
+	return 0, false
+}
+
+func videoContractFirstString(value any, paths []string) string {
+	for _, path := range paths {
+		if result := strings.TrimSpace(util.Clean(videoJSONPathValue(value, path))); result != "" {
+			return result
+		}
+	}
+	return ""
+}
+
+func videoContractErrorMessage(state map[string]any, contract protocol.VideoModelContract) string {
+	if message := videoContractFirstString(state, contract.Polling.ErrorFields); message != "" {
+		return message
+	}
+	return "视频上游任务执行失败"
+}
+
+func videoContractResultURLValue(value any) string {
 	switch typed := value.(type) {
 	case string:
-		text := strings.TrimSpace(typed)
-		if strings.HasPrefix(text, "http://") || strings.HasPrefix(text, "https://") || strings.HasPrefix(text, "data:") || strings.HasPrefix(text, "/") {
-			return text
-		}
-		var decoded any
-		if json.Unmarshal([]byte(text), &decoded) == nil {
-			return videoStateResultURL(decoded, depth+1)
-		}
-	case []any:
-		for _, item := range typed {
-			if result := videoStateResultURL(item, depth+1); result != "" {
-				return result
-			}
-		}
+		return strings.TrimSpace(typed)
 	case []string:
 		for _, item := range typed {
-			if result := videoStateResultURL(item, depth+1); result != "" {
+			if result := strings.TrimSpace(item); result != "" {
 				return result
 			}
 		}
-	case map[string]any:
-		for _, key := range []string{
-			"video_url", "videoUrl", "output_url", "outputUrl", "download_url", "downloadUrl",
-			"result_url", "resultUrl", "content_url", "contentUrl", "file_url", "fileUrl", "url", "uri",
-		} {
-			if result := videoStateResultURL(typed[key], depth+1); result != "" {
-				return result
-			}
-		}
-		for _, key := range []string{
-			"resultUrls", "result_urls", "videoUrls", "video_urls", "urls", "videos", "video",
-			"generatedVideos", "generatedSamples", "generateVideoResponse", "resultJson", "result_json",
-			"data", "result", "output", "content", "response", "metadata",
-		} {
-			if result := videoStateResultURL(typed[key], depth+1); result != "" {
+	case []any:
+		for _, item := range typed {
+			if result := videoContractResultURLValue(item); result != "" {
 				return result
 			}
 		}
 	}
 	return ""
+}
+
+func videoJSONPathValue(value any, path string) any {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return nil
+	}
+	current := value
+	for position := 0; position < len(path); {
+		if encoded, ok := current.(string); ok {
+			var decoded any
+			if err := json.Unmarshal([]byte(strings.TrimSpace(encoded)), &decoded); err != nil {
+				return nil
+			}
+			current = decoded
+		}
+		start := position
+		for position < len(path) && path[position] != '.' && path[position] != '[' {
+			position++
+		}
+		if start == position {
+			return nil
+		}
+		object, ok := current.(map[string]any)
+		if !ok {
+			return nil
+		}
+		current, ok = object[path[start:position]]
+		if !ok {
+			return nil
+		}
+		for position < len(path) && path[position] == '[' {
+			if encoded, ok := current.(string); ok {
+				var decoded any
+				if err := json.Unmarshal([]byte(strings.TrimSpace(encoded)), &decoded); err != nil {
+					return nil
+				}
+				current = decoded
+			}
+			end := strings.IndexByte(path[position:], ']')
+			if end < 0 {
+				return nil
+			}
+			end += position
+			index, err := strconv.Atoi(path[position+1 : end])
+			if err != nil {
+				return nil
+			}
+			items, ok := current.([]any)
+			if !ok || index < 0 || index >= len(items) {
+				return nil
+			}
+			current = items[index]
+			position = end + 1
+		}
+		if position == len(path) {
+			return current
+		}
+		if path[position] != '.' {
+			return nil
+		}
+		position++
+	}
+	return current
 }
 
 func absoluteRelayURL(baseURL, value string) string {
@@ -2282,53 +1602,6 @@ func absoluteRelayURL(baseURL, value string) string {
 		return value
 	}
 	return strings.TrimRight(baseURL, "/") + "/" + strings.TrimLeft(value, "/")
-}
-
-func videoErrorMessage(state map[string]any) string {
-	return firstNonEmpty(videoUpstreamErrorMessage(state), "视频生成失败，请查看上游错误详情")
-}
-
-func videoUpstreamErrorMessage(state map[string]any) string {
-	if state == nil {
-		return ""
-	}
-	return videoStateErrorMessage(state, 0)
-}
-
-func videoStateErrorMessage(value any, depth int) string {
-	if depth > 7 || value == nil {
-		return ""
-	}
-	switch typed := value.(type) {
-	case map[string]any:
-		for _, key := range []string{"error", "detail", "last_error", "failure_reason", "failMsg", "fail_msg", "failCode", "fail_code", "reason"} {
-			if message := relayErrorMessageFromValue(typed[key]); message != "" {
-				return message
-			}
-		}
-		for _, key := range []string{"data", "task", "result", "output", "response", "metadata"} {
-			if message := videoStateErrorMessage(typed[key], depth+1); message != "" {
-				return message
-			}
-		}
-		for _, key := range []string{"message", "msg"} {
-			if message := relayErrorMessageFromValue(typed[key]); message != "" {
-				return message
-			}
-		}
-	case []any:
-		for _, item := range typed {
-			if message := videoStateErrorMessage(item, depth+1); message != "" {
-				return message
-			}
-		}
-	case string:
-		var decoded any
-		if json.Unmarshal([]byte(strings.TrimSpace(typed)), &decoded) == nil {
-			return videoStateErrorMessage(decoded, depth+1)
-		}
-	}
-	return ""
 }
 
 func (a *App) relayJSONStream(ctx context.Context, pathValue, apiKey string, payload map[string]any) (map[string]any, *protocol.StreamResult, error) {
@@ -3228,6 +2501,63 @@ func normalizeKIEImageSizeName(value string) string {
 	}
 }
 
+func normalizeKIEAspectRatio(value string) string {
+	normalized := strings.ToLower(strings.ReplaceAll(strings.TrimSpace(value), " ", ""))
+	switch normalized {
+	case "", "auto", "adaptive":
+		return normalized
+	case "landscape", "landscape_16_9", "1280x720", "1920x1080", "1024x576", "720x405":
+		return "16:9"
+	case "portrait", "portrait_16_9", "720x1280", "1080x1920", "576x1024", "405x720":
+		return "9:16"
+	case "square", "square_hd", "1024x1024", "1080x1080", "960x960":
+		return "1:1"
+	case "landscape_4_3":
+		return "4:3"
+	case "portrait_4_3":
+		return "3:4"
+	}
+	separator := ":"
+	if strings.Contains(normalized, "x") {
+		separator = "x"
+	} else if strings.Contains(normalized, "*") {
+		separator = "*"
+	}
+	parts := strings.Split(normalized, separator)
+	if len(parts) != 2 {
+		return normalized
+	}
+	width, widthErr := strconv.ParseFloat(parts[0], 64)
+	height, heightErr := strconv.ParseFloat(parts[1], 64)
+	if widthErr != nil || heightErr != nil || width <= 0 || height <= 0 {
+		return normalized
+	}
+	options := []struct {
+		name  string
+		value float64
+	}{
+		{name: "1:1", value: 1},
+		{name: "16:9", value: 16.0 / 9},
+		{name: "9:16", value: 9.0 / 16},
+		{name: "4:3", value: 4.0 / 3},
+		{name: "3:4", value: 3.0 / 4},
+		{name: "21:9", value: 21.0 / 9},
+	}
+	target := width / height
+	best := options[0]
+	bestDiff := math.Abs(target-best.value) / best.value
+	for _, option := range options[1:] {
+		diff := math.Abs(target-option.value) / option.value
+		if diff < bestDiff {
+			best, bestDiff = option, diff
+		}
+	}
+	if bestDiff <= 0.04 {
+		return best.name
+	}
+	return strconv.FormatFloat(width, 'f', -1, 64) + ":" + strconv.FormatFloat(height, 'f', -1, 64)
+}
+
 func firstNonNilRelayValue(values ...any) any {
 	for _, value := range values {
 		if value != nil {
@@ -3610,7 +2940,7 @@ func shouldDropRelayPayloadKey(key string) bool {
 		relayImageTaskSlotManagedPayloadKey,
 		service.ImageOutputCompletionReleasePayloadKey,
 		protocol.ImageOutputSlotAcquirerPayloadKey,
-		"image_output_callback", "text_output_callback":
+		"image_output_callback", "text_output_callback", service.VideoTaskProgressCallbackPayloadKey:
 		return true
 	default:
 		return false

@@ -7,7 +7,6 @@ import (
 	"net"
 	"net/http"
 	"net/url"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -36,8 +35,10 @@ func (a *App) handleImageGenerationPreferences(w http.ResponseWriter, r *http.Re
 		}
 		preferences.DefaultTextModel = allowedPersonalModel(preferences.DefaultTextModel, a.config.TextModels())
 		preferences.DefaultImageModel = allowedPersonalModel(preferences.DefaultImageModel, a.config.ImageModels())
-		preferences.DefaultVideoModel = allowedPersonalModel(preferences.DefaultVideoModel, a.config.VideoModels())
+		preferences.DefaultVideoModel = allowedPersonalModel(preferences.DefaultVideoModel, a.configuredVideoModels())
 		preferences.DefaultAudioModel = allowedPersonalModel(preferences.DefaultAudioModel, a.config.AudioModels())
+		preferences.Workbench.ImageModel = allowedPersonalModel(preferences.Workbench.ImageModel, a.config.ImageModels())
+		preferences.Workbench.VideoModel = allowedPersonalModel(preferences.Workbench.VideoModel, a.configuredVideoModels())
 		util.WriteJSON(w, http.StatusOK, map[string]any{"preferences": preferences})
 	case http.MethodPut, http.MethodPost:
 		body, err := readJSONMap(r)
@@ -71,7 +72,7 @@ func (a *App) handleImageGenerationPreferences(w http.ResponseWriter, r *http.Re
 		}{
 			{field: "default_text_model", model: util.Clean(body["default_text_model"]), allowed: a.config.TextModels()},
 			{field: "default_image_model", model: util.Clean(body["default_image_model"]), allowed: a.config.ImageModels()},
-			{field: "default_video_model", model: util.Clean(body["default_video_model"]), allowed: a.config.VideoModels()},
+			{field: "default_video_model", model: util.Clean(body["default_video_model"]), allowed: a.configuredVideoModels()},
 			{field: "default_audio_model", model: util.Clean(body["default_audio_model"]), allowed: a.config.AudioModels()},
 		}
 		for _, requested := range requestedModels {
@@ -89,6 +90,10 @@ func (a *App) handleImageGenerationPreferences(w http.ResponseWriter, r *http.Re
 		if rawWorkbench, present := body["workbench"]; present {
 			workbench, err = creationWorkbenchPreferencesFromValue(rawWorkbench)
 			if err != nil {
+				util.WriteError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			if err = a.validateCreationWorkbenchModels(workbench); err != nil {
 				util.WriteError(w, http.StatusBadRequest, err.Error())
 				return
 			}
@@ -110,10 +115,10 @@ func (a *App) handleImageGenerationPreferences(w http.ResponseWriter, r *http.Re
 			DefaultAudioVoice:       strings.TrimSpace(util.Clean(body["default_audio_voice"])),
 			DefaultAudioFormat:      defaultAudioFormat,
 			DefaultAudioSpeed:       defaultAudioSpeed,
-			DefaultTextRelayToken:   relayTokenPreferenceValue(body, "default_text_relay_token_name", current.DefaultTextRelayToken),
-			DefaultImageRelayToken:  relayTokenPreferenceValue(body, "default_image_relay_token_name", current.DefaultImageRelayToken),
-			DefaultVideoRelayToken:  relayTokenPreferenceValue(body, "default_video_relay_token_name", current.DefaultVideoRelayToken),
-			DefaultAudioRelayToken:  relayTokenPreferenceValue(body, "default_audio_relay_token_name", current.DefaultAudioRelayToken),
+			DefaultTextRelayTokens:  relayTokenPreferenceValues(body, "default_text_relay_token_names", current.DefaultTextRelayTokens),
+			DefaultImageRelayTokens: relayTokenPreferenceValues(body, "default_image_relay_token_names", current.DefaultImageRelayTokens),
+			DefaultVideoRelayTokens: relayTokenPreferenceValues(body, "default_video_relay_token_names", current.DefaultVideoRelayTokens),
+			DefaultAudioRelayTokens: relayTokenPreferenceValues(body, "default_audio_relay_token_names", current.DefaultAudioRelayTokens),
 			Workbench:               workbench,
 		})
 		if err != nil {
@@ -127,11 +132,11 @@ func (a *App) handleImageGenerationPreferences(w http.ResponseWriter, r *http.Re
 			util.WriteError(w, http.StatusBadRequest, "invalid json body")
 			return
 		}
-		updates := map[string]string{}
+		updates := map[string][]string{}
 		for _, kind := range []string{"text", "image", "video", "audio"} {
-			field := "default_" + kind + "_relay_token_name"
+			field := "default_" + kind + "_relay_token_names"
 			if value, present := body[field]; present {
-				updates[kind] = util.Clean(value)
+				updates[kind] = util.AsStringSlice(value)
 			}
 		}
 		var preferences service.ImageGenerationPreferences
@@ -157,6 +162,10 @@ func (a *App) handleImageGenerationPreferences(w http.ResponseWriter, r *http.Re
 			if rawWorkbench, present := body["workbench"]; present {
 				workbench, parseErr := creationWorkbenchPreferencesFromValue(rawWorkbench)
 				if parseErr != nil {
+					util.WriteError(w, http.StatusBadRequest, parseErr.Error())
+					return
+				}
+				if parseErr = a.validateCreationWorkbenchModels(workbench); parseErr != nil {
 					util.WriteError(w, http.StatusBadRequest, parseErr.Error())
 					return
 				}
@@ -195,11 +204,11 @@ func (a *App) handleImageGenerationPreferences(w http.ResponseWriter, r *http.Re
 	}
 }
 
-func relayTokenPreferenceValue(body map[string]any, field, fallback string) string {
+func relayTokenPreferenceValues(body map[string]any, field string, fallback []string) []string {
 	if value, present := body[field]; present {
-		return util.Clean(value)
+		return util.AsStringSlice(value)
 	}
-	return fallback
+	return append([]string(nil), fallback...)
 }
 
 func creationWorkbenchPreferencesFromValue(value any) (service.CreationWorkbenchPreferences, error) {
@@ -212,6 +221,7 @@ func creationWorkbenchPreferencesFromValue(value any) (service.CreationWorkbench
 		return service.CreationWorkbenchPreferences{}, fmt.Errorf("workbench.image_count must be an integer")
 	}
 	return service.CreationWorkbenchPreferences{
+		ImageModel:             util.Clean(workbench["image_model"]),
 		ImageSize:              util.Clean(workbench["image_size"]),
 		ImageSizeMode:          util.Clean(workbench["image_size_mode"]),
 		ImageAspectRatio:       util.Clean(workbench["image_aspect_ratio"]),
@@ -224,13 +234,23 @@ func creationWorkbenchPreferencesFromValue(value any) (service.CreationWorkbench
 		ImageCount:             count,
 		ImageOutputFormat:      util.Clean(workbench["image_output_format"]),
 		ImageOutputCompression: util.Clean(workbench["image_output_compression"]),
+		VideoModel:             util.Clean(workbench["video_model"]),
 		VideoSize:              util.Clean(workbench["video_size"]),
 		VideoSeconds:           util.Clean(workbench["video_seconds"]),
 		VideoResolution:        util.Clean(workbench["video_resolution"]),
-		VideoMode:              util.Clean(workbench["video_mode"]),
 		VideoGenerateAudio:     util.ToBool(workbench["video_generate_audio"]),
 		VideoWatermark:         util.ToBool(workbench["video_watermark"]),
 	}, nil
+}
+
+func (a *App) validateCreationWorkbenchModels(workbench service.CreationWorkbenchPreferences) error {
+	if workbench.ImageModel != "" && allowedPersonalModel(workbench.ImageModel, a.config.ImageModels()) == "" {
+		return fmt.Errorf("workbench.image_model is not enabled by the administrator")
+	}
+	if workbench.VideoModel != "" && allowedPersonalModel(workbench.VideoModel, a.configuredVideoModels()) == "" {
+		return fmt.Errorf("workbench.video_model is not enabled by the administrator")
+	}
+	return nil
 }
 
 func allowedPersonalModel(model string, allowed []string) string {
@@ -275,12 +295,12 @@ func (a *App) handleProfileRelayKey(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodGet:
 		selectedName := strings.TrimSpace(r.URL.Query().Get("token_name"))
-		if kind := service.CustomRelayKindFromTokenName(selectedName); kind != "" {
+		if configID := service.CustomRelayConfigIDFromTokenName(selectedName); configID != "" {
 			if a.customRelayConfigs == nil {
 				util.WriteError(w, http.StatusServiceUnavailable, "自定义 API 配置存储不可用")
 				return
 			}
-			config, err := a.customRelayConfigs.Config(identityScope(identity), kind)
+			config, err := a.customRelayConfigs.Config(identityScope(identity), configID)
 			if err != nil {
 				util.WriteError(w, http.StatusInternalServerError, "读取自定义 API 配置失败")
 				return
@@ -402,7 +422,6 @@ func (a *App) handleProfilePromptFavorites(w http.ResponseWriter, r *http.Reques
 		}
 		return
 	}
-
 	parts := splitPath(r.URL.Path)
 	if len(parts) != 4 || parts[0] != "api" || parts[1] != "profile" || parts[2] != "prompt-favorites" {
 		http.NotFound(w, r)
@@ -437,17 +456,19 @@ func (a *App) handleProfileAssets(w http.ResponseWriter, r *http.Request) {
 	ownerID := identityScope(identity)
 	switch r.Method {
 	case http.MethodGet:
+		if r.URL.Query().Get("scope") == "visible" {
+			items, err := a.myAssets.ListVisible(ownerID, identity.Role == service.AuthRoleAdmin, a.myAssetOwners(identity))
+			if err != nil {
+				util.WriteError(w, http.StatusInternalServerError, "failed to load assets")
+				return
+			}
+			util.WriteJSON(w, http.StatusOK, map[string]any{"items": items})
+			return
+		}
 		items, err := a.myAssets.EnsureTextStorage(r.Context(), ownerID, identity.Role == service.AuthRoleAdmin)
 		if err != nil {
 			a.logger.Warning("text asset storage migration failed", "owner_id", ownerID, "error", err)
 			items, err = a.myAssets.List(ownerID)
-		}
-		if err != nil {
-			util.WriteError(w, http.StatusInternalServerError, "failed to load assets")
-			return
-		}
-		if r.URL.Query().Get("scope") == "visible" {
-			items, err = a.myAssets.ListVisible(ownerID, identity.Role == service.AuthRoleAdmin, a.myAssetOwners(identity))
 		}
 		if err != nil {
 			util.WriteError(w, http.StatusInternalServerError, "failed to load assets")
@@ -463,6 +484,20 @@ func (a *App) handleProfileAssets(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		items, err := a.myAssets.Replace(r.Context(), ownerID, identity.Role == service.AuthRoleAdmin, body.Items)
+		if err != nil {
+			util.WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		util.WriteJSON(w, http.StatusOK, map[string]any{"items": items})
+	case http.MethodPost:
+		var body struct {
+			Item service.MyAsset `json:"item"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			util.WriteError(w, http.StatusBadRequest, "invalid json body")
+			return
+		}
+		items, err := a.myAssets.UpsertMedia(ownerID, body.Item)
 		if err != nil {
 			util.WriteError(w, http.StatusBadRequest, err.Error())
 			return
@@ -513,6 +548,47 @@ func (a *App) handleProfileImageConversations(w http.ResponseWriter, r *http.Req
 	}
 	ownerID := identityScope(identity)
 	base := "/api/profile/image-conversations"
+	if r.URL.Path == base+"/window" {
+		if r.Method != http.MethodGet {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		limit := 0
+		if rawLimit := strings.TrimSpace(r.URL.Query().Get("limit")); rawLimit != "" {
+			parsed, parseErr := strconv.Atoi(rawLimit)
+			if parseErr != nil {
+				util.WriteError(w, http.StatusBadRequest, "invalid conversation history limit")
+				return
+			}
+			limit = parsed
+		}
+		for attempt := 0; attempt < 3; attempt++ {
+			firstPage, err := a.history.ListPage(r.Context(), ownerID, "", limit)
+			if err != nil {
+				writeImageConversationHistoryError(w, err)
+				return
+			}
+			activeItems, generation, err := a.history.ListActive(r.Context(), ownerID, 0)
+			if err != nil {
+				writeImageConversationHistoryError(w, err)
+				return
+			}
+			if firstPage.Generation != generation {
+				continue
+			}
+			util.WriteJSON(w, http.StatusOK, map[string]any{
+				"first_page": firstPage,
+				"active_page": map[string]any{
+					"items":      activeItems,
+					"has_more":   false,
+					"generation": generation,
+				},
+			})
+			return
+		}
+		util.WriteError(w, http.StatusServiceUnavailable, "历史记录正在更新，请稍后重试")
+		return
+	}
 	if r.URL.Path == base {
 		switch r.Method {
 		case http.MethodGet:
@@ -1397,13 +1473,15 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 		}
 		model := util.Clean(body["model"])
 		if model == "" {
-			model = firstString(a.config.VideoModels(), defaultVideoModel)
-			body["model"] = model
+			util.WriteError(w, http.StatusBadRequest, "请选择视频模型")
+			return
 		}
 		allowed := false
-		for _, candidate := range a.config.VideoModels() {
-			if candidate == model {
+		for _, candidate := range a.configuredVideoModels() {
+			if strings.EqualFold(candidate, model) {
 				allowed = true
+				model = candidate
+				body["model"] = candidate
 				break
 			}
 		}
@@ -1411,90 +1489,79 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusBadRequest, "视频模型不可用")
 			return
 		}
-		seconds := util.ToInt(body["seconds"], videoDefaultSeconds(model))
+		contract, ok := protocol.VideoContractForModel(model)
+		if !ok {
+			util.WriteError(w, http.StatusBadRequest, fmt.Sprintf("视频模型 %q 未配置启用的视频模型契约", model))
+			return
+		}
+		seconds := util.ToInt(body["seconds"], contract.Capability.DefaultSeconds)
 		refs := util.AsStringSlice(body["reference_image_urls"])
 		frameRefs := videoFrameAliases(body)
 		refs = removeVideoFrameAliases(refs, frameRefs)
 		referenceVideoURLs := util.AsStringSlice(body["reference_video_urls"])
 		referenceAudioURLs := util.AsStringSlice(body["reference_audio_urls"])
-		referenceMode := normalizeVideoReferenceMode(util.Clean(body["reference_mode"]))
-		if referenceMode == "" {
-			if len(referenceVideoURLs) > 0 || len(referenceAudioURLs) > 0 {
-				referenceMode = "reference"
-			} else {
-				referenceMode = "first-frame"
-			}
+		generationKind, valid := videoContractGenerationKind(body, contract)
+		if !valid {
+			util.WriteError(w, http.StatusBadRequest, "generation_mode 不属于当前视频模型契约")
+			return
 		}
-		// Endpoint names that explicitly represent reference-to-video always use
-		// the multimodal reference fields, even for a request containing only
-		// images. This prevents silently dropping the image when callers omit the
-		// UI's mode toggle.
-		if strings.Contains(strings.ToLower(model), "reference-to-video") || strings.Contains(strings.ToLower(model), "-r2v") || strings.HasSuffix(strings.ToLower(model), "/r2v") {
+		generationMode, supported := protocol.VideoContractModeForKind(contract, generationKind)
+		if !supported {
+			util.WriteError(w, http.StatusBadRequest, "当前模型不支持所选生成模式")
+			return
+		}
+		body["generation_mode"] = firstNonEmpty(generationMode.RequestValue, generationMode.ID)
+		referenceMode := "first-frame"
+		if generationKind == "reference" {
 			referenceMode = "reference"
 		}
-		if len(frameRefs) > 0 && len(refs)+len(referenceVideoURLs)+len(referenceAudioURLs) == 0 {
-			// Named first/last-frame slots define keyframe mode even when an old
-			// persisted task retained the reference-mode toggle.
-			referenceMode = "first-frame"
-		}
-		// A persisted canvas node may retain the multimodal toggle after the
-		// model is changed to a first-frame image-to-video endpoint. Preserve the
-		// useful image-only request by normalizing it to first-frame mode; mixed
-		// video/audio references still fail with the provider-specific validation
-		// below instead of being silently discarded.
-		capability := protocol.VideoCapability(model)
-		if referenceMode == "reference" && !capability.ReferenceMode && len(referenceVideoURLs) == 0 && len(referenceAudioURLs) == 0 && capability.FirstFrameImageLimit > 0 {
-			referenceMode = "first-frame"
-		}
 		body["reference_mode"] = referenceMode
-		normalizeVideoControlParameters(body, model)
-		if err := validateVideoAdvancedParameters(body, model); err != nil {
+		counts := videoContractMaterialCounts(generationKind, body, refs, referenceVideoURLs, referenceAudioURLs)
+		if err := protocol.ValidateVideoContractModeMaterials(contract, generationKind, counts); err != nil {
 			util.WriteError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		if err := validateVideoPrompt(model, util.Clean(body["prompt"])); err != nil {
+		ruleValues := videoContractRuleValues(body)
+		protocol.ApplyVideoContractForcedValues(contract, ruleValues)
+		if err := protocol.ValidateVideoContractRuleValues(contract, ruleValues); err != nil {
 			util.WriteError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		allImageRefs := append(append([]string{}, frameRefs...), refs...)
-		if err := validateVideoAudioGeneration(model, util.ToBool(body["generate_audio"]), firstNonEmpty(util.Clean(body["video_mode"]), util.Clean(body["mode"])), len(allImageRefs)); err != nil {
-			util.WriteError(w, http.StatusBadRequest, err.Error())
+		for field, bodyField := range map[string]string{
+			"duration": "seconds", "size": "size", "resolution": "resolution",
+			"generate_audio": "generate_audio", "watermark": "watermark",
+		} {
+			if value, exists := ruleValues[field]; exists {
+				body[bodyField] = value
+			}
+		}
+		seconds = util.ToInt(body["seconds"], contract.Capability.DefaultSeconds)
+		if strings.TrimSpace(util.Clean(body["prompt"])) == "" {
+			util.WriteError(w, http.StatusBadRequest, "请输入视频提示词")
 			return
 		}
-		if err := validateVideoRequiredInputs(model, util.Clean(body["prompt"]), allImageRefs, referenceVideoURLs, referenceAudioURLs); err != nil {
-			util.WriteError(w, http.StatusBadRequest, err.Error())
+		if utf8.RuneCountInString(util.Clean(body["prompt"])) > contract.Validation.MaxPromptCharacters {
+			util.WriteError(w, http.StatusBadRequest, fmt.Sprintf("当前视频模型提示词最多支持 %d 个字符", contract.Validation.MaxPromptCharacters))
 			return
 		}
-		if err := validateVideoReferencesWithFrameSlots(
-			model,
-			referenceMode,
-			videoFirstFrameAlias(body),
-			videoLastFrameAlias(body),
-			refs,
-			referenceVideoURLs,
-			referenceAudioURLs,
-			hasKlingElementReferences(body["element_list"]),
-		); err != nil {
-			util.WriteError(w, http.StatusBadRequest, err.Error())
-			return
+		switch contract.Capability.AudioControl {
+		case "none":
+			body["generate_audio"] = false
+		case "always":
+			body["generate_audio"] = true
 		}
-		firstFrameCount := len(frameRefs)
-		if firstFrameCount == 0 && referenceMode == "first-frame" {
-			firstFrameCount = len(refs)
+		if !contract.Capability.Watermark {
+			body["watermark"] = false
 		}
-		multimodalReferenceCount := 0
-		if referenceMode == "reference" {
-			multimodalReferenceCount = len(refs) + len(referenceVideoURLs) + len(referenceAudioURLs)
-		}
-		if err := validateVideoParameters(model, util.Clean(body["size"]), seconds, util.Clean(body["resolution"]), firstFrameCount, multimodalReferenceCount); err != nil {
-			util.WriteError(w, http.StatusBadRequest, err.Error())
+		if !protocol.VideoContractSupports(contract, util.Clean(body["size"]), seconds, util.Clean(body["resolution"])) {
+			util.WriteError(w, http.StatusBadRequest, "当前视频模型不支持所选视频参数")
 			return
 		}
 		if _, err := a.relayAPIKeyForIdentitySelection(r.Context(), identity, selectedRelayTokenGroupFromPayload(body), selectedRelayTokenNameFromPayload(body)); err != nil {
 			a.writeCreationTaskSubmitError(w, err)
 			return
 		}
-		task, err := a.tasks.SubmitVideo(r.Context(), identity, util.Clean(body["client_task_id"]), util.Clean(body["prompt"]), model, util.Clean(body["size"]), seconds, util.Clean(body["resolution"]), util.ToBool(body["generate_audio"]), util.ToBool(body["watermark"]), referenceMode, refs, referenceVideoURLs, referenceAudioURLs, videoTaskRequestMetadata(body))
+		task, err := a.tasks.SubmitVideo(r.Context(), identity, util.Clean(body["client_task_id"]), util.Clean(body["prompt"]), model, util.Clean(body["size"]), seconds, util.Clean(body["resolution"]), util.ToBool(body["generate_audio"]), util.ToBool(body["watermark"]), referenceMode, refs, referenceVideoURLs, referenceAudioURLs, videoTaskRequestMetadata(body, contract))
 		if err != nil {
 			a.writeCreationTaskSubmitError(w, err)
 			return
@@ -1630,6 +1697,48 @@ func videoFrameAliases(body map[string]any) []string {
 	return frames
 }
 
+func videoContractMaterialCounts(kind string, body map[string]any, imageURLs, videoURLs, audioURLs []string) protocol.VideoModelMaterialCounts {
+	counts := protocol.VideoModelMaterialCounts{
+		Video: len(videoURLs),
+		Audio: len(audioURLs),
+	}
+	firstFrame := videoFirstFrameAlias(body)
+	lastFrame := videoLastFrameAlias(body)
+	switch kind {
+	case "image":
+		if firstFrame != "" {
+			counts.FirstFrame = 1
+		} else if len(imageURLs) > 0 {
+			counts.FirstFrame = 1
+		}
+		if lastFrame != "" {
+			counts.LastFrame = 1
+		} else if firstFrame == "" && len(imageURLs) > 1 {
+			counts.LastFrame = 1
+		}
+		if firstFrame != "" {
+			counts.Image = len(imageURLs)
+		}
+	case "reference":
+		if firstFrame != "" {
+			counts.FirstFrame = 1
+		}
+		if lastFrame != "" {
+			counts.LastFrame = 1
+		}
+		counts.Image = len(imageURLs)
+	default:
+		if firstFrame != "" {
+			counts.FirstFrame = 1
+		}
+		if lastFrame != "" {
+			counts.LastFrame = 1
+		}
+		counts.Image = len(imageURLs)
+	}
+	return counts
+}
+
 func videoFirstFrameAlias(body map[string]any) string {
 	for _, key := range []string{"first_frame_url", "first_frame_image"} {
 		if value := strings.TrimSpace(util.Clean(body[key])); value != "" {
@@ -1664,439 +1773,6 @@ func removeVideoFrameAliases(refs, frames []string) []string {
 		}
 	}
 	return filtered
-}
-
-func validateVideoReferencesWithFrameSlots(model, mode, firstFrameURL, lastFrameURL string, imageURLs, videoURLs, audioURLs []string, hasElementReferences bool) error {
-	mode = normalizeVideoReferenceMode(mode)
-	if mode != "first-frame" && mode != "reference" {
-		return fmt.Errorf("视频参考模式仅支持 first-frame 或 reference")
-	}
-	firstFrameURL = strings.TrimSpace(firstFrameURL)
-	lastFrameURL = strings.TrimSpace(lastFrameURL)
-	hasFrames := firstFrameURL != "" || lastFrameURL != ""
-	ordinaryImageURLs := imageURLs
-	if !hasFrames && mode == "first-frame" {
-		// First-frame mode uses the ordered image array for frame slots when
-		// explicit named slots are absent.
-		ordinaryImageURLs = nil
-	}
-	if err := validateVideoReferenceCombination(model, firstFrameURL != "", lastFrameURL != "", ordinaryImageURLs, videoURLs, audioURLs); err != nil {
-		return err
-	}
-	if !hasFrames {
-		return validateVideoReferences(model, mode, imageURLs, videoURLs, audioURLs, hasElementReferences)
-	}
-	frames := make([]string, 0, 2)
-	if firstFrameURL != "" {
-		frames = append(frames, firstFrameURL)
-	}
-	if lastFrameURL != "" {
-		frames = append(frames, lastFrameURL)
-	}
-	if err := validateVideoReferences(model, "first-frame", frames, nil, nil); err != nil {
-		return err
-	}
-	hasOrdinaryReferences := len(imageURLs)+len(videoURLs)+len(audioURLs) > 0
-	if !hasOrdinaryReferences {
-		return nil
-	}
-	return validateVideoReferences(model, "reference", imageURLs, videoURLs, audioURLs, hasElementReferences)
-}
-
-func validateVideoReferenceCombination(model string, hasFirstFrame, hasLastFrame bool, imageURLs, videoURLs, audioURLs []string) error {
-	profileName := protocol.VideoModelProfile(model)
-	hasFrames := hasFirstFrame || hasLastFrame
-	hasOrdinaryReferences := len(imageURLs)+len(videoURLs)+len(audioURLs) > 0
-	switch profileName {
-	case "veo", "veo-31":
-		if len(videoURLs) > 0 {
-			return fmt.Errorf("Gemini Veo 不支持普通参考视频，请移除后重试")
-		}
-		if len(audioURLs) > 0 {
-			return fmt.Errorf("Gemini Veo 不支持参考音频，请移除后重试")
-		}
-		if hasLastFrame && !hasFirstFrame {
-			return fmt.Errorf("请先添加首帧图片")
-		}
-		if hasFrames && len(imageURLs) > 0 {
-			return fmt.Errorf("首尾帧模式不能与普通参考图同时使用")
-		}
-		if profileName != "veo-31" && (hasLastFrame || len(imageURLs) > 0) {
-			return fmt.Errorf("当前 Veo 模型不支持尾帧或普通参考图")
-		}
-		if len(imageURLs) > 3 {
-			return fmt.Errorf("Veo 3.1 参考图最多 3 张")
-		}
-	case "agnes-25":
-		if hasFrames && hasOrdinaryReferences {
-			return fmt.Errorf("Agnes Video 2.5 的首尾帧不能和普通参考素材同时使用")
-		}
-	case "minimax-h3":
-		if hasFrames && hasOrdinaryReferences {
-			return fmt.Errorf("MiniMax H3 首尾帧不能与参考图片、视频或音频同时使用")
-		}
-		if len(audioURLs) > 0 && len(imageURLs)+len(videoURLs) == 0 {
-			return fmt.Errorf("MiniMax H3 参考音频需要同时提供参考图片或参考视频")
-		}
-	case "cogvideox-3":
-		if len(videoURLs)+len(audioURLs) > 0 {
-			return fmt.Errorf("CogVideoX-3 不支持参考视频或参考音频")
-		}
-	}
-	return nil
-}
-
-func validateVideoReferences(model, mode string, imageURLs, videoURLs, audioURLs []string, elementReferenceValues ...bool) error {
-	model = protocol.CanonicalVideoModel(model)
-	mode = normalizeVideoReferenceMode(mode)
-	capability := protocol.VideoCapability(model)
-	if mode != "first-frame" && mode != "reference" {
-		return fmt.Errorf("视频参考模式仅支持 first-frame 或 reference")
-	}
-	for kind, values := range map[string][]string{"图片": imageURLs, "视频": videoURLs, "音频": audioURLs} {
-		for _, value := range values {
-			if !isPublicReferenceURL(value) {
-				return fmt.Errorf("参考%s必须使用公网可访问的 http:// 或 https:// URL", kind)
-			}
-		}
-	}
-	profileName := protocol.VideoModelProfile(model)
-	hasElementReferences := len(elementReferenceValues) > 0 && elementReferenceValues[0]
-	name := strings.ToLower(strings.TrimSpace(model))
-	wan27VisualInput := profileName == "wan-27-i2v" || profileName == "wan-27-kie-i2v"
-	if !wan27VisualInput && (strings.Contains(name, "image-to-video") || strings.Contains(name, "image_to_video") || name == "kling/v2-1-pro" || name == "kling/v2-1-standard") && len(imageURLs) == 0 {
-		return fmt.Errorf("当前图生视频模型必须提供至少一张参考图片")
-	}
-	if wan27VisualInput && len(imageURLs)+len(videoURLs) == 0 {
-		return fmt.Errorf("Wan 2.7 图生视频或视频生视频必须提供参考图片或参考视频")
-	}
-	if (profileName == "wan-i2v" || profileName == "bytedance-v1-i2v" || profileName == "grok-i2v") && len(imageURLs) == 0 {
-		return fmt.Errorf("当前图生视频模型必须提供至少一张参考图片")
-	}
-	if profileName == "minimax-hailuo" && strings.Contains(strings.ToLower(model), "image-to-video") && len(imageURLs) == 0 {
-		return fmt.Errorf("Hailuo 图生视频模型必须提供至少一张参考图片")
-	}
-	if profileName == "wan-speech" && (len(imageURLs) == 0 || len(audioURLs) == 0) {
-		return fmt.Errorf("Wan 语音驱动视频必须同时提供参考图片和参考音频")
-	}
-	if profileName == "wan-animate" && (len(imageURLs) == 0 || len(videoURLs) == 0) {
-		return fmt.Errorf("Wan 动作迁移必须同时提供参考图片和参考视频")
-	}
-	if profileName == "kling-avatar" && (len(imageURLs) == 0 || len(audioURLs) == 0) {
-		return fmt.Errorf("Kling AI Avatar 必须同时提供参考图片和参考音频")
-	}
-	if profileName == "vidu-q3" && len(imageURLs) == 0 {
-		return fmt.Errorf("Vidu Q3 当前模式必须提供至少一张参考图片")
-	}
-	if profileName == "kling-motion" && (len(imageURLs) == 0 || len(videoURLs) == 0) {
-		return fmt.Errorf("Kling Motion Control 必须同时提供参考图片和参考视频")
-	}
-	if profileName == "kling-omni-image" && len(imageURLs) == 0 {
-		return fmt.Errorf("Kling Omni 图生视频必须提供至少一张参考图片")
-	}
-	if profileName == "kling-omni-reference" && len(imageURLs)+len(videoURLs) == 0 && !hasElementReferences {
-		return fmt.Errorf("Kling Omni 参考生视频至少需要参考图片或参考视频")
-	}
-	if profileName == "kling-omni-transformation" && len(videoURLs) == 0 {
-		return fmt.Errorf("Kling Omni Transformation 必须提供一个参考视频")
-	}
-	if profileName == "infinitalk" && (len(imageURLs) == 0 || len(audioURLs) == 0) {
-		return fmt.Errorf("Infinitalk 必须同时提供参考图片和参考音频")
-	}
-	if profileName == "topaz-video" && len(videoURLs) == 0 {
-		return fmt.Errorf("Topaz Video 必须提供一个参考视频")
-	}
-	if profileName == "happyhorse" {
-		switch {
-		case strings.Contains(name, "video-edit") && len(videoURLs) == 0:
-			return fmt.Errorf("HappyHorse 视频编辑必须提供参考视频")
-		case strings.Contains(name, "image-to-video") && len(imageURLs) == 0:
-			return fmt.Errorf("HappyHorse 图生视频必须提供参考图片")
-		case strings.Contains(name, "reference-to-video") && len(imageURLs) == 0:
-			return fmt.Errorf("HappyHorse 参考生视频必须提供参考图片")
-		}
-	}
-	if (profileName == "wan-videoedit" || profileName == "wan-v2v") && len(videoURLs) == 0 {
-		return fmt.Errorf("当前 Wan 视频编辑模型必须提供一个公网参考视频 URL")
-	}
-	if profileName == "wan-27-r2v" && len(imageURLs)+len(videoURLs) == 0 {
-		return fmt.Errorf("Wan R2V 至少需要参考图片或参考视频")
-	}
-	if profileName == "wan-27-i2v" && len(videoURLs) > 0 && len(audioURLs) > 0 {
-		return fmt.Errorf("Wan 2.7 参考视频和参考音频不能同时使用")
-	}
-	if profileName == "skyreels" && len(audioURLs) > 0 && len(imageURLs) == 0 {
-		return fmt.Errorf("SkyReels 参考音频必须和至少一张参考图片一起使用")
-	}
-	if mode == "first-frame" {
-		if len(videoURLs) > 0 || len(audioURLs) > 0 {
-			return fmt.Errorf("首帧图生视频不能同时传入参考视频或参考音频")
-		}
-		if len(imageURLs) > capability.FirstFrameImageLimit {
-			return fmt.Errorf("当前视频模型最多支持 %d 张帧参考图", capability.FirstFrameImageLimit)
-		}
-		return nil
-	}
-	genericWorkbench := !usesReferenceSpecialVideoPanelModel(model)
-	if !genericWorkbench && !capability.ReferenceMode {
-		return fmt.Errorf("当前模型尚未接入多模态参考生视频")
-	}
-	if len(imageURLs)+len(videoURLs)+len(audioURLs) == 0 && !hasElementReferences {
-		return fmt.Errorf("多模态参考生视频至少需要一个参考图片、视频或音频 URL")
-	}
-	imageLimit, videoLimit, audioLimit := capability.References.Image, capability.References.Video, capability.References.Audio
-	if genericWorkbench {
-		// The reference workbench accepts one shared material envelope and leaves
-		// provider-specific truncation/removal to the final adapter.
-		imageLimit, videoLimit, audioLimit = 9, 3, 3
-	}
-	if len(imageURLs) > imageLimit || len(videoURLs) > videoLimit || len(audioURLs) > audioLimit {
-		return fmt.Errorf("当前模型最多支持 %d 张参考图片、%d 个参考视频和 %d 个参考音频", imageLimit, videoLimit, audioLimit)
-	}
-	if protocol.VideoModelProfile(model) == "minimax-h3" && len(audioURLs) > 0 && len(imageURLs)+len(videoURLs) == 0 {
-		return fmt.Errorf("MiniMax H3 参考音频需要同时提供参考图片或参考视频")
-	}
-	return nil
-}
-
-func validateVideoAudioGeneration(model string, enabled bool, mode string, imageCount int) error {
-	name := strings.NewReplacer("_", "-", ".", "-", "/", "-").Replace(strings.ToLower(strings.TrimSpace(protocol.CanonicalVideoModel(model))))
-	if !enabled || name != "kling-v2-6" {
-		return nil
-	}
-	if strings.ToLower(strings.TrimSpace(mode)) != "pro" {
-		return fmt.Errorf("Kling v2.6 音频生成需要 pro 模式")
-	}
-	if imageCount > 1 {
-		return fmt.Errorf("Kling v2.6 开启音频时最多 1 张参考图")
-	}
-	return nil
-}
-
-// Normalize controls before persistence so direct API callers receive the
-// same provider-safe envelope as the web client.
-func normalizeVideoControlParameters(body map[string]any, model string) {
-	model = protocol.CanonicalVideoModel(model)
-	capability := protocol.VideoCapability(model)
-	profile := protocol.VideoModelProfile(model)
-	if size := normalizeVideoWorkbenchSizeForModel(model, util.Clean(body["size"])); size != "" {
-		body["size"] = size
-	} else {
-		delete(body, "size")
-	}
-	switch capability.AudioControl {
-	case "none":
-		delete(body, "generate_audio")
-	case "always":
-		body["generate_audio"] = true
-	}
-	if !capability.Watermark || !strings.HasPrefix(profile, "seedance-") {
-		delete(body, "watermark")
-	}
-	if profile == "grok-kie" || profile == "grok-i2v" {
-		mode := strings.ToLower(strings.TrimSpace(util.Clean(body["video_mode"])))
-		if mode != "fun" && mode != "spicy" {
-			mode = "normal"
-		}
-		body["video_mode"] = mode
-	} else if supportsKlingMode(model) {
-		mode := strings.ToLower(strings.TrimSpace(util.Clean(body["video_mode"])))
-		if mode != "pro" && mode != "4k" {
-			mode = "std"
-		}
-		if profile == "kling-legacy" && mode == "4k" {
-			mode = "pro"
-		}
-		body["video_mode"] = mode
-	} else {
-		delete(body, "video_mode")
-	}
-	if !supportsKlingNegativePrompt(model) {
-		delete(body, "negative_prompt")
-	}
-	if !supportsKlingMultiShot(model) {
-		for _, key := range []string{"multi_shot", "shot_type", "multi_prompt", "element_list"} {
-			delete(body, key)
-		}
-	}
-	if !supportsKlingShotType(model) {
-		delete(body, "shot_type")
-	}
-	if !supportsKlingElements(model) {
-		delete(body, "element_list")
-	}
-	if profile != "kling-motion" {
-		delete(body, "character_orientation")
-	}
-}
-
-func klingOmniVariant(model string) string {
-	name := strings.ToLower(strings.TrimSpace(model))
-	const prefix = "kling-3.0-omni/"
-	if !strings.HasPrefix(name, prefix) {
-		return ""
-	}
-	variant := strings.TrimPrefix(name, prefix)
-	switch variant {
-	case "text-to-video", "image-to-video", "reference-to-video", "transformation":
-		return variant
-	default:
-		return ""
-	}
-}
-
-func supportsKlingNegativePrompt(model string) bool {
-	name := strings.ToLower(strings.TrimSpace(model))
-	if name == "kling-3-0-turbo" {
-		return false
-	}
-	profile := protocol.VideoModelProfile(name)
-	return !strings.Contains(name, "/") && (profile == "kling-3" || profile == "kling-legacy")
-}
-
-func supportsKlingMultiShot(model string) bool {
-	name := strings.ToLower(strings.TrimSpace(model))
-	if name == "kling-3-0-turbo" {
-		return false
-	}
-	if variant := klingOmniVariant(name); variant != "" {
-		return variant != "transformation"
-	}
-	return name == "kling-3.0/video" || (!strings.Contains(name, "/") && protocol.VideoModelProfile(name) == "kling-3")
-}
-
-func supportsKlingShotType(model string) bool {
-	name := strings.ToLower(strings.TrimSpace(model))
-	if name == "kling-3-0-turbo" {
-		return false
-	}
-	if variant := klingOmniVariant(name); variant != "" {
-		return variant == "text-to-video" || variant == "image-to-video"
-	}
-	return !strings.Contains(name, "/") && protocol.VideoModelProfile(name) == "kling-3"
-}
-
-func supportsKlingElements(model string) bool {
-	return supportsKlingMultiShot(model)
-}
-
-func supportsKlingMode(model string) bool {
-	name := strings.ToLower(strings.TrimSpace(model))
-	if name == "kling-3-0-turbo" {
-		return false
-	}
-	profile := protocol.VideoModelProfile(name)
-	return name == "kling-3.0/video" || klingOmniVariant(name) != "" || (!strings.Contains(name, "/") && (profile == "kling-3" || profile == "kling-legacy"))
-}
-
-func validateVideoAdvancedParameters(body map[string]any, model string) error {
-	profile := protocol.VideoModelProfile(model)
-	if value := util.Clean(body["shot_type"]); value != "" && value != "intelligence" && value != "customize" {
-		return fmt.Errorf("Kling 分镜类型仅支持 intelligence 或 customize")
-	}
-	if value := util.Clean(body["character_orientation"]); value != "" && value != "image" && value != "video" {
-		return fmt.Errorf("Kling Motion Control 角色朝向仅支持 image 或 video")
-	}
-	if util.ToBool(body["multi_shot"]) && (!supportsKlingShotType(model) || util.Clean(body["shot_type"]) == "customize") && len(util.AsMapSlice(body["multi_prompt"])) == 0 {
-		return fmt.Errorf("Kling 自定义多镜头必须提供 multi_prompt 分镜列表")
-	}
-	if value, ok := body["multi_prompt"]; ok && value != nil {
-		if _, ok := value.([]any); !ok {
-			return fmt.Errorf("multi_prompt 必须是 JSON 数组")
-		}
-	}
-	if value, ok := body["element_list"]; ok && value != nil {
-		if _, ok := value.([]any); !ok {
-			return fmt.Errorf("element_list 必须是 JSON 数组")
-		}
-		if err := validateKlingElementList(value); err != nil {
-			return err
-		}
-	}
-	if profile == "kling-motion" && util.Clean(body["character_orientation"]) == "" {
-		body["character_orientation"] = "video"
-	}
-	return nil
-}
-
-func validateKlingElementList(value any) error {
-	rawItems, _ := value.([]any)
-	if len(rawItems) > 3 {
-		return fmt.Errorf("Kling 元素列表最多支持 3 个元素")
-	}
-	for index, rawItem := range rawItems {
-		item, ok := rawItem.(map[string]any)
-		if !ok {
-			return fmt.Errorf("Kling 元素 %d 必须是 JSON 对象", index+1)
-		}
-		type elementReference struct {
-			kind string
-			url  string
-		}
-		references := make([]elementReference, 0, 4)
-		if rawReferences, exists := item["references"]; exists {
-			items, ok := rawReferences.([]any)
-			if !ok {
-				return fmt.Errorf("Kling 元素 %d 的 references 必须是 JSON 数组", index+1)
-			}
-			for _, rawReference := range items {
-				reference, ok := rawReference.(map[string]any)
-				if !ok {
-					return fmt.Errorf("Kling 元素 %d 的资源必须是 JSON 对象", index+1)
-				}
-				references = append(references, elementReference{kind: strings.ToLower(strings.TrimSpace(util.Clean(reference["kind"]))), url: strings.TrimSpace(util.Clean(reference["url"]))})
-			}
-		}
-		for _, key := range []string{"element_input_urls", "element_input_audio_urls"} {
-			if rawURLs, exists := item[key]; exists {
-				items, ok := rawURLs.([]any)
-				if !ok {
-					return fmt.Errorf("Kling 元素 %d 的 %s 必须是 JSON 数组", index+1, key)
-				}
-				kind := "image"
-				if key == "element_input_audio_urls" {
-					kind = "audio"
-				}
-				for _, rawURL := range items {
-					url, ok := rawURL.(string)
-					if !ok {
-						return fmt.Errorf("Kling 元素 %d 的资源 URL 必须是字符串", index+1)
-					}
-					references = append(references, elementReference{kind: kind, url: strings.TrimSpace(url)})
-				}
-			}
-		}
-		if len(references) == 0 {
-			continue
-		}
-		if strings.TrimSpace(util.Clean(item["name"])) == "" {
-			return fmt.Errorf("Kling 元素 %d 需要填写名称", index+1)
-		}
-		if strings.TrimSpace(util.Clean(item["description"])) == "" {
-			return fmt.Errorf("Kling 元素 %d 需要填写描述", index+1)
-		}
-		if len(references) < 2 || len(references) > 4 {
-			return fmt.Errorf("Kling 元素 %d 的资源数量需要 2-4 个", index+1)
-		}
-		for _, reference := range references {
-			if reference.kind != "image" && reference.kind != "video" && reference.kind != "audio" {
-				return fmt.Errorf("Kling 元素 %d 的资源类型仅支持 image、video 或 audio", index+1)
-			}
-			if !isPublicReferenceURL(reference.url) {
-				return fmt.Errorf("Kling 元素 %d 的资源必须使用公网可访问的 http:// 或 https:// URL", index+1)
-			}
-		}
-	}
-	return nil
-}
-
-func hasKlingElementReferences(value any) bool {
-	for _, item := range util.AsMapSlice(value) {
-		if len(util.AsMapSlice(item["references"])) > 0 || len(util.AsStringSlice(item["element_input_urls"])) > 0 || len(util.AsStringSlice(item["element_input_audio_urls"])) > 0 {
-			return true
-		}
-	}
-	return false
 }
 
 func normalizeVideoReferenceMode(value string) string {
@@ -2144,428 +1820,6 @@ func isPublicReferenceIP(ip net.IP) bool {
 	return true
 }
 
-func validateVideoParameters(model, size string, seconds int, resolution string, referenceCountValues ...int) error {
-	model = protocol.CanonicalVideoModel(model)
-	name := strings.ToLower(strings.TrimSpace(model))
-	size = normalizeVideoWorkbenchSizeForModel(model, size)
-	resolution = strings.ToLower(strings.TrimSpace(resolution))
-	// The reference workbench deliberately exposes 480p and 720p for every
-	// generic panel, even when a provider advertises a different native enum.
-	// Validate those shared choices against the closest provider value while
-	// leaving the original request value available to the adapter for shaping.
-	validationResolution := normalizeGenericWorkbenchResolutionForValidation(model, resolution)
-	manualResolution := videoAllowsArbitraryResolutionModel(name) && regexp.MustCompile(`^(\d{3,5})(p|k)$`).MatchString(validationResolution)
-	referenceCount := 0
-	multimodalReferenceCount := 0
-	if len(referenceCountValues) > 0 {
-		referenceCount = referenceCountValues[0]
-	}
-	if len(referenceCountValues) > 1 {
-		multimodalReferenceCount = referenceCountValues[1]
-	}
-	hasH3Reference := referenceCount > 0 || multimodalReferenceCount > 0
-	if referenceCount > protocol.VideoCapability(model).FirstFrameImageLimit {
-		return fmt.Errorf("当前视频模型最多支持 %d 张帧参考图", protocol.VideoCapability(model).FirstFrameImageLimit)
-	}
-	// The shared protocol is the first line of validation. Provider-specific
-	// rules below add semantic constraints such as Hailuo's 10-second limit.
-	if profileName := protocol.VideoModelProfile(model); profileName != "vendor-unknown" && profileName != "generic" {
-		capability := protocol.VideoCapability(model)
-		validationSeconds := seconds
-		genericWorkbenchDuration := !usesReferenceSpecialVideoPanelModel(model) && profileName != "cogvideox-3" && videoDurationSupportedProfile(profileName)
-		seedanceWorkbenchDuration := strings.HasPrefix(profileName, "seedance-")
-		if genericWorkbenchDuration || seedanceWorkbenchDuration ||
-			!videoDurationSupportedProfile(profileName) ||
-			strings.HasPrefix(name, "wan/2-2-a14b-") ||
-			strings.HasPrefix(name, "wan/2-2-animate-") ||
-			name == "gemini-omni-flash-preview" ||
-			(profileName == "happyhorse" && strings.Contains(name, "video-edit")) {
-			validationSeconds = capability.DefaultSeconds
-		}
-		isAPIMartKlingMotion := strings.Contains(name, "kling-v2-6-motion-control") || strings.Contains(name, "kling-v3-motion-control")
-		// KIE's v3 turbo image endpoint has no size/aspect field at all;
-		// unlike the text endpoint, a custom pixel size would be silently
-		// discarded by the provider adapter and must be rejected here.
-		customSize := videoAllowsCustomDimensionsModel(name) && regexp.MustCompile(`^\d+x\d+$`).MatchString(size)
-		if size != "" && !customSize && !(profileName == "minimax-h3" && hasH3Reference && size == "adaptive") && !protocol.VideoCapabilitySupports(capability, size, validationSeconds, "") {
-			return fmt.Errorf("当前视频模型不支持所选尺寸")
-		}
-		apimartKlingMotionResolution := isAPIMartKlingMotion && stringIn(resolution, "720p", "1080p")
-		customResolution := manualResolution || isGenericWorkbenchResolutionPreset(model, resolution) || apimartKlingMotionResolution
-		if !customResolution && !protocol.VideoCapabilitySupports(capability, "", validationSeconds, validationResolution) {
-			return fmt.Errorf("当前视频模型不支持所选视频参数")
-		}
-		switch profileName {
-		case "veo-31", "veo":
-			if ((validationResolution != "" && validationResolution != "720p") || referenceCount > 0 || multimodalReferenceCount > 0) && seconds != 8 {
-				return fmt.Errorf("Veo 使用 1080p、4K 或参考图时固定生成 8 秒视频")
-			}
-			return nil
-		case "bytedance-v1-i2v", "bytedance-v1-t2v", "agnes-25", "agnes", "wan-27-i2v", "wan-27-kie-i2v", "wan-27-r2v", "wan-videoedit", "wan-v2v", "wan-speech", "wan-animate", "wan-i2v", "wan-t2v", "wan-kie-t2v", "vidu-q3", "vidu", "jimeng", "cogvideox-3", "kling-motion", "kling-avatar", "kling-kie-v3", "kling-kie-26", "kling-kie-legacy", "kling-omni-text", "kling-omni-image", "kling-omni-reference", "kling-omni-transformation", "kling-omni", "grok-i2v", "gemini-omni", "pixverse", "skyreels", "happyhorse", "infinitalk", "topaz-video", "flux-3-video":
-			return nil
-		}
-		// These KIE configurations declare a duration type but no duration
-		// bounds in the reference project. Their creator controls therefore use
-		// the generic manual range instead of a provider-family preset enum.
-		if genericWorkbenchDuration && isKIEVideoModelName(name) && profileName != "minimax-h3" && profileName != "grok-kie" {
-			return nil
-		}
-	}
-	contains := func(values ...string) bool {
-		for _, value := range values {
-			if value == size {
-				return true
-			}
-		}
-		return false
-	}
-	validRange := func(min, max int) bool { return seconds >= min && seconds <= max }
-	if profile := seedanceVideoProfile(name); profile != "" {
-		if !contains("", "adaptive", "16:9", "4:3", "1:1", "3:4", "9:16", "21:9") {
-			return fmt.Errorf("Seedance 官方画幅仅支持 adaptive、16:9、4:3、1:1、3:4、9:16、21:9")
-		}
-		// The reference Seedance panel exposes smart duration plus a manual
-		// 4-15 second range for every displayed version. Its submission helper
-		// serializes smart duration as 1 before this route receives the request.
-		resolutionValues := []string{"480p", "720p", "1080p"}
-		switch profile {
-		case "2.0":
-			resolutionValues = []string{"480p", "720p", "1080p"}
-		case "2.0-fast", "2.0-mini":
-			resolutionValues = []string{"480p", "720p"}
-		}
-		if seconds != 1 && !validRange(4, 15) {
-			return fmt.Errorf("Seedance 创作台视频时长支持智能时长或 4-15 秒")
-		}
-		if validationResolution != "" && !stringIn(validationResolution, resolutionValues...) {
-			return fmt.Errorf("Seedance 官方清晰度不受支持")
-		}
-		return nil
-	}
-	if strings.Contains(name, "seedance") && (size != "" || resolution != "") {
-		return fmt.Errorf("尚未录入当前 Seedance 型号的官方画幅和清晰度，请留空并使用上游默认值")
-	}
-	if isKnownGrokVideoModel(name) {
-		if !contains("", "1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3") || !validRange(1, 15) {
-			return fmt.Errorf("Grok 官方视频支持 1-15 秒及 1:1、16:9、9:16、4:3、3:4、3:2、2:3 画幅")
-		}
-		if validationResolution != "" && !manualResolution && !stringIn(validationResolution, "480p", "720p", "1080p") {
-			return fmt.Errorf("Grok 官方清晰度仅支持 480p、720p、1080p")
-		}
-		if !manualResolution && !strings.Contains(name, "1.5") && !strings.Contains(name, "1-5") && validationResolution == "1080p" {
-			return fmt.Errorf("Grok 官方 1080p 仅支持 grok-imagine-video-1.5")
-		}
-		return nil
-	}
-	if strings.Contains(name, "kling") && (isKling3Model(name) || isKlingLegacyModel(name)) {
-		if !contains("", "16:9", "9:16", "1:1") {
-			return fmt.Errorf("Kling 官方画幅仅支持 16:9、9:16、1:1")
-		}
-		if isKling3Model(name) {
-			if !validRange(3, 15) {
-				return fmt.Errorf("Kling 3.0 官方视频时长支持 3-15 秒")
-			}
-		} else if seconds != 5 && seconds != 10 {
-			return fmt.Errorf("Kling 当前模型官方视频时长支持 5 秒或 10 秒")
-		}
-		resolutionValues := []string{"720p", "1080p"}
-		if isKling3Model(name) {
-			resolutionValues = append(resolutionValues, "4k")
-		}
-		if validationResolution != "" && !stringIn(validationResolution, resolutionValues...) {
-			return fmt.Errorf("Kling 官方清晰度不支持当前选择")
-		}
-		return nil
-	}
-	if strings.Contains(name, "kling") && (size != "" || resolution != "") {
-		return fmt.Errorf("尚未录入当前 Kling 型号的官方画幅和清晰度，请留空并使用上游默认值")
-	}
-	if strings.Contains(name, "minimax") || strings.Contains(name, "hailuo") || strings.HasPrefix(name, "t2v-") || strings.HasPrefix(name, "i2v-") || strings.HasPrefix(name, "s2v-") {
-		if strings.Contains(name, "h3") {
-			if !hasH3Reference && !contains("21:9", "16:9", "4:3", "1:1", "3:4", "9:16") {
-				return fmt.Errorf("MiniMax H3 文生视频必须选择 21:9、16:9、4:3、1:1、3:4 或 9:16，不能使用自适应画幅")
-			}
-			if hasH3Reference && !contains("", "adaptive", "21:9", "16:9", "4:3", "1:1", "3:4", "9:16") {
-				return fmt.Errorf("MiniMax H3 图生视频画幅由首帧参考图决定")
-			}
-			if !validRange(4, 15) {
-				return fmt.Errorf("MiniMax H3 官方视频时长仅支持 4-15 秒")
-			}
-			if !manualResolution && !stringIn(validationResolution, "768p", "2k") {
-				return fmt.Errorf("MiniMax H3 官方清晰度仅支持 768P、2K")
-			}
-			return nil
-		}
-		if size != "" {
-			return fmt.Errorf("MiniMax v1 官方接口没有画幅参数")
-		}
-		validDurations := []string{"6", "10"}
-		if strings.HasPrefix(name, "hailuo/02-") {
-			validDurations = []string{"5", "10"}
-		}
-		if !stringIn(strconv.Itoa(seconds), validDurations...) {
-			return fmt.Errorf("MiniMax 当前模型不支持所选视频时长")
-		}
-		if resolution != "" {
-			if strings.Contains(name, "hailuo") && !manualResolution && !stringIn(validationResolution, "768p", "1080p") {
-				return fmt.Errorf("MiniMax Hailuo 官方清晰度仅支持 768P、1080P")
-			}
-			if !strings.Contains(name, "hailuo") && !manualResolution && validationResolution != "720p" {
-				return fmt.Errorf("MiniMax 旧版官方清晰度仅支持 720P")
-			}
-		}
-		if strings.Contains(name, "hailuo") && seconds == 10 && validationResolution == "1080p" {
-			return fmt.Errorf("MiniMax Hailuo 官方 10 秒视频仅支持 768P")
-		}
-		if strings.Contains(name, "hailuo-2.3-fast") && referenceCount == 0 {
-			return fmt.Errorf("MiniMax-Hailuo-2.3-Fast 官方仅支持图生视频，请上传一张首帧参考图")
-		}
-		if strings.HasPrefix(name, "i2v-") && referenceCount == 0 {
-			return fmt.Errorf("MiniMax I2V 官方模型仅支持图生视频，请上传一张首帧参考图")
-		}
-		return nil
-	}
-	if isSora2Model(name) {
-		allowedSizes := []string{"1280x720", "720x1280"}
-		if strings.Contains(name, "pro") {
-			allowedSizes = append(allowedSizes, "1792x1024", "1024x1792", "1920x1080", "1080x1920")
-		}
-		if !stringIn(size, allowedSizes...) && !videoAllowsCustomDimensionsModel(name) {
-			return fmt.Errorf("Sora 官方视频尺寸不支持当前选择")
-		}
-		if !stringIn(strconv.Itoa(seconds), "4", "8", "12", "16", "20") {
-			return fmt.Errorf("Sora 官方视频时长仅支持 4、8、12、16、20 秒")
-		}
-		if validationResolution != "" && !regexp.MustCompile(`^(\d{3,5})(p|k)$`).MatchString(validationResolution) {
-			return fmt.Errorf("Sora 清晰度必须使用 720p、1080p、2k 等格式")
-		}
-		if referenceCount > 1 {
-			return fmt.Errorf("Sora 官方 input_reference 只支持一张首帧参考图")
-		}
-		return nil
-	}
-	if size != "" && size != "auto" && size != "adaptive" && !regexp.MustCompile(`^\d+x\d+$`).MatchString(size) {
-		return fmt.Errorf("视频尺寸必须使用 宽x高 格式")
-	}
-	if !validRange(1, 30) {
-		return fmt.Errorf("视频时长支持 1-30 秒")
-	}
-	if validationResolution != "" && !regexp.MustCompile(`^(\d+p|\d+k)$`).MatchString(validationResolution) {
-		return fmt.Errorf("视频清晰度必须使用 720p、1080p、2k 等格式")
-	}
-	return nil
-}
-
-func videoAllowsCustomDimensionsModel(model string) bool {
-	return !usesReferenceSpecialVideoPanelModel(model)
-}
-
-func usesReferenceSpecialVideoPanelModel(model string) bool {
-	value := strings.ToLower(protocol.CanonicalVideoModel(model))
-	value = strings.NewReplacer(".", "-", "_", "-", "/", "-").Replace(value)
-	if strings.HasPrefix(value, "seedance-") || strings.HasPrefix(value, "doubao-seedance-") {
-		return true
-	}
-	return value == "kling-v2-6" || value == "kling-v3" || value == "kling-3-0-video" || strings.HasPrefix(value, "kling-3-0-omni-")
-}
-
-// isGenericWorkbenchResolutionPreset identifies the two shared quality
-// buttons rendered by the reference project's generic video panel. They are
-// intentionally accepted across generic providers even when a provider uses
-// a different native enum (for example 768P instead of 720p).
-func isGenericWorkbenchResolutionPreset(model, resolution string) bool {
-	return !usesReferenceSpecialVideoPanelModel(model) &&
-		stringIn(strings.ToLower(strings.TrimSpace(resolution)), "480p", "720p")
-}
-
-// normalizeGenericWorkbenchResolutionForValidation converts a generic panel
-// preset to the closest documented provider value for server-side capability
-// checks. The original value is still passed to the adapter, which performs
-// the final provider-specific serialization (such as 480p -> 512P for
-// Hailuo). Empty capability lists are left untouched because those endpoints
-// deliberately omit resolution after the adapter runs.
-func normalizeGenericWorkbenchResolutionForValidation(model, resolution string) string {
-	requested := strings.ToLower(strings.TrimSpace(resolution))
-	if requested == "" || !isGenericWorkbenchResolutionPreset(model, requested) {
-		return requested
-	}
-	capability := protocol.VideoCapability(model)
-	for _, supported := range capability.Resolutions {
-		if strings.EqualFold(supported, requested) {
-			return requested
-		}
-	}
-	for _, preferred := range []string{"768p", "720p", "1080p", "2k", "4k"} {
-		for _, supported := range capability.Resolutions {
-			if strings.EqualFold(supported, preferred) {
-				return preferred
-			}
-		}
-	}
-	return requested
-}
-
-// The generic reference workbench stores pixel dimensions even when a
-// provider accepts a ratio enum. Normalize that value before validation and
-// persistence so browser and direct API submissions use the same contract.
-func normalizeVideoWorkbenchSizeForModel(model, size string) string {
-	requested := strings.ToLower(strings.TrimSpace(size))
-	if requested == "" || !videoAllowsCustomDimensionsModel(model) || !regexp.MustCompile(`^\d+x\d+$`).MatchString(requested) {
-		return requested
-	}
-	capability := protocol.VideoCapability(model)
-	for _, supported := range capability.Sizes {
-		if strings.EqualFold(supported, requested) {
-			return requested
-		}
-	}
-	ratio := normalizeKIEAspectRatio(requested)
-	for _, supported := range capability.Sizes {
-		if strings.EqualFold(supported, ratio) {
-			return strings.ToLower(supported)
-		}
-	}
-	if len(capability.Sizes) == 0 {
-		switch protocol.VideoModelProfile(model) {
-		case "generic", "agnes", "sora", "sora-pro":
-			return requested
-		default:
-			return ""
-		}
-	}
-	return requested
-}
-
-// The workbench keeps a manual quality input for parity with the reference
-// project, but only these profiles can safely carry a non-enumerated value.
-// Other providers expose an enum and must be validated against it before the
-// request reaches their API.
-func videoAllowsArbitraryResolutionModel(model string) bool {
-	if !usesReferenceSpecialVideoPanelModel(model) {
-		return true
-	}
-	name := strings.ToLower(strings.TrimSpace(model))
-	if name == "kling/v3-turbo-text-to-video" || name == "kling-3-0-turbo" {
-		return true
-	}
-	switch protocol.VideoModelProfile(model) {
-	case "generic", "sora", "sora-pro", "veo", "veo-31", "minimax-h3":
-		return true
-	default:
-		return false
-	}
-}
-
-func videoDurationSupportedProfile(profile string) bool {
-	switch profile {
-	case "kling-motion", "kling-avatar", "wan-speech", "wan-animate", "infinitalk", "topaz-video":
-		return false
-	default:
-		return true
-	}
-}
-
-func validateVideoPrompt(model, prompt string) error {
-	if strings.TrimSpace(prompt) == "" {
-		return fmt.Errorf("请输入视频提示词")
-	}
-	characters := utf8.RuneCountInString(prompt)
-	if isMiniMaxH3Model(model) && characters > 7000 {
-		return fmt.Errorf("MiniMax H3 官方提示词最多支持 7000 个字符")
-	}
-	if isKling3Model(model) && characters > 3072 {
-		return fmt.Errorf("Kling 3.0 官方提示词最多支持 3072 个字符")
-	}
-	return nil
-}
-
-func validateVideoRequiredInputs(model, prompt string, imageURLs, videoURLs, audioURLs []string) error {
-	name := strings.ToLower(strings.TrimSpace(model))
-	normalized := strings.NewReplacer("_", "-", ".", "-", "/", "-").Replace(name)
-	if normalized == "kling-3-0-turbo" || normalized == "happyhorse-1-1" {
-		if strings.TrimSpace(prompt) == "" && len(imageURLs) == 0 {
-			return fmt.Errorf("当前视频模型至少需要提示词或一张参考图片")
-		}
-	}
-	switch name {
-	case "kling-3.0-omni/text-to-video", "kling/v3-turbo-text-to-video", "bytedance/seedance-2-mini", "happyhorse-1-1/text-to-video":
-		if strings.TrimSpace(prompt) == "" {
-			return fmt.Errorf("当前文生视频模型必须提供提示词")
-		}
-	}
-	return nil
-}
-
-func seedanceVideoProfile(model string) string {
-	name := strings.ToLower(strings.TrimSpace(model))
-	if !strings.Contains(name, "seedance") {
-		return ""
-	}
-	switch {
-	case strings.Contains(name, "2-5") || strings.Contains(name, "2.5"):
-		return "2.5"
-	case strings.Contains(name, "2-0") || strings.Contains(name, "2.0"):
-		if strings.Contains(name, "fast") {
-			return "2.0-fast"
-		}
-		if strings.Contains(name, "mini") {
-			return "2.0-mini"
-		}
-		return "2.0"
-	case strings.Contains(name, "1-5") || strings.Contains(name, "1.5"):
-		return "1.5"
-	case strings.Contains(name, "1-0") || strings.Contains(name, "1.0"):
-		return "1.0"
-	default:
-		if strings.Contains(name, "fast") {
-			return "2.0-fast"
-		}
-		if strings.Contains(name, "mini") {
-			return "2.0-mini"
-		}
-		return "2.0"
-	}
-}
-
-func isKling3Model(model string) bool {
-	name := strings.ToLower(strings.TrimSpace(model))
-	return strings.Contains(name, "kling") && (strings.Contains(name, "v3") || strings.Contains(name, "3-0") || strings.Contains(name, "3.0"))
-}
-
-func isKnownGrokVideoModel(model string) bool {
-	name := strings.ToLower(strings.TrimSpace(model))
-	return name == "grok-imagine" || name == "grok-imagine-video" || name == "grok-imagine-video-latest" || strings.Contains(name, "grok-imagine-video-1.5") || strings.Contains(name, "grok-imagine-video-1-5")
-}
-
-func isKlingLegacyModel(model string) bool {
-	name := strings.ToLower(strings.TrimSpace(model))
-	if !strings.Contains(name, "kling") || isKling3Model(name) {
-		return false
-	}
-	return strings.Contains(name, "kling-v1") || strings.Contains(name, "kling-v2") || strings.Contains(name, "kling-1") || strings.Contains(name, "kling-2")
-}
-
-func isSora2Model(model string) bool {
-	name := strings.ToLower(strings.TrimSpace(model))
-	return strings.Contains(name, "sora-2") || strings.Contains(name, "sora_2")
-}
-
-func stringIn(value string, values ...string) bool {
-	for _, candidate := range values {
-		if value == candidate {
-			return true
-		}
-	}
-	return false
-}
-
-func videoDefaultSeconds(model string) int {
-	if value := protocol.VideoCapability(model).DefaultSeconds; value != 0 {
-		return value
-	}
-	return 4
-}
-
 func creationTaskRequestMetadata(body map[string]any) map[string]any {
 	metadata := map[string]any{}
 	if tokenGroup := selectedRelayTokenGroupFromPayload(body); tokenGroup != "" {
@@ -2574,13 +1828,7 @@ func creationTaskRequestMetadata(body map[string]any) map[string]any {
 	if tokenName := selectedRelayTokenNameFromPayload(body); tokenName != "" {
 		metadata["token_name"] = tokenName
 	}
-	if videoMode := util.Clean(body["video_mode"]); videoMode != "" {
-		metadata["video_mode"] = videoMode
-	}
-	// Advanced video controls are kept in metadata so the task service can
-	// carry them through the shared envelope and let each provider adapter
-	// map only the fields its model actually supports.
-	for _, key := range []string{"negative_prompt", "multi_shot", "shot_type", "multi_prompt", "element_list", "character_orientation", "video_generate_audio", "preset", "mode"} {
+	for _, key := range []string{"preset", "mode"} {
 		if value, ok := body[key]; ok {
 			metadata[key] = value
 		}
@@ -2599,20 +1847,24 @@ func chatTaskRequestMetadata(body map[string]any) map[string]any {
 	return metadata
 }
 
-func videoTaskRequestMetadata(body map[string]any) map[string]any {
-	metadata := creationTaskRequestMetadata(body)
+func videoTaskRequestMetadata(body map[string]any, contract protocol.VideoModelContract) map[string]any {
+	metadata := map[string]any{
+		protocol.VideoContractSnapshotPayloadKey:  contract,
+		service.VideoTaskTimeoutSecondsPayloadKey: contract.Polling.TimeoutSeconds + contract.Polling.IntervalSeconds,
+	}
+	if tokenGroup := selectedRelayTokenGroupFromPayload(body); tokenGroup != "" {
+		metadata["token_group"] = tokenGroup
+	}
+	if tokenName := selectedRelayTokenNameFromPayload(body); tokenName != "" {
+		metadata["token_name"] = tokenName
+	}
 	for _, key := range []string{"first_frame_url", "last_frame_url"} {
 		if value := strings.TrimSpace(util.Clean(body[key])); value != "" {
 			metadata[key] = value
 		}
 	}
-	// Preserve an explicit channel hint for model families whose bare name is
-	// shared by KIE and APIMart (for example `minimax-h3`). The normal route
-	// does not guess a provider from an ambiguous model string.
-	for _, key := range []string{"provider", "video_provider", "channel_protocol", "protocol", "channel_base_url", "provider_base_url"} {
-		if value := util.Clean(body[key]); value != "" {
-			metadata[key] = value
-		}
+	if generationMode := strings.TrimSpace(util.Clean(body["generation_mode"])); generationMode != "" {
+		metadata["generation_mode"] = generationMode
 	}
 	return metadata
 }

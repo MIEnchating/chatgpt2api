@@ -30,14 +30,15 @@ type ImageGenerationPreferences struct {
 	DefaultAudioVoice       string                       `json:"default_audio_voice"`
 	DefaultAudioFormat      string                       `json:"default_audio_format"`
 	DefaultAudioSpeed       float64                      `json:"default_audio_speed"`
-	DefaultTextRelayToken   string                       `json:"default_text_relay_token_name"`
-	DefaultImageRelayToken  string                       `json:"default_image_relay_token_name"`
-	DefaultVideoRelayToken  string                       `json:"default_video_relay_token_name"`
-	DefaultAudioRelayToken  string                       `json:"default_audio_relay_token_name"`
+	DefaultTextRelayTokens  []string                     `json:"default_text_relay_token_names"`
+	DefaultImageRelayTokens []string                     `json:"default_image_relay_token_names"`
+	DefaultVideoRelayTokens []string                     `json:"default_video_relay_token_names"`
+	DefaultAudioRelayTokens []string                     `json:"default_audio_relay_token_names"`
 	Workbench               CreationWorkbenchPreferences `json:"workbench"`
 }
 
 type CreationWorkbenchPreferences struct {
+	ImageModel             string `json:"image_model"`
 	ImageSize              string `json:"image_size"`
 	ImageSizeMode          string `json:"image_size_mode"`
 	ImageAspectRatio       string `json:"image_aspect_ratio"`
@@ -50,10 +51,10 @@ type CreationWorkbenchPreferences struct {
 	ImageCount             int    `json:"image_count"`
 	ImageOutputFormat      string `json:"image_output_format"`
 	ImageOutputCompression string `json:"image_output_compression"`
+	VideoModel             string `json:"video_model"`
 	VideoSize              string `json:"video_size"`
 	VideoSeconds           string `json:"video_seconds"`
 	VideoResolution        string `json:"video_resolution"`
-	VideoMode              string `json:"video_mode"`
 	VideoGenerateAudio     bool   `json:"video_generate_audio"`
 	VideoWatermark         bool   `json:"video_watermark"`
 }
@@ -86,7 +87,6 @@ func defaultCreationWorkbenchPreferences() CreationWorkbenchPreferences {
 		VideoSize:             "1280x720",
 		VideoSeconds:          "6",
 		VideoResolution:       "720p",
-		VideoMode:             "std",
 	}
 }
 
@@ -134,10 +134,10 @@ func (s *ImageGenerationPreferenceService) Update(ownerID string, input ImageGen
 	input.DefaultAudioVoice = strings.TrimSpace(input.DefaultAudioVoice)
 	input.DefaultAudioFormat = strings.ToLower(strings.TrimSpace(input.DefaultAudioFormat))
 	input.DefaultAudioSpeed = math.Round(input.DefaultAudioSpeed*100) / 100
-	input.DefaultTextRelayToken = normalizeRelayTokenName(input.DefaultTextRelayToken)
-	input.DefaultImageRelayToken = normalizeRelayTokenName(input.DefaultImageRelayToken)
-	input.DefaultVideoRelayToken = normalizeRelayTokenName(input.DefaultVideoRelayToken)
-	input.DefaultAudioRelayToken = normalizeRelayTokenName(input.DefaultAudioRelayToken)
+	input.DefaultTextRelayTokens = normalizeRelayTokenNames(input.DefaultTextRelayTokens)
+	input.DefaultImageRelayTokens = normalizeRelayTokenNames(input.DefaultImageRelayTokens)
+	input.DefaultVideoRelayTokens = normalizeRelayTokenNames(input.DefaultVideoRelayTokens)
+	input.DefaultAudioRelayTokens = normalizeRelayTokenNames(input.DefaultAudioRelayTokens)
 	workbench, err := normalizeCreationWorkbenchPreferences(input.Workbench)
 	if err != nil {
 		return ImageGenerationPreferences{}, err
@@ -176,7 +176,7 @@ func (s *ImageGenerationPreferenceService) UpdateWorkbench(ownerID string, input
 	return preferences, nil
 }
 
-func (s *ImageGenerationPreferenceService) UpdateRelayTokenNames(ownerID string, updates map[string]string) (ImageGenerationPreferences, error) {
+func (s *ImageGenerationPreferenceService) UpdateRelayTokenNames(ownerID string, updates map[string][]string) (ImageGenerationPreferences, error) {
 	ownerID = strings.TrimSpace(ownerID)
 	if ownerID == "" {
 		return ImageGenerationPreferences{}, fmt.Errorf("owner_id is required")
@@ -191,16 +191,16 @@ func (s *ImageGenerationPreferenceService) UpdateRelayTokenNames(ownerID string,
 		return ImageGenerationPreferences{}, err
 	}
 	for kind, value := range updates {
-		value = normalizeRelayTokenName(value)
+		value = normalizeRelayTokenNames(value)
 		switch kind {
 		case "text":
-			preferences.DefaultTextRelayToken = value
+			preferences.DefaultTextRelayTokens = value
 		case "image":
-			preferences.DefaultImageRelayToken = value
+			preferences.DefaultImageRelayTokens = value
 		case "video":
-			preferences.DefaultVideoRelayToken = value
+			preferences.DefaultVideoRelayTokens = value
 		case "audio":
-			preferences.DefaultAudioRelayToken = value
+			preferences.DefaultAudioRelayTokens = value
 		default:
 			return ImageGenerationPreferences{}, fmt.Errorf("unsupported relay token preference %q", kind)
 		}
@@ -234,12 +234,13 @@ func (s *ImageGenerationPreferenceService) loadLocked(ownerID string) (ImageGene
 	preferences.DefaultImageModel = strings.TrimSpace(util.Clean(value["default_image_model"]))
 	preferences.DefaultVideoModel = strings.TrimSpace(util.Clean(value["default_video_model"]))
 	preferences.DefaultAudioModel = strings.TrimSpace(util.Clean(value["default_audio_model"]))
-	preferences.DefaultTextRelayToken = normalizeRelayTokenName(util.Clean(value["default_text_relay_token_name"]))
-	preferences.DefaultImageRelayToken = normalizeRelayTokenName(util.Clean(value["default_image_relay_token_name"]))
-	preferences.DefaultVideoRelayToken = normalizeRelayTokenName(util.Clean(value["default_video_relay_token_name"]))
-	preferences.DefaultAudioRelayToken = normalizeRelayTokenName(util.Clean(value["default_audio_relay_token_name"]))
+	preferences.DefaultTextRelayTokens = normalizeRelayTokenNames(util.AsStringSlice(value["default_text_relay_token_names"]))
+	preferences.DefaultImageRelayTokens = normalizeRelayTokenNames(util.AsStringSlice(value["default_image_relay_token_names"]))
+	preferences.DefaultVideoRelayTokens = normalizeRelayTokenNames(util.AsStringSlice(value["default_video_relay_token_names"]))
+	preferences.DefaultAudioRelayTokens = normalizeRelayTokenNames(util.AsStringSlice(value["default_audio_relay_token_names"]))
 	if workbenchValue := util.StringMap(value["workbench"]); len(workbenchValue) > 0 {
 		workbench := defaultCreationWorkbenchPreferences()
+		workbench.ImageModel = util.Clean(workbenchValue["image_model"])
 		workbench.ImageSize = util.Clean(workbenchValue["image_size"])
 		workbench.ImageSizeMode = util.Clean(workbenchValue["image_size_mode"])
 		workbench.ImageAspectRatio = util.Clean(workbenchValue["image_aspect_ratio"])
@@ -250,10 +251,10 @@ func (s *ImageGenerationPreferenceService) loadLocked(ownerID string) (ImageGene
 		workbench.ImageQuality = util.Clean(workbenchValue["image_quality"])
 		workbench.ImageOutputFormat = util.Clean(workbenchValue["image_output_format"])
 		workbench.ImageOutputCompression = util.Clean(workbenchValue["image_output_compression"])
+		workbench.VideoModel = util.Clean(workbenchValue["video_model"])
 		workbench.VideoSize = util.Clean(workbenchValue["video_size"])
 		workbench.VideoSeconds = util.Clean(workbenchValue["video_seconds"])
 		workbench.VideoResolution = util.Clean(workbenchValue["video_resolution"])
-		workbench.VideoMode = util.Clean(workbenchValue["video_mode"])
 		if _, present := workbenchValue["image_snap_to_multiple_16"]; present {
 			workbench.ImageSnapToMultiple16 = util.ToBool(workbenchValue["image_snap_to_multiple_16"])
 		}
@@ -303,16 +304,33 @@ func normalizePreferenceText(value string) string {
 	return value
 }
 
-func normalizeRelayTokenName(value string) string {
-	value = strings.TrimSpace(value)
-	if len([]rune(value)) > 256 {
-		return string([]rune(value)[:256])
+func normalizeRelayTokenNames(values []string) []string {
+	normalized := make([]string, 0, min(len(values), 20))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if len([]rune(value)) > 256 {
+			value = string([]rune(value)[:256])
+		}
+		if value == "" {
+			continue
+		}
+		key := strings.ToLower(value)
+		if _, exists := seen[key]; exists {
+			continue
+		}
+		seen[key] = struct{}{}
+		normalized = append(normalized, value)
+		if len(normalized) == 20 {
+			break
+		}
 	}
-	return value
+	return normalized
 }
 
 func normalizeCreationWorkbenchPreferences(value CreationWorkbenchPreferences) (CreationWorkbenchPreferences, error) {
 	defaults := defaultCreationWorkbenchPreferences()
+	value.ImageModel = normalizeOptionalShortPreference(value.ImageModel)
 	value.ImageSize = normalizeShortPreference(value.ImageSize, defaults.ImageSize)
 	value.ImageSizeMode = strings.ToLower(normalizeShortPreference(value.ImageSizeMode, defaults.ImageSizeMode))
 	if value.ImageSizeMode != "auto" && value.ImageSizeMode != "ratio" && value.ImageSizeMode != "custom" {
@@ -342,11 +360,19 @@ func normalizeCreationWorkbenchPreferences(value CreationWorkbenchPreferences) (
 		}
 		value.ImageOutputCompression = strconv.Itoa(compression)
 	}
+	value.VideoModel = normalizeOptionalShortPreference(value.VideoModel)
 	value.VideoSize = normalizeShortPreference(value.VideoSize, defaults.VideoSize)
 	value.VideoSeconds = normalizeShortPreference(value.VideoSeconds, defaults.VideoSeconds)
 	value.VideoResolution = normalizeShortPreference(value.VideoResolution, defaults.VideoResolution)
-	value.VideoMode = normalizeShortPreference(value.VideoMode, defaults.VideoMode)
 	return value, nil
+}
+
+func normalizeOptionalShortPreference(value string) string {
+	value = strings.TrimSpace(value)
+	if len([]rune(value)) > 128 {
+		return string([]rune(value)[:128])
+	}
+	return value
 }
 
 func normalizeShortPreference(value, fallback string) string {

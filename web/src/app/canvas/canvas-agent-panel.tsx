@@ -62,7 +62,7 @@ export function CanvasAgentPanel({ open, nodes, selectedNodeIDs, referenceNodeCl
   onInitialRequestConsumed?: () => void;
   onClose: () => void;
 }) {
-  const { tokenNames: relayTokenNames } = useRelayTokenPreferences();
+  const { tokenNameForModel } = useRelayTokenPreferences();
   const [initialSession] = useState(createSession);
   const sessions = useMemo(() => initialSessions.length ? initialSessions : [initialSession], [initialSession, initialSessions]);
   const activeSessionID = initialActiveSessionID && sessions.some((item) => item.id === initialActiveSessionID) ? initialActiveSessionID : sessions[0].id;
@@ -173,7 +173,7 @@ export function CanvasAgentPanel({ open, nodes, selectedNodeIDs, referenceNodeCl
   async function submit(nextText = input, savedReferences?: CanvasAssistantReference[], referenceNodeIDs = composerReferenceNodeIDs) {
     const text = nextText.trim();
     if (!text || busy || !activeSession) return;
-    const relayTokenName = relayTokenNames.text;
+    const relayTokenName = tokenNameForModel("text", model);
     if (!relayTokenName) return toast.error("请先在个人中心选择文本生成密钥");
     if (!model) return toast.error("请先配置文本模型");
     const references = savedReferences

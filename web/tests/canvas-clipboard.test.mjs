@@ -97,14 +97,11 @@ test("preserves batch links that point outside the copied graph", () => {
   assert.equal(mapped.batch_root_id, "outside");
 });
 
-test("preserves video, element, frame, and audio clone node bindings", () => {
+test("preserves generic video frame and audio clone node bindings", () => {
   const mapped = remapCanvasNodeReferences(node("video-copy", {
     type: "video",
     generation_video_first_frame_node_id: "first-old",
     generation_video_last_frame_node_id: "last-old",
-    generation_video_kling_image_node_ids: ["first-old", "outside"],
-    generation_video_kling_multi_prompt: [{ text_node_id: "text-old", duration: "3" }, { text_node_id: "outside", duration: "2" }],
-    generation_video_kling_element_list: [{ name: "角色", description: "主角", node_ids: ["image-old", "video-old", "outside"] }],
     generation_audio_mimo_voice_clone_node_id: "audio-old",
   }), new Map([
     ["first-old", "first-new"],
@@ -116,9 +113,6 @@ test("preserves video, element, frame, and audio clone node bindings", () => {
   ]));
   assert.equal(mapped.generation_video_first_frame_node_id, "first-old");
   assert.equal(mapped.generation_video_last_frame_node_id, "last-old");
-  assert.deepEqual(mapped.generation_video_kling_image_node_ids, ["first-old", "outside"]);
-  assert.deepEqual(mapped.generation_video_kling_multi_prompt, [{ text_node_id: "text-old", duration: "3" }, { text_node_id: "outside", duration: "2" }]);
-  assert.deepEqual(mapped.generation_video_kling_element_list, [{ name: "角色", description: "主角", node_ids: ["image-old", "video-old", "outside"] }]);
   assert.equal(mapped.generation_audio_mimo_voice_clone_node_id, "audio-old");
 });
 

@@ -31,7 +31,7 @@ type PermissionSet struct {
 }
 
 var fullMenuPermissions = []MenuPermission{
-	{ID: "image", Label: "创作台", Path: "/image", Icon: "image", Order: 10},
+	{ID: "studio", Label: "创作台", Path: "/studio", Icon: "image", Order: 10},
 	{ID: "canvas", Label: "无限画布", Path: "/canvas", Icon: "panels-top-left", Order: 15},
 	{ID: "workflows", Label: "工作流", Path: "/workflows", Icon: "workflow", Order: 18},
 	{ID: "prompt-library", Label: "提示词库", Path: "/prompt-library", Icon: "book-open", Order: 20},
@@ -114,7 +114,7 @@ func DefaultPermissionSetForRole(role string) PermissionSet {
 	}
 	return PermissionSet{
 		MenuPaths: NormalizeMenuPermissions([]string{
-			"/image",
+			"/studio",
 			"/canvas",
 			"/workflows",
 			"/prompt-library",
@@ -275,6 +275,9 @@ func normalizeKnownStrings(values []string, known map[string]struct{}) []string 
 	seen := map[string]struct{}{}
 	for _, value := range values {
 		item := normalizePermissionPath(util.Clean(value))
+		if item == "/image" {
+			item = "/studio"
+		}
 		if _, ok := known[item]; !ok {
 			continue
 		}

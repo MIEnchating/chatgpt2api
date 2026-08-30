@@ -644,21 +644,20 @@ func TestCanvasDocumentServiceStoresVideoGenerationParameters(t *testing.T) {
 		GenerationVideoModel: " sora-2 ", GenerationVideoSize: " 1280X720 ",
 		GenerationVideoSeconds: 8, GenerationVideoResolution: " 1080P ",
 		GenerationVideoAudio: &audio, GenerationVideoWatermark: &watermark,
-		GenerationVideoNegativePrompt: "  保留首尾空白  ",
 	}}})
 	if err != nil {
 		t.Fatalf("Save(video) error = %v", err)
 	}
 	node := document.Nodes[0]
-	if node.GenerationVideoModel != "sora-2" || node.GenerationVideoSize != "1280x720" || node.GenerationVideoSeconds != 8 || node.GenerationVideoResolution != "1080p" || node.GenerationVideoAudio == nil || !*node.GenerationVideoAudio || node.GenerationVideoWatermark == nil || *node.GenerationVideoWatermark || node.GenerationVideoNegativePrompt != "  保留首尾空白  " {
+	if node.GenerationVideoModel != "sora-2" || node.GenerationVideoSize != "1280x720" || node.GenerationVideoSeconds != 8 || node.GenerationVideoResolution != "1080p" || node.GenerationVideoAudio == nil || !*node.GenerationVideoAudio || node.GenerationVideoWatermark == nil || *node.GenerationVideoWatermark {
 		t.Fatalf("video generation parameters = %#v", node)
 	}
 	loaded, err := loadCanvas(service, "owner")
 	if err != nil {
 		t.Fatalf("Load(video) error = %v", err)
 	}
-	if loaded.Nodes[0].GenerationVideoNegativePrompt != "  保留首尾空白  " {
-		t.Fatalf("video negative prompt was changed after reload: %q", loaded.Nodes[0].GenerationVideoNegativePrompt)
+	if loaded.Nodes[0].GenerationVideoModel != "sora-2" {
+		t.Fatalf("video model changed after reload: %q", loaded.Nodes[0].GenerationVideoModel)
 	}
 }
 
@@ -799,47 +798,17 @@ func TestCanvasDocumentServiceStoresVideoNodeBindings(t *testing.T) {
 		ID: "video", Type: "video", Width: 420, Height: 236, ScaleX: 1, ScaleY: 1,
 		GenerationVideoModel: "sora-2", GenerationVideoSize: "1280x720", GenerationVideoSeconds: 8, GenerationVideoResolution: "1080p",
 		ExcludeUpstreamText: true, GenerationVideoFirstFrameNodeID: " first ", GenerationVideoLastFrameNodeID: " last ",
-		GenerationVideoKlingImageNodeIDs: []string{" first ", " last "},
-		GenerationVideoKlingMultiPrompt:  []map[string]any{{"text_node_id": " shot ", "duration": "3"}},
-		GenerationVideoKlingElementList:  []map[string]any{{"name": " hero ", "description": " lead ", "node_ids": []string{" first ", "audio"}}},
 	}}})
 	if err != nil {
 		t.Fatalf("Save(video bindings) error = %v", err)
 	}
 	node := document.Nodes[0]
-	if !node.ExcludeUpstreamText || node.GenerationVideoFirstFrameNodeID != "first" || node.GenerationVideoLastFrameNodeID != "last" || len(node.GenerationVideoKlingImageNodeIDs) != 2 || node.GenerationVideoKlingImageNodeIDs[0] != "first" {
+	if !node.ExcludeUpstreamText || node.GenerationVideoFirstFrameNodeID != "first" || node.GenerationVideoLastFrameNodeID != "last" {
 		t.Fatalf("frame bindings = %#v", node)
 	}
-	if node.GenerationVideoKlingMultiPrompt[0]["text_node_id"] != "shot" || node.GenerationVideoKlingMultiPrompt[0]["duration"] != "3" {
-		t.Fatalf("multi prompt bindings = %#v", node.GenerationVideoKlingMultiPrompt)
-	}
-	if node.GenerationVideoKlingElementList[0]["name"] != "hero" || !reflect.DeepEqual(node.GenerationVideoKlingElementList[0]["node_ids"], []string{"first", "audio"}) {
-		t.Fatalf("element bindings = %#v", node.GenerationVideoKlingElementList)
-	}
 }
 
-func TestCanvasDocumentServiceRejectsMalformedVideoNodeBindings(t *testing.T) {
-	service := NewCanvasDocumentService(newTestStorageBackend(t))
-	base := CanvasNode{ID: "video", Type: "video", Width: 420, Height: 236, ScaleX: 1, ScaleY: 1, GenerationVideoModel: "sora-2", GenerationVideoSize: "1280x720", GenerationVideoSeconds: 8, GenerationVideoResolution: "1080p"}
-	invalid := []func(*CanvasNode){
-		func(node *CanvasNode) { node.GenerationVideoKlingImageNodeIDs = []string{"a", "b", "c"} },
-		func(node *CanvasNode) {
-			node.GenerationVideoKlingMultiPrompt = []map[string]any{{"text_node_id": "shot", "duration": 3}}
-		},
-		func(node *CanvasNode) {
-			node.GenerationVideoKlingElementList = []map[string]any{{"name": "hero", "description": "lead", "node_ids": "image"}}
-		},
-	}
-	for _, mutate := range invalid {
-		node := base
-		mutate(&node)
-		if _, err := saveCanvas(service, "owner", CanvasDocument{Nodes: []CanvasNode{node}}); !errors.Is(err, ErrInvalidCanvasDocument) {
-			t.Fatalf("Save(malformed video bindings) error = %v, want ErrInvalidCanvasDocument", err)
-		}
-	}
-}
-
-func TestCanvasDocumentServiceRejectsInvalidVideoGenerationParameters(t *testing.T) {
+func TestCanvasDocumentServiceRejectsStructurallyInvalidVideoGenerationParameters(t *testing.T) {
 	valid := CanvasNode{
 		ID: "video-1", Type: "video", Width: 420, Height: 236, ScaleX: 1, ScaleY: 1,
 		GenerationVideoModel: "sora-2", GenerationVideoSize: "1280x720",
@@ -850,9 +819,9 @@ func TestCanvasDocumentServiceRejectsInvalidVideoGenerationParameters(t *testing
 		mutate func(*CanvasNode)
 	}{
 		{name: "model too long", mutate: func(node *CanvasNode) { node.GenerationVideoModel = strings.Repeat("m", 257) }},
-		{name: "unsupported size", mutate: func(node *CanvasNode) { node.GenerationVideoSize = "800-600" }},
+		{name: "size too long", mutate: func(node *CanvasNode) { node.GenerationVideoSize = strings.Repeat("s", 65) }},
 		{name: "invalid duration", mutate: func(node *CanvasNode) { node.GenerationVideoSeconds = 0 }},
-		{name: "unsupported resolution", mutate: func(node *CanvasNode) { node.GenerationVideoResolution = "2160p" }},
+		{name: "resolution too long", mutate: func(node *CanvasNode) { node.GenerationVideoResolution = strings.Repeat("r", 65) }},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -863,6 +832,22 @@ func TestCanvasDocumentServiceRejectsInvalidVideoGenerationParameters(t *testing
 				t.Fatalf("Save(invalid video) error = %v, want ErrInvalidCanvasDocument", err)
 			}
 		})
+	}
+}
+
+func TestCanvasDocumentServiceDefersVideoModelParameterValidationToContract(t *testing.T) {
+	service := NewCanvasDocumentService(newTestStorageBackend(t))
+	document, err := saveCanvas(service, "owner", CanvasDocument{Nodes: []CanvasNode{{
+		ID: "video-1", Type: "video", Width: 420, Height: 236, ScaleX: 1, ScaleY: 1,
+		GenerationVideoModel: "future-video-model", GenerationVideoSize: "800-600",
+		GenerationVideoSeconds: 7, GenerationVideoResolution: "2160p",
+	}}})
+	if err != nil {
+		t.Fatalf("Save(contract-defined video parameters) error = %v", err)
+	}
+	node := document.Nodes[0]
+	if node.GenerationVideoSize != "800-600" || node.GenerationVideoResolution != "2160p" {
+		t.Fatalf("contract-defined video parameters = %#v", node)
 	}
 }
 

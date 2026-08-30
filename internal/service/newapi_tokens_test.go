@@ -447,6 +447,37 @@ func TestNewAPITokenReaderSub2APIFallsBackToEmailUsername(t *testing.T) {
 	}
 }
 
+func TestNewAPITokenReaderCachesSchemaPresenceWithoutCachingFailures(t *testing.T) {
+	dbURL := newTestNewAPIDatabase(t)
+	reader, err := NewNewAPITokenReader(NewAPITokenReaderConfig{DatabaseURL: dbURL})
+	if err != nil {
+		t.Fatalf("NewNewAPITokenReader() error = %v", err)
+	}
+	if !reader.hasTableColumn(context.Background(), "tokens", "group_route_config") || !reader.hasTable(context.Background(), "users") {
+		t.Fatal("expected schema probes to find the test schema")
+	}
+	if len(reader.schemaPresenceCache) != 2 {
+		t.Fatalf("schema cache entries = %d, want 2", len(reader.schemaPresenceCache))
+	}
+	if err := reader.db.Close(); err != nil {
+		t.Fatalf("close database: %v", err)
+	}
+	if !reader.hasTableColumn(context.Background(), "tokens", "group_route_config") || !reader.hasTable(context.Background(), "users") {
+		t.Fatal("cached schema probes should not query the closed database")
+	}
+
+	failedReader, err := NewNewAPITokenReader(NewAPITokenReaderConfig{DatabaseURL: dbURL})
+	if err != nil {
+		t.Fatalf("NewNewAPITokenReader(failure) error = %v", err)
+	}
+	if err := failedReader.db.Close(); err != nil {
+		t.Fatalf("close failure database: %v", err)
+	}
+	if failedReader.hasTable(context.Background(), "users") || len(failedReader.schemaPresenceCache) != 0 {
+		t.Fatalf("failed schema probe must not be cached: %#v", failedReader.schemaPresenceCache)
+	}
+}
+
 func newTestNewAPIDatabase(t *testing.T) string {
 	t.Helper()
 	dbPath := filepath.Join(t.TempDir(), "newapi.db")

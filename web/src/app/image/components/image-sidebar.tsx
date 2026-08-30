@@ -61,20 +61,18 @@ export function ImageSidebar({
         )}
 
         <ScrollArea
-          className={cn(
-            "min-h-0 flex-1",
-            hideActionButtons ? "flex flex-col gap-1 pr-0" : "flex flex-col gap-2 pr-1",
-          )}
+          className="min-h-0 flex-1"
         >
-          {isLoadingHistory ? (
-            <div className="flex items-center gap-2 px-2 py-3 text-sm text-stone-500">
-              <LoaderCircle className="size-4 animate-spin" />
-              正在读取会话记录
-            </div>
-          ) : conversations.length === 0 ? (
-            <div className="px-2 py-3 text-sm leading-6 text-stone-500">还没有对话记录，输入提示词后会在这里显示。</div>
-          ) : (
-            <>
+          <div className={cn("flex min-h-full flex-col gap-2", hideActionButtons ? "pr-0" : "pr-1")}>
+            {isLoadingHistory ? (
+              <div className="flex items-center gap-2 px-2 py-3 text-sm text-stone-500">
+                <LoaderCircle className="size-4 animate-spin" />
+                正在读取会话记录
+              </div>
+            ) : conversations.length === 0 ? (
+              <div className="px-2 py-3 text-sm leading-6 text-stone-500">还没有对话记录，输入提示词后会在这里显示。</div>
+            ) : (
+              <>
               {conversations.map((conversation) => {
                 const active = conversation.id === selectedConversationId;
                 const stats = getImageConversationStats(conversation);
@@ -139,8 +137,9 @@ export function ImageSidebar({
                   {isLoadingMoreHistory ? "正在加载" : "加载更多"}
                 </Button>
               ) : null}
-            </>
-          )}
+              </>
+            )}
+          </div>
         </ScrollArea>
       </div>
     </aside>

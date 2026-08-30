@@ -55,26 +55,12 @@ export type CanvasNode = {
   generation_video_resolution?: string;
   generation_video_audio?: boolean;
   generation_video_watermark?: boolean;
-  generation_video_mode?: string;
-  generation_video_negative_prompt?: string;
-  generation_video_multi_shot?: boolean;
-  generation_video_shot_type?: "intelligence" | "customize";
-  generation_video_multi_prompt?: Array<Record<string, unknown>>;
-  generation_video_element_list?: Array<Record<string, unknown>>;
-  generation_video_character_orientation?: "image" | "video";
   generation_video_reference_mode?: "first-frame" | "reference";
   generation_video_reference_image_urls?: string[];
   generation_video_reference_urls?: string[];
   generation_video_reference_audio_urls?: string[];
   generation_video_first_frame_node_id?: string;
   generation_video_last_frame_node_id?: string;
-  generation_video_kling_image_node_ids?: string[];
-  generation_video_kling_multi_prompt?: Array<{ text_node_id?: string; duration?: string }>;
-  generation_video_kling_element_list?: Array<{
-    name?: string;
-    description?: string;
-    node_ids?: string[];
-  }>;
   generation_mode?: "image" | "text" | "video" | "audio";
   generation_text_model?: string;
   generation_audio_model?: string;

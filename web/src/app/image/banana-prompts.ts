@@ -1,3 +1,5 @@
+import { createExpiringRequestCache, type ExpiringRequestCache } from "@/lib/expiring-request-cache";
+
 export type BananaPromptMode = "generate" | "edit";
 export type PromptMarketSourceId = string;
 export type PromptMarketLanguage = "zh-CN" | "en";
@@ -126,6 +128,36 @@ export const DEFAULT_PROMPT_MARKET_SOURCES: PromptMarketSourceConfig[] = [
     builtin: true,
   },
 ];
+
+const PROMPT_MARKET_CACHE_TTL_MS = 5 * 60 * 1000;
+const promptMarketCaches = new Map<string, ExpiringRequestCache<BananaPrompt[]>>();
+
+function promptMarketSourceCacheKey(sources: PromptMarketSourceConfig[]) {
+  return JSON.stringify(sources.map(({ id, label, url, homepage, format, enabled }) => ({
+    id,
+    label,
+    url,
+    homepage: homepage || "",
+    format,
+    enabled,
+  })));
+}
+
+function abortError() {
+  const error = new Error("请求已取消");
+  error.name = "AbortError";
+  return error;
+}
+
+function waitForPromptMarketRequest(request: Promise<BananaPrompt[]>, signal?: AbortSignal) {
+  if (!signal) return request;
+  if (signal.aborted) return Promise.reject(abortError());
+  return new Promise<BananaPrompt[]>((resolve, reject) => {
+    const abort = () => reject(abortError());
+    signal.addEventListener("abort", abort, { once: true });
+    request.then(resolve, reject).finally(() => signal.removeEventListener("abort", abort));
+  });
+}
 
 const BANANA_SOURCE: PromptMarketSourceConfig = {
   id: "banana-prompt-quicker",
@@ -496,12 +528,19 @@ export async function fetchPromptMarketSourcePrompts(source: PromptMarketSourceC
 
 export async function fetchPromptMarketPrompts(signal?: AbortSignal, configuredSources: PromptMarketSourceConfig[] = DEFAULT_PROMPT_MARKET_SOURCES) {
   const sources = normalizePromptMarketSources(configuredSources).filter((source) => source.enabled);
-  const results = await Promise.allSettled(sources.map((source) => fetchPromptMarketSourcePrompts(source, signal)));
-  const prompts = results.flatMap((result) => result.status === "fulfilled" ? result.value : []);
-  if (prompts.length > 0) {
-    return prompts;
+  const cacheKey = promptMarketSourceCacheKey(sources);
+  let cache = promptMarketCaches.get(cacheKey);
+  if (!cache) {
+    cache = createExpiringRequestCache<BananaPrompt[]>(PROMPT_MARKET_CACHE_TTL_MS);
+    promptMarketCaches.set(cacheKey, cache);
   }
+  const request = cache.get(async () => {
+    const results = await Promise.allSettled(sources.map((source) => fetchPromptMarketSourcePrompts(source)));
+    const prompts = results.flatMap((result) => result.status === "fulfilled" ? result.value : []);
+    if (prompts.length > 0) return prompts;
 
-  const failure = results.find((result): result is PromiseRejectedResult => result.status === "rejected");
-  throw failure?.reason instanceof Error ? failure.reason : new Error("读取提示词市场失败");
+    const failure = results.find((result): result is PromiseRejectedResult => result.status === "rejected");
+    throw failure?.reason instanceof Error ? failure.reason : new Error("读取提示词市场失败");
+  });
+  return waitForPromptMarketRequest(request, signal);
 }

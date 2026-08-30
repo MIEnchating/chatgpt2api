@@ -1,9 +1,7 @@
-import { CircleHelp, SlidersHorizontal } from "lucide-react";
+import { CircleHelp } from "lucide-react";
 import type { ReactNode } from "react";
 
-import { parseImageRatio } from "@/app/image/image-options";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { cn } from "@/lib/utils";
 
 export function ImageParameterLabel({ children, help }: { children: ReactNode; help?: string }) {
   return (
@@ -24,67 +22,5 @@ export function ImageParameterLabel({ children, help }: { children: ReactNode; h
         </Tooltip>
       ) : null}
     </div>
-  );
-}
-
-function ImageAspectRatioGlyph({ ratio }: { ratio: string }) {
-  const parsed = parseImageRatio(ratio) || { width: 1, height: 1 };
-  const landscape = parsed.width >= parsed.height;
-  const square = parsed.width === parsed.height;
-  const longEdge = square ? 16 : 20;
-  const width = landscape ? longEdge : Math.max(8, longEdge * (parsed.width / parsed.height));
-  const height = landscape ? Math.max(8, longEdge * (parsed.height / parsed.width)) : longEdge;
-  return (
-    <span className="flex h-5 w-6 shrink-0 items-center justify-center" aria-hidden="true">
-      <span
-        className="block rounded-[2px] border-[1.5px] border-current"
-        style={{ width, height }}
-      />
-    </span>
-  );
-}
-
-export function ImageAspectRatioOptionButton({
-  active,
-  disabled = false,
-  label,
-  ratio,
-  description,
-  onClick,
-}: {
-  active: boolean;
-  disabled?: boolean;
-  label: string;
-  ratio?: string;
-  description?: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      disabled={disabled}
-      aria-pressed={active}
-      className={cn(
-        "flex min-w-0 items-center justify-center rounded-md border border-transparent bg-[#f4f4f5] px-1.5 text-[10px] font-medium text-[#686b73] transition-colors hover:bg-[#eceef1] hover:text-[#222222] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1456f0]/30 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-[#f4f4f5] disabled:hover:text-[#686b73] dark:bg-muted/55 dark:text-muted-foreground dark:hover:bg-muted dark:hover:text-foreground dark:disabled:hover:bg-muted/55 dark:disabled:hover:text-muted-foreground",
-        description ? "h-14 flex-col gap-0.5" : "h-9 gap-1",
-        active &&
-          "border-[#a9c1ff] bg-[#edf3ff] text-[#1456f0] shadow-[inset_0_0_0_1px_rgba(20,86,240,0.04)] hover:bg-[#edf3ff] hover:text-[#1456f0] dark:border-sky-800 dark:bg-sky-950/35 dark:text-sky-300 dark:hover:bg-sky-950/45 dark:hover:text-sky-200",
-      )}
-      onClick={onClick}
-    >
-      <span className="flex min-w-0 items-center justify-center gap-1">
-        {ratio ? <ImageAspectRatioGlyph ratio={ratio} /> : (
-          <span className="flex h-5 w-6 shrink-0 items-center justify-center" aria-hidden="true">
-            <SlidersHorizontal className="size-3.5" />
-          </span>
-        )}
-        <span className="whitespace-nowrap leading-none">{label}</span>
-      </span>
-      {description ? (
-        <span className="max-w-full truncate text-[9px] font-normal leading-none text-[#92959c] dark:text-muted-foreground">
-          {description}
-        </span>
-      ) : null}
-    </button>
   );
 }

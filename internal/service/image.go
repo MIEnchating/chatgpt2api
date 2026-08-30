@@ -52,6 +52,7 @@ type ImageAccessScope struct {
 	OwnerID string
 	All     bool
 	Public  bool
+	Visible bool
 }
 
 type imageMetadata struct {
@@ -380,10 +381,8 @@ func (r *ImageStorageCleanupResult) addRemovalStats(stats imageStorageRemovalSta
 }
 
 func (s *ImageService) ListImages(baseURL, startDate, endDate string, scope ImageAccessScope) map[string]any {
-	_, _ = s.CleanupStorage(ImageStorageCleanupOptions{
-		RetentionDays: s.config.ImageRetentionDays(),
-		MaxBytes:      s.config.ImageStorageLimitBytes(),
-	})
+	metadataDocuments, metadataBatch := s.imageDocuments("image_metadata/")
+	thumbnailDocuments, thumbnailBatch := s.imageDocuments("image_thumbnails/")
 	root := s.config.ImagesDir()
 	items := make([]map[string]any, 0)
 	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
@@ -410,20 +409,24 @@ func (s *ImageService) ListImages(baseURL, startDate, endDate string, scope Imag
 		if endDate != "" && day > endDate {
 			return nil
 		}
-		meta := s.imageMetadata(rel)
+		meta := s.imageMetadataFromDocuments(rel, metadataDocuments, metadataBatch)
 		if meta.Deleting {
 			return nil
 		}
 		storedTime := storedImageTime(meta, info)
 		ownerID := meta.OwnerID
-		if scope.Public {
+		if scope.Visible {
+			if ownerID != scope.OwnerID && meta.Visibility != ImageVisibilityPublic {
+				return nil
+			}
+		} else if scope.Public {
 			if meta.Visibility != ImageVisibilityPublic {
 				return nil
 			}
 		} else if !scope.All && (scope.OwnerID == "" || ownerID != scope.OwnerID) {
 			return nil
 		}
-		thumb := s.thumbnailInfo(rel, info)
+		thumb := s.thumbnailInfoFromDocuments(rel, info, thumbnailDocuments, thumbnailBatch)
 		item := map[string]any{
 			"name":       filepath.Base(path),
 			"path":       rel,
@@ -433,10 +436,11 @@ func (s *ImageService) ListImages(baseURL, startDate, endDate string, scope Imag
 			"created_at": storedTime.Format("2006-01-02 15:04:05"),
 			"visibility": meta.Visibility,
 		}
+		sharedPublic := (scope.Public || scope.Visible) && ownerID != scope.OwnerID
 		addImageMetadataFields(item, meta, imageMetadataFieldOptions{
 			BaseURL:                baseURL,
-			IncludeReusableFields:  !scope.Public || meta.SharePromptParams,
-			IncludeReferenceImages: !scope.Public || meta.ShareReferences,
+			IncludeReusableFields:  !sharedPublic || meta.SharePromptParams,
+			IncludeReferenceImages: !sharedPublic || meta.ShareReferences,
 		})
 		if thumbRel, ok := thumb["thumbnail_rel"].(string); ok && thumbRel != "" {
 			item["thumbnail_url"] = thumbnailURL(baseURL, thumbRel, storedTime)
@@ -757,6 +761,30 @@ func (s *ImageService) thumbnailInfo(rel string, sourceInfo os.FileInfo) map[str
 	return result
 }
 
+func (s *ImageService) thumbnailInfoFromDocuments(rel string, sourceInfo os.FileInfo, documents map[string]any, batched bool) map[string]any {
+	if !batched {
+		return s.thumbnailInfo(rel, sourceInfo)
+	}
+	thumbPath := s.thumbnailPath(rel)
+	thumbRel := thumbnailRelativePath(s.config.ImageThumbnailsDir(), thumbPath)
+	result := map[string]any{"thumbnail_rel": thumbRel}
+	thumbInfo, err := os.Stat(thumbPath)
+	if err != nil || thumbInfo.ModTime().Before(sourceInfo.ModTime()) {
+		return result
+	}
+	meta, _ := documents[thumbnailMetadataDocumentName(rel)].(map[string]any)
+	if meta == nil {
+		meta = readImageMetadata(thumbPath+".json", sourceInfo.ModTime())
+	}
+	if !isCurrentThumbnailMetadata(meta) {
+		return result
+	}
+	for key, value := range meta {
+		result[key] = value
+	}
+	return result
+}
+
 func (s *ImageService) ensureThumbnailForRef(ref imageFileRef) map[string]any {
 	if _, result, ok := s.thumbnailCacheInfo(ref.rel, ref.info.ModTime()); ok {
 		return result
@@ -934,6 +962,40 @@ func (s *ImageService) imageMetadata(rel string) imageMetadata {
 		return imageMetadata{Visibility: ImageVisibilityPrivate}
 	}
 	return meta
+}
+
+func (s *ImageService) imageDocuments(prefix string) (map[string]any, bool) {
+	store, ok := s.store.(storage.JSONDocumentPrefixBackend)
+	if !ok {
+		return nil, false
+	}
+	documents, err := store.ListJSONDocuments(prefix)
+	if err != nil {
+		return nil, false
+	}
+	return documents, true
+}
+
+func (s *ImageService) imageMetadataFromDocuments(rel string, documents map[string]any, batched bool) imageMetadata {
+	if !batched {
+		return s.imageMetadata(rel)
+	}
+	if raw, ok := documents[imageOwnerDocumentName(rel)].(map[string]any); ok {
+		return normalizeImageMetadata(raw)
+	}
+	metaPath, err := s.imageOwnerMetadataPath(rel)
+	if err != nil {
+		return imageMetadata{Visibility: ImageVisibilityPrivate}
+	}
+	data, err := os.ReadFile(metaPath)
+	if err != nil {
+		return imageMetadata{Visibility: ImageVisibilityPrivate}
+	}
+	var raw map[string]any
+	if json.Unmarshal(data, &raw) != nil {
+		return imageMetadata{Visibility: ImageVisibilityPrivate}
+	}
+	return normalizeImageMetadata(raw)
 }
 
 func (s *ImageService) loadImageMetadata(rel string) (imageMetadata, error) {

@@ -3,6 +3,7 @@ package service
 import (
 	"fmt"
 	"net/url"
+	"sort"
 	"strings"
 	"sync"
 
@@ -13,6 +14,7 @@ import (
 const (
 	customRelayConfigDocumentDir = "custom_relay_configs"
 	customRelayTokenPrefix       = "__custom_relay__:"
+	maxCustomRelayConfigs        = 20
 	maxCustomRelayBaseURLLength  = 2048
 	maxCustomRelayAPIKeyLength   = 16384
 )
@@ -20,12 +22,17 @@ const (
 var customRelayKinds = []string{"text", "image", "video", "audio"}
 
 type CustomRelayConfig struct {
+	ID      string `json:"id"`
+	Kind    string `json:"kind"`
+	Name    string `json:"name"`
 	BaseURL string `json:"base_url"`
 	APIKey  string `json:"api_key"`
 }
 
 type CustomRelayConfigStatus struct {
+	ID         string `json:"id"`
 	Kind       string `json:"kind"`
+	Name       string `json:"name"`
 	TokenName  string `json:"token_name"`
 	BaseURL    string `json:"base_url"`
 	HasKey     bool   `json:"has_key"`
@@ -45,20 +52,20 @@ func CustomRelayKinds() []string {
 	return append([]string(nil), customRelayKinds...)
 }
 
-func CustomRelayTokenName(kind string) string {
-	kind = NormalizeCustomRelayKind(kind)
-	if kind == "" {
+func CustomRelayTokenName(id string) string {
+	id = strings.TrimSpace(id)
+	if id == "" {
 		return ""
 	}
-	return customRelayTokenPrefix + kind
+	return customRelayTokenPrefix + id
 }
 
-func CustomRelayKindFromTokenName(name string) string {
+func CustomRelayConfigIDFromTokenName(name string) string {
 	name = strings.TrimSpace(name)
 	if !strings.HasPrefix(name, customRelayTokenPrefix) {
 		return ""
 	}
-	return NormalizeCustomRelayKind(strings.TrimPrefix(name, customRelayTokenPrefix))
+	return strings.TrimSpace(strings.TrimPrefix(name, customRelayTokenPrefix))
 }
 
 func NormalizeCustomRelayKind(kind string) string {
@@ -71,14 +78,14 @@ func NormalizeCustomRelayKind(kind string) string {
 	return ""
 }
 
-func (s *CustomRelayConfigService) Config(ownerID, kind string) (CustomRelayConfig, error) {
+func (s *CustomRelayConfigService) Config(ownerID, id string) (CustomRelayConfig, error) {
 	ownerID = strings.TrimSpace(ownerID)
-	kind = NormalizeCustomRelayKind(kind)
+	id = strings.TrimSpace(id)
 	if ownerID == "" {
 		return CustomRelayConfig{}, fmt.Errorf("owner_id is required")
 	}
-	if kind == "" {
-		return CustomRelayConfig{}, fmt.Errorf("custom relay kind is not supported")
+	if id == "" {
+		return CustomRelayConfig{}, fmt.Errorf("custom relay config id is required")
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -86,10 +93,10 @@ func (s *CustomRelayConfigService) Config(ownerID, kind string) (CustomRelayConf
 	if err != nil {
 		return CustomRelayConfig{}, err
 	}
-	return configs[kind], nil
+	return configs[id], nil
 }
 
-func (s *CustomRelayConfigService) Statuses(ownerID string) (map[string]CustomRelayConfigStatus, error) {
+func (s *CustomRelayConfigService) Statuses(ownerID string) ([]CustomRelayConfigStatus, error) {
 	ownerID = strings.TrimSpace(ownerID)
 	if ownerID == "" {
 		return nil, fmt.Errorf("owner_id is required")
@@ -100,59 +107,88 @@ func (s *CustomRelayConfigService) Statuses(ownerID string) (map[string]CustomRe
 	if err != nil {
 		return nil, err
 	}
-	statuses := make(map[string]CustomRelayConfigStatus, len(customRelayKinds))
-	for _, kind := range customRelayKinds {
-		statuses[kind] = customRelayConfigStatus(kind, configs[kind])
+	statuses := make([]CustomRelayConfigStatus, 0, len(configs))
+	for _, config := range configs {
+		statuses = append(statuses, customRelayConfigStatus(config))
 	}
+	sort.Slice(statuses, func(i, j int) bool {
+		if statuses[i].Kind != statuses[j].Kind {
+			return statuses[i].Kind < statuses[j].Kind
+		}
+		if !strings.EqualFold(statuses[i].Name, statuses[j].Name) {
+			return strings.ToLower(statuses[i].Name) < strings.ToLower(statuses[j].Name)
+		}
+		return statuses[i].ID < statuses[j].ID
+	})
 	return statuses, nil
 }
 
-func (s *CustomRelayConfigService) Update(ownerID, kind, baseURL, apiKey string) (CustomRelayConfigStatus, error) {
+func (s *CustomRelayConfigService) Create(ownerID, kind, name, baseURL, apiKey string) (CustomRelayConfigStatus, error) {
 	ownerID = strings.TrimSpace(ownerID)
-	kind = NormalizeCustomRelayKind(kind)
 	if ownerID == "" {
 		return CustomRelayConfigStatus{}, fmt.Errorf("owner_id is required")
 	}
-	if kind == "" {
-		return CustomRelayConfigStatus{}, fmt.Errorf("custom relay kind is not supported")
-	}
-	normalizedBaseURL, err := normalizeCustomRelayBaseURL(baseURL)
+	config, err := normalizeCustomRelayConfig(CustomRelayConfig{ID: util.NewUUID(), Kind: kind, Name: name, BaseURL: baseURL, APIKey: apiKey})
 	if err != nil {
 		return CustomRelayConfigStatus{}, err
 	}
-	apiKey = strings.TrimSpace(apiKey)
-	if len(apiKey) > maxCustomRelayAPIKeyLength {
-		return CustomRelayConfigStatus{}, fmt.Errorf("API Key is too long")
-	}
-
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	configs, err := s.loadLocked(ownerID)
 	if err != nil {
 		return CustomRelayConfigStatus{}, err
 	}
-	current := configs[kind]
-	if apiKey == "" {
-		apiKey = current.APIKey
+	if len(configs) >= maxCustomRelayConfigs {
+		return CustomRelayConfigStatus{}, fmt.Errorf("自定义 API 配置最多支持 %d 条", maxCustomRelayConfigs)
 	}
-	if apiKey == "" {
-		return CustomRelayConfigStatus{}, fmt.Errorf("API Key is required")
-	}
-	configs[kind] = CustomRelayConfig{BaseURL: normalizedBaseURL, APIKey: apiKey}
+	configs[config.ID] = config
 	if err := s.saveLocked(ownerID, configs); err != nil {
 		return CustomRelayConfigStatus{}, err
 	}
-	return customRelayConfigStatus(kind, configs[kind]), nil
+	return customRelayConfigStatus(config), nil
 }
 
-func (s *CustomRelayConfigService) Delete(ownerID, kind string) error {
+func (s *CustomRelayConfigService) Update(ownerID, id, name, baseURL, apiKey string) (CustomRelayConfigStatus, error) {
 	ownerID = strings.TrimSpace(ownerID)
-	kind = NormalizeCustomRelayKind(kind)
+	id = strings.TrimSpace(id)
+	if ownerID == "" {
+		return CustomRelayConfigStatus{}, fmt.Errorf("owner_id is required")
+	}
+	if id == "" {
+		return CustomRelayConfigStatus{}, fmt.Errorf("custom relay config id is required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	configs, err := s.loadLocked(ownerID)
+	if err != nil {
+		return CustomRelayConfigStatus{}, err
+	}
+	current, exists := configs[id]
+	if !exists {
+		return CustomRelayConfigStatus{}, fmt.Errorf("custom relay config was not found")
+	}
+	if strings.TrimSpace(apiKey) == "" {
+		apiKey = current.APIKey
+	}
+	config, err := normalizeCustomRelayConfig(CustomRelayConfig{ID: id, Kind: current.Kind, Name: name, BaseURL: baseURL, APIKey: apiKey})
+	if err != nil {
+		return CustomRelayConfigStatus{}, err
+	}
+	configs[id] = config
+	if err := s.saveLocked(ownerID, configs); err != nil {
+		return CustomRelayConfigStatus{}, err
+	}
+	return customRelayConfigStatus(config), nil
+}
+
+func (s *CustomRelayConfigService) Delete(ownerID, id string) error {
+	ownerID = strings.TrimSpace(ownerID)
+	id = strings.TrimSpace(id)
 	if ownerID == "" {
 		return fmt.Errorf("owner_id is required")
 	}
-	if kind == "" {
-		return fmt.Errorf("custom relay kind is not supported")
+	if id == "" {
+		return fmt.Errorf("custom relay config id is required")
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -160,7 +196,7 @@ func (s *CustomRelayConfigService) Delete(ownerID, kind string) error {
 	if err != nil {
 		return err
 	}
-	delete(configs, kind)
+	delete(configs, id)
 	return s.saveLocked(ownerID, configs)
 }
 
@@ -172,19 +208,16 @@ func (s *CustomRelayConfigService) loadLocked(ownerID string) (map[string]Custom
 	if err != nil {
 		return nil, err
 	}
-	configs := make(map[string]CustomRelayConfig, len(customRelayKinds))
+	configs := make(map[string]CustomRelayConfig)
 	for key, value := range util.StringMap(raw) {
-		kind := NormalizeCustomRelayKind(key)
 		item := util.StringMap(value)
-		if kind == "" || len(item) == 0 {
-			continue
+		config, normalizeErr := normalizeCustomRelayConfig(CustomRelayConfig{
+			ID: key, Kind: util.Clean(item["kind"]), Name: util.Clean(item["name"]),
+			BaseURL: util.Clean(item["base_url"]), APIKey: util.Clean(item["api_key"]),
+		})
+		if normalizeErr == nil {
+			configs[config.ID] = config
 		}
-		baseURL, normalizeErr := normalizeCustomRelayBaseURL(util.Clean(item["base_url"]))
-		apiKey := strings.TrimSpace(util.Clean(item["api_key"]))
-		if normalizeErr != nil || apiKey == "" || len(apiKey) > maxCustomRelayAPIKeyLength {
-			continue
-		}
-		configs[kind] = CustomRelayConfig{BaseURL: baseURL, APIKey: apiKey}
 	}
 	return configs, nil
 }
@@ -197,12 +230,40 @@ func customRelayConfigDocumentName(ownerID string) string {
 	return customRelayConfigDocumentDir + "/" + util.SHA256Hex(strings.TrimSpace(ownerID)) + ".json"
 }
 
-func customRelayConfigStatus(kind string, config CustomRelayConfig) CustomRelayConfigStatus {
+func customRelayConfigStatus(config CustomRelayConfig) CustomRelayConfigStatus {
 	configured := config.BaseURL != "" && config.APIKey != ""
 	return CustomRelayConfigStatus{
-		Kind: kind, TokenName: CustomRelayTokenName(kind), BaseURL: config.BaseURL,
-		HasKey: config.APIKey != "", Configured: configured,
+		ID: config.ID, Kind: config.Kind, Name: config.Name, TokenName: CustomRelayTokenName(config.ID),
+		BaseURL: config.BaseURL, HasKey: config.APIKey != "", Configured: configured,
 	}
+}
+
+func normalizeCustomRelayConfig(config CustomRelayConfig) (CustomRelayConfig, error) {
+	config.ID = strings.TrimSpace(config.ID)
+	config.Kind = NormalizeCustomRelayKind(config.Kind)
+	config.Name = strings.TrimSpace(config.Name)
+	config.APIKey = strings.TrimSpace(config.APIKey)
+	if config.ID == "" || config.Kind == "" {
+		return CustomRelayConfig{}, fmt.Errorf("custom relay config is invalid")
+	}
+	if config.Name == "" {
+		return CustomRelayConfig{}, fmt.Errorf("配置名称不能为空")
+	}
+	if len([]rune(config.Name)) > 100 {
+		return CustomRelayConfig{}, fmt.Errorf("配置名称不能超过 100 个字符")
+	}
+	baseURL, err := normalizeCustomRelayBaseURL(config.BaseURL)
+	if err != nil {
+		return CustomRelayConfig{}, err
+	}
+	config.BaseURL = baseURL
+	if config.APIKey == "" {
+		return CustomRelayConfig{}, fmt.Errorf("API Key is required")
+	}
+	if len(config.APIKey) > maxCustomRelayAPIKeyLength {
+		return CustomRelayConfig{}, fmt.Errorf("API Key is too long")
+	}
+	return config, nil
 }
 
 func normalizeCustomRelayBaseURL(value string) (string, error) {

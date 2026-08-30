@@ -30,7 +30,7 @@ import {
 } from "@/lib/theme";
 
 const navItems = [
-  { href: "/image", label: "创作台" },
+  { href: "/studio", label: "创作台" },
   { href: "/canvas", label: "无限画布" },
   { href: "/workflows", label: "工作流" },
   { href: "/prompt-library", label: "提示词库" },
@@ -298,7 +298,7 @@ export function TopNav() {
 
   const visibleNavItems = navItems.filter((item) => canAccessPath(session, item.href));
   const roleLabel = session.role === "admin" ? "管理员" : session.roleName || "普通用户";
-  const canAccessImageTasks = canAccessPath(session, "/image");
+  const canAccessImageTasks = canAccessPath(session, "/studio");
 
   return (
     <header className="sticky top-3 z-40 rounded-2xl border border-border bg-card/92 shadow-[0_12px_36px_-28px_rgba(15,23,42,0.55)] backdrop-blur dark:border-border dark:bg-card/92">

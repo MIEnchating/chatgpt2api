@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Archive, Bell, Database, ImageIcon, ListChecks, LoaderCircle, ScrollText, Settings2, Sparkles } from "lucide-react";
+import { Archive, Bell, Clapperboard, Database, ImageIcon, ListChecks, LoaderCircle, ScrollText, Settings2, Sparkles } from "lucide-react";
 
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import type { StoredAuthSession } from "@/store/auth";
@@ -15,6 +15,7 @@ import { LogGovernanceCard } from "./components/log-governance-card";
 import { LoginPageImageCard } from "./components/login-page-image-card";
 import { ModelConfigCard } from "./components/model-config-card";
 import { PromptSourcesCard } from "./components/prompt-sources-card";
+import { VideoModelContractsCard } from "./components/video-model-contracts-card";
 import { useSettingsStore } from "./store";
 
 function SettingsDataController() {
@@ -36,6 +37,7 @@ function AdminSettingsPageContent({ session }: { session: StoredAuthSession }) {
   const settingsItems = [
     { id: "config", label: "基础与数据库", icon: Settings2, content: <ConfigCard isAdmin={session.role === "admin"} /> },
     { id: "model-config", label: "模型配置", icon: Sparkles, content: <ModelConfigCard session={session} /> },
+		...(session.role === "admin" ? [{ id: "video-model-contracts", label: "视频模型契约", icon: Clapperboard, content: <VideoModelContractsCard /> }] : []),
 		{ id: "image-object-storage", label: "存储配置", icon: Database, content: <StorageProvidersCard /> },
 		{ id: "media-storage-governance", label: "媒体治理", icon: Archive, content: <ImageStorageGovernanceCard /> },
     ...(session.role === "admin" ? [{ id: "announcements", label: "公告管理", icon: Bell, content: <AnnouncementsCard /> }] : []),
@@ -67,10 +69,14 @@ function AdminSettingsPageContent({ session }: { session: StoredAuthSession }) {
   };
 
   return (
-    <ScrollArea className="h-full min-h-0">
-      <div data-settings-layout className="w-full pr-1">
+    <ScrollArea
+      className="h-full min-h-0"
+      viewportClassName="pr-4 lg:pr-0"
+      viewStyle={{ height: "100%", minHeight: "100%" }}
+    >
+      <div data-settings-layout className="min-h-full w-full lg:h-full lg:min-h-0">
         <SettingsDataController />
-        <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-4 lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-5 2xl:grid-cols-[240px_minmax(0,1fr)]">
+        <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-4 lg:h-full lg:min-h-0 lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-5 2xl:grid-cols-[240px_minmax(0,1fr)]">
           <aside className="rounded-lg border border-border bg-background p-2 lg:sticky lg:top-0">
             <div className="px-2 pb-2 pt-1 lg:pb-3">
               <h1 className="text-base font-semibold text-foreground">系统设置</h1>
@@ -84,7 +90,7 @@ function AdminSettingsPageContent({ session }: { session: StoredAuthSession }) {
               })}
             </nav>
           </aside>
-          <main id={activeItem.id} className="min-w-0">{activeItem.content}</main>
+          <main id={activeItem.id} className="min-w-0 lg:h-full lg:min-h-0">{activeItem.content}</main>
         </div>
       </div>
     </ScrollArea>

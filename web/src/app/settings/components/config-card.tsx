@@ -238,7 +238,7 @@ export function ConfigCard({ isAdmin }: { isAdmin: boolean }) {
               />
             </Field>
             <Field className={configFieldClassName}>
-              <ConfigFieldLabel htmlFor="settings-image-task-timeout-seconds" tip="图片和视频异步任务超过该时间后会被判定为超时。">
+              <ConfigFieldLabel htmlFor="settings-image-task-timeout-seconds" tip="所有创作任务的基础超时；视频契约配置的轮询时限更长时，视频任务会自动延长。">
                 创作任务超时
               </ConfigFieldLabel>
               <NumberInputWithUnit

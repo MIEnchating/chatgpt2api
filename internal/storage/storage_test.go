@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -315,6 +316,70 @@ func TestDatabaseBackendQueryLogsEmptyReturnsJSONArray(t *testing.T) {
 	}
 	if string(data) != `{"items":[]}` {
 		t.Fatalf("marshaled logs = %s, want {\"items\":[]}", data)
+	}
+}
+
+func TestDatabaseBackendPaginatesLogsAndAggregatesSummary(t *testing.T) {
+	backend := openSQLiteStorageTestBackend(t, filepath.Join(t.TempDir(), "chatgpt2api.db"))
+	for _, item := range []map[string]any{
+		{"time": "2026-04-29 23:59:00", "summary": "old"},
+		{"time": "2026-04-30 09:00:00", "summary": "middle"},
+		{"time": "2026-04-30 10:00:00", "summary": "new"},
+	} {
+		if err := backend.AppendLog(item); err != nil {
+			t.Fatalf("AppendLog() error = %v", err)
+		}
+	}
+
+	first, err := backend.QueryLogPage("", "", nil, 2)
+	if err != nil {
+		t.Fatalf("QueryLogPage(first) error = %v", err)
+	}
+	if got := []any{first.Items[0]["summary"], first.Items[1]["summary"]}; !reflect.DeepEqual(got, []any{"new", "middle"}) || first.NextCursor == nil {
+		t.Fatalf("QueryLogPage(first) = %#v", first)
+	}
+	second, err := backend.QueryLogPage("", "", first.NextCursor, 2)
+	if err != nil {
+		t.Fatalf("QueryLogPage(second) error = %v", err)
+	}
+	if len(second.Items) != 1 || second.Items[0]["summary"] != "old" || second.NextCursor != nil {
+		t.Fatalf("QueryLogPage(second) = %#v", second)
+	}
+	total, oldest, latest, err := backend.LogSummary()
+	if err != nil || total != 3 || oldest != "2026-04-29 23:59:00" || latest != "2026-04-30 10:00:00" {
+		t.Fatalf("LogSummary() = (%d, %q, %q, %v)", total, oldest, latest, err)
+	}
+	var plan string
+	if err := backend.db.QueryRow(`EXPLAIN QUERY PLAN SELECT COUNT(*) FROM logs`).Scan(new(int), new(int), new(int), &plan); err != nil {
+		t.Fatalf("EXPLAIN QUERY PLAN error = %v", err)
+	}
+	if !strings.Contains(plan, "COVERING INDEX idx_logs_created_at") {
+		t.Fatalf("log summary query plan = %q", plan)
+	}
+}
+
+func TestDatabaseBackendListsDocumentPrefixWithIndexRange(t *testing.T) {
+	backend := openSQLiteStorageTestBackend(t, filepath.Join(t.TempDir(), "chatgpt2api.db"))
+	for name, value := range map[string]any{
+		"my_assets/a.json":        map[string]any{"id": "a"},
+		"my_assets/b.json":        map[string]any{"id": "b"},
+		"myXassets/wildcard.json": map[string]any{"id": "wrong"},
+	} {
+		if err := backend.SaveJSONDocument(name, value); err != nil {
+			t.Fatalf("SaveJSONDocument(%q) error = %v", name, err)
+		}
+	}
+	documents, err := backend.ListJSONDocuments("my_assets/")
+	if err != nil || len(documents) != 2 || documents["my_assets/a.json"] == nil || documents["my_assets/b.json"] == nil {
+		t.Fatalf("ListJSONDocuments() = %#v, error = %v", documents, err)
+	}
+	var plan string
+	if err := backend.db.QueryRow(`EXPLAIN QUERY PLAN SELECT name, data FROM json_documents
+		WHERE name >= ? AND name < ? ORDER BY name`, "my_assets/", documentPrefixUpperBound("my_assets/")).Scan(new(int), new(int), new(int), &plan); err != nil {
+		t.Fatalf("EXPLAIN QUERY PLAN error = %v", err)
+	}
+	if !strings.Contains(plan, "name>? AND name<?") {
+		t.Fatalf("document prefix query plan = %q", plan)
 	}
 }
 

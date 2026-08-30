@@ -7,8 +7,27 @@ import (
 	"testing"
 	"time"
 
+	"chatgpt2api/internal/storage"
 	"chatgpt2api/internal/util"
 )
+
+type countingLogPageBackend struct {
+	pageCalls     int
+	fullScanCalls int
+	page          storage.LogPage
+}
+
+func (b *countingLogPageBackend) AppendLog(map[string]any) error { return nil }
+
+func (b *countingLogPageBackend) QueryLogs(string, string, int) ([]map[string]any, error) {
+	b.fullScanCalls++
+	return nil, nil
+}
+
+func (b *countingLogPageBackend) QueryLogPage(string, string, *storage.LogCursor, int) (storage.LogPage, error) {
+	b.pageCalls++
+	return b.page, nil
+}
 
 func TestLogServiceStoresLogsInDatabase(t *testing.T) {
 	logs := NewLogService(newTestStorageBackend(t))
@@ -26,6 +45,18 @@ func TestLogServiceStoresLogsInDatabase(t *testing.T) {
 	}
 	if _, ok := items[0]["type"]; ok {
 		t.Fatalf("List()[0] should not expose log type: %#v", items[0])
+	}
+}
+
+func TestLogServiceSearchStopsAfterFirstMatchingPage(t *testing.T) {
+	backend := &countingLogPageBackend{page: storage.LogPage{Items: []map[string]any{
+		{"time": "2026-08-30 10:00:00", "summary": "newest", "detail": map[string]any{}},
+		{"time": "2026-08-30 09:00:00", "summary": "second", "detail": map[string]any{}},
+	}, NextCursor: &storage.LogCursor{Day: "2026-08-30", ID: 1}}}
+	service := &LogService{store: backend}
+	items := service.Search(LogQuery{Limit: 2})
+	if len(items) != 2 || backend.pageCalls != 1 || backend.fullScanCalls != 0 {
+		t.Fatalf("Search() = %#v, page calls = %d, full scans = %d", items, backend.pageCalls, backend.fullScanCalls)
 	}
 }
 

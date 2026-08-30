@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"mime"
 	"net"
 	"net/http"
 	"net/url"
@@ -45,8 +46,10 @@ func (r *auditBodyReadCloser) Close() error {
 
 type auditResponseWriter struct {
 	http.ResponseWriter
-	status int
-	body   bytes.Buffer
+	status        int
+	body          bytes.Buffer
+	bytesWritten  int64
+	bodyTruncated bool
 }
 
 func (w *auditResponseWriter) WriteHeader(status int) {
@@ -61,15 +64,46 @@ func (w *auditResponseWriter) Write(data []byte) (int, error) {
 	if w.status == 0 {
 		w.status = http.StatusOK
 	}
-	if w.body.Len() < maxAuditResponsePayloadBytes {
+	n, err := w.ResponseWriter.Write(data)
+	w.bytesWritten += int64(n)
+	if n > 0 && auditTextualResponse(w.Header().Get("Content-Type"), data[:n]) {
 		remaining := maxAuditResponsePayloadBytes - w.body.Len()
-		if len(data) > remaining {
-			_, _ = w.body.Write(data[:remaining])
-		} else {
-			_, _ = w.body.Write(data)
+		if remaining > 0 {
+			captured := n
+			if captured > remaining {
+				captured = remaining
+			}
+			_, _ = w.body.Write(data[:captured])
+		}
+		if n > remaining {
+			w.bodyTruncated = true
 		}
 	}
-	return w.ResponseWriter.Write(data)
+	return n, err
+}
+
+func (w *auditResponseWriter) ReadFrom(reader io.Reader) (int64, error) {
+	if w.status == 0 {
+		w.status = http.StatusOK
+	}
+	if auditTextualResponse(w.Header().Get("Content-Type"), nil) {
+		return io.Copy(struct{ io.Writer }{w}, reader)
+	}
+	var (
+		n   int64
+		err error
+	)
+	if readerFrom, ok := w.ResponseWriter.(io.ReaderFrom); ok {
+		n, err = readerFrom.ReadFrom(reader)
+	} else {
+		n, err = io.Copy(w.ResponseWriter, reader)
+	}
+	w.bytesWritten += n
+	return n, err
+}
+
+func (w *auditResponseWriter) Unwrap() http.ResponseWriter {
+	return w.ResponseWriter
 }
 
 func (w *auditResponseWriter) Flush() {
@@ -145,9 +179,7 @@ func (a *App) writeAuditLog(r *http.Request, recorder *auditResponseWriter, stat
 		"log_level":      logLevelForStatus(status),
 	}
 	addAuditRequestDetail(detail, requestCapture)
-	if responseBody := normalizeAuditPayload(recorder.body.Bytes()); responseBody != nil {
-		detail["response_body"] = responseBody
-	}
+	addAuditResponseDetail(detail, r, recorder, status)
 	if identity, ok := requestIdentity(r.Context()); ok {
 		addIdentityLogDetail(detail, identity)
 		if name := identityDisplayName(identity); name != "" {
@@ -229,14 +261,77 @@ func isNoisySuccessfulAuditRequest(r *http.Request) bool {
 			path == "/api/logs/governance",
 			path == "/api/announcements",
 			path == "/api/images/storage-governance",
+			path == "/api/images",
+			path == "/api/canvas",
+			path == "/api/workflows",
+			path == "/api/prompt-sources",
 			path == "/api/creation-tasks",
 			path == "/api/app-meta",
 			path == "/api/admin/permissions",
+			path == "/api/profile/announcement-preferences",
+			path == "/api/profile/image-generation-preferences",
+			path == "/api/profile/assets",
+			path == "/api/profile/prompt-favorites",
+			path == "/api/profile/storage-provider",
+			path == "/api/profile/custom-relay-configs",
+			path == "/api/profile/upstream-models",
+			path == "/api/profile/relay-key",
+			path == "/api/profile/balance",
+			path == "/api/model-config",
+			path == "/api/settings",
 			path == "/auth/session":
+			return true
+		case strings.HasPrefix(path, "/api/profile/image-conversations"),
+			strings.HasPrefix(path, "/api/files/") && strings.HasSuffix(path, "/content"):
 			return true
 		}
 	}
 	return false
+}
+
+func addAuditResponseDetail(detail map[string]any, r *http.Request, recorder *auditResponseWriter, status int) {
+	if detail == nil || recorder == nil {
+		return
+	}
+	if recorder.bytesWritten > 0 {
+		detail["response_bytes"] = recorder.bytesWritten
+	}
+	if contentType := auditMediaType(recorder.Header().Get("Content-Type")); contentType != "" {
+		detail["response_content_type"] = contentType
+	}
+	if recorder.bodyTruncated {
+		detail["response_truncated"] = true
+		return
+	}
+	if r != nil && status < http.StatusBadRequest && (r.Method == http.MethodGet || r.Method == http.MethodHead) {
+		return
+	}
+	if responseBody := normalizeAuditPayload(recorder.body.Bytes()); responseBody != nil {
+		detail["response_body"] = responseBody
+	}
+}
+
+func auditTextualResponse(contentType string, data []byte) bool {
+	mediaType := auditMediaType(contentType)
+	if mediaType == "" && len(data) > 0 {
+		mediaType = auditMediaType(http.DetectContentType(data))
+	}
+	if mediaType == "text/event-stream" {
+		return false
+	}
+	return strings.HasPrefix(mediaType, "text/") || mediaType == "application/json" || strings.HasSuffix(mediaType, "+json")
+}
+
+func auditMediaType(contentType string) string {
+	contentType = strings.TrimSpace(contentType)
+	if contentType == "" {
+		return ""
+	}
+	mediaType, _, err := mime.ParseMediaType(contentType)
+	if err != nil {
+		mediaType = strings.TrimSpace(strings.SplitN(contentType, ";", 2)[0])
+	}
+	return strings.ToLower(mediaType)
 }
 
 func captureAuditRequest(r *http.Request) auditRequestCapture {

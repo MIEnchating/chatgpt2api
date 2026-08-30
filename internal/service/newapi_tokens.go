@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"chatgpt2api/internal/storage"
@@ -20,6 +21,7 @@ import (
 const (
 	defaultNewAPITokenQueryTimeout    = 5 * time.Second
 	newAPITokenRouteMaxCooldownSecond = 31_536_000
+	newAPISchemaPresenceCacheTTL      = 5 * time.Minute
 )
 
 type NewAPITokenReaderConfig struct {
@@ -73,11 +75,18 @@ type newAPITokenGroupRoute struct {
 }
 
 type NewAPITokenReader struct {
-	db           *sql.DB
-	driver       string
-	databaseKind string
-	configured   bool
-	timeout      time.Duration
+	db                  *sql.DB
+	driver              string
+	databaseKind        string
+	configured          bool
+	timeout             time.Duration
+	schemaCacheMu       sync.RWMutex
+	schemaPresenceCache map[string]newAPISchemaPresenceCacheEntry
+}
+
+type newAPISchemaPresenceCacheEntry struct {
+	present   bool
+	expiresAt time.Time
 }
 
 type NewAPITokenError struct {
@@ -105,7 +114,10 @@ func NewNewAPITokenReader(cfg NewAPITokenReaderConfig) (*NewAPITokenReader, erro
 	if databaseKind != "newapi" && databaseKind != "sub2api" {
 		return nil, fmt.Errorf("unsupported relay database type %q: must be newapi or sub2api", cfg.DatabaseType)
 	}
-	reader := &NewAPITokenReader{timeout: timeout, databaseKind: databaseKind}
+	reader := &NewAPITokenReader{
+		timeout: timeout, databaseKind: databaseKind,
+		schemaPresenceCache: make(map[string]newAPISchemaPresenceCacheEntry),
+	}
 	databaseURL := strings.TrimSpace(cfg.DatabaseURL)
 	if databaseURL == "" {
 		return reader, nil
@@ -609,11 +621,20 @@ func (r *NewAPITokenReader) hasTableColumn(ctx context.Context, table, column st
 	if table == "" || column == "" || r == nil || r.db == nil {
 		return false
 	}
-	switch r.driver {
-	case "sqlite":
+	key := "column:" + strings.ToLower(table) + ":" + strings.ToLower(column)
+	return r.cachedSchemaPresence(key, func() (bool, error) {
+		if r.driver != "sqlite" {
+			query := "SELECT 1 FROM information_schema.columns WHERE table_name = " + r.placeholder(1) + " AND column_name = " + r.placeholder(2) + " LIMIT 1"
+			var exists int
+			err := r.db.QueryRowContext(ctx, query, table, column).Scan(&exists)
+			if errors.Is(err, sql.ErrNoRows) {
+				return false, nil
+			}
+			return err == nil, err
+		}
 		rows, err := r.db.QueryContext(ctx, "PRAGMA table_info("+r.quoteIdentifier(table)+")")
 		if err != nil {
-			return false
+			return false, err
 		}
 		defer rows.Close()
 		for rows.Next() {
@@ -623,31 +644,58 @@ func (r *NewAPITokenReader) hasTableColumn(ctx context.Context, table, column st
 			var defaultValue any
 			var pk int
 			if err := rows.Scan(&cid, &name, &typ, &notNull, &defaultValue, &pk); err != nil {
-				return false
+				return false, err
 			}
 			if strings.EqualFold(strings.TrimSpace(name), column) {
-				return true
+				return true, nil
 			}
 		}
-		return false
-	default:
-		query := "SELECT 1 FROM information_schema.columns WHERE table_name = " + r.placeholder(1) + " AND column_name = " + r.placeholder(2) + " LIMIT 1"
-		var exists int
-		return r.db.QueryRowContext(ctx, query, table, column).Scan(&exists) == nil
-	}
+		return false, rows.Err()
+	})
 }
 
 func (r *NewAPITokenReader) hasTable(ctx context.Context, table string) bool {
 	if r == nil || r.db == nil || strings.TrimSpace(table) == "" {
 		return false
 	}
-	var exists int
-	if r.driver == "sqlite" {
-		err := r.db.QueryRowContext(ctx, "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1", table).Scan(&exists)
-		return err == nil
+	key := "table:" + strings.ToLower(strings.TrimSpace(table))
+	return r.cachedSchemaPresence(key, func() (bool, error) {
+		var exists int
+		query := "SELECT 1 FROM information_schema.tables WHERE table_name = " + r.placeholder(1) + " LIMIT 1"
+		arguments := []any{table}
+		if r.driver == "sqlite" {
+			query = "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1"
+		}
+		err := r.db.QueryRowContext(ctx, query, arguments...).Scan(&exists)
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, nil
+		}
+		return err == nil, err
+	})
+}
+
+func (r *NewAPITokenReader) cachedSchemaPresence(key string, load func() (bool, error)) bool {
+	if r == nil || load == nil {
+		return false
 	}
-	err := r.db.QueryRowContext(ctx, "SELECT 1 FROM information_schema.tables WHERE table_name = "+r.placeholder(1)+" LIMIT 1", table).Scan(&exists)
-	return err == nil
+	now := time.Now()
+	r.schemaCacheMu.RLock()
+	entry, ok := r.schemaPresenceCache[key]
+	r.schemaCacheMu.RUnlock()
+	if ok && entry.expiresAt.After(now) {
+		return entry.present
+	}
+	present, err := load()
+	if err != nil {
+		return false
+	}
+	r.schemaCacheMu.Lock()
+	if r.schemaPresenceCache == nil {
+		r.schemaPresenceCache = make(map[string]newAPISchemaPresenceCacheEntry)
+	}
+	r.schemaPresenceCache[key] = newAPISchemaPresenceCacheEntry{present: present, expiresAt: now.Add(newAPISchemaPresenceCacheTTL)}
+	r.schemaCacheMu.Unlock()
+	return present
 }
 
 func (r *NewAPITokenReader) activeUserPredicate() string {

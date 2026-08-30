@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"chatgpt2api/internal/storage"
@@ -13,6 +14,59 @@ type myAssetObjectStorageStub struct {
 	nextID  int
 	uploads map[string]string
 	deleted []string
+}
+
+func TestGeneratedMediaUpsertIsAtomicAndIdempotent(t *testing.T) {
+	backend, err := storage.NewDatabaseBackend("sqlite:///" + filepath.ToSlash(filepath.Join(t.TempDir(), "assets.db")))
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend() error = %v", err)
+	}
+	defer backend.Close()
+
+	assets := NewMyAssetService(backend, newMyAssetObjectStorageStub())
+	if _, err := assets.Replace(context.Background(), "user-a", false, []MyAsset{{
+		ID: "manual-image", Kind: "image", Title: "手动素材", URL: "/images/manual.png", Tags: []string{},
+	}}); err != nil {
+		t.Fatalf("Replace() error = %v", err)
+	}
+	generated := []MyAsset{
+		{ID: "generated-video:task-a:0", Kind: "video", Title: "视频 A", URL: "/api/files/video-a/content", StorageKey: "server:video-a", MIMEType: "video/mp4", Source: "生成视频", Tags: []string{}},
+		{ID: "generated-video:task-b:0", Kind: "video", Title: "视频 B", URL: "/api/files/video-b/content", StorageKey: "server:video-b", MIMEType: "video/mp4", Source: "无限画布", Tags: []string{}},
+	}
+	var wait sync.WaitGroup
+	errors := make(chan error, len(generated))
+	for _, item := range generated {
+		wait.Add(1)
+		go func() {
+			defer wait.Done()
+			_, upsertErr := assets.UpsertMedia("user-a", item)
+			errors <- upsertErr
+		}()
+	}
+	wait.Wait()
+	close(errors)
+	for upsertErr := range errors {
+		if upsertErr != nil {
+			t.Fatalf("UpsertMedia() error = %v", upsertErr)
+		}
+	}
+
+	// Replaying a completed task must update the same record, not append one.
+	generated[0].Title = "视频 A（已恢复）"
+	if _, err := assets.UpsertMedia("user-a", generated[0]); err != nil {
+		t.Fatalf("UpsertMedia(replay) error = %v", err)
+	}
+	items, err := assets.List("user-a")
+	if err != nil || len(items) != 3 {
+		t.Fatalf("List() = (%#v, %v)", items, err)
+	}
+	byID := make(map[string]MyAsset, len(items))
+	for _, item := range items {
+		byID[item.ID] = item
+	}
+	if byID[generated[0].ID].Title != "视频 A（已恢复）" || byID["manual-image"].URL != "/images/manual.png" {
+		t.Fatalf("upserted items = %#v", items)
+	}
 }
 
 func newMyAssetObjectStorageStub() *myAssetObjectStorageStub {
@@ -97,7 +151,8 @@ func TestMyAssetsVisibleScopeHonorsVisibilityAndAdminAccess(t *testing.T) {
 	}
 	defer backend.Close()
 
-	assets := NewMyAssetService(backend, newMyAssetObjectStorageStub())
+	countingBackend := newCountingImageDocumentBackend(t, backend)
+	assets := NewMyAssetService(countingBackend, newMyAssetObjectStorageStub())
 	if _, err := assets.Replace(context.Background(), "user-a", false, []MyAsset{
 		{ID: "alice-private", Kind: "text", Title: "Alice private", Content: "private", Visibility: MyAssetPrivate},
 		{ID: "alice-public", Kind: "text", Title: "Alice public", Content: "public", Visibility: MyAssetPublic},
@@ -112,12 +167,17 @@ func TestMyAssetsVisibleScopeHonorsVisibilityAndAdminAccess(t *testing.T) {
 	}
 	owners := []MyAssetOwner{{ID: "user-a", Name: "Alice"}, {ID: "user-b", Name: "Bob"}}
 
+	countingBackend.loadCalls = 0
+	countingBackend.prefixCalls = 0
 	visible, err := assets.ListVisible("user-b", false, owners)
 	if err != nil {
 		t.Fatalf("ListVisible(user-b) error = %v", err)
 	}
 	if len(visible) != 3 {
 		t.Fatalf("ListVisible(user-b) = %#v", visible)
+	}
+	if countingBackend.prefixCalls != 1 || countingBackend.loadCalls != 0 {
+		t.Fatalf("ListVisible() prefix calls = %d, per-owner loads = %d", countingBackend.prefixCalls, countingBackend.loadCalls)
 	}
 	byID := make(map[string]MyAsset, len(visible))
 	for _, item := range visible {

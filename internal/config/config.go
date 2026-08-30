@@ -86,6 +86,8 @@ var (
 		"kling-v3",
 		"kling-3-0-turbo",
 		"minimax-h3",
+		"minimax-h3-768p",
+		"minimax-h3-768p-enhanced",
 		"MiniMax-Hailuo-2.3",
 		"doubao-seedance-2-5-260628",
 		"grok-imagine/text-to-video",
@@ -1083,6 +1085,7 @@ func normalizeHour(value any, fallback int) int {
 
 func normalizeModelList(value any, fallback []string) []string {
 	items := make([]string, 0)
+	explicit := true
 	switch v := value.(type) {
 	case []string:
 		items = append(items, v...)
@@ -1093,6 +1096,7 @@ func normalizeModelList(value any, fallback []string) []string {
 	case string:
 		items = append(items, strings.Split(v, ",")...)
 	default:
+		explicit = false
 		items = append(items, strings.Split(fmt.Sprint(util.ValueOr(value, "")), ",")...)
 	}
 	seen := map[string]struct{}{}
@@ -1109,6 +1113,9 @@ func normalizeModelList(value any, fallback []string) []string {
 		out = append(out, model)
 	}
 	if len(out) == 0 {
+		if explicit {
+			return []string{}
+		}
 		return append([]string(nil), fallback...)
 	}
 	return out

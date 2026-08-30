@@ -15,6 +15,11 @@ export type ImageConversationHistoryDetailResponse = {
   generation?: string | number | null;
 };
 
+export type ImageConversationHistoryWindowResponse = {
+  first_page: ImageConversationHistoryPageResponse;
+  active_page: ImageConversationHistoryPageResponse;
+};
+
 export type ImageConversationHistoryMutationResponse = {
   ok?: boolean;
   removed?: boolean;
@@ -77,11 +82,15 @@ export function fetchImageConversationHistoryPage(
   );
 }
 
-export function fetchActiveImageConversationHistory(
-  options: ImageConversationHistoryRequestOptions = {},
+export function fetchImageConversationHistoryWindow(
+  options: ImageConversationHistoryPageOptions = {},
 ) {
-  return httpRequest<ImageConversationHistoryPageResponse>(
-    "/api/profile/image-conversations/active",
+  const params = new URLSearchParams();
+  const limit = Number(options.limit);
+  if (Number.isSafeInteger(limit) && limit > 0) params.set("limit", String(limit));
+  const query = params.toString();
+  return httpRequest<ImageConversationHistoryWindowResponse>(
+    `/api/profile/image-conversations/window${query ? `?${query}` : ""}`,
     {
       headers: {
         "Cache-Control": "no-cache",

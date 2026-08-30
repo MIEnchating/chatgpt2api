@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"strconv"
 	"strings"
 	"sync"
 
@@ -116,22 +115,12 @@ type CanvasNode struct {
 	GenerationVideoResolution            string               `json:"generation_video_resolution,omitempty"`
 	GenerationVideoAudio                 *bool                `json:"generation_video_audio,omitempty"`
 	GenerationVideoWatermark             *bool                `json:"generation_video_watermark,omitempty"`
-	GenerationVideoMode                  string               `json:"generation_video_mode,omitempty"`
-	GenerationVideoNegativePrompt        string               `json:"generation_video_negative_prompt,omitempty"`
-	GenerationVideoMultiShot             *bool                `json:"generation_video_multi_shot,omitempty"`
-	GenerationVideoShotType              string               `json:"generation_video_shot_type,omitempty"`
-	GenerationVideoMultiPrompt           []map[string]any     `json:"generation_video_multi_prompt,omitempty"`
-	GenerationVideoElementList           []map[string]any     `json:"generation_video_element_list,omitempty"`
-	GenerationVideoCharacterOrientation  string               `json:"generation_video_character_orientation,omitempty"`
 	GenerationVideoReferenceMode         string               `json:"generation_video_reference_mode,omitempty"`
 	GenerationVideoReferenceImages       []string             `json:"generation_video_reference_image_urls,omitempty"`
 	GenerationVideoReferenceURLs         []string             `json:"generation_video_reference_urls,omitempty"`
 	GenerationVideoReferenceAudio        []string             `json:"generation_video_reference_audio_urls,omitempty"`
 	GenerationVideoFirstFrameNodeID      string               `json:"generation_video_first_frame_node_id,omitempty"`
 	GenerationVideoLastFrameNodeID       string               `json:"generation_video_last_frame_node_id,omitempty"`
-	GenerationVideoKlingImageNodeIDs     []string             `json:"generation_video_kling_image_node_ids,omitempty"`
-	GenerationVideoKlingMultiPrompt      []map[string]any     `json:"generation_video_kling_multi_prompt,omitempty"`
-	GenerationVideoKlingElementList      []map[string]any     `json:"generation_video_kling_element_list,omitempty"`
 	GenerationMode                       string               `json:"generation_mode,omitempty"`
 	GenerationTextModel                  string               `json:"generation_text_model,omitempty"`
 	GenerationAudioModel                 string               `json:"generation_audio_model,omitempty"`
@@ -993,9 +982,6 @@ func normalizeCanvasNode(node CanvasNode) (CanvasNode, error) {
 	node.GenerationVideoModel = strings.TrimSpace(node.GenerationVideoModel)
 	node.GenerationVideoSize = strings.ToLower(strings.TrimSpace(node.GenerationVideoSize))
 	node.GenerationVideoResolution = strings.ToLower(strings.TrimSpace(node.GenerationVideoResolution))
-	node.GenerationVideoMode = strings.TrimSpace(node.GenerationVideoMode)
-	node.GenerationVideoShotType = strings.ToLower(strings.TrimSpace(node.GenerationVideoShotType))
-	node.GenerationVideoCharacterOrientation = strings.ToLower(strings.TrimSpace(node.GenerationVideoCharacterOrientation))
 	node.GenerationVideoReferenceMode = strings.ToLower(strings.TrimSpace(node.GenerationVideoReferenceMode))
 	node.GenerationVideoFirstFrameNodeID = strings.TrimSpace(node.GenerationVideoFirstFrameNodeID)
 	node.GenerationVideoLastFrameNodeID = strings.TrimSpace(node.GenerationVideoLastFrameNodeID)
@@ -1036,9 +1022,6 @@ func normalizeCanvasNode(node CanvasNode) (CanvasNode, error) {
 	for index := range node.GenerationVideoReferenceAudio {
 		node.GenerationVideoReferenceAudio[index] = strings.TrimSpace(node.GenerationVideoReferenceAudio[index])
 	}
-	for index := range node.GenerationVideoKlingImageNodeIDs {
-		node.GenerationVideoKlingImageNodeIDs[index] = strings.TrimSpace(node.GenerationVideoKlingImageNodeIDs[index])
-	}
 	for index := range node.BatchChildIDs {
 		node.BatchChildIDs[index] = strings.TrimSpace(node.BatchChildIDs[index])
 	}
@@ -1048,7 +1031,7 @@ func normalizeCanvasNode(node CanvasNode) (CanvasNode, error) {
 	if len(node.Title) > canvasDocumentMaxTitle || len(node.Prompt) > canvasDocumentMaxPrompt || node.ComposerContent != nil && len(*node.ComposerContent) > canvasDocumentMaxPrompt {
 		return CanvasNode{}, invalidCanvasDocument("node text is too long")
 	}
-	if len(node.GenerationVideoMode) > 128 || len(node.GenerationVideoNegativePrompt) > canvasDocumentMaxPrompt || len(node.GenerationAudioInstructions) > canvasDocumentMaxPrompt || len(node.GenerationAudioMiMoVoiceDesignPrompt) > canvasDocumentMaxPrompt || len(node.PanoramaSourcePrompt) > canvasDocumentMaxPrompt || len(node.PanoramaFinalPrompt) > canvasDocumentMaxPrompt {
+	if len(node.GenerationAudioInstructions) > canvasDocumentMaxPrompt || len(node.GenerationAudioMiMoVoiceDesignPrompt) > canvasDocumentMaxPrompt || len(node.PanoramaSourcePrompt) > canvasDocumentMaxPrompt || len(node.PanoramaFinalPrompt) > canvasDocumentMaxPrompt {
 		return CanvasNode{}, invalidCanvasDocument("node media generation text is too long")
 	}
 	if node.GenerationMode != "" && node.GenerationMode != "image" && node.GenerationMode != "text" && node.GenerationMode != "video" && node.GenerationMode != "audio" {
@@ -1057,48 +1040,8 @@ func normalizeCanvasNode(node CanvasNode) (CanvasNode, error) {
 	if node.Type == "config" && node.GenerationMode == "text" && (node.GenerationTextModel == "" || len(node.GenerationTextModel) > 256) {
 		return CanvasNode{}, invalidCanvasDocument("text node generation model is invalid")
 	}
-	if node.GenerationVideoShotType != "" && node.GenerationVideoShotType != "intelligence" && node.GenerationVideoShotType != "customize" {
-		return CanvasNode{}, invalidCanvasDocument("video node shot type is invalid")
-	}
-	if node.GenerationVideoCharacterOrientation != "" && node.GenerationVideoCharacterOrientation != "image" && node.GenerationVideoCharacterOrientation != "video" {
-		return CanvasNode{}, invalidCanvasDocument("video node character orientation is invalid")
-	}
-	if len(node.GenerationVideoMultiPrompt) > 20 || len(node.GenerationVideoElementList) > 20 || len(node.GenerationVideoKlingMultiPrompt) > 20 || len(node.GenerationVideoKlingElementList) > 3 {
-		return CanvasNode{}, invalidCanvasDocument("video node structured parameters are too large")
-	}
-	if len(node.GenerationVideoFirstFrameNodeID) > 128 || len(node.GenerationVideoLastFrameNodeID) > 128 || len(node.GenerationVideoKlingImageNodeIDs) > 2 {
+	if len(node.GenerationVideoFirstFrameNodeID) > 128 || len(node.GenerationVideoLastFrameNodeID) > 128 {
 		return CanvasNode{}, invalidCanvasDocument("video node frame references are invalid")
-	}
-	for _, nodeID := range node.GenerationVideoKlingImageNodeIDs {
-		if nodeID == "" || len(nodeID) > 128 {
-			return CanvasNode{}, invalidCanvasDocument("video node frame references are invalid")
-		}
-	}
-	for _, item := range node.GenerationVideoKlingMultiPrompt {
-		nodeID, nodeIDOK := item["text_node_id"].(string)
-		duration, durationOK := item["duration"].(string)
-		if !nodeIDOK || len(strings.TrimSpace(nodeID)) > 128 || !durationOK || len(strings.TrimSpace(duration)) > 16 {
-			return CanvasNode{}, invalidCanvasDocument("video node multi prompt bindings are invalid")
-		}
-		item["text_node_id"] = strings.TrimSpace(nodeID)
-		item["duration"] = strings.TrimSpace(duration)
-	}
-	for _, item := range node.GenerationVideoKlingElementList {
-		name, nameOK := item["name"].(string)
-		description, descriptionOK := item["description"].(string)
-		nodeIDs, nodeIDsOK := canvasStringSlice(item["node_ids"])
-		if !nameOK || !descriptionOK || len(name) > canvasDocumentMaxTitle || len(description) > canvasDocumentMaxPrompt || !nodeIDsOK || len(nodeIDs) > 4 {
-			return CanvasNode{}, invalidCanvasDocument("video node element bindings are invalid")
-		}
-		for index := range nodeIDs {
-			nodeIDs[index] = strings.TrimSpace(nodeIDs[index])
-			if nodeIDs[index] == "" || len(nodeIDs[index]) > 128 {
-				return CanvasNode{}, invalidCanvasDocument("video node element bindings are invalid")
-			}
-		}
-		item["name"] = strings.TrimSpace(name)
-		item["description"] = strings.TrimSpace(description)
-		item["node_ids"] = nodeIDs
 	}
 	if node.Type == "audio" || node.Type == "config" && node.GenerationMode == "audio" {
 		if node.GenerationAudioModel == "" || len(node.GenerationAudioModel) > 256 {
@@ -1173,17 +1116,13 @@ func normalizeCanvasNode(node CanvasNode) (CanvasNode, error) {
 		if node.GenerationVideoModel == "" || len(node.GenerationVideoModel) > 256 {
 			return CanvasNode{}, invalidCanvasDocument("video node generation model is invalid")
 		}
-		// Some providers (for example MiniMax Hailuo) derive the output frame
-		// from the input and do not expose a size/aspect-ratio parameter.
-		if !validCanvasVideoSize(node.GenerationVideoSize) {
+		if len(node.GenerationVideoSize) > 64 {
 			return CanvasNode{}, invalidCanvasDocument("video node generation size is invalid")
 		}
-		if !validCanvasVideoDuration(node.GenerationVideoModel, node.GenerationVideoSeconds) {
+		if node.GenerationVideoSeconds < 1 || node.GenerationVideoSeconds > 3600 {
 			return CanvasNode{}, invalidCanvasDocument("video node generation duration is invalid")
 		}
-		// Sora selects its output size through generation_video_size and does not
-		// send an independent resolution. Other providers may expose 2K/4K.
-		if node.GenerationVideoResolution != "" && node.GenerationVideoResolution != "480p" && node.GenerationVideoResolution != "512p" && node.GenerationVideoResolution != "720p" && node.GenerationVideoResolution != "768p" && node.GenerationVideoResolution != "1080p" && node.GenerationVideoResolution != "2k" && node.GenerationVideoResolution != "4k" {
+		if len(node.GenerationVideoResolution) > 64 {
 			return CanvasNode{}, invalidCanvasDocument("video node generation resolution is invalid")
 		}
 		if node.GenerationVideoReferenceMode != "" && node.GenerationVideoReferenceMode != "first-frame" && node.GenerationVideoReferenceMode != "reference" {
@@ -1274,26 +1213,6 @@ func normalizeCanvasNode(node CanvasNode) (CanvasNode, error) {
 	return node, nil
 }
 
-func validCanvasVideoDuration(model string, seconds int) bool {
-	_ = model
-	// Persistence should not duplicate every provider's duration enum. The
-	// generation endpoint performs the authoritative model-specific validation.
-	return seconds == -1 || (seconds >= 1 && seconds <= 60)
-}
-
-func validCanvasVideoSize(value string) bool {
-	if value == "" || canvasStringIn(value, "auto", "adaptive", "16:9", "9:16", "1:1", "4:3", "3:4", "3:2", "2:3", "21:9") {
-		return true
-	}
-	parts := strings.Split(value, "x")
-	if len(parts) != 2 {
-		return false
-	}
-	width, widthErr := strconv.Atoi(parts[0])
-	height, heightErr := strconv.Atoi(parts[1])
-	return widthErr == nil && heightErr == nil && width > 0 && height > 0 && width <= canvasDocumentMaxNodeDim && height <= canvasDocumentMaxNodeDim
-}
-
 func validCanvasOpenAITTSVoice(value string) bool {
 	return canvasStringIn(value, "alloy", "ash", "ballad", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer", "verse", "marin", "cedar")
 }
@@ -1330,25 +1249,6 @@ func canvasNodeIDListContains(ids []string, target string) bool {
 		}
 	}
 	return false
-}
-
-func canvasStringSlice(value any) ([]string, bool) {
-	switch values := value.(type) {
-	case []string:
-		return append([]string(nil), values...), true
-	case []any:
-		result := make([]string, 0, len(values))
-		for _, value := range values {
-			text, ok := value.(string)
-			if !ok {
-				return nil, false
-			}
-			result = append(result, text)
-		}
-		return result, true
-	default:
-		return nil, false
-	}
 }
 
 func canvasWorkspaceName(ownerID string) string {

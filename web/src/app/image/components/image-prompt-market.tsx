@@ -14,7 +14,7 @@ import {
   type PromptMarketLocalization,
   type PromptMarketSourceId,
 } from "@/app/image/banana-prompts";
-import { fetchSettingsConfig } from "@/lib/api";
+import { fetchPromptSourcesConfig } from "@/lib/api";
 import {
   createPromptFavorite,
   deletePromptFavorite,
@@ -30,6 +30,7 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
+  DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -185,9 +186,9 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
     setError("");
     const controller = new AbortController();
 
-    void fetchSettingsConfig()
-      .then(({ config }) => {
-        const configured = normalizePromptMarketSources(config.prompt_sources);
+    void fetchPromptSourcesConfig()
+      .then(({ sources }) => {
+        const configured = normalizePromptMarketSources(sources);
         setSourceConfigs(configured);
         return fetchPromptMarketPrompts(controller.signal, configured);
       })
@@ -465,7 +466,7 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
 
   const content = (
     <>
-        {presentation === "dialog" ? <header className="border-b border-border px-4 pt-4 pr-12 pb-3 sm:px-6 sm:pt-5 sm:pr-14 sm:pb-4">
+        {presentation === "dialog" ? <DialogHeader className="block border-b border-border px-4 pt-4 pr-20 pb-3 sm:px-6 sm:pt-5 sm:pr-20 sm:pb-4">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <h1 className="font-display text-xl font-semibold leading-tight sm:text-2xl">提示词库</h1>
@@ -485,7 +486,7 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
               </span>
             </div>
           </div>
-        </header> : null}
+        </DialogHeader> : null}
 
         <div className="border-b border-border px-4 py-2.5 sm:px-6 sm:py-3">
           <div className="grid gap-2 md:grid-cols-[minmax(180px,1fr)_minmax(220px,340px)_150px]">

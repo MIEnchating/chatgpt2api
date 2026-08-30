@@ -11,6 +11,7 @@ import {
 import { normalizedImagePartialImages } from "@/lib/image-api-contract";
 
 export const DEFAULT_CREATION_WORKBENCH_PREFERENCES: CreationWorkbenchPreferences = {
+  image_model: "",
   image_size: "1024x1024",
   image_size_mode: "ratio",
   image_aspect_ratio: "1:1",
@@ -23,10 +24,10 @@ export const DEFAULT_CREATION_WORKBENCH_PREFERENCES: CreationWorkbenchPreference
   image_count: 1,
   image_output_format: "png",
   image_output_compression: "",
+  video_model: "",
   video_size: "1280x720",
   video_seconds: "6",
   video_resolution: "720p",
-  video_mode: "std",
   video_generate_audio: false,
   video_watermark: false,
 };
@@ -48,10 +49,10 @@ const DEFAULT_IMAGE_GENERATION_PREFERENCES: ImageGenerationPreferences = {
   default_audio_voice: "",
   default_audio_format: "",
   default_audio_speed: 1,
-  default_text_relay_token_name: "",
-  default_image_relay_token_name: "",
-  default_video_relay_token_name: "",
-  default_audio_relay_token_name: "",
+  default_text_relay_token_names: [],
+  default_image_relay_token_names: [],
+  default_video_relay_token_names: [],
+  default_audio_relay_token_names: [],
   workbench: DEFAULT_CREATION_WORKBENCH_PREFERENCES,
 };
 
@@ -79,16 +80,18 @@ function normalizePreferences(value: Partial<ImageGenerationPreferences> | undef
     default_audio_voice: String(value?.default_audio_voice || "").trim(),
     default_audio_format: defaultAudioFormat,
     default_audio_speed: Math.max(0.25, Math.min(4, Number(value?.default_audio_speed) || 1)),
-    default_text_relay_token_name: String(value?.default_text_relay_token_name || "").trim(),
-    default_image_relay_token_name: String(value?.default_image_relay_token_name || "").trim(),
-    default_video_relay_token_name: String(value?.default_video_relay_token_name || "").trim(),
-    default_audio_relay_token_name: String(value?.default_audio_relay_token_name || "").trim(),
+    default_text_relay_token_names: Array.isArray(value?.default_text_relay_token_names) ? value.default_text_relay_token_names.map((name) => String(name).trim()).filter(Boolean) : [],
+    default_image_relay_token_names: Array.isArray(value?.default_image_relay_token_names) ? value.default_image_relay_token_names.map((name) => String(name).trim()).filter(Boolean) : [],
+    default_video_relay_token_names: Array.isArray(value?.default_video_relay_token_names) ? value.default_video_relay_token_names.map((name) => String(name).trim()).filter(Boolean) : [],
+    default_audio_relay_token_names: Array.isArray(value?.default_audio_relay_token_names) ? value.default_audio_relay_token_names.map((name) => String(name).trim()).filter(Boolean) : [],
     workbench: {
       ...DEFAULT_CREATION_WORKBENCH_PREFERENCES,
       ...value?.workbench,
+      image_model: String(value?.workbench?.image_model || "").trim(),
       image_count: Math.max(1, Math.min(10, Math.round(Number(value?.workbench?.image_count) || 1))),
       image_snap_to_multiple_16: value?.workbench?.image_snap_to_multiple_16 !== false,
       video_generate_audio: value?.workbench?.video_generate_audio === true,
+      video_model: String(value?.workbench?.video_model || "").trim(),
       video_watermark: value?.workbench?.video_watermark === true,
     },
   };

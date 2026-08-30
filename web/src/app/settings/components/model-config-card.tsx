@@ -82,12 +82,14 @@ function GlobalModelList({
   models,
   onChange,
   onAdd,
+  onClear,
 }: {
   icon: typeof ImageIcon;
   kind: ModelKind;
   models: string[];
   onChange: (models: string[]) => void;
   onAdd: () => void;
+  onClear: () => void;
 }) {
   const title = modelKindMetadata[kind].title;
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
@@ -122,10 +124,16 @@ function GlobalModelList({
             <p className="text-xs text-muted-foreground">全站可用，共 {models.length} 个</p>
           </div>
         </div>
-        <Button type="button" variant="outline" size="sm" className="h-9 shrink-0" onClick={onAdd}>
-          <Plus className="size-4" />
-          添加
-        </Button>
+        <div className="flex shrink-0 items-center gap-1.5">
+          <Button type="button" variant="ghost" size="sm" className="h-9 px-2.5 text-muted-foreground hover:text-destructive" onClick={onClear} disabled={models.length === 0}>
+            <Trash2 className="size-4" />
+            清空
+          </Button>
+          <Button type="button" variant="outline" size="sm" className="h-9" onClick={onAdd}>
+            <Plus className="size-4" />
+            添加
+          </Button>
+        </div>
       </div>
       <div className="divide-y divide-border/70 overflow-hidden rounded-lg border border-border/80 bg-background">
         {models.map((model, index) => {
@@ -202,6 +210,9 @@ function GlobalModelList({
             </div>
           );
         })}
+        {models.length === 0 ? (
+          <div className="flex min-h-20 items-center justify-center px-4 text-sm text-muted-foreground">暂无模型，点击“添加”进行配置</div>
+        ) : null}
       </div>
     </section>
   );
@@ -246,7 +257,7 @@ function AddModelDialog({
     if (!open) return;
     const controller = new AbortController();
     const preferredKind = initialKind;
-    const preferredTokenName = relayTokenNames[preferredKind].trim();
+    const preferredTokenName = relayTokenNames[preferredKind][0] || "";
     setMode("automatic");
     setKind(preferredKind);
     setSelectedTokenName(preferredTokenName);
@@ -289,7 +300,7 @@ function AddModelDialog({
 
   function selectModelKind(value: ModelKind) {
     setKind(value);
-    const preferredTokenName = relayTokenNames[value].trim();
+    const preferredTokenName = relayTokenNames[value][0] || "";
     setSelectedTokenName(tokenNames.includes(preferredTokenName) ? preferredTokenName : "");
     setFetchedModels([]);
     setSelectedModels(new Set());
@@ -511,7 +522,6 @@ export function ModelConfigCard({ session }: { session: StoredAuthSession }) {
 
   function updateModels(kind: ModelKind, models: string[]) {
     const normalized = normalizeModelNames(models, []);
-    if (normalized.length === 0) return;
     const serialized = normalized.join(", ");
     if (kind === "text") setTextModels(serialized);
     if (kind === "image") setImageModels(serialized);
@@ -549,6 +559,7 @@ export function ModelConfigCard({ session }: { session: StoredAuthSession }) {
               models={textModels}
               onChange={(models) => updateModels("text", models)}
               onAdd={() => openAddDialog("text")}
+              onClear={() => updateModels("text", [])}
             />
             <GlobalModelList
               icon={ImageIcon}
@@ -556,6 +567,7 @@ export function ModelConfigCard({ session }: { session: StoredAuthSession }) {
               models={imageModels}
               onChange={(models) => updateModels("image", models)}
               onAdd={() => openAddDialog("image")}
+              onClear={() => updateModels("image", [])}
             />
             <GlobalModelList
               icon={Clapperboard}
@@ -563,6 +575,7 @@ export function ModelConfigCard({ session }: { session: StoredAuthSession }) {
               models={videoModels}
               onChange={(models) => updateModels("video", models)}
               onAdd={() => openAddDialog("video")}
+              onClear={() => updateModels("video", [])}
             />
             <GlobalModelList
               icon={AudioLines}
@@ -570,6 +583,7 @@ export function ModelConfigCard({ session }: { session: StoredAuthSession }) {
               models={audioModels}
               onChange={(models) => updateModels("audio", models)}
               onAdd={() => openAddDialog("audio")}
+              onClear={() => updateModels("audio", [])}
             />
           </div>
         </div>

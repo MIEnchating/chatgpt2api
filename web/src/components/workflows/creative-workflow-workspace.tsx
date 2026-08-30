@@ -245,9 +245,10 @@ export function CreativeWorkflowWorkspace({
   generationDefaults,
 }: CreativeWorkflowWorkspaceProps = {}) {
   const { isCheckingAuth, session } = useAuthGuard(undefined, "/workflows");
-  const { preferences } = useImageGenerationPreferences(session?.key || "");
-  const { tokenNames: relayTokenNames } = useRelayTokenPreferences();
-  const sessionTextChannelID = relayTokenNames.text;
+  const sessionKey = session?.key || "";
+  const { preferences, isReady: preferencesReady } = useImageGenerationPreferences(sessionKey);
+  const { isReady: relayPreferencesReady, tokenNameForModel } = useRelayTokenPreferences();
+  const sessionTextChannelID = tokenNameForModel("text", preferences.default_text_model || "");
   const { assets: myAssets, loading: assetLoading } = useMyAssets(
     session?.key || "",
     Boolean(session),
@@ -284,7 +285,7 @@ export function CreativeWorkflowWorkspace({
   const [agentWarnings, setAgentWarnings] = useState<string[]>([]);
   const [assetPickerTarget, setAssetPickerTarget] = useState<"workflow" | "agent" | null>(null);
   useEffect(() => {
-    if (!session) return;
+    if (!sessionKey || !preferencesReady || !relayPreferencesReady) return;
     let ignore = false;
     void Promise.all([fetchWorkflows(), fetchModelConfig(), fetchCreationTasks([])])
       .then(async ([workflows, modelResponse, creationTasks]) => {
@@ -322,7 +323,7 @@ export function CreativeWorkflowWorkspace({
     return () => {
       ignore = true;
     };
-  }, [generationDefaults, preferences, session, sessionTextChannelID]);
+  }, [generationDefaults, preferences, preferencesReady, relayPreferencesReady, sessionKey, sessionTextChannelID]);
 
   useEffect(() => {
     if (!agentModel && models?.default_text_model) {
@@ -603,7 +604,7 @@ export function CreativeWorkflowWorkspace({
       : undefined;
     const stream = preferences.stream;
     const partialImages = preferences.partial_images || undefined;
-    const relayTokenName = relayTokenNames.image;
+    const relayTokenName = tokenNameForModel("image", model);
     const execution = {
       stream,
       partial_images: preferences.partial_images,
@@ -824,7 +825,7 @@ export function CreativeWorkflowWorkspace({
         clientTaskId: taskID("workflow-series"),
         prompt,
         model,
-        relayTokenName: relayTokenNames.text,
+        relayTokenName: tokenNameForModel("text", model),
         messages: [{ role: "user", content: prompt }],
       });
       const completed = await waitForTask(
@@ -982,12 +983,12 @@ export function CreativeWorkflowWorkspace({
     if (!session || !agentPrompt.trim() || agentBusy) return;
     setAgentBusy(true);
     try {
+      const model = agentModel || preferences.default_text_model || models?.default_text_model || "";
       const response = await draftWorkflowWithAgent({
         prompt: agentPrompt.trim(),
         scope: agentScope,
-        model:
-          agentModel || preferences.default_text_model || models?.default_text_model || "",
-        channelID: relayTokenNames.text,
+        model,
+        channelID: tokenNameForModel("text", model),
         references: agentReferences.length
           ? await workflowImageDataURLs(agentReferences)
           : [],

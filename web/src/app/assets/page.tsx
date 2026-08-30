@@ -69,14 +69,8 @@ export default function AssetsPage() {
         setManagedAssets(items.map((item) => managedImageAsset(item, Boolean(item.owner_id && item.owner_id === session.subjectId))));
         return;
       }
-      const [mine, published] = await Promise.all([
-        fetchManagedImages({ scope: "mine" }, { signal: controller.signal }),
-        fetchManagedImages({ scope: "public" }, { signal: controller.signal }),
-      ]);
-      const records = new Map<string, MyAsset>();
-      published.items.forEach((item) => records.set(item.path, managedImageAsset(item, Boolean(item.owner_id && item.owner_id === session.subjectId))));
-      mine.items.forEach((item) => records.set(item.path, managedImageAsset(item, true)));
-      setManagedAssets(Array.from(records.values()));
+      const { items } = await fetchManagedImages({ scope: "visible" }, { signal: controller.signal });
+      setManagedAssets(items.map((item) => managedImageAsset(item, Boolean(item.owner_id && item.owner_id === session.subjectId))));
     };
     void load()
       .catch((error) => {

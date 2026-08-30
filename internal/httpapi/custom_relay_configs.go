@@ -20,21 +20,33 @@ func (a *App) handleProfileCustomRelayConfigs(w http.ResponseWriter, r *http.Req
 	configurable := identity.Role == service.AuthRoleAdmin || a.config.AllowUserCustomRelayConfig()
 	path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/profile/custom-relay-configs"), "/")
 	if path == "" {
-		if r.Method != http.MethodGet {
+		switch r.Method {
+		case http.MethodGet:
+			statuses, err := a.customRelayConfigs.Statuses(identityScope(identity))
+			if err != nil {
+				util.WriteError(w, http.StatusInternalServerError, "读取自定义 API 配置失败")
+				return
+			}
+			util.WriteJSON(w, http.StatusOK, map[string]any{"configurable": configurable, "configs": statuses})
+		case http.MethodPost:
+			if !configurable {
+				util.WriteError(w, http.StatusForbidden, "管理员尚未允许用户添加自定义 API 配置")
+				return
+			}
+			body, err := readJSONMap(r)
+			if err != nil {
+				util.WriteError(w, http.StatusBadRequest, "invalid json body")
+				return
+			}
+			status, err := a.customRelayConfigs.Create(identityScope(identity), util.Clean(body["kind"]), util.Clean(body["name"]), util.Clean(body["base_url"]), util.Clean(body["api_key"]))
+			if err != nil {
+				util.WriteError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			util.WriteJSON(w, http.StatusCreated, map[string]any{"item": status})
+		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
 		}
-		statuses, err := a.customRelayConfigs.Statuses(identityScope(identity))
-		if err != nil {
-			util.WriteError(w, http.StatusInternalServerError, "读取自定义 API 配置失败")
-			return
-		}
-		util.WriteJSON(w, http.StatusOK, map[string]any{"configurable": configurable, "configs": statuses})
-		return
-	}
-	kind := service.NormalizeCustomRelayKind(path)
-	if kind == "" {
-		http.NotFound(w, r)
 		return
 	}
 	if !configurable {
@@ -48,14 +60,14 @@ func (a *App) handleProfileCustomRelayConfigs(w http.ResponseWriter, r *http.Req
 			util.WriteError(w, http.StatusBadRequest, "invalid json body")
 			return
 		}
-		status, err := a.customRelayConfigs.Update(identityScope(identity), kind, util.Clean(body["base_url"]), util.Clean(body["api_key"]))
+		status, err := a.customRelayConfigs.Update(identityScope(identity), path, util.Clean(body["name"]), util.Clean(body["base_url"]), util.Clean(body["api_key"]))
 		if err != nil {
 			util.WriteError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 		util.WriteJSON(w, http.StatusOK, map[string]any{"item": status})
 	case http.MethodDelete:
-		if err := a.customRelayConfigs.Delete(identityScope(identity), kind); err != nil {
+		if err := a.customRelayConfigs.Delete(identityScope(identity), path); err != nil {
 			util.WriteError(w, http.StatusInternalServerError, "删除自定义 API 配置失败")
 			return
 		}

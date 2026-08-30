@@ -4,8 +4,10 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,6 +17,129 @@ import (
 
 const maxVideoReferenceFileBytes int64 = 50 << 20
 const maxVideoImageReferenceFileBytes int64 = 30 << 20
+
+type videoMultipartFile struct {
+	Data        []byte
+	Filename    string
+	ContentType string
+}
+
+func (a *App) localVideoReferenceFile(rawURL string) (videoMultipartFile, bool, error) {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" || a == nil || strings.TrimSpace(a.videoReferenceDir) == "" {
+		return videoMultipartFile{}, false, nil
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return videoMultipartFile{}, false, nil
+	}
+	referencePath := parsed.Path
+	if parsed.IsAbs() {
+		if a.config == nil || strings.TrimSpace(a.config.BaseURL()) == "" {
+			return videoMultipartFile{}, false, nil
+		}
+		base, parseErr := url.Parse(a.config.BaseURL())
+		if parseErr != nil || !strings.EqualFold(parsed.Scheme, base.Scheme) || !strings.EqualFold(parsed.Host, base.Host) {
+			return videoMultipartFile{}, false, nil
+		}
+		basePath := strings.TrimRight(base.Path, "/")
+		if basePath != "" && basePath != "/" {
+			if !strings.HasPrefix(referencePath, basePath+"/") {
+				return videoMultipartFile{}, false, nil
+			}
+			referencePath = strings.TrimPrefix(referencePath, basePath)
+		}
+	} else if !strings.HasPrefix(parsed.Path, "/") {
+		return videoMultipartFile{}, false, nil
+	}
+
+	var (
+		contentType string
+		maxBytes    int64
+	)
+	name := ""
+	switch {
+	case strings.HasPrefix(referencePath, "/video-image-references/"):
+		name = strings.TrimPrefix(referencePath, "/video-image-references/")
+		maxBytes = maxVideoImageReferenceFileBytes
+		switch strings.ToLower(filepath.Ext(name)) {
+		case ".jpg", ".jpeg":
+			contentType = "image/jpeg"
+		case ".webp":
+			contentType = "image/webp"
+		case ".png":
+			contentType = "image/png"
+		}
+	case strings.HasPrefix(referencePath, "/video-references/"):
+		name = strings.TrimPrefix(referencePath, "/video-references/")
+		maxBytes = maxVideoReferenceFileBytes
+		switch strings.ToLower(filepath.Ext(name)) {
+		case ".mov":
+			contentType = "video/quicktime"
+		case ".mp4":
+			contentType = "video/mp4"
+		}
+	case strings.HasPrefix(referencePath, "/audio-references/"):
+		name = strings.TrimPrefix(referencePath, "/audio-references/")
+		maxBytes = 15 << 20
+		switch strings.ToLower(filepath.Ext(name)) {
+		case ".wav":
+			contentType = "audio/wav"
+		case ".mp3":
+			contentType = "audio/mpeg"
+		}
+	default:
+		return videoMultipartFile{}, false, nil
+	}
+	if contentType == "" || !validStoredVideoReferenceName(name) {
+		return videoMultipartFile{}, false, nil
+	}
+	root := filepath.Clean(a.videoReferenceDir)
+	filePath := filepath.Join(root, name)
+	if filepath.Dir(filePath) != root {
+		return videoMultipartFile{}, false, nil
+	}
+	info, err := os.Stat(filePath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return videoMultipartFile{}, true, errors.New("平台暂存的视频素材已不存在，请重新上传")
+		}
+		return videoMultipartFile{}, true, fmt.Errorf("读取平台暂存的视频素材失败: %w", err)
+	}
+	if info.Size() <= 0 || info.Size() > maxBytes {
+		return videoMultipartFile{}, true, errors.New("平台暂存的视频素材大小无效，请重新上传")
+	}
+	data, err := os.ReadFile(filePath)
+	if err != nil {
+		return videoMultipartFile{}, true, fmt.Errorf("读取平台暂存的视频素材失败: %w", err)
+	}
+	return videoMultipartFile{Data: data, Filename: name, ContentType: contentType}, true, nil
+}
+
+func validStoredVideoReferenceName(name string) bool {
+	if strings.ContainsAny(name, "/\\") || !strings.HasPrefix(name, "reference-") {
+		return false
+	}
+	stem := strings.TrimSuffix(strings.TrimPrefix(name, "reference-"), filepath.Ext(name))
+	if len(stem) != 32 {
+		return false
+	}
+	_, err := hex.DecodeString(stem)
+	return err == nil
+}
+
+func isLocalVideoReferencePath(value string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(value))
+	if err != nil || parsed.IsAbs() || parsed.Host != "" {
+		return false
+	}
+	for _, prefix := range []string{"/video-image-references/", "/video-references/", "/audio-references/"} {
+		if strings.HasPrefix(parsed.Path, prefix) {
+			return validStoredVideoReferenceName(strings.TrimPrefix(parsed.Path, prefix))
+		}
+	}
+	return false
+}
 
 func (a *App) handleVideoReferenceUpload(w http.ResponseWriter, r *http.Request) {
 	_, ok := a.requireIdentity(w, r)

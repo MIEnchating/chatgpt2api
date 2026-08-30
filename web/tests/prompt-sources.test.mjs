@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   DEFAULT_PROMPT_MARKET_SOURCES,
+  fetchPromptMarketPrompts,
   fetchPromptMarketSourcePrompts,
   normalizePromptMarketSources,
   promptMatchesKeyword,
@@ -85,6 +86,43 @@ test("custom prompt JSON supports the documented camelCase media fields", async 
     assert.deepEqual(prompts[0].referenceImageUrls, ["https://cdn.example.test/reference.png"]);
     assert.equal(prompts[0].mode, undefined);
     assert.deepEqual(prompts[0].tags, ["product", "photography"]);
+  } finally {
+    globalThis.fetch = previousFetch;
+  }
+});
+
+test("prompt market reuses one external load for matching source configurations", async () => {
+  const previousFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return new Response(JSON.stringify([{
+      id: "cached-prompt",
+      title: "Cached prompt",
+      prompt: "Generate once",
+    }]), { status: 200, headers: { "Content-Type": "application/json" } });
+  };
+  const sources = [
+    ...DEFAULT_PROMPT_MARKET_SOURCES.map((source) => ({ ...source, enabled: false })),
+    {
+      id: "cache-test-source",
+      label: "Cache test",
+      url: "https://cache-test.example/prompts.json",
+      format: "generic-json",
+      enabled: true,
+    },
+  ];
+
+  try {
+    const [first, second] = await Promise.all([
+      fetchPromptMarketPrompts(undefined, sources),
+      fetchPromptMarketPrompts(undefined, sources),
+    ]);
+    const third = await fetchPromptMarketPrompts(undefined, sources);
+    assert.equal(calls, 1);
+    assert.equal(first[0].id, "cache-test-source:cached-prompt");
+    assert.deepEqual(second, first);
+    assert.deepEqual(third, first);
   } finally {
     globalThis.fetch = previousFetch;
   }

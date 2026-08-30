@@ -106,6 +106,12 @@ func TestWriteCreationTaskSubmitErrorPreservesProtocolStatus(t *testing.T) {
 func TestVideoCreationRouteRemovesInternalFieldsBeforeNewAPI(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()
+	contract := protocol.DefaultVideoContracts()[0]
+	contract.Polling.IntervalSeconds = 1
+	if err := protocol.ReplaceVideoContracts([]protocol.VideoModelContract{contract}); err != nil {
+		t.Fatalf("install video contract: %v", err)
+	}
+	t.Cleanup(func() { _ = protocol.ReplaceVideoContracts(protocol.DefaultVideoContracts()) })
 
 	dbURL := newHTTPTestNewAPIDatabase(t)
 	insertHTTPTestNewAPIUser(t, dbURL, 1, "alice", "alice@example.test")
@@ -141,7 +147,7 @@ func TestVideoCreationRouteRemovesInternalFieldsBeforeNewAPI(t *testing.T) {
 	defer upstream.Close()
 	if _, err := app.config.Update(map[string]any{
 		"relay_base_url": upstream.URL,
-		"video_models":   []string{"kling-v3"},
+		"video_models":   []string{"minimax-h3-768p"},
 	}); err != nil {
 		t.Fatalf("configure video route: %v", err)
 	}
@@ -149,21 +155,18 @@ func TestVideoCreationRouteRemovesInternalFieldsBeforeNewAPI(t *testing.T) {
 	_, token := createPasswordUserSession(t, app, "alice", "Password123", "Alice")
 	requestBody := `{
 		"client_task_id":"video-contract-route",
-		"model":"kling-v3",
+		"model":"minimax-h3-768p",
 		"provider":"apimart",
 		"video_provider":"apimart",
 		"channel_protocol":"apimart",
 		"protocol":"apimart",
 		"prompt":"animate",
-		"seconds":6,
+		"seconds":5,
 		"size":"16:9",
-		"resolution":"1080p",
-		"video_mode":"pro",
+		"resolution":"768p",
 		"generation_mode":"text-to-video",
 		"metadata":{"generation_mode":"nested-metadata"},
-		"multi_shot":true,
-		"shot_type":"customize",
-		"multi_prompt":[{"prompt":"first shot","duration":3,"generation_mode":"nested-array"}]
+		"undeclared_option":{"generation_mode":"nested-value"}
 	}`
 	req := httptest.NewRequest(http.MethodPost, "/api/creation-tasks/video-generations", strings.NewReader(requestBody))
 	req.Header.Set("Content-Type", "application/json")
@@ -180,20 +183,18 @@ func TestVideoCreationRouteRemovesInternalFieldsBeforeNewAPI(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("timed out waiting for NewAPI video request")
 	}
-	if posted["model"] != "kling-v3" || posted["prompt"] != "animate" || posted["mode"] != "pro" {
+	if posted["model"] != "minimax-h3-768p" || posted["prompt"] != "animate" || posted["duration"] != float64(5) || posted["generation_mode"] != "text-to-video" {
 		t.Fatalf("NewAPI video request lost supported fields: %#v", posted)
 	}
-	for _, field := range videoInternalRequestFields {
+	for _, field := range []string{"reference_mode", "provider", "video_provider", "channel_protocol", "protocol", "channel_base_url", "provider_base_url"} {
 		assertVideoRequestFieldAbsentRecursively(t, posted, field)
 	}
 	if _, ok := posted["metadata"]; ok {
 		t.Fatalf("NewAPI video request leaked client metadata: %#v", posted)
 	}
-	prompts := util.AsMapSlice(posted["multi_prompt"])
-	if len(prompts) != 1 || prompts[0]["prompt"] != "first shot" {
-		t.Fatalf("NewAPI video multi_prompt = %#v", posted["multi_prompt"])
+	if _, ok := posted["undeclared_option"]; ok {
+		t.Fatalf("undeclared advanced field leaked into NewAPI request: %#v", posted)
 	}
-	assertVideoRequestFieldAbsentRecursively(t, prompts, "generation_mode")
 }
 
 func TestAppAuthAndSPACompatibility(t *testing.T) {
@@ -439,20 +440,28 @@ func TestImageGenerationPreferencesArePersonal(t *testing.T) {
 		t.Fatalf("update image generation preferences status = %d body = %s", res.Code, res.Body.String())
 	}
 
-	req = httptest.NewRequest(http.MethodPatch, "/api/profile/image-generation-preferences", strings.NewReader(`{"default_text_relay_token_name":"text-key","default_image_relay_token_name":"image-key","default_video_relay_token_name":"video-key","default_audio_relay_token_name":"audio-key"}`))
+	req = httptest.NewRequest(http.MethodPatch, "/api/profile/image-generation-preferences", strings.NewReader(`{"default_text_relay_token_names":["text-key","text-backup"],"default_image_relay_token_names":["image-key"],"default_video_relay_token_names":["video-key"],"default_audio_relay_token_names":["audio-key"]}`))
 	setRequestAuthCookie(req, "Bearer "+firstToken)
 	res = httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), `"default_text_relay_token_name":"text-key"`) || !strings.Contains(res.Body.String(), `"default_image_relay_token_name":"image-key"`) || !strings.Contains(res.Body.String(), `"default_video_relay_token_name":"video-key"`) || !strings.Contains(res.Body.String(), `"default_audio_relay_token_name":"audio-key"`) || !strings.Contains(res.Body.String(), `"system_prompt":"系统"`) {
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), `"default_text_relay_token_names":["text-key","text-backup"]`) || !strings.Contains(res.Body.String(), `"default_image_relay_token_names":["image-key"]`) || !strings.Contains(res.Body.String(), `"default_video_relay_token_names":["video-key"]`) || !strings.Contains(res.Body.String(), `"default_audio_relay_token_names":["audio-key"]`) || !strings.Contains(res.Body.String(), `"system_prompt":"系统"`) {
 		t.Fatalf("update relay token preferences status = %d body = %s", res.Code, res.Body.String())
 	}
 
-	req = httptest.NewRequest(http.MethodPatch, "/api/profile/image-generation-preferences", strings.NewReader(`{"stream":false,"partial_images":3,"response_format_b64_json":false,"codex_cli_compatibility":false,"workbench":{"image_size":"2048x1152","image_size_mode":"ratio","image_aspect_ratio":"16:9","image_resolution":"2k","image_custom_ratio":"16:9","image_custom_width":"2048","image_custom_height":"1152","image_snap_to_multiple_16":true,"image_quality":"high","image_count":3,"image_output_format":"webp","image_output_compression":"88","video_size":"1920x1080","video_seconds":"10","video_resolution":"1080p","video_mode":"pro","video_generate_audio":true,"video_watermark":true}}`))
+	req = httptest.NewRequest(http.MethodPatch, "/api/profile/image-generation-preferences", strings.NewReader(`{"stream":false,"partial_images":3,"response_format_b64_json":false,"codex_cli_compatibility":false,"workbench":{"image_model":"image-allowed","image_size":"2048x1152","image_size_mode":"ratio","image_aspect_ratio":"16:9","image_resolution":"2k","image_custom_ratio":"16:9","image_custom_width":"2048","image_custom_height":"1152","image_snap_to_multiple_16":true,"image_quality":"high","image_count":3,"image_output_format":"webp","image_output_compression":"88","video_model":"video-allowed","video_size":"1920x1080","video_seconds":"10","video_resolution":"1080p","video_generate_audio":true,"video_watermark":true}}`))
 	setRequestAuthCookie(req, "Bearer "+firstToken)
 	res = httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), `"partial_images":3`) || !strings.Contains(res.Body.String(), `"image_size":"2048x1152"`) || !strings.Contains(res.Body.String(), `"image_count":3`) || !strings.Contains(res.Body.String(), `"video_generate_audio":true`) || !strings.Contains(res.Body.String(), `"default_text_relay_token_name":"text-key"`) {
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), `"partial_images":3`) || !strings.Contains(res.Body.String(), `"image_model":"image-allowed"`) || !strings.Contains(res.Body.String(), `"image_size":"2048x1152"`) || !strings.Contains(res.Body.String(), `"image_count":3`) || !strings.Contains(res.Body.String(), `"video_model":"video-allowed"`) || !strings.Contains(res.Body.String(), `"video_generate_audio":true`) || !strings.Contains(res.Body.String(), `"default_text_relay_token_names":["text-key","text-backup"]`) {
 		t.Fatalf("update creation workbench preferences status = %d body = %s", res.Code, res.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodPatch, "/api/profile/image-generation-preferences", strings.NewReader(`{"workbench":{"image_model":"image-disabled","image_size":"1024x1024","image_size_mode":"ratio","image_aspect_ratio":"1:1","image_resolution":"auto","image_custom_ratio":"16:9","image_custom_width":"1024","image_custom_height":"1024","image_snap_to_multiple_16":true,"image_quality":"","image_count":1,"image_output_format":"png","image_output_compression":"","video_model":"video-allowed","video_size":"1280x720","video_seconds":"6","video_resolution":"720p","video_generate_audio":false,"video_watermark":false}}`))
+	setRequestAuthCookie(req, "Bearer "+firstToken)
+	res = httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusBadRequest || !strings.Contains(res.Body.String(), "workbench.image_model is not enabled by the administrator") {
+		t.Fatalf("disabled workbench model status = %d body = %s", res.Code, res.Body.String())
 	}
 
 	req = httptest.NewRequest(http.MethodPut, "/api/profile/image-generation-preferences", strings.NewReader(`{"partial_images":1,"default_video_model":"video-disabled"}`))
@@ -478,7 +487,7 @@ func TestImageGenerationPreferencesArePersonal(t *testing.T) {
 	setRequestAuthCookie(req, "Bearer "+secondToken)
 	res = httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusOK || strings.Contains(res.Body.String(), `"stream":true`) || strings.Contains(res.Body.String(), `"response_format_b64_json":true`) || strings.Contains(res.Body.String(), `"codex_cli_compatibility":true`) || strings.Contains(res.Body.String(), `"default_text_relay_token_name":"text-key"`) {
+	if res.Code != http.StatusOK || strings.Contains(res.Body.String(), `"stream":true`) || strings.Contains(res.Body.String(), `"response_format_b64_json":true`) || strings.Contains(res.Body.String(), `"codex_cli_compatibility":true`) || strings.Contains(res.Body.String(), `"default_text_relay_token_names":["text-key"`) {
 		t.Fatalf("second user saw first user's preferences status = %d body = %s", res.Code, res.Body.String())
 	}
 
@@ -747,26 +756,30 @@ func TestProfileCustomRelayConfigsVisibilityAndSecretRedaction(t *testing.T) {
 	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), `"configurable":false`) {
 		t.Fatalf("default user custom config status = %d body = %s", res.Code, res.Body.String())
 	}
-	res = request(http.MethodPut, "/api/profile/custom-relay-configs/image", userToken, `{"base_url":"https://api.example.test","api_key":"sk-user-secret"}`)
+	res = request(http.MethodPost, "/api/profile/custom-relay-configs", userToken, `{"kind":"image","name":"用户线路","base_url":"https://api.example.test","api_key":"sk-user-secret"}`)
 	if res.Code != http.StatusForbidden {
 		t.Fatalf("disabled user update status = %d body = %s", res.Code, res.Body.String())
 	}
 
 	adminToken := adminSessionToken(t, app)
-	res = request(http.MethodPut, "/api/profile/custom-relay-configs/image", adminToken, `{"base_url":"https://api.example.test/v1/","api_key":"sk-admin-secret"}`)
-	if res.Code != http.StatusOK || strings.Contains(res.Body.String(), "sk-admin-secret") || !strings.Contains(res.Body.String(), `"configured":true`) {
+	res = request(http.MethodPost, "/api/profile/custom-relay-configs", adminToken, `{"kind":"image","name":"主线路","base_url":"https://api.example.test/v1/","api_key":"sk-admin-secret"}`)
+	if res.Code != http.StatusCreated || strings.Contains(res.Body.String(), "sk-admin-secret") || !strings.Contains(res.Body.String(), `"configured":true`) {
 		t.Fatalf("admin update status = %d body = %s", res.Code, res.Body.String())
 	}
+	res = request(http.MethodPost, "/api/profile/custom-relay-configs", adminToken, `{"kind":"image","name":"备用线路","base_url":"https://backup.example.test/v1","api_key":"sk-admin-backup"}`)
+	if res.Code != http.StatusCreated || strings.Contains(res.Body.String(), "sk-admin-backup") {
+		t.Fatalf("admin second config status = %d body = %s", res.Code, res.Body.String())
+	}
 	res = request(http.MethodGet, "/api/profile/custom-relay-configs", adminToken, "")
-	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), `"configurable":true`) || strings.Contains(res.Body.String(), "sk-admin-secret") {
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), `"configurable":true`) || strings.Count(res.Body.String(), `"kind":"image"`) != 2 || strings.Contains(res.Body.String(), "sk-admin-secret") {
 		t.Fatalf("admin config status = %d body = %s", res.Code, res.Body.String())
 	}
 
 	if _, err := app.config.Update(map[string]any{"allow_user_custom_relay_config": true}); err != nil {
 		t.Fatal(err)
 	}
-	res = request(http.MethodPut, "/api/profile/custom-relay-configs/text", userToken, `{"base_url":"https://text.example.test","api_key":"sk-user-secret"}`)
-	if res.Code != http.StatusOK || strings.Contains(res.Body.String(), "sk-user-secret") {
+	res = request(http.MethodPost, "/api/profile/custom-relay-configs", userToken, `{"kind":"text","name":"文本线路","base_url":"https://text.example.test","api_key":"sk-user-secret"}`)
+	if res.Code != http.StatusCreated || strings.Contains(res.Body.String(), "sk-user-secret") {
 		t.Fatalf("enabled user update status = %d body = %s", res.Code, res.Body.String())
 	}
 }
@@ -816,6 +829,54 @@ func TestSettingsDoesNotExposeRelayDatabaseCredentials(t *testing.T) {
 		if responseConfig["relay_database_password_configured"] != true {
 			t.Fatalf("%s settings response missing password configured state: %#v", testCase.method, responseConfig)
 		}
+	}
+}
+
+func TestPromptSourcesDoNotRequireSettingsPermission(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+
+	sources := []any{
+		map[string]any{
+			"id":      "custom-source",
+			"label":   "Custom source",
+			"url":     "https://example.test/prompts.json",
+			"format":  "generic-json",
+			"enabled": true,
+		},
+	}
+	if _, err := app.config.Update(map[string]any{"prompt_sources": sources}); err != nil {
+		t.Fatalf("configure prompt sources: %v", err)
+	}
+
+	_, userToken := createPasswordUserSession(t, app, "prompt-reader", "Password123", "Prompt Reader")
+	request := func(path string) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		setRequestAuthCookie(req, userToken)
+		res := httptest.NewRecorder()
+		app.Handler().ServeHTTP(res, req)
+		return res
+	}
+
+	settingsResponse := request("/api/settings")
+	if settingsResponse.Code != http.StatusForbidden {
+		t.Fatalf("settings status = %d body = %s", settingsResponse.Code, settingsResponse.Body.String())
+	}
+
+	promptSourcesResponse := request("/api/prompt-sources")
+	if promptSourcesResponse.Code != http.StatusOK || !strings.Contains(promptSourcesResponse.Body.String(), "custom-source") {
+		t.Fatalf("prompt sources status = %d body = %s", promptSourcesResponse.Code, promptSourcesResponse.Body.String())
+	}
+	if strings.Contains(promptSourcesResponse.Body.String(), "relay_database") {
+		t.Fatalf("prompt sources response leaked unrelated settings: %s", promptSourcesResponse.Body.String())
+	}
+
+	anonymousRequest := httptest.NewRequest(http.MethodGet, "/api/prompt-sources", nil)
+	anonymousResponse := httptest.NewRecorder()
+	app.Handler().ServeHTTP(anonymousResponse, anonymousRequest)
+	if anonymousResponse.Code != http.StatusUnauthorized {
+		t.Fatalf("anonymous prompt sources status = %d body = %s", anonymousResponse.Code, anonymousResponse.Body.String())
 	}
 }
 
@@ -3068,21 +3129,53 @@ func TestCreationTaskPollingDisablesCaching(t *testing.T) {
 	}
 }
 
+func TestAutomaticProfileReadsAvoidGenericAuditNoise(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+
+	_, rawKey, err := createTestUserSession(app, "automatic-read", service.AuthOwner{})
+	if err != nil {
+		t.Fatalf("CreateSession() error = %v", err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/profile/image-generation-preferences", nil)
+	setRequestAuthCookie(req, "Bearer "+rawKey)
+	res := httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("preferences status = %d body = %s", res.Code, res.Body.String())
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/logs?view=all", nil)
+	setRequestAuthCookie(req, adminSessionToken(t, app))
+	res = httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("logs status = %d body = %s", res.Code, res.Body.String())
+	}
+	var logs map[string]any
+	if err := json.Unmarshal(res.Body.Bytes(), &logs); err != nil {
+		t.Fatalf("logs json: %v", err)
+	}
+	if auditLog := findHTTPAuditLogByPath(logItems(logs), "/api/profile/image-generation-preferences"); auditLog != nil {
+		t.Fatalf("automatic preference read should not create a generic audit log: %#v", auditLog)
+	}
+}
+
 func TestAPIAuditLogCapturesRequestMetadata(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/settings?section=logging", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/admin/users?page=1", nil)
 	setRequestAuthCookie(req, adminSessionToken(t, app))
 	req.Header.Set("User-Agent", "chatgpt2api-test")
 	req.RemoteAddr = "203.0.113.10:12345"
 	res := httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
 	if res.Code != http.StatusOK {
-		t.Fatalf("settings status = %d body = %s", res.Code, res.Body.String())
+		t.Fatalf("users status = %d body = %s", res.Code, res.Body.String())
 	}
 
-	req = httptest.NewRequest(http.MethodGet, "/api/logs?username=admin&method=GET&status=200&summary=%2Fapi%2Fsettings&view=all", nil)
+	req = httptest.NewRequest(http.MethodGet, "/api/logs?username=admin&method=GET&status=200&summary=%2Fapi%2Fadmin%2Fusers&view=all", nil)
 	setRequestAuthCookie(req, adminSessionToken(t, app))
 	res = httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
@@ -3097,9 +3190,9 @@ func TestAPIAuditLogCapturesRequestMetadata(t *testing.T) {
 	if len(items) == 0 {
 		t.Fatalf("expected audit log, got %#v", logs)
 	}
-	item := findLogByDetail(items, "path", "/api/settings")
+	item := findLogByDetail(items, "path", "/api/admin/users")
 	if item == nil {
-		t.Fatalf("expected audit log for /api/settings, got %#v", items)
+		t.Fatalf("expected audit log for /api/admin/users, got %#v", items)
 	}
 	if _, ok := item["type"]; ok {
 		t.Fatalf("log item should not expose type: %#v", item)

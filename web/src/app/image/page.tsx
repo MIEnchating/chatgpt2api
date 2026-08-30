@@ -1,15 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { ArrowDownToLine, AudioLines, Globe2, History, ImagePlus, LoaderCircle, Plus, Search, Trash2, X } from "lucide-react";
+import { ArrowDownToLine, Globe2, History, ImagePlus, LoaderCircle, Plus, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { ImageComposer } from "@/app/image/components/image-composer";
+import { ImageSizePresetControls } from "@/components/generation/image-size-preset-controls";
 import { Switch } from "@/components/ui/switch";
-import {
-  ImageAspectRatioOptionButton,
-  ImageParameterLabel,
-} from "@/app/image/components/image-parameter-ui";
+import { ImageParameterLabel } from "@/app/image/components/image-parameter-ui";
 import { imageParameterChoiceClass } from "@/app/image/components/image-parameter-styles";
 import { ImagePromptMarket } from "@/app/image/components/image-prompt-market";
 import {
@@ -27,7 +25,6 @@ import {
   DEFAULT_IMAGE_CUSTOM_HEIGHT,
   DEFAULT_IMAGE_CUSTOM_RATIO,
   DEFAULT_IMAGE_CUSTOM_WIDTH,
-  IMAGE_ASPECT_RATIO_PRESET_OPTIONS,
   IMAGE_WORKBENCH_QUALITY_OPTIONS,
   buildImageSize,
   formatImageSizeDisplay,
@@ -73,7 +70,7 @@ import {
 } from "@/lib/image-task-state";
 import { Button } from "@/components/ui/button";
 import { ScrollArea, type ScrollAreaHandle } from "@/components/ui/scroll-area";
-import { DEFAULT_VIDEO_MODEL, supportsKlingElements, supportsKlingMultiShot, supportsKlingShotType, supportsVideoMultimodalReferences, usesReferenceSpecialVideoPanel, videoAllowsCustomDimensions, videoAllowsCustomResolution, videoDefaultSeconds, videoModelProfile, videoReferenceImageLimit, videoRequiresMultimodalReferenceMode, videoRequiresReferenceAudio, videoRequiresReferenceImage, videoRequiresReferenceVideo, videoWorkbenchReferenceLimits, videoWorkbenchResolutionForModelSize, videoWorkbenchSizeForModelResolution, videoWorkbenchValidatesReferenceVideoMetadata } from "@/lib/video-model-capabilities";
+import { resolveConfiguredVideoModel, supportsVideoMultimodalReferences, videoAllowsCustomDimensions, videoAllowsCustomResolution, videoDefaultSeconds, videoReferenceImageLimit, videoRequiresMultimodalReferenceMode, videoRequiresReferenceAudio, videoRequiresReferenceImage, videoRequiresReferenceVideo, videoWorkbenchReferenceLimits, videoWorkbenchResolutionForModelSize, videoWorkbenchSizeForModelResolution, videoWorkbenchValidatesReferenceVideoMetadata } from "@/lib/video-model-capabilities";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
@@ -101,7 +98,6 @@ import {
   uploadAudioReference,
   uploadVideoImageReference,
   uploadVideoReference,
-  fetchProfileRelayKey,
   DEFAULT_IMAGE_MODEL,
   fetchCreationTasks,
   fetchModelConfig,
@@ -142,18 +138,15 @@ import {
 } from "@/lib/image-api-contract";
 import { getManagedImagePathFromUrl, getManagedImageUrlFromPath } from "@/lib/image-path";
 import { isPublicReferenceURL } from "@/lib/public-reference-url";
-import { retainSelectedRelayTokenName, type RelayTokenKind } from "@/lib/relay-token-selection";
+import { type RelayTokenKind } from "@/lib/relay-token-selection";
 import { useRelayTokenPreferences } from "@/lib/use-relay-token-preferences";
 import { AUTH_SESSION_CHANGE_EVENT, getCachedAuthSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import { DEFAULT_CREATION_WORKBENCH_PREFERENCES, useImageGenerationPreferences } from "@/lib/use-image-generation-preferences";
-import { persistCreationTaskOutputs } from "@/services/generation-result-storage";
-import { normalizeVideoKlingElementList, normalizeVideoRequest, validateVideoKlingElementList, videoAudioGenerationError, videoHasKlingElementReferences, videoReferenceCombinationError, videoWorkbenchReferenceLimitError } from "@/lib/video-request-normalizer";
-import { defaultVideoElementList, defaultVideoMultiPrompts, normalizeVideoElementList, normalizeVideoMultiPrompts, videoElementListToRequest, videoMultiPromptsToRequest, type VideoElementReference } from "@/lib/video-kling-workbench";
+import { ensureGeneratedVideoAsset, persistCreationTaskOutputs, type CreationTaskOutputPersistenceFailure } from "@/services/generation-result-storage";
+import { normalizeVideoRequest, videoAudioGenerationError, videoReferenceCombinationError, videoWorkbenchReferenceLimitError } from "@/lib/video-request-normalizer";
 import { audioReferenceMetadataError, videoReferenceMetadataError, type AudioReferenceFileMetadata, type VideoReferenceFileMetadata } from "@/lib/video-reference-validation";
-import { useMyAssets } from "@/app/assets/use-my-assets";
-import type { MyAsset } from "@/lib/my-assets";
 import type { StoredAuthSession } from "@/store/auth";
 import { imageConversationOwnerScope } from "@/store/image-conversation-session-scope";
 import {
@@ -194,7 +187,6 @@ import {
 type CreationRelayTokenKind = Extract<RelayTokenKind, "image" | "video">;
 
 const COMPOSER_MODE_STORAGE_KEY = "chatgpt2api:image_composer_mode";
-const NEWAPI_TOKEN_MISSING_MESSAGE = "请先在云棉为当前用户创建可用令牌";
 const DEFAULT_IMAGE_OUTPUT_FORMAT: ImageOutputFormat = "png";
 const MISSING_RECOVERABLE_TASK_ID_ERROR = "页面刷新或任务中断，未找到可恢复的任务 ID";
 const RESULTS_BOTTOM_STICKY_THRESHOLD = 96;
@@ -386,40 +378,6 @@ function inspectAudioReferenceFile(file: File) {
     };
     audio.src = url;
   });
-}
-
-async function uploadVideoElementReferenceFile(file: File): Promise<VideoElementReference> {
-  const mime = file.type.toLowerCase().split(";", 1)[0];
-  if (mime.startsWith("image/") || /\.(png|jpe?g|webp)$/i.test(file.name)) {
-    if (file.size > 30 * 1024 * 1024) throw new Error(`${file.name} 超过 30 MiB`);
-    const uploaded = await uploadVideoImageReference(file);
-    return { id: createId(), kind: "image", name: file.name, type: uploaded.content_type || mime || "image/png", url: uploaded.url, bytes: uploaded.size ?? file.size };
-  }
-  if (mime === "video/mp4" || mime === "video/quicktime" || /\.(mp4|mov)$/i.test(file.name)) {
-    if (file.size > 50 * 1024 * 1024) throw new Error(`${file.name} 超过 50 MiB`);
-    const metadata = await inspectVideoReferenceFile(file);
-    if (metadata.durationMs < 3000 || metadata.durationMs > 8000) throw new Error(`${file.name} 的时长需要在 3-8 秒之间`);
-    const uploaded = await uploadVideoReference(file);
-    return { id: createId(), kind: "video", name: file.name, type: uploaded.content_type || mime || "video/mp4", url: uploaded.url, bytes: uploaded.size ?? file.size, width: metadata.width, height: metadata.height, durationMs: metadata.durationMs };
-  }
-  if (mime === "audio/mpeg" || mime === "audio/mp3" || mime === "audio/wav" || mime === "audio/x-wav" || /\.(mp3|wav)$/i.test(file.name)) {
-    if (file.size > 15 * 1024 * 1024) throw new Error(`${file.name} 超过 15 MiB`);
-    const metadata = await inspectAudioReferenceFile(file);
-    if (metadata.durationMs < 5000 || metadata.durationMs > 30000) throw new Error(`${file.name} 的时长需要在 5-30 秒之间`);
-    const uploaded = await uploadAudioReference(file);
-    return { id: createId(), kind: "audio", name: file.name, type: uploaded.content_type || mime || "audio/mpeg", url: uploaded.url, bytes: uploaded.size ?? file.size, durationMs: metadata.durationMs };
-  }
-  throw new Error(`${file.name} 不是支持的图片、视频或音频格式`);
-}
-
-async function myAssetToElementFile(asset: MyAsset) {
-  if (asset.kind === "text" || !asset.url) throw new Error("请选择图片、视频或音频素材");
-  const response = await fetch(asset.url, { credentials: "include" });
-  if (!response.ok) throw new Error(`素材读取失败（${response.status}）`);
-  const blob = await response.blob();
-  const fallbackExtension = asset.kind === "image" ? "png" : asset.kind === "video" ? "mp4" : "mp3";
-  const extension = asset.url.split(/[?#]/, 1)[0].match(/\.([a-z0-9]{2,5})$/i)?.[1] || fallbackExtension;
-  return new File([blob], `${asset.title}.${extension}`, { type: asset.mimeType || blob.type });
 }
 
 function imageFileExtensionForOutputFormat(format?: ImageOutputFormat) {
@@ -629,10 +587,18 @@ function imageQualityForRequest(model: ImageModel, value: "" | ImageQuality): Im
 }
 
 function imageTaskProgressMessage(turn: ImageTurn, elapsedSeconds = 0) {
+  const video = turn.mode === "video";
   if (turn.status === "queued") {
     return {
       message: "等待任务开始",
-      detail: "图片任务已入队，等待开始处理",
+      detail: `${video ? "视频" : "图片"}任务已入队，等待开始处理`,
+    };
+  }
+
+  if (video) {
+    return {
+      message: "正在生成视频",
+      detail: "后端正在轮询视频任务状态",
     };
   }
 
@@ -659,7 +625,7 @@ function imageTaskLoadingDetail(turn: ImageTurn, fallbackDetail: string) {
   if (counts.queued > 0) {
     return `${fallbackDetail}；还有 ${counts.queued} 张图片排队中`;
   }
-  return "图片结果已返回，正在确认任务状态";
+  return `${turn.mode === "video" ? "视频" : "图片"}结果已返回，正在确认任务状态`;
 }
 
 function imageTaskBatchId(turnId: string, imageIndex: number, model: ImageModel) {
@@ -1122,12 +1088,6 @@ function getStoredComposerMode(): ComposerMode {
   return window.localStorage.getItem(COMPOSER_MODE_STORAGE_KEY) === "video" ? "video" : "image";
 }
 
-function normalizeRelayTokenNames(values: unknown) {
-  return Array.isArray(values)
-    ? Array.from(new Set(values.map((name) => String(name || "").trim()).filter(Boolean)))
-    : [];
-}
-
 function ensureModelOption(options: ReadonlyArray<ImageModelOption>, model: ImageModel): ImageModelOption[] {
   if (!model || options.some((option) => option.value === model)) {
     return [...options];
@@ -1217,6 +1177,16 @@ async function syncConversationCreationTasks(
   items: ImageConversation[],
   requestOptions: CreationTaskRequestOptions,
 ) {
+  await backfillConversationVideoAssets(items);
+  const assetContextByTaskID = new Map<string, { prompt: string; source: string; metadata?: Record<string, unknown> }>();
+  items.forEach((conversation) => conversation.turns.forEach((turn) => turn.images.forEach((image) => {
+    if (!image.taskId) return;
+    assetContextByTaskID.set(image.taskId, {
+      prompt: turn.prompt,
+      source: turn.source === "workflow" ? "工作流" : "生成视频",
+      ...(turn.source === "workflow" ? { metadata: { workflowId: turn.workflowId, workflowName: turn.workflowName } } : {}),
+    });
+  })));
   const taskIds = Array.from(
     new Set(
       items.flatMap((conversation) =>
@@ -1236,7 +1206,10 @@ async function syncConversationCreationTasks(
   } catch {
     return items;
   }
-  const taskMap = new Map(mergeCreationTaskList(taskList.items).map((task) => [task.id, task]));
+  const persistedTasks = await Promise.all(taskList.items.map((task) => persistCreationTaskOutputs(task, {
+    assetContext: assetContextByTaskID.get(task.id),
+  })));
+  const taskMap = new Map(mergeCreationTaskList(persistedTasks).map((task) => [task.id, task]));
   const normalized = items.map((conversation) => {
     // Cursor pages can contain metadata-only rows. They are completed by the
     // selected-conversation detail request and must not enter task recovery.
@@ -1292,6 +1265,42 @@ async function syncConversationCreationTasks(
   return normalized;
 }
 
+async function backfillConversationVideoAssets(items: ImageConversation[]) {
+  const requests: Promise<void>[] = [];
+  items.forEach((conversation) => conversation.turns.forEach((turn) => turn.images.forEach((image, imageIndex) => {
+    const url = String(image.videoUrl || image.url || "").trim();
+    const isVideo = image.mediaType === "video" || Boolean(image.videoUrl) || String(image.mimeType || "").startsWith("video/");
+    if (!isVideo || image.status !== "success" || !image.taskId || !image.storageKey || !url) return;
+    requests.push(ensureGeneratedVideoAsset({
+      id: image.taskId,
+      status: "success",
+      mode: "video",
+      model: turn.model,
+      visibility: turn.visibility,
+      created_at: image.taskCreatedAt || turn.createdAt,
+      updated_at: image.taskUpdatedAt || conversation.updatedAt,
+    }, {
+      type: "video",
+      video_url: url,
+      url,
+      storageKey: image.storageKey,
+      storage_key: image.storageKey,
+      mime_type: image.mimeType || "video/mp4",
+      width: image.width,
+      height: image.height,
+    }, imageDataIndexForTask(turn.images, imageIndex), {
+      prompt: turn.prompt,
+      source: turn.source === "workflow" ? "工作流" : "生成视频",
+      metadata: {
+        conversationId: conversation.id,
+        turnId: turn.id,
+        ...(turn.source === "workflow" ? { workflowId: turn.workflowId, workflowName: turn.workflowName } : {}),
+      },
+    }));
+  })));
+  await Promise.allSettled(requests);
+}
+
 async function recoverConversationHistory(
   items: ImageConversation[],
   requestOptions: CreationTaskRequestOptions,
@@ -1304,6 +1313,18 @@ async function recoverConversationHistory(
     const turns = conversation.turns.map((turn) => {
       let turnChanged = false;
       const recoveredImages = turn.images.map((image, imageIndex) => {
+        if (
+          image.status === "error" &&
+          image.taskId &&
+          (image.taskStatus === "queued" || image.taskStatus === "running")
+        ) {
+          turnChanged = true;
+          return {
+            ...image,
+            status: "loading" as const,
+            error: undefined,
+          };
+        }
         if (image.status === "error" && isMissingBatchImageDataError(image.error)) {
           turnChanged = true;
           return {
@@ -1506,20 +1527,11 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   const [imageCodexCLICompatibility, setImageCodexCLICompatibility] = useState(false);
   const { preferences: imageGenerationPreferences, isReady: imageGenerationPreferencesReady } = useImageGenerationPreferences(session.key);
   const imageAPIMode = imageGenerationPreferences.api_mode;
-  const [videoModel, setVideoModel] = useState(DEFAULT_VIDEO_MODEL);
-  const [videoModelOptions, setVideoModelOptions] = useState<Array<{ value: string; label: string }>>([
-    { value: DEFAULT_VIDEO_MODEL, label: DEFAULT_VIDEO_MODEL },
-  ]);
+  const [videoModel, setVideoModel] = useState("");
+  const [videoModelOptions, setVideoModelOptions] = useState<Array<{ value: string; label: string }>>([]);
   const [videoSize, setVideoSize] = useState(DEFAULT_CREATION_WORKBENCH_PREFERENCES.video_size);
   const [videoSeconds, setVideoSeconds] = useState(DEFAULT_CREATION_WORKBENCH_PREFERENCES.video_seconds);
   const [videoResolution, setVideoResolution] = useState(DEFAULT_CREATION_WORKBENCH_PREFERENCES.video_resolution);
-  const [videoKlingMode, setVideoKlingMode] = useState(DEFAULT_CREATION_WORKBENCH_PREFERENCES.video_mode);
-  const [videoNegativePrompt, setVideoNegativePrompt] = useState("");
-  const [videoMultiShot, setVideoMultiShot] = useState(false);
-  const [videoShotType, setVideoShotType] = useState<"intelligence" | "customize">("intelligence");
-  const [videoMultiPrompt, setVideoMultiPrompt] = useState(defaultVideoMultiPrompts);
-  const [videoElementList, setVideoElementList] = useState(defaultVideoElementList);
-  const [videoCharacterOrientation, setVideoCharacterOrientation] = useState<"image" | "video">("video");
   const [videoGenerateAudio, setVideoGenerateAudio] = useState(DEFAULT_CREATION_WORKBENCH_PREFERENCES.video_generate_audio);
   const [videoWatermark, setVideoWatermark] = useState(DEFAULT_CREATION_WORKBENCH_PREFERENCES.video_watermark);
   const [workbenchPreferencesReady, setWorkbenchPreferencesReady] = useState(false);
@@ -1534,22 +1546,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   const [videoReferenceAudioURLs, setVideoReferenceAudioURLs] = useState<string[]>([]);
   const [videoReferenceUploading, setVideoReferenceUploading] = useState(false);
   const [audioReferenceUploading, setAudioReferenceUploading] = useState(false);
-  const [videoElementUploadingIndex, setVideoElementUploadingIndex] = useState<number | null>(null);
-  const [videoElementAssetIndex, setVideoElementAssetIndex] = useState<number | null>(null);
-  const { assets: videoElementAssets, loading: videoElementAssetsLoading } = useMyAssets(session.key, videoElementAssetIndex !== null);
-  const initializedKlingV3SecondsModelRef = useRef("");
-  useEffect(() => {
-    const profile = videoModelProfile(videoModel);
-    const usesKlingV3Panel = usesReferenceSpecialVideoPanel(videoModel)
-      && (profile === "kling-3" || profile.startsWith("kling-omni"));
-    if (composerMode !== "video" || !usesKlingV3Panel) {
-      initializedKlingV3SecondsModelRef.current = "";
-      return;
-    }
-    if (initializedKlingV3SecondsModelRef.current === videoModel) return;
-    initializedKlingV3SecondsModelRef.current = videoModel;
-    setVideoSeconds((current) => current.trim() === "6" ? "3" : current);
-  }, [composerMode, videoModel]);
   const handleVideoFrameFileChange = useCallback(async (slot: "first" | "last", file: File) => {
     const mime = file.type.toLowerCase().split(";", 1)[0];
     if (!(mime === "image/png" || mime === "image/jpeg" || mime === "image/webp" || /\.(png|jpe?g|webp)$/i.test(file.name))) {
@@ -1644,73 +1640,13 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       setAudioReferenceUploading(false);
     }
   }, [videoReferenceAudioURLs]);
-  const addVideoElementReferences = useCallback((elementIndex: number, references: VideoElementReference[]) => {
-    if (!references.length) return;
-    setVideoElementList((current) => normalizeVideoElementList(current).map((item, index) => index === elementIndex
-      ? { ...item, references: [...item.references, ...references].slice(0, 4) }
-      : item));
-  }, []);
-  const handleVideoElementReferenceFiles = useCallback(async (elementIndex: number, files: File[]) => {
-    const current = normalizeVideoElementList(videoElementList)[elementIndex];
-    if (!current) return;
-    const available = Math.max(0, 4 - current.references.length);
-    const selected = files.slice(0, available);
-    if (!selected.length) {
-      toast.error("每个元素最多支持 4 个素材");
-      return;
-    }
-    if (files.length > selected.length) toast.warning("已忽略超出 4 个上限的元素素材");
-    setVideoElementUploadingIndex(elementIndex);
-    try {
-      const uploaded: VideoElementReference[] = [];
-      for (const file of selected) uploaded.push(await uploadVideoElementReferenceFile(file));
-      addVideoElementReferences(elementIndex, uploaded);
-      toast.success(`已上传 ${uploaded.length} 个元素素材`);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "元素素材上传失败");
-    } finally {
-      setVideoElementUploadingIndex(null);
-    }
-  }, [addVideoElementReferences, videoElementList]);
-  const handleVideoElementClipboard = useCallback(async (elementIndex: number) => {
-    try {
-      const clipboardItems = await navigator.clipboard.read();
-      const blobs = await Promise.all(clipboardItems.flatMap((item) => item.types.filter((type) => type.startsWith("image/")).map((type) => item.getType(type))));
-      if (!blobs.length) throw new Error("剪贴板里没有可读取的图片");
-      const files = blobs.map((blob, index) => new File([blob], `clipboard-element-${index + 1}.png`, { type: blob.type || "image/png" }));
-      await handleVideoElementReferenceFiles(elementIndex, files);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "剪贴板里没有可读取的图片");
-    }
-  }, [handleVideoElementReferenceFiles]);
-  const handleVideoElementAssetInsert = useCallback(async (asset: MyAsset) => {
-    const elementIndex = videoElementAssetIndex;
-    if (elementIndex === null) return;
-    setVideoElementAssetIndex(null);
-    try {
-      const file = await myAssetToElementFile(asset);
-      await handleVideoElementReferenceFiles(elementIndex, [file]);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "元素素材读取失败");
-    }
-  }, [handleVideoElementReferenceFiles, videoElementAssetIndex]);
   const handleVideoModelChange = useCallback((model: string) => {
     // Keep the previous model's async upload from racing with the new model.
     // Existing references and raw settings remain available across switches.
     referenceUploadEpochRef.current += 1;
     setVideoModel(model);
   }, []);
-  const [relayKeyConfigured, setRelayKeyConfigured] = useState<Record<CreationRelayTokenKind, boolean>>({
-    image: false,
-    video: false,
-  });
-  const [relayKeyStatusMessage, setRelayKeyStatusMessage] = useState<Record<CreationRelayTokenKind, string>>({
-    image: NEWAPI_TOKEN_MISSING_MESSAGE,
-    video: NEWAPI_TOKEN_MISSING_MESSAGE,
-  });
-  const { tokenNames: relayTokenNames, setTokenName: setRelayTokenName } = useRelayTokenPreferences();
-  const imageRelayTokenName = relayTokenNames.image;
-  const videoRelayTokenName = relayTokenNames.video;
+  const { refreshTokenModels, routeForModel, tokenNameForModel } = useRelayTokenPreferences();
   const [relayTokenDialogKind, setRelayTokenDialogKind] = useState<CreationRelayTokenKind | null>(null);
   const [relayImageModelOptions, setRelayImageModelOptions] = useState<ImageModelOption[]>(() =>
     ensureDefaultImageModelOption(IMAGE_CREATION_MODEL_OPTIONS),
@@ -1824,7 +1760,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   const editingDraftSizeSupported = editingTurnDraft
     ? imageWorkbenchSupportsSize(editingTurnDraft.model)
     : false;
-  const editingDraftAspectRatioPresets = editingTurnDraft ? IMAGE_ASPECT_RATIO_PRESET_OPTIONS : [];
   const editingDraftQualityOptions = editingTurnDraft
     ? IMAGE_WORKBENCH_QUALITY_OPTIONS
     : [];
@@ -1885,19 +1820,27 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     [conversations, selectedConversationId],
   );
   const activeRelayTokenKind: CreationRelayTokenKind = composerMode === "video" ? "video" : "image";
-  const activeRelayTokenName = (activeRelayTokenKind === "video" ? videoRelayTokenName : imageRelayTokenName).trim();
-  const activeRelayKeyConfigured = relayKeyConfigured[activeRelayTokenKind];
-  const activeRelayKeyMissingMessage = relayKeyStatusMessage[activeRelayTokenKind] || NEWAPI_TOKEN_MISSING_MESSAGE;
-  const relayTokenNameForKind = useCallback((kind: CreationRelayTokenKind) => (
-    kind === "video" ? videoRelayTokenName : imageRelayTokenName
-  ).trim(), [imageRelayTokenName, videoRelayTokenName]);
-  const requireRelayToken = useCallback((kind: CreationRelayTokenKind) => {
-    if (relayTokenNameForKind(kind) && relayKeyConfigured[kind]) {
-      return true;
+  const activeRelayTokenName = tokenNameForModel(activeRelayTokenKind, composerMode === "video" ? videoModel : imageModel);
+  const relayTokenNameForKind = useCallback((kind: CreationRelayTokenKind, model: string) => tokenNameForModel(kind, model), [tokenNameForModel]);
+  const requireRelayToken = useCallback((kind: CreationRelayTokenKind, model: string) => {
+    const route = routeForModel(kind, model);
+    if (route.status === "ready") return true;
+    if (route.status === "loading") {
+      toast.info("正在读取所选 Key 的模型列表，请稍候再试");
+      return false;
+    }
+    if (route.status === "model-list-error") {
+      refreshTokenModels();
+      toast.error("已选择 Key，但模型列表读取失败，正在重新连接上游，请稍候再试");
+      return false;
+    }
+    if (route.status === "model-unavailable") {
+      toast.error(`已选择的 Key 均未提供模型 ${model}，请检查 Key 的模型权限或调整选择顺序`);
+      return false;
     }
     setRelayTokenDialogKind(kind);
     return false;
-  }, [relayKeyConfigured, relayTokenNameForKind]);
+  }, [refreshTokenModels, routeForModel]);
   const activeTaskCount = useMemo(
     () =>
       conversations.reduce((sum, conversation) => {
@@ -2092,7 +2035,9 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     window.addEventListener(IMAGE_CONVERSATIONS_CHANGED_EVENT, handleConversationsChanged);
     window.addEventListener("focus", handleWindowFocus);
     document.addEventListener("visibilitychange", handleVisibilityChange);
-    const refreshTimer = window.setInterval(() => void refreshConversations(), 30_000);
+    const refreshTimer = window.setInterval(() => {
+      if (document.visibilityState === "visible") void refreshConversations();
+    }, 30_000);
     return () => {
       cancelled = true;
       conversationRefreshRequestRef.current += 1;
@@ -2449,16 +2394,19 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
           return;
         }
         const imageOptions = modelOptionsFromNames(result.config.image_models);
-        const preferredImageModel = imageGenerationPreferences.default_image_model;
+        const preferredImageModel = imageGenerationPreferences.workbench.image_model || imageGenerationPreferences.default_image_model;
         const nextImageDefault = imageOptions.some((option) => option.value === preferredImageModel)
           ? preferredImageModel
           : result.config.default_image_model || imageOptions[0]?.value || DEFAULT_IMAGE_MODEL;
         setRelayImageModelOptions(ensureDefaultImageModelOption(imageOptions, nextImageDefault));
         setImageModel(nextImageDefault);
-        const nextVideoModels = result.config.video_models?.length ? result.config.video_models : [DEFAULT_VIDEO_MODEL];
-        const nextVideoDefault = nextVideoModels.includes(imageGenerationPreferences.default_video_model)
-          ? imageGenerationPreferences.default_video_model
-          : result.config.default_video_model || nextVideoModels[0] || DEFAULT_VIDEO_MODEL;
+        const nextVideoModels = result.config.video_models || [];
+        const nextVideoDefault = resolveConfiguredVideoModel(
+          nextVideoModels,
+          imageGenerationPreferences.workbench.video_model,
+          imageGenerationPreferences.default_video_model,
+          result.config.default_video_model,
+        );
         setVideoModelOptions(nextVideoModels.map((model) => ({ value: model, label: model })));
         setVideoModel(nextVideoDefault);
       })
@@ -2478,7 +2426,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     return () => {
       ignore = true;
     };
-  }, [imageGenerationPreferences.default_image_model, imageGenerationPreferences.default_video_model, imageGenerationPreferencesReady]);
+  }, [imageGenerationPreferences.default_image_model, imageGenerationPreferences.default_video_model, imageGenerationPreferences.workbench.image_model, imageGenerationPreferences.workbench.video_model, imageGenerationPreferencesReady]);
 
   useEffect(() => {
     if (!imageGenerationPreferencesReady) return;
@@ -2504,7 +2452,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     setVideoSize(workbench.video_size);
     setVideoSeconds(workbench.video_seconds);
     setVideoResolution(workbench.video_resolution);
-    setVideoKlingMode(workbench.video_mode);
     setVideoGenerateAudio(workbench.video_generate_audio);
     setVideoWatermark(workbench.video_watermark);
     setImageStreamEnabled(imageGenerationPreferences.stream);
@@ -2515,8 +2462,9 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   }, [imageGenerationPreferences, imageGenerationPreferencesReady]);
 
   useEffect(() => {
-    if (!workbenchPreferencesReady) return;
+    if (!workbenchPreferencesReady || !imageModelConfigReady) return;
     const workbench: CreationWorkbenchPreferences = {
+      image_model: imageModel,
       image_size: imageSize || DEFAULT_CREATION_WORKBENCH_PREFERENCES.image_size,
       image_size_mode: imageSizeMode,
       image_aspect_ratio: imageAspectRatio,
@@ -2531,10 +2479,10 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       image_output_compression: supportsImageOutputCompression(imageOutputFormat)
         ? String(normalizeOutputCompressionValue(imageOutputCompression) ?? "")
         : "",
+      video_model: videoModel,
       video_size: videoSize,
       video_seconds: videoSeconds,
       video_resolution: videoResolution,
-      video_mode: videoKlingMode,
       video_generate_audio: videoGenerateAudio,
       video_watermark: videoWatermark,
     };
@@ -2563,49 +2511,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         .catch((error) => toast.error(error instanceof Error ? error.message : "创作参数保存失败"));
     }, 400);
     return () => window.clearTimeout(timer);
-  }, [imageAspectRatio, imageCodexCLICompatibility, imageCount, imageCustomHeight, imageCustomRatio, imageCustomWidth, imageOutputCompression, imageOutputFormat, imagePartialImages, imageQuality, imageResolution, imageResponseFormatB64JSON, imageSize, imageSizeMode, imageSnapToMultiple16, imageStreamEnabled, videoGenerateAudio, videoKlingMode, videoResolution, videoSeconds, videoSize, videoWatermark, workbenchPreferencesReady]);
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-    let ignore = false;
-    void Promise.all([
-      fetchProfileRelayKey(undefined, imageRelayTokenName.trim()),
-      fetchProfileRelayKey(undefined, videoRelayTokenName.trim()),
-    ])
-      .then(([imageStatus, videoStatus]) => {
-        if (ignore) return;
-        const imageName = retainSelectedRelayTokenName(
-          imageRelayTokenName,
-          normalizeRelayTokenNames(imageStatus.token_names),
-        );
-        const videoName = retainSelectedRelayTokenName(
-          videoRelayTokenName,
-          normalizeRelayTokenNames(videoStatus.token_names),
-        );
-        const imageConfigured = Boolean(imageName && imageStatus.has_key);
-        const videoConfigured = Boolean(videoName && videoStatus.has_key);
-        if (imageName !== imageRelayTokenName) void setRelayTokenName("image", imageName).catch(() => undefined);
-        if (videoName !== videoRelayTokenName) void setRelayTokenName("video", videoName).catch(() => undefined);
-        setRelayKeyConfigured({ image: imageConfigured, video: videoConfigured });
-        setRelayKeyStatusMessage({
-          image: imageConfigured ? "" : imageName ? imageStatus.message || NEWAPI_TOKEN_MISSING_MESSAGE : "请先选择用于生图的密钥",
-          video: videoConfigured ? "" : videoName ? videoStatus.message || NEWAPI_TOKEN_MISSING_MESSAGE : "请先选择用于生视频的密钥",
-        });
-      })
-      .catch(() => {
-        if (ignore) return;
-        setRelayKeyConfigured({ image: false, video: false });
-        setRelayKeyStatusMessage({
-          image: "无法读取云棉令牌状态，请稍后重试",
-          video: "无法读取云棉令牌状态，请稍后重试",
-        });
-      });
-    return () => {
-      ignore = true;
-    };
-  }, [imageRelayTokenName, session, setRelayTokenName, videoRelayTokenName]);
+  }, [imageAspectRatio, imageCodexCLICompatibility, imageCount, imageCustomHeight, imageCustomRatio, imageCustomWidth, imageModel, imageModelConfigReady, imageOutputCompression, imageOutputFormat, imagePartialImages, imageQuality, imageResolution, imageResponseFormatB64JSON, imageSize, imageSizeMode, imageSnapToMultiple16, imageStreamEnabled, videoGenerateAudio, videoModel, videoResolution, videoSeconds, videoSize, videoWatermark, workbenchPreferencesReady]);
 
   useEffect(() => {
     const selectedConversation = selectedConversationId
@@ -3471,7 +3377,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       setVideoSize(targetTurn.size || "1280x720");
       setVideoSeconds(String(targetTurn.videoSeconds || videoDefaultSeconds(targetTurn.model)));
       setVideoResolution(targetTurn.videoResolution || "720p");
-      setVideoKlingMode(targetTurn.videoMode || "std");
       setVideoGenerateAudio(targetTurn.videoGenerateAudio ?? false);
       setVideoWatermark(targetTurn.videoWatermark ?? false);
       setVideoFirstFrameURL(targetTurn.videoFirstFrameURL || "");
@@ -3479,12 +3384,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       setVideoReferenceImageURLs(targetTurn.videoReferenceImageURLs || []);
       setVideoReferenceVideoURLs(targetTurn.videoReferenceVideoURLs || []);
       setVideoReferenceAudioURLs(targetTurn.videoReferenceAudioURLs || []);
-      setVideoNegativePrompt(targetTurn.videoNegativePrompt || "");
-      setVideoMultiShot(targetTurn.videoMultiShot ?? false);
-      setVideoShotType(targetTurn.videoShotType || "intelligence");
-      setVideoMultiPrompt(normalizeVideoMultiPrompts(targetTurn.videoMultiPrompt));
-      setVideoElementList(normalizeVideoElementList(targetTurn.videoElementList));
-      setVideoCharacterOrientation(targetTurn.videoCharacterOrientation || "video");
       replaceReferenceImages(targetTurn.referenceImages);
       window.requestAnimationFrame(() => textareaRef.current?.focus());
       toast.message("已载入视频提示词和参数");
@@ -3660,7 +3559,26 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         startedAt: activeTurnStartedAt,
       });
       const applyTasks = async (tasks: CreationTask[]) => {
-        tasks = await Promise.all(tasks.map((task) => persistCreationTaskOutputs(task)));
+        const persistenceFailures: CreationTaskOutputPersistenceFailure[] = [];
+        tasks = await Promise.all(tasks.map((task) => persistCreationTaskOutputs(task, {
+          assetContext: {
+            prompt: activeTurn.prompt,
+            source: activeTurn.source === "workflow" ? "工作流" : "生成视频",
+            ...(activeTurn.source === "workflow" ? {
+              metadata: { workflowId: activeTurn.workflowId, workflowName: activeTurn.workflowName },
+            } : {}),
+          },
+          onError: (failure) => persistenceFailures.push(failure),
+        })));
+        if (persistenceFailures.length > 0) {
+          const first = persistenceFailures[0];
+          const kind = { image: "图片", video: "视频", audio: "音频" }[first.kind];
+          const detail = first.error instanceof Error ? first.error.message : String(first.error || "未知错误");
+          const reason = detail === "Failed to fetch"
+            ? "浏览器无法下载结果，请检查结果地址的跨域访问策略"
+            : detail;
+          toast.warning(`${kind}已生成，但保存到素材库失败：${reason}`);
+        }
         const taskMap = new Map<string, CreationTask>();
         for (const task of mergeCreationTaskList(tasks)) {
           observedTaskIds.add(task.id);
@@ -3978,13 +3896,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
               referenceAudioURLs: activeTurn.videoReferenceAudioURLs,
               referenceMode: activeTurn.videoReferenceMode || "first-frame",
               systemPrompt: activeTurn.videoSystemPrompt,
-              videoMode: activeTurn.videoMode,
-              negativePrompt: activeTurn.videoNegativePrompt,
-              multiShot: activeTurn.videoMultiShot,
-              shotType: activeTurn.videoShotType,
-              multiPrompt: activeTurn.videoMultiPrompt,
-              elementList: activeTurn.videoElementList,
-              characterOrientation: activeTurn.videoCharacterOrientation,
               relayTokenName: activeTurnRelayTokenName,
               assertDispatchAllowed: (taskIds) => assertTaskDispatchAllowed(taskIds),
             });
@@ -4010,7 +3921,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
             return;
           }
           const errorsByTaskId = new Map(
-            failures.map(({ group, error }) => [group.taskId, formatCreationTaskError(error, "提交图片任务失败")]),
+            failures.map(({ group, error }) => [group.taskId, formatCreationTaskError(error, activeTurn.mode === "video" ? "提交视频任务失败" : "提交图片任务失败")]),
           );
           await updateConversation(conversationId, (current) => {
             const conversation = current ?? snapshot;
@@ -4039,7 +3950,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         };
         updateTurnProgress(conversationId, activeTurn.id, {
           message: "正在提交生成请求",
-          detail: `${pendingTaskGroups.length} 个图片任务正在入队`,
+          detail: `${pendingTaskGroups.length} 个${activeTurn.mode === "video" ? "视频" : "图片"}任务正在入队`,
         });
         assertTaskDispatchAllowed(pendingTaskGroups.map((group) => group.taskId));
         const initialSubmission = await submitTaskGroups(pendingTaskGroups);
@@ -4235,7 +4146,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         if (cancelledTurnIdsRef.current.has(activeTurnKey)) {
           return;
         }
-        const message = formatCreationTaskError(error, "生成图片失败");
+        const message = formatCreationTaskError(error, activeTurn.mode === "video" ? "生成视频失败" : "生成图片失败");
         await updateConversation(conversationId, (current) => {
           const conversation = current ?? snapshot;
           return {
@@ -4499,7 +4410,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         toast.error(referenceLimitMessage);
         return;
       }
-      if (!requireRelayToken(targetTurn.mode === "video" ? "video" : "image")) {
+      if (!requireRelayToken(targetTurn.mode === "video" ? "video" : "image", targetTurn.model)) {
         return;
       }
 
@@ -4555,7 +4466,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                 ...derived,
                 processingStartedAt: undefined,
                 tokenGroup: undefined,
-                tokenName: relayTokenNameForKind(targetTurn.mode === "video" ? "video" : "image") || undefined,
+                tokenName: relayTokenNameForKind(targetTurn.mode === "video" ? "video" : "image", targetTurn.model) || undefined,
                 images,
               };
             }),
@@ -4620,7 +4531,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         toast.error(referenceLimitMessage);
         return;
       }
-      if (!requireRelayToken(targetTurn.mode === "video" ? "video" : "image")) {
+      if (!requireRelayToken(targetTurn.mode === "video" ? "video" : "image", targetTurn.model)) {
         return;
       }
 
@@ -4655,7 +4566,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                 error: undefined,
                 processingStartedAt: undefined,
                 tokenGroup: undefined,
-                tokenName: relayTokenNameForKind(targetTurn.mode === "video" ? "video" : "image") || undefined,
+                tokenName: relayTokenNameForKind(targetTurn.mode === "video" ? "video" : "image", targetTurn.model) || undefined,
                 images: Array.from({ length: imageCount }, (_, index): StoredImage => {
                   const imageId = `${turn.id}-${regenerationId}-${index}`;
                   return {
@@ -4722,7 +4633,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         toast.error("当前轮次正在处理，稍后再编辑");
         return;
       }
-      if (regenerate && !requireRelayToken(targetTurn.mode === "video" ? "video" : "image")) {
+      if (regenerate && !requireRelayToken(targetTurn.mode === "video" ? "video" : "image", targetTurn.model)) {
         return;
       }
       const mode = getComposerConversationMode("image", draft.referenceImages);
@@ -4831,7 +4742,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                 partialImages: draftStream ? normalizedImagePartialImages(Number(draft.partialImages)) : 0,
                 tokenGroup: regenerate ? undefined : draft.tokenGroup || undefined,
                 tokenName: regenerate
-                  ? relayTokenNameForKind(targetTurn.mode === "video" ? "video" : "image") || undefined
+                  ? relayTokenNameForKind(targetTurn.mode === "video" ? "video" : "image", targetTurn.model) || undefined
                   : draft.tokenName || undefined,
                 visibility: draft.visibility,
               };
@@ -4901,10 +4812,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     }
 
     const videoMode = composerMode === "video";
-    if (!requireRelayToken(videoMode ? "video" : "image")) {
-      return;
-    }
-
     const prompt = imagePrompt.trim();
     const normalizedFirstFrameURL = absoluteReferenceURL(videoFirstFrameURL);
     const normalizedLastFrameURL = absoluteReferenceURL(videoLastFrameURL);
@@ -4915,28 +4822,17 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       return;
     }
     const effectiveModel = videoMode
-      ? (videoModelOptions.some((option) => option.value === videoModel) ? videoModel : videoModelOptions[0]?.value || DEFAULT_VIDEO_MODEL)
+      ? (videoModelOptions.some((option) => option.value === videoModel) ? videoModel : videoModelOptions[0]?.value || "")
       : imageCreationModelOptions.some((option) => option.value === imageModel) ? imageModel : defaultImageModel;
-    const selectedVideoSeconds = Number(videoSeconds);
-    let normalizedVideoMultiPrompt: Array<Record<string, unknown>> = [];
-    let normalizedVideoElementList: Array<Record<string, unknown>> = [];
-    if (videoMode) {
-      // These fields only belong to Kling's advanced panels. Stale values
-      // must not affect another provider after the model changes.
-      const useCustomShots = supportsKlingMultiShot(effectiveModel)
-        && videoMultiShot
-        && (!supportsKlingShotType(effectiveModel) || videoShotType === "customize");
-      normalizedVideoMultiPrompt = useCustomShots ? videoMultiPromptsToRequest(videoMultiPrompt) : [];
-      const elementRecords = supportsKlingElements(effectiveModel) ? videoElementListToRequest(videoElementList) : [];
-      const elementError = validateVideoKlingElementList(elementRecords);
-      if (elementError) {
-        toast.error(elementError);
-        return;
-      }
-      normalizedVideoElementList = normalizeVideoKlingElementList(elementRecords);
+    if (videoMode && !effectiveModel) {
+      toast.error("管理员尚未配置可用的视频模型");
+      return;
     }
-    const hasKlingElementReferences = videoHasKlingElementReferences(normalizedVideoElementList);
-    // The shared request normalizer applies the provider contract at submit
+    if (!requireRelayToken(videoMode ? "video" : "image", effectiveModel)) {
+      return;
+    }
+    const selectedVideoSeconds = Number(videoSeconds);
+    // The shared request normalizer applies the video model contract at submit
     // time. This keeps manual quality input working while snapping fixed
     // model values to the nearest documented duration/size/resolution.
     if (videoMode && videoRequiresReferenceImage(effectiveModel) && !hasVideoReferenceImage) {
@@ -4977,7 +4873,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     const audioGenerationError = videoMode ? videoAudioGenerationError(
       effectiveModel,
       videoGenerateAudio,
-      videoKlingMode,
       ordinaryVideoReferenceCount,
     ) : "";
     if (audioGenerationError) {
@@ -5000,10 +4895,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     }
     if (videoMode && effectiveVideoReferenceMode === "reference") {
       const referenceImageCount = referenceImages.length + normalizedVideoReferenceImages.length;
-      if (referenceImageCount + normalizedVideoReferenceVideos.length + normalizedVideoReferenceAudios.length === 0 && !hasKlingElementReferences) {
-        toast.error(videoModelProfile(effectiveModel) === "kling-omni-reference"
-          ? "请添加参考图、参考视频或角色元素"
-          : "请至少上传一个参考图、参考视频或参考音频");
+      if (referenceImageCount + normalizedVideoReferenceVideos.length + normalizedVideoReferenceAudios.length === 0) {
+        toast.error("请至少上传一个参考图、参考视频或参考音频");
         return;
       }
       if (![...normalizedVideoReferenceImages, ...normalizedVideoReferenceVideos, ...normalizedVideoReferenceAudios].every(isPublicReferenceURL)) {
@@ -5038,13 +4931,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
           referenceImageURLs: normalizedVideoReferenceImages,
           referenceVideoURLs: normalizedVideoReferenceVideos,
           referenceAudioURLs: normalizedVideoReferenceAudios,
-          videoMode: videoKlingMode,
-          negativePrompt: videoNegativePrompt,
-          multiShot: videoMultiShot,
-          shotType: videoShotType,
-          multiPrompt: normalizedVideoMultiPrompt,
-          elementList: normalizedVideoElementList,
-          characterOrientation: videoCharacterOrientation,
         })
       : undefined;
     const normalizedVideoTurnFields = normalizedVideoParameters
@@ -5144,13 +5030,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         videoReferenceVideoURLs: videoMode ? normalizedVideoTurnFields?.videoReferenceVideoURLs : undefined,
         videoReferenceAudioURLs: videoMode ? normalizedVideoTurnFields?.videoReferenceAudioURLs : undefined,
         videoSystemPrompt: videoMode ? (imageGenerationPreferences.video_system_prompt || undefined) : undefined,
-        videoMode: videoMode ? normalizedVideoTurnFields?.videoMode : undefined,
-        videoNegativePrompt: videoMode ? normalizedVideoTurnFields?.videoNegativePrompt : undefined,
-        videoMultiShot: videoMode ? normalizedVideoTurnFields?.videoMultiShot : undefined,
-        videoShotType: videoMode ? normalizedVideoTurnFields?.videoShotType : undefined,
-        videoMultiPrompt: videoMode ? normalizedVideoTurnFields?.videoMultiPrompt : undefined,
-        videoElementList: videoMode ? normalizedVideoTurnFields?.videoElementList : undefined,
-        videoCharacterOrientation: videoMode ? normalizedVideoTurnFields?.videoCharacterOrientation : undefined,
         tokenGroup: undefined,
         tokenName: activeRelayTokenName || undefined,
         visibility: defaultImageVisibility,
@@ -5422,51 +5301,25 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
 
                   {editingTurnDraft.mode !== "chat" && editingDraftEffectiveSizeSelection && editingDraftSizeSupported ? (
                     <div className="flex flex-col gap-3.5 rounded-xl border border-[#dedfe3] bg-white p-3.5 dark:border-border dark:bg-card">
-                      <section className="order-3 space-y-1.5">
-                        <div className="flex items-center justify-between gap-3">
-                          <ImageParameterLabel help="选择图片宽高比，系统会自动换算实际尺寸。">
-                            宽高比
-                          </ImageParameterLabel>
-                          <span
-                            className={cn(
-                              "rounded-md bg-[#f3f4f6] px-2 py-0.5 font-mono text-[11px] text-[#686b73] dark:bg-muted dark:text-muted-foreground",
-                              editingDraftSizeIsHighResolution && "bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300",
-                            )}
-                          >
-                            {editingDraftSizePreviewLabel}
-                          </span>
-                        </div>
-                        <div className="grid grid-cols-4 gap-1.5" role="group" aria-label="编辑图片宽高比">
-                          {editingDraftAspectRatioPresets.map((option) => {
-                            const isAuto = option.aspectRatio === "";
-                            const active = isAuto
-                              ? editingDraftEffectiveSizeSelection.mode === "auto"
-                              : editingDraftEffectiveSizeSelection.mode === "ratio" &&
-                                editingTurnDraft.aspectRatio === option.aspectRatio &&
-                                editingTurnDraft.resolution === option.resolution;
-                            return (
-                              <ImageAspectRatioOptionButton
-                                key={option.value}
-                                active={active}
-                                label={option.label}
-                                ratio={isAuto ? undefined : option.aspectRatio}
-                                onClick={() =>
-                                  setEditingTurnDraft((current) =>
-                                    current
-                                      ? {
-                                          ...current,
-                                          aspectRatio: option.aspectRatio,
-                                          resolution: option.resolution,
-                                          sizeMode: isAuto ? "auto" : "ratio",
-                                        }
-                                      : current,
-                                  )
-                                }
-                              />
-                            );
-                          })}
-                        </div>
-                      </section>
+                      <ImageSizePresetControls
+                        className="order-2"
+                        ariaLabelPrefix="编辑图片"
+                        value={{
+                          mode: editingTurnDraft.sizeMode,
+                          aspectRatio: editingTurnDraft.aspectRatio,
+                          resolution: editingTurnDraft.resolution,
+                        }}
+                        previewLabel={editingDraftSizePreviewLabel}
+                        highResolution={editingDraftSizeIsHighResolution}
+                        onChange={(patch) =>
+                          setEditingTurnDraft((current) => current ? {
+                            ...current,
+                            ...(patch.mode !== undefined ? { sizeMode: patch.mode } : {}),
+                            ...(patch.aspectRatio !== undefined ? { aspectRatio: patch.aspectRatio } : {}),
+                            ...(patch.resolution !== undefined ? { resolution: patch.resolution } : {}),
+                          } : current)
+                        }
+                      />
 
                       {editingDraftQualitySupported ? (
                         <section className="order-1 space-y-1.5">
@@ -5523,11 +5376,11 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                         />
                       </section>
 
-                      <div className="order-2 border-t border-[#ececef] pt-2.5 dark:border-border">
+                      <div className="order-3 border-t border-[#ececef] pt-2.5 dark:border-border">
                         <div className="space-y-3">
                           <section className="space-y-1.5">
                             <div className="flex items-center justify-between gap-3">
-                              <ImageParameterLabel help="手动输入图片宽高；输入完成后可自动向上补成 16 的倍数。">尺寸</ImageParameterLabel>
+                              <ImageParameterLabel help="手动输入图片宽高；输入完成后可自动向上补成 16 的倍数。">自定义尺寸</ImageParameterLabel>
                               <label className="flex items-center gap-2 text-[11px] text-muted-foreground"><span>16倍数对齐</span><Switch checked={imageSnapToMultiple16} aria-label="16倍数对齐" onCheckedChange={setImageSnapToMultiple16} /></label>
                             </div>
                             <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5">
@@ -5755,13 +5608,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                 videoSize={videoSize}
                 videoSeconds={videoSeconds}
                 videoResolution={videoResolution}
-                videoMode={videoKlingMode}
-                videoNegativePrompt={videoNegativePrompt}
-                videoMultiShot={videoMultiShot}
-                videoShotType={videoShotType}
-                videoMultiPrompt={videoMultiPrompt}
-                videoElementList={videoElementList}
-                videoCharacterOrientation={videoCharacterOrientation}
                 videoGenerateAudio={videoGenerateAudio}
                 videoWatermark={videoWatermark}
                 videoTaskCount={videoTaskCount}
@@ -5770,8 +5616,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                 videoReferenceImageURLs={videoReferenceImageURLs}
                 videoReferenceVideoURLs={videoReferenceVideoURLs}
                 videoReferenceAudioURLs={videoReferenceAudioURLs}
-                relayKeyConfigured={activeRelayKeyConfigured}
-                relayKeyStatusMessage={activeRelayKeyMissingMessage}
                 referenceImages={referenceImages}
                 textareaRef={textareaRef}
                 fileInputRef={fileInputRef}
@@ -5797,22 +5641,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                   setVideoResolution(value);
                   if (videoAllowsCustomResolution(videoModel)) setVideoSize((current) => videoWorkbenchSizeForModelResolution(videoModel, value, current));
                 }}
-                onVideoModeChange={(value) => {
-                  setVideoKlingMode(value);
-                  if (videoModel.toLowerCase().replace(/[._/]+/g, "-") === "kling-v2-6" && value !== "pro") {
-                    setVideoGenerateAudio(false);
-                  }
-                }}
-                onVideoNegativePromptChange={setVideoNegativePrompt}
-                onVideoMultiShotChange={setVideoMultiShot}
-                onVideoShotTypeChange={setVideoShotType}
-                onVideoMultiPromptChange={setVideoMultiPrompt}
-                onVideoElementListChange={setVideoElementList}
-                videoElementUploadingIndex={videoElementUploadingIndex}
-                onVideoElementReferenceFiles={handleVideoElementReferenceFiles}
-                onVideoElementClipboard={handleVideoElementClipboard}
-                onVideoElementAssetOpen={setVideoElementAssetIndex}
-                onVideoCharacterOrientationChange={setVideoCharacterOrientation}
                 onVideoGenerateAudioChange={setVideoGenerateAudio}
                 onVideoWatermarkChange={setVideoWatermark}
                 onVideoTaskCountChange={setVideoTaskCount}
@@ -5847,14 +5675,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         open={isPromptMarketOpen}
         onOpenChange={setIsPromptMarketOpen}
         onApplyPrompt={handleApplyMarketPrompt}
-      />
-
-      <VideoElementAssetPicker
-        open={videoElementAssetIndex !== null}
-        assets={videoElementAssets}
-        loading={videoElementAssetsLoading}
-        onInsert={(asset) => void handleVideoElementAssetInsert(asset)}
-        onClose={() => setVideoElementAssetIndex(null)}
       />
 
       <ImageLightbox
@@ -5956,38 +5776,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   );
 }
 
-function VideoElementAssetPicker({ open, assets, loading, onInsert, onClose }: { open: boolean; assets: MyAsset[]; loading: boolean; onInsert: (asset: MyAsset) => void; onClose: () => void }) {
-  const [query, setQuery] = useState("");
-  const mediaAssets = assets.filter((asset) => asset.kind !== "text");
-  const filtered = mediaAssets.filter((asset) => {
-    const text = query.trim().toLowerCase();
-    return !text || [asset.title, asset.source, ...(asset.tags || [])].some((value) => String(value || "").toLowerCase().includes(text));
-  });
-  return (
-    <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
-      <DialogContent scrollable={false} className="flex max-h-[86dvh] w-[min(94vw,900px)] max-w-none flex-col overflow-hidden">
-        <DialogHeader><DialogTitle>我的素材</DialogTitle><DialogDescription>选择图片、3-8 秒视频或 5-30 秒音频作为 Kling 元素素材。</DialogDescription></DialogHeader>
-        <div className="relative">
-          <Search className="absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-          <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索素材" className="pl-8" />
-        </div>
-        <ScrollArea className="h-[min(58vh,560px)]" viewportClassName="pr-3">
-          {loading ? <div className="grid h-48 place-items-center"><LoaderCircle className="size-5 animate-spin text-muted-foreground" /></div> : filtered.length ? <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {filtered.map((asset) => <button key={asset.id} type="button" className="min-w-0 overflow-hidden rounded-lg border bg-card text-left hover:border-[#1456f0]" onClick={() => onInsert(asset)}>
-              <div className="flex aspect-[4/3] items-center justify-center overflow-hidden bg-muted/50">
-                {asset.kind === "image" && asset.url ? <AuthenticatedImage src={asset.url} alt={asset.title} className="size-full object-cover" /> : asset.kind === "video" && asset.url ? <video src={`${asset.url}#t=0.1`} muted playsInline preload="metadata" className="size-full object-cover" /> : <AudioLines className="size-10 text-[#1456f0]" />}
-              </div>
-              <div className="p-3"><p className="truncate text-sm font-semibold">{asset.title}</p><p className="mt-1 text-xs text-muted-foreground">{asset.kind === "image" ? "图片" : asset.kind === "video" ? "视频" : "音频"}</p></div>
-            </button>)}
-          </div> : <div className="grid h-48 place-items-center text-sm text-muted-foreground">暂无图片、视频或音频素材</div>}
-        </ScrollArea>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
 export default function ImagePage() {
-  const { isCheckingAuth, session } = useAuthGuard(undefined, "/image");
+  const { isCheckingAuth, session } = useAuthGuard(undefined, "/studio");
 
   if (isCheckingAuth || !session) {
     return (

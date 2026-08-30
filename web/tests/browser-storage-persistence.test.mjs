@@ -7,15 +7,24 @@ async function source(path) {
 }
 
 test("account creation preferences do not use browser storage", async () => {
-  const [imagePage, workflowRuntime, canvasDefaults] = await Promise.all([
+  const [imagePage, workflowRuntime, canvasDefaults, canvasPage, workflowWorkspace] = await Promise.all([
     source("../src/app/image/page.tsx"),
     source("../src/app/workflows/workflow-runtime.ts"),
     source("../src/app/canvas/canvas-image-parameter-defaults.ts"),
+    source("../src/app/canvas/page.tsx"),
+    source("../src/components/workflows/creative-workflow-workspace.tsx"),
   ]);
   assert.doesNotMatch(imagePage, /image_last_|image_generation_snap_to_multiple_16/);
   assert.doesNotMatch(workflowRuntime, /localStorage|sessionStorage/);
   assert.doesNotMatch(canvasDefaults, /localStorage|sessionStorage/);
   assert.match(imagePage, /updateCreationWorkbenchPreferences/);
+  assert.match(imagePage, /image_model: imageModel/);
+  assert.match(imagePage, /video_model: videoModel/);
+  assert.match(imagePage, /workbench\.image_model \|\| imageGenerationPreferences\.default_image_model/);
+  assert.match(imagePage, /resolveConfiguredVideoModel\([\s\S]*?workbench\.video_model,[\s\S]*?default_video_model,[\s\S]*?config\.default_video_model/);
+  assert.match(canvasPage, /function updateNodeGenerationParameters[\s\S]*?pushHistory\(\);/);
+  assert.match(workflowWorkspace, /onModelChange=\{\(model\) => patchConfig\(\{ model, image_model: model \}\)\}/);
+  assert.match(workflowWorkspace, /saveWorkflow\(normalizeWorkflow\(workflow, models, preferences\)\)/);
 });
 
 test("assets use account-scoped server storage with in-memory request deduplication", async () => {

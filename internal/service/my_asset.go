@@ -72,11 +72,18 @@ func (s *MyAssetService) ListVisible(viewerID string, admin bool, owners []MyAss
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	documents, batched := s.listAssetDocumentsLocked()
 	items := make([]MyAsset, 0)
 	for _, owner := range ownerByID {
-		ownedItems, err := s.loadLocked(owner.ID)
-		if err != nil {
-			return nil, err
+		var ownedItems []MyAsset
+		if batched {
+			ownedItems = decodeMyAssets(documents[myAssetDocumentName(owner.ID)])
+		} else {
+			var err error
+			ownedItems, err = s.loadLocked(owner.ID)
+			if err != nil {
+				return nil, err
+			}
 		}
 		for _, item := range ownedItems {
 			owned := owner.ID == viewerID
@@ -223,6 +230,56 @@ func (s *MyAssetService) Replace(ctx context.Context, ownerID string, admin bool
 	return append([]MyAsset(nil), items...), nil
 }
 
+// UpsertMedia atomically adds generated media to a user's material library.
+// The full-list Replace API is kept for manual library editing, while this
+// method avoids lost updates when multiple generation tasks finish together.
+func (s *MyAssetService) UpsertMedia(ownerID string, input MyAsset) ([]MyAsset, error) {
+	ownerID = strings.TrimSpace(ownerID)
+	if ownerID == "" {
+		return nil, fmt.Errorf("owner_id is required")
+	}
+	input.OwnerID = ""
+	input.OwnerName = ""
+	input.Owned = false
+	item, err := normalizeMyAsset(input)
+	if err != nil {
+		return nil, err
+	}
+	if item.Kind == "text" {
+		return nil, fmt.Errorf("generated asset must be media")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	items, err := s.loadLocked(ownerID)
+	if err != nil {
+		return nil, err
+	}
+	matched := -1
+	for index, existing := range items {
+		if existing.ID == item.ID || item.StorageKey != "" && existing.StorageKey == item.StorageKey {
+			matched = index
+			break
+		}
+	}
+	if matched >= 0 {
+		if items[matched].CreatedAt != "" {
+			item.CreatedAt = items[matched].CreatedAt
+		}
+		items[matched] = item
+	} else {
+		if len(items) >= maxMyAssetItems {
+			return nil, fmt.Errorf("assets cannot contain more than %d items", maxMyAssetItems)
+		}
+		items = append(items, item)
+	}
+	sortMyAssets(items)
+	if err := saveStoredJSON(s.store, myAssetDocumentName(ownerID), map[string]any{"items": items}); err != nil {
+		return nil, err
+	}
+	return append([]MyAsset(nil), items...), nil
+}
+
 func (s *MyAssetService) EnsureTextStorage(ctx context.Context, ownerID string, admin bool) ([]MyAsset, error) {
 	items, err := s.List(ownerID)
 	if err != nil {
@@ -261,6 +318,22 @@ func (s *MyAssetService) loadLocked(ownerID string) ([]MyAsset, error) {
 	if err != nil {
 		return nil, err
 	}
+	return decodeMyAssets(raw), nil
+}
+
+func (s *MyAssetService) listAssetDocumentsLocked() (map[string]any, bool) {
+	store, ok := s.store.(storage.JSONDocumentPrefixBackend)
+	if !ok {
+		return nil, false
+	}
+	documents, err := store.ListJSONDocuments(myAssetDocumentDir + "/")
+	if err != nil {
+		return nil, false
+	}
+	return documents, true
+}
+
+func decodeMyAssets(raw any) []MyAsset {
 	items := make([]MyAsset, 0)
 	for _, candidate := range util.AsMapSlice(util.StringMap(raw)["items"]) {
 		item, err := normalizeMyAsset(MyAsset{
@@ -275,7 +348,7 @@ func (s *MyAssetService) loadLocked(ownerID string) ([]MyAsset, error) {
 		}
 	}
 	sortMyAssets(items)
-	return items, nil
+	return items
 }
 
 func normalizeMyAsset(item MyAsset) (MyAsset, error) {

@@ -1,4 +1,5 @@
 import { lazy, type ReactNode } from "react";
+import { Navigate, useLocation } from "react-router-dom";
 
 // Route configuration intentionally exports non-component metadata alongside
 // lazy components; Fast Refresh does not apply to this module.
@@ -6,7 +7,7 @@ import { lazy, type ReactNode } from "react";
 
 const CanvasRoute = lazy(() => import("@/app/canvas/route"));
 const CanvasLibraryRoute = lazy(() => import("@/app/canvas/library-route"));
-const ImagePage = lazy(() => import("@/app/image/page"));
+const StudioPage = lazy(() => import("@/app/image/page"));
 const AssetsPage = lazy(() => import("@/app/assets/page"));
 const PromptLibraryPage = lazy(() => import("@/app/prompt-library/page"));
 const HomePage = lazy(() => import("@/app/page"));
@@ -24,6 +25,11 @@ export type AppRouteConfig = {
   requiredPath?: string;
 };
 
+function LegacyImageRoute() {
+  const { hash, search } = useLocation();
+  return <Navigate to={{ pathname: "/studio", search, hash }} replace />;
+}
+
 export const appRoutes: AppRouteConfig[] = [
   { path: "/", element: <HomePage /> },
   { path: "/login", element: <LoginPage /> },
@@ -38,6 +44,7 @@ export const appRoutes: AppRouteConfig[] = [
   { path: "/rbac", element: <RBACPage />, requiredPath: "/rbac" },
   { path: "/logs", element: <LogsPage />, requiredPath: "/logs" },
   { path: "/settings", element: <SettingsPage />, requiredPath: "/settings" },
-  { path: "/image", element: <ImagePage />, requiredPath: "/image" },
+  { path: "/studio", element: <StudioPage />, requiredPath: "/studio" },
+  { path: "/image", element: <LegacyImageRoute /> },
   { path: "*", element: <HomePage /> },
 ];

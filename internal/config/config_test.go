@@ -17,6 +17,15 @@ func TestDefaultVideoModelsMatchReferenceWorkbenchDefault(t *testing.T) {
 	}
 }
 
+func TestNormalizeModelListPreservesExplicitEmptyList(t *testing.T) {
+	if got := normalizeModelList([]any{}, []string{"fallback"}); len(got) != 0 {
+		t.Fatalf("normalizeModelList(explicit empty) = %#v, want empty", got)
+	}
+	if got := normalizeModelList(nil, []string{"fallback"}); len(got) != 1 || got[0] != "fallback" {
+		t.Fatalf("normalizeModelList(nil) = %#v, want fallback", got)
+	}
+}
+
 func TestAllowUserCustomRelayConfigDefaultsOffAndPersists(t *testing.T) {
 	t.Setenv("ROOT_DIR", t.TempDir())
 	unsetEnv(t, "ALLOW_USER_CUSTOM_RELAY_CONFIG")

@@ -12,14 +12,11 @@ const CANVAS_CLIPBOARD_NODE_FIELDS = new Set<keyof CanvasNode>([
   "generation_resolution", "generation_quality", "generation_count", "generation_output_format",
   "generation_output_compression", "generation_stream", "generation_partial_images", "generation_snap_to_multiple_16",
   "generation_response_format_b64_json", "generation_codex_cli_compatibility", "generation_status",
-  "generation_started_at", "generation_progress", "generation_error", "generation_type", "generation_reference_urls",
-  "generation_video_model", "generation_video_size", "generation_video_seconds", "generation_video_resolution",
-  "generation_video_audio", "generation_video_watermark", "generation_video_mode", "generation_video_negative_prompt",
-  "generation_video_multi_shot", "generation_video_shot_type", "generation_video_multi_prompt",
-  "generation_video_element_list", "generation_video_character_orientation", "generation_video_reference_mode",
-  "generation_video_reference_image_urls", "generation_video_reference_urls", "generation_video_reference_audio_urls",
-  "generation_video_first_frame_node_id", "generation_video_last_frame_node_id", "generation_video_kling_image_node_ids",
-  "generation_video_kling_multi_prompt", "generation_video_kling_element_list", "generation_mode", "generation_text_model",
+	  "generation_started_at", "generation_progress", "generation_error", "generation_type", "generation_reference_urls",
+	  "generation_video_model", "generation_video_size", "generation_video_seconds", "generation_video_resolution",
+	  "generation_video_audio", "generation_video_watermark", "generation_video_reference_mode",
+	  "generation_video_reference_image_urls", "generation_video_reference_urls", "generation_video_reference_audio_urls",
+	  "generation_video_first_frame_node_id", "generation_video_last_frame_node_id", "generation_mode", "generation_text_model",
   "generation_audio_model", "generation_audio_voice", "generation_audio_format", "generation_audio_speed",
   "generation_audio_instructions", "generation_audio_grok_voice", "generation_audio_grok_language",
   "generation_audio_grok_format", "generation_audio_grok_speed", "generation_audio_glm_voice",
@@ -65,9 +62,9 @@ export function normalizeCanvasClipboard(value: unknown): CanvasClipboard | null
     if (source.group_id !== undefined && (typeof source.group_id !== "string" || source.group_id.length > 128 || source.group_id === id || type === "group")) return null;
     if (source.generation_model !== undefined && (typeof source.generation_model !== "string" || source.generation_model.trim().length > 256)) return null;
     if (source.generation_video_model !== undefined && (typeof source.generation_video_model !== "string" || source.generation_video_model.trim().length > 256)) return null;
-    if (source.generation_video_size !== undefined && (typeof source.generation_video_size !== "string" || (!/^\d+x\d+$/i.test(source.generation_video_size.trim()) && !["auto", "1280x720", "720x1280", "1024x1024", "16:9", "9:16", "1:1", "4:3", "3:4", "3:2", "2:3", "21:9", "adaptive"].includes(source.generation_video_size.trim().toLowerCase())))) return null;
-    if (source.generation_video_seconds !== undefined && (!isFiniteNumber(source.generation_video_seconds) || source.generation_video_seconds === 0 || source.generation_video_seconds < -1 || source.generation_video_seconds > 60 || (source.generation_video_seconds !== -1 && !Number.isInteger(source.generation_video_seconds)))) return null;
-    if (source.generation_video_resolution !== undefined && (typeof source.generation_video_resolution !== "string" || !/^(?:\d{3,5}p?|\d+k)$/i.test(source.generation_video_resolution.trim()))) return null;
+    if (source.generation_video_size !== undefined && (typeof source.generation_video_size !== "string" || source.generation_video_size.length > 64)) return null;
+    if (source.generation_video_seconds !== undefined && (!isFiniteNumber(source.generation_video_seconds) || source.generation_video_seconds < 1 || source.generation_video_seconds > 3600 || !Number.isInteger(source.generation_video_seconds))) return null;
+    if (source.generation_video_resolution !== undefined && (typeof source.generation_video_resolution !== "string" || source.generation_video_resolution.length > 64)) return null;
     if (source.batch_child_ids !== undefined && (!Array.isArray(source.batch_child_ids) || source.batch_child_ids.some((childID) => typeof childID !== "string"))) return null;
     if (source.generation_reference_urls !== undefined && (!Array.isArray(source.generation_reference_urls) || source.generation_reference_urls.some((url) => typeof url !== "string"))) return null;
     if (source.generation_video_reference_urls !== undefined && (!Array.isArray(source.generation_video_reference_urls) || source.generation_video_reference_urls.some((url) => typeof url !== "string"))) return null;
@@ -76,10 +73,7 @@ export function normalizeCanvasClipboard(value: unknown): CanvasClipboard | null
     if (source.generation_video_reference_audio_urls !== undefined && (!Array.isArray(source.generation_video_reference_audio_urls) || source.generation_video_reference_audio_urls.some((url) => typeof url !== "string"))) return null;
     if (source.generation_video_first_frame_node_id !== undefined && typeof source.generation_video_first_frame_node_id !== "string") return null;
     if (source.generation_video_last_frame_node_id !== undefined && typeof source.generation_video_last_frame_node_id !== "string") return null;
-    if (source.generation_video_kling_image_node_ids !== undefined && (!Array.isArray(source.generation_video_kling_image_node_ids) || source.generation_video_kling_image_node_ids.length > 2 || source.generation_video_kling_image_node_ids.some((nodeID) => typeof nodeID !== "string"))) return null;
-    if (source.generation_video_kling_multi_prompt !== undefined && (!Array.isArray(source.generation_video_kling_multi_prompt) || source.generation_video_kling_multi_prompt.some((item) => !item || typeof item !== "object" || typeof item.text_node_id !== "string" || typeof item.duration !== "string"))) return null;
-    if (source.generation_video_kling_element_list !== undefined && (!Array.isArray(source.generation_video_kling_element_list) || source.generation_video_kling_element_list.length > 3 || source.generation_video_kling_element_list.some((item) => !item || typeof item !== "object" || !Array.isArray(item.node_ids) || item.node_ids.length > 4 || item.node_ids.some((nodeID) => typeof nodeID !== "string")))) return null;
-    ids.add(id);
+	    ids.add(id);
     nodes.push({ ...source, id, type, x: source.x, y: source.y, width: source.width, height: source.height, scale_x: source.scale_x, scale_y: source.scale_y } as CanvasNode);
   }
   const nodeByID = new Map(nodes.map((node) => [node.id, node]));

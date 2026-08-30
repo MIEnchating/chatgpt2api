@@ -19,7 +19,7 @@ test("reference-project size presets and fallback dimensions stay aligned", () =
   assert.equal(IMAGE_ASPECT_RATIO_PRESET_OPTIONS.some((option) => option.label.includes("自定义")), false);
   assert.deepEqual(
     IMAGE_ASPECT_RATIO_PRESET_OPTIONS.map((option) => option.label),
-    ["1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16", "21:9", "1:1(2k)", "16:9(2k)", "9:16(2k)", "21:9(2k)", "16:9(4k)", "9:16(4k)", "21:9(4k)", "auto"],
+    ["1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16", "21:9", "1:1(2k)", "16:9(2k)", "9:16(2k)", "21:9(2k)", "16:9(4k)", "9:16(4k)", "21:9(4k)", "自动"],
   );
   assert.equal(calculateDefaultImageSize("16:9"), "1920x1080");
   assert.equal(calculateDefaultImageSize("9:16"), "1080x1920");

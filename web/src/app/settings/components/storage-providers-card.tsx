@@ -1,4 +1,4 @@
-import { CircleHelp, Cloud, Gauge, HardDrive, LoaderCircle, Plus, Save, Trash2 } from "lucide-react";
+import { CircleHelp, Clock3, Cloud, Gauge, HardDrive, LoaderCircle, Plus, Save, Server, Trash2 } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
@@ -111,6 +111,7 @@ export function StorageProvidersCard() {
   const [localUsage, setLocalUsage] = useState<{ bytes: number; limitBytes: number; overLimit: boolean; checkedAt: string } | null>(null);
   const [activeTab, setActiveTab] = useState<"local" | "providers">("local");
   const setting = config?.storage || defaultSetting();
+  const enabledProviderCount = setting.providers.filter((provider) => provider.enabled).length;
 
   const updateSetting = (patch: Partial<StorageSettingConfig>) => setStorage({ ...setting, ...patch });
   const patchProvider = (index: number, patch: Partial<StorageProviderConfig>) => {
@@ -197,25 +198,45 @@ export function StorageProvidersCard() {
           </div>
         </section> : null}
 
-        {activeTab === "providers" ? <section id="storage-panel-providers" role="tabpanel" className="space-y-4 pt-5">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div><h3 className="text-base font-semibold text-foreground">全局外部存储</h3><p className="mt-1 text-sm text-muted-foreground">配置 S3、R2 或 WebDAV，并统一管理容量统计。</p></div>
-            <div className="flex flex-wrap gap-2"><Button type="button" variant="outline" size="sm" onClick={() => updateSetting({ providers: [...setting.providers, newProvider("s3", setting.providers.length)] })}><Plus />S3 / R2</Button><Button type="button" variant="outline" size="sm" onClick={() => updateSetting({ providers: [...setting.providers, newProvider("webdav", setting.providers.length)] })}><Plus />WebDAV</Button></div>
+        {activeTab === "providers" ? <section id="storage-panel-providers" role="tabpanel" className="space-y-5 pt-5">
+          <div data-storage-provider-toolbar className="flex flex-wrap items-start justify-between gap-4">
+            <div className="min-w-0"><h3 className="text-base font-semibold text-foreground">全局外部存储</h3><p className="mt-1 text-sm leading-5 text-muted-foreground">统一配置 S3、R2 与 WebDAV；素材写入失败时自动回退到服务器本机。</p></div>
+            <div className="flex shrink-0 flex-wrap gap-2"><Button type="button" variant="outline" size="sm" onClick={() => updateSetting({ providers: [...setting.providers, newProvider("s3", setting.providers.length)] })}><Plus />S3 / R2</Button><Button type="button" variant="outline" size="sm" onClick={() => updateSetting({ providers: [...setting.providers, newProvider("webdav", setting.providers.length)] })}><Plus />WebDAV</Button></div>
           </div>
-          <div className="grid border-y border-border/70 lg:grid-cols-2 lg:divide-x lg:divide-border/70">
-            <div className="py-3 lg:pr-8">
-              <StorageToggle title="自动统计容量" description={setting.capacityCheck.enabled ? "已开启，按下方 Cron 计划定期检查" : "已关闭，仍可在每个存储配置中手动统计"} checked={setting.capacityCheck.enabled} onCheckedChange={(checked) => updateSetting({ capacityCheck: { ...setting.capacityCheck, enabled: checked } })} />
-              {setting.capacityCheck.enabled ? <StorageField className="max-w-md pb-3" label="检查计划（Cron）" hint="默认每 6 小时检查一次。"><Input className={settingsInputClassName} value={setting.capacityCheck.cron} onChange={(event) => updateSetting({ capacityCheck: { ...setting.capacityCheck, cron: event.target.value } })} placeholder="0 */6 * * *" /></StorageField> : null}
-            </div>
-            <div className="border-t border-border/70 py-5 lg:border-t-0 lg:pl-8">
-              <StorageField label="外部存储容量上限" hint="统计结果超过该上限时自动停用对应存储。">
+
+          <div data-storage-provider-overview className="grid grid-cols-2 gap-x-4 gap-y-3 border-y border-border/70 py-3 lg:grid-cols-4 lg:gap-0 lg:divide-x lg:divide-border/70">
+            <StorageMetric label="已配置">{setting.providers.length} 个</StorageMetric>
+            <StorageMetric label="已启用">{enabledProviderCount} 个</StorageMetric>
+            <StorageMetric label="容量上限">{formatBytes(setting.capacityLimitBytes)}</StorageMetric>
+            <StorageMetric label="自动统计">{setting.capacityCheck.enabled ? "已开启" : "已关闭"}</StorageMetric>
+          </div>
+
+          <div data-storage-provider-policy className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(280px,0.85fr)]">
+            <section className="rounded-lg border border-border/70 bg-muted/20 p-4">
+              <div className="flex min-h-10 items-start justify-between gap-4">
+                <div className="flex min-w-0 items-start gap-3">
+                  <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-background text-muted-foreground ring-1 ring-border/70"><Clock3 className="size-4" /></span>
+                  <div className="min-w-0"><h4 className="text-sm font-semibold text-foreground">自动统计容量</h4><p className="mt-0.5 text-xs leading-5 text-muted-foreground">{setting.capacityCheck.enabled ? "按 Cron 计划定期检查所有外部存储" : "关闭时仍可在单个配置中手动统计"}</p></div>
+                </div>
+                <Switch aria-label="自动统计容量" checked={setting.capacityCheck.enabled} onCheckedChange={(checked) => updateSetting({ capacityCheck: { ...setting.capacityCheck, enabled: checked } })} />
+              </div>
+              {setting.capacityCheck.enabled ? <StorageField className="mt-4 max-w-lg border-t border-border/70 pt-4" label="检查计划（Cron）" hint="默认每 6 小时检查一次。"><Input className={settingsInputClassName} value={setting.capacityCheck.cron} onChange={(event) => updateSetting({ capacityCheck: { ...setting.capacityCheck, cron: event.target.value } })} placeholder="0 */6 * * *" /></StorageField> : null}
+            </section>
+
+            <section className="rounded-lg border border-border/70 bg-muted/20 p-4">
+              <div className="flex min-w-0 items-start gap-3">
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-background text-muted-foreground ring-1 ring-border/70"><Gauge className="size-4" /></span>
+                <div className="min-w-0"><h4 className="text-sm font-semibold text-foreground">容量保护</h4><p className="mt-0.5 text-xs leading-5 text-muted-foreground">统计结果达到上限后自动停用对应存储</p></div>
+              </div>
+              <StorageField className="mt-4 border-t border-border/70 pt-4" label="每个外部存储的容量上限" hint="该上限应用于每个外部存储，不是所有存储的合计容量。">
                 <GigabyteInput min={0.01} value={Number((setting.capacityLimitBytes / 1024 ** 3).toFixed(2))} onChange={(value) => updateSetting({ capacityLimitBytes: Math.max(1, value * 1024 ** 3) })} />
               </StorageField>
-            </div>
+            </section>
           </div>
-          {setting.providers.length === 0 ? <div className="rounded-lg border border-dashed p-8 text-center text-sm text-muted-foreground">未添加外部存储，当前使用服务器本机</div> : null}
+
+          {setting.providers.length === 0 ? <div data-storage-provider-empty className="flex min-h-36 flex-col items-center justify-center rounded-lg border border-dashed border-border bg-muted/10 px-6 py-6 text-center"><span className="flex size-10 items-center justify-center rounded-lg bg-muted text-muted-foreground"><Server className="size-5" /></span><p className="mt-3 text-sm font-medium text-foreground">还没有外部存储</p><p className="mt-1 max-w-md text-xs leading-5 text-muted-foreground">当前素材保存在服务器本机。可从右上角添加 S3、R2 或 WebDAV。</p></div> : null}
           {setting.providers.map((provider, index) => (
-            <div key={provider.id} className="space-y-4 rounded-lg border p-4">
+            <div key={provider.id} className="space-y-4 rounded-lg border border-border/70 bg-background p-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div><p className="text-sm font-semibold">{provider.name || providerTypeLabel(provider.type)}</p><p className="text-xs text-muted-foreground">{providerTypeLabel(provider.type)} · {formatBytes(provider.capacityBytes)}{provider.capacityCheckedAt ? ` · ${new Date(provider.capacityCheckedAt).toLocaleString("zh-CN")}` : ""}</p></div>
                 <div className="flex items-center gap-2">

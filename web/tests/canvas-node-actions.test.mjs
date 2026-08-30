@@ -149,6 +149,13 @@ test("shared tooltips include a directional arrow and comfortable trigger spacin
   assert.match(tooltipSource, /vectorEffect="non-scaling-stroke"/);
 });
 
+test("shared tooltips close when their trigger performs an action", () => {
+  assert.match(tooltipSource, /const \[open, setOpen\] = React\.useState\(false\)/);
+  assert.match(tooltipSource, /<Tooltip open=\{open\} onOpenChange=\{setOpen\}>/);
+  assert.match(tooltipSource, /onPointerDown=\{\(\) => setOpen\(false\)\}/);
+  assert.match(tooltipSource, /onClick=\{\(\) => setOpen\(false\)\}/);
+});
+
 test("the bottom node toolbar does not render a clipped light-theme shadow", () => {
   assert.match(pageSource, /shadow-none backdrop-blur-xl dark:shadow-\[0_10px_28px_rgba\(0,0,0,\.24\)\]/);
 });

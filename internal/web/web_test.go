@@ -17,6 +17,9 @@ func TestHandlerServesEmbeddedSPA(t *testing.T) {
 	if !strings.Contains(res.Body.String(), `<div id="root"></div>`) {
 		t.Fatalf("SPA route body missing root element: %q", res.Body.String())
 	}
+	if got := res.Header().Get("Cache-Control"); got != "no-cache" {
+		t.Fatalf("SPA route Cache-Control = %q, want no-cache", got)
+	}
 }
 
 func TestHandlerKeepsMissingAssetsOutOfSPA(t *testing.T) {

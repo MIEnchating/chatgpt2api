@@ -17,12 +17,5 @@ export function videoTurnFieldsFromNormalizedRequest(request: NormalizedVideoReq
     videoReferenceImageURLs: request.referenceImageURLs,
     videoReferenceVideoURLs: request.referenceVideoURLs,
     videoReferenceAudioURLs: request.referenceAudioURLs,
-    videoMode: request.videoMode,
-    videoNegativePrompt: request.negativePrompt,
-    videoMultiShot: request.multiShot,
-    videoShotType: request.shotType,
-    videoMultiPrompt: request.multiPrompt,
-    videoElementList: request.elementList,
-    videoCharacterOrientation: request.characterOrientation,
   };
 }

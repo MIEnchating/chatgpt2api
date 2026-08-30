@@ -103,6 +103,23 @@ func TestProfileImageConversationRowsPaginationDetailActiveAndGeneration(t *test
 		t.Fatalf("active response was not full: body bytes=%d", res.Body.Len())
 	}
 
+	res = request(http.MethodGet, "/api/profile/image-conversations/window?limit=2", nil)
+	if res.Code != http.StatusOK {
+		t.Fatalf("window status=%d body=%s", res.Code, res.Body.String())
+	}
+	window := decodeImageConversationHTTPPayload(t, res)
+	windowFirst := window["first_page"].(map[string]any)
+	windowActive := window["active_page"].(map[string]any)
+	if len(windowFirst["items"].([]any)) != 2 || len(windowActive["items"].([]any)) != 1 {
+		t.Fatalf("window response=%#v", window)
+	}
+	if windowFirst["generation"] != windowActive["generation"] || int64(windowFirst["generation"].(float64)) != generation {
+		t.Fatalf("window generation mismatch: %#v", window)
+	}
+	if !strings.Contains(res.Body.String(), activeReferencePayload) || strings.Contains(res.Body.String(), summaryReferencePayload) {
+		t.Fatalf("window did not preserve summary/full payload boundary")
+	}
+
 	res = request(http.MethodGet, "/api/profile/image-conversations/row-http-c", nil)
 	if res.Code != http.StatusOK {
 		t.Fatalf("detail status=%d body=%s", res.Code, res.Body.String())

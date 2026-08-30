@@ -9,8 +9,6 @@ export type CanvasGenerationContext = {
   lastFrameURL: string | null;
   referenceVideoURLs: string[];
   referenceAudioURLs: string[];
-  videoMultiPrompt: Array<Record<string, unknown>>;
-  videoElementList: Array<Record<string, unknown>>;
   textCount: number;
   imageCount: number;
   videoCount: number;
@@ -85,14 +83,12 @@ export function buildCanvasGenerationContext(
     return buildExplicitCanvasGenerationContext(prompt, inputs, sourceNode);
   }
 
-  const advanced = buildCanvasVideoAdvancedContext(sourceNode, inputs);
   const textInputs: string[] = [];
-  const referenceImageURLs: string[] = [...advanced.klingImageReferenceURLs];
+  const referenceImageURLs: string[] = [];
   const referenceVideoURLs: string[] = [];
   const referenceAudioURLs: string[] = [];
 
   inputs.forEach((input) => {
-    if (advanced.textNodeIDs.has(input.nodeID) || advanced.referenceNodeIDs.has(input.nodeID)) return;
     if (input.url) {
       if (input.type === "image") referenceImageURLs.push(input.url);
       if (input.type === "video") referenceVideoURLs.push(input.url);
@@ -114,10 +110,8 @@ export function buildCanvasGenerationContext(
     lastFrameURL: frames.lastFrameURL,
     referenceVideoURLs,
     referenceAudioURLs,
-    videoMultiPrompt: advanced.videoMultiPrompt,
-    videoElementList: advanced.videoElementList,
     textCount: inputs.filter((input) => input.type === "text").length,
-    imageCount: inputs.filter((input) => input.type === "image" && Boolean(input.url) && !advanced.referenceNodeIDs.has(input.nodeID)).length,
+    imageCount: inputs.filter((input) => input.type === "image" && Boolean(input.url)).length,
     videoCount: referenceVideoURLs.length,
     audioCount: referenceAudioURLs.length,
   };
@@ -128,7 +122,6 @@ function buildExplicitCanvasGenerationContext(
   inputs: ReturnType<typeof canvasGenerationInputs>,
   sourceNode: CanvasNode,
 ): CanvasGenerationContext {
-  const advanced = buildCanvasVideoAdvancedContext(sourceNode, inputs);
   const inputByID = new Map(inputs.map((input) => [input.nodeID, input]));
   const labelByID = new Map<string, string>();
   const textBlocks: string[] = [];
@@ -141,7 +134,7 @@ function buildExplicitCanvasGenerationContext(
   let audioCount = 0;
   const resolvedPrompt = prompt.replace(CANVAS_CONFIG_REFERENCE_PATTERN, (_token, nodeID: string) => {
     const input = inputByID.get(nodeID);
-    if (!input || advanced.textNodeIDs.has(input.nodeID) || advanced.referenceNodeIDs.has(input.nodeID)) return "";
+    if (!input) return "";
     const existing = labelByID.get(input.nodeID);
     if (existing) return input.type === "text" ? `【${existing}】` : existing;
     if (input.type !== "text" && input.url) {
@@ -171,67 +164,16 @@ function buildExplicitCanvasGenerationContext(
   const effectiveReferenceImageURLs = referenceImageURLs.filter((url) => !frameURLs.has(url));
   return {
     prompt: textBlocks.length ? `${resolvedPrompt.trim()}\n\n${textBlocks.join("\n\n")}` : resolvedPrompt,
-    referenceImageURLs: [...advanced.klingImageReferenceURLs, ...effectiveReferenceImageURLs],
+    referenceImageURLs: effectiveReferenceImageURLs,
     firstFrameURL: frames.firstFrameURL,
     lastFrameURL: frames.lastFrameURL,
     referenceVideoURLs,
     referenceAudioURLs,
-    videoMultiPrompt: advanced.videoMultiPrompt,
-    videoElementList: advanced.videoElementList,
     textCount,
     imageCount,
     videoCount,
     audioCount,
   };
-}
-
-type CanvasVideoAdvancedContext = {
-  textNodeIDs: Set<string>;
-  referenceNodeIDs: Set<string>;
-  klingImageReferenceURLs: string[];
-  videoMultiPrompt: Array<Record<string, unknown>>;
-  videoElementList: Array<Record<string, unknown>>;
-};
-
-function buildCanvasVideoAdvancedContext(
-  sourceNode: CanvasNode | undefined,
-  inputs: ReturnType<typeof canvasGenerationInputs>,
-): CanvasVideoAdvancedContext {
-  const inputByID = new Map(inputs.map((input) => [input.nodeID, input]));
-  const textNodeIDs = new Set<string>();
-  const referenceNodeIDs = new Set<string>();
-  const klingImageReferenceURLs = (sourceNode?.generation_video_kling_image_node_ids || [])
-    .map((nodeID) => {
-      referenceNodeIDs.add(nodeID);
-      const input = inputByID.get(nodeID);
-      return input?.type === "image" ? input.url || null : null;
-    })
-    .filter((url): url is string => Boolean(url));
-  const videoMultiPrompt = (sourceNode?.generation_video_kling_multi_prompt || [])
-    .map((item) => {
-      const nodeID = String(item.text_node_id || "").trim();
-      const input = inputByID.get(nodeID);
-      if (!nodeID || input?.type !== "text" || !input.text) return null;
-      textNodeIDs.add(nodeID);
-      return { prompt: input.text, duration: item.duration || "1" };
-    })
-    .filter((item): item is { prompt: string; duration: string } => Boolean(item));
-  const videoElementList = (sourceNode?.generation_video_kling_element_list || [])
-    .slice(0, 3)
-    .map((item) => {
-      const references = (item.node_ids || [])
-        .slice(0, 4)
-        .map((nodeID) => {
-          referenceNodeIDs.add(nodeID);
-          const input = inputByID.get(nodeID);
-          if (!input?.url || input.type === "text") return null;
-          return { kind: input.type, url: input.url };
-        })
-        .filter((reference): reference is { kind: "image" | "video" | "audio"; url: string } => Boolean(reference));
-      return references.length ? { name: item.name || "", description: item.description || "", references } : null;
-    })
-    .filter((item): item is { name: string; description: string; references: Array<{ kind: "image" | "video" | "audio"; url: string }> } => Boolean(item));
-  return { textNodeIDs, referenceNodeIDs, klingImageReferenceURLs, videoMultiPrompt, videoElementList };
 }
 
 function canvasVideoFrameReferences(

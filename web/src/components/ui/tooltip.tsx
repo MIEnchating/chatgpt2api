@@ -57,9 +57,17 @@ type TooltipHintProps = Omit<React.ComponentProps<typeof TooltipContent>, "child
 };
 
 function TooltipHint({ children, content, ...contentProps }: TooltipHintProps) {
+  const [open, setOpen] = React.useState(false);
+
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>{children}</TooltipTrigger>
+    <Tooltip open={open} onOpenChange={setOpen}>
+      <TooltipTrigger
+        asChild
+        onPointerDown={() => setOpen(false)}
+        onClick={() => setOpen(false)}
+      >
+        {children}
+      </TooltipTrigger>
       <TooltipContent {...contentProps}>{content}</TooltipContent>
     </Tooltip>
   );

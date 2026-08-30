@@ -1,12 +1,8 @@
 import { X } from "lucide-react";
 
-import {
-  ImageAspectRatioOptionButton,
-  ImageParameterLabel,
-} from "@/app/image/components/image-parameter-ui";
+import { ImageParameterLabel } from "@/app/image/components/image-parameter-ui";
 import { imageParameterChoiceClass } from "@/app/image/components/image-parameter-styles";
 import {
-  IMAGE_ASPECT_RATIO_PRESET_OPTIONS,
   IMAGE_WORKBENCH_QUALITY_OPTIONS,
   buildImageSize,
   formatImageSizeDisplay,
@@ -14,6 +10,7 @@ import {
   parseImageSizeDimensions,
   type ImageSizeSelection,
 } from "@/app/image/image-options";
+import { ImageSizePresetControls } from "@/components/generation/image-size-preset-controls";
 import { Input } from "@/components/ui/input";
 import { NumberInput } from "@/components/ui/number-input";
 import { Switch } from "@/components/ui/switch";
@@ -90,9 +87,9 @@ export function ImageSettingsPanel({
         </div>
       </section> : null}
 
-      {showSize ? <section className="order-2 space-y-1.5 border-t border-[#ececef] pt-2.5 dark:border-border">
+      {showSize ? <section className="order-3 space-y-1.5 border-t border-[#ececef] pt-2.5 dark:border-border">
         <div className="flex items-center justify-between gap-3">
-          <ImageParameterLabel help="手动输入图片宽高；输入完成后可自动向上补成 16 的倍数。">尺寸</ImageParameterLabel>
+          <ImageParameterLabel help="手动输入图片宽高；输入完成后可自动向上补成 16 的倍数。">自定义尺寸</ImageParameterLabel>
           {showSnapToMultiple16 ? <label className="flex items-center gap-2 text-[11px] text-muted-foreground">
             <span>16倍数对齐</span>
             <Switch disabled={disabled} checked={value.snapToMultiple16} aria-label="16倍数对齐" onCheckedChange={(checked) => onChange({ snapToMultiple16: checked })} />
@@ -119,34 +116,14 @@ export function ImageSettingsPanel({
         </div>
       </section> : null}
 
-      {showSize ? <section className="order-3 space-y-1.5">
-        <div className="flex items-center justify-between gap-3">
-          <ImageParameterLabel help="选择图片宽高比，系统会自动换算实际尺寸。">宽高比</ImageParameterLabel>
-          <span className={cn("rounded-md bg-[#f3f4f6] px-2 py-0.5 font-mono text-[11px] text-[#686b73] dark:bg-muted dark:text-muted-foreground", highResolution && "bg-amber-50 text-amber-700 dark:bg-amber-950/30 dark:text-amber-300")}>{sizeLabel}</span>
-        </div>
-        <div className="grid grid-cols-4 gap-1.5" role="group" aria-label="图片宽高比">
-          {IMAGE_ASPECT_RATIO_PRESET_OPTIONS.map((option) => {
-            const automatic = option.aspectRatio === "";
-            const active = automatic
-              ? value.mode === "auto"
-              : value.mode === "ratio" && value.aspectRatio === option.aspectRatio && value.resolution === option.resolution;
-            return (
-              <ImageAspectRatioOptionButton
-                key={option.value}
-                active={active}
-                disabled={disabled}
-                label={option.label}
-                ratio={automatic ? undefined : option.aspectRatio}
-                onClick={() => onChange({
-                  mode: automatic ? "auto" : "ratio",
-                  aspectRatio: option.aspectRatio,
-                  resolution: option.resolution,
-                })}
-              />
-            );
-          })}
-        </div>
-      </section> : null}
+      {showSize ? <ImageSizePresetControls
+        className="order-2"
+        value={value}
+        previewLabel={sizeLabel}
+        highResolution={highResolution}
+        disabled={disabled}
+        onChange={onChange}
+      /> : null}
 
       {showCount ? <section className="order-4 flex items-center justify-between gap-3 border-t border-[#ececef] pt-3 dark:border-border">
         <ImageParameterLabel help={`当前模型单次请求支持 1-${countLimit} 张图片。`}>生成数量</ImageParameterLabel>

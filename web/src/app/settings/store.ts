@@ -23,7 +23,6 @@ import {
   type SettingsConfig,
 	type StorageSettingConfig,
 } from "@/lib/api";
-import { DEFAULT_VIDEO_MODEL } from "@/lib/video-model-capabilities";
 import { dispatchAppMetaUpdated } from "@/lib/app-meta";
 import { normalizePromptMarketSources, type PromptMarketSourceConfig } from "@/app/image/banana-prompts";
 import {
@@ -43,6 +42,11 @@ function normalizeDefaultLogView(value: unknown): LogView {
 function normalizeLogCleanupHour(value: unknown) {
   const hour = Number(value);
   return Number.isInteger(hour) && hour >= 0 && hour <= 23 ? hour : 3;
+}
+
+function normalizeConfiguredModels(value: unknown, fallback: readonly string[]) {
+  if (value === undefined || value === null) return [...fallback];
+  return normalizeModelNames(value, []);
 }
 
 function databaseFieldsFromConfig(config: SettingsConfig) {
@@ -65,19 +69,23 @@ function normalizeConfig(config: SettingsConfig): SettingsConfig {
   const appTitle = typeof config.app_title === "string" && config.app_title.trim() ? config.app_title.trim() : "云棉";
   const projectName = typeof config.project_name === "string" && config.project_name.trim() ? config.project_name.trim() : appTitle;
   const relayDatabaseFields = databaseFieldsFromConfig(config);
+  const videoModels = normalizeConfiguredModels(config.video_models, []);
+  const defaultVideoModel = videoModels.includes(String(config.default_video_model || "").trim())
+    ? String(config.default_video_model).trim()
+    : videoModels[0] || "";
   return {
     ...config,
     app_title: appTitle,
     project_name: projectName,
     site_icon_url: typeof config.site_icon_url === "string" ? config.site_icon_url.trim() : "",
     image_task_timeout_seconds: Number(config.image_task_timeout_seconds || 300),
-    image_models: normalizeModelNames(config.image_models, DEFAULT_IMAGE_MODELS),
+    image_models: normalizeConfiguredModels(config.image_models, DEFAULT_IMAGE_MODELS),
     default_image_model: String(config.default_image_model || DEFAULT_IMAGE_MODELS[0]),
-    video_models: normalizeModelNames(config.video_models, [DEFAULT_VIDEO_MODEL]),
-    default_video_model: String(config.default_video_model || config.video_models?.[0] || DEFAULT_VIDEO_MODEL),
-    text_models: normalizeModelNames(config.text_models, ["gpt-5.5", "gpt-5.4"]),
+    video_models: videoModels,
+    default_video_model: defaultVideoModel,
+    text_models: normalizeConfiguredModels(config.text_models, ["gpt-5.5", "gpt-5.4"]),
     default_text_model: String(config.default_text_model || config.text_models?.[0] || "gpt-5.5"),
-    audio_models: normalizeModelNames(config.audio_models, ["gpt-4o-mini-tts"]),
+    audio_models: normalizeConfiguredModels(config.audio_models, ["gpt-4o-mini-tts"]),
     default_audio_model: String(config.default_audio_model || config.audio_models?.[0] || "gpt-4o-mini-tts"),
     user_default_concurrent_limit: Number(config.user_default_concurrent_limit || 0),
     user_default_rpm_limit: Number(config.user_default_rpm_limit || 0),
@@ -244,10 +252,10 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       const payload: SettingsConfig = {
         ...config,
         image_task_timeout_seconds: Math.min(3600, Math.max(30, Number(config.image_task_timeout_seconds) || 300)),
-        image_models: normalizeModelNames(config.image_models, DEFAULT_IMAGE_MODELS),
-        video_models: normalizeModelNames(config.video_models, [DEFAULT_VIDEO_MODEL]),
-        text_models: normalizeModelNames(config.text_models, ["gpt-5.5", "gpt-5.4"]),
-        audio_models: normalizeModelNames(config.audio_models, ["gpt-4o-mini-tts"]),
+        image_models: normalizeConfiguredModels(config.image_models, DEFAULT_IMAGE_MODELS),
+        video_models: normalizeConfiguredModels(config.video_models, []),
+        text_models: normalizeConfiguredModels(config.text_models, ["gpt-5.5", "gpt-5.4"]),
+        audio_models: normalizeConfiguredModels(config.audio_models, ["gpt-4o-mini-tts"]),
         user_default_concurrent_limit: Math.max(0, Number(config.user_default_concurrent_limit) || 0),
         user_default_rpm_limit: Math.max(0, Number(config.user_default_rpm_limit) || 0),
         allow_user_custom_relay_config: config.allow_user_custom_relay_config === true,

@@ -1,21 +1,14 @@
 "use client";
 import {
-  ArrowLeft,
-  ArrowRight,
   ArrowUp,
   AudioLines,
   BookOpenText,
   Bot,
-  Check,
-  ChevronDown,
-  ClipboardPaste,
-  FolderPlus,
   ImagePlus,
   Link2,
   LoaderCircle,
   Plus,
   SlidersHorizontal,
-  Trash2,
   Video,
   X,
 } from "lucide-react";
@@ -44,11 +37,11 @@ import {
 import {
   ImageParameterLabel,
 } from "@/app/image/components/image-parameter-ui";
-import { Button } from "@/components/ui/button";
 import { FileUploadButton } from "@/components/ui/file-upload-button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { TooltipButton, TooltipHint } from "@/components/ui/tooltip";
 import {
@@ -63,8 +56,8 @@ import {
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { isPublicReferenceURL } from "@/lib/public-reference-url";
-import { supportsKlingElements, supportsVideoFrameReferences, videoWorkbenchMaterialSections, videoWorkbenchReferenceLimits } from "@/lib/video-model-capabilities";
-import { moveVideoElementReference, normalizeVideoElementList, type VideoElementItem, type VideoMultiPromptItem } from "@/lib/video-kling-workbench";
+import { supportsVideoFrameReferences, videoWorkbenchMaterialSections, videoWorkbenchReferenceLimits } from "@/lib/video-model-capabilities";
+import { videoContractUIState, videoModelContract } from "@/lib/video-model-contracts";
 
 type ImageComposerProps = {
   composerMode: "chat" | "image" | "video";
@@ -85,13 +78,6 @@ type ImageComposerProps = {
   videoSize: string;
   videoSeconds: string;
   videoResolution: string;
-  videoMode: string;
-  videoNegativePrompt: string;
-  videoMultiShot: boolean;
-  videoShotType: "intelligence" | "customize";
-  videoMultiPrompt: VideoMultiPromptItem[];
-  videoElementList: VideoElementItem[];
-  videoCharacterOrientation: "image" | "video";
   videoGenerateAudio: boolean;
   videoWatermark: boolean;
   videoTaskCount: number;
@@ -100,8 +86,6 @@ type ImageComposerProps = {
   videoReferenceImageURLs: string[];
   videoReferenceVideoURLs: string[];
   videoReferenceAudioURLs: string[];
-  relayKeyConfigured: boolean;
-  relayKeyStatusMessage?: string;
   referenceImages: Array<{ name: string; dataUrl: string }>;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
   fileInputRef: RefObject<HTMLInputElement | null>;
@@ -121,17 +105,6 @@ type ImageComposerProps = {
   onVideoSizeChange: (value: string) => void;
   onVideoSecondsChange: (value: string) => void;
   onVideoResolutionChange: (value: string) => void;
-  onVideoModeChange: (value: string) => void;
-  onVideoNegativePromptChange: (value: string) => void;
-  onVideoMultiShotChange: (value: boolean) => void;
-  onVideoShotTypeChange: (value: "intelligence" | "customize") => void;
-  onVideoMultiPromptChange: (value: VideoMultiPromptItem[]) => void;
-  onVideoElementListChange: (value: VideoElementItem[]) => void;
-  videoElementUploadingIndex: number | null;
-  onVideoElementReferenceFiles: (elementIndex: number, files: File[]) => void | Promise<void>;
-  onVideoElementClipboard: (elementIndex: number) => void | Promise<void>;
-  onVideoElementAssetOpen: (elementIndex: number) => void;
-  onVideoCharacterOrientationChange: (value: "image" | "video") => void;
   onVideoGenerateAudioChange: (value: boolean) => void;
   onVideoWatermarkChange: (value: boolean) => void;
   onVideoTaskCountChange: (value: number) => void;
@@ -171,67 +144,6 @@ const PROMPT_AREA_DEFAULT_HEIGHT = 72;
 const PROMPT_AREA_MAX_HEIGHT = 320;
 const PROMPT_AREA_KEYBOARD_STEP = 12;
 
-function KlingElementListEditor({ value, uploadingIndex, onChange, onFiles, onClipboard, onAssetOpen }: {
-  value: VideoElementItem[];
-  uploadingIndex: number | null;
-  onChange: (value: VideoElementItem[]) => void;
-  onFiles: (elementIndex: number, files: File[]) => void | Promise<void>;
-  onClipboard: (elementIndex: number) => void | Promise<void>;
-  onAssetOpen: (elementIndex: number) => void;
-}) {
-  const items = normalizeVideoElementList(value);
-  const update = (index: number, patch: Partial<VideoElementItem>) => {
-    onChange(normalizeVideoElementList(items.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item)));
-  };
-  return (
-    <div className="space-y-2">
-      <ImageParameterLabel>元素列表</ImageParameterLabel>
-      {items.map((item, index) => {
-        const inputID = `video-element-files-${index}`;
-        return (
-          <section key={index} className="space-y-2 rounded-lg border border-[#dedfe3] p-2 dark:border-border">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-xs font-medium">元素列表 {index + 1} · {item.references.length}</span>
-              <div className="flex items-center gap-1">
-                <TooltipButton type="button" tooltip="新增元素" aria-label="新增元素" disabled={items.length >= 3} onClick={() => onChange([...items, { name: "", description: "", references: [] }])} className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted disabled:opacity-35"><Plus className="size-3.5" /></TooltipButton>
-                <TooltipButton type="button" tooltip="删除元素" aria-label={`删除元素 ${index + 1}`} disabled={items.length <= 1} onClick={() => onChange(items.filter((_, itemIndex) => itemIndex !== index))} className="inline-flex size-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-rose-600 disabled:opacity-35"><X className="size-3.5" /></TooltipButton>
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-1">
-              <Button type="button" variant="outline" size="sm" className="h-7 px-2 text-xs" disabled={item.references.length >= 4 || uploadingIndex === index} onClick={() => void onClipboard(index)}><ClipboardPaste className="size-3.5" />剪贴板</Button>
-              <input id={inputID} type="file" accept="image/*,video/mp4,video/quicktime,video/webm,audio/mpeg,audio/wav,audio/mp4,.mp4,.mov,.webm,.mp3,.wav,.m4a" multiple className="hidden" onChange={(event) => { const files = Array.from(event.target.files || []); event.target.value = ""; if (files.length) void onFiles(index, files); }} />
-              <Button type="button" variant="outline" size="sm" className="h-7 px-2 text-xs" disabled={item.references.length >= 4 || uploadingIndex === index} onClick={() => document.getElementById(inputID)?.click()}><ImagePlus className="size-3.5" />{uploadingIndex === index ? "上传中…" : "上传"}</Button>
-              <Button type="button" variant="outline" size="sm" className="h-7 px-2 text-xs" disabled={item.references.length >= 4 || uploadingIndex === index} onClick={() => onAssetOpen(index)}><FolderPlus className="size-3.5" />我的素材</Button>
-            </div>
-            <Input value={item.name} onChange={(event) => update(index, { name: event.target.value })} placeholder="元素名称，在提示词中使用 @ 前缀引用" className="h-8 text-xs" />
-            <Input value={item.description} onChange={(event) => update(index, { description: event.target.value })} placeholder="元素描述" className="h-8 text-xs" />
-            <KlingElementReferenceStrip references={item.references} onChange={(references) => update(index, { references })} />
-          </section>
-        );
-      })}
-    </div>
-  );
-}
-
-function KlingElementReferenceStrip({ references, onChange }: { references: VideoElementItem["references"]; onChange: (value: VideoElementItem["references"]) => void }) {
-  return (
-    <div className="flex min-h-24 w-full gap-2 overflow-x-auto rounded-lg border border-dashed border-[#cbd5e1] p-2 dark:border-border">
-      {references.map((item, index) => (
-        <div key={item.id} className="group relative size-20 shrink-0 overflow-hidden rounded-md border bg-muted/30">
-          {item.kind === "image" ? <AuthenticatedImage src={item.url} alt={item.name} className="size-full object-cover" /> : item.kind === "video" ? <video src={item.url} muted preload="metadata" className="size-full object-cover" /> : <div className="flex size-full flex-col items-center justify-center gap-1 px-1 text-center text-[10px] text-muted-foreground"><AudioLines className="size-5" /><span className="line-clamp-2">{item.name}</span></div>}
-          <span className="absolute left-1 top-1 rounded bg-black/60 px-1 text-[10px] text-white">{index + 1}</span>
-          <TooltipButton type="button" tooltip="移除元素素材" aria-label={`移除元素素材 ${index + 1}`} onClick={() => onChange(references.filter((reference) => reference.id !== item.id))} className="absolute right-1 top-1 hidden size-6 items-center justify-center rounded bg-black/60 text-white group-hover:flex"><Trash2 className="size-3.5" /></TooltipButton>
-          {references.length > 1 ? <div className="absolute inset-x-1 bottom-1 flex justify-between">
-            <TooltipButton type="button" tooltip="向前移动" aria-label={`向前移动元素素材 ${index + 1}`} disabled={index === 0} onClick={() => onChange(moveVideoElementReference(references, index, -1))} className="inline-flex size-6 items-center justify-center rounded-full bg-white/85 text-black shadow disabled:opacity-35"><ArrowLeft className="size-3" /></TooltipButton>
-            <TooltipButton type="button" tooltip="向后移动" aria-label={`向后移动元素素材 ${index + 1}`} disabled={index === references.length - 1} onClick={() => onChange(moveVideoElementReference(references, index, 1))} className="inline-flex size-6 items-center justify-center rounded-full bg-white/85 text-black shadow disabled:opacity-35"><ArrowRight className="size-3" /></TooltipButton>
-          </div> : null}
-        </div>
-      ))}
-      {!references.length ? <div className="flex min-w-full items-center justify-center whitespace-pre-line text-center text-[11px] leading-4 text-muted-foreground">暂无参考图，最多 2-4 张{"\n"}暂无参考视频，有效长度需至少 3-8 秒{"\n"}暂无参考音频，音频时长必须为 5-30 秒</div> : null}
-    </div>
-  );
-}
-
 function VideoReferencePicker({ values, max, disabled, uploading, onChange, onRemove }: { values: string[]; max: number; disabled: boolean; uploading: boolean; onChange: (file: File) => void | Promise<void>; onRemove: (index: number) => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
   return (
@@ -265,7 +177,7 @@ function AudioReferencePicker({ values, max, disabled, uploading, onChange, onRe
   );
 }
 
-function PublicReferenceURLList({ label, values, max, showValues = true, onChange }: { label: string; values: string[]; max: number; showValues?: boolean; onChange: (values: string[]) => void }) {
+function PublicReferenceURLList({ label, values, max, disabled = false, showValues = true, onChange }: { label: string; values: string[]; max: number; disabled?: boolean; showValues?: boolean; onChange: (values: string[]) => void }) {
   const [draft, setDraft] = useState("");
   const populated = values.map((value, index) => ({ value: value.trim(), index })).filter((item) => item.value);
   const add = () => {
@@ -276,20 +188,21 @@ function PublicReferenceURLList({ label, values, max, showValues = true, onChang
   };
   return (
     <div className="space-y-1.5">
-      <div className={cn("flex h-9 items-center gap-1 rounded-lg border border-input bg-background p-1 shadow-[0_1px_3px_rgba(0,0,0,0.03)] transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/20", (max === 0 || populated.length >= max) && "bg-muted/35 opacity-60")}>
+      <div className={cn("flex h-9 items-center gap-1 rounded-lg border border-input bg-background p-1 shadow-[0_1px_3px_rgba(0,0,0,0.03)] transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/20", (disabled || max === 0 || populated.length >= max) && "bg-muted/35 opacity-60")}>
         <Link2 className="ml-1.5 size-3.5 shrink-0 text-muted-foreground" />
-        <Input type="url" value={draft} placeholder={`${label}公网 URL`} disabled={max === 0 || populated.length >= max} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); add(); } }} className="h-7 min-w-0 flex-1 border-0 bg-transparent px-1.5 text-xs shadow-none focus-visible:border-transparent focus-visible:ring-0" aria-label={`${label}公网 URL`} />
-        <TooltipButton type="button" tooltip={`添加${label} URL`} aria-label={`添加${label} URL`} disabled={!isPublicReferenceURL(draft.trim()) || populated.length >= max} onClick={add} className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground disabled:opacity-60"><Plus className="size-3.5" /></TooltipButton>
+        <Input type="url" value={draft} placeholder={`${label}公网 URL`} disabled={disabled || max === 0 || populated.length >= max} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); add(); } }} className="h-7 min-w-0 flex-1 border-0 bg-transparent px-1.5 text-xs shadow-none focus-visible:border-transparent focus-visible:ring-0" aria-label={`${label}公网 URL`} />
+        <TooltipButton type="button" tooltip={`添加${label} URL`} aria-label={`添加${label} URL`} disabled={disabled || !isPublicReferenceURL(draft.trim()) || populated.length >= max} onClick={add} className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground transition-colors hover:bg-primary/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:bg-muted disabled:text-muted-foreground disabled:opacity-60"><Plus className="size-3.5" /></TooltipButton>
       </div>
       {showValues && populated.length ? <div className="space-y-1">{populated.map(({ value, index }) => <div key={`${value}-${index}`} className="grid grid-cols-[minmax(0,1fr)_1.75rem] items-center gap-1"><TooltipHint content={value}><span className="truncate rounded-md bg-[#f4f4f5] px-2 py-1.5 text-[11px] text-muted-foreground dark:bg-muted/70">{value}</span></TooltipHint><button type="button" onClick={() => onChange(values.filter((_, itemIndex) => itemIndex !== index))} className="inline-flex size-7 items-center justify-center rounded-md text-[#8e8e93] hover:bg-black/[0.06] hover:text-foreground" aria-label={`移除${label} URL ${index + 1}`}><X className="size-3.5" /></button></div>)}</div> : null}
     </div>
   );
 }
 
-function VideoFramePicker({ slot, label, value, uploading, onFileChange, onURLChange }: {
+function VideoFramePicker({ slot, label, value, disabled, uploading, onFileChange, onURLChange }: {
   slot: "first" | "last";
   label: string;
   value: string;
+  disabled: boolean;
   uploading: boolean;
   onFileChange: (slot: "first" | "last", file: File) => void | Promise<void>;
   onURLChange: (value: string) => void;
@@ -303,14 +216,14 @@ function VideoFramePicker({ slot, label, value, uploading, onFileChange, onURLCh
         <div className="grid grid-cols-[3rem_minmax(0,1fr)_1.75rem] items-center gap-2 rounded-lg border border-[#e3e4e7] p-1.5 dark:border-border">
           <AuthenticatedImage src={value} alt={label} className="size-12 rounded-md object-cover" />
           <TooltipHint content={value}><span className="truncate text-[11px] text-muted-foreground">{value}</span></TooltipHint>
-          <button type="button" onClick={() => onURLChange("")} className="inline-flex size-7 items-center justify-center rounded-md text-[#8e8e93] hover:bg-black/[0.06] hover:text-foreground" aria-label={`移除${label}`}><X className="size-3.5" /></button>
+          <button type="button" disabled={disabled} onClick={() => onURLChange("")} className="inline-flex size-7 items-center justify-center rounded-md text-[#8e8e93] hover:bg-black/[0.06] hover:text-foreground disabled:cursor-not-allowed disabled:opacity-50" aria-label={`移除${label}`}><X className="size-3.5" /></button>
         </div>
       ) : (
-        <FileUploadButton icon={ImagePlus} loading={uploading} onClick={() => inputRef.current?.click()} className="h-10">
+        <FileUploadButton icon={ImagePlus} loading={uploading} disabled={disabled} onClick={() => inputRef.current?.click()} className="h-10">
           {uploading ? `正在上传${label}` : `上传${label}`}
         </FileUploadButton>
       )}
-      <PublicReferenceURLList label={label} values={value ? [value] : []} max={1} showValues={false} onChange={(values) => onURLChange(values[0] || "")} />
+      <PublicReferenceURLList label={label} values={value ? [value] : []} max={1} disabled={disabled} showValues={false} onChange={(values) => onURLChange(values[0] || "")} />
     </div>
   );
 }
@@ -384,13 +297,6 @@ export function ImageComposer({
   videoSize,
   videoSeconds,
   videoResolution,
-  videoMode,
-  videoNegativePrompt,
-  videoMultiShot,
-  videoShotType,
-  videoMultiPrompt,
-  videoElementList,
-  videoCharacterOrientation,
   videoGenerateAudio,
   videoWatermark,
   videoTaskCount,
@@ -399,8 +305,6 @@ export function ImageComposer({
   videoReferenceImageURLs,
   videoReferenceVideoURLs,
   videoReferenceAudioURLs,
-  relayKeyConfigured,
-  relayKeyStatusMessage,
   referenceImages,
   textareaRef,
   fileInputRef,
@@ -420,17 +324,6 @@ export function ImageComposer({
   onVideoSizeChange,
   onVideoSecondsChange,
   onVideoResolutionChange,
-  onVideoModeChange,
-  onVideoNegativePromptChange,
-  onVideoMultiShotChange,
-  onVideoShotTypeChange,
-  onVideoMultiPromptChange,
-  onVideoElementListChange,
-  videoElementUploadingIndex,
-  onVideoElementReferenceFiles,
-  onVideoElementClipboard,
-  onVideoElementAssetOpen,
-  onVideoCharacterOrientationChange,
   onVideoGenerateAudioChange,
   onVideoWatermarkChange,
   onVideoTaskCountChange,
@@ -460,7 +353,6 @@ export function ImageComposer({
   const [pendingReferenceImages, setPendingReferenceImages] = useState<PendingReferenceImage[]>([]);
   const composerPanelRef = useRef<HTMLDivElement>(null);
   const composerToolbarRef = useRef<HTMLDivElement>(null);
-  const modelMenuRef = useRef<HTMLDivElement>(null);
   const promptAreaResizeRef = useRef<{ pointerOffsetY: number } | null>(null);
   const referenceImageDragDepthRef = useRef(0);
   const pendingReferenceImageSequenceRef = useRef(0);
@@ -488,12 +380,26 @@ export function ImageComposer({
   );
   const activeModel = composerMode === "video" ? videoModel : imageModel;
   const activeModelOptions = composerMode === "video" ? videoModelOptions : imageModelOptions;
-	const activeVideoSupportsElements = supportsKlingElements(videoModel);
   const activeVideoSupportsFrames = supportsVideoFrameReferences(videoModel);
   const activeVideoReferenceLimits = videoWorkbenchReferenceLimits(videoModel);
   const activeVideoMaterialSections = videoWorkbenchMaterialSections(videoModel);
   const activeVideoImageLimit = activeVideoReferenceLimits.image;
   const activeVideoReferenceImageCount = referenceImages.length + pendingReferenceImages.length + videoReferenceImageURLs.filter(Boolean).length;
+  const videoRuleValues = {
+    first_frame: videoFirstFrameURL.trim(),
+    last_frame: videoLastFrameURL.trim(),
+    reference_image: activeVideoReferenceImageCount,
+    reference_video: videoReferenceVideoURLs.filter(Boolean).length,
+    reference_audio: videoReferenceAudioURLs.filter(Boolean).length,
+    generate_audio: videoGenerateAudio,
+    size: videoSize,
+    resolution: videoResolution,
+    duration: Number(videoSeconds),
+    watermark: videoWatermark,
+  };
+  const activeVideoContractUI = videoContractUIState(videoModelContract(videoModel), videoRuleValues);
+  const videoFieldVisible = (field: "first_frame" | "last_frame" | "reference_image" | "reference_video" | "reference_audio") => !activeVideoContractUI.hidden.has(field);
+  const videoFieldDisabled = (field: "first_frame" | "last_frame" | "reference_image" | "reference_video" | "reference_audio") => activeVideoContractUI.disabled.has(field);
   const imageModelLabel = activeModelOptions.find((option) => option.value === activeModel)?.label || activeModel;
   const referenceEditingSupported = composerMode === "video"
     ? true
@@ -505,8 +411,6 @@ export function ImageComposer({
   const submitLabel = composerMode === "video"
     ? hasReferenceVideo ? "视频生视频" : hasVideoFrame || hasReferenceImages || videoReferenceImageURLs.some(Boolean) ? "图片生视频" : hasMultimodalReferences ? "参考生成视频" : "生成视频"
     : hasReferenceImages ? "编辑图片" : "生成图片";
-  const relayApiKeyMissing = !relayKeyConfigured;
-  const relayApiKeyMissingMessage = relayKeyStatusMessage || "请先在云棉为当前用户创建可用令牌";
   const imageSettingsValue: ImageSettingsValue = {
     mode: imageSizeMode,
     aspectRatio: imageAspectRatio,
@@ -535,12 +439,6 @@ export function ImageComposer({
     size: videoSize,
     seconds: videoSeconds,
     resolution: videoResolution,
-    mode: videoMode,
-    negativePrompt: videoNegativePrompt,
-    multiShot: videoMultiShot,
-    shotType: videoShotType,
-    multiPrompt: videoMultiPrompt,
-    characterOrientation: videoCharacterOrientation,
     generateAudio: videoGenerateAudio,
     watermark: videoWatermark,
     taskCount: videoTaskCount,
@@ -550,32 +448,10 @@ export function ImageComposer({
     if (patch.size !== undefined) onVideoSizeChange(patch.size);
     if (patch.seconds !== undefined) onVideoSecondsChange(patch.seconds);
     if (patch.resolution !== undefined) onVideoResolutionChange(patch.resolution);
-    if (patch.mode !== undefined) onVideoModeChange(patch.mode);
-    if (patch.negativePrompt !== undefined) onVideoNegativePromptChange(patch.negativePrompt);
-    if (patch.multiShot !== undefined) onVideoMultiShotChange(patch.multiShot);
-    if (patch.shotType !== undefined) onVideoShotTypeChange(patch.shotType);
-    if (patch.multiPrompt !== undefined) onVideoMultiPromptChange(patch.multiPrompt);
-    if (patch.characterOrientation !== undefined) onVideoCharacterOrientationChange(patch.characterOrientation);
     if (patch.generateAudio !== undefined) onVideoGenerateAudioChange(patch.generateAudio);
     if (patch.watermark !== undefined) onVideoWatermarkChange(patch.watermark);
     if (patch.taskCount !== undefined) onVideoTaskCountChange(patch.taskCount);
   }
-
-  useEffect(() => {
-    if (!isModelMenuOpen) {
-      return;
-    }
-    const handlePointerDown = (event: MouseEvent) => {
-      const target = event.target as Node;
-      if (!modelMenuRef.current?.contains(target)) {
-        setIsModelMenuOpen(false);
-      }
-    };
-    window.addEventListener("mousedown", handlePointerDown);
-    return () => {
-      window.removeEventListener("mousedown", handlePointerDown);
-    };
-  }, [isModelMenuOpen]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -875,7 +751,7 @@ export function ImageComposer({
             </span>
           </div>
         ) : null}
-        <TooltipButton
+        <button
           type="button"
           className={cn(
             "hidden h-4 w-full cursor-[ns-resize] touch-none select-none items-center justify-center rounded-t-[24px] focus-visible:outline-none sm:flex",
@@ -891,10 +767,9 @@ export function ImageComposer({
           }}
           onKeyDown={handlePromptResizeKeyDown}
           aria-label="调整提示词输入区域高度"
-          tooltip="拖动调整输入区域高度"
         >
           <span className="h-1 w-10 rounded-full bg-[#8e8e93]/40 dark:bg-muted-foreground/35" />
-        </TooltipButton>
+        </button>
         <div
           className="cursor-text"
           onClick={() => {
@@ -938,95 +813,81 @@ export function ImageComposer({
             <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-2 sm:gap-3">
               <div className="flex min-w-0 flex-nowrap items-center gap-1.5 sm:gap-2">
                 <div className="flex shrink-0 items-center rounded-full bg-[#f4f4f5] p-0.5 dark:bg-muted/70" role="group" aria-label="创作类型">
-                  <TooltipButton
+                  <button
                     type="button"
                     className={cn("inline-flex size-8 items-center justify-center rounded-full text-muted-foreground transition hover:text-foreground", composerMode === "image" && "bg-white text-[#1456f0] shadow-sm dark:bg-background dark:text-sky-300")}
                     onClick={() => onComposerModeChange("image")}
                     aria-label="图片生成"
-                    tooltip="图片生成"
                   >
                     <ImagePlus className="size-4" />
-                  </TooltipButton>
-                  <TooltipButton
+                  </button>
+                  <button
                     type="button"
                     className={cn("inline-flex size-8 items-center justify-center rounded-full text-muted-foreground transition hover:text-foreground", composerMode === "video" && "bg-white text-[#1456f0] shadow-sm dark:bg-background dark:text-sky-300")}
                     onClick={() => onComposerModeChange("video")}
                     aria-label="视频生成"
-                    tooltip="视频生成"
                   >
                     <Video className="size-4" />
-                  </TooltipButton>
+                  </button>
                 </div>
-                <div ref={modelMenuRef} className="relative shrink-0">
-                  <TooltipButton
-                    type="button"
+                <Select
+                  value={activeModel}
+                  open={isModelMenuOpen}
+                  onOpenChange={(open) => {
+                    setIsModelMenuOpen(open);
+                    if (open) setIsImageSettingsOpen(false);
+                  }}
+                  onValueChange={(value) => {
+                    if (composerMode === "video") {
+                      onVideoModelChange(value);
+                    } else {
+                      onImageModelChange(value as ImageModel);
+                    }
+                  }}
+                >
+                  <SelectTrigger
                     className={cn(
-                      "inline-flex size-9 items-center justify-center gap-1.5 rounded-full bg-muted/60 text-xs font-medium text-foreground transition hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1456f0]/30 dark:bg-muted/70 dark:text-foreground sm:h-8 sm:w-[190px] sm:border sm:border-[#e5e7eb] sm:bg-white sm:px-3 sm:text-[#45515e] sm:dark:border-border sm:dark:bg-background/70 sm:dark:text-muted-foreground",
+                      "size-9 justify-center gap-1.5 rounded-full border-0 bg-muted/60 p-0 text-xs font-medium text-foreground shadow-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-[#1456f0]/30 dark:bg-muted/70 dark:text-foreground [&>svg]:hidden sm:h-8 sm:w-[190px] sm:justify-between sm:border sm:border-[#e5e7eb] sm:bg-white sm:px-3 sm:text-[#45515e] sm:dark:border-border sm:dark:bg-background/70 sm:dark:text-muted-foreground sm:[&>svg]:block",
                       isModelMenuOpen &&
                         "bg-[#eef4ff] text-[#1456f0] dark:bg-sky-950/30 dark:text-sky-300 sm:border-[#bfdbfe] sm:bg-[#eef4ff] sm:text-[#1456f0] sm:dark:border-sky-900/70 sm:dark:bg-sky-950/30 sm:dark:text-sky-300",
                     )}
-                    onClick={() => {
-                      setIsModelMenuOpen((open) => !open);
-                      setIsImageSettingsOpen(false);
-                    }}
-                    aria-expanded={isModelMenuOpen}
                     aria-label={`选择模型，当前 ${imageModelLabel}`}
-                    tooltip={`模型：${imageModelLabel}`}
                   >
                     <Bot className="size-5 shrink-0 sm:hidden" />
-                    <span className="hidden shrink-0 sm:inline">模型</span>
-                    <span className="hidden min-w-0 flex-1 truncate text-left font-semibold sm:inline">
-                      {imageModelLabel}
-                    </span>
-                    <ChevronDown className={cn("hidden size-4 shrink-0 opacity-60 transition sm:block", isModelMenuOpen && "rotate-180")} />
-                  </TooltipButton>
-                  {isModelMenuOpen ? (
-                    <ScrollArea className="absolute bottom-[calc(100%+0.5rem)] left-0 z-[80] max-h-[45dvh] w-[min(14rem,calc(100vw-2rem))] rounded-[20px] border border-[#e5e7eb] bg-white shadow-[0_24px_80px_-32px_rgba(15,23,42,0.35)] dark:border-border dark:bg-card dark:shadow-[0_24px_80px_-28px_rgba(0,0,0,0.72)] sm:bottom-[calc(100%+8px)] sm:w-[218px]" viewportClassName="p-1.5">
-                      {activeModelOptions.map((option) => {
-                        const active = option.value === activeModel;
-                        const unavailableForReferences = composerMode !== "video" && hasReferenceImages && !imageWorkbenchAcceptsReferenceImages(option.value);
-                        return (
-                          <TooltipButton
-                            key={option.value}
-                            type="button"
-                            disabled={unavailableForReferences}
-                            tooltip={unavailableForReferences ? "请先移除参考图再切换到此模型" : option.label}
-                            className={cn(
-                              "flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm text-[#45515e] transition hover:bg-black/[0.05] dark:text-muted-foreground dark:hover:bg-accent/60",
-                              active && "bg-black/[0.05] font-medium text-[#18181b] dark:bg-accent dark:text-foreground",
-                              unavailableForReferences && "cursor-not-allowed opacity-45 hover:bg-transparent dark:hover:bg-transparent",
-                            )}
-                            onClick={() => {
-                              if (composerMode === "video") {
-                                onVideoModelChange(option.value);
-                              } else {
-                                onImageModelChange(option.value);
-                              }
-                              setIsModelMenuOpen(false);
-                            }}
-                          >
-                            <span className="min-w-0 truncate">{option.label}</span>
-                            {active ? <Check className="size-4 shrink-0" /> : null}
-                          </TooltipButton>
-                        );
-                      })}
-                    </ScrollArea>
-                  ) : null}
-                </div>
-                {composerMode !== "chat" ? <TooltipButton
+                    <SelectValue><span className="hidden min-w-0 flex-1 truncate text-left font-semibold sm:block">{imageModelLabel}</span></SelectValue>
+                  </SelectTrigger>
+                  <SelectContent
+                    side="top"
+                    align="start"
+                    sideOffset={8}
+                  >
+                    {activeModelOptions.map((option) => {
+                      const unavailableForReferences = composerMode !== "video" && hasReferenceImages && !imageWorkbenchAcceptsReferenceImages(option.value);
+                      return (
+                        <SelectItem
+                          key={option.value}
+                          value={option.value}
+                          disabled={unavailableForReferences}
+                        >
+                          {option.label}
+                        </SelectItem>
+                      );
+                    })}
+                  </SelectContent>
+                </Select>
+                {composerMode !== "chat" ? <button
                   type="button"
                   className="inline-flex size-9 shrink-0 items-center justify-center gap-1.5 rounded-full bg-muted/60 text-foreground transition hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1456f0]/30 dark:bg-muted/70 dark:text-foreground sm:h-8 sm:w-auto sm:border sm:border-[#e5e7eb] sm:bg-white sm:px-3 sm:text-xs sm:font-medium sm:text-[#45515e] sm:dark:border-border sm:dark:bg-background/70 sm:dark:text-muted-foreground"
                   onClick={onOpenPromptMarket}
                   aria-label="打开提示词"
-                  tooltip="提示词"
                 >
                   <BookOpenText className="size-5 sm:size-3.5" />
                   <span className="hidden sm:inline">提示词</span>
-                </TooltipButton> : null}
+                </button> : null}
                 {composerMode === "image" ? (
                   <Popover open={isImageSettingsOpen} onOpenChange={handleImageSettingsOpenChange}>
                     <PopoverTrigger asChild>
-                      <TooltipButton
+                      <button
                         type="button"
                         className={cn(
                           "inline-flex size-9 shrink-0 items-center justify-center gap-1.5 rounded-full bg-muted/60 text-foreground transition hover:bg-muted dark:bg-muted/70 dark:text-foreground sm:h-8 sm:w-auto sm:border sm:border-[#e5e7eb] sm:bg-white sm:px-3 sm:text-xs sm:font-medium sm:text-[#45515e] sm:dark:border-border sm:dark:bg-background/70 sm:dark:text-muted-foreground",
@@ -1035,11 +896,10 @@ export function ImageComposer({
                         )}
                         aria-label={isImageSettingsOpen ? "收起图像设置" : "打开图像设置"}
                         aria-expanded={isImageSettingsOpen}
-                        tooltip={isImageSettingsOpen ? "收起参数" : "图像设置"}
                       >
                         <SlidersHorizontal className="size-5 sm:size-3.5" />
                         <span className="hidden sm:inline">参数</span>
-                      </TooltipButton>
+                      </button>
                     </PopoverTrigger>
                     <PopoverContent
                       align="start"
@@ -1059,18 +919,17 @@ export function ImageComposer({
                 {composerMode === "video" ? (
                   <Popover open={isImageSettingsOpen} onOpenChange={handleImageSettingsOpenChange}>
                     <PopoverTrigger asChild>
-                      <TooltipButton
+                      <button
                         type="button"
                         className={cn(
                           "inline-flex size-9 shrink-0 items-center justify-center gap-1.5 rounded-full text-[#686b73] transition hover:bg-black/[0.05] dark:text-muted-foreground dark:hover:bg-accent/60 sm:h-8 sm:w-auto sm:border sm:border-[#e5e7eb] sm:bg-white sm:px-3 sm:text-xs sm:font-medium dark:sm:border-border dark:sm:bg-background/70",
                           isImageSettingsOpen && "bg-[#eef4ff] text-[#1456f0] dark:bg-sky-950/30 dark:text-sky-300 sm:border-[#bfdbfe]",
                         )}
                         aria-label="打开视频设置"
-                        tooltip="视频设置"
                       >
                         <SlidersHorizontal className="size-5 sm:size-3.5" />
                         <span className="hidden sm:inline">参数</span>
-                      </TooltipButton>
+                      </button>
                     </PopoverTrigger>
                     <PopoverContent
                       align="start"
@@ -1081,39 +940,30 @@ export function ImageComposer({
                     >
                       <ScrollArea className="max-h-[min(calc(100dvh-2rem),32rem)]" viewportClassName="max-h-[min(calc(100dvh-2rem),32rem)]">
                       <div className="flex flex-col gap-3.5 p-3 pr-4">
-                        {activeVideoSupportsFrames ? <section className="order-40 space-y-2">
+                        {activeVideoSupportsFrames && (videoFieldVisible("first_frame") || videoFieldVisible("last_frame")) ? <section className="space-y-2">
                           <div className="flex items-center justify-between"><ImageParameterLabel help="首帧和尾帧是独立输入，不会与普通参考图混用。">首尾帧</ImageParameterLabel><span className="text-[11px] text-[#8e8e93] dark:text-muted-foreground">{[videoFirstFrameURL, videoLastFrameURL].filter(Boolean).length}/2</span></div>
-                          <div className="grid grid-cols-2 gap-2">
-                            <VideoFramePicker slot="first" label="首帧" value={videoFirstFrameURL} uploading={videoFrameUploading === "first"} onFileChange={onVideoFrameFileChange} onURLChange={onVideoFirstFrameURLChange} />
-                            <VideoFramePicker slot="last" label="尾帧" value={videoLastFrameURL} uploading={videoFrameUploading === "last"} onFileChange={onVideoFrameFileChange} onURLChange={onVideoLastFrameURLChange} />
+                          <div className={cn("grid gap-2", videoFieldVisible("first_frame") && videoFieldVisible("last_frame") ? "grid-cols-2" : "grid-cols-1")}>
+                            {videoFieldVisible("first_frame") ? <VideoFramePicker slot="first" label="首帧" value={videoFirstFrameURL} disabled={videoFieldDisabled("first_frame")} uploading={videoFrameUploading === "first"} onFileChange={onVideoFrameFileChange} onURLChange={onVideoFirstFrameURLChange} /> : null}
+                            {videoFieldVisible("last_frame") ? <VideoFramePicker slot="last" label="尾帧" value={videoLastFrameURL} disabled={videoFieldDisabled("last_frame")} uploading={videoFrameUploading === "last"} onFileChange={onVideoFrameFileChange} onURLChange={onVideoLastFrameURLChange} /> : null}
                           </div>
                         </section> : null}
-                        {activeVideoMaterialSections.image ? <section className="order-50 space-y-1.5">
+                        {activeVideoMaterialSections.image && videoFieldVisible("reference_image") ? <section className="space-y-1.5">
                           <div className="flex items-center justify-between"><ImageParameterLabel help={activeVideoMaterialSections.imageLabel === "首尾帧" ? "图片顺序分别作为首帧和尾帧。" : "上传一张图片时使用图生视频；多张图片或混合视频、音频时使用参考生视频。"}>{activeVideoMaterialSections.imageLabel}</ImageParameterLabel><span className="text-[11px] text-[#8e8e93] dark:text-muted-foreground">{activeVideoReferenceImageCount}/{activeVideoImageLimit}</span></div>
                           <input id="video-reference-image-input" type="file" accept="image/png,image/jpeg,image/webp" multiple className="hidden" onChange={(event) => { const files = Array.from(event.target.files || []); event.target.value = ""; if (files.length) void addReferenceImages(files); }} />
-                          <FileUploadButton icon={ImagePlus} loading={pendingReferenceImages.length > 0} disabled={activeVideoImageLimit === 0 || activeVideoReferenceImageCount >= activeVideoImageLimit} onClick={() => document.getElementById("video-reference-image-input")?.click()}>{pendingReferenceImages.length > 0 ? "正在上传参考图" : "上传参考图"}</FileUploadButton>
+                          <FileUploadButton icon={ImagePlus} loading={pendingReferenceImages.length > 0} disabled={videoFieldDisabled("reference_image") || activeVideoImageLimit === 0 || activeVideoReferenceImageCount >= activeVideoImageLimit} onClick={() => document.getElementById("video-reference-image-input")?.click()}>{pendingReferenceImages.length > 0 ? "正在上传参考图" : "上传参考图"}</FileUploadButton>
                           {displayReferenceImages.length > 0 ? <div className="flex gap-1.5 overflow-x-auto">{displayReferenceImages.map((image, index) => <div key={image.id} className="group relative size-12 shrink-0 overflow-hidden rounded-md border border-border"><AuthenticatedImage src={image.dataUrl} alt={image.name} className="size-full object-cover" placeholderClassName="min-h-0" />{image.uploading ? <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/30 text-white"><LoaderCircle className="size-3.5 animate-spin" /></span> : <button type="button" onClick={() => { if (image.storedIndex !== null) onRemoveReferenceImage(image.storedIndex); }} className="absolute right-0.5 top-0.5 hidden size-5 items-center justify-center rounded bg-black/65 text-white group-hover:flex" aria-label={`移除参考图 ${index + 1}`}><X className="size-3" /></button>}</div>)}</div> : null}
-                          <PublicReferenceURLList label="参考图片" values={videoReferenceImageURLs} max={Math.max(0, activeVideoImageLimit - referenceImages.length - pendingReferenceImages.length)} onChange={onVideoReferenceImageURLsChange} />
+                          <PublicReferenceURLList label="参考图片" values={videoReferenceImageURLs} max={Math.max(0, activeVideoImageLimit - referenceImages.length - pendingReferenceImages.length)} disabled={videoFieldDisabled("reference_image")} onChange={onVideoReferenceImageURLsChange} />
                           {activeVideoImageLimit === 0 ? <p className="text-[11px] leading-4 text-muted-foreground">当前模型不支持参考图片</p> : null}
                         </section> : null}
-                        <div className="order-50 space-y-3 border-b border-[#ececf0] pb-3 dark:border-border">
-                          {activeVideoMaterialSections.video ? <><VideoReferencePicker values={videoReferenceVideoURLs} max={activeVideoReferenceLimits.video} disabled={activeVideoReferenceLimits.video === 0 || videoReferenceVideoURLs.length >= activeVideoReferenceLimits.video} uploading={videoReferenceUploading} onChange={onVideoReferenceFileChange} onRemove={(index) => onVideoReferenceVideoURLsChange(videoReferenceVideoURLs.filter((_, itemIndex) => itemIndex !== index))} /><PublicReferenceURLList label="参考视频" values={videoReferenceVideoURLs} max={activeVideoReferenceLimits.video} showValues={false} onChange={onVideoReferenceVideoURLsChange} /></> : null}
-                          {activeVideoMaterialSections.audio ? <><AudioReferencePicker values={videoReferenceAudioURLs} max={activeVideoReferenceLimits.audio} disabled={activeVideoReferenceLimits.audio === 0 || videoReferenceAudioURLs.length >= activeVideoReferenceLimits.audio} uploading={audioReferenceUploading} onChange={onAudioReferenceFileChange} onRemove={(index) => onVideoReferenceAudioURLsChange(videoReferenceAudioURLs.filter((_, itemIndex) => itemIndex !== index))} /><PublicReferenceURLList label="参考音频" values={videoReferenceAudioURLs} max={activeVideoReferenceLimits.audio} showValues={false} onChange={onVideoReferenceAudioURLsChange} /></> : null}
+                        <div className="space-y-3 border-b border-[#ececf0] pb-3 dark:border-border">
+                          {activeVideoMaterialSections.video && videoFieldVisible("reference_video") ? <><VideoReferencePicker values={videoReferenceVideoURLs} max={activeVideoReferenceLimits.video} disabled={videoFieldDisabled("reference_video") || activeVideoReferenceLimits.video === 0 || videoReferenceVideoURLs.length >= activeVideoReferenceLimits.video} uploading={videoReferenceUploading} onChange={onVideoReferenceFileChange} onRemove={(index) => onVideoReferenceVideoURLsChange(videoReferenceVideoURLs.filter((_, itemIndex) => itemIndex !== index))} /><PublicReferenceURLList label="参考视频" values={videoReferenceVideoURLs} max={activeVideoReferenceLimits.video} disabled={videoFieldDisabled("reference_video")} showValues={false} onChange={onVideoReferenceVideoURLsChange} /></> : null}
+                          {activeVideoMaterialSections.audio && videoFieldVisible("reference_audio") ? <><AudioReferencePicker values={videoReferenceAudioURLs} max={activeVideoReferenceLimits.audio} disabled={videoFieldDisabled("reference_audio") || activeVideoReferenceLimits.audio === 0 || videoReferenceAudioURLs.length >= activeVideoReferenceLimits.audio} uploading={audioReferenceUploading} onChange={onAudioReferenceFileChange} onRemove={(index) => onVideoReferenceAudioURLsChange(videoReferenceAudioURLs.filter((_, itemIndex) => itemIndex !== index))} /><PublicReferenceURLList label="参考音频" values={videoReferenceAudioURLs} max={activeVideoReferenceLimits.audio} disabled={videoFieldDisabled("reference_audio")} showValues={false} onChange={onVideoReferenceAudioURLsChange} /></> : null}
                         </div>
                         <VideoSettingsPanel
                           model={videoModel}
                           value={videoSettingsValue}
+                          ruleValues={videoRuleValues}
                           onChange={updateVideoSettings}
-                          referenceImageCount={activeVideoReferenceImageCount}
-                          referenceVideoCount={videoReferenceVideoURLs.filter(Boolean).length}
-                          advancedContent={activeVideoSupportsElements ? <KlingElementListEditor
-                            value={videoElementList}
-                            uploadingIndex={videoElementUploadingIndex}
-                            onChange={onVideoElementListChange}
-                            onFiles={onVideoElementReferenceFiles}
-                            onClipboard={onVideoElementClipboard}
-                            onAssetOpen={onVideoElementAssetOpen}
-                          /> : null}
                         />
                       </div>
                       </ScrollArea>
@@ -1123,28 +973,26 @@ export function ImageComposer({
               </div>
 
               <div className="flex shrink-0 items-center gap-2">
-                {composerMode !== "video" ? <TooltipButton
+                {composerMode !== "video" ? <button
                   type="button"
                   onClick={handlePickReferenceImage}
                   disabled={!referenceEditingSupported}
                   className="inline-flex size-11 items-center justify-center rounded-full text-[#686b73] transition hover:bg-black/[0.05] dark:text-muted-foreground dark:hover:bg-accent/60 dark:hover:text-foreground sm:size-10 sm:border sm:border-[#e5e7eb] sm:bg-white sm:text-[#45515e] sm:dark:border-border sm:dark:bg-background/70 sm:dark:text-muted-foreground"
                   aria-label="上传参考图"
-                  tooltip={referenceEditingSupported ? "上传参考图" : "当前模型不支持参考图编辑"}
                 >
                   <Plus className="size-6 sm:hidden" />
                   <ImagePlus className="hidden size-4 sm:block" />
-                </TooltipButton> : null}
+                </button> : null}
 
-                <TooltipButton
+                <button
                   type="button"
                   onClick={() => void onSubmit()}
                   disabled={!prompt.trim()}
                   className="inline-flex size-11 shrink-0 items-center justify-center rounded-full bg-[#181e25] text-white shadow-[0_4px_10px_rgba(24,30,37,0.12)] transition hover:bg-[#2a323d] disabled:cursor-not-allowed disabled:bg-[#e1e2e4] disabled:text-[#73777f] dark:bg-foreground dark:text-background dark:hover:bg-foreground/90 dark:disabled:bg-muted dark:disabled:text-muted-foreground sm:size-10"
                   aria-label={submitLabel}
-                  tooltip={relayApiKeyMissing ? relayApiKeyMissingMessage : submitLabel}
                 >
                   <ArrowUp className="size-5 sm:size-4" />
-                </TooltipButton>
+                </button>
               </div>
             </div>
           </div>
