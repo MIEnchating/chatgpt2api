@@ -259,7 +259,7 @@ func NewApp() (*App, error) {
 			Hour:          cfg.LogCleanupHour(),
 		}
 	}, time.Hour, logger)
-	if _, err := app.images.CleanupStorage(service.ImageStorageCleanupOptions{
+	if _, err := app.cleanupImageStorageWithOptions(service.ImageStorageCleanupOptions{
 		RetentionDays: cfg.ImageRetentionDays(),
 		MaxBytes:      cfg.ImageStorageLimitBytes(),
 	}); err != nil {

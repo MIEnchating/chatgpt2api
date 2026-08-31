@@ -670,9 +670,7 @@ func (s *ImageService) DeleteImages(paths []string, scope ImageAccessScope) (map
 	}
 
 	seen := make(map[string]struct{}, len(paths))
-	deleted := 0
-	missing := 0
-	removedPaths := make([]string, 0, len(paths))
+	normalized := make([]string, 0, len(paths))
 	for _, value := range paths {
 		rel, err := cleanImageRelativePath(value)
 		if err != nil {
@@ -682,22 +680,41 @@ func (s *ImageService) DeleteImages(paths []string, scope ImageAccessScope) (map
 			continue
 		}
 		seen[rel] = struct{}{}
+		normalized = append(normalized, rel)
+	}
 
-		if _, err := s.imageFileRef(imageRoot, rel); err != nil {
+	s.metadataMu.Lock()
+	defer s.metadataMu.Unlock()
+
+	candidates := make([]string, 0, len(normalized))
+	missing := 0
+	for _, rel := range normalized {
+		ref, err := s.imageFileRef(imageRoot, rel)
+		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				missing++
 				continue
 			}
 			return nil, err
 		}
-		if !pathInsideRoot(imageRoot, filepath.Join(imageRoot, filepath.FromSlash(rel))) {
-			return nil, errors.New("invalid image path")
+		meta, err := s.loadImageMetadata(rel)
+		if err != nil {
+			return nil, err
 		}
-		if !scope.All && (scope.OwnerID == "" || s.imageOwner(rel) != scope.OwnerID) {
+		if !scope.All && (scope.OwnerID == "" || meta.OwnerID != scope.OwnerID) {
 			missing++
 			continue
 		}
-		stats, claimed, err := s.removeImageGroupIf(rel, func(meta imageMetadata) bool {
+		if _, err := s.imageGroupSize(rel, storedImageSize(meta, ref.info)); err != nil {
+			return nil, err
+		}
+		candidates = append(candidates, rel)
+	}
+
+	deleted := 0
+	removedPaths := make([]string, 0, len(candidates))
+	for _, rel := range candidates {
+		stats, claimed, err := s.removeImageGroupIfLocked(rel, func(meta imageMetadata) bool {
 			return scope.All || (scope.OwnerID != "" && meta.OwnerID == scope.OwnerID)
 		})
 		if err != nil {
@@ -957,10 +974,6 @@ func (s *ImageService) imageFileRef(imageRoot, rel string) (imageFileRef, error)
 
 func (s *ImageService) thumbnailPath(rel string) string {
 	return filepath.Join(s.config.ImageThumbnailsDir(), filepath.FromSlash(rel)+thumbnailExtension)
-}
-
-func (s *ImageService) imageOwner(rel string) string {
-	return s.imageMetadata(rel).OwnerID
 }
 
 func imageMetadataAllowsAccess(meta imageMetadata, scope ImageAccessScope) bool {
@@ -1535,6 +1548,10 @@ func (s *ImageService) removeImageGroupIf(rel string, allowed func(imageMetadata
 	}
 	s.metadataMu.Lock()
 	defer s.metadataMu.Unlock()
+	return s.removeImageGroupIfLocked(rel, allowed)
+}
+
+func (s *ImageService) removeImageGroupIfLocked(rel string, allowed func(imageMetadata) bool) (imageStorageRemovalStats, bool, error) {
 	var stats imageStorageRemovalStats
 	_, claimed, err := s.markImageDeletingLocked(rel, allowed)
 	if err != nil {

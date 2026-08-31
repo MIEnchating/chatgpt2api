@@ -901,6 +901,11 @@ func (a *App) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 				util.WriteError(w, http.StatusBadRequest, "invalid json body")
 				return
 			}
+			query, err := parseManagedUsersQuery(r)
+			if err != nil {
+				util.WriteError(w, http.StatusBadRequest, err.Error())
+				return
+			}
 			enabled := true
 			if value, ok := body["enabled"]; ok {
 				enabled = util.ToBool(value)
@@ -919,11 +924,7 @@ func (a *App) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 				util.WriteError(w, http.StatusBadRequest, err.Error())
 				return
 			}
-			response, err := a.managedUsersResponse(r)
-			if err != nil {
-				util.WriteError(w, http.StatusBadRequest, err.Error())
-				return
-			}
+			response := a.managedUsersResponseForQuery(query)
 			if current := a.managedUser(util.Clean(item["id"])); current != nil {
 				item = current
 			}
@@ -970,6 +971,11 @@ func (a *App) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusBadRequest, "no updates provided")
 			return
 		}
+		query, err := parseManagedUsersQuery(r)
+		if err != nil {
+			util.WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		if len(updates) > 0 {
 			item, err := a.auth.UpdateUser(userID, updates)
 			if err != nil {
@@ -987,15 +993,16 @@ func (a *App) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusNotFound, "user not found")
 			return
 		}
-		response, err := a.managedUsersResponse(r)
-		if err != nil {
-			util.WriteError(w, http.StatusBadRequest, err.Error())
-			return
-		}
+		response := a.managedUsersResponseForQuery(query)
 		item := a.managedUser(userID)
 		response["item"] = item
 		util.WriteJSON(w, http.StatusOK, response)
 	case http.MethodDelete:
+		query, err := parseManagedUsersQuery(r)
+		if err != nil {
+			util.WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
 		deleted, err := a.auth.DeleteUser(userID)
 		if err != nil {
 			if a.writeAuthPersistenceError(w, err) {
@@ -1008,11 +1015,7 @@ func (a *App) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusNotFound, "user not found")
 			return
 		}
-		response, err := a.managedUsersResponse(r)
-		if err != nil {
-			util.WriteError(w, http.StatusBadRequest, err.Error())
-			return
-		}
+		response := a.managedUsersResponseForQuery(query)
 		util.WriteJSON(w, http.StatusOK, response)
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -1036,6 +1039,10 @@ func (a *App) managedUsersResponse(r *http.Request) (map[string]any, error) {
 	if err != nil {
 		return nil, err
 	}
+	return a.managedUsersResponseForQuery(query), nil
+}
+
+func (a *App) managedUsersResponseForQuery(query managedUsersQuery) map[string]any {
 	items := filterManagedUsers(a.auth.ListUsers(), query)
 	a.prepareManagedUsersSortValues(items, query.SortBy)
 	sortManagedUsers(items, query)
@@ -1062,7 +1069,7 @@ func (a *App) managedUsersResponse(r *http.Request) (map[string]any, error) {
 		"sort_by":     query.SortBy,
 		"sort_order":  query.SortOrder,
 		"total_pages": query.TotalPages,
-	}, nil
+	}
 }
 
 func (a *App) managedUser(id string) map[string]any {

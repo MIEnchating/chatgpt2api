@@ -60,24 +60,6 @@ type Identity struct {
 	APIPermissions []string
 }
 
-func (i Identity) Map() map[string]any {
-	return map[string]any{
-		"id":              i.ID,
-		"username":        i.Username,
-		"name":            i.Name,
-		"role":            i.Role,
-		"role_id":         i.RoleID,
-		"role_name":       i.RoleName,
-		"provider":        i.Provider,
-		"owner_id":        i.OwnerID,
-		"credential_id":   i.CredentialID,
-		"credential_name": i.CredentialName,
-		"kind":            i.Kind,
-		"menu_paths":      append([]string(nil), i.MenuPaths...),
-		"api_permissions": append([]string(nil), i.APIPermissions...),
-	}
-}
-
 type AuthOwner struct {
 	ID           string
 	Name         string

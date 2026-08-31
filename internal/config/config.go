@@ -12,7 +12,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"time"
 
 	"chatgpt2api/internal/model"
 	"chatgpt2api/internal/storage"
@@ -829,27 +828,6 @@ func (s *Store) Update(data map[string]any) (map[string]any, error) {
 	return s.Get(), nil
 }
 
-func (s *Store) CleanupOldImages() int {
-	cutoff := time.Now().Add(-time.Duration(s.ImageRetentionDays()) * 24 * time.Hour)
-	removed := 0
-	for _, dir := range []string{s.ImagesDir(), s.ImageThumbnailsDir(), s.ImageMetadataDir()} {
-		_ = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
-			if err != nil || d.IsDir() {
-				return nil
-			}
-			info, statErr := d.Info()
-			if statErr == nil && info.ModTime().Before(cutoff) {
-				if os.Remove(path) == nil {
-					removed++
-				}
-			}
-			return nil
-		})
-		removeEmptyDirs(dir)
-	}
-	return removed
-}
-
 func (s *Store) StorageBackend() (storage.Backend, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1511,18 +1489,4 @@ func formatEnvValue(value string) string {
 	value = strings.ReplaceAll(value, `"`, `\"`)
 	value = strings.ReplaceAll(value, "\n", `\n`)
 	return `"` + value + `"`
-}
-
-func removeEmptyDirs(root string) {
-	var dirs []string
-	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err == nil && d.IsDir() && path != root {
-			dirs = append(dirs, path)
-		}
-		return nil
-	})
-	sort.Slice(dirs, func(i, j int) bool { return len(dirs[i]) > len(dirs[j]) })
-	for _, dir := range dirs {
-		_ = os.Remove(dir)
-	}
 }

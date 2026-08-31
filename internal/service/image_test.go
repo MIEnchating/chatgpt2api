@@ -544,6 +544,89 @@ func TestImageServiceDeleteImagesRemovesOriginalAndThumbnail(t *testing.T) {
 	}
 }
 
+func TestImageServiceDeleteImagesPreflightsBatchBeforeMutation(t *testing.T) {
+	root := t.TempDir()
+	config := testImageConfig{root: root}
+	rel := "2026/04/29/sample.png"
+	imagePath := filepath.Join(config.ImagesDir(), filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(imagePath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeTestPNG(imagePath); err != nil {
+		t.Fatal(err)
+	}
+	service := NewImageService(config)
+	if err := service.RecordGeneratedImages([]string{rel}, "owner", "Owner", ImageVisibilityPublic); err != nil {
+		t.Fatal(err)
+	}
+	thumbnailPath := filepath.Join(config.ImageThumbnailsDir(), filepath.FromSlash(rel)+thumbnailExtension)
+	metadataPath := filepath.Join(config.ImageMetadataDir(), filepath.FromSlash(rel)+".json")
+	metadataBefore, err := os.ReadFile(metadataPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := service.DeleteImages([]string{rel, "../invalid.png"}, allImages); err == nil {
+		t.Fatal("DeleteImages(valid then invalid) error = nil")
+	}
+	for _, path := range []string{imagePath, thumbnailPath} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("batch preflight changed %s: %v", path, err)
+		}
+	}
+	metadataAfter, err := os.ReadFile(metadataPath)
+	if err != nil {
+		t.Fatalf("batch preflight removed metadata: %v", err)
+	}
+	if !bytes.Equal(metadataAfter, metadataBefore) {
+		t.Fatalf("batch preflight changed metadata:\nbefore=%s\nafter=%s", metadataBefore, metadataAfter)
+	}
+}
+
+func TestImageServiceDeleteImagesPreflightsMetadataErrors(t *testing.T) {
+	root := t.TempDir()
+	config := testImageConfig{root: root}
+	rels := []string{"2026/04/29/first.png", "2026/04/29/second.png"}
+	for _, rel := range rels {
+		imagePath := filepath.Join(config.ImagesDir(), filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(imagePath), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := writeTestPNG(imagePath); err != nil {
+			t.Fatal(err)
+		}
+	}
+	service := NewImageService(config)
+	if err := service.RecordGeneratedImages(rels, "owner", "Owner", ImageVisibilityPrivate); err != nil {
+		t.Fatal(err)
+	}
+	firstMetadataPath := filepath.Join(config.ImageMetadataDir(), filepath.FromSlash(rels[0])+".json")
+	firstMetadataBefore, err := os.ReadFile(firstMetadataPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	secondMetadataPath := filepath.Join(config.ImageMetadataDir(), filepath.FromSlash(rels[1])+".json")
+	if err := os.WriteFile(secondMetadataPath, []byte("{invalid json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := service.DeleteImages(rels, allImages); err == nil {
+		t.Fatal("DeleteImages(corrupt later metadata) error = nil")
+	}
+	for _, rel := range rels {
+		if _, err := os.Stat(filepath.Join(config.ImagesDir(), filepath.FromSlash(rel))); err != nil {
+			t.Fatalf("batch preflight removed %s: %v", rel, err)
+		}
+	}
+	firstMetadataAfter, err := os.ReadFile(firstMetadataPath)
+	if err != nil {
+		t.Fatalf("batch preflight removed first metadata: %v", err)
+	}
+	if !bytes.Equal(firstMetadataAfter, firstMetadataBefore) {
+		t.Fatalf("batch preflight changed first metadata:\nbefore=%s\nafter=%s", firstMetadataBefore, firstMetadataAfter)
+	}
+}
+
 func TestImageServiceScopesImagesByOwner(t *testing.T) {
 	root := t.TempDir()
 	config := testImageConfig{root: root}

@@ -2826,6 +2826,45 @@ func TestImageVisibilityImportsDataURL(t *testing.T) {
 	}
 }
 
+func TestDeleteImagesPreflightsEntireBatch(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+
+	rel := "2026/04/29/delete-preflight.png"
+	imagePath := filepath.Join(app.config.ImagesDir(), filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(imagePath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeHTTPTestPNG(imagePath); err != nil {
+		t.Fatal(err)
+	}
+	if err := app.images.RecordGeneratedImageMetadata([]string{rel}, "owner", "Owner", service.ImageVisibilityPublic); err != nil {
+		t.Fatal(err)
+	}
+	app.images.EnsureThumbnails([]string{rel})
+	thumbnailPath := filepath.Join(app.config.ImageThumbnailsDir(), filepath.FromSlash(rel)+".jpg")
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/images", strings.NewReader(fmt.Sprintf(`{"paths":[%q,"../invalid.png"]}`, rel)))
+	setRequestAuthCookie(req, adminSessionToken(t, app))
+	res := httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("delete status = %d, want %d; body = %s", res.Code, http.StatusBadRequest, res.Body.String())
+	}
+	for _, path := range []string{imagePath, thumbnailPath} {
+		if _, err := os.Stat(path); err != nil {
+			t.Fatalf("batch preflight changed %s: %v", path, err)
+		}
+	}
+	access, err := app.images.ImageFileAccess(rel, service.ImageAccessScope{All: true})
+	if err != nil {
+		t.Fatalf("image metadata unavailable after failed batch preflight: %v", err)
+	}
+	if access.Visibility != service.ImageVisibilityPublic || access.OwnerID != "owner" {
+		t.Fatalf("image metadata changed after failed batch preflight: %#v", access)
+	}
+}
+
 func TestImageThumbnailsAreGeneratedOnDemand(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()
@@ -3453,6 +3492,71 @@ func TestAdminUsersListPaginationAndFilters(t *testing.T) {
 	app.Handler().ServeHTTP(res, req)
 	if res.Code != http.StatusBadRequest {
 		t.Fatalf("invalid page status = %d body = %s", res.Code, res.Body.String())
+	}
+}
+
+func TestAdminUsersCreateRejectsInvalidListQueryBeforePersisting(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+
+	token := adminSessionToken(t, app)
+	before := app.auth.ListUsers()
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/users?page=0", strings.NewReader(`{"username":"query_guard_create","password":"Password123","name":"Query Guard Create","role_id":"default-user","enabled":true}`))
+	setRequestAuthCookie(req, token)
+	res := httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("create with invalid page status = %d body = %s", res.Code, res.Body.String())
+	}
+	after := app.auth.ListUsers()
+	if !reflect.DeepEqual(after, before) {
+		t.Fatalf("users changed after rejected create: before=%#v after=%#v", before, after)
+	}
+}
+
+func TestAdminUsersUpdateRejectsInvalidListQueryBeforePersisting(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+
+	user, err := app.auth.CreatePasswordUser("query_guard_update", "Password123", "Original Name", service.DefaultManagedRoleID, true)
+	if err != nil {
+		t.Fatalf("CreatePasswordUser() error = %v", err)
+	}
+	token := adminSessionToken(t, app)
+	before := app.auth.ListUsers()
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/users/"+util.Clean(user["id"])+"?page=0", strings.NewReader(`{"name":"Changed Name"}`))
+	setRequestAuthCookie(req, token)
+	res := httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("update with invalid page status = %d body = %s", res.Code, res.Body.String())
+	}
+	after := app.auth.ListUsers()
+	if !reflect.DeepEqual(after, before) {
+		t.Fatalf("users changed after rejected update: before=%#v after=%#v", before, after)
+	}
+}
+
+func TestAdminUsersDeleteRejectsInvalidListQueryBeforePersisting(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+
+	user, err := app.auth.CreatePasswordUser("query_guard_delete", "Password123", "Query Guard Delete", service.DefaultManagedRoleID, true)
+	if err != nil {
+		t.Fatalf("CreatePasswordUser() error = %v", err)
+	}
+	token := adminSessionToken(t, app)
+	before := app.auth.ListUsers()
+	req := httptest.NewRequest(http.MethodDelete, "/api/admin/users/"+util.Clean(user["id"])+"?page=0", nil)
+	setRequestAuthCookie(req, token)
+	res := httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("delete with invalid page status = %d body = %s", res.Code, res.Body.String())
+	}
+	after := app.auth.ListUsers()
+	if !reflect.DeepEqual(after, before) {
+		t.Fatalf("users changed after rejected delete: before=%#v after=%#v", before, after)
 	}
 }
 
