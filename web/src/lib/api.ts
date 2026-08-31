@@ -1656,7 +1656,7 @@ export async function deleteManagedImages(paths: string[]) {
   );
 }
 
-export async function fetchSystemLogs(filters: SystemLogFilters) {
+export async function fetchSystemLogs(filters: SystemLogFilters, options: { signal?: AbortSignal } = {}) {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(filters)) {
     if (
@@ -1671,6 +1671,7 @@ export async function fetchSystemLogs(filters: SystemLogFilters) {
   }
   return httpRequest<{ items: SystemLog[]; view?: LogView | string }>(
     `/api/logs${params.toString() ? `?${params.toString()}` : ""}`,
+    { signal: options.signal },
   );
 }
 

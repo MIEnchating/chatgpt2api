@@ -195,14 +195,16 @@ func (s *LogService) CleanupOlderThan(retentionDays int) (LogCleanupResult, erro
 	}, nil
 }
 
-func (s *LogService) StartRetentionCleaner(ctx context.Context, scheduleGetter func() LogRetentionSchedule, interval time.Duration, logger *Logger) {
+func (s *LogService) StartRetentionCleaner(ctx context.Context, scheduleGetter func() LogRetentionSchedule, interval time.Duration, logger *Logger) <-chan struct{} {
 	if interval <= 0 {
 		interval = time.Hour
 	}
 	if scheduleGetter == nil {
 		scheduleGetter = func() LogRetentionSchedule { return LogRetentionSchedule{} }
 	}
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		timer := time.NewTimer(0)
 		defer timer.Stop()
 		lastRunDate := ""
@@ -211,10 +213,16 @@ func (s *LogService) StartRetentionCleaner(ctx context.Context, scheduleGetter f
 			case <-ctx.Done():
 				return
 			case <-timer.C:
+				if ctx.Err() != nil {
+					return
+				}
 				now := time.Now()
 				schedule := normalizeLogRetentionSchedule(scheduleGetter())
 				runDate := now.Format("2006-01-02")
 				if schedule.Enabled && now.Hour() == schedule.Hour && runDate != lastRunDate {
+					if ctx.Err() != nil {
+						return
+					}
 					result, err := s.CleanupOlderThan(schedule.RetentionDays)
 					if err != nil {
 						if logger != nil {
@@ -231,6 +239,7 @@ func (s *LogService) StartRetentionCleaner(ctx context.Context, scheduleGetter f
 			}
 		}
 	}()
+	return done
 }
 
 func normalizeLogRetentionSchedule(schedule LogRetentionSchedule) LogRetentionSchedule {

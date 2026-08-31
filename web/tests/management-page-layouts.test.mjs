@@ -11,6 +11,7 @@ const usersSource = readSource("../src/app/users/page.tsx");
 const rbacSource = readSource("../src/app/rbac/page.tsx");
 const permissionEditorSource = readSource("../src/components/permission-editor.tsx");
 const logsSource = readSource("../src/app/logs/page.tsx");
+const apiSource = readSource("../src/lib/api.ts");
 const workflowsSource = readSource("../src/app/workflows/creative-workflow-workspace.tsx");
 const emptyStateSource = readSource("../src/components/ui/empty-state.tsx");
 
@@ -106,6 +107,18 @@ test("management actions share the same row as their filters", () => {
       .length,
     1
   );
+});
+
+test("log queries abort stale loads and only the latest request updates state", () => {
+  assert.match(logsSource, /loadLogsAbortRef = useRef<AbortController \| null>/);
+  assert.match(logsSource, /loadLogsRequestRef = useRef\(0\)/);
+  assert.match(logsSource, /loadLogsAbortRef\.current\?\.abort\(\)/);
+  assert.match(logsSource, /fetchSystemLogs\(nextQuery, \{ signal: controller\.signal \}\)/);
+  assert.match(logsSource, /requestID !== loadLogsRequestRef\.current/);
+  assert.match(logsSource, /requestID === loadLogsRequestRef\.current/);
+  assert.match(logsSource, /return \(\) => \{[\s\S]*loadLogsRequestRef\.current \+= 1;[\s\S]*loadLogsAbortRef\.current\?\.abort\(\)/);
+  assert.match(apiSource, /fetchSystemLogs\(filters: SystemLogFilters, options: \{ signal\?: AbortSignal \} = \{\}\)/);
+  assert.match(apiSource, /`\/api\/logs[\s\S]*\{ signal: options\.signal \}/);
 });
 
 test("log detail header reserves the global dialog close-button area", () => {

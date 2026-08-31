@@ -55,8 +55,10 @@ import {
 import { DEFAULT_CREATION_WORKBENCH_PREFERENCES } from "@/lib/use-image-generation-preferences";
 import { displaySubjectId } from "@/lib/session";
 import {
+  relayTokenAvailabilityFromBalance,
+  relayTokenNamesUpdateForAvailability,
   relayTokenPreferencesFromNames,
-  retainSelectedRelayTokenNames,
+  type RelayTokenAvailability,
   type RelayTokenKind,
 } from "@/lib/relay-token-selection";
 import { useRelayTokenPreferences } from "@/lib/use-relay-token-preferences";
@@ -774,6 +776,10 @@ function profileSectionFromHash(): ProfileSection {
 
 function ProfileContent({ session }: { session: StoredAuthSession }) {
   const [balance, setBalance] = useState<ProfileBalanceStatus | null>(null);
+  const [relayTokenAvailability, setRelayTokenAvailability] = useState<RelayTokenAvailability>({
+    authoritative: false,
+    names: [],
+  });
   const [customRelayConfigs, setCustomRelayConfigs] = useState<CustomRelayConfigsResponse | null>(null);
   const [editingCustomRelay, setEditingCustomRelay] = useState<{ kind: RelayTokenKind; status?: CustomRelayConfigStatus } | null>(null);
   const { tokenNames: selectedTokenNames, setTokenNames } = useRelayTokenPreferences();
@@ -786,23 +792,27 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
     });
   }, [setTokenNames]);
 
-  const tokenNameOptions = useMemo(
-    () => normalizeTokenNames([
-      ...(balance?.token_names || []),
-    ]),
-    [balance?.token_names],
-  );
+  const tokenNameOptions = useMemo(() => normalizeTokenNames([
+    ...relayTokenAvailability.names,
+    ...(!relayTokenAvailability.authoritative ? Object.values(selectedTokenNames).flat() : []),
+  ]), [relayTokenAvailability, selectedTokenNames]);
   const loadBalance = useCallback(async () => {
     setIsLoadingBalance(true);
+    setRelayTokenAvailability((current) => ({ ...current, authoritative: false }));
     try {
       const nextBalance = await fetchProfileBalance();
       setBalance(nextBalance);
+      const nextAvailability = relayTokenAvailabilityFromBalance(nextBalance);
+      setRelayTokenAvailability((current) => (
+        nextAvailability.authoritative ? nextAvailability : { ...current, authoritative: false }
+      ));
     } catch (error) {
       setBalance({
         has_balance: false,
         source: "newapi",
         message: error instanceof Error ? error.message : "读取云棉用户余额失败",
       });
+      setRelayTokenAvailability((current) => ({ ...current, authoritative: false }));
     } finally {
       setIsLoadingBalance(false);
     }
@@ -823,15 +833,15 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
     }
     (["text", "image", "video", "audio"] as const).forEach((kind) => {
       const customNames = customRelayConfigs.configs.filter((config) => config.kind === kind && config.configured).map((config) => config.token_name);
-      const retainedNames = retainSelectedRelayTokenNames(selectedTokenNames[kind], [...tokenNameOptions, ...customNames]);
-      if (retainedNames.join("\0") !== selectedTokenNames[kind].join("\0")) selectRelayTokenNames(kind, retainedNames);
+      const retainedNames = relayTokenNamesUpdateForAvailability(selectedTokenNames[kind], relayTokenAvailability, customNames);
+      if (retainedNames) selectRelayTokenNames(kind, retainedNames);
     });
   }, [
     isLoadingBalance,
     customRelayConfigs,
     selectRelayTokenNames,
     selectedTokenNames,
-    tokenNameOptions,
+    relayTokenAvailability,
   ]);
 
   useEffect(() => {

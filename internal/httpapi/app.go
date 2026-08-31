@@ -77,6 +77,7 @@ type App struct {
 	videoReferenceDir   string
 	loginLimiter        *loginRateLimiter
 	settingsMu          sync.Mutex
+	backgroundWorkers   sync.WaitGroup
 
 	imageCleanup             imageCleanupWorker
 	conversationAssetCleanup imageConversationAssetCleanupWorker
@@ -252,13 +253,13 @@ func NewApp() (*App, error) {
 	app.tasks.SetTaskTimeoutGetter(func() time.Duration {
 		return time.Duration(app.config.ImageTaskTimeoutSeconds()) * time.Second
 	})
-	logs.StartRetentionCleaner(ctx, func() service.LogRetentionSchedule {
+	app.trackBackgroundDone(logs.StartRetentionCleaner(ctx, func() service.LogRetentionSchedule {
 		return service.LogRetentionSchedule{
 			Enabled:       cfg.LogCleanupScheduleEnabled(),
 			RetentionDays: cfg.LogRetentionDays(),
 			Hour:          cfg.LogCleanupHour(),
 		}
-	}, time.Hour, logger)
+	}, time.Hour, logger))
 	if _, err := app.cleanupImageStorageWithOptions(service.ImageStorageCleanupOptions{
 		RetentionDays: cfg.ImageRetentionDays(),
 		MaxBytes:      cfg.ImageStorageLimitBytes(),
@@ -274,7 +275,9 @@ func (a *App) startVideoModelContractRefresher(ctx context.Context, interval tim
 	if a == nil || a.videoContracts == nil || interval <= 0 {
 		return
 	}
+	a.backgroundWorkers.Add(1)
 	go func() {
+		defer a.backgroundWorkers.Done()
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {
@@ -540,11 +543,14 @@ func (a *App) Close() {
 	if a.cancel != nil {
 		a.cancel()
 	}
+	a.backgroundWorkers.Wait()
 	if a.storageFiles != nil {
 		a.storageFiles.Close()
 	}
 	if a.tasks != nil {
-		a.tasks.Close()
+		if err := a.tasks.Close(); err != nil && a.logger != nil {
+			a.logger.Warning("persist image tasks during shutdown failed", "error", err)
+		}
 	}
 	a.closeImageStorageCleaner()
 	a.closeImageConversationAssetCleaner()
@@ -559,6 +565,17 @@ func (a *App) Close() {
 			}
 		}
 	}
+}
+
+func (a *App) trackBackgroundDone(done <-chan struct{}) {
+	if a == nil || done == nil {
+		return
+	}
+	a.backgroundWorkers.Add(1)
+	go func() {
+		defer a.backgroundWorkers.Done()
+		<-done
+	}()
 }
 
 func (a *App) Logger() *service.Logger {
@@ -1337,7 +1354,11 @@ func (a *App) handleImages(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, status, message)
 			return
 		}
-		payload := a.images.ListImages(a.resolveImageBaseURL(r), strings.TrimSpace(r.URL.Query().Get("start_date")), strings.TrimSpace(r.URL.Query().Get("end_date")), scope)
+		payload, err := a.images.ListImages(a.resolveImageBaseURL(r), strings.TrimSpace(r.URL.Query().Get("start_date")), strings.TrimSpace(r.URL.Query().Get("end_date")), scope)
+		if err != nil {
+			a.writeImageStorageError(w, "list images", err)
+			return
+		}
 		a.decorateImageList(payload)
 		util.WriteJSON(w, http.StatusOK, payload)
 	case http.MethodDelete:
@@ -1548,12 +1569,14 @@ func (a *App) handleImageThumbnail(w http.ResponseWriter, r *http.Request) {
 	if _, ok := a.authorizeImageFileRequest(w, r, sourceRel); !ok {
 		return
 	}
-	_ = a.images.EnsureThumbnail(thumbnailRel)
-	thumbPath := filepath.Join(a.config.ImageThumbnailsDir(), filepath.FromSlash(thumbnailRel))
-	if info, err := os.Stat(thumbPath); err == nil && !info.IsDir() {
-		w.Header().Set("Cache-Control", imageThumbnailCacheControl)
-		http.ServeFile(w, r, thumbPath)
-		return
+	thumbnailErr := a.images.EnsureThumbnail(thumbnailRel)
+	if thumbnailErr == nil {
+		thumbPath := filepath.Join(a.config.ImageThumbnailsDir(), filepath.FromSlash(thumbnailRel))
+		if info, err := os.Stat(thumbPath); err == nil && !info.IsDir() {
+			w.Header().Set("Cache-Control", imageThumbnailCacheControl)
+			http.ServeFile(w, r, thumbPath)
+			return
+		}
 	}
 	if data, contentType, err := a.images.ImageBytes(sourceRel, service.ImageAccessScope{All: true}); err == nil {
 		w.Header().Set("Content-Type", contentType)
@@ -2390,7 +2413,9 @@ func (a *App) startImageStorageCleaner(ctx context.Context, interval time.Durati
 	if interval <= 0 {
 		interval = time.Hour
 	}
+	a.backgroundWorkers.Add(1)
 	go func() {
+		defer a.backgroundWorkers.Done()
 		timer := time.NewTimer(interval)
 		defer timer.Stop()
 		for {

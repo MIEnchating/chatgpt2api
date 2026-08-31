@@ -764,7 +764,7 @@ func (b *DatabaseBackend) ListJSONDocuments(prefix string) (map[string]any, erro
 		}
 		value, err := decodeJSONString(text)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("decode JSON document %q: %w", name, err)
 		}
 		out[name] = value
 	}
@@ -811,7 +811,7 @@ func (b *DatabaseBackend) AppendLog(item map[string]any) error {
 }
 
 func (b *DatabaseBackend) QueryLogs(startDate, endDate string, limit int) ([]map[string]any, error) {
-	query := "SELECT data FROM logs"
+	query := "SELECT id, data FROM logs"
 	var filters []string
 	var args []any
 	if strings.TrimSpace(startDate) != "" {
@@ -836,18 +836,23 @@ func (b *DatabaseBackend) QueryLogs(startDate, endDate string, limit int) ([]map
 	}
 	defer rows.Close()
 	out := make([]map[string]any, 0)
+	rowNumber := 0
 	for rows.Next() {
+		rowNumber++
+		var id int64
 		var text string
-		if err := rows.Scan(&text); err != nil {
-			continue
+		if err := rows.Scan(&id, &text); err != nil {
+			return nil, fmt.Errorf("scan log result row %d: %w", rowNumber, err)
 		}
 		item, err := decodeJSONString(text)
 		if err != nil {
-			continue
+			return nil, fmt.Errorf("decode log row %d: %w", id, err)
 		}
-		if m, ok := item.(map[string]any); ok {
-			out = append(out, m)
+		m, ok := item.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("decode log row %d: expected JSON object", id)
 		}
+		out = append(out, m)
 	}
 	return out, rows.Err()
 }
@@ -889,24 +894,26 @@ func (b *DatabaseBackend) QueryLogPage(startDate, endDate string, cursor *LogCur
 	var pageCursor *LogCursor
 	rowNumber := 0
 	for rows.Next() {
+		rowNumber++
 		var id int64
 		var day, text string
 		if err := rows.Scan(&id, &day, &text); err != nil {
-			return LogPage{}, err
+			return LogPage{}, fmt.Errorf("scan log result row %d: %w", rowNumber, err)
 		}
-		rowNumber++
+		decoded, err := decodeJSONString(text)
+		if err != nil {
+			return LogPage{}, fmt.Errorf("decode log row %d: %w", id, err)
+		}
+		item, ok := decoded.(map[string]any)
+		if !ok {
+			return LogPage{}, fmt.Errorf("decode log row %d: expected JSON object", id)
+		}
 		if rowNumber > limit {
 			page.NextCursor = pageCursor
 			continue
 		}
 		pageCursor = &LogCursor{Day: day, ID: id}
-		decoded, err := decodeJSONString(text)
-		if err != nil {
-			continue
-		}
-		if item, ok := decoded.(map[string]any); ok {
-			page.Items = append(page.Items, item)
-		}
+		page.Items = append(page.Items, item)
 	}
 	if err := rows.Err(); err != nil {
 		return LogPage{}, err

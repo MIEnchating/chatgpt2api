@@ -394,3 +394,18 @@ func TestLogServiceRetentionCleanerHonorsDisabledSchedule(t *testing.T) {
 		t.Fatalf("disabled retention cleaner removed logs, remaining = %#v", items)
 	}
 }
+
+func TestLogServiceRetentionCleanerClosesDoneAfterCancel(t *testing.T) {
+	logs := NewLogService(newTestStorageBackend(t))
+	ctx, cancel := context.WithCancel(context.Background())
+	done := logs.StartRetentionCleaner(ctx, func() LogRetentionSchedule {
+		return LogRetentionSchedule{Enabled: false}
+	}, time.Hour, nil)
+
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("retention cleaner did not stop after context cancellation")
+	}
+}

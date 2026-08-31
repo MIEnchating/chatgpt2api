@@ -370,7 +370,9 @@ func (a *App) startImageConversationAssetCleaner(ctx context.Context, interval t
 	if interval <= 0 {
 		interval = time.Hour
 	}
+	a.backgroundWorkers.Add(1)
 	go func() {
+		defer a.backgroundWorkers.Done()
 		ticker := time.NewTicker(interval)
 		defer ticker.Stop()
 		for {

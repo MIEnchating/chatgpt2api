@@ -80,6 +80,15 @@ func (s *ImageService) RecordGeneratedImages(values []string, ownerID, ownerName
 	return s.recordGeneratedImages(values, ownerID, ownerName, visibility, true, metadataValues...)
 }
 
+func requireImageList(t *testing.T, service *ImageService, baseURL, startDate, endDate string, scope ImageAccessScope) map[string]any {
+	t.Helper()
+	result, err := service.ListImages(baseURL, startDate, endDate, scope)
+	if err != nil {
+		t.Fatalf("ListImages() error = %v", err)
+	}
+	return result
+}
+
 type firstImageMetadataSaveGate struct {
 	storage.Backend
 	documents storage.JSONDocumentBackend
@@ -94,6 +103,7 @@ type countingImageDocumentBackend struct {
 	prefixes    storage.JSONDocumentPrefixBackend
 	loadCalls   int
 	prefixCalls int
+	prefixErr   error
 }
 
 func newCountingImageDocumentBackend(t *testing.T, backend storage.Backend) *countingImageDocumentBackend {
@@ -121,6 +131,9 @@ func (b *countingImageDocumentBackend) DeleteJSONDocument(name string) error {
 
 func (b *countingImageDocumentBackend) ListJSONDocuments(prefix string) (map[string]any, error) {
 	b.prefixCalls++
+	if b.prefixErr != nil {
+		return nil, b.prefixErr
+	}
 	return b.prefixes.ListJSONDocuments(prefix)
 }
 
@@ -172,7 +185,7 @@ func (b *firstImageMetadataSaveGate) DeleteJSONDocument(name string) error {
 
 func TestImageServiceListImagesReturnsEmptyArrays(t *testing.T) {
 	service := NewImageService(testImageConfig{root: t.TempDir()})
-	result := service.ListImages("http://127.0.0.1:8000", "", "", allImages)
+	result := requireImageList(t, service, "http://127.0.0.1:8000", "", "", allImages)
 
 	data, err := json.Marshal(result)
 	if err != nil {
@@ -180,6 +193,59 @@ func TestImageServiceListImagesReturnsEmptyArrays(t *testing.T) {
 	}
 	if string(data) != `{"groups":[],"items":[]}` {
 		t.Fatalf("ListImages() JSON = %s", data)
+	}
+}
+
+func TestImageServiceListImagesAllowsMissingDirectory(t *testing.T) {
+	root := t.TempDir()
+	service := NewImageService(fixedImageConfig{
+		imagesDir:     filepath.Join(root, "missing-images"),
+		thumbnailsDir: filepath.Join(root, "thumbnails"),
+		metadataDir:   filepath.Join(root, "metadata"),
+	})
+	result := requireImageList(t, service, "", "", "", allImages)
+	if len(result["items"].([]map[string]any)) != 0 || len(result["groups"].([]map[string]any)) != 0 {
+		t.Fatalf("ListImages() = %#v, want empty collections", result)
+	}
+}
+
+func TestImageServiceListImagesRejectsFileRoot(t *testing.T) {
+	root := t.TempDir()
+	imagesPath := filepath.Join(root, "images")
+	if err := os.WriteFile(imagesPath, []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	service := NewImageService(fixedImageConfig{
+		imagesDir:     imagesPath,
+		thumbnailsDir: filepath.Join(root, "thumbnails"),
+		metadataDir:   filepath.Join(root, "metadata"),
+	})
+	if _, err := service.ListImages("", "", "", allImages); err == nil {
+		t.Fatal("ListImages() error = nil, want invalid root error")
+	}
+}
+
+func TestImageServiceListImagesReturnsMetadataDecodeError(t *testing.T) {
+	root := t.TempDir()
+	config := testImageConfig{root: root}
+	rel := "2026/04/29/corrupt.png"
+	imagePath := filepath.Join(config.ImagesDir(), filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(imagePath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeTestPNG(imagePath); err != nil {
+		t.Fatal(err)
+	}
+	metadataPath := filepath.Join(config.ImageMetadataDir(), filepath.FromSlash(rel)+".json")
+	if err := os.MkdirAll(filepath.Dir(metadataPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(metadataPath, []byte("{invalid"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	service := NewImageService(config)
+	if _, err := service.ListImages("", "", "", allImages); err == nil {
+		t.Fatal("ListImages() error = nil, want metadata decode error")
 	}
 }
 
@@ -202,9 +268,19 @@ func TestImageServiceListImagesLoadsMetadataInBatches(t *testing.T) {
 	}
 	backend.loadCalls = 0
 	backend.prefixCalls = 0
-	items := service.ListImages("", "", "", allImages)["items"].([]map[string]any)
+	items := requireImageList(t, service, "", "", "", allImages)["items"].([]map[string]any)
 	if len(items) != 2 || backend.prefixCalls != 2 || backend.loadCalls != 0 {
 		t.Fatalf("ListImages() items = %d, prefix calls = %d, per-document loads = %d", len(items), backend.prefixCalls, backend.loadCalls)
+	}
+}
+
+func TestImageServiceListImagesReturnsBatchMetadataError(t *testing.T) {
+	config := testImageConfig{root: t.TempDir()}
+	backend := newCountingImageDocumentBackend(t, newTestStorageBackend(t))
+	backend.prefixErr = errors.New("metadata database unavailable")
+	service := NewImageService(config, backend)
+	if _, err := service.ListImages("", "", "", allImages); err == nil || !strings.Contains(err.Error(), "metadata database unavailable") {
+		t.Fatalf("ListImages() error = %v, want backend error", err)
 	}
 }
 
@@ -217,7 +293,7 @@ func TestImageServiceUsesSameOriginPathsWhenBaseURLIsEmpty(t *testing.T) {
 	if !strings.HasPrefix(imageURL, "/images/") {
 		t.Fatalf("SaveImageBytes() URL = %q, want same-origin path", imageURL)
 	}
-	items := service.ListImages("", "", "", allImages)["items"].([]map[string]any)
+	items := requireImageList(t, service, "", "", "", allImages)["items"].([]map[string]any)
 	if len(items) != 1 || !strings.HasPrefix(toString(items[0]["url"]), "/images/") {
 		t.Fatalf("ListImages() = %#v, want same-origin URL", items)
 	}
@@ -235,7 +311,7 @@ func TestImageServiceListImagesReturnsDimensionsWithoutGeneratingThumbnails(t *t
 	}
 
 	service := NewImageService(config)
-	result := service.ListImages("http://127.0.0.1:8000", "", "", allImages)
+	result := requireImageList(t, service, "http://127.0.0.1:8000", "", "", allImages)
 	items := result["items"].([]map[string]any)
 	if len(items) != 1 {
 		t.Fatalf("items = %#v", items)
@@ -375,7 +451,7 @@ func TestImageServiceEnsureThumbnailsCreatesCachedThumbnailFromImageURL(t *testi
 		t.Fatalf("thumbnail metadata was not created: %v", err)
 	}
 
-	result := service.ListImages("http://127.0.0.1:8000", "", "", allImages)
+	result := requireImageList(t, service, "http://127.0.0.1:8000", "", "", allImages)
 	items := result["items"].([]map[string]any)
 	if len(items) != 1 {
 		t.Fatalf("items = %#v", items)
@@ -646,12 +722,12 @@ func TestImageServiceScopesImagesByOwner(t *testing.T) {
 	service.RecordImageOwners([]string{"2026/04/29/alice.png"}, "linuxdo:123")
 	service.RecordImageOwners([]string{"http://127.0.0.1:8000/images/2026/04/29/bob.png"}, "linuxdo:456")
 
-	alice := service.ListImages("http://127.0.0.1:8000", "", "", ImageAccessScope{OwnerID: "linuxdo:123"})
+	alice := requireImageList(t, service, "http://127.0.0.1:8000", "", "", ImageAccessScope{OwnerID: "linuxdo:123"})
 	aliceItems := alice["items"].([]map[string]any)
 	if len(aliceItems) != 1 || aliceItems[0]["path"] != "2026/04/29/alice.png" {
 		t.Fatalf("alice ListImages() = %#v", alice)
 	}
-	admin := service.ListImages("http://127.0.0.1:8000", "", "", allImages)
+	admin := requireImageList(t, service, "http://127.0.0.1:8000", "", "", allImages)
 	if items := admin["items"].([]map[string]any); len(items) != 3 {
 		t.Fatalf("admin ListImages() = %#v", admin)
 	}
@@ -690,7 +766,7 @@ func TestImageServicePublicVisibility(t *testing.T) {
 	service.RecordGeneratedImages([]string{aliceRel}, "linuxdo:123", "alice", ImageVisibilityPublic)
 	service.RecordGeneratedImages([]string{bobRel}, "linuxdo:456", "bob", ImageVisibilityPrivate)
 
-	public := service.ListImages("http://127.0.0.1:8000", "", "", ImageAccessScope{Public: true})
+	public := requireImageList(t, service, "http://127.0.0.1:8000", "", "", ImageAccessScope{Public: true})
 	publicItems := public["items"].([]map[string]any)
 	if len(publicItems) != 1 || publicItems[0]["path"] != aliceRel {
 		t.Fatalf("public ListImages() = %#v", public)
@@ -698,7 +774,7 @@ func TestImageServicePublicVisibility(t *testing.T) {
 	if publicItems[0]["visibility"] != ImageVisibilityPublic || publicItems[0]["owner_name"] != "alice" || publicItems[0]["published_at"] == "" {
 		t.Fatalf("public metadata = %#v", publicItems[0])
 	}
-	visible := service.ListImages("http://127.0.0.1:8000", "", "", ImageAccessScope{OwnerID: "linuxdo:456", Visible: true})
+	visible := requireImageList(t, service, "http://127.0.0.1:8000", "", "", ImageAccessScope{OwnerID: "linuxdo:456", Visible: true})
 	visibleItems := visible["items"].([]map[string]any)
 	if len(visibleItems) != 2 {
 		t.Fatalf("visible ListImages() = %#v, want own private and shared public images", visible)
@@ -710,7 +786,7 @@ func TestImageServicePublicVisibility(t *testing.T) {
 	if _, err := service.UpdateImageVisibility("http://127.0.0.1:8000/images/"+aliceRel, ImageVisibilityPrivate, ImageAccessScope{OwnerID: "linuxdo:123"}); err != nil {
 		t.Fatalf("UpdateImageVisibility(owner private) error = %v", err)
 	}
-	public = service.ListImages("http://127.0.0.1:8000", "", "", ImageAccessScope{Public: true})
+	public = requireImageList(t, service, "http://127.0.0.1:8000", "", "", ImageAccessScope{Public: true})
 	if items := public["items"].([]map[string]any); len(items) != 0 {
 		t.Fatalf("private image should leave public gallery: %#v", public)
 	}
@@ -859,7 +935,7 @@ func TestImageServiceRecordGeneratedImageMetadataDoesNotGenerateThumbnail(t *tes
 		SharePromptParams: true,
 	})
 
-	list := service.ListImages("http://127.0.0.1:8000", "", "", ImageAccessScope{OwnerID: "linuxdo:123"})
+	list := requireImageList(t, service, "http://127.0.0.1:8000", "", "", ImageAccessScope{OwnerID: "linuxdo:123"})
 	items := list["items"].([]map[string]any)
 	if len(items) != 1 {
 		t.Fatalf("ListImages() = %#v", list)
@@ -939,7 +1015,7 @@ func TestImageServiceListImagesReturnsRequestedResolutionPreset(t *testing.T) {
 		RequestedSize:    "2048x2048",
 	})
 
-	list := service.ListImages("http://127.0.0.1:8000", "", "", allImages)
+	list := requireImageList(t, service, "http://127.0.0.1:8000", "", "", allImages)
 	items := list["items"].([]map[string]any)
 	if len(items) != 1 {
 		t.Fatalf("ListImages() = %#v", list)
@@ -986,7 +1062,7 @@ func TestImageServiceListImagesReturnsGenerationReuseMetadata(t *testing.T) {
 		ShareReferences:   true,
 	})
 
-	list := service.ListImages("http://127.0.0.1:8000", "", "", ImageAccessScope{Public: true})
+	list := requireImageList(t, service, "http://127.0.0.1:8000", "", "", ImageAccessScope{Public: true})
 	items := list["items"].([]map[string]any)
 	if len(items) != 1 {
 		t.Fatalf("ListImages() = %#v", list)
@@ -1112,7 +1188,7 @@ func TestImageServicePublicListHidesUnsharedGenerationMetadata(t *testing.T) {
 		},
 	})
 
-	publicList := service.ListImages("http://127.0.0.1:8000", "", "", ImageAccessScope{Public: true})
+	publicList := requireImageList(t, service, "http://127.0.0.1:8000", "", "", ImageAccessScope{Public: true})
 	publicItems := publicList["items"].([]map[string]any)
 	if len(publicItems) != 1 {
 		t.Fatalf("public ListImages() = %#v", publicList)
@@ -1121,7 +1197,7 @@ func TestImageServicePublicListHidesUnsharedGenerationMetadata(t *testing.T) {
 		t.Fatalf("public item exposed unshared metadata = %#v", publicItems[0])
 	}
 
-	ownerList := service.ListImages("http://127.0.0.1:8000", "", "", ImageAccessScope{OwnerID: "linuxdo:123"})
+	ownerList := requireImageList(t, service, "http://127.0.0.1:8000", "", "", ImageAccessScope{OwnerID: "linuxdo:123"})
 	ownerItems := ownerList["items"].([]map[string]any)
 	if len(ownerItems) != 1 || ownerItems[0]["prompt"] != "private recipe" || ownerItems[0]["reference_image_urls"] == nil {
 		t.Fatalf("owner item did not include private metadata = %#v", ownerList)
@@ -1161,7 +1237,7 @@ func TestImageServiceCleanupStorageClearsThumbnailCacheOnly(t *testing.T) {
 	if _, err := os.Stat(thumbPath); !os.IsNotExist(err) {
 		t.Fatalf("thumbnail still exists, stat error = %v", err)
 	}
-	list := service.ListImages("http://127.0.0.1:8000", "", "", ImageAccessScope{OwnerID: "linuxdo:123"})
+	list := requireImageList(t, service, "http://127.0.0.1:8000", "", "", ImageAccessScope{OwnerID: "linuxdo:123"})
 	if items := list["items"].([]map[string]any); len(items) != 1 || items[0]["path"] != rel {
 		t.Fatalf("image missing after thumbnail cleanup: %#v", list)
 	}

@@ -396,6 +396,46 @@ func TestDatabaseBackendListsDocumentPrefixWithIndexRange(t *testing.T) {
 	}
 }
 
+func TestDatabaseBackendListJSONDocumentsRejectsCorruptDocument(t *testing.T) {
+	backend := openSQLiteStorageTestBackend(t, filepath.Join(t.TempDir(), "chatgpt2api.db"))
+	name := "my_assets/corrupt.json"
+	if _, err := backend.db.Exec(`INSERT INTO json_documents (name, data, updated_at) VALUES (?, ?, ?)`, name, "{invalid", "2026-04-30T10:00:00Z"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := backend.ListJSONDocuments("my_assets/"); err == nil || !strings.Contains(err.Error(), name) {
+		t.Fatalf("ListJSONDocuments() error = %v, want document name context", err)
+	}
+}
+
+func TestDatabaseBackendLogQueriesRejectCorruptRows(t *testing.T) {
+	backend := openSQLiteStorageTestBackend(t, filepath.Join(t.TempDir(), "chatgpt2api.db"))
+	result, err := backend.db.Exec(`INSERT INTO logs (created_at, type, day, data) VALUES (?, ?, ?, ?)`, "2026-04-30 10:00:00", "event", "2026-04-30", "{invalid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, run := range map[string]func() error{
+		"QueryLogs": func() error {
+			_, err := backend.QueryLogs("", "", 10)
+			return err
+		},
+		"QueryLogPage": func() error {
+			_, err := backend.QueryLogPage("", "", nil, 10)
+			return err
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := run()
+			if err == nil || !strings.Contains(err.Error(), fmt.Sprint(id)) {
+				t.Fatalf("error = %v, want log row ID %d", err, id)
+			}
+		})
+	}
+}
+
 func TestDatabaseBackendDeletesLogsBeforeDay(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "chatgpt2api.db")
 	backend, err := NewDatabaseBackend("sqlite:///" + filepath.ToSlash(dbPath))

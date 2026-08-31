@@ -76,6 +76,7 @@ type ImageToolOptions struct {
 type ImageTaskService struct {
 	mu                   sync.RWMutex
 	closeOnce            sync.Once
+	closeErr             error
 	taskWorkers          sync.WaitGroup
 	persistenceWorkers   sync.WaitGroup
 	remoteMonitorWorkers sync.WaitGroup
@@ -198,9 +199,9 @@ func (s *ImageTaskService) SetAudioHandler(handler ImageTaskHandler) {
 
 // Close cancels active tasks and waits for all task, persistence, and monitor workers.
 // Callers may close the shared storage backend after this method returns.
-func (s *ImageTaskService) Close() {
+func (s *ImageTaskService) Close() error {
 	if s == nil {
-		return
+		return nil
 	}
 	s.closeOnce.Do(func() {
 		s.mu.Lock()
@@ -224,11 +225,14 @@ func (s *ImageTaskService) Close() {
 		if s.persistenceDirty {
 			if err := s.saveLocked(); err == nil {
 				s.persistenceDirty = false
+			} else {
+				s.closeErr = fmt.Errorf("persist image tasks during close: %w", err)
 			}
 		}
 		s.closed = true
 		s.mu.Unlock()
 	})
+	return s.closeErr
 }
 
 func (s *ImageTaskService) SubmitGenerationWithOptions(ctx context.Context, identity Identity, clientTaskID, prompt, model, size, quality, baseURL string, n int, _ any, metadata map[string]any, options ImageOutputOptions, toolOptions ImageToolOptions, visibilityValues ...string) (map[string]any, error) {

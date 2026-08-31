@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { ChevronDown, Copy, Eye, ListFilter, LoaderCircle, RefreshCw, Search, X } from "lucide-react";
 import { toast } from "sonner";
 
@@ -348,6 +348,8 @@ function activeFilterCount(filters: SystemLogFilters, defaultView: LogView) {
 }
 
 function LogsContent() {
+  const loadLogsAbortRef = useRef<AbortController | null>(null);
+  const loadLogsRequestRef = useRef(0);
   const initialFilters = createEmptyFilters("meaningful");
   const [items, setItems] = useState<SystemLog[]>([]);
   const [defaultLogView, setDefaultLogView] = useState<LogView>("meaningful");
@@ -375,15 +377,25 @@ function LogsContent() {
   const slowRequestCount = items.filter((item) => durationMs(item) >= 3000).length;
 
   const loadLogs = useCallback(async (nextQuery: SystemLogFilters) => {
+    const requestID = loadLogsRequestRef.current + 1;
+    loadLogsRequestRef.current = requestID;
+    loadLogsAbortRef.current?.abort();
+    const controller = new AbortController();
+    loadLogsAbortRef.current = controller;
     setIsLoading(true);
     try {
-      const data = await fetchSystemLogs(nextQuery);
+      const data = await fetchSystemLogs(nextQuery, { signal: controller.signal });
+      if (requestID !== loadLogsRequestRef.current) return;
       setItems(data.items);
       setPage(1);
     } catch (error) {
+      if (controller.signal.aborted || requestID !== loadLogsRequestRef.current) return;
       toast.error(error instanceof Error ? error.message : "加载日志失败");
     } finally {
-      setIsLoading(false);
+      if (requestID === loadLogsRequestRef.current) {
+        setIsLoading(false);
+        if (loadLogsAbortRef.current === controller) loadLogsAbortRef.current = null;
+      }
     }
   }, []);
 
@@ -446,6 +458,10 @@ function LogsContent() {
       return;
     }
     void loadLogs(query);
+    return () => {
+      loadLogsRequestRef.current += 1;
+      loadLogsAbortRef.current?.abort();
+    };
   }, [isDefaultLogViewReady, loadLogs, query]);
 
   return (

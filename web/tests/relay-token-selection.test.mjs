@@ -3,6 +3,8 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
+  relayTokenAvailabilityFromBalance,
+  relayTokenNamesUpdateForAvailability,
   relayTokenNameForModel,
   relayTokenPreferencesFromNames,
   relayTokenRouteForModel,
@@ -65,6 +67,18 @@ test("keeps explicitly selected relay tokens in selection order while they remai
 
 test("clears a relay token that is no longer available", () => {
   assert.deepEqual(retainSelectedRelayTokenNames(["removed-key", "image-key"], ["image-key"]), ["image-key"]);
+});
+
+test("only authoritative balance results can remove saved relay token selections", () => {
+  const failed = relayTokenAvailabilityFromBalance({ has_balance: false, token_names: [], message: "database timeout" });
+  const malformed = relayTokenAvailabilityFromBalance({ has_balance: true });
+  const loaded = relayTokenAvailabilityFromBalance({ has_balance: true, token_names: [" available-key "] });
+
+  assert.deepEqual(failed, { authoritative: false, names: [] });
+  assert.deepEqual(malformed, { authoritative: false, names: [] });
+  assert.equal(relayTokenNamesUpdateForAvailability(["saved-key"], failed), null);
+  assert.equal(relayTokenNamesUpdateForAvailability(["saved-key"], malformed), null);
+  assert.deepEqual(relayTokenNamesUpdateForAvailability(["saved-key"], loaded), []);
 });
 
 test("routes a model to the first selected key that exposes it", () => {

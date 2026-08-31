@@ -4,6 +4,7 @@ export type RelayTokenNames = Record<RelayTokenKind, string[]>;
 export type RelayTokenModels = Record<string, string[]>;
 export type RelayTokenRouteStatus = "loading" | "missing-selection" | "model-list-error" | "model-unavailable" | "ready";
 export type RelayTokenRoute = { status: RelayTokenRouteStatus; tokenName: string };
+export type RelayTokenAvailability = { authoritative: boolean; names: string[] };
 
 export const EMPTY_RELAY_TOKEN_NAMES: RelayTokenNames = {
   text: [],
@@ -49,6 +50,25 @@ export function relayTokenPreferenceField(kind: RelayTokenKind) {
 export function retainSelectedRelayTokenNames(current: string[], options: string[]) {
   const available = new Set(options);
   return normalizeRelayTokenNames(current).filter((name) => available.has(name));
+}
+
+export function relayTokenAvailabilityFromBalance(
+  value: { has_balance?: unknown; token_names?: unknown } | null | undefined,
+): RelayTokenAvailability {
+  if (value?.has_balance !== true || !Array.isArray(value.token_names)) {
+    return { authoritative: false, names: [] };
+  }
+  return { authoritative: true, names: normalizeRelayTokenNames(value.token_names) };
+}
+
+export function relayTokenNamesUpdateForAvailability(
+  current: string[],
+  availability: RelayTokenAvailability,
+  additionalOptions: string[] = [],
+) {
+  if (!availability.authoritative) return null;
+  const retained = retainSelectedRelayTokenNames(current, [...availability.names, ...additionalOptions]);
+  return retained.join("\0") === normalizeRelayTokenNames(current).join("\0") ? null : retained;
 }
 
 export function relayTokenNameForModel(names: string[], model: string, modelsByToken: RelayTokenModels) {

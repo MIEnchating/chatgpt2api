@@ -400,23 +400,49 @@ func (r *ImageStorageCleanupResult) addRemovalStats(stats imageStorageRemovalSta
 	r.DeletedReferenceFiles += stats.referenceFiles
 }
 
-func (s *ImageService) ListImages(baseURL, startDate, endDate string, scope ImageAccessScope) map[string]any {
-	metadataDocuments, metadataBatch := s.imageDocuments("image_metadata/")
-	thumbnailDocuments, thumbnailBatch := s.imageDocuments("image_thumbnails/")
+func (s *ImageService) ListImages(baseURL, startDate, endDate string, scope ImageAccessScope) (map[string]any, error) {
+	empty := map[string]any{"items": []map[string]any{}, "groups": []map[string]any{}}
 	root := s.config.ImagesDir()
+	rootInfo, err := os.Stat(root)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return empty, nil
+		}
+		return nil, fmt.Errorf("inspect image directory: %w", err)
+	}
+	if !rootInfo.IsDir() {
+		return nil, errors.New("image directory is not a directory")
+	}
+	metadataDocuments, metadataBatch, err := s.imageDocuments("image_metadata/")
+	if err != nil {
+		return nil, fmt.Errorf("list image metadata: %w", err)
+	}
+	thumbnailDocuments, thumbnailBatch, err := s.imageDocuments("image_thumbnails/")
+	if err != nil {
+		return nil, fmt.Errorf("list thumbnail metadata: %w", err)
+	}
 	items := make([]map[string]any, 0)
-	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
+	walkErr := filepath.WalkDir(root, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			if errors.Is(walkErr, os.ErrNotExist) {
+				return nil
+			}
+			return walkErr
+		}
+		if d.IsDir() {
 			return nil
 		}
 		rel, err := filepath.Rel(root, path)
 		if err != nil {
-			return nil
+			return err
 		}
 		rel = filepath.ToSlash(rel)
 		info, err := d.Info()
 		if err != nil {
-			return nil
+			if errors.Is(err, os.ErrNotExist) {
+				return nil
+			}
+			return err
 		}
 		parts := strings.Split(rel, "/")
 		day := info.ModTime().Format("2006-01-02")
@@ -429,7 +455,10 @@ func (s *ImageService) ListImages(baseURL, startDate, endDate string, scope Imag
 		if endDate != "" && day > endDate {
 			return nil
 		}
-		meta := s.imageMetadataFromDocuments(rel, metadataDocuments, metadataBatch)
+		meta, err := s.imageMetadataFromDocuments(rel, metadataDocuments, metadataBatch)
+		if err != nil {
+			return fmt.Errorf("load metadata for %q: %w", rel, err)
+		}
 		if meta.Deleting {
 			return nil
 		}
@@ -446,7 +475,10 @@ func (s *ImageService) ListImages(baseURL, startDate, endDate string, scope Imag
 		} else if !scope.All && (scope.OwnerID == "" || ownerID != scope.OwnerID) {
 			return nil
 		}
-		thumb := s.thumbnailInfoFromDocuments(rel, info, thumbnailDocuments, thumbnailBatch)
+		thumb, err := s.thumbnailInfoFromDocuments(rel, info, thumbnailDocuments, thumbnailBatch)
+		if err != nil {
+			return fmt.Errorf("load thumbnail metadata for %q: %w", rel, err)
+		}
 		item := map[string]any{
 			"name":       filepath.Base(path),
 			"path":       rel,
@@ -475,6 +507,12 @@ func (s *ImageService) ListImages(baseURL, startDate, endDate string, scope Imag
 		items = append(items, item)
 		return nil
 	})
+	if walkErr != nil {
+		if errors.Is(walkErr, os.ErrNotExist) {
+			return empty, nil
+		}
+		return nil, fmt.Errorf("walk image directory: %w", walkErr)
+	}
 	sort.Slice(items, func(i, j int) bool {
 		left := toString(items[i]["created_at"])
 		right := toString(items[j]["created_at"])
@@ -497,7 +535,7 @@ func (s *ImageService) ListImages(baseURL, startDate, endDate string, scope Imag
 	for _, day := range order {
 		groups = append(groups, map[string]any{"date": day, "items": groupMap[day]})
 	}
-	return map[string]any{"items": items, "groups": groups}
+	return map[string]any{"items": items, "groups": groups}, nil
 }
 
 func (s *ImageService) UpdateImageVisibility(value, visibility string, scope ImageAccessScope, optionValues ...ImageVisibilityUpdateOptions) (map[string]any, error) {
@@ -793,12 +831,12 @@ func (s *ImageService) EnsureThumbnail(thumbnailRel string) error {
 	return nil
 }
 
-func (s *ImageService) thumbnailInfo(rel string, sourceInfo os.FileInfo) map[string]any {
-	_, result, _ := s.thumbnailCacheInfo(rel, sourceInfo.ModTime())
-	return result
+func (s *ImageService) thumbnailInfo(rel string, sourceInfo os.FileInfo) (map[string]any, error) {
+	_, result, _, err := s.thumbnailCacheInfo(rel, sourceInfo.ModTime())
+	return result, err
 }
 
-func (s *ImageService) thumbnailInfoFromDocuments(rel string, sourceInfo os.FileInfo, documents map[string]any, batched bool) map[string]any {
+func (s *ImageService) thumbnailInfoFromDocuments(rel string, sourceInfo os.FileInfo, documents map[string]any, batched bool) (map[string]any, error) {
 	if !batched {
 		return s.thumbnailInfo(rel, sourceInfo)
 	}
@@ -806,28 +844,45 @@ func (s *ImageService) thumbnailInfoFromDocuments(rel string, sourceInfo os.File
 	thumbRel := thumbnailRelativePath(s.config.ImageThumbnailsDir(), thumbPath)
 	result := map[string]any{"thumbnail_rel": thumbRel}
 	thumbInfo, err := os.Stat(thumbPath)
-	if err != nil || thumbInfo.ModTime().Before(sourceInfo.ModTime()) {
-		return result
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return result, nil
+		}
+		return nil, err
 	}
-	meta, _ := documents[thumbnailMetadataDocumentName(rel)].(map[string]any)
-	if meta == nil {
-		meta = readImageMetadata(thumbPath+".json", sourceInfo.ModTime())
+	if thumbInfo.IsDir() {
+		return nil, errors.New("thumbnail path is not a file")
+	}
+	if thumbInfo.ModTime().Before(sourceInfo.ModTime()) {
+		return result, nil
+	}
+	documentName := thumbnailMetadataDocumentName(rel)
+	raw, exists := documents[documentName]
+	meta, ok := raw.(map[string]any)
+	if exists && !ok {
+		return nil, fmt.Errorf("thumbnail metadata document %q is not an object", documentName)
+	}
+	if !exists {
+		meta, err = readImageMetadata(thumbPath+".json", sourceInfo.ModTime())
+		if err != nil {
+			return nil, err
+		}
 	}
 	if !isCurrentThumbnailMetadata(meta) {
-		return result
+		return result, nil
 	}
 	for key, value := range meta {
 		result[key] = value
 	}
-	return result
+	return result, nil
 }
 
 func (s *ImageService) ensureThumbnailForRef(ref imageFileRef) map[string]any {
-	if _, result, ok := s.thumbnailCacheInfo(ref.rel, ref.info.ModTime()); ok {
+	if _, result, ok, err := s.thumbnailCacheInfo(ref.rel, ref.info.ModTime()); err == nil && ok {
 		return result
 	}
 	return s.withThumbnailJob(ref.rel, func() map[string]any {
-		if _, result, ok := s.thumbnailCacheInfo(ref.rel, ref.info.ModTime()); ok {
+		if _, result, ok, err := s.thumbnailCacheInfo(ref.rel, ref.info.ModTime()); err == nil && ok {
 			return result
 		}
 		return s.generateThumbnail(ref)
@@ -858,26 +913,41 @@ func (s *ImageService) withThumbnailJob(rel string, run func() map[string]any) m
 	return job.result
 }
 
-func (s *ImageService) thumbnailCacheInfo(rel string, sourceModTime time.Time) (string, map[string]any, bool) {
+func (s *ImageService) thumbnailCacheInfo(rel string, sourceModTime time.Time) (string, map[string]any, bool, error) {
 	thumbPath := s.thumbnailPath(rel)
 	thumbRel := thumbnailRelativePath(s.config.ImageThumbnailsDir(), thumbPath)
 	result := map[string]any{"thumbnail_rel": thumbRel}
 	thumbInfo, err := os.Stat(thumbPath)
-	if err != nil || thumbInfo.ModTime().Before(sourceModTime) {
-		return thumbPath, result, false
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return thumbPath, result, false, nil
+		}
+		return thumbPath, result, false, err
 	}
-	meta := s.readThumbnailMetadata(rel, thumbPath+".json", sourceModTime)
+	if thumbInfo.IsDir() {
+		return thumbPath, result, false, errors.New("thumbnail path is not a file")
+	}
+	if thumbInfo.ModTime().Before(sourceModTime) {
+		return thumbPath, result, false, nil
+	}
+	meta, err := s.readThumbnailMetadata(rel, thumbPath+".json", sourceModTime)
+	if err != nil {
+		return thumbPath, result, false, err
+	}
 	if !isCurrentThumbnailMetadata(meta) {
-		return thumbPath, result, false
+		return thumbPath, result, false, nil
 	}
 	for key, value := range meta {
 		result[key] = value
 	}
-	return thumbPath, result, true
+	return thumbPath, result, true, nil
 }
 
 func (s *ImageService) generateThumbnail(ref imageFileRef) map[string]any {
-	thumbPath, result, _ := s.thumbnailCacheInfo(ref.rel, ref.info.ModTime())
+	thumbPath, result, _, err := s.thumbnailCacheInfo(ref.rel, ref.info.ModTime())
+	if err != nil {
+		return map[string]any{}
+	}
 	meta := s.imageMetadata(ref.rel)
 	if meta.Deleting {
 		return map[string]any{}
@@ -997,38 +1067,47 @@ func (s *ImageService) imageMetadata(rel string) imageMetadata {
 	return meta
 }
 
-func (s *ImageService) imageDocuments(prefix string) (map[string]any, bool) {
+func (s *ImageService) imageDocuments(prefix string) (map[string]any, bool, error) {
 	store, ok := s.store.(storage.JSONDocumentPrefixBackend)
 	if !ok {
-		return nil, false
+		return nil, false, nil
 	}
 	documents, err := store.ListJSONDocuments(prefix)
 	if err != nil {
-		return nil, false
+		return nil, true, err
 	}
-	return documents, true
+	return documents, true, nil
 }
 
-func (s *ImageService) imageMetadataFromDocuments(rel string, documents map[string]any, batched bool) imageMetadata {
+func (s *ImageService) imageMetadataFromDocuments(rel string, documents map[string]any, batched bool) (imageMetadata, error) {
 	if !batched {
-		return s.imageMetadata(rel)
+		return s.loadImageMetadata(rel)
 	}
-	if raw, ok := documents[imageOwnerDocumentName(rel)].(map[string]any); ok {
-		return normalizeImageMetadata(raw)
+	documentName := imageOwnerDocumentName(rel)
+	raw, exists := documents[documentName]
+	if exists {
+		meta, ok := raw.(map[string]any)
+		if !ok {
+			return imageMetadata{}, fmt.Errorf("image metadata document %q is not an object", documentName)
+		}
+		return normalizeImageMetadata(meta), nil
 	}
 	metaPath, err := s.imageOwnerMetadataPath(rel)
 	if err != nil {
-		return imageMetadata{Visibility: ImageVisibilityPrivate}
+		return imageMetadata{}, err
 	}
 	data, err := os.ReadFile(metaPath)
 	if err != nil {
-		return imageMetadata{Visibility: ImageVisibilityPrivate}
+		if errors.Is(err, os.ErrNotExist) {
+			return imageMetadata{Visibility: ImageVisibilityPrivate}, nil
+		}
+		return imageMetadata{}, err
 	}
-	var raw map[string]any
-	if json.Unmarshal(data, &raw) != nil {
-		return imageMetadata{Visibility: ImageVisibilityPrivate}
+	var meta map[string]any
+	if err := json.Unmarshal(data, &meta); err != nil {
+		return imageMetadata{}, err
 	}
-	return normalizeImageMetadata(raw)
+	return normalizeImageMetadata(meta), nil
 }
 
 func (s *ImageService) loadImageMetadata(rel string) (imageMetadata, error) {
@@ -1784,12 +1863,19 @@ func (s *ImageService) imageOwnerMetadataPath(rel string) (string, error) {
 	return metaPath, nil
 }
 
-func (s *ImageService) readThumbnailMetadata(rel, metaPath string, sourceMtime time.Time) map[string]any {
+func (s *ImageService) readThumbnailMetadata(rel, metaPath string, sourceMtime time.Time) (map[string]any, error) {
 	if s.store != nil {
 		raw, err := s.store.LoadJSONDocument(thumbnailMetadataDocumentName(rel))
-		if err == nil {
-			if meta, ok := raw.(map[string]any); ok && meta["width"] != nil && meta["height"] != nil {
-				return meta
+		if err != nil {
+			return nil, err
+		}
+		if raw != nil {
+			meta, ok := raw.(map[string]any)
+			if !ok {
+				return nil, errors.New("thumbnail metadata is not an object")
+			}
+			if meta["width"] != nil && meta["height"] != nil {
+				return meta, nil
 			}
 		}
 	}
@@ -2412,23 +2498,32 @@ func removeEmptyParentDirs(root, start string) {
 	}
 }
 
-func readImageMetadata(path string, sourceMtime time.Time) map[string]any {
+func readImageMetadata(path string, sourceMtime time.Time) (map[string]any, error) {
 	info, err := os.Stat(path)
-	if err != nil || info.ModTime().Before(sourceMtime) {
-		return nil
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	if info.IsDir() {
+		return nil, errors.New("image metadata path is not a file")
+	}
+	if info.ModTime().Before(sourceMtime) {
+		return nil, nil
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	var meta map[string]any
-	if json.Unmarshal(data, &meta) != nil {
-		return nil
+	if err := json.Unmarshal(data, &meta); err != nil {
+		return nil, err
 	}
 	if meta["width"] == nil || meta["height"] == nil {
-		return nil
+		return nil, nil
 	}
-	return meta
+	return meta, nil
 }
 
 func isCurrentThumbnailMetadata(meta map[string]any) bool {

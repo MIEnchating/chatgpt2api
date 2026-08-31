@@ -35,6 +35,18 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+type fixedHTTPImageConfig struct {
+	imagesDir     string
+	thumbnailsDir string
+	metadataDir   string
+}
+
+func (c fixedHTTPImageConfig) ImagesDir() string             { return c.imagesDir }
+func (c fixedHTTPImageConfig) ImageThumbnailsDir() string    { return c.thumbnailsDir }
+func (c fixedHTTPImageConfig) ImageMetadataDir() string      { return c.metadataDir }
+func (c fixedHTTPImageConfig) ImageRetentionDays() int       { return 30 }
+func (c fixedHTTPImageConfig) ImageStorageLimitBytes() int64 { return 0 }
+
 func TestWriteCreationTaskSubmitErrorReportsPersistenceOutage(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()
@@ -2455,7 +2467,10 @@ func TestRecordGeneratedImagesForPayloadStoresReusableRequestMetadata(t *testing
 		},
 	)
 
-	list := app.images.ListImages("http://127.0.0.1:8000", "", "", service.ImageAccessScope{Public: true})
+	list, err := app.images.ListImages("http://127.0.0.1:8000", "", "", service.ImageAccessScope{Public: true})
+	if err != nil {
+		t.Fatalf("ListImages() error = %v", err)
+	}
 	items := list["items"].([]map[string]any)
 	if len(items) != 1 {
 		t.Fatalf("ListImages() = %#v", list)
@@ -2533,7 +2548,10 @@ func TestRecordGeneratedImagesForPayloadPreservesDetectedOutputFormat(t *testing
 		map[string]any{"prompt": "format check", "model": "grok-imagine-image", "output_format": "png"},
 	)
 
-	list := app.images.ListImages("", "", "", service.ImageAccessScope{All: true})
+	list, err := app.images.ListImages("", "", "", service.ImageAccessScope{All: true})
+	if err != nil {
+		t.Fatalf("ListImages() error = %v", err)
+	}
 	items := list["items"].([]map[string]any)
 	if len(items) != 1 || items[0]["output_format"] != "jpeg" {
 		t.Fatalf("actual JPEG format was overwritten by request metadata: %#v", list)
@@ -2930,6 +2948,73 @@ func TestImageThumbnailsAreGeneratedOnDemand(t *testing.T) {
 	}
 	if _, err := os.Stat(thumbPath); err != nil {
 		t.Fatalf("thumbnail was not created on demand: %v", err)
+	}
+}
+
+func TestImageThumbnailDoesNotServeStaleCacheWhenSourceIsCorrupt(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+
+	rel := "2026/04/29/stale.png"
+	imagePath := filepath.Join(app.config.ImagesDir(), filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(imagePath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeHTTPTestPNG(imagePath); err != nil {
+		t.Fatal(err)
+	}
+	thumbnailPath := "/image-thumbnails/" + rel + ".jpg"
+	req := httptest.NewRequest(http.MethodGet, thumbnailPath, nil)
+	setRequestAuthCookie(req, adminSessionToken(t, app))
+	res := httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK || !strings.Contains(res.Header().Get("Content-Type"), "image/jpeg") {
+		t.Fatalf("initial thumbnail status = %d content-type = %q", res.Code, res.Header().Get("Content-Type"))
+	}
+	staleJPEG := append([]byte(nil), res.Body.Bytes()...)
+	if err := os.WriteFile(imagePath, []byte("corrupt image"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	newer := time.Now().Add(2 * time.Second)
+	if err := os.Chtimes(imagePath, newer, newer); err != nil {
+		t.Fatal(err)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, thumbnailPath, nil)
+	setRequestAuthCookie(req, adminSessionToken(t, app))
+	res = httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusNotFound {
+		t.Fatalf("corrupt source thumbnail status = %d, want %d", res.Code, http.StatusNotFound)
+	}
+	if bytes.Equal(res.Body.Bytes(), staleJPEG) || strings.Contains(res.Header().Get("Content-Type"), "image/jpeg") {
+		t.Fatalf("corrupt source returned stale JPEG: status=%d content-type=%q", res.Code, res.Header().Get("Content-Type"))
+	}
+}
+
+func TestImagesListStorageFailureReturnsSanitizedServiceUnavailable(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+
+	root := t.TempDir()
+	imagesPath := filepath.Join(root, "private-images-path")
+	if err := os.WriteFile(imagesPath, []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	app.images = service.NewImageService(fixedHTTPImageConfig{
+		imagesDir:     imagesPath,
+		thumbnailsDir: filepath.Join(root, "thumbnails"),
+		metadataDir:   filepath.Join(root, "metadata"),
+	})
+	req := httptest.NewRequest(http.MethodGet, "/api/images", nil)
+	setRequestAuthCookie(req, adminSessionToken(t, app))
+	res := httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d; body = %s", res.Code, http.StatusServiceUnavailable, res.Body.String())
+	}
+	if strings.Contains(res.Body.String(), imagesPath) || !strings.Contains(res.Body.String(), "媒体存储暂时不可用") {
+		t.Fatalf("response leaked storage details or omitted generic message: %q", res.Body.String())
 	}
 }
 

@@ -649,8 +649,8 @@ func TestImageTaskServiceClaimsDuplicateTaskAcrossDatabaseInstances(t *testing.T
 	}
 	serviceA := newImageTaskService(backendA, handler, handler, handler, func() int { return 30 })
 	serviceB := newImageTaskService(backendB, handler, handler, handler, func() int { return 30 })
-	t.Cleanup(serviceA.Close)
-	t.Cleanup(serviceB.Close)
+	t.Cleanup(func() { _ = serviceA.Close() })
+	t.Cleanup(func() { _ = serviceB.Close() })
 	identity := Identity{ID: "alice", Name: "Alice", Role: AuthRoleUser}
 
 	first, err := serviceA.SubmitGeneration(context.Background(), identity, "shared-task", "first", "gpt-image-2", "1024x1024", "high", "https://base.test", 1, nil)
@@ -702,8 +702,8 @@ func TestImageTaskServicePropagatesCancellationAcrossDatabaseInstances(t *testin
 	}
 	serviceA := newImageTaskService(backendA, handler, handler, handler, func() int { return 30 })
 	serviceB := newImageTaskService(backendB, handler, handler, handler, func() int { return 30 })
-	t.Cleanup(serviceA.Close)
-	t.Cleanup(serviceB.Close)
+	t.Cleanup(func() { _ = serviceA.Close() })
+	t.Cleanup(func() { _ = serviceB.Close() })
 	identity := Identity{ID: "alice", Name: "Alice", Role: AuthRoleUser}
 	if _, err := serviceA.SubmitGeneration(context.Background(), identity, "cancel-across-instances", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 1, nil); err != nil {
 		t.Fatalf("SubmitGeneration() error = %v", err)
@@ -1117,7 +1117,7 @@ func TestImageTaskServiceMergesPartialSlotsAndDefersPartialPersistence(t *testin
 
 func TestImageTaskServiceLimitsGlobalConcurrentCreationUnitsForAdmins(t *testing.T) {
 	svc := newTestImageTaskService(t, nil, nil, nil, func() int { return 30 })
-	t.Cleanup(svc.Close)
+	t.Cleanup(func() { _ = svc.Close() })
 	admin := Identity{ID: "admin", Name: "Admin", Role: AuthRoleAdmin}
 	releases := make([]func(), 0, defaultGlobalImageTaskConcurrentUnits)
 	for index := 0; index < defaultGlobalImageTaskConcurrentUnits; index++ {
@@ -1186,7 +1186,7 @@ func TestImageTaskCountUsesSelectedModelLimit(t *testing.T) {
 
 func TestImageTaskServiceAcceptsMaximumGPTOutputUnits(t *testing.T) {
 	svc := newTestImageTaskService(t, nil, nil, nil, func() int { return 30 })
-	t.Cleanup(svc.Close)
+	t.Cleanup(func() { _ = svc.Close() })
 	admin := Identity{ID: "admin", Name: "Admin", Role: AuthRoleAdmin}
 
 	release, err := svc.AcquireCreationUnits(context.Background(), admin, util.MaxImageOutputCount("gpt-image-2"))
@@ -2090,8 +2090,9 @@ func TestImageTaskServiceCloseCancelsAndWaitsForActiveTask(t *testing.T) {
 	}
 
 	closed := make(chan struct{})
+	var closeErr error
 	go func() {
-		svc.Close()
+		closeErr = svc.Close()
 		close(closed)
 	}()
 	select {
@@ -2103,6 +2104,9 @@ func TestImageTaskServiceCloseCancelsAndWaitsForActiveTask(t *testing.T) {
 	case <-closed:
 	case <-time.After(2 * time.Second):
 		t.Fatal("Close() did not wait for task shutdown")
+	}
+	if closeErr != nil {
+		t.Fatalf("Close() error = %v", closeErr)
 	}
 
 	items := svc.ListTasks(identity, []string{"task-close"})["items"].([]map[string]any)
@@ -2153,14 +2157,18 @@ func TestImageTaskServiceCloseStopsPermanentPersistenceRetry(t *testing.T) {
 	waitForImageTaskSaveCalls(t, store, 2)
 
 	closed := make(chan struct{})
+	var closeErr error
 	go func() {
-		svc.Close()
+		closeErr = svc.Close()
 		close(closed)
 	}()
 	select {
 	case <-closed:
 	case <-time.After(2 * time.Second):
 		t.Fatal("Close() blocked on permanent persistence failure")
+	}
+	if closeErr == nil || !strings.Contains(closeErr.Error(), "injected permanent image task persistence failure") {
+		t.Fatalf("Close() error = %v, want persistence failure", closeErr)
 	}
 
 	svc.mu.RLock()
@@ -2184,6 +2192,9 @@ func TestImageTaskServiceCloseStopsPermanentPersistenceRetry(t *testing.T) {
 	}
 	if calls := store.SaveCount(); calls != callsAfterClose {
 		t.Fatalf("save after Close() touched storage: before=%d after=%d", callsAfterClose, calls)
+	}
+	if secondErr := svc.Close(); secondErr != closeErr {
+		t.Fatalf("second Close() error = %v, want same error %v", secondErr, closeErr)
 	}
 }
 
@@ -2235,7 +2246,7 @@ func TestImageTaskServiceDeleteTasksPersistsOwnerScopedTerminalDeletion(t *testi
 		return map[string]any{"data": []map[string]any{{"url": "https://example.test/image.png"}}}, nil
 	}
 	svc := NewStoredImageTaskService(backend, handler, handler, handler, func() int { return 30 })
-	t.Cleanup(svc.Close)
+	t.Cleanup(func() { _ = svc.Close() })
 	alice := Identity{ID: "alice"}
 	bob := Identity{ID: "bob"}
 
@@ -2272,7 +2283,7 @@ func TestImageTaskServiceDeleteTasksPersistsOwnerScopedTerminalDeletion(t *testi
 	}
 
 	reloaded := NewStoredImageTaskService(backend, handler, handler, handler, func() int { return 30 })
-	t.Cleanup(reloaded.Close)
+	t.Cleanup(func() { _ = reloaded.Close() })
 	if got := reloaded.ListTasks(alice, []string{"alice-done"}); len(got["items"].([]map[string]any)) != 0 {
 		t.Fatalf("deleted task returned after reload: %#v", got)
 	}
