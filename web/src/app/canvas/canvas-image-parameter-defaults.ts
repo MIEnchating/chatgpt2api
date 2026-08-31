@@ -1,4 +1,4 @@
-import { getImageSizeSelectionFromSize } from "@/app/image/image-options";
+import { getImageSizeSelectionFromSize } from "@/lib/image-options";
 import { isImageOutputFormat, isImageQuality, type ImageGenerationPreferences } from "@/lib/api";
 import type { CanvasNode } from "@/services/api/canvas";
 

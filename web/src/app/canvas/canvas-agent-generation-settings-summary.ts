@@ -1,4 +1,4 @@
-import { formatImageSizeDisplay } from "@/app/image/image-options";
+import { formatImageSizeDisplay } from "@/lib/image-options";
 import { videoSizeLabel } from "@/lib/video-model-capabilities";
 
 const IMAGE_QUALITY_LABELS: Record<string, string> = {

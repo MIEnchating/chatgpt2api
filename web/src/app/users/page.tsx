@@ -32,6 +32,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { EmptyState } from "@/components/ui/empty-state";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -847,7 +848,7 @@ function UsersContent() {
               <LoaderCircle className="size-5 animate-spin text-stone-400" />
             </div>
           ) : null}
-          {!isLoading && items.length === 0 ? <div className="px-6 py-14 text-center text-sm text-stone-500">{hasActiveFilters ? "没有匹配的用户" : "暂无用户"}</div> : null}
+          {!isLoading && items.length === 0 ? <EmptyState icon={UserRound} title={hasActiveFilters ? "没有匹配的用户" : "暂无用户"} description={hasActiveFilters ? "调整搜索或筛选条件后再试" : "创建用户后可在这里管理账号与权限"} /> : null}
           <ManagementPagination
             page={safePage}
             totalPages={totalPages}

@@ -155,6 +155,14 @@ func TestStorageFileRoutesMatchReferenceLifecycle(t *testing.T) {
 		t.Fatalf("cross-user delete status = %d body = %s", response.Code, response.Body.String())
 	}
 
+	request = httptest.NewRequest(http.MethodDelete, "/api/files/"+objectID, strings.NewReader(`{"provider":`))
+	setRequestAuthCookie(request, aliceToken)
+	response = httptest.NewRecorder()
+	app.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest || deleted {
+		t.Fatalf("malformed delete status = %d deleted = %v body = %s", response.Code, deleted, response.Body.String())
+	}
+
 	request = httptest.NewRequest(http.MethodDelete, "/api/files/"+objectID, strings.NewReader(`{}`))
 	setRequestAuthCookie(request, aliceToken)
 	response = httptest.NewRecorder()

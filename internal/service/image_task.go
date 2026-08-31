@@ -239,8 +239,8 @@ func (s *ImageTaskService) SubmitEditWithOptions(ctx context.Context, identity I
 	return s.submitImageWithMetadataAndOptions(ctx, identity, clientTaskID, prompt, model, size, quality, baseURL, n, metadata, "edit", images, options, toolOptions, visibilityValues...)
 }
 
-func (s *ImageTaskService) SubmitChatWithMetadata(ctx context.Context, identity Identity, clientTaskID, prompt, model string, messages any, billable bool, metadata map[string]any, nValues ...int) (map[string]any, error) {
-	return s.submitChatWithMetadata(ctx, identity, clientTaskID, prompt, model, messages, billable, metadata, nValues...)
+func (s *ImageTaskService) SubmitChatWithMetadata(ctx context.Context, identity Identity, clientTaskID, prompt, model string, messages any, metadata map[string]any, nValues ...int) (map[string]any, error) {
+	return s.submitChatWithMetadata(ctx, identity, clientTaskID, prompt, model, messages, metadata, nValues...)
 }
 
 func (s *ImageTaskService) SubmitVideo(ctx context.Context, identity Identity, clientTaskID, prompt, model, size string, seconds int, resolution string, generateAudio, watermark bool, referenceMode string, images, videos, audios any, metadata map[string]any) (map[string]any, error) {
@@ -293,7 +293,7 @@ func (s *ImageTaskService) SubmitAudio(ctx context.Context, identity Identity, c
 	return s.submit(ctx, identity, clientTaskID, "audio", payload)
 }
 
-func (s *ImageTaskService) submitChatWithMetadata(ctx context.Context, identity Identity, clientTaskID, prompt, model string, messages any, billable bool, metadata map[string]any, nValues ...int) (map[string]any, error) {
+func (s *ImageTaskService) submitChatWithMetadata(ctx context.Context, identity Identity, clientTaskID, prompt, model string, messages any, metadata map[string]any, nValues ...int) (map[string]any, error) {
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
 		return nil, fmt.Errorf("prompt is required")
@@ -307,7 +307,6 @@ func (s *ImageTaskService) submitChatWithMetadata(ctx context.Context, identity 
 	}
 	payload := map[string]any{"prompt": prompt, "model": model, "messages": messages, "n": n, "visibility": ImageVisibilityPrivate}
 	mergeChatTaskMetadata(payload, metadata)
-	_ = billable
 	return s.submit(ctx, identity, clientTaskID, "chat", payload)
 }
 
@@ -532,7 +531,7 @@ func (s *ImageTaskService) submit(ctx context.Context, identity Identity, client
 	}
 	count := taskCount(mode, payload)
 	submittedAt := time.Now()
-	if err := s.checkUserTaskLimitsLocked(identity, owner, count, submittedAt); err != nil {
+	if err := s.checkUserTaskLimitsLocked(identity, owner, submittedAt); err != nil {
 		if cleaned {
 			_ = s.saveWithRetryLocked()
 		}
@@ -818,7 +817,7 @@ func videoTaskTimeoutOverride(mode string, payload map[string]any, fallback time
 	return fallback
 }
 
-func (s *ImageTaskService) checkUserTaskLimitsLocked(identity Identity, owner string, _ int, now time.Time) error {
+func (s *ImageTaskService) checkUserTaskLimitsLocked(identity Identity, owner string, now time.Time) error {
 	if identity.Role != AuthRoleUser {
 		return nil
 	}

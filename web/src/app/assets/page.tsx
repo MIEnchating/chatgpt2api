@@ -8,11 +8,12 @@ import { AssetCard, AssetPreview } from "@/app/assets/asset-display";
 import { AssetForm } from "@/app/assets/asset-form";
 import { assetListKey, assetPrompt, canManageAsset, collectAssetStorageKeys, managedImageAsset, mergeAssetLibrary } from "@/app/assets/asset-library";
 import { downloadMyAsset } from "@/app/assets/asset-media";
-import { useMyAssets } from "@/app/assets/use-my-assets";
+import { useMyAssets } from "@/lib/use-my-assets";
 import { ManagementPage, ManagementPagination, ManagementPanel } from "@/components/management-page";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -309,7 +310,7 @@ export default function AssetsPage() {
         </div>
         <ScrollArea className="min-h-0 flex-1" viewportClassName="px-5 py-5 sm:px-8">
         <div data-asset-content className="flex w-full flex-col gap-5">
-          {(loading || visibleLoading) && allAssets.length === 0 ? <div className="flex min-h-80 items-center justify-center text-sm text-muted-foreground">正在同步素材...</div> : visibleAssets.length ? <div data-asset-grid className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,280px),1fr))] gap-4">{visibleAssets.map((asset) => { const key = assetListKey(asset); const canManage = canManageAsset(asset); return <AssetCard key={key} asset={asset} selected={selectedKeys.has(key)} onSelectedChange={(checked) => setSelectedKeys((current) => { const next = new Set(current); if (checked) next.add(key); else next.delete(key); return next; })} onOpen={() => setPreview(asset)} onEdit={canManage && !asset.managedPath ? () => { setEditing(asset); setFormOpen(true); } : undefined} onDelete={canManage && (!asset.managedPath || hasAPIPermission(session, "DELETE", "/api/images")) ? () => setDeleting(asset) : undefined} onCopy={() => void copyText(asset)} onDownload={() => void download(asset)} />; })}</div> : <div className="flex min-h-80 items-center justify-center text-sm text-muted-foreground">{allAssets.length ? "没有找到匹配的素材" : "还没有可用素材"}</div>}
+          {(loading || visibleLoading) && allAssets.length === 0 ? <div className="flex min-h-80 items-center justify-center text-sm text-muted-foreground">正在同步素材...</div> : visibleAssets.length ? <div data-asset-grid className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,280px),1fr))] gap-4">{visibleAssets.map((asset) => { const key = assetListKey(asset); const canManage = canManageAsset(asset); return <AssetCard key={key} asset={asset} selected={selectedKeys.has(key)} onSelectedChange={(checked) => setSelectedKeys((current) => { const next = new Set(current); if (checked) next.add(key); else next.delete(key); return next; })} onOpen={() => setPreview(asset)} onEdit={canManage && !asset.managedPath ? () => { setEditing(asset); setFormOpen(true); } : undefined} onDelete={canManage && (!asset.managedPath || hasAPIPermission(session, "DELETE", "/api/images")) ? () => setDeleting(asset) : undefined} onCopy={() => void copyText(asset)} onDownload={() => void download(asset)} />; })}</div> : <EmptyState icon={ImageIcon} title={allAssets.length ? "没有找到匹配的素材" : "还没有可用素材"} description={allAssets.length ? "调整搜索词或筛选条件后再试" : "上传或生成的素材会统一显示在这里"} className="min-h-80" />}
         </div>
         </ScrollArea>
         <ManagementPagination

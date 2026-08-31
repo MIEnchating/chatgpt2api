@@ -406,6 +406,9 @@ func (a *App) cleanupImageConversationAssetsForOwner(ctx context.Context, ownerI
 	}
 	referenced, err := a.history.ConversationAssetReferencesContext(ctx, ownerID)
 	if err != nil {
+		if a.logger != nil {
+			a.logger.Warning("image conversation asset reference scan failed", "owner_id", ownerID, "error", err)
+		}
 		return
 	}
 	if ctx.Err() != nil {
@@ -415,7 +418,9 @@ func (a *App) cleanupImageConversationAssetsForOwner(ctx context.Context, ownerI
 	if a.config != nil {
 		limit = a.config.ImageStorageLimitBytes()
 	}
-	_, _ = a.conversationAssets.CleanupOrphansContext(ctx, ownerID, referenced, service.ImageConversationAssetOrphanGrace, limit)
+	if _, err := a.conversationAssets.CleanupOrphansContext(ctx, ownerID, referenced, service.ImageConversationAssetOrphanGrace, limit); err != nil && a.logger != nil {
+		a.logger.Warning("image conversation orphan cleanup failed", "owner_id", ownerID, "error", err)
+	}
 }
 
 func (a *App) closeImageConversationAssetCleaner() {

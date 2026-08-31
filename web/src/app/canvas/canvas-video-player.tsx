@@ -1,5 +1,5 @@
 import { Download, Maximize, Maximize2, Pause, Play, Volume2, VolumeX, X } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 
 import { formatCanvasVideoTime } from "@/app/canvas/canvas-video-time";
 import { TooltipButton } from "@/components/ui/tooltip";
@@ -28,11 +28,6 @@ export function CanvasVideoNodePlayer({
     if (video.paused) void video.play();
     else video.pause();
   }
-
-  useEffect(() => {
-    if (selected) videoRef.current?.focus({ preventScroll: true });
-    else if (document.activeElement === videoRef.current) videoRef.current?.blur();
-  }, [selected, src]);
 
   const controlClassName = "absolute bottom-2 z-20 flex size-7 items-center justify-center rounded-md bg-black/55 text-white opacity-80 backdrop-blur transition-opacity hover:opacity-100";
   const keepVideoFocus = (event: React.MouseEvent<HTMLButtonElement>) => {
@@ -135,12 +130,6 @@ export function CanvasVideoPreview({
     if (video.paused) void video.play();
     else video.pause();
   }
-
-  useEffect(() => {
-    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    videoRef.current?.focus({ preventScroll: true });
-    return () => previousFocus?.focus({ preventScroll: true });
-  }, []);
 
   return (
     <div className="fixed inset-0 z-[2000] flex items-center justify-center bg-black/80 backdrop-blur-sm" onClick={onClose}>

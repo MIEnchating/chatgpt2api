@@ -16,6 +16,7 @@ import { toast } from "sonner";
 
 import { ManagementPage, ManagementPanel, ManagementToolbar } from "@/components/management-page";
 import { PermissionEditor } from "@/components/permission-editor";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -273,7 +274,7 @@ function RBACContent() {
                 </div>
               ) : null}
               {!isLoading && filteredRoles.length === 0 ? (
-                <div className="px-5 py-12 text-center text-sm text-muted-foreground">暂无角色</div>
+                <EmptyState compact icon={ShieldCheck} title="暂无角色" description="创建角色后可配置菜单与功能权限" />
               ) : null}
               {!isLoading
                 ? filteredRoles.map((role) => {
@@ -414,9 +415,7 @@ function RBACContent() {
                   disabled={isSaving}
                 />
               ) : (
-                <div className="flex min-h-[420px] items-center justify-center text-sm text-muted-foreground">
-                  暂无角色
-                </div>
+                <EmptyState icon={ShieldCheck} title="暂无角色" description="请先创建或选择一个角色" className="min-h-[420px]" />
               )}
             </div>
         </ManagementPanel>

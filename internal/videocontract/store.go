@@ -17,17 +17,29 @@ import (
 const (
 	videoModelContractDocumentName  = "video_model_contracts.json"
 	videoModelContractSaveAttempts  = 3
-	videoModelContractStoreVersion  = 5
+	videoModelContractStoreVersion  = 6
 	oldestVideoModelContractVersion = 3
 	maxVideoModelContracts          = 100
+	maxVideoModelContractVersions   = 8
 )
 
+type VideoModelContractVersion struct {
+	Revision    int                         `json:"revision"`
+	Contract    protocol.VideoModelContract `json:"contract"`
+	PublishedAt string                      `json:"published_at"`
+}
+
 type ManagedVideoModelContract struct {
-	ID        string                      `json:"id"`
-	Contract  protocol.VideoModelContract `json:"contract"`
-	Enabled   bool                        `json:"enabled"`
-	CreatedAt string                      `json:"created_at"`
-	UpdatedAt string                      `json:"updated_at"`
+	ID             string                       `json:"id"`
+	Contract       protocol.VideoModelContract  `json:"contract"`
+	Draft          *protocol.VideoModelContract `json:"draft,omitempty"`
+	DraftEnabled   *bool                        `json:"draft_enabled,omitempty"`
+	Enabled        bool                         `json:"enabled"`
+	Revision       int                          `json:"revision"`
+	Versions       []VideoModelContractVersion  `json:"versions,omitempty"`
+	CreatedAt      string                       `json:"created_at"`
+	UpdatedAt      string                       `json:"updated_at"`
+	DraftUpdatedAt string                       `json:"draft_updated_at,omitempty"`
 }
 
 type videoModelContractStoreDocument struct {
@@ -99,7 +111,8 @@ func (s *VideoModelContractService) Create(contract protocol.VideoModelContract,
 			return ManagedVideoModelContract{}, err
 		}
 		now := util.NowISO()
-		item := ManagedVideoModelContract{ID: util.NewUUID(), Contract: normalized, Enabled: enabled, CreatedAt: now, UpdatedAt: now}
+		item := ManagedVideoModelContract{ID: util.NewUUID(), Contract: normalized, Enabled: enabled, Revision: 1, CreatedAt: now, UpdatedAt: now}
+		item.Versions = appendVideoContractVersion(nil, item.Revision, normalized, now)
 		items = append(items, item)
 		if err := s.saveLocked(items); err != nil {
 			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < videoModelContractSaveAttempts {
@@ -156,6 +169,11 @@ func (s *VideoModelContractService) Import(values []ImportedVideoModelContract) 
 			if index >= 0 {
 				items[index].Contract = value.Contract
 				items[index].Enabled = value.Enabled
+				items[index].Revision++
+				items[index].Versions = appendVideoContractVersion(items[index].Versions, items[index].Revision, value.Contract, now)
+				items[index].Draft = nil
+				items[index].DraftEnabled = nil
+				items[index].DraftUpdatedAt = ""
 				items[index].UpdatedAt = now
 				updated++
 				continue
@@ -164,7 +182,8 @@ func (s *VideoModelContractService) Import(values []ImportedVideoModelContract) 
 				return 0, 0, fmt.Errorf("视频模型契约最多支持 %d 个", maxVideoModelContracts)
 			}
 			items = append(items, ManagedVideoModelContract{
-				ID: util.NewUUID(), Contract: value.Contract, Enabled: value.Enabled, CreatedAt: now, UpdatedAt: now,
+				ID: util.NewUUID(), Contract: value.Contract, Enabled: value.Enabled, Revision: 1,
+				Versions: appendVideoContractVersion(nil, 1, value.Contract, now), CreatedAt: now, UpdatedAt: now,
 			})
 			created++
 		}
@@ -211,7 +230,13 @@ func (s *VideoModelContractService) Update(id string, contract protocol.VideoMod
 		}
 		items[index].Contract = normalized
 		items[index].Enabled = enabled
-		items[index].UpdatedAt = util.NowISO()
+		now := util.NowISO()
+		items[index].Revision++
+		items[index].Versions = appendVideoContractVersion(items[index].Versions, items[index].Revision, normalized, now)
+		items[index].Draft = nil
+		items[index].DraftEnabled = nil
+		items[index].DraftUpdatedAt = ""
+		items[index].UpdatedAt = now
 		updated := items[index]
 		if err := s.saveLocked(items); err != nil {
 			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < videoModelContractSaveAttempts {
@@ -225,6 +250,159 @@ func (s *VideoModelContractService) Update(id string, contract protocol.VideoMod
 		return &updated, nil
 	}
 	return nil, fmt.Errorf("更新视频模型契约失败")
+}
+
+func (s *VideoModelContractService) SaveDraft(id string, contract protocol.VideoModelContract, enabled bool) (*ManagedVideoModelContract, error) {
+	id = strings.TrimSpace(id)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for attempt := 0; attempt < videoModelContractSaveAttempts; attempt++ {
+		items, err := s.loadLocked()
+		if err != nil {
+			return nil, err
+		}
+		index := managedVideoContractIndex(items, id)
+		if index < 0 {
+			return nil, nil
+		}
+		normalized, err := validateVideoModelContractCandidate(items, id, contract)
+		if err != nil {
+			return nil, err
+		}
+		now := util.NowISO()
+		items[index].Draft = &normalized
+		items[index].DraftEnabled = &enabled
+		items[index].DraftUpdatedAt = now
+		updated := items[index]
+		if err := s.saveLocked(items); err != nil {
+			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < videoModelContractSaveAttempts {
+				continue
+			}
+			return nil, err
+		}
+		return &updated, nil
+	}
+	return nil, fmt.Errorf("保存视频模型契约草稿失败")
+}
+
+func (s *VideoModelContractService) Publish(id string, contract *protocol.VideoModelContract, enabled *bool) (*ManagedVideoModelContract, error) {
+	id = strings.TrimSpace(id)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for attempt := 0; attempt < videoModelContractSaveAttempts; attempt++ {
+		items, err := s.loadLocked()
+		if err != nil {
+			return nil, err
+		}
+		index := managedVideoContractIndex(items, id)
+		if index < 0 {
+			return nil, nil
+		}
+		candidate := items[index].Draft
+		if contract != nil {
+			candidate = contract
+		}
+		if candidate == nil {
+			return nil, fmt.Errorf("没有可发布的视频模型契约草稿")
+		}
+		normalized, err := validateVideoModelContractCandidate(items, id, *candidate)
+		if err != nil {
+			return nil, err
+		}
+		now := util.NowISO()
+		items[index].Contract = normalized
+		items[index].Revision++
+		items[index].Versions = appendVideoContractVersion(items[index].Versions, items[index].Revision, normalized, now)
+		items[index].Draft = nil
+		items[index].DraftUpdatedAt = ""
+		items[index].UpdatedAt = now
+		if enabled != nil {
+			items[index].Enabled = *enabled
+		} else if items[index].DraftEnabled != nil {
+			items[index].Enabled = *items[index].DraftEnabled
+		}
+		items[index].DraftEnabled = nil
+		updated := items[index]
+		if err := s.saveLocked(items); err != nil {
+			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < videoModelContractSaveAttempts {
+				continue
+			}
+			return nil, err
+		}
+		if err := applyActiveVideoModelContracts(items); err != nil {
+			return nil, err
+		}
+		return &updated, nil
+	}
+	return nil, fmt.Errorf("发布视频模型契约失败")
+}
+
+func (s *VideoModelContractService) Versions(id string) ([]VideoModelContractVersion, error) {
+	id = strings.TrimSpace(id)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	items, err := s.loadLocked()
+	if err != nil {
+		return nil, err
+	}
+	index := managedVideoContractIndex(items, id)
+	if index < 0 {
+		return nil, nil
+	}
+	versions := append([]VideoModelContractVersion(nil), items[index].Versions...)
+	sort.SliceStable(versions, func(i, j int) bool { return versions[i].Revision > versions[j].Revision })
+	return versions, nil
+}
+
+func (s *VideoModelContractService) Rollback(id string, revision int) (*ManagedVideoModelContract, error) {
+	id = strings.TrimSpace(id)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for attempt := 0; attempt < videoModelContractSaveAttempts; attempt++ {
+		items, err := s.loadLocked()
+		if err != nil {
+			return nil, err
+		}
+		index := managedVideoContractIndex(items, id)
+		if index < 0 {
+			return nil, nil
+		}
+		var target *protocol.VideoModelContract
+		for _, version := range items[index].Versions {
+			if version.Revision == revision {
+				contract := version.Contract
+				target = &contract
+				break
+			}
+		}
+		if target == nil {
+			return nil, fmt.Errorf("视频模型契约版本不存在")
+		}
+		normalized, err := validateVideoModelContractCandidate(items, id, *target)
+		if err != nil {
+			return nil, err
+		}
+		now := util.NowISO()
+		items[index].Contract = normalized
+		items[index].Revision++
+		items[index].Versions = appendVideoContractVersion(items[index].Versions, items[index].Revision, normalized, now)
+		items[index].Draft = nil
+		items[index].DraftEnabled = nil
+		items[index].DraftUpdatedAt = ""
+		items[index].UpdatedAt = now
+		updated := items[index]
+		if err := s.saveLocked(items); err != nil {
+			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < videoModelContractSaveAttempts {
+				continue
+			}
+			return nil, err
+		}
+		if err := applyActiveVideoModelContracts(items); err != nil {
+			return nil, err
+		}
+		return &updated, nil
+	}
+	return nil, fmt.Errorf("回滚视频模型契约失败")
 }
 
 func (s *VideoModelContractService) SetEnabled(id string, enabled bool) (*ManagedVideoModelContract, error) {
@@ -333,6 +511,10 @@ func (s *VideoModelContractService) loadLocked() ([]ManagedVideoModelContract, e
 	}
 	migrated := header.Version < videoModelContractStoreVersion
 	for index := range document.Items {
+		if header.Version < videoModelContractStoreVersion && document.Items[index].Contract.Artifact.Mode == "" {
+			migrateLegacyVideoArtifact(&document.Items[index].Contract)
+			migrated = true
+		}
 		if strings.EqualFold(strings.TrimSpace(document.Items[index].Contract.Driver), "newapi-video") {
 			document.Items[index].Contract.Driver = protocol.VideoContractDriverOpenAI
 			migrated = true
@@ -354,6 +536,19 @@ func (s *VideoModelContractService) loadLocked() ([]ManagedVideoModelContract, e
 		}
 	}
 	return items, nil
+}
+
+func migrateLegacyVideoArtifact(contract *protocol.VideoModelContract) {
+	if contract == nil {
+		return
+	}
+	if strings.EqualFold(strings.TrimSpace(contract.Driver), protocol.VideoContractDriverKling) || strings.EqualFold(strings.TrimSpace(contract.Driver), protocol.VideoContractDriverLegacyKling) {
+		contract.Artifact = protocol.VideoModelContractArtifact{Mode: "response_url", Auth: "none"}
+		return
+	}
+	contract.Artifact = protocol.VideoModelContractArtifact{
+		Mode: "task_content", ContentPath: "/v1/videos/{task_id}/content", Auth: "relay",
+	}
 }
 
 func migrateDefaultMiniMaxH3Rules(item *ManagedVideoModelContract) bool {
@@ -431,7 +626,8 @@ func defaultManagedVideoModelContracts() []ManagedVideoModelContract {
 	items := make([]ManagedVideoModelContract, 0, len(contracts))
 	for _, contract := range contracts {
 		items = append(items, ManagedVideoModelContract{
-			ID: util.NewUUID(), Contract: contract, Enabled: true, CreatedAt: now, UpdatedAt: now,
+			ID: util.NewUUID(), Contract: contract, Enabled: true, Revision: 1,
+			Versions: appendVideoContractVersion(nil, 1, contract, now), CreatedAt: now, UpdatedAt: now,
 		})
 	}
 	return items
@@ -457,10 +653,73 @@ func normalizeManagedVideoModelContracts(items []ManagedVideoModelContract) ([]M
 			return nil, fmt.Errorf("契约 %q 无效: %w", items[index].Contract.Name, err)
 		}
 		items[index].Contract = normalized
+		if items[index].Revision < 1 {
+			items[index].Revision = 1
+		}
+		if items[index].Draft != nil {
+			draft, draftErr := protocol.NormalizeVideoModelContract(*items[index].Draft)
+			if draftErr != nil {
+				return nil, fmt.Errorf("契约 %q 草稿无效: %w", items[index].Contract.Name, draftErr)
+			}
+			items[index].Draft = &draft
+		}
+		versions := make([]VideoModelContractVersion, 0, minInt(len(items[index].Versions), maxVideoModelContractVersions))
+		seenRevisions := make(map[int]struct{}, len(items[index].Versions))
+		for _, version := range items[index].Versions {
+			if version.Revision < 1 || version.Revision > items[index].Revision {
+				return nil, fmt.Errorf("契约 %q 版本号无效", items[index].Contract.Name)
+			}
+			if _, exists := seenRevisions[version.Revision]; exists {
+				return nil, fmt.Errorf("契约 %q 版本号重复", items[index].Contract.Name)
+			}
+			seenRevisions[version.Revision] = struct{}{}
+			version.Contract, err = protocol.NormalizeVideoModelContract(version.Contract)
+			if err != nil {
+				return nil, fmt.Errorf("契约 %q 历史版本无效: %w", items[index].Contract.Name, err)
+			}
+			versions = append(versions, version)
+		}
+		if len(versions) == 0 {
+			publishedAt := items[index].UpdatedAt
+			if publishedAt == "" {
+				publishedAt = util.NowISO()
+			}
+			versions = appendVideoContractVersion(nil, items[index].Revision, normalized, publishedAt)
+		}
+		items[index].Versions = trimVideoContractVersions(versions)
 		contracts = append(contracts, normalized)
 	}
 	if err := protocol.ValidateVideoContracts(contracts); err != nil {
 		return nil, err
 	}
 	return items, nil
+}
+
+func managedVideoContractIndex(items []ManagedVideoModelContract, id string) int {
+	for index := range items {
+		if items[index].ID == id {
+			return index
+		}
+	}
+	return -1
+}
+
+func appendVideoContractVersion(versions []VideoModelContractVersion, revision int, contract protocol.VideoModelContract, publishedAt string) []VideoModelContractVersion {
+	versions = append(versions, VideoModelContractVersion{Revision: revision, Contract: contract, PublishedAt: publishedAt})
+	return trimVideoContractVersions(versions)
+}
+
+func trimVideoContractVersions(versions []VideoModelContractVersion) []VideoModelContractVersion {
+	sort.SliceStable(versions, func(i, j int) bool { return versions[i].Revision < versions[j].Revision })
+	if len(versions) > maxVideoModelContractVersions {
+		versions = versions[len(versions)-maxVideoModelContractVersions:]
+	}
+	return append([]VideoModelContractVersion(nil), versions...)
+}
+
+func minInt(left, right int) int {
+	if left < right {
+		return left
+	}
+	return right
 }

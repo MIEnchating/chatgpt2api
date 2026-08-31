@@ -11,6 +11,7 @@ import { ManagementPage, ManagementPagination, ManagementPanel, ManagementToolba
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -652,8 +653,8 @@ function LogsContent() {
                 ) : null}
                 {!isLoading && items.length === 0 ? (
                   <TableRow className="hover:bg-transparent">
-                    <TableCell colSpan={7} className="h-44 text-center text-sm text-muted-foreground">
-                      {activeFilters > 0 ? "没有匹配的日志" : "暂无日志"}
+                    <TableCell colSpan={7} className="p-0">
+                      <EmptyState compact icon={ListFilter} title={activeFilters > 0 ? "没有匹配的日志" : "暂无日志"} description={activeFilters > 0 ? "调整筛选条件后再试" : "系统产生操作记录后会显示在这里"} />
                     </TableCell>
                   </TableRow>
                 ) : null}

@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/json"
+	"maps"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -107,7 +108,7 @@ func TestAdminVideoModelContractJSONImport(t *testing.T) {
 	contract.Name = "Imported video contract"
 	contract.Models = []string{"imported/video-v1"}
 	body, _ := json.Marshal(map[string]any{
-		"version":   3,
+		"version":   4,
 		"contracts": []any{map[string]any{"contract": contract, "enabled": true}},
 	})
 	req := httptest.NewRequest(http.MethodPost, "/api/admin/video-model-contracts/import-json", bytes.NewReader(body))
@@ -121,7 +122,7 @@ func TestAdminVideoModelContractJSONImport(t *testing.T) {
 		t.Fatal("imported API contract was not installed")
 	}
 
-	body = []byte(`{"version":3,"contracts":[],"unexpected":true}`)
+	body = []byte(`{"version":4,"contracts":[],"unexpected":true}`)
 	req = httptest.NewRequest(http.MethodPost, "/api/admin/video-model-contracts/import-json", bytes.NewReader(body))
 	setRequestAuthCookie(req, token)
 	res = httptest.NewRecorder()
@@ -139,6 +140,66 @@ func TestAdminVideoModelContractJSONImport(t *testing.T) {
 		if res.Code != http.StatusBadRequest || !strings.Contains(res.Body.String(), "不支持的契约导入版本") {
 			t.Fatalf("legacy import version %d status = %d body = %s", version, res.Code, res.Body.String())
 		}
+	}
+}
+
+func TestAdminVideoModelContractPreviewBuildsRequestAndParsesResponses(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+	t.Cleanup(func() { _ = protocol.ReplaceVideoContracts(protocol.DefaultVideoContracts()) })
+	items, err := app.videoContracts.List()
+	if err != nil || len(items) == 0 {
+		t.Fatalf("List() = %#v, error = %v", items, err)
+	}
+	contract := items[0].Contract
+	body, _ := json.Marshal(map[string]any{
+		"contract":    contract,
+		"existing_id": items[0].ID,
+		"input": map[string]any{
+			"model": contract.Models[0], "prompt": "preview", "seconds": contract.Capability.DefaultSeconds,
+			"size": contract.Capability.DefaultSize, "resolution": contract.Capability.DefaultResolution,
+		},
+		"submit_response": map[string]any{"id": "task-123"},
+		"query_response":  map[string]any{"status": "completed", "progress": "100%", "video_url": "https://cdn.example.com/video.mp4"},
+	})
+	req := httptest.NewRequest(http.MethodPost, "/api/admin/video-model-contracts/preview", bytes.NewReader(body))
+	setRequestAuthCookie(req, adminSessionToken(t, app))
+	res := httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), `"create_path":"/v1/videos"`) || !strings.Contains(res.Body.String(), `"task_id":"task-123"`) || !strings.Contains(res.Body.String(), `"status":"completed"`) {
+		t.Fatalf("preview status = %d body = %s", res.Code, res.Body.String())
+	}
+}
+
+func TestVideoContractDocumentImportPromptUsesCurrentSchema(t *testing.T) {
+	if !strings.Contains(videoContractImportSystemPrompt, "当前 v4 格式中的单个 contract JSON 对象") ||
+		!strings.Contains(videoContractImportSystemPrompt, "不要包裹 version 或 contracts") {
+		t.Fatal("document import prompt does not distinguish a generated draft from a transfer document")
+	}
+	for _, field := range []string{
+		`"create_path"`, `"query_path"`, `"artifact"`, `"content_path"`,
+		`"allowed_hosts"`, `"generation"`, `"rules"`, `"validation"`, "custom-video",
+		"queued_statuses", "processing_statuses", "progress_fields", "generation_mode_field",
+		`"when"`, `"require"`, `"require_any"`, `"forbid"`, `"limits"`,
+		`"force_values"`, `"ui"`, `"show"`, `"hide"`, `"disable"`, `"message"`,
+	} {
+		if !strings.Contains(videoContractImportSystemPrompt, field) {
+			t.Errorf("document import prompt is missing current contract field %q", field)
+		}
+	}
+
+	const schemaEnd = "\n}\n\n规则："
+	start := strings.Index(videoContractImportSystemPrompt, "{")
+	end := strings.Index(videoContractImportSystemPrompt, schemaEnd)
+	if start < 0 || end < start {
+		t.Fatal("document import prompt does not contain a complete contract example")
+	}
+	contract, err := decodeGeneratedVideoModelContract(videoContractImportSystemPrompt[start : end+2])
+	if err != nil {
+		t.Fatalf("document import prompt example does not match the current contract schema: %v", err)
+	}
+	if contract.Artifact.Mode != "response_url" || contract.Generation.DefaultMode != "text-to-video" || len(contract.Rules) != 1 {
+		t.Fatalf("document import prompt example lost current contract fields: %#v", contract)
 	}
 }
 
@@ -183,6 +244,21 @@ func TestDecodeGeneratedVideoModelContractIsStrict(t *testing.T) {
 	withUnknown := strings.TrimSuffix(string(data), "}") + `,"unexpected":true}`
 	if _, err := decodeGeneratedVideoModelContract(withUnknown); err == nil {
 		t.Fatal("unknown contract field was accepted")
+	}
+	var legacy map[string]any
+	if err := json.Unmarshal(data, &legacy); err != nil {
+		t.Fatalf("decode contract for legacy fixture: %v", err)
+	}
+	for _, field := range []string{
+		"name", "models", "priority", "driver", "transport", "artifact",
+		"capability", "validation", "generation", "rules", "request", "polling",
+	} {
+		withoutField := maps.Clone(legacy)
+		delete(withoutField, field)
+		legacyData, _ := json.Marshal(withoutField)
+		if _, err := decodeGeneratedVideoModelContract(string(legacyData)); err == nil || !strings.Contains(err.Error(), field) {
+			t.Fatalf("generated contract without %s was accepted: %v", field, err)
+		}
 	}
 }
 

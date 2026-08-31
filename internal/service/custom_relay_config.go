@@ -48,10 +48,6 @@ func NewCustomRelayConfigService(backend storage.Backend) *CustomRelayConfigServ
 	return &CustomRelayConfigService{store: jsonDocumentStoreFromBackend(backend)}
 }
 
-func CustomRelayKinds() []string {
-	return append([]string(nil), customRelayKinds...)
-}
-
 func CustomRelayTokenName(id string) string {
 	id = strings.TrimSpace(id)
 	if id == "" {

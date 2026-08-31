@@ -298,11 +298,31 @@ func (b *DatabaseBackend) HealthCheck() map[string]any {
 	if err := b.db.PingContext(ctx); err != nil {
 		return map[string]any{"status": "unhealthy", "backend": "database", "error": err.Error()}
 	}
-	accountCount := b.count("accounts")
-	authKeyCount := b.count("auth_keys")
-	documentCount := b.count("json_documents")
-	logCount := b.count("logs")
-	return map[string]any{"status": "healthy", "backend": "database", "database_url": maskPassword(b.databaseURL), "account_count": accountCount, "auth_key_count": authKeyCount, "document_count": documentCount, "log_count": logCount}
+	counts := make(map[string]int, 4)
+	for _, item := range []struct {
+		outputField string
+		table       string
+	}{
+		{outputField: "account_count", table: "accounts"},
+		{outputField: "auth_key_count", table: "auth_keys"},
+		{outputField: "document_count", table: "json_documents"},
+		{outputField: "log_count", table: "logs"},
+	} {
+		count, err := b.count(ctx, item.table)
+		if err != nil {
+			return map[string]any{"status": "unhealthy", "backend": "database", "error": err.Error()}
+		}
+		counts[item.outputField] = count
+	}
+	return map[string]any{
+		"status":         "healthy",
+		"backend":        "database",
+		"database_url":   maskPassword(b.databaseURL),
+		"account_count":  counts["account_count"],
+		"auth_key_count": counts["auth_key_count"],
+		"document_count": counts["document_count"],
+		"log_count":      counts["log_count"],
+	}
 }
 
 func (b *DatabaseBackend) Info() map[string]any {
@@ -563,10 +583,12 @@ func (b *DatabaseBackend) rowDataPredicate(argumentIndex int) string {
 	return "data = " + placeholder
 }
 
-func (b *DatabaseBackend) count(table string) int {
+func (b *DatabaseBackend) count(ctx context.Context, table string) (int, error) {
 	var count int
-	_ = b.db.QueryRow("SELECT COUNT(*) FROM " + table).Scan(&count)
-	return count
+	if err := b.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+table).Scan(&count); err != nil {
+		return 0, fmt.Errorf("count %s rows: %w", table, err)
+	}
+	return count, nil
 }
 
 func (b *DatabaseBackend) LoadJSONDocument(name string) (any, error) {

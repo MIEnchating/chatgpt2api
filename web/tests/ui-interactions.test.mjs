@@ -7,11 +7,11 @@ const selectSource = await readFile(new URL("../src/components/ui/select.tsx", i
 const dialogSource = await readFile(new URL("../src/components/ui/dialog.tsx", import.meta.url), "utf8");
 const inputTagSource = await readFile(new URL("../src/components/ui/input-tag.tsx", import.meta.url), "utf8");
 const multiSelectSource = await readFile(new URL("../src/components/ui/multi-select.tsx", import.meta.url), "utf8");
-const workflowSource = await readFile(new URL("../src/components/workflows/creative-workflow-workspace.tsx", import.meta.url), "utf8");
+const workflowSource = await readFile(new URL("../src/app/workflows/creative-workflow-workspace.tsx", import.meta.url), "utf8");
 const workflowPageSource = await readFile(new URL("../src/app/workflows/page.tsx", import.meta.url), "utf8");
 const imageTaskQueueSource = await readFile(new URL("../src/components/image-task-queue.tsx", import.meta.url), "utf8");
 const globalStylesSource = await readFile(new URL("../src/app/globals.css", import.meta.url), "utf8");
-const imageParameterStylesSource = await readFile(new URL("../src/app/image/components/image-parameter-styles.ts", import.meta.url), "utf8");
+const imageParameterStylesSource = await readFile(new URL("../src/components/generation/image-parameter-styles.ts", import.meta.url), "utf8");
 const aspectRatioOptionSource = await readFile(new URL("../src/components/generation/aspect-ratio-option.tsx", import.meta.url), "utf8");
 const imageSizePresetControlsSource = await readFile(new URL("../src/components/generation/image-size-preset-controls.tsx", import.meta.url), "utf8");
 const imageSettingsPanelSource = await readFile(new URL("../src/components/generation/image-settings-panel.tsx", import.meta.url), "utf8");
@@ -143,13 +143,19 @@ test("dialog footers share compact inset and full-width fixed styles", () => {
   assert.doesNotMatch(dialogSource, /sticky bottom-0 z-10 flex shrink-0/);
   assert.match(dialogSource, /\[&>\[data-slot=button\]\]:min-w-18/);
   assert.ok(dialogSource.includes("[&:has([data-slot=dialog-footer]:not([data-flush=true]))]:pb-3"));
-  assert.match(dialogSource, /min-h-15 border-t border-border bg-background px-5 py-3 sm:px-6/);
+  assert.match(dialogSource, /min-h-15 border-t border-border bg-card px-5 py-3 sm:px-6/);
   assert.doesNotMatch(dialogSource, /mt-1 pt-1/);
 });
 
 test("video contract editor shows configuration and parameter preview side by side", () => {
   assert.match(videoContractsSource, /h-\[min\(90dvh,860px\)\] w-\[min\(96vw,1280px\)\] max-w-none/);
-  assert.doesNotMatch(videoContractsSource, /<ScrollArea/);
+  assert.match(videoContractsSource, /<DialogContent[\s\S]*?scrollable=\{false\}/);
+  assert.match(videoContractsSource, /data-video-contract-layout className="[^"]*grid-rows-\[minmax\(0,1fr\)_minmax\(0,1fr\)\][^"]*overflow-hidden/);
+  assert.match(videoContractsSource, /<ScrollArea[\s\S]*?data-video-contract-details[\s\S]*?className="h-full min-h-0 min-w-0"[\s\S]*?viewportClassName="h-full overscroll-y-contain pr-3"[\s\S]*?ariaLabel="契约表单"/);
+  assert.match(videoContractsSource, /<ScrollArea[\s\S]*?data-video-contract-preview[\s\S]*?className="h-full min-h-0 min-w-0[^"]*"[\s\S]*?viewportClassName="h-full overscroll-y-contain pr-3 lg:pl-5"[\s\S]*?ariaLabel="契约预览"/);
+  assert.doesNotMatch(videoContractsSource, /scrollContractViewport|detailsScrollViewportRef|previewScrollViewportRef/);
+  assert.match(videoContractsSource, /function normalizeTags\(value: string\[\] \| string \| null \| undefined\)/);
+  assert.match(videoContractsSource, /String\(value \|\| ""\)\.split/);
   assert.match(videoContractsSource, /contentClassName="p-0 sm:p-0"/);
   assert.match(videoContractsSource, /divide-y divide-border\/70/);
   assert.match(videoContractsSource, /data-video-contract-layout/);
@@ -174,7 +180,7 @@ test("video contract editor shows configuration and parameter preview side by si
     assert.doesNotMatch(videoContractsSource, new RegExp(`<TextField id="video-contract-${id}"`));
   }
   assert.match(videoContractsSource, /models: \[\.\.\.value\.models\]/);
-  assert.match(videoContractsSource, /Array\.isArray\(value\) \? value : value\.split/);
+  assert.match(videoContractsSource, /Array\.isArray\(value\) \? value : String\(value \|\| ""\)\.split/);
   assert.match(videoContractsSource, /value=\{normalizeTags\(value\)\}/);
   assert.match(videoContractsSource, /<Field className="self-start">[\s\S]*?<InputTag[\s\S]*?className="min-h-11"/);
   assert.match(videoContractsSource, /grid items-start gap-4 sm:grid-cols-2 xl:grid-cols-3/);
@@ -182,8 +188,7 @@ test("video contract editor shows configuration and parameter preview side by si
   assert.match(videoContractsSource, /<details[^>]*>[\s\S]*原始 JSON[\s\S]*复制 JSON/);
   assert.match(videoContractsSource, /JSON\.stringify\(normalizedContract, null, 2\)/);
   assert.match(videoContractsSource, /navigator\.clipboard\.writeText\(contractJSON\)/);
-  assert.match(videoContractsSource, /if \(!readOnly\) return;\s*event\.preventDefault\(\);\s*contractDialogTitleRef\.current\?\.focus\(\{ preventScroll: true \}\)/);
-  assert.match(videoContractsSource, /<DialogTitle ref=\{contractDialogTitleRef\} tabIndex=\{-1\} className="outline-none">/);
+  assert.doesNotMatch(videoContractsSource, /contractDialogTitleRef|onOpenAutoFocus/);
 });
 
 test("video contract help icons explain only technical fields", () => {
@@ -195,7 +200,7 @@ test("video contract help icons explain only technical fields", () => {
   assert.match(videoContractsSource, /label="接口协议" help=/);
   assert.doesNotMatch(videoContractsSource, /Google Gemini Veo 视频协议/);
   assert.doesNotMatch(videoContractsSource, /VIDEO_CONTRACT_DRIVERS\.find\(\(driver\) => driver\.value === draft\.contract\.driver\)\?\.description/);
-  for (const driver of ["openai-videos", "xai-videos", "gemini-veo", "vertex-veo", "dashscope-video", "volcengine-video", "kling-video", "minimax-video", "vidu-video", "kie-video", "apimart-video"]) {
+  for (const driver of ["openai-videos", "xai-videos", "gemini-veo", "vertex-veo", "dashscope-video", "volcengine-video", "kling-video", "minimax-video", "vidu-video", "kie-video", "apimart-video", "custom-video"]) {
     assert.match(videoContractsSource, new RegExp(`value: "${driver}"`));
   }
   for (const adapter of ["OpenAI Videos / Sora", "Kling Video", "MiniMax / Hailuo", "Gemini Veo", "Vertex AI Veo", "Vidu Video", "Seedance / 即梦", "DashScope / 通义万相", "KIE Video", "APIMart Video"]) {
@@ -239,7 +244,11 @@ test("video contracts use a responsive management list with prioritized actions"
   assert.match(videoContractsSource, /data-video-contract-list/);
   assert.match(videoContractsSource, /契约<\/span>[\s\S]*匹配模型<\/span>[\s\S]*能力范围<\/span>[\s\S]*更新时间<\/span>[\s\S]*操作<\/span>/);
   assert.match(videoContractsSource, /data-video-contract-row/);
-  assert.match(videoContractsSource, /xl:grid-cols-\[minmax\(220px,1\.2fr\)_minmax\(180px,0\.95fr\)_minmax\(280px,1\.35fr\)_150px_180px\]/);
+  assert.match(videoContractsSource, /xl:grid-cols-\[minmax\(220px,1\.2fr\)_minmax\(180px,0\.95fr\)_minmax\(280px,1\.35fr\)_150px_210px\]/);
+  assert.match(videoContractsSource, /保存草稿/);
+  assert.match(videoContractsSource, /发布新版本/);
+  assert.match(videoContractsSource, /请求与响应模拟/);
+  assert.match(videoContractsSource, /版本历史/);
   assert.match(videoContractsSource, /<Switch[\s\S]*?onCheckedChange=\{\(\) => void toggleEnabled\(item\)\}/);
   assert.match(videoContractsSource, /item\.contract\.models\.slice\(0, 2\)/);
   assert.match(videoContractsSource, /formatDurationRange\(item\.contract\.capability\.seconds\)/);
@@ -389,6 +398,9 @@ test("interactive controls share a visible global disabled state", () => {
   assert.match(globalStylesSource, /:where\(input, textarea, select\):disabled/);
   assert.match(globalStylesSource, /background-color: color-mix\(in srgb, var\(--muted\)/);
   assert.match(globalStylesSource, /fieldset:disabled/);
+  assert.match(videoContractsSource, /data-disabled=\{disabled \|\| undefined\}/);
+  assert.match(videoContractsSource, /disabled && "border-border\/60 bg-muted\/50 text-muted-foreground"/);
+  assert.match(videoContractsSource, /<ContractCheckboxField id="video-contract-watermark"/);
 });
 
 test("shared generation parameter buttons expose their disabled state", () => {

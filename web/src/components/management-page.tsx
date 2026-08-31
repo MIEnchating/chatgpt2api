@@ -48,7 +48,7 @@ function ManagementPanel({
     <div
       data-management-panel
       className={cn(
-        "flex min-h-0 flex-col overflow-hidden rounded-xl border border-border bg-background",
+        "card-surface flex min-h-0 flex-col overflow-hidden rounded-xl border border-border/80 shadow-[0_4px_16px_rgba(24,40,72,0.05)]",
         className
       )}
       {...props}

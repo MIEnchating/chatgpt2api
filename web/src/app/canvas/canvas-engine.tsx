@@ -206,12 +206,12 @@ export function CanvasEngine({
     return { x: (clientX - rect.left - current.x) / current.zoom, y: (clientY - rect.top - current.y) / current.zoom };
   }
 
-  function connectionFor(origin: ConnectionOrigin, otherID: string) {
+  const connectionFor = useCallback((origin: ConnectionOrigin, otherID: string) => {
     const connection = resolveCanvasConnection(origin, otherID, nodesRef.current);
     return connection && canConnect(connection.sourceID, connection.targetID) ? connection : null;
-  }
+  }, [canConnect]);
 
-  function connectionTargetAt(point: Point, origin: ConnectionOrigin) {
+  const connectionTargetAt = useCallback((point: Point, origin: ConnectionOrigin) => {
     return findCanvasConnectionDropTarget({
       nodes: visibleCanvasNodes(nodesRef.current),
       point,
@@ -219,7 +219,7 @@ export function CanvasEngine({
       origin,
       canConnect: (current, otherNodeID) => Boolean(connectionFor(current, otherNodeID)),
     });
-  }
+  }, [connectionFor]);
 
   function selectNode(event: ReactMouseEvent, nodeID: string) {
     const next = new Set(selectedRef.current);
@@ -320,7 +320,6 @@ export function CanvasEngine({
     onViewportChange(next, true);
   }
 
-  // oxlint-disable react-hooks/exhaustive-deps
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
@@ -585,8 +584,7 @@ export function CanvasEngine({
       window.removeEventListener("pointercancel", handleUp);
       window.removeEventListener("blur", handleBlur);
     };
-  }, [canConnect, onConnect, onConnectionDropEmpty, onNodeActivate, onNodesChange, onNodesCommit, onSelectionChange, onViewportChange]);
-  // oxlint-enable react-hooks/exhaustive-deps
+  }, [connectionFor, connectionTargetAt, onConnect, onConnectionDropEmpty, onNodeActivate, onNodesChange, onNodesCommit, onSelectionChange, onViewportChange]);
 
   const preview = connectionPreview(connecting, connectionTargetID, mouseWorld, nodeByID);
   const activeNodeID = exporting ? "" : selectedNodeIDs.size > 1
@@ -867,7 +865,6 @@ function CanvasDOMNode({ node, showImageInfo, selected, related, focusRelated, s
         {editingTitle ? (
           <input
             ref={titleInputRef}
-            autoFocus
             value={titleDraft}
             maxLength={64}
             className="h-7 max-w-full rounded-md border border-border bg-card/92 px-2 text-center text-xs font-medium text-foreground shadow-sm outline-none backdrop-blur"

@@ -23,15 +23,6 @@ import (
 	"chatgpt2api/internal/util"
 )
 
-func videoPayloadField(payload map[string]any, key string) (any, bool) {
-	if value, ok := payload[key]; ok {
-		return value, true
-	}
-	metadata, _ := payload["metadata"].(map[string]any)
-	value, ok := metadata[key]
-	return value, ok
-}
-
 func TestRelayCredentialsUseCurrentPayloadFieldsOnly(t *testing.T) {
 	payload := map[string]any{
 		"api_key":            "current-key",
@@ -473,6 +464,10 @@ func TestRelayVideoTaskUsesContractProtocolDriver(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			contract := protocol.DefaultVideoContracts()[0]
 			contract.Driver = test.driver
+			contract.Artifact = protocol.VideoModelContractArtifact{
+				Mode: "response_url",
+				Auth: "none",
+			}
 			contract.Polling.IntervalSeconds = 1
 			contract.Polling.TimeoutSeconds = 2
 			if test.configure != nil {

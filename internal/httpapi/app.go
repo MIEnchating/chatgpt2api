@@ -172,7 +172,9 @@ func NewApp() (*App, error) {
 		cancel()
 		return nil, err
 	}
-	storageFiles, err := service.NewGenericStorageService(storageBackend, cfg, filepath.Join(cfg.DataDir, "storage_files"))
+	storageFiles, err := service.NewGenericStorageService(storageBackend, cfg, filepath.Join(cfg.DataDir, "storage_files"), func(err error) {
+		logger.Warning("scheduled storage capacity measurement failed", "error", err)
+	})
 	if err != nil {
 		cancel()
 		return nil, err
@@ -260,10 +262,12 @@ func NewApp() (*App, error) {
 			Hour:          cfg.LogCleanupHour(),
 		}
 	}, time.Hour, logger)
-	_, _ = app.images.CleanupStorage(service.ImageStorageCleanupOptions{
+	if _, err := app.images.CleanupStorage(service.ImageStorageCleanupOptions{
 		RetentionDays: cfg.ImageRetentionDays(),
 		MaxBytes:      cfg.ImageStorageLimitBytes(),
-	})
+	}); err != nil {
+		logger.Warning("initial image storage cleanup failed", "error", err)
+	}
 	app.startImageStorageCleaner(ctx, time.Hour)
 	app.startImageConversationAssetCleaner(ctx, time.Hour)
 	return app, nil
@@ -2445,10 +2449,12 @@ func (a *App) cleanupImageStorage() {
 	if a == nil || a.images == nil || a.config == nil {
 		return
 	}
-	_, _ = a.cleanupImageStorageWithOptions(service.ImageStorageCleanupOptions{
+	if _, err := a.cleanupImageStorageWithOptions(service.ImageStorageCleanupOptions{
 		RetentionDays: a.config.ImageRetentionDays(),
 		MaxBytes:      a.config.ImageStorageLimitBytes(),
-	})
+	}); err != nil && a.logger != nil {
+		a.logger.Warning("scheduled image storage cleanup failed", "error", err)
+	}
 }
 
 func imageReferenceMetadataFromPayload(payload map[string]any) []service.GeneratedImageReference {

@@ -259,6 +259,7 @@ export function ImageLightbox({
         <DialogPrimitive.Overlay className="fixed inset-y-0 left-0 z-[1000] h-dvh w-screen bg-black/80 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
         <DialogPrimitive.Content
           className="fixed inset-y-0 left-0 z-[1001] flex h-dvh w-screen items-center justify-center outline-none"
+          onOpenAutoFocus={(event) => event.preventDefault()}
           onPointerDownOutside={(e) => e.preventDefault()}
         >
           <DialogPrimitive.Title className="sr-only">

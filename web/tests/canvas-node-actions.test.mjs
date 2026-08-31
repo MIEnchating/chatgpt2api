@@ -14,7 +14,7 @@ const canvasLibrarySource = readFileSync(new URL("../src/app/canvas/library-page
 const canvasSidePanelSource = readFileSync(new URL("../src/app/canvas/canvas-side-panel.tsx", import.meta.url), "utf8");
 const configComposerSource = readFileSync(new URL("../src/app/canvas/canvas-config-composer.tsx", import.meta.url), "utf8");
 const promptScrollFrameSource = readFileSync(new URL("../src/components/generation/prompt-textarea-frame.tsx", import.meta.url), "utf8");
-const workflowSource = readFileSync(new URL("../src/components/workflows/creative-workflow-workspace.tsx", import.meta.url), "utf8");
+const workflowSource = readFileSync(new URL("../src/app/workflows/creative-workflow-workspace.tsx", import.meta.url), "utf8");
 const tooltipSource = readFileSync(new URL("../src/components/ui/tooltip.tsx", import.meta.url), "utf8");
 const globalStylesSource = readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
 const taskQueueSource = readFileSync(new URL("../src/components/image-task-queue.tsx", import.meta.url), "utf8");
@@ -207,9 +207,9 @@ test("both canvas Agent entries reuse the shared image and video settings panels
   }
 });
 
-test("Agent parameter popovers do not autofocus the first tooltip trigger", () => {
+test("Agent parameter popovers rely on the global no-autofocus policy", () => {
   for (const source of [agentPanelSource, canvasLibrarySource]) {
-    assert.match(source, /onOpenAutoFocus=\{\(event\) => event\.preventDefault\(\)\}/);
+    assert.doesNotMatch(source, /onOpenAutoFocus/);
   }
 });
 

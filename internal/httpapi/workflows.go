@@ -63,7 +63,7 @@ func (a *App) handleWorkflows(w http.ResponseWriter, r *http.Request) {
 	if remainder == "" {
 		switch r.Method {
 		case http.MethodGet:
-			items, err := a.workflows.List(ownerID, identity.Role)
+			items, err := a.workflows.List(ownerID)
 			if err != nil {
 				util.WriteError(w, http.StatusInternalServerError, "failed to load workflows")
 				return
@@ -75,7 +75,7 @@ func (a *App) handleWorkflows(w http.ResponseWriter, r *http.Request) {
 				util.WriteError(w, http.StatusBadRequest, "invalid json body")
 				return
 			}
-			item, err := a.workflows.Save(ownerID, identity.Role, input)
+			item, err := a.workflows.Save(ownerID, input)
 			if err != nil {
 				util.WriteError(w, http.StatusBadRequest, err.Error())
 				return
@@ -93,7 +93,7 @@ func (a *App) handleWorkflows(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(parts) == 1 && r.Method == http.MethodDelete {
-		if err := a.workflows.Delete(ownerID, identity.Role, id); err != nil {
+		if err := a.workflows.Delete(ownerID, id); err != nil {
 			util.WriteError(w, http.StatusForbidden, err.Error())
 			return
 		}

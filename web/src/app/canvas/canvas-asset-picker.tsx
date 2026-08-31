@@ -4,7 +4,7 @@ import { toast } from "sonner";
 
 import { AssetForm } from "@/app/assets/asset-form";
 import { assetListKey, managedImageAsset } from "@/app/assets/asset-library";
-import { useMyAssets } from "@/app/assets/use-my-assets";
+import { useMyAssets } from "@/lib/use-my-assets";
 import { canvasInsertPayloadFromMyAsset } from "@/app/canvas/agent/canvas-agent-starter";
 import type { CanvasInsertAssetPayload } from "@/app/canvas/agent/canvas-agent-types";
 import { AuthenticatedImage } from "@/components/authenticated-image";

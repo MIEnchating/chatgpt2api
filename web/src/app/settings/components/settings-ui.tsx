@@ -11,6 +11,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { EmptyState } from "@/components/ui/empty-state";
 import { cn } from "@/lib/utils";
 
 type SettingsCardTone = "blue" | "amber" | "slate" | "violet";
@@ -135,12 +136,6 @@ export function SettingsEmptyState({
   title: string;
 }) {
   return (
-    <div className="flex flex-col items-center justify-center gap-3 rounded-xl border border-border/70 bg-muted/55 px-6 py-10 text-center">
-      <Icon className="size-8 text-muted-foreground/45" />
-      <div className="flex flex-col gap-1">
-        <p className="text-sm font-medium text-foreground">{title}</p>
-        <p className="text-sm text-muted-foreground">{description}</p>
-      </div>
-    </div>
+    <EmptyState icon={Icon} title={title} description={description} />
   );
 }

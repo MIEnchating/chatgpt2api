@@ -21,7 +21,7 @@ import {
 import { CanvasProjectDialog, type CanvasProjectDialogMode } from "@/app/canvas/canvas-project-dialog";
 import { createCanvasProjectArchive, downloadCanvasProjectArchive, readCanvasProjectArchive } from "@/app/canvas/canvas-project-transfer";
 import { CanvasAssetPicker } from "@/app/canvas/canvas-asset-picker";
-import { canvasProjectPath } from "@/app/canvas/canvas-project-route";
+import { canvasProjectPath } from "@/lib/canvas-project-route";
 import { canvasAgentStarterLabel, createCanvasPendingAgentAsset, defaultCanvasAgentStarterConfig } from "@/app/canvas/agent/canvas-agent-starter";
 import type { CanvasAgentConfig, CanvasInsertAssetPayload, CanvasPendingAgentAsset } from "@/app/canvas/agent/canvas-agent-types";
 import { DEFAULT_IMAGE_MODEL, fetchModelConfig } from "@/lib/api";
@@ -349,7 +349,7 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
           </>
         }
       />
-      <ScrollArea className="min-h-0 flex-1 rounded-lg border border-border bg-background">
+      <ScrollArea className="card-surface min-h-0 flex-1 rounded-xl border border-border/80 shadow-[0_4px_16px_rgba(24,40,72,0.05)]">
         <div data-canvas-project-content className="w-full px-4 py-4 sm:px-6 sm:py-6">
         {loading ? (
           <div className="flex min-h-[360px] items-center justify-center text-sm text-muted-foreground"><LoaderCircle className="mr-2 size-4 animate-spin" />正在加载画布...</div>
@@ -458,5 +458,5 @@ function AgentStarterAssetMenu({ uploading, busy, onUpload, onOpenAssets }: { up
 }
 
 function AgentStarterParameterMenu({ icon, label, summary, children }: { icon: React.ReactNode; label: string; summary: string; children: React.ReactNode }) {
-  return <Popover><PopoverTrigger asChild><Button type="button" variant="secondary" className="h-9 min-w-0 flex-1 !gap-0.5 rounded-full !px-1.5 text-[10px] [&_svg]:size-3" aria-label={label}>{icon}<span className="truncate">{summary}</span></Button></PopoverTrigger><PopoverContent side="bottom" align="center" className="w-[min(calc(100vw-2rem),23rem)] overflow-hidden p-0" onOpenAutoFocus={(event) => event.preventDefault()}><ScrollArea className="max-h-[min(70dvh,32rem)]"><div className="space-y-3 p-3 pr-4"><p className="text-xs font-semibold">{label}</p>{children}</div></ScrollArea></PopoverContent></Popover>;
+  return <Popover><PopoverTrigger asChild><Button type="button" variant="secondary" className="h-9 min-w-0 flex-1 !gap-0.5 rounded-full !px-1.5 text-[10px] [&_svg]:size-3" aria-label={label}>{icon}<span className="truncate">{summary}</span></Button></PopoverTrigger><PopoverContent side="bottom" align="center" className="w-[min(calc(100vw-2rem),23rem)] overflow-hidden p-0"><ScrollArea className="max-h-[min(70dvh,32rem)]"><div className="space-y-3 p-3 pr-4"><p className="text-xs font-semibold">{label}</p>{children}</div></ScrollArea></PopoverContent></Popover>;
 }

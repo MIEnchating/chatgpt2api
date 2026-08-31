@@ -1,10 +1,10 @@
-import { ImageParameterLabel } from "@/app/image/components/image-parameter-ui";
+import { ImageParameterLabel } from "@/components/generation/image-parameter-ui";
 import {
   IMAGE_ASPECT_RATIO_PRESET_OPTIONS,
   type ImageAspectRatio,
   type ImageResolution,
   type ImageSizeMode,
-} from "@/app/image/image-options";
+} from "@/lib/image-options";
 import { AspectRatioOptionButton } from "@/components/generation/aspect-ratio-option";
 import { GenerationSizeBadge } from "@/components/generation/generation-size-badge";
 import { cn } from "@/lib/utils";

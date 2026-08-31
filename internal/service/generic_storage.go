@@ -115,14 +115,15 @@ type LocalMediaGovernance struct {
 }
 
 type GenericStorageService struct {
-	settings        StorageSettingsProvider
-	objects         storage.StorageObjectBackend
-	documents       storage.JSONDocumentBackend
-	localDir        string
-	mu              sync.Mutex
-	localCapacityMu sync.Mutex
-	cronMu          sync.Mutex
-	cron            *cron.Cron
+	settings             StorageSettingsProvider
+	objects              storage.StorageObjectBackend
+	documents            storage.JSONDocumentBackend
+	localDir             string
+	capacityErrorHandler func(error)
+	mu                   sync.Mutex
+	localCapacityMu      sync.Mutex
+	cronMu               sync.Mutex
+	cron                 *cron.Cron
 }
 
 func (s *GenericStorageService) RefreshCapacityScheduler(ctx context.Context) error {
@@ -140,11 +141,16 @@ func (s *GenericStorageService) RefreshCapacityScheduler(ctx context.Context) er
 		return nil
 	}
 	_, err := s.cron.AddFunc(setting.Cron, func() {
-		for _, measureErr := range s.MeasureAll(ctx) {
-			_ = measureErr
-		}
+		s.runScheduledCapacityCheck(ctx)
 	})
 	return err
+}
+
+func (s *GenericStorageService) runScheduledCapacityCheck(ctx context.Context) {
+	errorsFound := s.MeasureAll(ctx)
+	if len(errorsFound) > 0 && s.capacityErrorHandler != nil {
+		s.capacityErrorHandler(errors.Join(errorsFound...))
+	}
 }
 
 func (s *GenericStorageService) Close() {
@@ -157,7 +163,7 @@ func (s *GenericStorageService) Close() {
 	}
 }
 
-func NewGenericStorageService(backend storage.Backend, settings StorageSettingsProvider, localDir string) (*GenericStorageService, error) {
+func NewGenericStorageService(backend storage.Backend, settings StorageSettingsProvider, localDir string, capacityErrorHandler func(error)) (*GenericStorageService, error) {
 	objects, ok := backend.(storage.StorageObjectBackend)
 	if !ok {
 		return nil, errors.New("storage object backend is required")
@@ -173,7 +179,10 @@ func NewGenericStorageService(backend storage.Backend, settings StorageSettingsP
 	if err := ensureLocalStorageDirectory(localDir); err != nil {
 		return nil, err
 	}
-	return &GenericStorageService{settings: settings, objects: objects, documents: documents, localDir: localDir}, nil
+	return &GenericStorageService{
+		settings: settings, objects: objects, documents: documents, localDir: localDir,
+		capacityErrorHandler: capacityErrorHandler,
+	}, nil
 }
 
 func (s *GenericStorageService) PublicConfig() StoragePublicConfig {

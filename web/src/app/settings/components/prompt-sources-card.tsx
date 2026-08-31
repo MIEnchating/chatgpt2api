@@ -275,7 +275,7 @@ export function PromptSourcesCard() {
               <div className="flex flex-col gap-5">
                 <Field>
                   <FieldLabel htmlFor="prompt-source-name">来源名称</FieldLabel>
-                  <Input id="prompt-source-name" autoFocus value={draft.label} onChange={(event) => { setDraft((current) => ({ ...current, label: event.target.value })); setFormError(""); }} placeholder="用于分类展示" className={settingsDialogInputClassName} />
+                  <Input id="prompt-source-name" value={draft.label} onChange={(event) => { setDraft((current) => ({ ...current, label: event.target.value })); setFormError(""); }} placeholder="用于分类展示" className={settingsDialogInputClassName} />
                 </Field>
                 <Field>
                   <FieldLabel htmlFor="prompt-source-url">JSON URL</FieldLabel>

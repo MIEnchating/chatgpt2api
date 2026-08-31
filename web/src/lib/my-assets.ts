@@ -25,7 +25,6 @@ function pruneAssetCache() {
 
 export {
   createMyAsset,
-  mergeMyAssets,
   type MyAsset,
   type MyAssetKind,
   type MyAssetVisibility,
@@ -105,8 +104,7 @@ export async function upsertMyAsset(asset: MyAsset) {
   const items = normalizeMyAssets(response.items);
   pruneAssetCache();
   for (const key of assetCache.keys()) {
-    if (key.endsWith(":own")) assetCache.set(key, { items, expiresAt: Date.now() + ASSET_CACHE_TTL_MS });
-    else if (key.endsWith(":visible")) assetCache.delete(key);
+    if (key.endsWith(":own") || key.endsWith(":visible")) assetCache.delete(key);
   }
   return normalizeMyAssets(items);
 }

@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { TooltipButton, TooltipHint } from "@/components/ui/tooltip";
 import type { ImagePromptPreset } from "@/app/image/image-presets";
-import { formatImageSizeDisplay, isHighResolutionImageSize } from "@/app/image/image-options";
+import { formatImageSizeDisplay, isHighResolutionImageSize } from "@/lib/image-options";
 import type { ImageVisibility } from "@/lib/api";
 import {
   fetchAuthenticatedImageBlob,
@@ -168,8 +168,7 @@ function imageQualityCheckTitle(image: StoredImage) {
   return parts.join("\n");
 }
 
-function getLongTaskHint(turn: ImageTurn, elapsedSeconds: number) {
-  void elapsedSeconds;
+function getLongTaskHint(turn: ImageTurn) {
   if (!isTurnBusy(turn)) {
     return "";
   }
@@ -574,7 +573,7 @@ export function ImageResults({
             ? "等待任务开始"
             : progress?.message || (turnBusy ? turn.mode === "video" ? "正在处理视频" : "正在处理图片" : "");
         const requestedSizeLabel = turn.size ? formatImageSizeDisplay(turn.size) : "自动";
-        const longTaskHint = getLongTaskHint(turn, elapsedSeconds);
+        const longTaskHint = getLongTaskHint(turn);
         const downloadActions = downloadableImages.length > 0
           ? isVideoTurn ? downloadableImages.length > 1 ? (
               <Button

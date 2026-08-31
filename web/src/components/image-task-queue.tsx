@@ -7,10 +7,10 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { formatImageSizeDisplay, getImageSizeRequirementLabel, isHighResolutionImageSize } from "@/app/image/image-options";
+import { formatImageSizeDisplay, getImageSizeRequirementLabel, isHighResolutionImageSize } from "@/lib/image-options";
 import { isWorkflowImageConversation } from "@/lib/image-conversation-source";
 import { cn, formatElapsedClock } from "@/lib/utils";
-import { canvasProjectPath } from "@/app/canvas/canvas-project-route";
+import { canvasProjectPath } from "@/lib/canvas-project-route";
 import {
   getCanvasTaskQueueSnapshot,
   subscribeCanvasTaskQueue,
@@ -129,8 +129,7 @@ function getQueueSizeLabel(turn: ImageTurn) {
   return requirement === "自动" ? size : `${size} / ${requirement}`;
 }
 
-function getQueueLongTaskHint(turn: ImageTurn, elapsedSeconds: number) {
-  void elapsedSeconds;
+function getQueueLongTaskHint(turn: ImageTurn) {
   if (isHighResolutionImageSize(turn.size, turn.sizeSelection)) {
     return "高分辨率任务已提交，正在等待生成结果";
   }
@@ -297,7 +296,7 @@ function QueueItem({
       : progress?.message || "等待图片处理";
   const loadingDetail = getQueueLoadingDetail(item, loadingPhase);
   const progressDetail = loadingDetail || (isQueued ? "" : progress?.detail) || "";
-  const longTaskHint = getQueueLongTaskHint(item.turn, elapsedSeconds);
+  const longTaskHint = getQueueLongTaskHint(item.turn);
 
   return (
     <button

@@ -12,6 +12,8 @@ import {
   Eye,
   FileText,
   Film,
+  FlaskConical,
+  History,
   ImagePlus,
   Link2,
   LoaderCircle,
@@ -27,7 +29,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
-import { ImageParameterLabel } from "@/app/image/components/image-parameter-ui";
+import { ImageParameterLabel } from "@/components/generation/image-parameter-ui";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -44,8 +46,10 @@ import { FileUploadButton } from "@/components/ui/file-upload-button";
 import { Input } from "@/components/ui/input";
 import { InputTag } from "@/components/ui/input-tag";
 import { NumberInput } from "@/components/ui/number-input";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { TooltipHint } from "@/components/ui/tooltip";
 import {
   VideoSettingsPanel,
@@ -57,14 +61,20 @@ import {
   fetchAdminVideoModelContracts,
   fetchImageGenerationPreferences,
   fetchModelConfig,
+  fetchVideoModelContractVersions,
   importVideoModelContract,
   importVideoModelContractJSON,
+  previewVideoModelContract,
+  publishVideoModelContract,
+  rollbackVideoModelContract,
+  saveVideoModelContractDraft,
   setVideoModelContractEnabled,
-  updateVideoModelContract,
   validateVideoModelContract,
   type ManagedVideoModelContract,
+  type VideoModelContractPreviewResult,
   type VideoModelContractMutation,
   type VideoModelContractTransferDocument,
+  type VideoModelContractVersion,
 } from "@/lib/api";
 import {
   activeVideoModelContracts,
@@ -76,6 +86,7 @@ import {
   type VideoModelContractRuleField,
   type VideoModelGenerationMode,
 } from "@/lib/video-model-contracts";
+import { cn } from "@/lib/utils";
 
 import {
   SettingsCard,
@@ -152,6 +163,10 @@ const VIDEO_CONTRACT_DRIVERS: Array<{
     value: "apimart-video",
     label: "APIMart Video",
   },
+  {
+    value: "custom-video",
+    label: "自定义异步视频协议",
+  },
 ];
 
 function videoContractDriverLabel(driver: VideoModelContract["driver"]) {
@@ -182,7 +197,10 @@ const emptyContract: VideoModelContract = {
     multipart_file_field: "",
     multipart_repeatable: false,
     multipart_mixed_urls: false,
+    create_path: "",
+    query_path: "",
   },
+  artifact: { mode: "response_url", content_path: "", auth: "none", allowed_hosts: [] },
   capability: {
     sizes: ["16:9", "9:16", "1:1"],
     seconds: [5],
@@ -273,8 +291,8 @@ function newDraft() {
   return draftFromContract(emptyContract, true);
 }
 
-function normalizeTags(value: string[] | string) {
-  const items = Array.isArray(value) ? value : value.split(/[\n,，;；]+/);
+function normalizeTags(value: string[] | string | null | undefined) {
+  const items = Array.isArray(value) ? value : String(value || "").split(/[\n,，;；]+/);
   return Array.from(new Set(items.map((item) => item.trim()).filter(Boolean)));
 }
 
@@ -314,7 +332,7 @@ function installEnabledContracts(items: ManagedVideoModelContract[]) {
 
 function videoContractTransferDocument(items: Array<Pick<ManagedVideoModelContract, "contract" | "enabled">>): VideoModelContractTransferDocument {
   return {
-    version: 3,
+    version: 4,
     contracts: items.map((item) => ({ contract: cloneContract(item.contract), enabled: item.enabled })),
   };
 }
@@ -323,11 +341,29 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+function parseJSONObject(value: string, label: string) {
+  const parsed = JSON.parse(value) as unknown;
+  if (!isRecord(parsed)) throw new Error(`${label}必须是 JSON 对象`);
+  return parsed;
+}
+
+function previewInputJSON(contract: VideoModelContract) {
+  const pattern = contract.models[0] || "video-model";
+  const model = pattern.replaceAll("*", "preview");
+  return JSON.stringify({
+    model,
+    prompt: "示例视频提示词",
+    seconds: contract.capability.default_seconds,
+    size: contract.capability.default_size,
+    resolution: contract.capability.default_resolution,
+  }, null, 2);
+}
+
 function normalizeVideoContractTransferDocument(value: unknown): VideoModelContractTransferDocument {
   if (!isRecord(value)) {
-    throw new Error("导入文件必须是视频模型契约 v3 JSON 对象");
+    throw new Error("导入文件必须是视频模型契约 v4 JSON 对象");
   }
-  if (value.version !== 3) {
+  if (value.version !== 4) {
     throw new Error(`不支持的契约导入版本 ${String(value.version ?? "未填写")}`);
   }
   if (!Array.isArray(value.contracts)) {
@@ -343,7 +379,7 @@ function normalizeVideoContractTransferDocument(value: unknown): VideoModelContr
     };
   });
   if (contracts.length === 0) throw new Error("导入文件中没有视频模型契约");
-  return { version: 3, contracts };
+  return { version: 4, contracts };
 }
 
 function downloadVideoContractDocument(bundle: VideoModelContractTransferDocument, filename: string) {
@@ -430,6 +466,7 @@ function ContractFieldLabel({ help, htmlFor, label }: { help?: string; htmlFor: 
 
 function ContractCheckboxField({
   checked,
+  className,
   disabled,
   help,
   id,
@@ -437,17 +474,26 @@ function ContractCheckboxField({
   onCheckedChange,
 }: {
   checked: boolean;
+  className?: string;
   disabled?: boolean;
-  help: string;
+  help?: string;
   id: string;
   label: string;
   onCheckedChange: (checked: boolean) => void;
 }) {
   return (
-    <div className="flex min-h-10 items-center gap-2.5 rounded-lg border border-border/70 bg-background px-3 py-2 text-sm font-medium text-foreground">
+    <div
+      data-disabled={disabled || undefined}
+      aria-disabled={disabled || undefined}
+      className={cn(
+        "flex min-h-10 items-center gap-2.5 rounded-lg border border-border/70 bg-background px-3 py-2 text-sm font-medium text-foreground transition-[border-color,background-color,color]",
+        disabled && "border-border/60 bg-muted/50 text-muted-foreground",
+        className,
+      )}
+    >
       <Checkbox id={id} checked={checked} disabled={disabled} onCheckedChange={(value) => onCheckedChange(Boolean(value))} />
-      <label htmlFor={id} className="min-w-0 flex-1 cursor-pointer">{label}</label>
-      <ContractHelpIcon help={help} label={label} />
+      <label htmlFor={id} className={cn("min-w-0 flex-1", disabled ? "cursor-not-allowed" : "cursor-pointer")}>{label}</label>
+      {help ? <ContractHelpIcon help={help} label={label} /> : null}
     </div>
   );
 }
@@ -545,7 +591,7 @@ function TagListField({
   onValueChange: (value: string[]) => void;
   placeholder?: string;
   validateTag?: (tag: string) => boolean;
-  value: string[];
+  value: string[] | null | undefined;
 }) {
   return (
     <Field className="self-start">
@@ -874,7 +920,6 @@ export function VideoModelContractsCard() {
   const didLoadRef = useRef(false);
   const importFileInputRef = useRef<HTMLInputElement>(null);
   const jsonImportInputRef = useRef<HTMLInputElement>(null);
-  const contractDialogTitleRef = useRef<HTMLHeadingElement>(null);
   const [items, setItems] = useState<ManagedVideoModelContract[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -898,6 +943,15 @@ export function VideoModelContractsCard() {
     filename: string;
     bundle: VideoModelContractTransferDocument;
   } | null>(null);
+  const [versionsItem, setVersionsItem] = useState<ManagedVideoModelContract | null>(null);
+  const [versions, setVersions] = useState<VideoModelContractVersion[]>([]);
+  const [isLoadingVersions, setIsLoadingVersions] = useState(false);
+  const [isRollingBack, setIsRollingBack] = useState(false);
+  const [previewInput, setPreviewInput] = useState("{}");
+  const [previewSubmitResponse, setPreviewSubmitResponse] = useState("{}");
+  const [previewQueryResponse, setPreviewQueryResponse] = useState("{}");
+  const [previewResult, setPreviewResult] = useState<VideoModelContractPreviewResult | null>(null);
+  const [isPreviewing, setIsPreviewing] = useState(false);
 
   useEffect(() => {
     if (didLoadRef.current) return;
@@ -984,7 +1038,12 @@ export function VideoModelContractsCard() {
   const openCreate = () => {
     setEditingItem(null);
     setReadOnly(false);
-    setDraft(newDraft());
+    const nextDraft = newDraft();
+    setDraft(nextDraft);
+    setPreviewInput(previewInputJSON(nextDraft.contract));
+    setPreviewSubmitResponse("{}");
+    setPreviewQueryResponse("{}");
+    setPreviewResult(null);
     setDialogOpen(true);
   };
 
@@ -1031,6 +1090,10 @@ export function VideoModelContractsCard() {
       setEditingItem(null);
       setReadOnly(false);
       setDraft(draftFromContract(data.contract, false));
+      setPreviewInput(previewInputJSON(data.contract));
+      setPreviewSubmitResponse("{}");
+      setPreviewQueryResponse("{}");
+      setPreviewResult(null);
       setDialogOpen(true);
       if (data.warnings.length > 0) {
         toast.warning(data.warnings.join("；"));
@@ -1048,13 +1111,22 @@ export function VideoModelContractsCard() {
     setEditingItem(item);
     setReadOnly(true);
     setDraft(draftFromContract(item.contract, item.enabled));
+    setPreviewInput(previewInputJSON(item.contract));
+    setPreviewSubmitResponse("{}");
+    setPreviewQueryResponse("{}");
+    setPreviewResult(null);
     setDialogOpen(true);
   };
 
   const openEdit = (item: ManagedVideoModelContract) => {
     setEditingItem(item);
     setReadOnly(false);
-    setDraft(draftFromContract(item.contract, item.enabled));
+    const contract = item.draft || item.contract;
+    setDraft(draftFromContract(contract, item.draft_enabled ?? item.enabled));
+    setPreviewInput(previewInputJSON(contract));
+    setPreviewSubmitResponse("{}");
+    setPreviewQueryResponse("{}");
+    setPreviewResult(null);
     setDialogOpen(true);
   };
 
@@ -1065,6 +1137,10 @@ export function VideoModelContractsCard() {
     setEditingItem(null);
     setReadOnly(false);
     setDraft(draftFromContract(copied, false));
+    setPreviewInput(previewInputJSON(copied));
+    setPreviewSubmitResponse("{}");
+    setPreviewQueryResponse("{}");
+    setPreviewResult(null);
     setDialogOpen(true);
   };
 
@@ -1076,21 +1152,67 @@ export function VideoModelContractsCard() {
     return { ...payload, contract: data.contract };
   };
 
-  const save = async () => {
+  const saveDraft = async () => {
+    if (!editingItem) return;
+    setIsSaving(true);
+    try {
+      const payload = await validate(false);
+      const data = await saveVideoModelContractDraft(editingItem.id, payload);
+      setItems(data.items);
+      setDialogOpen(false);
+      toast.success("草稿已保存，当前已发布版本不受影响");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "保存视频模型契约草稿失败");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const publish = async () => {
     setIsSaving(true);
     try {
       const payload = await validate(false);
       const data = editingItem
-        ? await updateVideoModelContract(editingItem.id, payload)
+        ? await publishVideoModelContract(editingItem.id, payload)
         : await createVideoModelContract(payload);
       setItems(data.items);
       installEnabledContracts(data.items);
       setDialogOpen(false);
-      toast.success(editingItem ? "视频模型契约已更新" : "视频模型契约已添加");
+      toast.success(editingItem ? `契约已发布为第 ${data.item.revision} 版` : "视频模型契约已添加并发布");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "保存视频模型契约失败");
+      toast.error(error instanceof Error ? error.message : "发布视频模型契约失败");
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const openVersions = async (item: ManagedVideoModelContract) => {
+    setVersionsItem(item);
+    setVersions([]);
+    setIsLoadingVersions(true);
+    try {
+      const data = await fetchVideoModelContractVersions(item.id);
+      setVersions(data.versions);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "加载契约版本失败");
+    } finally {
+      setIsLoadingVersions(false);
+    }
+  };
+
+  const rollback = async (revision: number) => {
+    if (!versionsItem) return;
+    setIsRollingBack(true);
+    try {
+      const data = await rollbackVideoModelContract(versionsItem.id, revision);
+      setItems(data.items);
+      installEnabledContracts(data.items);
+      setVersionsItem(null);
+      toast.success(`已基于第 ${revision} 版发布新版本`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "回滚契约失败");
+    } finally {
+      setIsRollingBack(false);
     }
   };
 
@@ -1165,6 +1287,7 @@ export function VideoModelContractsCard() {
   const capability = draft.contract.capability;
   const request = draft.contract.request;
   const transport = draft.contract.transport;
+  const artifact = draft.contract.artifact;
   const polling = draft.contract.polling;
   const normalizedContract = useMemo(() => mutationFromDraft(draft).contract, [draft]);
   const contractJSON = useMemo(() => JSON.stringify(normalizedContract, null, 2), [normalizedContract]);
@@ -1185,6 +1308,25 @@ export function VideoModelContractsCard() {
       toast.success("契约 JSON 已复制");
     } catch {
       toast.error("复制契约 JSON 失败");
+    }
+  };
+
+  const runPreview = async () => {
+    setIsPreviewing(true);
+    try {
+      const result = await previewVideoModelContract({
+        contract: normalizedContract,
+        ...(editingItem ? { existing_id: editingItem.id } : {}),
+        input: parseJSONObject(previewInput, "示例请求"),
+        submit_response: parseJSONObject(previewSubmitResponse, "创建响应"),
+        query_response: parseJSONObject(previewQueryResponse, "查询响应"),
+      });
+      setPreviewResult(result);
+      toast.success("契约模拟通过");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "契约模拟失败");
+    } finally {
+      setIsPreviewing(false);
     }
   };
 
@@ -1233,7 +1375,7 @@ export function VideoModelContractsCard() {
           <div className="p-5 sm:p-6"><SettingsEmptyState icon={Film} title="暂无视频模型契约" description="添加后可为模型设置中的视频模型提供参数和请求转换规则。" /></div>
         ) : (
           <div data-video-contract-list>
-            <div className="hidden grid-cols-[minmax(220px,1.2fr)_minmax(180px,0.95fr)_minmax(280px,1.35fr)_150px_180px] items-center gap-5 border-b border-border/70 bg-muted/35 px-6 py-2.5 text-xs font-medium text-muted-foreground xl:grid">
+            <div className="hidden grid-cols-[minmax(220px,1.2fr)_minmax(180px,0.95fr)_minmax(280px,1.35fr)_150px_210px] items-center gap-5 border-b border-border/70 bg-muted/35 px-6 py-2.5 text-xs font-medium text-muted-foreground xl:grid">
               <span>契约</span>
               <span>匹配模型</span>
               <span>能力范围</span>
@@ -1248,7 +1390,7 @@ export function VideoModelContractsCard() {
                   <div
                     key={item.id}
                     data-video-contract-row
-                    className="grid min-w-0 gap-4 px-5 py-4 transition-colors hover:bg-muted/25 sm:px-6 xl:grid-cols-[minmax(220px,1.2fr)_minmax(180px,0.95fr)_minmax(280px,1.35fr)_150px_180px] xl:items-center xl:gap-5"
+                    className="grid min-w-0 gap-4 px-5 py-4 transition-colors hover:bg-muted/25 sm:px-6 xl:grid-cols-[minmax(220px,1.2fr)_minmax(180px,0.95fr)_minmax(280px,1.35fr)_150px_210px] xl:items-center xl:gap-5"
                   >
                   <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-3">
                     <TooltipHint content={item.enabled ? "停用契约" : "启用契约"}>
@@ -1265,6 +1407,8 @@ export function VideoModelContractsCard() {
                         <Badge variant={item.enabled ? "success" : "secondary"} className="rounded-md">
                           {item.enabled ? "已启用" : "已停用"}
                         </Badge>
+                        <Badge variant="outline" className="rounded-md">v{item.revision}</Badge>
+                        {item.draft ? <Badge variant="warning" className="rounded-md">有草稿</Badge> : null}
                       </div>
                       <p className="mt-1 truncate text-xs text-muted-foreground">{videoContractDriverLabel(item.contract.driver)}</p>
                     </div>
@@ -1303,6 +1447,7 @@ export function VideoModelContractsCard() {
 
                   <div className="flex items-center gap-1 border-t border-border/60 pt-3 xl:justify-end xl:border-t-0 xl:pt-0">
                     <Button type="button" variant="ghost" size="icon" className="size-8" onClick={() => openView(item)} aria-label="查看契约" title="查看契约"><Eye className="size-4" /></Button>
+                    <Button type="button" variant="ghost" size="icon" className="size-8" onClick={() => void openVersions(item)} aria-label="版本历史" title="版本历史"><History className="size-4" /></Button>
                     <Button type="button" variant="ghost" size="icon" className="size-8" onClick={() => downloadVideoContractDocument(videoContractTransferDocument([item]), videoContractExportName(item.contract.name))} aria-label="导出契约" title="导出契约"><Download className="size-4" /></Button>
                     <Button type="button" variant="ghost" size="icon" className="size-8" onClick={() => openCopy(item)} aria-label="复制契约" title="复制契约"><Copy className="size-4" /></Button>
                     <Button type="button" variant="ghost" size="icon" className="size-8" disabled={pending} onClick={() => openEdit(item)} aria-label="编辑契约" title="编辑契约"><Pencil className="size-4" /></Button>
@@ -1398,21 +1543,23 @@ export function VideoModelContractsCard() {
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent
+          scrollable={false}
           className="h-[min(90dvh,860px)] w-[min(96vw,1280px)] max-w-none"
-          onOpenAutoFocus={(event) => {
-            if (!readOnly) return;
-            event.preventDefault();
-            contractDialogTitleRef.current?.focus({ preventScroll: true });
-          }}
         >
           <DialogHeader>
-            <DialogTitle ref={contractDialogTitleRef} tabIndex={-1} className="outline-none">
+            <DialogTitle>
               {readOnly ? "查看视频模型契约" : editingItem ? "编辑视频模型契约" : "添加视频模型契约"}
             </DialogTitle>
             <DialogDescription>{draft.contract.name || "配置模型能力和上游字段映射"}</DialogDescription>
           </DialogHeader>
-          <div data-video-contract-layout className="grid min-w-0 gap-5 py-1 pr-3 lg:grid-cols-[minmax(0,1fr)_minmax(300px,20rem)] lg:items-start">
-            <div data-video-contract-details className="flex min-w-0 flex-col gap-7">
+          <div data-video-contract-layout className="grid min-h-0 min-w-0 flex-1 grid-rows-[minmax(0,1fr)_minmax(0,1fr)] gap-5 overflow-hidden lg:grid-cols-[minmax(0,1fr)_minmax(300px,20rem)] lg:grid-rows-[minmax(0,1fr)]">
+            <ScrollArea
+              data-video-contract-details
+              className="h-full min-h-0 min-w-0"
+              viewportClassName="h-full overscroll-y-contain pr-3"
+              viewClass="flex min-w-0 flex-col gap-7 pb-1"
+              ariaLabel="契约表单"
+            >
               <section className="flex flex-col gap-4">
                 <SectionTitle>基本信息</SectionTitle>
                 <div className="grid items-start gap-4 sm:grid-cols-2">
@@ -1441,7 +1588,7 @@ export function VideoModelContractsCard() {
                   <TextField id="video-contract-default-resolution" label="默认清晰度" value={capability.default_resolution} disabled={readOnly} onChange={(value) => updateContract((contract) => { contract.capability.default_resolution = value; })} />
                   <NumericField id="video-contract-prompt-limit" label="提示词上限" min={1} max={100000} value={draft.contract.validation.max_prompt_characters} disabled={readOnly} suffix="字符" onChange={(value) => updateContract((contract) => { contract.validation.max_prompt_characters = value; })} />
                   <Field><ContractFieldLabel htmlFor="video-contract-audio-control" label="音频生成" help="控制创作参数面板是否显示音频开关。不支持表示不生成音频，用户开关表示由用户选择，始终生成表示请求固定携带音频。" /><Select value={capability.audio_control} disabled={readOnly} onValueChange={(value) => updateContract((contract) => { contract.capability.audio_control = value as VideoModelContract["capability"]["audio_control"]; })}><SelectTrigger id="video-contract-audio-control" className="h-11"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">不支持</SelectItem><SelectItem value="toggle">用户开关</SelectItem><SelectItem value="always">始终生成</SelectItem></SelectContent></Select></Field>
-                  <label className="flex min-h-11 items-center gap-3 self-end rounded-lg border border-border bg-muted/30 px-3 py-2.5 text-sm font-medium text-foreground"><Checkbox checked={capability.watermark} disabled={readOnly} onCheckedChange={(checked) => updateContract((contract) => { contract.capability.watermark = Boolean(checked); })} />支持水印开关</label>
+                  <ContractCheckboxField id="video-contract-watermark" label="支持水印开关" checked={capability.watermark} disabled={readOnly} className="min-h-11 self-end" onCheckedChange={(checked) => updateContract((contract) => { contract.capability.watermark = checked; })} />
                 </div>
               </section>
 
@@ -1506,6 +1653,8 @@ export function VideoModelContractsCard() {
                   <TextField id="video-contract-multipart-field" label="multipart 文件字段" help="上游接收文件的表单字段名，可包含末尾方括号，例如 input_reference[]。" value={transport.multipart_file_field} disabled={readOnly || transport.local_material !== "multipart"} placeholder="例如 input_reference[]" onChange={(value) => updateContract((contract) => { contract.transport.multipart_file_field = value; })} />
                   <ContractCheckboxField id="video-contract-multipart-repeatable" label="允许重复文件字段" help="开启后，同一任务的多个本地素材会使用相同字段名逐个提交。" checked={transport.multipart_repeatable} disabled={readOnly || transport.local_material !== "multipart"} onCheckedChange={(checked) => updateContract((contract) => { contract.transport.multipart_repeatable = checked; })} />
                   <ContractCheckboxField id="video-contract-multipart-mixed-urls" label="允许文件与 URL 混用" help="开启后，本地素材转为文件，外部公网 URL 仍保留在各自请求字段中。" checked={transport.multipart_mixed_urls} disabled={readOnly || transport.local_material !== "multipart"} onCheckedChange={(checked) => updateContract((contract) => { contract.transport.multipart_mixed_urls = checked; })} />
+                  <TextField id="video-contract-create-path" label="任务创建路径" help="可选。留空时使用厂家驱动的默认入口；自定义协议必须填写站内绝对路径。" value={transport.create_path} disabled={readOnly} placeholder="例如 /v1/videos" onChange={(value) => updateContract((contract) => { contract.transport.create_path = value; })} />
+                  <TextField id="video-contract-query-path" label="任务查询路径" help="可选。留空时使用厂家驱动默认入口；自定义路径必须包含 {task_id}。" value={transport.query_path} disabled={readOnly} placeholder="例如 /v1/videos/{task_id}" onChange={(value) => updateContract((contract) => { contract.transport.query_path = value; })} />
                 </div>
                 <div className={`${settingsPanelClassName} grid gap-4 sm:grid-cols-2`}>
                   {([
@@ -1514,6 +1663,37 @@ export function VideoModelContractsCard() {
                     ["last_frame_field", "尾帧字段"], ["reference_images_field", "参考图片字段"], ["reference_videos_field", "参考视频字段"],
                     ["reference_audios_field", "参考音频字段"],
                   ] as const).map(([key, label]) => <TextField key={key} id={`video-contract-${key}`} label={label} help={REQUEST_FIELD_HELP[key]} value={request[key]} disabled={readOnly} onChange={(value) => updateContract((contract) => { contract.request[key] = value; })} />)}
+                </div>
+              </section>
+
+              <section className="flex flex-col gap-4">
+                <SectionTitle description="显式声明视频最终从哪里获取，适配 NewAPI 内容端点和其他厂家的 CDN 返回地址。">视频产物</SectionTitle>
+                <div className="grid items-start gap-4 sm:grid-cols-2">
+                  <Field>
+                    <ContractFieldLabel htmlFor="video-contract-artifact-mode" label="获取方式" help="响应地址读取轮询 JSON 中的结果字段；任务内容端点使用任务 ID 组成下载路径。" />
+                    <Select value={artifact.mode} disabled={readOnly} onValueChange={(value) => updateContract((contract) => {
+                      contract.artifact.mode = value as VideoModelContract["artifact"]["mode"];
+                      if (value === "task_content") {
+                        contract.artifact.content_path ||= "/v1/videos/{task_id}/content";
+                        contract.artifact.auth = "relay";
+                      } else {
+                        contract.artifact.content_path = "";
+                        contract.artifact.auth = "none";
+                      }
+                    })}>
+                      <SelectTrigger id="video-contract-artifact-mode" className="h-11"><SelectValue /></SelectTrigger>
+                      <SelectContent><SelectItem value="response_url">响应中的视频地址</SelectItem><SelectItem value="task_content">任务内容端点</SelectItem></SelectContent>
+                    </Select>
+                  </Field>
+                  <Field>
+                    <ContractFieldLabel htmlFor="video-contract-artifact-auth" label="下载鉴权" help="不鉴权不会发送中转 Key；中转鉴权仅允许向中转域名或允许域名发送 Bearer Key。" />
+                    <Select value={artifact.auth} disabled={readOnly || artifact.mode === "task_content"} onValueChange={(value) => updateContract((contract) => { contract.artifact.auth = value as VideoModelContract["artifact"]["auth"]; })}>
+                      <SelectTrigger id="video-contract-artifact-auth" className="h-11"><SelectValue /></SelectTrigger>
+                      <SelectContent><SelectItem value="none">不携带鉴权</SelectItem><SelectItem value="relay">携带中转鉴权</SelectItem></SelectContent>
+                    </Select>
+                  </Field>
+                  <TextField id="video-contract-content-path" label="任务产物路径" help="必须包含 {task_id}，适用于 /v1/videos/{task_id}/content 这类内容代理。" value={artifact.content_path} disabled={readOnly || artifact.mode !== "task_content"} placeholder="/v1/videos/{task_id}/content" onChange={(value) => updateContract((contract) => { contract.artifact.content_path = value; })} />
+                  <TagListField id="video-contract-artifact-hosts" label="允许域名" help="限制结果地址或允许携带中转鉴权的域名；支持 *.example.com。留空时，relay 鉴权只能发送到中转自身。" value={artifact.allowed_hosts} disabled={readOnly} placeholder="例如 cdn.example.com" onValueChange={(value) => updateContract((contract) => { contract.artifact.allowed_hosts = value; })} />
                 </div>
               </section>
 
@@ -1540,9 +1720,42 @@ export function VideoModelContractsCard() {
                   <TagListField id="video-contract-result-fields" label="结果地址路径" help="任务成功后视频地址的 JSON 路径，按顺序读取，例如 video_url 或 data.output.video_url。" value={draft.resultFields} disabled={readOnly} placeholder="例如 video_url" onValueChange={(value) => setDraft((current) => ({ ...current, resultFields: value }))} />
                 </div>
               </section>
-            </div>
-            <aside data-video-contract-preview className="min-w-0 space-y-3 lg:sticky lg:top-0 lg:border-l lg:border-border/70 lg:pl-5">
+            </ScrollArea>
+            <ScrollArea
+              data-video-contract-preview
+              className="h-full min-h-0 min-w-0 border-t border-border/70 pt-4 lg:border-t-0 lg:border-l lg:pt-0"
+              viewportClassName="h-full overscroll-y-contain pr-3 lg:pl-5"
+              viewClass="space-y-3 pb-1"
+              ariaLabel="契约预览"
+            >
               <ContractParameterPreview key={parameterPreviewKey} contract={normalizedContract} />
+              <details className="group overflow-hidden rounded-lg border border-border/70 bg-background">
+                <summary className="flex cursor-pointer list-none items-center gap-2 px-3.5 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted/35 [&::-webkit-details-marker]:hidden">
+                  <FlaskConical className="size-4 text-muted-foreground" />
+                  <span className="min-w-0 flex-1">请求与响应模拟</span>
+                  <span className="text-xs font-normal text-muted-foreground group-open:hidden">展开</span>
+                  <span className="hidden text-xs font-normal text-muted-foreground group-open:inline">收起</span>
+                </summary>
+                <div className="space-y-3 border-t border-border p-3">
+                  <Field>
+                    <FieldLabel htmlFor="video-contract-preview-input">示例请求</FieldLabel>
+                    <Textarea id="video-contract-preview-input" className="min-h-32 font-mono text-xs" value={previewInput} onChange={(event) => setPreviewInput(event.target.value)} />
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="video-contract-preview-submit">创建响应</FieldLabel>
+                    <Textarea id="video-contract-preview-submit" className="min-h-24 font-mono text-xs" value={previewSubmitResponse} onChange={(event) => setPreviewSubmitResponse(event.target.value)} />
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="video-contract-preview-query">查询响应</FieldLabel>
+                    <Textarea id="video-contract-preview-query" className="min-h-24 font-mono text-xs" value={previewQueryResponse} onChange={(event) => setPreviewQueryResponse(event.target.value)} />
+                  </Field>
+                  <Button type="button" size="sm" className="w-full" disabled={isPreviewing} onClick={() => void runPreview()}>
+                    {isPreviewing ? <LoaderCircle className="size-4 animate-spin" /> : <FlaskConical className="size-4" />}
+                    运行模拟
+                  </Button>
+                  {previewResult ? <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words rounded-lg bg-zinc-950 p-3 font-mono text-xs leading-5 text-zinc-100"><code>{JSON.stringify(previewResult, null, 2)}</code></pre> : null}
+                </div>
+              </details>
               <details className="group overflow-hidden rounded-lg border border-border/70 bg-background">
                 <summary className="flex cursor-pointer list-none items-center gap-2 px-3.5 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-muted/35 [&::-webkit-details-marker]:hidden">
                   <Braces className="size-4 text-muted-foreground" />
@@ -1560,12 +1773,13 @@ export function VideoModelContractsCard() {
                   <pre className="whitespace-pre-wrap break-words rounded-lg bg-zinc-950 p-4 font-mono text-xs leading-5 text-zinc-100 shadow-inner dark:bg-black/45"><code>{contractJSON}</code></pre>
                 </div>
               </details>
-            </aside>
+            </ScrollArea>
           </div>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} disabled={isSaving}>{readOnly ? "关闭" : "取消"}</Button>
             {!readOnly ? <Button type="button" variant="outline" onClick={() => void validate().catch((error) => toast.error(error instanceof Error ? error.message : "契约校验失败"))} disabled={isSaving}><ShieldCheck className="size-4" />校验配置</Button> : null}
-            {!readOnly ? <Button type="button" onClick={() => void save()} disabled={isSaving}>{isSaving ? <LoaderCircle className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}{editingItem ? "保存修改" : "添加契约"}</Button> : null}
+            {!readOnly && editingItem ? <Button type="button" variant="outline" onClick={() => void saveDraft()} disabled={isSaving}><FileText className="size-4" />保存草稿</Button> : null}
+            {!readOnly ? <Button type="button" onClick={() => void publish()} disabled={isSaving}>{isSaving ? <LoaderCircle className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}{editingItem ? "发布新版本" : "添加并发布"}</Button> : null}
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1599,6 +1813,43 @@ export function VideoModelContractsCard() {
               {isJSONImporting ? "正在导入" : "确认导入"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(versionsItem)} onOpenChange={(open) => (!open && !isRollingBack ? setVersionsItem(null) : undefined)}>
+        <DialogContent className="sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>契约版本历史</DialogTitle>
+            <DialogDescription>{versionsItem?.contract.name} · 当前第 {versionsItem?.revision} 版</DialogDescription>
+          </DialogHeader>
+          <div className="max-h-[min(60dvh,520px)] overflow-y-auto rounded-lg border border-border">
+            {isLoadingVersions ? (
+              <div className="flex min-h-32 items-center justify-center"><LoaderCircle className="size-5 animate-spin text-muted-foreground" /></div>
+            ) : versions.length === 0 ? (
+              <div className="p-6 text-center text-sm text-muted-foreground">暂无历史版本</div>
+            ) : (
+              <div className="divide-y divide-border/70">
+                {versions.map((version) => {
+                  const current = version.revision === versionsItem?.revision;
+                  return (
+                    <div key={version.revision} className="flex min-w-0 items-center gap-3 px-4 py-3">
+                      <span className="flex size-9 shrink-0 items-center justify-center rounded-md bg-muted font-mono text-xs font-semibold">v{version.revision}</span>
+                      <div className="min-w-0 flex-1">
+                        <p className="truncate text-sm font-medium">{version.contract.name}</p>
+                        <time dateTime={version.published_at} className="text-xs text-muted-foreground">{formatDateTime(version.published_at)}</time>
+                      </div>
+                      {current ? <Badge variant="success">当前版本</Badge> : (
+                        <Button type="button" size="sm" variant="outline" disabled={isRollingBack} onClick={() => void rollback(version.revision)}>
+                          {isRollingBack ? <LoaderCircle className="size-4 animate-spin" /> : <History className="size-4" />}回滚到此版本
+                        </Button>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+          <DialogFooter><Button type="button" variant="outline" disabled={isRollingBack} onClick={() => setVersionsItem(null)}>关闭</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 

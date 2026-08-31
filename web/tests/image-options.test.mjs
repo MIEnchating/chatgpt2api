@@ -12,7 +12,7 @@ import {
   imageWorkbenchSupportsSize,
   normalizeReferenceImageQuality,
   resolveReferenceImageRequestSize,
-} from "../src/app/image/image-options.ts";
+} from "../src/lib/image-options.ts";
 
 test("reference-project size presets and fallback dimensions stay aligned", () => {
   assert.equal(IMAGE_ASPECT_RATIO_PRESET_OPTIONS.length, 16);

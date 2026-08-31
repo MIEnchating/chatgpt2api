@@ -41,7 +41,7 @@ func referenceWorkflow() CreativeWorkflow {
 
 func TestWorkflowServiceCRUDVisibilityAndReferenceRun(t *testing.T) {
 	workflows := NewWorkflowService(newTestStorageBackend(t))
-	created, err := workflows.Save("alice", AuthRoleUser, referenceWorkflow())
+	created, err := workflows.Save("alice", referenceWorkflow())
 	if err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
@@ -51,19 +51,19 @@ func TestWorkflowServiceCRUDVisibilityAndReferenceRun(t *testing.T) {
 	if created.Config.APIMode != "responses" || created.SeriesConfig.PromptChannelID != "text-token" {
 		t.Fatalf("reference configuration was not preserved: %#v", created)
 	}
-	visible, err := workflows.List("bob", AuthRoleUser)
+	visible, err := workflows.List("bob")
 	if err != nil || len(visible) != 1 || visible[0].Editable {
 		t.Fatalf("bob visible workflows = %#v, error = %v", visible, err)
 	}
 	created.LastRunAt = "2026-08-26T08:00:00Z"
-	updated, err := workflows.Save("alice", AuthRoleUser, created)
+	updated, err := workflows.Save("alice", created)
 	if err != nil || updated.LastRunAt != created.LastRunAt {
 		t.Fatalf("updated last run = %q, error = %v", updated.LastRunAt, err)
 	}
-	if err := workflows.Delete("bob", AuthRoleUser, created.ID); err == nil {
+	if err := workflows.Delete("bob", created.ID); err == nil {
 		t.Fatal("Delete() error = nil, want ownership error")
 	}
-	if err := workflows.Delete("alice", AuthRoleUser, created.ID); err != nil {
+	if err := workflows.Delete("alice", created.ID); err != nil {
 		t.Fatalf("owner Delete() error = %v", err)
 	}
 }
@@ -72,13 +72,13 @@ func TestWorkflowServiceNormalizesDraftFieldsLikeReferenceFrontend(t *testing.T)
 	workflows := NewWorkflowService(newTestStorageBackend(t))
 	invalidVariable := referenceWorkflow()
 	invalidVariable.Variables[0].Key = "product name"
-	created, err := workflows.Save("alice", AuthRoleUser, invalidVariable)
+	created, err := workflows.Save("alice", invalidVariable)
 	if err != nil || created.Variables[0].Key != "product_name" {
 		t.Fatalf("Save() normalized variable = %#v, error = %v", created.Variables, err)
 	}
 	missingTemplate := referenceWorkflow()
 	missingTemplate.Config.PromptTemplate = ""
-	if _, err := workflows.Save("alice", AuthRoleUser, missingTemplate); err != nil {
+	if _, err := workflows.Save("alice", missingTemplate); err != nil {
 		t.Fatalf("Save() missing template error = %v", err)
 	}
 }
@@ -89,7 +89,7 @@ func TestWorkflowServicePreservesReferenceSeriesParameters(t *testing.T) {
 	workflow.Mode = "multi_image_series"
 	workflow.SeriesConfig.TargetCount = "12"
 	workflow.SeriesConfig.Concurrency = "5"
-	created, err := workflows.Save("alice", AuthRoleUser, workflow)
+	created, err := workflows.Save("alice", workflow)
 	if err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
@@ -101,7 +101,7 @@ func TestWorkflowServicePreservesReferenceSeriesParameters(t *testing.T) {
 	workflow.SeriesConfig.TargetCount = "99"
 	workflow.SeriesConfig.Concurrency = "0"
 	workflow.Config.Count = "30"
-	created, err = workflows.Save("alice", AuthRoleUser, workflow)
+	created, err = workflows.Save("alice", workflow)
 	if err != nil {
 		t.Fatalf("Save() bounds error = %v", err)
 	}
@@ -114,11 +114,11 @@ func TestWorkflowServicePrivateScopeDoesNotGrantAdministratorOwnership(t *testin
 	workflows := NewWorkflowService(newTestStorageBackend(t))
 	private := referenceWorkflow()
 	private.Scope = "private"
-	created, err := workflows.Save("alice", AuthRoleUser, private)
+	created, err := workflows.Save("alice", private)
 	if err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
-	visible, err := workflows.List("administrator", AuthRoleAdmin)
+	visible, err := workflows.List("administrator")
 	if err != nil {
 		t.Fatalf("administrator List() error = %v", err)
 	}
@@ -126,10 +126,10 @@ func TestWorkflowServicePrivateScopeDoesNotGrantAdministratorOwnership(t *testin
 		t.Fatalf("administrator private workflows = %#v, want none", visible)
 	}
 	created.Name = "管理员修改"
-	if _, err := workflows.Save("administrator", AuthRoleAdmin, created); err == nil {
+	if _, err := workflows.Save("administrator", created); err == nil {
 		t.Fatal("administrator Save() error = nil, want ownership error")
 	}
-	if err := workflows.Delete("administrator", AuthRoleAdmin, created.ID); err == nil {
+	if err := workflows.Delete("administrator", created.ID); err == nil {
 		t.Fatal("administrator Delete() error = nil, want ownership error")
 	}
 }
@@ -139,7 +139,7 @@ func TestWorkflowServicePreservesUnknownIDAndDeleteIsIdempotent(t *testing.T) {
 	workflows := NewWorkflowService(backend)
 	workflow := referenceWorkflow()
 	workflow.ID = "imported-workflow-id"
-	created, err := workflows.Save("alice", AuthRoleUser, workflow)
+	created, err := workflows.Save("alice", workflow)
 	if err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
@@ -147,18 +147,38 @@ func TestWorkflowServicePreservesUnknownIDAndDeleteIsIdempotent(t *testing.T) {
 		t.Fatalf("created ID = %q, want %q", created.ID, workflow.ID)
 	}
 
-	reloaded, err := NewWorkflowService(backend).List("alice", AuthRoleUser)
+	reloaded, err := NewWorkflowService(backend).List("alice")
 	if err != nil || len(reloaded) != 1 || reloaded[0].ID != workflow.ID || !reloaded[0].Editable {
 		t.Fatalf("reloaded workflows = %#v, error = %v", reloaded, err)
 	}
-	if err := workflows.Delete("alice", AuthRoleUser, "missing-workflow-id"); err != nil {
+	if err := workflows.Delete("alice", "missing-workflow-id"); err != nil {
 		t.Fatalf("Delete() missing error = %v", err)
+	}
+}
+
+func TestWorkflowServiceRejectsInvalidPersistedWorkflow(t *testing.T) {
+	backend := newTestStorageBackend(t)
+	store := jsonDocumentStoreFromBackend(backend)
+	if err := store.SaveJSONDocument(workflowDocumentName, map[string]any{
+		"version": 2,
+		"items": []map[string]any{{
+			"id":       "broken-workflow",
+			"owner_id": "alice",
+			"name":     "   ",
+		}},
+	}); err != nil {
+		t.Fatalf("SaveJSONDocument() error = %v", err)
+	}
+
+	_, err := NewWorkflowService(backend).List("alice")
+	if err == nil || !strings.Contains(err.Error(), "broken-workflow") || !strings.Contains(err.Error(), "请输入工作流名称") {
+		t.Fatalf("List() error = %v, want persisted workflow validation error", err)
 	}
 }
 
 func TestWorkflowServiceIgnoresRemovedDAGFields(t *testing.T) {
 	workflows := NewWorkflowService(newTestStorageBackend(t))
-	created, err := workflows.Save("alice", AuthRoleUser, CreativeWorkflow{
+	created, err := workflows.Save("alice", CreativeWorkflow{
 		Name:      "当前工作流",
 		Variables: []WorkflowVariable{{Key: "subject", Label: "主题", Type: "text", Required: true}},
 	})

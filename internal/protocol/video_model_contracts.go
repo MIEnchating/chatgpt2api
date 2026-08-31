@@ -4,7 +4,9 @@ import (
 	_ "embed"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -18,11 +20,11 @@ const VideoContractSnapshotPayloadKey = "video_contract_snapshot"
 
 var (
 	videoContractModelPattern          = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$`)
-	videoContractFieldPattern          = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,63}$`)
 	videoContractRequestPathPattern    = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,63}(\.[A-Za-z][A-Za-z0-9_]{0,63}){0,7}$`)
 	videoContractFieldPathPattern      = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,63}(\.[A-Za-z][A-Za-z0-9_]{0,63}|\[[0-9]{1,3}\])*$`)
 	videoContractMultipartFieldPattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,63}(?:\[\])?$`)
 	videoContractValuePattern          = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]{0,63}$`)
+	videoContractHostPattern           = regexp.MustCompile(`^(?:\*\.)?[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$`)
 )
 
 type VideoModelReferenceLimits struct {
@@ -132,9 +134,18 @@ type VideoModelContractPolling struct {
 
 type VideoModelContractTransport struct {
 	LocalMaterial       string `json:"local_material"`
-	MultipartFileField  string `json:"multipart_file_field,omitempty"`
-	MultipartRepeatable bool   `json:"multipart_repeatable,omitempty"`
-	MultipartMixedURLs  bool   `json:"multipart_mixed_urls,omitempty"`
+	MultipartFileField  string `json:"multipart_file_field"`
+	MultipartRepeatable bool   `json:"multipart_repeatable"`
+	MultipartMixedURLs  bool   `json:"multipart_mixed_urls"`
+	CreatePath          string `json:"create_path"`
+	QueryPath           string `json:"query_path"`
+}
+
+type VideoModelContractArtifact struct {
+	Mode         string   `json:"mode"`
+	ContentPath  string   `json:"content_path"`
+	Auth         string   `json:"auth"`
+	AllowedHosts []string `json:"allowed_hosts"`
 }
 
 type VideoModelContract struct {
@@ -143,6 +154,7 @@ type VideoModelContract struct {
 	Priority   int                          `json:"priority"`
 	Driver     string                       `json:"driver"`
 	Transport  VideoModelContractTransport  `json:"transport"`
+	Artifact   VideoModelContractArtifact   `json:"artifact"`
 	Capability VideoModelContractCapability `json:"capability"`
 	Validation VideoModelContractValidation `json:"validation"`
 	Generation VideoModelContractGeneration `json:"generation"`
@@ -180,7 +192,7 @@ func loadDefaultVideoModelContracts() []VideoModelContract {
 	if err := json.Unmarshal(videoModelContractsJSON, &document); err != nil {
 		panic(err)
 	}
-	if document.Version != 3 {
+	if document.Version != 4 {
 		panic(fmt.Sprintf("unsupported video model contract version %d", document.Version))
 	}
 	contracts := make([]VideoModelContract, 0, len(document.Contracts))
@@ -208,11 +220,23 @@ func NormalizeVideoModelContract(contract VideoModelContract) (VideoModelContrac
 	}
 	contract.Transport.LocalMaterial = strings.ToLower(strings.TrimSpace(contract.Transport.LocalMaterial))
 	contract.Transport.MultipartFileField = strings.TrimSpace(contract.Transport.MultipartFileField)
+	contract.Transport.CreatePath = normalizeVideoContractEndpointPath(contract.Transport.CreatePath)
+	contract.Transport.QueryPath = normalizeVideoContractEndpointPath(contract.Transport.QueryPath)
 	if contract.Transport.LocalMaterial != "multipart" {
 		contract.Transport.MultipartFileField = ""
 		contract.Transport.MultipartRepeatable = false
 		contract.Transport.MultipartMixedURLs = false
 	}
+	contract.Artifact.Mode = strings.ToLower(strings.TrimSpace(contract.Artifact.Mode))
+	if contract.Artifact.Mode == "" {
+		contract.Artifact.Mode = "response_url"
+	}
+	contract.Artifact.ContentPath = normalizeVideoContractEndpointPath(contract.Artifact.ContentPath)
+	contract.Artifact.Auth = strings.ToLower(strings.TrimSpace(contract.Artifact.Auth))
+	if contract.Artifact.Auth == "" {
+		contract.Artifact.Auth = "none"
+	}
+	contract.Artifact.AllowedHosts = uniqueTrimmedStrings(contract.Artifact.AllowedHosts, true)
 	contract.Models = uniqueTrimmedStrings(contract.Models, false)
 	contract.Capability.Sizes = uniqueTrimmedStrings(contract.Capability.Sizes, false)
 	contract.Capability.Resolutions = uniqueTrimmedStrings(contract.Capability.Resolutions, false)
@@ -699,6 +723,30 @@ func ValidateVideoModelContract(contract VideoModelContract) error {
 			return fmt.Errorf("multipart 文件字段 %q 格式无效", contract.Transport.MultipartFileField)
 		}
 	}
+	if err := validateVideoContractEndpointPaths(contract); err != nil {
+		return err
+	}
+	if !stringSliceContains([]string{"response_url", "task_content"}, contract.Artifact.Mode) {
+		return fmt.Errorf("视频产物获取方式仅支持 response_url 或 task_content")
+	}
+	if !stringSliceContains([]string{"none", "relay"}, contract.Artifact.Auth) {
+		return fmt.Errorf("视频产物鉴权仅支持 none 或 relay")
+	}
+	if contract.Artifact.Mode == "task_content" {
+		if !validVideoContractTaskPath(contract.Artifact.ContentPath) {
+			return fmt.Errorf("任务产物路径必须是包含 {task_id} 的绝对路径")
+		}
+		if contract.Artifact.Auth != "relay" {
+			return fmt.Errorf("任务产物路径必须使用 relay 鉴权")
+		}
+	} else if contract.Artifact.ContentPath != "" {
+		return fmt.Errorf("从响应地址获取产物时不能配置任务产物路径")
+	}
+	for _, host := range contract.Artifact.AllowedHosts {
+		if !videoContractHostPattern.MatchString(host) || strings.Contains(host, "..") {
+			return fmt.Errorf("视频产物允许域名 %q 格式无效", host)
+		}
+	}
 	capability := contract.Capability
 	if len(capability.Sizes) > 32 || len(capability.Seconds) == 0 || len(capability.Seconds) > 60 || len(capability.Resolutions) > 16 {
 		return fmt.Errorf("视频参数选项数量超出限制")
@@ -754,7 +802,8 @@ func ValidateVideoModelContract(contract VideoModelContract) error {
 	if contract.Polling.IntervalSeconds < 1 || contract.Polling.IntervalSeconds > 300 || contract.Polling.TimeoutSeconds < contract.Polling.IntervalSeconds || contract.Polling.TimeoutSeconds > 86400 {
 		return fmt.Errorf("轮询间隔或超时时间无效")
 	}
-	if len(contract.Polling.TaskIDFields) == 0 || len(contract.Polling.TaskIDFields) > 20 || len(contract.Polling.StatusFields) == 0 || len(contract.Polling.StatusFields) > 20 || len(contract.Polling.ProgressFields) > 20 || len(contract.Polling.ErrorFields) > 20 || len(contract.Polling.QueuedStatuses) == 0 || len(contract.Polling.QueuedStatuses) > 20 || len(contract.Polling.RunningStatuses) == 0 || len(contract.Polling.RunningStatuses) > 20 || len(contract.Polling.SuccessStatuses) == 0 || len(contract.Polling.SuccessStatuses) > 20 || len(contract.Polling.FailureStatuses) == 0 || len(contract.Polling.FailureStatuses) > 20 || len(contract.Polling.ResultFields) == 0 || len(contract.Polling.ResultFields) > 20 {
+	resultFieldsInvalid := len(contract.Polling.ResultFields) > 20 || contract.Artifact.Mode == "response_url" && len(contract.Polling.ResultFields) == 0
+	if len(contract.Polling.TaskIDFields) == 0 || len(contract.Polling.TaskIDFields) > 20 || len(contract.Polling.StatusFields) == 0 || len(contract.Polling.StatusFields) > 20 || len(contract.Polling.ProgressFields) > 20 || len(contract.Polling.ErrorFields) > 20 || len(contract.Polling.QueuedStatuses) == 0 || len(contract.Polling.QueuedStatuses) > 20 || len(contract.Polling.RunningStatuses) == 0 || len(contract.Polling.RunningStatuses) > 20 || len(contract.Polling.SuccessStatuses) == 0 || len(contract.Polling.SuccessStatuses) > 20 || len(contract.Polling.FailureStatuses) == 0 || len(contract.Polling.FailureStatuses) > 20 || resultFieldsInvalid {
 		return fmt.Errorf("轮询状态和结果字段不能为空或超过 20 项")
 	}
 	statusGroups := [][]string{
@@ -810,6 +859,35 @@ func ValidateVideoModelContract(contract VideoModelContract) error {
 		if !videoContractFieldPathPattern.MatchString(field) {
 			return fmt.Errorf("响应字段路径 %q 格式无效", field)
 		}
+	}
+	return nil
+}
+
+func normalizeVideoContractEndpointPath(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" || strings.HasPrefix(value, "/") {
+		return value
+	}
+	return "/" + value
+}
+
+func validVideoContractEndpointPath(value string) bool {
+	return strings.HasPrefix(value, "/") && !strings.HasPrefix(value, "//") && !strings.ContainsAny(value, "\r\n?#") && !strings.Contains(value, "://")
+}
+
+func validVideoContractTaskPath(value string) bool {
+	return validVideoContractEndpointPath(value) && strings.Count(value, "{task_id}") == 1
+}
+
+func validateVideoContractEndpointPaths(contract VideoModelContract) error {
+	if contract.Transport.CreatePath != "" && !validVideoContractEndpointPath(contract.Transport.CreatePath) {
+		return fmt.Errorf("任务创建路径必须是站内绝对路径")
+	}
+	if contract.Transport.QueryPath != "" && !validVideoContractTaskPath(contract.Transport.QueryPath) {
+		return fmt.Errorf("任务查询路径必须是包含 {task_id} 的绝对路径")
+	}
+	if contract.Driver == VideoContractDriverCustom && (contract.Transport.CreatePath == "" || contract.Transport.QueryPath == "") {
+		return fmt.Errorf("custom-video 必须配置任务创建路径和查询路径")
 	}
 	return nil
 }
@@ -1043,9 +1121,37 @@ func videoContractGlobsOverlap(left, right string) bool {
 }
 
 func cloneVideoContracts(contracts []VideoModelContract) []VideoModelContract {
-	data, _ := json.Marshal(contracts)
-	var cloned []VideoModelContract
-	_ = json.Unmarshal(data, &cloned)
+	cloned := make([]VideoModelContract, len(contracts))
+	for index, contract := range contracts {
+		contract.Models = slices.Clone(contract.Models)
+		contract.Artifact.AllowedHosts = slices.Clone(contract.Artifact.AllowedHosts)
+		contract.Capability.Sizes = slices.Clone(contract.Capability.Sizes)
+		contract.Capability.Seconds = slices.Clone(contract.Capability.Seconds)
+		contract.Capability.Resolutions = slices.Clone(contract.Capability.Resolutions)
+		contract.Generation.Modes = slices.Clone(contract.Generation.Modes)
+		contract.Rules = slices.Clone(contract.Rules)
+		for ruleIndex := range contract.Rules {
+			rule := &contract.Rules[ruleIndex]
+			rule.Require = slices.Clone(rule.Require)
+			rule.RequireAny = slices.Clone(rule.RequireAny)
+			rule.Forbid = slices.Clone(rule.Forbid)
+			rule.Limits = maps.Clone(rule.Limits)
+			rule.ForceValues = maps.Clone(rule.ForceValues)
+			rule.UI.Show = slices.Clone(rule.UI.Show)
+			rule.UI.Hide = slices.Clone(rule.UI.Hide)
+			rule.UI.Disable = slices.Clone(rule.UI.Disable)
+		}
+		contract.Polling.TaskIDFields = slices.Clone(contract.Polling.TaskIDFields)
+		contract.Polling.StatusFields = slices.Clone(contract.Polling.StatusFields)
+		contract.Polling.ProgressFields = slices.Clone(contract.Polling.ProgressFields)
+		contract.Polling.ErrorFields = slices.Clone(contract.Polling.ErrorFields)
+		contract.Polling.QueuedStatuses = slices.Clone(contract.Polling.QueuedStatuses)
+		contract.Polling.RunningStatuses = slices.Clone(contract.Polling.RunningStatuses)
+		contract.Polling.SuccessStatuses = slices.Clone(contract.Polling.SuccessStatuses)
+		contract.Polling.FailureStatuses = slices.Clone(contract.Polling.FailureStatuses)
+		contract.Polling.ResultFields = slices.Clone(contract.Polling.ResultFields)
+		cloned[index] = contract
+	}
 	return cloned
 }
 

@@ -224,10 +224,6 @@ func audioStringIn(value string, options ...string) bool {
 	return false
 }
 
-func (a *App) fetchGrokTTSVoices(ctx context.Context, apiKey, model string) ([]map[string]any, error) {
-	return a.fetchGrokTTSVoicesAt(ctx, a.relayBaseURL(), apiKey, model)
-}
-
 func (a *App) fetchGrokTTSVoicesAt(ctx context.Context, baseURL, apiKey, model string) ([]map[string]any, error) {
 	endpoint := strings.TrimRight(strings.TrimSpace(baseURL), "/") + "/v1/tts/voices?" + url.Values{"model": []string{model}}.Encode()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)

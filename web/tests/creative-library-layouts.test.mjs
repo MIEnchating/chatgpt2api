@@ -7,7 +7,7 @@ const assetDisplaySource = readFileSync(new URL("../src/app/assets/asset-display
 const globalStylesSource = readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
 const promptsSource = readFileSync(new URL("../src/app/image/components/image-prompt-market.tsx", import.meta.url), "utf8");
 const canvasSidePanelSource = readFileSync(new URL("../src/app/canvas/canvas-side-panel.tsx", import.meta.url), "utf8");
-const workflowsSource = readFileSync(new URL("../src/components/workflows/creative-workflow-workspace.tsx", import.meta.url), "utf8");
+const workflowsSource = readFileSync(new URL("../src/app/workflows/creative-workflow-workspace.tsx", import.meta.url), "utf8");
 
 test("asset filters and cards use the full content width", () => {
   assert.match(assetsSource, /data-asset-filter-bar/);
@@ -86,7 +86,7 @@ test("prompt and workflow libraries keep dense wide-screen layouts", () => {
   assert.match(workflowsSource, /<ManagementPagination/);
   assert.match(workflowsSource, /visibleWorkflows\.map/);
   assert.doesNotMatch(workflowsSource, /<h1 className="text-base font-semibold">创意工作流|个工作流\{/);
-  assert.match(workflowsSource, /!embedded && "rounded-xl border border-border"/);
+  assert.match(workflowsSource, /embedded \? "bg-transparent" : "card-surface rounded-xl border border-border\/80/);
   assert.doesNotMatch(workflowsSource, /max-w-\[1680px\]/);
   assert.match(workflowsSource, /role="button"[\s\S]*?aria-label=\{`查看任务/);
   assert.match(workflowsSource, /<WorkflowTaskDialog task=\{selectedTask\}/);

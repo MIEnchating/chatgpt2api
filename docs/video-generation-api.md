@@ -6,8 +6,8 @@
 
 - 全局模型设置决定用户可见、可选择的视频模型 ID。
 - 用户创作偏好只能在全局已启用的视频模型中选择默认模型。
-- 视频模型契约按模型 ID 声明参数面板、生成模式、素材约束、请求字段映射、轮询状态和结果字段。
-- NewAPI 负责 API Key、渠道、模型映射、厂家选择和故障转移。
+- 视频模型契约按模型 ID 声明参数面板、生成模式、素材约束、请求字段映射、厂家传输驱动、轮询状态和产物获取方式。
+- 使用 NewAPI 时由其负责 API Key、渠道、模型映射、厂家选择和故障转移；使用其他上游时仍可由内置厂家驱动或自定义异步协议完成传输。
 - 契约不会向全局模型列表注入模型。一个契约可以包含多个匹配规则，但只有全局模型设置中的模型才会出现在创作页面。
 
 ## 请求流程
@@ -39,7 +39,9 @@
 
 ## 传输
 
-当前契约版本为 v3，支持以下视频驱动：`openai-videos`、`xai-videos`、`gemini-veo`、`vertex-veo`、`dashscope-video`、`volcengine-video`、`kling-video`、`minimax-video`、`vidu-video`、`kie-video`、`apimart-video`。
+当前契约版本为 v4，支持以下视频驱动：`openai-videos`、`xai-videos`、`gemini-veo`、`vertex-veo`、`dashscope-video`、`volcengine-video`、`kling-video`、`minimax-video`、`vidu-video`、`kie-video`、`apimart-video`、`custom-video`。
+
+厂家驱动继续保留，不把系统绑定到 NewAPI。内置驱动提供默认创建和查询入口；契约也可以使用 `transport.create_path` 和包含 `{task_id}` 的 `transport.query_path` 覆盖入口。`custom-video` 用于兼容采用普通 JSON 或 multipart 异步任务结构、但不属于内置厂家的上游；需要特殊签名、加密或响应封装时仍应增加独立厂家驱动。
 
 除 Kling 原生入口外，当前 NewAPI 厂家驱动都从 `POST /v1/videos` 创建并从 `GET /v1/videos/{task_id}` 查询。驱动仍需分开声明，因为各厂家读取的请求参数不同，例如 Gemini/Vertex、火山和万相会从 `metadata` 中读取厂家参数。请求字段映射支持 `metadata.durationSeconds` 这类嵌套路径。
 
@@ -47,7 +49,22 @@
 - `kling-video` 使用 `/kling/v1/videos/text2video` 或 `/kling/v1/videos/image2video` 原生入口。
 - `kie-video` 和 `apimart-video` 仍调用 NewAPI 的 `/v1/videos`，由其 Sora 任务适配器转换为聚合平台协议。
 
-模型 ID 始终原样传输。协议完全由匹配到的契约决定，不自动选择、不做厂家推断，也没有无契约兜底。
+模型 ID 始终原样传输。协议完全由匹配到的契约决定，不自动选择、不做厂家推断，也没有无契约兜底。NewAPI 只是默认部署中常用的中转实现，并不是契约运行所必需的协议。
+
+## 产物获取
+
+契约显式选择最终视频的获取方式：
+
+- `response_url`：从轮询响应的 `result_fields` 读取视频地址，适合厂家 CDN 或聚合平台返回地址。
+- `task_content`：按 `artifact.content_path` 和任务 ID 获取内容，例如 `/v1/videos/{task_id}/content`，适合 NewAPI 或其他内容代理。
+
+`artifact.auth` 为 `none` 时不会向视频地址发送中转 Key。设置为 `relay` 时，仅允许向中转自身或 `artifact.allowed_hosts` 明确允许的域名发送 Bearer Key，避免结果地址被篡改后泄露凭据。公开结果地址还会经过公网地址与 SSRF 校验。
+
+## 发布与调试
+
+编辑已有契约可以先保存草稿；草稿不会进入运行时，也不会影响新任务。发布时系统先校验完整契约集合，再一次性替换运行时索引。每个契约保留最近 8 个已发布版本，回滚会基于历史内容发布一个新的修订，不覆盖审计记录。
+
+管理页的请求与响应模拟只执行字段映射、路径选择、任务 ID 提取、状态归一、进度和结果解析，不访问上游，也不会产生视频费用。任务创建时仍保存完整契约快照，已经进入队列的任务不受后续发布和回滚影响。
 
 NewAPI 根据原样传入的模型 ID 选择渠道；本项目的驱动决定请求结构和入口，模型契约决定具体能力及字段路径。驱动不会向模型列表注入模型，也不会替代 NewAPI 的渠道配置。
 
@@ -67,7 +84,7 @@ NewAPI 的 `/v1/videos` 对外状态为 `unknown`、`queued`、`in_progress`、`
 新增模型时：
 
 1. 在全局模型设置中添加 NewAPI 实际可用的模型 ID。
-2. 根据 NewAPI 对该模型暴露的请求和响应协议创建或导入 v3 契约。
+2. 根据实际中转或厂家暴露的请求和响应协议创建或导入 v4 契约。
 3. 在预览中确认参数面板、生成模式和素材限制。
 4. 保存并启用契约后再提交测试任务。
 

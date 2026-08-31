@@ -2,7 +2,7 @@ import { LoaderCircle } from "lucide-react";
 import { lazy, Suspense } from "react";
 import { useParams } from "react-router-dom";
 
-import { canvasProjectIDFromRoute } from "@/app/canvas/canvas-project-route";
+import { canvasProjectIDFromRoute } from "@/lib/canvas-project-route";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 
 const CanvasPage = lazy(() => import("@/app/canvas/page"));

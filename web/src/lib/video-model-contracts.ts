@@ -1,5 +1,5 @@
-export type VideoModelMaterialRange = { min: number; max: number };
-export type VideoModelModeMaterials = {
+type VideoModelMaterialRange = { min: number; max: number };
+type VideoModelModeMaterials = {
   first_frame: VideoModelMaterialRange;
   last_frame: VideoModelMaterialRange;
   image: VideoModelMaterialRange;
@@ -51,12 +51,21 @@ export type VideoModelContract = {
     | "minimax-video"
     | "vidu-video"
     | "kie-video"
-    | "apimart-video";
+    | "apimart-video"
+    | "custom-video";
   transport: {
     local_material: "url" | "multipart";
     multipart_file_field: string;
     multipart_repeatable: boolean;
     multipart_mixed_urls: boolean;
+    create_path: string;
+    query_path: string;
+  };
+  artifact: {
+    mode: "response_url" | "task_content";
+    content_path: string;
+    auth: "none" | "relay";
+    allowed_hosts: string[];
   };
   capability: {
     sizes: string[];

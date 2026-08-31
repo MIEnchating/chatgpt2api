@@ -282,9 +282,20 @@ export type ModelConfig = {
 export type ManagedVideoModelContract = {
   id: string;
   contract: VideoModelContract;
+  draft?: VideoModelContract;
+  draft_enabled?: boolean;
   enabled: boolean;
+  revision: number;
+  versions?: VideoModelContractVersion[];
   created_at: string;
   updated_at: string;
+  draft_updated_at?: string;
+};
+
+export type VideoModelContractVersion = {
+  revision: number;
+  contract: VideoModelContract;
+  published_at: string;
 };
 
 export type VideoModelContractMutation = {
@@ -301,7 +312,7 @@ export type VideoModelContractImportResult = {
 };
 
 export type VideoModelContractTransferDocument = {
-  version: 3;
+  version: 4;
   contracts: Array<{ contract: VideoModelContract; enabled: boolean }>;
 };
 
@@ -763,7 +774,7 @@ export type CreateManagedUserPayload = {
 };
 
 export async function login(username: string, password: string) {
-  clearImageGenerationPreferencesCache();
+	clearAccountScopedAPICaches();
   return httpRequest<LoginResponse>("/auth/login", {
     method: "POST",
     body: { username, password },
@@ -786,8 +797,10 @@ type ImageGenerationPreferencesResponse = { preferences: ImageGenerationPreferen
 const imageGenerationPreferencesCache = createExpiringRequestCache<ImageGenerationPreferencesResponse>(30_000);
 const modelConfigCache = createExpiringRequestCache<{ config: ModelConfig }>(30_000);
 
-function clearImageGenerationPreferencesCache() {
-  imageGenerationPreferencesCache.clear();
+function clearAccountScopedAPICaches() {
+	imageGenerationPreferencesCache.clear();
+	modelConfigCache.clear();
+	grokTTSVoiceRequests.clear();
 }
 
 export async function fetchProfileRelayKey(group?: string, tokenName?: string) {
@@ -889,7 +902,7 @@ export async function updateCreationWorkbenchPreferences(
 }
 
 export async function logout() {
-  clearImageGenerationPreferencesCache();
+	clearAccountScopedAPICaches();
   return httpRequest<{ ok: boolean }>("/auth/logout", {
     method: "POST",
     redirectOnUnauthorized: false,
@@ -1006,11 +1019,15 @@ export function fetchGrokTTSVoices(model: string, relayTokenName: string) {
   const query = new URLSearchParams({ model });
   if (relayTokenName.trim()) query.set("token_name", relayTokenName.trim());
   const requestKey = query.toString();
-  const existing = grokTTSVoiceRequests.get(requestKey);
-  if (existing) return existing;
-  const request = httpRequest<{ voices?: GrokTTSVoice[] }>(`/api/creation-tasks/audio-voices?${query.toString()}`, { timeout: 30_000 })
-    .then((response) => Array.isArray(response.voices) ? response.voices.filter((voice) => Boolean(voice.voice_id?.trim())) : [])
-    .finally(() => grokTTSVoiceRequests.delete(requestKey));
+	const existing = grokTTSVoiceRequests.get(requestKey);
+	if (existing) return existing;
+	const request = httpRequest<{ voices?: GrokTTSVoice[] }>(`/api/creation-tasks/audio-voices?${query.toString()}`, { timeout: 30_000 })
+		.then((response) => Array.isArray(response.voices) ? response.voices.filter((voice) => Boolean(voice.voice_id?.trim())) : [])
+		.finally(() => {
+			if (grokTTSVoiceRequests.get(requestKey) === request) {
+				grokTTSVoiceRequests.delete(requestKey);
+			}
+		});
   grokTTSVoiceRequests.set(requestKey, request);
   return request;
 }
@@ -1436,6 +1453,62 @@ export async function updateVideoModelContract(id: string, input: VideoModelCont
   );
   modelConfigCache.clear();
   return response;
+}
+
+export async function saveVideoModelContractDraft(id: string, input: VideoModelContractMutation) {
+  return httpRequest<{ item: ManagedVideoModelContract; items: ManagedVideoModelContract[] }>(
+    `/api/admin/video-model-contracts/${encodeURIComponent(id)}/draft`,
+    { method: "PUT", body: input },
+  );
+}
+
+export async function publishVideoModelContract(id: string, input: VideoModelContractMutation) {
+  const response = await httpRequest<{ item: ManagedVideoModelContract; items: ManagedVideoModelContract[] }>(
+    `/api/admin/video-model-contracts/${encodeURIComponent(id)}/publish`,
+    { method: "POST", body: input },
+  );
+  modelConfigCache.clear();
+  return response;
+}
+
+export async function fetchVideoModelContractVersions(id: string) {
+  return httpRequest<{ versions: VideoModelContractVersion[] }>(
+    `/api/admin/video-model-contracts/${encodeURIComponent(id)}/versions`,
+  );
+}
+
+export async function rollbackVideoModelContract(id: string, revision: number) {
+  const response = await httpRequest<{ item: ManagedVideoModelContract; items: ManagedVideoModelContract[] }>(
+    `/api/admin/video-model-contracts/${encodeURIComponent(id)}/rollback`,
+    { method: "POST", body: { revision } },
+  );
+  modelConfigCache.clear();
+  return response;
+}
+
+export type VideoModelContractPreviewResult = {
+  request: {
+    method: "POST";
+    create_path: string;
+    query_path: string;
+    body: Record<string, unknown>;
+    transport: VideoModelContract["transport"];
+  };
+  submit?: { task_id: string; error: string };
+  query?: { status: "unknown" | "queued" | "in_progress" | "completed" | "failed"; progress?: number; error: string; result_url?: string };
+};
+
+export async function previewVideoModelContract(input: {
+  contract: VideoModelContract;
+  existing_id?: string;
+  input: Record<string, unknown>;
+  submit_response?: Record<string, unknown>;
+  query_response?: Record<string, unknown>;
+}) {
+  return httpRequest<VideoModelContractPreviewResult>("/api/admin/video-model-contracts/preview", {
+    method: "POST",
+    body: input,
+  });
 }
 
 export async function setVideoModelContractEnabled(id: string, enabled: boolean) {

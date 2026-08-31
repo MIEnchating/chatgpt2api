@@ -3,6 +3,7 @@ package storage
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -81,6 +82,18 @@ func TestDatabaseBackendStoresDocumentsAndLogs(t *testing.T) {
 	health := backend.HealthCheck()
 	if health["document_count"] != 1 || health["log_count"] != 2 {
 		t.Fatalf("HealthCheck() = %#v", health)
+	}
+}
+
+func TestDatabaseBackendHealthCheckReportsCountFailure(t *testing.T) {
+	backend := openSQLiteStorageTestBackend(t, filepath.Join(t.TempDir(), "health.db"))
+	if _, err := backend.db.Exec(`DROP TABLE logs`); err != nil {
+		t.Fatalf("drop logs table: %v", err)
+	}
+
+	health := backend.HealthCheck()
+	if health["status"] != "unhealthy" || !strings.Contains(fmt.Sprint(health["error"]), "count logs rows") {
+		t.Fatalf("HealthCheck() = %#v, want count failure", health)
 	}
 }
 

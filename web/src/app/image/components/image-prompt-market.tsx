@@ -438,7 +438,6 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
               onChange={(event) => setCategorySearch(event.target.value)}
               placeholder="搜索分类"
               className="h-9 pl-8"
-              autoFocus
             />
           </div>
           <div className="flex flex-col gap-0.5">
@@ -561,7 +560,7 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
           ) : null}
         </div>
 
-        <ScrollArea ref={scrollAreaRef} className="min-h-0 flex-1 bg-background px-4 py-3 sm:px-6 sm:py-4">
+        <ScrollArea ref={scrollAreaRef} className="min-h-0 flex-1 px-4 py-3 sm:px-6 sm:py-4">
           {favoriteFilter !== "favorites" && isLoading ? (
             <div className="flex h-full min-h-[320px] flex-col items-center justify-center gap-3 text-muted-foreground">
               <LoaderCircle className="size-6 animate-spin text-[#1456f0]" />
@@ -758,7 +757,7 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
   );
 
   if (presentation === "page") {
-    return <section className="flex h-full min-h-0 w-full flex-col overflow-hidden rounded-xl border border-border bg-background">{content}</section>;
+    return <section className="card-surface flex h-full min-h-0 w-full flex-col overflow-hidden rounded-xl border border-border/80 shadow-[0_4px_16px_rgba(24,40,72,0.05)]">{content}</section>;
   }
 
   return (

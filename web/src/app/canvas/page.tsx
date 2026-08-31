@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { CanvasEngine } from "@/app/canvas/canvas-engine";
 import { CanvasNodeActionsPanel, CanvasNodeQuickActions, type CanvasImageOperation } from "@/app/canvas/canvas-node-actions-panel";
 import { CanvasProjectDialog, type CanvasProjectDialogMode } from "@/app/canvas/canvas-project-dialog";
-import { canvasProjectPath } from "@/app/canvas/canvas-project-route";
+import { canvasProjectPath } from "@/lib/canvas-project-route";
 import { CanvasSidePanel, type CanvasSidePanelTab } from "@/app/canvas/canvas-side-panel";
 import { buildCanvasAgentContext, summarizeCanvasAgentNode, summarizeCanvasAgentTask } from "@/app/canvas/agent/canvas-agent-context";
 import { arrangeCanvasAgentNodes, CANVAS_AGENT_PRIMARY_SCRIPT_NODE_SIZE, canvasAgentMediaLayoutSources, canvasAgentNodePosition, canvasAgentSourceNodeIDs, canvasAgentVideoDurationHint, canvasAgentVideoSupportsAudio, validateCanvasAgentVideoSeconds } from "@/app/canvas/agent/canvas-agent-generation";
@@ -51,8 +51,8 @@ import { CanvasPromptLibrary } from "@/app/canvas/canvas-prompt-library";
 import { CanvasVideoNodeBindings } from "@/app/canvas/canvas-video-node-bindings";
 import { CanvasVideoPreview } from "@/app/canvas/canvas-video-player";
 import { canvasVideoDisplaySize, canvasVideoFileError } from "@/app/canvas/canvas-video-import";
-import { ImageParameterLabel } from "@/app/image/components/image-parameter-ui";
-import { IMAGE_ASPECT_RATIO_OPTIONS, IMAGE_ASPECT_RATIO_PRESET_OPTIONS, IMAGE_QUALITY_OPTIONS } from "@/app/image/image-options";
+import { ImageParameterLabel } from "@/components/generation/image-parameter-ui";
+import { IMAGE_ASPECT_RATIO_OPTIONS, IMAGE_ASPECT_RATIO_PRESET_OPTIONS, IMAGE_QUALITY_OPTIONS } from "@/lib/image-options";
 import { CanvasResourceMentionTextarea } from "@/app/canvas/canvas-resource-mention-textarea";
 import { CanvasAudioPromptPanel, CanvasAudioSettingsFields, CanvasPanoramaPromptPanel, CanvasPanoramaViewer } from "@/app/canvas/canvas-special-nodes";
 import { canvasNodeMentionReferences, type CanvasResourceReference } from "@/app/canvas/canvas-resources";
@@ -84,7 +84,7 @@ import { cn } from "@/lib/utils";
 import { COLOR_THEME_CHANGE_EVENT, getPreferredColorTheme, type ColorTheme } from "@/lib/theme";
 import { useImageGenerationPreferences } from "@/lib/use-image-generation-preferences";
 import { syncCanvasTaskQueue } from "@/store/canvas-task-queue";
-import { resolveConfiguredVideoModel, supportsVideoFrameReferences, supportsVideoMultimodalReferences, videoAllowsCustomDimensions, videoAllowsCustomResolution, videoAudioControl, videoDefaultResolution, videoDefaultSeconds, videoDefaultSize, videoMultimodalReferenceLimits, videoRequiresReferenceImage, videoResolutionOptions, videoSecondsIsValid, videoSizeLabel, videoSizeOptions, videoWorkbenchResolutionForModelSize, videoWorkbenchResolutionOptions, videoWorkbenchSecondsOptions, videoWorkbenchSizeForModelResolution } from "@/lib/video-model-capabilities";
+import { resolveConfiguredVideoModel, supportsVideoFrameReferences, supportsVideoMultimodalReferences, videoAudioControl, videoDefaultResolution, videoDefaultSeconds, videoDefaultSize, videoMultimodalReferenceLimits, videoRequiresReferenceImage, videoResolutionOptions, videoSecondsIsValid, videoSizeLabel, videoSizeOptions, videoWorkbenchResolutionOptions, videoWorkbenchSecondsOptions } from "@/lib/video-model-capabilities";
 import { normalizeVideoRequest } from "@/lib/video-request-normalizer";
 import { videoContractUIState, videoModelContract } from "@/lib/video-model-contracts";
 import {
@@ -401,21 +401,17 @@ function isCanvasAccessibleReferenceURL(value: string) {
 function canvasVideoParameters(node?: CanvasNode | null) {
 	const model = node?.generation_video_model || "";
 	const sizes = videoSizeOptions(model);
-	const customDimensions = videoAllowsCustomDimensions(model);
 	const selectedSeconds = node?.generation_video_seconds;
 	const normalizedSeconds = typeof selectedSeconds === "number" && videoSecondsIsValid(model, selectedSeconds) ? selectedSeconds : videoDefaultSeconds(model);
-	const resolutions = videoResolutionOptions(model, normalizedSeconds);
-	const customResolution = videoAllowsCustomResolution(model);
+	const resolutions = videoResolutionOptions(model);
 	const defaultSize = videoDefaultSize(model);
 	const storedSize = String(node?.generation_video_size || "");
-	const normalizedSize = customDimensions
-		? (/^\d+x\d+$/i.test(storedSize) || storedSize === "auto" || storedSize === "adaptive" ? storedSize : defaultSize)
-		: sizes.includes(storedSize) ? storedSize : defaultSize;
+	const normalizedSize = sizes.includes(storedSize) ? storedSize : defaultSize;
 	return {
     generation_video_model: model,
 		generation_video_size: normalizedSize,
 		generation_video_seconds: normalizedSeconds,
-		generation_video_resolution: customResolution ? node?.generation_video_resolution || videoDefaultResolution(model, normalizedSeconds) : resolutions.includes(node?.generation_video_resolution || "") ? node?.generation_video_resolution : videoDefaultResolution(model, normalizedSeconds),
+			generation_video_resolution: resolutions.includes(node?.generation_video_resolution || "") ? node?.generation_video_resolution : videoDefaultResolution(model),
 	    generation_video_audio: videoAudioControl(model) === "toggle" ? (node?.generation_video_audio ?? false) : videoAudioControl(model) === "always",
 	    generation_video_watermark: node?.generation_video_watermark ?? false,
 			generation_video_reference_mode: node?.generation_video_reference_mode === "reference" ? "reference" as const : "first-frame" as const,
@@ -431,12 +427,12 @@ function canvasVideoParameters(node?: CanvasNode | null) {
 function canvasVideoModelPatch(model: string) {
   const presets = videoWorkbenchSecondsOptions(model);
   const seconds = presets.find((value) => value > 0) || videoDefaultSeconds(model);
-  const resolutions = videoWorkbenchResolutionOptions(model, seconds);
+  const resolutions = videoWorkbenchResolutionOptions(model);
   return {
     generation_video_model: model,
     generation_video_size: videoDefaultSize(model),
     generation_video_seconds: seconds,
-    generation_video_resolution: resolutions[0] || videoDefaultResolution(model, seconds),
+    generation_video_resolution: resolutions[0] || videoDefaultResolution(model),
     generation_video_reference_mode: "first-frame" as const,
   };
 }
@@ -523,16 +519,10 @@ function CanvasVideoPromptPanel({ node, inputs, running, generationBusy, uploadi
     taskCount: 1,
   };
   function updateVideoSettings(patch: Partial<VideoSettingsValue>) {
-    const linkedResolution = patch.size !== undefined && patch.resolution === undefined && videoAllowsCustomDimensions(params.generation_video_model)
-      ? videoWorkbenchResolutionForModelSize(params.generation_video_model, patch.size, params.generation_video_resolution || "")
-      : patch.resolution;
-    const linkedSize = patch.resolution !== undefined && patch.size === undefined && videoAllowsCustomResolution(params.generation_video_model)
-      ? videoWorkbenchSizeForModelResolution(params.generation_video_model, patch.resolution, params.generation_video_size)
-      : patch.size;
     onParametersChange({
-      ...(linkedSize !== undefined ? { generation_video_size: linkedSize } : {}),
+      ...(patch.size !== undefined ? { generation_video_size: patch.size } : {}),
       ...(patch.seconds !== undefined && videoSecondsIsValid(params.generation_video_model, Number(patch.seconds)) ? { generation_video_seconds: Number(patch.seconds) } : {}),
-      ...(linkedResolution !== undefined ? { generation_video_resolution: linkedResolution } : {}),
+      ...(patch.resolution !== undefined ? { generation_video_resolution: patch.resolution } : {}),
       ...(patch.generateAudio !== undefined ? { generation_video_audio: patch.generateAudio } : {}),
       ...(patch.watermark !== undefined ? { generation_video_watermark: patch.watermark } : {}),
     });
@@ -959,7 +949,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     ...IMAGE_ASPECT_RATIO_PRESET_OPTIONS.map((option) => option.size).filter((value) => value !== "auto"),
     ...(agentConfig?.imageSize ? [agentConfig.imageSize] : []),
   ]));
-  const agentVideoQualityValues = videoResolutionOptions(videoModel, defaultAgentVideoParameters.generation_video_seconds);
+  const agentVideoQualityValues = videoResolutionOptions(videoModel);
   const agentVideoSizeValues = videoSizeOptions(videoModel);
   const preferredAgentVideoSize = preferredCanvasAgentVideoSize(
     agentVideoSizeValues,

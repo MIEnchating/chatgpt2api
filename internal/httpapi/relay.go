@@ -121,10 +121,6 @@ func selectedRelayTokenNameFromPayload(payload map[string]any) string {
 	return util.Clean(payload["token_name"])
 }
 
-func (a *App) relayListModels(ctx context.Context, apiKey string) (map[string]any, error) {
-	return a.relayListModelsAt(ctx, a.relayBaseURL(), apiKey)
-}
-
 func (a *App) relayListModelsAt(ctx context.Context, baseURL, apiKey string) (map[string]any, error) {
 	apiKey = strings.TrimSpace(apiKey)
 	if apiKey == "" {
@@ -893,10 +889,6 @@ func (a *App) relayJSONAt(ctx context.Context, baseURL, method, pathValue, apiKe
 	return a.relayJSONDataAt(ctx, baseURL, method, pathValue, apiKey, data)
 }
 
-func (a *App) relayJSONData(ctx context.Context, method, pathValue, apiKey string, data []byte) (map[string]any, error) {
-	return a.relayJSONDataAt(ctx, a.relayBaseURL(), method, pathValue, apiKey, data)
-}
-
 func (a *App) relayJSONDataAt(ctx context.Context, baseURL, method, pathValue, apiKey string, data []byte) (map[string]any, error) {
 	var body io.Reader
 	if data != nil {
@@ -984,21 +976,26 @@ func (a *App) relayVideoTask(ctx context.Context, payload map[string]any) (map[s
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		state, pollErr := a.relayJSONAt(ctx, baseURL, http.MethodGet, queryPath+url.PathEscape(taskID), apiKey, nil)
+		state, pollErr := a.relayJSONAt(ctx, baseURL, http.MethodGet, videoContractTaskPath(queryPath, taskID), apiKey, nil)
 		if pollErr != nil {
 			return state, pollErr
 		}
 		relayVideoTaskProgress(payload, state, contract)
 		status := videoRelayTaskStatusForContract(state, contract)
 		if status == "completed" {
-			videoURL := videoResultURLForContract(state, baseURL, contract)
+			videoURL, videoAuth, artifactErr := videoArtifactURLForContract(state, baseURL, taskID, contract)
+			if artifactErr != nil {
+				return state, protocol.HTTPError{Status: http.StatusBadGateway, Message: artifactErr.Error()}
+			}
 			if videoURL == "" {
 				return state, protocol.HTTPError{Status: http.StatusBadGateway, Message: "视频已完成但上游没有返回视频地址"}
 			}
-			if strings.Contains(videoURL, "/v1/videos/") && strings.HasSuffix(videoURL, "/content") {
-				if localURL, saveErr := a.downloadRelayVideo(ctx, videoURL, apiKey, util.Clean(payload["owner_id"]), taskID); saveErr == nil {
-					videoURL = localURL
+			if videoAuth == "relay" {
+				localURL, saveErr := a.downloadRelayVideo(ctx, videoURL, apiKey, util.Clean(payload["owner_id"]), taskID, baseURL, contract.Artifact.AllowedHosts)
+				if saveErr != nil {
+					return state, protocol.HTTPError{Status: http.StatusBadGateway, Message: "视频已生成但保存失败: " + saveErr.Error()}
 				}
+				videoURL = localURL
 			}
 			return map[string]any{"created": state["created_at"], "data": []map[string]any{{"url": videoURL, "type": "video", "mime_type": "video/mp4", "video_url": videoURL}}, "output_type": "video", "model": payload["model"]}, nil
 		}
@@ -1017,6 +1014,12 @@ func (a *App) relayVideoTask(ctx context.Context, payload map[string]any) (map[s
 }
 
 func videoContractDriverPaths(contract protocol.VideoModelContract, payload map[string]any) (string, string, error) {
+	if contract.Transport.CreatePath != "" || contract.Transport.QueryPath != "" {
+		if contract.Transport.CreatePath == "" || contract.Transport.QueryPath == "" {
+			return "", "", protocol.HTTPError{Status: http.StatusBadRequest, Message: "视频模型契约必须同时配置任务创建路径和查询路径"}
+		}
+		return contract.Transport.CreatePath, contract.Transport.QueryPath, nil
+	}
 	switch contract.Driver {
 	case protocol.VideoContractDriverOpenAI,
 		protocol.VideoContractDriverXAI,
@@ -1028,7 +1031,7 @@ func videoContractDriverPaths(contract protocol.VideoModelContract, payload map[
 		protocol.VideoContractDriverVidu,
 		protocol.VideoContractDriverKIE,
 		protocol.VideoContractDriverAPIMart:
-		return "/v1/videos", "/v1/videos/", nil
+		return "/v1/videos", "/v1/videos/{task_id}", nil
 	case protocol.VideoContractDriverKling:
 		kind, valid := videoContractGenerationKind(payload, contract)
 		if !valid {
@@ -1036,15 +1039,19 @@ func videoContractDriverPaths(contract protocol.VideoModelContract, payload map[
 		}
 		switch kind {
 		case "text":
-			return "/kling/v1/videos/text2video", "/kling/v1/videos/text2video/", nil
+			return "/kling/v1/videos/text2video", "/kling/v1/videos/text2video/{task_id}", nil
 		case "image":
-			return "/kling/v1/videos/image2video", "/kling/v1/videos/image2video/", nil
+			return "/kling/v1/videos/image2video", "/kling/v1/videos/image2video/{task_id}", nil
 		default:
 			return "", "", protocol.HTTPError{Status: http.StatusBadRequest, Message: "kling-video 传输驱动仅支持文生视频和图生视频"}
 		}
 	default:
 		return "", "", protocol.HTTPError{Status: http.StatusBadRequest, Message: "视频模型契约使用了不支持的传输驱动"}
 	}
+}
+
+func videoContractTaskPath(template, taskID string) string {
+	return strings.Replace(template, "{task_id}", url.PathEscape(taskID), 1)
 }
 
 func validateVideoReferencePayloadURLs(request map[string]any, contract protocol.VideoModelContract) error {
@@ -1388,16 +1395,12 @@ func relayVideoMultipartRequest(ctx context.Context, baseURL, apiKey, createPath
 	return req, nil
 }
 
-func videoReferenceImageExtension(contentType string) string {
-	if strings.EqualFold(contentType, "image/jpeg") {
-		return "jpg"
-	}
-	return strings.TrimPrefix(strings.ToLower(strings.TrimSpace(contentType)), "image/")
-}
-
-func (a *App) downloadRelayVideo(ctx context.Context, videoURL, apiKey, owner, taskID string) (string, error) {
+func (a *App) downloadRelayVideo(ctx context.Context, videoURL, apiKey, owner, taskID, baseURL string, allowedHosts []string) (string, error) {
 	if a == nil || strings.TrimSpace(a.videoDir) == "" {
 		return "", fmt.Errorf("video storage is unavailable")
+	}
+	if err := validateAuthenticatedVideoArtifactURL(videoURL, baseURL, allowedHosts); err != nil {
+		return "", err
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, videoURL, nil)
 	if err != nil {
@@ -1412,15 +1415,82 @@ func (a *App) downloadRelayVideo(ctx context.Context, videoURL, apiKey, owner, t
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return "", fmt.Errorf("video content returned status %d", resp.StatusCode)
 	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, 512<<20))
+	data, err := io.ReadAll(io.LimitReader(resp.Body, (512<<20)+1))
 	if err != nil {
 		return "", err
+	}
+	if len(data) > 512<<20 {
+		return "", fmt.Errorf("video content exceeds 512 MB")
 	}
 	name := util.SHA1Short(owner+":"+taskID, 24) + ".mp4"
 	if err := os.WriteFile(filepath.Join(a.videoDir, name), data, 0o644); err != nil {
 		return "", err
 	}
 	return "/videos/" + name, nil
+}
+
+func videoArtifactURLForContract(state map[string]any, baseURL, taskID string, contract protocol.VideoModelContract) (string, string, error) {
+	if contract.Artifact.Mode == "task_content" {
+		path := videoContractTaskPath(contract.Artifact.ContentPath, taskID)
+		return absoluteRelayURL(baseURL, path), contract.Artifact.Auth, nil
+	}
+	videoURL := videoResultURLForContract(state, baseURL, contract)
+	if videoURL == "" {
+		return "", contract.Artifact.Auth, nil
+	}
+	if contract.Artifact.Auth == "relay" {
+		if err := validateAuthenticatedVideoArtifactURL(videoURL, baseURL, contract.Artifact.AllowedHosts); err != nil {
+			return "", "", err
+		}
+		return videoURL, "relay", nil
+	}
+	if !isPublicReferenceURL(videoURL) {
+		return "", "", fmt.Errorf("视频产物地址不是公网 HTTP 或 HTTPS URL")
+	}
+	if !videoArtifactHostAllowed(videoURL, contract.Artifact.AllowedHosts) {
+		return "", "", fmt.Errorf("视频产物地址不在契约允许域名中")
+	}
+	return videoURL, "none", nil
+}
+
+func validateAuthenticatedVideoArtifactURL(videoURL, baseURL string, allowedHosts []string) error {
+	artifact, err := url.Parse(videoURL)
+	if err != nil || artifact.Host == "" || artifact.User != nil || artifact.Scheme != "http" && artifact.Scheme != "https" {
+		return fmt.Errorf("视频产物地址无效")
+	}
+	base, err := url.Parse(baseURL)
+	if err != nil || base.Hostname() == "" || base.Scheme != "http" && base.Scheme != "https" {
+		return fmt.Errorf("视频上游地址无效")
+	}
+	if strings.EqualFold(artifact.Hostname(), base.Hostname()) || len(allowedHosts) > 0 && videoArtifactHostAllowed(videoURL, allowedHosts) {
+		return nil
+	}
+	return fmt.Errorf("拒绝向非上游域名发送视频产物鉴权")
+}
+
+func videoArtifactHostAllowed(rawURL string, allowedHosts []string) bool {
+	if len(allowedHosts) == 0 {
+		return true
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+	host := strings.ToLower(strings.TrimSuffix(parsed.Hostname(), "."))
+	for _, pattern := range allowedHosts {
+		pattern = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(pattern), "."))
+		if strings.HasPrefix(pattern, "*.") {
+			suffix := strings.TrimPrefix(pattern, "*")
+			if strings.HasSuffix(host, suffix) && host != strings.TrimPrefix(suffix, ".") {
+				return true
+			}
+			continue
+		}
+		if host == pattern {
+			return true
+		}
+	}
+	return false
 }
 
 func videoResultURLForContract(state map[string]any, baseURL string, contract protocol.VideoModelContract) string {
@@ -1604,10 +1674,6 @@ func absoluteRelayURL(baseURL, value string) string {
 	return strings.TrimRight(baseURL, "/") + "/" + strings.TrimLeft(value, "/")
 }
 
-func (a *App) relayJSONStream(ctx context.Context, pathValue, apiKey string, payload map[string]any) (map[string]any, *protocol.StreamResult, error) {
-	return a.relayJSONStreamAt(ctx, a.relayBaseURL(), pathValue, apiKey, payload)
-}
-
 func (a *App) relayJSONStreamAt(ctx context.Context, baseURL, pathValue, apiKey string, payload map[string]any) (map[string]any, *protocol.StreamResult, error) {
 	data, err := json.Marshal(payload)
 	if err != nil {
@@ -1627,10 +1693,6 @@ func (a *App) relayJSONStreamAt(ctx context.Context, baseURL, pathValue, apiKey 
 	return relayDecodeMaybeStreamResponse(resp, pathValue)
 }
 
-func (a *App) relayMultipart(ctx context.Context, pathValue, apiKey string, payload map[string]any, images []protocol.UploadedImage) (map[string]any, error) {
-	return a.relayMultipartAt(ctx, a.relayBaseURL(), pathValue, apiKey, payload, images)
-}
-
 func (a *App) relayMultipartAt(ctx context.Context, baseURL, pathValue, apiKey string, payload map[string]any, images []protocol.UploadedImage) (map[string]any, error) {
 	req, err := relayMultipartRequest(ctx, baseURL, pathValue, apiKey, payload, images)
 	if err != nil {
@@ -1642,10 +1704,6 @@ func (a *App) relayMultipartAt(ctx context.Context, baseURL, pathValue, apiKey s
 	}
 	defer resp.Body.Close()
 	return relayDecodeJSONResponse(resp)
-}
-
-func (a *App) relayMultipartStream(ctx context.Context, pathValue, apiKey string, payload map[string]any, images []protocol.UploadedImage) (map[string]any, *protocol.StreamResult, error) {
-	return a.relayMultipartStreamAt(ctx, a.relayBaseURL(), pathValue, apiKey, payload, images)
 }
 
 func (a *App) relayMultipartStreamAt(ctx context.Context, baseURL, pathValue, apiKey string, payload map[string]any, images []protocol.UploadedImage) (map[string]any, *protocol.StreamResult, error) {

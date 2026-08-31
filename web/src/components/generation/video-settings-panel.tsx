@@ -1,8 +1,8 @@
 import { LockKeyhole } from "lucide-react";
 import { useEffect, useState } from "react";
 
-import { ImageParameterLabel } from "@/app/image/components/image-parameter-ui";
-import { imageParameterChoiceClass } from "@/app/image/components/image-parameter-styles";
+import { ImageParameterLabel } from "@/components/generation/image-parameter-ui";
+import { imageParameterChoiceClass } from "@/components/generation/image-parameter-styles";
 import { AspectRatioOptionButton } from "@/components/generation/aspect-ratio-option";
 import { GenerationSizeBadge } from "@/components/generation/generation-size-badge";
 import { Input } from "@/components/ui/input";
@@ -11,10 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { TooltipHint } from "@/components/ui/tooltip";
 import {
-  VIDEO_WORKBENCH_RATIO_OPTIONS,
-  videoAllowsCustomDimensions,
   videoAllowsCustomDuration,
-  videoAllowsCustomResolution,
   videoAudioControl,
   videoComposerAspectRatio,
   videoComposerPixelLabel,
@@ -28,7 +25,6 @@ import {
   videoWorkbenchDisplaySeconds,
   videoWorkbenchDisplaySize,
   videoWorkbenchRatioForSize,
-  videoWorkbenchResolutionInputValue,
   videoWorkbenchResolutionOptions,
   videoWorkbenchSecondsOptions,
 } from "@/lib/video-model-capabilities";
@@ -65,9 +61,7 @@ export function VideoSettingsPanel({
 }) {
   const sizeOptions = videoSizeOptions(model);
   const dimensionOptions = sizeOptions.filter((item) => /^\d+x\d+$/i.test(item));
-  const allowsCustomDimensions = videoAllowsCustomDimensions(model);
-  const usesDimensionInputs = allowsCustomDimensions || (dimensionOptions.length > 0 && dimensionOptions.length === sizeOptions.length);
-  const allowsCustomResolution = videoAllowsCustomResolution(model);
+  const usesDimensionInputs = dimensionOptions.length > 0 && dimensionOptions.length === sizeOptions.length;
   const secondsOptions = videoSecondsOptions(model);
   const positiveSeconds = secondsOptions.filter((item) => item > 0);
   const displaySize = videoWorkbenchDisplaySize(model, value.size);
@@ -81,12 +75,12 @@ export function VideoSettingsPanel({
   const minimumSeconds = positiveSeconds[0] || 1;
   const maximumSeconds = positiveSeconds.at(-1) || minimumSeconds;
   const secondsValid = videoSecondsIsValid(model, Number(displaySeconds));
-  const resolutionValid = videoResolutionIsValid(model, displayResolution, Number(displaySeconds));
+  const resolutionValid = videoResolutionIsValid(model, displayResolution);
   const audioControl = videoAudioControl(model);
   const showAudio = audioControl !== "none";
   const showWatermark = videoComposerWatermarkSupported(model);
   const secondsPresets = videoWorkbenchSecondsOptions(model);
-  const resolutionOptions = videoWorkbenchResolutionOptions(model, Number(displaySeconds));
+  const resolutionOptions = videoWorkbenchResolutionOptions(model);
   const audioDisabled = audioControl === "always";
   const taskCount = Math.max(1, Math.min(6, Math.floor(value.taskCount || 1)));
   const contractUI = videoContractUIState(videoModelContract(model), {
@@ -102,12 +96,11 @@ export function VideoSettingsPanel({
 
   return (
     <div className="flex flex-col gap-3.5">
-      {!hidden("resolution") && (resolutionOptions.length > 0 || allowsCustomResolution) ? <section className="order-10 space-y-1.5">
+      {!hidden("resolution") && resolutionOptions.length > 0 ? <section className="order-10 space-y-1.5">
         <ImageParameterLabel help="更高清晰度通常需要更长生成时间。">清晰度</ImageParameterLabel>
         <div className={cn("grid gap-1 rounded-lg bg-[#f4f4f5] p-1 dark:bg-muted/70", resolutionOptions.length === 3 ? "grid-cols-3" : "grid-cols-2")}>
           {resolutionOptions.map((resolution) => <button key={resolution} type="button" disabled={disabled("resolution")} aria-pressed={displayResolution === resolution} className={imageParameterChoiceClass(displayResolution === resolution, "h-8 uppercase")} onClick={() => onChange({ resolution })}>{resolution}</button>)}
         </div>
-        {allowsCustomResolution ? <VideoResolutionInput value={videoWorkbenchResolutionInputValue(value.resolution)} disabled={disabled("resolution")} onChange={(resolution) => onChange({ resolution })} /> : null}
         {!resolutionValid ? <p className="text-[11px] text-rose-600 dark:text-rose-400">当前模型不支持该清晰度</p> : null}
       </section> : null}
 
@@ -117,8 +110,7 @@ export function VideoSettingsPanel({
           <GenerationSizeBadge>{videoSizePreview}</GenerationSizeBadge>
         </div>
         {usesDimensionInputs ? <div className="space-y-2">
-          <VideoDimensionInputs value={displaySize} options={dimensionOptions} allowCustom={allowsCustomDimensions} disabled={displaySize === "auto" || disabled("size")} onChange={(size) => onChange({ size })} />
-          {allowsCustomDimensions ? <div className="grid grid-cols-3 gap-1.5" role="group" aria-label="视频宽高比">{VIDEO_WORKBENCH_RATIO_OPTIONS.map((ratio) => <AspectRatioOptionButton key={ratio} active={displayRatio === ratio} disabled={disabled("size")} label={videoComposerSizeLabel(ratio)} description={ratio === "adaptive" ? "自动匹配" : ratio} ratio={videoComposerAspectRatio(ratio)} onClick={() => onChange({ size: ratio === "adaptive" ? "auto" : videoComposerPixelLabel(value.resolution, ratio) })} />)}</div> : null}
+          <VideoDimensionInputs value={displaySize} options={dimensionOptions} disabled={displaySize === "auto" || disabled("size")} onChange={(size) => onChange({ size })} />
         </div> : <div className="grid grid-cols-3 gap-1.5" role="group" aria-label="视频画幅比例">{sizeOptions.map((size) => { const ratio = videoWorkbenchRatioForSize(size); return <AspectRatioOptionButton key={size} active={displaySize === size} disabled={disabled("size")} label={videoComposerSizeLabel(size)} description={ratio === "adaptive" ? "自动匹配" : ratio} ratio={videoComposerAspectRatio(size)} onClick={() => onChange({ size })} />; })}</div>}
       </section> : null}
 
@@ -190,19 +182,14 @@ function VideoDurationInput({ value, min, max, disabled, placeholder, onChange }
   );
 }
 
-function VideoDimensionInputs({ value, options, allowCustom, disabled, onChange }: { value: string; options: string[]; allowCustom: boolean; disabled: boolean; onChange: (value: string) => void }) {
+function VideoDimensionInputs({ value, options, disabled, onChange }: { value: string; options: string[]; disabled: boolean; onChange: (value: string) => void }) {
   const readDimensions = (size: string) => { const match = size.match(/^(\d+)x(\d+)$/i); return { width: match?.[1] || "", height: match?.[2] || "" }; };
   const [dimensions, setDimensions] = useState(() => readDimensions(value || options[0] || ""));
   useEffect(() => setDimensions(readDimensions(value || options[0] || "")), [options, value]);
   const commit = () => {
     if (disabled || !/^\d+$/.test(dimensions.width) || !/^\d+$/.test(dimensions.height) || Number(dimensions.width) < 1 || Number(dimensions.height) < 1) return setDimensions(readDimensions(value || options[0] || ""));
     const next = `${dimensions.width}x${dimensions.height}`;
-    if (allowCustom || options.includes(next)) onChange(next); else setDimensions(readDimensions(value || options[0] || ""));
+    if (options.includes(next)) onChange(next); else setDimensions(readDimensions(value || options[0] || ""));
   };
   return <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) commit(); }}>{(["width", "height"] as const).map((key, index) => <div key={key} className={cn("grid h-9 min-w-0 grid-cols-[1.5rem_minmax(0,1fr)] items-center overflow-hidden rounded-lg border border-[#dedfe3] bg-white transition-colors dark:border-border dark:bg-background/70", disabled && "cursor-not-allowed border-border/60 bg-muted/50 text-muted-foreground dark:bg-muted/40", index === 1 && "col-start-3")}><span className={cn("pl-2 text-[11px] font-semibold text-[#8e8e93]", disabled && "text-muted-foreground")}>{key === "width" ? "W" : "H"}</span>{disabled ? <TooltipHint content="自动尺寸下不可手动输入"><span tabIndex={0} role="img" aria-label={`${key === "width" ? "宽度" : "高度"}已锁定`} className="flex h-full min-w-0 cursor-not-allowed items-center justify-center outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"><LockKeyhole className="size-3.5" aria-hidden="true" /></span></TooltipHint> : <Input type="number" min="1" value={dimensions[key]} onChange={(event) => setDimensions((current) => ({ ...current, [key]: event.target.value.replace(/\D/g, "") }))} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); commit(); event.currentTarget.blur(); } }} className="h-full min-w-0 border-0 bg-transparent px-1.5 text-center text-xs font-semibold shadow-none focus-visible:ring-0" aria-label={key === "width" ? "视频宽度" : "视频高度"} />}</div>)}<span className={cn("col-start-2 row-start-1 text-sm text-[#a0a3aa]", disabled && "text-muted-foreground/70")}>x</span></div>;
-}
-
-function VideoResolutionInput({ value, disabled, onChange }: { value: string; disabled: boolean; onChange: (value: string) => void }) {
-  const showPixelSuffix = /^\d{3,}$/.test(value.trim());
-  return <div className="grid h-8 grid-cols-[minmax(0,1fr)_1.75rem] items-center overflow-hidden rounded-lg border border-[#dedfe3] bg-white dark:border-border dark:bg-background/70"><Input value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} placeholder="自定义" className="h-full min-w-0 border-0 bg-transparent px-2 text-center text-xs font-semibold shadow-none focus-visible:ring-0" aria-label="自定义清晰度" /><span className="pr-2 text-[11px] text-[#8e8e93]">{showPixelSuffix ? "p" : ""}</span></div>;
 }

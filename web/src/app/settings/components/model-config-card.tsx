@@ -466,7 +466,6 @@ function AddModelDialog({
           <label className="grid gap-2 text-sm font-medium">
             模型 ID
             <Input
-              autoFocus
               value={customModels}
               onChange={(event) => setCustomModels(event.target.value)}
               onKeyDown={(event) => {

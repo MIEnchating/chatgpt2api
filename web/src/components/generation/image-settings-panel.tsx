@@ -1,7 +1,7 @@
 import { X } from "lucide-react";
 
-import { ImageParameterLabel } from "@/app/image/components/image-parameter-ui";
-import { imageParameterChoiceClass } from "@/app/image/components/image-parameter-styles";
+import { ImageParameterLabel } from "@/components/generation/image-parameter-ui";
+import { imageParameterChoiceClass } from "@/components/generation/image-parameter-styles";
 import {
   IMAGE_WORKBENCH_QUALITY_OPTIONS,
   buildImageSize,
@@ -9,7 +9,7 @@ import {
   isHighResolutionImageSize,
   parseImageSizeDimensions,
   type ImageSizeSelection,
-} from "@/app/image/image-options";
+} from "@/lib/image-options";
 import { ImageSizePresetControls } from "@/components/generation/image-size-preset-controls";
 import { Input } from "@/components/ui/input";
 import { NumberInput } from "@/components/ui/number-input";

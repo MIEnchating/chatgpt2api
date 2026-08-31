@@ -7,17 +7,16 @@ import type {
   CanvasPendingAgentAsset,
 } from "@/app/canvas/agent/canvas-agent-types";
 import type { MyAsset } from "@/lib/my-assets";
-import { videoDefaultResolution, videoDefaultSeconds, videoDefaultSize, videoSizeOptions } from "@/lib/video-model-capabilities";
+import { videoDefaultResolution, videoDefaultSize, videoSizeOptions } from "@/lib/video-model-capabilities";
 import type { CanvasNode } from "@/services/api/canvas";
 
 const STARTER_NODE_GAP = 360;
 
 export function defaultCanvasAgentStarterConfig(videoModel = "") {
-  const seconds = videoDefaultSeconds(videoModel);
   return {
     imageQuality: "",
     imageSize: "1:1",
-    videoQuality: videoDefaultResolution(videoModel, seconds),
+    videoQuality: videoDefaultResolution(videoModel),
     videoSize: preferredCanvasAgentVideoSize(
       videoSizeOptions(videoModel),
       videoDefaultSize(videoModel),

@@ -1,4 +1,4 @@
-import type { BananaPrompt, PromptMarketSourceConfig } from "@/app/image/banana-prompts";
+import type { BananaPrompt, PromptMarketSourceConfig } from "@/lib/prompt-market-types";
 
 const TIGER_CASE_FILES = ["README.md", "cases/ad-creative.md", "cases/character.md", "cases/comparison.md", "cases/ecommerce.md", "cases/portrait.md", "cases/poster.md", "cases/ui.md"];
 

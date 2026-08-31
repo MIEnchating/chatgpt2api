@@ -147,7 +147,10 @@ func (a *App) handleStorageFiles(w http.ResponseWriter, r *http.Request) {
 			Provider *service.StorageObjectProviderInput `json:"provider"`
 		}
 		if r.Body != nil {
-			_ = json.NewDecoder(r.Body).Decode(&request)
+			if err := json.NewDecoder(r.Body).Decode(&request); err != nil && !errors.Is(err, io.EOF) {
+				util.WriteError(w, http.StatusBadRequest, "storage provider payload is invalid")
+				return
+			}
 		}
 		if err := a.storageFiles.Delete(r.Context(), identity.ID, identity.Role == service.AuthRoleAdmin, id, request.Provider); err != nil {
 			a.writeStorageServiceError(w, err)

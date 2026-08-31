@@ -314,7 +314,7 @@ function AgentAssetMenu({ onOpenUpload, onOpenAssets }: { onOpenUpload: () => vo
 }
 
 function AgentParameterMenu({ icon, label, summary, children }: { icon: React.ReactNode; label: string; summary: string; children: React.ReactNode }) {
-  return <Popover><PopoverTrigger asChild><Button type="button" variant="secondary" className="h-9 min-w-0 flex-1 !gap-0.5 rounded-full !px-1.5 text-[10px] [&_svg]:size-3" aria-label={label}>{icon}<span className="truncate">{summary}</span></Button></PopoverTrigger><PopoverContent side="top" align="center" className="w-[min(calc(100vw-2rem),23rem)] overflow-hidden p-0" onOpenAutoFocus={(event) => event.preventDefault()}><ScrollArea className="max-h-[min(70dvh,32rem)]"><div className="space-y-3 p-3 pr-4"><p className="text-xs font-semibold">{label}</p>{children}</div></ScrollArea></PopoverContent></Popover>;
+  return <Popover><PopoverTrigger asChild><Button type="button" variant="secondary" className="h-9 min-w-0 flex-1 !gap-0.5 rounded-full !px-1.5 text-[10px] [&_svg]:size-3" aria-label={label}>{icon}<span className="truncate">{summary}</span></Button></PopoverTrigger><PopoverContent side="top" align="center" className="w-[min(calc(100vw-2rem),23rem)] overflow-hidden p-0"><ScrollArea className="max-h-[min(70dvh,32rem)]"><div className="space-y-3 p-3 pr-4"><p className="text-xs font-semibold">{label}</p>{children}</div></ScrollArea></PopoverContent></Popover>;
 }
 
 const ASSISTANT_MARKDOWN_COMPONENTS: Components = {

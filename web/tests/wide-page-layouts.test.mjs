@@ -10,6 +10,7 @@ const imageResultsSource = readSource("../src/app/image/components/image-results
 const mediaVideoPlayerSource = readSource("../src/components/media-video-player.tsx");
 const assetDisplaySource = readSource("../src/app/assets/asset-display.tsx");
 const settingsPageSource = readSource("../src/app/settings/page.tsx");
+const sectionNavigationSource = readSource("../src/components/section-navigation.tsx");
 const settingsConfigSource = readSource("../src/app/settings/components/config-card.tsx");
 const settingsUISource = readSource("../src/app/settings/components/settings-ui.tsx");
 const modelConfigSource = readSource("../src/app/settings/components/model-config-card.tsx");
@@ -81,6 +82,13 @@ test("settings and profile pages no longer retain their previous centered caps",
   assert.match(profilePageSource, /data-profile-layout/);
   assert.match(profilePageSource, /2xl:grid-cols-\[240px_minmax\(0,1fr\)\]/);
   assert.match(profilePageSource, /xl:grid-cols-3/);
+  for (const source of [settingsPageSource, profilePageSource]) {
+    assert.match(source, /<SectionNavigation/);
+    assert.doesNotMatch(source, /<aside className="rounded-lg border border-border bg-background/);
+  }
+  assert.match(sectionNavigationSource, /data-section-navigation/);
+  assert.match(sectionNavigationSource, /card-surface rounded-xl border border-border\/80/);
+  assert.match(sectionNavigationSource, /aria-current=\{active \? "page" : undefined\}/);
 });
 
 test("settings section titles and actions stay visible while their content scrolls", () => {

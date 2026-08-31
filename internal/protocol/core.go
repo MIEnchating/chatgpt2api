@@ -26,6 +26,8 @@ type StreamResult struct {
 
 const ImageOutputSlotAcquirerPayloadKey = "image_output_slot_acquirer"
 
+var inlineImageDataURLRE = regexp.MustCompile(`data:(image/[A-Za-z0-9.+-]+);base64,([A-Za-z0-9+/=]+)`)
+
 type accountUsageContextKey struct{}
 
 type AccountUsageTracker struct {
@@ -298,8 +300,7 @@ func ExtractImagesFromMessageContent(content any) []UploadedImage {
 
 func extractImagesFromText(text string) []UploadedImage {
 	var images []UploadedImage
-	re := regexp.MustCompile(`data:(image/[A-Za-z0-9.+-]+);base64,([A-Za-z0-9+/=]+)`)
-	for _, match := range re.FindAllStringSubmatch(text, -1) {
+	for _, match := range inlineImageDataURLRE.FindAllStringSubmatch(text, -1) {
 		if len(match) < 3 {
 			continue
 		}

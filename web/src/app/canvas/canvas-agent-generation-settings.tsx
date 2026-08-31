@@ -1,7 +1,7 @@
 import {
   buildImageSize,
   getImageSizeSelectionFromSize,
-} from "@/app/image/image-options";
+} from "@/lib/image-options";
 import {
   ImageSettingsPanel,
   type ImageSettingsValue,
@@ -12,11 +12,7 @@ import {
 } from "@/components/generation/video-settings-panel";
 import type { ImageQuality } from "@/lib/api";
 import {
-  videoAllowsCustomDimensions,
-  videoAllowsCustomResolution,
   videoDefaultSeconds,
-  videoWorkbenchResolutionForModelSize,
-  videoWorkbenchSizeForModelResolution,
 } from "@/lib/video-model-capabilities";
 
 export function CanvasAgentImageSettings({
@@ -71,17 +67,9 @@ export function CanvasAgentVideoSettings({
   };
 
   function update(patch: Partial<VideoSettingsValue>) {
-    let nextSize = patch.size;
-    let nextQuality = patch.resolution;
-    if (patch.size !== undefined && patch.resolution === undefined && videoAllowsCustomDimensions(model)) {
-      nextQuality = videoWorkbenchResolutionForModelSize(model, patch.size, quality);
-    }
-    if (patch.resolution !== undefined && patch.size === undefined && videoAllowsCustomResolution(model)) {
-      nextSize = videoWorkbenchSizeForModelResolution(model, patch.resolution, size);
-    }
     onChange({
-      ...(nextQuality !== undefined ? { videoQuality: nextQuality } : {}),
-      ...(nextSize !== undefined ? { videoSize: nextSize } : {}),
+      ...(patch.resolution !== undefined ? { videoQuality: patch.resolution } : {}),
+      ...(patch.size !== undefined ? { videoSize: patch.size } : {}),
     });
   }
 

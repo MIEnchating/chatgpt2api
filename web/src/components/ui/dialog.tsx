@@ -35,16 +35,21 @@ function DialogOverlay({
   );
 }
 
+type DialogContentProps = Omit<
+  React.ComponentProps<typeof DialogPrimitive.Content>,
+  "onOpenAutoFocus"
+> & {
+  showCloseButton?: boolean;
+  scrollable?: boolean;
+};
+
 function DialogContent({
   className,
   children,
   showCloseButton = true,
   scrollable = true,
   ...props
-}: React.ComponentProps<typeof DialogPrimitive.Content> & {
-  showCloseButton?: boolean;
-  scrollable?: boolean;
-}) {
+}: DialogContentProps) {
   const dialogChildren = flattenDialogChildren(children);
   const headers = dialogChildren.filter(isDialogHeaderElement);
   const footers = dialogChildren.filter(isDialogFooterElement);
@@ -57,8 +62,9 @@ function DialogContent({
       <DialogOverlay />
       <DialogPrimitive.Content
         data-slot="dialog-content"
+        onOpenAutoFocus={(event) => event.preventDefault()}
         className={cn(
-          "fixed top-[50%] left-[50%] z-50 flex max-h-[calc(100dvh-2rem)] w-[min(92vw,560px)] translate-x-[-50%] translate-y-[-50%] flex-col gap-4 overflow-hidden rounded-xl border border-border bg-background p-[var(--dialog-padding)] [--dialog-padding:1.25rem] shadow-[0_24px_70px_-32px_rgba(15,23,42,0.42)] duration-200 data-[state=open]:animate-in sm:[--dialog-padding:1.5rem] [&:has([data-slot=dialog-footer]:not([data-flush=true]))]:pb-3",
+          "fixed top-[50%] left-[50%] z-50 flex max-h-[calc(100dvh-2rem)] w-[min(92vw,560px)] translate-x-[-50%] translate-y-[-50%] flex-col gap-4 overflow-hidden rounded-xl border border-border/80 bg-card p-[var(--dialog-padding)] [--dialog-padding:1.25rem] shadow-[0_24px_70px_-32px_rgba(15,23,42,0.42)] duration-200 data-[state=open]:animate-in sm:[--dialog-padding:1.5rem] [&:has([data-slot=dialog-footer]:not([data-flush=true]))]:pb-3",
           className,
         )}
         {...props}
@@ -80,7 +86,7 @@ function DialogContent({
           </>
         ) : children}
         {showCloseButton ? (
-          <DialogPrimitive.Close data-slot="dialog-auto-close" aria-label="关闭" className="ring-offset-background focus:ring-ring data-[state=open]:bg-accent data-[state=open]:text-muted-foreground absolute top-4 right-4 z-30 rounded-full bg-background p-1.5 opacity-70 transition-[background-color,opacity] hover:bg-accent hover:opacity-100 focus:ring-2 focus:outline-none disabled:pointer-events-none">
+          <DialogPrimitive.Close data-slot="dialog-auto-close" aria-label="关闭" className="ring-offset-background focus:ring-ring data-[state=open]:bg-accent data-[state=open]:text-muted-foreground absolute top-4 right-4 z-30 rounded-full bg-card p-1.5 opacity-70 transition-[background-color,opacity] hover:bg-accent hover:opacity-100 focus:ring-2 focus:outline-none disabled:pointer-events-none">
             <X className="size-4" />
             <span className="sr-only">Close</span>
           </DialogPrimitive.Close>
@@ -130,8 +136,8 @@ function DialogFooter({
       data-slot="dialog-footer"
       data-flush={flush || undefined}
       className={cn(
-        "z-10 flex shrink-0 flex-col-reverse gap-2 bg-background sm:flex-row sm:items-center sm:justify-end [&>[data-slot=button]]:min-w-18",
-        flush && "min-h-15 border-t border-border bg-background px-5 py-3 sm:px-6",
+        "z-10 flex shrink-0 flex-col-reverse gap-2 bg-card sm:flex-row sm:items-center sm:justify-end [&>[data-slot=button]]:min-w-18",
+        flush && "min-h-15 border-t border-border bg-card px-5 py-3 sm:px-6",
         className,
       )}
       {...props}

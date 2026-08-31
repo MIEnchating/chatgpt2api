@@ -1,10 +1,50 @@
 package protocol
 
 import (
+	"encoding/json"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 )
+
+func TestVideoModelContractJSONKeepsV4Fields(t *testing.T) {
+	data, err := json.Marshal(DefaultVideoContracts()[0])
+	if err != nil {
+		t.Fatalf("marshal contract: %v", err)
+	}
+	for _, field := range []string{
+		`"multipart_file_field"`, `"multipart_repeatable"`, `"multipart_mixed_urls"`,
+		`"create_path"`, `"query_path"`, `"content_path"`, `"allowed_hosts"`,
+	} {
+		if !strings.Contains(string(data), field) {
+			t.Fatalf("serialized v4 contract is missing %s: %s", field, data)
+		}
+	}
+}
+
+func TestCloneVideoContractsCopiesNestedState(t *testing.T) {
+	source := DefaultVideoContracts()
+	source[0].Artifact.AllowedHosts = []string{"source.example"}
+	source[0].Rules[0].Limits = map[string]int{"reference_image": 1}
+	source[0].Rules[0].UI.Hide = []string{"watermark"}
+	cloned := cloneVideoContracts(source)
+	cloned[0].Models[0] = "mutated-model"
+	cloned[0].Artifact.AllowedHosts[0] = "mutated.example"
+	cloned[0].Generation.Modes[0].Label = "mutated mode"
+	cloned[0].Rules[0].Limits["reference_image"] = 999
+	cloned[0].Rules[0].UI.Hide[0] = "duration"
+	cloned[0].Polling.ResultFields[0] = "mutated.result"
+
+	if source[0].Models[0] == "mutated-model" ||
+		!slices.Contains(source[0].Artifact.AllowedHosts, "source.example") ||
+		source[0].Generation.Modes[0].Label == "mutated mode" ||
+		source[0].Rules[0].Limits["reference_image"] != 1 ||
+		!slices.Contains(source[0].Rules[0].UI.Hide, "watermark") ||
+		source[0].Polling.ResultFields[0] == "mutated.result" {
+		t.Fatalf("cloneVideoContracts() shared nested state: %#v", source[0])
+	}
+}
 
 func TestMiniMaxH3DeclaredVideoContract(t *testing.T) {
 	for _, model := range []string{"minimax-h3-768p", "minimax-h3-768p-enhanced"} {
@@ -174,6 +214,10 @@ func TestSupportedVideoContractDrivers(t *testing.T) {
 		if driver == VideoContractDriverKling {
 			contract.Generation.Modes = contract.Generation.Modes[:2]
 		}
+		if driver == VideoContractDriverCustom {
+			contract.Transport.CreatePath = "/vendor/tasks"
+			contract.Transport.QueryPath = "/vendor/tasks/{task_id}"
+		}
 		if _, err := NormalizeVideoModelContract(contract); err != nil {
 			t.Fatalf("supported driver %q rejected: %v", driver, err)
 		}
@@ -182,6 +226,33 @@ func TestSupportedVideoContractDrivers(t *testing.T) {
 	contract.Driver = "newapi-video"
 	if _, err := NormalizeVideoModelContract(contract); err == nil {
 		t.Fatal("legacy gateway name was accepted as a protocol driver")
+	}
+}
+
+func TestVideoContractValidatesPortableTransportAndArtifactSettings(t *testing.T) {
+	contract := DefaultVideoContracts()[0]
+	contract.Driver = VideoContractDriverCustom
+	contract.Transport.CreatePath = "/vendor/tasks"
+	contract.Transport.QueryPath = "/vendor/tasks/{task_id}"
+	contract.Artifact = VideoModelContractArtifact{
+		Mode:         "task_content",
+		ContentPath:  "/vendor/tasks/{task_id}/content",
+		Auth:         "relay",
+		AllowedHosts: []string{"media.example.com", "*.cdn.example.com"},
+	}
+	contract.Polling.ResultFields = nil
+	if _, err := NormalizeVideoModelContract(contract); err != nil {
+		t.Fatalf("portable contract rejected: %v", err)
+	}
+
+	contract.Transport.QueryPath = "/vendor/tasks"
+	if _, err := NormalizeVideoModelContract(contract); err == nil {
+		t.Fatal("query path without task placeholder was accepted")
+	}
+	contract.Transport.QueryPath = "/vendor/tasks/{task_id}"
+	contract.Artifact.Auth = "none"
+	if _, err := NormalizeVideoModelContract(contract); err == nil {
+		t.Fatal("task content without relay auth was accepted")
 	}
 }
 

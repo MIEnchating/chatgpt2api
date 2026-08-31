@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { canvasProjectIDFromRoute, canvasProjectPath } from "../src/app/canvas/canvas-project-route.ts";
+import { canvasProjectIDFromRoute, canvasProjectPath } from "../src/lib/canvas-project-route.ts";
 
 test("canvas project URLs omit the storage ID prefix", () => {
   assert.equal(canvasProjectPath("canvas-0626bfdc6e10c39c5bbbefba"), "/canvas/0626bfdc6e10c39c5bbbefba");

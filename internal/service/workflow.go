@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"regexp"
 	"sort"
 	"strings"
@@ -13,6 +14,8 @@ import (
 )
 
 const workflowDocumentName = "creative_workflows.json"
+
+var invalidWorkflowTemplateVariableKeyCharacterRE = regexp.MustCompile(`[^A-Za-z0-9_.-]`)
 
 type WorkflowVariable struct {
 	ID           string   `json:"id"`
@@ -73,7 +76,7 @@ func NewWorkflowService(backend ...storage.Backend) *WorkflowService {
 	return &WorkflowService{store: firstJSONDocumentStore(backend)}
 }
 
-func (s *WorkflowService) List(ownerID, role string) ([]CreativeWorkflow, error) {
+func (s *WorkflowService) List(ownerID string) ([]CreativeWorkflow, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	items, err := s.loadLocked()
@@ -92,7 +95,7 @@ func (s *WorkflowService) List(ownerID, role string) ([]CreativeWorkflow, error)
 	return result, nil
 }
 
-func (s *WorkflowService) Save(ownerID, role string, input CreativeWorkflow) (CreativeWorkflow, error) {
+func (s *WorkflowService) Save(ownerID string, input CreativeWorkflow) (CreativeWorkflow, error) {
 	ownerID = strings.TrimSpace(ownerID)
 	if ownerID == "" {
 		return CreativeWorkflow{}, errors.New("owner_id is required")
@@ -142,7 +145,7 @@ func (s *WorkflowService) Save(ownerID, role string, input CreativeWorkflow) (Cr
 	return input, nil
 }
 
-func (s *WorkflowService) Delete(ownerID, role, id string) error {
+func (s *WorkflowService) Delete(ownerID, id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	items, err := s.loadLocked()
@@ -209,7 +212,7 @@ func normalizeWorkflow(item *CreativeWorkflow) error {
 }
 
 func sanitizeWorkflowTemplateVariableKey(value string) string {
-	return regexp.MustCompile(`[^A-Za-z0-9_.-]`).ReplaceAllString(value, "_")
+	return invalidWorkflowTemplateVariableKeyCharacterRE.ReplaceAllString(value, "_")
 }
 
 func normalizeWorkflowConfig(config *WorkflowGenerationConfig) {
@@ -264,7 +267,13 @@ func (s *WorkflowService) loadLocked() ([]CreativeWorkflow, error) {
 		document.Items = []CreativeWorkflow{}
 	}
 	for i := range document.Items {
-		_ = normalizeWorkflow(&document.Items[i])
+		if err := normalizeWorkflow(&document.Items[i]); err != nil {
+			identifier := strings.TrimSpace(document.Items[i].ID)
+			if identifier == "" {
+				identifier = fmt.Sprintf("第 %d 条", i+1)
+			}
+			return nil, fmt.Errorf("工作流 %s 的存储数据无效: %w", identifier, err)
+		}
 	}
 	return document.Items, nil
 }

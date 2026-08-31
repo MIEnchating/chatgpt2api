@@ -76,15 +76,14 @@ export function videoDefaultSize(model: string) {
   return capability.default_size || capability.sizes[0] || "";
 }
 
-export function videoDefaultResolution(model: string, seconds?: number) {
+export function videoDefaultResolution(model: string) {
   const capability = videoCapability(model);
   const requestedDefault = capability.default_resolution || "";
-  const options = videoResolutionOptions(model, seconds);
+  const options = videoResolutionOptions(model);
   return options.find((value) => value.toLowerCase() === requestedDefault.toLowerCase()) || options[0] || "";
 }
 
-export function videoResolutionOptions(model: string, seconds?: number): string[] {
-  void seconds;
+export function videoResolutionOptions(model: string): string[] {
   return [...videoCapability(model).resolutions];
 }
 
@@ -92,8 +91,7 @@ export function videoReferenceImageLimit(model: string) {
   return videoCapability(model).first_frame_image_limit;
 }
 
-export function supportsVideoFrameReferences(model: string, protocol = "") {
-  void protocol;
+export function supportsVideoFrameReferences(model: string) {
   return Boolean(videoModelContract(model)?.generation.modes.some((mode) => mode.kind === "image"));
 }
 
@@ -137,33 +135,12 @@ export function videoAudioControl(model: string): "toggle" | "always" | "none" {
   return videoCapability(model).audio_control;
 }
 
-export function referenceWorkbenchSupportsVideoAudio(model: string) {
-  return videoAudioControl(model) !== "none";
-}
-
-export function videoWatermarkSupported(model: string) {
+function videoWatermarkSupported(model: string) {
   return videoCapability(model).watermark;
 }
 
 export function videoComposerWatermarkSupported(model: string) {
   return videoWatermarkSupported(model);
-}
-
-export function videoAllowsCustomDimensions(model: string) {
-  void model;
-  return false;
-}
-
-export function videoAllowsCustomResolution(model: string) {
-  void model;
-  return false;
-}
-
-export function videoSizeIsValid(model: string, value: string) {
-  const requested = String(value || "").trim();
-  const options = videoSizeOptions(model);
-  if (options.length === 0) return requested === "";
-  return options.some((option) => option.toLowerCase() === requested.toLowerCase());
 }
 
 export function videoSecondsIsValid(model: string, value: number) {
@@ -175,27 +152,19 @@ export function videoAllowsCustomDuration(model: string) {
   return false;
 }
 
-export function videoDurationSupported(model: string) {
-  return Boolean(videoModelContract(model)?.request.duration_field);
-}
-
-export function videoResolutionIsValid(model: string, value: string, seconds?: number) {
+export function videoResolutionIsValid(model: string, value: string) {
   const requested = String(value || "").trim();
-  const options = videoResolutionOptions(model, seconds);
+  const options = videoResolutionOptions(model);
   if (options.length === 0) return requested === "";
   return options.some((option) => option.toLowerCase() === requested.toLowerCase());
 }
 
-export function videoWorkbenchResolutionOptions(model: string, seconds?: number) {
-  return videoResolutionOptions(model, seconds);
+export function videoWorkbenchResolutionOptions(model: string) {
+  return videoResolutionOptions(model);
 }
 
 export function videoWorkbenchSecondsOptions(model: string) {
   return videoSecondsOptions(model);
-}
-
-export function usesReferenceSpecialVideoPanel(model: string) {
-  return Boolean(videoModelContract(model));
 }
 
 export type VideoWorkbenchMaterialSections = {
@@ -215,11 +184,6 @@ export function videoWorkbenchMaterialSections(model: string): VideoWorkbenchMat
     audio: Boolean(referenceMode?.materials.audio.max),
     imageLabel: imageMode && !referenceMode ? "首尾帧" : "参考图",
   };
-}
-
-export function videoWorkbenchValidatesReferenceVideoMetadata(model: string) {
-  void model;
-  return false;
 }
 
 export function videoSizeLabel(size: string) {
@@ -273,7 +237,7 @@ function normalizeVideoWorkbenchResolutionToken(resolution: string) {
   return value;
 }
 
-export const VIDEO_WORKBENCH_RATIO_OPTIONS = ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9", "adaptive"] as const;
+const VIDEO_WORKBENCH_RATIO_OPTIONS = ["16:9", "9:16", "1:1", "4:3", "3:4", "21:9", "adaptive"] as const;
 
 function closestVideoWorkbenchRatio(size: string) {
   if (size === "auto" || size === "adaptive") return "adaptive";
@@ -308,42 +272,10 @@ export function videoWorkbenchDisplayResolution(model: string, resolution: strin
   return options.find((option) => option.toLowerCase() === requested.toLowerCase()) || videoDefaultResolution(model);
 }
 
-export function videoWorkbenchResolutionInputValue(value: string) {
-  return String(value || "").trim().replace(/p$/i, "");
-}
-
 export function videoWorkbenchDisplaySeconds(model: string, seconds: string | number) {
   const requested = Math.floor(Number(seconds));
   if (Number.isFinite(requested) && videoSecondsOptions(model).includes(requested)) return String(requested);
   return String(videoDefaultSeconds(model));
-}
-
-export function videoWorkbenchSizeForResolution(resolution: string, currentSize: string) {
-  void resolution;
-  return currentSize;
-}
-
-export function videoWorkbenchResolutionForSize(size: string, currentResolution: string) {
-  void size;
-  return currentResolution;
-}
-
-export function videoWorkbenchSizeForModelResolution(model: string, resolution: string, currentSize: string) {
-  void model;
-  return videoWorkbenchSizeForResolution(resolution, currentSize);
-}
-
-export function videoWorkbenchResolutionForModelSize(model: string, size: string, currentResolution: string) {
-  void model;
-  return videoWorkbenchResolutionForSize(size, currentResolution);
-}
-
-export function videoComposerSizeDescription(model: string, resolution: string, size: string) {
-  void model;
-  const ratio = videoWorkbenchRatioForSize(size);
-  const ratioLabel = ratio === "adaptive" ? "自动匹配" : ratio;
-  const pixelLabel = /^\d+x\d+$/i.test(size) ? size : videoComposerPixelLabel(resolution, ratio);
-  return Array.from(new Set([ratioLabel, pixelLabel].filter(Boolean))).join(" · ") || undefined;
 }
 
 export function videoComposerAspectRatio(size: string) {

@@ -127,24 +127,29 @@ func TestVideoContractDriverPathsAreDeclaredByContract(t *testing.T) {
 		createPath string
 		queryPath  string
 	}{
-		{name: "OpenAI", driver: protocol.VideoContractDriverOpenAI, mode: "text-to-video", createPath: "/v1/videos", queryPath: "/v1/videos/"},
-		{name: "xAI", driver: protocol.VideoContractDriverXAI, mode: "text-to-video", createPath: "/v1/videos", queryPath: "/v1/videos/"},
-		{name: "Gemini Veo", driver: protocol.VideoContractDriverGeminiVeo, mode: "text-to-video", createPath: "/v1/videos", queryPath: "/v1/videos/"},
-		{name: "Vertex Veo", driver: protocol.VideoContractDriverVertexVeo, mode: "text-to-video", createPath: "/v1/videos", queryPath: "/v1/videos/"},
-		{name: "DashScope", driver: protocol.VideoContractDriverDashScope, mode: "text-to-video", createPath: "/v1/videos", queryPath: "/v1/videos/"},
-		{name: "Volcengine", driver: protocol.VideoContractDriverVolcengine, mode: "text-to-video", createPath: "/v1/videos", queryPath: "/v1/videos/"},
-		{name: "Kling text", driver: protocol.VideoContractDriverKling, mode: "text-to-video", createPath: "/kling/v1/videos/text2video", queryPath: "/kling/v1/videos/text2video/"},
-		{name: "Kling image", driver: protocol.VideoContractDriverKling, mode: "image-to-video", createPath: "/kling/v1/videos/image2video", queryPath: "/kling/v1/videos/image2video/"},
-		{name: "MiniMax", driver: protocol.VideoContractDriverMiniMax, mode: "text-to-video", createPath: "/v1/videos", queryPath: "/v1/videos/"},
-		{name: "Vidu", driver: protocol.VideoContractDriverVidu, mode: "text-to-video", createPath: "/v1/videos", queryPath: "/v1/videos/"},
-		{name: "KIE", driver: protocol.VideoContractDriverKIE, mode: "text-to-video", createPath: "/v1/videos", queryPath: "/v1/videos/"},
-		{name: "APIMart", driver: protocol.VideoContractDriverAPIMart, mode: "text-to-video", createPath: "/v1/videos", queryPath: "/v1/videos/"},
+		{name: "OpenAI", driver: protocol.VideoContractDriverOpenAI, mode: "text-to-video", createPath: "/v1/videos", queryPath: "/v1/videos/{task_id}"},
+		{name: "xAI", driver: protocol.VideoContractDriverXAI, mode: "text-to-video", createPath: "/v1/videos", queryPath: "/v1/videos/{task_id}"},
+		{name: "Gemini Veo", driver: protocol.VideoContractDriverGeminiVeo, mode: "text-to-video", createPath: "/v1/videos", queryPath: "/v1/videos/{task_id}"},
+		{name: "Vertex Veo", driver: protocol.VideoContractDriverVertexVeo, mode: "text-to-video", createPath: "/v1/videos", queryPath: "/v1/videos/{task_id}"},
+		{name: "DashScope", driver: protocol.VideoContractDriverDashScope, mode: "text-to-video", createPath: "/v1/videos", queryPath: "/v1/videos/{task_id}"},
+		{name: "Volcengine", driver: protocol.VideoContractDriverVolcengine, mode: "text-to-video", createPath: "/v1/videos", queryPath: "/v1/videos/{task_id}"},
+		{name: "Kling text", driver: protocol.VideoContractDriverKling, mode: "text-to-video", createPath: "/kling/v1/videos/text2video", queryPath: "/kling/v1/videos/text2video/{task_id}"},
+		{name: "Kling image", driver: protocol.VideoContractDriverKling, mode: "image-to-video", createPath: "/kling/v1/videos/image2video", queryPath: "/kling/v1/videos/image2video/{task_id}"},
+		{name: "MiniMax", driver: protocol.VideoContractDriverMiniMax, mode: "text-to-video", createPath: "/v1/videos", queryPath: "/v1/videos/{task_id}"},
+		{name: "Vidu", driver: protocol.VideoContractDriverVidu, mode: "text-to-video", createPath: "/v1/videos", queryPath: "/v1/videos/{task_id}"},
+		{name: "KIE", driver: protocol.VideoContractDriverKIE, mode: "text-to-video", createPath: "/v1/videos", queryPath: "/v1/videos/{task_id}"},
+		{name: "APIMart", driver: protocol.VideoContractDriverAPIMart, mode: "text-to-video", createPath: "/v1/videos", queryPath: "/v1/videos/{task_id}"},
+		{name: "Custom", driver: protocol.VideoContractDriverCustom, mode: "text-to-video", createPath: "/custom/tasks", queryPath: "/custom/tasks/{task_id}"},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			coveredDrivers[test.driver] = true
 			contract := base
 			contract.Driver = test.driver
+			if test.driver == protocol.VideoContractDriverCustom {
+				contract.Transport.CreatePath = test.createPath
+				contract.Transport.QueryPath = test.queryPath
+			}
 			createPath, queryPath, err := videoContractDriverPaths(contract, map[string]any{"generation_mode": test.mode})
 			if err != nil || createPath != test.createPath || queryPath != test.queryPath {
 				t.Fatalf("videoContractDriverPaths() = %q, %q, %v; want %q, %q", createPath, queryPath, err, test.createPath, test.queryPath)
@@ -155,6 +160,45 @@ func TestVideoContractDriverPathsAreDeclaredByContract(t *testing.T) {
 		if !coveredDrivers[driver] {
 			t.Errorf("supported video driver %q has no declared runtime path test", driver)
 		}
+	}
+}
+
+func TestVideoArtifactURLUsesExplicitPortableStrategy(t *testing.T) {
+	contract := protocol.DefaultVideoContracts()[0]
+	contract.Artifact = protocol.VideoModelContractArtifact{
+		Mode:        "task_content",
+		ContentPath: "/v1/videos/{task_id}/content",
+		Auth:        "relay",
+	}
+	videoURL, auth, err := videoArtifactURLForContract(nil, "https://relay.example.com", "task/id", contract)
+	if err != nil || videoURL != "https://relay.example.com/v1/videos/task%2Fid/content" || auth != "relay" {
+		t.Fatalf("task content artifact = %q, %q, %v", videoURL, auth, err)
+	}
+
+	contract.Artifact = protocol.VideoModelContractArtifact{Mode: "response_url", Auth: "none", AllowedHosts: []string{"cdn.example.com"}}
+	state := map[string]any{"video_url": "https://cdn.example.com/video.mp4"}
+	videoURL, auth, err = videoArtifactURLForContract(state, "https://relay.example.com", "task-1", contract)
+	if err != nil || videoURL != state["video_url"] || auth != "none" {
+		t.Fatalf("response artifact = %q, %q, %v", videoURL, auth, err)
+	}
+	state["video_url"] = "https://other.example.com/video.mp4"
+	if _, _, err = videoArtifactURLForContract(state, "https://relay.example.com", "task-1", contract); err == nil {
+		t.Fatal("response artifact outside allowed hosts was accepted")
+	}
+}
+
+func TestAuthenticatedVideoArtifactDoesNotLeakRelayKeyToOtherHosts(t *testing.T) {
+	if err := validateAuthenticatedVideoArtifactURL("https://relay.example.com/content", "https://relay.example.com", nil); err != nil {
+		t.Fatalf("relay host rejected: %v", err)
+	}
+	if err := validateAuthenticatedVideoArtifactURL("ftp://relay.example.com/content", "https://relay.example.com", nil); err == nil {
+		t.Fatal("non-HTTP artifact URL accepted relay authentication")
+	}
+	if err := validateAuthenticatedVideoArtifactURL("https://cdn.example.com/content", "https://relay.example.com", nil); err == nil {
+		t.Fatal("unlisted CDN accepted relay authentication")
+	}
+	if err := validateAuthenticatedVideoArtifactURL("https://media.cdn.example.com/content", "https://relay.example.com", []string{"*.cdn.example.com"}); err != nil {
+		t.Fatalf("allowed CDN rejected: %v", err)
 	}
 }
 

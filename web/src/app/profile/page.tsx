@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
+import { SectionNavigation } from "@/components/section-navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -853,12 +854,14 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
       viewStyle={{ height: "100%", minHeight: "100%" }}
     >
       <div data-profile-layout className="grid min-h-full w-full grid-cols-[minmax(0,1fr)] items-start gap-4 pr-1 lg:h-full lg:min-h-0 lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-5 2xl:grid-cols-[240px_minmax(0,1fr)]">
-        <aside className="rounded-lg border border-border bg-background p-2 lg:sticky lg:top-0">
-          <div className="px-2 pb-2 pt-1 lg:pb-3"><h1 className="text-base font-semibold text-foreground">个人设置</h1><p className="mt-0.5 text-xs text-muted-foreground">管理账户与创作偏好</p></div>
-          <nav className="flex gap-1 overflow-x-auto pb-1 lg:grid lg:overflow-visible lg:pb-0" aria-label="个人设置分类">
-            {profileItems.map((item) => { const Icon = item.icon; const active = item.id === activeSection; return <button key={item.id} type="button" onClick={() => selectSection(item.id)} className={`flex h-10 shrink-0 items-center gap-2 rounded-md px-3 text-left text-sm transition lg:w-full lg:gap-2.5 ${active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}><Icon className="size-4" /><span>{item.label}</span></button>; })}
-          </nav>
-        </aside>
+        <SectionNavigation
+          title="个人设置"
+          description="管理账户与创作偏好"
+          items={profileItems}
+          activeId={activeSection}
+          ariaLabel="个人设置分类"
+          onSelect={selectSection}
+        />
         <main id={activeSection} className="min-w-0 lg:h-full lg:min-h-0">
           <div hidden={activeSection !== "account"}><AccountOverviewCard balance={balance} isLoading={isLoadingBalance} onRefresh={() => void loadBalance()} session={session} /></div>
           <div hidden={activeSection !== "keys"}><AccountResourcesCard customConfigs={customRelayConfigs?.configs} customConfigurable={customRelayConfigs?.configurable === true} selectedTokenNames={selectedTokenNames} tokenNameOptions={tokenNameOptions} onTokenNameChange={selectRelayTokenNames} onEditCustom={(kind, status) => setEditingCustomRelay({ kind, status })} /></div>

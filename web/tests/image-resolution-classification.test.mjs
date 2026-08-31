@@ -5,7 +5,7 @@ import {
   calculateImageSize,
   getImageSizeRequirementLabel,
   isHighResolutionImageSize,
-} from "../src/app/image/image-options.ts";
+} from "../src/lib/image-options.ts";
 
 test("1080P requests remain regular resolution across aspect ratios", () => {
   const fullHD = calculateImageSize("1080p", "16:9");

@@ -24,6 +24,16 @@ export type CreationTaskOutputPersistenceFailure = {
 
 const registeredGeneratedAssetIDs = new Set<string>();
 const generatedAssetRequests = new Map<string, Promise<void>>();
+const MAX_REGISTERED_GENERATED_ASSETS = 512;
+
+function rememberGeneratedAssetRegistration(key: string) {
+  registeredGeneratedAssetIDs.add(key);
+  while (registeredGeneratedAssetIDs.size > MAX_REGISTERED_GENERATED_ASSETS) {
+    const oldestKey = registeredGeneratedAssetIDs.values().next().value;
+    if (typeof oldestKey !== "string") break;
+    registeredGeneratedAssetIDs.delete(oldestKey);
+  }
+}
 
 export async function persistCreationTaskOutputs(
   task: CreationTask,
@@ -97,13 +107,15 @@ export async function ensureGeneratedVideoAsset(
   context: CreationTaskAssetContext = {},
 ) {
   const asset = generatedVideoAsset(task, item, index, context);
-  if (!asset || registeredGeneratedAssetIDs.has(asset.id)) return;
-  let request = generatedAssetRequests.get(asset.id);
+  if (!asset) return;
+  const registrationKey = `${asset.id}:${asset.storageKey || ""}`;
+  if (registeredGeneratedAssetIDs.has(registrationKey)) return;
+  let request = generatedAssetRequests.get(registrationKey);
   if (!request) {
     request = upsertMyAsset(asset).then(() => {
-      registeredGeneratedAssetIDs.add(asset.id);
-    }).finally(() => generatedAssetRequests.delete(asset.id));
-    generatedAssetRequests.set(asset.id, request);
+      rememberGeneratedAssetRegistration(registrationKey);
+    }).finally(() => generatedAssetRequests.delete(registrationKey));
+    generatedAssetRequests.set(registrationKey, request);
   }
   await request;
 }

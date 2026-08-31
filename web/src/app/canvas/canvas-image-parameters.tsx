@@ -2,14 +2,14 @@ import { SlidersHorizontal } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-import { ImageParameterLabel } from "@/app/image/components/image-parameter-ui";
+import { ImageParameterLabel } from "@/components/generation/image-parameter-ui";
 import { defaultCanvasImageParameters } from "@/app/canvas/canvas-image-parameter-defaults";
 import { canvasFloatingPanelPlacement } from "@/app/canvas/canvas-floating-panel";
 import {
   buildImageSize,
   formatImageSizeDisplay,
   getImageSizeSelectionFromSize,
-} from "@/app/image/image-options";
+} from "@/lib/image-options";
 import {
   ImageSettingsPanel,
   type ImageSettingsValue,

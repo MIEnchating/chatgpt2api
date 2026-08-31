@@ -9,7 +9,7 @@ import type {
   ImageTurn,
   ImageTurnStatus,
   StoredImage,
-} from "@/store/image-conversations";
+} from "@/lib/image-conversation-types";
 
 export type { GenerationOutputStatus, GenerationTaskSlot, GenerationTaskStatus } from "@/lib/generation-task-contract";
 

@@ -11,6 +11,8 @@ const usersSource = readSource("../src/app/users/page.tsx");
 const rbacSource = readSource("../src/app/rbac/page.tsx");
 const permissionEditorSource = readSource("../src/components/permission-editor.tsx");
 const logsSource = readSource("../src/app/logs/page.tsx");
+const workflowsSource = readSource("../src/app/workflows/creative-workflow-workspace.tsx");
+const emptyStateSource = readSource("../src/components/ui/empty-state.tsx");
 
 test("management pages share one page and panel layout contract", () => {
   for (const source of [assetsSource, usersSource, rbacSource, logsSource]) {
@@ -24,7 +26,8 @@ test("management pages share one page and panel layout contract", () => {
   assert.match(managementSource, /data-management-page/);
   assert.match(managementSource, /gap-\[var\(--page-section-gap\)\]/);
   assert.match(managementSource, /data-management-panel/);
-  assert.match(managementSource, /border border-border bg-background/);
+  assert.match(managementSource, /card-surface[\s\S]*border border-border\/80/);
+  assert.doesNotMatch(managementSource, /data-management-panel[\s\S]{0,240}bg-background/);
   assert.doesNotMatch(managementSource, /components\/ui\/card/);
   assert.match(managementSource, /data-management-toolbar/);
 });
@@ -103,4 +106,14 @@ test("management actions share the same row as their filters", () => {
       .length,
     1
   );
+});
+
+test("major libraries and management pages share one page-level empty state", () => {
+  assert.match(emptyStateSource, /data-empty-state/);
+  assert.match(emptyStateSource, /compact \? "min-h-32 py-8" : "min-h-44 py-10"/);
+  for (const source of [assetsSource, usersSource, rbacSource, logsSource, workflowsSource]) {
+    assert.match(source, /<EmptyState/);
+  }
+  assert.doesNotMatch(usersSource, /px-6 py-14 text-center text-sm text-stone-500/);
+  assert.doesNotMatch(rbacSource, /px-5 py-12 text-center text-sm text-muted-foreground/);
 });

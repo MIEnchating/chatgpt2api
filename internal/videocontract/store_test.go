@@ -74,7 +74,7 @@ func TestVideoModelContractServiceMigratesLegacyGatewayDriver(t *testing.T) {
 
 	contract := protocol.DefaultVideoContracts()[0]
 	contract.Driver = "newapi-video"
-	document := videoModelContractStoreDocument{Version: videoModelContractStoreVersion, Items: []ManagedVideoModelContract{{
+	document := videoModelContractStoreDocument{Version: 5, Items: []ManagedVideoModelContract{{
 		ID: "legacy-contract", Contract: contract, Enabled: true, CreatedAt: "2026-08-30T00:00:00Z", UpdatedAt: "2026-08-30T00:00:00Z",
 	}}}
 	if err := backend.SaveJSONDocument(videoModelContractDocumentName, document); err != nil {
@@ -86,7 +86,7 @@ func TestVideoModelContractServiceMigratesLegacyGatewayDriver(t *testing.T) {
 		t.Fatalf("Initialize() error = %v", err)
 	}
 	items, err := service.List()
-	if err != nil || len(items) != 1 || items[0].Contract.Driver != protocol.VideoContractDriverOpenAI {
+	if err != nil || len(items) != 1 || items[0].Contract.Driver != protocol.VideoContractDriverOpenAI || items[0].Contract.Artifact.Mode != "task_content" || items[0].Contract.Artifact.Auth != "relay" {
 		t.Fatalf("List() = %#v, error = %v", items, err)
 	}
 	raw, err := backend.LoadJSONDocument(videoModelContractDocumentName)
@@ -245,5 +245,55 @@ func TestVideoModelContractServiceImportsBundleAtomically(t *testing.T) {
 	afterFailure, err := service.List()
 	if err != nil || len(afterFailure) != 2 {
 		t.Fatalf("failed import changed stored contracts: %#v, error = %v", afterFailure, err)
+	}
+}
+
+func TestVideoModelContractDraftPublishAndRollbackLifecycle(t *testing.T) {
+	databasePath := filepath.Join(t.TempDir(), "contracts.db")
+	backend, err := storage.NewDatabaseBackend("sqlite:///" + filepath.ToSlash(databasePath))
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend() error = %v", err)
+	}
+	defer backend.Close()
+	t.Cleanup(func() { _ = protocol.ReplaceVideoContracts(protocol.DefaultVideoContracts()) })
+
+	service := NewVideoModelContractService(backend)
+	if err := service.Initialize(); err != nil {
+		t.Fatalf("Initialize() error = %v", err)
+	}
+	created, err := service.Create(testVideoContract(t, "Version one", "versioned/video"), true)
+	if err != nil {
+		t.Fatalf("Create() error = %v", err)
+	}
+	if created.Revision != 1 || len(created.Versions) != 1 {
+		t.Fatalf("created version metadata = %#v", created)
+	}
+
+	draft := created.Contract
+	draft.Name = "Version two"
+	saved, err := service.SaveDraft(created.ID, draft, false)
+	if err != nil || saved == nil || saved.Draft == nil || saved.DraftEnabled == nil || *saved.DraftEnabled {
+		t.Fatalf("SaveDraft() = %#v, error = %v", saved, err)
+	}
+	active, ok := protocol.VideoContractForModel("versioned/video")
+	if !ok || active.Name != "Version one" {
+		t.Fatalf("draft changed active contract = %#v, %v", active, ok)
+	}
+
+	published, err := service.Publish(created.ID, nil, nil)
+	if err != nil || published == nil || published.Revision != 2 || published.Contract.Name != "Version two" || published.Enabled {
+		t.Fatalf("Publish() = %#v, error = %v", published, err)
+	}
+	if _, ok := protocol.VideoContractForModel("versioned/video"); ok {
+		t.Fatal("draft enabled state was not applied on publish")
+	}
+
+	rolledBack, err := service.Rollback(created.ID, 1)
+	if err != nil || rolledBack == nil || rolledBack.Revision != 3 || rolledBack.Contract.Name != "Version one" {
+		t.Fatalf("Rollback() = %#v, error = %v", rolledBack, err)
+	}
+	versions, err := service.Versions(created.ID)
+	if err != nil || len(versions) != 3 || versions[0].Revision != 3 || versions[2].Revision != 1 {
+		t.Fatalf("Versions() = %#v, error = %v", versions, err)
 	}
 }

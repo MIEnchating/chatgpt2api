@@ -59,7 +59,10 @@ var settingEnvKeys = map[string]string{
 	"prompt_sources":                 "PROMPT_SOURCES",
 }
 
-var envKeyRE = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+var (
+	envKeyRE      = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+	unquotedEnvRE = regexp.MustCompile(`^[A-Za-z0-9_./:@%+\-,]*$`)
+)
 
 const (
 	defaultImageTaskTimeoutSeconds = 300
@@ -1448,7 +1451,7 @@ func formatEnvValue(value string) string {
 	if value == "" {
 		return ""
 	}
-	if regexp.MustCompile(`^[A-Za-z0-9_./:@%+\-,]*$`).MatchString(value) {
+	if unquotedEnvRE.MatchString(value) {
 		return value
 	}
 	value = strings.ReplaceAll(value, `\`, `\\`)

@@ -36,7 +36,7 @@ import {
 } from "@/components/generation/video-settings-panel";
 import {
   ImageParameterLabel,
-} from "@/app/image/components/image-parameter-ui";
+} from "@/components/generation/image-parameter-ui";
 import { FileUploadButton } from "@/components/ui/file-upload-button";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -49,7 +49,7 @@ import {
   type ImageAspectRatio,
   type ImageResolution,
   type ImageSizeMode,
-} from "@/app/image/image-options";
+} from "@/lib/image-options";
 import {
   type ImageModel,
   type ImageQuality,
@@ -906,7 +906,6 @@ export function ImageComposer({
                       side="top"
                       sideOffset={8}
                       className="z-[70] w-[min(calc(100vw-1rem),23rem)] overflow-hidden rounded-lg border-[#dedfe3] bg-white p-0 shadow-[0_18px_50px_-24px_rgba(15,23,42,0.28)] dark:border-border dark:bg-card dark:shadow-[0_18px_50px_-22px_rgba(0,0,0,0.68)] sm:w-[min(calc(100vw-2rem),23rem)]"
-                      onOpenAutoFocus={(event) => event.preventDefault()}
                     >
                       <ScrollArea className="max-h-[min(calc(100dvh-2rem),32rem)]" viewportClassName="max-h-[min(calc(100dvh-2rem),32rem)]">
                       <div className="p-3 pr-4">
@@ -936,7 +935,6 @@ export function ImageComposer({
                       side="top"
                       sideOffset={8}
                       className="z-[70] w-[min(calc(100vw-1rem),23rem)] overflow-hidden rounded-lg border-[#dedfe3] bg-white p-0 shadow-[0_18px_50px_-24px_rgba(15,23,42,0.28)] dark:border-border dark:bg-card dark:shadow-[0_18px_50px_-22px_rgba(0,0,0,0.68)] sm:w-[min(calc(100vw-2rem),23rem)]"
-                      onOpenAutoFocus={(event) => event.preventDefault()}
                     >
                       <ScrollArea className="max-h-[min(calc(100dvh-2rem),32rem)]" viewportClassName="max-h-[min(calc(100dvh-2rem),32rem)]">
                       <div className="flex flex-col gap-3.5 p-3 pr-4">

@@ -1494,7 +1494,6 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusBadRequest, fmt.Sprintf("视频模型 %q 未配置启用的视频模型契约", model))
 			return
 		}
-		seconds := util.ToInt(body["seconds"], contract.Capability.DefaultSeconds)
 		refs := util.AsStringSlice(body["reference_image_urls"])
 		frameRefs := videoFrameAliases(body)
 		refs = removeVideoFrameAliases(refs, frameRefs)
@@ -1535,7 +1534,7 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 				body[bodyField] = value
 			}
 		}
-		seconds = util.ToInt(body["seconds"], contract.Capability.DefaultSeconds)
+		seconds := util.ToInt(body["seconds"], contract.Capability.DefaultSeconds)
 		if strings.TrimSpace(util.Clean(body["prompt"])) == "" {
 			util.WriteError(w, http.StatusBadRequest, "请输入视频提示词")
 			return
@@ -1624,7 +1623,7 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 			a.writeCreationTaskSubmitError(w, err)
 			return
 		}
-		task, err := a.tasks.SubmitChatWithMetadata(r.Context(), identity, util.Clean(body["client_task_id"]), prompt, model, messages, true, chatTaskRequestMetadata(body))
+		task, err := a.tasks.SubmitChatWithMetadata(r.Context(), identity, util.Clean(body["client_task_id"]), prompt, model, messages, chatTaskRequestMetadata(body))
 		if err != nil {
 			a.writeCreationTaskSubmitError(w, err)
 			return

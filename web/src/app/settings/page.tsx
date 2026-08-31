@@ -6,6 +6,7 @@ import { Archive, Bell, Clapperboard, Database, ImageIcon, ListChecks, LoaderCir
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import type { StoredAuthSession } from "@/store/auth";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { SectionNavigation } from "@/components/section-navigation";
 
 import { ConfigCard } from "./components/config-card";
 import { AnnouncementsCard } from "./components/announcements-card";
@@ -77,19 +78,14 @@ function AdminSettingsPageContent({ session }: { session: StoredAuthSession }) {
       <div data-settings-layout className="min-h-full w-full lg:h-full lg:min-h-0">
         <SettingsDataController />
         <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-4 lg:h-full lg:min-h-0 lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-5 2xl:grid-cols-[240px_minmax(0,1fr)]">
-          <aside className="rounded-lg border border-border bg-background p-2 lg:sticky lg:top-0">
-            <div className="px-2 pb-2 pt-1 lg:pb-3">
-              <h1 className="text-base font-semibold text-foreground">系统设置</h1>
-              <p className="mt-0.5 text-xs text-muted-foreground">按类别管理站点配置</p>
-            </div>
-            <nav className="flex gap-1 overflow-x-auto pb-1 lg:grid lg:overflow-visible lg:pb-0" aria-label="系统设置分类">
-              {settingsItems.map((item) => {
-                const Icon = item.icon;
-                const active = item.id === activeItem.id;
-                return <button key={item.id} type="button" onClick={() => selectSection(item.id)} className={`flex h-10 shrink-0 items-center gap-2 rounded-md px-3 text-left text-sm transition lg:w-full lg:gap-2.5 ${active ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}><Icon className="size-4" /><span>{item.label}</span></button>;
-              })}
-            </nav>
-          </aside>
+          <SectionNavigation
+            title="系统设置"
+            description="按类别管理站点配置"
+            items={settingsItems}
+            activeId={activeItem.id}
+            ariaLabel="系统设置分类"
+            onSelect={selectSection}
+          />
           <main id={activeItem.id} className="min-w-0 lg:h-full lg:min-h-0">{activeItem.content}</main>
         </div>
       </div>

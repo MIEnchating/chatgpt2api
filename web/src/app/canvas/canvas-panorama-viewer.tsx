@@ -154,7 +154,7 @@ export function CanvasPanoramaViewer({ src, alt, proxyGeneratedPanorama = false,
 
   if (immersive) {
     return (
-      <div className="size-full overflow-hidden" data-canvas-no-pan data-canvas-no-zoom tabIndex={-1} autoFocus onClick={(event) => event.stopPropagation()} onMouseDown={(event) => event.stopPropagation()} onPointerEnter={activate} onPointerDown={(event) => { activate(); event.stopPropagation(); }} onWheel={(event) => event.stopPropagation()} onDoubleClick={(event) => event.stopPropagation()} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); }}>
+      <div className="size-full overflow-hidden" data-canvas-no-pan data-canvas-no-zoom tabIndex={-1} onClick={(event) => event.stopPropagation()} onMouseDown={(event) => event.stopPropagation()} onPointerEnter={activate} onPointerDown={(event) => { activate(); event.stopPropagation(); }} onWheel={(event) => event.stopPropagation()} onDoubleClick={(event) => event.stopPropagation()} onContextMenu={(event) => { event.preventDefault(); event.stopPropagation(); }}>
         {surface}
       </div>
     );

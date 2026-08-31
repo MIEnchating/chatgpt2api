@@ -49,13 +49,14 @@ import {
 import {
   buildImageSize,
   getImageSizeSelectionFromSize,
-} from "@/app/image/image-options";
+} from "@/lib/image-options";
 import {
   creationTaskImages,
   restoreWorkflowTasks,
   type WorkflowTask,
 } from "@/app/workflows/workflow-task-runtime";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Checkbox } from "@/components/ui/checkbox";
 import { AuthenticatedImage } from "@/components/authenticated-image";
 import { ManagementPagination } from "@/components/management-page";
@@ -64,7 +65,7 @@ import {
   ImageSettingsPanel,
   type ImageSettingsValue,
 } from "@/components/generation/image-settings-panel";
-import { ImageParameterLabel } from "@/app/image/components/image-parameter-ui";
+import { ImageParameterLabel } from "@/components/generation/image-parameter-ui";
 import {
   Dialog,
   DialogContent,
@@ -84,7 +85,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { useMyAssets } from "@/app/assets/use-my-assets";
+import { useMyAssets } from "@/lib/use-my-assets";
 import {
   createChatGenerationTask,
   createImageEditTask,
@@ -1058,7 +1059,7 @@ export function CreativeWorkflowWorkspace({
 
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
-      <div className={cn("flex min-h-0 flex-1 flex-col overflow-hidden bg-background", !embedded && "rounded-xl border border-border")}>
+      <div className={cn("flex min-h-0 flex-1 flex-col overflow-hidden", embedded ? "bg-transparent" : "card-surface rounded-xl border border-border/80 shadow-[0_4px_16px_rgba(24,40,72,0.05)]")}>
         <header className={cn("shrink-0 border-b border-border px-5 py-3 sm:px-8", embedded && "pr-14 sm:pr-14")}>
           <div data-workflow-toolbar className="flex w-full flex-wrap items-center gap-3">
             <div className="relative min-w-[240px] flex-[1_1_320px]">
@@ -1124,7 +1125,7 @@ export function CreativeWorkflowWorkspace({
                 </div>
               </section>
             ) : (
-              <div className="grid min-h-72 place-items-center text-center text-sm text-muted-foreground">暂无工作流</div>
+              <EmptyState icon={WorkflowIcon} title="暂无工作流" description="新建工作流后可在这里配置并运行创作任务" className="min-h-72" />
             )}
           </div>
         </ScrollArea>
@@ -1319,13 +1320,12 @@ function WorkflowTaskHistoryDialog({ open, tasks, now, clearing, canDeleteAssets
                 {filteredTasks.map((task) => <WorkflowTaskRow key={task.id} task={task} now={now} onOpen={() => onOpenTask(task.id)} />)}
               </div>
             ) : (
-              <div className="grid min-h-72 place-items-center px-6 text-center">
-                <div>
-                  <span className="mx-auto grid size-11 place-items-center rounded-full bg-muted text-muted-foreground"><ClipboardList className="size-5" /></span>
-                  <p className="mt-3 text-sm font-medium">当前没有{filter === "all" ? "任务记录" : filters.find((option) => option.value === filter)?.label + "任务"}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">{filter === "all" ? "从工作流启动任务后可在这里查看进度和结果" : "切换其他状态查看工作流运行记录"}</p>
-                </div>
-              </div>
+              <EmptyState
+                icon={ClipboardList}
+                title={`当前没有${filter === "all" ? "任务记录" : filters.find((option) => option.value === filter)?.label + "任务"}`}
+                description={filter === "all" ? "从工作流启动任务后可在这里查看进度和结果" : "切换其他状态查看工作流运行记录"}
+                className="min-h-72"
+              />
             )}
           </ScrollArea>
           <DialogFooter flush><Button variant="outline" onClick={onClose}>关闭</Button></DialogFooter>

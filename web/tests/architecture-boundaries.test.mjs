@@ -17,7 +17,11 @@ async function sourceFiles(root) {
 }
 
 test("shared frontend layers do not import page modules", async () => {
-  const roots = [path.join(webRoot, "src/lib"), path.join(webRoot, "src/services")];
+  const roots = [
+    path.join(webRoot, "src/lib"),
+    path.join(webRoot, "src/services"),
+    path.join(webRoot, "src/components"),
+  ];
   const violations = [];
   for (const root of roots) {
     for (const filename of await sourceFiles(root)) {
@@ -48,4 +52,35 @@ test("global dialogs use the shared scroll area instead of native scrollbars", a
   assert.match(source, /import \{ ScrollArea \} from "@\/components\/ui\/scroll-area"/);
   assert.match(source, /scrollable \? \(/);
   assert.doesNotMatch(source, /overflow-y-auto/);
+});
+
+test("global overlays never autofocus when opened", async () => {
+  const dialog = await readFile(path.join(webRoot, "src/components/ui/dialog.tsx"), "utf8");
+  const popover = await readFile(path.join(webRoot, "src/components/ui/popover.tsx"), "utf8");
+  const imageLightbox = await readFile(path.join(webRoot, "src/components/image-lightbox.tsx"), "utf8");
+  const canvasVideoPlayer = await readFile(path.join(webRoot, "src/app/canvas/canvas-video-player.tsx"), "utf8");
+
+  for (const source of [dialog, popover]) {
+    assert.match(source, /"onOpenAutoFocus"/);
+    assert.match(source, /onOpenAutoFocus=\{\(event\) => event\.preventDefault\(\)\}/);
+  }
+  assert.match(imageLightbox, /onOpenAutoFocus=\{\(event\) => event\.preventDefault\(\)\}/);
+  assert.doesNotMatch(canvasVideoPlayer, /useEffect/);
+  assert.doesNotMatch(canvasVideoPlayer, /previousFocus/);
+
+  const autoFocusViolations = [];
+  const openAutoFocusViolations = [];
+  const allowedOpenAutoFocus = new Set([
+    "src/components/image-lightbox.tsx",
+    "src/components/ui/dialog.tsx",
+    "src/components/ui/popover.tsx",
+  ]);
+  for (const filename of await sourceFiles(path.join(webRoot, "src"))) {
+    const source = await readFile(filename, "utf8");
+    const relative = path.relative(webRoot, filename);
+    if (/\bautoFocus\b/.test(source)) autoFocusViolations.push(relative);
+    if (/onOpenAutoFocus/.test(source) && !allowedOpenAutoFocus.has(relative)) openAutoFocusViolations.push(relative);
+  }
+  assert.deepEqual(autoFocusViolations, []);
+  assert.deepEqual(openAutoFocusViolations, []);
 });

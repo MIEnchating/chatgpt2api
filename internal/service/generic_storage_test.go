@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"chatgpt2api/internal/model"
@@ -31,7 +32,7 @@ func newGenericStorageTestService(t *testing.T, setting model.StorageSetting) *G
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = backend.Close() })
-	service, err := NewGenericStorageService(backend, &genericStorageTestSettings{setting: setting}, filepath.Join(root, "media"))
+	service, err := NewGenericStorageService(backend, &genericStorageTestSettings{setting: setting}, filepath.Join(root, "media"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,13 +169,37 @@ func TestGenericStorageServicePublicConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer backend.Close()
-	service, err := NewGenericStorageService(backend, settings, filepath.Join(t.TempDir(), "media"))
+	service, err := NewGenericStorageService(backend, settings, filepath.Join(t.TempDir(), "media"), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	config := service.PublicConfig()
 	if config.Mode != "server_external" || !config.LocalStorageEnabled || !config.AllowUserProvider || !config.AllowUserGlobalProvider {
 		t.Fatalf("PublicConfig() = %#v", config)
+	}
+}
+
+func TestGenericStorageServiceReportsScheduledCapacityErrors(t *testing.T) {
+	settings := &genericStorageTestSettings{setting: model.StorageSetting{
+		Providers: []model.StorageProvider{{
+			ID: "broken", Name: "Broken DAV", Type: "webdav", Endpoint: "://invalid", Enabled: true,
+		}},
+	}}
+	backend, err := storage.NewDatabaseBackend("sqlite:///" + filepath.ToSlash(filepath.Join(t.TempDir(), "storage.db")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer backend.Close()
+	var reported error
+	service, err := NewGenericStorageService(backend, settings, filepath.Join(t.TempDir(), "media"), func(err error) {
+		reported = err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.runScheduledCapacityCheck(context.Background())
+	if reported == nil || !strings.Contains(reported.Error(), `measure provider "Broken DAV"`) {
+		t.Fatalf("scheduled capacity error = %v", reported)
 	}
 }
 

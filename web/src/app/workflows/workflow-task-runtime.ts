@@ -75,13 +75,6 @@ export type WorkflowExternalTaskStart = {
   startedAt: number;
 };
 
-export type WorkflowExternalTaskSuccess = {
-  taskId: string;
-  images: WorkflowRunResult[];
-  durationMs: number;
-  endedAt: number;
-};
-
 export type WorkflowExternalTaskFailure = {
   taskId: string;
   error: string;
@@ -137,16 +130,6 @@ function workflowTaskResults(task: WorkflowTask, endedAt: number): WorkflowRunRe
       createdAt: endedAt,
     };
   });
-}
-
-export function workflowTaskSuccessEvent(task: WorkflowTask): WorkflowExternalTaskSuccess {
-  const endedAt = task.ended_at || task.started_at;
-  return {
-    taskId: task.id,
-    images: workflowTaskResults(task, endedAt),
-    durationMs: Math.max(0, endedAt - task.started_at),
-    endedAt,
-  };
 }
 
 export function workflowTaskFailureEvent(task: WorkflowTask): WorkflowExternalTaskFailure {

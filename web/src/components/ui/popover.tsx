@@ -14,17 +14,23 @@ function PopoverTrigger(props: React.ComponentProps<typeof PopoverPrimitive.Trig
   return <PopoverPrimitive.Trigger data-slot="popover-trigger" {...props} />;
 }
 
+type PopoverContentProps = Omit<
+  React.ComponentProps<typeof PopoverPrimitive.Content>,
+  "onOpenAutoFocus"
+>;
+
 function PopoverContent({
   className,
   children,
   align = "center",
   sideOffset = 6,
   ...props
-}: React.ComponentProps<typeof PopoverPrimitive.Content>) {
+}: PopoverContentProps) {
   return (
     <PopoverPrimitive.Portal>
       <PopoverPrimitive.Content
         data-slot="popover-content"
+        onOpenAutoFocus={(event) => event.preventDefault()}
         align={align}
         sideOffset={sideOffset}
         collisionPadding={8}

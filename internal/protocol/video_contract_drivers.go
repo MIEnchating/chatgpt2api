@@ -12,6 +12,7 @@ const (
 	VideoContractDriverVidu       = "vidu-video"
 	VideoContractDriverKIE        = "kie-video"
 	VideoContractDriverAPIMart    = "apimart-video"
+	VideoContractDriverCustom     = "custom-video"
 
 	VideoContractDriverLegacyKling = "kling-videos"
 )
@@ -28,6 +29,7 @@ var videoContractDrivers = []string{
 	VideoContractDriverVidu,
 	VideoContractDriverKIE,
 	VideoContractDriverAPIMart,
+	VideoContractDriverCustom,
 }
 
 func SupportedVideoContractDrivers() []string {

@@ -42,7 +42,7 @@ export function formatAssetCreatedTime(value: string) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-export function managedImageSourceLabel(source: ManagedImage["generation_source"]) {
+function managedImageSourceLabel(source: ManagedImage["generation_source"]) {
   if (source === "workflow") return "工作流";
   if (source === "canvas") return "无限画布";
   return "生成图片";

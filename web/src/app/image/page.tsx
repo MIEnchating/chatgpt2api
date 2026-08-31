@@ -7,8 +7,8 @@ import { toast } from "sonner";
 import { ImageComposer } from "@/app/image/components/image-composer";
 import { ImageSizePresetControls } from "@/components/generation/image-size-preset-controls";
 import { Switch } from "@/components/ui/switch";
-import { ImageParameterLabel } from "@/app/image/components/image-parameter-ui";
-import { imageParameterChoiceClass } from "@/app/image/components/image-parameter-styles";
+import { ImageParameterLabel } from "@/components/generation/image-parameter-ui";
+import { imageParameterChoiceClass } from "@/components/generation/image-parameter-styles";
 import { ImagePromptMarket } from "@/app/image/components/image-prompt-market";
 import {
   imageConversationHistoryGenerationChanged,
@@ -44,7 +44,7 @@ import {
   type ImageResolution,
   type ImageSizeMode,
   type ImageSizeSelection,
-} from "@/app/image/image-options";
+} from "@/lib/image-options";
 import { IMAGE_PROMPT_PRESETS, type ImagePromptPreset } from "@/app/image/image-presets";
 import { consumeSimilarImageIntent } from "@/app/image/similar-image-intent";
 import { ImageSidebar } from "@/app/image/components/image-sidebar";
@@ -70,7 +70,7 @@ import {
 } from "@/lib/image-task-state";
 import { Button } from "@/components/ui/button";
 import { ScrollArea, type ScrollAreaHandle } from "@/components/ui/scroll-area";
-import { resolveConfiguredVideoModel, supportsVideoMultimodalReferences, videoAllowsCustomDimensions, videoAllowsCustomResolution, videoDefaultSeconds, videoReferenceImageLimit, videoRequiresMultimodalReferenceMode, videoRequiresReferenceAudio, videoRequiresReferenceImage, videoRequiresReferenceVideo, videoWorkbenchReferenceLimits, videoWorkbenchResolutionForModelSize, videoWorkbenchSizeForModelResolution, videoWorkbenchValidatesReferenceVideoMetadata } from "@/lib/video-model-capabilities";
+import { resolveConfiguredVideoModel, supportsVideoMultimodalReferences, videoDefaultSeconds, videoReferenceImageLimit, videoRequiresMultimodalReferenceMode, videoRequiresReferenceAudio, videoRequiresReferenceImage, videoRequiresReferenceVideo, videoWorkbenchReferenceLimits } from "@/lib/video-model-capabilities";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
@@ -146,7 +146,7 @@ import { useAuthGuard } from "@/lib/use-auth-guard";
 import { DEFAULT_CREATION_WORKBENCH_PREFERENCES, useImageGenerationPreferences } from "@/lib/use-image-generation-preferences";
 import { ensureGeneratedVideoAsset, persistCreationTaskOutputs, type CreationTaskOutputPersistenceFailure } from "@/services/generation-result-storage";
 import { normalizeVideoRequest, videoAudioGenerationError, videoReferenceCombinationError, videoWorkbenchReferenceLimitError } from "@/lib/video-request-normalizer";
-import { audioReferenceMetadataError, videoReferenceMetadataError, type AudioReferenceFileMetadata, type VideoReferenceFileMetadata } from "@/lib/video-reference-validation";
+import { audioReferenceMetadataError, type AudioReferenceFileMetadata } from "@/lib/video-reference-validation";
 import type { StoredAuthSession } from "@/store/auth";
 import { imageConversationOwnerScope } from "@/store/image-conversation-session-scope";
 import {
@@ -321,38 +321,6 @@ async function dataUrlToFile(dataUrl: string, fileName: string, mimeType?: strin
   return imageSourceToFile(dataUrl, fileName, mimeType, fetchAuthenticatedImageBlob);
 }
 
-function inspectVideoReferenceFile(file: File) {
-  return new Promise<VideoReferenceFileMetadata>((resolve, reject) => {
-    const url = URL.createObjectURL(file);
-    const video = document.createElement("video");
-    const cleanup = () => {
-      video.removeAttribute("src");
-      video.load();
-      URL.revokeObjectURL(url);
-    };
-    video.preload = "metadata";
-    video.onloadedmetadata = () => {
-      const metadata = {
-        durationMs: Math.round(video.duration * 1000),
-        width: video.videoWidth,
-        height: video.videoHeight,
-        bytes: file.size,
-      };
-      cleanup();
-      if (!Number.isFinite(metadata.durationMs) || metadata.durationMs <= 0 || metadata.width <= 0 || metadata.height <= 0) {
-        reject(new Error("无法读取参考视频的时长或尺寸"));
-        return;
-      }
-      resolve(metadata);
-    };
-    video.onerror = () => {
-      cleanup();
-      reject(new Error("无法读取参考视频，请确认文件编码可用"));
-    };
-    video.src = url;
-  });
-}
-
 function inspectAudioReferenceFile(file: File) {
   return new Promise<AudioReferenceFileMetadata>((resolve, reject) => {
     const url = URL.createObjectURL(file);
@@ -486,8 +454,7 @@ async function ensureReferenceImageAsset(
   return (await uploadReferenceFiles([file], source))[0] || null;
 }
 
-function normalizeRequestedImageCount(value: string | number, model: ImageModel) {
-  void model;
+function normalizeRequestedImageCount(value: string | number) {
   return normalizedImageWorkbenchCount(value);
 }
 
@@ -581,12 +548,11 @@ function imageOutputCompressionForFormat(format: ImageOutputFormat, value: unkno
   return normalizeOutputCompressionValue(value);
 }
 
-function imageQualityForRequest(model: ImageModel, value: "" | ImageQuality): ImageRequestQuality {
-  void model;
+function imageQualityForRequest(value: "" | ImageQuality): ImageRequestQuality {
   return isImageQuality(value) ? value : "auto";
 }
 
-function imageTaskProgressMessage(turn: ImageTurn, elapsedSeconds = 0) {
+function imageTaskProgressMessage(turn: ImageTurn) {
   const video = turn.mode === "video";
   if (turn.status === "queued") {
     return {
@@ -604,7 +570,6 @@ function imageTaskProgressMessage(turn: ImageTurn, elapsedSeconds = 0) {
 
   const isHighResolution =
     supportsStructuredImageParameters(turn.model) && isHighResolutionImageSize(turn.size, turn.sizeSelection);
-  void elapsedSeconds;
   if (isHighResolution) {
     return {
       message: "大尺寸生成中",
@@ -628,13 +593,12 @@ function imageTaskLoadingDetail(turn: ImageTurn, fallbackDetail: string) {
   return `${turn.mode === "video" ? "视频" : "图片"}结果已返回，正在确认任务状态`;
 }
 
-function imageTaskBatchId(turnId: string, imageIndex: number, model: ImageModel) {
-	void model;
+function imageTaskBatchId(turnId: string, imageIndex: number) {
 	return `${turnId}-task-${imageIndex}`;
 }
 
-function imageTaskIdForImage(turnId: string, model: ImageModel, images: StoredImage[], imageIndex: number) {
-  return images[imageIndex]?.taskId || imageTaskBatchId(turnId, imageIndex, model);
+function imageTaskIdForImage(turnId: string, images: StoredImage[], imageIndex: number) {
+  return images[imageIndex]?.taskId || imageTaskBatchId(turnId, imageIndex);
 }
 
 function imageDataIndexForTask(images: StoredImage[], imageIndex: number) {
@@ -1343,7 +1307,7 @@ async function recoverConversationHistory(
           turnChanged = true;
           return {
             ...image,
-            taskId: imageTaskIdForImage(turn.id, turn.model, turn.images, imageIndex),
+            taskId: imageTaskIdForImage(turn.id, turn.images, imageIndex),
             taskRevision: undefined,
             taskStatus: "queued" as const,
             taskCreatedAt: undefined,
@@ -1357,7 +1321,7 @@ async function recoverConversationHistory(
           turnChanged = true;
           return {
             ...image,
-            taskId: imageTaskIdForImage(turn.id, turn.model, turn.images, imageIndex),
+            taskId: imageTaskIdForImage(turn.id, turn.images, imageIndex),
           };
         }
         return image;
@@ -1483,8 +1447,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   const referenceImagesRef = useRef<StoredReferenceImage[]>([]);
   const referenceUploadEpochRef = useRef(0);
   const referenceUploadPendingCountRef = useRef(0);
-  const videoReferenceMetadataRef = useRef(new Map<string, VideoReferenceFileMetadata>());
-  const pendingVideoReferenceDurationMsRef = useRef(0);
   const audioReferenceMetadataRef = useRef(new Map<string, AudioReferenceFileMetadata>());
   const pendingAudioReferenceDurationMsRef = useRef(0);
   const editReferenceUploadPendingCountRef = useRef(0);
@@ -1578,38 +1540,17 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       toast.error("参考视频不能超过 50 MiB");
       return;
     }
-    let inspectedMetadata: VideoReferenceFileMetadata | undefined;
-    let reservedDurationMs = 0;
-    const validatesReferenceMetadata = videoWorkbenchValidatesReferenceVideoMetadata(videoModel);
-    if (validatesReferenceMetadata) {
-      try {
-        inspectedMetadata = await inspectVideoReferenceFile(file);
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : "无法读取参考视频信息");
-        return;
-      }
-      const storedDurationMs = videoReferenceVideoURLs.reduce((total, url) => total + (videoReferenceMetadataRef.current.get(url)?.durationMs || 0), 0);
-      const metadataError = videoReferenceMetadataError(inspectedMetadata, storedDurationMs + pendingVideoReferenceDurationMsRef.current);
-      if (metadataError) {
-        toast.error(`${metadataError}。参考视频需为 MP4/MOV、H.264/H.265、24-60 FPS`);
-        return;
-      }
-      reservedDurationMs = inspectedMetadata.durationMs;
-      pendingVideoReferenceDurationMsRef.current += reservedDurationMs;
-    }
     setVideoReferenceUploading(true);
     try {
       const uploaded = await uploadVideoReference(file);
-      if (inspectedMetadata) videoReferenceMetadataRef.current.set(uploaded.url, inspectedMetadata);
       setVideoReferenceVideoURLs((current) => [...current, uploaded.url].slice(0, 3));
       toast.success("参考视频已上传");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "参考视频上传失败");
     } finally {
-      pendingVideoReferenceDurationMsRef.current = Math.max(0, pendingVideoReferenceDurationMsRef.current - reservedDurationMs);
       setVideoReferenceUploading(false);
     }
-  }, [videoModel, videoReferenceVideoURLs]);
+  }, []);
   const handleAudioReferenceFileChange = useCallback(async (file: File) => {
     const mime = file.type.toLowerCase().split(";", 1)[0];
     if (!(mime === "audio/mpeg" || mime === "audio/wav" || /\.(mp3|wav)$/i.test(file.name))) { toast.error("参考音频仅支持 MP3 或 WAV 格式"); return; }
@@ -1797,7 +1738,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       ? editingTurnDraft?.customHeight || editingDraftDimensions?.height || ""
       : editingDraftDimensions?.height || "1024";
   const editingDraftCount = editingTurnDraft
-    ? normalizeRequestedImageCount(editingTurnDraft.count, editingTurnDraft.model)
+    ? normalizeRequestedImageCount(editingTurnDraft.count)
     : 1;
   const editingDraftCountLimit = 10;
   const imageCreationModelOptions = useMemo(
@@ -2410,11 +2351,10 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         setVideoModelOptions(nextVideoModels.map((model) => ({ value: model, label: model })));
         setVideoModel(nextVideoDefault);
       })
-      .catch((error) => {
+      .catch(() => {
         if (ignore) {
           return;
         }
-        void error;
         setRelayImageModelOptions(ensureDefaultImageModelOption(IMAGE_CREATION_MODEL_OPTIONS));
       })
       .finally(() => {
@@ -2799,8 +2739,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     setVideoReferenceImageURLs([]);
     setVideoReferenceVideoURLs([]);
     setVideoReferenceAudioURLs([]);
-    videoReferenceMetadataRef.current.clear();
-    pendingVideoReferenceDurationMsRef.current = 0;
     audioReferenceMetadataRef.current.clear();
     pendingAudioReferenceDurationMsRef.current = 0;
     setVideoFirstFrameURL("");
@@ -3398,7 +3336,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         ? targetTurn.model
         : defaultImageModel,
       mode: targetTurn.mode,
-      count: String(normalizeRequestedImageCount(targetTurn.count || targetTurn.images.length || 1, targetTurn.model)),
+      count: String(normalizeRequestedImageCount(targetTurn.count || targetTurn.images.length || 1)),
       sizeMode: sizeSelection.mode,
       aspectRatio: sizeSelection.aspectRatio,
       resolution: sizeSelection.resolution,
@@ -3696,7 +3634,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                         image.status === "loading" && !image.taskId
                           ? {
                               ...image,
-                              taskId: imageTaskIdForImage(turn.id, turn.model, turn.images, imageIndex),
+                              taskId: imageTaskIdForImage(turn.id, turn.images, imageIndex),
                             }
                           : image,
                       ),
@@ -3789,13 +3727,13 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
           supportsStructuredImageParameters(activeTurn.model) && activeTurnSizeRequest.selection?.resolution !== "auto"
             ? activeTurnSizeRequest.selection?.resolution
             : undefined;
-        const taskQuality = imageQualityForRequest(activeTurn.model, activeTurn.quality || "");
+        const taskQuality = imageQualityForRequest(activeTurn.quality || "");
         const taskStream = Boolean(activeTurn.stream);
         const taskPartialImages = taskStream ? normalizedImagePartialImages(Number(activeTurn.partialImages)) : 0;
         const pendingTaskGroups = imageWorkbenchTaskDispatches(
           activeTurn.images.flatMap((image, imageIndex) =>
             image.status === "loading"
-              ? [imageTaskIdForImage(activeTurn.id, activeTurn.model, activeTurn.images, imageIndex)]
+              ? [imageTaskIdForImage(activeTurn.id, activeTurn.images, imageIndex)]
               : [],
           ),
         );
@@ -3994,13 +3932,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
             break;
           }
 
-          const progressSnapshot = getImageTurnProgressSnapshot()[activeTurnKey];
-          const elapsedSeconds =
-            progressSnapshot && Number.isFinite(progressSnapshot.startedAt)
-              ? Math.max(0, Math.floor((Date.now() - progressSnapshot.startedAt) / 1000))
-              : Math.max(0, Math.floor((Date.now() - activeTurnStartedAt) / 1000));
           const progressTurn = latestTurn ?? activeTurn;
-          const progressCopy = imageTaskProgressMessage(progressTurn, elapsedSeconds);
+          const progressCopy = imageTaskProgressMessage(progressTurn);
           updateTurnProgress(conversationId, activeTurn.id, {
             message: progressCopy.message,
             detail: imageTaskLoadingDetail(progressTurn, progressCopy.detail),
@@ -4421,7 +4354,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       queueingTurnIdsRef.current.add(turnQueueKey);
       retryingImageIdsRef.current.add(retryKey);
       const now = new Date().toISOString();
-      const retryTaskId = imageTaskBatchId(`${targetTurn.id}-${createId()}`, imageIndex, targetTurn.model);
+      const retryTaskId = imageTaskBatchId(`${targetTurn.id}-${createId()}`, imageIndex);
       try {
         const retryPersisted = await updateConversation(conversationId, (current) => {
           const conversation = current ?? targetConversation;
@@ -4557,7 +4490,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
 
               const imageCount = turn.mode === "video"
                 ? Math.max(1, Math.min(6, Math.floor(Number(turn.count || turn.images.length || 1) || 1)))
-                : normalizeRequestedImageCount(turn.count || turn.images.length || 1, turn.model);
+                : normalizeRequestedImageCount(turn.count || turn.images.length || 1);
               const visibility = turn.visibility || "private";
               return {
                 ...turn,
@@ -4573,7 +4506,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                     id: imageId,
                     taskId: turn.mode === "video"
                       ? `${turn.id}-${regenerationId}-video-${index}`
-                      : imageTaskBatchId(`${turn.id}-${regenerationId}`, index, turn.model),
+                      : imageTaskBatchId(`${turn.id}-${regenerationId}`, index),
                     taskStatus: "queued" as const,
                     status: "loading" as const,
                     mediaType: turn.mode === "video" ? "video" as const : "image" as const,
@@ -4651,7 +4584,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         return;
       }
 
-      const imageCount = normalizeRequestedImageCount(draft.count, draft.model);
+      const imageCount = normalizeRequestedImageCount(draft.count);
       const referenceImages = usesReferenceImages(mode) ? draft.referenceImages : [];
       const rawDraftSizeSelection = {
         mode: draft.sizeMode,
@@ -4695,7 +4628,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         draftOutputFormat === undefined
           ? undefined
           : imageOutputCompressionForModel(draft.model, draftOutputFormat, draft.outputCompression);
-      const draftQuality = imageQualityForRequest(draft.model, draft.quality);
+      const draftQuality = imageQualityForRequest(draft.quality);
       const draftStream = draft.stream;
       if (
         supportsStructuredImageParameters(draft.model) &&
@@ -4760,7 +4693,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                     id: imageId,
                     taskId: targetTurn.mode === "video"
                       ? `${turn.id}-${regenerationId}-video-${index}`
-                      : imageTaskBatchId(`${turn.id}-${regenerationId}`, index, draft.model),
+                      : imageTaskBatchId(`${turn.id}-${regenerationId}`, index),
                     taskStatus: "queued" as const,
                     status: "loading" as const,
                     visibility: baseTurn.visibility,
@@ -4943,7 +4876,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       const effectiveImageMode = getComposerConversationMode(composerMode, referenceImages);
       const requestedCount = videoMode
         ? Math.max(1, Math.min(6, Math.floor(Number(videoTaskCount) || 1)))
-        : normalizeRequestedImageCount(imageCount, effectiveModel);
+        : normalizeRequestedImageCount(imageCount);
       const rawImageSizeSelection = {
         mode: imageSizeMode,
         aspectRatio: imageAspectRatio,
@@ -4986,7 +4919,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         effectiveOutputFormat === undefined
           ? undefined
           : imageOutputCompressionForModel(effectiveModel, effectiveOutputFormat, imageOutputCompression);
-      const effectiveImageQuality = videoMode ? undefined : imageQualityForRequest(effectiveModel, imageQuality);
+      const effectiveImageQuality = videoMode ? undefined : imageQualityForRequest(imageQuality);
       const effectiveImageStream = !videoMode && imageStreamEnabled;
       const isHighResolutionRequest =
         supportsStructuredImageParameters(effectiveModel) &&
@@ -5037,7 +4970,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
           const imageId = `${turnId}-${index}`;
           return {
             id: imageId,
-            taskId: videoMode ? `${turnId}-video-${index}` : imageTaskBatchId(turnId, index, effectiveModel),
+            taskId: videoMode ? `${turnId}-video-${index}` : imageTaskBatchId(turnId, index),
             taskStatus: "queued" as const,
             status: "loading" as const,
             mediaType: videoMode ? "video" as const : "image" as const,
@@ -5634,12 +5567,10 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                 onVideoModelChange={handleVideoModelChange}
                 onVideoSizeChange={(value) => {
                   setVideoSize(value);
-                  if (videoAllowsCustomDimensions(videoModel)) setVideoResolution((current) => videoWorkbenchResolutionForModelSize(videoModel, value, current));
                 }}
                 onVideoSecondsChange={setVideoSeconds}
                 onVideoResolutionChange={(value) => {
                   setVideoResolution(value);
-                  if (videoAllowsCustomResolution(videoModel)) setVideoSize((current) => videoWorkbenchSizeForModelResolution(videoModel, value, current));
                 }}
                 onVideoGenerateAudioChange={setVideoGenerateAudio}
                 onVideoWatermarkChange={setVideoWatermark}

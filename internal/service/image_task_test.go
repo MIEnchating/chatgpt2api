@@ -27,8 +27,8 @@ func (s *ImageTaskService) SubmitEdit(ctx context.Context, identity Identity, cl
 	return s.SubmitEditWithOptions(ctx, identity, clientTaskID, prompt, model, size, quality, baseURL, images, n, messages, nil, ImageOutputOptions{}, ImageToolOptions{}, visibilityValues...)
 }
 
-func (s *ImageTaskService) SubmitChat(ctx context.Context, identity Identity, clientTaskID, prompt, model string, messages any, billable bool, nValues ...int) (map[string]any, error) {
-	return s.SubmitChatWithMetadata(ctx, identity, clientTaskID, prompt, model, messages, billable, nil, nValues...)
+func (s *ImageTaskService) SubmitChat(ctx context.Context, identity Identity, clientTaskID, prompt, model string, messages any, nValues ...int) (map[string]any, error) {
+	return s.SubmitChatWithMetadata(ctx, identity, clientTaskID, prompt, model, messages, nil, nValues...)
 }
 
 func (s *ImageTaskService) ListTasks(identity Identity, taskIDs []string) map[string]any {
@@ -336,7 +336,7 @@ func TestImageTaskServiceRejectsBlankPromptBeforeQueueing(t *testing.T) {
 			return svc.SubmitEdit(context.Background(), identity, "task-2", "\t", "gpt-image-2", "1024x1024", "high", "https://base.test", []any{"image"}, 1, nil)
 		},
 		"chat": func() (map[string]any, error) {
-			return svc.SubmitChat(context.Background(), identity, "task-3", " ", "auto", []map[string]any{{"role": "user", "content": "hello"}}, false)
+			return svc.SubmitChat(context.Background(), identity, "task-3", " ", "auto", []map[string]any{{"role": "user", "content": "hello"}})
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -775,7 +775,7 @@ func TestImageTaskServiceSubmitsChatTasks(t *testing.T) {
 	messages := []map[string]any{{"role": "user", "content": "hello"}}
 	tools := []map[string]any{{"type": "function", "function": map[string]any{"name": "get_canvas_summary"}}}
 
-	if _, err := svc.SubmitChatWithMetadata(context.Background(), identity, "chat-1", "hello", "auto", messages, false, map[string]any{"token_group": "draw", "token_name": "codex", "tools": tools, "tool_choice": "auto"}); err != nil {
+	if _, err := svc.SubmitChatWithMetadata(context.Background(), identity, "chat-1", "hello", "auto", messages, map[string]any{"token_group": "draw", "token_name": "codex", "tools": tools, "tool_choice": "auto"}); err != nil {
 		t.Fatalf("SubmitChatWithMetadata() error = %v", err)
 	}
 	waitForTaskStatus(t, svc, identity, "chat-1", TaskStatusSuccess)
@@ -833,7 +833,7 @@ func TestImageTaskServicePublishesPartialChatTextWhileRunning(t *testing.T) {
 	identity := Identity{ID: "alice", Name: "Alice", Role: AuthRoleUser}
 	messages := []map[string]any{{"role": "user", "content": "hello"}}
 
-	if _, err := svc.SubmitChat(context.Background(), identity, "chat-stream", "hello", "gpt-5.5", messages, false); err != nil {
+	if _, err := svc.SubmitChat(context.Background(), identity, "chat-stream", "hello", "gpt-5.5", messages); err != nil {
 		t.Fatalf("SubmitChat() error = %v", err)
 	}
 	select {
@@ -1389,7 +1389,7 @@ func TestImageTaskServiceLimitsUserDefaultConcurrentCreationUnits(t *testing.T) 
 	if got := waitForStartedTask(t, started); got != "image" {
 		t.Fatalf("started task = %q, want image", got)
 	}
-	if _, err := svc.SubmitChat(context.Background(), alice, "chat-1", "hello", "auto", messages, false); err != nil {
+	if _, err := svc.SubmitChat(context.Background(), alice, "chat-1", "hello", "auto", messages); err != nil {
 		t.Fatalf("SubmitChat(chat-1) error = %v", err)
 	}
 	waitForTaskStatus(t, svc, alice, "chat-1", TaskStatusQueued)
