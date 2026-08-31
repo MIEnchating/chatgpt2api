@@ -40,6 +40,15 @@ func storeConversationAssetReader(assets *ImageConversationAssetService, ctx con
 	return assets.StoreValidatedContext(ctx, ownerID, filename, validated)
 }
 
+func mustImageConversationAssetGovernance(t *testing.T, assets *ImageConversationAssetService) ImageConversationAssetGovernance {
+	t.Helper()
+	usage, err := assets.Governance()
+	if err != nil {
+		t.Fatalf("Governance() error = %v", err)
+	}
+	return usage
+}
+
 func TestImageConversationAssetServiceStoresPrivateContentAddressedAsset(t *testing.T) {
 	root := t.TempDir()
 	assets := NewImageConversationAssetService(root)
@@ -70,7 +79,7 @@ func TestImageConversationAssetServiceStoresPrivateContentAddressedAsset(t *test
 	if _, err := assets.Access(first.URL, "", true); err != nil {
 		t.Fatalf("Access(admin) error = %v", err)
 	}
-	if usage := assets.Governance(); usage.FileCount != 1 || usage.TotalBytes != int64(len(data)) {
+	if usage := mustImageConversationAssetGovernance(t, assets); usage.FileCount != 1 || usage.TotalBytes != int64(len(data)) {
 		t.Fatalf("Governance() = %#v", usage)
 	}
 }
@@ -114,7 +123,7 @@ func TestImageConversationAssetServiceRejectsInvalidFilesAndDeclaredTypeMismatch
 	if _, _, err := assetizeConversationReference(assets, context.Background(), "owner", map[string]any{"dataUrl": badDataURL}); !errors.Is(err, ErrInvalidImageConversationAsset) {
 		t.Fatalf("AssetizeReference(mismatch) error = %v", err)
 	}
-	if usage := assets.Governance(); usage.FileCount != 0 {
+	if usage := mustImageConversationAssetGovernance(t, assets); usage.FileCount != 0 {
 		t.Fatalf("invalid asset left files behind: %#v", usage)
 	}
 	tooLarge := bytes.NewReader(make([]byte, ImageConversationAssetMaxBytes+1))
@@ -134,7 +143,7 @@ func TestImageConversationAssetServiceRejectsExcessEmbeddedReferenceCountBeforeW
 	if _, err := assets.PrepareConversations(context.Background(), "owner", []map[string]any{item}); !errors.Is(err, ErrInvalidImageConversationAsset) {
 		t.Fatalf("PrepareConversations(excess references) error = %v", err)
 	}
-	if usage := assets.Governance(); usage.FileCount != 0 {
+	if usage := mustImageConversationAssetGovernance(t, assets); usage.FileCount != 0 {
 		t.Fatalf("rejected conversation wrote files: %#v", usage)
 	}
 }
@@ -187,7 +196,7 @@ func TestImageConversationAssetServiceConcurrentStoresDeduplicate(t *testing.T) 
 			t.Fatalf("concurrent Store() paths differ: %q and %q", want, assetPath)
 		}
 	}
-	if usage := assets.Governance(); usage.FileCount != 1 {
+	if usage := mustImageConversationAssetGovernance(t, assets); usage.FileCount != 1 {
 		t.Fatalf("concurrent Governance() = %#v", usage)
 	}
 }
@@ -195,12 +204,33 @@ func TestImageConversationAssetServiceConcurrentStoresDeduplicate(t *testing.T) 
 func TestImageConversationAssetServiceEnforcesCombinedStorageBudget(t *testing.T) {
 	assets := NewImageConversationAssetService(t.TempDir())
 	data := imageConversationAssetTestPNG(t)
-	assets.SetStorageBudget(func() int64 { return int64(len(data) - 1) }, func() int64 { return 0 })
+	assets.SetStorageBudget(func() int64 { return int64(len(data) - 1) }, func() (int64, error) { return 0, nil })
 	if _, err := storeConversationAsset(assets, "owner", "reference.png", data); !errors.Is(err, ErrImageConversationAssetStorageLimit) {
 		t.Fatalf("Store(over budget) error = %v", err)
 	}
-	if usage := assets.Governance(); usage.FileCount != 0 || len(assets.Owners()) != 0 {
+	if usage := mustImageConversationAssetGovernance(t, assets); usage.FileCount != 0 || len(assets.Owners()) != 0 {
 		t.Fatalf("over-budget store left data: usage=%#v owners=%#v", usage, assets.Owners())
+	}
+}
+
+func TestImageConversationAssetServiceFailsClosedWhenOtherStorageUsageFails(t *testing.T) {
+	root := t.TempDir()
+	assets := NewImageConversationAssetService(root)
+	data := imageConversationAssetTestPNG(t)
+	usageErr := errors.New("image storage scan failed")
+	assets.SetStorageBudget(func() int64 { return 1 << 30 }, func() (int64, error) {
+		return 0, usageErr
+	})
+
+	if _, err := storeConversationAsset(assets, "owner", "reference.png", data); !errors.Is(err, usageErr) {
+		t.Fatalf("Store(other storage scan failure) error = %v, want %v", err, usageErr)
+	}
+	usage := mustImageConversationAssetGovernance(t, assets)
+	if usage.FileCount != 0 || usage.TotalBytes != 0 {
+		t.Fatalf("failed storage preflight wrote files: %#v", usage)
+	}
+	if owners := assets.Owners(); len(owners) != 0 {
+		t.Fatalf("failed storage preflight wrote owner markers: %#v", owners)
 	}
 }
 
@@ -217,9 +247,9 @@ func TestImageConversationAssetServiceChecksBatchStorageBudgetOnce(t *testing.T)
 		t.Fatalf("ReadValidatedReader(second) error = %v", err)
 	}
 	otherUsageCalls := 0
-	assets.SetStorageBudget(func() int64 { return 1 << 30 }, func() int64 {
+	assets.SetStorageBudget(func() int64 { return 1 << 30 }, func() (int64, error) {
 		otherUsageCalls++
-		return 0
+		return 0, nil
 	})
 
 	stored, err := assets.StoreValidatedBatchContext(context.Background(),
@@ -236,7 +266,7 @@ func TestImageConversationAssetServiceChecksBatchStorageBudgetOnce(t *testing.T)
 	if otherUsageCalls != 1 {
 		t.Fatalf("other storage usage checked %d times, want 1", otherUsageCalls)
 	}
-	if usage := assets.Governance(); usage.FileCount != 2 {
+	if usage := mustImageConversationAssetGovernance(t, assets); usage.FileCount != 2 {
 		t.Fatalf("batch Governance() = %#v", usage)
 	}
 }
@@ -253,7 +283,7 @@ func TestImageConversationAssetServiceRejectsCombinedBatchBeforeWriting(t *testi
 	if err != nil {
 		t.Fatalf("ReadValidatedReader(second) error = %v", err)
 	}
-	assets.SetStorageBudget(func() int64 { return int64(len(firstData) + len(secondData) - 1) }, func() int64 { return 0 })
+	assets.SetStorageBudget(func() int64 { return int64(len(firstData) + len(secondData) - 1) }, func() (int64, error) { return 0, nil })
 
 	_, err = assets.StoreValidatedBatchContext(context.Background(),
 		"batch-over-budget-owner",
@@ -263,7 +293,7 @@ func TestImageConversationAssetServiceRejectsCombinedBatchBeforeWriting(t *testi
 	if !errors.Is(err, ErrImageConversationAssetStorageLimit) {
 		t.Fatalf("StoreValidatedBatch(over budget) error = %v", err)
 	}
-	if usage := assets.Governance(); usage.FileCount != 0 || usage.TotalBytes != 0 {
+	if usage := mustImageConversationAssetGovernance(t, assets); usage.FileCount != 0 || usage.TotalBytes != 0 {
 		t.Fatalf("over-budget batch wrote files: %#v", usage)
 	}
 	if owners := assets.Owners(); len(owners) != 0 {
@@ -278,7 +308,7 @@ func TestImageConversationAssetServiceDeduplicatesDestinationsWithinBatch(t *tes
 	if err != nil {
 		t.Fatalf("ReadValidatedReader() error = %v", err)
 	}
-	assets.SetStorageBudget(func() int64 { return int64(len(data)) }, func() int64 { return 0 })
+	assets.SetStorageBudget(func() int64 { return int64(len(data)) }, func() (int64, error) { return 0, nil })
 
 	stored, err := assets.StoreValidatedBatchContext(context.Background(),
 		"duplicate-batch-owner",
@@ -294,7 +324,7 @@ func TestImageConversationAssetServiceDeduplicatesDestinationsWithinBatch(t *tes
 	if stored[0].Name != "first.png" || stored[1].Name != "second.png" {
 		t.Fatalf("duplicate batch names = %#v", stored)
 	}
-	if usage := assets.Governance(); usage.FileCount != 1 || usage.TotalBytes != int64(len(data)) {
+	if usage := mustImageConversationAssetGovernance(t, assets); usage.FileCount != 1 || usage.TotalBytes != int64(len(data)) {
 		t.Fatalf("duplicate batch Governance() = %#v", usage)
 	}
 }
@@ -315,9 +345,9 @@ func TestImageConversationAssetServiceBatchBudgetCountsOnlyNewDestinations(t *te
 		t.Fatalf("ReadValidatedReader(second) error = %v", err)
 	}
 	otherUsageCalls := 0
-	assets.SetStorageBudget(func() int64 { return int64(len(firstData) + len(secondData)) }, func() int64 {
+	assets.SetStorageBudget(func() int64 { return int64(len(firstData) + len(secondData)) }, func() (int64, error) {
 		otherUsageCalls++
-		return 0
+		return 0, nil
 	})
 
 	stored, err := assets.StoreValidatedBatchContext(context.Background(),
@@ -334,7 +364,7 @@ func TestImageConversationAssetServiceBatchBudgetCountsOnlyNewDestinations(t *te
 	if otherUsageCalls != 1 {
 		t.Fatalf("mixed batch storage usage checked %d times, want 1", otherUsageCalls)
 	}
-	if usage := assets.Governance(); usage.FileCount != 2 || usage.TotalBytes != int64(len(firstData)+len(secondData)) {
+	if usage := mustImageConversationAssetGovernance(t, assets); usage.FileCount != 2 || usage.TotalBytes != int64(len(firstData)+len(secondData)) {
 		t.Fatalf("mixed batch Governance() = %#v", usage)
 	}
 }
@@ -375,7 +405,7 @@ func TestImageConversationAssetServiceRollsBackPartialBatchWrite(t *testing.T) {
 	if _, statErr := os.Stat(markerPath); !errors.Is(statErr, os.ErrNotExist) {
 		t.Fatalf("partial batch left the owner marker behind: %v", statErr)
 	}
-	if usage := assets.Governance(); usage.FileCount != 0 || usage.TotalBytes != 0 {
+	if usage := mustImageConversationAssetGovernance(t, assets); usage.FileCount != 0 || usage.TotalBytes != 0 {
 		t.Fatalf("partial batch Governance() = %#v", usage)
 	}
 	if owners := assets.Owners(); len(owners) != 0 {
@@ -435,7 +465,7 @@ func TestImageConversationAssetServiceKeepsRepairedOwnerMarkerWhenRollbackLeaves
 	if len(owners) != 1 || owners[0] != ownerID {
 		t.Fatalf("Owners() after repaired-marker rollback = %#v", owners)
 	}
-	if usage := assets.Governance(); usage.FileCount != 1 || usage.TotalBytes != int64(len(oldData)) {
+	if usage := mustImageConversationAssetGovernance(t, assets); usage.FileCount != 1 || usage.TotalBytes != int64(len(oldData)) {
 		t.Fatalf("Governance() after repaired-marker rollback = %#v", usage)
 	}
 }
@@ -462,9 +492,9 @@ func TestImageConversationHistoryStoresPreparedAssetsWithOneBudgetCheck(t *testi
 	backend := newTestStorageBackend(t)
 	assets := NewImageConversationAssetService(t.TempDir())
 	otherUsageCalls := 0
-	assets.SetStorageBudget(func() int64 { return 1 << 30 }, func() int64 {
+	assets.SetStorageBudget(func() int64 { return 1 << 30 }, func() (int64, error) {
 		otherUsageCalls++
-		return 0
+		return 0, nil
 	})
 	history := NewImageConversationHistoryService(backend)
 	history.SetConversationAssetService(assets)
@@ -489,7 +519,7 @@ func TestImageConversationHistoryStoresPreparedAssetsWithOneBudgetCheck(t *testi
 	if otherUsageCalls != 1 {
 		t.Fatalf("prepared asset budget checked %d times, want 1", otherUsageCalls)
 	}
-	if usage := assets.Governance(); usage.FileCount != 2 {
+	if usage := mustImageConversationAssetGovernance(t, assets); usage.FileCount != 2 {
 		t.Fatalf("prepared asset Governance() = %#v", usage)
 	}
 }
@@ -626,11 +656,26 @@ func TestImageConversationAssetFilesystemScansPropagateErrors(t *testing.T) {
 	}
 	assets := NewImageConversationAssetService(filepath.Join(blocker, "assets"))
 
-	if _, err := assets.governanceLockedContext(context.Background(), "", nil, time.Time{}, 0); err == nil {
-		t.Fatal("governanceLockedContext() error = nil, want filesystem traversal error")
+	if _, err := assets.Governance(); err == nil {
+		t.Fatal("Governance() error = nil, want filesystem traversal error")
 	}
 	if _, err := imageConversationAssetOwnerDirectoryEmptyContext(context.Background(), filepath.Join(blocker, "owner")); err == nil {
 		t.Fatal("imageConversationAssetOwnerDirectoryEmptyContext() error = nil, want filesystem read error")
+	}
+}
+
+func TestImageConversationAssetFilesystemScansRejectRootFile(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "assets")
+	if err := os.WriteFile(root, []byte("not a directory"), 0o600); err != nil {
+		t.Fatalf("WriteFile(root) error = %v", err)
+	}
+	assets := NewImageConversationAssetService(root)
+
+	if _, err := assets.Governance(); err == nil {
+		t.Fatal("Governance(root file) error = nil, want filesystem traversal error")
+	}
+	if _, err := assets.CleanupExpired(1); err == nil {
+		t.Fatal("CleanupExpired(root file) error = nil, want filesystem traversal error")
 	}
 }
 
@@ -638,9 +683,9 @@ func TestImageConversationAssetFilesystemScansAllowMissingDirectories(t *testing
 	root := filepath.Join(t.TempDir(), "missing")
 	assets := NewImageConversationAssetService(root)
 
-	usage, err := assets.governanceLockedContext(context.Background(), "", nil, time.Time{}, 0)
+	usage, err := assets.Governance()
 	if err != nil || usage.FileCount != 0 || usage.TotalBytes != 0 {
-		t.Fatalf("governanceLockedContext(missing) = %#v, error = %v", usage, err)
+		t.Fatalf("Governance(missing) = %#v, error = %v", usage, err)
 	}
 	result, err := assets.CleanupOrphansContext(context.Background(), "owner", map[string]struct{}{}, time.Hour, 0)
 	if err != nil || result.FileCount != 0 || result.DeletedCount != 0 {
@@ -673,7 +718,7 @@ func TestImageConversationHistoryMergeAssetizesBeforeAcceptedHash(t *testing.T) 
 	if err != nil || len(replayed) != 1 || !replayed[0].Accepted || replayed[0].ActualRevision != 1 {
 		t.Fatalf("replay acknowledgements=%#v error=%v", replayed, err)
 	}
-	if usage := assets.Governance(); usage.FileCount != 1 {
+	if usage := mustImageConversationAssetGovernance(t, assets); usage.FileCount != 1 {
 		t.Fatalf("replay created duplicate files: %#v", usage)
 	}
 }
@@ -698,7 +743,7 @@ func TestImageConversationHistoryBatchPreflightRejectsBeforeWritingAnyAsset(t *t
 	if !errors.As(err, &validationErr) || !errors.Is(err, ErrInvalidImageConversationAsset) {
 		t.Fatalf("MergeWithAcknowledgementsMinimal() error = %v", err)
 	}
-	if usage := assets.Governance(); usage.FileCount != 0 || usage.TotalBytes != 0 {
+	if usage := mustImageConversationAssetGovernance(t, assets); usage.FileCount != 0 || usage.TotalBytes != 0 {
 		t.Fatalf("rejected batch wrote an earlier asset: %#v", usage)
 	}
 }

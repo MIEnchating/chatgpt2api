@@ -295,9 +295,12 @@ func firstNonZero(values ...int) int {
 	return 0
 }
 
-func (s *ImageService) StorageGovernance() ImageStorageGovernanceSummary {
+func (s *ImageService) StorageGovernance() (ImageStorageGovernanceSummary, error) {
 	summary := ImageStorageGovernanceSummary{LimitBytes: s.config.ImageStorageLimitBytes()}
-	candidates := s.imageCleanupCandidates()
+	candidates, err := s.imageCleanupCandidates()
+	if err != nil {
+		return summary, err
+	}
 	for _, candidate := range candidates {
 		meta := candidate.meta
 		summary.ImagesCount++
@@ -315,14 +318,23 @@ func (s *ImageService) StorageGovernance() ImageStorageGovernanceSummary {
 			summary.LatestImageAt = created
 		}
 	}
-	summary.ThumbnailsBytes, summary.ThumbnailFiles, _ = thumbnailCacheStats(s.config.ImageThumbnailsDir())
-	summary.MetadataBytes, summary.MetadataFiles = directorySize(s.config.ImageMetadataDir(), "")
-	summary.ReferenceBytes, summary.ReferenceFiles = directorySize(s.imageReferencesDir(), "")
+	summary.ThumbnailsBytes, summary.ThumbnailFiles, _, err = thumbnailCacheStats(s.config.ImageThumbnailsDir())
+	if err != nil {
+		return summary, err
+	}
+	summary.MetadataBytes, summary.MetadataFiles, err = directorySize(s.config.ImageMetadataDir(), s.imageReferencesDir())
+	if err != nil {
+		return summary, err
+	}
+	summary.ReferenceBytes, summary.ReferenceFiles, err = directorySize(s.imageReferencesDir(), "")
+	if err != nil {
+		return summary, err
+	}
 	summary.TotalBytes = summary.ImagesBytes + summary.ThumbnailsBytes + summary.MetadataBytes + summary.ReferenceBytes
 	if summary.LimitBytes > 0 && summary.TotalBytes > summary.LimitBytes {
 		summary.OverLimitBytes = summary.TotalBytes - summary.LimitBytes
 	}
-	return summary
+	return summary, nil
 }
 
 func (s *ImageService) CleanupStorage(options ImageStorageCleanupOptions) (ImageStorageCleanupResult, error) {
@@ -333,6 +345,11 @@ func (s *ImageService) CleanupStorage(options ImageStorageCleanupOptions) (Image
 		RetentionDays: options.RetentionDays,
 		MaxBytes:      options.MaxBytes,
 		IncludePublic: options.IncludePublic,
+	}
+	if options.ClearThumbnails || options.RetentionDays > 0 || options.MaxBytes > 0 {
+		if _, err := s.StorageGovernance(); err != nil {
+			return result, err
+		}
 	}
 	if options.ClearThumbnails {
 		stats, err := s.clearThumbnailCache()
@@ -366,7 +383,10 @@ func (s *ImageService) CleanupStorage(options ImageStorageCleanupOptions) (Image
 		result.addRemovalStats(stats)
 		result.PreservedPublicImages += preserved
 	}
-	summary := s.StorageGovernance()
+	summary, err := s.StorageGovernance()
+	if err != nil {
+		return result, err
+	}
 	result.RemainingBytes = summary.TotalBytes
 	result.OverLimitBytes = summary.OverLimitBytes
 	return result, nil
@@ -1374,36 +1394,58 @@ func imageReferenceStorageExtension(format string) string {
 	}
 }
 
-func (s *ImageService) imageCleanupCandidates() []imageCleanupCandidate {
+func (s *ImageService) imageCleanupCandidates() ([]imageCleanupCandidate, error) {
 	root, err := filepath.Abs(s.config.ImagesDir())
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	candidates := make([]imageCleanupCandidate, 0)
-	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
+	walkErr := filepath.WalkDir(root, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			if errors.Is(walkErr, os.ErrNotExist) {
+				return nil
+			}
+			return walkErr
+		}
+		if path == root && !d.IsDir() {
+			return fmt.Errorf("image storage root is not a directory: %s", root)
+		}
+		if d.IsDir() {
 			return nil
 		}
 		rel, relErr := filepath.Rel(root, path)
 		if relErr != nil {
-			return nil
+			return relErr
 		}
 		rel = filepath.ToSlash(rel)
 		info, statErr := d.Info()
 		if statErr != nil {
-			return nil
+			if errors.Is(statErr, os.ErrNotExist) {
+				return nil
+			}
+			return statErr
 		}
-		meta := s.imageMetadata(rel)
+		meta, metaErr := s.loadImageMetadata(rel)
+		if metaErr != nil {
+			return metaErr
+		}
+		groupSize, groupErr := s.imageGroupSize(rel, storedImageSize(meta, info))
+		if groupErr != nil {
+			return groupErr
+		}
 		candidates = append(candidates, imageCleanupCandidate{
 			rel:       rel,
 			path:      path,
 			info:      info,
 			meta:      meta,
-			groupSize: s.imageGroupSize(rel, storedImageSize(meta, info)),
+			groupSize: groupSize,
 		})
 		return nil
 	})
-	return candidates
+	if walkErr != nil && !errors.Is(walkErr, os.ErrNotExist) {
+		return candidates, walkErr
+	}
+	return candidates, nil
 }
 
 func (s *ImageService) cleanupByRetention(retentionDays int, includePublic bool) (imageStorageRemovalStats, int, error) {
@@ -1413,7 +1455,11 @@ func (s *ImageService) cleanupByRetention(retentionDays int, includePublic bool)
 	cutoff := time.Now().Add(-time.Duration(retentionDays) * 24 * time.Hour)
 	var total imageStorageRemovalStats
 	preservedPublic := 0
-	for _, candidate := range s.imageCleanupCandidates() {
+	candidates, err := s.imageCleanupCandidates()
+	if err != nil {
+		return total, preservedPublic, err
+	}
+	for _, candidate := range candidates {
 		if !storedImageTime(candidate.meta, candidate.info).Before(cutoff) {
 			continue
 		}
@@ -1436,11 +1482,17 @@ func (s *ImageService) cleanupByStorageLimit(maxBytes int64, includePublic bool)
 	if maxBytes <= 0 {
 		return imageStorageRemovalStats{}, 0, nil
 	}
-	summary := s.StorageGovernance()
+	summary, err := s.StorageGovernance()
+	if err != nil {
+		return imageStorageRemovalStats{}, 0, err
+	}
 	if summary.TotalBytes <= maxBytes {
 		return imageStorageRemovalStats{}, 0, nil
 	}
-	candidates := s.imageCleanupCandidates()
+	candidates, err := s.imageCleanupCandidates()
+	if err != nil {
+		return imageStorageRemovalStats{}, 0, err
+	}
 	sort.Slice(candidates, func(i, j int) bool {
 		leftPublic := candidates[i].meta.Visibility == ImageVisibilityPublic
 		rightPublic := candidates[j].meta.Visibility == ImageVisibilityPublic
@@ -1608,7 +1660,10 @@ func (s *ImageService) removeImageReferencesWithStats(sourceRel string) (int, in
 	if !pathInsideRoot(root, dir) {
 		return 0, 0, errors.New("invalid image path")
 	}
-	bytes, files := directorySize(dir, "")
+	bytes, files, err := directorySize(dir, "")
+	if err != nil {
+		return 0, 0, err
+	}
 	removeErr := os.RemoveAll(dir)
 	if removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
 		return 0, 0, removeErr
@@ -1647,7 +1702,10 @@ func (s *ImageService) removeImageThumbnailWithStats(root, rel string) (int, int
 
 func (s *ImageService) clearThumbnailCache() (imageStorageRemovalStats, error) {
 	root := s.config.ImageThumbnailsDir()
-	bytes, thumbnails, metadataFiles := thumbnailCacheStats(root)
+	bytes, thumbnails, metadataFiles, err := thumbnailCacheStats(root)
+	if err != nil {
+		return imageStorageRemovalStats{}, err
+	}
 	if err := os.RemoveAll(root); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return imageStorageRemovalStats{}, err
 	}
@@ -1657,24 +1715,40 @@ func (s *ImageService) clearThumbnailCache() (imageStorageRemovalStats, error) {
 	return imageStorageRemovalStats{bytes: bytes, thumbnails: thumbnails, metadataFiles: metadataFiles}, nil
 }
 
-func (s *ImageService) imageGroupSize(rel string, imageSize int64) int64 {
+func (s *ImageService) imageGroupSize(rel string, imageSize int64) (int64, error) {
 	total := imageSize
 	thumbPath := s.thumbnailPath(rel)
 	for _, path := range []string{thumbPath, thumbPath + ".json"} {
-		if info, err := os.Stat(path); err == nil && !info.IsDir() {
+		info, err := os.Stat(path)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return 0, err
+		}
+		if !info.IsDir() {
 			total += info.Size()
 		}
 	}
 	metaPath, err := s.imageOwnerMetadataPath(rel)
-	if err == nil {
-		if info, statErr := os.Stat(metaPath); statErr == nil && !info.IsDir() {
-			total += info.Size()
+	if err != nil {
+		return 0, err
+	}
+	info, statErr := os.Stat(metaPath)
+	if statErr != nil {
+		if !errors.Is(statErr, os.ErrNotExist) {
+			return 0, statErr
 		}
+	} else if !info.IsDir() {
+		total += info.Size()
 	}
 	refDir := filepath.Join(s.imageReferencesDir(), filepath.FromSlash(rel+".refs"))
-	refBytes, _ := directorySize(refDir, "")
+	refBytes, _, err := directorySize(refDir, "")
+	if err != nil {
+		return 0, err
+	}
 	total += refBytes
-	return total
+	return total, nil
 }
 
 func (s *ImageService) imageOwnerMetadataPath(rel string) (string, error) {
@@ -2164,24 +2238,41 @@ func removeFileWithStats(path string) (bool, int64, error) {
 	return true, size, nil
 }
 
-func directorySize(root, skipPrefix string) (int64, int) {
+func directorySize(root, skipPrefix string) (int64, int, error) {
 	root = strings.TrimSpace(root)
 	if root == "" {
-		return 0, 0
+		return 0, 0, nil
 	}
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return 0, 0, err
+	}
+	root = absRoot
 	if skipPrefix != "" {
-		if abs, err := filepath.Abs(skipPrefix); err == nil {
-			skipPrefix = abs
+		abs, err := filepath.Abs(skipPrefix)
+		if err != nil {
+			return 0, 0, err
 		}
+		skipPrefix = abs
 	}
 	var total int64
 	files := 0
-	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil {
-			return nil
+	walkErr := filepath.WalkDir(root, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			if errors.Is(walkErr, os.ErrNotExist) {
+				return nil
+			}
+			return walkErr
+		}
+		if path == root && !d.IsDir() {
+			return fmt.Errorf("storage directory is not a directory: %s", root)
 		}
 		if skipPrefix != "" {
-			if abs, absErr := filepath.Abs(path); absErr == nil && (abs == skipPrefix || strings.HasPrefix(abs, skipPrefix+string(os.PathSeparator))) {
+			abs, absErr := filepath.Abs(path)
+			if absErr != nil {
+				return absErr
+			}
+			if abs == skipPrefix || strings.HasPrefix(abs, skipPrefix+string(os.PathSeparator)) {
 				if d.IsDir() && abs != root {
 					return filepath.SkipDir
 				}
@@ -2193,26 +2284,44 @@ func directorySize(root, skipPrefix string) (int64, int) {
 		}
 		info, statErr := d.Info()
 		if statErr != nil {
-			return nil
+			if errors.Is(statErr, os.ErrNotExist) {
+				return nil
+			}
+			return statErr
 		}
 		total += info.Size()
 		files++
 		return nil
 	})
-	return total, files
+	if walkErr != nil && !errors.Is(walkErr, os.ErrNotExist) {
+		return total, files, walkErr
+	}
+	return total, files, nil
 }
 
-func thumbnailCacheStats(root string) (int64, int, int) {
+func thumbnailCacheStats(root string) (int64, int, int, error) {
 	var bytes int64
 	thumbnails := 0
 	metadataFiles := 0
-	_ = filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
+	walkErr := filepath.WalkDir(root, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			if errors.Is(walkErr, os.ErrNotExist) {
+				return nil
+			}
+			return walkErr
+		}
+		if path == root && !d.IsDir() {
+			return fmt.Errorf("thumbnail cache root is not a directory: %s", root)
+		}
+		if d.IsDir() {
 			return nil
 		}
 		info, statErr := d.Info()
 		if statErr != nil {
-			return nil
+			if errors.Is(statErr, os.ErrNotExist) {
+				return nil
+			}
+			return statErr
 		}
 		bytes += info.Size()
 		if strings.HasSuffix(path, ".json") {
@@ -2222,7 +2331,10 @@ func thumbnailCacheStats(root string) (int64, int, int) {
 		}
 		return nil
 	})
-	return bytes, thumbnails, metadataFiles
+	if walkErr != nil && !errors.Is(walkErr, os.ErrNotExist) {
+		return bytes, thumbnails, metadataFiles, walkErr
+	}
+	return bytes, thumbnails, metadataFiles, nil
 }
 
 func writeJPEGThumbnail(path string, img image.Image) error {

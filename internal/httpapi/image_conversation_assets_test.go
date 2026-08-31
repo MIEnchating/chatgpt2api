@@ -101,7 +101,11 @@ func TestImageConversationAssetsUploadAndPrivateAccess(t *testing.T) {
 	if second.Items[0].AssetPath != asset.AssetPath {
 		t.Fatalf("duplicate upload paths = %q, %q", asset.AssetPath, second.Items[0].AssetPath)
 	}
-	if usage := app.conversationAssets.Governance(); usage.FileCount != 1 {
+	usage, err := app.conversationAssets.Governance()
+	if err != nil {
+		t.Fatalf("conversation asset governance: %v", err)
+	}
+	if usage.FileCount != 1 {
 		t.Fatalf("duplicate upload governance = %#v", usage)
 	}
 	if _, err := app.myAssets.Upsert(context.Background(), owner.ID, false, service.MyAsset{ID: "prompt-asset", Kind: "text", Title: "镜头提示词", Content: "电影感近景", Visibility: service.MyAssetPrivate}); err != nil {
@@ -170,6 +174,57 @@ func TestImageStorageRetentionCleanupRemovesConversationAssets(t *testing.T) {
 	}
 }
 
+func TestImageStorageGovernanceRejectsIncompleteFilesystemScan(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+	token := adminSessionToken(t, app)
+	_, ownerToken := createPasswordUserSession(t, app, "governance-scan-owner", "", "Scan Owner")
+	payload := uploadHTTPTestConversationAssets(t, app, ownerToken, 1, true)
+	assetPath := filepath.Join(app.config.DataDir, "image_conversation_assets", filepath.FromSlash(payload.Items[0].AssetPath))
+	old := time.Now().Add(-48 * time.Hour)
+	if err := os.Chtimes(assetPath, old, old); err != nil {
+		t.Fatalf("age conversation asset: %v", err)
+	}
+
+	imagesDir := app.config.ImagesDir()
+	if err := os.RemoveAll(imagesDir); err != nil {
+		t.Fatalf("remove images directory: %v", err)
+	}
+	if err := os.WriteFile(imagesDir, []byte("not a directory"), 0o644); err != nil {
+		t.Fatalf("replace images directory with file: %v", err)
+	}
+
+	requests := []struct {
+		name    string
+		method  string
+		body    string
+		cleanup bool
+	}{
+		{name: "governance", method: http.MethodGet},
+		{name: "cleanup", method: http.MethodPost, body: `{"action":"retention","retention_days":1}`, cleanup: true},
+	}
+	for _, test := range requests {
+		t.Run(test.name, func(t *testing.T) {
+			req := httptest.NewRequest(test.method, "/api/images/storage-governance", strings.NewReader(test.body))
+			setRequestAuthCookie(req, token)
+			res := httptest.NewRecorder()
+			app.Handler().ServeHTTP(res, req)
+
+			if res.Code != http.StatusServiceUnavailable {
+				t.Fatalf("status = %d, want %d; body = %s", res.Code, http.StatusServiceUnavailable, res.Body.String())
+			}
+			if strings.Contains(res.Body.String(), imagesDir) || strings.Contains(res.Body.String(), "not a directory") {
+				t.Fatalf("response leaked filesystem error: %s", res.Body.String())
+			}
+			if test.cleanup {
+				if _, err := os.Stat(assetPath); err != nil {
+					t.Fatalf("conversation asset was deleted before image scan failed: %v", err)
+				}
+			}
+		})
+	}
+}
+
 func TestImageConversationAssetUploadValidatesFormatAndCount(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()
@@ -234,7 +289,11 @@ func TestImageConversationAssetUploadPreflightsWholeBatchBeforeStoring(t *testin
 	if res.Code != http.StatusBadRequest {
 		t.Fatalf("partial-invalid upload status = %d body = %s", res.Code, res.Body.String())
 	}
-	if usage := app.conversationAssets.Governance(); usage.FileCount != 0 || usage.TotalBytes != 0 {
+	usage, err := app.conversationAssets.Governance()
+	if err != nil {
+		t.Fatalf("conversation asset governance: %v", err)
+	}
+	if usage.FileCount != 0 || usage.TotalBytes != 0 {
 		t.Fatalf("partial-invalid upload left an orphan: %#v", usage)
 	}
 	if owners := app.conversationAssets.Owners(); len(owners) != 0 {

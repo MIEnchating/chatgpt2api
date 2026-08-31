@@ -4,6 +4,7 @@ import test from "node:test";
 
 import {
   relayTokenNameForModel,
+  relayTokenPreferencesFromNames,
   relayTokenRouteForModel,
   relayTokenNamesFromPreferences,
   relayTokenPreferenceField,
@@ -38,6 +39,20 @@ test("maps each relay token kind to its account preference field", () => {
   assert.equal(relayTokenPreferenceField("image"), "default_image_relay_token_names");
   assert.equal(relayTokenPreferenceField("video"), "default_video_relay_token_names");
   assert.equal(relayTokenPreferenceField("audio"), "default_audio_relay_token_names");
+});
+
+test("maps the current provider selection back to persisted preference fields", () => {
+  assert.deepEqual(relayTokenPreferencesFromNames({
+    text: ["text-key"],
+    image: [" image-key ", "image-key"],
+    video: ["video-key-1", "video-key-2"],
+    audio: [],
+  }), {
+    default_text_relay_token_names: ["text-key"],
+    default_image_relay_token_names: ["image-key"],
+    default_video_relay_token_names: ["video-key-1", "video-key-2"],
+    default_audio_relay_token_names: [],
+  });
 });
 
 test("does not select relay tokens when the user has not chosen any", () => {

@@ -2,8 +2,8 @@ package httpapi
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
+	"fmt"
 	"mime/multipart"
 	"net/http"
 	"strings"
@@ -429,18 +429,39 @@ func (a *App) closeImageConversationAssetCleaner() {
 	}
 }
 
-func (a *App) imageStorageGovernance(identity service.Identity) map[string]any {
+func (a *App) imageStorageGovernance(identity service.Identity) (map[string]any, error) {
 	if a == nil || a.images == nil {
-		return map[string]any{}
+		return nil, errors.New("image storage is unavailable")
 	}
-	images := a.images.StorageGovernance()
-	value := map[string]any{}
-	if data, err := json.Marshal(images); err == nil {
-		_ = json.Unmarshal(data, &value)
+	images, err := a.images.StorageGovernance()
+	if err != nil {
+		return nil, fmt.Errorf("inspect image storage: %w", err)
+	}
+	value := map[string]any{
+		"images_bytes":         images.ImagesBytes,
+		"thumbnails_bytes":     images.ThumbnailsBytes,
+		"metadata_bytes":       images.MetadataBytes,
+		"reference_bytes":      images.ReferenceBytes,
+		"images_count":         images.ImagesCount,
+		"public_images_count":  images.PublicImagesCount,
+		"private_images_count": images.PrivateImagesCount,
+		"thumbnail_files":      images.ThumbnailFiles,
+		"metadata_files":       images.MetadataFiles,
+		"reference_files":      images.ReferenceFiles,
+		"limit_bytes":          images.LimitBytes,
+	}
+	if images.OldestImageAt != "" {
+		value["oldest_image_at"] = images.OldestImageAt
+	}
+	if images.LatestImageAt != "" {
+		value["latest_image_at"] = images.LatestImageAt
 	}
 	assets := service.ImageConversationAssetGovernance{}
 	if a.conversationAssets != nil {
-		assets = a.conversationAssets.Governance()
+		assets, err = a.conversationAssets.Governance()
+		if err != nil {
+			return nil, fmt.Errorf("inspect image conversation assets: %w", err)
+		}
 	}
 	totalBytes := images.TotalBytes + assets.TotalBytes
 	overLimitBytes := int64(0)
@@ -453,17 +474,21 @@ func (a *App) imageStorageGovernance(identity service.Identity) map[string]any {
 	value["total_bytes"] = totalBytes
 	value["over_limit_bytes"] = overLimitBytes
 	if a.storageFiles != nil {
-		if localMedia, err := a.storageFiles.LocalMediaGovernance(); err == nil {
-			value["local_media"] = localMedia
-			value["media_total_bytes"] = totalBytes + localMedia.TotalBytes
+		localMedia, err := a.storageFiles.LocalMediaGovernance()
+		if err != nil {
+			return nil, fmt.Errorf("inspect local media storage: %w", err)
 		}
+		value["local_media"] = localMedia
+		value["media_total_bytes"] = totalBytes + localMedia.TotalBytes
 	}
 	if a.myAssets != nil {
-		if textAssets, err := a.myAssets.TextGovernance(identityScope(identity), identity.Role == service.AuthRoleAdmin, a.myAssetOwners(identity)); err == nil {
-			value["text_assets"] = textAssets
+		textAssets, err := a.myAssets.TextGovernance(identityScope(identity), identity.Role == service.AuthRoleAdmin, a.myAssetOwners(identity))
+		if err != nil {
+			return nil, fmt.Errorf("inspect text asset storage: %w", err)
 		}
+		value["text_assets"] = textAssets
 	}
-	return value
+	return value, nil
 }
 
 func imageStorageLimitAvailableForGallery(limitBytes, assetBytes int64) int64 {

@@ -26,6 +26,18 @@ type testImageConfig struct {
 	root string
 }
 
+type fixedImageConfig struct {
+	imagesDir     string
+	thumbnailsDir string
+	metadataDir   string
+}
+
+func (c fixedImageConfig) ImagesDir() string             { return c.imagesDir }
+func (c fixedImageConfig) ImageThumbnailsDir() string    { return c.thumbnailsDir }
+func (c fixedImageConfig) ImageMetadataDir() string      { return c.metadataDir }
+func (c fixedImageConfig) ImageRetentionDays() int       { return 30 }
+func (c fixedImageConfig) ImageStorageLimitBytes() int64 { return 0 }
+
 func (c testImageConfig) ImagesDir() string {
 	path := filepath.Join(c.root, "images")
 	_ = os.MkdirAll(path, 0o755)
@@ -1072,6 +1084,186 @@ func TestImageServiceCleanupStorageClearsThumbnailCacheOnly(t *testing.T) {
 	}
 }
 
+func TestImageServiceStorageGovernancePropagatesScanErrors(t *testing.T) {
+	for _, testCase := range []struct {
+		name   string
+		broken string
+	}{
+		{name: "images root is a file", broken: "images"},
+		{name: "thumbnails root is a file", broken: "thumbnails"},
+		{name: "metadata root is a file", broken: "metadata"},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			root := t.TempDir()
+			config := fixedImageConfig{
+				imagesDir:     filepath.Join(root, "images"),
+				thumbnailsDir: filepath.Join(root, "thumbnails"),
+				metadataDir:   filepath.Join(root, "metadata"),
+			}
+			for name, path := range map[string]string{
+				"images": config.imagesDir, "thumbnails": config.thumbnailsDir, "metadata": config.metadataDir,
+			} {
+				if name == testCase.broken {
+					if err := os.WriteFile(path, []byte("not a directory"), 0o600); err != nil {
+						t.Fatalf("WriteFile(%s) error = %v", name, err)
+					}
+					continue
+				}
+				if err := os.MkdirAll(path, 0o755); err != nil {
+					t.Fatalf("MkdirAll(%s) error = %v", name, err)
+				}
+			}
+
+			if _, err := NewImageService(config).StorageGovernance(); err == nil {
+				t.Fatal("StorageGovernance() error = nil, want scan error")
+			}
+		})
+	}
+}
+
+func TestImageServiceStorageGovernanceAllowsMissingDirectories(t *testing.T) {
+	root := t.TempDir()
+	config := fixedImageConfig{
+		imagesDir: filepath.Join(root, "missing-images"), thumbnailsDir: filepath.Join(root, "missing-thumbnails"), metadataDir: filepath.Join(root, "missing-metadata"),
+	}
+	summary, err := NewImageService(config).StorageGovernance()
+	if err != nil || summary.TotalBytes != 0 || summary.ImagesCount != 0 {
+		t.Fatalf("StorageGovernance(missing) = %#v, error = %v", summary, err)
+	}
+}
+
+func TestImageServiceStorageGovernanceCountsReferencesOnce(t *testing.T) {
+	root := t.TempDir()
+	config := testImageConfig{root: root}
+	rel := "2026/08/31/reference.png"
+	imagePath := filepath.Join(config.ImagesDir(), filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(imagePath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeTestPNG(imagePath); err != nil {
+		t.Fatal(err)
+	}
+	service := NewImageService(config)
+	if err := service.RecordGeneratedImages([]string{rel}, "owner", "Owner", ImageVisibilityPrivate, GeneratedImageMetadata{
+		ReferenceImages: []GeneratedImageReference{{Filename: "source.png", ContentType: "image/png", Data: testPNGBytes(t, 8, 8)}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	summary, err := service.StorageGovernance()
+	if err != nil {
+		t.Fatal(err)
+	}
+	imageInfo, err := os.Stat(imagePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	metadataInfo, err := os.Stat(filepath.Join(config.ImageMetadataDir(), filepath.FromSlash(rel)+".json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	referenceBytes, referenceFiles, err := directorySize(filepath.Join(config.ImageMetadataDir(), "references", filepath.FromSlash(rel+".refs")), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	thumbnailBytes, thumbnailFiles, _, err := thumbnailCacheStats(config.ImageThumbnailsDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if summary.ImagesBytes != imageInfo.Size() || summary.ThumbnailsBytes != thumbnailBytes || summary.ThumbnailFiles != thumbnailFiles || summary.MetadataBytes != metadataInfo.Size() || summary.MetadataFiles != 1 || summary.ReferenceBytes != referenceBytes || summary.ReferenceFiles != referenceFiles {
+		t.Fatalf("StorageGovernance() double-counted reference storage: %#v", summary)
+	}
+	wantTotal := imageInfo.Size() + thumbnailBytes + metadataInfo.Size() + referenceBytes
+	if summary.TotalBytes != wantTotal {
+		t.Fatalf("StorageGovernance().TotalBytes = %d, want %d", summary.TotalBytes, wantTotal)
+	}
+}
+
+func TestImageServiceCleanupScanFailureDoesNotDeleteImages(t *testing.T) {
+	root := t.TempDir()
+	imagesDir := filepath.Join(root, "images")
+	thumbnailsDir := filepath.Join(root, "thumbnails")
+	if err := os.MkdirAll(imagesDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(thumbnailsDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	blocker := filepath.Join(root, "not-a-directory")
+	if err := os.WriteFile(blocker, []byte("blocker"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	config := fixedImageConfig{imagesDir: imagesDir, thumbnailsDir: thumbnailsDir, metadataDir: filepath.Join(blocker, "metadata")}
+	imagePath := filepath.Join(imagesDir, "old.png")
+	if err := writeTestPNG(imagePath); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-72 * time.Hour)
+	if err := os.Chtimes(imagePath, old, old); err != nil {
+		t.Fatal(err)
+	}
+	thumbnailPath := filepath.Join(thumbnailsDir, "cached.jpg")
+	if err := os.WriteFile(thumbnailPath, []byte("cached thumbnail"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	service := NewImageService(config)
+
+	for _, options := range []ImageStorageCleanupOptions{{RetentionDays: 1}, {MaxBytes: 1}, {ClearThumbnails: true}} {
+		result, err := service.CleanupStorage(options)
+		if err == nil {
+			t.Fatalf("CleanupStorage(%#v) error = nil, result = %#v", options, result)
+		}
+		if result.DeletedImages != 0 || result.DeletedBytes != 0 {
+			t.Fatalf("CleanupStorage(%#v) deleted data: %#v", options, result)
+		}
+		if _, statErr := os.Stat(imagePath); statErr != nil {
+			t.Fatalf("image removed after failed cleanup: %v", statErr)
+		}
+		if _, statErr := os.Stat(thumbnailPath); statErr != nil {
+			t.Fatalf("thumbnail removed after failed cleanup: %v", statErr)
+		}
+	}
+}
+
+func TestImageServiceMetadataReadFailurePreventsCleanup(t *testing.T) {
+	root := t.TempDir()
+	config := testImageConfig{root: root}
+	rel := "2026/08/31/public.png"
+	imagePath := filepath.Join(config.ImagesDir(), filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(imagePath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeTestPNG(imagePath); err != nil {
+		t.Fatal(err)
+	}
+	service := NewImageService(config)
+	if err := service.RecordGeneratedImages([]string{rel}, "owner", "Owner", ImageVisibilityPublic); err != nil {
+		t.Fatal(err)
+	}
+	metadataPath := filepath.Join(config.ImageMetadataDir(), filepath.FromSlash(rel)+".json")
+	if err := os.WriteFile(metadataPath, []byte("{invalid json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-72 * time.Hour)
+	if err := os.Chtimes(imagePath, old, old); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := service.StorageGovernance(); err == nil {
+		t.Fatal("StorageGovernance(corrupt metadata) error = nil")
+	}
+	result, err := service.CleanupStorage(ImageStorageCleanupOptions{RetentionDays: 1})
+	if err == nil {
+		t.Fatalf("CleanupStorage(corrupt metadata) error = nil, result = %#v", result)
+	}
+	if result.DeletedImages != 0 || result.DeletedBytes != 0 {
+		t.Fatalf("CleanupStorage(corrupt metadata) deleted data: %#v", result)
+	}
+	if _, err := os.Stat(imagePath); err != nil {
+		t.Fatalf("public image removed after metadata read failure: %v", err)
+	}
+}
+
 func TestImageServiceCleanupStorageRetentionRemovesImageGroup(t *testing.T) {
 	root := t.TempDir()
 	config := testImageConfig{root: root}
@@ -1131,7 +1323,10 @@ func TestImageServiceCleanupStorageLimitPreservesPublicByDefault(t *testing.T) {
 	service := NewImageService(config)
 	service.RecordGeneratedImages([]string{publicRel}, "linuxdo:123", "alice", ImageVisibilityPublic)
 	service.RecordGeneratedImages([]string{privateRel}, "linuxdo:123", "alice", ImageVisibilityPrivate)
-	summary := service.StorageGovernance()
+	summary, err := service.StorageGovernance()
+	if err != nil {
+		t.Fatalf("StorageGovernance() error = %v", err)
+	}
 	if summary.ImagesCount != 2 || summary.PublicImagesCount != 1 || summary.PrivateImagesCount != 1 {
 		t.Fatalf("StorageGovernance() = %#v", summary)
 	}

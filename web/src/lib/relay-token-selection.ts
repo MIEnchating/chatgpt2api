@@ -33,6 +33,15 @@ export function relayTokenNamesFromPreferences(value: RelayTokenPreferenceSource
   };
 }
 
+export function relayTokenPreferencesFromNames(value: RelayTokenNames) {
+  return {
+    default_text_relay_token_names: normalizeRelayTokenNames(value.text),
+    default_image_relay_token_names: normalizeRelayTokenNames(value.image),
+    default_video_relay_token_names: normalizeRelayTokenNames(value.video),
+    default_audio_relay_token_names: normalizeRelayTokenNames(value.audio),
+  };
+}
+
 export function relayTokenPreferenceField(kind: RelayTokenKind) {
   return `default_${kind}_relay_token_names` as const;
 }

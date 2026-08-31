@@ -488,6 +488,18 @@ test("creation preferences pull each model kind with its selected key", () => {
   assert.match(profileSource, /按当前 Key 拉取\$\{label\}/);
   assert.match(profileSource, /Promise\.all\(tokenNames\.map\(\(tokenName\) => fetchRelayModels\(\{ tokenName \}\)\)\)/);
   assert.match(profileSource, /tokenNameForModel\("audio", selectedAudioModel\)/);
+  assert.match(profileSource, /\.\.\.relayTokenPreferencesFromNames\(relayTokenNames\)/);
+});
+
+test("task queue keeps video copy and the last successful snapshot", () => {
+  assert.match(imageTaskQueueSource, /mode === "video"[\s\S]*return "视频生成"/);
+  assert.match(imageTaskQueueSource, /item\.turn\.mode === "video" \? "等待视频处理" : "等待图片处理"/);
+  assert.match(imageTaskQueueSource, /item\.turn\.mode === "video" \? "个视频" : "张图片"/);
+  const loader = imageTaskQueueSource.slice(
+    imageTaskQueueSource.indexOf("function useImageConversationsForQueue"),
+    imageTaskQueueSource.indexOf("function QueueItem"),
+  );
+  assert.doesNotMatch(loader, /catch\s*\{[\s\S]*setConversations\(\[\]\)/);
 });
 
 test("video progress hover does not resize or shift the progress track", () => {

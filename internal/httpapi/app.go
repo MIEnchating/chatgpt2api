@@ -212,8 +212,9 @@ func NewApp() (*App, error) {
 		return nil, fmt.Errorf("initialize audio storage: %w", err)
 	}
 	app := &App{ctx: ctx, config: cfg, auth: auth, logs: logs, logger: logger, proxy: proxy, images: images, videoDir: videoDir, audioDir: audioDir, videoReferenceDir: videoReferenceDir, conversationAssets: service.NewImageConversationAssetService(filepath.Join(cfg.DataDir, "image_conversation_assets")), prompts: service.NewPromptFavoriteService(storageBackend), myAssets: service.NewMyAssetService(storageBackend, storageFiles), history: service.NewImageConversationHistoryService(storageBackend), canvas: service.NewCanvasDocumentService(storageBackend), announce: service.NewAnnouncementService(storageBackend), videoContracts: videoContracts, imagePreferences: service.NewImageGenerationPreferenceService(storageBackend), customRelayConfigs: service.NewCustomRelayConfigService(storageBackend), workflows: service.NewWorkflowService(storageBackend), storageFiles: storageFiles, newAPIKeys: newAPIKeys, newRelayTokenReader: service.NewNewAPITokenReader, cancel: cancel, historyWriteLimiter: newImageConversationHistoryWriteLimiter(imageConversationHistoryWriteParallelism), imageUploadSlots: make(chan struct{}, 2), loginLimiter: newLoginRateLimiter()}
-	app.conversationAssets.SetStorageBudget(cfg.ImageStorageLimitBytes, func() int64 {
-		return app.images.StorageGovernance().TotalBytes
+	app.conversationAssets.SetStorageBudget(cfg.ImageStorageLimitBytes, func() (int64, error) {
+		summary, err := app.images.StorageGovernance()
+		return summary.TotalBytes, err
 	})
 	app.history.SetConversationAssetService(app.conversationAssets)
 	app.startVideoModelContractRefresher(ctx, time.Minute)
@@ -1682,7 +1683,12 @@ func (a *App) handleImageStorageGovernance(w http.ResponseWriter, r *http.Reques
 	}
 	switch r.Method {
 	case http.MethodGet:
-		util.WriteJSON(w, http.StatusOK, map[string]any{"governance": a.imageStorageGovernance(identity)})
+		governance, err := a.imageStorageGovernance(identity)
+		if err != nil {
+			a.writeImageStorageError(w, "query image storage governance", err)
+			return
+		}
+		util.WriteJSON(w, http.StatusOK, map[string]any{"governance": governance})
 	case http.MethodPost:
 		body, err := readJSONMap(r)
 		if err != nil {
@@ -1710,15 +1716,34 @@ func (a *App) handleImageStorageGovernance(w http.ResponseWriter, r *http.Reques
 		}
 		result, err := a.cleanupImageStorageWithOptions(options)
 		if err != nil {
-			util.WriteError(w, http.StatusBadRequest, err.Error())
+			a.writeImageStorageError(w, "clean up image storage", err)
 			return
+		}
+		governance, err := a.imageStorageGovernance(identity)
+		if err != nil {
+			a.logImageStorageError("query image storage governance after cleanup", err)
+			governance = map[string]any{
+				"total_bytes":      result.RemainingBytes,
+				"over_limit_bytes": result.OverLimitBytes,
+			}
 		}
 		util.WriteJSON(w, http.StatusOK, map[string]any{
 			"cleanup":    result,
-			"governance": a.imageStorageGovernance(identity),
+			"governance": governance,
 		})
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
+}
+
+func (a *App) writeImageStorageError(w http.ResponseWriter, operation string, err error) {
+	a.logImageStorageError(operation, err)
+	util.WriteError(w, http.StatusServiceUnavailable, "媒体存储暂时不可用，请稍后重试")
+}
+
+func (a *App) logImageStorageError(operation string, err error) {
+	if a.logger != nil {
+		a.logger.Error("image storage operation failed", "operation", operation, "error", err)
 	}
 }
 
@@ -1734,17 +1759,31 @@ func imageCleanupMaxBytes(rawBytes, rawMB any, fallback int64) int64 {
 
 func (a *App) cleanupImageStorageWithOptions(options service.ImageStorageCleanupOptions) (service.ImageStorageCleanupResult, error) {
 	assetCleanup := service.ImageConversationAssetGovernance{}
-	if a.conversationAssets != nil && options.RetentionDays > 0 {
+	assets := service.ImageConversationAssetGovernance{}
+	if a.images == nil {
+		return service.ImageStorageCleanupResult{}, errors.New("image storage is unavailable")
+	}
+	if _, err := a.images.StorageGovernance(); err != nil {
+		return service.ImageStorageCleanupResult{}, err
+	}
+	if a.conversationAssets != nil {
 		var err error
-		assetCleanup, err = a.conversationAssets.CleanupExpired(options.RetentionDays)
+		assets, err = a.conversationAssets.Governance()
 		if err != nil {
 			return service.ImageStorageCleanupResult{}, err
+		}
+		if options.RetentionDays > 0 {
+			assetCleanup, err = a.conversationAssets.CleanupExpired(options.RetentionDays)
+			if err != nil {
+				return service.ImageStorageCleanupResult{}, err
+			}
+			assets = assetCleanup
 		}
 	}
 
 	galleryOptions := options
 	if galleryOptions.MaxBytes > 0 && a.conversationAssets != nil {
-		galleryOptions.MaxBytes = imageStorageLimitAvailableForGallery(galleryOptions.MaxBytes, a.conversationAssets.Governance().TotalBytes)
+		galleryOptions.MaxBytes = imageStorageLimitAvailableForGallery(galleryOptions.MaxBytes, assets.TotalBytes)
 	}
 	result, err := a.images.CleanupStorage(galleryOptions)
 	if err != nil {
@@ -1763,10 +1802,7 @@ func (a *App) cleanupImageStorageWithOptions(options service.ImageStorageCleanup
 		}
 		assetCleanup.DeletedBytes += quotaCleanup.DeletedBytes
 		assetCleanup.DeletedCount += quotaCleanup.DeletedCount
-	}
-	assets := service.ImageConversationAssetGovernance{}
-	if a.conversationAssets != nil {
-		assets = a.conversationAssets.Governance()
+		assets = quotaCleanup
 	}
 	result.DeletedConversationAssets = assetCleanup.DeletedCount
 	result.DeletedBytes += assetCleanup.DeletedBytes

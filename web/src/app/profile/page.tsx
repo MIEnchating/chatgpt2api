@@ -54,7 +54,11 @@ import {
 } from "@/lib/api";
 import { DEFAULT_CREATION_WORKBENCH_PREFERENCES } from "@/lib/use-image-generation-preferences";
 import { displaySubjectId } from "@/lib/session";
-import { retainSelectedRelayTokenNames, type RelayTokenKind } from "@/lib/relay-token-selection";
+import {
+  relayTokenPreferencesFromNames,
+  retainSelectedRelayTokenNames,
+  type RelayTokenKind,
+} from "@/lib/relay-token-selection";
 import { useRelayTokenPreferences } from "@/lib/use-relay-token-preferences";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import { filterModelsByCapability } from "@/lib/model-capabilities";
@@ -550,7 +554,13 @@ function ImageGenerationPreferencesCard({ sessionKey }: { sessionKey: string }) 
     setIsSaving(true);
     setMessage("");
     try {
-      const normalizedPreferences = { ...preferences, default_audio_voice: selectedAudioVoice, default_audio_format: selectedAudioFormat, default_audio_speed: selectedAudioSpeed };
+      const normalizedPreferences = {
+        ...preferences,
+        ...relayTokenPreferencesFromNames(relayTokenNames),
+        default_audio_voice: selectedAudioVoice,
+        default_audio_format: selectedAudioFormat,
+        default_audio_speed: selectedAudioSpeed,
+      };
       const { preferences: saved } = await updateImageGenerationPreferences(normalizedPreferences);
       setPreferences(saved);
       setMessage("设置已保存");

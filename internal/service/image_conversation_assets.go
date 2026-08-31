@@ -59,7 +59,7 @@ type ImageConversationAssetService struct {
 	processing chan struct{}
 	mu         imageConversationAssetMutex
 	limitBytes func() int64
-	otherBytes func() int64
+	otherBytes func() (int64, error)
 }
 
 type imageConversationAssetMutex struct {
@@ -122,7 +122,7 @@ type ImageConversationAssetPreparation struct {
 	storeErr     error
 }
 
-func (s *ImageConversationAssetService) SetStorageBudget(limitBytes, otherBytes func() int64) {
+func (s *ImageConversationAssetService) SetStorageBudget(limitBytes func() int64, otherBytes func() (int64, error)) {
 	if s == nil {
 		return
 	}
@@ -335,7 +335,11 @@ func (s *ImageConversationAssetService) canStoreLockedContext(ctx context.Contex
 	}
 	usage := governance.TotalBytes
 	if s.otherBytes != nil {
-		if other := s.otherBytes(); other > 0 {
+		other, err := s.otherBytes()
+		if err != nil {
+			return false, err
+		}
+		if other > 0 {
 			usage += other
 		}
 	}
@@ -345,13 +349,13 @@ func (s *ImageConversationAssetService) canStoreLockedContext(ctx context.Contex
 	return usage <= limit-size, nil
 }
 
-func (s *ImageConversationAssetService) Governance() ImageConversationAssetGovernance {
+func (s *ImageConversationAssetService) Governance() (ImageConversationAssetGovernance, error) {
 	if s == nil {
-		return ImageConversationAssetGovernance{}
+		return ImageConversationAssetGovernance{}, nil
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.governanceLocked("", nil, time.Time{}, 0)
+	return s.governanceLockedContext(context.Background(), "", nil, time.Time{}, 0)
 }
 
 // CleanupExpired removes conversation reference images older than the configured
@@ -452,6 +456,9 @@ func (s *ImageConversationAssetService) cleanupCandidatesLocked() ([]imageConver
 				return nil
 			}
 			return walkErr
+		}
+		if filePath == root && !entry.IsDir() {
+			return fmt.Errorf("image conversation asset root is not a directory: %s", root)
 		}
 		if entry.IsDir() {
 			return nil
@@ -679,11 +686,6 @@ func imageConversationAssetOwnerDirectoryEmptyContext(ctx context.Context, owner
 	return true, nil
 }
 
-func (s *ImageConversationAssetService) governanceLocked(ownerHash string, referenced map[string]struct{}, cutoff time.Time, limitBytes int64) ImageConversationAssetGovernance {
-	result, _ := s.governanceLockedContext(context.Background(), ownerHash, referenced, cutoff, limitBytes)
-	return result
-}
-
 func (s *ImageConversationAssetService) governanceLockedContext(ctx context.Context, ownerHash string, referenced map[string]struct{}, cutoff time.Time, limitBytes int64) (ImageConversationAssetGovernance, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -709,6 +711,9 @@ func (s *ImageConversationAssetService) governanceLockedContext(ctx context.Cont
 				return nil
 			}
 			return walkErr
+		}
+		if filePath == scanRoot && !entry.IsDir() {
+			return fmt.Errorf("image conversation asset scan root is not a directory: %s", scanRoot)
 		}
 		if entry.IsDir() {
 			return nil

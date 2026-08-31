@@ -88,6 +88,9 @@ function getModeLabel(mode: ImageConversationMode) {
   if (mode === "image") {
     return "参考图";
   }
+  if (mode === "video") {
+    return "视频生成";
+  }
   return "文生图";
 }
 
@@ -121,6 +124,11 @@ function getStatusClass(status: ImageTurnStatus) {
 }
 
 function getQueueSizeLabel(turn: ImageTurn) {
+  if (turn.mode === "video") {
+    const size = turn.size.includes("x") ? formatImageSizeDisplay(turn.size) : turn.size;
+    return Array.from(new Set([size, turn.videoResolution].map((value) => String(value || "").trim()).filter(Boolean)))
+      .join(" / ");
+  }
   if (!turn.size) {
     return "";
   }
@@ -137,11 +145,12 @@ function getQueueLongTaskHint(turn: ImageTurn) {
 }
 
 function getQueueLoadingDetail(item: TaskQueueItem, loadingPhase: ImageTurnLoadingPhase) {
+  const unit = item.turn.mode === "video" ? "个视频" : "张图片";
   if (loadingPhase === "queued" && item.queuedCount > 0) {
-    return `还有 ${item.queuedCount} 张图片排队中`;
+    return `还有 ${item.queuedCount} ${unit}排队中`;
   }
   if (loadingPhase === "running" && item.runningCount > 0) {
-    return `还有 ${item.runningCount} 张图片处理中`;
+    return `还有 ${item.runningCount} ${unit}处理中`;
   }
   return "";
 }
@@ -235,9 +244,7 @@ function useImageConversationsForQueue() {
             .finally(() => cleanupIDsRef.current.delete(conversation.id));
         }
       } catch {
-        if (active && requestSequence === requestSequenceRef.current) {
-          setConversations([]);
-        }
+        // Preserve the last successful snapshot when a background refresh fails.
       }
     };
 
@@ -293,7 +300,7 @@ function QueueItem({
   const progressMessage =
     isQueued
       ? "等待任务开始"
-      : progress?.message || "等待图片处理";
+      : progress?.message || (item.turn.mode === "video" ? "等待视频处理" : "等待图片处理");
   const loadingDetail = getQueueLoadingDetail(item, loadingPhase);
   const progressDetail = loadingDetail || (isQueued ? "" : progress?.detail) || "";
   const longTaskHint = getQueueLongTaskHint(item.turn);
