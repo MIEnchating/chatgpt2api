@@ -136,8 +136,7 @@ func TestProfileImageConversationRowsPaginationDetailActiveAndGeneration(t *test
 	// must be rejected instead of silently skipping the reordered row.
 	reorderedID := secondItems[0].(map[string]any)["id"].(string)
 	res = request(http.MethodPost, "/api/profile/image-conversations?response=minimal", map[string]any{
-		"generation": generation,
-		"item":       imageConversationHTTPTestItem(reorderedID, 2, "2026-07-19T13:00:00Z", "success", "success"),
+		"item": imageConversationHTTPTestItem(reorderedID, 2, "2026-07-19T13:00:00Z", "success", "success"),
 	})
 	if res.Code != http.StatusOK {
 		t.Fatalf("reorder save status=%d body=%s", res.Code, res.Body.String())
@@ -170,27 +169,25 @@ func TestProfileImageConversationRowsPaginationDetailActiveAndGeneration(t *test
 		t.Fatalf("delete generation=%d initial=%d", deleteGeneration, generation)
 	}
 	res = request(http.MethodPost, "/api/profile/image-conversations?response=minimal", map[string]any{
-		"generation": generation,
-		"item":       imageConversationHTTPTestItem("row-http-after-delete", 1, updatedAt, "success", "success"),
+		"item": imageConversationHTTPTestItem("row-http-after-delete", 1, updatedAt, "success", "success"),
 	})
 	if res.Code != http.StatusOK {
-		t.Fatalf("unrelated stale-generation save status=%d body=%s", res.Code, res.Body.String())
+		t.Fatalf("unrelated post-delete save status=%d body=%s", res.Code, res.Body.String())
 	}
 	afterDelete := decodeImageConversationHTTPPayload(t, res)
 	afterDeleteGeneration := int64(afterDelete["generation"].(float64))
 	if afterDelete["accepted"] != true || afterDeleteGeneration <= deleteGeneration {
-		t.Fatalf("unrelated stale-generation response=%#v", afterDelete)
+		t.Fatalf("unrelated post-delete response=%#v", afterDelete)
 	}
 	res = request(http.MethodPost, "/api/profile/image-conversations?response=minimal", map[string]any{
-		"generation": generation,
-		"item":       imageConversationHTTPTestItem("missing", 1, updatedAt, "success", "success"),
+		"item": imageConversationHTTPTestItem("missing", 1, updatedAt, "success", "success"),
 	})
 	if res.Code != http.StatusGone {
-		t.Fatalf("deleted stale-generation save status=%d body=%s", res.Code, res.Body.String())
+		t.Fatalf("deleted conversation save status=%d body=%s", res.Code, res.Body.String())
 	}
 	deletedWrite := decodeImageConversationHTTPPayload(t, res)
 	if int64(deletedWrite["generation"].(float64)) != afterDeleteGeneration {
-		t.Fatalf("deleted stale-generation response=%#v", deletedWrite)
+		t.Fatalf("deleted conversation response=%#v", deletedWrite)
 	}
 
 	res = request(http.MethodGet, "/api/profile/image-conversations?limit=2&cursor="+nextCursor, nil)
@@ -212,15 +209,14 @@ func TestProfileImageConversationRowsPaginationDetailActiveAndGeneration(t *test
 		t.Fatalf("minimal clear response=%#v", cleared)
 	}
 	res = request(http.MethodPost, "/api/profile/image-conversations?response=minimal", map[string]any{
-		"generation": deleteGeneration,
-		"item":       imageConversationHTTPTestItem("row-http-before-clear", 1, "2026-07-19T08:00:00Z", "success", "success"),
+		"item": imageConversationHTTPTestItem("row-http-before-clear", 1, "2026-07-19T08:00:00Z", "success", "success"),
 	})
 	if res.Code != http.StatusGone {
-		t.Fatalf("pre-clear stale-generation save status=%d body=%s", res.Code, res.Body.String())
+		t.Fatalf("pre-clear save status=%d body=%s", res.Code, res.Body.String())
 	}
 	preClear := decodeImageConversationHTTPPayload(t, res)
 	if int64(preClear["generation"].(float64)) != clearGeneration {
-		t.Fatalf("pre-clear stale-generation response=%#v", preClear)
+		t.Fatalf("pre-clear response=%#v", preClear)
 	}
 }
 

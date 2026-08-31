@@ -10,7 +10,7 @@ import (
 )
 
 func mergeConversationHistory(history *ImageConversationHistoryService, ownerID string, incoming []map[string]any) ([]map[string]any, error) {
-	if _, _, err := history.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, incoming, nil); err != nil {
+	if _, _, err := history.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, incoming); err != nil {
 		return nil, err
 	}
 	return listImageConversationHistoryForTest(history, ownerID)
@@ -198,12 +198,12 @@ func TestImageConversationHistoryMergeAcknowledgements(t *testing.T) {
 		"updatedAt": "2026-07-15T10:00:00Z",
 		"turns":     []any{},
 	}
-	acknowledgements, _, err := history.MergeWithAcknowledgementsMinimal(context.Background(), "user-a", []map[string]any{current}, nil)
+	acknowledgements, _, err := history.MergeWithAcknowledgementsMinimal(context.Background(), "user-a", []map[string]any{current})
 	if err != nil || len(acknowledgements) != 1 || !acknowledgements[0].Accepted || acknowledgements[0].Gone || acknowledgements[0].ActualRevision != 7 {
 		t.Fatalf("initial acknowledgement = %#v, error=%v", acknowledgements, err)
 	}
 
-	acknowledgements, _, err = history.MergeWithAcknowledgementsMinimal(context.Background(), "user-a", []map[string]any{current}, nil)
+	acknowledgements, _, err = history.MergeWithAcknowledgementsMinimal(context.Background(), "user-a", []map[string]any{current})
 	if err != nil || len(acknowledgements) != 1 || !acknowledgements[0].Accepted || acknowledgements[0].ActualRevision != 7 {
 		t.Fatalf("idempotent acknowledgement = %#v, error=%v", acknowledgements, err)
 	}
@@ -211,14 +211,14 @@ func TestImageConversationHistoryMergeAcknowledgements(t *testing.T) {
 	staleRevision := cloneImageConversationMap(current)
 	staleRevision["revision"] = 6
 	staleRevision["updatedAt"] = "2099-01-01T00:00:00Z"
-	acknowledgements, _, err = history.MergeWithAcknowledgementsMinimal(context.Background(), "user-a", []map[string]any{staleRevision}, nil)
+	acknowledgements, _, err = history.MergeWithAcknowledgementsMinimal(context.Background(), "user-a", []map[string]any{staleRevision})
 	if err != nil || len(acknowledgements) != 1 || acknowledgements[0].Accepted || acknowledgements[0].Gone || acknowledgements[0].ActualRevision != 7 {
 		t.Fatalf("stale revision acknowledgement = %#v, error=%v", acknowledgements, err)
 	}
 
 	staleTimestamp := cloneImageConversationMap(current)
 	staleTimestamp["updatedAt"] = "2026-07-15T09:30:00Z"
-	acknowledgements, _, err = history.MergeWithAcknowledgementsMinimal(context.Background(), "user-a", []map[string]any{staleTimestamp}, nil)
+	acknowledgements, _, err = history.MergeWithAcknowledgementsMinimal(context.Background(), "user-a", []map[string]any{staleTimestamp})
 	if err != nil || len(acknowledgements) != 1 || acknowledgements[0].Accepted || acknowledgements[0].Gone || acknowledgements[0].ActualRevision != 7 {
 		t.Fatalf("stale timestamp acknowledgement = %#v, error=%v", acknowledgements, err)
 	}
@@ -226,7 +226,7 @@ func TestImageConversationHistoryMergeAcknowledgements(t *testing.T) {
 	concurrentSameRevision := cloneImageConversationMap(current)
 	concurrentSameRevision["title"] = "conflicting concurrent update"
 	concurrentSameRevision["updatedAt"] = "2026-07-15T11:00:00Z"
-	acknowledgements, _, err = history.MergeWithAcknowledgementsMinimal(context.Background(), "user-a", []map[string]any{concurrentSameRevision}, nil)
+	acknowledgements, _, err = history.MergeWithAcknowledgementsMinimal(context.Background(), "user-a", []map[string]any{concurrentSameRevision})
 	if err != nil || len(acknowledgements) != 1 || acknowledgements[0].Accepted || acknowledgements[0].Gone || acknowledgements[0].ActualRevision != 7 {
 		t.Fatalf("same-revision conflict acknowledgement = %#v, error=%v", acknowledgements, err)
 	}
@@ -241,7 +241,7 @@ func TestImageConversationHistoryMergeAcknowledgements(t *testing.T) {
 	deleted := cloneImageConversationMap(current)
 	deleted["revision"] = 8
 	deleted["updatedAt"] = "2099-01-01T00:00:00Z"
-	acknowledgements, _, err = history.MergeWithAcknowledgementsMinimal(context.Background(), "user-a", []map[string]any{deleted}, nil)
+	acknowledgements, _, err = history.MergeWithAcknowledgementsMinimal(context.Background(), "user-a", []map[string]any{deleted})
 	if err != nil || len(acknowledgements) != 1 || acknowledgements[0].Accepted || !acknowledgements[0].Gone {
 		t.Fatalf("deleted acknowledgement = %#v, error=%v", acknowledgements, err)
 	}
@@ -256,7 +256,7 @@ func TestImageConversationHistoryMergeAcknowledgements(t *testing.T) {
 		"updatedAt": "2099-01-01T00:00:00Z",
 		"turns":     []any{},
 	}
-	acknowledgements, _, err = history.MergeWithAcknowledgementsMinimal(context.Background(), "user-b", []map[string]any{cleared}, nil)
+	acknowledgements, _, err = history.MergeWithAcknowledgementsMinimal(context.Background(), "user-b", []map[string]any{cleared})
 	if err != nil || len(acknowledgements) != 1 || acknowledgements[0].Accepted || !acknowledgements[0].Gone {
 		t.Fatalf("cleared acknowledgement = %#v, error=%v", acknowledgements, err)
 	}

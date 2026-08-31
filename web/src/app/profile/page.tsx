@@ -960,5 +960,5 @@ export default function ProfilePage() {
       </div>
     );
   }
-  return <ProfileContent session={session} />;
+  return <ProfileContent key={session.key} session={session} />;
 }

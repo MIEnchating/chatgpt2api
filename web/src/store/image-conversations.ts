@@ -136,7 +136,7 @@ type ImageConversationScopeState = {
   coalescedDrain: Promise<void> | null;
   retryTimer: ReturnType<typeof setTimeout> | null;
   paginationEpoch: number;
-  remoteGeneration: string | null;
+  remoteCursorGeneration: string | null;
   pageRequests: Map<string, { epoch: number; promise: Promise<ImageConversationHistoryPage> }>;
   windowRequests: Map<number, { epoch: number; promise: Promise<ImageConversationHistoryWindow> }>;
   detailRequests: Map<string, { epoch: number; promise: Promise<ImageConversation | null> }>;
@@ -157,7 +157,7 @@ function createImageConversationScopeState(scope: ImageConversationSessionScope)
     coalescedDrain: null,
     retryTimer: null,
     paginationEpoch: 0,
-    remoteGeneration: null,
+    remoteCursorGeneration: null,
     pageRequests: new Map(),
     windowRequests: new Map(),
     detailRequests: new Map(),
@@ -190,7 +190,7 @@ function retireImageConversationScopeState(state: ImageConversationScopeState) {
   state.pageRequests.clear();
   state.windowRequests.clear();
   state.detailRequests.clear();
-  state.remoteGeneration = null;
+  state.remoteCursorGeneration = null;
 }
 
 function invalidateImageConversationSessionScope() {
@@ -248,10 +248,9 @@ function assertCurrentImageConversationRequest(
   }
 }
 
-function historyRequestOptions(state: ImageConversationScopeState): ImageConversationHistoryRequestOptions {
+function historyRequestOptions(): ImageConversationHistoryRequestOptions {
   return {
     redirectOnUnauthorized: false,
-    generation: state.remoteGeneration,
   };
 }
 
@@ -824,7 +823,7 @@ function normalizeHistoryGeneration(value: unknown): string | null {
   return normalizeImageConversationHistoryGeneration(value);
 }
 
-function updateRemoteGenerationFromResponse(
+function updateRemoteCursorGenerationFromResponse(
   state: ImageConversationScopeState,
   response: { generation?: unknown },
 ) {
@@ -833,7 +832,10 @@ function updateRemoteGenerationFromResponse(
   }
   const generation = normalizeHistoryGeneration(response.generation);
   if (generation !== null) {
-    state.remoteGeneration = maxImageConversationHistoryGeneration(state.remoteGeneration, generation);
+    state.remoteCursorGeneration = maxImageConversationHistoryGeneration(
+      state.remoteCursorGeneration,
+      generation,
+    );
   }
 }
 
@@ -894,7 +896,10 @@ function normalizeHistoryPage(
 ): ImageConversationHistoryPage {
   const generation = normalizeHistoryGeneration(response.generation);
   if (requestEpoch === state.paginationEpoch && generation !== null) {
-    state.remoteGeneration = maxImageConversationHistoryGeneration(state.remoteGeneration, generation);
+    state.remoteCursorGeneration = maxImageConversationHistoryGeneration(
+      state.remoteCursorGeneration,
+      generation,
+    );
   }
   const serverItems = normalizeHistoryPageItems(response.items);
   const items = includeFailedSnapshots
@@ -907,7 +912,7 @@ function normalizeHistoryPage(
     items,
     nextCursor,
     hasMore: response.has_more === true || Boolean(nextCursor),
-    generation: generation ?? state.remoteGeneration,
+    generation: generation ?? state.remoteCursorGeneration,
   };
 }
 
@@ -971,9 +976,9 @@ async function mergeImageConversationBatchWithRebase(
       response = await mergeImageConversationHistory(
         pending.map((conversation) =>
           conversationForServerPersistence(conversation) as unknown as Record<string, unknown>),
-        historyRequestOptions(state),
+        historyRequestOptions(),
       );
-      updateRemoteGenerationFromResponse(state, response);
+      updateRemoteCursorGenerationFromResponse(state, response);
     } catch (error) {
       if (
         pendingIndices.length === 1 &&
@@ -1064,7 +1069,7 @@ export async function listImageConversationPage(
 
   const requestEpoch = state.paginationEpoch;
   const promise = fetchImageConversationHistoryPage({
-    ...historyRequestOptions(state),
+    ...historyRequestOptions(),
     limit,
     cursor,
   })
@@ -1093,7 +1098,7 @@ export async function loadImageConversationHistoryWindow(
 
   const requestEpoch = state.paginationEpoch;
   const promise = fetchImageConversationHistoryWindow({
-    ...historyRequestOptions(state),
+    ...historyRequestOptions(),
     limit: normalizedLimit,
   }).then((response) => {
     assertCurrentImageConversationRequest(state, requestEpoch);
@@ -1128,11 +1133,11 @@ export async function getImageConversation(id: string): Promise<ImageConversatio
   }
 
   const requestEpoch = state.paginationEpoch;
-  const promise = fetchImageConversationHistoryItem(conversationID, historyRequestOptions(state))
+  const promise = fetchImageConversationHistoryItem(conversationID, historyRequestOptions())
     .then((response) => {
       assertCurrentImageConversationRequest(state, requestEpoch);
       const generation = normalizeHistoryGeneration(response.generation);
-      if (!imageConversationHistoryGenerationAtLeast(generation, state.remoteGeneration)) {
+      if (!imageConversationHistoryGenerationAtLeast(generation, state.remoteCursorGeneration)) {
         throw new ImageConversationHistoryRequestStaleError();
       }
       const rawItem = response.item;
@@ -1141,7 +1146,10 @@ export async function getImageConversation(id: string): Promise<ImageConversatio
       }
       const fetched = normalizeConversation(rawItem as ImageConversation & Record<string, unknown>);
       if (generation !== null) {
-        state.remoteGeneration = maxImageConversationHistoryGeneration(state.remoteGeneration, generation);
+        state.remoteCursorGeneration = maxImageConversationHistoryGeneration(
+          state.remoteCursorGeneration,
+          generation,
+        );
       }
       const failed = state.failedSnapshots.get(fetched.id);
       return failed ? mergeImageConversationSnapshot(failed, fetched) : fetched;
@@ -1182,9 +1190,9 @@ async function persistImageConversationDurably(
           const payload = conversationForServerPersistence(candidate);
           const response = await mergeImageConversationHistory(
             [payload as unknown as Record<string, unknown>],
-            historyRequestOptions(state),
+            historyRequestOptions(),
           );
-          updateRemoteGenerationFromResponse(state, response);
+          updateRemoteCursorGenerationFromResponse(state, response);
           assertDurableConversationAcknowledgement(response, candidate);
           state.failedSnapshots.delete(candidate.id);
           state.coalescedFailures.delete(candidate.id);
@@ -1342,8 +1350,8 @@ export async function deleteImageConversation(id: string): Promise<void> {
   const state = await getCurrentImageConversationScopeState();
   await flushImageConversationScopeSaves(state).catch(() => undefined);
   await queueImageConversationWrite(state, async () => {
-    const response = await deleteImageConversationHistoryItem(id, historyRequestOptions(state));
-    updateRemoteGenerationFromResponse(state, response);
+    const response = await deleteImageConversationHistoryItem(id, historyRequestOptions());
+    updateRemoteCursorGenerationFromResponse(state, response);
     state.failedSnapshots.delete(id);
     state.coalescedFailures.delete(id);
     state.durableFailures.delete(id);
@@ -1359,8 +1367,8 @@ export async function clearImageConversations(): Promise<void> {
   const state = await getCurrentImageConversationScopeState();
   await flushImageConversationScopeSaves(state).catch(() => undefined);
   await queueImageConversationWrite(state, async () => {
-    const response = await clearImageConversationHistory(historyRequestOptions(state));
-    updateRemoteGenerationFromResponse(state, response);
+    const response = await clearImageConversationHistory(historyRequestOptions());
+    updateRemoteCursorGenerationFromResponse(state, response);
     state.failedSnapshots.clear();
     state.coalescedSaves.clear();
     state.coalescedFailures.clear();

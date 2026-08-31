@@ -635,12 +635,7 @@ func (a *App) handleProfileImageConversations(w http.ResponseWriter, r *http.Req
 			// files created by a rejected/conflicting write are reclaimed after the
 			// orphan grace window as well as files released by a successful update.
 			defer a.scheduleImageConversationAssetCleanupDebounced(ownerID)
-			expectedGeneration, generationErr := imageConversationHistoryRequestGeneration(body)
-			if generationErr != nil {
-				util.WriteError(w, http.StatusBadRequest, generationErr.Error())
-				return
-			}
-			acknowledgements, generation, mergeErr := a.history.MergeWithAcknowledgementsMinimal(r.Context(), ownerID, items, expectedGeneration)
+			acknowledgements, generation, mergeErr := a.history.MergeWithAcknowledgementsMinimal(r.Context(), ownerID, items)
 			if mergeErr != nil {
 				writeImageConversationHistoryError(w, mergeErr)
 				return
@@ -760,21 +755,6 @@ func (a *App) acquireImageConversationHistoryWrite(r *http.Request) (func(), boo
 		r.Context(),
 		imageConversationHistoryWriteWeight(r.ContentLength),
 	)
-}
-
-func imageConversationHistoryRequestGeneration(body map[string]any) (*int64, error) {
-	value, exists := body["generation"]
-	if !exists {
-		value, exists = body["history_epoch"]
-	}
-	if !exists || value == nil || strings.TrimSpace(fmt.Sprint(value)) == "" {
-		return nil, nil
-	}
-	generation, err := strconv.ParseInt(strings.TrimSpace(fmt.Sprint(value)), 10, 64)
-	if err != nil || generation < 1 {
-		return nil, fmt.Errorf("invalid conversation history generation")
-	}
-	return &generation, nil
 }
 
 func writeImageConversationHistoryError(w http.ResponseWriter, err error) {

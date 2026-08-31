@@ -112,7 +112,7 @@ func TestCanceledReferenceUploadsDoNotCreateFiles(t *testing.T) {
 		{
 			name: "audio", path: "/api/creation-tasks/audio-reference-uploads", field: "audio",
 			filename: "reference.wav", contentType: "audio/wav",
-			data: func(*testing.T) []byte { return []byte("RIFFtestWAVE") },
+			data: func(*testing.T) []byte { return testWAVReferenceBytes() },
 		},
 		{
 			name: "image", path: "/api/creation-tasks/video-image-reference-uploads", field: "image",

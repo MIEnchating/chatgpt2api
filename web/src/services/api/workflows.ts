@@ -43,6 +43,7 @@ export type WorkflowSeriesConfig = {
 
 export type CreativeWorkflow = {
   id: string;
+  revision?: number;
   owner_id?: string;
   scope: "private" | "public";
   name: string;
@@ -96,6 +97,17 @@ export async function saveWorkflow(workflow: CreativeWorkflow) {
     method: workflow.id ? "PUT" : "POST",
     body: workflow,
   });
+  return response.item;
+}
+
+export async function touchWorkflowLastRun(id: string, lastRunAt: string) {
+  const response = await httpRequest<{ item: CreativeWorkflow }>(
+    `/api/workflows/${encodeURIComponent(id)}/last-run`,
+    {
+      method: "PUT",
+      body: { last_run_at: lastRunAt },
+    },
+  );
   return response.item;
 }
 

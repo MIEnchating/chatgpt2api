@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"reflect"
 	"regexp"
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"chatgpt2api/internal/storage"
 	"chatgpt2api/internal/util"
@@ -20,6 +22,11 @@ const (
 )
 
 var invalidWorkflowTemplateVariableKeyCharacterRE = regexp.MustCompile(`[^A-Za-z0-9_.-]`)
+
+var (
+	ErrWorkflowNotFound     = errors.New("workflow not found")
+	ErrWorkflowAccessDenied = errors.New("workflow access denied")
+)
 
 type WorkflowVariable struct {
 	ID           string   `json:"id"`
@@ -56,6 +63,7 @@ type WorkflowSeriesConfig struct {
 
 type CreativeWorkflow struct {
 	ID           string                   `json:"id"`
+	Revision     int64                    `json:"revision"`
 	OwnerID      string                   `json:"owner_id"`
 	Scope        string                   `json:"scope"`
 	Mode         string                   `json:"mode"`
@@ -105,37 +113,47 @@ func (s *WorkflowService) Save(ownerID string, input CreativeWorkflow) (Creative
 		return CreativeWorkflow{}, errors.New("owner_id is required")
 	}
 	input = *copyWorkflow(&input)
-	if strings.TrimSpace(input.ID) == "" {
+	creating := strings.TrimSpace(input.ID) == ""
+	if creating {
 		input.ID = util.NewUUID()
+		input.Revision = 0
 	}
 	now := util.NowISO()
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	var expected *CreativeWorkflow
 	for attempt := 0; attempt < workflowSaveAttempts; attempt++ {
 		items, err := s.loadLocked()
 		if err != nil {
 			return CreativeWorkflow{}, err
 		}
 		index, current := workflowByID(items, input.ID)
-		if attempt == 0 {
-			expected = copyWorkflow(current)
-		} else if !sameWorkflow(expected, current) {
-			return CreativeWorkflow{}, workflowConcurrentMutationError(input.ID)
-		}
 		if current != nil && current.OwnerID != ownerID {
 			return CreativeWorkflow{}, errors.New("只能编辑自己的工作流")
 		}
 		candidate := input
 		if index < 0 {
+			if !creating && input.Revision != 0 {
+				return CreativeWorkflow{}, workflowConcurrentMutationError(input.ID)
+			}
 			candidate.OwnerID = ownerID
 			candidate.CreatedAt = now
+			candidate.UpdatedAt = now
+			candidate.LastRunAt = ""
+			candidate.Revision = 1
 		} else {
+			if input.Revision != current.Revision {
+				return CreativeWorkflow{}, workflowConcurrentMutationError(input.ID)
+			}
+			if current.Revision == math.MaxInt64 {
+				return CreativeWorkflow{}, errors.New("workflow revision limit reached")
+			}
 			candidate.OwnerID = current.OwnerID
 			candidate.CreatedAt = current.CreatedAt
+			candidate.UpdatedAt = latestWorkflowTimestamp(current.UpdatedAt, now)
+			candidate.LastRunAt = current.LastRunAt
+			candidate.Revision = current.Revision + 1
 		}
-		candidate.UpdatedAt = now
 		candidate.Editable = true
 		if err := normalizeWorkflow(&candidate); err != nil {
 			return CreativeWorkflow{}, err
@@ -156,6 +174,58 @@ func (s *WorkflowService) Save(ownerID string, input CreativeWorkflow) (Creative
 		return candidate, nil
 	}
 	return CreativeWorkflow{}, fmt.Errorf("failed to save workflow")
+}
+
+func (s *WorkflowService) TouchLastRun(ownerID, id, lastRunAt string) (CreativeWorkflow, error) {
+	ownerID = strings.TrimSpace(ownerID)
+	id = strings.TrimSpace(id)
+	if ownerID == "" {
+		return CreativeWorkflow{}, errors.New("owner_id is required")
+	}
+	if id == "" {
+		return CreativeWorkflow{}, errors.New("workflow id is required")
+	}
+	parsedLastRunAt, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(lastRunAt))
+	if err != nil {
+		return CreativeWorkflow{}, errors.New("last_run_at must be an RFC3339 timestamp")
+	}
+	lastRunAt = parsedLastRunAt.UTC().Format(time.RFC3339Nano)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for attempt := 0; attempt < workflowSaveAttempts; attempt++ {
+		items, err := s.loadLocked()
+		if err != nil {
+			return CreativeWorkflow{}, err
+		}
+		index, current := workflowByID(items, id)
+		if index < 0 {
+			return CreativeWorkflow{}, fmt.Errorf("%w: %q", ErrWorkflowNotFound, id)
+		}
+		if current.OwnerID != ownerID {
+			return CreativeWorkflow{}, ErrWorkflowAccessDenied
+		}
+		if !workflowTimestampAfter(lastRunAt, current.LastRunAt) {
+			result := *copyWorkflow(current)
+			result.Editable = true
+			return result, nil
+		}
+
+		candidate := *copyWorkflow(current)
+		candidate.LastRunAt = lastRunAt
+		candidate.UpdatedAt = latestWorkflowTimestamp(current.UpdatedAt, lastRunAt)
+		candidate.Editable = false
+		items[index] = candidate
+		if err := s.saveLocked(items); err != nil {
+			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < workflowSaveAttempts {
+				continue
+			}
+			return CreativeWorkflow{}, err
+		}
+		candidate.Editable = true
+		return candidate, nil
+	}
+	return CreativeWorkflow{}, fmt.Errorf("failed to update workflow last run")
 }
 
 func (s *WorkflowService) Delete(ownerID, id string) error {
@@ -235,6 +305,22 @@ func sameWorkflow(expected, current *CreativeWorkflow) bool {
 
 func workflowConcurrentMutationError(id string) error {
 	return fmt.Errorf("%w: workflow %q changed during the operation", storage.ErrConcurrentRowUpdate, id)
+}
+
+func workflowTimestampAfter(candidate, current string) bool {
+	candidateTime, candidateErr := time.Parse(time.RFC3339Nano, strings.TrimSpace(candidate))
+	if candidateErr != nil {
+		return false
+	}
+	currentTime, currentErr := time.Parse(time.RFC3339Nano, strings.TrimSpace(current))
+	return currentErr != nil || candidateTime.After(currentTime)
+}
+
+func latestWorkflowTimestamp(current, candidate string) string {
+	if workflowTimestampAfter(candidate, current) {
+		return candidate
+	}
+	return current
 }
 
 func normalizeWorkflow(item *CreativeWorkflow) error {
@@ -356,6 +442,9 @@ func (s *WorkflowService) loadLocked() ([]CreativeWorkflow, error) {
 		document.Items = []CreativeWorkflow{}
 	}
 	for i := range document.Items {
+		if document.Items[i].Revision <= 0 {
+			document.Items[i].Revision = 1
+		}
 		if err := normalizeWorkflow(&document.Items[i]); err != nil {
 			identifier := strings.TrimSpace(document.Items[i].ID)
 			if identifier == "" {
@@ -371,5 +460,5 @@ func (s *WorkflowService) saveLocked(items []CreativeWorkflow) error {
 	if items == nil {
 		items = []CreativeWorkflow{}
 	}
-	return saveStoredJSON(s.store, workflowDocumentName, map[string]any{"version": 2, "items": items})
+	return saveStoredJSON(s.store, workflowDocumentName, map[string]any{"version": 3, "items": items})
 }

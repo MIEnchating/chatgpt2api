@@ -14,18 +14,9 @@ import {
 
 const pageSource = await readFile(new URL("../src/app/image/page.tsx", import.meta.url), "utf8");
 
-test("generation is sent in the merge body only after the server provides one", () => {
+test("history merge body contains only conversation items", () => {
   const items = [{ id: "conversation-1" }];
   assert.deepEqual(buildImageConversationHistoryMergeBody(items), { items });
-  assert.deepEqual(buildImageConversationHistoryMergeBody(items, null), { items });
-  assert.deepEqual(buildImageConversationHistoryMergeBody(items, 12), {
-    items,
-    generation: "12",
-  });
-  assert.deepEqual(buildImageConversationHistoryMergeBody(items, " 13 "), {
-    items,
-    generation: "13",
-  });
 });
 
 test("history generations normalize and detect a cursor reset", () => {

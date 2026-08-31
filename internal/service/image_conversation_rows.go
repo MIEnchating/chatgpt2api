@@ -239,9 +239,9 @@ func (s *ImageConversationHistoryService) ListActive(ctx context.Context, ownerI
 }
 
 // MergeWithAcknowledgementsMinimal persists snapshots without loading the
-// owner's complete history. The generation is advisory: destructive changes
-// force a reload and each ID is then checked against its tombstone/watermark.
-func (s *ImageConversationHistoryService) MergeWithAcknowledgementsMinimal(ctx context.Context, ownerID string, incoming []map[string]any, _ *int64) ([]ImageConversationMergeAcknowledgement, int64, error) {
+// owner's complete history. Destructive changes force a reload and each ID is
+// checked against its latest tombstone or clear watermark before it is saved.
+func (s *ImageConversationHistoryService) MergeWithAcknowledgementsMinimal(ctx context.Context, ownerID string, incoming []map[string]any) ([]ImageConversationMergeAcknowledgement, int64, error) {
 	ownerID = util.Clean(ownerID)
 	if ownerID == "" {
 		return nil, 0, fmt.Errorf("owner_id is required")
@@ -464,9 +464,9 @@ type plannedImageConversationRowWrite struct {
 }
 
 func (s *ImageConversationHistoryService) mergeImageConversationRowsContext(ctx context.Context, ownerID string, incoming []map[string]any, strictRevision bool) ([]ImageConversationMergeAcknowledgement, int64, error) {
-	// The client generation identifies a read snapshot. Writes are re-evaluated
-	// per conversation against the latest internal tombstone/clear generation;
-	// otherwise deleting X could incorrectly discard an in-flight save for Y.
+	// Writes are re-evaluated per conversation against the latest internal
+	// tombstone/clear generation; otherwise deleting X could incorrectly discard
+	// an in-flight save for Y.
 	prepared := make([]normalizedImageConversationRowInput, 0, len(incoming))
 	seen := make(map[string]struct{}, len(incoming))
 	for _, raw := range incoming {

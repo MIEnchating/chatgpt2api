@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"database/sql/driver"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -10,6 +11,16 @@ import (
 	"strings"
 	"testing"
 )
+
+type logDeleteResult struct {
+	affected int64
+	err      error
+}
+
+func (r logDeleteResult) LastInsertId() (int64, error) { return 0, nil }
+func (r logDeleteResult) RowsAffected() (int64, error) { return r.affected, r.err }
+
+var _ driver.Result = logDeleteResult{}
 
 func openSQLiteStorageTestBackend(t *testing.T, path string) *DatabaseBackend {
 	t.Helper()
@@ -82,6 +93,14 @@ func TestDatabaseBackendStoresDocumentsAndLogs(t *testing.T) {
 	health := backend.HealthCheck()
 	if health["document_count"] != 1 || health["log_count"] != 2 {
 		t.Fatalf("HealthCheck() = %#v", health)
+	}
+}
+
+func TestDeleteLogsResultPropagatesRowsAffectedError(t *testing.T) {
+	wantErr := errors.New("rows affected unavailable")
+	deleted, err := deletedLogRows(logDeleteResult{err: wantErr})
+	if deleted != 0 || !errors.Is(err, wantErr) {
+		t.Fatalf("deletedLogRows() = (%d, %v), want (0, %v)", deleted, err, wantErr)
 	}
 }
 

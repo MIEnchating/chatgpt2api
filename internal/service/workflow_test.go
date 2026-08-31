@@ -49,7 +49,7 @@ func TestWorkflowServiceCRUDVisibilityAndReferenceRun(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Save() error = %v", err)
 	}
-	if created.OwnerID != "alice" || !created.Editable {
+	if created.OwnerID != "alice" || !created.Editable || created.Revision != 1 {
 		t.Fatalf("created workflow = %#v", created)
 	}
 	if created.Config.APIMode != "responses" || created.SeriesConfig.PromptChannelID != "text-token" {
@@ -59,10 +59,14 @@ func TestWorkflowServiceCRUDVisibilityAndReferenceRun(t *testing.T) {
 	if err != nil || len(visible) != 1 || visible[0].Editable {
 		t.Fatalf("bob visible workflows = %#v, error = %v", visible, err)
 	}
-	created.LastRunAt = "2026-08-26T08:00:00Z"
+	created.Name = "更新后的商品海报"
 	updated, err := workflows.Save("alice", created)
-	if err != nil || updated.LastRunAt != created.LastRunAt {
-		t.Fatalf("updated last run = %q, error = %v", updated.LastRunAt, err)
+	if err != nil || updated.Name != created.Name || updated.Revision != 2 {
+		t.Fatalf("updated workflow = %#v, error = %v", updated, err)
+	}
+	touched, err := workflows.TouchLastRun("alice", created.ID, "2026-08-26T08:00:00Z")
+	if err != nil || touched.LastRunAt != "2026-08-26T08:00:00Z" || touched.Revision != updated.Revision {
+		t.Fatalf("touched last run workflow = %#v, error = %v", touched, err)
 	}
 	if err := workflows.Delete("bob", created.ID); err == nil {
 		t.Fatal("Delete() error = nil, want ownership error")
@@ -152,8 +156,32 @@ func TestWorkflowServiceLoadsLegacyVariablesWithoutIDs(t *testing.T) {
 		t.Fatalf("List() = (%#v, %v)", items, err)
 	}
 	variables := items[0].Variables
-	if variables[0].Key != "subject_name" || variables[0].ID == "" || variables[1].ID == "" || variables[0].ID == variables[1].ID {
+	if variables[0].Key != "subject_name" || variables[0].ID == "" || variables[1].ID == "" || variables[0].ID == variables[1].ID || items[0].Revision != 1 {
 		t.Fatalf("normalized legacy variables = %#v", variables)
+	}
+}
+
+func TestWorkflowServiceRejectsStaleClientRevision(t *testing.T) {
+	workflows := NewWorkflowService(newTestStorageBackend(t))
+	base, err := workflows.Save("alice", referenceWorkflow())
+	if err != nil {
+		t.Fatalf("Save(base) error = %v", err)
+	}
+	current := base
+	current.Name = "当前编辑"
+	current, err = workflows.Save("alice", current)
+	if err != nil {
+		t.Fatalf("Save(current) error = %v", err)
+	}
+
+	stale := base
+	stale.Name = "旧快照编辑"
+	if _, err := workflows.Save("alice", stale); !errors.Is(err, storage.ErrConcurrentRowUpdate) {
+		t.Fatalf("Save(stale) error = %v, want concurrent mutation", err)
+	}
+	items, err := workflows.List("alice")
+	if err != nil || len(items) != 1 || items[0].Name != current.Name || items[0].Revision != current.Revision {
+		t.Fatalf("workflows after stale save = %#v, error = %v", items, err)
 	}
 }
 
@@ -361,6 +389,53 @@ func TestWorkflowServiceRejectsConcurrentUpdatesToSameWorkflow(t *testing.T) {
 	}
 	if len(items) != 1 || items[0].Name != first.Name && items[0].Name != second.Name {
 		t.Fatalf("concurrent update result = %#v", items)
+	}
+}
+
+func TestWorkflowServiceMergesConcurrentSaveAndLastRunTouch(t *testing.T) {
+	databaseURL := "sqlite:///" + filepath.ToSlash(filepath.Join(t.TempDir(), "shared-workflow-last-run.db"))
+	backendA, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend(A) error = %v", err)
+	}
+	t.Cleanup(func() { _ = backendA.Close() })
+	backendB, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend(B) error = %v", err)
+	}
+	t.Cleanup(func() { _ = backendB.Close() })
+	seed := NewWorkflowService(backendA)
+	base, err := seed.Save("alice", referenceWorkflow())
+	if err != nil {
+		t.Fatalf("Save(seed) error = %v", err)
+	}
+
+	barrier := newTestDocumentSaveBarrier(2)
+	serviceA := NewWorkflowService(newFirstSaveBarrierBackend(t, backendA, barrier))
+	serviceB := NewWorkflowService(newFirstSaveBarrierBackend(t, backendB, barrier))
+	updated := base
+	updated.Name = "并发编辑后的名称"
+	errorsCh := make(chan error, 2)
+	go func() {
+		_, saveErr := serviceA.Save("alice", updated)
+		errorsCh <- saveErr
+	}()
+	go func() {
+		_, touchErr := serviceB.TouchLastRun("alice", base.ID, "2026-08-26T08:00:00Z")
+		errorsCh <- touchErr
+	}()
+	for range 2 {
+		if mutationErr := <-errorsCh; mutationErr != nil {
+			t.Fatalf("concurrent save/touch error = %v", mutationErr)
+		}
+	}
+
+	items, err := seed.List("alice")
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(items) != 1 || items[0].Name != updated.Name || items[0].LastRunAt != "2026-08-26T08:00:00Z" || items[0].Revision != base.Revision+1 {
+		t.Fatalf("concurrent save/touch result = %#v", items)
 	}
 }
 

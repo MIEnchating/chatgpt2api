@@ -136,5 +136,6 @@ describe("preference lifecycle", () => {
 
   test("profile saves reject responses from a previous session", () => {
     expect(profilePageSource).toContain("currentSessionKeyRef.current !== saveSessionKey");
+    expect(profilePageSource).toContain("<ProfileContent key={session.key} session={session} />");
   });
 });

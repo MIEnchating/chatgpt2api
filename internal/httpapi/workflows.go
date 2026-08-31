@@ -98,6 +98,35 @@ func (a *App) handleWorkflows(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if len(parts) == 2 && parts[1] == "last-run" {
+		if r.Method != http.MethodPut {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			return
+		}
+		var input struct {
+			LastRunAt string `json:"last_run_at"`
+		}
+		if err := util.DecodeJSON(r.Body, &input); err != nil {
+			util.WriteError(w, http.StatusBadRequest, "invalid workflow last run body")
+			return
+		}
+		item, err := a.workflows.TouchLastRun(ownerID, id, input.LastRunAt)
+		if err != nil {
+			switch {
+			case errors.Is(err, service.ErrWorkflowNotFound):
+				util.WriteError(w, http.StatusNotFound, "工作流不存在")
+			case errors.Is(err, storage.ErrConcurrentRowUpdate):
+				util.WriteError(w, http.StatusConflict, "工作流已被其他请求修改，请重试")
+			case errors.Is(err, service.ErrWorkflowAccessDenied):
+				util.WriteError(w, http.StatusForbidden, "只能更新自己的工作流")
+			default:
+				util.WriteError(w, http.StatusBadRequest, err.Error())
+			}
+			return
+		}
+		util.WriteJSON(w, http.StatusOK, map[string]any{"item": item})
+		return
+	}
 	if len(parts) == 1 && r.Method == http.MethodDelete {
 		if err := a.workflows.Delete(ownerID, id); err != nil {
 			if errors.Is(err, storage.ErrConcurrentRowUpdate) {

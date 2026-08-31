@@ -5,6 +5,7 @@ import {
   buildSeriesPromptDraftRequest,
   createBlankWorkflow,
   createDefaultInputValues,
+  mergeWorkflowRunMetadata,
   normalizeSeriesDraft,
   normalizeWorkflow,
   parseVariableOptions,
@@ -72,6 +73,24 @@ test("workflow defaults come from account workbench preferences", () => {
     size: "2048x1152",
     count: "3",
   });
+});
+
+test("run metadata merge preserves newer workflow content and monotonic timestamps", () => {
+  const current = createBlankWorkflow(models, preferences);
+  current.id = "workflow-1";
+  current.revision = 4;
+  current.name = "刚保存的新名称";
+  current.updated_at = "2026-08-26T10:00:00Z";
+  current.last_run_at = "2026-08-26T08:00:00Z";
+
+  const merged = mergeWorkflowRunMetadata(current, {
+    updated_at: "2026-08-26T09:00:00Z",
+    last_run_at: "2026-08-26T09:00:00Z",
+  });
+  assert.equal(merged.name, current.name);
+  assert.equal(merged.revision, 4);
+  assert.equal(merged.updated_at, current.updated_at);
+  assert.equal(merged.last_run_at, "2026-08-26T09:00:00Z");
 });
 
 test("blank workflow uses the complete reference generation contract", () => {

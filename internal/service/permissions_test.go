@@ -95,6 +95,7 @@ func TestDefaultUserPermissionsIncludeCreatorFlows(t *testing.T) {
 		{"GET", "/api/workflows"},
 		{"POST", "/api/workflows/agent-draft"},
 		{"PUT", "/api/workflows/workflow-1"},
+		{"PUT", "/api/workflows/workflow-1/last-run"},
 		{"DELETE", "/api/workflows/workflow-1"},
 		{"GET", "/api/images"},
 		{"PATCH", "/api/images/visibility"},

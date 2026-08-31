@@ -33,7 +33,7 @@ func TestImageConversationRowsPaginationActiveDetailAndClearInvalidation(t *test
 	itemTurns[0].(map[string]any)["referenceImages"] = []any{map[string]any{
 		"name": "large.png", "type": "image/png", "dataUrl": referencePayload,
 	}}
-	acknowledgements, generation, err := history.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, items, nil)
+	acknowledgements, generation, err := history.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, items)
 	if err != nil || len(acknowledgements) != 3 {
 		t.Fatalf("MergeWithAcknowledgementsMinimal() acknowledgements=%#v error=%v", acknowledgements, err)
 	}
@@ -111,7 +111,7 @@ func TestImageConversationRowsSaveInvalidatesCursorBeforeReorderedItemCanBeSkipp
 		imageConversationRowTestItem("conversation-older", 1, "2026-07-19T10:00:00Z", "success"),
 		imageConversationRowTestItem("conversation-oldest", 1, "2026-07-19T09:00:00Z", "success"),
 	}
-	_, initialGeneration, err := history.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, items, nil)
+	_, initialGeneration, err := history.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, items)
 	if err != nil {
 		t.Fatalf("seed merge error = %v", err)
 	}
@@ -121,7 +121,7 @@ func TestImageConversationRowsSaveInvalidatesCursorBeforeReorderedItemCanBeSkipp
 	}
 
 	reordered := imageConversationRowTestItem("conversation-older", 2, "2026-07-19T13:00:00Z", "success")
-	_, reorderedGeneration, err := history.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, []map[string]any{reordered}, &initialGeneration)
+	_, reorderedGeneration, err := history.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, []map[string]any{reordered})
 	if err != nil || reorderedGeneration <= initialGeneration {
 		t.Fatalf("reorder merge generation=%d initial=%d error=%v", reorderedGeneration, initialGeneration, err)
 	}
@@ -142,20 +142,20 @@ func TestImageConversationRowsLostAcknowledgementIsIdempotentAndStaleIsReadOnly(
 	history := NewImageConversationHistoryService(backend)
 	ownerID := "row-idempotence-owner"
 	base := imageConversationRowTestItem("conversation-idempotent", 1, "2026-07-19T10:00:00Z", "success")
-	if acknowledgements, _, err := history.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, []map[string]any{base}, nil); err != nil || !acknowledgements[0].Accepted {
+	if acknowledgements, _, err := history.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, []map[string]any{base}); err != nil || !acknowledgements[0].Accepted {
 		t.Fatalf("initial merge acknowledgements=%#v error=%v", acknowledgements, err)
 	}
 
 	next := imageConversationRowTestItem("conversation-idempotent", 2, "2026-07-19T11:00:00Z", "success")
 	next["turns"] = []any{map[string]any{"id": "turn-new", "status": "success", "images": []any{}}}
-	if acknowledgements, _, err := history.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, []map[string]any{next}, nil); err != nil || !acknowledgements[0].Accepted {
+	if acknowledgements, _, err := history.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, []map[string]any{next}); err != nil || !acknowledgements[0].Accepted {
 		t.Fatalf("new revision acknowledgements=%#v error=%v", acknowledgements, err)
 	}
 	before, ok, err := rows.Load(context.Background(), ownerID, "conversation-idempotent")
 	if err != nil || !ok {
 		t.Fatalf("Load(before replay) record=%#v ok=%v error=%v", before, ok, err)
 	}
-	if acknowledgements, _, err := history.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, []map[string]any{next}, nil); err != nil || !acknowledgements[0].Accepted || acknowledgements[0].ActualRevision != 2 {
+	if acknowledgements, _, err := history.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, []map[string]any{next}); err != nil || !acknowledgements[0].Accepted || acknowledgements[0].ActualRevision != 2 {
 		t.Fatalf("replay acknowledgements=%#v error=%v", acknowledgements, err)
 	}
 	afterReplay, _, err := rows.Load(context.Background(), ownerID, "conversation-idempotent")
@@ -165,7 +165,7 @@ func TestImageConversationRowsLostAcknowledgementIsIdempotentAndStaleIsReadOnly(
 
 	stale := imageConversationRowTestItem("conversation-idempotent", 1, "2099-01-01T00:00:00Z", "success")
 	stale["title"] = "stale conflict"
-	acknowledgements, _, err := history.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, []map[string]any{stale}, nil)
+	acknowledgements, _, err := history.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, []map[string]any{stale})
 	if err != nil || len(acknowledgements) != 1 || acknowledgements[0].Accepted || acknowledgements[0].Gone || acknowledgements[0].ActualRevision != 2 {
 		t.Fatalf("stale acknowledgements=%#v error=%v", acknowledgements, err)
 	}
@@ -188,34 +188,32 @@ func TestImageConversationRowsDeleteMissingAdvancesGeneration(t *testing.T) {
 	}
 }
 
-func TestImageConversationRowsStaleGenerationReevaluatesEachConversation(t *testing.T) {
+func TestImageConversationRowsReevaluatesEachConversationAfterDestructiveChanges(t *testing.T) {
 	history := NewImageConversationHistoryService(newTestStorageBackend(t))
-	ownerID := "row-generation-reevaluation-owner"
+	ownerID := "row-destructive-reevaluation-owner"
 	deletedItem := imageConversationRowTestItem("conversation-x", 1, "2026-07-19T10:00:00Z", "success")
-	acknowledgements, originalGeneration, err := history.MergeWithAcknowledgementsMinimal(
+	acknowledgements, initialCursorGeneration, err := history.MergeWithAcknowledgementsMinimal(
 		context.Background(),
 		ownerID,
 		[]map[string]any{deletedItem},
-		nil,
 	)
 	if err != nil || len(acknowledgements) != 1 || !acknowledgements[0].Accepted {
 		t.Fatalf("initial merge acknowledgements=%#v error=%v", acknowledgements, err)
 	}
-	removed, deleteGeneration, err := history.DeleteMinimal(context.Background(), ownerID, "conversation-x")
-	if err != nil || !removed || deleteGeneration <= originalGeneration {
-		t.Fatalf("DeleteMinimal() removed=%v generation=%d original=%d error=%v", removed, deleteGeneration, originalGeneration, err)
+	removed, deleteCursorGeneration, err := history.DeleteMinimal(context.Background(), ownerID, "conversation-x")
+	if err != nil || !removed || deleteCursorGeneration <= initialCursorGeneration {
+		t.Fatalf("DeleteMinimal() removed=%v generation=%d original=%d error=%v", removed, deleteCursorGeneration, initialCursorGeneration, err)
 	}
 
 	deletedRetry := imageConversationRowTestItem("conversation-x", 2, "2026-07-19T11:00:00Z", "success")
 	unrelated := imageConversationRowTestItem("conversation-y", 1, "2026-07-19T11:00:00Z", "success")
-	acknowledgements, generation, err := history.MergeWithAcknowledgementsMinimal(
+	acknowledgements, cursorGeneration, err := history.MergeWithAcknowledgementsMinimal(
 		context.Background(),
 		ownerID,
 		[]map[string]any{deletedRetry, unrelated},
-		&originalGeneration,
 	)
-	if err != nil || generation <= deleteGeneration || len(acknowledgements) != 2 {
-		t.Fatalf("stale-generation batch acknowledgements=%#v generation=%d error=%v", acknowledgements, generation, err)
+	if err != nil || cursorGeneration <= deleteCursorGeneration || len(acknowledgements) != 2 {
+		t.Fatalf("post-delete batch acknowledgements=%#v generation=%d error=%v", acknowledgements, cursorGeneration, err)
 	}
 	if !acknowledgements[0].Gone || acknowledgements[0].Accepted {
 		t.Fatalf("deleted X acknowledgement=%#v", acknowledgements[0])
@@ -224,19 +222,18 @@ func TestImageConversationRowsStaleGenerationReevaluatesEachConversation(t *test
 		t.Fatalf("unrelated Y acknowledgement=%#v", acknowledgements[1])
 	}
 
-	clearGeneration, err := history.ClearMinimal(context.Background(), ownerID)
-	if err != nil || clearGeneration <= deleteGeneration {
-		t.Fatalf("ClearMinimal() generation=%d deleteGeneration=%d error=%v", clearGeneration, deleteGeneration, err)
+	clearCursorGeneration, err := history.ClearMinimal(context.Background(), ownerID)
+	if err != nil || clearCursorGeneration <= deleteCursorGeneration {
+		t.Fatalf("ClearMinimal() generation=%d deleteGeneration=%d error=%v", clearCursorGeneration, deleteCursorGeneration, err)
 	}
 	preClearUnknown := imageConversationRowTestItem("conversation-before-clear", 1, "2026-07-19T09:00:00Z", "success")
-	acknowledgements, generation, err = history.MergeWithAcknowledgementsMinimal(
+	acknowledgements, cursorGeneration, err = history.MergeWithAcknowledgementsMinimal(
 		context.Background(),
 		ownerID,
 		[]map[string]any{preClearUnknown},
-		&deleteGeneration,
 	)
-	if err != nil || generation != clearGeneration || len(acknowledgements) != 1 || !acknowledgements[0].Gone || acknowledgements[0].Accepted {
-		t.Fatalf("pre-clear acknowledgement=%#v generation=%d error=%v", acknowledgements, generation, err)
+	if err != nil || cursorGeneration != clearCursorGeneration || len(acknowledgements) != 1 || !acknowledgements[0].Gone || acknowledgements[0].Accepted {
+		t.Fatalf("pre-clear acknowledgement=%#v generation=%d error=%v", acknowledgements, cursorGeneration, err)
 	}
 }
 
@@ -248,7 +245,7 @@ func TestImageConversationRowsGetRechecksGenerationAfterRecordRead(t *testing.T)
 	conversationID := "conversation-detail-race"
 	history := NewImageConversationHistoryService(backend)
 	item := imageConversationRowTestItem(conversationID, 1, "2026-07-19T10:00:00Z", "success")
-	_, initialGeneration, err := history.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, []map[string]any{item}, nil)
+	_, initialGeneration, err := history.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, []map[string]any{item})
 	if err != nil {
 		t.Fatalf("initial merge error = %v", err)
 	}
@@ -278,7 +275,7 @@ func TestImageConversationRowsListActiveDefaultDoesNotTruncateAtOneHundred(t *te
 			"loading",
 		))
 	}
-	if acknowledgements, _, err := history.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, items, nil); err != nil || len(acknowledgements) != len(items) {
+	if acknowledgements, _, err := history.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, items); err != nil || len(acknowledgements) != len(items) {
 		t.Fatalf("active merge acknowledgements=%d error=%v", len(acknowledgements), err)
 	}
 	active, _, err := history.ListActive(context.Background(), ownerID, 0)
@@ -304,7 +301,7 @@ func TestImageConversationRowsMergeUsesOneBatchCAS(t *testing.T) {
 		imageConversationRowTestItem("batch-b", 1, "2026-07-20T10:01:00Z", "success"),
 		imageConversationRowTestItem("batch-c", 1, "2026-07-20T10:02:00Z", "success"),
 	}
-	acknowledgements, _, err := history.MergeWithAcknowledgementsMinimal(context.Background(), "batch-owner", items, nil)
+	acknowledgements, _, err := history.MergeWithAcknowledgementsMinimal(context.Background(), "batch-owner", items)
 	if err != nil || len(acknowledgements) != len(items) {
 		t.Fatalf("MergeWithAcknowledgementsMinimal() acknowledgements=%#v error=%v", acknowledgements, err)
 	}
@@ -318,7 +315,7 @@ func TestImageConversationRowsBatchConflictRetriesFromReturnedCurrent(t *testing
 	ownerID := "batch-conflict-owner"
 	base := imageConversationRowTestItem("batch-conflict", 1, "2026-07-20T10:00:00Z", "success")
 	baseHistory := NewImageConversationHistoryService(backend)
-	if acknowledgements, _, err := baseHistory.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, []map[string]any{base}, nil); err != nil || !acknowledgements[0].Accepted {
+	if acknowledgements, _, err := baseHistory.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, []map[string]any{base}); err != nil || !acknowledgements[0].Accepted {
 		t.Fatalf("initial merge acknowledgements=%#v error=%v", acknowledgements, err)
 	}
 	competitor := imageConversationRowTestItem("batch-conflict", 2, "2026-07-20T10:01:00Z", "success")
@@ -334,7 +331,7 @@ func TestImageConversationRowsBatchConflictRetriesFromReturnedCurrent(t *testing
 	}
 	history := NewImageConversationHistoryService(tracing)
 	incoming := imageConversationRowTestItem("batch-conflict", 3, "2026-07-20T10:02:00Z", "success")
-	acknowledgements, _, err := history.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, []map[string]any{incoming}, nil)
+	acknowledgements, _, err := history.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, []map[string]any{incoming})
 	if err != nil || len(acknowledgements) != 1 || !acknowledgements[0].Accepted || acknowledgements[0].ActualRevision != 3 {
 		t.Fatalf("conflict retry acknowledgements=%#v error=%v", acknowledgements, err)
 	}

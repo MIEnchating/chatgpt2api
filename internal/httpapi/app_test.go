@@ -1409,6 +1409,80 @@ func TestWorkflowRoutesExposePublicTemplatesWithoutEditRights(t *testing.T) {
 	}
 }
 
+func TestWorkflowRoutesRejectStaleSavesAndTouchOnlyLastRunMetadata(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+	token := adminSessionToken(t, app)
+	request := func(method, path string, body any) *httptest.ResponseRecorder {
+		t.Helper()
+		var reader io.Reader
+		if body != nil {
+			encoded, err := json.Marshal(body)
+			if err != nil {
+				t.Fatalf("marshal request body: %v", err)
+			}
+			reader = bytes.NewReader(encoded)
+		}
+		req := httptest.NewRequest(method, path, reader)
+		setRequestAuthCookie(req, token)
+		res := httptest.NewRecorder()
+		app.Handler().ServeHTTP(res, req)
+		return res
+	}
+	decodeWorkflow := func(res *httptest.ResponseRecorder) service.CreativeWorkflow {
+		t.Helper()
+		var payload struct {
+			Item service.CreativeWorkflow `json:"item"`
+		}
+		if err := json.Unmarshal(res.Body.Bytes(), &payload); err != nil {
+			t.Fatalf("decode workflow response: %v", err)
+		}
+		return payload.Item
+	}
+
+	createdResponse := request(http.MethodPost, "/api/workflows", service.CreativeWorkflow{
+		Name:      "初始工作流",
+		Variables: []service.WorkflowVariable{{ID: "subject", Key: "subject", Type: "text", Options: []string{}}},
+		Config:    service.WorkflowGenerationConfig{PromptTemplate: "{{subject}}"},
+	})
+	if createdResponse.Code != http.StatusOK {
+		t.Fatalf("create workflow status = %d body = %s", createdResponse.Code, createdResponse.Body.String())
+	}
+	base := decodeWorkflow(createdResponse)
+	if base.Revision != 1 {
+		t.Fatalf("created revision = %d, want 1", base.Revision)
+	}
+
+	updated := base
+	updated.Name = "当前工作流"
+	updatedResponse := request(http.MethodPut, "/api/workflows", updated)
+	if updatedResponse.Code != http.StatusOK {
+		t.Fatalf("update workflow status = %d body = %s", updatedResponse.Code, updatedResponse.Body.String())
+	}
+	current := decodeWorkflow(updatedResponse)
+	if current.Revision != 2 || current.Name != updated.Name {
+		t.Fatalf("updated workflow = %#v", current)
+	}
+
+	touchResponse := request(http.MethodPut, "/api/workflows/"+current.ID+"/last-run", map[string]any{
+		"last_run_at": "2026-08-26T08:00:00Z",
+	})
+	if touchResponse.Code != http.StatusOK {
+		t.Fatalf("touch last run status = %d body = %s", touchResponse.Code, touchResponse.Body.String())
+	}
+	touched := decodeWorkflow(touchResponse)
+	if touched.Name != current.Name || touched.Revision != current.Revision || touched.LastRunAt != "2026-08-26T08:00:00Z" {
+		t.Fatalf("touched workflow = %#v", touched)
+	}
+
+	stale := base
+	stale.Name = "旧快照覆盖"
+	staleResponse := request(http.MethodPut, "/api/workflows", stale)
+	if staleResponse.Code != http.StatusConflict {
+		t.Fatalf("stale workflow status = %d body = %s", staleResponse.Code, staleResponse.Body.String())
+	}
+}
+
 func TestWorkflowAgentDraftRouteValidatesPromptBeforeRelaySelection(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()

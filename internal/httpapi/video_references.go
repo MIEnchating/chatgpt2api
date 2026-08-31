@@ -2,10 +2,12 @@ package httpapi
 
 import (
 	"crypto/rand"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os"
@@ -15,13 +17,82 @@ import (
 	"chatgpt2api/internal/util"
 )
 
-const maxVideoReferenceFileBytes int64 = 50 << 20
-const maxVideoImageReferenceFileBytes int64 = 30 << 20
+const (
+	maxVideoReferenceFileBytes      int64 = 50 << 20
+	maxVideoImageReferenceFileBytes int64 = 30 << 20
+	maxAudioReferenceFileBytes      int64 = 15 << 20
+	referenceMultipartMemory        int64 = 1 << 20
+	referenceMultipartOverhead      int64 = 1 << 20
+)
 
 type videoMultipartFile struct {
 	Data        []byte
 	Filename    string
 	ContentType string
+}
+
+type referenceUpload struct {
+	data                []byte
+	filename            string
+	declaredContentType string
+}
+
+type referenceUploadFailure struct {
+	status  int
+	message string
+}
+
+func readReferenceUpload(w http.ResponseWriter, r *http.Request, field string, maxBytes int64) (referenceUpload, *referenceUploadFailure) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxBytes+referenceMultipartOverhead)
+	if err := r.ParseMultipartForm(referenceMultipartMemory); err != nil {
+		var tooLarge *http.MaxBytesError
+		if errors.As(err, &tooLarge) || errors.Is(err, multipart.ErrMessageTooLarge) {
+			return referenceUpload{}, referenceUploadTooLargeError(field, maxBytes)
+		}
+		return referenceUpload{}, &referenceUploadFailure{status: http.StatusBadRequest, message: "invalid multipart form"}
+	}
+	defer r.MultipartForm.RemoveAll()
+
+	header := firstMultipartFile(r.MultipartForm, field)
+	if header == nil {
+		return referenceUpload{}, &referenceUploadFailure{status: http.StatusBadRequest, message: field + " is required"}
+	}
+	file, err := header.Open()
+	if err != nil {
+		return referenceUpload{}, &referenceUploadFailure{status: http.StatusBadRequest, message: "invalid " + field + " file"}
+	}
+	data, uploadErr := readReferenceUploadData(file, field, maxBytes)
+	_ = file.Close()
+	if uploadErr != nil {
+		return referenceUpload{}, uploadErr
+	}
+	return referenceUpload{
+		data:                data,
+		filename:            header.Filename,
+		declaredContentType: header.Header.Get("Content-Type"),
+	}, nil
+}
+
+func readReferenceUploadData(reader io.Reader, field string, maxBytes int64) ([]byte, *referenceUploadFailure) {
+	data, err := io.ReadAll(io.LimitReader(reader, maxBytes+1))
+	if err != nil {
+		return nil, &referenceUploadFailure{status: http.StatusBadRequest, message: "failed to read " + field + " file"}
+	}
+	if int64(len(data)) > maxBytes {
+		return nil, referenceUploadTooLargeError(field, maxBytes)
+	}
+	return data, nil
+}
+
+func referenceUploadTooLargeError(field string, maxBytes int64) *referenceUploadFailure {
+	return &referenceUploadFailure{
+		status:  http.StatusRequestEntityTooLarge,
+		message: fmt.Sprintf("%s reference cannot exceed %d MiB", field, maxBytes>>20),
+	}
+}
+
+func writeReferenceUploadError(w http.ResponseWriter, err *referenceUploadFailure) {
+	util.WriteError(w, err.status, err.message)
 }
 
 func (a *App) localVideoReferenceFile(rawURL string) (videoMultipartFile, bool, error) {
@@ -81,7 +152,7 @@ func (a *App) localVideoReferenceFile(rawURL string) (videoMultipartFile, bool, 
 		}
 	case strings.HasPrefix(referencePath, "/audio-references/"):
 		name = strings.TrimPrefix(referencePath, "/audio-references/")
-		maxBytes = 15 << 20
+		maxBytes = maxAudioReferenceFileBytes
 		switch strings.ToLower(filepath.Ext(name)) {
 		case ".wav":
 			contentType = "audio/wav"
@@ -150,38 +221,12 @@ func (a *App) handleVideoReferenceUpload(w http.ResponseWriter, r *http.Request)
 		util.WriteError(w, http.StatusServiceUnavailable, "video reference storage is unavailable")
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, maxVideoReferenceFileBytes+(1<<20))
-	if err := r.ParseMultipartForm(1 << 20); err != nil {
-		var tooLarge *http.MaxBytesError
-		if errors.As(err, &tooLarge) {
-			util.WriteError(w, http.StatusRequestEntityTooLarge, "video reference is too large")
-			return
-		}
-		util.WriteError(w, http.StatusBadRequest, "invalid multipart form")
+	upload, uploadErr := readReferenceUpload(w, r, "video", maxVideoReferenceFileBytes)
+	if uploadErr != nil {
+		writeReferenceUploadError(w, uploadErr)
 		return
 	}
-	defer r.MultipartForm.RemoveAll()
-	header := firstMultipartFile(r.MultipartForm, "video")
-	if header == nil {
-		util.WriteError(w, http.StatusBadRequest, "video is required")
-		return
-	}
-	file, err := header.Open()
-	if err != nil {
-		util.WriteError(w, http.StatusBadRequest, "invalid video file")
-		return
-	}
-	data, readErr := io.ReadAll(io.LimitReader(file, maxVideoReferenceFileBytes+1))
-	_ = file.Close()
-	if readErr != nil {
-		util.WriteError(w, http.StatusBadRequest, "failed to read video file")
-		return
-	}
-	if int64(len(data)) > maxVideoReferenceFileBytes {
-		util.WriteError(w, http.StatusRequestEntityTooLarge, "video reference cannot exceed 50 MiB")
-		return
-	}
-	ext, contentType, ok := videoReferenceFileType(data, header.Filename)
+	ext, contentType, ok := videoReferenceFileType(upload.data, upload.filename)
 	if !ok {
 		util.WriteError(w, http.StatusBadRequest, "视频参考仅支持 MP4 或 MOV 格式")
 		return
@@ -196,12 +241,12 @@ func (a *App) handleVideoReferenceUpload(w http.ResponseWriter, r *http.Request)
 		util.WriteError(w, http.StatusRequestTimeout, "video reference upload was canceled")
 		return
 	}
-	if err := os.WriteFile(filepath.Join(a.videoReferenceDir, name), data, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(a.videoReferenceDir, name), upload.data, 0o644); err != nil {
 		util.WriteError(w, http.StatusInternalServerError, "failed to store video reference")
 		return
 	}
 	url := strings.TrimRight(a.resolveImageBaseURL(r), "/") + "/video-references/" + name
-	util.WriteJSON(w, http.StatusCreated, map[string]any{"url": url, "name": header.Filename, "content_type": contentType, "size": len(data)})
+	util.WriteJSON(w, http.StatusCreated, map[string]any{"url": url, "name": upload.filename, "content_type": contentType, "size": len(upload.data)})
 }
 
 func (a *App) handleAudioReferenceUpload(w http.ResponseWriter, r *http.Request) {
@@ -213,29 +258,12 @@ func (a *App) handleAudioReferenceUpload(w http.ResponseWriter, r *http.Request)
 		util.WriteError(w, http.StatusServiceUnavailable, "audio reference storage is unavailable")
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, 15<<20+(1<<20))
-	if err := r.ParseMultipartForm(1 << 20); err != nil {
-		util.WriteError(w, http.StatusBadRequest, "invalid multipart form")
+	upload, uploadErr := readReferenceUpload(w, r, "audio", maxAudioReferenceFileBytes)
+	if uploadErr != nil {
+		writeReferenceUploadError(w, uploadErr)
 		return
 	}
-	defer r.MultipartForm.RemoveAll()
-	header := firstMultipartFile(r.MultipartForm, "audio")
-	if header == nil {
-		util.WriteError(w, http.StatusBadRequest, "audio is required")
-		return
-	}
-	file, err := header.Open()
-	if err != nil {
-		util.WriteError(w, http.StatusBadRequest, "invalid audio file")
-		return
-	}
-	data, readErr := io.ReadAll(io.LimitReader(file, 15<<20+1))
-	_ = file.Close()
-	if readErr != nil || int64(len(data)) > 15<<20 {
-		util.WriteError(w, http.StatusRequestEntityTooLarge, "audio reference cannot exceed 15 MiB")
-		return
-	}
-	ext, contentType, ok := audioReferenceFileType(header.Filename, header.Header.Get("Content-Type"))
+	ext, contentType, ok := audioReferenceFileType(upload.data, upload.filename, upload.declaredContentType)
 	if !ok {
 		util.WriteError(w, http.StatusBadRequest, "音频参考仅支持 MP3 或 WAV 格式")
 		return
@@ -250,12 +278,12 @@ func (a *App) handleAudioReferenceUpload(w http.ResponseWriter, r *http.Request)
 		util.WriteError(w, http.StatusRequestTimeout, "audio reference upload was canceled")
 		return
 	}
-	if err := os.WriteFile(filepath.Join(a.videoReferenceDir, name), data, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(a.videoReferenceDir, name), upload.data, 0o644); err != nil {
 		util.WriteError(w, http.StatusInternalServerError, "failed to store audio reference")
 		return
 	}
 	url := strings.TrimRight(a.resolveImageBaseURL(r), "/") + "/audio-references/" + name
-	util.WriteJSON(w, http.StatusCreated, map[string]any{"url": url, "name": header.Filename, "content_type": contentType, "size": len(data)})
+	util.WriteJSON(w, http.StatusCreated, map[string]any{"url": url, "name": upload.filename, "content_type": contentType, "size": len(upload.data)})
 }
 
 func (a *App) handleVideoImageReferenceUpload(w http.ResponseWriter, r *http.Request) {
@@ -267,33 +295,12 @@ func (a *App) handleVideoImageReferenceUpload(w http.ResponseWriter, r *http.Req
 		util.WriteError(w, http.StatusServiceUnavailable, "video reference storage is unavailable")
 		return
 	}
-	r.Body = http.MaxBytesReader(w, r.Body, maxVideoImageReferenceFileBytes+(1<<20))
-	if err := r.ParseMultipartForm(1 << 20); err != nil {
-		util.WriteError(w, http.StatusBadRequest, "invalid multipart form")
+	upload, uploadErr := readReferenceUpload(w, r, "image", maxVideoImageReferenceFileBytes)
+	if uploadErr != nil {
+		writeReferenceUploadError(w, uploadErr)
 		return
 	}
-	defer r.MultipartForm.RemoveAll()
-	header := firstMultipartFile(r.MultipartForm, "image")
-	if header == nil {
-		util.WriteError(w, http.StatusBadRequest, "image is required")
-		return
-	}
-	file, err := header.Open()
-	if err != nil {
-		util.WriteError(w, http.StatusBadRequest, "invalid image file")
-		return
-	}
-	data, readErr := io.ReadAll(io.LimitReader(file, maxVideoImageReferenceFileBytes+1))
-	_ = file.Close()
-	if readErr != nil {
-		util.WriteError(w, http.StatusBadRequest, "failed to read image file")
-		return
-	}
-	if int64(len(data)) > maxVideoImageReferenceFileBytes {
-		util.WriteError(w, http.StatusRequestEntityTooLarge, "image reference cannot exceed 30 MiB")
-		return
-	}
-	info, inspectErr := util.InspectRasterImage(data, "image/png", "image/jpeg", "image/webp")
+	info, inspectErr := util.InspectRasterImage(upload.data, "image/png", "image/jpeg", "image/webp")
 	if inspectErr != nil {
 		util.WriteError(w, http.StatusBadRequest, "视频参考图必须是有效的 PNG、JPEG 或 WebP 图片")
 		return
@@ -315,12 +322,12 @@ func (a *App) handleVideoImageReferenceUpload(w http.ResponseWriter, r *http.Req
 		util.WriteError(w, http.StatusRequestTimeout, "image reference upload was canceled")
 		return
 	}
-	if err := os.WriteFile(filepath.Join(a.videoReferenceDir, name), data, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(a.videoReferenceDir, name), upload.data, 0o644); err != nil {
 		util.WriteError(w, http.StatusInternalServerError, "failed to store image reference")
 		return
 	}
 	url := strings.TrimRight(a.resolveImageBaseURL(r), "/") + "/video-image-references/" + name
-	util.WriteJSON(w, http.StatusCreated, map[string]any{"url": url, "name": header.Filename, "content_type": contentType, "size": len(data)})
+	util.WriteJSON(w, http.StatusCreated, map[string]any{"url": url, "name": upload.filename, "content_type": contentType, "size": len(upload.data)})
 }
 
 func (a *App) handleVideoReferenceFile(w http.ResponseWriter, r *http.Request) {
@@ -394,13 +401,91 @@ func videoReferenceFileType(data []byte, filename string) (string, string, bool)
 	return ext, "video/mp4", true
 }
 
-func audioReferenceFileType(filename, mime string) (string, string, bool) {
+func audioReferenceFileType(data []byte, filename, mime string) (string, string, bool) {
 	ext := strings.ToLower(filepath.Ext(strings.TrimSpace(filename)))
-	if ext == ".mp3" && (mime == "" || strings.HasPrefix(strings.ToLower(mime), "audio/")) {
+	declaredType := strings.ToLower(strings.TrimSpace(mime))
+	if declaredType != "" && !strings.HasPrefix(declaredType, "audio/") {
+		return "", "", false
+	}
+	if ext == ".mp3" && validMP3Reference(data) {
 		return ext, "audio/mpeg", true
 	}
-	if ext == ".wav" && (mime == "" || strings.HasPrefix(strings.ToLower(mime), "audio/")) {
+	if ext == ".wav" && validWAVReference(data) {
 		return ext, "audio/wav", true
 	}
 	return "", "", false
+}
+
+func validMP3Reference(data []byte) bool {
+	offset := 0
+	if len(data) >= 10 && string(data[:3]) == "ID3" {
+		if data[3] < 2 || data[3] > 4 || data[4] == 0xff {
+			return false
+		}
+		for _, value := range data[6:10] {
+			if value&0x80 != 0 {
+				return false
+			}
+		}
+		tagSize := int(data[6])<<21 | int(data[7])<<14 | int(data[8])<<7 | int(data[9])
+		offset = 10 + tagSize
+		if data[3] == 4 && data[5]&0x10 != 0 {
+			offset += 10
+		}
+		if offset > len(data)-4 {
+			return false
+		}
+	}
+	limit := min(len(data)-4, offset+(64<<10))
+	for index := offset; index <= limit; index++ {
+		if validMPEGAudioFrameHeader(data[index : index+4]) {
+			return true
+		}
+	}
+	return false
+}
+
+func validMPEGAudioFrameHeader(header []byte) bool {
+	if len(header) < 4 || header[0] != 0xff || header[1]&0xe0 != 0xe0 {
+		return false
+	}
+	version := (header[1] >> 3) & 0x03
+	layer := (header[1] >> 1) & 0x03
+	bitrate := (header[2] >> 4) & 0x0f
+	sampleRate := (header[2] >> 2) & 0x03
+	emphasis := header[3] & 0x03
+	return version != 0x01 && layer == 0x01 && bitrate != 0x0f && sampleRate != 0x03 && emphasis != 0x02
+}
+
+func validWAVReference(data []byte) bool {
+	if len(data) < 12 || string(data[:4]) != "RIFF" || string(data[8:12]) != "WAVE" {
+		return false
+	}
+	validFormat := false
+	validAudioData := false
+	for offset := 12; offset+8 <= len(data); {
+		chunkSize := int64(binary.LittleEndian.Uint32(data[offset+4 : offset+8]))
+		chunkStart := offset + 8
+		chunkEnd := int64(chunkStart) + chunkSize
+		if chunkEnd > int64(len(data)) {
+			return false
+		}
+		switch string(data[offset : offset+4]) {
+		case "fmt ":
+			if chunkSize >= 16 {
+				format := binary.LittleEndian.Uint16(data[chunkStart : chunkStart+2])
+				channels := binary.LittleEndian.Uint16(data[chunkStart+2 : chunkStart+4])
+				sampleRate := binary.LittleEndian.Uint32(data[chunkStart+4 : chunkStart+8])
+				blockAlign := binary.LittleEndian.Uint16(data[chunkStart+12 : chunkStart+14])
+				validFormat = validFormat || format != 0 && channels != 0 && sampleRate != 0 && blockAlign != 0
+			}
+		case "data":
+			validAudioData = validAudioData || chunkSize > 0
+		}
+		offset = int(chunkEnd)
+		if chunkSize&1 != 0 && offset < len(data) {
+			offset++
+		}
+	}
+	return validFormat && validAudioData
 }

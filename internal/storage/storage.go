@@ -943,9 +943,13 @@ func (b *DatabaseBackend) DeleteLogsBefore(day string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+	return deletedLogRows(result)
+}
+
+func deletedLogRows(result sql.Result) (int, error) {
 	rows, err := result.RowsAffected()
 	if err != nil {
-		return 0, nil
+		return 0, fmt.Errorf("delete logs affected rows: %w", err)
 	}
 	return int(rows), nil
 }

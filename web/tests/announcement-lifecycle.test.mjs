@@ -4,14 +4,16 @@ import { readFile } from "node:fs/promises";
 import {
   AnnouncementLoadLifecycle,
   loadAnnouncementSnapshot,
+  mergeAnnouncementPreferenceMutation,
 } from "../src/lib/announcement-lifecycle.ts";
 import {
   mergeScopedMutationItem,
   ScopedMutationLifecycle,
 } from "../src/lib/scoped-mutation-lifecycle.ts";
 
-const [cardSource, settingsPageSource, apiSource] = await Promise.all([
+const [cardSource, centerSource, settingsPageSource, apiSource] = await Promise.all([
   readFile(new URL("../src/app/settings/components/announcements-card.tsx", import.meta.url), "utf8"),
+  readFile(new URL("../src/components/announcement-center.tsx", import.meta.url), "utf8"),
   readFile(new URL("../src/app/settings/page.tsx", import.meta.url), "utf8"),
   readFile(new URL("../src/lib/api.ts", import.meta.url), "utf8"),
 ]);
@@ -50,6 +52,85 @@ describe("announcement lifecycle", () => {
     expect(lifecycle.consumeAutomaticPrompt("account-a")).toBe(false);
     lifecycle.activateSession("account-b");
     expect(lifecycle.consumeAutomaticPrompt("account-b")).toBe(true);
+  });
+
+  test("unmount invalidates a pending announcement load", () => {
+    const lifecycle = new AnnouncementLoadLifecycle("account-a");
+    const pending = lifecycle.beginLoad("account-a");
+
+    lifecycle.deactivateSession("account-a");
+
+    expect(lifecycle.completeLoad(pending, 1_000)).toBe(false);
+  });
+
+  test("preference writes invalidate an older announcement load", () => {
+    const lifecycle = new AnnouncementLoadLifecycle("account-a");
+    const pending = lifecycle.beginLoad("account-a");
+
+    lifecycle.invalidateLoads("account-a");
+
+    expect(lifecycle.completeLoad(pending, 1_000)).toBe(false);
+  });
+
+  test("preference mutations merge monotonically when responses arrive out of order", () => {
+    const current = {
+      seen_versions: ["announcement-a"],
+      permanent_versions: ["announcement-b"],
+      snoozed_dates: { "announcement-c": "2026-08-31" },
+    };
+    const staleResponse = {
+      seen_versions: ["announcement-c"],
+      permanent_versions: [],
+      snoozed_dates: { "announcement-b": "2026-08-30" },
+    };
+
+    expect(mergeAnnouncementPreferenceMutation(current, staleResponse, {
+      version: "announcement-d",
+      action: "today",
+      localDate: "2026-09-01",
+    })).toEqual({
+      seen_versions: ["announcement-c", "announcement-a", "announcement-d"],
+      permanent_versions: ["announcement-b"],
+      snoozed_dates: {
+        "announcement-c": "2026-08-31",
+        "announcement-d": "2026-09-01",
+      },
+    });
+  });
+
+  test("permanent preference wins over stale snooze responses", () => {
+    expect(mergeAnnouncementPreferenceMutation({
+      seen_versions: [],
+      permanent_versions: [],
+      snoozed_dates: {},
+    }, {
+      seen_versions: [],
+      permanent_versions: [],
+      snoozed_dates: { "announcement-a": "2026-08-31" },
+    }, {
+      version: "announcement-a",
+      action: "forever",
+    })).toEqual({
+      seen_versions: ["announcement-a"],
+      permanent_versions: ["announcement-a"],
+      snoozed_dates: {},
+    });
+  });
+
+  test("the later snooze date wins when snapshots overlap", () => {
+    expect(mergeAnnouncementPreferenceMutation({
+      seen_versions: [],
+      permanent_versions: [],
+      snoozed_dates: { "announcement-a": "2026-08-31" },
+    }, {
+      seen_versions: [],
+      permanent_versions: [],
+      snoozed_dates: { "announcement-a": "2026-09-02" },
+    }, {
+      version: "announcement-a",
+      action: "today",
+      localDate: "2026-09-01",
+    }).snoozed_dates).toEqual({ "announcement-a": "2026-09-02" });
   });
 
   test("parallel mutations for different announcements both remain applicable", () => {
@@ -138,5 +219,13 @@ describe("announcement lifecycle", () => {
     expect(cardSource).toContain("mergeScopedMutationItem(items, data.item, data.items)");
     expect(cardSource).toContain("mutationLifecycleRef.current?.deactivateSession(sessionKey)");
     expect(cardSource).not.toContain("setItems(data.items)");
+  });
+
+  test("the announcement center scopes preference writes to the active session", () => {
+    expect(centerSource).toContain("new ScopedMutationLifecycle(sessionKey)");
+    expect(centerSource).toContain("lifecycleRef.current.invalidateLoads(token.sessionKey)");
+    expect(centerSource).toContain("mergeAnnouncementPreferenceMutation(current, data.preferences, mutation)");
+    expect(centerSource).toContain("preferenceMutationLifecycle?.deactivateSession(sessionKey)");
+    expect(centerSource).not.toContain(".then((data) => setPreferences(data.preferences))");
   });
 });

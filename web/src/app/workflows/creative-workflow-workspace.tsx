@@ -37,6 +37,7 @@ import {
   createDefaultInputValues,
   createStarterWorkflows,
   createWorkflowVariable,
+  mergeWorkflowRunMetadata,
   normalizeWorkflow,
   parseVariableOptions,
   parseWorkflowSeriesDrafts,
@@ -106,6 +107,7 @@ import {
   draftWorkflowWithAgent,
   fetchWorkflows,
   saveWorkflow,
+  touchWorkflowLastRun,
   type CreativeWorkflow,
   type WorkflowGenerationConfig,
   type WorkflowSeriesConfig,
@@ -341,8 +343,11 @@ export function CreativeWorkflowWorkspace({
               .reduce((value, task) => Math.max(value, task.ended_at || 0), 0);
             if (!latest || latest <= Date.parse(workflow.last_run_at || "")) return workflow;
             const timestamp = new Date(latest).toISOString();
-            const updated = { ...workflow, last_run_at: timestamp, updated_at: timestamp };
-            void saveWorkflow(updated).catch(() => undefined);
+            const updated = mergeWorkflowRunMetadata(workflow, {
+              last_run_at: timestamp,
+              updated_at: timestamp,
+            });
+            void touchWorkflowLastRun(workflow.id, timestamp).catch(() => undefined);
             return updated;
           });
           setItems(recovered);
@@ -490,6 +495,7 @@ export function CreativeWorkflowWorkspace({
       {
         ...structuredClone(workflow),
         id: "",
+        revision: undefined,
         owner_id: undefined,
         editable: true,
         scope: "private",
@@ -513,18 +519,23 @@ export function CreativeWorkflowWorkspace({
   function markWorkflowRunCompleted(workflow: CreativeWorkflow, endedAt: number) {
     if (workflow.editable === false) return;
     const timestamp = new Date(endedAt).toISOString();
-    const completed = { ...workflow, last_run_at: timestamp, updated_at: timestamp };
+    const metadata = { last_run_at: timestamp, updated_at: timestamp };
     setItems((current) =>
       current
-        .map((item) => (item.id === workflow.id ? completed : item))
+        .map((item) => (item.id === workflow.id ? mergeWorkflowRunMetadata(item, metadata) : item))
         .sort((left, right) => String(right.updated_at || "").localeCompare(String(left.updated_at || ""))),
     );
-    setRunning((current) => (current?.id === workflow.id ? completed : current));
-    void saveWorkflow(completed)
-      .then((saved) => {
-        const normalized = normalizeWorkflow(saved, models, preferences);
-        setItems((current) => current.map((item) => (item.id === normalized.id ? normalized : item)));
-        setRunning((current) => (current?.id === normalized.id ? normalized : current));
+    setRunning((current) => (current?.id === workflow.id
+      ? mergeWorkflowRunMetadata(current, metadata)
+      : current));
+    void touchWorkflowLastRun(workflow.id, timestamp)
+      .then((touched) => {
+        setItems((current) => current
+          .map((item) => (item.id === touched.id ? mergeWorkflowRunMetadata(item, touched) : item))
+          .sort((left, right) => String(right.updated_at || "").localeCompare(String(left.updated_at || ""))));
+        setRunning((current) => (current?.id === touched.id
+          ? mergeWorkflowRunMetadata(current, touched)
+          : current));
       })
       .catch(() => undefined);
   }

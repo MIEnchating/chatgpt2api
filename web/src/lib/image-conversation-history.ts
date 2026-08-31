@@ -1,15 +1,11 @@
 export type ImageConversationHistoryMergeBody<T> = {
   items: T[];
-  generation?: string;
 };
 
-/** Do not invent a snapshot generation before the server supplies one. */
 export function buildImageConversationHistoryMergeBody<T>(
   items: T[],
-  generation?: string | number | null,
 ): ImageConversationHistoryMergeBody<T> {
-  const normalizedGeneration = normalizeImageConversationHistoryGeneration(generation);
-  return normalizedGeneration === null ? { items } : { items, generation: normalizedGeneration };
+  return { items };
 }
 
 export function normalizeImageConversationHistoryGeneration(value: unknown): string | null {

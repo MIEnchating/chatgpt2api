@@ -23,7 +23,13 @@ import {
   type AnnouncementPreferences,
 } from "@/lib/api";
 import { ANNOUNCEMENTS_UPDATED_EVENT } from "@/lib/announcement-events";
-import { AnnouncementLoadLifecycle, loadAnnouncementSnapshot } from "@/lib/announcement-lifecycle";
+import {
+  AnnouncementLoadLifecycle,
+  loadAnnouncementSnapshot,
+  mergeAnnouncementPreferenceMutation,
+  type AnnouncementPreferenceMutation,
+} from "@/lib/announcement-lifecycle";
+import { ScopedMutationLifecycle } from "@/lib/scoped-mutation-lifecycle";
 import { cn } from "@/lib/utils";
 
 const emptyPreferences: AnnouncementPreferences = {
@@ -67,8 +73,14 @@ export function AnnouncementCenter({ className, sessionKey }: { className?: stri
   const [selected, setSelected] = useState<Announcement | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
   const lifecycleRef = useRef(new AnnouncementLoadLifecycle(sessionKey));
+  const preferenceMutationLifecycleRef = useRef<ScopedMutationLifecycle | null>(null);
   const loadPromiseRef = useRef<{ promise: Promise<void>; sessionKey: string } | null>(null);
   lifecycleRef.current.activateSession(sessionKey);
+  if (!preferenceMutationLifecycleRef.current) {
+    preferenceMutationLifecycleRef.current = new ScopedMutationLifecycle(sessionKey);
+  } else {
+    preferenceMutationLifecycleRef.current.activateSession(sessionKey);
+  }
 
   const load = useCallback((force = false) => {
     const inFlight = loadPromiseRef.current;
@@ -89,13 +101,33 @@ export function AnnouncementCenter({ className, sessionKey }: { className?: stri
     return request;
   }, [sessionKey]);
 
+  const mutatePreferences = useCallback(async (mutation: AnnouncementPreferenceMutation) => {
+    const token = preferenceMutationLifecycleRef.current!.begin(mutation.version);
+    lifecycleRef.current.invalidateLoads(token.sessionKey);
+    try {
+      const data = await updateAnnouncementPreferences(mutation.version, mutation.action, mutation.localDate || "");
+      const decision = preferenceMutationLifecycleRef.current!.complete(token, true);
+      if (decision.current) {
+        lifecycleRef.current.invalidateLoads(token.sessionKey);
+        setPreferences((current) => mergeAnnouncementPreferenceMutation(current, data.preferences, mutation));
+      }
+      return { current: decision.current, error: null };
+    } catch (error) {
+      const decision = preferenceMutationLifecycleRef.current!.complete(token, false);
+      return { current: decision.current, error };
+    }
+  }, []);
+
   useEffect(() => {
+    const loadLifecycle = lifecycleRef.current;
+    const preferenceMutationLifecycle = preferenceMutationLifecycleRef.current;
     setAnnouncements([]);
     setPreferences(emptyPreferences);
     setIsLoaded(false);
     setPopoverOpen(false);
     setDialogOpen(false);
     setIsAutomaticPrompt(false);
+    setIsUpdating(false);
     setSelected(null);
     void load(true);
     const handleAnnouncementsUpdated = () => void load(true);
@@ -111,6 +143,8 @@ export function AnnouncementCenter({ className, sessionKey }: { className?: stri
       window.removeEventListener(ANNOUNCEMENTS_UPDATED_EVENT, handleAnnouncementsUpdated);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.clearInterval(refreshTimer);
+      loadLifecycle.deactivateSession(sessionKey);
+      preferenceMutationLifecycle?.deactivateSession(sessionKey);
     };
   }, [load, sessionKey]);
 
@@ -138,11 +172,9 @@ export function AnnouncementCenter({ className, sessionKey }: { className?: stri
     setDialogOpen(true);
     const version = announcementVersion(candidate);
     if (!seenVersions.has(version)) {
-      void updateAnnouncementPreferences(version, "seen")
-        .then((data) => setPreferences(data.preferences))
-        .catch(() => undefined);
+      void mutatePreferences({ version, action: "seen" });
     }
-  }, [announcements, isLoaded, permanentVersions, preferences.snoozed_dates, seenVersions, sessionKey]);
+  }, [announcements, isLoaded, mutatePreferences, permanentVersions, preferences.snoozed_dates, seenVersions, sessionKey]);
 
   const handlePopoverOpenChange = (open: boolean) => {
     setPopoverOpen(open);
@@ -156,9 +188,7 @@ export function AnnouncementCenter({ className, sessionKey }: { className?: stri
     setDialogOpen(true);
     const version = announcementVersion(item);
     if (!seenVersions.has(version)) {
-      void updateAnnouncementPreferences(version, "seen")
-        .then((data) => setPreferences(data.preferences))
-        .catch(() => undefined);
+      void mutatePreferences({ version, action: "seen" });
     }
   };
 
@@ -167,20 +197,19 @@ export function AnnouncementCenter({ className, sessionKey }: { className?: stri
       return;
     }
     setIsUpdating(true);
-    try {
-      const data = await updateAnnouncementPreferences(
-        announcementVersion(selected),
-        action,
-        action === "today" ? localDateKey() : "",
-      );
-      setPreferences(data.preferences);
-      setIsAutomaticPrompt(false);
-      setDialogOpen(false);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "保存公告偏好失败");
-    } finally {
-      setIsUpdating(false);
+    const result = await mutatePreferences({
+      version: announcementVersion(selected),
+      action,
+      localDate: action === "today" ? localDateKey() : "",
+    });
+    if (!result.current) return;
+    setIsUpdating(false);
+    if (result.error) {
+      toast.error(result.error instanceof Error ? result.error.message : "保存公告偏好失败");
+      return;
     }
+    setIsAutomaticPrompt(false);
+    setDialogOpen(false);
   };
 
   const handleDialogOpenChange = (open: boolean) => {

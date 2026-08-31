@@ -318,9 +318,11 @@ test("multi-image workflow runner exposes a full-width guided review workspace",
   assert.match(workflowSource, /生成此图/);
 });
 
-test("workflow completion normalizes sparse save responses before rendering again", () => {
-  assert.match(workflowSource, /\.then\(\(saved\) => \{\s*const normalized = normalizeWorkflow\(saved, models, preferences\)/);
-  assert.match(workflowSource, /setRunning\(\(current\) => \(current\?\.id === normalized\.id \? normalized : current\)\)/);
+test("workflow completion merges last-run metadata without replacing current content", () => {
+  assert.match(workflowSource, /touchWorkflowLastRun\(workflow\.id, timestamp\)/);
+  assert.match(workflowSource, /mergeWorkflowRunMetadata\(item, touched\)/);
+  assert.match(workflowSource, /mergeWorkflowRunMetadata\(current, touched\)/);
+  assert.doesNotMatch(workflowSource, /saveWorkflow\((?:completed|updated)\)/);
 });
 
 test("workflow editor keeps its header and footer outside the scrolling form", () => {

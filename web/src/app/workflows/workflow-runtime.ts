@@ -37,6 +37,28 @@ export function workflowGenerationDefaultsFromPreferences(
   };
 }
 
+function workflowTimestamp(value: string | undefined) {
+  const timestamp = Date.parse(value || "");
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+export function mergeWorkflowRunMetadata(
+  workflow: CreativeWorkflow,
+  metadata: Pick<CreativeWorkflow, "last_run_at" | "updated_at">,
+): CreativeWorkflow {
+  const lastRunAt = workflowTimestamp(metadata.last_run_at) > workflowTimestamp(workflow.last_run_at)
+    ? metadata.last_run_at
+    : workflow.last_run_at;
+  const updatedAt = workflowTimestamp(metadata.updated_at) > workflowTimestamp(workflow.updated_at)
+    ? metadata.updated_at
+    : workflow.updated_at;
+  return {
+    ...workflow,
+    last_run_at: lastRunAt,
+    updated_at: updatedAt,
+  };
+}
+
 function uid() {
   return typeof crypto !== "undefined" && crypto.randomUUID
     ? crypto.randomUUID()

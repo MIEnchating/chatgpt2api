@@ -17,7 +17,7 @@ func TestImageConversationAssetReferencesUseSummaryWithoutLeakingInternalFields(
 	ownerID := "summary-reference-owner"
 	history := NewImageConversationHistoryService(counting)
 	item := imageConversationAssetSummaryTestItem(ownerID, "summary-reference", 1)
-	if acknowledgements, _, err := history.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, []map[string]any{item}, nil); err != nil || !acknowledgements[0].Accepted {
+	if acknowledgements, _, err := history.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, []map[string]any{item}); err != nil || !acknowledgements[0].Accepted {
 		t.Fatalf("seed merge acknowledgements=%#v error=%v", acknowledgements, err)
 	}
 	history.SetConversationAssetService(NewImageConversationAssetService(t.TempDir()))
@@ -51,7 +51,7 @@ func TestImageConversationAssetReferencesFailClosedWhenSummaryExceedsLimit(t *te
 	history := NewImageConversationHistoryService(counting)
 	const referenceCount = 600
 	item := imageConversationAssetSummaryTestItem(ownerID, "oversized-summary-reference", referenceCount)
-	_, _, err := history.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, []map[string]any{item}, nil)
+	_, _, err := history.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, []map[string]any{item})
 	if err != nil {
 		t.Fatalf("seed merge error=%v", err)
 	}

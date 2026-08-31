@@ -511,7 +511,6 @@ func TestImageConversationHistoryStoresPreparedAssetsWithOneBudgetCheck(t *testi
 		context.Background(),
 		"prepared-batch-owner",
 		[]map[string]any{item},
-		nil,
 	)
 	if err != nil || len(acknowledgements) != 1 || !acknowledgements[0].Accepted {
 		t.Fatalf("MergeWithAcknowledgementsMinimal() acknowledgements=%#v error=%v", acknowledgements, err)
@@ -702,7 +701,7 @@ func TestImageConversationHistoryMergeAssetizesBeforeAcceptedHash(t *testing.T) 
 	ownerID := "assetized-merge-owner"
 	item := imageConversationAssetHistoryItem(t, "assetized-merge", 1, "success")
 
-	acknowledgements, generation, err := history.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, []map[string]any{item}, nil)
+	acknowledgements, generation, err := history.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, []map[string]any{item})
 	if err != nil || len(acknowledgements) != 1 || !acknowledgements[0].Accepted {
 		t.Fatalf("initial merge acknowledgements=%#v generation=%d error=%v", acknowledgements, generation, err)
 	}
@@ -714,7 +713,7 @@ func TestImageConversationHistoryMergeAssetizesBeforeAcceptedHash(t *testing.T) 
 		t.Fatalf("persisted record still contains embedded image: %s", record.Data)
 	}
 
-	replayed, _, err := history.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, []map[string]any{item}, &generation)
+	replayed, _, err := history.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, []map[string]any{item})
 	if err != nil || len(replayed) != 1 || !replayed[0].Accepted || replayed[0].ActualRevision != 1 {
 		t.Fatalf("replay acknowledgements=%#v error=%v", replayed, err)
 	}
@@ -737,7 +736,6 @@ func TestImageConversationHistoryBatchPreflightRejectsBeforeWritingAnyAsset(t *t
 		context.Background(),
 		"batch-preflight-owner",
 		[]map[string]any{valid, invalid},
-		nil,
 	)
 	var validationErr ImageConversationHistoryValidationError
 	if !errors.As(err, &validationErr) || !errors.Is(err, ErrInvalidImageConversationAsset) {
@@ -754,7 +752,7 @@ func TestImageConversationHistoryDetailLazyAssetizationUpdatesAcceptedHash(t *te
 	ownerID := "lazy-asset-owner"
 	item := imageConversationAssetHistoryItem(t, "lazy-asset", 7, "success")
 	withoutAssets := NewImageConversationHistoryService(backend)
-	acknowledgements, generation, err := withoutAssets.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, []map[string]any{item}, nil)
+	acknowledgements, generation, err := withoutAssets.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, []map[string]any{item})
 	if err != nil || !acknowledgements[0].Accepted {
 		t.Fatalf("seed merge acknowledgements=%#v error=%v", acknowledgements, err)
 	}
@@ -782,7 +780,7 @@ func TestImageConversationHistoryDetailLazyAssetizationUpdatesAcceptedHash(t *te
 		t.Fatalf("lazy rewritten record still has data URL: %s", after.Data)
 	}
 
-	replayed, _, err := withAssets.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, []map[string]any{item}, &generation)
+	replayed, _, err := withAssets.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, []map[string]any{item})
 	if err != nil || len(replayed) != 1 || !replayed[0].Accepted || replayed[0].ActualRevision != 7 {
 		t.Fatalf("same revision replay acknowledgements=%#v error=%v", replayed, err)
 	}
@@ -799,7 +797,7 @@ func TestImageConversationAssetReferencesRebuildAcrossUpdateDeleteAndClear(t *te
 	history.SetConversationAssetService(assets)
 	ownerID := "asset-reference-owner"
 	first := imageConversationAssetHistoryItem(t, "reference-lifecycle", 1, "success")
-	if acknowledgements, _, err := history.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, []map[string]any{first}, nil); err != nil || !acknowledgements[0].Accepted {
+	if acknowledgements, _, err := history.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, []map[string]any{first}); err != nil || !acknowledgements[0].Accepted {
 		t.Fatalf("first merge acknowledgements=%#v error=%v", acknowledgements, err)
 	}
 	firstReferences, err := history.ConversationAssetReferencesContext(context.Background(), ownerID)
@@ -818,7 +816,7 @@ func TestImageConversationAssetReferencesRebuildAcrossUpdateDeleteAndClear(t *te
 		"type":    "image/png",
 		"dataUrl": "data:image/png;base64," + base64.StdEncoding.EncodeToString(append(imageConversationAssetTestPNG(t), 0)),
 	}}
-	if acknowledgements, _, err := history.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, []map[string]any{second}, nil); err != nil || !acknowledgements[0].Accepted {
+	if acknowledgements, _, err := history.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, []map[string]any{second}); err != nil || !acknowledgements[0].Accepted {
 		t.Fatalf("second merge acknowledgements=%#v error=%v", acknowledgements, err)
 	}
 	secondReferences, err := history.ConversationAssetReferencesContext(context.Background(), ownerID)
@@ -851,7 +849,7 @@ func TestImageConversationAssetReferencesRebuildAcrossUpdateDeleteAndClear(t *te
 	}
 
 	third := imageConversationAssetHistoryItem(t, "reference-after-delete", 1, "success")
-	if acknowledgements, _, err := history.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, []map[string]any{third}, nil); err != nil || !acknowledgements[0].Accepted {
+	if acknowledgements, _, err := history.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, []map[string]any{third}); err != nil || !acknowledgements[0].Accepted {
 		t.Fatalf("third merge acknowledgements=%#v error=%v", acknowledgements, err)
 	}
 	thirdReferences, err := history.ConversationAssetReferencesContext(context.Background(), ownerID)

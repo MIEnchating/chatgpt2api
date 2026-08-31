@@ -47,7 +47,6 @@ export type ImageConversationHistoryMergeResponse = {
 
 export type ImageConversationHistoryRequestOptions = {
   redirectOnUnauthorized?: boolean;
-  generation?: string | number | null;
 };
 
 export type ImageConversationHistoryPageOptions = ImageConversationHistoryRequestOptions & {
@@ -125,7 +124,7 @@ export function mergeImageConversationHistory(
 ) {
   return httpRequest<ImageConversationHistoryMergeResponse>("/api/profile/image-conversations", {
     method: "POST",
-    body: buildImageConversationHistoryMergeBody(items, options.generation),
+    body: buildImageConversationHistoryMergeBody(items),
     redirectOnUnauthorized: options.redirectOnUnauthorized,
     timeout: 30_000,
   });
