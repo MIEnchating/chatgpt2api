@@ -873,10 +873,6 @@ func relayImagePath(path string) bool {
 	return path == "/v1/images/generations" || path == "/v1/images/edits"
 }
 
-func (a *App) relayJSON(ctx context.Context, method, pathValue, apiKey string, payload map[string]any) (map[string]any, error) {
-	return a.relayJSONAt(ctx, a.relayBaseURL(), method, pathValue, apiKey, payload)
-}
-
 func (a *App) relayJSONAt(ctx context.Context, baseURL, method, pathValue, apiKey string, payload map[string]any) (map[string]any, error) {
 	var data []byte
 	if payload != nil {

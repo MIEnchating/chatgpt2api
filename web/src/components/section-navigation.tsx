@@ -2,7 +2,7 @@ import type { LucideIcon } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
-export type SectionNavigationItem<T extends string = string> = {
+type SectionNavigationItem<T extends string = string> = {
   id: T;
   label: string;
   icon: LucideIcon;

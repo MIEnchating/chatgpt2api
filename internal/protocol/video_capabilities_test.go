@@ -2,27 +2,18 @@ package protocol
 
 import "testing"
 
-func TestCanonicalVideoModelPreservesConfiguredModelID(t *testing.T) {
-	for _, model := range []string{
-		"kling/text-to-video",
-		"bytedance/seedance-1-5-pro",
-		"vendor/model.with_symbols-v1",
-	} {
-		if got := CanonicalVideoModel("  " + model + "  "); got != model {
-			t.Fatalf("CanonicalVideoModel() = %q, want %q", got, model)
-		}
-	}
-}
-
-func TestVideoCapabilityRequiresMatchingContract(t *testing.T) {
-	capability := VideoCapability("unconfigured/video-model")
-	if len(capability.Sizes) != 0 || len(capability.Seconds) != 0 || len(capability.Resolutions) != 0 || capability.DefaultSeconds != 0 {
-		t.Fatalf("unconfigured model received fallback capability: %#v", capability)
+func TestVideoContractLookupRequiresMatchingContract(t *testing.T) {
+	if contract, ok := VideoContractForModel("unconfigured/video-model"); ok {
+		t.Fatalf("unconfigured model received contract: %#v", contract)
 	}
 }
 
 func TestVideoCapabilityUsesDeclaredContract(t *testing.T) {
-	capability := VideoCapability("minimax-h3-768p")
+	contract, ok := VideoContractForModel("  minimax-h3-768p  ")
+	if !ok {
+		t.Fatal("configured model did not match after trimming whitespace")
+	}
+	capability := videoCapabilityFromContract(contract)
 	if capability.DefaultSeconds != 5 || capability.DefaultSize != "16:9" || capability.DefaultResolution != "768p" {
 		t.Fatalf("declared capability defaults = %#v", capability)
 	}

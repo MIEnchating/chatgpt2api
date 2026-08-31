@@ -388,7 +388,7 @@ func TestDeclaredVideoContractValidation(t *testing.T) {
 		{size: "21:9", seconds: 15, resolution: "768P"},
 	}
 	for _, input := range valid {
-		if !protocol.VideoCapabilitySupports(protocol.VideoCapability("minimax-h3-768p"), input.size, input.seconds, input.resolution) {
+		if !protocol.VideoContractSupports(contract, input.size, input.seconds, input.resolution) {
 			t.Fatalf("valid declared parameters rejected: %#v", input)
 		}
 	}
@@ -404,7 +404,7 @@ func TestDeclaredVideoContractValidation(t *testing.T) {
 		{size: "16:9", seconds: 5, resolution: "2k"},
 		{size: "16:9", seconds: 5, resolution: "768p", total: 13},
 	} {
-		parametersValid := protocol.VideoCapabilitySupports(protocol.VideoCapability("minimax-h3-768p"), input.size, input.seconds, input.resolution)
+		parametersValid := protocol.VideoContractSupports(contract, input.size, input.seconds, input.resolution)
 		materialValid := protocol.ValidateVideoContractModeMaterials(contract, "reference", protocol.VideoModelMaterialCounts{Image: input.total}) == nil
 		if parametersValid && materialValid {
 			t.Fatalf("invalid declared parameters accepted: %#v", input)

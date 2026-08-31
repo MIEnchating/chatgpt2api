@@ -448,6 +448,21 @@ func TestImageGenerationPreferencesArePersonal(t *testing.T) {
 		t.Fatalf("update relay token preferences status = %d body = %s", res.Code, res.Body.String())
 	}
 
+	req = httptest.NewRequest(http.MethodPatch, "/api/profile/image-generation-preferences", strings.NewReader(`{"default_text_relay_token_names":["must-not-be-saved"],"partial_images":4}`))
+	setRequestAuthCookie(req, "Bearer "+firstToken)
+	res = httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusBadRequest || !strings.Contains(res.Body.String(), "partial_images must be an integer between 0 and 3") {
+		t.Fatalf("invalid mixed preference patch status = %d body = %s", res.Code, res.Body.String())
+	}
+	req = httptest.NewRequest(http.MethodGet, "/api/profile/image-generation-preferences", nil)
+	setRequestAuthCookie(req, "Bearer "+firstToken)
+	res = httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), `"default_text_relay_token_names":["text-key","text-backup"]`) || strings.Contains(res.Body.String(), "must-not-be-saved") {
+		t.Fatalf("invalid mixed preference patch changed data status = %d body = %s", res.Code, res.Body.String())
+	}
+
 	req = httptest.NewRequest(http.MethodPatch, "/api/profile/image-generation-preferences", strings.NewReader(`{"stream":false,"partial_images":3,"response_format_b64_json":false,"codex_cli_compatibility":false,"workbench":{"image_model":"image-allowed","image_size":"2048x1152","image_size_mode":"ratio","image_aspect_ratio":"16:9","image_resolution":"2k","image_custom_ratio":"16:9","image_custom_width":"2048","image_custom_height":"1152","image_snap_to_multiple_16":true,"image_quality":"high","image_count":3,"image_output_format":"webp","image_output_compression":"88","video_model":"video-allowed","video_size":"1920x1080","video_seconds":"10","video_resolution":"1080p","video_generate_audio":true,"video_watermark":true}}`))
 	setRequestAuthCookie(req, "Bearer "+firstToken)
 	res = httptest.NewRecorder()
@@ -688,10 +703,12 @@ func TestProfileRelayKeyReadsNewAPITokenForUserAndGroup(t *testing.T) {
 	}
 
 	var gotAuth string
+	const upstreamModelDelay = 25 * time.Millisecond
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/models" {
 			t.Fatalf("unexpected upstream path: %s", r.URL.Path)
 		}
+		time.Sleep(upstreamModelDelay)
 		gotAuth = r.Header.Get("Authorization")
 		util.WriteJSON(w, http.StatusOK, map[string]any{
 			"object": "list",
@@ -714,6 +731,13 @@ func TestProfileRelayKeyReadsNewAPITokenForUserAndGroup(t *testing.T) {
 	}
 	if gotAuth != "Bearer sk-alice-relay" {
 		t.Fatalf("upstream Authorization = %q", gotAuth)
+	}
+	callLog := findLogBySummary(app.logs.Search(service.LogQuery{Limit: 20}), "上游模型列表调用完成")
+	if callLog == nil {
+		t.Fatal("upstream model request did not create a business log")
+	}
+	if duration := util.ToInt(util.StringMap(callLog["detail"])["duration_ms"], 0); duration < int(upstreamModelDelay.Milliseconds()) {
+		t.Fatalf("upstream model duration_ms = %d, want at least %d", duration, upstreamModelDelay.Milliseconds())
 	}
 
 	req = httptest.NewRequest(http.MethodGet, "/api/profile/upstream-models?token_name=missing", nil)

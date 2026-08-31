@@ -64,6 +64,15 @@ type ImageGenerationPreferenceService struct {
 	store storage.JSONDocumentBackend
 }
 
+type ImageGenerationPreferencePatch struct {
+	Stream                *bool
+	PartialImages         *int
+	ResponseFormatB64JSON *bool
+	CodexCLICompatibility *bool
+	Workbench             *CreationWorkbenchPreferences
+	RelayTokenNames       map[string][]string
+}
+
 func NewImageGenerationPreferenceService(backend storage.Backend) *ImageGenerationPreferenceService {
 	return &ImageGenerationPreferenceService{store: jsonDocumentStoreFromBackend(backend)}
 }
@@ -154,14 +163,33 @@ func (s *ImageGenerationPreferenceService) Update(ownerID string, input ImageGen
 	return input, nil
 }
 
-func (s *ImageGenerationPreferenceService) UpdateWorkbench(ownerID string, input CreationWorkbenchPreferences) (ImageGenerationPreferences, error) {
+func (s *ImageGenerationPreferenceService) Patch(ownerID string, patch ImageGenerationPreferencePatch) (ImageGenerationPreferences, error) {
 	ownerID = strings.TrimSpace(ownerID)
 	if ownerID == "" {
 		return ImageGenerationPreferences{}, fmt.Errorf("owner_id is required")
 	}
-	workbench, err := normalizeCreationWorkbenchPreferences(input)
-	if err != nil {
-		return ImageGenerationPreferences{}, err
+	if patch.Stream == nil && patch.PartialImages == nil && patch.ResponseFormatB64JSON == nil && patch.CodexCLICompatibility == nil && patch.Workbench == nil && len(patch.RelayTokenNames) == 0 {
+		return ImageGenerationPreferences{}, fmt.Errorf("at least one preference is required")
+	}
+	if patch.PartialImages != nil && (*patch.PartialImages < 0 || *patch.PartialImages > 3) {
+		return ImageGenerationPreferences{}, fmt.Errorf("partial_images must be an integer between 0 and 3")
+	}
+	var workbench *CreationWorkbenchPreferences
+	if patch.Workbench != nil {
+		normalized, err := normalizeCreationWorkbenchPreferences(*patch.Workbench)
+		if err != nil {
+			return ImageGenerationPreferences{}, err
+		}
+		workbench = &normalized
+	}
+	normalizedTokens := make(map[string][]string, len(patch.RelayTokenNames))
+	for kind, value := range patch.RelayTokenNames {
+		switch kind {
+		case "text", "image", "video", "audio":
+			normalizedTokens[kind] = normalizeRelayTokenNames(value)
+		default:
+			return ImageGenerationPreferences{}, fmt.Errorf("unsupported relay token preference %q", kind)
+		}
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -169,29 +197,7 @@ func (s *ImageGenerationPreferenceService) UpdateWorkbench(ownerID string, input
 	if err != nil {
 		return ImageGenerationPreferences{}, err
 	}
-	preferences.Workbench = workbench
-	if err := s.store.SaveJSONDocument(imageGenerationPreferenceDocumentName(ownerID), preferences); err != nil {
-		return ImageGenerationPreferences{}, err
-	}
-	return preferences, nil
-}
-
-func (s *ImageGenerationPreferenceService) UpdateRelayTokenNames(ownerID string, updates map[string][]string) (ImageGenerationPreferences, error) {
-	ownerID = strings.TrimSpace(ownerID)
-	if ownerID == "" {
-		return ImageGenerationPreferences{}, fmt.Errorf("owner_id is required")
-	}
-	if len(updates) == 0 {
-		return ImageGenerationPreferences{}, fmt.Errorf("at least one relay token preference is required")
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	preferences, err := s.loadLocked(ownerID)
-	if err != nil {
-		return ImageGenerationPreferences{}, err
-	}
-	for kind, value := range updates {
-		value = normalizeRelayTokenNames(value)
+	for kind, value := range normalizedTokens {
 		switch kind {
 		case "text":
 			preferences.DefaultTextRelayTokens = value
@@ -201,9 +207,22 @@ func (s *ImageGenerationPreferenceService) UpdateRelayTokenNames(ownerID string,
 			preferences.DefaultVideoRelayTokens = value
 		case "audio":
 			preferences.DefaultAudioRelayTokens = value
-		default:
-			return ImageGenerationPreferences{}, fmt.Errorf("unsupported relay token preference %q", kind)
 		}
+	}
+	if patch.Stream != nil {
+		preferences.Stream = *patch.Stream
+	}
+	if patch.PartialImages != nil {
+		preferences.PartialImages = *patch.PartialImages
+	}
+	if patch.ResponseFormatB64JSON != nil {
+		preferences.ResponseFormatB64JSON = *patch.ResponseFormatB64JSON
+	}
+	if patch.CodexCLICompatibility != nil {
+		preferences.CodexCLICompatibility = *patch.CodexCLICompatibility
+	}
+	if workbench != nil {
+		preferences.Workbench = *workbench
 	}
 	if err := s.store.SaveJSONDocument(imageGenerationPreferenceDocumentName(ownerID), preferences); err != nil {
 		return ImageGenerationPreferences{}, err

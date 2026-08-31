@@ -848,7 +848,7 @@ func TestMarshalGoogleGeminiInlineRequestRejectsPayloadOverOfficialLimit(t *test
 	}
 }
 
-func TestRelayJSONPreservesEncodedRequestBody(t *testing.T) {
+func TestRelayJSONAtPreservesEncodedRequestBody(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if got := r.Header.Get("Content-Type"); got != "application/json" {
 			t.Errorf("Content-Type = %q, want application/json", got)
@@ -870,12 +870,12 @@ func TestRelayJSONPreservesEncodedRequestBody(t *testing.T) {
 	if _, err := app.config.Update(map[string]any{"relay_base_url": upstream.URL}); err != nil {
 		t.Fatalf("update relay URL: %v", err)
 	}
-	result, err := app.relayJSON(context.Background(), http.MethodPost, "/v1/test", "sk-test", map[string]any{"prompt": "draw"})
+	result, err := app.relayJSONAt(context.Background(), app.relayBaseURL(), http.MethodPost, "/v1/test", "sk-test", map[string]any{"prompt": "draw"})
 	if err != nil {
-		t.Fatalf("relayJSON() error = %v", err)
+		t.Fatalf("relayJSONAt() error = %v", err)
 	}
 	if result["ok"] != true {
-		t.Fatalf("relayJSON() result = %#v", result)
+		t.Fatalf("relayJSONAt() result = %#v", result)
 	}
 }
 

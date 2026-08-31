@@ -139,63 +139,52 @@ func (a *App) handleImageGenerationPreferences(w http.ResponseWriter, r *http.Re
 				updates[kind] = util.AsStringSlice(value)
 			}
 		}
-		var preferences service.ImageGenerationPreferences
-		if len(updates) > 0 {
-			preferences, err = a.imagePreferences.UpdateRelayTokenNames(ownerID, updates)
-			if err != nil {
-				util.WriteError(w, http.StatusBadRequest, err.Error())
-				return
-			}
-		}
 		_, hasWorkbench := body["workbench"]
 		_, hasStream := body["stream"]
 		_, hasPartialImages := body["partial_images"]
 		_, hasResponseFormat := body["response_format_b64_json"]
 		_, hasCodexCompatibility := body["codex_cli_compatibility"]
 		hasCreationOptions := hasWorkbench || hasStream || hasPartialImages || hasResponseFormat || hasCodexCompatibility
-		if hasCreationOptions {
-			current, loadErr := a.imagePreferences.Preferences(ownerID)
-			if loadErr != nil {
-				util.WriteError(w, http.StatusInternalServerError, "failed to load image generation preferences")
-				return
-			}
-			if rawWorkbench, present := body["workbench"]; present {
-				workbench, parseErr := creationWorkbenchPreferencesFromValue(rawWorkbench)
-				if parseErr != nil {
-					util.WriteError(w, http.StatusBadRequest, parseErr.Error())
-					return
-				}
-				if parseErr = a.validateCreationWorkbenchModels(workbench); parseErr != nil {
-					util.WriteError(w, http.StatusBadRequest, parseErr.Error())
-					return
-				}
-				current.Workbench = workbench
-			}
-			if hasStream {
-				current.Stream = util.ToBool(body["stream"])
-			}
-			if hasPartialImages {
-				partialImages, valid := imagePreferencePartialImages(body["partial_images"])
-				if !valid {
-					util.WriteError(w, http.StatusBadRequest, "partial_images must be an integer between 0 and 3")
-					return
-				}
-				current.PartialImages = partialImages
-			}
-			if hasResponseFormat {
-				current.ResponseFormatB64JSON = util.ToBool(body["response_format_b64_json"])
-			}
-			if hasCodexCompatibility {
-				current.CodexCLICompatibility = util.ToBool(body["codex_cli_compatibility"])
-			}
-			preferences, err = a.imagePreferences.Update(ownerID, current)
-			if err != nil {
-				util.WriteError(w, http.StatusBadRequest, err.Error())
-				return
-			}
-		}
 		if len(updates) == 0 && !hasCreationOptions {
 			util.WriteError(w, http.StatusBadRequest, "at least one preference is required")
+			return
+		}
+		patch := service.ImageGenerationPreferencePatch{RelayTokenNames: updates}
+		if rawWorkbench, present := body["workbench"]; present {
+			workbench, parseErr := creationWorkbenchPreferencesFromValue(rawWorkbench)
+			if parseErr != nil {
+				util.WriteError(w, http.StatusBadRequest, parseErr.Error())
+				return
+			}
+			if parseErr = a.validateCreationWorkbenchModels(workbench); parseErr != nil {
+				util.WriteError(w, http.StatusBadRequest, parseErr.Error())
+				return
+			}
+			patch.Workbench = &workbench
+		}
+		if hasStream {
+			stream := util.ToBool(body["stream"])
+			patch.Stream = &stream
+		}
+		if hasPartialImages {
+			partialImages, valid := imagePreferencePartialImages(body["partial_images"])
+			if !valid {
+				util.WriteError(w, http.StatusBadRequest, "partial_images must be an integer between 0 and 3")
+				return
+			}
+			patch.PartialImages = &partialImages
+		}
+		if hasResponseFormat {
+			responseFormat := util.ToBool(body["response_format_b64_json"])
+			patch.ResponseFormatB64JSON = &responseFormat
+		}
+		if hasCodexCompatibility {
+			codexCompatibility := util.ToBool(body["codex_cli_compatibility"])
+			patch.CodexCLICompatibility = &codexCompatibility
+		}
+		preferences, err := a.imagePreferences.Patch(ownerID, patch)
+		if err != nil {
+			util.WriteError(w, http.StatusBadRequest, err.Error())
 			return
 		}
 		util.WriteJSON(w, http.StatusOK, map[string]any{"preferences": preferences})

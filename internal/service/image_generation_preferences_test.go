@@ -77,9 +77,9 @@ func TestImageGenerationPreferencesArePersistentAndPersonal(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("reloaded preferences = %#v, want %#v", got, want)
 	}
-	updated, err := preferences.UpdateRelayTokenNames("user-a", map[string][]string{"image": {"image-key-2", "image-key-3"}, "audio": {"audio-key-2"}})
+	updated, err := preferences.Patch("user-a", ImageGenerationPreferencePatch{RelayTokenNames: map[string][]string{"image": {"image-key-2", "image-key-3"}, "audio": {"audio-key-2"}}})
 	if err != nil {
-		t.Fatalf("UpdateRelayTokenNames() error = %v", err)
+		t.Fatalf("Patch(relay tokens) error = %v", err)
 	}
 	if !reflect.DeepEqual(updated.DefaultImageRelayTokens, []string{"image-key-2", "image-key-3"}) || !reflect.DeepEqual(updated.DefaultAudioRelayTokens, []string{"audio-key-2"}) || !reflect.DeepEqual(updated.DefaultTextRelayTokens, []string{"text-key", "text-backup"}) || !reflect.DeepEqual(updated.DefaultVideoRelayTokens, []string{"video-key"}) {
 		t.Fatalf("updated relay token preferences = %#v", updated)
@@ -90,12 +90,27 @@ func TestImageGenerationPreferencesArePersistentAndPersonal(t *testing.T) {
 	workbench := want.Workbench
 	workbench.ImageCount = 6
 	workbench.ImageQuality = "medium"
-	updated, err = preferences.UpdateWorkbench("user-a", workbench)
+	updated, err = preferences.Patch("user-a", ImageGenerationPreferencePatch{Workbench: &workbench})
 	if err != nil {
-		t.Fatalf("UpdateWorkbench() error = %v", err)
+		t.Fatalf("Patch(workbench) error = %v", err)
 	}
 	if updated.Workbench.ImageCount != 6 || updated.Workbench.ImageQuality != "medium" || !reflect.DeepEqual(updated.DefaultTextRelayTokens, []string{"text-key", "text-backup"}) {
 		t.Fatalf("updated workbench preferences = %#v", updated)
+	}
+	beforeInvalidPatch := updated
+	invalidPartialImages := 4
+	if _, err := preferences.Patch("user-a", ImageGenerationPreferencePatch{
+		PartialImages:   &invalidPartialImages,
+		RelayTokenNames: map[string][]string{"text": {"must-not-be-saved"}},
+	}); err == nil {
+		t.Fatal("Patch() accepted invalid partial_images")
+	}
+	afterInvalidPatch, err := preferences.Preferences("user-a")
+	if err != nil {
+		t.Fatalf("Preferences(after invalid patch) error = %v", err)
+	}
+	if !reflect.DeepEqual(afterInvalidPatch, beforeInvalidPatch) {
+		t.Fatalf("invalid patch modified preferences: got %#v, want %#v", afterInvalidPatch, beforeInvalidPatch)
 	}
 	other, err := preferences.Preferences("user-b")
 	if err != nil {

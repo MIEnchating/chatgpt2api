@@ -20,20 +20,6 @@ type VideoCapabilityProfile struct {
 	} `json:"references"`
 }
 
-// CanonicalVideoModel only normalizes surrounding whitespace. Model IDs are
-// upstream identifiers and must not be rewritten or treated as vendor hints.
-func CanonicalVideoModel(model string) string {
-	return strings.TrimSpace(model)
-}
-
-func VideoCapability(model string) VideoCapabilityProfile {
-	contract, ok := VideoContractForModel(strings.TrimSpace(model))
-	if !ok {
-		return VideoCapabilityProfile{}
-	}
-	return videoCapabilityFromContract(contract)
-}
-
 func VideoCapabilitySupports(profile VideoCapabilityProfile, size string, seconds int, resolution string) bool {
 	if size != "" && !stringInFold(profile.Sizes, size) {
 		return false

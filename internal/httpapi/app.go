@@ -573,6 +573,7 @@ func (a *App) handleUpstreamModels(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
+	started := time.Now()
 	relayAPIKey := ""
 	relayBaseURL := a.relayBaseURL()
 	group := strings.TrimSpace(r.URL.Query().Get("group"))
@@ -580,7 +581,7 @@ func (a *App) handleUpstreamModels(w http.ResponseWriter, r *http.Request) {
 	if service.CustomRelayConfigIDFromTokenName(tokenName) != "" {
 		credential, err := a.relayCredentialForIdentitySelection(r.Context(), identity, group, tokenName)
 		if err != nil {
-			a.writeProtocol(w, r, nil, nil, err, "openai", "/api/profile/upstream-models", "models", identity, "上游模型列表", service.ImageVisibilityPrivate)
+			a.writeUpstreamModelsResponse(w, r, nil, err, started, identity)
 			return
 		}
 		relayAPIKey = credential.APIKey
@@ -592,7 +593,7 @@ func (a *App) handleUpstreamModels(w http.ResponseWriter, r *http.Request) {
 			var err error
 			relayAPIKey, err = newAPIKeys.KeyForIdentityGroupAndName(r.Context(), identity, group, tokenName)
 			if err != nil {
-				a.writeProtocol(w, r, nil, nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: err.Error()}, "openai", "/api/profile/upstream-models", "models", identity, "上游模型列表", service.ImageVisibilityPrivate)
+				a.writeUpstreamModelsResponse(w, r, nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: err.Error()}, started, identity)
 				return
 			}
 		} else {
@@ -600,107 +601,22 @@ func (a *App) handleUpstreamModels(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	result, err := a.relayListModelsAt(r.Context(), relayBaseURL, relayAPIKey)
-	a.writeProtocol(w, r, result, nil, err, "openai", "/api/profile/upstream-models", "models", identity, "上游模型列表", service.ImageVisibilityPrivate)
+	a.writeUpstreamModelsResponse(w, r, result, err, started, identity)
 }
 
-func (a *App) writeProtocol(w http.ResponseWriter, r *http.Request, result map[string]any, stream *protocol.StreamResult, err error, sseKind, endpoint, model string, identity service.Identity, summary, visibility string, imagePayloads ...map[string]any) {
-	start := time.Now()
+func (a *App) writeUpstreamModelsResponse(w http.ResponseWriter, r *http.Request, result map[string]any, err error, started time.Time, identity service.Identity) {
+	const endpoint = "/api/profile/upstream-models"
 	requestCapture := requestAuditCapture(r.Context())
+	urls := collectURLs(result)
 	if err != nil {
-		urls := collectURLs(result)
-		if recordErr := a.recordProtocolGeneratedImages(identity, urls, visibility, imagePayloads...); recordErr != nil {
-			err = errors.Join(err, imageMetadataPersistenceError(recordErr))
-		}
-		a.logCall(r.Context(), identity, summary, r.Method, endpoint, model, start, "failed", protocolErrorHTTPStatus(err), err.Error(), urls, requestCapture)
+		a.logCall(r.Context(), identity, "上游模型列表", r.Method, endpoint, "models", started, "failed", protocolErrorHTTPStatus(err), err.Error(), urls, requestCapture)
 		markRequestBusinessLogged(r)
 		a.writeProtocolError(w, err)
 		return
 	}
-	if stream == nil {
-		urls := collectURLs(result)
-		if recordErr := a.recordProtocolGeneratedImages(identity, urls, visibility, imagePayloads...); recordErr != nil {
-			err := imageMetadataPersistenceError(recordErr)
-			a.logCall(r.Context(), identity, summary, r.Method, endpoint, model, start, "failed", protocolErrorHTTPStatus(err), err.Error(), urls, requestCapture)
-			markRequestBusinessLogged(r)
-			a.writeProtocolError(w, err)
-			return
-		}
-		a.logCall(r.Context(), identity, summary, r.Method, endpoint, model, start, "success", http.StatusOK, "", urls, requestCapture)
-		markRequestBusinessLogged(r)
-		util.WriteJSON(w, http.StatusOK, result)
-		return
-	}
-	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
-	w.Header().Set("Cache-Control", "no-cache")
-	flusher, _ := w.(http.Flusher)
-	if stream.Kind == "anthropic" || sseKind == "anthropic" {
-		var urls []string
-		for item := range stream.Items {
-			urls = append(urls, collectURLs(item)...)
-			event := firstNonEmpty(util.Clean(item["type"]), "message_delta")
-			fmt.Fprintf(w, "event: %s\n", event)
-			fmt.Fprintf(w, "data: %s\n\n", jsonString(item))
-			if flusher != nil {
-				flusher.Flush()
-			}
-		}
-		upstreamErr := <-stream.Err
-		recordErr := a.recordProtocolGeneratedImages(identity, urls, visibility, imagePayloads...)
-		if upstreamErr != nil {
-			loggedErr := upstreamErr
-			if recordErr != nil {
-				loggedErr = errors.Join(upstreamErr, imageMetadataPersistenceError(recordErr))
-			}
-			a.logCall(r.Context(), identity, summary, r.Method, endpoint, model, start, "failed", protocolErrorHTTPStatus(upstreamErr), loggedErr.Error(), urls, requestCapture)
-			markRequestBusinessLogged(r)
-			fmt.Fprintf(w, "event: error\n")
-			fmt.Fprintf(w, "data: %s\n\n", jsonString(map[string]any{"type": "error", "error": map[string]any{"type": fmt.Sprintf("%T", upstreamErr), "message": upstreamErr.Error()}}))
-			return
-		}
-		if recordErr != nil {
-			err := imageMetadataPersistenceError(recordErr)
-			a.logCall(r.Context(), identity, summary, r.Method, endpoint, model, start, "failed", protocolErrorHTTPStatus(err), err.Error(), urls, requestCapture)
-			markRequestBusinessLogged(r)
-			fmt.Fprintf(w, "event: error\n")
-			fmt.Fprintf(w, "data: %s\n\n", jsonString(map[string]any{"type": "error", "error": map[string]any{"type": "persistence_error", "message": err.Error()}}))
-			return
-		}
-		a.logCall(r.Context(), identity, summary, r.Method, endpoint, model, start, "success", http.StatusOK, "", urls, requestCapture)
-		markRequestBusinessLogged(r)
-		return
-	}
-	fmt.Fprint(w, ": stream-open\n\n")
-	if flusher != nil {
-		flusher.Flush()
-	}
-	var urls []string
-	for item := range stream.Items {
-		urls = append(urls, collectURLs(item)...)
-		fmt.Fprintf(w, "data: %s\n\n", jsonString(item))
-		if flusher != nil {
-			flusher.Flush()
-		}
-	}
-	upstreamErr := <-stream.Err
-	recordErr := a.recordProtocolGeneratedImages(identity, urls, visibility, imagePayloads...)
-	if upstreamErr != nil {
-		loggedErr := upstreamErr
-		if recordErr != nil {
-			loggedErr = errors.Join(upstreamErr, imageMetadataPersistenceError(recordErr))
-		}
-		a.logCall(r.Context(), identity, summary, r.Method, endpoint, model, start, "failed", protocolErrorHTTPStatus(upstreamErr), loggedErr.Error(), urls, requestCapture)
-		markRequestBusinessLogged(r)
-		fmt.Fprintf(w, "data: %s\n\n", jsonString(openAIErrorForStream(upstreamErr)))
-	} else if recordErr != nil {
-		err := imageMetadataPersistenceError(recordErr)
-		a.logCall(r.Context(), identity, summary, r.Method, endpoint, model, start, "failed", protocolErrorHTTPStatus(err), err.Error(), urls, requestCapture)
-		markRequestBusinessLogged(r)
-		fmt.Fprintf(w, "data: %s\n\n", jsonString(openAIErrorForStream(err)))
-	} else {
-		a.logCall(r.Context(), identity, summary, r.Method, endpoint, model, start, "success", http.StatusOK, "", urls, requestCapture)
-		markRequestBusinessLogged(r)
-	}
-	fmt.Fprint(w, "data: [DONE]\n\n")
+	a.logCall(r.Context(), identity, "上游模型列表", r.Method, endpoint, "models", started, "success", http.StatusOK, "", urls, requestCapture)
+	markRequestBusinessLogged(r)
+	util.WriteJSON(w, http.StatusOK, result)
 }
 
 func imageMetadataPersistenceError(err error) error {
@@ -2159,19 +2075,6 @@ func normalizeUploadedImageContentType(contentType string) string {
 	}
 }
 
-func jsonString(v any) string {
-	data, _ := json.Marshal(v)
-	return string(data)
-}
-
-func openAIErrorForStream(err error) map[string]any {
-	var imageErr *protocol.ImageGenerationError
-	if errors.As(err, &imageErr) {
-		return imageErr.OpenAIError()
-	}
-	return map[string]any{"error": map[string]any{"message": err.Error(), "type": fmt.Sprintf("%T", err)}}
-}
-
 func (a *App) logCall(ctx context.Context, identity service.Identity, summary, method, endpoint, model string, started time.Time, outcome string, status int, errText string, urls []string, requestCapture auditRequestCapture) {
 	method = strings.ToUpper(strings.TrimSpace(method))
 	if status <= 0 {
@@ -2347,23 +2250,6 @@ func imageListAccessScope(identity service.Identity, value string) (service.Imag
 	default:
 		return service.ImageAccessScope{}, http.StatusBadRequest, "scope must be mine, public, visible, or all"
 	}
-}
-
-func (a *App) recordGeneratedImages(identity service.Identity, urls []string, visibility string) error {
-	if len(urls) == 0 || a.images == nil {
-		return nil
-	}
-	ownerID := identityScope(identity)
-	err := a.images.RecordGeneratedImageMetadata(urls, ownerID, identityDisplayName(identity), visibility)
-	a.scheduleImageStorageCleanup()
-	return err
-}
-
-func (a *App) recordProtocolGeneratedImages(identity service.Identity, urls []string, visibility string, payloads ...map[string]any) error {
-	if len(payloads) > 0 && payloads[0] != nil {
-		return a.recordGeneratedImagesForPayload(identity, urls, visibility, payloads[0])
-	}
-	return a.recordGeneratedImages(identity, urls, visibility)
 }
 
 func (a *App) recordGeneratedImagesForPayload(identity service.Identity, urls []string, visibility string, payload map[string]any) error {
