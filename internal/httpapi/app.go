@@ -2767,7 +2767,7 @@ func (a *App) localizeRelayImageItem(ctx context.Context, ownerID, ownerName str
 	if a == nil || a.images == nil || a.config == nil {
 		return "", "", nil, errors.New("image storage is unavailable")
 	}
-	url, err := a.images.SaveImageBytes(ctx, data, a.config.BaseURL(), ownerID, ownerName, outputFormat)
+	url, err := a.images.SaveImageBytes(ctx, data, a.config.BaseURL(), ownerID, ownerName)
 	return url, outputFormat, qualityCheck, err
 }
 

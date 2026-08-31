@@ -113,7 +113,6 @@ const CanvasMaskDialog = lazy(() => import("@/app/canvas/canvas-image-tools").th
 const CanvasAngleDialog = lazy(() => import("@/app/canvas/canvas-image-tools").then((module) => ({ default: module.CanvasAngleDialog })));
 const ImageLightbox = lazy(() => import("@/components/image-lightbox").then((module) => ({ default: module.ImageLightbox })));
 
-type SaveState = "saved" | "dirty" | "saving" | "error";
 type CanvasSwitchPhase = "switching" | "revealing" | null;
 type ConnectionOrigin = { nodeID: string; handleType: "source" | "target" };
 type PendingConnectionCreate = ConnectionOrigin & { position: { x: number; y: number }; menu: { x: number; y: number } };
@@ -146,7 +145,6 @@ const MAX_HISTORY = 50;
 const TASK_POLL_INTERVAL_MS = 1200;
 const TASK_POLL_MAX_DURATION_MS = 8 * 60 * 1000;
 const TASK_POLL_MAX_RETRY_DELAY_MS = 10_000;
-const MINI_MAP_STORAGE_KEY = "yunmian-canvas-mini-map-open";
 const SIDE_PANEL_STORAGE_KEY = "yunmian-canvas-side-panel";
 const DEFAULT_SIDE_PANEL = { open: true, width: 304, tab: "canvas" as CanvasSidePanelTab };
 const IMAGE_PROMPT_REVERSE_PRESET = `请根据参考图片反推一段适合用于 AI 生图的提示词。
@@ -866,9 +864,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
   const [contextMenu, setContextMenu] = useState<CanvasContextMenu | null>(null);
   const [runningNodeID, setRunningNodeID] = useState("");
   const [runningResultNodeID, setRunningResultNodeID] = useState("");
-  const [, setRunningControlNodeID] = useState("");
   const [runningTaskID, setRunningTaskID] = useState("");
-  const [, setCancellingTaskID] = useState("");
   const [activeGenerationNodeIDs, setActiveGenerationNodeIDs] = useState(new Set<string>());
   const [cancellingGenerationNodeIDs, setCancellingGenerationNodeIDs] = useState(new Set<string>());
   const [stopTargetNodeID, setStopTargetNodeID] = useState("");
@@ -890,7 +886,6 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
   const [audioModels, setAudioModels] = useState(["gpt-4o-mini-tts"]);
   const { tokenNameForModel } = useRelayTokenPreferences();
   const [relayTokenDialogKind, setRelayTokenDialogKind] = useState<RelayTokenCreationKind | null>(null);
-  const [, setSaveState] = useState<SaveState>("saved");
   const [switchPhase, setSwitchPhase] = useState<CanvasSwitchPhase>(null);
   const [loading, setLoading] = useState(true);
   const [canvasSize, setCanvasSize] = useState({ width: 0, height: 0 });
@@ -1168,7 +1163,6 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
   function scheduleSave() {
     if (!loadedRef.current) return;
     saveChangeVersionRef.current += 1;
-    setSaveState("dirty");
     if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current);
     saveTimerRef.current = window.setTimeout(() => void persistCanvas(), 700);
   }
@@ -1208,15 +1202,11 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     if (!loadedRef.current) return true;
     if (saveTimerRef.current !== null) window.clearTimeout(saveTimerRef.current);
     saveTimerRef.current = null;
-    if (!canvasSaveRequired(persistedChangeVersionRef.current, saveChangeVersionRef.current)) {
-      if (mountedRef.current) setSaveState("saved");
-      return true;
-    }
+    if (!canvasSaveRequired(persistedChangeVersionRef.current, saveChangeVersionRef.current)) return true;
     const payload = captureDocument();
     const changeVersion = saveChangeVersionRef.current;
     const requestVersion = saveRequestVersionRef.current + 1;
     saveRequestVersionRef.current = requestVersion;
-    if (mountedRef.current && documentRef.current.id === payload.id) setSaveState("saving");
     let response: Awaited<ReturnType<typeof saveCanvasDocument>>;
     const request = saveQueueRef.current
       .catch(() => undefined)
@@ -1233,11 +1223,9 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       }
       if (mountedRef.current) {
         setProjects((items) => items.map((item) => item.id === payload.id ? { ...item, title: payload.title, node_count: payload.nodes.length, updated_at: response.document.updated_at } : item));
-        if (documentRef.current.id === payload.id && saveRequestVersionRef.current === requestVersion) setSaveState(saveChangeVersionRef.current === changeVersion && saveTimerRef.current === null ? "saved" : "dirty");
       }
       return true;
     } catch (error) {
-      if (mountedRef.current && documentRef.current.id === payload.id && saveRequestVersionRef.current === requestVersion) setSaveState(saveChangeVersionRef.current === changeVersion ? "error" : "dirty");
       if (mountedRef.current && saveRequestVersionRef.current === requestVersion) toast.error(canvasErrorMessage(error));
       return false;
     }
@@ -1298,7 +1286,6 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       persistedChangeVersionRef.current = 0;
       setHistoryVersion((value) => value + 1);
     }
-    setSaveState("saved");
     loadedRef.current = true;
 	void hydrateCanvasStorageURLs(next, operationEpoch).then(() => {
       void consumePendingAgentRequest(next.pending_agent_request, next.id, operationEpoch)
@@ -2988,9 +2975,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     setStopTargetNodeID("");
     setRunningNodeID("");
     setRunningResultNodeID("");
-    setRunningControlNodeID("");
     setRunningTaskID("");
-    setCancellingTaskID("");
     serverTaskIDs.forEach((submittedID) => {
       void cancelCreationTask(submittedID).catch((error) => toast.error(error instanceof Error ? `本地已停止，服务端停止失败：${error.message}` : "本地已停止，服务端停止失败"));
     });
@@ -3340,7 +3325,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     if (createsResult) replaceConnections([...connectionsRef.current, { id: `connection-${randomID()}`, from_node_id: requestedNode.id, to_node_id: resultID }]);
     setPanelNodeID(resultID);
     if (!concurrent) {
-      setRunningNodeID(requestedNode.id); setRunningResultNodeID(resultID); setRunningControlNodeID(requestedNode.id); generationAbortControllerRef.current = controller;
+      setRunningNodeID(requestedNode.id); setRunningResultNodeID(resultID); generationAbortControllerRef.current = controller;
       pendingTaskIDRef.current = taskID;
       submittedTaskIDRef.current = "";
     }
@@ -3392,7 +3377,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         submittedTaskIDsRef.current.clear();
         pendingTaskIDRef.current = "";
         submittedTaskIDRef.current = "";
-        setRunningNodeID(""); setRunningResultNodeID(""); setRunningControlNodeID(""); setRunningTaskID("");
+        setRunningNodeID(""); setRunningResultNodeID(""); setRunningTaskID("");
       }
     }
   }
@@ -3669,7 +3654,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     if (createsResult) replaceConnections([...connectionsRef.current, { id: `connection-${randomID()}`, from_node_id: sourceNode.id, to_node_id: resultNodeID }]);
     setPanelNodeID(resultNodeID); setSelectedNodeIDs(new Set([resultNodeID]));
     if (!concurrent) {
-      setRunningNodeID(nodeID); setRunningResultNodeID(resultNodeID); setRunningControlNodeID(nodeID); generationAbortControllerRef.current = controller;
+      setRunningNodeID(nodeID); setRunningResultNodeID(resultNodeID); generationAbortControllerRef.current = controller;
       pendingTaskIDRef.current = taskID;
       submittedTaskIDRef.current = "";
     }
@@ -3756,7 +3741,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         submittedTaskIDsRef.current.clear();
         pendingTaskIDRef.current = "";
         submittedTaskIDRef.current = "";
-        setRunningNodeID(""); setRunningResultNodeID(""); setRunningControlNodeID(""); setRunningTaskID("");
+        setRunningNodeID(""); setRunningResultNodeID(""); setRunningTaskID("");
       }
     }
   }
@@ -3929,7 +3914,6 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       generationHistoryBaseRef.current = generationHistoryBase;
       setRunningNodeID(nodeID);
       setRunningResultNodeID(resultNodeID);
-      setRunningControlNodeID(activeSelectionNodeID);
       setRunningTaskID("");
     }
     try {
@@ -4075,9 +4059,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         setStopTargetNodeID("");
         setRunningNodeID("");
         setRunningResultNodeID("");
-        setRunningControlNodeID("");
         setRunningTaskID("");
-        setCancellingTaskID("");
       }
     }
   }
@@ -4425,10 +4407,6 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
   useEffect(() => {
     window.localStorage.setItem(SIDE_PANEL_STORAGE_KEY, JSON.stringify(sidePanel));
   }, [sidePanel]);
-
-  useEffect(() => {
-    window.localStorage.setItem(MINI_MAP_STORAGE_KEY, String(miniMapOpen));
-  }, [miniMapOpen]);
 
   useEffect(() => {
     const keydown = (event: KeyboardEvent) => {

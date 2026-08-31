@@ -348,7 +348,7 @@ func matchLogQuery(item map[string]any, query LogQuery) bool {
 	if method := strings.TrimSpace(query.Method); method != "" && !strings.EqualFold(logDetailString(item, "method"), method) {
 		return false
 	}
-	if status := strings.TrimSpace(query.Status); status != "" && logStatus(item) != status {
+	if !matchLogStatus(item, query.Status) {
 		return false
 	}
 	if !containsFold(logDetailString(item, "ip_address"), query.IPAddress) {
@@ -476,6 +476,19 @@ func logLevel(item map[string]any) string {
 
 func logStatus(item map[string]any) string {
 	return util.Clean(util.StringMap(item["detail"])["status"])
+}
+
+func matchLogStatus(item map[string]any, filter string) bool {
+	filter = strings.TrimSpace(filter)
+	if filter == "" {
+		return true
+	}
+	switch strings.ToLower(filter) {
+	case "success", "failed":
+		return strings.EqualFold(logOutcome(item), filter)
+	default:
+		return logStatus(item) == filter
+	}
 }
 
 func logOutcome(item map[string]any) string {

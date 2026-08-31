@@ -8,6 +8,7 @@ const DEPRECATED_EXACT_KEYS = new Set([
   "chatgpt2api:canvas_default_image_count",
   "chatgpt2api:prompt-source-pull-states:v1",
   "chatgpt2api:prompt-source-last-run:v1",
+  "yunmian-canvas-mini-map-open",
 ]);
 
 const DEPRECATED_KEY_PREFIXES = [

@@ -32,6 +32,11 @@ import {
   normalizeLoginPageImageTransform,
   type LoginPageImageMode,
 } from "@/lib/login-page-image-layout";
+import {
+  LOGIN_PAGE_IMAGE_CONFIG_FIELDS,
+  mergeUnchangedConfigFields,
+  SITE_ICON_CONFIG_FIELDS,
+} from "./specialized-config-merge";
 
 function normalizeDefaultLogView(value: unknown): LogView {
   if (value === "all" || value === "meaningful" || value === "business") {
@@ -464,11 +469,18 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   },
 
   saveSiteIcon: async ({ file, action }) => {
+    const { config } = get();
+    if (!config) {
+      return false;
+    }
+
     set({ isSavingConfig: true });
     try {
       const data = await updateSiteIconSettings({ action, file });
       const nextConfig = normalizeConfig(data.config);
-      set({ config: nextConfig });
+      set((state) => ({
+        config: mergeUnchangedConfigFields(state.config, config, nextConfig, SITE_ICON_CONFIG_FIELDS),
+      }));
       dispatchAppMetaUpdated({
         site_icon_url: String(nextConfig.site_icon_url || ""),
       });
@@ -536,10 +548,10 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
     try {
       const data = await updateLoginPageImageSettings(settings, { action, file });
       const nextConfig = normalizeConfig(data.config);
-      set({ config: nextConfig });
+      set((state) => ({
+        config: mergeUnchangedConfigFields(state.config, config, nextConfig, LOGIN_PAGE_IMAGE_CONFIG_FIELDS),
+      }));
       dispatchAppMetaUpdated({
-        app_title: String(nextConfig.app_title || "云棉"),
-        project_name: String(nextConfig.project_name || nextConfig.app_title || "云棉"),
         login_page_image_url: String(nextConfig.login_page_image_url || ""),
         login_page_image_mode: normalizeLoginPageImageMode(nextConfig.login_page_image_mode),
         login_page_image_zoom: Number(nextConfig.login_page_image_zoom),

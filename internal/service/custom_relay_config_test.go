@@ -60,8 +60,8 @@ func TestCustomRelayConfigServiceValidatesAndDeletesConfig(t *testing.T) {
 		t.Fatalf("Delete() error = %v", err)
 	}
 	config, err := service.Config("owner-a", created.ID)
-	if err != nil || config != (CustomRelayConfig{}) {
-		t.Fatalf("Config() after Delete = %#v, %v", config, err)
+	if !errors.Is(err, ErrCustomRelayConfigNotFound) || config != (CustomRelayConfig{}) {
+		t.Fatalf("Config() after Delete = %#v, %v, want ErrCustomRelayConfigNotFound", config, err)
 	}
 }
 

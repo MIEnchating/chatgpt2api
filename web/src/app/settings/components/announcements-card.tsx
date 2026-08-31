@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Edit3, LoaderCircle, Megaphone, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -28,6 +28,12 @@ import {
   type AnnouncementInput,
 } from "@/lib/api";
 import { dispatchAnnouncementsUpdated } from "@/lib/announcement-events";
+import {
+  mergeScopedMutationItem,
+  ScopedMutationLifecycle,
+  type ScopedMutationDecision,
+  type ScopedMutationToken,
+} from "@/lib/scoped-mutation-lifecycle";
 
 import {
   SettingsCard,
@@ -56,8 +62,20 @@ function formatDateTime(value: string) {
   }).format(date);
 }
 
-export function AnnouncementsCard() {
-  const didLoadRef = useRef(false);
+export function AnnouncementsCard({ sessionKey }: { sessionKey: string }) {
+  const mountedRef = useRef(false);
+  const currentSessionKeyRef = useRef(sessionKey);
+  const itemsRef = useRef<Announcement[]>([]);
+  const loadControllerRef = useRef<AbortController | null>(null);
+  const loadVersionRef = useRef(0);
+  const loadResetRef = useRef(false);
+  const mutationLifecycleRef = useRef<ScopedMutationLifecycle | null>(null);
+  currentSessionKeyRef.current = sessionKey;
+  if (!mutationLifecycleRef.current) {
+    mutationLifecycleRef.current = new ScopedMutationLifecycle(sessionKey);
+  } else {
+    mutationLifecycleRef.current.activateSession(sessionKey);
+  }
   const [items, setItems] = useState<Announcement[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -67,23 +85,98 @@ export function AnnouncementsCard() {
   const [deletingItem, setDeletingItem] = useState<Announcement | null>(null);
   const [form, setForm] = useState<AnnouncementInput>(emptyForm);
 
-  useEffect(() => {
-    if (didLoadRef.current) {
-      return;
+  const isCurrentSession = useCallback((targetSessionKey: string) => (
+    mountedRef.current && currentSessionKeyRef.current === targetSessionKey
+  ), []);
+
+  const commitItems = useCallback((
+    targetSessionKey: string,
+    value: Announcement[] | ((current: Announcement[]) => Announcement[]),
+  ) => {
+    if (!isCurrentSession(targetSessionKey)) return false;
+    const next = typeof value === "function" ? value(itemsRef.current) : value;
+    itemsRef.current = next;
+    setItems(next);
+    return true;
+  }, [isCurrentSession]);
+
+  const loadAnnouncements = useCallback(async (targetSessionKey: string, reset: boolean) => {
+    const controller = new AbortController();
+    const requestVersion = loadVersionRef.current + 1;
+    loadVersionRef.current = requestVersion;
+    loadControllerRef.current?.abort();
+    loadControllerRef.current = controller;
+    loadResetRef.current = reset;
+    if (reset && isCurrentSession(targetSessionKey)) {
+      itemsRef.current = [];
+      setItems([]);
+      setIsLoading(true);
     }
-    didLoadRef.current = true;
-    const load = async () => {
-      try {
-        const data = await fetchAdminAnnouncements();
-        setItems(data.items);
-      } catch (error) {
-        toast.error(error instanceof Error ? error.message : "加载公告失败");
-      } finally {
-        setIsLoading(false);
+    try {
+      const data = await fetchAdminAnnouncements({ signal: controller.signal });
+      if (controller.signal.aborted || loadVersionRef.current !== requestVersion) return;
+      commitItems(targetSessionKey, data.items);
+    } catch (error) {
+      if (controller.signal.aborted || loadVersionRef.current !== requestVersion || !isCurrentSession(targetSessionKey)) return;
+      toast.error(error instanceof Error ? error.message : "加载公告失败");
+    } finally {
+      if (loadVersionRef.current === requestVersion) {
+        loadControllerRef.current = null;
+        loadResetRef.current = false;
+        if (isCurrentSession(targetSessionKey)) setIsLoading(false);
       }
+    }
+  }, [commitItems, isCurrentSession]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    mutationLifecycleRef.current?.activateSession(sessionKey);
+    void loadAnnouncements(sessionKey, true);
+    return () => {
+      mountedRef.current = false;
+      mutationLifecycleRef.current?.deactivateSession(sessionKey);
+      loadVersionRef.current += 1;
+      loadControllerRef.current?.abort();
+      loadControllerRef.current = null;
+      loadResetRef.current = false;
     };
-    void load();
-  }, []);
+  }, [loadAnnouncements, sessionKey]);
+
+  const beginMutation = (scope: string) => {
+    const interruptedResetLoad = loadResetRef.current;
+    loadVersionRef.current += 1;
+    loadControllerRef.current?.abort();
+    loadControllerRef.current = null;
+    loadResetRef.current = false;
+    if (interruptedResetLoad) setIsLoading(false);
+    return mutationLifecycleRef.current!.begin(scope);
+  };
+
+  const reconcileMutation = (
+    token: ScopedMutationToken,
+    decision: ScopedMutationDecision,
+  ) => {
+    if (decision.reconcile) void loadAnnouncements(token.sessionKey, false);
+  };
+
+  const applyMutationResult = (
+    token: ScopedMutationToken,
+    responseItems: Announcement[],
+    mergeConcurrent: (current: Announcement[]) => Announcement[],
+  ) => {
+    const decision = mutationLifecycleRef.current!.complete(token, true);
+    if (decision.current && decision.applySnapshot) {
+      commitItems(token.sessionKey, decision.concurrent ? mergeConcurrent : responseItems);
+    }
+    reconcileMutation(token, decision);
+    return decision.current;
+  };
+
+  const rejectMutation = (token: ScopedMutationToken) => {
+    const decision = mutationLifecycleRef.current!.complete(token, false);
+    reconcileMutation(token, decision);
+    return decision.current;
+  };
 
   const setPending = (id: string, pending: boolean) => {
     setPendingIds((current) => {
@@ -128,35 +221,44 @@ export function AnnouncementsCard() {
       return;
     }
 
+    const item = editingItem;
+    const token = beginMutation(item?.id || "create");
+    let current = true;
     setIsSaving(true);
     try {
-      const data = editingItem
-        ? await updateAnnouncement(editingItem.id, payload)
+      const data = item
+        ? await updateAnnouncement(item.id, payload)
         : await createAnnouncement(payload);
-      setItems(data.items);
+      current = applyMutationResult(token, data.items, (items) => mergeScopedMutationItem(items, data.item, data.items));
+      if (!current) return;
       setDialogOpen(false);
       setEditingItem(null);
       setForm(emptyForm);
       dispatchAnnouncementsUpdated();
-      toast.success(editingItem ? "公告已更新" : "公告已发布");
+      toast.success(item ? "公告已更新" : "公告已发布");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "保存公告失败");
+      current = rejectMutation(token);
+      if (current) toast.error(error instanceof Error ? error.message : "保存公告失败");
     } finally {
-      setIsSaving(false);
+      if (current) setIsSaving(false);
     }
   };
 
   const toggleEnabled = async (item: Announcement) => {
+    const token = beginMutation(item.id);
+    let current = true;
     setPending(item.id, true);
     try {
       const data = await updateAnnouncement(item.id, { enabled: !item.enabled });
-      setItems(data.items);
+      current = applyMutationResult(token, data.items, (items) => mergeScopedMutationItem(items, data.item, data.items));
+      if (!current) return;
       dispatchAnnouncementsUpdated();
       toast.success(item.enabled ? "公告已停用" : "公告已启用");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "更新公告失败");
+      current = rejectMutation(token);
+      if (current) toast.error(error instanceof Error ? error.message : "更新公告失败");
     } finally {
-      setPending(item.id, false);
+      if (current) setPending(item.id, false);
     }
   };
 
@@ -165,17 +267,21 @@ export function AnnouncementsCard() {
       return;
     }
     const item = deletingItem;
+    const token = beginMutation(item.id);
+    let current = true;
     setPending(item.id, true);
     try {
       const data = await deleteAnnouncement(item.id);
-      setItems(data.items);
+      current = applyMutationResult(token, data.items, (items) => items.filter((candidate) => candidate.id !== item.id));
+      if (!current) return;
       setDeletingItem(null);
       dispatchAnnouncementsUpdated();
       toast.success("公告已删除");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "删除公告失败");
+      current = rejectMutation(token);
+      if (current) toast.error(error instanceof Error ? error.message : "删除公告失败");
     } finally {
-      setPending(item.id, false);
+      if (current) setPending(item.id, false);
     }
   };
 

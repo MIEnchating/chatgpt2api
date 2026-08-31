@@ -79,6 +79,23 @@ func TestProfilePreferenceConflictsReturnConflict(t *testing.T) {
 	}
 }
 
+func TestProfileRelayKeyRejectsMissingCustomConfig(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+	token := adminSessionToken(t, app)
+	selectedName := service.CustomRelayTokenName("missing-config")
+
+	response := authenticatedProfileRequest(app, token, http.MethodGet, "/api/profile/relay-key?token_name="+selectedName, "")
+	if response.Code != http.StatusNotFound || !strings.Contains(response.Body.String(), "自定义 API 配置不存在") {
+		t.Fatalf("missing custom relay key = %d %s", response.Code, response.Body.String())
+	}
+
+	response = authenticatedProfileRequest(app, token, http.MethodGet, "/api/profile/upstream-models?token_name="+selectedName, "")
+	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "所选自定义 API 配置无效") {
+		t.Fatalf("missing custom relay model selection = %d %s", response.Code, response.Body.String())
+	}
+}
+
 func authenticatedProfileRequest(app *App, token, method, path, body string) *httptest.ResponseRecorder {
 	request := httptest.NewRequest(method, path, strings.NewReader(body))
 	setRequestAuthCookie(request, token)

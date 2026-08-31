@@ -2,9 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { readFile } from "node:fs/promises";
 
 import {
-  ALL_VIDEO_MODEL_CONTRACTS_SCOPE,
-  VideoModelContractMutationTracker,
-} from "../src/app/settings/components/video-model-contract-mutation-tracker.ts";
+  ALL_MUTATIONS_SCOPE,
+  ScopedMutationLifecycle,
+} from "../src/lib/scoped-mutation-lifecycle.ts";
 
 const cardSource = await readFile(
   new URL("../src/app/settings/components/video-model-contracts-card.tsx", import.meta.url),
@@ -13,7 +13,7 @@ const cardSource = await readFile(
 
 describe("video model contract mutation lifecycle", () => {
   test("parallel mutations for different contracts both remain applicable", () => {
-    const tracker = new VideoModelContractMutationTracker("account-a");
+    const tracker = new ScopedMutationLifecycle("account-a");
     const first = tracker.begin("contract-a");
     const second = tracker.begin("contract-b");
 
@@ -32,7 +32,7 @@ describe("video model contract mutation lifecycle", () => {
   });
 
   test("an older response for the same contract cannot replace the newer response", () => {
-    const tracker = new VideoModelContractMutationTracker("account-a");
+    const tracker = new ScopedMutationLifecycle("account-a");
     const older = tracker.begin("contract-a");
     const newer = tracker.begin("contract-a");
 
@@ -47,9 +47,9 @@ describe("video model contract mutation lifecycle", () => {
   });
 
   test("a global import conflicts with every overlapping contract mutation", () => {
-    const tracker = new VideoModelContractMutationTracker("account-a");
+    const tracker = new ScopedMutationLifecycle("account-a");
     const toggle = tracker.begin("contract-a");
-    const jsonImport = tracker.begin(ALL_VIDEO_MODEL_CONTRACTS_SCOPE);
+    const jsonImport = tracker.begin(ALL_MUTATIONS_SCOPE);
 
     expect(tracker.complete(jsonImport, true).applySnapshot).toBe(true);
     expect(tracker.complete(toggle, true)).toMatchObject({
@@ -59,7 +59,7 @@ describe("video model contract mutation lifecycle", () => {
   });
 
   test("responses from an inactive session are ignored", () => {
-    const tracker = new VideoModelContractMutationTracker("account-a");
+    const tracker = new ScopedMutationLifecycle("account-a");
     const previousSession = tracker.begin("contract-a");
 
     tracker.activateSession("account-b");
@@ -73,7 +73,7 @@ describe("video model contract mutation lifecycle", () => {
   });
 
   test("unmount invalidates pending responses from the active session", () => {
-    const tracker = new VideoModelContractMutationTracker("account-a");
+    const tracker = new ScopedMutationLifecycle("account-a");
     const pending = tracker.begin("contract-a");
 
     tracker.deactivateSession("account-a");
@@ -82,7 +82,7 @@ describe("video model contract mutation lifecycle", () => {
   });
 
   test("a failed mutation still reconciles the authoritative contract list", () => {
-    const tracker = new VideoModelContractMutationTracker("account-a");
+    const tracker = new ScopedMutationLifecycle("account-a");
     const failed = tracker.begin("contract-a");
 
     expect(tracker.complete(failed, false)).toMatchObject({
@@ -93,7 +93,7 @@ describe("video model contract mutation lifecycle", () => {
   });
 
   test("a failed batch retries reconciliation after interrupting a previous reload", () => {
-    const tracker = new VideoModelContractMutationTracker("account-a");
+    const tracker = new ScopedMutationLifecycle("account-a");
     const firstBatch = tracker.begin("contract-a");
     expect(tracker.complete(firstBatch, true).reconcile).toBe(true);
 

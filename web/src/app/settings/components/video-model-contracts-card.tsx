@@ -89,11 +89,12 @@ import {
 import { cn } from "@/lib/utils";
 
 import {
-  ALL_VIDEO_MODEL_CONTRACTS_SCOPE,
-  VideoModelContractMutationTracker,
-  type VideoModelContractMutationDecision,
-  type VideoModelContractMutationTicket,
-} from "./video-model-contract-mutation-tracker";
+  ALL_MUTATIONS_SCOPE,
+  mergeScopedMutationItem,
+  ScopedMutationLifecycle,
+  type ScopedMutationDecision,
+  type ScopedMutationToken,
+} from "@/lib/scoped-mutation-lifecycle";
 import {
   SettingsCard,
   SettingsEmptyState,
@@ -334,28 +335,6 @@ function mutationFromDraft(draft: ContractDraft, existingID = ""): VideoModelCon
 
 function installEnabledContracts(items: ManagedVideoModelContract[]) {
   installVideoModelContracts(items.filter((item) => item.enabled).map((item) => item.contract));
-}
-
-function mergeManagedVideoModelContract(
-  current: ManagedVideoModelContract[],
-  item: ManagedVideoModelContract,
-  responseItems: ManagedVideoModelContract[],
-) {
-  const next = current.some((candidate) => candidate.id === item.id)
-    ? current.map((candidate) => candidate.id === item.id ? item : candidate)
-    : [...current, item];
-  const responseOrder = new Map(responseItems.map((candidate, index) => [candidate.id, index]));
-  return next
-    .map((candidate, index) => ({ candidate, index }))
-    .sort((left, right) => {
-      const leftOrder = responseOrder.get(left.candidate.id);
-      const rightOrder = responseOrder.get(right.candidate.id);
-      if (leftOrder !== undefined && rightOrder !== undefined) return leftOrder - rightOrder;
-      if (leftOrder !== undefined) return -1;
-      if (rightOrder !== undefined) return 1;
-      return left.index - right.index;
-    })
-    .map(({ candidate }) => candidate);
 }
 
 function videoContractTransferDocument(items: Array<Pick<ManagedVideoModelContract, "contract" | "enabled">>): VideoModelContractTransferDocument {
@@ -955,10 +934,10 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
   const contractLoadResetRef = useRef(false);
   const versionsLoadControllerRef = useRef<AbortController | null>(null);
   const versionsLoadVersionRef = useRef(0);
-  const mutationTrackerRef = useRef<VideoModelContractMutationTracker | null>(null);
+  const mutationTrackerRef = useRef<ScopedMutationLifecycle | null>(null);
   currentSessionKeyRef.current = sessionKey;
   if (!mutationTrackerRef.current) {
-    mutationTrackerRef.current = new VideoModelContractMutationTracker(sessionKey);
+    mutationTrackerRef.current = new ScopedMutationLifecycle(sessionKey);
   } else {
     mutationTrackerRef.current.activateSession(sessionKey);
   }
@@ -1070,14 +1049,14 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
   };
 
   const reconcileMutation = (
-    ticket: VideoModelContractMutationTicket,
-    decision: VideoModelContractMutationDecision,
+    ticket: ScopedMutationToken,
+    decision: ScopedMutationDecision,
   ) => {
     if (decision.reconcile) void loadContracts(ticket.sessionKey, false);
   };
 
   const applyMutationResult = (
-    ticket: VideoModelContractMutationTicket,
+    ticket: ScopedMutationToken,
     responseItems: ManagedVideoModelContract[],
     mergeConcurrent: (current: ManagedVideoModelContract[]) => ManagedVideoModelContract[],
   ) => {
@@ -1089,7 +1068,7 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
     return decision.current;
   };
 
-  const rejectMutation = (ticket: VideoModelContractMutationTicket) => {
+  const rejectMutation = (ticket: ScopedMutationToken) => {
     const decision = mutationTrackerRef.current!.complete(ticket, false);
     reconcileMutation(ticket, decision);
     return decision.current;
@@ -1271,7 +1250,7 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
 
   const validate = async (
     showSuccess = true,
-    mutationTicket?: VideoModelContractMutationTicket,
+    mutationTicket?: ScopedMutationToken,
   ) => {
     const payload = mutationFromDraft(draft, editingItem?.id || "");
     const data = await validateVideoModelContract(payload);
@@ -1294,7 +1273,7 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
         return;
       }
       const data = await saveVideoModelContractDraft(item.id, payload);
-      current = applyMutationResult(ticket, data.items, (items) => mergeManagedVideoModelContract(items, data.item, data.items));
+      current = applyMutationResult(ticket, data.items, (items) => mergeScopedMutationItem(items, data.item, data.items));
       if (!current) return;
       setDialogOpen(false);
       toast.success("草稿已保存，当前已发布版本不受影响");
@@ -1320,7 +1299,7 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
       const data = item
         ? await publishVideoModelContract(item.id, payload)
         : await createVideoModelContract(payload);
-      current = applyMutationResult(ticket, data.items, (items) => mergeManagedVideoModelContract(items, data.item, data.items));
+      current = applyMutationResult(ticket, data.items, (items) => mergeScopedMutationItem(items, data.item, data.items));
       if (!current) return;
       setDialogOpen(false);
       toast.success(item ? `契约已发布为第 ${data.item.revision} 版` : "视频模型契约已添加并发布");
@@ -1373,7 +1352,7 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
     setIsRollingBack(true);
     try {
       const data = await rollbackVideoModelContract(item.id, revision);
-      current = applyMutationResult(ticket, data.items, (items) => mergeManagedVideoModelContract(items, data.item, data.items));
+      current = applyMutationResult(ticket, data.items, (items) => mergeScopedMutationItem(items, data.item, data.items));
       if (!current) return;
       closeVersions();
       toast.success(`已基于第 ${revision} 版发布新版本`);
@@ -1391,7 +1370,7 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
     setPendingIds((current) => new Set(current).add(item.id));
     try {
       const data = await setVideoModelContractEnabled(item.id, !item.enabled);
-      current = applyMutationResult(ticket, data.items, (items) => mergeManagedVideoModelContract(items, data.item, data.items));
+      current = applyMutationResult(ticket, data.items, (items) => mergeScopedMutationItem(items, data.item, data.items));
       if (!current) return;
       toast.success(item.enabled ? "契约已停用" : "契约已启用");
     } catch (error) {
@@ -1450,7 +1429,7 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
   const confirmJSONImport = async () => {
     if (!pendingJSONImport) return;
     const importBundle = pendingJSONImport.bundle;
-    const ticket = beginMutation(ALL_VIDEO_MODEL_CONTRACTS_SCOPE);
+    const ticket = beginMutation(ALL_MUTATIONS_SCOPE);
     let current = true;
     setIsJSONImporting(true);
     try {

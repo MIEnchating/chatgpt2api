@@ -2637,7 +2637,7 @@ func TestRecordGeneratedImagesForPayloadPreservesDetectedOutputFormat(t *testing
 	if err := jpeg.Encode(&encoded, imageValue, nil); err != nil {
 		t.Fatalf("encode JPEG: %v", err)
 	}
-	imageURL, err := app.images.SaveImageBytes(context.Background(), encoded.Bytes(), "", "admin", "Admin", "png")
+	imageURL, err := app.images.SaveImageBytes(context.Background(), encoded.Bytes(), "", "admin", "Admin")
 	if err != nil {
 		t.Fatalf("SaveImageBytes() error = %v", err)
 	}

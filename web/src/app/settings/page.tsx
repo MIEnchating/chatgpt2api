@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Archive, Bell, Clapperboard, Database, ImageIcon, ListChecks, LoaderCircle, ScrollText, Settings2, Sparkles } from "lucide-react";
 
 import { useAuthGuard } from "@/lib/use-auth-guard";
@@ -35,33 +35,33 @@ function SettingsDataController() {
 }
 
 function AdminSettingsPageContent({ session }: { session: StoredAuthSession }) {
-  const settingsItems = [
+  const settingsItems = useMemo(() => [
     { id: "config", label: "基础与数据库", icon: Settings2, content: <ConfigCard isAdmin={session.role === "admin"} /> },
     { id: "model-config", label: "模型配置", icon: Sparkles, content: <ModelConfigCard session={session} /> },
 		...(session.role === "admin" ? [{ id: "video-model-contracts", label: "视频模型契约", icon: Clapperboard, content: <VideoModelContractsCard key={session.key} sessionKey={session.key} /> }] : []),
 		{ id: "image-object-storage", label: "存储配置", icon: Database, content: <StorageProvidersCard /> },
 		{ id: "media-storage-governance", label: "媒体治理", icon: Archive, content: <ImageStorageGovernanceCard /> },
-    ...(session.role === "admin" ? [{ id: "announcements", label: "公告管理", icon: Bell, content: <AnnouncementsCard /> }] : []),
+    ...(session.role === "admin" ? [{ id: "announcements", label: "公告管理", icon: Bell, content: <AnnouncementsCard key={session.key} sessionKey={session.key} /> }] : []),
     ...(session.role === "admin" ? [{ id: "prompt-sources", label: "提示词来源", icon: ListChecks, content: <PromptSourcesCard /> }] : []),
     { id: "log-governance", label: "日志治理", icon: ScrollText, content: <LogGovernanceCard /> },
     { id: "login-page-image", label: "登录页图片", icon: ImageIcon, content: <LoginPageImageCard /> },
-  ];
-  const sectionFromHash = () => {
+  ], [session]);
+  const sectionFromHash = useCallback(() => {
     if (typeof window === "undefined") return settingsItems[0].id;
     const hash = decodeURIComponent(window.location.hash.slice(1));
     if (hash === "database-connection") return "config";
     if (hash === "image-storage-governance") return "media-storage-governance";
     return settingsItems.some((item) => item.id === hash) ? hash : settingsItems[0].id;
-  };
-  const initialSection = sectionFromHash();
-  const [activeSection, setActiveSection] = useState(initialSection);
+  }, [settingsItems]);
+  const [activeSection, setActiveSection] = useState(sectionFromHash);
   const activeItem = settingsItems.find((item) => item.id === activeSection) || settingsItems[0];
 
   useEffect(() => {
     const handleHashChange = () => setActiveSection(sectionFromHash());
+    handleHashChange();
     window.addEventListener("hashchange", handleHashChange);
     return () => window.removeEventListener("hashchange", handleHashChange);
-  });
+  }, [sectionFromHash]);
 
   const selectSection = (id: string) => {
     setActiveSection(id);

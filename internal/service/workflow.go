@@ -252,12 +252,37 @@ func normalizeWorkflow(item *CreativeWorkflow) error {
 	if item.Mode != "multi_image_series" {
 		item.Mode = "single_image"
 	}
-	for i := range item.Variables {
-		variable := &item.Variables[i]
+	if err := normalizeWorkflowVariables(item.Variables); err != nil {
+		return err
+	}
+	item.Config.PromptTemplate = strings.TrimSpace(item.Config.PromptTemplate)
+	normalizeWorkflowConfig(&item.Config)
+	normalizeSeriesConfig(&item.SeriesConfig)
+	return nil
+}
+
+func normalizeWorkflowVariables(variables []WorkflowVariable) error {
+	keyIndexes := make(map[string]int, len(variables))
+	idIndexes := make(map[string]int, len(variables))
+	for i := range variables {
+		variable := &variables[i]
+		variable.ID = strings.TrimSpace(variable.ID)
 		if variable.ID == "" {
 			variable.ID = util.NewUUID()
 		}
 		variable.Key = sanitizeWorkflowTemplateVariableKey(strings.TrimSpace(variable.Key))
+		if variable.Key == "" {
+			return fmt.Errorf("第 %d 个工作流变量缺少变量名", i+1)
+		}
+		if previous, exists := keyIndexes[variable.Key]; exists {
+			return fmt.Errorf("工作流变量名 %q 重复（第 %d 和第 %d 个变量）", variable.Key, previous+1, i+1)
+		}
+		keyIndexes[variable.Key] = i
+		if previous, exists := idIndexes[variable.ID]; exists {
+			return fmt.Errorf("工作流变量 ID %q 重复（第 %d 和第 %d 个变量）", variable.ID, previous+1, i+1)
+		}
+		idIndexes[variable.ID] = i
+
 		variable.Label = strings.TrimSpace(variable.Label)
 		variable.Type = strings.ToLower(strings.TrimSpace(variable.Type))
 		if variable.Label == "" {
@@ -272,9 +297,6 @@ func normalizeWorkflow(item *CreativeWorkflow) error {
 			variable.Options = []string{}
 		}
 	}
-	item.Config.PromptTemplate = strings.TrimSpace(item.Config.PromptTemplate)
-	normalizeWorkflowConfig(&item.Config)
-	normalizeSeriesConfig(&item.SeriesConfig)
 	return nil
 }
 

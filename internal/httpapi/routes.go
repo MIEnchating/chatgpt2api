@@ -303,7 +303,7 @@ func (a *App) handleProfileRelayKey(w http.ResponseWriter, r *http.Request) {
 			}
 			config, err := a.customRelayConfigs.Config(identityScope(identity), configID)
 			if err != nil {
-				util.WriteError(w, http.StatusServiceUnavailable, "自定义 API 配置存储暂时不可用")
+				writeCustomRelayConfigError(w, err)
 				return
 			}
 			names := []string{}
@@ -1471,7 +1471,7 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 			a.writeCreationTaskSubmitError(w, err)
 			return
 		}
-		task, err := a.tasks.SubmitGenerationWithOptions(r.Context(), identity, util.Clean(body["client_task_id"]), util.Clean(body["prompt"]), model, util.Clean(body["size"]), taskQuality, a.relayBaseURL(), util.ToInt(body["n"], 1), nil, imageTaskRequestMetadata(body), imageOutputOptionsFromBody(body), imageToolOptionsFromBody(body), util.Clean(body["visibility"]))
+		task, err := a.tasks.SubmitGenerationWithOptions(r.Context(), identity, util.Clean(body["client_task_id"]), util.Clean(body["prompt"]), model, util.Clean(body["size"]), taskQuality, a.relayBaseURL(), util.ToInt(body["n"], 1), imageTaskRequestMetadata(body), imageOutputOptionsFromBody(body), imageToolOptionsFromBody(body), util.Clean(body["visibility"]))
 		if err != nil {
 			a.writeCreationTaskSubmitError(w, err)
 			return
@@ -1688,7 +1688,7 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 			a.writeCreationTaskSubmitError(w, err)
 			return
 		}
-		task, err := a.tasks.SubmitEditWithOptions(r.Context(), identity, util.Clean(body["client_task_id"]), util.Clean(body["prompt"]), model, util.Clean(body["size"]), taskQuality, a.relayBaseURL(), images, util.ToInt(body["n"], 1), nil, imageTaskRequestMetadata(body), imageOutputOptionsFromBody(body), imageToolOptionsFromBody(body), util.Clean(body["visibility"]))
+		task, err := a.tasks.SubmitEditWithOptions(r.Context(), identity, util.Clean(body["client_task_id"]), util.Clean(body["prompt"]), model, util.Clean(body["size"]), taskQuality, a.relayBaseURL(), images, util.ToInt(body["n"], 1), imageTaskRequestMetadata(body), imageOutputOptionsFromBody(body), imageToolOptionsFromBody(body), util.Clean(body["visibility"]))
 		if err != nil {
 			a.writeCreationTaskSubmitError(w, err)
 			return

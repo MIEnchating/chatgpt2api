@@ -232,7 +232,7 @@ func NewImageService(config ImageConfig, backend ...storage.Backend) *ImageServi
 	return &ImageService{config: config, store: firstJSONDocumentStore(backend)}
 }
 
-func (s *ImageService) SaveImageBytes(ctx context.Context, imageData []byte, baseURL, ownerID, ownerName, _ string) (string, error) {
+func (s *ImageService) SaveImageBytes(ctx context.Context, imageData []byte, baseURL, ownerID, ownerName string) (string, error) {
 	if ctx == nil {
 		return "", errors.New("image save context is required")
 	}
@@ -301,14 +301,14 @@ func imageStorageExtension(format string) string {
 	return NormalizeImageOutputFormat(format)
 }
 
-func storedImageSize(_ imageMetadata, info os.FileInfo) int64 {
+func storedImageSize(info os.FileInfo) int64 {
 	if info != nil {
 		return info.Size()
 	}
 	return 0
 }
 
-func storedImageTime(_ imageMetadata, info os.FileInfo) time.Time {
+func storedImageTime(info os.FileInfo) time.Time {
 	if info != nil {
 		return info.ModTime()
 	}
@@ -333,13 +333,13 @@ func (s *ImageService) StorageGovernance() (ImageStorageGovernanceSummary, error
 	for _, candidate := range candidates {
 		meta := candidate.meta
 		summary.ImagesCount++
-		summary.ImagesBytes += storedImageSize(meta, candidate.info)
+		summary.ImagesBytes += storedImageSize(candidate.info)
 		if meta.Visibility == ImageVisibilityPublic {
 			summary.PublicImagesCount++
 		} else {
 			summary.PrivateImagesCount++
 		}
-		created := storedImageTime(meta, candidate.info).Format("2006-01-02 15:04:05")
+		created := storedImageTime(candidate.info).Format("2006-01-02 15:04:05")
 		if summary.OldestImageAt == "" || created < summary.OldestImageAt {
 			summary.OldestImageAt = created
 		}
@@ -491,7 +491,7 @@ func (s *ImageService) ListImages(baseURL, startDate, endDate string, scope Imag
 		if meta.Deleting {
 			return nil
 		}
-		storedTime := storedImageTime(meta, info)
+		storedTime := storedImageTime(info)
 		ownerID := meta.OwnerID
 		if scope.Visible {
 			if ownerID != scope.OwnerID && meta.Visibility != ImageVisibilityPublic {
@@ -512,7 +512,7 @@ func (s *ImageService) ListImages(baseURL, startDate, endDate string, scope Imag
 			"name":       filepath.Base(path),
 			"path":       rel,
 			"date":       day,
-			"size":       storedImageSize(meta, info),
+			"size":       storedImageSize(info),
 			"url":        publicAssetURL(baseURL, "images", rel),
 			"created_at": storedTime.Format("2006-01-02 15:04:05"),
 			"visibility": meta.Visibility,
@@ -608,10 +608,10 @@ func (s *ImageService) UpdateImageVisibility(value, visibility string, scope Ima
 	item := map[string]any{
 		"name":       filepath.Base(ref.path),
 		"path":       ref.rel,
-		"date":       imageDay(ref.rel, storedImageTime(nextMeta, ref.info)),
-		"size":       storedImageSize(nextMeta, ref.info),
+		"date":       imageDay(ref.rel, storedImageTime(ref.info)),
+		"size":       storedImageSize(ref.info),
 		"visibility": nextMeta.Visibility,
-		"created_at": storedImageTime(nextMeta, ref.info).Format("2006-01-02 15:04:05"),
+		"created_at": storedImageTime(ref.info).Format("2006-01-02 15:04:05"),
 	}
 	addImageMetadataFields(item, nextMeta)
 	if nextMeta.Width > 0 && nextMeta.Height > 0 {
@@ -772,7 +772,7 @@ func (s *ImageService) DeleteImages(paths []string, scope ImageAccessScope) (map
 			missing++
 			continue
 		}
-		if _, err := s.imageGroupSize(rel, storedImageSize(meta, ref.info)); err != nil {
+		if _, err := s.imageGroupSize(rel, storedImageSize(ref.info)); err != nil {
 			return nil, err
 		}
 		candidates = append(candidates, rel)
@@ -1550,7 +1550,7 @@ func (s *ImageService) imageCleanupCandidates() ([]imageCleanupCandidate, error)
 		if metaErr != nil {
 			return metaErr
 		}
-		groupSize, groupErr := s.imageGroupSize(rel, storedImageSize(meta, info))
+		groupSize, groupErr := s.imageGroupSize(rel, storedImageSize(info))
 		if groupErr != nil {
 			return groupErr
 		}
@@ -1581,7 +1581,7 @@ func (s *ImageService) cleanupByRetention(retentionDays int, includePublic bool)
 		return total, preservedPublic, err
 	}
 	for _, candidate := range candidates {
-		if !storedImageTime(candidate.meta, candidate.info).Before(cutoff) {
+		if !storedImageTime(candidate.info).Before(cutoff) {
 			continue
 		}
 		stats, claimed, err := s.removeImageGroupIf(candidate.rel, func(meta imageMetadata) bool {
@@ -1620,7 +1620,7 @@ func (s *ImageService) cleanupByStorageLimit(maxBytes int64, includePublic bool)
 		if leftPublic != rightPublic {
 			return !leftPublic
 		}
-		return storedImageTime(candidates[i].meta, candidates[i].info).Before(storedImageTime(candidates[j].meta, candidates[j].info))
+		return storedImageTime(candidates[i].info).Before(storedImageTime(candidates[j].info))
 	})
 	current := summary.TotalBytes
 	var total imageStorageRemovalStats

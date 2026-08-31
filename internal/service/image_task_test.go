@@ -15,16 +15,16 @@ import (
 	"chatgpt2api/internal/util"
 )
 
-func (s *ImageTaskService) SubmitGeneration(ctx context.Context, identity Identity, clientTaskID, prompt, model, size, quality, baseURL string, n int, messages any, visibilityValues ...string) (map[string]any, error) {
-	return s.SubmitGenerationWithOptions(ctx, identity, clientTaskID, prompt, model, size, quality, baseURL, n, messages, nil, ImageOutputOptions{}, ImageToolOptions{}, visibilityValues...)
+func (s *ImageTaskService) SubmitGeneration(ctx context.Context, identity Identity, clientTaskID, prompt, model, size, quality, baseURL string, n int, visibilityValues ...string) (map[string]any, error) {
+	return s.SubmitGenerationWithOptions(ctx, identity, clientTaskID, prompt, model, size, quality, baseURL, n, nil, ImageOutputOptions{}, ImageToolOptions{}, visibilityValues...)
 }
 
-func (s *ImageTaskService) SubmitGenerationWithMetadata(ctx context.Context, identity Identity, clientTaskID, prompt, model, size, quality, baseURL string, n int, messages any, metadata map[string]any, visibilityValues ...string) (map[string]any, error) {
-	return s.SubmitGenerationWithOptions(ctx, identity, clientTaskID, prompt, model, size, quality, baseURL, n, messages, metadata, ImageOutputOptions{}, ImageToolOptions{}, visibilityValues...)
+func (s *ImageTaskService) SubmitGenerationWithMetadata(ctx context.Context, identity Identity, clientTaskID, prompt, model, size, quality, baseURL string, n int, metadata map[string]any, visibilityValues ...string) (map[string]any, error) {
+	return s.SubmitGenerationWithOptions(ctx, identity, clientTaskID, prompt, model, size, quality, baseURL, n, metadata, ImageOutputOptions{}, ImageToolOptions{}, visibilityValues...)
 }
 
-func (s *ImageTaskService) SubmitEdit(ctx context.Context, identity Identity, clientTaskID, prompt, model, size, quality, baseURL string, images any, n int, messages any, visibilityValues ...string) (map[string]any, error) {
-	return s.SubmitEditWithOptions(ctx, identity, clientTaskID, prompt, model, size, quality, baseURL, images, n, messages, nil, ImageOutputOptions{}, ImageToolOptions{}, visibilityValues...)
+func (s *ImageTaskService) SubmitEdit(ctx context.Context, identity Identity, clientTaskID, prompt, model, size, quality, baseURL string, images any, n int, visibilityValues ...string) (map[string]any, error) {
+	return s.SubmitEditWithOptions(ctx, identity, clientTaskID, prompt, model, size, quality, baseURL, images, n, nil, ImageOutputOptions{}, ImageToolOptions{}, visibilityValues...)
 }
 
 func (s *ImageTaskService) SubmitChat(ctx context.Context, identity Identity, clientTaskID, prompt, model string, messages any, nValues ...int) (map[string]any, error) {
@@ -232,11 +232,11 @@ func TestImageTaskServiceIdempotencyOwnerIsolationAndCompletion(t *testing.T) {
 	alice := Identity{ID: "alice", Name: "Alice", Role: "user"}
 	bob := Identity{ID: "bob", Name: "Bob", Role: "user"}
 
-	first, err := svc.SubmitGeneration(context.Background(), alice, "task-1", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 1, nil)
+	first, err := svc.SubmitGeneration(context.Background(), alice, "task-1", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 1)
 	if err != nil {
 		t.Fatalf("SubmitGeneration() error = %v", err)
 	}
-	second, err := svc.SubmitGeneration(context.Background(), alice, "task-1", "different", "gpt-image-2", "1024x1024", "high", "https://base.test", 1, nil)
+	second, err := svc.SubmitGeneration(context.Background(), alice, "task-1", "different", "gpt-image-2", "1024x1024", "high", "https://base.test", 1)
 	if err != nil {
 		t.Fatalf("second SubmitGeneration() error = %v", err)
 	}
@@ -272,7 +272,7 @@ func TestImageTaskServiceUsesOwnerIDAroundCredentialRotation(t *testing.T) {
 	newKey := Identity{ID: ownerID, OwnerID: ownerID, CredentialID: "key-new", Name: "Alice", Role: "user"}
 	otherOwner := Identity{ID: "linuxdo:456", OwnerID: "linuxdo:456", CredentialID: "key-other", Name: "Bob", Role: "user"}
 
-	if _, err := svc.SubmitGeneration(context.Background(), oldKey, "task-1", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 1, nil); err != nil {
+	if _, err := svc.SubmitGeneration(context.Background(), oldKey, "task-1", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 1); err != nil {
 		t.Fatalf("SubmitGeneration() error = %v", err)
 	}
 	waitForTaskStatus(t, svc, newKey, "task-1", TaskStatusSuccess)
@@ -282,7 +282,7 @@ func TestImageTaskServiceUsesOwnerIDAroundCredentialRotation(t *testing.T) {
 	if got := svc.ListTasks(otherOwner, []string{"task-1"}); len(got["items"].([]map[string]any)) != 0 || len(got["missing_ids"].([]string)) != 1 {
 		t.Fatalf("other owner should not see task: %#v", got)
 	}
-	if _, err := svc.SubmitGeneration(context.Background(), newKey, "task-1", "different", "gpt-image-2", "1024x1024", "high", "https://base.test", 1, nil); err != nil {
+	if _, err := svc.SubmitGeneration(context.Background(), newKey, "task-1", "different", "gpt-image-2", "1024x1024", "high", "https://base.test", 1); err != nil {
 		t.Fatalf("second SubmitGeneration() error = %v", err)
 	}
 	if len(handlerCalls) != 1 {
@@ -330,10 +330,10 @@ func TestImageTaskServiceRejectsBlankPromptBeforeQueueing(t *testing.T) {
 
 	for name, submit := range map[string]func() (map[string]any, error){
 		"generation": func() (map[string]any, error) {
-			return svc.SubmitGeneration(context.Background(), identity, "task-1", "  ", "gpt-image-2", "1024x1024", "high", "https://base.test", 1, nil)
+			return svc.SubmitGeneration(context.Background(), identity, "task-1", "  ", "gpt-image-2", "1024x1024", "high", "https://base.test", 1)
 		},
 		"edit": func() (map[string]any, error) {
-			return svc.SubmitEdit(context.Background(), identity, "task-2", "\t", "gpt-image-2", "1024x1024", "high", "https://base.test", []any{"image"}, 1, nil)
+			return svc.SubmitEdit(context.Background(), identity, "task-2", "\t", "gpt-image-2", "1024x1024", "high", "https://base.test", []any{"image"}, 1)
 		},
 		"chat": func() (map[string]any, error) {
 			return svc.SubmitChat(context.Background(), identity, "task-3", " ", "auto", []map[string]any{{"role": "user", "content": "hello"}})
@@ -360,13 +360,7 @@ func TestImageTaskServiceUsesOnlyCurrentPromptForImageRequests(t *testing.T) {
 	}
 	svc := newTestImageTaskService(t, handler, handler, handler, func() int { return 30 })
 	identity := Identity{ID: "alice", Name: "Alice", Role: "user"}
-	messages := []any{
-		map[string]any{"role": "user", "content": "你好，你是什么模型？"},
-		map[string]any{"role": "assistant", "content": "我是 GPT-5 Mini。"},
-		map[string]any{"role": "user", "content": "我之前说了什么？"},
-	}
-
-	if _, err := svc.SubmitGeneration(context.Background(), identity, "task-1", "我之前说了什么？", "auto", "", "high", "https://base.test", 1, messages); err != nil {
+	if _, err := svc.SubmitGeneration(context.Background(), identity, "task-1", "我之前说了什么？", "auto", "", "high", "https://base.test", 1); err != nil {
 		t.Fatalf("SubmitGeneration() error = %v", err)
 	}
 
@@ -409,7 +403,7 @@ func TestImageTaskServicePersistsWorkflowContext(t *testing.T) {
 		"batch_index":   1,
 		"batch_count":   2,
 	}
-	if _, err := svc.SubmitGenerationWithMetadata(context.Background(), identity, "workflow-task-1", "生成商品海报", "auto", "", "high", "https://base.test", 1, nil, map[string]any{"workflow_context": workflowContext}); err != nil {
+	if _, err := svc.SubmitGenerationWithMetadata(context.Background(), identity, "workflow-task-1", "生成商品海报", "auto", "", "high", "https://base.test", 1, map[string]any{"workflow_context": workflowContext}); err != nil {
 		t.Fatalf("SubmitGenerationWithMetadata() error = %v", err)
 	}
 	waitForTaskStatus(t, svc, identity, "workflow-task-1", TaskStatusSuccess)
@@ -436,7 +430,7 @@ func TestImageTaskServicePassesImageRequestMetadataToHandler(t *testing.T) {
 	svc := newTestImageTaskService(t, handler, handler, handler, func() int { return 30 })
 	identity := Identity{ID: "alice", Name: "Alice", Role: "user"}
 
-	if _, err := svc.SubmitGenerationWithMetadata(context.Background(), identity, "task-1", "draw", "gemini-3.1-flash-image", "1:1", "", "https://base.test", 1, nil, map[string]any{"image_resolution": "512", "requested_size": "1:1", "token_group": "draw", "token_name": "image", "provider": "apimart", "image_provider": "apimart", "channel_protocol": "apimart", "provider_base_url": "https://api.apimart.ai"}); err != nil {
+	if _, err := svc.SubmitGenerationWithMetadata(context.Background(), identity, "task-1", "draw", "gemini-3.1-flash-image", "1:1", "", "https://base.test", 1, map[string]any{"image_resolution": "512", "requested_size": "1:1", "token_group": "draw", "token_name": "image", "provider": "apimart", "image_provider": "apimart", "channel_protocol": "apimart", "provider_base_url": "https://api.apimart.ai"}); err != nil {
 		t.Fatalf("SubmitGenerationWithMetadata() error = %v", err)
 	}
 
@@ -480,7 +474,7 @@ func TestImageTaskServicePassesImageToolOptionsToHandler(t *testing.T) {
 	svc := newTestImageTaskService(t, handler, handler, handler, func() int { return 30 })
 	identity := Identity{ID: "alice", Name: "Alice", Role: "user"}
 
-	if _, err := svc.SubmitGenerationWithOptions(context.Background(), identity, "task-1", "draw", "gpt-image-2", "16:9", "high", "https://base.test", 1, nil, nil, ImageOutputOptions{Format: "webp"}, ImageToolOptions{Moderation: "auto", Stream: true, PartialImages: 2}); err != nil {
+	if _, err := svc.SubmitGenerationWithOptions(context.Background(), identity, "task-1", "draw", "gpt-image-2", "16:9", "high", "https://base.test", 1, nil, ImageOutputOptions{Format: "webp"}, ImageToolOptions{Moderation: "auto", Stream: true, PartialImages: 2}); err != nil {
 		t.Fatalf("SubmitGenerationWithOptions() error = %v", err)
 	}
 
@@ -512,7 +506,7 @@ func TestImageTaskServicePreservesExplicitZeroPartialImages(t *testing.T) {
 	svc := newTestImageTaskService(t, handler, handler, handler, func() int { return 30 })
 	identity := Identity{ID: "alice", Name: "Alice", Role: "user"}
 
-	if _, err := svc.SubmitGenerationWithOptions(context.Background(), identity, "task-zero-partials", "draw", "gpt-image-2", "1:1", "auto", "https://base.test", 1, nil, nil, ImageOutputOptions{}, ImageToolOptions{Stream: true, PartialImages: 0, PartialImagesSet: true}); err != nil {
+	if _, err := svc.SubmitGenerationWithOptions(context.Background(), identity, "task-zero-partials", "draw", "gpt-image-2", "1:1", "auto", "https://base.test", 1, nil, ImageOutputOptions{}, ImageToolOptions{Stream: true, PartialImages: 0, PartialImagesSet: true}); err != nil {
 		t.Fatalf("SubmitGenerationWithOptions() error = %v", err)
 	}
 
@@ -537,7 +531,7 @@ func TestImageTaskServiceDoesNotPersistRawMaskData(t *testing.T) {
 	identity := Identity{ID: "alice", Name: "Alice", Role: "user"}
 	mask := "data:image/png;base64,bWFzaw=="
 
-	task, err := svc.SubmitEditWithOptions(context.Background(), identity, "task-mask", "edit", "gpt-image-2", "1024x1024", "high", "https://base.test", []string{"source"}, 1, nil, nil, ImageOutputOptions{}, ImageToolOptions{InputImageMask: mask}, ImageVisibilityPrivate)
+	task, err := svc.SubmitEditWithOptions(context.Background(), identity, "task-mask", "edit", "gpt-image-2", "1024x1024", "high", "https://base.test", []string{"source"}, 1, nil, ImageOutputOptions{}, ImageToolOptions{InputImageMask: mask}, ImageVisibilityPrivate)
 	if err != nil {
 		t.Fatalf("SubmitEditWithOptions() error = %v", err)
 	}
@@ -653,14 +647,14 @@ func TestImageTaskServiceClaimsDuplicateTaskAcrossDatabaseInstances(t *testing.T
 	t.Cleanup(func() { _ = serviceB.Close() })
 	identity := Identity{ID: "alice", Name: "Alice", Role: AuthRoleUser}
 
-	first, err := serviceA.SubmitGeneration(context.Background(), identity, "shared-task", "first", "gpt-image-2", "1024x1024", "high", "https://base.test", 1, nil)
+	first, err := serviceA.SubmitGeneration(context.Background(), identity, "shared-task", "first", "gpt-image-2", "1024x1024", "high", "https://base.test", 1)
 	if err != nil {
 		t.Fatalf("service A SubmitGeneration() error = %v", err)
 	}
 	if got := waitForStartedTask(t, started); got != "first" {
 		t.Fatalf("service A started prompt = %q, want first", got)
 	}
-	second, err := serviceB.SubmitGeneration(context.Background(), identity, "shared-task", "second", "gpt-image-2", "1024x1024", "high", "https://base.test", 1, nil)
+	second, err := serviceB.SubmitGeneration(context.Background(), identity, "shared-task", "second", "gpt-image-2", "1024x1024", "high", "https://base.test", 1)
 	if err != nil {
 		t.Fatalf("service B duplicate SubmitGeneration() error = %v", err)
 	}
@@ -705,7 +699,7 @@ func TestImageTaskServicePropagatesCancellationAcrossDatabaseInstances(t *testin
 	t.Cleanup(func() { _ = serviceA.Close() })
 	t.Cleanup(func() { _ = serviceB.Close() })
 	identity := Identity{ID: "alice", Name: "Alice", Role: AuthRoleUser}
-	if _, err := serviceA.SubmitGeneration(context.Background(), identity, "cancel-across-instances", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 1, nil); err != nil {
+	if _, err := serviceA.SubmitGeneration(context.Background(), identity, "cancel-across-instances", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 1); err != nil {
 		t.Fatalf("SubmitGeneration() error = %v", err)
 	}
 	select {
@@ -733,7 +727,7 @@ func TestImageTaskServicePreservesUnspecifiedOutputFormat(t *testing.T) {
 	svc := newTestImageTaskService(t, handler, handler, handler, func() int { return 30 })
 	identity := Identity{ID: "alice", Name: "Alice", Role: "user"}
 
-	submitted, err := svc.SubmitGenerationWithOptions(context.Background(), identity, "task-no-format", "draw", "grok-imagine-image", "", "", "https://base.test", 1, nil, nil, ImageOutputOptions{}, ImageToolOptions{})
+	submitted, err := svc.SubmitGenerationWithOptions(context.Background(), identity, "task-no-format", "draw", "grok-imagine-image", "", "", "https://base.test", 1, nil, ImageOutputOptions{}, ImageToolOptions{})
 	if err != nil {
 		t.Fatalf("SubmitGenerationWithOptions() error = %v", err)
 	}
@@ -863,13 +857,13 @@ func TestImageTaskServiceDoesNotLimitGlobalImageSlots(t *testing.T) {
 	svc := newTestImageTaskService(t, handler, handler, handler, func() int { return 30 })
 	identity := Identity{ID: "alice", Name: "Alice", Role: "user"}
 
-	if _, err := svc.SubmitGeneration(context.Background(), identity, "task-1", "first", "gpt-image-2", "1024x1024", "high", "https://base.test", 4, nil); err != nil {
+	if _, err := svc.SubmitGeneration(context.Background(), identity, "task-1", "first", "gpt-image-2", "1024x1024", "high", "https://base.test", 4); err != nil {
 		t.Fatalf("SubmitGeneration(first) error = %v", err)
 	}
 	if got := waitForStartedTask(t, started); got != "first" {
 		t.Fatalf("started task = %q, want first", got)
 	}
-	if _, err := svc.SubmitGeneration(context.Background(), identity, "task-2", "second", "gpt-image-2", "1024x1024", "high", "https://base.test", 4, nil); err != nil {
+	if _, err := svc.SubmitGeneration(context.Background(), identity, "task-2", "second", "gpt-image-2", "1024x1024", "high", "https://base.test", 4); err != nil {
 		t.Fatalf("SubmitGeneration(second) error = %v", err)
 	}
 	if got := waitForStartedTask(t, started); got != "second" {
@@ -902,7 +896,7 @@ func TestImageTaskServicePublishesPartialImageDataWhileRunning(t *testing.T) {
 	svc := newTestImageTaskService(t, handler, handler, handler, func() int { return 30 })
 	identity := Identity{ID: "alice", Name: "Alice", Role: AuthRoleUser}
 
-	if _, err := svc.SubmitGeneration(context.Background(), identity, "task-1", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 2, nil); err != nil {
+	if _, err := svc.SubmitGeneration(context.Background(), identity, "task-1", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 2); err != nil {
 		t.Fatalf("SubmitGeneration() error = %v", err)
 	}
 	select {
@@ -956,7 +950,7 @@ func TestImageTaskServiceKeepsPreviewRunningAndProtectsCompletedOutput(t *testin
 	svc := newTestImageTaskService(t, handler, handler, handler, func() int { return 30 })
 	identity := Identity{ID: "preview-state", Name: "Alice", Role: AuthRoleUser}
 
-	if _, err := svc.SubmitGeneration(context.Background(), identity, "task-preview", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 1, nil); err != nil {
+	if _, err := svc.SubmitGeneration(context.Background(), identity, "task-preview", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 1); err != nil {
 		t.Fatalf("SubmitGeneration() error = %v", err)
 	}
 	select {
@@ -1038,7 +1032,7 @@ func TestImageTaskServiceMergesPartialSlotsAndDefersPartialPersistence(t *testin
 	svc := newImageTaskService(store, handler, handler, handler, func() int { return 30 })
 	identity := Identity{ID: "alice", Name: "Alice", Role: AuthRoleUser}
 
-	submitted, err := svc.SubmitGeneration(context.Background(), identity, "task-union", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 2, nil)
+	submitted, err := svc.SubmitGeneration(context.Background(), identity, "task-union", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 2)
 	if err != nil {
 		t.Fatalf("SubmitGeneration() error = %v", err)
 	}
@@ -1302,7 +1296,7 @@ func TestImageTaskServiceLimitsUserDefaultConcurrentCreationUnits(t *testing.T) 
 	svc := newTestImageTaskService(t, imageHandler, imageHandler, chatHandler, func() int { return 30 }, func() int { return 2 })
 	alice := Identity{ID: "alice", Name: "Alice", Role: AuthRoleUser}
 
-	if _, err := svc.SubmitGeneration(context.Background(), alice, "task-1", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 3, nil); err != nil {
+	if _, err := svc.SubmitGeneration(context.Background(), alice, "task-1", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 3); err != nil {
 		t.Fatalf("SubmitGeneration() error = %v", err)
 	}
 	seen := map[int]bool{}
@@ -1380,7 +1374,7 @@ func TestImageTaskServiceLimitsUserDefaultConcurrentCreationUnits(t *testing.T) 
 	svc = newTestImageTaskService(t, imageHandler, imageHandler, chatHandler, func() int { return 30 }, func() int { return 2 })
 	messages := []map[string]any{{"role": "user", "content": "hello"}}
 
-	if _, err := svc.SubmitEdit(context.Background(), alice, "edit-1", "edit", "gpt-image-2", "1024x1024", "high", "https://base.test", []any{"image"}, 2, nil); err != nil {
+	if _, err := svc.SubmitEdit(context.Background(), alice, "edit-1", "edit", "gpt-image-2", "1024x1024", "high", "https://base.test", []any{"image"}, 2); err != nil {
 		t.Fatalf("SubmitEdit(edit-1) error = %v", err)
 	}
 	if got := waitForStartedTask(t, started); got != "image" {
@@ -1416,11 +1410,11 @@ func TestImageTaskServiceLimitsUserDefaultRPM(t *testing.T) {
 	user := Identity{ID: "alice", Name: "Alice", Role: AuthRoleUser}
 	admin := Identity{ID: "admin", Name: "Admin", Role: AuthRoleAdmin}
 
-	if _, err := svc.SubmitGeneration(context.Background(), user, "task-1", "first", "gpt-image-2", "1024x1024", "high", "https://base.test", 1, nil); err != nil {
+	if _, err := svc.SubmitGeneration(context.Background(), user, "task-1", "first", "gpt-image-2", "1024x1024", "high", "https://base.test", 1); err != nil {
 		t.Fatalf("SubmitGeneration(first) error = %v", err)
 	}
 	waitForTaskStatus(t, svc, user, "task-1", TaskStatusSuccess)
-	if _, err := svc.SubmitGeneration(context.Background(), user, "task-2", "second", "gpt-image-2", "1024x1024", "high", "https://base.test", 1, nil); err == nil {
+	if _, err := svc.SubmitGeneration(context.Background(), user, "task-2", "second", "gpt-image-2", "1024x1024", "high", "https://base.test", 1); err == nil {
 		t.Fatal("SubmitGeneration(second) error = nil, want RPM limit")
 	} else {
 		var limitErr ImageTaskLimitError
@@ -1428,10 +1422,10 @@ func TestImageTaskServiceLimitsUserDefaultRPM(t *testing.T) {
 			t.Fatalf("SubmitGeneration(second) error = %T %v, want ImageTaskLimitError", err, err)
 		}
 	}
-	if _, err := svc.SubmitGeneration(context.Background(), admin, "task-1", "admin first", "gpt-image-2", "1024x1024", "high", "https://base.test", 1, nil); err != nil {
+	if _, err := svc.SubmitGeneration(context.Background(), admin, "task-1", "admin first", "gpt-image-2", "1024x1024", "high", "https://base.test", 1); err != nil {
 		t.Fatalf("admin should bypass user RPM limit: %v", err)
 	}
-	if _, err := svc.SubmitGeneration(context.Background(), admin, "task-2", "admin second", "gpt-image-2", "1024x1024", "high", "https://base.test", 1, nil); err != nil {
+	if _, err := svc.SubmitGeneration(context.Background(), admin, "task-2", "admin second", "gpt-image-2", "1024x1024", "high", "https://base.test", 1); err != nil {
 		t.Fatalf("admin should bypass user RPM limit on second request: %v", err)
 	}
 	waitForTaskStatus(t, svc, admin, "task-1", TaskStatusSuccess)
@@ -1458,7 +1452,7 @@ func TestImageTaskServiceRequestWideSlotCountsEveryRequestedImage(t *testing.T) 
 	}
 	svc := newTestImageTaskService(t, handler, handler, handler, func() int { return 30 }, func() int { return 4 })
 	identity := Identity{ID: "request-wide", Role: AuthRoleUser}
-	if _, err := svc.SubmitGeneration(context.Background(), identity, "task-wide", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 3, nil); err != nil {
+	if _, err := svc.SubmitGeneration(context.Background(), identity, "task-wide", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 3); err != nil {
 		t.Fatalf("SubmitGeneration() error = %v", err)
 	}
 	select {
@@ -1488,7 +1482,7 @@ func TestImageTaskServiceCancelsRunningTask(t *testing.T) {
 	svc := newTestImageTaskService(t, handler, handler, handler, func() int { return 30 })
 	identity := Identity{ID: "alice", Name: "Alice", Role: "user"}
 
-	submitted, err := svc.SubmitGeneration(context.Background(), identity, "task-1", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 1, nil)
+	submitted, err := svc.SubmitGeneration(context.Background(), identity, "task-1", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 1)
 	if err != nil {
 		t.Fatalf("SubmitGeneration() error = %v", err)
 	}
@@ -1561,7 +1555,7 @@ func TestImageTaskServiceCancellationPreservesCompletedOutputsAfterReload(t *tes
 	svc := newImageTaskService(documentStore, handler, handler, handler, func() int { return 30 })
 	identity := Identity{ID: "partial-cancel", Name: "Alice", Role: AuthRoleUser}
 
-	if _, err := svc.SubmitGeneration(context.Background(), identity, "task-partial-cancel", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 2, nil); err != nil {
+	if _, err := svc.SubmitGeneration(context.Background(), identity, "task-partial-cancel", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 2); err != nil {
 		t.Fatalf("SubmitGeneration() error = %v", err)
 	}
 	select {
@@ -1611,7 +1605,7 @@ func TestImageTaskServicePreservesPartialDataOnFailure(t *testing.T) {
 	svc := newTestImageTaskService(t, handler, handler, handler, func() int { return 30 })
 	identity := Identity{ID: "alice", Name: "Alice", Role: "user"}
 
-	if _, err := svc.SubmitGeneration(context.Background(), identity, "task-1", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 2, nil); err != nil {
+	if _, err := svc.SubmitGeneration(context.Background(), identity, "task-1", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 2); err != nil {
 		t.Fatalf("SubmitGeneration() error = %v", err)
 	}
 	waitForTaskStatus(t, svc, identity, "task-1", TaskStatusError)
@@ -1639,7 +1633,7 @@ func TestImageTaskServiceMarksTimedOutTaskAsError(t *testing.T) {
 	svc.SetTaskTimeoutGetter(func() time.Duration { return 20 * time.Millisecond })
 	identity := Identity{ID: "alice", Name: "Alice", Role: "user"}
 
-	if _, err := svc.SubmitGeneration(context.Background(), identity, "task-1", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 1, nil); err != nil {
+	if _, err := svc.SubmitGeneration(context.Background(), identity, "task-1", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 1); err != nil {
 		t.Fatalf("SubmitGeneration() error = %v", err)
 	}
 	waitForTaskStatus(t, svc, identity, "task-1", TaskStatusError)
@@ -1685,7 +1679,7 @@ func TestImageTaskServicePreservesTextOutputType(t *testing.T) {
 	svc := newTestImageTaskService(t, handler, handler, handler, func() int { return 30 })
 	identity := Identity{ID: "alice", Name: "Alice", Role: "user"}
 
-	if _, err := svc.SubmitGeneration(context.Background(), identity, "task-1", "who are you", "gpt-image-2", "1024x1024", "high", "https://base.test", 1, nil); err != nil {
+	if _, err := svc.SubmitGeneration(context.Background(), identity, "task-1", "who are you", "gpt-image-2", "1024x1024", "high", "https://base.test", 1); err != nil {
 		t.Fatalf("SubmitGeneration() error = %v", err)
 	}
 	waitForTaskStatus(t, svc, identity, "task-1", TaskStatusSuccess)
@@ -1707,7 +1701,7 @@ func TestImageTaskServiceStoresTextOutputFromHandlerError(t *testing.T) {
 	svc := newTestImageTaskService(t, handler, handler, handler, func() int { return 30 })
 	identity := Identity{ID: "alice", Name: "Alice", Role: "user"}
 
-	if _, err := svc.SubmitGeneration(context.Background(), identity, "task-1", "who are you", "gpt-image-2", "1024x1024", "high", "https://base.test", 1, nil); err != nil {
+	if _, err := svc.SubmitGeneration(context.Background(), identity, "task-1", "who are you", "gpt-image-2", "1024x1024", "high", "https://base.test", 1); err != nil {
 		t.Fatalf("SubmitGeneration() error = %v", err)
 	}
 	waitForTaskStatus(t, svc, identity, "task-1", TaskStatusSuccess)
@@ -1781,7 +1775,7 @@ func TestImageTaskServiceRunningTransitionIsAtomicAndPreservesTerminalSlots(t *t
 	}
 	svc := NewStoredImageTaskService(backend, handler, handler, handler, func() int { return 30 })
 	identity := Identity{ID: "atomic-running", Name: "Alice", Role: AuthRoleUser}
-	if _, err := svc.SubmitGeneration(context.Background(), identity, "task-atomic-running", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 4, nil); err != nil {
+	if _, err := svc.SubmitGeneration(context.Background(), identity, "task-atomic-running", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 4); err != nil {
 		t.Fatalf("SubmitGeneration() error = %v", err)
 	}
 	defer func() { _, _ = svc.CancelTask(identity, "task-atomic-running") }()
@@ -1859,7 +1853,7 @@ func TestImageTaskServiceCanMarkWholeImageRequestRunning(t *testing.T) {
 	svc := newTestImageTaskService(t, handler, handler, handler, func() int { return 30 })
 	identity := Identity{ID: "alice", Name: "Alice", Role: AuthRoleUser}
 
-	if _, err := svc.SubmitGeneration(context.Background(), identity, "task-1", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 3, nil); err != nil {
+	if _, err := svc.SubmitGeneration(context.Background(), identity, "task-1", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 3); err != nil {
 		t.Fatalf("SubmitGeneration() error = %v", err)
 	}
 	select {
@@ -1889,7 +1883,7 @@ func TestImageTaskServiceDoesNotStartHandlerWhenInitialPersistenceFails(t *testi
 	svc := newImageTaskService(store, handler, handler, handler, func() int { return 30 }, func() int { return 0 }, func() int { return 1 })
 	identity := Identity{ID: "initial-save-failure", Name: "Alice", Role: AuthRoleUser}
 
-	result, err := svc.SubmitGeneration(context.Background(), identity, "task-save-failure", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 1, nil)
+	result, err := svc.SubmitGeneration(context.Background(), identity, "task-save-failure", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 1)
 	if err == nil || !strings.Contains(err.Error(), "未启动上游请求") {
 		t.Fatalf("SubmitGeneration() result = %#v, error = %v; want clear persistence error", result, err)
 	}
@@ -1949,7 +1943,7 @@ func TestImageTaskServiceRetriesInitialLoadWithoutOverwritingStoredTasks(t *test
 	}
 	svc := newImageTaskService(store, handler, handler, handler, func() int { return 30 })
 
-	result, err := svc.SubmitGeneration(context.Background(), identity, "new-task", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 1, nil)
+	result, err := svc.SubmitGeneration(context.Background(), identity, "new-task", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 1)
 	var loadErr ImageTaskLoadError
 	if result != nil || !errors.As(err, &loadErr) {
 		t.Fatalf("SubmitGeneration() result = %#v, error = %v; want ImageTaskLoadError", result, err)
@@ -1968,7 +1962,7 @@ func TestImageTaskServiceRetriesInitialLoadWithoutOverwritingStoredTasks(t *test
 		t.Fatalf("stored tasks changed after load failure: %#v", items)
 	}
 
-	if _, err := svc.SubmitGeneration(context.Background(), identity, "new-task", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 1, nil); err != nil {
+	if _, err := svc.SubmitGeneration(context.Background(), identity, "new-task", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 1); err != nil {
 		t.Fatalf("SubmitGeneration() after recovery error = %v", err)
 	}
 	waitForTaskStatus(t, svc, identity, "new-task", TaskStatusSuccess)
@@ -2025,7 +2019,7 @@ func TestImageTaskServiceRetriesFailedTerminalPersistence(t *testing.T) {
 	svc := newImageTaskService(store, handler, handler, handler, func() int { return 30 })
 	identity := Identity{ID: "terminal-save-retry", Name: "Alice", Role: AuthRoleUser}
 
-	if _, err := svc.SubmitGeneration(context.Background(), identity, "task-terminal-retry", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 1, nil); err != nil {
+	if _, err := svc.SubmitGeneration(context.Background(), identity, "task-terminal-retry", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 1); err != nil {
 		t.Fatalf("SubmitGeneration() error = %v", err)
 	}
 	select {
@@ -2080,7 +2074,7 @@ func TestImageTaskServiceCloseCancelsAndWaitsForActiveTask(t *testing.T) {
 	svc := newImageTaskService(store, handler, handler, handler, func() int { return 30 })
 	identity := Identity{ID: "close-active", Name: "Alice", Role: AuthRoleUser}
 
-	if _, err := svc.SubmitGeneration(context.Background(), identity, "task-close", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 1, nil); err != nil {
+	if _, err := svc.SubmitGeneration(context.Background(), identity, "task-close", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 1); err != nil {
 		t.Fatalf("SubmitGeneration() error = %v", err)
 	}
 	select {
@@ -2114,7 +2108,7 @@ func TestImageTaskServiceCloseCancelsAndWaitsForActiveTask(t *testing.T) {
 		t.Fatalf("closed task = %#v, want cancelled", items)
 	}
 	waitForPersistedImageTaskStatus(t, documentStore, "task-close", TaskStatusCancelled)
-	if _, err := svc.SubmitGeneration(context.Background(), identity, "task-after-close", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 1, nil); err == nil || !strings.Contains(err.Error(), "service is closed") {
+	if _, err := svc.SubmitGeneration(context.Background(), identity, "task-after-close", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 1); err == nil || !strings.Contains(err.Error(), "service is closed") {
 		t.Fatalf("submission after Close() error = %v, want closed service error", err)
 	}
 
@@ -2254,7 +2248,7 @@ func TestImageTaskServiceDeleteTasksPersistsOwnerScopedTerminalDeletion(t *testi
 		identity Identity
 		id       string
 	}{{alice, "alice-done"}, {bob, "bob-done"}} {
-		if _, err := svc.SubmitGenerationWithOptions(context.Background(), item.identity, item.id, "draw", "gpt-image-2", "1024x1024", "high", "", 1, nil, nil, ImageOutputOptions{}, ImageToolOptions{}); err != nil {
+		if _, err := svc.SubmitGenerationWithOptions(context.Background(), item.identity, item.id, "draw", "gpt-image-2", "1024x1024", "high", "", 1, nil, ImageOutputOptions{}, ImageToolOptions{}); err != nil {
 			t.Fatalf("SubmitGenerationWithOptions(%s) error = %v", item.id, err)
 		}
 		waitForTaskStatus(t, svc, item.identity, item.id, TaskStatusSuccess)

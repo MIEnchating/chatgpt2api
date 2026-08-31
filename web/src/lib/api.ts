@@ -1332,8 +1332,10 @@ export async function updateAnnouncementPreferences(
   );
 }
 
-export async function fetchAdminAnnouncements() {
-  return httpRequest<{ items: Announcement[] }>("/api/admin/announcements");
+export async function fetchAdminAnnouncements(options: { signal?: AbortSignal } = {}) {
+  return httpRequest<{ items: Announcement[] }>("/api/admin/announcements", {
+    signal: options.signal,
+  });
 }
 
 export async function createAnnouncement(input: AnnouncementInput) {

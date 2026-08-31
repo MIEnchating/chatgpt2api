@@ -160,11 +160,7 @@ func (a *App) handleCanvasImageUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	contentType := info.ContentType
 	upload.ContentType = contentType
-	format := strings.TrimPrefix(contentType, "image/")
-	if format == "jpg" {
-		format = "jpeg"
-	}
-	url, err := a.images.SaveImageBytes(r.Context(), upload.Data, a.config.BaseURL(), identityScope(identity), identityDisplayName(identity), format)
+	url, err := a.images.SaveImageBytes(r.Context(), upload.Data, a.config.BaseURL(), identityScope(identity), identityDisplayName(identity))
 	if err != nil || url == "" {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			util.WriteError(w, http.StatusRequestTimeout, "image upload was canceled")

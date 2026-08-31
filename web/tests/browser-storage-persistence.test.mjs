@@ -62,6 +62,18 @@ test("remembered login storage never contains a password field", async () => {
   assert.match(cleanup, /yunmian:my-assets:/);
 });
 
+test("removed canvas UI state is not persisted or updated", async () => {
+  const [canvasPage, cleanup] = await Promise.all([
+    source("../src/app/canvas/page.tsx"),
+    source("../src/lib/deprecated-browser-persistence.ts"),
+  ]);
+  assert.doesNotMatch(canvasPage, /yunmian-canvas-mini-map-open|MINI_MAP_STORAGE_KEY/);
+  assert.doesNotMatch(canvasPage, /SaveState|setSaveState|setRunningControlNodeID|setCancellingTaskID/);
+  assert.match(cleanup, /yunmian-canvas-mini-map-open/);
+  assert.match(canvasPage, /SIDE_PANEL_STORAGE_KEY/);
+  assert.match(canvasPage, /setHistoryVersion/);
+});
+
 test("account-scoped API caches are invalidated across login boundaries", async () => {
 	const api = await source("../src/lib/api.ts");
 	assert.match(api, /function clearAccountScopedAPICaches\(\)/);

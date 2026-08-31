@@ -300,7 +300,7 @@ func TestImageServiceListImagesReturnsBatchMetadataError(t *testing.T) {
 
 func TestImageServiceUsesSameOriginPathsWhenBaseURLIsEmpty(t *testing.T) {
 	service := NewImageService(testImageConfig{root: t.TempDir()})
-	imageURL, err := service.SaveImageBytes(context.Background(), testPNGBytes(t, 8, 8), "", "owner", "Owner", "png")
+	imageURL, err := service.SaveImageBytes(context.Background(), testPNGBytes(t, 8, 8), "", "owner", "Owner")
 	if err != nil {
 		t.Fatalf("SaveImageBytes() error = %v", err)
 	}
@@ -325,7 +325,7 @@ func TestImageServiceRollsBackWhenContextIsCanceledAfterMetadataSave(t *testing.
 		Backend: backend, JSONDocumentBackend: documents, cancel: cancel,
 	})
 
-	if _, err := service.SaveImageBytes(ctx, testPNGBytes(t, 8, 8), "", "owner", "Owner", "png"); !errors.Is(err, context.Canceled) {
+	if _, err := service.SaveImageBytes(ctx, testPNGBytes(t, 8, 8), "", "owner", "Owner"); !errors.Is(err, context.Canceled) {
 		t.Fatalf("SaveImageBytes() error = %v, want context cancellation", err)
 	}
 	entries, err := os.ReadDir(config.ImagesDir())
@@ -857,7 +857,7 @@ func TestImageServiceMergesConcurrentMetadataUpdates(t *testing.T) {
 	t.Cleanup(func() { _ = backendB.Close() })
 
 	seed := NewImageService(config, backendA)
-	imageURL, err := seed.SaveImageBytes(context.Background(), testPNGBytes(t, 32, 24), "https://image.example.test", "owner", "Owner", "png")
+	imageURL, err := seed.SaveImageBytes(context.Background(), testPNGBytes(t, 32, 24), "https://image.example.test", "owner", "Owner")
 	if err != nil {
 		t.Fatalf("SaveImageBytes() error = %v", err)
 	}
@@ -914,7 +914,7 @@ func TestImageServiceCleanupRechecksVisibilityAfterMetadataConflict(t *testing.T
 	t.Cleanup(func() { _ = backendB.Close() })
 
 	seed := NewImageService(config, backendA)
-	imageURL, err := seed.SaveImageBytes(context.Background(), testPNGBytes(t, 24, 24), "https://image.example.test", "owner", "Owner", "png")
+	imageURL, err := seed.SaveImageBytes(context.Background(), testPNGBytes(t, 24, 24), "https://image.example.test", "owner", "Owner")
 	if err != nil {
 		t.Fatalf("SaveImageBytes() error = %v", err)
 	}
@@ -1166,7 +1166,7 @@ func TestImageServiceReferenceReplacementRollsBackWhenMetadataSaveFails(t *testi
 	config := testImageConfig{root: t.TempDir()}
 	backend := &failingAtomicAuthStorage{}
 	service := NewImageService(config, backend)
-	imageURL, err := service.SaveImageBytes(context.Background(), testPNGBytes(t, 32, 24), "https://image.example.test", "user-1", "User", "png")
+	imageURL, err := service.SaveImageBytes(context.Background(), testPNGBytes(t, 32, 24), "https://image.example.test", "user-1", "User")
 	if err != nil {
 		t.Fatalf("SaveImageBytes() error = %v", err)
 	}

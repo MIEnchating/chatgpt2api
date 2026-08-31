@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 )
 
@@ -106,33 +107,36 @@ func NormalizeWorkflowAgentDraft(content, scope string) (map[string]any, []strin
 	if strings.TrimSpace(scope) != "public" {
 		draft["scope"] = "private"
 	}
-	if variables, ok := draft["variables"].([]any); ok {
-		for index, value := range variables {
-			variable, ok := value.(map[string]any)
-			if !ok {
-				continue
-			}
-			if key, ok := variable["key"].(string); ok {
-				variable["key"] = sanitizeWorkflowVariableKey(key)
-			}
-			variables[index] = variable
-		}
-		draft["variables"] = variables
+	if err := normalizeWorkflowAgentDraftVariables(draft); err != nil {
+		return nil, nil, fmt.Errorf("工作流 Agent 返回的变量配置无效: %w", err)
 	}
 	return draft, []string{}, nil
 }
 
-func sanitizeWorkflowVariableKey(key string) string {
-	var result strings.Builder
-	for _, value := range key {
-		if value >= 'a' && value <= 'z' || value >= 'A' && value <= 'Z' || value >= '0' && value <= '9' || value == '_' || value == '-' {
-			result.WriteRune(value)
-		} else {
-			result.WriteByte('_')
-		}
+func normalizeWorkflowAgentDraftVariables(draft map[string]any) error {
+	raw, exists := draft["variables"]
+	if !exists {
+		return nil
 	}
-	if result.Len() == 0 {
-		return "var"
+	data, err := json.Marshal(raw)
+	if err != nil {
+		return errors.New("variables 必须是变量数组")
 	}
-	return result.String()
+	var variables []WorkflowVariable
+	if err := json.Unmarshal(data, &variables); err != nil {
+		return errors.New("variables 必须是变量数组")
+	}
+	if err := normalizeWorkflowVariables(variables); err != nil {
+		return err
+	}
+	data, err = json.Marshal(variables)
+	if err != nil {
+		return err
+	}
+	var normalized []any
+	if err := json.Unmarshal(data, &normalized); err != nil {
+		return err
+	}
+	draft["variables"] = normalized
+	return nil
 }

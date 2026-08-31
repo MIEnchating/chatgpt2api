@@ -87,6 +87,76 @@ func TestWorkflowServiceNormalizesDraftFieldsLikeReferenceFrontend(t *testing.T)
 	}
 }
 
+func TestWorkflowServiceRejectsAmbiguousVariableIdentifiers(t *testing.T) {
+	tests := []struct {
+		name      string
+		mutate    func(*CreativeWorkflow)
+		wantError string
+	}{
+		{
+			name: "empty normalized key",
+			mutate: func(workflow *CreativeWorkflow) {
+				workflow.Variables[0].Key = "   "
+			},
+			wantError: "第 1 个工作流变量缺少变量名",
+		},
+		{
+			name: "duplicate normalized key",
+			mutate: func(workflow *CreativeWorkflow) {
+				workflow.Variables[0].Key = "product name"
+				workflow.Variables[1].Key = "product/name"
+			},
+			wantError: `工作流变量名 "product_name" 重复`,
+		},
+		{
+			name: "duplicate id",
+			mutate: func(workflow *CreativeWorkflow) {
+				workflow.Variables[1].ID = workflow.Variables[0].ID
+			},
+			wantError: `工作流变量 ID "product" 重复`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			workflow := referenceWorkflow()
+			test.mutate(&workflow)
+			_, err := NewWorkflowService(newTestStorageBackend(t)).Save("alice", workflow)
+			if err == nil || !strings.Contains(err.Error(), test.wantError) {
+				t.Fatalf("Save() error = %v, want error containing %q", err, test.wantError)
+			}
+		})
+	}
+}
+
+func TestWorkflowServiceLoadsLegacyVariablesWithoutIDs(t *testing.T) {
+	backend := newTestStorageBackend(t)
+	store := jsonDocumentStoreFromBackend(backend)
+	if err := store.SaveJSONDocument(workflowDocumentName, map[string]any{
+		"version": 1,
+		"items": []map[string]any{{
+			"id":       "legacy-workflow",
+			"owner_id": "alice",
+			"name":     "旧工作流",
+			"variables": []map[string]any{
+				{"key": "subject name", "type": "text"},
+				{"key": "style", "type": "text"},
+			},
+		}},
+	}); err != nil {
+		t.Fatalf("SaveJSONDocument() error = %v", err)
+	}
+
+	items, err := NewWorkflowService(backend).List("alice")
+	if err != nil || len(items) != 1 || len(items[0].Variables) != 2 {
+		t.Fatalf("List() = (%#v, %v)", items, err)
+	}
+	variables := items[0].Variables
+	if variables[0].Key != "subject_name" || variables[0].ID == "" || variables[1].ID == "" || variables[0].ID == variables[1].ID {
+		t.Fatalf("normalized legacy variables = %#v", variables)
+	}
+}
+
 func TestWorkflowServicePreservesReferenceSeriesParameters(t *testing.T) {
 	workflows := NewWorkflowService(newTestStorageBackend(t))
 	workflow := referenceWorkflow()
@@ -406,6 +476,19 @@ func TestNormalizeWorkflowAgentDraftMatchesReferenceContract(t *testing.T) {
 	variable, _ := variables[0].(map[string]any)
 	if variable["key"] != "product_name___" {
 		t.Fatalf("sanitized key = %#v", variable["key"])
+	}
+}
+
+func TestNormalizeWorkflowAgentDraftRejectsAmbiguousVariables(t *testing.T) {
+	_, _, err := NormalizeWorkflowAgentDraft(`{
+		"name":"商品图",
+		"variables":[
+			{"key":"product name","type":"text"},
+			{"key":"product/name","type":"text"}
+		]
+	}`, "private")
+	if err == nil || !strings.Contains(err.Error(), `工作流变量名 "product_name" 重复`) {
+		t.Fatalf("NormalizeWorkflowAgentDraft() error = %v", err)
 	}
 }
 

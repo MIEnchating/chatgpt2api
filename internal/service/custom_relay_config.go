@@ -105,7 +105,11 @@ func (s *CustomRelayConfigService) Config(ownerID, id string) (CustomRelayConfig
 	if err != nil {
 		return CustomRelayConfig{}, customRelayConfigStorageError(err)
 	}
-	return configs[id], nil
+	config, exists := configs[id]
+	if !exists {
+		return CustomRelayConfig{}, ErrCustomRelayConfigNotFound
+	}
+	return config, nil
 }
 
 func (s *CustomRelayConfigService) Statuses(ownerID string) ([]CustomRelayConfigStatus, error) {

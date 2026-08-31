@@ -235,11 +235,11 @@ func (s *ImageTaskService) Close() error {
 	return s.closeErr
 }
 
-func (s *ImageTaskService) SubmitGenerationWithOptions(ctx context.Context, identity Identity, clientTaskID, prompt, model, size, quality, baseURL string, n int, _ any, metadata map[string]any, options ImageOutputOptions, toolOptions ImageToolOptions, visibilityValues ...string) (map[string]any, error) {
+func (s *ImageTaskService) SubmitGenerationWithOptions(ctx context.Context, identity Identity, clientTaskID, prompt, model, size, quality, baseURL string, n int, metadata map[string]any, options ImageOutputOptions, toolOptions ImageToolOptions, visibilityValues ...string) (map[string]any, error) {
 	return s.submitImageWithMetadataAndOptions(ctx, identity, clientTaskID, prompt, model, size, quality, baseURL, n, metadata, "generate", nil, options, toolOptions, visibilityValues...)
 }
 
-func (s *ImageTaskService) SubmitEditWithOptions(ctx context.Context, identity Identity, clientTaskID, prompt, model, size, quality, baseURL string, images any, n int, _ any, metadata map[string]any, options ImageOutputOptions, toolOptions ImageToolOptions, visibilityValues ...string) (map[string]any, error) {
+func (s *ImageTaskService) SubmitEditWithOptions(ctx context.Context, identity Identity, clientTaskID, prompt, model, size, quality, baseURL string, images any, n int, metadata map[string]any, options ImageOutputOptions, toolOptions ImageToolOptions, visibilityValues ...string) (map[string]any, error) {
 	return s.submitImageWithMetadataAndOptions(ctx, identity, clientTaskID, prompt, model, size, quality, baseURL, n, metadata, "edit", images, options, toolOptions, visibilityValues...)
 }
 
@@ -1182,25 +1182,7 @@ func (s *ImageTaskService) loadLocked() (map[string]map[string]any, error) {
 		}
 		now := util.NowISO()
 		normalized := map[string]any{"id": id, "owner_id": owner, "status": status, "mode": mode, "model": firstNonEmpty(util.Clean(task["model"]), util.ImageModelAuto), "size": util.Clean(task["size"]), "quality": util.Clean(task["quality"]), "visibility": visibility, "count": count, "revision": revision, "created_at": firstNonEmpty(util.Clean(task["created_at"]), now), "updated_at": firstNonEmpty(util.Clean(task["updated_at"]), util.Clean(task["created_at"]), now)}
-		if mode == "video" {
-			for _, key := range []string{"seconds", "resolution", "generate_audio", "watermark"} {
-				if task[key] != nil {
-					normalized[key] = task[key]
-				}
-			}
-			if upstreamStatus := strings.TrimSpace(util.Clean(task["upstream_status"])); upstreamStatus != "" {
-				normalized["upstream_status"] = upstreamStatus
-			}
-			if progress := util.ToInt(task["progress"], -1); progress >= 0 && progress <= 100 {
-				normalized["progress"] = progress
-			}
-		} else if mode == "audio" {
-			for _, key := range []string{"voice", "response_format", "speed", "instructions"} {
-				if task[key] != nil {
-					normalized[key] = task[key]
-				}
-			}
-		}
+		mergeMediaTaskFields(normalized, task, mode)
 		if workflowContext := util.StringMap(task["workflow_context"]); len(workflowContext) > 0 {
 			normalized["workflow_context"] = workflowContext
 		}
@@ -1603,6 +1585,30 @@ func (s *ImageTaskService) cleanupLocked() bool {
 	return removed
 }
 
+func mergeMediaTaskFields(target, source map[string]any, mode string) {
+	if mode == "video" {
+		for _, key := range []string{"seconds", "resolution", "generate_audio", "watermark"} {
+			if source[key] != nil {
+				target[key] = source[key]
+			}
+		}
+		if upstreamStatus := strings.TrimSpace(util.Clean(source["upstream_status"])); upstreamStatus != "" {
+			target["upstream_status"] = upstreamStatus
+		}
+		if progress := util.ToInt(source["progress"], -1); progress >= 0 && progress <= 100 {
+			target["progress"] = progress
+		}
+		return
+	}
+	if mode == "audio" {
+		for _, key := range []string{"voice", "response_format", "speed", "instructions"} {
+			if source[key] != nil {
+				target[key] = source[key]
+			}
+		}
+	}
+}
+
 func publicTask(task map[string]any) map[string]any {
 	mode := util.Clean(task["mode"])
 	item := map[string]any{"id": task["id"], "status": task["status"], "mode": task["mode"], "model": task["model"], "size": task["size"], "count": taskCount(mode, task), "revision": task["revision"], "created_at": task["created_at"], "updated_at": task["updated_at"]}
@@ -1618,25 +1624,7 @@ func publicTask(task map[string]any) map[string]any {
 		}
 	}
 	mergePublicImageToolTaskFields(item, task)
-	if mode == "video" {
-		for _, key := range []string{"seconds", "resolution", "generate_audio", "watermark"} {
-			if task[key] != nil {
-				item[key] = task[key]
-			}
-		}
-		if upstreamStatus := strings.TrimSpace(util.Clean(task["upstream_status"])); upstreamStatus != "" {
-			item["upstream_status"] = upstreamStatus
-		}
-		if progress := util.ToInt(task["progress"], -1); progress >= 0 && progress <= 100 {
-			item["progress"] = progress
-		}
-	} else if mode == "audio" {
-		for _, key := range []string{"voice", "response_format", "speed", "instructions"} {
-			if task[key] != nil {
-				item[key] = task[key]
-			}
-		}
-	}
+	mergeMediaTaskFields(item, task, mode)
 	if workflowContext := util.StringMap(task["workflow_context"]); len(workflowContext) > 0 {
 		item["workflow_context"] = workflowContext
 	}
