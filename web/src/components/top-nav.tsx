@@ -302,8 +302,8 @@ export function TopNav() {
 
   return (
     <header className="sticky top-3 z-40 rounded-2xl border border-border bg-card/92 shadow-[0_12px_36px_-28px_rgba(15,23,42,0.55)] backdrop-blur dark:border-border dark:bg-card/92">
-      <div className="grid min-h-14 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-2 px-3 py-2 lg:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] lg:gap-4 lg:px-4">
-        <div className="flex min-w-0 items-center gap-2 lg:col-start-1 lg:justify-self-start">
+      <div className="grid min-h-14 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-2 px-3 py-2 xl:grid-cols-[auto_minmax(0,1fr)_auto] xl:gap-4 xl:px-4">
+        <div className="flex min-w-0 items-center gap-2 xl:col-start-1 xl:justify-self-start">
           <div className="flex h-9 max-w-[190px] items-center gap-2 rounded-xl px-1.5 pr-2 text-[15px] font-semibold text-[#18181b] sm:max-w-none dark:text-foreground">
             <img
               src={resolveSiteIconSrc(appMeta.site_icon_url)}
@@ -316,13 +316,13 @@ export function TopNav() {
         </div>
         <nav
           aria-label="主导航"
-          className="hide-scrollbar col-span-2 row-start-2 -mx-1 flex min-w-0 gap-1 overflow-x-auto overscroll-x-contain px-1 pb-0.5 scroll-px-1 touch-pan-x [-webkit-overflow-scrolling:touch] lg:col-span-1 lg:col-start-2 lg:row-start-1 lg:justify-self-center lg:mx-0 lg:gap-1.5 lg:px-0 lg:pb-0"
+          className="hide-scrollbar col-span-2 row-start-2 -mx-1 flex min-w-0 gap-1 overflow-x-auto overscroll-x-contain px-1 pb-0.5 scroll-px-1 touch-pan-x [-webkit-overflow-scrolling:touch] xl:col-span-1 xl:col-start-2 xl:row-start-1 xl:mx-0 xl:w-full xl:justify-self-stretch xl:gap-1.5 xl:px-0 xl:pb-0 [@media(min-width:1280px)]:[justify-content:safe_center]"
         >
           {visibleNavItems.map((item) => (
             <NavPill key={item.href} item={item} pathname={pathname} />
           ))}
         </nav>
-        <div className="col-start-2 row-start-1 flex items-center justify-end gap-1 lg:col-start-3 lg:gap-1.5 lg:justify-self-end">
+        <div className="col-start-2 row-start-1 flex items-center justify-end gap-1 xl:col-start-3 xl:gap-1.5 xl:justify-self-end">
           {canAccessImageTasks ? <ImageTaskQueue className="size-8 px-0 lg:h-9 lg:w-auto lg:px-3" /> : null}
           <AnnouncementCenter />
           <ThemeToggleButton theme={theme} onToggle={handleThemeToggle} />

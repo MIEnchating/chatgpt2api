@@ -678,7 +678,7 @@ function LogsContent() {
 
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
         <DialogContent scrollable={false} className="flex max-h-[90vh] w-[min(94vw,980px)] grid-rows-none flex-col gap-0 overflow-hidden rounded-2xl p-0">
-          <DialogHeader className="border-b border-border px-6 py-5">
+          <DialogHeader className="border-b border-border py-5 pl-6 pr-20">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0 space-y-2">
                 <DialogTitle>日志详情</DialogTitle>
@@ -689,7 +689,7 @@ function LogsContent() {
                   <span>{detailLog?.time || "—"}</span>
                 </div>
               </div>
-              <Button type="button" variant="outline" className="h-9 rounded-lg px-3" onClick={() => void handleCopyDetailJSON()}>
+              <Button type="button" variant="outline" className="h-9 shrink-0 self-start rounded-lg px-3" onClick={() => void handleCopyDetailJSON()}>
                 <Copy className="size-4" />
                 复制 JSON
               </Button>

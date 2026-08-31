@@ -475,6 +475,12 @@ test("key preferences expose scoped custom API configuration without revealing s
   assert.match(apiSource, /\/api\/profile\/custom-relay-configs/);
 });
 
+test("multi-select owns one viewport and only scrolls when options exceed available space", () => {
+  assert.match(multiSelectSource, /<PopoverContent scrollable=\{false\}/);
+  assert.match(multiSelectSource, /maxHeight="min\(20rem, calc\(var\(--radix-popover-content-available-height\) - 0\.75rem\)\)"/);
+  assert.doesNotMatch(multiSelectSource, /className="max-h-64"/);
+});
+
 test("creation preferences pull each model kind with its selected key", () => {
   assert.match(profileSource, /fetchRelayModels\(\{ tokenName \}\)/);
   assert.match(profileSource, /filterModelsByCapability/);

@@ -11,6 +11,7 @@ const mediaVideoPlayerSource = readSource("../src/components/media-video-player.
 const assetDisplaySource = readSource("../src/app/assets/asset-display.tsx");
 const settingsPageSource = readSource("../src/app/settings/page.tsx");
 const sectionNavigationSource = readSource("../src/components/section-navigation.tsx");
+const topNavSource = readSource("../src/components/top-nav.tsx");
 const settingsConfigSource = readSource("../src/app/settings/components/config-card.tsx");
 const settingsUISource = readSource("../src/app/settings/components/settings-ui.tsx");
 const modelConfigSource = readSource("../src/app/settings/components/model-config-card.tsx");
@@ -89,6 +90,13 @@ test("settings and profile pages no longer retain their previous centered caps",
   assert.match(sectionNavigationSource, /data-section-navigation/);
   assert.match(sectionNavigationSource, /card-surface rounded-xl border border-border\/80/);
   assert.match(sectionNavigationSource, /aria-current=\{active \? "page" : undefined\}/);
+});
+
+test("admin navigation stays in two rows until every menu and action can fit", () => {
+  assert.match(topNavSource, /xl:grid-cols-\[auto_minmax\(0,1fr\)_auto\]/);
+  assert.match(topNavSource, /xl:col-start-2 xl:row-start-1/);
+  assert.match(topNavSource, /xl:w-full xl:justify-self-stretch/);
+  assert.doesNotMatch(topNavSource, /lg:grid-cols-\[minmax\(0,1fr\)_auto_minmax\(0,1fr\)\]/);
 });
 
 test("settings section titles and actions stay visible while their content scrolls", () => {

@@ -193,8 +193,11 @@ export function MultiSelect({
           <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} />
         </div>
       </PopoverTrigger>
-      <PopoverContent align="start" className="w-[var(--radix-popover-trigger-width)] min-w-[min(90vw,18rem)] p-1.5">
-        <ScrollArea className="max-h-64" viewportClassName="max-h-64 pr-2">
+      <PopoverContent scrollable={false} align="start" className="w-[var(--radix-popover-trigger-width)] min-w-[min(90vw,18rem)] p-1.5">
+        <ScrollArea
+          maxHeight="min(20rem, calc(var(--radix-popover-content-available-height) - 0.75rem))"
+          viewportClassName="pr-2"
+        >
           <div role="listbox" aria-multiselectable="true" className="space-y-0.5">
             {options.map((option) => {
               const checked = selected.includes(option.value);

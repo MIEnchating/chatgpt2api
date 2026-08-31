@@ -108,6 +108,12 @@ test("management actions share the same row as their filters", () => {
   );
 });
 
+test("log detail header reserves the global dialog close-button area", () => {
+  assert.match(logsSource, /<DialogHeader className="border-b border-border py-5 pl-6 pr-20">/);
+  assert.match(logsSource, /className="h-9 shrink-0 self-start rounded-lg px-3"[\s\S]*?复制 JSON/);
+  assert.doesNotMatch(logsSource, /<DialogHeader className="[^"]*px-6[^"]*">[\s\S]*?复制 JSON/);
+});
+
 test("major libraries and management pages share one page-level empty state", () => {
   assert.match(emptyStateSource, /data-empty-state/);
   assert.match(emptyStateSource, /compact \? "min-h-32 py-8" : "min-h-44 py-10"/);

@@ -17,13 +17,16 @@ function PopoverTrigger(props: React.ComponentProps<typeof PopoverPrimitive.Trig
 type PopoverContentProps = Omit<
   React.ComponentProps<typeof PopoverPrimitive.Content>,
   "onOpenAutoFocus"
->;
+> & {
+  scrollable?: boolean;
+};
 
 function PopoverContent({
   className,
   children,
   align = "center",
   sideOffset = 6,
+  scrollable = true,
   ...props
 }: PopoverContentProps) {
   return (
@@ -40,9 +43,11 @@ function PopoverContent({
         )}
         {...props}
       >
-        <ScrollArea className="max-h-[var(--radix-popover-content-available-height)]" viewportClassName="max-h-[var(--radix-popover-content-available-height)]">
-          {children}
-        </ScrollArea>
+        {scrollable ? (
+          <ScrollArea className="max-h-[var(--radix-popover-content-available-height)]" viewportClassName="max-h-[var(--radix-popover-content-available-height)]">
+            {children}
+          </ScrollArea>
+        ) : children}
       </PopoverPrimitive.Content>
     </PopoverPrimitive.Portal>
   );
