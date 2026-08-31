@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   AudioLines,
   ArrowDown,
@@ -244,6 +244,10 @@ function AddModelDialog({
   const [selectedModels, setSelectedModels] = useState<Set<string>>(new Set());
   const [search, setSearch] = useState("");
   const [customModels, setCustomModels] = useState("");
+  const modelLoadControllerRef = useRef<AbortController | null>(null);
+  const modelLoadVersionRef = useRef(0);
+  const currentSessionKeyRef = useRef(session.key);
+  currentSessionKeyRef.current = session.key;
 
   const configuredModels = modelsByKind[kind];
   const configuredSet = useMemo(() => new Set(configuredModels), [configuredModels]);
@@ -253,8 +257,19 @@ function AddModelDialog({
     return fetchedModels.filter((model) => model.toLowerCase().includes(query));
   }, [fetchedModels, search]);
 
+  function invalidateModelLoad() {
+    modelLoadVersionRef.current += 1;
+    modelLoadControllerRef.current?.abort();
+    modelLoadControllerRef.current = null;
+    setIsLoadingModels(false);
+  }
+
   useEffect(() => {
     if (!open) return;
+    modelLoadVersionRef.current += 1;
+    modelLoadControllerRef.current?.abort();
+    modelLoadControllerRef.current = null;
+    setIsLoadingModels(false);
     const controller = new AbortController();
     const preferredKind = initialKind;
     const preferredTokenName = relayTokenNames[preferredKind][0] || "";
@@ -291,7 +306,21 @@ function AddModelDialog({
     return () => controller.abort();
   }, [initialKind, open, relayTokenNames, session]);
 
+  useEffect(() => () => {
+    modelLoadVersionRef.current += 1;
+    modelLoadControllerRef.current?.abort();
+    modelLoadControllerRef.current = null;
+  }, []);
+
+  useEffect(() => {
+    modelLoadVersionRef.current += 1;
+    modelLoadControllerRef.current?.abort();
+    modelLoadControllerRef.current = null;
+    setIsLoadingModels(false);
+  }, [open, session.key]);
+
   function selectTokenName(value: string) {
+    invalidateModelLoad();
     setSelectedTokenName(value);
     setFetchedModels([]);
     setSelectedModels(new Set());
@@ -299,6 +328,7 @@ function AddModelDialog({
   }
 
   function selectModelKind(value: ModelKind) {
+    invalidateModelLoad();
     setKind(value);
     const preferredTokenName = relayTokenNames[value][0] || "";
     setSelectedTokenName(tokenNames.includes(preferredTokenName) ? preferredTokenName : "");
@@ -312,21 +342,38 @@ function AddModelDialog({
       toast.error("请先选择用于获取模型的 Key");
       return;
     }
+    modelLoadControllerRef.current?.abort();
+    const controller = new AbortController();
+    const requestVersion = modelLoadVersionRef.current + 1;
+    modelLoadVersionRef.current = requestVersion;
+    modelLoadControllerRef.current = controller;
+    const requestTokenName = selectedTokenName;
+    const requestKind = kind;
+    const requestSessionKey = session.key;
     setIsLoadingModels(true);
     try {
-      const response = await fetchRelayModels({ tokenName: selectedTokenName });
+      const response = await fetchRelayModels({ tokenName: requestTokenName, signal: controller.signal });
+      if (
+        controller.signal.aborted
+        || modelLoadVersionRef.current !== requestVersion
+        || currentSessionKeyRef.current !== requestSessionKey
+      ) return;
       const models = filterModelsByCapability(
         relayModelOptionsFromList(response.data).map((option) => option.value),
-        kind,
+        requestKind,
       );
       setFetchedModels(models);
       setSelectedModels(new Set());
       setSearch("");
       if (models.length === 0) toast.info("该 Key 没有返回可用模型");
     } catch (error) {
+      if (controller.signal.aborted || modelLoadVersionRef.current !== requestVersion) return;
       toast.error(error instanceof Error ? error.message : "获取模型失败");
     } finally {
-      setIsLoadingModels(false);
+      if (modelLoadVersionRef.current === requestVersion) {
+        modelLoadControllerRef.current = null;
+        setIsLoadingModels(false);
+      }
     }
   }
 
@@ -350,6 +397,7 @@ function AddModelDialog({
       return;
     }
     onAdd(kind, additions);
+    invalidateModelLoad();
     onOpenChange(false);
     toast.success(`已加入 ${additions.length} 个全局模型，保存配置后生效`);
   }
@@ -359,7 +407,10 @@ function AddModelDialog({
     : normalizeModelNames(customModels, []).some((model) => !configuredSet.has(model));
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(nextOpen) => {
+      if (!nextOpen) invalidateModelLoad();
+      onOpenChange(nextOpen);
+    }}>
       <DialogContent className="w-full max-w-[calc(100vw-2rem)] gap-5 overflow-x-hidden sm:max-w-[680px]">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2"><ListPlus className="size-5 text-primary" />添加全局模型</DialogTitle>
@@ -379,7 +430,10 @@ function AddModelDialog({
             type="button"
             variant={mode === "custom" ? "outline" : "ghost"}
             className={cn("shadow-none", mode === "custom" && "bg-background")}
-            onClick={() => setMode("custom")}
+            onClick={() => {
+              invalidateModelLoad();
+              setMode("custom");
+            }}
           >
             <PencilLine className="size-4" />自定义
           </Button>
@@ -482,7 +536,10 @@ function AddModelDialog({
         )}
 
         <DialogFooter>
-          <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>取消</Button>
+          <Button type="button" variant="outline" onClick={() => {
+            invalidateModelLoad();
+            onOpenChange(false);
+          }}>取消</Button>
           <Button type="button" onClick={submitModels} disabled={!canSubmit}>
             <Plus className="size-4" />
             {mode === "automatic" ? `添加已选模型${selectedModels.size ? ` (${selectedModels.size})` : ""}` : "添加模型"}

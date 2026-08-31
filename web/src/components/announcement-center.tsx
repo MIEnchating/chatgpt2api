@@ -23,6 +23,7 @@ import {
   type AnnouncementPreferences,
 } from "@/lib/api";
 import { ANNOUNCEMENTS_UPDATED_EVENT } from "@/lib/announcement-events";
+import { AnnouncementLoadLifecycle, loadAnnouncementSnapshot } from "@/lib/announcement-lifecycle";
 import { cn } from "@/lib/utils";
 
 const emptyPreferences: AnnouncementPreferences = {
@@ -56,7 +57,7 @@ function announcementTime(value: string) {
   });
 }
 
-export function AnnouncementCenter({ className }: { className?: string }) {
+export function AnnouncementCenter({ className, sessionKey }: { className?: string; sessionKey: string }) {
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [preferences, setPreferences] = useState<AnnouncementPreferences>(emptyPreferences);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -65,35 +66,37 @@ export function AnnouncementCenter({ className }: { className?: string }) {
   const [isAutomaticPrompt, setIsAutomaticPrompt] = useState(false);
   const [selected, setSelected] = useState<Announcement | null>(null);
   const [isUpdating, setIsUpdating] = useState(false);
-  const automaticPromptHandledRef = useRef(false);
-  const loadPromiseRef = useRef<Promise<void> | null>(null);
-  const lastLoadedAtRef = useRef(0);
+  const lifecycleRef = useRef(new AnnouncementLoadLifecycle(sessionKey));
+  const loadPromiseRef = useRef<{ promise: Promise<void>; sessionKey: string } | null>(null);
+  lifecycleRef.current.activateSession(sessionKey);
 
   const load = useCallback((force = false) => {
-    if (loadPromiseRef.current) return loadPromiseRef.current;
-    if (!force && Date.now() - lastLoadedAtRef.current < ANNOUNCEMENT_REFRESH_INTERVAL_MS) {
+    const inFlight = loadPromiseRef.current;
+    if (inFlight?.sessionKey === sessionKey) return inFlight.promise;
+    if (!force && !lifecycleRef.current.shouldLoad(sessionKey, Date.now(), ANNOUNCEMENT_REFRESH_INTERVAL_MS)) {
       return Promise.resolve();
     }
-    const request = Promise.allSettled([
-      fetchAnnouncements(),
-      fetchAnnouncementPreferences(),
-    ]).then(([announcementResult, preferenceResult]) => {
-      if (announcementResult.status === "fulfilled") {
-        setAnnouncements(Array.isArray(announcementResult.value.items) ? announcementResult.value.items : []);
-      }
-      if (preferenceResult.status === "fulfilled") {
-        setPreferences(preferenceResult.value.preferences || emptyPreferences);
-      }
-      lastLoadedAtRef.current = Date.now();
+    const token = lifecycleRef.current.beginLoad(sessionKey);
+    const request = loadAnnouncementSnapshot(fetchAnnouncements, fetchAnnouncementPreferences).then((snapshot) => {
+      if (!lifecycleRef.current.completeLoad(token, Date.now())) return;
+      setAnnouncements(Array.isArray(snapshot.announcements.items) ? snapshot.announcements.items : []);
+      setPreferences(snapshot.preferences.preferences || emptyPreferences);
       setIsLoaded(true);
-    }).finally(() => {
-      if (loadPromiseRef.current === request) loadPromiseRef.current = null;
+    }).catch(() => undefined).finally(() => {
+      if (loadPromiseRef.current?.promise === request) loadPromiseRef.current = null;
     });
-    loadPromiseRef.current = request;
+    loadPromiseRef.current = { promise: request, sessionKey };
     return request;
-  }, []);
+  }, [sessionKey]);
 
   useEffect(() => {
+    setAnnouncements([]);
+    setPreferences(emptyPreferences);
+    setIsLoaded(false);
+    setPopoverOpen(false);
+    setDialogOpen(false);
+    setIsAutomaticPrompt(false);
+    setSelected(null);
     void load(true);
     const handleAnnouncementsUpdated = () => void load(true);
     const handleVisibilityChange = () => {
@@ -109,7 +112,7 @@ export function AnnouncementCenter({ className }: { className?: string }) {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.clearInterval(refreshTimer);
     };
-  }, [load]);
+  }, [load, sessionKey]);
 
   const seenVersions = useMemo(() => new Set(preferences.seen_versions || []), [preferences.seen_versions]);
   const permanentVersions = useMemo(
@@ -119,10 +122,9 @@ export function AnnouncementCenter({ className }: { className?: string }) {
   const unreadCount = announcements.filter((item) => !seenVersions.has(announcementVersion(item))).length;
 
   useEffect(() => {
-    if (!isLoaded || automaticPromptHandledRef.current) {
+    if (!isLoaded || !lifecycleRef.current.consumeAutomaticPrompt(sessionKey)) {
       return;
     }
-    automaticPromptHandledRef.current = true;
     const today = localDateKey();
     const candidate = announcements.find((item) => {
       const version = announcementVersion(item);
@@ -140,7 +142,12 @@ export function AnnouncementCenter({ className }: { className?: string }) {
         .then((data) => setPreferences(data.preferences))
         .catch(() => undefined);
     }
-  }, [announcements, isLoaded, permanentVersions, preferences.snoozed_dates, seenVersions]);
+  }, [announcements, isLoaded, permanentVersions, preferences.snoozed_dates, seenVersions, sessionKey]);
+
+  const handlePopoverOpenChange = (open: boolean) => {
+    setPopoverOpen(open);
+    if (open) void load();
+  };
 
   const openAnnouncement = (item: Announcement) => {
     setSelected(item);
@@ -190,7 +197,7 @@ export function AnnouncementCenter({ className }: { className?: string }) {
 
   return (
     <>
-      <Popover open={popoverOpen} onOpenChange={setPopoverOpen}>
+      <Popover open={popoverOpen} onOpenChange={handlePopoverOpenChange}>
         <PopoverTrigger asChild>
           <Button
             type="button"

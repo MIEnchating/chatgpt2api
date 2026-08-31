@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"path/filepath"
 	"reflect"
 	"testing"
@@ -139,5 +140,70 @@ func TestImageGenerationPreferencesArePersistentAndPersonal(t *testing.T) {
 	invalid.DefaultAudioSpeed = 4.1
 	if _, err := preferences.Update("user-a", invalid); err == nil {
 		t.Fatal("Update() accepted default_audio_speed greater than 4")
+	}
+}
+
+func TestImageGenerationPreferenceServiceMergesConcurrentPatches(t *testing.T) {
+	databaseURL := "sqlite:///" + filepath.ToSlash(filepath.Join(t.TempDir(), "shared-preferences.db"))
+	backendA, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer backendA.Close()
+	backendB, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer backendB.Close()
+
+	barrier := newTestDocumentSaveBarrier(2)
+	serviceA := NewImageGenerationPreferenceService(newFirstSaveBarrierBackend(t, backendA, barrier))
+	serviceB := NewImageGenerationPreferenceService(newFirstSaveBarrierBackend(t, backendB, barrier))
+	type patchResult struct {
+		preferences ImageGenerationPreferences
+		err         error
+	}
+	results := make(chan patchResult, 2)
+	go func() {
+		stream := true
+		preferences, patchErr := serviceA.Patch("owner", ImageGenerationPreferencePatch{Stream: &stream})
+		results <- patchResult{preferences: preferences, err: patchErr}
+	}()
+	go func() {
+		preferences, patchErr := serviceB.Patch("owner", ImageGenerationPreferencePatch{RelayTokenNames: map[string][]string{"video": {"video-key"}}})
+		results <- patchResult{preferences: preferences, err: patchErr}
+	}()
+	returnedMergedState := false
+	for range 2 {
+		result := <-results
+		if result.err != nil {
+			t.Fatalf("concurrent Patch() error = %v", result.err)
+		}
+		if result.preferences.Stream && reflect.DeepEqual(result.preferences.DefaultVideoRelayTokens, []string{"video-key"}) {
+			returnedMergedState = true
+		}
+	}
+	preferences, err := serviceA.Preferences("owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !preferences.Stream || !reflect.DeepEqual(preferences.DefaultVideoRelayTokens, []string{"video-key"}) || !returnedMergedState {
+		t.Fatalf("merged preferences = %#v, returned merged state = %v", preferences, returnedMergedState)
+	}
+}
+
+func TestImageGenerationPreferenceServiceClassifiesStorageErrors(t *testing.T) {
+	backend, err := storage.NewDatabaseBackend("sqlite:///" + filepath.ToSlash(filepath.Join(t.TempDir(), "closed-preferences.db")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := NewImageGenerationPreferenceService(backend)
+	if err := backend.Close(); err != nil {
+		t.Fatal(err)
+	}
+	_, err = service.Preferences("owner")
+	var storageErr *ImageGenerationPreferenceStorageError
+	if !errors.As(err, &storageErr) {
+		t.Fatalf("Preferences() error = %T %v, want storage error", err, err)
 	}
 }

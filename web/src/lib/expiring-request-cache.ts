@@ -1,4 +1,5 @@
 export type ExpiringRequestCache<T> = {
+  beginStore: () => (value: T) => T;
   clear: () => void;
   get: (load: () => Promise<T>) => Promise<T>;
   store: (value: T) => T;
@@ -18,6 +19,18 @@ export function createExpiringRequestCache<T>(ttlMilliseconds: number): Expiring
   };
 
   return {
+    beginStore() {
+      revision += 1;
+      cached = null;
+      inFlight = null;
+      const storeRevision = revision;
+      return (value) => {
+        if (revision === storeRevision) {
+          store(value);
+        }
+        return value;
+      };
+    },
     clear() {
       revision += 1;
       cached = null;

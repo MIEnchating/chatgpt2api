@@ -65,11 +65,18 @@ func NewVideoModelContractService(backend storage.Backend) *VideoModelContractSe
 func (s *VideoModelContractService) Initialize() error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	items, err := s.loadLocked()
-	if err != nil {
-		return err
+	var lastErr error
+	for attempt := 0; attempt < videoModelContractSaveAttempts; attempt++ {
+		items, err := s.loadLocked()
+		if err == nil {
+			return applyActiveVideoModelContracts(items)
+		}
+		if !errors.Is(err, storage.ErrConcurrentRowUpdate) {
+			return err
+		}
+		lastErr = err
 	}
-	return applyActiveVideoModelContracts(items)
+	return lastErr
 }
 
 func (s *VideoModelContractService) List() ([]ManagedVideoModelContract, error) {

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"strconv"
@@ -11,7 +12,22 @@ import (
 	"chatgpt2api/internal/util"
 )
 
-const imageGenerationPreferenceDocumentDir = "image_generation_preferences"
+const (
+	imageGenerationPreferenceDocumentDir  = "image_generation_preferences"
+	imageGenerationPreferenceSaveAttempts = 4
+)
+
+type ImageGenerationPreferenceStorageError struct {
+	Err error
+}
+
+func (e *ImageGenerationPreferenceStorageError) Error() string {
+	return "image generation preference storage: " + e.Err.Error()
+}
+
+func (e *ImageGenerationPreferenceStorageError) Unwrap() error {
+	return e.Err
+}
 
 type ImageGenerationPreferences struct {
 	APIMode                 string                       `json:"api_mode"`
@@ -106,7 +122,11 @@ func (s *ImageGenerationPreferenceService) Preferences(ownerID string) (ImageGen
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.loadLocked(ownerID)
+	preferences, err := s.loadLocked(ownerID)
+	if err != nil {
+		return preferences, imageGenerationPreferenceStorageError(err)
+	}
+	return preferences, nil
 }
 
 func (s *ImageGenerationPreferenceService) Update(ownerID string, input ImageGenerationPreferences) (ImageGenerationPreferences, error) {
@@ -155,12 +175,21 @@ func (s *ImageGenerationPreferenceService) Update(ownerID string, input ImageGen
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.store == nil {
-		return ImageGenerationPreferences{}, fmt.Errorf("storage document backend is required")
+		return ImageGenerationPreferences{}, imageGenerationPreferenceStorageError(fmt.Errorf("storage document backend is required"))
 	}
-	if err := s.store.SaveJSONDocument(imageGenerationPreferenceDocumentName(ownerID), input); err != nil {
-		return ImageGenerationPreferences{}, err
+	for attempt := 0; attempt < imageGenerationPreferenceSaveAttempts; attempt++ {
+		if err := s.store.SaveJSONDocument(imageGenerationPreferenceDocumentName(ownerID), input); err != nil {
+			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < imageGenerationPreferenceSaveAttempts {
+				if _, loadErr := s.loadLocked(ownerID); loadErr != nil {
+					return ImageGenerationPreferences{}, imageGenerationPreferenceStorageError(loadErr)
+				}
+				continue
+			}
+			return ImageGenerationPreferences{}, imageGenerationPreferenceStorageError(err)
+		}
+		return input, nil
 	}
-	return input, nil
+	return ImageGenerationPreferences{}, imageGenerationPreferenceStorageError(fmt.Errorf("%w: update image generation preferences after %d attempts", storage.ErrConcurrentRowUpdate, imageGenerationPreferenceSaveAttempts))
 }
 
 func (s *ImageGenerationPreferenceService) Patch(ownerID string, patch ImageGenerationPreferencePatch) (ImageGenerationPreferences, error) {
@@ -193,41 +222,47 @@ func (s *ImageGenerationPreferenceService) Patch(ownerID string, patch ImageGene
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	preferences, err := s.loadLocked(ownerID)
-	if err != nil {
-		return ImageGenerationPreferences{}, err
-	}
-	for kind, value := range normalizedTokens {
-		switch kind {
-		case "text":
-			preferences.DefaultTextRelayTokens = value
-		case "image":
-			preferences.DefaultImageRelayTokens = value
-		case "video":
-			preferences.DefaultVideoRelayTokens = value
-		case "audio":
-			preferences.DefaultAudioRelayTokens = value
+	for attempt := 0; attempt < imageGenerationPreferenceSaveAttempts; attempt++ {
+		preferences, err := s.loadLocked(ownerID)
+		if err != nil {
+			return ImageGenerationPreferences{}, imageGenerationPreferenceStorageError(err)
 		}
+		for kind, value := range normalizedTokens {
+			switch kind {
+			case "text":
+				preferences.DefaultTextRelayTokens = value
+			case "image":
+				preferences.DefaultImageRelayTokens = value
+			case "video":
+				preferences.DefaultVideoRelayTokens = value
+			case "audio":
+				preferences.DefaultAudioRelayTokens = value
+			}
+		}
+		if patch.Stream != nil {
+			preferences.Stream = *patch.Stream
+		}
+		if patch.PartialImages != nil {
+			preferences.PartialImages = *patch.PartialImages
+		}
+		if patch.ResponseFormatB64JSON != nil {
+			preferences.ResponseFormatB64JSON = *patch.ResponseFormatB64JSON
+		}
+		if patch.CodexCLICompatibility != nil {
+			preferences.CodexCLICompatibility = *patch.CodexCLICompatibility
+		}
+		if workbench != nil {
+			preferences.Workbench = *workbench
+		}
+		if err := s.store.SaveJSONDocument(imageGenerationPreferenceDocumentName(ownerID), preferences); err != nil {
+			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < imageGenerationPreferenceSaveAttempts {
+				continue
+			}
+			return ImageGenerationPreferences{}, imageGenerationPreferenceStorageError(err)
+		}
+		return preferences, nil
 	}
-	if patch.Stream != nil {
-		preferences.Stream = *patch.Stream
-	}
-	if patch.PartialImages != nil {
-		preferences.PartialImages = *patch.PartialImages
-	}
-	if patch.ResponseFormatB64JSON != nil {
-		preferences.ResponseFormatB64JSON = *patch.ResponseFormatB64JSON
-	}
-	if patch.CodexCLICompatibility != nil {
-		preferences.CodexCLICompatibility = *patch.CodexCLICompatibility
-	}
-	if workbench != nil {
-		preferences.Workbench = *workbench
-	}
-	if err := s.store.SaveJSONDocument(imageGenerationPreferenceDocumentName(ownerID), preferences); err != nil {
-		return ImageGenerationPreferences{}, err
-	}
-	return preferences, nil
+	return ImageGenerationPreferences{}, imageGenerationPreferenceStorageError(fmt.Errorf("%w: patch image generation preferences after %d attempts", storage.ErrConcurrentRowUpdate, imageGenerationPreferenceSaveAttempts))
 }
 
 func (s *ImageGenerationPreferenceService) loadLocked(ownerID string) (ImageGenerationPreferences, error) {
@@ -302,6 +337,13 @@ func (s *ImageGenerationPreferenceService) loadLocked(ownerID string) (ImageGene
 		preferences.PartialImages = partialImages
 	}
 	return preferences, nil
+}
+
+func imageGenerationPreferenceStorageError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &ImageGenerationPreferenceStorageError{Err: err}
 }
 
 func validPreferenceAudioFormat(value string) bool {

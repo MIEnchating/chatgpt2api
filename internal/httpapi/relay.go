@@ -77,7 +77,11 @@ func (a *App) relayCredentialForIdentitySelection(ctx context.Context, identity 
 		}
 		config, err := a.customRelayConfigs.Config(identityScope(identity), configID)
 		if err != nil {
-			return relayCredential{}, protocol.HTTPError{Status: http.StatusBadRequest, Message: err.Error()}
+			var storageErr *service.CustomRelayConfigStorageError
+			if errors.As(err, &storageErr) {
+				return relayCredential{}, protocol.HTTPError{Status: http.StatusServiceUnavailable, Message: "自定义 API 配置存储暂时不可用"}
+			}
+			return relayCredential{}, protocol.HTTPError{Status: http.StatusBadRequest, Message: "所选自定义 API 配置无效"}
 		}
 		if config.BaseURL == "" || config.APIKey == "" {
 			return relayCredential{}, protocol.HTTPError{Status: http.StatusBadRequest, Message: "所选自定义 API 配置不完整，请重新配置 Base URL 和 Key"}

@@ -170,9 +170,6 @@ func (a *App) handleCanvasImageUpload(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusRequestTimeout, "image upload was canceled")
 			return
 		}
-		if err == nil {
-			err = errors.New("image storage returned an empty URL")
-		}
 		util.WriteError(w, http.StatusInternalServerError, "failed to store image")
 		return
 	}

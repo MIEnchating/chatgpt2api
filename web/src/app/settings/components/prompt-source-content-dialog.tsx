@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, ClipboardCopy, ImageIcon, LoaderCircle, RefreshCcw } from "lucide-react";
 import { toast } from "sonner";
 
@@ -61,17 +61,30 @@ export function PromptSourceContentDialog({ source, open, onOpenChange, onPull }
   const [error, setError] = useState("");
   const [page, setPage] = useState(1);
   const [selectedPrompt, setSelectedPrompt] = useState<BananaPrompt | null>(null);
+  const loadGenerationRef = useRef(0);
+  const currentSourceIDRef = useRef(source?.id || "");
+  const openRef = useRef(open);
+  currentSourceIDRef.current = source?.id || "";
+  openRef.current = open;
 
   const loadPrompts = useCallback(async (quiet: boolean) => {
     if (!source) return;
+    const sourceID = source.id;
+    const loadGeneration = loadGenerationRef.current + 1;
+    loadGenerationRef.current = loadGeneration;
     setIsLoading(true);
     setError("");
     const result = await onPull(source, quiet);
+    if (
+      loadGenerationRef.current !== loadGeneration
+      || currentSourceIDRef.current !== sourceID
+      || !openRef.current
+    ) return;
     if (result.ok) {
       setPrompts(result.prompts);
       setPage(1);
-    } else if (!result.skipped) {
-      setError("提示词内容加载失败，请重试");
+    } else {
+      setError(result.skipped ? "该来源正在其他位置更新，请稍后重试" : "提示词内容加载失败，请重试");
     }
     setIsLoading(false);
   }, [onPull, source]);

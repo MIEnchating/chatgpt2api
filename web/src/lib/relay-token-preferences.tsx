@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
 import { fetchImageGenerationPreferences, fetchRelayModels, updateRelayTokenPreferences } from "@/lib/api";
 import {
@@ -19,6 +19,12 @@ import {
 } from "@/lib/session";
 import type { StoredAuthSession } from "@/store/auth";
 import { RelayTokenPreferencesContext } from "@/lib/use-relay-token-preferences";
+import { RelayTokenPreferenceMutationTracker } from "@/lib/relay-token-preference-mutations";
+import {
+  dismissImageGenerationPreferencesLoadError,
+  IMAGE_GENERATION_PREFERENCES_RETRY_EVENT,
+  showImageGenerationPreferencesLoadError,
+} from "@/lib/image-generation-preferences-retry";
 
 export function RelayTokenPreferencesProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<StoredAuthSession | null>(() => getCachedAuthSession() ?? null);
@@ -30,7 +36,12 @@ export function RelayTokenPreferencesProvider({ children }: { children: ReactNod
   const [modelsByToken, setModelsByToken] = useState<Record<string, string[]>>({});
   const [failedModelTokenNames, setFailedModelTokenNames] = useState<string[]>([]);
   const [modelRefreshVersion, setModelRefreshVersion] = useState(0);
-  const updateVersions = useRef<Record<RelayTokenKind, number>>({ text: 0, image: 0, video: 0, audio: 0 });
+  const [preferencesLoadVersion, setPreferencesLoadVersion] = useState(0);
+  const [mutationTracker] = useState(() => new RelayTokenPreferenceMutationTracker());
+
+  useLayoutEffect(() => {
+    mutationTracker.activateSession(sessionKey);
+  }, [mutationTracker, sessionKey]);
 
   useEffect(() => {
     let active = true;
@@ -41,7 +52,7 @@ export function RelayTokenPreferencesProvider({ children }: { children: ReactNod
     const handleSessionChange = () => {
       setSession(getCachedAuthSession() ?? null);
     };
-    void refreshSession();
+    void refreshSession().catch(() => undefined);
     window.addEventListener(AUTH_SESSION_CHANGE_EVENT, handleSessionChange);
     return () => {
       active = false;
@@ -50,11 +61,21 @@ export function RelayTokenPreferencesProvider({ children }: { children: ReactNod
   }, []);
 
   useEffect(() => {
+    const handleRetry = () => setPreferencesLoadVersion((version) => version + 1);
+    window.addEventListener(IMAGE_GENERATION_PREFERENCES_RETRY_EVENT, handleRetry);
+    return () => window.removeEventListener(IMAGE_GENERATION_PREFERENCES_RETRY_EVENT, handleRetry);
+  }, []);
+
+  useEffect(() => {
     let ignore = false;
     setPreferencesReady(false);
+    setRoutingReady(false);
+    setModelsByToken({});
+    setFailedModelTokenNames([]);
     tokenNamesRef.current = EMPTY_RELAY_TOKEN_NAMES;
     setSelectedTokenNames(EMPTY_RELAY_TOKEN_NAMES);
     if (!sessionKey) {
+      dismissImageGenerationPreferencesLoadError();
       return () => { ignore = true; };
     }
     void fetchImageGenerationPreferences()
@@ -63,19 +84,15 @@ export function RelayTokenPreferencesProvider({ children }: { children: ReactNod
           const loaded = relayTokenNamesFromPreferences(preferences);
           tokenNamesRef.current = loaded;
           setSelectedTokenNames(loaded);
+          setPreferencesReady(true);
+          dismissImageGenerationPreferencesLoadError();
         }
       })
-      .catch(() => {
-        if (!ignore) {
-          tokenNamesRef.current = EMPTY_RELAY_TOKEN_NAMES;
-          setSelectedTokenNames(EMPTY_RELAY_TOKEN_NAMES);
-        }
-      })
-      .finally(() => {
-        if (!ignore) setPreferencesReady(true);
+      .catch((error) => {
+        if (!ignore) showImageGenerationPreferencesLoadError(error);
       });
     return () => { ignore = true; };
-  }, [sessionKey]);
+  }, [preferencesLoadVersion, sessionKey]);
 
   useEffect(() => {
     if (!preferencesReady) return;
@@ -107,28 +124,28 @@ export function RelayTokenPreferencesProvider({ children }: { children: ReactNod
   }, [modelRefreshVersion, preferencesReady, tokenNames]);
 
   const setTokenNames = useCallback(async (kind: RelayTokenKind, names: string[]) => {
+    mutationTracker.activateSession(sessionKey);
+    const mutation = mutationTracker.begin(kind);
     const normalizedNames = Array.from(new Set(names.map((name) => name.trim()).filter(Boolean))).slice(0, 20);
-    const version = updateVersions.current[kind] + 1;
-    updateVersions.current[kind] = version;
     const previousNames = tokenNamesRef.current[kind];
     tokenNamesRef.current = { ...tokenNamesRef.current, [kind]: normalizedNames };
     setSelectedTokenNames(tokenNamesRef.current);
     try {
       const field = relayTokenPreferenceField(kind);
       const { preferences } = await updateRelayTokenPreferences({ [field]: normalizedNames });
-      if (updateVersions.current[kind] === version) {
+      if (mutationTracker.isCurrent(mutation)) {
         const savedNames = relayTokenNamesFromPreferences(preferences)[kind];
         tokenNamesRef.current = { ...tokenNamesRef.current, [kind]: savedNames };
         setSelectedTokenNames(tokenNamesRef.current);
       }
     } catch (error) {
-      if (updateVersions.current[kind] === version) {
+      if (mutationTracker.isCurrent(mutation)) {
         tokenNamesRef.current = { ...tokenNamesRef.current, [kind]: previousNames };
         setSelectedTokenNames(tokenNamesRef.current);
       }
       throw error;
     }
-  }, []);
+  }, [mutationTracker, sessionKey]);
 
   const tokenNameForModel = useCallback((kind: RelayTokenKind, model: string) => (
     relayTokenNameForModel(tokenNamesRef.current[kind], model, modelsByToken)

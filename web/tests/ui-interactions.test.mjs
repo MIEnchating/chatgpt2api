@@ -262,6 +262,12 @@ test("large dialog pagination and actions use the shared footer layouts", () => 
   assert.doesNotMatch(assetDisplaySource, /flex justify-end gap-2 border-t border-border pt-4/);
 });
 
+test("prompt source content rejects stale source and closed-dialog responses", () => {
+  assert.match(promptSourceContentDialogSource, /loadGenerationRef\.current !== loadGeneration/);
+  assert.match(promptSourceContentDialogSource, /currentSourceIDRef\.current !== sourceID/);
+  assert.match(promptSourceContentDialogSource, /!openRef\.current/);
+});
+
 test("workflow runner keeps its header and actions outside the scrolling form", () => {
   assert.match(workflowRunnerSource, /<DialogContent scrollable=\{false\} className="h-\[min\(92dvh,900px\)\]/);
   assert.match(workflowRunnerSource, /<DialogHeader className="border-b border-border/);
@@ -482,13 +488,25 @@ test("multi-select owns one viewport and only scrolls when options exceed availa
 });
 
 test("creation preferences pull each model kind with its selected key", () => {
-  assert.match(profileSource, /fetchRelayModels\(\{ tokenName \}\)/);
+  assert.match(profileSource, /fetchRelayModels\(\{ tokenName, signal: controller\.signal \}\)/);
   assert.match(profileSource, /filterModelsByCapability/);
   assert.match(profileSource, /modelConfig\[kind\]\.models\.filter/);
   assert.match(profileSource, /按当前 Key 拉取\$\{label\}/);
-  assert.match(profileSource, /Promise\.all\(tokenNames\.map\(\(tokenName\) => fetchRelayModels\(\{ tokenName \}\)\)\)/);
+  assert.match(profileSource, /Promise\.all\(tokenNames\.map\(\(tokenName\) => fetchRelayModels\(\{ tokenName, signal: controller\.signal \}\)\)\)/);
+  assert.match(profileSource, /modelPullVersionRef\.current !== requestVersion/);
+  assert.match(profileSource, /currentSessionKeyRef\.current !== requestSessionKey/);
+  assert.match(profileSource, /JSON\.stringify\(currentRelayTokenNamesRef\.current\[kind\]\) !== tokenSelectionKey/);
   assert.match(profileSource, /tokenNameForModel\("audio", selectedAudioModel\)/);
   assert.match(profileSource, /\.\.\.relayTokenPreferencesFromNames\(relayTokenNames\)/);
+});
+
+test("settings model discovery rejects responses from an obsolete key, kind, or session", async () => {
+  const modelConfigSource = await readFile(new URL("../src/app/settings/components/model-config-card.tsx", import.meta.url), "utf8");
+  assert.match(modelConfigSource, /fetchRelayModels\(\{ tokenName: requestTokenName, signal: controller\.signal \}\)/);
+  assert.match(modelConfigSource, /modelLoadVersionRef\.current !== requestVersion/);
+  assert.match(modelConfigSource, /currentSessionKeyRef\.current !== requestSessionKey/);
+  assert.match(modelConfigSource, /function selectTokenName[\s\S]*?invalidateModelLoad\(\)/);
+  assert.match(modelConfigSource, /function selectModelKind[\s\S]*?invalidateModelLoad\(\)/);
 });
 
 test("task queue keeps video copy and the last successful snapshot", () => {

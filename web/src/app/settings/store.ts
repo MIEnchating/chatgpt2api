@@ -24,6 +24,7 @@ import {
 	type StorageSettingConfig,
 } from "@/lib/api";
 import { dispatchAppMetaUpdated } from "@/lib/app-meta";
+import { invalidateStorageProviderCache } from "@/services/storage-provider";
 import { normalizePromptMarketSources, type PromptMarketSourceConfig } from "@/app/image/banana-prompts";
 import {
   LOGIN_PAGE_IMAGE_DEFAULT_TRANSFORM,
@@ -299,6 +300,7 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       }
 
       const data = await updateSettingsConfig(payload);
+      invalidateStorageProviderCache();
       set({
         config: normalizeConfig(data.config),
       });

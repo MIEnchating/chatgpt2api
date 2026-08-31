@@ -2,6 +2,7 @@ package videocontract
 
 import (
 	"encoding/json"
+	"errors"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -11,12 +12,97 @@ import (
 	"chatgpt2api/internal/storage"
 )
 
+type scriptedVideoContractDocumentBackend struct {
+	storage.Backend
+	document         any
+	conflictDocument any
+	loadCalls        int
+	saveCalls        int
+	saveErrors       []error
+}
+
+func (b *scriptedVideoContractDocumentBackend) LoadJSONDocument(string) (any, error) {
+	b.loadCalls++
+	return b.document, nil
+}
+
+func (b *scriptedVideoContractDocumentBackend) SaveJSONDocument(_ string, value any) error {
+	b.saveCalls++
+	if len(b.saveErrors) > 0 {
+		err := b.saveErrors[0]
+		b.saveErrors = b.saveErrors[1:]
+		if errors.Is(err, storage.ErrConcurrentRowUpdate) {
+			b.document = b.conflictDocument
+			b.conflictDocument = nil
+		}
+		return err
+	}
+	b.document = value
+	return nil
+}
+
+func (b *scriptedVideoContractDocumentBackend) DeleteJSONDocument(string) error {
+	b.document = nil
+	return nil
+}
+
 func testVideoContract(t *testing.T, id, model string) protocol.VideoModelContract {
 	t.Helper()
 	contract := protocol.DefaultVideoContracts()[0]
 	contract.Name = id
 	contract.Models = []string{model}
 	return contract
+}
+
+func TestVideoModelContractServiceInitializeReloadsAfterConcurrentDefaultInsert(t *testing.T) {
+	t.Cleanup(func() { _ = protocol.ReplaceVideoContracts(protocol.DefaultVideoContracts()) })
+	publishedAt := "2026-08-31T00:00:00Z"
+	peerContract := testVideoContract(t, "Peer contract", "peer/video-v1")
+	peerDocument := videoModelContractStoreDocument{
+		Version: videoModelContractStoreVersion,
+		Items: []ManagedVideoModelContract{{
+			ID:        "peer-contract",
+			Contract:  peerContract,
+			Enabled:   true,
+			Revision:  1,
+			Versions:  appendVideoContractVersion(nil, 1, peerContract, publishedAt),
+			CreatedAt: publishedAt,
+			UpdatedAt: publishedAt,
+		}},
+	}
+	backend := &scriptedVideoContractDocumentBackend{
+		conflictDocument: peerDocument,
+		saveErrors:       []error{storage.ErrConcurrentRowUpdate},
+	}
+
+	service := NewVideoModelContractService(backend)
+	if err := service.Initialize(); err != nil {
+		t.Fatalf("Initialize() error = %v", err)
+	}
+	if backend.loadCalls != 2 || backend.saveCalls != 1 {
+		t.Fatalf("storage calls = %d loads, %d saves; want 2 loads, 1 save", backend.loadCalls, backend.saveCalls)
+	}
+	stored, ok := backend.document.(videoModelContractStoreDocument)
+	if !ok || len(stored.Items) != 1 || stored.Items[0].ID != "peer-contract" {
+		t.Fatalf("stored document was overwritten: %#v", backend.document)
+	}
+	active, ok := protocol.VideoContractForModel("peer/video-v1")
+	if !ok || active.Name != peerContract.Name {
+		t.Fatalf("active peer contract = %#v, %v", active, ok)
+	}
+}
+
+func TestVideoModelContractServiceInitializeReturnsStorageFailure(t *testing.T) {
+	wantErr := errors.New("storage unavailable")
+	backend := &scriptedVideoContractDocumentBackend{saveErrors: []error{wantErr}}
+
+	err := NewVideoModelContractService(backend).Initialize()
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("Initialize() error = %v, want %v", err, wantErr)
+	}
+	if backend.loadCalls != 1 || backend.saveCalls != 1 {
+		t.Fatalf("storage calls = %d loads, %d saves; want 1 load, 1 save", backend.loadCalls, backend.saveCalls)
+	}
 }
 
 func TestVideoModelContractServicePersistsAndRefreshesRuntime(t *testing.T) {

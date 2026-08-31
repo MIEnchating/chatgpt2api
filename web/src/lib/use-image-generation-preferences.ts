@@ -1,14 +1,23 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import {
   type CreationWorkbenchPreferences,
   fetchImageGenerationPreferences,
-  IMAGE_GENERATION_PREFERENCES_CHANGED_EVENT,
   type ImageGenerationPreferences,
 } from "@/lib/api";
 import { normalizedImagePartialImages } from "@/lib/image-api-contract";
+import {
+  imageGenerationPreferencesFromChangedEvent,
+  IMAGE_GENERATION_PREFERENCES_CHANGED_EVENT,
+} from "@/lib/image-generation-preferences-events";
+import {
+  dismissImageGenerationPreferencesLoadError,
+  IMAGE_GENERATION_PREFERENCES_RETRY_EVENT,
+  requestImageGenerationPreferencesRetry,
+  showImageGenerationPreferencesLoadError,
+} from "@/lib/image-generation-preferences-retry";
 
 export const DEFAULT_CREATION_WORKBENCH_PREFERENCES: CreationWorkbenchPreferences = {
   image_model: "",
@@ -97,37 +106,77 @@ function normalizePreferences(value: Partial<ImageGenerationPreferences> | undef
   };
 }
 
+type ImageGenerationPreferencesLoader = () => Promise<{ preferences: ImageGenerationPreferences }>;
+
+export async function loadImageGenerationPreferences(
+  load: ImageGenerationPreferencesLoader = fetchImageGenerationPreferences,
+) {
+  try {
+    const { preferences } = await load();
+    return { status: "ready" as const, preferences: normalizePreferences(preferences) };
+  } catch (error) {
+    return {
+      status: "error" as const,
+      error: error instanceof Error ? error : new Error("创作偏好读取失败"),
+    };
+  }
+}
+
 export function useImageGenerationPreferences(sessionKey: string) {
   const [preferences, setPreferences] = useState(DEFAULT_IMAGE_GENERATION_PREFERENCES);
   const [isReady, setIsReady] = useState(false);
+  const [loadedSessionKey, setLoadedSessionKey] = useState("");
+  const [error, setError] = useState<Error | null>(null);
+  const [loadVersion, setLoadVersion] = useState(0);
+  const loadGeneration = useRef(0);
+  const retry = useCallback(() => requestImageGenerationPreferencesRetry(), []);
 
   useEffect(() => {
     let ignore = false;
+    const generation = loadGeneration.current + 1;
+    loadGeneration.current = generation;
+    setPreferences(DEFAULT_IMAGE_GENERATION_PREFERENCES);
     setIsReady(false);
-    void fetchImageGenerationPreferences()
-      .then(({ preferences: loaded }) => {
-        if (ignore) return;
-        const normalized = normalizePreferences(loaded);
-        setPreferences(normalized);
-      })
-      .catch(() => undefined)
-      .finally(() => {
-        if (!ignore) setIsReady(true);
-      });
+    setLoadedSessionKey("");
+    setError(null);
+    if (!sessionKey) {
+      dismissImageGenerationPreferencesLoadError();
+    } else {
+      void loadImageGenerationPreferences()
+        .then((result) => {
+          if (ignore || loadGeneration.current !== generation) return;
+          if (result.status === "error") {
+            setError(result.error);
+            showImageGenerationPreferencesLoadError(result.error);
+            return;
+          }
+          setPreferences(result.preferences);
+          setLoadedSessionKey(sessionKey);
+          setIsReady(true);
+          dismissImageGenerationPreferencesLoadError();
+        });
+    }
 
     const handleChange = (event: Event) => {
-      const normalized = normalizePreferences(
-        (event as CustomEvent<Partial<ImageGenerationPreferences>>).detail,
-      );
+      const changedPreferences = imageGenerationPreferencesFromChangedEvent(event, sessionKey);
+      if (!changedPreferences) return;
+      loadGeneration.current += 1;
+      const normalized = normalizePreferences(changedPreferences);
       setPreferences(normalized);
+      setLoadedSessionKey(sessionKey);
+      setError(null);
       setIsReady(true);
+      dismissImageGenerationPreferencesLoadError();
     };
+    const handleRetry = () => setLoadVersion((version) => version + 1);
     window.addEventListener(IMAGE_GENERATION_PREFERENCES_CHANGED_EVENT, handleChange);
+    window.addEventListener(IMAGE_GENERATION_PREFERENCES_RETRY_EVENT, handleRetry);
     return () => {
       ignore = true;
       window.removeEventListener(IMAGE_GENERATION_PREFERENCES_CHANGED_EVENT, handleChange);
+      window.removeEventListener(IMAGE_GENERATION_PREFERENCES_RETRY_EVENT, handleRetry);
     };
-  }, [sessionKey]);
+  }, [loadVersion, sessionKey]);
 
-  return { preferences, isReady };
+  return { error, isReady, loadedSessionKey, preferences, retry };
 }

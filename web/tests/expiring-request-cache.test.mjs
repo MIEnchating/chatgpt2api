@@ -46,4 +46,25 @@ describe("expiring request cache", () => {
     await oldRequest;
     expect(await cache.get(async () => "unexpected")).toBe("fresh");
   });
+
+  test("clear invalidates a pending mutation response", async () => {
+    const cache = createExpiringRequestCache(30_000);
+    const storeOldResponse = cache.beginStore();
+
+    cache.clear();
+    storeOldResponse("old-account");
+
+    expect(await cache.get(async () => "new-account")).toBe("new-account");
+  });
+
+  test("a newer mutation prevents an older response from overwriting the cache", async () => {
+    const cache = createExpiringRequestCache(30_000);
+    const storeFirstResponse = cache.beginStore();
+    const storeSecondResponse = cache.beginStore();
+
+    storeSecondResponse("second");
+    storeFirstResponse("first");
+
+    expect(await cache.get(async () => "unexpected")).toBe("second");
+  });
 });

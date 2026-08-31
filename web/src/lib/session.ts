@@ -51,6 +51,13 @@ export function getCachedAuthSession() {
   return cachedAuthSession;
 }
 
+function isUnauthenticatedSessionError(error: unknown) {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+  return (error as { status?: unknown }).status === 401;
+}
+
 export async function getVerifiedAuthSession(): Promise<StoredAuthSession | null> {
   if (cachedAuthSession !== undefined) {
     return cachedAuthSession;
@@ -95,7 +102,10 @@ async function verifyStoredAuthSession(): Promise<StoredAuthSession | null> {
   try {
     const data = await verifySession();
     return authSessionFromLoginResponse(data);
-  } catch {
-    return null;
+  } catch (error) {
+    if (isUnauthenticatedSessionError(error)) {
+      return null;
+    }
+    throw error;
   }
 }

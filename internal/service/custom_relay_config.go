@@ -1,6 +1,7 @@
 package service
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"sort"
@@ -17,9 +18,24 @@ const (
 	maxCustomRelayConfigs        = 20
 	maxCustomRelayBaseURLLength  = 2048
 	maxCustomRelayAPIKeyLength   = 16384
+	customRelaySaveAttempts      = 4
 )
 
 var customRelayKinds = []string{"text", "image", "video", "audio"}
+
+var ErrCustomRelayConfigNotFound = errors.New("custom relay config was not found")
+
+type CustomRelayConfigStorageError struct {
+	Err error
+}
+
+func (e *CustomRelayConfigStorageError) Error() string {
+	return "custom relay config storage: " + e.Err.Error()
+}
+
+func (e *CustomRelayConfigStorageError) Unwrap() error {
+	return e.Err
+}
 
 type CustomRelayConfig struct {
 	ID      string `json:"id"`
@@ -87,7 +103,7 @@ func (s *CustomRelayConfigService) Config(ownerID, id string) (CustomRelayConfig
 	defer s.mu.Unlock()
 	configs, err := s.loadLocked(ownerID)
 	if err != nil {
-		return CustomRelayConfig{}, err
+		return CustomRelayConfig{}, customRelayConfigStorageError(err)
 	}
 	return configs[id], nil
 }
@@ -101,7 +117,7 @@ func (s *CustomRelayConfigService) Statuses(ownerID string) ([]CustomRelayConfig
 	defer s.mu.Unlock()
 	configs, err := s.loadLocked(ownerID)
 	if err != nil {
-		return nil, err
+		return nil, customRelayConfigStorageError(err)
 	}
 	statuses := make([]CustomRelayConfigStatus, 0, len(configs))
 	for _, config := range configs {
@@ -130,18 +146,24 @@ func (s *CustomRelayConfigService) Create(ownerID, kind, name, baseURL, apiKey s
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	configs, err := s.loadLocked(ownerID)
-	if err != nil {
-		return CustomRelayConfigStatus{}, err
+	for attempt := 0; attempt < customRelaySaveAttempts; attempt++ {
+		configs, loadErr := s.loadLocked(ownerID)
+		if loadErr != nil {
+			return CustomRelayConfigStatus{}, customRelayConfigStorageError(loadErr)
+		}
+		if len(configs) >= maxCustomRelayConfigs {
+			return CustomRelayConfigStatus{}, fmt.Errorf("自定义 API 配置最多支持 %d 条", maxCustomRelayConfigs)
+		}
+		configs[config.ID] = config
+		if saveErr := s.saveLocked(ownerID, configs); saveErr != nil {
+			if errors.Is(saveErr, storage.ErrConcurrentRowUpdate) && attempt+1 < customRelaySaveAttempts {
+				continue
+			}
+			return CustomRelayConfigStatus{}, customRelayConfigStorageError(saveErr)
+		}
+		return customRelayConfigStatus(config), nil
 	}
-	if len(configs) >= maxCustomRelayConfigs {
-		return CustomRelayConfigStatus{}, fmt.Errorf("自定义 API 配置最多支持 %d 条", maxCustomRelayConfigs)
-	}
-	configs[config.ID] = config
-	if err := s.saveLocked(ownerID, configs); err != nil {
-		return CustomRelayConfigStatus{}, err
-	}
-	return customRelayConfigStatus(config), nil
+	return CustomRelayConfigStatus{}, customRelayConfigStorageError(fmt.Errorf("%w: create custom relay config after %d attempts", storage.ErrConcurrentRowUpdate, customRelaySaveAttempts))
 }
 
 func (s *CustomRelayConfigService) Update(ownerID, id, name, baseURL, apiKey string) (CustomRelayConfigStatus, error) {
@@ -155,26 +177,33 @@ func (s *CustomRelayConfigService) Update(ownerID, id, name, baseURL, apiKey str
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	configs, err := s.loadLocked(ownerID)
-	if err != nil {
-		return CustomRelayConfigStatus{}, err
+	for attempt := 0; attempt < customRelaySaveAttempts; attempt++ {
+		configs, loadErr := s.loadLocked(ownerID)
+		if loadErr != nil {
+			return CustomRelayConfigStatus{}, customRelayConfigStorageError(loadErr)
+		}
+		current, exists := configs[id]
+		if !exists {
+			return CustomRelayConfigStatus{}, ErrCustomRelayConfigNotFound
+		}
+		nextAPIKey := apiKey
+		if strings.TrimSpace(nextAPIKey) == "" {
+			nextAPIKey = current.APIKey
+		}
+		config, normalizeErr := normalizeCustomRelayConfig(CustomRelayConfig{ID: id, Kind: current.Kind, Name: name, BaseURL: baseURL, APIKey: nextAPIKey})
+		if normalizeErr != nil {
+			return CustomRelayConfigStatus{}, normalizeErr
+		}
+		configs[id] = config
+		if saveErr := s.saveLocked(ownerID, configs); saveErr != nil {
+			if errors.Is(saveErr, storage.ErrConcurrentRowUpdate) && attempt+1 < customRelaySaveAttempts {
+				continue
+			}
+			return CustomRelayConfigStatus{}, customRelayConfigStorageError(saveErr)
+		}
+		return customRelayConfigStatus(config), nil
 	}
-	current, exists := configs[id]
-	if !exists {
-		return CustomRelayConfigStatus{}, fmt.Errorf("custom relay config was not found")
-	}
-	if strings.TrimSpace(apiKey) == "" {
-		apiKey = current.APIKey
-	}
-	config, err := normalizeCustomRelayConfig(CustomRelayConfig{ID: id, Kind: current.Kind, Name: name, BaseURL: baseURL, APIKey: apiKey})
-	if err != nil {
-		return CustomRelayConfigStatus{}, err
-	}
-	configs[id] = config
-	if err := s.saveLocked(ownerID, configs); err != nil {
-		return CustomRelayConfigStatus{}, err
-	}
-	return customRelayConfigStatus(config), nil
+	return CustomRelayConfigStatus{}, customRelayConfigStorageError(fmt.Errorf("%w: update custom relay config after %d attempts", storage.ErrConcurrentRowUpdate, customRelaySaveAttempts))
 }
 
 func (s *CustomRelayConfigService) Delete(ownerID, id string) error {
@@ -188,12 +217,24 @@ func (s *CustomRelayConfigService) Delete(ownerID, id string) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	configs, err := s.loadLocked(ownerID)
-	if err != nil {
-		return err
+	for attempt := 0; attempt < customRelaySaveAttempts; attempt++ {
+		configs, err := s.loadLocked(ownerID)
+		if err != nil {
+			return customRelayConfigStorageError(err)
+		}
+		if _, exists := configs[id]; !exists {
+			return nil
+		}
+		delete(configs, id)
+		if err := s.saveLocked(ownerID, configs); err != nil {
+			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < customRelaySaveAttempts {
+				continue
+			}
+			return customRelayConfigStorageError(err)
+		}
+		return nil
 	}
-	delete(configs, id)
-	return s.saveLocked(ownerID, configs)
+	return customRelayConfigStorageError(fmt.Errorf("%w: delete custom relay config after %d attempts", storage.ErrConcurrentRowUpdate, customRelaySaveAttempts))
 }
 
 func (s *CustomRelayConfigService) loadLocked(ownerID string) (map[string]CustomRelayConfig, error) {
@@ -220,6 +261,13 @@ func (s *CustomRelayConfigService) loadLocked(ownerID string) (map[string]Custom
 
 func (s *CustomRelayConfigService) saveLocked(ownerID string, configs map[string]CustomRelayConfig) error {
 	return saveStoredJSON(s.store, customRelayConfigDocumentName(ownerID), configs)
+}
+
+func customRelayConfigStorageError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &CustomRelayConfigStorageError{Err: err}
 }
 
 func customRelayConfigDocumentName(ownerID string) string {

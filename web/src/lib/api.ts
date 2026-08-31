@@ -789,9 +789,6 @@ export async function verifySession() {
   });
 }
 
-export const IMAGE_GENERATION_PREFERENCES_CHANGED_EVENT =
-  "chatgpt2api:image-generation-preferences-changed";
-
 type ImageGenerationPreferencesResponse = { preferences: ImageGenerationPreferences };
 
 const imageGenerationPreferencesCache = createExpiringRequestCache<ImageGenerationPreferencesResponse>(30_000);
@@ -861,13 +858,14 @@ export async function fetchImageGenerationPreferences() {
 export async function updateImageGenerationPreferences(
   preferences: ImageGenerationPreferences,
 ) {
+  const storeResponse = imageGenerationPreferencesCache.beginStore();
   return httpRequest<ImageGenerationPreferencesResponse>(
     "/api/profile/image-generation-preferences",
     {
       method: "PUT",
       body: preferences,
     },
-  ).then(imageGenerationPreferencesCache.store);
+  ).then(storeResponse);
 }
 
 export type RelayTokenPreferenceUpdate = Partial<Pick<
@@ -879,26 +877,28 @@ export type RelayTokenPreferenceUpdate = Partial<Pick<
 >>;
 
 export async function updateRelayTokenPreferences(preferences: RelayTokenPreferenceUpdate) {
+  const storeResponse = imageGenerationPreferencesCache.beginStore();
   return httpRequest<ImageGenerationPreferencesResponse>(
     "/api/profile/image-generation-preferences",
     {
       method: "PATCH",
       body: preferences,
     },
-  ).then(imageGenerationPreferencesCache.store);
+  ).then(storeResponse);
 }
 
 export async function updateCreationWorkbenchPreferences(
   workbench: CreationWorkbenchPreferences,
   options: Pick<ImageGenerationPreferences, "stream" | "partial_images" | "response_format_b64_json" | "codex_cli_compatibility">,
 ) {
+  const storeResponse = imageGenerationPreferencesCache.beginStore();
   return httpRequest<ImageGenerationPreferencesResponse>(
     "/api/profile/image-generation-preferences",
     {
       method: "PATCH",
       body: { workbench, ...options },
     },
-  ).then(imageGenerationPreferencesCache.store);
+  ).then(storeResponse);
 }
 
 export async function logout() {

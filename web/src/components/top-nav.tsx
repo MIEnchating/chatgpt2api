@@ -324,7 +324,7 @@ export function TopNav() {
         </nav>
         <div className="col-start-2 row-start-1 flex items-center justify-end gap-1 xl:col-start-3 xl:gap-1.5 xl:justify-self-end">
           {canAccessImageTasks ? <ImageTaskQueue className="size-8 px-0 lg:h-9 lg:w-auto lg:px-3" /> : null}
-          <AnnouncementCenter />
+          <AnnouncementCenter key={session.key} sessionKey={session.key} />
           <ThemeToggleButton theme={theme} onToggle={handleThemeToggle} />
           <AccountMenu
             session={session}

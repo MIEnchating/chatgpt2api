@@ -29,7 +29,7 @@ func (a *App) handleImageGenerationPreferences(w http.ResponseWriter, r *http.Re
 	case http.MethodGet:
 		preferences, err := a.imagePreferences.Preferences(ownerID)
 		if err != nil {
-			util.WriteError(w, http.StatusInternalServerError, "failed to load image generation preferences")
+			util.WriteError(w, http.StatusServiceUnavailable, "创作偏好存储暂时不可用")
 			return
 		}
 		preferences.DefaultTextModel = allowedPersonalModel(preferences.DefaultTextModel, a.config.TextModels())
@@ -82,7 +82,7 @@ func (a *App) handleImageGenerationPreferences(w http.ResponseWriter, r *http.Re
 		}
 		current, err := a.imagePreferences.Preferences(ownerID)
 		if err != nil {
-			util.WriteError(w, http.StatusInternalServerError, "failed to load image generation preferences")
+			util.WriteError(w, http.StatusServiceUnavailable, "创作偏好存储暂时不可用")
 			return
 		}
 		workbench := current.Workbench
@@ -121,7 +121,7 @@ func (a *App) handleImageGenerationPreferences(w http.ResponseWriter, r *http.Re
 			Workbench:               workbench,
 		})
 		if err != nil {
-			util.WriteError(w, http.StatusBadRequest, err.Error())
+			writeImageGenerationPreferenceError(w, err)
 			return
 		}
 		util.WriteJSON(w, http.StatusOK, map[string]any{"preferences": preferences})
@@ -183,13 +183,26 @@ func (a *App) handleImageGenerationPreferences(w http.ResponseWriter, r *http.Re
 		}
 		preferences, err := a.imagePreferences.Patch(ownerID, patch)
 		if err != nil {
-			util.WriteError(w, http.StatusBadRequest, err.Error())
+			writeImageGenerationPreferenceError(w, err)
 			return
 		}
 		util.WriteJSON(w, http.StatusOK, map[string]any{"preferences": preferences})
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
+}
+
+func writeImageGenerationPreferenceError(w http.ResponseWriter, err error) {
+	var storageErr *service.ImageGenerationPreferenceStorageError
+	if errors.As(err, &storageErr) {
+		if errors.Is(err, storage.ErrConcurrentRowUpdate) {
+			util.WriteError(w, http.StatusConflict, "创作偏好已被其他请求修改，请重试")
+			return
+		}
+		util.WriteError(w, http.StatusServiceUnavailable, "创作偏好存储暂时不可用")
+		return
+	}
+	util.WriteError(w, http.StatusBadRequest, err.Error())
 }
 
 func relayTokenPreferenceValues(body map[string]any, field string, fallback []string) []string {
@@ -290,7 +303,7 @@ func (a *App) handleProfileRelayKey(w http.ResponseWriter, r *http.Request) {
 			}
 			config, err := a.customRelayConfigs.Config(identityScope(identity), configID)
 			if err != nil {
-				util.WriteError(w, http.StatusInternalServerError, "读取自定义 API 配置失败")
+				util.WriteError(w, http.StatusServiceUnavailable, "自定义 API 配置存储暂时不可用")
 				return
 			}
 			names := []string{}

@@ -1,4 +1,6 @@
+import { createExpiringRequestCache, type ExpiringRequestCache } from "@/lib/expiring-request-cache";
 import { httpRequest } from "@/lib/request";
+import { AUTH_SESSION_CHANGE_EVENT } from "@/lib/session";
 
 export type StorageConfig = {
   mode: string;
@@ -33,7 +35,12 @@ export type UserWebDAVStorageProvider = UserStorageProviderBase & {
 export type UserStorageProvider = UserS3StorageProvider | UserWebDAVStorageProvider;
 export type UserStorageProviders = { s3?: UserS3StorageProvider; webdav?: UserWebDAVStorageProvider };
 
-let storageConfigPromise: Promise<StorageConfig> | null = null;
+type StorageProviderRequest = <T>(
+  path: string,
+  options?: { method?: string; body?: unknown },
+) => Promise<T>;
+
+const STORAGE_PROVIDER_CACHE_TTL = 30_000;
 
 export function defaultUserStorageProvider(): UserS3StorageProvider {
   return {
@@ -62,22 +69,82 @@ export function defaultUserWebDAVStorageProvider(): UserWebDAVStorageProvider {
   };
 }
 
-export async function fetchStorageConfig() {
-  storageConfigPromise ??= httpRequest<{ config: StorageConfig }>("/api/storage/config").then((value) => value.config);
-  return storageConfigPromise;
-}
+export function createStorageProviderClient(
+  request: StorageProviderRequest,
+  ttlMilliseconds = STORAGE_PROVIDER_CACHE_TTL,
+) {
+  const configCache = createExpiringRequestCache<StorageConfig>(ttlMilliseconds);
+  const providersCache = createExpiringRequestCache<UserStorageProviders>(ttlMilliseconds);
+  let scopeRevision = 0;
 
-export async function fetchUserStorageProviders() {
-  const response = await httpRequest<{ provider: UserStorageProviders }>("/api/profile/storage-provider");
-  return response.provider;
-}
+  const currentRequest = async <T>(cache: ExpiringRequestCache<T>, load: () => Promise<T>): Promise<T> => {
+    for (;;) {
+      const requestRevision = scopeRevision;
+      try {
+        const value = await cache.get(load);
+        if (requestRevision === scopeRevision) return value;
+      } catch (error) {
+        if (requestRevision === scopeRevision) throw error;
+      }
+    }
+  };
 
-export async function updateUserStorageProviders(provider: UserStorageProviders) {
-  const response = await httpRequest<{ provider: UserStorageProviders }>("/api/profile/storage-provider", {
-    method: "POST",
-    body: { provider },
+  const fetchConfig = () => currentRequest(configCache, async () => {
+    const response = await request<{ config: StorageConfig }>("/api/storage/config");
+    return response.config;
   });
-  return response.provider;
+  const fetchProviders = () => currentRequest(providersCache, async () => {
+    const response = await request<{ provider: UserStorageProviders }>("/api/profile/storage-provider");
+    return response.provider;
+  });
+  const invalidate = () => {
+    scopeRevision += 1;
+    configCache.clear();
+    providersCache.clear();
+  };
+
+  return {
+    fetchStorageConfig: fetchConfig,
+    fetchUserStorageProviders: fetchProviders,
+    invalidate,
+    async updateUserStorageProviders(provider: UserStorageProviders) {
+      const mutationRevision = scopeRevision;
+      const storeResponse = providersCache.beginStore();
+      try {
+        const response = await request<{ provider: UserStorageProviders }>("/api/profile/storage-provider", {
+          method: "POST",
+          body: { provider },
+        });
+        if (mutationRevision !== scopeRevision) return fetchProviders();
+        return storeResponse(response.provider);
+      } catch (error) {
+        if (mutationRevision !== scopeRevision) return fetchProviders();
+        throw error;
+      }
+    },
+  };
+}
+
+const storageProviderClient = createStorageProviderClient(httpRequest);
+
+if (typeof window !== "undefined") {
+  window.addEventListener(AUTH_SESSION_CHANGE_EVENT, storageProviderClient.invalidate);
+}
+
+export function invalidateStorageProviderCache() {
+  storageProviderClient.invalidate();
+}
+
+export function fetchStorageConfig() {
+  return storageProviderClient.fetchStorageConfig();
+}
+
+export function fetchUserStorageProviders() {
+  return storageProviderClient.fetchUserStorageProviders();
+}
+
+export function updateUserStorageProviders(provider: UserStorageProviders) {
+  return storageProviderClient.updateUserStorageProviders(provider);
 }
 
 export async function measureUserStorageProvider(provider: UserStorageProvider) {

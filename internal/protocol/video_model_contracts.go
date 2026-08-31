@@ -210,6 +210,7 @@ func loadDefaultVideoModelContracts() []VideoModelContract {
 }
 
 func NormalizeVideoModelContract(contract VideoModelContract) (VideoModelContract, error) {
+	contract = cloneVideoContract(contract)
 	queuedStatusesMissing := contract.Polling.QueuedStatuses == nil
 	runningStatusesMissing := contract.Polling.RunningStatuses == nil
 	progressFieldsMissing := contract.Polling.ProgressFields == nil
@@ -943,11 +944,11 @@ func VideoContractForModel(model string) (VideoModelContract, bool) {
 	videoModelContractsMu.RLock()
 	defer videoModelContractsMu.RUnlock()
 	if contract, ok := videoModelContracts.exact[key]; ok {
-		return contract, true
+		return cloneVideoContract(contract), true
 	}
 	for _, candidate := range videoModelContracts.wildcards {
 		if videoContractGlobMatches(candidate.pattern, key) {
-			return candidate.contract, true
+			return cloneVideoContract(candidate.contract), true
 		}
 	}
 	return VideoModelContract{}, false
@@ -1003,11 +1004,12 @@ func validateVideoContractCollection(contracts []VideoModelContract) error {
 }
 
 func indexVideoModelContracts(contracts []VideoModelContract) videoModelContractRegistry {
+	owned := cloneVideoContracts(contracts)
 	result := videoModelContractRegistry{
-		contracts: cloneVideoContracts(contracts),
+		contracts: owned,
 		exact:     make(map[string]VideoModelContract),
 	}
-	for _, contract := range contracts {
+	for _, contract := range owned {
 		for _, model := range contract.Models {
 			key := strings.ToLower(strings.TrimSpace(model))
 			if strings.Contains(key, "*") {
@@ -1123,36 +1125,40 @@ func videoContractGlobsOverlap(left, right string) bool {
 func cloneVideoContracts(contracts []VideoModelContract) []VideoModelContract {
 	cloned := make([]VideoModelContract, len(contracts))
 	for index, contract := range contracts {
-		contract.Models = slices.Clone(contract.Models)
-		contract.Artifact.AllowedHosts = slices.Clone(contract.Artifact.AllowedHosts)
-		contract.Capability.Sizes = slices.Clone(contract.Capability.Sizes)
-		contract.Capability.Seconds = slices.Clone(contract.Capability.Seconds)
-		contract.Capability.Resolutions = slices.Clone(contract.Capability.Resolutions)
-		contract.Generation.Modes = slices.Clone(contract.Generation.Modes)
-		contract.Rules = slices.Clone(contract.Rules)
-		for ruleIndex := range contract.Rules {
-			rule := &contract.Rules[ruleIndex]
-			rule.Require = slices.Clone(rule.Require)
-			rule.RequireAny = slices.Clone(rule.RequireAny)
-			rule.Forbid = slices.Clone(rule.Forbid)
-			rule.Limits = maps.Clone(rule.Limits)
-			rule.ForceValues = maps.Clone(rule.ForceValues)
-			rule.UI.Show = slices.Clone(rule.UI.Show)
-			rule.UI.Hide = slices.Clone(rule.UI.Hide)
-			rule.UI.Disable = slices.Clone(rule.UI.Disable)
-		}
-		contract.Polling.TaskIDFields = slices.Clone(contract.Polling.TaskIDFields)
-		contract.Polling.StatusFields = slices.Clone(contract.Polling.StatusFields)
-		contract.Polling.ProgressFields = slices.Clone(contract.Polling.ProgressFields)
-		contract.Polling.ErrorFields = slices.Clone(contract.Polling.ErrorFields)
-		contract.Polling.QueuedStatuses = slices.Clone(contract.Polling.QueuedStatuses)
-		contract.Polling.RunningStatuses = slices.Clone(contract.Polling.RunningStatuses)
-		contract.Polling.SuccessStatuses = slices.Clone(contract.Polling.SuccessStatuses)
-		contract.Polling.FailureStatuses = slices.Clone(contract.Polling.FailureStatuses)
-		contract.Polling.ResultFields = slices.Clone(contract.Polling.ResultFields)
-		cloned[index] = contract
+		cloned[index] = cloneVideoContract(contract)
 	}
 	return cloned
+}
+
+func cloneVideoContract(contract VideoModelContract) VideoModelContract {
+	contract.Models = slices.Clone(contract.Models)
+	contract.Artifact.AllowedHosts = slices.Clone(contract.Artifact.AllowedHosts)
+	contract.Capability.Sizes = slices.Clone(contract.Capability.Sizes)
+	contract.Capability.Seconds = slices.Clone(contract.Capability.Seconds)
+	contract.Capability.Resolutions = slices.Clone(contract.Capability.Resolutions)
+	contract.Generation.Modes = slices.Clone(contract.Generation.Modes)
+	contract.Rules = slices.Clone(contract.Rules)
+	for ruleIndex := range contract.Rules {
+		rule := &contract.Rules[ruleIndex]
+		rule.Require = slices.Clone(rule.Require)
+		rule.RequireAny = slices.Clone(rule.RequireAny)
+		rule.Forbid = slices.Clone(rule.Forbid)
+		rule.Limits = maps.Clone(rule.Limits)
+		rule.ForceValues = maps.Clone(rule.ForceValues)
+		rule.UI.Show = slices.Clone(rule.UI.Show)
+		rule.UI.Hide = slices.Clone(rule.UI.Hide)
+		rule.UI.Disable = slices.Clone(rule.UI.Disable)
+	}
+	contract.Polling.TaskIDFields = slices.Clone(contract.Polling.TaskIDFields)
+	contract.Polling.StatusFields = slices.Clone(contract.Polling.StatusFields)
+	contract.Polling.ProgressFields = slices.Clone(contract.Polling.ProgressFields)
+	contract.Polling.ErrorFields = slices.Clone(contract.Polling.ErrorFields)
+	contract.Polling.QueuedStatuses = slices.Clone(contract.Polling.QueuedStatuses)
+	contract.Polling.RunningStatuses = slices.Clone(contract.Polling.RunningStatuses)
+	contract.Polling.SuccessStatuses = slices.Clone(contract.Polling.SuccessStatuses)
+	contract.Polling.FailureStatuses = slices.Clone(contract.Polling.FailureStatuses)
+	contract.Polling.ResultFields = slices.Clone(contract.Polling.ResultFields)
+	return contract
 }
 
 func uniqueTrimmedStrings(values []string, lower bool) []string {

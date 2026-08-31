@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import {
   AudioLines,
@@ -42,7 +42,6 @@ import {
   fetchModelConfig,
   fetchProfileBalance,
   fetchRelayModels,
-  IMAGE_GENERATION_PREFERENCES_CHANGED_EVENT,
   deleteCustomRelayConfig,
   relayModelOptionsFromList,
   updateCustomRelayConfig,
@@ -52,6 +51,7 @@ import {
   type CustomRelayConfigsResponse,
   type ProfileBalanceStatus,
 } from "@/lib/api";
+import { dispatchImageGenerationPreferencesChanged } from "@/lib/image-generation-preferences-events";
 import { DEFAULT_CREATION_WORKBENCH_PREFERENCES } from "@/lib/use-image-generation-preferences";
 import { displaySubjectId } from "@/lib/session";
 import {
@@ -455,6 +455,9 @@ function ImageGenerationPreferencesCard({ sessionKey }: { sessionKey: string }) 
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState("");
+  const saveVersionRef = useRef(0);
+  const currentSessionKeyRef = useRef(sessionKey);
+  currentSessionKeyRef.current = sessionKey;
   const [grokVoices, setGrokVoices] = useState<string[]>([]);
   const [loadingModelKind, setLoadingModelKind] = useState<RelayTokenKind | null>(null);
   const [pulledModels, setPulledModels] = useState<Record<RelayTokenKind, string[] | null>>({
@@ -463,9 +466,16 @@ function ImageGenerationPreferencesCard({ sessionKey }: { sessionKey: string }) 
     video: null,
     audio: null,
   });
+  const modelPullControllerRef = useRef<AbortController | null>(null);
+  const modelPullVersionRef = useRef(0);
+  const currentRelayTokenNamesRef = useRef(relayTokenNames);
+  currentRelayTokenNamesRef.current = relayTokenNames;
+  const relayTokenSelectionKey = JSON.stringify(relayTokenNames);
 
   useEffect(() => {
     let ignore = false;
+    saveVersionRef.current += 1;
+    setIsSaving(false);
     setIsLoading(true);
     void Promise.all([fetchImageGenerationPreferences(), fetchModelConfig()])
       .then(([{ preferences: loaded }, { config }]) => {
@@ -490,8 +500,17 @@ function ImageGenerationPreferencesCard({ sessionKey }: { sessionKey: string }) 
   }, [sessionKey]);
 
   useEffect(() => {
+    modelPullVersionRef.current += 1;
+    modelPullControllerRef.current?.abort();
+    modelPullControllerRef.current = null;
+    setLoadingModelKind(null);
     setPulledModels({ text: null, image: null, video: null, audio: null });
-  }, [relayTokenNames]);
+    return () => {
+      modelPullVersionRef.current += 1;
+      modelPullControllerRef.current?.abort();
+      modelPullControllerRef.current = null;
+    };
+  }, [relayTokenSelectionKey, sessionKey]);
 
   const selectedAudioModel = modelConfig.audio.models.includes(preferences.default_audio_model) ? preferences.default_audio_model : modelConfig.audio.fallback;
 
@@ -521,14 +540,27 @@ function ImageGenerationPreferencesCard({ sessionKey }: { sessionKey: string }) 
     : Math.max(audioChoices.minimumSpeed, Math.min(audioChoices.maximumSpeed, Number(preferences.default_audio_speed) || 1));
 
   const pullModels = async (kind: RelayTokenKind) => {
-    const tokenNames = relayTokenNames[kind];
+    const tokenNames = [...relayTokenNames[kind]];
     if (tokenNames.length === 0) {
       toast.error(`请先在 Key 选择中设置${{ text: "文本", image: "图片", video: "视频", audio: "音频" }[kind]}模型 Key`);
       return;
     }
+    modelPullControllerRef.current?.abort();
+    const controller = new AbortController();
+    const requestVersion = modelPullVersionRef.current + 1;
+    modelPullVersionRef.current = requestVersion;
+    modelPullControllerRef.current = controller;
+    const requestSessionKey = sessionKey;
+    const tokenSelectionKey = JSON.stringify(tokenNames);
     setLoadingModelKind(kind);
     try {
-      const responses = await Promise.all(tokenNames.map((tokenName) => fetchRelayModels({ tokenName })));
+      const responses = await Promise.all(tokenNames.map((tokenName) => fetchRelayModels({ tokenName, signal: controller.signal })));
+      if (
+        controller.signal.aborted
+        || modelPullVersionRef.current !== requestVersion
+        || currentSessionKeyRef.current !== requestSessionKey
+        || JSON.stringify(currentRelayTokenNamesRef.current[kind]) !== tokenSelectionKey
+      ) return;
       const upstreamModels = filterModelsByCapability(
         Array.from(new Set(responses.flatMap((response) => relayModelOptionsFromList(response.data).map((option) => option.value)))),
         kind,
@@ -537,22 +569,29 @@ function ImageGenerationPreferencesCard({ sessionKey }: { sessionKey: string }) 
       const availableModels = modelConfig[kind].models.filter((model) => upstreamSet.has(model));
       setPulledModels((current) => ({ ...current, [kind]: availableModels }));
       const field = `default_${kind}_model` as const;
-      if (preferences[field] && !availableModels.includes(preferences[field])) {
-        setPreferences((current) => ({ ...current, [field]: availableModels[0] || "" }));
-      }
+      setPreferences((current) => current[field] && !availableModels.includes(current[field])
+        ? { ...current, [field]: availableModels[0] || "" }
+        : current);
       if (availableModels.length === 0) {
         toast.info(`该 Key 返回的模型中没有管理员开放的${{ text: "文本", image: "图片", video: "视频", audio: "音频" }[kind]}模型`);
       } else {
         toast.success(`已拉取 ${availableModels.length} 个可用模型`);
       }
     } catch (error) {
+      if (controller.signal.aborted || modelPullVersionRef.current !== requestVersion) return;
       toast.error(error instanceof Error ? error.message : "拉取模型失败");
     } finally {
-      setLoadingModelKind(null);
+      if (modelPullVersionRef.current === requestVersion) {
+        modelPullControllerRef.current = null;
+        setLoadingModelKind(null);
+      }
     }
   };
 
   const save = async () => {
+    const saveVersion = saveVersionRef.current + 1;
+    saveVersionRef.current = saveVersion;
+    const saveSessionKey = sessionKey;
     setIsSaving(true);
     setMessage("");
     try {
@@ -564,13 +603,18 @@ function ImageGenerationPreferencesCard({ sessionKey }: { sessionKey: string }) 
         default_audio_speed: selectedAudioSpeed,
       };
       const { preferences: saved } = await updateImageGenerationPreferences(normalizedPreferences);
+      if (saveVersionRef.current !== saveVersion || currentSessionKeyRef.current !== saveSessionKey) return;
       setPreferences(saved);
       setMessage("设置已保存");
-      window.dispatchEvent(new CustomEvent(IMAGE_GENERATION_PREFERENCES_CHANGED_EVENT, { detail: saved }));
+      dispatchImageGenerationPreferencesChanged(saveSessionKey, saved);
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : "保存图片生成设置失败");
+      if (saveVersionRef.current === saveVersion && currentSessionKeyRef.current === saveSessionKey) {
+        setMessage(error instanceof Error ? error.message : "保存图片生成设置失败");
+      }
     } finally {
-      setIsSaving(false);
+      if (saveVersionRef.current === saveVersion && currentSessionKeyRef.current === saveSessionKey) {
+        setIsSaving(false);
+      }
     }
   };
 
