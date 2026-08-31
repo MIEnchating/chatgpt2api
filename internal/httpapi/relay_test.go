@@ -56,9 +56,9 @@ func TestCustomRelaySelectionUsesItsBaseURLAndKeyWithoutForwardingInternals(t *t
 	app := newTestApp(t)
 	defer app.Close()
 
-	identity, _, err := app.auth.LoginAdminPassword(testAdminUsername, testAdminPassword)
+	identity, _, err := app.auth.LoginPassword(testAdminUsername, testAdminPassword)
 	if err != nil || identity == nil {
-		t.Fatalf("LoginAdminPassword() identity=%#v error=%v", identity, err)
+		t.Fatalf("LoginPassword() identity=%#v error=%v", identity, err)
 	}
 	var received map[string]any
 	var authorization string

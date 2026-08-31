@@ -16,6 +16,8 @@ const (
 	passwordSessionName          = "登录会话"
 )
 
+var ErrInvalidPasswordCredentials = authError("用户名或密码错误")
+
 var accountUsernameRE = regexp.MustCompile(`^[a-z0-9][a-z0-9_.-]{2,31}$`)
 
 type PasswordAccount struct {
@@ -162,19 +164,22 @@ func (s *AuthService) CreatePasswordUser(username, password, name, roleID string
 	return item, nil
 }
 
-func (s *AuthService) LoginAdminPassword(username, password string) (*Identity, string, error) {
+func (s *AuthService) LoginPassword(username, password string) (*Identity, string, error) {
 	username, err := normalizeAccountUsername(username)
 	if err != nil {
-		return nil, "", authError("用户名或密码错误")
+		return nil, "", ErrInvalidPasswordCredentials
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	index, account, ok := passwordAccountIndexByUsernameLocked(s.accounts, username)
-	if !ok || account.Role != AuthRoleAdmin || !verifyAccountPassword(password, account.PasswordHash) {
-		return nil, "", authError("用户名或密码错误")
+	if !ok {
+		return nil, "", ErrInvalidPasswordCredentials
 	}
 	if !account.Enabled {
 		return nil, "", authError("用户已被禁用")
+	}
+	if !verifyAccountPassword(password, account.PasswordHash) {
+		return nil, "", ErrInvalidPasswordCredentials
 	}
 	now := util.NowISO()
 	previousAccounts := append([]PasswordAccount(nil), s.accounts...)

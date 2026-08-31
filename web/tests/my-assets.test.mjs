@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { createMyAsset, createMyAssetId, mergeMyAssets, normalizeMyAssets } from "../src/lib/my-assets-core.ts";
@@ -49,4 +50,20 @@ test("my assets normalize visibility and preserve ownership metadata", () => {
   assert.equal(shared.ownerId, "user-a");
   assert.equal(shared.ownerName, "Alice");
   assert.equal(shared.owned, false);
+});
+
+test("my asset clients persist item mutations without delayed full-table snapshots", () => {
+  const api = readFileSync(new URL("../src/lib/my-assets.ts", import.meta.url), "utf8");
+  const hook = readFileSync(new URL("../src/lib/use-my-assets.ts", import.meta.url), "utf8");
+  const prompts = readFileSync(new URL("../src/app/prompt-library/page.tsx", import.meta.url), "utf8");
+  const canvas = readFileSync(new URL("../src/app/canvas/page.tsx", import.meta.url), "utf8");
+
+  assert.doesNotMatch(api, /method:\s*"PUT"/);
+  assert.match(api, /method:\s*"POST"/);
+  assert.match(api, /method:\s*"DELETE"/);
+  assert.doesNotMatch(hook, /syncMyAssets|setTimeout\(/);
+  assert.match(hook, /upsertMyAsset\(asset\)/);
+  assert.match(hook, /deleteMyAsset\(id\)/);
+  assert.match(prompts, /await upsertMyAsset\(asset\)/);
+  assert.match(canvas, /await upsertMyAsset\(asset\)/);
 });

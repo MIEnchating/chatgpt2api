@@ -87,8 +87,8 @@ export async function persistCreationTaskOutputs(
           duration_ms: uploaded.durationMs || item.duration_ms,
         };
       }
-      if (kind === "video" && storageKeyOf(persistedItem)) {
-        await ensureGeneratedVideoAsset(task, persistedItem, index, options.assetContext);
+      if ((kind === "video" || kind === "audio") && storageKeyOf(persistedItem)) {
+        await ensureGeneratedMediaAsset(task, persistedItem, index, options.assetContext);
       }
       return persistedItem;
     } catch (error) {
@@ -100,13 +100,13 @@ export async function persistCreationTaskOutputs(
   return data.some((item, index) => item !== task.data?.[index]) ? { ...task, data } : task;
 }
 
-export async function ensureGeneratedVideoAsset(
+export async function ensureGeneratedMediaAsset(
   task: CreationTask,
   item: CreationTaskData,
   index: number,
   context: CreationTaskAssetContext = {},
 ) {
-  const asset = generatedVideoAsset(task, item, index, context);
+  const asset = generatedMediaAsset(task, item, index, context);
   if (!asset) return;
   const registrationKey = `${asset.id}:${asset.storageKey || ""}`;
   if (registeredGeneratedAssetIDs.has(registrationKey)) return;
@@ -120,29 +120,32 @@ export async function ensureGeneratedVideoAsset(
   await request;
 }
 
-export function generatedVideoAsset(
+export function generatedMediaAsset(
   task: CreationTask,
   item: CreationTaskData,
   index: number,
   context: CreationTaskAssetContext = {},
 ): MyAsset | null {
-  const url = String(item.video_url || item.url || "").trim();
+  const kind = taskItemKind(task, item);
+  if (kind !== "video" && kind !== "audio") return null;
+  const url = String(kind === "video" ? item.video_url || item.url || "" : item.audio_url || item.url || "").trim();
   const storageKey = storageKeyOf(item);
   if (!url || !storageKey) return null;
   const prompt = String(context.prompt || "").trim();
   const workflowContext = task.workflow_context && typeof task.workflow_context === "object"
     ? task.workflow_context as Record<string, unknown>
     : {};
-  const source = String(context.source || (Object.keys(workflowContext).length ? "工作流" : "生成视频")).trim();
+  const generatedLabel = kind === "video" ? "生成视频" : "生成音频";
+  const source = String(context.source || (Object.keys(workflowContext).length ? "工作流" : generatedLabel)).trim();
   const createdAt = validTaskDate(task.created_at);
   const updatedAt = validTaskDate(task.updated_at) || createdAt;
   return {
-    id: `generated-video:${task.id}:${index}`,
-    kind: "video",
-    title: promptTitle(prompt),
+    id: `generated-${kind}:${task.id}:${index}`,
+    kind,
+    title: promptTitle(prompt, generatedLabel),
     url,
     storageKey,
-    mimeType: item.mime_type || "video/mp4",
+    mimeType: item.mime_type || defaultMediaType(kind),
     ...(positiveNumber(item.bytes || item.size) ? { bytes: positiveNumber(item.bytes || item.size) } : {}),
     ...(positiveNumber(item.width) ? { width: positiveNumber(item.width) } : {}),
     ...(positiveNumber(item.height) ? { height: positiveNumber(item.height) } : {}),
@@ -166,8 +169,8 @@ function storageKeyOf(item: CreationTaskData) {
   return String(item.storageKey || item.storage_key || "").trim();
 }
 
-function promptTitle(prompt: string) {
-  if (!prompt) return "生成视频";
+function promptTitle(prompt: string, fallback: string) {
+  if (!prompt) return fallback;
   return prompt.length > 60 ? `${prompt.slice(0, 60)}...` : prompt;
 }
 

@@ -146,6 +146,20 @@ func TestStorageFileRoutesMatchReferenceLifecycle(t *testing.T) {
 	if got := response.Header().Get("Content-Range"); got != "bytes 2-5/10" {
 		t.Fatalf("Content-Range = %q", got)
 	}
+	if got := response.Header().Get("Cache-Control"); got != "private, no-store" {
+		t.Fatalf("GET content Cache-Control = %q", got)
+	}
+
+	request = httptest.NewRequest(http.MethodHead, "/api/files/"+objectID+"/content", nil)
+	setRequestAuthCookie(request, aliceToken)
+	response = httptest.NewRecorder()
+	app.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusOK || response.Body.Len() != 0 {
+		t.Fatalf("HEAD content status = %d body = %q", response.Code, response.Body.String())
+	}
+	if got := response.Header().Get("Cache-Control"); got != "private, no-store" {
+		t.Fatalf("HEAD content Cache-Control = %q", got)
+	}
 
 	request = httptest.NewRequest(http.MethodDelete, "/api/files/"+objectID, strings.NewReader(`{}`))
 	setRequestAuthCookie(request, bobToken)
@@ -224,6 +238,26 @@ func TestStorageRoutesEnforceProviderAndMeasurePermissions(t *testing.T) {
 				t.Fatalf("status = %d body = %s", response.Code, response.Body.String())
 			}
 		})
+	}
+}
+
+func TestProfileStorageMeasureHonorsDisabledUserProviders(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+	if _, err := app.config.Update(map[string]any{"storage": model.StorageSetting{Mode: "server_local"}}); err != nil {
+		t.Fatal(err)
+	}
+	_, userToken := createPasswordUserSession(t, app, "storage-measure-disabled", "Password123!", "Storage Measure Disabled")
+
+	request := httptest.NewRequest(http.MethodPost, "/api/profile/storage-provider/measure", strings.NewReader(`{
+		"provider":{"enabled":true,"type":"webdav","endpoint":"http://127.0.0.1:1","username":"user","password":"secret"}
+	}`))
+	request.Header.Set("Content-Type", "application/json")
+	setRequestAuthCookie(request, userToken)
+	response := httptest.NewRecorder()
+	app.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "user storage providers are disabled") {
+		t.Fatalf("disabled user provider measure status = %d body = %s", response.Code, response.Body.String())
 	}
 }
 

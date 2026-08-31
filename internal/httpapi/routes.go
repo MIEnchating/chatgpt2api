@@ -464,20 +464,6 @@ func (a *App) handleProfileAssets(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		util.WriteJSON(w, http.StatusOK, map[string]any{"items": items})
-	case http.MethodPut:
-		var body struct {
-			Items []service.MyAsset `json:"items"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-			util.WriteError(w, http.StatusBadRequest, "invalid json body")
-			return
-		}
-		items, err := a.myAssets.Replace(r.Context(), ownerID, identity.Role == service.AuthRoleAdmin, body.Items)
-		if err != nil {
-			util.WriteError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		util.WriteJSON(w, http.StatusOK, map[string]any{"items": items})
 	case http.MethodPost:
 		var body struct {
 			Item service.MyAsset `json:"item"`
@@ -486,12 +472,26 @@ func (a *App) handleProfileAssets(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusBadRequest, "invalid json body")
 			return
 		}
-		items, err := a.myAssets.UpsertMedia(ownerID, body.Item)
+		item, err := a.myAssets.Upsert(r.Context(), ownerID, identity.Role == service.AuthRoleAdmin, body.Item)
 		if err != nil {
 			util.WriteError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		util.WriteJSON(w, http.StatusOK, map[string]any{"items": items})
+		util.WriteJSON(w, http.StatusOK, map[string]any{"item": item})
+	case http.MethodDelete:
+		var body struct {
+			ID string `json:"id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			util.WriteError(w, http.StatusBadRequest, "invalid json body")
+			return
+		}
+		deleted, err := a.myAssets.Delete(r.Context(), ownerID, identity.Role == service.AuthRoleAdmin, body.ID)
+		if err != nil {
+			util.WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		util.WriteJSON(w, http.StatusOK, map[string]any{"deleted": deleted, "id": strings.TrimSpace(body.ID)})
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}

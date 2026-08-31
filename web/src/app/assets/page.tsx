@@ -43,7 +43,7 @@ const visibilityOptions: Array<{ value: "all" | MyAssetVisibility; label: string
 export default function AssetsPage() {
   const { isCheckingAuth, session } = useAuthGuard(undefined, "/assets");
   const scope = session?.key || "anonymous";
-  const { assets, setAssets, loading } = useMyAssets(scope, Boolean(session));
+  const { assets, upsertAsset, deleteAsset, loading } = useMyAssets(scope, Boolean(session));
   const [managedAssets, setManagedAssets] = useState<MyAsset[]>([]);
   const [visibleRemoteAssets, setVisibleRemoteAssets] = useState<MyAsset[]>([]);
   const [visibleLoading, setVisibleLoading] = useState(true);
@@ -167,7 +167,7 @@ export default function AssetsPage() {
         setManagedAssets((current) => current.filter((item) => item.managedPath !== deleting.managedPath));
       } else {
         await deleteUnusedAssetStorage(deleting, assets.filter((item) => item.id !== deleting.id));
-        setAssets((current) => current.filter((item) => item.id !== deleting.id));
+        await deleteAsset(deleting.id);
       }
       if (preview?.id === deleting.id) setPreview(null);
       setSelectedKeys((current) => { const next = new Set(current); next.delete(assetListKey(deleting)); return next; });
@@ -218,23 +218,20 @@ export default function AssetsPage() {
     const targets = visibilityManageableAssets.filter((asset) => asset.visibility !== nextVisibility);
     if (!targets.length) return;
     setBulkActionBusy(true);
-    const customKeys = new Set(targets.filter((asset) => !asset.managedPath).map(assetListKey));
+    const customTargets = targets.filter((asset) => !asset.managedPath);
     const managedTargets = targets.filter((asset): asset is MyAsset & { managedPath: string } => Boolean(asset.managedPath));
     try {
       const managedResults = await Promise.allSettled(
         managedTargets.map((asset) => updateManagedImageVisibility(asset.managedPath, nextVisibility)),
       );
+      const updatedAt = new Date().toISOString();
+      const customResults = await Promise.allSettled(
+        customTargets.map((asset) => upsertAsset({ ...asset, visibility: nextVisibility, updatedAt })),
+      );
       const updatedManagedPaths = new Set(managedResults.flatMap((result, index) =>
         result.status === "fulfilled" ? [managedTargets[index].managedPath] : [],
       ));
-      const updatedAt = new Date().toISOString();
-      if (customKeys.size) {
-        setAssets((current) => current.map((asset) =>
-          customKeys.has(assetListKey(asset))
-            ? { ...asset, visibility: nextVisibility, updatedAt }
-            : asset,
-        ));
-      }
+      const updatedCustomCount = customResults.filter((result) => result.status === "fulfilled").length;
       if (updatedManagedPaths.size) {
         setManagedAssets((current) => current.map((asset) =>
           asset.managedPath && updatedManagedPaths.has(asset.managedPath)
@@ -242,9 +239,9 @@ export default function AssetsPage() {
             : asset,
         ));
       }
-      const updatedCount = customKeys.size + updatedManagedPaths.size;
-      const failedCount = managedTargets.length - updatedManagedPaths.size;
-      if (failedCount) toast.error(`已更新 ${updatedCount} 项，${failedCount} 张生成图片更新失败`);
+      const updatedCount = updatedCustomCount + updatedManagedPaths.size;
+      const failedCount = managedTargets.length - updatedManagedPaths.size + customTargets.length - updatedCustomCount;
+      if (failedCount) toast.error(`已更新 ${updatedCount} 项，${failedCount} 项更新失败`);
       else toast.success(`已将 ${updatedCount} 项设为${nextVisibility === "public" ? "公开" : "个人"}`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "可见范围更新失败");
@@ -262,9 +259,11 @@ export default function AssetsPage() {
     const remainingOwnedAssets = assets.filter((asset) => !deletingKeys.has(assetListKey(asset)));
     try {
       if (managedPaths.length) await deleteManagedImages(managedPaths);
-      for (const asset of ownedAssetsToDelete) await deleteUnusedAssetStorage(asset, remainingOwnedAssets);
+      for (const asset of ownedAssetsToDelete) {
+        await deleteUnusedAssetStorage(asset, remainingOwnedAssets);
+        await deleteAsset(asset.id);
+      }
       if (managedPaths.length) setManagedAssets((current) => current.filter((asset) => !asset.managedPath || !managedPaths.includes(asset.managedPath)));
-      if (ownedAssetsToDelete.length) setAssets(remainingOwnedAssets);
       setSelectedKeys(new Set());
       setBulkDeleteOpen(false);
       toast.success(`已删除 ${deletableSelectedAssets.length} 个素材`);
@@ -327,7 +326,7 @@ export default function AssetsPage() {
           }}
         />
       </ManagementPanel>
-      <AssetForm open={formOpen} asset={editing} onClose={() => setFormOpen(false)} onSave={(next) => { setAssets((current) => current.some((item) => item.id === next.id) ? current.map((item) => item.id === next.id ? next : item) : [next, ...current]); setFormOpen(false); }} />
+      <AssetForm open={formOpen} asset={editing} onClose={() => setFormOpen(false)} onSave={(next) => { void upsertAsset(next).then(() => setFormOpen(false)).catch((error) => toast.error(error instanceof Error ? `素材保存失败：${error.message}` : "素材保存失败")); }} />
       <AssetPreview asset={preview} onClose={() => setPreview(null)} onCopy={() => preview && void copyText(preview)} onCopyPrompt={() => preview && void copyPrompt(preview)} onDownload={() => preview && void download(preview)} />
       <Dialog open={Boolean(deleting)} onOpenChange={(open) => !open && !deleteBusy && setDeleting(null)}><DialogContent className="w-[min(92vw,420px)]"><DialogHeader><DialogTitle>删除素材？</DialogTitle><DialogDescription>{deleting?.managedPath ? `确定永久删除生成图片“${deleting.title}”吗？` : `确定删除“${deleting?.title}”吗？删除后会同步到当前账号。`}</DialogDescription></DialogHeader><DialogFooter><Button type="button" variant="outline" disabled={deleteBusy} onClick={() => setDeleting(null)}>取消</Button><Button type="button" variant="destructive" disabled={deleteBusy} onClick={() => void confirmDelete()}>{deleteBusy ? "删除中" : "删除"}</Button></DialogFooter></DialogContent></Dialog>
       <Dialog open={bulkDeleteOpen} onOpenChange={(open) => !bulkActionBusy && setBulkDeleteOpen(open)}><DialogContent className="w-[min(92vw,440px)]"><DialogHeader><DialogTitle>批量删除素材？</DialogTitle><DialogDescription>将永久删除选中的 {deletableSelectedAssets.length} 个自有素材。共享素材和无删除权限的素材不会被删除。</DialogDescription></DialogHeader><DialogFooter><Button type="button" variant="outline" disabled={bulkActionBusy} onClick={() => setBulkDeleteOpen(false)}>取消</Button><Button type="button" variant="destructive" disabled={bulkActionBusy} onClick={() => void deleteSelected()}>{bulkActionBusy ? "删除中" : `删除 ${deletableSelectedAssets.length} 项`}</Button></DialogFooter></DialogContent></Dialog>

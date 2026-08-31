@@ -17,6 +17,8 @@ import (
 	"chatgpt2api/internal/model"
 	"chatgpt2api/internal/storage"
 	"chatgpt2api/internal/util"
+
+	"github.com/robfig/cron/v3"
 )
 
 var settingEnvKeys = map[string]string{
@@ -1344,6 +1346,9 @@ func keepStorageProviderSecrets(setting *model.StorageSetting, saved model.Stora
 }
 
 func validateStorageSetting(setting model.StorageSetting) error {
+	if _, err := cron.ParseStandard(setting.CapacityCheck.Cron); err != nil {
+		return fmt.Errorf("storage capacity check cron is invalid: %w", err)
+	}
 	enabledType := ""
 	for _, provider := range setting.Providers {
 		if provider.Type != model.StorageProviderTypeS3 && provider.Type != model.StorageProviderTypeWebDAV {

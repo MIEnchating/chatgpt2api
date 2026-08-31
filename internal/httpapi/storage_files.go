@@ -229,7 +229,7 @@ func (a *App) handleStorageFileContent(w http.ResponseWriter, r *http.Request, i
 	}
 	defer download.Stream.Close()
 	w.Header().Set("Content-Type", download.Object.MIMEType)
-	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	w.Header().Set("Cache-Control", "private, no-store")
 	if download.AcceptRanges {
 		w.Header().Set("Accept-Ranges", "bytes")
 	}

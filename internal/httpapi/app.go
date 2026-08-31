@@ -540,11 +540,11 @@ func cloneRelayImageData(items []map[string]any) []map[string]any {
 }
 
 func (a *App) Close() {
-	if a.storageFiles != nil {
-		a.storageFiles.Close()
-	}
 	if a.cancel != nil {
 		a.cancel()
+	}
+	if a.storageFiles != nil {
+		a.storageFiles.Close()
 	}
 	if a.tasks != nil {
 		a.tasks.Close()
@@ -682,9 +682,14 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 		util.WriteError(w, http.StatusTooManyRequests, "登录尝试过于频繁，请稍后再试")
 		return
 	}
-	identity, token, err := a.auth.LoginAdminPassword(username, password)
+	identity, token, err := a.auth.LoginPassword(username, password)
 	if err != nil {
 		if a.writeAuthPersistenceError(w, err) {
+			return
+		}
+		if !errors.Is(err, service.ErrInvalidPasswordCredentials) {
+			loginLimiter.recordFailure(requestIP, username)
+			util.WriteError(w, http.StatusUnauthorized, "用户名或密码错误")
 			return
 		}
 		newAPIKeys := a.relayTokenReader()

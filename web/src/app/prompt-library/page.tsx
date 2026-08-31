@@ -4,7 +4,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { ImagePromptMarket } from "@/app/image/components/image-prompt-market";
 import type { BananaPrompt } from "@/app/image/banana-prompts";
 import { stagePromptForWorkbench } from "@/app/prompt-library/prompt-handoff";
-import { createMyAsset, fetchMyAssets, syncMyAssets } from "@/lib/my-assets";
+import { createMyAsset, fetchMyAssets, upsertMyAsset } from "@/lib/my-assets";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import { toast } from "sonner";
 
@@ -22,7 +22,7 @@ export default function PromptLibraryPage() {
         return;
       }
       const coverUrl = prompt.referenceImageUrls[0] || (!prompt.preview.startsWith("data:") ? prompt.preview : "");
-      const next = [createMyAsset({
+      const asset = createMyAsset({
         kind: "text",
         title: prompt.title,
         content: prompt.prompt,
@@ -35,8 +35,8 @@ export default function PromptLibraryPage() {
           promptSource: prompt.source,
           referenceImageUrls: prompt.referenceImageUrls,
         },
-      }), ...assets];
-      await syncMyAssets(session.key, next);
+      });
+      await upsertMyAsset(asset);
       toast.success("已保存到我的素材");
     } catch (error) {
       toast.error(error instanceof Error ? `保存素材失败：${error.message}` : "保存素材失败");

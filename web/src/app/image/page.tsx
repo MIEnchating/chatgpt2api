@@ -144,7 +144,7 @@ import { AUTH_SESSION_CHANGE_EVENT, getCachedAuthSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import { DEFAULT_CREATION_WORKBENCH_PREFERENCES, useImageGenerationPreferences } from "@/lib/use-image-generation-preferences";
-import { ensureGeneratedVideoAsset, persistCreationTaskOutputs, type CreationTaskOutputPersistenceFailure } from "@/services/generation-result-storage";
+import { ensureGeneratedMediaAsset, persistCreationTaskOutputs, type CreationTaskOutputPersistenceFailure } from "@/services/generation-result-storage";
 import { normalizeVideoRequest, videoAudioGenerationError, videoReferenceCombinationError, videoWorkbenchReferenceLimitError } from "@/lib/video-request-normalizer";
 import { audioReferenceMetadataError, type AudioReferenceFileMetadata } from "@/lib/video-reference-validation";
 import type { StoredAuthSession } from "@/store/auth";
@@ -1235,7 +1235,7 @@ async function backfillConversationVideoAssets(items: ImageConversation[]) {
     const url = String(image.videoUrl || image.url || "").trim();
     const isVideo = image.mediaType === "video" || Boolean(image.videoUrl) || String(image.mimeType || "").startsWith("video/");
     if (!isVideo || image.status !== "success" || !image.taskId || !image.storageKey || !url) return;
-    requests.push(ensureGeneratedVideoAsset({
+    requests.push(ensureGeneratedMediaAsset({
       id: image.taskId,
       status: "success",
       mode: "video",
@@ -2893,6 +2893,22 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     if (pendingPrompt) void handleApplyMarketPrompt(pendingPrompt);
   }, [handleApplyMarketPrompt, imageModelConfigReady]);
 
+  const restoreConversationHistoryWindow = async () => {
+    const {
+      firstPage,
+      activePage,
+      generation: windowGeneration,
+    } = await loadImageConversationHistoryWindow(IMAGE_HISTORY_PAGE_SIZE);
+    if (!pageActiveRef.current) return;
+    const items = mergeImageConversationItems(firstPage.items, activePage.items);
+    conversationHistoryNextCursorRef.current = firstPage.nextCursor;
+    conversationHistoryHasMoreRef.current = firstPage.hasMore;
+    conversationHistoryGenerationRef.current = windowGeneration;
+    setHasMoreHistory(firstPage.hasMore);
+    conversationsRef.current = items;
+    setConversations(items);
+  };
+
   const handleDeleteConversation = async (id: string) => {
     const targetConversation = conversationsRef.current.find((item) => item.id === id);
     const nextConversations = conversationsRef.current.filter((item) => item.id !== id);
@@ -2929,18 +2945,11 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       }
       const message = error instanceof Error ? error.message : "删除会话失败";
       toast.error(message);
-      const {
-        firstPage,
-        activePage,
-        generation: windowGeneration,
-      } = await loadImageConversationHistoryWindow(IMAGE_HISTORY_PAGE_SIZE);
-      const items = mergeImageConversationItems(firstPage.items, activePage.items);
-      conversationHistoryNextCursorRef.current = firstPage.nextCursor;
-      conversationHistoryHasMoreRef.current = firstPage.hasMore;
-      conversationHistoryGenerationRef.current = windowGeneration;
-      setHasMoreHistory(firstPage.hasMore);
-      conversationsRef.current = items;
-      setConversations(items);
+      try {
+        await restoreConversationHistoryWindow();
+      } catch {
+        conversationRefreshNeededRef.current = true;
+      }
     } finally {
       finishConversationWrite();
     }
@@ -2993,18 +3002,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       const message = error instanceof Error ? error.message : "清空历史记录失败";
       toast.error(message);
       try {
-        const {
-          firstPage,
-          activePage,
-          generation: windowGeneration,
-        } = await loadImageConversationHistoryWindow(IMAGE_HISTORY_PAGE_SIZE);
-        const items = mergeImageConversationItems(firstPage.items, activePage.items);
-        conversationHistoryNextCursorRef.current = firstPage.nextCursor;
-        conversationHistoryHasMoreRef.current = firstPage.hasMore;
-        conversationHistoryGenerationRef.current = windowGeneration;
-        setHasMoreHistory(firstPage.hasMore);
-        conversationsRef.current = items;
-        setConversations(items);
+        await restoreConversationHistoryWindow();
       } catch {
         conversationRefreshNeededRef.current = true;
       }

@@ -177,24 +177,46 @@ function taskID(prefix: string) {
   return `${prefix}-${typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : Date.now()}`;
 }
 
-async function waitForTask(id: string, timeoutSeconds: number) {
+function workflowPollDelay(milliseconds: number, signal?: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    const onAbort = () => {
+      window.clearTimeout(timer);
+      reject(signal?.reason || new DOMException("Workspace closed", "AbortError"));
+    };
+    const timer = window.setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, milliseconds);
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+function isWorkflowPollAbort(error: unknown) {
+  return error instanceof DOMException && error.name === "AbortError";
+}
+
+async function waitForTask(id: string, timeoutSeconds: number, signal?: AbortSignal) {
   const deadline = Date.now() + Math.max(1, timeoutSeconds) * 1000;
   while (Date.now() < deadline) {
-    const response = await fetchCreationTasks([id]);
+    const response = await fetchCreationTasks([id], { signal });
     const task = response.items?.[0];
     if (task?.status === "success") return task;
     if (task?.status === "error" || task?.status === "cancelled") {
       throw new Error(task.error || "任务执行失败");
     }
-    await new Promise((resolve) => window.setTimeout(resolve, 1200));
+    await workflowPollDelay(1200, signal);
   }
   throw new Error("任务执行超时");
 }
 
-async function workflowImageFiles(references: WorkflowReference[]) {
+async function workflowImageFiles(references: WorkflowReference[], signal?: AbortSignal) {
   return Promise.all(
     references.map(async (reference, index) => {
-      const response = await fetch(reference.url, { credentials: "include" });
+      const response = await fetch(reference.url, { credentials: "include", signal });
       if (!response.ok) throw new Error(`无法读取参考图（${response.status}）`);
       const blob = await response.blob();
       if (!blob.type.startsWith("image/")) throw new Error("参考文件不是图片");
@@ -271,6 +293,8 @@ export function CreativeWorkflowWorkspace({
   const [seriesDraftLoading, setSeriesDraftLoading] = useState(false);
   const [seriesBatchAppend, setSeriesBatchAppend] = useState("");
   const [tasks, setTasks] = useState<WorkflowTask[]>([]);
+  const [directTaskPollIDs, setDirectTaskPollIDs] = useState<string[]>([]);
+  const taskWaitAbortControllerRef = useRef<AbortController | null>(null);
   const [taskHistoryOpen, setTaskHistoryOpen] = useState(false);
   const [selectedTaskID, setSelectedTaskID] = useState("");
   const [clearingTaskHistory, setClearingTaskHistory] = useState(false);
@@ -285,6 +309,17 @@ export function CreativeWorkflowWorkspace({
   const [agentDraft, setAgentDraft] = useState<CreativeWorkflow | null>(null);
   const [agentWarnings, setAgentWarnings] = useState<string[]>([]);
   const [assetPickerTarget, setAssetPickerTarget] = useState<"workflow" | "agent" | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    taskWaitAbortControllerRef.current = controller;
+    return () => {
+      controller.abort();
+      if (taskWaitAbortControllerRef.current === controller) {
+        taskWaitAbortControllerRef.current = null;
+      }
+    };
+  }, []);
+
   useEffect(() => {
     if (!sessionKey || !preferencesReady || !relayPreferencesReady) return;
     let ignore = false;
@@ -332,9 +367,11 @@ export function CreativeWorkflowWorkspace({
     }
   }, [agentModel, models, preferences.default_text_model]);
 
-  const runningWorkflowTaskIDs = tasks
+  const directTaskPollIDSet = new Set(directTaskPollIDs);
+  const runningWorkflowTaskIDs = Array.from(new Set(tasks
     .filter((task) => task.status === "running")
     .flatMap((task) => task.backend_task_ids)
+    .filter((id) => !directTaskPollIDSet.has(id))))
     .join(",");
   const runningTaskCount = tasks.filter((task) => task.status === "running").length;
 
@@ -346,45 +383,49 @@ export function CreativeWorkflowWorkspace({
 
   useEffect(() => {
     if (!runningWorkflowTaskIDs) return;
-    let stopped = false;
+    const controller = new AbortController();
     const poll = async () => {
-      try {
-        const response = await fetchCreationTasks(runningWorkflowTaskIDs.split(","));
-        if (stopped) return;
-        const updates = new Map(
-          restoreWorkflowTasks(response.items).map((task) => [task.id, task]),
-        );
-        setTasks((current) => current.map((task) => {
-          const update = updates.get(task.id);
-          if (!update) return task;
-          const completedUnits = Array.from(new Set([
-            ...(task.completed_units || []),
-            ...(update.completed_units || []),
-          ])).sort((left, right) => left - right);
-          const unitErrors = { ...task.unit_errors, ...update.unit_errors };
-          const count = Math.max(task.count, update.count);
-          const incomplete = completedUnits.length < count;
-          return {
-            ...task,
-            ...update,
-            count,
-            backend_task_ids: Array.from(new Set([...task.backend_task_ids, ...update.backend_task_ids])),
-            completed_units: completedUnits,
-            unit_errors: unitErrors,
-            status: incomplete ? "running" : Object.keys(unitErrors).length ? "failed" : "success",
-            ended_at: incomplete ? undefined : update.ended_at,
-          };
-        }));
-      } catch {
-        // Keep the durable task visible and retry on the next interval.
+      const ids = runningWorkflowTaskIDs.split(",");
+      while (!controller.signal.aborted) {
+        try {
+          const response = await fetchCreationTasks(ids, { signal: controller.signal });
+          const updates = new Map(
+            restoreWorkflowTasks(response.items).map((task) => [task.id, task]),
+          );
+          setTasks((current) => current.map((task) => {
+            const update = updates.get(task.id);
+            if (!update) return task;
+            const completedUnits = Array.from(new Set([
+              ...(task.completed_units || []),
+              ...(update.completed_units || []),
+            ])).sort((left, right) => left - right);
+            const unitErrors = { ...task.unit_errors, ...update.unit_errors };
+            const count = Math.max(task.count, update.count);
+            const incomplete = completedUnits.length < count;
+            return {
+              ...task,
+              ...update,
+              count,
+              backend_task_ids: Array.from(new Set([...task.backend_task_ids, ...update.backend_task_ids])),
+              completed_units: completedUnits,
+              unit_errors: unitErrors,
+              status: incomplete ? "running" : Object.keys(unitErrors).length ? "failed" : "success",
+              ended_at: incomplete ? undefined : update.ended_at,
+            };
+          }));
+        } catch {
+          if (controller.signal.aborted) return;
+          // Keep the durable task visible and retry on the next interval.
+        }
+        try {
+          await workflowPollDelay(1200, controller.signal);
+        } catch {
+          return;
+        }
       }
     };
     void poll();
-    const timer = window.setInterval(() => void poll(), 1200);
-    return () => {
-      stopped = true;
-      window.clearInterval(timer);
-    };
+    return () => controller.abort();
   }, [runningWorkflowTaskIDs]);
 
   const categories = useMemo(
@@ -597,6 +638,10 @@ export function CreativeWorkflowWorkspace({
     seriesRun?: WorkflowSeriesRun,
   ) {
     if (!session) throw new Error("登录状态已失效");
+    const taskController = taskWaitAbortControllerRef.current;
+    if (!taskController || taskController.signal.aborted) {
+      throw taskController?.signal.reason || new DOMException("Workspace closed", "AbortError");
+    }
     const runtime = resolveWorkflowRuntime(workflow, models, preferences);
     const model = runtime.model;
     const count = Math.max(1, Math.min(10, countOverride || runtime.count));
@@ -689,7 +734,7 @@ export function CreativeWorkflowWorkspace({
       }));
     };
     try {
-      const imageFiles = references.length ? await workflowImageFiles(references) : [];
+      const imageFiles = references.length ? await workflowImageFiles(references, taskController.signal) : [];
       const settled = await Promise.allSettled(
         Array.from({ length: count }, async (_, index) => {
           const batchIndex = seriesRun && seriesIndex ? seriesIndex : index + 1;
@@ -721,8 +766,8 @@ export function CreativeWorkflowWorkspace({
             generationSource: "workflow" as const,
           };
           const submitted = imageFiles.length
-            ? await createImageEditTask(clientTaskID, imageFiles, prompt, model, runtime.size || undefined, undefined, quality, 1, "private", undefined, undefined, undefined, stream, partialImages, toolOptions, undefined, relayTokenName || undefined)
-            : await createImageGenerationTask(clientTaskID, prompt, model, runtime.size || undefined, undefined, quality, 1, "private", undefined, undefined, undefined, stream, partialImages, toolOptions, undefined, relayTokenName || undefined);
+            ? await createImageEditTask(clientTaskID, imageFiles, prompt, model, runtime.size || undefined, undefined, quality, 1, "private", undefined, undefined, undefined, stream, partialImages, toolOptions, undefined, relayTokenName || undefined, undefined, undefined, { signal: taskController.signal })
+            : await createImageGenerationTask(clientTaskID, prompt, model, runtime.size || undefined, undefined, quality, 1, "private", undefined, undefined, undefined, stream, partialImages, toolOptions, undefined, relayTokenName || undefined, undefined, undefined, { signal: taskController.signal });
           setTasks((current) => current.map((task) =>
             task.id === localTaskID
               ? {
@@ -731,9 +776,13 @@ export function CreativeWorkflowWorkspace({
                 }
               : task,
           ));
-          return waitForTask(submitted.id, runtime.timeout);
+          return waitForOwnedTask(submitted.id, runtime.timeout);
         }),
       );
+      const aborted = settled.find(
+        (item): item is PromiseRejectedResult => item.status === "rejected" && isWorkflowPollAbort(item.reason),
+      );
+      if (aborted) throw aborted.reason;
       const completed = settled.flatMap((item, index) =>
         item.status === "fulfilled" ? [{ task: item.value, index }] : [],
       );
@@ -766,6 +815,9 @@ export function CreativeWorkflowWorkspace({
       markWorkflowRunCompleted(workflow, Date.now());
       return imageURLs;
     } catch (error) {
+      if (taskController.signal.aborted || isWorkflowPollAbort(error)) {
+        throw taskController.signal.reason || error;
+      }
       const message = error instanceof Error ? error.message : "工作流运行失败";
       settleLocalTask([], message);
       if (draft) patchSeriesDraft(draft.id, { status: "failed", error: message });
@@ -793,6 +845,7 @@ export function CreativeWorkflowWorkspace({
       await executeImageTask(workflow, prompt);
       toast.success("工作流运行完成");
     } catch (error) {
+      if (isWorkflowPollAbort(error)) return;
       toast.error(error instanceof Error ? error.message : "工作流运行失败");
     }
   }
@@ -806,6 +859,8 @@ export function CreativeWorkflowWorkspace({
       toast.error(`请填写 ${missing.label}`);
       return;
     }
+    const taskController = taskWaitAbortControllerRef.current;
+    if (!taskController || taskController.signal.aborted) return;
     setSeriesDraftLoading(true);
     try {
       const count = Math.max(
@@ -828,8 +883,9 @@ export function CreativeWorkflowWorkspace({
         model,
         relayTokenName: tokenNameForModel("text", model),
         messages: [{ role: "user", content: prompt }],
+        requestOptions: { signal: taskController.signal },
       });
-      const completed = await waitForTask(
+      const completed = await waitForOwnedTask(
         submitted.id,
         600,
       );
@@ -842,9 +898,28 @@ export function CreativeWorkflowWorkspace({
         }, 0);
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "系列提示词生成失败");
+      if (!taskController.signal.aborted && !isWorkflowPollAbort(error)) {
+        toast.error(error instanceof Error ? error.message : "系列提示词生成失败");
+      }
     } finally {
-      setSeriesDraftLoading(false);
+      if (!taskController.signal.aborted) {
+        setSeriesDraftLoading(false);
+      }
+    }
+  }
+
+  async function waitForOwnedTask(id: string, timeoutSeconds: number) {
+    const controller = taskWaitAbortControllerRef.current;
+    if (!controller || controller.signal.aborted) {
+      throw controller?.signal.reason || new DOMException("Workspace closed", "AbortError");
+    }
+    setDirectTaskPollIDs((current) => current.includes(id) ? current : [...current, id]);
+    try {
+      return await waitForTask(id, timeoutSeconds, controller.signal);
+    } finally {
+      if (!controller.signal.aborted) {
+        setDirectTaskPollIDs((current) => current.filter((item) => item !== id));
+      }
     }
   }
 
@@ -892,6 +967,7 @@ export function CreativeWorkflowWorkspace({
       await executeImageTask(running, draft.prompt.trim(), 1, draft, index, seriesRun);
       return true;
     } catch (error) {
+      if (isWorkflowPollAbort(error)) return false;
       if (notifyError) {
         toast.error(error instanceof Error ? error.message : "系列图片生成失败");
       }
@@ -901,6 +977,8 @@ export function CreativeWorkflowWorkspace({
 
   async function runAllSeriesDrafts(source = seriesDrafts) {
     if (!running) return;
+    const controller = taskWaitAbortControllerRef.current;
+    if (!controller || controller.signal.aborted) return;
     const drafts = source.filter(
       (draft) => draft.prompt.trim() && draft.status !== "running" && draft.status !== "success",
     );
@@ -918,6 +996,7 @@ export function CreativeWorkflowWorkspace({
     };
     let successCount = 0;
     for (let index = 0; index < drafts.length; index += concurrency) {
+      if (controller.signal.aborted) return;
       const results = await Promise.all(
         drafts.slice(index, index + concurrency).map((draft, chunkIndex) =>
           runOneSeriesDraft(
@@ -930,6 +1009,7 @@ export function CreativeWorkflowWorkspace({
       );
       successCount += results.filter(Boolean).length;
     }
+    if (controller.signal.aborted) return;
     if (successCount === drafts.length) toast.success(`多图任务已完成，共生成 ${successCount} 张`);
     else toast.error(`多图任务完成 ${successCount}/${drafts.length} 张，请查看任务记录`);
   }

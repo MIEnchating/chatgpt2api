@@ -32,7 +32,7 @@ export function CanvasAssetPicker({ open, session, onInsert, onClose }: {
   onInsert: (payload: CanvasInsertAssetPayload) => void;
   onClose: () => void;
 }) {
-  const { assets, setAssets, loading } = useMyAssets(session.key, open);
+  const { assets, upsertAsset, loading } = useMyAssets(session.key, open);
   const [sharedAssets, setSharedAssets] = useState<MyAsset[]>([]);
   const [managedAssets, setManagedAssets] = useState<MyAsset[]>([]);
   const [remoteLoading, setRemoteLoading] = useState(false);
@@ -148,8 +148,9 @@ export function CanvasAssetPicker({ open, session, onInsert, onClose }: {
         asset={null}
         onClose={() => setCreateOpen(false)}
         onSave={(asset) => {
-          setAssets((current) => [asset, ...current]);
-          setCreateOpen(false);
+          void upsertAsset(asset)
+            .then(() => setCreateOpen(false))
+            .catch((error) => toast.error(error instanceof Error ? `素材保存失败：${error.message}` : "素材保存失败"));
         }}
       />
     </>

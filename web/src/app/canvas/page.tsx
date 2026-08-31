@@ -79,7 +79,7 @@ import { fetchAuthenticatedImageBlob, primeAuthenticatedImageCache } from "@/lib
 import { imageConversationReferenceLimitMessage } from "@/lib/image-conversation-assets";
 import { isPublicReferenceURL } from "@/lib/public-reference-url";
 import { useRelayTokenPreferences } from "@/lib/use-relay-token-preferences";
-import { createMyAsset, fetchMyAssets, syncMyAssets } from "@/lib/my-assets";
+import { createMyAsset, fetchMyAssets, upsertMyAsset } from "@/lib/my-assets";
 import { cn } from "@/lib/utils";
 import { COLOR_THEME_CHANGE_EVENT, getPreferredColorTheme, type ColorTheme } from "@/lib/theme";
 import { useImageGenerationPreferences } from "@/lib/use-image-generation-preferences";
@@ -2510,8 +2510,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         source: "无限画布",
         metadata: { projectId: documentRef.current.id, nodeId: node.id, nodeType: node.type, prompt: node.prompt || "" },
       });
-      const next = [asset, ...assets];
-      await syncMyAssets(session.key, next);
+      await upsertMyAsset(asset);
       toast.success("已保存到我的素材");
     } catch (error) {
       toast.error(error instanceof Error ? `保存素材失败：${error.message}` : "保存素材失败");

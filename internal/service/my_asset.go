@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -12,10 +13,11 @@ import (
 )
 
 const (
-	myAssetDocumentDir = "my_assets"
-	maxMyAssetItems    = 2000
-	MyAssetPrivate     = "private"
-	MyAssetPublic      = "public"
+	myAssetDocumentDir  = "my_assets"
+	maxMyAssetItems     = 2000
+	myAssetSaveAttempts = 8
+	MyAssetPrivate      = "private"
+	MyAssetPublic       = "public"
 )
 
 type MyAssetOwner struct {
@@ -230,54 +232,110 @@ func (s *MyAssetService) Replace(ctx context.Context, ownerID string, admin bool
 	return append([]MyAsset(nil), items...), nil
 }
 
-// UpsertMedia atomically adds generated media to a user's material library.
-// The full-list Replace API is kept for manual library editing, while this
-// method avoids lost updates when multiple generation tasks finish together.
-func (s *MyAssetService) UpsertMedia(ownerID string, input MyAsset) ([]MyAsset, error) {
+// Upsert applies one asset mutation to the latest stored document. Retrying the
+// item-level intent after a document CAS conflict preserves unrelated writes.
+func (s *MyAssetService) Upsert(ctx context.Context, ownerID string, admin bool, input MyAsset) (MyAsset, error) {
 	ownerID = strings.TrimSpace(ownerID)
 	if ownerID == "" {
-		return nil, fmt.Errorf("owner_id is required")
+		return MyAsset{}, fmt.Errorf("owner_id is required")
 	}
 	input.OwnerID = ""
 	input.OwnerName = ""
 	input.Owned = false
 	item, err := normalizeMyAsset(input)
 	if err != nil {
-		return nil, err
-	}
-	if item.Kind == "text" {
-		return nil, fmt.Errorf("generated asset must be media")
+		return MyAsset{}, err
 	}
 
 	s.mu.Lock()
-	defer s.mu.Unlock()
-	items, err := s.loadLocked(ownerID)
-	if err != nil {
-		return nil, err
-	}
-	matched := -1
-	for index, existing := range items {
-		if existing.ID == item.ID || item.StorageKey != "" && existing.StorageKey == item.StorageKey {
-			matched = index
+	var staged *UploadedStorageObject
+	var saved MyAsset
+	var staleTextKey string
+	var lastErr error
+	for attempt := 0; attempt < myAssetSaveAttempts; attempt++ {
+		items, loadErr := s.loadLocked(ownerID)
+		if loadErr != nil {
+			lastErr = loadErr
 			break
 		}
-	}
-	if matched >= 0 {
-		if items[matched].CreatedAt != "" {
-			item.CreatedAt = items[matched].CreatedAt
+		matched := myAssetIndex(items, item)
+		candidate := item
+		var previous MyAsset
+		if matched >= 0 {
+			previous = items[matched]
+			if previous.CreatedAt != "" {
+				candidate.CreatedAt = previous.CreatedAt
+			}
+		} else if len(items) >= maxMyAssetItems {
+			lastErr = fmt.Errorf("assets cannot contain more than %d items", maxMyAssetItems)
+			break
 		}
-		items[matched] = item
-	} else {
-		if len(items) >= maxMyAssetItems {
-			return nil, fmt.Errorf("assets cannot contain more than %d items", maxMyAssetItems)
+
+		if candidate.Kind == "text" {
+			candidate.StorageKey = ""
+			candidate.URL = ""
+			candidate.MIMEType = ""
+			candidate.Bytes = 0
+			if previous.Kind == "text" && previous.Content == candidate.Content && previous.StorageKey != "" {
+				candidate.StorageKey = previous.StorageKey
+				candidate.URL = previous.URL
+				candidate.MIMEType = previous.MIMEType
+				candidate.Bytes = previous.Bytes
+			} else {
+				if staged == nil {
+					if s.objects == nil {
+						lastErr = fmt.Errorf("asset object storage is required")
+						break
+					}
+					uploaded, uploadErr := s.objects.Upload(ctx, ownerID, admin, candidate.ID+".txt", "text/plain; charset=utf-8", []byte(candidate.Content), nil)
+					if uploadErr != nil {
+						lastErr = fmt.Errorf("store text asset %q: %w", candidate.Title, uploadErr)
+						break
+					}
+					staged = &uploaded
+				}
+				candidate.StorageKey = staged.StorageKey
+				candidate.URL = staged.URL
+				candidate.MIMEType = staged.MIMEType
+				candidate.Bytes = staged.Bytes
+			}
 		}
-		items = append(items, item)
+
+		if matched >= 0 {
+			items[matched] = candidate
+		} else {
+			items = append(items, candidate)
+		}
+		sortMyAssets(items)
+		if saveErr := saveStoredJSON(s.store, myAssetDocumentName(ownerID), map[string]any{"items": items}); saveErr != nil {
+			lastErr = saveErr
+			if errors.Is(saveErr, storage.ErrConcurrentRowUpdate) && attempt+1 < myAssetSaveAttempts {
+				continue
+			}
+			break
+		}
+		saved = candidate
+		if previous.Kind == "text" && previous.StorageKey != "" && previous.StorageKey != candidate.StorageKey {
+			staleTextKey = previous.StorageKey
+		}
+		lastErr = nil
+		break
 	}
-	sortMyAssets(items)
-	if err := saveStoredJSON(s.store, myAssetDocumentName(ownerID), map[string]any{"items": items}); err != nil {
-		return nil, err
+	s.mu.Unlock()
+
+	if lastErr != nil {
+		if staged != nil {
+			s.deleteTextObjects(ctx, ownerID, admin, []string{staged.ID})
+		}
+		return MyAsset{}, lastErr
 	}
-	return append([]MyAsset(nil), items...), nil
+	if staged != nil && saved.StorageKey != staged.StorageKey {
+		s.deleteTextObjects(ctx, ownerID, admin, []string{staged.ID})
+	}
+	if id := storageObjectIDFromKey(staleTextKey); id != "" {
+		s.deleteTextObjects(ctx, ownerID, admin, []string{id})
+	}
+	return saved, nil
 }
 
 func (s *MyAssetService) EnsureTextStorage(ctx context.Context, ownerID string, admin bool) ([]MyAsset, error) {
@@ -287,10 +345,81 @@ func (s *MyAssetService) EnsureTextStorage(ctx context.Context, ownerID string, 
 	}
 	for _, item := range items {
 		if item.Kind == "text" && item.StorageKey == "" {
-			return s.Replace(ctx, ownerID, admin, items)
+			if _, err := s.Upsert(ctx, ownerID, admin, item); err != nil {
+				return nil, err
+			}
 		}
 	}
-	return items, nil
+	return s.List(ownerID)
+}
+
+// Delete removes one asset from the latest stored document. Text object
+// cleanup runs only after the document mutation has committed.
+func (s *MyAssetService) Delete(ctx context.Context, ownerID string, admin bool, id string) (bool, error) {
+	ownerID = strings.TrimSpace(ownerID)
+	id = strings.TrimSpace(id)
+	if ownerID == "" {
+		return false, fmt.Errorf("owner_id is required")
+	}
+	if id == "" {
+		return false, fmt.Errorf("asset id is required")
+	}
+
+	s.mu.Lock()
+	removedOnce := false
+	staleTextKey := ""
+	var lastErr error
+	for attempt := 0; attempt < myAssetSaveAttempts; attempt++ {
+		items, loadErr := s.loadLocked(ownerID)
+		if loadErr != nil {
+			lastErr = loadErr
+			break
+		}
+		index := -1
+		for itemIndex := range items {
+			if items[itemIndex].ID == id {
+				index = itemIndex
+				break
+			}
+		}
+		if index < 0 {
+			lastErr = nil
+			break
+		}
+		removedOnce = true
+		if items[index].Kind == "text" {
+			staleTextKey = items[index].StorageKey
+		}
+		items = append(items[:index], items[index+1:]...)
+		if saveErr := saveStoredJSON(s.store, myAssetDocumentName(ownerID), map[string]any{"items": items}); saveErr != nil {
+			lastErr = saveErr
+			if errors.Is(saveErr, storage.ErrConcurrentRowUpdate) && attempt+1 < myAssetSaveAttempts {
+				continue
+			}
+			break
+		}
+		lastErr = nil
+		break
+	}
+	s.mu.Unlock()
+	if lastErr != nil {
+		return false, lastErr
+	}
+	if removedOnce {
+		if objectID := storageObjectIDFromKey(staleTextKey); objectID != "" {
+			s.deleteTextObjects(ctx, ownerID, admin, []string{objectID})
+		}
+	}
+	return removedOnce, nil
+}
+
+func myAssetIndex(items []MyAsset, candidate MyAsset) int {
+	for index, existing := range items {
+		if existing.ID == candidate.ID || candidate.Kind != "text" && candidate.StorageKey != "" && existing.StorageKey == candidate.StorageKey {
+			return index
+		}
+	}
+	return -1
 }
 
 func (s *MyAssetService) deleteTextObjects(ctx context.Context, ownerID string, admin bool, ids []string) {

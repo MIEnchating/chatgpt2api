@@ -12,6 +12,8 @@ import (
 
 	"chatgpt2api/internal/model"
 	"chatgpt2api/internal/storage"
+
+	"golang.org/x/net/webdav"
 )
 
 type genericStorageTestSettings struct {
@@ -95,6 +97,41 @@ func TestGenericStorageServiceRejectsMixedEnabledUserProviderTypes(t *testing.T)
 	})
 	if err == nil {
 		t.Fatal("SaveUserProviders() accepted S3/R2 and WebDAV at the same time")
+	}
+}
+
+func TestGenericStorageServiceMeasureUserHonorsProviderSetting(t *testing.T) {
+	fileSystem := webdav.NewMemFS()
+	if err := fileSystem.Mkdir(context.Background(), "/assets", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	requests := 0
+	webDAVHandler := &webdav.Handler{FileSystem: fileSystem, LockSystem: webdav.NewMemLS()}
+	webDAV := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		webDAVHandler.ServeHTTP(w, r)
+	}))
+	defer webDAV.Close()
+	input := StorageObjectProviderInput{
+		Name: "Private DAV", Type: model.StorageProviderTypeWebDAV, Endpoint: webDAV.URL,
+		PathPrefix: "assets", Username: "user", Password: "secret",
+	}
+
+	disabled := newGenericStorageTestService(t, model.StorageSetting{})
+	if _, err := disabled.MeasureUser(context.Background(), "user-1", input); err == nil || err.Error() != "user storage providers are disabled" {
+		t.Fatalf("MeasureUser() error = %v, want disabled error", err)
+	}
+	if requests != 0 {
+		t.Fatalf("disabled MeasureUser() made %d WebDAV requests", requests)
+	}
+
+	enabled := newGenericStorageTestService(t, model.StorageSetting{AllowUserProvider: true})
+	result, err := enabled.MeasureUser(context.Background(), "user-1", input)
+	if err != nil {
+		t.Fatalf("MeasureUser(private WebDAV) error = %v", err)
+	}
+	if result.ProviderName != "Private DAV" || result.Bytes != 0 || requests == 0 {
+		t.Fatalf("MeasureUser(private WebDAV) = %#v, requests = %d", result, requests)
 	}
 }
 
@@ -200,6 +237,66 @@ func TestGenericStorageServiceReportsScheduledCapacityErrors(t *testing.T) {
 	service.runScheduledCapacityCheck(context.Background())
 	if reported == nil || !strings.Contains(reported.Error(), `measure provider "Broken DAV"`) {
 		t.Fatalf("scheduled capacity error = %v", reported)
+	}
+}
+
+func TestGenericStorageServiceRefreshesCapacitySchedulerAtomically(t *testing.T) {
+	settings := &genericStorageTestSettings{setting: model.StorageSetting{
+		CapacityCheck: model.StorageCapacityCheckSetting{Enabled: true, Cron: "0 0 1 1 *"},
+	}}
+	root := t.TempDir()
+	backend, err := storage.NewDatabaseBackend("sqlite:///" + filepath.ToSlash(filepath.Join(root, "storage.db")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer backend.Close()
+	service, err := NewGenericStorageService(backend, settings, filepath.Join(root, "media"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer service.Close()
+
+	if err := service.RefreshCapacityScheduler(context.Background()); err != nil {
+		t.Fatalf("initial RefreshCapacityScheduler() error = %v", err)
+	}
+	entries := service.cron.Entries()
+	if len(entries) != 1 {
+		t.Fatalf("initial scheduler entries = %#v", entries)
+	}
+	initialEntryID := entries[0].ID
+
+	settings.setting.CapacityCheck.Cron = "definitely-not-cron"
+	if err := service.RefreshCapacityScheduler(context.Background()); err == nil {
+		t.Fatal("RefreshCapacityScheduler(invalid cron) error = nil")
+	}
+	entries = service.cron.Entries()
+	if len(entries) != 1 || entries[0].ID != initialEntryID {
+		t.Fatalf("invalid refresh replaced existing entry: %#v", entries)
+	}
+
+	settings.setting.CapacityCheck.Cron = "0 0 2 1 *"
+	if err := service.RefreshCapacityScheduler(context.Background()); err != nil {
+		t.Fatalf("replacement RefreshCapacityScheduler() error = %v", err)
+	}
+	entries = service.cron.Entries()
+	if len(entries) != 1 || entries[0].ID == initialEntryID {
+		t.Fatalf("valid refresh did not replace existing entry: %#v", entries)
+	}
+
+	settings.setting.CapacityCheck.Enabled = false
+	if err := service.RefreshCapacityScheduler(context.Background()); err != nil {
+		t.Fatalf("disable RefreshCapacityScheduler() error = %v", err)
+	}
+	if entries = service.cron.Entries(); len(entries) != 0 {
+		t.Fatalf("disabled scheduler entries = %#v", entries)
+	}
+
+	settings.setting.CapacityCheck.Enabled = true
+	if err := service.RefreshCapacityScheduler(context.Background()); err != nil {
+		t.Fatalf("re-enable RefreshCapacityScheduler() error = %v", err)
+	}
+	if entries = service.cron.Entries(); len(entries) != 1 {
+		t.Fatalf("re-enabled scheduler entries = %#v", entries)
 	}
 }
 

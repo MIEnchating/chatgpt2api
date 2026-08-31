@@ -16,7 +16,7 @@ type myAssetObjectStorageStub struct {
 	deleted []string
 }
 
-func TestGeneratedMediaUpsertIsAtomicAndIdempotent(t *testing.T) {
+func TestMyAssetItemMutationsPreserveConcurrentGeneratedMedia(t *testing.T) {
 	backend, err := storage.NewDatabaseBackend("sqlite:///" + filepath.ToSlash(filepath.Join(t.TempDir(), "assets.db")))
 	if err != nil {
 		t.Fatalf("NewDatabaseBackend() error = %v", err)
@@ -33,13 +33,15 @@ func TestGeneratedMediaUpsertIsAtomicAndIdempotent(t *testing.T) {
 		{ID: "generated-video:task-a:0", Kind: "video", Title: "视频 A", URL: "/api/files/video-a/content", StorageKey: "server:video-a", MIMEType: "video/mp4", Source: "生成视频", Tags: []string{}},
 		{ID: "generated-video:task-b:0", Kind: "video", Title: "视频 B", URL: "/api/files/video-b/content", StorageKey: "server:video-b", MIMEType: "video/mp4", Source: "无限画布", Tags: []string{}},
 	}
+	staleManualEdit := MyAsset{ID: "manual-image", Kind: "image", Title: "旧标签页改名", URL: "/images/manual.png", Tags: []string{}}
 	var wait sync.WaitGroup
-	errors := make(chan error, len(generated))
-	for _, item := range generated {
+	errors := make(chan error, len(generated)+1)
+	mutations := append(append([]MyAsset(nil), generated...), staleManualEdit)
+	for _, item := range mutations {
 		wait.Add(1)
 		go func() {
 			defer wait.Done()
-			_, upsertErr := assets.UpsertMedia("user-a", item)
+			_, upsertErr := assets.Upsert(context.Background(), "user-a", false, item)
 			errors <- upsertErr
 		}()
 	}
@@ -47,14 +49,14 @@ func TestGeneratedMediaUpsertIsAtomicAndIdempotent(t *testing.T) {
 	close(errors)
 	for upsertErr := range errors {
 		if upsertErr != nil {
-			t.Fatalf("UpsertMedia() error = %v", upsertErr)
+			t.Fatalf("Upsert() error = %v", upsertErr)
 		}
 	}
 
 	// Replaying a completed task must update the same record, not append one.
 	generated[0].Title = "视频 A（已恢复）"
-	if _, err := assets.UpsertMedia("user-a", generated[0]); err != nil {
-		t.Fatalf("UpsertMedia(replay) error = %v", err)
+	if _, err := assets.Upsert(context.Background(), "user-a", false, generated[0]); err != nil {
+		t.Fatalf("Upsert(replay) error = %v", err)
 	}
 	items, err := assets.List("user-a")
 	if err != nil || len(items) != 3 {
@@ -64,8 +66,15 @@ func TestGeneratedMediaUpsertIsAtomicAndIdempotent(t *testing.T) {
 	for _, item := range items {
 		byID[item.ID] = item
 	}
-	if byID[generated[0].ID].Title != "视频 A（已恢复）" || byID["manual-image"].URL != "/images/manual.png" {
+	if byID[generated[0].ID].Title != "视频 A（已恢复）" || byID["manual-image"].Title != "旧标签页改名" {
 		t.Fatalf("upserted items = %#v", items)
+	}
+	if deleted, err := assets.Delete(context.Background(), "user-a", false, "manual-image"); err != nil || !deleted {
+		t.Fatalf("Delete() = (%v, %v)", deleted, err)
+	}
+	items, err = assets.List("user-a")
+	if err != nil || len(items) != 2 || items[0].ID == "manual-image" || items[1].ID == "manual-image" {
+		t.Fatalf("generated assets after stale item deletion = (%#v, %v)", items, err)
 	}
 }
 
@@ -236,16 +245,16 @@ func TestMyAssetTextStorageMigratesUpdatesAndDeletesObjects(t *testing.T) {
 	updated := migrated[0]
 	updated.Content = "新正文"
 	updated.UpdatedAt = "2026-08-28T01:00:00Z"
-	replaced, err := assets.Replace(context.Background(), "user-a", false, []MyAsset{updated})
-	if err != nil || replaced[0].StorageKey != "server:text-2" || objects.uploads["text-2"] != "新正文" {
-		t.Fatalf("Replace(updated) = (%#v, %v), uploads=%#v", replaced, err, objects.uploads)
+	replaced, err := assets.Upsert(context.Background(), "user-a", false, updated)
+	if err != nil || replaced.StorageKey != "server:text-2" || objects.uploads["text-2"] != "新正文" {
+		t.Fatalf("Upsert(updated) = (%#v, %v), uploads=%#v", replaced, err, objects.uploads)
 	}
 	if len(objects.deleted) != 1 || objects.deleted[0] != "text-1" {
 		t.Fatalf("updated text deleted objects = %#v", objects.deleted)
 	}
 
-	if _, err := assets.Replace(context.Background(), "user-a", false, nil); err != nil {
-		t.Fatalf("Replace(deleted) error = %v", err)
+	if deleted, err := assets.Delete(context.Background(), "user-a", false, updated.ID); err != nil || !deleted {
+		t.Fatalf("Delete(text) = (%v, %v)", deleted, err)
 	}
 	if len(objects.deleted) != 2 || objects.deleted[1] != "text-2" || len(objects.uploads) != 0 {
 		t.Fatalf("deleted text objects = %#v, uploads=%#v", objects.deleted, objects.uploads)

@@ -133,17 +133,26 @@ func (s *GenericStorageService) RefreshCapacityScheduler(ctx context.Context) er
 		s.cron = cron.New()
 		s.cron.Start()
 	}
-	for _, entry := range s.cron.Entries() {
-		s.cron.Remove(entry.ID)
-	}
+	previousEntries := s.cron.Entries()
 	setting := s.settings.StorageSettings().CapacityCheck
 	if !setting.Enabled {
+		for _, entry := range previousEntries {
+			s.cron.Remove(entry.ID)
+		}
 		return nil
 	}
-	_, err := s.cron.AddFunc(setting.Cron, func() {
+	nextEntryID, err := s.cron.AddFunc(setting.Cron, func() {
 		s.runScheduledCapacityCheck(ctx)
 	})
-	return err
+	if err != nil {
+		return err
+	}
+	for _, entry := range previousEntries {
+		if entry.ID != nextEntryID {
+			s.cron.Remove(entry.ID)
+		}
+	}
+	return nil
 }
 
 func (s *GenericStorageService) runScheduledCapacityCheck(ctx context.Context) {
@@ -450,6 +459,9 @@ func (s *GenericStorageService) storageObjectForIdentity(ownerID string, admin b
 }
 
 func (s *GenericStorageService) MeasureUser(ctx context.Context, ownerID string, input StorageObjectProviderInput) (StorageCapacityResult, error) {
+	if !s.settings.StorageSettings().AllowUserProvider {
+		return StorageCapacityResult{}, errors.New("user storage providers are disabled")
+	}
 	provider := normalizeUserStorageProvider(ownerID, input)
 	bytesUsed, err := measureStorageProvider(ctx, provider)
 	if err != nil {

@@ -10,6 +10,7 @@ type AssetCacheEntry = {
 
 const assetCache = new Map<string, AssetCacheEntry>();
 const assetRequests = new Map<string, Promise<MyAsset[]>>();
+let assetCacheEpoch = 0;
 
 function pruneAssetCache() {
   const now = Date.now();
@@ -32,6 +33,12 @@ export {
 
 function scopedCacheKey(scope: string, visibility: "own" | "visible") {
   return `${scope.trim()}:${visibility}`;
+}
+
+function invalidateAssetCache() {
+  assetCacheEpoch += 1;
+  assetCache.clear();
+  assetRequests.clear();
 }
 
 function waitForAssets(request: Promise<MyAsset[]>, signal?: AbortSignal) {
@@ -62,13 +69,20 @@ async function fetchAssets(scope: string, visibility: "own" | "visible", signal?
   let request = assetRequests.get(key);
   if (!request) {
     const path = visibility === "visible" ? "/api/profile/assets?scope=visible" : "/api/profile/assets";
-    request = httpRequest<{ items?: MyAsset[] }>(path)
+    const epoch = assetCacheEpoch;
+    const pending = httpRequest<{ items?: MyAsset[] }>(path)
       .then((response) => {
         const items = normalizeMyAssets(response.items);
-        assetCache.set(key, { items, expiresAt: Date.now() + ASSET_CACHE_TTL_MS });
+        if (epoch === assetCacheEpoch) {
+          assetCache.set(key, { items, expiresAt: Date.now() + ASSET_CACHE_TTL_MS });
+        }
         return items;
-      })
-      .finally(() => assetRequests.delete(key));
+      });
+    let tracked: Promise<MyAsset[]>;
+    tracked = pending.finally(() => {
+      if (assetRequests.get(key) === tracked) assetRequests.delete(key);
+    });
+    request = tracked;
     assetRequests.set(key, request);
   }
   return normalizeMyAssets(await waitForAssets(request, signal));
@@ -82,29 +96,30 @@ export function fetchVisibleMyAssets(scope: string, signal?: AbortSignal) {
   return fetchAssets(scope, "visible", signal);
 }
 
-export async function syncMyAssets(scope: string, assets: MyAsset[]) {
-  const response = await httpRequest<{ items?: MyAsset[] }>("/api/profile/assets", {
-    method: "PUT",
-    body: { items: assets },
-  });
-  const items = normalizeMyAssets(response.items);
-  pruneAssetCache();
-  assetCache.set(scopedCacheKey(scope, "own"), { items, expiresAt: Date.now() + ASSET_CACHE_TTL_MS });
-  for (const key of assetCache.keys()) {
-    if (key.endsWith(":visible")) assetCache.delete(key);
+export async function upsertMyAsset(asset: MyAsset) {
+  invalidateAssetCache();
+  try {
+    const response = await httpRequest<{ item?: MyAsset }>("/api/profile/assets", {
+      method: "POST",
+      body: { item: asset },
+    });
+    const item = normalizeMyAssets([response.item])[0];
+    if (!item) throw new Error("素材保存响应无效");
+    return item;
+  } finally {
+    invalidateAssetCache();
   }
-  return normalizeMyAssets(items);
 }
 
-export async function upsertMyAsset(asset: MyAsset) {
-  const response = await httpRequest<{ items?: MyAsset[] }>("/api/profile/assets", {
-    method: "POST",
-    body: { item: asset },
-  });
-  const items = normalizeMyAssets(response.items);
-  pruneAssetCache();
-  for (const key of assetCache.keys()) {
-    if (key.endsWith(":own") || key.endsWith(":visible")) assetCache.delete(key);
+export async function deleteMyAsset(id: string) {
+  invalidateAssetCache();
+  try {
+    const response = await httpRequest<{ deleted?: boolean }>("/api/profile/assets", {
+      method: "DELETE",
+      body: { id },
+    });
+    return response.deleted === true;
+  } finally {
+    invalidateAssetCache();
   }
-  return normalizeMyAssets(items);
 }

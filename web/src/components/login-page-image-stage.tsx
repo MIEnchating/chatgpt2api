@@ -39,13 +39,13 @@ export function LoginPageImageStage({
   zoom = LOGIN_PAGE_IMAGE_DEFAULT_TRANSFORM.zoom,
 }: LoginPageImageStageProps) {
   const frameRef = useRef<HTMLDivElement | null>(null);
-  const [fallbackActive, setFallbackActive] = useState(false);
+  const [failedSrc, setFailedSrc] = useState("");
   const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
   const [frameSize, setFrameSize] = useState({ width: 0, height: 0 });
   const resolvedMode = normalizeLoginPageImageMode(mode);
   const resolvedSrc = resolveLoginPageImageSrc(src);
   const fallbackSrc = resolveLoginPageImageSrc(DEFAULT_LOGIN_PAGE_IMAGE);
-  const currentSrc = fallbackActive ? fallbackSrc : resolvedSrc;
+  const currentSrc = failedSrc === resolvedSrc ? fallbackSrc : resolvedSrc;
   const transform = useMemo(
     () => normalizeLoginPageImageTransform({ zoom, positionX, positionY }),
     [positionX, positionY, zoom],
@@ -148,7 +148,7 @@ export function LoginPageImageStage({
           onError={(event) => {
             if (event.currentTarget.src !== fallbackSrc) {
               event.currentTarget.src = fallbackSrc;
-              setFallbackActive(true);
+              setFailedSrc(resolvedSrc);
             }
           }}
           style={imageStyle}

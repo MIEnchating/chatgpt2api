@@ -39,7 +39,8 @@ test("assets use account-scoped server storage with in-memory request deduplicat
   assert.match(assets, /assetRequests/);
   assert.match(assets, /scope: string/);
   assert.doesNotMatch(assets, /key\.endsWith\(":own"\)\) assetCache\.set/);
-  assert.match(assets, /key\.endsWith\(":own"\) \|\| key\.endsWith\(":visible"\)/);
+  assert.match(assets, /function invalidateAssetCache\(\)[\s\S]*?assetCache\.clear\(\);[\s\S]*?assetRequests\.clear\(\);/);
+  assert.match(assets, /epoch === assetCacheEpoch/);
   assert.match(assetsHook, /activeScopeRef\.current !== scope/);
   assert.match(assetsHook, /setAssets\(\[\]\)/);
   assert.match(generatedAssets, /registrationKey = `\$\{asset\.id\}:\$\{asset\.storageKey/);

@@ -553,6 +553,62 @@ func TestPasswordAccountLogin(t *testing.T) {
 	}
 	assertCreationConcurrentLimit(t, login, 0)
 
+	req = httptest.NewRequest(http.MethodPost, "/api/admin/users", strings.NewReader(`{"username":"local_alice","password":"LocalPass123!","name":"Local Alice","role_id":"default-user","enabled":true}`))
+	setRequestAuthCookie(req, adminCookie.Value)
+	res = httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("create local user status = %d body = %s", res.Code, res.Body.String())
+	}
+	var created map[string]any
+	if err := json.Unmarshal(res.Body.Bytes(), &created); err != nil {
+		t.Fatalf("create local user json: %v", err)
+	}
+	createdUser := util.StringMap(created["item"])
+	if createdUser["role"] != service.AuthRoleUser || createdUser["provider"] != service.AuthProviderLocal {
+		t.Fatalf("created local user = %#v", createdUser)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(`{"username":"local_alice","password":"LocalPass123!"}`))
+	res = httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("local user password login status = %d body = %s", res.Code, res.Body.String())
+	}
+	var localLogin map[string]any
+	if err := json.Unmarshal(res.Body.Bytes(), &localLogin); err != nil {
+		t.Fatalf("local user login json: %v", err)
+	}
+	localCookie := findResponseCookieByDomain(res.Result(), authSessionCookieName, "")
+	if localCookie == nil || localCookie.Value == "" || localLogin["token"] != nil || localLogin["role"] != service.AuthRoleUser || localLogin["provider"] != service.AuthProviderLocal || localLogin["subject_id"] != createdUser["id"] || localLogin["username"] != "local_alice" || localLogin["name"] != "Local Alice" || localLogin["role_id"] != service.DefaultManagedRoleID {
+		t.Fatalf("local user login body = %#v cookie = %#v", localLogin, localCookie)
+	}
+	assertCreationConcurrentLimit(t, localLogin, 2)
+
+	req = httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(`{"username":"local_alice","password":"WrongPass123!"}`))
+	res = httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusUnauthorized {
+		t.Fatalf("local user wrong password status = %d body = %s", res.Code, res.Body.String())
+	}
+	if cookie := findResponseCookieByDomain(res.Result(), authSessionCookieName, ""); cookie != nil && cookie.Value != "" {
+		t.Fatalf("local user wrong password cookie = %#v", cookie)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/api/admin/users", strings.NewReader(`{"username":"disabled_alice","password":"DisabledLocal123!","name":"Disabled Alice","role_id":"default-user","enabled":false}`))
+	setRequestAuthCookie(req, adminCookie.Value)
+	res = httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("create disabled local user status = %d body = %s", res.Code, res.Body.String())
+	}
+	req = httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(`{"username":"disabled_alice","password":"DisabledLocal123!"}`))
+	res = httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusUnauthorized {
+		t.Fatalf("disabled local user login status = %d body = %s", res.Code, res.Body.String())
+	}
+
 	req = httptest.NewRequest(http.MethodGet, "/auth/providers", nil)
 	res = httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
@@ -569,6 +625,8 @@ func TestPasswordAccountLogin(t *testing.T) {
 
 	dbURL := newHTTPTestNewAPIDatabase(t)
 	insertHTTPTestNewAPIUser(t, dbURL, 1, "alice", "alice@example.test")
+	insertHTTPTestNewAPIUser(t, dbURL, 2, "local_alice", "local-alice@example.test")
+	insertHTTPTestNewAPIUser(t, dbURL, 3, "disabled_alice", "disabled-alice@example.test")
 	reader, err := service.NewNewAPITokenReader(service.NewAPITokenReaderConfig{DatabaseURL: dbURL})
 	if err != nil {
 		t.Fatalf("NewNewAPITokenReader() error = %v", err)
@@ -577,6 +635,31 @@ func TestPasswordAccountLogin(t *testing.T) {
 		_ = app.newAPIKeys.Close()
 	}
 	app.newAPIKeys = reader
+	// The valid external password must not bypass the disabled local account.
+	req = httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(`{"username":"disabled_alice","password":"Password123"}`))
+	res = httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusUnauthorized {
+		t.Fatalf("disabled local user external fallback status = %d body = %s", res.Code, res.Body.String())
+	}
+	if cookie := findResponseCookieByDomain(res.Result(), authSessionCookieName, ""); cookie != nil && cookie.Value != "" {
+		t.Fatalf("disabled local user external fallback cookie = %#v", cookie)
+	}
+
+	req = httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(`{"username":"local_alice","password":"Password123"}`))
+	res = httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("mismatched local password external fallback status = %d body = %s", res.Code, res.Body.String())
+	}
+	var fallbackLogin map[string]any
+	if err := json.Unmarshal(res.Body.Bytes(), &fallbackLogin); err != nil {
+		t.Fatalf("mismatched local password external fallback json: %v", err)
+	}
+	if fallbackLogin["provider"] != service.AuthProviderNewAPI || fallbackLogin["subject_id"] != "newapi:2" || fallbackLogin["username"] != "local_alice" {
+		t.Fatalf("mismatched local password external fallback body = %#v", fallbackLogin)
+	}
+
 	req = httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(`{"username":"alice","password":"Password123"}`))
 	res = httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
@@ -853,6 +936,114 @@ func TestSettingsDoesNotExposeRelayDatabaseCredentials(t *testing.T) {
 		if responseConfig["relay_database_password_configured"] != true {
 			t.Fatalf("%s settings response missing password configured state: %#v", testCase.method, responseConfig)
 		}
+	}
+}
+
+func TestSettingsRejectsInvalidStorageCapacityCronWithoutPersisting(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+	adminToken := adminSessionToken(t, app)
+
+	validCron := "0 0 1 1 *"
+	setting := app.config.StorageSettings()
+	setting.CapacityCheck.Enabled = true
+	setting.CapacityCheck.Cron = validCron
+	validBody, err := json.Marshal(map[string]any{"storage": setting})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodPost, "/api/settings", bytes.NewReader(validBody))
+	setRequestAuthCookie(req, adminToken)
+	res := httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("valid capacity cron status = %d body = %s", res.Code, res.Body.String())
+	}
+	before, err := os.ReadFile(app.config.EnvFile)
+	if err != nil {
+		t.Fatalf("read persisted settings: %v", err)
+	}
+
+	setting.CapacityCheck.Cron = "definitely-not-cron"
+	invalidBody, err := json.Marshal(map[string]any{"storage": setting})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req = httptest.NewRequest(http.MethodPost, "/api/settings", bytes.NewReader(invalidBody))
+	setRequestAuthCookie(req, adminToken)
+	res = httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusBadRequest || !strings.Contains(res.Body.String(), "storage capacity check cron is invalid") {
+		t.Fatalf("invalid capacity cron status = %d body = %s", res.Code, res.Body.String())
+	}
+	if got := app.config.StorageSettings().CapacityCheck.Cron; got != validCron {
+		t.Fatalf("capacity cron after invalid update = %q, want %q", got, validCron)
+	}
+	after, err := os.ReadFile(app.config.EnvFile)
+	if err != nil {
+		t.Fatalf("read settings after invalid update: %v", err)
+	}
+	if !bytes.Equal(after, before) {
+		t.Fatalf("invalid capacity cron changed .env:\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}
+
+func TestAppCloseCancelsRunningCapacityCheckBeforeWaiting(t *testing.T) {
+	requestStarted := make(chan struct{})
+	var startOnce sync.Once
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		startOnce.Do(func() { close(requestStarted) })
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+
+	app := newTestApp(t)
+	closed := false
+	defer func() {
+		if !closed {
+			app.cancel()
+			app.Close()
+		}
+	}()
+	_, err := app.config.Update(map[string]any{
+		"storage": map[string]any{
+			"providers": []any{map[string]any{
+				"id": "blocking-s3", "name": "Blocking S3", "type": "s3", "endpoint": server.URL,
+				"region": "us-east-1", "bucket": "bucket", "accessKeyId": "key", "secretAccessKey": "secret",
+				"pathPrefix": "assets", "enabled": true,
+			}},
+			"capacityCheck": map[string]any{"enabled": true, "cron": "@every 1s"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("configure scheduled capacity check: %v", err)
+	}
+	if err := app.storageFiles.RefreshCapacityScheduler(app.ctx); err != nil {
+		t.Fatalf("RefreshCapacityScheduler() error = %v", err)
+	}
+	select {
+	case <-requestStarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("scheduled capacity request did not start")
+	}
+
+	closeDone := make(chan struct{})
+	go func() {
+		app.Close()
+		close(closeDone)
+	}()
+	select {
+	case <-closeDone:
+		closed = true
+	case <-time.After(3 * time.Second):
+		app.cancel()
+		select {
+		case <-closeDone:
+			closed = true
+		case <-time.After(5 * time.Second):
+			t.Fatal("App.Close() remained blocked after context cancellation")
+		}
+		t.Fatal("App.Close() waited for capacity work before canceling its context")
 	}
 }
 
@@ -3477,7 +3668,7 @@ const (
 
 func adminSessionToken(t *testing.T, app *App) string {
 	t.Helper()
-	identity, token, err := app.auth.LoginAdminPassword(testAdminUsername, testAdminPassword)
+	identity, token, err := app.auth.LoginPassword(testAdminUsername, testAdminPassword)
 	if err != nil {
 		t.Fatalf("admin LoginPassword() error = %v", err)
 	}
@@ -3610,14 +3801,28 @@ func TestProfileAssetsAreSyncedPerAccount(t *testing.T) {
 
 	_, aliceToken := createPasswordUserSession(t, app, "asset-alice", "Password123", "Asset Alice")
 	_, bobToken := createPasswordUserSession(t, app, "asset-bob", "Password123", "Asset Bob")
-	body := `{"items":[{"id":"asset-text","kind":"text","title":"镜头提示词","content":"电影感近景","visibility":"public","tags":["电影"],"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"},{"id":"asset-audio","kind":"audio","title":"参考音频","url":"/videos/references/a.mp3","mimeType":"audio/mpeg","bytes":2048,"durationMs":4300,"visibility":"private","source":"画布","note":"节奏参考","tags":[]}]}`
-	req := httptest.NewRequest(http.MethodPut, "/api/profile/assets", strings.NewReader(body))
-	setRequestAuthCookie(req, "Bearer "+aliceToken)
-	res := httptest.NewRecorder()
-	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusOK {
-		t.Fatalf("replace assets status = %d body = %s", res.Code, res.Body.String())
+	postAssets := func(token, body string) {
+		t.Helper()
+		var payload struct {
+			Items []json.RawMessage `json:"items"`
+		}
+		if err := json.Unmarshal([]byte(body), &payload); err != nil {
+			t.Fatalf("decode asset fixture: %v", err)
+		}
+		for _, item := range payload.Items {
+			req := httptest.NewRequest(http.MethodPost, "/api/profile/assets", strings.NewReader(`{"item":`+string(item)+`}`))
+			setRequestAuthCookie(req, "Bearer "+token)
+			res := httptest.NewRecorder()
+			app.Handler().ServeHTTP(res, req)
+			if res.Code != http.StatusOK {
+				t.Fatalf("upsert asset status = %d body = %s", res.Code, res.Body.String())
+			}
+		}
 	}
+	body := `{"items":[{"id":"asset-text","kind":"text","title":"镜头提示词","content":"电影感近景","visibility":"public","tags":["电影"],"createdAt":"2026-01-01T00:00:00Z","updatedAt":"2026-01-01T00:00:00Z"},{"id":"asset-audio","kind":"audio","title":"参考音频","url":"/videos/references/a.mp3","mimeType":"audio/mpeg","bytes":2048,"durationMs":4300,"visibility":"private","source":"画布","note":"节奏参考","tags":[]}]}`
+	postAssets(aliceToken, body)
+	var req *http.Request
+	var res *httptest.ResponseRecorder
 
 	for _, test := range []struct {
 		name  string
@@ -3656,13 +3861,7 @@ func TestProfileAssetsAreSyncedPerAccount(t *testing.T) {
 	}
 
 	bobBody := `{"items":[{"id":"bob-private","kind":"text","title":"Bob private","content":"private","visibility":"private","tags":[]},{"id":"bob-public","kind":"text","title":"Bob public","content":"public","visibility":"public","tags":[]}]}`
-	req = httptest.NewRequest(http.MethodPut, "/api/profile/assets", strings.NewReader(bobBody))
-	setRequestAuthCookie(req, "Bearer "+bobToken)
-	res = httptest.NewRecorder()
-	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusOK {
-		t.Fatalf("replace bob assets status = %d body = %s", res.Code, res.Body.String())
-	}
+	postAssets(bobToken, bobBody)
 
 	visibleItems := func(name, authHeader string) []map[string]any {
 		t.Helper()
@@ -3716,6 +3915,7 @@ func newTestApp(t *testing.T) *App {
 	t.Setenv("ADMIN_PASSWORD", testAdminPassword)
 	t.Setenv("STORAGE_BACKEND", "sqlite")
 	t.Setenv("STORAGE_DATABASE_URL", "")
+	unsetTestEnv(t, "OBJECT_STORAGE_SETTINGS")
 	app, err := NewApp()
 	if err != nil {
 		t.Fatalf("NewApp() error = %v", err)
