@@ -67,14 +67,14 @@ func (s *AnnouncementService) ListVisible() ([]Announcement, error) {
 	return visible, nil
 }
 
-func (s *AnnouncementService) Create(body map[string]any) (Announcement, error) {
+func (s *AnnouncementService) CreateWithItems(body map[string]any) (Announcement, []Announcement, error) {
 	title, err := normalizeAnnouncementTitle(body["title"])
 	if err != nil {
-		return Announcement{}, err
+		return Announcement{}, nil, err
 	}
 	content, err := normalizeAnnouncementContent(body["content"])
 	if err != nil {
-		return Announcement{}, err
+		return Announcement{}, nil, err
 	}
 	enabled := true
 	if value, exists := body["enabled"]; exists {
@@ -95,11 +95,11 @@ func (s *AnnouncementService) Create(body map[string]any) (Announcement, error) 
 	for attempt := 0; attempt < announcementSaveAttempts; attempt++ {
 		items, err := s.loadLocked()
 		if err != nil {
-			return Announcement{}, err
+			return Announcement{}, nil, err
 		}
 		for _, existing := range items {
 			if existing.ID == item.ID {
-				return item, nil
+				return item, copyAnnouncements(items), nil
 			}
 		}
 		items = append([]Announcement{item}, items...)
@@ -107,17 +107,17 @@ func (s *AnnouncementService) Create(body map[string]any) (Announcement, error) 
 			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < announcementSaveAttempts {
 				continue
 			}
-			return Announcement{}, err
+			return Announcement{}, nil, err
 		}
-		return item, nil
+		return item, copyAnnouncements(items), nil
 	}
-	return Announcement{}, fmt.Errorf("failed to save announcement")
+	return Announcement{}, nil, fmt.Errorf("failed to save announcement")
 }
 
-func (s *AnnouncementService) Update(id string, body map[string]any) (*Announcement, error) {
+func (s *AnnouncementService) UpdateWithItems(id string, body map[string]any) (*Announcement, []Announcement, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
-		return nil, fmt.Errorf("announcement id is required")
+		return nil, nil, fmt.Errorf("announcement id is required")
 	}
 
 	s.mu.Lock()
@@ -125,7 +125,7 @@ func (s *AnnouncementService) Update(id string, body map[string]any) (*Announcem
 	for attempt := 0; attempt < announcementSaveAttempts; attempt++ {
 		items, err := s.loadLocked()
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		for index := range items {
 			if items[index].ID != id {
@@ -135,7 +135,7 @@ func (s *AnnouncementService) Update(id string, body map[string]any) (*Announcem
 			if value, exists := body["title"]; exists {
 				title, normalizeErr := normalizeAnnouncementTitle(value)
 				if normalizeErr != nil {
-					return nil, normalizeErr
+					return nil, nil, normalizeErr
 				}
 				items[index].Title = title
 				changed = true
@@ -143,7 +143,7 @@ func (s *AnnouncementService) Update(id string, body map[string]any) (*Announcem
 			if value, exists := body["content"]; exists {
 				content, normalizeErr := normalizeAnnouncementContent(value)
 				if normalizeErr != nil {
-					return nil, normalizeErr
+					return nil, nil, normalizeErr
 				}
 				items[index].Content = content
 				changed = true
@@ -153,7 +153,7 @@ func (s *AnnouncementService) Update(id string, body map[string]any) (*Announcem
 				changed = true
 			}
 			if !changed {
-				return nil, fmt.Errorf("no updates provided")
+				return nil, nil, fmt.Errorf("no updates provided")
 			}
 			items[index].UpdatedAt = util.NowISO()
 			updated := items[index]
@@ -162,21 +162,21 @@ func (s *AnnouncementService) Update(id string, body map[string]any) (*Announcem
 				if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < announcementSaveAttempts {
 					break
 				}
-				return nil, err
+				return nil, nil, err
 			}
-			return &updated, nil
+			return &updated, copyAnnouncements(items), nil
 		}
 		if attempt+1 == announcementSaveAttempts {
-			return nil, nil
+			return nil, copyAnnouncements(items), nil
 		}
 	}
-	return nil, fmt.Errorf("failed to update announcement")
+	return nil, nil, fmt.Errorf("failed to update announcement")
 }
 
-func (s *AnnouncementService) Delete(id string) (bool, error) {
+func (s *AnnouncementService) DeleteWithItems(id string) (bool, []Announcement, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
-		return false, nil
+		return false, []Announcement{}, nil
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -184,7 +184,7 @@ func (s *AnnouncementService) Delete(id string) (bool, error) {
 	for attempt := 0; attempt < announcementSaveAttempts; attempt++ {
 		items, err := s.loadLocked()
 		if err != nil {
-			return false, err
+			return false, nil, err
 		}
 		next := make([]Announcement, 0, len(items))
 		removed := false
@@ -196,18 +196,18 @@ func (s *AnnouncementService) Delete(id string) (bool, error) {
 			next = append(next, item)
 		}
 		if !removed {
-			return removedOnce, nil
+			return removedOnce, copyAnnouncements(items), nil
 		}
 		removedOnce = true
 		if err := s.saveLocked(next); err != nil {
 			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < announcementSaveAttempts {
 				continue
 			}
-			return false, err
+			return false, nil, err
 		}
-		return true, nil
+		return true, copyAnnouncements(next), nil
 	}
-	return false, fmt.Errorf("failed to delete announcement")
+	return false, nil, fmt.Errorf("failed to delete announcement")
 }
 
 func (s *AnnouncementService) Preferences(ownerID string) (AnnouncementPreferences, error) {
@@ -378,6 +378,10 @@ func (s *AnnouncementService) saveLocked(items []Announcement) error {
 		return fmt.Errorf("storage document backend is required")
 	}
 	return s.store.SaveJSONDocument(announcementDocumentName, map[string]any{"items": items})
+}
+
+func copyAnnouncements(items []Announcement) []Announcement {
+	return append(make([]Announcement, 0, len(items)), items...)
 }
 
 func storedAnnouncement(raw map[string]any) (Announcement, bool) {

@@ -58,11 +58,6 @@ func copyPromptFavorites(items []map[string]any) []map[string]any {
 	return out
 }
 
-func (s *PromptFavoriteService) Upsert(ownerID string, body map[string]any) (map[string]any, error) {
-	item, _, err := s.UpsertWithItems(ownerID, body)
-	return item, err
-}
-
 func (s *PromptFavoriteService) UpsertWithItems(ownerID string, body map[string]any) (map[string]any, []map[string]any, error) {
 	ownerID = util.Clean(ownerID)
 	if ownerID == "" {
@@ -108,11 +103,6 @@ func (s *PromptFavoriteService) UpsertWithItems(ownerID string, body map[string]
 		return util.CopyMap(item), copyPromptFavorites(items), nil
 	}
 	return nil, nil, fmt.Errorf("failed to save prompt favorite")
-}
-
-func (s *PromptFavoriteService) Delete(ownerID, id string) (bool, error) {
-	deleted, _, err := s.DeleteWithItems(ownerID, id)
-	return deleted, err
 }
 
 func (s *PromptFavoriteService) DeleteWithItems(ownerID, id string) (bool, []map[string]any, error) {

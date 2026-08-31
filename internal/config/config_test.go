@@ -995,6 +995,57 @@ func TestNewStoreRejectsUnreadableEnvironmentPath(t *testing.T) {
 	}
 }
 
+func TestNewStoreInitializesRequiredDataDirectories(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("ROOT_DIR", root)
+	store, err := NewStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"images", "image_thumbnails", "image_metadata", "login_page_images", "site_icons"} {
+		info, statErr := os.Stat(filepath.Join(store.DataDir, name))
+		if statErr != nil || !info.IsDir() {
+			t.Fatalf("required data directory %q: info = %#v, error = %v", name, info, statErr)
+		}
+	}
+}
+
+func TestNewStoreRejectsInvalidRequiredDataDirectory(t *testing.T) {
+	root := t.TempDir()
+	dataDir := filepath.Join(root, "data")
+	if err := os.MkdirAll(dataDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dataDir, "images"), []byte("not a directory"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ROOT_DIR", root)
+
+	if _, err := NewStore(); err == nil || !strings.Contains(err.Error(), "initialize data directory") {
+		t.Fatalf("NewStore() error = %v, want data directory failure", err)
+	}
+}
+
+func TestStoreRejectsEnvironmentValuesContainingNullBytesBeforePersisting(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("ROOT_DIR", root)
+	store, err := NewStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	previousTitle := store.AppTitle()
+
+	if _, err := store.Update(map[string]any{"app_title": "invalid\x00title"}); err == nil || !strings.Contains(err.Error(), "contains a null byte") {
+		t.Fatalf("Update() error = %v, want null-byte rejection", err)
+	}
+	if got := store.AppTitle(); got != previousTitle {
+		t.Fatalf("AppTitle() = %q after rejected update, want %q", got, previousTitle)
+	}
+	if _, err := os.Stat(store.EnvFile); !os.IsNotExist(err) {
+		t.Fatalf("rejected update persisted .env: %v", err)
+	}
+}
+
 func TestStoreUpdatePersistsRelayBaseURL(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("ROOT_DIR", root)

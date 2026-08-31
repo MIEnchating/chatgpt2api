@@ -16,7 +16,7 @@ func TestAnnouncementServicePersistsAndFiltersAnnouncements(t *testing.T) {
 	defer backend.Close()
 
 	announcements := NewAnnouncementService(backend)
-	created, err := announcements.Create(map[string]any{
+	created, itemsAfterCreate, err := announcements.CreateWithItems(map[string]any{
 		"title":   "维护通知",
 		"content": "今晚 23:00 进行维护。",
 	})
@@ -24,10 +24,13 @@ func TestAnnouncementServicePersistsAndFiltersAnnouncements(t *testing.T) {
 		t.Fatalf("Create() error = %v", err)
 	}
 	if created.ID == "" || created.Title != "维护通知" || !created.Enabled {
-		t.Fatalf("Create() = %#v", created)
+		t.Fatalf("CreateWithItems() item = %#v", created)
+	}
+	if len(itemsAfterCreate) != 1 || itemsAfterCreate[0].ID != created.ID {
+		t.Fatalf("CreateWithItems() items = %#v", itemsAfterCreate)
 	}
 
-	disabled, err := announcements.Create(map[string]any{
+	disabled, itemsAfterDisabled, err := announcements.CreateWithItems(map[string]any{
 		"content": "内部草稿",
 		"enabled": false,
 	})
@@ -35,7 +38,10 @@ func TestAnnouncementServicePersistsAndFiltersAnnouncements(t *testing.T) {
 		t.Fatalf("Create(disabled) error = %v", err)
 	}
 	if disabled.Title != "系统公告" || disabled.Enabled {
-		t.Fatalf("Create(disabled) = %#v", disabled)
+		t.Fatalf("CreateWithItems(disabled) item = %#v", disabled)
+	}
+	if len(itemsAfterDisabled) != 2 || itemsAfterDisabled[0].ID != disabled.ID {
+		t.Fatalf("CreateWithItems(disabled) items = %#v", itemsAfterDisabled)
 	}
 
 	visible, err := announcements.ListVisible()
@@ -46,12 +52,15 @@ func TestAnnouncementServicePersistsAndFiltersAnnouncements(t *testing.T) {
 		t.Fatalf("ListVisible() = %#v", visible)
 	}
 
-	updated, err := announcements.Update(created.ID, map[string]any{"enabled": false, "content": "维护已延期。"})
+	updated, itemsAfterUpdate, err := announcements.UpdateWithItems(created.ID, map[string]any{"enabled": false, "content": "维护已延期。"})
 	if err != nil {
 		t.Fatalf("Update() error = %v", err)
 	}
 	if updated == nil || updated.Enabled || updated.Content != "维护已延期。" {
-		t.Fatalf("Update() = %#v", updated)
+		t.Fatalf("UpdateWithItems() item = %#v", updated)
+	}
+	if len(itemsAfterUpdate) != 2 {
+		t.Fatalf("UpdateWithItems() items = %#v", itemsAfterUpdate)
 	}
 
 	reloaded := NewAnnouncementService(backend)
@@ -63,9 +72,12 @@ func TestAnnouncementServicePersistsAndFiltersAnnouncements(t *testing.T) {
 		t.Fatalf("reloaded ListAll() = %#v", items)
 	}
 
-	deleted, err := reloaded.Delete(disabled.ID)
+	deleted, itemsAfterDelete, err := reloaded.DeleteWithItems(disabled.ID)
 	if err != nil || !deleted {
-		t.Fatalf("Delete() deleted=%v error=%v", deleted, err)
+		t.Fatalf("DeleteWithItems() deleted=%v error=%v", deleted, err)
+	}
+	if len(itemsAfterDelete) != 1 || itemsAfterDelete[0].ID != created.ID {
+		t.Fatalf("DeleteWithItems() items = %#v", itemsAfterDelete)
 	}
 	items, err = announcements.ListAll()
 	if err != nil || len(items) != 1 || items[0].ID != created.ID {
@@ -82,11 +94,11 @@ func TestAnnouncementServiceValidatesContent(t *testing.T) {
 	defer backend.Close()
 
 	announcements := NewAnnouncementService(backend)
-	if _, err := announcements.Create(map[string]any{"content": "  "}); err == nil {
-		t.Fatal("Create() error = nil, want content validation error")
+	if _, _, err := announcements.CreateWithItems(map[string]any{"content": "  "}); err == nil {
+		t.Fatal("CreateWithItems() error = nil, want content validation error")
 	}
-	if _, err := announcements.Create(map[string]any{"content": string(make([]rune, maxAnnouncementBodyRunes+1))}); err == nil {
-		t.Fatal("Create() error = nil, want content length error")
+	if _, _, err := announcements.CreateWithItems(map[string]any{"content": string(make([]rune, maxAnnouncementBodyRunes+1))}); err == nil {
+		t.Fatal("CreateWithItems() error = nil, want content length error")
 	}
 }
 
@@ -158,19 +170,36 @@ func TestAnnouncementServiceMergesConcurrentDatabaseCreates(t *testing.T) {
 	serviceA := NewAnnouncementService(newFirstSaveBarrierBackend(t, backendA, barrier))
 	serviceB := NewAnnouncementService(newFirstSaveBarrierBackend(t, backendB, barrier))
 
-	errorsCh := make(chan error, 2)
+	type createResult struct {
+		content string
+		item    Announcement
+		items   []Announcement
+		err     error
+	}
+	resultsCh := make(chan createResult, 2)
 	go func() {
-		_, saveErr := serviceA.Create(map[string]any{"content": "公告 A"})
-		errorsCh <- saveErr
+		item, items, saveErr := serviceA.CreateWithItems(map[string]any{"content": "公告 A"})
+		resultsCh <- createResult{content: "公告 A", item: item, items: items, err: saveErr}
 	}()
 	go func() {
-		_, saveErr := serviceB.Create(map[string]any{"content": "公告 B"})
-		errorsCh <- saveErr
+		item, items, saveErr := serviceB.CreateWithItems(map[string]any{"content": "公告 B"})
+		resultsCh <- createResult{content: "公告 B", item: item, items: items, err: saveErr}
 	}()
+	maxReturnedItems := 0
 	for range 2 {
-		if saveErr := <-errorsCh; saveErr != nil {
-			t.Fatalf("concurrent Create() error = %v", saveErr)
+		result := <-resultsCh
+		if result.err != nil {
+			t.Fatalf("concurrent CreateWithItems() error = %v", result.err)
 		}
+		if result.item.Content != result.content || !announcementSliceContainsID(result.items, result.item.ID) {
+			t.Fatalf("CreateWithItems(%q) item=%#v items=%#v", result.content, result.item, result.items)
+		}
+		if len(result.items) > maxReturnedItems {
+			maxReturnedItems = len(result.items)
+		}
+	}
+	if maxReturnedItems != 2 {
+		t.Fatalf("successful CAS results never included both announcements; max items = %d", maxReturnedItems)
 	}
 	items, err := serviceA.ListAll()
 	if err != nil {
@@ -179,6 +208,15 @@ func TestAnnouncementServiceMergesConcurrentDatabaseCreates(t *testing.T) {
 	if len(items) != 2 {
 		t.Fatalf("concurrent announcements lost an update: %#v", items)
 	}
+}
+
+func announcementSliceContainsID(items []Announcement, id string) bool {
+	for _, item := range items {
+		if item.ID == id {
+			return true
+		}
+	}
+	return false
 }
 
 func TestAnnouncementServiceMergesConcurrentPreferenceUpdates(t *testing.T) {

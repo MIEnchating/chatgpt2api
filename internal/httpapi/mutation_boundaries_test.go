@@ -32,7 +32,7 @@ func TestPromptFavoriteMutationsDoNotRequirePostWriteReload(t *testing.T) {
 	backend := &promptFavoritePostWriteReloadBackend{DatabaseBackend: store}
 	app.prompts = service.NewPromptFavoriteService(backend)
 
-	seed, err := app.prompts.Upsert(owner.ID, promptFavoriteBoundaryPayload("seed"))
+	seed, _, err := app.prompts.UpsertWithItems(owner.ID, promptFavoriteBoundaryPayload("seed"))
 	if err != nil {
 		t.Fatalf("seed prompt favorite: %v", err)
 	}

@@ -3390,7 +3390,7 @@ func TestProfilePromptFavoritesAlwaysExcludeAdultContent(t *testing.T) {
 		t.Fatalf("nsfw favorite status = %d body = %s", res.Code, res.Body.String())
 	}
 
-	if _, err := app.prompts.Upsert(user.ID, map[string]any{
+	if _, _, err := app.prompts.UpsertWithItems(user.ID, map[string]any{
 		"prompt_id":    "seeded-adult",
 		"source":       "banana-prompt-quicker",
 		"title":        "Seeded Adult",

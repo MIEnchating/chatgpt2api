@@ -69,19 +69,24 @@ func (a *App) handleAdminAnnouncements(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path == base {
 		switch r.Method {
 		case http.MethodGet:
-			a.writeAdminAnnouncements(w, nil)
+			items, err := a.announce.ListAll()
+			if err != nil {
+				util.WriteError(w, http.StatusInternalServerError, "failed to load announcements")
+				return
+			}
+			writeAdminAnnouncements(w, items, nil)
 		case http.MethodPost:
 			body, err := readJSONMap(r)
 			if err != nil {
 				util.WriteError(w, http.StatusBadRequest, "invalid json body")
 				return
 			}
-			item, err := a.announce.Create(body)
+			item, items, err := a.announce.CreateWithItems(body)
 			if err != nil {
 				util.WriteError(w, http.StatusBadRequest, err.Error())
 				return
 			}
-			a.writeAdminAnnouncements(w, &item)
+			writeAdminAnnouncements(w, items, &item)
 		default:
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		}
@@ -101,7 +106,7 @@ func (a *App) handleAdminAnnouncements(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusBadRequest, "invalid json body")
 			return
 		}
-		item, err := a.announce.Update(id, body)
+		item, items, err := a.announce.UpdateWithItems(id, body)
 		if err != nil {
 			util.WriteError(w, http.StatusBadRequest, err.Error())
 			return
@@ -110,9 +115,9 @@ func (a *App) handleAdminAnnouncements(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusNotFound, "announcement not found")
 			return
 		}
-		a.writeAdminAnnouncements(w, item)
+		writeAdminAnnouncements(w, items, item)
 	case http.MethodDelete:
-		deleted, err := a.announce.Delete(id)
+		deleted, items, err := a.announce.DeleteWithItems(id)
 		if err != nil {
 			util.WriteError(w, http.StatusInternalServerError, "failed to delete announcement")
 			return
@@ -121,18 +126,13 @@ func (a *App) handleAdminAnnouncements(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusNotFound, "announcement not found")
 			return
 		}
-		a.writeAdminAnnouncements(w, nil)
+		writeAdminAnnouncements(w, items, nil)
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
 }
 
-func (a *App) writeAdminAnnouncements(w http.ResponseWriter, item *service.Announcement) {
-	items, err := a.announce.ListAll()
-	if err != nil {
-		util.WriteError(w, http.StatusInternalServerError, "failed to load announcements")
-		return
-	}
+func writeAdminAnnouncements(w http.ResponseWriter, items []service.Announcement, item *service.Announcement) {
 	payload := map[string]any{"items": items}
 	if item != nil {
 		payload["item"] = item

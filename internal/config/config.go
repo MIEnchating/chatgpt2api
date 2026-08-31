@@ -174,6 +174,14 @@ type Store struct {
 	storageBackend storage.Backend
 }
 
+var requiredDataSubdirectories = []string{
+	"images",
+	"image_thumbnails",
+	"image_metadata",
+	"login_page_images",
+	"site_icons",
+}
+
 func NewStore() (*Store, error) {
 	root, err := resolveRootDir()
 	if err != nil {
@@ -193,6 +201,9 @@ func NewStore() (*Store, error) {
 		data:    map[string]any{},
 	}
 	if err := os.MkdirAll(s.DataDir, 0o755); err != nil {
+		return nil, err
+	}
+	if err := initializeDataDirectories(s.DataDir); err != nil {
 		return nil, err
 	}
 	if err := applyEnvDefaults(envFileValues); err != nil {
@@ -570,33 +581,23 @@ func (s *Store) LogLevels() []string {
 }
 
 func (s *Store) ImagesDir() string {
-	path := filepath.Join(s.DataDir, "images")
-	_ = os.MkdirAll(path, 0o755)
-	return path
+	return filepath.Join(s.DataDir, "images")
 }
 
 func (s *Store) ImageThumbnailsDir() string {
-	path := filepath.Join(s.DataDir, "image_thumbnails")
-	_ = os.MkdirAll(path, 0o755)
-	return path
+	return filepath.Join(s.DataDir, "image_thumbnails")
 }
 
 func (s *Store) ImageMetadataDir() string {
-	path := filepath.Join(s.DataDir, "image_metadata")
-	_ = os.MkdirAll(path, 0o755)
-	return path
+	return filepath.Join(s.DataDir, "image_metadata")
 }
 
 func (s *Store) LoginPageImagesDir() string {
-	path := filepath.Join(s.DataDir, "login_page_images")
-	_ = os.MkdirAll(path, 0o755)
-	return path
+	return filepath.Join(s.DataDir, "login_page_images")
 }
 
 func (s *Store) SiteIconsDir() string {
-	path := filepath.Join(s.DataDir, "site_icons")
-	_ = os.MkdirAll(path, 0o755)
-	return path
+	return filepath.Join(s.DataDir, "site_icons")
 }
 
 func (s *Store) SiteIconURL() string {
@@ -973,6 +974,9 @@ func (s *Store) saveLocked() error {
 			updates[settingEnvKeys[key]] = stringifySettingEnvValue(key, value)
 		}
 	}
+	if err := validateEnvUpdates(updates); err != nil {
+		return err
+	}
 	if err := writeEnvUpdates(s.EnvFile, updates); err != nil {
 		return err
 	}
@@ -980,7 +984,28 @@ func (s *Store) saveLocked() error {
 		if key == settingEnvKeys["relay_database_url"] || key == settingEnvKeys["relay_database_type"] {
 			continue
 		}
-		_ = os.Setenv(key, value)
+		if err := os.Setenv(key, value); err != nil {
+			return fmt.Errorf("set environment value %q: %w", key, err)
+		}
+	}
+	return nil
+}
+
+func initializeDataDirectories(dataDir string) error {
+	for _, name := range requiredDataSubdirectories {
+		path := filepath.Join(dataDir, name)
+		if err := os.MkdirAll(path, 0o755); err != nil {
+			return fmt.Errorf("initialize data directory %q: %w", path, err)
+		}
+	}
+	return nil
+}
+
+func validateEnvUpdates(updates map[string]string) error {
+	for key, value := range updates {
+		if strings.ContainsRune(value, '\x00') {
+			return fmt.Errorf("environment value %q contains a null byte", key)
+		}
 	}
 	return nil
 }

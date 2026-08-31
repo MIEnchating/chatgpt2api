@@ -2,11 +2,13 @@ package httpapi
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -215,5 +217,48 @@ func TestDefaultUserCanvasImageUploadStoresPrivateGalleryImage(t *testing.T) {
 	}
 	if len(gallery.Items) != 1 || gallery.Items[0]["visibility"] != "private" {
 		t.Fatalf("gallery items = %#v", gallery.Items)
+	}
+}
+
+func TestCanceledCanvasImageUploadDoesNotCreateImageOrThumbnail(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+	authorization := adminSessionToken(t, app)
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	part, err := writer.CreateFormFile("image", "canceled.png")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := encodeHTTPTestPNG(part); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	request := httptest.NewRequest(http.MethodPost, "/api/canvas/images", body)
+	setRequestAuthCookie(request, authorization)
+	request.Header.Set("Content-Type", writer.FormDataContentType())
+	ctx, cancel := context.WithCancel(request.Context())
+	cancel()
+	response := httptest.NewRecorder()
+	app.Handler().ServeHTTP(response, request.WithContext(ctx))
+	if response.Code != http.StatusRequestTimeout {
+		t.Fatalf("upload status = %d, want %d; body = %s", response.Code, http.StatusRequestTimeout, response.Body.String())
+	}
+	items, err := app.images.ListImages("", "", "", service.ImageAccessScope{All: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := len(items["items"].([]map[string]any)); got != 0 {
+		t.Fatalf("canceled upload created %d images", got)
+	}
+	thumbnailEntries, err := os.ReadDir(app.config.ImageThumbnailsDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(thumbnailEntries) != 0 {
+		t.Fatalf("canceled upload created thumbnails: %#v", thumbnailEntries)
 	}
 }

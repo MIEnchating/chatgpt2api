@@ -106,6 +106,20 @@ type countingImageDocumentBackend struct {
 	prefixErr   error
 }
 
+type cancelAfterImageMetadataSaveBackend struct {
+	storage.Backend
+	storage.JSONDocumentBackend
+	cancel context.CancelFunc
+}
+
+func (b *cancelAfterImageMetadataSaveBackend) SaveJSONDocument(name string, value any) error {
+	if err := b.JSONDocumentBackend.SaveJSONDocument(name, value); err != nil {
+		return err
+	}
+	b.cancel()
+	return nil
+}
+
 func newCountingImageDocumentBackend(t *testing.T, backend storage.Backend) *countingImageDocumentBackend {
 	t.Helper()
 	documents, documentsOK := backend.(storage.JSONDocumentBackend)
@@ -296,6 +310,41 @@ func TestImageServiceUsesSameOriginPathsWhenBaseURLIsEmpty(t *testing.T) {
 	items := requireImageList(t, service, "", "", "", allImages)["items"].([]map[string]any)
 	if len(items) != 1 || !strings.HasPrefix(toString(items[0]["url"]), "/images/") {
 		t.Fatalf("ListImages() = %#v, want same-origin URL", items)
+	}
+}
+
+func TestImageServiceRollsBackWhenContextIsCanceledAfterMetadataSave(t *testing.T) {
+	config := testImageConfig{root: t.TempDir()}
+	backend := newTestStorageBackend(t)
+	documents, ok := backend.(storage.JSONDocumentBackend)
+	if !ok {
+		t.Fatal("test backend does not support JSON documents")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	service := NewImageService(config, &cancelAfterImageMetadataSaveBackend{
+		Backend: backend, JSONDocumentBackend: documents, cancel: cancel,
+	})
+
+	if _, err := service.SaveImageBytes(ctx, testPNGBytes(t, 8, 8), "", "owner", "Owner", "png"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("SaveImageBytes() error = %v, want context cancellation", err)
+	}
+	entries, err := os.ReadDir(config.ImagesDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("canceled image save left image data: %#v", entries)
+	}
+	prefixes, ok := backend.(storage.JSONDocumentPrefixBackend)
+	if !ok {
+		t.Fatal("test backend does not support JSON document prefixes")
+	}
+	metadata, err := prefixes.ListJSONDocuments("image_metadata/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(metadata) != 0 {
+		t.Fatalf("canceled image save left metadata: %#v", metadata)
 	}
 }
 

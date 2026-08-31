@@ -61,7 +61,7 @@ func TestPromptFavoriteServiceUpsertListAndDelete(t *testing.T) {
 	backend := newTestStorageBackend(t)
 	service := NewPromptFavoriteService(backend)
 
-	item, err := service.Upsert("user_1", map[string]any{
+	item, _, err := service.UpsertWithItems("user_1", map[string]any{
 		"prompt_id":            "prompt-a",
 		"source":               "banana-prompt-quicker",
 		"title":                "Prompt A",
@@ -119,7 +119,7 @@ func TestPromptFavoriteServiceUpsertListAndDelete(t *testing.T) {
 		t.Fatalf("other owner saw favorites: %#v", otherItems)
 	}
 
-	updated, err := service.Upsert("user_1", map[string]any{
+	updated, _, err := service.UpsertWithItems("user_1", map[string]any{
 		"prompt_id":    "prompt-a",
 		"source":       "banana-prompt-quicker",
 		"title":        "Prompt A Updated",
@@ -144,7 +144,7 @@ func TestPromptFavoriteServiceUpsertListAndDelete(t *testing.T) {
 		t.Fatalf("duplicate upsert did not update in place: %#v", items)
 	}
 
-	if deleted, err := service.Delete("user_1", item["id"].(string)); err != nil || !deleted {
+	if deleted, _, err := service.DeleteWithItems("user_1", item["id"].(string)); err != nil || !deleted {
 		t.Fatalf("Delete() = %v, %v", deleted, err)
 	}
 	items, err = service.ListWithError("user_1")
@@ -154,7 +154,7 @@ func TestPromptFavoriteServiceUpsertListAndDelete(t *testing.T) {
 	if len(items) != 0 {
 		t.Fatalf("favorite remained after delete: %#v", items)
 	}
-	if deleted, err := service.Delete("user_1", item["id"].(string)); err != nil || deleted {
+	if deleted, _, err := service.DeleteWithItems("user_1", item["id"].(string)); err != nil || deleted {
 		t.Fatalf("Delete() missing favorite = %v, %v", deleted, err)
 	}
 }
@@ -170,7 +170,7 @@ func TestPromptFavoriteServiceRejectsInvalidInput(t *testing.T) {
 		{"prompt_id": "p1", "source": "banana-prompt-quicker", "title": "Title", "preview": "https://example.test/a.png", "author": "Alice"},
 	}
 	for index, body := range cases {
-		if _, err := service.Upsert("user_1", body); err == nil {
+		if _, _, err := service.UpsertWithItems("user_1", body); err == nil {
 			t.Fatalf("case %d Upsert() error = nil", index)
 		}
 	}
@@ -178,7 +178,7 @@ func TestPromptFavoriteServiceRejectsInvalidInput(t *testing.T) {
 
 func TestPromptFavoriteServiceDoesNotInventReferenceProjectModeOrReferences(t *testing.T) {
 	service := NewPromptFavoriteService(newTestStorageBackend(t))
-	item, err := service.Upsert("user_1", map[string]any{
+	item, _, err := service.UpsertWithItems("user_1", map[string]any{
 		"prompt_id":            "gpt-image-2-prompts:0001",
 		"source":               "gpt-image-2-prompts",
 		"title":                "Prompt",

@@ -232,7 +232,10 @@ func NewImageService(config ImageConfig, backend ...storage.Backend) *ImageServi
 	return &ImageService{config: config, store: firstJSONDocumentStore(backend)}
 }
 
-func (s *ImageService) SaveImageBytes(_ context.Context, imageData []byte, baseURL, ownerID, ownerName, _ string) (string, error) {
+func (s *ImageService) SaveImageBytes(ctx context.Context, imageData []byte, baseURL, ownerID, ownerName, _ string) (string, error) {
+	if ctx == nil {
+		return "", errors.New("image save context is required")
+	}
 	if len(imageData) == 0 {
 		return "", errors.New("image data is empty")
 	}
@@ -243,6 +246,9 @@ func (s *ImageService) SaveImageBytes(_ context.Context, imageData []byte, baseU
 	if err != nil {
 		return "", fmt.Errorf("invalid image data: %w", err)
 	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	outputFormat := info.Format
 	now := time.Now().UTC()
 	filename := strconv.FormatInt(now.UnixNano(), 10) + "_" + util.NewHex(12) + "." + imageStorageExtension(outputFormat)
@@ -251,18 +257,41 @@ func (s *ImageService) SaveImageBytes(_ context.Context, imageData []byte, baseU
 	if err := os.MkdirAll(filepath.Dir(imagePath), 0o755); err != nil {
 		return "", err
 	}
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
 	if err := os.WriteFile(imagePath, imageData, 0o644); err != nil {
 		return "", err
+	}
+	if err := ctx.Err(); err != nil {
+		return "", errors.Join(err, s.rollbackSavedImage(rel, imagePath, false))
 	}
 	meta := imageMetadata{
 		OwnerID: ownerID, OwnerName: ownerName, Visibility: ImageVisibilityPrivate,
 		Width: info.Width, Height: info.Height, OutputFormat: outputFormat,
 	}
 	if err := s.writeImageMetadata(rel, meta); err != nil {
-		_ = os.Remove(imagePath)
-		return "", err
+		return "", errors.Join(err, s.rollbackSavedImage(rel, imagePath, true))
+	}
+	if err := ctx.Err(); err != nil {
+		return "", errors.Join(err, s.rollbackSavedImage(rel, imagePath, true))
 	}
 	return publicAssetURL(baseURL, "images", rel), nil
+}
+
+func (s *ImageService) rollbackSavedImage(rel, imagePath string, removeMetadata bool) error {
+	var rollbackErrors []error
+	if removeMetadata {
+		if _, _, err := s.removeImageOwnerWithStats(rel); err != nil {
+			rollbackErrors = append(rollbackErrors, fmt.Errorf("remove image metadata: %w", err))
+		}
+	}
+	if err := os.Remove(imagePath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		rollbackErrors = append(rollbackErrors, fmt.Errorf("remove image data: %w", err))
+	} else if err == nil {
+		removeEmptyParentDirs(s.config.ImagesDir(), filepath.Dir(imagePath))
+	}
+	return errors.Join(rollbackErrors...)
 }
 
 func imageStorageExtension(format string) string {

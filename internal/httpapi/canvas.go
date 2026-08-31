@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"strconv"
@@ -165,10 +166,18 @@ func (a *App) handleCanvasImageUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	url, err := a.images.SaveImageBytes(r.Context(), upload.Data, a.config.BaseURL(), identityScope(identity), identityDisplayName(identity), format)
 	if err != nil || url == "" {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			util.WriteError(w, http.StatusRequestTimeout, "image upload was canceled")
+			return
+		}
 		if err == nil {
 			err = errors.New("image storage returned an empty URL")
 		}
-		util.WriteError(w, http.StatusInternalServerError, "failed to store image: "+err.Error())
+		util.WriteError(w, http.StatusInternalServerError, "failed to store image")
+		return
+	}
+	if r.Context().Err() != nil {
+		util.WriteError(w, http.StatusRequestTimeout, "image upload was canceled")
 		return
 	}
 	a.images.EnsureThumbnails([]string{url})
