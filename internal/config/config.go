@@ -294,14 +294,60 @@ func (s *Store) StorageSettings() model.StorageSetting {
 	return normalizeStorageSetting(s.settingValue("storage", nil))
 }
 
-func (s *Store) UpdateStorageProvider(index int, provider model.StorageProvider) error {
-	setting := s.StorageSettings()
-	if index < 0 || index >= len(setting.Providers) {
-		return errors.New("storage provider does not exist")
+func (s *Store) UpdateStorageProviderCapacity(expected model.StorageProvider, expectedLimitBytes, capacityBytes int64, checkedAt string, exceeded bool) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	setting := normalizeStorageSetting(s.settingValueFromData(s.data, "storage", nil))
+	if setting.CapacityLimitBytes != expectedLimitBytes {
+		return false, nil
 	}
-	setting.Providers[index] = provider
-	_, err := s.Update(map[string]any{"storage": setting})
-	return err
+	providerIndex := -1
+	for index := range setting.Providers {
+		if setting.Providers[index].ID != expected.ID {
+			continue
+		}
+		if providerIndex >= 0 {
+			return false, nil
+		}
+		providerIndex = index
+	}
+	if providerIndex < 0 {
+		return false, nil
+	}
+	current := &setting.Providers[providerIndex]
+	if storageProviderMeasurementFingerprint(*current) != storageProviderMeasurementFingerprint(expected) {
+		return false, nil
+	}
+
+	current.CapacityBytes = capacityBytes
+	current.CapacityCheckedAt = checkedAt
+	current.CapacityExceeded = exceeded
+	if exceeded {
+		current.Enabled = false
+	}
+	next := util.CopyMap(s.data)
+	next["storage"] = setting
+	if err := s.validateSettingsUpdateLocked(next); err != nil {
+		return false, err
+	}
+	previous := s.data
+	s.data = next
+	if err := s.saveLocked(); err != nil {
+		s.data = previous
+		return false, err
+	}
+	return true, nil
+}
+
+func storageProviderMeasurementFingerprint(provider model.StorageProvider) string {
+	parts := []string{provider.Type, provider.Endpoint, provider.PathPrefix, strconv.FormatBool(provider.Enabled)}
+	if provider.Type == model.StorageProviderTypeS3 {
+		parts = append(parts, provider.Region, provider.Bucket, provider.AccessKeyID, provider.SecretAccessKey)
+	} else {
+		parts = append(parts, provider.Username, provider.Password)
+	}
+	return util.SHA256Hex(strings.Join(parts, "\x00"))
 }
 
 func (s *Store) LogRetentionDays() int {
@@ -1245,9 +1291,11 @@ func normalizeStorageSetting(value any) model.StorageSetting {
 	switch typed := value.(type) {
 	case model.StorageSetting:
 		setting = typed
+		setting.Providers = append([]model.StorageProvider(nil), typed.Providers...)
 	case *model.StorageSetting:
 		if typed != nil {
 			setting = *typed
+			setting.Providers = append([]model.StorageProvider(nil), typed.Providers...)
 		}
 	default:
 		if text, ok := value.(string); ok {

@@ -1,7 +1,6 @@
 package httpapi
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net"
@@ -472,7 +471,7 @@ func (a *App) handleProfileAssets(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Item service.MyAsset `json:"item"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		if err := util.DecodeJSON(r.Body, &body); err != nil {
 			util.WriteError(w, http.StatusBadRequest, "invalid json body")
 			return
 		}
@@ -486,7 +485,7 @@ func (a *App) handleProfileAssets(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			ID string `json:"id"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		if err := util.DecodeJSON(r.Body, &body); err != nil {
 			util.WriteError(w, http.StatusBadRequest, "invalid json body")
 			return
 		}
@@ -812,7 +811,11 @@ func (a *App) handleAdminRoles(w http.ResponseWriter, r *http.Request) {
 		case http.MethodGet:
 			util.WriteJSON(w, http.StatusOK, map[string]any{"items": a.auth.ListRoles()})
 		case http.MethodPost:
-			body, _ := readJSONMap(r)
+			body, err := readJSONMap(r)
+			if err != nil {
+				util.WriteError(w, http.StatusBadRequest, "invalid json body")
+				return
+			}
 			item, err := a.auth.CreateRole(body)
 			if err != nil {
 				if a.writeAuthPersistenceError(w, err) {
@@ -836,7 +839,11 @@ func (a *App) handleAdminRoles(w http.ResponseWriter, r *http.Request) {
 	roleID := parts[3]
 	switch r.Method {
 	case http.MethodPost:
-		body, _ := readJSONMap(r)
+		body, err := readJSONMap(r)
+		if err != nil {
+			util.WriteError(w, http.StatusBadRequest, "invalid json body")
+			return
+		}
 		item, err := a.auth.UpdateRole(roleID, body)
 		if err != nil {
 			if a.writeAuthPersistenceError(w, err) {
@@ -940,7 +947,11 @@ func (a *App) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodPost:
-		body, _ := readJSONMap(r)
+		body, err := readJSONMap(r)
+		if err != nil {
+			util.WriteError(w, http.StatusBadRequest, "invalid json body")
+			return
+		}
 		updates := map[string]any{}
 		if value, ok := body["name"]; ok {
 			updates["name"] = value

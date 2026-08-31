@@ -33,7 +33,7 @@ var ErrLocalStorageCapacityExceeded = errors.New("服务器本机素材容量已
 
 type StorageSettingsProvider interface {
 	StorageSettings() model.StorageSetting
-	UpdateStorageProvider(int, model.StorageProvider) error
+	UpdateStorageProviderCapacity(model.StorageProvider, int64, int64, string, bool) (bool, error)
 }
 
 type StorageObjectProviderInput struct {
@@ -490,6 +490,7 @@ func (s *GenericStorageService) MeasureAdmin(ctx context.Context, index int, inc
 	provider := setting.Providers[index]
 	if incoming != nil {
 		candidate := normalizeStorageProvider(*incoming)
+		candidate.ID = provider.ID
 		if candidate.SecretAccessKey == "" {
 			candidate.SecretAccessKey = provider.SecretAccessKey
 		}
@@ -498,24 +499,23 @@ func (s *GenericStorageService) MeasureAdmin(ctx context.Context, index int, inc
 		}
 		provider = candidate
 	}
+	return s.measureAdminProvider(ctx, provider, setting.CapacityLimitBytes)
+}
+
+func (s *GenericStorageService) measureAdminProvider(ctx context.Context, provider model.StorageProvider, limit int64) (StorageCapacityResult, error) {
 	bytesUsed, err := measureStorageProvider(ctx, provider)
 	if err != nil {
 		return StorageCapacityResult{}, err
 	}
-	limit := setting.CapacityLimitBytes
 	if limit <= 0 {
 		limit = defaultStorageCapacityLimitBytes
 	}
-	provider.CapacityBytes = bytesUsed
-	provider.CapacityCheckedAt = time.Now().UTC().Format(time.RFC3339Nano)
-	provider.CapacityExceeded = bytesUsed >= limit
-	if provider.CapacityExceeded {
-		provider.Enabled = false
-	}
-	if err := s.settings.UpdateStorageProvider(index, provider); err != nil {
+	checkedAt := time.Now().UTC().Format(time.RFC3339Nano)
+	overLimit := bytesUsed >= limit
+	if _, err := s.settings.UpdateStorageProviderCapacity(provider, limit, bytesUsed, checkedAt, overLimit); err != nil {
 		return StorageCapacityResult{}, err
 	}
-	return StorageCapacityResult{Bytes: bytesUsed, LimitBytes: limit, OverLimit: provider.CapacityExceeded, CheckedAt: provider.CapacityCheckedAt, ProviderName: provider.Name}, nil
+	return StorageCapacityResult{Bytes: bytesUsed, LimitBytes: limit, OverLimit: overLimit, CheckedAt: checkedAt, ProviderName: provider.Name}, nil
 }
 
 func (s *GenericStorageService) MeasureAll(ctx context.Context) []error {
@@ -524,11 +524,11 @@ func (s *GenericStorageService) MeasureAll(ctx context.Context) []error {
 	if _, err := s.MeasureAdmin(ctx, -1, nil); err != nil {
 		errorsFound = append(errorsFound, fmt.Errorf("measure server local storage: %w", err))
 	}
-	for index, provider := range setting.Providers {
+	for _, provider := range setting.Providers {
 		if !provider.Enabled {
 			continue
 		}
-		if _, err := s.MeasureAdmin(ctx, index, nil); err != nil {
+		if _, err := s.measureAdminProvider(ctx, provider, setting.CapacityLimitBytes); err != nil {
 			errorsFound = append(errorsFound, fmt.Errorf("measure provider %q: %w", provider.Name, err))
 		}
 	}

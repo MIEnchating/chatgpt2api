@@ -153,6 +153,140 @@ func TestStoreGenericStorageProvidersKeepSecretsAndRejectMixedEnabledTypes(t *te
 	}
 }
 
+func TestStoreStorageCapacityUpdateUsesProviderIdentityAndConfigurationSnapshot(t *testing.T) {
+	newStore := func(t *testing.T) *Store {
+		t.Helper()
+		t.Setenv("ROOT_DIR", t.TempDir())
+		t.Setenv("OBJECT_STORAGE_SETTINGS", "")
+		store, err := NewStore()
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = store.Update(map[string]any{"storage": model.StorageSetting{
+			CapacityLimitBytes: 100,
+			Providers: []model.StorageProvider{
+				{ID: "dav-a", Name: "DAV A", Type: model.StorageProviderTypeWebDAV, Endpoint: "https://dav-a.example.test", PathPrefix: "assets-a", Username: "user-a", Password: "secret-a", Weight: 1, Enabled: true, CapacityBytes: 7, CapacityCheckedAt: "before-a"},
+				{ID: "dav-b", Name: "DAV B", Type: model.StorageProviderTypeWebDAV, Endpoint: "https://dav-b.example.test", PathPrefix: "assets-b", Username: "user-b", Password: "secret-b", Weight: 2, Enabled: true, CapacityBytes: 9, CapacityCheckedAt: "before-b"},
+			},
+		}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return store
+	}
+	providerByID := func(t *testing.T, setting model.StorageSetting, id string) model.StorageProvider {
+		t.Helper()
+		for _, provider := range setting.Providers {
+			if provider.ID == id {
+				return provider
+			}
+		}
+		t.Fatalf("provider %q not found in %#v", id, setting.Providers)
+		return model.StorageProvider{}
+	}
+
+	t.Run("reorder updates the matching provider", func(t *testing.T) {
+		store := newStore(t)
+		before := store.StorageSettings()
+		expected := providerByID(t, before, "dav-a")
+		before.Providers[0], before.Providers[1] = before.Providers[1], before.Providers[0]
+		before.Providers[0].Name = "DAV B renamed"
+		if _, err := store.Update(map[string]any{"storage": before}); err != nil {
+			t.Fatal(err)
+		}
+
+		applied, err := store.UpdateStorageProviderCapacity(expected, 100, 42, "after-a", false)
+		if err != nil || !applied {
+			t.Fatalf("UpdateStorageProviderCapacity() = (%v, %v), want applied", applied, err)
+		}
+		after := store.StorageSettings()
+		if after.Providers[0].ID != "dav-b" || after.Providers[0].Name != "DAV B renamed" || after.Providers[0].CapacityBytes != 9 || after.Providers[0].CapacityCheckedAt != "before-b" {
+			t.Fatalf("reordered first provider was overwritten: %#v", after.Providers[0])
+		}
+		updated := providerByID(t, after, "dav-a")
+		if updated.CapacityBytes != 42 || updated.CapacityCheckedAt != "after-a" || updated.CapacityExceeded {
+			t.Fatalf("matching provider capacity = %#v", updated)
+		}
+	})
+
+	t.Run("non measurement edits are preserved", func(t *testing.T) {
+		store := newStore(t)
+		setting := store.StorageSettings()
+		expected := providerByID(t, setting, "dav-a")
+		setting.Providers[0].Name = "Renamed while measuring"
+		setting.Providers[0].Weight = 8
+		setting.Providers[0].PublicBaseURL = "https://cdn.example.test"
+		if _, err := store.Update(map[string]any{"storage": setting}); err != nil {
+			t.Fatal(err)
+		}
+
+		applied, err := store.UpdateStorageProviderCapacity(expected, 100, 105, "after-a", true)
+		if err != nil || !applied {
+			t.Fatalf("UpdateStorageProviderCapacity() = (%v, %v), want applied", applied, err)
+		}
+		updated := providerByID(t, store.StorageSettings(), "dav-a")
+		if updated.Name != "Renamed while measuring" || updated.Weight != 8 || updated.PublicBaseURL != "https://cdn.example.test" {
+			t.Fatalf("concurrent non-measurement edit was overwritten: %#v", updated)
+		}
+		if updated.CapacityBytes != 105 || !updated.CapacityExceeded || updated.Enabled {
+			t.Fatalf("capacity protection was not applied: %#v", updated)
+		}
+	})
+
+	for _, test := range []struct {
+		name   string
+		mutate func(*model.StorageSetting)
+	}{
+		{name: "connection edit", mutate: func(setting *model.StorageSetting) {
+			setting.Providers[0].Endpoint = "https://dav-new.example.test"
+		}},
+		{name: "enabled edit", mutate: func(setting *model.StorageSetting) {
+			setting.Providers[0].Enabled = false
+		}},
+		{name: "capacity limit edit", mutate: func(setting *model.StorageSetting) {
+			setting.CapacityLimitBytes = 200
+		}},
+		{name: "delete", mutate: func(setting *model.StorageSetting) {
+			setting.Providers = setting.Providers[1:]
+		}},
+	} {
+		t.Run(test.name+" skips stale result", func(t *testing.T) {
+			store := newStore(t)
+			setting := store.StorageSettings()
+			expected := providerByID(t, setting, "dav-a")
+			test.mutate(&setting)
+			if _, err := store.Update(map[string]any{"storage": setting}); err != nil {
+				t.Fatal(err)
+			}
+
+			applied, err := store.UpdateStorageProviderCapacity(expected, 100, 105, "stale", true)
+			if err != nil || applied {
+				t.Fatalf("UpdateStorageProviderCapacity() = (%v, %v), want skipped", applied, err)
+			}
+			after := store.StorageSettings()
+			if test.name == "delete" {
+				if len(after.Providers) != 1 || after.Providers[0].ID != "dav-b" {
+					t.Fatalf("deleted provider was restored: %#v", after.Providers)
+				}
+				return
+			}
+			updated := providerByID(t, after, "dav-a")
+			if updated.CapacityBytes != 7 || updated.CapacityCheckedAt != "before-a" || updated.CapacityExceeded {
+				t.Fatalf("stale capacity result was persisted: %#v", updated)
+			}
+			if test.name == "connection edit" && updated.Endpoint != "https://dav-new.example.test" {
+				t.Fatalf("connection edit was lost: %#v", updated)
+			}
+			if test.name == "enabled edit" && updated.Enabled {
+				t.Fatalf("enabled edit was lost: %#v", updated)
+			}
+			if test.name == "capacity limit edit" && after.CapacityLimitBytes != 200 {
+				t.Fatalf("capacity limit edit was lost: %#v", after)
+			}
+		})
+	}
+}
+
 func TestStoreIgnoresRemovedImageObjectStorageSettings(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("ROOT_DIR", root)

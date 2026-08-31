@@ -23,9 +23,26 @@ type genericStorageTestSettings struct {
 }
 
 func (s *genericStorageTestSettings) StorageSettings() model.StorageSetting { return s.setting }
-func (s *genericStorageTestSettings) UpdateStorageProvider(index int, provider model.StorageProvider) error {
-	s.setting.Providers[index] = provider
-	return nil
+func (s *genericStorageTestSettings) UpdateStorageProviderCapacity(expected model.StorageProvider, expectedLimitBytes, capacityBytes int64, checkedAt string, exceeded bool) (bool, error) {
+	if s.setting.CapacityLimitBytes <= 0 {
+		s.setting.CapacityLimitBytes = defaultStorageCapacityLimitBytes
+	}
+	if s.setting.CapacityLimitBytes != expectedLimitBytes {
+		return false, nil
+	}
+	for index := range s.setting.Providers {
+		if s.setting.Providers[index].ID != expected.ID {
+			continue
+		}
+		s.setting.Providers[index].CapacityBytes = capacityBytes
+		s.setting.Providers[index].CapacityCheckedAt = checkedAt
+		s.setting.Providers[index].CapacityExceeded = exceeded
+		if exceeded {
+			s.setting.Providers[index].Enabled = false
+		}
+		return true, nil
+	}
+	return false, nil
 }
 
 func newGenericStorageTestService(t *testing.T, setting model.StorageSetting) *GenericStorageService {

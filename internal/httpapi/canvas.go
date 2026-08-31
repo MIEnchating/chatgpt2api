@@ -163,7 +163,7 @@ func (a *App) handleCanvasImageUpload(w http.ResponseWriter, r *http.Request) {
 	if format == "jpg" {
 		format = "jpeg"
 	}
-	url, err := a.engine.SaveImageBytesForOwnerWithFormatE(r.Context(), upload.Data, "", identityScope(identity), identityDisplayName(identity), format)
+	url, err := a.images.SaveImageBytes(r.Context(), upload.Data, a.config.BaseURL(), identityScope(identity), identityDisplayName(identity), format)
 	if err != nil || url == "" {
 		if err == nil {
 			err = errors.New("image storage returned an empty URL")

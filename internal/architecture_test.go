@@ -17,7 +17,7 @@ func TestInternalPackageDependencyDirection(t *testing.T) {
 		"storage":  {"chatgpt2api/internal/httpapi", "chatgpt2api/internal/protocol", "chatgpt2api/internal/service"},
 		"service":  {"chatgpt2api/internal/backend", "chatgpt2api/internal/config", "chatgpt2api/internal/httpapi", "chatgpt2api/internal/protocol", "chatgpt2api/internal/web"},
 		"backend":  {"chatgpt2api/internal/config", "chatgpt2api/internal/httpapi", "chatgpt2api/internal/model", "chatgpt2api/internal/protocol", "chatgpt2api/internal/service", "chatgpt2api/internal/storage", "chatgpt2api/internal/web"},
-		"protocol": {"chatgpt2api/internal/config", "chatgpt2api/internal/httpapi", "chatgpt2api/internal/web"},
+		"protocol": {"chatgpt2api/internal/config", "chatgpt2api/internal/httpapi", "chatgpt2api/internal/service", "chatgpt2api/internal/storage", "chatgpt2api/internal/web"},
 	}
 
 	for packageName, forbiddenImports := range rules {

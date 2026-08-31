@@ -3,18 +3,10 @@ package protocol
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
-	"errors"
-	"fmt"
-	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 	"sync"
-	"time"
 
-	"chatgpt2api/internal/service"
-	"chatgpt2api/internal/storage"
 	"chatgpt2api/internal/util"
 )
 
@@ -96,18 +88,6 @@ type HTTPError struct {
 
 func (e HTTPError) Error() string { return e.Message }
 
-type ImageConfig interface {
-	ImagesDir() string
-	ImageMetadataDir() string
-	BaseURL() string
-}
-
-type Engine struct {
-	Config  ImageConfig
-	Storage storage.JSONDocumentBackend
-	Images  *service.ImageService
-}
-
 type ImageOutputProgressCallback func([]map[string]any)
 type ImageOutputSlotAcquirer func(context.Context, int) (func(), error)
 
@@ -129,84 +109,6 @@ type UploadedImage struct {
 	Data        []byte
 	Filename    string
 	ContentType string
-}
-
-func NormalizeImageOutputFormat(format string) string {
-	return service.NormalizeImageOutputFormat(format)
-}
-
-func (e *Engine) SaveImageBytesForOwnerWithFormatE(ctx context.Context, imageData []byte, baseURL, ownerID, ownerName, outputFormat string) (string, error) {
-	if e != nil && e.Images != nil {
-		if baseURL == "" && e.Config != nil {
-			baseURL = e.Config.BaseURL()
-		}
-		return e.Images.SaveImageBytes(ctx, imageData, baseURL, ownerID, ownerName, outputFormat)
-	}
-	if e == nil || e.Config == nil {
-		return "", errors.New("image configuration is required")
-	}
-	if len(imageData) > util.MaxRasterImageEncodedBytes {
-		return "", errors.New("image data is too large")
-	}
-	info, err := util.InspectRasterImage(imageData, "image/png", "image/jpeg", "image/webp")
-	if err != nil {
-		return "", fmt.Errorf("invalid image data: %w", err)
-	}
-	outputFormat = info.Format
-	now := time.Now()
-	filename := fmt.Sprintf("%d_%s.%s", now.UnixNano(), util.NewHex(12), imageFileExtension(outputFormat))
-	relativeDir := filepath.Join(now.Format("2006"), now.Format("01"), now.Format("02"))
-	rel := filepath.Join(relativeDir, filename)
-	filePath := filepath.Join(e.Config.ImagesDir(), rel)
-	if err := os.MkdirAll(filepath.Dir(filePath), 0o755); err != nil {
-		return "", fmt.Errorf("create image directory: %w", err)
-	}
-	if err := os.WriteFile(filePath, imageData, 0o644); err != nil {
-		return "", fmt.Errorf("write image file: %w", err)
-	}
-	if err := e.writeImageOwnerMetadata(rel, ownerID, ownerName); err != nil {
-		_ = os.Remove(filePath)
-		return "", fmt.Errorf("write image metadata: %w", err)
-	}
-	if baseURL == "" {
-		baseURL = e.Config.BaseURL()
-	}
-	return strings.TrimRight(baseURL, "/") + "/images/" + filepath.ToSlash(rel), nil
-}
-
-func imageFileExtension(outputFormat string) string {
-	if NormalizeImageOutputFormat(outputFormat) == "jpeg" {
-		return "jpg"
-	}
-	return NormalizeImageOutputFormat(outputFormat)
-}
-
-func (e *Engine) writeImageOwnerMetadata(rel, ownerID, ownerName string) error {
-	ownerID = strings.TrimSpace(ownerID)
-	ownerName = strings.TrimSpace(ownerName)
-	if e == nil || e.Config == nil || ownerID == "" {
-		return nil
-	}
-	value := map[string]any{"owner_id": ownerID, "updated_at": time.Now().UTC().Format(time.RFC3339Nano)}
-	if ownerName != "" {
-		value["owner_name"] = ownerName
-	}
-	if e.Storage != nil {
-		return e.Storage.SaveJSONDocument(imageOwnerDocumentName(rel), value)
-	}
-	metaPath := filepath.Join(e.Config.ImageMetadataDir(), filepath.FromSlash(filepath.ToSlash(rel))+".json")
-	data, err := json.Marshal(value)
-	if err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Dir(metaPath), 0o755); err != nil {
-		return err
-	}
-	return os.WriteFile(metaPath, data, 0o644)
-}
-
-func imageOwnerDocumentName(rel string) string {
-	return "image_metadata/" + filepath.ToSlash(rel) + ".json"
 }
 
 func ExtractChatPrompt(body map[string]any) string {

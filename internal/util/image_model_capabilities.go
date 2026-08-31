@@ -171,8 +171,7 @@ func NormalizeXAIImageResolution(value string) (string, bool) {
 
 // MaxImageOutputCount returns the maximum number of images accepted for one
 // request by this application for the selected model.
-func MaxImageOutputCount(model string) int {
-	_ = model
+func MaxImageOutputCount(_ string) int {
 	return maxImageOutputCount
 }
 

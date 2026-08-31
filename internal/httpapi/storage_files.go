@@ -42,7 +42,7 @@ func (a *App) handleProfileStorageProvider(w http.ResponseWriter, r *http.Reques
 		var request struct {
 			Provider service.UserStorageProviders `json:"provider"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		if err := util.DecodeJSON(r.Body, &request); err != nil {
 			util.WriteError(w, http.StatusBadRequest, "storage provider payload is invalid")
 			return
 		}
@@ -56,7 +56,7 @@ func (a *App) handleProfileStorageProvider(w http.ResponseWriter, r *http.Reques
 		var request struct {
 			Provider service.StorageObjectProviderInput `json:"provider"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		if err := util.DecodeJSON(r.Body, &request); err != nil {
 			util.WriteError(w, http.StatusBadRequest, "storage provider payload is invalid")
 			return
 		}
@@ -88,7 +88,7 @@ func (a *App) handleAdminStorageMeasure(w http.ResponseWriter, r *http.Request) 
 		Index    int                    `json:"index"`
 		Provider *model.StorageProvider `json:"provider"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+	if err := util.DecodeJSON(r.Body, &request); err != nil {
 		util.WriteError(w, http.StatusBadRequest, "storage provider payload is invalid")
 		return
 	}
@@ -147,7 +147,7 @@ func (a *App) handleStorageFiles(w http.ResponseWriter, r *http.Request) {
 			Provider *service.StorageObjectProviderInput `json:"provider"`
 		}
 		if r.Body != nil {
-			if err := json.NewDecoder(r.Body).Decode(&request); err != nil && !errors.Is(err, io.EOF) {
+			if err := util.DecodeJSON(r.Body, &request); err != nil && !errors.Is(err, io.EOF) {
 				util.WriteError(w, http.StatusBadRequest, "storage provider payload is invalid")
 				return
 			}
@@ -209,7 +209,7 @@ func (a *App) handleStorageFileDirect(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var request service.DirectStorageObjectInput
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+	if err := util.DecodeJSON(r.Body, &request); err != nil {
 		util.WriteError(w, http.StatusBadRequest, "storage object payload is invalid")
 		return
 	}

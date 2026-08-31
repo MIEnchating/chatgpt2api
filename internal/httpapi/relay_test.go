@@ -224,6 +224,31 @@ func TestLocalizeRelayImageStreamCancellationDrainsUpstream(t *testing.T) {
 	}
 }
 
+func TestLocalizeRelayImageItemUsesConfiguredImageBaseURL(t *testing.T) {
+	const imageBaseURL = "https://assets.example.test/root"
+
+	t.Setenv("IMAGE_BASE_URL", imageBaseURL)
+	app := newTestApp(t)
+	defer app.Close()
+	encoded := base64.StdEncoding.EncodeToString(httpTestPNGBytes(t))
+	imageURL, outputFormat, _, err := app.localizeRelayImageItem(
+		context.Background(),
+		"owner-1",
+		"Owner",
+		map[string]any{"b64_json": encoded},
+		map[string]any{"output_format": "png"},
+	)
+	if err != nil {
+		t.Fatalf("localizeRelayImageItem() error = %v", err)
+	}
+	if !strings.HasPrefix(imageURL, imageBaseURL+"/images/") {
+		t.Fatalf("localized image URL = %q, want configured base URL", imageURL)
+	}
+	if outputFormat != "png" {
+		t.Fatalf("localized output format = %q, want png", outputFormat)
+	}
+}
+
 func TestRelayImageTaskManagedMarkerCannotBeForgedByJSON(t *testing.T) {
 	if relayImageTaskSlotIsManaged(map[string]any{relayImageTaskSlotManagedPayloadKey: true}) {
 		t.Fatal("JSON boolean forged the internal managed-slot marker")

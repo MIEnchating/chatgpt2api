@@ -24,6 +24,8 @@ const (
 	LogViewBusiness   = "business"
 )
 
+var ErrInvalidLogRetentionDays = errors.New("retention days must be between 1 and 3650")
+
 type LogService struct {
 	mu              sync.Mutex
 	store           storage.LogBackend
@@ -114,17 +116,15 @@ func (s *LogService) Add(summary string, detail map[string]any) error {
 	return fmt.Errorf("log storage backend is required")
 }
 
-func (s *LogService) Search(query LogQuery) []map[string]any {
+func (s *LogService) Search(query LogQuery) ([]map[string]any, error) {
 	limit := normalizedLogLimit(query.Limit)
 	startDate, endDate := logQueryDateBounds(query)
 	if pager, ok := s.store.(storage.LogPageBackend); ok {
-		if out, ok := searchLogPages(pager, query, startDate, endDate, limit); ok {
-			return out
-		}
+		return searchLogPages(pager, query, startDate, endDate, limit)
 	}
-	items, ok := s.loadLogItems(startDate, endDate)
-	if !ok {
-		return []map[string]any{}
+	items, err := s.loadLogItems(startDate, endDate)
+	if err != nil {
+		return nil, err
 	}
 	out := make([]map[string]any, 0, min(limit, len(items)))
 	for _, item := range items {
@@ -136,17 +136,17 @@ func (s *LogService) Search(query LogQuery) []map[string]any {
 			break
 		}
 	}
-	return out
+	return out, nil
 }
 
-func searchLogPages(pager storage.LogPageBackend, query LogQuery, startDate, endDate string, limit int) ([]map[string]any, bool) {
+func searchLogPages(pager storage.LogPageBackend, query LogQuery, startDate, endDate string, limit int) ([]map[string]any, error) {
 	batchSize := min(max(256, limit*2), 1000)
 	out := make([]map[string]any, 0, limit)
 	var cursor *storage.LogCursor
 	for {
 		page, err := pager.QueryLogPage(startDate, endDate, cursor, batchSize)
 		if err != nil {
-			return nil, false
+			return nil, fmt.Errorf("query log page: %w", err)
 		}
 		for _, item := range page.Items {
 			if !matchLogQuery(item, query) {
@@ -154,17 +154,17 @@ func searchLogPages(pager storage.LogPageBackend, query LogQuery, startDate, end
 			}
 			out = append(out, publicLogItem(item))
 			if len(out) >= limit {
-				return out, true
+				return out, nil
 			}
 		}
 		if page.NextCursor == nil {
-			return out, true
+			return out, nil
 		}
 		cursor = page.NextCursor
 	}
 }
 
-func (s *LogService) GovernanceSummary() LogGovernanceSummary {
+func (s *LogService) GovernanceSummary() (LogGovernanceSummary, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.governanceSummaryLocked()
@@ -172,13 +172,17 @@ func (s *LogService) GovernanceSummary() LogGovernanceSummary {
 
 func (s *LogService) CleanupOlderThan(retentionDays int) (LogCleanupResult, error) {
 	if retentionDays < 1 || retentionDays > 3650 {
-		return LogCleanupResult{}, errors.New("retention days must be between 1 and 3650")
+		return LogCleanupResult{}, ErrInvalidLogRetentionDays
 	}
 	cutoffDate := time.Now().AddDate(0, 0, -retentionDays+1).Format("2006-01-02")
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	summary, err := s.governanceSummaryLocked()
+	if err != nil {
+		return LogCleanupResult{}, err
+	}
 	deleted, err := s.deleteLogsBeforeLocked(cutoffDate)
 	if err != nil {
 		return LogCleanupResult{}, err
@@ -187,7 +191,7 @@ func (s *LogService) CleanupOlderThan(retentionDays int) (LogCleanupResult, erro
 		RetentionDays: retentionDays,
 		CutoffDate:    cutoffDate,
 		Deleted:       deleted,
-		Remaining:     s.governanceSummaryLocked().Total,
+		Remaining:     max(0, summary.Total-deleted),
 	}, nil
 }
 
@@ -241,17 +245,18 @@ func normalizeLogRetentionSchedule(schedule LogRetentionSchedule) LogRetentionSc
 	return schedule
 }
 
-func (s *LogService) governanceSummaryLocked() LogGovernanceSummary {
+func (s *LogService) governanceSummaryLocked() (LogGovernanceSummary, error) {
 	if summaryStore, ok := s.store.(storage.LogSummaryBackend); ok {
 		total, oldest, latest, err := summaryStore.LogSummary()
-		if err == nil {
-			return LogGovernanceSummary{Total: total, OldestTime: oldest, LatestTime: latest}
+		if err != nil {
+			return LogGovernanceSummary{}, fmt.Errorf("query log summary: %w", err)
 		}
+		return LogGovernanceSummary{Total: total, OldestTime: oldest, LatestTime: latest}, nil
 	}
-	items, ok := s.loadLogItems("", "")
+	items, err := s.loadLogItems("", "")
 	summary := LogGovernanceSummary{}
-	if !ok {
-		return summary
+	if err != nil {
+		return summary, err
 	}
 	summary.Total = len(items)
 	for _, item := range items {
@@ -266,7 +271,7 @@ func (s *LogService) governanceSummaryLocked() LogGovernanceSummary {
 			summary.OldestTime = logTime
 		}
 	}
-	return summary
+	return summary, nil
 }
 
 func (s *LogService) deleteLogsBeforeLocked(day string) (int, error) {
@@ -278,14 +283,15 @@ func (s *LogService) deleteLogsBeforeLocked(day string) (int, error) {
 	return 0, fmt.Errorf("log maintenance backend is required")
 }
 
-func (s *LogService) loadLogItems(startDate, endDate string) ([]map[string]any, bool) {
-	if s.store != nil {
-		items, err := s.store.QueryLogs(startDate, endDate, 0)
-		if err == nil {
-			return items, true
-		}
+func (s *LogService) loadLogItems(startDate, endDate string) ([]map[string]any, error) {
+	if s.store == nil {
+		return nil, fmt.Errorf("log storage backend is required")
 	}
-	return nil, false
+	items, err := s.store.QueryLogs(startDate, endDate, 0)
+	if err != nil {
+		return nil, fmt.Errorf("query logs: %w", err)
+	}
+	return items, nil
 }
 
 func normalizedLogLimit(limit int) int {

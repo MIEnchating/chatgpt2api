@@ -815,7 +815,7 @@ func TestProfileRelayKeyReadsNewAPITokenForUserAndGroup(t *testing.T) {
 	if gotAuth != "Bearer sk-alice-relay" {
 		t.Fatalf("upstream Authorization = %q", gotAuth)
 	}
-	callLog := findLogBySummary(app.logs.Search(service.LogQuery{Limit: 20}), "上游模型列表调用完成")
+	callLog := findLogBySummary(mustSearchAppLogs(t, app, service.LogQuery{Limit: 20}), "上游模型列表调用完成")
 	if callLog == nil {
 		t.Fatal("upstream model request did not create a business log")
 	}
@@ -1457,7 +1457,7 @@ func TestChatCompletionsCallLogIncludesUpstreamAccountPreview(t *testing.T) {
 	tracker.Record(fullToken)
 	app.logCall(ctx, service.Identity{ID: "user-1", Role: service.AuthRoleUser, Name: "frontend"}, "文本生成", http.MethodPost, "/v1/chat/completions", "gpt-5", time.Now(), "success", http.StatusOK, "", nil, auditRequestCapture{})
 
-	logs := app.logs.Search(service.LogQuery{Limit: 10})
+	logs := mustSearchAppLogs(t, app, service.LogQuery{Limit: 10})
 	item := findLogBySummary(logs, "文本生成调用完成")
 	if item == nil {
 		t.Fatalf("expected chat completions log, got %#v", logs)
@@ -1519,7 +1519,7 @@ func TestRunLoggedChatTaskCreatesAccountUsageTrackerForLogs(t *testing.T) {
 	if gotAuth != "Bearer sk-"+fullToken {
 		t.Fatalf("upstream Authorization = %q", gotAuth)
 	}
-	logs := app.logs.Search(service.LogQuery{Limit: 20})
+	logs := mustSearchAppLogs(t, app, service.LogQuery{Limit: 20})
 	item := findLogBySummary(logs, "文本生成调用失败")
 	if item == nil {
 		t.Fatalf("expected failed chat task log, got %#v", logs)
@@ -1577,7 +1577,7 @@ func TestRunLoggedImageTaskLogsTextOutputAsFailure(t *testing.T) {
 	if result["output_type"] != "text" || result["message"] != "模型返回文本" {
 		t.Fatalf("runLoggedImageTask() result = %#v", result)
 	}
-	logs := app.logs.Search(service.LogQuery{Limit: 10})
+	logs := mustSearchAppLogs(t, app, service.LogQuery{Limit: 10})
 	item := findLogBySummary(logs, "文生图调用失败")
 	if item == nil {
 		t.Fatalf("expected text-only image result to write failure log, got %#v", logs)
@@ -3716,9 +3716,18 @@ func TestNewAppStartsLogRetentionCleaner(t *testing.T) {
 	defer app.Close()
 
 	waitForHTTPTestCondition(t, func() bool {
-		items := app.logs.Search(service.LogQuery{Limit: 10})
-		return len(items) == 1 && items[0]["summary"] == "新日志"
+		items, err := app.logs.Search(service.LogQuery{Limit: 10})
+		return err == nil && len(items) == 1 && items[0]["summary"] == "新日志"
 	})
+}
+
+func mustSearchAppLogs(t *testing.T, app *App, query service.LogQuery) []map[string]any {
+	t.Helper()
+	items, err := app.logs.Search(query)
+	if err != nil {
+		t.Fatalf("Search() error = %v", err)
+	}
+	return items
 }
 
 func logPayloadSummaries(items []map[string]any) []string {

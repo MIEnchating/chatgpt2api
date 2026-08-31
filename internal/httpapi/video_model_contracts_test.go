@@ -333,7 +333,7 @@ func TestAdminVideoModelContractImportReturnsUnsavedDraft(t *testing.T) {
 			t.Fatal("imported draft was saved before confirmation")
 		}
 	}
-	logs := app.logs.Search(service.LogQuery{Limit: 20})
+	logs := mustSearchAppLogs(t, app, service.LogQuery{Limit: 20})
 	encodedLogs, _ := json.Marshal(logs)
 	if strings.Contains(string(encodedLogs), "PRIVATE_DOC_MARKER") {
 		t.Fatal("document content leaked into operation logs")

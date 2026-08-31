@@ -255,9 +255,7 @@ func (a *App) handleVideoModelContractAction(w http.ResponseWriter, r *http.Requ
 		var body struct {
 			Revision int `json:"revision"`
 		}
-		decoder := json.NewDecoder(r.Body)
-		decoder.DisallowUnknownFields()
-		if err := decoder.Decode(&body); err != nil || body.Revision < 1 {
+		if err := decodeStrictJSON(r.Body, &body); err != nil || body.Revision < 1 {
 			util.WriteError(w, http.StatusBadRequest, "invalid video model contract revision")
 			return
 		}
@@ -277,10 +275,8 @@ func (a *App) handleVideoModelContractAction(w http.ResponseWriter, r *http.Requ
 }
 
 func (a *App) handleVideoModelContractPreview(w http.ResponseWriter, r *http.Request) {
-	decoder := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2<<20))
-	decoder.DisallowUnknownFields()
 	var body videoModelContractPreviewRequest
-	if err := decoder.Decode(&body); err != nil {
+	if err := decodeStrictJSON(http.MaxBytesReader(w, r.Body, 2<<20), &body); err != nil {
 		util.WriteError(w, http.StatusBadRequest, "invalid video model contract preview body")
 		return
 	}
@@ -858,13 +854,27 @@ func (a *App) videoContractImportConflictWarnings(contract protocol.VideoModelCo
 
 func decodeVideoModelContractMutation(w http.ResponseWriter, r *http.Request) (videoModelContractMutation, bool) {
 	var body videoModelContractMutation
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-	if err := decoder.Decode(&body); err != nil {
+	if err := decodeStrictJSON(r.Body, &body); err != nil {
 		util.WriteError(w, http.StatusBadRequest, "invalid video model contract body")
 		return videoModelContractMutation{}, false
 	}
 	return body, true
+}
+
+func decodeStrictJSON(reader io.Reader, out any) error {
+	decoder := json.NewDecoder(reader)
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(out); err != nil {
+		return err
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err == nil {
+			return errors.New("request body must contain a single JSON value")
+		}
+		return err
+	}
+	return nil
 }
 
 func (a *App) writeAdminVideoModelContracts(w http.ResponseWriter, item *videocontract.ManagedVideoModelContract) {

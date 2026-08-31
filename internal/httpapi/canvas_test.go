@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strconv"
+	"strings"
 	"testing"
 
 	"chatgpt2api/internal/service"
@@ -142,6 +143,9 @@ func TestCanvasSaveRejectsStaleRevision(t *testing.T) {
 }
 
 func TestDefaultUserCanvasImageUploadStoresPrivateGalleryImage(t *testing.T) {
+	const imageBaseURL = "https://assets.example.test"
+
+	t.Setenv("IMAGE_BASE_URL", imageBaseURL)
 	app := newTestApp(t)
 	defer app.Close()
 	_, rawKey, err := createTestUserSession(app, "canvas-user", service.AuthOwner{})
@@ -180,7 +184,7 @@ func TestDefaultUserCanvasImageUploadStoresPrivateGalleryImage(t *testing.T) {
 	if err := json.Unmarshal(res.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("upload json: %v", err)
 	}
-	if payload.URL == "" || payload.Name != "reference.png" || payload.ContentType != "image/png" {
+	if !strings.HasPrefix(payload.URL, imageBaseURL+"/images/") || payload.Name != "reference.png" || payload.ContentType != "image/png" {
 		t.Fatalf("upload payload = %#v", payload)
 	}
 

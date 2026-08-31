@@ -22,7 +22,6 @@ import (
 	"chatgpt2api/internal/config"
 	"chatgpt2api/internal/protocol"
 	"chatgpt2api/internal/service"
-	"chatgpt2api/internal/storage"
 	"chatgpt2api/internal/util"
 	"chatgpt2api/internal/videocontract"
 	frontend "chatgpt2api/internal/web"
@@ -54,7 +53,6 @@ type App struct {
 	logs                *service.LogService
 	logger              *service.Logger
 	proxy               *service.ProxyService
-	engine              *protocol.Engine
 	images              *service.ImageService
 	conversationAssets  *service.ImageConversationAssetService
 	tasks               *service.ImageTaskService
@@ -192,14 +190,12 @@ func NewApp() (*App, error) {
 		fmt.Fprintf(os.Stderr, "bootstrap admin password generated: username=%s password=%s\n", bootstrap.Username, bootstrap.Password)
 		logger.Warning("bootstrap admin password generated", "username", bootstrap.Username)
 	}
-	documentStore, _ := storageBackend.(storage.JSONDocumentBackend)
 	videoContracts := videocontract.NewVideoModelContractService(storageBackend)
 	if err := videoContracts.Initialize(); err != nil {
 		cancel()
 		return nil, fmt.Errorf("initialize video model contracts: %w", err)
 	}
 	images := service.NewImageService(cfg, storageBackend)
-	engine := &protocol.Engine{Config: cfg, Storage: documentStore, Images: images}
 	videoDir := filepath.Join(cfg.DataDir, "videos")
 	if err := os.MkdirAll(videoDir, 0o755); err != nil {
 		cancel()
@@ -215,7 +211,7 @@ func NewApp() (*App, error) {
 		cancel()
 		return nil, fmt.Errorf("initialize audio storage: %w", err)
 	}
-	app := &App{ctx: ctx, config: cfg, auth: auth, logs: logs, logger: logger, proxy: proxy, engine: engine, images: images, videoDir: videoDir, audioDir: audioDir, videoReferenceDir: videoReferenceDir, conversationAssets: service.NewImageConversationAssetService(filepath.Join(cfg.DataDir, "image_conversation_assets")), prompts: service.NewPromptFavoriteService(storageBackend), myAssets: service.NewMyAssetService(storageBackend, storageFiles), history: service.NewImageConversationHistoryService(storageBackend), canvas: service.NewCanvasDocumentService(storageBackend), announce: service.NewAnnouncementService(storageBackend), videoContracts: videoContracts, imagePreferences: service.NewImageGenerationPreferenceService(storageBackend), customRelayConfigs: service.NewCustomRelayConfigService(storageBackend), workflows: service.NewWorkflowService(storageBackend), storageFiles: storageFiles, newAPIKeys: newAPIKeys, newRelayTokenReader: service.NewNewAPITokenReader, cancel: cancel, historyWriteLimiter: newImageConversationHistoryWriteLimiter(imageConversationHistoryWriteParallelism), imageUploadSlots: make(chan struct{}, 2), loginLimiter: newLoginRateLimiter()}
+	app := &App{ctx: ctx, config: cfg, auth: auth, logs: logs, logger: logger, proxy: proxy, images: images, videoDir: videoDir, audioDir: audioDir, videoReferenceDir: videoReferenceDir, conversationAssets: service.NewImageConversationAssetService(filepath.Join(cfg.DataDir, "image_conversation_assets")), prompts: service.NewPromptFavoriteService(storageBackend), myAssets: service.NewMyAssetService(storageBackend, storageFiles), history: service.NewImageConversationHistoryService(storageBackend), canvas: service.NewCanvasDocumentService(storageBackend), announce: service.NewAnnouncementService(storageBackend), videoContracts: videoContracts, imagePreferences: service.NewImageGenerationPreferenceService(storageBackend), customRelayConfigs: service.NewCustomRelayConfigService(storageBackend), workflows: service.NewWorkflowService(storageBackend), storageFiles: storageFiles, newAPIKeys: newAPIKeys, newRelayTokenReader: service.NewNewAPITokenReader, cancel: cancel, historyWriteLimiter: newImageConversationHistoryWriteLimiter(imageConversationHistoryWriteParallelism), imageUploadSlots: make(chan struct{}, 2), loginLimiter: newLoginRateLimiter()}
 	app.conversationAssets.SetStorageBudget(cfg.ImageStorageLimitBytes, func() int64 {
 		return app.images.StorageGovernance().TotalBytes
 	})
@@ -1618,7 +1614,11 @@ func (a *App) handleLogs(w http.ResponseWriter, r *http.Request) {
 		query.View = a.config.DefaultLogView()
 	}
 	query.View = service.NormalizeLogView(query.View, a.config.DefaultLogView())
-	items := a.logs.Search(query)
+	items, err := a.logs.Search(query)
+	if err != nil {
+		a.writeLogStorageError(w, "query logs", err)
+		return
+	}
 	util.WriteJSON(w, http.StatusOK, map[string]any{"items": items, "total": len(items), "page_size": normalizedHTTPLogPageSize(query.Limit), "view": query.View})
 }
 
@@ -1628,7 +1628,12 @@ func (a *App) handleLogGovernance(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodGet:
-		util.WriteJSON(w, http.StatusOK, map[string]any{"governance": a.logs.GovernanceSummary()})
+		summary, err := a.logs.GovernanceSummary()
+		if err != nil {
+			a.writeLogStorageError(w, "query log governance", err)
+			return
+		}
+		util.WriteJSON(w, http.StatusOK, map[string]any{"governance": summary})
 	case http.MethodPost:
 		body, err := readJSONMap(r)
 		if err != nil {
@@ -1638,15 +1643,35 @@ func (a *App) handleLogGovernance(w http.ResponseWriter, r *http.Request) {
 		retentionDays := util.ToInt(body["retention_days"], a.config.LogRetentionDays())
 		result, err := a.logs.CleanupOlderThan(retentionDays)
 		if err != nil {
-			util.WriteError(w, http.StatusBadRequest, err.Error())
+			if errors.Is(err, service.ErrInvalidLogRetentionDays) {
+				util.WriteError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			a.writeLogStorageError(w, "clean up logs", err)
 			return
+		}
+		summary, err := a.logs.GovernanceSummary()
+		if err != nil {
+			a.logLogStorageError("query log governance after cleanup", err)
+			summary = service.LogGovernanceSummary{Total: result.Remaining}
 		}
 		util.WriteJSON(w, http.StatusOK, map[string]any{
 			"cleanup":    result,
-			"governance": a.logs.GovernanceSummary(),
+			"governance": summary,
 		})
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
+}
+
+func (a *App) writeLogStorageError(w http.ResponseWriter, operation string, err error) {
+	a.logLogStorageError(operation, err)
+	util.WriteError(w, http.StatusServiceUnavailable, "日志数据库暂时不可用，请稍后重试")
+}
+
+func (a *App) logLogStorageError(operation string, err error) {
+	if a.logger != nil {
+		a.logger.Error("log storage operation failed", "operation", operation, "error", err)
 	}
 }
 
@@ -1769,7 +1794,11 @@ func (a *App) handleProxyTest(w http.ResponseWriter, r *http.Request) {
 	if _, ok := a.requireIdentity(w, r); !ok {
 		return
 	}
-	body, _ := readJSONMap(r)
+	body, err := readJSONMap(r)
+	if err != nil {
+		util.WriteError(w, http.StatusBadRequest, "invalid json body")
+		return
+	}
 	candidate := strings.TrimSpace(util.Clean(body["url"]))
 	if candidate == "" {
 		candidate = a.config.Proxy()
@@ -2503,7 +2532,7 @@ func (a *App) runLoggedImageTask(ctx context.Context, identity service.Identity,
 }
 
 func (a *App) localizeRelayImageResult(ctx context.Context, identity service.Identity, result map[string]any, payload map[string]any) error {
-	if a == nil || a.engine == nil || result == nil {
+	if a == nil || a.images == nil || a.config == nil || result == nil {
 		return nil
 	}
 	items := util.AsMapSlice(result["data"])
@@ -2669,7 +2698,10 @@ func (a *App) localizeRelayImageItem(ctx context.Context, ownerID, ownerName str
 	}
 	outputFormat := relayStoredImageFormat(item, payload, contentType, util.Clean(item["url"]), data)
 	qualityCheck := relayImageQualityCheck(data, outputFormat, payload)
-	url, err := a.engine.SaveImageBytesForOwnerWithFormatE(ctx, data, "", ownerID, ownerName, outputFormat)
+	if a == nil || a.images == nil || a.config == nil {
+		return "", "", nil, errors.New("image storage is unavailable")
+	}
+	url, err := a.images.SaveImageBytes(ctx, data, a.config.BaseURL(), ownerID, ownerName, outputFormat)
 	return url, outputFormat, qualityCheck, err
 }
 
