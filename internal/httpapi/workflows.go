@@ -1,10 +1,12 @@
 package httpapi
 
 import (
+	"errors"
 	"net/http"
 	"strings"
 
 	"chatgpt2api/internal/service"
+	"chatgpt2api/internal/storage"
 	"chatgpt2api/internal/util"
 )
 
@@ -77,6 +79,10 @@ func (a *App) handleWorkflows(w http.ResponseWriter, r *http.Request) {
 			}
 			item, err := a.workflows.Save(ownerID, input)
 			if err != nil {
+				if errors.Is(err, storage.ErrConcurrentRowUpdate) {
+					util.WriteError(w, http.StatusConflict, "工作流已被其他请求修改，请刷新后重试")
+					return
+				}
 				util.WriteError(w, http.StatusBadRequest, err.Error())
 				return
 			}
@@ -94,6 +100,10 @@ func (a *App) handleWorkflows(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(parts) == 1 && r.Method == http.MethodDelete {
 		if err := a.workflows.Delete(ownerID, id); err != nil {
+			if errors.Is(err, storage.ErrConcurrentRowUpdate) {
+				util.WriteError(w, http.StatusConflict, "工作流已被其他请求修改，请刷新后重试")
+				return
+			}
 			util.WriteError(w, http.StatusForbidden, err.Error())
 			return
 		}

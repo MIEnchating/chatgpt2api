@@ -181,7 +181,10 @@ func NewStore() (*Store, error) {
 	}
 
 	envFile := filepath.Join(root, ".env")
-	envFileValues := readEnvObject(envFile)
+	envFileValues, err := readEnvObject(envFile)
+	if err != nil {
+		return nil, fmt.Errorf("read environment file %q: %w", envFile, err)
+	}
 	processEnvValues := currentSettingEnvValues()
 	s := &Store{
 		RootDir: root,
@@ -192,7 +195,9 @@ func NewStore() (*Store, error) {
 	if err := os.MkdirAll(s.DataDir, 0o755); err != nil {
 		return nil, err
 	}
-	s.loadEnvFile()
+	if err := applyEnvDefaults(envFileValues); err != nil {
+		return nil, err
+	}
 	s.data = settingsFromEnvValues(envFileValues)
 	for key, value := range settingsFromEnvValues(processEnvValues) {
 		s.data[key] = value
@@ -980,12 +985,15 @@ func (s *Store) saveLocked() error {
 	return nil
 }
 
-func (s *Store) loadEnvFile() {
-	for key, value := range readEnvObject(s.EnvFile) {
+func applyEnvDefaults(values map[string]string) error {
+	for key, value := range values {
 		if _, ok := os.LookupEnv(key); !ok {
-			_ = os.Setenv(key, value)
+			if err := os.Setenv(key, value); err != nil {
+				return fmt.Errorf("set environment value %q: %w", key, err)
+			}
 		}
 	}
+	return nil
 }
 
 func settingsFromEnvValues(values map[string]string) map[string]any {
@@ -1169,13 +1177,13 @@ func clampFloat(value, min, max float64) float64 {
 	return value
 }
 
-func readEnvObject(path string) map[string]string {
+func readEnvObject(path string) (map[string]string, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
-		if info, statErr := os.Stat(path); statErr == nil && info.IsDir() {
-			fmt.Fprintf(os.Stderr, "Warning: .env at %q is a directory, ignoring it.\n", path)
+		if errors.Is(err, os.ErrNotExist) {
+			return map[string]string{}, nil
 		}
-		return map[string]string{}
+		return nil, err
 	}
 	result := map[string]string{}
 	for _, line := range strings.Split(string(data), "\n") {
@@ -1184,7 +1192,7 @@ func readEnvObject(path string) map[string]string {
 			result[key] = value
 		}
 	}
-	return result
+	return result, nil
 }
 
 func parseEnvAssignment(line string) (string, string, bool) {

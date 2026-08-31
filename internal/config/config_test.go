@@ -983,6 +983,18 @@ func TestStoreReadsRelayBaseURLFromEnvFile(t *testing.T) {
 	}
 }
 
+func TestNewStoreRejectsUnreadableEnvironmentPath(t *testing.T) {
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, ".env"), 0o755); err != nil {
+		t.Fatalf("create .env directory: %v", err)
+	}
+	t.Setenv("ROOT_DIR", root)
+
+	if _, err := NewStore(); err == nil || !strings.Contains(err.Error(), "read environment file") {
+		t.Fatalf("NewStore() error = %v, want environment read failure", err)
+	}
+}
+
 func TestStoreUpdatePersistsRelayBaseURL(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("ROOT_DIR", root)

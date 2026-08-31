@@ -121,6 +121,18 @@ test("log queries abort stale loads and only the latest request updates state", 
   assert.match(apiSource, /`\/api\/logs[\s\S]*\{ signal: options\.signal \}/);
 });
 
+test("role permission queries abort stale loads and preserve the latest selection", () => {
+  assert.match(rbacSource, /loadRBACAbortRef = useRef<AbortController \| null>/);
+  assert.match(rbacSource, /loadRBACRequestRef = useRef\(0\)/);
+  assert.match(rbacSource, /fetchManagedRoles\(\{ signal: controller\.signal \}\)/);
+  assert.match(rbacSource, /fetchPermissionCatalog\(\{ signal: controller\.signal \}\)/);
+  assert.match(rbacSource, /requestID !== loadRBACRequestRef\.current/);
+  assert.match(rbacSource, /loadRBACRequestRef\.current \+= 1;[\s\S]*loadRBACAbortRef\.current\?\.abort\(\)/);
+  assert.match(rbacSource, /selectedRoleIdRef\.current = roleID;[\s\S]*setSelectedRoleId\(roleID\)/);
+  assert.match(apiSource, /fetchManagedRoles\(options: \{ signal\?: AbortSignal \} = \{\}\)/);
+  assert.match(apiSource, /fetchPermissionCatalog\(options: \{ signal\?: AbortSignal \} = \{\}\)/);
+});
+
 test("log detail header reserves the global dialog close-button area", () => {
   assert.match(logsSource, /<DialogHeader className="border-b border-border py-5 pl-6 pr-20">/);
   assert.match(logsSource, /className="h-9 shrink-0 self-start rounded-lg px-3"[\s\S]*?复制 JSON/);

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"reflect"
 	"regexp"
 	"sort"
 	"strings"
@@ -13,7 +14,10 @@ import (
 	"chatgpt2api/internal/util"
 )
 
-const workflowDocumentName = "creative_workflows.json"
+const (
+	workflowDocumentName = "creative_workflows.json"
+	workflowSaveAttempts = 3
+)
 
 var invalidWorkflowTemplateVariableKeyCharacterRE = regexp.MustCompile(`[^A-Za-z0-9_.-]`)
 
@@ -100,74 +104,137 @@ func (s *WorkflowService) Save(ownerID string, input CreativeWorkflow) (Creative
 	if ownerID == "" {
 		return CreativeWorkflow{}, errors.New("owner_id is required")
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	items, err := s.loadLocked()
-	if err != nil {
-		return CreativeWorkflow{}, err
+	input = *copyWorkflow(&input)
+	if strings.TrimSpace(input.ID) == "" {
+		input.ID = util.NewUUID()
 	}
 	now := util.NowISO()
-	index := -1
-	for i := range items {
-		if input.ID != "" && items[i].ID == input.ID {
-			index = i
-			if items[i].OwnerID != ownerID {
-				return CreativeWorkflow{}, errors.New("只能编辑自己的工作流")
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var expected *CreativeWorkflow
+	for attempt := 0; attempt < workflowSaveAttempts; attempt++ {
+		items, err := s.loadLocked()
+		if err != nil {
+			return CreativeWorkflow{}, err
+		}
+		index, current := workflowByID(items, input.ID)
+		if attempt == 0 {
+			expected = copyWorkflow(current)
+		} else if !sameWorkflow(expected, current) {
+			return CreativeWorkflow{}, workflowConcurrentMutationError(input.ID)
+		}
+		if current != nil && current.OwnerID != ownerID {
+			return CreativeWorkflow{}, errors.New("只能编辑自己的工作流")
+		}
+		candidate := input
+		if index < 0 {
+			candidate.OwnerID = ownerID
+			candidate.CreatedAt = now
+		} else {
+			candidate.OwnerID = current.OwnerID
+			candidate.CreatedAt = current.CreatedAt
+		}
+		candidate.UpdatedAt = now
+		candidate.Editable = true
+		if err := normalizeWorkflow(&candidate); err != nil {
+			return CreativeWorkflow{}, err
+		}
+		stored := candidate
+		stored.Editable = false
+		if index < 0 {
+			items = append(items, stored)
+		} else {
+			items[index] = stored
+		}
+		if err := s.saveLocked(items); err != nil {
+			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < workflowSaveAttempts {
+				continue
 			}
-			break
+			return CreativeWorkflow{}, err
 		}
+		return candidate, nil
 	}
-	if index < 0 {
-		if strings.TrimSpace(input.ID) == "" {
-			input.ID = util.NewUUID()
-		}
-		input.OwnerID = ownerID
-		input.CreatedAt = now
-	} else {
-		input.OwnerID = items[index].OwnerID
-		input.CreatedAt = items[index].CreatedAt
-	}
-	input.UpdatedAt = now
-	input.Editable = true
-	if err := normalizeWorkflow(&input); err != nil {
-		return CreativeWorkflow{}, err
-	}
-	stored := input
-	stored.Editable = false
-	if index < 0 {
-		items = append(items, stored)
-	} else {
-		items[index] = stored
-	}
-	if err := s.saveLocked(items); err != nil {
-		return CreativeWorkflow{}, err
-	}
-	return input, nil
+	return CreativeWorkflow{}, fmt.Errorf("failed to save workflow")
 }
 
 func (s *WorkflowService) Delete(ownerID, id string) error {
+	id = strings.TrimSpace(id)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	items, err := s.loadLocked()
-	if err != nil {
-		return err
-	}
-	next := make([]CreativeWorkflow, 0, len(items))
-	found := false
-	for _, item := range items {
-		if item.ID != strings.TrimSpace(id) {
-			next = append(next, item)
-			continue
+	var expected *CreativeWorkflow
+	for attempt := 0; attempt < workflowSaveAttempts; attempt++ {
+		items, err := s.loadLocked()
+		if err != nil {
+			return err
 		}
-		found = true
-		if item.OwnerID != ownerID {
+		_, current := workflowByID(items, id)
+		if attempt == 0 {
+			if current == nil {
+				return nil
+			}
+			expected = copyWorkflow(current)
+		} else if current == nil {
+			return nil
+		} else if !sameWorkflow(expected, current) {
+			return workflowConcurrentMutationError(id)
+		}
+		if current.OwnerID != ownerID {
 			return errors.New("只能删除自己的工作流")
 		}
-	}
-	if !found {
+		next := make([]CreativeWorkflow, 0, len(items))
+		for _, item := range items {
+			if item.ID != id {
+				next = append(next, item)
+			}
+		}
+		if err := s.saveLocked(next); err != nil {
+			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < workflowSaveAttempts {
+				continue
+			}
+			return err
+		}
 		return nil
 	}
-	return s.saveLocked(next)
+	return fmt.Errorf("failed to delete workflow")
+}
+
+func workflowByID(items []CreativeWorkflow, id string) (int, *CreativeWorkflow) {
+	for index := range items {
+		if items[index].ID == id {
+			return index, &items[index]
+		}
+	}
+	return -1, nil
+}
+
+func copyWorkflow(item *CreativeWorkflow) *CreativeWorkflow {
+	if item == nil {
+		return nil
+	}
+	cloned := *item
+	if item.Variables != nil {
+		cloned.Variables = make([]WorkflowVariable, len(item.Variables))
+		copy(cloned.Variables, item.Variables)
+	}
+	for index := range cloned.Variables {
+		if item.Variables[index].Options != nil {
+			cloned.Variables[index].Options = make([]string, len(item.Variables[index].Options))
+			copy(cloned.Variables[index].Options, item.Variables[index].Options)
+		}
+	}
+	return &cloned
+}
+
+func sameWorkflow(expected, current *CreativeWorkflow) bool {
+	if expected == nil || current == nil {
+		return expected == current
+	}
+	return reflect.DeepEqual(*expected, *current)
+}
+
+func workflowConcurrentMutationError(id string) error {
+	return fmt.Errorf("%w: workflow %q changed during the operation", storage.ErrConcurrentRowUpdate, id)
 }
 
 func normalizeWorkflow(item *CreativeWorkflow) error {

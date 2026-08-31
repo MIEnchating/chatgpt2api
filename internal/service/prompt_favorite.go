@@ -59,9 +59,14 @@ func copyPromptFavorites(items []map[string]any) []map[string]any {
 }
 
 func (s *PromptFavoriteService) Upsert(ownerID string, body map[string]any) (map[string]any, error) {
+	item, _, err := s.UpsertWithItems(ownerID, body)
+	return item, err
+}
+
+func (s *PromptFavoriteService) UpsertWithItems(ownerID string, body map[string]any) (map[string]any, []map[string]any, error) {
 	ownerID = util.Clean(ownerID)
 	if ownerID == "" {
-		return nil, fmt.Errorf("owner_id is required")
+		return nil, nil, fmt.Errorf("owner_id is required")
 	}
 
 	s.mu.Lock()
@@ -71,7 +76,7 @@ func (s *PromptFavoriteService) Upsert(ownerID string, body map[string]any) (map
 	for attempt := 0; attempt < promptFavoriteSaveAttempts; attempt++ {
 		items, err := s.loadLocked(ownerID)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		existingIndex := -1
 		existingFavoritedAt := ""
@@ -86,7 +91,7 @@ func (s *PromptFavoriteService) Upsert(ownerID string, body map[string]any) (map
 
 		item, err := normalizePromptFavoriteInput(body, now, existingFavoritedAt)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		if existingIndex >= 0 {
 			items[existingIndex] = item
@@ -98,18 +103,23 @@ func (s *PromptFavoriteService) Upsert(ownerID string, body map[string]any) (map
 			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < promptFavoriteSaveAttempts {
 				continue
 			}
-			return nil, err
+			return nil, nil, err
 		}
-		return util.CopyMap(item), nil
+		return util.CopyMap(item), copyPromptFavorites(items), nil
 	}
-	return nil, fmt.Errorf("failed to save prompt favorite")
+	return nil, nil, fmt.Errorf("failed to save prompt favorite")
 }
 
 func (s *PromptFavoriteService) Delete(ownerID, id string) (bool, error) {
+	deleted, _, err := s.DeleteWithItems(ownerID, id)
+	return deleted, err
+}
+
+func (s *PromptFavoriteService) DeleteWithItems(ownerID, id string) (bool, []map[string]any, error) {
 	ownerID = util.Clean(ownerID)
 	id = util.Clean(id)
 	if ownerID == "" || id == "" {
-		return false, nil
+		return false, []map[string]any{}, nil
 	}
 
 	s.mu.Lock()
@@ -119,7 +129,7 @@ func (s *PromptFavoriteService) Delete(ownerID, id string) (bool, error) {
 	for attempt := 0; attempt < promptFavoriteSaveAttempts; attempt++ {
 		items, err := s.loadLocked(ownerID)
 		if err != nil {
-			return false, err
+			return false, nil, err
 		}
 		next := items[:0]
 		removed := false
@@ -131,18 +141,18 @@ func (s *PromptFavoriteService) Delete(ownerID, id string) (bool, error) {
 			next = append(next, item)
 		}
 		if !removed {
-			return removedOnce, nil
+			return removedOnce, copyPromptFavorites(items), nil
 		}
 		removedOnce = true
 		if err := s.saveLocked(ownerID, next); err != nil {
 			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < promptFavoriteSaveAttempts {
 				continue
 			}
-			return false, err
+			return false, nil, err
 		}
-		return true, nil
+		return true, copyPromptFavorites(next), nil
 	}
-	return false, fmt.Errorf("failed to delete prompt favorite")
+	return false, nil, fmt.Errorf("failed to delete prompt favorite")
 }
 
 func (s *PromptFavoriteService) loadLocked(ownerID string) ([]map[string]any, error) {

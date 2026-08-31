@@ -27,7 +27,10 @@ import (
 	"github.com/robfig/cron/v3"
 )
 
-const defaultStorageCapacityLimitBytes int64 = 9 * 1024 * 1024 * 1024
+const (
+	defaultStorageCapacityLimitBytes int64 = 9 * 1024 * 1024 * 1024
+	storageObjectRollbackTimeout           = 30 * time.Second
+)
 
 var ErrLocalStorageCapacityExceeded = errors.New("服务器本机素材容量已达到上限")
 
@@ -338,7 +341,9 @@ func (s *GenericStorageService) Upload(ctx context.Context, ownerID string, admi
 		CreatedAt: now.Format(time.RFC3339Nano),
 	}
 	if err := s.objects.SaveStorageObject(object); err != nil {
-		_ = deleteStorageObjectData(ctx, provider, objectKey)
+		if cleanupErr := rollbackStorageObjectData(ctx, provider, objectKey, storageObjectRollbackTimeout); cleanupErr != nil {
+			return UploadedStorageObject{}, errors.Join(err, fmt.Errorf("rollback uploaded storage object: %w", cleanupErr))
+		}
 		return UploadedStorageObject{}, err
 	}
 	objectURL := "/api/files/" + objectID + "/content"
@@ -815,6 +820,12 @@ func deleteStorageObjectData(ctx context.Context, provider model.StorageProvider
 	default:
 		return errors.New("storage provider type is unsupported")
 	}
+}
+
+func rollbackStorageObjectData(ctx context.Context, provider model.StorageProvider, objectKey string, timeout time.Duration) error {
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeout)
+	defer cancel()
+	return deleteStorageObjectData(cleanupCtx, provider, objectKey)
 }
 
 func downloadStorageObject(ctx context.Context, provider model.StorageProvider, object model.StorageObject, rangeHeader string) (DownloadedStorageObject, error) {

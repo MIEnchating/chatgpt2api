@@ -72,6 +72,8 @@ function permissionCountLabel(role: ManagedRole) {
 
 function RBACContent() {
   const selectedRoleIdRef = useRef("");
+  const loadRBACAbortRef = useRef<AbortController | null>(null);
+  const loadRBACRequestRef = useRef(0);
   const [roles, setRoles] = useState<ManagedRole[]>([]);
   const [catalog, setCatalog] = useState<{ menus: PermissionMenu[]; apis: ApiPermission[] }>({ menus: [], apis: [] });
   const [selectedRoleId, setSelectedRoleId] = useState("");
@@ -90,12 +92,10 @@ function RBACContent() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [pendingRole, setPendingRole] = useState<ManagedRole | null>(null);
 
-  useEffect(() => {
-    selectedRoleIdRef.current = selectedRoleId;
-  }, [selectedRoleId]);
-
   const applySelectedRole = useCallback((role: ManagedRole | null | undefined) => {
-    setSelectedRoleId(role?.id || "");
+    const roleID = role?.id || "";
+    selectedRoleIdRef.current = roleID;
+    setSelectedRoleId(roleID);
     setRoleName(role?.name || "");
     setRoleDescription(role?.description || "");
     setSelectedMenuPaths(uniqueSortedStrings(role?.menu_paths));
@@ -103,12 +103,18 @@ function RBACContent() {
   }, []);
 
   const loadRBAC = useCallback(async () => {
+    const requestID = loadRBACRequestRef.current + 1;
+    loadRBACRequestRef.current = requestID;
+    loadRBACAbortRef.current?.abort();
+    const controller = new AbortController();
+    loadRBACAbortRef.current = controller;
     setIsLoading(true);
     try {
       const [rolesData, catalogData] = await Promise.all([
-        fetchManagedRoles(),
-        fetchPermissionCatalog(),
+        fetchManagedRoles({ signal: controller.signal }),
+        fetchPermissionCatalog({ signal: controller.signal }),
       ]);
+      if (requestID !== loadRBACRequestRef.current) return;
       const nextRoles = normalizeManagedRoles(rolesData.items);
       const nextCatalog = {
         menus: Array.isArray(catalogData.menus) ? catalogData.menus : [],
@@ -120,14 +126,22 @@ function RBACContent() {
       setCatalog(nextCatalog);
       applySelectedRole(nextSelected);
     } catch (error) {
+      if (controller.signal.aborted || requestID !== loadRBACRequestRef.current) return;
       toast.error(error instanceof Error ? error.message : "加载角色权限失败");
     } finally {
-      setIsLoading(false);
+      if (requestID === loadRBACRequestRef.current) {
+        setIsLoading(false);
+        if (loadRBACAbortRef.current === controller) loadRBACAbortRef.current = null;
+      }
     }
   }, [applySelectedRole]);
 
   useEffect(() => {
     void loadRBAC();
+    return () => {
+      loadRBACRequestRef.current += 1;
+      loadRBACAbortRef.current?.abort();
+    };
   }, [loadRBAC]);
 
   const selectedRole = useMemo(

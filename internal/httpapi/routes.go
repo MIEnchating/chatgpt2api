@@ -398,14 +398,9 @@ func (a *App) handleProfilePromptFavorites(w http.ResponseWriter, r *http.Reques
 				util.WriteError(w, http.StatusForbidden, "adult prompts are not supported")
 				return
 			}
-			item, err := a.prompts.Upsert(ownerID, body)
+			item, items, err := a.prompts.UpsertWithItems(ownerID, body)
 			if err != nil {
 				util.WriteError(w, http.StatusBadRequest, err.Error())
-				return
-			}
-			items, err := a.promptFavoritesForIdentity(ownerID)
-			if err != nil {
-				util.WriteError(w, http.StatusInternalServerError, "failed to load prompt favorites")
 				return
 			}
 			util.WriteJSON(w, http.StatusOK, map[string]any{"item": item, "items": items})
@@ -423,18 +418,13 @@ func (a *App) handleProfilePromptFavorites(w http.ResponseWriter, r *http.Reques
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	deleted, err := a.prompts.Delete(ownerID, parts[3])
+	deleted, items, err := a.prompts.DeleteWithItems(ownerID, parts[3])
 	if err != nil {
 		util.WriteError(w, http.StatusInternalServerError, "failed to delete prompt favorite")
 		return
 	}
 	if !deleted {
 		util.WriteError(w, http.StatusNotFound, "prompt favorite not found")
-		return
-	}
-	items, err := a.promptFavoritesForIdentity(ownerID)
-	if err != nil {
-		util.WriteError(w, http.StatusInternalServerError, "failed to load prompt favorites")
 		return
 	}
 	util.WriteJSON(w, http.StatusOK, map[string]any{"items": items})

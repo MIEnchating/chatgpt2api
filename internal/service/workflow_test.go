@@ -1,8 +1,12 @@
 package service
 
 import (
+	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"chatgpt2api/internal/storage"
 )
 
 func referenceWorkflow() CreativeWorkflow {
@@ -153,6 +157,200 @@ func TestWorkflowServicePreservesUnknownIDAndDeleteIsIdempotent(t *testing.T) {
 	}
 	if err := workflows.Delete("alice", "missing-workflow-id"); err != nil {
 		t.Fatalf("Delete() missing error = %v", err)
+	}
+}
+
+func TestWorkflowServiceMergesConcurrentDatabaseCreates(t *testing.T) {
+	databaseURL := "sqlite:///" + filepath.ToSlash(filepath.Join(t.TempDir(), "shared-workflows.db"))
+	backendA, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend(A) error = %v", err)
+	}
+	t.Cleanup(func() { _ = backendA.Close() })
+	backendB, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend(B) error = %v", err)
+	}
+	t.Cleanup(func() { _ = backendB.Close() })
+	barrier := newTestDocumentSaveBarrier(2)
+	serviceA := NewWorkflowService(newFirstSaveBarrierBackend(t, backendA, barrier))
+	serviceB := NewWorkflowService(newFirstSaveBarrierBackend(t, backendB, barrier))
+
+	first := referenceWorkflow()
+	first.Name = "工作流 A"
+	second := referenceWorkflow()
+	second.Name = "工作流 B"
+	errorsCh := make(chan error, 2)
+	go func() {
+		_, saveErr := serviceA.Save("alice", first)
+		errorsCh <- saveErr
+	}()
+	go func() {
+		_, saveErr := serviceB.Save("alice", second)
+		errorsCh <- saveErr
+	}()
+	for range 2 {
+		if saveErr := <-errorsCh; saveErr != nil {
+			t.Fatalf("concurrent Save() error = %v", saveErr)
+		}
+	}
+
+	items, err := serviceA.List("alice")
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("concurrent creates lost a workflow: %#v", items)
+	}
+}
+
+func TestWorkflowServiceMergesConcurrentDatabaseDeletes(t *testing.T) {
+	databaseURL := "sqlite:///" + filepath.ToSlash(filepath.Join(t.TempDir(), "shared-workflow-deletes.db"))
+	backendA, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend(A) error = %v", err)
+	}
+	t.Cleanup(func() { _ = backendA.Close() })
+	backendB, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend(B) error = %v", err)
+	}
+	t.Cleanup(func() { _ = backendB.Close() })
+	seed := NewWorkflowService(backendA)
+	first, err := seed.Save("alice", referenceWorkflow())
+	if err != nil {
+		t.Fatalf("Save(first) error = %v", err)
+	}
+	secondInput := referenceWorkflow()
+	secondInput.Name = "第二个工作流"
+	second, err := seed.Save("alice", secondInput)
+	if err != nil {
+		t.Fatalf("Save(second) error = %v", err)
+	}
+
+	barrier := newTestDocumentSaveBarrier(2)
+	serviceA := NewWorkflowService(newFirstSaveBarrierBackend(t, backendA, barrier))
+	serviceB := NewWorkflowService(newFirstSaveBarrierBackend(t, backendB, barrier))
+	errorsCh := make(chan error, 2)
+	go func() { errorsCh <- serviceA.Delete("alice", first.ID) }()
+	go func() { errorsCh <- serviceB.Delete("alice", second.ID) }()
+	for range 2 {
+		if deleteErr := <-errorsCh; deleteErr != nil {
+			t.Fatalf("concurrent Delete() error = %v", deleteErr)
+		}
+	}
+
+	items, err := serviceA.List("alice")
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(items) != 0 {
+		t.Fatalf("concurrent deletes restored a workflow: %#v", items)
+	}
+}
+
+func TestWorkflowServiceRejectsConcurrentUpdatesToSameWorkflow(t *testing.T) {
+	databaseURL := "sqlite:///" + filepath.ToSlash(filepath.Join(t.TempDir(), "shared-workflow-updates.db"))
+	backendA, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend(A) error = %v", err)
+	}
+	t.Cleanup(func() { _ = backendA.Close() })
+	backendB, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend(B) error = %v", err)
+	}
+	t.Cleanup(func() { _ = backendB.Close() })
+	seed := NewWorkflowService(backendA)
+	base, err := seed.Save("alice", referenceWorkflow())
+	if err != nil {
+		t.Fatalf("Save(seed) error = %v", err)
+	}
+
+	barrier := newTestDocumentSaveBarrier(2)
+	serviceA := NewWorkflowService(newFirstSaveBarrierBackend(t, backendA, barrier))
+	serviceB := NewWorkflowService(newFirstSaveBarrierBackend(t, backendB, barrier))
+	first := base
+	first.Name = "并发更新 A"
+	second := base
+	second.Name = "并发更新 B"
+	errorsCh := make(chan error, 2)
+	go func() {
+		_, saveErr := serviceA.Save("alice", first)
+		errorsCh <- saveErr
+	}()
+	go func() {
+		_, saveErr := serviceB.Save("alice", second)
+		errorsCh <- saveErr
+	}()
+	assertOneWorkflowMutationConflict(t, errorsCh)
+
+	items, err := seed.List("alice")
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(items) != 1 || items[0].Name != first.Name && items[0].Name != second.Name {
+		t.Fatalf("concurrent update result = %#v", items)
+	}
+}
+
+func TestWorkflowServiceRejectsConcurrentSaveAndDeleteOfSameWorkflow(t *testing.T) {
+	databaseURL := "sqlite:///" + filepath.ToSlash(filepath.Join(t.TempDir(), "shared-workflow-save-delete.db"))
+	backendA, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend(A) error = %v", err)
+	}
+	t.Cleanup(func() { _ = backendA.Close() })
+	backendB, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend(B) error = %v", err)
+	}
+	t.Cleanup(func() { _ = backendB.Close() })
+	seed := NewWorkflowService(backendA)
+	base, err := seed.Save("alice", referenceWorkflow())
+	if err != nil {
+		t.Fatalf("Save(seed) error = %v", err)
+	}
+
+	barrier := newTestDocumentSaveBarrier(2)
+	serviceA := NewWorkflowService(newFirstSaveBarrierBackend(t, backendA, barrier))
+	serviceB := NewWorkflowService(newFirstSaveBarrierBackend(t, backendB, barrier))
+	updated := base
+	updated.Name = "并发保存"
+	errorsCh := make(chan error, 2)
+	go func() {
+		_, saveErr := serviceA.Save("alice", updated)
+		errorsCh <- saveErr
+	}()
+	go func() { errorsCh <- serviceB.Delete("alice", base.ID) }()
+	assertOneWorkflowMutationConflict(t, errorsCh)
+
+	items, err := seed.List("alice")
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(items) > 1 || len(items) == 1 && items[0].Name != updated.Name {
+		t.Fatalf("concurrent save/delete result = %#v", items)
+	}
+}
+
+func assertOneWorkflowMutationConflict(t *testing.T, errorsCh <-chan error) {
+	t.Helper()
+	successes := 0
+	conflicts := 0
+	for range 2 {
+		err := <-errorsCh
+		switch {
+		case err == nil:
+			successes++
+		case errors.Is(err, storage.ErrConcurrentRowUpdate):
+			conflicts++
+		default:
+			t.Fatalf("concurrent mutation error = %v", err)
+		}
+	}
+	if successes != 1 || conflicts != 1 {
+		t.Fatalf("concurrent mutation results: successes = %d, conflicts = %d", successes, conflicts)
 	}
 }
 

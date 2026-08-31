@@ -222,19 +222,31 @@ func TestPromptFavoriteServiceMergesConcurrentDatabaseUpdates(t *testing.T) {
 			"preview": "https://example.test/preview.png", "prompt": "draw", "author": "Alice",
 		}
 	}
-	errorsCh := make(chan error, 2)
+	type upsertResult struct {
+		items []map[string]any
+		err   error
+	}
+	resultsCh := make(chan upsertResult, 2)
 	go func() {
-		_, saveErr := serviceA.Upsert("owner", body("prompt-a"))
-		errorsCh <- saveErr
+		_, items, saveErr := serviceA.UpsertWithItems("owner", body("prompt-a"))
+		resultsCh <- upsertResult{items: items, err: saveErr}
 	}()
 	go func() {
-		_, saveErr := serviceB.Upsert("owner", body("prompt-b"))
-		errorsCh <- saveErr
+		_, items, saveErr := serviceB.UpsertWithItems("owner", body("prompt-b"))
+		resultsCh <- upsertResult{items: items, err: saveErr}
 	}()
+	maxResponseItems := 0
 	for range 2 {
-		if saveErr := <-errorsCh; saveErr != nil {
-			t.Fatalf("concurrent Upsert() error = %v", saveErr)
+		result := <-resultsCh
+		if result.err != nil {
+			t.Fatalf("concurrent UpsertWithItems() error = %v", result.err)
 		}
+		if len(result.items) > maxResponseItems {
+			maxResponseItems = len(result.items)
+		}
+	}
+	if maxResponseItems != 2 {
+		t.Fatalf("successful CAS response omitted a previously committed favorite: max items = %d", maxResponseItems)
 	}
 	items, err := serviceA.ListWithError("owner")
 	if err != nil {

@@ -192,6 +192,10 @@ func (a *App) handleVideoReferenceUpload(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	name := "reference-" + hex.EncodeToString(randomID[:]) + ext
+	if r.Context().Err() != nil {
+		util.WriteError(w, http.StatusRequestTimeout, "video reference upload was canceled")
+		return
+	}
 	if err := os.WriteFile(filepath.Join(a.videoReferenceDir, name), data, 0o644); err != nil {
 		util.WriteError(w, http.StatusInternalServerError, "failed to store video reference")
 		return
@@ -242,6 +246,10 @@ func (a *App) handleAudioReferenceUpload(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	name := "reference-" + hex.EncodeToString(randomID[:]) + ext
+	if r.Context().Err() != nil {
+		util.WriteError(w, http.StatusRequestTimeout, "audio reference upload was canceled")
+		return
+	}
 	if err := os.WriteFile(filepath.Join(a.videoReferenceDir, name), data, 0o644); err != nil {
 		util.WriteError(w, http.StatusInternalServerError, "failed to store audio reference")
 		return
@@ -303,6 +311,10 @@ func (a *App) handleVideoImageReferenceUpload(w http.ResponseWriter, r *http.Req
 		return
 	}
 	name := "reference-" + hex.EncodeToString(randomID[:]) + ext
+	if r.Context().Err() != nil {
+		util.WriteError(w, http.StatusRequestTimeout, "image reference upload was canceled")
+		return
+	}
 	if err := os.WriteFile(filepath.Join(a.videoReferenceDir, name), data, 0o644); err != nil {
 		util.WriteError(w, http.StatusInternalServerError, "failed to store image reference")
 		return

@@ -22,6 +22,19 @@ type genericStorageTestSettings struct {
 	setting model.StorageSetting
 }
 
+type genericStorageFailingSaveBackend struct {
+	storage.Backend
+	storage.JSONDocumentBackend
+	storage.StorageObjectBackend
+	cancel context.CancelFunc
+	err    error
+}
+
+func (b *genericStorageFailingSaveBackend) SaveStorageObject(model.StorageObject) error {
+	b.cancel()
+	return b.err
+}
+
 func (s *genericStorageTestSettings) StorageSettings() model.StorageSetting { return s.setting }
 func (s *genericStorageTestSettings) UpdateStorageProviderCapacity(expected model.StorageProvider, expectedLimitBytes, capacityBytes int64, checkedAt string, exceeded bool) (bool, error) {
 	if s.setting.CapacityLimitBytes <= 0 {
@@ -421,6 +434,130 @@ func TestGenericStorageServiceUsesServerLocalMediaStorageByDefault(t *testing.T)
 	}
 	if _, err := service.InfoForIdentity("user-1", false, uploaded.ID); !errors.Is(err, storage.ErrStorageObjectNotFound) {
 		t.Fatalf("deleted object error = %v", err)
+	}
+}
+
+func TestGenericStorageServiceRollsBackUploadedDataAfterCanceledMetadataFailure(t *testing.T) {
+	fileSystem := webdav.NewMemFS()
+	handler := &webdav.Handler{FileSystem: fileSystem, LockSystem: webdav.NewMemLS()}
+	var requestMu sync.Mutex
+	uploadedPath := ""
+	deleteRequests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestMu.Lock()
+		if r.Method == http.MethodPut {
+			uploadedPath = r.URL.Path
+		}
+		if r.Method == http.MethodDelete {
+			deleteRequests++
+		}
+		requestMu.Unlock()
+		handler.ServeHTTP(w, r)
+	}))
+	defer server.Close()
+
+	root := t.TempDir()
+	backend, err := storage.NewDatabaseBackend("sqlite:///" + filepath.ToSlash(filepath.Join(root, "storage.db")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer backend.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	metadataErr := errors.New("metadata save failed")
+	failingBackend := &genericStorageFailingSaveBackend{
+		Backend: backend, JSONDocumentBackend: backend, StorageObjectBackend: backend,
+		cancel: cancel, err: metadataErr,
+	}
+	settings := &genericStorageTestSettings{setting: model.StorageSetting{Providers: []model.StorageProvider{{
+		ID: "webdav", Name: "WebDAV", Type: model.StorageProviderTypeWebDAV, Endpoint: server.URL,
+		PathPrefix: "assets", Username: "user", Password: "secret", Enabled: true, Weight: 1,
+	}}}}
+	service, err := NewGenericStorageService(failingBackend, settings, filepath.Join(root, "media"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = service.Upload(ctx, "user-1", true, "sample.txt", "text/plain", []byte("content"), nil)
+	if !errors.Is(err, metadataErr) {
+		t.Fatalf("Upload() error = %v, want metadata error", err)
+	}
+	if ctx.Err() == nil {
+		t.Fatal("metadata failure did not cancel the request context")
+	}
+	requestMu.Lock()
+	path := uploadedPath
+	deletes := deleteRequests
+	requestMu.Unlock()
+	if path == "" || deletes == 0 {
+		t.Fatalf("rollback requests: uploaded path = %q, DELETE count = %d", path, deletes)
+	}
+	if _, statErr := fileSystem.Stat(context.Background(), path); statErr == nil {
+		t.Fatalf("uploaded WebDAV object %q still exists after metadata rollback", path)
+	}
+}
+
+func TestGenericStorageServiceReportsMetadataAndRollbackFailures(t *testing.T) {
+	fileSystem := webdav.NewMemFS()
+	handler := &webdav.Handler{FileSystem: fileSystem, LockSystem: webdav.NewMemLS()}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodDelete {
+			http.Error(w, "injected delete failure", http.StatusInternalServerError)
+			return
+		}
+		handler.ServeHTTP(w, r)
+	}))
+	defer server.Close()
+
+	root := t.TempDir()
+	backend, err := storage.NewDatabaseBackend("sqlite:///" + filepath.ToSlash(filepath.Join(root, "storage.db")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer backend.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	metadataErr := errors.New("metadata save failed")
+	failingBackend := &genericStorageFailingSaveBackend{
+		Backend: backend, JSONDocumentBackend: backend, StorageObjectBackend: backend,
+		cancel: cancel, err: metadataErr,
+	}
+	settings := &genericStorageTestSettings{setting: model.StorageSetting{Providers: []model.StorageProvider{{
+		ID: "webdav", Name: "WebDAV", Type: model.StorageProviderTypeWebDAV, Endpoint: server.URL,
+		PathPrefix: "assets", Username: "user", Password: "secret", Enabled: true, Weight: 1,
+	}}}}
+	service, err := NewGenericStorageService(failingBackend, settings, filepath.Join(root, "media"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = service.Upload(ctx, "user-1", true, "sample.txt", "text/plain", []byte("content"), nil)
+	if !errors.Is(err, metadataErr) {
+		t.Fatalf("Upload() error = %v, want metadata error", err)
+	}
+	if !strings.Contains(err.Error(), "rollback uploaded storage object") || !strings.Contains(err.Error(), "500") {
+		t.Fatalf("Upload() error omitted rollback failure: %v", err)
+	}
+}
+
+func TestRollbackStorageObjectDataHasBoundedLifetime(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	defer server.Close()
+	provider := model.StorageProvider{
+		Type: model.StorageProviderTypeWebDAV, Endpoint: server.URL, PathPrefix: "assets",
+		Username: "user", Password: "secret",
+	}
+
+	started := time.Now()
+	err := rollbackStorageObjectData(context.Background(), provider, "assets/sample.txt", 25*time.Millisecond)
+	if err == nil {
+		t.Fatal("rollbackStorageObjectData() error = nil")
+	}
+	if elapsed := time.Since(started); elapsed < 20*time.Millisecond {
+		t.Fatalf("rollbackStorageObjectData() returned before its deadline: %s", elapsed)
+	}
+	if elapsed := time.Since(started); elapsed > time.Second {
+		t.Fatalf("rollbackStorageObjectData() took %s", elapsed)
 	}
 }
 

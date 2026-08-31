@@ -1741,9 +1741,10 @@ export async function fetchManagedUsers(query: ManagedUsersQuery = {}) {
   };
 }
 
-export async function fetchPermissionCatalog() {
+export async function fetchPermissionCatalog(options: { signal?: AbortSignal } = {}) {
   return httpRequest<{ menus: PermissionMenu[]; apis: ApiPermission[] }>(
     "/api/admin/permissions",
+    { signal: options.signal },
   );
 }
 
@@ -1751,8 +1752,8 @@ function managedRolePath(roleId: string) {
   return `/api/admin/roles/${encodeURIComponent(roleId)}`;
 }
 
-export async function fetchManagedRoles() {
-  return httpRequest<{ items: ManagedRole[] }>("/api/admin/roles");
+export async function fetchManagedRoles(options: { signal?: AbortSignal } = {}) {
+  return httpRequest<{ items: ManagedRole[] }>("/api/admin/roles", { signal: options.signal });
 }
 
 export async function createManagedRole(updates: {
