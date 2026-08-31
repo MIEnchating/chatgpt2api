@@ -84,7 +84,8 @@ func (a *App) relayCredentialForIdentitySelection(ctx context.Context, identity 
 		}
 		return relayCredential{APIKey: config.APIKey, BaseURL: config.BaseURL}, nil
 	}
-	reader := a.relayTokenReader()
+	reader, releaseRelayTokenReader := a.acquireRelayTokenReader()
+	defer releaseRelayTokenReader()
 	if reader == nil {
 		return relayCredential{}, protocol.HTTPError{Status: http.StatusBadRequest, Message: "请先配置数据库连接，并创建指定分组的令牌"}
 	}

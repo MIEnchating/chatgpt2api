@@ -70,7 +70,7 @@ type App struct {
 	storageFiles        *service.GenericStorageService
 	newAPIKeys          *service.NewAPITokenReader
 	newAPIKeysMu        sync.RWMutex
-	retiredNewAPIKeys   []*service.NewAPITokenReader
+	newRelayTokenReader func(service.NewAPITokenReaderConfig) (*service.NewAPITokenReader, error)
 	cancel              context.CancelFunc
 	historyWriteLimiter *imageConversationHistoryWriteLimiter
 	imageUploadSlots    chan struct{}
@@ -215,7 +215,7 @@ func NewApp() (*App, error) {
 		cancel()
 		return nil, fmt.Errorf("initialize audio storage: %w", err)
 	}
-	app := &App{ctx: ctx, config: cfg, auth: auth, logs: logs, logger: logger, proxy: proxy, engine: engine, images: images, videoDir: videoDir, audioDir: audioDir, videoReferenceDir: videoReferenceDir, conversationAssets: service.NewImageConversationAssetService(filepath.Join(cfg.DataDir, "image_conversation_assets")), prompts: service.NewPromptFavoriteService(storageBackend), myAssets: service.NewMyAssetService(storageBackend, storageFiles), history: service.NewImageConversationHistoryService(storageBackend), canvas: service.NewCanvasDocumentService(storageBackend), announce: service.NewAnnouncementService(storageBackend), videoContracts: videoContracts, imagePreferences: service.NewImageGenerationPreferenceService(storageBackend), customRelayConfigs: service.NewCustomRelayConfigService(storageBackend), workflows: service.NewWorkflowService(storageBackend), storageFiles: storageFiles, newAPIKeys: newAPIKeys, cancel: cancel, historyWriteLimiter: newImageConversationHistoryWriteLimiter(imageConversationHistoryWriteParallelism), imageUploadSlots: make(chan struct{}, 2), loginLimiter: newLoginRateLimiter()}
+	app := &App{ctx: ctx, config: cfg, auth: auth, logs: logs, logger: logger, proxy: proxy, engine: engine, images: images, videoDir: videoDir, audioDir: audioDir, videoReferenceDir: videoReferenceDir, conversationAssets: service.NewImageConversationAssetService(filepath.Join(cfg.DataDir, "image_conversation_assets")), prompts: service.NewPromptFavoriteService(storageBackend), myAssets: service.NewMyAssetService(storageBackend, storageFiles), history: service.NewImageConversationHistoryService(storageBackend), canvas: service.NewCanvasDocumentService(storageBackend), announce: service.NewAnnouncementService(storageBackend), videoContracts: videoContracts, imagePreferences: service.NewImageGenerationPreferenceService(storageBackend), customRelayConfigs: service.NewCustomRelayConfigService(storageBackend), workflows: service.NewWorkflowService(storageBackend), storageFiles: storageFiles, newAPIKeys: newAPIKeys, newRelayTokenReader: service.NewNewAPITokenReader, cancel: cancel, historyWriteLimiter: newImageConversationHistoryWriteLimiter(imageConversationHistoryWriteParallelism), imageUploadSlots: make(chan struct{}, 2), loginLimiter: newLoginRateLimiter()}
 	app.conversationAssets.SetStorageBudget(cfg.ImageStorageLimitBytes, func() int64 {
 		return app.images.StorageGovernance().TotalBytes
 	})
@@ -587,7 +587,8 @@ func (a *App) handleUpstreamModels(w http.ResponseWriter, r *http.Request) {
 		relayAPIKey = credential.APIKey
 		relayBaseURL = credential.BaseURL
 	}
-	newAPIKeys := a.relayTokenReader()
+	newAPIKeys, releaseRelayTokenReader := a.acquireRelayTokenReader()
+	defer releaseRelayTokenReader()
 	if relayAPIKey == "" && newAPIKeys != nil {
 		if group != "" || tokenName != "" {
 			var err error
@@ -692,7 +693,8 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusUnauthorized, "用户名或密码错误")
 			return
 		}
-		newAPIKeys := a.relayTokenReader()
+		newAPIKeys, releaseRelayTokenReader := a.acquireRelayTokenReader()
+		defer releaseRelayTokenReader()
 		if strings.EqualFold(username, a.config.AdminUsername()) || newAPIKeys == nil {
 			loginLimiter.recordFailure(requestIP, username)
 			util.WriteError(w, http.StatusUnauthorized, "用户名或密码错误")
@@ -808,13 +810,13 @@ func (a *App) handleSettings(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		var nextRelayTokenReader *service.NewAPITokenReader
-		if _, hasURL := body["relay_database_url"]; hasURL || body["relay_database_type"] != nil || body["relay_database_driver"] != nil || body["relay_database_host"] != nil || body["relay_database_name"] != nil {
+		if relayDatabaseUpdateRequested(body) {
 			databaseURL := a.config.RelayDatabaseConnectionURLWithUpdate(body)
 			databaseType := a.config.RelayDatabaseType()
 			if value, ok := body["relay_database_type"]; ok {
 				databaseType = strings.ToLower(strings.TrimSpace(fmt.Sprint(value)))
 			}
-			nextRelayTokenReader, err = service.NewNewAPITokenReader(service.NewAPITokenReaderConfig{
+			nextRelayTokenReader, err = a.newRelayTokenReader(service.NewAPITokenReaderConfig{
 				DatabaseURL: databaseURL, DatabaseType: databaseType,
 			})
 			if err != nil {
@@ -835,12 +837,13 @@ func (a *App) handleSettings(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusBadRequest, err.Error())
 			return
 		}
+		if nextRelayTokenReader != nil {
+			a.swapRelayTokenReader(nextRelayTokenReader)
+			nextRelayTokenReader = nil
+		}
 		if err := a.storageFiles.RefreshCapacityScheduler(a.ctx); err != nil {
 			util.WriteError(w, http.StatusInternalServerError, "failed to refresh storage capacity scheduler")
 			return
-		}
-		if nextRelayTokenReader != nil {
-			a.swapRelayTokenReader(nextRelayTokenReader)
 		}
 		util.WriteJSON(w, http.StatusOK, map[string]any{"config": updated})
 	default:
@@ -848,34 +851,49 @@ func (a *App) handleSettings(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (a *App) relayTokenReader() *service.NewAPITokenReader {
+func relayDatabaseUpdateRequested(update map[string]any) bool {
+	for _, key := range []string{
+		"relay_database_type",
+		"relay_database_url",
+		"relay_database_driver",
+		"relay_database_host",
+		"relay_database_port",
+		"relay_database_name",
+		"relay_database_user",
+		"relay_database_password",
+	} {
+		if _, ok := update[key]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func (a *App) acquireRelayTokenReader() (*service.NewAPITokenReader, func()) {
 	if a == nil {
-		return nil
+		return nil, func() {}
 	}
 	a.newAPIKeysMu.RLock()
-	defer a.newAPIKeysMu.RUnlock()
-	return a.newAPIKeys
+	return a.newAPIKeys, a.newAPIKeysMu.RUnlock
 }
 
 func (a *App) swapRelayTokenReader(reader *service.NewAPITokenReader) {
 	a.newAPIKeysMu.Lock()
-	if a.newAPIKeys != nil {
-		a.retiredNewAPIKeys = append(a.retiredNewAPIKeys, a.newAPIKeys)
-	}
+	previous := a.newAPIKeys
 	a.newAPIKeys = reader
 	a.newAPIKeysMu.Unlock()
+	if previous != nil && previous != reader {
+		_ = previous.Close()
+	}
 }
 
 func (a *App) closeRelayTokenReaders() {
 	a.newAPIKeysMu.Lock()
-	readers := append(a.retiredNewAPIKeys, a.newAPIKeys)
-	a.retiredNewAPIKeys = nil
+	reader := a.newAPIKeys
 	a.newAPIKeys = nil
 	a.newAPIKeysMu.Unlock()
-	for _, reader := range readers {
-		if reader != nil {
-			_ = reader.Close()
-		}
+	if reader != nil {
+		_ = reader.Close()
 	}
 }
 

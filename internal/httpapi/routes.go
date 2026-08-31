@@ -295,10 +295,12 @@ func (a *App) handleProfileRelayKey(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 			names := []string{}
-			if reader := a.relayTokenReader(); reader != nil {
+			reader, releaseRelayTokenReader := a.acquireRelayTokenReader()
+			if reader != nil {
 				status := reader.StatusForGroupAndName(r.Context(), identity, "", "")
 				names = append(names, util.AsStringSlice(status["token_names"])...)
 			}
+			releaseRelayTokenReader()
 			if config.BaseURL != "" && config.APIKey != "" {
 				names = append(names, selectedName)
 			}
@@ -312,7 +314,8 @@ func (a *App) handleProfileRelayKey(w http.ResponseWriter, r *http.Request) {
 			util.WriteJSON(w, http.StatusOK, status)
 			return
 		}
-		reader := a.relayTokenReader()
+		reader, releaseRelayTokenReader := a.acquireRelayTokenReader()
+		defer releaseRelayTokenReader()
 		if reader == nil {
 			message := "数据库连接未配置，请联系管理员"
 			if identity.Role == service.AuthRoleAdmin {
@@ -336,7 +339,8 @@ func (a *App) handleProfileBalance(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodGet:
-		reader := a.relayTokenReader()
+		reader, releaseRelayTokenReader := a.acquireRelayTokenReader()
+		defer releaseRelayTokenReader()
 		if reader == nil {
 			message := "数据库连接未配置，请联系管理员"
 			if identity.Role == service.AuthRoleAdmin {

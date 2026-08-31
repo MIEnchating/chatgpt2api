@@ -939,6 +939,142 @@ func TestSettingsDoesNotExposeRelayDatabaseCredentials(t *testing.T) {
 	}
 }
 
+func TestSettingsRefreshesRelayDatabaseReaderForEveryStructuredCredentialField(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+	adminToken := adminSessionToken(t, app)
+	if _, err := app.config.Update(map[string]any{
+		"relay_database_driver":   "postgres",
+		"relay_database_host":     "db.internal",
+		"relay_database_port":     "5432",
+		"relay_database_name":     "newapi",
+		"relay_database_user":     "reader",
+		"relay_database_password": "old-secret",
+	}); err != nil {
+		t.Fatalf("configure relay database: %v", err)
+	}
+
+	dbURL := newHTTPTestNewAPIDatabase(t)
+	initialReader, err := service.NewNewAPITokenReader(service.NewAPITokenReaderConfig{DatabaseURL: dbURL})
+	if err != nil {
+		t.Fatalf("create initial token reader: %v", err)
+	}
+	app.swapRelayTokenReader(initialReader)
+	var received []service.NewAPITokenReaderConfig
+	app.newRelayTokenReader = func(cfg service.NewAPITokenReaderConfig) (*service.NewAPITokenReader, error) {
+		received = append(received, cfg)
+		return service.NewNewAPITokenReader(service.NewAPITokenReaderConfig{DatabaseURL: dbURL, DatabaseType: cfg.DatabaseType})
+	}
+
+	tests := []struct {
+		name      string
+		body      string
+		assertURL func(*testing.T, *url.URL)
+	}{
+		{
+			name: "port",
+			body: `{"relay_database_port":"5433"}`,
+			assertURL: func(t *testing.T, parsed *url.URL) {
+				if parsed.Port() != "5433" {
+					t.Fatalf("database port = %q, want 5433", parsed.Port())
+				}
+			},
+		},
+		{
+			name: "user",
+			body: `{"relay_database_user":"next-reader"}`,
+			assertURL: func(t *testing.T, parsed *url.URL) {
+				if parsed.User.Username() != "next-reader" {
+					t.Fatalf("database user = %q, want next-reader", parsed.User.Username())
+				}
+			},
+		},
+		{
+			name: "password",
+			body: `{"relay_database_password":"next-secret"}`,
+			assertURL: func(t *testing.T, parsed *url.URL) {
+				password, _ := parsed.User.Password()
+				if password != "next-secret" {
+					t.Fatalf("database password = %q, want next-secret", password)
+				}
+			},
+		},
+	}
+
+	previous := initialReader
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodPost, "/api/settings", strings.NewReader(testCase.body))
+			setRequestAuthCookie(req, adminToken)
+			res := httptest.NewRecorder()
+			app.Handler().ServeHTTP(res, req)
+			if res.Code != http.StatusOK {
+				t.Fatalf("settings status = %d body = %s", res.Code, res.Body.String())
+			}
+			if len(received) == 0 {
+				t.Fatal("settings update did not construct a replacement token reader")
+			}
+			parsed, err := url.Parse(received[len(received)-1].DatabaseURL)
+			if err != nil {
+				t.Fatalf("parse replacement database URL: %v", err)
+			}
+			testCase.assertURL(t, parsed)
+			if err := previous.ValidateConnection(context.Background()); err == nil {
+				t.Fatal("previous token reader remains open after replacement")
+			}
+			current, release := app.acquireRelayTokenReader()
+			release()
+			if current == nil || current == previous {
+				t.Fatal("active token reader was not replaced")
+			}
+			previous = current
+		})
+	}
+}
+
+func TestSettingsRelayDatabaseReaderFailurePreservesActiveConfiguration(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+	adminToken := adminSessionToken(t, app)
+	if _, err := app.config.Update(map[string]any{
+		"relay_database_driver": "postgres",
+		"relay_database_host":   "db.internal",
+		"relay_database_port":   "5432",
+		"relay_database_name":   "newapi",
+		"relay_database_user":   "reader",
+	}); err != nil {
+		t.Fatalf("configure relay database: %v", err)
+	}
+	dbURL := newHTTPTestNewAPIDatabase(t)
+	activeReader, err := service.NewNewAPITokenReader(service.NewAPITokenReaderConfig{DatabaseURL: dbURL})
+	if err != nil {
+		t.Fatalf("create active token reader: %v", err)
+	}
+	app.swapRelayTokenReader(activeReader)
+	app.newRelayTokenReader = func(service.NewAPITokenReaderConfig) (*service.NewAPITokenReader, error) {
+		return nil, errors.New("replacement unavailable")
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/settings", strings.NewReader(`{"relay_database_port":"5433"}`))
+	setRequestAuthCookie(req, adminToken)
+	res := httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusBadRequest || !strings.Contains(res.Body.String(), "数据库连接配置无效") {
+		t.Fatalf("settings status = %d body = %s", res.Code, res.Body.String())
+	}
+	if got := app.config.Get()["relay_database_port"]; got != "5432" {
+		t.Fatalf("persisted database port = %#v, want 5432", got)
+	}
+	current, release := app.acquireRelayTokenReader()
+	release()
+	if current != activeReader {
+		t.Fatal("failed replacement changed the active token reader")
+	}
+	if err := activeReader.ValidateConnection(context.Background()); err != nil {
+		t.Fatalf("active token reader was closed after failed replacement: %v", err)
+	}
+}
+
 func TestSettingsRejectsInvalidStorageCapacityCronWithoutPersisting(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()
