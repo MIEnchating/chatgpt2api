@@ -889,10 +889,6 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
   const [audioModel, setAudioModel] = useState("gpt-4o-mini-tts");
   const [audioModels, setAudioModels] = useState(["gpt-4o-mini-tts"]);
   const { tokenNameForModel } = useRelayTokenPreferences();
-  const imageRelayTokenName = tokenNameForModel("image", imageModel);
-  const videoRelayTokenName = tokenNameForModel("video", videoModel);
-  const audioRelayTokenName = tokenNameForModel("audio", audioModel);
-  const textRelayTokenName = tokenNameForModel("text", textModel);
   const [relayTokenDialogKind, setRelayTokenDialogKind] = useState<RelayTokenCreationKind | null>(null);
   const [, setSaveState] = useState<SaveState>("saved");
   const [switchPhase, setSwitchPhase] = useState<CanvasSwitchPhase>(null);
@@ -1922,7 +1918,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         : type === "audio"
           ? audioModel
           : imageModel || imageGenerationPreferences.default_image_model;
-      const relayTokenName = type === "video" ? videoRelayTokenName : type === "audio" ? audioRelayTokenName : imageRelayTokenName;
+      const relayTokenName = tokenNameForModel(type, generationModel);
       if (!generationModel || !relayTokenName.trim()) return { ok: false, code: "model_not_configured", message: `请先在个人中心完成${type === "video" ? "视频" : type === "audio" ? "音频" : "图片"}模型和密钥配置` };
       let videoSeconds: number | undefined;
       let videoGenerateAudio: boolean | undefined;
@@ -3195,9 +3191,10 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       : plan.requestPrompt;
     const context = buildCanvasGenerationContext(sourceNode.id, nodesRef.current, connectionsRef.current, sourcePrompt);
     if (!context.prompt.trim() && !context.referenceImageURLs.length) return toast.error("请填写文本指令或连接有效输入");
-    if (!textRelayTokenName.trim()) { setRelayTokenDialogKind("text"); return; }
     const model = sourceNode.generation_text_model?.trim() || textModel;
     if (!model) return toast.error("没有可用的文本模型");
+    const relayTokenName = tokenNameForModel("text", model);
+    if (!relayTokenName.trim()) { setRelayTokenDialogKind("text"); return; }
     const resultIDs = retrying ? [requestedNode.id] : plan.createsChildNodes ? Array.from({ length: plan.count }, () => `text-${randomID()}`) : [requestedNode.id];
     const childIDs = retrying ? [] : plan.createsChildNodes ? resultIDs : [];
     const clientTaskIDs = new Map(resultIDs.map((resultID) => [resultID, `canvas-text-${randomID()}`]));
@@ -3245,7 +3242,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       const outcomes = await Promise.all(resultIDs.map(async (resultID) => {
         const clientTaskID = clientTaskIDs.get(resultID) || `canvas-text-${randomID()}`;
         try {
-          const submitted = await createChatGenerationTask({ clientTaskId: clientTaskID, prompt: context.prompt.trim(), model, messages, relayTokenName: textRelayTokenName, requestOptions: { signal: controller.signal } });
+          const submitted = await createChatGenerationTask({ clientTaskId: clientTaskID, prompt: context.prompt.trim(), model, messages, relayTokenName, requestOptions: { signal: controller.signal } });
           const serverTaskID = submitted.id || clientTaskID;
           addActiveGenerationTask(activeGeneration, serverTaskID, clientTaskID);
           replaceNodes(nodesRef.current.map((node) => node.id === resultID ? { ...node, task_id: serverTaskID } : node));
@@ -3299,7 +3296,8 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     const generationContext = buildCanvasGenerationContext(sourceNode.id, nodesRef.current, connectionsRef.current, contextPrompt);
     const text = generationContext.prompt.trim();
     if (!text) return toast.error("请填写音频内容或连接文本节点");
-    const relayTokenName = audioRelayTokenName;
+    const generationAudioModel = sourceNode.generation_audio_model || audioModel;
+    const relayTokenName = tokenNameForModel("audio", generationAudioModel);
     if (!relayTokenName.trim()) { setRelayTokenDialogKind("audio"); return; }
     const taskID = `canvas-audio-${randomID()}`;
     const controller = new AbortController();
@@ -3307,7 +3305,6 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     const createsResult = !retrying && (requestedNode.type === "config" || Boolean(requestedNode.url));
     const resultID = createsResult ? `audio-${randomID()}` : requestedNode.id;
     const activeGeneration = registerActiveGeneration(controller, [requestedNode.id, sourceNode.id, resultID], [taskID]);
-    const generationAudioModel = sourceNode.generation_audio_model || audioModel;
     const settingsSource: CanvasNode = {
       ...canvasAgentAudioNodeParameters(generationAudioModel, imageGenerationPreferences.default_audio_voice, imageGenerationPreferences.audio_instructions, "", { format: imageGenerationPreferences.default_audio_format, speed: imageGenerationPreferences.default_audio_speed }),
       ...sourceNode,
@@ -3402,12 +3399,13 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
   async function runPanoramaGeneration(nodeID: string, retry = false) {
     const sourceNode = nodesRef.current.find((node) => node.id === nodeID && node.type === "panorama");
     if (!sourceNode || activeGenerationsRef.current.has(nodeID)) return;
-    if (!imageRelayTokenName.trim()) { setRelayTokenDialogKind("image"); return; }
     const retrying = retry && sourceNode.generation_status === "error";
     const sourcePrompt = String(sourceNode.panorama_source_prompt || sourceNode.prompt || "").trim();
     const context = retrying ? null : buildCanvasGenerationContext(nodeID, nodesRef.current, connectionsRef.current, sourcePrompt);
     const effectivePrompt = context?.prompt.trim() || "";
     const generationModel = sourceNode.generation_model?.trim() || imageModel.trim();
+    const relayTokenName = tokenNameForModel("image", generationModel);
+    if (!relayTokenName.trim()) { setRelayTokenDialogKind("image"); return; }
     const referenceLimit = imageReferenceImageLimit(generationModel);
     const referenceImageURLs = (retrying
       ? panoramaRetryReferenceURLs(sourceNode.generation_type, sourceNode.generation_reference_urls)
@@ -3519,8 +3517,8 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         const clientTaskID = taskIDs.get(targetID) || `canvas-panorama-${randomID()}`;
         try {
           const submitted = referenceFiles.length
-            ? await createImageEditTask(clientTaskID, referenceFiles, prompt, generationModel || undefined, PANORAMA_IMAGE_SIZE, PANORAMA_IMAGE_SIZE, quality, 1, "private", resolution, outputFormat, outputCompression, stream, partialImages, { apiMode: imageGenerationPreferences.api_mode, responseFormatB64JSON: sourceNode.generation_response_format_b64_json, generationSource: "canvas" }, undefined, imageRelayTokenName, undefined, undefined, { signal: controller.signal })
-            : await createImageGenerationTask(clientTaskID, prompt, generationModel || undefined, PANORAMA_IMAGE_SIZE, PANORAMA_IMAGE_SIZE, quality, 1, "private", resolution, outputFormat, outputCompression, stream, partialImages, { apiMode: imageGenerationPreferences.api_mode, responseFormatB64JSON: sourceNode.generation_response_format_b64_json, generationSource: "canvas" }, undefined, imageRelayTokenName, undefined, undefined, { signal: controller.signal });
+            ? await createImageEditTask(clientTaskID, referenceFiles, prompt, generationModel || undefined, PANORAMA_IMAGE_SIZE, PANORAMA_IMAGE_SIZE, quality, 1, "private", resolution, outputFormat, outputCompression, stream, partialImages, { apiMode: imageGenerationPreferences.api_mode, responseFormatB64JSON: sourceNode.generation_response_format_b64_json, generationSource: "canvas" }, undefined, relayTokenName, undefined, undefined, { signal: controller.signal })
+            : await createImageGenerationTask(clientTaskID, prompt, generationModel || undefined, PANORAMA_IMAGE_SIZE, PANORAMA_IMAGE_SIZE, quality, 1, "private", resolution, outputFormat, outputCompression, stream, partialImages, { apiMode: imageGenerationPreferences.api_mode, responseFormatB64JSON: sourceNode.generation_response_format_b64_json, generationSource: "canvas" }, undefined, relayTokenName, undefined, undefined, { signal: controller.signal });
           const serverTaskID = submitted.id || clientTaskID;
           addActiveGenerationTask(activeGeneration, serverTaskID, clientTaskID);
           replaceNodes(nodesRef.current.map((node) => node.id === targetID ? { ...node, task_id: serverTaskID } : node));
@@ -3600,11 +3598,13 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
   async function runVideoGeneration(nodeID: string, prompt?: string, concurrent = true) {
     const sourceNode = nodesRef.current.find((node) => node.id === nodeID && (node.type === "video" || node.type === "config" && node.generation_mode === "video"));
     if (!sourceNode || activeGenerationsRef.current.has(nodeID) || runningNodeID && !concurrent) return;
-    const selectedModel = String(sourceNode.generation_video_model || "").trim();
+    const params = canvasVideoParameters(sourceNode);
+    const selectedModel = params.generation_video_model.trim();
     if (!selectedModel || !videoModels.includes(selectedModel)) {
       return toast.error("请选择全局模型设置中已启用的视频模型");
     }
-    if (!videoRelayTokenName.trim()) {
+    const relayTokenName = tokenNameForModel("video", selectedModel);
+    if (!relayTokenName.trim()) {
       setRelayTokenDialogKind("video");
       return;
     }
@@ -3612,8 +3612,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     const text = context.prompt.trim();
 		const requestPrompt = applyCameraPrompt(text, sourceNode.camera_control);
     if (!text && !context.referenceImageURLs.length && !context.firstFrameURL && !context.lastFrameURL && !context.referenceVideoURLs.length && !context.referenceAudioURLs.length) return toast.error("请填写视频描述或连接参考素材");
-			const params = canvasVideoParameters(sourceNode);
-			const configuredVideoReferenceURLs = params.generation_video_reference_urls.filter((url) => url.trim());
+				const configuredVideoReferenceURLs = params.generation_video_reference_urls.filter((url) => url.trim());
 			const configuredImageReferenceURLs = params.generation_video_reference_image_urls.filter((url) => url.trim());
 			const configuredAudioReferenceURLs = params.generation_video_reference_audio_urls.filter((url) => url.trim());
 			const frameReferencesEnabled = supportsVideoFrameReferences(params.generation_video_model);
@@ -3718,7 +3717,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
 				referenceAudioURLs: normalizedVideo.referenceAudioURLs,
 				referenceMode: normalizedVideo.referenceMode,
 					systemPrompt: imageGenerationPreferences.video_system_prompt || undefined,
-				relayTokenName: videoRelayTokenName.trim() || undefined,
+				relayTokenName,
 				requestOptions: { signal: controller.signal },
 				});
       const serverTaskID = submitted.id || taskID;
@@ -3773,16 +3772,17 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     if (videoNode) return runVideoGeneration(nodeID, prompt, concurrent);
     const sourceNode = nodesRef.current.find((node) => node.id === nodeID && (node.type === "image" || node.type === "config" || options.forceImageGeneration && node.type === "panorama"));
     if (!sourceNode || activeGenerationsRef.current.has(nodeID)) return;
-    if (!imageRelayTokenName.trim()) {
-      setRelayTokenDialogKind("image");
-      return;
-    }
     const retrying = sourceNode.type === "image" && retry && sourceNode.generation_status === "error";
     const retryConfiguration = retrying && !sourceNode.generation_type
       ? findCanvasRetryConfigurationNode(sourceNode.id, nodesRef.current, connectionsRef.current)
       : null;
     const contextNode = retryConfiguration || sourceNode;
     const generationModel = options.generationModel?.trim() || canvasGenerationModel(imageModel, sourceNode, retryConfiguration, retrying);
+    const taskRelayTokenName = tokenNameForModel("image", generationModel).trim();
+    if (!taskRelayTokenName) {
+      setRelayTokenDialogKind("image");
+      return;
+    }
     const contextPrompt = prompt ?? retryConfiguration?.composer_content ?? retryConfiguration?.prompt ?? sourceNode.composer_content ?? sourceNode.prompt ?? "";
     const context = buildCanvasGenerationContext(contextNode.id, nodesRef.current, connectionsRef.current, contextPrompt);
     const text = retrying ? String(sourceNode.prompt || context.prompt).trim() : context.prompt;
@@ -3821,7 +3821,6 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       codexCLICompatibility: parameters.generation_codex_cli_compatibility ?? false,
       generationSource: "canvas" as const,
     };
-    const taskRelayTokenName = imageRelayTokenName.trim() || undefined;
     const taskID = `canvas-${mode}-${randomID()}`;
     const controller = new AbortController();
     const generationEpoch = concurrent ? generationEpochRef.current : generationEpochRef.current + 1;
@@ -4264,6 +4263,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       const inputs = canvasConfigInputs(node.id, nodesRef.current, connectionsRef.current);
       const canGenerate = canGenerateCanvasConfig(node, inputs);
       const nodeTextModel = node.generation_text_model || textModel;
+      const nodeAudioModel = node.generation_audio_model || audioModels[0] || "gpt-4o-mini-tts";
       const configVideoParams = canvasVideoParameters(node);
       const canGenerateWithParameters = mode !== "video" || videoSecondsIsValid(configVideoParams.generation_video_model, configVideoParams.generation_video_seconds);
       const configPromptTools = mode === "image"
@@ -4271,7 +4271,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         : mode === "text"
           ? <CanvasInlineModelSelect value={nodeTextModel} models={textModels} label="文本模型" onChange={(generation_text_model) => updateNodeGenerationParameters(node.id, { generation_text_model })} />
           : mode === "audio"
-            ? <CanvasInlineModelSelect value={node.generation_audio_model || audioModels[0] || "gpt-4o-mini-tts"} models={audioModels} label="音频模型" onChange={(generation_audio_model) => updateNodeGenerationParameters(node.id, { generation_audio_model })} />
+            ? <CanvasInlineModelSelect value={nodeAudioModel} models={audioModels} label="音频模型" onChange={(generation_audio_model) => updateNodeGenerationParameters(node.id, { generation_audio_model })} />
             : <CanvasInlineModelSelect value={canvasVideoParameters(node).generation_video_model} models={videoModels} label="视频模型" onChange={(model) => updateNodeGenerationParameters(node.id, canvasVideoModelPatch(model))} />;
       return (
         <div className="flex h-full min-h-0 flex-col">
@@ -4286,7 +4286,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
               >
                 <label className="grid gap-1 text-xs"><span className="text-muted-foreground">生成模式</span><Select value={mode} onValueChange={(value: NonNullable<CanvasNode["generation_mode"]>) => updateNodeGenerationParameters(node.id, { generation_mode: value })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent><SelectItem value="image">图片</SelectItem><SelectItem value="text">文本</SelectItem><SelectItem value="video">视频</SelectItem><SelectItem value="audio">音频</SelectItem></SelectContent></Select></label>
                 {mode === "image" ? <><CanvasImageParameterPopover node={node} imageModel={node.generation_model || imageModel} imageModels={imageModels} onChange={(patch) => updateNodeGenerationParameters(node.id, patch)} expanded showModel={false} /><CanvasCameraControl value={node.camera_control} onChange={(camera_control) => updateNodeGenerationParameters(node.id, { camera_control })} className="w-full" /></> : null}
-                {mode === "audio" ? <CanvasAudioSettingsFields node={node} models={audioModels} audioReferences={canvasAudioReferences(node.id, nodesRef.current, connectionsRef.current)} relayTokenName={audioRelayTokenName} onChange={(patch) => updateNodeGenerationParameters(node.id, patch)} showModel={false} /> : null}
+                {mode === "audio" ? <CanvasAudioSettingsFields node={node} models={audioModels} audioReferences={canvasAudioReferences(node.id, nodesRef.current, connectionsRef.current)} relayTokenName={tokenNameForModel("audio", nodeAudioModel)} onChange={(patch) => updateNodeGenerationParameters(node.id, patch)} showModel={false} /> : null}
               </CanvasConfigComposer>
               {mode === "video" ? <div className="h-[640px] overflow-hidden rounded-xl border border-border bg-card p-3"><CanvasVideoPromptPanel node={{ ...node, prompt: node.composer_content ?? node.prompt }} inputs={inputs} running={running} generationBusy={false} showPromptEditor={false} showGenerateFooter={false} videoModels={videoModels} onPromptChange={(value, commit) => updateNodeComposerContent(node.id, value, commit)} onParametersChange={(patch) => updateNodeGenerationParameters(node.id, patch)} onGenerate={(prompt) => void runVideoGeneration(node.id, prompt)} onStop={() => requestStopGeneration(node.id)} /></div> : null}
             </div>
@@ -4312,7 +4312,8 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     }
     if (node.type === "audio") {
       const context = buildCanvasGenerationContext(node.id, nodesRef.current, connectionsRef.current, node.prompt || "");
-      return <CanvasAudioPromptPanel node={node} models={audioModels} audioReferences={canvasAudioReferences(node.id, nodesRef.current, connectionsRef.current)} relayTokenName={audioRelayTokenName} running={nodeGenerationRunning(node.id)} busy={false} uploading={uploadingNodeID === node.id} canGenerate={Boolean(context.prompt.trim())} onChange={(patch) => updateNodeGenerationParameters(node.id, patch)} onPromptChange={(value, commit) => updateNodePrompt(node.id, value, commit)} onUpload={() => requestNodeMediaUpload(node.id)} onGenerate={() => void runAudioGeneration(node.id)} onStop={() => requestStopGeneration(node.id)} />;
+      const nodeAudioModel = node.generation_audio_model || audioModels[0] || "gpt-4o-mini-tts";
+      return <CanvasAudioPromptPanel node={node} models={audioModels} audioReferences={canvasAudioReferences(node.id, nodesRef.current, connectionsRef.current)} relayTokenName={tokenNameForModel("audio", nodeAudioModel)} running={nodeGenerationRunning(node.id)} busy={false} uploading={uploadingNodeID === node.id} canGenerate={Boolean(context.prompt.trim())} onChange={(patch) => updateNodeGenerationParameters(node.id, patch)} onPromptChange={(value, commit) => updateNodePrompt(node.id, value, commit)} onUpload={() => requestNodeMediaUpload(node.id)} onGenerate={() => void runAudioGeneration(node.id)} onStop={() => requestStopGeneration(node.id)} />;
     }
     if (node.type === "panorama") {
       const context = buildCanvasGenerationContext(node.id, nodesRef.current, connectionsRef.current, node.panorama_source_prompt || node.prompt || "");

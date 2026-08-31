@@ -139,6 +139,16 @@ test("canvas generation is concurrent per node and stopping is task scoped", () 
   assert.match(taskQueueSource, /navigate\(canvasProjectPath\(canvasID\)\)/);
 });
 
+test("canvas routes every generation through the key matched to its actual node model", () => {
+  assert.match(pageSource, /const relayTokenName = tokenNameForModel\("text", model\)/);
+  assert.match(pageSource, /const relayTokenName = tokenNameForModel\("audio", generationAudioModel\)/);
+  assert.match(pageSource, /const relayTokenName = tokenNameForModel\("image", generationModel\)/);
+  assert.match(pageSource, /const relayTokenName = tokenNameForModel\("video", selectedModel\)/);
+  assert.match(pageSource, /const taskRelayTokenName = tokenNameForModel\("image", generationModel\)\.trim\(\)/);
+  assert.match(pageSource, /relayTokenName=\{tokenNameForModel\("audio", nodeAudioModel\)\}/);
+  assert.doesNotMatch(pageSource, /const (?:image|video|audio|text)RelayTokenName = tokenNameForModel/);
+});
+
 test("shared tooltips include a directional arrow and comfortable trigger spacing", () => {
   assert.match(tooltipSource, /sideOffset = 10/);
   assert.match(tooltipSource, /<TooltipPrimitive\.Arrow/);

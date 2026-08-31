@@ -1,5 +1,4 @@
 export type RelayTokenKind = "text" | "image" | "video" | "audio";
-export const RELAY_TOKEN_KINDS = ["text", "image", "video", "audio"] as const;
 
 export type RelayTokenNames = Record<RelayTokenKind, string[]>;
 export type RelayTokenModels = Record<string, string[]>;
@@ -20,7 +19,7 @@ type RelayTokenPreferenceSource = {
   default_audio_relay_token_names?: unknown;
 };
 
-export function normalizeRelayTokenNames(value: unknown) {
+function normalizeRelayTokenNames(value: unknown) {
   if (!Array.isArray(value)) return [];
   return Array.from(new Set(value.map((name) => String(name || "").trim()).filter(Boolean))).slice(0, 20);
 }

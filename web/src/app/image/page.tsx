@@ -2161,9 +2161,9 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     const outputFormat = isImageOutputFormat(intent.outputFormat) ? intent.outputFormat : DEFAULT_IMAGE_OUTPUT_FORMAT;
     const intentModel = isImageCreationModel(intent.model) ? intent.model : defaultImageModel;
 
-    const sourceImageUrls = intent.sourceImageUrls.length > 0 ? intent.sourceImageUrls : [intent.sourceImageUrl];
+    const sourceImageUrls = intent.sourceImageUrls;
     const usesPublicImageFallback = intent.sourceKind !== "original_references";
-    if (sourceImageUrls.length > 0 && !imageWorkbenchAcceptsReferenceImages(intentModel)) {
+    if (!imageWorkbenchAcceptsReferenceImages(intentModel)) {
       toast.error(`模型 ${intentModel} 暂不支持参考图编辑`);
       return;
     }
@@ -2179,9 +2179,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     const toastId = toast.loading(
       usesPublicImageFallback
         ? "正在读取公开图作为参考图"
-        : sourceImageUrls.length > 1
-          ? "正在读取公开的原始参考图"
-          : "正在读取公开的原始参考图",
+        : "正在读取公开的原始参考图",
     );
     void buildReferenceImagesFromUrls(sourceImageUrls, "public-gallery-reference")
       .then((loadedReferences) => {

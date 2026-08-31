@@ -1446,15 +1446,6 @@ export async function createVideoModelContract(input: VideoModelContractMutation
   return response;
 }
 
-export async function updateVideoModelContract(id: string, input: VideoModelContractMutation) {
-  const response = await httpRequest<{ item: ManagedVideoModelContract; items: ManagedVideoModelContract[] }>(
-    `/api/admin/video-model-contracts/${encodeURIComponent(id)}`,
-    { method: "PUT", body: input },
-  );
-  modelConfigCache.clear();
-  return response;
-}
-
 export async function saveVideoModelContractDraft(id: string, input: VideoModelContractMutation) {
   return httpRequest<{ item: ManagedVideoModelContract; items: ManagedVideoModelContract[] }>(
     `/api/admin/video-model-contracts/${encodeURIComponent(id)}/draft`,
