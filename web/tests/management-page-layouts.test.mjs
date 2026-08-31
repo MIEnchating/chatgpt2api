@@ -129,6 +129,13 @@ test("role permission queries abort stale loads and preserve the latest selectio
   assert.match(rbacSource, /requestID !== loadRBACRequestRef\.current/);
   assert.match(rbacSource, /loadRBACRequestRef\.current \+= 1;[\s\S]*loadRBACAbortRef\.current\?\.abort\(\)/);
   assert.match(rbacSource, /selectedRoleIdRef\.current = roleID;[\s\S]*setSelectedRoleId\(roleID\)/);
+  assert.match(rbacSource, /const savingRoleID = selectedRole\.id/);
+  assert.match(rbacSource, /const savingDraftVersion = draftVersionRef\.current/);
+  assert.match(rbacSource, /selectedRoleIdRef\.current === savingRoleID[\s\S]*draftVersionRef\.current === savingDraftVersion[\s\S]*applySelectedRole/);
+  assert.match(rbacSource, /const applySelectedRole = useCallback[\s\S]{0,180}draftVersionRef\.current \+= 1/);
+  assert.match(rbacSource, /onChange=\{\(event\) => \{\s*draftVersionRef\.current \+= 1;\s*setRoleName\(event\.target\.value\)/);
+  assert.match(rbacSource, /onMenuPathsChange=\{\(paths\) => \{\s*draftVersionRef\.current \+= 1;\s*setSelectedMenuPaths\(paths\)/);
+  assert.match(rbacSource, /onApiPermissionsChange=\{\(permissions\) => \{\s*draftVersionRef\.current \+= 1;\s*setSelectedApiPermissions\(permissions\)/);
   assert.match(apiSource, /fetchManagedRoles\(options: \{ signal\?: AbortSignal \} = \{\}\)/);
   assert.match(apiSource, /fetchPermissionCatalog\(options: \{ signal\?: AbortSignal \} = \{\}\)/);
 });

@@ -1,7 +1,24 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { generatedMediaAsset, persistCreationTaskOutputs } from "../src/services/generation-result-storage.ts";
+import {
+  generatedAssetRegistrationKey,
+  generatedMediaAsset,
+  persistCreationTaskOutputs,
+} from "../src/services/generation-result-storage.ts";
+
+test("generated asset registration is isolated by authenticated session", () => {
+  const asset = { id: "generated-video:shared-task:0", storageKey: "server:shared-video" };
+
+  assert.notEqual(
+    generatedAssetRegistrationKey(asset, "session-a"),
+    generatedAssetRegistrationKey(asset, "session-b"),
+  );
+  assert.equal(
+    generatedAssetRegistrationKey(asset, " session-a "),
+    "session-a:generated-video:shared-task:0:server:shared-video",
+  );
+});
 
 test("stored video results build a stable material record with prompt and source", () => {
   const task = {

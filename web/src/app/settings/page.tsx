@@ -38,7 +38,7 @@ function AdminSettingsPageContent({ session }: { session: StoredAuthSession }) {
   const settingsItems = [
     { id: "config", label: "基础与数据库", icon: Settings2, content: <ConfigCard isAdmin={session.role === "admin"} /> },
     { id: "model-config", label: "模型配置", icon: Sparkles, content: <ModelConfigCard session={session} /> },
-		...(session.role === "admin" ? [{ id: "video-model-contracts", label: "视频模型契约", icon: Clapperboard, content: <VideoModelContractsCard /> }] : []),
+		...(session.role === "admin" ? [{ id: "video-model-contracts", label: "视频模型契约", icon: Clapperboard, content: <VideoModelContractsCard key={session.key} sessionKey={session.key} /> }] : []),
 		{ id: "image-object-storage", label: "存储配置", icon: Database, content: <StorageProvidersCard /> },
 		{ id: "media-storage-governance", label: "媒体治理", icon: Archive, content: <ImageStorageGovernanceCard /> },
     ...(session.role === "admin" ? [{ id: "announcements", label: "公告管理", icon: Bell, content: <AnnouncementsCard /> }] : []),

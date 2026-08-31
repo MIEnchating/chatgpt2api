@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"database/sql/driver"
 	"errors"
 	"path/filepath"
 	"strings"
@@ -8,6 +9,16 @@ import (
 
 	"chatgpt2api/internal/model"
 )
+
+type storageObjectDeleteResult struct {
+	affected int64
+	err      error
+}
+
+func (r storageObjectDeleteResult) LastInsertId() (int64, error) { return 0, nil }
+func (r storageObjectDeleteResult) RowsAffected() (int64, error) { return r.affected, r.err }
+
+var _ driver.Result = storageObjectDeleteResult{}
 
 func TestDatabaseBackendStorageObjectLifecycle(t *testing.T) {
 	backend, err := NewDatabaseBackend("sqlite:///" + filepath.ToSlash(filepath.Join(t.TempDir(), "storage.db")))
@@ -47,5 +58,12 @@ func TestStorageObjectUsageUsesProviderMIMEIndex(t *testing.T) {
 	}
 	if !strings.Contains(plan, "idx_storage_objects_provider_mime") {
 		t.Fatalf("storage usage query plan = %q", plan)
+	}
+}
+
+func TestStorageObjectDeleteResultPropagatesRowsAffectedError(t *testing.T) {
+	wantErr := errors.New("rows affected unavailable")
+	if err := storageObjectDeleteResultError(storageObjectDeleteResult{err: wantErr}); !errors.Is(err, wantErr) {
+		t.Fatalf("storageObjectDeleteResultError() error = %v, want %v", err, wantErr)
 	}
 }

@@ -72,6 +72,7 @@ function permissionCountLabel(role: ManagedRole) {
 
 function RBACContent() {
   const selectedRoleIdRef = useRef("");
+  const draftVersionRef = useRef(0);
   const loadRBACAbortRef = useRef<AbortController | null>(null);
   const loadRBACRequestRef = useRef(0);
   const [roles, setRoles] = useState<ManagedRole[]>([]);
@@ -94,6 +95,7 @@ function RBACContent() {
 
   const applySelectedRole = useCallback((role: ManagedRole | null | undefined) => {
     const roleID = role?.id || "";
+    draftVersionRef.current += 1;
     selectedRoleIdRef.current = roleID;
     setSelectedRoleId(roleID);
     setRoleName(role?.name || "");
@@ -183,9 +185,11 @@ function RBACContent() {
       toast.error("角色名称不能为空");
       return;
     }
+    const savingRoleID = selectedRole.id;
+    const savingDraftVersion = draftVersionRef.current;
     setIsSaving(true);
     try {
-      const data = await updateManagedRole(selectedRole.id, {
+      const data = await updateManagedRole(savingRoleID, {
         name: nextName,
         description: roleDescription.trim(),
         menu_paths: selectedMenuPaths,
@@ -193,7 +197,12 @@ function RBACContent() {
       });
       const nextRoles = normalizeManagedRoles(data.items);
       setRoles(nextRoles);
-      applySelectedRole(nextRoles.find((role) => role.id === data.item.id) || data.item);
+      if (
+        selectedRoleIdRef.current === savingRoleID
+        && draftVersionRef.current === savingDraftVersion
+      ) {
+        applySelectedRole(nextRoles.find((role) => role.id === data.item.id) || data.item);
+      }
       toast.success("角色已保存");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "保存角色失败");
@@ -395,7 +404,10 @@ function RBACContent() {
                   角色名称
                   <Input
                     value={roleName}
-                    onChange={(event) => setRoleName(event.target.value)}
+                    onChange={(event) => {
+                      draftVersionRef.current += 1;
+                      setRoleName(event.target.value);
+                    }}
                     placeholder="角色名称"
                     disabled={!selectedRole || isLoading || isSaving}
                     className="h-10 rounded-lg text-foreground"
@@ -405,7 +417,10 @@ function RBACContent() {
                   角色说明
                   <Input
                     value={roleDescription}
-                    onChange={(event) => setRoleDescription(event.target.value)}
+                    onChange={(event) => {
+                      draftVersionRef.current += 1;
+                      setRoleDescription(event.target.value);
+                    }}
                     placeholder="说明角色职责或适用范围"
                     disabled={!selectedRole || isLoading || isSaving}
                     className="h-10 rounded-lg text-foreground"
@@ -424,8 +439,14 @@ function RBACContent() {
                   apis={catalog.apis}
                   selectedMenuPaths={selectedMenuPaths}
                   selectedApiPermissions={selectedApiPermissions}
-                  onMenuPathsChange={setSelectedMenuPaths}
-                  onApiPermissionsChange={setSelectedApiPermissions}
+                  onMenuPathsChange={(paths) => {
+                    draftVersionRef.current += 1;
+                    setSelectedMenuPaths(paths);
+                  }}
+                  onApiPermissionsChange={(permissions) => {
+                    draftVersionRef.current += 1;
+                    setSelectedApiPermissions(permissions);
+                  }}
                   disabled={isSaving}
                 />
               ) : (

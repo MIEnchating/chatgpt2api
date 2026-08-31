@@ -43,7 +43,7 @@ test("assets use account-scoped server storage with in-memory request deduplicat
   assert.match(assets, /epoch === assetCacheEpoch/);
   assert.match(assetsHook, /activeScopeRef\.current !== scope/);
   assert.match(assetsHook, /setAssets\(\[\]\)/);
-  assert.match(generatedAssets, /registrationKey = `\$\{asset\.id\}:\$\{asset\.storageKey/);
+  assert.match(generatedAssets, /generatedAssetRegistrationKey\([\s\S]*?getCachedAuthSession\(\)\?\.key/);
   assert.match(generatedAssets, /MAX_REGISTERED_GENERATED_ASSETS = 512/);
   assert.doesNotMatch(promptPulls, /localStorage|sessionStorage|prompt-source-pull-states|prompt-source-last-run/);
   assert.doesNotMatch(promptPulls, /setInterval|prompt-source-pulls/);

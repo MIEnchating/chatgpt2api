@@ -29,11 +29,11 @@ test("prompt library handoff preserves references and is consumed once", () => {
       source: "test",
       sourceLabel: "Test",
       isNsfw: false,
-    });
-    const prompt = consumePromptForWorkbench();
+    }, "session-a");
+    const prompt = consumePromptForWorkbench("session-a");
     assert.equal(prompt?.prompt, "studio product photo");
     assert.deepEqual(prompt?.referenceImageUrls, ["https://example.test/reference.png"]);
-    assert.equal(consumePromptForWorkbench(), null);
+    assert.equal(consumePromptForWorkbench("session-a"), null);
   } finally {
     globalThis.window = previousWindow;
   }
@@ -55,8 +55,33 @@ test("prompt library handoff does not invent a generation mode", () => {
       source: "test",
       sourceLabel: "Test",
       isNsfw: false,
-    });
-    assert.equal(consumePromptForWorkbench()?.mode, undefined);
+    }, "session-a");
+    assert.equal(consumePromptForWorkbench("session-a")?.mode, undefined);
+  } finally {
+    globalThis.window = previousWindow;
+  }
+});
+
+test("prompt library handoff cannot cross authenticated sessions", () => {
+  const previousWindow = globalThis.window;
+  globalThis.window = { sessionStorage: memorySessionStorage() };
+  try {
+    stagePromptForWorkbench({
+      id: "private-prompt",
+      title: "账号 A 提示词",
+      preview: "",
+      referenceImageUrls: [],
+      prompt: "account a content",
+      author: "author",
+      category: "摄影",
+      tags: [],
+      source: "test",
+      sourceLabel: "Test",
+      isNsfw: false,
+    }, "session-a");
+
+    assert.equal(consumePromptForWorkbench("session-b"), null);
+    assert.equal(consumePromptForWorkbench("session-a"), null);
   } finally {
     globalThis.window = previousWindow;
   }

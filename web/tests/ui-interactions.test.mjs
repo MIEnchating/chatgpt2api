@@ -21,6 +21,7 @@ const imageComposerSource = await readFile(new URL("../src/app/image/components/
 const imagePageSource = await readFile(new URL("../src/app/image/page.tsx", import.meta.url), "utf8");
 const logGovernanceSource = await readFile(new URL("../src/app/settings/components/log-governance-card.tsx", import.meta.url), "utf8");
 const videoContractsSource = await readFile(new URL("../src/app/settings/components/video-model-contracts-card.tsx", import.meta.url), "utf8");
+const settingsPageSource = await readFile(new URL("../src/app/settings/page.tsx", import.meta.url), "utf8");
 const settingsStoreSource = await readFile(new URL("../src/app/settings/store.ts", import.meta.url), "utf8");
 const settingsConfigSource = await readFile(new URL("../src/app/settings/components/config-card.tsx", import.meta.url), "utf8");
 const profileSource = await readFile(new URL("../src/app/profile/page.tsx", import.meta.url), "utf8");
@@ -233,6 +234,21 @@ test("video contracts support reviewed JSON import and ID-free export", () => {
   assert.match(videoContractsSource, /pendingImportSummary\.updated/);
   assert.match(videoContractsSource, /同名契约将更新/);
   assert.doesNotMatch(videoContractsSource, /videoContractTransferDocument[\s\S]*created_at/);
+});
+
+test("video contract loads reject obsolete sessions and version-history requests", () => {
+  assert.match(settingsPageSource, /<VideoModelContractsCard key=\{session\.key\} sessionKey=\{session\.key\} \/>/);
+  assert.match(videoContractsSource, /fetchAdminVideoModelContracts\(\{ signal: controller\.signal \}\)/);
+  assert.match(videoContractsSource, /contractLoadVersionRef\.current !== requestVersion/);
+  assert.match(videoContractsSource, /fetchVideoModelContractVersions\(item\.id, \{ signal: controller\.signal \}\)/);
+  assert.match(videoContractsSource, /versionsLoadVersionRef\.current !== requestVersion/);
+  assert.match(videoContractsSource, /const closeVersions = \(\) => \{[\s\S]*versionsLoadVersionRef\.current \+= 1;[\s\S]*versionsLoadControllerRef\.current\?\.abort\(\)/);
+  assert.match(apiSource, /fetchAdminVideoModelContracts\(options: \{ signal\?: AbortSignal \} = \{\}\)/);
+  assert.match(apiSource, /fetchVideoModelContractVersions\(id: string, options: \{ signal\?: AbortSignal \} = \{\}\)/);
+});
+
+test("settings saves do not overwrite edits made while the request is pending", () => {
+  assert.match(settingsStoreSource, /config: state\.config === config \? normalizeConfig\(data\.config\) : state\.config/);
 });
 
 test("video contracts use a responsive management list with prioritized actions", () => {

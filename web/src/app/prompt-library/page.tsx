@@ -42,5 +42,5 @@ export default function PromptLibraryPage() {
       toast.error(error instanceof Error ? `保存素材失败：${error.message}` : "保存素材失败");
     }
   };
-  return <ImagePromptMarket open presentation="page" initialSource={initialSource} onOpenChange={() => undefined} onApplyPrompt={(prompt) => { stagePromptForWorkbench(prompt); navigate("/studio"); }} onSavePrompt={savePrompt} />;
+  return <ImagePromptMarket open presentation="page" initialSource={initialSource} onOpenChange={() => undefined} onApplyPrompt={(prompt) => { stagePromptForWorkbench(prompt, session.key); navigate("/studio"); }} onSavePrompt={savePrompt} />;
 }

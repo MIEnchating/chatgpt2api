@@ -65,7 +65,15 @@ func (b *DatabaseBackend) DeleteStorageObject(id string) error {
 	if err != nil {
 		return fmt.Errorf("delete storage object: %w", err)
 	}
-	if affected, rowsErr := result.RowsAffected(); rowsErr == nil && affected == 0 {
+	return storageObjectDeleteResultError(result)
+}
+
+func storageObjectDeleteResultError(result sql.Result) error {
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("delete storage object affected rows: %w", err)
+	}
+	if affected == 0 {
 		return ErrStorageObjectNotFound
 	}
 	return nil

@@ -166,8 +166,10 @@ function indexContracts(contracts: VideoModelContract[]) {
 }
 
 export function installVideoModelContracts(contracts: VideoModelContract[] | null | undefined) {
-  activeContracts = Array.isArray(contracts) ? contracts.map(cloneVideoModelContract) : [];
-  contractIndex = indexContracts(activeContracts);
+  const nextContracts = Array.isArray(contracts) ? contracts.map(cloneVideoModelContract) : [];
+  const nextIndex = indexContracts(nextContracts);
+  activeContracts = nextContracts;
+  contractIndex = nextIndex;
 }
 
 export function activeVideoModelContracts() {
@@ -176,9 +178,9 @@ export function activeVideoModelContracts() {
 
 export function videoModelContract(model: string) {
   const key = String(model || "").trim().toLowerCase();
-  const exact = contractIndex.exact.get(key);
-  if (exact) return exact;
-  return contractIndex.wildcards.find((candidate) => globMatches(candidate.pattern, key))?.contract;
+  const matched = contractIndex.exact.get(key)
+    || contractIndex.wildcards.find((candidate) => globMatches(candidate.pattern, key))?.contract;
+  return matched ? cloneVideoModelContract(matched) : undefined;
 }
 
 export function videoContractGenerationMode(contract: VideoModelContract, kind: VideoModelGenerationMode["kind"]) {

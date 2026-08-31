@@ -57,6 +57,47 @@ test("an explicit empty contract list does not restore defaults", () => {
   }
 });
 
+test("failed installs preserve the previous registry atomically", () => {
+  const previous = activeVideoModelContracts();
+  const installed = structuredClone(contractDocument.contracts[0]);
+  installed.name = "Atomic registry";
+  installed.models = ["atomic-video"];
+  const duplicate = structuredClone(installed);
+  duplicate.name = "Duplicate registry";
+
+  try {
+    installVideoModelContracts([installed]);
+    assert.throws(() => installVideoModelContracts([installed, duplicate]), /Duplicate video model contract/);
+    assert.deepEqual(activeVideoModelContracts().map((contract) => contract.name), [installed.name]);
+    assert.equal(videoModelContract("atomic-video")?.name, installed.name);
+  } finally {
+    installVideoModelContracts(previous);
+  }
+});
+
+test("contract lookups do not expose mutable registry state", () => {
+  const previous = activeVideoModelContracts();
+  const installed = structuredClone(contractDocument.contracts[0]);
+  installed.name = "Owned registry";
+  installed.models = ["owned-video"];
+
+  try {
+    installVideoModelContracts([installed]);
+    const exposed = videoModelContract("owned-video");
+    exposed.name = "Mutated caller copy";
+    exposed.models[0] = "mutated-video";
+    exposed.capability.sizes.push("caller-only-size");
+
+    const retained = videoModelContract("owned-video");
+    assert.equal(retained?.name, installed.name);
+    assert.deepEqual(retained?.models, installed.models);
+    assert.equal(retained?.capability.sizes.includes("caller-only-size"), false);
+    assert.equal(videoModelContract("mutated-video"), undefined);
+  } finally {
+    installVideoModelContracts(previous);
+  }
+});
+
 test("matches exact and increasingly specific wildcard model rules deterministically", () => {
   const previous = activeVideoModelContracts();
   const base = structuredClone(contractDocument.contracts[0]);

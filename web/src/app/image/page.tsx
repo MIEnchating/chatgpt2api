@@ -2905,9 +2905,9 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     if (!imageModelConfigReady) {
       return;
     }
-    const pendingPrompt = consumePromptForWorkbench();
+    const pendingPrompt = consumePromptForWorkbench(session.key);
     if (pendingPrompt) void handleApplyMarketPrompt(pendingPrompt);
-  }, [handleApplyMarketPrompt, imageModelConfigReady]);
+  }, [handleApplyMarketPrompt, imageModelConfigReady, session.key]);
 
   const restoreConversationHistoryWindow = async () => {
     const {

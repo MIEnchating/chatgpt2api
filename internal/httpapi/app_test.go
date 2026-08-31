@@ -852,6 +852,107 @@ func TestProfileRelayKeyReadsNewAPITokenForUserAndGroup(t *testing.T) {
 	}
 }
 
+func TestProfileUpstreamModelsDefaultTokenSelection(t *testing.T) {
+	tests := []struct {
+		name            string
+		insertToken     bool
+		closeReader     bool
+		upstreamStatus  int
+		wantStatus      int
+		wantCalls       int32
+		wantAuth        string
+		wantBodyMessage string
+	}{
+		{
+			name:            "missing token",
+			wantStatus:      http.StatusBadRequest,
+			wantBodyMessage: "可用令牌",
+		},
+		{
+			name:            "token query failure",
+			insertToken:     true,
+			closeReader:     true,
+			wantStatus:      http.StatusBadRequest,
+			wantBodyMessage: "数据库连接",
+		},
+		{
+			name:           "selected token",
+			insertToken:    true,
+			upstreamStatus: http.StatusOK,
+			wantStatus:     http.StatusOK,
+			wantCalls:      1,
+			wantAuth:       "Bearer sk-default-relay",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			app := newTestApp(t)
+			defer app.Close()
+
+			dbURL := newHTTPTestNewAPIDatabase(t)
+			insertHTTPTestNewAPIUser(t, dbURL, 1, "alice", "alice@example.test")
+			if test.insertToken {
+				insertHTTPTestNewAPIToken(t, dbURL, 1, 1, "default", "default-relay", -1, 0, true)
+			}
+			reader, err := service.NewNewAPITokenReader(service.NewAPITokenReaderConfig{DatabaseURL: dbURL})
+			if err != nil {
+				t.Fatalf("NewNewAPITokenReader() error = %v", err)
+			}
+			if test.closeReader {
+				if err := reader.Close(); err != nil {
+					t.Fatalf("close token reader: %v", err)
+				}
+			}
+			app.swapRelayTokenReader(reader)
+
+			var upstreamCalls atomic.Int32
+			var upstreamAuthorization atomic.Value
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				upstreamCalls.Add(1)
+				upstreamAuthorization.Store(r.Header.Get("Authorization"))
+				status := test.upstreamStatus
+				if status == 0 {
+					status = http.StatusUnauthorized
+				}
+				util.WriteJSON(w, status, map[string]any{
+					"object": "list",
+					"data":   []map[string]any{{"id": "default-model"}},
+				})
+			}))
+			defer upstream.Close()
+			if _, err := app.config.Update(map[string]any{"relay_base_url": upstream.URL}); err != nil {
+				t.Fatalf("update relay base URL: %v", err)
+			}
+
+			_, token := createPasswordUserSession(t, app, "alice", "Password123", "Alice")
+			req := httptest.NewRequest(http.MethodGet, "/api/profile/upstream-models", nil)
+			setRequestAuthCookie(req, token)
+			res := httptest.NewRecorder()
+			app.Handler().ServeHTTP(res, req)
+
+			if res.Code != test.wantStatus {
+				t.Fatalf("status = %d, want %d; body = %s", res.Code, test.wantStatus, res.Body.String())
+			}
+			if res.Code == http.StatusUnauthorized {
+				t.Fatalf("token selection failure was returned as upstream 401: %s", res.Body.String())
+			}
+			if calls := upstreamCalls.Load(); calls != test.wantCalls {
+				t.Fatalf("upstream calls = %d, want %d", calls, test.wantCalls)
+			}
+			if test.wantBodyMessage != "" && !strings.Contains(res.Body.String(), test.wantBodyMessage) {
+				t.Fatalf("body = %q, want message containing %q", res.Body.String(), test.wantBodyMessage)
+			}
+			if test.wantAuth != "" {
+				gotAuth, _ := upstreamAuthorization.Load().(string)
+				if gotAuth != test.wantAuth {
+					t.Fatalf("upstream Authorization = %q, want %q", gotAuth, test.wantAuth)
+				}
+			}
+		})
+	}
+}
+
 func TestProfileCustomRelayConfigsVisibilityAndSecretRedaction(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()

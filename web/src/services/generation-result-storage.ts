@@ -1,6 +1,7 @@
 import type { CreationTask, CreationTaskData } from "@/lib/api";
 import { isManagedImageURL } from "@/lib/authenticated-image";
 import { upsertMyAsset, type MyAsset } from "@/lib/my-assets";
+import { getCachedAuthSession } from "@/lib/session";
 import { uploadAssetMediaFile } from "@/services/file-storage";
 import { uploadImage } from "@/services/image-storage";
 
@@ -108,7 +109,10 @@ export async function ensureGeneratedMediaAsset(
 ) {
   const asset = generatedMediaAsset(task, item, index, context);
   if (!asset) return;
-  const registrationKey = `${asset.id}:${asset.storageKey || ""}`;
+  const registrationKey = generatedAssetRegistrationKey(
+    asset,
+    String(getCachedAuthSession()?.key || "").trim(),
+  );
   if (registeredGeneratedAssetIDs.has(registrationKey)) return;
   let request = generatedAssetRequests.get(registrationKey);
   if (!request) {
@@ -118,6 +122,13 @@ export async function ensureGeneratedMediaAsset(
     generatedAssetRequests.set(registrationKey, request);
   }
   await request;
+}
+
+export function generatedAssetRegistrationKey(
+  asset: Pick<MyAsset, "id" | "storageKey">,
+  sessionKey: string,
+) {
+  return `${sessionKey.trim()}:${asset.id}:${asset.storageKey || ""}`;
 }
 
 export function generatedMediaAsset(

@@ -301,9 +301,9 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
 
       const data = await updateSettingsConfig(payload);
       invalidateStorageProviderCache();
-      set({
-        config: normalizeConfig(data.config),
-      });
+      set((state) => ({
+        config: state.config === config ? normalizeConfig(data.config) : state.config,
+      }));
       dispatchAppMetaUpdated({
         app_title: String(data.config.app_title || "云棉"),
         project_name: String(data.config.project_name || data.config.app_title || "云棉"),

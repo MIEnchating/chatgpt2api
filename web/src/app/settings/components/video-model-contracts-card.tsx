@@ -916,10 +916,13 @@ function ContractParameterPreview({ contract }: { contract: VideoModelContract }
   );
 }
 
-export function VideoModelContractsCard() {
-  const didLoadRef = useRef(false);
+export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) {
   const importFileInputRef = useRef<HTMLInputElement>(null);
   const jsonImportInputRef = useRef<HTMLInputElement>(null);
+  const contractLoadControllerRef = useRef<AbortController | null>(null);
+  const contractLoadVersionRef = useRef(0);
+  const versionsLoadControllerRef = useRef<AbortController | null>(null);
+  const versionsLoadVersionRef = useRef(0);
   const [items, setItems] = useState<ManagedVideoModelContract[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -954,20 +957,41 @@ export function VideoModelContractsCard() {
   const [isPreviewing, setIsPreviewing] = useState(false);
 
   useEffect(() => {
-    if (didLoadRef.current) return;
-    didLoadRef.current = true;
+    const controller = new AbortController();
+    const requestVersion = contractLoadVersionRef.current + 1;
+    contractLoadVersionRef.current = requestVersion;
+    contractLoadControllerRef.current?.abort();
+    contractLoadControllerRef.current = controller;
+    setItems([]);
+    setIsLoading(true);
     const load = async () => {
       try {
-        const data = await fetchAdminVideoModelContracts();
+        const data = await fetchAdminVideoModelContracts({ signal: controller.signal });
+        if (controller.signal.aborted || contractLoadVersionRef.current !== requestVersion) return;
         setItems(data.items);
         installEnabledContracts(data.items);
       } catch (error) {
+        if (controller.signal.aborted || contractLoadVersionRef.current !== requestVersion) return;
         toast.error(error instanceof Error ? error.message : "加载视频模型契约失败");
       } finally {
-        setIsLoading(false);
+        if (contractLoadVersionRef.current === requestVersion) {
+          contractLoadControllerRef.current = null;
+          setIsLoading(false);
+        }
       }
     };
     void load();
+    return () => {
+      contractLoadVersionRef.current += 1;
+      controller.abort();
+      if (contractLoadControllerRef.current === controller) contractLoadControllerRef.current = null;
+    };
+  }, [sessionKey]);
+
+  useEffect(() => () => {
+    versionsLoadVersionRef.current += 1;
+    versionsLoadControllerRef.current?.abort();
+    versionsLoadControllerRef.current = null;
   }, []);
 
   const updateContract = (update: (contract: VideoModelContract) => void) => {
@@ -1187,17 +1211,36 @@ export function VideoModelContractsCard() {
   };
 
   const openVersions = async (item: ManagedVideoModelContract) => {
+    versionsLoadControllerRef.current?.abort();
+    const controller = new AbortController();
+    const requestVersion = versionsLoadVersionRef.current + 1;
+    versionsLoadVersionRef.current = requestVersion;
+    versionsLoadControllerRef.current = controller;
     setVersionsItem(item);
     setVersions([]);
     setIsLoadingVersions(true);
     try {
-      const data = await fetchVideoModelContractVersions(item.id);
+      const data = await fetchVideoModelContractVersions(item.id, { signal: controller.signal });
+      if (controller.signal.aborted || versionsLoadVersionRef.current !== requestVersion) return;
       setVersions(data.versions);
     } catch (error) {
+      if (controller.signal.aborted || versionsLoadVersionRef.current !== requestVersion) return;
       toast.error(error instanceof Error ? error.message : "加载契约版本失败");
     } finally {
-      setIsLoadingVersions(false);
+      if (versionsLoadVersionRef.current === requestVersion) {
+        versionsLoadControllerRef.current = null;
+        setIsLoadingVersions(false);
+      }
     }
+  };
+
+  const closeVersions = () => {
+    versionsLoadVersionRef.current += 1;
+    versionsLoadControllerRef.current?.abort();
+    versionsLoadControllerRef.current = null;
+    setVersionsItem(null);
+    setVersions([]);
+    setIsLoadingVersions(false);
   };
 
   const rollback = async (revision: number) => {
@@ -1207,7 +1250,7 @@ export function VideoModelContractsCard() {
       const data = await rollbackVideoModelContract(versionsItem.id, revision);
       setItems(data.items);
       installEnabledContracts(data.items);
-      setVersionsItem(null);
+      closeVersions();
       toast.success(`已基于第 ${revision} 版发布新版本`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "回滚契约失败");
@@ -1816,7 +1859,7 @@ export function VideoModelContractsCard() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={Boolean(versionsItem)} onOpenChange={(open) => (!open && !isRollingBack ? setVersionsItem(null) : undefined)}>
+      <Dialog open={Boolean(versionsItem)} onOpenChange={(open) => (!open && !isRollingBack ? closeVersions() : undefined)}>
         <DialogContent className="sm:max-w-xl">
           <DialogHeader>
             <DialogTitle>契约版本历史</DialogTitle>
@@ -1849,7 +1892,7 @@ export function VideoModelContractsCard() {
               </div>
             )}
           </div>
-          <DialogFooter><Button type="button" variant="outline" disabled={isRollingBack} onClick={() => setVersionsItem(null)}>关闭</Button></DialogFooter>
+          <DialogFooter><Button type="button" variant="outline" disabled={isRollingBack} onClick={closeVersions}>关闭</Button></DialogFooter>
         </DialogContent>
       </Dialog>
 

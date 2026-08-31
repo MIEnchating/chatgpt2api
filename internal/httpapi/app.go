@@ -612,7 +612,12 @@ func (a *App) handleUpstreamModels(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		} else {
-			relayAPIKey, _ = newAPIKeys.KeyForIdentity(r.Context(), identity)
+			var err error
+			relayAPIKey, err = newAPIKeys.KeyForIdentity(r.Context(), identity)
+			if err != nil {
+				a.writeUpstreamModelsResponse(w, r, nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: err.Error()}, started, identity)
+				return
+			}
 		}
 	}
 	result, err := a.relayListModelsAt(r.Context(), relayBaseURL, relayAPIKey)

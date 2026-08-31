@@ -1392,8 +1392,10 @@ export async function fetchModelConfig() {
   return data;
 }
 
-export async function fetchAdminVideoModelContracts() {
-  return httpRequest<{ items: ManagedVideoModelContract[] }>("/api/admin/video-model-contracts");
+export async function fetchAdminVideoModelContracts(options: { signal?: AbortSignal } = {}) {
+  return httpRequest<{ items: ManagedVideoModelContract[] }>("/api/admin/video-model-contracts", {
+    signal: options.signal,
+  });
 }
 
 export async function importVideoModelContract(input: {
@@ -1462,9 +1464,10 @@ export async function publishVideoModelContract(id: string, input: VideoModelCon
   return response;
 }
 
-export async function fetchVideoModelContractVersions(id: string) {
+export async function fetchVideoModelContractVersions(id: string, options: { signal?: AbortSignal } = {}) {
   return httpRequest<{ versions: VideoModelContractVersion[] }>(
     `/api/admin/video-model-contracts/${encodeURIComponent(id)}/versions`,
+    { signal: options.signal },
   );
 }
 
