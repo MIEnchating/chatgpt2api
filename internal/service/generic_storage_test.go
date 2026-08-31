@@ -8,7 +8,9 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"chatgpt2api/internal/model"
 	"chatgpt2api/internal/storage"
@@ -132,6 +134,77 @@ func TestGenericStorageServiceMeasureUserHonorsProviderSetting(t *testing.T) {
 	}
 	if result.ProviderName != "Private DAV" || result.Bytes != 0 || requests == 0 {
 		t.Fatalf("MeasureUser(private WebDAV) = %#v, requests = %d", result, requests)
+	}
+}
+
+func TestGenericStorageServiceWebDAVMeasureHonorsContextCancellation(t *testing.T) {
+	requestStarted := make(chan struct{})
+	releaseRequest := make(chan struct{})
+	var startOnce sync.Once
+	server := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, request *http.Request) {
+		startOnce.Do(func() { close(requestStarted) })
+		select {
+		case <-request.Context().Done():
+		case <-releaseRequest:
+		}
+	}))
+	defer server.Close()
+	defer close(releaseRequest)
+
+	service := newGenericStorageTestService(t, model.StorageSetting{AllowUserProvider: true})
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, err := service.MeasureUser(ctx, "user-1", StorageObjectProviderInput{
+			Name: "Blocking DAV", Type: model.StorageProviderTypeWebDAV, Endpoint: server.URL,
+			PathPrefix: "assets", Username: "user", Password: "secret",
+		})
+		done <- err
+	}()
+
+	select {
+	case <-requestStarted:
+	case <-time.After(3 * time.Second):
+		t.Fatal("WebDAV capacity request did not start")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("MeasureUser() error = %v, want context canceled", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("WebDAV capacity request ignored context cancellation")
+	}
+}
+
+func TestGenericWebDAVObjectLifecycleKeepsNormalRequestsWorking(t *testing.T) {
+	fileSystem := webdav.NewMemFS()
+	server := httptest.NewServer(&webdav.Handler{FileSystem: fileSystem, LockSystem: webdav.NewMemLS()})
+	defer server.Close()
+	provider := model.StorageProvider{
+		Type: model.StorageProviderTypeWebDAV, Endpoint: server.URL, PathPrefix: "assets",
+		Username: "user", Password: "secret",
+	}
+	ctx := context.Background()
+	objectKey := "assets/user-1/sample.txt"
+	if err := putGenericWebDAVObject(ctx, provider, objectKey, []byte("content")); err != nil {
+		t.Fatalf("putGenericWebDAVObject() error = %v", err)
+	}
+	download, err := downloadGenericWebDAVObject(ctx, provider, model.StorageObject{ObjectKey: objectKey, Bytes: 7}, "")
+	if err != nil {
+		t.Fatalf("downloadGenericWebDAVObject() error = %v", err)
+	}
+	data, readErr := io.ReadAll(download.Stream)
+	_ = download.Stream.Close()
+	if readErr != nil || string(data) != "content" {
+		t.Fatalf("downloaded WebDAV object = %q, %v", data, readErr)
+	}
+	if err := deleteGenericWebDAVObject(ctx, provider, objectKey); err != nil {
+		t.Fatalf("deleteGenericWebDAVObject() error = %v", err)
+	}
+	if _, err := fileSystem.Stat(ctx, "/"+objectKey); err == nil {
+		t.Fatal("deleted WebDAV object still exists")
 	}
 }
 

@@ -1,8 +1,10 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"path"
 	"strings"
@@ -13,7 +15,7 @@ import (
 	"github.com/studio-b12/gowebdav"
 )
 
-func newGenericWebDAVClient(provider model.StorageProvider) (*gowebdav.Client, error) {
+func newGenericWebDAVClient(ctx context.Context, provider model.StorageProvider) (*gowebdav.Client, error) {
 	parsed, err := url.Parse(strings.TrimSpace(provider.Endpoint))
 	if err != nil || parsed.Host == "" || parsed.Scheme != "http" && parsed.Scheme != "https" {
 		return nil, errors.New("WebDAV endpoint is invalid")
@@ -23,6 +25,9 @@ func newGenericWebDAVClient(provider model.StorageProvider) (*gowebdav.Client, e
 	}
 	client := gowebdav.NewClient(strings.TrimRight(parsed.String(), "/"), provider.Username, provider.Password)
 	client.SetTimeout(5 * time.Minute)
+	client.SetInterceptor(func(_ string, request *http.Request) {
+		*request = *request.WithContext(ctx)
+	})
 	return client, nil
 }
 
@@ -36,8 +41,8 @@ func cleanStorageObjectPath(value string) (string, error) {
 	return strings.Join(parts, "/"), nil
 }
 
-func putGenericWebDAVObject(provider model.StorageProvider, objectKey string, data []byte) error {
-	client, err := newGenericWebDAVClient(provider)
+func putGenericWebDAVObject(ctx context.Context, provider model.StorageProvider, objectKey string, data []byte) error {
+	client, err := newGenericWebDAVClient(ctx, provider)
 	if err != nil {
 		return err
 	}
@@ -56,8 +61,8 @@ func putGenericWebDAVObject(provider model.StorageProvider, objectKey string, da
 	return nil
 }
 
-func deleteGenericWebDAVObject(provider model.StorageProvider, objectKey string) error {
-	client, err := newGenericWebDAVClient(provider)
+func deleteGenericWebDAVObject(ctx context.Context, provider model.StorageProvider, objectKey string) error {
+	client, err := newGenericWebDAVClient(ctx, provider)
 	if err != nil {
 		return err
 	}
@@ -84,8 +89,8 @@ func deleteGenericWebDAVObject(provider model.StorageProvider, objectKey string)
 	return nil
 }
 
-func downloadGenericWebDAVObject(provider model.StorageProvider, object model.StorageObject, rangeHeader string) (DownloadedStorageObject, error) {
-	client, err := newGenericWebDAVClient(provider)
+func downloadGenericWebDAVObject(ctx context.Context, provider model.StorageProvider, object model.StorageObject, rangeHeader string) (DownloadedStorageObject, error) {
+	client, err := newGenericWebDAVClient(ctx, provider)
 	if err != nil {
 		return DownloadedStorageObject{}, err
 	}
@@ -111,8 +116,8 @@ func downloadGenericWebDAVObject(provider model.StorageProvider, object model.St
 	}, nil
 }
 
-func measureGenericWebDAVProvider(provider model.StorageProvider) (int64, error) {
-	client, err := newGenericWebDAVClient(provider)
+func measureGenericWebDAVProvider(ctx context.Context, provider model.StorageProvider) (int64, error) {
+	client, err := newGenericWebDAVClient(ctx, provider)
 	if err != nil {
 		return 0, err
 	}

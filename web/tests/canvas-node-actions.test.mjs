@@ -18,6 +18,7 @@ const workflowSource = readFileSync(new URL("../src/app/workflows/creative-workf
 const tooltipSource = readFileSync(new URL("../src/components/ui/tooltip.tsx", import.meta.url), "utf8");
 const globalStylesSource = readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
 const taskQueueSource = readFileSync(new URL("../src/components/image-task-queue.tsx", import.meta.url), "utf8");
+const canvasTaskQueueStoreSource = readFileSync(new URL("../src/store/canvas-task-queue.ts", import.meta.url), "utf8");
 
 test("the side drawer exposes the complete supported image operation set", () => {
   for (const label of ["局部编辑", "裁剪", "切图", "放大", "多角度", "自由缩放", "反推提示词", "复制提示词", "查看大图", "沉浸查看", "下载", "存入我的素材", "复制节点"]) {
@@ -133,10 +134,29 @@ test("canvas generation is concurrent per node and stopping is task scoped", () 
   assert.match(pageSource, /其他节点的任务会继续运行/);
   assert.doesNotMatch(pageSource, /generationBusy=\{Boolean\(runningNodeID\)\}/);
   assert.doesNotMatch(pageSource, /busy=\{Boolean\(runningNodeID\)/);
-  assert.match(pageSource, /syncCanvasTaskQueue\(documentRef\.current\.id, titleRef\.current, next\)/);
+  assert.match(pageSource, /syncCanvasTaskQueue\(session\.key, documentRef\.current\.id, titleRef\.current, next\)/);
   assert.match(taskQueueSource, /subscribeCanvasTaskQueue/);
   assert.match(taskQueueSource, /activeCount = queueItems\.length \+ activeCanvasTasks\.length/);
   assert.match(taskQueueSource, /navigate\(canvasProjectPath\(canvasID\)\)/);
+});
+
+test("canvas task queue is cleared across projects and sessions before stale work can resync", () => {
+  const applyDocumentSource = pageSource.slice(
+    pageSource.indexOf("function applyDocument"),
+    pageSource.indexOf("async function hydrateCanvasStorageURLs"),
+  );
+  assert.match(applyDocumentSource, /clearCanvasTaskQueueForCanvas\(session\.key, previousCanvasID\)/);
+  const titleUpdateIndex = applyDocumentSource.indexOf("titleRef.current = next.title");
+  const nodeSyncIndex = applyDocumentSource.indexOf("replaceNodes(next.nodes");
+  assert.ok(titleUpdateIndex >= 0 && nodeSyncIndex >= 0 && titleUpdateIndex < nodeSyncIndex);
+
+  const lifecycleStart = pageSource.indexOf("useEffect(() => {\n    const batchAnimationTimers");
+  assert.ok(lifecycleStart >= 0);
+  const lifecycleSource = pageSource.slice(lifecycleStart, pageSource.indexOf("\n  useEffect(() => {", lifecycleStart + 1));
+  assert.match(lifecycleSource, /activateCanvasTaskQueueSession\(session\.key\)/);
+  assert.match(lifecycleSource, /active = false;[\s\S]*?canvasOperationEpochRef\.current \+= 1;[\s\S]*?clearCanvasTaskQueueForSession\(session\.key\)/);
+  assert.match(lifecycleSource, /\}, \[projectID, session\.key\]\);/);
+  assert.match(canvasTaskQueueStoreSource, /window\.addEventListener\(AUTH_SESSION_CHANGE_EVENT,[\s\S]*?clearSnapshot\(\)/);
 });
 
 test("canvas routes every generation through the key matched to its actual node model", () => {

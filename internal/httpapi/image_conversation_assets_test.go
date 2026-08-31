@@ -104,7 +104,7 @@ func TestImageConversationAssetsUploadAndPrivateAccess(t *testing.T) {
 	if usage := app.conversationAssets.Governance(); usage.FileCount != 1 {
 		t.Fatalf("duplicate upload governance = %#v", usage)
 	}
-	if _, err := app.myAssets.Replace(context.Background(), owner.ID, false, []service.MyAsset{{ID: "prompt-asset", Kind: "text", Title: "镜头提示词", Content: "电影感近景", Visibility: service.MyAssetPrivate}}); err != nil {
+	if _, err := app.myAssets.Upsert(context.Background(), owner.ID, false, service.MyAsset{ID: "prompt-asset", Kind: "text", Title: "镜头提示词", Content: "电影感近景", Visibility: service.MyAssetPrivate}); err != nil {
 		t.Fatalf("save text asset: %v", err)
 	}
 	req = httptest.NewRequest(http.MethodGet, "/api/images/storage-governance", nil)

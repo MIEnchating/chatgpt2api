@@ -83,7 +83,7 @@ import { createMyAsset, fetchMyAssets, upsertMyAsset } from "@/lib/my-assets";
 import { cn } from "@/lib/utils";
 import { COLOR_THEME_CHANGE_EVENT, getPreferredColorTheme, type ColorTheme } from "@/lib/theme";
 import { useImageGenerationPreferences } from "@/lib/use-image-generation-preferences";
-import { syncCanvasTaskQueue } from "@/store/canvas-task-queue";
+import { activateCanvasTaskQueueSession, clearCanvasTaskQueueForCanvas, clearCanvasTaskQueueForSession, syncCanvasTaskQueue } from "@/store/canvas-task-queue";
 import { resolveConfiguredVideoModel, supportsVideoFrameReferences, supportsVideoMultimodalReferences, videoAudioControl, videoDefaultResolution, videoDefaultSeconds, videoDefaultSize, videoMultimodalReferenceLimits, videoRequiresReferenceImage, videoResolutionOptions, videoSecondsIsValid, videoSizeLabel, videoSizeOptions, videoWorkbenchResolutionOptions, videoWorkbenchSecondsOptions } from "@/lib/video-model-capabilities";
 import { normalizeVideoRequest } from "@/lib/video-request-normalizer";
 import { videoContractUIState, videoModelContract } from "@/lib/video-model-contracts";
@@ -1062,7 +1062,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
   function replaceNodes(next: CanvasNode[]) {
     nodesRef.current = next;
     setNodesState(next);
-    syncCanvasTaskQueue(documentRef.current.id, titleRef.current, next);
+    syncCanvasTaskQueue(session.key, documentRef.current.id, titleRef.current, next);
   }
 
   function registerActiveGeneration(controller: AbortController, nodeIDs: Iterable<string>, taskIDs: Iterable<string> = []) {
@@ -1261,11 +1261,13 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     const restoredActiveAgentSessionID = next.active_agent_session_id && restoredAgentSessions.some((item) => item.id === next.active_agent_session_id)
       ? next.active_agent_session_id
       : restoredAgentSessions[0]?.id || "";
+    const previousCanvasID = documentRef.current.id;
+    if (previousCanvasID && previousCanvasID !== next.id) clearCanvasTaskQueueForCanvas(session.key, previousCanvasID);
     documentRef.current = { ...next, agent_sessions: restoredAgentSessions, active_agent_session_id: restoredActiveAgentSessionID || undefined };
+    titleRef.current = next.title || "我的画布";
     replaceNodes(next.nodes || []);
     replaceConnections(next.connections || []);
     viewportRef.current = next.viewport || DEFAULT_DOCUMENT.viewport;
-    titleRef.current = next.title || "我的画布";
     backgroundRef.current = next.background || "dots";
     showImageInfoRef.current = Boolean(next.show_image_info);
     setViewportState(viewportRef.current);
@@ -2920,9 +2922,9 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     canvasOperationEpochRef.current += 1;
     const next = restoreCanvasHistoryDocument(documentRef.current, cloneDocument(document));
     documentRef.current = next;
+    titleRef.current = next.title;
     replaceNodes(next.nodes);
     replaceConnections(next.connections);
-    titleRef.current = next.title;
     backgroundRef.current = next.background;
     showImageInfoRef.current = Boolean(next.show_image_info);
     setTitle(next.title);
@@ -4347,18 +4349,25 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
   useEffect(() => {
     const batchAnimationTimers = batchAnimationTimersRef.current;
     const activeGenerations = activeGenerationsRef.current;
+    let active = true;
+    activateCanvasTaskQueueSession(session.key);
     mountedRef.current = true;
     const loadWorkspace = async () => {
       let workspace = await fetchCanvasDocument();
+      if (!active) return;
       if (!workspace.document?.id) {
         workspace = await updateCanvasProject({ action: "create", title: "我的画布" });
+        if (!active) return;
       }
       if (projectID && workspace.active_project_id !== projectID) {
         workspace = await updateCanvasProject({ action: "activate", project_id: projectID });
+        if (!active) return;
       }
       applyWorkspace(workspace);
     };
-    void loadWorkspace().catch((error) => toast.error(error instanceof Error ? error.message : "画布加载失败")).finally(() => mountedRef.current && setLoading(false));
+    void loadWorkspace()
+      .catch((error) => { if (active) toast.error(error instanceof Error ? error.message : "画布加载失败"); })
+      .finally(() => { if (active && mountedRef.current) setLoading(false); });
     const flushPendingSave = () => {
       if (saveTimerRef.current === null) return;
       window.clearTimeout(saveTimerRef.current);
@@ -4367,7 +4376,9 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     };
     window.addEventListener("pagehide", flushPendingSave);
     return () => {
+      active = false;
       mountedRef.current = false;
+      canvasOperationEpochRef.current += 1;
       generationEpochRef.current += 1;
       generationAbortControllerRef.current?.abort();
       generationAbortControllerRef.current = null;
@@ -4381,8 +4392,11 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       batchAnimationTimers.clear();
       if (switchRevealTimerRef.current !== null) window.clearTimeout(switchRevealTimerRef.current);
       if (focusAnimationRef.current !== null) window.cancelAnimationFrame(focusAnimationRef.current);
+      clearCanvasTaskQueueForSession(session.key);
     };
-  }, [projectID]);
+    // Workspace loading is keyed by route and account; callbacks read the current canvas refs.
+    // oxlint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectID, session.key]);
 
   useEffect(() => {
     const host = hostRef.current;

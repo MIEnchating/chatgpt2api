@@ -24,11 +24,9 @@ func TestMyAssetItemMutationsPreserveConcurrentGeneratedMedia(t *testing.T) {
 	defer backend.Close()
 
 	assets := NewMyAssetService(backend, newMyAssetObjectStorageStub())
-	if _, err := assets.Replace(context.Background(), "user-a", false, []MyAsset{{
+	upsertMyAssetFixtures(t, assets, "user-a", []MyAsset{{
 		ID: "manual-image", Kind: "image", Title: "手动素材", URL: "/images/manual.png", Tags: []string{},
-	}}); err != nil {
-		t.Fatalf("Replace() error = %v", err)
-	}
+	}})
 	generated := []MyAsset{
 		{ID: "generated-video:task-a:0", Kind: "video", Title: "视频 A", URL: "/api/files/video-a/content", StorageKey: "server:video-a", MIMEType: "video/mp4", Source: "生成视频", Tags: []string{}},
 		{ID: "generated-video:task-b:0", Kind: "video", Title: "视频 B", URL: "/api/files/video-b/content", StorageKey: "server:video-b", MIMEType: "video/mp4", Source: "无限画布", Tags: []string{}},
@@ -110,9 +108,7 @@ func TestMyAssetsArePersistentAndPersonal(t *testing.T) {
 		{ID: "asset-3", Kind: "video", Title: "参考视频", URL: "/videos/reference.mp4", MIMEType: "video/mp4", Bytes: 4096, Width: 1920, Height: 1080, DurationMs: 5200, Tags: []string{}, Source: "画布", Note: "人物动作参考"},
 		{ID: "asset-4", Kind: "audio", Title: "参考音频", URL: "/audio-references/reference.mp3", MIMEType: "audio/mpeg", Bytes: 1024, DurationMs: 3100, Tags: []string{}},
 	}
-	if _, err := assets.Replace(context.Background(), "user-a", false, want); err != nil {
-		t.Fatalf("Replace() error = %v", err)
-	}
+	upsertMyAssetFixtures(t, assets, "user-a", want)
 	got, err := NewMyAssetService(backend, objects).List("user-a")
 	if err != nil {
 		t.Fatalf("List() error = %v", err)
@@ -142,14 +138,14 @@ func TestMyAssetsArePersistentAndPersonal(t *testing.T) {
 	if err != nil || len(other) != 0 {
 		t.Fatalf("List(other) = %#v, %v", other, err)
 	}
-	if _, err := assets.Replace(context.Background(), "user-a", false, []MyAsset{{ID: "bad", Kind: "image", Title: "bad", URL: "blob:temporary"}}); err == nil {
-		t.Fatal("Replace() accepted a transient blob URL")
+	if _, err := assets.Upsert(context.Background(), "user-a", false, MyAsset{ID: "bad", Kind: "image", Title: "bad", URL: "blob:temporary"}); err == nil {
+		t.Fatal("Upsert() accepted a transient blob URL")
 	}
-	if _, err := assets.Replace(context.Background(), "user-a", false, []MyAsset{{ID: "bad", Kind: "video", Title: "bad", URL: "/video.mp4", DurationMs: -1}}); err == nil {
-		t.Fatal("Replace() accepted negative media metadata")
+	if _, err := assets.Upsert(context.Background(), "user-a", false, MyAsset{ID: "bad", Kind: "video", Title: "bad", URL: "/video.mp4", DurationMs: -1}); err == nil {
+		t.Fatal("Upsert() accepted negative media metadata")
 	}
-	if _, err := assets.Replace(context.Background(), "user-a", false, []MyAsset{{ID: "bad", Kind: "text", Title: "bad", Content: "bad", Visibility: "everyone"}}); err == nil {
-		t.Fatal("Replace() accepted invalid visibility")
+	if _, err := assets.Upsert(context.Background(), "user-a", false, MyAsset{ID: "bad", Kind: "text", Title: "bad", Content: "bad", Visibility: "everyone"}); err == nil {
+		t.Fatal("Upsert() accepted invalid visibility")
 	}
 }
 
@@ -162,18 +158,14 @@ func TestMyAssetsVisibleScopeHonorsVisibilityAndAdminAccess(t *testing.T) {
 
 	countingBackend := newCountingImageDocumentBackend(t, backend)
 	assets := NewMyAssetService(countingBackend, newMyAssetObjectStorageStub())
-	if _, err := assets.Replace(context.Background(), "user-a", false, []MyAsset{
+	upsertMyAssetFixtures(t, assets, "user-a", []MyAsset{
 		{ID: "alice-private", Kind: "text", Title: "Alice private", Content: "private", Visibility: MyAssetPrivate},
 		{ID: "alice-public", Kind: "text", Title: "Alice public", Content: "public", Visibility: MyAssetPublic},
-	}); err != nil {
-		t.Fatalf("Replace(user-a) error = %v", err)
-	}
-	if _, err := assets.Replace(context.Background(), "user-b", false, []MyAsset{
+	})
+	upsertMyAssetFixtures(t, assets, "user-b", []MyAsset{
 		{ID: "bob-private", Kind: "text", Title: "Bob private", Content: "private"},
 		{ID: "bob-public", Kind: "text", Title: "Bob public", Content: "public", Visibility: MyAssetPublic},
-	}); err != nil {
-		t.Fatalf("Replace(user-b) error = %v", err)
-	}
+	})
 	owners := []MyAssetOwner{{ID: "user-a", Name: "Alice"}, {ID: "user-b", Name: "Bob"}}
 
 	countingBackend.loadCalls = 0
@@ -258,5 +250,14 @@ func TestMyAssetTextStorageMigratesUpdatesAndDeletesObjects(t *testing.T) {
 	}
 	if len(objects.deleted) != 2 || objects.deleted[1] != "text-2" || len(objects.uploads) != 0 {
 		t.Fatalf("deleted text objects = %#v, uploads=%#v", objects.deleted, objects.uploads)
+	}
+}
+
+func upsertMyAssetFixtures(t *testing.T, assets *MyAssetService, ownerID string, items []MyAsset) {
+	t.Helper()
+	for _, item := range items {
+		if _, err := assets.Upsert(context.Background(), ownerID, false, item); err != nil {
+			t.Fatalf("Upsert(%s, %s) error = %v", ownerID, item.ID, err)
+		}
 	}
 }

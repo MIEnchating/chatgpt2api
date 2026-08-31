@@ -1,4 +1,5 @@
 import type { CanvasNode } from "@/services/api/canvas";
+import { AUTH_SESSION_CHANGE_EVENT, getCachedAuthSession } from "@/lib/session";
 
 export type CanvasTaskQueueStatus = "generating" | "success" | "error" | "cancelled";
 
@@ -26,6 +27,7 @@ const TERMINAL_TASK_RETENTION_MS = 5000;
 const listeners = new Set<() => void>();
 let snapshot: CanvasTaskQueueItem[] = [];
 let pruneTimer: ReturnType<typeof setTimeout> | null = null;
+let activeSessionKey = String(getCachedAuthSession()?.key || "").trim();
 
 function emit(next: CanvasTaskQueueItem[]) {
   snapshot = next;
@@ -33,7 +35,10 @@ function emit(next: CanvasTaskQueueItem[]) {
 }
 
 function scheduleTerminalPrune() {
-  if (pruneTimer) clearTimeout(pruneTimer);
+  if (pruneTimer) {
+    clearTimeout(pruneTimer);
+    pruneTimer = null;
+  }
   const terminalTimes = snapshot.flatMap((item) => item.completedAt ? [item.completedAt] : []);
   if (!terminalTimes.length) return;
   const delay = Math.max(0, Math.min(...terminalTimes) + TERMINAL_TASK_RETENTION_MS - Date.now());
@@ -44,6 +49,34 @@ function scheduleTerminalPrune() {
     if (next.length !== snapshot.length) emit(next);
     scheduleTerminalPrune();
   }, delay + 10);
+}
+
+function clearSnapshot(canvasID?: string) {
+  const next = canvasID ? snapshot.filter((item) => item.canvasID !== canvasID) : [];
+  if (next.length === snapshot.length) return;
+  emit(next);
+  scheduleTerminalPrune();
+}
+
+function normalizedSessionKey(sessionKey: string) {
+  return String(sessionKey || "").trim();
+}
+
+export function activateCanvasTaskQueueSession(sessionKey: string) {
+  const nextSessionKey = normalizedSessionKey(sessionKey);
+  if (nextSessionKey === activeSessionKey) return;
+  activeSessionKey = nextSessionKey;
+  clearSnapshot();
+}
+
+export function clearCanvasTaskQueueForCanvas(sessionKey: string, canvasID: string) {
+  if (!canvasID || normalizedSessionKey(sessionKey) !== activeSessionKey) return;
+  clearSnapshot(canvasID);
+}
+
+export function clearCanvasTaskQueueForSession(sessionKey: string) {
+  if (normalizedSessionKey(sessionKey) !== activeSessionKey) return;
+  clearSnapshot();
 }
 
 function nodeTaskID(node: CanvasNode) {
@@ -83,8 +116,8 @@ function terminalStatus(nodes: CanvasNode[]): CanvasTaskQueueStatus {
 }
 
 /** Mirrors canvas node generation state into the global task queue. */
-export function syncCanvasTaskQueue(canvasID: string, canvasTitle: string, nodes: CanvasNode[]) {
-  if (!canvasID) return;
+export function syncCanvasTaskQueue(sessionKey: string, canvasID: string, canvasTitle: string, nodes: CanvasNode[]) {
+  if (!canvasID || !activeSessionKey || normalizedSessionKey(sessionKey) !== activeSessionKey) return;
   const groups = new Map<string, CanvasNode[]>();
   nodes.forEach((node) => {
     const taskID = nodeTaskID(node);
@@ -163,4 +196,12 @@ export function resetCanvasTaskQueueForTests() {
   if (pruneTimer) clearTimeout(pruneTimer);
   pruneTimer = null;
   snapshot = [];
+  activeSessionKey = "";
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener(AUTH_SESSION_CHANGE_EVENT, () => {
+    activeSessionKey = String(getCachedAuthSession()?.key || "").trim();
+    clearSnapshot();
+  });
 }

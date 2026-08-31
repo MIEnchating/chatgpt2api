@@ -794,7 +794,7 @@ func putStorageObject(ctx context.Context, provider model.StorageProvider, objec
 		_, err = client.PutObject(ctx, provider.Bucket, objectKey, bytes.NewReader(data), int64(len(data)), minio.PutObjectOptions{ContentType: contentType})
 		return err
 	case model.StorageProviderTypeWebDAV:
-		return putGenericWebDAVObject(provider, objectKey, data)
+		return putGenericWebDAVObject(ctx, provider, objectKey, data)
 	default:
 		return errors.New("storage provider type is unsupported")
 	}
@@ -811,7 +811,7 @@ func deleteStorageObjectData(ctx context.Context, provider model.StorageProvider
 		}
 		return client.RemoveObject(ctx, provider.Bucket, objectKey, minio.RemoveObjectOptions{})
 	case model.StorageProviderTypeWebDAV:
-		return deleteGenericWebDAVObject(provider, objectKey)
+		return deleteGenericWebDAVObject(ctx, provider, objectKey)
 	default:
 		return errors.New("storage provider type is unsupported")
 	}
@@ -822,7 +822,7 @@ func downloadStorageObject(ctx context.Context, provider model.StorageProvider, 
 		return downloadLocalStorageObject(provider, object, rangeHeader)
 	}
 	if provider.Type == model.StorageProviderTypeWebDAV {
-		return downloadGenericWebDAVObject(provider, object, rangeHeader)
+		return downloadGenericWebDAVObject(ctx, provider, object, rangeHeader)
 	}
 	client, err := newGenericS3Client(provider)
 	if err != nil {
@@ -863,7 +863,7 @@ func measureStorageProvider(ctx context.Context, provider model.StorageProvider)
 		return measureLocalStorageProvider(provider)
 	}
 	if provider.Type == model.StorageProviderTypeWebDAV {
-		return measureGenericWebDAVProvider(provider)
+		return measureGenericWebDAVProvider(ctx, provider)
 	}
 	client, err := newGenericS3Client(provider)
 	if err != nil {
