@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   AudioLines,
   Braces,
@@ -88,6 +88,12 @@ import {
 } from "@/lib/video-model-contracts";
 import { cn } from "@/lib/utils";
 
+import {
+  ALL_VIDEO_MODEL_CONTRACTS_SCOPE,
+  VideoModelContractMutationTracker,
+  type VideoModelContractMutationDecision,
+  type VideoModelContractMutationTicket,
+} from "./video-model-contract-mutation-tracker";
 import {
   SettingsCard,
   SettingsEmptyState,
@@ -328,6 +334,28 @@ function mutationFromDraft(draft: ContractDraft, existingID = ""): VideoModelCon
 
 function installEnabledContracts(items: ManagedVideoModelContract[]) {
   installVideoModelContracts(items.filter((item) => item.enabled).map((item) => item.contract));
+}
+
+function mergeManagedVideoModelContract(
+  current: ManagedVideoModelContract[],
+  item: ManagedVideoModelContract,
+  responseItems: ManagedVideoModelContract[],
+) {
+  const next = current.some((candidate) => candidate.id === item.id)
+    ? current.map((candidate) => candidate.id === item.id ? item : candidate)
+    : [...current, item];
+  const responseOrder = new Map(responseItems.map((candidate, index) => [candidate.id, index]));
+  return next
+    .map((candidate, index) => ({ candidate, index }))
+    .sort((left, right) => {
+      const leftOrder = responseOrder.get(left.candidate.id);
+      const rightOrder = responseOrder.get(right.candidate.id);
+      if (leftOrder !== undefined && rightOrder !== undefined) return leftOrder - rightOrder;
+      if (leftOrder !== undefined) return -1;
+      if (rightOrder !== undefined) return 1;
+      return left.index - right.index;
+    })
+    .map(({ candidate }) => candidate);
 }
 
 function videoContractTransferDocument(items: Array<Pick<ManagedVideoModelContract, "contract" | "enabled">>): VideoModelContractTransferDocument {
@@ -919,10 +947,21 @@ function ContractParameterPreview({ contract }: { contract: VideoModelContract }
 export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) {
   const importFileInputRef = useRef<HTMLInputElement>(null);
   const jsonImportInputRef = useRef<HTMLInputElement>(null);
+  const mountedRef = useRef(false);
+  const currentSessionKeyRef = useRef(sessionKey);
+  const itemsRef = useRef<ManagedVideoModelContract[]>([]);
   const contractLoadControllerRef = useRef<AbortController | null>(null);
   const contractLoadVersionRef = useRef(0);
+  const contractLoadResetRef = useRef(false);
   const versionsLoadControllerRef = useRef<AbortController | null>(null);
   const versionsLoadVersionRef = useRef(0);
+  const mutationTrackerRef = useRef<VideoModelContractMutationTracker | null>(null);
+  currentSessionKeyRef.current = sessionKey;
+  if (!mutationTrackerRef.current) {
+    mutationTrackerRef.current = new VideoModelContractMutationTracker(sessionKey);
+  } else {
+    mutationTrackerRef.current.activateSession(sessionKey);
+  }
   const [items, setItems] = useState<ManagedVideoModelContract[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -956,43 +995,105 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
   const [previewResult, setPreviewResult] = useState<VideoModelContractPreviewResult | null>(null);
   const [isPreviewing, setIsPreviewing] = useState(false);
 
-  useEffect(() => {
+  const isCurrentSession = useCallback((targetSessionKey: string) => (
+    mountedRef.current && currentSessionKeyRef.current === targetSessionKey
+  ), []);
+
+  const commitItems = useCallback((
+    targetSessionKey: string,
+    value: ManagedVideoModelContract[] | ((current: ManagedVideoModelContract[]) => ManagedVideoModelContract[]),
+  ) => {
+    if (!isCurrentSession(targetSessionKey)) return false;
+    const next = typeof value === "function" ? value(itemsRef.current) : value;
+    itemsRef.current = next;
+    setItems(next);
+    installEnabledContracts(next);
+    return true;
+  }, [isCurrentSession]);
+
+  const loadContracts = useCallback(async (targetSessionKey: string, reset: boolean) => {
     const controller = new AbortController();
     const requestVersion = contractLoadVersionRef.current + 1;
     contractLoadVersionRef.current = requestVersion;
     contractLoadControllerRef.current?.abort();
     contractLoadControllerRef.current = controller;
-    setItems([]);
-    setIsLoading(true);
-    const load = async () => {
-      try {
-        const data = await fetchAdminVideoModelContracts({ signal: controller.signal });
-        if (controller.signal.aborted || contractLoadVersionRef.current !== requestVersion) return;
-        setItems(data.items);
-        installEnabledContracts(data.items);
-      } catch (error) {
-        if (controller.signal.aborted || contractLoadVersionRef.current !== requestVersion) return;
-        toast.error(error instanceof Error ? error.message : "加载视频模型契约失败");
-      } finally {
-        if (contractLoadVersionRef.current === requestVersion) {
-          contractLoadControllerRef.current = null;
-          setIsLoading(false);
-        }
+    contractLoadResetRef.current = reset;
+    if (reset && isCurrentSession(targetSessionKey)) {
+      itemsRef.current = [];
+      setItems([]);
+      setIsLoading(true);
+    }
+    try {
+      const data = await fetchAdminVideoModelContracts({ signal: controller.signal });
+      if (controller.signal.aborted || contractLoadVersionRef.current !== requestVersion) return;
+      commitItems(targetSessionKey, data.items);
+    } catch (error) {
+      if (controller.signal.aborted || contractLoadVersionRef.current !== requestVersion || !isCurrentSession(targetSessionKey)) return;
+      toast.error(error instanceof Error ? error.message : "加载视频模型契约失败");
+    } finally {
+      if (contractLoadVersionRef.current === requestVersion) {
+        contractLoadControllerRef.current = null;
+        contractLoadResetRef.current = false;
+        if (isCurrentSession(targetSessionKey)) setIsLoading(false);
       }
-    };
-    void load();
+    }
+  }, [commitItems, isCurrentSession]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    mutationTrackerRef.current?.activateSession(sessionKey);
+    void loadContracts(sessionKey, true);
     return () => {
+      mountedRef.current = false;
+      mutationTrackerRef.current?.deactivateSession(sessionKey);
       contractLoadVersionRef.current += 1;
-      controller.abort();
-      if (contractLoadControllerRef.current === controller) contractLoadControllerRef.current = null;
+      contractLoadControllerRef.current?.abort();
+      contractLoadControllerRef.current = null;
+      contractLoadResetRef.current = false;
     };
-  }, [sessionKey]);
+  }, [loadContracts, sessionKey]);
 
   useEffect(() => () => {
     versionsLoadVersionRef.current += 1;
     versionsLoadControllerRef.current?.abort();
     versionsLoadControllerRef.current = null;
   }, []);
+
+  const beginMutation = (scope: string) => {
+    const interruptedResetLoad = contractLoadResetRef.current;
+    contractLoadVersionRef.current += 1;
+    contractLoadControllerRef.current?.abort();
+    contractLoadControllerRef.current = null;
+    contractLoadResetRef.current = false;
+    if (interruptedResetLoad) setIsLoading(false);
+    return mutationTrackerRef.current!.begin(scope);
+  };
+
+  const reconcileMutation = (
+    ticket: VideoModelContractMutationTicket,
+    decision: VideoModelContractMutationDecision,
+  ) => {
+    if (decision.reconcile) void loadContracts(ticket.sessionKey, false);
+  };
+
+  const applyMutationResult = (
+    ticket: VideoModelContractMutationTicket,
+    responseItems: ManagedVideoModelContract[],
+    mergeConcurrent: (current: ManagedVideoModelContract[]) => ManagedVideoModelContract[],
+  ) => {
+    const decision = mutationTrackerRef.current!.complete(ticket, true);
+    if (decision.current && decision.applySnapshot) {
+      commitItems(ticket.sessionKey, decision.concurrent ? mergeConcurrent : responseItems);
+    }
+    reconcileMutation(ticket, decision);
+    return decision.current;
+  };
+
+  const rejectMutation = (ticket: VideoModelContractMutationTicket) => {
+    const decision = mutationTrackerRef.current!.complete(ticket, false);
+    reconcileMutation(ticket, decision);
+    return decision.current;
+  };
 
   const updateContract = (update: (contract: VideoModelContract) => void) => {
     setDraft((current) => {
@@ -1168,9 +1269,13 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
     setDialogOpen(true);
   };
 
-  const validate = async (showSuccess = true) => {
+  const validate = async (
+    showSuccess = true,
+    mutationTicket?: VideoModelContractMutationTicket,
+  ) => {
     const payload = mutationFromDraft(draft, editingItem?.id || "");
     const data = await validateVideoModelContract(payload);
+    if (mutationTicket && !mutationTrackerRef.current!.canApply(mutationTicket)) return null;
     setDraft(draftFromContract(data.contract, draft.enabled));
     if (showSuccess) toast.success("契约校验通过");
     return { ...payload, contract: data.contract };
@@ -1178,35 +1283,52 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
 
   const saveDraft = async () => {
     if (!editingItem) return;
+    const item = editingItem;
+    const ticket = beginMutation(item.id);
+    let current = true;
     setIsSaving(true);
     try {
-      const payload = await validate(false);
-      const data = await saveVideoModelContractDraft(editingItem.id, payload);
-      setItems(data.items);
+      const payload = await validate(false, ticket);
+      if (!payload) {
+        current = rejectMutation(ticket);
+        return;
+      }
+      const data = await saveVideoModelContractDraft(item.id, payload);
+      current = applyMutationResult(ticket, data.items, (items) => mergeManagedVideoModelContract(items, data.item, data.items));
+      if (!current) return;
       setDialogOpen(false);
       toast.success("草稿已保存，当前已发布版本不受影响");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "保存视频模型契约草稿失败");
+      current = rejectMutation(ticket);
+      if (current) toast.error(error instanceof Error ? error.message : "保存视频模型契约草稿失败");
     } finally {
-      setIsSaving(false);
+      if (current) setIsSaving(false);
     }
   };
 
   const publish = async () => {
+    const item = editingItem;
+    const ticket = beginMutation(item?.id || "create");
+    let current = true;
     setIsSaving(true);
     try {
-      const payload = await validate(false);
-      const data = editingItem
-        ? await publishVideoModelContract(editingItem.id, payload)
+      const payload = await validate(false, ticket);
+      if (!payload) {
+        current = rejectMutation(ticket);
+        return;
+      }
+      const data = item
+        ? await publishVideoModelContract(item.id, payload)
         : await createVideoModelContract(payload);
-      setItems(data.items);
-      installEnabledContracts(data.items);
+      current = applyMutationResult(ticket, data.items, (items) => mergeManagedVideoModelContract(items, data.item, data.items));
+      if (!current) return;
       setDialogOpen(false);
-      toast.success(editingItem ? `契约已发布为第 ${data.item.revision} 版` : "视频模型契约已添加并发布");
+      toast.success(item ? `契约已发布为第 ${data.item.revision} 版` : "视频模型契约已添加并发布");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "发布视频模型契约失败");
+      current = rejectMutation(ticket);
+      if (current) toast.error(error instanceof Error ? error.message : "发布视频模型契约失败");
     } finally {
-      setIsSaving(false);
+      if (current) setIsSaving(false);
     }
   };
 
@@ -1245,56 +1367,70 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
 
   const rollback = async (revision: number) => {
     if (!versionsItem) return;
+    const item = versionsItem;
+    const ticket = beginMutation(item.id);
+    let current = true;
     setIsRollingBack(true);
     try {
-      const data = await rollbackVideoModelContract(versionsItem.id, revision);
-      setItems(data.items);
-      installEnabledContracts(data.items);
+      const data = await rollbackVideoModelContract(item.id, revision);
+      current = applyMutationResult(ticket, data.items, (items) => mergeManagedVideoModelContract(items, data.item, data.items));
+      if (!current) return;
       closeVersions();
       toast.success(`已基于第 ${revision} 版发布新版本`);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "回滚契约失败");
+      current = rejectMutation(ticket);
+      if (current) toast.error(error instanceof Error ? error.message : "回滚契约失败");
     } finally {
-      setIsRollingBack(false);
+      if (current) setIsRollingBack(false);
     }
   };
 
   const toggleEnabled = async (item: ManagedVideoModelContract) => {
+    const ticket = beginMutation(item.id);
+    let current = true;
     setPendingIds((current) => new Set(current).add(item.id));
     try {
       const data = await setVideoModelContractEnabled(item.id, !item.enabled);
-      setItems(data.items);
-      installEnabledContracts(data.items);
+      current = applyMutationResult(ticket, data.items, (items) => mergeManagedVideoModelContract(items, data.item, data.items));
+      if (!current) return;
       toast.success(item.enabled ? "契约已停用" : "契约已启用");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "更新契约状态失败");
+      current = rejectMutation(ticket);
+      if (current) toast.error(error instanceof Error ? error.message : "更新契约状态失败");
     } finally {
-      setPendingIds((current) => {
-        const next = new Set(current);
-        next.delete(item.id);
-        return next;
-      });
+      if (current) {
+        setPendingIds((pending) => {
+          const next = new Set(pending);
+          next.delete(item.id);
+          return next;
+        });
+      }
     }
   };
 
   const remove = async () => {
     if (!deletingItem) return;
     const id = deletingItem.id;
+    const ticket = beginMutation(id);
+    let current = true;
     setPendingIds((current) => new Set(current).add(id));
     try {
       const data = await deleteVideoModelContract(id);
-      setItems(data.items);
-      installEnabledContracts(data.items);
+      current = applyMutationResult(ticket, data.items, (items) => items.filter((item) => item.id !== id));
+      if (!current) return;
       setDeletingItem(null);
       toast.success("视频模型契约已删除");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "删除视频模型契约失败");
+      current = rejectMutation(ticket);
+      if (current) toast.error(error instanceof Error ? error.message : "删除视频模型契约失败");
     } finally {
-      setPendingIds((current) => {
-        const next = new Set(current);
-        next.delete(id);
-        return next;
-      });
+      if (current) {
+        setPendingIds((pending) => {
+          const next = new Set(pending);
+          next.delete(id);
+          return next;
+        });
+      }
     }
   };
 
@@ -1313,17 +1449,21 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
 
   const confirmJSONImport = async () => {
     if (!pendingJSONImport) return;
+    const importBundle = pendingJSONImport.bundle;
+    const ticket = beginMutation(ALL_VIDEO_MODEL_CONTRACTS_SCOPE);
+    let current = true;
     setIsJSONImporting(true);
     try {
-      const data = await importVideoModelContractJSON(pendingJSONImport.bundle);
-      setItems(data.items);
-      installEnabledContracts(data.items);
+      const data = await importVideoModelContractJSON(importBundle);
+      current = applyMutationResult(ticket, data.items, () => data.items);
+      if (!current) return;
       setPendingJSONImport(null);
       toast.success(`已导入 ${data.imported} 个契约（新增 ${data.created}，更新 ${data.updated}）`);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "导入视频模型契约失败");
+      current = rejectMutation(ticket);
+      if (current) toast.error(error instanceof Error ? error.message : "导入视频模型契约失败");
     } finally {
-      setIsJSONImporting(false);
+      if (current) setIsJSONImporting(false);
     }
   };
 

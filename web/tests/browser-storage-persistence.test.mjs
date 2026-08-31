@@ -15,6 +15,7 @@ test("account creation preferences do not use browser storage", async () => {
     source("../src/app/workflows/creative-workflow-workspace.tsx"),
   ]);
   assert.doesNotMatch(imagePage, /image_last_|image_generation_snap_to_multiple_16/);
+  assert.doesNotMatch(imagePage, /similar-image-intent|image_similar_intent|consumeSimilarImageIntent/);
   assert.doesNotMatch(workflowRuntime, /localStorage|sessionStorage/);
   assert.doesNotMatch(canvasDefaults, /localStorage|sessionStorage/);
   assert.match(imagePage, /updateCreationWorkbenchPreferences/);
@@ -57,6 +58,7 @@ test("remembered login storage never contains a password field", async () => {
   ]);
   assert.doesNotMatch(rememberedLogin, /password/);
   assert.match(cleanup, /getRememberedLogin/);
+  assert.match(cleanup, /chatgpt2api:image_similar_intent/);
   assert.match(cleanup, /yunmian:my-assets:/);
 });
 

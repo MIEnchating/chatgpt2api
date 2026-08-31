@@ -4,6 +4,7 @@ const DEPRECATED_EXACT_KEYS = new Set([
   "chatgpt2api:image_generation_response_format_b64_json",
   "chatgpt2api:image_generation_codex_cli_compatibility",
   "chatgpt2api:image_generation_snap_to_multiple_16",
+  "chatgpt2api:image_similar_intent",
   "chatgpt2api:canvas_default_image_count",
   "chatgpt2api:prompt-source-pull-states:v1",
   "chatgpt2api:prompt-source-last-run:v1",

@@ -46,7 +46,6 @@ import {
   type ImageSizeSelection,
 } from "@/lib/image-options";
 import { IMAGE_PROMPT_PRESETS, type ImagePromptPreset } from "@/app/image/image-presets";
-import { consumeSimilarImageIntent } from "@/app/image/similar-image-intent";
 import { ImageSidebar } from "@/app/image/components/image-sidebar";
 import { useVideoTaskQueue } from "@/app/image/use-video-task-queue";
 import { ImageLightbox } from "@/components/image-lightbox";
@@ -102,7 +101,6 @@ import {
   fetchCreationTasks,
   fetchModelConfig,
   IMAGE_CREATION_MODEL_OPTIONS,
-  isImageCreationModel,
   isImageModel,
   isImageOutputFormat,
   isImageQuality,
@@ -416,17 +414,6 @@ async function buildReferenceImagesFromUrls(
 
 function getPromptReferenceImageUrls(prompt: BananaPrompt) {
   return Array.from(new Set(prompt.referenceImageUrls.map((url) => url.trim()).filter(Boolean)));
-}
-
-function reusableOutputCompressionValue(value: unknown, outputFormat: ImageOutputFormat) {
-  if (!supportsImageOutputCompression(outputFormat)) {
-    return "";
-  }
-  const compression = Number(value);
-  if (!Number.isFinite(compression)) {
-    return "";
-  }
-  return String(Math.min(100, Math.max(0, Math.round(compression))));
 }
 
 async function buildReferenceImageFromStoredImage(image: StoredImage, fileName: string) {
@@ -1459,7 +1446,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const editFileInputRef = useRef<HTMLInputElement>(null);
   const promptApplyRequestIdRef = useRef(0);
-  const similarIntentAppliedRef = useRef(false);
   const creationTaskRequestOptions = useMemo<CreationTaskRequestOptions>(() => ({
     redirectOnUnauthorized: false,
   }), []);
@@ -2148,89 +2134,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       cancelled = true;
     };
   }, [creationTaskRequestOptions]);
-
-  useEffect(() => {
-    if (isLoadingHistory || similarIntentAppliedRef.current) {
-      return;
-    }
-    similarIntentAppliedRef.current = true;
-
-    const intent = consumeSimilarImageIntent();
-    if (!intent) {
-      return;
-    }
-
-    const requestId = promptApplyRequestIdRef.current + 1;
-    promptApplyRequestIdRef.current = requestId;
-    const prompt = intent.prompt.trim() || "参考这张图，生成一张风格、主体和构图相近的新图片。";
-    const sizeSelection = getImageSizeSelectionFromSize(intent.requestedSize || intent.resolutionPreset || "");
-    const outputFormat = isImageOutputFormat(intent.outputFormat) ? intent.outputFormat : DEFAULT_IMAGE_OUTPUT_FORMAT;
-    const intentModel = isImageCreationModel(intent.model) ? intent.model : defaultImageModel;
-
-    const sourceImageUrls = intent.sourceImageUrls;
-    const usesPublicImageFallback = intent.sourceKind !== "original_references";
-    if (!imageWorkbenchAcceptsReferenceImages(intentModel)) {
-      toast.error(`模型 ${intentModel} 暂不支持参考图编辑`);
-      return;
-    }
-    const referenceLimitMessage = imageConversationReferenceLimitMessage(
-      0,
-      sourceImageUrls.length,
-      imageWorkbenchReferenceImageLimit(intentModel),
-    );
-    if (referenceLimitMessage) {
-      toast.error(referenceLimitMessage);
-      return;
-    }
-    const toastId = toast.loading(
-      usesPublicImageFallback
-        ? "正在读取公开图作为参考图"
-        : "正在读取公开的原始参考图",
-    );
-    void buildReferenceImagesFromUrls(sourceImageUrls, "public-gallery-reference")
-      .then((loadedReferences) => {
-        if (promptApplyRequestIdRef.current !== requestId) {
-          toast.dismiss(toastId);
-          return;
-        }
-        if (loadedReferences.length === 0) {
-          toast.error("参考图读取失败，未修改创作台", { id: toastId });
-          return;
-        }
-        setSelectedConversationId(null);
-        setComposerMode("image");
-        setImagePrompt(prompt);
-        setImageCount("1");
-        setImageModel(intentModel);
-        setImageSizeMode(sizeSelection.mode);
-        setImageAspectRatio(sizeSelection.aspectRatio);
-        setImageResolution(isImageResolution(intent.resolutionPreset) ? intent.resolutionPreset : sizeSelection.resolution);
-        setImageCustomRatio(sizeSelection.customRatio);
-        setImageCustomWidth(sizeSelection.customWidth);
-        setImageCustomHeight(sizeSelection.customHeight);
-        setImageOutputFormat(outputFormat);
-        setImageOutputCompression(reusableOutputCompressionValue(intent.outputCompression, outputFormat));
-        setDefaultImageVisibility("private");
-        replaceReferenceImages(loadedReferences);
-        if (fileInputRef.current) {
-          fileInputRef.current.value = "";
-        }
-        textareaRef.current?.focus();
-        toast.success(
-          usesPublicImageFallback
-            ? "未公开原始参考图，已使用公开图和可用参数"
-            : `已带入原始提示词、${loadedReferences.length} 张原始参考图和生成参数`,
-          { id: toastId },
-        );
-      })
-      .catch(() => {
-        if (promptApplyRequestIdRef.current !== requestId) {
-          toast.dismiss(toastId);
-          return;
-        }
-        toast.error("参考图读取失败，未修改创作台", { id: toastId });
-      });
-  }, [defaultImageModel, isLoadingHistory, replaceReferenceImages]);
 
   useLayoutEffect(() => {
     const turnCount = selectedConversation?.turns.length ?? 0;
