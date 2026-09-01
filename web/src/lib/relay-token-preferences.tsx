@@ -17,7 +17,7 @@ import {
   getCachedAuthSession,
   getVerifiedAuthSession,
 } from "@/lib/session";
-import type { StoredAuthSession } from "@/store/auth";
+import type { StoredAuthSession } from "@/lib/auth-session";
 import { RelayTokenPreferencesContext } from "@/lib/use-relay-token-preferences";
 import { RelayTokenPreferenceMutationTracker } from "@/lib/relay-token-preference-mutations";
 import {

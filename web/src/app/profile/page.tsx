@@ -64,7 +64,7 @@ import {
 import { useRelayTokenPreferences } from "@/lib/use-relay-token-preferences";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import { filterModelsByCapability } from "@/lib/model-capabilities";
-import type { StoredAuthSession } from "@/store/auth";
+import type { StoredAuthSession } from "@/lib/auth-session";
 import {
   AUDIO_FORMAT_OPTIONS,
   AUDIO_VOICE_OPTIONS,

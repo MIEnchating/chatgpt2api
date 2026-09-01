@@ -56,6 +56,8 @@ type RecentQueueCompletion = TaskQueueItem & {
   finalStatus: ImageTurnStatus;
 };
 
+const RECENT_COMPLETION_RETENTION_MS = 4500;
+
 function isTurnBusy(turn: ImageTurn) {
   const status = getEffectiveImageTurnStatus(turn);
   return status === "queued" || status === "generating";
@@ -537,10 +539,13 @@ export function ImageTaskQueue({ className }: { className?: string }) {
       return;
     }
 
+    const nextExpiration = Math.min(
+      ...recentCompletions.map((item) => item.completedAt + RECENT_COMPLETION_RETENTION_MS),
+    );
     const timer = window.setTimeout(() => {
-      const cutoff = Date.now() - 4500;
-      setRecentCompletions((current) => current.filter((item) => item.completedAt >= cutoff));
-    }, 4500);
+      const cutoff = Date.now() - RECENT_COMPLETION_RETENTION_MS;
+      setRecentCompletions((current) => current.filter((item) => item.completedAt > cutoff));
+    }, Math.max(0, nextExpiration - Date.now()));
     return () => {
       window.clearTimeout(timer);
     };

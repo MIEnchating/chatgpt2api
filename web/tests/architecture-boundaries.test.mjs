@@ -6,7 +6,8 @@ import { fileURLToPath } from "node:url";
 import ts from "typescript";
 
 const webRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const appRoot = path.join(webRoot, "src/app");
+const srcRoot = path.join(webRoot, "src");
+const frontendLayers = ["lib", "services", "store", "components", "app"];
 
 async function sourceFiles(root) {
   const entries = await readdir(root, { withFileTypes: true });
@@ -46,16 +47,25 @@ function importedModules(source, filename) {
   return modules;
 }
 
-function resolvesIntoApp(filename, moduleName) {
-  let resolved;
-  if (moduleName === "@/app" || moduleName.startsWith("@/app/")) {
-    resolved = path.join(webRoot, "src", moduleName.slice(2));
+function resolveFrontendModule(filename, moduleName) {
+  if (moduleName.startsWith("@/")) {
+    return path.join(srcRoot, moduleName.slice(2));
   } else if (moduleName.startsWith(".")) {
-    resolved = path.resolve(path.dirname(filename), moduleName);
-  } else {
-    return false;
+    return path.resolve(path.dirname(filename), moduleName);
   }
-  return resolved === appRoot || resolved.startsWith(`${appRoot}${path.sep}`);
+  return null;
+}
+
+function frontendLayer(filename) {
+  const relative = path.relative(srcRoot, filename);
+  if (relative.startsWith("..")) return null;
+  const layer = relative.split(path.sep)[0];
+  const rank = frontendLayers.indexOf(layer);
+  return rank < 0 ? null : { layer, rank };
+}
+
+function resolvesIntoApp(filename, moduleName) {
+  return frontendLayer(resolveFrontendModule(filename, moduleName) || "")?.layer === "app";
 }
 
 test("frontend boundary scanner covers static, dynamic, and relative imports", () => {
@@ -81,19 +91,18 @@ test("frontend boundary scanner covers static, dynamic, and relative imports", (
   assert.equal(resolvesIntoApp(filename, "@/components/button"), false);
 });
 
-test("shared frontend layers do not import page modules", async () => {
-  const roots = [
-    path.join(webRoot, "src/lib"),
-    path.join(webRoot, "src/services"),
-    path.join(webRoot, "src/components"),
-    path.join(webRoot, "src/store"),
-  ];
+test("frontend layers only import their own or lower layers", async () => {
   const violations = [];
-  for (const root of roots) {
+  for (const layer of frontendLayers.slice(0, -1)) {
+    const root = path.join(srcRoot, layer);
     for (const filename of await sourceFiles(root)) {
       const source = await readFile(filename, "utf8");
-      if (importedModules(source, filename).some((moduleName) => resolvesIntoApp(filename, moduleName))) {
-        violations.push(path.relative(webRoot, filename));
+      const importer = frontendLayer(filename);
+      for (const moduleName of importedModules(source, filename)) {
+        const dependency = frontendLayer(resolveFrontendModule(filename, moduleName) || "");
+        if (importer && dependency && dependency.rank > importer.rank) {
+          violations.push(`${path.relative(webRoot, filename)} -> ${moduleName}`);
+        }
       }
     }
   }

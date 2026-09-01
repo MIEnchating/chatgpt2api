@@ -126,7 +126,7 @@ import type { MyAsset } from "@/lib/my-assets";
 import { getManagedImagePathFromUrl } from "@/lib/image-path";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import { useImageGenerationPreferences } from "@/lib/use-image-generation-preferences";
-import { hasAPIPermission } from "@/store/auth";
+import { hasAPIPermission } from "@/lib/auth-session";
 import { cn } from "@/lib/utils";
 
 type WorkflowReference = {

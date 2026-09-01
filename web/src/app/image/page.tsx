@@ -151,7 +151,7 @@ import {
   imageTurnReferenceValidationError,
   imageTurnUsesReferenceImages as usesReferenceImages,
 } from "@/lib/image-turn-validation";
-import type { StoredAuthSession } from "@/store/auth";
+import type { StoredAuthSession } from "@/lib/auth-session";
 import { imageConversationOwnerScope } from "@/store/image-conversation-session-scope";
 import {
   ACTIVE_IMAGE_CONVERSATION_STORAGE_KEY,

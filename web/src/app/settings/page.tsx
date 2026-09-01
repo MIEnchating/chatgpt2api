@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Archive, Bell, Clapperboard, Database, ImageIcon, ListChecks, LoaderCircle, ScrollText, Settings2, Sparkles } from "lucide-react";
 
 import { useAuthGuard } from "@/lib/use-auth-guard";
-import type { StoredAuthSession } from "@/store/auth";
+import type { StoredAuthSession } from "@/lib/auth-session";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SectionNavigation } from "@/components/section-navigation";
 

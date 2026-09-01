@@ -9,7 +9,7 @@ import {
   getDefaultRouteForSession,
   type AuthRole,
   type StoredAuthSession,
-} from "@/store/auth";
+} from "@/lib/auth-session";
 import { getCachedAuthSession, getVerifiedAuthSession } from "@/lib/session";
 
 type UseAuthGuardResult = {

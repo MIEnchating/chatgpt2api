@@ -36,7 +36,7 @@ import {
   updateCanvasProject,
   type CanvasProjectSummary,
 } from "@/services/api/canvas";
-import type { StoredAuthSession } from "@/store/auth";
+import type { StoredAuthSession } from "@/lib/auth-session";
 
 function projectDate(value?: string) {
   if (!value) return "暂无更新时间";

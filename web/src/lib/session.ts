@@ -2,7 +2,7 @@
 
 import { verifySession, type LoginResponse } from "@/lib/api";
 import { clearAuthenticatedImageCache } from "@/lib/authenticated-image";
-import type { StoredAuthSession } from "@/store/auth";
+import type { StoredAuthSession } from "@/lib/auth-session";
 
 let cachedAuthSession: StoredAuthSession | null | undefined;
 let verifyAuthSessionPromise: Promise<StoredAuthSession | null> | null = null;

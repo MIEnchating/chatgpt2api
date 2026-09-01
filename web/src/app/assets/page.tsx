@@ -21,7 +21,7 @@ import { deleteManagedImages, fetchManagedImages, updateManagedImageVisibility }
 import { fetchVisibleMyAssets, type MyAsset, type MyAssetKind, type MyAssetVisibility } from "@/lib/my-assets";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import { cn } from "@/lib/utils";
-import { hasAPIPermission } from "@/store/auth";
+import { hasAPIPermission } from "@/lib/auth-session";
 import { fetchCanvasDocument } from "@/services/api/canvas";
 import { deleteStoredMedia } from "@/services/file-storage";
 import { deleteStoredImages } from "@/services/image-storage";

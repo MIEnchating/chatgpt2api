@@ -427,6 +427,13 @@ test("the global task queue uses a compact flat list", () => {
   assert.doesNotMatch(imageTaskQueueSource, /pointer-events-none absolute -inset-1/);
 });
 
+test("recent task completions expire from their own completion time", () => {
+  assert.match(imageTaskQueueSource, /Math\.min\([\s\S]*?completedAt \+ RECENT_COMPLETION_RETENTION_MS/);
+  assert.match(imageTaskQueueSource, /Math\.max\(0, nextExpiration - Date\.now\(\)\)/);
+  assert.match(imageTaskQueueSource, /item\.completedAt > cutoff/);
+  assert.doesNotMatch(imageTaskQueueSource, /item\.completedAt >= cutoff/);
+});
+
 test("interactive controls share a visible global disabled state", () => {
   assert.match(globalStylesSource, /\[aria-disabled="true"\]/);
   assert.match(globalStylesSource, /\[data-disabled\]:not\(\[data-disabled="false"\]\)/);
@@ -471,6 +478,8 @@ test("image ratio cards combine shape and resolution while video shows a size ba
   assert.match(imageSizePresetControlsSource, /layout="visual"/);
   assert.match(imageSizePresetControlsSource, /label=\{automatic \? "自动" : option\.label\}/);
   assert.match(videoSettingsPanelSource, />画幅比例<\/ImageParameterLabel>/);
+  assert.match(videoSettingsPanelSource, /const displayRatio = videoWorkbenchRatioForSize\(displaySize\)/);
+  assert.doesNotMatch(videoSettingsPanelSource, /const displayRatio = videoWorkbenchRatioForSize\(value\.size\)/);
   assert.match(videoSettingsPanelSource, /<GenerationSizeBadge>\{videoSizePreview\}<\/GenerationSizeBadge>/);
   assert.match(videoSettingsPanelSource, /description=\{ratio === "adaptive" \? "自动匹配" : ratio\}/);
   assert.doesNotMatch(videoSettingsPanelSource, /description=\{videoComposerSizeDescription/);

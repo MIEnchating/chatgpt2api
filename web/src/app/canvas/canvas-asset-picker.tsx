@@ -15,7 +15,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { fetchManagedImages } from "@/lib/api";
 import { fetchVisibleMyAssets, type MyAsset, type MyAssetKind } from "@/lib/my-assets";
 import { cn } from "@/lib/utils";
-import type { StoredAuthSession } from "@/store/auth";
+import type { StoredAuthSession } from "@/lib/auth-session";
 
 const PAGE_SIZE = 8;
 const kinds: Array<{ value: "all" | MyAssetKind; label: string }> = [

@@ -16,7 +16,7 @@ import {
 
 import { appRoutes } from "@/app/route-config";
 import { getCachedAuthSession } from "@/lib/session";
-import { canAccessPath, getDefaultRouteForSession } from "@/store/auth";
+import { canAccessPath, getDefaultRouteForSession } from "@/lib/auth-session";
 
 const routeTransition: Transition = {
   duration: 0.2,

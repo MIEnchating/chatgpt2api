@@ -14,7 +14,7 @@ import {
   getCachedAuthSession,
   getVerifiedAuthSession,
 } from "@/lib/session";
-import { canAccessPath, type StoredAuthSession } from "@/store/auth";
+import { canAccessPath, type StoredAuthSession } from "@/lib/auth-session";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";

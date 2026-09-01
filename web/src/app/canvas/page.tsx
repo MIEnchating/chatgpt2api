@@ -103,7 +103,7 @@ import {
 import { resolveMediaURL, uploadMediaBlob } from "@/services/file-storage";
 import { persistCreationTaskOutputs } from "@/services/generation-result-storage";
 import { resolveImageURL, uploadImage } from "@/services/image-storage";
-import type { StoredAuthSession } from "@/store/auth";
+import type { StoredAuthSession } from "@/lib/auth-session";
 
 const CanvasAgentPanel = lazy(() => import("@/app/canvas/canvas-agent-panel").then((module) => ({ default: module.CanvasAgentPanel })));
 const CanvasAssetPicker = lazy(() => import("@/app/canvas/canvas-asset-picker").then((module) => ({ default: module.CanvasAssetPicker })));

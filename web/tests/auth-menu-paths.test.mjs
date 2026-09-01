@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { canAccessPath, getDefaultRouteForSession } from "../src/store/auth.ts";
+import { canAccessPath, getDefaultRouteForSession } from "../src/lib/auth-session.ts";
 
 function session(menuPaths) {
   return {

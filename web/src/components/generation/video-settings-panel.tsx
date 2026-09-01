@@ -70,7 +70,7 @@ export function VideoSettingsPanel({
   const secondsOptions = videoSecondsOptions(capabilitySource);
   const positiveSeconds = secondsOptions.filter((item) => item > 0);
   const displaySize = videoWorkbenchDisplaySize(capabilitySource, value.size);
-  const displayRatio = videoWorkbenchRatioForSize(value.size);
+  const displayRatio = videoWorkbenchRatioForSize(displaySize);
   const displaySeconds = videoWorkbenchDisplaySeconds(capabilitySource, value.seconds);
   const displayResolution = videoWorkbenchDisplayResolution(capabilitySource, value.resolution);
   const videoSizePreview = displayRatio === "adaptive"

@@ -47,7 +47,7 @@ import {
 import { useRelayTokenPreferences } from "@/lib/use-relay-token-preferences";
 import { filterModelsByCapability } from "@/lib/model-capabilities";
 import { cn } from "@/lib/utils";
-import type { StoredAuthSession } from "@/store/auth";
+import type { StoredAuthSession } from "@/lib/auth-session";
 
 import { useSettingsStore } from "../store";
 import { SettingsCard, settingsDialogInputClassName } from "./settings-ui";

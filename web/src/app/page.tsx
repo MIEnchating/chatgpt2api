@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 
 import { getVerifiedAuthSession } from "@/lib/session";
-import { getDefaultRouteForSession } from "@/store/auth";
+import { getDefaultRouteForSession } from "@/lib/auth-session";
 
 export default function HomePage() {
   const navigate = useNavigate();
