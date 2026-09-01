@@ -647,6 +647,22 @@ func TestImageConversationAssetCleanupContextStopsWaitingForFilesystemLock(t *te
 	}
 }
 
+func TestImageConversationAssetReadRejectsCanceledContextWithAvailableSlot(t *testing.T) {
+	assets := NewImageConversationAssetService(t.TempDir())
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	for range 32 {
+		validated, err := assets.ReadValidatedReader(ctx, bytes.NewReader(imageConversationAssetTestPNG(t)))
+		if !errors.Is(err, context.Canceled) || validated != nil {
+			t.Fatalf("ReadValidatedReader() = (%#v, %v), want context canceled", validated, err)
+		}
+	}
+	if len(assets.processing) != 0 {
+		t.Fatalf("canceled reads retained %d processing slots", len(assets.processing))
+	}
+}
+
 func TestImageConversationAssetFilesystemScansPropagateErrors(t *testing.T) {
 	parent := t.TempDir()
 	blocker := filepath.Join(parent, "not-a-directory")

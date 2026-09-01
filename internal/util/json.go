@@ -31,53 +31,6 @@ const (
 	ImageModelGPTMini   = "gpt-5-mini"
 )
 
-var ImageModels = map[string]struct{}{
-	ImageModelGPT:   {},
-	ImageModelCodex: {},
-}
-
-var ModelIDs = []string{
-	ImageModelGPT,
-	ImageModelCodex,
-	ImageModelAuto,
-	ImageModelGPTMini,
-	ImageModelGPT53Mini,
-	ImageModelGPT5,
-	ImageModelGPT51,
-	ImageModelGPT52,
-	ImageModelGPT53,
-	ImageModelGPT54,
-	ImageModelGPT55,
-}
-
-var ImageGenerationModelIDs = []string{
-	ImageModelGPT,
-	ImageModelCodex,
-	ImageModelAuto,
-}
-
-var ImageGenerationModels = map[string]struct{}{}
-
-func init() {
-	for _, model := range ImageGenerationModelIDs {
-		ImageGenerationModels[model] = struct{}{}
-	}
-}
-
-var ResponsesImageToolModels = map[string]struct{}{
-	ImageModelAuto:      {},
-	ImageModelGPT:       {},
-	ImageModelCodex:     {},
-	ImageModelGPTMini:   {},
-	ImageModelGPT53Mini: {},
-	ImageModelGPT5:      {},
-	ImageModelGPT51:     {},
-	ImageModelGPT52:     {},
-	ImageModelGPT53:     {},
-	ImageModelGPT54:     {},
-	ImageModelGPT55:     {},
-}
-
 func Clean(v any) string {
 	return strings.TrimSpace(fmt.Sprint(ValueOr(v, "")))
 }

@@ -1248,11 +1248,29 @@ func unquoteEnvValue(value string) string {
 	if len(value) >= 2 && value[0] == value[len(value)-1] && (value[0] == '"' || value[0] == '\'') {
 		inner := value[1 : len(value)-1]
 		if value[0] == '"' {
-			inner = strings.ReplaceAll(inner, `\n`, "\n")
-			inner = strings.ReplaceAll(inner, `\r`, "\r")
-			inner = strings.ReplaceAll(inner, `\t`, "\t")
-			inner = strings.ReplaceAll(inner, `\"`, `"`)
-			inner = strings.ReplaceAll(inner, `\\`, `\`)
+			var decoded strings.Builder
+			decoded.Grow(len(inner))
+			for index := 0; index < len(inner); index++ {
+				if inner[index] != '\\' || index+1 >= len(inner) {
+					decoded.WriteByte(inner[index])
+					continue
+				}
+				switch inner[index+1] {
+				case 'n':
+					decoded.WriteByte('\n')
+				case 'r':
+					decoded.WriteByte('\r')
+				case 't':
+					decoded.WriteByte('\t')
+				case '"', '\\':
+					decoded.WriteByte(inner[index+1])
+				default:
+					decoded.WriteByte('\\')
+					continue
+				}
+				index++
+			}
+			inner = decoded.String()
 		}
 		return inner
 	}
@@ -1489,7 +1507,7 @@ func writeEnvUpdates(path string, updates map[string]string) error {
 	for _, line := range lines {
 		key, _, ok := parseEnvAssignment(line)
 		if ok {
-			if value, exists := pending[key]; exists {
+			if value, exists := updates[key]; exists {
 				next = append(next, formatEnvAssignment(key, value))
 				delete(pending, key)
 				continue
@@ -1526,6 +1544,8 @@ func formatEnvValue(value string) string {
 	}
 	value = strings.ReplaceAll(value, `\`, `\\`)
 	value = strings.ReplaceAll(value, `"`, `\"`)
+	value = strings.ReplaceAll(value, "\r", `\r`)
+	value = strings.ReplaceAll(value, "\t", `\t`)
 	value = strings.ReplaceAll(value, "\n", `\n`)
 	return `"` + value + `"`
 }

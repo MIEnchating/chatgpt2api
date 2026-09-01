@@ -215,26 +215,22 @@ func extractImagesFromText(text string) []UploadedImage {
 }
 
 func MessageText(content any) string {
-	switch value := content.(type) {
-	case string:
+	if value, ok := content.(string); ok {
 		return value
-	case []any:
-		var parts []string
-		for _, raw := range value {
-			switch item := raw.(type) {
-			case string:
-				parts = append(parts, item)
-			case map[string]any:
-				typeName := util.Clean(item["type"])
-				if typeName == "text" || typeName == "input_text" || typeName == "output_text" {
-					parts = append(parts, util.Clean(item["text"]))
-				}
+	}
+	var parts []string
+	for _, raw := range anyList(content) {
+		switch item := raw.(type) {
+		case string:
+			parts = append(parts, item)
+		case map[string]any:
+			typeName := util.Clean(item["type"])
+			if typeName == "text" || typeName == "input_text" || typeName == "output_text" {
+				parts = append(parts, util.Clean(item["text"]))
 			}
 		}
-		return strings.Join(parts, "")
-	default:
-		return ""
 	}
+	return strings.Join(parts, "")
 }
 
 func NormalizeMessages(messages any, system any) []map[string]any {

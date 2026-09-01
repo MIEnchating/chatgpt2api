@@ -206,15 +206,22 @@ func TestAPIRouterRejectsDeclaredBodyAboveGlobalLimit(t *testing.T) {
 
 func TestImageUploadSlotsBoundConcurrentHeavyReads(t *testing.T) {
 	app := &App{imageUploadSlots: make(chan struct{}, 1)}
+	canceledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	canceledRelease, canceledAcquired := app.acquireImageUpload(canceledCtx)
+	if canceledAcquired || canceledRelease != nil || len(app.imageUploadSlots) != 0 {
+		t.Fatal("canceled upload acquired an available slot")
+	}
+
 	release, acquired := app.acquireImageUpload(context.Background())
 	if !acquired {
 		t.Fatal("first upload did not acquire the slot")
 	}
 	defer release()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	cancel()
-	secondRelease, secondAcquired := app.acquireImageUpload(ctx)
+	secondCtx, secondCancel := context.WithCancel(context.Background())
+	secondCancel()
+	secondRelease, secondAcquired := app.acquireImageUpload(secondCtx)
 	if secondAcquired || secondRelease != nil {
 		t.Fatal("canceled second upload acquired the full slot")
 	}

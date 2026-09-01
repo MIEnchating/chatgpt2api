@@ -12,6 +12,7 @@ function Switch({
   checked: checkedProp,
   defaultChecked = false,
   onCheckedChange,
+  onClick,
   className,
   disabled,
   ...props
@@ -19,8 +20,9 @@ function Switch({
   const [uncontrolledChecked, setUncontrolledChecked] = React.useState(defaultChecked);
   const checked = checkedProp ?? uncontrolledChecked;
 
-  const handleClick = () => {
-    if (disabled) return;
+  const handleClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+    onClick?.(event);
+    if (event.defaultPrevented || disabled) return;
     const next = !checked;
     if (checkedProp === undefined) setUncontrolledChecked(next);
     onCheckedChange?.(next);

@@ -310,8 +310,18 @@ func (a *App) acquireImageUpload(ctx context.Context) (func(), bool) {
 	if a == nil || a.imageUploadSlots == nil {
 		return func() {}, true
 	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if ctx.Err() != nil {
+		return nil, false
+	}
 	select {
 	case a.imageUploadSlots <- struct{}{}:
+		if ctx.Err() != nil {
+			<-a.imageUploadSlots
+			return nil, false
+		}
 		return func() { <-a.imageUploadSlots }, true
 	case <-ctx.Done():
 		return nil, false

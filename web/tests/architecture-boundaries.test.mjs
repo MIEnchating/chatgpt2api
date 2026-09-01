@@ -21,6 +21,7 @@ test("shared frontend layers do not import page modules", async () => {
     path.join(webRoot, "src/lib"),
     path.join(webRoot, "src/services"),
     path.join(webRoot, "src/components"),
+    path.join(webRoot, "src/store"),
   ];
   const violations = [];
   for (const root of roots) {

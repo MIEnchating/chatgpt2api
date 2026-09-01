@@ -184,8 +184,9 @@ function VideoDurationInput({ value, min, max, disabled, placeholder, onChange }
 
 function VideoDimensionInputs({ value, options, disabled, onChange }: { value: string; options: string[]; disabled: boolean; onChange: (value: string) => void }) {
   const readDimensions = (size: string) => { const match = size.match(/^(\d+)x(\d+)$/i); return { width: match?.[1] || "", height: match?.[2] || "" }; };
-  const [dimensions, setDimensions] = useState(() => readDimensions(value || options[0] || ""));
-  useEffect(() => setDimensions(readDimensions(value || options[0] || "")), [options, value]);
+  const defaultSize = options[0] || "";
+  const [dimensions, setDimensions] = useState(() => readDimensions(value || defaultSize));
+  useEffect(() => setDimensions(readDimensions(value || defaultSize)), [defaultSize, value]);
   const commit = () => {
     if (disabled || !/^\d+$/.test(dimensions.width) || !/^\d+$/.test(dimensions.height) || Number(dimensions.width) < 1 || Number(dimensions.height) < 1) return setDimensions(readDimensions(value || options[0] || ""));
     const next = `${dimensions.width}x${dimensions.height}`;

@@ -20,11 +20,15 @@ const DEPRECATED_KEY_PREFIXES = [
 export function purgeDeprecatedBrowserPersistence() {
   if (typeof window === "undefined") return;
   getRememberedLogin();
-  for (let index = window.localStorage.length - 1; index >= 0; index -= 1) {
-    const key = window.localStorage.key(index);
-    if (!key) continue;
-    if (DEPRECATED_EXACT_KEYS.has(key) || DEPRECATED_KEY_PREFIXES.some((prefix) => key.startsWith(prefix))) {
-      window.localStorage.removeItem(key);
+  try {
+    for (let index = window.localStorage.length - 1; index >= 0; index -= 1) {
+      const key = window.localStorage.key(index);
+      if (!key) continue;
+      if (DEPRECATED_EXACT_KEYS.has(key) || DEPRECATED_KEY_PREFIXES.some((prefix) => key.startsWith(prefix))) {
+        window.localStorage.removeItem(key);
+      }
     }
+  } catch {
+    // Cleanup is best-effort when browser storage is unavailable.
   }
 }

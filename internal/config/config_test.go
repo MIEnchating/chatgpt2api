@@ -1103,6 +1103,44 @@ func TestStoreUpdateRejectsInvalidRelayBaseURL(t *testing.T) {
 	}
 }
 
+func TestEnvValueFormattingRoundTripsEscapes(t *testing.T) {
+	for _, value := range []string{
+		`literal\nsequence`,
+		`literal\rsequence`,
+		`literal\tsequence`,
+		"line one\nline two\r\n\tindent",
+		`quote " and trailing slash\`,
+	} {
+		if got := unquoteEnvValue(formatEnvValue(value)); got != value {
+			t.Errorf("environment value round trip = %q, want %q", got, value)
+		}
+	}
+}
+
+func TestWriteEnvUpdatesReplacesDuplicateAssignments(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".env")
+	if err := os.WriteFile(path, []byte("DUPLICATE=old-first\nKEEP=unchanged\nDUPLICATE=old-last\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeEnvUpdates(path, map[string]string{"DUPLICATE": "new"}); err != nil {
+		t.Fatal(err)
+	}
+	values, err := readEnvObject(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if values["DUPLICATE"] != "new" || values["KEEP"] != "unchanged" {
+		t.Fatalf("environment values = %#v", values)
+	}
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(contents), "DUPLICATE=old") || strings.Count(string(contents), "DUPLICATE=new") != 2 {
+		t.Fatalf("updated environment file = %q", contents)
+	}
+}
+
 func TestStoreAllowsEmptyImageBaseURLAndRejectsInvalidOverride(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("ROOT_DIR", root)

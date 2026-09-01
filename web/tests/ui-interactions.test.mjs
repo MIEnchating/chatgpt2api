@@ -7,6 +7,7 @@ const selectSource = await readFile(new URL("../src/components/ui/select.tsx", i
 const dialogSource = await readFile(new URL("../src/components/ui/dialog.tsx", import.meta.url), "utf8");
 const inputTagSource = await readFile(new URL("../src/components/ui/input-tag.tsx", import.meta.url), "utf8");
 const multiSelectSource = await readFile(new URL("../src/components/ui/multi-select.tsx", import.meta.url), "utf8");
+const switchSource = await readFile(new URL("../src/components/ui/switch.tsx", import.meta.url), "utf8");
 const workflowSource = await readFile(new URL("../src/app/workflows/creative-workflow-workspace.tsx", import.meta.url), "utf8");
 const workflowPageSource = await readFile(new URL("../src/app/workflows/page.tsx", import.meta.url), "utf8");
 const imageTaskQueueSource = await readFile(new URL("../src/components/image-task-queue.tsx", import.meta.url), "utf8");
@@ -79,6 +80,12 @@ test("controlled selects remain controlled while asynchronous values are empty",
   assert.match(selectSource, /hasControlledValue \? \{ value: value \?\? "" \} : \{\}/);
 });
 
+test("switch composes native click handlers with checked state changes", () => {
+  assert.match(switchSource, /onClick\?\.\(event\)/);
+  assert.match(switchSource, /event\.defaultPrevented \|\| disabled/);
+  assert.match(switchSource, /onClick=\{handleClick\}[\s\S]*?\.\.\.props/);
+});
+
 test("global selects keep the neutral selected treatment shown across settings", () => {
   assert.match(selectSource, /data-\[state=checked\]:bg-accent/);
   assert.match(selectSource, /data-\[state=checked\]:font-medium/);
@@ -110,6 +117,12 @@ test("multi select fills available width before collapsing selected tags", () =>
   assert.match(multiSelectSource, /candidateWidth \+ gap \+ collapseWidth > availableWidth/);
   assert.match(multiSelectSource, /new ResizeObserver\(measureVisibleTags\)/);
   assert.doesNotMatch(multiSelectSource, /selected\.slice\(0, 1\)/);
+});
+
+test("video dimension drafts survive equivalent option array instances", () => {
+  assert.match(videoSettingsPanelSource, /const defaultSize = options\[0\] \|\| ""/);
+  assert.match(videoSettingsPanelSource, /\[defaultSize, value\]/);
+  assert.doesNotMatch(videoSettingsPanelSource, /\[options, value\]/);
 });
 
 test("dialog close buttons stay fixed while the body scrollbar updates", () => {

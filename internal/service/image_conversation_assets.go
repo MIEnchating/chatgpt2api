@@ -1192,8 +1192,15 @@ func (s *ImageConversationAssetService) acquireProcessing(ctx context.Context) (
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
 	select {
 	case s.processing <- struct{}{}:
+		if err := ctx.Err(); err != nil {
+			<-s.processing
+			return nil, err
+		}
 		return func() { <-s.processing }, nil
 	case <-ctx.Done():
 		return nil, ctx.Err()
