@@ -9,8 +9,6 @@ import {
   canvasConfigUsesConnectedText,
   canvasGenerationInputsFromIndex,
   canvasConfigPromptDisplay,
-  canvasConfigPromptValue,
-  insertCanvasConfigReference,
 } from "../src/app/canvas/canvas-config-inputs.ts";
 
 function node(id, type, values = {}) {
@@ -73,7 +71,7 @@ test("shared input index preserves direct and connected generation semantics", (
   assert.deepEqual(canvasGenerationInputsFromIndex("direct", index).map((input) => input.nodeID), ["idea"]);
 });
 
-test("configuration prompt labels round-trip to stable node references", () => {
+test("configuration prompt references display stable labels", () => {
   const inputs = [
     { nodeID: "image-a", type: "image", title: "A", url: "/a.png" },
     { nodeID: "text-a", type: "text", title: "说明", text: "保持配色" },
@@ -81,14 +79,6 @@ test("configuration prompt labels round-trip to stable node references", () => {
   const stored = "让 @[node:image-a] 遵循 @[node:text-a]";
   const display = canvasConfigPromptDisplay(stored, inputs);
   assert.equal(display, "让 @图片1 遵循 @文本1");
-  assert.equal(canvasConfigPromptValue(display, inputs), stored);
-});
-
-test("inserting a reference preserves surrounding text and returns the caret", () => {
-  assert.deepEqual(insertCanvasConfigReference("生成海报", "图片1", 2, 2), {
-    value: "生成 @图片1 海报",
-    cursor: 8,
-  });
 });
 
 test("configuration generation requires prompt text or at least one usable input", () => {

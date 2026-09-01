@@ -1,18 +1,15 @@
 import type { CanvasConnection, CanvasNode } from "@/services/api/canvas";
 import { buildCanvasInputIndex, canvasConfigInputLabel, canvasGenerationInputsFromIndex, type CanvasConfigInput, type CanvasInputIndex } from "./canvas-config-inputs.ts";
 
-export type CanvasResourceLabel = {
-  label: string;
-  active: boolean;
-};
-
-export type CanvasResourceReference = CanvasResourceLabel & {
+export type CanvasResourceReference = {
   id: string;
   nodeID: string;
   kind: "image" | "video" | "audio" | "text";
+  label: string;
   title: string;
   previewURL?: string;
   text?: string;
+  active: boolean;
 };
 
 export function buildAllCanvasResourceReferences(nodes: readonly CanvasNode[]) {
@@ -35,46 +32,12 @@ export function buildAllCanvasResourceReferences(nodes: readonly CanvasNode[]) {
   });
 }
 
-export function canvasResourceLabels(
-  nodes: readonly CanvasNode[],
-  connections: readonly CanvasConnection[],
-  contextNodeID: string,
-  inputIndex = buildCanvasInputIndex(nodes, connections),
-) {
-  const activeReferences = canvasNodeMentionReferencesFromIndex(contextNodeID, inputIndex);
-  const activeByNodeID = new Map(activeReferences.map((reference) => [reference.nodeID, reference]));
-  const counts: Record<CanvasResourceReference["kind"], number> = { image: 0, video: 0, audio: 0, text: 0 };
-  const labels = new Map<string, CanvasResourceLabel>();
-
-  nodes.forEach((node) => {
-    const kind = canvasResourceKind(node);
-    if (!kind) return;
-    counts[kind] += 1;
-    const active = activeByNodeID.get(node.id);
-    labels.set(node.id, {
-      label: active?.label || `${{ image: "图片", video: "视频", audio: "音频", text: "文本" }[kind]}${counts[kind]}`,
-      active: Boolean(active),
-    });
-  });
-
-  return labels;
-}
-
 export function canvasNodeMentionReferences(
   nodeID: string,
   nodes: readonly CanvasNode[],
   connections: readonly CanvasConnection[],
 ) {
   return canvasNodeMentionReferencesFromIndex(nodeID, buildCanvasInputIndex(nodes, connections));
-}
-
-export function canvasNodeMentionReferencesByNodeID(
-  nodeIDs: readonly string[],
-  inputIndex: CanvasInputIndex,
-) {
-  const references = new Map<string, CanvasResourceReference[]>();
-  nodeIDs.forEach((nodeID) => references.set(nodeID, canvasNodeMentionReferencesFromIndex(nodeID, inputIndex)));
-  return references;
 }
 
 function canvasNodeMentionReferencesFromIndex(nodeID: string, inputIndex: CanvasInputIndex) {

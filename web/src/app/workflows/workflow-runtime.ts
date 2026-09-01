@@ -412,17 +412,6 @@ export function parseWorkflowSeriesDrafts(
   }));
 }
 
-export function normalizeSeriesDraft(draft: WorkflowSeriesDraft) {
-  return {
-    id: draft.id || uid(),
-    title: draft.title || "未命名",
-    prompt: draft.prompt || "",
-    status: draft.status === "running" ? ("draft" as const) : draft.status || "draft",
-    error: draft.error,
-    result_ids: Array.isArray(draft.result_ids) ? draft.result_ids : [],
-  };
-}
-
 export function parseVariableOptions(text: string) {
   return text
     .split(/[/\n]/)

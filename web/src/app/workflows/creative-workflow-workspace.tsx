@@ -134,10 +134,6 @@ type WorkflowSeriesRun = {
   total: number;
 };
 
-export type {
-  WorkflowRunResult,
-} from "@/app/workflows/workflow-task-runtime";
-
 type CreativeWorkflowWorkspaceProps = {
   embedded?: boolean;
   hideTaskList?: boolean;

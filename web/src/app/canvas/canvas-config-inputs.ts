@@ -97,20 +97,3 @@ export function canvasConfigPromptDisplay(value: string, inputs: readonly Canvas
     return input ? `@${canvasConfigInputLabel(input, inputs)}` : token;
   });
 }
-
-export function canvasConfigPromptValue(value: string, inputs: readonly CanvasConfigInput[]) {
-  const idByLabel = new Map(inputs.map((input) => [canvasConfigInputLabel(input, inputs), input.nodeID]));
-  return value.replace(/@(图片|视频|音频|文本)\d+/g, (label) => {
-    const nodeID = idByLabel.get(label.slice(1));
-    return nodeID ? `@[node:${nodeID}]` : label;
-  });
-}
-
-export function insertCanvasConfigReference(value: string, label: string, start: number, end: number) {
-  const before = value.slice(0, start);
-  const after = value.slice(end);
-  const prefix = before && !/\s$/.test(before) ? " " : "";
-  const suffix = after && !/^\s/.test(after) ? " " : "";
-  const inserted = `${prefix}@${label}${suffix || " "}`;
-  return { value: `${before}${inserted}${after}`, cursor: before.length + inserted.length };
-}

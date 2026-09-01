@@ -6,7 +6,6 @@ import {
   createBlankWorkflow,
   createDefaultInputValues,
   mergeWorkflowRunMetadata,
-  normalizeSeriesDraft,
   normalizeWorkflow,
   parseVariableOptions,
   parseWorkflowSeriesDrafts,
@@ -16,8 +15,6 @@ import {
 } from "../src/app/workflows/workflow-runtime.ts";
 import {
   restoreWorkflowTasks,
-  workflowTaskFailureEvent,
-  workflowTaskStartEvent,
 } from "../src/app/workflows/workflow-task-runtime.ts";
 
 const models = {
@@ -218,7 +215,6 @@ test("series parser accepts fenced JSON and follows reference fallbacks", () => 
   const fallback = parseWorkflowSeriesDrafts("", 3, "基础提示词");
   assert.equal(fallback.length, 3);
   assert.match(fallback[2].prompt, /第 3 张/);
-  assert.equal(normalizeSeriesDraft({ ...fallback[0], status: "running" }).status, "draft");
 });
 
 test("series parser preserves top-level arrays and skips malformed entries", () => {
@@ -348,12 +344,6 @@ test("workflow batch reports failure after all child tasks finish", () => {
   assert.equal(restored[0].images[0].index, 0);
   assert.deepEqual(restored[0].completed_units, [1, 2]);
   assert.deepEqual(restored[0].unit_errors, { 2: "额度不足" });
-  const start = workflowTaskStartEvent(restored[0]);
-  assert.equal(start.taskId, "batch");
-  assert.equal(start.count, 2);
-  const failure = workflowTaskFailureEvent(restored[0]);
-  assert.equal(failure.images[0].index, 0);
-  assert.equal(failure.images[0].mimeType, "image/webp");
 });
 
 test("workflow batch stays running until every expected child is persisted", () => {
