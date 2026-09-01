@@ -426,6 +426,61 @@ func TestVideoContractNormalizesAndAppliesTypedForcedValues(t *testing.T) {
 	}
 }
 
+func TestVideoContractRuleMapNormalizationRejectsConflictingKeys(t *testing.T) {
+	tests := []struct {
+		name        string
+		limits      map[string]int
+		forceValues map[string]string
+		wantField   string
+	}{
+		{
+			name:      "limits",
+			limits:    map[string]int{"duration": 4, " DURATION ": 8},
+			wantField: "duration",
+		},
+		{
+			name:        "force values",
+			forceValues: map[string]string{"watermark": "true", " WATERMARK ": "false"},
+			wantField:   "watermark",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			contract := DefaultVideoContracts()[0]
+			contract.Rules = []VideoModelContractRule{{
+				When:        VideoModelContractRuleCondition{Field: "duration", Operator: "present"},
+				Limits:      test.limits,
+				ForceValues: test.forceValues,
+				Message:     "conflicting normalized keys",
+			}}
+			if _, err := NormalizeVideoModelContract(contract); err == nil || !strings.Contains(err.Error(), test.wantField) {
+				t.Fatalf("NormalizeVideoModelContract() error = %v, want conflict for %q", err, test.wantField)
+			}
+		})
+	}
+}
+
+func TestVideoContractRuleMapNormalizationCollapsesEquivalentKeys(t *testing.T) {
+	contract := DefaultVideoContracts()[0]
+	contract.Rules = []VideoModelContractRule{{
+		When:        VideoModelContractRuleCondition{Field: "duration", Operator: "present"},
+		Limits:      map[string]int{"duration": 8, " DURATION ": 8},
+		ForceValues: map[string]string{"watermark": "TRUE", " WATERMARK ": " true "},
+		Message:     "equivalent normalized keys",
+	}}
+	normalized, err := NormalizeVideoModelContract(contract)
+	if err != nil {
+		t.Fatalf("NormalizeVideoModelContract() error = %v", err)
+	}
+	rule := normalized.Rules[0]
+	if len(rule.Limits) != 1 || rule.Limits["duration"] != 8 {
+		t.Fatalf("normalized limits = %#v", rule.Limits)
+	}
+	if len(rule.ForceValues) != 1 || rule.ForceValues["watermark"] != "true" {
+		t.Fatalf("normalized force values = %#v", rule.ForceValues)
+	}
+}
+
 func TestVideoContractRuleNormalizationAndConflicts(t *testing.T) {
 	contract := DefaultVideoContracts()[0]
 	contract.Rules = []VideoModelContractRule{{

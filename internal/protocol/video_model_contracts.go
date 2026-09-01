@@ -279,12 +279,14 @@ func NormalizeVideoModelContract(contract VideoModelContract) (VideoModelContrac
 			rule.RequireAny = filtered
 		}
 		rule.Message = strings.TrimSpace(rule.Message)
-		rule.Limits = normalizedVideoContractIntMap(rule.Limits)
-		rule.ForceValues = normalizedVideoContractStringMap(rule.ForceValues)
-		for field, value := range rule.ForceValues {
-			if field == "generate_audio" || field == "watermark" {
-				rule.ForceValues[field] = strings.ToLower(value)
-			}
+		var err error
+		rule.Limits, err = normalizedVideoContractIntMap(rule.Limits)
+		if err != nil {
+			return VideoModelContract{}, fmt.Errorf("条件规则 %d 的字段上限冲突: %w", index+1, err)
+		}
+		rule.ForceValues, err = normalizedVideoContractStringMap(rule.ForceValues)
+		if err != nil {
+			return VideoModelContract{}, fmt.Errorf("条件规则 %d 的强制字段值冲突: %w", index+1, err)
 		}
 	}
 	contract.Polling.QueuedStatuses = uniqueTrimmedStrings(contract.Polling.QueuedStatuses, true)
@@ -344,32 +346,44 @@ func videoCapabilityWithGenerationModes(capability VideoModelContractCapability,
 	return capability
 }
 
-func normalizedVideoContractIntMap(values map[string]int) map[string]int {
+func normalizedVideoContractIntMap(values map[string]int) (map[string]int, error) {
 	if len(values) == 0 {
-		return nil
+		return nil, nil
 	}
 	result := make(map[string]int, len(values))
 	for key, value := range values {
 		key = strings.ToLower(strings.TrimSpace(key))
-		if key != "" {
-			result[key] = value
+		if key == "" {
+			continue
 		}
+		if existing, exists := result[key]; exists && existing != value {
+			return nil, fmt.Errorf("字段 %q 配置了不一致的值", key)
+		}
+		result[key] = value
 	}
-	return result
+	return result, nil
 }
 
-func normalizedVideoContractStringMap(values map[string]string) map[string]string {
+func normalizedVideoContractStringMap(values map[string]string) (map[string]string, error) {
 	if len(values) == 0 {
-		return nil
+		return nil, nil
 	}
 	result := make(map[string]string, len(values))
 	for key, value := range values {
 		key = strings.ToLower(strings.TrimSpace(key))
-		if key != "" {
-			result[key] = strings.TrimSpace(value)
+		if key == "" {
+			continue
 		}
+		value = strings.TrimSpace(value)
+		if key == "generate_audio" || key == "watermark" {
+			value = strings.ToLower(value)
+		}
+		if existing, exists := result[key]; exists && existing != value {
+			return nil, fmt.Errorf("字段 %q 配置了不一致的值", key)
+		}
+		result[key] = value
 	}
-	return result
+	return result, nil
 }
 
 var videoContractRuleFields = map[string]struct{}{

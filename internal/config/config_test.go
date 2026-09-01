@@ -571,6 +571,7 @@ func TestStorePromptSourcesDoNotExposeMutableState(t *testing.T) {
 func TestStoreGetUsesOneSettingsSnapshot(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("ROOT_DIR", root)
+	t.Setenv("PROJECT_NAME", "Old project")
 
 	blockingTitle := &blockingConfigString{
 		value:   "Old title",
@@ -583,7 +584,7 @@ func TestStoreGetUsesOneSettingsSnapshot(t *testing.T) {
 	}
 	store.mu.Lock()
 	store.data["app_title"] = blockingTitle
-	store.data["project_name"] = "Old project"
+	delete(store.data, "project_name")
 	store.mu.Unlock()
 
 	result := make(chan map[string]any, 1)
@@ -591,8 +592,10 @@ func TestStoreGetUsesOneSettingsSnapshot(t *testing.T) {
 	<-blockingTitle.reached
 	store.mu.Lock()
 	store.data["app_title"] = "New title"
-	store.data["project_name"] = "New project"
 	store.mu.Unlock()
+	if err := os.Setenv("PROJECT_NAME", "New project"); err != nil {
+		t.Fatalf("Setenv(PROJECT_NAME): %v", err)
+	}
 	close(blockingTitle.release)
 
 	settings := <-result

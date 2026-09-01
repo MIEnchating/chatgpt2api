@@ -95,6 +95,43 @@ type imageCleanupWorker struct {
 	closeWait    time.Duration
 }
 
+type appStartupCleanup struct {
+	cancel  context.CancelFunc
+	actions []func()
+	done    bool
+}
+
+func (c *appStartupCleanup) add(action func()) {
+	if c == nil || c.done || action == nil {
+		return
+	}
+	c.actions = append(c.actions, action)
+}
+
+func (c *appStartupCleanup) run() {
+	if c == nil || c.done {
+		return
+	}
+	c.done = true
+	if c.cancel != nil {
+		c.cancel()
+	}
+	for index := len(c.actions) - 1; index >= 0; index-- {
+		c.actions[index]()
+	}
+	c.cancel = nil
+	c.actions = nil
+}
+
+func (c *appStartupCleanup) commit() {
+	if c == nil || c.done {
+		return
+	}
+	c.done = true
+	c.cancel = nil
+	c.actions = nil
+}
+
 func (w *imageCleanupWorker) scheduleContext(run func(context.Context)) {
 	if w == nil || run == nil {
 		return
@@ -188,6 +225,9 @@ func (w *imageCleanupWorker) wait() {
 const imageCleanupWorkerCloseWait = time.Second
 
 func NewApp() (*App, error) {
+	startupCleanup := &appStartupCleanup{}
+	defer startupCleanup.run()
+
 	cfg, err := config.NewStore()
 	if err != nil {
 		return nil, err
@@ -196,41 +236,44 @@ func NewApp() (*App, error) {
 	if err != nil {
 		return nil, err
 	}
+	storageBackendCloser, _ := storageBackend.(io.Closer)
+	if storageBackendCloser != nil {
+		startupCleanup.add(func() { _ = storageBackendCloser.Close() })
+	}
 	ctx, cancel := context.WithCancel(context.Background())
+	startupCleanup.cancel = cancel
 	logs := service.NewLogService(storageBackend)
 	logger, err := service.NewLogger(cfg.DataDir, cfg.LogLevels)
 	if err != nil {
-		cancel()
 		return nil, err
 	}
+	startupCleanup.add(func() { _ = logger.Close() })
 	proxy := service.NewProxyService(cfg)
+	startupCleanup.add(proxy.Close)
 	newAPIKeys, err := service.NewNewAPITokenReader(service.NewAPITokenReaderConfig{
 		DatabaseURL:  cfg.RelayDatabaseConnectionURL(),
 		DatabaseType: cfg.RelayDatabaseType(),
 	})
 	if err != nil {
-		cancel()
 		return nil, err
 	}
+	startupCleanup.add(func() { _ = newAPIKeys.Close() })
 	auth, err := service.NewAuthService(storageBackend)
 	if err != nil {
-		cancel()
 		return nil, err
 	}
 	storageFiles, err := service.NewGenericStorageService(storageBackend, cfg, filepath.Join(cfg.DataDir, "storage_files"), func(err error) {
 		logger.Warning("scheduled storage capacity measurement failed", "error", err)
 	})
 	if err != nil {
-		cancel()
 		return nil, err
 	}
+	startupCleanup.add(storageFiles.Close)
 	if err := storageFiles.RefreshCapacityScheduler(ctx); err != nil {
-		cancel()
 		return nil, fmt.Errorf("initialize storage capacity scheduler: %w", err)
 	}
 	bootstrap, err := auth.EnsureBootstrapAdmin(cfg.AdminUsername(), cfg.AdminPassword())
 	if err != nil {
-		cancel()
 		return nil, err
 	}
 	if bootstrap.Created && bootstrap.Generated {
@@ -239,26 +282,21 @@ func NewApp() (*App, error) {
 	}
 	videoContracts := videocontract.NewVideoModelContractService(storageBackend)
 	if err := videoContracts.Initialize(); err != nil {
-		cancel()
 		return nil, fmt.Errorf("initialize video model contracts: %w", err)
 	}
 	images := service.NewImageService(cfg, storageBackend)
 	videoDir := filepath.Join(cfg.DataDir, "videos")
 	if err := os.MkdirAll(videoDir, 0o755); err != nil {
-		cancel()
 		return nil, fmt.Errorf("initialize video storage: %w", err)
 	}
 	videoReferenceDir := filepath.Join(videoDir, "references")
 	if err := os.MkdirAll(videoReferenceDir, 0o755); err != nil {
-		cancel()
 		return nil, fmt.Errorf("initialize video reference storage: %w", err)
 	}
 	audioDir := filepath.Join(cfg.DataDir, "audio")
 	if err := os.MkdirAll(audioDir, 0o755); err != nil {
-		cancel()
 		return nil, fmt.Errorf("initialize audio storage: %w", err)
 	}
-	storageBackendCloser, _ := storageBackend.(io.Closer)
 	canvas := service.NewCanvasDocumentService(storageBackend, func(ownerID, objectID string) error {
 		_, err := storageFiles.InfoForIdentity(ownerID, false, objectID)
 		return err
@@ -321,6 +359,7 @@ func NewApp() (*App, error) {
 	app.startImageStorageCleaner(ctx, time.Hour)
 	app.startImageConversationAssetCleaner(ctx, time.Hour)
 	app.startMyAssetDeletionCleaner(ctx, time.Hour)
+	startupCleanup.commit()
 	return app, nil
 }
 

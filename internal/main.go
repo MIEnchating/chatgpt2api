@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -20,10 +21,17 @@ const (
 )
 
 func main() {
+	if err := run(); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func run() error {
 	app, err := httpapi.NewApp()
 	if err != nil {
-		log.Fatalf("init app: %v", err)
+		return fmt.Errorf("init app: %w", err)
 	}
+	defer app.Close()
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -32,25 +40,38 @@ func main() {
 	logger := app.Logger()
 
 	server := newHTTPServer(":"+port, app.Handler())
-
-	go func() {
-		logger.Info("starting server", "addr", ":"+port)
-		if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logger.Error("listen failed", "error", err)
-			os.Exit(1)
-		}
-	}()
-
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
-	<-stop
+	defer signal.Stop(stop)
+
+	logger.Info("starting server", "addr", ":"+port)
+	stoppedBySignal, err := waitForServerEvent(server, stop)
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return fmt.Errorf("listen failed: %w", err)
+	}
+	if !stoppedBySignal {
+		return nil
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if err := server.Shutdown(ctx); err != nil {
 		logger.Error("server shutdown failed", "error", err)
 	}
-	app.Close()
+	return nil
+}
+
+func waitForServerEvent(server *http.Server, stop <-chan os.Signal) (bool, error) {
+	serveErr := make(chan error, 1)
+	go func() {
+		serveErr <- server.ListenAndServe()
+	}()
+	select {
+	case err := <-serveErr:
+		return false, err
+	case <-stop:
+		return true, nil
+	}
 }
 
 func newHTTPServer(addr string, handler http.Handler) *http.Server {

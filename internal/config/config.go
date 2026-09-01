@@ -173,6 +173,7 @@ type Store struct {
 	EnvFile        string
 	data           map[string]any
 	storageBackend storage.Backend
+	frozenSettings bool
 }
 
 var requiredDataSubdirectories = []string{
@@ -668,8 +669,16 @@ func (s *Store) DefaultChatModel() string {
 func (s *Store) Get() map[string]any {
 	s.mu.RLock()
 	snapshotData := util.CopyMap(s.data)
+	for key, envKey := range settingEnvKeys {
+		if _, exists := snapshotData[key]; exists {
+			continue
+		}
+		if value, exists := os.LookupEnv(envKey); exists {
+			snapshotData[key] = value
+		}
+	}
 	s.mu.RUnlock()
-	snapshot := &Store{data: snapshotData}
+	snapshot := &Store{data: snapshotData, frozenSettings: true}
 	data := util.CopyMap(snapshotData)
 	delete(data, "image_concurrent_limit")
 	delete(data, "chat_models")
@@ -862,8 +871,10 @@ func (s *Store) settingValue(key string, fallback any) any {
 		return value
 	}
 	s.mu.RUnlock()
-	if value, ok := os.LookupEnv(settingEnvKeys[key]); ok {
-		return value
+	if !s.frozenSettings {
+		if value, ok := os.LookupEnv(settingEnvKeys[key]); ok {
+			return value
+		}
 	}
 	return fallback
 }
