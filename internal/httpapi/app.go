@@ -2237,7 +2237,9 @@ func (a *App) logCall(ctx context.Context, identity service.Identity, summary, m
 	if outcome == "failed" {
 		suffix = "调用失败"
 	}
-	a.logs.Add(summary+suffix, detail)
+	if err := a.logs.Add(summary+suffix, detail); err != nil && a.logger != nil {
+		a.logger.Error("create upstream call log failed", "error", err, "endpoint", endpoint, "method", method)
+	}
 }
 
 func addIdentityLogDetail(detail map[string]any, identity service.Identity) {

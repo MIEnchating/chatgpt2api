@@ -235,19 +235,19 @@ func (s *ImageTaskService) Close() error {
 	return s.closeErr
 }
 
-func (s *ImageTaskService) SubmitGenerationWithOptions(ctx context.Context, identity Identity, clientTaskID, prompt, model, size, quality, baseURL string, n int, metadata map[string]any, options ImageOutputOptions, toolOptions ImageToolOptions, visibilityValues ...string) (map[string]any, error) {
-	return s.submitImageWithMetadataAndOptions(ctx, identity, clientTaskID, prompt, model, size, quality, baseURL, n, metadata, "generate", nil, options, toolOptions, visibilityValues...)
+func (s *ImageTaskService) SubmitGenerationWithOptions(_ context.Context, identity Identity, clientTaskID, prompt, model, size, quality, baseURL string, n int, metadata map[string]any, options ImageOutputOptions, toolOptions ImageToolOptions, visibilityValues ...string) (map[string]any, error) {
+	return s.submitImageWithMetadataAndOptions(identity, clientTaskID, prompt, model, size, quality, baseURL, n, metadata, "generate", nil, options, toolOptions, visibilityValues...)
 }
 
-func (s *ImageTaskService) SubmitEditWithOptions(ctx context.Context, identity Identity, clientTaskID, prompt, model, size, quality, baseURL string, images any, n int, metadata map[string]any, options ImageOutputOptions, toolOptions ImageToolOptions, visibilityValues ...string) (map[string]any, error) {
-	return s.submitImageWithMetadataAndOptions(ctx, identity, clientTaskID, prompt, model, size, quality, baseURL, n, metadata, "edit", images, options, toolOptions, visibilityValues...)
+func (s *ImageTaskService) SubmitEditWithOptions(_ context.Context, identity Identity, clientTaskID, prompt, model, size, quality, baseURL string, images any, n int, metadata map[string]any, options ImageOutputOptions, toolOptions ImageToolOptions, visibilityValues ...string) (map[string]any, error) {
+	return s.submitImageWithMetadataAndOptions(identity, clientTaskID, prompt, model, size, quality, baseURL, n, metadata, "edit", images, options, toolOptions, visibilityValues...)
 }
 
-func (s *ImageTaskService) SubmitChatWithMetadata(ctx context.Context, identity Identity, clientTaskID, prompt, model string, messages any, metadata map[string]any, nValues ...int) (map[string]any, error) {
-	return s.submitChatWithMetadata(ctx, identity, clientTaskID, prompt, model, messages, metadata, nValues...)
+func (s *ImageTaskService) SubmitChatWithMetadata(_ context.Context, identity Identity, clientTaskID, prompt, model string, messages any, metadata map[string]any, nValues ...int) (map[string]any, error) {
+	return s.submitChatWithMetadata(identity, clientTaskID, prompt, model, messages, metadata, nValues...)
 }
 
-func (s *ImageTaskService) SubmitVideo(ctx context.Context, identity Identity, clientTaskID, prompt, model, size string, seconds int, resolution string, generateAudio, watermark bool, referenceMode string, images, videos, audios any, metadata map[string]any) (map[string]any, error) {
+func (s *ImageTaskService) SubmitVideo(_ context.Context, identity Identity, clientTaskID, prompt, model, size string, seconds int, resolution string, generateAudio, watermark bool, referenceMode string, images, videos, audios any, metadata map[string]any) (map[string]any, error) {
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
 		return nil, fmt.Errorf("prompt is required")
@@ -278,10 +278,10 @@ func (s *ImageTaskService) SubmitVideo(ctx context.Context, identity Identity, c
 		payload["reference_audio_urls"] = audios
 	}
 	mergeTaskRoutingMetadata(payload, metadata)
-	return s.submit(ctx, identity, clientTaskID, "video", payload)
+	return s.submit(identity, clientTaskID, "video", payload)
 }
 
-func (s *ImageTaskService) SubmitAudio(ctx context.Context, identity Identity, clientTaskID string, request map[string]any, metadata map[string]any) (map[string]any, error) {
+func (s *ImageTaskService) SubmitAudio(_ context.Context, identity Identity, clientTaskID string, request map[string]any, metadata map[string]any) (map[string]any, error) {
 	payload := util.CopyMap(request)
 	input := firstNonEmpty(strings.TrimSpace(util.Clean(payload["input"])), strings.TrimSpace(util.Clean(payload["prompt"])))
 	if input == "" {
@@ -294,10 +294,10 @@ func (s *ImageTaskService) SubmitAudio(ctx context.Context, identity Identity, c
 	payload["visibility"] = ImageVisibilityPrivate
 	payload["n"] = 1
 	mergeTaskRoutingMetadata(payload, metadata)
-	return s.submit(ctx, identity, clientTaskID, "audio", payload)
+	return s.submit(identity, clientTaskID, "audio", payload)
 }
 
-func (s *ImageTaskService) submitChatWithMetadata(ctx context.Context, identity Identity, clientTaskID, prompt, model string, messages any, metadata map[string]any, nValues ...int) (map[string]any, error) {
+func (s *ImageTaskService) submitChatWithMetadata(identity Identity, clientTaskID, prompt, model string, messages any, metadata map[string]any, nValues ...int) (map[string]any, error) {
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
 		return nil, fmt.Errorf("prompt is required")
@@ -311,7 +311,7 @@ func (s *ImageTaskService) submitChatWithMetadata(ctx context.Context, identity 
 	}
 	payload := map[string]any{"prompt": prompt, "model": model, "messages": messages, "n": n, "visibility": ImageVisibilityPrivate}
 	mergeChatTaskMetadata(payload, metadata)
-	return s.submit(ctx, identity, clientTaskID, "chat", payload)
+	return s.submit(identity, clientTaskID, "chat", payload)
 }
 
 func mergeChatTaskMetadata(payload map[string]any, metadata map[string]any) {
@@ -324,7 +324,7 @@ func mergeChatTaskMetadata(payload map[string]any, metadata map[string]any) {
 	}
 }
 
-func (s *ImageTaskService) submitImageWithMetadataAndOptions(ctx context.Context, identity Identity, clientTaskID, prompt, model, size, quality, baseURL string, n int, metadata map[string]any, mode string, images any, options ImageOutputOptions, toolOptions ImageToolOptions, visibilityValues ...string) (map[string]any, error) {
+func (s *ImageTaskService) submitImageWithMetadataAndOptions(identity Identity, clientTaskID, prompt, model, size, quality, baseURL string, n int, metadata map[string]any, mode string, images any, options ImageOutputOptions, toolOptions ImageToolOptions, visibilityValues ...string) (map[string]any, error) {
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
 		return nil, fmt.Errorf("prompt is required")
@@ -340,7 +340,7 @@ func (s *ImageTaskService) submitImageWithMetadataAndOptions(ctx context.Context
 	mergeImageTaskMetadata(payload, metadata)
 	mergeImageOutputOptions(payload, options)
 	mergeImageToolOptions(payload, toolOptions)
-	return s.submit(ctx, identity, clientTaskID, mode, payload)
+	return s.submit(identity, clientTaskID, mode, payload)
 }
 
 func (s *ImageTaskService) ListTasksWithError(identity Identity, taskIDs []string) (map[string]any, error) {
@@ -497,7 +497,7 @@ func (s *ImageTaskService) DeleteTasks(identity Identity, taskIDs []string) (map
 	return map[string]any{"deleted_ids": deleted, "active_ids": active, "missing_ids": missing}, nil
 }
 
-func (s *ImageTaskService) submit(ctx context.Context, identity Identity, clientTaskID, mode string, payload map[string]any) (map[string]any, error) {
+func (s *ImageTaskService) submit(identity Identity, clientTaskID, mode string, payload map[string]any) (map[string]any, error) {
 	taskID := strings.TrimSpace(clientTaskID)
 	if taskID == "" {
 		return nil, fmt.Errorf("client_task_id is required")
@@ -539,6 +539,7 @@ func (s *ImageTaskService) submit(ctx context.Context, identity Identity, client
 		s.mu.Unlock()
 		return nil, err
 	}
+	// Persisted asynchronous tasks outlive the request and are canceled through CancelTask or Close.
 	taskCtx, cancel := context.WithCancel(context.Background())
 	outputFormat := normalizeOptionalImageOutputFormat(util.Clean(payload["output_format"]))
 	task := map[string]any{"id": taskID, "owner_id": owner, "status": TaskStatusQueued, "mode": mode, "model": firstNonEmpty(util.Clean(payload["model"]), util.ImageModelAuto), "size": util.Clean(payload["size"]), "quality": util.Clean(payload["quality"]), "visibility": util.Clean(payload["visibility"]), "count": count, "revision": 1, "created_at": now, "updated_at": now}

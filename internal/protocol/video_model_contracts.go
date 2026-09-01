@@ -281,6 +281,11 @@ func NormalizeVideoModelContract(contract VideoModelContract) (VideoModelContrac
 		rule.Message = strings.TrimSpace(rule.Message)
 		rule.Limits = normalizedVideoContractIntMap(rule.Limits)
 		rule.ForceValues = normalizedVideoContractStringMap(rule.ForceValues)
+		for field, value := range rule.ForceValues {
+			if field == "generate_audio" || field == "watermark" {
+				rule.ForceValues[field] = strings.ToLower(value)
+			}
+		}
 	}
 	contract.Polling.QueuedStatuses = uniqueTrimmedStrings(contract.Polling.QueuedStatuses, true)
 	contract.Polling.RunningStatuses = uniqueTrimmedStrings(contract.Polling.RunningStatuses, true)
@@ -628,19 +633,28 @@ func ApplyVideoContractForcedValues(contract VideoModelContract, values map[stri
 			continue
 		}
 		for field, value := range rule.ForceValues {
-			switch field {
-			case "duration":
-				if parsed, err := strconv.Atoi(value); err == nil {
-					values[field] = parsed
-				}
-			case "generate_audio", "watermark":
-				if parsed, err := strconv.ParseBool(value); err == nil {
-					values[field] = parsed
-				}
-			default:
-				values[field] = value
+			if parsed, ok := parseVideoContractForcedValue(field, value); ok {
+				values[field] = parsed
 			}
 		}
+	}
+}
+
+func parseVideoContractForcedValue(field, value string) (any, bool) {
+	value = strings.TrimSpace(value)
+	switch field {
+	case "duration":
+		parsed, err := strconv.Atoi(value)
+		const maxExactInteger = int64(1<<53 - 1)
+		if err != nil || int64(parsed) < -maxExactInteger || int64(parsed) > maxExactInteger {
+			return nil, false
+		}
+		return parsed, true
+	case "generate_audio", "watermark":
+		parsed, err := strconv.ParseBool(value)
+		return parsed, err == nil
+	default:
+		return value, value != ""
 	}
 }
 

@@ -162,3 +162,78 @@ test("validates declared generation modes and conditional rules", () => {
   assert.equal(unmatchedUI.hidden.size, 0);
   assert.equal(unmatchedUI.disabled.size, 0);
 });
+
+test("parses forced values with the same typed rules as the backend", () => {
+  const contract = structuredClone(contractDocument.contracts[0]);
+  contract.rules = [{
+    when: { field: "duration", operator: "present" },
+    force_values: {
+      duration: " 08 ",
+      generate_audio: " TRUE ",
+      watermark: " False ",
+      resolution: " 1080p ",
+    },
+    message: "apply typed values",
+  }];
+  assert.deepEqual(applyVideoContractForcedValues(contract, { duration: 4 }), {
+    duration: 8,
+    generate_audio: true,
+    watermark: false,
+    resolution: "1080p",
+  });
+
+  contract.rules[0].force_values = { duration: "8.5", generate_audio: "1", watermark: "f" };
+  assert.deepEqual(applyVideoContractForcedValues(contract, { duration: 4, generate_audio: false, watermark: true }), {
+    duration: 4,
+    generate_audio: true,
+    watermark: false,
+  });
+
+  contract.rules[0].force_values = { duration: "9007199254740993", generate_audio: "yes", watermark: "off" };
+  assert.deepEqual(applyVideoContractForcedValues(contract, { duration: 4, generate_audio: false, watermark: true }), {
+    duration: 4,
+    generate_audio: false,
+    watermark: true,
+  });
+});
+
+test("uses normalized forced values when evaluating chained UI rules", () => {
+  const contract = structuredClone(contractDocument.contracts[0]);
+  contract.rules = [
+    {
+      when: { field: "duration", operator: "equals", value: "4" },
+      force_values: { generate_audio: " TRUE " },
+      message: "force audio",
+    },
+    {
+      when: { field: "generate_audio", operator: "equals", value: "true" },
+      ui: { hide: ["watermark"] },
+      message: "hide watermark",
+    },
+  ];
+  assert.equal(videoContractUIState(contract, { duration: 4 }).hidden.has("watermark"), true);
+
+  contract.rules[0].force_values = { generate_audio: "yes" };
+  assert.equal(videoContractUIState(contract, { duration: 4 }).hidden.has("watermark"), false);
+});
+
+test("enforces per-material and total minimums in backend order", () => {
+  const contract = structuredClone(contractDocument.contracts[0]);
+  const referenceMode = contract.generation.modes.find((mode) => mode.kind === "reference");
+  referenceMode.materials.image.min = 1;
+  referenceMode.materials.video.min = 1;
+  referenceMode.materials.total.min = 3;
+
+  assert.equal(
+    videoContractMaterialError(contract, "reference", { first_frame: 0, last_frame: 0, image: 1, video: 0, audio: 0 }),
+    "参考素材生视频至少需要 1 个参考视频",
+  );
+  assert.equal(
+    videoContractMaterialError(contract, "reference", { first_frame: 0, last_frame: 0, image: 1, video: 1, audio: 0 }),
+    "参考素材生视频至少需要 3 个素材",
+  );
+  assert.equal(
+    videoContractMaterialError(contract, "reference", { first_frame: 0, last_frame: 0, image: 2, video: 1, audio: 0 }),
+    "",
+  );
+});

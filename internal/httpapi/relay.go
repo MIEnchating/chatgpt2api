@@ -33,6 +33,7 @@ const (
 	relayJSONSuccessMaxBytes            = 256 * 1024 * 1024
 	relayJSONErrorMaxBytes              = 1 * 1024 * 1024
 	maxGoogleGeminiInlineRequestBytes   = 20 * 1024 * 1024
+	relayImageDimensionMultiple         = 16
 )
 
 type relayImageTaskSlotManagedMarker struct{}
@@ -65,9 +66,9 @@ func (a *App) attachRelayAPIKeyForIdentity(ctx context.Context, identity service
 	return nil
 }
 
-func (a *App) relayAPIKeyForIdentitySelection(ctx context.Context, identity service.Identity, group, name string) (string, error) {
-	credential, err := a.relayCredentialForIdentitySelection(ctx, identity, group, name)
-	return credential.APIKey, err
+func (a *App) validateRelayCredentialForIdentitySelection(ctx context.Context, identity service.Identity, group, name string) error {
+	_, err := a.relayCredentialForIdentitySelection(ctx, identity, group, name)
+	return err
 }
 
 func (a *App) relayCredentialForIdentitySelection(ctx context.Context, identity service.Identity, group, name string) (relayCredential, error) {
@@ -955,7 +956,7 @@ func (a *App) relayVideoTask(ctx context.Context, payload map[string]any) (map[s
 	if apiKey == "" {
 		return nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: "视频任务缺少上游令牌"}
 	}
-	request := declaredVideoContractRequestPayload(payload, contract)
+	request := declaredCanonicalVideoContractRequestPayload(payload, contract)
 	baseURL := a.relayBaseURLFromPayload(payload)
 	createPath, queryPath, err := videoContractDriverPaths(contract, payload)
 	if err != nil {
@@ -1188,6 +1189,14 @@ func (a *App) relayVideoMultipart(ctx context.Context, baseURL, apiKey, createPa
 func declaredVideoContractRequestPayload(payload map[string]any, contract protocol.VideoModelContract) map[string]any {
 	ruleValues := videoContractRuleValues(payload)
 	protocol.ApplyVideoContractForcedValues(contract, ruleValues)
+	return declaredVideoContractRequestPayloadFromRuleValues(payload, contract, ruleValues)
+}
+
+func declaredCanonicalVideoContractRequestPayload(payload map[string]any, contract protocol.VideoModelContract) map[string]any {
+	return declaredVideoContractRequestPayloadFromRuleValues(payload, contract, videoContractRuleValues(payload))
+}
+
+func declaredVideoContractRequestPayloadFromRuleValues(payload map[string]any, contract protocol.VideoModelContract, ruleValues map[string]any) map[string]any {
 	request := map[string]any{
 		"model":  strings.TrimSpace(util.Clean(payload["model"])),
 		"prompt": payload["prompt"],
@@ -2946,22 +2955,21 @@ func relayImageSizeFromRatio(ratioWidth, ratioHeight float64) string {
 
 func normalizeRelayImageDimensions(width, height int) string {
 	const (
-		multiple  = 16
 		maxEdge   = 3840
 		maxRatio  = 3
 		minPixels = 655360
 		maxPixels = 8294400
 	)
-	normalizedWidth := roundToRelayImageMultiple(width, multiple)
-	normalizedHeight := roundToRelayImageMultiple(height, multiple)
+	normalizedWidth := roundToRelayImageMultiple(width)
+	normalizedHeight := roundToRelayImageMultiple(height)
 
 	scaleToFit := func(scale float64) {
-		normalizedWidth = floorToRelayImageMultiple(float64(normalizedWidth)*scale, multiple)
-		normalizedHeight = floorToRelayImageMultiple(float64(normalizedHeight)*scale, multiple)
+		normalizedWidth = floorToRelayImageMultiple(float64(normalizedWidth) * scale)
+		normalizedHeight = floorToRelayImageMultiple(float64(normalizedHeight) * scale)
 	}
 	scaleToFill := func(scale float64) {
-		normalizedWidth = ceilToRelayImageMultiple(float64(normalizedWidth)*scale, multiple)
-		normalizedHeight = ceilToRelayImageMultiple(float64(normalizedHeight)*scale, multiple)
+		normalizedWidth = ceilToRelayImageMultiple(float64(normalizedWidth) * scale)
+		normalizedHeight = ceilToRelayImageMultiple(float64(normalizedHeight) * scale)
 	}
 
 	for range 4 {
@@ -2969,9 +2977,9 @@ func normalizeRelayImageDimensions(width, height int) string {
 			scaleToFit(float64(maxEdge) / float64(max(normalizedWidth, normalizedHeight)))
 		}
 		if normalizedWidth > normalizedHeight*maxRatio {
-			normalizedWidth = floorToRelayImageMultiple(float64(normalizedHeight*maxRatio), multiple)
+			normalizedWidth = floorToRelayImageMultiple(float64(normalizedHeight * maxRatio))
 		} else if normalizedHeight > normalizedWidth*maxRatio {
-			normalizedHeight = floorToRelayImageMultiple(float64(normalizedWidth*maxRatio), multiple)
+			normalizedHeight = floorToRelayImageMultiple(float64(normalizedWidth * maxRatio))
 		}
 		pixels := normalizedWidth * normalizedHeight
 		if pixels > maxPixels {
@@ -2983,16 +2991,16 @@ func normalizeRelayImageDimensions(width, height int) string {
 	return fmt.Sprintf("%dx%d", normalizedWidth, normalizedHeight)
 }
 
-func roundToRelayImageMultiple(value, multiple int) int {
-	return max(multiple, ((value+multiple/2)/multiple)*multiple)
+func roundToRelayImageMultiple(value int) int {
+	return max(relayImageDimensionMultiple, ((value+relayImageDimensionMultiple/2)/relayImageDimensionMultiple)*relayImageDimensionMultiple)
 }
 
-func floorToRelayImageMultiple(value float64, multiple int) int {
-	return max(multiple, int(value/float64(multiple))*multiple)
+func floorToRelayImageMultiple(value float64) int {
+	return max(relayImageDimensionMultiple, int(value/float64(relayImageDimensionMultiple))*relayImageDimensionMultiple)
 }
 
-func ceilToRelayImageMultiple(value float64, multiple int) int {
-	return max(multiple, int(math.Ceil(value/float64(multiple)))*multiple)
+func ceilToRelayImageMultiple(value float64) int {
+	return max(relayImageDimensionMultiple, int(math.Ceil(value/float64(relayImageDimensionMultiple)))*relayImageDimensionMultiple)
 }
 
 func shouldDropRelayPayloadKey(key string) bool {

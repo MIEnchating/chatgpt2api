@@ -357,6 +357,75 @@ func TestVideoContractGenerationModesAndRules(t *testing.T) {
 	}
 }
 
+func TestVideoContractAppliesLegacyForcedBooleanTokensAndSkipsInvalidValues(t *testing.T) {
+	tests := []struct {
+		field    string
+		value    string
+		expected any
+		applied  bool
+	}{
+		{field: "generate_audio", value: "1", expected: true, applied: true},
+		{field: "generate_audio", value: "t", expected: true, applied: true},
+		{field: "watermark", value: "0", expected: false, applied: true},
+		{field: "watermark", value: "f", expected: false, applied: true},
+		{field: "duration", value: "eight", applied: false},
+		{field: "duration", value: "9007199254740993", applied: false},
+		{field: "generate_audio", value: "yes", applied: false},
+	}
+	for _, test := range tests {
+		t.Run(test.field+"_"+test.value, func(t *testing.T) {
+			contract := DefaultVideoContracts()[0]
+			contract.Rules = []VideoModelContractRule{{
+				When:        VideoModelContractRuleCondition{Field: "duration", Operator: "present"},
+				ForceValues: map[string]string{test.field: test.value},
+				Message:     "forced value",
+			}}
+			normalized, err := NormalizeVideoModelContract(contract)
+			if err != nil {
+				t.Fatalf("NormalizeVideoModelContract() error = %v", err)
+			}
+			values := map[string]any{"duration": 4}
+			ApplyVideoContractForcedValues(normalized, values)
+			got, exists := values[test.field]
+			if test.applied && (!exists || got != test.expected) {
+				t.Fatalf("force_values[%q]=%q applied as %#v, want %#v", test.field, test.value, got, test.expected)
+			}
+			if !test.applied && test.field != "duration" && exists {
+				t.Fatalf("invalid force_values[%q]=%q was applied as %#v", test.field, test.value, got)
+			}
+			if !test.applied && test.field == "duration" && got != 4 {
+				t.Fatalf("invalid duration force value changed duration to %#v", got)
+			}
+		})
+	}
+}
+
+func TestVideoContractNormalizesAndAppliesTypedForcedValues(t *testing.T) {
+	contract := DefaultVideoContracts()[0]
+	contract.Rules = []VideoModelContractRule{{
+		When: VideoModelContractRuleCondition{Field: "duration", Operator: "present"},
+		ForceValues: map[string]string{
+			"duration":       " 08 ",
+			"generate_audio": " TRUE ",
+			"watermark":      " False ",
+		},
+		Message: "typed forced values",
+	}}
+	normalized, err := NormalizeVideoModelContract(contract)
+	if err != nil {
+		t.Fatalf("NormalizeVideoModelContract() error = %v", err)
+	}
+	forced := normalized.Rules[0].ForceValues
+	if forced["generate_audio"] != "true" || forced["watermark"] != "false" {
+		t.Fatalf("normalized boolean force values = %#v", forced)
+	}
+	values := map[string]any{"duration": 4}
+	ApplyVideoContractForcedValues(normalized, values)
+	if values["duration"] != 8 || values["generate_audio"] != true || values["watermark"] != false {
+		t.Fatalf("applied force values = %#v", values)
+	}
+}
+
 func TestVideoContractRuleNormalizationAndConflicts(t *testing.T) {
 	contract := DefaultVideoContracts()[0]
 	contract.Rules = []VideoModelContractRule{{

@@ -67,6 +67,7 @@ import {
   taskImageHasPreview,
   deriveGenerationTaskStatus,
 } from "@/lib/image-task-state";
+import { isRetryableTaskPollError } from "@/lib/generation-task-contract";
 import { Button } from "@/components/ui/button";
 import { ScrollArea, type ScrollAreaHandle } from "@/components/ui/scroll-area";
 import { resolveConfiguredVideoModel, supportsVideoMultimodalReferences, videoDefaultSeconds, videoReferenceImageLimit, videoRequiresMultimodalReferenceMode, videoRequiresReferenceAudio, videoRequiresReferenceImage, videoRequiresReferenceVideo, videoWorkbenchReferenceLimits } from "@/lib/video-model-capabilities";
@@ -1005,16 +1006,6 @@ function taskDataToStoredImage(image: StoredImage, task: CreationTask, dataIndex
 
 function isActiveCreationTask(task: CreationTask) {
   return task.status === "queued" || task.status === "running";
-}
-
-function isRetryableTaskPollError(error: unknown) {
-  const status = typeof error === "object" && error !== null && "status" in error
-    ? Number((error as { status?: unknown }).status)
-    : Number.NaN;
-  if (!Number.isFinite(status)) {
-    return true;
-  }
-  return status === 408 || status === 425 || status === 429 || status >= 500;
 }
 
 function sleep(ms: number) {

@@ -260,6 +260,43 @@ func TestImageTaskServiceIdempotencyOwnerIsolationAndCompletion(t *testing.T) {
 	}
 }
 
+func TestImageTaskServiceTaskOutlivesSubmissionContext(t *testing.T) {
+	handlerContexts := make(chan context.Context, 1)
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	finish := func() { releaseOnce.Do(func() { close(release) }) }
+	t.Cleanup(finish)
+	handler := func(ctx context.Context, _ Identity, _ map[string]any) (map[string]any, error) {
+		handlerContexts <- ctx
+		select {
+		case <-release:
+			return map[string]any{"data": []map[string]any{{"url": "https://example.test/image.png"}}}, nil
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	svc := newTestImageTaskService(t, handler, handler, handler, func() int { return 30 })
+	identity := Identity{ID: "alice", Name: "Alice", Role: AuthRoleUser}
+	requestCtx, cancelRequest := context.WithCancel(context.Background())
+
+	if _, err := svc.SubmitGeneration(requestCtx, identity, "detached-task", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 1); err != nil {
+		t.Fatalf("SubmitGeneration() error = %v", err)
+	}
+	var taskCtx context.Context
+	select {
+	case taskCtx = <-handlerContexts:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for task handler")
+	}
+	cancelRequest()
+	if err := taskCtx.Err(); err != nil {
+		t.Fatalf("task context was canceled with submission context: %v", err)
+	}
+
+	finish()
+	waitForTaskStatus(t, svc, identity, "detached-task", TaskStatusSuccess)
+}
+
 func TestImageTaskServiceUsesOwnerIDAroundCredentialRotation(t *testing.T) {
 	handlerCalls := make(chan map[string]any, 4)
 	handler := func(ctx context.Context, identity Identity, payload map[string]any) (map[string]any, error) {

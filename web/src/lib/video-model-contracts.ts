@@ -229,12 +229,13 @@ function contractRuleMatches(rule: VideoModelContractRule, values: VideoModelCon
 }
 
 export function videoContractRuleError(contract: VideoModelContract, values: VideoModelContractRuleValues) {
+  const effectiveValues = applyVideoContractForcedValues(contract, values);
   for (const rule of contract.rules || []) {
-    if (!contractRuleMatches(rule, values)) continue;
-    if ((rule.require || []).some((field) => contractRuleValueCount(values[field]) === 0)) return rule.message;
-    if ((rule.require_any || []).length > 0 && !(rule.require_any || []).some((field) => contractRuleValueCount(values[field]) > 0)) return rule.message;
-    if ((rule.forbid || []).some((field) => contractRuleValueCount(values[field]) > 0)) return rule.message;
-    if (Object.entries(rule.limits || {}).some(([field, limit]) => contractRuleValueCount(values[field as VideoModelContractRuleField]) > Number(limit))) return rule.message;
+    if (!contractRuleMatches(rule, effectiveValues)) continue;
+    if ((rule.require || []).some((field) => contractRuleValueCount(effectiveValues[field]) === 0)) return rule.message;
+    if ((rule.require_any || []).length > 0 && !(rule.require_any || []).some((field) => contractRuleValueCount(effectiveValues[field]) > 0)) return rule.message;
+    if ((rule.forbid || []).some((field) => contractRuleValueCount(effectiveValues[field]) > 0)) return rule.message;
+    if (Object.entries(rule.limits || {}).some(([field, limit]) => contractRuleValueCount(effectiveValues[field as VideoModelContractRuleField]) > Number(limit))) return rule.message;
   }
   return "";
 }
@@ -245,14 +246,27 @@ export function applyVideoContractForcedValues(contract: VideoModelContract, val
     if (!contractRuleMatches(rule, next)) continue;
     for (const [field, value] of Object.entries(rule.force_values || {})) {
       const key = field as VideoModelContractRuleField;
-      next[key] = videoContractForcedValue(key, value);
+      const forced = parseVideoContractForcedValue(key, value);
+      if (forced.valid) next[key] = forced.value;
     }
   }
   return next;
 }
 
-function videoContractForcedValue(field: VideoModelContractRuleField, value: string) {
-  return field === "duration" ? Number(value) : field === "generate_audio" || field === "watermark" ? value === "true" : value;
+function parseVideoContractForcedValue(field: VideoModelContractRuleField, value: string): { valid: boolean; value?: unknown } {
+  const normalized = String(value).trim();
+  if (field === "duration") {
+    if (!/^[+-]?\d+$/.test(normalized)) return { valid: false };
+    const parsed = Number(normalized);
+    return Number.isSafeInteger(parsed) ? { valid: true, value: parsed } : { valid: false };
+  }
+  if (field === "generate_audio" || field === "watermark") {
+    const parsed = normalized.toLowerCase();
+    if (["1", "t", "true"].includes(parsed)) return { valid: true, value: true };
+    if (["0", "f", "false"].includes(parsed)) return { valid: true, value: false };
+    return { valid: false };
+  }
+  return normalized ? { valid: true, value: normalized } : { valid: false };
 }
 
 export function videoContractUIState(contract: VideoModelContract | null | undefined, values: VideoModelContractRuleValues): VideoModelContractUIState {
@@ -266,7 +280,8 @@ export function videoContractUIState(contract: VideoModelContract | null | undef
     for (const field of rule.ui?.disable || []) disabled.add(field);
     for (const [field, value] of Object.entries(rule.force_values || {})) {
       const key = field as VideoModelContractRuleField;
-      effectiveValues[key] = videoContractForcedValue(key, value);
+      const forced = parseVideoContractForcedValue(key, value);
+      if (forced.valid) effectiveValues[key] = forced.value;
     }
   }
   return { hidden, disabled };

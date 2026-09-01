@@ -401,6 +401,49 @@ func TestDeclaredVideoContractAllowsProtocolEncodedGenerationModeAndAppliesForce
 	}
 }
 
+func TestCanonicalVideoContractRequestDoesNotReapplyForceValues(t *testing.T) {
+	contract := protocol.DefaultVideoContracts()[0]
+	contract.Capability.AudioControl = "toggle"
+	contract.Capability.Watermark = true
+	contract.Request.DurationField = "duration"
+	contract.Request.AspectRatioField = "aspect_ratio"
+	contract.Request.ResolutionField = "resolution"
+	contract.Request.WatermarkField = "watermark"
+	contract.Rules = []protocol.VideoModelContractRule{
+		{
+			When:        protocol.VideoModelContractRuleCondition{Field: "resolution", Operator: "equals", Value: "1080p"},
+			ForceValues: map[string]string{"watermark": "true"},
+			Message:     "force watermark",
+		},
+		{
+			When:        protocol.VideoModelContractRuleCondition{Field: "duration", Operator: "equals", Value: "8"},
+			ForceValues: map[string]string{"resolution": "1080p"},
+			Message:     "force resolution",
+		},
+		{
+			When:        protocol.VideoModelContractRuleCondition{Field: "size", Operator: "equals", Value: "16:9"},
+			ForceValues: map[string]string{"duration": "8"},
+			Message:     "force duration",
+		},
+	}
+	raw := map[string]any{
+		"model": "minimax-h3-768p", "prompt": "city", "size": "16:9",
+		"seconds": 4, "resolution": "768p", "watermark": false,
+	}
+	canonical := map[string]any{
+		"model": "minimax-h3-768p", "prompt": "city", "size": "16:9",
+		"seconds": 8, "resolution": "768p", "watermark": false,
+	}
+	want := declaredVideoContractRequestPayload(raw, contract)
+	got := declaredCanonicalVideoContractRequestPayload(canonical, contract)
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("canonical mapper reapplied force values: got %#v, want %#v", got, want)
+	}
+	if got["duration"] != 8 || got["resolution"] != "768p" || got["watermark"] != false {
+		t.Fatalf("canonical request values = %#v", got)
+	}
+}
+
 func TestDeclaredVideoContractValidation(t *testing.T) {
 	contract, ok := protocol.VideoContractForModel("minimax-h3-768p")
 	if !ok {

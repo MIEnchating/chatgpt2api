@@ -39,7 +39,7 @@ func (a *App) handleWorkflows(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		payload := workflowAgentPayload(input, model)
-		if _, err := a.relayAPIKeyForIdentitySelection(r.Context(), identity, "", strings.TrimSpace(input.ChannelID)); err != nil {
+		if err := a.validateRelayCredentialForIdentitySelection(r.Context(), identity, "", strings.TrimSpace(input.ChannelID)); err != nil {
 			a.writeCreationTaskSubmitError(w, err)
 			return
 		}

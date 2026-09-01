@@ -1443,7 +1443,7 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusBadRequest, protocolImageCountRangeMessage())
 			return
 		}
-		if _, err := a.relayAPIKeyForIdentitySelection(r.Context(), identity, selectedRelayTokenGroupFromPayload(body), selectedRelayTokenNameFromPayload(body)); err != nil {
+		if err := a.validateRelayCredentialForIdentitySelection(r.Context(), identity, selectedRelayTokenGroupFromPayload(body), selectedRelayTokenNameFromPayload(body)); err != nil {
 			a.writeCreationTaskSubmitError(w, err)
 			return
 		}
@@ -1550,7 +1550,7 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusBadRequest, "当前视频模型不支持所选视频参数")
 			return
 		}
-		if _, err := a.relayAPIKeyForIdentitySelection(r.Context(), identity, selectedRelayTokenGroupFromPayload(body), selectedRelayTokenNameFromPayload(body)); err != nil {
+		if err := a.validateRelayCredentialForIdentitySelection(r.Context(), identity, selectedRelayTokenGroupFromPayload(body), selectedRelayTokenNameFromPayload(body)); err != nil {
 			a.writeCreationTaskSubmitError(w, err)
 			return
 		}
@@ -1578,7 +1578,7 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		if _, err := a.relayAPIKeyForIdentitySelection(r.Context(), identity, selectedRelayTokenGroupFromPayload(body), selectedRelayTokenNameFromPayload(body)); err != nil {
+		if err := a.validateRelayCredentialForIdentitySelection(r.Context(), identity, selectedRelayTokenGroupFromPayload(body), selectedRelayTokenNameFromPayload(body)); err != nil {
 			a.writeCreationTaskSubmitError(w, err)
 			return
 		}
@@ -1613,7 +1613,7 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 		if prompt == "" {
 			prompt = util.Clean(messages[len(messages)-1]["content"])
 		}
-		if _, err := a.relayAPIKeyForIdentitySelection(r.Context(), identity, selectedRelayTokenGroupFromPayload(body), selectedRelayTokenNameFromPayload(body)); err != nil {
+		if err := a.validateRelayCredentialForIdentitySelection(r.Context(), identity, selectedRelayTokenGroupFromPayload(body), selectedRelayTokenNameFromPayload(body)); err != nil {
 			a.writeCreationTaskSubmitError(w, err)
 			return
 		}
@@ -1656,7 +1656,7 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusBadRequest, protocolImageCountRangeMessage())
 			return
 		}
-		if _, err := a.relayAPIKeyForIdentitySelection(r.Context(), identity, selectedRelayTokenGroupFromPayload(body), selectedRelayTokenNameFromPayload(body)); err != nil {
+		if err := a.validateRelayCredentialForIdentitySelection(r.Context(), identity, selectedRelayTokenGroupFromPayload(body), selectedRelayTokenNameFromPayload(body)); err != nil {
 			a.writeCreationTaskSubmitError(w, err)
 			return
 		}
