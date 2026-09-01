@@ -437,9 +437,6 @@ func (s *ImageTaskService) CancelTask(identity Identity, clientTaskID string) (m
 	}
 	result := publicTask(task)
 	s.mu.Unlock()
-	if cancel != nil {
-		cancel()
-	}
 	return result, nil
 }
 

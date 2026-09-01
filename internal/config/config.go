@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -1090,22 +1091,27 @@ func intSetting(value any, fallback int) int {
 }
 
 func floatSetting(value any, fallback float64) float64 {
+	var parsed float64
+	ok := true
 	switch v := value.(type) {
 	case float64:
-		return v
+		parsed = v
 	case float32:
-		return float64(v)
+		parsed = float64(v)
 	case int:
-		return float64(v)
+		parsed = float64(v)
 	case int64:
-		return float64(v)
+		parsed = float64(v)
 	case string:
 		n, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
-		if err == nil {
-			return n
-		}
+		parsed, ok = n, err == nil
+	default:
+		ok = false
 	}
-	return fallback
+	if !ok || math.IsNaN(parsed) || math.IsInf(parsed, 0) {
+		return fallback
+	}
+	return parsed
 }
 
 func normalizeLoginPageImageMode(value any) string {

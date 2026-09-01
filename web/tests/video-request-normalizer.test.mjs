@@ -131,6 +131,30 @@ test("validates contract material limits and rules", () => {
     referenceMode: "reference",
     referenceImageURLs: ["https://cdn.example.com/ref.png"],
   }), "");
+  assert.match(videoReferenceCombinationError({
+    model: "minimax-h3-768p",
+    referenceImageURLs: [
+      "https://cdn.example.com/first.png",
+      "https://cdn.example.com/last.png",
+      "https://cdn.example.com/extra.png",
+    ],
+  }), /不能使用参考图片/);
+  assert.match(videoReferenceCombinationError({
+    model: "minimax-h3-768p",
+    firstFrameURL: "https://cdn.example.com/first.png",
+    referenceImageURLs: ["https://cdn.example.com/extra.png"],
+  }), /不能使用参考图片/);
+});
+
+test("rejects excess image-mode materials instead of silently truncating them", () => {
+  assert.throws(() => normalizeVideoRequest({
+    model: "minimax-h3-768p",
+    referenceImageURLs: [
+      "https://cdn.example.com/first.png",
+      "https://cdn.example.com/last.png",
+      "https://cdn.example.com/extra.png",
+    ],
+  }), /不能使用参考图片/);
 });
 
 test("keeps shared prompt and stored-duration normalization deterministic", () => {

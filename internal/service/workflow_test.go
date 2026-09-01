@@ -660,6 +660,16 @@ func TestNormalizeWorkflowAgentDraftMatchesReferenceContract(t *testing.T) {
 	}
 }
 
+func TestNormalizeWorkflowAgentDraftUsesRequestedPublicScope(t *testing.T) {
+	draft, _, err := NormalizeWorkflowAgentDraft(`{"name":"商品图","scope":"private"}`, "public")
+	if err != nil {
+		t.Fatalf("NormalizeWorkflowAgentDraft() error = %v", err)
+	}
+	if draft["scope"] != "public" {
+		t.Fatalf("scope = %#v, want requested public scope", draft["scope"])
+	}
+}
+
 func TestNormalizeWorkflowAgentDraftRejectsAmbiguousVariables(t *testing.T) {
 	_, _, err := NormalizeWorkflowAgentDraft(`{
 		"name":"商品图",

@@ -31,8 +31,7 @@
         "watermark": true
       },
       "validation": {
-        "max_prompt_characters": 5000,
-        "allow_audio_only_reference": true
+        "max_prompt_characters": 5000
       },
       "generation": {
         "selection": "infer",

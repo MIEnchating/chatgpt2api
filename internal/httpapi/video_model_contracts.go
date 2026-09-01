@@ -687,7 +687,7 @@ const videoContractImportSystemPrompt = `你是视频模型 API 契约分析器�
     "first_frame_image_limit": 0, "reference_mode": false,
     "audio_control": "none", "watermark": false
   },
-  "validation": {"max_prompt_characters": 5000, "allow_audio_only_reference": false},
+  "validation": {"max_prompt_characters": 5000},
   "generation": {
     "selection": "infer", "default_mode": "text-to-video",
     "modes": [{

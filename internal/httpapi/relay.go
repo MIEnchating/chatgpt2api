@@ -331,7 +331,8 @@ func validateKIEImageReferenceURLs(model string, payload map[string]any) error {
 	}
 	for _, key := range []string{
 		"image_url", "image_urls", "input_url", "input_urls", "images", "image", "image_input",
-		"reference_image_url", "reference_image_urls", "mask_url", "mask_urls", "video_url", "video_urls",
+		"reference_image_url", "reference_image_urls", "mask", "mask_url", "mask_urls",
+		"video_url", "video_urls", "input_video_urls", "reference_video_urls",
 	} {
 		for _, value := range normalizeKIEReferenceArrayValue(payload[key]) {
 			if !isPublicReferenceURL(value) {
@@ -361,6 +362,9 @@ func validateKIEImageRequiredInput(model string, payload map[string]any, uploade
 	// KIE schemas fail locally with an actionable message instead of returning
 	// a generic upstream 422.
 	hasBaseImage := uploaded > 0 || has("image_url", "image_urls", "input_urls", "input_url", "images", "image", "image_input", "reference_image")
+	if name == "ideogram/v3-remix" || strings.HasPrefix(name, "qwen/") || strings.HasPrefix(name, "qwen2/") {
+		hasBaseImage = hasBaseImage || has("reference_image_urls")
+	}
 	requireBase := func() error {
 		if hasBaseImage {
 			return nil
@@ -397,6 +401,8 @@ func validateKIEImageRequiredInput(model string, payload map[string]any, uploade
 		return requireField("reference_image_urls", "reference_image_urls")
 	case name == "ideogram/character":
 		return requireField("reference_image_urls", "reference_image_urls")
+	case name == "topaz/video-upscale":
+		return requireField("video_url", "video_url", "video_urls", "input_video_urls", "reference_video_urls")
 	case strings.Contains(name, "qwen/image-to-image"), strings.Contains(name, "qwen/image-edit"), strings.Contains(name, "qwen2/image-edit"), strings.Contains(name, "ideogram/v3-remix"), strings.Contains(name, "seedream/5-pro-layer-decomposition"), strings.Contains(name, "image-to-image"), strings.Contains(name, "image-edit"), strings.Contains(name, "remix"):
 		return requireBase()
 	case strings.HasSuffix(name, "/extend"), strings.Contains(name, "upscale"), strings.Contains(name, "remove-background"):
@@ -1229,13 +1235,9 @@ func declaredVideoContractRequestPayload(payload map[string]any, contract protoc
 			videoSetObjectPath(request, contract.Request.ReferenceAudiosField, audioReferences)
 		}
 	} else if modeKind == "image" {
-		frames := append(append([]string(nil), frameReferences...), imageReferences...)
-		if len(frames) > 0 {
-			set(contract.Request.FirstFrameField, frames[0])
-		}
-		if len(frames) > 1 {
-			set(contract.Request.LastFrameField, frames[1])
-		}
+		firstFrame, lastFrame, _ := videoContractImageFrames(payload, imageReferences)
+		set(contract.Request.FirstFrameField, firstFrame)
+		set(contract.Request.LastFrameField, lastFrame)
 	}
 	return request
 }
@@ -2016,11 +2018,11 @@ func isKnownKIEImageModel(model string) bool {
 		return false
 	}
 	for _, prefix := range []string{"bytedance/", "flux-2/", "google/", "gpt-image/", "grok-imagine/", "ideogram/", "qwen/", "qwen2/", "recraft/", "seedream/", "topaz/", "wan/2-7-image", "z-image"} {
-		if strings.HasPrefix(value, prefix) || value == prefix[:len(prefix)-1] {
+		if strings.HasPrefix(value, prefix) {
 			return true
 		}
 	}
-	return strings.Contains(value, "nano-banana") || strings.Contains(value, "imagen4")
+	return strings.Contains(value, "imagen4")
 }
 
 // normalizeImagePayloadForModel keeps only fields supported by the selected
@@ -2125,6 +2127,7 @@ func normalizeKIEImagePayload(payload map[string]any) bool {
 	if !strings.Contains(name, "/") && name != "z-image" && !strings.Contains(name, "nano-banana") && !strings.HasPrefix(name, "gpt-image-2-") {
 		return false
 	}
+	originalPayload := util.CopyMap(payload)
 	imageSize := firstNonEmpty(util.Clean(payload["image_size"]), util.Clean(payload["size"]))
 	resolution := firstNonEmpty(util.Clean(payload["image_resolution"]), util.Clean(payload["resolution"]))
 	count := firstNonNilRelayValue(payload["n"], payload["num_images"], payload["max_images"], payload["actual_image_count"])
@@ -2181,7 +2184,6 @@ func normalizeKIEImagePayload(payload map[string]any) bool {
 		if !allowed {
 			resolutionValue := normalizeKIEQualityResolutionValue(quality)
 			if resolutionValue != "" && resolution == "" {
-				mapResolution("resolution")
 				payload["resolution"] = resolutionValue
 			}
 			delete(payload, "quality")
@@ -2221,18 +2223,19 @@ func normalizeKIEImagePayload(payload map[string]any) bool {
 		}
 	}
 	mapReferenceFrom := func(field string, sources []string) {
-		if _, exists := payload[field]; exists {
+		if len(normalizeKIEReferenceArrayValue(payload[field])) > 0 {
 			return
 		}
 		for _, source := range sources {
 			if value, ok := payload[source]; ok {
+				values := normalizeKIEReferenceArrayValue(value)
+				if len(values) == 0 {
+					continue
+				}
 				if isKIEImageReferenceArrayFieldName(field) {
-					payload[field] = normalizeKIEReferenceArrayValue(value)
+					payload[field] = values
 				} else {
-					values := normalizeKIEReferenceArrayValue(value)
-					if len(values) > 0 {
-						payload[field] = values[0]
-					}
+					payload[field] = values[0]
 				}
 				if source != field {
 					delete(payload, source)
@@ -2339,7 +2342,7 @@ func normalizeKIEImagePayload(payload map[string]any) bool {
 		if strings.Contains(name, "image-to-image") {
 			mapReference("input_urls")
 		}
-	case strings.Contains(name, "nano-banana"), strings.Contains(name, "google/nano-banana"):
+	case strings.Contains(name, "nano-banana"):
 		mapAspectRatio()
 		if (strings.Contains(name, "nano-banana-2") && !strings.Contains(name, "nano-banana-2-lite")) || strings.Contains(name, "nano-banana-pro") {
 			mapResolution("resolution")
@@ -2444,6 +2447,10 @@ func normalizeKIEImagePayload(payload map[string]any) bool {
 		mapAspectRatio()
 		delete(payload, "size")
 	default:
+		clear(payload)
+		for key, value := range originalPayload {
+			payload[key] = value
+		}
 		return false
 	}
 	clearKIEImageReferenceAliases(payload, name)
@@ -2504,6 +2511,10 @@ func clearKIEImageReferenceAliases(payload map[string]any, model string) {
 			keepField("image_url")
 		} else if strings.Contains(name, "image-to-image") {
 			keepField("image_urls")
+		}
+	case strings.Contains(name, "gpt-image/1.5"):
+		if strings.Contains(name, "image-to-image") {
+			keepField("input_urls")
 		}
 	case strings.Contains(name, "flux-2"), strings.Contains(name, "gpt-image-2"):
 		if strings.Contains(name, "image-to-image") {

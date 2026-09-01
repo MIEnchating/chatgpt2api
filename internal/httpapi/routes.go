@@ -1699,19 +1699,14 @@ func videoContractMaterialCounts(kind string, body map[string]any, imageURLs, vi
 	lastFrame := videoLastFrameAlias(body)
 	switch kind {
 	case "image":
+		firstFrame, lastFrame, imageURLs = videoContractImageFrames(body, imageURLs)
 		if firstFrame != "" {
-			counts.FirstFrame = 1
-		} else if len(imageURLs) > 0 {
 			counts.FirstFrame = 1
 		}
 		if lastFrame != "" {
 			counts.LastFrame = 1
-		} else if firstFrame == "" && len(imageURLs) > 1 {
-			counts.LastFrame = 1
 		}
-		if firstFrame != "" {
-			counts.Image = len(imageURLs)
-		}
+		counts.Image = len(imageURLs)
 	case "reference":
 		if firstFrame != "" {
 			counts.FirstFrame = 1
@@ -1730,6 +1725,22 @@ func videoContractMaterialCounts(kind string, body map[string]any, imageURLs, vi
 		counts.Image = len(imageURLs)
 	}
 	return counts
+}
+
+func videoContractImageFrames(body map[string]any, imageURLs []string) (string, string, []string) {
+	firstFrame := videoFirstFrameAlias(body)
+	lastFrame := videoLastFrameAlias(body)
+	remaining := append([]string(nil), imageURLs...)
+	if firstFrame != "" || len(remaining) == 0 {
+		return firstFrame, lastFrame, remaining
+	}
+	firstFrame = remaining[0]
+	remaining = remaining[1:]
+	if lastFrame == "" && len(remaining) > 0 {
+		lastFrame = remaining[0]
+		remaining = remaining[1:]
+	}
+	return firstFrame, lastFrame, remaining
 }
 
 func videoFirstFrameAlias(body map[string]any) string {

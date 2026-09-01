@@ -337,9 +337,6 @@ func mergeImageConversationImages(base, other map[string]any) {
 func sameImageTask(left, right map[string]any) bool {
 	leftTask := strings.TrimSpace(util.Clean(left["taskId"]))
 	rightTask := strings.TrimSpace(util.Clean(right["taskId"]))
-	if leftTask == "" || rightTask == "" {
-		return leftTask == rightTask
-	}
 	return leftTask == rightTask
 }
 

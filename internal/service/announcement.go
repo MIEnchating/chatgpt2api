@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 	"unicode/utf8"
 
 	"chatgpt2api/internal/storage"
@@ -340,18 +341,11 @@ func normalizeAnnouncementSnoozedDates(value any) map[string]string {
 }
 
 func validAnnouncementLocalDate(value string) bool {
-	if len(value) != 10 || value[4] != '-' || value[7] != '-' {
+	if len(value) != len("2006-01-02") {
 		return false
 	}
-	for index, char := range value {
-		if index == 4 || index == 7 {
-			continue
-		}
-		if char < '0' || char > '9' {
-			return false
-		}
-	}
-	return true
+	parsed, err := time.Parse("2006-01-02", value)
+	return err == nil && parsed.Format("2006-01-02") == value
 }
 
 func (s *AnnouncementService) loadLocked() ([]Announcement, error) {

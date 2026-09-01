@@ -1,6 +1,7 @@
 package config
 
 import (
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -10,6 +11,17 @@ import (
 	"chatgpt2api/internal/model"
 	"chatgpt2api/internal/util"
 )
+
+func TestFloatSettingRejectsNonFiniteValues(t *testing.T) {
+	for _, value := range []any{"NaN", "Inf", math.NaN(), math.Inf(-1)} {
+		if got := floatSetting(value, 1.5); got != 1.5 {
+			t.Fatalf("floatSetting(%v) = %v, want fallback", value, got)
+		}
+	}
+	if got := floatSetting("2.25", 1.5); got != 2.25 {
+		t.Fatalf("floatSetting(finite) = %v, want 2.25", got)
+	}
+}
 
 func TestDefaultVideoModelsMatchReferenceWorkbenchDefault(t *testing.T) {
 	if len(defaultVideoModels) == 0 || defaultVideoModels[0] != "grok-imagine-video" {

@@ -213,7 +213,6 @@ test("video contract help icons explain only technical fields", () => {
   assert.match(videoContractsSource, /label="允许文件与 URL 混用" help=/);
   assert.match(videoContractsSource, /label="默认模式" help=/);
   assert.match(videoContractsSource, /label="模式类型" help=/);
-  assert.match(videoContractsSource, /label="允许仅使用参考音频" help=/);
   assert.match(videoContractsSource, /label="至少提供一项"/);
   assert.match(videoContractsSource, /help=\{REQUEST_FIELD_HELP\[key\]\}/);
   for (const label of ["轮询间隔", "超时时间", "任务 ID 路径", "任务状态路径", "任务进度路径", "排队状态", "处理中状态", "成功状态", "失败状态", "未知状态", "错误信息路径", "结果地址路径"]) {

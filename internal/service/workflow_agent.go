@@ -104,8 +104,9 @@ func NormalizeWorkflowAgentDraft(content, scope string) (map[string]any, []strin
 	if err := json.Unmarshal([]byte(content), &draft); err != nil {
 		return nil, nil, errors.New("工作流 Agent 返回内容格式异常，请重试")
 	}
-	if strings.TrimSpace(scope) != "public" {
-		draft["scope"] = "private"
+	draft["scope"] = "private"
+	if strings.TrimSpace(scope) == "public" {
+		draft["scope"] = "public"
 	}
 	if err := normalizeWorkflowAgentDraftVariables(draft); err != nil {
 		return nil, nil, fmt.Errorf("工作流 Agent 返回的变量配置无效: %w", err)

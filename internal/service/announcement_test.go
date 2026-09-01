@@ -146,8 +146,10 @@ func TestAnnouncementPreferencesPersistPerOwner(t *testing.T) {
 
 func TestAnnouncementPreferencesValidateActions(t *testing.T) {
 	announcements := NewAnnouncementService(newTestStorageBackend(t))
-	if _, err := announcements.UpdatePreferences("user-a", "v1", "today", "15-07-2026"); err == nil {
-		t.Fatal("today preference accepted invalid date")
+	for _, date := range []string{"15-07-2026", "2026-02-29", "2026-13-01"} {
+		if _, err := announcements.UpdatePreferences("user-a", "v1", "today", date); err == nil {
+			t.Fatalf("today preference accepted invalid date %q", date)
+		}
 	}
 	if _, err := announcements.UpdatePreferences("user-a", "v1", "unknown", ""); err == nil {
 		t.Fatal("preference accepted invalid action")

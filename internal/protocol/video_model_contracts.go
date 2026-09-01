@@ -49,8 +49,7 @@ type VideoModelContractCapability struct {
 }
 
 type VideoModelContractValidation struct {
-	MaxPromptCharacters     int  `json:"max_prompt_characters"`
-	AllowAudioOnlyReference bool `json:"allow_audio_only_reference"`
+	MaxPromptCharacters int `json:"max_prompt_characters"`
 }
 
 type VideoModelMaterialRange struct {

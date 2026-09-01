@@ -221,7 +221,7 @@ const emptyContract: VideoModelContract = {
     audio_control: "none",
     watermark: false,
   },
-  validation: { max_prompt_characters: 5000, allow_audio_only_reference: false },
+  validation: { max_prompt_characters: 5000 },
   generation: {
     selection: "infer",
     default_mode: "text-to-video",
@@ -1761,7 +1761,7 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
                     <p className="mt-1 text-xs leading-5 text-muted-foreground">定义系统如何根据输入素材选择上游生成模式。</p>
                   </div>
                 </div>
-                <div className="grid items-end gap-3 rounded-lg bg-muted/30 p-3 sm:grid-cols-[minmax(0,1fr)_minmax(260px,1fr)]">
+                <div className="rounded-lg bg-muted/30 p-3">
                   <Field>
                     <ContractFieldLabel htmlFor="video-contract-default-mode" label="默认模式" help="没有任何素材时优先使用的模式；通常设置为文生视频。" />
                     <Select value={draft.contract.generation.default_mode} disabled={readOnly} onValueChange={(default_mode) => updateContract((contract) => { contract.generation.default_mode = default_mode; })}>
@@ -1769,7 +1769,6 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
                       <SelectContent>{draft.contract.generation.modes.filter((mode) => mode.kind === "text").map((mode) => <SelectItem key={mode.id} value={mode.id}>{mode.label}</SelectItem>)}</SelectContent>
                     </Select>
                   </Field>
-                  <ContractCheckboxField id="video-contract-audio-only-reference" label="允许仅使用参考音频" help="开启后，没有参考图片或视频时也可以只上传音频发起参考素材生成。" checked={draft.contract.validation.allow_audio_only_reference} disabled={readOnly} onCheckedChange={(checked) => updateContract((contract) => { contract.validation.allow_audio_only_reference = checked; })} />
                 </div>
                 <div className="mt-1 flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2">

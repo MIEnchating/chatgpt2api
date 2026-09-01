@@ -289,6 +289,24 @@ func TestDeclaredVideoContractExplicitGenerationModeTakesPriority(t *testing.T) 
 	}
 }
 
+func TestDeclaredVideoContractImageFramesKeepExplicitPositions(t *testing.T) {
+	contract, ok := protocol.VideoContractForModel("minimax-h3-768p")
+	if !ok {
+		t.Fatal("MiniMax H3 contract is not installed")
+	}
+	payload := map[string]any{
+		"model":                "minimax-h3-768p",
+		"prompt":               "animate",
+		"generation_mode":      "image-to-video",
+		"last_frame_url":       "https://cdn.example.com/last.png",
+		"reference_image_urls": []string{"https://cdn.example.com/first.png"},
+	}
+	got := declaredVideoContractRequestPayload(payload, contract)
+	if got["image_url"] != "https://cdn.example.com/first.png" || got["last_image_url"] != "https://cdn.example.com/last.png" {
+		t.Fatalf("image frames were reordered: %#v", got)
+	}
+}
+
 func TestDeclaredVideoContractGenerationModeValidation(t *testing.T) {
 	contract, ok := protocol.VideoContractForModel("minimax-h3-768p")
 	if !ok {
@@ -322,6 +340,14 @@ func TestDeclaredVideoContractGenerationModeValidation(t *testing.T) {
 	if err := protocol.ValidateVideoContractModeMaterials(contract, "image", imageCounts); err != nil {
 		t.Fatalf("valid explicit image mode rejected: %v", err)
 	}
+	tooManyImageCounts := videoContractMaterialCounts("image", map[string]any{}, []string{
+		"https://cdn.example.com/first.png",
+		"https://cdn.example.com/last.png",
+		"https://cdn.example.com/extra.png",
+	}, nil, nil)
+	if err := protocol.ValidateVideoContractModeMaterials(contract, "image", tooManyImageCounts); err == nil {
+		t.Fatal("image mode silently accepted a reference beyond the first and last frames")
+	}
 }
 
 func TestDeclaredVideoContractRouteRejectsInvalidOrMismatchedGenerationMode(t *testing.T) {
@@ -336,6 +362,7 @@ func TestDeclaredVideoContractRouteRejectsInvalidOrMismatchedGenerationMode(t *t
 		`{"model":"minimax-h3-768p","prompt":"animate","generation_mode":"unsupported-mode"}`,
 		`{"model":"minimax-h3-768p","prompt":"animate","generation_mode":"text-to-video","reference_image_urls":["https://cdn.example.com/ref.png"]}`,
 		`{"model":"minimax-h3-768p","prompt":"animate","generation_mode":"reference-to-video"}`,
+		`{"model":"minimax-h3-768p","prompt":"animate","generation_mode":"image-to-video","reference_image_urls":["https://cdn.example.com/first.png","https://cdn.example.com/last.png","https://cdn.example.com/extra.png"]}`,
 	} {
 		req := httptest.NewRequest(http.MethodPost, "/api/creation-tasks/video-generations", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")

@@ -1948,6 +1948,84 @@ func TestNormalizeKIEImagePayloadMapsArrayReferencesToSingleImageContracts(t *te
 	}
 }
 
+func TestNormalizeKIEImagePayloadSkipsBlankReferenceAliases(t *testing.T) {
+	const imageURL = "https://cdn.example.com/source.png"
+	const maskURL = "https://cdn.example.com/mask.png"
+	const videoURL = "https://cdn.example.com/source.mp4"
+	tests := []struct {
+		name    string
+		payload map[string]any
+		field   string
+		want    any
+	}{
+		{
+			name:    "single image target",
+			payload: map[string]any{"model": "qwen/image-to-image", "image_url": " ", "image_urls": []string{imageURL}},
+			field:   "image_url",
+			want:    imageURL,
+		},
+		{
+			name:    "image array target",
+			payload: map[string]any{"model": "nano-banana-2-lite", "image_urls": []string{" "}, "image_url": imageURL},
+			field:   "image_urls",
+			want:    []string{imageURL},
+		},
+		{
+			name:    "mask target",
+			payload: map[string]any{"model": "ideogram/v3-edit", "image_url": imageURL, "mask_url": "", "mask_urls": []string{maskURL}},
+			field:   "mask_url",
+			want:    maskURL,
+		},
+		{
+			name:    "video target",
+			payload: map[string]any{"model": "topaz/video-upscale", "video_url": "", "reference_video_urls": []string{videoURL}},
+			field:   "video_url",
+			want:    videoURL,
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			normalizeImagePayloadForModel(test.payload)
+			if got := test.payload[test.field]; !reflect.DeepEqual(got, test.want) {
+				t.Fatalf("%s = %#v, want %#v; payload=%#v", test.field, got, test.want, test.payload)
+			}
+		})
+	}
+}
+
+func TestNormalizeKIEImagePayloadLeavesUnsupportedSlashModelUntouched(t *testing.T) {
+	payload := map[string]any{
+		"model":            "custom/image-v1",
+		"size":             "1024x1024",
+		"resolution":       "2k",
+		"image_resolution": "4k",
+		"n":                2,
+		"num_images":       3,
+	}
+	want := util.CopyMap(payload)
+	if normalizeKIEImagePayload(payload) {
+		t.Fatal("unsupported slash-qualified model was treated as KIE")
+	}
+	if !reflect.DeepEqual(payload, want) {
+		t.Fatalf("unsupported model payload = %#v, want %#v", payload, want)
+	}
+}
+
+func TestNormalizeKIEGPTImage15KeepsMappedReference(t *testing.T) {
+	const source = "https://cdn.example.com/source.png"
+	payload := map[string]any{
+		"model":     "gpt-image/1.5-image-to-image",
+		"image_url": source,
+	}
+	normalizeImagePayloadForModel(payload)
+	if got := payload["input_urls"]; !reflect.DeepEqual(got, []string{source}) {
+		t.Fatalf("input_urls = %#v, want mapped reference; payload=%#v", got, payload)
+	}
+	if _, exists := payload["image_url"]; exists {
+		t.Fatalf("source alias leaked after mapping: %#v", payload)
+	}
+}
+
 func TestValidateKIEImageRequiredInputKeepsAdditionalInputsStrict(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -1979,6 +2057,21 @@ func TestValidateKIEImageRequiredInputKeepsAdditionalInputsStrict(t *testing.T) 
 	}, 1); err != nil {
 		t.Fatalf("character edit with all required inputs should pass: %v", err)
 	}
+	for _, test := range []struct {
+		model   string
+		payload map[string]any
+	}{
+		{model: "ideogram/v3-remix", payload: map[string]any{"reference_image_urls": []string{"https://cdn.example.com/source.png"}}},
+		{model: "qwen/image-to-image", payload: map[string]any{"reference_image_urls": []string{"https://cdn.example.com/source.png"}}},
+		{model: "topaz/video-upscale", payload: map[string]any{"reference_video_urls": []string{"https://cdn.example.com/source.mp4"}}},
+	} {
+		if err := validateKIEImageRequiredInput(test.model, test.payload, 0); err != nil {
+			t.Fatalf("%s supported reference alias was rejected: %v", test.model, err)
+		}
+	}
+	if err := validateKIEImageRequiredInput("topaz/video-upscale", nil, 1); err == nil || !strings.Contains(err.Error(), "video_url") {
+		t.Fatalf("Topaz video upscale accepted an image upload without video URL: %v", err)
+	}
 }
 
 func TestValidateKIEImageReferenceURLsRejectsInlineAndPrivateSources(t *testing.T) {
@@ -1986,6 +2079,8 @@ func TestValidateKIEImageReferenceURLsRejectsInlineAndPrivateSources(t *testing.
 		{"model": "qwen/image-to-image", "image_url": "data:image/png;base64,AAAA"},
 		{"model": "topaz/image-upscale", "image_url": "http://127.0.0.1/source.png"},
 		{"model": "ideogram/v3-edit", "image_url": "https://cdn.example.com/source.png", "mask_url": "https://cdn.example.com/mask.png", "reference_image_urls": []string{"https://cdn.example.com/ref.png"}},
+		{"model": "ideogram/v3-edit", "image_url": "https://cdn.example.com/source.png", "mask": "data:image/png;base64,AAAA"},
+		{"model": "topaz/video-upscale", "input_video_urls": []string{"http://127.0.0.1/source.mp4"}},
 	}
 	for index, payload := range tests {
 		if index == 2 {
@@ -2368,6 +2463,11 @@ func TestNormalizeKIEImagePayloadCoversEveryReferenceImageModel(t *testing.T) {
 				}
 				if _, ok := payload[field]; ok {
 					t.Fatalf("unsupported reference field %s leaked: %#v", field, payload)
+				}
+			}
+			if test.reference != "" {
+				if _, ok := payload[test.reference]; !ok {
+					t.Fatalf("missing reference field %s: %#v", test.reference, payload)
 				}
 			}
 		})

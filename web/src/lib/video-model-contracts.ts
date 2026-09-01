@@ -82,7 +82,6 @@ export type VideoModelContract = {
   };
   validation: {
     max_prompt_characters: number;
-    allow_audio_only_reference: boolean;
   };
   generation: {
     selection: "infer";

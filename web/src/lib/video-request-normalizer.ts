@@ -119,11 +119,23 @@ function contractMaterialCounts(input: VideoReferenceCombinationInput, kind: Vid
   const firstFrame = String(input.firstFrameURL || "").trim();
   const lastFrame = String(input.lastFrameURL || "").trim();
   const images = Math.max(0, Math.floor(input.ordinaryReferenceImageCount ?? cleanURLs(input.referenceImageURLs).length));
-  const frameImages = kind === "image" && !firstFrame ? cleanURLs(input.referenceImageURLs).length : 0;
+  let remainingImages = images;
+  let firstFrameCount = firstFrame ? 1 : 0;
+  let lastFrameCount = lastFrame ? 1 : 0;
+  if (kind === "image" && !firstFrame) {
+    if (remainingImages > 0) {
+      firstFrameCount = 1;
+      remainingImages -= 1;
+    }
+    if (!lastFrame && remainingImages > 0) {
+      lastFrameCount = 1;
+      remainingImages -= 1;
+    }
+  }
   return {
-    first_frame: firstFrame || frameImages > 0 ? 1 : 0,
-    last_frame: lastFrame || frameImages > 1 ? 1 : 0,
-    image: kind === "reference" ? images : 0,
+    first_frame: firstFrameCount,
+    last_frame: lastFrameCount,
+    image: kind === "reference" ? images : kind === "image" ? remainingImages : 0,
     video: cleanURLs(input.referenceVideoURLs).length,
     audio: cleanURLs(input.referenceAudioURLs).length,
   };
@@ -183,6 +195,8 @@ export function normalizeVideoRequest(input: VideoRequestInput): NormalizedVideo
   if (!videoContractGenerationMode(contract, kind)) {
     throw new Error(`当前视频模型不支持${kind === "image" ? "图生视频" : kind === "reference" ? "参考素材生视频" : "文生视频"}`);
   }
+  const materialError = videoContractMaterialError(contract, kind, contractMaterialCounts(visibleInput, kind));
+  if (materialError) throw new Error(materialError);
   const normalizedKind = kind;
   const size = capability.sizes.length > 0
     ? selectedOption(capability.sizes, visibleInput.size, capability.default_size)
