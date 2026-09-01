@@ -637,7 +637,7 @@ func normalizeManagedVideoModelContracts(items []ManagedVideoModelContract) ([]M
 			}
 			items[index].Draft = &draft
 		}
-		versions := make([]VideoModelContractVersion, 0, minInt(len(items[index].Versions), maxVideoModelContractVersions))
+		versions := make([]VideoModelContractVersion, 0, min(len(items[index].Versions), maxVideoModelContractVersions))
 		seenRevisions := make(map[int]struct{}, len(items[index].Versions))
 		for _, version := range items[index].Versions {
 			if version.Revision < 1 || version.Revision > items[index].Revision {
@@ -689,11 +689,4 @@ func trimVideoContractVersions(versions []VideoModelContractVersion) []VideoMode
 		versions = versions[len(versions)-maxVideoModelContractVersions:]
 	}
 	return append([]VideoModelContractVersion(nil), versions...)
-}
-
-func minInt(left, right int) int {
-	if left < right {
-		return left
-	}
-	return right
 }

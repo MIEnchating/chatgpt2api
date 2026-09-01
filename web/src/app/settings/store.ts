@@ -195,7 +195,6 @@ type SettingsStore = {
   setProxy: (value: string) => void;
   setBaseUrl: (value: string) => void;
   setRelayBaseUrl: (value: string) => void;
-  setRelayDatabaseUrl: (value: string) => void;
   setRelayDatabaseType: (value: "newapi" | "sub2api") => void;
   setRelayDatabaseDriver: (value: "sqlite" | "postgres" | "mysql") => void;
   setRelayDatabaseField: (field: "host" | "port" | "name" | "user" | "password", value: string) => void;
@@ -432,10 +431,6 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         },
       };
     });
-  },
-
-  setRelayDatabaseUrl: (value) => {
-    set((state) => state.config ? { config: { ...state.config, relay_database_url: value } } : {});
   },
 
   setRelayDatabaseType: (value) => {

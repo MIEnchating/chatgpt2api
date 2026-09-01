@@ -221,6 +221,32 @@ test("series parser accepts fenced JSON and follows reference fallbacks", () => 
   assert.equal(normalizeSeriesDraft({ ...fallback[0], status: "running" }).status, "draft");
 });
 
+test("series parser preserves top-level arrays and skips malformed entries", () => {
+  const drafts = parseWorkflowSeriesDrafts(
+    '[{"title":"封面","prompt":"主视觉"},null,{"prompt":"细节"},{"prompt":42}]',
+    4,
+    "基础提示词",
+  );
+
+  assert.equal(drafts.length, 2);
+  assert.equal(drafts[0].title, "封面");
+  assert.equal(drafts[0].prompt, "主视觉");
+  assert.equal(drafts[1].title, "第 3 张");
+  assert.equal(drafts[1].prompt, "细节");
+});
+
+test("series parser skips unrelated bracketed prefixes before valid JSON", () => {
+  const drafts = parseWorkflowSeriesDrafts(
+    '[note]\n{"items":[{"title":"封面","prompt":"有效提示词"}]}',
+    2,
+    "基础提示词",
+  );
+
+  assert.equal(drafts.length, 1);
+  assert.equal(drafts[0].title, "封面");
+  assert.equal(drafts[0].prompt, "有效提示词");
+});
+
 test("select variable options match the reference separators", () => {
   assert.deepEqual(parseVariableOptions("自动 / 极简\n商业,清冷，温暖"), [
     "自动",

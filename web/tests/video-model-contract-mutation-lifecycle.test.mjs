@@ -107,4 +107,20 @@ describe("video model contract mutation lifecycle", () => {
     expect(cardSource).toContain("if (mutationTicket && !mutationTrackerRef.current!.canApply(mutationTicket)) return null");
     expect(cardSource).toContain("const payload = await validate(false, ticket)");
   });
+
+  test("the parameter preview waits for each changed contract to be installed", () => {
+    expect(cardSource).toContain("const [installedContract, setInstalledContract] = useState<VideoModelContract | null>(null)");
+    expect(cardSource).toContain("setInstalledContract(contract)");
+    expect(cardSource).toContain("{installedContract === contract ? (");
+    expect(cardSource).not.toContain("const [isReady, setIsReady] = useState(false)");
+  });
+
+  test("JSON imports validate contract names before the review summary can trim them", () => {
+    const validation = "typeof entry.contract.name !== \"string\" || entry.contract.name.trim() === \"\"";
+    const unsafeCast = "contract: entry.contract as unknown as VideoModelContract";
+
+    expect(cardSource).toContain(validation);
+    expect(cardSource).toContain("导入文件中的契约名称必须是非空字符串");
+    expect(cardSource.indexOf(validation)).toBeLessThan(cardSource.indexOf(unsafeCast));
+  });
 });

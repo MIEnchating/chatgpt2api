@@ -337,7 +337,7 @@ export function buildSeriesPromptDraftRequest(
     .join("\n\n");
 }
 
-function extractJSONText(content: string) {
+function extractJSONTexts(content: string) {
   const trimmed = content
     .trim()
     .replace(/^```json/i, "")
@@ -346,13 +346,15 @@ function extractJSONText(content: string) {
     .trim();
   const objectStart = trimmed.indexOf("{");
   const objectEnd = trimmed.lastIndexOf("}");
-  if (objectStart >= 0 && objectEnd > objectStart)
-    return trimmed.slice(objectStart, objectEnd + 1);
   const arrayStart = trimmed.indexOf("[");
   const arrayEnd = trimmed.lastIndexOf("]");
-  return arrayStart >= 0 && arrayEnd > arrayStart
-    ? trimmed.slice(arrayStart, arrayEnd + 1)
-    : "";
+  const candidates = [
+    { start: objectStart, end: objectEnd },
+    { start: arrayStart, end: arrayEnd },
+  ]
+    .filter(({ start, end }) => start >= 0 && end > start)
+    .sort((left, right) => left.start - right.start);
+  return candidates.map(({ start, end }) => trimmed.slice(start, end + 1));
 }
 
 export function parseWorkflowSeriesDrafts(
@@ -361,24 +363,32 @@ export function parseWorkflowSeriesDrafts(
   fallbackPrompt = "",
 ): WorkflowSeriesDraft[] {
   const count = Math.max(1, Math.min(20, Math.round(targetCount) || 4));
-  const jsonText = extractJSONText(content);
-  if (jsonText) {
+  const jsonTexts = extractJSONTexts(content);
+  for (const jsonText of jsonTexts) {
     try {
-      const payload = JSON.parse(jsonText) as
-        | { items?: Array<{ title?: string; prompt?: string }> }
-        | Array<{ title?: string; prompt?: string }>;
-      const items = Array.isArray(payload) ? payload : payload.items || [];
+      const payload = JSON.parse(jsonText) as unknown;
+      const items = Array.isArray(payload)
+        ? payload
+        : payload && typeof payload === "object" && "items" in payload && Array.isArray(payload.items)
+          ? payload.items
+          : [];
       const drafts = items
-        .map((item, index) => ({
-          id: uid(),
-          title: item.title?.trim() || `第 ${index + 1} 张`,
-          prompt: item.prompt?.trim() || "",
-          status: "draft" as const,
-        }))
-        .filter((item) => item.prompt);
+        .flatMap((item, index) => {
+          if (!item || typeof item !== "object") return [];
+          const prompt = typeof item.prompt === "string" ? item.prompt.trim() : "";
+          if (!prompt) return [];
+          return [{
+            id: uid(),
+            title: typeof item.title === "string" && item.title.trim()
+              ? item.title.trim()
+              : `第 ${index + 1} 张`,
+            prompt,
+            status: "draft" as const,
+          }];
+        });
       if (drafts.length) return drafts.slice(0, count);
     } catch {
-      // Keep the reference project's line and fallback parsing behavior.
+      // Try the next structured candidate before falling back to line parsing.
     }
   }
   const lines = content

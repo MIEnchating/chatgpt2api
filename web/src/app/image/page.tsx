@@ -124,6 +124,7 @@ import {
   type ImageVisibility,
 } from "@/lib/api";
 import { fetchAuthenticatedImageBlob } from "@/lib/authenticated-image";
+import { inspectAudioReferenceFile } from "@/lib/audio-reference-file";
 import { dispatchImageGenerationPreferencesChanged } from "@/lib/image-generation-preferences-events";
 import { imageSourceToFile } from "@/lib/image-source-file";
 import {
@@ -322,33 +323,6 @@ function isNearResultsBottom(element: HTMLElement | ScrollAreaHandle) {
 
 async function dataUrlToFile(dataUrl: string, fileName: string, mimeType?: string) {
   return imageSourceToFile(dataUrl, fileName, mimeType, fetchAuthenticatedImageBlob);
-}
-
-function inspectAudioReferenceFile(file: File) {
-  return new Promise<AudioReferenceFileMetadata>((resolve, reject) => {
-    const url = URL.createObjectURL(file);
-    const audio = document.createElement("audio");
-    const cleanup = () => {
-      audio.removeAttribute("src");
-      audio.load();
-      URL.revokeObjectURL(url);
-    };
-    audio.preload = "metadata";
-    audio.onloadedmetadata = () => {
-      const metadata = { durationMs: Math.round(audio.duration * 1000), bytes: file.size };
-      cleanup();
-      if (!Number.isFinite(metadata.durationMs) || metadata.durationMs <= 0) {
-        reject(new Error("无法读取参考音频的时长"));
-        return;
-      }
-      resolve(metadata);
-    };
-    audio.onerror = () => {
-      cleanup();
-      reject(new Error("无法读取参考音频，请确认文件编码可用"));
-    };
-    audio.src = url;
-  });
 }
 
 function imageFileExtensionForOutputFormat(format?: ImageOutputFormat) {
@@ -604,6 +578,7 @@ function imageDataIndexForTask(images: StoredImage[], imageIndex: number) {
 const STORED_IMAGE_FIELDS: Array<keyof StoredImage> = [
   "id",
   "taskId",
+  "storageKey",
   "taskRevision",
   "taskStatus",
   "status",
@@ -803,16 +778,6 @@ function taskDataToStoredImage(image: StoredImage, task: CreationTask, dataIndex
           taskStatus: slotStatus,
           status: slotStatus === "cancelled" ? "cancelled" : "error",
           error: slotStatus === "cancelled" ? task.error || "任务已终止" : task.error || "生成失败",
-        });
-      }
-      if (dataIndex > 0 && image.taskId !== image.id) {
-        return updateStoredImage(image, {
-          taskId: task.id,
-          taskRevision: normalizedTaskRevision,
-          ...finalTiming,
-          taskStatus: "success",
-          status: "error",
-          error: `未返回第 ${dataIndex + 1} 张图片数据`,
         });
       }
       return updateStoredImage(image, {

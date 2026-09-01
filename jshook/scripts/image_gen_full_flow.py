@@ -13,9 +13,8 @@ import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
-from io import BytesIO
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Iterator
 
 import pybase64
 from curl_cffi import requests
@@ -455,7 +454,6 @@ def main():
 
     # 构建 requirements
     req_token = req_data.get("token", "")
-    so_token = req_data.get("so_token", "")
     if not req_token:
         raise RuntimeError(f"Missing chat requirements token: {req_data}")
 
@@ -696,7 +694,7 @@ def main():
                 continue
             conv = r.json()
             mapping = conv.get("mapping") or {}
-            for msg_id, node in mapping.items():
+            for node in mapping.values():
                 msg = (node or {}).get("message") or {}
                 if (msg.get("author") or {}).get("role") != "tool":
                     continue

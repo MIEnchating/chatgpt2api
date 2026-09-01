@@ -1245,22 +1245,3 @@ func maxInt(values ...int) int {
 	}
 	return maximum
 }
-
-func videoCapabilityFromContract(contract VideoModelContract) VideoCapabilityProfile {
-	capability := VideoCapabilityProfile{
-		Sizes:                append([]string(nil), contract.Capability.Sizes...),
-		Seconds:              append([]int(nil), contract.Capability.Seconds...),
-		Resolutions:          append([]string(nil), contract.Capability.Resolutions...),
-		DefaultSize:          contract.Capability.DefaultSize,
-		DefaultSeconds:       contract.Capability.DefaultSeconds,
-		DefaultResolution:    contract.Capability.DefaultResolution,
-		FirstFrameImageLimit: contract.Capability.FirstFrameImageLimit,
-		ReferenceMode:        contract.Capability.ReferenceMode,
-		AudioControl:         contract.Capability.AudioControl,
-		Watermark:            contract.Capability.Watermark,
-	}
-	capability.References.Image = contract.Capability.References.Image
-	capability.References.Video = contract.Capability.References.Video
-	capability.References.Audio = contract.Capability.References.Audio
-	return capability
-}

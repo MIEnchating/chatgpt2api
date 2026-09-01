@@ -9,6 +9,7 @@
 .codex
 .ace-tool
 .github
+.playwright-cli
 
 .env
 .env.*
@@ -33,6 +34,9 @@ web/out
 web/build
 web/coverage
 web/.vercel
+web/.playwright-cli
+web/test-results
+web/tests
 web/*.tsbuildinfo
 web/npm-debug.log*
 web/yarn-debug.log*
@@ -43,7 +47,10 @@ internal/web/dist
 
 assets
 docs
+jshook
 README.md
+CHANGELOG.md
+RELEASE_NOTES.md
 AGENTS.md
 DESIGN.md
 LICENSE

@@ -341,6 +341,21 @@ func TestGenericStorageServicePublicConfig(t *testing.T) {
 	}
 }
 
+func TestSelectStorageProviderDoesNotExpandWeights(t *testing.T) {
+	provider := model.StorageProvider{
+		ID: "weighted", Type: model.StorageProviderTypeS3, Endpoint: "https://s3.example.test",
+		Bucket: "bucket", AccessKeyID: "key", SecretAccessKey: "secret", Enabled: true,
+		Weight: int(^uint(0) >> 1),
+	}
+	selected, err := selectStorageProvider(model.StorageSetting{Providers: []model.StorageProvider{provider}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selected.ID != provider.ID {
+		t.Fatalf("selectStorageProvider() = %#v, want provider %q", selected, provider.ID)
+	}
+}
+
 func TestGenericStorageServiceReportsScheduledCapacityErrors(t *testing.T) {
 	settings := &genericStorageTestSettings{setting: model.StorageSetting{
 		Providers: []model.StorageProvider{{

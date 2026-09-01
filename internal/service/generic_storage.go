@@ -713,18 +713,30 @@ func hasAdminStorageProvider(setting model.StorageSetting) bool {
 
 func selectStorageProvider(setting model.StorageSetting) (model.StorageProvider, error) {
 	candidates := make([]model.StorageProvider, 0)
+	var totalWeight uint64
 	for _, provider := range setting.Providers {
-		if !provider.Enabled || !storageProviderConfigured(provider) {
+		if !provider.Enabled || !storageProviderConfigured(provider) || provider.Weight <= 0 {
 			continue
 		}
-		for weight := 0; weight < provider.Weight; weight++ {
-			candidates = append(candidates, provider)
+		weight := uint64(provider.Weight)
+		if ^uint64(0)-totalWeight < weight {
+			return model.StorageProvider{}, errors.New("storage provider weight total is too large")
 		}
+		totalWeight += weight
+		candidates = append(candidates, provider)
 	}
 	if len(candidates) == 0 {
 		return model.StorageProvider{}, errors.New("no storage provider is available")
 	}
-	return candidates[int(time.Now().UnixNano())%len(candidates)], nil
+	ticket := uint64(time.Now().UnixNano()) % totalWeight
+	for _, provider := range candidates {
+		weight := uint64(provider.Weight)
+		if ticket < weight {
+			return provider, nil
+		}
+		ticket -= weight
+	}
+	return model.StorageProvider{}, errors.New("storage provider selection failed")
 }
 
 func storageProviderConfigured(provider model.StorageProvider) bool {

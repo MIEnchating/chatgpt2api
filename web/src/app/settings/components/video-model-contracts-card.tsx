@@ -380,6 +380,9 @@ function normalizeVideoContractTransferDocument(value: unknown): VideoModelContr
     if (!isRecord(entry) || !isRecord(entry.contract) || typeof entry.enabled !== "boolean") {
       throw new Error("导入文件中存在无效的契约条目");
     }
+    if (typeof entry.contract.name !== "string" || entry.contract.name.trim() === "") {
+      throw new Error("导入文件中的契约名称必须是非空字符串");
+    }
     return {
       contract: entry.contract as unknown as VideoModelContract,
       enabled: entry.enabled,
@@ -862,7 +865,7 @@ function ContractReferenceMaterialPreview({ contract, ruleValues }: { contract: 
 }
 
 function ContractParameterPreview({ contract }: { contract: VideoModelContract }) {
-  const [isReady, setIsReady] = useState(false);
+  const [installedContract, setInstalledContract] = useState<VideoModelContract | null>(null);
   const [value, setValue] = useState<VideoSettingsValue>(() => previewSettingsFromContract(contract));
 
   useEffect(() => {
@@ -873,7 +876,7 @@ function ContractParameterPreview({ contract }: { contract: VideoModelContract }
       ...previousContracts.filter((item) => !item.models.includes(CONTRACT_PREVIEW_MODEL)),
       previewContract,
     ]);
-    setIsReady(true);
+    setInstalledContract(contract);
     return () => installVideoModelContracts(
       activeVideoModelContracts().filter((item) => !item.models.includes(CONTRACT_PREVIEW_MODEL)),
     );
@@ -905,7 +908,7 @@ function ContractParameterPreview({ contract }: { contract: VideoModelContract }
         <Badge variant="secondary" className="h-5 rounded px-1.5 text-[11px]">实时</Badge>
       </header>
       <div className="min-h-64 p-3.5">
-        {isReady ? (
+        {installedContract === contract ? (
           <div className="flex flex-col gap-3.5">
             <ContractReferenceMaterialPreview contract={contract} ruleValues={ruleValues} />
             <VideoSettingsPanel

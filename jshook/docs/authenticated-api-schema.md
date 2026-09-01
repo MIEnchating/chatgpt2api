@@ -386,7 +386,7 @@ Content-Type: text/event-stream; charset=utf-8
 4. **`content_type: "text"` 在两个端点都可用** ✅
    - `/backend-api/conversation` + `content_type: "text"` → HTTP 200（普通文本对话）
    - `/backend-api/f/conversation` + `content_type: "text"` → HTTP 200（生图）
-   - 原始 `curl_cffi_request.py` 的 422 错误是由其他字段或 headers 缺失导致，非 `content_type` 引起
+   - 早期单端点实验中的 422 错误是由其他字段或 headers 缺失导致，非 `content_type` 引起
 5. **OAuth access_token 完全可用于生图**，无需 Web Session Cookie
 6. **Cloudflare WAF 可通过 curl-cffi + edge101 指纹 + PoW 完全绕过**
 7. **Turnstile token 当前不触发**（arkose.required = false）

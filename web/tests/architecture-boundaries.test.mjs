@@ -3,8 +3,10 @@ import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import ts from "typescript";
 
 const webRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const appRoot = path.join(webRoot, "src/app");
 
 async function sourceFiles(root) {
   const entries = await readdir(root, { withFileTypes: true });
@@ -15,6 +17,69 @@ async function sourceFiles(root) {
   }));
   return nested.flat();
 }
+
+function importedModules(source, filename) {
+  const sourceFile = ts.createSourceFile(
+    filename,
+    source,
+    ts.ScriptTarget.Latest,
+    true,
+    filename.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+  );
+  const modules = [];
+  const visit = (node) => {
+    if ((ts.isImportDeclaration(node) || ts.isExportDeclaration(node))
+      && node.moduleSpecifier && ts.isStringLiteral(node.moduleSpecifier)) {
+      modules.push(node.moduleSpecifier.text);
+    } else if (ts.isCallExpression(node) && node.arguments.length >= 1
+      && ts.isStringLiteralLike(node.arguments[0])) {
+      const dynamicImport = node.expression.kind === ts.SyntaxKind.ImportKeyword;
+      const requireCall = node.arguments.length === 1
+        && ts.isIdentifier(node.expression) && node.expression.text === "require";
+      if (dynamicImport || requireCall) {
+        modules.push(node.arguments[0].text);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(sourceFile);
+  return modules;
+}
+
+function resolvesIntoApp(filename, moduleName) {
+  let resolved;
+  if (moduleName === "@/app" || moduleName.startsWith("@/app/")) {
+    resolved = path.join(webRoot, "src", moduleName.slice(2));
+  } else if (moduleName.startsWith(".")) {
+    resolved = path.resolve(path.dirname(filename), moduleName);
+  } else {
+    return false;
+  }
+  return resolved === appRoot || resolved.startsWith(`${appRoot}${path.sep}`);
+}
+
+test("frontend boundary scanner covers static, dynamic, and relative imports", () => {
+  const filename = path.join(webRoot, "src/lib/example.ts");
+  const source = `
+    import "@/app/side-effect";
+    export { value } from "@/app/re-export";
+    const dynamicValue = import("../app/dynamic");
+    const templateDynamicValue = import(\`../app/template-dynamic\`);
+    const attributedDynamicValue = import("../app/data.json", { with: { type: "json" } });
+    const requiredValue = require("../app/required");
+  `;
+  const modules = importedModules(source, filename);
+  assert.deepEqual(modules, [
+    "@/app/side-effect",
+    "@/app/re-export",
+    "../app/dynamic",
+    "../app/template-dynamic",
+    "../app/data.json",
+    "../app/required",
+  ]);
+  assert.equal(modules.every((moduleName) => resolvesIntoApp(filename, moduleName)), true);
+  assert.equal(resolvesIntoApp(filename, "@/components/button"), false);
+});
 
 test("shared frontend layers do not import page modules", async () => {
   const roots = [
@@ -27,7 +92,7 @@ test("shared frontend layers do not import page modules", async () => {
   for (const root of roots) {
     for (const filename of await sourceFiles(root)) {
       const source = await readFile(filename, "utf8");
-      if (/from\s+["']@\/app(?:\/|["'])/.test(source)) {
+      if (importedModules(source, filename).some((moduleName) => resolvesIntoApp(filename, moduleName))) {
         violations.push(path.relative(webRoot, filename));
       }
     }

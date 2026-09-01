@@ -13,20 +13,20 @@ func TestVideoCapabilityUsesDeclaredContract(t *testing.T) {
 	if !ok {
 		t.Fatal("configured model did not match after trimming whitespace")
 	}
-	capability := videoCapabilityFromContract(contract)
+	capability := contract.Capability
 	if capability.DefaultSeconds != 5 || capability.DefaultSize != "16:9" || capability.DefaultResolution != "768p" {
 		t.Fatalf("declared capability defaults = %#v", capability)
 	}
-	if !VideoCapabilitySupports(capability, "9:16", 8, "768p") {
+	if !VideoContractSupports(contract, "9:16", 8, "768p") {
 		t.Fatalf("declared capability rejected supported values: %#v", capability)
 	}
-	if !VideoCapabilitySupports(capability, "9:16", 8, "768P") {
+	if !VideoContractSupports(contract, "9:16", 8, "768P") {
 		t.Fatalf("declared capability rejected case-insensitive resolution: %#v", capability)
 	}
-	if VideoCapabilitySupports(capability, "2:1", 8, "768p") {
+	if VideoContractSupports(contract, "2:1", 8, "768p") {
 		t.Fatal("declared capability accepted an unsupported aspect ratio")
 	}
-	if VideoCapabilitySupports(capability, "9:16", 3601, "768p") {
+	if VideoContractSupports(contract, "9:16", 3601, "768p") {
 		t.Fatal("declared capability accepted an unsupported duration")
 	}
 }

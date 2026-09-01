@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"math"
 	"os"
 	"path/filepath"
@@ -20,6 +21,26 @@ func TestFloatSettingRejectsNonFiniteValues(t *testing.T) {
 	}
 	if got := floatSetting("2.25", 1.5); got != 2.25 {
 		t.Fatalf("floatSetting(finite) = %v, want 2.25", got)
+	}
+}
+
+func TestIntSettingSaturatesOutOfRangeNumbers(t *testing.T) {
+	maxInt := int(^uint(0) >> 1)
+	minInt := -maxInt - 1
+	for _, value := range []any{^uint(0), ^uint64(0), math.MaxFloat64, json.Number("1e100"), strings.Repeat("9", 100)} {
+		if got := intSetting(value, 17); got != maxInt {
+			t.Errorf("intSetting(%T(%v)) = %d, want %d", value, value, got, maxInt)
+		}
+	}
+	for _, value := range []any{-math.MaxFloat64, json.Number("-1e100"), "-" + strings.Repeat("9", 100)} {
+		if got := intSetting(value, 17); got != minInt {
+			t.Errorf("intSetting(%T(%v)) = %d, want %d", value, value, got, minInt)
+		}
+	}
+	for _, value := range []any{math.NaN(), math.Inf(1), json.Number("NaN")} {
+		if got := intSetting(value, 17); got != 17 {
+			t.Errorf("intSetting(%T(%v)) = %d, want fallback", value, value, got)
+		}
 	}
 }
 
@@ -141,6 +162,17 @@ func TestStoreGenericStorageProvidersKeepSecretsAndRejectMixedEnabledTypes(t *te
 	}
 	if got := store.StorageSettings().Providers[0].SecretAccessKey; got != "secret" {
 		t.Fatalf("redacted update replaced secret with %q", got)
+	}
+
+	replacement := publicSetting
+	replacement.Providers[0].ID = "replacement"
+	replacement.Providers[0].Name = "Replacement R2"
+	replacement.Providers[0].AccessKeyID = "replacement-access"
+	if _, err := store.Update(map[string]any{"storage": replacement}); err == nil || !strings.Contains(err.Error(), "enabled S3 provider is incomplete") {
+		t.Fatalf("replacement provider without its own secret error = %v", err)
+	}
+	if provider := store.StorageSettings().Providers[0]; provider.ID != "primary" || provider.SecretAccessKey != "secret" {
+		t.Fatalf("failed replacement changed stored provider = %#v", provider)
 	}
 
 	mixed := store.StorageSettings()
@@ -856,6 +888,18 @@ func TestStoreUpdateRefreshesEnvFileBackedRuntimeSettings(t *testing.T) {
 		if gotEnv := os.Getenv(key); gotEnv != want {
 			t.Fatalf("%s = %q, want %q", key, gotEnv, want)
 		}
+	}
+}
+
+func TestImageStorageLimitBytesDoesNotOverflowLargestInt(t *testing.T) {
+	maxMB := int(^uint(0) >> 1)
+	store := &Store{data: map[string]any{"image_storage_limit_mb": maxMB}}
+	want := int64(math.MaxInt64)
+	if int64(maxMB) <= math.MaxInt64/(1024*1024) {
+		want = int64(maxMB) * 1024 * 1024
+	}
+	if got := store.ImageStorageLimitBytes(); got != want {
+		t.Fatalf("ImageStorageLimitBytes() = %d, want %d", got, want)
 	}
 }
 

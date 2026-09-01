@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1.7
 
 ARG BUN_IMAGE=oven/bun:1.3.13-alpine
-ARG GO_IMAGE=golang:1.26.2-bookworm
+ARG GO_IMAGE=golang:1.26.6-bookworm
 ARG RUNTIME_IMAGE=debian:bookworm-slim
 
 FROM --platform=$BUILDPLATFORM ${BUN_IMAGE} AS web-deps

@@ -303,7 +303,11 @@ func (s *Store) ImageStorageLimitBytes() int64 {
 	if mb <= 0 {
 		return 0
 	}
-	return int64(mb) * 1024 * 1024
+	const bytesPerMB int64 = 1024 * 1024
+	if int64(mb) > math.MaxInt64/bytesPerMB {
+		return math.MaxInt64
+	}
+	return int64(mb) * bytesPerMB
 }
 
 func (s *Store) StorageSettings() model.StorageSetting {
@@ -1057,37 +1061,71 @@ func intSetting(value any, fallback int) int {
 	case int16:
 		return int(v)
 	case int32:
-		return int(v)
+		return intSettingFromSigned(int64(v))
 	case int64:
-		return int(v)
+		return intSettingFromSigned(v)
 	case uint:
-		return int(v)
+		return intSettingFromUnsigned(uint64(v))
 	case uint8:
 		return int(v)
 	case uint16:
 		return int(v)
 	case uint32:
-		return int(v)
+		return intSettingFromUnsigned(uint64(v))
 	case uint64:
-		return int(v)
+		return intSettingFromUnsigned(v)
 	case float32:
-		return int(v)
+		return intSettingFromFloat(float64(v), fallback)
 	case float64:
-		return int(v)
+		return intSettingFromFloat(v, fallback)
 	case json.Number:
 		if n, err := v.Int64(); err == nil {
-			return int(n)
+			return intSettingFromSigned(n)
 		}
 		if f, err := v.Float64(); err == nil {
-			return int(f)
+			return intSettingFromFloat(f, fallback)
 		}
 	case string:
 		n, err := strconv.Atoi(strings.TrimSpace(v))
-		if err == nil {
+		if err == nil || errors.Is(err, strconv.ErrRange) {
 			return n
 		}
 	}
 	return fallback
+}
+
+func intSettingFromSigned(value int64) int {
+	maxInt := int64(^uint(0) >> 1)
+	minInt := -maxInt - 1
+	if value > maxInt {
+		return int(maxInt)
+	}
+	if value < minInt {
+		return int(minInt)
+	}
+	return int(value)
+}
+
+func intSettingFromUnsigned(value uint64) int {
+	maxInt := uint64(^uint(0) >> 1)
+	if value > maxInt {
+		return int(maxInt)
+	}
+	return int(value)
+}
+
+func intSettingFromFloat(value float64, fallback int) int {
+	if math.IsNaN(value) || math.IsInf(value, 0) {
+		return fallback
+	}
+	limit := math.Ldexp(1, strconv.IntSize-1)
+	if value >= limit {
+		return int(^uint(0) >> 1)
+	}
+	if value <= -limit {
+		return -int(^uint(0)>>1) - 1
+	}
+	return int(value)
 }
 
 func floatSetting(value any, fallback float64) float64 {
@@ -1412,9 +1450,6 @@ func keepStorageProviderSecrets(setting *model.StorageSetting, saved model.Stora
 				previous = &saved.Providers[savedIndex]
 				break
 			}
-		}
-		if previous == nil && index < len(saved.Providers) {
-			previous = &saved.Providers[index]
 		}
 		if previous == nil {
 			continue

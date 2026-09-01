@@ -112,22 +112,10 @@ type UploadedImage struct {
 }
 
 func ExtractChatPrompt(body map[string]any) string {
-	if prompt := strings.TrimSpace(util.Clean(body["prompt"])); prompt != "" {
+	if prompt := util.Clean(body["prompt"]); prompt != "" {
 		return prompt
 	}
-	messages := NormalizeMessages(util.AsMapSlice(body["messages"]), nil)
-	if prompt := LatestUserPrompt(messages); prompt != "" {
-		return prompt
-	}
-	for _, message := range util.AsMapSlice(body["messages"]) {
-		if strings.ToLower(util.Clean(message["role"])) != "user" {
-			continue
-		}
-		if prompt := ExtractPromptFromMessageContent(message["content"]); prompt != "" {
-			return prompt
-		}
-	}
-	return ""
+	return LatestUserPrompt(NormalizeMessages(util.AsMapSlice(body["messages"]), nil))
 }
 
 func ExtractChatContextImages(body map[string]any) []UploadedImage {
@@ -188,13 +176,8 @@ func ExtractImagesFromMessageContent(content any) []UploadedImage {
 		if itemType == "input_image" {
 			imageURL = util.Clean(item["image_url"])
 		}
-		if strings.HasPrefix(imageURL, "data:") {
-			header, data, _ := strings.Cut(imageURL, ",")
-			mime := strings.TrimPrefix(strings.Split(header, ";")[0], "data:")
-			bytes, err := base64.StdEncoding.DecodeString(data)
-			if err == nil {
-				images = append(images, UploadedImage{Data: bytes, Filename: "image.png", ContentType: firstNonEmpty(mime, "image/png")})
-			}
+		if image, ok := decodeInlineImageDataURL(imageURL); ok {
+			images = append(images, image)
 		}
 	}
 	return images
@@ -206,12 +189,42 @@ func extractImagesFromText(text string) []UploadedImage {
 		if len(match) < 3 {
 			continue
 		}
-		bytes, err := base64.StdEncoding.DecodeString(match[2])
-		if err == nil {
-			images = append(images, UploadedImage{Data: bytes, Filename: "image.png", ContentType: firstNonEmpty(match[1], "image/png")})
+		if image, ok := decodeInlineImageDataURL(match[0]); ok {
+			images = append(images, image)
 		}
 	}
 	return images
+}
+
+func decodeInlineImageDataURL(value string) (UploadedImage, bool) {
+	value = strings.TrimSpace(value)
+	if len(value) < len("data:") || !strings.EqualFold(value[:len("data:")], "data:") {
+		return UploadedImage{}, false
+	}
+	header, encoded, found := strings.Cut(value[len("data:"):], ",")
+	if !found || encoded == "" {
+		return UploadedImage{}, false
+	}
+	parts := strings.Split(header, ";")
+	mime := strings.ToLower(strings.TrimSpace(parts[0]))
+	if !strings.HasPrefix(mime, "image/") {
+		return UploadedImage{}, false
+	}
+	base64Encoded := false
+	for _, parameter := range parts[1:] {
+		if strings.EqualFold(strings.TrimSpace(parameter), "base64") {
+			base64Encoded = true
+			break
+		}
+	}
+	if !base64Encoded {
+		return UploadedImage{}, false
+	}
+	data, err := base64.StdEncoding.DecodeString(encoded)
+	if err != nil || len(data) == 0 {
+		return UploadedImage{}, false
+	}
+	return UploadedImage{Data: data, Filename: "image.png", ContentType: mime}, true
 }
 
 func MessageText(content any) string {
@@ -224,8 +237,10 @@ func MessageText(content any) string {
 		case string:
 			parts = append(parts, item)
 		case map[string]any:
-			typeName := util.Clean(item["type"])
-			if typeName == "text" || typeName == "input_text" || typeName == "output_text" {
+			switch util.Clean(item["type"]) {
+			case "input_text":
+				parts = append(parts, firstNonEmpty(util.Clean(item["text"]), util.Clean(item["input_text"])))
+			case "text", "output_text":
 				parts = append(parts, util.Clean(item["text"]))
 			}
 		}

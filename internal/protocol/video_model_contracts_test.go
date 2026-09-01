@@ -55,12 +55,12 @@ func TestMiniMaxH3DeclaredVideoContract(t *testing.T) {
 		if contract.Name != "MiniMax H3 v1.8" || contract.Driver != VideoContractDriverMiniMax || contract.Transport.LocalMaterial != "multipart" || contract.Transport.MultipartFileField != "input_reference[]" {
 			t.Fatalf("VideoContractForModel(%q) = %#v", model, contract)
 		}
-		capability := videoCapabilityFromContract(contract)
+		capability := contract.Capability
 		if capability.DefaultSeconds != 5 || capability.DefaultSize != "16:9" || capability.DefaultResolution != "768p" {
-			t.Fatalf("videoCapabilityFromContract(%q) defaults = %#v", model, capability)
+			t.Fatalf("contract capability for %q defaults = %#v", model, capability)
 		}
 		if len(capability.Resolutions) != 1 || capability.Resolutions[0] != "768p" {
-			t.Fatalf("videoCapabilityFromContract(%q) resolutions = %#v", model, capability.Resolutions)
+			t.Fatalf("contract capability for %q resolutions = %#v", model, capability.Resolutions)
 		}
 		if contract.Capability.References.Total != 12 || contract.Validation.MaxPromptCharacters != 5000 {
 			t.Fatalf("VideoContractForModel(%q) limits = %#v", model, contract)

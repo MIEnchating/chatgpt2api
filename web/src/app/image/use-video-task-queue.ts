@@ -40,12 +40,13 @@ export function useVideoTaskQueue(options: {
   assertDispatchAllowed?: (taskIds: string[]) => void;
   isRetryableError?: (error: unknown) => boolean;
 }) {
+  const { requestOptions, assertDispatchAllowed, isRetryableError } = options;
   const submitVideoTaskGroups = useCallback(async (
     groups: VideoTaskQueueGroup[],
     request: VideoTaskQueueRequest,
   ): Promise<VideoTaskQueueResult> => {
     const submit = async (group: VideoTaskQueueGroup) => {
-      (request.assertDispatchAllowed || options.assertDispatchAllowed)?.([group.taskId]);
+      (request.assertDispatchAllowed || assertDispatchAllowed)?.([group.taskId]);
       const create = () => createVideoGenerationTask({
         clientTaskId: group.taskId,
         prompt: request.prompt,
@@ -63,19 +64,19 @@ export function useVideoTaskQueue(options: {
         referenceMode: request.referenceMode || "first-frame",
         systemPrompt: request.systemPrompt,
         relayTokenName: request.relayTokenName,
-        requestOptions: options.requestOptions,
+        requestOptions,
       });
       try {
         return await create();
       } catch (error) {
-        if (!options.isRetryableError?.(error)) throw error;
+        if (!isRetryableError?.(error)) throw error;
         await wait(750);
-        (request.assertDispatchAllowed || options.assertDispatchAllowed)?.([group.taskId]);
+        (request.assertDispatchAllowed || assertDispatchAllowed)?.([group.taskId]);
         return create();
       }
     };
 
-    (request.assertDispatchAllowed || options.assertDispatchAllowed)?.(groups.map((group) => group.taskId));
+    (request.assertDispatchAllowed || assertDispatchAllowed)?.(groups.map((group) => group.taskId));
     const results = await Promise.allSettled(groups.map(submit));
     return {
       submitted: results.flatMap((result) => result.status === "fulfilled" ? [result.value] : []),
@@ -83,7 +84,7 @@ export function useVideoTaskQueue(options: {
         ? [{ group: groups[index], error: result.reason }]
         : []),
     };
-  }, [options]);
+  }, [assertDispatchAllowed, isRetryableError, requestOptions]);
 
   return { submitVideoTaskGroups };
 }
