@@ -57,3 +57,21 @@ func TestStrictIntRequiresAnExactPlatformInteger(t *testing.T) {
 		})
 	}
 }
+
+func TestToIntFallsBackForOutOfRangeAndNonFiniteNumbers(t *testing.T) {
+	const fallback = 17
+	for _, value := range []any{
+		math.MaxFloat64,
+		-math.MaxFloat64,
+		math.NaN(),
+		math.Inf(1),
+		json.Number("18446744073709551615"),
+	} {
+		if got := ToInt(value, fallback); got != fallback {
+			t.Errorf("ToInt(%T(%v)) = %d, want fallback %d", value, value, got, fallback)
+		}
+	}
+	if got := ToInt(3.9, fallback); got != 3 {
+		t.Fatalf("ToInt(3.9) = %d, want existing truncation behavior", got)
+	}
+}

@@ -45,7 +45,6 @@ function defaultSetting(): StorageSettingConfig {
     allowUserProvider: false,
     allowUserGlobalProvider: true,
     providers: [],
-    roundRobinCursor: 0,
     capacityCheck: { enabled: false, cron: "0 */6 * * *" },
     capacityLimitBytes: DEFAULT_LIMIT,
     localCapacityLimitBytes: 0,

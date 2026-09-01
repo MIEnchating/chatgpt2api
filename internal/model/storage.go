@@ -55,7 +55,6 @@ type StorageSetting struct {
 	AllowUserProvider       bool                        `json:"allowUserProvider"`
 	AllowUserGlobalProvider bool                        `json:"allowUserGlobalProvider"`
 	Providers               []StorageProvider           `json:"providers"`
-	RoundRobinCursor        int                         `json:"roundRobinCursor"`
 	CapacityCheck           StorageCapacityCheckSetting `json:"capacityCheck"`
 	CapacityLimitBytes      int64                       `json:"capacityLimitBytes"`
 	LocalCapacityLimitBytes int64                       `json:"localCapacityLimitBytes"`

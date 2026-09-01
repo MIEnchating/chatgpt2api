@@ -153,7 +153,6 @@ function normalizeStorageSetting(value: SettingsConfig["storage"]): StorageSetti
 			capacityCheckedAt: String(provider.capacityCheckedAt || ""),
 			capacityExceeded: provider.capacityExceeded === true,
 		})) : [],
-		roundRobinCursor: Math.max(0, Number(value?.roundRobinCursor) || 0),
 		capacityCheck: { enabled: value?.capacityCheck?.enabled === true, cron: value?.capacityCheck?.cron || "0 */6 * * *" },
 		capacityLimitBytes: Math.max(1, Number(value?.capacityLimitBytes) || 9 * 1024 ** 3),
 		localCapacityLimitBytes: Math.max(0, Number(value?.localCapacityLimitBytes) || 0),

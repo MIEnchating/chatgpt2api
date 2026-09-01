@@ -19,6 +19,7 @@ export type RetainedAuthenticatedImage = {
 
 const authenticatedImageCache = new Map<string, CachedAuthenticatedImage>();
 const pendingAuthenticatedImageFetches = new Map<string, Promise<{ key: string; objectURL: string; byteSize: number }>>();
+const pendingAuthenticatedImageReservations = new Map<string, CachedAuthenticatedImage>();
 let authenticatedImageCacheBytes = 0;
 let authenticatedImageCacheGeneration = 0;
 
@@ -52,6 +53,19 @@ function retainAuthenticatedImageCacheEntry(key: string, entry: CachedAuthentica
   return { key, objectURL: entry.objectURL, byteSize: entry.byteSize };
 }
 
+function reservePendingAuthenticatedImage(key: string, entry: CachedAuthenticatedImage) {
+  if (pendingAuthenticatedImageReservations.get(key) === entry) return;
+  entry.references += 1;
+  pendingAuthenticatedImageReservations.set(key, entry);
+}
+
+function releasePendingAuthenticatedImageReservation(key: string) {
+  const entry = pendingAuthenticatedImageReservations.get(key);
+  if (!entry) return;
+  pendingAuthenticatedImageReservations.delete(key);
+  entry.references = Math.max(0, entry.references - 1);
+}
+
 function trimAuthenticatedImageCache() {
   while (
     authenticatedImageCache.size > MAX_CACHED_AUTHENTICATED_IMAGE_ENTRIES ||
@@ -77,7 +91,12 @@ function trimAuthenticatedImageCache() {
   }
 }
 
-function storeAuthenticatedImageCacheEntry(key: string, objectURL: string, byteSize: number) {
+function storeAuthenticatedImageCacheEntry(
+  key: string,
+  objectURL: string,
+  byteSize: number,
+  trim = true,
+) {
   const existing = authenticatedImageCache.get(key);
   if (existing) {
     URL.revokeObjectURL(objectURL);
@@ -92,7 +111,9 @@ function storeAuthenticatedImageCacheEntry(key: string, objectURL: string, byteS
   };
   authenticatedImageCache.set(key, entry);
   authenticatedImageCacheBytes += byteSize;
-  trimAuthenticatedImageCache();
+  if (trim) {
+    trimAuthenticatedImageCache();
+  }
   return entry;
 }
 
@@ -186,7 +207,11 @@ export async function fetchCachedAuthenticatedImage(src: string): Promise<Retain
           if (generation !== authenticatedImageCacheGeneration) {
             throw new Error("图片缓存已重置");
           }
-          storeAuthenticatedImageCacheEntry(key, objectURL, blob.size);
+          // The new entry has no external reference until the awaiting caller
+          // resumes. Trimming here can evict that same entry when every older
+          // cache entry is retained.
+          const entry = storeAuthenticatedImageCacheEntry(key, objectURL, blob.size, false);
+          reservePendingAuthenticatedImage(key, entry);
           return { key, objectURL, byteSize: blob.size };
         } catch (error) {
           URL.revokeObjectURL(objectURL);
@@ -204,9 +229,13 @@ export async function fetchCachedAuthenticatedImage(src: string): Promise<Retain
   await pending;
   const entry = authenticatedImageCache.get(key);
   if (!entry) {
+    releasePendingAuthenticatedImageReservation(key);
     throw new Error("图片缓存不可用");
   }
-  return retainAuthenticatedImageCacheEntry(key, entry);
+  const retained = retainAuthenticatedImageCacheEntry(key, entry);
+  releasePendingAuthenticatedImageReservation(key);
+  trimAuthenticatedImageCache();
+  return retained;
 }
 
 export async function primeAuthenticatedImageCache(src: string, blob: Blob) {
@@ -254,6 +283,7 @@ export function getCachedAuthenticatedImageByteSize(src?: string) {
 export function clearAuthenticatedImageCache() {
   authenticatedImageCacheGeneration += 1;
   pendingAuthenticatedImageFetches.clear();
+  pendingAuthenticatedImageReservations.clear();
   for (const entry of authenticatedImageCache.values()) {
     URL.revokeObjectURL(entry.objectURL);
   }

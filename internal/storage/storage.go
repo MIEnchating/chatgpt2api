@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/url"
 	"os"
 	"path"
@@ -790,15 +791,16 @@ func documentPrefixUpperBound(prefix string) string {
 }
 
 func (b *DatabaseBackend) AppendLog(item map[string]any) error {
-	if item == nil {
-		item = map[string]any{}
+	record := maps.Clone(item)
+	if record == nil {
+		record = map[string]any{}
 	}
-	item["type"] = "event"
-	data, err := json.Marshal(item)
+	record["type"] = "event"
+	data, err := json.Marshal(record)
 	if err != nil {
 		return err
 	}
-	createdAt := strings.TrimSpace(fmt.Sprint(item["time"]))
+	createdAt := strings.TrimSpace(fmt.Sprint(record["time"]))
 	if createdAt == "" {
 		createdAt = time.Now().Format("2006-01-02 15:04:05")
 	}

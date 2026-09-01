@@ -241,6 +241,24 @@ func TestStorageRoutesEnforceProviderAndMeasurePermissions(t *testing.T) {
 	}
 }
 
+func TestStorageDirectRouteDoesNotFallThroughToFileResource(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+	token := adminSessionToken(t, app)
+
+	for _, method := range []string{http.MethodGet, http.MethodPut, http.MethodPatch, http.MethodDelete} {
+		t.Run(method, func(t *testing.T) {
+			request := httptest.NewRequest(method, "/api/files/direct", nil)
+			setRequestAuthCookie(request, token)
+			response := httptest.NewRecorder()
+			app.Handler().ServeHTTP(response, request)
+			if response.Code != http.StatusMethodNotAllowed {
+				t.Fatalf("status = %d body = %s", response.Code, response.Body.String())
+			}
+		})
+	}
+}
+
 func TestProfileStorageMeasureHonorsDisabledUserProviders(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()

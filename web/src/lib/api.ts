@@ -259,7 +259,6 @@ export type StorageSettingConfig = {
 	allowUserProvider: boolean;
 	allowUserGlobalProvider: boolean;
 	providers: StorageProviderConfig[];
-	roundRobinCursor: number;
 	capacityCheck: { enabled: boolean; cron: string };
 	capacityLimitBytes: number;
 	localCapacityLimitBytes: number;

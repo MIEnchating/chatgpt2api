@@ -67,7 +67,7 @@ func (a *App) routes() []appRoute {
 		exact("", "/api/settings/login-page-image", a.handleLoginPageImageSettings),
 		exact("", "/api/settings/site-icon", a.handleSiteIconSettings),
 		exact(http.MethodPost, "/api/settings/storage/measure", a.handleAdminStorageMeasure),
-		exact(http.MethodPost, "/api/files/direct", a.handleStorageFileDirect),
+		exact("", "/api/files/direct", a.handleStorageFileDirect),
 		exact(http.MethodGet, "/api/proxy-image", a.handleImageProxy),
 		subtree("/api/files", a.handleStorageFiles),
 		exact(http.MethodGet, "/api/model-config", a.handleModelConfig),

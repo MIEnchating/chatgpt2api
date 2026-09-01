@@ -104,6 +104,21 @@ func TestDeleteLogsResultPropagatesRowsAffectedError(t *testing.T) {
 	}
 }
 
+func TestAppendLogDoesNotMutateCallerData(t *testing.T) {
+	backend := openSQLiteStorageTestBackend(t, filepath.Join(t.TempDir(), "append-log.db"))
+	item := map[string]any{"time": "2026-04-30 10:00:00", "type": "caller-value", "summary": "immutable"}
+	if err := backend.AppendLog(item); err != nil {
+		t.Fatalf("AppendLog() error = %v", err)
+	}
+	if item["type"] != "caller-value" {
+		t.Fatalf("AppendLog() mutated caller item: %#v", item)
+	}
+	logs, err := backend.QueryLogs("", "", 1)
+	if err != nil || len(logs) != 1 || logs[0]["type"] != "event" {
+		t.Fatalf("QueryLogs() = (%#v, %v), want normalized event", logs, err)
+	}
+}
+
 func TestDatabaseBackendHealthCheckReportsCountFailure(t *testing.T) {
 	backend := openSQLiteStorageTestBackend(t, filepath.Join(t.TempDir(), "health.db"))
 	if _, err := backend.db.Exec(`DROP TABLE logs`); err != nil {

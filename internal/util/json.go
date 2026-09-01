@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -16,19 +17,12 @@ import (
 )
 
 const (
-	ImageModelAuto      = "auto"
-	ImageModelGPT       = "gpt-image-2"
-	ImageModelCodex     = "codex-gpt-image-2"
-	ImageModelGemini    = "gemini-3.1-flash-image"
-	ImageModelGrok      = "grok-imagine-image"
-	ImageModelGPT5      = "gpt-5"
-	ImageModelGPT51     = "gpt-5-1"
-	ImageModelGPT52     = "gpt-5-2"
-	ImageModelGPT53     = "gpt-5-3"
-	ImageModelGPT53Mini = "gpt-5-3-mini"
-	ImageModelGPT54     = "gpt-5.4"
-	ImageModelGPT55     = "gpt-5.5"
-	ImageModelGPTMini   = "gpt-5-mini"
+	ImageModelAuto   = "auto"
+	ImageModelGPT    = "gpt-image-2"
+	ImageModelGemini = "gemini-3.1-flash-image"
+	ImageModelGrok   = "grok-imagine-image"
+	ImageModelGPT54  = "gpt-5.4"
+	ImageModelGPT55  = "gpt-5.5"
 )
 
 func Clean(v any) string {
@@ -96,13 +90,21 @@ func ToInt(v any, fallback int) int {
 	case int:
 		return x
 	case int64:
-		return int(x)
+		if value, ok := strictParsedInt(strconv.FormatInt(x, 10)); ok {
+			return value
+		}
 	case float64:
+		limit := math.Ldexp(1, strconv.IntSize-1)
+		if math.IsNaN(x) || math.IsInf(x, 0) || x >= limit || x < -limit {
+			return fallback
+		}
 		return int(x)
 	case json.Number:
 		n, err := x.Int64()
 		if err == nil {
-			return int(n)
+			if value, ok := strictParsedInt(strconv.FormatInt(n, 10)); ok {
+				return value
+			}
 		}
 	case string:
 		n, err := strconv.Atoi(strings.TrimSpace(x))
