@@ -98,6 +98,7 @@ export function CanvasAgentPanel({ open, nodes, selectedNodeIDs, referenceNodeCl
   const [resizing, setResizing] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const runLifecycleRef = useRef(createCanvasAgentRunLifecycle());
+  const resizeCleanupRef = useRef<(() => void) | null>(null);
   const pendingDeleteRef = useRef<PendingDeleteConfirmation | null>(null);
   const messageListRef = useRef<HTMLDivElement | null>(null);
   const consumedReferenceNodeClickVersionRef = useRef(0);
@@ -146,6 +147,8 @@ export function CanvasAgentPanel({ open, nodes, selectedNodeIDs, referenceNodeCl
       abortCanvasAgentRun(abortRef);
       pendingDeleteRef.current?.resolve(false);
       pendingDeleteRef.current = null;
+      resizeCleanupRef.current?.();
+      resizeCleanupRef.current = null;
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
     };
@@ -291,19 +294,27 @@ export function CanvasAgentPanel({ open, nodes, selectedNodeIDs, referenceNodeCl
   }
 
   function startResize() {
+    resizeCleanupRef.current?.();
     const move = (event: MouseEvent) => onWidthChange(Math.min(760, Math.max(320, window.innerWidth - event.clientX - 12)));
     const stop = () => {
+      cleanup();
       setResizing(false);
+    };
+    const cleanup = () => {
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
       document.removeEventListener("mousemove", move);
       document.removeEventListener("mouseup", stop);
+      window.removeEventListener("blur", stop);
+      if (resizeCleanupRef.current === cleanup) resizeCleanupRef.current = null;
     };
+    resizeCleanupRef.current = cleanup;
     setResizing(true);
     document.body.style.cursor = "col-resize";
     document.body.style.userSelect = "none";
     document.addEventListener("mousemove", move);
     document.addEventListener("mouseup", stop);
+    window.addEventListener("blur", stop);
   }
 
   submitInitialRequestRef.current = (prompt, references, onUserMessageCommitted) => {

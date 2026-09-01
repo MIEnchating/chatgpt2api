@@ -6,6 +6,25 @@ import type { Plugin } from "vite";
 
 const webRoot = path.dirname(fileURLToPath(import.meta.url));
 const backendTarget = process.env.VITE_BACKEND_URL || "http://127.0.0.1:8001";
+const backendProxyPaths = [
+  "/api",
+  "/auth",
+  "/images",
+  "/videos",
+  "/audios",
+  "/image-references",
+  "/image-thumbnails",
+  "/conversation-assets",
+  "/video-image-references",
+  "/video-references",
+  "/audio-references",
+  "/login-page-images",
+  "/site-icons",
+  "/health",
+] as const;
+const backendProxy = Object.fromEntries(
+  backendProxyPaths.map((path) => [path, { target: backendTarget, changeOrigin: true }]),
+);
 
 function rejectLocalV1Routes(): Plugin {
   return {
@@ -35,56 +54,7 @@ export default defineConfig({
     host: "0.0.0.0",
     port: 8000,
     strictPort: true,
-    proxy: {
-      "/api": {
-        target: backendTarget,
-        changeOrigin: true,
-      },
-      "/auth": {
-        target: backendTarget,
-        changeOrigin: true,
-      },
-      "/images": {
-        target: backendTarget,
-        changeOrigin: true,
-      },
-      "/image-references": {
-        target: backendTarget,
-        changeOrigin: true,
-      },
-      "/image-thumbnails": {
-        target: backendTarget,
-        changeOrigin: true,
-      },
-      "/conversation-assets": {
-        target: backendTarget,
-        changeOrigin: true,
-      },
-      "/video-image-references": {
-        target: backendTarget,
-        changeOrigin: true,
-      },
-      "/video-references": {
-        target: backendTarget,
-        changeOrigin: true,
-      },
-      "/audio-references": {
-        target: backendTarget,
-        changeOrigin: true,
-      },
-      "/login-page-images": {
-        target: backendTarget,
-        changeOrigin: true,
-      },
-      "/site-icons": {
-        target: backendTarget,
-        changeOrigin: true,
-      },
-      "/health": {
-        target: backendTarget,
-        changeOrigin: true,
-      },
-    },
+    proxy: backendProxy,
   },
   build: {
     outDir: "../internal/web/dist",

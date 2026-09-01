@@ -19,6 +19,7 @@ const tooltipSource = readFileSync(new URL("../src/components/ui/tooltip.tsx", i
 const globalStylesSource = readFileSync(new URL("../src/app/globals.css", import.meta.url), "utf8");
 const taskQueueSource = readFileSync(new URL("../src/components/image-task-queue.tsx", import.meta.url), "utf8");
 const canvasTaskQueueStoreSource = readFileSync(new URL("../src/store/canvas-task-queue.ts", import.meta.url), "utf8");
+const imageToolsSource = readFileSync(new URL("../src/app/canvas/canvas-image-tools.tsx", import.meta.url), "utf8");
 
 test("the side drawer exposes the complete supported image operation set", () => {
   for (const label of ["局部编辑", "裁剪", "切图", "放大", "多角度", "自由缩放", "反推提示词", "复制提示词", "查看大图", "沉浸查看", "下载", "存入我的素材", "复制节点"]) {
@@ -27,6 +28,20 @@ test("the side drawer exposes the complete supported image operation set", () =>
   assert.match(engineSource, />操作<\/button>/);
   assert.match(engineSource, /renderNodeActions\(panelNode\)/);
   assert.doesNotMatch(actionsSource, /ActionSection title="生成"/);
+});
+
+test("canvas image tool drags release window listeners on every exit path", () => {
+  const hookStart = imageToolsSource.indexOf("function useWindowPointerDrag");
+  const hookEnd = imageToolsSource.indexOf("export function CanvasCropDialog", hookStart);
+  assert.ok(hookStart >= 0 && hookEnd > hookStart);
+  const hookSource = imageToolsSource.slice(hookStart, hookEnd);
+  for (const eventName of ["pointermove", "pointerup", "pointercancel", "blur"]) {
+    assert.match(hookSource, new RegExp(`window\\.addEventListener\\("${eventName}"`));
+    assert.match(hookSource, new RegExp(`window\\.removeEventListener\\("${eventName}"`));
+  }
+  assert.match(hookSource, /useEffect\(\(\) => stopDragging, \[stopDragging\]\)/);
+  assert.ok((imageToolsSource.match(/stopDragging\(\);[\s\S]*?if \((?:open|!open)\)/g) || []).length >= 2);
+  assert.ok((imageToolsSource.match(/startDragging\(move\)/g) || []).length >= 2);
 });
 
 test("the quick action rail supports every actionable node type", () => {
@@ -257,6 +272,17 @@ test("Agent node references do not open the node drawer and new chat stays avail
   assert.match(pageSource, /onClick=\{\(\) => \{\s*setPanelNodeID\(""\);\s*setAgentOpen\(true\)/);
   assert.match(agentPanelSource, /aria-label="新对话" disabled=\{busy\}/);
   assert.doesNotMatch(agentPanelSource, /aria-label="新对话" disabled=\{!activeSession\.messages\.length\}/);
+});
+
+test("Agent panel resizing releases global listeners across every lifecycle exit", () => {
+  assert.match(agentPanelSource, /resizeCleanupRef = useRef<\(\(\) => void\) \| null>\(null\)/);
+  assert.match(agentPanelSource, /resizeCleanupRef\.current\?\.\(\);[\s\S]*?resizeCleanupRef\.current = null;[\s\S]*?document\.body\.style\.cursor = ""/);
+  for (const eventName of ["mousemove", "mouseup"]) {
+    assert.match(agentPanelSource, new RegExp(`document\\.addEventListener\\("${eventName}"`));
+    assert.match(agentPanelSource, new RegExp(`document\\.removeEventListener\\("${eventName}"`));
+  }
+  assert.match(agentPanelSource, /window\.addEventListener\("blur", stop\)/);
+  assert.match(agentPanelSource, /window\.removeEventListener\("blur", stop\)/);
 });
 
 test("Agent submission claims synchronous ownership before hydrating references", () => {

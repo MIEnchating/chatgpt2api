@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Brush, Camera, Check, Eraser, Grid2X2, ListRestart, Lock, LockOpen, PanelTop, RotateCcw, Rows3, Trash2, WandSparkles, X, ZoomIn } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
@@ -12,13 +12,42 @@ import { buildCanvasGridLines, canvasImageAngleLabel, clampCanvasGrid, CANVAS_MA
 const defaultCrop: CanvasImageCropRect = { x: 0.12, y: 0.12, width: 0.76, height: 0.76 };
 const cropHandles = ["nw", "n", "ne", "e", "se", "s", "sw", "w"] as const;
 
+function useWindowPointerDrag() {
+  const cleanupRef = useRef<(() => void) | null>(null);
+  const stopDragging = useCallback(() => {
+    cleanupRef.current?.();
+    cleanupRef.current = null;
+  }, []);
+  const startDragging = useCallback((move: (event: PointerEvent) => void) => {
+    stopDragging();
+    const end = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", end);
+      window.removeEventListener("pointercancel", end);
+      window.removeEventListener("blur", end);
+      if (cleanupRef.current === end) cleanupRef.current = null;
+    };
+    cleanupRef.current = end;
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", end);
+    window.addEventListener("pointercancel", end);
+    window.addEventListener("blur", end);
+  }, [stopDragging]);
+  useEffect(() => stopDragging, [stopDragging]);
+  return { startDragging, stopDragging };
+}
+
 export function CanvasCropDialog({ sourceURL, open, busy, onClose, onConfirm }: { sourceURL: string; open: boolean; busy: boolean; onClose: () => void; onConfirm: (crop: CanvasImageCropRect) => void }) {
   const frameRef = useRef<HTMLDivElement | null>(null);
   const [crop, setCrop] = useState(defaultCrop);
   const [locked, setLocked] = useState(false);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+  const { startDragging, stopDragging } = useWindowPointerDrag();
 
-  useEffect(() => { if (open) setCrop(defaultCrop); }, [open, sourceURL]);
+  useEffect(() => {
+    stopDragging();
+    if (open) setCrop(defaultCrop);
+  }, [open, sourceURL, stopDragging]);
 
   function startDrag(mode: "move" | "resize", event: ReactPointerEvent, handle = "se") {
     const frame = frameRef.current?.getBoundingClientRect();
@@ -31,9 +60,7 @@ export function CanvasCropDialog({ sourceURL, open, busy, onClose, onConfirm }: 
       const dy = (nextEvent.clientY - start.y) / frame.height;
       setCrop(mode === "move" ? moveCrop(start.crop, dx, dy) : resizeCrop(start.crop, dx, dy, handle, locked, frame));
     };
-    const end = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", end); };
-    window.addEventListener("pointermove", move);
-    window.addEventListener("pointerup", end);
+    startDragging(move);
   }
 
   const cropWidth = dimensions.width ? Math.round(crop.width * dimensions.width) : 0;
@@ -69,16 +96,18 @@ export function CanvasSplitDialog({ sourceURL, open, busy, onClose, onConfirm }:
   const [verticalLines, setVerticalLines] = useState([0.5]);
   const [activeLine, setActiveLine] = useState<{ axis: "horizontal" | "vertical"; index: number } | null>(null);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+  const { startDragging, stopDragging } = useWindowPointerDrag();
   const rows = horizontalLines.length + 1;
   const columns = verticalLines.length + 1;
 
   useEffect(() => {
+    stopDragging();
     if (!open) return;
     setHorizontalLines([0.5]);
     setVerticalLines([0.5]);
     setActiveLine(null);
     setDimensions({ width: 0, height: 0 });
-  }, [open, sourceURL]);
+  }, [open, sourceURL, stopDragging]);
 
   function updateGrid(axis: "rows" | "columns", value: string) {
     const count = clampCanvasGrid(Number(value));
@@ -114,8 +143,7 @@ export function CanvasSplitDialog({ sourceURL, open, busy, onClose, onConfirm }:
       if (axis === "horizontal") setHorizontalLines((lines) => updateLine(lines, index, value));
       else setVerticalLines((lines) => updateLine(lines, index, value));
     };
-    const end = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", end); };
-    window.addEventListener("pointermove", move); window.addEventListener("pointerup", end);
+    startDragging(move);
   }
 
   const total = rows * columns;
