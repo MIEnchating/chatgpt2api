@@ -2,7 +2,10 @@ package service
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -34,6 +37,10 @@ func (b *failingLogQueryBackend) AppendLog(map[string]any) error { return nil }
 
 func (b *failingLogQueryBackend) QueryLogs(string, string, int) ([]map[string]any, error) {
 	return nil, b.err
+}
+
+func (b *failingLogQueryBackend) QueryLogPage(string, string, *storage.LogCursor, int) (storage.LogPage, error) {
+	return storage.LogPage{}, b.err
 }
 
 func (b *failingLogCleanupSummaryBackend) AppendLog(map[string]any) error { return nil }
@@ -70,11 +77,11 @@ func (b *countingLogPageBackend) LogSummary() (int, string, string, error) {
 
 func mustSearchLogs(t *testing.T, logs *LogService, query LogQuery) []map[string]any {
 	t.Helper()
-	items, err := logs.Search(query)
+	page, err := logs.SearchPage(query)
 	if err != nil {
-		t.Fatalf("Search() error = %v", err)
+		t.Fatalf("SearchPage() error = %v", err)
 	}
-	return items
+	return page.Items
 }
 
 func TestLogServiceStoresLogsInDatabase(t *testing.T) {
@@ -97,14 +104,15 @@ func TestLogServiceStoresLogsInDatabase(t *testing.T) {
 }
 
 func TestLogServiceSearchStopsAfterFirstMatchingPage(t *testing.T) {
-	backend := &countingLogPageBackend{page: storage.LogPage{Items: []map[string]any{
-		{"time": "2026-08-30 10:00:00", "summary": "newest", "detail": map[string]any{}},
-		{"time": "2026-08-30 09:00:00", "summary": "second", "detail": map[string]any{}},
-	}, NextCursor: &storage.LogCursor{Day: "2026-08-30", ID: 1}}}
+	backend := &countingLogPageBackend{page: storage.LogPage{SnapshotID: 3, Records: []storage.LogRecord{
+		{Item: map[string]any{"time": "2026-08-30 10:00:00", "summary": "newest", "detail": map[string]any{}}, Cursor: storage.LogCursor{SnapshotID: 3, Day: "2026-08-30", ID: 3}},
+		{Item: map[string]any{"time": "2026-08-30 09:00:00", "summary": "second", "detail": map[string]any{}}, Cursor: storage.LogCursor{SnapshotID: 3, Day: "2026-08-30", ID: 2}},
+		{Item: map[string]any{"time": "2026-08-30 08:00:00", "summary": "third", "detail": map[string]any{}}, Cursor: storage.LogCursor{SnapshotID: 3, Day: "2026-08-30", ID: 1}},
+	}}}
 	service := &LogService{store: backend}
-	items := mustSearchLogs(t, service, LogQuery{Limit: 2})
-	if len(items) != 2 || backend.pageCalls != 1 || backend.fullScanCalls != 0 {
-		t.Fatalf("Search() = %#v, page calls = %d, full scans = %d", items, backend.pageCalls, backend.fullScanCalls)
+	page, err := service.SearchPage(LogQuery{Limit: 2})
+	if err != nil || len(page.Items) != 2 || !page.HasMore || backend.pageCalls != 1 || backend.fullScanCalls != 0 {
+		t.Fatalf("SearchPage() = (%#v, %v), page calls = %d, full scans = %d", page, err, backend.pageCalls, backend.fullScanCalls)
 	}
 }
 
@@ -113,12 +121,98 @@ func TestLogServiceSearchReturnsPageQueryErrorWithoutFullScanFallback(t *testing
 	backend := &countingLogPageBackend{pageErr: queryErr}
 	logs := &LogService{store: backend}
 
-	items, err := logs.Search(LogQuery{Limit: 10})
-	if !errors.Is(err, queryErr) || items != nil {
-		t.Fatalf("Search() = (%#v, %v), want wrapped page query error", items, err)
+	page, err := logs.SearchPage(LogQuery{Limit: 10})
+	if !errors.Is(err, queryErr) || page.Items != nil {
+		t.Fatalf("SearchPage() = (%#v, %v), want wrapped page query error", page, err)
 	}
 	if backend.pageCalls != 1 || backend.fullScanCalls != 0 {
 		t.Fatalf("page calls = %d, full scans = %d, want 1 and 0", backend.pageCalls, backend.fullScanCalls)
+	}
+}
+
+func TestLogServiceSearchPagePaginatesSparseMatchesWithoutLoss(t *testing.T) {
+	logs := NewLogService(newTestStorageBackend(t))
+	for index := 0; index < 520; index++ {
+		summary := fmt.Sprintf("noise-%03d", index)
+		if index == 10 || index == 260 || index == 510 {
+			summary = fmt.Sprintf("needle-%03d", index)
+		}
+		if err := logs.store.AppendLog(map[string]any{
+			"time":    "2026-08-30 10:00:00",
+			"summary": summary,
+			"detail":  map[string]any{},
+		}); err != nil {
+			t.Fatalf("AppendLog(%d) error = %v", index, err)
+		}
+	}
+
+	query := LogQuery{Summary: "needle", View: LogViewAll, Limit: 2}
+	first, err := logs.SearchPage(query)
+	if err != nil {
+		t.Fatalf("SearchPage(first) error = %v", err)
+	}
+	if got := logSummaries(first.Items); !reflect.DeepEqual(got, []string{"needle-510", "needle-260"}) || !first.HasMore || first.SnapshotCursor == "" || first.NextCursor == "" {
+		t.Fatalf("SearchPage(first) = %#v", first)
+	}
+	if err := logs.store.AppendLog(map[string]any{
+		"time":    "2020-01-01 00:00:00",
+		"summary": "needle-backfilled-later",
+		"detail":  map[string]any{},
+	}); err != nil {
+		t.Fatalf("AppendLog(backfill) error = %v", err)
+	}
+
+	query.Summary = " NEEDLE "
+	query.Cursor = first.NextCursor
+	second, err := logs.SearchPage(query)
+	if err != nil {
+		t.Fatalf("SearchPage(second) error = %v", err)
+	}
+	if got := logSummaries(second.Items); !reflect.DeepEqual(got, []string{"needle-010"}) || second.HasMore || second.NextCursor != "" {
+		t.Fatalf("SearchPage(second) = %#v", second)
+	}
+}
+
+func TestLogServiceSearchPageRejectsInvalidAndMismatchedCursors(t *testing.T) {
+	logs := NewLogService(newTestStorageBackend(t))
+	for index := 0; index < 2; index++ {
+		if err := logs.store.AppendLog(map[string]any{
+			"time":    "2026-08-30 10:00:00",
+			"summary": "cursor test",
+			"detail":  map[string]any{},
+		}); err != nil {
+			t.Fatalf("AppendLog() error = %v", err)
+		}
+	}
+	first, err := logs.SearchPage(LogQuery{Summary: "cursor", View: LogViewAll, Limit: 1})
+	if err != nil || !first.HasMore || first.NextCursor == "" {
+		t.Fatalf("SearchPage(first) = (%#v, %v)", first, err)
+	}
+	forgedPayload, err := json.Marshal(logOpaqueCursor{
+		Version:    logCursorVersion,
+		SnapshotID: 2,
+		Day:        "2026-08-30",
+		ID:         -1,
+		QueryHash:  logQueryCursorHash(LogQuery{Summary: "cursor", View: LogViewAll}),
+	})
+	if err != nil {
+		t.Fatalf("Marshal(forged cursor) error = %v", err)
+	}
+	forgedCursor := base64.RawURLEncoding.EncodeToString(forgedPayload)
+
+	for name, query := range map[string]LogQuery{
+		"malformed":       {Summary: "cursor", View: LogViewAll, Limit: 1, Cursor: "not-a-cursor"},
+		"oversized":       {Summary: "cursor", View: LogViewAll, Limit: 1, Cursor: strings.Repeat("a", maxLogCursorLength+1)},
+		"negative id":     {Summary: "cursor", View: LogViewAll, Limit: 1, Cursor: forgedCursor},
+		"filter mismatch": {Summary: "different", View: LogViewAll, Limit: 1, Cursor: first.NextCursor},
+		"view mismatch":   {Summary: "cursor", View: LogViewBusiness, Limit: 1, Cursor: first.NextCursor},
+	} {
+		t.Run(name, func(t *testing.T) {
+			page, err := logs.SearchPage(query)
+			if !errors.Is(err, ErrInvalidLogCursor) || page.Items != nil || page.SnapshotCursor != "" || page.NextCursor != "" || page.HasMore {
+				t.Fatalf("SearchPage() = (%#v, %v), want invalid cursor", page, err)
+			}
+		})
 	}
 }
 
@@ -140,9 +234,9 @@ func TestLogServiceBasicQueriesReturnDatabaseError(t *testing.T) {
 	queryErr := errors.New("log query failed")
 	logs := &LogService{store: &failingLogQueryBackend{err: queryErr}}
 
-	items, err := logs.Search(LogQuery{Limit: 10})
-	if !errors.Is(err, queryErr) || items != nil {
-		t.Fatalf("Search() = (%#v, %v), want wrapped database error", items, err)
+	page, err := logs.SearchPage(LogQuery{Limit: 10})
+	if !errors.Is(err, queryErr) || page.Items != nil {
+		t.Fatalf("SearchPage() = (%#v, %v), want wrapped database error", page, err)
 	}
 	summary, err := logs.GovernanceSummary()
 	if !errors.Is(err, queryErr) || summary != (LogGovernanceSummary{}) {
@@ -365,8 +459,8 @@ func TestLogServiceRetentionCleanerRunsAtConfiguredHour(t *testing.T) {
 
 	deadline := time.Now().Add(time.Second)
 	for time.Now().Before(deadline) {
-		items, err := logs.Search(LogQuery{Limit: 10})
-		if err == nil && len(items) == 1 && items[0]["summary"] == "新日志" {
+		page, err := logs.SearchPage(LogQuery{Limit: 10})
+		if err == nil && len(page.Items) == 1 && page.Items[0]["summary"] == "新日志" {
 			return
 		}
 		time.Sleep(10 * time.Millisecond)

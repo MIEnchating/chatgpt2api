@@ -245,7 +245,7 @@ func (a *App) handleVideoReferenceUpload(w http.ResponseWriter, r *http.Request)
 		util.WriteError(w, http.StatusInternalServerError, "failed to store video reference")
 		return
 	}
-	url := strings.TrimRight(a.resolveImageBaseURL(r), "/") + "/video-references/" + name
+	url := strings.TrimRight(a.resolveImageBaseURL(), "/") + "/video-references/" + name
 	util.WriteJSON(w, http.StatusCreated, map[string]any{"url": url, "name": upload.filename, "content_type": contentType, "size": len(upload.data)})
 }
 
@@ -282,7 +282,7 @@ func (a *App) handleAudioReferenceUpload(w http.ResponseWriter, r *http.Request)
 		util.WriteError(w, http.StatusInternalServerError, "failed to store audio reference")
 		return
 	}
-	url := strings.TrimRight(a.resolveImageBaseURL(r), "/") + "/audio-references/" + name
+	url := strings.TrimRight(a.resolveImageBaseURL(), "/") + "/audio-references/" + name
 	util.WriteJSON(w, http.StatusCreated, map[string]any{"url": url, "name": upload.filename, "content_type": contentType, "size": len(upload.data)})
 }
 
@@ -326,7 +326,7 @@ func (a *App) handleVideoImageReferenceUpload(w http.ResponseWriter, r *http.Req
 		util.WriteError(w, http.StatusInternalServerError, "failed to store image reference")
 		return
 	}
-	url := strings.TrimRight(a.resolveImageBaseURL(r), "/") + "/video-image-references/" + name
+	url := strings.TrimRight(a.resolveImageBaseURL(), "/") + "/video-image-references/" + name
 	util.WriteJSON(w, http.StatusCreated, map[string]any{"url": url, "name": upload.filename, "content_type": contentType, "size": len(upload.data)})
 }
 

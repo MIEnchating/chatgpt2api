@@ -367,14 +367,17 @@ func TestDatabaseBackendPaginatesLogsAndAggregatesSummary(t *testing.T) {
 	if err != nil {
 		t.Fatalf("QueryLogPage(first) error = %v", err)
 	}
-	if got := []any{first.Items[0]["summary"], first.Items[1]["summary"]}; !reflect.DeepEqual(got, []any{"new", "middle"}) || first.NextCursor == nil {
+	if got := []any{first.Records[0].Item["summary"], first.Records[1].Item["summary"]}; !reflect.DeepEqual(got, []any{"new", "middle"}) || first.NextCursor == nil {
 		t.Fatalf("QueryLogPage(first) = %#v", first)
+	}
+	if first.NextCursor.SnapshotID != 3 || first.Records[0].Cursor.SnapshotID != 3 || first.Records[1].Cursor != *first.NextCursor {
+		t.Fatalf("QueryLogPage(first) cursors = %#v", first)
 	}
 	second, err := backend.QueryLogPage("", "", first.NextCursor, 2)
 	if err != nil {
 		t.Fatalf("QueryLogPage(second) error = %v", err)
 	}
-	if len(second.Items) != 1 || second.Items[0]["summary"] != "old" || second.NextCursor != nil {
+	if len(second.Records) != 1 || second.Records[0].Item["summary"] != "old" || second.NextCursor != nil {
 		t.Fatalf("QueryLogPage(second) = %#v", second)
 	}
 	total, oldest, latest, err := backend.LogSummary()
@@ -387,6 +390,38 @@ func TestDatabaseBackendPaginatesLogsAndAggregatesSummary(t *testing.T) {
 	}
 	if !strings.Contains(plan, "COVERING INDEX idx_logs_created_at") {
 		t.Fatalf("log summary query plan = %q", plan)
+	}
+}
+
+func TestDatabaseBackendLogCursorExcludesLaterBackfilledRows(t *testing.T) {
+	backend := openSQLiteStorageTestBackend(t, filepath.Join(t.TempDir(), "chatgpt2api.db"))
+	for _, item := range []map[string]any{
+		{"time": "2026-04-30 10:00:00", "summary": "first"},
+		{"time": "2026-04-29 10:00:00", "summary": "second"},
+	} {
+		if err := backend.AppendLog(item); err != nil {
+			t.Fatalf("AppendLog() error = %v", err)
+		}
+	}
+
+	first, err := backend.QueryLogPage("", "", nil, 1)
+	if err != nil || len(first.Records) != 1 || first.NextCursor == nil {
+		t.Fatalf("QueryLogPage(first) = (%#v, %v)", first, err)
+	}
+	if err := backend.AppendLog(map[string]any{"time": "2020-01-01 00:00:00", "summary": "backfilled later"}); err != nil {
+		t.Fatalf("AppendLog(backfill) error = %v", err)
+	}
+	replayed, err := backend.QueryLogPage("", "", &LogCursor{SnapshotID: first.SnapshotID}, 1)
+	if err != nil || len(replayed.Records) != 1 || replayed.Records[0].Item["summary"] != "first" {
+		t.Fatalf("QueryLogPage(snapshot start) = (%#v, %v)", replayed, err)
+	}
+
+	second, err := backend.QueryLogPage("", "", first.NextCursor, 10)
+	if err != nil {
+		t.Fatalf("QueryLogPage(second) error = %v", err)
+	}
+	if len(second.Records) != 1 || second.Records[0].Item["summary"] != "second" || second.NextCursor != nil {
+		t.Fatalf("QueryLogPage(second) = %#v, want only snapshot row", second)
 	}
 }
 

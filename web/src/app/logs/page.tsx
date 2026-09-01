@@ -19,6 +19,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { fetchSettingsConfig, fetchSystemLogs, type LogView, type SystemLog, type SystemLogFilters } from "@/lib/api";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 
+import { logCursorForPage, recordLogPageCursor, resetLogCursorStack } from "./log-pagination";
+
 const methodOptions = ["GET", "POST", "PUT", "PATCH", "DELETE"];
 const statusOptions = [
   { value: "success", label: "成功" },
@@ -350,6 +352,7 @@ function activeFilterCount(filters: SystemLogFilters, defaultView: LogView) {
 function LogsContent() {
   const loadLogsAbortRef = useRef<AbortController | null>(null);
   const loadLogsRequestRef = useRef(0);
+  const logCursorStackRef = useRef<string[]>(resetLogCursorStack());
   const initialFilters = createEmptyFilters("meaningful");
   const [items, setItems] = useState<SystemLog[]>([]);
   const [defaultLogView, setDefaultLogView] = useState<LogView>("meaningful");
@@ -362,21 +365,30 @@ function LogsContent() {
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(15);
+  const [hasMore, setHasMore] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isFiltersExpanded, setIsFiltersExpanded] = useState(false);
   const detailUrls = getUrls(detailLog);
   const detailImages = detailUrls.map((url, index) => ({ id: `${index}`, src: url }));
   const detailMethod = detailText(detailLog, "method");
   const detailFieldSections = getDetailFieldSections(detailLog);
-  const pageCount = Math.max(1, Math.ceil(items.length / pageSize));
-  const safePage = Math.min(page, pageCount);
-  const currentRows = items.slice((safePage - 1) * pageSize, safePage * pageSize);
+  const currentRows = items;
   const activeFilters = activeFilterCount(filters, defaultLogView);
   const errorCount = items.filter((item) => logLevel(item) === "error" || statusBadgeVariant(item) === "danger").length;
   const warningCount = items.filter((item) => logLevel(item) === "warning").length;
   const slowRequestCount = items.filter((item) => durationMs(item) >= 3000).length;
 
-  const loadLogs = useCallback(async (nextQuery: SystemLogFilters) => {
+  const loadLogs = useCallback(async (
+    nextQuery: SystemLogFilters,
+    options: { cursor?: string; pageSize: number; reset?: boolean; targetPage?: number },
+  ) => {
+    const targetPage = options.targetPage || 1;
+    if (options.reset) {
+      logCursorStackRef.current = resetLogCursorStack();
+      setItems([]);
+      setPage(1);
+      setHasMore(false);
+    }
     const requestID = loadLogsRequestRef.current + 1;
     loadLogsRequestRef.current = requestID;
     loadLogsAbortRef.current?.abort();
@@ -384,10 +396,22 @@ function LogsContent() {
     loadLogsAbortRef.current = controller;
     setIsLoading(true);
     try {
-      const data = await fetchSystemLogs(nextQuery, { signal: controller.signal });
+      const data = await fetchSystemLogs(nextQuery, {
+        signal: controller.signal,
+        cursor: options.cursor,
+        pageSize: options.pageSize,
+      });
       if (requestID !== loadLogsRequestRef.current) return;
+      logCursorStackRef.current = recordLogPageCursor(
+        logCursorStackRef.current,
+        targetPage,
+        data.snapshot_cursor,
+        data.next_cursor,
+        data.has_more,
+      );
       setItems(data.items);
-      setPage(1);
+      setHasMore(data.has_more);
+      setPage(targetPage);
     } catch (error) {
       if (controller.signal.aborted || requestID !== loadLogsRequestRef.current) return;
       toast.error(error instanceof Error ? error.message : "加载日志失败");
@@ -398,6 +422,16 @@ function LogsContent() {
       }
     }
   }, []);
+
+  const loadFirstLogPage = useCallback((nextQuery: SystemLogFilters, requestPageSize: number) => {
+    return loadLogs(nextQuery, { cursor: "", pageSize: requestPageSize, reset: true, targetPage: 1 });
+  }, [loadLogs]);
+
+  const handlePageChange = (targetPage: number) => {
+    const cursor = logCursorForPage(logCursorStackRef.current, targetPage);
+    if (cursor === null) return;
+    void loadLogs(query, { cursor, pageSize, targetPage });
+  };
 
   const updateFilter = (key: keyof SystemLogFilters, value: string) => {
     setFilters((current) => ({ ...current, [key]: value }));
@@ -457,12 +491,12 @@ function LogsContent() {
     if (!isDefaultLogViewReady) {
       return;
     }
-    void loadLogs(query);
+    void loadFirstLogPage(query, pageSize);
     return () => {
       loadLogsRequestRef.current += 1;
       loadLogsAbortRef.current?.abort();
     };
-  }, [isDefaultLogViewReady, loadLogs, query]);
+  }, [isDefaultLogViewReady, loadFirstLogPage, pageSize, query]);
 
   return (
     <ManagementPage data-logs-layout>
@@ -525,7 +559,7 @@ function LogsContent() {
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => void loadLogs(query)}
+                  onClick={() => void loadFirstLogPage(query, pageSize)}
                   disabled={isLoading}
                   className="h-10 flex-1 rounded-lg px-3 xl:flex-none"
                 >
@@ -574,22 +608,22 @@ function LogsContent() {
         <div className="flex min-h-11 shrink-0 flex-wrap items-center gap-x-5 gap-y-2 border-b border-border bg-muted/15 px-4 py-2 text-xs text-muted-foreground sm:px-5">
           <div className="flex items-baseline gap-1.5">
             <span className="text-base font-semibold tabular-nums text-foreground">{isLoading && items.length === 0 ? "—" : items.length}</span>
-            <span>条结果</span>
+            <span>条本页结果</span>
           </div>
           <div className="hidden h-4 w-px bg-border sm:block" />
           <div className="flex items-center gap-1.5">
             <span className="size-1.5 rounded-full bg-rose-500" />
-            <span>错误</span>
+            <span>本页错误</span>
             <span className="font-medium tabular-nums text-foreground">{errorCount}</span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="size-1.5 rounded-full bg-amber-500" />
-            <span>警告</span>
+            <span>本页警告</span>
             <span className="font-medium tabular-nums text-foreground">{warningCount}</span>
           </div>
           <div className="flex items-center gap-1.5">
             <span className="size-1.5 rounded-full bg-muted-foreground/60" />
-            <span>慢请求（≥ 3 秒）</span>
+            <span>本页慢请求（≥ 3 秒）</span>
             <span className="font-medium tabular-nums text-foreground">{slowRequestCount}</span>
           </div>
         </div>
@@ -678,16 +712,16 @@ function LogsContent() {
             </Table>
           </ScrollArea>
           <ManagementPagination
-            page={safePage}
-            totalPages={pageCount}
-            totalItems={items.length}
+            mode="cursor"
+            page={page}
+            currentItems={items.length}
+            hasMore={hasMore}
             pageSize={pageSize}
             pageSizeOptions={pageSizeOptions}
             disabled={isLoading}
-            onPageChange={setPage}
+            onPageChange={handlePageChange}
             onPageSizeChange={(value) => {
               setPageSize(value);
-              setPage(1);
             }}
           />
       </ManagementPanel>

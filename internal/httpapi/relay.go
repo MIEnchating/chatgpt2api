@@ -539,7 +539,7 @@ func (a *App) relayGoogleGeminiImage(ctx context.Context, payload map[string]any
 		return nil, err
 	}
 
-	count := normalizedProtocolImageCount(payload["n"], util.Clean(payload["model"]))
+	count := normalizedProtocolImageCount(payload["n"])
 	results := make([][]map[string]any, count)
 	var waitGroup sync.WaitGroup
 	var firstErr error

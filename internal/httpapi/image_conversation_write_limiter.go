@@ -70,7 +70,6 @@ func (l *imageConversationHistoryWriteLimiter) acquire(ctx context.Context, weig
 		if canAcquire {
 			if registeredExclusive {
 				l.exclusiveWaiters--
-				registeredExclusive = false
 			}
 			l.used += weight
 			l.signalLocked()

@@ -54,6 +54,7 @@ type LogQuery struct {
 	EndTime       string
 	View          string
 	Limit         int
+	Cursor        string
 }
 
 type LogGovernanceSummary struct {
@@ -114,54 +115,6 @@ func (s *LogService) Add(summary string, detail map[string]any) error {
 		return s.store.AppendLog(item)
 	}
 	return fmt.Errorf("log storage backend is required")
-}
-
-func (s *LogService) Search(query LogQuery) ([]map[string]any, error) {
-	limit := normalizedLogLimit(query.Limit)
-	startDate, endDate := logQueryDateBounds(query)
-	if pager, ok := s.store.(storage.LogPageBackend); ok {
-		return searchLogPages(pager, query, startDate, endDate, limit)
-	}
-	items, err := s.loadLogItems(startDate, endDate)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]map[string]any, 0, min(limit, len(items)))
-	for _, item := range items {
-		if !matchLogQuery(item, query) {
-			continue
-		}
-		out = append(out, publicLogItem(item))
-		if len(out) >= limit {
-			break
-		}
-	}
-	return out, nil
-}
-
-func searchLogPages(pager storage.LogPageBackend, query LogQuery, startDate, endDate string, limit int) ([]map[string]any, error) {
-	batchSize := min(max(256, limit*2), 1000)
-	out := make([]map[string]any, 0, limit)
-	var cursor *storage.LogCursor
-	for {
-		page, err := pager.QueryLogPage(startDate, endDate, cursor, batchSize)
-		if err != nil {
-			return nil, fmt.Errorf("query log page: %w", err)
-		}
-		for _, item := range page.Items {
-			if !matchLogQuery(item, query) {
-				continue
-			}
-			out = append(out, publicLogItem(item))
-			if len(out) >= limit {
-				return out, nil
-			}
-		}
-		if page.NextCursor == nil {
-			return out, nil
-		}
-		cursor = page.NextCursor
-	}
 }
 
 func (s *LogService) GovernanceSummary() (LogGovernanceSummary, error) {

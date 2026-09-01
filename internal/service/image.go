@@ -2262,7 +2262,7 @@ func sourceImageRelativePathFromReference(value string) (string, error) {
 }
 
 func normalizeImageReferenceMetadata(value any) []imageReferenceMetadata {
-	items := imageReferenceMetadataItems(value)
+	items := util.AsMapSlice(value)
 	if len(items) == 0 {
 		return nil
 	}
@@ -2322,23 +2322,6 @@ func safeImageReferenceFilename(value string, index int) string {
 		clean = stem + ext
 	}
 	return clean
-}
-
-func imageReferenceMetadataItems(value any) []map[string]any {
-	switch v := value.(type) {
-	case []map[string]any:
-		return v
-	case []any:
-		items := make([]map[string]any, 0, len(v))
-		for _, item := range v {
-			if m, ok := item.(map[string]any); ok {
-				items = append(items, m)
-			}
-		}
-		return items
-	default:
-		return nil
-	}
 }
 
 func (s *imageStorageRemovalStats) add(next imageStorageRemovalStats) {

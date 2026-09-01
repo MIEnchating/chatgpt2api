@@ -323,7 +323,7 @@ func collectRelayImageTaskStream(payload map[string]any, stream *protocol.Stream
 	created := time.Now().Unix()
 	model := ""
 	message := ""
-	outputLimit := normalizedProtocolImageCount(payload["n"], util.Clean(payload["model"]))
+	outputLimit := normalizedProtocolImageCount(payload["n"])
 	accumulator := newRelayImageStreamAccumulator(outputLimit)
 	onProgress := relayImageTaskProgressCallback(payload)
 
@@ -807,7 +807,7 @@ func (a *App) handleSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodGet:
-		util.WriteJSON(w, http.StatusOK, map[string]any{"config": a.settingsConfig(r.Context(), identity.Role == service.AuthRoleAdmin)})
+		util.WriteJSON(w, http.StatusOK, map[string]any{"config": a.settingsConfig(identity.Role == service.AuthRoleAdmin)})
 	case http.MethodPost:
 		a.settingsMu.Lock()
 		defer a.settingsMu.Unlock()
@@ -920,7 +920,7 @@ func isObjectStorageCredentialKey(key string) bool {
 	return key == "storage"
 }
 
-func (a *App) settingsConfig(ctx context.Context, includeDatabaseCredentials bool) map[string]any {
+func (a *App) settingsConfig(includeDatabaseCredentials bool) map[string]any {
 	config := a.config.Get()
 	if !includeDatabaseCredentials {
 		for key := range config {
@@ -1359,7 +1359,7 @@ func (a *App) handleImages(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, status, message)
 			return
 		}
-		payload, err := a.images.ListImages(a.resolveImageBaseURL(r), strings.TrimSpace(r.URL.Query().Get("start_date")), strings.TrimSpace(r.URL.Query().Get("end_date")), scope)
+		payload, err := a.images.ListImages(a.resolveImageBaseURL(), strings.TrimSpace(r.URL.Query().Get("start_date")), strings.TrimSpace(r.URL.Query().Get("end_date")), scope)
 		if err != nil {
 			a.writeImageStorageError(w, "list images", err)
 			return
@@ -1643,12 +1643,24 @@ func (a *App) handleLogs(w http.ResponseWriter, r *http.Request) {
 		query.View = a.config.DefaultLogView()
 	}
 	query.View = service.NormalizeLogView(query.View, a.config.DefaultLogView())
-	items, err := a.logs.Search(query)
+	page, err := a.logs.SearchPage(query)
 	if err != nil {
+		if errors.Is(err, service.ErrInvalidLogCursor) {
+			util.WriteError(w, http.StatusBadRequest, "cursor 参数无效")
+			return
+		}
 		a.writeLogStorageError(w, "query logs", err)
 		return
 	}
-	util.WriteJSON(w, http.StatusOK, map[string]any{"items": items, "total": len(items), "page_size": normalizedHTTPLogPageSize(query.Limit), "view": query.View})
+	util.WriteJSON(w, http.StatusOK, map[string]any{
+		"items":           page.Items,
+		"total":           nil,
+		"page_size":       normalizedHTTPLogPageSize(query.Limit),
+		"view":            query.View,
+		"has_more":        page.HasMore,
+		"snapshot_cursor": page.SnapshotCursor,
+		"next_cursor":     page.NextCursor,
+	})
 }
 
 func (a *App) handleLogGovernance(w http.ResponseWriter, r *http.Request) {
@@ -2012,7 +2024,7 @@ func clearAuthSessionCookie(w http.ResponseWriter, r *http.Request) {
 	setAuthSessionCookieValue(w, r, "", -1)
 }
 
-func (a *App) resolveImageBaseURL(_ *http.Request) string {
+func (a *App) resolveImageBaseURL() string {
 	return a.config.BaseURL()
 }
 
@@ -3357,35 +3369,35 @@ func collectURLs(v any) []string {
 	}
 }
 
-func normalizedProtocolImageCount(value any, model string) int {
+func normalizedProtocolImageCount(value any) int {
 	n, ok := util.StrictInt(value)
 	if !ok || n < 1 {
 		return 1
 	}
-	limit := util.MaxImageOutputCount(model)
+	limit := util.MaxImageOutputCount()
 	if n > limit {
 		return limit
 	}
 	return n
 }
 
-func validProtocolImageCount(value any, model string) bool {
+func validProtocolImageCount(value any) bool {
 	if value == nil || strings.TrimSpace(util.Clean(value)) == "" {
 		return true
 	}
 	n, ok := util.StrictInt(value)
-	return ok && n >= 1 && n <= util.MaxImageOutputCount(model)
+	return ok && n >= 1 && n <= util.MaxImageOutputCount()
 }
 
-func protocolImageCountRangeMessage(model string) string {
-	return fmt.Sprintf("n must be between 1 and %d", util.MaxImageOutputCount(model))
+func protocolImageCountRangeMessage() string {
+	return fmt.Sprintf("n must be between 1 and %d", util.MaxImageOutputCount())
 }
 
 func normalizedRelayImageStreamOutputLimit(value int) int {
 	if value < 1 {
 		return 1
 	}
-	limit := util.MaxImageOutputCount(util.ImageModelGPT)
+	limit := util.MaxImageOutputCount()
 	if value > limit {
 		return limit
 	}

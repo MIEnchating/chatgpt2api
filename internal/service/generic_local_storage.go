@@ -77,7 +77,11 @@ func deleteLocalStorageObject(provider model.StorageProvider, objectKey string) 
 }
 
 func removeEmptyLocalStorageDirectories(directory, root string) {
-	root, _ = filepath.Abs(root)
+	absoluteRoot, err := filepath.Abs(root)
+	if err != nil {
+		return
+	}
+	root = absoluteRoot
 	for {
 		absolute, err := filepath.Abs(directory)
 		if err != nil || absolute == root || !strings.HasPrefix(absolute, root+string(filepath.Separator)) {

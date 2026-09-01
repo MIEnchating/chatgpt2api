@@ -718,6 +718,143 @@ func TestImageTaskServicePropagatesCancellationAcrossDatabaseInstances(t *testin
 	waitForTaskStatus(t, serviceA, identity, "cancel-across-instances", TaskStatusCancelled)
 }
 
+func TestImageTaskServiceActivationFailsClosedWhenRefreshCannotObserveRemoteCancellation(t *testing.T) {
+	databaseURL := "sqlite:///" + filepath.ToSlash(filepath.Join(t.TempDir(), "activation-refresh-failure.db"))
+	backendA, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend(A) error = %v", err)
+	}
+	t.Cleanup(func() { _ = backendA.Close() })
+	backendB, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend(B) error = %v", err)
+	}
+	t.Cleanup(func() { _ = backendB.Close() })
+
+	storeA := &flakyImageTaskLoadStore{JSONDocumentBackend: backendA}
+	serviceA := newImageTaskService(storeA, nil, nil, nil, func() int { return 30 })
+	t.Cleanup(func() { _ = serviceA.Close() })
+	identity := Identity{ID: "activation-refresh-owner", Role: AuthRoleUser}
+	key := taskKey(ownerID(identity), "activation-refresh-task")
+	now := util.NowISO()
+	serviceA.mu.Lock()
+	serviceA.tasks[key] = map[string]any{
+		"id": "activation-refresh-task", "owner_id": ownerID(identity), "status": TaskStatusQueued,
+		"mode": "chat", "model": "gpt-image-2", "count": 1, "revision": 1,
+		"created_at": now, "updated_at": now,
+	}
+	err = serviceA.saveLocked()
+	serviceA.mu.Unlock()
+	if err != nil {
+		t.Fatalf("seed task save error = %v", err)
+	}
+
+	serviceB := newImageTaskService(backendB, nil, nil, nil, func() int { return 30 })
+	t.Cleanup(func() { _ = serviceB.Close() })
+	if _, err := serviceB.CancelTask(identity, "activation-refresh-task"); err != nil {
+		t.Fatalf("CancelTask() error = %v", err)
+	}
+	storeA.FailNextLoads(1)
+	active, activationErr := serviceA.ensureTaskRunning(key)
+	if activationErr == nil || !strings.Contains(activationErr.Error(), "injected image task load failure") {
+		t.Fatalf("ensureTaskRunning() error = %v, want refresh failure", activationErr)
+	}
+	if active {
+		t.Fatal("ensureTaskRunning() authorized a task without observing remote cancellation")
+	}
+	waitForPersistedImageTaskStatus(t, backendA, "activation-refresh-task", TaskStatusCancelled)
+}
+
+func TestImageTaskServiceActivationSaveFailureRestoresQueuedState(t *testing.T) {
+	backend := newTestStorageBackend(t)
+	documentStore, ok := backend.(storage.JSONDocumentBackend)
+	if !ok {
+		t.Fatalf("storage backend %T does not implement JSONDocumentBackend", backend)
+	}
+	store := &flakyImageTaskDocumentStore{JSONDocumentBackend: documentStore}
+	service := newImageTaskService(store, nil, nil, nil, func() int { return 30 })
+	t.Cleanup(func() { _ = service.Close() })
+	identity := Identity{ID: "activation-save-owner", Role: AuthRoleUser}
+	key := taskKey(ownerID(identity), "activation-save-task")
+	now := util.NowISO()
+	service.mu.Lock()
+	service.tasks[key] = map[string]any{
+		"id": "activation-save-task", "owner_id": ownerID(identity), "status": TaskStatusQueued,
+		"mode": "chat", "model": "gpt-image-2", "count": 1, "revision": 1,
+		"created_at": now, "updated_at": now,
+	}
+	err := service.saveLocked()
+	service.mu.Unlock()
+	if err != nil {
+		t.Fatalf("seed task save error = %v", err)
+	}
+
+	store.FailNextSaves(1)
+	active, activationErr := service.ensureTaskRunning(key)
+	if activationErr == nil || !strings.Contains(activationErr.Error(), "injected image task persistence failure") {
+		t.Fatalf("ensureTaskRunning() error = %v, want persistence failure", activationErr)
+	}
+	if active {
+		t.Fatal("ensureTaskRunning() authorized an unpersisted running transition")
+	}
+	service.mu.RLock()
+	status := util.Clean(service.tasks[key]["status"])
+	service.mu.RUnlock()
+	if status != TaskStatusQueued {
+		t.Fatalf("task status after failed activation save = %q, want queued", status)
+	}
+	waitForImageTaskSaveCalls(t, store, 3)
+	waitForPersistedImageTaskStatus(t, documentStore, "activation-save-task", TaskStatusQueued)
+}
+
+func TestImageTaskServiceTerminalUpdateDoesNotOverrideRemoteCancellationAfterRefreshFailure(t *testing.T) {
+	databaseURL := "sqlite:///" + filepath.ToSlash(filepath.Join(t.TempDir(), "terminal-refresh-failure.db"))
+	backendA, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend(A) error = %v", err)
+	}
+	t.Cleanup(func() { _ = backendA.Close() })
+	backendB, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend(B) error = %v", err)
+	}
+	t.Cleanup(func() { _ = backendB.Close() })
+
+	storeA := &flakyImageTaskLoadStore{JSONDocumentBackend: backendA}
+	serviceA := newImageTaskService(storeA, nil, nil, nil, func() int { return 30 })
+	t.Cleanup(func() { _ = serviceA.Close() })
+	identity := Identity{ID: "terminal-refresh-owner", Role: AuthRoleUser}
+	key := taskKey(ownerID(identity), "terminal-refresh-task")
+	now := util.NowISO()
+	serviceA.mu.Lock()
+	serviceA.tasks[key] = map[string]any{
+		"id": "terminal-refresh-task", "owner_id": ownerID(identity), "status": TaskStatusRunning,
+		"mode": "chat", "model": "gpt-image-2", "count": 1, "revision": 1,
+		"created_at": now, "updated_at": now,
+	}
+	err = serviceA.saveLocked()
+	serviceA.mu.Unlock()
+	if err != nil {
+		t.Fatalf("seed task save error = %v", err)
+	}
+
+	serviceB := newImageTaskService(backendB, nil, nil, nil, func() int { return 30 })
+	t.Cleanup(func() { _ = serviceB.Close() })
+	if _, err := serviceB.CancelTask(identity, "terminal-refresh-task"); err != nil {
+		t.Fatalf("CancelTask() error = %v", err)
+	}
+	time.Sleep(2 * time.Millisecond)
+	storeA.FailNextLoads(1)
+	if err := serviceA.updateActiveTask(key, map[string]any{
+		"status": TaskStatusSuccess,
+		"error":  "",
+		"data":   []map[string]any{{"url": "https://example.test/late.png"}},
+	}); err != nil {
+		t.Fatalf("updateActiveTask() error = %v", err)
+	}
+	waitForPersistedImageTaskStatus(t, backendA, "terminal-refresh-task", TaskStatusCancelled)
+}
+
 func TestImageTaskServicePreservesUnspecifiedOutputFormat(t *testing.T) {
 	handlerCalls := make(chan map[string]any, 1)
 	handler := func(ctx context.Context, identity Identity, payload map[string]any) (map[string]any, error) {
@@ -1158,16 +1295,15 @@ func TestImageTaskServiceLimitsGlobalConcurrentCreationUnitsForAdmins(t *testing
 	}
 }
 
-func TestImageTaskCountUsesSelectedModelLimit(t *testing.T) {
+func TestImageTaskCountUsesApplicationLimit(t *testing.T) {
 	tests := []struct {
 		name    string
 		payload map[string]any
 		want    int
 	}{
-		{name: "GPT permits fifteen outputs", payload: map[string]any{"model": "gpt-image-2", "n": 15}, want: 15},
-		{name: "GPT clamps oversized count", payload: map[string]any{"model": "gpt-image-2", "n": 16}, want: 15},
-		{name: "Gemini uses the shared canvas limit", payload: map[string]any{"model": "gemini-3.1-flash-image", "n": 15}, want: 15},
-		{name: "stored count uses task model", payload: map[string]any{"model": "gpt-image-2", "count": 15}, want: 15},
+		{name: "permits fifteen outputs", payload: map[string]any{"n": 15}, want: 15},
+		{name: "clamps oversized count", payload: map[string]any{"n": 16}, want: 15},
+		{name: "uses stored count", payload: map[string]any{"count": 15}, want: 15},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -1178,14 +1314,14 @@ func TestImageTaskCountUsesSelectedModelLimit(t *testing.T) {
 	}
 }
 
-func TestImageTaskServiceAcceptsMaximumGPTOutputUnits(t *testing.T) {
+func TestImageTaskServiceAcceptsMaximumOutputUnits(t *testing.T) {
 	svc := newTestImageTaskService(t, nil, nil, nil, func() int { return 30 })
 	t.Cleanup(func() { _ = svc.Close() })
 	admin := Identity{ID: "admin", Name: "Admin", Role: AuthRoleAdmin}
 
-	release, err := svc.AcquireCreationUnits(context.Background(), admin, util.MaxImageOutputCount("gpt-image-2"))
+	release, err := svc.AcquireCreationUnits(context.Background(), admin, util.MaxImageOutputCount())
 	if err != nil {
-		t.Fatalf("AcquireCreationUnits() rejected a valid GPT image request: %v", err)
+		t.Fatalf("AcquireCreationUnits() rejected a valid image request: %v", err)
 	}
 	release()
 }
@@ -1788,7 +1924,8 @@ func TestImageTaskServiceRunningTransitionIsAtomicAndPreservesTerminalSlots(t *t
 	if !svc.markImageOutputStatus(key, 1, TaskStatusSuccess) || !svc.markImageOutputStatus(key, 2, TaskStatusError) || !svc.markImageOutputStatus(key, 3, TaskStatusCancelled) {
 		t.Fatal("failed to seed terminal output statuses")
 	}
-	if !svc.activateImageTaskOutput(key, 0) {
+	active, activationErr := svc.activateImageTaskOutput(key, 0)
+	if activationErr != nil || !active {
 		t.Fatal("queued task did not transition to running")
 	}
 	if !svc.markAllImageOutputStatuses(key, TaskStatusRunning) || !svc.markImageOutputStatus(key, 1, TaskStatusRunning) {
@@ -2376,6 +2513,12 @@ type flakyImageTaskLoadStore struct {
 	storage.JSONDocumentBackend
 	mu       sync.Mutex
 	failNext int
+}
+
+func (s *flakyImageTaskLoadStore) FailNextLoads(count int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.failNext = count
 }
 
 func (s *flakyImageTaskLoadStore) LoadJSONDocument(name string) (any, error) {

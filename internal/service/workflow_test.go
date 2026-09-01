@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -130,6 +131,111 @@ func TestWorkflowServiceRejectsAmbiguousVariableIdentifiers(t *testing.T) {
 				t.Fatalf("Save() error = %v, want error containing %q", err, test.wantError)
 			}
 		})
+	}
+}
+
+func TestWorkflowServiceRejectsResourceExhaustingDefinitions(t *testing.T) {
+	tests := []struct {
+		name      string
+		mutate    func(*CreativeWorkflow)
+		wantError string
+	}{
+		{
+			name: "long name",
+			mutate: func(workflow *CreativeWorkflow) {
+				workflow.Name = strings.Repeat("名", maxWorkflowNameRunes+1)
+			},
+			wantError: "工作流名称最多支持",
+		},
+		{
+			name: "too many variables",
+			mutate: func(workflow *CreativeWorkflow) {
+				workflow.Variables = make([]WorkflowVariable, maxWorkflowVariables+1)
+				for i := range workflow.Variables {
+					workflow.Variables[i] = WorkflowVariable{ID: fmt.Sprintf("variable-%d", i), Key: fmt.Sprintf("variable_%d", i)}
+				}
+			},
+			wantError: "每个工作流最多支持",
+		},
+		{
+			name: "too many options",
+			mutate: func(workflow *CreativeWorkflow) {
+				workflow.Variables[0].Options = make([]string, maxWorkflowVariableOptions+1)
+			},
+			wantError: "第 1 个工作流变量最多支持",
+		},
+		{
+			name: "oversized payload",
+			mutate: func(workflow *CreativeWorkflow) {
+				workflow.Config.PromptTemplate = strings.Repeat("x", maxWorkflowPayloadBytes)
+			},
+			wantError: "单个工作流配置不能超过",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			workflow := referenceWorkflow()
+			test.mutate(&workflow)
+			_, err := NewWorkflowService(newTestStorageBackend(t)).Save("alice", workflow)
+			if err == nil || !strings.Contains(err.Error(), test.wantError) {
+				t.Fatalf("Save() error = %v, want error containing %q", err, test.wantError)
+			}
+		})
+	}
+}
+
+func TestWorkflowServiceLimitsNewWorkflowsPerOwnerWithoutBlockingOtherOwnersOrUpdates(t *testing.T) {
+	backend := newTestStorageBackend(t)
+	store := jsonDocumentStoreFromBackend(backend)
+	items := make([]CreativeWorkflow, maxWorkflowsPerOwner)
+	for i := range items {
+		items[i] = CreativeWorkflow{
+			ID:       fmt.Sprintf("workflow-%d", i),
+			Revision: 1,
+			OwnerID:  "alice",
+			Name:     fmt.Sprintf("工作流 %d", i),
+		}
+	}
+	if err := store.SaveJSONDocument(workflowDocumentName, map[string]any{"version": 3, "items": items}); err != nil {
+		t.Fatalf("SaveJSONDocument() error = %v", err)
+	}
+	workflows := NewWorkflowService(backend)
+	if _, err := workflows.Save("alice", referenceWorkflow()); err == nil || !strings.Contains(err.Error(), "每个用户最多保存") {
+		t.Fatalf("Save(alice new) error = %v, want owner limit", err)
+	}
+	bobWorkflow := referenceWorkflow()
+	bobWorkflow.Name = "Bob 工作流"
+	bobWorkflow.Scope = "private"
+	if _, err := workflows.Save("bob", bobWorkflow); err != nil {
+		t.Fatalf("Save(bob new) error = %v", err)
+	}
+	visible, err := workflows.List("alice")
+	if err != nil || len(visible) != maxWorkflowsPerOwner {
+		t.Fatalf("List(alice) length = %d, error = %v", len(visible), err)
+	}
+	updated := visible[0]
+	updated.Name = "已更新"
+	if _, err := workflows.Save("alice", updated); err != nil {
+		t.Fatalf("Save(alice existing) error = %v", err)
+	}
+}
+
+func TestWorkflowServiceStillReadsExistingDefinitionsAboveNewWriteLimits(t *testing.T) {
+	backend := newTestStorageBackend(t)
+	store := jsonDocumentStoreFromBackend(backend)
+	legacy := referenceWorkflow()
+	legacy.ID = "existing-large-workflow"
+	legacy.Revision = 1
+	legacy.OwnerID = "alice"
+	legacy.Name = strings.Repeat("名", maxWorkflowNameRunes+1)
+	if err := store.SaveJSONDocument(workflowDocumentName, map[string]any{"version": 3, "items": []CreativeWorkflow{legacy}}); err != nil {
+		t.Fatalf("SaveJSONDocument() error = %v", err)
+	}
+
+	items, err := NewWorkflowService(backend).List("alice")
+	if err != nil || len(items) != 1 || items[0].Name != legacy.Name {
+		t.Fatalf("List() = (%#v, %v), want existing workflow unchanged", items, err)
 	}
 }
 

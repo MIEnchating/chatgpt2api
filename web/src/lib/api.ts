@@ -462,6 +462,16 @@ export type SystemLogFilters = {
   page_size?: number | string;
 };
 
+export type SystemLogPage = {
+  items: SystemLog[];
+  total: number | null;
+  page_size: number;
+  view?: LogView | string;
+  has_more: boolean;
+  snapshot_cursor: string;
+  next_cursor: string;
+};
+
 export type LogGovernanceSummary = {
   total: number;
   oldest_time?: string;
@@ -1661,7 +1671,10 @@ export async function deleteManagedImages(paths: string[]) {
   );
 }
 
-export async function fetchSystemLogs(filters: SystemLogFilters, options: { signal?: AbortSignal } = {}) {
+export async function fetchSystemLogs(
+  filters: SystemLogFilters,
+  options: { signal?: AbortSignal; cursor?: string; pageSize?: number } = {},
+) {
   const params = new URLSearchParams();
   for (const [key, value] of Object.entries(filters)) {
     if (
@@ -1674,10 +1687,27 @@ export async function fetchSystemLogs(filters: SystemLogFilters, options: { sign
     }
     params.set(key, String(value));
   }
-  return httpRequest<{ items: SystemLog[]; view?: LogView | string }>(
+  if (options.pageSize !== undefined) {
+    params.set("page_size", String(options.pageSize));
+  }
+  if (options.cursor?.trim()) {
+    params.set("cursor", options.cursor.trim());
+  }
+  const data = await httpRequest<Partial<SystemLogPage>>(
     `/api/logs${params.toString() ? `?${params.toString()}` : ""}`,
     { signal: options.signal },
   );
+  const nextCursor = typeof data.next_cursor === "string" ? data.next_cursor.trim() : "";
+  const snapshotCursor = typeof data.snapshot_cursor === "string" ? data.snapshot_cursor.trim() : "";
+  return {
+    items: Array.isArray(data.items) ? data.items : [],
+    total: typeof data.total === "number" ? data.total : null,
+    page_size: typeof data.page_size === "number" ? data.page_size : options.pageSize || 0,
+    view: data.view,
+    has_more: data.has_more === true && nextCursor !== "",
+    snapshot_cursor: snapshotCursor,
+    next_cursor: nextCursor,
+  } satisfies SystemLogPage;
 }
 
 export async function fetchLogGovernance() {

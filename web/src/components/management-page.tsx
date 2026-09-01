@@ -71,10 +71,8 @@ function ManagementToolbar({ className, ...props }: ComponentProps<"div">) {
   );
 }
 
-type ManagementPaginationProps = {
+type ManagementPaginationBaseProps = {
   page: number;
-  totalPages: number;
-  totalItems: number;
   pageSize: number;
   pageSizeOptions: number[];
   itemLabel?: string;
@@ -83,10 +81,28 @@ type ManagementPaginationProps = {
   onPageSizeChange: (pageSize: number) => void;
 };
 
+type ManagementPaginationProps = ManagementPaginationBaseProps & (
+  | {
+      mode?: "total";
+      totalPages: number;
+      totalItems: number;
+    }
+  | {
+      mode: "cursor";
+      currentItems: number;
+      hasMore: boolean;
+    }
+);
+
 function ManagementPagination(props: ManagementPaginationProps) {
-  const totalPages = Math.max(1, props.totalPages);
-  const page = Math.min(Math.max(1, props.page), totalPages);
-  const hasItems = props.totalItems > 0;
+  const cursorMode = props.mode === "cursor";
+  const totalPages = cursorMode ? 1 : Math.max(1, props.totalPages);
+  const page = cursorMode
+    ? Math.max(1, props.page)
+    : Math.min(Math.max(1, props.page), totalPages);
+  const hasItems = cursorMode ? props.currentItems > 0 : props.totalItems > 0;
+  const canGoPrevious = cursorMode ? page > 1 : hasItems && page > 1;
+  const canGoNext = cursorMode ? props.hasMore : hasItems && page < totalPages;
   const itemLabel = props.itemLabel || "条";
 
   return (
@@ -95,7 +111,7 @@ function ManagementPagination(props: ManagementPaginationProps) {
       className="mt-auto grid min-h-14 shrink-0 grid-cols-[1fr_auto] items-center gap-3 border-t border-border px-4 py-2 text-xs text-muted-foreground sm:grid-cols-[1fr_auto_1fr] sm:px-5"
     >
       <span className="shrink-0 whitespace-nowrap tabular-nums">
-        共 {props.totalItems} {itemLabel}
+        {cursorMode ? "本页" : "共"} {cursorMode ? props.currentItems : props.totalItems} {itemLabel}
       </span>
       <div className="order-3 col-span-2 flex items-center justify-center gap-2 sm:order-none sm:col-span-1">
         <Button
@@ -104,13 +120,15 @@ function ManagementPagination(props: ManagementPaginationProps) {
           size="icon"
           className="size-9 shrink-0 rounded-lg"
           aria-label="上一页"
-          disabled={!hasItems || page <= 1 || props.disabled}
+          disabled={!canGoPrevious || props.disabled}
           onClick={() => props.onPageChange(page - 1)}
         >
           <ChevronLeft className="size-4" />
         </Button>
         <span className="min-w-24 shrink-0 text-center tabular-nums">
-          第 {hasItems ? page : 0} / {hasItems ? totalPages : 0} 页
+          {cursorMode
+            ? `第 ${hasItems || page > 1 ? page : 0} 页`
+            : `第 ${hasItems ? page : 0} / ${hasItems ? totalPages : 0} 页`}
         </span>
         <Button
           type="button"
@@ -118,7 +136,7 @@ function ManagementPagination(props: ManagementPaginationProps) {
           size="icon"
           className="size-9 shrink-0 rounded-lg"
           aria-label="下一页"
-          disabled={!hasItems || page >= totalPages || props.disabled}
+          disabled={!canGoNext || props.disabled}
           onClick={() => props.onPageChange(page + 1)}
         >
           <ChevronRight className="size-4" />

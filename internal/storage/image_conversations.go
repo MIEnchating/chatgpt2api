@@ -662,22 +662,12 @@ func (b *DatabaseBackend) insertImageConversationRecordTx(
 	tx *sql.Tx,
 	ownerKey, conversationKey string,
 	record ImageConversationRecord,
-	ignoreConflict bool,
-) (bool, error) {
-	prefix := "INSERT INTO"
-	if b.driver == "mysql" && ignoreConflict {
-		prefix = "INSERT IGNORE INTO"
-	}
-	statement := prefix + ` image_conversations (
+) error {
+	statement := `INSERT INTO image_conversations (
 		owner_key, conversation_key, conversation_id, revision, storage_version,
 		accepted_hash, created_at_ms, updated_at_ms, active, deleted_at_ms, summary, data
 	) VALUES (` + b.imageConversationPlaceholders(12) + `)`
-	if ignoreConflict && b.driver == "postgres" {
-		statement += " ON CONFLICT (owner_key, conversation_key) DO NOTHING"
-	} else if ignoreConflict && b.driver == "sqlite" {
-		statement += " ON CONFLICT(owner_key, conversation_key) DO NOTHING"
-	}
-	result, err := tx.ExecContext(
+	_, err := tx.ExecContext(
 		ctx,
 		statement,
 		ownerKey,
@@ -693,14 +683,7 @@ func (b *DatabaseBackend) insertImageConversationRecordTx(
 		imageConversationDatabaseData(record.Summary),
 		imageConversationDatabaseData(record.Data),
 	)
-	if err != nil {
-		return false, err
-	}
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return true, nil
-	}
-	return rows > 0, nil
+	return err
 }
 
 func (b *DatabaseBackend) updateImageConversationRecordCASTx(
@@ -882,7 +865,7 @@ func (b *DatabaseBackend) BatchSaveCAS(
 			}
 		} else {
 			record.StorageVersion = 1
-			if _, insertErr := b.insertImageConversationRecordTx(ctx, tx, ownerKey, request.conversationKey, record, false); insertErr != nil {
+			if insertErr := b.insertImageConversationRecordTx(ctx, tx, ownerKey, request.conversationKey, record); insertErr != nil {
 				return result, insertErr
 			}
 		}
@@ -1209,7 +1192,7 @@ func (b *DatabaseBackend) Delete(ctx context.Context, ownerID, conversationID st
 			AcceptedHash:    imageConversationDataHash(nil),
 			DeletedAtMillis: deletedAtMillis,
 		}
-		if _, err := b.insertImageConversationRecordTx(ctx, tx, ownerKey, conversationKey, tombstone, false); err != nil {
+		if err := b.insertImageConversationRecordTx(ctx, tx, ownerKey, conversationKey, tombstone); err != nil {
 			return false, err
 		}
 	}

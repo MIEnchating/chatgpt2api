@@ -79,22 +79,8 @@ func TestMaxImageReferenceImagesLeavesGenericLimitsToProviderAdapters(t *testing
 }
 
 func TestMaxImageOutputCountUsesReferenceWorkbenchAPILimit(t *testing.T) {
-	tests := []struct {
-		model string
-		want  int
-	}{
-		{model: "gpt-image-2", want: 15},
-		{model: "gpt-image-1.5", want: 15},
-		{model: "chatgpt-image-latest", want: 15},
-		{model: "gemini-3.1-flash-image", want: 15},
-		{model: "grok-imagine-image-2.0", want: 15},
-		{model: "codex-gpt-image-2", want: 15},
-		{model: "custom-image-channel", want: 15},
-	}
-	for _, test := range tests {
-		if got := MaxImageOutputCount(test.model); got != test.want {
-			t.Errorf("MaxImageOutputCount(%q) = %d, want %d", test.model, got, test.want)
-		}
+	if got := MaxImageOutputCount(); got != 15 {
+		t.Errorf("MaxImageOutputCount() = %d, want 15", got)
 	}
 }
 

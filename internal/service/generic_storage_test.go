@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -71,6 +72,27 @@ func newGenericStorageTestService(t *testing.T, setting model.StorageSetting) *G
 		t.Fatal(err)
 	}
 	return service
+}
+
+func TestRemoveEmptyLocalStorageDirectoriesStopsAtConfiguredRoot(t *testing.T) {
+	parent := t.TempDir()
+	root := filepath.Join(parent, "storage")
+	nested := filepath.Join(root, "owner", "images")
+	if err := os.MkdirAll(nested, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	removeEmptyLocalStorageDirectories(nested, root)
+
+	if _, err := os.Stat(root); err != nil {
+		t.Fatalf("configured root was removed: %v", err)
+	}
+	if _, err := os.Stat(nested); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("empty nested directory still exists: %v", err)
+	}
+	if _, err := os.Stat(parent); err != nil {
+		t.Fatalf("parent directory was removed: %v", err)
+	}
 }
 
 func TestGenericStorageServicePersistsUserProvidersAndDirectObjects(t *testing.T) {

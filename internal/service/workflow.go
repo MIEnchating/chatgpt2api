@@ -11,14 +11,20 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"chatgpt2api/internal/storage"
 	"chatgpt2api/internal/util"
 )
 
 const (
-	workflowDocumentName = "creative_workflows.json"
-	workflowSaveAttempts = 3
+	workflowDocumentName       = "creative_workflows.json"
+	workflowSaveAttempts       = 3
+	maxWorkflowsPerOwner       = 200
+	maxWorkflowVariables       = 100
+	maxWorkflowVariableOptions = 200
+	maxWorkflowNameRunes       = 200
+	maxWorkflowPayloadBytes    = 512 << 10
 )
 
 var invalidWorkflowTemplateVariableKeyCharacterRE = regexp.MustCompile(`[^A-Za-z0-9_.-]`)
@@ -136,6 +142,9 @@ func (s *WorkflowService) Save(ownerID string, input CreativeWorkflow) (Creative
 			if !creating && input.Revision != 0 {
 				return CreativeWorkflow{}, workflowConcurrentMutationError(input.ID)
 			}
+			if workflowOwnerCount(items, ownerID) >= maxWorkflowsPerOwner {
+				return CreativeWorkflow{}, fmt.Errorf("每个用户最多保存 %d 个工作流", maxWorkflowsPerOwner)
+			}
 			candidate.OwnerID = ownerID
 			candidate.CreatedAt = now
 			candidate.UpdatedAt = now
@@ -156,6 +165,9 @@ func (s *WorkflowService) Save(ownerID string, input CreativeWorkflow) (Creative
 		}
 		candidate.Editable = true
 		if err := normalizeWorkflow(&candidate); err != nil {
+			return CreativeWorkflow{}, err
+		}
+		if err := validateWorkflowSaveLimits(candidate); err != nil {
 			return CreativeWorkflow{}, err
 		}
 		stored := candidate
@@ -276,6 +288,60 @@ func workflowByID(items []CreativeWorkflow, id string) (int, *CreativeWorkflow) 
 		}
 	}
 	return -1, nil
+}
+
+func workflowOwnerCount(items []CreativeWorkflow, ownerID string) int {
+	count := 0
+	for i := range items {
+		if items[i].OwnerID == ownerID {
+			count++
+		}
+	}
+	return count
+}
+
+func validateWorkflowSaveLimits(item CreativeWorkflow) error {
+	if utf8.RuneCountInString(item.Name) > maxWorkflowNameRunes {
+		return fmt.Errorf("工作流名称最多支持 %d 个字符", maxWorkflowNameRunes)
+	}
+	if len(item.Variables) > maxWorkflowVariables {
+		return fmt.Errorf("每个工作流最多支持 %d 个变量", maxWorkflowVariables)
+	}
+	for i := range item.Variables {
+		if len(item.Variables[i].Options) > maxWorkflowVariableOptions {
+			return fmt.Errorf("第 %d 个工作流变量最多支持 %d 个选项", i+1, maxWorkflowVariableOptions)
+		}
+	}
+	if workflowTextBytes(item) > maxWorkflowPayloadBytes {
+		return fmt.Errorf("单个工作流配置不能超过 %d KiB", maxWorkflowPayloadBytes>>10)
+	}
+	data, err := json.Marshal(item)
+	if err != nil {
+		return fmt.Errorf("encode workflow: %w", err)
+	}
+	if len(data) > maxWorkflowPayloadBytes {
+		return fmt.Errorf("单个工作流配置不能超过 %d KiB", maxWorkflowPayloadBytes>>10)
+	}
+	return nil
+}
+
+func workflowTextBytes(item CreativeWorkflow) int {
+	total := len(item.ID) + len(item.OwnerID) + len(item.Scope) + len(item.Mode) + len(item.Name) + len(item.Category) + len(item.Description)
+	total += len(item.CreatedAt) + len(item.UpdatedAt) + len(item.LastRunAt)
+	total += len(item.Config.Model) + len(item.Config.ImageModel) + len(item.Config.Quality) + len(item.Config.Size)
+	total += len(item.Config.Count) + len(item.Config.APIMode) + len(item.Config.Timeout) + len(item.Config.SystemPrompt)
+	total += len(item.Config.PromptTemplate) + len(item.Config.NegativePrompt)
+	total += len(item.SeriesConfig.TargetCount) + len(item.SeriesConfig.PromptModel) + len(item.SeriesConfig.PromptChannelID)
+	total += len(item.SeriesConfig.PromptInstruction) + len(item.SeriesConfig.Concurrency)
+	for i := range item.Variables {
+		variable := item.Variables[i]
+		total += len(variable.ID) + len(variable.Key) + len(variable.Label) + len(variable.Type)
+		total += len(variable.DefaultValue) + len(variable.Placeholder)
+		for _, option := range variable.Options {
+			total += len(option)
+		}
+	}
+	return total
 }
 
 func copyWorkflow(item *CreativeWorkflow) *CreativeWorkflow {

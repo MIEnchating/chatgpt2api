@@ -4080,18 +4080,18 @@ func TestNewAppStartsLogRetentionCleaner(t *testing.T) {
 	defer app.Close()
 
 	waitForHTTPTestCondition(t, func() bool {
-		items, err := app.logs.Search(service.LogQuery{Limit: 10})
-		return err == nil && len(items) == 1 && items[0]["summary"] == "新日志"
+		page, err := app.logs.SearchPage(service.LogQuery{Limit: 10})
+		return err == nil && len(page.Items) == 1 && page.Items[0]["summary"] == "新日志"
 	})
 }
 
 func mustSearchAppLogs(t *testing.T, app *App, query service.LogQuery) []map[string]any {
 	t.Helper()
-	items, err := app.logs.Search(query)
+	page, err := app.logs.SearchPage(query)
 	if err != nil {
-		t.Fatalf("Search() error = %v", err)
+		t.Fatalf("SearchPage() error = %v", err)
 	}
-	return items
+	return page.Items
 }
 
 func logPayloadSummaries(items []map[string]any) []string {

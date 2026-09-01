@@ -2,6 +2,16 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperti
 import { createPortal } from "react-dom";
 import { FileText, Image as ImageIcon, Music2, Video } from "lucide-react";
 
+import {
+  contentEditableTextBeforeCaret,
+  deleteAdjacentContentEditableReference,
+  getContentEditableMentionKeyAction,
+  insertPlainTextAtContentEditableSelection,
+  moveContentEditableMentionIndex,
+  placeContentEditableCaretAtEnd,
+  removeActiveContentEditableMention,
+  serializeContentEditable,
+} from "@/app/canvas/canvas-contenteditable";
 import type { CanvasResourceReference } from "@/app/canvas/canvas-resources";
 import { AuthenticatedImage } from "@/components/authenticated-image";
 import { ImageLightbox } from "@/components/image-lightbox";
@@ -94,7 +104,7 @@ export function CanvasAgentPromptChipInput({ value, references, onChange, onRefe
   }
 
   function syncMention() {
-    const text = textBeforeCaret();
+    const text = contentEditableTextBeforeCaret();
     const match = /@([^\s@]*)$/.exec(text);
     if (!match || !activeReferences.length) {
       closeMention();
@@ -115,7 +125,7 @@ export function CanvasAgentPromptChipInput({ value, references, onChange, onRefe
   function insertReference(reference: CanvasResourceReference) {
     const editor = editorRef.current;
     if (!editor) return;
-    removeActiveMention();
+    removeActiveContentEditableMention();
     const leadingSpace = document.createTextNode(" ");
     const chip = createReferenceChip(reference, setImagePreview);
     const trailingSpace = document.createTextNode(" ");
@@ -131,7 +141,7 @@ export function CanvasAgentPromptChipInput({ value, references, onChange, onRefe
       selection?.addRange(range);
     } else {
       editor.append(leadingSpace, chip, trailingSpace);
-      placeCaretAtEnd(editor);
+      placeContentEditableCaretAtEnd(editor);
     }
     closeMention();
     emitChange(serializePromptEditor(editor));
@@ -167,17 +177,7 @@ export function CanvasAgentPromptChipInput({ value, references, onChange, onRefe
           const text = event.clipboardData.getData("text/plain");
           if (!text) return;
           event.preventDefault();
-          const selection = window.getSelection();
-          const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
-          if (!range) return;
-          range.deleteContents();
-          const textNode = document.createTextNode(text);
-          range.insertNode(textNode);
-          range.setStartAfter(textNode);
-          range.collapse(true);
-          selection?.removeAllRanges();
-          selection?.addRange(range);
-          syncFromEditor();
+          if (insertPlainTextAtContentEditableSelection(text)) syncFromEditor();
         }}
         onCompositionStart={() => {
           composingRef.current = true;
@@ -192,29 +192,15 @@ export function CanvasAgentPromptChipInput({ value, references, onChange, onRefe
           const nativeEvent = event.nativeEvent;
           const isComposing = composingRef.current || nativeEvent.isComposing || nativeEvent.keyCode === 229;
           if (isComposing) return;
-          if (mention && candidates.length) {
-            if (event.key === "ArrowDown") {
-              event.preventDefault();
-              setActiveIndex((index) => (index + 1) % candidates.length);
-              return;
-            }
-            if (event.key === "ArrowUp") {
-              event.preventDefault();
-              setActiveIndex((index) => (index - 1 + candidates.length) % candidates.length);
-              return;
-            }
-            if (event.key === "Enter") {
-              event.preventDefault();
-              insertReference(candidates[Math.min(activeIndex, candidates.length - 1)]);
-              return;
-            }
-            if (event.key === "Escape") {
-              event.preventDefault();
-              closeMention();
-              return;
-            }
+          const mentionAction = mention ? getContentEditableMentionKeyAction(event.key, candidates.length) : null;
+          if (mentionAction) {
+            event.preventDefault();
+            if (mentionAction.type === "move") setActiveIndex((index) => moveContentEditableMentionIndex(index, candidates.length, mentionAction.offset));
+            else if (mentionAction.type === "select") insertReference(candidates[Math.min(activeIndex, candidates.length - 1)]);
+            else closeMention();
+            return;
           }
-          if ((event.key === "Backspace" || event.key === "Delete") && deleteAdjacentReference(event.key)) {
+          if ((event.key === "Backspace" || event.key === "Delete") && deleteAdjacentContentEditableReference(event.key, "refLabel", { trimAdjacentWhitespace: true })) {
             event.preventDefault();
             requestAnimationFrame(syncFromEditor);
             return;
@@ -343,7 +329,7 @@ function referenceIDsFromEditor(editor: HTMLElement) {
 }
 
 function serializePromptEditor(editor: HTMLElement) {
-  return serializePromptNodes(editor.childNodes).replace(/\uFEFF/g, "");
+  return serializeContentEditable(editor, (element) => element.dataset.refLabel);
 }
 
 function isEmptyEditorPlaceholder(editor: HTMLElement) {
@@ -352,92 +338,6 @@ function isEmptyEditorPlaceholder(editor: HTMLElement) {
   if (!(child instanceof HTMLElement)) return false;
   if (child.tagName === "BR") return true;
   return (child.tagName === "DIV" || child.tagName === "P") && child.childNodes.length <= 1 && (!child.firstChild || child.firstChild instanceof HTMLBRElement);
-}
-
-function serializePromptNodes(nodes: NodeListOf<ChildNode>) {
-  let result = "";
-  nodes.forEach((node) => {
-    if (node.nodeType === Node.TEXT_NODE) {
-      result += node.textContent || "";
-      return;
-    }
-    if (!(node instanceof HTMLElement)) return;
-    const referenceLabel = node.dataset.refLabel;
-    if (referenceLabel) {
-      result += referenceLabel;
-      return;
-    }
-    if (node.tagName === "BR") {
-      result += "\n";
-      return;
-    }
-    const content = serializePromptNodes(node.childNodes);
-    const isBlock = node.tagName === "DIV" || node.tagName === "P";
-    if (isBlock && result && !result.endsWith("\n")) result += "\n";
-    result += content;
-    if (isBlock && !content) result += "\n";
-  });
-  return result;
-}
-
-function removeActiveMention() {
-  const selection = window.getSelection();
-  if (!selection?.rangeCount) return;
-  const range = selection.getRangeAt(0);
-  const text = textBeforeCaret();
-  const match = /@([^\s@]*)$/.exec(text);
-  if (!match) return;
-  range.setStart(range.startContainer, Math.max(0, range.startOffset - (match[1] || "").length - 1));
-  range.deleteContents();
-}
-
-function deleteAdjacentReference(key: string) {
-  const selection = window.getSelection();
-  if (!selection?.rangeCount || !selection.isCollapsed) return false;
-  const range = selection.getRangeAt(0);
-  const target = adjacentReferenceNode(range, key);
-  if (!target) return false;
-  target.parentNode?.normalize();
-  const previousSibling = target.previousSibling;
-  const nextSibling = target.nextSibling;
-  if (previousSibling?.nodeType === Node.TEXT_NODE) previousSibling.textContent = (previousSibling.textContent || "").replace(/[ \u00A0]$/, "");
-  if (nextSibling?.nodeType === Node.TEXT_NODE) nextSibling.textContent = (nextSibling.textContent || "").replace(/^[ \u00A0]/, "");
-  const nextCaretNode = document.createTextNode("");
-  target.replaceWith(nextCaretNode);
-  range.setStart(nextCaretNode, 0);
-  range.collapse(true);
-  selection.removeAllRanges();
-  selection.addRange(range);
-  return true;
-}
-
-function adjacentReferenceNode(range: Range, key: string) {
-  const container = range.startContainer;
-  const offset = range.startOffset;
-  const previous = key === "Backspace";
-  if (container.nodeType === Node.TEXT_NODE) {
-    const text = container.textContent || "";
-    if ((previous && offset > 0) || (!previous && offset < text.length)) return null;
-    return findReferenceSibling(container, previous);
-  }
-  const children = Array.from(container.childNodes);
-  return findReferenceSibling(children[previous ? offset - 1 : offset] || container, previous, true);
-}
-
-function findReferenceSibling(node: Node, previous: boolean, includeSelf = false): HTMLElement | null {
-  let current: Node | null = includeSelf ? node : previous ? node.previousSibling : node.nextSibling;
-  while (current && current.nodeType === Node.TEXT_NODE && !(current.textContent || "").trim()) current = previous ? current.previousSibling : current.nextSibling;
-  return current instanceof HTMLElement && current.dataset.refLabel ? current : null;
-}
-
-function textBeforeCaret() {
-  const selection = window.getSelection();
-  if (!selection?.rangeCount) return "";
-  const range = selection.getRangeAt(0).cloneRange();
-  const editor = closestPromptEditor(range.startContainer);
-  if (!editor) return "";
-  range.setStart(editor, 0);
-  return range.toString();
 }
 
 function getCaretRect(): DOMRect | null {
@@ -454,15 +354,6 @@ function getCaretRect(): DOMRect | null {
 function closestPromptEditor(node: Node) {
   const element = node instanceof Element ? node : node.parentElement;
   return element?.closest("[contenteditable='true']") || null;
-}
-
-function placeCaretAtEnd(element: HTMLElement) {
-  const range = document.createRange();
-  range.selectNodeContents(element);
-  range.collapse(false);
-  const selection = window.getSelection();
-  selection?.removeAllRanges();
-  selection?.addRange(range);
 }
 
 function parsePromptTokens(value: string, labels: string[]): PromptToken[] {

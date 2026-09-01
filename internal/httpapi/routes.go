@@ -1439,8 +1439,8 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 		if apiMode == "images" {
 			normalizeImagePayloadForModel(body)
 		}
-		if !validProtocolImageCount(body["n"], model) {
-			util.WriteError(w, http.StatusBadRequest, protocolImageCountRangeMessage(model))
+		if !validProtocolImageCount(body["n"]) {
+			util.WriteError(w, http.StatusBadRequest, protocolImageCountRangeMessage())
 			return
 		}
 		if _, err := a.relayAPIKeyForIdentitySelection(r.Context(), identity, selectedRelayTokenGroupFromPayload(body), selectedRelayTokenNameFromPayload(body)); err != nil {
@@ -1652,8 +1652,8 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 		if apiMode == "images" {
 			normalizeImagePayloadForModel(body)
 		}
-		if !validProtocolImageCount(body["n"], model) {
-			util.WriteError(w, http.StatusBadRequest, protocolImageCountRangeMessage(model))
+		if !validProtocolImageCount(body["n"]) {
+			util.WriteError(w, http.StatusBadRequest, protocolImageCountRangeMessage())
 			return
 		}
 		if _, err := a.relayAPIKeyForIdentitySelection(r.Context(), identity, selectedRelayTokenGroupFromPayload(body), selectedRelayTokenNameFromPayload(body)); err != nil {

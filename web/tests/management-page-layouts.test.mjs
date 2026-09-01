@@ -48,12 +48,14 @@ test("assets, users, and logs use the same responsive pagination contract", () =
   );
   assert.match(
     managementSource,
-    /disabled=\{!hasItems \|\| page <= 1 \|\| props\.disabled\}/
+    /const canGoPrevious = cursorMode \? page > 1 : hasItems && page > 1;/
   );
   assert.match(
     managementSource,
-    /第 \{hasItems \? page : 0\} \/ \{hasItems \? totalPages : 0\} 页/
+    /const canGoNext = cursorMode \? props\.hasMore : hasItems && page < totalPages;/
   );
+  assert.match(managementSource, /mode: "cursor";[\s\S]*currentItems: number;[\s\S]*hasMore: boolean;/);
+  assert.match(logsSource, /mode="cursor"/);
 });
 
 test("user toolbar leaves totals and empty selection state to pagination and row controls", () => {
@@ -103,7 +105,7 @@ test("management actions share the same row as their filters", () => {
     assert.doesNotMatch(source, /<ManagementPage[\s\S]{0,120}actions=\{/);
   }
   assert.equal(
-    (logsSource.match(/onClick=\{\(\) => void loadLogs\(query\)\}/g) || [])
+    (logsSource.match(/onClick=\{\(\) => void loadFirstLogPage\(query, pageSize\)\}/g) || [])
       .length,
     1
   );
@@ -113,11 +115,11 @@ test("log queries abort stale loads and only the latest request updates state", 
   assert.match(logsSource, /loadLogsAbortRef = useRef<AbortController \| null>/);
   assert.match(logsSource, /loadLogsRequestRef = useRef\(0\)/);
   assert.match(logsSource, /loadLogsAbortRef\.current\?\.abort\(\)/);
-  assert.match(logsSource, /fetchSystemLogs\(nextQuery, \{ signal: controller\.signal \}\)/);
+  assert.match(logsSource, /fetchSystemLogs\(nextQuery, \{[\s\S]{0,180}signal: controller\.signal,[\s\S]{0,180}cursor: options\.cursor,[\s\S]{0,180}pageSize: options\.pageSize/);
   assert.match(logsSource, /requestID !== loadLogsRequestRef\.current/);
   assert.match(logsSource, /requestID === loadLogsRequestRef\.current/);
   assert.match(logsSource, /return \(\) => \{[\s\S]*loadLogsRequestRef\.current \+= 1;[\s\S]*loadLogsAbortRef\.current\?\.abort\(\)/);
-  assert.match(apiSource, /fetchSystemLogs\(filters: SystemLogFilters, options: \{ signal\?: AbortSignal \} = \{\}\)/);
+  assert.match(apiSource, /fetchSystemLogs\([\s\S]{0,100}filters: SystemLogFilters,[\s\S]{0,120}cursor\?: string; pageSize\?: number/);
   assert.match(apiSource, /`\/api\/logs[\s\S]*\{ signal: options\.signal \}/);
 });
 

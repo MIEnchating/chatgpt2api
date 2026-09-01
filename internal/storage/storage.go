@@ -50,12 +50,19 @@ type LogBackend interface {
 }
 
 type LogCursor struct {
-	Day string
-	ID  int64
+	SnapshotID int64
+	Day        string
+	ID         int64
+}
+
+type LogRecord struct {
+	Item   map[string]any
+	Cursor LogCursor
 }
 
 type LogPage struct {
-	Items      []map[string]any
+	SnapshotID int64
+	Records    []LogRecord
 	NextCursor *LogCursor
 }
 
@@ -456,7 +463,7 @@ func (b *DatabaseBackend) applyRows(tx *sql.Tx, table, keyColumn string, known, 
 			return err
 		}
 		if affected != 1 {
-			return b.concurrentRowUpdateError(tx, table, keyColumn, "update", key)
+			return b.concurrentRowUpdateError(tx, table, "update", key)
 		}
 	}
 	for key, previous := range known {
@@ -476,7 +483,7 @@ func (b *DatabaseBackend) applyRows(tx *sql.Tx, table, keyColumn string, known, 
 			return err
 		}
 		if affected != 1 {
-			return b.concurrentRowUpdateError(tx, table, keyColumn, "delete", key)
+			return b.concurrentRowUpdateError(tx, table, "delete", key)
 		}
 	}
 	return nil
@@ -540,7 +547,7 @@ func (b *DatabaseBackend) classifyRowInsertError(tx *sql.Tx, table, keyColumn, k
 	return fmt.Errorf("%w: insert %s row %q", ErrConcurrentRowUpdate, table, key)
 }
 
-func (b *DatabaseBackend) concurrentRowUpdateError(tx *sql.Tx, table, keyColumn, operation, key string) error {
+func (b *DatabaseBackend) concurrentRowUpdateError(tx *sql.Tx, table, operation, key string) error {
 	_ = tx.Rollback()
 	return fmt.Errorf("%w: %s %s row %q", ErrConcurrentRowUpdate, operation, table, key)
 }
@@ -680,7 +687,7 @@ func (b *DatabaseBackend) DeleteJSONDocument(name string) error {
 		return err
 	}
 	if affected != 1 {
-		return b.concurrentRowUpdateError(tx, "json_documents", "name", "delete", rel)
+		return b.concurrentRowUpdateError(tx, "json_documents", "delete", rel)
 	}
 	if err := tx.Commit(); err != nil {
 		return err
@@ -740,7 +747,7 @@ func (b *DatabaseBackend) applyJSONDocument(tx *sql.Tx, name string, known jsonD
 		return err
 	}
 	if affected != 1 {
-		return b.concurrentRowUpdateError(tx, "json_documents", "name", "update", name)
+		return b.concurrentRowUpdateError(tx, "json_documents", "update", name)
 	}
 	return nil
 }
@@ -864,9 +871,26 @@ func (b *DatabaseBackend) QueryLogPage(startDate, endDate string, cursor *LogCur
 	if limit > 1000 {
 		limit = 1000
 	}
+	snapshotID := int64(0)
+	if cursor == nil {
+		if err := b.db.QueryRow("SELECT COALESCE(MAX(id), 0) FROM logs").Scan(&snapshotID); err != nil {
+			return LogPage{}, fmt.Errorf("query log snapshot: %w", err)
+		}
+		if snapshotID == 0 {
+			return LogPage{Records: []LogRecord{}}, nil
+		}
+	} else {
+		snapshotID = cursor.SnapshotID
+		hasPosition := cursor.ID != 0 || strings.TrimSpace(cursor.Day) != ""
+		if snapshotID <= 0 || (hasPosition && (cursor.ID <= 0 || cursor.ID > snapshotID || strings.TrimSpace(cursor.Day) == "")) {
+			return LogPage{}, fmt.Errorf("invalid log cursor")
+		}
+	}
 	query := "SELECT id, day, data FROM logs"
-	filters := make([]string, 0, 3)
-	args := make([]any, 0, 5)
+	filters := make([]string, 0, 4)
+	args := make([]any, 0, 7)
+	args = append(args, snapshotID)
+	filters = append(filters, "id <= "+b.placeholder(len(args)))
 	if startDate = strings.TrimSpace(startDate); startDate != "" {
 		args = append(args, startDate)
 		filters = append(filters, "day >= "+b.placeholder(len(args)))
@@ -875,7 +899,7 @@ func (b *DatabaseBackend) QueryLogPage(startDate, endDate string, cursor *LogCur
 		args = append(args, endDate)
 		filters = append(filters, "day <= "+b.placeholder(len(args)))
 	}
-	if cursor != nil && strings.TrimSpace(cursor.Day) != "" && cursor.ID > 0 {
+	if cursor != nil && cursor.ID > 0 {
 		args = append(args, strings.TrimSpace(cursor.Day), strings.TrimSpace(cursor.Day), cursor.ID)
 		last := len(args)
 		filters = append(filters, "(day < "+b.placeholder(last-2)+" OR (day = "+b.placeholder(last-1)+" AND id < "+b.placeholder(last)+"))")
@@ -890,7 +914,7 @@ func (b *DatabaseBackend) QueryLogPage(startDate, endDate string, cursor *LogCur
 		return LogPage{}, err
 	}
 	defer rows.Close()
-	page := LogPage{Items: make([]map[string]any, 0, limit)}
+	page := LogPage{SnapshotID: snapshotID, Records: make([]LogRecord, 0, limit)}
 	var pageCursor *LogCursor
 	rowNumber := 0
 	for rows.Next() {
@@ -912,8 +936,9 @@ func (b *DatabaseBackend) QueryLogPage(startDate, endDate string, cursor *LogCur
 			page.NextCursor = pageCursor
 			continue
 		}
-		pageCursor = &LogCursor{Day: day, ID: id}
-		page.Items = append(page.Items, item)
+		recordCursor := LogCursor{SnapshotID: snapshotID, Day: day, ID: id}
+		pageCursor = &recordCursor
+		page.Records = append(page.Records, LogRecord{Item: item, Cursor: recordCursor})
 	}
 	if err := rows.Err(); err != nil {
 		return LogPage{}, err

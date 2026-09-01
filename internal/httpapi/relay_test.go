@@ -1289,19 +1289,19 @@ func TestGoogleGeminiImageItemsReportsBlockedResponse(t *testing.T) {
 	}
 }
 
-func TestValidProtocolImageCountUsesModelLimit(t *testing.T) {
+func TestValidProtocolImageCountUsesApplicationLimit(t *testing.T) {
 	for _, value := range []any{nil, 1, float64(15), "2"} {
-		if !validProtocolImageCount(value, "gpt-image-2") {
-			t.Errorf("validProtocolImageCount(%#v, gpt-image-2) = false, want true", value)
+		if !validProtocolImageCount(value) {
+			t.Errorf("validProtocolImageCount(%#v) = false, want true", value)
 		}
 	}
 	for _, value := range []any{0, 16, 1.5, "invalid"} {
-		if validProtocolImageCount(value, "gpt-image-2") {
-			t.Errorf("validProtocolImageCount(%#v, gpt-image-2) = true, want false", value)
+		if validProtocolImageCount(value) {
+			t.Errorf("validProtocolImageCount(%#v) = true, want false", value)
 		}
 	}
-	if !validProtocolImageCount(15, "gemini-3.1-flash-image") || validProtocolImageCount(16, "gemini-3.1-flash-image") {
-		t.Fatal("Gemini image request did not enforce the reference workbench API limit")
+	if !validProtocolImageCount(15) || validProtocolImageCount(16) {
+		t.Fatal("image request did not enforce the reference workbench API limit")
 	}
 }
 

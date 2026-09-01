@@ -2,6 +2,16 @@ import { FileText, Image as ImageIcon, Music2, Video, X } from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 
+import {
+  contentEditableTextBeforeCaret,
+  deleteAdjacentContentEditableReference,
+  getContentEditableMentionKeyAction,
+  insertPlainTextAtContentEditableSelection,
+  moveContentEditableMentionIndex,
+  placeContentEditableCaretAtEnd,
+  removeActiveContentEditableMention,
+  serializeContentEditable,
+} from "@/app/canvas/canvas-contenteditable";
 import { CANVAS_CONFIG_REFERENCE_PATTERN, canvasConfigInputLabel, canvasConfigUsesConnectedText, type CanvasConfigInput } from "@/app/canvas/canvas-config-inputs";
 import { ImageLightbox } from "@/components/image-lightbox";
 import { Button } from "@/components/ui/button";
@@ -75,7 +85,7 @@ export function CanvasConfigComposer({ node, inputs, children, promptTools, onCo
   }
 
   function syncMention() {
-    const match = /@([^\s@]*)$/.exec(textBeforeCaret());
+    const match = /@([^\s@]*)$/.exec(contentEditableTextBeforeCaret());
     if (!match || !inputs.length) return closeMention();
     setMention({ query: match[1] || "" });
     setActiveIndex(0);
@@ -91,8 +101,8 @@ export function CanvasConfigComposer({ node, inputs, children, promptTools, onCo
   function insertReference(input: CanvasConfigInput) {
     const editor = editorRef.current;
     if (!editor) return;
-    const textBeforeMention = textBeforeCaret();
-    removeActiveMention();
+    const textBeforeMention = contentEditableTextBeforeCaret();
+    removeActiveContentEditableMention();
     const chip = createReferenceChip(input, inputs, setPreviewInput, () => removeReferenceChip(chip, editor, onComposerChange));
     const beforeMention = textBeforeMention.replace(/@([^\s@]*)$/, "");
     const needsLeadingSpace = Boolean(beforeMention && !/\s$/.test(beforeMention));
@@ -110,7 +120,7 @@ export function CanvasConfigComposer({ node, inputs, children, promptTools, onCo
     } else {
       if (needsLeadingSpace) editor.append(document.createTextNode(" "));
       editor.append(chip, space);
-      placeCaretAtEnd(editor);
+      placeContentEditableCaretAtEnd(editor);
     }
     closeMention();
     onComposerChange(serializeEditor(editor));
@@ -147,45 +157,21 @@ export function CanvasConfigComposer({ node, inputs, children, promptTools, onCo
               const text = event.clipboardData.getData("text/plain");
               if (!text) return;
               event.preventDefault();
-              const selection = window.getSelection();
-              const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
-              if (!range) return;
-              range.deleteContents();
-              const textNode = document.createTextNode(text);
-              range.insertNode(textNode);
-              range.setStartAfter(textNode);
-              range.collapse(true);
-              selection?.removeAllRanges();
-              selection?.addRange(range);
-              syncFromEditor();
+              if (insertPlainTextAtContentEditableSelection(text)) syncFromEditor();
             }}
             onCompositionStart={() => { composingRef.current = true; }}
             onCompositionEnd={() => { composingRef.current = false; syncFromEditor(); }}
             onKeyDown={(event: KeyboardEvent<HTMLDivElement>) => {
               event.stopPropagation();
-              if (mention && candidates.length) {
-                if (event.key === "ArrowDown") {
-                  event.preventDefault();
-                  setActiveIndex((index) => (index + 1) % candidates.length);
-                  return;
-                }
-                if (event.key === "ArrowUp") {
-                  event.preventDefault();
-                  setActiveIndex((index) => (index - 1 + candidates.length) % candidates.length);
-                  return;
-                }
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  insertReference(candidates[Math.min(activeIndex, candidates.length - 1)]);
-                  return;
-                }
-                if (event.key === "Escape") {
-                  event.preventDefault();
-                  closeMention();
-                  return;
-                }
+              const mentionAction = mention ? getContentEditableMentionKeyAction(event.key, candidates.length) : null;
+              if (mentionAction) {
+                event.preventDefault();
+                if (mentionAction.type === "move") setActiveIndex((index) => moveContentEditableMentionIndex(index, candidates.length, mentionAction.offset));
+                else if (mentionAction.type === "select") insertReference(candidates[Math.min(activeIndex, candidates.length - 1)]);
+                else closeMention();
+                return;
               }
-              if ((event.key === "Backspace" || event.key === "Delete") && deleteAdjacentReference(event.key)) {
+              if ((event.key === "Backspace" || event.key === "Delete") && deleteAdjacentContentEditableReference(event.key, "referenceNodeId")) {
                 event.preventDefault();
                 requestAnimationFrame(() => syncFromEditor());
                 return;
@@ -357,7 +343,7 @@ function removeReferenceChip(chip: HTMLElement, editor: HTMLElement, onChange: (
   if (next?.nodeType === Node.TEXT_NODE && next.textContent?.startsWith(" ")) next.textContent = next.textContent.slice(1);
   chip.remove();
   onChange(serializeEditor(editor), true);
-  placeCaretAtEnd(editor);
+  placeContentEditableCaretAtEnd(editor);
 }
 
 function composerCaretRect(editor: HTMLElement) {
@@ -388,97 +374,11 @@ function clamp(value: number, minimum: number, maximum: number) {
 }
 
 function serializeEditor(editor: HTMLElement) {
-  return serializeNodes(editor.childNodes).replace(/\uFEFF/g, "");
-}
-
-function serializeNodes(nodes: NodeListOf<ChildNode>) {
-  let result = "";
-  nodes.forEach((node) => {
-    if (node.nodeType === Node.TEXT_NODE) {
-      result += node.textContent || "";
-      return;
-    }
-    if (!(node instanceof HTMLElement)) return;
-    if (node.tagName === "BR") {
-      result += "\n";
-      return;
-    }
-    const nodeID = node.dataset.referenceNodeId;
-    if (nodeID) {
-      result += `@[node:${nodeID}]`;
-      return;
-    }
-    const content = serializeNodes(node.childNodes);
-    const isBlock = node.tagName === "DIV" || node.tagName === "P";
-    if (isBlock && result && !result.endsWith("\n")) result += "\n";
-    result += content;
-    if (isBlock && !content) result += "\n";
+  return serializeContentEditable(editor, (element) => {
+    if (element.tagName === "BR") return undefined;
+    const nodeID = element.dataset.referenceNodeId;
+    return nodeID ? `@[node:${nodeID}]` : undefined;
   });
-  return result;
-}
-
-function removeActiveMention() {
-  const selection = window.getSelection();
-  if (!selection?.rangeCount) return;
-  const range = selection.getRangeAt(0);
-  const match = /@([^\s@]*)$/.exec(textBeforeCaret());
-  if (!match) return;
-  range.setStart(range.startContainer, Math.max(0, range.startOffset - (match[1] || "").length - 1));
-  range.deleteContents();
-}
-
-function deleteAdjacentReference(key: string) {
-  const selection = window.getSelection();
-  if (!selection?.rangeCount || !selection.isCollapsed) return false;
-  const range = selection.getRangeAt(0);
-  const target = adjacentReferenceNode(range, key);
-  if (!target) return false;
-  const caret = document.createTextNode("");
-  target.replaceWith(caret);
-  range.setStart(caret, 0);
-  range.collapse(true);
-  selection.removeAllRanges();
-  selection.addRange(range);
-  return true;
-}
-
-function adjacentReferenceNode(range: Range, key: string) {
-  const container = range.startContainer;
-  const offset = range.startOffset;
-  const previous = key === "Backspace";
-  if (container.nodeType === Node.TEXT_NODE) {
-    const text = container.textContent || "";
-    if ((previous && offset > 0) || (!previous && offset < text.length)) return null;
-    return findReferenceSibling(container, previous);
-  }
-  const children = Array.from(container.childNodes);
-  return findReferenceSibling(children[previous ? offset - 1 : offset] || container, previous, true);
-}
-
-function findReferenceSibling(node: Node, previous: boolean, includeSelf = false): HTMLElement | null {
-  let current: Node | null = includeSelf ? node : previous ? node.previousSibling : node.nextSibling;
-  while (current?.nodeType === Node.TEXT_NODE && !(current.textContent || "").trim()) current = previous ? current.previousSibling : current.nextSibling;
-  return current instanceof HTMLElement && current.dataset.referenceNodeId ? current : null;
-}
-
-function textBeforeCaret() {
-  const selection = window.getSelection();
-  if (!selection?.rangeCount) return "";
-  const range = selection.getRangeAt(0).cloneRange();
-  const element = range.startContainer instanceof Element ? range.startContainer : range.startContainer.parentElement;
-  const editor = element?.closest("[contenteditable='true']");
-  if (!editor) return "";
-  range.setStart(editor, 0);
-  return range.toString();
-}
-
-function placeCaretAtEnd(element: HTMLElement) {
-  const range = document.createRange();
-  range.selectNodeContents(element);
-  range.collapse(false);
-  const selection = window.getSelection();
-  selection?.removeAllRanges();
-  selection?.addRange(range);
 }
 
 function parseComposerTokens(value: string) {
