@@ -93,6 +93,17 @@ func NewBackendFromEnv(dataDir string) (Backend, error) {
 			}
 			dsn = "sqlite:///" + filepath.ToSlash(filepath.Join(dataDir, "chatgpt2api.db"))
 		}
+		driver, _, err := ParseDatabaseURL(dsn)
+		if err != nil {
+			return nil, err
+		}
+		expectedDriver := backendType
+		if expectedDriver == "postgresql" {
+			expectedDriver = "postgres"
+		}
+		if expectedDriver != "database" && driver != expectedDriver {
+			return nil, fmt.Errorf("STORAGE_BACKEND %q does not match STORAGE_DATABASE_URL driver %q", backendType, driver)
+		}
 		return NewDatabaseBackend(dsn)
 	default:
 		return nil, fmt.Errorf("unknown storage backend: %s", backendType)
@@ -754,10 +765,11 @@ func (b *DatabaseBackend) applyJSONDocument(tx *sql.Tx, name string, known jsonD
 }
 
 func (b *DatabaseBackend) ListJSONDocuments(prefix string) (map[string]any, error) {
-	prefix = filepath.ToSlash(strings.TrimSpace(prefix))
-	if prefix == "" || strings.HasPrefix(prefix, "/") || strings.Contains(prefix, "..") {
-		return nil, errors.New("invalid document prefix")
+	cleanedPrefix, err := cleanDocumentPrefix(prefix)
+	if err != nil {
+		return nil, err
 	}
+	prefix = cleanedPrefix
 	upper := documentPrefixUpperBound(prefix)
 	rows, err := b.db.Query("SELECT name, data FROM json_documents WHERE name >= "+b.placeholder(1)+" AND name < "+b.placeholder(2)+" ORDER BY name", prefix, upper)
 	if err != nil {
@@ -1002,6 +1014,16 @@ func cleanDocumentName(name string) (string, error) {
 	return rel, nil
 }
 
+func cleanDocumentPrefix(prefix string) (string, error) {
+	raw := strings.TrimSpace(filepath.ToSlash(prefix))
+	name := strings.TrimSuffix(raw, "/")
+	cleanedName, err := cleanDocumentName(name)
+	if err != nil || (raw != cleanedName && raw != cleanedName+"/") {
+		return "", errors.New("invalid document prefix")
+	}
+	return raw, nil
+}
+
 func decodeJSONString(text string) (any, error) {
 	return decodeJSONBytes([]byte(text))
 }
@@ -1069,13 +1091,7 @@ func ParseDatabaseURL(databaseURL string) (driver, dsn string, err error) {
 			params.Encode(),
 		), nil
 	default:
-		if strings.Contains(databaseURL, "://") {
-			return "", "", fmt.Errorf("unsupported database URL scheme")
-		}
-		if strings.Contains(lower, "postgres") {
-			return "postgres", databaseURL, nil
-		}
-		return "sqlite", databaseURL, nil
+		return "", "", fmt.Errorf("unsupported database URL scheme")
 	}
 }
 

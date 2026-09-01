@@ -7,11 +7,25 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"testing"
 
 	"chatgpt2api/internal/model"
 	"chatgpt2api/internal/util"
 )
+
+type blockingConfigString struct {
+	value   string
+	reached chan struct{}
+	release chan struct{}
+	once    sync.Once
+}
+
+func (v *blockingConfigString) String() string {
+	v.once.Do(func() { close(v.reached) })
+	<-v.release
+	return v.value
+}
 
 func TestFloatSettingRejectsNonFiniteValues(t *testing.T) {
 	for _, value := range []any{"NaN", "Inf", math.NaN(), math.Inf(-1)} {
@@ -513,6 +527,77 @@ func TestStorePersistsPromptSourcesAsJSON(t *testing.T) {
 	}
 	if reloadedSource["homepage"] != "https://example.test/prompts" {
 		t.Fatalf("reloaded source homepage = %#v", reloadedSource["homepage"])
+	}
+}
+
+func TestStorePromptSourcesDoNotExposeMutableState(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("ROOT_DIR", root)
+	unsetEnv(t, "PROMPT_SOURCES")
+
+	tags := []any{"original"}
+	metadata := map[string]any{"owner": "original"}
+	source := map[string]any{
+		"id":       "custom-source",
+		"label":    "Original",
+		"tags":     tags,
+		"metadata": metadata,
+	}
+	store, err := NewStore()
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	if _, err := store.Update(map[string]any{"prompt_sources": []any{source}}); err != nil {
+		t.Fatalf("Update() error = %v", err)
+	}
+
+	source["label"] = "mutated input"
+	tags[0] = "mutated input"
+	metadata["owner"] = "mutated input"
+	first := store.Get()["prompt_sources"].([]any)[0].(map[string]any)
+	if first["label"] != "Original" || first["tags"].([]any)[0] != "original" || first["metadata"].(map[string]any)["owner"] != "original" {
+		t.Fatalf("prompt_sources changed through Update() input: %#v", first)
+	}
+
+	first["label"] = "mutated output"
+	first["tags"].([]any)[0] = "mutated output"
+	first["metadata"].(map[string]any)["owner"] = "mutated output"
+	second := store.Get()["prompt_sources"].([]any)[0].(map[string]any)
+	if second["label"] != "Original" || second["tags"].([]any)[0] != "original" || second["metadata"].(map[string]any)["owner"] != "original" {
+		t.Fatalf("prompt_sources changed through Get() result: %#v", second)
+	}
+}
+
+func TestStoreGetUsesOneSettingsSnapshot(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("ROOT_DIR", root)
+
+	blockingTitle := &blockingConfigString{
+		value:   "Old title",
+		reached: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	store, err := NewStore()
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	store.mu.Lock()
+	store.data["app_title"] = blockingTitle
+	store.data["project_name"] = "Old project"
+	store.mu.Unlock()
+
+	result := make(chan map[string]any, 1)
+	go func() { result <- store.Get() }()
+	<-blockingTitle.reached
+	store.mu.Lock()
+	store.data["app_title"] = "New title"
+	store.data["project_name"] = "New project"
+	store.mu.Unlock()
+	close(blockingTitle.release)
+
+	settings := <-result
+	if settings["app_title"] != "Old title" || settings["project_name"] != "Old project" {
+		t.Fatalf("Get() mixed settings versions: app_title=%q project_name=%q", settings["app_title"], settings["project_name"])
 	}
 }
 
@@ -1228,6 +1313,17 @@ func TestWriteEnvUpdatesReplacesDuplicateAssignments(t *testing.T) {
 	}
 	if strings.Contains(string(contents), "DUPLICATE=old") || strings.Count(string(contents), "DUPLICATE=new") != 2 {
 		t.Fatalf("updated environment file = %q", contents)
+	}
+}
+
+func TestWriteEnvUpdatesReturnsExistingFileReadError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".env")
+	if err := os.Mkdir(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	err := writeEnvUpdates(path, map[string]string{"KEY": "value"})
+	if err == nil || !strings.Contains(err.Error(), "read environment file") {
+		t.Fatalf("writeEnvUpdates() error = %v, want contextual read error", err)
 	}
 }
 

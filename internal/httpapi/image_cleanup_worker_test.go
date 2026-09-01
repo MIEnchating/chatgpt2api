@@ -17,7 +17,7 @@ func TestImageCleanupWorkerCoalescesTriggersAndCloseWaits(t *testing.T) {
 	releaseFirst := make(chan struct{})
 	releaseSecond := make(chan struct{})
 
-	run := func() {
+	run := func(context.Context) {
 		switch runs.Add(1) {
 		case 1:
 			close(firstStarted)
@@ -28,7 +28,7 @@ func TestImageCleanupWorkerCoalescesTriggersAndCloseWaits(t *testing.T) {
 		}
 	}
 
-	worker.schedule(run)
+	worker.scheduleContext(run)
 	waitForImageCleanupSignal(t, firstStarted, "first cleanup")
 
 	var schedules sync.WaitGroup
@@ -36,7 +36,7 @@ func TestImageCleanupWorkerCoalescesTriggersAndCloseWaits(t *testing.T) {
 		schedules.Add(1)
 		go func() {
 			defer schedules.Done()
-			worker.schedule(run)
+			worker.scheduleContext(run)
 		}()
 	}
 	schedules.Wait()
@@ -64,7 +64,7 @@ func TestImageCleanupWorkerCoalescesTriggersAndCloseWaits(t *testing.T) {
 
 	close(releaseSecond)
 	waitForImageCleanupSignal(t, closeDone, "worker close")
-	worker.schedule(run)
+	worker.scheduleContext(run)
 	if got := runs.Load(); got != 2 {
 		t.Fatalf("cleanup runs after close = %d, want 2", got)
 	}
@@ -80,7 +80,7 @@ func TestImageCleanupWorkerConcurrentScheduleAndClose(t *testing.T) {
 			go func() {
 				defer schedules.Done()
 				<-start
-				worker.schedule(func() {})
+				worker.scheduleContext(func(context.Context) {})
 			}()
 		}
 		close(start)

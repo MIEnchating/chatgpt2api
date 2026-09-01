@@ -95,13 +95,6 @@ type imageCleanupWorker struct {
 	closeWait    time.Duration
 }
 
-func (w *imageCleanupWorker) schedule(run func()) {
-	if run == nil {
-		return
-	}
-	w.scheduleContext(func(context.Context) { run() })
-}
-
 func (w *imageCleanupWorker) scheduleContext(run func(context.Context)) {
 	if w == nil || run == nil {
 		return

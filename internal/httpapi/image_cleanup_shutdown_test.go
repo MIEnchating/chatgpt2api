@@ -106,7 +106,7 @@ func TestAppCloseBoundsUnresponsiveImageCleanup(t *testing.T) {
 		t.Fatal("storage backend closed while cleanup was still active")
 	default:
 	}
-	app.imageCleanup.schedule(func() { postCloseRuns.Add(1) })
+	app.imageCleanup.scheduleContext(func(context.Context) { postCloseRuns.Add(1) })
 	if got := postCloseRuns.Load(); got != 0 {
 		t.Fatalf("cleanup runs scheduled after App.Close = %d, want 0", got)
 	}

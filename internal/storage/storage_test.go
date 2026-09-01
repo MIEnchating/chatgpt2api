@@ -465,6 +465,33 @@ func TestDatabaseBackendListsDocumentPrefixWithIndexRange(t *testing.T) {
 	}
 }
 
+func TestDatabaseBackendListsDocumentPrefixWithDoubleDotInSegment(t *testing.T) {
+	backend := openSQLiteStorageTestBackend(t, filepath.Join(t.TempDir(), "chatgpt2api.db"))
+	name := "my..assets/a.json"
+	if err := backend.SaveJSONDocument(name, map[string]any{"id": "a"}); err != nil {
+		t.Fatalf("SaveJSONDocument() error = %v", err)
+	}
+
+	documents, err := backend.ListJSONDocuments("my..assets/")
+	if err != nil {
+		t.Fatalf("ListJSONDocuments() error = %v", err)
+	}
+	if len(documents) != 1 || documents[name] == nil {
+		t.Fatalf("ListJSONDocuments() = %#v, want %q", documents, name)
+	}
+}
+
+func TestDatabaseBackendListJSONDocumentsRejectsNonCanonicalPrefix(t *testing.T) {
+	backend := openSQLiteStorageTestBackend(t, filepath.Join(t.TempDir(), "chatgpt2api.db"))
+	for _, prefix := range []string{"../", "a/../", "a//", "/absolute/", "C:/windows/", "a/\x00/"} {
+		t.Run(prefix, func(t *testing.T) {
+			if _, err := backend.ListJSONDocuments(prefix); err == nil {
+				t.Fatalf("ListJSONDocuments(%q) succeeded, want error", prefix)
+			}
+		})
+	}
+}
+
 func TestDatabaseBackendListJSONDocumentsRejectsCorruptDocument(t *testing.T) {
 	backend := openSQLiteStorageTestBackend(t, filepath.Join(t.TempDir(), "chatgpt2api.db"))
 	name := "my_assets/corrupt.json"
@@ -613,10 +640,47 @@ func TestNewBackendFromEnvRequiresDatabaseURLForRemoteBackend(t *testing.T) {
 	}
 }
 
+func TestNewBackendFromEnvRejectsDatabaseURLDriverMismatch(t *testing.T) {
+	for _, testCase := range []struct {
+		backendType string
+		databaseURL string
+	}{
+		{backendType: "sqlite", databaseURL: "postgresql://app:secret@db.internal/chatgpt2api"},
+		{backendType: "postgres", databaseURL: "sqlite:///chatgpt2api.db"},
+		{backendType: "postgresql", databaseURL: "sqlite:///chatgpt2api.db"},
+		{backendType: "mysql", databaseURL: "sqlite:///chatgpt2api.db"},
+	} {
+		t.Run(testCase.backendType, func(t *testing.T) {
+			t.Setenv("STORAGE_BACKEND", testCase.backendType)
+			t.Setenv("STORAGE_DATABASE_URL", testCase.databaseURL)
+
+			_, err := NewBackendFromEnv(t.TempDir())
+			if err == nil || !strings.Contains(err.Error(), "does not match") {
+				t.Fatalf("NewBackendFromEnv() error = %v, want driver mismatch", err)
+			}
+			if strings.Contains(err.Error(), "secret") {
+				t.Fatalf("NewBackendFromEnv() error leaked database password: %v", err)
+			}
+		})
+	}
+}
+
 func TestParseDatabaseURLRejectsEmptyAndUnsupportedURL(t *testing.T) {
 	for _, databaseURL := range []string{"", "   ", "mongodb://db.internal/chatgpt2api", "https://db.internal/chatgpt2api"} {
 		if _, _, err := ParseDatabaseURL(databaseURL); err == nil {
 			t.Fatalf("ParseDatabaseURL(%q) succeeded, want error", databaseURL)
+		}
+	}
+}
+
+func TestParseDatabaseURLRejectsSchemeLessInput(t *testing.T) {
+	for _, databaseURL := range []string{
+		"chatgpt2api.db",
+		"/data/postgres/cache.db",
+		"host=postgres.internal user=app password=secret dbname=chatgpt2api",
+	} {
+		if _, _, err := ParseDatabaseURL(databaseURL); err == nil {
+			t.Fatalf("ParseDatabaseURL(%q) succeeded, want explicit URL scheme error", databaseURL)
 		}
 	}
 }

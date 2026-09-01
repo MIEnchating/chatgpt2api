@@ -490,6 +490,23 @@ func TestGenericStorageServiceRefreshesCapacitySchedulerAtomically(t *testing.T)
 	}
 }
 
+func TestGenericStorageServiceDoesNotRestartCapacitySchedulerAfterClose(t *testing.T) {
+	service := newGenericStorageTestService(t, model.StorageSetting{
+		CapacityCheck: model.StorageCapacityCheckSetting{Enabled: true, Cron: "0 0 1 1 *"},
+	})
+	if err := service.RefreshCapacityScheduler(context.Background()); err != nil {
+		t.Fatalf("RefreshCapacityScheduler() error = %v", err)
+	}
+
+	service.Close()
+	if err := service.RefreshCapacityScheduler(context.Background()); !errors.Is(err, errStorageCapacitySchedulerClosed) {
+		t.Fatalf("RefreshCapacityScheduler() after Close error = %v, want scheduler closed", err)
+	}
+	if service.cron != nil {
+		t.Fatal("capacity scheduler restarted after Close")
+	}
+}
+
 func TestGenericStorageServiceUsesServerLocalMediaStorageByDefault(t *testing.T) {
 	service := newGenericStorageTestService(t, model.StorageSetting{})
 	uploaded, err := service.Upload(context.Background(), "user-1", false, "sample.txt", "text/plain", []byte("0123456789"), nil)

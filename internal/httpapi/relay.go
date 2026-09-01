@@ -1009,7 +1009,16 @@ func (a *App) relayVideoTask(ctx context.Context, payload map[string]any) (map[s
 				return state, protocol.HTTPError{Status: http.StatusBadGateway, Message: "视频已完成但上游没有返回视频地址"}
 			}
 			if videoAuth == "relay" {
-				localURL, saveErr := a.downloadRelayVideo(ctx, videoURL, apiKey, util.Clean(payload["owner_id"]), taskID, baseURL, contract.Artifact.AllowedHosts)
+				localURL, saveErr := a.downloadRelayVideo(
+					ctx,
+					videoURL,
+					apiKey,
+					util.Clean(payload["owner_id"]),
+					util.Clean(payload["client_task_id"]),
+					taskID,
+					baseURL,
+					contract.Artifact.AllowedHosts,
+				)
 				if saveErr != nil {
 					return state, protocol.HTTPError{Status: http.StatusBadGateway, Message: "视频已生成但保存失败: " + saveErr.Error()}
 				}
@@ -1416,9 +1425,17 @@ func relayVideoMultipartRequest(ctx context.Context, baseURL, apiKey, createPath
 	return req, nil
 }
 
-func (a *App) downloadRelayVideo(ctx context.Context, videoURL, apiKey, owner, taskID, baseURL string, allowedHosts []string) (string, error) {
+func (a *App) downloadRelayVideo(ctx context.Context, videoURL, apiKey, owner, clientTaskID, upstreamTaskID, baseURL string, allowedHosts []string) (string, error) {
 	if a == nil || strings.TrimSpace(a.videoDir) == "" {
 		return "", fmt.Errorf("video storage is unavailable")
+	}
+	clientTaskID = strings.TrimSpace(clientTaskID)
+	upstreamTaskID = strings.TrimSpace(upstreamTaskID)
+	if clientTaskID == "" {
+		return "", fmt.Errorf("client task id is required for video storage")
+	}
+	if upstreamTaskID == "" {
+		return "", fmt.Errorf("upstream task id is required for video storage")
 	}
 	if err := validateAuthenticatedVideoArtifactURL(videoURL, baseURL, allowedHosts); err != nil {
 		return "", err
@@ -1455,7 +1472,8 @@ func (a *App) downloadRelayVideo(ctx context.Context, videoURL, apiKey, owner, t
 	if resp.ContentLength > maxVideoBytes {
 		return "", fmt.Errorf("video content exceeds 512 MB")
 	}
-	name := util.SHA1Short(owner+":"+taskID, 24) + ".mp4"
+	storageIdentity := strconv.Quote(strings.TrimSpace(owner)) + ":" + strconv.Quote(clientTaskID) + ":" + strconv.Quote(upstreamTaskID)
+	name := util.SHA1Short(storageIdentity, 24) + ".mp4"
 	if err := storeRelayVideoStream(a.videoDir, name, resp.Body, maxVideoBytes); err != nil {
 		return "", err
 	}

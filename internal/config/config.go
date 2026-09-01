@@ -667,44 +667,46 @@ func (s *Store) DefaultChatModel() string {
 
 func (s *Store) Get() map[string]any {
 	s.mu.RLock()
-	data := util.CopyMap(s.data)
+	snapshotData := util.CopyMap(s.data)
 	s.mu.RUnlock()
+	snapshot := &Store{data: snapshotData}
+	data := util.CopyMap(snapshotData)
 	delete(data, "image_concurrent_limit")
 	delete(data, "chat_models")
 	delete(data, "default_chat_model")
-	data["image_task_timeout_seconds"] = s.ImageTaskTimeoutSeconds()
-	data["image_models"] = s.ImageModels()
-	data["video_models"] = s.VideoModels()
-	data["text_models"] = s.TextModels()
-	data["audio_models"] = s.AudioModels()
-	data["default_image_model"] = s.DefaultImageModel()
-	data["default_text_model"] = s.DefaultTextModel()
-	data["default_audio_model"] = s.DefaultAudioModel()
-	data["user_default_concurrent_limit"] = s.UserDefaultConcurrentLimit()
-	data["user_default_rpm_limit"] = s.UserDefaultRPMLimit()
-	data["allow_user_custom_relay_config"] = s.AllowUserCustomRelayConfig()
-	data["image_retention_days"] = s.ImageRetentionDays()
-	data["image_storage_limit_mb"] = s.ImageStorageLimitMB()
-	storageSetting := s.StorageSettings()
+	data["image_task_timeout_seconds"] = snapshot.ImageTaskTimeoutSeconds()
+	data["image_models"] = snapshot.ImageModels()
+	data["video_models"] = snapshot.VideoModels()
+	data["text_models"] = snapshot.TextModels()
+	data["audio_models"] = snapshot.AudioModels()
+	data["default_image_model"] = snapshot.DefaultImageModel()
+	data["default_text_model"] = snapshot.DefaultTextModel()
+	data["default_audio_model"] = snapshot.DefaultAudioModel()
+	data["user_default_concurrent_limit"] = snapshot.UserDefaultConcurrentLimit()
+	data["user_default_rpm_limit"] = snapshot.UserDefaultRPMLimit()
+	data["allow_user_custom_relay_config"] = snapshot.AllowUserCustomRelayConfig()
+	data["image_retention_days"] = snapshot.ImageRetentionDays()
+	data["image_storage_limit_mb"] = snapshot.ImageStorageLimitMB()
+	storageSetting := snapshot.StorageSettings()
 	storageSetting.Providers = append([]model.StorageProvider(nil), storageSetting.Providers...)
 	for index := range storageSetting.Providers {
 		storageSetting.Providers[index].SecretAccessKey = ""
 		storageSetting.Providers[index].Password = ""
 	}
 	data["storage"] = storageSetting
-	data["log_retention_days"] = s.LogRetentionDays()
-	data["log_cleanup_schedule_enabled"] = s.LogCleanupScheduleEnabled()
-	data["log_cleanup_hour"] = s.LogCleanupHour()
-	data["default_log_view"] = s.DefaultLogView()
-	data["log_levels"] = s.LogLevels()
-	data["proxy"] = s.Proxy()
-	data["base_url"] = s.BaseURL()
-	data["app_title"] = s.AppTitle()
-	data["project_name"] = s.ProjectName()
-	data["site_icon_url"] = s.SiteIconURL()
-	data["relay_base_url"] = s.RelayBaseURL()
-	data["relay_database_type"] = s.RelayDatabaseType()
-	driver, host, port, name, user := relayDatabasePublicFields(s.RelayDatabaseConnectionURL(), s.RelayDatabaseDriver())
+	data["log_retention_days"] = snapshot.LogRetentionDays()
+	data["log_cleanup_schedule_enabled"] = snapshot.LogCleanupScheduleEnabled()
+	data["log_cleanup_hour"] = snapshot.LogCleanupHour()
+	data["default_log_view"] = snapshot.DefaultLogView()
+	data["log_levels"] = snapshot.LogLevels()
+	data["proxy"] = snapshot.Proxy()
+	data["base_url"] = snapshot.BaseURL()
+	data["app_title"] = snapshot.AppTitle()
+	data["project_name"] = snapshot.ProjectName()
+	data["site_icon_url"] = snapshot.SiteIconURL()
+	data["relay_base_url"] = snapshot.RelayBaseURL()
+	data["relay_database_type"] = snapshot.RelayDatabaseType()
+	driver, host, port, name, user := relayDatabasePublicFields(snapshot.RelayDatabaseConnectionURL(), snapshot.RelayDatabaseDriver())
 	data["relay_database_driver"] = driver
 	data["relay_database_host"] = host
 	data["relay_database_port"] = port
@@ -712,13 +714,13 @@ func (s *Store) Get() map[string]any {
 	data["relay_database_user"] = user
 	delete(data, "relay_database_url")
 	delete(data, "relay_database_password")
-	data["relay_database_configured"] = s.RelayDatabaseConnectionURL() != ""
-	data["relay_database_password_configured"] = s.relayDatabasePassword() != ""
-	data["login_page_image_url"] = s.LoginPageImageURL()
-	data["login_page_image_mode"] = s.LoginPageImageMode()
-	data["login_page_image_zoom"] = s.LoginPageImageZoom()
-	data["login_page_image_position_x"] = s.LoginPageImagePositionX()
-	data["login_page_image_position_y"] = s.LoginPageImagePositionY()
+	data["relay_database_configured"] = snapshot.RelayDatabaseConnectionURL() != ""
+	data["relay_database_password_configured"] = snapshot.relayDatabasePassword() != ""
+	data["login_page_image_url"] = snapshot.LoginPageImageURL()
+	data["login_page_image_mode"] = snapshot.LoginPageImageMode()
+	data["login_page_image_zoom"] = snapshot.LoginPageImageZoom()
+	data["login_page_image_position_x"] = snapshot.LoginPageImagePositionX()
+	data["login_page_image_position_y"] = snapshot.LoginPageImagePositionY()
 	if value, ok := data["prompt_sources"]; ok {
 		data["prompt_sources"] = normalizePromptSourcesValue(value)
 	}
@@ -1526,11 +1528,15 @@ func validateStorageSetting(setting model.StorageSetting) error {
 func normalizePromptSourcesValue(value any) []any {
 	switch v := value.(type) {
 	case []any:
-		return v
+		out := make([]any, len(v))
+		for index, item := range v {
+			out[index] = clonePromptSourceValue(item)
+		}
+		return out
 	case []map[string]any:
 		out := make([]any, 0, len(v))
 		for _, item := range v {
-			out = append(out, item)
+			out = append(out, clonePromptSourceValue(item))
 		}
 		return out
 	case string:
@@ -1540,6 +1546,27 @@ func normalizePromptSourcesValue(value any) []any {
 		}
 	}
 	return []any{}
+}
+
+func clonePromptSourceValue(value any) any {
+	switch v := value.(type) {
+	case map[string]any:
+		out := make(map[string]any, len(v))
+		for key, item := range v {
+			out[key] = clonePromptSourceValue(item)
+		}
+		return out
+	case []any:
+		out := make([]any, len(v))
+		for index, item := range v {
+			out[index] = clonePromptSourceValue(item)
+		}
+		return out
+	case []string:
+		return append([]string(nil), v...)
+	default:
+		return value
+	}
 }
 
 func writeEnvUpdates(path string, updates map[string]string) error {
@@ -1552,6 +1579,8 @@ func writeEnvUpdates(path string, updates map[string]string) error {
 		if len(lines) > 0 && lines[len(lines)-1] == "" {
 			lines = lines[:len(lines)-1]
 		}
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("read environment file %q: %w", path, err)
 	}
 	pending := map[string]string{}
 	for key, value := range updates {

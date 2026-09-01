@@ -33,8 +33,9 @@ const (
 )
 
 var (
-	ErrInvalidStorageRange          = errors.New("requested storage range is invalid")
-	ErrLocalStorageCapacityExceeded = errors.New("服务器本机素材容量已达到上限")
+	ErrInvalidStorageRange            = errors.New("requested storage range is invalid")
+	ErrLocalStorageCapacityExceeded   = errors.New("服务器本机素材容量已达到上限")
+	errStorageCapacitySchedulerClosed = errors.New("storage capacity scheduler is closed")
 )
 
 type StorageSettingsProvider interface {
@@ -130,11 +131,15 @@ type GenericStorageService struct {
 	localCapacityMu      sync.Mutex
 	cronMu               sync.Mutex
 	cron                 *cron.Cron
+	cronClosed           bool
 }
 
 func (s *GenericStorageService) RefreshCapacityScheduler(ctx context.Context) error {
 	s.cronMu.Lock()
 	defer s.cronMu.Unlock()
+	if s.cronClosed {
+		return errStorageCapacitySchedulerClosed
+	}
 	if s.cron == nil {
 		s.cron = cron.New()
 		s.cron.Start()
@@ -171,6 +176,7 @@ func (s *GenericStorageService) runScheduledCapacityCheck(ctx context.Context) {
 func (s *GenericStorageService) Close() {
 	s.cronMu.Lock()
 	defer s.cronMu.Unlock()
+	s.cronClosed = true
 	if s.cron != nil {
 		stop := s.cron.Stop()
 		<-stop.Done()

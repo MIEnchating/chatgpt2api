@@ -286,7 +286,7 @@ func TestDownloadRelayVideoRejectsAuthenticatedCrossOriginRedirect(t *testing.T)
 	defer upstream.Close()
 
 	app := &App{videoDir: t.TempDir()}
-	_, err := app.downloadRelayVideo(context.Background(), upstream.URL+"/content", "sk-secret", "owner-1", "task-1", upstream.URL, nil)
+	_, err := app.downloadRelayVideo(context.Background(), upstream.URL+"/content", "sk-secret", "owner-1", "client-task-1", "upstream-task-1", upstream.URL, nil)
 	if err == nil {
 		t.Fatal("cross-origin redirect was accepted for an authenticated video artifact")
 	}
@@ -314,13 +314,39 @@ func TestDownloadRelayVideoAllowsAuthenticatedSameOriginRedirect(t *testing.T) {
 
 	videoDir := t.TempDir()
 	app := &App{videoDir: videoDir}
-	localURL, err := app.downloadRelayVideo(context.Background(), upstream.URL+"/content", "sk-secret", "owner-1", "task-1", upstream.URL, nil)
+	localURL, err := app.downloadRelayVideo(context.Background(), upstream.URL+"/content", "sk-secret", "owner-1", "client-task-1", "upstream-task-1", upstream.URL, nil)
 	if err != nil {
 		t.Fatalf("downloadRelayVideo() error = %v", err)
 	}
 	data, err := os.ReadFile(filepath.Join(videoDir, strings.TrimPrefix(localURL, "/videos/")))
 	if err != nil || string(data) != "video" {
 		t.Fatalf("saved video = %q, error = %v", data, err)
+	}
+}
+
+func TestDownloadRelayVideoSeparatesClientTasksWithSameUpstreamTaskID(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte("video"))
+	}))
+	defer upstream.Close()
+
+	videoDir := t.TempDir()
+	app := &App{videoDir: videoDir}
+	firstURL, err := app.downloadRelayVideo(context.Background(), upstream.URL+"/video.mp4", "sk-secret", "owner-1", "client-task-1", "shared-upstream-task", upstream.URL, nil)
+	if err != nil {
+		t.Fatalf("first downloadRelayVideo() error = %v", err)
+	}
+	secondURL, err := app.downloadRelayVideo(context.Background(), upstream.URL+"/video.mp4", "sk-secret", "owner-1", "client-task-2", "shared-upstream-task", upstream.URL, nil)
+	if err != nil {
+		t.Fatalf("second downloadRelayVideo() error = %v", err)
+	}
+	if firstURL == secondURL {
+		t.Fatalf("different client tasks reused local video URL %q", firstURL)
+	}
+	for _, localURL := range []string{firstURL, secondURL} {
+		if _, err := os.Stat(filepath.Join(videoDir, strings.TrimPrefix(localURL, "/videos/"))); err != nil {
+			t.Fatalf("stored video %q: %v", localURL, err)
+		}
 	}
 }
 
