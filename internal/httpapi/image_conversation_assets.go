@@ -22,6 +22,7 @@ type imageConversationAssetCleanupWorker struct {
 	stalled      bool
 	closed       bool
 	done         chan struct{}
+	stalledDone  chan struct{}
 	activeCancel context.CancelFunc
 	timeout      time.Duration
 }
@@ -158,42 +159,47 @@ func (w *imageConversationAssetCleanupWorker) run(run func(context.Context, stri
 			w.mu.Unlock()
 		case <-ctx.Done():
 			cancel()
+			stalledDone := make(chan struct{})
 			w.mu.Lock()
 			w.activeCancel = nil
 			w.running = false
 			w.stalled = true
+			w.stalledDone = stalledDone
 			done := w.done
 			w.done = nil
 			if done != nil {
 				close(done)
 			}
 			w.mu.Unlock()
-			go w.resumeAfterStalledRun(finished, run)
+			go w.resumeAfterStalledRun(finished, stalledDone, run)
 			return
 		}
 	}
 }
 
-func (w *imageConversationAssetCleanupWorker) resumeAfterStalledRun(finished <-chan struct{}, run func(context.Context, string)) {
+func (w *imageConversationAssetCleanupWorker) resumeAfterStalledRun(finished <-chan struct{}, stalledDone chan struct{}, run func(context.Context, string)) {
 	<-finished
 	w.mu.Lock()
 	w.stalled = false
+	w.stalledDone = nil
 	if w.closed || len(w.pending) == 0 {
 		if w.closed {
 			w.pending = nil
 		}
 		w.mu.Unlock()
+		close(stalledDone)
 		return
 	}
 	w.running = true
 	w.done = make(chan struct{})
 	w.mu.Unlock()
+	close(stalledDone)
 	go w.run(run)
 }
 
-func (w *imageConversationAssetCleanupWorker) close() {
+func (w *imageConversationAssetCleanupWorker) close() bool {
 	if w == nil {
-		return
+		return true
 	}
 	w.mu.Lock()
 	w.closed = true
@@ -213,6 +219,36 @@ func (w *imageConversationAssetCleanupWorker) close() {
 	}
 	if done != nil {
 		<-done
+	}
+	w.mu.Lock()
+	drained := !w.running && !w.stalled
+	w.mu.Unlock()
+	return drained
+}
+
+func (w *imageConversationAssetCleanupWorker) wait() {
+	if w == nil {
+		return
+	}
+	for {
+		w.mu.Lock()
+		running := w.running
+		stalled := w.stalled
+		done := w.done
+		stalledDone := w.stalledDone
+		w.mu.Unlock()
+		if !running && !stalled {
+			return
+		}
+		if stalled && stalledDone != nil {
+			<-stalledDone
+			continue
+		}
+		if running && done != nil {
+			<-done
+			continue
+		}
+		return
 	}
 }
 
@@ -413,7 +449,7 @@ func (a *App) cleanupImageConversationAssetsForOwner(ctx context.Context, ownerI
 	}
 	referenced, err := a.history.ConversationAssetReferencesContext(ctx, ownerID)
 	if err != nil {
-		if a.logger != nil {
+		if ctx.Err() == nil && a.logger != nil {
 			a.logger.Warning("image conversation asset reference scan failed", "owner_id", ownerID, "error", err)
 		}
 		return
@@ -425,15 +461,16 @@ func (a *App) cleanupImageConversationAssetsForOwner(ctx context.Context, ownerI
 	if a.config != nil {
 		limit = a.config.ImageStorageLimitBytes()
 	}
-	if _, err := a.conversationAssets.CleanupOrphansContext(ctx, ownerID, referenced, service.ImageConversationAssetOrphanGrace, limit); err != nil && a.logger != nil {
+	if _, err := a.conversationAssets.CleanupOrphansContext(ctx, ownerID, referenced, service.ImageConversationAssetOrphanGrace, limit); err != nil && ctx.Err() == nil && a.logger != nil {
 		a.logger.Warning("image conversation orphan cleanup failed", "owner_id", ownerID, "error", err)
 	}
 }
 
-func (a *App) closeImageConversationAssetCleaner() {
+func (a *App) closeImageConversationAssetCleaner() bool {
 	if a != nil {
-		a.conversationAssetCleanup.close()
+		return a.conversationAssetCleanup.close()
 	}
+	return true
 }
 
 func (a *App) imageStorageGovernance(identity service.Identity) (map[string]any, error) {

@@ -214,15 +214,32 @@ func TestImageConversationAssetCleanupWorkerCloseCancelsWithoutWaitingForRun(t *
 	})
 	waitForImageCleanupSignal(t, started, "conversation asset cleanup")
 
-	closed := make(chan struct{})
+	closed := make(chan bool, 1)
 	go func() {
-		worker.close()
-		close(closed)
+		closed <- worker.close()
 	}()
 	waitForImageCleanupSignal(t, ctxCanceled, "conversation asset cleanup cancellation")
-	waitForImageCleanupSignal(t, closed, "conversation asset cleanup worker close")
+	select {
+	case drained := <-closed:
+		if drained {
+			t.Fatal("unresponsive conversation cleanup reported a drained worker")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for conversation asset cleanup worker close")
+	}
+	waited := make(chan struct{})
+	go func() {
+		worker.wait()
+		close(waited)
+	}()
+	select {
+	case <-waited:
+		t.Fatal("worker wait returned before the cleanup callback exited")
+	default:
+	}
 	close(release)
 	waitForImageCleanupSignal(t, runFinished, "canceled conversation asset cleanup exit")
+	waitForImageCleanupSignal(t, waited, "conversation asset cleanup worker drain")
 }
 
 func waitForImageCleanupSignal(t *testing.T, signal <-chan struct{}, name string) {

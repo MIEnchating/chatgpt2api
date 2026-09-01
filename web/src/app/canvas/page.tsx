@@ -4459,6 +4459,8 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     return () => window.removeEventListener("pointerdown", outside, true);
   }, [canvasMenuOpen]);
 
+  const renderedCanvasID = documentRef.current.id;
+
   return (
     <section className="relative flex h-full min-h-[540px] overflow-hidden rounded-xl border border-border bg-card shadow-[0_16px_42px_-34px_rgba(15,23,42,0.34)]">
       <CanvasSidePanel
@@ -4576,7 +4578,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       {projectMenuOpen ? <aside className="absolute top-16 left-3 z-30 w-80 rounded-xl border border-border bg-card shadow-xl"><div className="border-b p-3"><p className="text-sm font-semibold">画布项目</p><p className="text-[11px] text-muted-foreground">跨设备自动同步</p></div><ScrollArea className="max-h-56 p-1.5">{projects.map((project) => <button key={project.id} className={cn("flex w-full items-center gap-2 rounded-lg p-2 text-left text-xs hover:bg-muted", project.id === documentRef.current.id && "bg-[#e7efff] text-[#1456f0] dark:bg-blue-950/50 dark:text-blue-300")} onClick={() => project.id !== documentRef.current.id && void runProject({ action: "activate", project_id: project.id })}><span className="flex size-7 items-center justify-center rounded-md bg-muted">{project.id === documentRef.current.id ? <Check className="size-3.5" /> : project.node_count}</span><span className="truncate font-semibold">{project.title}</span></button>)}</ScrollArea><div className="space-y-2 border-t p-2.5"><div className="flex rounded-lg bg-muted p-1"><BackgroundButton active={background === "dots"} label="点阵" onClick={() => { backgroundRef.current = "dots"; setBackground("dots"); setTimeout(pushHistory); }}><CircleDot /></BackgroundButton><BackgroundButton active={background === "grid"} label="网格" onClick={() => { backgroundRef.current = "grid"; setBackground("grid"); setTimeout(pushHistory); }}><Grid2X2 /></BackgroundButton><BackgroundButton active={background === "plain"} label="空白" onClick={() => { backgroundRef.current = "plain"; setBackground("plain"); setTimeout(pushHistory); }}><Square /></BackgroundButton></div><label className="flex items-center justify-between gap-3 rounded-lg px-1.5 py-1 text-xs"><span className="flex min-w-0 items-center gap-1.5 text-muted-foreground"><Info className="size-3.5" />图片信息</span><Switch checked={showImageInfo} aria-label="显示图片信息" onCheckedChange={(enabled) => { showImageInfoRef.current = enabled; setShowImageInfo(enabled); pushHistory(); }} /></label></div></aside> : null}
 
       {agentPanelMounted ? <Suspense fallback={null}><CanvasAgentPanel
-        key={documentRef.current.id}
+        key={renderedCanvasID}
         open={agentOpen}
         nodes={nodes}
         selectedNodeIDs={[...selectedNodeIDs]}
@@ -4590,8 +4592,12 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         initialRequest={initialAgentRequest}
         agentConfig={resolvedAgentConfig}
         width={agentWidth}
-        getAgentContext={getCanvasAgentContext}
+        getAgentContext={(state) => {
+          if (documentRef.current.id !== renderedCanvasID) throw new DOMException("画布已切换", "AbortError");
+          return getCanvasAgentContext(state);
+        }}
         onSessionsChange={(sessions, activeSessionID) => {
+          if (documentRef.current.id !== renderedCanvasID) return;
           setAgentSessions(sessions);
           setActiveAgentSessionID(activeSessionID);
           documentRef.current = {
@@ -4612,11 +4618,15 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
           documentRef.current = { ...documentRef.current, agent_panel: { open: true, width } };
           scheduleSave();
         }}
-        onExecuteAction={executeCanvasAgentAction}
+        onExecuteAction={(action, messageReferenceNodeIDs) => documentRef.current.id === renderedCanvasID
+          ? executeCanvasAgentAction(action, messageReferenceNodeIDs)
+          : Promise.resolve({ ok: false, code: "run_stale", message: "画布已切换，当前执行已停止" })}
         onOpenUpload={() => requestCanvasImageUpload()}
         onOpenAssets={() => setAssetPickerOpen(true)}
         onPasteImage={(file) => { void uploadImageFile(file, "", canvasCenterPosition()); }}
-        onInitialRequestConsumed={() => setInitialAgentRequest(null)}
+        onInitialRequestConsumed={() => {
+          if (documentRef.current.id === renderedCanvasID) setInitialAgentRequest(null);
+        }}
         onClose={() => {
           setAgentOpen(false);
           documentRef.current = { ...documentRef.current, agent_panel: { open: false, width: agentWidth } };

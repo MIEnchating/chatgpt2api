@@ -147,7 +147,7 @@ func (a *App) handleStorageFiles(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 		}
-		if err := a.storageFiles.Delete(r.Context(), identity.ID, identity.Role == service.AuthRoleAdmin, id, request.Provider); err != nil {
+		if err := a.myAssets.DeleteStorageObject(r.Context(), identity.ID, identity.Role == service.AuthRoleAdmin, id, request.Provider); err != nil {
 			a.writeStorageServiceError(w, err)
 			return
 		}
@@ -245,6 +245,10 @@ func (a *App) writeStorageServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, storage.ErrStorageObjectNotFound):
 		status = http.StatusNotFound
+	case errors.Is(err, service.ErrStorageObjectInUse):
+		status = http.StatusConflict
+	case errors.Is(err, service.ErrInvalidStorageRange):
+		status = http.StatusRequestedRangeNotSatisfiable
 	case errors.Is(err, service.ErrLocalStorageCapacityExceeded):
 		status = http.StatusInsufficientStorage
 	case strings.Contains(strings.ToLower(err.Error()), "permission"):

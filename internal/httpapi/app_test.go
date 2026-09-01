@@ -1403,6 +1403,65 @@ func TestWorkflowRoutesExposePublicTemplatesWithoutEditRights(t *testing.T) {
 	}
 }
 
+func TestWorkflowInitializeRouteIsIdempotent(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+	_, token := createPasswordUserSession(t, app, "workflow_initialize", "Password123!", "Initializer")
+	body := `{"items":[
+		{"scope":"public","name":"模板 A","mode":"single_image","variables":[{"id":"subject-a","key":"subject","label":"主题","type":"text","required":true,"options":[]}],"config":{"prompt_template":"{{subject}}"}},
+		{"scope":"public","name":"模板 B","mode":"single_image","variables":[{"id":"subject-b","key":"subject","label":"主题","type":"text","required":true,"options":[]}],"config":{"prompt_template":"{{subject}}"}}
+	]}`
+	request := func() map[string]any {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodPost, "/api/workflows/initialize", strings.NewReader(body))
+		setRequestAuthCookie(req, "Bearer "+token)
+		res := httptest.NewRecorder()
+		app.Handler().ServeHTTP(res, req)
+		if res.Code != http.StatusOK {
+			t.Fatalf("initialize workflows status = %d body = %s", res.Code, res.Body.String())
+		}
+		var response map[string]any
+		if err := json.Unmarshal(res.Body.Bytes(), &response); err != nil {
+			t.Fatalf("decode initialize response: %v", err)
+		}
+		return response
+	}
+
+	first := util.AsMapSlice(request()["items"])
+	second := util.AsMapSlice(request()["items"])
+	if len(first) != 2 || len(second) != 2 {
+		t.Fatalf("initialize item counts = %d and %d, want 2", len(first), len(second))
+	}
+	firstIDs := []string{util.Clean(first[0]["id"]), util.Clean(first[1]["id"])}
+	secondIDs := []string{util.Clean(second[0]["id"]), util.Clean(second[1]["id"])}
+	if !reflect.DeepEqual(firstIDs, secondIDs) {
+		t.Fatalf("initialize workflow IDs changed: first=%#v second=%#v", firstIDs, secondIDs)
+	}
+}
+
+func TestWorkflowCommandRoutesDoNotReserveWorkflowIDs(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+	identity, token := createPasswordUserSession(t, app, "workflow_reserved_ids", "Password123!", "Workflow Owner")
+	for _, id := range []string{"initialize", "agent-draft"} {
+		_, err := app.workflows.Save(identityScope(*identity), service.CreativeWorkflow{
+			ID: id, Scope: "private", Name: "同名工作流", Mode: "single_image",
+			Variables: []service.WorkflowVariable{{ID: "subject", Key: "subject", Label: "主题", Type: "text", Options: []string{}}},
+			Config:    service.WorkflowGenerationConfig{PromptTemplate: "{{subject}}"},
+		})
+		if err != nil {
+			t.Fatalf("save workflow %q: %v", id, err)
+		}
+		req := httptest.NewRequest(http.MethodDelete, "/api/workflows/"+id, nil)
+		setRequestAuthCookie(req, "Bearer "+token)
+		res := httptest.NewRecorder()
+		app.Handler().ServeHTTP(res, req)
+		if res.Code != http.StatusNoContent {
+			t.Fatalf("delete workflow %q status = %d body = %s", id, res.Code, res.Body.String())
+		}
+	}
+}
+
 func TestWorkflowRoutesRejectStaleSavesAndTouchOnlyLastRunMetadata(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()

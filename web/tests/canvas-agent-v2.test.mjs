@@ -46,6 +46,7 @@ const { clearCanvasAgentSessionReferences, syncCanvasAgentSessions } = await imp
 const { canvasAgentStarterLabel, canvasInsertPayloadFromMyAsset, canvasPendingAgentAssetNode, createCanvasPendingAgentAsset, defaultCanvasAgentStarterConfig, normalizeCanvasAgentConfig, preferredCanvasAgentVideoSize } = await import("../src/app/canvas/agent/canvas-agent-starter.ts");
 const { buildCanvasAgentSkillPrompt } = await import("../src/app/canvas/agent/canvas-agent-skills.ts");
 const { runCanvasAgent, createCanvasAgentState } = await import("../src/app/canvas/agent/canvas-agent-runtime.ts");
+const { abortCanvasAgentRun, beginCanvasAgentRunEpoch, claimCanvasAgentRun, createCanvasAgentRunLifecycle, invalidateCanvasAgentRunLifecycle, isCurrentCanvasAgentRun, mountCanvasAgentRunLifecycle, releaseCanvasAgentRun } = await import("../src/app/canvas/agent/canvas-agent-run-gate.ts");
 const { CANVAS_AGENT_TOOLS, normalizeCanvasAgentAction } = await import("../src/app/canvas/agent/canvas-agent-tools.ts");
 
 function context(state = createCanvasAgentState()) {
@@ -90,6 +91,50 @@ function toolReply(calls, textResponse = "") {
 }
 
 describe("canvas agent v2 tool contract", () => {
+  test("claims one panel run synchronously until its controller is released", () => {
+    const slot = { current: null };
+    const first = claimCanvasAgentRun(slot);
+    assert.ok(first instanceof AbortController);
+    assert.equal(claimCanvasAgentRun(slot), null);
+    assert.equal(releaseCanvasAgentRun(slot, new AbortController()), false);
+    assert.equal(claimCanvasAgentRun(slot), null);
+    assert.equal(releaseCanvasAgentRun(slot, first), true);
+
+    const second = claimCanvasAgentRun(slot);
+    assert.ok(second instanceof AbortController);
+    assert.notEqual(second, first);
+    assert.equal(releaseCanvasAgentRun(slot, first), false);
+    assert.equal(claimCanvasAgentRun(slot), null);
+    assert.equal(releaseCanvasAgentRun(slot, second), true);
+  });
+
+  test("aborts the active panel run without releasing or replacing its ownership", () => {
+    const slot = { current: null };
+    const controller = claimCanvasAgentRun(slot);
+    assert.ok(controller instanceof AbortController);
+    assert.equal(abortCanvasAgentRun(slot), true);
+    assert.equal(controller.signal.aborted, true);
+    assert.equal(slot.current, controller);
+    assert.equal(claimCanvasAgentRun(slot), null);
+    assert.equal(releaseCanvasAgentRun(slot, controller), true);
+    assert.equal(abortCanvasAgentRun(slot), false);
+  });
+
+  test("invalidates every callback from an unmounted Agent run", () => {
+    const lifecycle = createCanvasAgentRunLifecycle();
+    mountCanvasAgentRunLifecycle(lifecycle);
+    const firstEpoch = beginCanvasAgentRunEpoch(lifecycle);
+    assert.equal(isCurrentCanvasAgentRun(lifecycle, firstEpoch), true);
+
+    invalidateCanvasAgentRunLifecycle(lifecycle);
+    assert.equal(isCurrentCanvasAgentRun(lifecycle, firstEpoch), false);
+
+    mountCanvasAgentRunLifecycle(lifecycle);
+    const secondEpoch = beginCanvasAgentRunEpoch(lifecycle);
+    assert.equal(isCurrentCanvasAgentRun(lifecycle, firstEpoch), false);
+    assert.equal(isCurrentCanvasAgentRun(lifecycle, secondEpoch), true);
+  });
+
   test("normalizes empty Agent parameters to visible generation defaults", () => {
     assert.deepEqual(defaultCanvasAgentStarterConfig(), {
       imageQuality: "",

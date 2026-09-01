@@ -44,6 +44,13 @@ export type WorkflowTask = {
   unit_errors?: Record<string, string>;
 };
 
+export function prependWorkflowTask(
+  tasks: readonly WorkflowTask[],
+  task: WorkflowTask,
+): WorkflowTask[] {
+  return tasks.some((item) => item.id === task.id) ? [...tasks] : [task, ...tasks];
+}
+
 export function creationTaskImages(task: CreationTask): WorkflowTaskImage[] {
   return (task.data || []).flatMap((item) => {
     const url = String(item.url || item.video_url || "").trim();

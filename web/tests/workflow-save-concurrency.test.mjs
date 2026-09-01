@@ -27,3 +27,22 @@ test("workflow completion merges metadata into current state instead of a task s
   );
   assert.doesNotMatch(workspaceSource, /const completed = \{ \.\.\.workflow, last_run_at:/);
 });
+
+test("workflow saves use a synchronous gate and keep the editor locked while pending", () => {
+  assert.match(workspaceSource, /const workflowSaveBusyRef = useRef\(false\)/);
+  assert.match(
+    workspaceSource,
+    /if \(workflowSaveBusyRef\.current\) return;\s*workflowSaveBusyRef\.current = true;\s*setWorkflowSaving\(true\)/,
+  );
+  assert.match(
+    workspaceSource,
+    /finally \{\s*workflowSaveBusyRef\.current = false;\s*if \(workspaceActiveRef\.current\) setWorkflowSaving\(false\)/,
+  );
+  assert.match(workspaceSource, /saving=\{workflowSaving\}/);
+  assert.match(workspaceSource, /onOpenChange=\{\(open\) => !open && !saving && onClose\(\)\}/);
+  assert.match(workspaceSource, /showCloseButton=\{!saving\}/);
+  assert.match(workspaceSource, /aria-busy=\{saving\}/);
+  assert.match(workspaceSource, /<fieldset disabled=\{saving\} className="contents space-y-6">/);
+  assert.match(workspaceSource, /variant="outline" disabled=\{saving\} onClick=\{onClose\}>取消/);
+  assert.match(workspaceSource, /disabled=\{saving \|\| !workflow\.name\.trim\(\)/);
+});

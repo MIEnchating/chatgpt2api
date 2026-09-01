@@ -32,7 +32,10 @@ const (
 	storageObjectRollbackTimeout           = 30 * time.Second
 )
 
-var ErrLocalStorageCapacityExceeded = errors.New("服务器本机素材容量已达到上限")
+var (
+	ErrInvalidStorageRange          = errors.New("requested storage range is invalid")
+	ErrLocalStorageCapacityExceeded = errors.New("服务器本机素材容量已达到上限")
+)
 
 type StorageSettingsProvider interface {
 	StorageSettings() model.StorageSetting
@@ -442,9 +445,11 @@ func (s *GenericStorageService) DownloadForIdentity(ctx context.Context, ownerID
 	}
 	provider, ok := findStorageProviderForObject(object, s.providersForObject(object))
 	if ok && storageProviderConfigured(provider) {
-		if download, downloadErr := downloadStorageObject(ctx, provider, object, rangeHeader); downloadErr == nil {
-			return download, nil
+		download, downloadErr := downloadStorageObject(ctx, provider, object, rangeHeader)
+		if downloadErr != nil {
+			return DownloadedStorageObject{}, downloadErr
 		}
+		return download, nil
 	}
 	if strings.TrimSpace(object.PublicURL) != "" {
 		return downloadPublicStorageObject(ctx, object, rangeHeader)
@@ -867,7 +872,7 @@ func downloadStorageObject(ctx context.Context, provider model.StorageProvider, 
 	if strings.TrimSpace(rangeHeader) != "" {
 		byteRange, ok := parseStorageByteRange(rangeHeader, info.Size)
 		if !ok {
-			return DownloadedStorageObject{}, errors.New("requested storage range is invalid")
+			return DownloadedStorageObject{}, ErrInvalidStorageRange
 		}
 		if err := options.SetRange(byteRange.offset, byteRange.offset+byteRange.length-1); err != nil {
 			return DownloadedStorageObject{}, err

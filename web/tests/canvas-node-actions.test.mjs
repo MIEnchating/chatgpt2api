@@ -258,3 +258,47 @@ test("Agent node references do not open the node drawer and new chat stays avail
   assert.match(agentPanelSource, /aria-label="新对话" disabled=\{busy\}/);
   assert.doesNotMatch(agentPanelSource, /aria-label="新对话" disabled=\{!activeSession\.messages\.length\}/);
 });
+
+test("Agent submission claims synchronous ownership before hydrating references", () => {
+  const claimIndex = agentPanelSource.indexOf("const controller = claimCanvasAgentRun(abortRef)");
+  const hydrationIndex = agentPanelSource.indexOf("await hydrateSavedReferences", claimIndex);
+  assert.ok(claimIndex >= 0);
+  assert.ok(hydrationIndex > claimIndex);
+  assert.match(agentPanelSource, /if \(releaseCanvasAgentRun\(abortRef, controller\)\) setBusy\(false\)/);
+  assert.doesNotMatch(agentPanelSource, /if \(!text \|\| busy \|\| !activeSession\) return/);
+});
+
+test("Agent initial requests are consumed only after their user message is committed", () => {
+  assert.match(agentPanelSource, /if \(!controller\) return "busy"/);
+  const claimIndex = agentPanelSource.indexOf("const controller = claimCanvasAgentRun(abortRef)");
+  const submitIndex = agentPanelSource.indexOf("submitInitialRequestRef.current(initialRequest.prompt", claimIndex);
+  const messageCommitIndex = agentPanelSource.indexOf("if (!updateSessionForRun(sessionID, runEpoch", claimIndex);
+  const committedCallbackIndex = agentPanelSource.indexOf("options.onUserMessageCommitted?.()", messageCommitIndex);
+  const consumedIndex = agentPanelSource.indexOf("consumedInitialRequestRef.current = initialRequest", submitIndex);
+  assert.ok(claimIndex >= 0);
+  assert.ok(submitIndex > claimIndex);
+  assert.ok(messageCommitIndex > claimIndex);
+  assert.ok(committedCallbackIndex > messageCommitIndex);
+  assert.ok(consumedIndex > submitIndex);
+  assert.match(agentPanelSource, /if \(!relayPreferencesReady \|\| !initialRequest/);
+  assert.match(agentPanelSource, /previous\?\.request === initialRequest && previous\.reason === result/);
+  assert.match(agentPanelSource, /\}, \[busy, initialRequest, model, relayPreferencesReady, relayTokenName\]\)/);
+  assert.match(agentPanelSource, /const stopped = controller\.signal\.aborted \|\| \(error instanceof Error && error\.name === "AbortError"\)/);
+});
+
+test("Agent run callbacks and project persistence reject stale lifecycle scopes", () => {
+  assert.match(agentPanelSource, /const lifecycle = runLifecycleRef\.current;\s*mountCanvasAgentRunLifecycle\(lifecycle\);[\s\S]*invalidateCanvasAgentRunLifecycle\(lifecycle\);\s*abortCanvasAgentRun\(abortRef\)/);
+  assert.match(agentPanelSource, /onEvent: \(event\) => updateSessionForRun\(sessionID, runEpoch/);
+  assert.match(agentPanelSource, /onCheckpoint: \(checkpoint\) => updateSessionForRun\(sessionID, runEpoch/);
+  assert.match(pageSource, /const renderedCanvasID = documentRef\.current\.id/);
+  assert.match(pageSource, /onSessionsChange=\{\(sessions, activeSessionID\) => \{\s*if \(documentRef\.current\.id !== renderedCanvasID\) return/);
+  assert.match(pageSource, /onExecuteAction=\{\(action, messageReferenceNodeIDs\) => documentRef\.current\.id === renderedCanvasID/);
+});
+
+test("Agent history deletion stays unavailable for the whole active run", () => {
+  assert.match(agentPanelSource, /aria-label="删除所选对话" disabled=\{busy \|\| !checkedSessionIDs\.length\}/);
+  assert.match(agentPanelSource, /aria-label="删除全部对话" disabled=\{busy \|\| !historySessions\.length\}/);
+  assert.match(agentPanelSource, /deleteDisabled=\{busy\}/);
+  assert.match(agentPanelSource, /variant="destructive" disabled=\{busy\}/);
+  assert.match(agentPanelSource, /function removeSessions\(sessionIDs: string\[\]\) \{\s*if \(busy\) return/);
+});

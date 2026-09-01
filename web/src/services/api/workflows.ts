@@ -92,6 +92,14 @@ export async function fetchWorkflows() {
   return Array.isArray(response.items) ? response.items : [];
 }
 
+export async function initializeWorkflows(items: CreativeWorkflow[]) {
+  const response = await httpRequest<{ items?: CreativeWorkflow[] }>("/api/workflows/initialize", {
+    method: "POST",
+    body: { items },
+  });
+  return Array.isArray(response.items) ? response.items : [];
+}
+
 export async function saveWorkflow(workflow: CreativeWorkflow) {
   const response = await httpRequest<{ item: CreativeWorkflow }>("/api/workflows", {
     method: workflow.id ? "PUT" : "POST",

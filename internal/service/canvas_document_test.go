@@ -8,6 +8,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"chatgpt2api/internal/storage"
@@ -190,6 +191,14 @@ type barrierCanvasDocumentBackend struct {
 	once      sync.Once
 }
 
+type blockingCanvasDocumentBackend struct {
+	storage.Backend
+	documents storage.JSONDocumentBackend
+	started   chan struct{}
+	release   <-chan struct{}
+	once      sync.Once
+}
+
 func (b *barrierCanvasDocumentBackend) LoadJSONDocument(name string) (any, error) {
 	return b.documents.LoadJSONDocument(name)
 }
@@ -202,6 +211,24 @@ func (b *barrierCanvasDocumentBackend) SaveJSONDocument(name string, value any) 
 }
 
 func (b *barrierCanvasDocumentBackend) DeleteJSONDocument(name string) error {
+	return b.documents.DeleteJSONDocument(name)
+}
+
+func (b *blockingCanvasDocumentBackend) LoadJSONDocument(name string) (any, error) {
+	return b.documents.LoadJSONDocument(name)
+}
+
+func (b *blockingCanvasDocumentBackend) SaveJSONDocument(name string, value any) error {
+	if strings.HasPrefix(name, canvasWorkspaceDir+"/") {
+		b.once.Do(func() {
+			close(b.started)
+			<-b.release
+		})
+	}
+	return b.documents.SaveJSONDocument(name, value)
+}
+
+func (b *blockingCanvasDocumentBackend) DeleteJSONDocument(name string) error {
 	return b.documents.DeleteJSONDocument(name)
 }
 
@@ -258,6 +285,209 @@ func TestCanvasDocumentServiceSavesAndIsolatesOwners(t *testing.T) {
 	}
 	if other.Revision != 0 || len(other.Nodes) != 0 {
 		t.Fatalf("other owner saw canvas = %#v", other)
+	}
+}
+
+func TestCanvasDocumentServiceFindsStorageObjectReferences(t *testing.T) {
+	canvas := NewCanvasDocumentService(newTestStorageBackend(t))
+	_, err := saveCanvas(canvas, "owner-a", CanvasDocument{
+		Title: "Stored media",
+		Nodes: []CanvasNode{
+			{ID: "image", Type: "image", Width: 512, Height: 512, ScaleX: 1, ScaleY: 1, URL: "/api/files/image-a/content", StorageKey: "server:image-a"},
+			{ID: "text", Type: "text", Width: 320, Height: 180, ScaleX: 1, ScaleY: 1},
+		},
+		AgentSessions: json.RawMessage(`[{"references":[{"storageKey":"server:session-image"}]}]`),
+	})
+	if err != nil {
+		t.Fatalf("saveCanvas() error = %v", err)
+	}
+	for _, storageKey := range []string{"server:image-a", "server:session-image"} {
+		referenced, err := canvas.ReferencesStorageObject("owner-a", storageKey)
+		if err != nil || !referenced {
+			t.Fatalf("ReferencesStorageObject(%q) = (%v, %v)", storageKey, referenced, err)
+		}
+	}
+	referenced, err := canvas.ReferencesStorageObject("owner-a", "server:unused")
+	if err != nil || referenced {
+		t.Fatalf("ReferencesStorageObject(unused) = (%v, %v)", referenced, err)
+	}
+	referenced, err = canvas.ReferencesStorageObject("owner-b", "server:image-a")
+	if err != nil || referenced {
+		t.Fatalf("ReferencesStorageObject(other owner) = (%v, %v)", referenced, err)
+	}
+}
+
+func TestCanvasStorageReferenceSaveAndDeletionFenceAreAtomicAcrossInstances(t *testing.T) {
+	databaseURL := "sqlite:///" + filepath.ToSlash(filepath.Join(t.TempDir(), "shared-canvas-deletion.db"))
+	backendA, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend(A) error = %v", err)
+	}
+	t.Cleanup(func() { _ = backendA.Close() })
+	backendB, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend(B) error = %v", err)
+	}
+	t.Cleanup(func() { _ = backendB.Close() })
+
+	seed := NewCanvasDocumentService(backendA)
+	initial, err := seed.Workspace("owner")
+	if err != nil {
+		t.Fatalf("Workspace(initial) error = %v", err)
+	}
+	candidate := initial.Document
+	candidate.Nodes = []CanvasNode{{
+		ID: "stored-image", Type: "image", Width: 512, Height: 512, ScaleX: 1, ScaleY: 1,
+		URL: "/api/files/object-a/content", StorageKey: "server:object-a",
+	}}
+
+	barrier := newCanvasSaveBarrier(2)
+	wrap := func(backend storage.Backend) *barrierCanvasDocumentBackend {
+		documents := backend.(storage.JSONDocumentBackend)
+		return &barrierCanvasDocumentBackend{Backend: backend, documents: documents, barrier: barrier}
+	}
+	deleteService := NewCanvasDocumentService(wrap(backendA))
+	saveService := NewCanvasDocumentService(wrap(backendB))
+	type result struct {
+		operation string
+		err       error
+	}
+	results := make(chan result, 2)
+	go func() {
+		results <- result{operation: "delete", err: deleteService.ReserveStorageObjectDeletion("owner", "object-a")}
+	}()
+	go func() {
+		_, saveErr := saveService.SaveAtRevision("owner", candidate)
+		results <- result{operation: "save", err: saveErr}
+	}()
+
+	completed := map[string]error{}
+	for range 2 {
+		item := <-results
+		completed[item.operation] = item.err
+	}
+	deleteErr := completed["delete"]
+	saveErr := completed["save"]
+	switch {
+	case deleteErr == nil:
+		if !errors.Is(saveErr, ErrInvalidCanvasDocument) {
+			t.Fatalf("deletion fence won but SaveAtRevision() error = %v", saveErr)
+		}
+		if err := deleteService.CompleteStorageObjectDeletion("owner", "object-a"); err != nil {
+			t.Fatalf("CompleteStorageObjectDeletion() error = %v", err)
+		}
+	case saveErr == nil:
+		if !errors.Is(deleteErr, ErrStorageObjectInUse) {
+			t.Fatalf("reference save won but ReserveStorageObjectDeletion() error = %v", deleteErr)
+		}
+	default:
+		t.Fatalf("concurrent operations both failed: delete=%v save=%v", deleteErr, saveErr)
+	}
+}
+
+func TestCanvasDeletionFenceAndMissingObjectValidatorRejectReferences(t *testing.T) {
+	available := true
+	service := NewCanvasDocumentService(newTestStorageBackend(t), func(ownerID, objectID string) error {
+		if ownerID != "owner" || objectID != "object-a" || !available {
+			return storage.ErrStorageObjectNotFound
+		}
+		return nil
+	})
+	workspace, err := service.Workspace("owner")
+	if err != nil {
+		t.Fatalf("Workspace() error = %v", err)
+	}
+	candidate := workspace.Document
+	candidate.Nodes = []CanvasNode{{
+		ID: "stored-image", Type: "image", Width: 512, Height: 512, ScaleX: 1, ScaleY: 1,
+		URL: "/api/files/object-a/content", StorageKey: "server:object-a",
+	}}
+
+	if err := service.ReserveStorageObjectDeletion("owner", "object-a"); err != nil {
+		t.Fatalf("ReserveStorageObjectDeletion() error = %v", err)
+	}
+	if _, err := service.SaveAtRevision("owner", candidate); !errors.Is(err, ErrInvalidCanvasDocument) {
+		t.Fatalf("SaveAtRevision(fenced) error = %v, want ErrInvalidCanvasDocument", err)
+	}
+	if _, err := service.Import("owner", candidate); !errors.Is(err, ErrInvalidCanvasDocument) {
+		t.Fatalf("Import(fenced) error = %v, want ErrInvalidCanvasDocument", err)
+	}
+
+	available = false
+	if err := service.CompleteStorageObjectDeletion("owner", "object-a"); err != nil {
+		t.Fatalf("CompleteStorageObjectDeletion() error = %v", err)
+	}
+	if _, err := service.SaveAtRevision("owner", candidate); !errors.Is(err, ErrInvalidCanvasDocument) {
+		t.Fatalf("SaveAtRevision(missing object) error = %v, want ErrInvalidCanvasDocument", err)
+	}
+}
+
+func TestCanvasWorkspaceGenerationPreventsDeletionFenceABA(t *testing.T) {
+	databaseURL := "sqlite:///" + filepath.ToSlash(filepath.Join(t.TempDir(), "canvas-deletion-aba.db"))
+	backendA, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend(A) error = %v", err)
+	}
+	t.Cleanup(func() { _ = backendA.Close() })
+	backendB, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend(B) error = %v", err)
+	}
+	t.Cleanup(func() { _ = backendB.Close() })
+
+	seed := NewCanvasDocumentService(backendA)
+	workspace, err := seed.Workspace("owner")
+	if err != nil {
+		t.Fatalf("Workspace() error = %v", err)
+	}
+	candidate := workspace.Document
+	candidate.Nodes = []CanvasNode{{
+		ID: "stored-image", Type: "image", Width: 512, Height: 512, ScaleX: 1, ScaleY: 1,
+		URL: "/api/files/object-a/content", StorageKey: "server:object-a",
+	}}
+
+	var available atomic.Bool
+	available.Store(true)
+	validator := func(_, objectID string) error {
+		if objectID != "object-a" || !available.Load() {
+			return storage.ErrStorageObjectNotFound
+		}
+		return nil
+	}
+	started := make(chan struct{})
+	release := make(chan struct{})
+	blockingBackend := &blockingCanvasDocumentBackend{
+		Backend: backendB, documents: backendB, started: started, release: release,
+	}
+	staleService := NewCanvasDocumentService(blockingBackend, validator)
+	deletionService := NewCanvasDocumentService(backendA, validator)
+	saveResult := make(chan error, 1)
+	go func() {
+		_, saveErr := staleService.SaveAtRevision("owner", candidate)
+		saveResult <- saveErr
+	}()
+	<-started
+
+	if err := deletionService.ReserveStorageObjectDeletion("owner", "object-a"); err != nil {
+		t.Fatalf("ReserveStorageObjectDeletion() error = %v", err)
+	}
+	available.Store(false)
+	if err := deletionService.CompleteStorageObjectDeletion("owner", "object-a"); err != nil {
+		t.Fatalf("CompleteStorageObjectDeletion() error = %v", err)
+	}
+	close(release)
+	if saveErr := <-saveResult; !errors.Is(saveErr, ErrInvalidCanvasDocument) {
+		t.Fatalf("stale SaveAtRevision() error = %v, want ErrInvalidCanvasDocument", saveErr)
+	}
+
+	deletionService.mu.Lock()
+	finalWorkspace, err := deletionService.loadWorkspaceLocked("owner")
+	deletionService.mu.Unlock()
+	if err != nil {
+		t.Fatalf("loadWorkspaceLocked() error = %v", err)
+	}
+	if finalWorkspace.Generation < 3 || len(finalWorkspace.Projects[0].Nodes) != 0 {
+		t.Fatalf("final workspace generation/nodes = %d/%#v", finalWorkspace.Generation, finalWorkspace.Projects[0].Nodes)
 	}
 }
 

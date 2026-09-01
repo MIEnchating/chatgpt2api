@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strings"
 
+	"chatgpt2api/internal/storage"
 	"chatgpt2api/internal/util"
 
 	"golang.org/x/crypto/bcrypt"
@@ -14,6 +15,7 @@ import (
 const (
 	passwordAccountsDocumentName = "auth_users.json"
 	passwordSessionName          = "登录会话"
+	bootstrapAdminSaveAttempts   = 3
 )
 
 var ErrInvalidPasswordCredentials = authError("用户名或密码错误")
@@ -77,10 +79,8 @@ func (s *AuthService) EnsureBootstrapAdmin(username, password string) (Bootstrap
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for _, account := range s.accounts {
-		if account.Role == AuthRoleAdmin {
-			return BootstrapAdminResult{Username: account.Username}, nil
-		}
+	if existing, ok := bootstrapAdminAccountLocked(s.accounts); ok {
+		return BootstrapAdminResult{Username: existing.Username}, nil
 	}
 	if _, ok := passwordAccountByUsernameLocked(s.accounts, username); ok {
 		return BootstrapAdminResult{}, fmt.Errorf("bootstrap admin username already exists")
@@ -100,14 +100,60 @@ func (s *AuthService) EnsureBootstrapAdmin(username, password string) (Bootstrap
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
-	previousAccounts := append([]PasswordAccount(nil), s.accounts...)
-	previousItems := cloneAuthItems(s.items)
-	s.accounts = append(s.accounts, account)
-	if err := s.savePasswordAccountsLocked(); err != nil {
-		s.restoreAuthAccountsAfterSaveFailureLocked(previousAccounts, previousItems, err)
-		return BootstrapAdminResult{}, err
+	for attempt := 0; attempt < bootstrapAdminSaveAttempts; attempt++ {
+		if existing, ok := bootstrapAdminAccountLocked(s.accounts); ok {
+			return BootstrapAdminResult{Username: existing.Username}, nil
+		}
+		if _, ok := passwordAccountByUsernameLocked(s.accounts, username); ok {
+			return BootstrapAdminResult{}, fmt.Errorf("bootstrap admin username already exists")
+		}
+
+		previousAccounts := append([]PasswordAccount(nil), s.accounts...)
+		previousItems := cloneAuthItems(s.items)
+		s.accounts = append(s.accounts, account)
+		saveErr := s.savePasswordAccountsLocked()
+		if saveErr == nil {
+			return BootstrapAdminResult{Created: true, Generated: generated, Username: username, Password: password}, nil
+		}
+		s.accounts = previousAccounts
+		s.items = previousItems
+		if !errors.Is(saveErr, storage.ErrConcurrentRowUpdate) {
+			return BootstrapAdminResult{}, saveErr
+		}
+		if reloadErr := s.reloadBootstrapAdminStateLocked(); reloadErr != nil {
+			return BootstrapAdminResult{}, AuthPersistenceError{Err: fmt.Errorf("reload bootstrap admin after concurrent update: %w", reloadErr)}
+		}
+		if existing, ok := bootstrapAdminAccountLocked(s.accounts); ok {
+			return BootstrapAdminResult{Username: existing.Username}, nil
+		}
+		if attempt+1 == bootstrapAdminSaveAttempts {
+			return BootstrapAdminResult{}, saveErr
+		}
 	}
-	return BootstrapAdminResult{Created: true, Generated: generated, Username: username, Password: password}, nil
+	return BootstrapAdminResult{}, fmt.Errorf("bootstrap admin save attempts exhausted")
+}
+
+func bootstrapAdminAccountLocked(accounts []PasswordAccount) (PasswordAccount, bool) {
+	for _, account := range accounts {
+		if account.Role == AuthRoleAdmin {
+			return account, true
+		}
+	}
+	return PasswordAccount{}, false
+}
+
+func (s *AuthService) reloadBootstrapAdminStateLocked() error {
+	accounts, err := s.loadPasswordAccounts()
+	if err != nil {
+		return fmt.Errorf("load password accounts: %w", err)
+	}
+	items, _, err := s.load()
+	if err != nil {
+		return fmt.Errorf("load auth credentials: %w", err)
+	}
+	s.accounts = accounts
+	s.applyLoadedAuthItemsLocked(items)
+	return nil
 }
 
 func (s *AuthService) CreatePasswordUser(username, password, name, roleID string, enabled bool) (map[string]any, error) {

@@ -98,14 +98,19 @@ func downloadGenericWebDAVObject(ctx context.Context, provider model.StorageProv
 	if err != nil {
 		return DownloadedStorageObject{}, err
 	}
-	if byteRange, ok := parseStorageByteRange(rangeHeader, object.Bytes); ok {
-		stream, rangeErr := client.ReadStreamRange(objectKey, byteRange.offset, byteRange.length)
-		if rangeErr == nil {
-			return DownloadedStorageObject{
-				Object: object, Stream: stream, StatusCode: 206, ContentLength: byteRange.length,
-				ContentRange: fmt.Sprintf("bytes %d-%d/%d", byteRange.offset, byteRange.offset+byteRange.length-1, object.Bytes), AcceptRanges: true,
-			}, nil
+	if strings.TrimSpace(rangeHeader) != "" {
+		byteRange, ok := parseStorageByteRange(rangeHeader, object.Bytes)
+		if !ok {
+			return DownloadedStorageObject{}, ErrInvalidStorageRange
 		}
+		stream, err := client.ReadStreamRange(objectKey, byteRange.offset, byteRange.length)
+		if err != nil {
+			return DownloadedStorageObject{}, fmt.Errorf("download WebDAV object range: %w", err)
+		}
+		return DownloadedStorageObject{
+			Object: object, Stream: stream, StatusCode: 206, ContentLength: byteRange.length,
+			ContentRange: fmt.Sprintf("bytes %d-%d/%d", byteRange.offset, byteRange.offset+byteRange.length-1, object.Bytes), AcceptRanges: true,
+		}, nil
 	}
 	stream, err := client.ReadStream(objectKey)
 	if err != nil {

@@ -118,7 +118,7 @@ func downloadLocalStorageObject(provider model.StorageProvider, object model.Sto
 	byteRange, ok := parseStorageByteRange(rangeHeader, size)
 	if !ok {
 		_ = file.Close()
-		return DownloadedStorageObject{}, errors.New("requested storage range is invalid")
+		return DownloadedStorageObject{}, ErrInvalidStorageRange
 	}
 	section := io.NewSectionReader(file, byteRange.offset, byteRange.length)
 	return DownloadedStorageObject{

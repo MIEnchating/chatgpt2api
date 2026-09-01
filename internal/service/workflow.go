@@ -101,6 +101,71 @@ func (s *WorkflowService) List(ownerID string) ([]CreativeWorkflow, error) {
 	if err != nil {
 		return nil, err
 	}
+	return visibleWorkflows(items, ownerID), nil
+}
+
+func (s *WorkflowService) InitializeIfEmpty(ownerID string, inputs []CreativeWorkflow) ([]CreativeWorkflow, error) {
+	ownerID = strings.TrimSpace(ownerID)
+	if ownerID == "" {
+		return nil, errors.New("owner_id is required")
+	}
+	if len(inputs) == 0 {
+		return nil, errors.New("starter workflows are required")
+	}
+	if len(inputs) > maxWorkflowsPerOwner {
+		return nil, fmt.Errorf("每个用户最多保存 %d 个工作流", maxWorkflowsPerOwner)
+	}
+
+	now := util.NowISO()
+	candidates := make([]CreativeWorkflow, 0, len(inputs))
+	for _, input := range inputs {
+		candidate := *copyWorkflow(&input)
+		candidate.ID = util.NewUUID()
+		candidate.OwnerID = ownerID
+		candidate.CreatedAt = now
+		candidate.UpdatedAt = now
+		candidate.LastRunAt = ""
+		candidate.Revision = 1
+		candidate.Editable = true
+		if err := normalizeWorkflow(&candidate); err != nil {
+			return nil, err
+		}
+		if err := validateWorkflowSaveLimits(candidate); err != nil {
+			return nil, err
+		}
+		candidates = append(candidates, candidate)
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for attempt := 0; attempt < workflowSaveAttempts; attempt++ {
+		items, err := s.loadLocked()
+		if err != nil {
+			return nil, err
+		}
+		if visible := visibleWorkflows(items, ownerID); len(visible) > 0 {
+			return visible, nil
+		}
+		if workflowOwnerCount(items, ownerID)+len(candidates) > maxWorkflowsPerOwner {
+			return nil, fmt.Errorf("每个用户最多保存 %d 个工作流", maxWorkflowsPerOwner)
+		}
+		for _, candidate := range candidates {
+			stored := candidate
+			stored.Editable = false
+			items = append(items, stored)
+		}
+		if err := s.saveLocked(items); err != nil {
+			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < workflowSaveAttempts {
+				continue
+			}
+			return nil, err
+		}
+		return visibleWorkflows(items, ownerID), nil
+	}
+	return nil, fmt.Errorf("failed to initialize workflows")
+}
+
+func visibleWorkflows(items []CreativeWorkflow, ownerID string) []CreativeWorkflow {
 	result := make([]CreativeWorkflow, 0, len(items))
 	for _, item := range items {
 		if item.OwnerID != ownerID && item.Scope != "public" {
@@ -110,7 +175,7 @@ func (s *WorkflowService) List(ownerID string) ([]CreativeWorkflow, error) {
 		result = append(result, item)
 	}
 	sort.SliceStable(result, func(i, j int) bool { return result[i].UpdatedAt > result[j].UpdatedAt })
-	return result, nil
+	return result
 }
 
 func (s *WorkflowService) Save(ownerID string, input CreativeWorkflow) (CreativeWorkflow, error) {

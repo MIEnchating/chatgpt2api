@@ -7,6 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net/url"
+	"sort"
 	"strings"
 	"sync"
 
@@ -211,10 +213,12 @@ type CanvasWorkspaceResult struct {
 }
 
 type canvasWorkspace struct {
-	Version         int              `json:"version"`
-	ActiveProjectID string           `json:"active_project_id"`
-	Projects        []CanvasDocument `json:"projects"`
-	storedActiveID  string
+	Version                       int              `json:"version"`
+	Generation                    int64            `json:"generation"`
+	ActiveProjectID               string           `json:"active_project_id"`
+	Projects                      []CanvasDocument `json:"projects"`
+	PendingStorageObjectDeletions []string         `json:"pending_storage_object_deletions,omitempty"`
+	storedActiveID                string
 }
 
 type canvasActiveProject struct {
@@ -224,12 +228,17 @@ type canvasActiveProject struct {
 }
 
 type CanvasDocumentService struct {
-	mu    sync.Mutex
-	store storage.JSONDocumentBackend
+	mu                     sync.Mutex
+	store                  storage.JSONDocumentBackend
+	storageObjectValidator func(ownerID, objectID string) error
 }
 
-func NewCanvasDocumentService(backend storage.Backend) *CanvasDocumentService {
-	return &CanvasDocumentService{store: jsonDocumentStoreFromBackend(backend)}
+func NewCanvasDocumentService(backend storage.Backend, validators ...func(ownerID, objectID string) error) *CanvasDocumentService {
+	service := &CanvasDocumentService{store: jsonDocumentStoreFromBackend(backend)}
+	if len(validators) > 0 {
+		service.storageObjectValidator = validators[0]
+	}
+	return service
 }
 
 func DefaultCanvasDocument() CanvasDocument {
@@ -293,6 +302,216 @@ func (s *CanvasDocumentService) Project(ownerID, projectID string) (CanvasDocume
 	return workspace.Projects[index], nil
 }
 
+// ReferencesStorageObject reports whether any persisted project for one owner
+// still contains the storage key or its authenticated content URL.
+func (s *CanvasDocumentService) ReferencesStorageObject(ownerID, storageKey string) (bool, error) {
+	ownerID = util.Clean(ownerID)
+	storageKey = strings.TrimSpace(storageKey)
+	if ownerID == "" || storageObjectIDFromKey(storageKey) == "" {
+		return false, nil
+	}
+	if s.store == nil {
+		return false, fmt.Errorf("storage document backend is required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	raw, err := s.store.LoadJSONDocument(canvasWorkspaceName(ownerID))
+	if err != nil || raw == nil {
+		return false, err
+	}
+	data, err := json.Marshal(raw)
+	if err != nil {
+		return false, err
+	}
+	var workspace canvasWorkspace
+	if err := json.Unmarshal(data, &workspace); err != nil {
+		return false, err
+	}
+	workspace, err = normalizeCanvasWorkspace(workspace)
+	if err != nil {
+		return false, err
+	}
+	for _, document := range workspace.Projects {
+		if canvasDocumentReferencesStorageObject(document, storageKey) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// ReserveStorageObjectDeletion fences canvas writes through the same durable
+// workspace CAS used by SaveAtRevision. Across service instances, either a
+// reference save wins first or the deletion fence does; the loser reloads and
+// observes the winning state.
+func (s *CanvasDocumentService) ReserveStorageObjectDeletion(ownerID, objectID string) error {
+	ownerID = util.Clean(ownerID)
+	objectID = strings.TrimSpace(objectID)
+	if ownerID == "" || objectID == "" {
+		return errors.New("canvas owner and storage object id are required")
+	}
+	if s.store == nil {
+		return fmt.Errorf("storage document backend is required")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for attempt := 0; attempt < canvasWorkspaceSaveAttempts; attempt++ {
+		workspace, err := s.loadWorkspaceLocked(ownerID)
+		if err != nil {
+			return err
+		}
+		storageKey := "server:" + objectID
+		for _, document := range workspace.Projects {
+			if canvasDocumentReferencesStorageObject(document, storageKey) {
+				return fmt.Errorf("%w by a canvas project: %q", ErrStorageObjectInUse, objectID)
+			}
+		}
+		if canvasStorageObjectIDListContains(workspace.PendingStorageObjectDeletions, objectID) {
+			return nil
+		}
+		workspace.PendingStorageObjectDeletions = append(workspace.PendingStorageObjectDeletions, objectID)
+		if err := s.saveWorkspaceLocked(ownerID, &workspace); err != nil {
+			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < canvasWorkspaceSaveAttempts {
+				continue
+			}
+			return err
+		}
+		return nil
+	}
+	return storage.ErrConcurrentRowUpdate
+}
+
+// CompleteStorageObjectDeletion removes a fence only after the object record
+// is gone. Canvas writes that race this CAS reload the workspace and validate
+// the now-missing object before they can commit.
+func (s *CanvasDocumentService) CompleteStorageObjectDeletion(ownerID, objectID string) error {
+	ownerID = util.Clean(ownerID)
+	objectID = strings.TrimSpace(objectID)
+	if ownerID == "" || objectID == "" {
+		return errors.New("canvas owner and storage object id are required")
+	}
+	if s.store == nil {
+		return fmt.Errorf("storage document backend is required")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for attempt := 0; attempt < canvasWorkspaceSaveAttempts; attempt++ {
+		workspace, err := s.loadWorkspaceLocked(ownerID)
+		if err != nil {
+			return err
+		}
+		remaining := make([]string, 0, len(workspace.PendingStorageObjectDeletions))
+		for _, pendingID := range workspace.PendingStorageObjectDeletions {
+			if pendingID != objectID {
+				remaining = append(remaining, pendingID)
+			}
+		}
+		if len(remaining) == len(workspace.PendingStorageObjectDeletions) {
+			return nil
+		}
+		workspace.PendingStorageObjectDeletions = remaining
+		if err := s.saveWorkspaceLocked(ownerID, &workspace); err != nil {
+			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < canvasWorkspaceSaveAttempts {
+				continue
+			}
+			return err
+		}
+		return nil
+	}
+	return storage.ErrConcurrentRowUpdate
+}
+
+func canvasDocumentReferencesStorageObject(document CanvasDocument, storageKey string) bool {
+	objectID := storageObjectIDFromKey(storageKey)
+	return objectID != "" && canvasStorageObjectIDListContains(canvasDocumentStorageObjectIDs(document), objectID)
+}
+
+func canvasDocumentStorageObjectIDs(document CanvasDocument) []string {
+	ids := make(map[string]struct{})
+	add := func(value string) {
+		if objectID := canvasStorageObjectIDFromReference(value); objectID != "" {
+			ids[objectID] = struct{}{}
+		}
+	}
+	for _, node := range document.Nodes {
+		add(node.StorageKey)
+		add(node.URL)
+		add(node.ThumbnailURL)
+		for _, values := range [][]string{node.GenerationReferenceURLs, node.GenerationVideoReferenceImages, node.GenerationVideoReferenceURLs, node.GenerationVideoReferenceAudio} {
+			for _, value := range values {
+				add(value)
+			}
+		}
+		collectCanvasRawJSONStorageObjectIDs(node.DirectorProject, add)
+	}
+	collectCanvasRawJSONStorageObjectIDs(document.AgentSessions, add)
+	collectCanvasRawJSONStorageObjectIDs(document.AgentConfig, add)
+	collectCanvasRawJSONStorageObjectIDs(document.PendingAgentRequest, add)
+
+	result := make([]string, 0, len(ids))
+	for objectID := range ids {
+		result = append(result, objectID)
+	}
+	sort.Strings(result)
+	return result
+}
+
+func canvasStorageObjectIDFromReference(value string) string {
+	value = strings.TrimSpace(value)
+	if objectID := storageObjectIDFromKey(value); objectID != "" {
+		return objectID
+	}
+	parsed, err := url.Parse(value)
+	if err != nil {
+		return ""
+	}
+	const prefix = "/api/files/"
+	if !strings.HasPrefix(parsed.Path, prefix) {
+		return ""
+	}
+	parts := strings.Split(strings.TrimPrefix(parsed.Path, prefix), "/")
+	if len(parts) != 2 || parts[0] == "" || parts[1] != "content" {
+		return ""
+	}
+	return strings.TrimSpace(parts[0])
+}
+
+func collectCanvasRawJSONStorageObjectIDs(raw json.RawMessage, add func(string)) {
+	if len(raw) == 0 {
+		return
+	}
+	var value any
+	if json.Unmarshal(raw, &value) != nil {
+		return
+	}
+	var visit func(any)
+	visit = func(candidate any) {
+		switch typed := candidate.(type) {
+		case string:
+			add(typed)
+		case []any:
+			for _, item := range typed {
+				visit(item)
+			}
+		case map[string]any:
+			for _, item := range typed {
+				visit(item)
+			}
+		}
+	}
+	visit(value)
+}
+
+func canvasStorageObjectIDListContains(ids []string, target string) bool {
+	for _, objectID := range ids {
+		if objectID == target {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *CanvasDocumentService) SaveAtRevision(ownerID string, input CanvasDocument) (CanvasDocument, error) {
 	expected := input.Revision
 	return s.save(ownerID, input, &expected)
@@ -334,9 +553,12 @@ func (s *CanvasDocumentService) save(ownerID string, input CanvasDocument, expec
 		candidate.CreatedAt = current.CreatedAt
 		candidate.Revision = current.Revision + 1
 		candidate.UpdatedAt = util.NowISO()
+		if err := s.validateStorageObjectReferencesLocked(ownerID, workspace, candidate); err != nil {
+			return CanvasDocument{}, err
+		}
 		workspace.Projects[projectIndex] = candidate
 		workspace.ActiveProjectID = candidate.ID
-		if err := s.saveWorkspaceLocked(ownerID, workspace); err != nil {
+		if err := s.saveWorkspaceLocked(ownerID, &workspace); err != nil {
 			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < canvasWorkspaceSaveAttempts {
 				continue
 			}
@@ -382,9 +604,12 @@ func (s *CanvasDocumentService) Import(ownerID string, input CanvasDocument) (Ca
 		if len(workspace.Projects) >= canvasWorkspaceMaxProjects {
 			return CanvasWorkspaceResult{}, invalidCanvasDocument("canvas project limit reached")
 		}
+		if err := s.validateStorageObjectReferencesLocked(ownerID, workspace, normalized); err != nil {
+			return CanvasWorkspaceResult{}, err
+		}
 		workspace.Projects = append([]CanvasDocument{normalized}, workspace.Projects...)
 		workspace.ActiveProjectID = normalized.ID
-		if err := s.saveWorkspaceLocked(ownerID, workspace); err != nil {
+		if err := s.saveWorkspaceLocked(ownerID, &workspace); err != nil {
 			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < canvasWorkspaceSaveAttempts {
 				continue
 			}
@@ -436,7 +661,7 @@ func (s *CanvasDocumentService) clear(ownerID, projectID string, expectedRevisio
 		cleared.Revision = current.Revision + 1
 		workspace.Projects[projectIndex] = cleared
 		workspace.ActiveProjectID = cleared.ID
-		if err := s.saveWorkspaceLocked(ownerID, workspace); err != nil {
+		if err := s.saveWorkspaceLocked(ownerID, &workspace); err != nil {
 			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < canvasWorkspaceSaveAttempts {
 				continue
 			}
@@ -539,7 +764,7 @@ func (s *CanvasDocumentService) updateProject(ownerID, action, projectID, title 
 				}
 			}
 		}
-		if err := s.saveWorkspaceLocked(ownerID, workspace); err != nil {
+		if err := s.saveWorkspaceLocked(ownerID, &workspace); err != nil {
 			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < canvasWorkspaceSaveAttempts {
 				continue
 			}
@@ -589,7 +814,7 @@ func (s *CanvasDocumentService) loadWorkspaceLocked(ownerID string) (canvasWorks
 		Projects:        []CanvasDocument{document},
 		storedActiveID:  document.ID,
 	}
-	if err := s.saveWorkspaceLocked(ownerID, workspace); err != nil {
+	if err := s.saveWorkspaceLocked(ownerID, &workspace); err != nil {
 		if errors.Is(err, storage.ErrConcurrentRowUpdate) {
 			return s.loadWorkspaceLocked(ownerID)
 		}
@@ -625,16 +850,44 @@ func (s *CanvasDocumentService) saveActiveProjectLocked(ownerID, projectID, work
 	})
 }
 
-func (s *CanvasDocumentService) saveWorkspaceLocked(ownerID string, workspace canvasWorkspace) error {
-	normalized, err := normalizeCanvasWorkspace(workspace)
+func (s *CanvasDocumentService) saveWorkspaceLocked(ownerID string, workspace *canvasWorkspace) error {
+	if workspace == nil {
+		return invalidCanvasDocument("canvas workspace is required")
+	}
+	workspace.Generation++
+	if workspace.Generation <= 0 {
+		return invalidCanvasDocument("canvas workspace generation is invalid")
+	}
+	normalized, err := normalizeCanvasWorkspace(*workspace)
 	if err != nil {
 		return err
 	}
-	return s.store.SaveJSONDocument(canvasWorkspaceName(ownerID), normalized)
+	if err := s.store.SaveJSONDocument(canvasWorkspaceName(ownerID), normalized); err != nil {
+		return err
+	}
+	*workspace = normalized
+	return nil
 }
 
 func normalizeCanvasWorkspace(workspace canvasWorkspace) (canvasWorkspace, error) {
 	workspace.Version = canvasWorkspaceVersion
+	if workspace.Generation < 0 {
+		return canvasWorkspace{}, invalidCanvasDocument("canvas workspace generation is invalid")
+	}
+	pendingDeletions := make([]string, 0, len(workspace.PendingStorageObjectDeletions))
+	seenPendingDeletion := make(map[string]struct{}, len(workspace.PendingStorageObjectDeletions))
+	for _, objectID := range workspace.PendingStorageObjectDeletions {
+		objectID = strings.TrimSpace(objectID)
+		if objectID == "" {
+			continue
+		}
+		if _, exists := seenPendingDeletion[objectID]; exists {
+			continue
+		}
+		seenPendingDeletion[objectID] = struct{}{}
+		pendingDeletions = append(pendingDeletions, objectID)
+	}
+	workspace.PendingStorageObjectDeletions = pendingDeletions
 	if len(workspace.Projects) > canvasWorkspaceMaxProjects {
 		return canvasWorkspace{}, invalidCanvasDocument("canvas contains too many projects")
 	}
@@ -663,6 +916,21 @@ func normalizeCanvasWorkspace(workspace canvasWorkspace) (canvasWorkspace, error
 		return canvasWorkspace{}, invalidCanvasDocument("canvas workspace is too large")
 	}
 	return workspace, nil
+}
+
+func (s *CanvasDocumentService) validateStorageObjectReferencesLocked(ownerID string, workspace canvasWorkspace, document CanvasDocument) error {
+	objectIDs := canvasDocumentStorageObjectIDs(document)
+	for _, objectID := range objectIDs {
+		if canvasStorageObjectIDListContains(workspace.PendingStorageObjectDeletions, objectID) {
+			return invalidCanvasDocument(fmt.Sprintf("storage object %q is pending deletion", objectID))
+		}
+		if s.storageObjectValidator != nil {
+			if err := s.storageObjectValidator(ownerID, objectID); err != nil {
+				return invalidCanvasDocument(fmt.Sprintf("storage object %q is unavailable", objectID))
+			}
+		}
+	}
+	return nil
 }
 
 func canvasWorkspaceResult(workspace canvasWorkspace) CanvasWorkspaceResult {

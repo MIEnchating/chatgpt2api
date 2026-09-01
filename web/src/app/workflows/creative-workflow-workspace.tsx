@@ -53,9 +53,16 @@ import {
 } from "@/lib/image-options";
 import {
   creationTaskImages,
+  prependWorkflowTask,
   restoreWorkflowTasks,
   type WorkflowTask,
 } from "@/app/workflows/workflow-task-runtime";
+import {
+  freezeWorkflowReferences,
+  ownedWorkflowTaskReferences,
+  settleWorkflowReferenceUploads,
+  workflowReferenceCleanupKeys,
+} from "@/app/workflows/workflow-reference-lifecycle";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -106,6 +113,7 @@ import {
   deleteWorkflow,
   draftWorkflowWithAgent,
   fetchWorkflows,
+  initializeWorkflows,
   saveWorkflow,
   touchWorkflowLastRun,
   type CreativeWorkflow,
@@ -132,6 +140,7 @@ type WorkflowReference = {
 type WorkflowSeriesRun = {
   id: string;
   total: number;
+  references: WorkflowReference[];
 };
 
 type CreativeWorkflowWorkspaceProps = {
@@ -283,10 +292,14 @@ export function CreativeWorkflowWorkspace({
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(12);
   const [editing, setEditing] = useState<CreativeWorkflow | null>(null);
+  const [workflowSaving, setWorkflowSaving] = useState(false);
+  const workflowSaveBusyRef = useRef(false);
   const [running, setRunning] = useState<CreativeWorkflow | null>(null);
   const [values, setValues] = useState<Record<string, string>>({});
   const [references, setReferences] = useState<WorkflowReference[]>([]);
   const [referenceBusy, setReferenceBusy] = useState(false);
+  const workflowReferenceUploadGenerationRef = useRef(0);
+  const referenceUploadCountRef = useRef(0);
   const [seriesDrafts, setSeriesDrafts] = useState<WorkflowSeriesDraft[]>([]);
   const [seriesDraftLoading, setSeriesDraftLoading] = useState(false);
   const [seriesBatchAppend, setSeriesBatchAppend] = useState("");
@@ -307,14 +320,81 @@ export function CreativeWorkflowWorkspace({
   const [agentDraft, setAgentDraft] = useState<CreativeWorkflow | null>(null);
   const [agentWarnings, setAgentWarnings] = useState<string[]>([]);
   const [assetPickerTarget, setAssetPickerTarget] = useState<"workflow" | "agent" | null>(null);
+  const workspaceActiveRef = useRef(false);
+  const workflowReferencesRef = useRef(references);
+  const agentReferencesRef = useRef(agentReferences);
+  const tasksRef = useRef(tasks);
+  const inFlightTaskCountsRef = useRef(new Map<string, number>());
+  tasksRef.current = tasks;
+
+  function updateWorkflowReferences(updater: (current: WorkflowReference[]) => WorkflowReference[]) {
+    const next = updater(workflowReferencesRef.current);
+    workflowReferencesRef.current = next;
+    setReferences(next);
+  }
+
+  function updateAgentReferences(updater: (current: WorkflowReference[]) => WorkflowReference[]) {
+    const next = updater(agentReferencesRef.current);
+    agentReferencesRef.current = next;
+    setAgentReferences(next);
+  }
+
+  function updateTasks(updater: (current: WorkflowTask[]) => WorkflowTask[]) {
+    const next = updater(tasksRef.current);
+    tasksRef.current = next;
+    setTasks(next);
+  }
+
+  function beginWorkflowTaskSubmission(id: string) {
+    const counts = inFlightTaskCountsRef.current;
+    counts.set(id, (counts.get(id) || 0) + 1);
+  }
+
+  function ownedTaskReferences() {
+    return ownedWorkflowTaskReferences(
+      tasksRef.current,
+      new Set(inFlightTaskCountsRef.current.keys()),
+    );
+  }
+
+  function finishWorkflowTaskSubmission(id: string, taskReferences: WorkflowReference[]) {
+    const counts = inFlightTaskCountsRef.current;
+    const remaining = Math.max(0, (counts.get(id) || 1) - 1);
+    if (remaining) {
+      counts.set(id, remaining);
+      return;
+    }
+    counts.delete(id);
+    const task = tasksRef.current.find((item) => item.id === id);
+    if (task?.backend_task_ids.length) return;
+    updateTasks((current) => current.map((item) =>
+      item.id === id ? { ...item, references: [] } : item
+    ));
+    if (workspaceActiveRef.current) cleanupDiscardedWorkflowReferences(taskReferences);
+  }
+
   useEffect(() => {
+    workspaceActiveRef.current = true;
     const controller = new AbortController();
+    const inFlightTaskCounts = inFlightTaskCountsRef.current;
     taskWaitAbortControllerRef.current = controller;
     return () => {
+      workspaceActiveRef.current = false;
+      workflowReferenceUploadGenerationRef.current += 1;
       controller.abort();
       if (taskWaitAbortControllerRef.current === controller) {
         taskWaitAbortControllerRef.current = null;
       }
+      const allTaskReferences = tasksRef.current.flatMap((task) => task.references || []);
+      const retained = ownedWorkflowTaskReferences(
+        tasksRef.current,
+        new Set(inFlightTaskCounts.keys()),
+      );
+      const keys = workflowReferenceCleanupKeys(
+        [...workflowReferencesRef.current, ...agentReferencesRef.current, ...allTaskReferences],
+        retained,
+      );
+      if (keys.length) void deleteStoredImages(keys).catch(() => undefined);
     };
   }, []);
 
@@ -327,7 +407,7 @@ export function CreativeWorkflowWorkspace({
         const modelConfig = modelResponse.config;
         setModels(modelConfig);
         const restoredTasks = restoreWorkflowTasks(creationTasks.items);
-        setTasks(restoredTasks);
+        updateTasks(() => restoredTasks);
         if (workflows.length) {
           const normalized = workflows.map((workflow) =>
             normalizeWorkflow(workflow, modelConfig, preferences),
@@ -350,7 +430,7 @@ export function CreativeWorkflowWorkspace({
           return;
         }
         const starters = createStarterWorkflows(modelConfig, preferences, workflowGenerationDefaults(preferences, generationDefaults, sessionTextChannelID));
-        const saved = await Promise.all(starters.map((workflow) => saveWorkflow(workflow)));
+        const saved = await initializeWorkflows(starters);
         if (!ignore) setItems(saved.map((workflow) => normalizeWorkflow(workflow, modelConfig, preferences)));
       })
       .catch((error) =>
@@ -393,7 +473,7 @@ export function CreativeWorkflowWorkspace({
           const updates = new Map(
             restoreWorkflowTasks(response.items).map((task) => [task.id, task]),
           );
-          setTasks((current) => current.map((task) => {
+          updateTasks((current) => current.map((task) => {
             const update = updates.get(task.id);
             if (!update) return task;
             const completedUnits = Array.from(new Set([
@@ -466,6 +546,9 @@ export function CreativeWorkflowWorkspace({
       toast.error("请输入提示词模板");
       return;
     }
+    if (workflowSaveBusyRef.current) return;
+    workflowSaveBusyRef.current = true;
+    setWorkflowSaving(true);
     try {
       const generatedByAgent = agentDraft?.id === workflow.id;
       const saved = normalizeWorkflow(
@@ -483,6 +566,9 @@ export function CreativeWorkflowWorkspace({
       toast.success("工作流已保存");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "工作流保存失败");
+    } finally {
+      workflowSaveBusyRef.current = false;
+      if (workspaceActiveRef.current) setWorkflowSaving(false);
     }
   }
 
@@ -537,17 +623,37 @@ export function CreativeWorkflowWorkspace({
   }
 
   function openRunner(workflow: CreativeWorkflow) {
+    workflowReferenceUploadGenerationRef.current += 1;
+    const discarded = workflowReferencesRef.current;
+    updateWorkflowReferences(() => []);
+    cleanupDiscardedWorkflowReferences(discarded);
     setRunning(workflow);
     setValues(createDefaultInputValues(workflow));
-    setReferences([]);
     setSeriesBatchAppend("");
     setSeriesDrafts([]);
   }
 
   function closeRunner() {
+    workflowReferenceUploadGenerationRef.current += 1;
+    const discarded = workflowReferencesRef.current;
+    updateWorkflowReferences(() => []);
+    cleanupDiscardedWorkflowReferences(discarded);
     setRunning(null);
     setSeriesDrafts([]);
     setSeriesBatchAppend("");
+  }
+
+  function cleanupDiscardedWorkflowReferences(discarded: WorkflowReference[]) {
+    const retained = [
+      ...ownedTaskReferences(),
+      ...workflowReferencesRef.current,
+      ...agentReferencesRef.current,
+    ];
+    const keys = workflowReferenceCleanupKeys(discarded, retained);
+    if (!keys.length) return;
+    void deleteStoredImages(keys).catch((error) =>
+      toast.error(error instanceof Error ? error.message : "参考图文件删除失败"),
+    );
   }
 
   async function addReferences(files: FileList | null, agent = false) {
@@ -555,9 +661,11 @@ export function CreativeWorkflowWorkspace({
       file.type.startsWith("image/"),
     );
     if (!selected.length) return;
+    const workflowUploadGeneration = workflowReferenceUploadGenerationRef.current;
+    referenceUploadCountRef.current += 1;
     setReferenceBusy(true);
     try {
-      const uploaded = await Promise.all(
+      const { uploaded, errors } = await settleWorkflowReferenceUploads(
         selected.map(async (file) => {
           const image = await uploadImage(file);
           return {
@@ -569,12 +677,32 @@ export function CreativeWorkflowWorkspace({
           };
         }),
       );
-      if (agent) setAgentReferences((value) => [...value, ...uploaded]);
-      else setReferences((value) => [...value, ...uploaded]);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "参考图上传失败");
+      if (!workspaceActiveRef.current) {
+        const staleKeys = workflowReferenceCleanupKeys(uploaded, []);
+        if (staleKeys.length) await deleteStoredImages(staleKeys).catch(() => undefined);
+        return;
+      }
+      if (!agent && workflowUploadGeneration !== workflowReferenceUploadGenerationRef.current) {
+        const staleKeys = workflowReferenceCleanupKeys(uploaded, []);
+        if (staleKeys.length) {
+          await deleteStoredImages(staleKeys).catch((error) =>
+            toast.error(error instanceof Error ? error.message : "参考图文件删除失败"),
+          );
+        }
+        return;
+      }
+      if (uploaded.length) {
+        if (agent) updateAgentReferences((value) => [...value, ...uploaded]);
+        else updateWorkflowReferences((value) => [...value, ...uploaded]);
+      }
+      if (errors.length) {
+        const firstError = errors[0];
+        const message = firstError instanceof Error ? firstError.message : "参考图上传失败";
+        toast.error(uploaded.length ? `${errors.length} 个参考图上传失败，已保留成功项` : message);
+      }
     } finally {
-      setReferenceBusy(false);
+      referenceUploadCountRef.current = Math.max(0, referenceUploadCountRef.current - 1);
+      if (referenceUploadCountRef.current === 0) setReferenceBusy(false);
     }
   }
 
@@ -599,36 +727,32 @@ export function CreativeWorkflowWorkspace({
     }
     const reference = { id: taskID("asset-reference"), name: asset.title, url: asset.url, temporary: false };
     if (assetPickerTarget === "agent") {
-      setAgentReferences((current) => [...current, reference]);
+      updateAgentReferences((current) => [...current, reference]);
     } else {
-      setReferences((current) => [...current, reference]);
+      updateWorkflowReferences((current) => [...current, reference]);
     }
     setAssetPickerTarget(null);
   }
 
   function removeWorkflowReference(id: string) {
-    const reference = references.find((item) => item.id === id);
-    setReferences((current) => current.filter((item) => item.id !== id));
-    if (!reference?.temporary || !reference.storageKey) return;
-    const used = tasks.some((task) => task.references?.some((item) =>
-      item.storageKey === reference.storageKey || item.url === reference.url,
-    ));
-    if (!used) void deleteStoredImages([reference.storageKey]).catch(() => undefined);
+    const reference = workflowReferencesRef.current.find((item) => item.id === id);
+    updateWorkflowReferences((current) => current.filter((item) => item.id !== id));
+    if (reference) cleanupDiscardedWorkflowReferences([reference]);
   }
 
   function removeAgentReference(id: string) {
-    const reference = agentReferences.find((item) => item.id === id);
-    setAgentReferences((current) => current.filter((item) => item.id !== id));
-    if (reference?.temporary && reference.storageKey) {
-      void deleteStoredImages([reference.storageKey]).catch(() => undefined);
-    }
+    const reference = agentReferencesRef.current.find((item) => item.id === id);
+    updateAgentReferences((current) => current.filter((item) => item.id !== id));
+    if (reference) cleanupDiscardedWorkflowReferences([reference]);
   }
 
   async function cleanupAgentReferences() {
-    const keys = agentReferences
-      .filter((reference) => reference.temporary && reference.storageKey)
-      .map((reference) => reference.storageKey as string);
-    setAgentReferences([]);
+    const discarded = agentReferencesRef.current;
+    updateAgentReferences(() => []);
+    const keys = workflowReferenceCleanupKeys(discarded, [
+      ...ownedTaskReferences(),
+      ...workflowReferencesRef.current,
+    ]);
     if (keys.length) {
       await deleteStoredImages(keys).catch((error) =>
         toast.error(error instanceof Error ? error.message : "参考图文件删除失败"),
@@ -666,6 +790,9 @@ export function CreativeWorkflowWorkspace({
       token_name: relayTokenName || undefined,
     };
     const localTaskID = seriesRun?.id || taskID("workflow-image");
+    const taskReferences = freezeWorkflowReferences(
+      seriesRun?.references || workflowReferencesRef.current,
+    );
     const startedAt = Date.now();
     const taskConfig = {
       ...workflow.config,
@@ -692,7 +819,7 @@ export function CreativeWorkflowWorkspace({
       series_title: draft?.title,
       series_index: seriesIndex,
       inputs: { ...values },
-      references: references.map((reference) => ({ ...reference })),
+      references: taskReferences,
       model,
       api_mode: runtime.api_mode,
       config: taskConfig,
@@ -702,15 +829,14 @@ export function CreativeWorkflowWorkspace({
       completed_units: [],
       unit_errors: {},
     };
-    setTasks((current) => current.some((task) => task.id === localTaskID)
-      ? current
-      : [taskSnapshot, ...current]);
+    beginWorkflowTaskSubmission(localTaskID);
+    updateTasks((current) => prependWorkflowTask(current, taskSnapshot));
     if (draft) patchSeriesDraft(draft.id, { status: "running", error: undefined });
     const settleLocalTask = (nextImages: WorkflowTask["images"], taskError?: string) => {
       const unitIndexes = seriesRun && seriesIndex
         ? [seriesIndex]
         : Array.from({ length: count }, (_, index) => index + 1);
-      setTasks((current) => current.map((task) => {
+      updateTasks((current) => current.map((task) => {
         if (task.id !== localTaskID) return task;
         const completedUnits = Array.from(new Set([
           ...(task.completed_units || []),
@@ -741,7 +867,7 @@ export function CreativeWorkflowWorkspace({
       }));
     };
     try {
-      const imageFiles = references.length ? await workflowImageFiles(references, taskController.signal) : [];
+      const imageFiles = taskReferences.length ? await workflowImageFiles(taskReferences, taskController.signal) : [];
       const settled = await Promise.allSettled(
         Array.from({ length: count }, async (_, index) => {
           const batchIndex = seriesRun && seriesIndex ? seriesIndex : index + 1;
@@ -754,7 +880,7 @@ export function CreativeWorkflowWorkspace({
             workflow_name: workflow.name,
             prompt,
             inputs: { ...values },
-            references: references.map((reference) => ({ ...reference })),
+            references: taskReferences.map((reference) => ({ ...reference })),
             config: { ...taskConfig, count: "1" },
             execution,
             count: batchCount,
@@ -775,7 +901,7 @@ export function CreativeWorkflowWorkspace({
           const submitted = imageFiles.length
             ? await createImageEditTask(clientTaskID, imageFiles, prompt, model, runtime.size || undefined, undefined, quality, 1, "private", undefined, undefined, undefined, stream, partialImages, toolOptions, undefined, relayTokenName || undefined, undefined, undefined, { signal: taskController.signal })
             : await createImageGenerationTask(clientTaskID, prompt, model, runtime.size || undefined, undefined, quality, 1, "private", undefined, undefined, undefined, stream, partialImages, toolOptions, undefined, relayTokenName || undefined, undefined, undefined, { signal: taskController.signal });
-          setTasks((current) => current.map((task) =>
+          updateTasks((current) => current.map((task) =>
             task.id === localTaskID
               ? {
                   ...task,
@@ -829,6 +955,8 @@ export function CreativeWorkflowWorkspace({
       settleLocalTask([], message);
       if (draft) patchSeriesDraft(draft.id, { status: "failed", error: message });
       throw error;
+    } finally {
+      finishWorkflowTaskSubmission(localTaskID, taskReferences);
     }
   }
 
@@ -847,9 +975,10 @@ export function CreativeWorkflowWorkspace({
     }
     const workflow = running;
     const prompt = renderedPrompt;
-    closeRunner();
     try {
-      await executeImageTask(workflow, prompt);
+      const task = executeImageTask(workflow, prompt);
+      closeRunner();
+      await task;
       toast.success("工作流运行完成");
     } catch (error) {
       if (isWorkflowPollAbort(error)) return;
@@ -1000,25 +1129,31 @@ export function CreativeWorkflowWorkspace({
     const seriesRun: WorkflowSeriesRun = {
       id: taskID("workflow-series-images"),
       total: drafts.length,
+      references: freezeWorkflowReferences(workflowReferencesRef.current),
     };
+    beginWorkflowTaskSubmission(seriesRun.id);
     let successCount = 0;
-    for (let index = 0; index < drafts.length; index += concurrency) {
-      if (controller.signal.aborted) return;
-      const results = await Promise.all(
-        drafts.slice(index, index + concurrency).map((draft, chunkIndex) =>
-          runOneSeriesDraft(
-            draft,
-            index + chunkIndex,
-            seriesRun,
-            false,
+    try {
+      for (let index = 0; index < drafts.length; index += concurrency) {
+        if (controller.signal.aborted) return;
+        const results = await Promise.all(
+          drafts.slice(index, index + concurrency).map((draft, chunkIndex) =>
+            runOneSeriesDraft(
+              draft,
+              index + chunkIndex,
+              seriesRun,
+              false,
+            ),
           ),
-        ),
-      );
-      successCount += results.filter(Boolean).length;
+        );
+        successCount += results.filter(Boolean).length;
+      }
+      if (controller.signal.aborted) return;
+      if (successCount === drafts.length) toast.success(`多图任务已完成，共生成 ${successCount} 张`);
+      else toast.error(`多图任务完成 ${successCount}/${drafts.length} 张，请查看任务记录`);
+    } finally {
+      finishWorkflowTaskSubmission(seriesRun.id, seriesRun.references);
     }
-    if (controller.signal.aborted) return;
-    if (successCount === drafts.length) toast.success(`多图任务已完成，共生成 ${successCount} 张`);
-    else toast.error(`多图任务完成 ${successCount}/${drafts.length} 张，请查看任务记录`);
   }
 
   async function clearCompletedTaskHistory(includeAssets: boolean) {
@@ -1036,8 +1171,25 @@ export function CreativeWorkflowWorkspace({
         .filter((task) => !task.backend_task_ids.some((id) => activeIDs.has(id)))
         .map((task) => task.id));
       const removableTasks = completedTasks.filter((task) => removableTaskIDs.has(task.id));
-      setTasks((current) => current.filter((task) => !removableTaskIDs.has(task.id)));
+      const retainedTasks = tasksRef.current.filter((task) => !removableTaskIDs.has(task.id));
+      updateTasks(() => retainedTasks);
+      const referenceKeys = workflowReferenceCleanupKeys(
+        removableTasks.flatMap((task) => task.references || []),
+        [
+          ...ownedWorkflowTaskReferences(
+            retainedTasks,
+            new Set(inFlightTaskCountsRef.current.keys()),
+          ),
+          ...workflowReferencesRef.current,
+          ...agentReferencesRef.current,
+        ],
+      );
       if (removableTaskIDs.has(selectedTaskID)) setSelectedTaskID("");
+      if (referenceKeys.length) {
+        await deleteStoredImages(referenceKeys).catch((error) =>
+          toast.error(error instanceof Error ? `任务记录已清理，但临时参考图删除失败：${error.message}` : "任务记录已清理，但临时参考图删除失败"),
+        );
+      }
       let deletedAssetCount = 0;
       if (includeAssets && hasAPIPermission(session, "DELETE", "/api/images")) {
         const assetPaths = Array.from(new Set(removableTasks.flatMap((task) =>
@@ -1244,6 +1396,7 @@ export function CreativeWorkflowWorkspace({
         workflow={editing}
         models={models}
         preferences={preferences}
+        saving={workflowSaving}
         onChange={setEditing}
         onSave={persist}
         onClose={() => setEditing(null)}
@@ -1660,7 +1813,7 @@ function WorkflowTaskDialog({ task, now, onClose }: { task: WorkflowTask | null;
   );
 }
 
-function WorkflowEditor({ workflow, models, preferences, onChange, onSave, onClose }: { workflow: CreativeWorkflow | null; models: ModelConfig | null; preferences: ImageGenerationPreferences; onChange: (workflow: CreativeWorkflow | null) => void; onSave: (workflow: CreativeWorkflow) => void; onClose: () => void }) {
+function WorkflowEditor({ workflow, models, preferences, saving, onChange, onSave, onClose }: { workflow: CreativeWorkflow | null; models: ModelConfig | null; preferences: ImageGenerationPreferences; saving: boolean; onChange: (workflow: CreativeWorkflow | null) => void; onSave: (workflow: CreativeWorkflow) => void; onClose: () => void }) {
   if (!workflow) return null;
   const patch = (value: Partial<CreativeWorkflow>) => onChange({ ...workflow, ...value });
   const patchConfig = (value: Partial<WorkflowGenerationConfig>) => patch({ config: { ...workflow.config, ...value } });
@@ -1678,8 +1831,8 @@ function WorkflowEditor({ workflow, models, preferences, onChange, onSave, onClo
     });
   };
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent scrollable={false} className="h-[min(92dvh,920px)] w-[min(96vw,1180px)] max-w-none gap-0 p-0">
+    <Dialog open onOpenChange={(open) => !open && !saving && onClose()}>
+      <DialogContent scrollable={false} showCloseButton={!saving} className="h-[min(92dvh,920px)] w-[min(96vw,1180px)] max-w-none gap-0 p-0">
         <DialogHeader className="border-b border-border px-5 py-4 sm:px-6">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <DialogTitle>{workflow.id ? "编辑工作流" : "新建工作流"}</DialogTitle>
@@ -1688,7 +1841,8 @@ function WorkflowEditor({ workflow, models, preferences, onChange, onSave, onClo
           </div>
           <DialogDescription>工作流信息、输入变量、提示词与创作参数</DialogDescription>
         </DialogHeader>
-        <ScrollArea className="min-h-0 flex-1" viewportClassName="overscroll-contain p-5 sm:p-6" viewClass="space-y-6">
+        <ScrollArea aria-busy={saving} className={cn("min-h-0 flex-1 transition-opacity", saving && "pointer-events-none opacity-70")} viewportClassName="overscroll-contain p-5 sm:p-6">
+          <fieldset disabled={saving} className="contents space-y-6">
           <section className="border-b border-border pb-6">
             <div className="mb-4 flex items-center gap-2">
               <span className="grid size-6 place-items-center rounded-md bg-muted text-xs font-semibold text-muted-foreground">1</span>
@@ -1787,11 +1941,12 @@ function WorkflowEditor({ workflow, models, preferences, onChange, onSave, onClo
               ) : null}
             </aside>
           </div>
+          </fieldset>
         </ScrollArea>
         <DialogFooter flush className="flex-row">
           <p className="mr-auto hidden text-xs text-muted-foreground sm:block">{!workflow.name.trim() ? "请填写工作流名称" : !workflow.config.prompt_template.trim() ? "请填写用户提示词模板" : "工作流配置已就绪"}</p>
-          <Button variant="outline" onClick={onClose}>取消</Button>
-          <Button disabled={!workflow.name.trim() || !workflow.config.prompt_template.trim()} onClick={() => onSave(workflow)}><Save />保存</Button>
+          <Button variant="outline" disabled={saving} onClick={onClose}>取消</Button>
+          <Button disabled={saving || !workflow.name.trim() || !workflow.config.prompt_template.trim()} onClick={() => onSave(workflow)}>{saving ? <LoaderCircle className="animate-spin" /> : <Save />}{saving ? "保存中" : "保存"}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -1838,7 +1993,7 @@ function VariableEditor({ index, variable, onChange, onDelete }: { index: number
   );
 }
 
-function WorkflowReferenceGrid({ references, className, emptyMessage, onRemove }: { references: WorkflowReference[]; className: string; emptyMessage?: string; onRemove: (id: string) => void }) {
+function WorkflowReferenceGrid({ references, className, emptyMessage, disabled = false, onRemove }: { references: WorkflowReference[]; className: string; emptyMessage?: string; disabled?: boolean; onRemove: (id: string) => void }) {
   if (!references.length) {
     return emptyMessage ? <div className="mt-3 rounded-lg border border-dashed py-5 text-center text-xs text-muted-foreground">{emptyMessage}</div> : null;
   }
@@ -1850,7 +2005,8 @@ function WorkflowReferenceGrid({ references, className, emptyMessage, onRemove }
           <button
             type="button"
             aria-label={`移除参考图 ${reference.name}`}
-            className="absolute top-1 right-1 grid size-6 place-items-center rounded-md bg-black/70 text-white"
+            disabled={disabled}
+            className="absolute top-1 right-1 grid size-6 place-items-center rounded-md bg-black/70 text-white disabled:cursor-not-allowed disabled:opacity-50"
             onClick={() => onRemove(reference.id)}
           >
             <X className="size-3" />
@@ -1949,7 +2105,7 @@ function WorkflowRunner({ workflow, values, prompt, references, referenceBusy, d
                   }}
                 />
               </div>
-              <WorkflowReferenceGrid references={references} className="grid-cols-4" emptyMessage="未添加参考图" onRemove={onReferenceRemove} />
+              <WorkflowReferenceGrid references={references} className="grid-cols-4" emptyMessage="未添加参考图" disabled={referenceBusy} onRemove={onReferenceRemove} />
             </div>
           </section>
           <div className="space-y-4">
@@ -2079,7 +2235,7 @@ function WorkflowRunner({ workflow, values, prompt, references, referenceBusy, d
           </p>
           <Button variant="outline" onClick={onClose}>取消</Button>
           <Button
-            disabled={completedRequiredVariables < requiredVariables.length || draftLoading || workflow.mode === "multi_image_series" && drafts.length > 0 && (!runnableDraftCount || runningDraftCount > 0)}
+            disabled={referenceBusy || completedRequiredVariables < requiredVariables.length || draftLoading || workflow.mode === "multi_image_series" && drafts.length > 0 && (!runnableDraftCount || runningDraftCount > 0)}
             onClick={workflow.mode === "multi_image_series" && drafts.length > 0 ? onRunAll : onRun}
           >
             {draftLoading || runningDraftCount > 0 ? <LoaderCircle className="animate-spin" /> : workflow.mode === "multi_image_series" ? drafts.length ? <Play /> : <Layers3 /> : <Play />}
@@ -2240,7 +2396,7 @@ function AgentDialog({
                   }}
                 />
               </div>
-              <WorkflowReferenceGrid references={references} className="grid-cols-5" onRemove={onReferenceRemove} />
+              <WorkflowReferenceGrid references={references} className="grid-cols-5" disabled={busy} onRemove={onReferenceRemove} />
             </section>
             <Button className="w-full" disabled={busy || !prompt.trim()} onClick={onRun}>
               {busy ? <LoaderCircle className="animate-spin" /> : <Sparkles />}
@@ -2262,7 +2418,7 @@ function AgentDialog({
                     {warnings.map((warning) => <p key={warning}>{warning}</p>)}
                   </div>
                 ) : null}
-                <Button className="w-full" onClick={onApply}><Pencil />应用到编辑器</Button>
+                <Button className="w-full" disabled={busy} onClick={onApply}><Pencil />应用到编辑器</Button>
               </>
             ) : (
               <div className="grid min-h-56 place-items-center rounded-lg border border-dashed text-xs text-muted-foreground">暂无草稿</div>

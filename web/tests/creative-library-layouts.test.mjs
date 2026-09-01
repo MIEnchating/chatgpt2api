@@ -61,6 +61,24 @@ test("asset filters and cards use the full content width", () => {
   assert.match(globalStylesSource, /\.selection-control\[data-state="checked"\]/);
 });
 
+test("asset deletion commits the record before best-effort file cleanup", () => {
+  const singleDelete = assetsSource.slice(
+    assetsSource.indexOf("const confirmDelete"),
+    assetsSource.indexOf("const toggleVisibleSelection"),
+  );
+  assert.ok(singleDelete.indexOf("await deleteAsset(deleting.id)") >= 0);
+  assert.ok(singleDelete.indexOf("await deleteUnusedAssetStorage") > singleDelete.indexOf("await deleteAsset(deleting.id)"));
+  assert.match(singleDelete, /素材记录已删除，文件清理失败/);
+
+  const bulkDelete = assetsSource.slice(
+    assetsSource.indexOf("const deleteSelected"),
+    assetsSource.indexOf("return (", assetsSource.indexOf("const deleteSelected")),
+  );
+  assert.ok(bulkDelete.indexOf("await deleteAsset(asset.id)") >= 0);
+  assert.ok(bulkDelete.indexOf("deleteUnusedAssetStorage") > bulkDelete.indexOf("await deleteAsset(asset.id)"));
+  assert.match(bulkDelete, /Promise\.allSettled/);
+});
+
 test("prompt and workflow libraries keep dense wide-screen layouts", () => {
   assert.match(promptsSource, /data-prompt-library-grid/);
   assert.match(promptsSource, /grid-cols-1 items-stretch gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4/);

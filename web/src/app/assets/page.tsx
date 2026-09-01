@@ -162,13 +162,17 @@ export default function AssetsPage() {
     }
     setDeleteBusy(true);
     try {
-      if (deleting.managedPath) {
-        await deleteManagedImages([deleting.managedPath]);
-        setManagedAssets((current) => current.filter((item) => item.managedPath !== deleting.managedPath));
-      } else {
-        await deleteUnusedAssetStorage(deleting, assets.filter((item) => item.id !== deleting.id));
-        await deleteAsset(deleting.id);
-      }
+	      if (deleting.managedPath) {
+	        await deleteManagedImages([deleting.managedPath]);
+	        setManagedAssets((current) => current.filter((item) => item.managedPath !== deleting.managedPath));
+	      } else {
+	        await deleteAsset(deleting.id);
+	        try {
+	          await deleteUnusedAssetStorage(deleting, assets.filter((item) => item.id !== deleting.id));
+	        } catch (error) {
+	          toast.warning(error instanceof Error ? `素材记录已删除，文件清理失败：${error.message}` : "素材记录已删除，文件稍后清理");
+	        }
+	      }
       if (preview?.id === deleting.id) setPreview(null);
       setSelectedKeys((current) => { const next = new Set(current); next.delete(assetListKey(deleting)); return next; });
       toast.success("素材已删除");
@@ -259,14 +263,16 @@ export default function AssetsPage() {
     const remainingOwnedAssets = assets.filter((asset) => !deletingKeys.has(assetListKey(asset)));
     try {
       if (managedPaths.length) await deleteManagedImages(managedPaths);
-      for (const asset of ownedAssetsToDelete) {
-        await deleteUnusedAssetStorage(asset, remainingOwnedAssets);
-        await deleteAsset(asset.id);
-      }
-      if (managedPaths.length) setManagedAssets((current) => current.filter((asset) => !asset.managedPath || !managedPaths.includes(asset.managedPath)));
-      setSelectedKeys(new Set());
-      setBulkDeleteOpen(false);
-      toast.success(`已删除 ${deletableSelectedAssets.length} 个素材`);
+	      for (const asset of ownedAssetsToDelete) await deleteAsset(asset.id);
+	      const cleanupResults = await Promise.allSettled(ownedAssetsToDelete.map((asset) =>
+	        deleteUnusedAssetStorage(asset, remainingOwnedAssets),
+	      ));
+	      if (managedPaths.length) setManagedAssets((current) => current.filter((asset) => !asset.managedPath || !managedPaths.includes(asset.managedPath)));
+	      setSelectedKeys(new Set());
+	      setBulkDeleteOpen(false);
+	      toast.success(`已删除 ${deletableSelectedAssets.length} 个素材`);
+	      const cleanupFailures = cleanupResults.filter((result) => result.status === "rejected").length;
+	      if (cleanupFailures) toast.warning(`${cleanupFailures} 个素材文件清理失败，素材记录已删除`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "批量删除失败");
     } finally {

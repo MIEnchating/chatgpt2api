@@ -408,6 +408,68 @@ func TestWorkflowServiceMergesConcurrentDatabaseCreates(t *testing.T) {
 	}
 }
 
+func TestWorkflowServiceInitializesStarterSetOnceAcrossConcurrentInstances(t *testing.T) {
+	databaseURL := "sqlite:///" + filepath.ToSlash(filepath.Join(t.TempDir(), "shared-workflow-initialize.db"))
+	backendA, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend(A) error = %v", err)
+	}
+	t.Cleanup(func() { _ = backendA.Close() })
+	backendB, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend(B) error = %v", err)
+	}
+	t.Cleanup(func() { _ = backendB.Close() })
+	barrier := newTestDocumentSaveBarrier(2)
+	serviceA := NewWorkflowService(newFirstSaveBarrierBackend(t, backendA, barrier))
+	serviceB := NewWorkflowService(newFirstSaveBarrierBackend(t, backendB, barrier))
+
+	first := referenceWorkflow()
+	first.Name = "初始工作流 A"
+	first.Scope = "public"
+	second := referenceWorkflow()
+	second.Name = "初始工作流 B"
+	second.Scope = "public"
+	starters := []CreativeWorkflow{first, second}
+	type initializeResult struct {
+		items []CreativeWorkflow
+		err   error
+	}
+	results := make(chan initializeResult, 2)
+	go func() {
+		items, initializeErr := serviceA.InitializeIfEmpty("alice", starters)
+		results <- initializeResult{items: items, err: initializeErr}
+	}()
+	go func() {
+		items, initializeErr := serviceB.InitializeIfEmpty("alice", starters)
+		results <- initializeResult{items: items, err: initializeErr}
+	}()
+	for range 2 {
+		result := <-results
+		if result.err != nil {
+			t.Fatalf("InitializeIfEmpty() error = %v", result.err)
+		}
+		if len(result.items) != 2 {
+			t.Fatalf("InitializeIfEmpty() items = %#v, want one starter set", result.items)
+		}
+	}
+
+	items, err := NewWorkflowService(backendA).List("alice")
+	if err != nil {
+		t.Fatalf("List() error = %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("stored starter workflows = %#v, want exactly two", items)
+	}
+	names := map[string]bool{}
+	for _, item := range items {
+		names[item.Name] = true
+	}
+	if !names[first.Name] || !names[second.Name] {
+		t.Fatalf("stored starter workflow names = %#v", names)
+	}
+}
+
 func TestWorkflowServiceMergesConcurrentDatabaseDeletes(t *testing.T) {
 	databaseURL := "sqlite:///" + filepath.ToSlash(filepath.Join(t.TempDir(), "shared-workflow-deletes.db"))
 	backendA, err := storage.NewDatabaseBackend(databaseURL)

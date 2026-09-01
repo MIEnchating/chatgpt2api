@@ -260,6 +260,56 @@ func TestGenericWebDAVObjectLifecycleKeepsNormalRequestsWorking(t *testing.T) {
 	}
 }
 
+func TestGenericWebDAVDownloadRejectsInvalidRangesBeforeReading(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		_, _ = w.Write([]byte("0123456789"))
+	}))
+	defer server.Close()
+
+	provider := model.StorageProvider{
+		Type: model.StorageProviderTypeWebDAV, Endpoint: server.URL,
+		Username: "user", Password: "secret",
+	}
+	object := model.StorageObject{ObjectKey: "assets/user-1/sample.txt", Bytes: 10}
+	for _, rangeHeader := range []string{"items=0-1", "bytes=10-11", "bytes=0-1,4-5"} {
+		if _, err := downloadGenericWebDAVObject(context.Background(), provider, object, rangeHeader); err == nil || err.Error() != "requested storage range is invalid" {
+			t.Fatalf("downloadGenericWebDAVObject(%q) error = %v, want invalid range", rangeHeader, err)
+		}
+	}
+	if requests != 0 {
+		t.Fatalf("invalid WebDAV ranges made %d requests, want none", requests)
+	}
+}
+
+func TestGenericWebDAVDownloadDoesNotRetryFailedRangeAsFullRead(t *testing.T) {
+	rangeRequests := 0
+	fullRequests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Range") == "bytes=2-5" {
+			rangeRequests++
+			http.Error(w, "range read failed", http.StatusInternalServerError)
+			return
+		}
+		fullRequests++
+		_, _ = w.Write([]byte("0123456789"))
+	}))
+	defer server.Close()
+
+	provider := model.StorageProvider{
+		Type: model.StorageProviderTypeWebDAV, Endpoint: server.URL,
+		Username: "user", Password: "secret",
+	}
+	object := model.StorageObject{ObjectKey: "assets/user-1/sample.txt", Bytes: 10}
+	if _, err := downloadGenericWebDAVObject(context.Background(), provider, object, "bytes=2-5"); err == nil || !strings.Contains(err.Error(), "500") {
+		t.Fatalf("downloadGenericWebDAVObject() error = %v, want range read failure", err)
+	}
+	if rangeRequests == 0 || fullRequests != 0 {
+		t.Fatalf("WebDAV requests = range %d, full %d; want range requests only", rangeRequests, fullRequests)
+	}
+}
+
 func TestStorageObjectPublicURLRejectsInvalidOverrides(t *testing.T) {
 	provider := model.StorageProvider{PublicBaseURL: "https://cdn.example.test/root"}
 	if got := storageObjectPublicURL(provider, "assets/user/image 1.png"); got != "https://cdn.example.test/root/assets/user/image%201.png" {
@@ -672,6 +722,41 @@ func TestGenericStorageServiceDownloadsPublicURLWithoutSavedProvider(t *testing.
 	data, err := io.ReadAll(download.Stream)
 	if err != nil || string(data) != "bcd" || download.StatusCode != http.StatusPartialContent || download.ContentRange != "bytes 1-3/5" {
 		t.Fatalf("DownloadForIdentity() = data %q, status %d, range %q, err %v", data, download.StatusCode, download.ContentRange, err)
+	}
+}
+
+func TestGenericStorageServicePropagatesProviderDownloadFailure(t *testing.T) {
+	providerRequests := 0
+	providerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		providerRequests++
+		http.Error(w, "provider read failed", http.StatusInternalServerError)
+	}))
+	defer providerServer.Close()
+	publicRequests := 0
+	publicServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		publicRequests++
+		_, _ = w.Write([]byte("public fallback"))
+	}))
+	defer publicServer.Close()
+
+	provider := model.StorageProvider{
+		ID: "webdav", Type: model.StorageProviderTypeWebDAV, Endpoint: providerServer.URL,
+		Username: "user", Password: "secret", Enabled: true,
+	}
+	service := newGenericStorageTestService(t, model.StorageSetting{Providers: []model.StorageProvider{provider}})
+	if err := service.objects.SaveStorageObject(model.StorageObject{
+		ID: "provider-object", ProviderID: provider.ID, ObjectKey: "assets/user-1/file.bin",
+		PublicURL: publicServer.URL + "/file.bin", Bytes: 5, CreatedBy: "user-1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := service.DownloadForIdentity(context.Background(), "user-1", false, "provider-object", "")
+	if err == nil || !strings.Contains(err.Error(), "500") || strings.Contains(err.Error(), "storage provider does not exist") {
+		t.Fatalf("DownloadForIdentity() error = %v, want provider read failure", err)
+	}
+	if providerRequests == 0 || publicRequests != 0 {
+		t.Fatalf("download requests = provider %d, public %d; want provider requests only", providerRequests, publicRequests)
 	}
 }
 

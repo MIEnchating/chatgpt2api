@@ -4,20 +4,28 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
+	"chatgpt2api/internal/model"
 	"chatgpt2api/internal/storage"
 	"chatgpt2api/internal/util"
 )
 
 const (
-	myAssetDocumentDir  = "my_assets"
-	maxMyAssetItems     = 2000
-	myAssetSaveAttempts = 8
-	MyAssetPrivate      = "private"
-	MyAssetPublic       = "public"
+	myAssetDocumentDir                 = "my_assets"
+	myAssetDocumentGenerationField     = "generation"
+	myAssetDocumentOwnerIDField        = "ownerID"
+	myAssetPendingObjectDeletionsField = "pendingObjectDeletions"
+	maxMyAssetItems                    = 2000
+	myAssetSaveAttempts                = 8
+	myAssetRequestCleanupBatchSize     = 1
+	myAssetRequestCleanupTimeout       = time.Second
+	MyAssetPrivate                     = "private"
+	MyAssetPublic                      = "public"
 )
 
 type MyAssetOwner struct {
@@ -54,6 +62,15 @@ type MyAssetTextGovernance struct {
 	Count int   `json:"count"`
 	Bytes int64 `json:"bytes"`
 }
+
+type myAssetDocument struct {
+	ownerID                string
+	items                  []MyAsset
+	pendingObjectDeletions []string
+	generation             int64
+}
+
+var ErrStorageObjectInUse = errors.New("storage object is still referenced")
 
 func (s *MyAssetService) ListVisible(viewerID string, admin bool, owners []MyAssetOwner) ([]MyAsset, error) {
 	viewerID = strings.TrimSpace(viewerID)
@@ -119,18 +136,29 @@ func (s *MyAssetService) TextGovernance(viewerID string, admin bool, owners []My
 }
 
 type MyAssetService struct {
-	mu      sync.Mutex
-	store   storage.JSONDocumentBackend
-	objects MyAssetObjectStorage
+	mu                  sync.Mutex
+	store               storage.JSONDocumentBackend
+	objects             MyAssetObjectStorage
+	deletionCoordinator StorageObjectDeletionCoordinator
 }
 
 type MyAssetObjectStorage interface {
 	Upload(context.Context, string, bool, string, string, []byte, *StorageObjectProviderInput) (UploadedStorageObject, error)
+	InfoForIdentity(string, bool, string) (model.StorageObject, error)
 	Delete(context.Context, string, bool, string, *StorageObjectProviderInput) error
 }
 
-func NewMyAssetService(backend storage.Backend, objects MyAssetObjectStorage) *MyAssetService {
-	return &MyAssetService{store: jsonDocumentStoreFromBackend(backend), objects: objects}
+type StorageObjectDeletionCoordinator interface {
+	ReserveStorageObjectDeletion(ownerID, objectID string) error
+	CompleteStorageObjectDeletion(ownerID, objectID string) error
+}
+
+func NewMyAssetService(backend storage.Backend, objects MyAssetObjectStorage, coordinators ...StorageObjectDeletionCoordinator) *MyAssetService {
+	service := &MyAssetService{store: jsonDocumentStoreFromBackend(backend), objects: objects}
+	if len(coordinators) > 0 {
+		service.deletionCoordinator = coordinators[0]
+	}
+	return service
 }
 
 func (s *MyAssetService) List(ownerID string) ([]MyAsset, error) {
@@ -158,17 +186,18 @@ func (s *MyAssetService) Upsert(ctx context.Context, ownerID string, admin bool,
 		return MyAsset{}, err
 	}
 
-	s.mu.Lock()
 	var staged *UploadedStorageObject
 	var saved MyAsset
-	var staleTextKey string
 	var lastErr error
-	for attempt := 0; attempt < myAssetSaveAttempts; attempt++ {
-		items, loadErr := s.loadLocked(ownerID)
+	for attempt := 0; attempt < myAssetSaveAttempts; {
+		s.mu.Lock()
+		document, loadErr := s.loadDocumentLocked(ownerID)
 		if loadErr != nil {
+			s.mu.Unlock()
 			lastErr = loadErr
 			break
 		}
+		items := document.items
 		matched := myAssetIndex(items, item)
 		candidate := item
 		var previous MyAsset
@@ -178,6 +207,7 @@ func (s *MyAssetService) Upsert(ctx context.Context, ownerID string, admin bool,
 				candidate.CreatedAt = previous.CreatedAt
 			}
 		} else if len(items) >= maxMyAssetItems {
+			s.mu.Unlock()
 			lastErr = fmt.Errorf("assets cannot contain more than %d items", maxMyAssetItems)
 			break
 		}
@@ -194,6 +224,7 @@ func (s *MyAssetService) Upsert(ctx context.Context, ownerID string, admin bool,
 				candidate.Bytes = previous.Bytes
 			} else {
 				if staged == nil {
+					s.mu.Unlock()
 					if s.objects == nil {
 						lastErr = fmt.Errorf("asset object storage is required")
 						break
@@ -204,12 +235,17 @@ func (s *MyAssetService) Upsert(ctx context.Context, ownerID string, admin bool,
 						break
 					}
 					staged = &uploaded
+					continue
 				}
 				candidate.StorageKey = staged.StorageKey
 				candidate.URL = staged.URL
 				candidate.MIMEType = staged.MIMEType
 				candidate.Bytes = staged.Bytes
 			}
+		} else if validateErr := s.validateMediaStorageObject(ownerID, candidate, document); validateErr != nil {
+			s.mu.Unlock()
+			lastErr = validateErr
+			break
 		}
 
 		if matched >= 0 {
@@ -218,38 +254,52 @@ func (s *MyAssetService) Upsert(ctx context.Context, ownerID string, admin bool,
 			items = append(items, candidate)
 		}
 		sortMyAssets(items)
-		if saveErr := saveStoredJSON(s.store, myAssetDocumentName(ownerID), map[string]any{"items": items}); saveErr != nil {
+		pending := append([]string(nil), document.pendingObjectDeletions...)
+		if previous.Kind == "text" && previous.StorageKey != "" && previous.StorageKey != candidate.StorageKey {
+			pending = appendMyAssetObjectDeletionIDs(pending, storageObjectIDFromKey(previous.StorageKey))
+		}
+		if staged != nil {
+			stagedID := firstNonEmpty(staged.ID, storageObjectIDFromKey(staged.StorageKey))
+			if storageObjectIDFromKey(candidate.StorageKey) != strings.TrimSpace(stagedID) {
+				pending = appendMyAssetObjectDeletionIDs(pending, stagedID)
+			}
+		}
+		document.items = items
+		document.pendingObjectDeletions = pending
+		saveErr := s.saveDocumentLocked(ownerID, document)
+		s.mu.Unlock()
+		attempt++
+		if saveErr != nil {
 			lastErr = saveErr
-			if errors.Is(saveErr, storage.ErrConcurrentRowUpdate) && attempt+1 < myAssetSaveAttempts {
+			if errors.Is(saveErr, storage.ErrConcurrentRowUpdate) && attempt < myAssetSaveAttempts {
 				continue
 			}
 			break
 		}
 		saved = candidate
-		if previous.Kind == "text" && previous.StorageKey != "" && previous.StorageKey != candidate.StorageKey {
-			staleTextKey = previous.StorageKey
-		}
 		lastErr = nil
 		break
 	}
-	s.mu.Unlock()
 
 	if lastErr != nil {
 		if staged != nil {
-			s.deleteTextObjects(ctx, ownerID, admin, []string{staged.ID})
+			stagedID := firstNonEmpty(staged.ID, storageObjectIDFromKey(staged.StorageKey))
+			if cleanupErr := s.cleanupUncommittedTextObject(ctx, ownerID, admin, stagedID); cleanupErr != nil {
+				lastErr = errors.Join(lastErr, cleanupErr)
+			}
 		}
 		return MyAsset{}, lastErr
 	}
-	if staged != nil && saved.StorageKey != staged.StorageKey {
-		s.deleteTextObjects(ctx, ownerID, admin, []string{staged.ID})
-	}
-	if id := storageObjectIDFromKey(staleTextKey); id != "" {
-		s.deleteTextObjects(ctx, ownerID, admin, []string{id})
-	}
+	// The asset mutation is already committed. Failed cleanup remains in the
+	// document outbox and must not make the mutation appear to have failed.
+	_ = s.retryPendingObjectDeletionsForRequest(ctx, ownerID, admin)
 	return saved, nil
 }
 
 func (s *MyAssetService) EnsureTextStorage(ctx context.Context, ownerID string, admin bool) ([]MyAsset, error) {
+	// A normal asset-page load is also the low-cost recovery path for durable
+	// cleanup work left by an earlier provider failure or process restart.
+	_ = s.retryPendingObjectDeletionsForRequest(ctx, ownerID, admin)
 	items, err := s.List(ownerID)
 	if err != nil {
 		return nil, err
@@ -278,14 +328,15 @@ func (s *MyAssetService) Delete(ctx context.Context, ownerID string, admin bool,
 
 	s.mu.Lock()
 	removedOnce := false
-	staleTextKey := ""
+	cleanupIDs := make([]string, 0, 1)
 	var lastErr error
 	for attempt := 0; attempt < myAssetSaveAttempts; attempt++ {
-		items, loadErr := s.loadLocked(ownerID)
+		document, loadErr := s.loadDocumentLocked(ownerID)
 		if loadErr != nil {
 			lastErr = loadErr
 			break
 		}
+		items := document.items
 		index := -1
 		for itemIndex := range items {
 			if items[itemIndex].ID == id {
@@ -294,15 +345,29 @@ func (s *MyAssetService) Delete(ctx context.Context, ownerID string, admin bool,
 			}
 		}
 		if index < 0 {
+			pending := appendMyAssetObjectDeletionIDs(document.pendingObjectDeletions, cleanupIDs...)
+			if len(pending) != len(document.pendingObjectDeletions) {
+				document.items = items
+				document.pendingObjectDeletions = pending
+				if saveErr := s.saveDocumentLocked(ownerID, document); saveErr != nil {
+					lastErr = saveErr
+					if errors.Is(saveErr, storage.ErrConcurrentRowUpdate) && attempt+1 < myAssetSaveAttempts {
+						continue
+					}
+					break
+				}
+			}
 			lastErr = nil
 			break
 		}
 		removedOnce = true
 		if items[index].Kind == "text" {
-			staleTextKey = items[index].StorageKey
+			cleanupIDs = appendMyAssetObjectDeletionIDs(cleanupIDs, storageObjectIDFromKey(items[index].StorageKey))
 		}
 		items = append(items[:index], items[index+1:]...)
-		if saveErr := saveStoredJSON(s.store, myAssetDocumentName(ownerID), map[string]any{"items": items}); saveErr != nil {
+		document.items = items
+		document.pendingObjectDeletions = appendMyAssetObjectDeletionIDs(document.pendingObjectDeletions, cleanupIDs...)
+		if saveErr := s.saveDocumentLocked(ownerID, document); saveErr != nil {
 			lastErr = saveErr
 			if errors.Is(saveErr, storage.ErrConcurrentRowUpdate) && attempt+1 < myAssetSaveAttempts {
 				continue
@@ -316,11 +381,9 @@ func (s *MyAssetService) Delete(ctx context.Context, ownerID string, admin bool,
 	if lastErr != nil {
 		return false, lastErr
 	}
-	if removedOnce {
-		if objectID := storageObjectIDFromKey(staleTextKey); objectID != "" {
-			s.deleteTextObjects(ctx, ownerID, admin, []string{objectID})
-		}
-	}
+	// The asset mutation is already committed. Failed cleanup remains in the
+	// document outbox and must not make the mutation appear to have failed.
+	_ = s.retryPendingObjectDeletionsForRequest(ctx, ownerID, admin)
 	return removedOnce, nil
 }
 
@@ -333,16 +396,398 @@ func myAssetIndex(items []MyAsset, candidate MyAsset) int {
 	return -1
 }
 
-func (s *MyAssetService) deleteTextObjects(ctx context.Context, ownerID string, admin bool, ids []string) {
-	if s.objects == nil {
-		return
+func (s *MyAssetService) cleanupUncommittedTextObject(ctx context.Context, ownerID string, admin bool, objectID string) error {
+	objectID = strings.TrimSpace(objectID)
+	if objectID == "" {
+		return nil
 	}
-	cleanupCtx := context.WithoutCancel(ctx)
-	for _, id := range ids {
-		if id != "" {
-			_ = s.objects.Delete(cleanupCtx, ownerID, admin, id, nil)
+	queued, err := s.enqueueObjectDeletion(ownerID, objectID)
+	if err != nil {
+		// A failed document save may have committed remotely. Without a durable
+		// outbox entry, deleting here could remove an object the document references.
+		return fmt.Errorf("persist text asset cleanup: %w", err)
+	}
+	if !queued {
+		return nil
+	}
+	return s.retryPendingObjectDeletionsWithBudget(ctx, ownerID, admin, objectID, nil)
+}
+
+func (s *MyAssetService) enqueueObjectDeletion(ownerID, objectID string) (bool, error) {
+	objectID = strings.TrimSpace(objectID)
+	if objectID == "" {
+		return false, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for attempt := 0; attempt < myAssetSaveAttempts; attempt++ {
+		document, err := s.loadDocumentLocked(ownerID)
+		if err != nil {
+			return false, err
+		}
+		if myAssetDocumentReferencesObject(document, objectID) {
+			return false, nil
+		}
+		pending := appendMyAssetObjectDeletionIDs(document.pendingObjectDeletions, objectID)
+		if len(pending) == len(document.pendingObjectDeletions) {
+			return true, nil
+		}
+		document.pendingObjectDeletions = pending
+		if err := s.saveDocumentLocked(ownerID, document); err != nil {
+			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < myAssetSaveAttempts {
+				continue
+			}
+			return false, err
+		}
+		return true, nil
+	}
+	return false, storage.ErrConcurrentRowUpdate
+}
+
+// RetryPendingObjectDeletions retries durable object cleanup for one
+// owner. Callers can use this after a process restart without the service
+// instance that originally committed the asset mutation.
+func (s *MyAssetService) RetryPendingObjectDeletions(ctx context.Context, ownerID string, admin bool) error {
+	ownerID = strings.TrimSpace(ownerID)
+	if ownerID == "" {
+		return fmt.Errorf("owner_id is required")
+	}
+	return s.retryPendingObjectDeletions(ctx, ownerID, admin, 0, "", nil)
+}
+
+// RetryAllPendingObjectDeletions performs a bounded recovery sweep. It handles
+// one object per owner so a large backlog cannot monopolize the server, while
+// periodic calls eventually drain durable work left by crashes or providers.
+func (s *MyAssetService) RetryAllPendingObjectDeletions(ctx context.Context, knownOwnerIDs ...string) error {
+	owners, err := s.pendingObjectDeletionOwners(knownOwnerIDs...)
+	if err != nil {
+		return err
+	}
+	cleanupErrors := make([]error, 0)
+	for _, ownerID := range owners {
+		if ctx != nil {
+			if err := ctx.Err(); err != nil {
+				cleanupErrors = append(cleanupErrors, err)
+				break
+			}
+		}
+		if err := s.retryPendingObjectDeletions(ctx, ownerID, false, myAssetRequestCleanupBatchSize, "", nil); err != nil {
+			cleanupErrors = append(cleanupErrors, fmt.Errorf("retry pending asset deletions for %q: %w", ownerID, err))
 		}
 	}
+	return errors.Join(cleanupErrors...)
+}
+
+func (s *MyAssetService) pendingObjectDeletionOwners(knownOwnerIDs ...string) ([]string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	store, ok := s.store.(storage.JSONDocumentPrefixBackend)
+	if !ok {
+		return nil, errors.New("storage document prefix backend is required")
+	}
+	documents, err := store.ListJSONDocuments(myAssetDocumentDir + "/")
+	if err != nil {
+		return nil, err
+	}
+	owners := make(map[string]struct{})
+	knownOwnerByDocument := make(map[string]string, len(knownOwnerIDs))
+	for _, knownOwnerID := range knownOwnerIDs {
+		knownOwnerID = strings.TrimSpace(knownOwnerID)
+		if knownOwnerID != "" {
+			knownOwnerByDocument[myAssetDocumentName(knownOwnerID)] = knownOwnerID
+		}
+	}
+	for name, raw := range documents {
+		value := util.StringMap(raw)
+		if len(appendMyAssetObjectDeletionIDs(nil, util.AsStringSlice(value[myAssetPendingObjectDeletionsField])...)) == 0 {
+			continue
+		}
+		ownerID := strings.TrimSpace(util.Clean(value[myAssetDocumentOwnerIDField]))
+		if ownerID == "" {
+			ownerID = knownOwnerByDocument[name]
+		}
+		if ownerID != "" {
+			owners[ownerID] = struct{}{}
+		}
+	}
+	result := make([]string, 0, len(owners))
+	for ownerID := range owners {
+		result = append(result, ownerID)
+	}
+	sort.Strings(result)
+	return result, nil
+}
+
+// DeleteStorageObject serializes an explicit object deletion with asset
+// mutations by publishing a durable tombstone before provider I/O begins.
+func (s *MyAssetService) DeleteStorageObject(ctx context.Context, requesterID string, admin bool, objectID string, provider *StorageObjectProviderInput) error {
+	requesterID = strings.TrimSpace(requesterID)
+	objectID = strings.TrimSpace(objectID)
+	if requesterID == "" || objectID == "" {
+		return errors.New("user and storage object id are required")
+	}
+	if s.objects == nil {
+		return errors.New("asset object storage is required")
+	}
+	object, err := s.objects.InfoForIdentity(requesterID, admin, objectID)
+	if errors.Is(err, storage.ErrStorageObjectNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	ownerID := strings.TrimSpace(object.CreatedBy)
+	if ownerID == "" {
+		ownerID = requesterID
+	}
+	queued, err := s.enqueueObjectDeletion(ownerID, objectID)
+	if err != nil {
+		return fmt.Errorf("persist storage object deletion: %w", err)
+	}
+	if !queued {
+		return fmt.Errorf("%w by an asset: %q", ErrStorageObjectInUse, objectID)
+	}
+	deleteErr := s.retryPendingObjectDeletionsWithBudget(ctx, ownerID, admin, objectID, provider)
+	if errors.Is(deleteErr, ErrStorageObjectInUse) {
+		if cancelErr := s.cancelObjectDeletion(ownerID, objectID); cancelErr != nil {
+			return errors.Join(deleteErr, fmt.Errorf("cancel storage object deletion: %w", cancelErr))
+		}
+	}
+	return deleteErr
+}
+
+func (s *MyAssetService) cancelObjectDeletion(ownerID, objectID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for attempt := 0; attempt < myAssetSaveAttempts; attempt++ {
+		document, err := s.loadDocumentLocked(ownerID)
+		if err != nil {
+			return err
+		}
+		remaining := make([]string, 0, len(document.pendingObjectDeletions))
+		for _, pendingID := range document.pendingObjectDeletions {
+			if pendingID != objectID {
+				remaining = append(remaining, pendingID)
+			}
+		}
+		if len(remaining) == len(document.pendingObjectDeletions) {
+			return nil
+		}
+		document.pendingObjectDeletions = remaining
+		if err := s.saveDocumentLocked(ownerID, document); err != nil {
+			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < myAssetSaveAttempts {
+				continue
+			}
+			return err
+		}
+		return nil
+	}
+	return storage.ErrConcurrentRowUpdate
+}
+
+func (s *MyAssetService) retryPendingObjectDeletionsForRequest(ctx context.Context, ownerID string, admin bool) error {
+	return s.retryPendingObjectDeletionsWithBudget(ctx, ownerID, admin, "", nil)
+}
+
+func (s *MyAssetService) retryPendingObjectDeletionsWithBudget(ctx context.Context, ownerID string, admin bool, preferredObjectID string, provider *StorageObjectProviderInput) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), myAssetRequestCleanupTimeout)
+	defer cancel()
+	return s.retryPendingObjectDeletions(cleanupCtx, ownerID, admin, myAssetRequestCleanupBatchSize, preferredObjectID, provider)
+}
+
+func (s *MyAssetService) retryPendingObjectDeletions(ctx context.Context, ownerID string, admin bool, limit int, preferredObjectID string, provider *StorageObjectProviderInput) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	// Keep deletion markers durable while provider I/O runs. This prevents a
+	// concurrent media upsert from claiming an object selected for deletion.
+	s.mu.Lock()
+	var candidates []string
+	snapshotReady := false
+	for attempt := 0; attempt < myAssetSaveAttempts; attempt++ {
+		document, err := s.loadDocumentLocked(ownerID)
+		if err != nil {
+			s.mu.Unlock()
+			return err
+		}
+		if len(document.pendingObjectDeletions) == 0 {
+			s.mu.Unlock()
+			return nil
+		}
+		candidates = make([]string, 0, len(document.pendingObjectDeletions))
+		for _, objectID := range document.pendingObjectDeletions {
+			if !myAssetDocumentReferencesObject(document, objectID) {
+				candidates = append(candidates, objectID)
+			}
+		}
+		if len(candidates) == len(document.pendingObjectDeletions) {
+			snapshotReady = true
+			break
+		}
+		document.pendingObjectDeletions = candidates
+		if err := s.saveDocumentLocked(ownerID, document); err != nil {
+			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < myAssetSaveAttempts {
+				continue
+			}
+			s.mu.Unlock()
+			return fmt.Errorf("save asset object cleanup: %w", err)
+		}
+		snapshotReady = true
+		break
+	}
+	s.mu.Unlock()
+	if !snapshotReady {
+		return storage.ErrConcurrentRowUpdate
+	}
+	if len(candidates) == 0 {
+		return nil
+	}
+	if s.objects == nil {
+		return errors.New("asset object storage is required")
+	}
+	selected := candidates
+	preferredObjectID = strings.TrimSpace(preferredObjectID)
+	if preferredObjectID != "" {
+		selected = nil
+		for _, objectID := range candidates {
+			if objectID == preferredObjectID {
+				selected = []string{objectID}
+				break
+			}
+		}
+	} else if limit > 0 && len(selected) > limit {
+		selected = selected[:limit]
+	}
+	if len(selected) == 0 {
+		return nil
+	}
+
+	deleted := make(map[string]struct{}, len(selected))
+	attempted := make(map[string]struct{}, len(selected))
+	deleteErrors := make([]error, 0)
+	for _, objectID := range selected {
+		attempted[objectID] = struct{}{}
+		if err := ctx.Err(); err != nil {
+			deleteErrors = append(deleteErrors, err)
+			continue
+		}
+		if s.deletionCoordinator != nil {
+			if err := s.deletionCoordinator.ReserveStorageObjectDeletion(ownerID, objectID); err != nil {
+				deleteErrors = append(deleteErrors, fmt.Errorf("reserve asset storage object deletion %q: %w", objectID, err))
+				continue
+			}
+		}
+		deleteProvider := (*StorageObjectProviderInput)(nil)
+		if objectID == preferredObjectID {
+			deleteProvider = provider
+		}
+		if err := s.objects.Delete(ctx, ownerID, admin, objectID, deleteProvider); err != nil {
+			deleteErrors = append(deleteErrors, fmt.Errorf("delete asset storage object %q: %w", objectID, err))
+			continue
+		}
+		if s.deletionCoordinator != nil {
+			if err := s.deletionCoordinator.CompleteStorageObjectDeletion(ownerID, objectID); err != nil {
+				deleteErrors = append(deleteErrors, fmt.Errorf("complete asset storage object deletion %q: %w", objectID, err))
+				continue
+			}
+		}
+		deleted[objectID] = struct{}{}
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for attempt := 0; attempt < myAssetSaveAttempts; attempt++ {
+		document, err := s.loadDocumentLocked(ownerID)
+		if err != nil {
+			return errors.Join(errors.Join(deleteErrors...), err)
+		}
+		remaining := make([]string, 0, len(document.pendingObjectDeletions))
+		deferred := make([]string, 0, len(attempted))
+		for _, objectID := range document.pendingObjectDeletions {
+			_, deletionCompleted := deleted[objectID]
+			if myAssetDocumentReferencesObject(document, objectID) || deletionCompleted {
+				continue
+			}
+			if _, deletionAttempted := attempted[objectID]; deletionAttempted {
+				deferred = append(deferred, objectID)
+				continue
+			}
+			remaining = append(remaining, objectID)
+		}
+		remaining = append(remaining, deferred...)
+		if slices.Equal(remaining, document.pendingObjectDeletions) {
+			return errors.Join(deleteErrors...)
+		}
+		document.pendingObjectDeletions = remaining
+		if err := s.saveDocumentLocked(ownerID, document); err != nil {
+			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < myAssetSaveAttempts {
+				continue
+			}
+			return errors.Join(errors.Join(deleteErrors...), fmt.Errorf("save asset object cleanup: %w", err))
+		}
+		return errors.Join(deleteErrors...)
+	}
+	return errors.Join(errors.Join(deleteErrors...), storage.ErrConcurrentRowUpdate)
+}
+
+func (s *MyAssetService) validateMediaStorageObject(ownerID string, item MyAsset, document myAssetDocument) error {
+	if item.Kind == "text" || !strings.HasPrefix(item.StorageKey, "server:") {
+		return nil
+	}
+	objectID := storageObjectIDFromKey(item.StorageKey)
+	if objectID == "" {
+		return errors.New("asset storage object id is required")
+	}
+	for _, pendingID := range document.pendingObjectDeletions {
+		if pendingID == objectID {
+			return fmt.Errorf("storage object %q is pending deletion", objectID)
+		}
+	}
+	if s.objects == nil {
+		return errors.New("asset object storage is required")
+	}
+	object, err := s.objects.InfoForIdentity(ownerID, false, objectID)
+	if err != nil {
+		return fmt.Errorf("load asset storage object %q: %w", objectID, err)
+	}
+	if strings.TrimSpace(object.CreatedBy) != ownerID {
+		return fmt.Errorf("storage object %q does not belong to the asset owner", objectID)
+	}
+	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(object.MIMEType)), item.Kind+"/") {
+		return fmt.Errorf("storage object %q MIME type %q is incompatible with asset kind %q", objectID, object.MIMEType, item.Kind)
+	}
+	return nil
+}
+
+func myAssetDocumentReferencesObject(document myAssetDocument, objectID string) bool {
+	objectID = strings.TrimSpace(objectID)
+	for _, item := range document.items {
+		if storageObjectIDFromKey(item.StorageKey) == objectID {
+			return true
+		}
+	}
+	return false
+}
+
+func appendMyAssetObjectDeletionIDs(current []string, ids ...string) []string {
+	result := make([]string, 0, len(current)+len(ids))
+	seen := make(map[string]struct{}, cap(result))
+	for _, id := range append(append([]string(nil), current...), ids...) {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, exists := seen[id]; exists {
+			continue
+		}
+		seen[id] = struct{}{}
+		result = append(result, id)
+	}
+	return result
 }
 
 func storageObjectIDFromKey(key string) string {
@@ -354,11 +799,35 @@ func storageObjectIDFromKey(key string) string {
 }
 
 func (s *MyAssetService) loadLocked(ownerID string) ([]MyAsset, error) {
+	document, err := s.loadDocumentLocked(ownerID)
+	return document.items, err
+}
+
+func (s *MyAssetService) loadDocumentLocked(ownerID string) (myAssetDocument, error) {
 	raw, err := loadStoredJSON(s.store, myAssetDocumentName(ownerID))
 	if err != nil {
-		return nil, err
+		return myAssetDocument{}, err
 	}
-	return decodeMyAssets(raw), nil
+	value := util.StringMap(raw)
+	return myAssetDocument{
+		ownerID:                strings.TrimSpace(util.Clean(value[myAssetDocumentOwnerIDField])),
+		items:                  decodeMyAssets(raw),
+		pendingObjectDeletions: appendMyAssetObjectDeletionIDs(nil, util.AsStringSlice(value[myAssetPendingObjectDeletionsField])...),
+		generation:             int64(util.ToInt(value[myAssetDocumentGenerationField], 0)),
+	}, nil
+}
+
+func (s *MyAssetService) saveDocumentLocked(ownerID string, document myAssetDocument) error {
+	document.ownerID = strings.TrimSpace(ownerID)
+	document.generation++
+	if document.generation <= 0 {
+		document.generation = 1
+	}
+	value := map[string]any{"items": document.items, myAssetDocumentGenerationField: document.generation, myAssetDocumentOwnerIDField: document.ownerID}
+	if len(document.pendingObjectDeletions) > 0 {
+		value[myAssetPendingObjectDeletionsField] = document.pendingObjectDeletions
+	}
+	return saveStoredJSON(s.store, myAssetDocumentName(ownerID), value)
 }
 
 func (s *MyAssetService) listAssetDocumentsLocked() (map[string]any, bool) {

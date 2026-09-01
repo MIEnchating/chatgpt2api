@@ -151,6 +151,15 @@ func TestStorageFileRoutesMatchReferenceLifecycle(t *testing.T) {
 		t.Fatalf("GET content Cache-Control = %q", got)
 	}
 
+	request = httptest.NewRequest(http.MethodGet, "/api/files/"+objectID+"/content", nil)
+	request.Header.Set("Range", "bytes=10-11")
+	setRequestAuthCookie(request, aliceToken)
+	response = httptest.NewRecorder()
+	app.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusRequestedRangeNotSatisfiable {
+		t.Fatalf("invalid range status = %d body = %s", response.Code, response.Body.String())
+	}
+
 	request = httptest.NewRequest(http.MethodHead, "/api/files/"+objectID+"/content", nil)
 	setRequestAuthCookie(request, aliceToken)
 	response = httptest.NewRecorder()
@@ -176,6 +185,52 @@ func TestStorageFileRoutesMatchReferenceLifecycle(t *testing.T) {
 	app.Handler().ServeHTTP(response, request)
 	if response.Code != http.StatusBadRequest || deleted {
 		t.Fatalf("malformed delete status = %d deleted = %v body = %s", response.Code, deleted, response.Body.String())
+	}
+
+	assetJSON := fmt.Sprintf(`{"item":{"id":"stored-video","kind":"video","title":"Stored video","url":"/api/files/%s/content","storageKey":"server:%s","mimeType":"video/mp4","tags":[]}}`, objectID, objectID)
+	request = httptest.NewRequest(http.MethodPost, "/api/profile/assets", strings.NewReader(assetJSON))
+	setRequestAuthCookie(request, aliceToken)
+	response = httptest.NewRecorder()
+	app.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("save referenced asset status = %d body = %s", response.Code, response.Body.String())
+	}
+	request = httptest.NewRequest(http.MethodDelete, "/api/files/"+objectID, strings.NewReader(`{}`))
+	setRequestAuthCookie(request, aliceToken)
+	response = httptest.NewRecorder()
+	app.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusConflict || deleted {
+		t.Fatalf("referenced object delete status = %d deleted = %v body = %s", response.Code, deleted, response.Body.String())
+	}
+	request = httptest.NewRequest(http.MethodDelete, "/api/profile/assets", strings.NewReader(`{"id":"stored-video"}`))
+	setRequestAuthCookie(request, aliceToken)
+	response = httptest.NewRecorder()
+	app.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("delete referenced asset status = %d body = %s", response.Code, response.Body.String())
+	}
+	workspace, err := app.canvas.Workspace(alice.ID)
+	if err != nil {
+		t.Fatalf("Workspace() error = %v", err)
+	}
+	workspace.Document.Nodes = []service.CanvasNode{{
+		ID: "stored-video", Type: "video", Width: 640, Height: 360, ScaleX: 1, ScaleY: 1,
+		URL: "/api/files/" + objectID + "/content", StorageKey: "server:" + objectID,
+		GenerationVideoModel: defaultVideoModel, GenerationVideoSeconds: 5,
+	}}
+	savedCanvas, err := app.canvas.SaveAtRevision(alice.ID, workspace.Document)
+	if err != nil {
+		t.Fatalf("SaveAtRevision(canvas reference) error = %v", err)
+	}
+	request = httptest.NewRequest(http.MethodDelete, "/api/files/"+objectID, strings.NewReader(`{}`))
+	setRequestAuthCookie(request, aliceToken)
+	response = httptest.NewRecorder()
+	app.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusConflict || deleted {
+		t.Fatalf("canvas-referenced object delete status = %d deleted = %v body = %s", response.Code, deleted, response.Body.String())
+	}
+	if _, err := app.canvas.ClearAtRevision(alice.ID, savedCanvas.ID, savedCanvas.Revision); err != nil {
+		t.Fatalf("ClearAtRevision() error = %v", err)
 	}
 
 	request = httptest.NewRequest(http.MethodDelete, "/api/files/"+objectID, strings.NewReader(`{}`))

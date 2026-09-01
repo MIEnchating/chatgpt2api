@@ -47,51 +47,62 @@ var (
 )
 
 type App struct {
-	ctx                 context.Context
-	config              *config.Store
-	auth                *service.AuthService
-	logs                *service.LogService
-	logger              *service.Logger
-	proxy               *service.ProxyService
-	images              *service.ImageService
-	conversationAssets  *service.ImageConversationAssetService
-	tasks               *service.ImageTaskService
-	prompts             *service.PromptFavoriteService
-	myAssets            *service.MyAssetService
-	history             *service.ImageConversationHistoryService
-	canvas              *service.CanvasDocumentService
-	announce            *service.AnnouncementService
-	videoContracts      *videocontract.VideoModelContractService
-	imagePreferences    *service.ImageGenerationPreferenceService
-	customRelayConfigs  *service.CustomRelayConfigService
-	workflows           *service.WorkflowService
-	storageFiles        *service.GenericStorageService
-	newAPIKeys          *service.NewAPITokenReader
-	newAPIKeysMu        sync.RWMutex
-	newRelayTokenReader func(service.NewAPITokenReaderConfig) (*service.NewAPITokenReader, error)
-	cancel              context.CancelFunc
-	historyWriteLimiter *imageConversationHistoryWriteLimiter
-	imageUploadSlots    chan struct{}
-	videoDir            string
-	audioDir            string
-	videoReferenceDir   string
-	loginLimiter        *loginRateLimiter
-	settingsMu          sync.Mutex
-	backgroundWorkers   sync.WaitGroup
+	ctx                     context.Context
+	config                  *config.Store
+	auth                    *service.AuthService
+	logs                    *service.LogService
+	logger                  *service.Logger
+	proxy                   *service.ProxyService
+	images                  *service.ImageService
+	conversationAssets      *service.ImageConversationAssetService
+	tasks                   *service.ImageTaskService
+	prompts                 *service.PromptFavoriteService
+	myAssets                *service.MyAssetService
+	history                 *service.ImageConversationHistoryService
+	canvas                  *service.CanvasDocumentService
+	announce                *service.AnnouncementService
+	videoContracts          *videocontract.VideoModelContractService
+	imagePreferences        *service.ImageGenerationPreferenceService
+	customRelayConfigs      *service.CustomRelayConfigService
+	workflows               *service.WorkflowService
+	storageFiles            *service.GenericStorageService
+	newAPIKeys              *service.NewAPITokenReader
+	newAPIKeysMu            sync.RWMutex
+	newRelayTokenReader     func(service.NewAPITokenReaderConfig) (*service.NewAPITokenReader, error)
+	cancel                  context.CancelFunc
+	historyWriteLimiter     *imageConversationHistoryWriteLimiter
+	imageUploadSlots        chan struct{}
+	videoDir                string
+	audioDir                string
+	videoReferenceDir       string
+	loginLimiter            *loginRateLimiter
+	settingsMu              sync.Mutex
+	backgroundWorkers       sync.WaitGroup
+	storageBackendCloser    io.Closer
+	storageBackendCloseOnce sync.Once
 
 	imageCleanup             imageCleanupWorker
 	conversationAssetCleanup imageConversationAssetCleanupWorker
 }
 
 type imageCleanupWorker struct {
-	mu      sync.Mutex
-	queued  bool
-	running bool
-	closed  bool
-	done    chan struct{}
+	mu           sync.Mutex
+	queued       bool
+	running      bool
+	closed       bool
+	done         chan struct{}
+	activeCancel context.CancelFunc
+	closeWait    time.Duration
 }
 
 func (w *imageCleanupWorker) schedule(run func()) {
+	if run == nil {
+		return
+	}
+	w.scheduleContext(func(context.Context) { run() })
+}
+
+func (w *imageCleanupWorker) scheduleContext(run func(context.Context)) {
 	if w == nil || run == nil {
 		return
 	}
@@ -108,15 +119,22 @@ func (w *imageCleanupWorker) schedule(run func()) {
 	w.running = true
 	w.done = make(chan struct{})
 	done := w.done
+	ctx, cancel := context.WithCancel(context.Background())
+	w.activeCancel = cancel
 	w.mu.Unlock()
 
 	go func() {
+		defer cancel()
 		for {
-			run()
+			if ctx.Err() == nil {
+				run(ctx)
+			}
 			w.mu.Lock()
-			if w.closed || !w.queued {
+			if w.closed || ctx.Err() != nil || !w.queued {
 				w.queued = false
 				w.running = false
+				w.activeCancel = nil
+				w.done = nil
 				close(done)
 				w.mu.Unlock()
 				return
@@ -127,19 +145,54 @@ func (w *imageCleanupWorker) schedule(run func()) {
 	}()
 }
 
-func (w *imageCleanupWorker) close() {
+func (w *imageCleanupWorker) close() bool {
 	if w == nil {
-		return
+		return true
 	}
 	w.mu.Lock()
 	w.closed = true
 	w.queued = false
 	done := w.done
+	cancel := w.activeCancel
+	w.activeCancel = nil
+	closeWait := w.closeWait
+	if closeWait <= 0 {
+		closeWait = imageCleanupWorkerCloseWait
+	}
 	w.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
 	if done != nil {
+		timer := time.NewTimer(closeWait)
+		defer timer.Stop()
+		select {
+		case <-done:
+		case <-timer.C:
+		}
+	}
+	w.mu.Lock()
+	drained := !w.running
+	w.mu.Unlock()
+	return drained
+}
+
+func (w *imageCleanupWorker) wait() {
+	if w == nil {
+		return
+	}
+	w.mu.Lock()
+	running := w.running
+	done := w.done
+	w.mu.Unlock()
+	if running && done != nil {
 		<-done
 	}
 }
+
+// Cleanup has no execution deadline during normal operation. This only bounds
+// how long shutdown waits after cancellation before continuing teardown.
+const imageCleanupWorkerCloseWait = time.Second
 
 func NewApp() (*App, error) {
 	cfg, err := config.NewStore()
@@ -212,7 +265,13 @@ func NewApp() (*App, error) {
 		cancel()
 		return nil, fmt.Errorf("initialize audio storage: %w", err)
 	}
-	app := &App{ctx: ctx, config: cfg, auth: auth, logs: logs, logger: logger, proxy: proxy, images: images, videoDir: videoDir, audioDir: audioDir, videoReferenceDir: videoReferenceDir, conversationAssets: service.NewImageConversationAssetService(filepath.Join(cfg.DataDir, "image_conversation_assets")), prompts: service.NewPromptFavoriteService(storageBackend), myAssets: service.NewMyAssetService(storageBackend, storageFiles), history: service.NewImageConversationHistoryService(storageBackend), canvas: service.NewCanvasDocumentService(storageBackend), announce: service.NewAnnouncementService(storageBackend), videoContracts: videoContracts, imagePreferences: service.NewImageGenerationPreferenceService(storageBackend), customRelayConfigs: service.NewCustomRelayConfigService(storageBackend), workflows: service.NewWorkflowService(storageBackend), storageFiles: storageFiles, newAPIKeys: newAPIKeys, newRelayTokenReader: service.NewNewAPITokenReader, cancel: cancel, historyWriteLimiter: newImageConversationHistoryWriteLimiter(imageConversationHistoryWriteParallelism), imageUploadSlots: make(chan struct{}, 2), loginLimiter: newLoginRateLimiter()}
+	storageBackendCloser, _ := storageBackend.(io.Closer)
+	canvas := service.NewCanvasDocumentService(storageBackend, func(ownerID, objectID string) error {
+		_, err := storageFiles.InfoForIdentity(ownerID, false, objectID)
+		return err
+	})
+	myAssets := service.NewMyAssetService(storageBackend, storageFiles, canvas)
+	app := &App{ctx: ctx, config: cfg, auth: auth, logs: logs, logger: logger, proxy: proxy, images: images, videoDir: videoDir, audioDir: audioDir, videoReferenceDir: videoReferenceDir, conversationAssets: service.NewImageConversationAssetService(filepath.Join(cfg.DataDir, "image_conversation_assets")), prompts: service.NewPromptFavoriteService(storageBackend), myAssets: myAssets, history: service.NewImageConversationHistoryService(storageBackend), canvas: canvas, announce: service.NewAnnouncementService(storageBackend), videoContracts: videoContracts, imagePreferences: service.NewImageGenerationPreferenceService(storageBackend), customRelayConfigs: service.NewCustomRelayConfigService(storageBackend), workflows: service.NewWorkflowService(storageBackend), storageFiles: storageFiles, newAPIKeys: newAPIKeys, newRelayTokenReader: service.NewNewAPITokenReader, cancel: cancel, historyWriteLimiter: newImageConversationHistoryWriteLimiter(imageConversationHistoryWriteParallelism), imageUploadSlots: make(chan struct{}, 2), loginLimiter: newLoginRateLimiter(), storageBackendCloser: storageBackendCloser}
 	app.conversationAssets.SetStorageBudget(cfg.ImageStorageLimitBytes, func() (int64, error) {
 		summary, err := app.images.StorageGovernance()
 		return summary.TotalBytes, err
@@ -268,7 +327,55 @@ func NewApp() (*App, error) {
 	}
 	app.startImageStorageCleaner(ctx, time.Hour)
 	app.startImageConversationAssetCleaner(ctx, time.Hour)
+	app.startMyAssetDeletionCleaner(ctx, time.Hour)
 	return app, nil
+}
+
+func (a *App) startMyAssetDeletionCleaner(ctx context.Context, interval time.Duration) {
+	if a == nil || a.myAssets == nil {
+		return
+	}
+	if interval <= 0 {
+		interval = time.Hour
+	}
+	run := func() {
+		if err := a.myAssets.RetryAllPendingObjectDeletions(ctx, a.myAssetCleanupOwnerIDs()...); err != nil && ctx.Err() == nil && a.logger != nil {
+			a.logger.Warning("retry pending asset object deletions failed", "error", err)
+		}
+	}
+	a.backgroundWorkers.Add(1)
+	go func() {
+		defer a.backgroundWorkers.Done()
+		run()
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				run()
+			}
+		}
+	}()
+}
+
+func (a *App) myAssetCleanupOwnerIDs() []string {
+	owners := map[string]struct{}{"admin": {}}
+	if a != nil && a.auth != nil {
+		for _, item := range a.auth.ListUsers() {
+			ownerID := firstNonEmpty(util.Clean(item["owner_id"]), util.Clean(item["id"]))
+			if ownerID != "" {
+				owners[ownerID] = struct{}{}
+			}
+		}
+	}
+	result := make([]string, 0, len(owners))
+	for ownerID := range owners {
+		result = append(result, ownerID)
+	}
+	sort.Strings(result)
+	return result
 }
 
 func (a *App) startVideoModelContractRefresher(ctx context.Context, interval time.Duration) {
@@ -543,6 +650,8 @@ func (a *App) Close() {
 	if a.cancel != nil {
 		a.cancel()
 	}
+	imageCleanupDrained := a.closeImageStorageCleaner()
+	conversationCleanupDrained := a.closeImageConversationAssetCleaner()
 	a.backgroundWorkers.Wait()
 	if a.storageFiles != nil {
 		a.storageFiles.Close()
@@ -555,19 +664,41 @@ func (a *App) Close() {
 	if a.proxy != nil {
 		a.proxy.Close()
 	}
-	a.closeImageStorageCleaner()
-	a.closeImageConversationAssetCleaner()
+	cleanupDrained := imageCleanupDrained && conversationCleanupDrained
+	if !cleanupDrained && a.logger != nil {
+		a.logger.Warning("storage backend close deferred until unfinished cleanup exits")
+	}
 	if a.logger != nil {
 		_ = a.logger.Close()
 	}
 	a.closeRelayTokenReaders()
-	if a.config != nil {
-		if backend, err := a.config.StorageBackend(); err == nil {
-			if closer, ok := backend.(interface{ Close() error }); ok {
-				_ = closer.Close()
+	if cleanupDrained {
+		a.closeStorageBackend()
+		return
+	}
+	go func() {
+		a.imageCleanup.wait()
+		a.conversationAssetCleanup.wait()
+		a.closeStorageBackend()
+	}()
+}
+
+func (a *App) closeStorageBackend() {
+	if a == nil {
+		return
+	}
+	a.storageBackendCloseOnce.Do(func() {
+		closer := a.storageBackendCloser
+		if closer == nil && a.config != nil {
+			backend, err := a.config.StorageBackend()
+			if err == nil {
+				closer, _ = backend.(io.Closer)
 			}
 		}
-	}
+		if closer != nil {
+			_ = closer.Close()
+		}
+	})
 }
 
 func (a *App) trackBackgroundDone(done <-chan struct{}) {
@@ -1811,12 +1942,25 @@ func imageCleanupMaxBytes(rawBytes, rawMB any, fallback int64) int64 {
 }
 
 func (a *App) cleanupImageStorageWithOptions(options service.ImageStorageCleanupOptions) (service.ImageStorageCleanupResult, error) {
+	return a.cleanupImageStorageWithOptionsContext(context.Background(), options)
+}
+
+func (a *App) cleanupImageStorageWithOptionsContext(ctx context.Context, options service.ImageStorageCleanupOptions) (service.ImageStorageCleanupResult, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if err := ctx.Err(); err != nil {
+		return service.ImageStorageCleanupResult{}, err
+	}
 	assetCleanup := service.ImageConversationAssetGovernance{}
 	assets := service.ImageConversationAssetGovernance{}
 	if a.images == nil {
 		return service.ImageStorageCleanupResult{}, errors.New("image storage is unavailable")
 	}
 	if _, err := a.images.StorageGovernance(); err != nil {
+		return service.ImageStorageCleanupResult{}, err
+	}
+	if err := ctx.Err(); err != nil {
 		return service.ImageStorageCleanupResult{}, err
 	}
 	if a.conversationAssets != nil {
@@ -1832,6 +1976,9 @@ func (a *App) cleanupImageStorageWithOptions(options service.ImageStorageCleanup
 			}
 			assets = assetCleanup
 		}
+		if err := ctx.Err(); err != nil {
+			return service.ImageStorageCleanupResult{}, err
+		}
 	}
 
 	galleryOptions := options
@@ -1840,6 +1987,9 @@ func (a *App) cleanupImageStorageWithOptions(options service.ImageStorageCleanup
 	}
 	result, err := a.images.CleanupStorage(galleryOptions)
 	if err != nil {
+		return result, err
+	}
+	if err := ctx.Err(); err != nil {
 		return result, err
 	}
 	result.MaxBytes = options.MaxBytes
@@ -1852,6 +2002,9 @@ func (a *App) cleanupImageStorageWithOptions(options service.ImageStorageCleanup
 		quotaCleanup, cleanupErr := a.conversationAssets.CleanupToMaxBytes(assetAllowance)
 		if cleanupErr != nil {
 			return result, cleanupErr
+		}
+		if err := ctx.Err(); err != nil {
+			return result, err
 		}
 		assetCleanup.DeletedBytes += quotaCleanup.DeletedBytes
 		assetCleanup.DeletedCount += quotaCleanup.DeletedCount
@@ -2469,24 +2622,34 @@ func (a *App) scheduleImageStorageCleanup() {
 	if a == nil || a.images == nil || a.config == nil {
 		return
 	}
-	a.imageCleanup.schedule(a.cleanupImageStorage)
+	a.imageCleanup.scheduleContext(a.cleanupImageStorage)
 }
 
-func (a *App) closeImageStorageCleaner() {
+func (a *App) closeImageStorageCleaner() bool {
 	if a == nil {
-		return
+		return true
 	}
-	a.imageCleanup.close()
+	return a.imageCleanup.close()
 }
 
-func (a *App) cleanupImageStorage() {
+func (a *App) cleanupImageStorage(ctx context.Context) {
 	if a == nil || a.images == nil || a.config == nil {
 		return
 	}
-	if _, err := a.cleanupImageStorageWithOptions(service.ImageStorageCleanupOptions{
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if ctx.Err() != nil {
+		return
+	}
+	options := service.ImageStorageCleanupOptions{
 		RetentionDays: a.config.ImageRetentionDays(),
 		MaxBytes:      a.config.ImageStorageLimitBytes(),
-	}); err != nil && a.logger != nil {
+	}
+	if ctx.Err() != nil {
+		return
+	}
+	if _, err := a.cleanupImageStorageWithOptionsContext(ctx, options); err != nil && ctx.Err() == nil && a.logger != nil {
 		a.logger.Warning("scheduled image storage cleanup failed", "error", err)
 	}
 }

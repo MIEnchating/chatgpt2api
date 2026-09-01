@@ -18,50 +18,6 @@ func (a *App) handleWorkflows(w http.ResponseWriter, r *http.Request) {
 	ownerID := identityScope(identity)
 	base := "/api/workflows"
 	remainder := strings.Trim(strings.TrimPrefix(r.URL.Path, base), "/")
-	if remainder == "agent-draft" {
-		if r.Method != http.MethodPost {
-			w.WriteHeader(http.StatusMethodNotAllowed)
-			return
-		}
-		var input service.WorkflowAgentDraftRequest
-		if err := util.DecodeJSON(r.Body, &input); err != nil {
-			util.WriteError(w, http.StatusBadRequest, "工作流需求格式错误")
-			return
-		}
-		input.Prompt = strings.TrimSpace(input.Prompt)
-		if input.Prompt == "" {
-			util.WriteError(w, http.StatusBadRequest, "请输入工作流需求")
-			return
-		}
-		model := firstNonEmpty(strings.TrimSpace(input.Model), a.config.DefaultTextModel(), firstString(a.config.TextModels(), a.defaultChatModel()))
-		if allowedPersonalModel(model, a.config.TextModels()) == "" {
-			util.WriteError(w, http.StatusBadRequest, "文本模型不可用")
-			return
-		}
-		payload := workflowAgentPayload(input, model)
-		if err := a.validateRelayCredentialForIdentitySelection(r.Context(), identity, "", strings.TrimSpace(input.ChannelID)); err != nil {
-			a.writeCreationTaskSubmitError(w, err)
-			return
-		}
-		result, err := a.runLoggedChatTaskWithContext(r.Context(), identity, payload, "/api/workflows/agent-draft", "工作流 Agent")
-		if err != nil {
-			a.writeCreationTaskSubmitError(w, err)
-			return
-		}
-		content := ""
-		for _, item := range util.AsMapSlice(result["data"]) {
-			if content = strings.TrimSpace(util.Clean(item["text_response"])); content != "" {
-				break
-			}
-		}
-		draft, warnings, err := service.NormalizeWorkflowAgentDraft(content, input.Scope)
-		if err != nil {
-			util.WriteError(w, http.StatusBadGateway, err.Error())
-			return
-		}
-		util.WriteJSON(w, http.StatusOK, service.WorkflowAgentDraftResponse{Draft: draft, Warnings: warnings, Model: model})
-		return
-	}
 	if remainder == "" {
 		switch r.Method {
 		case http.MethodGet:
@@ -140,6 +96,74 @@ func (a *App) handleWorkflows(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.NotFound(w, r)
+}
+
+func (a *App) handleWorkflowInitialize(w http.ResponseWriter, r *http.Request) {
+	identity, ok := a.requireIdentity(w, r)
+	if !ok {
+		return
+	}
+	var input struct {
+		Items []service.CreativeWorkflow `json:"items"`
+	}
+	if err := util.DecodeJSON(r.Body, &input); err != nil {
+		util.WriteError(w, http.StatusBadRequest, "invalid workflow initialization body")
+		return
+	}
+	items, err := a.workflows.InitializeIfEmpty(identityScope(identity), input.Items)
+	if err != nil {
+		if errors.Is(err, storage.ErrConcurrentRowUpdate) {
+			util.WriteError(w, http.StatusConflict, "工作流已被其他请求修改，请刷新后重试")
+			return
+		}
+		util.WriteError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	util.WriteJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (a *App) handleWorkflowAgentDraft(w http.ResponseWriter, r *http.Request) {
+	identity, ok := a.requireIdentity(w, r)
+	if !ok {
+		return
+	}
+	var input service.WorkflowAgentDraftRequest
+	if err := util.DecodeJSON(r.Body, &input); err != nil {
+		util.WriteError(w, http.StatusBadRequest, "工作流需求格式错误")
+		return
+	}
+	input.Prompt = strings.TrimSpace(input.Prompt)
+	if input.Prompt == "" {
+		util.WriteError(w, http.StatusBadRequest, "请输入工作流需求")
+		return
+	}
+	model := firstNonEmpty(strings.TrimSpace(input.Model), a.config.DefaultTextModel(), firstString(a.config.TextModels(), a.defaultChatModel()))
+	if allowedPersonalModel(model, a.config.TextModels()) == "" {
+		util.WriteError(w, http.StatusBadRequest, "文本模型不可用")
+		return
+	}
+	payload := workflowAgentPayload(input, model)
+	if err := a.validateRelayCredentialForIdentitySelection(r.Context(), identity, "", strings.TrimSpace(input.ChannelID)); err != nil {
+		a.writeCreationTaskSubmitError(w, err)
+		return
+	}
+	result, err := a.runLoggedChatTaskWithContext(r.Context(), identity, payload, "/api/workflows/agent-draft", "工作流 Agent")
+	if err != nil {
+		a.writeCreationTaskSubmitError(w, err)
+		return
+	}
+	content := ""
+	for _, item := range util.AsMapSlice(result["data"]) {
+		if content = strings.TrimSpace(util.Clean(item["text_response"])); content != "" {
+			break
+		}
+	}
+	draft, warnings, err := service.NormalizeWorkflowAgentDraft(content, input.Scope)
+	if err != nil {
+		util.WriteError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	util.WriteJSON(w, http.StatusOK, service.WorkflowAgentDraftResponse{Draft: draft, Warnings: warnings, Model: model})
 }
 
 func workflowAgentPayload(input service.WorkflowAgentDraftRequest, model string) map[string]any {

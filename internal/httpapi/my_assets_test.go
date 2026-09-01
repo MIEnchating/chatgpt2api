@@ -1,7 +1,9 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,7 +16,11 @@ import (
 func TestProfileAssetItemAPIKeepsConcurrentGenerationWrites(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()
-	_, token := createPasswordUserSession(t, app, "asset-race", "Password123", "Asset Race")
+	identity, token := createPasswordUserSession(t, app, "asset-race", "Password123", "Asset Race")
+	video, err := app.storageFiles.Upload(context.Background(), identity.ID, false, "race.mp4", "video/mp4", []byte("video fixture"), nil)
+	if err != nil {
+		t.Fatalf("Upload(video fixture) error = %v", err)
+	}
 
 	request := func(method, body string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(method, "/api/profile/assets", strings.NewReader(body))
@@ -30,7 +36,7 @@ func TestProfileAssetItemAPIKeepsConcurrentGenerationWrites(t *testing.T) {
 
 	bodies := []string{
 		`{"item":{"id":"manual","kind":"image","title":"旧标签页改名","url":"/images/manual.png","tags":[]}}`,
-		`{"item":{"id":"generated-video:task-race:0","kind":"video","title":"并发生成结果","url":"/api/files/video-race/content","storageKey":"server:video-race","tags":[]}}`,
+		fmt.Sprintf(`{"item":{"id":"generated-video:task-race:0","kind":"video","title":"并发生成结果","url":%q,"storageKey":%q,"mimeType":"video/mp4","tags":[]}}`, video.URL, video.StorageKey),
 	}
 	var wait sync.WaitGroup
 	statuses := make(chan int, len(bodies))

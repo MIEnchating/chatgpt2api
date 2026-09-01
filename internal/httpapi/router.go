@@ -56,6 +56,8 @@ func (a *App) routes() []appRoute {
 		subtree("/api/profile/prompt-favorites", a.handleProfilePromptFavorites),
 		exact("", "/api/profile/assets", a.handleProfileAssets),
 		subtree("/api/profile/image-conversations", a.handleProfileImageConversations),
+		exact(http.MethodPost, "/api/workflows/initialize", a.handleWorkflowInitialize),
+		exact(http.MethodPost, "/api/workflows/agent-draft", a.handleWorkflowAgentDraft),
 		subtree("/api/workflows", a.handleWorkflows),
 		exact("", "/api/canvas", a.handleCanvasDocument),
 		exact(http.MethodPost, "/api/canvas/images", a.handleCanvasImageUpload),

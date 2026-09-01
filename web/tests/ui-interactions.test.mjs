@@ -338,8 +338,8 @@ test("workflow completion merges last-run metadata without replacing current con
 });
 
 test("workflow editor keeps its header and footer outside the scrolling form", () => {
-  assert.match(workflowEditorSource, /<DialogContent scrollable=\{false\} className="h-\[min\(92dvh,920px\)\]/);
-  assert.match(workflowSource, /<ScrollArea className="min-h-0 flex-1" viewportClassName="overscroll-contain p-5 sm:p-6"/);
+  assert.match(workflowEditorSource, /<DialogContent[^>]*scrollable=\{false\}[^>]*className="h-\[min\(92dvh,920px\)\]/);
+  assert.match(workflowEditorSource, /<ScrollArea[^>]*className=\{cn\("min-h-0 flex-1[^>]*viewportClassName="overscroll-contain p-5 sm:p-6"/);
   assert.match(workflowEditorSource, /<DialogFooter flush className="flex-row">/);
 });
 
@@ -348,7 +348,7 @@ test("workflow editor keeps multi-image planning in the main flow and a stable s
   assert.match(workflowEditorSource, />输入变量</);
   assert.match(workflowEditorSource, />提示词模板</);
   assert.match(workflowEditorSource, />多图提示词规划</);
-  assert.match(workflowEditorSource, /viewClass="space-y-6"/);
+  assert.match(workflowEditorSource, /<fieldset disabled=\{saving\} className="contents space-y-6">/);
   assert.match(workflowEditorSource, /lg:grid-cols-\[minmax\(0,1fr\)_340px\]/);
   assert.match(workflowEditorSource, /bg-card shadow-sm lg:sticky lg:top-0/);
   assert.ok(workflowEditorSource.indexOf("多图提示词规划") < workflowEditorSource.indexOf("<aside className"));
@@ -410,7 +410,7 @@ test("multi-image workflow history uses one durable batch and persistent clearin
 });
 
 test("single-image workflow closes its runner after task submission starts", () => {
-  assert.match(workflowSource, /const workflow = running;\s*const prompt = renderedPrompt;\s*closeRunner\(\);\s*try \{\s*await executeImageTask\(workflow, prompt\)/);
+  assert.match(workflowSource, /const workflow = running;\s*const prompt = renderedPrompt;\s*try \{\s*const task = executeImageTask\(workflow, prompt\);\s*closeRunner\(\);\s*await task;/);
 });
 
 test("workflow tasks stay isolated from creation workbench history and queue", () => {

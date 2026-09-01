@@ -2,9 +2,12 @@ package service
 
 import (
 	"errors"
+	"path/filepath"
 	"reflect"
 	"slices"
+	"sync"
 	"testing"
+	"time"
 
 	"chatgpt2api/internal/storage"
 	"chatgpt2api/internal/util"
@@ -32,6 +35,38 @@ type failingAtomicAuthStorage struct {
 	documentLoadErr error
 	failDocument    bool
 	failAtomic      bool
+}
+
+type coordinatedBootstrapAuthBackend struct {
+	*storage.DatabaseBackend
+	saveReady      chan<- struct{}
+	saveRelease    <-chan struct{}
+	coordinateSave sync.Once
+}
+
+func (b *coordinatedBootstrapAuthBackend) SaveJSONDocument(name string, value any) error {
+	if name == passwordAccountsDocumentName {
+		b.coordinateSave.Do(func() {
+			b.saveReady <- struct{}{}
+			<-b.saveRelease
+		})
+	}
+	return b.DatabaseBackend.SaveJSONDocument(name, value)
+}
+
+type alwaysConflictingBootstrapAuthStorage struct {
+	failingAtomicAuthStorage
+	saveCalls int
+}
+
+func (s *alwaysConflictingBootstrapAuthStorage) SaveJSONDocument(string, any) error {
+	s.saveCalls++
+	return storage.ErrConcurrentRowUpdate
+}
+
+type bootstrapAdminCallResult struct {
+	result BootstrapAdminResult
+	err    error
 }
 
 func (s *failingAuthStorage) LoadAccounts() ([]map[string]any, error) { return nil, nil }
@@ -341,6 +376,135 @@ func TestAuthServiceRollsBackRoleCreateAndDeleteWhenPersistenceFails(t *testing.
 	}
 	if _, ok := managedRoleByIDLocked(auth.roles, roleID); !ok {
 		t.Fatalf("failed role delete removed role %q from memory", roleID)
+	}
+}
+
+func TestAuthServiceEnsureBootstrapAdminHandlesConcurrentFirstStartup(t *testing.T) {
+	t.Run("peer creates admin", func(t *testing.T) {
+		first, second, saveReady, releaseFirst, releaseSecond := newCoordinatedBootstrapAuthServices(t)
+		firstResult := make(chan bootstrapAdminCallResult, 1)
+		secondResult := make(chan bootstrapAdminCallResult, 1)
+
+		go func() {
+			result, err := first.EnsureBootstrapAdmin("admin", "FirstAdminPassword123")
+			firstResult <- bootstrapAdminCallResult{result: result, err: err}
+		}()
+		go func() {
+			result, err := second.EnsureBootstrapAdmin("admin", "SecondAdminPassword123")
+			secondResult <- bootstrapAdminCallResult{result: result, err: err}
+		}()
+
+		waitForAuthTestValue(t, saveReady)
+		waitForAuthTestValue(t, saveReady)
+		releaseFirst <- struct{}{}
+		created := waitForAuthTestValue(t, firstResult)
+		if created.err != nil || !created.result.Created || created.result.Username != "admin" {
+			t.Fatalf("first EnsureBootstrapAdmin() = (%#v, %v), want created admin", created.result, created.err)
+		}
+
+		releaseSecond <- struct{}{}
+		reloaded := waitForAuthTestValue(t, secondResult)
+		if reloaded.err != nil || reloaded.result.Created || reloaded.result.Username != "admin" {
+			t.Fatalf("second EnsureBootstrapAdmin() = (%#v, %v), want existing admin", reloaded.result, reloaded.err)
+		}
+		if len(second.accounts) != 1 || second.accounts[0].Role != AuthRoleAdmin || !verifyAccountPassword("FirstAdminPassword123", second.accounts[0].PasswordHash) {
+			t.Fatalf("second service accounts after conflict reload = %#v", second.accounts)
+		}
+	})
+
+	t.Run("peer creates non-admin account", func(t *testing.T) {
+		first, second, saveReady, releaseFirst, releaseSecond := newCoordinatedBootstrapAuthServices(t)
+		userResult := make(chan error, 1)
+		bootstrapResult := make(chan bootstrapAdminCallResult, 1)
+
+		go func() {
+			_, err := first.CreatePasswordUser("alice", "AlicePassword123", "Alice", DefaultManagedRoleID, true)
+			userResult <- err
+		}()
+		go func() {
+			result, err := second.EnsureBootstrapAdmin("admin", "AdminPassword123")
+			bootstrapResult <- bootstrapAdminCallResult{result: result, err: err}
+		}()
+
+		waitForAuthTestValue(t, saveReady)
+		waitForAuthTestValue(t, saveReady)
+		releaseFirst <- struct{}{}
+		if err := waitForAuthTestValue(t, userResult); err != nil {
+			t.Fatalf("concurrent CreatePasswordUser() error = %v", err)
+		}
+
+		releaseSecond <- struct{}{}
+		created := waitForAuthTestValue(t, bootstrapResult)
+		if created.err != nil || !created.result.Created || created.result.Username != "admin" {
+			t.Fatalf("EnsureBootstrapAdmin() after unrelated conflict = (%#v, %v), want created admin", created.result, created.err)
+		}
+		if len(second.accounts) != 2 {
+			t.Fatalf("second service accounts after retry = %#v, want user and admin", second.accounts)
+		}
+		if _, ok := passwordAccountByUsernameLocked(second.accounts, "alice"); !ok {
+			t.Fatalf("concurrent user was lost after bootstrap retry: %#v", second.accounts)
+		}
+		if admin, ok := bootstrapAdminAccountLocked(second.accounts); !ok || !verifyAccountPassword("AdminPassword123", admin.PasswordHash) {
+			t.Fatalf("retried bootstrap admin = %#v, exists=%v", admin, ok)
+		}
+	})
+}
+
+func TestAuthServiceEnsureBootstrapAdminBoundsConflictRetries(t *testing.T) {
+	backend := &alwaysConflictingBootstrapAuthStorage{}
+	auth := newTestAuthService(t, backend)
+
+	result, err := auth.EnsureBootstrapAdmin("admin", "AdminPassword123")
+	if !errors.Is(err, storage.ErrConcurrentRowUpdate) {
+		t.Fatalf("EnsureBootstrapAdmin() = (%#v, %v), want concurrent update", result, err)
+	}
+	if backend.saveCalls != bootstrapAdminSaveAttempts {
+		t.Fatalf("bootstrap save calls = %d, want %d", backend.saveCalls, bootstrapAdminSaveAttempts)
+	}
+	if len(auth.accounts) != 0 {
+		t.Fatalf("failed bootstrap left in-memory account: %#v", auth.accounts)
+	}
+}
+
+func newCoordinatedBootstrapAuthServices(t *testing.T) (*AuthService, *AuthService, <-chan struct{}, chan<- struct{}, chan<- struct{}) {
+	t.Helper()
+	databaseURL := "sqlite:///" + filepath.ToSlash(filepath.Join(t.TempDir(), "bootstrap.db"))
+	firstDatabase, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend(first) error = %v", err)
+	}
+	t.Cleanup(func() { _ = firstDatabase.Close() })
+	secondDatabase, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend(second) error = %v", err)
+	}
+	t.Cleanup(func() { _ = secondDatabase.Close() })
+
+	saveReady := make(chan struct{}, 2)
+	releaseFirst := make(chan struct{}, 1)
+	releaseSecond := make(chan struct{}, 1)
+	firstBackend := &coordinatedBootstrapAuthBackend{
+		DatabaseBackend: firstDatabase,
+		saveReady:       saveReady,
+		saveRelease:     releaseFirst,
+	}
+	secondBackend := &coordinatedBootstrapAuthBackend{
+		DatabaseBackend: secondDatabase,
+		saveReady:       saveReady,
+		saveRelease:     releaseSecond,
+	}
+	return newTestAuthService(t, firstBackend), newTestAuthService(t, secondBackend), saveReady, releaseFirst, releaseSecond
+}
+
+func waitForAuthTestValue[T any](t *testing.T, values <-chan T) T {
+	t.Helper()
+	select {
+	case value := <-values:
+		return value
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for coordinated auth operation")
+		var zero T
+		return zero
 	}
 }
 
