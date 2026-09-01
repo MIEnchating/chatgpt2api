@@ -178,6 +178,30 @@ func TestProxyServiceCloseReleasesConnectionsAndRejectsNewRequests(t *testing.T)
 	service.Close()
 }
 
+func TestProxyServiceRejectsInvalidProxyWithoutDirectRequest(t *testing.T) {
+	var requests atomic.Int32
+	target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer target.Close()
+
+	invalidProxy := "ftp" + strings.TrimPrefix(target.URL, "http")
+	service := NewProxyService(&mutableProxyConfig{proxy: invalidProxy})
+	defer service.Close()
+
+	response, err := service.HTTPClient(time.Second).Get(target.URL)
+	if response != nil {
+		_ = response.Body.Close()
+	}
+	if err == nil || !strings.Contains(err.Error(), "invalid proxy url") {
+		t.Fatalf("request error = %v, want invalid proxy url", err)
+	}
+	if got := requests.Load(); got != 0 {
+		t.Fatalf("direct target requests = %d, want 0", got)
+	}
+}
+
 func TestSOCKS5AddressModes(t *testing.T) {
 	t.Run("socks5h keeps hostname for proxy-side DNS", func(t *testing.T) {
 		got, err := socks5Address(context.Background(), "socks5h", "chatgpt.com:443")

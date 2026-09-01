@@ -206,7 +206,6 @@ func (s *AuthService) CreatePasswordUser(username, password, name, roleID string
 	}
 	item := managedAuthUserByIDLocked(s.items, s.roles, s.accounts, account.ID)
 	s.mu.Unlock()
-	s.notifyUserCreated(account.ID)
 	return item, nil
 }
 

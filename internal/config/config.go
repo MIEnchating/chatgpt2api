@@ -885,6 +885,12 @@ func (s *Store) validateSettingsUpdateLocked(data map[string]any) error {
 			return errors.New("image base URL must be an absolute http(s) URL")
 		}
 	}
+	proxy := strings.TrimSpace(fmt.Sprint(s.settingValueFromData(data, "proxy", "")))
+	if proxy != "" {
+		if err := validateProxyURL(proxy); err != nil {
+			return err
+		}
+	}
 	relayBaseURL := strings.TrimSpace(fmt.Sprint(util.ValueOr(data["relay_base_url"], defaultRelayBaseURL)))
 	if relayBaseURL == "" {
 		return errors.New("baseurl is required")
@@ -913,6 +919,19 @@ func (s *Store) validateSettingsUpdateLocked(data map[string]any) error {
 		return err
 	}
 	return nil
+}
+
+func validateProxyURL(value string) error {
+	parsed, err := url.Parse(strings.TrimSpace(value))
+	if err != nil || parsed.Host == "" {
+		return errors.New("proxy must be an absolute http(s) or socks5 URL")
+	}
+	switch parsed.Scheme {
+	case "http", "https", "socks5", "socks5h":
+		return nil
+	default:
+		return errors.New("proxy must use http, https, socks5, or socks5h")
+	}
 }
 
 func validateWebDAVEndpoint(value string) error {

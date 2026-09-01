@@ -538,8 +538,8 @@ func TestMyAssetTextReplacementPersistsFailedObjectCleanupForRetry(t *testing.T)
 	assertMyAssetPendingObjectDeletions(t, backend, "user-a", []string{oldObjectID})
 
 	reloaded := NewMyAssetService(backend, objects)
-	if err := reloaded.RetryPendingObjectDeletions(context.Background(), "user-a", false); err != nil {
-		t.Fatalf("RetryPendingObjectDeletions() error = %v", err)
+	if err := reloaded.RetryAllPendingObjectDeletions(context.Background(), "user-a"); err != nil {
+		t.Fatalf("RetryAllPendingObjectDeletions() error = %v", err)
 	}
 	if objects.nextID != 2 {
 		t.Fatalf("uploads = %d, want 2", objects.nextID)
@@ -573,8 +573,8 @@ func TestMyAssetUploadRollbackPersistsFailedObjectCleanupForRetry(t *testing.T) 
 	assertMyAssetPendingObjectDeletions(t, backend, ownerID, []string{"text-1"})
 
 	reloaded := NewMyAssetService(backend, objects)
-	if err := reloaded.RetryPendingObjectDeletions(context.Background(), ownerID, false); err != nil {
-		t.Fatalf("RetryPendingObjectDeletions() error = %v", err)
+	if err := reloaded.RetryAllPendingObjectDeletions(context.Background(), ownerID); err != nil {
+		t.Fatalf("RetryAllPendingObjectDeletions() error = %v", err)
 	}
 	assertMyAssetPendingObjectDeletions(t, backend, ownerID, nil)
 	if _, exists := objects.uploads["text-1"]; exists {
@@ -605,8 +605,8 @@ func TestMyAssetCleanupDoesNotDeleteReferencedObject(t *testing.T) {
 	objects := newMyAssetObjectStorageStub()
 	objects.uploads[objectID] = "body"
 
-	if err := NewMyAssetService(backend, objects).RetryPendingObjectDeletions(context.Background(), ownerID, false); err != nil {
-		t.Fatalf("RetryPendingObjectDeletions() error = %v", err)
+	if err := NewMyAssetService(backend, objects).RetryAllPendingObjectDeletions(context.Background(), ownerID); err != nil {
+		t.Fatalf("RetryAllPendingObjectDeletions() error = %v", err)
 	}
 	assertMyAssetPendingObjectDeletions(t, backend, ownerID, nil)
 	if _, exists := objects.uploads[objectID]; !exists {
@@ -718,8 +718,8 @@ func TestMyAssetRejectsPendingDeletedAndIncompatibleStorageObjects(t *testing.T)
 	if err == nil || !strings.Contains(err.Error(), "pending deletion") {
 		t.Fatalf("Upsert(pending object) error = %v", err)
 	}
-	if err := assets.RetryPendingObjectDeletions(context.Background(), "user-a", false); err != nil {
-		t.Fatalf("RetryPendingObjectDeletions() error = %v", err)
+	if err := assets.RetryAllPendingObjectDeletions(context.Background(), "user-a"); err != nil {
+		t.Fatalf("RetryAllPendingObjectDeletions() error = %v", err)
 	}
 	_, err = assets.Upsert(context.Background(), "user-a", false, MyAsset{
 		ID: "deleted", Kind: "video", Title: "Deleted", URL: "/api/files/" + objectID + "/content", StorageKey: "server:" + objectID,

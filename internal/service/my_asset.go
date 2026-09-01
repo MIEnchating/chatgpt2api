@@ -444,17 +444,6 @@ func (s *MyAssetService) enqueueObjectDeletion(ownerID, objectID string) (bool, 
 	return false, storage.ErrConcurrentRowUpdate
 }
 
-// RetryPendingObjectDeletions retries durable object cleanup for one
-// owner. Callers can use this after a process restart without the service
-// instance that originally committed the asset mutation.
-func (s *MyAssetService) RetryPendingObjectDeletions(ctx context.Context, ownerID string, admin bool) error {
-	ownerID = strings.TrimSpace(ownerID)
-	if ownerID == "" {
-		return fmt.Errorf("owner_id is required")
-	}
-	return s.retryPendingObjectDeletions(ctx, ownerID, admin, 0, "", nil)
-}
-
 // RetryAllPendingObjectDeletions performs a bounded recovery sweep. It handles
 // one object per owner so a large backlog cannot monopolize the server, while
 // periodic calls eventually drain durable work left by crashes or providers.

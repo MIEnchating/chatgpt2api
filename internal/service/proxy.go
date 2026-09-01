@@ -286,9 +286,14 @@ func transportForProxy(candidate string) *http.Transport {
 	}
 	proxyURL, err := url.Parse(candidate)
 	if err != nil || proxyURL.Host == "" {
-		return transport
+		return invalidProxyTransport()
 	}
-	return transportForProxyURL(proxyURL)
+	switch strings.ToLower(proxyURL.Scheme) {
+	case "http", "https", "socks5", "socks5h":
+		return transportForProxyURL(proxyURL)
+	default:
+		return invalidProxyTransport()
+	}
 }
 
 func normalizeProxy(candidate string) string {
@@ -303,6 +308,17 @@ func transportForProxyURL(proxyURL *url.URL) *http.Transport {
 	case "socks5", "socks5h":
 		transport.Proxy = nil
 		transport.DialContext = socks5DialContext(proxyURL)
+	default:
+		return invalidProxyTransport()
+	}
+	return transport
+}
+
+func invalidProxyTransport() *http.Transport {
+	transport := baseTransport()
+	transport.Proxy = nil
+	transport.DialContext = func(context.Context, string, string) (net.Conn, error) {
+		return nil, fmt.Errorf("invalid proxy url")
 	}
 	return transport
 }

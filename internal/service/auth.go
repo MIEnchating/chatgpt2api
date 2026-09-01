@@ -93,7 +93,6 @@ type AuthService struct {
 	items           []map[string]any
 	roles           []ManagedRole
 	lastUsedFlushAt map[string]time.Time
-	onUserCreated   func(string)
 }
 
 func NewAuthService(backend storage.Backend) (*AuthService, error) {
@@ -123,19 +122,6 @@ func NewAuthService(backend storage.Backend) (*AuthService, error) {
 		}
 	}
 	return s, nil
-}
-
-func (s *AuthService) notifyUserCreated(userID string) {
-	userID = util.Clean(userID)
-	if userID == "" {
-		return
-	}
-	s.mu.Lock()
-	fn := s.onUserCreated
-	s.mu.Unlock()
-	if fn != nil {
-		fn(userID)
-	}
 }
 
 func (s *AuthService) ListUsers() []map[string]any {
@@ -392,12 +378,7 @@ func (s *AuthService) UpsertNewAPISession(user NewAPIUser) (*Identity, string, e
 		return nil, "", err
 	}
 	identity := identityForAuthItem(item)
-	createdUserID := ""
-	if !ownerSeen {
-		createdUserID = managedAuthUserID(item)
-	}
 	s.mu.Unlock()
-	s.notifyUserCreated(createdUserID)
 	return identity, raw, nil
 }
 

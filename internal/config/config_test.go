@@ -1147,6 +1147,52 @@ func TestStoreUpdateRejectsInvalidRelayBaseURL(t *testing.T) {
 	}
 }
 
+func TestStoreUpdateValidatesProxyURLBeforePersisting(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("ROOT_DIR", root)
+	unsetEnv(t, "PROXY")
+
+	store, err := NewStore()
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	for _, proxy := range []string{
+		"http://proxy.example:8080",
+		"https://user:password@proxy.example:8443",
+		"socks5://127.0.0.1:1080",
+		"socks5h://proxy.example:1080",
+		"",
+	} {
+		if _, err := store.Update(map[string]any{"proxy": proxy}); err != nil {
+			t.Fatalf("Update(proxy %q) error = %v", proxy, err)
+		}
+	}
+
+	if _, err := store.Update(map[string]any{"proxy": "http://proxy.example:8080"}); err != nil {
+		t.Fatal(err)
+	}
+	for _, proxy := range []string{
+		"proxy.example:8080",
+		"ftp://proxy.example:21",
+		"http:///missing-host",
+		"://invalid",
+	} {
+		if _, err := store.Update(map[string]any{"proxy": proxy}); err == nil {
+			t.Errorf("Update(proxy %q) succeeded, want validation error", proxy)
+		}
+		if got := store.Proxy(); got != "http://proxy.example:8080" {
+			t.Errorf("Proxy() = %q after rejected update, want previous value", got)
+		}
+	}
+	envData, err := os.ReadFile(filepath.Join(root, ".env"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(envData), "ftp://") || strings.Contains(string(envData), "missing-host") {
+		t.Fatalf("invalid proxy was persisted: %s", envData)
+	}
+}
+
 func TestEnvValueFormattingRoundTripsEscapes(t *testing.T) {
 	for _, value := range []string{
 		`literal\nsequence`,
