@@ -191,14 +191,32 @@ func TestAuthenticatedVideoArtifactDoesNotLeakRelayKeyToOtherHosts(t *testing.T)
 	if err := validateAuthenticatedVideoArtifactURL("https://relay.example.com/content", "https://relay.example.com", nil); err != nil {
 		t.Fatalf("relay host rejected: %v", err)
 	}
+	if err := validateAuthenticatedVideoArtifactURL("https://relay.example.com:443/content", "https://relay.example.com", nil); err != nil {
+		t.Fatalf("equivalent default HTTPS port rejected: %v", err)
+	}
 	if err := validateAuthenticatedVideoArtifactURL("ftp://relay.example.com/content", "https://relay.example.com", nil); err == nil {
 		t.Fatal("non-HTTP artifact URL accepted relay authentication")
+	}
+	if err := validateAuthenticatedVideoArtifactURL("http://relay.example.com/content", "https://relay.example.com", nil); err == nil {
+		t.Fatal("cross-scheme artifact URL accepted relay authentication")
+	}
+	if err := validateAuthenticatedVideoArtifactURL("https://relay.example.com:8443/content", "https://relay.example.com", nil); err == nil {
+		t.Fatal("cross-port artifact URL accepted relay authentication")
 	}
 	if err := validateAuthenticatedVideoArtifactURL("https://cdn.example.com/content", "https://relay.example.com", nil); err == nil {
 		t.Fatal("unlisted CDN accepted relay authentication")
 	}
 	if err := validateAuthenticatedVideoArtifactURL("https://media.cdn.example.com/content", "https://relay.example.com", []string{"*.cdn.example.com"}); err != nil {
 		t.Fatalf("allowed CDN rejected: %v", err)
+	}
+	if err := validateAuthenticatedVideoArtifactURL("http://media.cdn.example.com/content", "https://relay.example.com", []string{"*.cdn.example.com"}); err == nil {
+		t.Fatal("insecure allowed CDN accepted relay authentication")
+	}
+	if err := validateAuthenticatedVideoArtifactURL("https://media.cdn.example.com:8443/content", "https://relay.example.com", []string{"*.cdn.example.com"}); err == nil {
+		t.Fatal("nonstandard allowed CDN port accepted relay authentication")
+	}
+	if err := validateAuthenticatedVideoArtifactURL("http://relay.example.com/content", "https://relay.example.com", []string{"relay.example.com"}); err == nil {
+		t.Fatal("allowed-host entry bypassed same-host origin validation")
 	}
 }
 

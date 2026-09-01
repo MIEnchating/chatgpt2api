@@ -33,7 +33,30 @@ func imageConversationTestRecord(id string, updatedAt int64, active bool) ImageC
 	}
 }
 
-func TestDatabaseBackendImageConversationSaveCAS(t *testing.T) {
+func saveOneImageConversationCASTest(
+	ctx context.Context,
+	backend *DatabaseBackend,
+	ownerID string,
+	expectedGeneration, expectedStorageVersion int64,
+	record ImageConversationRecord,
+) (ImageConversationRecord, error) {
+	result, err := backend.BatchSaveCAS(ctx, ownerID, expectedGeneration, []ImageConversationCASRequest{{
+		ExpectedStorageVersion: expectedStorageVersion,
+		Record:                 record,
+	}})
+	if len(result.Items) != 1 {
+		if err != nil {
+			return ImageConversationRecord{}, err
+		}
+		return ImageConversationRecord{}, fmt.Errorf("BatchSaveCAS returned %d results for one request", len(result.Items))
+	}
+	if errors.Is(err, ErrImageConversationGenerationStale) {
+		return ImageConversationRecord{}, err
+	}
+	return result.Items[0].Current, err
+}
+
+func TestDatabaseBackendImageConversationBatchSaveCASSingleRequest(t *testing.T) {
 	backend := newImageConversationTestBackend(t)
 	ctx := context.Background()
 	state, err := backend.LoadOwnerState(ctx, "owner-cas")
@@ -44,32 +67,32 @@ func TestDatabaseBackendImageConversationSaveCAS(t *testing.T) {
 		t.Fatalf("initial state = %#v", state)
 	}
 
-	created, err := backend.SaveCAS(ctx, "owner-cas", state.Generation, 0, imageConversationTestRecord("conversation", 1000, false))
+	created, err := saveOneImageConversationCASTest(ctx, backend, "owner-cas", state.Generation, 0, imageConversationTestRecord("conversation", 1000, false))
 	if err != nil {
-		t.Fatalf("SaveCAS(insert) error = %v", err)
+		t.Fatalf("BatchSaveCAS(insert) error = %v", err)
 	}
 	if created.StorageVersion != 1 || created.AcceptedHash == "" {
-		t.Fatalf("SaveCAS(insert) = %#v", created)
+		t.Fatalf("BatchSaveCAS(insert) = %#v", created)
 	}
 
-	current, err := backend.SaveCAS(ctx, "owner-cas", state.Generation, 0, imageConversationTestRecord("conversation", 1001, true))
+	current, err := saveOneImageConversationCASTest(ctx, backend, "owner-cas", state.Generation, 0, imageConversationTestRecord("conversation", 1001, true))
 	if !errors.Is(err, ErrImageConversationCASConflict) || current.StorageVersion != 1 {
-		t.Fatalf("SaveCAS(conflicting insert) = (%#v, %v)", current, err)
+		t.Fatalf("BatchSaveCAS(conflicting insert) = (%#v, %v)", current, err)
 	}
 
 	updatedInput := imageConversationTestRecord("conversation", 2000, true)
 	updatedInput.Revision = 2
-	updated, err := backend.SaveCAS(ctx, "owner-cas", state.Generation, created.StorageVersion, updatedInput)
+	updated, err := saveOneImageConversationCASTest(ctx, backend, "owner-cas", state.Generation, created.StorageVersion, updatedInput)
 	if err != nil {
-		t.Fatalf("SaveCAS(update) error = %v", err)
+		t.Fatalf("BatchSaveCAS(update) error = %v", err)
 	}
 	if updated.StorageVersion != 2 || !updated.Active || updated.Revision != 2 {
-		t.Fatalf("SaveCAS(update) = %#v", updated)
+		t.Fatalf("BatchSaveCAS(update) = %#v", updated)
 	}
 
-	current, err = backend.SaveCAS(ctx, "owner-cas", state.Generation, created.StorageVersion, updatedInput)
+	current, err = saveOneImageConversationCASTest(ctx, backend, "owner-cas", state.Generation, created.StorageVersion, updatedInput)
 	if !errors.Is(err, ErrImageConversationCASConflict) || current.StorageVersion != 2 {
-		t.Fatalf("SaveCAS(stale update) = (%#v, %v)", current, err)
+		t.Fatalf("BatchSaveCAS(stale update) = (%#v, %v)", current, err)
 	}
 
 	loaded, exists, err := backend.Load(ctx, "owner-cas", "conversation")
@@ -95,8 +118,8 @@ func TestDatabaseBackendImageConversationCursorPaginationUsesHashTieBreaker(t *t
 		imageConversationTestRecord("older-b", 1000, false),
 	}
 	for _, record := range input {
-		if _, err := backend.SaveCAS(ctx, "owner-page", state.Generation, 0, record); err != nil {
-			t.Fatalf("SaveCAS(%q) error = %v", record.ID, err)
+		if _, err := saveOneImageConversationCASTest(ctx, backend, "owner-page", state.Generation, 0, record); err != nil {
+			t.Fatalf("BatchSaveCAS(%q) error = %v", record.ID, err)
 		}
 	}
 	sort.Slice(input, func(i, j int) bool {
@@ -146,8 +169,8 @@ func TestDatabaseBackendImageConversationCursorInvalidatedWhenSaveReordersRows(t
 	}
 	for index, id := range []string{"newest", "newer", "older", "oldest"} {
 		updatedAt := int64(4000 - index*1000)
-		if _, err := backend.SaveCAS(ctx, ownerID, state.Generation, 0, imageConversationTestRecord(id, updatedAt, false)); err != nil {
-			t.Fatalf("SaveCAS(%q) error = %v", id, err)
+		if _, err := saveOneImageConversationCASTest(ctx, backend, ownerID, state.Generation, 0, imageConversationTestRecord(id, updatedAt, false)); err != nil {
+			t.Fatalf("BatchSaveCAS(%q) error = %v", id, err)
 		}
 	}
 	stableState, err := backend.LoadOwnerState(ctx, ownerID)
@@ -165,8 +188,8 @@ func TestDatabaseBackendImageConversationCursorInvalidatedWhenSaveReordersRows(t
 	}
 	reordered := imageConversationTestRecord("older", 5000, false)
 	reordered.Revision = older.Revision + 1
-	if _, err := backend.SaveCAS(ctx, ownerID, state.Generation, older.StorageVersion, reordered); err != nil {
-		t.Fatalf("SaveCAS(reorder) error = %v", err)
+	if _, err := saveOneImageConversationCASTest(ctx, backend, ownerID, state.Generation, older.StorageVersion, reordered); err != nil {
+		t.Fatalf("BatchSaveCAS(reorder) error = %v", err)
 	}
 	latestState, err := backend.LoadOwnerState(ctx, ownerID)
 	if err != nil || latestState.CursorGeneration <= stableState.CursorGeneration {
@@ -188,12 +211,12 @@ func TestDatabaseBackendImageConversationActiveDeleteAndGeneration(t *testing.T)
 	if err != nil {
 		t.Fatalf("LoadOwnerState() error = %v", err)
 	}
-	active, err := backend.SaveCAS(ctx, "owner-delete", state.Generation, 0, imageConversationTestRecord("active", 2000, true))
+	active, err := saveOneImageConversationCASTest(ctx, backend, "owner-delete", state.Generation, 0, imageConversationTestRecord("active", 2000, true))
 	if err != nil {
-		t.Fatalf("SaveCAS(active) error = %v", err)
+		t.Fatalf("BatchSaveCAS(active) error = %v", err)
 	}
-	if _, err := backend.SaveCAS(ctx, "owner-delete", state.Generation, 0, imageConversationTestRecord("inactive", 1000, false)); err != nil {
-		t.Fatalf("SaveCAS(inactive) error = %v", err)
+	if _, err := saveOneImageConversationCASTest(ctx, backend, "owner-delete", state.Generation, 0, imageConversationTestRecord("inactive", 1000, false)); err != nil {
+		t.Fatalf("BatchSaveCAS(inactive) error = %v", err)
 	}
 	activeRecords, err := backend.ListActive(ctx, "owner-delete", state.Generation, 10)
 	if err != nil || len(activeRecords) != 1 || activeRecords[0].ID != "active" {
@@ -225,8 +248,8 @@ func TestDatabaseBackendImageConversationActiveDeleteAndGeneration(t *testing.T)
 	if tombstone.StorageVersion != active.StorageVersion+1 {
 		t.Fatalf("tombstone storage version = %d, want %d", tombstone.StorageVersion, active.StorageVersion+1)
 	}
-	if _, err := backend.SaveCAS(ctx, "owner-delete", nextState.Generation, tombstone.StorageVersion, imageConversationTestRecord("active", 4000, false)); !errors.Is(err, ErrImageConversationGone) {
-		t.Fatalf("SaveCAS(deleted) error = %v", err)
+	if _, err := saveOneImageConversationCASTest(ctx, backend, "owner-delete", nextState.Generation, tombstone.StorageVersion, imageConversationTestRecord("active", 4000, false)); !errors.Is(err, ErrImageConversationGone) {
+		t.Fatalf("BatchSaveCAS(deleted) error = %v", err)
 	}
 
 	removed, err = backend.Delete(ctx, "owner-delete", "missing", 4000)
@@ -251,8 +274,8 @@ func TestDatabaseBackendImageConversationClearInvalidatesGenerationAndData(t *te
 		t.Fatalf("LoadOwnerState() error = %v", err)
 	}
 	for _, id := range []string{"one", "two"} {
-		if _, err := backend.SaveCAS(ctx, "owner-clear", state.Generation, 0, imageConversationTestRecord(id, 1000, id == "one")); err != nil {
-			t.Fatalf("SaveCAS(%q) error = %v", id, err)
+		if _, err := saveOneImageConversationCASTest(ctx, backend, "owner-clear", state.Generation, 0, imageConversationTestRecord(id, 1000, id == "one")); err != nil {
+			t.Fatalf("BatchSaveCAS(%q) error = %v", id, err)
 		}
 	}
 	cleared, err := backend.Clear(ctx, "owner-clear", "2026-07-20T10:00:00Z", 5000)
@@ -275,8 +298,8 @@ func TestDatabaseBackendImageConversationClearInvalidatesGenerationAndData(t *te
 			t.Fatalf("Load(%q after clear) = (%#v, %v, %v)", id, record, exists, err)
 		}
 	}
-	if _, err := backend.SaveCAS(ctx, "owner-clear", cleared.Generation, 0, imageConversationTestRecord("new", 6000, false)); err != nil {
-		t.Fatalf("SaveCAS(new after clear) error = %v", err)
+	if _, err := saveOneImageConversationCASTest(ctx, backend, "owner-clear", cleared.Generation, 0, imageConversationTestRecord("new", 6000, false)); err != nil {
+		t.Fatalf("BatchSaveCAS(new after clear) error = %v", err)
 	}
 }
 
@@ -287,9 +310,9 @@ func TestDatabaseBackendImageConversationBatchSaveCASCommitsAtomically(t *testin
 	if err != nil {
 		t.Fatalf("LoadOwnerState() error = %v", err)
 	}
-	first, err := backend.SaveCAS(ctx, "owner-batch", state.Generation, 0, imageConversationTestRecord("first", 1000, false))
+	first, err := saveOneImageConversationCASTest(ctx, backend, "owner-batch", state.Generation, 0, imageConversationTestRecord("first", 1000, false))
 	if err != nil {
-		t.Fatalf("SaveCAS(first) error = %v", err)
+		t.Fatalf("BatchSaveCAS(first) error = %v", err)
 	}
 	beforeBatch, err := backend.LoadOwnerState(ctx, "owner-batch")
 	if err != nil {
@@ -322,13 +345,13 @@ func TestDatabaseBackendImageConversationBatchSaveCASConflictRollsBackAll(t *tes
 	if err != nil {
 		t.Fatalf("LoadOwnerState() error = %v", err)
 	}
-	first, err := backend.SaveCAS(ctx, "owner-batch-conflict", state.Generation, 0, imageConversationTestRecord("first", 1000, false))
+	first, err := saveOneImageConversationCASTest(ctx, backend, "owner-batch-conflict", state.Generation, 0, imageConversationTestRecord("first", 1000, false))
 	if err != nil {
-		t.Fatalf("SaveCAS(first) error = %v", err)
+		t.Fatalf("BatchSaveCAS(first) error = %v", err)
 	}
-	second, err := backend.SaveCAS(ctx, "owner-batch-conflict", state.Generation, 0, imageConversationTestRecord("second", 1000, false))
+	second, err := saveOneImageConversationCASTest(ctx, backend, "owner-batch-conflict", state.Generation, 0, imageConversationTestRecord("second", 1000, false))
 	if err != nil {
-		t.Fatalf("SaveCAS(second) error = %v", err)
+		t.Fatalf("BatchSaveCAS(second) error = %v", err)
 	}
 	firstUpdate := imageConversationTestRecord("first", 3000, true)
 	firstUpdate.Revision = 2
@@ -390,13 +413,13 @@ func TestDatabaseBackendImageConversationBatchSaveCASInfrastructureFailureRollsB
 	if err != nil {
 		t.Fatalf("LoadOwnerState() error = %v", err)
 	}
-	first, err := backend.SaveCAS(ctx, "owner-batch-infrastructure", state.Generation, 0, imageConversationTestRecord("first", 1000, false))
+	first, err := saveOneImageConversationCASTest(ctx, backend, "owner-batch-infrastructure", state.Generation, 0, imageConversationTestRecord("first", 1000, false))
 	if err != nil {
-		t.Fatalf("SaveCAS(first) error = %v", err)
+		t.Fatalf("BatchSaveCAS(first) error = %v", err)
 	}
-	second, err := backend.SaveCAS(ctx, "owner-batch-infrastructure", state.Generation, 0, imageConversationTestRecord("failure", 1000, false))
+	second, err := saveOneImageConversationCASTest(ctx, backend, "owner-batch-infrastructure", state.Generation, 0, imageConversationTestRecord("failure", 1000, false))
 	if err != nil {
-		t.Fatalf("SaveCAS(failure) error = %v", err)
+		t.Fatalf("BatchSaveCAS(failure) error = %v", err)
 	}
 	if _, err := backend.db.Exec(`CREATE TRIGGER fail_image_conversation_batch
 		BEFORE UPDATE ON image_conversations
@@ -455,8 +478,9 @@ func TestDatabaseBackendImageConversationConcurrentSQLiteCAS(t *testing.T) {
 			if index%2 != 0 {
 				backend = second
 			}
-			_, err := backend.SaveCAS(
+			_, err := saveOneImageConversationCASTest(
 				ctx,
+				backend,
 				"owner-concurrent",
 				state.Generation,
 				0,
@@ -470,7 +494,7 @@ func TestDatabaseBackendImageConversationConcurrentSQLiteCAS(t *testing.T) {
 	close(errorsByWrite)
 	for err := range errorsByWrite {
 		if err != nil {
-			t.Fatalf("concurrent SaveCAS() error = %v", err)
+			t.Fatalf("concurrent BatchSaveCAS() error = %v", err)
 		}
 	}
 	page, err := first.List(ctx, "owner-concurrent", state.Generation, nil, count)
@@ -485,8 +509,9 @@ func TestDatabaseBackendImageConversationConcurrentSQLiteCAS(t *testing.T) {
 		go func(backend *DatabaseBackend) {
 			defer wait.Done()
 			<-start
-			_, err := backend.SaveCAS(
+			_, err := saveOneImageConversationCASTest(
 				ctx,
+				backend,
 				"owner-concurrent",
 				state.Generation,
 				0,
@@ -507,10 +532,10 @@ func TestDatabaseBackendImageConversationConcurrentSQLiteCAS(t *testing.T) {
 		case errors.Is(err, ErrImageConversationCASConflict):
 			conflicted++
 		default:
-			t.Fatalf("same-row concurrent SaveCAS() error = %v", err)
+			t.Fatalf("same-row concurrent BatchSaveCAS() error = %v", err)
 		}
 	}
 	if succeeded != 1 || conflicted != 1 {
-		t.Fatalf("same-row concurrent SaveCAS() succeeded=%d conflicted=%d", succeeded, conflicted)
+		t.Fatalf("same-row concurrent BatchSaveCAS() succeeded=%d conflicted=%d", succeeded, conflicted)
 	}
 }

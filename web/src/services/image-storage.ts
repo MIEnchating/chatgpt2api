@@ -17,6 +17,52 @@ export type UploadedImage = {
   mimeType: string;
 };
 
+export const IMAGE_METADATA_TIMEOUT_MS = 8_000;
+
+type ImageMetadata = {
+  width: number;
+  height: number;
+};
+
+type ImageBitmapMetadata = Pick<ImageBitmap, "close" | "height" | "width">;
+
+type ImageMetadataElement = Pick<
+  HTMLImageElement,
+  "naturalHeight" | "naturalWidth" | "onerror" | "onload" | "removeAttribute" | "src"
+>;
+
+type TimeoutHandle = ReturnType<typeof globalThis.setTimeout>;
+
+export type ImageMetadataInspectionEnvironment = {
+  createImageBitmap?: (blob: Blob) => Promise<ImageBitmapMetadata>;
+  createImageElement: () => ImageMetadataElement;
+  createObjectURL: (blob: Blob) => string;
+  revokeObjectURL: (url: string) => void;
+  scheduleTimeout: (callback: () => void, delayMs: number) => TimeoutHandle;
+  clearScheduledTimeout: (handle: TimeoutHandle) => void;
+};
+
+export type ImageUploadEnvironment = {
+  inspectMetadata: (blob: Blob) => Promise<ImageMetadata>;
+  uploadObject: (blob: Blob, filename: string, fallbackMessage: string) => Promise<UploadedImage>;
+};
+
+const browserImageMetadataInspectionEnvironment: ImageMetadataInspectionEnvironment = {
+  createImageBitmap: typeof globalThis.createImageBitmap === "function"
+    ? (blob) => globalThis.createImageBitmap(blob)
+    : undefined,
+  createImageElement: () => new Image(),
+  createObjectURL: (blob) => URL.createObjectURL(blob),
+  revokeObjectURL: (url) => URL.revokeObjectURL(url),
+  scheduleTimeout: (callback, delayMs) => globalThis.setTimeout(callback, delayMs),
+  clearScheduledTimeout: (handle) => globalThis.clearTimeout(handle),
+};
+
+const browserImageUploadEnvironment: ImageUploadEnvironment = {
+  inspectMetadata: (blob) => inspectImageBlobMetadata(blob),
+  uploadObject: (blob, filename, fallbackMessage) => uploadStorageObject<UploadedImage>(blob, filename, fallbackMessage),
+};
+
 export async function uploadImage(input: string | Blob): Promise<UploadedImage> {
   const blob = typeof input === "string" ? await downloadImage(input) : input;
   return uploadImageToServer(blob, `image-${nanoid()}.${imageExtension(blob.type)}`);
@@ -43,12 +89,13 @@ export async function imageToDataURL(image: { url?: string; storageKey?: string 
   return blobToDataURL(await response.blob());
 }
 
-async function uploadImageToServer(
+export async function uploadImageToServer(
   blob: Blob,
   filename: string,
+  environment: ImageUploadEnvironment = browserImageUploadEnvironment,
 ): Promise<UploadedImage> {
-  const uploaded = await uploadStorageObject<UploadedImage>(blob, filename, "服务端图片上传失败");
-  const metadata = await readImageMetadata(blob);
+  const metadata = await environment.inspectMetadata(blob);
+  const uploaded = await environment.uploadObject(blob, filename, "服务端图片上传失败");
   return {
     ...uploaded,
     width: uploaded.width || metadata.width,
@@ -66,24 +113,132 @@ async function downloadImage(url: string) {
   return blob;
 }
 
-async function readImageMetadata(blob: Blob) {
-  if (typeof createImageBitmap === "function") {
-    const bitmap = await createImageBitmap(blob);
-    const metadata = { width: bitmap.width, height: bitmap.height };
-    bitmap.close();
-    return metadata;
+export async function inspectImageBlobMetadata(
+  blob: Blob,
+  environment: ImageMetadataInspectionEnvironment = browserImageMetadataInspectionEnvironment,
+) {
+  if (environment.createImageBitmap) {
+    const metadata = await inspectImageBitmapMetadata(blob, environment).catch(() => null);
+    if (metadata) return metadata;
   }
-  const url = URL.createObjectURL(blob);
-  try {
-    return await new Promise<{ width: number; height: number }>((resolve, reject) => {
-      const image = new Image();
-      image.onload = () => resolve({ width: image.naturalWidth, height: image.naturalHeight });
-      image.onerror = () => reject(new Error("读取图片尺寸失败"));
+  return inspectImageElementMetadata(blob, environment);
+}
+
+function inspectImageBitmapMetadata(
+  blob: Blob,
+  environment: ImageMetadataInspectionEnvironment,
+) {
+  return new Promise<ImageMetadata>((resolve, reject) => {
+    let settled = false;
+    let timeoutHandle: TimeoutHandle | null = null;
+
+    const settle = (metadata?: ImageMetadata, error?: unknown) => {
+      if (settled) return;
+      settled = true;
+      if (timeoutHandle !== null) {
+        try {
+          environment.clearScheduledTimeout(timeoutHandle);
+        } catch {
+          // Timer cleanup must not change the inspection result.
+        }
+        timeoutHandle = null;
+      }
+      if (metadata) resolve(metadata);
+      else reject(error instanceof Error ? error : new Error("读取图片尺寸失败"));
+    };
+
+    timeoutHandle = environment.scheduleTimeout(() => {
+      settle(undefined, new Error("读取图片尺寸超时"));
+    }, IMAGE_METADATA_TIMEOUT_MS);
+    Promise.resolve()
+      .then(() => environment.createImageBitmap?.(blob))
+      .then((bitmap) => {
+        if (!bitmap) {
+          settle(undefined, new Error("读取图片尺寸失败"));
+          return;
+        }
+        let metadata: ImageMetadata | null = null;
+        try {
+          metadata = imageMetadata(bitmap.width, bitmap.height);
+        } catch (error) {
+          settle(undefined, error);
+        } finally {
+          try {
+            bitmap.close();
+          } catch {
+            // Releasing a decoded bitmap must not change the inspection result.
+          }
+        }
+        if (settled) return;
+        if (metadata) {
+          settle(metadata);
+        } else {
+          settle(undefined, new Error("读取图片尺寸失败"));
+        }
+      }, (error) => settle(undefined, error));
+  });
+}
+
+function inspectImageElementMetadata(
+  blob: Blob,
+  environment: ImageMetadataInspectionEnvironment,
+) {
+  const image = environment.createImageElement();
+  const url = environment.createObjectURL(blob);
+  return new Promise<ImageMetadata>((resolve, reject) => {
+    let settled = false;
+    let timeoutHandle: TimeoutHandle | null = null;
+
+    const cleanup = () => {
+      if (timeoutHandle !== null) {
+        try {
+          environment.clearScheduledTimeout(timeoutHandle);
+        } catch {
+          // Timer cleanup must not change the inspection result.
+        }
+        timeoutHandle = null;
+      }
+      image.onload = null;
+      image.onerror = null;
+      try {
+        image.removeAttribute("src");
+      } catch {
+        // A detached image can already be unavailable during cleanup.
+      }
+      try {
+        environment.revokeObjectURL(url);
+      } catch {
+        // URL cleanup failures must not leave metadata inspection pending.
+      }
+    };
+    const settle = (metadata?: ImageMetadata, error?: unknown) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      if (metadata) resolve(metadata);
+      else reject(error instanceof Error ? error : new Error("读取图片尺寸失败"));
+    };
+
+    image.onload = () => settle(imageMetadata(image.naturalWidth, image.naturalHeight) || undefined);
+    image.onerror = () => settle(undefined, new Error("读取图片尺寸失败"));
+    try {
+      timeoutHandle = environment.scheduleTimeout(
+        () => settle(undefined, new Error("读取图片尺寸超时")),
+        IMAGE_METADATA_TIMEOUT_MS,
+      );
       image.src = url;
-    });
-  } finally {
-    URL.revokeObjectURL(url);
-  }
+    } catch (error) {
+      settle(undefined, error);
+    }
+  });
+}
+
+function imageMetadata(widthValue: unknown, heightValue: unknown): ImageMetadata | null {
+  const width = Number(widthValue);
+  const height = Number(heightValue);
+  return Number.isFinite(width) && width > 0 && Number.isFinite(height) && height > 0
+    ? { width, height }
+    : null;
 }
 
 function imageExtension(mimeType: string) {

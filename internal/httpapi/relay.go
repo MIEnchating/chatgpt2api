@@ -979,14 +979,24 @@ func (a *App) relayVideoTask(ctx context.Context, payload map[string]any) (map[s
 	}
 	interval := time.Duration(contract.Polling.IntervalSeconds) * time.Second
 	timeout := time.Duration(contract.Polling.TimeoutSeconds) * time.Second
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
-		if err := ctx.Err(); err != nil {
-			return nil, err
+	pollCtx, cancelPolling := context.WithTimeout(ctx, timeout)
+	defer cancelPolling()
+	pollingError := func(err error) error {
+		if parentErr := ctx.Err(); parentErr != nil {
+			return parentErr
 		}
-		state, pollErr := a.relayJSONAt(ctx, baseURL, http.MethodGet, videoContractTaskPath(queryPath, taskID), apiKey, nil)
+		if errors.Is(pollCtx.Err(), context.DeadlineExceeded) {
+			return protocol.HTTPError{Status: http.StatusGatewayTimeout, Message: "视频生成超时，请稍后重试"}
+		}
+		return err
+	}
+	for {
+		if err := pollCtx.Err(); err != nil {
+			return nil, pollingError(err)
+		}
+		state, pollErr := a.relayJSONAt(pollCtx, baseURL, http.MethodGet, videoContractTaskPath(queryPath, taskID), apiKey, nil)
 		if pollErr != nil {
-			return state, pollErr
+			return state, pollingError(pollErr)
 		}
 		relayVideoTaskProgress(payload, state, contract)
 		status := videoRelayTaskStatusForContract(state, contract)
@@ -1012,13 +1022,12 @@ func (a *App) relayVideoTask(ctx context.Context, payload map[string]any) (map[s
 		}
 		timer := time.NewTimer(interval)
 		select {
-		case <-ctx.Done():
+		case <-pollCtx.Done():
 			timer.Stop()
-			return nil, ctx.Err()
+			return nil, pollingError(pollCtx.Err())
 		case <-timer.C:
 		}
 	}
-	return nil, protocol.HTTPError{Status: http.StatusGatewayTimeout, Message: "视频生成超时，请稍后重试"}
 }
 
 func videoContractDriverPaths(contract protocol.VideoModelContract, payload map[string]any) (string, string, error) {
@@ -1419,7 +1428,22 @@ func (a *App) downloadRelayVideo(ctx context.Context, videoURL, apiKey, owner, t
 		return "", err
 	}
 	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(apiKey))
-	resp, err := a.relayHTTPClient().Do(req)
+	client := a.relayHTTPClient()
+	redirectPolicy := client.CheckRedirect
+	clientCopy := *client
+	clientCopy.CheckRedirect = func(req *http.Request, via []*http.Request) error {
+		if err := validateAuthenticatedVideoArtifactURL(req.URL.String(), baseURL, allowedHosts); err != nil {
+			return err
+		}
+		if redirectPolicy != nil {
+			return redirectPolicy(req, via)
+		}
+		if len(via) >= 10 {
+			return fmt.Errorf("视频产物重定向次数过多")
+		}
+		return nil
+	}
+	resp, err := clientCopy.Do(req)
 	if err != nil {
 		return "", err
 	}
@@ -1474,10 +1498,38 @@ func validateAuthenticatedVideoArtifactURL(videoURL, baseURL string, allowedHost
 	if err != nil || base.Hostname() == "" || base.Scheme != "http" && base.Scheme != "https" {
 		return fmt.Errorf("视频上游地址无效")
 	}
-	if strings.EqualFold(artifact.Hostname(), base.Hostname()) || len(allowedHosts) > 0 && videoArtifactHostAllowed(videoURL, allowedHosts) {
+	artifactHost := normalizedHTTPHostname(artifact.Hostname())
+	baseHost := normalizedHTTPHostname(base.Hostname())
+	if artifactHost == baseHost {
+		if sameHTTPOrigin(artifact, base) {
+			return nil
+		}
+		return fmt.Errorf("拒绝向跨协议或端口的视频产物地址发送鉴权")
+	}
+	if len(allowedHosts) > 0 && artifact.Scheme == "https" && effectiveHTTPPort(artifact) == "443" && videoArtifactHostAllowed(videoURL, allowedHosts) {
 		return nil
 	}
 	return fmt.Errorf("拒绝向非上游域名发送视频产物鉴权")
+}
+
+func sameHTTPOrigin(left, right *url.URL) bool {
+	return strings.EqualFold(left.Scheme, right.Scheme) &&
+		normalizedHTTPHostname(left.Hostname()) == normalizedHTTPHostname(right.Hostname()) &&
+		effectiveHTTPPort(left) == effectiveHTTPPort(right)
+}
+
+func normalizedHTTPHostname(host string) string {
+	return strings.ToLower(strings.TrimSuffix(strings.TrimSpace(host), "."))
+}
+
+func effectiveHTTPPort(value *url.URL) string {
+	if port := value.Port(); port != "" {
+		return port
+	}
+	if strings.EqualFold(value.Scheme, "https") {
+		return "443"
+	}
+	return "80"
 }
 
 func videoArtifactHostAllowed(rawURL string, allowedHosts []string) bool {

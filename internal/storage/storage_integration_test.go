@@ -274,14 +274,14 @@ func exerciseImageConversationIntegration(t *testing.T, ctx context.Context, bac
 	}
 
 	first := integrationConversationRecord("first", 1_000, true, "First summary")
-	first, err = backend.SaveCAS(ctx, ownerID, state.Generation, 0, first)
+	first, err = saveOneImageConversationCASTest(ctx, backend, ownerID, state.Generation, 0, first)
 	if err != nil || first.StorageVersion != 1 {
-		t.Fatalf("SaveCAS(first) = (%#v, %v)", first, err)
+		t.Fatalf("BatchSaveCAS(first) = (%#v, %v)", first, err)
 	}
 	second := integrationConversationRecord("second", 2_000, false, "Second summary")
-	second, err = backend.SaveCAS(ctx, ownerID, state.Generation, 0, second)
+	second, err = saveOneImageConversationCASTest(ctx, backend, ownerID, state.Generation, 0, second)
 	if err != nil || second.StorageVersion != 1 {
-		t.Fatalf("SaveCAS(second) = (%#v, %v)", second, err)
+		t.Fatalf("BatchSaveCAS(second) = (%#v, %v)", second, err)
 	}
 
 	loaded, exists, err := backend.Load(ctx, ownerID, first.ID)
@@ -304,9 +304,9 @@ func exerciseImageConversationIntegration(t *testing.T, ctx context.Context, bac
 
 	firstUpdate := integrationConversationRecord(first.ID, 3_000, false, "First updated")
 	firstUpdate.Revision = 2
-	first, err = backend.SaveCAS(ctx, ownerID, state.Generation, first.StorageVersion, firstUpdate)
+	first, err = saveOneImageConversationCASTest(ctx, backend, ownerID, state.Generation, first.StorageVersion, firstUpdate)
 	if err != nil || first.StorageVersion != 2 || first.Revision != 2 {
-		t.Fatalf("SaveCAS(update first) = (%#v, %v)", first, err)
+		t.Fatalf("BatchSaveCAS(update first) = (%#v, %v)", first, err)
 	}
 	batchFirstUpdate := integrationConversationRecord(first.ID, 3_200, true, "First batch update")
 	batchFirstUpdate.Revision = 3
@@ -323,9 +323,9 @@ func exerciseImageConversationIntegration(t *testing.T, ctx context.Context, bac
 	first = batchResult.Items[0].Current
 
 	failure := integrationConversationRecord(integrationFailureConversationID, 3_500, false, "Failure row")
-	failure, err = backend.SaveCAS(ctx, ownerID, state.Generation, 0, failure)
+	failure, err = saveOneImageConversationCASTest(ctx, backend, ownerID, state.Generation, 0, failure)
 	if err != nil {
-		t.Fatalf("SaveCAS(failure row) error = %v", err)
+		t.Fatalf("BatchSaveCAS(failure row) error = %v", err)
 	}
 	firstAttempt := integrationConversationRecord(first.ID, 4_000, true, "Must roll back")
 	firstAttempt.Revision = 3

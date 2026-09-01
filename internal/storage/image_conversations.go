@@ -109,7 +109,6 @@ type ImageConversationBackend interface {
 	List(ctx context.Context, ownerID string, generation int64, cursor *ImageConversationCursor, limit int) (ImageConversationPage, error)
 	ListActive(ctx context.Context, ownerID string, generation int64, limit int) ([]ImageConversationRecord, error)
 	BatchSaveCAS(ctx context.Context, ownerID string, expectedGeneration int64, requests []ImageConversationCASRequest) (ImageConversationBatchCASResult, error)
-	SaveCAS(ctx context.Context, ownerID string, expectedGeneration, expectedStorageVersion int64, record ImageConversationRecord) (ImageConversationRecord, error)
 	Delete(ctx context.Context, ownerID, conversationID string, deletedAtMillis int64) (bool, error)
 	Clear(ctx context.Context, ownerID, clearedAt string, clearedAtMillis int64) (ImageConversationOwnerState, error)
 }
@@ -890,25 +889,6 @@ func (b *DatabaseBackend) BatchSaveCAS(
 		result.Items[index].Current = record
 	}
 	return result, nil
-}
-
-func (b *DatabaseBackend) SaveCAS(
-	ctx context.Context,
-	ownerID string,
-	expectedGeneration, expectedStorageVersion int64,
-	record ImageConversationRecord,
-) (ImageConversationRecord, error) {
-	result, err := b.BatchSaveCAS(ctx, ownerID, expectedGeneration, []ImageConversationCASRequest{{
-		ExpectedStorageVersion: expectedStorageVersion,
-		Record:                 record,
-	}})
-	if len(result.Items) == 0 {
-		return ImageConversationRecord{}, err
-	}
-	if errors.Is(err, ErrImageConversationGenerationStale) {
-		return ImageConversationRecord{}, err
-	}
-	return result.Items[0].Current, err
 }
 
 func normalizeImageConversationPageLimit(limit int) int {

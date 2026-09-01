@@ -305,8 +305,8 @@ func TestImageConversationRowsMergeUsesOneBatchCAS(t *testing.T) {
 	if err != nil || len(acknowledgements) != len(items) {
 		t.Fatalf("MergeWithAcknowledgementsMinimal() acknowledgements=%#v error=%v", acknowledgements, err)
 	}
-	if tracing.batchCalls != 1 || tracing.batchSizes[0] != len(items) || tracing.singleSaveCalls != 0 {
-		t.Fatalf("CAS calls: batches=%d sizes=%#v singles=%d", tracing.batchCalls, tracing.batchSizes, tracing.singleSaveCalls)
+	if tracing.batchCalls != 1 || tracing.batchSizes[0] != len(items) {
+		t.Fatalf("CAS calls: batches=%d sizes=%#v", tracing.batchCalls, tracing.batchSizes)
 	}
 }
 
@@ -378,20 +378,14 @@ type tracingImageConversationBatchBackend struct {
 	storage.Backend
 	storage.JSONDocumentBackend
 	storage.ImageConversationBackend
-	batchCalls      int
-	batchSizes      []int
-	singleSaveCalls int
+	batchCalls int
+	batchSizes []int
 }
 
 func (b *tracingImageConversationBatchBackend) BatchSaveCAS(ctx context.Context, ownerID string, generation int64, requests []storage.ImageConversationCASRequest) (storage.ImageConversationBatchCASResult, error) {
 	b.batchCalls++
 	b.batchSizes = append(b.batchSizes, len(requests))
 	return b.ImageConversationBackend.BatchSaveCAS(ctx, ownerID, generation, requests)
-}
-
-func (b *tracingImageConversationBatchBackend) SaveCAS(ctx context.Context, ownerID string, generation, storageVersion int64, record storage.ImageConversationRecord) (storage.ImageConversationRecord, error) {
-	b.singleSaveCalls++
-	return b.ImageConversationBackend.SaveCAS(ctx, ownerID, generation, storageVersion, record)
 }
 
 type conflictOnceImageConversationBatchBackend struct {
@@ -414,7 +408,10 @@ func (b *conflictOnceImageConversationBatchBackend) BatchSaveCAS(ctx context.Con
 		if len(requests) != 1 {
 			return storage.ImageConversationBatchCASResult{}, fmt.Errorf("unexpected request count: %d", len(requests))
 		}
-		if _, err := b.ImageConversationBackend.SaveCAS(ctx, ownerID, generation, requests[0].ExpectedStorageVersion, b.competitor); err != nil {
+		if _, err := b.ImageConversationBackend.BatchSaveCAS(ctx, ownerID, generation, []storage.ImageConversationCASRequest{{
+			ExpectedStorageVersion: requests[0].ExpectedStorageVersion,
+			Record:                 b.competitor,
+		}}); err != nil {
 			return storage.ImageConversationBatchCASResult{}, err
 		}
 	}

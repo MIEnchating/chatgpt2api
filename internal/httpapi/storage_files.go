@@ -72,12 +72,7 @@ func (a *App) handleProfileStorageProvider(w http.ResponseWriter, r *http.Reques
 }
 
 func (a *App) handleAdminStorageMeasure(w http.ResponseWriter, r *http.Request) {
-	identity, ok := a.requireIdentity(w, r)
-	if !ok {
-		return
-	}
-	if identity.Role != service.AuthRoleAdmin {
-		util.WriteError(w, http.StatusForbidden, "permission denied")
+	if _, ok := a.requireIdentity(w, r); !ok {
 		return
 	}
 	if r.Method != http.MethodPost {

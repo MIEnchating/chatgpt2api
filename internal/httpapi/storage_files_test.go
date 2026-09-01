@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"chatgpt2api/internal/model"
+	"chatgpt2api/internal/service"
 	"chatgpt2api/internal/util"
 )
 
@@ -238,6 +239,36 @@ func TestStorageRoutesEnforceProviderAndMeasurePermissions(t *testing.T) {
 				t.Fatalf("status = %d body = %s", response.Code, response.Body.String())
 			}
 		})
+	}
+}
+
+func TestStorageMeasureHonorsExplicitRolePermission(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+
+	role, err := app.auth.CreateRole(map[string]any{
+		"name":            "Storage Capacity Operator",
+		"menu_paths":      []string{"/settings"},
+		"api_permissions": []string{service.APIPermissionKey(http.MethodPost, "/api/settings/storage/measure")},
+	})
+	if err != nil {
+		t.Fatalf("CreateRole() error = %v", err)
+	}
+	roleID := util.Clean(role["id"])
+	if _, err := app.auth.CreatePasswordUser("storage_operator", "Password123!", "Storage Operator", roleID, true); err != nil {
+		t.Fatalf("CreatePasswordUser() error = %v", err)
+	}
+	identity, token, err := app.auth.LoginPassword("storage_operator", "Password123!")
+	if err != nil || identity == nil || token == "" {
+		t.Fatalf("LoginPassword() = (%#v, %q, %v)", identity, token, err)
+	}
+
+	request := httptest.NewRequest(http.MethodPost, "/api/settings/storage/measure", strings.NewReader(`{"index":0}`))
+	setRequestAuthCookie(request, token)
+	response := httptest.NewRecorder()
+	app.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "storage provider does not exist") {
+		t.Fatalf("status = %d body = %s", response.Code, response.Body.String())
 	}
 }
 

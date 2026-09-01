@@ -552,6 +552,9 @@ func (a *App) Close() {
 			a.logger.Warning("persist image tasks during shutdown failed", "error", err)
 		}
 	}
+	if a.proxy != nil {
+		a.proxy.Close()
+	}
 	a.closeImageStorageCleaner()
 	a.closeImageConversationAssetCleaner()
 	if a.logger != nil {
@@ -2320,7 +2323,10 @@ func isInternalPayloadValue(value any) bool {
 		return false
 	}
 	switch value.(type) {
-	case func(context.Context, int) (func(), error), func([]map[string]any), func(string):
+	case func(context.Context, int) (func(), error),
+		func([]map[string]any),
+		func(service.VideoTaskProgressUpdate),
+		func(string):
 		return true
 	default:
 		return false

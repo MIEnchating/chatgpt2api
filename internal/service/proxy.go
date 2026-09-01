@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"chatgpt2api/internal/util"
@@ -25,18 +26,76 @@ type ProxyConfig interface {
 
 type ProxyService struct {
 	config ProxyConfig
+
+	mu           sync.Mutex
+	transports   map[string]*sharedProxyTransport
+	currentProxy string
+	current      *sharedProxyTransport
+	closed       bool
 }
 
 func NewProxyService(config ProxyConfig) *ProxyService {
-	return &ProxyService{config: config}
+	return &ProxyService{
+		config:     config,
+		transports: make(map[string]*sharedProxyTransport),
+	}
 }
 
 func HTTPClientForProxy(proxy string, timeout time.Duration) *http.Client {
-	return &http.Client{Timeout: timeout, Transport: transportForProxy(proxy)}
+	return &http.Client{Timeout: timeout, Transport: transportForProxy(normalizeProxy(proxy))}
 }
 
 func (s *ProxyService) HTTPClient(timeout time.Duration) *http.Client {
-	return HTTPClientForProxy(s.config.Proxy(), timeout)
+	if s == nil {
+		return HTTPClientForProxy("", timeout)
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return &http.Client{Timeout: timeout, Transport: closedProxyTransport{}}
+	}
+
+	proxy := ""
+	if s.config != nil {
+		proxy = normalizeProxy(s.config.Proxy())
+	}
+	if s.current != nil && proxy == s.currentProxy {
+		return &http.Client{Timeout: timeout, Transport: s.current}
+	}
+
+	transport := s.transports[proxy]
+	if transport == nil {
+		transport = newSharedProxyTransport(proxy)
+		s.transports[proxy] = transport
+	}
+	if s.current != nil {
+		s.current.retire()
+	}
+	transport.activate()
+	s.currentProxy = proxy
+	s.current = transport
+	return &http.Client{Timeout: timeout, Transport: transport}
+}
+
+// Close releases idle connections owned by the service. Requests already in
+// flight may finish; clients created by this service reject new requests after
+// shutdown.
+func (s *ProxyService) Close() {
+	if s == nil {
+		return
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return
+	}
+	s.closed = true
+	for _, transport := range s.transports {
+		transport.close()
+	}
+	s.current = nil
+	s.transports = nil
 }
 
 func (s *ProxyService) Test(candidate string, timeout time.Duration) map[string]any {
@@ -53,6 +112,7 @@ func (s *ProxyService) Test(candidate string, timeout time.Duration) map[string]
 		return map[string]any{"ok": false, "status": 0, "latency_ms": 0, "error": "invalid proxy url"}
 	}
 	client := browserHTTPClientForProfile(candidate, "", timeout)
+	defer client.CloseIdleConnections()
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, "https://chatgpt.com/", nil)
@@ -74,6 +134,108 @@ func (s *ProxyService) Test(candidate string, timeout time.Duration) map[string]
 		message = resp.Status
 	}
 	return map[string]any{"ok": ok, "status": resp.StatusCode, "latency_ms": latency, "error": message}
+}
+
+type sharedProxyTransport struct {
+	transport *http.Transport
+
+	mu      sync.Mutex
+	retired bool
+	closed  bool
+}
+
+func newSharedProxyTransport(proxy string) *sharedProxyTransport {
+	return &sharedProxyTransport{transport: transportForProxy(proxy)}
+}
+
+func (t *sharedProxyTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	t.mu.Lock()
+	closed := t.closed
+	t.mu.Unlock()
+	if closed {
+		return nil, fmt.Errorf("proxy service is closed")
+	}
+
+	resp, err := t.transport.RoundTrip(req)
+	if err != nil {
+		t.finishRequest()
+		return nil, err
+	}
+	if resp.Body == nil {
+		t.finishRequest()
+		return resp, nil
+	}
+	resp.Body = &proxyResponseBody{
+		ReadCloser: resp.Body,
+		done:       t.finishRequest,
+	}
+	return resp, nil
+}
+
+func (t *sharedProxyTransport) CloseIdleConnections() {
+	t.transport.CloseIdleConnections()
+}
+
+func (t *sharedProxyTransport) activate() {
+	t.mu.Lock()
+	if !t.closed {
+		t.retired = false
+	}
+	t.mu.Unlock()
+}
+
+func (t *sharedProxyTransport) retire() {
+	t.mu.Lock()
+	t.retired = true
+	t.mu.Unlock()
+	t.transport.CloseIdleConnections()
+}
+
+func (t *sharedProxyTransport) close() {
+	t.mu.Lock()
+	t.closed = true
+	t.retired = true
+	t.mu.Unlock()
+	t.transport.CloseIdleConnections()
+}
+
+func (t *sharedProxyTransport) finishRequest() {
+	t.mu.Lock()
+	closeIdle := t.retired || t.closed
+	t.mu.Unlock()
+	if closeIdle {
+		t.transport.CloseIdleConnections()
+	}
+}
+
+type proxyResponseBody struct {
+	io.ReadCloser
+	done func()
+	once sync.Once
+}
+
+func (b *proxyResponseBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	if err == io.EOF {
+		b.finish()
+	}
+	return n, err
+}
+
+func (b *proxyResponseBody) Close() error {
+	err := b.ReadCloser.Close()
+	b.finish()
+	return err
+}
+
+func (b *proxyResponseBody) finish() {
+	b.once.Do(b.done)
+}
+
+type closedProxyTransport struct{}
+
+func (closedProxyTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	return nil, fmt.Errorf("proxy service is closed")
 }
 
 func browserHTTPClientForProfile(proxy, profile string, timeout time.Duration) *http.Client {
@@ -117,6 +279,7 @@ func applyBrowserProfile(builder *surf.Builder, profile string) *surf.Builder {
 }
 
 func transportForProxy(candidate string) *http.Transport {
+	candidate = normalizeProxy(candidate)
 	transport := baseTransport()
 	if candidate == "" {
 		return transport
@@ -126,6 +289,10 @@ func transportForProxy(candidate string) *http.Transport {
 		return transport
 	}
 	return transportForProxyURL(proxyURL)
+}
+
+func normalizeProxy(candidate string) string {
+	return strings.TrimSpace(candidate)
 }
 
 func transportForProxyURL(proxyURL *url.URL) *http.Transport {

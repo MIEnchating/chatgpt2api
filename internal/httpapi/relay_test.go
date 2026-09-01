@@ -269,6 +269,61 @@ func TestRelayHTTPClientUsesConfiguredImageTaskTimeout(t *testing.T) {
 	}
 }
 
+func TestDownloadRelayVideoRejectsAuthenticatedCrossOriginRedirect(t *testing.T) {
+	var destinationCalls atomic.Int32
+	destination := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		destinationCalls.Add(1)
+		if authorization := r.Header.Get("Authorization"); authorization != "" {
+			t.Errorf("redirect destination received Authorization %q", authorization)
+		}
+		_, _ = w.Write([]byte("video"))
+	}))
+	defer destination.Close()
+
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, destination.URL+"/video.mp4", http.StatusFound)
+	}))
+	defer upstream.Close()
+
+	app := &App{videoDir: t.TempDir()}
+	_, err := app.downloadRelayVideo(context.Background(), upstream.URL+"/content", "sk-secret", "owner-1", "task-1", upstream.URL, nil)
+	if err == nil {
+		t.Fatal("cross-origin redirect was accepted for an authenticated video artifact")
+	}
+	if destinationCalls.Load() != 0 {
+		t.Fatalf("cross-origin redirect destination received %d requests", destinationCalls.Load())
+	}
+}
+
+func TestDownloadRelayVideoAllowsAuthenticatedSameOriginRedirect(t *testing.T) {
+	var upstream *httptest.Server
+	upstream = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if authorization := r.Header.Get("Authorization"); authorization != "Bearer sk-secret" {
+			t.Errorf("Authorization = %q", authorization)
+		}
+		switch r.URL.Path {
+		case "/content":
+			http.Redirect(w, r, upstream.URL+"/video.mp4", http.StatusFound)
+		case "/video.mp4":
+			_, _ = w.Write([]byte("video"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer upstream.Close()
+
+	videoDir := t.TempDir()
+	app := &App{videoDir: videoDir}
+	localURL, err := app.downloadRelayVideo(context.Background(), upstream.URL+"/content", "sk-secret", "owner-1", "task-1", upstream.URL, nil)
+	if err != nil {
+		t.Fatalf("downloadRelayVideo() error = %v", err)
+	}
+	data, err := os.ReadFile(filepath.Join(videoDir, strings.TrimPrefix(localURL, "/videos/")))
+	if err != nil || string(data) != "video" {
+		t.Fatalf("saved video = %q, error = %v", data, err)
+	}
+}
+
 func TestManagedRelayImageTaskDoesNotAcquireSecondSlot(t *testing.T) {
 	acquireCalls := 0
 	payload := map[string]any{
@@ -549,6 +604,48 @@ func TestRelayVideoTaskUsesContractProtocolDriver(t *testing.T) {
 				t.Fatalf("video progress updates = %#v", progressUpdates)
 			}
 		})
+	}
+}
+
+func TestRelayVideoPollingTimeoutCancelsInFlightRequest(t *testing.T) {
+	pollCanceled := make(chan struct{})
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost:
+			util.WriteJSON(w, http.StatusOK, map[string]any{"id": "slow-task", "status": "queued"})
+		case http.MethodGet:
+			<-r.Context().Done()
+			close(pollCanceled)
+		default:
+			http.Error(w, "unexpected method", http.StatusMethodNotAllowed)
+		}
+	}))
+	defer upstream.Close()
+
+	contract := protocol.DefaultVideoContracts()[0]
+	contract.Polling.IntervalSeconds = 1
+	contract.Polling.TimeoutSeconds = 1
+	app := newTestApp(t)
+	defer app.Close()
+	ctx, cancel := context.WithTimeout(context.Background(), 4*time.Second)
+	defer cancel()
+	started := time.Now()
+	_, err := app.relayVideoTask(ctx, map[string]any{
+		"model": "minimax-h3-768p", "prompt": "city", "api_key": "sk-test", "relay_base_url": upstream.URL,
+		protocol.VideoContractSnapshotPayloadKey: contract,
+	})
+	elapsed := time.Since(started)
+	var httpErr protocol.HTTPError
+	if !errors.As(err, &httpErr) || httpErr.Status != http.StatusGatewayTimeout {
+		t.Fatalf("relayVideoTask() error = %v, want HTTP 504", err)
+	}
+	if elapsed >= 3*time.Second {
+		t.Fatalf("polling request exceeded contract timeout: %s", elapsed)
+	}
+	select {
+	case <-pollCanceled:
+	case <-time.After(time.Second):
+		t.Fatal("in-flight polling request was not canceled")
 	}
 }
 

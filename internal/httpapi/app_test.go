@@ -2333,6 +2333,19 @@ func TestRelayChatPayloadDropsInternalTextCallback(t *testing.T) {
 	}
 }
 
+func TestAuditPayloadDropsInternalVideoProgressCallback(t *testing.T) {
+	payload := cleanAuditPayloadMap(map[string]any{
+		"model": "minimax-h3-768p",
+		service.VideoTaskProgressCallbackPayloadKey: func(service.VideoTaskProgressUpdate) {},
+	})
+	if _, ok := payload[service.VideoTaskProgressCallbackPayloadKey]; ok {
+		t.Fatalf("video progress callback should be dropped from audit payload: %#v", payload)
+	}
+	if _, err := json.Marshal(payload); err != nil {
+		t.Fatalf("audit payload should be JSON serializable: %v", err)
+	}
+}
+
 func TestRelayImageTaskResultCollectsStream(t *testing.T) {
 	items := make(chan map[string]any, 1)
 	errCh := make(chan error, 1)

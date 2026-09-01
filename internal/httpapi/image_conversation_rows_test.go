@@ -276,10 +276,6 @@ type failingImageConversationRowSaveBackend struct {
 	storage.ImageConversationBackend
 }
 
-func (b *failingImageConversationRowSaveBackend) SaveCAS(context.Context, string, int64, int64, storage.ImageConversationRecord) (storage.ImageConversationRecord, error) {
-	return storage.ImageConversationRecord{}, errors.New("row database unavailable")
-}
-
 func (b *failingImageConversationRowSaveBackend) BatchSaveCAS(context.Context, string, int64, []storage.ImageConversationCASRequest) (storage.ImageConversationBatchCASResult, error) {
 	return storage.ImageConversationBatchCASResult{}, errors.New("row database unavailable")
 }
