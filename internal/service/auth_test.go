@@ -344,6 +344,25 @@ func TestAuthServiceRollsBackRoleCreateAndDeleteWhenPersistenceFails(t *testing.
 	}
 }
 
+func TestAuthServiceDeleteUserDoesNotDeleteBootstrapAdmin(t *testing.T) {
+	backend := &failingAtomicAuthStorage{}
+	auth := newTestAuthService(t, backend)
+	const password = "AdminPassword123"
+	result, err := auth.EnsureBootstrapAdmin("admin", password)
+	if err != nil || !result.Created {
+		t.Fatalf("EnsureBootstrapAdmin() = (%#v, %v), want created admin", result, err)
+	}
+
+	deleted, err := auth.DeleteUser(AuthRoleAdmin)
+	if err != nil || deleted {
+		t.Fatalf("DeleteUser(admin) = (%v, %v), want protected account", deleted, err)
+	}
+	identity, token, err := auth.LoginPassword("admin", password)
+	if err != nil || identity == nil || identity.Role != AuthRoleAdmin || token == "" {
+		t.Fatalf("LoginPassword(admin) = (%#v, %q, %v), want working admin login", identity, token, err)
+	}
+}
+
 func (s *failingAtomicAuthStorage) DeleteJSONDocument(name string) error {
 	delete(s.documents, name)
 	return nil

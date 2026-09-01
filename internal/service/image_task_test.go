@@ -175,6 +175,39 @@ func TestImageTaskServiceTracksVideoQueueAndUpstreamProgress(t *testing.T) {
 	}
 }
 
+func TestImageTaskServiceAuthorizesMediaResultsByTaskOwner(t *testing.T) {
+	handler := func(_ context.Context, _ Identity, _ map[string]any) (map[string]any, error) {
+		return map[string]any{
+			"output_type": "video",
+			"data":        []map[string]any{{"url": "/videos/private.mp4", "video_url": "/videos/private.mp4"}},
+		}, nil
+	}
+	svc := newTestImageTaskService(t, handler, handler, handler, func() int { return 30 })
+	svc.SetVideoHandler(handler)
+	alice := Identity{ID: "alice", Role: AuthRoleUser}
+	if _, err := svc.SubmitVideo(context.Background(), alice, "private-video", "animate", "video-model", "16:9", 5, "720p", false, false, "text", nil, nil, nil, nil); err != nil {
+		t.Fatalf("SubmitVideo() error = %v", err)
+	}
+	waitForTaskStatus(t, svc, alice, "private-video", TaskStatusSuccess)
+
+	for _, testCase := range []struct {
+		name     string
+		identity Identity
+		want     bool
+	}{
+		{name: "owner", identity: alice, want: true},
+		{name: "other user", identity: Identity{ID: "bob", Role: AuthRoleUser}},
+		{name: "admin", identity: Identity{ID: "admin", Role: AuthRoleAdmin}, want: true},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			allowed, err := svc.CanAccessMediaResult(testCase.identity, "/videos/private.mp4")
+			if err != nil || allowed != testCase.want {
+				t.Fatalf("CanAccessMediaResult() = (%v, %v), want %v", allowed, err, testCase.want)
+			}
+		})
+	}
+}
+
 func TestImageTaskServiceDoesNotApplyLegacyVideoDurationLimit(t *testing.T) {
 	handlerCalls := make(chan map[string]any, 1)
 	handler := func(_ context.Context, _ Identity, payload map[string]any) (map[string]any, error) {

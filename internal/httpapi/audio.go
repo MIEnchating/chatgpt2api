@@ -593,7 +593,8 @@ func (a *App) handleAudioFile(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	if _, ok := a.requireIdentity(w, r); !ok {
+	identity, ok := a.imageRequestIdentity(w, r)
+	if !ok {
 		return
 	}
 	name := strings.TrimPrefix(r.URL.Path, "/audios/")
@@ -604,6 +605,9 @@ func (a *App) handleAudioFile(w http.ResponseWriter, r *http.Request) {
 	path := filepath.Join(a.audioDir, name)
 	if filepath.Dir(path) != filepath.Clean(a.audioDir) {
 		http.NotFound(w, r)
+		return
+	}
+	if !a.authorizeGeneratedMediaFile(w, r, identity, "/audios/"+name) {
 		return
 	}
 	w.Header().Set("Content-Type", audioContentType(strings.TrimPrefix(filepath.Ext(name), ".")))

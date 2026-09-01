@@ -1451,18 +1451,45 @@ func (a *App) downloadRelayVideo(ctx context.Context, videoURL, apiKey, owner, t
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return "", fmt.Errorf("video content returned status %d", resp.StatusCode)
 	}
-	data, err := io.ReadAll(io.LimitReader(resp.Body, (512<<20)+1))
-	if err != nil {
-		return "", err
-	}
-	if len(data) > 512<<20 {
+	const maxVideoBytes int64 = 512 << 20
+	if resp.ContentLength > maxVideoBytes {
 		return "", fmt.Errorf("video content exceeds 512 MB")
 	}
 	name := util.SHA1Short(owner+":"+taskID, 24) + ".mp4"
-	if err := os.WriteFile(filepath.Join(a.videoDir, name), data, 0o644); err != nil {
+	if err := storeRelayVideoStream(a.videoDir, name, resp.Body, maxVideoBytes); err != nil {
 		return "", err
 	}
 	return "/videos/" + name, nil
+}
+
+func storeRelayVideoStream(directory, name string, source io.Reader, maxBytes int64) error {
+	if maxBytes <= 0 {
+		return fmt.Errorf("video content size limit is invalid")
+	}
+	temporary, err := os.CreateTemp(directory, ".video-*")
+	if err != nil {
+		return err
+	}
+	temporaryName := temporary.Name()
+	defer os.Remove(temporaryName)
+
+	written, copyErr := io.Copy(temporary, io.LimitReader(source, maxBytes+1))
+	if copyErr != nil {
+		_ = temporary.Close()
+		return copyErr
+	}
+	if written > maxBytes {
+		_ = temporary.Close()
+		return fmt.Errorf("video content exceeds 512 MB")
+	}
+	if err := temporary.Chmod(0o644); err != nil {
+		_ = temporary.Close()
+		return err
+	}
+	if err := temporary.Close(); err != nil {
+		return err
+	}
+	return os.Rename(temporaryName, filepath.Join(directory, name))
 }
 
 func videoArtifactURLForContract(state map[string]any, baseURL, taskID string, contract protocol.VideoModelContract) (string, string, error) {

@@ -1475,7 +1475,8 @@ func (a *App) handleVideoFile(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
-	if _, ok := a.requireIdentity(w, r); !ok {
+	identity, ok := a.imageRequestIdentity(w, r)
+	if !ok {
 		return
 	}
 	name := strings.TrimPrefix(r.URL.Path, "/videos/")
@@ -1488,6 +1489,9 @@ func (a *App) handleVideoFile(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if !a.authorizeGeneratedMediaFile(w, r, identity, "/videos/"+name) {
+		return
+	}
 	contentType := "video/mp4"
 	if strings.EqualFold(filepath.Ext(name), ".webm") {
 		contentType = "video/webm"
@@ -1495,6 +1499,23 @@ func (a *App) handleVideoFile(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Cache-Control", "private, max-age=3600")
 	http.ServeFile(w, r, path)
+}
+
+func (a *App) authorizeGeneratedMediaFile(w http.ResponseWriter, r *http.Request, identity service.Identity, resultURL string) bool {
+	if a.tasks == nil {
+		util.WriteError(w, http.StatusServiceUnavailable, "creation task storage is unavailable")
+		return false
+	}
+	allowed, err := a.tasks.CanAccessMediaResult(identity, resultURL)
+	if err != nil {
+		util.WriteError(w, http.StatusServiceUnavailable, err.Error())
+		return false
+	}
+	if !allowed {
+		http.NotFound(w, r)
+		return false
+	}
+	return true
 }
 
 func (a *App) handleImageReferenceFile(w http.ResponseWriter, r *http.Request) {

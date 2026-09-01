@@ -674,3 +674,30 @@ func TestGenericStorageServiceDownloadsPublicURLWithoutSavedProvider(t *testing.
 		t.Fatalf("DownloadForIdentity() = data %q, status %d, range %q, err %v", data, download.StatusCode, download.ContentRange, err)
 	}
 }
+
+func TestFindStorageProviderForObjectPrefersRecordedProviderID(t *testing.T) {
+	providers := []model.StorageProvider{
+		{ID: "wrong-provider", Type: model.StorageProviderTypeS3, Endpoint: "https://wrong.example.test", Bucket: "shared"},
+		{ID: "recorded-provider", Type: model.StorageProviderTypeS3, Endpoint: "https://recorded.example.test", Bucket: "shared"},
+	}
+
+	provider, ok := findStorageProviderForObject(model.StorageObject{
+		ProviderID: "recorded-provider",
+		Bucket:     "shared",
+	}, providers)
+	if !ok || provider.ID != "recorded-provider" {
+		t.Fatalf("findStorageProviderForObject() = (%#v, %v), want recorded provider", provider, ok)
+	}
+
+	if provider, ok := findStorageProviderForObject(model.StorageObject{
+		ProviderID: "removed-provider",
+		Bucket:     "shared",
+	}, providers); ok {
+		t.Fatalf("findStorageProviderForObject() = (%#v, true), want no replacement for recorded provider", provider)
+	}
+
+	provider, ok = findStorageProviderForObject(model.StorageObject{Bucket: "shared"}, providers)
+	if !ok || provider.ID != "wrong-provider" {
+		t.Fatalf("findStorageProviderForObject(legacy object) = (%#v, %v), want bucket fallback", provider, ok)
+	}
+}

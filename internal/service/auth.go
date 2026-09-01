@@ -530,7 +530,7 @@ func (s *AuthService) DeleteUser(id string) (bool, error) {
 	removedAccount := false
 	nextAccounts := s.accounts[:0]
 	for _, account := range s.accounts {
-		if account.ID == id {
+		if account.ID == id && account.Role == AuthRoleUser {
 			removed = true
 			removedAccount = true
 			continue

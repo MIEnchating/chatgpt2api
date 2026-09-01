@@ -757,10 +757,15 @@ func storageProviderConfigured(provider model.StorageProvider) bool {
 }
 
 func findStorageProviderForObject(object model.StorageObject, providers []model.StorageProvider) (model.StorageProvider, bool) {
-	for _, provider := range providers {
-		if object.ProviderID != "" && provider.ID == object.ProviderID {
-			return normalizeStorageProvider(provider), true
+	if object.ProviderID != "" {
+		for _, provider := range providers {
+			if provider.ID == object.ProviderID {
+				return normalizeStorageProvider(provider), true
+			}
 		}
+		return model.StorageProvider{}, false
+	}
+	for _, provider := range providers {
 		if object.Bucket != "" && provider.Bucket == object.Bucket {
 			base := strings.TrimRight(strings.TrimSpace(provider.PublicBaseURL), "/")
 			if object.PublicURL == "" || base == "" || strings.HasPrefix(object.PublicURL, base+"/") {

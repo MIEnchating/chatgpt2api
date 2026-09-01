@@ -387,6 +387,42 @@ func (s *ImageTaskService) ListTasksWithError(identity Identity, taskIDs []strin
 	return map[string]any{"items": items, "missing_ids": missing}, nil
 }
 
+func (s *ImageTaskService) CanAccessMediaResult(identity Identity, resultURL string) (bool, error) {
+	resultURL = strings.TrimSpace(resultURL)
+	if resultURL == "" {
+		return false, nil
+	}
+	owner := ownerID(identity)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if err := s.ensureLoadedLocked(); err != nil {
+		return false, ImageTaskLoadError{Err: err}
+	}
+	if imageTaskMediaResultVisible(s.tasks, identity, owner, resultURL) {
+		return true, nil
+	}
+	if err := s.refreshTasksLocked(); err != nil {
+		return false, ImageTaskLoadError{Err: err}
+	}
+	return imageTaskMediaResultVisible(s.tasks, identity, owner, resultURL), nil
+}
+
+func imageTaskMediaResultVisible(tasks map[string]map[string]any, identity Identity, owner, resultURL string) bool {
+	for _, task := range tasks {
+		if identity.Role != AuthRoleAdmin && util.Clean(task["owner_id"]) != owner {
+			continue
+		}
+		for _, item := range util.AsMapSlice(task["data"]) {
+			for _, field := range []string{"url", "video_url", "audio_url"} {
+				if util.Clean(item[field]) == resultURL {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 func (s *ImageTaskService) CancelTask(identity Identity, clientTaskID string) (map[string]any, error) {
 	taskID := strings.TrimSpace(clientTaskID)
 	if taskID == "" {

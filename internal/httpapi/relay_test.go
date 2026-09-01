@@ -324,6 +324,28 @@ func TestDownloadRelayVideoAllowsAuthenticatedSameOriginRedirect(t *testing.T) {
 	}
 }
 
+func TestStoreRelayVideoStreamCleansPartialFiles(t *testing.T) {
+	directory := t.TempDir()
+	if err := storeRelayVideoStream(directory, "result.mp4", strings.NewReader("video"), 5); err != nil {
+		t.Fatalf("storeRelayVideoStream() error = %v", err)
+	}
+	stored, err := os.ReadFile(filepath.Join(directory, "result.mp4"))
+	if err != nil || string(stored) != "video" {
+		t.Fatalf("stored video = %q, %v", stored, err)
+	}
+
+	if err := storeRelayVideoStream(directory, "oversized.mp4", strings.NewReader("123456"), 5); err == nil {
+		t.Fatal("storeRelayVideoStream() accepted oversized content")
+	}
+	if _, err := os.Stat(filepath.Join(directory, "oversized.mp4")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("oversized target stat error = %v, want not exist", err)
+	}
+	temporary, err := filepath.Glob(filepath.Join(directory, ".video-*"))
+	if err != nil || len(temporary) != 0 {
+		t.Fatalf("temporary video files = %#v, %v", temporary, err)
+	}
+}
+
 func TestManagedRelayImageTaskDoesNotAcquireSecondSlot(t *testing.T) {
 	acquireCalls := 0
 	payload := map[string]any{
