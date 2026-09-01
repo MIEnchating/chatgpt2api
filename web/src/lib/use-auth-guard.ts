@@ -17,6 +17,11 @@ type UseAuthGuardResult = {
   session: StoredAuthSession | null;
 };
 
+type VerifiedSessionHandler = (
+  session: StoredAuthSession | null,
+  finishChecking: () => void,
+) => void;
+
 const AUTH_SESSION_ERROR_TOAST_ID = "auth-session-verification-error";
 
 function sessionVerificationError(error: unknown) {
@@ -35,12 +40,12 @@ function showSessionVerificationError(error: Error, retry: () => void) {
   });
 }
 
-export function useAuthGuard(allowedRoles?: AuthRole[], requiredPath?: string): UseAuthGuardResult {
-  const navigate = useNavigate();
-  const [session, setSession] = useState<StoredAuthSession | null>(() => getCachedAuthSession() ?? null);
-  const [isCheckingAuth, setIsCheckingAuth] = useState(() => getCachedAuthSession() === undefined);
+function useVerifiedSessionLifecycle(
+  initialChecking: () => boolean,
+  onVerified: VerifiedSessionHandler,
+) {
+  const [isCheckingAuth, setIsCheckingAuth] = useState(initialChecking);
   const [retryVersion, setRetryVersion] = useState(0);
-  const allowedRolesKey = (allowedRoles || []).join(",");
   const retryAuth = useCallback(() => {
     setIsCheckingAuth(true);
     setRetryVersion((version) => version + 1);
@@ -50,7 +55,6 @@ export function useAuthGuard(allowedRoles?: AuthRole[], requiredPath?: string): 
     let active = true;
 
     const load = async () => {
-      const roleList = allowedRolesKey ? (allowedRolesKey.split(",") as AuthRole[]) : [];
       try {
         const storedSession = await getVerifiedAuthSession();
         if (!active) {
@@ -58,30 +62,7 @@ export function useAuthGuard(allowedRoles?: AuthRole[], requiredPath?: string): 
         }
 
         toast.dismiss(AUTH_SESSION_ERROR_TOAST_ID);
-
-        if (!storedSession) {
-          setSession(null);
-          setIsCheckingAuth(false);
-          navigate("/login", { replace: true });
-          return;
-        }
-
-        if (roleList.length > 0 && !roleList.includes(storedSession.role)) {
-          setSession(storedSession);
-          setIsCheckingAuth(false);
-          navigate(getDefaultRouteForSession(storedSession), { replace: true });
-          return;
-        }
-
-        if (requiredPath && !canAccessPath(storedSession, requiredPath)) {
-          setSession(storedSession);
-          setIsCheckingAuth(false);
-          navigate(getDefaultRouteForSession(storedSession), { replace: true });
-          return;
-        }
-
-        setSession(storedSession);
-        setIsCheckingAuth(false);
+        onVerified(storedSession, () => setIsCheckingAuth(false));
       } catch (error) {
         if (!active) {
           return;
@@ -96,53 +77,64 @@ export function useAuthGuard(allowedRoles?: AuthRole[], requiredPath?: string): 
     return () => {
       active = false;
     };
-  }, [allowedRolesKey, navigate, requiredPath, retryAuth, retryVersion]);
+  }, [onVerified, retryAuth, retryVersion]);
+
+  return { isCheckingAuth };
+}
+
+export function useAuthGuard(allowedRoles?: AuthRole[], requiredPath?: string): UseAuthGuardResult {
+  const navigate = useNavigate();
+  const [session, setSession] = useState<StoredAuthSession | null>(() => getCachedAuthSession() ?? null);
+  const allowedRolesKey = (allowedRoles || []).join(",");
+  const handleVerifiedSession = useCallback<VerifiedSessionHandler>((storedSession, finishChecking) => {
+    const roleList = allowedRolesKey ? (allowedRolesKey.split(",") as AuthRole[]) : [];
+
+    if (!storedSession) {
+      setSession(null);
+      finishChecking();
+      navigate("/login", { replace: true });
+      return;
+    }
+
+    if (roleList.length > 0 && !roleList.includes(storedSession.role)) {
+      setSession(storedSession);
+      finishChecking();
+      navigate(getDefaultRouteForSession(storedSession), { replace: true });
+      return;
+    }
+
+    if (requiredPath && !canAccessPath(storedSession, requiredPath)) {
+      setSession(storedSession);
+      finishChecking();
+      navigate(getDefaultRouteForSession(storedSession), { replace: true });
+      return;
+    }
+
+    setSession(storedSession);
+    finishChecking();
+  }, [allowedRolesKey, navigate, requiredPath]);
+  const { isCheckingAuth } = useVerifiedSessionLifecycle(
+    () => getCachedAuthSession() === undefined,
+    handleVerifiedSession,
+  );
 
   return { isCheckingAuth, session };
 }
 
 export function useRedirectIfAuthenticated() {
   const navigate = useNavigate();
-  const [isCheckingAuth, setIsCheckingAuth] = useState(() => getCachedAuthSession() !== null);
-  const [retryVersion, setRetryVersion] = useState(0);
-  const retryAuth = useCallback(() => {
-    setIsCheckingAuth(true);
-    setRetryVersion((version) => version + 1);
-  }, []);
+  const handleVerifiedSession = useCallback<VerifiedSessionHandler>((storedSession, finishChecking) => {
+    if (storedSession) {
+      navigate(getDefaultRouteForSession(storedSession), { replace: true });
+      return;
+    }
 
-  useEffect(() => {
-    let active = true;
-
-    const load = async () => {
-      try {
-        const storedSession = await getVerifiedAuthSession();
-        if (!active) {
-          return;
-        }
-
-        toast.dismiss(AUTH_SESSION_ERROR_TOAST_ID);
-
-        if (storedSession) {
-          navigate(getDefaultRouteForSession(storedSession), { replace: true });
-          return;
-        }
-
-        setIsCheckingAuth(false);
-      } catch (error) {
-        if (!active) {
-          return;
-        }
-        const verificationError = sessionVerificationError(error);
-        setIsCheckingAuth(false);
-        showSessionVerificationError(verificationError, retryAuth);
-      }
-    };
-
-    void load();
-    return () => {
-      active = false;
-    };
-  }, [navigate, retryAuth, retryVersion]);
+    finishChecking();
+  }, [navigate]);
+  const { isCheckingAuth } = useVerifiedSessionLifecycle(
+    () => getCachedAuthSession() !== null,
+    handleVerifiedSession,
+  );
 
   return { isCheckingAuth };
 }

@@ -386,18 +386,8 @@ func (r *NewAPITokenReader) lookupUserBalance(ctx context.Context, candidates []
 	groupColumn := r.quoteIdentifier("group")
 	query := "SELECT id, username, email, display_name, quota, used_quota, request_count, " + groupColumn + " FROM users WHERE (username = " + r.placeholder(1) + " OR email = " + r.placeholder(2) + ") AND status = 1 AND deleted_at IS NULL ORDER BY id ASC LIMIT 1"
 	for _, candidate := range candidates {
-		var balance NewAPIUserBalance
-		var email, displayName, group sql.NullString
-		var quota, usedQuota, requestCount sql.NullInt64
-		err := r.db.QueryRowContext(ctx, query, candidate, candidate).Scan(&balance.ID, &balance.Username, &email, &displayName, &quota, &usedQuota, &requestCount, &group)
+		balance, err := scanNewAPIUserBalance(r.db.QueryRowContext(ctx, query, candidate, candidate))
 		if err == nil {
-			balance.Username = strings.TrimSpace(balance.Username)
-			balance.Email = strings.TrimSpace(email.String)
-			balance.DisplayName = strings.TrimSpace(displayName.String)
-			balance.Group = strings.TrimSpace(group.String)
-			balance.Quota = float64(quota.Int64)
-			balance.UsedQuota = float64(usedQuota.Int64)
-			balance.RequestCount = requestCount.Int64
 			if balance.Username == "" {
 				return NewAPIUserBalance{}, newAPITokenMessageError("读取云棉余额失败，请检查云棉用户数据", nil)
 			}
@@ -418,29 +408,36 @@ func (r *NewAPITokenReader) lookupUserBalanceForIdentity(ctx context.Context, id
 			return r.lookupSub2APIUserBalanceByID(ctx, userID)
 		}
 		query := "SELECT id, username, email, display_name, quota, used_quota, request_count, " + groupColumn + " FROM users WHERE id = " + r.placeholder(1) + " AND status = 1 AND deleted_at IS NULL LIMIT 1"
-		var balance NewAPIUserBalance
-		var email, displayName, group sql.NullString
-		var quota, usedQuota, requestCount sql.NullInt64
-		err := r.db.QueryRowContext(ctx, query, userID).Scan(&balance.ID, &balance.Username, &email, &displayName, &quota, &usedQuota, &requestCount, &group)
+		balance, err := scanNewAPIUserBalance(r.db.QueryRowContext(ctx, query, userID))
 		if errors.Is(err, sql.ErrNoRows) {
 			return NewAPIUserBalance{}, newAPITokenMessageError(fmt.Sprintf("云棉用户 ID %d 不存在或已停用，请重新登录", userID), nil)
 		}
 		if err != nil {
 			return NewAPIUserBalance{}, newAPITokenMessageError("读取余额失败，请检查数据库连接", err)
 		}
-		balance.Username = strings.TrimSpace(balance.Username)
-		balance.Email = strings.TrimSpace(email.String)
-		balance.DisplayName = strings.TrimSpace(displayName.String)
-		balance.Group = strings.TrimSpace(group.String)
-		balance.Quota = float64(quota.Int64)
-		balance.UsedQuota = float64(usedQuota.Int64)
-		balance.RequestCount = requestCount.Int64
 		if balance.Username == "" {
 			return NewAPIUserBalance{}, newAPITokenMessageError("读取云棉余额失败，请检查云棉用户数据", nil)
 		}
 		return balance, nil
 	}
 	return r.lookupUserBalance(ctx, candidates)
+}
+
+func scanNewAPIUserBalance(row *sql.Row) (NewAPIUserBalance, error) {
+	var balance NewAPIUserBalance
+	var email, displayName, group sql.NullString
+	var quota, usedQuota, requestCount sql.NullInt64
+	if err := row.Scan(&balance.ID, &balance.Username, &email, &displayName, &quota, &usedQuota, &requestCount, &group); err != nil {
+		return NewAPIUserBalance{}, err
+	}
+	balance.Username = strings.TrimSpace(balance.Username)
+	balance.Email = strings.TrimSpace(email.String)
+	balance.DisplayName = strings.TrimSpace(displayName.String)
+	balance.Group = strings.TrimSpace(group.String)
+	balance.Quota = float64(quota.Int64)
+	balance.UsedQuota = float64(usedQuota.Int64)
+	balance.RequestCount = requestCount.Int64
+	return balance, nil
 }
 
 func (r *NewAPITokenReader) lookupTokenSelection(ctx context.Context, userID int64, group, name string) (NewAPITokenSelection, error) {
@@ -734,23 +731,13 @@ func (r *NewAPITokenReader) lookupSub2APITokenCandidates(ctx context.Context, us
 func (r *NewAPITokenReader) lookupSub2APIUserBalance(ctx context.Context, candidates []string) (NewAPIUserBalance, error) {
 	query := "SELECT id, username, email, balance FROM users WHERE (username = " + r.placeholder(1) + " OR email = " + r.placeholder(2) + ") AND status = 'active' AND deleted_at IS NULL ORDER BY id ASC LIMIT 1"
 	for _, candidate := range candidates {
-		var balance NewAPIUserBalance
-		var email, username sql.NullString
-		var amount sql.NullFloat64
-		err := r.db.QueryRowContext(ctx, query, candidate, candidate).Scan(&balance.ID, &username, &email, &amount)
+		balance, err := r.scanSub2APIUserBalance(ctx, r.db.QueryRowContext(ctx, query, candidate, candidate))
 		if errors.Is(err, sql.ErrNoRows) {
 			continue
 		}
 		if err != nil {
 			return NewAPIUserBalance{}, newAPITokenMessageError("读取 Sub2API 余额失败，请检查数据库连接", err)
 		}
-		balance.Username, balance.Email, balance.DisplayName = strings.TrimSpace(username.String), strings.TrimSpace(email.String), strings.TrimSpace(username.String)
-		if balance.Username == "" {
-			balance.Username = balance.Email
-			balance.DisplayName = balance.Email
-		}
-		balance.Quota = amount.Float64 * 500000
-		balance.UsedQuota, balance.RequestCount = r.lookupSub2APIUsage(ctx, balance.ID)
 		return balance, nil
 	}
 	return NewAPIUserBalance{}, newAPITokenMessageError("请先在 Sub2API 创建当前登录用户", nil)
@@ -758,15 +745,22 @@ func (r *NewAPITokenReader) lookupSub2APIUserBalance(ctx context.Context, candid
 
 func (r *NewAPITokenReader) lookupSub2APIUserBalanceByID(ctx context.Context, userID int64) (NewAPIUserBalance, error) {
 	query := "SELECT id, username, email, balance FROM users WHERE id = " + r.placeholder(1) + " AND status = 'active' AND deleted_at IS NULL LIMIT 1"
-	var balance NewAPIUserBalance
-	var email, username sql.NullString
-	var amount sql.NullFloat64
-	err := r.db.QueryRowContext(ctx, query, userID).Scan(&balance.ID, &username, &email, &amount)
+	balance, err := r.scanSub2APIUserBalance(ctx, r.db.QueryRowContext(ctx, query, userID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return NewAPIUserBalance{}, newAPITokenMessageError(fmt.Sprintf("Sub2API 用户 ID %d 不存在或已停用，请重新登录", userID), nil)
 	}
 	if err != nil {
 		return NewAPIUserBalance{}, newAPITokenMessageError("读取 Sub2API 余额失败，请检查数据库连接", err)
+	}
+	return balance, nil
+}
+
+func (r *NewAPITokenReader) scanSub2APIUserBalance(ctx context.Context, row *sql.Row) (NewAPIUserBalance, error) {
+	var balance NewAPIUserBalance
+	var email, username sql.NullString
+	var amount sql.NullFloat64
+	if err := row.Scan(&balance.ID, &username, &email, &amount); err != nil {
+		return NewAPIUserBalance{}, err
 	}
 	balance.Username = strings.TrimSpace(username.String)
 	balance.Email = strings.TrimSpace(email.String)

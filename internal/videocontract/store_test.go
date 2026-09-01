@@ -383,3 +383,191 @@ func TestVideoModelContractDraftPublishAndRollbackLifecycle(t *testing.T) {
 		t.Fatalf("Versions() = %#v, error = %v", versions, err)
 	}
 }
+
+func TestVideoModelContractMutationsRetryWithLatestDocument(t *testing.T) {
+	t.Cleanup(func() { _ = protocol.ReplaceVideoContracts(protocol.DefaultVideoContracts()) })
+
+	publishedAt := "2026-08-31T00:00:00Z"
+	originalContract := testVideoContract(t, "CAS original", "cas/video-v1")
+	currentContract := testVideoContract(t, "CAS current", "cas/video-v1")
+	draftContract := testVideoContract(t, "CAS draft", "cas/video-v1")
+	desiredContract := testVideoContract(t, "CAS desired", "cas/video-v1")
+	peerContract := testVideoContract(t, "CAS peer", "cas/peer-video-v1")
+	sentinelContract := testVideoContract(t, "CAS runtime sentinel", "cas/runtime-sentinel-v1")
+	draftEnabled := false
+	baseItem := ManagedVideoModelContract{
+		ID:           "cas-contract",
+		Contract:     currentContract,
+		Draft:        &draftContract,
+		DraftEnabled: &draftEnabled,
+		Enabled:      true,
+		Revision:     2,
+		Versions: []VideoModelContractVersion{
+			{Revision: 1, Contract: originalContract, PublishedAt: publishedAt},
+			{Revision: 2, Contract: currentContract, PublishedAt: publishedAt},
+		},
+		CreatedAt:      publishedAt,
+		UpdatedAt:      publishedAt,
+		DraftUpdatedAt: publishedAt,
+	}
+	peerItem := ManagedVideoModelContract{
+		ID:        "peer-contract",
+		Contract:  peerContract,
+		Enabled:   true,
+		Revision:  1,
+		Versions:  appendVideoContractVersion(nil, 1, peerContract, publishedAt),
+		CreatedAt: publishedAt,
+		UpdatedAt: publishedAt,
+	}
+
+	type mutationResult struct {
+		item    *ManagedVideoModelContract
+		deleted bool
+	}
+	tests := []struct {
+		name                   string
+		mutate                 func(*VideoModelContractService) (mutationResult, error)
+		wantContractName       string
+		wantDraftName          string
+		wantRevision           int
+		wantEnabled            bool
+		wantDeleted            bool
+		preservesActiveRuntime bool
+	}{
+		{
+			name: "update",
+			mutate: func(service *VideoModelContractService) (mutationResult, error) {
+				item, err := service.Update(baseItem.ID, desiredContract, false)
+				return mutationResult{item: item}, err
+			},
+			wantContractName: desiredContract.Name,
+			wantRevision:     3,
+		},
+		{
+			name: "save draft",
+			mutate: func(service *VideoModelContractService) (mutationResult, error) {
+				item, err := service.SaveDraft(baseItem.ID, desiredContract, false)
+				return mutationResult{item: item}, err
+			},
+			wantContractName:       currentContract.Name,
+			wantDraftName:          desiredContract.Name,
+			wantRevision:           2,
+			wantEnabled:            true,
+			preservesActiveRuntime: true,
+		},
+		{
+			name: "publish",
+			mutate: func(service *VideoModelContractService) (mutationResult, error) {
+				item, err := service.Publish(baseItem.ID, nil, nil)
+				return mutationResult{item: item}, err
+			},
+			wantContractName: draftContract.Name,
+			wantRevision:     3,
+		},
+		{
+			name: "rollback",
+			mutate: func(service *VideoModelContractService) (mutationResult, error) {
+				item, err := service.Rollback(baseItem.ID, 1)
+				return mutationResult{item: item}, err
+			},
+			wantContractName: originalContract.Name,
+			wantRevision:     3,
+			wantEnabled:      true,
+		},
+		{
+			name: "set enabled",
+			mutate: func(service *VideoModelContractService) (mutationResult, error) {
+				item, err := service.SetEnabled(baseItem.ID, false)
+				return mutationResult{item: item}, err
+			},
+			wantContractName: currentContract.Name,
+			wantDraftName:    draftContract.Name,
+			wantRevision:     2,
+		},
+		{
+			name: "delete",
+			mutate: func(service *VideoModelContractService) (mutationResult, error) {
+				deleted, err := service.Delete(baseItem.ID)
+				return mutationResult{deleted: deleted}, err
+			},
+			wantDeleted: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if err := protocol.ReplaceVideoContracts([]protocol.VideoModelContract{sentinelContract}); err != nil {
+				t.Fatalf("ReplaceVideoContracts() error = %v", err)
+			}
+			initialDocument := videoModelContractStoreDocument{
+				Version: videoModelContractStoreVersion,
+				Items:   []ManagedVideoModelContract{baseItem},
+			}
+			peerDocument := videoModelContractStoreDocument{
+				Version: videoModelContractStoreVersion,
+				Items:   []ManagedVideoModelContract{baseItem, peerItem},
+			}
+			backend := &scriptedVideoContractDocumentBackend{
+				document:         initialDocument,
+				conflictDocument: peerDocument,
+				saveErrors:       []error{storage.ErrConcurrentRowUpdate},
+			}
+			result, err := test.mutate(NewVideoModelContractService(backend))
+			if err != nil {
+				t.Fatalf("mutation error = %v", err)
+			}
+			if backend.loadCalls != 2 || backend.saveCalls != 2 {
+				t.Fatalf("storage calls = %d loads, %d saves; want 2 loads, 2 saves", backend.loadCalls, backend.saveCalls)
+			}
+			stored, ok := backend.document.(videoModelContractStoreDocument)
+			if !ok {
+				t.Fatalf("stored document type = %T", backend.document)
+			}
+			if managedVideoContractIndex(stored.Items, peerItem.ID) < 0 {
+				t.Fatalf("concurrent peer item was overwritten: %#v", stored.Items)
+			}
+
+			index := managedVideoContractIndex(stored.Items, baseItem.ID)
+			if test.wantDeleted {
+				if !result.deleted || result.item != nil || index >= 0 {
+					t.Fatalf("delete result = %#v, stored items = %#v", result, stored.Items)
+				}
+			} else {
+				if result.deleted || result.item == nil || index < 0 {
+					t.Fatalf("mutation result = %#v, stored items = %#v", result, stored.Items)
+				}
+				item := stored.Items[index]
+				if item.Contract.Name != test.wantContractName || item.Revision != test.wantRevision || item.Enabled != test.wantEnabled {
+					t.Fatalf("stored item = %#v", item)
+				}
+				if test.wantDraftName == "" {
+					if item.Draft != nil {
+						t.Fatalf("stored draft = %#v, want nil", item.Draft)
+					}
+				} else if item.Draft == nil || item.Draft.Name != test.wantDraftName {
+					t.Fatalf("stored draft = %#v, want %q", item.Draft, test.wantDraftName)
+				}
+			}
+
+			_, sentinelActive := protocol.VideoContractForModel(sentinelContract.Models[0])
+			_, peerActive := protocol.VideoContractForModel(peerContract.Models[0])
+			active, contractActive := protocol.VideoContractForModel(currentContract.Models[0])
+			if test.preservesActiveRuntime {
+				if !sentinelActive || peerActive || contractActive {
+					t.Fatalf("draft save refreshed runtime: sentinel=%v peer=%v contract=%#v, %v", sentinelActive, peerActive, active, contractActive)
+				}
+				return
+			}
+			if sentinelActive || !peerActive {
+				t.Fatalf("active runtime was not refreshed: sentinel=%v peer=%v", sentinelActive, peerActive)
+			}
+			if !test.wantDeleted && test.wantEnabled {
+				if !contractActive || active.Name != test.wantContractName {
+					t.Fatalf("active contract = %#v, %v; want %q", active, contractActive, test.wantContractName)
+				}
+			} else if contractActive {
+				t.Fatalf("inactive contract remained in runtime: %#v", active)
+			}
+		})
+	}
+}

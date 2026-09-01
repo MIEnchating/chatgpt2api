@@ -367,38 +367,15 @@ export function calculateImageSize(resolution: Exclude<ImageResolution, "auto">,
 
   if (resolution === "512" || resolution === "1k") {
     const longSide = resolution === "512" ? 512 : 1024;
-    const width = ratioWidth > ratioHeight
-      ? longSide
-      : roundToMultiple((longSide * ratioWidth) / ratioHeight, SIZE_MULTIPLE);
-    const height = ratioWidth > ratioHeight
-      ? roundToMultiple((longSide * ratioHeight) / ratioWidth, SIZE_MULTIPLE)
-      : longSide;
-    return `${width}x${height}`;
+    return fitImageRatioToLongSide(ratioWidth, ratioHeight, longSide);
   }
 
   if (resolution === "1080p") {
-    const shortSide = 1080;
-    const width =
-      ratioWidth > ratioHeight
-        ? roundToMultiple((shortSide * ratioWidth) / ratioHeight, SIZE_MULTIPLE)
-        : shortSide;
-    const height =
-      ratioWidth > ratioHeight
-        ? shortSide
-        : roundToMultiple((shortSide * ratioHeight) / ratioWidth, SIZE_MULTIPLE);
-    return normalizeImageSize(`${width}x${height}`);
+    return normalizeImageSize(fitImageRatioToShortSide(ratioWidth, ratioHeight, 1080));
   }
 
   const longSide = resolution === "2k" ? 2048 : 3840;
-  const width =
-    ratioWidth > ratioHeight
-      ? longSide
-      : roundToMultiple((longSide * ratioWidth) / ratioHeight, SIZE_MULTIPLE);
-  const height =
-    ratioWidth > ratioHeight
-      ? roundToMultiple((longSide * ratioHeight) / ratioWidth, SIZE_MULTIPLE)
-      : longSide;
-  return normalizeImageSize(`${width}x${height}`);
+  return normalizeImageSize(fitImageRatioToLongSide(ratioWidth, ratioHeight, longSide));
 }
 
 export function calculateDefaultImageSize(ratio: string) {
@@ -416,7 +393,10 @@ export function calculateDefaultImageSize(ratio: string) {
     return "1024x1024";
   }
 
-  const longSide = 1536;
+  return normalizeImageSize(fitImageRatioToLongSide(ratioWidth, ratioHeight, 1536));
+}
+
+function fitImageRatioToLongSide(ratioWidth: number, ratioHeight: number, longSide: number) {
   const width =
     ratioWidth > ratioHeight
       ? longSide
@@ -425,7 +405,19 @@ export function calculateDefaultImageSize(ratio: string) {
     ratioWidth > ratioHeight
       ? roundToMultiple((longSide * ratioHeight) / ratioWidth, SIZE_MULTIPLE)
       : longSide;
-  return normalizeImageSize(`${width}x${height}`);
+  return `${width}x${height}`;
+}
+
+function fitImageRatioToShortSide(ratioWidth: number, ratioHeight: number, shortSide: number) {
+  const width =
+    ratioWidth > ratioHeight
+      ? roundToMultiple((shortSide * ratioWidth) / ratioHeight, SIZE_MULTIPLE)
+      : shortSide;
+  const height =
+    ratioWidth > ratioHeight
+      ? shortSide
+      : roundToMultiple((shortSide * ratioHeight) / ratioWidth, SIZE_MULTIPLE);
+  return `${width}x${height}`;
 }
 
 function alignImageDimension(value: number, enabled = true) {

@@ -231,22 +231,7 @@ func (a *App) handleVideoReferenceUpload(w http.ResponseWriter, r *http.Request)
 		util.WriteError(w, http.StatusBadRequest, "视频参考仅支持 MP4 或 MOV 格式")
 		return
 	}
-	var randomID [16]byte
-	if _, err := rand.Read(randomID[:]); err != nil {
-		util.WriteError(w, http.StatusInternalServerError, "failed to create video reference id")
-		return
-	}
-	name := "reference-" + hex.EncodeToString(randomID[:]) + ext
-	if r.Context().Err() != nil {
-		util.WriteError(w, http.StatusRequestTimeout, "video reference upload was canceled")
-		return
-	}
-	if err := os.WriteFile(filepath.Join(a.videoReferenceDir, name), upload.data, 0o644); err != nil {
-		util.WriteError(w, http.StatusInternalServerError, "failed to store video reference")
-		return
-	}
-	url := strings.TrimRight(a.resolveImageBaseURL(), "/") + "/video-references/" + name
-	util.WriteJSON(w, http.StatusCreated, map[string]any{"url": url, "name": upload.filename, "content_type": contentType, "size": len(upload.data)})
+	a.persistReferenceUpload(w, r, upload, ext, contentType, "video", "/video-references/")
 }
 
 func (a *App) handleAudioReferenceUpload(w http.ResponseWriter, r *http.Request) {
@@ -268,22 +253,7 @@ func (a *App) handleAudioReferenceUpload(w http.ResponseWriter, r *http.Request)
 		util.WriteError(w, http.StatusBadRequest, "音频参考仅支持 MP3 或 WAV 格式")
 		return
 	}
-	var randomID [16]byte
-	if _, err := rand.Read(randomID[:]); err != nil {
-		util.WriteError(w, http.StatusInternalServerError, "failed to create audio reference id")
-		return
-	}
-	name := "reference-" + hex.EncodeToString(randomID[:]) + ext
-	if r.Context().Err() != nil {
-		util.WriteError(w, http.StatusRequestTimeout, "audio reference upload was canceled")
-		return
-	}
-	if err := os.WriteFile(filepath.Join(a.videoReferenceDir, name), upload.data, 0o644); err != nil {
-		util.WriteError(w, http.StatusInternalServerError, "failed to store audio reference")
-		return
-	}
-	url := strings.TrimRight(a.resolveImageBaseURL(), "/") + "/audio-references/" + name
-	util.WriteJSON(w, http.StatusCreated, map[string]any{"url": url, "name": upload.filename, "content_type": contentType, "size": len(upload.data)})
+	a.persistReferenceUpload(w, r, upload, ext, contentType, "audio", "/audio-references/")
 }
 
 func (a *App) handleVideoImageReferenceUpload(w http.ResponseWriter, r *http.Request) {
@@ -312,22 +282,31 @@ func (a *App) handleVideoImageReferenceUpload(w http.ResponseWriter, r *http.Req
 	} else if info.ContentType == "image/webp" {
 		ext, contentType = ".webp", "image/webp"
 	}
+	a.persistReferenceUpload(w, r, upload, ext, contentType, "image", "/video-image-references/")
+}
+
+func (a *App) persistReferenceUpload(
+	w http.ResponseWriter,
+	r *http.Request,
+	upload referenceUpload,
+	ext, contentType, kind, pathPrefix string,
+) {
 	var randomID [16]byte
 	if _, err := rand.Read(randomID[:]); err != nil {
-		util.WriteError(w, http.StatusInternalServerError, "failed to create image reference id")
+		util.WriteError(w, http.StatusInternalServerError, "failed to create "+kind+" reference id")
 		return
 	}
 	name := "reference-" + hex.EncodeToString(randomID[:]) + ext
 	if r.Context().Err() != nil {
-		util.WriteError(w, http.StatusRequestTimeout, "image reference upload was canceled")
+		util.WriteError(w, http.StatusRequestTimeout, kind+" reference upload was canceled")
 		return
 	}
 	if err := os.WriteFile(filepath.Join(a.videoReferenceDir, name), upload.data, 0o644); err != nil {
-		util.WriteError(w, http.StatusInternalServerError, "failed to store image reference")
+		util.WriteError(w, http.StatusInternalServerError, "failed to store "+kind+" reference")
 		return
 	}
-	url := strings.TrimRight(a.resolveImageBaseURL(), "/") + "/video-image-references/" + name
-	util.WriteJSON(w, http.StatusCreated, map[string]any{"url": url, "name": upload.filename, "content_type": contentType, "size": len(upload.data)})
+	referenceURL := strings.TrimRight(a.resolveImageBaseURL(), "/") + pathPrefix + name
+	util.WriteJSON(w, http.StatusCreated, map[string]any{"url": referenceURL, "name": upload.filename, "content_type": contentType, "size": len(upload.data)})
 }
 
 func (a *App) handleVideoReferenceFile(w http.ResponseWriter, r *http.Request) {

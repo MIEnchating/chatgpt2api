@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/textproto"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -93,44 +94,83 @@ func TestAudioReferenceUploadRejectsSpoofedContent(t *testing.T) {
 	}
 }
 
-func TestAudioReferenceUploadStoresValidatedWAV(t *testing.T) {
-	app := newTestApp(t)
-	defer app.Close()
-	data := testWAVReferenceBytes()
+func TestReferenceUploadStoresValidatedMedia(t *testing.T) {
+	tests := []struct {
+		name            string
+		path            string
+		field           string
+		filename        string
+		declaredType    string
+		data            func(*testing.T) []byte
+		wantContentType string
+		wantPathPrefix  string
+		wantExtension   string
+	}{
+		{
+			name: "video", path: "/api/creation-tasks/video-reference-uploads", field: "video",
+			filename: "reference.mp4", declaredType: "video/mp4",
+			data:            func(*testing.T) []byte { return append([]byte("....ftypisom"), make([]byte, 16)...) },
+			wantContentType: "video/mp4", wantPathPrefix: "/video-references/", wantExtension: ".mp4",
+		},
+		{
+			name: "audio", path: "/api/creation-tasks/audio-reference-uploads", field: "audio",
+			filename: "voice.wav", declaredType: "audio/wav", data: func(*testing.T) []byte { return testWAVReferenceBytes() },
+			wantContentType: "audio/wav", wantPathPrefix: "/audio-references/", wantExtension: ".wav",
+		},
+		{
+			name: "image", path: "/api/creation-tasks/video-image-reference-uploads", field: "image",
+			filename: "frame.png", declaredType: "image/png", data: httpTestPNGBytes,
+			wantContentType: "image/png", wantPathPrefix: "/video-image-references/", wantExtension: ".png",
+		},
+	}
 
-	request := newReferenceUploadRequest(t, "/api/creation-tasks/audio-reference-uploads", "audio", "voice.wav", "audio/wav", data)
-	setRequestAuthCookie(request, adminSessionToken(t, app))
-	response := httptest.NewRecorder()
-	app.Handler().ServeHTTP(response, request)
-	if response.Code != http.StatusCreated {
-		t.Fatalf("response = %d %s", response.Code, response.Body.String())
-	}
-	var payload struct {
-		Name        string `json:"name"`
-		ContentType string `json:"content_type"`
-		Size        int    `json:"size"`
-		URL         string `json:"url"`
-	}
-	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
-		t.Fatalf("decode response: %v", err)
-	}
-	if payload.Name != "voice.wav" || payload.ContentType != "audio/wav" || payload.Size != len(data) ||
-		!strings.Contains(payload.URL, "/audio-references/reference-") || !strings.HasSuffix(payload.URL, ".wav") {
-		t.Fatalf("payload = %#v", payload)
-	}
-	entries, err := os.ReadDir(app.videoReferenceDir)
-	if err != nil {
-		t.Fatalf("ReadDir(%s): %v", app.videoReferenceDir, err)
-	}
-	if len(entries) != 1 {
-		t.Fatalf("stored files = %#v", entries)
-	}
-	stored, err := os.ReadFile(filepath.Join(app.videoReferenceDir, entries[0].Name()))
-	if err != nil {
-		t.Fatalf("ReadFile(): %v", err)
-	}
-	if !bytes.Equal(stored, data) {
-		t.Fatal("stored WAV differs from uploaded data")
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			app := newTestApp(t)
+			defer app.Close()
+			data := test.data(t)
+
+			request := newReferenceUploadRequest(t, test.path, test.field, test.filename, test.declaredType, data)
+			setRequestAuthCookie(request, adminSessionToken(t, app))
+			response := httptest.NewRecorder()
+			app.Handler().ServeHTTP(response, request)
+			if response.Code != http.StatusCreated {
+				t.Fatalf("response = %d %s", response.Code, response.Body.String())
+			}
+			var payload struct {
+				Name        string `json:"name"`
+				ContentType string `json:"content_type"`
+				Size        int    `json:"size"`
+				URL         string `json:"url"`
+			}
+			if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+				t.Fatalf("decode response: %v", err)
+			}
+			if payload.Name != test.filename || payload.ContentType != test.wantContentType || payload.Size != len(data) {
+				t.Fatalf("payload = %#v", payload)
+			}
+			parsedURL, err := url.Parse(payload.URL)
+			if err != nil {
+				t.Fatalf("parse response URL %q: %v", payload.URL, err)
+			}
+			if !strings.HasPrefix(parsedURL.Path, test.wantPathPrefix+"reference-") || filepath.Ext(parsedURL.Path) != test.wantExtension {
+				t.Fatalf("response URL = %q", payload.URL)
+			}
+			entries, err := os.ReadDir(app.videoReferenceDir)
+			if err != nil {
+				t.Fatalf("ReadDir(%s): %v", app.videoReferenceDir, err)
+			}
+			if len(entries) != 1 || entries[0].Name() != filepath.Base(parsedURL.Path) {
+				t.Fatalf("stored files = %#v, response URL = %q", entries, payload.URL)
+			}
+			stored, err := os.ReadFile(filepath.Join(app.videoReferenceDir, entries[0].Name()))
+			if err != nil {
+				t.Fatalf("ReadFile(): %v", err)
+			}
+			if !bytes.Equal(stored, data) {
+				t.Fatal("stored media differs from uploaded data")
+			}
+		})
 	}
 }
 

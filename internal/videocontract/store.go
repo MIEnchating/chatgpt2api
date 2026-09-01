@@ -216,24 +216,15 @@ func (s *VideoModelContractService) Update(id string, contract protocol.VideoMod
 	id = strings.TrimSpace(id)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for attempt := 0; attempt < videoModelContractSaveAttempts; attempt++ {
-		items, err := s.loadLocked()
-		if err != nil {
-			return nil, err
-		}
-		index := -1
-		for current := range items {
-			if items[current].ID == id {
-				index = current
-				break
-			}
-		}
+	var updated ManagedVideoModelContract
+	changed, err := s.mutateLocked(refreshActiveVideoModelContracts, "更新视频模型契约失败", func(items []ManagedVideoModelContract) ([]ManagedVideoModelContract, bool, error) {
+		index := managedVideoContractIndex(items, id)
 		if index < 0 {
-			return nil, nil
+			return items, false, nil
 		}
 		normalized, err := validateVideoModelContractCandidate(items, id, contract)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		items[index].Contract = normalized
 		items[index].Enabled = enabled
@@ -244,77 +235,62 @@ func (s *VideoModelContractService) Update(id string, contract protocol.VideoMod
 		items[index].DraftEnabled = nil
 		items[index].DraftUpdatedAt = ""
 		items[index].UpdatedAt = now
-		updated := items[index]
-		if err := s.saveLocked(items); err != nil {
-			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < videoModelContractSaveAttempts {
-				continue
-			}
-			return nil, err
-		}
-		if err := applyActiveVideoModelContracts(items); err != nil {
-			return nil, err
-		}
-		return &updated, nil
+		updated = items[index]
+		return items, true, nil
+	})
+	if err != nil || !changed {
+		return nil, err
 	}
-	return nil, fmt.Errorf("更新视频模型契约失败")
+	return &updated, nil
 }
 
 func (s *VideoModelContractService) SaveDraft(id string, contract protocol.VideoModelContract, enabled bool) (*ManagedVideoModelContract, error) {
 	id = strings.TrimSpace(id)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for attempt := 0; attempt < videoModelContractSaveAttempts; attempt++ {
-		items, err := s.loadLocked()
-		if err != nil {
-			return nil, err
-		}
+	var updated ManagedVideoModelContract
+	changed, err := s.mutateLocked(preserveActiveVideoModelContracts, "保存视频模型契约草稿失败", func(items []ManagedVideoModelContract) ([]ManagedVideoModelContract, bool, error) {
 		index := managedVideoContractIndex(items, id)
 		if index < 0 {
-			return nil, nil
+			return items, false, nil
 		}
 		normalized, err := validateVideoModelContractCandidate(items, id, contract)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		now := util.NowISO()
 		items[index].Draft = &normalized
 		items[index].DraftEnabled = &enabled
 		items[index].DraftUpdatedAt = now
-		updated := items[index]
-		if err := s.saveLocked(items); err != nil {
-			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < videoModelContractSaveAttempts {
-				continue
-			}
-			return nil, err
-		}
-		return &updated, nil
+		updated = items[index]
+		return items, true, nil
+	})
+	if err != nil || !changed {
+		return nil, err
 	}
-	return nil, fmt.Errorf("保存视频模型契约草稿失败")
+	return &updated, nil
 }
 
 func (s *VideoModelContractService) Publish(id string, contract *protocol.VideoModelContract, enabled *bool) (*ManagedVideoModelContract, error) {
 	id = strings.TrimSpace(id)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for attempt := 0; attempt < videoModelContractSaveAttempts; attempt++ {
-		items, err := s.loadLocked()
-		if err != nil {
-			return nil, err
-		}
+	var updated ManagedVideoModelContract
+	changed, err := s.mutateLocked(refreshActiveVideoModelContracts, "发布视频模型契约失败", func(items []ManagedVideoModelContract) ([]ManagedVideoModelContract, bool, error) {
 		index := managedVideoContractIndex(items, id)
 		if index < 0 {
-			return nil, nil
+			return items, false, nil
 		}
 		candidate := items[index].Draft
 		if contract != nil {
 			candidate = contract
 		}
 		if candidate == nil {
-			return nil, fmt.Errorf("没有可发布的视频模型契约草稿")
+			return nil, false, fmt.Errorf("没有可发布的视频模型契约草稿")
 		}
 		normalized, err := validateVideoModelContractCandidate(items, id, *candidate)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		now := util.NowISO()
 		items[index].Contract = normalized
@@ -329,19 +305,13 @@ func (s *VideoModelContractService) Publish(id string, contract *protocol.VideoM
 			items[index].Enabled = *items[index].DraftEnabled
 		}
 		items[index].DraftEnabled = nil
-		updated := items[index]
-		if err := s.saveLocked(items); err != nil {
-			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < videoModelContractSaveAttempts {
-				continue
-			}
-			return nil, err
-		}
-		if err := applyActiveVideoModelContracts(items); err != nil {
-			return nil, err
-		}
-		return &updated, nil
+		updated = items[index]
+		return items, true, nil
+	})
+	if err != nil || !changed {
+		return nil, err
 	}
-	return nil, fmt.Errorf("发布视频模型契约失败")
+	return &updated, nil
 }
 
 func (s *VideoModelContractService) Versions(id string) ([]VideoModelContractVersion, error) {
@@ -365,14 +335,11 @@ func (s *VideoModelContractService) Rollback(id string, revision int) (*ManagedV
 	id = strings.TrimSpace(id)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for attempt := 0; attempt < videoModelContractSaveAttempts; attempt++ {
-		items, err := s.loadLocked()
-		if err != nil {
-			return nil, err
-		}
+	var updated ManagedVideoModelContract
+	changed, err := s.mutateLocked(refreshActiveVideoModelContracts, "回滚视频模型契约失败", func(items []ManagedVideoModelContract) ([]ManagedVideoModelContract, bool, error) {
 		index := managedVideoContractIndex(items, id)
 		if index < 0 {
-			return nil, nil
+			return items, false, nil
 		}
 		var target *protocol.VideoModelContract
 		for _, version := range items[index].Versions {
@@ -383,11 +350,11 @@ func (s *VideoModelContractService) Rollback(id string, revision int) (*ManagedV
 			}
 		}
 		if target == nil {
-			return nil, fmt.Errorf("视频模型契约版本不存在")
+			return nil, false, fmt.Errorf("视频模型契约版本不存在")
 		}
 		normalized, err := validateVideoModelContractCandidate(items, id, *target)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		now := util.NowISO()
 		items[index].Contract = normalized
@@ -397,66 +364,41 @@ func (s *VideoModelContractService) Rollback(id string, revision int) (*ManagedV
 		items[index].DraftEnabled = nil
 		items[index].DraftUpdatedAt = ""
 		items[index].UpdatedAt = now
-		updated := items[index]
-		if err := s.saveLocked(items); err != nil {
-			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < videoModelContractSaveAttempts {
-				continue
-			}
-			return nil, err
-		}
-		if err := applyActiveVideoModelContracts(items); err != nil {
-			return nil, err
-		}
-		return &updated, nil
+		updated = items[index]
+		return items, true, nil
+	})
+	if err != nil || !changed {
+		return nil, err
 	}
-	return nil, fmt.Errorf("回滚视频模型契约失败")
+	return &updated, nil
 }
 
 func (s *VideoModelContractService) SetEnabled(id string, enabled bool) (*ManagedVideoModelContract, error) {
 	id = strings.TrimSpace(id)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for attempt := 0; attempt < videoModelContractSaveAttempts; attempt++ {
-		items, err := s.loadLocked()
-		if err != nil {
-			return nil, err
-		}
-		index := -1
-		for current := range items {
-			if items[current].ID == id {
-				index = current
-				break
-			}
-		}
+	var updated ManagedVideoModelContract
+	changed, err := s.mutateLocked(refreshActiveVideoModelContracts, "更新视频模型契约状态失败", func(items []ManagedVideoModelContract) ([]ManagedVideoModelContract, bool, error) {
+		index := managedVideoContractIndex(items, id)
 		if index < 0 {
-			return nil, nil
+			return items, false, nil
 		}
 		items[index].Enabled = enabled
 		items[index].UpdatedAt = util.NowISO()
-		updated := items[index]
-		if err := s.saveLocked(items); err != nil {
-			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < videoModelContractSaveAttempts {
-				continue
-			}
-			return nil, err
-		}
-		if err := applyActiveVideoModelContracts(items); err != nil {
-			return nil, err
-		}
-		return &updated, nil
+		updated = items[index]
+		return items, true, nil
+	})
+	if err != nil || !changed {
+		return nil, err
 	}
-	return nil, fmt.Errorf("更新视频模型契约状态失败")
+	return &updated, nil
 }
 
 func (s *VideoModelContractService) Delete(id string) (bool, error) {
 	id = strings.TrimSpace(id)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	for attempt := 0; attempt < videoModelContractSaveAttempts; attempt++ {
-		items, err := s.loadLocked()
-		if err != nil {
-			return false, err
-		}
+	return s.mutateLocked(refreshActiveVideoModelContracts, "删除视频模型契约失败", func(items []ManagedVideoModelContract) ([]ManagedVideoModelContract, bool, error) {
 		next := make([]ManagedVideoModelContract, 0, len(items))
 		removed := false
 		for _, item := range items {
@@ -467,7 +409,30 @@ func (s *VideoModelContractService) Delete(id string) (bool, error) {
 			next = append(next, item)
 		}
 		if !removed {
-			return false, nil
+			return items, false, nil
+		}
+		return next, true, nil
+	})
+}
+
+type videoModelContractMutation func([]ManagedVideoModelContract) ([]ManagedVideoModelContract, bool, error)
+
+type activeVideoModelContractMutationPolicy bool
+
+const (
+	preserveActiveVideoModelContracts activeVideoModelContractMutationPolicy = false
+	refreshActiveVideoModelContracts  activeVideoModelContractMutationPolicy = true
+)
+
+func (s *VideoModelContractService) mutateLocked(activePolicy activeVideoModelContractMutationPolicy, exhaustedMessage string, mutate videoModelContractMutation) (bool, error) {
+	for attempt := 0; attempt < videoModelContractSaveAttempts; attempt++ {
+		items, err := s.loadLocked()
+		if err != nil {
+			return false, err
+		}
+		next, changed, err := mutate(items)
+		if err != nil || !changed {
+			return false, err
 		}
 		if err := s.saveLocked(next); err != nil {
 			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < videoModelContractSaveAttempts {
@@ -475,12 +440,14 @@ func (s *VideoModelContractService) Delete(id string) (bool, error) {
 			}
 			return false, err
 		}
-		if err := applyActiveVideoModelContracts(next); err != nil {
-			return false, err
+		if activePolicy == refreshActiveVideoModelContracts {
+			if err := applyActiveVideoModelContracts(next); err != nil {
+				return false, err
+			}
 		}
 		return true, nil
 	}
-	return false, fmt.Errorf("删除视频模型契约失败")
+	return false, fmt.Errorf("%s", exhaustedMessage)
 }
 
 func (s *VideoModelContractService) loadLocked() ([]ManagedVideoModelContract, error) {

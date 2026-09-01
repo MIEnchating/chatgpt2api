@@ -268,16 +268,7 @@ func (a *App) handleImageConversationAssetUpload(w http.ResponseWriter, r *http.
 		validated, err := a.conversationAssets.ReadValidatedReader(r.Context(), file)
 		file.Close()
 		if err != nil {
-			switch {
-			case errors.Is(err, service.ErrImageConversationAssetTooLarge):
-				util.WriteError(w, http.StatusRequestEntityTooLarge, "image file is too large")
-			case errors.Is(err, service.ErrImageConversationAssetStorageLimit):
-				util.WriteError(w, http.StatusInsufficientStorage, "image storage limit exceeded")
-			case errors.Is(err, service.ErrInvalidImageConversationAsset):
-				util.WriteError(w, http.StatusBadRequest, err.Error())
-			default:
-				util.WriteError(w, http.StatusInternalServerError, "failed to store conversation image asset")
-			}
+			writeImageConversationAssetUploadError(w, err)
 			return
 		}
 		pending = append(pending, pendingImageConversationAssetUpload{filename: header.Filename, validated: validated})
@@ -296,19 +287,23 @@ func (a *App) handleImageConversationAssetUpload(w http.ResponseWriter, r *http.
 	}()
 	items, err := a.conversationAssets.StoreValidatedBatchContext(r.Context(), identityScope(identity), filenames, validated)
 	if err != nil {
-		switch {
-		case errors.Is(err, service.ErrImageConversationAssetTooLarge):
-			util.WriteError(w, http.StatusRequestEntityTooLarge, "image file is too large")
-		case errors.Is(err, service.ErrImageConversationAssetStorageLimit):
-			util.WriteError(w, http.StatusInsufficientStorage, "image storage limit exceeded")
-		case errors.Is(err, service.ErrInvalidImageConversationAsset):
-			util.WriteError(w, http.StatusBadRequest, err.Error())
-		default:
-			util.WriteError(w, http.StatusInternalServerError, "failed to store conversation image asset")
-		}
+		writeImageConversationAssetUploadError(w, err)
 		return
 	}
 	util.WriteJSON(w, http.StatusCreated, map[string]any{"items": items})
+}
+
+func writeImageConversationAssetUploadError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, service.ErrImageConversationAssetTooLarge):
+		util.WriteError(w, http.StatusRequestEntityTooLarge, "image file is too large")
+	case errors.Is(err, service.ErrImageConversationAssetStorageLimit):
+		util.WriteError(w, http.StatusInsufficientStorage, "image storage limit exceeded")
+	case errors.Is(err, service.ErrInvalidImageConversationAsset):
+		util.WriteError(w, http.StatusBadRequest, err.Error())
+	default:
+		util.WriteError(w, http.StatusInternalServerError, "failed to store conversation image asset")
+	}
 }
 
 func (a *App) acquireImageUpload(ctx context.Context) (func(), bool) {

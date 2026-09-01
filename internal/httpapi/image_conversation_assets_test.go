@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -298,6 +299,53 @@ func TestImageConversationAssetUploadPreflightsWholeBatchBeforeStoring(t *testin
 	}
 	if owners := app.conversationAssets.Owners(); len(owners) != 0 {
 		t.Fatalf("partial-invalid upload left owner directories: %#v", owners)
+	}
+}
+
+func TestWriteImageConversationAssetUploadError(t *testing.T) {
+	tests := []struct {
+		name        string
+		err         error
+		wantStatus  int
+		wantMessage string
+	}{
+		{
+			name: "too large", err: fmt.Errorf("read upload: %w", service.ErrImageConversationAssetTooLarge),
+			wantStatus: http.StatusRequestEntityTooLarge, wantMessage: "image file is too large",
+		},
+		{
+			name: "storage limit", err: fmt.Errorf("store upload: %w", service.ErrImageConversationAssetStorageLimit),
+			wantStatus: http.StatusInsufficientStorage, wantMessage: "image storage limit exceeded",
+		},
+		{
+			name: "invalid", err: fmt.Errorf("%w: unsupported image format", service.ErrInvalidImageConversationAsset),
+			wantStatus: http.StatusBadRequest, wantMessage: "invalid conversation image asset: unsupported image format",
+		},
+		{
+			name: "unknown", err: fmt.Errorf("database failure at /private/storage/path"),
+			wantStatus: http.StatusInternalServerError, wantMessage: "failed to store conversation image asset",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			writeImageConversationAssetUploadError(response, test.err)
+			if response.Code != test.wantStatus {
+				t.Fatalf("status = %d, want %d; body = %s", response.Code, test.wantStatus, response.Body.String())
+			}
+			var payload struct {
+				Detail struct {
+					Error string `json:"error"`
+				} `json:"detail"`
+			}
+			if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+				t.Fatalf("decode response: %v", err)
+			}
+			if payload.Detail.Error != test.wantMessage {
+				t.Fatalf("error = %q, want %q", payload.Detail.Error, test.wantMessage)
+			}
+		})
 	}
 }
 
