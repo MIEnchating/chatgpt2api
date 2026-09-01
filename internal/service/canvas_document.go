@@ -1056,7 +1056,7 @@ func normalizeCanvasNode(node CanvasNode) (CanvasNode, error) {
 		if node.GenerationAudioFormat != "" && node.GenerationAudioFormat != "mp3" && node.GenerationAudioFormat != "wav" && node.GenerationAudioFormat != "opus" && node.GenerationAudioFormat != "aac" && node.GenerationAudioFormat != "flac" && node.GenerationAudioFormat != "pcm" {
 			return CanvasNode{}, invalidCanvasDocument("audio node generation format is invalid")
 		}
-		if node.GenerationAudioSpeed != 0 && (node.GenerationAudioSpeed < 0.25 || node.GenerationAudioSpeed > 4) {
+		if !validCanvasOptionalRange(node.GenerationAudioSpeed, 0.25, 4) {
 			return CanvasNode{}, invalidCanvasDocument("audio node generation speed is invalid")
 		}
 		if node.GenerationAudioGrokLanguage != "" && !validCanvasGrokTTSLanguage(node.GenerationAudioGrokLanguage) {
@@ -1065,7 +1065,7 @@ func normalizeCanvasNode(node CanvasNode) (CanvasNode, error) {
 		if node.GenerationAudioGrokFormat != "" && node.GenerationAudioGrokFormat != "mp3" && node.GenerationAudioGrokFormat != "wav" {
 			return CanvasNode{}, invalidCanvasDocument("audio node Grok format is invalid")
 		}
-		if node.GenerationAudioGrokSpeed != 0 && (node.GenerationAudioGrokSpeed < 0.7 || node.GenerationAudioGrokSpeed > 1.5) {
+		if !validCanvasOptionalRange(node.GenerationAudioGrokSpeed, 0.7, 1.5) {
 			return CanvasNode{}, invalidCanvasDocument("audio node Grok speed is invalid")
 		}
 		if node.GenerationAudioGLMFormat != "" && node.GenerationAudioGLMFormat != "wav" && node.GenerationAudioGLMFormat != "pcm" {
@@ -1074,7 +1074,7 @@ func normalizeCanvasNode(node CanvasNode) (CanvasNode, error) {
 		if node.GenerationAudioGLMVoice != "" && !validCanvasGLMTTSVoice(node.GenerationAudioGLMVoice) {
 			return CanvasNode{}, invalidCanvasDocument("audio node GLM voice is invalid")
 		}
-		if node.GenerationAudioGLMSpeed != 0 && (node.GenerationAudioGLMSpeed < 0.5 || node.GenerationAudioGLMSpeed > 2) {
+		if !validCanvasOptionalRange(node.GenerationAudioGLMSpeed, 0.5, 2) {
 			return CanvasNode{}, invalidCanvasDocument("audio node GLM speed is invalid")
 		}
 		if node.GenerationAudioMiMoFormat != "" && node.GenerationAudioMiMoFormat != "wav" && node.GenerationAudioMiMoFormat != "mp3" {
@@ -1240,6 +1240,10 @@ func canvasStringIn(value string, options ...string) bool {
 		}
 	}
 	return false
+}
+
+func validCanvasOptionalRange(value, minimum, maximum float64) bool {
+	return finiteCanvasNumber(value) && (value == 0 || value >= minimum && value <= maximum)
 }
 
 func canvasNodeIDListContains(ids []string, target string) bool {

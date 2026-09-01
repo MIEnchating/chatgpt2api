@@ -367,17 +367,7 @@ func (s *AuthService) UpsertNewAPISession(user NewAPIUser) (*Identity, string, e
 		next["updated_at"] = now
 		next["expires_at"] = authSessionExpiry(now)
 		next["role"] = role
-		if role == AuthRoleAdmin {
-			next["role_id"] = AuthRoleAdmin
-			next["role_name"] = "管理员"
-			applyPermissionSet(next, DefaultPermissionSetForRole(AuthRoleAdmin))
-		} else {
-			if roleID, ok := managedAuthRoleIDLocked(s.items, s.accounts, owner.ID); ok {
-				s.applyRoleToAuthItem(next, roleID)
-			} else {
-				s.applyRoleToAuthItem(next, "")
-			}
-		}
+		s.applyNewAPISessionRoleLocked(next, role, owner.ID)
 		s.items[index] = next
 		if err := s.saveLocked(); err != nil {
 			s.restoreAuthItemsAfterSaveFailureLocked(previousItems, err)
@@ -394,17 +384,7 @@ func (s *AuthService) UpsertNewAPISession(user NewAPIUser) (*Identity, string, e
 	item["email"] = user.Email
 	item["enabled"] = sessionEnabled
 	item["updated_at"] = now
-	if role == AuthRoleAdmin {
-		item["role_id"] = AuthRoleAdmin
-		item["role_name"] = "管理员"
-		applyPermissionSet(item, DefaultPermissionSetForRole(AuthRoleAdmin))
-	} else {
-		if roleID, ok := managedAuthRoleIDLocked(s.items, s.accounts, owner.ID); ok {
-			s.applyRoleToAuthItem(item, roleID)
-		} else {
-			s.applyRoleToAuthItem(item, "")
-		}
-	}
+	s.applyNewAPISessionRoleLocked(item, role, owner.ID)
 	s.items = append(s.items, item)
 	if err := s.saveLocked(); err != nil {
 		s.restoreAuthItemsAfterSaveFailureLocked(previousItems, err)
@@ -419,6 +399,17 @@ func (s *AuthService) UpsertNewAPISession(user NewAPIUser) (*Identity, string, e
 	s.mu.Unlock()
 	s.notifyUserCreated(createdUserID)
 	return identity, raw, nil
+}
+
+func (s *AuthService) applyNewAPISessionRoleLocked(item map[string]any, role, ownerID string) {
+	if role == AuthRoleAdmin {
+		item["role_id"] = AuthRoleAdmin
+		item["role_name"] = "管理员"
+		applyPermissionSet(item, DefaultPermissionSetForRole(AuthRoleAdmin))
+		return
+	}
+	roleID, _ := managedAuthRoleIDLocked(s.items, s.accounts, ownerID)
+	s.applyRoleToAuthItem(item, roleID)
 }
 
 func (s *AuthService) UpdateUser(id string, updates map[string]any) (map[string]any, error) {
@@ -702,35 +693,30 @@ func (s *AuthService) restoreAuthItemsAfterSaveFailureLocked(previous []map[stri
 func (s *AuthService) restoreAuthAccountsAfterSaveFailureLocked(previousAccounts []PasswordAccount, previousItems []map[string]any, saveErr error) {
 	s.accounts = previousAccounts
 	s.items = previousItems
-	if !errors.Is(saveErr, storage.ErrConcurrentRowUpdate) {
-		return
-	}
-	accounts, accountsErr := s.loadPasswordAccounts()
-	items, _, itemsErr := s.load()
-	if accountsErr != nil || itemsErr != nil {
-		return
-	}
-	s.accounts = accounts
-	s.items = items
-	s.syncPasswordAccountsToItems()
-	s.applyRolesToItems()
+	reloadAuthRelatedStateAfterConflictLocked(s, saveErr, s.loadPasswordAccounts, func(accounts []PasswordAccount) {
+		s.accounts = accounts
+	})
 }
 
 func (s *AuthService) restoreAuthRolesAfterSaveFailureLocked(previousRoles []ManagedRole, previousItems []map[string]any, saveErr error) {
 	s.roles = previousRoles
 	s.items = previousItems
+	reloadAuthRelatedStateAfterConflictLocked(s, saveErr, s.loadRoles, func(roles []ManagedRole) {
+		s.roles = roles
+	})
+}
+
+func reloadAuthRelatedStateAfterConflictLocked[T any](s *AuthService, saveErr error, loadRelated func() (T, error), applyRelated func(T)) {
 	if !errors.Is(saveErr, storage.ErrConcurrentRowUpdate) {
 		return
 	}
-	roles, rolesErr := s.loadRoles()
+	related, relatedErr := loadRelated()
 	items, _, itemsErr := s.load()
-	if rolesErr != nil || itemsErr != nil {
+	if relatedErr != nil || itemsErr != nil {
 		return
 	}
-	s.roles = roles
-	s.items = items
-	s.syncPasswordAccountsToItems()
-	s.applyRolesToItems()
+	applyRelated(related)
+	s.applyLoadedAuthItemsLocked(items)
 }
 
 func (s *AuthService) reloadAuthItemsAfterConflictLocked(saveErr error) {
@@ -741,6 +727,10 @@ func (s *AuthService) reloadAuthItemsAfterConflictLocked(saveErr error) {
 	if err != nil {
 		return
 	}
+	s.applyLoadedAuthItemsLocked(items)
+}
+
+func (s *AuthService) applyLoadedAuthItemsLocked(items []map[string]any) {
 	s.items = items
 	s.syncPasswordAccountsToItems()
 	s.applyRolesToItems()
@@ -770,27 +760,26 @@ func (s *AuthService) load() ([]map[string]any, bool, error) {
 }
 
 func (s *AuthService) loadRoles() ([]ManagedRole, error) {
-	var raw any
-	if s.roleStore != nil {
-		value, err := s.roleStore.LoadJSONDocument(rbacRolesDocumentName)
-		if err != nil {
-			return nil, err
-		}
-		raw = value
+	raw, err := s.loadAuthDocument(rbacRolesDocumentName)
+	if err != nil {
+		return nil, err
 	}
 	return normalizeManagedRoles(raw), nil
 }
 
 func (s *AuthService) loadPasswordAccounts() ([]PasswordAccount, error) {
-	var raw any
-	if s.roleStore != nil {
-		value, err := s.roleStore.LoadJSONDocument(passwordAccountsDocumentName)
-		if err != nil {
-			return nil, err
-		}
-		raw = value
+	raw, err := s.loadAuthDocument(passwordAccountsDocumentName)
+	if err != nil {
+		return nil, err
 	}
 	return normalizePasswordAccounts(raw), nil
+}
+
+func (s *AuthService) loadAuthDocument(name string) (any, error) {
+	if s.roleStore == nil {
+		return nil, nil
+	}
+	return s.roleStore.LoadJSONDocument(name)
 }
 
 func (s *AuthService) saveLocked() error {
@@ -801,58 +790,45 @@ func (s *AuthService) saveLocked() error {
 }
 
 func (s *AuthService) savePasswordAccountsLocked() error {
-	if s.roleStore == nil {
-		return AuthPersistenceError{Err: fmt.Errorf("auth document storage is required")}
-	}
-	items := make([]map[string]any, 0, len(s.accounts))
-	for _, account := range s.accounts {
-		items = append(items, storedPasswordAccount(account))
-	}
-	if err := s.roleStore.SaveJSONDocument(passwordAccountsDocumentName, map[string]any{"items": items}); err != nil {
-		return AuthPersistenceError{Err: err}
-	}
-	return nil
+	return s.saveAuthDocumentLocked(passwordAccountsDocumentName, storedAuthDocument(s.accounts, storedPasswordAccount))
 }
 
 func (s *AuthService) saveAuthAndPasswordAccountsLocked() error {
-	store, ok := s.storage.(storage.AuthStateBackend)
-	if !ok {
-		return AuthPersistenceError{Err: fmt.Errorf("atomic auth state storage is required")}
-	}
-	items := make([]map[string]any, 0, len(s.accounts))
-	for _, account := range s.accounts {
-		items = append(items, storedPasswordAccount(account))
-	}
-	if err := store.SaveAuthKeysAndJSONDocument(s.items, passwordAccountsDocumentName, map[string]any{"items": items}); err != nil {
-		return AuthPersistenceError{Err: err}
-	}
-	return nil
+	return s.saveAuthAndDocumentLocked(passwordAccountsDocumentName, storedAuthDocument(s.accounts, storedPasswordAccount))
 }
 
 func (s *AuthService) saveAuthAndRolesLocked() error {
-	store, ok := s.storage.(storage.AuthStateBackend)
-	if !ok {
-		return AuthPersistenceError{Err: fmt.Errorf("atomic auth state storage is required")}
+	return s.saveAuthAndDocumentLocked(rbacRolesDocumentName, storedAuthDocument(s.roles, storedManagedRole))
+}
+
+func (s *AuthService) saveRolesLocked() error {
+	return s.saveAuthDocumentLocked(rbacRolesDocumentName, storedAuthDocument(s.roles, storedManagedRole))
+}
+
+func storedAuthDocument[T any](values []T, encode func(T) map[string]any) map[string]any {
+	items := make([]map[string]any, 0, len(values))
+	for _, value := range values {
+		items = append(items, encode(value))
 	}
-	items := make([]map[string]any, 0, len(s.roles))
-	for _, role := range s.roles {
-		items = append(items, storedManagedRole(role))
+	return map[string]any{"items": items}
+}
+
+func (s *AuthService) saveAuthDocumentLocked(name string, document map[string]any) error {
+	if s.roleStore == nil {
+		return AuthPersistenceError{Err: fmt.Errorf("auth document storage is required")}
 	}
-	if err := store.SaveAuthKeysAndJSONDocument(s.items, rbacRolesDocumentName, map[string]any{"items": items}); err != nil {
+	if err := s.roleStore.SaveJSONDocument(name, document); err != nil {
 		return AuthPersistenceError{Err: err}
 	}
 	return nil
 }
 
-func (s *AuthService) saveRolesLocked() error {
-	if s.roleStore == nil {
-		return AuthPersistenceError{Err: fmt.Errorf("auth document storage is required")}
+func (s *AuthService) saveAuthAndDocumentLocked(name string, document map[string]any) error {
+	store, ok := s.storage.(storage.AuthStateBackend)
+	if !ok {
+		return AuthPersistenceError{Err: fmt.Errorf("atomic auth state storage is required")}
 	}
-	items := make([]map[string]any, 0, len(s.roles))
-	for _, role := range s.roles {
-		items = append(items, storedManagedRole(role))
-	}
-	if err := s.roleStore.SaveJSONDocument(rbacRolesDocumentName, map[string]any{"items": items}); err != nil {
+	if err := store.SaveAuthKeysAndJSONDocument(s.items, name, document); err != nil {
 		return AuthPersistenceError{Err: err}
 	}
 	return nil

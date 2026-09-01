@@ -1842,6 +1842,29 @@ function VariableEditor({ index, variable, onChange, onDelete }: { index: number
   );
 }
 
+function WorkflowReferenceGrid({ references, className, emptyMessage, onRemove }: { references: WorkflowReference[]; className: string; emptyMessage?: string; onRemove: (id: string) => void }) {
+  if (!references.length) {
+    return emptyMessage ? <div className="mt-3 rounded-lg border border-dashed py-5 text-center text-xs text-muted-foreground">{emptyMessage}</div> : null;
+  }
+  return (
+    <div className={cn("mt-3 grid gap-2", className)}>
+      {references.map((reference) => (
+        <div key={reference.id} className="group relative aspect-square overflow-hidden rounded-lg border">
+          <AuthenticatedImage src={reference.url} alt={reference.name} className="size-full object-cover" placeholderClassName="min-h-0" />
+          <button
+            type="button"
+            aria-label={`移除参考图 ${reference.name}`}
+            className="absolute top-1 right-1 grid size-6 place-items-center rounded-md bg-black/70 text-white"
+            onClick={() => onRemove(reference.id)}
+          >
+            <X className="size-3" />
+          </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function WorkflowRunner({ workflow, values, prompt, references, referenceBusy, drafts, draftLoading, batchAppend, models, onValuesChange, onAssetsOpen, onReferencesAdd, onReferenceRemove, onRun, onGenerateDrafts, onRunAll, onRunDraft, onDraftChange, onDraftMove, onDraftDelete, onBatchAppendChange, onBatchAppend, onClose }: { workflow: CreativeWorkflow | null; values: Record<string, string>; prompt: string; references: WorkflowReference[]; referenceBusy: boolean; drafts: WorkflowSeriesDraft[]; draftLoading: boolean; batchAppend: string; models: ModelConfig | null; onValuesChange: (values: Record<string, string>) => void; onAssetsOpen: () => void; onReferencesAdd: (files: FileList | null) => void; onReferenceRemove: (id: string) => void; onRun: () => void; onGenerateDrafts: () => void; onRunAll: () => void; onRunDraft: (draft: WorkflowSeriesDraft, index: number) => void; onDraftChange: (id: string, patch: Partial<WorkflowSeriesDraft>) => void; onDraftMove: (id: string, direction: -1 | 1) => void; onDraftDelete: (id: string) => void; onBatchAppendChange: (value: string) => void; onBatchAppend: () => void; onClose: () => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -1930,24 +1953,7 @@ function WorkflowRunner({ workflow, values, prompt, references, referenceBusy, d
                   }}
                 />
               </div>
-              {references.length ? (
-                <div className="mt-3 grid grid-cols-4 gap-2">
-                  {references.map((reference) => (
-                    <div key={reference.id} className="group relative aspect-square overflow-hidden rounded-lg border">
-                      <AuthenticatedImage src={reference.url} alt={reference.name} className="size-full object-cover" placeholderClassName="min-h-0" />
-                      <button
-                        type="button"
-                        className="absolute top-1 right-1 grid size-6 place-items-center rounded-md bg-black/70 text-white"
-                        onClick={() => onReferenceRemove(reference.id)}
-                      >
-                        <X className="size-3" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="mt-3 rounded-lg border border-dashed py-5 text-center text-xs text-muted-foreground">未添加参考图</div>
-              )}
+              <WorkflowReferenceGrid references={references} className="grid-cols-4" emptyMessage="未添加参考图" onRemove={onReferenceRemove} />
             </div>
           </section>
           <div className="space-y-4">
@@ -2238,18 +2244,7 @@ function AgentDialog({
                   }}
                 />
               </div>
-              {references.length ? (
-                <div className="mt-3 grid grid-cols-5 gap-2">
-                  {references.map((reference) => (
-                    <div key={reference.id} className="group relative aspect-square overflow-hidden rounded-lg border">
-                      <AuthenticatedImage src={reference.url} alt={reference.name} className="size-full object-cover" placeholderClassName="min-h-0" />
-                      <button type="button" className="absolute top-1 right-1 grid size-6 place-items-center rounded-md bg-black/70 text-white" onClick={() => onReferenceRemove(reference.id)}>
-                        <X className="size-3" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              ) : null}
+              <WorkflowReferenceGrid references={references} className="grid-cols-5" onRemove={onReferenceRemove} />
             </section>
             <Button className="w-full" disabled={busy || !prompt.trim()} onClick={onRun}>
               {busy ? <LoaderCircle className="animate-spin" /> : <Sparkles />}

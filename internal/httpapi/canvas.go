@@ -69,15 +69,7 @@ func (a *App) handleCanvasDocument(w http.ResponseWriter, r *http.Request) {
 			workspace, err = a.canvas.UpdateProject(ownerID, action, input.ProjectID, input.Title)
 		}
 		if err != nil {
-			if errors.Is(err, service.ErrCanvasRevisionConflict) {
-				util.WriteError(w, http.StatusConflict, err.Error())
-				return
-			}
-			if errors.Is(err, service.ErrInvalidCanvasDocument) {
-				util.WriteError(w, http.StatusBadRequest, err.Error())
-				return
-			}
-			util.WriteError(w, http.StatusInternalServerError, "failed to update canvas project")
+			writeCanvasMutationError(w, err, "failed to update canvas project")
 			return
 		}
 		util.WriteJSON(w, http.StatusOK, workspace)
@@ -89,15 +81,7 @@ func (a *App) handleCanvasDocument(w http.ResponseWriter, r *http.Request) {
 		}
 		document, err := a.canvas.SaveAtRevision(ownerID, input)
 		if err != nil {
-			if errors.Is(err, service.ErrCanvasRevisionConflict) {
-				util.WriteError(w, http.StatusConflict, err.Error())
-				return
-			}
-			if errors.Is(err, service.ErrInvalidCanvasDocument) {
-				util.WriteError(w, http.StatusBadRequest, err.Error())
-				return
-			}
-			util.WriteError(w, http.StatusInternalServerError, "failed to save canvas")
+			writeCanvasMutationError(w, err, "failed to save canvas")
 			return
 		}
 		util.WriteJSON(w, http.StatusOK, map[string]any{"document": document})
@@ -109,20 +93,23 @@ func (a *App) handleCanvasDocument(w http.ResponseWriter, r *http.Request) {
 		}
 		document, err := a.canvas.ClearAtRevision(ownerID, r.URL.Query().Get("project_id"), revision)
 		if err != nil {
-			if errors.Is(err, service.ErrCanvasRevisionConflict) {
-				util.WriteError(w, http.StatusConflict, err.Error())
-				return
-			}
-			if errors.Is(err, service.ErrInvalidCanvasDocument) {
-				util.WriteError(w, http.StatusBadRequest, err.Error())
-				return
-			}
-			util.WriteError(w, http.StatusInternalServerError, "failed to clear canvas")
+			writeCanvasMutationError(w, err, "failed to clear canvas")
 			return
 		}
 		util.WriteJSON(w, http.StatusOK, map[string]any{"document": document})
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
+	}
+}
+
+func writeCanvasMutationError(w http.ResponseWriter, err error, internalMessage string) {
+	switch {
+	case errors.Is(err, service.ErrCanvasRevisionConflict):
+		util.WriteError(w, http.StatusConflict, err.Error())
+	case errors.Is(err, service.ErrInvalidCanvasDocument):
+		util.WriteError(w, http.StatusBadRequest, err.Error())
+	default:
+		util.WriteError(w, http.StatusInternalServerError, internalMessage)
 	}
 }
 
@@ -158,8 +145,7 @@ func (a *App) handleCanvasImageUpload(w http.ResponseWriter, r *http.Request) {
 		util.WriteError(w, http.StatusBadRequest, "unsupported image format")
 		return
 	}
-	contentType := info.ContentType
-	upload.ContentType = contentType
+	upload.ContentType = info.ContentType
 	url, err := a.images.SaveImageBytes(r.Context(), upload.Data, a.config.BaseURL(), identityScope(identity), identityDisplayName(identity))
 	if err != nil || url == "" {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {

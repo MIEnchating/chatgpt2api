@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
@@ -15,6 +17,58 @@ import (
 
 	"chatgpt2api/internal/service"
 )
+
+func TestWriteCanvasMutationErrorPreservesPublicMappings(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		fallback string
+		status   int
+		message  string
+	}{
+		{
+			name:     "revision conflict",
+			err:      fmt.Errorf("stale update: %w", service.ErrCanvasRevisionConflict),
+			fallback: "failed to save canvas",
+			status:   http.StatusConflict,
+			message:  "stale update: canvas revision conflict",
+		},
+		{
+			name:     "invalid document",
+			err:      fmt.Errorf("invalid node: %w", service.ErrInvalidCanvasDocument),
+			fallback: "failed to update canvas project",
+			status:   http.StatusBadRequest,
+			message:  "invalid node: invalid canvas document",
+		},
+		{
+			name:     "internal failure",
+			err:      errors.New("private storage detail"),
+			fallback: "failed to clear canvas",
+			status:   http.StatusInternalServerError,
+			message:  "failed to clear canvas",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			writeCanvasMutationError(response, test.err, test.fallback)
+			if response.Code != test.status {
+				t.Fatalf("status = %d, want %d", response.Code, test.status)
+			}
+			var payload struct {
+				Detail struct {
+					Error string `json:"error"`
+				} `json:"detail"`
+			}
+			if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+				t.Fatalf("decode error response: %v", err)
+			}
+			if payload.Detail.Error != test.message {
+				t.Fatalf("message = %q, want %q", payload.Detail.Error, test.message)
+			}
+		})
+	}
+}
 
 func TestCanvasClearRequiresExplicitProjectID(t *testing.T) {
 	app := newTestApp(t)

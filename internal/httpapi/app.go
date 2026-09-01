@@ -1595,33 +1595,22 @@ func (a *App) handleImageThumbnail(w http.ResponseWriter, r *http.Request) {
 }
 
 func imageFileRequestPath(r *http.Request) (string, error) {
-	raw := strings.TrimPrefix(r.URL.EscapedPath(), "/images/")
-	if raw == "" || raw == r.URL.EscapedPath() {
-		return "", errors.New("invalid image path")
-	}
-	rel, err := url.PathUnescape(raw)
-	if err != nil {
-		return "", err
-	}
-	return rel, nil
+	return relativeEscapedRequestPath(r, "/images/", "invalid image path")
 }
 
 func imageReferenceFileRequestPath(r *http.Request) (string, error) {
-	raw := strings.TrimPrefix(r.URL.EscapedPath(), "/image-references/")
-	if raw == "" || raw == r.URL.EscapedPath() {
-		return "", errors.New("invalid image path")
-	}
-	rel, err := url.PathUnescape(raw)
-	if err != nil {
-		return "", err
-	}
-	return rel, nil
+	return relativeEscapedRequestPath(r, "/image-references/", "invalid image path")
 }
 
 func imageThumbnailRequestPath(r *http.Request) (string, error) {
-	raw := strings.TrimPrefix(r.URL.EscapedPath(), "/image-thumbnails/")
-	if raw == "" || raw == r.URL.EscapedPath() {
-		return "", errors.New("invalid thumbnail path")
+	return relativeEscapedRequestPath(r, "/image-thumbnails/", "invalid thumbnail path")
+}
+
+func relativeEscapedRequestPath(r *http.Request, prefix, invalidMessage string) (string, error) {
+	escapedPath := r.URL.EscapedPath()
+	raw := strings.TrimPrefix(escapedPath, prefix)
+	if raw == "" || raw == escapedPath {
+		return "", errors.New(invalidMessage)
 	}
 	rel, err := url.PathUnescape(raw)
 	if err != nil {

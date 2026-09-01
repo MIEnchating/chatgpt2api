@@ -1088,6 +1088,11 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     setCancellingGenerationNodeIDs((current) => new Set([...current].filter((nodeID) => activeGenerationsRef.current.has(nodeID))));
   }
 
+  function completeActiveGeneration(generation: CanvasActiveGeneration) {
+    generation.taskIDs.forEach((taskID) => cancelledTaskIDsRef.current.delete(taskID));
+    releaseActiveGeneration(generation);
+  }
+
   function interruptGenerationRecords(records: Iterable<CanvasActiveGeneration>, notifyServer = true) {
     const uniqueRecords = new Set(records);
     uniqueRecords.forEach((generation) => {
@@ -3267,8 +3272,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         toast.error(message);
       }
     } finally {
-      activeGeneration.taskIDs.forEach((taskID) => cancelledTaskIDsRef.current.delete(taskID));
-      releaseActiveGeneration(activeGeneration);
+      completeActiveGeneration(activeGeneration);
     }
   }
 
@@ -3369,8 +3373,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         finishHistory(); toast.error(message);
       }
     } finally {
-      activeGeneration.taskIDs.forEach((activeTaskID) => cancelledTaskIDsRef.current.delete(activeTaskID));
-      releaseActiveGeneration(activeGeneration);
+      completeActiveGeneration(activeGeneration);
       if (!concurrent) {
         if (generationAbortControllerRef.current === controller) generationAbortControllerRef.current = null;
         submittedTaskIDsRef.current.forEach((submittedID) => cancelledTaskIDsRef.current.delete(submittedID));
@@ -3576,8 +3579,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     } catch (error) {
       if (!controller.signal.aborted) { const message = error instanceof Error ? error.message : "全景图生成失败"; replaceNodes(nodesRef.current.map((node) => node.id === rootID ? { ...node, duration_ms: Date.now() - generationStartedAt, generation_status: "error", generation_error: message } : node)); commitGenerationHistory(historyBase); toast.error(message); }
     } finally {
-      activeGeneration.taskIDs.forEach((taskID) => cancelledTaskIDsRef.current.delete(taskID));
-      releaseActiveGeneration(activeGeneration);
+      completeActiveGeneration(activeGeneration);
     }
   }
 
@@ -3733,8 +3735,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       replaceNodes(nodesRef.current.map((node) => node.id === resultNodeID ? { ...node, duration_ms: Date.now() - generationStartedAt, generation_status: "error" as const, generation_error: message, task_id: taskID } : node));
       finishHistory(); toast.error(message);
     } finally {
-      activeGeneration.taskIDs.forEach((activeTaskID) => cancelledTaskIDsRef.current.delete(activeTaskID));
-      releaseActiveGeneration(activeGeneration);
+      completeActiveGeneration(activeGeneration);
       if (!concurrent) {
         if (generationAbortControllerRef.current === controller) generationAbortControllerRef.current = null;
         submittedTaskIDsRef.current.forEach((submittedID) => cancelledTaskIDsRef.current.delete(submittedID));
@@ -4045,8 +4046,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       if (completedImageByNodeID.size) void refreshLibrary();
       if (!cancelled) toast.error(recoveryPending ? "暂时无法同步后台任务，重新进入画布后将继续恢复" : generationError);
     } finally {
-      activeGeneration.taskIDs.forEach((activeID) => cancelledTaskIDsRef.current.delete(activeID));
-      releaseActiveGeneration(activeGeneration);
+      completeActiveGeneration(activeGeneration);
       if (!concurrent) {
         cancelledTaskIDsRef.current.delete(taskID);
         cancelledTaskIDsRef.current.delete(activeTaskID);

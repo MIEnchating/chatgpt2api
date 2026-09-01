@@ -145,6 +145,10 @@ import { DEFAULT_CREATION_WORKBENCH_PREFERENCES, useImageGenerationPreferences }
 import { ensureGeneratedMediaAsset, persistCreationTaskOutputs, type CreationTaskOutputPersistenceFailure } from "@/services/generation-result-storage";
 import { normalizeVideoRequest, videoAudioGenerationError, videoReferenceCombinationError, videoWorkbenchReferenceLimitError } from "@/lib/video-request-normalizer";
 import { audioReferenceMetadataError, type AudioReferenceFileMetadata } from "@/lib/video-reference-validation";
+import {
+  imageTurnReferenceValidationError,
+  imageTurnUsesReferenceImages as usesReferenceImages,
+} from "@/lib/image-turn-validation";
 import type { StoredAuthSession } from "@/store/auth";
 import { imageConversationOwnerScope } from "@/store/image-conversation-session-scope";
 import {
@@ -1100,10 +1104,6 @@ function isTurnInProgress(turn: ImageTurn) {
     turn.status === "generating" ||
     turn.images.some((image) => image.status === "loading")
   );
-}
-
-function usesReferenceImages(mode: ImageConversationMode) {
-  return mode === "image" || mode === "edit";
 }
 
 function isMissingBatchImageDataError(error?: string) {
@@ -4241,21 +4241,9 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         toast.error("只有失败图片可以单独重试");
         return;
       }
-      if (usesReferenceImages(targetTurn.mode) && targetTurn.referenceImages.length === 0) {
-        toast.error("未找到可用的参考图");
-        return;
-      }
-      if (usesReferenceImages(targetTurn.mode) && !imageWorkbenchAcceptsReferenceImages(targetTurn.model)) {
-        toast.error(`模型 ${targetTurn.model} 暂不支持参考图编辑`);
-        return;
-      }
-      const referenceLimitMessage = imageConversationReferenceLimitMessage(
-        0,
-        targetTurn.referenceImages.length,
-        imageWorkbenchReferenceImageLimit(targetTurn.model),
-      );
-      if (referenceLimitMessage) {
-        toast.error(referenceLimitMessage);
+      const referenceValidationError = imageTurnReferenceValidationError(targetTurn);
+      if (referenceValidationError) {
+        toast.error(referenceValidationError);
         return;
       }
       if (!requireRelayToken(targetTurn.mode === "video" ? "video" : "image", targetTurn.model)) {
@@ -4362,21 +4350,9 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         toast.error("当前轮次正在处理，稍后再重新生成");
         return;
       }
-      if (usesReferenceImages(targetTurn.mode) && targetTurn.referenceImages.length === 0) {
-        toast.error("未找到可用的参考图");
-        return;
-      }
-      if (usesReferenceImages(targetTurn.mode) && !imageWorkbenchAcceptsReferenceImages(targetTurn.model)) {
-        toast.error(`模型 ${targetTurn.model} 暂不支持参考图编辑`);
-        return;
-      }
-      const referenceLimitMessage = imageConversationReferenceLimitMessage(
-        0,
-        targetTurn.referenceImages.length,
-        imageWorkbenchReferenceImageLimit(targetTurn.model),
-      );
-      if (referenceLimitMessage) {
-        toast.error(referenceLimitMessage);
+      const referenceValidationError = imageTurnReferenceValidationError(targetTurn);
+      if (referenceValidationError) {
+        toast.error(referenceValidationError);
         return;
       }
       if (!requireRelayToken(targetTurn.mode === "video" ? "video" : "image", targetTurn.model)) {

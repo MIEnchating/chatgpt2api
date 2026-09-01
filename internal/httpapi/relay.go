@@ -1859,9 +1859,8 @@ func sanitizeRelayImagePayload(payload map[string]any) {
 	isKIEImage := isKnownKIEImageModel(model)
 	route := util.ImageModelRouteFor(model)
 	if isKIEImage || isAPIMartImage {
-		// KIE schemas are strict and each model has its own field contract. The
-		// model normalizer has already selected those fields; do not run the
-		// generic OpenAI size/stream cleanup over them.
+		// Provider-specific schemas are strict. Their normalizers have already
+		// selected the accepted fields, so skip generic OpenAI cleanup.
 		delete(payload, "stream")
 		delete(payload, "partial_images")
 		delete(payload, "response_format")
@@ -1967,9 +1966,7 @@ func sanitizeRelayImagePayload(payload map[string]any) {
 		}
 		return
 	}
-	if !isKIEImage {
-		delete(payload, "image_resolution")
-	}
+	delete(payload, "image_resolution")
 	if util.ToBool(payload["stream"]) {
 		payload["stream"] = true
 		if partialImages, ok := normalizeRelayImagePartialImages(payload["partial_images"]); ok {

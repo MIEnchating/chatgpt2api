@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/json"
 	"errors"
+	"math"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -713,12 +714,15 @@ func TestCanvasDocumentServiceValidatesAudioProviderParameters(t *testing.T) {
 	base := CanvasNode{ID: "audio-1", Type: "audio", Width: 420, Height: 160, ScaleX: 1, ScaleY: 1, GenerationAudioModel: "gpt-4o-mini-tts"}
 	invalid := []CanvasNode{
 		func() CanvasNode { node := base; node.GenerationAudioVoice = "unknown"; return node }(),
+		func() CanvasNode { node := base; node.GenerationAudioSpeed = math.NaN(); return node }(),
 		func() CanvasNode { node := base; node.GenerationAudioGrokLanguage = "xx"; return node }(),
 		func() CanvasNode { node := base; node.GenerationAudioGrokFormat = "flac"; return node }(),
 		func() CanvasNode { node := base; node.GenerationAudioGrokSpeed = 1.6; return node }(),
+		func() CanvasNode { node := base; node.GenerationAudioGrokSpeed = math.Inf(1); return node }(),
 		func() CanvasNode { node := base; node.GenerationAudioGLMVoice = "unknown"; return node }(),
 		func() CanvasNode { node := base; node.GenerationAudioGLMFormat = "mp3"; return node }(),
 		func() CanvasNode { node := base; node.GenerationAudioGLMSpeed = 2.1; return node }(),
+		func() CanvasNode { node := base; node.GenerationAudioGLMSpeed = math.Inf(-1); return node }(),
 		func() CanvasNode { node := base; node.GenerationAudioMiMoVoice = "unknown"; return node }(),
 		func() CanvasNode { node := base; node.GenerationAudioMiMoFormat = "flac"; return node }(),
 		func() CanvasNode { node := base; node.GenerationAudioGeminiVoice = "Unknown"; return node }(),

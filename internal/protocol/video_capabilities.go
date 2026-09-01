@@ -1,7 +1,5 @@
 package protocol
 
-import "strings"
-
 type VideoCapabilityProfile struct {
 	Sizes                []string `json:"sizes"`
 	Seconds              []int    `json:"seconds"`
@@ -21,13 +19,13 @@ type VideoCapabilityProfile struct {
 }
 
 func VideoCapabilitySupports(profile VideoCapabilityProfile, size string, seconds int, resolution string) bool {
-	if size != "" && !stringInFold(profile.Sizes, size) {
+	if size != "" && !stringSliceContainsFold(profile.Sizes, size) {
 		return false
 	}
-	if !intIn(profile.Seconds, seconds) {
+	if !intSliceContains(profile.Seconds, seconds) {
 		return false
 	}
-	if resolution != "" && !stringInFold(profile.Resolutions, resolution) {
+	if resolution != "" && !stringSliceContainsFold(profile.Resolutions, resolution) {
 		return false
 	}
 	return true
@@ -35,22 +33,4 @@ func VideoCapabilitySupports(profile VideoCapabilityProfile, size string, second
 
 func VideoContractSupports(contract VideoModelContract, size string, seconds int, resolution string) bool {
 	return VideoCapabilitySupports(videoCapabilityFromContract(contract), size, seconds, resolution)
-}
-
-func stringInFold(values []string, value string) bool {
-	for _, candidate := range values {
-		if strings.EqualFold(candidate, value) {
-			return true
-		}
-	}
-	return false
-}
-
-func intIn(values []int, value int) bool {
-	for _, candidate := range values {
-		if candidate == value {
-			return true
-		}
-	}
-	return false
 }

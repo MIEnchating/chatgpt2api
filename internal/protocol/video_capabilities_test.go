@@ -20,7 +20,13 @@ func TestVideoCapabilityUsesDeclaredContract(t *testing.T) {
 	if !VideoCapabilitySupports(capability, "9:16", 8, "768p") {
 		t.Fatalf("declared capability rejected supported values: %#v", capability)
 	}
+	if !VideoCapabilitySupports(capability, "9:16", 8, "768P") {
+		t.Fatalf("declared capability rejected case-insensitive resolution: %#v", capability)
+	}
 	if VideoCapabilitySupports(capability, "2:1", 8, "768p") {
 		t.Fatal("declared capability accepted an unsupported aspect ratio")
+	}
+	if VideoCapabilitySupports(capability, "9:16", 3601, "768p") {
+		t.Fatal("declared capability accepted an unsupported duration")
 	}
 }

@@ -4,9 +4,9 @@ import { useEffect, useState } from "react";
 
 import {
   APP_META_UPDATED_EVENT,
+  createAppMetaLoadMerge,
   defaultAppMeta,
   fetchAppMeta,
-  normalizeAppMeta,
   resolveSiteIconSrc,
   type AppMeta,
 } from "@/lib/app-meta";
@@ -16,23 +16,27 @@ export function useAppMeta() {
 
   useEffect(() => {
     let active = true;
+    const loadMerge = createAppMetaLoadMerge();
 
     const load = async () => {
       try {
         const data = await fetchAppMeta();
         if (active) {
-          setAppMeta(data);
+          setAppMeta(loadMerge.applyLoaded(data));
         }
       } catch {
         if (active) {
-          setAppMeta(defaultAppMeta);
+          const fallback = loadMerge.failureFallback();
+          if (fallback) setAppMeta(fallback);
         }
       }
     };
 
     const handleUpdated = (event: Event) => {
-      const detail = event instanceof CustomEvent ? event.detail : {};
-      setAppMeta((current) => normalizeAppMeta({ ...current, ...detail }));
+      const detail = event instanceof CustomEvent && event.detail && typeof event.detail === "object"
+        ? event.detail as Partial<AppMeta>
+        : {};
+      setAppMeta(loadMerge.prepareUpdate(detail));
     };
 
     void load();

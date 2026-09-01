@@ -34,6 +34,25 @@ export const defaultAppMeta: AppMeta = {
   login_page_image_position_y: LOGIN_PAGE_IMAGE_DEFAULT_TRANSFORM.positionY,
 };
 
+export function createAppMetaLoadMerge() {
+  let updates: Partial<AppMeta> = {};
+  let hasUpdates = false;
+
+  return {
+    applyLoaded(loaded: AppMeta) {
+      return normalizeAppMeta({ ...loaded, ...updates });
+    },
+    prepareUpdate(update: Partial<AppMeta>) {
+      hasUpdates = true;
+      updates = { ...updates, ...update };
+      return (current: AppMeta) => normalizeAppMeta({ ...current, ...update });
+    },
+    failureFallback() {
+      return hasUpdates ? null : defaultAppMeta;
+    },
+  };
+}
+
 export async function fetchAppMeta() {
   const data = await httpRequest<Partial<AppMeta>>("/api/app-meta", {
     redirectOnUnauthorized: false,

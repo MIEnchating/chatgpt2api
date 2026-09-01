@@ -689,31 +689,25 @@ func TestPasswordAccountLogin(t *testing.T) {
 }
 
 func TestCreationTaskRequiresRelayAIAPIKey(t *testing.T) {
-	app := newTestApp(t)
-	defer app.Close()
-
-	_, rawKey, err := createTestUserSession(app, "frontend", service.AuthOwner{})
-	if err != nil {
-		t.Fatalf("CreateSession() error = %v", err)
-	}
-
-	req := httptest.NewRequest(http.MethodPost, "/api/creation-tasks/image-generations", strings.NewReader(`{"client_task_id":"task-log-test","prompt":"test image"}`))
-	setRequestAuthCookie(req, "Bearer "+rawKey)
-	res := httptest.NewRecorder()
-	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusBadRequest {
-		t.Fatalf("submit creation task status = %d body = %s", res.Code, res.Body.String())
-	}
-	var payload map[string]any
-	if err := json.Unmarshal(res.Body.Bytes(), &payload); err != nil {
-		t.Fatalf("error json: %v", err)
-	}
-	if detail := util.StringMap(payload["detail"]); detail["error"] != "请先配置数据库连接，并创建指定分组的令牌" {
-		t.Fatalf("error body = %#v", payload)
-	}
+	assertCreationTaskError(
+		t,
+		`{"client_task_id":"task-log-test","prompt":"test image"}`,
+		"submit creation task",
+		"请先配置数据库连接，并创建指定分组的令牌",
+	)
 }
 
 func TestCreationTaskRejectsMalformedJSONBeforeRelayLookup(t *testing.T) {
+	assertCreationTaskError(
+		t,
+		`{"client_task_id":`,
+		"malformed creation task",
+		"invalid json body",
+	)
+}
+
+func assertCreationTaskError(t *testing.T, body, failureContext, wantError string) {
+	t.Helper()
 	app := newTestApp(t)
 	defer app.Close()
 
@@ -722,18 +716,18 @@ func TestCreationTaskRejectsMalformedJSONBeforeRelayLookup(t *testing.T) {
 		t.Fatalf("CreateSession() error = %v", err)
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/api/creation-tasks/image-generations", strings.NewReader(`{"client_task_id":`))
+	req := httptest.NewRequest(http.MethodPost, "/api/creation-tasks/image-generations", strings.NewReader(body))
 	setRequestAuthCookie(req, "Bearer "+rawKey)
 	res := httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
 	if res.Code != http.StatusBadRequest {
-		t.Fatalf("malformed creation task status = %d body = %s", res.Code, res.Body.String())
+		t.Fatalf("%s status = %d body = %s", failureContext, res.Code, res.Body.String())
 	}
 	var payload map[string]any
 	if err := json.Unmarshal(res.Body.Bytes(), &payload); err != nil {
 		t.Fatalf("error json: %v", err)
 	}
-	if detail := util.StringMap(payload["detail"]); detail["error"] != "invalid json body" {
+	if detail := util.StringMap(payload["detail"]); detail["error"] != wantError {
 		t.Fatalf("error body = %#v", payload)
 	}
 }
@@ -3274,15 +3268,7 @@ func TestCredentialedCORSAllowsSameHostnameAcrossPorts(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()
 
-	req := httptest.NewRequest(http.MethodOptions, "/auth/session", nil)
-	req.Host = "studio.example.test:8001"
-	req.Header.Set("Origin", "https://studio.example.test:8002")
-	req.Header.Set("Access-Control-Request-Method", http.MethodGet)
-	res := httptest.NewRecorder()
-	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusNoContent {
-		t.Fatalf("preflight status = %d body = %s", res.Code, res.Body.String())
-	}
+	res := requestCORSPreflight(t, app, "/auth/session", "studio.example.test:8001", "", "https://studio.example.test:8002")
 	if got := res.Header().Get("Access-Control-Allow-Origin"); got != "https://studio.example.test:8002" {
 		t.Fatalf("Access-Control-Allow-Origin = %q, want request origin", got)
 	}
@@ -3295,15 +3281,7 @@ func TestCredentialedCORSRejectsNonHTTPOrigin(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()
 
-	req := httptest.NewRequest(http.MethodOptions, "/auth/session", nil)
-	req.Host = "studio.example.test"
-	req.Header.Set("Origin", "chrome-extension://studio.example.test")
-	req.Header.Set("Access-Control-Request-Method", http.MethodGet)
-	res := httptest.NewRecorder()
-	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusNoContent {
-		t.Fatalf("preflight status = %d body = %s", res.Code, res.Body.String())
-	}
+	res := requestCORSPreflight(t, app, "/auth/session", "studio.example.test", "", "chrome-extension://studio.example.test")
 	for _, header := range []string{"Access-Control-Allow-Origin", "Access-Control-Allow-Credentials", "Access-Control-Allow-Methods", "Access-Control-Allow-Headers"} {
 		if got := res.Header().Get(header); got != "" {
 			t.Fatalf("%s = %q, want empty", header, got)
@@ -3315,80 +3293,53 @@ func TestUnconfiguredSiblingSubdomainDoesNotAllowCredentialedCORS(t *testing.T) 
 	app := newTestApp(t)
 	defer app.Close()
 
-	req := httptest.NewRequest(http.MethodOptions, "/auth/session", nil)
-	req.Host = "relayai.tech"
-	req.Header.Set("Origin", "https://image.relayai.tech")
-	req.Header.Set("Access-Control-Request-Method", http.MethodGet)
-	res := httptest.NewRecorder()
-	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusNoContent {
-		t.Fatalf("preflight status = %d body = %s", res.Code, res.Body.String())
-	}
-	if got := res.Header().Get("Access-Control-Allow-Origin"); got != "" {
-		t.Fatalf("Access-Control-Allow-Origin = %q, want empty", got)
-	}
-	if got := res.Header().Get("Access-Control-Allow-Credentials"); got != "" {
-		t.Fatalf("Access-Control-Allow-Credentials = %q, want empty", got)
-	}
+	res := requestCORSPreflight(t, app, "/auth/session", "relayai.tech", "", "https://image.relayai.tech")
+	assertNoCredentialedCORSHeaders(t, res)
 }
 
 func TestUnconfiguredSiblingSubdomainWithForwardedHostDoesNotAllowCredentialedCORS(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()
 
-	req := httptest.NewRequest(http.MethodOptions, "/auth/session", nil)
-	req.Host = "127.0.0.1:8000"
-	req.Header.Set("X-Forwarded-Host", "relayai.tech")
-	req.Header.Set("Origin", "https://image.relayai.tech")
-	req.Header.Set("Access-Control-Request-Method", http.MethodGet)
-	res := httptest.NewRecorder()
-	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusNoContent {
-		t.Fatalf("preflight status = %d body = %s", res.Code, res.Body.String())
-	}
-	if got := res.Header().Get("Access-Control-Allow-Origin"); got != "" {
-		t.Fatalf("Access-Control-Allow-Origin = %q, want empty", got)
-	}
-	if got := res.Header().Get("Access-Control-Allow-Credentials"); got != "" {
-		t.Fatalf("Access-Control-Allow-Credentials = %q, want empty", got)
-	}
+	res := requestCORSPreflight(t, app, "/auth/session", "127.0.0.1:8000", "relayai.tech", "https://image.relayai.tech")
+	assertNoCredentialedCORSHeaders(t, res)
 }
 
 func TestForgedForwardedHostDoesNotAllowCredentialedCORS(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()
 
-	req := httptest.NewRequest(http.MethodOptions, "/auth/session", nil)
-	req.Host = "image.relayai.tech"
-	req.Header.Set("X-Forwarded-Host", "evil.example")
-	req.Header.Set("Origin", "https://evil.example")
-	req.Header.Set("Access-Control-Request-Method", http.MethodGet)
-	res := httptest.NewRecorder()
-	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusNoContent {
-		t.Fatalf("preflight status = %d body = %s", res.Code, res.Body.String())
-	}
-	if got := res.Header().Get("Access-Control-Allow-Origin"); got != "" {
-		t.Fatalf("Access-Control-Allow-Origin = %q, want empty", got)
-	}
-	if got := res.Header().Get("Access-Control-Allow-Credentials"); got != "" {
-		t.Fatalf("Access-Control-Allow-Credentials = %q, want empty", got)
-	}
+	res := requestCORSPreflight(t, app, "/auth/session", "image.relayai.tech", "evil.example", "https://evil.example")
+	assertNoCredentialedCORSHeaders(t, res)
 }
 
 func TestUnconfiguredSiblingSubdomainBehindProxyDoesNotAllowCredentialedCORS(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()
 
-	req := httptest.NewRequest(http.MethodOptions, "/images/2026/05/21/sample.png", nil)
-	req.Host = "chatgpt2api"
-	req.Header.Set("Origin", "https://image.relayai.tech")
+	res := requestCORSPreflight(t, app, "/images/2026/05/21/sample.png", "chatgpt2api", "", "https://image.relayai.tech")
+	assertNoCredentialedCORSHeaders(t, res)
+}
+
+func requestCORSPreflight(t *testing.T, app *App, path, host, forwardedHost, origin string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodOptions, path, nil)
+	req.Host = host
+	if forwardedHost != "" {
+		req.Header.Set("X-Forwarded-Host", forwardedHost)
+	}
+	req.Header.Set("Origin", origin)
 	req.Header.Set("Access-Control-Request-Method", http.MethodGet)
 	res := httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
 	if res.Code != http.StatusNoContent {
 		t.Fatalf("preflight status = %d body = %s", res.Code, res.Body.String())
 	}
+	return res
+}
+
+func assertNoCredentialedCORSHeaders(t *testing.T, res *httptest.ResponseRecorder) {
+	t.Helper()
 	if got := res.Header().Get("Access-Control-Allow-Origin"); got != "" {
 		t.Fatalf("Access-Control-Allow-Origin = %q, want empty", got)
 	}

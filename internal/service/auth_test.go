@@ -2,6 +2,8 @@ package service
 
 import (
 	"errors"
+	"reflect"
+	"slices"
 	"testing"
 
 	"chatgpt2api/internal/storage"
@@ -26,9 +28,10 @@ type failingAuthStorage struct {
 
 type failingAtomicAuthStorage struct {
 	failingAuthStorage
-	documents    map[string]any
-	failDocument bool
-	failAtomic   bool
+	documents       map[string]any
+	documentLoadErr error
+	failDocument    bool
+	failAtomic      bool
 }
 
 func (s *failingAuthStorage) LoadAccounts() ([]map[string]any, error) { return nil, nil }
@@ -77,6 +80,186 @@ func TestAuthServiceCreatesSub2APISessionIdentity(t *testing.T) {
 	}
 }
 
+func TestAuthServiceNewAPISessionRoleIsStableAcrossRefresh(t *testing.T) {
+	for _, testCase := range []struct {
+		name       string
+		admin      bool
+		wantRole   string
+		wantRoleID string
+	}{
+		{name: "user", wantRole: AuthRoleUser, wantRoleID: DefaultManagedRoleID},
+		{name: "admin", admin: true, wantRole: AuthRoleAdmin, wantRoleID: AuthRoleAdmin},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			auth := newTestAuthService(t, &failingAuthStorage{})
+			user := NewAPIUser{ID: 42, Username: "alice", DisplayName: "Alice", IsAdmin: testCase.admin}
+			first, _, err := auth.UpsertNewAPISession(user)
+			if err != nil {
+				t.Fatalf("first UpsertNewAPISession() error = %v", err)
+			}
+			refreshed, _, err := auth.UpsertNewAPISession(user)
+			if err != nil {
+				t.Fatalf("second UpsertNewAPISession() error = %v", err)
+			}
+			if first.Role != testCase.wantRole || first.RoleID != testCase.wantRoleID {
+				t.Fatalf("first role = %q/%q, want %q/%q", first.Role, first.RoleID, testCase.wantRole, testCase.wantRoleID)
+			}
+			if refreshed.Role != first.Role || refreshed.RoleID != first.RoleID || refreshed.RoleName != first.RoleName {
+				t.Fatalf("refreshed role = %q/%q/%q, first = %q/%q/%q", refreshed.Role, refreshed.RoleID, refreshed.RoleName, first.Role, first.RoleID, first.RoleName)
+			}
+			if !slices.Equal(refreshed.MenuPaths, first.MenuPaths) || !slices.Equal(refreshed.APIPermissions, first.APIPermissions) {
+				t.Fatalf("refreshed permissions = %#v/%#v, first = %#v/%#v", refreshed.MenuPaths, refreshed.APIPermissions, first.MenuPaths, first.APIPermissions)
+			}
+		})
+	}
+}
+
+func TestStoredAuthDocumentUsesCanonicalEnvelope(t *testing.T) {
+	account := PasswordAccount{
+		ID: "user-1", Username: "alice", Name: "Alice", PasswordHash: "hash", Role: AuthRoleUser,
+		RoleID: DefaultManagedRoleID, Enabled: true, CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: "2026-01-01T00:00:00Z",
+	}
+	accountItems, ok := storedAuthDocument([]PasswordAccount{account}, storedPasswordAccount)["items"].([]map[string]any)
+	if !ok || len(accountItems) != 1 || !reflect.DeepEqual(accountItems[0], storedPasswordAccount(account)) {
+		t.Fatalf("stored account document items = %#v", accountItems)
+	}
+
+	role := ManagedRole{ID: "reviewer", Name: "Reviewer", MenuPaths: []string{"/studio"}, APIPermissions: []string{"GET /api/models"}}
+	roleItems, ok := storedAuthDocument([]ManagedRole{role}, storedManagedRole)["items"].([]map[string]any)
+	if !ok || len(roleItems) != 1 || !reflect.DeepEqual(roleItems[0], storedManagedRole(role)) {
+		t.Fatalf("stored role document items = %#v", roleItems)
+	}
+
+	emptyItems, ok := storedAuthDocument([]PasswordAccount(nil), storedPasswordAccount)["items"].([]map[string]any)
+	if !ok || emptyItems == nil || len(emptyItems) != 0 {
+		t.Fatalf("empty stored document items = %#v", emptyItems)
+	}
+}
+
+func TestAuthServiceReloadsRelatedStateAfterConcurrentPersistenceConflict(t *testing.T) {
+	t.Run("password accounts", func(t *testing.T) {
+		backend := &failingAtomicAuthStorage{}
+		auth := newTestAuthService(t, backend)
+		authoritative := PasswordAccount{
+			ID: "user-current", Username: "alice", Name: "Alice", PasswordHash: "hash", Role: AuthRoleUser,
+			RoleID: DefaultManagedRoleID, Enabled: true, CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: "2026-01-01T00:00:00Z",
+		}
+		backend.documents = map[string]any{
+			passwordAccountsDocumentName: storedAuthDocument([]PasswordAccount{authoritative}, storedPasswordAccount),
+		}
+		backend.items = []map[string]any{newAuthItem(AuthRoleUser, passwordSessionName, AuthOwner{
+			ID: authoritative.ID, Name: "stale", Provider: AuthProviderLocal,
+		}, "session-token")}
+
+		auth.restoreAuthAccountsAfterSaveFailureLocked(
+			[]PasswordAccount{{ID: "user-previous", Username: "previous", PasswordHash: "hash", Role: AuthRoleUser, Enabled: true}},
+			nil,
+			AuthPersistenceError{Err: storage.ErrConcurrentRowUpdate},
+		)
+		if len(auth.accounts) != 1 || auth.accounts[0].ID != authoritative.ID {
+			t.Fatalf("reloaded accounts = %#v", auth.accounts)
+		}
+		if len(auth.items) != 1 || util.Clean(auth.items[0]["username"]) != authoritative.Username || util.Clean(auth.items[0]["owner_name"]) != authoritative.Name {
+			t.Fatalf("reloaded auth items = %#v", auth.items)
+		}
+	})
+
+	t.Run("roles", func(t *testing.T) {
+		backend := &failingAtomicAuthStorage{}
+		auth := newTestAuthService(t, backend)
+		permissions := DefaultPermissionSetForRole(AuthRoleUser)
+		authoritative := ManagedRole{
+			ID: "reviewer", Name: "Reviewer", MenuPaths: permissions.MenuPaths, APIPermissions: permissions.APIPermissions,
+		}
+		backend.documents = map[string]any{
+			rbacRolesDocumentName: storedAuthDocument([]ManagedRole{authoritative}, storedManagedRole),
+		}
+		item := newAuthItem(AuthRoleUser, "remote session", AuthOwner{ID: "newapi:42", Name: "Alice", Provider: AuthProviderNewAPI}, "session-token")
+		item["role_id"] = authoritative.ID
+		backend.items = []map[string]any{item}
+
+		auth.restoreAuthRolesAfterSaveFailureLocked([]ManagedRole{defaultManagedRole()}, nil, AuthPersistenceError{Err: storage.ErrConcurrentRowUpdate})
+		if _, ok := managedRoleByIDLocked(auth.roles, authoritative.ID); !ok {
+			t.Fatalf("reloaded roles = %#v", auth.roles)
+		}
+		if len(auth.items) != 1 || util.Clean(auth.items[0]["role_id"]) != authoritative.ID || util.Clean(auth.items[0]["role_name"]) != authoritative.Name {
+			t.Fatalf("reloaded auth items = %#v", auth.items)
+		}
+	})
+}
+
+func TestAuthServiceConcurrentRestoreDoesNotPartiallyApplyFailedLoads(t *testing.T) {
+	conflictErr := AuthPersistenceError{Err: storage.ErrConcurrentRowUpdate}
+
+	for _, failure := range []struct {
+		name            string
+		documentLoadErr error
+		failAuthLoad    bool
+	}{
+		{name: "related document load", documentLoadErr: errors.New("auth document storage unavailable")},
+		{name: "auth items load", failAuthLoad: true},
+	} {
+		t.Run("password accounts/"+failure.name, func(t *testing.T) {
+			backend := &failingAtomicAuthStorage{}
+			auth := newTestAuthService(t, backend)
+			authoritative := PasswordAccount{
+				ID: "user-current", Username: "alice", Name: "Alice", PasswordHash: "hash", Role: AuthRoleUser,
+				RoleID: DefaultManagedRoleID, Enabled: true, CreatedAt: "2026-01-01T00:00:00Z", UpdatedAt: "2026-01-01T00:00:00Z",
+			}
+			backend.documents = map[string]any{
+				passwordAccountsDocumentName: storedAuthDocument([]PasswordAccount{authoritative}, storedPasswordAccount),
+			}
+			backend.items = []map[string]any{newAuthItem(AuthRoleUser, passwordSessionName, AuthOwner{
+				ID: authoritative.ID, Name: authoritative.Name, Provider: AuthProviderLocal,
+			}, "session-token")}
+			backend.documentLoadErr = failure.documentLoadErr
+			backend.failLoad = failure.failAuthLoad
+
+			previousAccounts := []PasswordAccount{{
+				ID: "user-previous", Username: "previous", Name: "Previous", PasswordHash: "previous-hash", Role: AuthRoleUser, Enabled: true,
+			}}
+			previousItems := []map[string]any{{"id": "session-previous", "owner_id": "user-previous", "username": "previous"}}
+			wantAccounts := append([]PasswordAccount(nil), previousAccounts...)
+			wantItems := cloneAuthItems(previousItems)
+
+			auth.restoreAuthAccountsAfterSaveFailureLocked(previousAccounts, previousItems, conflictErr)
+			if !reflect.DeepEqual(auth.accounts, wantAccounts) {
+				t.Fatalf("accounts after failed reload = %#v, want previous %#v", auth.accounts, wantAccounts)
+			}
+			if !reflect.DeepEqual(auth.items, wantItems) {
+				t.Fatalf("auth items after failed reload = %#v, want previous %#v", auth.items, wantItems)
+			}
+		})
+
+		t.Run("roles/"+failure.name, func(t *testing.T) {
+			backend := &failingAtomicAuthStorage{}
+			auth := newTestAuthService(t, backend)
+			authoritative := ManagedRole{ID: "reviewer", Name: "Reviewer"}
+			backend.documents = map[string]any{
+				rbacRolesDocumentName: storedAuthDocument([]ManagedRole{authoritative}, storedManagedRole),
+			}
+			item := newAuthItem(AuthRoleUser, "remote session", AuthOwner{ID: "newapi:42", Name: "Alice", Provider: AuthProviderNewAPI}, "session-token")
+			item["role_id"] = authoritative.ID
+			backend.items = []map[string]any{item}
+			backend.documentLoadErr = failure.documentLoadErr
+			backend.failLoad = failure.failAuthLoad
+
+			previousRoles := []ManagedRole{{ID: "previous-role", Name: "Previous role"}}
+			previousItems := []map[string]any{{"id": "session-previous", "owner_id": "newapi:previous", "role_id": "previous-role"}}
+			wantRoles := append([]ManagedRole(nil), previousRoles...)
+			wantItems := cloneAuthItems(previousItems)
+
+			auth.restoreAuthRolesAfterSaveFailureLocked(previousRoles, previousItems, conflictErr)
+			if !reflect.DeepEqual(auth.roles, wantRoles) {
+				t.Fatalf("roles after failed reload = %#v, want previous %#v", auth.roles, wantRoles)
+			}
+			if !reflect.DeepEqual(auth.items, wantItems) {
+				t.Fatalf("auth items after failed reload = %#v, want previous %#v", auth.items, wantItems)
+			}
+		})
+	}
+}
+
 func TestAuthServiceRemovesNonSessionCredentialsOnLoad(t *testing.T) {
 	apiKey := "sk-api-key"
 	sessionToken := "sess-current"
@@ -109,6 +292,9 @@ func (s *failingAuthStorage) HealthCheck() map[string]any { return map[string]an
 func (s *failingAuthStorage) Info() map[string]any        { return map[string]any{} }
 
 func (s *failingAtomicAuthStorage) LoadJSONDocument(name string) (any, error) {
+	if s.documentLoadErr != nil {
+		return nil, s.documentLoadErr
+	}
 	return s.documents[name], nil
 }
 
