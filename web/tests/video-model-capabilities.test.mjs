@@ -2,7 +2,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import contractDocument from "../../internal/protocol/video_model_contracts.json" with { type: "json" };
 
-import { installVideoModelContracts } from "../src/lib/video-model-contracts.ts";
+import {
+  activeVideoModelContracts,
+  installVideoModelContracts,
+} from "../src/lib/video-model-contracts.ts";
 
 import {
   canonicalVideoModel,
@@ -64,4 +67,20 @@ test("reads every creator capability from the matching contract", () => {
   assert.equal(videoRequiresReferenceVideo(model), false);
   assert.equal(videoRequiresReferenceAudio(model), false);
   assert.equal(videoRequiresMultimodalReferenceMode(model), false);
+});
+
+test("reads an explicit preview contract without mutating the runtime registry", () => {
+  const previewContract = structuredClone(contractDocument.contracts[0]);
+  previewContract.models = ["preview-only-model"];
+  previewContract.capability.sizes = ["3:2"];
+  previewContract.capability.seconds = [7];
+  previewContract.capability.default_size = "3:2";
+  previewContract.capability.default_seconds = 7;
+  const registryBefore = activeVideoModelContracts();
+
+  assert.deepEqual(videoSizeOptions(previewContract), ["3:2"]);
+  assert.deepEqual(videoSecondsOptions(previewContract), [7]);
+  assert.equal(videoDefaultSize(previewContract), "3:2");
+  assert.equal(videoDefaultSeconds(previewContract), 7);
+  assert.deepEqual(activeVideoModelContracts(), registryBefore);
 });

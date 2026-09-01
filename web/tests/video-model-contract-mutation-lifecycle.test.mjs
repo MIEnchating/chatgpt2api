@@ -108,11 +108,11 @@ describe("video model contract mutation lifecycle", () => {
     expect(cardSource).toContain("const payload = await validate(false, ticket)");
   });
 
-  test("the parameter preview waits for each changed contract to be installed", () => {
-    expect(cardSource).toContain("const [installedContract, setInstalledContract] = useState<VideoModelContract | null>(null)");
-    expect(cardSource).toContain("setInstalledContract(contract)");
-    expect(cardSource).toContain("{installedContract === contract ? (");
-    expect(cardSource).not.toContain("const [isReady, setIsReady] = useState(false)");
+  test("the parameter preview reads the draft contract without mutating the runtime registry", () => {
+    expect(cardSource).toContain("contract={contract}");
+    expect(cardSource).not.toContain("CONTRACT_PREVIEW_MODEL");
+    expect(cardSource).not.toContain("activeVideoModelContracts");
+    expect(cardSource).not.toContain("installedContract");
   });
 
   test("JSON imports validate contract names before the review summary can trim them", () => {

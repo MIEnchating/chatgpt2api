@@ -1,4 +1,9 @@
-import { videoModelContract } from "@/lib/video-model-contracts";
+import {
+  videoModelContract,
+  type VideoModelContract,
+} from "@/lib/video-model-contracts";
+
+export type VideoModelCapabilitySource = string | VideoModelContract;
 
 type SharedVideoCapability = {
   sizes: string[];
@@ -44,8 +49,12 @@ export function resolveConfiguredVideoModel(
   return available[0] || "";
 }
 
-function videoCapability(model: string): SharedVideoCapability {
-  const capability = videoModelContract(model)?.capability;
+function contractFromCapabilitySource(source: VideoModelCapabilitySource) {
+  return typeof source === "string" ? videoModelContract(source) : source;
+}
+
+function videoCapability(source: VideoModelCapabilitySource): SharedVideoCapability {
+  const capability = contractFromCapabilitySource(source)?.capability;
   if (!capability) return emptyVideoCapability;
   return {
     ...capability,
@@ -58,113 +67,113 @@ function videoCapability(model: string): SharedVideoCapability {
   };
 }
 
-export function videoSizeOptions(model: string): string[] {
-  return [...videoCapability(model).sizes];
+export function videoSizeOptions(source: VideoModelCapabilitySource): string[] {
+  return [...videoCapability(source).sizes];
 }
 
-export function videoSecondsOptions(model: string): number[] {
-  return [...videoCapability(model).seconds];
+export function videoSecondsOptions(source: VideoModelCapabilitySource): number[] {
+  return [...videoCapability(source).seconds];
 }
 
-export function videoDefaultSeconds(model: string) {
-  const capability = videoCapability(model);
+export function videoDefaultSeconds(source: VideoModelCapabilitySource) {
+  const capability = videoCapability(source);
   return capability.default_seconds || capability.seconds[0] || 0;
 }
 
-export function videoDefaultSize(model: string) {
-  const capability = videoCapability(model);
+export function videoDefaultSize(source: VideoModelCapabilitySource) {
+  const capability = videoCapability(source);
   return capability.default_size || capability.sizes[0] || "";
 }
 
-export function videoDefaultResolution(model: string) {
-  const capability = videoCapability(model);
+export function videoDefaultResolution(source: VideoModelCapabilitySource) {
+  const capability = videoCapability(source);
   const requestedDefault = capability.default_resolution || "";
-  const options = videoResolutionOptions(model);
+  const options = videoResolutionOptions(source);
   return options.find((value) => value.toLowerCase() === requestedDefault.toLowerCase()) || options[0] || "";
 }
 
-export function videoResolutionOptions(model: string): string[] {
-  return [...videoCapability(model).resolutions];
+export function videoResolutionOptions(source: VideoModelCapabilitySource): string[] {
+  return [...videoCapability(source).resolutions];
 }
 
-export function videoReferenceImageLimit(model: string) {
-  return videoCapability(model).first_frame_image_limit;
+export function videoReferenceImageLimit(source: VideoModelCapabilitySource) {
+  return videoCapability(source).first_frame_image_limit;
 }
 
-export function supportsVideoFrameReferences(model: string) {
-  return Boolean(videoModelContract(model)?.generation.modes.some((mode) => mode.kind === "image"));
+export function supportsVideoFrameReferences(source: VideoModelCapabilitySource) {
+  return Boolean(contractFromCapabilitySource(source)?.generation.modes.some((mode) => mode.kind === "image"));
 }
 
-export function supportsVideoMultimodalReferences(model: string) {
-  return videoCapability(model).reference_mode;
+export function supportsVideoMultimodalReferences(source: VideoModelCapabilitySource) {
+  return videoCapability(source).reference_mode;
 }
 
-export function videoMultimodalReferenceLimits(model: string) {
-  return { ...videoCapability(model).references };
+export function videoMultimodalReferenceLimits(source: VideoModelCapabilitySource) {
+  return { ...videoCapability(source).references };
 }
 
-export function videoWorkbenchReferenceLimits(model: string) {
-  return videoMultimodalReferenceLimits(model);
+export function videoWorkbenchReferenceLimits(source: VideoModelCapabilitySource) {
+  return videoMultimodalReferenceLimits(source);
 }
 
-export function videoRequiresReferenceImage(model: string) {
-  return everyVideoGenerationMode(model, (mode) => mode.materials.first_frame.min > 0 || mode.materials.image.min > 0);
+export function videoRequiresReferenceImage(source: VideoModelCapabilitySource) {
+  return everyVideoGenerationMode(source, (mode) => mode.materials.first_frame.min > 0 || mode.materials.image.min > 0);
 }
 
-export function videoRequiresReferenceVideo(model: string) {
-  return everyVideoGenerationMode(model, (mode) => mode.materials.video.min > 0);
+export function videoRequiresReferenceVideo(source: VideoModelCapabilitySource) {
+  return everyVideoGenerationMode(source, (mode) => mode.materials.video.min > 0);
 }
 
-export function videoRequiresReferenceAudio(model: string) {
-  return everyVideoGenerationMode(model, (mode) => mode.materials.audio.min > 0);
+export function videoRequiresReferenceAudio(source: VideoModelCapabilitySource) {
+  return everyVideoGenerationMode(source, (mode) => mode.materials.audio.min > 0);
 }
 
-export function videoRequiresMultimodalReferenceMode(model: string) {
-  return everyVideoGenerationMode(model, (mode) => mode.kind === "reference");
+export function videoRequiresMultimodalReferenceMode(source: VideoModelCapabilitySource) {
+  return everyVideoGenerationMode(source, (mode) => mode.kind === "reference");
 }
 
 function everyVideoGenerationMode(
-  model: string,
+  source: VideoModelCapabilitySource,
   predicate: (mode: NonNullable<ReturnType<typeof videoModelContract>>["generation"]["modes"][number]) => boolean,
 ) {
-  const modes = videoModelContract(model)?.generation.modes || [];
+  const modes = contractFromCapabilitySource(source)?.generation.modes || [];
   return modes.length > 0 && modes.every(predicate);
 }
 
-export function videoAudioControl(model: string): "toggle" | "always" | "none" {
-  return videoCapability(model).audio_control;
+export function videoAudioControl(source: VideoModelCapabilitySource): "toggle" | "always" | "none" {
+  return videoCapability(source).audio_control;
 }
 
-function videoWatermarkSupported(model: string) {
-  return videoCapability(model).watermark;
+function videoWatermarkSupported(source: VideoModelCapabilitySource) {
+  return videoCapability(source).watermark;
 }
 
-export function videoComposerWatermarkSupported(model: string) {
-  return videoWatermarkSupported(model);
+export function videoComposerWatermarkSupported(source: VideoModelCapabilitySource) {
+  return videoWatermarkSupported(source);
 }
 
-export function videoSecondsIsValid(model: string, value: number) {
-  return Number.isInteger(value) && videoSecondsOptions(model).includes(value);
+export function videoSecondsIsValid(source: VideoModelCapabilitySource, value: number) {
+  return Number.isInteger(value) && videoSecondsOptions(source).includes(value);
 }
 
-export function videoAllowsCustomDuration(model: string) {
-  void model;
+export function videoAllowsCustomDuration(source: VideoModelCapabilitySource) {
+  void source;
   return false;
 }
 
-export function videoResolutionIsValid(model: string, value: string) {
+export function videoResolutionIsValid(source: VideoModelCapabilitySource, value: string) {
   const requested = String(value || "").trim();
-  const options = videoResolutionOptions(model);
+  const options = videoResolutionOptions(source);
   if (options.length === 0) return requested === "";
   return options.some((option) => option.toLowerCase() === requested.toLowerCase());
 }
 
-export function videoWorkbenchResolutionOptions(model: string) {
-  return videoResolutionOptions(model);
+export function videoWorkbenchResolutionOptions(source: VideoModelCapabilitySource) {
+  return videoResolutionOptions(source);
 }
 
-export function videoWorkbenchSecondsOptions(model: string) {
-  return videoSecondsOptions(model);
+export function videoWorkbenchSecondsOptions(source: VideoModelCapabilitySource) {
+  return videoSecondsOptions(source);
 }
 
 export type VideoWorkbenchMaterialSections = {
@@ -174,8 +183,8 @@ export type VideoWorkbenchMaterialSections = {
   imageLabel: "首尾帧" | "参考图";
 };
 
-export function videoWorkbenchMaterialSections(model: string): VideoWorkbenchMaterialSections {
-  const contract = videoModelContract(model);
+export function videoWorkbenchMaterialSections(source: VideoModelCapabilitySource): VideoWorkbenchMaterialSections {
+  const contract = contractFromCapabilitySource(source);
   const imageMode = contract?.generation.modes.find((mode) => mode.kind === "image");
   const referenceMode = contract?.generation.modes.find((mode) => mode.kind === "reference");
   return {
@@ -256,26 +265,26 @@ function closestVideoWorkbenchRatio(size: string) {
   return candidates.reduce((best, item) => Math.abs(item[1] - ratio) < Math.abs(best[1] - ratio) ? item : best, candidates[0])[0];
 }
 
-export function videoWorkbenchDisplaySize(model: string, size: string) {
+export function videoWorkbenchDisplaySize(source: VideoModelCapabilitySource, size: string) {
   const requested = String(size || "").trim();
-  const options = videoSizeOptions(model);
-  return options.find((option) => option.toLowerCase() === requested.toLowerCase()) || videoDefaultSize(model);
+  const options = videoSizeOptions(source);
+  return options.find((option) => option.toLowerCase() === requested.toLowerCase()) || videoDefaultSize(source);
 }
 
 export function videoWorkbenchRatioForSize(size: string) {
   return closestVideoWorkbenchRatio(String(size || "").trim().toLowerCase());
 }
 
-export function videoWorkbenchDisplayResolution(model: string, resolution: string) {
+export function videoWorkbenchDisplayResolution(source: VideoModelCapabilitySource, resolution: string) {
   const requested = String(resolution || "").trim();
-  const options = videoResolutionOptions(model);
-  return options.find((option) => option.toLowerCase() === requested.toLowerCase()) || videoDefaultResolution(model);
+  const options = videoResolutionOptions(source);
+  return options.find((option) => option.toLowerCase() === requested.toLowerCase()) || videoDefaultResolution(source);
 }
 
-export function videoWorkbenchDisplaySeconds(model: string, seconds: string | number) {
+export function videoWorkbenchDisplaySeconds(source: VideoModelCapabilitySource, seconds: string | number) {
   const requested = Math.floor(Number(seconds));
-  if (Number.isFinite(requested) && videoSecondsOptions(model).includes(requested)) return String(requested);
-  return String(videoDefaultSeconds(model));
+  if (Number.isFinite(requested) && videoSecondsOptions(source).includes(requested)) return String(requested);
+  return String(videoDefaultSeconds(source));
 }
 
 export function videoComposerAspectRatio(size: string) {

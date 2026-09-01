@@ -77,7 +77,6 @@ import {
   type VideoModelContractVersion,
 } from "@/lib/api";
 import {
-  activeVideoModelContracts,
   installVideoModelContracts,
   cloneVideoModelContract,
   videoContractUIState,
@@ -119,8 +118,6 @@ type ContractDraft = {
   errorFields: string[];
   resultFields: string[];
 };
-
-const CONTRACT_PREVIEW_MODEL = "__video-contract-parameter-preview__";
 
 const VIDEO_CONTRACT_DRIVERS: Array<{
   value: VideoModelContract["driver"];
@@ -865,22 +862,7 @@ function ContractReferenceMaterialPreview({ contract, ruleValues }: { contract: 
 }
 
 function ContractParameterPreview({ contract }: { contract: VideoModelContract }) {
-  const [installedContract, setInstalledContract] = useState<VideoModelContract | null>(null);
   const [value, setValue] = useState<VideoSettingsValue>(() => previewSettingsFromContract(contract));
-
-  useEffect(() => {
-    const previousContracts = activeVideoModelContracts();
-    const previewContract = cloneContract(contract);
-    previewContract.models = [CONTRACT_PREVIEW_MODEL];
-    installVideoModelContracts([
-      ...previousContracts.filter((item) => !item.models.includes(CONTRACT_PREVIEW_MODEL)),
-      previewContract,
-    ]);
-    setInstalledContract(contract);
-    return () => installVideoModelContracts(
-      activeVideoModelContracts().filter((item) => !item.models.includes(CONTRACT_PREVIEW_MODEL)),
-    );
-  }, [contract]);
 
   const modelLabel = contract.models[0] || "未填写模型名称";
   const ruleValues: Record<VideoModelContractRuleField, unknown> = {
@@ -908,19 +890,16 @@ function ContractParameterPreview({ contract }: { contract: VideoModelContract }
         <Badge variant="secondary" className="h-5 rounded px-1.5 text-[11px]">实时</Badge>
       </header>
       <div className="min-h-64 p-3.5">
-        {installedContract === contract ? (
-          <div className="flex flex-col gap-3.5">
-            <ContractReferenceMaterialPreview contract={contract} ruleValues={ruleValues} />
-            <VideoSettingsPanel
-              model={CONTRACT_PREVIEW_MODEL}
-              value={value}
-              ruleValues={ruleValues}
-              onChange={(patch) => setValue((current) => ({ ...current, ...patch }))}
-            />
-          </div>
-        ) : (
-          <div className="flex min-h-56 items-center justify-center"><LoaderCircle className="size-5 animate-spin text-muted-foreground" /></div>
-        )}
+        <div className="flex flex-col gap-3.5">
+          <ContractReferenceMaterialPreview contract={contract} ruleValues={ruleValues} />
+          <VideoSettingsPanel
+            model={contract.models[0] || ""}
+            contract={contract}
+            value={value}
+            ruleValues={ruleValues}
+            onChange={(patch) => setValue((current) => ({ ...current, ...patch }))}
+          />
+        </div>
       </div>
     </section>
   );

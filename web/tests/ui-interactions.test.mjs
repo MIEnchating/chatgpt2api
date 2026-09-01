@@ -187,7 +187,8 @@ test("video contract editor shows configuration and parameter preview side by si
   assert.match(videoContractsSource, /label="命中后显示"/);
   assert.match(videoContractsSource, /label="命中后隐藏"/);
   assert.match(videoContractsSource, /label="命中后禁用"/);
-  assert.match(videoContractsSource, /activeVideoModelContracts\(\)\.filter\(\(item\) => !item\.models\.includes\(CONTRACT_PREVIEW_MODEL\)\)/);
+  assert.match(videoContractsSource, /<VideoSettingsPanel[\s\S]*?contract=\{contract\}/);
+  assert.doesNotMatch(videoContractsSource, /CONTRACT_PREVIEW_MODEL|activeVideoModelContracts/);
   assert.match(videoContractsSource, /import \{ InputTag \} from "@\/components\/ui\/input-tag"/);
   for (const id of ["models", "sizes", "seconds", "resolutions", "queued-statuses", "processing-statuses", "success-statuses", "failure-statuses", "progress-fields", "result-fields"]) {
     assert.match(videoContractsSource, new RegExp(`<TagListField id="video-contract-${id}"`));

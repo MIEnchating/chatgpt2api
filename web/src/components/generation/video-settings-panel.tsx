@@ -27,10 +27,12 @@ import {
   videoWorkbenchRatioForSize,
   videoWorkbenchResolutionOptions,
   videoWorkbenchSecondsOptions,
+  type VideoModelCapabilitySource,
 } from "@/lib/video-model-capabilities";
 import {
   videoContractUIState,
   videoModelContract,
+  type VideoModelContract,
   type VideoModelContractRuleValues,
 } from "@/lib/video-model-contracts";
 import { cn } from "@/lib/utils";
@@ -51,6 +53,7 @@ export function VideoSettingsPanel({
   showTaskCount = true,
   coreOnly = false,
   ruleValues,
+  contract,
 }: {
   model: string;
   value: VideoSettingsValue;
@@ -58,32 +61,34 @@ export function VideoSettingsPanel({
   showTaskCount?: boolean;
   coreOnly?: boolean;
   ruleValues?: VideoModelContractRuleValues;
+  contract?: VideoModelContract;
 }) {
-  const sizeOptions = videoSizeOptions(model);
+  const capabilitySource: VideoModelCapabilitySource = contract ?? model;
+  const sizeOptions = videoSizeOptions(capabilitySource);
   const dimensionOptions = sizeOptions.filter((item) => /^\d+x\d+$/i.test(item));
   const usesDimensionInputs = dimensionOptions.length > 0 && dimensionOptions.length === sizeOptions.length;
-  const secondsOptions = videoSecondsOptions(model);
+  const secondsOptions = videoSecondsOptions(capabilitySource);
   const positiveSeconds = secondsOptions.filter((item) => item > 0);
-  const displaySize = videoWorkbenchDisplaySize(model, value.size);
+  const displaySize = videoWorkbenchDisplaySize(capabilitySource, value.size);
   const displayRatio = videoWorkbenchRatioForSize(value.size);
-  const displaySeconds = videoWorkbenchDisplaySeconds(model, value.seconds);
-  const displayResolution = videoWorkbenchDisplayResolution(model, value.resolution);
+  const displaySeconds = videoWorkbenchDisplaySeconds(capabilitySource, value.seconds);
+  const displayResolution = videoWorkbenchDisplayResolution(capabilitySource, value.resolution);
   const videoSizePreview = displayRatio === "adaptive"
     ? "自动"
     : (/^\d+x\d+$/i.test(displaySize) ? displaySize : videoComposerPixelLabel(displayResolution, displayRatio)).replace(/x/gi, "×");
-  const allowsCustomDuration = videoAllowsCustomDuration(model);
+  const allowsCustomDuration = videoAllowsCustomDuration(capabilitySource);
   const minimumSeconds = positiveSeconds[0] || 1;
   const maximumSeconds = positiveSeconds.at(-1) || minimumSeconds;
-  const secondsValid = videoSecondsIsValid(model, Number(displaySeconds));
-  const resolutionValid = videoResolutionIsValid(model, displayResolution);
-  const audioControl = videoAudioControl(model);
+  const secondsValid = videoSecondsIsValid(capabilitySource, Number(displaySeconds));
+  const resolutionValid = videoResolutionIsValid(capabilitySource, displayResolution);
+  const audioControl = videoAudioControl(capabilitySource);
   const showAudio = audioControl !== "none";
-  const showWatermark = videoComposerWatermarkSupported(model);
-  const secondsPresets = videoWorkbenchSecondsOptions(model);
-  const resolutionOptions = videoWorkbenchResolutionOptions(model);
+  const showWatermark = videoComposerWatermarkSupported(capabilitySource);
+  const secondsPresets = videoWorkbenchSecondsOptions(capabilitySource);
+  const resolutionOptions = videoWorkbenchResolutionOptions(capabilitySource);
   const audioDisabled = audioControl === "always";
   const taskCount = Math.max(1, Math.min(6, Math.floor(value.taskCount || 1)));
-  const contractUI = videoContractUIState(videoModelContract(model), {
+  const contractUI = videoContractUIState(contract ?? videoModelContract(model), {
     ...ruleValues,
     size: displaySize,
     resolution: displayResolution,
