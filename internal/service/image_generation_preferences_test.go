@@ -9,6 +9,16 @@ import (
 	"chatgpt2api/internal/storage"
 )
 
+func replaceImageGenerationPreferences(service *ImageGenerationPreferenceService, ownerID string, input ImageGenerationPreferences) (ImageGenerationPreferences, error) {
+	workbench := input.Workbench
+	return service.UpdateProfile(ownerID, input, &workbench, map[string][]string{
+		"text":  input.DefaultTextRelayTokens,
+		"image": input.DefaultImageRelayTokens,
+		"video": input.DefaultVideoRelayTokens,
+		"audio": input.DefaultAudioRelayTokens,
+	})
+}
+
 func TestImageGenerationPreferencesArePersistentAndPersonal(t *testing.T) {
 	backend, err := storage.NewDatabaseBackend("sqlite:///" + filepath.ToSlash(filepath.Join(t.TempDir(), "preferences.db")))
 	if err != nil {
@@ -68,8 +78,8 @@ func TestImageGenerationPreferencesArePersistentAndPersonal(t *testing.T) {
 			VideoWatermark:         true,
 		},
 	}
-	if _, err := preferences.Update("user-a", want); err != nil {
-		t.Fatalf("Update() error = %v", err)
+	if _, err := replaceImageGenerationPreferences(preferences, "user-a", want); err != nil {
+		t.Fatalf("UpdateProfile() error = %v", err)
 	}
 	got, err := NewImageGenerationPreferenceService(backend).Preferences("user-a")
 	if err != nil {
@@ -120,26 +130,30 @@ func TestImageGenerationPreferencesArePersistentAndPersonal(t *testing.T) {
 	if other.APIMode != "images" || other.Stream || other.PartialImages != 1 || other.ResponseFormatB64JSON || other.CodexCLICompatibility || other.CanvasDefaultImageCount != 1 || other.DefaultAudioVoice != "" || other.DefaultAudioFormat != "" || other.DefaultAudioSpeed != 1 {
 		t.Fatalf("other user preferences = %#v", other)
 	}
-	if _, err := preferences.Update("user-a", ImageGenerationPreferences{PartialImages: 4}); err == nil {
-		t.Fatal("Update() accepted partial_images greater than 3")
-	}
-	if _, err := preferences.Update("user-a", ImageGenerationPreferences{APIMode: "legacy", PartialImages: 1}); err == nil {
-		t.Fatal("Update() accepted an unknown api_mode")
-	}
 	invalid := defaultImageGenerationPreferences()
+	invalid.PartialImages = 4
+	if _, err := replaceImageGenerationPreferences(preferences, "user-a", invalid); err == nil {
+		t.Fatal("UpdateProfile() accepted partial_images greater than 3")
+	}
+	invalid = defaultImageGenerationPreferences()
+	invalid.APIMode = "legacy"
+	if _, err := replaceImageGenerationPreferences(preferences, "user-a", invalid); err == nil {
+		t.Fatal("UpdateProfile() accepted an unknown api_mode")
+	}
+	invalid = defaultImageGenerationPreferences()
 	invalid.CanvasDefaultImageCount = 16
-	if _, err := preferences.Update("user-a", invalid); err == nil {
-		t.Fatal("Update() accepted canvas_default_image_count greater than 15")
+	if _, err := replaceImageGenerationPreferences(preferences, "user-a", invalid); err == nil {
+		t.Fatal("UpdateProfile() accepted canvas_default_image_count greater than 15")
 	}
 	invalid = defaultImageGenerationPreferences()
 	invalid.DefaultAudioFormat = "ogg"
-	if _, err := preferences.Update("user-a", invalid); err == nil {
-		t.Fatal("Update() accepted unsupported default_audio_format")
+	if _, err := replaceImageGenerationPreferences(preferences, "user-a", invalid); err == nil {
+		t.Fatal("UpdateProfile() accepted unsupported default_audio_format")
 	}
 	invalid = defaultImageGenerationPreferences()
 	invalid.DefaultAudioSpeed = 4.1
-	if _, err := preferences.Update("user-a", invalid); err == nil {
-		t.Fatal("Update() accepted default_audio_speed greater than 4")
+	if _, err := replaceImageGenerationPreferences(preferences, "user-a", invalid); err == nil {
+		t.Fatal("UpdateProfile() accepted default_audio_speed greater than 4")
 	}
 }
 
@@ -209,7 +223,7 @@ func TestImageGenerationPreferenceServiceProfileUpdatePreservesConcurrentOptiona
 	initial.SystemPrompt = "before"
 	initial.DefaultVideoRelayTokens = []string{"video-before"}
 	initial.Workbench.ImageQuality = "low"
-	if _, err := NewImageGenerationPreferenceService(backendA).Update("owner", initial); err != nil {
+	if _, err := replaceImageGenerationPreferences(NewImageGenerationPreferenceService(backendA), "owner", initial); err != nil {
 		t.Fatal(err)
 	}
 

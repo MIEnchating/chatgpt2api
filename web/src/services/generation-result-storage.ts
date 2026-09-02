@@ -30,7 +30,7 @@ export type CreationTaskOutputPersistenceOptions = {
   signal?: AbortSignal;
 };
 
-export class GenerationResultSessionChangedError extends DOMException {
+class GenerationResultSessionChangedError extends DOMException {
   constructor() {
     super("生成结果持久化期间认证会话已变更", "AbortError");
   }

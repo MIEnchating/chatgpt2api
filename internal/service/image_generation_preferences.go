@@ -129,35 +129,6 @@ func (s *ImageGenerationPreferenceService) Preferences(ownerID string) (ImageGen
 	return preferences, nil
 }
 
-func (s *ImageGenerationPreferenceService) Update(ownerID string, input ImageGenerationPreferences) (ImageGenerationPreferences, error) {
-	ownerID = strings.TrimSpace(ownerID)
-	if ownerID == "" {
-		return ImageGenerationPreferences{}, fmt.Errorf("owner_id is required")
-	}
-	normalized, err := normalizeImageGenerationPreferences(input)
-	if err != nil {
-		return ImageGenerationPreferences{}, err
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.store == nil {
-		return ImageGenerationPreferences{}, imageGenerationPreferenceStorageError(fmt.Errorf("storage document backend is required"))
-	}
-	for attempt := 0; attempt < imageGenerationPreferenceSaveAttempts; attempt++ {
-		if err := s.store.SaveJSONDocument(imageGenerationPreferenceDocumentName(ownerID), normalized); err != nil {
-			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < imageGenerationPreferenceSaveAttempts {
-				if _, loadErr := s.loadLocked(ownerID); loadErr != nil {
-					return ImageGenerationPreferences{}, imageGenerationPreferenceStorageError(loadErr)
-				}
-				continue
-			}
-			return ImageGenerationPreferences{}, imageGenerationPreferenceStorageError(err)
-		}
-		return normalized, nil
-	}
-	return ImageGenerationPreferences{}, imageGenerationPreferenceStorageError(fmt.Errorf("%w: update image generation preferences after %d attempts", storage.ErrConcurrentRowUpdate, imageGenerationPreferenceSaveAttempts))
-}
-
 // UpdateProfile replaces the profile fields while preserving optional fields that
 // were omitted by the caller. The merge is repeated after a document CAS conflict
 // so a concurrent workbench or relay-token update is not overwritten by stale data.
