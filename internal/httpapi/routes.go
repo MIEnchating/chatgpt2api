@@ -2081,6 +2081,10 @@ func (a *App) writeCreationTaskSubmitError(w http.ResponseWriter, err error) {
 }
 
 func (a *App) writeCreationTaskStorageError(w http.ResponseWriter, err error) bool {
+	if errors.Is(err, service.ErrImageTaskServiceClosed) {
+		util.WriteError(w, http.StatusServiceUnavailable, "创建任务服务暂时不可用，请稍后重试")
+		return true
+	}
 	var persistenceErr service.ImageTaskPersistenceError
 	if errors.As(err, &persistenceErr) {
 		if a != nil && a.logger != nil {

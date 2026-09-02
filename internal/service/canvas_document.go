@@ -974,6 +974,9 @@ func canvasProjectIndex(workspace canvasWorkspace, projectID string) int {
 }
 
 func normalizeCanvasDocument(input CanvasDocument) (CanvasDocument, error) {
+	input.Nodes = append([]CanvasNode(nil), input.Nodes...)
+	input.Connections = append([]CanvasConnection(nil), input.Connections...)
+	input.AgentMessages = append([]CanvasAgentMessage(nil), input.AgentMessages...)
 	input.Version = canvasDocumentVersion
 	input.ID = strings.TrimSpace(input.ID)
 	if input.ID == "" {
@@ -1201,6 +1204,15 @@ func normalizeCanvasViewport(viewport CanvasViewport) CanvasViewport {
 }
 
 func normalizeCanvasNode(node CanvasNode) (CanvasNode, error) {
+	node.GenerationReferenceURLs = append([]string(nil), node.GenerationReferenceURLs...)
+	node.GenerationVideoReferenceURLs = append([]string(nil), node.GenerationVideoReferenceURLs...)
+	node.GenerationVideoReferenceImages = append([]string(nil), node.GenerationVideoReferenceImages...)
+	node.GenerationVideoReferenceAudio = append([]string(nil), node.GenerationVideoReferenceAudio...)
+	node.BatchChildIDs = append([]string(nil), node.BatchChildIDs...)
+	if node.CameraControl != nil {
+		cameraControl := *node.CameraControl
+		node.CameraControl = &cameraControl
+	}
 	node.ID = strings.TrimSpace(node.ID)
 	if node.ID == "" || len(node.ID) > 128 {
 		return CanvasNode{}, invalidCanvasDocument("node id is required")
@@ -1214,6 +1226,9 @@ func normalizeCanvasNode(node CanvasNode) (CanvasNode, error) {
 	}
 	if !finiteCanvasNumber(node.Width) || !finiteCanvasNumber(node.Height) || node.Width <= 0 || node.Height <= 0 || node.Width > canvasDocumentMaxNodeDim || node.Height > canvasDocumentMaxNodeDim {
 		return CanvasNode{}, invalidCanvasDocument("node size is invalid")
+	}
+	if node.Bytes < 0 {
+		return CanvasNode{}, invalidCanvasDocument("node media size is invalid")
 	}
 	if node.NaturalWidth < 0 || node.NaturalHeight < 0 || node.NaturalWidth > 65535 || node.NaturalHeight > 65535 {
 		return CanvasNode{}, invalidCanvasDocument("node natural size is invalid")
@@ -1231,6 +1246,7 @@ func normalizeCanvasNode(node CanvasNode) (CanvasNode, error) {
 		node.Angle = 0
 	}
 	node.URL = strings.TrimSpace(node.URL)
+	node.StorageKey = strings.TrimSpace(node.StorageKey)
 	node.ThumbnailURL = strings.TrimSpace(node.ThumbnailURL)
 	node.Title = strings.TrimSpace(node.Title)
 	node.GroupID = strings.TrimSpace(node.GroupID)

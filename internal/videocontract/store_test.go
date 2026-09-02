@@ -185,6 +185,269 @@ func TestVideoModelContractServiceMigratesLegacyGatewayDriver(t *testing.T) {
 	}
 }
 
+func TestVideoModelContractServiceMigratesLegacyKlingDriver(t *testing.T) {
+	databasePath := filepath.Join(t.TempDir(), "contracts.db")
+	backend, err := storage.NewDatabaseBackend("sqlite:///" + filepath.ToSlash(databasePath))
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend() error = %v", err)
+	}
+	defer backend.Close()
+	t.Cleanup(func() { _ = protocol.ReplaceVideoContracts(protocol.DefaultVideoContracts()) })
+
+	contract := protocol.DefaultVideoContracts()[0]
+	contract.Driver = legacyKlingVideoContractDriver
+	contract.Generation.Modes = contract.Generation.Modes[:2]
+	contract.Artifact = protocol.VideoModelContractArtifact{}
+	document := videoModelContractStoreDocument{Version: 4, Items: []ManagedVideoModelContract{{
+		ID: "legacy-kling-contract", Contract: contract, Enabled: true, CreatedAt: "2026-08-30T00:00:00Z", UpdatedAt: "2026-08-30T00:00:00Z",
+	}}}
+	if err := backend.SaveJSONDocument(videoModelContractDocumentName, document); err != nil {
+		t.Fatalf("SaveJSONDocument() error = %v", err)
+	}
+
+	service := NewVideoModelContractService(backend)
+	if err := service.Initialize(); err != nil {
+		t.Fatalf("Initialize() error = %v", err)
+	}
+	items, err := service.List()
+	if err != nil || len(items) != 1 || items[0].Contract.Driver != protocol.VideoContractDriverKling || items[0].Contract.Artifact.Mode != "response_url" || items[0].Contract.Artifact.Auth != "none" {
+		t.Fatalf("List() = %#v, error = %v", items, err)
+	}
+	raw, err := backend.LoadJSONDocument(videoModelContractDocumentName)
+	if err != nil {
+		t.Fatalf("LoadJSONDocument() error = %v", err)
+	}
+	data, _ := json.Marshal(raw)
+	if strings.Contains(string(data), legacyKlingVideoContractDriver) || !strings.Contains(string(data), protocol.VideoContractDriverKling) {
+		t.Fatalf("legacy Kling driver was not persisted as migrated: %s", data)
+	}
+}
+
+func TestVideoModelContractServiceMigratesPreV6NestedContracts(t *testing.T) {
+	t.Cleanup(func() { _ = protocol.ReplaceVideoContracts(protocol.DefaultVideoContracts()) })
+	publishedAt := "2026-08-30T00:00:00Z"
+	legacyContract := func(name string) protocol.VideoModelContract {
+		contract := protocol.DefaultVideoContracts()[0]
+		contract.Name = name
+		contract.Artifact = protocol.VideoModelContractArtifact{}
+		contract.Rules = []protocol.VideoModelContractRule{{
+			When:    protocol.VideoModelContractRuleCondition{Field: "last_frame", Operator: "present"},
+			Require: []string{"first_frame"},
+			Message: "添加尾帧前必须先添加首帧",
+		}}
+		return contract
+	}
+	draftEnabled := true
+	draft := legacyContract("Legacy nested draft")
+	draft.Driver = "newapi-video"
+	history := legacyContract("Legacy nested history")
+	history.Driver = legacyKlingVideoContractDriver
+	history.Generation.Modes = history.Generation.Modes[:2]
+	backend := &scriptedVideoContractDocumentBackend{document: videoModelContractStoreDocument{
+		Version: 5,
+		Items: []ManagedVideoModelContract{{
+			ID: "legacy-nested", Contract: legacyContract("Legacy nested current"), Draft: &draft, DraftEnabled: &draftEnabled,
+			Enabled: true, Revision: 1,
+			Versions:  []VideoModelContractVersion{{Revision: 1, Contract: history, PublishedAt: publishedAt}},
+			CreatedAt: publishedAt, UpdatedAt: publishedAt, DraftUpdatedAt: publishedAt,
+		}},
+	}}
+	service := NewVideoModelContractService(backend)
+	if err := service.Initialize(); err != nil {
+		t.Fatalf("Initialize() error = %v", err)
+	}
+	persisted, ok := backend.document.(videoModelContractStoreDocument)
+	if !ok || persisted.Version != 7 || len(persisted.Items) != 1 {
+		t.Fatalf("persisted migration = %#v", backend.document)
+	}
+	item := persisted.Items[0]
+	for _, contract := range []protocol.VideoModelContract{item.Contract, *item.Draft} {
+		if contract.Artifact.Mode != "task_content" || contract.Artifact.ContentPath != "/v1/videos/{task_id}/content" || contract.Artifact.Auth != "relay" || len(contract.Rules) != 2 {
+			t.Fatalf("nested pre-v6 task-content contract was not fully migrated: %#v", contract)
+		}
+	}
+	if item.Draft.Driver != protocol.VideoContractDriverOpenAI {
+		t.Fatalf("nested legacy draft driver = %q", item.Draft.Driver)
+	}
+	history = item.Versions[0].Contract
+	if history.Driver != protocol.VideoContractDriverKling || history.Artifact.Mode != "response_url" || history.Artifact.ContentPath != "" || history.Artifact.Auth != "none" || len(history.Rules) != 2 {
+		t.Fatalf("nested pre-v6 Kling history was not fully migrated: %#v", history)
+	}
+	if item.DraftEnabled == nil || !*item.DraftEnabled || item.Revision != 1 || len(item.Versions) != 1 || item.Versions[0].PublishedAt != publishedAt {
+		t.Fatalf("nested migration changed version metadata: %#v", item)
+	}
+}
+
+func TestVideoModelContractServiceMigratesV6StrictValidationData(t *testing.T) {
+	t.Cleanup(func() { _ = protocol.ReplaceVideoContracts(protocol.DefaultVideoContracts()) })
+	publishedAt := "2026-08-30T00:00:00Z"
+	draftEnabled := true
+	legacyCurrent := func() protocol.VideoModelContract {
+		contract := testVideoContract(t, "Legacy current", "legacy/current-video")
+		contract.Transport.CreatePath = "/legacy/tasks"
+		contract.Generation.Modes[0].RequestValue = "vendor-text"
+		contract.Generation.Modes[2].RequestValue = contract.Generation.Modes[1].ID
+		contract.Generation.Modes[2].Materials.Image.Min = 2
+		contract.Generation.Modes[2].Materials.Image.Max = 2
+		contract.Generation.Modes[2].Materials.Video.Min = 2
+		contract.Generation.Modes[2].Materials.Video.Max = 2
+		contract.Generation.Modes[2].Materials.Audio.Max = 0
+		contract.Generation.Modes[2].Materials.Total.Max = 3
+		contract.Rules = []protocol.VideoModelContractRule{{
+			When:        protocol.VideoModelContractRuleCondition{Field: "duration", Operator: "present"},
+			Require:     []string{"reference_image"},
+			Limits:      map[string]int{"reference_image": 0, "reference_video": 2},
+			ForceValues: map[string]string{"duration": "eight", "watermark": "true"},
+			Message:     "legacy rule",
+		}}
+		return contract
+	}
+	current := legacyCurrent()
+	draft := testVideoContract(t, "Legacy draft", "legacy/current-video")
+	draft.Driver = protocol.VideoContractDriverCustom
+	draft.Transport.CreatePath = "/vendor/{tenant}/tasks"
+	draft.Transport.QueryPath = "/vendor/{tenant}/tasks/{task_id}"
+	draft.Artifact.ContentPath = "/vendor/{tenant}/tasks/{task_id}/content"
+	historical := testVideoContract(t, "Legacy history", "legacy/current-video")
+	historical.Driver = legacyKlingVideoContractDriver
+	historical.Generation.Modes = historical.Generation.Modes[:2]
+	historical.Transport.CreatePath = "/legacy/tasks/{task_id}"
+	historical.Transport.QueryPath = "/legacy/tasks/{task_id}"
+	historical.Rules = []protocol.VideoModelContractRule{{
+		When:        protocol.VideoModelContractRuleCondition{Field: "duration", Operator: "present"},
+		ForceValues: map[string]string{"generate_audio": "yes"},
+		Message:     "legacy forced value",
+	}}
+	backend := &scriptedVideoContractDocumentBackend{document: videoModelContractStoreDocument{
+		Version: 6,
+		Items: []ManagedVideoModelContract{{
+			ID: "legacy-v6", Contract: current, Draft: &draft, DraftEnabled: &draftEnabled,
+			Enabled: true, Revision: 2,
+			Versions: []VideoModelContractVersion{
+				{Revision: 1, Contract: historical, PublishedAt: publishedAt},
+				{Revision: 2, Contract: legacyCurrent(), PublishedAt: publishedAt},
+			},
+			CreatedAt: publishedAt, UpdatedAt: publishedAt, DraftUpdatedAt: publishedAt,
+		}},
+	}}
+	service := NewVideoModelContractService(backend)
+	if err := service.Initialize(); err != nil {
+		t.Fatalf("Initialize() error = %v", err)
+	}
+	if backend.saveCalls != 1 {
+		t.Fatalf("migration save calls = %d, want 1", backend.saveCalls)
+	}
+	persisted, ok := backend.document.(videoModelContractStoreDocument)
+	if !ok || persisted.Version != 7 || len(persisted.Items) != 1 {
+		t.Fatalf("persisted migration = %#v", backend.document)
+	}
+	item := persisted.Items[0]
+	if item.ID != "legacy-v6" || !item.Enabled || item.Revision != 2 || item.CreatedAt != publishedAt || item.UpdatedAt != publishedAt || item.DraftUpdatedAt != publishedAt {
+		t.Fatalf("migration changed item metadata: %#v", item)
+	}
+	if item.Contract.Transport.CreatePath != "" || item.Contract.Transport.QueryPath != "" {
+		t.Fatalf("migrated current paths = %#v", item.Contract.Transport)
+	}
+	modes := item.Contract.Generation.Modes
+	if modes[0].RequestValue != "vendor-text" || modes[2].RequestValue != modes[2].ID || modes[2].Materials.Total.Max != 4 {
+		t.Fatalf("migrated generation = %#v", item.Contract.Generation)
+	}
+	rule := item.Contract.Rules[0]
+	if _, exists := rule.Limits["reference_image"]; exists || rule.Limits["reference_video"] != 2 || len(rule.ForceValues) != 1 || rule.ForceValues["watermark"] != "true" {
+		t.Fatalf("migrated rule = %#v", rule)
+	}
+	if item.Draft == nil || item.DraftEnabled == nil || !*item.DraftEnabled {
+		t.Fatalf("migrated draft metadata = %#v", item)
+	}
+	if item.Draft.Transport.CreatePath != "/vendor/%7Btenant%7D/tasks" || item.Draft.Transport.QueryPath != "/vendor/%7Btenant%7D/tasks/{task_id}" || item.Draft.Artifact.ContentPath != "/vendor/%7Btenant%7D/tasks/{task_id}/content" {
+		t.Fatalf("migrated draft paths = %#v, %#v", item.Draft.Transport, item.Draft.Artifact)
+	}
+	if len(item.Versions) != 2 || item.Versions[0].Revision != 1 || item.Versions[0].PublishedAt != publishedAt || item.Versions[0].Contract.Driver != protocol.VideoContractDriverKling || len(item.Versions[0].Contract.Rules[0].ForceValues) != 0 {
+		t.Fatalf("migrated versions = %#v", item.Versions)
+	}
+	for _, contract := range []protocol.VideoModelContract{item.Contract, *item.Draft, item.Versions[0].Contract, item.Versions[1].Contract} {
+		if _, err := protocol.NormalizeVideoModelContract(contract); err != nil {
+			t.Fatalf("migrated contract remains invalid: %v", err)
+		}
+	}
+	if active, exists := protocol.VideoContractForModel("legacy/current-video"); !exists || active.Name != item.Contract.Name {
+		t.Fatalf("migrated current contract was not activated: %#v, %v", active, exists)
+	}
+	if err := service.Initialize(); err != nil || backend.saveCalls != 1 {
+		t.Fatalf("second Initialize() error = %v, save calls = %d", err, backend.saveCalls)
+	}
+	if _, err := service.SaveDraft(item.ID, legacyCurrent(), true); err == nil {
+		t.Fatal("new v7 draft accepted legacy-invalid contract")
+	}
+	rolledBack, err := service.Rollback(item.ID, 1)
+	if err != nil || rolledBack == nil || rolledBack.Revision != 3 || rolledBack.Contract.Driver != protocol.VideoContractDriverKling {
+		t.Fatalf("Rollback() = %#v, error = %v", rolledBack, err)
+	}
+}
+
+func TestMigrateV6VideoContractPaths(t *testing.T) {
+	tests := []struct {
+		name           string
+		driver         string
+		createPath     string
+		queryPath      string
+		contentPath    string
+		wantCreatePath string
+		wantQueryPath  string
+		wantContent    string
+		wantUsable     bool
+	}{
+		{name: "built-in single override", driver: protocol.VideoContractDriverMiniMax, createPath: "/vendor/tasks", wantUsable: true},
+		{name: "custom missing query", driver: protocol.VideoContractDriverCustom, createPath: "/vendor/tasks", wantCreatePath: "/vendor/tasks", wantQueryPath: "/vendor/tasks/{task_id}", wantUsable: true},
+		{name: "custom missing create", driver: protocol.VideoContractDriverCustom, queryPath: "/vendor/tasks/{task_id}", wantCreatePath: "/vendor/tasks", wantQueryPath: "/vendor/tasks/{task_id}", wantUsable: true},
+		{name: "custom task create", driver: protocol.VideoContractDriverCustom, createPath: "/vendor/tasks/{task_id}", queryPath: "/vendor/tasks/{task_id}", wantCreatePath: "/vendor/tasks", wantQueryPath: "/vendor/tasks/{task_id}", wantUsable: true},
+		{name: "custom non-tail query", driver: protocol.VideoContractDriverCustom, queryPath: "/vendor/tasks/{task_id}/state", wantCreatePath: "/vendor/tasks/%7Btask_id%7D/state", wantQueryPath: "/vendor/tasks/{task_id}/state", wantUsable: false},
+		{name: "literal placeholders", driver: protocol.VideoContractDriverCustom, createPath: "/vendor/{tenant}/tasks", queryPath: "/vendor/{tenant}/tasks/{task_id}", contentPath: "/vendor/{tenant}/tasks/{task_id}/content", wantCreatePath: "/vendor/%7Btenant%7D/tasks", wantQueryPath: "/vendor/%7Btenant%7D/tasks/{task_id}", wantContent: "/vendor/%7Btenant%7D/tasks/{task_id}/content", wantUsable: true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			contract := testVideoContract(t, test.name, "legacy/"+strings.ReplaceAll(test.name, " ", "-"))
+			contract.Driver = test.driver
+			contract.Transport.CreatePath = test.createPath
+			contract.Transport.QueryPath = test.queryPath
+			if test.contentPath != "" {
+				contract.Artifact.ContentPath = test.contentPath
+			}
+			if usable := migrateV6VideoModelContract(&contract); usable != test.wantUsable {
+				t.Fatalf("usable = %v, want %v", usable, test.wantUsable)
+			}
+			wantContent := test.wantContent
+			if wantContent == "" {
+				wantContent = "/v1/videos/{task_id}/content"
+			}
+			if contract.Transport.CreatePath != test.wantCreatePath || contract.Transport.QueryPath != test.wantQueryPath || contract.Artifact.ContentPath != wantContent {
+				t.Fatalf("migrated paths = %#v, %#v", contract.Transport, contract.Artifact)
+			}
+			if _, err := protocol.NormalizeVideoModelContract(contract); err != nil {
+				t.Fatalf("migrated contract invalid: %v", err)
+			}
+		})
+	}
+}
+
+func TestMigrateV6VideoContractCapsMaterialMinimumOverflow(t *testing.T) {
+	contract := testVideoContract(t, "Legacy material overflow", "legacy/material-overflow")
+	materials := &contract.Generation.Modes[2].Materials
+	materials.Image = protocol.VideoModelMaterialRange{Min: 50, Max: 50}
+	materials.Video = protocol.VideoModelMaterialRange{Min: 20, Max: 20}
+	materials.Audio = protocol.VideoModelMaterialRange{Min: 20, Max: 20}
+	materials.Total.Max = 80
+	if !migrateV6VideoModelContract(&contract) {
+		t.Fatal("material migration unexpectedly marked contract unusable")
+	}
+	if materials.Total.Max != 80 || materials.Image.Min != 50 || materials.Video.Min != 20 || materials.Audio.Min != 10 {
+		t.Fatalf("migrated material minimums = %#v", materials)
+	}
+	if _, err := protocol.NormalizeVideoModelContract(contract); err != nil {
+		t.Fatalf("migrated material contract invalid: %v", err)
+	}
+}
+
 func TestVideoModelContractServiceMigratesDefaultMiniMaxH3RulesOnce(t *testing.T) {
 	databasePath := filepath.Join(t.TempDir(), "contracts.db")
 	backend, err := storage.NewDatabaseBackend("sqlite:///" + filepath.ToSlash(databasePath))

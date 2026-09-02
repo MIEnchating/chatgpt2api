@@ -352,6 +352,10 @@ func (s *ImageTaskService) ListTasksWithError(identity Identity, taskIDs []strin
 		}
 	}
 	s.mu.Lock()
+	if s.stopping || s.closed {
+		s.mu.Unlock()
+		return nil, ErrImageTaskServiceClosed
+	}
 	if err := s.ensureLoadedLocked(); err != nil {
 		s.mu.Unlock()
 		return nil, ImageTaskLoadError{Err: err}
@@ -395,6 +399,9 @@ func (s *ImageTaskService) CanAccessMediaResult(identity Identity, resultURL str
 	owner := ownerID(identity)
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.stopping || s.closed {
+		return false, ErrImageTaskServiceClosed
+	}
 	if err := s.ensureLoadedLocked(); err != nil {
 		return false, ImageTaskLoadError{Err: err}
 	}
@@ -431,6 +438,10 @@ func (s *ImageTaskService) CancelTask(identity Identity, clientTaskID string) (m
 	key := taskKey(ownerID(identity), taskID)
 	var cancel context.CancelFunc
 	s.mu.Lock()
+	if s.stopping || s.closed {
+		s.mu.Unlock()
+		return nil, ErrImageTaskServiceClosed
+	}
 	if err := s.ensureLoadedLocked(); err != nil {
 		s.mu.Unlock()
 		return nil, ImageTaskLoadError{Err: err}
@@ -499,6 +510,9 @@ func (s *ImageTaskService) DeleteTasks(identity Identity, taskIDs []string) (map
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.stopping || s.closed {
+		return nil, ErrImageTaskServiceClosed
+	}
 	if err := s.ensureLoadedLocked(); err != nil {
 		return nil, ImageTaskLoadError{Err: err}
 	}

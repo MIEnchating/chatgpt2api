@@ -17,10 +17,11 @@ import (
 const (
 	videoModelContractDocumentName  = "video_model_contracts.json"
 	videoModelContractSaveAttempts  = 3
-	videoModelContractStoreVersion  = 6
+	videoModelContractStoreVersion  = 7
 	oldestVideoModelContractVersion = 3
 	maxVideoModelContracts          = 100
 	maxVideoModelContractVersions   = 8
+	legacyKlingVideoContractDriver  = "kling-videos"
 )
 
 type VideoModelContractVersion struct {
@@ -485,19 +486,11 @@ func (s *VideoModelContractService) loadLocked() ([]ManagedVideoModelContract, e
 	}
 	migrated := header.Version < videoModelContractStoreVersion
 	for index := range document.Items {
-		if header.Version < videoModelContractStoreVersion && document.Items[index].Contract.Artifact.Mode == "" {
-			migrateLegacyVideoArtifact(&document.Items[index].Contract)
-			migrated = true
+		if header.Version < 6 {
+			migratePreV6ManagedVideoModelContract(&document.Items[index])
 		}
-		if strings.EqualFold(strings.TrimSpace(document.Items[index].Contract.Driver), "newapi-video") {
-			document.Items[index].Contract.Driver = protocol.VideoContractDriverOpenAI
-			migrated = true
-		} else if strings.EqualFold(strings.TrimSpace(document.Items[index].Contract.Driver), protocol.VideoContractDriverLegacyKling) {
-			document.Items[index].Contract.Driver = protocol.VideoContractDriverKling
-			migrated = true
-		}
-		if header.Version < videoModelContractStoreVersion && migrateDefaultMiniMaxH3Rules(&document.Items[index]) {
-			migrated = true
+		if header.Version < 7 {
+			migrateV6ManagedVideoModelContract(&document.Items[index])
 		}
 	}
 	items, err := normalizeManagedVideoModelContracts(document.Items)
@@ -512,11 +505,202 @@ func (s *VideoModelContractService) loadLocked() ([]ManagedVideoModelContract, e
 	return items, nil
 }
 
+func migratePreV6ManagedVideoModelContract(item *ManagedVideoModelContract) {
+	if item == nil {
+		return
+	}
+	if item.Contract.Artifact.Mode == "" {
+		migrateLegacyVideoArtifact(&item.Contract)
+	}
+	if migrateDefaultMiniMaxH3Rules(&item.Contract) {
+		item.UpdatedAt = util.NowISO()
+	}
+	if item.Draft != nil {
+		if item.Draft.Artifact.Mode == "" {
+			migrateLegacyVideoArtifact(item.Draft)
+		}
+		migrateDefaultMiniMaxH3Rules(item.Draft)
+	}
+	for index := range item.Versions {
+		contract := &item.Versions[index].Contract
+		if contract.Artifact.Mode == "" {
+			migrateLegacyVideoArtifact(contract)
+		}
+		migrateDefaultMiniMaxH3Rules(contract)
+	}
+}
+
+func migrateV6ManagedVideoModelContract(item *ManagedVideoModelContract) {
+	if item == nil {
+		return
+	}
+	if !migrateV6VideoModelContract(&item.Contract) {
+		item.Enabled = false
+	}
+	if item.Draft != nil && !migrateV6VideoModelContract(item.Draft) {
+		disabled := false
+		item.DraftEnabled = &disabled
+	}
+	for index := range item.Versions {
+		migrateV6VideoModelContract(&item.Versions[index].Contract)
+	}
+}
+
+func migrateV6VideoModelContract(contract *protocol.VideoModelContract) bool {
+	if contract == nil {
+		return true
+	}
+	switch {
+	case strings.EqualFold(strings.TrimSpace(contract.Driver), "newapi-video"):
+		contract.Driver = protocol.VideoContractDriverOpenAI
+	case strings.EqualFold(strings.TrimSpace(contract.Driver), legacyKlingVideoContractDriver):
+		contract.Driver = protocol.VideoContractDriverKling
+	}
+
+	usable := migrateV6VideoContractPaths(contract)
+	migrateV6VideoContractModeSelectors(contract)
+	for index := range contract.Generation.Modes {
+		materials := &contract.Generation.Modes[index].Materials
+		minimum := materials.FirstFrame.Min + materials.LastFrame.Min + materials.Image.Min + materials.Video.Min + materials.Audio.Min
+		if materials.Total.Max >= minimum {
+			continue
+		}
+		materials.Total.Max = min(minimum, 80)
+		if minimum > materials.Total.Max {
+			reduceV6VideoMaterialMinimums(materials, minimum-materials.Total.Max)
+		}
+	}
+	for ruleIndex := range contract.Rules {
+		rule := &contract.Rules[ruleIndex]
+		for field, limit := range rule.Limits {
+			if limit == 0 && containsFoldTrimmed(rule.Require, field) {
+				delete(rule.Limits, field)
+			}
+		}
+		for field, value := range rule.ForceValues {
+			if _, ok := protocol.ParseVideoContractForcedValue(strings.ToLower(strings.TrimSpace(field)), value); !ok {
+				delete(rule.ForceValues, field)
+			}
+		}
+	}
+	return usable
+}
+
+func migrateV6VideoContractPaths(contract *protocol.VideoModelContract) bool {
+	createPath := escapeV6VideoPathPlaceholders(contract.Transport.CreatePath, true)
+	queryPath := escapeV6VideoPathPlaceholders(contract.Transport.QueryPath, true)
+	contract.Artifact.ContentPath = escapeV6VideoPathPlaceholders(contract.Artifact.ContentPath, true)
+
+	if contract.Driver != protocol.VideoContractDriverCustom {
+		if (createPath == "") != (queryPath == "") || strings.Contains(createPath, "{task_id}") {
+			createPath = ""
+			queryPath = ""
+		}
+		contract.Transport.CreatePath = createPath
+		contract.Transport.QueryPath = queryPath
+		return true
+	}
+
+	if queryPath == "" && createPath != "" {
+		if strings.Contains(createPath, "{task_id}") {
+			queryPath = createPath
+		} else {
+			queryPath = strings.TrimRight(createPath, "/") + "/{task_id}"
+		}
+	}
+	if createPath == "" || strings.Contains(createPath, "{task_id}") {
+		if derived, ok := v6VideoCreatePathFromQuery(queryPath); ok {
+			createPath = derived
+		} else if createPath != "" {
+			createPath = escapeV6VideoPathPlaceholders(createPath, false)
+		} else if queryPath != "" {
+			// The old contract could not submit without a create path. Keep the
+			// declared query endpoint as a literal, disabled compatibility value.
+			createPath = escapeV6VideoPathPlaceholders(queryPath, false)
+			contract.Transport.CreatePath = createPath
+			contract.Transport.QueryPath = queryPath
+			return false
+		}
+	}
+	contract.Transport.CreatePath = createPath
+	contract.Transport.QueryPath = queryPath
+	return createPath != "" && queryPath != ""
+}
+
+func escapeV6VideoPathPlaceholders(value string, preserveTaskID bool) string {
+	value = strings.TrimSpace(value)
+	const taskMarker = "\x00video-task-id\x00"
+	if preserveTaskID {
+		value = strings.Replace(value, "{task_id}", taskMarker, 1)
+	}
+	value = strings.ReplaceAll(value, "{", "%7B")
+	value = strings.ReplaceAll(value, "}", "%7D")
+	return strings.Replace(value, taskMarker, "{task_id}", 1)
+}
+
+func v6VideoCreatePathFromQuery(queryPath string) (string, bool) {
+	queryPath = strings.TrimSuffix(strings.TrimSpace(queryPath), "/")
+	if !strings.HasSuffix(queryPath, "/{task_id}") {
+		return "", false
+	}
+	createPath := strings.TrimSuffix(queryPath, "/{task_id}")
+	if createPath == "" {
+		createPath = "/"
+	}
+	return createPath, true
+}
+
+func migrateV6VideoContractModeSelectors(contract *protocol.VideoModelContract) {
+	owners := make(map[string]int, len(contract.Generation.Modes)*2)
+	for index, mode := range contract.Generation.Modes {
+		owners[strings.ToLower(strings.TrimSpace(mode.ID))] = index
+	}
+	for index := range contract.Generation.Modes {
+		mode := &contract.Generation.Modes[index]
+		requestValue := strings.ToLower(strings.TrimSpace(mode.RequestValue))
+		if requestValue == "" || strings.EqualFold(requestValue, mode.ID) {
+			continue
+		}
+		if owner, exists := owners[requestValue]; exists && owner != index {
+			mode.RequestValue = mode.ID
+			continue
+		}
+		owners[requestValue] = index
+	}
+}
+
+func reduceV6VideoMaterialMinimums(materials *protocol.VideoModelModeMaterials, excess int) {
+	minimums := []*int{
+		&materials.Audio.Min,
+		&materials.Video.Min,
+		&materials.Image.Min,
+		&materials.LastFrame.Min,
+		&materials.FirstFrame.Min,
+	}
+	for _, minimum := range minimums {
+		removed := min(*minimum, excess)
+		*minimum -= removed
+		excess -= removed
+		if excess == 0 {
+			return
+		}
+	}
+}
+
+func containsFoldTrimmed(values []string, candidate string) bool {
+	for _, value := range values {
+		if strings.EqualFold(strings.TrimSpace(value), strings.TrimSpace(candidate)) {
+			return true
+		}
+	}
+	return false
+}
+
 func migrateLegacyVideoArtifact(contract *protocol.VideoModelContract) {
 	if contract == nil {
 		return
 	}
-	if strings.EqualFold(strings.TrimSpace(contract.Driver), protocol.VideoContractDriverKling) || strings.EqualFold(strings.TrimSpace(contract.Driver), protocol.VideoContractDriverLegacyKling) {
+	if strings.EqualFold(strings.TrimSpace(contract.Driver), protocol.VideoContractDriverKling) || strings.EqualFold(strings.TrimSpace(contract.Driver), legacyKlingVideoContractDriver) {
 		contract.Artifact = protocol.VideoModelContractArtifact{Mode: "response_url", Auth: "none"}
 		return
 	}
@@ -525,7 +709,10 @@ func migrateLegacyVideoArtifact(contract *protocol.VideoModelContract) {
 	}
 }
 
-func migrateDefaultMiniMaxH3Rules(item *ManagedVideoModelContract) bool {
+func migrateDefaultMiniMaxH3Rules(contract *protocol.VideoModelContract) bool {
+	if contract == nil {
+		return false
+	}
 	var currentDefault protocol.VideoModelContract
 	for _, contract := range protocol.DefaultVideoContracts() {
 		if contract.Name == "MiniMax H3 v1.8" {
@@ -533,7 +720,7 @@ func migrateDefaultMiniMaxH3Rules(item *ManagedVideoModelContract) bool {
 			break
 		}
 	}
-	if currentDefault.Name == "" || !isMiniMaxH3Contract(item.Contract) {
+	if currentDefault.Name == "" || !isMiniMaxH3Contract(*contract) {
 		return false
 	}
 	legacyRules := []protocol.VideoModelContractRule{{
@@ -541,11 +728,10 @@ func migrateDefaultMiniMaxH3Rules(item *ManagedVideoModelContract) bool {
 		Require: []string{"first_frame"},
 		Message: "添加尾帧前必须先添加首帧",
 	}}
-	if len(item.Contract.Rules) > 0 && !reflect.DeepEqual(item.Contract.Rules, legacyRules) {
+	if len(contract.Rules) > 0 && !reflect.DeepEqual(contract.Rules, legacyRules) {
 		return false
 	}
-	item.Contract.Rules = currentDefault.Rules
-	item.UpdatedAt = util.NowISO()
+	contract.Rules = currentDefault.Rules
 	return true
 }
 

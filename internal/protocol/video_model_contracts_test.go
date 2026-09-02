@@ -222,10 +222,12 @@ func TestSupportedVideoContractDrivers(t *testing.T) {
 			t.Fatalf("supported driver %q rejected: %v", driver, err)
 		}
 	}
-	contract := base
-	contract.Driver = "newapi-video"
-	if _, err := NormalizeVideoModelContract(contract); err == nil {
-		t.Fatal("legacy gateway name was accepted as a protocol driver")
+	for _, driver := range []string{"newapi-video", "kling-videos"} {
+		contract := base
+		contract.Driver = driver
+		if _, err := NormalizeVideoModelContract(contract); err == nil {
+			t.Fatalf("legacy gateway name %q was accepted as a protocol driver", driver)
+		}
 	}
 }
 
@@ -250,6 +252,29 @@ func TestVideoContractValidatesPortableTransportAndArtifactSettings(t *testing.T
 		t.Fatal("query path without task placeholder was accepted")
 	}
 	contract.Transport.QueryPath = "/vendor/tasks/{task_id}"
+	contract.Transport.CreatePath = ""
+	if _, err := NormalizeVideoModelContract(contract); err == nil {
+		t.Fatal("query path without a create path was accepted")
+	}
+	contract.Transport.CreatePath = "/vendor/tasks/{task_id}"
+	if _, err := NormalizeVideoModelContract(contract); err == nil {
+		t.Fatal("create path with a task placeholder was accepted")
+	}
+	contract.Transport.CreatePath = "/vendor/{project}/tasks"
+	if _, err := NormalizeVideoModelContract(contract); err == nil {
+		t.Fatal("create path with an unsupported placeholder was accepted")
+	}
+	contract.Transport.CreatePath = "/vendor/tasks"
+	contract.Transport.QueryPath = "/vendor/{project}/tasks/{task_id}"
+	if _, err := NormalizeVideoModelContract(contract); err == nil {
+		t.Fatal("query path with an unsupported placeholder was accepted")
+	}
+	contract.Transport.QueryPath = "/vendor/tasks/{task_id}"
+	contract.Artifact.ContentPath = "/vendor/{project}/tasks/{task_id}/content"
+	if _, err := NormalizeVideoModelContract(contract); err == nil {
+		t.Fatal("content path with an unsupported placeholder was accepted")
+	}
+	contract.Artifact.ContentPath = "/vendor/tasks/{task_id}/content"
 	contract.Artifact.Auth = "none"
 	if _, err := NormalizeVideoModelContract(contract); err == nil {
 		t.Fatal("task content without relay auth was accepted")
@@ -357,20 +382,16 @@ func TestVideoContractGenerationModesAndRules(t *testing.T) {
 	}
 }
 
-func TestVideoContractAppliesLegacyForcedBooleanTokensAndSkipsInvalidValues(t *testing.T) {
+func TestVideoContractAppliesForcedBooleanTokens(t *testing.T) {
 	tests := []struct {
 		field    string
 		value    string
 		expected any
-		applied  bool
 	}{
-		{field: "generate_audio", value: "1", expected: true, applied: true},
-		{field: "generate_audio", value: "t", expected: true, applied: true},
-		{field: "watermark", value: "0", expected: false, applied: true},
-		{field: "watermark", value: "f", expected: false, applied: true},
-		{field: "duration", value: "eight", applied: false},
-		{field: "duration", value: "9007199254740993", applied: false},
-		{field: "generate_audio", value: "yes", applied: false},
+		{field: "generate_audio", value: "1", expected: true},
+		{field: "generate_audio", value: "t", expected: true},
+		{field: "watermark", value: "0", expected: false},
+		{field: "watermark", value: "f", expected: false},
 	}
 	for _, test := range tests {
 		t.Run(test.field+"_"+test.value, func(t *testing.T) {
@@ -387,14 +408,31 @@ func TestVideoContractAppliesLegacyForcedBooleanTokensAndSkipsInvalidValues(t *t
 			values := map[string]any{"duration": 4}
 			ApplyVideoContractForcedValues(normalized, values)
 			got, exists := values[test.field]
-			if test.applied && (!exists || got != test.expected) {
+			if !exists || got != test.expected {
 				t.Fatalf("force_values[%q]=%q applied as %#v, want %#v", test.field, test.value, got, test.expected)
 			}
-			if !test.applied && test.field != "duration" && exists {
-				t.Fatalf("invalid force_values[%q]=%q was applied as %#v", test.field, test.value, got)
-			}
-			if !test.applied && test.field == "duration" && got != 4 {
-				t.Fatalf("invalid duration force value changed duration to %#v", got)
+		})
+	}
+}
+
+func TestVideoContractRejectsInvalidForcedValues(t *testing.T) {
+	for _, test := range []struct {
+		field string
+		value string
+	}{
+		{field: "duration", value: "eight"},
+		{field: "duration", value: "9007199254740993"},
+		{field: "generate_audio", value: "yes"},
+	} {
+		t.Run(test.field+"_"+test.value, func(t *testing.T) {
+			contract := DefaultVideoContracts()[0]
+			contract.Rules = []VideoModelContractRule{{
+				When:        VideoModelContractRuleCondition{Field: "duration", Operator: "present"},
+				ForceValues: map[string]string{test.field: test.value},
+				Message:     "forced value",
+			}}
+			if _, err := NormalizeVideoModelContract(contract); err == nil {
+				t.Fatalf("invalid force_values[%q]=%q was accepted", test.field, test.value)
 			}
 		})
 	}
@@ -518,6 +556,16 @@ func TestVideoContractRuleNormalizationAndConflicts(t *testing.T) {
 		t.Fatal("required and forbidden field overlap was accepted")
 	}
 	contract = DefaultVideoContracts()[0]
+	contract.Rules = []VideoModelContractRule{{
+		When:    VideoModelContractRuleCondition{Field: "generate_audio", Operator: "present"},
+		Require: []string{"reference_image"},
+		Limits:  map[string]int{"reference_image": 0},
+		Message: "invalid",
+	}}
+	if _, err := NormalizeVideoModelContract(contract); err == nil {
+		t.Fatal("required field with a zero limit was accepted")
+	}
+	contract = DefaultVideoContracts()[0]
 	contract.Generation.Selection = "explicit"
 	if _, err := NormalizeVideoModelContract(contract); err == nil {
 		t.Fatal("unsupported explicit mode selection was accepted")
@@ -538,6 +586,21 @@ func TestVideoContractRuleNormalizationAndConflicts(t *testing.T) {
 	contract.Generation.Modes[2].Materials.Total.Max = 2
 	if _, err := NormalizeVideoModelContract(contract); err == nil {
 		t.Fatal("total limit below a material category limit was accepted")
+	}
+	contract = DefaultVideoContracts()[0]
+	contract.Generation.Modes[2].Materials.Image.Min = 2
+	contract.Generation.Modes[2].Materials.Image.Max = 2
+	contract.Generation.Modes[2].Materials.Video.Min = 2
+	contract.Generation.Modes[2].Materials.Video.Max = 2
+	contract.Generation.Modes[2].Materials.Audio.Max = 0
+	contract.Generation.Modes[2].Materials.Total.Max = 3
+	if _, err := NormalizeVideoModelContract(contract); err == nil {
+		t.Fatal("total limit below the sum of material minimums was accepted")
+	}
+	contract = DefaultVideoContracts()[0]
+	contract.Generation.Modes[2].RequestValue = contract.Generation.Modes[1].ID
+	if _, err := NormalizeVideoModelContract(contract); err == nil {
+		t.Fatal("ambiguous generation mode selector was accepted")
 	}
 }
 

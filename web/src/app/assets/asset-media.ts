@@ -1,42 +1,9 @@
 import { fetchAuthenticatedImageBlob, shouldUseAuthenticatedImageFallback } from "@/lib/authenticated-image";
-import type { MyAsset, MyAssetKind } from "@/lib/my-assets";
+import type { MyAsset } from "@/lib/my-assets";
 import { resolveMediaURL } from "@/services/file-storage";
 import { resolveImageURL } from "@/services/image-storage";
 
 export type AssetMediaMetadata = Pick<MyAsset, "bytes" | "mimeType" | "width" | "height" | "durationMs">;
-
-export async function inspectAssetFile(file: File, kind: Exclude<MyAssetKind, "text">): Promise<AssetMediaMetadata> {
-  const base = { bytes: file.size, mimeType: file.type || fallbackMimeType(kind) };
-  if (kind === "image") {
-    try {
-      const bitmap = await createImageBitmap(file);
-      const result = { ...base, width: bitmap.width, height: bitmap.height };
-      bitmap.close();
-      return result;
-    } catch {
-      return base;
-    }
-  }
-
-  const objectURL = URL.createObjectURL(file);
-  try {
-    const media = document.createElement(kind === "video" ? "video" : "audio");
-    media.preload = "metadata";
-    media.src = objectURL;
-    await waitForMetadata(media);
-    return {
-      ...base,
-      ...(kind === "video" && media instanceof HTMLVideoElement && media.videoWidth > 0
-        ? { width: media.videoWidth, height: media.videoHeight }
-        : {}),
-      ...(Number.isFinite(media.duration) && media.duration > 0 ? { durationMs: Math.round(media.duration * 1000) } : {}),
-    };
-  } catch {
-    return base;
-  } finally {
-    URL.revokeObjectURL(objectURL);
-  }
-}
 
 function formatAssetBytes(value?: number) {
   if (!value || value < 1) return "";
@@ -97,18 +64,6 @@ function triggerAssetDownload(href: string, fileName: string) {
   document.body.appendChild(link);
   link.click();
   link.remove();
-}
-
-function waitForMetadata(media: HTMLMediaElement) {
-  return new Promise<void>((resolve, reject) => {
-    const timer = window.setTimeout(() => reject(new Error("metadata timeout")), 8000);
-    media.onloadedmetadata = () => { window.clearTimeout(timer); resolve(); };
-    media.onerror = () => { window.clearTimeout(timer); reject(new Error("metadata unavailable")); };
-  });
-}
-
-function fallbackMimeType(kind: Exclude<MyAssetKind, "text">) {
-  return kind === "image" ? "image/*" : kind === "video" ? "video/mp4" : "audio/mpeg";
 }
 
 function safeFileName(value: string) {

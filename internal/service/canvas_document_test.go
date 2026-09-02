@@ -288,6 +288,99 @@ func TestCanvasDocumentServiceSavesAndIsolatesOwners(t *testing.T) {
 	}
 }
 
+func TestCanvasDocumentServiceNormalizesWithoutMutatingInput(t *testing.T) {
+	service := NewCanvasDocumentService(newTestStorageBackend(t))
+	workspace, err := service.Workspace("owner")
+	if err != nil {
+		t.Fatalf("Workspace() error = %v", err)
+	}
+	input := workspace.Document
+	input.Nodes = []CanvasNode{
+		{
+			ID: " root ", Type: " IMAGE ", Width: 512, Height: 512, ScaleX: 1, ScaleY: 1,
+			URL: " /images/root.png ", StorageKey: " server:root ",
+			GenerationReferenceURLs:        []string{" /images/reference.png "},
+			GenerationVideoReferenceURLs:   []string{" /videos/reference.mp4 "},
+			GenerationVideoReferenceImages: []string{" /images/video-reference.png "},
+			GenerationVideoReferenceAudio:  []string{" /audio/reference.mp3 "},
+			BatchChildIDs:                  []string{" child "},
+			BatchPrimaryID:                 " child ",
+			CameraControl:                  &CanvasCameraControl{Camera: " dolly ", Lens: " wide "},
+		},
+		{ID: " child ", Type: " text ", Width: 320, Height: 180, ScaleX: 1, ScaleY: 1, BatchRootID: " root "},
+	}
+	input.Connections = []CanvasConnection{{ID: " connection ", FromNodeID: " root ", ToNodeID: " child "}}
+	input.AgentMessages = []CanvasAgentMessage{{ID: " message ", Role: " USER ", Content: " hello ", CreatedAt: " now "}}
+	before, err := json.Marshal(input)
+	if err != nil {
+		t.Fatalf("json.Marshal(input) error = %v", err)
+	}
+
+	stored, err := service.SaveAtRevision("owner", input)
+	if err != nil {
+		t.Fatalf("SaveAtRevision() error = %v", err)
+	}
+	after, err := json.Marshal(input)
+	if err != nil {
+		t.Fatalf("json.Marshal(input after save) error = %v", err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("SaveAtRevision() mutated input\nbefore: %s\nafter:  %s", before, after)
+	}
+	root := stored.Nodes[0]
+	if root.StorageKey != "server:root" || root.GenerationReferenceURLs[0] != "/images/reference.png" || root.GenerationVideoReferenceURLs[0] != "/videos/reference.mp4" || root.GenerationVideoReferenceImages[0] != "/images/video-reference.png" || root.GenerationVideoReferenceAudio[0] != "/audio/reference.mp3" || root.BatchChildIDs[0] != "child" || root.CameraControl.Camera != "dolly" || root.CameraControl.Lens != "wide" {
+		t.Fatalf("stored root node was not normalized: %#v", root)
+	}
+	if stored.Connections[0].ID != "connection" || stored.AgentMessages[0].Role != "user" || stored.AgentMessages[0].Content != "hello" {
+		t.Fatalf("stored document was not normalized: %#v", stored)
+	}
+}
+
+func TestCanvasDocumentServiceRejectedImportDoesNotMutateInput(t *testing.T) {
+	service := NewCanvasDocumentService(newTestStorageBackend(t))
+	input := CanvasDocument{
+		Nodes: []CanvasNode{
+			{
+				ID: " first ", Type: " image ", Width: 512, Height: 512, ScaleX: 1, ScaleY: 1,
+				GenerationReferenceURLs: []string{" /images/reference.png "},
+				CameraControl:           &CanvasCameraControl{Camera: " dolly ", Lens: " wide "},
+			},
+			{ID: " second ", Type: " text ", Width: 320, Height: 180, ScaleX: 1, ScaleY: 1},
+		},
+		Connections: []CanvasConnection{
+			{ID: " valid ", FromNodeID: " first ", ToNodeID: " second "},
+			{ID: " invalid ", FromNodeID: " missing ", ToNodeID: " second "},
+		},
+		AgentMessages: []CanvasAgentMessage{{ID: " message ", Role: " USER ", Content: " hello ", CreatedAt: " now "}},
+	}
+	before, err := json.Marshal(input)
+	if err != nil {
+		t.Fatalf("json.Marshal(input) error = %v", err)
+	}
+
+	_, err = service.Import("owner", input)
+	if !errors.Is(err, ErrInvalidCanvasDocument) {
+		t.Fatalf("Import() error = %v, want ErrInvalidCanvasDocument", err)
+	}
+	after, err := json.Marshal(input)
+	if err != nil {
+		t.Fatalf("json.Marshal(input after import) error = %v", err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("Import() mutated rejected input\nbefore: %s\nafter:  %s", before, after)
+	}
+}
+
+func TestCanvasDocumentServiceRejectsNegativeNodeBytes(t *testing.T) {
+	service := NewCanvasDocumentService(newTestStorageBackend(t))
+	_, err := service.Import("owner", CanvasDocument{Nodes: []CanvasNode{{
+		ID: "image", Type: "image", Width: 512, Height: 512, ScaleX: 1, ScaleY: 1, Bytes: -1,
+	}}})
+	if !errors.Is(err, ErrInvalidCanvasDocument) {
+		t.Fatalf("Import() error = %v, want ErrInvalidCanvasDocument", err)
+	}
+}
+
 func TestCanvasDocumentServiceFindsStorageObjectReferences(t *testing.T) {
 	canvas := NewCanvasDocumentService(newTestStorageBackend(t))
 	_, err := saveCanvas(canvas, "owner-a", CanvasDocument{

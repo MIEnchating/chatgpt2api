@@ -2310,9 +2310,8 @@ func TestImageTaskServiceCloseCancelsAndWaitsForActiveTask(t *testing.T) {
 		t.Fatalf("Close() error = %v", closeErr)
 	}
 
-	items := svc.ListTasks(identity, []string{"task-close"})["items"].([]map[string]any)
-	if len(items) != 1 || items[0]["status"] != TaskStatusCancelled {
-		t.Fatalf("closed task = %#v, want cancelled", items)
+	if _, err := svc.ListTasksWithError(identity, []string{"task-close"}); !errors.Is(err, ErrImageTaskServiceClosed) {
+		t.Fatalf("ListTasksWithError() after Close() error = %v, want closed service", err)
 	}
 	waitForPersistedImageTaskStatus(t, documentStore, "task-close", TaskStatusCancelled)
 	if _, err := svc.SubmitGeneration(context.Background(), identity, "task-after-close", "draw", "gpt-image-2", "1024x1024", "high", "https://base.test", 1); err == nil || !strings.Contains(err.Error(), "service is closed") {
@@ -2328,6 +2327,43 @@ func TestImageTaskServiceCloseCancelsAndWaitsForActiveTask(t *testing.T) {
 	case <-secondClose:
 	case <-time.After(time.Second):
 		t.Fatal("second Close() call blocked")
+	}
+}
+
+func TestImageTaskServiceRejectsStorageOperationsAfterClose(t *testing.T) {
+	svc := newTestImageTaskService(t, nil, nil, nil, func() int { return 30 })
+	identity := Identity{ID: "closed-owner", Name: "Alice", Role: AuthRoleUser}
+	if err := svc.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+
+	tests := []struct {
+		name string
+		call func() error
+	}{
+		{name: "list", call: func() error {
+			_, err := svc.ListTasksWithError(identity, nil)
+			return err
+		}},
+		{name: "media access", call: func() error {
+			_, err := svc.CanAccessMediaResult(identity, "https://example.test/result.png")
+			return err
+		}},
+		{name: "cancel", call: func() error {
+			_, err := svc.CancelTask(identity, "task")
+			return err
+		}},
+		{name: "delete", call: func() error {
+			_, err := svc.DeleteTasks(identity, []string{"task"})
+			return err
+		}},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if err := test.call(); !errors.Is(err, ErrImageTaskServiceClosed) {
+				t.Fatalf("operation error = %v, want ErrImageTaskServiceClosed", err)
+			}
+		})
 	}
 }
 

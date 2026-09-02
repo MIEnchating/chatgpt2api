@@ -2139,20 +2139,37 @@ func TestNormalizeKIEImagePayloadSkipsBlankReferenceAliases(t *testing.T) {
 }
 
 func TestNormalizeKIEImagePayloadLeavesUnsupportedSlashModelUntouched(t *testing.T) {
-	payload := map[string]any{
-		"model":            "custom/image-v1",
-		"size":             "1024x1024",
-		"resolution":       "2k",
-		"image_resolution": "4k",
-		"n":                2,
-		"num_images":       3,
+	for _, model := range []string{
+		"custom/image-v1",
+		"custom/seedream-v5",
+		"custom/nano-banana-2",
+		"custom/imagen4",
+		"google/custom-image",
+		"gpt-image/custom",
+	} {
+		t.Run(model, func(t *testing.T) {
+			payload := map[string]any{
+				"model":            model,
+				"size":             "1024x1024",
+				"resolution":       "2k",
+				"image_resolution": "4k",
+				"n":                2,
+				"num_images":       3,
+			}
+			want := util.CopyMap(payload)
+			if isKnownKIEImageModel(model) {
+				t.Fatal("unsupported slash-qualified model was classified as KIE")
+			}
+			if normalizeKIEImagePayload(payload) {
+				t.Fatal("unsupported slash-qualified model was treated as KIE")
+			}
+			if !reflect.DeepEqual(payload, want) {
+				t.Fatalf("unsupported model payload = %#v, want %#v", payload, want)
+			}
+		})
 	}
-	want := util.CopyMap(payload)
-	if normalizeKIEImagePayload(payload) {
-		t.Fatal("unsupported slash-qualified model was treated as KIE")
-	}
-	if !reflect.DeepEqual(payload, want) {
-		t.Fatalf("unsupported model payload = %#v, want %#v", payload, want)
+	if !isKnownKIEImageModel("grok-imagine-image-2-0/text-to-image") {
+		t.Fatal("supported Grok KIE model was not classified as KIE")
 	}
 }
 

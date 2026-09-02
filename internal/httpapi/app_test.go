@@ -99,6 +99,33 @@ func TestWriteCreationTaskStorageErrorReportsStatePersistenceOutage(t *testing.T
 	}
 }
 
+func TestWriteCreationTaskErrorsReportClosedServiceAsUnavailable(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+
+	for _, test := range []struct {
+		name  string
+		write func(http.ResponseWriter)
+	}{
+		{name: "submit", write: func(w http.ResponseWriter) {
+			app.writeCreationTaskSubmitError(w, service.ErrImageTaskServiceClosed)
+		}},
+		{name: "storage", write: func(w http.ResponseWriter) {
+			if !app.writeCreationTaskStorageError(w, service.ErrImageTaskServiceClosed) {
+				t.Fatal("writeCreationTaskStorageError() did not handle closed service")
+			}
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			test.write(response)
+			if response.Code != http.StatusServiceUnavailable || !strings.Contains(response.Body.String(), "创建任务服务暂时不可用") {
+				t.Fatalf("status = %d body = %s, want service unavailable", response.Code, response.Body.String())
+			}
+		})
+	}
+}
+
 func TestWriteCreationTaskSubmitErrorPreservesProtocolStatus(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()
@@ -706,6 +733,36 @@ func TestCreationTaskRejectsMalformedJSONBeforeRelayLookup(t *testing.T) {
 	)
 }
 
+func TestCreationTaskReturnsServiceUnavailableWhenRelayTokenDatabaseFails(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+
+	dbURL := newHTTPTestNewAPIDatabase(t)
+	insertHTTPTestNewAPIUser(t, dbURL, 1, "alice", "alice@example.test")
+	insertHTTPTestNewAPIToken(t, dbURL, 1, 1, "default", "default-relay", -1, 0, true)
+	reader, err := service.NewNewAPITokenReader(service.NewAPITokenReaderConfig{DatabaseURL: dbURL})
+	if err != nil {
+		t.Fatalf("NewNewAPITokenReader() error = %v", err)
+	}
+	if err := reader.Close(); err != nil {
+		t.Fatalf("Close() token reader error = %v", err)
+	}
+	app.swapRelayTokenReader(reader)
+
+	_, token := createPasswordUserSession(t, app, "alice", "Password123", "Alice")
+	req := httptest.NewRequest(http.MethodPost, "/api/creation-tasks/image-generations", strings.NewReader(`{"client_task_id":"token-db-failure","prompt":"draw"}`))
+	setRequestAuthCookie(req, token)
+	res := httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+
+	if res.Code != http.StatusServiceUnavailable || !strings.Contains(res.Body.String(), "令牌数据库暂时不可用") {
+		t.Fatalf("status = %d body = %s, want sanitized service unavailable error", res.Code, res.Body.String())
+	}
+	if strings.Contains(strings.ToLower(res.Body.String()), "sql") {
+		t.Fatalf("response leaked storage error details: %s", res.Body.String())
+	}
+}
+
 func assertCreationTaskError(t *testing.T, body, failureContext, wantError string) {
 	t.Helper()
 	app := newTestApp(t)
@@ -866,8 +923,8 @@ func TestProfileUpstreamModelsDefaultTokenSelection(t *testing.T) {
 			name:            "token query failure",
 			insertToken:     true,
 			closeReader:     true,
-			wantStatus:      http.StatusBadRequest,
-			wantBodyMessage: "数据库连接",
+			wantStatus:      http.StatusServiceUnavailable,
+			wantBodyMessage: "令牌数据库暂时不可用",
 		},
 		{
 			name:           "selected token",
@@ -3996,6 +4053,11 @@ func TestAPIAuditLogCapturesRequestMetadata(t *testing.T) {
 func TestCreationTaskSubmitLogsRequestAndPollingAvoidsGenericAuditNoise(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()
+	reader, err := service.NewNewAPITokenReader(service.NewAPITokenReaderConfig{})
+	if err != nil {
+		t.Fatalf("NewNewAPITokenReader() error = %v", err)
+	}
+	app.swapRelayTokenReader(reader)
 
 	_, rawKey, err := createTestUserSession(app, "frontend", service.AuthOwner{})
 	if err != nil {

@@ -11,7 +11,7 @@ type TimeoutHandle = ReturnType<typeof globalThis.setTimeout>;
 
 export type AudioReferenceInspectionEnvironment = {
   createAudioElement: () => AudioMetadataElement;
-  createObjectURL: (file: File) => string;
+  createObjectURL: (file: Blob) => string;
   revokeObjectURL: (url: string) => void;
   scheduleTimeout: (callback: () => void, delayMs: number) => TimeoutHandle;
   clearScheduledTimeout: (handle: TimeoutHandle) => void;
@@ -26,7 +26,7 @@ const browserAudioReferenceInspectionEnvironment: AudioReferenceInspectionEnviro
 };
 
 export function inspectAudioReferenceFile(
-  file: File,
+  file: Blob,
   environment: AudioReferenceInspectionEnvironment = browserAudioReferenceInspectionEnvironment,
 ) {
   return new Promise<AudioReferenceFileMetadata>((resolve, reject) => {

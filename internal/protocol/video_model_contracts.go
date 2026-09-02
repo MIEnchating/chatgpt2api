@@ -215,9 +215,6 @@ func NormalizeVideoModelContract(contract VideoModelContract) (VideoModelContrac
 	progressFieldsMissing := contract.Polling.ProgressFields == nil
 	contract.Name = strings.TrimSpace(contract.Name)
 	contract.Driver = strings.ToLower(strings.TrimSpace(contract.Driver))
-	if contract.Driver == VideoContractDriverLegacyKling {
-		contract.Driver = VideoContractDriverKling
-	}
 	contract.Transport.LocalMaterial = strings.ToLower(strings.TrimSpace(contract.Transport.LocalMaterial))
 	contract.Transport.MultipartFileField = strings.TrimSpace(contract.Transport.MultipartFileField)
 	contract.Transport.CreatePath = normalizeVideoContractEndpointPath(contract.Transport.CreatePath)
@@ -400,6 +397,7 @@ func validateVideoContractGeneration(generation VideoModelContractGeneration) er
 	}
 	ids := make(map[string]struct{}, len(generation.Modes))
 	kinds := make(map[string]struct{}, len(generation.Modes))
+	selectors := make(map[string]string, len(generation.Modes)*2)
 	defaultKind := ""
 	for _, mode := range generation.Modes {
 		if !videoContractValuePattern.MatchString(mode.ID) {
@@ -424,6 +422,16 @@ func validateVideoContractGeneration(generation VideoModelContractGeneration) er
 		}
 		if mode.RequestValue != "" && !videoContractValuePattern.MatchString(mode.RequestValue) {
 			return fmt.Errorf("生成模式请求值 %q 格式无效", mode.RequestValue)
+		}
+		for _, selector := range []string{mode.ID, mode.RequestValue} {
+			if selector == "" {
+				continue
+			}
+			selectorKey := strings.ToLower(selector)
+			if owner, exists := selectors[selectorKey]; exists && owner != strings.ToLower(mode.ID) {
+				return fmt.Errorf("生成模式选择值 %q 不能由多个模式共用", selector)
+			}
+			selectors[selectorKey] = strings.ToLower(mode.ID)
 		}
 		ranges := []struct {
 			name  string
@@ -462,12 +470,16 @@ func validateVideoContractGeneration(generation VideoModelContractGeneration) er
 			}
 		}
 		materialMax := mode.Materials.FirstFrame.Max + mode.Materials.LastFrame.Max + mode.Materials.Image.Max + mode.Materials.Video.Max + mode.Materials.Audio.Max
+		materialMin := mode.Materials.FirstFrame.Min + mode.Materials.LastFrame.Min + mode.Materials.Image.Min + mode.Materials.Video.Min + mode.Materials.Audio.Min
 		largestMaterialMax := maxInt(mode.Materials.FirstFrame.Max, mode.Materials.LastFrame.Max)
 		largestMaterialMax = maxInt(largestMaterialMax, mode.Materials.Image.Max)
 		largestMaterialMax = maxInt(largestMaterialMax, mode.Materials.Video.Max)
 		largestMaterialMax = maxInt(largestMaterialMax, mode.Materials.Audio.Max)
 		if mode.Materials.Total.Max < largestMaterialMax || mode.Materials.Total.Max > materialMax {
 			return fmt.Errorf("生成模式 %s 的素材总上限必须介于单类上限和各类上限之和之间", mode.Label)
+		}
+		if mode.Materials.Total.Max < materialMin {
+			return fmt.Errorf("生成模式 %s 的素材总上限不能小于各类素材下限之和", mode.Label)
 		}
 	}
 	if _, exists := ids[strings.ToLower(generation.DefaultMode)]; !exists {
@@ -515,9 +527,15 @@ func validateVideoContractRules(rules []VideoModelContractRule) error {
 			if _, ok := videoContractRuleFields[field]; !ok || limit < 0 || limit > 80 {
 				return fmt.Errorf("条件规则 %d 的字段上限无效", index+1)
 			}
+			if limit == 0 && slices.Contains(rule.Require, field) {
+				return fmt.Errorf("条件规则 %d 的必需字段上限不能为 0", index+1)
+			}
 		}
 		for field, value := range rule.ForceValues {
 			if _, ok := videoContractRuleFields[field]; !ok || value == "" || len([]rune(value)) > 100 {
+				return fmt.Errorf("条件规则 %d 的强制字段值无效", index+1)
+			}
+			if _, ok := ParseVideoContractForcedValue(field, value); !ok {
 				return fmt.Errorf("条件规则 %d 的强制字段值无效", index+1)
 			}
 		}
@@ -647,14 +665,15 @@ func ApplyVideoContractForcedValues(contract VideoModelContract, values map[stri
 			continue
 		}
 		for field, value := range rule.ForceValues {
-			if parsed, ok := parseVideoContractForcedValue(field, value); ok {
+			if parsed, ok := ParseVideoContractForcedValue(field, value); ok {
 				values[field] = parsed
 			}
 		}
 	}
 }
 
-func parseVideoContractForcedValue(field, value string) (any, bool) {
+// ParseVideoContractForcedValue converts a persisted rule value to its runtime type.
+func ParseVideoContractForcedValue(field, value string) (any, bool) {
 	value = strings.TrimSpace(value)
 	switch field {
 	case "duration":
@@ -900,19 +919,28 @@ func normalizeVideoContractEndpointPath(value string) string {
 }
 
 func validVideoContractEndpointPath(value string) bool {
-	return strings.HasPrefix(value, "/") && !strings.HasPrefix(value, "//") && !strings.ContainsAny(value, "\r\n?#") && !strings.Contains(value, "://")
+	return strings.HasPrefix(value, "/") && !strings.HasPrefix(value, "//") && !strings.ContainsAny(value, "\r\n?#{}") && !strings.Contains(value, "://")
 }
 
 func validVideoContractTaskPath(value string) bool {
-	return validVideoContractEndpointPath(value) && strings.Count(value, "{task_id}") == 1
+	if strings.Count(value, "{task_id}") != 1 {
+		return false
+	}
+	return validVideoContractEndpointPath(strings.Replace(value, "{task_id}", "task-id", 1))
 }
 
 func validateVideoContractEndpointPaths(contract VideoModelContract) error {
+	if strings.Contains(contract.Transport.CreatePath, "{task_id}") {
+		return fmt.Errorf("任务创建路径不能包含 {task_id}")
+	}
 	if contract.Transport.CreatePath != "" && !validVideoContractEndpointPath(contract.Transport.CreatePath) {
 		return fmt.Errorf("任务创建路径必须是站内绝对路径")
 	}
 	if contract.Transport.QueryPath != "" && !validVideoContractTaskPath(contract.Transport.QueryPath) {
 		return fmt.Errorf("任务查询路径必须是包含 {task_id} 的绝对路径")
+	}
+	if (contract.Transport.CreatePath == "") != (contract.Transport.QueryPath == "") {
+		return fmt.Errorf("任务创建路径和查询路径必须同时配置")
 	}
 	if contract.Driver == VideoContractDriverCustom && (contract.Transport.CreatePath == "" || contract.Transport.QueryPath == "") {
 		return fmt.Errorf("custom-video 必须配置任务创建路径和查询路径")

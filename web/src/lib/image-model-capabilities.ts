@@ -191,18 +191,21 @@ function isOfficialXAIImageModelName(model: string) {
 
 function isKIEImageModelName(model: string) {
   const value = model.trim().toLowerCase();
-  if (value === "z-image" || value.includes("nano-banana") || value.startsWith("gpt-image-2-")) {
-    return true;
-  }
   if (!value.includes("/")) {
-    return false;
+    return value === "z-image" ||
+      value.includes("nano-banana") ||
+      value.startsWith("gpt-image-2-") ||
+      value.startsWith("imagen4");
   }
   if ([
-    "bytedance/",
+    "bytedance/seedream",
+    "bytedance/seedance-4",
     "flux-2/",
-    "google/",
-    "gpt-image/",
+    "google/imagen4",
+    "google/nano-banana",
+    "gpt-image/1.5",
     "grok-imagine/",
+    "grok-imagine-image-2-0/",
     "ideogram/",
     "qwen/",
     "qwen2/",
@@ -210,11 +213,10 @@ function isKIEImageModelName(model: string) {
     "seedream/",
     "topaz/",
     "wan/2-7-image",
-    "z-image",
   ].some((prefix) => value.startsWith(prefix))) {
     return true;
   }
-  return value.includes("imagen4");
+  return false;
 }
 
 function isKIEImageEditModel(model: string) {

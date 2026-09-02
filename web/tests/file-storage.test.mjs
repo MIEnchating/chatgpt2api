@@ -2,9 +2,38 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  inspectMediaBlobMetadata,
   inspectVideoBlobMetadata,
   VIDEO_METADATA_TIMEOUT_MS,
 } from "../src/services/file-storage.ts";
+
+test("media metadata dispatches once to the matching shared inspector", async () => {
+  const calls = [];
+  const inspectors = {
+    inspectAudio: async (blob) => {
+      calls.push(["audio", blob]);
+      return { durationMs: 2400 };
+    },
+    inspectVideo: async (blob) => {
+      calls.push(["video", blob]);
+      return { width: 640, height: 360, durationMs: 3200 };
+    },
+  };
+  const video = new Blob(["video"], { type: "video/mp4" });
+  const audio = new Blob(["audio"], { type: "audio/mpeg" });
+
+  assert.deepEqual(await inspectMediaBlobMetadata(video, video.type, inspectors), { width: 640, height: 360, durationMs: 3200 });
+  assert.deepEqual(await inspectMediaBlobMetadata(audio, audio.type, inspectors), { durationMs: 2400 });
+  assert.deepEqual(calls, [["video", video], ["audio", audio]]);
+});
+
+test("optional media metadata failures settle without rejecting an uploaded file", async () => {
+  const failed = async () => { throw new Error("decoder unavailable"); };
+  assert.deepEqual(await inspectMediaBlobMetadata(new Blob(["audio"]), "audio/mpeg", {
+    inspectAudio: failed,
+    inspectVideo: failed,
+  }), {});
+});
 
 function createInspectionHarness({ duration = 3.25, height = 720, width = 1280 } = {}) {
   const calls = {

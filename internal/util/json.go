@@ -163,6 +163,13 @@ func ToBool(v any) bool {
 	switch x := v.(type) {
 	case bool:
 		return x
+	case int, int8, int16, int32, int64,
+		uint, uint8, uint16, uint32, uint64, uintptr,
+		float32, float64, json.Number:
+		number, err := strconv.ParseFloat(fmt.Sprint(x), 64)
+		return err == nil && !math.IsNaN(number) && !math.IsInf(number, 0) && number != 0
+	case []byte:
+		return ToBool(string(x))
 	case string:
 		switch strings.ToLower(strings.TrimSpace(x)) {
 		case "1", "true", "yes", "on":
@@ -170,7 +177,7 @@ func ToBool(v any) bool {
 		}
 		return false
 	default:
-		return v != nil
+		return false
 	}
 }
 

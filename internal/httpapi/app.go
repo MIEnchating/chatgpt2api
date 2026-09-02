@@ -774,14 +774,14 @@ func (a *App) handleUpstreamModels(w http.ResponseWriter, r *http.Request) {
 			var err error
 			relayAPIKey, err = newAPIKeys.KeyForIdentityGroupAndName(r.Context(), identity, group, tokenName)
 			if err != nil {
-				a.writeUpstreamModelsResponse(w, r, nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: err.Error()}, started, identity)
+				a.writeUpstreamModelsResponse(w, r, nil, a.relayTokenSelectionHTTPError(err), started, identity)
 				return
 			}
 		} else {
 			var err error
 			relayAPIKey, err = newAPIKeys.KeyForIdentity(r.Context(), identity)
 			if err != nil {
-				a.writeUpstreamModelsResponse(w, r, nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: err.Error()}, started, identity)
+				a.writeUpstreamModelsResponse(w, r, nil, a.relayTokenSelectionHTTPError(err), started, identity)
 				return
 			}
 		}

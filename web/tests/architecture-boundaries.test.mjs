@@ -122,6 +122,18 @@ test("media storage is server-backed and never writes browser databases", async 
   assert.doesNotMatch(shell, /storage-migration|migrateLocalAssetsToCloud/);
 });
 
+test("media uploads use storage-service metadata instead of decoding files again in app views", async () => {
+  const canvas = await readFile(path.join(webRoot, "src/app/canvas/page.tsx"), "utf8");
+  const assetForm = await readFile(path.join(webRoot, "src/app/assets/asset-form.tsx"), "utf8");
+  const assetMedia = await readFile(path.join(webRoot, "src/app/assets/asset-media.ts"), "utf8");
+
+  for (const source of [canvas, assetForm, assetMedia]) {
+    assert.doesNotMatch(source, /createImageBitmap|createObjectURL\(file\)|onloadedmetadata/);
+  }
+  assert.doesNotMatch(canvas, /videoFileMetadata|imageFileSize|audioFileDuration/);
+  assert.doesNotMatch(assetForm, /inspectAssetFile/);
+});
+
 test("global dialogs use the shared scroll area instead of native scrollbars", async () => {
   const source = await readFile(path.join(webRoot, "src/components/ui/dialog.tsx"), "utf8");
   assert.match(source, /import \{ ScrollArea \} from "@\/components\/ui\/scroll-area"/);

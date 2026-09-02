@@ -96,9 +96,20 @@ func (a *App) relayCredentialForIdentitySelection(ctx context.Context, identity 
 	}
 	key, err := reader.KeyForIdentityGroupAndName(ctx, identity, group, name)
 	if err != nil {
-		return relayCredential{}, protocol.HTTPError{Status: http.StatusBadRequest, Message: err.Error()}
+		return relayCredential{}, a.relayTokenSelectionHTTPError(err)
 	}
 	return relayCredential{APIKey: key, BaseURL: a.relayBaseURL()}, nil
+}
+
+func (a *App) relayTokenSelectionHTTPError(err error) protocol.HTTPError {
+	var tokenErr service.NewAPITokenError
+	if errors.As(err, &tokenErr) && tokenErr.Cause != nil {
+		if a != nil && a.logger != nil {
+			a.logger.Error("relay token lookup failed", "error", tokenErr.Cause)
+		}
+		return protocol.HTTPError{Status: http.StatusServiceUnavailable, Message: "令牌数据库暂时不可用，请稍后重试"}
+	}
+	return protocol.HTTPError{Status: http.StatusBadRequest, Message: err.Error()}
 }
 
 func (a *App) relayBaseURL() string {
@@ -2117,18 +2128,24 @@ func sanitizeRelayImagePayload(payload map[string]any) {
 
 func isKnownKIEImageModel(model string) bool {
 	value := strings.ToLower(strings.TrimSpace(model))
-	if value == "z-image" || strings.Contains(value, "nano-banana") || strings.HasPrefix(value, "gpt-image-2-") {
-		return true
-	}
 	if !strings.Contains(value, "/") {
-		return false
+		return value == "z-image" ||
+			strings.Contains(value, "nano-banana") ||
+			strings.HasPrefix(value, "gpt-image-2-") ||
+			strings.HasPrefix(value, "imagen4")
 	}
-	for _, prefix := range []string{"bytedance/", "flux-2/", "google/", "gpt-image/", "grok-imagine/", "ideogram/", "qwen/", "qwen2/", "recraft/", "seedream/", "topaz/", "wan/2-7-image", "z-image"} {
+	for _, prefix := range []string{
+		"bytedance/seedream", "bytedance/seedance-4", "flux-2/",
+		"google/imagen4", "google/nano-banana", "gpt-image/1.5",
+		"grok-imagine/", "grok-imagine-image-2-0/", "ideogram/",
+		"qwen/", "qwen2/", "recraft/", "seedream/", "topaz/",
+		"wan/2-7-image",
+	} {
 		if strings.HasPrefix(value, prefix) {
 			return true
 		}
 	}
-	return strings.Contains(value, "imagen4")
+	return false
 }
 
 // normalizeImagePayloadForModel keeps only fields supported by the selected
@@ -2228,9 +2245,7 @@ func normalizeImagePayloadForModel(payload map[string]any) {
 // slash-qualified custom models retain the generic OpenAI-compatible payload.
 func normalizeKIEImagePayload(payload map[string]any) bool {
 	name := strings.ToLower(strings.TrimSpace(util.Clean(payload["model"])))
-	// Bare `gpt-image-2` is the official OpenAI route. Only the KIE
-	// `gpt-image-2-*` task IDs should enter this strict normalizer.
-	if !strings.Contains(name, "/") && name != "z-image" && !strings.Contains(name, "nano-banana") && !strings.HasPrefix(name, "gpt-image-2-") {
+	if !isKnownKIEImageModel(name) {
 		return false
 	}
 	originalPayload := util.CopyMap(payload)

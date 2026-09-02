@@ -141,6 +141,17 @@ test("known KIE models use KIE capabilities without changing unknown custom rout
   assert.equal(supportsImageEditing("vendor/custom-image-model"), true);
   assert.equal(supportsImageMask("vendor/custom-image-model"), true);
   assert.equal(supportsStructuredImageParameters("vendor/custom-image-model"), false);
+
+  for (const model of [
+    "custom/seedream-v5",
+    "custom/nano-banana-2",
+    "custom/imagen4",
+    "google/custom-image",
+    "gpt-image/custom",
+  ]) {
+    assert.equal(imageModelRoute(model), "openai-image", model);
+  }
+  assert.equal(imageModelRoute("grok-imagine-image-2-0/text-to-image"), "kie-image");
 });
 
 test("APIMart image capability branches match the reference contracts", () => {

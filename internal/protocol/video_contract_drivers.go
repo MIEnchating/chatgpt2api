@@ -13,8 +13,6 @@ const (
 	VideoContractDriverKIE        = "kie-video"
 	VideoContractDriverAPIMart    = "apimart-video"
 	VideoContractDriverCustom     = "custom-video"
-
-	VideoContractDriverLegacyKling = "kling-videos"
 )
 
 var videoContractDrivers = []string{

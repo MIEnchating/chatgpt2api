@@ -1,39 +1,24 @@
-import axios, {AxiosError, type AxiosRequestConfig} from "axios";
+import axios, {type AxiosRequestConfig} from "axios";
 
 import webConfig from "@/constants/common-env";
 import {clearAuthenticatedImageCache} from "@/lib/authenticated-image";
-import {extractRequestErrorMessage} from "@/lib/request-error";
+import {
+    rejectRequestError,
+    type UnauthorizedRedirectEnvironment,
+} from "@/lib/request-response-error";
 
 type RequestConfig = AxiosRequestConfig & {
     redirectOnUnauthorized?: boolean;
 };
 
-type ErrorPayload = {
-    detail?: string | { error?: string | { message?: string } };
-    error?: string | { message?: string; code?: string; type?: string };
-    message?: string;
-};
-
-function errorCodeFromValue(value: unknown): string {
-    if (!value || typeof value !== "object") {
-        return "";
-    }
-    const item = value as { code?: unknown; type?: unknown; error?: unknown; message?: unknown };
-    if (typeof item.code === "string" && item.code.trim()) {
-        return item.code.trim();
-    }
-    if (typeof item.type === "string" && item.type.trim()) {
-        return item.type.trim();
-    }
-    return errorCodeFromValue(item.error);
+function browserUnauthorizedRedirectEnvironment(): UnauthorizedRedirectEnvironment | undefined {
+    if (typeof window === "undefined") return undefined;
+    return {
+        pathname: window.location.pathname,
+        clearImageCache: clearAuthenticatedImageCache,
+        replace: (path) => window.location.replace(path),
+    };
 }
-
-type AppRequestError = Error & {
-    status?: number;
-    code?: string;
-    errorType?: string;
-    payload?: unknown;
-};
 
 const request = axios.create({
     baseURL: webConfig.apiUrl.replace(/\/$/, ""),
@@ -42,43 +27,7 @@ const request = axios.create({
 
 request.interceptors.response.use(
     (response) => response,
-    async (error: AxiosError<ErrorPayload>) => {
-        const status = error.response?.status;
-        const shouldRedirect = (error.config as RequestConfig | undefined)?.redirectOnUnauthorized !== false;
-        if (status === 401 && shouldRedirect && typeof window !== "undefined") {
-            // Avoid redirect loop — only redirect if not already on /login
-            if (!window.location.pathname.startsWith("/login")) {
-                clearAuthenticatedImageCache();
-                window.location.replace("/login");
-                // Return a never-resolving promise to prevent further error handling
-                // while the browser navigates away
-                return new Promise(() => {});
-            }
-        }
-
-        const payload = error.response?.data;
-        const code =
-            errorCodeFromValue(payload?.detail) ||
-            errorCodeFromValue(payload?.error) ||
-            "";
-        const errorValue = payload?.error;
-        const errorType =
-            errorValue && typeof errorValue === "object" && typeof (errorValue as { type?: unknown }).type === "string"
-                ? String((errorValue as { type?: unknown }).type || "")
-                : "";
-        const message =
-            extractRequestErrorMessage(payload?.detail) ||
-            extractRequestErrorMessage(payload?.error) ||
-            extractRequestErrorMessage(payload?.message) ||
-            error.message ||
-            `请求失败 (${status || 500})`;
-        const appError = new Error(message) as AppRequestError;
-        appError.status = status;
-        appError.code = code || undefined;
-        appError.errorType = errorType || undefined;
-        appError.payload = payload;
-        return Promise.reject(appError);
-    },
+    (error) => rejectRequestError(error, browserUnauthorizedRedirectEnvironment()),
 );
 
 type RequestOptions = {

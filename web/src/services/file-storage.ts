@@ -1,5 +1,6 @@
 import { nanoid } from "nanoid";
 
+import { inspectAudioReferenceFile } from "@/lib/audio-reference-file";
 import {
   deleteStorageObjects,
   getStorageObjectBlob,
@@ -24,6 +25,11 @@ type VideoMetadata = {
   width?: number;
   height?: number;
   durationMs?: number;
+};
+
+export type MediaMetadataInspectors = {
+  inspectAudio: (blob: Blob) => Promise<{ durationMs?: number }>;
+  inspectVideo: (blob: Blob) => Promise<VideoMetadata>;
 };
 
 type VideoMetadataElement = Pick<
@@ -57,6 +63,11 @@ const browserVideoMetadataInspectionEnvironment: VideoMetadataInspectionEnvironm
   clearScheduledTimeout: (handle) => globalThis.clearTimeout(handle),
 };
 
+const browserMediaMetadataInspectors: MediaMetadataInspectors = {
+  inspectAudio: (blob) => inspectAudioReferenceFile(blob),
+  inspectVideo: (blob) => inspectVideoBlobMetadata(blob),
+};
+
 export async function uploadMediaBlob(blob: Blob, filename: string, signal?: AbortSignal): Promise<UploadedFile> {
   signal?.throwIfAborted();
   const uploaded = await uploadStorageObject<UploadedFile>(blob, filename, "媒体同步失败", signal);
@@ -83,9 +94,7 @@ export async function deleteStoredMedia(keys: Iterable<string>) {
 }
 
 async function withMediaMetadata(uploaded: UploadedFile, blob: Blob) {
-  const metadata: VideoMetadata = (uploaded.mimeType || blob.type).startsWith("video/")
-    ? await inspectVideoBlobMetadata(blob)
-    : {};
+  const metadata = await inspectMediaBlobMetadata(blob, uploaded.mimeType || blob.type);
   return {
     ...uploaded,
     bytes: uploaded.bytes || blob.size,
@@ -94,6 +103,23 @@ async function withMediaMetadata(uploaded: UploadedFile, blob: Blob) {
     height: uploaded.height || metadata.height,
     durationMs: uploaded.durationMs || metadata.durationMs,
   };
+}
+
+export async function inspectMediaBlobMetadata(
+  blob: Blob,
+  mimeType = blob.type,
+  inspectors: MediaMetadataInspectors = browserMediaMetadataInspectors,
+): Promise<VideoMetadata> {
+  try {
+    if (mimeType.startsWith("video/")) return await inspectors.inspectVideo(blob);
+    if (mimeType.startsWith("audio/")) {
+      const metadata = await inspectors.inspectAudio(blob);
+      return metadata.durationMs ? { durationMs: metadata.durationMs } : {};
+    }
+  } catch {
+    // Metadata is optional; a decoder failure must not discard an uploaded file.
+  }
+  return {};
 }
 
 export function inspectVideoBlobMetadata(

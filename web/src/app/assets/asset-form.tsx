@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { AudioLines, FileText, Globe2, Image as ImageIcon, LoaderCircle, LockKeyhole, Upload, Video } from "lucide-react";
 import { toast } from "sonner";
 
-import { assetMediaSummary, inspectAssetFile, type AssetMediaMetadata } from "@/app/assets/asset-media";
+import { assetMediaSummary, type AssetMediaMetadata } from "@/app/assets/asset-media";
 import { AuthenticatedImage } from "@/components/authenticated-image";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -74,17 +74,16 @@ export function AssetForm({ open, asset, onClose, onSave }: { open: boolean; ass
     if (!file || kind === "text") return;
     setBusyTarget("content");
     try {
-      const [result, metadata] = await Promise.all([
-        kind === "image" ? uploadImage(file) : uploadAssetMediaFile(file, kind === "video" ? "asset-video" : "asset-audio"),
-        inspectAssetFile(file, kind),
-      ]);
+      const result = kind === "image"
+        ? await uploadImage(file)
+        : await uploadAssetMediaFile(file, kind === "video" ? "asset-video" : "asset-audio");
       setContent(result.url);
       setMediaStorageKey(result.storageKey);
       setMediaMetadata({
-        ...metadata,
-        mimeType: result.mimeType || metadata.mimeType,
-        bytes: result.bytes ?? metadata.bytes,
-        ...(kind === "image" && result.width && result.height ? { width: result.width, height: result.height } : {}),
+        bytes: result.bytes || file.size,
+        mimeType: result.mimeType || file.type,
+        ...(result.width && result.height ? { width: result.width, height: result.height } : {}),
+        ...("durationMs" in result && result.durationMs ? { durationMs: result.durationMs } : {}),
       });
       if (kind === "image" && !coverUrl && !isBlobURL(result.url)) setCoverUrl(result.url);
       if (!title) setTitle(file.name.replace(/\.[^.]+$/, ""));

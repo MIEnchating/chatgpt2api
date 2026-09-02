@@ -185,24 +185,6 @@ function createdAt() {
   return new Date().toISOString();
 }
 
-function videoFileMetadata(file: File) {
-  return new Promise<{ width: number; height: number; durationMS?: number }>((resolve) => {
-    const url = URL.createObjectURL(file);
-    const video = document.createElement("video");
-    const finish = () => {
-      const width = video.videoWidth || 1280;
-      const height = video.videoHeight || 720;
-      const durationMS = Number.isFinite(video.duration) ? Math.round(video.duration * 1000) : undefined;
-      URL.revokeObjectURL(url);
-      resolve({ width, height, durationMS });
-    };
-    video.preload = "metadata";
-    video.onloadedmetadata = finish;
-    video.onerror = finish;
-    video.src = url;
-  });
-}
-
 function storedCanvasAgentSessions(document: CanvasDocument): CanvasAssistantSession[] {
   const sessions = (document.agent_sessions || []).filter((value): value is CanvasAssistantSession => {
     if (!value || typeof value !== "object") return false;
@@ -249,43 +231,6 @@ function sleep(milliseconds: number, signal?: AbortSignal) {
       resolve();
     }, milliseconds);
     signal?.addEventListener("abort", abort, { once: true });
-  });
-}
-
-function imageFileSize(file: File) {
-  return new Promise<{ width: number; height: number }>((resolve, reject) => {
-    const url = URL.createObjectURL(file);
-    const image = new Image();
-    image.onload = () => {
-      URL.revokeObjectURL(url);
-      resolve({ width: Math.max(1, image.naturalWidth), height: Math.max(1, image.naturalHeight) });
-    };
-    image.onerror = () => {
-      URL.revokeObjectURL(url);
-      reject(new Error("无法读取图片尺寸"));
-    };
-    image.src = url;
-  });
-}
-
-function audioFileDuration(file: File) {
-  return new Promise<number | undefined>((resolve) => {
-    const url = URL.createObjectURL(file);
-    const audio = document.createElement("audio");
-    let settled = false;
-    const timer = window.setTimeout(() => finish(), 5000);
-    const finish = (value?: number) => {
-      if (settled) return;
-      settled = true;
-      window.clearTimeout(timer);
-      URL.revokeObjectURL(url);
-      audio.removeAttribute("src");
-      resolve(value);
-    };
-    audio.preload = "metadata";
-    audio.onloadedmetadata = () => finish(Number.isFinite(audio.duration) ? Math.round(audio.duration * 1000) : undefined);
-    audio.onerror = () => finish();
-    audio.src = url;
   });
 }
 
@@ -2090,11 +2035,13 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     const operationEpoch = canvasOperationEpochRef.current;
     setUploadingNodeID(nodeID || "canvas-upload");
     try {
-      const [uploaded, metadata] = await Promise.all([uploadMediaBlob(file, file.name), videoFileMetadata(file)]);
+      const uploaded = await uploadMediaBlob(file, file.name);
       if (documentRef.current.id !== projectID || canvasOperationEpochRef.current !== operationEpoch) return;
       const target = nodeID ? nodesRef.current.find((node) => node.id === nodeID && node.type === "video") : null;
       if (nodeID && !target) return;
-      const size = canvasVideoDisplaySize(metadata.width, metadata.height);
+      const sourceWidth = uploaded.width || 1280;
+      const sourceHeight = uploaded.height || 720;
+      const size = canvasVideoDisplaySize(sourceWidth, sourceHeight);
       let selectedID = nodeID;
       if (target) {
         replaceNodes(nodesRef.current.map((node): CanvasNode => node.id === target.id ? {
@@ -2105,10 +2052,10 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
           url: uploaded.url,
 			storage_key: uploaded.storageKey,
           title: file.name,
-          natural_width: metadata.width,
-          natural_height: metadata.height,
+          natural_width: sourceWidth,
+          natural_height: sourceHeight,
 			bytes: uploaded.bytes || file.size,
-          duration_ms: metadata.durationMS,
+          duration_ms: uploaded.durationMs,
 			mime_type: uploaded.mimeType || file.type || "video/mp4",
           task_id: "",
           generation_status: "success",
@@ -2125,10 +2072,10 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
           id: selectedID,
 			storage_key: uploaded.storageKey,
           ...size,
-          natural_width: metadata.width,
-          natural_height: metadata.height,
+          natural_width: sourceWidth,
+          natural_height: sourceHeight,
 			bytes: uploaded.bytes || file.size,
-          duration_ms: metadata.durationMS,
+          duration_ms: uploaded.durationMs,
 			mime_type: uploaded.mimeType || file.type || "video/mp4",
           generation_status: "success",
         }]);
@@ -2154,7 +2101,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     const operationEpoch = canvasOperationEpochRef.current;
     setUploadingNodeID(nodeID || "canvas-upload");
     try {
-      const [uploaded, durationMS] = await Promise.all([uploadMediaBlob(file, file.name), audioFileDuration(file)]);
+      const uploaded = await uploadMediaBlob(file, file.name);
       if (documentRef.current.id !== projectID || canvasOperationEpochRef.current !== operationEpoch) return;
       const target = nodeID ? nodesRef.current.find((node) => node.id === nodeID && node.type === "audio") : null;
       if (nodeID && !target) return;
@@ -2171,7 +2118,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
 			storage_key: uploaded.storageKey,
           title: file.name,
 			bytes: uploaded.bytes || file.size,
-          duration_ms: durationMS,
+          duration_ms: uploaded.durationMs,
           mime_type: mimeType,
           task_id: "",
           audio_task_id: "",
@@ -2195,7 +2142,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
           title: file.name,
           prompt: "",
 			bytes: uploaded.bytes || file.size,
-          duration_ms: durationMS,
+          duration_ms: uploaded.durationMs,
           mime_type: mimeType,
           ...preferredCanvasAudioParameters(),
           generation_status: "success",
@@ -2223,7 +2170,8 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     const operationEpoch = canvasOperationEpochRef.current;
     setUploadingNodeID(nodeID || "canvas-upload");
     try {
-      const [uploaded, sourceSize] = await Promise.all([uploadImage(file), imageFileSize(file)]);
+      const uploaded = await uploadImage(file);
+      const sourceSize = uploaded;
       await primeAuthenticatedImageCache(uploaded.url, file);
       if (documentRef.current.id !== projectID || canvasOperationEpochRef.current !== operationEpoch) {
         void refreshLibrary();
@@ -2609,7 +2557,8 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
 
   async function uploadDerivedCanvasImage(dataURL: string, fileName: string) {
     const file = await canvasDataURLFile(dataURL, fileName);
-    const [uploaded, dimensions] = await Promise.all([uploadImage(file), imageFileSize(file)]);
+    const uploaded = await uploadImage(file);
+    const dimensions = uploaded;
     await primeAuthenticatedImageCache(uploaded.url, file);
     return { uploaded, dimensions, bytes: file.size };
   }
