@@ -760,6 +760,7 @@ export type ManagedUsersResponse = {
   page: number;
   page_size: number;
   total_pages: number;
+  usage_stats_available: boolean;
 };
 
 export type ManagedRole = {
@@ -1772,6 +1773,7 @@ export async function fetchManagedUsers(query: ManagedUsersQuery = {}) {
     page: Number(data.page ?? query.page ?? 1),
     page_size: Number(data.page_size ?? query.page_size ?? 20),
     total_pages: Number(data.total_pages ?? 1),
+    usage_stats_available: data.usage_stats_available !== false,
   };
 }
 

@@ -13,6 +13,7 @@ import {
   RefreshCw,
   Search,
   ShieldCheck,
+  TriangleAlert,
   Trash2,
   UserRound,
   X,
@@ -338,6 +339,7 @@ function UsersContent() {
   const [pageSize, setPageSize] = useState("20");
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
+  const [usageStatsAvailable, setUsageStatsAvailable] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [pendingIds, setPendingIds] = useState<Set<string>>(() => new Set());
   const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(() => new Set());
@@ -380,6 +382,7 @@ function UsersContent() {
       setItems(normalizeManagedUsers(usersData.items));
       setTotal(Number.isFinite(usersData.total) ? usersData.total : 0);
       setTotalPages(Math.max(1, Number.isFinite(usersData.total_pages) ? usersData.total_pages : 1));
+      setUsageStatsAvailable(usersData.usage_stats_available);
       if (usersData.page && usersData.page !== page) {
         setPage(usersData.page);
       }
@@ -511,6 +514,8 @@ function UsersContent() {
         type="button"
         className="-ml-1 inline-flex h-8 items-center gap-1 rounded-md px-1 text-left font-semibold transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
         onClick={() => handleSort(field)}
+        disabled={field === "call_count" && !usageStatsAvailable}
+        title={field === "call_count" && !usageStatsAvailable ? "使用统计暂时不可用" : undefined}
         aria-label={`按${label}${nextSortOrder(field) === "asc" ? "升序" : "降序"}排序`}
       >
         <span>{label}</span>
@@ -779,14 +784,27 @@ function UsersContent() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <div className="flex items-center gap-3">
-                          <UsageSparkline points={user.usage_curve} />
-                          <div className="min-w-[70px] space-y-1 text-xs text-muted-foreground">
-                            <div>总计 {formatCompactNumber(user.call_count)}</div>
-                            <div>今日 {formatCompactNumber(todayCallCount(user))}</div>
-                            <div>失败 {formatCompactNumber(user.failure_count)}</div>
+                        {usageStatsAvailable ? (
+                          <div className="flex items-center gap-3">
+                            <UsageSparkline points={user.usage_curve} />
+                            <div className="min-w-[70px] space-y-1 text-xs text-muted-foreground">
+                              <div>总计 {formatCompactNumber(user.call_count)}</div>
+                              <div>今日 {formatCompactNumber(todayCallCount(user))}</div>
+                              <div>失败 {formatCompactNumber(user.failure_count)}</div>
+                            </div>
                           </div>
-                        </div>
+                        ) : (
+                          <div
+                            className="flex h-16 w-[230px] items-center gap-2 rounded-lg border border-dashed border-amber-300/80 bg-amber-50/60 px-3 text-xs text-amber-800 dark:border-amber-700/70 dark:bg-amber-950/20 dark:text-amber-200"
+                            role="status"
+                          >
+                            <TriangleAlert className="size-4 shrink-0" aria-hidden="true" />
+                            <div>
+                              <div className="font-medium">统计暂时不可用</div>
+                              <div className="mt-0.5 text-[11px] opacity-80">用户数据与操作不受影响</div>
+                            </div>
+                          </div>
+                        )}
                       </TableCell>
                       <TableCell>
                         <div className="space-y-1 text-xs leading-5">
