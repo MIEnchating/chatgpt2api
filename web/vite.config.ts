@@ -83,7 +83,7 @@ export default defineConfig({
             },
             {
               name: "data-vendor",
-              test: /node_modules[\\/](?:axios|immer|zustand|date-fns)[\\/]/,
+              test: /node_modules[\\/](?:axios|zustand|date-fns)[\\/]/,
               priority: 15,
               minSize: 0,
             },

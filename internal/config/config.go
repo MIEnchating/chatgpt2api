@@ -651,19 +651,19 @@ func (s *Store) ChatModels() []string {
 }
 
 func (s *Store) DefaultImageModel() string {
-	return firstString(s.ImageModels(), util.ImageModelGPT)
+	return firstString(s.ImageModels(), "")
 }
 
 func (s *Store) DefaultTextModel() string {
-	return firstString(s.TextModels(), util.ImageModelGPT55)
+	return firstString(s.TextModels(), "")
 }
 
 func (s *Store) DefaultAudioModel() string {
-	return firstString(s.AudioModels(), "gpt-4o-mini-tts")
+	return firstString(s.AudioModels(), "")
 }
 
 func (s *Store) DefaultChatModel() string {
-	return firstString(s.ChatModels(), util.ImageModelGPT55)
+	return firstString(s.ChatModels(), "")
 }
 
 func (s *Store) Get() map[string]any {
@@ -804,6 +804,9 @@ func (s *Store) Update(data map[string]any) (map[string]any, error) {
 	if value, ok := next["audio_models"]; ok {
 		next["audio_models"] = normalizeModelList(value, defaultAudioModels)
 	}
+	if value, ok := next["chat_models"]; ok {
+		next["chat_models"] = normalizeModelList(value, defaultChatModels)
+	}
 	if value, ok := next["relay_database_url"]; ok {
 		next["relay_database_url"] = strings.TrimSpace(fmt.Sprint(value))
 	}
@@ -825,7 +828,6 @@ func (s *Store) Update(data map[string]any) (map[string]any, error) {
 	if value, ok := next["prompt_sources"]; ok {
 		next["prompt_sources"] = normalizePromptSourcesValue(value)
 	}
-	delete(next, "chat_models")
 	delete(next, "default_chat_model")
 	if value, ok := next["app_title"]; ok {
 		next["app_title"] = strings.TrimSpace(fmt.Sprint(value))

@@ -685,6 +685,11 @@ func TestWorkflowServiceRejectsInvalidPersistedWorkflow(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "broken-workflow") || !strings.Contains(err.Error(), "请输入工作流名称") {
 		t.Fatalf("List() error = %v, want persisted workflow validation error", err)
 	}
+	var storageErr *WorkflowStorageError
+	var validationErr WorkflowValidationError
+	if !errors.As(err, &storageErr) || !errors.As(err, &validationErr) {
+		t.Fatalf("List() error = %T %v, want storage boundary preserving validation cause", err, err)
+	}
 }
 
 func TestWorkflowServiceIgnoresRemovedDAGFields(t *testing.T) {

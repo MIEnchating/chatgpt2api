@@ -64,6 +64,7 @@ import {
 import { useRelayTokenPreferences } from "@/lib/use-relay-token-preferences";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import { filterModelsByCapability } from "@/lib/model-capabilities";
+import { configuredModelNames, resolveConfiguredModel } from "@/lib/model-config-selection";
 import type { StoredAuthSession } from "@/lib/auth-session";
 import {
   AUDIO_FORMAT_OPTIONS,
@@ -447,10 +448,10 @@ function ImageGenerationPreferencesCard({ sessionKey }: { sessionKey: string }) 
   const { tokenNames: relayTokenNames, tokenNameForModel } = useRelayTokenPreferences();
   const [preferences, setPreferences] = useState<ImageGenerationPreferences>(DEFAULT_IMAGE_GENERATION_PREFERENCES);
   const [modelConfig, setModelConfig] = useState({
-    text: { models: [] as string[], fallback: "" },
-    image: { models: [] as string[], fallback: "" },
-    video: { models: [] as string[], fallback: "" },
-    audio: { models: [] as string[], fallback: "" },
+    text: { models: [] as string[], defaultModel: "" },
+    image: { models: [] as string[], defaultModel: "" },
+    video: { models: [] as string[], defaultModel: "" },
+    audio: { models: [] as string[], defaultModel: "" },
   });
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
@@ -477,19 +478,44 @@ function ImageGenerationPreferencesCard({ sessionKey }: { sessionKey: string }) 
     saveVersionRef.current += 1;
     setIsSaving(false);
     setIsLoading(true);
-    void Promise.all([fetchImageGenerationPreferences(), fetchModelConfig()])
-      .then(([{ preferences: loaded }, { config }]) => {
+    void Promise.allSettled([fetchImageGenerationPreferences(), fetchModelConfig()])
+      .then(([preferencesResult, modelConfigResult]) => {
         if (ignore) return;
-        setPreferences({ ...DEFAULT_IMAGE_GENERATION_PREFERENCES, ...loaded });
-        setModelConfig({
-          text: { models: config.text_models || [], fallback: config.default_text_model || config.text_models?.[0] || "" },
-          image: { models: config.image_models || [], fallback: config.default_image_model || config.image_models?.[0] || "" },
-          video: { models: config.video_models || [], fallback: config.default_video_model || config.video_models?.[0] || "" },
-          audio: { models: config.audio_models || [], fallback: config.default_audio_model || config.audio_models?.[0] || "" },
+        const config = modelConfigResult.status === "fulfilled" ? modelConfigResult.value.config : null;
+        const configuredModels = config ? {
+          text: configuredModelNames(config.text_models),
+          image: configuredModelNames(config.image_models),
+          video: configuredModelNames(config.video_models),
+          audio: configuredModelNames(config.audio_models),
+        } : null;
+        const reconcileDefaults = (current: ImageGenerationPreferences) => !config || !configuredModels ? current : ({
+          ...current,
+          default_text_model: resolveConfiguredModel(configuredModels.text, current.default_text_model, config.default_text_model),
+          default_image_model: resolveConfiguredModel(configuredModels.image, current.default_image_model, config.default_image_model),
+          default_video_model: resolveConfiguredModel(configuredModels.video, current.default_video_model, config.default_video_model),
+          default_audio_model: resolveConfiguredModel(configuredModels.audio, current.default_audio_model, config.default_audio_model),
         });
-      })
-      .catch((error) => {
-        if (!ignore) setMessage(error instanceof Error ? error.message : "读取图片生成设置失败");
+
+        if (configuredModels && config) {
+          setModelConfig({
+            text: { models: configuredModels.text, defaultModel: resolveConfiguredModel(configuredModels.text, config.default_text_model) },
+            image: { models: configuredModels.image, defaultModel: resolveConfiguredModel(configuredModels.image, config.default_image_model) },
+            video: { models: configuredModels.video, defaultModel: resolveConfiguredModel(configuredModels.video, config.default_video_model) },
+            audio: { models: configuredModels.audio, defaultModel: resolveConfiguredModel(configuredModels.audio, config.default_audio_model) },
+          });
+        }
+        if (preferencesResult.status === "fulfilled") {
+          setPreferences(reconcileDefaults({ ...DEFAULT_IMAGE_GENERATION_PREFERENCES, ...preferencesResult.value.preferences }));
+        } else if (config) {
+          setPreferences((current) => reconcileDefaults(current));
+        }
+
+        const error = preferencesResult.status === "rejected"
+          ? preferencesResult.reason
+          : modelConfigResult.status === "rejected"
+            ? modelConfigResult.reason
+            : null;
+        if (error) setMessage(error instanceof Error ? error.message : "读取图片生成设置失败");
       })
       .finally(() => {
         if (!ignore) setIsLoading(false);
@@ -512,7 +538,7 @@ function ImageGenerationPreferencesCard({ sessionKey }: { sessionKey: string }) 
     };
   }, [relayTokenSelectionKey, sessionKey]);
 
-  const selectedAudioModel = modelConfig.audio.models.includes(preferences.default_audio_model) ? preferences.default_audio_model : modelConfig.audio.fallback;
+  const selectedAudioModel = resolveConfiguredModel(modelConfig.audio.models, preferences.default_audio_model, modelConfig.audio.defaultModel);
 
   useEffect(() => {
     if (canvasAudioProvider(selectedAudioModel) !== "grok" || !selectedAudioModel) {
@@ -569,9 +595,10 @@ function ImageGenerationPreferencesCard({ sessionKey }: { sessionKey: string }) 
       const availableModels = modelConfig[kind].models.filter((model) => upstreamSet.has(model));
       setPulledModels((current) => ({ ...current, [kind]: availableModels }));
       const field = `default_${kind}_model` as const;
-      setPreferences((current) => current[field] && !availableModels.includes(current[field])
-        ? { ...current, [field]: availableModels[0] || "" }
-        : current);
+      setPreferences((current) => {
+        const nextModel = resolveConfiguredModel(availableModels, current[field]);
+        return nextModel === current[field] ? current : { ...current, [field]: nextModel };
+      });
       if (availableModels.length === 0) {
         toast.info(`该 Key 返回的模型中没有管理员开放的${{ text: "文本", image: "图片", video: "视频", audio: "音频" }[kind]}模型`);
       } else {
@@ -659,12 +686,12 @@ function ImageGenerationPreferencesCard({ sessionKey }: { sessionKey: string }) 
               ["audio", "音频模型", "default_audio_model", AudioLines],
             ] as const).map(([kind, label, field, Icon]) => {
               const options = pulledModels[kind] ?? modelConfig[kind].models;
-              const fallback = pulledModels[kind] === null ? modelConfig[kind].fallback : options[0] || "";
-              const current = options.includes(preferences[field]) ? preferences[field] : fallback;
+              const defaultModel = pulledModels[kind] === null ? modelConfig[kind].defaultModel : "";
+              const current = resolveConfiguredModel(options, preferences[field], defaultModel);
               return <label key={kind} className="grid min-w-0 gap-2 text-sm font-medium">
                 <span className="flex items-center gap-2"><Icon className="size-4 text-muted-foreground" />{label}</span>
                 <span className="grid grid-cols-[minmax(0,1fr)_auto] gap-2">
-                  <Select value={options.includes(current) ? current : undefined} disabled={isLoading || options.length === 0} onValueChange={(value) => setPreferences((state) => field === "default_audio_model" ? { ...state, [field]: value, ...audioPreferenceDefaults(value) } : { ...state, [field]: value })}>
+                  <Select value={current} disabled={isLoading || options.length === 0} onValueChange={(value) => setPreferences((state) => field === "default_audio_model" ? { ...state, [field]: value, ...audioPreferenceDefaults(value) } : { ...state, [field]: value })}>
                     <SelectTrigger className="h-9 bg-background shadow-none"><SelectValue placeholder={pulledModels[kind] !== null ? "该 Key 暂无可用模型" : "暂无可用模型"} /></SelectTrigger>
                     <SelectContent>{options.map((model) => <SelectItem key={model} value={model}>{model}</SelectItem>)}</SelectContent>
                   </Select>

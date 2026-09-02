@@ -8,6 +8,8 @@ let cachedAuthSession: StoredAuthSession | null | undefined;
 let verifyAuthSessionPromise: Promise<StoredAuthSession | null> | null = null;
 let authSessionVersion = 0;
 export const AUTH_SESSION_CHANGE_EVENT = "chatgpt2api:auth-session-change";
+const AUTH_SESSION_CHANNEL_NAME = "chatgpt2api:auth-session";
+const AUTH_SESSION_INVALIDATED_MESSAGE = "invalidate";
 
 export function displaySubjectId(subjectId?: string | null, provider?: string) {
   const normalizedId = String(subjectId || "").trim();
@@ -47,8 +49,43 @@ function emitAuthSessionChange() {
   }
 }
 
+const authSessionChannel = typeof window !== "undefined" && typeof BroadcastChannel !== "undefined"
+  ? new BroadcastChannel(AUTH_SESSION_CHANNEL_NAME)
+  : null;
+
+function invalidateVerifiedAuthSession() {
+  authSessionVersion += 1;
+  clearAuthenticatedImageCache();
+  cachedAuthSession = undefined;
+  verifyAuthSessionPromise = null;
+  emitAuthSessionChange();
+}
+
+authSessionChannel?.addEventListener("message", (event) => {
+  if (event.data === AUTH_SESSION_INVALIDATED_MESSAGE) {
+    invalidateVerifiedAuthSession();
+  }
+});
+
+function notifyOtherTabs() {
+  authSessionChannel?.postMessage(AUTH_SESSION_INVALIDATED_MESSAGE);
+}
+
 export function getCachedAuthSession() {
   return cachedAuthSession;
+}
+
+function sameAuthSession(
+  left: StoredAuthSession | null | undefined,
+  right: StoredAuthSession | null,
+) {
+  if (left === right) {
+    return true;
+  }
+  if (!left || !right) {
+    return false;
+  }
+  return JSON.stringify(left) === JSON.stringify(right);
 }
 
 function isUnauthenticatedSessionError(error: unknown) {
@@ -58,8 +95,8 @@ function isUnauthenticatedSessionError(error: unknown) {
   return (error as { status?: unknown }).status === 401;
 }
 
-export async function getVerifiedAuthSession(): Promise<StoredAuthSession | null> {
-  if (cachedAuthSession !== undefined) {
+async function loadVerifiedAuthSession(forceRefresh: boolean): Promise<StoredAuthSession | null> {
+  if (!forceRefresh && cachedAuthSession !== undefined) {
     return cachedAuthSession;
   }
 
@@ -68,9 +105,13 @@ export async function getVerifiedAuthSession(): Promise<StoredAuthSession | null
   try {
     const verifiedSession = await verifyAuthSessionPromise;
     if (verifyStartedAtVersion === authSessionVersion) {
+      const changed = forceRefresh && !sameAuthSession(cachedAuthSession, verifiedSession);
       cachedAuthSession = verifiedSession;
       if (!verifiedSession) {
         clearAuthenticatedImageCache();
+      }
+      if (changed) {
+        emitAuthSessionChange();
       }
       return verifiedSession;
     }
@@ -82,12 +123,21 @@ export async function getVerifiedAuthSession(): Promise<StoredAuthSession | null
   }
 }
 
+export function getVerifiedAuthSession(): Promise<StoredAuthSession | null> {
+  return loadVerifiedAuthSession(false);
+}
+
+export function refreshVerifiedAuthSession(): Promise<StoredAuthSession | null> {
+  return loadVerifiedAuthSession(true);
+}
+
 export async function setVerifiedAuthSession(session: StoredAuthSession) {
   authSessionVersion += 1;
   clearAuthenticatedImageCache();
   cachedAuthSession = session;
   verifyAuthSessionPromise = null;
   emitAuthSessionChange();
+  notifyOtherTabs();
 }
 
 export async function clearVerifiedAuthSession() {
@@ -96,6 +146,7 @@ export async function clearVerifiedAuthSession() {
   cachedAuthSession = null;
   verifyAuthSessionPromise = null;
   emitAuthSessionChange();
+  notifyOtherTabs();
 }
 
 async function verifyStoredAuthSession(): Promise<StoredAuthSession | null> {

@@ -5,12 +5,14 @@ import {
   buildSeriesPromptDraftRequest,
   createBlankWorkflow,
   createDefaultInputValues,
+  isWorkflowModelConfigured,
   mergeWorkflowRunMetadata,
   normalizeWorkflow,
   parseVariableOptions,
   parseWorkflowSeriesDrafts,
   renderWorkflowPrompt,
   resolveWorkflowRuntime,
+  resolveWorkflowTextModel,
   workflowGenerationDefaultsFromPreferences,
 } from "../src/app/workflows/workflow-runtime.ts";
 import {
@@ -427,6 +429,66 @@ test("workflow runtime uses the selected template's saved generation settings", 
       timeout: 900,
     },
   );
+});
+
+test("workflow normalization replaces stale saved models with authoritative configured models", () => {
+  const configuredModels = {
+    ...models,
+    image_models: ["current-image-model"],
+    default_image_model: "stale-image-default",
+    text_models: ["current-text-model"],
+    default_text_model: "stale-text-default",
+  };
+  const workflow = createBlankWorkflow(models, preferences, "multi_image_series");
+  workflow.config.model = "removed-image-model";
+  workflow.config.image_model = "removed-image-model";
+  workflow.series_config.prompt_model = "removed-text-model";
+
+  const normalized = normalizeWorkflow(workflow, configuredModels, {
+    ...preferences,
+    default_image_model: "removed-image-preference",
+    default_text_model: "removed-text-preference",
+  });
+
+  assert.equal(normalized.config.model, "current-image-model");
+  assert.equal(normalized.config.image_model, "current-image-model");
+  assert.equal(normalized.series_config.prompt_model, "current-text-model");
+});
+
+test("workflow runtime preserves valid saved models from authoritative lists", () => {
+  const workflow = createBlankWorkflow(models, preferences, "multi_image_series");
+  workflow.config.model = "gemini-3-pro-image-preview";
+  workflow.config.image_model = "gemini-3-pro-image-preview";
+  workflow.series_config.prompt_model = "gpt-5.2";
+
+  const normalized = normalizeWorkflow(workflow, models, preferences);
+
+  assert.equal(resolveWorkflowRuntime(normalized, models, preferences).model, "gemini-3-pro-image-preview");
+  assert.equal(resolveWorkflowTextModel(normalized, models, preferences), "gpt-5.2");
+});
+
+test("successful empty workflow model lists stay empty and reject stale selections", () => {
+  const emptyModels = {
+    ...models,
+    image_models: [],
+    default_image_model: "stale-image-default",
+    text_models: [],
+    default_text_model: "stale-text-default",
+  };
+  const workflow = createBlankWorkflow(models, preferences, "multi_image_series");
+  workflow.config.model = "removed-image-model";
+  workflow.config.image_model = "removed-image-model";
+  workflow.series_config.prompt_model = "removed-text-model";
+
+  const normalized = normalizeWorkflow(workflow, emptyModels, preferences);
+
+  assert.equal(normalized.config.model, "");
+  assert.equal(normalized.config.image_model, "");
+  assert.equal(normalized.series_config.prompt_model, "");
+  assert.equal(resolveWorkflowRuntime(workflow, emptyModels, preferences).model, "");
+  assert.equal(resolveWorkflowTextModel(workflow, emptyModels, preferences), "");
+  assert.equal(isWorkflowModelConfigured("removed-image-model", emptyModels.image_models), false);
+  assert.equal(isWorkflowModelConfigured("", emptyModels.image_models), false);
 });
 
 test("editing one workflow does not change another workflow's generation settings", () => {

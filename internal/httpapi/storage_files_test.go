@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -360,8 +361,59 @@ func TestProfileStorageMeasureHonorsDisabledUserProviders(t *testing.T) {
 	setRequestAuthCookie(request, userToken)
 	response := httptest.NewRecorder()
 	app.Handler().ServeHTTP(response, request)
-	if response.Code != http.StatusBadRequest || !strings.Contains(response.Body.String(), "user storage providers are disabled") {
+	if response.Code != http.StatusForbidden || !strings.Contains(response.Body.String(), "管理员未启用用户自定义素材存储") {
 		t.Fatalf("disabled user provider measure status = %d body = %s", response.Code, response.Body.String())
+	}
+}
+
+func TestWriteStorageServiceErrorClassifiesAndRedactsFailures(t *testing.T) {
+	app := &App{}
+	tests := []struct {
+		name        string
+		err         error
+		wantStatus  int
+		wantMessage string
+		hidden      string
+	}{
+		{
+			name:        "safe validation",
+			err:         service.StorageValidationError{Message: "file is empty"},
+			wantStatus:  http.StatusBadRequest,
+			wantMessage: "file is empty",
+		},
+		{
+			name:        "access denied",
+			err:         fmt.Errorf("object owner mismatch: %w", service.ErrStorageObjectAccessDenied),
+			wantStatus:  http.StatusForbidden,
+			wantMessage: "无权访问",
+			hidden:      "owner mismatch",
+		},
+		{
+			name:        "provider unavailable",
+			err:         fmt.Errorf("provider secret-name: %w", service.ErrStorageProviderUnavailable),
+			wantStatus:  http.StatusServiceUnavailable,
+			wantMessage: "素材存储服务暂时不可用",
+			hidden:      "secret-name",
+		},
+		{
+			name:        "unknown backend failure",
+			err:         errors.New("postgres password=private-value"),
+			wantStatus:  http.StatusServiceUnavailable,
+			wantMessage: "素材存储服务暂时不可用",
+			hidden:      "private-value",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			app.writeStorageServiceError(response, test.err)
+			if response.Code != test.wantStatus || !strings.Contains(response.Body.String(), test.wantMessage) {
+				t.Fatalf("response = %d %s", response.Code, response.Body.String())
+			}
+			if test.hidden != "" && strings.Contains(response.Body.String(), test.hidden) {
+				t.Fatalf("response leaked internal detail: %s", response.Body.String())
+			}
+		})
 	}
 }
 

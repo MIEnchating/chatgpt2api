@@ -10,7 +10,7 @@ afterAll(() => {
   mock.restore();
 });
 
-function loginResponse() {
+function loginResponse(overrides = {}) {
   return {
     credential_id: "credential-1",
     role: "user",
@@ -23,6 +23,7 @@ function loginResponse() {
     menu_paths: ["/studio"],
     api_permissions: [],
     menus: [],
+    ...overrides,
   };
 }
 
@@ -93,6 +94,46 @@ describe("verified auth session cache", () => {
     await expect(session.getVerifiedAuthSession()).rejects.toThrow("permission denied");
     expect(session.getCachedAuthSession()).toBeUndefined();
     expect(await session.getVerifiedAuthSession()).toMatchObject({ key: "credential-1" });
+    expect(calls).toBe(2);
+  });
+
+  test("refreshes cached role and permission data from the server", async () => {
+    let response = loginResponse();
+    let calls = 0;
+    verifySessionImplementation = async () => {
+      calls += 1;
+      return response;
+    };
+    const session = await import("../src/lib/session.ts?permission-refresh");
+
+    expect(await session.getVerifiedAuthSession()).toMatchObject({ menuPaths: ["/studio"] });
+    response = loginResponse({
+      menu_paths: ["/assets"],
+      api_permissions: ["get/api/profile/assets"],
+    });
+
+    expect(await session.refreshVerifiedAuthSession()).toMatchObject({
+      menuPaths: ["/assets"],
+      apiPermissions: ["get/api/profile/assets"],
+    });
+    expect(session.getCachedAuthSession()).toMatchObject({ menuPaths: ["/assets"] });
+    expect(calls).toBe(2);
+  });
+
+  test("keeps the last verified session when a refresh fails transiently", async () => {
+    let calls = 0;
+    verifySessionImplementation = async () => {
+      calls += 1;
+      if (calls === 2) {
+        throw requestError(503, "service unavailable");
+      }
+      return loginResponse();
+    };
+    const session = await import("../src/lib/session.ts?failed-refresh");
+
+    expect(await session.getVerifiedAuthSession()).toMatchObject({ key: "credential-1" });
+    await expect(session.refreshVerifiedAuthSession()).rejects.toThrow("service unavailable");
+    expect(session.getCachedAuthSession()).toMatchObject({ key: "credential-1" });
     expect(calls).toBe(2);
   });
 });

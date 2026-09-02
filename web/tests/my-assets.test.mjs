@@ -62,8 +62,8 @@ test("my asset clients persist item mutations without delayed full-table snapsho
   assert.match(api, /method:\s*"POST"/);
   assert.match(api, /method:\s*"DELETE"/);
   assert.doesNotMatch(hook, /syncMyAssets|setTimeout\(/);
-  assert.match(hook, /upsertMyAsset\(asset\)/);
-  assert.match(hook, /deleteMyAsset\(id\)/);
+  assert.match(hook, /upsertMyAsset\(asset, signal\)/);
+  assert.match(hook, /deleteMyAsset\(id, signal\)/);
   assert.match(prompts, /await upsertMyAsset\(asset\)/);
   assert.match(canvas, /await upsertMyAsset\(asset\)/);
 });

@@ -127,6 +127,7 @@ import { fetchAuthenticatedImageBlob } from "@/lib/authenticated-image";
 import { inspectAudioReferenceFile } from "@/lib/audio-reference-file";
 import { dispatchImageGenerationPreferencesChanged } from "@/lib/image-generation-preferences-events";
 import { imageSourceToFile } from "@/lib/image-source-file";
+import { resolveConfiguredModel } from "@/lib/model-config-selection";
 import {
   imageConversationReferenceLimitMessage,
   isImageConversationAssetURL,
@@ -999,23 +1000,6 @@ function getStoredComposerMode(): ComposerMode {
   return window.localStorage.getItem(COMPOSER_MODE_STORAGE_KEY) === "video" ? "video" : "image";
 }
 
-function ensureModelOption(options: ReadonlyArray<ImageModelOption>, model: ImageModel): ImageModelOption[] {
-  if (!model || options.some((option) => option.value === model)) {
-    return [...options];
-  }
-  return [{ value: model, label: model }, ...options];
-}
-
-function ensureDefaultImageModelOption(
-  options: ReadonlyArray<ImageModelOption>,
-  defaultModel = DEFAULT_IMAGE_MODEL,
-): ImageModelOption[] {
-  return [
-    { value: defaultModel, label: defaultModel },
-    ...options.filter((option) => option.value !== defaultModel),
-  ];
-}
-
 function serializeImageSizeSelection(selection: ImageSizeSelection): StoredImageSizeSelection {
   return {
     mode: selection.mode,
@@ -1559,7 +1543,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   const { refreshTokenModels, routeForModel, tokenNameForModel } = useRelayTokenPreferences();
   const [relayTokenDialogKind, setRelayTokenDialogKind] = useState<CreationRelayTokenKind | null>(null);
   const [relayImageModelOptions, setRelayImageModelOptions] = useState<ImageModelOption[]>(() =>
-    ensureDefaultImageModelOption(IMAGE_CREATION_MODEL_OPTIONS),
+    [...IMAGE_CREATION_MODEL_OPTIONS],
   );
   const [defaultImageVisibility, setDefaultImageVisibility] = useState<ImageVisibility>("private");
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
@@ -1712,20 +1696,26 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     : 1;
   const editingDraftCountLimit = 10;
   const imageCreationModelOptions = useMemo(
-    () => (relayImageModelOptions.length > 0 ? relayImageModelOptions : IMAGE_CREATION_MODEL_OPTIONS),
+    () => relayImageModelOptions,
     [relayImageModelOptions],
   );
-  const defaultImageModel = imageCreationModelOptions[0]?.value ?? DEFAULT_IMAGE_MODEL;
-  const composerModelOptions = useMemo(
-    () => ensureModelOption(imageCreationModelOptions, imageModel),
-    [imageCreationModelOptions, imageModel],
-  );
+  const defaultImageModel = imageCreationModelOptions[0]?.value ?? "";
+  const composerModelOptions = imageCreationModelOptions;
   const editingTurnModelOptions = useMemo(() => {
     if (!editingTurnDraft) {
       return [];
     }
-    return ensureModelOption(imageCreationModelOptions, editingTurnDraft.model);
+    return imageCreationModelOptions;
   }, [editingTurnDraft, imageCreationModelOptions]);
+  const isConfiguredCreationModel = useCallback((mode: ImageTurn["mode"], model: string) => (
+    mode === "video"
+      ? videoModelOptions.some((option) => option.value === model)
+      : imageCreationModelOptions.some((option) => option.value === model)
+  ), [imageCreationModelOptions, videoModelOptions]);
+  const editingDraftModelAvailable = Boolean(
+    editingTurnDraft
+    && imageCreationModelOptions.some((option) => option.value === editingTurnDraft.model),
+  );
   const selectedConversation = useMemo(
     () => conversations.find((item) => item.id === selectedConversationId) ?? null,
     [conversations, selectedConversationId],
@@ -2220,11 +2210,13 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
           return;
         }
         const imageOptions = modelOptionsFromNames(result.config.image_models);
-        const preferredImageModel = imageGenerationPreferences.workbench.image_model || imageGenerationPreferences.default_image_model;
-        const nextImageDefault = imageOptions.some((option) => option.value === preferredImageModel)
-          ? preferredImageModel
-          : result.config.default_image_model || imageOptions[0]?.value || DEFAULT_IMAGE_MODEL;
-        setRelayImageModelOptions(ensureDefaultImageModelOption(imageOptions, nextImageDefault));
+        const nextImageDefault = resolveConfiguredModel(
+          result.config.image_models,
+          imageGenerationPreferences.workbench.image_model,
+          imageGenerationPreferences.default_image_model,
+          result.config.default_image_model,
+        );
+        setRelayImageModelOptions(imageOptions);
         setImageModel(nextImageDefault);
         const nextVideoModels = result.config.video_models || [];
         const nextVideoDefault = resolveConfiguredVideoModel(
@@ -2237,10 +2229,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         setVideoModel(nextVideoDefault);
       })
       .catch(() => {
-        if (ignore) {
-          return;
-        }
-        setRelayImageModelOptions(ensureDefaultImageModelOption(IMAGE_CREATION_MODEL_OPTIONS));
+        // A failed refresh is non-authoritative; keep the currently displayed local state.
       })
       .finally(() => {
         if (!ignore) {
@@ -4225,6 +4214,10 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         toast.error("只有失败图片可以单独重试");
         return;
       }
+      if (!isConfiguredCreationModel(targetTurn.mode, targetTurn.model)) {
+        toast.error(targetTurn.mode === "video" ? "当前没有可用的视频模型" : "当前没有可用的图片模型");
+        return;
+      }
       const referenceValidationError = imageTurnReferenceValidationError(targetTurn);
       if (referenceValidationError) {
         toast.error(referenceValidationError);
@@ -4310,6 +4303,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       relayTokenNameForKind,
       requireRelayToken,
       runConversationQueue,
+      isConfiguredCreationModel,
       updateConversation,
     ],
   );
@@ -4332,6 +4326,10 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       }
       if (isTurnInProgress(targetTurn)) {
         toast.error("当前轮次正在处理，稍后再重新生成");
+        return;
+      }
+      if (!isConfiguredCreationModel(targetTurn.mode, targetTurn.model)) {
+        toast.error(targetTurn.mode === "video" ? "当前没有可用的视频模型" : "当前没有可用的图片模型");
         return;
       }
       const referenceValidationError = imageTurnReferenceValidationError(targetTurn);
@@ -4407,6 +4405,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       relayTokenNameForKind,
       requireRelayToken,
       runConversationQueue,
+      isConfiguredCreationModel,
       updateConversation,
     ],
   );
@@ -4441,7 +4440,11 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         toast.error("当前轮次正在处理，稍后再编辑");
         return;
       }
-      if (regenerate && !requireRelayToken(targetTurn.mode === "video" ? "video" : "image", targetTurn.model)) {
+      if (regenerate && !isConfiguredCreationModel(draft.mode, draft.model)) {
+        toast.error("当前没有可用的图片模型");
+        return;
+      }
+      if (regenerate && !requireRelayToken("image", draft.model)) {
         return;
       }
       const mode = getComposerConversationMode("image", draft.referenceImages);
@@ -4603,6 +4606,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     },
     [
       editingTurnDraft,
+      isConfiguredCreationModel,
       relayTokenNameForKind,
       requireRelayToken,
       runConversationQueue,
@@ -4634,6 +4638,10 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       : imageCreationModelOptions.some((option) => option.value === imageModel) ? imageModel : defaultImageModel;
     if (videoMode && !effectiveModel) {
       toast.error("管理员尚未配置可用的视频模型");
+      return;
+    }
+    if (!videoMode && !effectiveModel) {
+      toast.error("管理员尚未配置可用的图片模型");
       return;
     }
     if (!requireRelayToken(videoMode ? "video" : "image", effectiveModel)) {
@@ -5080,8 +5088,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                   <label className="flex max-w-[15rem] flex-col gap-1.5">
                     <ImageParameterLabel>模型</ImageParameterLabel>
                     <Select
-                      value={editingTurnDraft.model}
-                      disabled={editReferenceUploadPendingCount > 0}
+                      value={editingDraftModelAvailable ? editingTurnDraft.model : ""}
+                      disabled={editReferenceUploadPendingCount > 0 || editingTurnModelOptions.length === 0}
                       onValueChange={(value) =>
                         setEditingTurnDraft((current) =>
                           current && isImageModel(value) ? { ...current, model: value } : current,
@@ -5302,7 +5310,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                   保存
                 </Button>
                 <Button
-                  disabled={editReferenceUploadPendingCount > 0}
+                  disabled={editReferenceUploadPendingCount > 0 || !editingDraftModelAvailable}
                   onClick={() => void handleSaveEditingTurn(true)}
                 >
                   保存并重新生成

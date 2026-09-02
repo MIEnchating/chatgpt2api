@@ -114,13 +114,16 @@ export async function upsertMyAsset(asset: MyAsset, signal?: AbortSignal) {
   }
 }
 
-export async function deleteMyAsset(id: string) {
+export async function deleteMyAsset(id: string, signal?: AbortSignal) {
+  signal?.throwIfAborted();
   invalidateAssetCache();
   try {
     const response = await httpRequest<{ deleted?: boolean }>("/api/profile/assets", {
       method: "DELETE",
       body: { id },
+      signal,
     });
+    signal?.throwIfAborted();
     return response.deleted === true;
   } finally {
     invalidateAssetCache();

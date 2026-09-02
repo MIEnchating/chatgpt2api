@@ -47,8 +47,9 @@ export function CanvasImageParameterPopover({ node, imageModel, imageModels = []
   );
   const quality = node.generation_quality ?? defaults.generation_quality ?? "";
   const selectedModel = node.generation_model?.trim() || imageModel;
-  const modelOptions = Array.from(new Set([selectedModel, ...imageModels, imageModel].filter(Boolean)));
-	const countLimit = imageOutputCountLimit(selectedModel);
+  const modelOptions = Array.from(new Set(imageModels.map((model) => model.trim()).filter(Boolean)));
+  const selectedModelAvailable = modelOptions.includes(selectedModel);
+  const countLimit = imageOutputCountLimit(selectedModel);
   const count = Math.max(1, Math.min(countLimit, node.generation_count ?? defaults.generation_count ?? 1));
   const snapToMultiple16 = node.generation_snap_to_multiple_16 ?? defaults.generation_snap_to_multiple_16 ?? true;
   const calculatedSize = buildImageSize(selection, { snapToMultiple16 });
@@ -102,8 +103,8 @@ export function CanvasImageParameterPopover({ node, imageModel, imageModels = []
     <div className="flex flex-col gap-3.5">
       {showModel ? <section className="order-0 space-y-1.5">
         <ImageParameterLabel help="选择当前图片节点使用的生成模型。">模型</ImageParameterLabel>
-        <Select value={selectedModel || undefined} onValueChange={(value) => onChange({ generation_model: value })}>
-          <SelectTrigger className="h-9 rounded-lg px-2.5 text-xs shadow-none"><SelectValue placeholder="选择模型" /></SelectTrigger>
+        <Select value={selectedModelAvailable ? selectedModel : ""} disabled={modelOptions.length === 0} onValueChange={(value) => onChange({ generation_model: value })}>
+          <SelectTrigger className="h-9 rounded-lg px-2.5 text-xs shadow-none"><SelectValue placeholder={modelOptions.length ? "选择模型" : "暂无可用模型"} /></SelectTrigger>
           <SelectContent>{modelOptions.map((model) => <SelectItem key={model} value={model}>{model}</SelectItem>)}</SelectContent>
         </Select>
       </section> : null}

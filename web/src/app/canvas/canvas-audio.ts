@@ -1,4 +1,5 @@
 import type { CanvasConnection, CanvasNode } from "@/services/api/canvas";
+import { resolveConfiguredModel } from "@/lib/model-config-selection";
 import { canvasGenerationInputs } from "./canvas-config-inputs.ts";
 
 export const AUDIO_VOICE_OPTIONS = ["alloy", "ash", "ballad", "coral", "echo", "fable", "nova", "onyx", "sage", "shimmer", "verse", "marin", "cedar"] as const;
@@ -25,16 +26,8 @@ export type CanvasAudioGenerationRequest = Record<string, unknown> & { model: st
 export function resolveCanvasAudioModel(
   defaultModel: unknown,
   audioModels: unknown,
-  fallback = "gpt-4o-mini-tts",
 ) {
-  const configuredModels = Array.isArray(audioModels)
-    ? audioModels
-    : String(audioModels ?? "").split(",");
-  for (const candidate of [defaultModel, ...configuredModels, fallback]) {
-    const model = String(candidate ?? "").trim();
-    if (model) return model;
-  }
-  return fallback;
+  return resolveConfiguredModel(audioModels, defaultModel);
 }
 
 export function isCanvasAudioFile(file: Pick<File, "name" | "type">) {

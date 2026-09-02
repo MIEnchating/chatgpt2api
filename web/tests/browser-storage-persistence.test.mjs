@@ -21,7 +21,7 @@ test("account creation preferences do not use browser storage", async () => {
   assert.match(imagePage, /updateCreationWorkbenchPreferences/);
   assert.match(imagePage, /image_model: imageModel/);
   assert.match(imagePage, /video_model: videoModel/);
-  assert.match(imagePage, /workbench\.image_model \|\| imageGenerationPreferences\.default_image_model/);
+  assert.match(imagePage, /resolveConfiguredModel\([\s\S]*?image_models,[\s\S]*?workbench\.image_model,[\s\S]*?default_image_model,[\s\S]*?config\.default_image_model/);
   assert.match(imagePage, /resolveConfiguredVideoModel\([\s\S]*?workbench\.video_model,[\s\S]*?default_video_model,[\s\S]*?config\.default_video_model/);
   assert.match(canvasPage, /function updateNodeGenerationParameters[\s\S]*?pushHistory\(\);/);
   assert.match(workflowWorkspace, /onModelChange=\{\(model\) => patchConfig\(\{ model, image_model: model \}\)\}/);
@@ -44,6 +44,15 @@ test("assets use account-scoped server storage with in-memory request deduplicat
   assert.match(assets, /epoch === assetCacheEpoch/);
   assert.match(assetsHook, /activeScopeRef\.current !== scope/);
   assert.match(assetsHook, /setAssets\(\[\]\)/);
+  assert.match(assetsHook, /mutationScopeRef/);
+  assert.match(assetsHook, /if \(!enabled\) \{[\s\S]*?mutationScopeRef\.current = null;/);
+  assert.match(assetsHook, /new AbortController\(\)/);
+  assert.match(assetsHook, /queueKey = `\$\{requestScope\}\\u0000\$\{id\}`/);
+  assert.match(assetsHook, /mutationScope\.scope !== requestScope/);
+  assert.match(assetsHook, /upsertMyAsset\(asset, signal\)/);
+  assert.match(assetsHook, /deleteMyAsset\(id, signal\)/);
+  assert.match(assets, /deleteMyAsset\(id: string, signal\?: AbortSignal\)/);
+  assert.match(assets, /method: "DELETE",[\s\S]*?signal,/);
   assert.match(generatedAssets, /generatedAssetRegistrationKey\([\s\S]*?getCachedAuthSession\(\)\?\.key/);
   assert.match(generatedAssets, /MAX_REGISTERED_GENERATED_ASSETS = 512/);
   assert.doesNotMatch(promptPulls, /localStorage|sessionStorage|prompt-source-pull-states|prompt-source-last-run/);

@@ -8,6 +8,7 @@ const dialogSource = await readFile(new URL("../src/components/ui/dialog.tsx", i
 const inputTagSource = await readFile(new URL("../src/components/ui/input-tag.tsx", import.meta.url), "utf8");
 const multiSelectSource = await readFile(new URL("../src/components/ui/multi-select.tsx", import.meta.url), "utf8");
 const switchSource = await readFile(new URL("../src/components/ui/switch.tsx", import.meta.url), "utf8");
+const themeSource = await readFile(new URL("../src/lib/theme.ts", import.meta.url), "utf8");
 const workflowSource = await readFile(new URL("../src/app/workflows/creative-workflow-workspace.tsx", import.meta.url), "utf8");
 const workflowPageSource = await readFile(new URL("../src/app/workflows/page.tsx", import.meta.url), "utf8");
 const imageTaskQueueSource = await readFile(new URL("../src/components/image-task-queue.tsx", import.meta.url), "utf8");
@@ -86,6 +87,13 @@ test("switch composes native click handlers with checked state changes", () => {
   assert.match(switchSource, /onClick=\{handleClick\}[\s\S]*?\.\.\.props/);
 });
 
+test("forced theme transitions still apply when the browser has no transition API", () => {
+  assert.match(themeSource, /typeof startViewTransition === "function"/);
+  assert.match(themeSource, /startViewTransition\.call\(document/);
+  assert.match(themeSource, /applyColorThemeToRoot\(theme\);\s*}/);
+  assert.doesNotMatch(themeSource, /startViewTransition\?\.\([\s\S]*?\);\s*return;/);
+});
+
 test("global selects keep the neutral selected treatment shown across settings", () => {
   assert.match(selectSource, /data-\[state=checked\]:bg-accent/);
   assert.match(selectSource, /data-\[state=checked\]:font-medium/);
@@ -117,6 +125,15 @@ test("multi select fills available width before collapsing selected tags", () =>
   assert.match(multiSelectSource, /candidateWidth \+ gap \+ collapseWidth > availableWidth/);
   assert.match(multiSelectSource, /new ResizeObserver\(measureVisibleTags\)/);
   assert.doesNotMatch(multiSelectSource, /selected\.slice\(0, 1\)/);
+});
+
+test("disabled multi select closes and blocks every value mutation path", () => {
+  assert.match(multiSelectSource, /if \(disabled\) \{\s*setOpen\(false\);/);
+  assert.match(multiSelectSource, /open=\{!disabled && open\}/);
+  assert.match(multiSelectSource, /onOpenChange=\{\(nextOpen\) => \{\s*if \(!disabled\)/);
+  assert.match(multiSelectSource, /const remove = \(item: string\) => \{\s*if \(!disabled\)/);
+  assert.match(multiSelectSource, /const toggle = \(item: string\) => \{\s*if \(!disabled\)/);
+  assert.equal(multiSelectSource.match(/\n\s+disabled=\{disabled\}/g)?.length, 2);
 });
 
 test("video dimension drafts survive equivalent option array instances", () => {
@@ -373,7 +390,7 @@ test("workflow runner shows the saved template settings as read only", () => {
   assert.match(workflowRunnerSource, /workflowImageSettings\(workflow\.config\)/);
   assert.match(workflowRunnerSource, /<WorkflowImageSettings[\s\S]*?readOnly/);
   assert.doesNotMatch(workflowRunnerSource, /onImageSettingsChange|onImageModelChange/);
-  assert.match(workflowSource, /<ImageSettingsPanel disabled=\{readOnly\}/);
+  assert.match(workflowSource, /<ImageSettingsPanel disabled=\{readOnly \|\| !modelAvailable\}/);
   assert.match(imageSettingsPanelSource, /disabled\s*\? "cursor-not-allowed border-border\/60 bg-muted\/50 dark:bg-muted\/40"/);
   assert.match(imageSettingsPanelSource, /disabled:bg-transparent disabled:opacity-100/);
 });
@@ -588,7 +605,8 @@ test("creation conversation cards keep spacing inside the scroll viewport", () =
 });
 
 test("creation composer model picker reuses the global select treatment", () => {
-  assert.match(imageComposerSource, /<Select[\s\S]*value=\{activeModel\}/);
+  assert.match(imageComposerSource, /<Select[\s\S]*value=\{activeModelAvailable \? activeModel : ""\}/);
+  assert.match(imageComposerSource, /disabled=\{activeModelOptions\.length === 0\}/);
   assert.match(imageComposerSource, /<SelectTrigger[\s\S]*选择模型，当前/);
   assert.match(imageComposerSource, /<SelectContent[\s\S]*side="top"/);
   assert.doesNotMatch(imageComposerSource, /data-\[state=checked\]:bg-\[#eef4ff\]/);

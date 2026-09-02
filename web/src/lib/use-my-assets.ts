@@ -10,6 +10,22 @@ export function useMyAssets(scope: string, enabled: boolean) {
   const [loading, setLoading] = useState(true);
   const activeScopeRef = useRef("");
   const mutationQueuesRef = useRef(new Map<string, Promise<unknown>>());
+  const mutationScopeRef = useRef<{ scope: string; controller: AbortController } | null>(null);
+
+  useEffect(() => {
+    if (!enabled) {
+      mutationScopeRef.current = null;
+      return;
+    }
+    const mutationScope = { scope, controller: new AbortController() };
+    mutationScopeRef.current = mutationScope;
+    return () => {
+      mutationScope.controller.abort(new DOMException("素材操作所属会话已失效", "AbortError"));
+      if (mutationScopeRef.current === mutationScope) {
+        mutationScopeRef.current = null;
+      }
+    };
+  }, [enabled, scope]);
 
   useEffect(() => {
     activeScopeRef.current = enabled ? scope : "";
@@ -38,20 +54,27 @@ export function useMyAssets(scope: string, enabled: boolean) {
     };
   }, [enabled, scope]);
 
-  const enqueueMutation = useCallback(<T,>(id: string, mutation: () => Promise<T>) => {
+  const enqueueMutation = useCallback(<T,>(requestScope: string, id: string, mutation: (signal: AbortSignal) => Promise<T>) => {
     const queues = mutationQueuesRef.current;
-    const previous = queues.get(id) || Promise.resolve();
-    const request = previous.catch(() => undefined).then(mutation);
+    const queueKey = `${requestScope}\u0000${id}`;
+    const previous = queues.get(queueKey) || Promise.resolve();
+    const request = previous.catch(() => undefined).then(() => {
+      const mutationScope = mutationScopeRef.current;
+      if (!mutationScope || mutationScope.scope !== requestScope || mutationScope.controller.signal.aborted) {
+        throw new DOMException("素材操作所属会话已失效", "AbortError");
+      }
+      return mutation(mutationScope.controller.signal);
+    });
     let tracked: Promise<T>;
     tracked = request.finally(() => {
-      if (queues.get(id) === tracked) queues.delete(id);
+      if (queues.get(queueKey) === tracked) queues.delete(queueKey);
     });
-    queues.set(id, tracked);
+    queues.set(queueKey, tracked);
     return tracked;
   }, []);
 
-  const upsertAsset = useCallback((asset: MyAsset) => enqueueMutation(asset.id, async () => {
-    const saved = await upsertMyAsset(asset);
+  const upsertAsset = useCallback((asset: MyAsset) => enqueueMutation(scope, asset.id, async (signal) => {
+    const saved = await upsertMyAsset(asset, signal);
     if (activeScopeRef.current === scope) {
       setAssets((current) => [
         saved,
@@ -65,8 +88,8 @@ export function useMyAssets(scope: string, enabled: boolean) {
     return saved;
   }), [enqueueMutation, scope]);
 
-  const deleteAsset = useCallback((id: string) => enqueueMutation(id, async () => {
-    const deleted = await deleteMyAsset(id);
+  const deleteAsset = useCallback((id: string) => enqueueMutation(scope, id, async (signal) => {
+    const deleted = await deleteMyAsset(id, signal);
     if (activeScopeRef.current === scope) {
       setAssets((current) => current.filter((item) => item.id !== id));
     }

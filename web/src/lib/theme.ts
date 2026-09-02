@@ -67,14 +67,19 @@ export function applyColorTheme(theme: ColorTheme, options: ThemeTransitionOptio
   }
 
   const origin = options.origin;
-  if (origin && (options.force || shouldAnimateThemeTransition())) {
+  const startViewTransition = (document as ViewTransitionDocument).startViewTransition;
+  if (
+    origin
+    && typeof startViewTransition === "function"
+    && (options.force || shouldAnimateThemeTransition())
+  ) {
     const root = document.documentElement;
     const radius = getThemeTransitionRadius(origin.x, origin.y);
     root.style.setProperty("--theme-transition-x", `${origin.x}px`);
     root.style.setProperty("--theme-transition-y", `${origin.y}px`);
     root.style.setProperty("--theme-transition-radius", `${radius}px`);
 
-    (document as ViewTransitionDocument).startViewTransition?.(() => {
+    startViewTransition.call(document, () => {
       applyColorThemeToRoot(theme);
     });
     return;

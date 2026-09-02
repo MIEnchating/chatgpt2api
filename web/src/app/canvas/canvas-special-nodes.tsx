@@ -42,7 +42,7 @@ export function CanvasSpecialNodeContent({ node, onPanoramaOpen, onPanoramaMoveS
 
 export function CanvasAudioPromptPanel({ node, models, audioReferences, relayTokenName, running, busy, uploading, canGenerate, onChange, onPromptChange, onUpload, onGenerate, onStop }: { node: CanvasNode; models: string[]; audioReferences: CanvasAudioReference[]; relayTokenName: string; running: boolean; busy: boolean; uploading: boolean; canGenerate: boolean; onChange: (patch: Partial<CanvasNode>) => void; onPromptChange: (value: string, commit?: boolean) => void; onUpload: () => void; onGenerate: () => void; onStop: () => void }) {
   const [prompt, setPrompt] = useState(node.prompt || "");
-  const model = node.generation_audio_model || models[0] || "gpt-4o-mini-tts";
+  const model = node.generation_audio_model || models[0] || "";
   useEffect(() => setPrompt(node.prompt || ""), [node.id, node.prompt]);
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
@@ -62,12 +62,12 @@ export function CanvasAudioPromptPanel({ node, models, audioReferences, relayTok
 }
 
 export function CanvasAudioSettingsFields({ node, models, audioReferences, relayTokenName, onChange, showModel = true }: { node: CanvasNode; models: string[]; audioReferences: CanvasAudioReference[]; relayTokenName: string; onChange: (patch: Partial<CanvasNode>) => void; showModel?: boolean }) {
-  const model = node.generation_audio_model || models[0] || "gpt-4o-mini-tts";
+  const model = node.generation_audio_model || models[0] || "";
   const provider = canvasAudioProvider(model);
   const cloneNodeID = node.generation_audio_mimo_voice_clone_node_id || (audioReferences.length === 1 ? audioReferences[0].nodeID : "");
   return (
     <>
-      {showModel ? <label className="grid gap-1 text-xs"><span className="text-muted-foreground">模型</span><Select value={model} onValueChange={(value) => onChange({ generation_audio_model: value })}><SelectTrigger><SelectValue /></SelectTrigger><SelectContent>{models.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></label> : null}
+      {showModel ? <label className="grid gap-1 text-xs"><span className="text-muted-foreground">模型</span><Select value={models.includes(model) ? model : ""} disabled={models.length === 0} onValueChange={(value) => onChange({ generation_audio_model: value })}><SelectTrigger><SelectValue placeholder={models.length ? "选择模型" : "暂无可用模型"} /></SelectTrigger><SelectContent>{models.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></label> : null}
       {provider === "gemini" ? <AudioSelect label="声音" value={node.generation_audio_gemini_voice || "Kore"} options={GEMINI_TTS_VOICE_OPTIONS} onChange={(value) => onChange({ generation_audio_gemini_voice: value })} /> : null}
       {provider === "glm" ? <><AudioSelect label="声音" value={node.generation_audio_glm_voice || "tongtong"} options={GLM_TTS_VOICE_OPTIONS} onChange={(value) => onChange({ generation_audio_glm_voice: value })} /><div className="grid grid-cols-2 gap-2"><AudioSelect label="格式" value={node.generation_audio_glm_format || "wav"} options={GLM_TTS_FORMAT_OPTIONS} onChange={(value) => onChange({ generation_audio_glm_format: value as "wav" | "pcm" })} /><AudioSpeedInput label="语速" value={node.generation_audio_glm_speed || 1} min={0.5} max={2} onChange={(value) => onChange({ generation_audio_glm_speed: value })} /></div></> : null}
       {provider === "grok" ? <><GrokTTSVoiceSelect model={model} relayTokenName={relayTokenName} value={node.generation_audio_grok_voice || "eve"} onChange={(value) => onChange({ generation_audio_grok_voice: value })} /><AudioSelect label="语言" value={node.generation_audio_grok_language || "auto"} options={GROK_TTS_LANGUAGE_OPTIONS} onChange={(value) => onChange({ generation_audio_grok_language: value })} /><div className="grid grid-cols-2 gap-2"><AudioSelect label="格式" value={node.generation_audio_grok_format || "mp3"} options={GROK_TTS_FORMAT_OPTIONS} onChange={(value) => onChange({ generation_audio_grok_format: value as "mp3" | "wav" })} /><AudioSpeedInput label="语速" value={node.generation_audio_grok_speed || 1} min={0.7} max={1.5} onChange={(value) => onChange({ generation_audio_grok_speed: value })} /></div></> : null}
@@ -122,7 +122,7 @@ export function CanvasPanoramaPromptPanel({ node, imageModel, imageModels, runni
       <AppScrollArea className="h-0 min-h-40 flex-1" viewportClassName="pr-3">
         <CanvasImageParameterPopover node={{ ...node, generation_size: "2:1" }} imageModel={imageModel} imageModels={imageModels} onChange={(patch) => onChange({ ...patch, generation_size: "2:1" })} expanded showModel={false} showSize={false} />
       </AppScrollArea>
-      <CanvasGenerationFooter running={running} disabled={!running && (busy || !canGenerate)} secondaryAction={{ label: "替换图片", icon: <Upload />, loading: uploading, disabled: uploading || running, onClick: onUpload }} onGenerate={onGenerate} onStop={onStop} />
+      <CanvasGenerationFooter running={running} disabled={!running && (busy || !canGenerate || !imageModels.includes(selectedModel))} secondaryAction={{ label: "替换图片", icon: <Upload />, loading: uploading, disabled: uploading || running, onClick: onUpload }} onGenerate={onGenerate} onStop={onStop} />
     </div>
   );
 }

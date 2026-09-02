@@ -74,10 +74,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { cancelCreationTask, createAudioGenerationTask, createChatGenerationTask, createImageEditTask, createImageGenerationTask, createVideoGenerationTask, DEFAULT_IMAGE_MODEL, fetchCreationTasks, fetchManagedImages, fetchModelConfig, imageReferenceImageLimit, supportsImageEditing, supportsImageOutputControls, supportsImageQualityValue, supportsImageResolution, supportsImageStreaming, supportsStructuredImageParameters, uploadAudioReference, uploadVideoImageReference, uploadVideoReference, type CreationTask, type CreationTaskMessage, type ImageModel, type ManagedImage } from "@/lib/api";
+import { cancelCreationTask, createAudioGenerationTask, createChatGenerationTask, createImageEditTask, createImageGenerationTask, createVideoGenerationTask, fetchCreationTasks, fetchManagedImages, fetchModelConfig, imageReferenceImageLimit, supportsImageEditing, supportsImageOutputControls, supportsImageQualityValue, supportsImageResolution, supportsImageStreaming, supportsStructuredImageParameters, uploadAudioReference, uploadVideoImageReference, uploadVideoReference, type CreationTask, type CreationTaskMessage, type ImageModel, type ManagedImage } from "@/lib/api";
 import { fetchAuthenticatedImageBlob, primeAuthenticatedImageCache } from "@/lib/authenticated-image";
 import { imageConversationReferenceLimitMessage } from "@/lib/image-conversation-assets";
 import { isRetryableTaskPollError } from "@/lib/generation-task-contract";
+import { configuredModelNames } from "@/lib/model-config-selection";
 import { isPublicReferenceURL } from "@/lib/public-reference-url";
 import { useRelayTokenPreferences } from "@/lib/use-relay-token-preferences";
 import { createMyAsset, fetchMyAssets, upsertMyAsset } from "@/lib/my-assets";
@@ -483,7 +484,8 @@ function CanvasVideoPromptPanel({ node, inputs, running, generationBusy, uploadi
   const connectedPromptAvailable = inputs.some((input) => input.type === "text" && Boolean(input.text?.trim()));
   useEffect(() => setPrompt(node.prompt || ""), [node.id, node.prompt]);
   const params = canvasVideoParameters(node);
-  const modelOptions = Array.from(new Set([...(videoModels || []), params.generation_video_model]));
+  const modelOptions = videoModels;
+  const modelAvailable = modelOptions.includes(params.generation_video_model);
   const videoReferenceSupported = supportsVideoMultimodalReferences(params.generation_video_model);
   const audioReferenceSupported = videoMultimodalReferenceLimits(params.generation_video_model).audio > 0;
   const referenceImageURL = params.generation_video_reference_image_urls[0] || "";
@@ -614,7 +616,7 @@ function CanvasVideoPromptPanel({ node, inputs, running, generationBusy, uploadi
 	  </AppScrollArea>
 	  {showGenerateFooter ? <CanvasGenerationFooter
 	    running={running}
-	    disabled={!running && (generationBusy || (!prompt.trim() && !connectedPromptAvailable) || !videoSecondsIsValid(params.generation_video_model, params.generation_video_seconds))}
+    disabled={!running && (generationBusy || !modelAvailable || (!prompt.trim() && !connectedPromptAvailable) || !videoSecondsIsValid(params.generation_video_model, params.generation_video_seconds))}
 	    secondaryAction={onUpload ? { label: node.url ? "替换视频" : "上传视频", icon: <Upload />, loading: uploading, disabled: uploading || running, onClick: onUpload } : undefined}
 	    onGenerate={() => onGenerate(prompt.trim())}
 	    onStop={onStop}
@@ -992,29 +994,34 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     void fetchModelConfig()
       .then(({ config }) => {
         if (active) {
-          const personalImageModel = config.image_models.includes(imageGenerationPreferences.default_image_model)
+          const configuredImageModels = configuredModelNames(config.image_models)
+            .filter((model) => model.toLowerCase() !== "auto");
+          const configuredTextModels = configuredModelNames(config.text_models);
+          const configuredVideoModels = configuredModelNames(config.video_models);
+          const configuredAudioModels = configuredModelNames(config.audio_models);
+          const personalImageModel = configuredImageModels.includes(imageGenerationPreferences.default_image_model)
             ? imageGenerationPreferences.default_image_model
             : config.default_image_model;
           const personalVideoModel = resolveConfiguredVideoModel(
-            config.video_models,
+            configuredVideoModels,
             imageGenerationPreferences.workbench.video_model,
             imageGenerationPreferences.default_video_model,
             config.default_video_model,
           );
-          const personalTextModel = config.text_models.includes(imageGenerationPreferences.default_text_model)
+          const personalTextModel = configuredTextModels.includes(imageGenerationPreferences.default_text_model)
             ? imageGenerationPreferences.default_text_model
             : config.default_text_model;
-          const personalAudioModel = config.audio_models.includes(imageGenerationPreferences.default_audio_model)
+          const personalAudioModel = configuredAudioModels.includes(imageGenerationPreferences.default_audio_model)
             ? imageGenerationPreferences.default_audio_model
             : config.default_audio_model;
-          setImageModel(resolveCanvasImageModel(personalImageModel, config.image_models, DEFAULT_IMAGE_MODEL));
-          setImageModels(config.image_models?.length ? config.image_models : [personalImageModel || DEFAULT_IMAGE_MODEL]);
-          setTextModel(resolveCanvasTextModel(personalTextModel, config.text_models));
-          setTextModels(config.text_models?.length ? config.text_models : [config.default_text_model].filter(Boolean));
+          setImageModel(resolveCanvasImageModel(personalImageModel, configuredImageModels));
+          setImageModels(configuredImageModels);
+          setTextModel(resolveCanvasTextModel(personalTextModel, configuredTextModels));
+          setTextModels(configuredTextModels);
           setVideoModel(personalVideoModel);
-          setVideoModels(config.video_models || []);
-          setAudioModel(resolveCanvasAudioModel(personalAudioModel, config.audio_models));
-          setAudioModels(config.audio_models?.length ? config.audio_models : [config.default_audio_model || "gpt-4o-mini-tts"]);
+          setVideoModels(configuredVideoModels);
+          setAudioModel(resolveCanvasAudioModel(personalAudioModel, configuredAudioModels));
+          setAudioModels(configuredAudioModels);
           setImageModelReady(true);
         }
       })
@@ -1680,7 +1687,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       agentState,
       generation: {
         textModel,
-        imageModel: imageModel || imageGenerationPreferences.default_image_model,
+        imageModel,
         videoModel,
         audioModel,
         imageQuality: resolvedAgentConfig.imageQuality,
@@ -1905,9 +1912,10 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         ? videoModel
         : type === "audio"
           ? audioModel
-          : imageModel || imageGenerationPreferences.default_image_model;
+          : imageModel;
+      const configuredModels = type === "video" ? videoModels : type === "audio" ? audioModels : imageModels;
       const relayTokenName = tokenNameForModel(type, generationModel);
-      if (!generationModel || !relayTokenName.trim()) return { ok: false, code: "model_not_configured", message: `请先在个人中心完成${type === "video" ? "视频" : type === "audio" ? "音频" : "图片"}模型和密钥配置` };
+      if (!configuredModels.includes(generationModel) || !relayTokenName.trim()) return { ok: false, code: "model_not_configured", message: `请先在个人中心完成${type === "video" ? "视频" : type === "audio" ? "音频" : "图片"}模型和密钥配置` };
       let videoSeconds: number | undefined;
       let videoGenerateAudio: boolean | undefined;
       if (type === "video") {
@@ -3191,7 +3199,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     const context = buildCanvasGenerationContext(sourceNode.id, nodesRef.current, connectionsRef.current, sourcePrompt);
     if (!context.prompt.trim() && !context.referenceImageURLs.length) return toast.error("请填写文本指令或连接有效输入");
     const model = sourceNode.generation_text_model?.trim() || textModel;
-    if (!model) return toast.error("没有可用的文本模型");
+    if (!textModels.includes(model)) return toast.error("请选择全局模型设置中已启用的文本模型");
     const relayTokenName = tokenNameForModel("text", model);
     if (!relayTokenName.trim()) { setRelayTokenDialogKind("text"); return; }
     const resultIDs = retrying ? [requestedNode.id] : plan.createsChildNodes ? Array.from({ length: plan.count }, () => `text-${randomID()}`) : [requestedNode.id];
@@ -3294,7 +3302,8 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     const generationContext = buildCanvasGenerationContext(sourceNode.id, nodesRef.current, connectionsRef.current, contextPrompt);
     const text = generationContext.prompt.trim();
     if (!text) return toast.error("请填写音频内容或连接文本节点");
-    const generationAudioModel = sourceNode.generation_audio_model || audioModel;
+    const generationAudioModel = (sourceNode.generation_audio_model || audioModel).trim();
+    if (!audioModels.includes(generationAudioModel)) return toast.error("请选择全局模型设置中已启用的音频模型");
     const relayTokenName = tokenNameForModel("audio", generationAudioModel);
     if (!relayTokenName.trim()) { setRelayTokenDialogKind("audio"); return; }
     const taskID = `canvas-audio-${randomID()}`;
@@ -3407,6 +3416,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     const context = retrying ? null : buildCanvasGenerationContext(nodeID, nodesRef.current, connectionsRef.current, sourcePrompt);
     const effectivePrompt = context?.prompt.trim() || "";
     const generationModel = sourceNode.generation_model?.trim() || imageModel.trim();
+    if (!imageModels.includes(generationModel)) return toast.error("请选择全局模型设置中已启用的图片模型");
     const relayTokenName = tokenNameForModel("image", generationModel);
     if (!relayTokenName.trim()) { setRelayTokenDialogKind("image"); return; }
     const referenceLimit = imageReferenceImageLimit(generationModel);
@@ -3791,6 +3801,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       : null;
     const contextNode = retryConfiguration || sourceNode;
     const generationModel = options.generationModel?.trim() || canvasGenerationModel(imageModel, sourceNode, retryConfiguration, retrying);
+    if (!imageModels.includes(generationModel)) return toast.error("请选择全局模型设置中已启用的图片模型");
     const taskRelayTokenName = tokenNameForModel("image", generationModel).trim();
     if (!taskRelayTokenName) {
       setRelayTokenDialogKind("image");
@@ -4284,8 +4295,15 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       const inputs = canvasConfigInputs(node.id, nodesRef.current, connectionsRef.current);
       const canGenerate = canGenerateCanvasConfig(node, inputs);
       const nodeTextModel = node.generation_text_model || textModel;
-      const nodeAudioModel = node.generation_audio_model || audioModels[0] || "gpt-4o-mini-tts";
+      const nodeAudioModel = node.generation_audio_model || audioModel;
       const configVideoParams = canvasVideoParameters(node);
+      const canGenerateWithModel = mode === "image"
+        ? imageModels.includes(node.generation_model?.trim() || imageModel)
+        : mode === "text"
+          ? textModels.includes(nodeTextModel)
+          : mode === "audio"
+            ? audioModels.includes(nodeAudioModel)
+            : videoModels.includes(configVideoParams.generation_video_model);
       const canGenerateWithParameters = mode !== "video" || videoSecondsIsValid(configVideoParams.generation_video_model, configVideoParams.generation_video_seconds);
       const configPromptTools = mode === "image"
         ? <CanvasInlineModelSelect value={node.generation_model?.trim() || imageModel} models={imageModels} label="图片模型" onChange={(generation_model) => updateNodeGenerationParameters(node.id, { generation_model })} />
@@ -4315,7 +4333,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
           <CanvasGenerationFooter
             className="mt-3"
             running={running}
-            disabled={!running && (!canGenerate || !canGenerateWithParameters)}
+            disabled={!running && (!canGenerate || !canGenerateWithModel || !canGenerateWithParameters)}
             onGenerate={mode === "video" ? () => void runVideoGeneration(node.id, (node.composer_content ?? node.prompt ?? "").trim()) : () => void runGeneration(node.id)}
             onStop={() => requestStopGeneration(node.id)}
           />
@@ -4333,12 +4351,13 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     }
     if (node.type === "audio") {
       const context = buildCanvasGenerationContext(node.id, nodesRef.current, connectionsRef.current, node.prompt || "");
-      const nodeAudioModel = node.generation_audio_model || audioModels[0] || "gpt-4o-mini-tts";
-      return <CanvasAudioPromptPanel node={node} models={audioModels} audioReferences={canvasAudioReferences(node.id, nodesRef.current, connectionsRef.current)} relayTokenName={tokenNameForModel("audio", nodeAudioModel)} running={nodeGenerationRunning(node.id)} busy={false} uploading={uploadingNodeID === node.id} canGenerate={Boolean(context.prompt.trim())} onChange={(patch) => updateNodeGenerationParameters(node.id, patch)} onPromptChange={(value, commit) => updateNodePrompt(node.id, value, commit)} onUpload={() => requestNodeMediaUpload(node.id)} onGenerate={() => void runAudioGeneration(node.id)} onStop={() => requestStopGeneration(node.id)} />;
+      const nodeAudioModel = node.generation_audio_model || audioModel;
+      return <CanvasAudioPromptPanel node={node} models={audioModels} audioReferences={canvasAudioReferences(node.id, nodesRef.current, connectionsRef.current)} relayTokenName={tokenNameForModel("audio", nodeAudioModel)} running={nodeGenerationRunning(node.id)} busy={false} uploading={uploadingNodeID === node.id} canGenerate={Boolean(context.prompt.trim()) && audioModels.includes(nodeAudioModel)} onChange={(patch) => updateNodeGenerationParameters(node.id, patch)} onPromptChange={(value, commit) => updateNodePrompt(node.id, value, commit)} onUpload={() => requestNodeMediaUpload(node.id)} onGenerate={() => void runAudioGeneration(node.id)} onStop={() => requestStopGeneration(node.id)} />;
     }
     if (node.type === "panorama") {
       const context = buildCanvasGenerationContext(node.id, nodesRef.current, connectionsRef.current, node.panorama_source_prompt || node.prompt || "");
-      return <CanvasPanoramaPromptPanel node={node} imageModel={node.generation_model?.trim() || imageModel} imageModels={imageModels} running={nodeGenerationRunning(node.id)} busy={false} uploading={uploadingNodeID === node.id} canGenerate={Boolean(context.prompt.trim() || context.referenceImageURLs.length || node.url)} onChange={(patch) => updateNodeGenerationParameters(node.id, { ...patch, generation_size: PANORAMA_IMAGE_SIZE })} onPromptChange={(value, commit) => { replaceNodes(nodesRef.current.map((item) => item.id === node.id ? { ...item, panorama_source_prompt: value, prompt: value } : item)); scheduleSave(); if (commit) pushHistory(); }} onUpload={() => requestNodeMediaUpload(node.id)} onGenerate={() => void runPanoramaGeneration(node.id)} onStop={() => requestStopGeneration(node.id)} />;
+      const nodeImageModel = node.generation_model?.trim() || imageModel;
+      return <CanvasPanoramaPromptPanel node={node} imageModel={nodeImageModel} imageModels={imageModels} running={nodeGenerationRunning(node.id)} busy={false} uploading={uploadingNodeID === node.id} canGenerate={Boolean(context.prompt.trim() || context.referenceImageURLs.length || node.url) && imageModels.includes(nodeImageModel)} onChange={(patch) => updateNodeGenerationParameters(node.id, { ...patch, generation_size: PANORAMA_IMAGE_SIZE })} onPromptChange={(value, commit) => { replaceNodes(nodesRef.current.map((item) => item.id === node.id ? { ...item, panorama_source_prompt: value, prompt: value } : item)); scheduleSave(); if (commit) pushHistory(); }} onUpload={() => requestNodeMediaUpload(node.id)} onGenerate={() => void runPanoramaGeneration(node.id)} onStop={() => requestStopGeneration(node.id)} />;
     }
     if (node.type === "director") return null;
     if (node.type === "video") {
@@ -4509,6 +4528,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
   return (
     <section className="relative flex h-full min-h-[540px] overflow-hidden rounded-xl border border-border bg-card shadow-[0_16px_42px_-34px_rgba(15,23,42,0.34)]">
       <CanvasSidePanel
+        sessionKey={session.key}
         nodes={nodes}
         selectedNodeIDs={selectedNodeIDs}
         open={sidePanel.open}

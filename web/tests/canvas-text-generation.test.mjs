@@ -7,10 +7,10 @@ function node(type, values = {}) {
   return { id: "node", type, x: 0, y: 0, width: 340, height: 240, scale_x: 1, scale_y: 1, ...values };
 }
 
-test("canvas and Agent use the explicit default text model instead of list order", () => {
+test("canvas and Agent resolve text models only from the configured list", () => {
   assert.equal(resolveCanvasTextModel("gpt-5.4", ["gpt-5.5", "gpt-5.4"]), "gpt-5.4");
   assert.equal(resolveCanvasTextModel("", ["gpt-5.3", "gpt-5.5"]), "gpt-5.3");
-  assert.equal(resolveCanvasTextModel("", []), "gpt-5.5");
+  assert.equal(resolveCanvasTextModel("", []), "");
 });
 
 test("edits an existing text node into one child without replacing the source", () => {

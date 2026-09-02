@@ -138,6 +138,17 @@ test("the canvas prompt library shares chronological ordering and limits every c
   assert.doesNotMatch(canvasSidePanelSource, /filter\(\(prompt\) => !prompt\.isNsfw\)/);
 });
 
+test("the canvas prompt cache is bounded and isolated by authenticated session", () => {
+  assert.match(pageSource, /<CanvasSidePanel[\s\S]*?sessionKey=\{session\.key\}/);
+  assert.match(canvasSidePanelSource, /sidePanelPromptCache = new Map<string, SidePanelPromptCacheEntry>/);
+  assert.match(canvasSidePanelSource, /sidePanelPromptRequests = new Map<string, Promise<SidePanelPromptData>>/);
+  assert.match(canvasSidePanelSource, /SIDE_PANEL_PROMPT_CACHE_TTL_MS = 5 \* 60_000/);
+  assert.match(canvasSidePanelSource, /SIDE_PANEL_PROMPT_CACHE_LIMIT = 8/);
+  assert.match(canvasSidePanelSource, /loadSidePanelPrompts\(sessionKey, force\)/);
+  assert.match(canvasSidePanelSource, /sidePanelPromptRequests\.get\(key\) === tracked/);
+  assert.match(canvasSidePanelSource, /requestVersionRef\.current !== requestVersion/);
+});
+
 test("canvas generation is concurrent per node and stopping is task scoped", () => {
   assert.match(pageSource, /activeGenerationsRef = useRef\(new Map<string, CanvasActiveGeneration>\(\)\)/);
   assert.match(pageSource, /async function runAudioGeneration\(nodeID: string, concurrent = true/);

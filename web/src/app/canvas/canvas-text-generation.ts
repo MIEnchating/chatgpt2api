@@ -1,4 +1,5 @@
 import type { CanvasNode } from "@/services/api/canvas";
+import { resolveConfiguredModel } from "@/lib/model-config-selection";
 
 export type CanvasTextGenerationPlan = {
   sourceContent: string;
@@ -11,16 +12,8 @@ export type CanvasTextGenerationPlan = {
 export function resolveCanvasTextModel(
   defaultModel: unknown,
   textModels: unknown,
-  fallback = "gpt-5.5",
 ) {
-  const configuredModels = Array.isArray(textModels)
-    ? textModels
-    : String(textModels ?? "").split(",");
-  for (const candidate of [defaultModel, ...configuredModels, fallback]) {
-    const model = String(candidate ?? "").trim();
-    if (model) return model;
-  }
-  return fallback;
+  return resolveConfiguredModel(textModels, defaultModel);
 }
 
 export function canvasTextGenerationPlan(sourceNode: CanvasNode): CanvasTextGenerationPlan {

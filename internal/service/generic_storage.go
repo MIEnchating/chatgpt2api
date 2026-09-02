@@ -35,8 +35,21 @@ const (
 var (
 	ErrInvalidStorageRange            = errors.New("requested storage range is invalid")
 	ErrLocalStorageCapacityExceeded   = errors.New("服务器本机素材容量已达到上限")
+	ErrStorageObjectAccessDenied      = errors.New("storage object access denied")
+	ErrStorageProviderUnavailable     = errors.New("storage provider is unavailable")
+	ErrUserStorageProviderDisabled    = errors.New("user storage providers are disabled")
 	errStorageCapacitySchedulerClosed = errors.New("storage capacity scheduler is closed")
 )
+
+type StorageValidationError struct {
+	Message string
+}
+
+func (e StorageValidationError) Error() string { return e.Message }
+
+func storageValidationError(message string) error {
+	return StorageValidationError{Message: message}
+}
 
 type StorageSettingsProvider interface {
 	StorageSettings() model.StorageSetting
@@ -223,7 +236,7 @@ func (s *GenericStorageService) PublicConfig() StoragePublicConfig {
 func (s *GenericStorageService) UserProviders(ownerID string) (UserStorageProviders, error) {
 	ownerID = strings.TrimSpace(ownerID)
 	if ownerID == "" {
-		return UserStorageProviders{}, errors.New("user is required")
+		return UserStorageProviders{}, storageValidationError("user is required")
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -233,10 +246,10 @@ func (s *GenericStorageService) UserProviders(ownerID string) (UserStorageProvid
 func (s *GenericStorageService) SaveUserProviders(ownerID string, incoming UserStorageProviders) (UserStorageProviders, error) {
 	ownerID = strings.TrimSpace(ownerID)
 	if ownerID == "" {
-		return UserStorageProviders{}, errors.New("user is required")
+		return UserStorageProviders{}, storageValidationError("user is required")
 	}
 	if !s.settings.StorageSettings().AllowUserProvider {
-		return UserStorageProviders{}, errors.New("user storage providers are disabled")
+		return UserStorageProviders{}, ErrUserStorageProviderDisabled
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -260,10 +273,10 @@ func (s *GenericStorageService) SaveUserProviders(ownerID string, incoming UserS
 		}
 		resolved := normalizeUserStorageProvider(ownerID, provider)
 		if providerEnabled(provider.Enabled) && !storageProviderConfigured(resolved) {
-			return errors.New("user storage provider is incomplete")
+			return storageValidationError("user storage provider is incomplete")
 		}
 		if resolved.PublicBaseURL != "" && storageObjectPublicURL(resolved, "health-check") == "" {
-			return errors.New("user storage provider public base URL is invalid")
+			return storageValidationError("user storage provider public base URL is invalid")
 		}
 		*next = &provider
 		return nil
@@ -292,21 +305,21 @@ func (s *GenericStorageService) SaveUserProviders(ownerID string, incoming UserS
 func (s *GenericStorageService) Upload(ctx context.Context, ownerID string, admin bool, filename, contentType string, data []byte, providerInput *StorageObjectProviderInput) (UploadedStorageObject, error) {
 	ownerID = strings.TrimSpace(ownerID)
 	if ownerID == "" {
-		return UploadedStorageObject{}, errors.New("user is required")
+		return UploadedStorageObject{}, storageValidationError("user is required")
 	}
 	if len(data) == 0 {
-		return UploadedStorageObject{}, errors.New("file is empty")
+		return UploadedStorageObject{}, storageValidationError("file is empty")
 	}
 	setting := s.settings.StorageSettings()
 	var provider model.StorageProvider
 	var err error
 	if providerInput != nil {
 		if !setting.AllowUserProvider {
-			return UploadedStorageObject{}, errors.New("user storage providers are disabled")
+			return UploadedStorageObject{}, ErrUserStorageProviderDisabled
 		}
 		provider = normalizeUserStorageProvider(ownerID, *providerInput)
 		if !provider.Enabled || !storageProviderConfigured(provider) {
-			return UploadedStorageObject{}, errors.New("user storage provider is incomplete")
+			return UploadedStorageObject{}, storageValidationError("user storage provider is incomplete")
 		}
 	} else {
 		provider, err = s.selectStorageProvider(ownerID, admin, setting)
@@ -365,23 +378,29 @@ func (s *GenericStorageService) Upload(ctx context.Context, ownerID string, admi
 func (s *GenericStorageService) RegisterDirect(ownerID string, input DirectStorageObjectInput) (UploadedStorageObject, error) {
 	ownerID = strings.TrimSpace(ownerID)
 	setting := s.settings.StorageSettings()
-	if ownerID == "" || !setting.AllowUserProvider || strings.ToLower(strings.TrimSpace(input.Provider.Type)) != model.StorageProviderTypeWebDAV {
-		return UploadedStorageObject{}, errors.New("user WebDAV is disabled")
+	if ownerID == "" {
+		return UploadedStorageObject{}, storageValidationError("user is required")
+	}
+	if !setting.AllowUserProvider {
+		return UploadedStorageObject{}, ErrUserStorageProviderDisabled
+	}
+	if strings.ToLower(strings.TrimSpace(input.Provider.Type)) != model.StorageProviderTypeWebDAV {
+		return UploadedStorageObject{}, storageValidationError("storage provider must be WebDAV")
 	}
 	provider := normalizeUserStorageProvider(ownerID, input.Provider)
 	if !provider.Enabled || !storageProviderConfigured(provider) {
-		return UploadedStorageObject{}, errors.New("user WebDAV provider is incomplete")
+		return UploadedStorageObject{}, storageValidationError("user WebDAV provider is incomplete")
 	}
 	objectKey, err := cleanStorageObjectPath(input.ObjectKey)
 	if err != nil {
-		return UploadedStorageObject{}, err
+		return UploadedStorageObject{}, storageValidationError(err.Error())
 	}
 	prefix := strings.Trim(path.Join(provider.PathPrefix, ownerID), "/") + "/"
 	if !strings.HasPrefix(objectKey, prefix) {
-		return UploadedStorageObject{}, errors.New("WebDAV object path is invalid")
+		return UploadedStorageObject{}, storageValidationError("WebDAV object path is invalid")
 	}
 	if input.Bytes < 0 {
-		return UploadedStorageObject{}, errors.New("file size is invalid")
+		return UploadedStorageObject{}, storageValidationError("file size is invalid")
 	}
 	mimeType := strings.TrimSpace(input.MIMEType)
 	if mimeType == "" {
@@ -414,7 +433,7 @@ func (s *GenericStorageService) Delete(ctx context.Context, ownerID string, admi
 		return err
 	}
 	if !admin && object.CreatedBy != ownerID {
-		return errors.New("storage object permission denied")
+		return ErrStorageObjectAccessDenied
 	}
 	providers := s.providersForObject(object)
 	if providerInput != nil && s.settings.StorageSettings().AllowUserProvider {
@@ -422,7 +441,7 @@ func (s *GenericStorageService) Delete(ctx context.Context, ownerID string, admi
 	}
 	provider, ok := findStorageProviderForObject(object, providers)
 	if !ok {
-		return errors.New("storage provider does not exist")
+		return fmt.Errorf("%w: provider %q does not exist", ErrStorageProviderUnavailable, object.ProviderID)
 	}
 	if err := deleteStorageObjectData(ctx, provider, object.ObjectKey); err != nil {
 		return err
@@ -439,7 +458,7 @@ func (s *GenericStorageService) DeleteDirectRecord(ownerID string, id string) er
 		return err
 	}
 	if object.CreatedBy != strings.TrimSpace(ownerID) || !object.Direct {
-		return errors.New("storage object permission denied")
+		return ErrStorageObjectAccessDenied
 	}
 	return ignoreStorageObjectNotFound(s.objects.DeleteStorageObject(object.ID))
 }
@@ -460,7 +479,7 @@ func (s *GenericStorageService) DownloadForIdentity(ctx context.Context, ownerID
 	if strings.TrimSpace(object.PublicURL) != "" {
 		return downloadPublicStorageObject(ctx, object, rangeHeader)
 	}
-	return DownloadedStorageObject{}, errors.New("storage provider does not exist")
+	return DownloadedStorageObject{}, fmt.Errorf("%w: provider %q does not exist", ErrStorageProviderUnavailable, object.ProviderID)
 }
 
 func (s *GenericStorageService) storageObjectForIdentity(ownerID string, admin bool, id string) (model.StorageObject, error) {
@@ -469,14 +488,14 @@ func (s *GenericStorageService) storageObjectForIdentity(ownerID string, admin b
 		return model.StorageObject{}, err
 	}
 	if !admin && object.CreatedBy != strings.TrimSpace(ownerID) {
-		return model.StorageObject{}, errors.New("storage object permission denied")
+		return model.StorageObject{}, ErrStorageObjectAccessDenied
 	}
 	return object, nil
 }
 
 func (s *GenericStorageService) MeasureUser(ctx context.Context, ownerID string, input StorageObjectProviderInput) (StorageCapacityResult, error) {
 	if !s.settings.StorageSettings().AllowUserProvider {
-		return StorageCapacityResult{}, errors.New("user storage providers are disabled")
+		return StorageCapacityResult{}, ErrUserStorageProviderDisabled
 	}
 	provider := normalizeUserStorageProvider(ownerID, input)
 	bytesUsed, err := measureStorageProvider(ctx, provider)
@@ -501,7 +520,7 @@ func (s *GenericStorageService) MeasureAdmin(ctx context.Context, index int, inc
 	}
 	setting := s.settings.StorageSettings()
 	if index < 0 || index >= len(setting.Providers) {
-		return StorageCapacityResult{}, errors.New("storage provider does not exist")
+		return StorageCapacityResult{}, storageValidationError("storage provider does not exist")
 	}
 	provider := setting.Providers[index]
 	if incoming != nil {
@@ -708,7 +727,7 @@ func validateUserStorageProviderTypes(providers UserStorageProviders) error {
 	s3Enabled := providers.S3 != nil && providerEnabled(providers.S3.Enabled)
 	webDAVEnabled := providers.WebDAV != nil && providerEnabled(providers.WebDAV.Enabled)
 	if s3Enabled && webDAVEnabled {
-		return errors.New("S3/R2 and WebDAV cannot be enabled at the same time")
+		return storageValidationError("S3/R2 and WebDAV cannot be enabled at the same time")
 	}
 	return nil
 }

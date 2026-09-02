@@ -34,6 +34,39 @@ var (
 	ErrWorkflowAccessDenied = errors.New("workflow access denied")
 )
 
+type WorkflowValidationError struct {
+	Message string
+}
+
+func (e WorkflowValidationError) Error() string { return e.Message }
+
+type WorkflowStorageError struct {
+	Err error
+}
+
+func (e *WorkflowStorageError) Error() string {
+	return "workflow storage: " + e.Err.Error()
+}
+
+func (e *WorkflowStorageError) Unwrap() error {
+	return e.Err
+}
+
+func workflowValidationError(message string, args ...any) error {
+	return WorkflowValidationError{Message: fmt.Sprintf(message, args...)}
+}
+
+func workflowStorageError(err error) error {
+	if err == nil {
+		return nil
+	}
+	var storageErr *WorkflowStorageError
+	if errors.As(err, &storageErr) {
+		return err
+	}
+	return &WorkflowStorageError{Err: err}
+}
+
 type WorkflowVariable struct {
 	ID           string   `json:"id"`
 	Key          string   `json:"key"`
@@ -110,10 +143,10 @@ func (s *WorkflowService) InitializeIfEmpty(ownerID string, inputs []CreativeWor
 		return nil, errors.New("owner_id is required")
 	}
 	if len(inputs) == 0 {
-		return nil, errors.New("starter workflows are required")
+		return nil, workflowValidationError("starter workflows are required")
 	}
 	if len(inputs) > maxWorkflowsPerOwner {
-		return nil, fmt.Errorf("每个用户最多保存 %d 个工作流", maxWorkflowsPerOwner)
+		return nil, workflowValidationError("每个用户最多保存 %d 个工作流", maxWorkflowsPerOwner)
 	}
 
 	now := util.NowISO()
@@ -147,7 +180,7 @@ func (s *WorkflowService) InitializeIfEmpty(ownerID string, inputs []CreativeWor
 			return visible, nil
 		}
 		if workflowOwnerCount(items, ownerID)+len(candidates) > maxWorkflowsPerOwner {
-			return nil, fmt.Errorf("每个用户最多保存 %d 个工作流", maxWorkflowsPerOwner)
+			return nil, workflowValidationError("每个用户最多保存 %d 个工作流", maxWorkflowsPerOwner)
 		}
 		for _, candidate := range candidates {
 			stored := candidate
@@ -200,7 +233,7 @@ func (s *WorkflowService) Save(ownerID string, input CreativeWorkflow) (Creative
 		}
 		index, current := workflowByID(items, input.ID)
 		if current != nil && current.OwnerID != ownerID {
-			return CreativeWorkflow{}, errors.New("只能编辑自己的工作流")
+			return CreativeWorkflow{}, ErrWorkflowAccessDenied
 		}
 		candidate := input
 		if index < 0 {
@@ -208,7 +241,7 @@ func (s *WorkflowService) Save(ownerID string, input CreativeWorkflow) (Creative
 				return CreativeWorkflow{}, workflowConcurrentMutationError(input.ID)
 			}
 			if workflowOwnerCount(items, ownerID) >= maxWorkflowsPerOwner {
-				return CreativeWorkflow{}, fmt.Errorf("每个用户最多保存 %d 个工作流", maxWorkflowsPerOwner)
+				return CreativeWorkflow{}, workflowValidationError("每个用户最多保存 %d 个工作流", maxWorkflowsPerOwner)
 			}
 			candidate.OwnerID = ownerID
 			candidate.CreatedAt = now
@@ -264,7 +297,7 @@ func (s *WorkflowService) TouchLastRun(ownerID, id, lastRunAt string) (CreativeW
 	}
 	parsedLastRunAt, err := time.Parse(time.RFC3339Nano, strings.TrimSpace(lastRunAt))
 	if err != nil {
-		return CreativeWorkflow{}, errors.New("last_run_at must be an RFC3339 timestamp")
+		return CreativeWorkflow{}, workflowValidationError("last_run_at must be an RFC3339 timestamp")
 	}
 	lastRunAt = parsedLastRunAt.UTC().Format(time.RFC3339Nano)
 
@@ -327,7 +360,7 @@ func (s *WorkflowService) Delete(ownerID, id string) error {
 			return workflowConcurrentMutationError(id)
 		}
 		if current.OwnerID != ownerID {
-			return errors.New("只能删除自己的工作流")
+			return ErrWorkflowAccessDenied
 		}
 		next := make([]CreativeWorkflow, 0, len(items))
 		for _, item := range items {
@@ -367,25 +400,25 @@ func workflowOwnerCount(items []CreativeWorkflow, ownerID string) int {
 
 func validateWorkflowSaveLimits(item CreativeWorkflow) error {
 	if utf8.RuneCountInString(item.Name) > maxWorkflowNameRunes {
-		return fmt.Errorf("工作流名称最多支持 %d 个字符", maxWorkflowNameRunes)
+		return workflowValidationError("工作流名称最多支持 %d 个字符", maxWorkflowNameRunes)
 	}
 	if len(item.Variables) > maxWorkflowVariables {
-		return fmt.Errorf("每个工作流最多支持 %d 个变量", maxWorkflowVariables)
+		return workflowValidationError("每个工作流最多支持 %d 个变量", maxWorkflowVariables)
 	}
 	for i := range item.Variables {
 		if len(item.Variables[i].Options) > maxWorkflowVariableOptions {
-			return fmt.Errorf("第 %d 个工作流变量最多支持 %d 个选项", i+1, maxWorkflowVariableOptions)
+			return workflowValidationError("第 %d 个工作流变量最多支持 %d 个选项", i+1, maxWorkflowVariableOptions)
 		}
 	}
 	if workflowTextBytes(item) > maxWorkflowPayloadBytes {
-		return fmt.Errorf("单个工作流配置不能超过 %d KiB", maxWorkflowPayloadBytes>>10)
+		return workflowValidationError("单个工作流配置不能超过 %d KiB", maxWorkflowPayloadBytes>>10)
 	}
 	data, err := json.Marshal(item)
 	if err != nil {
 		return fmt.Errorf("encode workflow: %w", err)
 	}
 	if len(data) > maxWorkflowPayloadBytes {
-		return fmt.Errorf("单个工作流配置不能超过 %d KiB", maxWorkflowPayloadBytes>>10)
+		return workflowValidationError("单个工作流配置不能超过 %d KiB", maxWorkflowPayloadBytes>>10)
 	}
 	return nil
 }
@@ -459,7 +492,7 @@ func normalizeWorkflow(item *CreativeWorkflow) error {
 	item.Category = strings.TrimSpace(item.Category)
 	item.Description = strings.TrimSpace(item.Description)
 	if item.Name == "" {
-		return errors.New("请输入工作流名称")
+		return workflowValidationError("请输入工作流名称")
 	}
 	if strings.EqualFold(strings.TrimSpace(item.Scope), "public") {
 		item.Scope = "public"
@@ -489,14 +522,14 @@ func normalizeWorkflowVariables(variables []WorkflowVariable) error {
 		}
 		variable.Key = sanitizeWorkflowTemplateVariableKey(strings.TrimSpace(variable.Key))
 		if variable.Key == "" {
-			return fmt.Errorf("第 %d 个工作流变量缺少变量名", i+1)
+			return workflowValidationError("第 %d 个工作流变量缺少变量名", i+1)
 		}
 		if previous, exists := keyIndexes[variable.Key]; exists {
-			return fmt.Errorf("工作流变量名 %q 重复（第 %d 和第 %d 个变量）", variable.Key, previous+1, i+1)
+			return workflowValidationError("工作流变量名 %q 重复（第 %d 和第 %d 个变量）", variable.Key, previous+1, i+1)
 		}
 		keyIndexes[variable.Key] = i
 		if previous, exists := idIndexes[variable.ID]; exists {
-			return fmt.Errorf("工作流变量 ID %q 重复（第 %d 和第 %d 个变量）", variable.ID, previous+1, i+1)
+			return workflowValidationError("工作流变量 ID %q 重复（第 %d 和第 %d 个变量）", variable.ID, previous+1, i+1)
 		}
 		idIndexes[variable.ID] = i
 
@@ -557,17 +590,17 @@ func normalizeSeriesConfig(config *WorkflowSeriesConfig) {
 func (s *WorkflowService) loadLocked() ([]CreativeWorkflow, error) {
 	raw, err := loadStoredJSON(s.store, workflowDocumentName)
 	if err != nil || raw == nil {
-		return []CreativeWorkflow{}, err
+		return []CreativeWorkflow{}, workflowStorageError(err)
 	}
 	data, err := json.Marshal(raw)
 	if err != nil {
-		return nil, err
+		return nil, workflowStorageError(err)
 	}
 	var document struct {
 		Items []CreativeWorkflow `json:"items"`
 	}
 	if err := json.Unmarshal(data, &document); err != nil {
-		return nil, err
+		return nil, workflowStorageError(err)
 	}
 	if document.Items == nil {
 		document.Items = []CreativeWorkflow{}
@@ -581,7 +614,7 @@ func (s *WorkflowService) loadLocked() ([]CreativeWorkflow, error) {
 			if identifier == "" {
 				identifier = fmt.Sprintf("第 %d 条", i+1)
 			}
-			return nil, fmt.Errorf("工作流 %s 的存储数据无效: %w", identifier, err)
+			return nil, workflowStorageError(fmt.Errorf("工作流 %s 的存储数据无效: %w", identifier, err))
 		}
 	}
 	return document.Items, nil
@@ -591,5 +624,5 @@ func (s *WorkflowService) saveLocked(items []CreativeWorkflow) error {
 	if items == nil {
 		items = []CreativeWorkflow{}
 	}
-	return saveStoredJSON(s.store, workflowDocumentName, map[string]any{"version": 3, "items": items})
+	return workflowStorageError(saveStoredJSON(s.store, workflowDocumentName, map[string]any{"version": 3, "items": items}))
 }

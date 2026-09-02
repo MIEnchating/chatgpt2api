@@ -42,6 +42,7 @@ import type { CanvasNode } from "@/services/api/canvas";
 export type CanvasSidePanelTab = "canvas" | "assets" | "prompts";
 
 type CanvasSidePanelProps = {
+  sessionKey: string;
   nodes: CanvasNode[];
   selectedNodeIDs: Set<string>;
   open: boolean;
@@ -89,9 +90,16 @@ type SidePanelPromptData = {
   categories: Array<{ id: string; label: string; builtin?: boolean }>;
 };
 
-let sidePanelPromptCache: SidePanelPromptData | null = null;
-let sidePanelPromptRequest: Promise<SidePanelPromptData> | null = null;
+type SidePanelPromptCacheEntry = {
+  data: SidePanelPromptData;
+  expiresAt: number;
+};
+
+const sidePanelPromptCache = new Map<string, SidePanelPromptCacheEntry>();
+const sidePanelPromptRequests = new Map<string, Promise<SidePanelPromptData>>();
 const SIDE_PANEL_PROMPT_CATEGORY_PAGE_SIZE = 12;
+const SIDE_PANEL_PROMPT_CACHE_TTL_MS = 5 * 60_000;
+const SIDE_PANEL_PROMPT_CACHE_LIMIT = 8;
 
 function localizedPrompt(prompt: BananaPrompt): BananaPrompt {
   const localization = prompt.localizations?.["zh-CN"] ?? prompt.localizations?.en;
@@ -104,11 +112,36 @@ function localizedPrompt(prompt: BananaPrompt): BananaPrompt {
   } : prompt;
 }
 
-function loadSidePanelPrompts(force = false) {
-  if (force) sidePanelPromptCache = null;
-  if (sidePanelPromptCache) return Promise.resolve(sidePanelPromptCache);
-  if (sidePanelPromptRequest) return sidePanelPromptRequest;
-  sidePanelPromptRequest = fetchPromptSourcesConfig()
+function cachedSidePanelPrompts(sessionKey: string) {
+  const key = sessionKey.trim();
+  const cached = sidePanelPromptCache.get(key);
+  if (!cached) return null;
+  if (cached.expiresAt <= Date.now()) {
+    sidePanelPromptCache.delete(key);
+    return null;
+  }
+  return cached.data;
+}
+
+function cacheSidePanelPrompts(sessionKey: string, data: SidePanelPromptData) {
+  sidePanelPromptCache.delete(sessionKey);
+  sidePanelPromptCache.set(sessionKey, { data, expiresAt: Date.now() + SIDE_PANEL_PROMPT_CACHE_TTL_MS });
+  while (sidePanelPromptCache.size > SIDE_PANEL_PROMPT_CACHE_LIMIT) {
+    const oldestKey = sidePanelPromptCache.keys().next().value;
+    if (typeof oldestKey !== "string") break;
+    sidePanelPromptCache.delete(oldestKey);
+  }
+}
+
+function loadSidePanelPrompts(sessionKey: string, force = false) {
+  const key = sessionKey.trim();
+  if (!key) return Promise.reject(new Error("登录会话无效"));
+  if (force) sidePanelPromptCache.delete(key);
+  const cached = cachedSidePanelPrompts(key);
+  if (cached) return Promise.resolve(cached);
+  const currentRequest = sidePanelPromptRequests.get(key);
+  if (currentRequest && !force) return currentRequest;
+  const pending = fetchPromptSourcesConfig()
     .then(async ({ sources: configuredSources }) => {
       const sources = normalizePromptMarketSources(configuredSources).filter((source) => source.enabled);
       const prompts = await fetchPromptMarketPrompts(undefined, sources);
@@ -116,18 +149,26 @@ function loadSidePanelPrompts(force = false) {
         prompts: sortPromptMarketPrompts(prompts.map(localizedPrompt)),
         categories: sources.map(({ id, label, builtin }) => ({ id, label, builtin })),
       };
-    })
+    });
+  let tracked: Promise<SidePanelPromptData>;
+  tracked = pending
     .then((data) => {
-      sidePanelPromptCache = data;
+      if (sidePanelPromptRequests.get(key) === tracked) {
+        cacheSidePanelPrompts(key, data);
+      }
       return data;
     })
     .finally(() => {
-      sidePanelPromptRequest = null;
+      if (sidePanelPromptRequests.get(key) === tracked) {
+        sidePanelPromptRequests.delete(key);
+      }
     });
-  return sidePanelPromptRequest;
+  sidePanelPromptRequests.set(key, tracked);
+  return tracked;
 }
 
 export function CanvasSidePanel({
+  sessionKey,
   nodes,
   selectedNodeIDs,
   open,
@@ -203,7 +244,7 @@ export function CanvasSidePanel({
           ) : tab === "assets" ? (
             <CanvasAssetsTab images={libraryImages} loading={libraryLoading} onInsert={onInsertLibraryImage} onOpenAssets={onOpenAssets} />
           ) : (
-            <CanvasPromptsTab onInsert={insertPrompt} />
+            <CanvasPromptsTab sessionKey={sessionKey} onInsert={insertPrompt} />
           )}
         </div>
 
@@ -411,29 +452,50 @@ function CanvasAssetsTab({ images, loading, onInsert, onOpenAssets }: {
   );
 }
 
-const CanvasPromptsTab = memo(function CanvasPromptsTab({ onInsert }: { onInsert: (prompt: string, title: string) => void }) {
-  const [prompts, setPrompts] = useState<BananaPrompt[]>(() => sidePanelPromptCache?.prompts || []);
-  const [categories, setCategories] = useState<Array<{ id: string; label: string; builtin?: boolean }>>(() => sidePanelPromptCache?.categories || []);
+const CanvasPromptsTab = memo(function CanvasPromptsTab({ sessionKey, onInsert }: { sessionKey: string; onInsert: (prompt: string, title: string) => void }) {
+  const initialData = cachedSidePanelPrompts(sessionKey);
+  const [prompts, setPrompts] = useState<BananaPrompt[]>(() => initialData?.prompts || []);
+  const [categories, setCategories] = useState<Array<{ id: string; label: string; builtin?: boolean }>>(() => initialData?.categories || []);
   const [query, setQuery] = useState("");
-  const [loading, setLoading] = useState(!sidePanelPromptCache);
+  const [loading, setLoading] = useState(!initialData);
   const [error, setError] = useState("");
   const [expandedCategoryID, setExpandedCategoryID] = useState<string | null>(null);
   const [visibleCounts, setVisibleCounts] = useState<Record<string, number>>({});
   const [detail, setDetail] = useState<BananaPrompt | null>(null);
+  const requestVersionRef = useRef(0);
 
-  const load = (force = false) => {
+  const load = useCallback((force = false) => {
+    const requestVersion = ++requestVersionRef.current;
     setLoading(true);
     setError("");
-    void loadSidePanelPrompts(force)
+    void loadSidePanelPrompts(sessionKey, force)
       .then((data) => {
+        if (requestVersionRef.current !== requestVersion) return;
         setPrompts(data.prompts);
         setCategories(data.categories);
       })
-      .catch((loadError: unknown) => setError(loadError instanceof Error ? loadError.message : "提示词加载失败"))
-      .finally(() => setLoading(false));
-  };
+      .catch((loadError: unknown) => {
+        if (requestVersionRef.current === requestVersion) {
+          setError(loadError instanceof Error ? loadError.message : "提示词加载失败");
+        }
+      })
+      .finally(() => {
+        if (requestVersionRef.current === requestVersion) setLoading(false);
+      });
+  }, [sessionKey]);
 
-  useEffect(() => load(), []);
+  useEffect(() => {
+    const cached = cachedSidePanelPrompts(sessionKey);
+    setPrompts(cached?.prompts || []);
+    setCategories(cached?.categories || []);
+    setDetail(null);
+    setExpandedCategoryID(null);
+    setVisibleCounts({});
+    load();
+    return () => {
+      requestVersionRef.current += 1;
+    };
+  }, [load, sessionKey]);
 
   const filteredPrompts = useMemo(() => {
     const matching = prompts.filter((prompt) => promptMatchesKeyword(prompt, query));

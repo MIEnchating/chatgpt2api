@@ -99,10 +99,13 @@ web/src/app/*          页面与业务工作区（创作台、画布、工作流
 web/src/lib/*          前端任务合同、模型能力与请求适配
 web/public/director    与画布隔离的 3D 导演台静态应用
 internal/httpapi       登录态 HTTP 边界、RBAC、参数校验与上游编排
-internal/protocol      图片/视频等厂商能力合同和协议映射
+internal/protocol      无状态的图片/视频上游合同、传输驱动和结果归一化
+internal/videocontract 视频模型契约的持久化、版本与运行时发布
 internal/service       画布、任务、素材、工作流、存储同步等领域逻辑
 internal/storage       SQLite/PostgreSQL/MySQL 持久化抽象
 internal/config        环境变量、在线设置和敏感配置边界
+internal/model         跨配置、存储和服务共享的持久化模型
+internal/util          无业务所有权的底层工具
 ```
 
 新增能力不直接堆入路由：工作流、音频任务和远端存储分别拥有独立服务或适配器；创作台与无限画布共享前端生成参数合同；S3/R2、WebDAV 统一通过 `GenericStorageService` 和 `/api/files` 接入。服务器图片图库只负责本地治理，不再维护第二套对象存储配置、远端索引或同步任务。

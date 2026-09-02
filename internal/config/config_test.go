@@ -73,6 +73,81 @@ func TestNormalizeModelListPreservesExplicitEmptyList(t *testing.T) {
 	}
 }
 
+func TestStoreModelListsPreserveExplicitEmptyConfiguration(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("ROOT_DIR", root)
+	for _, key := range []string{"IMAGE_MODELS", "VIDEO_MODELS", "TEXT_MODELS", "AUDIO_MODELS", "CHAT_MODELS"} {
+		unsetEnv(t, key)
+	}
+	store, err := NewStore()
+	if err != nil {
+		t.Fatalf("NewStore() error = %v", err)
+	}
+	for name, models := range map[string][]string{
+		"image": store.ImageModels(),
+		"video": store.VideoModels(),
+		"text":  store.TextModels(),
+		"audio": store.AudioModels(),
+		"chat":  store.ChatModels(),
+	} {
+		if len(models) == 0 {
+			t.Errorf("fresh %s models unexpectedly empty", name)
+		}
+	}
+	if _, err := store.Update(map[string]any{
+		"image_models": []string{},
+		"video_models": []string{},
+		"text_models":  []string{},
+		"audio_models": []string{},
+		"chat_models":  []string{},
+	}); err != nil {
+		t.Fatalf("Update(explicit empty model lists) error = %v", err)
+	}
+
+	for _, key := range []string{"IMAGE_MODELS", "VIDEO_MODELS", "TEXT_MODELS", "AUDIO_MODELS", "CHAT_MODELS"} {
+		if err := os.Unsetenv(key); err != nil {
+			t.Fatalf("unset %s before reload: %v", key, err)
+		}
+	}
+	store, err = NewStore()
+	if err != nil {
+		t.Fatalf("reload NewStore() error = %v", err)
+	}
+	for name, models := range map[string][]string{
+		"image": store.ImageModels(),
+		"video": store.VideoModels(),
+		"text":  store.TextModels(),
+		"audio": store.AudioModels(),
+		"chat":  store.ChatModels(),
+	} {
+		if len(models) != 0 {
+			t.Errorf("%s models = %#v, want explicit empty list", name, models)
+		}
+	}
+	for name, model := range map[string]string{
+		"image": store.DefaultImageModel(),
+		"text":  store.DefaultTextModel(),
+		"audio": store.DefaultAudioModel(),
+		"chat":  store.DefaultChatModel(),
+	} {
+		if model != "" {
+			t.Errorf("default %s model = %q, want empty", name, model)
+		}
+	}
+
+	public := store.Get()
+	for _, key := range []string{"image_models", "video_models", "text_models", "audio_models"} {
+		if models, ok := public[key].([]string); !ok || len(models) != 0 {
+			t.Errorf("Get()[%q] = %#v, want empty []string", key, public[key])
+		}
+	}
+	for _, key := range []string{"default_image_model", "default_text_model", "default_audio_model"} {
+		if public[key] != "" {
+			t.Errorf("Get()[%q] = %#v, want empty", key, public[key])
+		}
+	}
+}
+
 func TestAllowUserCustomRelayConfigDefaultsOffAndPersists(t *testing.T) {
 	t.Setenv("ROOT_DIR", t.TempDir())
 	unsetEnv(t, "ALLOW_USER_CUSTOM_RELAY_CONFIG")

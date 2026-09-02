@@ -1549,6 +1549,46 @@ func TestWorkflowAgentDraftRouteValidatesPromptBeforeRelaySelection(t *testing.T
 	}
 }
 
+func TestWriteWorkflowServiceErrorSeparatesValidationFromStoredDataFailure(t *testing.T) {
+	app := &App{}
+	tests := []struct {
+		name        string
+		err         error
+		wantStatus  int
+		wantMessage string
+		hidden      string
+	}{
+		{
+			name:        "request validation",
+			err:         service.WorkflowValidationError{Message: "请输入工作流名称"},
+			wantStatus:  http.StatusBadRequest,
+			wantMessage: "请输入工作流名称",
+		},
+		{
+			name: "invalid stored document",
+			err: &service.WorkflowStorageError{Err: fmt.Errorf(
+				"stored workflow is invalid: %w",
+				service.WorkflowValidationError{Message: "private database detail"},
+			)},
+			wantStatus:  http.StatusServiceUnavailable,
+			wantMessage: "工作流存储暂时不可用",
+			hidden:      "private database detail",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			response := httptest.NewRecorder()
+			app.writeWorkflowServiceError(response, "test", test.err)
+			if response.Code != test.wantStatus || !strings.Contains(response.Body.String(), test.wantMessage) {
+				t.Fatalf("response = %d %s", response.Code, response.Body.String())
+			}
+			if test.hidden != "" && strings.Contains(response.Body.String(), test.hidden) {
+				t.Fatalf("response leaked internal detail: %s", response.Body.String())
+			}
+		})
+	}
+}
+
 func TestWorkflowAgentPayloadMatchesReferenceContract(t *testing.T) {
 	payload := workflowAgentPayload(service.WorkflowAgentDraftRequest{
 		Prompt:     "创建商品海报工作流",

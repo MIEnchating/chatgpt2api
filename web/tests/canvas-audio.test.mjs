@@ -7,10 +7,10 @@ function node(model, values = {}) {
   return { id: "audio", type: "audio", x: 0, y: 0, width: 340, height: 160, scale_x: 1, scale_y: 1, generation_audio_model: model, ...values };
 }
 
-test("canvas uses the explicit default audio model instead of list order", () => {
+test("canvas resolves audio models only from the configured list", () => {
   assert.equal(resolveCanvasAudioModel("glm-tts", ["gpt-4o-mini-tts", "glm-tts"]), "glm-tts");
   assert.equal(resolveCanvasAudioModel("", ["grok-voice-latest", "glm-tts"]), "grok-voice-latest");
-  assert.equal(resolveCanvasAudioModel("", []), "gpt-4o-mini-tts");
+  assert.equal(resolveCanvasAudioModel("", []), "");
 });
 
 test("audio node uploads accept every audio MIME type like the reference project", () => {

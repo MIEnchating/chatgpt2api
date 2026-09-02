@@ -1119,16 +1119,20 @@ func (a *App) handlePromptSources(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) modelConfig() map[string]any {
 	imageModels := a.configuredImageModels()
+	videoModels := a.configuredVideoModels()
+	videoContracts := protocol.ActiveVideoContracts()
+	textModels := append([]string(nil), a.config.TextModels()...)
+	audioModels := append([]string(nil), a.config.AudioModels()...)
 	return map[string]any{
 		"image_models":          imageModels,
-		"default_image_model":   a.defaultImageModel(),
-		"video_models":          a.configuredVideoModels(),
-		"default_video_model":   firstString(a.configuredVideoModels(), defaultVideoModel),
-		"video_model_contracts": protocol.ActiveVideoContracts(),
-		"text_models":           a.config.TextModels(),
-		"default_text_model":    a.config.DefaultTextModel(),
-		"audio_models":          a.config.AudioModels(),
-		"default_audio_model":   a.config.DefaultAudioModel(),
+		"default_image_model":   defaultConfiguredImageModel(imageModels),
+		"video_models":          videoModels,
+		"default_video_model":   defaultConfiguredVideoModel(videoModels, videoContracts),
+		"video_model_contracts": videoContracts,
+		"text_models":           textModels,
+		"default_text_model":    firstString(textModels, ""),
+		"audio_models":          audioModels,
+		"default_audio_model":   firstString(audioModels, ""),
 		"relay_base_url":        a.relayBaseURL(),
 	}
 }
@@ -1139,35 +1143,52 @@ func (a *App) configuredVideoModels() []string {
 
 func (a *App) configuredImageModels() []string {
 	if a != nil && a.config != nil {
-		return a.config.ImageModels()
+		return append([]string(nil), a.config.ImageModels()...)
 	}
-	return []string{util.ImageModelGPT}
+	return []string{}
 }
 
 func (a *App) configuredChatModels() []string {
 	if a != nil && a.config != nil {
-		return a.config.ChatModels()
+		return append([]string(nil), a.config.ChatModels()...)
 	}
-	return []string{util.ImageModelGPT55, util.ImageModelGPT54}
+	return []string{}
 }
 
 func (a *App) defaultImageModel() string {
 	if a != nil && a.config != nil {
-		for _, model := range a.config.ImageModels() {
-			model = strings.TrimSpace(model)
-			if model != "" && !strings.EqualFold(model, util.ImageModelAuto) {
-				return model
-			}
-		}
+		return defaultConfiguredImageModel(a.config.ImageModels())
 	}
-	return util.ImageModelGPT
+	return ""
 }
 
 func (a *App) defaultChatModel() string {
 	if a != nil && a.config != nil {
 		return a.config.DefaultChatModel()
 	}
-	return util.ImageModelGPT55
+	return ""
+}
+
+func defaultConfiguredImageModel(models []string) string {
+	for _, model := range models {
+		model = strings.TrimSpace(model)
+		if model != "" && !strings.EqualFold(model, util.ImageModelAuto) {
+			return model
+		}
+	}
+	return ""
+}
+
+func defaultConfiguredVideoModel(models []string, contracts []protocol.VideoModelContract) string {
+	for _, model := range models {
+		model = strings.TrimSpace(model)
+		for _, contract := range contracts {
+			if protocol.VideoContractMatchesModel(contract, model) {
+				return model
+			}
+		}
+	}
+	return ""
 }
 
 func (a *App) applyDefaultImageModel(body map[string]any) string {

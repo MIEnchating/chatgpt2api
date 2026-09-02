@@ -380,6 +380,7 @@ export function ImageComposer({
   );
   const activeModel = composerMode === "video" ? videoModel : imageModel;
   const activeModelOptions = composerMode === "video" ? videoModelOptions : imageModelOptions;
+  const activeModelAvailable = activeModelOptions.some((option) => option.value === activeModel);
   const activeVideoSupportsFrames = supportsVideoFrameReferences(videoModel);
   const activeVideoReferenceLimits = videoWorkbenchReferenceLimits(videoModel);
   const activeVideoMaterialSections = videoWorkbenchMaterialSections(videoModel);
@@ -400,7 +401,7 @@ export function ImageComposer({
   const activeVideoContractUI = videoContractUIState(videoModelContract(videoModel), videoRuleValues);
   const videoFieldVisible = (field: "first_frame" | "last_frame" | "reference_image" | "reference_video" | "reference_audio") => !activeVideoContractUI.hidden.has(field);
   const videoFieldDisabled = (field: "first_frame" | "last_frame" | "reference_image" | "reference_video" | "reference_audio") => activeVideoContractUI.disabled.has(field);
-  const imageModelLabel = activeModelOptions.find((option) => option.value === activeModel)?.label || activeModel;
+  const imageModelLabel = activeModelOptions.find((option) => option.value === activeModel)?.label || "暂无可用模型";
   const referenceEditingSupported = composerMode === "video"
     ? true
     : imageWorkbenchAcceptsReferenceImages(imageModel);
@@ -798,7 +799,7 @@ export function ImageComposer({
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey) {
                 event.preventDefault();
-                void onSubmit();
+                if (activeModelAvailable) void onSubmit();
               }
             }}
             className="min-h-[58px] resize-none rounded-none border-0 bg-transparent px-5 pt-4 pb-1 text-[16px] leading-6 text-[#222222] shadow-none placeholder:text-[#8e8e93] focus-visible:ring-0 dark:text-foreground dark:placeholder:text-muted-foreground sm:min-h-0 sm:px-5 sm:py-2.5 sm:text-[15px]"
@@ -831,7 +832,8 @@ export function ImageComposer({
                   </button>
                 </div>
                 <Select
-                  value={activeModel}
+                  value={activeModelAvailable ? activeModel : ""}
+                  disabled={activeModelOptions.length === 0}
                   open={isModelMenuOpen}
                   onOpenChange={(open) => {
                     setIsModelMenuOpen(open);
@@ -985,7 +987,7 @@ export function ImageComposer({
                 <button
                   type="button"
                   onClick={() => void onSubmit()}
-                  disabled={!prompt.trim()}
+                  disabled={!prompt.trim() || !activeModelAvailable}
                   className="inline-flex size-11 shrink-0 items-center justify-center rounded-full bg-[#181e25] text-white shadow-[0_4px_10px_rgba(24,30,37,0.12)] transition hover:bg-[#2a323d] disabled:cursor-not-allowed disabled:bg-[#e1e2e4] disabled:text-[#73777f] dark:bg-foreground dark:text-background dark:hover:bg-foreground/90 dark:disabled:bg-muted dark:disabled:text-muted-foreground sm:size-10"
                   aria-label={submitLabel}
                 >

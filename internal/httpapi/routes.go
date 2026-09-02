@@ -1508,6 +1508,10 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusBadRequest, protocolImageCountRangeMessage())
 			return
 		}
+		if allowedPersonalModel(model, a.config.ImageModels()) == "" {
+			util.WriteError(w, http.StatusBadRequest, "图片模型不可用")
+			return
+		}
 		if err := a.validateRelayCredentialForIdentitySelection(r.Context(), identity, selectedRelayTokenGroupFromPayload(body), selectedRelayTokenNameFromPayload(body)); err != nil {
 			a.writeCreationTaskSubmitError(w, err)
 			return
@@ -1719,6 +1723,10 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 		}
 		if !validProtocolImageCount(body["n"]) {
 			util.WriteError(w, http.StatusBadRequest, protocolImageCountRangeMessage())
+			return
+		}
+		if allowedPersonalModel(model, a.config.ImageModels()) == "" {
+			util.WriteError(w, http.StatusBadRequest, "图片模型不可用")
 			return
 		}
 		if err := a.validateRelayCredentialForIdentitySelection(r.Context(), identity, selectedRelayTokenGroupFromPayload(body), selectedRelayTokenNameFromPayload(body)); err != nil {

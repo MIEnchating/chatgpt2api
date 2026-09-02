@@ -23,7 +23,7 @@ func (a *App) handleWorkflows(w http.ResponseWriter, r *http.Request) {
 		case http.MethodGet:
 			items, err := a.workflows.List(ownerID)
 			if err != nil {
-				util.WriteError(w, http.StatusInternalServerError, "failed to load workflows")
+				a.writeWorkflowServiceError(w, "list workflows", err)
 				return
 			}
 			util.WriteJSON(w, http.StatusOK, map[string]any{"items": items})
@@ -35,11 +35,7 @@ func (a *App) handleWorkflows(w http.ResponseWriter, r *http.Request) {
 			}
 			item, err := a.workflows.Save(ownerID, input)
 			if err != nil {
-				if errors.Is(err, storage.ErrConcurrentRowUpdate) {
-					util.WriteError(w, http.StatusConflict, "工作流已被其他请求修改，请刷新后重试")
-					return
-				}
-				util.WriteError(w, http.StatusBadRequest, err.Error())
+				a.writeWorkflowServiceError(w, "save workflow", err)
 				return
 			}
 			util.WriteJSON(w, http.StatusOK, map[string]any{"item": item})
@@ -68,16 +64,7 @@ func (a *App) handleWorkflows(w http.ResponseWriter, r *http.Request) {
 		}
 		item, err := a.workflows.TouchLastRun(ownerID, id, input.LastRunAt)
 		if err != nil {
-			switch {
-			case errors.Is(err, service.ErrWorkflowNotFound):
-				util.WriteError(w, http.StatusNotFound, "工作流不存在")
-			case errors.Is(err, storage.ErrConcurrentRowUpdate):
-				util.WriteError(w, http.StatusConflict, "工作流已被其他请求修改，请重试")
-			case errors.Is(err, service.ErrWorkflowAccessDenied):
-				util.WriteError(w, http.StatusForbidden, "只能更新自己的工作流")
-			default:
-				util.WriteError(w, http.StatusBadRequest, err.Error())
-			}
+			a.writeWorkflowServiceError(w, "update workflow last run", err)
 			return
 		}
 		util.WriteJSON(w, http.StatusOK, map[string]any{"item": item})
@@ -85,11 +72,7 @@ func (a *App) handleWorkflows(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(parts) == 1 && r.Method == http.MethodDelete {
 		if err := a.workflows.Delete(ownerID, id); err != nil {
-			if errors.Is(err, storage.ErrConcurrentRowUpdate) {
-				util.WriteError(w, http.StatusConflict, "工作流已被其他请求修改，请刷新后重试")
-				return
-			}
-			util.WriteError(w, http.StatusForbidden, err.Error())
+			a.writeWorkflowServiceError(w, "delete workflow", err)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -112,14 +95,35 @@ func (a *App) handleWorkflowInitialize(w http.ResponseWriter, r *http.Request) {
 	}
 	items, err := a.workflows.InitializeIfEmpty(identityScope(identity), input.Items)
 	if err != nil {
-		if errors.Is(err, storage.ErrConcurrentRowUpdate) {
-			util.WriteError(w, http.StatusConflict, "工作流已被其他请求修改，请刷新后重试")
-			return
-		}
-		util.WriteError(w, http.StatusBadRequest, err.Error())
+		a.writeWorkflowServiceError(w, "initialize workflows", err)
 		return
 	}
 	util.WriteJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func (a *App) writeWorkflowServiceError(w http.ResponseWriter, operation string, err error) {
+	var validationErr service.WorkflowValidationError
+	var storageErr *service.WorkflowStorageError
+	switch {
+	case errors.Is(err, service.ErrWorkflowNotFound):
+		util.WriteError(w, http.StatusNotFound, "工作流不存在")
+	case errors.Is(err, service.ErrWorkflowAccessDenied):
+		util.WriteError(w, http.StatusForbidden, "只能操作自己的工作流")
+	case errors.Is(err, storage.ErrConcurrentRowUpdate):
+		util.WriteError(w, http.StatusConflict, "工作流已被其他请求修改，请刷新后重试")
+	case errors.As(err, &storageErr):
+		if a != nil && a.logger != nil {
+			a.logger.Error("workflow storage operation failed", "operation", operation, "error", err)
+		}
+		util.WriteError(w, http.StatusServiceUnavailable, "工作流存储暂时不可用，请稍后重试")
+	case errors.As(err, &validationErr):
+		util.WriteError(w, http.StatusBadRequest, validationErr.Error())
+	default:
+		if a != nil && a.logger != nil {
+			a.logger.Error("workflow storage operation failed", "operation", operation, "error", err)
+		}
+		util.WriteError(w, http.StatusServiceUnavailable, "工作流存储暂时不可用，请稍后重试")
+	}
 }
 
 func (a *App) handleWorkflowAgentDraft(w http.ResponseWriter, r *http.Request) {

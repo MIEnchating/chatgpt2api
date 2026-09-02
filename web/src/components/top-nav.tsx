@@ -256,11 +256,26 @@ export function TopNav() {
   }, [pathname]);
 
   useEffect(() => {
+    let active = true;
     const handleSessionChange = () => {
-      setSession(getCachedAuthSession() ?? null);
+      const cachedSession = getCachedAuthSession();
+      setSession(cachedSession);
+      if (cachedSession !== undefined) {
+        return;
+      }
+      void getVerifiedAuthSession()
+        .then((verifiedSession) => {
+          if (active) {
+            setSession(verifiedSession);
+          }
+        })
+        .catch(() => {
+          // The route guard owns verification error feedback and retry handling.
+        });
     };
     window.addEventListener(AUTH_SESSION_CHANGE_EVENT, handleSessionChange);
     return () => {
+      active = false;
       window.removeEventListener(AUTH_SESSION_CHANGE_EVENT, handleSessionChange);
     };
   }, []);

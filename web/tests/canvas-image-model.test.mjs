@@ -12,6 +12,6 @@ test("canvas skips auto and selects an actual image model", () => {
   assert.equal(resolveCanvasImageModel("", "auto,codex-gpt-image-2"), "codex-gpt-image-2");
 });
 
-test("canvas falls back when model configuration is empty", () => {
-  assert.equal(resolveCanvasImageModel("", []), "gpt-image-2");
+test("canvas keeps an authoritative empty image model configuration empty", () => {
+  assert.equal(resolveCanvasImageModel("", []), "");
 });

@@ -241,20 +241,28 @@ func (a *App) handleStorageFileContent(w http.ResponseWriter, r *http.Request, i
 }
 
 func (a *App) writeStorageServiceError(w http.ResponseWriter, err error) {
-	status := http.StatusBadRequest
+	var validationErr service.StorageValidationError
 	switch {
 	case errors.Is(err, storage.ErrStorageObjectNotFound):
-		status = http.StatusNotFound
+		util.WriteError(w, http.StatusNotFound, "素材文件不存在")
 	case errors.Is(err, service.ErrStorageObjectInUse):
-		status = http.StatusConflict
+		util.WriteError(w, http.StatusConflict, "素材文件仍被使用，无法删除")
 	case errors.Is(err, service.ErrInvalidStorageRange):
-		status = http.StatusRequestedRangeNotSatisfiable
+		util.WriteError(w, http.StatusRequestedRangeNotSatisfiable, "请求的文件范围无效")
 	case errors.Is(err, service.ErrLocalStorageCapacityExceeded):
-		status = http.StatusInsufficientStorage
-	case strings.Contains(strings.ToLower(err.Error()), "permission"):
-		status = http.StatusForbidden
-	case strings.Contains(strings.ToLower(err.Error()), "no storage provider"):
-		status = http.StatusServiceUnavailable
+		util.WriteError(w, http.StatusInsufficientStorage, "服务器本机素材容量已达到上限")
+	case errors.Is(err, service.ErrStorageObjectAccessDenied):
+		util.WriteError(w, http.StatusForbidden, "无权访问该素材文件")
+	case errors.Is(err, service.ErrUserStorageProviderDisabled):
+		util.WriteError(w, http.StatusForbidden, "管理员未启用用户自定义素材存储")
+	case errors.Is(err, service.ErrStorageProviderUnavailable):
+		util.WriteError(w, http.StatusServiceUnavailable, "素材存储服务暂时不可用")
+	case errors.As(err, &validationErr):
+		util.WriteError(w, http.StatusBadRequest, validationErr.Error())
+	default:
+		if a != nil && a.logger != nil {
+			a.logger.Error("storage file operation failed", "error", err)
+		}
+		util.WriteError(w, http.StatusServiceUnavailable, "素材存储服务暂时不可用")
 	}
-	util.WriteError(w, status, err.Error())
 }

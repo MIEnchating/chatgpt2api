@@ -1,4 +1,5 @@
 import type { ImageGenerationPreferences, ModelConfig } from "@/lib/api";
+import { configuredModelNames, resolveConfiguredModel } from "@/lib/model-config-selection";
 import type {
   CreativeWorkflow,
   WorkflowGenerationConfig,
@@ -86,8 +87,13 @@ function createWorkflowConfig(
   preferences?: ImageGenerationPreferences,
   defaults: WorkflowGenerationDefaults = {},
 ): WorkflowGenerationConfig {
-  const imageModel =
-    defaults.image_model || defaults.model || preferences?.default_image_model || models?.default_image_model || "";
+  const imageModel = resolveConfiguredModel(
+    models?.image_models,
+    defaults.image_model,
+    defaults.model,
+    preferences?.default_image_model,
+    models?.default_image_model,
+  );
   return {
     model: imageModel,
     image_model: imageModel,
@@ -109,8 +115,12 @@ function createWorkflowSeriesConfig(
 ): WorkflowSeriesConfig {
   return {
     target_count: "4",
-    prompt_model:
-      defaults.text_model || preferences?.default_text_model || models?.default_text_model || "",
+    prompt_model: resolveConfiguredModel(
+      models?.text_models,
+      defaults.text_model,
+      preferences?.default_text_model,
+      models?.default_text_model,
+    ),
     prompt_channel_id: defaults.text_channel_id || "",
     prompt_instruction:
       "围绕同一主题拆分成封面图、核心信息图、场景图和总结图；每张图需要画面重点不同但视觉风格一致。",
@@ -156,7 +166,7 @@ export function createBlankWorkflow(
         : {}),
     },
     series_config: createWorkflowSeriesConfig(models, preferences, defaults),
-  });
+  }, models, preferences, defaults);
 }
 
 export function createStarterWorkflows(
@@ -221,13 +231,32 @@ export function normalizeWorkflow(
     codex_cli: _legacyCodexCLI,
     ...workflowConfig
   } = (workflow.config || {}) as WorkflowGenerationConfig & Record<string, unknown>;
+  const imageModel = resolveConfiguredModel(
+    models?.image_models,
+    workflowConfig.image_model,
+    workflowConfig.model,
+    defaults.image_model,
+    defaults.model,
+    preferences?.default_image_model,
+    models?.default_image_model,
+  );
   const config = {
     ...fallbackConfig,
     ...workflowConfig,
+    model: imageModel,
+    image_model: imageModel,
   };
+  const promptModel = resolveConfiguredModel(
+    models?.text_models,
+    workflow.series_config?.prompt_model,
+    defaults.text_model,
+    preferences?.default_text_model,
+    models?.default_text_model,
+  );
   const seriesConfig = {
     ...createWorkflowSeriesConfig(models, preferences, defaults),
     ...workflow.series_config,
+    prompt_model: promptModel,
   };
   return {
     ...workflow,
@@ -267,15 +296,13 @@ export function resolveWorkflowRuntime(
   models: ModelConfig | null,
   preferences: ImageGenerationPreferences,
 ) {
-  const preferredModel =
-    workflow.config.image_model ||
-    workflow.config.model ||
-    preferences.default_image_model ||
-    models?.default_image_model ||
-    "";
-  const model = models?.image_models.length && !models.image_models.includes(preferredModel)
-    ? models.default_image_model || models.image_models[0] || ""
-    : preferredModel;
+  const model = resolveConfiguredModel(
+    models?.image_models,
+    workflow.config.image_model,
+    workflow.config.model,
+    preferences.default_image_model,
+    models?.default_image_model,
+  );
   const count = Math.max(1, Math.min(10, Math.round(Number(workflow.config.count) || 1)));
   const timeout = Math.max(1, Math.min(3600, Math.round(Number(workflow.config.timeout) || 600)));
   return {
@@ -287,6 +314,24 @@ export function resolveWorkflowRuntime(
     count,
     timeout,
   };
+}
+
+export function resolveWorkflowTextModel(
+  workflow: CreativeWorkflow,
+  models: ModelConfig | null,
+  preferences: ImageGenerationPreferences,
+) {
+  return resolveConfiguredModel(
+    models?.text_models,
+    workflow.series_config.prompt_model,
+    preferences.default_text_model,
+    models?.default_text_model,
+  );
+}
+
+export function isWorkflowModelConfigured(model: unknown, configuredModels: unknown) {
+  const candidate = String(model ?? "").trim();
+  return Boolean(candidate) && configuredModelNames(configuredModels).includes(candidate);
 }
 
 export function renderWorkflowPrompt(

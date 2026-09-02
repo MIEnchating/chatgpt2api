@@ -37,6 +37,7 @@ import {
   createDefaultInputValues,
   createStarterWorkflows,
   createWorkflowVariable,
+  isWorkflowModelConfigured,
   mergeWorkflowRunMetadata,
   normalizeWorkflow,
   parseVariableOptions,
@@ -44,6 +45,7 @@ import {
   workflowGenerationDefaultsFromPreferences,
   renderWorkflowPrompt,
   resolveWorkflowRuntime,
+  resolveWorkflowTextModel,
   type WorkflowGenerationDefaults,
   type WorkflowSeriesDraft,
 } from "@/app/workflows/workflow-runtime";
@@ -130,6 +132,7 @@ import { useImageGenerationPreferences } from "@/lib/use-image-generation-prefer
 import { hasAPIPermission } from "@/lib/auth-session";
 import { AUTH_SESSION_CHANGE_EVENT, getCachedAuthSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
+import { configuredModelNames, resolveConfiguredModel } from "@/lib/model-config-selection";
 
 type WorkflowReference = {
   id: string;
@@ -471,9 +474,13 @@ export function CreativeWorkflowWorkspace({
   }, [generationDefaults, preferences, preferencesReady, relayPreferencesReady, sessionKey, sessionTextChannelID]);
 
   useEffect(() => {
-    if (!agentModel && models?.default_text_model) {
-      setAgentModel(preferences.default_text_model || models.default_text_model);
-    }
+    const nextModel = resolveConfiguredModel(
+      models?.text_models,
+      agentModel,
+      preferences.default_text_model,
+      models?.default_text_model,
+    );
+    if (nextModel !== agentModel) setAgentModel(nextModel);
   }, [agentModel, models, preferences.default_text_model]);
 
   const directTaskPollIDSet = new Set(directTaskPollIDs);
@@ -803,6 +810,9 @@ export function CreativeWorkflowWorkspace({
     }
     const runtime = resolveWorkflowRuntime(workflow, models, preferences);
     const model = runtime.model;
+    if (!isWorkflowModelConfigured(model, models?.image_models)) {
+      throw new Error("管理员尚未配置可用的图片模型");
+    }
     const count = Math.max(1, Math.min(10, countOverride || runtime.count));
     const quality = ["low", "medium", "high"].includes(runtime.quality)
       ? (runtime.quality as ImageQuality)
@@ -1001,6 +1011,11 @@ export function CreativeWorkflowWorkspace({
       await generateSeriesDrafts();
       return;
     }
+    const runtime = resolveWorkflowRuntime(running, models, preferences);
+    if (!isWorkflowModelConfigured(runtime.model, models?.image_models)) {
+      toast.error("管理员尚未配置可用的图片模型");
+      return;
+    }
     const workflow = running;
     const prompt = renderedPrompt;
     try {
@@ -1023,6 +1038,11 @@ export function CreativeWorkflowWorkspace({
       toast.error(`请填写 ${missing.label}`);
       return;
     }
+    const model = resolveWorkflowTextModel(running, models, preferences);
+    if (!isWorkflowModelConfigured(model, models?.text_models)) {
+      toast.error("管理员尚未配置可用的文本模型");
+      return;
+    }
     const taskController = taskWaitAbortControllerRef.current;
     if (!taskController || taskController.signal.aborted) return;
     setSeriesDraftLoading(true);
@@ -1037,10 +1057,6 @@ export function CreativeWorkflowWorkspace({
         count,
         values,
       );
-      const model =
-        preferences.default_text_model ||
-        models?.default_text_model ||
-        "";
       const submitted = await createChatGenerationTask({
         clientTaskId: taskID("workflow-series"),
         prompt,
@@ -1141,6 +1157,11 @@ export function CreativeWorkflowWorkspace({
 
   async function runAllSeriesDrafts(source = seriesDrafts) {
     if (!running) return;
+    const runtime = resolveWorkflowRuntime(running, models, preferences);
+    if (!isWorkflowModelConfigured(runtime.model, models?.image_models)) {
+      toast.error("管理员尚未配置可用的图片模型");
+      return;
+    }
     const controller = taskWaitAbortControllerRef.current;
     if (!controller || controller.signal.aborted) return;
     const drafts = source.filter(
@@ -1249,6 +1270,16 @@ export function CreativeWorkflowWorkspace({
 
   async function draftWithAgent() {
     if (!session || !agentPrompt.trim() || agentDraftAbortControllerRef.current) return;
+    const model = resolveConfiguredModel(
+      models?.text_models,
+      agentModel,
+      preferences.default_text_model,
+      models?.default_text_model,
+    );
+    if (!isWorkflowModelConfigured(model, models?.text_models)) {
+      toast.error("管理员尚未配置可用的文本模型");
+      return;
+    }
     const requestSessionKey = session.key;
     if (!workspaceActiveRef.current || getCachedAuthSession()?.key !== requestSessionKey) return;
     const controller = new AbortController();
@@ -1262,7 +1293,6 @@ export function CreativeWorkflowWorkspace({
       && getCachedAuthSession()?.key === requestSessionKey
     );
     try {
-      const model = agentModel || preferences.default_text_model || models?.default_text_model || "";
       await runCurrentWorkflowAgentDraft({
         signal: controller.signal,
         isCurrent,
@@ -1463,6 +1493,7 @@ export function CreativeWorkflowWorkspace({
         drafts={seriesDrafts}
         draftLoading={seriesDraftLoading}
         models={models}
+        preferences={preferences}
         batchAppend={seriesBatchAppend}
         onValuesChange={setValues}
         onAssetsOpen={() => setAssetPickerTarget("workflow")}
@@ -1750,9 +1781,8 @@ function WorkflowImageSettings({
   onModelChange?: (model: string) => void;
   onChange?: (patch: Partial<ImageSettingsValue>) => void;
 }) {
-  const modelOptions = models?.image_models.includes(model)
-    ? models.image_models
-    : [model, ...(models?.image_models || [])].filter(Boolean);
+  const modelOptions = configuredModelNames(models?.image_models);
+  const modelAvailable = isWorkflowModelConfigured(model, modelOptions);
   return (
     <section data-workbench-generation-settings data-read-only={readOnly || undefined} className={cn("space-y-3", className)}>
       {showHeading ? (
@@ -1763,15 +1793,15 @@ function WorkflowImageSettings({
       ) : null}
       <div className="space-y-1.5">
         <ImageParameterLabel>图片模型</ImageParameterLabel>
-        <Select value={model} disabled={readOnly} onValueChange={(next) => onModelChange?.(next)}>
-          <SelectTrigger aria-label="图片模型"><SelectValue placeholder="选择图片模型" /></SelectTrigger>
+        <Select value={modelAvailable ? model : ""} disabled={readOnly || !modelOptions.length} onValueChange={(next) => onModelChange?.(next)}>
+          <SelectTrigger aria-label="图片模型"><SelectValue placeholder={modelOptions.length ? "选择图片模型" : "暂无可用模型"} /></SelectTrigger>
           <SelectContent>
             {modelOptions.map((option) => <SelectItem key={option} value={option}>{option}</SelectItem>)}
           </SelectContent>
         </Select>
       </div>
-      <fieldset disabled={readOnly} className={cn(readOnly && "[&_button]:cursor-default [&_input]:cursor-default")}>
-        <ImageSettingsPanel disabled={readOnly} model={model} value={value} showSnapToMultiple16={false} onChange={(patch) => onChange?.(patch)} />
+      <fieldset disabled={readOnly || !modelAvailable} className={cn(readOnly && "[&_button]:cursor-default [&_input]:cursor-default")}>
+        <ImageSettingsPanel disabled={readOnly || !modelAvailable} model={model} value={value} showSnapToMultiple16={false} onChange={(patch) => onChange?.(patch)} />
       </fieldset>
     </section>
   );
@@ -1871,7 +1901,13 @@ function WorkflowEditor({ workflow, models, preferences, saving, onChange, onSav
   const patchConfig = (value: Partial<WorkflowGenerationConfig>) => patch({ config: { ...workflow.config, ...value } });
   const patchSeries = (value: Partial<WorkflowSeriesConfig>) => patch({ series_config: { ...workflow.series_config, ...value } });
   const patchVariable = (id: string, value: Partial<WorkflowVariable>) => patch({ variables: workflow.variables.map((item) => item.id === id ? { ...item, ...value } : item) });
-  const imageModel = workflow.config.image_model || workflow.config.model || models?.default_image_model || models?.image_models[0] || "";
+  const imageModel = resolveConfiguredModel(
+    models?.image_models,
+    workflow.config.image_model,
+    workflow.config.model,
+    preferences.default_image_model,
+    models?.default_image_model,
+  );
   const imageSettings = workflowImageSettings(workflow.config);
   const patchImageSettings = (value: Partial<ImageSettingsValue>) => {
     const next = { ...imageSettings, ...value };
@@ -2069,11 +2105,20 @@ function WorkflowReferenceGrid({ references, className, emptyMessage, disabled =
   );
 }
 
-function WorkflowRunner({ workflow, values, prompt, references, referenceBusy, drafts, draftLoading, batchAppend, models, onValuesChange, onAssetsOpen, onReferencesAdd, onReferenceRemove, onRun, onGenerateDrafts, onRunAll, onRunDraft, onDraftChange, onDraftMove, onDraftDelete, onBatchAppendChange, onBatchAppend, onClose }: { workflow: CreativeWorkflow | null; values: Record<string, string>; prompt: string; references: WorkflowReference[]; referenceBusy: boolean; drafts: WorkflowSeriesDraft[]; draftLoading: boolean; batchAppend: string; models: ModelConfig | null; onValuesChange: (values: Record<string, string>) => void; onAssetsOpen: () => void; onReferencesAdd: (files: FileList | null) => void; onReferenceRemove: (id: string) => void; onRun: () => void; onGenerateDrafts: () => void; onRunAll: () => void; onRunDraft: (draft: WorkflowSeriesDraft, index: number) => void; onDraftChange: (id: string, patch: Partial<WorkflowSeriesDraft>) => void; onDraftMove: (id: string, direction: -1 | 1) => void; onDraftDelete: (id: string) => void; onBatchAppendChange: (value: string) => void; onBatchAppend: () => void; onClose: () => void }) {
+function WorkflowRunner({ workflow, values, prompt, references, referenceBusy, drafts, draftLoading, batchAppend, models, preferences, onValuesChange, onAssetsOpen, onReferencesAdd, onReferenceRemove, onRun, onGenerateDrafts, onRunAll, onRunDraft, onDraftChange, onDraftMove, onDraftDelete, onBatchAppendChange, onBatchAppend, onClose }: { workflow: CreativeWorkflow | null; values: Record<string, string>; prompt: string; references: WorkflowReference[]; referenceBusy: boolean; drafts: WorkflowSeriesDraft[]; draftLoading: boolean; batchAppend: string; models: ModelConfig | null; preferences: ImageGenerationPreferences; onValuesChange: (values: Record<string, string>) => void; onAssetsOpen: () => void; onReferencesAdd: (files: FileList | null) => void; onReferenceRemove: (id: string) => void; onRun: () => void; onGenerateDrafts: () => void; onRunAll: () => void; onRunDraft: (draft: WorkflowSeriesDraft, index: number) => void; onDraftChange: (id: string, patch: Partial<WorkflowSeriesDraft>) => void; onDraftMove: (id: string, direction: -1 | 1) => void; onDraftDelete: (id: string) => void; onBatchAppendChange: (value: string) => void; onBatchAppend: () => void; onClose: () => void }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   if (!workflow) return null;
-  const imageModel = workflow.config.image_model || workflow.config.model || models?.default_image_model || models?.image_models[0] || "";
+  const imageModel = resolveConfiguredModel(
+    models?.image_models,
+    workflow.config.image_model,
+    workflow.config.model,
+    preferences.default_image_model,
+    models?.default_image_model,
+  );
+  const imageModelAvailable = isWorkflowModelConfigured(imageModel, models?.image_models);
+  const textModel = resolveWorkflowTextModel(workflow, models, preferences);
+  const textModelAvailable = isWorkflowModelConfigured(textModel, models?.text_models);
   const imageSettings = workflowImageSettings(workflow.config);
   const requiredVariables = workflow.variables.filter((variable) => variable.required);
   const completedRequiredVariables = requiredVariables.filter((variable) => String(values[variable.key] || "").trim()).length;
@@ -2082,6 +2127,9 @@ function WorkflowRunner({ workflow, values, prompt, references, referenceBusy, d
   const completedDraftCount = drafts.filter((draft) => draft.status === "success").length;
   const runnableDraftCount = drafts.filter((draft) => draft.status !== "running" && draft.status !== "success" && draft.prompt.trim()).length;
   const allDraftsComplete = drafts.length > 0 && completedDraftCount === drafts.length;
+  const primaryModelAvailable = workflow.mode === "multi_image_series" && drafts.length === 0
+    ? textModelAvailable
+    : imageModelAvailable;
   const seriesStep = missingRequiredVariables > 0
     ? 1
     : draftLoading || drafts.length === 0
@@ -2181,7 +2229,7 @@ function WorkflowRunner({ workflow, values, prompt, references, referenceBusy, d
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm font-semibold">创作参数</span>
                   <span className="mt-1 block truncate text-xs text-muted-foreground">
-                    {imageModel || "默认模型"} · {generationQualityLabel(imageSettings.quality)} · {imageSize} · {imageSettings.count} 张
+                    {imageModel || "暂无可用模型"} · {generationQualityLabel(imageSettings.quality)} · {imageSize} · {imageSettings.count} 张
                   </span>
                 </span>
                 <ChevronDown className={cn("size-4 shrink-0 text-muted-foreground transition-transform duration-200", settingsOpen && "rotate-180")} />
@@ -2204,11 +2252,11 @@ function WorkflowRunner({ workflow, values, prompt, references, referenceBusy, d
                 </div>
                 {drafts.length ? (
                   <div className="flex items-center gap-2">
-                    <Button size="sm" variant="outline" disabled={draftLoading || runningDraftCount > 0} onClick={onGenerateDrafts}>
+                    <Button size="sm" variant="outline" disabled={!textModelAvailable || draftLoading || runningDraftCount > 0} onClick={onGenerateDrafts}>
                       {draftLoading ? <LoaderCircle className="animate-spin" /> : null}
                       重新生成提示词
                     </Button>
-                    <Button size="sm" disabled={!runnableDraftCount || runningDraftCount > 0} onClick={onRunAll}>
+                    <Button size="sm" disabled={!imageModelAvailable || !runnableDraftCount || runningDraftCount > 0} onClick={onRunAll}>
                       <Play />生成{runnableDraftCount ? `剩余 ${runnableDraftCount} 张` : "图片"}
                     </Button>
                   </div>
@@ -2257,6 +2305,7 @@ function WorkflowRunner({ workflow, values, prompt, references, referenceBusy, d
                           index={index}
                           first={index === 0}
                           last={index === drafts.length - 1}
+                          generationDisabled={!imageModelAvailable}
                           onChange={(patch) => onDraftChange(draft.id, patch)}
                           onMove={(direction) => onDraftMove(draft.id, direction)}
                           onDelete={() => onDraftDelete(draft.id)}
@@ -2270,7 +2319,7 @@ function WorkflowRunner({ workflow, values, prompt, references, referenceBusy, d
                     {draftLoading ? <LoaderCircle className="size-6 animate-spin text-primary" /> : <Sparkles className="size-6 text-muted-foreground" />}
                     <p className="mt-3 text-sm font-medium">{draftLoading ? "正在生成多图提示词" : "还没有提示词草稿"}</p>
                     <p className="mt-1 text-xs text-muted-foreground">{draftLoading ? "生成后可逐条修改、排序或单独生成。" : "系统会根据工作流规划拆分每张图片的标题和提示词。"}</p>
-                    {!draftLoading ? <Button className="mt-4" size="sm" disabled={missingRequiredVariables > 0} onClick={onGenerateDrafts}><Layers3 />生成提示词</Button> : null}
+                    {!draftLoading ? <Button className="mt-4" size="sm" disabled={!textModelAvailable || missingRequiredVariables > 0} onClick={onGenerateDrafts}><Layers3 />生成提示词</Button> : null}
                   </div>
                 )}
               </div>
@@ -2287,7 +2336,7 @@ function WorkflowRunner({ workflow, values, prompt, references, referenceBusy, d
           </p>
           <Button variant="outline" onClick={onClose}>取消</Button>
           <Button
-            disabled={referenceBusy || completedRequiredVariables < requiredVariables.length || draftLoading || workflow.mode === "multi_image_series" && drafts.length > 0 && (!runnableDraftCount || runningDraftCount > 0)}
+            disabled={!primaryModelAvailable || referenceBusy || completedRequiredVariables < requiredVariables.length || draftLoading || workflow.mode === "multi_image_series" && drafts.length > 0 && (!runnableDraftCount || runningDraftCount > 0)}
             onClick={workflow.mode === "multi_image_series" && drafts.length > 0 ? onRunAll : onRun}
           >
             {draftLoading || runningDraftCount > 0 ? <LoaderCircle className="animate-spin" /> : workflow.mode === "multi_image_series" ? drafts.length ? <Play /> : <Layers3 /> : <Play />}
@@ -2307,7 +2356,7 @@ function WorkflowRunner({ workflow, values, prompt, references, referenceBusy, d
   );
 }
 
-function SeriesDraftCard({ draft, index, first, last, onChange, onMove, onDelete, onRun }: { draft: WorkflowSeriesDraft; index: number; first: boolean; last: boolean; onChange: (patch: Partial<WorkflowSeriesDraft>) => void; onMove: (direction: -1 | 1) => void; onDelete: () => void; onRun: () => void }) {
+function SeriesDraftCard({ draft, index, first, last, generationDisabled, onChange, onMove, onDelete, onRun }: { draft: WorkflowSeriesDraft; index: number; first: boolean; last: boolean; generationDisabled: boolean; onChange: (patch: Partial<WorkflowSeriesDraft>) => void; onMove: (direction: -1 | 1) => void; onDelete: () => void; onRun: () => void }) {
   const statusLabel = draft.status === "success" ? "已完成" : draft.status === "failed" ? "生成失败" : draft.status === "running" ? "生成中" : "待审核";
   const statusVariant: "success" | "danger" | "info" | "warning" = draft.status === "success" ? "success" : draft.status === "failed" ? "danger" : draft.status === "running" ? "info" : "warning";
   const running = draft.status === "running";
@@ -2348,7 +2397,7 @@ function SeriesDraftCard({ draft, index, first, last, onChange, onMove, onDelete
       </div>
       <div className="flex min-h-12 items-center justify-between gap-3 border-t border-border bg-muted/15 px-3 py-2.5">
         <p className={cn("min-w-0 text-xs leading-5", draft.status === "failed" ? "text-rose-600" : draft.status === "success" ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground")}>{draft.error || (draft.status === "success" ? "生成完成，结果已显示在卡片中" : running ? "任务已提交，完成后会在这里显示结果" : "确认标题和提示词无误后生成此图")}</p>
-        <Button size="sm" variant={draft.status === "draft" || draft.status === "failed" ? "default" : "outline"} className="shrink-0" disabled={!draft.prompt.trim() || running || draft.status === "success"} onClick={onRun}>
+        <Button size="sm" variant={draft.status === "draft" || draft.status === "failed" ? "default" : "outline"} className="shrink-0" disabled={generationDisabled || !draft.prompt.trim() || running || draft.status === "success"} onClick={onRun}>
           {running ? <LoaderCircle className="animate-spin" /> : draft.status === "success" ? <CircleCheck /> : <Play />}
           {running ? "生成中" : draft.status === "success" ? "已生成" : "生成此图"}
         </Button>
@@ -2403,6 +2452,8 @@ function AgentDialog({
   onClose,
 }: AgentDialogProps) {
   const inputRef = useRef<HTMLInputElement>(null);
+  const textModelOptions = configuredModelNames(models?.text_models);
+  const modelAvailable = isWorkflowModelConfigured(model, textModelOptions);
   return (
     <Dialog open={open} onOpenChange={(next) => !next && !busy && onClose()}>
       <DialogContent className="w-[min(96vw,980px)]">
@@ -2420,11 +2471,10 @@ function AgentDialog({
                   <SelectItem value="public">公开工作流</SelectItem>
                 </SelectContent>
               </Select>
-              <Select value={model || "__default"} onValueChange={(value) => onModelChange(value === "__default" ? "" : value)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+              <Select value={modelAvailable ? model : ""} disabled={!textModelOptions.length} onValueChange={onModelChange}>
+                <SelectTrigger><SelectValue placeholder={textModelOptions.length ? "选择文本模型" : "暂无可用模型"} /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="__default">默认文本模型</SelectItem>
-                  {(models?.text_models || []).map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
+                  {textModelOptions.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
@@ -2450,7 +2500,7 @@ function AgentDialog({
               </div>
               <WorkflowReferenceGrid references={references} className="grid-cols-5" disabled={busy} onRemove={onReferenceRemove} />
             </section>
-            <Button className="w-full" disabled={busy || !prompt.trim()} onClick={onRun}>
+            <Button className="w-full" disabled={busy || !prompt.trim() || !modelAvailable} onClick={onRun}>
               {busy ? <LoaderCircle className="animate-spin" /> : <Sparkles />}
               生成工作流草稿
             </Button>

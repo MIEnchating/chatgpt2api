@@ -10,7 +10,12 @@ import {
   type AuthRole,
   type StoredAuthSession,
 } from "@/lib/auth-session";
-import { getCachedAuthSession, getVerifiedAuthSession } from "@/lib/session";
+import {
+  AUTH_SESSION_CHANGE_EVENT,
+  getCachedAuthSession,
+  getVerifiedAuthSession,
+  refreshVerifiedAuthSession,
+} from "@/lib/session";
 
 type UseAuthGuardResult = {
   isCheckingAuth: boolean;
@@ -54,9 +59,11 @@ function useVerifiedSessionLifecycle(
   useEffect(() => {
     let active = true;
 
-    const load = async () => {
+    const load = async (forceRefresh = false) => {
       try {
-        const storedSession = await getVerifiedAuthSession();
+        const storedSession = forceRefresh
+          ? await refreshVerifiedAuthSession()
+          : await getVerifiedAuthSession();
         if (!active) {
           return;
         }
@@ -73,9 +80,30 @@ function useVerifiedSessionLifecycle(
       }
     };
 
+    const verifyCurrentSession = (forceRefresh: boolean) => {
+      if (!active) {
+        return;
+      }
+      setIsCheckingAuth(true);
+      void load(forceRefresh);
+    };
+    const handleSessionChange = () => verifyCurrentSession(false);
+    const handleWindowFocus = () => verifyCurrentSession(true);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        verifyCurrentSession(true);
+      }
+    };
+
     void load();
+    window.addEventListener(AUTH_SESSION_CHANGE_EVENT, handleSessionChange);
+    window.addEventListener("focus", handleWindowFocus);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
       active = false;
+      window.removeEventListener(AUTH_SESSION_CHANGE_EVENT, handleSessionChange);
+      window.removeEventListener("focus", handleWindowFocus);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [onVerified, retryAuth, retryVersion]);
 

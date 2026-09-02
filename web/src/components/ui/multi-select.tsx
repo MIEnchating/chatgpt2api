@@ -93,8 +93,22 @@ export function MultiSelect({
     return () => observer.disconnect();
   }, [measureVisibleTags]);
 
-  const remove = (item: string) => onValueChange(selected.filter((valueItem) => valueItem !== item));
-  const toggle = (item: string) => onValueChange(selected.includes(item) ? selected.filter((valueItem) => valueItem !== item) : [...selected, item]);
+  React.useEffect(() => {
+    if (disabled) {
+      setOpen(false);
+    }
+  }, [disabled]);
+
+  const remove = (item: string) => {
+    if (!disabled) {
+      onValueChange(selected.filter((valueItem) => valueItem !== item));
+    }
+  };
+  const toggle = (item: string) => {
+    if (!disabled) {
+      onValueChange(selected.includes(item) ? selected.filter((valueItem) => valueItem !== item) : [...selected, item]);
+    }
+  };
   const collapsedTag = collapsedSelected.length > 0 ? (
     <span className="inline-flex h-6 shrink-0 items-center rounded-md border border-border/70 bg-muted/55 px-1.5 text-[11px] font-medium text-muted-foreground">
       +{collapsedSelected.length}
@@ -102,7 +116,11 @@ export function MultiSelect({
   ) : null;
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover open={!disabled && open} onOpenChange={(nextOpen) => {
+      if (!disabled) {
+        setOpen(nextOpen);
+      }
+    }}>
       <PopoverTrigger asChild>
         <div
           role="combobox"
@@ -132,6 +150,7 @@ export function MultiSelect({
                   <span className="truncate">{option.label}</span>
                   <button
                     type="button"
+                    disabled={disabled}
                     className="inline-flex size-4 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-background hover:text-foreground"
                     aria-label={`移除 ${option.label}`}
                     onClick={(event) => {
@@ -205,6 +224,7 @@ export function MultiSelect({
                 <div key={option.value} className="flex items-center gap-1 rounded-md hover:bg-muted">
                   <button
                     type="button"
+                    disabled={disabled}
                     role="option"
                     aria-selected={checked}
                     className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm"
