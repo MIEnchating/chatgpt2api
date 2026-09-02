@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState, type ReactNode } from "react";
 import { Archive, Bell, Clapperboard, Database, ImageIcon, ListChecks, LoaderCircle, ScrollText, Settings2, Sparkles } from "lucide-react";
 
 import { useAuthGuard } from "@/lib/use-auth-guard";
@@ -19,19 +19,19 @@ import { PromptSourcesCard } from "./components/prompt-sources-card";
 import { VideoModelContractsCard } from "./components/video-model-contracts-card";
 import { useSettingsStore } from "./store";
 
-function SettingsDataController() {
-  const didLoadRef = useRef(false);
+function SettingsDataController({ children, sessionKey }: { children: ReactNode; sessionKey: string }) {
+  const activeSessionKey = useSettingsStore((state) => state.activeSessionKey);
+  const activateSession = useSettingsStore((state) => state.activateSession);
+  const deactivateSession = useSettingsStore((state) => state.deactivateSession);
   const initialize = useSettingsStore((state) => state.initialize);
 
-  useEffect(() => {
-    if (didLoadRef.current) {
-      return;
-    }
-    didLoadRef.current = true;
-    void initialize();
-  }, [initialize]);
+  useLayoutEffect(() => {
+    activateSession(sessionKey);
+    void initialize(sessionKey);
+    return () => deactivateSession(sessionKey);
+  }, [activateSession, deactivateSession, initialize, sessionKey]);
 
-  return null;
+  return activeSessionKey === sessionKey ? children : null;
 }
 
 function AdminSettingsPageContent({ session }: { session: StoredAuthSession }) {
@@ -70,26 +70,27 @@ function AdminSettingsPageContent({ session }: { session: StoredAuthSession }) {
   };
 
   return (
-    <ScrollArea
-      className="h-full min-h-0"
-      viewportClassName="pr-4 lg:pr-0"
-      viewStyle={{ height: "100%", minHeight: "100%" }}
-    >
-      <div data-settings-layout className="min-h-full w-full lg:h-full lg:min-h-0">
-        <SettingsDataController />
-        <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-4 lg:h-full lg:min-h-0 lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-5 2xl:grid-cols-[240px_minmax(0,1fr)]">
-          <SectionNavigation
-            title="系统设置"
-            description="按类别管理站点配置"
-            items={settingsItems}
-            activeId={activeItem.id}
-            ariaLabel="系统设置分类"
-            onSelect={selectSection}
-          />
-          <main id={activeItem.id} className="min-w-0 lg:h-full lg:min-h-0">{activeItem.content}</main>
+    <SettingsDataController sessionKey={session.key}>
+      <ScrollArea
+        className="h-full min-h-0"
+        viewportClassName="pr-4 lg:pr-0"
+        viewStyle={{ height: "100%", minHeight: "100%" }}
+      >
+        <div data-settings-layout className="min-h-full w-full lg:h-full lg:min-h-0">
+          <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-4 lg:h-full lg:min-h-0 lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-5 2xl:grid-cols-[240px_minmax(0,1fr)]">
+            <SectionNavigation
+              title="系统设置"
+              description="按类别管理站点配置"
+              items={settingsItems}
+              activeId={activeItem.id}
+              ariaLabel="系统设置分类"
+              onSelect={selectSection}
+            />
+            <main id={activeItem.id} className="min-w-0 lg:h-full lg:min-h-0">{activeItem.content}</main>
+          </div>
         </div>
-      </div>
-    </ScrollArea>
+      </ScrollArea>
+    </SettingsDataController>
   );
 }
 
@@ -104,5 +105,5 @@ export default function SettingsPage() {
     );
   }
 
-  return <AdminSettingsPageContent session={session} />;
+  return <AdminSettingsPageContent key={session.key} session={session} />;
 }

@@ -159,7 +159,9 @@ function normalizeStorageSetting(value: SettingsConfig["storage"]): StorageSetti
 	};
 }
 
-type SettingsStore = {
+type SettingsSessionData = {
+  activeSessionKey: string | null;
+  sessionGeneration: number;
   config: SettingsConfig | null;
   isLoadingConfig: boolean;
   isSavingConfig: boolean;
@@ -171,8 +173,13 @@ type SettingsStore = {
   lastImageStorageCleanup: ImageStorageCleanupResult | null;
   isLoadingImageStorageGovernance: boolean;
   isCleaningImageStorage: boolean;
+};
 
-  initialize: () => Promise<void>;
+type SettingsStore = SettingsSessionData & {
+  activateSession: (sessionKey: string) => void;
+  deactivateSession: (sessionKey: string) => void;
+
+  initialize: (sessionKey: string) => Promise<void>;
   loadConfig: () => Promise<void>;
   saveConfig: () => Promise<void>;
   setImageTaskTimeoutSeconds: (value: string) => void;
@@ -213,45 +220,163 @@ type SettingsStore = {
   cleanupImageThumbnails: () => Promise<void>;
 };
 
-export const useSettingsStore = create<SettingsStore>((set, get) => ({
+type SettingsSessionToken = {
+  sessionKey: string;
+  generation: number;
+};
+
+const CLEARED_SETTINGS_SESSION_DATA = {
   config: null,
-  isLoadingConfig: true,
+  isLoadingConfig: false,
   isSavingConfig: false,
   logGovernance: null,
   lastLogCleanup: null,
-  isLoadingLogGovernance: true,
+  isLoadingLogGovernance: false,
   isCleaningLogs: false,
   imageStorageGovernance: null,
   lastImageStorageCleanup: null,
-  isLoadingImageStorageGovernance: true,
+  isLoadingImageStorageGovernance: false,
   isCleaningImageStorage: false,
+} satisfies Omit<SettingsSessionData, "activeSessionKey" | "sessionGeneration">;
 
-  initialize: async () => {
+function sessionToken(state: SettingsSessionData): SettingsSessionToken | null {
+  return state.activeSessionKey
+    ? { sessionKey: state.activeSessionKey, generation: state.sessionGeneration }
+    : null;
+}
+
+function isCurrentSession(state: SettingsSessionData, token: SettingsSessionToken) {
+  return state.activeSessionKey === token.sessionKey && state.sessionGeneration === token.generation;
+}
+
+type SettingsStoreDependencies = {
+  cleanupImageStorage: typeof cleanupImageStorage;
+  cleanupLogs: typeof cleanupLogs;
+  fetchImageStorageGovernance: typeof fetchImageStorageGovernance;
+  fetchLogGovernance: typeof fetchLogGovernance;
+  fetchSettingsConfig: typeof fetchSettingsConfig;
+  updateLoginPageImageSettings: typeof updateLoginPageImageSettings;
+  updateSettingsConfig: typeof updateSettingsConfig;
+  updateSiteIconSettings: typeof updateSiteIconSettings;
+  dispatchAppMetaUpdated: typeof dispatchAppMetaUpdated;
+  invalidateStorageProviderCache: typeof invalidateStorageProviderCache;
+  toastError: (message: string) => void;
+  toastSuccess: (message: string) => void;
+};
+
+const DEFAULT_SETTINGS_STORE_DEPENDENCIES: SettingsStoreDependencies = {
+  cleanupImageStorage,
+  cleanupLogs,
+  fetchImageStorageGovernance,
+  fetchLogGovernance,
+  fetchSettingsConfig,
+  updateLoginPageImageSettings,
+  updateSettingsConfig,
+  updateSiteIconSettings,
+  dispatchAppMetaUpdated,
+  invalidateStorageProviderCache,
+  toastError: (message) => {
+    toast.error(message);
+  },
+  toastSuccess: (message) => {
+    toast.success(message);
+  },
+};
+
+export function createSettingsStore(
+  dependencyOverrides: Partial<SettingsStoreDependencies> = {},
+) {
+  const dependencies = {
+    ...DEFAULT_SETTINGS_STORE_DEPENDENCIES,
+    ...dependencyOverrides,
+  };
+
+  return create<SettingsStore>((set, get) => {
+  const setForSession = (
+    token: SettingsSessionToken,
+    update: Partial<SettingsStore> | ((state: SettingsStore) => Partial<SettingsStore>),
+  ) => {
+    set((state) => {
+      if (!isCurrentSession(state, token)) {
+        return {};
+      }
+      return typeof update === "function" ? update(state) : update;
+    });
+  };
+
+  const getSessionToken = () => sessionToken(get());
+  const sessionIsCurrent = (token: SettingsSessionToken) => isCurrentSession(get(), token);
+
+  return {
+  activeSessionKey: null,
+  sessionGeneration: 0,
+  ...CLEARED_SETTINGS_SESSION_DATA,
+
+  activateSession: (sessionKey) => {
+    if (!sessionKey) {
+      return;
+    }
+    set((state) => {
+      if (state.activeSessionKey === sessionKey) {
+        return {};
+      }
+      return {
+        ...CLEARED_SETTINGS_SESSION_DATA,
+        activeSessionKey: sessionKey,
+        sessionGeneration: state.sessionGeneration + 1,
+      };
+    });
+  },
+
+  deactivateSession: (sessionKey) => {
+    set((state) => {
+      if (state.activeSessionKey !== sessionKey) {
+        return {};
+      }
+      return {
+        ...CLEARED_SETTINGS_SESSION_DATA,
+        activeSessionKey: null,
+        sessionGeneration: state.sessionGeneration + 1,
+      };
+    });
+  },
+
+  initialize: async (sessionKey) => {
+    if (get().activeSessionKey !== sessionKey) {
+      return;
+    }
     await Promise.allSettled([get().loadConfig(), get().loadLogGovernance(), get().loadImageStorageGovernance()]);
   },
 
   loadConfig: async () => {
-    set({ isLoadingConfig: true });
+    const token = getSessionToken();
+    if (!token) {
+      return;
+    }
+    setForSession(token, { isLoadingConfig: true });
     try {
-      const data = await fetchSettingsConfig();
-      set({
+      const data = await dependencies.fetchSettingsConfig();
+      setForSession(token, {
         config: normalizeConfig(data.config),
       });
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "加载系统配置失败");
+      if (sessionIsCurrent(token)) {
+        dependencies.toastError(error instanceof Error ? error.message : "加载系统配置失败");
+      }
     } finally {
-      set({ isLoadingConfig: false });
+      setForSession(token, { isLoadingConfig: false });
     }
   },
 
   saveConfig: async () => {
+    const token = getSessionToken();
     const { config } = get();
-    if (!config) {
+    if (!token || !config) {
       return;
     }
     const canConfigureRelayDatabase = typeof config.relay_database_password_configured === "boolean";
 
-    set({ isSavingConfig: true });
+    setForSession(token, { isSavingConfig: true });
     try {
       const payload: SettingsConfig = {
         ...config,
@@ -302,21 +427,34 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
         delete payload.relay_database_password;
       }
 
-      const data = await updateSettingsConfig(payload);
-      invalidateStorageProviderCache();
-      set((state) => ({
+      const data = await dependencies.updateSettingsConfig(payload);
+      if (!sessionIsCurrent(token)) {
+        return;
+      }
+      dependencies.invalidateStorageProviderCache();
+      setForSession(token, (state) => ({
         config: state.config === config ? normalizeConfig(data.config) : state.config,
       }));
-      dispatchAppMetaUpdated({
+      if (!sessionIsCurrent(token)) {
+        return;
+      }
+      dependencies.dispatchAppMetaUpdated({
         app_title: String(data.config.app_title || "云棉"),
         project_name: String(data.config.project_name || data.config.app_title || "云棉"),
       });
+      if (!sessionIsCurrent(token)) {
+        return;
+      }
       await get().loadImageStorageGovernance(true);
-      toast.success("配置已保存");
+      if (sessionIsCurrent(token)) {
+        dependencies.toastSuccess("配置已保存");
+      }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "保存系统配置失败");
+      if (sessionIsCurrent(token)) {
+        dependencies.toastError(error instanceof Error ? error.message : "保存系统配置失败");
+      }
     } finally {
-      set({ isSavingConfig: false });
+      setForSession(token, { isSavingConfig: false });
     }
   },
 
@@ -463,28 +601,39 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   },
 
   saveSiteIcon: async ({ file, action }) => {
+    const token = getSessionToken();
     const { config } = get();
-    if (!config) {
+    if (!token || !config) {
       return false;
     }
 
-    set({ isSavingConfig: true });
+    setForSession(token, { isSavingConfig: true });
     try {
-      const data = await updateSiteIconSettings({ action, file });
+      const data = await dependencies.updateSiteIconSettings({ action, file });
+      if (!sessionIsCurrent(token)) {
+        return false;
+      }
       const nextConfig = normalizeConfig(data.config);
-      set((state) => ({
+      setForSession(token, (state) => ({
         config: mergeUnchangedConfigFields(state.config, config, nextConfig, SITE_ICON_CONFIG_FIELDS),
       }));
-      dispatchAppMetaUpdated({
+      if (!sessionIsCurrent(token)) {
+        return false;
+      }
+      dependencies.dispatchAppMetaUpdated({
         site_icon_url: String(nextConfig.site_icon_url || ""),
       });
-      toast.success(action === "remove" ? "已恢复默认网站图标" : "网站图标已保存");
+      if (sessionIsCurrent(token)) {
+        dependencies.toastSuccess(action === "remove" ? "已恢复默认网站图标" : "网站图标已保存");
+      }
       return true;
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "保存网站图标失败");
+      if (sessionIsCurrent(token)) {
+        dependencies.toastError(error instanceof Error ? error.message : "保存网站图标失败");
+      }
       return false;
     } finally {
-      set({ isSavingConfig: false });
+      setForSession(token, { isSavingConfig: false });
     }
   },
 
@@ -521,8 +670,9 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
   },
 
   saveLoginPageImage: async ({ file, action }) => {
+    const token = getSessionToken();
     const { config } = get();
-    if (!config) {
+    if (!token || !config) {
       return false;
     }
     const transform = normalizeLoginPageImageTransform({
@@ -538,121 +688,170 @@ export const useSettingsStore = create<SettingsStore>((set, get) => ({
       login_page_image_position_y: transform.positionY,
     };
 
-    set({ isSavingConfig: true });
+    setForSession(token, { isSavingConfig: true });
     try {
-      const data = await updateLoginPageImageSettings(settings, { action, file });
+      const data = await dependencies.updateLoginPageImageSettings(settings, { action, file });
+      if (!sessionIsCurrent(token)) {
+        return false;
+      }
       const nextConfig = normalizeConfig(data.config);
-      set((state) => ({
+      setForSession(token, (state) => ({
         config: mergeUnchangedConfigFields(state.config, config, nextConfig, LOGIN_PAGE_IMAGE_CONFIG_FIELDS),
       }));
-      dispatchAppMetaUpdated({
+      if (!sessionIsCurrent(token)) {
+        return false;
+      }
+      dependencies.dispatchAppMetaUpdated({
         login_page_image_url: String(nextConfig.login_page_image_url || ""),
         login_page_image_mode: normalizeLoginPageImageMode(nextConfig.login_page_image_mode),
         login_page_image_zoom: Number(nextConfig.login_page_image_zoom),
         login_page_image_position_x: Number(nextConfig.login_page_image_position_x),
         login_page_image_position_y: Number(nextConfig.login_page_image_position_y),
       });
-      toast.success("登录页图片已保存");
+      if (sessionIsCurrent(token)) {
+        dependencies.toastSuccess("登录页图片已保存");
+      }
       return true;
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "保存登录页图片失败");
+      if (sessionIsCurrent(token)) {
+        dependencies.toastError(error instanceof Error ? error.message : "保存登录页图片失败");
+      }
       return false;
     } finally {
-      set({ isSavingConfig: false });
+      setForSession(token, { isSavingConfig: false });
     }
   },
 
   loadLogGovernance: async (silent = false) => {
-    if (!silent) set({ isLoadingLogGovernance: true });
+    const token = getSessionToken();
+    if (!token) {
+      return;
+    }
+    if (!silent) setForSession(token, { isLoadingLogGovernance: true });
     try {
-      const data = await fetchLogGovernance();
-      set({ logGovernance: data.governance });
+      const data = await dependencies.fetchLogGovernance();
+      setForSession(token, { logGovernance: data.governance });
     } catch (error) {
-      if (!silent) toast.error(error instanceof Error ? error.message : "加载日志治理数据失败");
+      if (!silent && sessionIsCurrent(token)) {
+        dependencies.toastError(error instanceof Error ? error.message : "加载日志治理数据失败");
+      }
     } finally {
-      if (!silent) set({ isLoadingLogGovernance: false });
+      if (!silent) setForSession(token, { isLoadingLogGovernance: false });
     }
   },
 
   cleanupLogsByRetention: async () => {
+    const token = getSessionToken();
     const { config } = get();
-    if (!config) {
+    if (!token || !config) {
       return;
     }
     const retentionDays = Math.min(3650, Math.max(1, Number(config.log_retention_days) || 7));
-    set({ isCleaningLogs: true });
+    setForSession(token, { isCleaningLogs: true });
     try {
-      const data = await cleanupLogs(retentionDays);
-      set({
+      const data = await dependencies.cleanupLogs(retentionDays);
+      setForSession(token, {
         lastLogCleanup: data.cleanup,
         logGovernance: data.governance,
       });
-      toast.success(`已清理 ${data.cleanup.deleted} 条历史日志`);
+      if (sessionIsCurrent(token)) {
+        dependencies.toastSuccess(`已清理 ${data.cleanup.deleted} 条历史日志`);
+      }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "清理日志失败");
+      if (sessionIsCurrent(token)) {
+        dependencies.toastError(error instanceof Error ? error.message : "清理日志失败");
+      }
     } finally {
-      set({ isCleaningLogs: false });
+      setForSession(token, { isCleaningLogs: false });
     }
   },
 
   loadImageStorageGovernance: async (silent = false) => {
-    if (!silent) set({ isLoadingImageStorageGovernance: true });
+    const token = getSessionToken();
+    if (!token) {
+      return;
+    }
+    if (!silent) setForSession(token, { isLoadingImageStorageGovernance: true });
     try {
-      const data = await fetchImageStorageGovernance();
-      set({ imageStorageGovernance: data.governance });
+      const data = await dependencies.fetchImageStorageGovernance();
+      setForSession(token, { imageStorageGovernance: data.governance });
     } catch (error) {
-      if (!silent) toast.error(error instanceof Error ? error.message : "加载媒体存储数据失败");
+      if (!silent && sessionIsCurrent(token)) {
+        dependencies.toastError(error instanceof Error ? error.message : "加载媒体存储数据失败");
+      }
     } finally {
-      if (!silent) set({ isLoadingImageStorageGovernance: false });
+      if (!silent) setForSession(token, { isLoadingImageStorageGovernance: false });
     }
   },
 
   cleanupImageStorageByRetention: async () => {
+    const token = getSessionToken();
     const { config } = get();
-    if (!config) return;
+    if (!token || !config) return;
     const retentionDays = Math.max(1, Number(config.image_retention_days) || 30);
-    set({ isCleaningImageStorage: true });
+    setForSession(token, { isCleaningImageStorage: true });
     try {
-      const data = await cleanupImageStorage({ action: "retention", retention_days: retentionDays });
-      set({ lastImageStorageCleanup: data.cleanup, imageStorageGovernance: data.governance });
-      toast.success(`已清理 ${data.cleanup.deleted_images + data.cleanup.deleted_conversation_assets} 张过期图片`);
+      const data = await dependencies.cleanupImageStorage({ action: "retention", retention_days: retentionDays });
+      setForSession(token, { lastImageStorageCleanup: data.cleanup, imageStorageGovernance: data.governance });
+      if (sessionIsCurrent(token)) {
+        dependencies.toastSuccess(`已清理 ${data.cleanup.deleted_images + data.cleanup.deleted_conversation_assets} 张过期图片`);
+      }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "清理图片失败");
+      if (sessionIsCurrent(token)) {
+        dependencies.toastError(error instanceof Error ? error.message : "清理图片失败");
+      }
     } finally {
-      set({ isCleaningImageStorage: false });
+      setForSession(token, { isCleaningImageStorage: false });
     }
   },
 
   cleanupImageStorageByQuota: async (includePublic = false) => {
+    const token = getSessionToken();
     const { config } = get();
-    if (!config) return;
+    if (!token || !config) return;
     const maxMb = Math.max(0, Number(config.image_storage_limit_mb) || 0);
     if (maxMb <= 0) {
-      toast.error("请先设置图片容量上限");
+      dependencies.toastError("请先设置图片容量上限");
       return;
     }
-    set({ isCleaningImageStorage: true });
+    setForSession(token, { isCleaningImageStorage: true });
     try {
-      const data = await cleanupImageStorage({ action: "quota", max_mb: maxMb, include_public: includePublic });
-      set({ lastImageStorageCleanup: data.cleanup, imageStorageGovernance: data.governance });
-      toast.success(`已按容量清理 ${data.cleanup.deleted_images + data.cleanup.deleted_conversation_assets} 张图片`);
+      const data = await dependencies.cleanupImageStorage({ action: "quota", max_mb: maxMb, include_public: includePublic });
+      setForSession(token, { lastImageStorageCleanup: data.cleanup, imageStorageGovernance: data.governance });
+      if (sessionIsCurrent(token)) {
+        dependencies.toastSuccess(`已按容量清理 ${data.cleanup.deleted_images + data.cleanup.deleted_conversation_assets} 张图片`);
+      }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "按容量清理图片失败");
+      if (sessionIsCurrent(token)) {
+        dependencies.toastError(error instanceof Error ? error.message : "按容量清理图片失败");
+      }
     } finally {
-      set({ isCleaningImageStorage: false });
+      setForSession(token, { isCleaningImageStorage: false });
     }
   },
 
   cleanupImageThumbnails: async () => {
-    set({ isCleaningImageStorage: true });
+    const token = getSessionToken();
+    if (!token) {
+      return;
+    }
+    setForSession(token, { isCleaningImageStorage: true });
     try {
-      const data = await cleanupImageStorage({ action: "thumbnails" });
-      set({ lastImageStorageCleanup: data.cleanup, imageStorageGovernance: data.governance });
-      toast.success(`已清理 ${data.cleanup.deleted_thumbnails} 个缩略图缓存`);
+      const data = await dependencies.cleanupImageStorage({ action: "thumbnails" });
+      setForSession(token, { lastImageStorageCleanup: data.cleanup, imageStorageGovernance: data.governance });
+      if (sessionIsCurrent(token)) {
+        dependencies.toastSuccess(`已清理 ${data.cleanup.deleted_thumbnails} 个缩略图缓存`);
+      }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "清理缩略图失败");
+      if (sessionIsCurrent(token)) {
+        dependencies.toastError(error instanceof Error ? error.message : "清理缩略图失败");
+      }
     } finally {
-      set({ isCleaningImageStorage: false });
+      setForSession(token, { isCleaningImageStorage: false });
     }
   },
-}));
+    };
+  });
+}
+
+export const useSettingsStore = createSettingsStore();
