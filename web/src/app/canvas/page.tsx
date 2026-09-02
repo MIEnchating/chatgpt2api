@@ -104,6 +104,7 @@ import { resolveMediaURL, uploadMediaBlob } from "@/services/file-storage";
 import { persistCreationTaskOutputs } from "@/services/generation-result-storage";
 import { resolveImageURL, uploadImage } from "@/services/image-storage";
 import type { StoredAuthSession } from "@/lib/auth-session";
+import { getCachedAuthSession } from "@/lib/session";
 
 const CanvasAgentPanel = lazy(() => import("@/app/canvas/canvas-agent-panel").then((module) => ({ default: module.CanvasAgentPanel })));
 const CanvasAssetPicker = lazy(() => import("@/app/canvas/canvas-asset-picker").then((module) => ({ default: module.CanvasAssetPicker })));
@@ -1292,7 +1293,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     if (recoveryTaskIDs.length) {
       const controller = new AbortController();
       canvasRecoveryAbortControllerRef.current = controller;
-      void recoverCanvasTasks(next.id, operationEpoch, recoveryTaskIDs, controller.signal);
+      void recoverCanvasTasks(next.id, operationEpoch, recoveryTaskIDs, session.key, controller.signal);
     }
   }
 
@@ -3093,7 +3094,13 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     scheduleSave();
   }
 
-  async function recoverCanvasTasks(projectID: string, operationEpoch: number, taskIDs: string[], signal: AbortSignal) {
+  async function recoverCanvasTasks(
+    projectID: string,
+    operationEpoch: number,
+    taskIDs: string[],
+    expectedSessionKey: string,
+    signal: AbortSignal,
+  ) {
     let response: Awaited<ReturnType<typeof fetchCreationTasks>>;
     try {
       response = await fetchCreationTasks(taskIDs, { signal });
@@ -3116,14 +3123,22 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       if (!task) return;
       try {
         const recoveredTask = task.status === "success" || task.status === "error" || task.status === "cancelled"
-          ? await persistCreationTaskOutputs(task, { assetContext: { source: "无限画布" } })
+          ? await persistCreationTaskOutputs(task, {
+              assetContext: { source: "无限画布" },
+              expectedSessionKey,
+              signal,
+            })
           : task;
         const progress = applyRecoveredCanvasTask(recoveredTask, projectID, operationEpoch, signal);
         if (progress.terminal) return;
         const completedTask = await waitForTask(taskID, (nextTask) => {
           applyRecoveredCanvasTask(nextTask, projectID, operationEpoch, signal);
         }, signal);
-        applyRecoveredCanvasTask(await persistCreationTaskOutputs(completedTask, { assetContext: { source: "无限画布" } }), projectID, operationEpoch, signal);
+        applyRecoveredCanvasTask(await persistCreationTaskOutputs(completedTask, {
+          assetContext: { source: "无限画布" },
+          expectedSessionKey,
+          signal,
+        }), projectID, operationEpoch, signal);
       } catch (error) {
         if (!(error instanceof DOMException && error.name === "AbortError")) {
           if (error instanceof CanvasTaskPollingTimeoutError || isRetryableTaskPollError(error)) {
@@ -3284,6 +3299,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     if (!relayTokenName.trim()) { setRelayTokenDialogKind("audio"); return; }
     const taskID = `canvas-audio-${randomID()}`;
     const controller = new AbortController();
+    const expectedSessionKey = session.key;
     const generationStartedAt = Date.now();
     const createsResult = !retrying && (requestedNode.type === "config" || Boolean(requestedNode.url));
     const resultID = createsResult ? `audio-${randomID()}` : requestedNode.id;
@@ -3350,13 +3366,18 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         setRunningTaskID(serverTaskID);
       }
       replaceNodes(nodesRef.current.map((node) => node.id === resultID ? { ...node, task_id: serverTaskID, audio_task_id: serverTaskID } : node));
-      const completed = await persistCreationTaskOutputs(await waitForTask(serverTaskID, undefined, controller.signal), { assetContext: { source: "无限画布" } });
+      const completed = await persistCreationTaskOutputs(await waitForTask(serverTaskID, undefined, controller.signal), {
+        assetContext: { source: "无限画布" },
+        expectedSessionKey,
+        signal: controller.signal,
+      });
       const item = completed.data?.find((entry) => entry.audio_url || entry.url);
       const url = String(item?.audio_url || item?.url || "").trim();
       if (!url) throw new Error(completed.error || "音频任务完成但没有返回音频地址");
       replaceNodes(nodesRef.current.map((node) => node.id === resultID ? { ...node, url, storage_key: item?.storageKey || item?.storage_key, mime_type: item?.mime_type || `audio/${canvasAudioResponseFormat(resultNode) === "mp3" ? "mpeg" : canvasAudioResponseFormat(resultNode)}`, bytes: item?.bytes, duration_ms: Date.now() - generationStartedAt, generation_status: "success", generation_progress: 100, generation_error: "", task_id: completed.id || serverTaskID, audio_task_id: completed.id || serverTaskID, audio_task_result_id: completed.id || serverTaskID } : node));
       finishHistory(); toast.success("已添加音频到画布");
     } catch (error) {
+      if (getCachedAuthSession()?.key !== expectedSessionKey) return;
       if (controller.signal.aborted) {
         replaceNodes(nodesRef.current.map((node) => node.id === resultID && node.generation_status === "loading" || node.id === requestedNode.id && requestedNode.type === "config" ? { ...node, duration_ms: node.id === resultID ? Date.now() - generationStartedAt : node.duration_ms, generation_status: "idle", generation_error: "" } : node));
         finishHistory();
@@ -3367,7 +3388,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       }
     } finally {
       completeActiveGeneration(activeGeneration);
-      if (!concurrent) {
+      if (!concurrent && getCachedAuthSession()?.key === expectedSessionKey) {
         if (generationAbortControllerRef.current === controller) generationAbortControllerRef.current = null;
         submittedTaskIDsRef.current.forEach((submittedID) => cancelledTaskIDsRef.current.delete(submittedID));
         submittedTaskIDsRef.current.clear();
@@ -3473,6 +3494,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       created_at: createdAt(),
     }));
     const controller = new AbortController();
+    const expectedSessionKey = session.key;
     const activeGeneration = registerActiveGeneration(controller, [sourceNode.id, rootID, ...targetIDs], taskIDs.values());
     const historyBase = appendCanvasHistorySnapshot(historyRef.current, cloneDocument(captureDocument()), MAX_HISTORY);
     historyRef.current = historyBase;
@@ -3504,7 +3526,11 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
           const serverTaskID = submitted.id || clientTaskID;
           addActiveGenerationTask(activeGeneration, serverTaskID, clientTaskID);
           replaceNodes(nodesRef.current.map((node) => node.id === targetID ? { ...node, task_id: serverTaskID } : node));
-          const completed = await persistCreationTaskOutputs(await waitForTask(serverTaskID, undefined, controller.signal), { assetContext: { source: "无限画布" } });
+          const completed = await persistCreationTaskOutputs(await waitForTask(serverTaskID, undefined, controller.signal), {
+            assetContext: { source: "无限画布" },
+            expectedSessionKey,
+            signal: controller.signal,
+          });
           const result = summarizeCanvasTaskResult(completed, 1);
           const image = result.images[0];
           if (!image?.url) throw new Error(result.error || "全景图任务没有返回图片");
@@ -3548,12 +3574,14 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
           replaceNodes(nextNodes);
           return true;
         } catch (error) {
+          if (getCachedAuthSession()?.key !== expectedSessionKey) return false;
           if (controller.signal.aborted) return false;
           const message = error instanceof Error ? error.message : "全景图生成失败";
           replaceNodes(nodesRef.current.map((node) => node.id === targetID ? { ...node, duration_ms: Date.now() - generationStartedAt, generation_status: "error", generation_error: message } : node));
           return false;
         }
       }));
+      if (getCachedAuthSession()?.key !== expectedSessionKey) return;
       if (controller.signal.aborted) {
         replaceNodes(nodesRef.current.map((node) => targetIDs.includes(node.id) && node.generation_status === "loading"
           ? { ...node, duration_ms: Date.now() - generationStartedAt, generation_status: "idle", generation_error: "" }
@@ -3570,6 +3598,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       if (successCount < results.length) toast.error(`已生成 ${successCount} 张全景图，${results.length - successCount} 张失败`);
       else toast.success(count > 1 ? `已生成 ${count} 张全景图` : "全景图已生成");
     } catch (error) {
+      if (getCachedAuthSession()?.key !== expectedSessionKey) return;
       if (!controller.signal.aborted) { const message = error instanceof Error ? error.message : "全景图生成失败"; replaceNodes(nodesRef.current.map((node) => node.id === rootID ? { ...node, duration_ms: Date.now() - generationStartedAt, generation_status: "error", generation_error: message } : node)); commitGenerationHistory(historyBase); toast.error(message); }
     } finally {
       completeActiveGeneration(activeGeneration);
@@ -3634,6 +3663,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
 		}
     const taskID = `canvas-video-${randomID()}`;
     const controller = new AbortController();
+    const expectedSessionKey = session.key;
     const generationStartedAt = Date.now();
     const createsResult = sourceNode.type === "config" || Boolean(sourceNode.url);
     const resultNodeID = createsResult ? `video-${randomID()}` : sourceNode.id;
@@ -3712,6 +3742,8 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       replaceNodes(nodesRef.current.map((node) => node.id === resultNodeID ? { ...node, task_id: serverTaskID } : node));
       const completed = await persistCreationTaskOutputs(await waitForTask(serverTaskID, undefined, controller.signal), {
         assetContext: { prompt, source: "无限画布", metadata: { projectId: documentRef.current.id, nodeId: resultNodeID } },
+        expectedSessionKey,
+        signal: controller.signal,
       });
       const item = completed.data?.find((entry) => String(entry.type || "") === "video" || entry.video_url || entry.url);
       const url = String(item?.video_url || item?.url || "").trim();
@@ -3719,6 +3751,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       replaceNodes(nodesRef.current.map((node) => node.id === resultNodeID ? { ...node, url, storage_key: item?.storageKey || item?.storage_key, mime_type: item?.mime_type || "video/mp4", bytes: item?.bytes || item?.size, duration_ms: Date.now() - generationStartedAt, generation_status: "success" as const, generation_progress: 100, generation_error: "", task_id: completed.id || serverTaskID } : node));
       finishHistory(); toast.success("已添加视频到画布");
     } catch (error) {
+      if (getCachedAuthSession()?.key !== expectedSessionKey) return;
       if (controller.signal.aborted) {
         replaceNodes(nodesRef.current.map((node) => node.id === resultNodeID && node.generation_status === "loading" ? { ...node, generation_status: "idle" as const, generation_error: "" } : node));
         finishHistory();
@@ -3729,7 +3762,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       finishHistory(); toast.error(message);
     } finally {
       completeActiveGeneration(activeGeneration);
-      if (!concurrent) {
+      if (!concurrent && getCachedAuthSession()?.key === expectedSessionKey) {
         if (generationAbortControllerRef.current === controller) generationAbortControllerRef.current = null;
         submittedTaskIDsRef.current.forEach((submittedID) => cancelledTaskIDsRef.current.delete(submittedID));
         submittedTaskIDsRef.current.clear();
@@ -3803,6 +3836,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     };
     const taskID = `canvas-${mode}-${randomID()}`;
     const controller = new AbortController();
+    const expectedSessionKey = session.key;
     const generationEpoch = concurrent ? generationEpochRef.current : generationEpochRef.current + 1;
     if (!concurrent) generationEpochRef.current = generationEpoch;
     const generationProjectID = documentRef.current.id;
@@ -3950,7 +3984,11 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         if (receivedNewFinal) nextNodes = setCanvasConfigGenerationStatus(nextNodes, sourceNode.id, "success", "", activeTaskID);
         replaceNodes(nextNodes);
         if (receivedNewFinal) scheduleSave();
-      }, controller.signal), { assetContext: { source: "无限画布" } });
+      }, controller.signal), {
+        assetContext: { source: "无限画布" },
+        expectedSessionKey,
+        signal: controller.signal,
+      });
       terminalTaskReceived = true;
       if (!generationIsCurrent()) return;
       const taskResult = summarizeCanvasTaskResult(completedTask, outputNodeIDs.length);
@@ -4004,6 +4042,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       else if (completedTask.status === "error") toast.error(completedTask.error || "任务返回异常状态");
       else toast.success(`已添加 ${images.length} 张图片到画布`);
     } catch (error) {
+      if (getCachedAuthSession()?.key !== expectedSessionKey) return;
       if (!generationOwnsCanvas()) return;
       const cancelled = taskCancelled || controller.signal.aborted || cancelledTaskIDsRef.current.has(activeTaskID) || cancelledTaskIDsRef.current.has(taskID);
       const generationError = error instanceof Error ? error.message : "创作任务失败";
@@ -4012,7 +4051,13 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       );
       let cancelledTask: CreationTask | null = null;
       if (cancelled) {
-        try { cancelledTask = await persistCreationTaskOutputs(await cancelCreationTask(activeTaskID), { assetContext: { source: "无限画布" } }); } catch { /* A request cancelled before submission has no server task. */ }
+        try {
+          cancelledTask = await persistCreationTaskOutputs(await cancelCreationTask(activeTaskID), {
+            assetContext: { source: "无限画布" },
+            expectedSessionKey,
+          });
+        } catch { /* A request cancelled before submission has no server task. */ }
+        if (getCachedAuthSession()?.key !== expectedSessionKey) return;
         if (!generationOwnsCanvas()) return;
       }
       const cancelledResult = cancelled ? reconcileCancelledCanvasTaskNodes(nodesRef.current, cancelledTask, {

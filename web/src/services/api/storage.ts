@@ -14,25 +14,37 @@ type StorageObjectResponse<T> = {
   detail?: string | { error?: string };
 };
 
-async function getStorageObjectInfo(id: string) {
-  const response = await httpRequest<{ object: StorageObjectInfo }>(`/api/files/${encodeURIComponent(id)}`);
+async function getStorageObjectInfo(id: string, signal?: AbortSignal) {
+  const response = await httpRequest<{ object: StorageObjectInfo }>(`/api/files/${encodeURIComponent(id)}`, { signal });
   return response.object;
 }
 
-export async function uploadStorageObject<T>(blob: Blob, filename: string, fallbackMessage: string): Promise<T> {
+export async function uploadStorageObject<T>(
+  blob: Blob,
+  filename: string,
+  fallbackMessage: string,
+  signal?: AbortSignal,
+): Promise<T> {
+  signal?.throwIfAborted();
   const formData = new FormData();
   formData.append("file", blob, filename);
-  const response = await fetch("/api/files", { method: "POST", credentials: "include", body: formData });
+  const response = await fetch("/api/files", { method: "POST", credentials: "include", body: formData, signal });
+  signal?.throwIfAborted();
   const payload = await response.json().catch(() => null) as StorageObjectResponse<T> | null;
+  signal?.throwIfAborted();
   if (!response.ok || !payload?.object) throw new Error(storageResponseMessage(payload, fallbackMessage));
   return payload.object;
 }
 
-export async function resolveStorageObjectURL(storageKey?: string, fallback = "") {
+export async function resolveStorageObjectURL(storageKey?: string, fallback = "", signal?: AbortSignal) {
+  signal?.throwIfAborted();
   if (!storageKey?.startsWith("server:")) return fallback;
   const id = storageKey.slice("server:".length);
   if (!id) return fallback;
-  const info = await getStorageObjectInfo(id).catch(() => null);
+  const info = await getStorageObjectInfo(id, signal).catch(() => {
+    signal?.throwIfAborted();
+    return null;
+  });
   if (!info) return fallback;
   return info.publicUrl || `/api/files/${encodeURIComponent(id)}/content`;
 }

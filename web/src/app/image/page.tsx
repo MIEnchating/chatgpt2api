@@ -1083,8 +1083,11 @@ function getComposerConversationMode(composerMode: ComposerMode, referenceImages
 async function syncConversationCreationTasks(
   items: ImageConversation[],
   requestOptions: CreationTaskRequestOptions,
+  expectedSessionKey: string,
 ) {
-  await backfillConversationVideoAssets(items);
+  requestOptions.signal?.throwIfAborted();
+  await backfillConversationVideoAssets(items, expectedSessionKey, requestOptions.signal);
+  requestOptions.signal?.throwIfAborted();
   const assetContextByTaskID = new Map<string, { prompt: string; source: string; metadata?: Record<string, unknown> }>();
   items.forEach((conversation) => conversation.turns.forEach((turn) => turn.images.forEach((image) => {
     if (!image.taskId) return;
@@ -1110,11 +1113,15 @@ async function syncConversationCreationTasks(
   let taskList: Awaited<ReturnType<typeof fetchCreationTasks>>;
   try {
     taskList = await fetchCreationTasks(taskIds, requestOptions);
-  } catch {
+  } catch (error) {
+    requestOptions.signal?.throwIfAborted();
+    if (error instanceof DOMException && error.name === "AbortError") throw error;
     return items;
   }
   const persistedTasks = await Promise.all(taskList.items.map((task) => persistCreationTaskOutputs(task, {
     assetContext: assetContextByTaskID.get(task.id),
+    expectedSessionKey,
+    signal: requestOptions.signal,
   })));
   const taskMap = new Map(mergeCreationTaskList(persistedTasks).map((task) => [task.id, task]));
   const normalized = items.map((conversation) => {
@@ -1172,7 +1179,11 @@ async function syncConversationCreationTasks(
   return normalized;
 }
 
-async function backfillConversationVideoAssets(items: ImageConversation[]) {
+async function backfillConversationVideoAssets(
+  items: ImageConversation[],
+  expectedSessionKey: string,
+  signal?: AbortSignal,
+) {
   const requests: Promise<void>[] = [];
   items.forEach((conversation) => conversation.turns.forEach((turn) => turn.images.forEach((image, imageIndex) => {
     const url = String(image.videoUrl || image.url || "").trim();
@@ -1196,21 +1207,31 @@ async function backfillConversationVideoAssets(items: ImageConversation[]) {
       width: image.width,
       height: image.height,
     }, imageDataIndexForTask(turn.images, imageIndex), {
-      prompt: turn.prompt,
-      source: turn.source === "workflow" ? "工作流" : "生成视频",
-      metadata: {
-        conversationId: conversation.id,
-        turnId: turn.id,
-        ...(turn.source === "workflow" ? { workflowId: turn.workflowId, workflowName: turn.workflowName } : {}),
+      assetContext: {
+        prompt: turn.prompt,
+        source: turn.source === "workflow" ? "工作流" : "生成视频",
+        metadata: {
+          conversationId: conversation.id,
+          turnId: turn.id,
+          ...(turn.source === "workflow" ? { workflowId: turn.workflowId, workflowName: turn.workflowName } : {}),
+        },
       },
+      expectedSessionKey,
+      signal,
     }));
   })));
-  await Promise.allSettled(requests);
+  const results = await Promise.allSettled(requests);
+  signal?.throwIfAborted();
+  const aborted = results.find((result): result is PromiseRejectedResult => (
+    result.status === "rejected" && result.reason instanceof DOMException && result.reason.name === "AbortError"
+  ));
+  if (aborted) throw aborted.reason;
 }
 
 async function recoverConversationHistory(
   items: ImageConversation[],
   requestOptions: CreationTaskRequestOptions,
+  expectedSessionKey: string,
 ) {
   const changedConversationIds = new Set<string>();
   const normalized = items.map((conversation) => {
@@ -1317,7 +1338,7 @@ async function recoverConversationHistory(
     };
   });
 
-  const synced = await syncConversationCreationTasks(normalized, requestOptions);
+  const synced = await syncConversationCreationTasks(normalized, requestOptions, expectedSessionKey);
   const originalById = new Map(items.map((conversation) => [conversation.id, conversation]));
   for (const conversation of synced) {
     const original = originalById.get(conversation.id);
@@ -1593,6 +1614,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       conversationHistoryHasMoreRef.current = false;
       conversationHistoryLoadMoreRef.current = false;
       conversationHistoryDetailRecoveryRef.current.clear();
+      taskSnapshotsRef.current.clear();
       setHasMoreHistory(false);
       setIsLoadingMoreHistory(false);
     };
@@ -1982,7 +2004,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       };
       const recoverLoadedItems = (items: ImageConversation[]) => {
         const recoveryMutationRevision = conversationMutationRevisionRef.current;
-        void recoverConversationHistory(items, creationTaskRequestOptions)
+        void recoverConversationHistory(items, creationTaskRequestOptions, session.key)
           .then(async ({ items: recoveredItems, saves }) => {
             if (
               cancelled ||
@@ -2089,7 +2111,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     return () => {
       cancelled = true;
     };
-  }, [creationTaskRequestOptions]);
+  }, [creationTaskRequestOptions, session.key]);
 
   useLayoutEffect(() => {
     const turnCount = selectedConversation?.turns.length ?? 0;
@@ -3299,6 +3321,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   const runConversationQueue = useCallback(
     async (conversationId: string) => {
       const runnerSessionEpoch = pageSessionEpochRef.current;
+      const expectedSessionKey = session.key;
       if (
         !pageActiveRef.current ||
         !canStartImageConversationQueueRunner(activeConversationQueueIdsRef.current, conversationId)
@@ -3377,6 +3400,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
               metadata: { workflowId: activeTurn.workflowId, workflowName: activeTurn.workflowName },
             } : {}),
           },
+          expectedSessionKey,
           onError: (failure) => persistenceFailures.push(failure),
         })));
         if (persistenceFailures.length > 0) {
@@ -3941,7 +3965,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
           });
         }
       } catch (error) {
-        if (error instanceof ImageTaskDispatchAbortedError) {
+        if (error instanceof ImageTaskDispatchAbortedError || error instanceof DOMException && error.name === "AbortError") {
           return;
         }
         if (!pageActiveRef.current) {
@@ -3972,47 +3996,50 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         });
         toast.error(message);
       } finally {
-        if (pageActiveRef.current) {
-          await flushImageConversationSaves().catch(reportHistorySyncError);
-        }
-        const turnWasCancelled = cancelledTurnIdsRef.current.has(activeTurnKey);
-        clearTurnProgress(conversationId, activeTurn.id);
-        cancelledTurnIdsRef.current.delete(activeTurnKey);
-        activeConversationQueueIdsRef.current.delete(conversationId);
         if (
           pageActiveRef.current &&
-          pollingUnavailable &&
-          !turnWasCancelled &&
-          !deletedConversationIdsRef.current.has(conversationId)
+          runnerSessionEpoch === pageSessionEpochRef.current &&
+          getCachedAuthSession()?.key === expectedSessionKey
         ) {
-          window.setTimeout(() => {
-            if (
-              pageActiveRef.current &&
-              runnerSessionEpoch === pageSessionEpochRef.current &&
-              !cancelledTurnIdsRef.current.has(activeTurnKey) &&
-              !deletedConversationIdsRef.current.has(conversationId)
-            ) {
-              void runConversationQueue(conversationId);
-            }
-          }, 5000);
-        }
-        for (const taskId of observedTaskIds) {
-          taskSnapshotsRef.current.delete(taskId);
-        }
-        for (const conversation of pageActiveRef.current ? conversationsRef.current : []) {
-          if (pollingUnavailable && conversation.id === conversationId) {
-            continue;
-          }
+          await flushImageConversationSaves().catch(reportHistorySyncError);
+          const turnWasCancelled = cancelledTurnIdsRef.current.has(activeTurnKey);
+          clearTurnProgress(conversationId, activeTurn.id);
+          cancelledTurnIdsRef.current.delete(activeTurnKey);
+          activeConversationQueueIdsRef.current.delete(conversationId);
           if (
-            !activeConversationQueueIdsRef.current.has(conversation.id) &&
-            conversation.turns.some(
-              (turn) =>
-                turn.source !== "workflow" &&
-                (turn.status === "queued" || turn.status === "generating") &&
-                turn.images.some((image) => image.status === "loading"),
-            )
+            pollingUnavailable &&
+            !turnWasCancelled &&
+            !deletedConversationIdsRef.current.has(conversationId)
           ) {
-            void runConversationQueue(conversation.id);
+            window.setTimeout(() => {
+              if (
+                pageActiveRef.current &&
+                runnerSessionEpoch === pageSessionEpochRef.current &&
+                !cancelledTurnIdsRef.current.has(activeTurnKey) &&
+                !deletedConversationIdsRef.current.has(conversationId)
+              ) {
+                void runConversationQueue(conversationId);
+              }
+            }, 5000);
+          }
+          for (const taskId of observedTaskIds) {
+            taskSnapshotsRef.current.delete(taskId);
+          }
+          for (const conversation of conversationsRef.current) {
+            if (pollingUnavailable && conversation.id === conversationId) {
+              continue;
+            }
+            if (
+              !activeConversationQueueIdsRef.current.has(conversation.id) &&
+              conversation.turns.some(
+                (turn) =>
+                  turn.source !== "workflow" &&
+                  (turn.status === "queued" || turn.status === "generating") &&
+                  turn.images.some((image) => image.status === "loading"),
+              )
+            ) {
+              void runConversationQueue(conversation.id);
+            }
           }
         }
       }
@@ -4025,6 +4052,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       imageGenerationPreferences.system_prompt,
       imageResponseFormatB64JSON,
       reportHistorySyncError,
+      session.key,
       updateConversation,
       updateTurnProgress,
       submitVideoTaskGroups,

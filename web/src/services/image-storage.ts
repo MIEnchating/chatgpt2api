@@ -44,7 +44,7 @@ export type ImageMetadataInspectionEnvironment = {
 
 export type ImageUploadEnvironment = {
   inspectMetadata: (blob: Blob) => Promise<ImageMetadata>;
-  uploadObject: (blob: Blob, filename: string, fallbackMessage: string) => Promise<UploadedImage>;
+  uploadObject: (blob: Blob, filename: string, fallbackMessage: string, signal?: AbortSignal) => Promise<UploadedImage>;
 };
 
 const browserImageMetadataInspectionEnvironment: ImageMetadataInspectionEnvironment = {
@@ -60,16 +60,18 @@ const browserImageMetadataInspectionEnvironment: ImageMetadataInspectionEnvironm
 
 const browserImageUploadEnvironment: ImageUploadEnvironment = {
   inspectMetadata: (blob) => inspectImageBlobMetadata(blob),
-  uploadObject: (blob, filename, fallbackMessage) => uploadStorageObject<UploadedImage>(blob, filename, fallbackMessage),
+  uploadObject: (blob, filename, fallbackMessage, signal) => uploadStorageObject<UploadedImage>(blob, filename, fallbackMessage, signal),
 };
 
-export async function uploadImage(input: string | Blob): Promise<UploadedImage> {
-  const blob = typeof input === "string" ? await downloadImage(input) : input;
-  return uploadImageToServer(blob, `image-${nanoid()}.${imageExtension(blob.type)}`);
+export async function uploadImage(input: string | Blob, signal?: AbortSignal): Promise<UploadedImage> {
+  signal?.throwIfAborted();
+  const blob = typeof input === "string" ? await downloadImage(input, signal) : input;
+  signal?.throwIfAborted();
+  return uploadImageToServer(blob, `image-${nanoid()}.${imageExtension(blob.type)}`, browserImageUploadEnvironment, signal);
 }
 
-export async function resolveImageURL(storageKey?: string, fallback = "") {
-  return resolveStorageObjectURL(storageKey, fallback);
+export async function resolveImageURL(storageKey?: string, fallback = "", signal?: AbortSignal) {
+  return resolveStorageObjectURL(storageKey, fallback, signal);
 }
 
 export async function getImageBlob(storageKey: string) {
@@ -80,22 +82,35 @@ export async function deleteStoredImages(keys: Iterable<string>) {
   await deleteStorageObjects(keys, "删除服务端图片失败");
 }
 
-export async function imageToDataURL(image: { url?: string; storageKey?: string }) {
-  const source = image.storageKey ? await resolveImageURL(image.storageKey, image.url || "") : image.url || "";
+export async function imageToDataURL(
+  image: { url?: string; storageKey?: string },
+  signal: AbortSignal,
+) {
+  signal.throwIfAborted();
+  const source = image.storageKey
+    ? await resolveImageURL(image.storageKey, image.url || "", signal)
+    : image.url || "";
+  signal.throwIfAborted();
   if (!source) return "";
   if (source.startsWith("data:")) return source;
-  const response = await fetch(source, { credentials: "include" });
+  const response = await fetch(source, { credentials: "include", signal });
   if (!response.ok) throw new Error(`读取图片失败：${response.status}`);
-  return blobToDataURL(await response.blob());
+  const blob = await response.blob();
+  signal.throwIfAborted();
+  return blobToDataURL(blob, signal);
 }
 
 export async function uploadImageToServer(
   blob: Blob,
   filename: string,
   environment: ImageUploadEnvironment = browserImageUploadEnvironment,
+  signal?: AbortSignal,
 ): Promise<UploadedImage> {
+  signal?.throwIfAborted();
   const metadata = await environment.inspectMetadata(blob);
-  const uploaded = await environment.uploadObject(blob, filename, "服务端图片上传失败");
+  signal?.throwIfAborted();
+  const uploaded = await environment.uploadObject(blob, filename, "服务端图片上传失败", signal);
+  signal?.throwIfAborted();
   return {
     ...uploaded,
     width: uploaded.width || metadata.width,
@@ -105,10 +120,13 @@ export async function uploadImageToServer(
   };
 }
 
-async function downloadImage(url: string) {
-  const response = await fetch(url, { credentials: "include" });
+async function downloadImage(url: string, signal?: AbortSignal) {
+  signal?.throwIfAborted();
+  const response = await fetch(url, { credentials: "include", signal });
+  signal?.throwIfAborted();
   if (!response.ok) throw new Error(`图片下载失败：${response.status}`);
   const blob = await response.blob();
+  signal?.throwIfAborted();
   if (!blob.type.startsWith("image/")) throw new Error("下载内容不是图片");
   return blob;
 }
@@ -248,11 +266,43 @@ function imageExtension(mimeType: string) {
   return "png";
 }
 
-function blobToDataURL(blob: Blob) {
+function blobToDataURL(blob: Blob, signal: AbortSignal) {
   return new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ""));
-    reader.onerror = () => reject(new Error("读取图片失败"));
+    let settled = false;
+    const cleanup = () => {
+      signal.removeEventListener("abort", onAbort);
+      reader.onload = null;
+      reader.onerror = null;
+    };
+    const onAbort = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      try {
+        reader.abort();
+      } catch {
+        // The reader may already have completed while the abort event was queued.
+      }
+      reject(signal.reason);
+    };
+    reader.onload = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(String(reader.result || ""));
+    };
+    reader.onerror = () => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(new Error("读取图片失败"));
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    if (signal.aborted) {
+      onAbort();
+      return;
+    }
     reader.readAsDataURL(blob);
   });
 }

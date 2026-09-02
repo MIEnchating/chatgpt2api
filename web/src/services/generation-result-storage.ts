@@ -1,7 +1,7 @@
 import type { CreationTask, CreationTaskData } from "@/lib/api";
 import { isManagedImageURL } from "@/lib/authenticated-image";
 import { upsertMyAsset, type MyAsset } from "@/lib/my-assets";
-import { getCachedAuthSession } from "@/lib/session";
+import { AUTH_SESSION_CHANGE_EVENT, getCachedAuthSession } from "@/lib/session";
 import { uploadAssetMediaFile } from "@/services/file-storage";
 import { uploadImage } from "@/services/image-storage";
 
@@ -23,6 +23,27 @@ export type CreationTaskOutputPersistenceFailure = {
   taskId: string;
 };
 
+export type CreationTaskOutputPersistenceOptions = {
+  assetContext?: CreationTaskAssetContext;
+  expectedSessionKey: string;
+  onError?: (failure: CreationTaskOutputPersistenceFailure) => void;
+  signal?: AbortSignal;
+};
+
+export class GenerationResultSessionChangedError extends DOMException {
+  constructor() {
+    super("生成结果持久化期间认证会话已变更", "AbortError");
+  }
+}
+
+type GenerationResultSessionGuard = {
+  assertCurrent: () => void;
+  dispose: () => void;
+  expectedSessionKey: string;
+  isCurrent: () => boolean;
+  signal: AbortSignal;
+};
+
 const registeredGeneratedAssetIDs = new Set<string>();
 const generatedAssetRequests = new Map<string, Promise<void>>();
 const MAX_REGISTERED_GENERATED_ASSETS = 512;
@@ -38,90 +59,137 @@ function rememberGeneratedAssetRegistration(key: string) {
 
 export async function persistCreationTaskOutputs(
   task: CreationTask,
-  options: {
-    assetContext?: CreationTaskAssetContext;
-    onError?: (failure: CreationTaskOutputPersistenceFailure) => void;
-  } = {},
+  options: CreationTaskOutputPersistenceOptions,
 ): Promise<CreationTask> {
   if (!isTerminalTask(task) || !task.data?.length) return task;
 
-  const data = await Promise.all(task.data.map(async (item, index) => {
-    if (!shouldPersistTaskItem(task, item, index)) return item;
-    const stored = item as StoredCreationTaskData;
-    const kind = taskItemKind(task, item);
-    try {
-      let persistedItem = item;
-      if (kind === "image") {
-        if (stored.storageKey || stored.storage_key) return item;
-        const source = taskItemImageSource(item);
-        if (!source) return item;
-        if (isManagedImageURL(source)) return item;
-        const uploaded = await uploadImage(source);
-        persistedItem = {
-          ...item,
-          url: uploaded.url,
-          storageKey: uploaded.storageKey,
-          storage_key: uploaded.storageKey,
-          width: uploaded.width || item.width,
-          height: uploaded.height || item.height,
-          bytes: uploaded.bytes || item.bytes,
-          mime_type: uploaded.mimeType || item.mime_type,
-        };
-      } else if (!(stored.storageKey || stored.storage_key)) {
-        const source = String(kind === "video" ? item.video_url || item.url || "" : item.audio_url || item.url || "").trim();
-        if (!source) return item;
-        const response = await fetch(source, { credentials: "same-origin" });
-        if (!response.ok) throw new Error(`${kind === "video" ? "视频" : "音频"}结果下载失败：${response.status}`);
-        const blob = await response.blob();
-        const filename = `generated-${kind}-${task.id}-${index + 1}.${mediaExtension(blob.type || item.mime_type, kind)}`;
-        const uploaded = await uploadAssetMediaFile(new File([blob], filename, { type: blob.type || item.mime_type || defaultMediaType(kind) }), `generated-${kind}`);
-        persistedItem = {
-          ...item,
-          url: uploaded.url,
-          ...(kind === "video" ? { video_url: uploaded.url } : { audio_url: uploaded.url }),
-          storageKey: uploaded.storageKey,
-          storage_key: uploaded.storageKey,
-          bytes: uploaded.bytes || item.bytes || item.size,
-          mime_type: uploaded.mimeType || item.mime_type || defaultMediaType(kind),
-          width: uploaded.width || item.width,
-          height: uploaded.height || item.height,
-          duration_ms: uploaded.durationMs || item.duration_ms,
-        };
-      }
-      if ((kind === "video" || kind === "audio") && storageKeyOf(persistedItem)) {
-        await ensureGeneratedMediaAsset(task, persistedItem, index, options.assetContext);
-      }
-      return persistedItem;
-    } catch (error) {
-      options.onError?.({ error, index, kind, taskId: task.id });
-      return item;
-    }
-  }));
+  const sessionGuard = createGenerationResultSessionGuard(options.expectedSessionKey, options.signal);
+  try {
+    sessionGuard.assertCurrent();
 
-  return data.some((item, index) => item !== task.data?.[index]) ? { ...task, data } : task;
+    const data = await Promise.all(task.data.map(async (item, index) => {
+      if (!shouldPersistTaskItem(task, item, index)) return item;
+      const stored = item as StoredCreationTaskData;
+      const kind = taskItemKind(task, item);
+      try {
+        sessionGuard.assertCurrent();
+        let persistedItem = item;
+        if (kind === "image") {
+          if (stored.storageKey || stored.storage_key) return item;
+          const source = taskItemImageSource(item);
+          if (!source) return item;
+          if (isManagedImageURL(source)) return item;
+          sessionGuard.assertCurrent();
+          const uploaded = await uploadImage(source, sessionGuard.signal);
+          sessionGuard.assertCurrent();
+          persistedItem = {
+            ...item,
+            url: uploaded.url,
+            storageKey: uploaded.storageKey,
+            storage_key: uploaded.storageKey,
+            width: uploaded.width || item.width,
+            height: uploaded.height || item.height,
+            bytes: uploaded.bytes || item.bytes,
+            mime_type: uploaded.mimeType || item.mime_type,
+          };
+        } else if (!(stored.storageKey || stored.storage_key)) {
+          const source = String(kind === "video" ? item.video_url || item.url || "" : item.audio_url || item.url || "").trim();
+          if (!source) return item;
+          sessionGuard.assertCurrent();
+          const response = await fetch(source, { credentials: "same-origin", signal: sessionGuard.signal });
+          sessionGuard.assertCurrent();
+          if (!response.ok) throw new Error(`${kind === "video" ? "视频" : "音频"}结果下载失败：${response.status}`);
+          const blob = await response.blob();
+          sessionGuard.assertCurrent();
+          const filename = `generated-${kind}-${task.id}-${index + 1}.${mediaExtension(blob.type || item.mime_type, kind)}`;
+          const uploaded = await uploadAssetMediaFile(
+            new File([blob], filename, { type: blob.type || item.mime_type || defaultMediaType(kind) }),
+            `generated-${kind}`,
+            sessionGuard.signal,
+          );
+          sessionGuard.assertCurrent();
+          persistedItem = {
+            ...item,
+            url: uploaded.url,
+            ...(kind === "video" ? { video_url: uploaded.url } : { audio_url: uploaded.url }),
+            storageKey: uploaded.storageKey,
+            storage_key: uploaded.storageKey,
+            bytes: uploaded.bytes || item.bytes || item.size,
+            mime_type: uploaded.mimeType || item.mime_type || defaultMediaType(kind),
+            width: uploaded.width || item.width,
+            height: uploaded.height || item.height,
+            duration_ms: uploaded.durationMs || item.duration_ms,
+          };
+        }
+        if ((kind === "video" || kind === "audio") && storageKeyOf(persistedItem)) {
+          await ensureGeneratedMediaAssetWithGuard(task, persistedItem, index, options.assetContext, sessionGuard);
+          sessionGuard.assertCurrent();
+        }
+        return persistedItem;
+      } catch (error) {
+        if (!sessionGuard.isCurrent()) throw new GenerationResultSessionChangedError();
+        if (sessionGuard.signal.aborted) sessionGuard.signal.throwIfAborted();
+        options.onError?.({ error, index, kind, taskId: task.id });
+        return item;
+      }
+    }));
+
+    sessionGuard.assertCurrent();
+    return data.some((item, index) => item !== task.data?.[index]) ? { ...task, data } : task;
+  } finally {
+    sessionGuard.dispose();
+  }
 }
 
 export async function ensureGeneratedMediaAsset(
   task: CreationTask,
   item: CreationTaskData,
   index: number,
-  context: CreationTaskAssetContext = {},
+  options: {
+    assetContext?: CreationTaskAssetContext;
+    expectedSessionKey: string;
+    signal?: AbortSignal;
+  },
 ) {
+  const sessionGuard = createGenerationResultSessionGuard(options.expectedSessionKey, options.signal);
+  try {
+    sessionGuard.assertCurrent();
+    await ensureGeneratedMediaAssetWithGuard(task, item, index, options.assetContext, sessionGuard);
+    sessionGuard.assertCurrent();
+  } catch (error) {
+    if (!sessionGuard.isCurrent()) throw new GenerationResultSessionChangedError();
+    throw error;
+  } finally {
+    sessionGuard.dispose();
+  }
+}
+
+async function ensureGeneratedMediaAssetWithGuard(
+  task: CreationTask,
+  item: CreationTaskData,
+  index: number,
+  context: CreationTaskAssetContext = {},
+  sessionGuard: GenerationResultSessionGuard,
+) {
+  sessionGuard.assertCurrent();
   const asset = generatedMediaAsset(task, item, index, context);
   if (!asset) return;
   const registrationKey = generatedAssetRegistrationKey(
     asset,
-    String(getCachedAuthSession()?.key || "").trim(),
+    sessionGuard.expectedSessionKey,
   );
   if (registeredGeneratedAssetIDs.has(registrationKey)) return;
   let request = generatedAssetRequests.get(registrationKey);
   if (!request) {
-    request = upsertMyAsset(asset).then(() => {
+    sessionGuard.assertCurrent();
+    request = upsertMyAsset(asset, sessionGuard.signal).then(() => {
+      sessionGuard.assertCurrent();
       rememberGeneratedAssetRegistration(registrationKey);
     }).finally(() => generatedAssetRequests.delete(registrationKey));
     generatedAssetRequests.set(registrationKey, request);
   }
   await request;
+  sessionGuard.assertCurrent();
 }
 
 export function generatedAssetRegistrationKey(
@@ -129,6 +197,52 @@ export function generatedAssetRegistrationKey(
   sessionKey: string,
 ) {
   return `${sessionKey.trim()}:${asset.id}:${asset.storageKey || ""}`;
+}
+
+function createGenerationResultSessionGuard(
+  expectedSessionKeyValue: string,
+  sourceSignal?: AbortSignal,
+): GenerationResultSessionGuard {
+  const expectedSessionKey = String(expectedSessionKeyValue || "").trim();
+  if (!expectedSessionKey) throw new TypeError("生成结果持久化缺少预期认证会话");
+
+  const controller = new AbortController();
+  const isCurrent = () => currentSessionKey() === expectedSessionKey;
+  const abortForSessionChange = () => {
+    if (!isCurrent() && !controller.signal.aborted) {
+      controller.abort(new GenerationResultSessionChangedError());
+    }
+  };
+  const abortFromSource = () => {
+    if (!controller.signal.aborted) controller.abort(sourceSignal?.reason);
+  };
+
+  sourceSignal?.addEventListener("abort", abortFromSource, { once: true });
+  if (typeof window !== "undefined") {
+    window.addEventListener(AUTH_SESSION_CHANGE_EVENT, abortForSessionChange);
+  }
+  if (sourceSignal?.aborted) abortFromSource();
+  abortForSessionChange();
+
+  return {
+    assertCurrent: () => {
+      abortForSessionChange();
+      controller.signal.throwIfAborted();
+    },
+    dispose: () => {
+      sourceSignal?.removeEventListener("abort", abortFromSource);
+      if (typeof window !== "undefined") {
+        window.removeEventListener(AUTH_SESSION_CHANGE_EVENT, abortForSessionChange);
+      }
+    },
+    expectedSessionKey,
+    isCurrent,
+    signal: controller.signal,
+  };
+}
+
+function currentSessionKey() {
+  return String(getCachedAuthSession()?.key || "").trim();
 }
 
 export function generatedMediaAsset(

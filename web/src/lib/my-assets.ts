@@ -96,13 +96,16 @@ export function fetchVisibleMyAssets(scope: string, signal?: AbortSignal) {
   return fetchAssets(scope, "visible", signal);
 }
 
-export async function upsertMyAsset(asset: MyAsset) {
+export async function upsertMyAsset(asset: MyAsset, signal?: AbortSignal) {
+  signal?.throwIfAborted();
   invalidateAssetCache();
   try {
     const response = await httpRequest<{ item?: MyAsset }>("/api/profile/assets", {
       method: "POST",
       body: { item: asset },
+      signal,
     });
+    signal?.throwIfAborted();
     const item = normalizeMyAssets([response.item])[0];
     if (!item) throw new Error("素材保存响应无效");
     return item;

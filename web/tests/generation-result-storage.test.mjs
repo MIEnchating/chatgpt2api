@@ -6,6 +6,25 @@ import {
   generatedMediaAsset,
   persistCreationTaskOutputs,
 } from "../src/services/generation-result-storage.ts";
+import { setVerifiedAuthSession } from "../src/lib/session.ts";
+
+function authSession(key) {
+  return {
+    key,
+    role: "user",
+    subjectId: `subject:${key}`,
+    username: key,
+    name: key,
+    provider: "test",
+    menuPaths: [],
+    apiPermissions: [],
+    menus: [],
+  };
+}
+
+async function activateSession(key) {
+  await setVerifiedAuthSession(authSession(key));
+}
 
 test("generated asset registration is isolated by authenticated session", () => {
   const asset = { id: "generated-video:shared-task:0", storageKey: "server:shared-video" };
@@ -86,6 +105,7 @@ test("stored audio results build an audio material record", () => {
 });
 
 test("already managed image results keep their durable server URL", async () => {
+  await activateSession("session-a");
   const task = {
     id: "task-managed-image",
     status: "success",
@@ -94,12 +114,13 @@ test("already managed image results keep their durable server URL", async () => 
     output_statuses: ["success"],
   };
 
-  assert.equal(await persistCreationTaskOutputs(task), task);
+  assert.equal(await persistCreationTaskOutputs(task, { expectedSessionKey: "session-a" }), task);
   assert.equal(task.data[0].url, "/images/2026/08/27/result.png");
   assert.equal(task.data[0].storageKey, undefined);
 });
 
 test("external video persistence omits cross-origin credentials and never changes generation success", async () => {
+  await activateSession("session-a");
   const originalFetch = globalThis.fetch;
   const failures = [];
   const task = {
@@ -115,12 +136,113 @@ test("external video persistence omits cross-origin credentials and never change
     throw new TypeError("Failed to fetch");
   };
   try {
-    const result = await persistCreationTaskOutputs(task, { onError: (failure) => failures.push(failure) });
+    const result = await persistCreationTaskOutputs(task, {
+      expectedSessionKey: "session-a",
+      onError: (failure) => failures.push(failure),
+    });
     assert.equal(result, task);
     assert.equal(result.status, "success");
     assert.equal(result.data[0].video_url, "https://media.example/video.mp4");
     assert.equal(failures.length, 1);
     assert.equal(failures[0].kind, "video");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("an A to B switch after result download prevents an upload under B", async () => {
+  await activateSession("session-a");
+  const originalFetch = globalThis.fetch;
+  const originalWindow = globalThis.window;
+  const requests = [];
+  const failures = [];
+  const task = {
+    id: "task-session-switch-before-upload",
+    status: "success",
+    output_type: "audio",
+    data: [{ type: "audio", audio_url: "https://media.example/result.mp3", mime_type: "audio/mpeg" }],
+  };
+
+  globalThis.window = new EventTarget();
+  globalThis.fetch = async (input, init) => {
+    requests.push(String(input));
+    assert.equal(init?.signal instanceof AbortSignal, true);
+    return {
+      ok: true,
+      status: 200,
+      blob: async () => {
+        await activateSession("session-b");
+        return new Blob(["audio"], { type: "audio/mpeg" });
+      },
+    };
+  };
+  try {
+    await assert.rejects(
+      persistCreationTaskOutputs(task, {
+        expectedSessionKey: "session-a",
+        onError: (failure) => failures.push(failure),
+      }),
+      (error) => error instanceof DOMException && error.name === "AbortError",
+    );
+    assert.deepEqual(requests, ["https://media.example/result.mp3"]);
+    assert.deepEqual(failures, []);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalWindow === undefined) delete globalThis.window;
+    else globalThis.window = originalWindow;
+  }
+});
+
+test("an A to B switch after upload prevents material upsert under B", async () => {
+  await activateSession("session-a");
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  const failures = [];
+  const task = {
+    id: "task-session-switch-before-upsert",
+    status: "success",
+    output_type: "audio",
+    data: [{ type: "audio", audio_url: "https://media.example/result.mp3", mime_type: "audio/mpeg" }],
+  };
+
+  globalThis.fetch = async (input, init) => {
+    const url = String(input);
+    requests.push(url);
+    assert.equal(init?.signal instanceof AbortSignal, true);
+    if (url === "https://media.example/result.mp3") {
+      return {
+        ok: true,
+        status: 200,
+        blob: async () => new Blob(["audio"], { type: "audio/mpeg" }),
+      };
+    }
+    assert.equal(url, "/api/files");
+    return {
+      ok: true,
+      status: 200,
+      json: async () => {
+        await activateSession("session-b");
+        return {
+          object: {
+            url: "/api/files/audio-a/content",
+            storageKey: "server:audio-a",
+            bytes: 5,
+            mimeType: "audio/mpeg",
+          },
+        };
+      },
+    };
+  };
+  try {
+    await assert.rejects(
+      persistCreationTaskOutputs(task, {
+        expectedSessionKey: "session-a",
+        onError: (failure) => failures.push(failure),
+      }),
+      (error) => error instanceof DOMException && error.name === "AbortError",
+    );
+    assert.deepEqual(requests, ["https://media.example/result.mp3", "/api/files"]);
+    assert.deepEqual(failures, []);
   } finally {
     globalThis.fetch = originalFetch;
   }

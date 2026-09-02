@@ -57,13 +57,17 @@ const browserVideoMetadataInspectionEnvironment: VideoMetadataInspectionEnvironm
   clearScheduledTimeout: (handle) => globalThis.clearTimeout(handle),
 };
 
-export async function uploadMediaBlob(blob: Blob, filename: string): Promise<UploadedFile> {
-  const uploaded = await uploadStorageObject<UploadedFile>(blob, filename, "媒体同步失败");
-  return withMediaMetadata(uploaded, blob);
+export async function uploadMediaBlob(blob: Blob, filename: string, signal?: AbortSignal): Promise<UploadedFile> {
+  signal?.throwIfAborted();
+  const uploaded = await uploadStorageObject<UploadedFile>(blob, filename, "媒体同步失败", signal);
+  signal?.throwIfAborted();
+  const result = await withMediaMetadata(uploaded, blob);
+  signal?.throwIfAborted();
+  return result;
 }
 
-export async function uploadAssetMediaFile(file: File, prefix = "asset-media") {
-  return uploadMediaBlob(file, file.name || `${prefix}-${nanoid()}`);
+export async function uploadAssetMediaFile(file: File, prefix = "asset-media", signal?: AbortSignal) {
+  return uploadMediaBlob(file, file.name || `${prefix}-${nanoid()}`, signal);
 }
 
 export async function resolveMediaURL(storageKey?: string, fallback = "") {

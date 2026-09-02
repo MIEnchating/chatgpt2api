@@ -131,9 +131,10 @@ export async function draftWorkflowWithAgent(input: {
   model?: string;
   channelID?: string;
   references?: string[];
-}) {
+}, options: { signal: AbortSignal }) {
   return httpRequest<WorkflowAgentDraftResponse>("/api/workflows/agent-draft", {
     method: "POST",
+    signal: options.signal,
     timeout: 610_000,
     body: {
       prompt: input.prompt,

@@ -63,6 +63,7 @@ import {
   settleWorkflowReferenceUploads,
   workflowReferenceCleanupKeys,
 } from "@/app/workflows/workflow-reference-lifecycle";
+import { runCurrentWorkflowAgentDraft } from "@/app/workflows/workflow-agent-draft-lifecycle";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -127,6 +128,7 @@ import { getManagedImagePathFromUrl } from "@/lib/image-path";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import { useImageGenerationPreferences } from "@/lib/use-image-generation-preferences";
 import { hasAPIPermission } from "@/lib/auth-session";
+import { AUTH_SESSION_CHANGE_EVENT, getCachedAuthSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
 
 type WorkflowReference = {
@@ -235,8 +237,8 @@ async function workflowImageFiles(references: WorkflowReference[], signal?: Abor
   );
 }
 
-async function workflowImageDataURLs(references: WorkflowReference[]) {
-  return Promise.all(references.map((reference) => imageToDataURL(reference)));
+async function workflowImageDataURLs(references: WorkflowReference[], signal: AbortSignal) {
+  return Promise.all(references.map((reference) => imageToDataURL(reference, signal)));
 }
 
 async function downloadWorkflowImage(url: string, fileName: string) {
@@ -321,10 +323,13 @@ export function CreativeWorkflowWorkspace({
   const [agentWarnings, setAgentWarnings] = useState<string[]>([]);
   const [assetPickerTarget, setAssetPickerTarget] = useState<"workflow" | "agent" | null>(null);
   const workspaceActiveRef = useRef(false);
+  const currentSessionKeyRef = useRef(sessionKey);
+  const agentDraftAbortControllerRef = useRef<AbortController | null>(null);
   const workflowReferencesRef = useRef(references);
   const agentReferencesRef = useRef(agentReferences);
   const tasksRef = useRef(tasks);
   const inFlightTaskCountsRef = useRef(new Map<string, number>());
+  currentSessionKeyRef.current = sessionKey;
   tasksRef.current = tasks;
 
   function updateWorkflowReferences(updater: (current: WorkflowReference[]) => WorkflowReference[]) {
@@ -381,6 +386,8 @@ export function CreativeWorkflowWorkspace({
     return () => {
       workspaceActiveRef.current = false;
       workflowReferenceUploadGenerationRef.current += 1;
+      agentDraftAbortControllerRef.current?.abort();
+      agentDraftAbortControllerRef.current = null;
       controller.abort();
       if (taskWaitAbortControllerRef.current === controller) {
         taskWaitAbortControllerRef.current = null;
@@ -396,6 +403,27 @@ export function CreativeWorkflowWorkspace({
       );
       if (keys.length) void deleteStoredImages(keys).catch(() => undefined);
     };
+  }, []);
+
+  useEffect(() => {
+    agentDraftAbortControllerRef.current?.abort();
+    agentDraftAbortControllerRef.current = null;
+    setAgentBusy(false);
+    return () => {
+      agentDraftAbortControllerRef.current?.abort();
+      agentDraftAbortControllerRef.current = null;
+    };
+  }, [sessionKey]);
+
+  useEffect(() => {
+    const handleAuthSessionChange = () => {
+      if (getCachedAuthSession()?.key !== currentSessionKeyRef.current) {
+        agentDraftAbortControllerRef.current?.abort();
+        if (workspaceActiveRef.current) setAgentBusy(false);
+      }
+    };
+    window.addEventListener(AUTH_SESSION_CHANGE_EVENT, handleAuthSessionChange);
+    return () => window.removeEventListener(AUTH_SESSION_CHANGE_EVENT, handleAuthSessionChange);
   }, []);
 
   useEffect(() => {
@@ -1220,52 +1248,76 @@ export function CreativeWorkflowWorkspace({
   }
 
   async function draftWithAgent() {
-    if (!session || !agentPrompt.trim() || agentBusy) return;
+    if (!session || !agentPrompt.trim() || agentDraftAbortControllerRef.current) return;
+    const requestSessionKey = session.key;
+    if (!workspaceActiveRef.current || getCachedAuthSession()?.key !== requestSessionKey) return;
+    const controller = new AbortController();
+    agentDraftAbortControllerRef.current = controller;
     setAgentBusy(true);
+    const isCurrent = () => (
+      workspaceActiveRef.current
+      && agentDraftAbortControllerRef.current === controller
+      && !controller.signal.aborted
+      && currentSessionKeyRef.current === requestSessionKey
+      && getCachedAuthSession()?.key === requestSessionKey
+    );
     try {
       const model = agentModel || preferences.default_text_model || models?.default_text_model || "";
-      const response = await draftWorkflowWithAgent({
-        prompt: agentPrompt.trim(),
-        scope: agentScope,
-        model,
-        channelID: tokenNameForModel("text", model),
-        references: agentReferences.length
-          ? await workflowImageDataURLs(agentReferences)
-          : [],
+      await runCurrentWorkflowAgentDraft({
+        signal: controller.signal,
+        isCurrent,
+        prepareReferences: (signal) => agentReferences.length
+          ? workflowImageDataURLs(agentReferences, signal)
+          : Promise.resolve([]),
+        submit: (preparedReferences, signal) => draftWorkflowWithAgent({
+          prompt: agentPrompt.trim(),
+          scope: agentScope,
+          model,
+          channelID: tokenNameForModel("text", model),
+          references: preparedReferences,
+        }, { signal }),
+        commit: (response) => {
+          const draft = response.draft;
+          const base = createBlankWorkflow(
+            models,
+            preferences,
+            draft.mode === "multi_image_series"
+              ? "multi_image_series"
+              : "single_image",
+            workflowGenerationDefaults(preferences, generationDefaults, sessionTextChannelID),
+          );
+          setAgentDraft(
+            normalizeWorkflow(
+              {
+                ...base,
+                ...draft,
+                id: taskID("workflow-draft"),
+                scope: agentScope,
+                variables: Array.isArray(draft.variables) ? draft.variables : base.variables,
+                config: { ...base.config, ...draft.config },
+                series_config: {
+                  ...base.series_config,
+                  ...draft.series_config,
+                },
+              },
+              models,
+              preferences,
+            ),
+          );
+          setAgentWarnings(Array.isArray(response.warnings) ? response.warnings : []);
+          toast.success("Agent 草稿已生成，请预览后应用");
+        },
       });
-      const draft = response.draft;
-      const base = createBlankWorkflow(
-        models,
-        preferences,
-        draft.mode === "multi_image_series"
-          ? "multi_image_series"
-          : "single_image",
-        workflowGenerationDefaults(preferences, generationDefaults, sessionTextChannelID),
-      );
-      setAgentDraft(
-        normalizeWorkflow(
-          {
-            ...base,
-            ...draft,
-            id: taskID("workflow-draft"),
-            scope: agentScope,
-            variables: Array.isArray(draft.variables) ? draft.variables : base.variables,
-            config: { ...base.config, ...draft.config },
-            series_config: {
-              ...base.series_config,
-              ...draft.series_config,
-            },
-          },
-          models,
-          preferences,
-        ),
-      );
-      setAgentWarnings(Array.isArray(response.warnings) ? response.warnings : []);
-      toast.success("Agent 草稿已生成，请预览后应用");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Agent 创建失败");
+      if (isCurrent()) {
+        toast.error(error instanceof Error ? error.message : "Agent 创建失败");
+      }
     } finally {
-      setAgentBusy(false);
+      const shouldReleaseUI = isCurrent();
+      if (agentDraftAbortControllerRef.current === controller) {
+        agentDraftAbortControllerRef.current = null;
+      }
+      if (shouldReleaseUI) setAgentBusy(false);
     }
   }
 
