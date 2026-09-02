@@ -1,9 +1,11 @@
 package httpapi
 
 import (
+	"errors"
 	"net/http"
 
 	"chatgpt2api/internal/service"
+	"chatgpt2api/internal/storage"
 	"chatgpt2api/internal/util"
 )
 
@@ -13,6 +15,9 @@ func (a *App) handleAnnouncements(w http.ResponseWriter, r *http.Request) {
 	}
 	items, err := a.announce.ListVisible()
 	if err != nil {
+		if writeAnnouncementStorageError(w, err) {
+			return
+		}
 		util.WriteError(w, http.StatusInternalServerError, "failed to load announcements")
 		return
 	}
@@ -29,6 +34,9 @@ func (a *App) handleAnnouncementPreferences(w http.ResponseWriter, r *http.Reque
 	case http.MethodGet:
 		preferences, err := a.announce.Preferences(ownerID)
 		if err != nil {
+			if writeAnnouncementStorageError(w, err) {
+				return
+			}
 			util.WriteError(w, http.StatusInternalServerError, "failed to load announcement preferences")
 			return
 		}
@@ -46,6 +54,9 @@ func (a *App) handleAnnouncementPreferences(w http.ResponseWriter, r *http.Reque
 			util.Clean(body["local_date"]),
 		)
 		if err != nil {
+			if writeAnnouncementStorageError(w, err) {
+				return
+			}
 			util.WriteError(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -71,6 +82,9 @@ func (a *App) handleAdminAnnouncements(w http.ResponseWriter, r *http.Request) {
 		case http.MethodGet:
 			items, err := a.announce.ListAll()
 			if err != nil {
+				if writeAnnouncementStorageError(w, err) {
+					return
+				}
 				util.WriteError(w, http.StatusInternalServerError, "failed to load announcements")
 				return
 			}
@@ -83,6 +97,9 @@ func (a *App) handleAdminAnnouncements(w http.ResponseWriter, r *http.Request) {
 			}
 			item, items, err := a.announce.CreateWithItems(body)
 			if err != nil {
+				if writeAnnouncementStorageError(w, err) {
+					return
+				}
 				util.WriteError(w, http.StatusBadRequest, err.Error())
 				return
 			}
@@ -108,6 +125,9 @@ func (a *App) handleAdminAnnouncements(w http.ResponseWriter, r *http.Request) {
 		}
 		item, items, err := a.announce.UpdateWithItems(id, body)
 		if err != nil {
+			if writeAnnouncementStorageError(w, err) {
+				return
+			}
 			util.WriteError(w, http.StatusBadRequest, err.Error())
 			return
 		}
@@ -119,6 +139,9 @@ func (a *App) handleAdminAnnouncements(w http.ResponseWriter, r *http.Request) {
 	case http.MethodDelete:
 		deleted, items, err := a.announce.DeleteWithItems(id)
 		if err != nil {
+			if writeAnnouncementStorageError(w, err) {
+				return
+			}
 			util.WriteError(w, http.StatusInternalServerError, "failed to delete announcement")
 			return
 		}
@@ -130,6 +153,19 @@ func (a *App) handleAdminAnnouncements(w http.ResponseWriter, r *http.Request) {
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
 	}
+}
+
+func writeAnnouncementStorageError(w http.ResponseWriter, err error) bool {
+	var storageErr *service.AnnouncementStorageError
+	if !errors.As(err, &storageErr) {
+		return false
+	}
+	if errors.Is(err, storage.ErrConcurrentRowUpdate) {
+		util.WriteError(w, http.StatusConflict, "announcement was modified by another request; please retry")
+		return true
+	}
+	util.WriteError(w, http.StatusServiceUnavailable, "announcement storage is temporarily unavailable")
+	return true
 }
 
 func writeAdminAnnouncements(w http.ResponseWriter, items []service.Announcement, item *service.Announcement) {

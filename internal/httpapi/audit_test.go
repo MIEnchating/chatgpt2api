@@ -2,10 +2,13 @@ package httpapi
 
 import (
 	"bytes"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"chatgpt2api/internal/service"
 )
 
 func TestAuditResponseWriterSkipsBinaryAndTracksResponseSize(t *testing.T) {
@@ -60,6 +63,120 @@ func TestAuditResponseWriterOmitsSuccessfulReadsAndTruncatedJSON(t *testing.T) {
 	addAuditResponseDetail(readDetail, readRequest, readRecorder, http.StatusOK)
 	if _, exists := readDetail["response_body"]; exists {
 		t.Fatalf("successful read response body must be omitted: %#v", readDetail)
+	}
+}
+
+func TestAuditLogsRedactLoginAndCustomRelaySecrets(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+
+	const loginPassword = "tiny"
+	request := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(`{"username":"admin","password":"`+loginPassword+`"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	app.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusUnauthorized {
+		t.Fatalf("login status = %d body = %s", response.Code, response.Body.String())
+	}
+
+	loginLog := findHTTPAuditLogByPath(mustSearchAppLogs(t, app, service.LogQuery{View: service.LogViewAll, Limit: 10}), "/auth/login")
+	if loginLog == nil {
+		t.Fatal("login audit log was not stored")
+	}
+	loginDetail, _ := loginLog["detail"].(map[string]any)
+	loginArgs, _ := loginDetail["request_args"].(map[string]any)
+	if loginArgs["password"] != "[REDACTED]" || strings.Contains(fmt.Sprintf("%#v", loginDetail), loginPassword) {
+		t.Fatalf("login audit detail leaked password: %#v", loginDetail)
+	}
+
+	const (
+		firstFormPassword = "form-first"
+		lastFormPassword  = "form-last"
+	)
+	request = httptest.NewRequest(
+		http.MethodPost,
+		"/auth/login",
+		strings.NewReader("username=admin&password="+firstFormPassword+"&password="+lastFormPassword),
+	)
+	request.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	response = httptest.NewRecorder()
+	app.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("form login status = %d body = %s", response.Code, response.Body.String())
+	}
+	formLoginLog := findHTTPAuditLogByPath(mustSearchAppLogs(t, app, service.LogQuery{View: service.LogViewAll, Limit: 10}), "/auth/login")
+	formLoginDetail, _ := formLoginLog["detail"].(map[string]any)
+	formLoginArgs, _ := formLoginDetail["request_args"].(map[string]any)
+	if formLoginArgs["password"] != "[REDACTED]" {
+		t.Fatalf("form login audit args were not redacted: %#v", formLoginArgs)
+	}
+	serializedFormDetail := fmt.Sprintf("%#v", formLoginDetail)
+	for _, password := range []string{firstFormPassword, lastFormPassword} {
+		if strings.Contains(serializedFormDetail, password) {
+			t.Fatalf("form login audit detail leaked %q: %#v", password, formLoginDetail)
+		}
+	}
+
+	const (
+		customAPIKey  = "z9q"
+		firstQueryKey = "first"
+		lastQueryKey  = "second"
+	)
+	request = httptest.NewRequest(
+		http.MethodPost,
+		"/api/profile/custom-relay-configs?api_key="+firstQueryKey+"&api_key="+lastQueryKey,
+		strings.NewReader(`{"kind":"video","name":"test relay","base_url":"https://api.example.test","api_key":"`+customAPIKey+`"}`),
+	)
+	request.Header.Set("Content-Type", "application/json")
+	setRequestAuthCookie(request, adminSessionToken(t, app))
+	response = httptest.NewRecorder()
+	app.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusCreated {
+		t.Fatalf("custom relay status = %d body = %s", response.Code, response.Body.String())
+	}
+
+	relayLog := findHTTPAuditLogByPath(mustSearchAppLogs(t, app, service.LogQuery{View: service.LogViewAll, Limit: 10}), "/api/profile/custom-relay-configs")
+	if relayLog == nil {
+		t.Fatal("custom relay audit log was not stored")
+	}
+	relayDetail, _ := relayLog["detail"].(map[string]any)
+	relayArgs, _ := relayDetail["request_args"].(map[string]any)
+	queryArgs, _ := relayArgs["query"].(map[string]any)
+	bodyArgs, _ := relayArgs["body"].(map[string]any)
+	if queryArgs["api_key"] != "[REDACTED]" || bodyArgs["api_key"] != "[REDACTED]" {
+		t.Fatalf("custom relay audit args were not redacted: %#v", relayArgs)
+	}
+	serializedDetail := fmt.Sprintf("%#v", relayDetail)
+	for _, secret := range []string{customAPIKey, firstQueryKey, lastQueryKey} {
+		if strings.Contains(serializedDetail, secret) {
+			t.Fatalf("custom relay audit detail leaked %q: %#v", secret, relayDetail)
+		}
+	}
+}
+
+func TestCaptureAuditRequestOmitsUnparseableSecrets(t *testing.T) {
+	const secret = "must-not-be-stored"
+	tests := []struct {
+		name        string
+		target      string
+		contentType string
+		body        string
+	}{
+		{name: "query", target: "/api/example?password=" + secret + ";broken"},
+		{name: "form", target: "/api/example", contentType: "application/x-www-form-urlencoded", body: "password=" + secret + ";broken"},
+		{name: "json", target: "/api/example", contentType: "application/json", body: `{"password":"` + secret + `"`},
+		{name: "missing content type", target: "/api/example", body: "password=" + secret},
+		{name: "plain text", target: "/api/example", contentType: "text/plain", body: "password=" + secret},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodPost, test.target, strings.NewReader(test.body))
+			request.Header.Set("Content-Type", test.contentType)
+			capture := captureAuditRequest(request)
+			if serialized := fmt.Sprintf("%#v", capture.args); strings.Contains(serialized, secret) {
+				t.Fatalf("captureAuditRequest() leaked unparseable secret: %s", serialized)
+			}
+		})
 	}
 }
 

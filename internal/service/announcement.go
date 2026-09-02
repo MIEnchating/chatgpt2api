@@ -36,6 +36,18 @@ type AnnouncementService struct {
 	store storage.JSONDocumentBackend
 }
 
+type AnnouncementStorageError struct {
+	Err error
+}
+
+func (e *AnnouncementStorageError) Error() string {
+	return "announcement storage: " + e.Err.Error()
+}
+
+func (e *AnnouncementStorageError) Unwrap() error {
+	return e.Err
+}
+
 type AnnouncementPreferences struct {
 	SeenVersions      []string          `json:"seen_versions"`
 	PermanentVersions []string          `json:"permanent_versions"`
@@ -112,7 +124,7 @@ func (s *AnnouncementService) CreateWithItems(body map[string]any) (Announcement
 		}
 		return item, copyAnnouncements(items), nil
 	}
-	return Announcement{}, nil, fmt.Errorf("failed to save announcement")
+	return Announcement{}, nil, announcementStorageError(fmt.Errorf("failed to save announcement"))
 }
 
 func (s *AnnouncementService) UpdateWithItems(id string, body map[string]any) (*Announcement, []Announcement, error) {
@@ -171,7 +183,7 @@ func (s *AnnouncementService) UpdateWithItems(id string, body map[string]any) (*
 			return nil, copyAnnouncements(items), nil
 		}
 	}
-	return nil, nil, fmt.Errorf("failed to update announcement")
+	return nil, nil, announcementStorageError(fmt.Errorf("failed to update announcement"))
 }
 
 func (s *AnnouncementService) DeleteWithItems(id string) (bool, []Announcement, error) {
@@ -208,7 +220,7 @@ func (s *AnnouncementService) DeleteWithItems(id string) (bool, []Announcement, 
 		}
 		return true, copyAnnouncements(next), nil
 	}
-	return false, nil, fmt.Errorf("failed to delete announcement")
+	return false, nil, announcementStorageError(fmt.Errorf("failed to delete announcement"))
 }
 
 func (s *AnnouncementService) Preferences(ownerID string) (AnnouncementPreferences, error) {
@@ -251,6 +263,7 @@ func (s *AnnouncementService) UpdatePreferences(ownerID, version, action, localD
 			preferences.PermanentVersions = appendUniqueAnnouncementVersion(preferences.PermanentVersions, version)
 			delete(preferences.SnoozedDates, version)
 		}
+		preferences.SnoozedDates = compactAnnouncementSnoozedDates(preferences.SnoozedDates, preferences.SeenVersions)
 		if err := s.savePreferencesLocked(ownerID, preferences); err != nil {
 			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < announcementSaveAttempts {
 				continue
@@ -259,30 +272,32 @@ func (s *AnnouncementService) UpdatePreferences(ownerID, version, action, localD
 		}
 		return preferences, nil
 	}
-	return AnnouncementPreferences{}, fmt.Errorf("failed to save announcement preferences")
+	return AnnouncementPreferences{}, announcementStorageError(fmt.Errorf("failed to save announcement preferences"))
 }
 
 func (s *AnnouncementService) loadPreferencesLocked(ownerID string) (AnnouncementPreferences, error) {
 	if s.store == nil {
-		return AnnouncementPreferences{}, fmt.Errorf("storage document backend is required")
+		return AnnouncementPreferences{}, announcementStorageError(fmt.Errorf("storage document backend is required"))
 	}
 	raw, err := s.store.LoadJSONDocument(announcementPreferenceDocumentName(ownerID))
 	if err != nil {
-		return AnnouncementPreferences{}, err
+		return AnnouncementPreferences{}, announcementStorageError(err)
 	}
 	value := util.StringMap(raw)
-	return AnnouncementPreferences{
+	preferences := AnnouncementPreferences{
 		SeenVersions:      normalizeAnnouncementVersions(value["seen_versions"]),
 		PermanentVersions: normalizeAnnouncementVersions(value["permanent_versions"]),
 		SnoozedDates:      normalizeAnnouncementSnoozedDates(value["snoozed_dates"]),
-	}, nil
+	}
+	preferences.SnoozedDates = compactAnnouncementSnoozedDates(preferences.SnoozedDates, preferences.SeenVersions)
+	return preferences, nil
 }
 
 func (s *AnnouncementService) savePreferencesLocked(ownerID string, preferences AnnouncementPreferences) error {
 	if s.store == nil {
-		return fmt.Errorf("storage document backend is required")
+		return announcementStorageError(fmt.Errorf("storage document backend is required"))
 	}
-	return s.store.SaveJSONDocument(announcementPreferenceDocumentName(ownerID), preferences)
+	return announcementStorageError(s.store.SaveJSONDocument(announcementPreferenceDocumentName(ownerID), preferences))
 }
 
 func announcementPreferenceDocumentName(ownerID string) string {
@@ -333,7 +348,36 @@ func normalizeAnnouncementSnoozedDates(value any) map[string]string {
 			continue
 		}
 		result[version] = date
-		if len(result) >= maxAnnouncementPreferenceVersions {
+	}
+	return result
+}
+
+func compactAnnouncementSnoozedDates(snoozedDates map[string]string, seenVersions []string) map[string]string {
+	if len(snoozedDates) <= maxAnnouncementPreferenceVersions {
+		return snoozedDates
+	}
+
+	result := make(map[string]string, maxAnnouncementPreferenceVersions)
+	for index := len(seenVersions) - 1; index >= 0 && len(result) < maxAnnouncementPreferenceVersions; index-- {
+		version := seenVersions[index]
+		if date, exists := snoozedDates[version]; exists {
+			result[version] = date
+		}
+	}
+	if len(result) == maxAnnouncementPreferenceVersions {
+		return result
+	}
+
+	orphanedVersions := make([]string, 0, len(snoozedDates)-len(result))
+	for version := range snoozedDates {
+		if _, selected := result[version]; !selected {
+			orphanedVersions = append(orphanedVersions, version)
+		}
+	}
+	sort.Strings(orphanedVersions)
+	for _, version := range orphanedVersions {
+		result[version] = snoozedDates[version]
+		if len(result) == maxAnnouncementPreferenceVersions {
 			break
 		}
 	}
@@ -350,11 +394,11 @@ func validAnnouncementLocalDate(value string) bool {
 
 func (s *AnnouncementService) loadLocked() ([]Announcement, error) {
 	if s.store == nil {
-		return nil, fmt.Errorf("storage document backend is required")
+		return nil, announcementStorageError(fmt.Errorf("storage document backend is required"))
 	}
 	raw, err := s.store.LoadJSONDocument(announcementDocumentName)
 	if err != nil {
-		return nil, err
+		return nil, announcementStorageError(err)
 	}
 	items := make([]Announcement, 0)
 	for _, candidate := range util.AsMapSlice(util.StringMap(raw)["items"]) {
@@ -369,9 +413,16 @@ func (s *AnnouncementService) loadLocked() ([]Announcement, error) {
 
 func (s *AnnouncementService) saveLocked(items []Announcement) error {
 	if s.store == nil {
-		return fmt.Errorf("storage document backend is required")
+		return announcementStorageError(fmt.Errorf("storage document backend is required"))
 	}
-	return s.store.SaveJSONDocument(announcementDocumentName, map[string]any{"items": items})
+	return announcementStorageError(s.store.SaveJSONDocument(announcementDocumentName, map[string]any{"items": items}))
+}
+
+func announcementStorageError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &AnnouncementStorageError{Err: err}
 }
 
 func copyAnnouncements(items []Announcement) []Announcement {

@@ -1,10 +1,14 @@
 package service
 
 import (
+	"fmt"
+	"maps"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"chatgpt2api/internal/storage"
+	"chatgpt2api/internal/util"
 )
 
 func TestAnnouncementServicePersistsAndFiltersAnnouncements(t *testing.T) {
@@ -154,6 +158,105 @@ func TestAnnouncementPreferencesValidateActions(t *testing.T) {
 	if _, err := announcements.UpdatePreferences("user-a", "v1", "unknown", ""); err == nil {
 		t.Fatal("preference accepted invalid action")
 	}
+}
+
+func TestAnnouncementPreferencesBoundSnoozedDatesWhenAdding501stVersion(t *testing.T) {
+	backend := newTestStorageBackend(t)
+	store := backend.(storage.JSONDocumentBackend)
+	const ownerID = "bounded-owner"
+	seenVersions := make([]string, 0, maxAnnouncementPreferenceVersions)
+	snoozedDates := make(map[string]string, maxAnnouncementPreferenceVersions)
+	for index := 0; index < maxAnnouncementPreferenceVersions; index++ {
+		version := testAnnouncementVersion(index)
+		seenVersions = append(seenVersions, version)
+		snoozedDates[version] = "2026-07-15"
+	}
+	if err := store.SaveJSONDocument(announcementPreferenceDocumentName(ownerID), AnnouncementPreferences{
+		SeenVersions: seenVersions,
+		SnoozedDates: snoozedDates,
+	}); err != nil {
+		t.Fatalf("SaveJSONDocument() error = %v", err)
+	}
+
+	newestVersion := testAnnouncementVersion(maxAnnouncementPreferenceVersions)
+	preferences, err := NewAnnouncementService(backend).UpdatePreferences(ownerID, newestVersion, "today", "2026-07-16")
+	if err != nil {
+		t.Fatalf("UpdatePreferences() error = %v", err)
+	}
+	if len(preferences.SeenVersions) != maxAnnouncementPreferenceVersions || len(preferences.SnoozedDates) != maxAnnouncementPreferenceVersions {
+		t.Fatalf("bounded preferences lengths = seen:%d snoozed:%d", len(preferences.SeenVersions), len(preferences.SnoozedDates))
+	}
+	if preferences.SeenVersions[0] != testAnnouncementVersion(1) || preferences.SeenVersions[len(preferences.SeenVersions)-1] != newestVersion {
+		t.Fatalf("bounded seen versions = %#v", preferences.SeenVersions)
+	}
+	if _, exists := preferences.SnoozedDates[testAnnouncementVersion(0)]; exists {
+		t.Fatalf("oldest snooze was not evicted: %#v", preferences.SnoozedDates)
+	}
+	if preferences.SnoozedDates[newestVersion] != "2026-07-16" {
+		t.Fatalf("newest snooze = %q", preferences.SnoozedDates[newestVersion])
+	}
+
+	raw, err := store.LoadJSONDocument(announcementPreferenceDocumentName(ownerID))
+	if err != nil {
+		t.Fatalf("LoadJSONDocument() error = %v", err)
+	}
+	persisted := util.StringMap(raw)
+	if count := len(util.StringMap(persisted["snoozed_dates"])); count != maxAnnouncementPreferenceVersions {
+		t.Fatalf("persisted snoozed_dates count = %d, want %d", count, maxAnnouncementPreferenceVersions)
+	}
+	reloaded, err := NewAnnouncementService(backend).Preferences(ownerID)
+	if err != nil {
+		t.Fatalf("reloaded Preferences() error = %v", err)
+	}
+	if !slices.Equal(reloaded.SeenVersions, preferences.SeenVersions) || !maps.Equal(reloaded.SnoozedDates, preferences.SnoozedDates) {
+		t.Fatalf("reloaded preferences = %#v, want %#v", reloaded, preferences)
+	}
+}
+
+func TestAnnouncementPreferencesNormalizeLegacySnoozeOverflowDeterministically(t *testing.T) {
+	backend := newTestStorageBackend(t)
+	store := backend.(storage.JSONDocumentBackend)
+	const ownerID = "legacy-overflow-owner"
+	const overflow = 2
+	seenVersions := make([]string, 0, maxAnnouncementPreferenceVersions+overflow)
+	snoozedDates := make(map[string]string, maxAnnouncementPreferenceVersions+overflow)
+	for index := 0; index < maxAnnouncementPreferenceVersions+overflow; index++ {
+		version := testAnnouncementVersion(index)
+		seenVersions = append(seenVersions, version)
+		snoozedDates[version] = "2026-07-15"
+	}
+	if err := store.SaveJSONDocument(announcementPreferenceDocumentName(ownerID), AnnouncementPreferences{
+		SeenVersions: seenVersions,
+		SnoozedDates: snoozedDates,
+	}); err != nil {
+		t.Fatalf("SaveJSONDocument() error = %v", err)
+	}
+
+	first, err := NewAnnouncementService(backend).Preferences(ownerID)
+	if err != nil {
+		t.Fatalf("first Preferences() error = %v", err)
+	}
+	second, err := NewAnnouncementService(backend).Preferences(ownerID)
+	if err != nil {
+		t.Fatalf("second Preferences() error = %v", err)
+	}
+	if len(first.SnoozedDates) != maxAnnouncementPreferenceVersions || !maps.Equal(first.SnoozedDates, second.SnoozedDates) {
+		t.Fatalf("legacy overflow normalization was unstable: first=%#v second=%#v", first.SnoozedDates, second.SnoozedDates)
+	}
+	for index := 0; index < overflow; index++ {
+		if _, exists := first.SnoozedDates[testAnnouncementVersion(index)]; exists {
+			t.Fatalf("stale snooze %q survived deterministic trimming", testAnnouncementVersion(index))
+		}
+	}
+	for index := overflow; index < maxAnnouncementPreferenceVersions+overflow; index++ {
+		if _, exists := first.SnoozedDates[testAnnouncementVersion(index)]; !exists {
+			t.Fatalf("recent snooze %q was discarded", testAnnouncementVersion(index))
+		}
+	}
+}
+
+func testAnnouncementVersion(index int) string {
+	return fmt.Sprintf("announcement-%03d:v1", index)
 }
 
 func TestAnnouncementServiceMergesConcurrentDatabaseCreates(t *testing.T) {

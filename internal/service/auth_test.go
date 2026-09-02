@@ -149,6 +149,141 @@ func TestAuthServiceNewAPISessionRoleIsStableAcrossRefresh(t *testing.T) {
 	}
 }
 
+func TestAuthServiceUpdateUserClearingDisplayNameSynchronizesActiveSession(t *testing.T) {
+	backend := newTestStorageBackend(t)
+	auth := newTestAuthService(t, backend)
+	const username = "display_user"
+	const password = "Password123!"
+
+	created, err := auth.CreatePasswordUser(username, password, "Previous Name", DefaultManagedRoleID, true)
+	if err != nil {
+		t.Fatalf("CreatePasswordUser() error = %v", err)
+	}
+	userID := util.Clean(created["id"])
+	identity, token, err := auth.LoginPassword(username, password)
+	if err != nil || identity == nil || identity.Name != "Previous Name" || token == "" {
+		t.Fatalf("LoginPassword() = (%#v, %q, %v)", identity, token, err)
+	}
+
+	updated, err := auth.UpdateUser(userID, map[string]any{"name": "  "})
+	if err != nil {
+		t.Fatalf("UpdateUser() error = %v", err)
+	}
+	if util.Clean(updated["name"]) != username || util.Clean(updated["owner_name"]) != username {
+		t.Fatalf("UpdateUser() = %#v, want username fallback", updated)
+	}
+	current := auth.Authenticate(token)
+	if current == nil || current.Name != username {
+		t.Fatalf("Authenticate() after name clear = %#v, want name %q", current, username)
+	}
+
+	reloaded := newTestAuthService(t, backend)
+	persisted := reloaded.Authenticate(token)
+	if persisted == nil || persisted.Name != username {
+		t.Fatalf("reloaded Authenticate() = %#v, want name %q", persisted, username)
+	}
+	account, ok := passwordAccountByIDLocked(reloaded.accounts, userID)
+	if !ok || account.Name != username || account.DisplayName() != username {
+		t.Fatalf("reloaded account = %#v, exists=%v", account, ok)
+	}
+}
+
+func TestAuthServicePrunesLastUsedFlushesAcrossSessionLifecycle(t *testing.T) {
+	t.Run("external rotation revoke and delete", func(t *testing.T) {
+		auth := newTestAuthService(t, &failingAuthStorage{})
+		user := NewAPIUser{ID: 42, Username: "alice", DisplayName: "Alice"}
+
+		firstIdentity, firstToken, err := auth.UpsertNewAPISession(user)
+		if err != nil {
+			t.Fatalf("first UpsertNewAPISession() error = %v", err)
+		}
+		firstIdentity = auth.Authenticate(firstToken)
+		if firstIdentity == nil || len(auth.lastUsedFlushAt) != 1 {
+			t.Fatalf("first Authenticate() identity=%#v flushes=%#v", firstIdentity, auth.lastUsedFlushAt)
+		}
+		firstCredentialID := firstIdentity.CredentialID
+
+		secondIdentity, secondToken, err := auth.UpsertNewAPISession(user)
+		if err != nil {
+			t.Fatalf("second UpsertNewAPISession() error = %v", err)
+		}
+		if secondIdentity.CredentialID == firstCredentialID {
+			t.Fatalf("session credential was not rotated: %#v", secondIdentity)
+		}
+		if _, exists := auth.lastUsedFlushAt[firstCredentialID]; exists || len(auth.lastUsedFlushAt) != 0 {
+			t.Fatalf("rotated session retained stale flush timestamp: %#v", auth.lastUsedFlushAt)
+		}
+
+		secondIdentity = auth.Authenticate(secondToken)
+		if secondIdentity == nil || len(auth.lastUsedFlushAt) != 1 {
+			t.Fatalf("second Authenticate() identity=%#v flushes=%#v", secondIdentity, auth.lastUsedFlushAt)
+		}
+		if removed, revokeErr := auth.RevokeSessions(secondToken); revokeErr != nil || removed != 1 {
+			t.Fatalf("RevokeSessions() = (%d, %v)", removed, revokeErr)
+		}
+		if len(auth.lastUsedFlushAt) != 0 {
+			t.Fatalf("revoked session retained flush timestamp: %#v", auth.lastUsedFlushAt)
+		}
+
+		thirdIdentity, thirdToken, err := auth.UpsertNewAPISession(user)
+		if err != nil {
+			t.Fatalf("third UpsertNewAPISession() error = %v", err)
+		}
+		thirdIdentity = auth.Authenticate(thirdToken)
+		if thirdIdentity == nil || len(auth.lastUsedFlushAt) != 1 {
+			t.Fatalf("third Authenticate() identity=%#v flushes=%#v", thirdIdentity, auth.lastUsedFlushAt)
+		}
+		if deleted, deleteErr := auth.DeleteUser(firstIdentity.ID); deleteErr != nil || !deleted {
+			t.Fatalf("DeleteUser() = (%v, %v)", deleted, deleteErr)
+		}
+		if len(auth.lastUsedFlushAt) != 0 {
+			t.Fatalf("deleted user retained flush timestamp: %#v", auth.lastUsedFlushAt)
+		}
+	})
+
+	t.Run("password session rotation", func(t *testing.T) {
+		auth := newTestAuthService(t, newTestStorageBackend(t))
+		if _, err := auth.CreatePasswordUser("local_user", "Password123!", "Local User", DefaultManagedRoleID, true); err != nil {
+			t.Fatalf("CreatePasswordUser() error = %v", err)
+		}
+		_, firstToken, err := auth.LoginPassword("local_user", "Password123!")
+		if err != nil {
+			t.Fatalf("first LoginPassword() error = %v", err)
+		}
+		firstIdentity := auth.Authenticate(firstToken)
+		if firstIdentity == nil || len(auth.lastUsedFlushAt) != 1 {
+			t.Fatalf("first Authenticate() identity=%#v flushes=%#v", firstIdentity, auth.lastUsedFlushAt)
+		}
+		if _, _, err := auth.LoginPassword("local_user", "Password123!"); err != nil {
+			t.Fatalf("second LoginPassword() error = %v", err)
+		}
+		if _, exists := auth.lastUsedFlushAt[firstIdentity.CredentialID]; exists || len(auth.lastUsedFlushAt) != 0 {
+			t.Fatalf("rotated password session retained stale flush timestamp: %#v", auth.lastUsedFlushAt)
+		}
+	})
+
+	t.Run("conflict reload", func(t *testing.T) {
+		backend := &failingAuthStorage{}
+		auth := newTestAuthService(t, backend)
+		identity, token, err := auth.UpsertNewAPISession(NewAPIUser{ID: 7, Username: "reload-user"})
+		if err != nil {
+			t.Fatalf("UpsertNewAPISession() error = %v", err)
+		}
+		identity = auth.Authenticate(token)
+		if identity == nil {
+			t.Fatal("Authenticate() identity = nil")
+		}
+		auth.lastUsedFlushAt["stale-session"] = time.Now().UTC()
+		auth.reloadAuthItemsAfterConflictLocked(AuthPersistenceError{Err: storage.ErrConcurrentRowUpdate})
+		if _, exists := auth.lastUsedFlushAt["stale-session"]; exists {
+			t.Fatalf("reload retained stale flush timestamp: %#v", auth.lastUsedFlushAt)
+		}
+		if _, exists := auth.lastUsedFlushAt[identity.CredentialID]; !exists {
+			t.Fatalf("reload removed active session flush timestamp: %#v", auth.lastUsedFlushAt)
+		}
+	})
+}
+
 func TestStoredAuthDocumentUsesCanonicalEnvelope(t *testing.T) {
 	account := PasswordAccount{
 		ID: "user-1", Username: "alice", Name: "Alice", PasswordHash: "hash", Role: AuthRoleUser,

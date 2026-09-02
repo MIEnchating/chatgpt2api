@@ -25,7 +25,8 @@ type countingLogPageBackend struct {
 }
 
 type failingLogQueryBackend struct {
-	err error
+	err        error
+	queryCalls int
 }
 
 type failingLogCleanupSummaryBackend struct {
@@ -36,6 +37,7 @@ type failingLogCleanupSummaryBackend struct {
 func (b *failingLogQueryBackend) AppendLog(map[string]any) error { return nil }
 
 func (b *failingLogQueryBackend) QueryLogs(string, string, int) ([]map[string]any, error) {
+	b.queryCalls++
 	return nil, b.err
 }
 
@@ -355,7 +357,11 @@ func TestLogServiceSearchFiltersUnifiedLogs(t *testing.T) {
 		t.Fatalf("Search(business) summaries = %#v", summaries)
 	}
 
-	usage := logs.UserUsageStatsForUsers(1, []string{"alice-key"})["alice-key"]
+	usageByUser, err := logs.UserUsageStatsForUsers(1, []string{"alice-key"})
+	if err != nil {
+		t.Fatalf("UserUsageStatsForUsers() error = %v", err)
+	}
+	usage := usageByUser["alice-key"]
 	if usage == nil || usage["call_count"] != 1 || usage["success_count"] != 1 || usage["quota_used"] != 1 {
 		t.Fatalf("UserUsageStats(new call log shape) = %#v", usage)
 	}
@@ -382,9 +388,46 @@ func TestSanitizeLogValueMasksSessionCredentials(t *testing.T) {
 	if !ok {
 		t.Fatalf("SanitizeLogValue() = %#v", sanitized)
 	}
-	text := item["session_json"].(string) + item["accessToken"].(string) + item["sessionToken"].(string)
-	if strings.Contains(text, accessToken) || strings.Contains(text, sessionToken) {
-		t.Fatalf("sanitized log value leaked credentials: %#v", sanitized)
+	for _, key := range []string{"session_json", "accessToken", "sessionToken"} {
+		if item[key] != redactedLogValue {
+			t.Fatalf("SanitizeLogValue()[%q] = %#v, want %q", key, item[key], redactedLogValue)
+		}
+	}
+}
+
+func TestSanitizeLogValueRedactsSensitiveFieldsRegardlessOfValueShape(t *testing.T) {
+	sanitized := SanitizeLogValue(map[string]any{
+		"password":      "short",
+		"authorization": "Bearer credential-with-a-visible-prefix",
+		"api_key":       []any{"first-key", "second-key"},
+		"secret":        123456,
+		"token":         nil,
+		"nested": map[string]any{
+			"refresh_token": true,
+			"label":         "visible",
+		},
+		"b64_json": strings.Repeat("a", 40),
+		"url":      "https://example.test/resource",
+	})
+
+	item, ok := sanitized.(map[string]any)
+	if !ok {
+		t.Fatalf("SanitizeLogValue() = %#v", sanitized)
+	}
+	for _, key := range []string{"password", "authorization", "api_key", "secret", "token"} {
+		if item[key] != redactedLogValue {
+			t.Fatalf("SanitizeLogValue()[%q] = %#v, want %q", key, item[key], redactedLogValue)
+		}
+	}
+	nested, ok := item["nested"].(map[string]any)
+	if !ok || nested["refresh_token"] != redactedLogValue || nested["label"] != "visible" {
+		t.Fatalf("SanitizeLogValue()[nested] = %#v", item["nested"])
+	}
+	if item["b64_json"] != strings.Repeat("a", 24)+"..." {
+		t.Fatalf("SanitizeLogValue()[b64_json] = %#v", item["b64_json"])
+	}
+	if item["url"] != "https://example.test/resource" {
+		t.Fatalf("SanitizeLogValue()[url] = %#v", item["url"])
 	}
 }
 
@@ -406,12 +449,38 @@ func TestLogServiceUserUsageStatsForUsersFiltersResults(t *testing.T) {
 		t.Fatalf("Add(bob) error = %v", err)
 	}
 
-	usage := logs.UserUsageStatsForUsers(1, []string{"alice-key"})
+	usage, err := logs.UserUsageStatsForUsers(1, []string{"alice-key"})
+	if err != nil {
+		t.Fatalf("UserUsageStatsForUsers() error = %v", err)
+	}
 	if usage["alice-key"] == nil {
 		t.Fatalf("missing requested user usage: %#v", usage)
 	}
 	if usage["bob-key"] != nil {
 		t.Fatalf("returned unrequested user usage: %#v", usage)
+	}
+}
+
+func TestLogServiceUserUsageStatsForUsersReturnsQueryErrorWithoutCachingFailure(t *testing.T) {
+	queryErr := errors.New("usage query failed")
+	backend := &failingLogQueryBackend{err: queryErr}
+	logs := &LogService{store: backend}
+
+	for attempt := 1; attempt <= 2; attempt++ {
+		stats, err := logs.UserUsageStatsForUsers(14, []string{"alice-key"})
+		if !errors.Is(err, queryErr) || stats != nil {
+			t.Fatalf("attempt %d UserUsageStatsForUsers() = (%#v, %v), want query error", attempt, stats, err)
+		}
+	}
+	if backend.queryCalls != 2 {
+		t.Fatalf("QueryLogs() calls = %d, want 2 so a transient failure is not cached", backend.queryCalls)
+	}
+}
+
+func TestLogServiceUserUsageStatsForUsersRequiresStorage(t *testing.T) {
+	stats, err := NewLogService().UserUsageStatsForUsers(14, []string{"alice-key"})
+	if err == nil || stats != nil {
+		t.Fatalf("UserUsageStatsForUsers() = (%#v, %v), want missing storage error", stats, err)
 	}
 }
 

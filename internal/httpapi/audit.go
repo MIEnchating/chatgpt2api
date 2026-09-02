@@ -345,7 +345,7 @@ func captureAuditRequest(r *http.Request) auditRequestCapture {
 	if r.Method != http.MethodGet && r.Body != nil {
 		body, truncated, ok := captureAuditBody(r)
 		if ok {
-			if bodyPayload := normalizeAuditPayload(body); bodyPayload != nil {
+			if bodyPayload := normalizeAuditRequestBody(r.Header.Get("Content-Type"), body); bodyPayload != nil {
 				return auditRequestCapture{args: combineAuditArgs(query, bodyPayload), truncated: truncated}
 			}
 		}
@@ -377,8 +377,12 @@ func captureAuditQuery(r *http.Request) any {
 	}
 	values, err := url.ParseQuery(r.URL.RawQuery)
 	if err != nil {
-		return service.SanitizeLogValue(r.URL.RawQuery)
+		return "[invalid query]"
 	}
+	return sanitizeAuditValues(values)
+}
+
+func sanitizeAuditValues(values url.Values) any {
 	payload := make(map[string]any, len(values))
 	for key, items := range values {
 		if len(items) == 1 {
@@ -388,6 +392,28 @@ func captureAuditQuery(r *http.Request) any {
 		payload[key] = items
 	}
 	return service.SanitizeLogValue(payload)
+}
+
+func normalizeAuditRequestBody(contentType string, raw []byte) any {
+	mediaType := auditMediaType(contentType)
+	if mediaType == "application/x-www-form-urlencoded" {
+		values, err := url.ParseQuery(string(raw))
+		if err != nil {
+			return "[invalid form payload]"
+		}
+		return sanitizeAuditValues(values)
+	}
+	trimmed := bytes.TrimSpace(raw)
+	if len(trimmed) == 0 {
+		return nil
+	}
+	if !json.Valid(trimmed) {
+		if mediaType == "application/json" || strings.HasSuffix(mediaType, "+json") {
+			return "[invalid JSON payload]"
+		}
+		return "[unparseable request payload]"
+	}
+	return normalizeAuditPayload(trimmed)
 }
 
 func combineAuditArgs(query, body any) any {

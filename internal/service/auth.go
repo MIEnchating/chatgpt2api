@@ -360,6 +360,7 @@ func (s *AuthService) UpsertNewAPISession(user NewAPIUser) (*Identity, string, e
 			s.mu.Unlock()
 			return nil, "", err
 		}
+		s.pruneLastUsedFlushAtLocked()
 		identity := identityForAuthItem(next)
 		s.mu.Unlock()
 		return identity, raw, nil
@@ -377,6 +378,7 @@ func (s *AuthService) UpsertNewAPISession(user NewAPIUser) (*Identity, string, e
 		s.mu.Unlock()
 		return nil, "", err
 	}
+	s.pruneLastUsedFlushAtLocked()
 	identity := identityForAuthItem(item)
 	s.mu.Unlock()
 	return identity, raw, nil
@@ -422,10 +424,6 @@ func (s *AuthService) UpdateUser(id string, updates map[string]any) (map[string]
 		}
 		selectedRole = role
 	}
-	accountDisplayName := ""
-	if account, ok := passwordAccountByIDLocked(s.accounts, id); ok {
-		accountDisplayName = account.DisplayName()
-	}
 	previousAccounts := append([]PasswordAccount(nil), s.accounts...)
 	previousItems := cloneAuthItems(s.items)
 	changed := false
@@ -449,6 +447,10 @@ func (s *AuthService) UpdateUser(id string, updates map[string]any) (map[string]
 		next.UpdatedAt = now
 		s.accounts[index] = next
 		changed = true
+	}
+	accountDisplayName := ""
+	if account, ok := passwordAccountByIDLocked(s.accounts, id); ok {
+		accountDisplayName = account.DisplayName()
 	}
 	for index, item := range s.items {
 		if managedAuthUserID(item) != id {
@@ -495,6 +497,7 @@ func (s *AuthService) UpdateUser(id string, updates map[string]any) (map[string]
 		s.restoreAuthAccountsAfterSaveFailureLocked(previousAccounts, previousItems, err)
 		return nil, err
 	}
+	s.pruneLastUsedFlushAtLocked()
 	return managedAuthUserByIDLocked(s.items, s.roles, s.accounts, id), nil
 }
 
@@ -541,6 +544,7 @@ func (s *AuthService) DeleteUser(id string) (bool, error) {
 		s.restoreAuthAccountsAfterSaveFailureLocked(previousAccounts, previousItems, err)
 		return false, err
 	}
+	s.pruneLastUsedFlushAtLocked()
 	return true, nil
 }
 
@@ -633,6 +637,7 @@ func (s *AuthService) RevokeSessions(rawTokens ...string) (int, error) {
 		s.restoreAuthItemsAfterSaveFailureLocked(previous, err)
 		return 0, err
 	}
+	s.pruneLastUsedFlushAtLocked()
 	return removed, nil
 }
 
@@ -664,6 +669,26 @@ func cloneAuthItems(items []map[string]any) []map[string]any {
 		cloned[index] = util.CopyMap(item)
 	}
 	return cloned
+}
+
+func (s *AuthService) pruneLastUsedFlushAtLocked() {
+	if len(s.lastUsedFlushAt) == 0 {
+		return
+	}
+	activeSessionIDs := make(map[string]struct{}, len(s.items))
+	for _, item := range s.items {
+		if util.Clean(item["kind"]) != AuthKindSession {
+			continue
+		}
+		if id := util.Clean(item["id"]); id != "" {
+			activeSessionIDs[id] = struct{}{}
+		}
+	}
+	for id := range s.lastUsedFlushAt {
+		if _, exists := activeSessionIDs[id]; !exists {
+			delete(s.lastUsedFlushAt, id)
+		}
+	}
 }
 
 func (s *AuthService) restoreAuthItemsAfterSaveFailureLocked(previous []map[string]any, saveErr error) {
@@ -715,6 +740,7 @@ func (s *AuthService) applyLoadedAuthItemsLocked(items []map[string]any) {
 	s.items = items
 	s.syncPasswordAccountsToItems()
 	s.applyRolesToItems()
+	s.pruneLastUsedFlushAtLocked()
 }
 
 func (s *AuthService) load() ([]map[string]any, bool, error) {

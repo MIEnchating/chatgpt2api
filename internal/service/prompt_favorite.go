@@ -32,6 +32,18 @@ type PromptFavoriteService struct {
 	store storage.JSONDocumentBackend
 }
 
+type PromptFavoriteStorageError struct {
+	Err error
+}
+
+func (e *PromptFavoriteStorageError) Error() string {
+	return "prompt favorite storage: " + e.Err.Error()
+}
+
+func (e *PromptFavoriteStorageError) Unwrap() error {
+	return e.Err
+}
+
 func NewPromptFavoriteService(backend ...storage.Backend) *PromptFavoriteService {
 	return &PromptFavoriteService{store: firstJSONDocumentStore(backend)}
 }
@@ -102,7 +114,7 @@ func (s *PromptFavoriteService) UpsertWithItems(ownerID string, body map[string]
 		}
 		return util.CopyMap(item), copyPromptFavorites(items), nil
 	}
-	return nil, nil, fmt.Errorf("failed to save prompt favorite")
+	return nil, nil, promptFavoriteStorageError(fmt.Errorf("failed to save prompt favorite"))
 }
 
 func (s *PromptFavoriteService) DeleteWithItems(ownerID, id string) (bool, []map[string]any, error) {
@@ -142,14 +154,14 @@ func (s *PromptFavoriteService) DeleteWithItems(ownerID, id string) (bool, []map
 		}
 		return true, copyPromptFavorites(next), nil
 	}
-	return false, nil, fmt.Errorf("failed to delete prompt favorite")
+	return false, nil, promptFavoriteStorageError(fmt.Errorf("failed to delete prompt favorite"))
 }
 
 func (s *PromptFavoriteService) loadLocked(ownerID string) ([]map[string]any, error) {
 	name := promptFavoriteDocumentName(ownerID)
 	raw, err := loadStoredJSON(s.store, name)
 	if err != nil {
-		return nil, err
+		return nil, promptFavoriteStorageError(err)
 	}
 	items := make([]map[string]any, 0)
 	for _, item := range util.AsMapSlice(util.StringMap(raw)["items"]) {
@@ -163,7 +175,14 @@ func (s *PromptFavoriteService) loadLocked(ownerID string) ([]map[string]any, er
 
 func (s *PromptFavoriteService) saveLocked(ownerID string, items []map[string]any) error {
 	name := promptFavoriteDocumentName(ownerID)
-	return saveStoredJSON(s.store, name, map[string]any{"items": items})
+	return promptFavoriteStorageError(saveStoredJSON(s.store, name, map[string]any{"items": items}))
+}
+
+func promptFavoriteStorageError(err error) error {
+	if err == nil {
+		return nil
+	}
+	return &PromptFavoriteStorageError{Err: err}
 }
 
 func promptFavoriteDocumentName(ownerID string) string {

@@ -192,6 +192,65 @@ func TestImageGenerationPreferenceServiceMergesConcurrentPatches(t *testing.T) {
 	}
 }
 
+func TestImageGenerationPreferenceServiceProfileUpdatePreservesConcurrentOptionalFields(t *testing.T) {
+	databaseURL := "sqlite:///" + filepath.ToSlash(filepath.Join(t.TempDir(), "shared-profile-preferences.db"))
+	backendA, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer backendA.Close()
+	backendB, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer backendB.Close()
+
+	initial := defaultImageGenerationPreferences()
+	initial.SystemPrompt = "before"
+	initial.DefaultVideoRelayTokens = []string{"video-before"}
+	initial.Workbench.ImageQuality = "low"
+	if _, err := NewImageGenerationPreferenceService(backendA).Update("owner", initial); err != nil {
+		t.Fatal(err)
+	}
+
+	barrier := newTestDocumentSaveBarrier(2)
+	serviceA := NewImageGenerationPreferenceService(newFirstSaveBarrierBackend(t, backendA, barrier))
+	serviceB := NewImageGenerationPreferenceService(newFirstSaveBarrierBackend(t, backendB, barrier))
+	profile := initial
+	profile.SystemPrompt = "after"
+	workbench := initial.Workbench
+	workbench.ImageQuality = "high"
+	type updateResult struct {
+		preferences ImageGenerationPreferences
+		err         error
+	}
+	results := make(chan updateResult, 2)
+	go func() {
+		preferences, updateErr := serviceA.UpdateProfile("owner", profile, nil, nil)
+		results <- updateResult{preferences: preferences, err: updateErr}
+	}()
+	go func() {
+		preferences, patchErr := serviceB.Patch("owner", ImageGenerationPreferencePatch{
+			Workbench:       &workbench,
+			RelayTokenNames: map[string][]string{"video": {"video-after"}},
+		})
+		results <- updateResult{preferences: preferences, err: patchErr}
+	}()
+	for range 2 {
+		if result := <-results; result.err != nil {
+			t.Fatalf("concurrent preference update error = %v", result.err)
+		}
+	}
+
+	preferences, err := serviceA.Preferences("owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preferences.SystemPrompt != "after" || preferences.Workbench.ImageQuality != "high" || !reflect.DeepEqual(preferences.DefaultVideoRelayTokens, []string{"video-after"}) {
+		t.Fatalf("merged profile preferences = %#v", preferences)
+	}
+}
+
 func TestImageGenerationPreferenceServiceClassifiesStorageErrors(t *testing.T) {
 	backend, err := storage.NewDatabaseBackend("sqlite:///" + filepath.ToSlash(filepath.Join(t.TempDir(), "closed-preferences.db")))
 	if err != nil {

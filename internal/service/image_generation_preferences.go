@@ -134,6 +134,79 @@ func (s *ImageGenerationPreferenceService) Update(ownerID string, input ImageGen
 	if ownerID == "" {
 		return ImageGenerationPreferences{}, fmt.Errorf("owner_id is required")
 	}
+	normalized, err := normalizeImageGenerationPreferences(input)
+	if err != nil {
+		return ImageGenerationPreferences{}, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.store == nil {
+		return ImageGenerationPreferences{}, imageGenerationPreferenceStorageError(fmt.Errorf("storage document backend is required"))
+	}
+	for attempt := 0; attempt < imageGenerationPreferenceSaveAttempts; attempt++ {
+		if err := s.store.SaveJSONDocument(imageGenerationPreferenceDocumentName(ownerID), normalized); err != nil {
+			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < imageGenerationPreferenceSaveAttempts {
+				if _, loadErr := s.loadLocked(ownerID); loadErr != nil {
+					return ImageGenerationPreferences{}, imageGenerationPreferenceStorageError(loadErr)
+				}
+				continue
+			}
+			return ImageGenerationPreferences{}, imageGenerationPreferenceStorageError(err)
+		}
+		return normalized, nil
+	}
+	return ImageGenerationPreferences{}, imageGenerationPreferenceStorageError(fmt.Errorf("%w: update image generation preferences after %d attempts", storage.ErrConcurrentRowUpdate, imageGenerationPreferenceSaveAttempts))
+}
+
+// UpdateProfile replaces the profile fields while preserving optional fields that
+// were omitted by the caller. The merge is repeated after a document CAS conflict
+// so a concurrent workbench or relay-token update is not overwritten by stale data.
+func (s *ImageGenerationPreferenceService) UpdateProfile(ownerID string, input ImageGenerationPreferences, workbench *CreationWorkbenchPreferences, relayTokenNames map[string][]string) (ImageGenerationPreferences, error) {
+	ownerID = strings.TrimSpace(ownerID)
+	if ownerID == "" {
+		return ImageGenerationPreferences{}, fmt.Errorf("owner_id is required")
+	}
+	normalizedTokens, err := normalizeRelayTokenUpdates(relayTokenNames)
+	if err != nil {
+		return ImageGenerationPreferences{}, err
+	}
+	if workbench == nil {
+		input.Workbench = defaultCreationWorkbenchPreferences()
+	} else {
+		input.Workbench = *workbench
+	}
+	applyRelayTokenUpdates(&input, normalizedTokens)
+	normalized, err := normalizeImageGenerationPreferences(input)
+	if err != nil {
+		return ImageGenerationPreferences{}, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.store == nil {
+		return ImageGenerationPreferences{}, imageGenerationPreferenceStorageError(fmt.Errorf("storage document backend is required"))
+	}
+	for attempt := 0; attempt < imageGenerationPreferenceSaveAttempts; attempt++ {
+		current, loadErr := s.loadLocked(ownerID)
+		if loadErr != nil {
+			return ImageGenerationPreferences{}, imageGenerationPreferenceStorageError(loadErr)
+		}
+		candidate := normalized
+		if workbench == nil {
+			candidate.Workbench = current.Workbench
+		}
+		preserveUnspecifiedRelayTokens(&candidate, current, normalizedTokens)
+		if saveErr := s.store.SaveJSONDocument(imageGenerationPreferenceDocumentName(ownerID), candidate); saveErr != nil {
+			if errors.Is(saveErr, storage.ErrConcurrentRowUpdate) && attempt+1 < imageGenerationPreferenceSaveAttempts {
+				continue
+			}
+			return ImageGenerationPreferences{}, imageGenerationPreferenceStorageError(saveErr)
+		}
+		return candidate, nil
+	}
+	return ImageGenerationPreferences{}, imageGenerationPreferenceStorageError(fmt.Errorf("%w: update image generation profile after %d attempts", storage.ErrConcurrentRowUpdate, imageGenerationPreferenceSaveAttempts))
+}
+
+func normalizeImageGenerationPreferences(input ImageGenerationPreferences) (ImageGenerationPreferences, error) {
 	if input.PartialImages < 0 || input.PartialImages > 3 {
 		return ImageGenerationPreferences{}, fmt.Errorf("partial_images must be an integer between 0 and 3")
 	}
@@ -172,24 +245,7 @@ func (s *ImageGenerationPreferenceService) Update(ownerID string, input ImageGen
 		return ImageGenerationPreferences{}, err
 	}
 	input.Workbench = workbench
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.store == nil {
-		return ImageGenerationPreferences{}, imageGenerationPreferenceStorageError(fmt.Errorf("storage document backend is required"))
-	}
-	for attempt := 0; attempt < imageGenerationPreferenceSaveAttempts; attempt++ {
-		if err := s.store.SaveJSONDocument(imageGenerationPreferenceDocumentName(ownerID), input); err != nil {
-			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < imageGenerationPreferenceSaveAttempts {
-				if _, loadErr := s.loadLocked(ownerID); loadErr != nil {
-					return ImageGenerationPreferences{}, imageGenerationPreferenceStorageError(loadErr)
-				}
-				continue
-			}
-			return ImageGenerationPreferences{}, imageGenerationPreferenceStorageError(err)
-		}
-		return input, nil
-	}
-	return ImageGenerationPreferences{}, imageGenerationPreferenceStorageError(fmt.Errorf("%w: update image generation preferences after %d attempts", storage.ErrConcurrentRowUpdate, imageGenerationPreferenceSaveAttempts))
+	return input, nil
 }
 
 func (s *ImageGenerationPreferenceService) Patch(ownerID string, patch ImageGenerationPreferencePatch) (ImageGenerationPreferences, error) {
@@ -211,14 +267,9 @@ func (s *ImageGenerationPreferenceService) Patch(ownerID string, patch ImageGene
 		}
 		workbench = &normalized
 	}
-	normalizedTokens := make(map[string][]string, len(patch.RelayTokenNames))
-	for kind, value := range patch.RelayTokenNames {
-		switch kind {
-		case "text", "image", "video", "audio":
-			normalizedTokens[kind] = normalizeRelayTokenNames(value)
-		default:
-			return ImageGenerationPreferences{}, fmt.Errorf("unsupported relay token preference %q", kind)
-		}
+	normalizedTokens, err := normalizeRelayTokenUpdates(patch.RelayTokenNames)
+	if err != nil {
+		return ImageGenerationPreferences{}, err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -227,18 +278,7 @@ func (s *ImageGenerationPreferenceService) Patch(ownerID string, patch ImageGene
 		if err != nil {
 			return ImageGenerationPreferences{}, imageGenerationPreferenceStorageError(err)
 		}
-		for kind, value := range normalizedTokens {
-			switch kind {
-			case "text":
-				preferences.DefaultTextRelayTokens = value
-			case "image":
-				preferences.DefaultImageRelayTokens = value
-			case "video":
-				preferences.DefaultVideoRelayTokens = value
-			case "audio":
-				preferences.DefaultAudioRelayTokens = value
-			}
-		}
+		applyRelayTokenUpdates(&preferences, normalizedTokens)
 		if patch.Stream != nil {
 			preferences.Stream = *patch.Stream
 		}
@@ -263,6 +303,49 @@ func (s *ImageGenerationPreferenceService) Patch(ownerID string, patch ImageGene
 		return preferences, nil
 	}
 	return ImageGenerationPreferences{}, imageGenerationPreferenceStorageError(fmt.Errorf("%w: patch image generation preferences after %d attempts", storage.ErrConcurrentRowUpdate, imageGenerationPreferenceSaveAttempts))
+}
+
+func normalizeRelayTokenUpdates(values map[string][]string) (map[string][]string, error) {
+	normalized := make(map[string][]string, len(values))
+	for kind, value := range values {
+		switch kind {
+		case "text", "image", "video", "audio":
+			normalized[kind] = normalizeRelayTokenNames(value)
+		default:
+			return nil, fmt.Errorf("unsupported relay token preference %q", kind)
+		}
+	}
+	return normalized, nil
+}
+
+func applyRelayTokenUpdates(preferences *ImageGenerationPreferences, values map[string][]string) {
+	for kind, value := range values {
+		switch kind {
+		case "text":
+			preferences.DefaultTextRelayTokens = value
+		case "image":
+			preferences.DefaultImageRelayTokens = value
+		case "video":
+			preferences.DefaultVideoRelayTokens = value
+		case "audio":
+			preferences.DefaultAudioRelayTokens = value
+		}
+	}
+}
+
+func preserveUnspecifiedRelayTokens(candidate *ImageGenerationPreferences, current ImageGenerationPreferences, specified map[string][]string) {
+	if _, ok := specified["text"]; !ok {
+		candidate.DefaultTextRelayTokens = current.DefaultTextRelayTokens
+	}
+	if _, ok := specified["image"]; !ok {
+		candidate.DefaultImageRelayTokens = current.DefaultImageRelayTokens
+	}
+	if _, ok := specified["video"]; !ok {
+		candidate.DefaultVideoRelayTokens = current.DefaultVideoRelayTokens
+	}
+	if _, ok := specified["audio"]; !ok {
+		candidate.DefaultAudioRelayTokens = current.DefaultAudioRelayTokens
+	}
 }
 
 func (s *ImageGenerationPreferenceService) loadLocked(ownerID string) (ImageGenerationPreferences, error) {

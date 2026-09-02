@@ -80,24 +80,27 @@ func (a *App) handleImageGenerationPreferences(w http.ResponseWriter, r *http.Re
 				return
 			}
 		}
-		current, err := a.imagePreferences.Preferences(ownerID)
-		if err != nil {
-			util.WriteError(w, http.StatusServiceUnavailable, "创作偏好存储暂时不可用")
-			return
-		}
-		workbench := current.Workbench
+		var workbench *service.CreationWorkbenchPreferences
 		if rawWorkbench, present := body["workbench"]; present {
-			workbench, err = creationWorkbenchPreferencesFromValue(rawWorkbench)
-			if err != nil {
+			parsedWorkbench, parseErr := creationWorkbenchPreferencesFromValue(rawWorkbench)
+			if parseErr != nil {
+				util.WriteError(w, http.StatusBadRequest, parseErr.Error())
+				return
+			}
+			if err = a.validateCreationWorkbenchModels(parsedWorkbench); err != nil {
 				util.WriteError(w, http.StatusBadRequest, err.Error())
 				return
 			}
-			if err = a.validateCreationWorkbenchModels(workbench); err != nil {
-				util.WriteError(w, http.StatusBadRequest, err.Error())
-				return
+			workbench = &parsedWorkbench
+		}
+		relayTokenNames := map[string][]string{}
+		for _, kind := range []string{"text", "image", "video", "audio"} {
+			field := "default_" + kind + "_relay_token_names"
+			if value, present := body[field]; present {
+				relayTokenNames[kind] = util.AsStringSlice(value)
 			}
 		}
-		preferences, err := a.imagePreferences.Update(ownerID, service.ImageGenerationPreferences{
+		preferences, err := a.imagePreferences.UpdateProfile(ownerID, service.ImageGenerationPreferences{
 			APIMode:                 util.Clean(body["api_mode"]),
 			Stream:                  util.ToBool(body["stream"]),
 			PartialImages:           partialImages,
@@ -114,12 +117,7 @@ func (a *App) handleImageGenerationPreferences(w http.ResponseWriter, r *http.Re
 			DefaultAudioVoice:       strings.TrimSpace(util.Clean(body["default_audio_voice"])),
 			DefaultAudioFormat:      defaultAudioFormat,
 			DefaultAudioSpeed:       defaultAudioSpeed,
-			DefaultTextRelayTokens:  relayTokenPreferenceValues(body, "default_text_relay_token_names", current.DefaultTextRelayTokens),
-			DefaultImageRelayTokens: relayTokenPreferenceValues(body, "default_image_relay_token_names", current.DefaultImageRelayTokens),
-			DefaultVideoRelayTokens: relayTokenPreferenceValues(body, "default_video_relay_token_names", current.DefaultVideoRelayTokens),
-			DefaultAudioRelayTokens: relayTokenPreferenceValues(body, "default_audio_relay_token_names", current.DefaultAudioRelayTokens),
-			Workbench:               workbench,
-		})
+		}, workbench, relayTokenNames)
 		if err != nil {
 			writeImageGenerationPreferenceError(w, err)
 			return
@@ -203,13 +201,6 @@ func writeImageGenerationPreferenceError(w http.ResponseWriter, err error) {
 		return
 	}
 	util.WriteError(w, http.StatusBadRequest, err.Error())
-}
-
-func relayTokenPreferenceValues(body map[string]any, field string, fallback []string) []string {
-	if value, present := body[field]; present {
-		return util.AsStringSlice(value)
-	}
-	return append([]string(nil), fallback...)
 }
 
 func creationWorkbenchPreferencesFromValue(value any) (service.CreationWorkbenchPreferences, error) {
@@ -397,6 +388,9 @@ func (a *App) handleProfilePromptFavorites(w http.ResponseWriter, r *http.Reques
 		case http.MethodGet:
 			items, err := a.promptFavoritesForIdentity(ownerID)
 			if err != nil {
+				if writePromptFavoriteStorageError(w, err) {
+					return
+				}
 				util.WriteError(w, http.StatusInternalServerError, "failed to load prompt favorites")
 				return
 			}
@@ -413,6 +407,9 @@ func (a *App) handleProfilePromptFavorites(w http.ResponseWriter, r *http.Reques
 			}
 			item, items, err := a.prompts.UpsertWithItems(ownerID, body)
 			if err != nil {
+				if writePromptFavoriteStorageError(w, err) {
+					return
+				}
 				util.WriteError(w, http.StatusBadRequest, err.Error())
 				return
 			}
@@ -433,6 +430,9 @@ func (a *App) handleProfilePromptFavorites(w http.ResponseWriter, r *http.Reques
 	}
 	deleted, items, err := a.prompts.DeleteWithItems(ownerID, parts[3])
 	if err != nil {
+		if writePromptFavoriteStorageError(w, err) {
+			return
+		}
 		util.WriteError(w, http.StatusInternalServerError, "failed to delete prompt favorite")
 		return
 	}
@@ -441,6 +441,19 @@ func (a *App) handleProfilePromptFavorites(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	util.WriteJSON(w, http.StatusOK, map[string]any{"items": items})
+}
+
+func writePromptFavoriteStorageError(w http.ResponseWriter, err error) bool {
+	var storageErr *service.PromptFavoriteStorageError
+	if !errors.As(err, &storageErr) {
+		return false
+	}
+	if errors.Is(err, storage.ErrConcurrentRowUpdate) {
+		util.WriteError(w, http.StatusConflict, "prompt favorite was modified by another request; please retry")
+		return true
+	}
+	util.WriteError(w, http.StatusServiceUnavailable, "prompt favorite storage is temporarily unavailable")
+	return true
 }
 
 func (a *App) handleProfileAssets(w http.ResponseWriter, r *http.Request) {
@@ -874,6 +887,10 @@ func (a *App) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 		case http.MethodGet:
 			response, err := a.managedUsersResponse(r)
 			if err != nil {
+				if errors.Is(err, errManagedUserUsageStatsUnavailable) {
+					util.WriteError(w, http.StatusServiceUnavailable, "用户使用统计暂时不可用，请稍后重试")
+					return
+				}
 				util.WriteError(w, http.StatusBadRequest, err.Error())
 				return
 			}
@@ -907,8 +924,11 @@ func (a *App) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 				util.WriteError(w, http.StatusBadRequest, err.Error())
 				return
 			}
-			response := a.managedUsersResponseForQuery(query)
+			response := a.managedUsersResponseAfterMutation(query)
 			if current := a.managedUser(util.Clean(item["id"])); current != nil {
+				if err := a.attachManagedUserUsage([]map[string]any{current}); err != nil {
+					response["usage_stats_available"] = false
+				}
 				item = current
 			}
 			response["item"] = item
@@ -976,8 +996,13 @@ func (a *App) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusNotFound, "user not found")
 			return
 		}
-		response := a.managedUsersResponseForQuery(query)
+		response := a.managedUsersResponseAfterMutation(query)
 		item := a.managedUser(userID)
+		if item != nil {
+			if err := a.attachManagedUserUsage([]map[string]any{item}); err != nil {
+				response["usage_stats_available"] = false
+			}
+		}
 		response["item"] = item
 		util.WriteJSON(w, http.StatusOK, response)
 	case http.MethodDelete:
@@ -998,7 +1023,7 @@ func (a *App) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusNotFound, "user not found")
 			return
 		}
-		response := a.managedUsersResponseForQuery(query)
+		response := a.managedUsersResponseAfterMutation(query)
 		util.WriteJSON(w, http.StatusOK, response)
 	default:
 		w.WriteHeader(http.StatusMethodNotAllowed)
@@ -1017,17 +1042,22 @@ type managedUsersQuery struct {
 	TotalPages int
 }
 
+var errManagedUserUsageStatsUnavailable = errors.New("managed user usage stats unavailable")
+
 func (a *App) managedUsersResponse(r *http.Request) (map[string]any, error) {
 	query, err := parseManagedUsersQuery(r)
 	if err != nil {
 		return nil, err
 	}
-	return a.managedUsersResponseForQuery(query), nil
+	return a.managedUsersResponseForQuery(query)
 }
 
-func (a *App) managedUsersResponseForQuery(query managedUsersQuery) map[string]any {
+func (a *App) managedUsersResponseForQuery(query managedUsersQuery) (map[string]any, error) {
 	items := filterManagedUsers(a.auth.ListUsers(), query)
-	a.prepareManagedUsersSortValues(items, query.SortBy)
+	usageSort := managedUsersSortUsesUsage(query.SortBy)
+	if err := a.prepareManagedUsersSortValues(items, query.SortBy); err != nil {
+		return nil, fmt.Errorf("%w: %v", errManagedUserUsageStatsUnavailable, err)
+	}
 	sortManagedUsers(items, query)
 	query.Total = len(items)
 	query.TotalPages = managedUsersTotalPages(query.Total, query.PageSize)
@@ -1043,16 +1073,36 @@ func (a *App) managedUsersResponseForQuery(query managedUsersQuery) map[string]a
 		end = query.Total
 	}
 	pageItems := items[start:end]
-	a.attachManagedUserUsage(pageItems)
-	return map[string]any{
-		"items":       pageItems,
-		"total":       query.Total,
-		"page":        query.Page,
-		"page_size":   query.PageSize,
-		"sort_by":     query.SortBy,
-		"sort_order":  query.SortOrder,
-		"total_pages": query.TotalPages,
+	usageStatsAvailable := true
+	if !usageSort {
+		usageStatsAvailable = a.attachManagedUserUsage(pageItems) == nil
 	}
+	return map[string]any{
+		"items":                 pageItems,
+		"total":                 query.Total,
+		"page":                  query.Page,
+		"page_size":             query.PageSize,
+		"sort_by":               query.SortBy,
+		"sort_order":            query.SortOrder,
+		"total_pages":           query.TotalPages,
+		"usage_stats_available": usageStatsAvailable,
+	}, nil
+}
+
+func (a *App) managedUsersResponseAfterMutation(query managedUsersQuery) map[string]any {
+	response, err := a.managedUsersResponseForQuery(query)
+	if err == nil {
+		return response
+	}
+
+	// The mutation has already committed. Return a truthful fallback page instead
+	// of turning a secondary usage-statistics failure into a retryable write error.
+	fallback := query
+	fallback.SortBy = "created_at"
+	fallback.SortOrder = "desc"
+	response, _ = a.managedUsersResponseForQuery(fallback)
+	response["usage_stats_available"] = false
+	return response
 }
 
 func (a *App) managedUser(id string) map[string]any {
@@ -1060,16 +1110,15 @@ func (a *App) managedUser(id string) map[string]any {
 	if item == nil {
 		return nil
 	}
-	a.attachManagedUserUsage([]map[string]any{item})
 	return item
 }
 
-func (a *App) attachManagedUserUsage(items []map[string]any) {
+func (a *App) attachManagedUserUsage(items []map[string]any) error {
 	userIDs := managedUserIDs(items)
 	if len(userIDs) == 0 {
-		return
+		return nil
 	}
-	a.attachManagedUserUsageStats(items, userIDs)
+	return a.attachManagedUserUsageStats(items, userIDs)
 }
 
 func managedUserIDs(items []map[string]any) []string {
@@ -1082,8 +1131,14 @@ func managedUserIDs(items []map[string]any) []string {
 	return userIDs
 }
 
-func (a *App) attachManagedUserUsageStats(items []map[string]any, userIDs []string) {
-	stats := a.logs.UserUsageStatsForUsers(14, userIDs)
+func (a *App) attachManagedUserUsageStats(items []map[string]any, userIDs []string) error {
+	if a.logs == nil {
+		return errors.New("log service is unavailable")
+	}
+	stats, err := a.logs.UserUsageStatsForUsers(14, userIDs)
+	if err != nil {
+		return err
+	}
 	for _, item := range items {
 		userID := util.Clean(item["id"])
 		usage := stats[userID]
@@ -1094,15 +1149,25 @@ func (a *App) attachManagedUserUsageStats(items []map[string]any, userIDs []stri
 			item[key] = value
 		}
 	}
+	return nil
 }
 
-func (a *App) prepareManagedUsersSortValues(items []map[string]any, sortBy string) {
+func (a *App) prepareManagedUsersSortValues(items []map[string]any, sortBy string) error {
 	if len(items) == 0 {
-		return
+		return nil
 	}
+	if managedUsersSortUsesUsage(sortBy) {
+		return a.attachManagedUserUsageStats(items, managedUserIDs(items))
+	}
+	return nil
+}
+
+func managedUsersSortUsesUsage(sortBy string) bool {
 	switch sortBy {
 	case "call_count", "quota_used", "failure_count":
-		a.attachManagedUserUsageStats(items, managedUserIDs(items))
+		return true
+	default:
+		return false
 	}
 }
 

@@ -22,6 +22,7 @@ const (
 	LogViewAll        = "all"
 	LogViewMeaningful = "meaningful"
 	LogViewBusiness   = "business"
+	redactedLogValue  = "[REDACTED]"
 )
 
 var ErrInvalidLogRetentionDays = errors.New("retention days must be between 1 and 3650")
@@ -476,12 +477,15 @@ func containsFold(value, filter string) bool {
 	return strings.Contains(strings.ToLower(value), strings.ToLower(filter))
 }
 
-func (s *LogService) UserUsageStatsForUsers(days int, userIDs []string) map[string]map[string]any {
+func (s *LogService) UserUsageStatsForUsers(days int, userIDs []string) (map[string]map[string]any, error) {
 	targets := userUsageTargetSet(userIDs)
 	if len(targets) == 0 {
-		return map[string]map[string]any{}
+		return map[string]map[string]any{}, nil
 	}
-	stats := s.cachedUserUsageStats(days)
+	stats, err := s.cachedUserUsageStats(days)
+	if err != nil {
+		return nil, err
+	}
 	out := make(map[string]map[string]any, min(len(targets), len(stats)))
 	for userID := range targets {
 		usage := stats[userID]
@@ -490,41 +494,42 @@ func (s *LogService) UserUsageStatsForUsers(days int, userIDs []string) map[stri
 		}
 		out[userID] = cloneUserUsageMap(usage)
 	}
-	return out
+	return out, nil
 }
 
-func (s *LogService) cachedUserUsageStats(days int) map[string]map[string]any {
+func (s *LogService) cachedUserUsageStats(days int) (map[string]map[string]any, error) {
 	dates := usageDates(days)
 	out := map[string]map[string]any{}
 	if len(dates) == 0 {
-		return out
+		return out, nil
 	}
 	cacheKey := userUsageStatsCacheKey(dates)
 	now := time.Now()
 	s.mu.Lock()
 	if cached, ok := s.usageStatsCache[cacheKey]; ok && now.Before(cached.expiresAt) {
 		s.mu.Unlock()
-		return cached.stats
+		return cached.stats, nil
 	}
 	s.mu.Unlock()
 
+	if s.store == nil {
+		return nil, fmt.Errorf("log storage backend is required")
+	}
 	startDate := dates[0]
 	endDate := dates[len(dates)-1]
 	byUser := map[string]*userUsageAccumulator{}
-	if s.store != nil {
-		items, err := s.store.QueryLogs(startDate, endDate, 0)
-		if err == nil {
-			for _, item := range items {
-				accumulateUserUsageLog(byUser, item, startDate, endDate)
-			}
-			for userID, acc := range byUser {
-				out[userID] = userUsageStatsMap(acc, dates)
-			}
-			s.cacheUserUsageStats(cacheKey, out, now)
-			return out
-		}
+	items, err := s.store.QueryLogs(startDate, endDate, 0)
+	if err != nil {
+		return nil, fmt.Errorf("query user usage logs: %w", err)
 	}
-	return out
+	for _, item := range items {
+		accumulateUserUsageLog(byUser, item, startDate, endDate)
+	}
+	for userID, acc := range byUser {
+		out[userID] = userUsageStatsMap(acc, dates)
+	}
+	s.cacheUserUsageStats(cacheKey, out, now)
+	return out, nil
 }
 
 func (s *LogService) cacheUserUsageStats(key string, stats map[string]map[string]any, now time.Time) {
@@ -844,8 +849,8 @@ func SanitizeLogValue(v any) any {
 }
 
 func sanitizeLogField(key string, value any) any {
-	if s, ok := value.(string); ok && sensitiveLogKey(key) {
-		return maskString(s, 10)
+	if sensitiveLogKey(key) {
+		return redactedLogValue
 	}
 	if s, ok := value.(string); ok && base64LogKey(key) {
 		return maskBase64(s)

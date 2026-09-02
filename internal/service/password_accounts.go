@@ -237,6 +237,7 @@ func (s *AuthService) LoginPassword(username, password string) (*Identity, strin
 		s.restoreAuthAccountsAfterSaveFailureLocked(previousAccounts, previousItems, err)
 		return nil, "", err
 	}
+	s.pruneLastUsedFlushAtLocked()
 	return identityForAuthItem(item), raw, nil
 }
 
