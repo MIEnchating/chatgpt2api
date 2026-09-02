@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -54,6 +55,36 @@ func saveOneImageConversationCASTest(
 		return ImageConversationRecord{}, err
 	}
 	return result.Items[0].Current, err
+}
+
+func setImageConversationStorageVersionForTest(
+	t *testing.T,
+	backend *DatabaseBackend,
+	ownerID, conversationID string,
+	storageVersion int64,
+) {
+	t.Helper()
+	ownerKey, err := imageConversationStorageKey(ownerID)
+	if err != nil {
+		t.Fatalf("imageConversationStorageKey(owner) error = %v", err)
+	}
+	conversationKey, err := imageConversationStorageKey(conversationID)
+	if err != nil {
+		t.Fatalf("imageConversationStorageKey(conversation) error = %v", err)
+	}
+	result, err := backend.db.Exec(
+		`UPDATE image_conversations SET storage_version = ? WHERE owner_key = ? AND conversation_key = ?`,
+		storageVersion,
+		ownerKey,
+		conversationKey,
+	)
+	if err != nil {
+		t.Fatalf("set storage version error = %v", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil || rows != 1 {
+		t.Fatalf("set storage version rows = (%d, %v), want (1, nil)", rows, err)
+	}
 }
 
 func TestDatabaseBackendImageConversationBatchSaveCASSingleRequest(t *testing.T) {
@@ -305,6 +336,44 @@ func TestDatabaseBackendImageConversationRepeatedDeleteIsReadOnly(t *testing.T) 
 	}
 }
 
+func TestDatabaseBackendImageConversationDeleteRejectsExhaustedStorageVersionAtomically(t *testing.T) {
+	backend := newImageConversationTestBackend(t)
+	ctx := context.Background()
+	ownerID := "owner-delete-exhausted"
+	conversationID := "conversation"
+	state, err := backend.LoadOwnerState(ctx, ownerID)
+	if err != nil {
+		t.Fatalf("LoadOwnerState() error = %v", err)
+	}
+	if _, err := saveOneImageConversationCASTest(ctx, backend, ownerID, state.Generation, 0, imageConversationTestRecord(conversationID, 1000, true)); err != nil {
+		t.Fatalf("BatchSaveCAS() error = %v", err)
+	}
+	setImageConversationStorageVersionForTest(t, backend, ownerID, conversationID, math.MaxInt64)
+	beforeState, err := backend.LoadOwnerState(ctx, ownerID)
+	if err != nil {
+		t.Fatalf("LoadOwnerState(before delete) error = %v", err)
+	}
+	beforeRecord, exists, err := backend.Load(ctx, ownerID, conversationID)
+	if err != nil || !exists {
+		t.Fatalf("Load(before delete) = (%#v, %v, %v)", beforeRecord, exists, err)
+	}
+
+	removed, err := backend.Delete(ctx, ownerID, conversationID, 2000)
+	if removed || err == nil || err.Error() != "image conversation storage version is exhausted" {
+		t.Fatalf("Delete() = (%v, %v), want exhausted storage version error", removed, err)
+	}
+	afterState, err := backend.LoadOwnerState(ctx, ownerID)
+	if err != nil || afterState != beforeState {
+		t.Fatalf("LoadOwnerState(after delete) = (%#v, %v), want %#v", afterState, err, beforeState)
+	}
+	afterRecord, exists, err := backend.Load(ctx, ownerID, conversationID)
+	if err != nil || !exists || afterRecord.StorageVersion != beforeRecord.StorageVersion ||
+		afterRecord.DeletedAtMillis != beforeRecord.DeletedAtMillis || afterRecord.Active != beforeRecord.Active ||
+		string(afterRecord.Summary) != string(beforeRecord.Summary) || string(afterRecord.Data) != string(beforeRecord.Data) {
+		t.Fatalf("Load(after delete) = (%#v, %v, %v), want unchanged %#v", afterRecord, exists, err, beforeRecord)
+	}
+}
+
 func TestDatabaseBackendImageConversationClearInvalidatesGenerationAndData(t *testing.T) {
 	backend := newImageConversationTestBackend(t)
 	ctx := context.Background()
@@ -339,6 +408,97 @@ func TestDatabaseBackendImageConversationClearInvalidatesGenerationAndData(t *te
 	}
 	if _, err := saveOneImageConversationCASTest(ctx, backend, "owner-clear", cleared.Generation, 0, imageConversationTestRecord("new", 6000, false)); err != nil {
 		t.Fatalf("BatchSaveCAS(new after clear) error = %v", err)
+	}
+}
+
+func TestDatabaseBackendImageConversationClearRejectsExhaustedStorageVersionAtomically(t *testing.T) {
+	backend := newImageConversationTestBackend(t)
+	ctx := context.Background()
+	ownerID := "owner-clear-exhausted"
+	state, err := backend.LoadOwnerState(ctx, ownerID)
+	if err != nil {
+		t.Fatalf("LoadOwnerState() error = %v", err)
+	}
+	for _, id := range []string{"normal", "exhausted"} {
+		if _, err := saveOneImageConversationCASTest(ctx, backend, ownerID, state.Generation, 0, imageConversationTestRecord(id, 1000, true)); err != nil {
+			t.Fatalf("BatchSaveCAS(%q) error = %v", id, err)
+		}
+	}
+	setImageConversationStorageVersionForTest(t, backend, ownerID, "exhausted", math.MaxInt64)
+	beforeState, err := backend.LoadOwnerState(ctx, ownerID)
+	if err != nil {
+		t.Fatalf("LoadOwnerState(before clear) error = %v", err)
+	}
+	beforeNormal, _, err := backend.Load(ctx, ownerID, "normal")
+	if err != nil {
+		t.Fatalf("Load(normal before clear) error = %v", err)
+	}
+	beforeExhausted, _, err := backend.Load(ctx, ownerID, "exhausted")
+	if err != nil {
+		t.Fatalf("Load(exhausted before clear) error = %v", err)
+	}
+
+	cleared, err := backend.Clear(ctx, ownerID, "2026-09-02T10:00:00Z", 2000)
+	if err == nil || err.Error() != "image conversation storage version is exhausted" {
+		t.Fatalf("Clear() = (%#v, %v), want exhausted storage version error", cleared, err)
+	}
+	afterState, err := backend.LoadOwnerState(ctx, ownerID)
+	if err != nil || afterState != beforeState {
+		t.Fatalf("LoadOwnerState(after clear) = (%#v, %v), want %#v", afterState, err, beforeState)
+	}
+	for id, before := range map[string]ImageConversationRecord{"normal": beforeNormal, "exhausted": beforeExhausted} {
+		after, exists, loadErr := backend.Load(ctx, ownerID, id)
+		if loadErr != nil || !exists || after.StorageVersion != before.StorageVersion ||
+			after.DeletedAtMillis != before.DeletedAtMillis || after.Active != before.Active ||
+			string(after.Summary) != string(before.Summary) || string(after.Data) != string(before.Data) {
+			t.Fatalf("Load(%q after clear) = (%#v, %v, %v), want unchanged %#v", id, after, exists, loadErr, before)
+		}
+	}
+}
+
+func TestDatabaseBackendImageConversationClearDoesNotRewriteExistingTombstones(t *testing.T) {
+	backend := newImageConversationTestBackend(t)
+	ctx := context.Background()
+	ownerID := "owner-clear-tombstones"
+	state, err := backend.LoadOwnerState(ctx, ownerID)
+	if err != nil {
+		t.Fatalf("LoadOwnerState() error = %v", err)
+	}
+	if _, err := saveOneImageConversationCASTest(ctx, backend, ownerID, state.Generation, 0, imageConversationTestRecord("deleted", 1000, true)); err != nil {
+		t.Fatalf("BatchSaveCAS(deleted) error = %v", err)
+	}
+	removed, err := backend.Delete(ctx, ownerID, "deleted", 2000)
+	if err != nil || !removed {
+		t.Fatalf("Delete() = (%v, %v)", removed, err)
+	}
+	setImageConversationStorageVersionForTest(t, backend, ownerID, "deleted", math.MaxInt64)
+	beforeTombstone, exists, err := backend.Load(ctx, ownerID, "deleted")
+	if err != nil || !exists {
+		t.Fatalf("Load(tombstone before clear) = (%#v, %v, %v)", beforeTombstone, exists, err)
+	}
+	currentState, err := backend.LoadOwnerState(ctx, ownerID)
+	if err != nil {
+		t.Fatalf("LoadOwnerState(after delete) error = %v", err)
+	}
+	if _, err := saveOneImageConversationCASTest(ctx, backend, ownerID, currentState.Generation, 0, imageConversationTestRecord("live", 3000, true)); err != nil {
+		t.Fatalf("BatchSaveCAS(live) error = %v", err)
+	}
+
+	cleared, err := backend.Clear(ctx, ownerID, "2026-09-02T10:00:00Z", 4000)
+	if err != nil {
+		t.Fatalf("Clear() error = %v", err)
+	}
+	afterTombstone, exists, err := backend.Load(ctx, ownerID, "deleted")
+	if err != nil || !exists || afterTombstone.StorageVersion != beforeTombstone.StorageVersion ||
+		afterTombstone.DeletedAtMillis != beforeTombstone.DeletedAtMillis {
+		t.Fatalf("Load(tombstone after clear) = (%#v, %v, %v), want unchanged %#v", afterTombstone, exists, err, beforeTombstone)
+	}
+	live, exists, err := backend.Load(ctx, ownerID, "live")
+	if err != nil || !exists || live.StorageVersion != 2 || live.DeletedAtMillis != 4000 || live.Active || len(live.Data) != 0 {
+		t.Fatalf("Load(live after clear) = (%#v, %v, %v)", live, exists, err)
+	}
+	if cleared.Generation != currentState.Generation+1 {
+		t.Fatalf("Clear() generation = %d, want %d", cleared.Generation, currentState.Generation+1)
 	}
 }
 

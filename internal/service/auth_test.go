@@ -46,12 +46,26 @@ type coordinatedBootstrapAuthBackend struct {
 
 func (b *coordinatedBootstrapAuthBackend) SaveJSONDocument(name string, value any) error {
 	if name == passwordAccountsDocumentName {
-		b.coordinateSave.Do(func() {
-			b.saveReady <- struct{}{}
-			<-b.saveRelease
-		})
+		b.waitForSaveRelease()
 	}
 	return b.DatabaseBackend.SaveJSONDocument(name, value)
+}
+
+func (b *coordinatedBootstrapAuthBackend) SaveAuthState(items []map[string]any, documents map[string]any) error {
+	b.waitForSaveRelease()
+	return b.DatabaseBackend.SaveAuthState(items, documents)
+}
+
+func (b *coordinatedBootstrapAuthBackend) SaveAuthKeys(items []map[string]any) error {
+	b.waitForSaveRelease()
+	return b.DatabaseBackend.SaveAuthKeys(items)
+}
+
+func (b *coordinatedBootstrapAuthBackend) waitForSaveRelease() {
+	b.coordinateSave.Do(func() {
+		b.saveReady <- struct{}{}
+		<-b.saveRelease
+	})
 }
 
 type alwaysConflictingBootstrapAuthStorage struct {
@@ -67,6 +81,22 @@ func (s *alwaysConflictingBootstrapAuthStorage) SaveJSONDocument(string, any) er
 type bootstrapAdminCallResult struct {
 	result BootstrapAdminResult
 	err    error
+}
+
+type newAPISessionCallResult struct {
+	identity *Identity
+	token    string
+	err      error
+}
+
+type updateUserCallResult struct {
+	user map[string]any
+	err  error
+}
+
+type deleteRoleCallResult struct {
+	deleted bool
+	err     error
 }
 
 func (s *failingAuthStorage) LoadAccounts() ([]map[string]any, error) { return nil, nil }
@@ -92,7 +122,7 @@ func (s *failingAuthStorage) SaveAuthKeys(items []map[string]any) error {
 }
 
 func TestAuthServiceCreatesSub2APISessionIdentity(t *testing.T) {
-	auth := newTestAuthService(t, &failingAuthStorage{})
+	auth := newTestAuthService(t, &failingAtomicAuthStorage{})
 	identity, raw, err := auth.UpsertNewAPISession(NewAPIUser{
 		ID:            42,
 		Username:      "alice",
@@ -115,6 +145,188 @@ func TestAuthServiceCreatesSub2APISessionIdentity(t *testing.T) {
 	}
 }
 
+func TestAuthServiceConcurrentNewAPISessionPersistsOneToken(t *testing.T) {
+	first, second, saveReady, releaseFirst, releaseSecond := newCoordinatedBootstrapAuthServices(t)
+	user := NewAPIUser{ID: 42, Username: "alice", DisplayName: "Alice"}
+	firstResult := make(chan newAPISessionCallResult, 1)
+	secondResult := make(chan newAPISessionCallResult, 1)
+
+	go func() {
+		identity, token, err := first.UpsertNewAPISession(user)
+		firstResult <- newAPISessionCallResult{identity: identity, token: token, err: err}
+	}()
+	go func() {
+		identity, token, err := second.UpsertNewAPISession(user)
+		secondResult <- newAPISessionCallResult{identity: identity, token: token, err: err}
+	}()
+
+	waitForAuthTestValue(t, saveReady)
+	waitForAuthTestValue(t, saveReady)
+	releaseFirst <- struct{}{}
+	committed := waitForAuthTestValue(t, firstResult)
+	if committed.err != nil || committed.identity == nil || committed.token == "" {
+		t.Fatalf("first UpsertNewAPISession() = (%#v, %q, %v), want committed session", committed.identity, committed.token, committed.err)
+	}
+
+	releaseSecond <- struct{}{}
+	conflicted := waitForAuthTestValue(t, secondResult)
+	if !errors.Is(conflicted.err, storage.ErrConcurrentRowUpdate) || conflicted.identity != nil || conflicted.token != "" {
+		t.Fatalf("second UpsertNewAPISession() = (%#v, %q, %v), want persistence conflict", conflicted.identity, conflicted.token, conflicted.err)
+	}
+	if identity := second.Authenticate(committed.token); identity == nil || identity.ID != committed.identity.ID {
+		t.Fatalf("Authenticate(committed token) = %#v", identity)
+	}
+	ownerSessions := 0
+	for _, item := range second.items {
+		if util.Clean(item["provider"]) == AuthProviderNewAPI && util.Clean(item["owner_id"]) == committed.identity.ID {
+			ownerSessions++
+			if hash := util.Clean(item["key_hash"]); hash != util.SHA256Hex(committed.token) {
+				t.Fatalf("persisted session hash = %q, want committed token hash", hash)
+			}
+		}
+	}
+	if ownerSessions != 1 {
+		t.Fatalf("persisted owner sessions = %d, items = %#v", ownerSessions, second.items)
+	}
+}
+
+func TestAuthServiceConcurrentNewAPISessionsForDifferentOwnersDoNotConflict(t *testing.T) {
+	databaseURL := "sqlite:///" + filepath.ToSlash(filepath.Join(t.TempDir(), "different-owners.db"))
+	first, second, saveReady, releaseFirst, releaseSecond := newCoordinatedAuthServices(t, databaseURL)
+	firstResult := make(chan newAPISessionCallResult, 1)
+	secondResult := make(chan newAPISessionCallResult, 1)
+	go func() {
+		identity, token, err := first.UpsertNewAPISession(NewAPIUser{ID: 1, Username: "alice"})
+		firstResult <- newAPISessionCallResult{identity: identity, token: token, err: err}
+	}()
+	go func() {
+		identity, token, err := second.UpsertNewAPISession(NewAPIUser{ID: 2, Username: "bob"})
+		secondResult <- newAPISessionCallResult{identity: identity, token: token, err: err}
+	}()
+	waitForAuthTestValue(t, saveReady)
+	waitForAuthTestValue(t, saveReady)
+	releaseFirst <- struct{}{}
+	releaseSecond <- struct{}{}
+	for index, result := range []newAPISessionCallResult{
+		waitForAuthTestValue(t, firstResult),
+		waitForAuthTestValue(t, secondResult),
+	} {
+		if result.err != nil || result.identity == nil || result.token == "" {
+			t.Fatalf("UpsertNewAPISession(result %d) = (%#v, %q, %v)", index, result.identity, result.token, result.err)
+		}
+	}
+
+	verifierBackend, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatalf("NewDatabaseBackend(verifier) error = %v", err)
+	}
+	t.Cleanup(func() { _ = verifierBackend.Close() })
+	verifier := newTestAuthService(t, verifierBackend)
+	if users := verifier.ListUsers(); len(users) != 2 {
+		t.Fatalf("persisted users = %#v, want two external owners", users)
+	}
+}
+
+func TestAuthServiceDeleteRoleAndAssignRoleAreSerializedAcrossInstances(t *testing.T) {
+	for _, testCase := range []struct {
+		name        string
+		localUser   bool
+		deleteFirst bool
+	}{
+		{name: "external user delete commits first", deleteFirst: true},
+		{name: "external user assignment commits first", deleteFirst: false},
+		{name: "local user delete commits first", localUser: true, deleteFirst: true},
+		{name: "local user assignment commits first", localUser: true, deleteFirst: false},
+	} {
+		t.Run(testCase.name, func(t *testing.T) {
+			databaseURL := "sqlite:///" + filepath.ToSlash(filepath.Join(t.TempDir(), "role-race.db"))
+			seedBackend, err := storage.NewDatabaseBackend(databaseURL)
+			if err != nil {
+				t.Fatalf("NewDatabaseBackend(seed) error = %v", err)
+			}
+			t.Cleanup(func() { _ = seedBackend.Close() })
+			seed := newTestAuthService(t, seedBackend)
+			role, err := seed.CreateRole(map[string]any{"name": "Reviewer"})
+			if err != nil {
+				t.Fatalf("CreateRole() error = %v", err)
+			}
+			roleID := util.Clean(role["id"])
+			userID := ""
+			if testCase.localUser {
+				user, createErr := seed.CreatePasswordUser("reviewer", "Password123!", "Reviewer", DefaultManagedRoleID, true)
+				if createErr != nil {
+					t.Fatalf("CreatePasswordUser() error = %v", createErr)
+				}
+				userID = util.Clean(user["id"])
+			} else {
+				identity, _, sessionErr := seed.UpsertNewAPISession(NewAPIUser{ID: 7, Username: "reviewer"})
+				if sessionErr != nil {
+					t.Fatalf("UpsertNewAPISession() error = %v", sessionErr)
+				}
+				userID = identity.ID
+			}
+
+			deleter, updater, saveReady, releaseDelete, releaseUpdate := newCoordinatedAuthServices(t, databaseURL)
+			deleteResult := make(chan deleteRoleCallResult, 1)
+			updateResult := make(chan updateUserCallResult, 1)
+			go func() {
+				deleted, err := deleter.DeleteRole(roleID)
+				deleteResult <- deleteRoleCallResult{deleted: deleted, err: err}
+			}()
+			go func() {
+				user, err := updater.UpdateUser(userID, map[string]any{"role_id": roleID})
+				updateResult <- updateUserCallResult{user: user, err: err}
+			}()
+
+			waitForAuthTestValue(t, saveReady)
+			waitForAuthTestValue(t, saveReady)
+			if testCase.deleteFirst {
+				releaseDelete <- struct{}{}
+				deleted := waitForAuthTestValue(t, deleteResult)
+				if deleted.err != nil || !deleted.deleted {
+					t.Fatalf("DeleteRole() = (%v, %v), want success", deleted.deleted, deleted.err)
+				}
+				releaseUpdate <- struct{}{}
+				updated := waitForAuthTestValue(t, updateResult)
+				if !errors.Is(updated.err, storage.ErrConcurrentRowUpdate) || updated.user != nil {
+					t.Fatalf("UpdateUser() = (%#v, %v), want persistence conflict", updated.user, updated.err)
+				}
+				assertManagedUserRoleReference(t, updater, userID, DefaultManagedRoleID, false, roleID)
+				return
+			}
+
+			releaseUpdate <- struct{}{}
+			updated := waitForAuthTestValue(t, updateResult)
+			if updated.err != nil || util.Clean(updated.user["role_id"]) != roleID {
+				t.Fatalf("UpdateUser() = (%#v, %v), want assigned role %q", updated.user, updated.err, roleID)
+			}
+			releaseDelete <- struct{}{}
+			deleted := waitForAuthTestValue(t, deleteResult)
+			if !errors.Is(deleted.err, storage.ErrConcurrentRowUpdate) || deleted.deleted {
+				t.Fatalf("DeleteRole() = (%v, %v), want persistence conflict", deleted.deleted, deleted.err)
+			}
+			assertManagedUserRoleReference(t, deleter, userID, roleID, true, roleID)
+		})
+	}
+}
+
+func assertManagedUserRoleReference(t *testing.T, auth *AuthService, userID, wantRoleID string, wantRoleExists bool, racedRoleID string) {
+	t.Helper()
+	if got := auth.RoleExists(racedRoleID); got != wantRoleExists {
+		t.Fatalf("RoleExists(%q) = %v, want %v", racedRoleID, got, wantRoleExists)
+	}
+	for _, user := range auth.ListUsers() {
+		if util.Clean(user["id"]) != userID {
+			continue
+		}
+		if roleID := util.Clean(user["role_id"]); roleID != wantRoleID {
+			t.Fatalf("user role_id = %q, want %q; user = %#v", roleID, wantRoleID, user)
+		}
+		return
+	}
+	t.Fatalf("managed user %q not found", userID)
+}
+
 func TestAuthServiceNewAPISessionRoleIsStableAcrossRefresh(t *testing.T) {
 	for _, testCase := range []struct {
 		name       string
@@ -126,7 +338,7 @@ func TestAuthServiceNewAPISessionRoleIsStableAcrossRefresh(t *testing.T) {
 		{name: "admin", admin: true, wantRole: AuthRoleAdmin, wantRoleID: AuthRoleAdmin},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
-			auth := newTestAuthService(t, &failingAuthStorage{})
+			auth := newTestAuthService(t, &failingAtomicAuthStorage{})
 			user := NewAPIUser{ID: 42, Username: "alice", DisplayName: "Alice", IsAdmin: testCase.admin}
 			first, _, err := auth.UpsertNewAPISession(user)
 			if err != nil {
@@ -190,7 +402,7 @@ func TestAuthServiceUpdateUserClearingDisplayNameSynchronizesActiveSession(t *te
 
 func TestAuthServicePrunesLastUsedFlushesAcrossSessionLifecycle(t *testing.T) {
 	t.Run("external rotation revoke and delete", func(t *testing.T) {
-		auth := newTestAuthService(t, &failingAuthStorage{})
+		auth := newTestAuthService(t, &failingAtomicAuthStorage{})
 		user := NewAPIUser{ID: 42, Username: "alice", DisplayName: "Alice"}
 
 		_, firstToken, err := auth.UpsertNewAPISession(user)
@@ -263,7 +475,7 @@ func TestAuthServicePrunesLastUsedFlushesAcrossSessionLifecycle(t *testing.T) {
 	})
 
 	t.Run("conflict reload", func(t *testing.T) {
-		backend := &failingAuthStorage{}
+		backend := &failingAtomicAuthStorage{}
 		auth := newTestAuthService(t, backend)
 		_, token, err := auth.UpsertNewAPISession(NewAPIUser{ID: 7, Username: "reload-user"})
 		if err != nil {
@@ -458,6 +670,36 @@ func TestAuthServiceRemovesNonSessionCredentialsOnLoad(t *testing.T) {
 	}
 }
 
+func TestAuthServiceDeduplicatesStoredSessionsByOwnerOnLoad(t *testing.T) {
+	owner := AuthOwner{ID: "newapi:42", Name: "Alice", Provider: AuthProviderNewAPI}
+	olderToken := "sess-older"
+	newerToken := "sess-newer"
+	older := newAuthItem(AuthRoleUser, "older", owner, olderToken)
+	older["id"] = "credential-older"
+	older["updated_at"] = "2026-08-01T00:00:00Z"
+	newer := newAuthItem(AuthRoleUser, "newer", owner, newerToken)
+	newer["id"] = "credential-newer"
+	newer["updated_at"] = "2026-08-02T00:00:00Z"
+	invalid := util.CopyMap(newer)
+	invalid["id"] = "credential-invalid"
+	invalid["updated_at"] = "2026-08-03T00:00:00Z"
+	invalid["key_hash"] = ""
+	backend := &failingAtomicAuthStorage{failingAuthStorage: failingAuthStorage{
+		items: []map[string]any{older, invalid, newer},
+	}}
+
+	auth := newTestAuthService(t, backend)
+	if len(backend.items) != 1 || util.Clean(backend.items[0]["id"]) != "credential-newer" {
+		t.Fatalf("sanitized stored sessions = %#v, want latest valid session", backend.items)
+	}
+	if identity := auth.Authenticate(olderToken); identity != nil {
+		t.Fatalf("older duplicate session still authenticates: %#v", identity)
+	}
+	if identity := auth.Authenticate(newerToken); identity == nil || identity.CredentialID != "credential-newer" {
+		t.Fatalf("Authenticate(newer token) = %#v", identity)
+	}
+}
+
 func (s *failingAuthStorage) HealthCheck() map[string]any { return map[string]any{} }
 func (s *failingAuthStorage) Info() map[string]any        { return map[string]any{} }
 
@@ -604,6 +846,11 @@ func TestAuthServiceEnsureBootstrapAdminBoundsConflictRetries(t *testing.T) {
 func newCoordinatedBootstrapAuthServices(t *testing.T) (*AuthService, *AuthService, <-chan struct{}, chan<- struct{}, chan<- struct{}) {
 	t.Helper()
 	databaseURL := "sqlite:///" + filepath.ToSlash(filepath.Join(t.TempDir(), "bootstrap.db"))
+	return newCoordinatedAuthServices(t, databaseURL)
+}
+
+func newCoordinatedAuthServices(t *testing.T, databaseURL string) (*AuthService, *AuthService, <-chan struct{}, chan<- struct{}, chan<- struct{}) {
+	t.Helper()
 	firstDatabase, err := storage.NewDatabaseBackend(databaseURL)
 	if err != nil {
 		t.Fatalf("NewDatabaseBackend(first) error = %v", err)
@@ -667,12 +914,24 @@ func (s *failingAtomicAuthStorage) DeleteJSONDocument(name string) error {
 	return nil
 }
 
-func (s *failingAtomicAuthStorage) SaveAuthKeysAndJSONDocument(items []map[string]any, name string, value any) error {
+func (s *failingAtomicAuthStorage) SaveAuthState(items []map[string]any, documents map[string]any) error {
 	if s.failAtomic {
 		return errors.New("atomic auth storage unavailable")
+	}
+	previousItems := cloneAuthItems(s.items)
+	previousDocuments := make(map[string]any, len(s.documents))
+	for name, value := range s.documents {
+		previousDocuments[name] = value
 	}
 	if err := s.SaveAuthKeys(items); err != nil {
 		return err
 	}
-	return s.SaveJSONDocument(name, value)
+	for name, value := range documents {
+		if err := s.SaveJSONDocument(name, value); err != nil {
+			s.items = previousItems
+			s.documents = previousDocuments
+			return err
+		}
+	}
+	return nil
 }

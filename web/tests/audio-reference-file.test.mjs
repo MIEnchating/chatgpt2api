@@ -92,3 +92,37 @@ test("audio reference metadata rejects decoding errors and releases browser reso
   assert.equal(harness.calls.load, 1);
   assert.deepEqual(harness.calls.revokedURLs, ["blob:audio-reference"]);
 });
+
+test("audio cleanup failures cannot replace a successful metadata result", async () => {
+  const harness = createInspectionHarness();
+  harness.environment.clearScheduledTimeout = () => {
+    throw new Error("timer already cleared");
+  };
+  harness.audio.removeAttribute = () => {
+    throw new Error("audio element already detached");
+  };
+  harness.environment.revokeObjectURL = () => {
+    throw new Error("object URL already revoked");
+  };
+  const pending = inspectAudioReferenceFile({ size: 2048 }, harness.environment);
+
+  assert.doesNotThrow(() => harness.audio.onloadedmetadata());
+  assert.deepEqual(await pending, { durationMs: 3250, bytes: 2048 });
+  assert.equal(harness.audio.onloadedmetadata, null);
+  assert.equal(harness.audio.onerror, null);
+});
+
+test("audio timer setup failures still release browser resources", async () => {
+  const harness = createInspectionHarness();
+  harness.environment.scheduleTimeout = () => {
+    throw new Error("timer unavailable");
+  };
+  const pending = inspectAudioReferenceFile({ size: 2048 }, harness.environment);
+
+  await assert.rejects(pending, /请确认文件编码可用/);
+  assert.deepEqual(harness.calls.removedAttributes, ["src"]);
+  assert.equal(harness.calls.load, 1);
+  assert.deepEqual(harness.calls.revokedURLs, ["blob:audio-reference"]);
+  assert.equal(harness.audio.onloadedmetadata, null);
+  assert.equal(harness.audio.onerror, null);
+});

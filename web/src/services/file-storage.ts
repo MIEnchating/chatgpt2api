@@ -108,7 +108,11 @@ export function inspectVideoBlobMetadata(
 
     const cleanup = () => {
       if (timeoutHandle !== null) {
-        environment.clearScheduledTimeout(timeoutHandle);
+        try {
+          environment.clearScheduledTimeout(timeoutHandle);
+        } catch {
+          // Timer cleanup must not change the inspection result.
+        }
         timeoutHandle = null;
       }
       video.onloadedmetadata = null;
@@ -144,11 +148,11 @@ export function inspectVideoBlobMetadata(
       });
     };
     video.onerror = () => settle({});
-    timeoutHandle = environment.scheduleTimeout(
-      () => settle({}),
-      VIDEO_METADATA_TIMEOUT_MS,
-    );
     try {
+      timeoutHandle = environment.scheduleTimeout(
+        () => settle({}),
+        VIDEO_METADATA_TIMEOUT_MS,
+      );
       video.src = url;
     } catch {
       settle({});

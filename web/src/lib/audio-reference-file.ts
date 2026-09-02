@@ -37,14 +37,26 @@ export function inspectAudioReferenceFile(
 
     const cleanup = () => {
       if (timeoutHandle !== null) {
-        environment.clearScheduledTimeout(timeoutHandle);
+        try {
+          environment.clearScheduledTimeout(timeoutHandle);
+        } catch {
+          // Timer cleanup must not change the inspection result.
+        }
         timeoutHandle = null;
       }
       audio.onloadedmetadata = null;
       audio.onerror = null;
-      audio.removeAttribute("src");
-      audio.load();
-      environment.revokeObjectURL(url);
+      try {
+        audio.removeAttribute("src");
+        audio.load();
+      } catch {
+        // A detached audio element may already be unavailable during cleanup.
+      }
+      try {
+        environment.revokeObjectURL(url);
+      } catch {
+        // URL cleanup failures must not leave metadata inspection pending.
+      }
     };
     const settle = (complete: () => void) => {
       if (settled) return;
@@ -65,10 +77,10 @@ export function inspectAudioReferenceFile(
     audio.onerror = () => {
       settle(() => reject(new Error("无法读取参考音频，请确认文件编码可用")));
     };
-    timeoutHandle = environment.scheduleTimeout(() => {
-      settle(() => reject(new Error("读取参考音频信息超时，请重试")));
-    }, AUDIO_REFERENCE_METADATA_TIMEOUT_MS);
     try {
+      timeoutHandle = environment.scheduleTimeout(() => {
+        settle(() => reject(new Error("读取参考音频信息超时，请重试")));
+      }, AUDIO_REFERENCE_METADATA_TIMEOUT_MS);
       audio.src = url;
     } catch {
       settle(() => reject(new Error("无法读取参考音频，请确认文件编码可用")));

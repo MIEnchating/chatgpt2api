@@ -44,6 +44,60 @@ export type WorkflowTask = {
   unit_errors?: Record<string, string>;
 };
 
+type RestorableWorkflowTask = CreationTask & {
+  workflow_context: WorkflowTaskContext;
+};
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isExecutionSnapshot(value: unknown): value is WorkflowExecutionSnapshot {
+  if (!isObject(value)) return false;
+  return typeof value.stream === "boolean"
+    && typeof value.partial_images === "number"
+    && Number.isFinite(value.partial_images)
+    && Number.isInteger(value.partial_images)
+    && value.partial_images >= 0
+    && typeof value.response_format_b64_json === "boolean"
+    && typeof value.codex_cli_compatibility === "boolean"
+    && (value.token_name === undefined || typeof value.token_name === "string");
+}
+
+function isGenerationConfig(value: unknown): value is WorkflowGenerationConfig {
+  if (!isObject(value)) return false;
+  const stringFields = [
+    "model",
+    "image_model",
+    "quality",
+    "size",
+    "count",
+    "timeout",
+    "system_prompt",
+    "prompt_template",
+    "negative_prompt",
+  ];
+  return stringFields.every((field) => typeof value[field] === "string")
+    && (value.api_mode === "images" || value.api_mode === "responses" || value.api_mode === "chat");
+}
+
+function isRestorableWorkflowTask(task: CreationTask): task is RestorableWorkflowTask {
+  const context = task.workflow_context;
+  return isObject(context)
+    && typeof context.workflow_id === "string"
+    && Boolean(context.workflow_id)
+    && typeof context.workflow_name === "string"
+    && Boolean(context.workflow_name)
+    && typeof context.prompt === "string"
+    && isObject(context.inputs)
+    && Array.isArray(context.references)
+    && isGenerationConfig(context.config)
+    && isExecutionSnapshot(context.execution)
+    && typeof context.count === "number"
+    && Number.isFinite(context.count)
+    && context.count > 0;
+}
+
 export function prependWorkflowTask(
   tasks: readonly WorkflowTask[],
   task: WorkflowTask,
@@ -79,10 +133,10 @@ function taskTimestamp(value: string, fallback: number) {
 }
 
 export function restoreWorkflowTasks(tasks: CreationTask[]): WorkflowTask[] {
-  const groups = new Map<string, CreationTask[]>();
+  const groups = new Map<string, RestorableWorkflowTask[]>();
   for (const task of tasks) {
-    const context = task.workflow_context as Partial<WorkflowTaskContext> | undefined;
-    if (!context?.workflow_id || !context.workflow_name) continue;
+    if (!isRestorableWorkflowTask(task)) continue;
+    const context = task.workflow_context;
     const groupID = context.batch_task_id || task.id;
     groups.set(groupID, [...(groups.get(groupID) || []), task]);
   }
@@ -91,15 +145,15 @@ export function restoreWorkflowTasks(tasks: CreationTask[]): WorkflowTask[] {
     .map(([groupID, group]) => {
       const ordered = [...group].sort(
         (left, right) =>
-          ((left.workflow_context as Partial<WorkflowTaskContext> | undefined)?.batch_index || 1) -
-          ((right.workflow_context as Partial<WorkflowTaskContext> | undefined)?.batch_index || 1),
+          (left.workflow_context.batch_index || 1) -
+          (right.workflow_context.batch_index || 1),
       );
       const first = ordered[0];
-      const context = first.workflow_context as WorkflowTaskContext;
+      const context = first.workflow_context;
       const statuses = ordered.map(creationTaskStatus);
       const expectedCount = Math.max(
         ordered.length,
-        ...ordered.map((task) => Number((task.workflow_context as Partial<WorkflowTaskContext> | undefined)?.batch_count) || 0),
+        ...ordered.map((task) => Number(task.workflow_context.batch_count) || 0),
       );
       const status: WorkflowTask["status"] = statuses.includes("running") || ordered.length < expectedCount
         ? "running"
@@ -115,23 +169,15 @@ export function restoreWorkflowTasks(tasks: CreationTask[]): WorkflowTask[] {
             ...ordered.map((task) => taskTimestamp(task.updated_at, startedAt)),
           );
       const images = ordered.flatMap((task, fallbackIndex) => {
-        const context = task.workflow_context as Partial<WorkflowTaskContext> | undefined;
-        const index = Math.max(0, Number(context?.batch_index || fallbackIndex + 1) - 1);
+        const context = task.workflow_context;
+        const index = Math.max(0, Number(context.batch_index || fallbackIndex + 1) - 1);
         return creationTaskImages(task).map((image) => ({
           ...image,
           index,
-          ...(context?.series_title ? { title: context.series_title } : {}),
-          ...(context?.prompt ? { prompt: context.prompt } : {}),
+          ...(context.series_title ? { title: context.series_title } : {}),
+          ...(context.prompt ? { prompt: context.prompt } : {}),
         }));
       });
-      const legacyConfig = context.config as WorkflowGenerationConfig & Record<string, unknown>;
-      const execution: WorkflowExecutionSnapshot = context.execution || {
-        stream: legacyConfig.stream_images === "1" || legacyConfig.stream_images === "true",
-        partial_images: Number(legacyConfig.stream_partial_images) || 0,
-        response_format_b64_json: legacyConfig.response_format_b64_json === "1" || legacyConfig.response_format_b64_json === "true",
-        codex_cli_compatibility: legacyConfig.codex_cli === "1" || legacyConfig.codex_cli === "true",
-        token_name: String(legacyConfig.image_channel_id || "") || undefined,
-      };
       return {
         id: groupID,
         workflow_id: context.workflow_id,
@@ -153,20 +199,18 @@ export function restoreWorkflowTasks(tasks: CreationTask[]): WorkflowTask[] {
         inputs: context.inputs || {},
         references: context.references || [],
         model: String(first.model || context.config.image_model || context.config.model || ""),
-        api_mode: context.config.api_mode || "images",
+        api_mode: context.config.api_mode,
         config: context.config,
-        execution,
-        count: expectedCount || context.count || ordered.length,
+        execution: context.execution,
+        count: expectedCount,
         backend_task_ids: ordered.map((task) => task.id),
         completed_units: ordered.flatMap((task, fallbackIndex) => {
           if (creationTaskStatus(task) === "running") return [];
-          const taskContext = task.workflow_context as Partial<WorkflowTaskContext> | undefined;
-          return [Math.max(1, Number(taskContext?.batch_index || fallbackIndex + 1))];
+          return [Math.max(1, Number(task.workflow_context.batch_index || fallbackIndex + 1))];
         }),
         unit_errors: Object.fromEntries(ordered.flatMap((task, fallbackIndex) => {
           if (creationTaskStatus(task) !== "failed") return [];
-          const taskContext = task.workflow_context as Partial<WorkflowTaskContext> | undefined;
-          const index = Math.max(1, Number(taskContext?.batch_index || fallbackIndex + 1));
+          const index = Math.max(1, Number(task.workflow_context.batch_index || fallbackIndex + 1));
           return [[String(index), task.error?.trim() || "任务执行失败"]];
         })),
       } satisfies WorkflowTask;

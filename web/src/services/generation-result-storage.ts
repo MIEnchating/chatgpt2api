@@ -1,7 +1,8 @@
 import type { CreationTask, CreationTaskData } from "@/lib/api";
+import { AUTH_SESSION_CHANGE_EVENT } from "@/lib/auth-session";
 import { isManagedImageURL } from "@/lib/authenticated-image";
 import { upsertMyAsset, type MyAsset } from "@/lib/my-assets";
-import { AUTH_SESSION_CHANGE_EVENT, getCachedAuthSession } from "@/lib/session";
+import { getCachedAuthSession } from "@/lib/session";
 import { uploadAssetMediaFile } from "@/services/file-storage";
 import { uploadImage } from "@/services/image-storage";
 

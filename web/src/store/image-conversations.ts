@@ -49,7 +49,8 @@ import type {
   StoredReferenceImage,
 } from "@/lib/image-conversation-types";
 import { normalizeStoredVideoSeconds } from "@/lib/video-request-normalizer";
-import { AUTH_SESSION_CHANGE_EVENT, getCachedAuthSession, getVerifiedAuthSession } from "@/lib/session";
+import { AUTH_SESSION_CHANGE_EVENT } from "@/lib/auth-session";
+import { getCachedAuthSession, getVerifiedAuthSession } from "@/lib/session";
 import {
   classifyImageConversationMergeAcknowledgements,
   enqueueScopedWrite,

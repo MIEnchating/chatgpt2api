@@ -43,7 +43,9 @@ func TestDatabaseBackendStoresDocumentsAndLogs(t *testing.T) {
 	if err := backend.SaveAccounts([]map[string]any{{"access_token": "token-1", "type": "Plus"}}); err != nil {
 		t.Fatalf("SaveAccounts() error = %v", err)
 	}
-	if err := backend.SaveAuthKeys([]map[string]any{{"id": "key-1", "key": "sk-test"}}); err != nil {
+	if err := backend.SaveAuthKeys([]map[string]any{{
+		"id": "key-1", "kind": "session", "provider": "test", "owner_id": "user-1", "key": "sk-test",
+	}}); err != nil {
 		t.Fatalf("SaveAuthKeys() error = %v", err)
 	}
 	if err := backend.SaveJSONDocument("announcements.json", []map[string]any{{"id": "a1", "content": "hello"}}); err != nil {
@@ -176,8 +178,35 @@ func TestEncodeRowsRejectsMissingAndDuplicateKeys(t *testing.T) {
 	if _, err := encodeRows("accounts", []map[string]any{{"type": "Plus"}}); err == nil {
 		t.Fatal("encodeRows() missing key error = nil")
 	}
-	if _, err := encodeRows("auth_keys", []map[string]any{{"id": "same"}, {"id": "same"}}); err == nil {
+	if _, err := encodeRows("auth_keys", []map[string]any{
+		{"id": "first", "kind": "session", "provider": "newapi", "owner_id": "newapi:1"},
+		{"id": "second", "kind": "session", "provider": "newapi", "owner_id": "newapi:1"},
+	}); err == nil {
 		t.Fatal("encodeRows() duplicate key error = nil")
+	}
+}
+
+func TestAuthSessionStorageKeyIsStableAcrossCredentialRotation(t *testing.T) {
+	first, err := storageRowKey("auth_keys", map[string]any{
+		"id": "credential-a", "kind": "session", "provider": "newapi", "owner_id": "newapi:42",
+	})
+	if err != nil {
+		t.Fatalf("storageRowKey(first) error = %v", err)
+	}
+	second, err := storageRowKey("auth_keys", map[string]any{
+		"id": "credential-b", "kind": "session", "provider": "newapi", "owner_id": "newapi:42",
+	})
+	if err != nil {
+		t.Fatalf("storageRowKey(second) error = %v", err)
+	}
+	otherOwner, err := storageRowKey("auth_keys", map[string]any{
+		"id": "credential-a", "kind": "session", "provider": "newapi", "owner_id": "newapi:43",
+	})
+	if err != nil {
+		t.Fatalf("storageRowKey(other owner) error = %v", err)
+	}
+	if first != second || first == otherOwner {
+		t.Fatalf("session storage keys = first %q, rotated %q, other owner %q", first, second, otherOwner)
 	}
 }
 
@@ -286,13 +315,38 @@ func TestDatabaseBackendJSONDocumentCASConflictRequiresReload(t *testing.T) {
 	}
 }
 
+func TestDatabaseBackendJSONDocumentCASRejectsABAUpdate(t *testing.T) {
+	databasePath := filepath.Join(t.TempDir(), "document-cas-aba.db")
+	first := openSQLiteStorageTestBackend(t, databasePath)
+	second := openSQLiteStorageTestBackend(t, databasePath)
+	original := map[string]any{"version": 1}
+	if err := first.SaveJSONDocument("roles.json", original); err != nil {
+		t.Fatalf("seed SaveJSONDocument() error = %v", err)
+	}
+	if _, err := first.LoadJSONDocument("roles.json"); err != nil {
+		t.Fatalf("first LoadJSONDocument() error = %v", err)
+	}
+	if _, err := second.LoadJSONDocument("roles.json"); err != nil {
+		t.Fatalf("second LoadJSONDocument() error = %v", err)
+	}
+	if err := first.SaveJSONDocument("roles.json", map[string]any{"version": 2}); err != nil {
+		t.Fatalf("first SaveJSONDocument(version 2) error = %v", err)
+	}
+	if err := first.SaveJSONDocument("roles.json", original); err != nil {
+		t.Fatalf("first SaveJSONDocument(original) error = %v", err)
+	}
+	if err := second.SaveJSONDocument("roles.json", map[string]any{"version": 3}); !errors.Is(err, ErrConcurrentRowUpdate) {
+		t.Fatalf("stale SaveJSONDocument() after ABA = %v, want ErrConcurrentRowUpdate", err)
+	}
+}
+
 func TestDatabaseBackendSaveAuthStateRollsBackBothWrites(t *testing.T) {
 	databasePath := filepath.Join(t.TempDir(), "auth-state.db")
 	backend := openSQLiteStorageTestBackend(t, databasePath)
-	seedKeys := []map[string]any{{"id": "session-1", "name": "before"}}
+	seedKeys := []map[string]any{{"id": "session-1", "kind": "session", "provider": "local", "owner_id": "user-1", "name": "before"}}
 	seedDocument := map[string]any{"items": []map[string]any{{"id": "user-1", "name": "before"}}}
-	if err := backend.SaveAuthKeysAndJSONDocument(seedKeys, "auth_users.json", seedDocument); err != nil {
-		t.Fatalf("seed SaveAuthKeysAndJSONDocument() error = %v", err)
+	if err := backend.SaveAuthState(seedKeys, map[string]any{"auth_users.json": seedDocument}); err != nil {
+		t.Fatalf("seed SaveAuthState() error = %v", err)
 	}
 	if _, err := backend.db.Exec(`CREATE TRIGGER fail_auth_users_update
 		BEFORE UPDATE ON json_documents
@@ -303,13 +357,13 @@ func TestDatabaseBackendSaveAuthStateRollsBackBothWrites(t *testing.T) {
 		t.Fatalf("create failure trigger: %v", err)
 	}
 
-	nextKeys := []map[string]any{{"id": "session-1", "name": "after"}}
+	nextKeys := []map[string]any{{"id": "session-1", "kind": "session", "provider": "local", "owner_id": "user-1", "name": "after"}}
 	nextDocument := map[string]any{"items": []map[string]any{{"id": "user-1", "name": "after"}}}
-	if err := backend.SaveAuthKeysAndJSONDocument(nextKeys, "auth_users.json", nextDocument); err == nil {
-		t.Fatal("SaveAuthKeysAndJSONDocument() error = nil, want document failure")
+	if err := backend.SaveAuthState(nextKeys, map[string]any{"auth_users.json": nextDocument}); err == nil {
+		t.Fatal("SaveAuthState() error = nil, want document failure")
 	}
 	var storedKey string
-	if err := backend.db.QueryRow(`SELECT data FROM auth_keys WHERE key_id = ?`, "session-1").Scan(&storedKey); err != nil {
+	if err := backend.db.QueryRow(`SELECT data FROM auth_keys`).Scan(&storedKey); err != nil {
 		t.Fatalf("read auth key after rollback: %v", err)
 	}
 	if !strings.Contains(storedKey, `"name":"before"`) {
@@ -330,8 +384,8 @@ func TestDatabaseBackendSaveAuthStateRollsBackBothWrites(t *testing.T) {
 	if _, err := backend.db.Exec(`DROP TRIGGER fail_auth_users_update`); err != nil {
 		t.Fatalf("drop failure trigger: %v", err)
 	}
-	if err := backend.SaveAuthKeysAndJSONDocument(nextKeys, "auth_users.json", nextDocument); err != nil {
-		t.Fatalf("retry SaveAuthKeysAndJSONDocument() error = %v", err)
+	if err := backend.SaveAuthState(nextKeys, map[string]any{"auth_users.json": nextDocument}); err != nil {
+		t.Fatalf("retry SaveAuthState() error = %v", err)
 	}
 	storedKeys, err := backend.LoadAuthKeys()
 	if err != nil {

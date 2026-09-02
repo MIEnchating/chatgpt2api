@@ -5,13 +5,13 @@ import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
 import {
+  AUTH_SESSION_CHANGE_EVENT,
   canAccessPath,
   getDefaultRouteForSession,
   type AuthRole,
   type StoredAuthSession,
 } from "@/lib/auth-session";
 import {
-  AUTH_SESSION_CHANGE_EVENT,
   getCachedAuthSession,
   getVerifiedAuthSession,
   refreshVerifiedAuthSession,

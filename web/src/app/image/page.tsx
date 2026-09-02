@@ -141,7 +141,7 @@ import { getManagedImagePathFromUrl, getManagedImageUrlFromPath } from "@/lib/im
 import { isPublicReferenceURL } from "@/lib/public-reference-url";
 import { type RelayTokenKind } from "@/lib/relay-token-selection";
 import { useRelayTokenPreferences } from "@/lib/use-relay-token-preferences";
-import { AUTH_SESSION_CHANGE_EVENT, getCachedAuthSession } from "@/lib/session";
+import { getCachedAuthSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import { DEFAULT_CREATION_WORKBENCH_PREFERENCES, useImageGenerationPreferences } from "@/lib/use-image-generation-preferences";
@@ -152,7 +152,7 @@ import {
   imageTurnReferenceValidationError,
   imageTurnUsesReferenceImages as usesReferenceImages,
 } from "@/lib/image-turn-validation";
-import type { StoredAuthSession } from "@/lib/auth-session";
+import { AUTH_SESSION_CHANGE_EVENT, type StoredAuthSession } from "@/lib/auth-session";
 import { imageConversationOwnerScope } from "@/store/image-conversation-session-scope";
 import {
   ACTIVE_IMAGE_CONVERSATION_STORAGE_KEY,

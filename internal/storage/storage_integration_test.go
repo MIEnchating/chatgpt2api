@@ -180,8 +180,8 @@ func writeIntegrationCoreData(t *testing.T, backend *DatabaseBackend, driver str
 		t.Fatalf("SaveAccounts() error = %v", err)
 	}
 	if err := backend.SaveAuthKeys([]map[string]any{
-		{"id": "key-" + driver, "key": "sk-integration", "enabled": true},
-		{"id": integrationLongAuthKeyID(driver), "key": "sk-long"},
+		{"id": "key-" + driver, "kind": "session", "provider": "integration", "owner_id": "user-" + driver, "key": "sk-integration", "enabled": true},
+		{"id": integrationLongAuthKeyID(driver), "kind": "session", "provider": "integration", "owner_id": "long-user-" + driver, "key": "sk-long"},
 	}); err != nil {
 		t.Fatalf("SaveAuthKeys() error = %v", err)
 	}

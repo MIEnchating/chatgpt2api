@@ -1,5 +1,7 @@
 "use client";
 
+export const AUTH_SESSION_CHANGE_EVENT = "chatgpt2api:auth-session-change";
+
 export type AuthRole = "admin" | "user";
 
 type AuthMenuItem = {

@@ -844,10 +844,11 @@ func (b *DatabaseBackend) BatchSaveCAS(
 		record := request.record
 		if currentExists[index] {
 			current := currentRecords[index]
-			if current.StorageVersion <= 0 || current.StorageVersion == math.MaxInt64 {
-				return result, fmt.Errorf("image conversation storage version is exhausted")
+			nextStorageVersion, versionErr := nextImageConversationStorageVersion(current.StorageVersion)
+			if versionErr != nil {
+				return result, versionErr
 			}
-			record.StorageVersion = current.StorageVersion + 1
+			record.StorageVersion = nextStorageVersion
 			updated, updateErr := b.updateImageConversationRecordCASTx(
 				ctx,
 				tx,
@@ -1092,32 +1093,42 @@ func nextImageConversationCursorGeneration(current int64) (int64, error) {
 	return current + 1, nil
 }
 
+func nextImageConversationStorageVersion(current int64) (int64, error) {
+	if current <= 0 || current == math.MaxInt64 {
+		return 0, fmt.Errorf("image conversation storage version is exhausted")
+	}
+	return current + 1, nil
+}
+
 func (b *DatabaseBackend) tombstoneImageConversationTx(
 	ctx context.Context,
 	tx *sql.Tx,
 	ownerKey, conversationKey string,
+	storageVersion int64,
 	deletedAtMillis int64,
 ) error {
 	statement := `UPDATE image_conversations SET
-		storage_version = storage_version + 1,
+		storage_version = ` + b.placeholder(1) + `,
 		active = 0,
-		deleted_at_ms = ` + b.placeholder(1) + `,
+		deleted_at_ms = ` + b.placeholder(2) + `,
 		summary = NULL,
 		data = NULL
-		WHERE owner_key = ` + b.placeholder(2) + ` AND conversation_key = ` + b.placeholder(3)
-	_, err := tx.ExecContext(ctx, statement, deletedAtMillis, ownerKey, conversationKey)
+		WHERE owner_key = ` + b.placeholder(3) + ` AND conversation_key = ` + b.placeholder(4)
+	_, err := tx.ExecContext(ctx, statement, storageVersion, deletedAtMillis, ownerKey, conversationKey)
 	return err
 }
 
-func (b *DatabaseBackend) updateImageConversationOwnerGenerationTx(
+func (b *DatabaseBackend) updateImageConversationOwnerEpochsTx(
 	ctx context.Context,
 	tx *sql.Tx,
 	ownerKey string,
-	generation int64,
+	generation, cursorGeneration int64,
 ) error {
-	statement := `UPDATE image_conversation_owners SET generation = ` + b.placeholder(1) + `
-		WHERE owner_key = ` + b.placeholder(2)
-	_, err := tx.ExecContext(ctx, statement, generation, ownerKey)
+	statement := `UPDATE image_conversation_owners SET
+		generation = ` + b.placeholder(1) + `,
+		cursor_generation = ` + b.placeholder(2) + `
+		WHERE owner_key = ` + b.placeholder(3)
+	_, err := tx.ExecContext(ctx, statement, generation, cursorGeneration, ownerKey)
 	return err
 }
 
@@ -1161,12 +1172,25 @@ func (b *DatabaseBackend) Delete(ctx context.Context, ownerID, conversationID st
 	if exists && current.DeletedAtMillis > 0 {
 		return false, nil
 	}
-	removed := exists && current.DeletedAtMillis == 0
+	var nextStorageVersion int64
 	if exists {
-		if current.DeletedAtMillis == 0 {
-			if err := b.tombstoneImageConversationTx(ctx, tx, ownerKey, conversationKey, deletedAtMillis); err != nil {
-				return false, err
-			}
+		nextStorageVersion, err = nextImageConversationStorageVersion(current.StorageVersion)
+		if err != nil {
+			return false, err
+		}
+	}
+	nextGeneration, err := nextImageConversationGeneration(state.Generation)
+	if err != nil {
+		return false, err
+	}
+	nextCursorGeneration, err := nextImageConversationCursorGeneration(state.CursorGeneration)
+	if err != nil {
+		return false, err
+	}
+	removed := exists
+	if exists {
+		if err := b.tombstoneImageConversationTx(ctx, tx, ownerKey, conversationKey, nextStorageVersion, deletedAtMillis); err != nil {
+			return false, err
 		}
 	} else {
 		tombstone := ImageConversationRecord{
@@ -1179,18 +1203,7 @@ func (b *DatabaseBackend) Delete(ctx context.Context, ownerID, conversationID st
 			return false, err
 		}
 	}
-	nextGeneration, err := nextImageConversationGeneration(state.Generation)
-	if err != nil {
-		return false, err
-	}
-	if err := b.updateImageConversationOwnerGenerationTx(ctx, tx, ownerKey, nextGeneration); err != nil {
-		return false, err
-	}
-	nextCursorGeneration, err := nextImageConversationCursorGeneration(state.CursorGeneration)
-	if err != nil {
-		return false, err
-	}
-	if err := b.updateImageConversationOwnerCursorGenerationTx(ctx, tx, ownerKey, nextCursorGeneration); err != nil {
+	if err := b.updateImageConversationOwnerEpochsTx(ctx, tx, ownerKey, nextGeneration, nextCursorGeneration); err != nil {
 		return false, err
 	}
 	if err := tx.Commit(); err != nil {
@@ -1232,13 +1245,28 @@ func (b *DatabaseBackend) Clear(
 	if err != nil {
 		return ImageConversationOwnerState{}, err
 	}
-	statement := `UPDATE image_conversations SET
+	var minimumStorageVersion, maximumStorageVersion sql.NullInt64
+	statement := `SELECT MIN(storage_version), MAX(storage_version)
+		FROM image_conversations
+		WHERE owner_key = ` + b.placeholder(1) + ` AND deleted_at_ms = 0`
+	if err := tx.QueryRowContext(ctx, statement, ownerKey).Scan(&minimumStorageVersion, &maximumStorageVersion); err != nil {
+		return ImageConversationOwnerState{}, err
+	}
+	if minimumStorageVersion.Valid {
+		if _, err := nextImageConversationStorageVersion(minimumStorageVersion.Int64); err != nil {
+			return ImageConversationOwnerState{}, err
+		}
+		if _, err := nextImageConversationStorageVersion(maximumStorageVersion.Int64); err != nil {
+			return ImageConversationOwnerState{}, err
+		}
+	}
+	statement = `UPDATE image_conversations SET
 		storage_version = storage_version + 1,
 		active = 0,
-		deleted_at_ms = CASE WHEN deleted_at_ms = 0 THEN ` + b.placeholder(1) + ` ELSE deleted_at_ms END,
+		deleted_at_ms = ` + b.placeholder(1) + `,
 		summary = NULL,
 		data = NULL
-		WHERE owner_key = ` + b.placeholder(2)
+		WHERE owner_key = ` + b.placeholder(2) + ` AND deleted_at_ms = 0`
 	if _, err := tx.ExecContext(ctx, statement, clearedAtMillis, ownerKey); err != nil {
 		return ImageConversationOwnerState{}, err
 	}

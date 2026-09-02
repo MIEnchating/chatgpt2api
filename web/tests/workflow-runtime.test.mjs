@@ -64,6 +64,27 @@ const preferences = {
   },
 };
 
+const workflowExecution = {
+  stream: true,
+  partial_images: 2,
+  response_format_b64_json: true,
+  codex_cli_compatibility: false,
+  token_name: "image-key",
+};
+
+const workflowConfig = {
+  model: "gpt-image-1.5",
+  image_model: "gpt-image-1.5",
+  quality: "auto",
+  size: "auto",
+  count: "1",
+  api_mode: "images",
+  timeout: "600",
+  system_prompt: "",
+  prompt_template: "",
+  negative_prompt: "",
+};
+
 test("workflow defaults come from account workbench preferences", () => {
   assert.deepEqual(workflowGenerationDefaultsFromPreferences(preferences), {
     image_model: "gpt-image-1.5",
@@ -261,15 +282,13 @@ test("workflow creation tasks restore as one ordered image batch", () => {
     inputs: { product: "旅行背包" },
     references: [{ id: "ref-1", name: "参考图", url: "/api/files/ref/content", storageKey: "server:ref", temporary: true }],
     config: {
-      model: "gpt-image-1.5",
-      image_model: "gpt-image-1.5",
+      ...workflowConfig,
       quality: "high",
       size: "1024x1024",
-      count: "1",
       api_mode: "responses",
-      timeout: "600",
       prompt_template: "{{product}}",
     },
+    execution: workflowExecution,
     count: 1,
     batch_task_id: "workflow-batch-1",
     batch_count: 2,
@@ -330,7 +349,8 @@ test("workflow batch reports failure after all child tasks finish", () => {
       prompt: "生成海报",
       inputs: {},
       references: [],
-      config: { quality: "auto", size: "auto", count: "1", api_mode: "images", timeout: "600", prompt_template: "生成海报" },
+      config: { ...workflowConfig, prompt_template: "生成海报" },
+      execution: workflowExecution,
       count: 1,
       batch_task_id: "batch",
       batch_count: 2,
@@ -362,7 +382,8 @@ test("workflow batch stays running until every expected child is persisted", () 
       prompt: "第一张",
       inputs: {},
       references: [],
-      config: { quality: "auto", size: "auto", count: "1", api_mode: "images", timeout: "600", prompt_template: "生成" },
+      config: { ...workflowConfig, prompt_template: "生成" },
+      execution: workflowExecution,
       count: 3,
       batch_task_id: "series-run",
       batch_index: 1,
@@ -377,7 +398,7 @@ test("workflow batch stays running until every expected child is persisted", () 
   assert.deepEqual(restored[0].completed_units, [1]);
 });
 
-test("workflow normalization removes legacy personal transport settings", () => {
+test("workflow normalization projects only current configuration fields", () => {
   const source = createBlankWorkflow(models, preferences);
   const workflow = normalizeWorkflow({
     ...source,
@@ -389,12 +410,36 @@ test("workflow normalization removes legacy personal transport settings", () => 
       stream_images: "false",
       response_format_b64_json: "true",
       codex_cli: "0",
+      unknown_setting: "ignored",
     },
   }, models, preferences);
 
   assert.equal("stream_images" in workflow.config, false);
   assert.equal("response_format_b64_json" in workflow.config, false);
   assert.equal("codex_cli" in workflow.config, false);
+  assert.equal("unknown_setting" in workflow.config, false);
+});
+
+test("workflow restoration rejects task contexts without a current execution snapshot", () => {
+  const restored = restoreWorkflowTasks([{
+    id: "obsolete-task",
+    status: "success",
+    mode: "generation",
+    created_at: "2026-08-26T08:00:00Z",
+    updated_at: "2026-08-26T08:01:00Z",
+    data: [],
+    workflow_context: {
+      workflow_id: "workflow-1",
+      workflow_name: "旧任务",
+      prompt: "旧提示词",
+      inputs: {},
+      references: [],
+      config: { ...workflowConfig, prompt_template: "生成" },
+      count: 1,
+    },
+  }]);
+
+  assert.deepEqual(restored, []);
 });
 
 test("workflow runtime uses the selected template's saved generation settings", () => {

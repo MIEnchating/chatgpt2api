@@ -13,11 +13,10 @@ import {
   type RelayTokenNames,
 } from "@/lib/relay-token-selection";
 import {
-  AUTH_SESSION_CHANGE_EVENT,
   getCachedAuthSession,
   getVerifiedAuthSession,
 } from "@/lib/session";
-import type { StoredAuthSession } from "@/lib/auth-session";
+import { AUTH_SESSION_CHANGE_EVENT, type StoredAuthSession } from "@/lib/auth-session";
 import { RelayTokenPreferencesContext } from "@/lib/use-relay-token-preferences";
 import { RelayTokenPreferenceMutationTracker } from "@/lib/relay-token-preference-mutations";
 import {

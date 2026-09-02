@@ -106,3 +106,39 @@ test("media-element cleanup failures cannot leave metadata inspection pending", 
   assert.deepEqual(await pending, {});
   assertReleased(harness);
 });
+
+test("all video cleanup failures leave metadata inspection settled", async () => {
+  const harness = createInspectionHarness();
+  harness.environment.clearScheduledTimeout = () => {
+    throw new Error("timer already cleared");
+  };
+  harness.video.removeAttribute = () => {
+    throw new Error("video element already detached");
+  };
+  harness.environment.revokeObjectURL = () => {
+    throw new Error("object URL already revoked");
+  };
+  const pending = inspectVideoBlobMetadata({ size: 1024 }, harness.environment);
+
+  assert.doesNotThrow(() => harness.video.onerror());
+  assert.deepEqual(await pending, {});
+  assert.equal(harness.video.onloadedmetadata, null);
+  assert.equal(harness.video.onerror, null);
+});
+
+test("video timer setup failures still release browser resources", async () => {
+  const harness = createInspectionHarness();
+  harness.environment.scheduleTimeout = () => {
+    throw new Error("timer unavailable");
+  };
+
+  assert.deepEqual(
+    await inspectVideoBlobMetadata({ size: 1024 }, harness.environment),
+    {},
+  );
+  assert.deepEqual(harness.calls.removedAttributes, ["src"]);
+  assert.equal(harness.calls.load, 1);
+  assert.deepEqual(harness.calls.revokedURLs, ["blob:uploaded-video"]);
+  assert.equal(harness.video.onloadedmetadata, null);
+  assert.equal(harness.video.onerror, null);
+});

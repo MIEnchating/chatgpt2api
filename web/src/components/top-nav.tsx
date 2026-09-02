@@ -8,13 +8,12 @@ import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { ImageTaskQueue } from "@/components/image-task-queue";
 import { AnnouncementCenter } from "@/components/announcement-center";
 import {
-  AUTH_SESSION_CHANGE_EVENT,
   clearVerifiedAuthSession,
   displaySubjectId,
   getCachedAuthSession,
   getVerifiedAuthSession,
 } from "@/lib/session";
-import { canAccessPath, type StoredAuthSession } from "@/lib/auth-session";
+import { AUTH_SESSION_CHANGE_EVENT, canAccessPath, type StoredAuthSession } from "@/lib/auth-session";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";

@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -12,6 +13,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -38,7 +40,7 @@ type JSONDocumentBackend interface {
 }
 
 type AuthStateBackend interface {
-	SaveAuthKeysAndJSONDocument(keys []map[string]any, name string, value any) error
+	SaveAuthState(keys []map[string]any, documents map[string]any) error
 }
 
 type JSONDocumentPrefixBackend interface {
@@ -121,8 +123,9 @@ type DatabaseBackend struct {
 }
 
 type jsonDocumentSnapshot struct {
-	Data   string
-	Exists bool
+	Data      string
+	UpdatedAt string
+	Exists    bool
 }
 
 var ErrConcurrentRowUpdate = errors.New("storage row changed concurrently")
@@ -419,19 +422,11 @@ func (b *DatabaseBackend) saveRows(table, keyColumn string, items []map[string]a
 }
 
 func encodeRows(table string, items []map[string]any) (map[string]string, error) {
-	sourceKey := "access_token"
-	if table == "auth_keys" {
-		sourceKey = "id"
-	}
 	current := make(map[string]string, len(items))
 	for _, item := range items {
-		rawKey, ok := item[sourceKey]
-		if !ok || rawKey == nil {
-			return nil, fmt.Errorf("encode %s row: %s is required", table, sourceKey)
-		}
-		key := strings.TrimSpace(fmt.Sprint(rawKey))
-		if key == "" {
-			return nil, fmt.Errorf("encode %s row: %s is required", table, sourceKey)
+		key, err := storageRowKey(table, item)
+		if err != nil {
+			return nil, err
 		}
 		if _, exists := current[key]; exists {
 			return nil, fmt.Errorf("encode %s row %q: duplicate key", table, key)
@@ -443,6 +438,29 @@ func encodeRows(table string, items []map[string]any) (map[string]string, error)
 		current[key] = string(data)
 	}
 	return current, nil
+}
+
+func storageRowKey(table string, item map[string]any) (string, error) {
+	if table != "auth_keys" {
+		key := strings.TrimSpace(fmt.Sprint(item["access_token"]))
+		if key == "" || item["access_token"] == nil {
+			return "", fmt.Errorf("encode %s row: access_token is required", table)
+		}
+		return key, nil
+	}
+	if kind := strings.TrimSpace(fmt.Sprint(item["kind"])); kind != "session" {
+		return "", fmt.Errorf("encode auth_keys row: kind must be session")
+	}
+	provider := strings.TrimSpace(fmt.Sprint(item["provider"]))
+	ownerID := strings.TrimSpace(fmt.Sprint(item["owner_id"]))
+	if provider == "" || item["provider"] == nil {
+		return "", fmt.Errorf("encode auth_keys row: provider is required")
+	}
+	if ownerID == "" || item["owner_id"] == nil {
+		return "", fmt.Errorf("encode auth_keys row: owner_id is required")
+	}
+	digest := sha256.Sum256([]byte(provider + "\x00" + ownerID))
+	return fmt.Sprintf("session_%x", digest[:]), nil
 }
 
 func (b *DatabaseBackend) applyRows(tx *sql.Tx, table, keyColumn string, known, current map[string]string) error {
@@ -501,15 +519,28 @@ func (b *DatabaseBackend) applyRows(tx *sql.Tx, table, keyColumn string, known, 
 	return nil
 }
 
-func (b *DatabaseBackend) SaveAuthKeysAndJSONDocument(keys []map[string]any, name string, value any) error {
-	rel, err := cleanDocumentName(name)
-	if err != nil {
-		return err
+func (b *DatabaseBackend) SaveAuthState(keys []map[string]any, documents map[string]any) error {
+	if len(documents) == 0 {
+		return fmt.Errorf("auth state documents are required")
 	}
-	documentData, err := json.Marshal(value)
-	if err != nil {
-		return err
+	documentData := make(map[string]string, len(documents))
+	documentNames := make([]string, 0, len(documents))
+	for name, value := range documents {
+		rel, err := cleanDocumentName(name)
+		if err != nil {
+			return err
+		}
+		if _, exists := documentData[rel]; exists {
+			return fmt.Errorf("duplicate auth state document: %s", rel)
+		}
+		data, err := json.Marshal(value)
+		if err != nil {
+			return err
+		}
+		documentData[rel] = string(data)
+		documentNames = append(documentNames, rel)
 	}
+	sort.Strings(documentNames)
 	current, err := encodeRows("auth_keys", keys)
 	if err != nil {
 		return err
@@ -521,9 +552,13 @@ func (b *DatabaseBackend) SaveAuthKeysAndJSONDocument(keys []map[string]any, nam
 	if known == nil {
 		known = map[string]string{}
 	}
-	knownDocument, err := b.jsonDocumentSnapshotLocked(rel)
-	if err != nil {
-		return err
+	knownDocuments := make(map[string]jsonDocumentSnapshot, len(documentNames))
+	for _, name := range documentNames {
+		known, err := b.jsonDocumentSnapshotLocked(name)
+		if err != nil {
+			return err
+		}
+		knownDocuments[name] = known
 	}
 	tx, err := b.db.Begin()
 	if err != nil {
@@ -535,15 +570,22 @@ func (b *DatabaseBackend) SaveAuthKeysAndJSONDocument(keys []map[string]any, nam
 	if err := b.applyRows(tx, "auth_keys", "key_id", known, current); err != nil {
 		return err
 	}
-	documentText := string(documentData)
-	if err := b.applyJSONDocument(tx, rel, knownDocument, documentText, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
-		return err
+	nextDocuments := make(map[string]jsonDocumentSnapshot, len(documentNames))
+	for _, name := range documentNames {
+		knownDocument := knownDocuments[name]
+		updatedAt := nextJSONDocumentUpdatedAt(knownDocument.UpdatedAt)
+		if err := b.applyJSONDocument(tx, name, knownDocument, documentData[name], updatedAt); err != nil {
+			return err
+		}
+		nextDocuments[name] = jsonDocumentSnapshot{Data: documentData[name], UpdatedAt: updatedAt, Exists: true}
 	}
 	if err := tx.Commit(); err != nil {
 		return err
 	}
 	b.rowSnapshots["auth_keys"] = current
-	b.documentSnapshots[rel] = jsonDocumentSnapshot{Data: documentText, Exists: true}
+	for name, snapshot := range nextDocuments {
+		b.documentSnapshots[name] = snapshot
+	}
 	return nil
 }
 
@@ -654,13 +696,14 @@ func (b *DatabaseBackend) SaveJSONDocument(name string, value any) error {
 	}
 	defer func() { _ = tx.Rollback() }()
 	text := string(data)
-	if err := b.applyJSONDocument(tx, rel, known, text, time.Now().UTC().Format(time.RFC3339Nano)); err != nil {
+	updatedAt := nextJSONDocumentUpdatedAt(known.UpdatedAt)
+	if err := b.applyJSONDocument(tx, rel, known, text, updatedAt); err != nil {
 		return err
 	}
 	if err := tx.Commit(); err != nil {
 		return err
 	}
-	b.documentSnapshots[rel] = jsonDocumentSnapshot{Data: text, Exists: true}
+	b.documentSnapshots[rel] = jsonDocumentSnapshot{Data: text, UpdatedAt: updatedAt, Exists: true}
 	return nil
 }
 
@@ -683,12 +726,12 @@ func (b *DatabaseBackend) DeleteJSONDocument(name string) error {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	query := "DELETE FROM json_documents WHERE name = ? AND data = ?"
-	args := []any{rel, known.Data}
+	query := "DELETE FROM json_documents WHERE name = ? AND data = ? AND updated_at = ?"
+	args := []any{rel, known.Data, known.UpdatedAt}
 	if b.driver == "postgres" {
-		query = "DELETE FROM json_documents WHERE name = $1 AND data = $2"
+		query = "DELETE FROM json_documents WHERE name = $1 AND data = $2 AND updated_at = $3"
 	} else if b.driver == "mysql" {
-		query = "DELETE FROM json_documents WHERE name = ? AND BINARY data = BINARY ?"
+		query = "DELETE FROM json_documents WHERE name = ? AND BINARY data = BINARY ? AND BINARY updated_at = BINARY ?"
 	}
 	result, err := tx.Exec(query, args...)
 	if err != nil {
@@ -722,14 +765,15 @@ func (b *DatabaseBackend) jsonDocumentSnapshotLocked(name string) (jsonDocumentS
 
 func (b *DatabaseBackend) readJSONDocumentSnapshot(name string) (jsonDocumentSnapshot, error) {
 	var text string
-	err := b.db.QueryRow("SELECT data FROM json_documents WHERE name = "+b.placeholder(1), name).Scan(&text)
+	var updatedAt string
+	err := b.db.QueryRow("SELECT data, updated_at FROM json_documents WHERE name = "+b.placeholder(1), name).Scan(&text, &updatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return jsonDocumentSnapshot{}, nil
 	}
 	if err != nil {
 		return jsonDocumentSnapshot{}, err
 	}
-	return jsonDocumentSnapshot{Data: text, Exists: true}, nil
+	return jsonDocumentSnapshot{Data: text, UpdatedAt: updatedAt, Exists: true}, nil
 }
 
 func (b *DatabaseBackend) applyJSONDocument(tx *sql.Tx, name string, known jsonDocumentSnapshot, data, updatedAt string) error {
@@ -743,12 +787,12 @@ func (b *DatabaseBackend) applyJSONDocument(tx *sql.Tx, name string, known jsonD
 		}
 		return nil
 	}
-	query := "UPDATE json_documents SET data = ?, updated_at = ? WHERE name = ? AND data = ?"
-	args := []any{data, updatedAt, name, known.Data}
+	query := "UPDATE json_documents SET data = ?, updated_at = ? WHERE name = ? AND data = ? AND updated_at = ?"
+	args := []any{data, updatedAt, name, known.Data, known.UpdatedAt}
 	if b.driver == "postgres" {
-		query = "UPDATE json_documents SET data = $1, updated_at = $2 WHERE name = $3 AND data = $4"
+		query = "UPDATE json_documents SET data = $1, updated_at = $2 WHERE name = $3 AND data = $4 AND updated_at = $5"
 	} else if b.driver == "mysql" {
-		query = "UPDATE json_documents SET data = ?, updated_at = ? WHERE name = ? AND BINARY data = BINARY ?"
+		query = "UPDATE json_documents SET data = ?, updated_at = ? WHERE name = ? AND BINARY data = BINARY ? AND BINARY updated_at = BINARY ?"
 	}
 	result, err := tx.Exec(query, args...)
 	if err != nil {
@@ -762,6 +806,14 @@ func (b *DatabaseBackend) applyJSONDocument(tx *sql.Tx, name string, known jsonD
 		return b.concurrentRowUpdateError(tx, "json_documents", "update", name)
 	}
 	return nil
+}
+
+func nextJSONDocumentUpdatedAt(previous string) string {
+	now := time.Now().UTC()
+	if previousTime, err := time.Parse(time.RFC3339Nano, previous); err == nil && !now.After(previousTime) {
+		now = previousTime.Add(time.Nanosecond)
+	}
+	return now.Format(time.RFC3339Nano)
 }
 
 func (b *DatabaseBackend) ListJSONDocuments(prefix string) (map[string]any, error) {

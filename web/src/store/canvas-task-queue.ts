@@ -1,5 +1,6 @@
 import type { CanvasNode } from "@/services/api/canvas";
-import { AUTH_SESSION_CHANGE_EVENT, getCachedAuthSession } from "@/lib/session";
+import { AUTH_SESSION_CHANGE_EVENT } from "@/lib/auth-session";
+import { getCachedAuthSession } from "@/lib/session";
 
 export type CanvasTaskQueueStatus = "generating" | "success" | "error" | "cancelled";
 

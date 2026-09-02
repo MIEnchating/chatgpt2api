@@ -223,14 +223,7 @@ export function normalizeWorkflow(
   defaults: WorkflowGenerationDefaults = {},
 ): CreativeWorkflow {
   const fallbackConfig = createWorkflowConfig(models, preferences, defaults);
-  const {
-    image_channel_id: _legacyImageChannelID,
-    stream_images: _legacyStreamImages,
-    stream_partial_images: _legacyStreamPartialImages,
-    response_format_b64_json: _legacyResponseFormat,
-    codex_cli: _legacyCodexCLI,
-    ...workflowConfig
-  } = (workflow.config || {}) as WorkflowGenerationConfig & Record<string, unknown>;
+  const workflowConfig = workflow.config || fallbackConfig;
   const imageModel = resolveConfiguredModel(
     models?.image_models,
     workflowConfig.image_model,
@@ -240,11 +233,19 @@ export function normalizeWorkflow(
     preferences?.default_image_model,
     models?.default_image_model,
   );
-  const config = {
-    ...fallbackConfig,
-    ...workflowConfig,
+  const config: WorkflowGenerationConfig = {
     model: imageModel,
     image_model: imageModel,
+    quality: typeof workflowConfig.quality === "string" ? workflowConfig.quality : fallbackConfig.quality,
+    size: typeof workflowConfig.size === "string" ? workflowConfig.size : fallbackConfig.size,
+    count: typeof workflowConfig.count === "string" ? workflowConfig.count : fallbackConfig.count,
+    api_mode: workflowConfig.api_mode === "responses" || workflowConfig.api_mode === "chat" || workflowConfig.api_mode === "images"
+      ? workflowConfig.api_mode
+      : fallbackConfig.api_mode,
+    timeout: typeof workflowConfig.timeout === "string" ? workflowConfig.timeout : fallbackConfig.timeout,
+    system_prompt: typeof workflowConfig.system_prompt === "string" ? workflowConfig.system_prompt : fallbackConfig.system_prompt,
+    prompt_template: typeof workflowConfig.prompt_template === "string" ? workflowConfig.prompt_template : fallbackConfig.prompt_template,
+    negative_prompt: typeof workflowConfig.negative_prompt === "string" ? workflowConfig.negative_prompt : fallbackConfig.negative_prompt,
   };
   const promptModel = resolveConfiguredModel(
     models?.text_models,
@@ -253,10 +254,15 @@ export function normalizeWorkflow(
     preferences?.default_text_model,
     models?.default_text_model,
   );
-  const seriesConfig = {
-    ...createWorkflowSeriesConfig(models, preferences, defaults),
-    ...workflow.series_config,
+  const fallbackSeriesConfig = createWorkflowSeriesConfig(models, preferences, defaults);
+  const workflowSeriesConfig = workflow.series_config || fallbackSeriesConfig;
+  const seriesConfig: WorkflowSeriesConfig = {
+    target_count: typeof workflowSeriesConfig.target_count === "string" ? workflowSeriesConfig.target_count : fallbackSeriesConfig.target_count,
     prompt_model: promptModel,
+    prompt_channel_id: typeof workflowSeriesConfig.prompt_channel_id === "string" ? workflowSeriesConfig.prompt_channel_id : fallbackSeriesConfig.prompt_channel_id,
+    prompt_instruction: typeof workflowSeriesConfig.prompt_instruction === "string" ? workflowSeriesConfig.prompt_instruction : fallbackSeriesConfig.prompt_instruction,
+    review_required: typeof workflowSeriesConfig.review_required === "boolean" ? workflowSeriesConfig.review_required : fallbackSeriesConfig.review_required,
+    concurrency: typeof workflowSeriesConfig.concurrency === "string" ? workflowSeriesConfig.concurrency : fallbackSeriesConfig.concurrency,
   };
   return {
     ...workflow,
@@ -268,15 +274,25 @@ export function normalizeWorkflow(
         : "single_image",
     category: workflow.category || "",
     description: workflow.description || "",
-    variables: (workflow.variables || []).map((variable) => ({
-      ...createWorkflowVariable(),
-      ...variable,
-      id: variable.id || uid(),
-      key: String(variable.key || "").replace(/[^\w.-]/g, "_"),
-      label: variable.label || variable.key,
-      default_value: String(variable.default_value ?? ""),
-      options: Array.isArray(variable.options) ? variable.options : [],
-    })),
+    variables: (workflow.variables || []).map((variable) => {
+      const sourceKey = String(variable.key || "");
+      const key = sourceKey.replace(/[^\w.-]/g, "_");
+      const type = variable.type === "textarea" || variable.type === "select" || variable.type === "number" || variable.type === "boolean"
+        ? variable.type
+        : "text";
+      return {
+        id: variable.id || uid(),
+        key,
+        label: variable.label || sourceKey,
+        type,
+        required: typeof variable.required === "boolean" ? variable.required : true,
+        default_value: String(variable.default_value ?? ""),
+        ...(typeof variable.placeholder === "string" ? { placeholder: variable.placeholder } : {}),
+        options: Array.isArray(variable.options)
+          ? variable.options.filter((option): option is string => typeof option === "string")
+          : [],
+      };
+    }),
     config,
     series_config: seriesConfig,
   };

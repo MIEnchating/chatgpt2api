@@ -1201,22 +1201,15 @@ func TestCanvasDocumentServiceUsesReferenceImageGenerationType(t *testing.T) {
 		t.Fatalf("generation type = %q, want generation", saved.Nodes[0].GenerationType)
 	}
 
-	document.Nodes[0].GenerationType = "generate"
-	legacySaved, err := saveCanvas(service, "owner", document)
-	if err != nil {
-		t.Fatalf("Save(generate) error = %v", err)
-	}
-	if legacySaved.Nodes[0].GenerationType != "generation" {
-		t.Fatalf("legacy generation type = %q, want generation", legacySaved.Nodes[0].GenerationType)
-	}
-
-	document.Nodes[0].GenerationType = "generate-image"
-	if _, err := saveCanvas(service, "owner", document); !errors.Is(err, ErrInvalidCanvasDocument) {
-		t.Fatalf("Save(generate-image) error = %v, want ErrInvalidCanvasDocument", err)
+	for _, invalid := range []string{"generate", "generate-image"} {
+		document.Nodes[0].GenerationType = invalid
+		if _, err := saveCanvas(service, "owner", document); !errors.Is(err, ErrInvalidCanvasDocument) {
+			t.Fatalf("Save(%s) error = %v, want ErrInvalidCanvasDocument", invalid, err)
+		}
 	}
 }
 
-func TestCanvasDocumentServiceLoadsLegacyGenerateType(t *testing.T) {
+func TestCanvasDocumentServiceRejectsStoredRemovedGenerateType(t *testing.T) {
 	backend := newTestStorageBackend(t)
 	store := jsonDocumentStoreFromBackend(backend)
 	document := DefaultCanvasDocument()
@@ -1233,12 +1226,8 @@ func TestCanvasDocumentServiceLoadsLegacyGenerateType(t *testing.T) {
 		t.Fatalf("SaveJSONDocument() error = %v", err)
 	}
 
-	loaded, err := loadCanvas(NewCanvasDocumentService(backend), "legacy-owner")
-	if err != nil {
-		t.Fatalf("Load() error = %v", err)
-	}
-	if len(loaded.Nodes) != 1 || loaded.Nodes[0].GenerationType != "generation" {
-		t.Fatalf("legacy generation type was not normalized: %#v", loaded.Nodes)
+	if _, err := loadCanvas(NewCanvasDocumentService(backend), "legacy-owner"); !errors.Is(err, ErrInvalidCanvasDocument) {
+		t.Fatalf("Load() error = %v, want ErrInvalidCanvasDocument", err)
 	}
 }
 

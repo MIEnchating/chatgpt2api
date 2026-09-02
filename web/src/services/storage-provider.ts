@@ -1,6 +1,6 @@
 import { createExpiringRequestCache, type ExpiringRequestCache } from "@/lib/expiring-request-cache";
+import { AUTH_SESSION_CHANGE_EVENT } from "@/lib/auth-session";
 import { httpRequest } from "@/lib/request";
-import { AUTH_SESSION_CHANGE_EVENT } from "@/lib/session";
 
 export type StorageConfig = {
   mode: string;

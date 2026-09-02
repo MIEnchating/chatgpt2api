@@ -129,8 +129,8 @@ import type { MyAsset } from "@/lib/my-assets";
 import { getManagedImagePathFromUrl } from "@/lib/image-path";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import { useImageGenerationPreferences } from "@/lib/use-image-generation-preferences";
-import { hasAPIPermission } from "@/lib/auth-session";
-import { AUTH_SESSION_CHANGE_EVENT, getCachedAuthSession } from "@/lib/session";
+import { AUTH_SESSION_CHANGE_EVENT, hasAPIPermission } from "@/lib/auth-session";
+import { getCachedAuthSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
 import { configuredModelNames, resolveConfiguredModel } from "@/lib/model-config-selection";
 

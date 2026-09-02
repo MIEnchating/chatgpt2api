@@ -1,4 +1,5 @@
 import { httpRequest } from "@/lib/request";
+import { AUTH_SESSION_CHANGE_EVENT } from "@/lib/auth-session";
 import {
   normalizeImageConversationAssetReference,
   planImageConversationAssetUploadBatches,
@@ -803,11 +804,16 @@ type ImageGenerationPreferencesResponse = { preferences: ImageGenerationPreferen
 
 const imageGenerationPreferencesCache = createExpiringRequestCache<ImageGenerationPreferencesResponse>(30_000);
 const modelConfigCache = createExpiringRequestCache<{ config: ModelConfig }>(30_000);
+const grokTTSVoiceRequests = new Map<string, Promise<GrokTTSVoice[]>>();
 
 function clearAccountScopedAPICaches() {
 	imageGenerationPreferencesCache.clear();
 	modelConfigCache.clear();
 	grokTTSVoiceRequests.clear();
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener(AUTH_SESSION_CHANGE_EVENT, clearAccountScopedAPICaches);
 }
 
 export async function fetchProfileRelayKey(group?: string, tokenName?: string) {
@@ -1022,8 +1028,6 @@ export type GrokTTSVoice = {
   name?: string;
   language?: string;
 };
-
-const grokTTSVoiceRequests = new Map<string, Promise<GrokTTSVoice[]>>();
 
 export function fetchGrokTTSVoices(model: string, relayTokenName: string) {
   const query = new URLSearchParams({ model });

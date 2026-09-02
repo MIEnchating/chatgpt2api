@@ -72,7 +72,7 @@ export type WorkflowTaskContext = {
     temporary?: boolean;
   }>;
   config: WorkflowGenerationConfig;
-  execution?: WorkflowExecutionSnapshot;
+  execution: WorkflowExecutionSnapshot;
   count: number;
   series_title?: string;
   series_index?: number;

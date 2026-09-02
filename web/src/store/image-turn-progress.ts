@@ -1,5 +1,7 @@
 "use client";
 
+import { AUTH_SESSION_CHANGE_EVENT } from "@/lib/auth-session";
+
 export type ImageTurnProgress = {
   message: string;
   detail?: string;
@@ -67,4 +69,17 @@ export function clearImageTurnProgress(conversationId: string, turnId: string) {
   delete nextProgress[key];
   imageTurnProgressByKey = nextProgress;
   dispatchImageTurnProgressChanged();
+}
+
+function clearAllImageTurnProgress() {
+  if (Object.keys(imageTurnProgressByKey).length === 0) {
+    return;
+  }
+
+  imageTurnProgressByKey = {};
+  dispatchImageTurnProgressChanged();
+}
+
+if (typeof window !== "undefined") {
+  window.addEventListener(AUTH_SESSION_CHANGE_EVENT, clearAllImageTurnProgress);
 }

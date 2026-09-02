@@ -197,12 +197,23 @@ func (s *AuthService) CreatePasswordUser(username, password, name, roleID string
 		UpdatedAt:    now,
 	}
 	previousAccounts := append([]PasswordAccount(nil), s.accounts...)
+	previousRoles := append([]ManagedRole(nil), s.roles...)
 	previousItems := cloneAuthItems(s.items)
 	s.accounts = append(s.accounts, account)
-	if err := s.savePasswordAccountsLocked(); err != nil {
-		s.restoreAuthAccountsAfterSaveFailureLocked(previousAccounts, previousItems, err)
+	var saveErr error
+	if accountUsesCustomRole(account) {
+		saveErr = s.saveCompleteAuthStateLocked()
+	} else {
+		saveErr = s.savePasswordAccountsLocked()
+	}
+	if saveErr != nil {
+		if accountUsesCustomRole(account) {
+			s.restoreCompleteAuthStateAfterSaveFailureLocked(previousAccounts, previousRoles, previousItems, saveErr)
+		} else {
+			s.restoreAuthAccountsAfterSaveFailureLocked(previousAccounts, previousItems, saveErr)
+		}
 		s.mu.Unlock()
-		return nil, err
+		return nil, saveErr
 	}
 	item := managedAuthUserByIDLocked(s.items, s.roles, s.accounts, account.ID)
 	s.mu.Unlock()
@@ -228,14 +239,25 @@ func (s *AuthService) LoginPassword(username, password string) (*Identity, strin
 	}
 	now := util.NowISO()
 	previousAccounts := append([]PasswordAccount(nil), s.accounts...)
+	previousRoles := append([]ManagedRole(nil), s.roles...)
 	previousItems := cloneAuthItems(s.items)
 	account.LastLoginAt = now
 	account.UpdatedAt = now
 	s.accounts[index] = account
 	item, raw := s.issuePasswordSessionLocked(account, now)
-	if err := s.saveAuthAndPasswordAccountsLocked(); err != nil {
-		s.restoreAuthAccountsAfterSaveFailureLocked(previousAccounts, previousItems, err)
-		return nil, "", err
+	var saveErr error
+	if accountUsesCustomRole(account) {
+		saveErr = s.saveCompleteAuthStateLocked()
+	} else {
+		saveErr = s.saveAuthAndPasswordAccountsLocked()
+	}
+	if saveErr != nil {
+		if accountUsesCustomRole(account) {
+			s.restoreCompleteAuthStateAfterSaveFailureLocked(previousAccounts, previousRoles, previousItems, saveErr)
+		} else {
+			s.restoreAuthAccountsAfterSaveFailureLocked(previousAccounts, previousItems, saveErr)
+		}
+		return nil, "", saveErr
 	}
 	s.pruneLastUsedFlushAtLocked()
 	return identityForAuthItem(item), raw, nil
@@ -298,6 +320,10 @@ func roleForAccountLocked(roles []ManagedRole, account PasswordAccount) ManagedR
 	}
 	role, _ = managedRoleByIDLocked(roles, DefaultManagedRoleID)
 	return role
+}
+
+func accountUsesCustomRole(account PasswordAccount) bool {
+	return account.Role == AuthRoleUser && account.ManagedRoleID() != DefaultManagedRoleID
 }
 
 func normalizePasswordAccounts(raw any) []PasswordAccount {

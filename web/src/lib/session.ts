@@ -2,12 +2,11 @@
 
 import { verifySession, type LoginResponse } from "@/lib/api";
 import { clearAuthenticatedImageCache } from "@/lib/authenticated-image";
-import type { StoredAuthSession } from "@/lib/auth-session";
+import { AUTH_SESSION_CHANGE_EVENT, type StoredAuthSession } from "@/lib/auth-session";
 
 let cachedAuthSession: StoredAuthSession | null | undefined;
 let verifyAuthSessionPromise: Promise<StoredAuthSession | null> | null = null;
 let authSessionVersion = 0;
-export const AUTH_SESSION_CHANGE_EVENT = "chatgpt2api:auth-session-change";
 const AUTH_SESSION_CHANNEL_NAME = "chatgpt2api:auth-session";
 const AUTH_SESSION_INVALIDATED_MESSAGE = "invalidate";
 
