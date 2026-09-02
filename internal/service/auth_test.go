@@ -193,11 +193,11 @@ func TestAuthServicePrunesLastUsedFlushesAcrossSessionLifecycle(t *testing.T) {
 		auth := newTestAuthService(t, &failingAuthStorage{})
 		user := NewAPIUser{ID: 42, Username: "alice", DisplayName: "Alice"}
 
-		firstIdentity, firstToken, err := auth.UpsertNewAPISession(user)
+		_, firstToken, err := auth.UpsertNewAPISession(user)
 		if err != nil {
 			t.Fatalf("first UpsertNewAPISession() error = %v", err)
 		}
-		firstIdentity = auth.Authenticate(firstToken)
+		firstIdentity := auth.Authenticate(firstToken)
 		if firstIdentity == nil || len(auth.lastUsedFlushAt) != 1 {
 			t.Fatalf("first Authenticate() identity=%#v flushes=%#v", firstIdentity, auth.lastUsedFlushAt)
 		}
@@ -225,11 +225,11 @@ func TestAuthServicePrunesLastUsedFlushesAcrossSessionLifecycle(t *testing.T) {
 			t.Fatalf("revoked session retained flush timestamp: %#v", auth.lastUsedFlushAt)
 		}
 
-		thirdIdentity, thirdToken, err := auth.UpsertNewAPISession(user)
+		_, thirdToken, err := auth.UpsertNewAPISession(user)
 		if err != nil {
 			t.Fatalf("third UpsertNewAPISession() error = %v", err)
 		}
-		thirdIdentity = auth.Authenticate(thirdToken)
+		thirdIdentity := auth.Authenticate(thirdToken)
 		if thirdIdentity == nil || len(auth.lastUsedFlushAt) != 1 {
 			t.Fatalf("third Authenticate() identity=%#v flushes=%#v", thirdIdentity, auth.lastUsedFlushAt)
 		}
@@ -265,11 +265,11 @@ func TestAuthServicePrunesLastUsedFlushesAcrossSessionLifecycle(t *testing.T) {
 	t.Run("conflict reload", func(t *testing.T) {
 		backend := &failingAuthStorage{}
 		auth := newTestAuthService(t, backend)
-		identity, token, err := auth.UpsertNewAPISession(NewAPIUser{ID: 7, Username: "reload-user"})
+		_, token, err := auth.UpsertNewAPISession(NewAPIUser{ID: 7, Username: "reload-user"})
 		if err != nil {
 			t.Fatalf("UpsertNewAPISession() error = %v", err)
 		}
-		identity = auth.Authenticate(token)
+		identity := auth.Authenticate(token)
 		if identity == nil {
 			t.Fatal("Authenticate() identity = nil")
 		}
