@@ -24,6 +24,7 @@ import {
   promptFavoriteToBananaPrompt,
   type PromptFavorite,
 } from "@/app/image/prompt-favorites";
+import { PromptFavoriteRequestLifecycle } from "@/app/image/prompt-favorite-request-lifecycle";
 import { tagVariants } from "@/components/ui/tag";
 import { Button } from "@/components/ui/button";
 import {
@@ -134,6 +135,9 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
   const [saveBusyIds, setSaveBusyIds] = useState<Set<string>>(() => new Set());
   const [selectedPrompt, setSelectedPrompt] = useState<BananaPrompt | null>(null);
   const scrollAreaRef = useRef<ScrollAreaHandle>(null);
+  const openRef = useRef(open);
+  const favoriteRequestLifecycleRef = useRef(new PromptFavoriteRequestLifecycle());
+  openRef.current = open;
 
   useEffect(() => {
     setSource(initialSource || "all");
@@ -160,22 +164,45 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
   };
 
   const loadFavoriteData = () => {
+    const lifecycle = favoriteRequestLifecycleRef.current;
+    const request = lifecycle.beginLoad();
+    if (!request) return null;
+
     setIsLoadingFavorites(true);
     setFavoriteError("");
 
-    void fetchPromptFavorites()
+    void fetchPromptFavorites(request.controller.signal)
       .then((data) => {
+        if (!openRef.current || !lifecycle.isCurrentLoad(request)) return;
         updateFavoriteItems(data.items);
       })
       .catch((loadError: unknown) => {
+        if (!openRef.current || !lifecycle.isCurrentLoad(request)) return;
         const message = loadError instanceof Error ? loadError.message : "读取收藏失败";
         setFavoriteError(message);
         toast.error(message);
       })
       .finally(() => {
-        setIsLoadingFavorites(false);
+        if (openRef.current && lifecycle.isCurrentLoad(request)) {
+          setIsLoadingFavorites(false);
+        }
+        lifecycle.releaseLoad(request);
       });
+
+    return request;
   };
+
+  useEffect(() => {
+    const lifecycle = favoriteRequestLifecycleRef.current;
+    if (open) {
+      lifecycle.activate();
+      return () => lifecycle.deactivate();
+    }
+
+    lifecycle.deactivate();
+    setIsLoadingFavorites(false);
+    setFavoriteBusyIds((current) => current.size === 0 ? current : new Set());
+  }, [open]);
 
   useEffect(() => {
     if (!open || prompts.length > 0) {
@@ -215,29 +242,11 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
       return;
     }
 
-    setIsLoadingFavorites(true);
-    setFavoriteError("");
-    const controller = new AbortController();
-
-    void fetchPromptFavorites(controller.signal)
-      .then((data) => {
-        updateFavoriteItems(data.items);
-      })
-      .catch((loadError: unknown) => {
-        if (controller.signal.aborted) {
-          return;
-        }
-        const message = loadError instanceof Error ? loadError.message : "读取收藏失败";
-        setFavoriteError(message);
-        toast.error(message);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) {
-          setIsLoadingFavorites(false);
-        }
-      });
-
-    return () => controller.abort();
+    const lifecycle = favoriteRequestLifecycleRef.current;
+    const request = loadFavoriteData();
+    return () => {
+      if (request) lifecycle.cancelLoad(request);
+    };
   }, [favoriteItems.length, open]);
 
   useEffect(() => {
@@ -339,22 +348,40 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
       return;
     }
 
+    const lifecycle = favoriteRequestLifecycleRef.current;
+    const mutation = lifecycle.beginMutation();
+    if (!mutation) return;
+
     const existing = favoriteByPromptKey.get(key);
+    setIsLoadingFavorites(false);
     setFavoriteBusy(key, true);
+    let reconcile = false;
     try {
       if (existing) {
         const data = await deletePromptFavorite(existing.id);
-        updateFavoriteItems(data.items);
+        const decision = lifecycle.completeMutation(mutation, true);
+        if (!openRef.current || !decision.current) return;
+        if (decision.applySnapshot) updateFavoriteItems(data.items);
+        reconcile = decision.reconcile;
         toast.success("已取消收藏");
       } else {
         const data = await createPromptFavorite(prompt);
-        updateFavoriteItems(data.items);
+        const decision = lifecycle.completeMutation(mutation, true);
+        if (!openRef.current || !decision.current) return;
+        if (decision.applySnapshot) updateFavoriteItems(data.items);
+        reconcile = decision.reconcile;
         toast.success("已收藏");
       }
     } catch (toggleError) {
+      const decision = lifecycle.completeMutation(mutation, false);
+      if (!openRef.current || !decision.current) return;
+      reconcile = decision.reconcile;
       toast.error(toggleError instanceof Error ? toggleError.message : "收藏操作失败");
     } finally {
-      setFavoriteBusy(key, false);
+      if (openRef.current && lifecycle.isCurrentLifecycle(mutation)) {
+        setFavoriteBusy(key, false);
+      }
+      if (reconcile && openRef.current) loadFavoriteData();
     }
   };
 
