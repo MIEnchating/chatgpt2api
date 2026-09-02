@@ -23,6 +23,26 @@ func TestVideoModelContractJSONKeepsV4Fields(t *testing.T) {
 	}
 }
 
+func TestNormalizeVideoModelContractUsesJSONArrayForEmptyRules(t *testing.T) {
+	contract := DefaultVideoContracts()[0]
+	contract.Rules = nil
+
+	normalized, err := NormalizeVideoModelContract(contract)
+	if err != nil {
+		t.Fatalf("NormalizeVideoModelContract() error = %v", err)
+	}
+	if normalized.Rules == nil {
+		t.Fatal("NormalizeVideoModelContract() left rules nil")
+	}
+	data, err := json.Marshal(normalized)
+	if err != nil {
+		t.Fatalf("marshal normalized contract: %v", err)
+	}
+	if !strings.Contains(string(data), `"rules":[]`) {
+		t.Fatalf("serialized rules must be an array: %s", data)
+	}
+}
+
 func TestCloneVideoContractsCopiesNestedState(t *testing.T) {
 	source := DefaultVideoContracts()
 	source[0].Artifact.AllowedHosts = []string{"source.example"}

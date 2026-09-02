@@ -5,7 +5,9 @@ import {
   AudioLines,
   Braces,
   CheckCircle2,
+  CheckCheck,
   ChevronDown,
+  CircleAlert,
   CircleHelp,
   Copy,
   Download,
@@ -19,8 +21,11 @@ import {
   LoaderCircle,
   Pencil,
   Plus,
+  Power,
+  PowerOff,
   ShieldCheck,
   SlidersHorizontal,
+  Square,
   Trash2,
   Upload,
   Video,
@@ -30,6 +35,7 @@ import {
 import { toast } from "sonner";
 
 import { ImageParameterLabel } from "@/components/generation/image-parameter-ui";
+import { ManagementPagination } from "@/components/management-page";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -71,6 +77,7 @@ import {
   setVideoModelContractEnabled,
   validateVideoModelContract,
   type ManagedVideoModelContract,
+  type VideoModelContractImportProgress,
   type VideoModelContractPreviewResult,
   type VideoModelContractMutation,
   type VideoModelContractTransferDocument,
@@ -118,6 +125,39 @@ type ContractDraft = {
   errorFields: string[];
   resultFields: string[];
 };
+
+function formatElapsedSeconds(seconds: number) {
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return minutes > 0 ? `${minutes}分${String(remainingSeconds).padStart(2, "0")}秒` : `${remainingSeconds}秒`;
+}
+
+function videoContractImportStatusLabel(stage: VideoModelContractImportProgress["stage"] | undefined) {
+  switch (stage) {
+    case "reading_document": return "正在读取文档";
+    case "document_ready": return "文档读取完成";
+    case "preparing": return "正在准备分析请求";
+    case "generating": return "正在请求分析模型";
+    case "upstream_connected": return "已连接分析模型";
+    case "receiving": return "正在接收分析结果";
+    case "validating": return "正在校验生成的契约";
+    case "repairing": return "正在自动修正契约";
+    case "retrying": return "正在重试分析请求";
+    case "heartbeat": return "正在等待分析模型响应";
+    case "completed": return "契约生成完成";
+    case "failed": return "契约生成失败";
+    default: return "正在分析文档并生成契约";
+  }
+}
+
+function videoContractImportStatusSummary(progress: VideoModelContractImportProgress | null) {
+  if (!progress) return "正在建立分析连接";
+  const details: string[] = [];
+  if (progress.attempt && progress.max_attempts) details.push(`分析轮次 ${progress.attempt}/${progress.max_attempts}`);
+  if (progress.request_attempt && progress.request_attempt > 1 && progress.max_request_attempts) details.push(`上游重试 ${progress.request_attempt}/${progress.max_request_attempts}`);
+  if (progress.received_characters) details.push(`已接收 ${progress.received_characters} 字符`);
+  return details.join(" · ") || "分析连接保持正常";
+}
 
 const VIDEO_CONTRACT_DRIVERS: Array<{
   value: VideoModelContract["driver"];
@@ -270,8 +310,29 @@ function cloneContract(contract: VideoModelContract) {
   return structuredClone(contract);
 }
 
-function draftFromContract(contract: VideoModelContract, enabled: boolean): ContractDraft {
+function normalizeVideoModelContractCollections(contract: VideoModelContract) {
   const value = cloneVideoModelContract(contract);
+  value.models = Array.isArray(value.models) ? value.models : [];
+  value.artifact.allowed_hosts = Array.isArray(value.artifact.allowed_hosts) ? value.artifact.allowed_hosts : [];
+  value.capability.sizes = Array.isArray(value.capability.sizes) ? value.capability.sizes : [];
+  value.capability.seconds = Array.isArray(value.capability.seconds) ? value.capability.seconds : [];
+  value.capability.resolutions = Array.isArray(value.capability.resolutions) ? value.capability.resolutions : [];
+  value.generation.modes = Array.isArray(value.generation.modes) ? value.generation.modes : [];
+  value.rules = Array.isArray(value.rules) ? value.rules : [];
+  value.polling.task_id_fields = Array.isArray(value.polling.task_id_fields) ? value.polling.task_id_fields : [];
+  value.polling.status_fields = Array.isArray(value.polling.status_fields) ? value.polling.status_fields : [];
+  value.polling.progress_fields = Array.isArray(value.polling.progress_fields) ? value.polling.progress_fields : [];
+  value.polling.error_fields = Array.isArray(value.polling.error_fields) ? value.polling.error_fields : [];
+  value.polling.queued_statuses = Array.isArray(value.polling.queued_statuses) ? value.polling.queued_statuses : [];
+  value.polling.processing_statuses = Array.isArray(value.polling.processing_statuses) ? value.polling.processing_statuses : [];
+  value.polling.success_statuses = Array.isArray(value.polling.success_statuses) ? value.polling.success_statuses : [];
+  value.polling.failure_statuses = Array.isArray(value.polling.failure_statuses) ? value.polling.failure_statuses : [];
+  value.polling.result_fields = Array.isArray(value.polling.result_fields) ? value.polling.result_fields : [];
+  return value;
+}
+
+function draftFromContract(contract: VideoModelContract, enabled: boolean): ContractDraft {
+  const value = normalizeVideoModelContractCollections(contract);
   return {
     contract: value,
     enabled,
@@ -907,6 +968,8 @@ function ContractParameterPreview({ contract }: { contract: VideoModelContract }
 
 export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) {
   const importFileInputRef = useRef<HTMLInputElement>(null);
+  const importControllerRef = useRef<AbortController | null>(null);
+  const importStartedAtRef = useRef(0);
   const jsonImportInputRef = useRef<HTMLInputElement>(null);
   const mountedRef = useRef(false);
   const currentSessionKeyRef = useRef(sessionKey);
@@ -924,9 +987,15 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
     mutationTrackerRef.current.activateSession(sessionKey);
   }
   const [items, setItems] = useState<ManagedVideoModelContract[]>([]);
+  const [listPage, setListPage] = useState(1);
+  const [listPageSize, setListPageSize] = useState(10);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [pendingIds, setPendingIds] = useState<Set<string>>(() => new Set());
+  const [optimisticEnabledByID, setOptimisticEnabledByID] = useState<Map<string, boolean>>(() => new Map());
+  const [selectedContractIds, setSelectedContractIds] = useState<Set<string>>(() => new Set());
+  const [isBulkActionBusy, setIsBulkActionBusy] = useState(false);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<ManagedVideoModelContract | null>(null);
   const [readOnly, setReadOnly] = useState(false);
@@ -938,6 +1007,13 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
   const [importURL, setImportURL] = useState("");
   const [importModel, setImportModel] = useState("");
   const [importTokenName, setImportTokenName] = useState("");
+  const [importError, setImportError] = useState("");
+  const [importStatus, setImportStatus] = useState<VideoModelContractImportProgress | null>(null);
+  const [importElapsedSeconds, setImportElapsedSeconds] = useState(0);
+  const [generatedContracts, setGeneratedContracts] = useState<VideoModelContract[]>([]);
+  const [generatedReviewOpen, setGeneratedReviewOpen] = useState(false);
+  const [generatedEditingIndex, setGeneratedEditingIndex] = useState<number | null>(null);
+  const [isPublishingGeneratedContracts, setIsPublishingGeneratedContracts] = useState(false);
   const [textModels, setTextModels] = useState<string[]>([]);
   const [isLoadingImportOptions, setIsLoadingImportOptions] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
@@ -1011,8 +1087,18 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
       contractLoadControllerRef.current?.abort();
       contractLoadControllerRef.current = null;
       contractLoadResetRef.current = false;
+      importControllerRef.current?.abort();
+      importControllerRef.current = null;
     };
   }, [loadContracts, sessionKey]);
+
+  useEffect(() => {
+    if (!isImporting) return;
+    const updateElapsed = () => setImportElapsedSeconds(Math.max(0, Math.floor((Date.now() - importStartedAtRef.current) / 1000)));
+    updateElapsed();
+    const timer = window.setInterval(updateElapsed, 1000);
+    return () => window.clearInterval(timer);
+  }, [isImporting]);
 
   useEffect(() => () => {
     versionsLoadVersionRef.current += 1;
@@ -1033,8 +1119,9 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
   const reconcileMutation = (
     ticket: ScopedMutationToken,
     decision: ScopedMutationDecision,
+    force = false,
   ) => {
-    if (decision.reconcile) void loadContracts(ticket.sessionKey, false);
+    if (decision.reconcile && (force || decision.concurrent)) void loadContracts(ticket.sessionKey, false);
   };
 
   const applyMutationResult = (
@@ -1052,7 +1139,7 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
 
   const rejectMutation = (ticket: ScopedMutationToken) => {
     const decision = mutationTrackerRef.current!.complete(ticket, false);
-    reconcileMutation(ticket, decision);
+    reconcileMutation(ticket, decision, true);
     return decision.current;
   };
 
@@ -1121,7 +1208,16 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
     });
   };
 
+  const clearImportFeedback = () => {
+    setImportError("");
+    setImportStatus(null);
+    setImportElapsedSeconds(0);
+  };
+
   const openCreate = () => {
+    setGeneratedContracts([]);
+    setGeneratedReviewOpen(false);
+    setGeneratedEditingIndex(null);
     setEditingItem(null);
     setReadOnly(false);
     const nextDraft = newDraft();
@@ -1137,6 +1233,7 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
     setImportSourceType("file");
     setImportFile(null);
     setImportURL("");
+    clearImportFeedback();
     setImportOpen(true);
     if (textModels.length > 0 || isLoadingImportOptions) return;
     setIsLoadingImportOptions(true);
@@ -1163,6 +1260,16 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
       toast.error("请输入文档链接");
       return;
     }
+    const controller = new AbortController();
+    importControllerRef.current?.abort();
+    importControllerRef.current = controller;
+    importStartedAtRef.current = Date.now();
+    setImportError("");
+    setImportStatus({
+      stage: "reading_document",
+      message: importSourceType === "file" ? "正在上传并读取文档" : "正在读取文档页面",
+    });
+    setImportElapsedSeconds(0);
     setIsImporting(true);
     try {
       const data = await importVideoModelContract({
@@ -1171,29 +1278,99 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
         url: importSourceType === "url" ? importURL : "",
         model: importModel,
         tokenName: importTokenName,
+        signal: controller.signal,
+        onProgress: (progress) => {
+          if (!controller.signal.aborted) setImportStatus(progress);
+        },
       });
+      const contracts = Array.isArray(data.contracts)
+        ? data.contracts.map(normalizeVideoModelContractCollections)
+        : [];
+      if (contracts.length === 0) throw new Error("文档分析完成，但未生成任何契约草稿");
       setImportOpen(false);
       setEditingItem(null);
       setReadOnly(false);
-      setDraft(draftFromContract(data.contract, false));
-      setPreviewInput(previewInputJSON(data.contract));
-      setPreviewSubmitResponse("{}");
-      setPreviewQueryResponse("{}");
-      setPreviewResult(null);
-      setDialogOpen(true);
-      if (data.warnings.length > 0) {
-        toast.warning(data.warnings.join("；"));
+      const warnings = Array.isArray(data.warnings) ? data.warnings : [];
+      setGeneratedContracts(contracts);
+      setGeneratedEditingIndex(null);
+      setGeneratedReviewOpen(true);
+      if (warnings.length > 0) {
+        toast.warning(warnings.join("；"));
       } else {
-        toast.success("契约草稿已生成，请校验后保存");
+        toast.success(`已生成 ${contracts.length} 份契约草稿，请逐份审核`);
       }
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "分析文档失败");
+      const message = controller.signal.aborted ? "已停止分析" : error instanceof Error ? error.message : "分析文档失败";
+      setImportError(message);
+      if (!controller.signal.aborted) toast.error(message);
     } finally {
-      setIsImporting(false);
+      if (importControllerRef.current === controller) {
+        importControllerRef.current = null;
+        setIsImporting(false);
+      }
+    }
+  };
+
+  const openGeneratedContract = (index: number) => {
+    const contract = generatedContracts[index];
+    if (!contract) return;
+    setGeneratedEditingIndex(index);
+    setEditingItem(null);
+    setReadOnly(false);
+    const generatedDraft = draftFromContract(contract, false);
+    setDraft(generatedDraft);
+    setPreviewInput(previewInputJSON(generatedDraft.contract));
+    setPreviewSubmitResponse("{}");
+    setPreviewQueryResponse("{}");
+    setPreviewResult(null);
+    setGeneratedReviewOpen(false);
+    setDialogOpen(true);
+  };
+
+  const closeContractDialog = () => {
+    setDialogOpen(false);
+    if (generatedEditingIndex === null) return;
+    setGeneratedEditingIndex(null);
+    setGeneratedReviewOpen(generatedContracts.length > 0);
+  };
+
+  const abandonGeneratedContracts = () => {
+    setGeneratedReviewOpen(false);
+    setGeneratedEditingIndex(null);
+    setGeneratedContracts([]);
+  };
+
+  const removeGeneratedContract = (index: number) => {
+    const remaining = generatedContracts.filter((_, currentIndex) => currentIndex !== index);
+    setGeneratedContracts(remaining);
+    if (remaining.length === 0) setGeneratedReviewOpen(false);
+  };
+
+  const publishAllGeneratedContracts = async () => {
+    if (generatedContracts.length === 0) return;
+    const contracts = generatedContracts;
+    const ticket = beginMutation(ALL_MUTATIONS_SCOPE);
+    let current = true;
+    setIsPublishingGeneratedContracts(true);
+    try {
+      const data = await importVideoModelContractJSON({
+        version: 4,
+        contracts: contracts.map((contract) => ({ contract, enabled: true })),
+      });
+      current = applyMutationResult(ticket, data.items, () => data.items);
+      if (!current) return;
+      abandonGeneratedContracts();
+      toast.success(`已审核并发布 ${contracts.length} 份契约（新增 ${data.created}，更新 ${data.updated}）`);
+    } catch (error) {
+      current = rejectMutation(ticket);
+      if (current) toast.error(error instanceof Error ? error.message : "批量审核视频模型契约失败");
+    } finally {
+      if (current) setIsPublishingGeneratedContracts(false);
     }
   };
 
   const openView = (item: ManagedVideoModelContract) => {
+    abandonGeneratedContracts();
     setEditingItem(item);
     setReadOnly(true);
     setDraft(draftFromContract(item.contract, item.enabled));
@@ -1205,6 +1382,7 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
   };
 
   const openEdit = (item: ManagedVideoModelContract) => {
+    abandonGeneratedContracts();
     setEditingItem(item);
     setReadOnly(false);
     const contract = item.draft || item.contract;
@@ -1217,6 +1395,7 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
   };
 
   const openCopy = (item: ManagedVideoModelContract) => {
+    abandonGeneratedContracts();
     const copied = cloneContract(item.contract);
     copied.name = `${copied.name} 副本`.slice(0, 100);
     copied.models = [];
@@ -1283,6 +1462,15 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
         : await createVideoModelContract(payload);
       current = applyMutationResult(ticket, data.items, (items) => mergeScopedMutationItem(items, data.item, data.items));
       if (!current) return;
+      if (generatedEditingIndex !== null) {
+        const remaining = generatedContracts.filter((_, index) => index !== generatedEditingIndex);
+        setGeneratedContracts(remaining);
+        setGeneratedEditingIndex(null);
+        setDialogOpen(false);
+        setGeneratedReviewOpen(remaining.length > 0);
+        toast.success(remaining.length > 0 ? `契约已发布，剩余 ${remaining.length} 份待审核` : "全部生成契约均已审核并发布");
+        return;
+      }
       setDialogOpen(false);
       toast.success(item ? `契约已发布为第 ${data.item.revision} 版` : "视频模型契约已添加并发布");
     } catch (error) {
@@ -1349,19 +1537,28 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
   const toggleEnabled = async (item: ManagedVideoModelContract) => {
     const ticket = beginMutation(item.id);
     let current = true;
+    const enabled = !item.enabled;
     setPendingIds((current) => new Set(current).add(item.id));
+    setOptimisticEnabledByID((current) => new Map(current).set(item.id, enabled));
     try {
-      const data = await setVideoModelContractEnabled(item.id, !item.enabled);
+      const data = await setVideoModelContractEnabled(item.id, enabled);
       current = applyMutationResult(ticket, data.items, (items) => mergeScopedMutationItem(items, data.item, data.items));
       if (!current) return;
       toast.success(item.enabled ? "契约已停用" : "契约已启用");
     } catch (error) {
       current = rejectMutation(ticket);
-      if (current) toast.error(error instanceof Error ? error.message : "更新契约状态失败");
+      if (current) {
+        toast.error(error instanceof Error ? error.message : "更新契约状态失败");
+      }
     } finally {
       if (current) {
         setPendingIds((pending) => {
           const next = new Set(pending);
+          next.delete(item.id);
+          return next;
+        });
+        setOptimisticEnabledByID((current) => {
+          const next = new Map(current);
           next.delete(item.id);
           return next;
         });
@@ -1445,6 +1642,152 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
     const updated = pendingJSONImport.bundle.contracts.filter((item) => existingNames.has(item.contract.name.trim().toLowerCase())).length;
     return { created: pendingJSONImport.bundle.contracts.length - updated, updated };
   }, [items, pendingJSONImport]);
+  const listTotalPages = Math.max(1, Math.ceil(items.length / listPageSize));
+  const safeListPage = Math.min(listPage, listTotalPages);
+  const visibleItems = useMemo(
+    () => items.slice((safeListPage - 1) * listPageSize, safeListPage * listPageSize),
+    [items, listPageSize, safeListPage],
+  );
+  const selectedItems = useMemo(
+    () => items.filter((item) => selectedContractIds.has(item.id)),
+    [items, selectedContractIds],
+  );
+  const visibleItemIds = useMemo(() => visibleItems.map((item) => item.id), [visibleItems]);
+  const allVisibleSelected = visibleItemIds.length > 0 && visibleItemIds.every((id) => selectedContractIds.has(id));
+  const someVisibleSelected = visibleItemIds.some((id) => selectedContractIds.has(id));
+
+  useEffect(() => setListPage((current) => Math.min(current, listTotalPages)), [listTotalPages]);
+
+  useEffect(() => {
+    const existingIds = new Set(items.map((item) => item.id));
+    setSelectedContractIds((current) => {
+      const next = new Set([...current].filter((id) => existingIds.has(id)));
+      return next.size === current.size ? current : next;
+    });
+  }, [items]);
+
+  const toggleContractSelection = (id: string, checked: boolean) => {
+    setSelectedContractIds((current) => {
+      const next = new Set(current);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  };
+
+  const toggleVisibleContractSelection = (checked: boolean) => {
+    setSelectedContractIds((current) => {
+      const next = new Set(current);
+      for (const id of visibleItemIds) {
+        if (checked) next.add(id);
+        else next.delete(id);
+      }
+      return next;
+    });
+  };
+
+  const exportSelectedContracts = () => {
+    if (selectedItems.length === 0) return;
+    downloadVideoContractDocument(
+      videoContractTransferDocument(selectedItems),
+      `video-model-contracts-selected-${selectedItems.length}.json`,
+    );
+    toast.success(`已导出 ${selectedItems.length} 个契约`);
+  };
+
+  const updateSelectedContractsEnabled = async (enabled: boolean) => {
+    if (isBulkActionBusy) return;
+    const targets = selectedItems.filter((item) => (optimisticEnabledByID.get(item.id) ?? item.enabled) !== enabled);
+    if (targets.length === 0) {
+      toast.info(enabled ? "选中的契约均已启用" : "选中的契约均已停用");
+      return;
+    }
+    const targetIds = new Set(targets.map((item) => item.id));
+    const ticket = beginMutation(ALL_MUTATIONS_SCOPE);
+    let latestItems: ManagedVideoModelContract[] | null = null;
+    const failedIds = new Set<string>();
+    let current = true;
+    setIsBulkActionBusy(true);
+    setPendingIds((pending) => new Set([...pending, ...targetIds]));
+    setOptimisticEnabledByID((values) => {
+      const next = new Map(values);
+      for (const id of targetIds) next.set(id, enabled);
+      return next;
+    });
+    try {
+      for (const item of targets) {
+        try {
+          const data = await setVideoModelContractEnabled(item.id, enabled);
+          latestItems = data.items;
+        } catch {
+          failedIds.add(item.id);
+        }
+      }
+      current = latestItems
+        ? applyMutationResult(ticket, latestItems, () => latestItems!)
+        : rejectMutation(ticket);
+      if (!current) return;
+      if (failedIds.size > 0) {
+        void loadContracts(ticket.sessionKey, false);
+        toast.warning(`${enabled ? "启用" : "停用"}完成：成功 ${targets.length - failedIds.size} 个，失败 ${failedIds.size} 个`);
+      } else {
+        toast.success(`已${enabled ? "启用" : "停用"} ${targets.length} 个契约`);
+      }
+    } finally {
+      setPendingIds((pending) => {
+        const next = new Set(pending);
+        for (const id of targetIds) next.delete(id);
+        return next;
+      });
+      setOptimisticEnabledByID((values) => {
+        const next = new Map(values);
+        for (const id of targetIds) next.delete(id);
+        return next;
+      });
+      if (current) setIsBulkActionBusy(false);
+    }
+  };
+
+  const deleteSelectedContracts = async () => {
+    if (isBulkActionBusy || selectedItems.length === 0) return;
+    const targets = [...selectedItems];
+    const targetIds = new Set(targets.map((item) => item.id));
+    const ticket = beginMutation(ALL_MUTATIONS_SCOPE);
+    let latestItems: ManagedVideoModelContract[] | null = null;
+    const failedIds = new Set<string>();
+    let current = true;
+    setIsBulkActionBusy(true);
+    setPendingIds((pending) => new Set([...pending, ...targetIds]));
+    try {
+      for (const item of targets) {
+        try {
+          const data = await deleteVideoModelContract(item.id);
+          latestItems = data.items;
+        } catch {
+          failedIds.add(item.id);
+        }
+      }
+      current = latestItems
+        ? applyMutationResult(ticket, latestItems, () => latestItems!)
+        : rejectMutation(ticket);
+      if (!current) return;
+      setSelectedContractIds(failedIds);
+      setBulkDeleteOpen(false);
+      if (failedIds.size > 0) {
+        void loadContracts(ticket.sessionKey, false);
+        toast.warning(`删除完成：成功 ${targets.length - failedIds.size} 个，失败 ${failedIds.size} 个`);
+      } else {
+        toast.success(`已删除 ${targets.length} 个契约`);
+      }
+    } finally {
+      setPendingIds((pending) => {
+        const next = new Set(pending);
+        for (const id of targetIds) next.delete(id);
+        return next;
+      });
+      if (current) setIsBulkActionBusy(false);
+    }
+  };
 
   const copyContractJSON = async () => {
     try {
@@ -1484,32 +1827,68 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
         onChange={(event) => void prepareJSONImport(event.target.files?.[0] || null)}
       />
       <SettingsCard
-        className="lg:h-auto"
-        contentClassName="p-0 sm:p-0"
+        contentClassName="p-0 sm:p-0 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col"
+        contentScrollable={false}
         icon={Film}
         tone="violet"
         title="视频模型契约"
         description="管理视频模型能力、请求字段和异步轮询规则。"
         meta={<Badge variant="secondary" className="rounded-md">{items.length} 个契约</Badge>}
         action={
-          <div data-video-contract-toolbar className="flex flex-wrap items-center justify-end gap-1.5">
-            <Button type="button" size="sm" variant="ghost" disabled={isJSONImporting} onClick={() => jsonImportInputRef.current?.click()}>
-              <Upload className="size-4" />
-              导入 JSON
-            </Button>
-            <Button type="button" size="sm" variant="ghost" disabled={items.length === 0} onClick={() => downloadVideoContractDocument(videoContractTransferDocument(items), "video-model-contracts.json")}>
-              <Download className="size-4" />
-              导出
-            </Button>
-            <span aria-hidden="true" className="mx-0.5 hidden h-5 w-px bg-border xl:block" />
-            <Button type="button" size="sm" variant="outline" onClick={openImport}>
-              <WandSparkles className="size-4" />
-              从文档生成
-            </Button>
-            <Button type="button" size="sm" onClick={openCreate}>
-              <Plus className="size-4" />
-              添加契约
-            </Button>
+          <div className="grid">
+            <div
+              data-video-contract-toolbar
+              aria-hidden={selectedItems.length > 0}
+              className={cn(
+                "col-start-1 row-start-1 flex flex-wrap items-center justify-end gap-1.5",
+                selectedItems.length > 0 && "invisible pointer-events-none",
+              )}
+            >
+              <Button type="button" size="sm" variant="ghost" disabled={isJSONImporting || isBulkActionBusy || selectedItems.length > 0} onClick={() => jsonImportInputRef.current?.click()}>
+                <Upload className="size-4" />
+                导入 JSON
+              </Button>
+              <Button type="button" size="sm" variant="ghost" disabled={items.length === 0 || selectedItems.length > 0} onClick={() => downloadVideoContractDocument(videoContractTransferDocument(items), "video-model-contracts.json")}>
+                <Download className="size-4" />
+                导出
+              </Button>
+              <span aria-hidden="true" className="mx-0.5 hidden h-5 w-px bg-border xl:block" />
+              <Button type="button" size="sm" variant="outline" disabled={isBulkActionBusy || selectedItems.length > 0} onClick={openImport}>
+                <WandSparkles className="size-4" />
+                从文档生成
+              </Button>
+              <Button type="button" size="sm" disabled={isBulkActionBusy || selectedItems.length > 0} onClick={openCreate}>
+                <Plus className="size-4" />
+                添加契约
+              </Button>
+            </div>
+            <div
+              data-video-contract-bulk-toolbar
+              aria-hidden={selectedItems.length === 0}
+              className={cn(
+                "col-start-1 row-start-1 flex flex-wrap items-center justify-end gap-1.5",
+                selectedItems.length === 0 && "invisible pointer-events-none",
+              )}
+            >
+              <span className="mr-1 whitespace-nowrap text-sm font-medium text-foreground">已选择 {selectedItems.length} 个</span>
+              <Button type="button" size="sm" variant="outline" disabled={isBulkActionBusy || selectedItems.length === 0} onClick={() => void updateSelectedContractsEnabled(true)}>
+                <Power className="size-4" />批量启用
+              </Button>
+              <Button type="button" size="sm" variant="outline" disabled={isBulkActionBusy || selectedItems.length === 0} onClick={() => void updateSelectedContractsEnabled(false)}>
+                <PowerOff className="size-4" />批量停用
+              </Button>
+              <Button type="button" size="sm" variant="outline" disabled={isBulkActionBusy || selectedItems.length === 0} onClick={exportSelectedContracts}>
+                <Download className="size-4" />导出选中
+              </Button>
+              <Button type="button" size="sm" variant="outline" className="text-rose-600 hover:text-rose-700" disabled={isBulkActionBusy || selectedItems.length === 0} onClick={() => setBulkDeleteOpen(true)}>
+                <Trash2 className="size-4" />删除选中
+              </Button>
+              <TooltipHint content="清除选择">
+                <Button type="button" size="icon" variant="ghost" className="size-8" disabled={isBulkActionBusy || selectedItems.length === 0} onClick={() => setSelectedContractIds(new Set())} aria-label="清除契约选择">
+                  <X className="size-4" />
+                </Button>
+              </TooltipHint>
+            </div>
           </div>
         }
       >
@@ -1518,38 +1897,60 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
         ) : items.length === 0 ? (
           <div className="p-5 sm:p-6"><SettingsEmptyState icon={Film} title="暂无视频模型契约" description="添加后可为模型设置中的视频模型提供参数和请求转换规则。" /></div>
         ) : (
-          <div data-video-contract-list>
-            <div className="hidden grid-cols-[minmax(220px,1.2fr)_minmax(180px,0.95fr)_minmax(280px,1.35fr)_150px_210px] items-center gap-5 border-b border-border/70 bg-muted/35 px-6 py-2.5 text-xs font-medium text-muted-foreground xl:grid">
+          <div data-video-contract-list className="lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
+            <div className="hidden grid-cols-[32px_minmax(220px,1.2fr)_minmax(180px,0.95fr)_minmax(280px,1.35fr)_150px_210px] items-center gap-5 border-b border-border/70 bg-muted/35 px-6 py-2.5 text-xs font-medium text-muted-foreground xl:grid">
+              <Checkbox
+                checked={allVisibleSelected || (someVisibleSelected ? "indeterminate" : false)}
+                disabled={isBulkActionBusy}
+                onCheckedChange={(checked) => toggleVisibleContractSelection(checked === true)}
+                aria-label="选择当前页契约"
+              />
               <span>契约</span>
               <span>匹配模型</span>
               <span>能力范围</span>
               <span>更新时间</span>
               <span className="text-right">操作</span>
             </div>
-            <div className="divide-y divide-border/70">
-              {items.map((item) => {
+            <ScrollArea
+              data-video-contract-rows
+              className="lg:min-h-0 lg:flex-1"
+              viewportClassName="overscroll-contain"
+            >
+              <div className="divide-y divide-border/70">
+                {visibleItems.map((item) => {
                 const pending = pendingIds.has(item.id);
+                const displayedEnabled = optimisticEnabledByID.get(item.id) ?? item.enabled;
                 const referenceTypes = referenceTypeCount(item.contract);
                 return (
                   <div
                     key={item.id}
                     data-video-contract-row
-                    className="grid min-w-0 gap-4 px-5 py-4 transition-colors hover:bg-muted/25 sm:px-6 xl:grid-cols-[minmax(220px,1.2fr)_minmax(180px,0.95fr)_minmax(280px,1.35fr)_150px_210px] xl:items-center xl:gap-5"
+                    data-selected={selectedContractIds.has(item.id) || undefined}
+                    className="grid min-w-0 gap-4 px-5 py-4 transition-colors hover:bg-muted/25 data-[selected=true]:bg-primary/[0.04] sm:px-6 xl:grid-cols-[32px_minmax(220px,1.2fr)_minmax(180px,0.95fr)_minmax(280px,1.35fr)_150px_210px] xl:items-center xl:gap-5"
                   >
+                  <label className="selection-trigger flex items-center gap-2 text-xs text-muted-foreground xl:justify-center" data-disabled={isBulkActionBusy}>
+                    <Checkbox
+                      checked={selectedContractIds.has(item.id)}
+                      disabled={isBulkActionBusy}
+                      onCheckedChange={(checked) => toggleContractSelection(item.id, checked === true)}
+                      aria-label={`选择 ${item.contract.name}`}
+                    />
+                    <span className="xl:hidden">{selectedContractIds.has(item.id) ? "已选择" : "选择"}</span>
+                  </label>
                   <div className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-3">
-                    <TooltipHint content={item.enabled ? "停用契约" : "启用契约"}>
+                    <TooltipHint content={displayedEnabled ? "停用契约" : "启用契约"}>
                       <Switch
-                        checked={item.enabled}
-                        disabled={pending}
+                        checked={displayedEnabled}
+                        disabled={pending || isBulkActionBusy}
                         onCheckedChange={() => void toggleEnabled(item)}
-                        aria-label={item.enabled ? "停用契约" : "启用契约"}
+                        aria-label={displayedEnabled ? "停用契约" : "启用契约"}
                       />
                     </TooltipHint>
                     <div className="min-w-0">
                       <div className="flex min-w-0 flex-wrap items-center gap-2">
                         <h3 className="truncate text-sm font-semibold text-foreground">{item.contract.name}</h3>
-                        <Badge variant={item.enabled ? "success" : "secondary"} className="rounded-md">
-                          {item.enabled ? "已启用" : "已停用"}
+                        <Badge variant={displayedEnabled ? "success" : "secondary"} className="rounded-md">
+                          {displayedEnabled ? "已启用" : "已停用"}
                         </Badge>
                         <Badge variant="outline" className="rounded-md">v{item.revision}</Badge>
                         {item.draft ? <Badge variant="warning" className="rounded-md">有草稿</Badge> : null}
@@ -1594,13 +1995,27 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
                     <Button type="button" variant="ghost" size="icon" className="size-8" onClick={() => void openVersions(item)} aria-label="版本历史" title="版本历史"><History className="size-4" /></Button>
                     <Button type="button" variant="ghost" size="icon" className="size-8" onClick={() => downloadVideoContractDocument(videoContractTransferDocument([item]), videoContractExportName(item.contract.name))} aria-label="导出契约" title="导出契约"><Download className="size-4" /></Button>
                     <Button type="button" variant="ghost" size="icon" className="size-8" onClick={() => openCopy(item)} aria-label="复制契约" title="复制契约"><Copy className="size-4" /></Button>
-                    <Button type="button" variant="ghost" size="icon" className="size-8" disabled={pending} onClick={() => openEdit(item)} aria-label="编辑契约" title="编辑契约"><Pencil className="size-4" /></Button>
-                    <Button type="button" variant="ghost" size="icon" className="size-8 text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:hover:bg-rose-950/30" disabled={pending} onClick={() => setDeletingItem(item)} aria-label="删除契约" title="删除契约"><Trash2 className="size-4" /></Button>
+                    <Button type="button" variant="ghost" size="icon" className="size-8" disabled={pending || isBulkActionBusy} onClick={() => openEdit(item)} aria-label="编辑契约" title="编辑契约"><Pencil className="size-4" /></Button>
+                    <Button type="button" variant="ghost" size="icon" className="size-8 text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:hover:bg-rose-950/30" disabled={pending || isBulkActionBusy} onClick={() => setDeletingItem(item)} aria-label="删除契约" title="删除契约"><Trash2 className="size-4" /></Button>
                   </div>
                   </div>
                 );
-              })}
-            </div>
+                })}
+              </div>
+            </ScrollArea>
+            <ManagementPagination
+              page={safeListPage}
+              totalPages={listTotalPages}
+              totalItems={items.length}
+              pageSize={listPageSize}
+              pageSizeOptions={[10, 20, 50]}
+              itemLabel="个"
+              onPageChange={setListPage}
+              onPageSizeChange={(pageSize) => {
+                setListPageSize(pageSize);
+                setListPage(1);
+              }}
+            />
           </div>
         )}
       </SettingsCard>
@@ -1618,7 +2033,7 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
                 variant={importSourceType === "file" ? "outline" : "ghost"}
                 className={importSourceType === "file" ? "bg-background shadow-sm" : "shadow-none"}
                 disabled={isImporting}
-                onClick={() => setImportSourceType("file")}
+                onClick={() => { setImportSourceType("file"); clearImportFeedback(); }}
               >
                 <FileText className="size-4" />上传文档
               </Button>
@@ -1627,7 +2042,7 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
                 variant={importSourceType === "url" ? "outline" : "ghost"}
                 className={importSourceType === "url" ? "bg-background shadow-sm" : "shadow-none"}
                 disabled={isImporting}
-                onClick={() => setImportSourceType("url")}
+                onClick={() => { setImportSourceType("url"); clearImportFeedback(); }}
               >
                 <Link2 className="size-4" />文档链接
               </Button>
@@ -1642,7 +2057,7 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
                   className="hidden"
                   accept=".txt,.md,.markdown,.json,.yaml,.yml,.html,.htm,.docx,text/plain,text/markdown,text/html,application/json,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                   disabled={isImporting}
-                  onChange={(event) => setImportFile(event.target.files?.[0] || null)}
+                  onChange={(event) => { setImportFile(event.target.files?.[0] || null); clearImportFeedback(); }}
                 />
                 {importFile ? (
                   <div className="flex h-11 min-w-0 items-center gap-3 rounded-lg border border-border bg-background px-3">
@@ -1661,7 +2076,7 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
             ) : (
               <Field>
                 <FieldLabel htmlFor="video-contract-import-url">文档链接</FieldLabel>
-                <Input id="video-contract-import-url" type="url" value={importURL} disabled={isImporting} placeholder="https://docs.example.com/video-api" className={settingsDialogInputClassName} onChange={(event) => setImportURL(event.target.value)} />
+                <Input id="video-contract-import-url" type="url" value={importURL} disabled={isImporting} placeholder="https://docs.example.com/video-api" className={settingsDialogInputClassName} onChange={(event) => { setImportURL(event.target.value); clearImportFeedback(); }} />
                 <FieldDescription>仅支持公网可访问的 HTTP 或 HTTPS 页面</FieldDescription>
               </Field>
             )}
@@ -1674,25 +2089,113 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
               </Select>
               <FieldDescription>使用个人默认文本 Key，请确认生成结果后再保存</FieldDescription>
             </Field>
+            {isImporting ? (
+              <section aria-live="polite" aria-label="契约生成进度" className="overflow-hidden rounded-lg border border-border bg-muted/15">
+                <header className="flex items-center justify-between gap-3 border-b border-border/70 px-3.5 py-2.5">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <WandSparkles className="size-4 shrink-0 animate-pulse text-primary" />
+                    <span className="truncate text-sm font-medium">生成进度</span>
+                  </div>
+                  <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{formatElapsedSeconds(importElapsedSeconds)}</span>
+                </header>
+                <div className="h-0.5 overflow-hidden bg-muted"><div className="h-full w-2/3 animate-pulse bg-primary" /></div>
+                <div className="flex min-h-20 items-center gap-3 px-3.5 py-4">
+                  <LoaderCircle className="size-5 shrink-0 animate-spin text-primary" />
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-medium text-foreground">{videoContractImportStatusLabel(importStatus?.stage)}</p>
+                    <p className="mt-1 truncate text-xs tabular-nums text-muted-foreground">{videoContractImportStatusSummary(importStatus)}</p>
+                  </div>
+                </div>
+              </section>
+            ) : null}
+            {importError ? (
+              <div role="alert" className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2.5 text-sm text-destructive">
+                <CircleAlert className="mt-0.5 size-4 shrink-0" />
+                <span className="min-w-0 break-words">{importError}</span>
+              </div>
+            ) : null}
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setImportOpen(false)} disabled={isImporting}>取消</Button>
+            <Button type="button" variant="outline" onClick={() => isImporting ? importControllerRef.current?.abort() : setImportOpen(false)}>
+              {isImporting ? <Square className="size-3.5 fill-current" /> : null}
+              {isImporting ? "停止分析" : "取消"}
+            </Button>
             <Button type="button" disabled={isImporting || isLoadingImportOptions || !importModel || (importSourceType === "file" ? !importFile : !importURL.trim())} onClick={() => void generateFromDocument()}>
-              {isImporting ? <LoaderCircle className="size-4 animate-spin" /> : <WandSparkles className="size-4" />}
-              {isImporting ? "正在分析" : "生成契约草稿"}
+              <WandSparkles className={cn("size-4", isImporting && "animate-pulse")} />
+              {isImporting ? `分析中 · ${formatElapsedSeconds(importElapsedSeconds)}` : "生成契约草稿"}
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <Dialog open={generatedReviewOpen} onOpenChange={(open) => (open ? setGeneratedReviewOpen(true) : !isPublishingGeneratedContracts && abandonGeneratedContracts())}>
+        <DialogContent className="w-[min(94vw,720px)] max-w-none">
+          <DialogHeader>
+            <DialogTitle>审核生成的契约</DialogTitle>
+            <DialogDescription>相同配置已自动合并；仍有差异的模型拆成了 {generatedContracts.length} 份契约，请逐份确认后发布。</DialogDescription>
+          </DialogHeader>
+          <ScrollArea
+            maxHeight="min(60dvh, 560px)"
+            className="border-y border-border"
+            viewportClassName="overscroll-y-contain pr-3"
+            viewClass="divide-y divide-border"
+            tabindex={0}
+            ariaLabel="生成的契约草稿"
+          >
+            {generatedContracts.map((contract, index) => (
+              <div key={`${contract.name}-${index}`} className="grid min-w-0 gap-3 py-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                <div className="min-w-0 space-y-2">
+                  <div className="flex min-w-0 flex-wrap items-center gap-2">
+                    <span className="flex size-7 shrink-0 items-center justify-center rounded-md bg-muted text-xs font-semibold tabular-nums">{index + 1}</span>
+                    <h3 className="min-w-0 truncate text-sm font-semibold text-foreground">{contract.name || "未命名契约"}</h3>
+                    <Badge variant="outline" className="shrink-0 rounded-md">{contract.driver}</Badge>
+                  </div>
+                  <p className="break-words text-xs text-muted-foreground">{contract.models.length > 0 ? contract.models.join("、") : "未匹配模型"}</p>
+                  <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                    <span>{formatDurationRange(contract.capability.seconds)}</span>
+                    <span>{contract.capability.sizes.length > 0 ? contract.capability.sizes.join(" / ") : "上游默认画幅"}</span>
+                    <span>{contract.capability.resolutions.length > 0 ? contract.capability.resolutions.join(" / ") : "上游默认清晰度"}</span>
+                    <span>{contract.generation.modes.length} 种生成模式</span>
+                  </div>
+                </div>
+                <div className="flex shrink-0 items-center justify-end gap-1.5">
+                  <TooltipHint content="移除此草稿">
+                    <Button type="button" variant="ghost" size="icon" className="size-9" disabled={isPublishingGeneratedContracts} onClick={() => removeGeneratedContract(index)} aria-label={`移除 ${contract.name || "未命名契约"}`}>
+                      <Trash2 className="size-4" />
+                    </Button>
+                  </TooltipHint>
+                  <Button type="button" variant="outline" size="sm" disabled={isPublishingGeneratedContracts} onClick={() => openGeneratedContract(index)}>
+                    <Pencil className="size-4" />审核
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </ScrollArea>
+          <DialogFooter>
+            <Button type="button" variant="outline" disabled={isPublishingGeneratedContracts} onClick={abandonGeneratedContracts}>放弃全部</Button>
+            <Button type="button" variant="outline" disabled={isPublishingGeneratedContracts || generatedContracts.length === 0} onClick={() => openGeneratedContract(0)}>
+              <Pencil className="size-4" />审核下一份
+            </Button>
+            <TooltipHint content="校验、发布并启用全部草稿">
+              <Button type="button" disabled={isPublishingGeneratedContracts || generatedContracts.length === 0} onClick={() => void publishAllGeneratedContracts()}>
+                {isPublishingGeneratedContracts ? <LoaderCircle className="size-4 animate-spin" /> : <CheckCheck className="size-4" />}
+                全部审核
+              </Button>
+            </TooltipHint>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={dialogOpen} onOpenChange={(open) => (open ? setDialogOpen(true) : closeContractDialog())}>
         <DialogContent
           scrollable={false}
           className="h-[min(90dvh,860px)] w-[min(96vw,1280px)] max-w-none"
         >
           <DialogHeader>
             <DialogTitle>
-              {readOnly ? "查看视频模型契约" : editingItem ? "编辑视频模型契约" : "添加视频模型契约"}
+              {generatedEditingIndex !== null
+                ? `审核视频模型契约（${generatedEditingIndex + 1}/${generatedContracts.length}）`
+                : readOnly ? "查看视频模型契约" : editingItem ? "编辑视频模型契约" : "添加视频模型契约"}
             </DialogTitle>
             <DialogDescription>{draft.contract.name || "配置模型能力和上游字段映射"}</DialogDescription>
           </DialogHeader>
@@ -1919,10 +2422,10 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
             </ScrollArea>
           </div>
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setDialogOpen(false)} disabled={isSaving}>{readOnly ? "关闭" : "取消"}</Button>
+            <Button type="button" variant="outline" onClick={closeContractDialog} disabled={isSaving}>{generatedEditingIndex !== null ? "返回审核列表" : readOnly ? "关闭" : "取消"}</Button>
             {!readOnly ? <Button type="button" variant="outline" onClick={() => void validate().catch((error) => toast.error(error instanceof Error ? error.message : "契约校验失败"))} disabled={isSaving}><ShieldCheck className="size-4" />校验配置</Button> : null}
             {!readOnly && editingItem ? <Button type="button" variant="outline" onClick={() => void saveDraft()} disabled={isSaving}><FileText className="size-4" />保存草稿</Button> : null}
-            {!readOnly ? <Button type="button" onClick={() => void publish()} disabled={isSaving}>{isSaving ? <LoaderCircle className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}{editingItem ? "发布新版本" : "添加并发布"}</Button> : null}
+            {!readOnly ? <Button type="button" onClick={() => void publish()} disabled={isSaving}>{isSaving ? <LoaderCircle className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}{generatedEditingIndex !== null ? (generatedContracts.length > 1 ? "发布并审核下一份" : "发布契约") : editingItem ? "发布新版本" : "添加并发布"}</Button> : null}
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -2002,6 +2505,22 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => setDeletingItem(null)}>取消</Button>
             <Button type="button" variant="destructive" onClick={() => void remove()} disabled={deletingItem ? pendingIds.has(deletingItem.id) : false}>{deletingItem && pendingIds.has(deletingItem.id) ? <LoaderCircle className="size-4 animate-spin" /> : <Trash2 className="size-4" />}删除</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={bulkDeleteOpen} onOpenChange={(open) => !isBulkActionBusy && setBulkDeleteOpen(open)}>
+        <DialogContent className="w-[min(92vw,460px)]">
+          <DialogHeader>
+            <DialogTitle>批量删除视频模型契约？</DialogTitle>
+            <DialogDescription>将永久删除选中的 {selectedItems.length} 个契约，使用这些契约的模型会立即失去对应参数和请求映射。</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button type="button" variant="outline" disabled={isBulkActionBusy} onClick={() => setBulkDeleteOpen(false)}>取消</Button>
+            <Button type="button" variant="destructive" disabled={isBulkActionBusy || selectedItems.length === 0} onClick={() => void deleteSelectedContracts()}>
+              {isBulkActionBusy ? <LoaderCircle className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+              {isBulkActionBusy ? "正在删除" : `删除 ${selectedItems.length} 个契约`}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -37,10 +37,12 @@ type RequestOptions = {
     redirectOnUnauthorized?: boolean;
     signal?: AbortSignal;
     timeout?: number;
+    responseType?: AxiosRequestConfig["responseType"];
+    onDownloadProgress?: AxiosRequestConfig["onDownloadProgress"];
 };
 
 export async function httpRequest<T>(path: string, options: RequestOptions = {}) {
-    const {method = "GET", body, headers, redirectOnUnauthorized = true, signal, timeout} = options;
+    const {method = "GET", body, headers, redirectOnUnauthorized = true, signal, timeout, responseType, onDownloadProgress} = options;
     const config: RequestConfig = {
         url: path,
         method,
@@ -49,6 +51,8 @@ export async function httpRequest<T>(path: string, options: RequestOptions = {})
         redirectOnUnauthorized,
         signal,
         timeout,
+        responseType,
+        onDownloadProgress,
     };
     const response = await request.request<T>(config);
     return response.data;

@@ -305,10 +305,22 @@ export type VideoModelContractMutation = {
 };
 
 export type VideoModelContractImportResult = {
-  contract: VideoModelContract;
+  contracts: VideoModelContract[];
   source: { type: "file" | "url"; name: string };
   warnings: string[];
   model: string;
+};
+
+export type VideoModelContractImportProgress = {
+  stage: "reading_document" | "document_ready" | "preparing" | "generating" | "upstream_connected" | "receiving" | "validating" | "repairing" | "retrying" | "heartbeat" | "completed" | "failed";
+  message: string;
+  attempt?: number;
+  max_attempts?: number;
+  request_attempt?: number;
+  max_request_attempts?: number;
+  elapsed_seconds?: number;
+  received_characters?: number;
+  result?: VideoModelContractImportResult;
 };
 
 export type VideoModelContractTransferDocument = {
@@ -1420,6 +1432,8 @@ export async function importVideoModelContract(input: {
   url?: string;
   model?: string;
   tokenName?: string;
+  signal?: AbortSignal;
+  onProgress?: (progress: VideoModelContractImportProgress) => void;
 }) {
   const formData = new FormData();
   formData.append("source_type", input.sourceType);
@@ -1427,11 +1441,57 @@ export async function importVideoModelContract(input: {
   if (input.url?.trim()) formData.append("url", input.url.trim());
   if (input.model?.trim()) formData.append("model", input.model.trim());
   if (input.tokenName?.trim()) formData.append("token_name", input.tokenName.trim());
-  return httpRequest<VideoModelContractImportResult>("/api/admin/video-model-contracts/import", {
+  let responseOffset = 0;
+  let pendingLine = "";
+  let result: VideoModelContractImportResult | undefined;
+  let streamError = "";
+  let parseError = "";
+  const consumeProgress = (responseText: string, flush = false) => {
+    if (responseText.length < responseOffset) {
+      responseOffset = 0;
+      pendingLine = "";
+    }
+    pendingLine += responseText.slice(responseOffset);
+    responseOffset = responseText.length;
+    const lines = pendingLine.split("\n");
+    pendingLine = lines.pop() || "";
+    if (flush && pendingLine.trim()) {
+      lines.push(pendingLine);
+      pendingLine = "";
+    }
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const progress = JSON.parse(line) as VideoModelContractImportProgress;
+        if (!progress || typeof progress.stage !== "string" || typeof progress.message !== "string") {
+          parseError = "文档分析进度响应格式无效";
+          continue;
+        }
+        input.onProgress?.(progress);
+        if (progress.stage === "completed" && progress.result) result = progress.result;
+        if (progress.stage === "failed") streamError = progress.message;
+      } catch {
+        parseError = "文档分析进度响应格式无效";
+      }
+    }
+  };
+  const responseText = await httpRequest<string>("/api/admin/video-model-contracts/import", {
     method: "POST",
     body: formData,
-    timeout: 180_000,
+    headers: { Accept: "application/x-ndjson" },
+    timeout: 600_000,
+    signal: input.signal,
+    responseType: "text",
+    onDownloadProgress: (event) => {
+      const target = event.event?.currentTarget || event.event?.target;
+      if (typeof target?.responseText === "string") consumeProgress(target.responseText);
+    },
   });
+  consumeProgress(responseText, true);
+  if (streamError) throw new Error(streamError);
+  if (parseError) throw new Error(parseError);
+  if (!result) throw new Error("文档分析完成，但未返回契约草稿");
+  return result;
 }
 
 export async function importVideoModelContractJSON(document: VideoModelContractTransferDocument) {

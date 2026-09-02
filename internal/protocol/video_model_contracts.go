@@ -243,6 +243,9 @@ func NormalizeVideoModelContract(contract VideoModelContract) (VideoModelContrac
 	contract.Capability.AudioControl = strings.ToLower(strings.TrimSpace(contract.Capability.AudioControl))
 	contract.Generation.Selection = strings.ToLower(strings.TrimSpace(contract.Generation.Selection))
 	contract.Generation.DefaultMode = strings.TrimSpace(contract.Generation.DefaultMode)
+	if contract.Generation.Modes == nil {
+		contract.Generation.Modes = make([]VideoModelGenerationMode, 0)
+	}
 	for index := range contract.Generation.Modes {
 		mode := &contract.Generation.Modes[index]
 		mode.ID = strings.TrimSpace(mode.ID)
@@ -251,6 +254,9 @@ func NormalizeVideoModelContract(contract VideoModelContract) (VideoModelContrac
 		mode.RequestValue = strings.TrimSpace(mode.RequestValue)
 	}
 	contract.Capability = videoCapabilityWithGenerationModes(contract.Capability, contract.Generation.Modes)
+	if contract.Rules == nil {
+		contract.Rules = make([]VideoModelContractRule, 0)
+	}
 	for index := range contract.Rules {
 		rule := &contract.Rules[index]
 		rule.When.Field = strings.ToLower(strings.TrimSpace(rule.When.Field))
@@ -874,24 +880,25 @@ func ValidateVideoModelContract(contract VideoModelContract) error {
 		}
 	}
 	fields := []struct {
+		path     string
 		name     string
 		required bool
 	}{
-		{contract.Request.DurationField, len(capability.Seconds) > 0},
-		{contract.Request.AspectRatioField, len(capability.Sizes) > 0},
-		{contract.Request.ResolutionField, len(capability.Resolutions) > 0},
-		{contract.Request.GenerateAudioField, capability.AudioControl == "toggle"},
-		{contract.Request.WatermarkField, capability.Watermark},
-		{contract.Request.GenerationModeField, false},
-		{contract.Request.FirstFrameField, capability.FirstFrameImageLimit > 0},
-		{contract.Request.LastFrameField, capability.FirstFrameImageLimit > 1},
-		{contract.Request.ReferenceImagesField, limits.Image > 0},
-		{contract.Request.ReferenceVideosField, limits.Video > 0},
-		{contract.Request.ReferenceAudiosField, limits.Audio > 0},
+		{"request.duration_field", contract.Request.DurationField, len(capability.Seconds) > 0},
+		{"request.aspect_ratio_field", contract.Request.AspectRatioField, len(capability.Sizes) > 0},
+		{"request.resolution_field", contract.Request.ResolutionField, len(capability.Resolutions) > 0},
+		{"request.generate_audio_field", contract.Request.GenerateAudioField, capability.AudioControl == "toggle"},
+		{"request.watermark_field", contract.Request.WatermarkField, capability.Watermark},
+		{"request.generation_mode_field", contract.Request.GenerationModeField, false},
+		{"request.first_frame_field", contract.Request.FirstFrameField, capability.FirstFrameImageLimit > 0},
+		{"request.last_frame_field", contract.Request.LastFrameField, capability.FirstFrameImageLimit > 1},
+		{"request.reference_images_field", contract.Request.ReferenceImagesField, limits.Image > 0},
+		{"request.reference_videos_field", contract.Request.ReferenceVideosField, limits.Video > 0},
+		{"request.reference_audios_field", contract.Request.ReferenceAudiosField, limits.Audio > 0},
 	}
 	for _, field := range fields {
 		if field.required && field.name == "" {
-			return fmt.Errorf("必需的请求字段映射不能为空")
+			return fmt.Errorf("必需的请求字段映射 %s 不能为空", field.path)
 		}
 		if field.name != "" && !videoContractRequestPathPattern.MatchString(field.name) {
 			return fmt.Errorf("请求字段 %q 格式无效", field.name)

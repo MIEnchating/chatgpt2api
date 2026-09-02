@@ -56,6 +56,12 @@ export default defineConfig({
     strictPort: true,
     proxy: backendProxy,
   },
+  preview: {
+    host: "0.0.0.0",
+    port: 8002,
+    strictPort: true,
+    proxy: backendProxy,
+  },
   build: {
     outDir: "../internal/web/dist",
     emptyOutDir: true,

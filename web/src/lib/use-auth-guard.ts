@@ -84,7 +84,6 @@ function useVerifiedSessionLifecycle(
       if (!active) {
         return;
       }
-      setIsCheckingAuth(true);
       void load(forceRefresh);
     };
     const handleSessionChange = () => verifyCurrentSession(false);

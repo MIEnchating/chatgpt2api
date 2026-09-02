@@ -8,7 +8,6 @@ import {
   Clapperboard,
   GripVertical,
   Image as ImageIcon,
-  KeyRound,
   ListPlus,
   LoaderCircle,
   PencilLine,
@@ -35,14 +34,17 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { MultiSelect } from "@/components/ui/multi-select";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { TooltipHint } from "@/components/ui/tooltip";
 import {
+  fetchCustomRelayConfigs,
   fetchProfileRelayKey,
   fetchRelayModels,
   normalizeModelNames,
   relayModelOptionsFromList,
+  type CustomRelayConfigStatus,
 } from "@/lib/api";
 import { useRelayTokenPreferences } from "@/lib/use-relay-token-preferences";
 import { filterModelsByCapability } from "@/lib/model-capabilities";
@@ -66,6 +68,19 @@ function normalizeTokenNames(values: unknown) {
   return Array.isArray(values)
     ? Array.from(new Set(values.map((name) => String(name || "").trim()).filter(Boolean)))
     : [];
+}
+
+function relayTokenOptions(
+  tokenNames: string[],
+  customConfigs: CustomRelayConfigStatus[],
+  kind: ModelKind,
+) {
+  const options = tokenNames.map((name) => ({ value: name, label: name, custom: false }));
+  for (const config of customConfigs) {
+    if (config.kind !== kind || !config.configured || options.some((option) => option.value === config.token_name)) continue;
+    options.push({ value: config.token_name, label: config.name, custom: true });
+  }
+  return options;
 }
 
 function moveModel(models: string[], index: number, offset: -1 | 1) {
@@ -237,7 +252,9 @@ function AddModelDialog({
   const [mode, setMode] = useState<AddMode>("automatic");
   const [kind, setKind] = useState<ModelKind>("image");
   const [tokenNames, setTokenNames] = useState<string[]>([]);
-  const [selectedTokenName, setSelectedTokenName] = useState("");
+  const [customConfigs, setCustomConfigs] = useState<CustomRelayConfigStatus[]>([]);
+  const [serviceTokenName, setServiceTokenName] = useState("");
+  const [selectedTokenNames, setSelectedTokenNames] = useState<string[]>([]);
   const [isLoadingKeys, setIsLoadingKeys] = useState(false);
   const [isLoadingModels, setIsLoadingModels] = useState(false);
   const [fetchedModels, setFetchedModels] = useState<string[]>([]);
@@ -251,6 +268,10 @@ function AddModelDialog({
 
   const configuredModels = modelsByKind[kind];
   const configuredSet = useMemo(() => new Set(configuredModels), [configuredModels]);
+  const tokenOptions = useMemo(
+    () => relayTokenOptions(tokenNames, customConfigs, kind),
+    [customConfigs, kind, tokenNames],
+  );
   const filteredModels = useMemo(() => {
     const query = search.trim().toLowerCase();
     if (!query) return fetchedModels;
@@ -272,32 +293,40 @@ function AddModelDialog({
     setIsLoadingModels(false);
     const controller = new AbortController();
     const preferredKind = initialKind;
-    const preferredTokenName = relayTokenNames[preferredKind][0] || "";
+    const preferredTokenNames = relayTokenNames[preferredKind];
     setMode("automatic");
     setKind(preferredKind);
-    setSelectedTokenName(preferredTokenName);
+    setSelectedTokenNames(preferredTokenNames);
     setFetchedModels([]);
     setSelectedModels(new Set());
     setSearch("");
     setCustomModels("");
     setIsLoadingKeys(true);
-    void fetchProfileRelayKey(undefined, preferredTokenName)
-      .then((status) => {
+    void Promise.all([fetchProfileRelayKey(), fetchCustomRelayConfigs()])
+      .then(([status, customConfigResponse]) => {
         if (controller.signal.aborted) return;
         const names = normalizeTokenNames(status.token_names);
+        const availableOptions = relayTokenOptions(names, customConfigResponse.configs, preferredKind);
+        const availableNames = new Set(availableOptions.map((option) => option.value));
         setTokenNames(names);
+        setCustomConfigs(customConfigResponse.configs);
         const serviceSelection = String(status.token_name || "").trim();
-        setSelectedTokenName(
-          names.includes(preferredTokenName)
-            ? preferredTokenName
-            : names.includes(serviceSelection)
-              ? serviceSelection
-              : "",
+        setServiceTokenName(serviceSelection);
+        const preferredSelections = preferredTokenNames.filter((name) => availableNames.has(name));
+        setSelectedTokenNames(
+          preferredSelections.length > 0
+            ? preferredSelections
+            : availableNames.has(serviceSelection)
+              ? [serviceSelection]
+              : [],
         );
       })
       .catch((error) => {
         if (controller.signal.aborted) return;
         setTokenNames([]);
+        setCustomConfigs([]);
+        setServiceTokenName("");
+        setSelectedTokenNames([]);
         toast.error(error instanceof Error ? error.message : "读取 Key 列表失败");
       })
       .finally(() => {
@@ -319,9 +348,9 @@ function AddModelDialog({
     setIsLoadingModels(false);
   }, [open, session.key]);
 
-  function selectTokenName(value: string) {
+  function selectTokenNames(values: string[]) {
     invalidateModelLoad();
-    setSelectedTokenName(value);
+    setSelectedTokenNames(values);
     setFetchedModels([]);
     setSelectedModels(new Set());
     setSearch("");
@@ -330,16 +359,23 @@ function AddModelDialog({
   function selectModelKind(value: ModelKind) {
     invalidateModelLoad();
     setKind(value);
-    const preferredTokenName = relayTokenNames[value][0] || "";
-    setSelectedTokenName(tokenNames.includes(preferredTokenName) ? preferredTokenName : "");
+    const availableNames = new Set(relayTokenOptions(tokenNames, customConfigs, value).map((option) => option.value));
+    const preferredSelections = relayTokenNames[value].filter((name) => availableNames.has(name));
+    setSelectedTokenNames(
+      preferredSelections.length > 0
+        ? preferredSelections
+        : availableNames.has(serviceTokenName)
+          ? [serviceTokenName]
+          : [],
+    );
     setFetchedModels([]);
     setSelectedModels(new Set());
     setSearch("");
   }
 
   async function loadModels() {
-    if (!selectedTokenName) {
-      toast.error("请先选择用于获取模型的 Key");
+    if (selectedTokenNames.length === 0) {
+      toast.error("请至少选择一个用于获取模型的 Key");
       return;
     }
     modelLoadControllerRef.current?.abort();
@@ -347,25 +383,29 @@ function AddModelDialog({
     const requestVersion = modelLoadVersionRef.current + 1;
     modelLoadVersionRef.current = requestVersion;
     modelLoadControllerRef.current = controller;
-    const requestTokenName = selectedTokenName;
+    const requestTokenNames = [...selectedTokenNames];
     const requestKind = kind;
     const requestSessionKey = session.key;
     setIsLoadingModels(true);
     try {
-      const response = await fetchRelayModels({ tokenName: requestTokenName, signal: controller.signal });
+      const responses = await Promise.all(
+        requestTokenNames.map((tokenName) => fetchRelayModels({ tokenName, signal: controller.signal })),
+      );
       if (
         controller.signal.aborted
         || modelLoadVersionRef.current !== requestVersion
         || currentSessionKeyRef.current !== requestSessionKey
       ) return;
       const models = filterModelsByCapability(
-        relayModelOptionsFromList(response.data).map((option) => option.value),
+        Array.from(new Set(responses.flatMap((response) => (
+          relayModelOptionsFromList(response.data).map((option) => option.value)
+        )))),
         requestKind,
       );
       setFetchedModels(models);
       setSelectedModels(new Set());
       setSearch("");
-      if (models.length === 0) toast.info("该 Key 没有返回可用模型");
+      if (models.length === 0) toast.info("所选 Key 没有返回可用模型");
     } catch (error) {
       if (controller.signal.aborted || modelLoadVersionRef.current !== requestVersion) return;
       toast.error(error instanceof Error ? error.message : "获取模型失败");
@@ -459,18 +499,23 @@ function AddModelDialog({
           </label>
 
           {mode === "automatic" ? (
-            <label className="grid gap-2 text-sm font-medium">
-              用于获取模型的 Key
-              <Select value={selectedTokenName || undefined} onValueChange={selectTokenName} disabled={isLoadingKeys || tokenNames.length === 0}>
-                <SelectTrigger className="h-11">
-                  {isLoadingKeys ? <LoaderCircle className="size-4 animate-spin" /> : <KeyRound className="size-4 text-muted-foreground" />}
-                  <SelectValue placeholder={isLoadingKeys ? "正在读取 Key" : tokenNames.length ? "选择 Key" : "暂无可用 Key"} />
-                </SelectTrigger>
-                <SelectContent>
-                  {tokenNames.map((name) => <SelectItem key={name} value={name}>{name}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </label>
+            <div className="grid gap-2 text-sm font-medium">
+              <span>用于获取模型的 Key</span>
+              <MultiSelect
+                value={selectedTokenNames}
+                options={tokenOptions.map((option) => ({
+                  value: option.value,
+                  label: option.label,
+                  meta: option.custom ? <span className="text-[10px] text-muted-foreground">自定义</span> : null,
+                }))}
+                disabled={isLoadingKeys || tokenOptions.length === 0}
+                placeholder={isLoadingKeys ? "正在读取 Key" : tokenOptions.length ? "选择 Key" : "暂无可用 Key"}
+                emptyText="暂无可用 Key"
+                collapseTags
+                collapseTagsTooltip
+                onValueChange={selectTokenNames}
+              />
+            </div>
           ) : (
             <div className="hidden sm:block" />
           )}
@@ -479,8 +524,8 @@ function AddModelDialog({
         {mode === "automatic" ? (
           <div className="grid gap-3">
             <div className="flex items-center justify-between gap-3 rounded-lg border border-border/70 bg-muted/40 px-3 py-2.5 text-xs text-muted-foreground">
-              <span>默认使用个人中心的{modelKindMetadata[kind].label} Key；在此切换不会修改个人中心。</span>
-              <Button type="button" size="sm" onClick={() => void loadModels()} disabled={!selectedTokenName || isLoadingModels}>
+              <span>默认使用个人中心已选择的全部{modelKindMetadata[kind].label} Key；在此切换不会修改个人中心。</span>
+              <Button type="button" size="sm" onClick={() => void loadModels()} disabled={selectedTokenNames.length === 0 || isLoadingModels}>
                 {isLoadingModels ? <LoaderCircle className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}
                 获取模型
               </Button>
@@ -512,7 +557,7 @@ function AddModelDialog({
             ) : (
               <div className="flex min-h-32 flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-border bg-muted/20 px-6 text-center">
                 <WandSparkles className="size-6 text-muted-foreground/50" />
-                <p className="text-sm text-muted-foreground">选择 Key 后点击“获取模型”</p>
+                <p className="text-sm text-muted-foreground">选择一个或多个 Key 后点击“获取模型”</p>
               </div>
             )}
           </div>

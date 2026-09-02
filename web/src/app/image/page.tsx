@@ -284,6 +284,26 @@ type PublishRecipeOptions = {
   shareReferenceImages: boolean;
 };
 
+function normalizeRetryVideoTurnFields(turn: ImageTurn, model: string) {
+  return videoTurnFieldsFromNormalizedRequest(normalizeVideoRequest({
+    model,
+    size: turn.size,
+    seconds: turn.videoSeconds,
+    resolution: turn.videoResolution,
+    generateAudio: turn.videoGenerateAudio,
+    watermark: turn.videoWatermark,
+    referenceMode: turn.videoReferenceMode,
+    firstFrameURL: turn.videoFirstFrameURL,
+    lastFrameURL: turn.videoLastFrameURL,
+    referenceImageURLs: [
+      ...(turn.videoReferenceImageURLs || []),
+      ...turn.referenceImages.map((image) => image.dataUrl),
+    ],
+    referenceVideoURLs: turn.videoReferenceVideoURLs,
+    referenceAudioURLs: turn.videoReferenceAudioURLs,
+  }));
+}
+
 type CreationTaskDataItem = NonNullable<CreationTask["data"]>[number];
 
 function buildConversationTitle(prompt: string) {
@@ -4214,7 +4234,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         toast.error("只有失败图片可以单独重试");
         return;
       }
-      if (!isConfiguredCreationModel(targetTurn.mode, targetTurn.model)) {
+      const retryModel = targetTurn.mode === "video" ? videoModel.trim() : imageModel.trim();
+      if (!isConfiguredCreationModel(targetTurn.mode, retryModel)) {
         toast.error(targetTurn.mode === "video" ? "当前没有可用的视频模型" : "当前没有可用的图片模型");
         return;
       }
@@ -4223,7 +4244,16 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         toast.error(referenceValidationError);
         return;
       }
-      if (!requireRelayToken(targetTurn.mode === "video" ? "video" : "image", targetTurn.model)) {
+      let retryVideoFields: ReturnType<typeof videoTurnFieldsFromNormalizedRequest> | undefined;
+      if (targetTurn.mode === "video") {
+        try {
+          retryVideoFields = normalizeRetryVideoTurnFields(targetTurn, retryModel);
+        } catch (error) {
+          toast.error(error instanceof Error ? error.message : "当前模型不支持原任务参数");
+          return;
+        }
+      }
+      if (!requireRelayToken(targetTurn.mode === "video" ? "video" : "image", retryModel)) {
         return;
       }
 
@@ -4277,9 +4307,18 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
               return {
                 ...turn,
                 ...derived,
+                model: retryModel,
+                ...(retryVideoFields ? {
+                  size: retryVideoFields.size,
+                  videoSeconds: retryVideoFields.videoSeconds,
+                  videoResolution: retryVideoFields.videoResolution,
+                  videoGenerateAudio: retryVideoFields.videoGenerateAudio,
+                  videoWatermark: retryVideoFields.videoWatermark,
+                  videoReferenceMode: retryVideoFields.videoReferenceMode,
+                } : {}),
                 processingStartedAt: undefined,
                 tokenGroup: undefined,
-                tokenName: relayTokenNameForKind(targetTurn.mode === "video" ? "video" : "image", targetTurn.model) || undefined,
+                tokenName: relayTokenNameForKind(targetTurn.mode === "video" ? "video" : "image", retryModel) || undefined,
                 images,
               };
             }),
@@ -4305,6 +4344,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       runConversationQueue,
       isConfiguredCreationModel,
       updateConversation,
+      imageModel,
+      videoModel,
     ],
   );
 
@@ -4328,7 +4369,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         toast.error("当前轮次正在处理，稍后再重新生成");
         return;
       }
-      if (!isConfiguredCreationModel(targetTurn.mode, targetTurn.model)) {
+      const retryModel = targetTurn.mode === "video" ? videoModel.trim() : imageModel.trim();
+      if (!isConfiguredCreationModel(targetTurn.mode, retryModel)) {
         toast.error(targetTurn.mode === "video" ? "当前没有可用的视频模型" : "当前没有可用的图片模型");
         return;
       }
@@ -4337,7 +4379,16 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         toast.error(referenceValidationError);
         return;
       }
-      if (!requireRelayToken(targetTurn.mode === "video" ? "video" : "image", targetTurn.model)) {
+      let retryVideoFields: ReturnType<typeof videoTurnFieldsFromNormalizedRequest> | undefined;
+      if (targetTurn.mode === "video") {
+        try {
+          retryVideoFields = normalizeRetryVideoTurnFields(targetTurn, retryModel);
+        } catch (error) {
+          toast.error(error instanceof Error ? error.message : "当前模型不支持原任务参数");
+          return;
+        }
+      }
+      if (!requireRelayToken(targetTurn.mode === "video" ? "video" : "image", retryModel)) {
         return;
       }
 
@@ -4367,12 +4418,21 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
               const visibility = turn.visibility || "private";
               return {
                 ...turn,
+                model: retryModel,
+                ...(retryVideoFields ? {
+                  size: retryVideoFields.size,
+                  videoSeconds: retryVideoFields.videoSeconds,
+                  videoResolution: retryVideoFields.videoResolution,
+                  videoGenerateAudio: retryVideoFields.videoGenerateAudio,
+                  videoWatermark: retryVideoFields.videoWatermark,
+                  videoReferenceMode: retryVideoFields.videoReferenceMode,
+                } : {}),
                 count: imageCount,
                 status: "queued",
                 error: undefined,
                 processingStartedAt: undefined,
                 tokenGroup: undefined,
-                tokenName: relayTokenNameForKind(targetTurn.mode === "video" ? "video" : "image", targetTurn.model) || undefined,
+                tokenName: relayTokenNameForKind(targetTurn.mode === "video" ? "video" : "image", retryModel) || undefined,
                 images: Array.from({ length: imageCount }, (_, index): StoredImage => {
                   const imageId = `${turn.id}-${regenerationId}-${index}`;
                   return {
@@ -4407,6 +4467,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       runConversationQueue,
       isConfiguredCreationModel,
       updateConversation,
+      imageModel,
+      videoModel,
     ],
   );
 

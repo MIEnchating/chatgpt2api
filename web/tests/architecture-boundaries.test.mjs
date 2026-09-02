@@ -141,17 +141,18 @@ test("global dialogs use the shared scroll area instead of native scrollbars", a
   assert.doesNotMatch(source, /overflow-y-auto/);
 });
 
-test("global overlays never autofocus when opened", async () => {
+test("global overlays keep focus out of editable controls while dialogs receive focus", async () => {
   const dialog = await readFile(path.join(webRoot, "src/components/ui/dialog.tsx"), "utf8");
   const popover = await readFile(path.join(webRoot, "src/components/ui/popover.tsx"), "utf8");
   const imageLightbox = await readFile(path.join(webRoot, "src/components/image-lightbox.tsx"), "utf8");
   const canvasVideoPlayer = await readFile(path.join(webRoot, "src/app/canvas/canvas-video-player.tsx"), "utf8");
 
-  for (const source of [dialog, popover]) {
-    assert.match(source, /"onOpenAutoFocus"/);
-    assert.match(source, /onOpenAutoFocus=\{\(event\) => event\.preventDefault\(\)\}/);
+  assert.match(popover, /"onOpenAutoFocus"/);
+  assert.match(popover, /onOpenAutoFocus=\{\(event\) => event\.preventDefault\(\)\}/);
+  for (const source of [dialog, imageLightbox]) {
+    assert.match(source, /tabIndex=\{-1\}/);
+    assert.match(source, /onOpenAutoFocus=\{\(event\) => \{\s*event\.preventDefault\(\);\s*\(event\.currentTarget as HTMLElement\)\.focus\(\{ preventScroll: true \}\)/);
   }
-  assert.match(imageLightbox, /onOpenAutoFocus=\{\(event\) => event\.preventDefault\(\)\}/);
   assert.doesNotMatch(canvasVideoPlayer, /useEffect/);
   assert.doesNotMatch(canvasVideoPlayer, /previousFocus/);
 

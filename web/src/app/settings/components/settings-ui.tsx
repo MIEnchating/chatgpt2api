@@ -28,6 +28,7 @@ type SettingsCardProps = {
   children: ReactNode;
   className?: string;
   contentClassName?: string;
+  contentScrollable?: boolean;
   description: string;
   icon: LucideIcon;
   meta?: ReactNode;
@@ -46,6 +47,7 @@ export function SettingsCard({
   children,
   className,
   contentClassName,
+  contentScrollable = true,
   description,
   icon: Icon,
   meta,
@@ -94,15 +96,23 @@ export function SettingsCard({
           ) : null}
         </CardHeader>
       </div>
-      <ScrollArea
-        data-settings-card-body
-        className="min-h-0 lg:flex-1"
-        viewportClassName="pr-4"
-      >
-        <CardContent className={cn("p-5 pt-0 sm:p-6 sm:pt-0", contentClassName)}>
-          {children}
-        </CardContent>
-      </ScrollArea>
+      {contentScrollable ? (
+        <ScrollArea
+          data-settings-card-body
+          className="min-h-0 lg:flex-1"
+          viewportClassName="pr-4"
+        >
+          <CardContent className={cn("p-5 pt-0 sm:p-6 sm:pt-0", contentClassName)}>
+            {children}
+          </CardContent>
+        </ScrollArea>
+      ) : (
+        <div data-settings-card-body className="min-h-0 lg:flex lg:flex-1 lg:flex-col">
+          <CardContent className={cn("p-5 pt-0 sm:p-6 sm:pt-0", contentClassName)}>
+            {children}
+          </CardContent>
+        </div>
+      )}
     </Card>
   );
 }

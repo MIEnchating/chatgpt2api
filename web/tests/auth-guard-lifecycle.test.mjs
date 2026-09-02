@@ -33,6 +33,8 @@ describe("auth guard lifecycle", () => {
     expect(source).toContain('window.addEventListener("focus", handleWindowFocus)');
     expect(source).toContain('document.addEventListener("visibilitychange", handleVisibilityChange)');
     expect(source).toContain("verifyCurrentSession(true)");
+    expect(source).toContain("const verifyCurrentSession = (forceRefresh: boolean) => {");
+    expect(source).not.toMatch(/const verifyCurrentSession[\s\S]*?setIsCheckingAuth\(true\)[\s\S]*?void load\(forceRefresh\)/);
     expect(sessionSource).toContain("new BroadcastChannel(AUTH_SESSION_CHANNEL_NAME)");
     expect(sessionSource).toContain('authSessionChannel?.postMessage(AUTH_SESSION_INVALIDATED_MESSAGE)');
     expect(sessionSource).toContain("invalidateVerifiedAuthSession();");

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
 
+const appSource = await readFile(new URL("../src/App.tsx", import.meta.url), "utf8");
 const scrollAreaSource = await readFile(new URL("../src/components/ui/scroll-area.tsx", import.meta.url), "utf8");
 const selectSource = await readFile(new URL("../src/components/ui/select.tsx", import.meta.url), "utf8");
 const dialogSource = await readFile(new URL("../src/components/ui/dialog.tsx", import.meta.url), "utf8");
@@ -94,6 +95,10 @@ test("forced theme transitions still apply when the browser has no transition AP
   assert.doesNotMatch(themeSource, /startViewTransition\?\.\([\s\S]*?\);\s*return;/);
 });
 
+test("floating messages provide a global close button", () => {
+  assert.match(appSource, /<Toaster closeButton /);
+});
+
 test("global selects keep the neutral selected treatment shown across settings", () => {
   assert.match(selectSource, /data-\[state=checked\]:bg-accent/);
   assert.match(selectSource, /data-\[state=checked\]:font-medium/);
@@ -143,6 +148,7 @@ test("video dimension drafts survive equivalent option array instances", () => {
 });
 
 test("dialog close buttons stay fixed while the body scrollbar updates", () => {
+  assert.match(dialogSource, /tabIndex=\{-1\}[\s\S]*?event\.currentTarget as HTMLElement\)\.focus\(\{ preventScroll: true \}\)/);
   assert.match(dialogSource, /data-slot="dialog-auto-close"/);
   assert.match(dialogSource, /absolute top-4 right-4 z-30/);
   assert.doesNotMatch(dialogSource, /data-scroll-overflow-y=true[^\n]*dialog-auto-close/);
@@ -187,7 +193,7 @@ test("video contract editor shows configuration and parameter preview side by si
   assert.doesNotMatch(videoContractsSource, /scrollContractViewport|detailsScrollViewportRef|previewScrollViewportRef/);
   assert.match(videoContractsSource, /function normalizeTags\(value: string\[\] \| string \| null \| undefined\)/);
   assert.match(videoContractsSource, /String\(value \|\| ""\)\.split/);
-  assert.match(videoContractsSource, /contentClassName="p-0 sm:p-0"/);
+  assert.match(videoContractsSource, /contentClassName="p-0 sm:p-0 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col"/);
   assert.match(videoContractsSource, /divide-y divide-border\/70/);
   assert.match(videoContractsSource, /data-video-contract-layout/);
   assert.match(videoContractsSource, /lg:grid-cols-\[minmax\(0,1fr\)_minmax\(300px,20rem\)\]/);
@@ -266,6 +272,51 @@ test("video contracts support reviewed JSON import and ID-free export", () => {
   assert.doesNotMatch(videoContractsSource, /videoContractTransferDocument[\s\S]*created_at/);
 });
 
+test("video contract document import keeps failures visible", () => {
+  assert.match(videoContractsSource, /const \[importError, setImportError\] = useState\(""\)/);
+  assert.match(videoContractsSource, /setImportError\(message\);[\s\S]{0,100}toast\.error\(message\)/);
+  assert.match(videoContractsSource, /role="alert"[\s\S]*?\{importError\}/);
+  assert.match(apiSource, /video-model-contracts\/import[\s\S]*?timeout: 600_000/);
+});
+
+test("video contract document import shows only the latest concise status and can be stopped", () => {
+  assert.match(apiSource, /Accept: "application\/x-ndjson"/);
+  assert.match(apiSource, /onDownloadProgress:[\s\S]*consumeProgress/);
+  assert.match(videoContractsSource, /aria-label="契约生成进度"/);
+  assert.match(videoContractsSource, /videoContractImportStatusLabel\(importStatus\?\.stage\)/);
+  assert.match(videoContractsSource, /videoContractImportStatusSummary\(importStatus\)/);
+  assert.match(videoContractsSource, /setImportStatus\(progress\)/);
+  assert.match(videoContractsSource, /progress\.request_attempt > 1[\s\S]*上游重试/);
+  assert.doesNotMatch(videoContractsSource, /`请求 \$\{progress\.request_attempt\}/);
+  assert.match(videoContractsSource, /LoaderCircle className="size-5 shrink-0 animate-spin text-primary"/);
+  assert.doesNotMatch(videoContractsSource, /importProgress|<ol|videoContractProgressDuration|importTranscript|transcript_content|模型对话/);
+  assert.match(videoContractsSource, /importControllerRef\.current\?\.abort\(\)/);
+  assert.match(videoContractsSource, /分析中 · \$\{formatElapsedSeconds\(importElapsedSeconds\)\}/);
+});
+
+test("video contract document import tolerates null response collections", () => {
+  assert.match(videoContractsSource, /const warnings = Array\.isArray\(data\.warnings\) \? data\.warnings : \[\]/);
+  assert.match(videoContractsSource, /value\.rules = Array\.isArray\(value\.rules\) \? value\.rules : \[\]/);
+  assert.match(videoContractsSource, /value\.artifact\.allowed_hosts = Array\.isArray\(value\.artifact\.allowed_hosts\)/);
+});
+
+test("video contract document import reviews and publishes split contracts one by one", () => {
+  assert.match(apiSource, /VideoModelContractImportResult = \{[\s\S]*?contracts: VideoModelContract\[\]/);
+  assert.match(videoContractsSource, /Array\.isArray\(data\.contracts\)[\s\S]*?data\.contracts\.map\(normalizeVideoModelContractCollections\)/);
+  assert.match(videoContractsSource, /<DialogTitle>审核生成的契约<\/DialogTitle>/);
+  assert.match(videoContractsSource, /maxHeight="min\(60dvh, 560px\)"/);
+  assert.match(videoContractsSource, /ariaLabel="生成的契约草稿"/);
+  assert.match(videoContractsSource, /viewClass="divide-y divide-border"/);
+  assert.match(videoContractsSource, /const publishAllGeneratedContracts = async \(\) =>/);
+  assert.match(videoContractsSource, /contracts: contracts\.map\(\(contract\) => \(\{ contract, enabled: true \}\)\)/);
+  assert.match(videoContractsSource, /校验、发布并启用全部草稿/);
+  assert.match(videoContractsSource, /CheckCheck className="size-4"[\s\S]{0,100}全部审核/);
+  assert.match(videoContractsSource, /openGeneratedContract\(index\)/);
+  assert.match(videoContractsSource, /generatedContracts\.filter\(\(_, index\) => index !== generatedEditingIndex\)/);
+  assert.match(videoContractsSource, /契约已发布，剩余 \$\{remaining\.length\} 份待审核/);
+  assert.match(videoContractsSource, /发布并审核下一份/);
+});
+
 test("video contract loads reject obsolete sessions and version-history requests", () => {
   assert.match(settingsPageSource, /<VideoModelContractsCard key=\{session\.key\} sessionKey=\{session\.key\} \/>/);
   assert.match(videoContractsSource, /fetchAdminVideoModelContracts\(\{ signal: controller\.signal \}\)/);
@@ -283,14 +334,24 @@ test("settings saves do not overwrite edits made while the request is pending", 
 
 test("video contracts use a responsive management list with prioritized actions", () => {
   assert.match(videoContractsSource, /data-video-contract-toolbar/);
-  assert.match(videoContractsSource, /variant="ghost" disabled=\{isJSONImporting\}/);
-  assert.match(videoContractsSource, /variant="ghost" disabled=\{items\.length === 0\}/);
-  assert.match(videoContractsSource, /variant="outline" onClick=\{openImport\}/);
-  assert.match(videoContractsSource, /size="sm" onClick=\{openCreate\}/);
+  assert.match(videoContractsSource, /variant="ghost" disabled=\{isJSONImporting \|\| isBulkActionBusy \|\| selectedItems\.length > 0\}/);
+  assert.match(videoContractsSource, /variant="ghost" disabled=\{items\.length === 0 \|\| selectedItems\.length > 0\}/);
+  assert.match(videoContractsSource, /variant="outline" disabled=\{isBulkActionBusy \|\| selectedItems\.length > 0\} onClick=\{openImport\}/);
+  assert.match(videoContractsSource, /size="sm" disabled=\{isBulkActionBusy \|\| selectedItems\.length > 0\} onClick=\{openCreate\}/);
   assert.match(videoContractsSource, /data-video-contract-list/);
+  assert.match(videoContractsSource, /contentScrollable=\{false\}/);
+  assert.doesNotMatch(videoContractsSource, /className="lg:h-auto"/);
+  assert.match(videoContractsSource, /data-video-contract-rows[\s\S]*className="lg:min-h-0 lg:flex-1"/);
+  assert.match(videoContractsSource, /data-video-contract-rows[\s\S]*<ManagementPagination/);
+  assert.match(videoContractsSource, /visibleItems\.map\(\(item\) =>/);
+  assert.match(videoContractsSource, /<ManagementPagination[\s\S]*pageSizeOptions=\{\[10, 20, 50\]\}/);
+  assert.match(videoContractsSource, /items\.slice\(\(safeListPage - 1\) \* listPageSize, safeListPage \* listPageSize\)/);
+  assert.match(videoContractsSource, /setOptimisticEnabledByID\(\(current\) => new Map\(current\)\.set\(item\.id, enabled\)\)/);
+  assert.match(videoContractsSource, /const displayedEnabled = optimisticEnabledByID\.get\(item\.id\) \?\? item\.enabled/);
+  assert.match(videoContractsSource, /decision\.reconcile && \(force \|\| decision\.concurrent\)/);
   assert.match(videoContractsSource, /契约<\/span>[\s\S]*匹配模型<\/span>[\s\S]*能力范围<\/span>[\s\S]*更新时间<\/span>[\s\S]*操作<\/span>/);
   assert.match(videoContractsSource, /data-video-contract-row/);
-  assert.match(videoContractsSource, /xl:grid-cols-\[minmax\(220px,1\.2fr\)_minmax\(180px,0\.95fr\)_minmax\(280px,1\.35fr\)_150px_210px\]/);
+  assert.match(videoContractsSource, /xl:grid-cols-\[32px_minmax\(220px,1\.2fr\)_minmax\(180px,0\.95fr\)_minmax\(280px,1\.35fr\)_150px_210px\]/);
   assert.match(videoContractsSource, /保存草稿/);
   assert.match(videoContractsSource, /发布新版本/);
   assert.match(videoContractsSource, /请求与响应模拟/);
@@ -299,6 +360,22 @@ test("video contracts use a responsive management list with prioritized actions"
   assert.match(videoContractsSource, /item\.contract\.models\.slice\(0, 2\)/);
   assert.match(videoContractsSource, /formatDurationRange\(item\.contract\.capability\.seconds\)/);
   assert.match(videoContractsSource, /<time dateTime=\{item\.updated_at\}/);
+});
+
+test("video contracts support page selection and ordered bulk operations", () => {
+  assert.match(videoContractsSource, /const \[selectedContractIds, setSelectedContractIds\] = useState<Set<string>>/);
+  assert.match(videoContractsSource, /visibleItemIds\.every\(\(id\) => selectedContractIds\.has\(id\)\)/);
+  assert.match(videoContractsSource, /aria-label="选择当前页契约"/);
+  assert.match(videoContractsSource, /data-video-contract-bulk-toolbar/);
+  assert.match(videoContractsSource, /data-video-contract-toolbar[\s\S]*data-video-contract-bulk-toolbar[\s\S]*data-video-contract-list/);
+  assert.match(videoContractsSource, /data-video-contract-bulk-toolbar[\s\S]*"col-start-1 row-start-1 flex flex-wrap items-center justify-end gap-1\.5"/);
+  assert.match(videoContractsSource, /批量启用/);
+  assert.match(videoContractsSource, /批量停用/);
+  assert.match(videoContractsSource, /导出选中/);
+  assert.match(videoContractsSource, /删除选中/);
+  assert.match(videoContractsSource, /for \(const item of targets\) \{[\s\S]*?await setVideoModelContractEnabled\(item\.id, enabled\)/);
+  assert.match(videoContractsSource, /for \(const item of targets\) \{[\s\S]*?await deleteVideoModelContract\(item\.id\)/);
+  assert.match(videoContractsSource, /<DialogTitle>批量删除视频模型契约？<\/DialogTitle>/);
 });
 
 test("large dialog pagination and actions use the shared footer layouts", () => {
@@ -489,6 +566,24 @@ test("video composer places reference materials before settings and uses video t
   assert.match(imagePageSource, /activeTurn\.mode === "video" \? "生成视频失败" : "生成图片失败"/);
 });
 
+test("result retries use the currently selected model instead of the failed turn model", () => {
+  const retryImageSource = imagePageSource.slice(
+    imagePageSource.indexOf("const handleRetryImage"),
+    imagePageSource.indexOf("const handleRegenerateTurn"),
+  );
+  const regenerateSource = imagePageSource.slice(
+    imagePageSource.indexOf("const handleRegenerateTurn"),
+    imagePageSource.indexOf("const handleSaveEditingTurn"),
+  );
+  for (const source of [retryImageSource, regenerateSource]) {
+    assert.match(source, /const retryModel = targetTurn\.mode === "video" \? videoModel\.trim\(\) : imageModel\.trim\(\)/);
+    assert.match(source, /normalizeRetryVideoTurnFields\(targetTurn, retryModel\)/);
+    assert.match(source, /model: retryModel/);
+    assert.match(source, /relayTokenNameForKind\(targetTurn\.mode === "video" \? "video" : "image", retryModel\)/);
+    assert.doesNotMatch(source, /isConfiguredCreationModel\(targetTurn\.mode, targetTurn\.model\)/);
+  }
+});
+
 test("image ratio cards combine shape and resolution while video shows a size badge", () => {
   assert.match(imageSizePresetControlsSource, />宽高比<\/ImageParameterLabel>/);
   assert.match(imageSizePresetControlsSource, /IMAGE_ASPECT_RATIO_PRESET_OPTIONS\.map/);
@@ -557,12 +652,19 @@ test("creation preferences pull each model kind with its selected key", () => {
   assert.match(profileSource, /\.\.\.relayTokenPreferencesFromNames\(relayTokenNames\)/);
 });
 
-test("settings model discovery rejects responses from an obsolete key, kind, or session", async () => {
+test("settings model discovery merges all selected keys and rejects obsolete responses", async () => {
   const modelConfigSource = await readFile(new URL("../src/app/settings/components/model-config-card.tsx", import.meta.url), "utf8");
-  assert.match(modelConfigSource, /fetchRelayModels\(\{ tokenName: requestTokenName, signal: controller\.signal \}\)/);
+  assert.match(modelConfigSource, /Promise\.all\(\s*requestTokenNames\.map\(\(tokenName\) => fetchRelayModels\(\{ tokenName, signal: controller\.signal \}\)\)/);
+  assert.match(modelConfigSource, /responses\.flatMap/);
+  assert.match(modelConfigSource, /fetchCustomRelayConfigs\(\)/);
+  assert.match(modelConfigSource, /config\.kind !== kind \|\| !config\.configured/);
+  assert.match(modelConfigSource, /label: config\.name, custom: true/);
+  assert.match(modelConfigSource, /<MultiSelect/);
+  assert.match(modelConfigSource, /<div className="grid gap-2 text-sm font-medium">\s*<span>用于获取模型的 Key<\/span>\s*<MultiSelect/);
+  assert.doesNotMatch(modelConfigSource, /<label[^>]*>\s*用于获取模型的 Key\s*<MultiSelect/);
   assert.match(modelConfigSource, /modelLoadVersionRef\.current !== requestVersion/);
   assert.match(modelConfigSource, /currentSessionKeyRef\.current !== requestSessionKey/);
-  assert.match(modelConfigSource, /function selectTokenName[\s\S]*?invalidateModelLoad\(\)/);
+  assert.match(modelConfigSource, /function selectTokenNames[\s\S]*?invalidateModelLoad\(\)/);
   assert.match(modelConfigSource, /function selectModelKind[\s\S]*?invalidateModelLoad\(\)/);
 });
 

@@ -62,7 +62,11 @@ function DialogContent({
       <DialogOverlay />
       <DialogPrimitive.Content
         data-slot="dialog-content"
-        onOpenAutoFocus={(event) => event.preventDefault()}
+        tabIndex={-1}
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          (event.currentTarget as HTMLElement).focus({ preventScroll: true });
+        }}
         className={cn(
           "fixed top-[50%] left-[50%] z-50 flex max-h-[calc(100dvh-2rem)] w-[min(92vw,560px)] translate-x-[-50%] translate-y-[-50%] flex-col gap-4 overflow-hidden rounded-xl border border-border/80 bg-card p-[var(--dialog-padding)] [--dialog-padding:1.25rem] shadow-[0_24px_70px_-32px_rgba(15,23,42,0.42)] duration-200 data-[state=open]:animate-in sm:[--dialog-padding:1.5rem] [&:has([data-slot=dialog-footer]:not([data-flush=true]))]:pb-3",
           className,

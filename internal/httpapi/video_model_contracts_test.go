@@ -3,18 +3,33 @@ package httpapi
 import (
 	"archive/zip"
 	"bytes"
+	"context"
 	"encoding/json"
+	"fmt"
 	"maps"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"chatgpt2api/internal/protocol"
 	"chatgpt2api/internal/service"
 	"chatgpt2api/internal/util"
 )
+
+type videoContractImportTestFlusher struct {
+	flushed chan<- struct{}
+}
+
+func (f videoContractImportTestFlusher) Flush() {
+	select {
+	case f.flushed <- struct{}{}:
+	default:
+	}
+}
 
 func TestAdminVideoModelContractLifecycle(t *testing.T) {
 	app := newTestApp(t)
@@ -172,34 +187,91 @@ func TestAdminVideoModelContractPreviewBuildsRequestAndParsesResponses(t *testin
 }
 
 func TestVideoContractDocumentImportPromptUsesCurrentSchema(t *testing.T) {
-	if !strings.Contains(videoContractImportSystemPrompt, "当前 v4 格式中的单个 contract JSON 对象") ||
-		!strings.Contains(videoContractImportSystemPrompt, "不要包裹 version 或 contracts") {
-		t.Fatal("document import prompt does not distinguish a generated draft from a transfer document")
+	for _, requirement := range []string{
+		"按真实协议差异拆分", "完整模型 ID", "只声明文档有证据支持的能力",
+		"custom-video", "generation.selection 固定为 infer", "polling", "artifact.mode",
+		"严格按以下互斥矩阵", "image 的 first_frame.max 必须为 1", "reference 的 first_frame、last_frame 全部为 0",
+		"不可信资料", "只返回 Schema 要求的 JSON 对象",
+	} {
+		if !strings.Contains(videoContractImportSystemPrompt, requirement) {
+			t.Errorf("document import prompt is missing requirement %q", requirement)
+		}
+	}
+	if strings.Contains(videoContractImportSystemPrompt, `{"contracts"`) || len(videoContractImportSystemPrompt) >= 8_000 {
+		t.Fatal("document import prompt still embeds a verbose contract example")
+	}
+	format := videoContractImportResponseFormat()
+	jsonSchema, ok := format["json_schema"].(map[string]any)
+	if !ok {
+		t.Fatalf("document import JSON Schema wrapper is invalid: %#v", format)
+	}
+	if format["type"] != "json_schema" || !util.ToBool(jsonSchema["strict"]) {
+		t.Fatalf("document import response format is not strict JSON Schema: %#v", format)
+	}
+	encoded, err := json.Marshal(jsonSchema["schema"])
+	if err != nil {
+		t.Fatalf("marshal document import schema: %v", err)
+	}
+	if len(encoded) >= 16_000 || !bytes.Contains(encoded, []byte(`"$ref":"#/$defs/`)) {
+		t.Fatalf("document import schema is not compact enough for prompt caching: %d bytes", len(encoded))
 	}
 	for _, field := range []string{
 		`"create_path"`, `"query_path"`, `"artifact"`, `"content_path"`,
-		`"allowed_hosts"`, `"generation"`, `"rules"`, `"validation"`, "custom-video",
-		"queued_statuses", "processing_statuses", "progress_fields", "generation_mode_field",
+		`"allowed_hosts"`, `"generation"`, `"rules"`, `"validation"`,
+		`"queued_statuses"`, `"processing_statuses"`, `"progress_fields"`, `"generation_mode_field"`,
 		`"when"`, `"require"`, `"require_any"`, `"forbid"`, `"limits"`,
 		`"force_values"`, `"ui"`, `"show"`, `"hide"`, `"disable"`, `"message"`,
 	} {
-		if !strings.Contains(videoContractImportSystemPrompt, field) {
-			t.Errorf("document import prompt is missing current contract field %q", field)
+		if !bytes.Contains(encoded, []byte(field)) {
+			t.Errorf("document import JSON Schema is missing current contract field %q", field)
 		}
 	}
+}
 
-	const schemaEnd = "\n}\n\n规则："
-	start := strings.Index(videoContractImportSystemPrompt, "{")
-	end := strings.Index(videoContractImportSystemPrompt, schemaEnd)
-	if start < 0 || end < start {
-		t.Fatal("document import prompt does not contain a complete contract example")
-	}
-	contract, err := decodeGeneratedVideoModelContract(videoContractImportSystemPrompt[start : end+2])
+func TestNormalizeGeneratedVideoContractRuleMaps(t *testing.T) {
+	contract := protocol.DefaultVideoContracts()[0]
+	contract.Rules = []protocol.VideoModelContractRule{{
+		When:        protocol.VideoModelContractRuleCondition{Field: "duration", Operator: "equals", Value: "5"},
+		Require:     []string{},
+		RequireAny:  []string{},
+		Forbid:      []string{},
+		Limits:      map[string]int{"reference_image": 2},
+		ForceValues: map[string]string{"watermark": "false"},
+		UI:          protocol.VideoModelContractRuleUI{Show: []string{}, Hide: []string{}, Disable: []string{}},
+		Message:     "测试条件规则",
+	}}
+	data, err := json.Marshal(contract)
 	if err != nil {
-		t.Fatalf("document import prompt example does not match the current contract schema: %v", err)
+		t.Fatalf("marshal contract: %v", err)
 	}
-	if contract.Artifact.Mode != "response_url" || contract.Generation.DefaultMode != "text-to-video" || len(contract.Rules) != 1 {
-		t.Fatalf("document import prompt example lost current contract fields: %#v", contract)
+	var generated map[string]any
+	if err := json.Unmarshal(data, &generated); err != nil {
+		t.Fatalf("decode generated contract: %v", err)
+	}
+	rules := generated["rules"].([]any)
+	rule := rules[0].(map[string]any)
+	rule["limits"] = []any{map[string]any{"field": "reference_image", "max": 2}}
+	rule["force_values"] = []any{map[string]any{"field": "watermark", "value": "false"}}
+	generatedData, _ := json.Marshal(generated)
+	normalized, err := normalizeGeneratedVideoContractRuleMaps(generatedData)
+	if err != nil {
+		t.Fatalf("normalize generated rule maps: %v", err)
+	}
+	decoded, err := decodeGeneratedVideoModelContractJSON(normalized)
+	if err != nil {
+		t.Fatalf("decode normalized contract: %v", err)
+	}
+	if decoded.Rules[0].Limits["reference_image"] != 2 || decoded.Rules[0].ForceValues["watermark"] != "false" {
+		t.Fatalf("normalized rule maps = %#v", decoded.Rules[0])
+	}
+
+	rule["limits"] = []any{
+		map[string]any{"field": "reference_image", "max": 2},
+		map[string]any{"field": "reference_image", "max": 3},
+	}
+	duplicateData, _ := json.Marshal(generated)
+	if _, err := normalizeGeneratedVideoContractRuleMaps(duplicateData); err == nil || !strings.Contains(err.Error(), "重复") {
+		t.Fatalf("duplicate generated rule field error = %v", err)
 	}
 }
 
@@ -229,7 +301,7 @@ func TestExtractVideoContractDocuments(t *testing.T) {
 	}
 }
 
-func TestDecodeGeneratedVideoModelContractIsStrict(t *testing.T) {
+func TestDecodeGeneratedVideoModelContractsIsStrict(t *testing.T) {
 	contract := protocol.DefaultVideoContracts()[0]
 	contract.Name = "Document video v1"
 	contract.Models = []string{"document/video-v1"}
@@ -237,13 +309,64 @@ func TestDecodeGeneratedVideoModelContractIsStrict(t *testing.T) {
 	if err != nil {
 		t.Fatalf("marshal contract: %v", err)
 	}
-	decoded, err := decodeGeneratedVideoModelContract("```json\n" + string(data) + "\n```")
-	if err != nil || decoded.Name != contract.Name {
+	bundle := `{"contracts":[` + string(data) + `]}`
+	decoded, err := decodeGeneratedVideoModelContracts("```json\n"+bundle+"\n```", "model: document/video-v1")
+	if err != nil || len(decoded) != 1 || decoded[0].Name != contract.Name {
 		t.Fatalf("decoded = %#v, err = %v", decoded, err)
 	}
+	var mixedMaterialsContract protocol.VideoModelContract
+	if err := json.Unmarshal(data, &mixedMaterialsContract); err != nil {
+		t.Fatalf("decode mixed-material fixture: %v", err)
+	}
+	foundImageMode := false
+	foundReferenceMode := false
+	for index := range mixedMaterialsContract.Generation.Modes {
+		mode := &mixedMaterialsContract.Generation.Modes[index]
+		switch mode.Kind {
+		case "image":
+			foundImageMode = true
+			mode.Materials.Image = protocol.VideoModelMaterialRange{Max: 4}
+			mode.Materials.Video = protocol.VideoModelMaterialRange{Max: 2}
+			mode.Materials.Audio = protocol.VideoModelMaterialRange{Max: 1}
+			mode.Materials.Total = protocol.VideoModelMaterialRange{Max: 7}
+		case "reference":
+			foundReferenceMode = true
+			mode.Materials.FirstFrame = protocol.VideoModelMaterialRange{Min: 1, Max: 1}
+			mode.Materials.LastFrame = protocol.VideoModelMaterialRange{Max: 1}
+		}
+	}
+	if !foundImageMode || !foundReferenceMode {
+		t.Fatal("default contract must exercise image and reference material normalization")
+	}
+	mixedData, _ := json.Marshal(mixedMaterialsContract)
+	normalizedMixed, err := decodeGeneratedVideoModelContracts(`{"contracts":[`+string(mixedData)+`]}`, "model: document/video-v1")
+	if err != nil || len(normalizedMixed) != 1 {
+		t.Fatalf("mixed mode materials were not normalized: %#v, %v", normalizedMixed, err)
+	}
+	for _, mode := range normalizedMixed[0].Generation.Modes {
+		if mode.Kind == "image" && mode.Materials.Image.Max+mode.Materials.Video.Max+mode.Materials.Audio.Max != 0 {
+			t.Fatalf("image mode retained ordinary reference materials: %#v", mode.Materials)
+		}
+		if mode.Kind == "reference" && mode.Materials.FirstFrame.Max+mode.Materials.LastFrame.Max != 0 {
+			t.Fatalf("reference mode retained frame materials: %#v", mode.Materials)
+		}
+	}
 	withUnknown := strings.TrimSuffix(string(data), "}") + `,"unexpected":true}`
-	if _, err := decodeGeneratedVideoModelContract(withUnknown); err == nil {
-		t.Fatal("unknown contract field was accepted")
+	if _, err := decodeGeneratedVideoModelContracts(`{"contracts":[`+withUnknown+`]}`, "document/video-v1"); err == nil || !strings.Contains(err.Error(), `未知字段 "unexpected"`) {
+		t.Fatalf("unknown contract field error = %v", err)
+	}
+	if _, err := decodeGeneratedVideoModelContracts(`{"contracts":[`+string(data)+`],"unexpected":true}`, "document/video-v1"); err == nil {
+		t.Fatal("unknown bundle field was accepted")
+	}
+	if _, err := decodeGeneratedVideoModelContracts(bundle, "different-video-model"); err == nil || !strings.Contains(err.Error(), "未在原始文档中出现") {
+		t.Fatalf("invented model error = %v", err)
+	}
+	if _, err := decodeGeneratedVideoModelContracts(bundle, "model: document/video-v10"); err == nil || !strings.Contains(err.Error(), "未在原始文档中出现") {
+		t.Fatalf("partial model identifier error = %v", err)
+	}
+	wrongPriorityType := strings.Replace(string(data), `"priority":0`, `"priority":"high"`, 1)
+	if _, err := decodeGeneratedVideoModelContracts(`{"contracts":[`+wrongPriorityType+`]}`, "document/video-v1"); err == nil || !strings.Contains(err.Error(), `字段 "priority" 类型错误`) {
+		t.Fatalf("contract field type error = %v", err)
 	}
 	var legacy map[string]any
 	if err := json.Unmarshal(data, &legacy); err != nil {
@@ -256,13 +379,31 @@ func TestDecodeGeneratedVideoModelContractIsStrict(t *testing.T) {
 		withoutField := maps.Clone(legacy)
 		delete(withoutField, field)
 		legacyData, _ := json.Marshal(withoutField)
-		if _, err := decodeGeneratedVideoModelContract(string(legacyData)); err == nil || !strings.Contains(err.Error(), field) {
+		if _, err := decodeGeneratedVideoModelContracts(`{"contracts":[`+string(legacyData)+`]}`, "document/video-v1"); err == nil || !strings.Contains(err.Error(), field) {
 			t.Fatalf("generated contract without %s was accepted: %v", field, err)
 		}
 	}
+	second := contract
+	second.Name = "Document video v2"
+	second.Models = []string{"document/video-v2"}
+	secondData, _ := json.Marshal(second)
+	multiple, err := decodeGeneratedVideoModelContracts(`{"contracts":[`+string(data)+`,`+string(secondData)+`]}`, "document/video-v1 document/video-v2")
+	if err != nil || len(multiple) != 1 || !slices.Equal(multiple[0].Models, []string{"document/video-v1", "document/video-v2"}) {
+		t.Fatalf("equivalent contracts = %#v, error = %v", multiple, err)
+	}
+
+	different := second
+	different.Name = "Document video v3"
+	different.Models = []string{"document/video-v3"}
+	different.Priority++
+	differentData, _ := json.Marshal(different)
+	multiple, err = decodeGeneratedVideoModelContracts(`{"contracts":[`+string(data)+`,`+string(secondData)+`,`+string(differentData)+`]}`, "document/video-v1 document/video-v2 document/video-v3")
+	if err != nil || len(multiple) != 2 || !slices.Equal(multiple[0].Models, []string{"document/video-v1", "document/video-v2"}) || !slices.Equal(multiple[1].Models, []string{"document/video-v3"}) {
+		t.Fatalf("different contracts = %#v, error = %v", multiple, err)
+	}
 }
 
-func TestAdminVideoModelContractImportReturnsUnsavedDraft(t *testing.T) {
+func TestAdminVideoModelContractImportStreamsUnsavedDraftProgress(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()
 
@@ -279,6 +420,12 @@ func TestAdminVideoModelContractImportReturnsUnsavedDraft(t *testing.T) {
 	contract.Name = "Document video v1"
 	contract.Models = []string{"document/video-v1"}
 	contractJSON, _ := json.Marshal(contract)
+	contractBundleJSON := []byte(`{"contracts":[` + string(contractJSON) + `]}`)
+	invalidContract := contract
+	invalidContract.Request.DurationField = ""
+	invalidContractJSON, _ := json.Marshal(invalidContract)
+	invalidContractBundleJSON := []byte(`{"contracts":[` + string(invalidContractJSON) + `]}`)
+	requestCount := 0
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/v1/chat/completions" {
 			http.NotFound(w, r)
@@ -291,15 +438,36 @@ func TestAdminVideoModelContractImportReturnsUnsavedDraft(t *testing.T) {
 		if !strings.Contains(util.Clean(util.AsMapSlice(payload["messages"])[1]["content"]), "PRIVATE_DOC_MARKER") {
 			t.Errorf("document content missing from analysis payload: %#v", payload["messages"])
 		}
-		util.WriteJSON(w, http.StatusOK, map[string]any{
-			"choices": []map[string]any{{"message": map[string]any{"role": "assistant", "content": string(contractJSON)}}},
+		responseFormat, _ := payload["response_format"].(map[string]any)
+		jsonSchema, _ := responseFormat["json_schema"].(map[string]any)
+		if !util.ToBool(payload["stream"]) || responseFormat["type"] != "json_schema" || !util.ToBool(jsonSchema["strict"]) || util.Clean(payload["reasoning_effort"]) != "low" {
+			t.Errorf("document analysis requires strict structured low-reasoning streaming: %#v", payload)
+		}
+		requestCount++
+		responseContent := string(contractBundleJSON)
+		switch requestCount {
+		case 1:
+			util.WriteError(w, 524, "The origin web server did not respond to Cloudflare within the allowed time.")
+			return
+		case 2:
+			responseContent = string(invalidContractBundleJSON)
+		case 3:
+			messages := util.AsMapSlice(payload["messages"])
+			if len(messages) != 3 || !strings.Contains(util.Clean(messages[len(messages)-1]["content"]), "request.duration_field") {
+				t.Errorf("request mapping feedback missing from retry: %#v", messages)
+			}
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		encoded, _ := json.Marshal(map[string]any{
+			"choices": []map[string]any{{"delta": map[string]any{"content": responseContent}}},
 		})
+		_, _ = fmt.Fprintf(w, "data: %s\n\ndata: [DONE]\n\n", encoded)
 	}))
 	defer upstream.Close()
 	if _, err := app.config.Update(map[string]any{
 		"relay_base_url":     upstream.URL,
-		"text_models":        []string{"gpt-contract-parser"},
-		"default_text_model": "gpt-contract-parser",
+		"text_models":        []string{"gpt-5-contract-parser"},
+		"default_text_model": "gpt-5-contract-parser",
 	}); err != nil {
 		t.Fatalf("configure import relay: %v", err)
 	}
@@ -307,7 +475,7 @@ func TestAdminVideoModelContractImportReturnsUnsavedDraft(t *testing.T) {
 	var body bytes.Buffer
 	writer := multipart.NewWriter(&body)
 	_ = writer.WriteField("source_type", "file")
-	_ = writer.WriteField("model", "gpt-contract-parser")
+	_ = writer.WriteField("model", "gpt-5-contract-parser")
 	file, err := writer.CreateFormFile("file", "video-api.md")
 	if err != nil {
 		t.Fatalf("create multipart file: %v", err)
@@ -318,11 +486,32 @@ func TestAdminVideoModelContractImportReturnsUnsavedDraft(t *testing.T) {
 	}
 	req := httptest.NewRequest(http.MethodPost, "/api/admin/video-model-contracts/import", &body)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
+	req.Header.Set("Accept", videoContractImportProgressType)
 	setRequestAuthCookie(req, adminSessionToken(t, app))
 	res := httptest.NewRecorder()
 	app.Handler().ServeHTTP(res, req)
 	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), `"Document video v1"`) {
 		t.Fatalf("import status = %d body = %s", res.Code, res.Body.String())
+	}
+	if contentType := res.Header().Get("Content-Type"); !strings.HasPrefix(contentType, videoContractImportProgressType) {
+		t.Fatalf("import Content-Type = %q", contentType)
+	}
+	if !res.Flushed {
+		t.Fatal("import progress response was not flushed")
+	}
+	for _, stage := range []string{"document_ready", "preparing", "generating", "retrying", "upstream_connected", "receiving", "validating", "repairing", "completed"} {
+		if !strings.Contains(res.Body.String(), `"stage":"`+stage+`"`) {
+			t.Fatalf("import progress missing stage %q: %s", stage, res.Body.String())
+		}
+	}
+	if !strings.Contains(res.Body.String(), `"warnings":[]`) {
+		t.Fatalf("import warnings must be an array: %s", res.Body.String())
+	}
+	if strings.Contains(res.Body.String(), `"transcript_`) || strings.Contains(res.Body.String(), `"stage":"transcript"`) {
+		t.Fatalf("import progress exposed model transcript: %s", res.Body.String())
+	}
+	if requestCount != videoContractGenerationAttempts+1 {
+		t.Fatalf("document analysis requests = %d, want %d", requestCount, videoContractGenerationAttempts+1)
 	}
 	items, err := app.videoContracts.List()
 	if err != nil {
@@ -337,5 +526,29 @@ func TestAdminVideoModelContractImportReturnsUnsavedDraft(t *testing.T) {
 	encodedLogs, _ := json.Marshal(logs)
 	if strings.Contains(string(encodedLogs), "PRIVATE_DOC_MARKER") {
 		t.Fatal("document content leaked into operation logs")
+	}
+}
+
+func TestVideoContractImportProgressWriterSendsHeartbeat(t *testing.T) {
+	var body bytes.Buffer
+	flushed := make(chan struct{}, 1)
+	writer := &videoContractImportProgressWriter{
+		encoder: json.NewEncoder(&body),
+		flusher: videoContractImportTestFlusher{flushed: flushed},
+	}
+	stop := writer.startHeartbeat(context.Background(), time.Millisecond)
+	select {
+	case <-flushed:
+	case <-time.After(time.Second):
+		t.Fatal("heartbeat was not flushed")
+	}
+	stop()
+
+	var event videoContractImportProgressEvent
+	if err := json.NewDecoder(&body).Decode(&event); err != nil {
+		t.Fatalf("decode heartbeat: %v", err)
+	}
+	if event.Stage != "heartbeat" || event.Message == "" {
+		t.Fatalf("heartbeat event = %#v", event)
 	}
 }
