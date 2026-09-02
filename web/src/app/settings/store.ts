@@ -24,6 +24,7 @@ import {
 	type StorageSettingConfig,
 } from "@/lib/api";
 import { dispatchAppMetaUpdated } from "@/lib/app-meta";
+import { resolveConfiguredModel } from "@/lib/model-config-selection";
 import { invalidateStorageProviderCache } from "@/services/storage-provider";
 import { normalizePromptMarketSources, type PromptMarketSourceConfig } from "@/app/image/banana-prompts";
 import {
@@ -75,24 +76,24 @@ function normalizeConfig(config: SettingsConfig): SettingsConfig {
   const appTitle = typeof config.app_title === "string" && config.app_title.trim() ? config.app_title.trim() : "云棉";
   const projectName = typeof config.project_name === "string" && config.project_name.trim() ? config.project_name.trim() : appTitle;
   const relayDatabaseFields = databaseFieldsFromConfig(config);
+  const imageModels = normalizeConfiguredModels(config.image_models, DEFAULT_IMAGE_MODELS);
   const videoModels = normalizeConfiguredModels(config.video_models, []);
-  const defaultVideoModel = videoModels.includes(String(config.default_video_model || "").trim())
-    ? String(config.default_video_model).trim()
-    : videoModels[0] || "";
+  const textModels = normalizeConfiguredModels(config.text_models, ["gpt-5.5", "gpt-5.4"]);
+  const audioModels = normalizeConfiguredModels(config.audio_models, ["gpt-4o-mini-tts"]);
   return {
     ...config,
     app_title: appTitle,
     project_name: projectName,
     site_icon_url: typeof config.site_icon_url === "string" ? config.site_icon_url.trim() : "",
     image_task_timeout_seconds: Number(config.image_task_timeout_seconds || 300),
-    image_models: normalizeConfiguredModels(config.image_models, DEFAULT_IMAGE_MODELS),
-    default_image_model: String(config.default_image_model || DEFAULT_IMAGE_MODELS[0]),
+    image_models: imageModels,
+    default_image_model: resolveConfiguredModel(imageModels, config.default_image_model),
     video_models: videoModels,
-    default_video_model: defaultVideoModel,
-    text_models: normalizeConfiguredModels(config.text_models, ["gpt-5.5", "gpt-5.4"]),
-    default_text_model: String(config.default_text_model || config.text_models?.[0] || "gpt-5.5"),
-    audio_models: normalizeConfiguredModels(config.audio_models, ["gpt-4o-mini-tts"]),
-    default_audio_model: String(config.default_audio_model || config.audio_models?.[0] || "gpt-4o-mini-tts"),
+    default_video_model: resolveConfiguredModel(videoModels, config.default_video_model),
+    text_models: textModels,
+    default_text_model: resolveConfiguredModel(textModels, config.default_text_model),
+    audio_models: audioModels,
+    default_audio_model: resolveConfiguredModel(audioModels, config.default_audio_model),
     user_default_concurrent_limit: Number(config.user_default_concurrent_limit || 0),
     user_default_rpm_limit: Number(config.user_default_rpm_limit || 0),
     allow_user_custom_relay_config: config.allow_user_custom_relay_config === true,
@@ -375,16 +376,24 @@ export function createSettingsStore(
       return;
     }
     const canConfigureRelayDatabase = typeof config.relay_database_password_configured === "boolean";
+    const imageModels = normalizeConfiguredModels(config.image_models, DEFAULT_IMAGE_MODELS);
+    const videoModels = normalizeConfiguredModels(config.video_models, []);
+    const textModels = normalizeConfiguredModels(config.text_models, ["gpt-5.5", "gpt-5.4"]);
+    const audioModels = normalizeConfiguredModels(config.audio_models, ["gpt-4o-mini-tts"]);
 
     setForSession(token, { isSavingConfig: true });
     try {
       const payload: SettingsConfig = {
         ...config,
         image_task_timeout_seconds: Math.min(3600, Math.max(30, Number(config.image_task_timeout_seconds) || 300)),
-        image_models: normalizeConfiguredModels(config.image_models, DEFAULT_IMAGE_MODELS),
-        video_models: normalizeConfiguredModels(config.video_models, []),
-        text_models: normalizeConfiguredModels(config.text_models, ["gpt-5.5", "gpt-5.4"]),
-        audio_models: normalizeConfiguredModels(config.audio_models, ["gpt-4o-mini-tts"]),
+        image_models: imageModels,
+        default_image_model: resolveConfiguredModel(imageModels, config.default_image_model),
+        video_models: videoModels,
+        default_video_model: resolveConfiguredModel(videoModels, config.default_video_model),
+        text_models: textModels,
+        default_text_model: resolveConfiguredModel(textModels, config.default_text_model),
+        audio_models: audioModels,
+        default_audio_model: resolveConfiguredModel(audioModels, config.default_audio_model),
         user_default_concurrent_limit: Math.max(0, Number(config.user_default_concurrent_limit) || 0),
         user_default_rpm_limit: Math.max(0, Number(config.user_default_rpm_limit) || 0),
         allow_user_custom_relay_config: config.allow_user_custom_relay_config === true,

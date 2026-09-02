@@ -33,6 +33,12 @@ test("management pages share one page and panel layout contract", () => {
   assert.match(managementSource, /data-management-toolbar/);
 });
 
+test("session changes remount stateful management pages", () => {
+  assert.match(usersSource, /<UsersContent key=\{session\.key\} \/>/);
+  assert.match(rbacSource, /<RBACContent key=\{session\.key\} \/>/);
+  assert.match(logsSource, /<LogsContent key=\{session\.key\} \/>/);
+});
+
 test("assets, users, and logs use the same responsive pagination contract", () => {
   assert.match(assetsSource, /<ManagementPagination/);
   assert.match(usersSource, /<ManagementPagination/);

@@ -1377,20 +1377,19 @@ func stringifyEnvValue(value any) string {
 }
 
 func stringifySettingEnvValue(settingKey string, value any) string {
-	if settingKey == "prompt_sources" || settingKey == "storage" {
-		if settingKey == "storage" {
-			value = normalizeStorageSetting(value)
-		}
-		encoded, err := json.Marshal(normalizePromptSourcesValue(value))
-		if settingKey == "storage" {
-			encoded, err = json.Marshal(value)
-		}
-		if err == nil {
-			return string(encoded)
-		}
-		return "[]"
+	switch settingKey {
+	case "prompt_sources":
+		value = normalizePromptSourcesValue(value)
+	case "storage":
+		value = normalizeStorageSetting(value)
+	default:
+		return stringifyEnvValue(value)
 	}
-	return stringifyEnvValue(value)
+	encoded, err := json.Marshal(value)
+	if err == nil {
+		return string(encoded)
+	}
+	return "[]"
 }
 
 func normalizeStorageSetting(value any) model.StorageSetting {
@@ -1624,7 +1623,13 @@ func writeEnvUpdates(path string, updates map[string]string) error {
 			next = append(next, formatEnvAssignment(key, pending[key]))
 		}
 	}
-	return os.WriteFile(path, []byte(strings.TrimRight(strings.Join(next, "\n"), "\n")+"\n"), 0o644)
+	if err := os.WriteFile(path, []byte(strings.TrimRight(strings.Join(next, "\n"), "\n")+"\n"), 0o600); err != nil {
+		return err
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		return fmt.Errorf("protect environment file %q: %w", path, err)
+	}
+	return nil
 }
 
 func formatEnvAssignment(key, value string) string {

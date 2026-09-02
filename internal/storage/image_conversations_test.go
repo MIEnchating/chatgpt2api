@@ -266,6 +266,45 @@ func TestDatabaseBackendImageConversationActiveDeleteAndGeneration(t *testing.T)
 	}
 }
 
+func TestDatabaseBackendImageConversationRepeatedDeleteIsReadOnly(t *testing.T) {
+	backend := newImageConversationTestBackend(t)
+	ctx := context.Background()
+	ownerID := "owner-repeated-delete"
+	conversationID := "missing"
+
+	removed, err := backend.Delete(ctx, ownerID, conversationID, 1000)
+	if err != nil || removed {
+		t.Fatalf("Delete(missing) = (%v, %v)", removed, err)
+	}
+	state, err := backend.LoadOwnerState(ctx, ownerID)
+	if err != nil {
+		t.Fatalf("LoadOwnerState(after first delete) error = %v", err)
+	}
+	tombstone, exists, err := backend.Load(ctx, ownerID, conversationID)
+	if err != nil || !exists {
+		t.Fatalf("Load(tombstone) = (%#v, %v, %v)", tombstone, exists, err)
+	}
+
+	removed, err = backend.Delete(ctx, ownerID, conversationID, 2000)
+	if err != nil || removed {
+		t.Fatalf("Delete(tombstone) = (%v, %v)", removed, err)
+	}
+	unchangedState, err := backend.LoadOwnerState(ctx, ownerID)
+	if err != nil {
+		t.Fatalf("LoadOwnerState(after repeated delete) error = %v", err)
+	}
+	if unchangedState != state {
+		t.Fatalf("repeated delete changed owner state from %#v to %#v", state, unchangedState)
+	}
+	unchangedTombstone, exists, err := backend.Load(ctx, ownerID, conversationID)
+	if err != nil || !exists {
+		t.Fatalf("Load(tombstone after repeated delete) = (%#v, %v, %v)", unchangedTombstone, exists, err)
+	}
+	if unchangedTombstone.StorageVersion != tombstone.StorageVersion || unchangedTombstone.DeletedAtMillis != tombstone.DeletedAtMillis {
+		t.Fatalf("repeated delete changed tombstone from %#v to %#v", tombstone, unchangedTombstone)
+	}
+}
+
 func TestDatabaseBackendImageConversationClearInvalidatesGenerationAndData(t *testing.T) {
 	backend := newImageConversationTestBackend(t)
 	ctx := context.Background()

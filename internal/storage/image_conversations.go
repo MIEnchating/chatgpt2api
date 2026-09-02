@@ -1158,6 +1158,9 @@ func (b *DatabaseBackend) Delete(ctx context.Context, ownerID, conversationID st
 	if exists && current.ID != conversationID {
 		return false, ErrImageConversationHashCollision
 	}
+	if exists && current.DeletedAtMillis > 0 {
+		return false, nil
+	}
 	removed := exists && current.DeletedAtMillis == 0
 	if exists {
 		if current.DeletedAtMillis == 0 {

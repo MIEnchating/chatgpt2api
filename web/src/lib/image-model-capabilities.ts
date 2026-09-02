@@ -1,4 +1,4 @@
-export type ImageModelRoute = "openai-image" | "google-gemini-image" | "xai-image" | "zhipu-image" | "agnes-image" | "apimart-image";
+export type ImageModelRoute = "openai-image" | "google-gemini-image" | "xai-image" | "zhipu-image" | "agnes-image" | "kie-image" | "apimart-image";
 
 const GOOGLE_GEMINI_IMAGE_MODELS = new Set([
   "gemini-3.1-flash-lite-image",
@@ -191,7 +191,30 @@ function isOfficialXAIImageModelName(model: string) {
 
 function isKIEImageModelName(model: string) {
   const value = model.trim().toLowerCase();
-  return value.includes("/") || value === "z-image" || value.startsWith("nano-banana-2") || value === "nano-banana-pro" || value.startsWith("gpt-image-2-");
+  if (value === "z-image" || value.includes("nano-banana") || value.startsWith("gpt-image-2-")) {
+    return true;
+  }
+  if (!value.includes("/")) {
+    return false;
+  }
+  if ([
+    "bytedance/",
+    "flux-2/",
+    "google/",
+    "gpt-image/",
+    "grok-imagine/",
+    "ideogram/",
+    "qwen/",
+    "qwen2/",
+    "recraft/",
+    "seedream/",
+    "topaz/",
+    "wan/2-7-image",
+    "z-image",
+  ].some((prefix) => value.startsWith(prefix))) {
+    return true;
+  }
+  return value.includes("imagen4");
 }
 
 function isKIEImageEditModel(model: string) {
@@ -228,6 +251,9 @@ export function imageModelRoute(model: string): ImageModelRoute {
   if (isKnownAPIMartImageModel(value)) {
     return "apimart-image";
   }
+  if (isKIEImageModelName(value)) {
+    return "kie-image";
+  }
   if (XAI_IMAGE_MODELS.has(value)) {
     return "xai-image";
   }
@@ -246,7 +272,8 @@ export function imageModelRoute(model: string): ImageModelRoute {
 export function supportsImageEditing(model: string) {
   const route = imageModelRoute(model);
   if (route === "apimart-image") return apimartImageCapabilities(model)?.hasReferences === true;
-  return route === "openai-image" || route === "google-gemini-image" || route === "xai-image" || route === "agnes-image" || isKIEImageEditModel(model);
+  if (route === "kie-image") return isKIEImageEditModel(model);
+  return route === "openai-image" || route === "google-gemini-image" || route === "xai-image" || route === "agnes-image";
 }
 
 export function supportsImageMask(model: string) {
@@ -264,7 +291,7 @@ export function imageReferenceImageLimit(model: string) {
     return 4;
   }
   if (route === "zhipu-image") return 0;
-  if (isKIEImageModelName(value)) {
+  if (route === "kie-image") {
     if (value.includes("upscale") || value.includes("remove-background") || value.endsWith("/extend")) return 1;
     if (value.includes("text-to-image") || value.includes("imagen4") || value.includes("z-image")) return 0;
     return value.includes("nano-banana-2") || value.includes("nano-banana-pro") ? 14 : 4;
@@ -295,7 +322,7 @@ export function supportsImageStreaming(model: string) {
 }
 
 export function supportsImageSize(model: string) {
-  return isKIEImageModelName(model) || imageModelRoute(model) !== "xai-image" || isOfficialXAIImageModelName(model);
+  return imageModelRoute(model) !== "xai-image" || isOfficialXAIImageModelName(model);
 }
 
 export function supportsImageExactDimensions(model: string) {
@@ -306,7 +333,7 @@ export function supportsImageAspectRatio(model: string, aspectRatio: string) {
   const route = imageModelRoute(model);
   const value = model.trim().toLowerCase();
   if (route === "apimart-image") return aspectRatio === "" || APIMART_IMAGE_ASPECT_RATIOS.has(aspectRatio);
-  if (isKIEImageModelName(value)) {
+  if (route === "kie-image") {
     if (value.includes("recraft/") || value.includes("upscale") || value.includes("remove-background") || value.endsWith("/extend")) return aspectRatio === "";
     return aspectRatio === "" || ["1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3", "21:9", "1:4", "1:8", "4:1", "4:5", "5:4", "8:1"].includes(aspectRatio);
   }
@@ -340,7 +367,7 @@ export function supportsImageResolution(model: string, resolution: string) {
     const level = levels[resolution.toLowerCase()];
     return Boolean(level && level >= capabilities.minResolution && level <= capabilities.maxResolution);
   }
-  if (isKIEImageModelName(value)) {
+  if (route === "kie-image") {
     if (value.includes("flux-2") || value.includes("gpt-image-2") || (value.includes("nano-banana-2") && !value.includes("nano-banana-2-lite")) || value.includes("nano-banana-pro") || value.includes("wan/2-7-image") || value.includes("bytedance/seedream-v4")) return ["", "auto", "1k", "2k", "4k", "2K", "4K"].includes(resolution);
     return resolution === "" || resolution === "auto";
   }
@@ -364,7 +391,7 @@ export function supportsImageResolution(model: string, resolution: string) {
 export function supportsStructuredImageParameters(model: string) {
   const value = model.trim().toLowerCase();
   const route = imageModelRoute(model);
-  return value === "gpt-image-2" || route === "google-gemini-image" || route === "agnes-image" || route === "apimart-image" || isOfficialXAIImageModelName(value) || isKIEImageModelName(value);
+  return value === "gpt-image-2" || route === "google-gemini-image" || route === "agnes-image" || route === "kie-image" || route === "apimart-image" || isOfficialXAIImageModelName(value);
 }
 
 export function supportsImageOutputControls(model: string) {

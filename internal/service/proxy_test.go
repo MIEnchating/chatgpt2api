@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -49,6 +50,27 @@ func waitForSignal(t *testing.T, signal <-chan struct{}, message string) {
 	case <-signal:
 	case <-time.After(5 * time.Second):
 		t.Fatal(message)
+	}
+}
+
+func TestProxyServiceTestWithoutConfigReturnsValidationError(t *testing.T) {
+	want := map[string]any{
+		"ok":         false,
+		"status":     0,
+		"latency_ms": 0,
+		"error":      "proxy url is required",
+	}
+	services := map[string]*ProxyService{
+		"nil config":  NewProxyService(nil),
+		"nil service": nil,
+	}
+
+	for name, service := range services {
+		t.Run(name, func(t *testing.T) {
+			if got := service.Test("", time.Second); !reflect.DeepEqual(got, want) {
+				t.Fatalf("Test() = %#v, want %#v", got, want)
+			}
+		})
 	}
 }
 

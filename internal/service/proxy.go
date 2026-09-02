@@ -100,7 +100,7 @@ func (s *ProxyService) Close() {
 
 func (s *ProxyService) Test(candidate string, timeout time.Duration) map[string]any {
 	candidate = strings.TrimSpace(candidate)
-	if candidate == "" {
+	if candidate == "" && s != nil && s.config != nil {
 		candidate = s.config.Proxy()
 	}
 	candidate = strings.TrimSpace(candidate)

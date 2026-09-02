@@ -70,6 +70,77 @@ const clearedSessionData = {
 };
 
 describe("settings store session isolation", () => {
+  test("explicit empty model lists clear stale defaults after loading", async () => {
+    const store = createSettingsStore({
+      fetchSettingsConfig: async () => ({
+        config: {
+          ...config("Empty models"),
+          image_models: [],
+          default_image_model: "stale-image-model",
+          video_models: [],
+          default_video_model: "stale-video-model",
+          text_models: [],
+          default_text_model: "stale-text-model",
+          audio_models: [],
+          default_audio_model: "stale-audio-model",
+        },
+      }),
+    });
+
+    store.getState().activateSession("session-a");
+    await store.getState().loadConfig();
+
+    expect(store.getState().config).toMatchObject({
+      image_models: [],
+      default_image_model: "",
+      video_models: [],
+      default_video_model: "",
+      text_models: [],
+      default_text_model: "",
+      audio_models: [],
+      default_audio_model: "",
+    });
+  });
+
+  test("saving keeps every default inside its normalized model list", async () => {
+    let savedConfig;
+    const store = createSettingsStore({
+      updateSettingsConfig: async (payload) => {
+        savedConfig = payload;
+        return { config: payload };
+      },
+      fetchImageStorageGovernance: async () => ({ governance: {} }),
+    });
+
+    store.getState().activateSession("session-a");
+    store.setState({
+      config: {
+        ...config("Changed models"),
+        image_models: "image-current, image-current",
+        default_image_model: "image-deleted",
+        video_models: "",
+        default_video_model: "video-deleted",
+        text_models: ["text-current"],
+        default_text_model: "text-current",
+        audio_models: [],
+        default_audio_model: "audio-deleted",
+      },
+    });
+
+    await store.getState().saveConfig();
+
+    expect(savedConfig).toMatchObject({
+      image_models: ["image-current"],
+      default_image_model: "image-current",
+      video_models: [],
+      default_video_model: "",
+      text_models: ["text-current"],
+      default_text_model: "text-current",
+      audio_models: [],
+      default_audio_model: "",
+    });
+  });
+
   test("an A response completing after B cannot overwrite B or emit feedback", async () => {
     const aRequest = deferred();
     const bRequest = deferred();

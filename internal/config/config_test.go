@@ -1370,6 +1370,39 @@ func TestEnvValueFormattingRoundTripsEscapes(t *testing.T) {
 	}
 }
 
+func TestStringifySettingEnvValueRoundTripsStructuredSettings(t *testing.T) {
+	promptSourcesJSON := stringifySettingEnvValue("prompt_sources", []any{
+		map[string]any{"id": "source-1", "enabled": true},
+	})
+	var promptSources []map[string]any
+	if err := json.Unmarshal([]byte(promptSourcesJSON), &promptSources); err != nil {
+		t.Fatalf("decode prompt sources: %v", err)
+	}
+	if len(promptSources) != 1 || promptSources[0]["id"] != "source-1" || promptSources[0]["enabled"] != true {
+		t.Fatalf("prompt sources round trip = %#v", promptSources)
+	}
+
+	storageJSON := stringifySettingEnvValue("storage", model.StorageSetting{
+		AllowUserProvider:  true,
+		CapacityLimitBytes: 1024,
+		Providers: []model.StorageProvider{{
+			ID: "storage-1", Name: "Primary", Type: model.StorageProviderTypeWebDAV,
+			Endpoint: "https://dav.example.test/", Username: "user", Password: "secret",
+		}},
+	})
+	var storageSetting model.StorageSetting
+	if err := json.Unmarshal([]byte(storageJSON), &storageSetting); err != nil {
+		t.Fatalf("decode storage setting: %v", err)
+	}
+	if storageSetting.Mode != "server_user_or_local" || storageSetting.CapacityLimitBytes != 1024 || len(storageSetting.Providers) != 1 {
+		t.Fatalf("storage setting round trip = %#v", storageSetting)
+	}
+	provider := storageSetting.Providers[0]
+	if provider.ID != "storage-1" || provider.Type != model.StorageProviderTypeWebDAV || provider.Endpoint != "https://dav.example.test" || provider.Password != "secret" {
+		t.Fatalf("storage provider round trip = %#v", provider)
+	}
+}
+
 func TestWriteEnvUpdatesReplacesDuplicateAssignments(t *testing.T) {
 	path := filepath.Join(t.TempDir(), ".env")
 	if err := os.WriteFile(path, []byte("DUPLICATE=old-first\nKEEP=unchanged\nDUPLICATE=old-last\n"), 0o600); err != nil {
@@ -1391,6 +1424,34 @@ func TestWriteEnvUpdatesReplacesDuplicateAssignments(t *testing.T) {
 	}
 	if strings.Contains(string(contents), "DUPLICATE=old") || strings.Count(string(contents), "DUPLICATE=new") != 2 {
 		t.Fatalf("updated environment file = %q", contents)
+	}
+}
+
+func TestWriteEnvUpdatesProtectsEnvironmentFilePermissions(t *testing.T) {
+	path := filepath.Join(t.TempDir(), ".env")
+	if err := writeEnvUpdates(path, map[string]string{"DATABASE_PASSWORD": "secret"}); err != nil {
+		t.Fatalf("create environment file: %v", err)
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("new environment file mode = %04o, want 0600", got)
+	}
+
+	if err := os.Chmod(path, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeEnvUpdates(path, map[string]string{"DATABASE_PASSWORD": "updated-secret"}); err != nil {
+		t.Fatalf("update environment file: %v", err)
+	}
+	info, err = os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Fatalf("updated environment file mode = %04o, want 0600", got)
 	}
 }
 

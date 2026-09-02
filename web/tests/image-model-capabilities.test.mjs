@@ -122,6 +122,27 @@ test("KIE image resolution controls follow the reference model contracts", () =>
   assert.equal(supportsImageResolution("nano-banana-2", "2k"), true);
 });
 
+test("known KIE models use KIE capabilities without changing unknown custom routes", () => {
+  const textOnlyModel = "bytedance/seedream-v4-text-to-image";
+  const editModel = "bytedance/seedream-v4-image-to-image";
+
+  assert.equal(imageModelRoute(textOnlyModel), "kie-image");
+  assert.equal(imageReferenceImageLimit(textOnlyModel), 0);
+  assert.equal(supportsImageEditing(textOnlyModel), false);
+  assert.equal(supportsImageMask(textOnlyModel), false);
+  assert.equal(supportsImageStreaming(textOnlyModel), false);
+  assert.equal(supportsImageOutputControls(textOnlyModel), false);
+  assert.equal(supportsImageQuality(textOnlyModel), false);
+
+  assert.equal(imageModelRoute(editModel), "kie-image");
+  assert.equal(supportsImageEditing(editModel), true);
+
+  assert.equal(imageModelRoute("vendor/custom-image-model"), "openai-image");
+  assert.equal(supportsImageEditing("vendor/custom-image-model"), true);
+  assert.equal(supportsImageMask("vendor/custom-image-model"), true);
+  assert.equal(supportsStructuredImageParameters("vendor/custom-image-model"), false);
+});
+
 test("APIMart image capability branches match the reference contracts", () => {
   const contracts = [
     { model: "gpt-image-2-official", count: 15, refs: Infinity, quality: true, output: true, resolutions: ["1k", "2k", "4k"] },
