@@ -61,9 +61,6 @@ func (a *App) handleImageGenerationPreferences(w http.ResponseWriter, r *http.Re
 			return
 		}
 		defaultAudioFormat := strings.ToLower(strings.TrimSpace(util.Clean(body["default_audio_format"])))
-		if defaultAudioFormat == "" {
-			defaultAudioFormat = "mp3"
-		}
 		requestedModels := []struct {
 			field   string
 			model   string

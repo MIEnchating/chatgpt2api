@@ -570,6 +570,43 @@ func TestImageGenerationPreferencesArePersonal(t *testing.T) {
 	}
 }
 
+func TestImageGenerationPreferencesPreserveEmptyAudioDefaults(t *testing.T) {
+	t.Setenv("AUDIO_MODELS", "gpt-4o-mini-tts")
+	app := newTestApp(t)
+	defer app.Close()
+	if _, err := app.config.Update(map[string]any{"audio_models": []string{}}); err != nil {
+		t.Fatalf("clear audio model whitelist: %v", err)
+	}
+	_, token := createPasswordUserSession(t, app, "image-pref-empty-audio", "Password123!", "Empty Audio User")
+
+	body := `{"partial_images":1,"canvas_default_image_count":1,"default_audio_model":"","default_audio_voice":"","default_audio_format":"","default_audio_speed":1}`
+	req := httptest.NewRequest(http.MethodPut, "/api/profile/image-generation-preferences", strings.NewReader(body))
+	setRequestAuthCookie(req, "Bearer "+token)
+	res := httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("save empty audio defaults status = %d body = %s", res.Code, res.Body.String())
+	}
+	for _, field := range []string{"default_audio_model", "default_audio_voice", "default_audio_format"} {
+		if !strings.Contains(res.Body.String(), `"`+field+`":""`) {
+			t.Fatalf("save empty audio defaults omitted %s: %s", field, res.Body.String())
+		}
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/profile/image-generation-preferences", nil)
+	setRequestAuthCookie(req, "Bearer "+token)
+	res = httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("reload empty audio defaults status = %d body = %s", res.Code, res.Body.String())
+	}
+	for _, field := range []string{"default_audio_model", "default_audio_voice", "default_audio_format"} {
+		if !strings.Contains(res.Body.String(), `"`+field+`":""`) {
+			t.Fatalf("reload empty audio defaults omitted %s: %s", field, res.Body.String())
+		}
+	}
+}
+
 func TestPasswordAccountLogin(t *testing.T) {
 	t.Setenv("USER_DEFAULT_CONCURRENT_LIMIT", "2")
 
