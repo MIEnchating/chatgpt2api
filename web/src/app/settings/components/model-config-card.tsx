@@ -215,9 +215,8 @@ function GlobalModelList({
                   size="icon"
                   className="size-8 text-muted-foreground hover:text-destructive"
                   onClick={() => onChange(models.filter((_, itemIndex) => itemIndex !== index))}
-                  disabled={models.length === 1}
                   aria-label={`删除 ${model}`}
-                  title={models.length === 1 ? "每类至少保留一个模型" : "删除"}
+                  title="删除"
                 >
                   <Trash2 className="size-3.5" />
                 </Button>

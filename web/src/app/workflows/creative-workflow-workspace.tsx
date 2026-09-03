@@ -2073,7 +2073,7 @@ function VariableEditor({ index, variable, onChange, onDelete }: { index: number
           <Field label="默认值"><Input type={variable.type === "number" ? "number" : "text"} value={variable.default_value} onChange={(event) => onChange({ default_value: event.target.value })} placeholder="可选" /></Field>
         )}
         {variable.type === "select" ? (
-          <div className="sm:col-span-2 xl:col-span-2"><Field label="选项"><Input value={variable.options.join(" / ")} onChange={(event) => { const options = parseVariableOptions(event.target.value); onChange({ options, default_value: options.includes(variable.default_value) ? variable.default_value : options[0] || "" }); }} placeholder="例如 自动 / 极简 / 商业" /></Field></div>
+          <div className="sm:col-span-2 xl:col-span-2"><Field label="选项"><Input value={variable.options.join(" / ")} onChange={(event) => { const options = parseVariableOptions(event.target.value); onChange({ options, default_value: options.includes(variable.default_value) ? variable.default_value : "" }); }} placeholder="例如 自动 / 极简 / 商业" /></Field></div>
         ) : null}
         <div className="sm:col-span-2 xl:col-span-2"><Field label="输入提示"><Input value={variable.placeholder || ""} onChange={(event) => onChange({ placeholder: event.target.value })} placeholder="可选" /></Field></div>
       </div>

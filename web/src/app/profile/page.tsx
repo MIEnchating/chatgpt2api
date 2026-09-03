@@ -412,6 +412,7 @@ function audioPreferenceChoices(model: string, currentVoice: string, grokVoices:
 }
 
 function audioPreferenceDefaults(model: string) {
+  if (!model.trim()) return { default_audio_voice: "", default_audio_format: "" as const, default_audio_speed: 1 };
   const provider = canvasAudioProvider(model);
   if (provider === "gemini") return { default_audio_voice: "Kore", default_audio_format: "wav" as const, default_audio_speed: 1 };
   if (provider === "glm") return { default_audio_voice: "tongtong", default_audio_format: "wav" as const, default_audio_speed: 1 };

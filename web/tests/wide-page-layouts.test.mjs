@@ -143,6 +143,8 @@ test("global model groups can be explicitly cleared", () => {
   assert.match(modelConfigSource, /onClear=\{\(\) => updateModels\("text", \[\]\)\}/);
   assert.match(modelConfigSource, /暂无模型，点击“添加”进行配置/);
   assert.doesNotMatch(modelConfigSource, /if \(normalized\.length === 0\) return/);
+  assert.doesNotMatch(modelConfigSource, /disabled=\{models\.length === 1\}/);
+  assert.doesNotMatch(modelConfigSource, /每类至少保留一个模型/);
 });
 
 test("management pages add density without removing their table overflow guards", () => {
