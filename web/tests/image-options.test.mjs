@@ -75,6 +75,27 @@ test("invalid saved resolution falls back to inferred size data", () => {
   assert.equal(selection.resolution, "2k");
 });
 
+test("custom canvas dimensions stay custom instead of becoming a ratio preset during editing", () => {
+  const selection = getImageSizeSelectionFromSize("8x1024");
+
+  assert.equal(selection.mode, "custom");
+  assert.equal(selection.aspectRatio, "");
+  assert.equal(selection.customWidth, "8");
+  assert.equal(selection.customHeight, "1024");
+});
+
+test("arbitrary custom dimensions are preserved while known presets remain ratio selections", () => {
+  const custom = getImageSizeSelectionFromSize("853x1844");
+  assert.equal(custom.mode, "custom");
+  assert.equal(custom.customWidth, "853");
+  assert.equal(custom.customHeight, "1844");
+
+  const preset = getImageSizeSelectionFromSize("2048x1152");
+  assert.equal(preset.mode, "ratio");
+  assert.equal(preset.aspectRatio, "16:9");
+  assert.equal(preset.resolution, "2k");
+});
+
 test("ratio-only requests use the reference service quality-to-pixel algorithm", () => {
   assert.equal(normalizeReferenceImageQuality(""), "auto");
   assert.equal(normalizeReferenceImageQuality("2K"), "medium");

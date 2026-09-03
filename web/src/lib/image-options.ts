@@ -546,9 +546,21 @@ function getImageResolutionFromSize(size: string): ImageResolution {
 }
 
 export function getImageSizeSelectionFromSize(size: string, preferredResolution?: unknown): ImageSizeSelection {
+  const rawDimensionsMatch = size.trim().match(SIZE_PATTERN);
+  const rawDimensions = rawDimensionsMatch
+    ? { width: rawDimensionsMatch[1], height: rawDimensionsMatch[2] }
+    : null;
   const normalized = normalizeImageSize(size);
-  const customSize = parseImageSizeDimensions(normalized);
-  const aspectRatio = getImageAspectRatioFromSize(normalized);
+  const normalizedDimensions = parseImageSizeDimensions(normalized);
+  // Keep arbitrary custom dimensions stable while they are edited. Normalizing
+  // an intermediate value such as 8x1024 can otherwise turn it into a valid
+  // preset (for example 1:8), making the width/height inputs appear locked.
+  const rawSizeWasNormalized = Boolean(
+    rawDimensions && normalizedDimensions &&
+      (rawDimensions.width !== normalizedDimensions.width || rawDimensions.height !== normalizedDimensions.height),
+  );
+  const customSize = rawSizeWasNormalized ? rawDimensions : normalizedDimensions;
+  const aspectRatio = rawSizeWasNormalized ? "" : getImageAspectRatioFromSize(normalized);
   const resolution = isImageResolution(preferredResolution)
     ? preferredResolution
     : getImageResolutionFromSize(normalized);
@@ -571,7 +583,7 @@ export function getImageSizeSelectionFromSize(size: string, preferredResolution?
       customHeight: baseSelection.customHeight,
     };
   }
-  if (customSize && !aspectRatio && resolution === "auto") {
+  if (customSize && !aspectRatio && (rawSizeWasNormalized || resolution === "auto")) {
     return {
       ...baseSelection,
       mode: "custom",

@@ -38,7 +38,14 @@ export function CanvasAgentImageSettings({
     onChange({
       ...(patch.quality !== undefined ? { imageQuality: patch.quality } : {}),
       ...(["mode", "aspectRatio", "resolution", "customRatio", "customWidth", "customHeight"].some((key) => key in patch)
-        ? { imageSize: buildImageSize(next, { preserveAspectRatio: true, snapToMultiple16: true }) }
+        ? {
+            imageSize: buildImageSize(next, {
+              preserveAspectRatio: true,
+              // Keep the input stable while typing; DimensionInput applies
+              // alignment on blur, matching the creation workbench behavior.
+              snapToMultiple16: !("customWidth" in patch || "customHeight" in patch),
+            }),
+          }
         : {}),
     });
   }

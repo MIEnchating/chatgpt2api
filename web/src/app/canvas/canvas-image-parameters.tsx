@@ -89,7 +89,12 @@ export function CanvasImageParameterPopover({ node, imageModel, imageModels = []
 
   function updateSettings(patch: Partial<ImageSettingsValue>) {
     const next = { ...settingsValue, ...patch };
-    const nextSize = buildImageSize(next, { snapToMultiple16: next.snapToMultiple16 });
+    const editingCustomDimension = "customWidth" in patch || "customHeight" in patch;
+    const nextSize = buildImageSize(next, {
+      // Keep the input stable while typing; DimensionInput applies alignment
+      // on blur, matching the creation workbench behavior.
+      snapToMultiple16: editingCustomDimension ? false : next.snapToMultiple16,
+    });
     onChange({
       generation_size: next.mode === "auto" ? "" : nextSize,
       generation_resolution: next.resolution,
