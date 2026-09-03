@@ -86,7 +86,7 @@ import { cn } from "@/lib/utils";
 import { COLOR_THEME_CHANGE_EVENT, getPreferredColorTheme, type ColorTheme } from "@/lib/theme";
 import { useImageGenerationPreferences } from "@/lib/use-image-generation-preferences";
 import { activateCanvasTaskQueueSession, clearCanvasTaskQueueForCanvas, clearCanvasTaskQueueForSession, syncCanvasTaskQueue } from "@/store/canvas-task-queue";
-import { resolveConfiguredVideoModel, supportsVideoFrameReferences, supportsVideoMultimodalReferences, videoAudioControl, videoDefaultResolution, videoDefaultSeconds, videoDefaultSize, videoMultimodalReferenceLimits, videoRequiresReferenceImage, videoResolutionOptions, videoSecondsIsValid, videoSizeLabel, videoSizeOptions, videoWorkbenchResolutionOptions, videoWorkbenchSecondsOptions } from "@/lib/video-model-capabilities";
+import { resolveConfiguredVideoModel, resolveVideoSeconds, supportsVideoFrameReferences, supportsVideoMultimodalReferences, videoAudioControl, videoDefaultResolution, videoDefaultSeconds, videoDefaultSize, videoMultimodalReferenceLimits, videoRequiresReferenceImage, videoResolutionOptions, videoSecondsIsValid, videoSizeLabel, videoSizeOptions, videoWorkbenchResolutionOptions, videoWorkbenchSecondsOptions } from "@/lib/video-model-capabilities";
 import { normalizeVideoRequest } from "@/lib/video-request-normalizer";
 import { videoContractUIState, videoModelContract } from "@/lib/video-model-contracts";
 import {
@@ -347,8 +347,7 @@ function isCanvasAccessibleReferenceURL(value: string) {
 function canvasVideoParameters(node?: CanvasNode | null) {
 	const model = node?.generation_video_model || "";
 	const sizes = videoSizeOptions(model);
-	const selectedSeconds = node?.generation_video_seconds;
-	const normalizedSeconds = typeof selectedSeconds === "number" && videoSecondsIsValid(model, selectedSeconds) ? selectedSeconds : videoDefaultSeconds(model);
+	const normalizedSeconds = resolveVideoSeconds(model, node?.generation_video_seconds);
 	const resolutions = videoResolutionOptions(model);
 	const defaultSize = videoDefaultSize(model);
 	const storedSize = String(node?.generation_video_size || "");
@@ -4341,7 +4340,11 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     activateCanvasTaskQueueSession(session.key);
     mountedRef.current = true;
     const loadWorkspace = async () => {
+      const modelConfigRequest = fetchModelConfig().catch(() => undefined);
       let workspace = await fetchCanvasDocument();
+      // Applying a document normalizes video nodes from the active model contracts.
+      // Wait for the parallel contract request so valid stored durations stay valid.
+      await modelConfigRequest;
       if (!active) return;
       if (!workspace.document?.id) {
         workspace = await updateCanvasProject({ action: "create", title: "我的画布" });

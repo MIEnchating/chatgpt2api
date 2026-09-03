@@ -1,4 +1,5 @@
 import { X } from "lucide-react";
+import { useEffect, useState } from "react";
 
 import { ImageParameterLabel } from "@/components/generation/image-parameter-ui";
 import { imageParameterChoiceClass } from "@/components/generation/image-parameter-styles";
@@ -148,6 +149,13 @@ function DimensionInput({
   onChange: (value: string) => void;
   onBlur: (value: string) => void;
 }) {
+  const [draft, setDraft] = useState(value);
+  const [editing, setEditing] = useState(false);
+
+  useEffect(() => {
+    if (!editing) setDraft(value);
+  }, [editing, value]);
+
   return (
     <label
       className={cn(
@@ -164,11 +172,21 @@ function DimensionInput({
         min="1"
         step="1"
         disabled={disabled}
-        value={value}
+        value={draft}
         placeholder="自动"
-        onFocus={onFocus}
-        onChange={(event) => onChange(event.target.value)}
-        onBlur={(event) => onBlur(event.target.value)}
+        onFocus={() => {
+          setEditing(true);
+          onFocus();
+        }}
+        onChange={(event) => {
+          const next = event.target.value;
+          setDraft(next);
+          onChange(next);
+        }}
+        onBlur={() => {
+          setEditing(false);
+          onBlur(draft);
+        }}
         className="h-7 rounded-none border-0 bg-transparent px-0 text-xs font-medium shadow-none disabled:bg-transparent disabled:opacity-100 focus-visible:ring-0"
       />
     </label>

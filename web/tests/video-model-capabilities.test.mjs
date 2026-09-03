@@ -9,6 +9,7 @@ import {
 
 import {
   canonicalVideoModel,
+  resolveVideoSeconds,
   resolveConfiguredVideoModel,
   supportsVideoFrameReferences,
   supportsVideoMultimodalReferences,
@@ -47,6 +48,16 @@ test("returns no inferred capability for a model without a contract", () => {
   assert.deepEqual(videoResolutionOptions("unconfigured/video"), []);
   assert.equal(videoDefaultSeconds("unconfigured/video"), 0);
   assert.equal(videoAudioControl("unconfigured/video"), "none");
+});
+
+test("preserves a valid stored duration while model contracts are unavailable", () => {
+  assert.equal(resolveVideoSeconds("unconfigured/video", 8), 8);
+  assert.equal(resolveVideoSeconds("unconfigured/video", 0), 0);
+});
+
+test("normalizes a stored duration against an installed model contract", () => {
+  assert.equal(resolveVideoSeconds("minimax-h3-768p", 8), 8);
+  assert.equal(resolveVideoSeconds("minimax-h3-768p", 3), 5);
 });
 
 test("reads every creator capability from the matching contract", () => {

@@ -80,6 +80,17 @@ export function videoDefaultSeconds(source: VideoModelCapabilitySource) {
   return capability.default_seconds || capability.seconds[0] || 0;
 }
 
+export function resolveVideoSeconds(source: VideoModelCapabilitySource, requested?: number) {
+  const options = videoSecondsOptions(source);
+  if (typeof requested === "number" && Number.isInteger(requested)) {
+    if (options.includes(requested)) return requested;
+    // Model contracts are installed asynchronously. Keep a broadly valid stored
+    // value until the matching contract is available instead of replacing it with 0.
+    if (options.length === 0 && requested >= 1 && requested <= 3600) return requested;
+  }
+  return videoDefaultSeconds(source);
+}
+
 export function videoDefaultSize(source: VideoModelCapabilitySource) {
   const capability = videoCapability(source);
   return capability.default_size || capability.sizes[0] || "";

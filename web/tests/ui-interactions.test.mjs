@@ -147,6 +147,14 @@ test("video dimension drafts survive equivalent option array instances", () => {
   assert.doesNotMatch(videoSettingsPanelSource, /\[options, value\]/);
 });
 
+test("image dimension inputs keep an empty editing draft instead of restoring 1024", () => {
+  assert.match(imageSettingsPanelSource, /const \[draft, setDraft\] = useState\(value\)/);
+  assert.match(imageSettingsPanelSource, /if \(!editing\) setDraft\(value\)/);
+  assert.match(imageSettingsPanelSource, /value=\{draft\}/);
+  assert.match(imageSettingsPanelSource, /const next = event\.target\.value;\s*setDraft\(next\);\s*onChange\(next\)/);
+  assert.doesNotMatch(imageSettingsPanelSource, /value=\{value\}[\s\S]{0,120}onChange=\{\(event\) => onChange\(event\.target\.value\)\}/);
+});
+
 test("dialog close buttons stay fixed while the body scrollbar updates", () => {
   assert.match(dialogSource, /tabIndex=\{-1\}[\s\S]*?event\.currentTarget as HTMLElement\)\.focus\(\{ preventScroll: true \}\)/);
   assert.match(dialogSource, /data-slot="dialog-auto-close"/);
