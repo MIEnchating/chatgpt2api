@@ -520,9 +520,12 @@ func normalizeWorkflowVariables(variables []WorkflowVariable) error {
 		if variable.ID == "" {
 			variable.ID = util.NewUUID()
 		}
-		variable.Key = sanitizeWorkflowTemplateVariableKey(strings.TrimSpace(variable.Key))
+		variable.Key = strings.TrimSpace(variable.Key)
 		if variable.Key == "" {
 			return workflowValidationError("第 %d 个工作流变量缺少变量名", i+1)
+		}
+		if sanitizeWorkflowTemplateVariableKey(variable.Key) != variable.Key {
+			return workflowValidationError("工作流变量名 %q 只能包含字母、数字、下划线、点和连字符", variable.Key)
 		}
 		if previous, exists := keyIndexes[variable.Key]; exists {
 			return workflowValidationError("工作流变量名 %q 重复（第 %d 和第 %d 个变量）", variable.Key, previous+1, i+1)

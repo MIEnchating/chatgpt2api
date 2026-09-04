@@ -52,7 +52,7 @@ func TestRelayCredentialsUseCurrentPayloadFieldsOnly(t *testing.T) {
 	}
 }
 
-func TestCustomRelaySelectionUsesItsBaseURLAndKeyWithoutForwardingInternals(t *testing.T) {
+func TestCustomRelaySelectionRejectsPrivateEndpointWithoutForwardingInternals(t *testing.T) {
 	app := newTestApp(t)
 	defer app.Close()
 
@@ -60,17 +60,14 @@ func TestCustomRelaySelectionUsesItsBaseURLAndKeyWithoutForwardingInternals(t *t
 	if err != nil || identity == nil {
 		t.Fatalf("LoginPassword() identity=%#v error=%v", identity, err)
 	}
-	var received map[string]any
-	var authorization string
+	requests := 0
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		authorization = r.Header.Get("Authorization")
-		if err := json.NewDecoder(r.Body).Decode(&received); err != nil {
-			t.Errorf("decode request: %v", err)
-		}
+		requests++
 		util.WriteJSON(w, http.StatusOK, map[string]any{"id": "completion-1", "choices": []any{}})
 	}))
 	defer upstream.Close()
-	customConfig, err := app.customRelayConfigs.Create(identityScope(*identity), "text", "测试线路", upstream.URL, "sk-custom")
+	privateHostnameURL := strings.Replace(upstream.URL, "127.0.0.1", "localhost", 1)
+	customConfig, err := app.customRelayConfigs.Create(identityScope(*identity), "text", "测试线路", privateHostnameURL, "sk-custom")
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}
@@ -81,14 +78,15 @@ func TestCustomRelaySelectionUsesItsBaseURLAndKeyWithoutForwardingInternals(t *t
 	if err := app.attachRelayAPIKeyForIdentity(context.Background(), *identity, payload); err != nil {
 		t.Fatalf("attachRelayAPIKeyForIdentity() error = %v", err)
 	}
-	if _, _, err := app.relayJSONMaybeStream(context.Background(), "/v1/chat/completions", payload); err != nil {
-		t.Fatalf("relayJSONMaybeStream() error = %v", err)
+	if _, _, err := app.relayJSONMaybeStream(context.Background(), "/v1/chat/completions", payload); err == nil || !strings.Contains(err.Error(), "local and private") {
+		t.Fatalf("relayJSONMaybeStream() error = %v, want SSRF rejection", err)
 	}
-	if authorization != "Bearer sk-custom" {
-		t.Fatalf("Authorization = %q", authorization)
+	if requests != 0 {
+		t.Fatalf("private relay received %d requests", requests)
 	}
-	if received["relay_base_url"] != nil || received["api_key"] != nil || received["token_name"] != nil {
-		t.Fatalf("request leaked internal credentials: %#v", received)
+	forwarded := relayPayloadForPath("/v1/chat/completions", payload)
+	if forwarded["relay_base_url"] != nil || forwarded["api_key"] != nil || forwarded["token_name"] != nil || forwarded[relayCustomEndpointPayloadKey] != nil {
+		t.Fatalf("request leaked internal credentials: %#v", forwarded)
 	}
 }
 
@@ -765,11 +763,11 @@ func TestDeclaredVideoContractForwardsLocalMixedMaterialsAsMultipart(t *testing.
 		"prompt":         "mixed material",
 		"reference_mode": "reference",
 		"reference_image_urls": []string{
-			platformBaseURL + "/video-image-references/" + expected[0].name,
+			app.signedReferenceURL(platformBaseURL+"/video-image-references/"+expected[0].name, time.Now().Add(time.Hour)),
 			"https://cdn.example.com/public.png",
 		},
-		"reference_video_urls": []string{platformBaseURL + "/video-references/" + expected[1].name},
-		"reference_audio_urls": []string{platformBaseURL + "/audio-references/" + expected[2].name},
+		"reference_video_urls": []string{app.signedReferenceURL(platformBaseURL+"/video-references/"+expected[1].name, time.Now().Add(time.Hour))},
+		"reference_audio_urls": []string{app.signedReferenceURL(platformBaseURL+"/audio-references/"+expected[2].name, time.Now().Add(time.Hour))},
 	}, contract)
 	result, err := app.relayVideoSubmitAt(context.Background(), upstream.URL, "sk-test", "/v1/videos", request, contract)
 	if err != nil {
@@ -812,7 +810,7 @@ func TestDeclaredVideoContractForwardsRelativeLocalMaterialAsMultipart(t *testin
 	request := declaredVideoContractRequestPayload(map[string]any{
 		"model":           "minimax-h3-768p",
 		"prompt":          "relative local material",
-		"first_frame_url": "/video-image-references/" + name,
+		"first_frame_url": app.signedReferenceURL("/video-image-references/"+name, time.Now().Add(time.Hour)),
 	}, contract)
 	result, err := app.relayVideoSubmitAt(context.Background(), upstream.URL, "sk-test", "/v1/videos", request, contract)
 	if err != nil {

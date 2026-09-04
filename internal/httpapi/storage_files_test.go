@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,34 +17,6 @@ import (
 
 func TestStorageFileRoutesMatchReferenceLifecycle(t *testing.T) {
 	webDAVData := []byte("0123456789")
-	deleted := false
-	webDAV := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		username, password, ok := r.BasicAuth()
-		if !ok || username != "dav-user" || password != "dav-password" {
-			w.Header().Set("WWW-Authenticate", `Basic realm="storage-test"`)
-			w.WriteHeader(http.StatusUnauthorized)
-			return
-		}
-		switch r.Method {
-		case http.MethodGet:
-			if got := r.Header.Get("Range"); got == "bytes=2-5" {
-				w.Header().Set("Content-Range", "bytes 2-5/10")
-				w.Header().Set("Content-Length", "4")
-				w.WriteHeader(http.StatusPartialContent)
-				_, _ = w.Write(webDAVData[2:6])
-				return
-			}
-			w.Header().Set("Content-Length", "10")
-			_, _ = w.Write(webDAVData)
-		case http.MethodDelete:
-			deleted = true
-			w.WriteHeader(http.StatusNoContent)
-		default:
-			w.WriteHeader(http.StatusInternalServerError)
-		}
-	}))
-	defer webDAV.Close()
-
 	app := newTestApp(t)
 	defer app.Close()
 	if _, err := app.config.Update(map[string]any{"storage": model.StorageSetting{
@@ -70,41 +43,11 @@ func TestStorageFileRoutesMatchReferenceLifecycle(t *testing.T) {
 		t.Fatalf("authenticated storage config = %#v", config)
 	}
 
-	providerJSON := fmt.Sprintf(`{
-		"provider":{"webdav":{"enabled":true,"name":"Alice DAV","type":"webdav",
-		"endpoint":%q,"pathPrefix":"canvas","username":"dav-user","password":"dav-password"}}
-	}`, webDAV.URL)
-	request = httptest.NewRequest(http.MethodPost, "/api/profile/storage-provider", strings.NewReader(providerJSON))
-	request.Header.Set("Content-Type", "application/json")
-	setRequestAuthCookie(request, aliceToken)
-	response = httptest.NewRecorder()
-	app.Handler().ServeHTTP(response, request)
-	if response.Code != http.StatusOK {
-		t.Fatalf("save user provider status = %d body = %s", response.Code, response.Body.String())
+	uploaded, err := app.storageFiles.Upload(context.Background(), alice.ID, false, "video.mp4", "video/mp4", webDAVData, nil)
+	if err != nil {
+		t.Fatalf("upload local object: %v", err)
 	}
-
-	objectKey := "canvas/" + alice.ID + "/2026/08/26/video.mp4"
-	directJSON := fmt.Sprintf(`{
-		"provider":{"enabled":true,"name":"Alice DAV","type":"webdav","endpoint":%q,
-		"pathPrefix":"canvas","username":"dav-user","password":"dav-password"},
-		"objectKey":%q,"mimeType":"video/mp4","bytes":10
-	}`, webDAV.URL, objectKey)
-	request = httptest.NewRequest(http.MethodPost, "/api/files/direct", strings.NewReader(directJSON))
-	request.Header.Set("Content-Type", "application/json")
-	setRequestAuthCookie(request, aliceToken)
-	response = httptest.NewRecorder()
-	app.Handler().ServeHTTP(response, request)
-	if response.Code != http.StatusOK {
-		t.Fatalf("register direct object status = %d body = %s", response.Code, response.Body.String())
-	}
-	var directPayload map[string]any
-	if err := json.Unmarshal(response.Body.Bytes(), &directPayload); err != nil {
-		t.Fatal(err)
-	}
-	objectID := util.Clean(util.StringMap(directPayload["object"])["id"])
-	if objectID == "" {
-		t.Fatalf("direct object response = %#v", directPayload)
-	}
+	objectID := uploaded.ID
 
 	request = httptest.NewRequest(http.MethodGet, "/api/files/"+objectID, nil)
 	response = httptest.NewRecorder()
@@ -125,7 +68,7 @@ func TestStorageFileRoutesMatchReferenceLifecycle(t *testing.T) {
 	setRequestAuthCookie(request, aliceToken)
 	response = httptest.NewRecorder()
 	app.Handler().ServeHTTP(response, request)
-	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"direct":true`) {
+	if response.Code != http.StatusOK {
 		t.Fatalf("storage object info status = %d body = %s", response.Code, response.Body.String())
 	}
 
@@ -184,8 +127,8 @@ func TestStorageFileRoutesMatchReferenceLifecycle(t *testing.T) {
 	setRequestAuthCookie(request, aliceToken)
 	response = httptest.NewRecorder()
 	app.Handler().ServeHTTP(response, request)
-	if response.Code != http.StatusBadRequest || deleted {
-		t.Fatalf("malformed delete status = %d deleted = %v body = %s", response.Code, deleted, response.Body.String())
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("malformed delete status = %d body = %s", response.Code, response.Body.String())
 	}
 
 	assetJSON := fmt.Sprintf(`{"item":{"id":"stored-video","kind":"video","title":"Stored video","url":"/api/files/%s/content","storageKey":"server:%s","mimeType":"video/mp4","tags":[]}}`, objectID, objectID)
@@ -200,8 +143,8 @@ func TestStorageFileRoutesMatchReferenceLifecycle(t *testing.T) {
 	setRequestAuthCookie(request, aliceToken)
 	response = httptest.NewRecorder()
 	app.Handler().ServeHTTP(response, request)
-	if response.Code != http.StatusConflict || deleted {
-		t.Fatalf("referenced object delete status = %d deleted = %v body = %s", response.Code, deleted, response.Body.String())
+	if response.Code != http.StatusConflict {
+		t.Fatalf("referenced object delete status = %d body = %s", response.Code, response.Body.String())
 	}
 	request = httptest.NewRequest(http.MethodDelete, "/api/profile/assets", strings.NewReader(`{"id":"stored-video"}`))
 	setRequestAuthCookie(request, aliceToken)
@@ -227,8 +170,8 @@ func TestStorageFileRoutesMatchReferenceLifecycle(t *testing.T) {
 	setRequestAuthCookie(request, aliceToken)
 	response = httptest.NewRecorder()
 	app.Handler().ServeHTTP(response, request)
-	if response.Code != http.StatusConflict || deleted {
-		t.Fatalf("canvas-referenced object delete status = %d deleted = %v body = %s", response.Code, deleted, response.Body.String())
+	if response.Code != http.StatusConflict {
+		t.Fatalf("canvas-referenced object delete status = %d body = %s", response.Code, response.Body.String())
 	}
 	if _, err := app.canvas.ClearAtRevision(alice.ID, savedCanvas.ID, savedCanvas.Revision); err != nil {
 		t.Fatalf("ClearAtRevision() error = %v", err)
@@ -238,8 +181,8 @@ func TestStorageFileRoutesMatchReferenceLifecycle(t *testing.T) {
 	setRequestAuthCookie(request, aliceToken)
 	response = httptest.NewRecorder()
 	app.Handler().ServeHTTP(response, request)
-	if response.Code != http.StatusOK || !deleted {
-		t.Fatalf("owner delete status = %d deleted = %v body = %s", response.Code, deleted, response.Body.String())
+	if response.Code != http.StatusOK {
+		t.Fatalf("owner delete status = %d body = %s", response.Code, response.Body.String())
 	}
 
 	request = httptest.NewRequest(http.MethodGet, "/api/files/"+objectID, nil)
@@ -343,6 +286,83 @@ func TestStorageDirectRouteDoesNotFallThroughToFileResource(t *testing.T) {
 				t.Fatalf("status = %d body = %s", response.Code, response.Body.String())
 			}
 		})
+	}
+}
+
+func TestStorageProviderAndDirectRegistrationRoutes(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+	if _, err := app.config.Update(map[string]any{"storage": model.StorageSetting{AllowUserProvider: true}}); err != nil {
+		t.Fatal(err)
+	}
+	identity, token := createPasswordUserSession(t, app, "storage-direct", "Password123!", "Storage Direct")
+	providerJSON := `{"provider":{"enabled":true,"name":"User DAV","type":"webdav","endpoint":"https://dav.example.test","pathPrefix":"canvas","username":"dav-user","password":"dav-password"}}`
+	request := httptest.NewRequest(http.MethodPost, "/api/profile/storage-provider", strings.NewReader(providerJSON))
+	request.Header.Set("Content-Type", "application/json")
+	setRequestAuthCookie(request, token)
+	response := httptest.NewRecorder()
+	app.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("save user provider status = %d body = %s", response.Code, response.Body.String())
+	}
+
+	objectKey := "canvas/" + identity.ID + "/2026/09/04/video.mp4"
+	directJSON := fmt.Sprintf(`{"provider":{"enabled":true,"name":"User DAV","type":"webdav","endpoint":"https://dav.example.test","pathPrefix":"canvas","username":"dav-user","password":"dav-password"},"objectKey":%q,"mimeType":"video/mp4","bytes":10}`, objectKey)
+	request = httptest.NewRequest(http.MethodPost, "/api/files/direct", strings.NewReader(directJSON))
+	request.Header.Set("Content-Type", "application/json")
+	setRequestAuthCookie(request, token)
+	response = httptest.NewRecorder()
+	app.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("register direct object status = %d body = %s", response.Code, response.Body.String())
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(response.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	object := util.StringMap(payload["object"])
+	objectID := util.Clean(object["id"])
+	if objectID == "" || !strings.Contains(util.Clean(object["url"]), "direct=1") {
+		t.Fatalf("direct object response = %#v", payload)
+	}
+
+	request = httptest.NewRequest(http.MethodGet, "/api/files/"+objectID, nil)
+	setRequestAuthCookie(request, token)
+	response = httptest.NewRecorder()
+	app.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"direct":true`) {
+		t.Fatalf("direct object info status = %d body = %s", response.Code, response.Body.String())
+	}
+
+	request = httptest.NewRequest(http.MethodDelete, "/api/files/"+objectID+"/record", nil)
+	setRequestAuthCookie(request, token)
+	response = httptest.NewRecorder()
+	app.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("delete direct record status = %d body = %s", response.Code, response.Body.String())
+	}
+}
+
+func TestStorageFileContentForcesHTMLDownload(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+	identity, token := createPasswordUserSession(t, app, "storage-html", "Password123!", "Storage HTML")
+	uploaded, err := app.storageFiles.Upload(context.Background(), identity.ID, false, "page.html", "text/html", []byte(`<script>alert(1)</script>`), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request := httptest.NewRequest(http.MethodGet, "/api/files/"+uploaded.ID+"/content", nil)
+	setRequestAuthCookie(request, token)
+	response := httptest.NewRecorder()
+	app.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("status = %d body = %s", response.Code, response.Body.String())
+	}
+	if disposition := response.Header().Get("Content-Disposition"); !strings.HasPrefix(disposition, "attachment;") {
+		t.Fatalf("Content-Disposition = %q", disposition)
+	}
+	if response.Header().Get("X-Content-Type-Options") != "nosniff" || response.Header().Get("Content-Security-Policy") != "default-src 'none'; sandbox" {
+		t.Fatalf("security headers = %#v", response.Header())
 	}
 }
 

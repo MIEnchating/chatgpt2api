@@ -368,6 +368,9 @@ func (s *ImageConversationAssetService) CleanupExpired(retentionDays int) (Image
 	if retentionDays < 1 {
 		retentionDays = 1
 	}
+	if retentionDays > 3650 {
+		retentionDays = 3650
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

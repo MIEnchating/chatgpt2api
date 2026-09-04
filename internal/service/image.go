@@ -28,6 +28,7 @@ import (
 )
 
 const (
+	maxImageRetentionDays = 3650
 	ThumbnailSize         = 480
 	thumbnailQuality      = 72
 	thumbnailCacheVersion = 3
@@ -1572,6 +1573,9 @@ func (s *ImageService) imageCleanupCandidates() ([]imageCleanupCandidate, error)
 func (s *ImageService) cleanupByRetention(retentionDays int, includePublic bool) (imageStorageRemovalStats, int, error) {
 	if retentionDays < 1 {
 		retentionDays = 1
+	}
+	if retentionDays > maxImageRetentionDays {
+		retentionDays = maxImageRetentionDays
 	}
 	cutoff := time.Now().Add(-time.Duration(retentionDays) * 24 * time.Hour)
 	var total imageStorageRemovalStats

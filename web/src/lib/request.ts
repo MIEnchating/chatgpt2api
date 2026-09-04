@@ -23,6 +23,7 @@ function browserUnauthorizedRedirectEnvironment(): UnauthorizedRedirectEnvironme
 const request = axios.create({
     baseURL: webConfig.apiUrl.replace(/\/$/, ""),
     withCredentials: true,
+    timeout: 30_000,
 });
 
 request.interceptors.response.use(
@@ -42,7 +43,7 @@ type RequestOptions = {
 };
 
 export async function httpRequest<T>(path: string, options: RequestOptions = {}) {
-    const {method = "GET", body, headers, redirectOnUnauthorized = true, signal, timeout, responseType, onDownloadProgress} = options;
+    const {method = "GET", body, headers, redirectOnUnauthorized = true, signal, timeout = 30_000, responseType, onDownloadProgress} = options;
     const config: RequestConfig = {
         url: path,
         method,

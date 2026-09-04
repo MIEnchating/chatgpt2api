@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"mime"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -13,6 +15,8 @@ import (
 	"chatgpt2api/internal/storage"
 	"chatgpt2api/internal/util"
 )
+
+const storageMultipartMemoryBytes int64 = 1 << 20
 
 func (a *App) handleStorageConfig(w http.ResponseWriter, r *http.Request) {
 	if _, ok := a.requireIdentity(w, r); !ok {
@@ -162,21 +166,35 @@ func (a *App) handleStorageFileUpload(w http.ResponseWriter, r *http.Request, id
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
+	if a.storageUploadSlots != nil {
+		select {
+		case a.storageUploadSlots <- struct{}{}:
+			defer func() { <-a.storageUploadSlots }()
+		case <-r.Context().Done():
+			util.WriteError(w, http.StatusRequestTimeout, "upload was canceled")
+			return
+		}
+	}
+	if err := r.ParseMultipartForm(storageMultipartMemoryBytes); err != nil {
+		util.WriteError(w, http.StatusBadRequest, "invalid multipart form")
+		return
+	}
+	defer r.MultipartForm.RemoveAll()
 	file, header, err := r.FormFile("file")
 	if err != nil {
 		util.WriteError(w, http.StatusBadRequest, "file is required")
 		return
 	}
 	defer file.Close()
-	data, err := io.ReadAll(file)
-	if err != nil {
-		a.writeStorageServiceError(w, err)
+	if header.Size < 1 {
+		util.WriteError(w, http.StatusBadRequest, "file is empty")
 		return
 	}
-	contentType := strings.TrimSpace(header.Header.Get("Content-Type"))
-	if contentType == "" {
-		contentType = http.DetectContentType(data)
+	if header.Size > maxAPIRequestBodyBytes {
+		util.WriteError(w, http.StatusRequestEntityTooLarge, "file is too large")
+		return
 	}
+	contentType := normalizedUploadedContentType(header.Header.Get("Content-Type"))
 	var provider *service.StorageObjectProviderInput
 	if raw := strings.TrimSpace(r.FormValue("provider")); raw != "" {
 		var parsed service.StorageObjectProviderInput
@@ -186,7 +204,7 @@ func (a *App) handleStorageFileUpload(w http.ResponseWriter, r *http.Request, id
 		}
 		provider = &parsed
 	}
-	object, err := a.storageFiles.Upload(r.Context(), identity.ID, identity.Role == service.AuthRoleAdmin, header.Filename, contentType, data, provider)
+	object, err := a.storageFiles.UploadReader(r.Context(), identity.ID, identity.Role == service.AuthRoleAdmin, header.Filename, contentType, file, header.Size, provider)
 	if err != nil {
 		a.writeStorageServiceError(w, err)
 		return
@@ -223,8 +241,15 @@ func (a *App) handleStorageFileContent(w http.ResponseWriter, r *http.Request, i
 		return
 	}
 	defer download.Stream.Close()
-	w.Header().Set("Content-Type", download.Object.MIMEType)
+	contentType := normalizedUploadedContentType(download.Object.MIMEType)
+	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Cache-Control", "private, no-store")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
+	if !storageContentMayRenderInline(contentType) {
+		filename := filepath.Base(download.Object.ObjectKey)
+		w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": filename}))
+	}
 	if download.AcceptRanges {
 		w.Header().Set("Accept-Ranges", "bytes")
 	}
@@ -237,6 +262,25 @@ func (a *App) handleStorageFileContent(w http.ResponseWriter, r *http.Request, i
 	w.WriteHeader(download.StatusCode)
 	if r.Method != http.MethodHead {
 		_, _ = io.Copy(w, download.Stream)
+	}
+}
+
+func normalizedUploadedContentType(value string) string {
+	mediaType, _, err := mime.ParseMediaType(strings.TrimSpace(value))
+	if err != nil || mediaType == "" {
+		return "application/octet-stream"
+	}
+	return strings.ToLower(mediaType)
+}
+
+func storageContentMayRenderInline(value string) bool {
+	switch normalizedUploadedContentType(value) {
+	case "image/png", "image/jpeg", "image/webp", "image/gif", "image/avif",
+		"video/mp4", "video/webm", "video/quicktime",
+		"audio/mpeg", "audio/mp4", "audio/wav", "audio/ogg", "audio/webm", "audio/flac":
+		return true
+	default:
+		return false
 	}
 }
 

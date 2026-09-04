@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { AudioLines, Download, FileText, Globe2, Image as ImageIcon, LockKeyhole, MoreHorizontal, Plus, Search, Trash2, Video, X } from "lucide-react";
+import { AudioLines, Download, FileText, Globe2, Image as ImageIcon, LockKeyhole, MoreHorizontal, Plus, RefreshCw, Search, Trash2, Video, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { AssetCard, AssetPreview } from "@/app/assets/asset-display";
@@ -45,6 +45,9 @@ export default function AssetsPage() {
   const scope = session?.key || "anonymous";
   const { assets, upsertAsset, deleteAsset, loading } = useMyAssets(scope, Boolean(session));
   const [managedAssets, setManagedAssets] = useState<MyAsset[]>([]);
+  const [managedLoading, setManagedLoading] = useState(true);
+  const [managedError, setManagedError] = useState("");
+  const [managedReloadKey, setManagedReloadKey] = useState(0);
   const [visibleRemoteAssets, setVisibleRemoteAssets] = useState<MyAsset[]>([]);
   const [visibleLoading, setVisibleLoading] = useState(true);
   const [keyword, setKeyword] = useState("");
@@ -64,6 +67,8 @@ export default function AssetsPage() {
   useEffect(() => {
     if (!session) return;
     const controller = new AbortController();
+    setManagedLoading(true);
+    setManagedError("");
     const load = async () => {
       if (session.role === "admin") {
         const { items } = await fetchManagedImages({ scope: "all" }, { signal: controller.signal });
@@ -75,10 +80,11 @@ export default function AssetsPage() {
     };
     void load()
       .catch((error) => {
-        if (!controller.signal.aborted) toast.error(error instanceof Error ? `生成图片读取失败：${error.message}` : "生成图片读取失败");
-      });
+        if (!controller.signal.aborted) setManagedError(error instanceof Error ? error.message : "生成图片读取失败");
+      })
+      .finally(() => { if (!controller.signal.aborted) setManagedLoading(false); });
     return () => controller.abort();
-  }, [session]);
+  }, [managedReloadKey, session]);
 
   useEffect(() => {
     if (!session) return;
@@ -315,7 +321,8 @@ export default function AssetsPage() {
         </div>
         <ScrollArea className="min-h-0 flex-1" viewportClassName="px-5 py-5 sm:px-8">
         <div data-asset-content className="flex w-full flex-col gap-5">
-          {(loading || visibleLoading) && allAssets.length === 0 ? <div className="flex min-h-80 items-center justify-center text-sm text-muted-foreground">正在同步素材...</div> : visibleAssets.length ? <div data-asset-grid className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,280px),1fr))] gap-4">{visibleAssets.map((asset) => { const key = assetListKey(asset); const canManage = canManageAsset(asset); return <AssetCard key={key} asset={asset} selected={selectedKeys.has(key)} onSelectedChange={(checked) => setSelectedKeys((current) => { const next = new Set(current); if (checked) next.add(key); else next.delete(key); return next; })} onOpen={() => setPreview(asset)} onEdit={canManage && !asset.managedPath ? () => { setEditing(asset); setFormOpen(true); } : undefined} onDelete={canManage && (!asset.managedPath || hasAPIPermission(session, "DELETE", "/api/images")) ? () => setDeleting(asset) : undefined} onCopy={() => void copyText(asset)} onDownload={() => void download(asset)} />; })}</div> : <EmptyState icon={ImageIcon} title={allAssets.length ? "没有找到匹配的素材" : "还没有可用素材"} description={allAssets.length ? "调整搜索词或筛选条件后再试" : "上传或生成的素材会统一显示在这里"} className="min-h-80" />}
+          {managedError ? <div role="alert" className="flex items-center gap-3 border-b border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700"><span className="min-w-0 flex-1 break-words">生成图片读取失败：{managedError}</span><Button type="button" variant="outline" size="sm" onClick={() => setManagedReloadKey((value) => value + 1)}><RefreshCw />重试</Button></div> : null}
+          {(loading || visibleLoading || managedLoading) && allAssets.length === 0 ? <div className="flex min-h-80 items-center justify-center text-sm text-muted-foreground">正在同步素材...</div> : visibleAssets.length ? <div data-asset-grid className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,280px),1fr))] gap-4">{visibleAssets.map((asset) => { const key = assetListKey(asset); const canManage = canManageAsset(asset); return <AssetCard key={key} asset={asset} selected={selectedKeys.has(key)} onSelectedChange={(checked) => setSelectedKeys((current) => { const next = new Set(current); if (checked) next.add(key); else next.delete(key); return next; })} onOpen={() => setPreview(asset)} onEdit={canManage && !asset.managedPath ? () => { setEditing(asset); setFormOpen(true); } : undefined} onDelete={canManage && (!asset.managedPath || hasAPIPermission(session, "DELETE", "/api/images")) ? () => setDeleting(asset) : undefined} onCopy={() => void copyText(asset)} onDownload={() => void download(asset)} />; })}</div> : managedError && allAssets.length === 0 ? null : <EmptyState icon={ImageIcon} title={allAssets.length ? "没有找到匹配的素材" : "还没有可用素材"} description={allAssets.length ? "调整搜索词或筛选条件后再试" : "上传或生成的素材会统一显示在这里"} className="min-h-80" />}
         </div>
         </ScrollArea>
         <ManagementPagination

@@ -78,6 +78,7 @@ async function requestCompletion(input: RequestCanvasAgentTurnInput & { tools: C
       }
       await waitForPoll(input.signal);
     }
+    await cancelCreationTask(submitted.id).catch(() => undefined);
     throw new CanvasAgentRequestError("Agent 请求超时");
   } finally {
     input.signal?.removeEventListener("abort", cancelSubmitted);

@@ -232,7 +232,7 @@ func (a *App) fetchGrokTTSVoicesAt(ctx context.Context, baseURL, apiKey, model s
 	}
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Accept", "application/json")
-	resp, err := a.relayHTTPClient().Do(req)
+	resp, err := a.relayHTTPClientForContext(ctx).Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -292,6 +292,7 @@ func (a *App) runLoggedAudioTask(ctx context.Context, identity service.Identity,
 }
 
 func (a *App) relayAudioSpeech(ctx context.Context, payload map[string]any) (map[string]any, error) {
+	ctx = relayContextForPayload(ctx, payload)
 	apiKey := relayAPIKeyFromPayload(payload)
 	if apiKey == "" {
 		return nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: "upstream API key is required"}
@@ -309,7 +310,7 @@ func (a *App) relayAudioSpeech(ctx context.Context, payload map[string]any) (map
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "audio/*, application/json")
-	resp, err := a.relayHTTPClient().Do(req)
+	resp, err := a.relayHTTPClientForContext(ctx).Do(req)
 	if err != nil {
 		return nil, err
 	}

@@ -288,6 +288,9 @@ func (s *Store) ImageRetentionDays() int {
 	if value < 1 {
 		return 1
 	}
+	if value > 3650 {
+		return 3650
+	}
 	return value
 }
 
@@ -780,6 +783,9 @@ func (s *Store) Update(data map[string]any) (map[string]any, error) {
 	if value, ok := next["image_storage_limit_mb"]; ok {
 		next["image_storage_limit_mb"] = normalizeNonNegativeInt(value)
 	}
+	if value, ok := next["image_retention_days"]; ok {
+		next["image_retention_days"] = normalizeImageRetentionDays(value)
+	}
 	if value, ok := next["log_cleanup_schedule_enabled"]; ok {
 		next["log_cleanup_schedule_enabled"] = util.ToBool(value)
 	}
@@ -850,6 +856,17 @@ func (s *Store) Update(data map[string]any) (map[string]any, error) {
 		return nil, err
 	}
 	return s.Get(), nil
+}
+
+func normalizeImageRetentionDays(value any) int {
+	parsed := intSetting(value, 30)
+	if parsed < 1 {
+		return 1
+	}
+	if parsed > 3650 {
+		return 3650
+	}
+	return parsed
 }
 
 func (s *Store) StorageBackend() (storage.Backend, error) {

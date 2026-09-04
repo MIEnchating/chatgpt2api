@@ -1,11 +1,14 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"chatgpt2api/internal/util"
 )
@@ -26,9 +29,18 @@ func TestProfileModelsUsesSelectedCustomRelayConfig(t *testing.T) {
 		})
 	}))
 	defer upstream.Close()
+	upstreamAddress := upstream.Listener.Addr().String()
+	app.newSafeRelayHTTPClient = func(timeout time.Duration) *http.Client {
+		transport := http.DefaultTransport.(*http.Transport).Clone()
+		transport.Proxy = nil
+		transport.DialContext = func(ctx context.Context, network, _ string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, network, upstreamAddress)
+		}
+		return &http.Client{Transport: transport, Timeout: timeout}
+	}
 
 	token := adminSessionToken(t, app)
-	request := httptest.NewRequest(http.MethodPost, "/api/profile/custom-relay-configs", strings.NewReader(`{"kind":"video","name":"视频线路","base_url":"`+upstream.URL+`","api_key":"sk-custom-video"}`))
+	request := httptest.NewRequest(http.MethodPost, "/api/profile/custom-relay-configs", strings.NewReader(`{"kind":"video","name":"视频线路","base_url":"http://relay.example","api_key":"sk-custom-video"}`))
 	request.Header.Set("Content-Type", "application/json")
 	setRequestAuthCookie(request, token)
 	response := httptest.NewRecorder()

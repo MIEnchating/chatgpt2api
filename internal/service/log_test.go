@@ -431,6 +431,23 @@ func TestSanitizeLogValueRedactsSensitiveFieldsRegardlessOfValueShape(t *testing
 	}
 }
 
+func TestSanitizeLogValueRemovesURLCapabilities(t *testing.T) {
+	sanitized := SanitizeLogValue(map[string]any{
+		"url": "https://cdn.example.test/file.png?token=secret&expires=1#preview",
+		"urls": []any{
+			"/video-references/reference.mp4?signature=secret&expires=1",
+			"data:image/png;base64,AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+		},
+	}).(map[string]any)
+	if sanitized["url"] != "https://cdn.example.test/file.png" {
+		t.Fatalf("sanitized url = %#v", sanitized["url"])
+	}
+	urls := sanitized["urls"].([]any)
+	if urls[0] != "/video-references/reference.mp4" || urls[1] != "data:image/png;base64,AAAAAAAAAAAAAAAAAAAAAAAA..." {
+		t.Fatalf("sanitized urls = %#v", urls)
+	}
+}
+
 func TestLogServiceUserUsageStatsForUsersFiltersResults(t *testing.T) {
 	logs := NewLogService(newTestStorageBackend(t))
 

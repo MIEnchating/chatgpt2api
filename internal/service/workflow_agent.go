@@ -127,6 +127,9 @@ func normalizeWorkflowAgentDraftVariables(draft map[string]any) error {
 	if err := json.Unmarshal(data, &variables); err != nil {
 		return errors.New("variables 必须是变量数组")
 	}
+	for index := range variables {
+		variables[index].Key = sanitizeWorkflowTemplateVariableKey(strings.TrimSpace(variables[index].Key))
+	}
 	if err := normalizeWorkflowVariables(variables); err != nil {
 		return err
 	}

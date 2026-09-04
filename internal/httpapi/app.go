@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"context"
+	cryptorand "crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -69,12 +70,15 @@ type App struct {
 	newAPIKeys              *service.NewAPITokenReader
 	newAPIKeysMu            sync.RWMutex
 	newRelayTokenReader     func(service.NewAPITokenReaderConfig) (*service.NewAPITokenReader, error)
+	newSafeRelayHTTPClient  func(time.Duration) *http.Client
 	cancel                  context.CancelFunc
 	historyWriteLimiter     *imageConversationHistoryWriteLimiter
 	imageUploadSlots        chan struct{}
+	storageUploadSlots      chan struct{}
 	videoDir                string
 	audioDir                string
 	videoReferenceDir       string
+	referenceSigningKey     [32]byte
 	loginLimiter            *loginRateLimiter
 	settingsMu              sync.Mutex
 	backgroundWorkers       sync.WaitGroup
@@ -302,7 +306,10 @@ func NewApp() (*App, error) {
 		return err
 	})
 	myAssets := service.NewMyAssetService(storageBackend, storageFiles, canvas)
-	app := &App{ctx: ctx, config: cfg, auth: auth, logs: logs, logger: logger, proxy: proxy, images: images, videoDir: videoDir, audioDir: audioDir, videoReferenceDir: videoReferenceDir, conversationAssets: service.NewImageConversationAssetService(filepath.Join(cfg.DataDir, "image_conversation_assets")), prompts: service.NewPromptFavoriteService(storageBackend), myAssets: myAssets, history: service.NewImageConversationHistoryService(storageBackend), canvas: canvas, announce: service.NewAnnouncementService(storageBackend), videoContracts: videoContracts, imagePreferences: service.NewImageGenerationPreferenceService(storageBackend), customRelayConfigs: service.NewCustomRelayConfigService(storageBackend), workflows: service.NewWorkflowService(storageBackend), storageFiles: storageFiles, newAPIKeys: newAPIKeys, newRelayTokenReader: service.NewNewAPITokenReader, cancel: cancel, historyWriteLimiter: newImageConversationHistoryWriteLimiter(imageConversationHistoryWriteParallelism), imageUploadSlots: make(chan struct{}, 2), loginLimiter: newLoginRateLimiter(), storageBackendCloser: storageBackendCloser}
+	app := &App{ctx: ctx, config: cfg, auth: auth, logs: logs, logger: logger, proxy: proxy, images: images, videoDir: videoDir, audioDir: audioDir, videoReferenceDir: videoReferenceDir, conversationAssets: service.NewImageConversationAssetService(filepath.Join(cfg.DataDir, "image_conversation_assets")), prompts: service.NewPromptFavoriteService(storageBackend), myAssets: myAssets, history: service.NewImageConversationHistoryService(storageBackend), canvas: canvas, announce: service.NewAnnouncementService(storageBackend), videoContracts: videoContracts, imagePreferences: service.NewImageGenerationPreferenceService(storageBackend), customRelayConfigs: service.NewCustomRelayConfigService(storageBackend), workflows: service.NewWorkflowService(storageBackend), storageFiles: storageFiles, newAPIKeys: newAPIKeys, newRelayTokenReader: service.NewNewAPITokenReader, newSafeRelayHTTPClient: service.SafeOutboundHTTPClient, cancel: cancel, historyWriteLimiter: newImageConversationHistoryWriteLimiter(imageConversationHistoryWriteParallelism), imageUploadSlots: make(chan struct{}, 2), storageUploadSlots: make(chan struct{}, 2), loginLimiter: newLoginRateLimiter(), storageBackendCloser: storageBackendCloser}
+	if _, err := cryptorand.Read(app.referenceSigningKey[:]); err != nil {
+		return nil, fmt.Errorf("initialize reference URL signing: %w", err)
+	}
 	app.conversationAssets.SetStorageBudget(cfg.ImageStorageLimitBytes, func() (int64, error) {
 		summary, err := app.images.StorageGovernance()
 		return summary.TotalBytes, err
@@ -359,6 +366,7 @@ func NewApp() (*App, error) {
 	app.startImageStorageCleaner(ctx, time.Hour)
 	app.startImageConversationAssetCleaner(ctx, time.Hour)
 	app.startMyAssetDeletionCleaner(ctx, time.Hour)
+	app.startGeneratedMediaCleaner(ctx, time.Hour)
 	startupCleanup.commit()
 	return app, nil
 }
@@ -766,6 +774,9 @@ func (a *App) handleUpstreamModels(w http.ResponseWriter, r *http.Request) {
 		}
 		relayAPIKey = credential.APIKey
 		relayBaseURL = credential.BaseURL
+		if credential.Custom {
+			r = r.WithContext(withCustomRelayContext(r.Context()))
+		}
 	}
 	newAPIKeys, releaseRelayTokenReader := a.acquireRelayTokenReader()
 	defer releaseRelayTokenReader()
@@ -2511,7 +2522,7 @@ func cleanAuditPayloadMap(payload map[string]any) map[string]any {
 	out := make(map[string]any, len(payload))
 	for key, value := range payload {
 		switch key {
-		case "owner_id", "owner_name", "base_url", "relay_base_url":
+		case "owner_id", "owner_name", "base_url", "relay_base_url", relayCustomEndpointPayloadKey:
 			continue
 		}
 		if isInternalPayloadValue(value) {
@@ -3058,7 +3069,7 @@ func relayImageItemBytes(ctx context.Context, app *App, item map[string]any) ([]
 		return nil, "", err
 	}
 	req.Header.Set("Accept", "image/*")
-	resp, err := app.relayHTTPClient().Do(req)
+	resp, err := app.relayHTTPClientForContext(ctx).Do(req)
 	if err != nil {
 		return nil, "", err
 	}
@@ -3573,12 +3584,12 @@ func collectURLs(v any) []string {
 		for key, value := range x {
 			if key == "url" {
 				if u := util.Clean(value); u != "" {
-					urls = append(urls, u)
+					urls = append(urls, service.SanitizeLogURL(u))
 				}
 			} else if key == "urls" {
 				for _, raw := range anyList(value) {
 					if u := util.Clean(raw); u != "" {
-						urls = append(urls, u)
+						urls = append(urls, service.SanitizeLogURL(u))
 					}
 				}
 			} else {

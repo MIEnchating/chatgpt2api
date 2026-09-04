@@ -81,9 +81,8 @@ func TestWorkflowServiceNormalizesDraftFieldsLikeReferenceFrontend(t *testing.T)
 	workflows := NewWorkflowService(newTestStorageBackend(t))
 	invalidVariable := referenceWorkflow()
 	invalidVariable.Variables[0].Key = "product name"
-	created, err := workflows.Save("alice", invalidVariable)
-	if err != nil || created.Variables[0].Key != "product_name" {
-		t.Fatalf("Save() normalized variable = %#v, error = %v", created.Variables, err)
+	if _, err := workflows.Save("alice", invalidVariable); err == nil || !strings.Contains(err.Error(), "只能包含") {
+		t.Fatalf("Save(invalid variable key) error = %v", err)
 	}
 	missingTemplate := referenceWorkflow()
 	missingTemplate.Config.PromptTemplate = ""
@@ -106,12 +105,12 @@ func TestWorkflowServiceRejectsAmbiguousVariableIdentifiers(t *testing.T) {
 			wantError: "第 1 个工作流变量缺少变量名",
 		},
 		{
-			name: "duplicate normalized key",
+			name: "invalid key",
 			mutate: func(workflow *CreativeWorkflow) {
 				workflow.Variables[0].Key = "product name"
 				workflow.Variables[1].Key = "product/name"
 			},
-			wantError: `工作流变量名 "product_name" 重复`,
+			wantError: `工作流变量名 "product name" 只能包含`,
 		},
 		{
 			name: "duplicate id",
@@ -249,7 +248,7 @@ func TestWorkflowServiceLoadsLegacyVariablesWithoutIDs(t *testing.T) {
 			"owner_id": "alice",
 			"name":     "旧工作流",
 			"variables": []map[string]any{
-				{"key": "subject name", "type": "text"},
+				{"key": "subject_name", "type": "text"},
 				{"key": "style", "type": "text"},
 			},
 		}},

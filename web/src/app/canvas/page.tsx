@@ -4340,11 +4340,10 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     activateCanvasTaskQueueSession(session.key);
     mountedRef.current = true;
     const loadWorkspace = async () => {
-      const modelConfigRequest = fetchModelConfig().catch(() => undefined);
-      let workspace = await fetchCanvasDocument();
       // Applying a document normalizes video nodes from the active model contracts.
-      // Wait for the parallel contract request so valid stored durations stay valid.
-      await modelConfigRequest;
+      // Load both in parallel so valid stored durations stay valid.
+      const [initialWorkspace] = await Promise.all([fetchCanvasDocument(), fetchModelConfig()]);
+      let workspace = initialWorkspace;
       if (!active) return;
       if (!workspace.document?.id) {
         workspace = await updateCanvasProject({ action: "create", title: "我的画布" });

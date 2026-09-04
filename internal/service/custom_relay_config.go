@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"sort"
 	"strings"
@@ -192,6 +193,15 @@ func (s *CustomRelayConfigService) Update(ownerID, id, name, baseURL, apiKey str
 		}
 		nextAPIKey := apiKey
 		if strings.TrimSpace(nextAPIKey) == "" {
+			normalizedBaseURL, normalizeErr := normalizeCustomRelayBaseURL(baseURL)
+			if normalizeErr != nil {
+				return CustomRelayConfigStatus{}, normalizeErr
+			}
+			currentURL, _ := url.Parse(current.BaseURL)
+			nextURL, _ := url.Parse(normalizedBaseURL)
+			if !strings.EqualFold(currentURL.Scheme, nextURL.Scheme) || !strings.EqualFold(currentURL.Host, nextURL.Host) {
+				return CustomRelayConfigStatus{}, fmt.Errorf("修改 Base URL 来源时必须重新填写 API Key")
+			}
 			nextAPIKey = current.APIKey
 		}
 		config, normalizeErr := normalizeCustomRelayConfig(CustomRelayConfig{ID: id, Kind: current.Kind, Name: name, BaseURL: baseURL, APIKey: nextAPIKey})
@@ -328,6 +338,9 @@ func normalizeCustomRelayBaseURL(value string) (string, error) {
 	}
 	if parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" {
 		return "", fmt.Errorf("Base URL must not contain credentials, query parameters, or fragments")
+	}
+	if ip := net.ParseIP(parsed.Hostname()); ip != nil && isBlockedMediaProxyIP(ip) {
+		return "", fmt.Errorf("Base URL must not use a local or private IP address")
 	}
 	return value, nil
 }

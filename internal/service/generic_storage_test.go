@@ -180,12 +180,11 @@ func TestGenericStorageServiceMeasureUserHonorsProviderSetting(t *testing.T) {
 	}
 
 	enabled := newGenericStorageTestService(t, model.StorageSetting{AllowUserProvider: true})
-	result, err := enabled.MeasureUser(context.Background(), "user-1", input)
-	if err != nil {
-		t.Fatalf("MeasureUser(private WebDAV) error = %v", err)
+	if _, err := enabled.MeasureUser(context.Background(), "user-1", input); err == nil || !strings.Contains(err.Error(), "local and private") {
+		t.Fatalf("MeasureUser(private WebDAV) error = %v, want SSRF rejection", err)
 	}
-	if result.ProviderName != "Private DAV" || result.Bytes != 0 || requests == 0 {
-		t.Fatalf("MeasureUser(private WebDAV) = %#v, requests = %d", result, requests)
+	if requests != 0 {
+		t.Fatalf("private endpoint received %d requests", requests)
 	}
 }
 
@@ -203,13 +202,12 @@ func TestGenericStorageServiceWebDAVMeasureHonorsContextCancellation(t *testing.
 	defer server.Close()
 	defer close(releaseRequest)
 
-	service := newGenericStorageTestService(t, model.StorageSetting{AllowUserProvider: true})
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		_, err := service.MeasureUser(ctx, "user-1", StorageObjectProviderInput{
+		_, err := measureStorageProvider(ctx, model.StorageProvider{
 			Name: "Blocking DAV", Type: model.StorageProviderTypeWebDAV, Endpoint: server.URL,
-			PathPrefix: "assets", Username: "user", Password: "secret",
+			PathPrefix: "assets", Username: "user", Password: "secret", Enabled: true,
 		})
 		done <- err
 	}()
@@ -223,7 +221,7 @@ func TestGenericStorageServiceWebDAVMeasureHonorsContextCancellation(t *testing.
 	select {
 	case err := <-done:
 		if !errors.Is(err, context.Canceled) {
-			t.Fatalf("MeasureUser() error = %v, want context canceled", err)
+			t.Fatalf("measureStorageProvider() error = %v, want context canceled", err)
 		}
 	case <-time.After(3 * time.Second):
 		t.Fatal("WebDAV capacity request ignored context cancellation")
@@ -240,7 +238,7 @@ func TestGenericWebDAVObjectLifecycleKeepsNormalRequestsWorking(t *testing.T) {
 	}
 	ctx := context.Background()
 	objectKey := "assets/user-1/sample.txt"
-	if err := putGenericWebDAVObject(ctx, provider, objectKey, []byte("content")); err != nil {
+	if err := putGenericWebDAVObject(ctx, provider, objectKey, strings.NewReader("content"), int64(len("content"))); err != nil {
 		t.Fatalf("putGenericWebDAVObject() error = %v", err)
 	}
 	download, err := downloadGenericWebDAVObject(ctx, provider, model.StorageObject{ObjectKey: objectKey, Bytes: 7}, "")
@@ -541,6 +539,68 @@ func TestGenericStorageServiceUsesServerLocalMediaStorageByDefault(t *testing.T)
 	}
 }
 
+func TestGenericStorageServiceUploadReaderRejectsSizeMismatch(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		size int64
+	}{
+		{name: "short", size: 4},
+		{name: "long", size: 2},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			service := newGenericStorageTestService(t, model.StorageSetting{})
+			if _, err := service.UploadReader(context.Background(), "user-1", false, "sample.bin", "application/octet-stream", strings.NewReader("abc"), test.size, nil); err == nil || !strings.Contains(err.Error(), "size mismatch") {
+				t.Fatalf("UploadReader(size=%d) error = %v", test.size, err)
+			}
+			governance, err := service.LocalMediaGovernance()
+			if err != nil || governance.TotalCount != 0 || governance.TotalBytes != 0 {
+				t.Fatalf("local governance = %#v, error = %v", governance, err)
+			}
+		})
+	}
+}
+
+func TestGenericStorageServiceRollsBackDataAfterProviderUploadFailure(t *testing.T) {
+	var requestMu sync.Mutex
+	putRequests := 0
+	deleteRequests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestMu.Lock()
+		switch r.Method {
+		case http.MethodPut:
+			putRequests++
+		case http.MethodDelete:
+			deleteRequests++
+		}
+		requestMu.Unlock()
+		if r.Method == http.MethodPut {
+			http.Error(w, "injected upload failure", http.StatusInternalServerError)
+			return
+		}
+		if r.Method == "MKCOL" {
+			w.WriteHeader(http.StatusCreated)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	service := newGenericStorageTestService(t, model.StorageSetting{Providers: []model.StorageProvider{{
+		ID: "webdav", Name: "WebDAV", Type: model.StorageProviderTypeWebDAV, Endpoint: server.URL,
+		PathPrefix: "assets", Username: "user", Password: "secret", Enabled: true, Weight: 1,
+	}}})
+	if _, err := service.Upload(context.Background(), "user-1", true, "sample.txt", "text/plain", []byte("content"), nil); err == nil || !strings.Contains(err.Error(), "500") {
+		t.Fatalf("Upload() error = %v, want provider failure", err)
+	}
+	requestMu.Lock()
+	puts := putRequests
+	deletes := deleteRequests
+	requestMu.Unlock()
+	if puts == 0 || deletes == 0 {
+		t.Fatalf("provider requests = PUT %d, DELETE %d; want upload and rollback", puts, deletes)
+	}
+}
+
 func TestGenericStorageServiceRollsBackUploadedDataAfterCanceledMetadataFailure(t *testing.T) {
 	fileSystem := webdav.NewMemFS()
 	handler := &webdav.Handler{FileSystem: fileSystem, LockSystem: webdav.NewMemLS()}
@@ -739,6 +799,40 @@ func TestGenericStorageServiceDownloadsPublicURLWithoutSavedProvider(t *testing.
 	data, err := io.ReadAll(download.Stream)
 	if err != nil || string(data) != "bcd" || download.StatusCode != http.StatusPartialContent || download.ContentRange != "bytes 1-3/5" {
 		t.Fatalf("DownloadForIdentity() = data %q, status %d, range %q, err %v", data, download.StatusCode, download.ContentRange, err)
+	}
+}
+
+func TestGenericStorageServiceRejectsPrivateUserProviderPublicURL(t *testing.T) {
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if r.Header.Get("Range") != "bytes=1-3" {
+			http.Error(w, "missing range", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Accept-Ranges", "bytes")
+		w.Header().Set("Content-Range", "bytes 1-3/5")
+		w.Header().Set("Content-Length", "3")
+		w.WriteHeader(http.StatusPartialContent)
+		_, _ = w.Write([]byte("bcd"))
+	}))
+	defer server.Close()
+
+	service := newGenericStorageTestService(t, model.StorageSetting{})
+	if err := service.objects.SaveStorageObject(model.StorageObject{
+		ID: "public-object", ProviderID: "user-user-1-webdav", ObjectKey: "media/file.bin",
+		PublicURL: server.URL + "/media/file.bin", MIMEType: "application/octet-stream", Bytes: 5, CreatedBy: "user-1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.DownloadForIdentity(context.Background(), "user-2", false, "public-object", "bytes=1-3"); err == nil {
+		t.Fatal("DownloadForIdentity() allowed another user")
+	}
+	if _, err := service.DownloadForIdentity(context.Background(), "user-1", false, "public-object", "bytes=1-3"); err == nil || !strings.Contains(err.Error(), "local and private") {
+		t.Fatalf("DownloadForIdentity(private public URL) error = %v, want SSRF rejection", err)
+	}
+	if requests != 0 {
+		t.Fatalf("private public URL received %d requests", requests)
 	}
 }
 

@@ -1452,7 +1452,11 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 			a.writeCreationTaskSubmitError(w, err)
 			return
 		}
-		voices, err := a.fetchGrokTTSVoicesAt(r.Context(), credential.BaseURL, credential.APIKey, model)
+		requestContext := r.Context()
+		if credential.Custom {
+			requestContext = withCustomRelayContext(requestContext)
+		}
+		voices, err := a.fetchGrokTTSVoicesAt(requestContext, credential.BaseURL, credential.APIKey, model)
 		if err != nil {
 			a.writeCreationTaskSubmitError(w, err)
 			return

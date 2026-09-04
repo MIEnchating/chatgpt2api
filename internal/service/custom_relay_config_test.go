@@ -3,6 +3,7 @@ package service
 import (
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"chatgpt2api/internal/storage"
@@ -22,7 +23,7 @@ func TestCustomRelayConfigServiceStoresMultipleMaskedStatusesAndPreservesKey(t *
 		t.Fatalf("created statuses = %#v, %#v", first, second)
 	}
 
-	updated, err := service.Update("owner-a", first.ID, "主线路更新", "https://next.example.test", "")
+	updated, err := service.Update("owner-a", first.ID, "主线路更新", "https://api.example.test/v2", "")
 	if err != nil {
 		t.Fatalf("Update() preserving key error = %v", err)
 	}
@@ -30,8 +31,11 @@ func TestCustomRelayConfigServiceStoresMultipleMaskedStatusesAndPreservesKey(t *
 	if err != nil {
 		t.Fatalf("Config() error = %v", err)
 	}
-	if config.BaseURL != "https://next.example.test" || config.APIKey != "sk-secret" || config.Name != "主线路更新" || !updated.Configured {
+	if config.BaseURL != "https://api.example.test/v2" || config.APIKey != "sk-secret" || config.Name != "主线路更新" || !updated.Configured {
 		t.Fatalf("Config() = %#v, status = %#v", config, updated)
+	}
+	if _, err := service.Update("owner-a", first.ID, "切换线路", "https://next.example.test", ""); err == nil || !strings.Contains(err.Error(), "必须重新填写 API Key") {
+		t.Fatalf("Update(changed origin without key) error = %v", err)
 	}
 	statuses, err := service.Statuses("owner-a")
 	if err != nil || len(statuses) != 2 {
@@ -41,7 +45,7 @@ func TestCustomRelayConfigServiceStoresMultipleMaskedStatusesAndPreservesKey(t *
 
 func TestCustomRelayConfigServiceValidatesAndDeletesConfig(t *testing.T) {
 	service := NewCustomRelayConfigService(newTestStorageBackend(t))
-	for _, baseURL := range []string{"", "ftp://api.example.test", "https://user:pass@api.example.test", "https://api.example.test?key=value"} {
+	for _, baseURL := range []string{"", "ftp://api.example.test", "https://user:pass@api.example.test", "https://api.example.test?key=value", "http://127.0.0.1:8080", "http://[::1]:8080"} {
 		if _, err := service.Create("owner-a", "text", "测试", baseURL, "sk-secret"); err == nil {
 			t.Fatalf("Create(%q) error = nil", baseURL)
 		}

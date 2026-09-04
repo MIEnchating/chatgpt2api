@@ -397,7 +397,7 @@ export function createSettingsStore(
         user_default_concurrent_limit: Math.max(0, Number(config.user_default_concurrent_limit) || 0),
         user_default_rpm_limit: Math.max(0, Number(config.user_default_rpm_limit) || 0),
         allow_user_custom_relay_config: config.allow_user_custom_relay_config === true,
-        image_retention_days: Math.max(1, Number(config.image_retention_days) || 30),
+        image_retention_days: Math.min(3650, Math.max(1, Number(config.image_retention_days) || 30)),
         image_storage_limit_mb: Math.max(0, Number(config.image_storage_limit_mb) || 0),
         storage: config.storage,
         log_retention_days: Math.min(3650, Math.max(1, Number(config.log_retention_days) || 7)),

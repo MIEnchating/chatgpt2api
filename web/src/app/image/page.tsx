@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { ArrowDownToLine, Globe2, History, ImagePlus, LoaderCircle, Plus, Trash2, X } from "lucide-react";
+import { ArrowDownToLine, CircleAlert, Globe2, History, ImagePlus, LoaderCircle, Plus, RefreshCw, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { ImageComposer } from "@/app/image/components/image-composer";
@@ -1439,6 +1439,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   const [composerMode, setComposerMode] = useState<ComposerMode>(getStoredComposerMode);
   const [imageModel, setImageModel] = useState<ImageModel>(DEFAULT_IMAGE_MODEL);
   const [imageModelConfigReady, setImageModelConfigReady] = useState(false);
+  const [imageModelConfigError, setImageModelConfigError] = useState("");
+  const [imageModelConfigReloadKey, setImageModelConfigReloadKey] = useState(0);
   const [imageCount, setImageCount] = useState(String(DEFAULT_CREATION_WORKBENCH_PREFERENCES.image_count));
   const [imageSizeMode, setImageSizeMode] = useState<ImageSizeMode>(DEFAULT_CREATION_WORKBENCH_PREFERENCES.image_size_mode);
   const [imageAspectRatio, setImageAspectRatio] = useState<ImageAspectRatio>(DEFAULT_CREATION_WORKBENCH_PREFERENCES.image_aspect_ratio as ImageAspectRatio);
@@ -2224,6 +2226,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     }
     let ignore = false;
     setImageModelConfigReady(false);
+    setImageModelConfigError("");
     void fetchModelConfig()
       .then((result) => {
         if (ignore) {
@@ -2247,20 +2250,18 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         );
         setVideoModelOptions(nextVideoModels.map((model) => ({ value: model, label: model })));
         setVideoModel(nextVideoDefault);
+        setImageModelConfigReady(true);
       })
-      .catch(() => {
-        // A failed refresh is non-authoritative; keep the currently displayed local state.
-      })
-      .finally(() => {
+      .catch((error) => {
         if (!ignore) {
-          setImageModelConfigReady(true);
+          setImageModelConfigError(error instanceof Error ? error.message : "模型配置加载失败");
         }
       });
 
     return () => {
       ignore = true;
     };
-  }, [imageGenerationPreferences.default_image_model, imageGenerationPreferences.default_video_model, imageGenerationPreferences.workbench.image_model, imageGenerationPreferences.workbench.video_model, imageGenerationPreferencesReady]);
+  }, [imageGenerationPreferences.default_image_model, imageGenerationPreferences.default_video_model, imageGenerationPreferences.workbench.image_model, imageGenerationPreferences.workbench.video_model, imageGenerationPreferencesReady, imageModelConfigReloadKey]);
 
   useEffect(() => {
     if (!imageGenerationPreferencesReady || imageGenerationPreferencesSessionKey !== session.key) {
@@ -5383,6 +5384,15 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         ) : null}
 
         <div className="relative flex min-h-0 flex-col gap-2 sm:gap-4">
+          {imageModelConfigError ? (
+            <div role="alert" className="mx-1 flex items-center gap-2 border-b border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 sm:mx-4">
+              <CircleAlert className="size-4 shrink-0" />
+              <span className="min-w-0 flex-1 break-words">模型配置加载失败：{imageModelConfigError}</span>
+              <Button type="button" variant="outline" size="sm" onClick={() => setImageModelConfigReloadKey((value) => value + 1)}>
+                <RefreshCw className="size-4" />重试
+              </Button>
+            </div>
+          ) : null}
           <div className="flex items-center justify-between gap-2 px-1 sm:px-4">
             <div className="flex min-w-0 flex-1 items-center gap-2 lg:hidden">
               <Button

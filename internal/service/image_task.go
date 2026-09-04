@@ -1657,6 +1657,9 @@ func (s *ImageTaskService) cleanupLocked() bool {
 	if days < 1 {
 		days = 1
 	}
+	if days > 3650 {
+		days = 3650
+	}
 	cutoff := time.Now().Add(-time.Duration(days) * 24 * time.Hour)
 	removed := false
 	for key, task := range s.tasks {

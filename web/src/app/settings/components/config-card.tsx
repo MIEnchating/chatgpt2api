@@ -218,6 +218,7 @@ export function ConfigCard({ isAdmin }: { isAdmin: boolean }) {
               <NumberInputWithUnit
                 id="settings-image-retention-days"
                 min={1}
+                max={3650}
                 value={config?.image_retention_days || ""}
                 onChange={setImageRetentionDays}
                 placeholder="30"

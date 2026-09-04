@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -848,14 +849,66 @@ func SanitizeLogValue(v any) any {
 	}
 }
 
+func SanitizeLogURL(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if strings.HasPrefix(strings.ToLower(trimmed), "data:") {
+		return maskBase64(trimmed)
+	}
+	parsed, err := url.Parse(trimmed)
+	if err != nil {
+		if index := strings.IndexAny(value, "?#"); index >= 0 {
+			return value[:index]
+		}
+		return value
+	}
+	parsed.RawQuery = ""
+	parsed.ForceQuery = false
+	parsed.Fragment = ""
+	parsed.RawFragment = ""
+	return parsed.String()
+}
+
 func sanitizeLogField(key string, value any) any {
 	if sensitiveLogKey(key) {
 		return redactedLogValue
+	}
+	switch strings.ToLower(strings.TrimSpace(key)) {
+	case "url":
+		if text, ok := value.(string); ok {
+			return SanitizeLogURL(text)
+		}
+	case "urls":
+		return sanitizeLogURLs(value)
 	}
 	if s, ok := value.(string); ok && base64LogKey(key) {
 		return maskBase64(s)
 	}
 	return SanitizeLogValue(value)
+}
+
+func sanitizeLogURLs(value any) any {
+	switch values := value.(type) {
+	case []string:
+		out := make([]string, len(values))
+		for index, item := range values {
+			out[index] = SanitizeLogURL(item)
+		}
+		return out
+	case []any:
+		out := make([]any, len(values))
+		for index, item := range values {
+			if text, ok := item.(string); ok {
+				out[index] = SanitizeLogURL(text)
+			} else {
+				out[index] = SanitizeLogValue(item)
+			}
+		}
+		return out
+	case string:
+		return SanitizeLogURL(values)
+	default:
+		return SanitizeLogValue(value)
+	}
 }
 
 func sensitiveLogKey(key string) bool {

@@ -58,6 +58,22 @@ func TestIntSettingSaturatesOutOfRangeNumbers(t *testing.T) {
 	}
 }
 
+func TestNormalizeImageRetentionDaysClampsExtremeValues(t *testing.T) {
+	for _, test := range []struct {
+		value any
+		want  int
+	}{
+		{value: -1, want: 1},
+		{value: 30, want: 30},
+		{value: math.MaxInt, want: 3650},
+		{value: strings.Repeat("9", 100), want: 3650},
+	} {
+		if got := normalizeImageRetentionDays(test.value); got != test.want {
+			t.Fatalf("normalizeImageRetentionDays(%v) = %d, want %d", test.value, got, test.want)
+		}
+	}
+}
+
 func TestDefaultVideoModelsMatchReferenceWorkbenchDefault(t *testing.T) {
 	if len(defaultVideoModels) == 0 || defaultVideoModels[0] != "grok-imagine-video" {
 		t.Fatalf("default video models = %#v, want grok-imagine-video first", defaultVideoModels)

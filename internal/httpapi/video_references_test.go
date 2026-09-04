@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestVideoReferenceFileType(t *testing.T) {
@@ -156,6 +157,9 @@ func TestReferenceUploadStoresValidatedMedia(t *testing.T) {
 			if !strings.HasPrefix(parsedURL.Path, test.wantPathPrefix+"reference-") || filepath.Ext(parsedURL.Path) != test.wantExtension {
 				t.Fatalf("response URL = %q", payload.URL)
 			}
+			if parsedURL.Query().Get("expires") == "" || parsedURL.Query().Get("signature") == "" {
+				t.Fatalf("response URL has no expiring capability: %q", payload.URL)
+			}
 			entries, err := os.ReadDir(app.videoReferenceDir)
 			if err != nil {
 				t.Fatalf("ReadDir(%s): %v", app.videoReferenceDir, err)
@@ -175,16 +179,18 @@ func TestReferenceUploadStoresValidatedMedia(t *testing.T) {
 }
 
 func TestServeReferenceFile(t *testing.T) {
+	app := &App{}
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "reference.mp4"), []byte("video"), 0o644); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
 
 	for _, method := range []string{http.MethodGet, http.MethodHead} {
-		req := httptest.NewRequest(method, "/video-references/reference.mp4", nil)
+		target := app.signedReferenceURL("/video-references/reference.mp4", time.Now().Add(time.Hour))
+		req := httptest.NewRequest(method, target, nil)
 		res := httptest.NewRecorder()
-		serveReferenceFile(res, req, "/video-references/", root, func(string) string { return "video/mp4" })
-		if res.Code != http.StatusOK || res.Header().Get("Content-Type") != "video/mp4" || res.Header().Get("Cache-Control") != "public, max-age=86400, immutable" {
+		app.serveReferenceFile(res, req, "/video-references/", root, func(string) string { return "video/mp4" })
+		if res.Code != http.StatusOK || res.Header().Get("Content-Type") != "video/mp4" || res.Header().Get("Cache-Control") != "private, no-store" {
 			t.Fatalf("%s response = status %d headers %#v", method, res.Code, res.Header())
 		}
 		if method == http.MethodGet && res.Body.String() != "video" {
@@ -201,19 +207,59 @@ func TestServeReferenceFile(t *testing.T) {
 		"/video-references/sub/reference.mp4",
 		"/wrong/reference.mp4",
 	} {
-		req := httptest.NewRequest(http.MethodGet, target, nil)
+		req := httptest.NewRequest(http.MethodGet, app.signedReferenceURL(target, time.Now().Add(time.Hour)), nil)
 		res := httptest.NewRecorder()
-		serveReferenceFile(res, req, "/video-references/", root, func(string) string { return "video/mp4" })
+		app.serveReferenceFile(res, req, "/video-references/", root, func(string) string { return "video/mp4" })
 		if res.Code != http.StatusNotFound {
 			t.Fatalf("GET %q status = %d, want 404", target, res.Code)
 		}
 	}
 
-	req := httptest.NewRequest(http.MethodPost, "/video-references/reference.mp4", nil)
+	req := httptest.NewRequest(http.MethodPost, app.signedReferenceURL("/video-references/reference.mp4", time.Now().Add(time.Hour)), nil)
 	res := httptest.NewRecorder()
-	serveReferenceFile(res, req, "/video-references/", root, func(string) string { return "video/mp4" })
+	app.serveReferenceFile(res, req, "/video-references/", root, func(string) string { return "video/mp4" })
 	if res.Code != http.StatusMethodNotAllowed {
 		t.Fatalf("POST status = %d, want 405", res.Code)
+	}
+}
+
+func TestReferenceFileRejectsMissingTamperedAndExpiredCapabilities(t *testing.T) {
+	app := &App{}
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "reference.mp4"), []byte("video"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	valid := app.signedReferenceURL("/video-references/reference.mp4", time.Now().Add(time.Hour))
+	tampered, err := url.Parse(valid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	query := tampered.Query()
+	query.Set("signature", strings.Repeat("0", 64))
+	tampered.RawQuery = query.Encode()
+	for _, target := range []string{
+		"/video-references/reference.mp4",
+		tampered.String(),
+		app.signedReferenceURL("/video-references/reference.mp4", time.Now().Add(-time.Minute)),
+	} {
+		res := httptest.NewRecorder()
+		app.serveReferenceFile(res, httptest.NewRequest(http.MethodGet, target, nil), "/video-references/", root, func(string) string { return "video/mp4" })
+		if res.Code != http.StatusNotFound {
+			t.Fatalf("GET %q status = %d, want 404", target, res.Code)
+		}
+	}
+}
+
+func TestReferenceCapabilitySurvivesReverseProxyBasePath(t *testing.T) {
+	app := &App{}
+	signed := app.signedReferenceURL("https://platform.example/base/video-references/reference-11111111111111111111111111111111.mp4", time.Now().Add(time.Hour))
+	parsed, err := url.Parse(signed)
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed.Path = strings.TrimPrefix(parsed.Path, "/base")
+	if !app.validReferenceCapability(parsed, time.Now()) {
+		t.Fatalf("capability became invalid after proxy base path stripping: %q", signed)
 	}
 }
 

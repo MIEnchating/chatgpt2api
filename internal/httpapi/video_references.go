@@ -1,7 +1,9 @@
 package httpapi
 
 import (
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
 	"errors"
@@ -12,7 +14,9 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"time"
 
 	"chatgpt2api/internal/util"
 )
@@ -23,6 +27,7 @@ const (
 	maxAudioReferenceFileBytes      int64 = 15 << 20
 	referenceMultipartMemory        int64 = 1 << 20
 	referenceMultipartOverhead      int64 = 1 << 20
+	referenceURLTTL                       = 24 * time.Hour
 )
 
 type videoMultipartFile struct {
@@ -123,7 +128,6 @@ func (a *App) localVideoReferenceFile(rawURL string) (videoMultipartFile, bool, 
 	} else if !strings.HasPrefix(parsed.Path, "/") {
 		return videoMultipartFile{}, false, nil
 	}
-
 	var (
 		contentType string
 		maxBytes    int64
@@ -164,6 +168,9 @@ func (a *App) localVideoReferenceFile(rawURL string) (videoMultipartFile, bool, 
 	}
 	if contentType == "" || !validStoredVideoReferenceName(name) {
 		return videoMultipartFile{}, false, nil
+	}
+	if !a.validReferenceCapability(parsed, time.Now()) {
+		return videoMultipartFile{}, true, errors.New("平台暂存的素材链接无效或已过期，请重新上传")
 	}
 	root := filepath.Clean(a.videoReferenceDir)
 	filePath := filepath.Join(root, name)
@@ -305,12 +312,12 @@ func (a *App) persistReferenceUpload(
 		util.WriteError(w, http.StatusInternalServerError, "failed to store "+kind+" reference")
 		return
 	}
-	referenceURL := strings.TrimRight(a.resolveImageBaseURL(), "/") + pathPrefix + name
+	referenceURL := a.signedReferenceURL(strings.TrimRight(a.resolveImageBaseURL(), "/")+pathPrefix+name, time.Now().Add(referenceURLTTL))
 	util.WriteJSON(w, http.StatusCreated, map[string]any{"url": referenceURL, "name": upload.filename, "content_type": contentType, "size": len(upload.data)})
 }
 
 func (a *App) handleVideoReferenceFile(w http.ResponseWriter, r *http.Request) {
-	serveReferenceFile(w, r, "/video-references/", a.videoReferenceDir, func(name string) string {
+	a.serveReferenceFile(w, r, "/video-references/", a.videoReferenceDir, func(name string) string {
 		if strings.EqualFold(filepath.Ext(name), ".mov") {
 			return "video/quicktime"
 		}
@@ -319,7 +326,7 @@ func (a *App) handleVideoReferenceFile(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleAudioReferenceFile(w http.ResponseWriter, r *http.Request) {
-	serveReferenceFile(w, r, "/audio-references/", a.videoReferenceDir, func(name string) string {
+	a.serveReferenceFile(w, r, "/audio-references/", a.videoReferenceDir, func(name string) string {
 		if strings.EqualFold(filepath.Ext(name), ".wav") {
 			return "audio/wav"
 		}
@@ -328,7 +335,7 @@ func (a *App) handleAudioReferenceFile(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleVideoImageReferenceFile(w http.ResponseWriter, r *http.Request) {
-	serveReferenceFile(w, r, "/video-image-references/", a.videoReferenceDir, func(name string) string {
+	a.serveReferenceFile(w, r, "/video-image-references/", a.videoReferenceDir, func(name string) string {
 		switch strings.ToLower(filepath.Ext(name)) {
 		case ".jpg", ".jpeg":
 			return "image/jpeg"
@@ -340,12 +347,16 @@ func (a *App) handleVideoImageReferenceFile(w http.ResponseWriter, r *http.Reque
 	})
 }
 
-func serveReferenceFile(w http.ResponseWriter, r *http.Request, prefix, root string, contentType func(string) string) {
+func (a *App) serveReferenceFile(w http.ResponseWriter, r *http.Request, prefix, root string, contentType func(string) string) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
 	if !strings.HasPrefix(r.URL.Path, prefix) {
+		http.NotFound(w, r)
+		return
+	}
+	if !a.validReferenceCapability(r.URL, time.Now()) {
 		http.NotFound(w, r)
 		return
 	}
@@ -361,8 +372,55 @@ func serveReferenceFile(w http.ResponseWriter, r *http.Request, prefix, root str
 		return
 	}
 	w.Header().Set("Content-Type", contentType(name))
-	w.Header().Set("Cache-Control", "public, max-age=86400, immutable")
+	w.Header().Set("Cache-Control", "private, no-store")
 	http.ServeFile(w, r, filePath)
+}
+
+func (a *App) signedReferenceURL(rawURL string, expiresAt time.Time) string {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return rawURL
+	}
+	expires := strconv.FormatInt(expiresAt.Unix(), 10)
+	query := parsed.Query()
+	query.Set("expires", expires)
+	query.Set("signature", a.referenceSignature(parsed.Path, expires))
+	parsed.RawQuery = query.Encode()
+	return parsed.String()
+}
+
+func (a *App) validReferenceCapability(parsed *url.URL, now time.Time) bool {
+	if a == nil || parsed == nil {
+		return false
+	}
+	expires := parsed.Query().Get("expires")
+	expiresUnix, err := strconv.ParseInt(expires, 10, 64)
+	if err != nil || !now.Before(time.Unix(expiresUnix, 0)) {
+		return false
+	}
+	want, err := hex.DecodeString(parsed.Query().Get("signature"))
+	if err != nil {
+		return false
+	}
+	expected, _ := hex.DecodeString(a.referenceSignature(parsed.Path, expires))
+	return hmac.Equal(want, expected)
+}
+
+func (a *App) referenceSignature(path, expires string) string {
+	mac := hmac.New(sha256.New, a.referenceSigningKey[:])
+	_, _ = mac.Write([]byte(referenceCapabilityPath(path)))
+	_, _ = mac.Write([]byte{'\n'})
+	_, _ = mac.Write([]byte(expires))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+func referenceCapabilityPath(path string) string {
+	for _, prefix := range []string{"/video-image-references/", "/video-references/", "/audio-references/"} {
+		if index := strings.Index(path, prefix); index >= 0 {
+			return path[index:]
+		}
+	}
+	return path
 }
 
 func videoReferenceFileType(data []byte, filename string) (string, string, bool) {

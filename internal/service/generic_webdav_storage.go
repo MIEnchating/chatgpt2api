@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"path"
@@ -25,6 +26,9 @@ func newGenericWebDAVClient(ctx context.Context, provider model.StorageProvider)
 	}
 	client := gowebdav.NewClient(strings.TrimRight(parsed.String(), "/"), provider.Username, provider.Password)
 	client.SetTimeout(5 * time.Minute)
+	if strings.TrimSpace(provider.OwnerUserID) != "" {
+		client.SetTransport(SafeOutboundTransport())
+	}
 	client.SetInterceptor(func(_ string, request *http.Request) {
 		*request = *request.WithContext(ctx)
 	})
@@ -41,7 +45,7 @@ func cleanStorageObjectPath(value string) (string, error) {
 	return strings.Join(parts, "/"), nil
 }
 
-func putGenericWebDAVObject(ctx context.Context, provider model.StorageProvider, objectKey string, data []byte) error {
+func putGenericWebDAVObject(ctx context.Context, provider model.StorageProvider, objectKey string, source io.Reader, size int64) error {
 	client, err := newGenericWebDAVClient(ctx, provider)
 	if err != nil {
 		return err
@@ -55,7 +59,7 @@ func putGenericWebDAVObject(ctx context.Context, provider model.StorageProvider,
 			return fmt.Errorf("create WebDAV directory: %w", err)
 		}
 	}
-	if err := client.Write(objectKey, data, 0o644); err != nil {
+	if err := client.WriteStreamWithLength(objectKey, source, size, 0o644); err != nil {
 		return fmt.Errorf("upload WebDAV object: %w", err)
 	}
 	return nil

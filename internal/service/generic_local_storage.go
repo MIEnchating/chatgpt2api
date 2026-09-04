@@ -35,7 +35,7 @@ func localStorageObjectPath(provider model.StorageProvider, objectKey string) (s
 	return target, nil
 }
 
-func putLocalStorageObject(provider model.StorageProvider, objectKey string, data []byte) error {
+func putLocalStorageObject(provider model.StorageProvider, objectKey string, source io.Reader, size int64) error {
 	target, err := localStorageObjectPath(provider, objectKey)
 	if err != nil {
 		return err
@@ -49,7 +49,13 @@ func putLocalStorageObject(provider model.StorageProvider, objectKey string, dat
 	}
 	temporaryName := temporary.Name()
 	defer os.Remove(temporaryName)
-	if _, err = temporary.Write(data); err == nil {
+	written, copyErr := io.Copy(temporary, io.LimitReader(source, size+1))
+	if copyErr != nil {
+		err = copyErr
+	} else if written != size {
+		err = fmt.Errorf("uploaded media size mismatch: got %d, want %d", written, size)
+	}
+	if err == nil {
 		err = temporary.Sync()
 	}
 	if closeErr := temporary.Close(); err == nil {

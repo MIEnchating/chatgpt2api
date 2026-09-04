@@ -303,11 +303,15 @@ func (s *GenericStorageService) SaveUserProviders(ownerID string, incoming UserS
 }
 
 func (s *GenericStorageService) Upload(ctx context.Context, ownerID string, admin bool, filename, contentType string, data []byte, providerInput *StorageObjectProviderInput) (UploadedStorageObject, error) {
+	return s.UploadReader(ctx, ownerID, admin, filename, contentType, bytes.NewReader(data), int64(len(data)), providerInput)
+}
+
+func (s *GenericStorageService) UploadReader(ctx context.Context, ownerID string, admin bool, filename, contentType string, source io.Reader, size int64, providerInput *StorageObjectProviderInput) (UploadedStorageObject, error) {
 	ownerID = strings.TrimSpace(ownerID)
 	if ownerID == "" {
 		return UploadedStorageObject{}, storageValidationError("user is required")
 	}
-	if len(data) == 0 {
+	if source == nil || size < 1 {
 		return UploadedStorageObject{}, storageValidationError("file is empty")
 	}
 	setting := s.settings.StorageSettings()
@@ -336,7 +340,7 @@ func (s *GenericStorageService) Upload(ctx context.Context, ownerID string, admi
 			if measureErr != nil {
 				return UploadedStorageObject{}, measureErr
 			}
-			incomingBytes := int64(len(data))
+			incomingBytes := size
 			if used >= limit || incomingBytes > limit-used {
 				return UploadedStorageObject{}, ErrLocalStorageCapacityExceeded
 			}
@@ -350,16 +354,31 @@ func (s *GenericStorageService) Upload(ctx context.Context, ownerID string, admi
 	now := time.Now().UTC()
 	objectKey := strings.Trim(path.Join(provider.PathPrefix, ownerID, now.Format("2006/01/02"), objectID+extension), "/")
 	if contentType = strings.TrimSpace(contentType); contentType == "" {
-		contentType = http.DetectContentType(data)
+		contentType = "application/octet-stream"
 	}
-	if err := putStorageObject(ctx, provider, objectKey, contentType, data); err != nil {
+	hasher := sha256.New()
+	limitedSource := &io.LimitedReader{R: source, N: size}
+	if err := putStorageObject(ctx, provider, objectKey, contentType, io.TeeReader(limitedSource, hasher), size); err != nil {
+		if cleanupErr := rollbackStorageObjectData(ctx, provider, objectKey, storageObjectRollbackTimeout); cleanupErr != nil {
+			return UploadedStorageObject{}, errors.Join(err, fmt.Errorf("rollback failed storage object: %w", cleanupErr))
+		}
 		return UploadedStorageObject{}, err
 	}
-	sum := sha256.Sum256(data)
+	extra, readErr := io.ReadAll(io.LimitReader(source, 1))
+	if limitedSource.N != 0 || len(extra) != 0 || readErr != nil {
+		mismatchErr := fmt.Errorf("uploaded media size mismatch")
+		if readErr != nil {
+			mismatchErr = fmt.Errorf("verify uploaded media size: %w", readErr)
+		}
+		if cleanupErr := rollbackStorageObjectData(ctx, provider, objectKey, storageObjectRollbackTimeout); cleanupErr != nil {
+			return UploadedStorageObject{}, errors.Join(mismatchErr, fmt.Errorf("rollback invalid storage object: %w", cleanupErr))
+		}
+		return UploadedStorageObject{}, mismatchErr
+	}
 	object := model.StorageObject{
 		ID: objectID, ProviderID: provider.ID, Bucket: provider.Bucket, ObjectKey: objectKey,
 		PublicURL: storageObjectPublicURL(provider, objectKey), MIMEType: contentType,
-		Bytes: int64(len(data)), SHA256: hex.EncodeToString(sum[:]), CreatedBy: ownerID,
+		Bytes: size, SHA256: hex.EncodeToString(hasher.Sum(nil)), CreatedBy: ownerID,
 		CreatedAt: now.Format(time.RFC3339Nano),
 	}
 	if err := s.objects.SaveStorageObject(object); err != nil {
@@ -477,7 +496,7 @@ func (s *GenericStorageService) DownloadForIdentity(ctx context.Context, ownerID
 		return download, nil
 	}
 	if strings.TrimSpace(object.PublicURL) != "" {
-		return downloadPublicStorageObject(ctx, object, rangeHeader)
+		return downloadPublicStorageObject(ctx, object, rangeHeader, strings.HasPrefix(object.ProviderID, "user-"))
 	}
 	return DownloadedStorageObject{}, fmt.Errorf("%w: provider %q does not exist", ErrStorageProviderUnavailable, object.ProviderID)
 }
@@ -806,7 +825,7 @@ func findStorageProviderForObject(object model.StorageObject, providers []model.
 	return model.StorageProvider{}, false
 }
 
-func downloadPublicStorageObject(ctx context.Context, object model.StorageObject, rangeHeader string) (DownloadedStorageObject, error) {
+func downloadPublicStorageObject(ctx context.Context, object model.StorageObject, rangeHeader string, safeOutbound bool) (DownloadedStorageObject, error) {
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, object.PublicURL, nil)
 	if err != nil {
 		return DownloadedStorageObject{}, err
@@ -814,7 +833,11 @@ func downloadPublicStorageObject(ctx context.Context, object model.StorageObject
 	if strings.TrimSpace(rangeHeader) != "" {
 		request.Header.Set("Range", rangeHeader)
 	}
-	response, err := http.DefaultClient.Do(request)
+	client := http.DefaultClient
+	if safeOutbound {
+		client = SafeOutboundHTTPClient(5 * time.Minute)
+	}
+	response, err := client.Do(request)
 	if err != nil {
 		return DownloadedStorageObject{}, err
 	}
@@ -834,19 +857,19 @@ func storageDownloadStatus(status int) bool {
 	return status >= 200 && status < 300 || status == http.StatusRequestedRangeNotSatisfiable
 }
 
-func putStorageObject(ctx context.Context, provider model.StorageProvider, objectKey, contentType string, data []byte) error {
+func putStorageObject(ctx context.Context, provider model.StorageProvider, objectKey, contentType string, source io.Reader, size int64) error {
 	switch provider.Type {
 	case model.StorageProviderTypeLocal:
-		return putLocalStorageObject(provider, objectKey, data)
+		return putLocalStorageObject(provider, objectKey, source, size)
 	case model.StorageProviderTypeS3:
 		client, err := newGenericS3Client(provider)
 		if err != nil {
 			return err
 		}
-		_, err = client.PutObject(ctx, provider.Bucket, objectKey, bytes.NewReader(data), int64(len(data)), minio.PutObjectOptions{ContentType: contentType})
+		_, err = client.PutObject(ctx, provider.Bucket, objectKey, source, size, minio.PutObjectOptions{ContentType: contentType})
 		return err
 	case model.StorageProviderTypeWebDAV:
-		return putGenericWebDAVObject(ctx, provider, objectKey, data)
+		return putGenericWebDAVObject(ctx, provider, objectKey, source, size)
 	default:
 		return errors.New("storage provider type is unsupported")
 	}
@@ -945,10 +968,14 @@ func newGenericS3Client(provider model.StorageProvider) (*minio.Client, error) {
 	if parsed.Path != "" && parsed.Path != "/" || parsed.RawQuery != "" || parsed.Fragment != "" || parsed.User != nil {
 		return nil, errors.New("S3 endpoint must not contain a path, query, fragment, or credentials")
 	}
-	return minio.New(parsed.Host, &minio.Options{
+	options := &minio.Options{
 		Creds:  credentials.NewStaticV4(provider.AccessKeyID, provider.SecretAccessKey, ""),
 		Secure: parsed.Scheme == "https", Region: provider.Region, BucketLookup: minio.BucketLookupPath,
-	})
+	}
+	if strings.TrimSpace(provider.OwnerUserID) != "" {
+		options.Transport = SafeOutboundTransport()
+	}
+	return minio.New(parsed.Host, options)
 }
 
 func storageObjectPublicURL(provider model.StorageProvider, objectKey string) string {

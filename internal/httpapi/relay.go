@@ -29,6 +29,7 @@ import (
 
 const (
 	relayImageTaskSlotManagedPayloadKey = "relay_image_task_slot_managed"
+	relayCustomEndpointPayloadKey       = "relay_custom_endpoint"
 	relayStreamMaxTokenSize             = 64 * 1024 * 1024
 	relayJSONSuccessMaxBytes            = 256 * 1024 * 1024
 	relayJSONErrorMaxBytes              = 1 * 1024 * 1024
@@ -37,6 +38,7 @@ const (
 )
 
 type relayImageTaskSlotManagedMarker struct{}
+type relayCustomEndpointContextKey struct{}
 
 type relayBufferedReadCloser struct {
 	*bufio.Reader
@@ -46,6 +48,7 @@ type relayBufferedReadCloser struct {
 type relayCredential struct {
 	APIKey  string
 	BaseURL string
+	Custom  bool
 }
 
 func (a *App) attachRelayAPIKeyForIdentity(ctx context.Context, identity service.Identity, body map[string]any) error {
@@ -58,6 +61,11 @@ func (a *App) attachRelayAPIKeyForIdentity(ctx context.Context, identity service
 	}
 	protocol.RecordAccountUsage(ctx, credential.APIKey)
 	body["api_key"] = credential.APIKey
+	if credential.Custom {
+		body[relayCustomEndpointPayloadKey] = true
+	} else {
+		delete(body, relayCustomEndpointPayloadKey)
+	}
 	if credential.BaseURL != "" && credential.BaseURL != a.relayBaseURL() {
 		body["relay_base_url"] = credential.BaseURL
 	} else {
@@ -87,7 +95,7 @@ func (a *App) relayCredentialForIdentitySelection(ctx context.Context, identity 
 		if config.BaseURL == "" || config.APIKey == "" {
 			return relayCredential{}, protocol.HTTPError{Status: http.StatusBadRequest, Message: "所选自定义 API 配置不完整，请重新配置 Base URL 和 Key"}
 		}
-		return relayCredential{APIKey: config.APIKey, BaseURL: config.BaseURL}, nil
+		return relayCredential{APIKey: config.APIKey, BaseURL: config.BaseURL, Custom: true}, nil
 	}
 	reader, releaseRelayTokenReader := a.acquireRelayTokenReader()
 	defer releaseRelayTokenReader()
@@ -155,6 +163,7 @@ func (a *App) relayListModelsAt(ctx context.Context, baseURL, apiKey string) (ma
 }
 
 func (a *App) relayImageGenerations(ctx context.Context, payload map[string]any) (map[string]any, *protocol.StreamResult, error) {
+	ctx = relayContextForPayload(ctx, payload)
 	if strings.TrimSpace(util.Clean(payload["prompt"])) == "" {
 		return nil, nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: "prompt is required"}
 	}
@@ -197,6 +206,7 @@ func (a *App) relayImageGenerations(ctx context.Context, payload map[string]any)
 }
 
 func (a *App) relayImageEdits(ctx context.Context, payload map[string]any, images []protocol.UploadedImage) (map[string]any, *protocol.StreamResult, error) {
+	ctx = relayContextForPayload(ctx, payload)
 	if len(images) == 0 {
 		return nil, nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: "image file is required"}
 	}
@@ -859,6 +869,7 @@ func (a *App) relayResponses(ctx context.Context, payload map[string]any) (map[s
 }
 
 func (a *App) relayJSONMaybeStream(ctx context.Context, path string, payload map[string]any) (map[string]any, *protocol.StreamResult, error) {
+	ctx = relayContextForPayload(ctx, payload)
 	apiKey := relayAPIKeyFromPayload(payload)
 	if apiKey == "" {
 		return nil, nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: "upstream API key is required"}
@@ -876,6 +887,7 @@ func (a *App) relayJSONMaybeStream(ctx context.Context, path string, payload map
 }
 
 func (a *App) relayMultipartMaybeStream(ctx context.Context, path string, payload map[string]any, images []protocol.UploadedImage) (map[string]any, *protocol.StreamResult, error) {
+	ctx = relayContextForPayload(ctx, payload)
 	apiKey := relayAPIKeyFromPayload(payload)
 	if apiKey == "" {
 		return nil, nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: "upstream API key is required"}
@@ -922,7 +934,7 @@ func (a *App) relayJSONDataAt(ctx context.Context, baseURL, method, pathValue, a
 	if data != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	resp, err := a.relayHTTPClient().Do(req)
+	resp, err := a.relayHTTPClientForContext(ctx).Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -958,6 +970,7 @@ func videoContractSnapshot(payload map[string]any, model string) (protocol.Video
 // relayVideoTask submits a contract-declared asynchronous video request to the
 // configured relay and polls it using the same protocol driver snapshot.
 func (a *App) relayVideoTask(ctx context.Context, payload map[string]any) (map[string]any, error) {
+	ctx = relayContextForPayload(ctx, payload)
 	model := strings.TrimSpace(util.Clean(payload["model"]))
 	contract, err := videoContractSnapshot(payload, model)
 	if err != nil {
@@ -1207,7 +1220,7 @@ func (a *App) relayVideoMultipart(ctx context.Context, baseURL, apiKey, createPa
 	if err != nil {
 		return nil, err
 	}
-	resp, err := a.relayHTTPClient().Do(req)
+	resp, err := a.relayHTTPClientForContext(ctx).Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -1456,7 +1469,7 @@ func (a *App) downloadRelayVideo(ctx context.Context, videoURL, apiKey, owner, c
 		return "", err
 	}
 	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(apiKey))
-	client := a.relayHTTPClient()
+	client := a.relayHTTPClientForContext(ctx)
 	redirectPolicy := client.CheckRedirect
 	clientCopy := *client
 	clientCopy.CheckRedirect = func(req *http.Request, via []*http.Request) error {
@@ -1806,7 +1819,7 @@ func (a *App) relayJSONStreamAt(ctx context.Context, baseURL, pathValue, apiKey 
 	req.Header.Set("Authorization", "Bearer "+strings.TrimSpace(apiKey))
 	req.Header.Set("Accept", "text/event-stream")
 	req.Header.Set("Content-Type", "application/json")
-	resp, err := a.relayHTTPClient().Do(req)
+	resp, err := a.relayHTTPClientForContext(ctx).Do(req)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1818,7 +1831,7 @@ func (a *App) relayMultipartAt(ctx context.Context, baseURL, pathValue, apiKey s
 	if err != nil {
 		return nil, err
 	}
-	resp, err := a.relayHTTPClient().Do(req)
+	resp, err := a.relayHTTPClientForContext(ctx).Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -1832,7 +1845,7 @@ func (a *App) relayMultipartStreamAt(ctx context.Context, baseURL, pathValue, ap
 		return nil, nil, err
 	}
 	req.Header.Set("Accept", "text/event-stream")
-	resp, err := a.relayHTTPClient().Do(req)
+	resp, err := a.relayHTTPClientForContext(ctx).Do(req)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1940,6 +1953,31 @@ func (a *App) relayHTTPClient() *http.Client {
 		return a.proxy.HTTPClient(timeout)
 	}
 	return &http.Client{Timeout: timeout}
+}
+
+func relayContextForPayload(ctx context.Context, payload map[string]any) context.Context {
+	if !util.ToBool(payload[relayCustomEndpointPayloadKey]) {
+		return ctx
+	}
+	return context.WithValue(ctx, relayCustomEndpointContextKey{}, true)
+}
+
+func withCustomRelayContext(ctx context.Context) context.Context {
+	return context.WithValue(ctx, relayCustomEndpointContextKey{}, true)
+}
+
+func (a *App) relayHTTPClientForContext(ctx context.Context) *http.Client {
+	if custom, _ := ctx.Value(relayCustomEndpointContextKey{}).(bool); custom {
+		timeout := 300 * time.Second
+		if a != nil && a.config != nil {
+			timeout = time.Duration(a.config.ImageTaskTimeoutSeconds()) * time.Second
+		}
+		if a != nil && a.newSafeRelayHTTPClient != nil {
+			return a.newSafeRelayHTTPClient(timeout)
+		}
+		return service.SafeOutboundHTTPClient(timeout)
+	}
+	return a.relayHTTPClient()
 }
 
 func relayPayloadForPath(pathValue string, payload map[string]any) map[string]any {
@@ -3118,7 +3156,7 @@ func ceilToRelayImageMultiple(value float64) int {
 func shouldDropRelayPayloadKey(key string) bool {
 	switch key {
 	case "api_key", "relay_api_key", "relayai_api_key", "upstream_api_key",
-		"relay_base_url",
+		"relay_base_url", relayCustomEndpointPayloadKey,
 		"token_group", "newapi_token_group", "relay_token_group",
 		"token_name", "newapi_token_name", "relay_token_name",
 		"owner_id", "owner_name", "base_url", "visibility", "client_task_id",

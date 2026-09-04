@@ -10,21 +10,19 @@ import (
 	"time"
 )
 
-var safeMediaProxyHTTPClient = newSafeMediaProxyHTTPClient()
+var safeOutboundTransport = newSafeOutboundTransport()
+var safeMediaProxyHTTPClient = SafeOutboundHTTPClient(5 * time.Minute)
 
 func SafeMediaProxyHTTPClient() *http.Client {
 	return safeMediaProxyHTTPClient
 }
 
-func newSafeMediaProxyHTTPClient() *http.Client {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.Proxy = nil
-	transport.DialContext = safeMediaProxyDialContext
+func SafeOutboundHTTPClient(timeout time.Duration) *http.Client {
 	return &http.Client{
-		Transport: transport,
-		Timeout:   5 * time.Minute,
+		Transport: safeOutboundTransport,
+		Timeout:   timeout,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			if len(via) > 5 {
+			if len(via) >= 5 {
 				return errors.New("too many redirects")
 			}
 			scheme := strings.ToLower(req.URL.Scheme)
@@ -34,6 +32,21 @@ func newSafeMediaProxyHTTPClient() *http.Client {
 			return nil
 		},
 	}
+}
+
+func SafeOutboundTransport() http.RoundTripper {
+	return safeOutboundTransport
+}
+
+func newSafeMediaProxyHTTPClient() *http.Client {
+	return SafeOutboundHTTPClient(5 * time.Minute)
+}
+
+func newSafeOutboundTransport() *http.Transport {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = nil
+	transport.DialContext = safeMediaProxyDialContext
+	return transport
 }
 
 func safeMediaProxyDialContext(ctx context.Context, network, address string) (net.Conn, error) {
