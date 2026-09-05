@@ -26,11 +26,11 @@ const videoContractImportSystemPrompt = `# Role
 1. name 使用文档中的厂家、产品或模型系列名称，并能区分拆分后的契约；priority 没有明确需求时为 0。
 2. driver 选择最接近的驱动：openai-videos、xai-videos、gemini-veo、vertex-veo、dashscope-video、volcengine-video、kling-video、minimax-video、vidu-video、kie-video、apimart-video、custom-video。Gemini 与 Vertex、KIE 与 APIMart 必须区分。厂家不属于内置驱动时才用 custom-video。
 3. custom-video 必须填写 create_path 和含 {task_id} 的 query_path。文档支持 multipart/form-data 文件直传时 local_material 为 multipart 并填写文件字段；否则为 url。
-4. capability 的非空能力必须有对应 request 字段：seconds/duration_field、sizes/aspect_ratio_field、resolutions/resolution_field、toggle/generate_audio_field、watermark/watermark_field，以及首帧、尾帧、参考图片、参考视频、参考音频字段。未支持的能力数量为 0、数组为空、字段为空字符串。
-5. seconds 至少一个值；每个默认值必须属于对应选项。audio_control 只能是 none、toggle、always。
-6. generation.selection 固定为 infer。modes 仅声明文档支持的 text、image、reference 类型且每类最多一个；默认模式必须是 text。严格按以下互斥矩阵填写 materials：text 的 first_frame、last_frame、image、video、audio、total 全部为 0；image 的 first_frame.max 必须为 1，image、video、audio 全部为 0，total 只统计首尾帧；reference 的 first_frame、last_frame 全部为 0，image、video、audio 至少一项 max 大于 0，total 只统计普通参考素材。每个 min 不得大于 max，total.max 不得小于任一单类 max，也不得大于各类 max 之和。
-7. 文档声明条件依赖时才生成 rules。when.field、require、require_any、forbid、limits[].field、force_values[].field 和 ui 字段只能使用 first_frame、last_frame、reference_image、reference_video、reference_audio、generate_audio、size、resolution、duration、watermark。无依赖时 rules 为空数组。
-8. request 路径可用点号表示嵌套对象。响应路径可用点号和数组下标。multipart_file_field 还可用 [] 结尾。
+4. capability 的非空能力必须有对应 request 字段：多个 seconds 选项必须有 duration_field；单一固定时长若由模型决定且文档要求不传时长，则 duration_field 为空；sizes/aspect_ratio_field、resolutions/resolution_field、toggle/generate_audio_field、watermark/watermark_field 均按文档字段映射。image 模式必须填写 first_frame_field，支持尾帧时还必须填写 last_frame_field；reference 模式中哪类素材上限非零，就必须填写对应的 reference_images_field、reference_videos_field 或 reference_audios_field。duration_value_type 必须按文档声明为 number 或 string；例如 JSON 示例中的 seconds 字符串值 "5" 必须选择 string，duration 数字值 5 必须选择 number。未支持的能力数量为 0、数组为空、字段为空字符串。
+5. seconds 至少一个值；每个默认值必须属于对应选项。sizes 或 resolutions 为空时，其对应 default_size 或 default_resolution 也必须为空。audio_control 只能是 none、toggle、always。
+6. generation.selection 固定为 infer。modes 仅声明文档支持的 text、image、reference 类型且每类最多一个；默认模式必须属于已声明模式，支持 text 时优先用 text，否则使用文档唯一支持的 image 或 reference。只有文档明确把图片定义为首帧/尾帧时才用 image；可传多张约束人物、风格等普通参考图时用 reference，即使文档把功能标题写成“图生视频”。严格按以下互斥矩阵填写 materials：text 的 first_frame、last_frame、image、video、audio、total 全部为 0；image 的 first_frame.max 必须为 1，last_frame.max 最大为 1，image、video、audio 全部为 0，total 只统计首尾帧；reference 的 first_frame、last_frame 全部为 0，image 最大 50、video 最大 20、audio 最大 20，且至少一项 max 大于 0，total 最大 80 并只统计普通参考素材。每个 min 不得大于 max，total.max 不得小于任一单类 max，也不得大于各类 max 之和。
+7. 文档声明条件依赖时才生成 rules。when.field、require、require_any、forbid、limits[].field、force_values[].field 和 ui 字段只能使用 first_frame、last_frame、reference_image、reference_video、reference_audio、generate_audio、size、resolution、duration、watermark；ui.show、ui.hide、ui.disable 三组不能包含同一字段。无依赖时 rules 为空数组。
+8. request 路径可用点号表示嵌套对象，也可用数组下标映射有序素材，例如首尾帧字段 images[0]、images[1]。响应路径同样可用点号和数组下标。multipart_file_field 还可用 [] 结尾。
 9. polling 把文档原始状态准确分到排队、处理中、成功、失败四组，组间不能重复。文档没有进度字段时 progress_fields 为空数组。
 10. artifact.mode 为 response_url 时从 result_fields 读取地址；结果 URL 需要 Bearer Key 时 auth 为 relay 并限制 allowed_hosts。独立内容接口使用 task_content，content_path 必须含 {task_id} 且 auth 为 relay。
 
@@ -88,6 +88,12 @@ func videoContractImportJSONSchema() map[string]any {
 	refValue := func(name string) map[string]any {
 		return map[string]any{"$ref": "#/$defs/" + name}
 	}
+	materialRange := func(maximum int) map[string]any {
+		return objectValue(map[string]any{
+			"min": integerValue(0, maximum),
+			"max": integerValue(0, maximum),
+		})
+	}
 	ruleFields := []string{
 		"first_frame", "last_frame", "reference_image", "reference_video", "reference_audio",
 		"generate_audio", "size", "resolution", "duration", "watermark",
@@ -95,12 +101,12 @@ func videoContractImportJSONSchema() map[string]any {
 	ruleField := func() map[string]any { return refValue("rule_field") }
 	ruleFieldArray := func() map[string]any { return arrayValue(ruleField(), 0, len(ruleFields)) }
 	modeMaterials := objectValue(map[string]any{
-		"first_frame": refValue("material_range"),
-		"last_frame":  refValue("material_range"),
-		"image":       refValue("material_range"),
-		"video":       refValue("material_range"),
-		"audio":       refValue("material_range"),
-		"total":       refValue("material_range"),
+		"first_frame": materialRange(1),
+		"last_frame":  materialRange(1),
+		"image":       materialRange(50),
+		"video":       materialRange(20),
+		"audio":       materialRange(20),
+		"total":       materialRange(80),
 	})
 	mode := objectValue(map[string]any{
 		"id":            stringValue(),
@@ -187,6 +193,7 @@ func videoContractImportJSONSchema() map[string]any {
 		"rules": arrayValue(rule, 0, 32),
 		"request": objectValue(map[string]any{
 			"duration_field":         stringValue(),
+			"duration_value_type":    stringEnum("number", "string"),
 			"aspect_ratio_field":     stringValue(),
 			"resolution_field":       stringValue(),
 			"generate_audio_field":   stringValue(),
@@ -217,10 +224,6 @@ func videoContractImportJSONSchema() map[string]any {
 	})
 	schema["$defs"] = map[string]any{
 		"rule_field": stringEnum(ruleFields...),
-		"material_range": objectValue(map[string]any{
-			"min": integerValue(0, 80),
-			"max": integerValue(0, 80),
-		}),
 	}
 	return schema
 }

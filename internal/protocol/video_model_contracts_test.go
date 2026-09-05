@@ -309,13 +309,32 @@ func TestVideoContractAcceptsNestedRequestFieldPaths(t *testing.T) {
 	contract.Request.GenerateAudioField = "metadata.generateAudio"
 	contract.Request.WatermarkField = "metadata.watermark"
 	contract.Request.GenerationModeField = "metadata.generationMode"
+	contract.Request.FirstFrameField = "images[0]"
+	contract.Request.LastFrameField = "images[1]"
 	if _, err := NormalizeVideoModelContract(contract); err != nil {
-		t.Fatalf("nested request field paths were rejected: %v", err)
+		t.Fatalf("nested or indexed request field paths were rejected: %v", err)
 	}
 
 	contract.Request.DurationField = "metadata..durationSeconds"
 	if _, err := NormalizeVideoModelContract(contract); err == nil {
 		t.Fatal("invalid nested request field path was accepted")
+	}
+}
+
+func TestVideoContractRequiresExplicitDurationValueType(t *testing.T) {
+	contract := DefaultVideoContracts()[0]
+	contract.Request.DurationValueType = ""
+	if _, err := NormalizeVideoModelContract(contract); err == nil {
+		t.Fatal("contract without duration value type was accepted")
+	}
+	contract.Request.DurationValueType = "boolean"
+	if _, err := NormalizeVideoModelContract(contract); err == nil {
+		t.Fatal("contract with unsupported duration value type was accepted")
+	}
+	contract.Request.DurationValueType = " STRING "
+	normalized, err := NormalizeVideoModelContract(contract)
+	if err != nil || normalized.Request.DurationValueType != "string" {
+		t.Fatalf("normalized duration value type = %q, %v", normalized.Request.DurationValueType, err)
 	}
 }
 
@@ -599,8 +618,19 @@ func TestVideoContractRuleNormalizationAndConflicts(t *testing.T) {
 	}
 	contract = DefaultVideoContracts()[0]
 	contract.Generation.DefaultMode = "image-to-video"
+	if _, err := NormalizeVideoModelContract(contract); err != nil {
+		t.Fatalf("configured image default mode was rejected: %v", err)
+	}
+	contract = DefaultVideoContracts()[0]
+	contract.Capability.Seconds = []int{12}
+	contract.Capability.DefaultSeconds = 12
+	contract.Request.DurationField = ""
+	if _, err := NormalizeVideoModelContract(contract); err != nil {
+		t.Fatalf("fixed duration without a request field was rejected: %v", err)
+	}
+	contract.Capability.Seconds = []int{8, 12}
 	if _, err := NormalizeVideoModelContract(contract); err == nil {
-		t.Fatal("non-text default inferred mode was accepted")
+		t.Fatal("selectable durations without a request field were accepted")
 	}
 	contract = DefaultVideoContracts()[0]
 	contract.Generation.Modes[2].Materials.Total.Max = 2

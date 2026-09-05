@@ -257,7 +257,7 @@ func TestVideoModelContractServiceMigratesPreV6NestedContracts(t *testing.T) {
 		t.Fatalf("Initialize() error = %v", err)
 	}
 	persisted, ok := backend.document.(videoModelContractStoreDocument)
-	if !ok || persisted.Version != 7 || len(persisted.Items) != 1 {
+	if !ok || persisted.Version != videoModelContractStoreVersion || len(persisted.Items) != 1 {
 		t.Fatalf("persisted migration = %#v", backend.document)
 	}
 	item := persisted.Items[0]
@@ -338,7 +338,7 @@ func TestVideoModelContractServiceMigratesV6StrictValidationData(t *testing.T) {
 		t.Fatalf("migration save calls = %d, want 1", backend.saveCalls)
 	}
 	persisted, ok := backend.document.(videoModelContractStoreDocument)
-	if !ok || persisted.Version != 7 || len(persisted.Items) != 1 {
+	if !ok || persisted.Version != videoModelContractStoreVersion || len(persisted.Items) != 1 {
 		t.Fatalf("persisted migration = %#v", backend.document)
 	}
 	item := persisted.Items[0]
@@ -382,6 +382,43 @@ func TestVideoModelContractServiceMigratesV6StrictValidationData(t *testing.T) {
 	rolledBack, err := service.Rollback(item.ID, 1)
 	if err != nil || rolledBack == nil || rolledBack.Revision != 3 || rolledBack.Contract.Driver != protocol.VideoContractDriverKling {
 		t.Fatalf("Rollback() = %#v, error = %v", rolledBack, err)
+	}
+}
+
+func TestVideoModelContractServiceMigratesDurationValueTypes(t *testing.T) {
+	t.Cleanup(func() { _ = protocol.ReplaceVideoContracts(protocol.DefaultVideoContracts()) })
+	withoutType := func(name, driver, field string) protocol.VideoModelContract {
+		contract := testVideoContract(t, name, strings.ToLower(strings.ReplaceAll(name, " ", "-")))
+		contract.Driver = driver
+		contract.Request.DurationField = field
+		contract.Request.DurationValueType = ""
+		return contract
+	}
+	current := withoutType("OpenAI current", protocol.VideoContractDriverOpenAI, "seconds")
+	draft := withoutType("Nested seconds draft", protocol.VideoContractDriverXAI, "metadata.seconds")
+	history := withoutType("Duration history", protocol.VideoContractDriverMiniMax, "duration")
+	backend := &scriptedVideoContractDocumentBackend{document: videoModelContractStoreDocument{
+		Version: 7,
+		Items: []ManagedVideoModelContract{{
+			ID: "duration-types", Contract: current, Draft: &draft, Enabled: true, Revision: 1,
+			Versions: []VideoModelContractVersion{{Revision: 1, Contract: history}},
+		}},
+	}}
+
+	service := NewVideoModelContractService(backend)
+	if err := service.Initialize(); err != nil {
+		t.Fatalf("Initialize() error = %v", err)
+	}
+	persisted, ok := backend.document.(videoModelContractStoreDocument)
+	if !ok || persisted.Version != videoModelContractStoreVersion || len(persisted.Items) != 1 {
+		t.Fatalf("persisted migration = %#v", backend.document)
+	}
+	item := persisted.Items[0]
+	if item.Contract.Request.DurationValueType != "string" || item.Draft == nil || item.Draft.Request.DurationValueType != "string" {
+		t.Fatalf("string duration types were not migrated: %#v", item)
+	}
+	if item.Versions[0].Contract.Request.DurationValueType != "number" {
+		t.Fatalf("numeric duration type = %q", item.Versions[0].Contract.Request.DurationValueType)
 	}
 }
 

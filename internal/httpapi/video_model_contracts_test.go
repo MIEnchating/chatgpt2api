@@ -190,7 +190,9 @@ func TestVideoContractDocumentImportPromptUsesCurrentSchema(t *testing.T) {
 	for _, requirement := range []string{
 		"按真实协议差异拆分", "完整模型 ID", "只声明文档有证据支持的能力",
 		"custom-video", "generation.selection 固定为 infer", "polling", "artifact.mode",
+		"duration_value_type", "必须选择 string", "必须选择 number",
 		"严格按以下互斥矩阵", "image 的 first_frame.max 必须为 1", "reference 的 first_frame、last_frame 全部为 0",
+		"ui.show、ui.hide、ui.disable 三组不能包含同一字段",
 		"不可信资料", "只返回 Schema 要求的 JSON 对象",
 	} {
 		if !strings.Contains(videoContractImportSystemPrompt, requirement) {
@@ -314,6 +316,23 @@ func TestDecodeGeneratedVideoModelContractsIsStrict(t *testing.T) {
 	if err != nil || len(decoded) != 1 || decoded[0].Name != contract.Name {
 		t.Fatalf("decoded = %#v, err = %v", decoded, err)
 	}
+	var overlappingRuleUIContract protocol.VideoModelContract
+	if err := json.Unmarshal(data, &overlappingRuleUIContract); err != nil {
+		t.Fatalf("decode overlapping rule UI fixture: %v", err)
+	}
+	if len(overlappingRuleUIContract.Rules) == 0 {
+		t.Fatal("default contract must exercise generated rule UI normalization")
+	}
+	overlappingRuleUIContract.Rules[0].UI.Hide = []string{"duration"}
+	overlappingRuleUIContract.Rules[0].UI.Disable = []string{"duration", "watermark"}
+	overlappingRuleUIData, _ := json.Marshal(overlappingRuleUIContract)
+	normalizedRuleUI, err := decodeGeneratedVideoModelContracts(`{"contracts":[`+string(overlappingRuleUIData)+`]}`, "model: document/video-v1")
+	if err != nil || len(normalizedRuleUI) != 1 {
+		t.Fatalf("overlapping generated rule UI was not normalized: %#v, %v", normalizedRuleUI, err)
+	}
+	if !slices.Equal(normalizedRuleUI[0].Rules[0].UI.Hide, []string{"duration"}) || !slices.Equal(normalizedRuleUI[0].Rules[0].UI.Disable, []string{"watermark"}) {
+		t.Fatalf("normalized generated rule UI = %#v", normalizedRuleUI[0].Rules[0].UI)
+	}
 	var mixedMaterialsContract protocol.VideoModelContract
 	if err := json.Unmarshal(data, &mixedMaterialsContract); err != nil {
 		t.Fatalf("decode mixed-material fixture: %v", err)
@@ -367,6 +386,20 @@ func TestDecodeGeneratedVideoModelContractsIsStrict(t *testing.T) {
 	wrongPriorityType := strings.Replace(string(data), `"priority":0`, `"priority":"high"`, 1)
 	if _, err := decodeGeneratedVideoModelContracts(`{"contracts":[`+wrongPriorityType+`]}`, "document/video-v1"); err == nil || !strings.Contains(err.Error(), `字段 "priority" 类型错误`) {
 		t.Fatalf("contract field type error = %v", err)
+	}
+	invalidFirst := contract
+	invalidFirst.Request.DurationField = ""
+	invalidFirstData, _ := json.Marshal(invalidFirst)
+	var invalidSecond protocol.VideoModelContract
+	if err := json.Unmarshal(data, &invalidSecond); err != nil {
+		t.Fatalf("decode second invalid contract fixture: %v", err)
+	}
+	invalidSecond.Name = "Document video v2"
+	invalidSecond.Models = []string{"document/video-v2"}
+	invalidSecond.Rules[0].Forbid = append(invalidSecond.Rules[0].Forbid, invalidSecond.Rules[0].Require[0])
+	invalidSecondData, _ := json.Marshal(invalidSecond)
+	if _, err := decodeGeneratedVideoModelContracts(`{"contracts":[`+string(invalidFirstData)+`,`+string(invalidSecondData)+`]}`, "document/video-v1 document/video-v2"); err == nil || !strings.Contains(err.Error(), "第 1 份契约无效") || !strings.Contains(err.Error(), "第 2 份契约无效") {
+		t.Fatalf("contract validation errors were not aggregated: %v", err)
 	}
 	var legacy map[string]any
 	if err := json.Unmarshal(data, &legacy); err != nil {
@@ -510,8 +543,8 @@ func TestAdminVideoModelContractImportStreamsUnsavedDraftProgress(t *testing.T) 
 	if strings.Contains(res.Body.String(), `"transcript_`) || strings.Contains(res.Body.String(), `"stage":"transcript"`) {
 		t.Fatalf("import progress exposed model transcript: %s", res.Body.String())
 	}
-	if requestCount != videoContractGenerationAttempts+1 {
-		t.Fatalf("document analysis requests = %d, want %d", requestCount, videoContractGenerationAttempts+1)
+	if requestCount != 3 {
+		t.Fatalf("document analysis requests = %d, want 3", requestCount)
 	}
 	items, err := app.videoContracts.List()
 	if err != nil {

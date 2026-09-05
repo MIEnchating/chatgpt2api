@@ -95,6 +95,7 @@
       ],
       "request": {
         "duration_field": "duration",
+        "duration_value_type": "number",
         "aspect_ratio_field": "ratio",
         "resolution_field": "resolution",
         "generate_audio_field": "",

@@ -20,7 +20,7 @@ const VideoContractSnapshotPayloadKey = "video_contract_snapshot"
 
 var (
 	videoContractModelPattern          = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]{0,127}$`)
-	videoContractRequestPathPattern    = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,63}(\.[A-Za-z][A-Za-z0-9_]{0,63}){0,7}$`)
+	videoContractRequestPathPattern    = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,63}(\.[A-Za-z][A-Za-z0-9_]{0,63}|\[[0-9]{1,3}\]){0,7}$`)
 	videoContractFieldPathPattern      = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,63}(\.[A-Za-z][A-Za-z0-9_]{0,63}|\[[0-9]{1,3}\])*$`)
 	videoContractMultipartFieldPattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_]{0,63}(?:\[\])?$`)
 	videoContractValuePattern          = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]{0,63}$`)
@@ -105,6 +105,7 @@ type VideoModelContractRule struct {
 
 type VideoModelContractRequest struct {
 	DurationField        string `json:"duration_field"`
+	DurationValueType    string `json:"duration_value_type"`
 	AspectRatioField     string `json:"aspect_ratio_field"`
 	ResolutionField      string `json:"resolution_field"`
 	GenerateAudioField   string `json:"generate_audio_field"`
@@ -240,6 +241,7 @@ func NormalizeVideoModelContract(contract VideoModelContract) (VideoModelContrac
 	contract.Capability.Seconds = uniqueSortedInts(contract.Capability.Seconds)
 	contract.Capability.DefaultSize = strings.TrimSpace(contract.Capability.DefaultSize)
 	contract.Capability.DefaultResolution = strings.TrimSpace(contract.Capability.DefaultResolution)
+	contract.Request.DurationValueType = strings.ToLower(strings.TrimSpace(contract.Request.DurationValueType))
 	contract.Capability.AudioControl = strings.ToLower(strings.TrimSpace(contract.Capability.AudioControl))
 	contract.Generation.Selection = strings.ToLower(strings.TrimSpace(contract.Generation.Selection))
 	contract.Generation.DefaultMode = strings.TrimSpace(contract.Generation.DefaultMode)
@@ -404,7 +406,6 @@ func validateVideoContractGeneration(generation VideoModelContractGeneration) er
 	ids := make(map[string]struct{}, len(generation.Modes))
 	kinds := make(map[string]struct{}, len(generation.Modes))
 	selectors := make(map[string]string, len(generation.Modes)*2)
-	defaultKind := ""
 	for _, mode := range generation.Modes {
 		if !videoContractValuePattern.MatchString(mode.ID) {
 			return fmt.Errorf("生成模式标识 %q 格式无效", mode.ID)
@@ -423,9 +424,6 @@ func validateVideoContractGeneration(generation VideoModelContractGeneration) er
 			return fmt.Errorf("生成模式类型 %q 重复", mode.Kind)
 		}
 		kinds[mode.Kind] = struct{}{}
-		if strings.EqualFold(mode.ID, generation.DefaultMode) {
-			defaultKind = mode.Kind
-		}
 		if mode.RequestValue != "" && !videoContractValuePattern.MatchString(mode.RequestValue) {
 			return fmt.Errorf("生成模式请求值 %q 格式无效", mode.RequestValue)
 		}
@@ -490,9 +488,6 @@ func validateVideoContractGeneration(generation VideoModelContractGeneration) er
 	}
 	if _, exists := ids[strings.ToLower(generation.DefaultMode)]; !exists {
 		return fmt.Errorf("默认生成模式必须属于已配置模式")
-	}
-	if defaultKind != "text" {
-		return fmt.Errorf("自动推断契约的默认生成模式必须是文生视频")
 	}
 	return nil
 }
@@ -852,6 +847,9 @@ func ValidateVideoModelContract(contract VideoModelContract) error {
 	if err := validateVideoContractRules(contract.Rules); err != nil {
 		return err
 	}
+	if !stringSliceContains([]string{"number", "string"}, contract.Request.DurationValueType) {
+		return fmt.Errorf("视频时长值类型仅支持 number 或 string")
+	}
 	if contract.Polling.IntervalSeconds < 1 || contract.Polling.IntervalSeconds > 300 || contract.Polling.TimeoutSeconds < contract.Polling.IntervalSeconds || contract.Polling.TimeoutSeconds > 86400 {
 		return fmt.Errorf("轮询间隔或超时时间无效")
 	}
@@ -884,7 +882,7 @@ func ValidateVideoModelContract(contract VideoModelContract) error {
 		name     string
 		required bool
 	}{
-		{"request.duration_field", contract.Request.DurationField, len(capability.Seconds) > 0},
+		{"request.duration_field", contract.Request.DurationField, len(capability.Seconds) > 1},
 		{"request.aspect_ratio_field", contract.Request.AspectRatioField, len(capability.Sizes) > 0},
 		{"request.resolution_field", contract.Request.ResolutionField, len(capability.Resolutions) > 0},
 		{"request.generate_audio_field", contract.Request.GenerateAudioField, capability.AudioControl == "toggle"},

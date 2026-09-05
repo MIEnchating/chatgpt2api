@@ -147,6 +147,8 @@ func TestVideoCreationRouteRemovesInternalFieldsBeforeNewAPI(t *testing.T) {
 	defer app.Close()
 	contract := protocol.DefaultVideoContracts()[0]
 	contract.Polling.IntervalSeconds = 1
+	contract.Request.DurationField = "seconds"
+	contract.Request.DurationValueType = "string"
 	if err := protocol.ReplaceVideoContracts([]protocol.VideoModelContract{contract}); err != nil {
 		t.Fatalf("install video contract: %v", err)
 	}
@@ -200,7 +202,7 @@ func TestVideoCreationRouteRemovesInternalFieldsBeforeNewAPI(t *testing.T) {
 		"channel_protocol":"apimart",
 		"protocol":"apimart",
 		"prompt":"animate",
-		"seconds":5,
+		"seconds":"5",
 		"size":"16:9",
 		"resolution":"768p",
 		"generation_mode":"text-to-video",
@@ -222,7 +224,7 @@ func TestVideoCreationRouteRemovesInternalFieldsBeforeNewAPI(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("timed out waiting for NewAPI video request")
 	}
-	if posted["model"] != "minimax-h3-768p" || posted["prompt"] != "animate" || posted["duration"] != float64(5) || posted["generation_mode"] != "text-to-video" {
+	if posted["model"] != "minimax-h3-768p" || posted["prompt"] != "animate" || posted["seconds"] != "5" || posted["generation_mode"] != "text-to-video" {
 		t.Fatalf("NewAPI video request lost supported fields: %#v", posted)
 	}
 	for _, field := range []string{"reference_mode", "provider", "video_provider", "channel_protocol", "protocol", "channel_base_url", "provider_base_url"} {

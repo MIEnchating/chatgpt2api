@@ -17,7 +17,7 @@ import (
 const (
 	videoModelContractDocumentName  = "video_model_contracts.json"
 	videoModelContractSaveAttempts  = 3
-	videoModelContractStoreVersion  = 7
+	videoModelContractStoreVersion  = 8
 	oldestVideoModelContractVersion = 3
 	maxVideoModelContracts          = 100
 	maxVideoModelContractVersions   = 8
@@ -492,6 +492,9 @@ func (s *VideoModelContractService) loadLocked() ([]ManagedVideoModelContract, e
 		if header.Version < 7 {
 			migrateV6ManagedVideoModelContract(&document.Items[index])
 		}
+		if header.Version < 8 {
+			migrateV7ManagedVideoModelContract(&document.Items[index])
+		}
 	}
 	items, err := normalizeManagedVideoModelContracts(document.Items)
 	if err != nil {
@@ -544,6 +547,35 @@ func migrateV6ManagedVideoModelContract(item *ManagedVideoModelContract) {
 	for index := range item.Versions {
 		migrateV6VideoModelContract(&item.Versions[index].Contract)
 	}
+}
+
+func migrateV7ManagedVideoModelContract(item *ManagedVideoModelContract) {
+	if item == nil {
+		return
+	}
+	migrateV7VideoModelContract(&item.Contract)
+	if item.Draft != nil {
+		migrateV7VideoModelContract(item.Draft)
+	}
+	for index := range item.Versions {
+		migrateV7VideoModelContract(&item.Versions[index].Contract)
+	}
+}
+
+func migrateV7VideoModelContract(contract *protocol.VideoModelContract) {
+	if contract == nil || strings.TrimSpace(contract.Request.DurationValueType) != "" {
+		return
+	}
+	field := strings.ToLower(strings.TrimSpace(contract.Request.DurationField))
+	leaf := field
+	if index := strings.LastIndexByte(field, '.'); index >= 0 {
+		leaf = field[index+1:]
+	}
+	if contract.Driver == protocol.VideoContractDriverOpenAI || leaf == "seconds" {
+		contract.Request.DurationValueType = "string"
+		return
+	}
+	contract.Request.DurationValueType = "number"
 }
 
 func migrateV6VideoModelContract(contract *protocol.VideoModelContract) bool {

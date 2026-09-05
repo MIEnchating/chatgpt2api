@@ -312,7 +312,7 @@ export type VideoModelContractImportResult = {
 };
 
 export type VideoModelContractImportProgress = {
-  stage: "reading_document" | "document_ready" | "preparing" | "generating" | "upstream_connected" | "receiving" | "validating" | "repairing" | "retrying" | "heartbeat" | "completed" | "failed";
+  stage: "reading_document" | "planning_documents" | "reading_documents" | "document_ready" | "preparing" | "generating" | "upstream_connected" | "receiving" | "validating" | "repairing" | "retrying" | "heartbeat" | "completed" | "failed";
   message: string;
   attempt?: number;
   max_attempts?: number;

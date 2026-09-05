@@ -91,6 +91,7 @@ export type VideoModelContract = {
   rules: VideoModelContractRule[];
   request: {
     duration_field: string;
+    duration_value_type: "number" | "string";
     aspect_ratio_field: string;
     resolution_field: string;
     generate_audio_field: string;

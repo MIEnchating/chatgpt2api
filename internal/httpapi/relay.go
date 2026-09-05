@@ -1248,7 +1248,12 @@ func declaredVideoContractRequestPayloadFromRuleValues(payload map[string]any, c
 			videoSetObjectPath(request, field, value)
 		}
 	}
-	set(contract.Request.DurationField, util.ToInt(ruleValues["duration"], contract.Capability.DefaultSeconds))
+	duration := util.ToInt(ruleValues["duration"], contract.Capability.DefaultSeconds)
+	if contract.Request.DurationValueType == "string" {
+		set(contract.Request.DurationField, strconv.Itoa(duration))
+	} else {
+		set(contract.Request.DurationField, duration)
+	}
 	set(contract.Request.AspectRatioField, firstNonEmpty(util.Clean(ruleValues["size"]), contract.Capability.DefaultSize))
 	set(contract.Request.ResolutionField, firstNonEmpty(util.Clean(ruleValues["resolution"]), contract.Capability.DefaultResolution))
 	if generateAudio, ok := ruleValues["generate_audio"].(bool); ok && contract.Request.GenerateAudioField != "" {
@@ -1294,45 +1299,120 @@ func declaredVideoContractRequestPayloadFromRuleValues(payload map[string]any, c
 }
 
 func videoSetObjectPath(target map[string]any, path string, value any) {
-	parts := strings.Split(strings.TrimSpace(path), ".")
-	if len(parts) == 0 || parts[0] == "" {
+	segments, ok := parseVideoObjectPath(path)
+	if !ok || len(segments) == 0 || segments[0].indexed {
 		return
 	}
-	current := target
-	for _, part := range parts[:len(parts)-1] {
-		nested, ok := current[part].(map[string]any)
-		if !ok {
-			nested = map[string]any{}
-			current[part] = nested
+	setVideoObjectPathValue(target, segments, value)
+}
+
+type videoObjectPathSegment struct {
+	name    string
+	index   int
+	indexed bool
+}
+
+func parseVideoObjectPath(value string) ([]videoObjectPathSegment, bool) {
+	value = strings.TrimSpace(value)
+	segments := make([]videoObjectPathSegment, 0, 4)
+	for position := 0; position < len(value); {
+		start := position
+		for position < len(value) && value[position] != '.' && value[position] != '[' {
+			position++
 		}
-		current = nested
+		if start == position {
+			return nil, false
+		}
+		segments = append(segments, videoObjectPathSegment{name: value[start:position]})
+		for position < len(value) && value[position] == '[' {
+			end := strings.IndexByte(value[position:], ']')
+			if end < 0 {
+				return nil, false
+			}
+			end += position
+			index, err := strconv.Atoi(value[position+1 : end])
+			if err != nil || index < 0 {
+				return nil, false
+			}
+			segments = append(segments, videoObjectPathSegment{index: index, indexed: true})
+			position = end + 1
+		}
+		if position == len(value) {
+			break
+		}
+		if value[position] != '.' {
+			return nil, false
+		}
+		position++
 	}
-	current[parts[len(parts)-1]] = value
+	return segments, len(segments) > 0
+}
+
+func setVideoObjectPathValue(current any, segments []videoObjectPathSegment, value any) any {
+	if len(segments) == 0 {
+		return value
+	}
+	segment := segments[0]
+	if segment.indexed {
+		items, _ := current.([]any)
+		if len(items) <= segment.index {
+			items = append(items, make([]any, segment.index-len(items)+1)...)
+		}
+		items[segment.index] = setVideoObjectPathValue(items[segment.index], segments[1:], value)
+		return items
+	}
+	object, _ := current.(map[string]any)
+	if object == nil {
+		object = make(map[string]any)
+	}
+	object[segment.name] = setVideoObjectPathValue(object[segment.name], segments[1:], value)
+	return object
 }
 
 func videoDeleteObjectPath(target map[string]any, path string) {
-	parts := strings.Split(strings.TrimSpace(path), ".")
-	if len(parts) == 0 || parts[0] == "" {
+	segments, ok := parseVideoObjectPath(path)
+	if !ok || len(segments) == 0 || segments[0].indexed {
 		return
 	}
-	objects := []map[string]any{target}
-	current := target
-	for _, part := range parts[:len(parts)-1] {
-		nested, ok := current[part].(map[string]any)
-		if !ok {
-			return
-		}
-		objects = append(objects, nested)
-		current = nested
+	deleteVideoObjectPathValue(target, segments)
+}
+
+func deleteVideoObjectPathValue(current any, segments []videoObjectPathSegment) (any, bool) {
+	if len(segments) == 0 {
+		return nil, false
 	}
-	delete(current, parts[len(parts)-1])
-	for index := len(parts) - 2; index >= 0; index-- {
-		child, _ := objects[index][parts[index]].(map[string]any)
-		if len(child) > 0 {
-			break
+	segment := segments[0]
+	if segment.indexed {
+		items, ok := current.([]any)
+		if !ok || segment.index < 0 || segment.index >= len(items) {
+			return current, true
 		}
-		delete(objects[index], parts[index])
+		child, keep := deleteVideoObjectPathValue(items[segment.index], segments[1:])
+		if keep {
+			items[segment.index] = child
+		} else {
+			items[segment.index] = nil
+		}
+		for len(items) > 0 && items[len(items)-1] == nil {
+			items = items[:len(items)-1]
+		}
+		return items, len(items) > 0
 	}
+	object, ok := current.(map[string]any)
+	if !ok {
+		return current, true
+	}
+	child, exists := object[segment.name]
+	if !exists {
+		return object, true
+	}
+	child, keep := deleteVideoObjectPathValue(child, segments[1:])
+	if keep {
+		object[segment.name] = child
+	} else {
+		delete(object, segment.name)
+	}
+	return object, len(object) > 0
 }
 
 func videoContractGenerationKind(payload map[string]any, contract protocol.VideoModelContract) (string, bool) {

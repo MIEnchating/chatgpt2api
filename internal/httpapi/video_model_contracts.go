@@ -28,10 +28,10 @@ import (
 
 const (
 	maxVideoContractDocumentBytes      = 8 << 20
-	maxVideoContractDocumentCharacters = 60_000
+	maxVideoContractDocumentCharacters = 180_000
 	maxVideoContractImportJSONBytes    = 2 << 20
-	videoContractDocumentFetchTimeout  = 20 * time.Second
-	videoContractGenerationAttempts    = 2
+	videoContractDocumentFetchTimeout  = 45 * time.Second
+	videoContractGenerationAttempts    = 3
 	videoContractUpstreamAttempts      = 3
 	videoContractImportProgressType    = "application/x-ndjson"
 	videoContractImportHeartbeat       = 5 * time.Second
@@ -377,8 +377,10 @@ func (a *App) handleVideoModelContractJSONImport(w http.ResponseWriter, r *http.
 }
 
 type videoContractImportSource struct {
-	Type string `json:"type"`
-	Name string `json:"name"`
+	Type     string                     `json:"type"`
+	Name     string                     `json:"name"`
+	Warnings []string                   `json:"-"`
+	Site     *videoContractDocumentSite `json:"-"`
 }
 
 type videoContractImportResponse struct {
@@ -524,15 +526,6 @@ func (a *App) handleVideoModelContractImport(w http.ResponseWriter, r *http.Requ
 		util.WriteError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	content, truncated := truncateVideoContractDocument(content)
-	if strings.TrimSpace(content) == "" {
-		util.WriteError(w, http.StatusBadRequest, "文档中没有可分析的文本内容")
-		return
-	}
-	if truncated {
-		warnings = append(warnings, "文档内容较长，仅分析了前 60000 个字符")
-	}
-
 	preferences, err := a.imagePreferences.Preferences(identityScope(identity))
 	if err != nil {
 		util.WriteError(w, http.StatusInternalServerError, "读取个人模型设置失败")
@@ -549,14 +542,51 @@ func (a *App) handleVideoModelContractImport(w http.ResponseWriter, r *http.Requ
 		progressWriter = newVideoContractImportProgressWriter(w)
 		stopHeartbeat := progressWriter.startHeartbeat(r.Context(), videoContractImportHeartbeat)
 		defer stopHeartbeat()
-		progressWriter.write(videoContractImportProgressEvent{
-			Stage:   "document_ready",
-			Message: fmt.Sprintf("文档读取完成，共 %d 个字符", utf8.RuneCountInString(content)),
-		})
 	}
 	reportProgress := func(event videoContractImportProgressEvent) {
 		progressWriter.write(event)
 	}
+	if source.Site != nil {
+		reportProgress(videoContractImportProgressEvent{Stage: "planning_documents", Message: fmt.Sprintf("发现 %d 个候选页面，正在由分析模型选择契约所需文档", len(source.Site.links))})
+		selected, planErr := a.planVideoContractDocumentPages(r.Context(), identity, model, tokenName, content, source.Site.links)
+		if planErr != nil {
+			if progressWriter != nil {
+				progressWriter.write(videoContractImportProgressEvent{Stage: "failed", Message: planErr.Error()})
+				return
+			}
+			a.writeCreationTaskSubmitError(w, planErr)
+			return
+		}
+		reportProgress(videoContractImportProgressEvent{Stage: "reading_documents", Message: fmt.Sprintf("分析模型选择了 %d 个页面，正在读取文档正文", len(selected))})
+		fetchCtx, cancelFetch := context.WithTimeout(r.Context(), videoContractDocumentFetchTimeout)
+		content, source, err = fetchSelectedVideoContractDocuments(fetchCtx, content, source, selected, service.SafeMediaProxyHTTPClient())
+		cancelFetch()
+		if err != nil {
+			if progressWriter != nil {
+				progressWriter.write(videoContractImportProgressEvent{Stage: "failed", Message: err.Error()})
+				return
+			}
+			util.WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+	warnings = append(warnings, source.Warnings...)
+	content, truncated := truncateVideoContractDocument(content)
+	if strings.TrimSpace(content) == "" {
+		if progressWriter != nil {
+			progressWriter.write(videoContractImportProgressEvent{Stage: "failed", Message: "文档中没有可分析的文本内容"})
+			return
+		}
+		util.WriteError(w, http.StatusBadRequest, "文档中没有可分析的文本内容")
+		return
+	}
+	if truncated {
+		warnings = append(warnings, fmt.Sprintf("文档内容较长，仅分析了前 %d 个字符", maxVideoContractDocumentCharacters))
+	}
+	reportProgress(videoContractImportProgressEvent{
+		Stage:   "document_ready",
+		Message: fmt.Sprintf("文档读取完成，共 %d 个字符", utf8.RuneCountInString(content)),
+	})
 	contracts, err := a.generateVideoModelContracts(r.Context(), identity, model, tokenName, source, content, reportProgress)
 	if err != nil {
 		if progressWriter != nil {
@@ -611,33 +641,9 @@ func fetchVideoContractDocument(parent context.Context, value string) (string, v
 	if !isPublicReferenceURL(value) {
 		return "", videoContractImportSource{}, errors.New("请输入公网可访问的 HTTP 或 HTTPS 链接")
 	}
-	parsed, _ := url.Parse(value)
 	ctx, cancel := context.WithTimeout(parent, videoContractDocumentFetchTimeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, value, nil)
-	if err != nil {
-		return "", videoContractImportSource{}, errors.New("文档链接无效")
-	}
-	req.Header.Set("User-Agent", "chatgpt2api-contract-import/1.0")
-	req.Header.Set("Accept", "text/html,text/plain,application/json,application/vnd.openxmlformats-officedocument.wordprocessingml.document;q=0.9,*/*;q=0.1")
-	response, err := service.SafeMediaProxyHTTPClient().Do(req)
-	if err != nil {
-		return "", videoContractImportSource{}, fmt.Errorf("读取文档链接失败: %w", err)
-	}
-	defer response.Body.Close()
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return "", videoContractImportSource{}, fmt.Errorf("文档链接返回 HTTP %d", response.StatusCode)
-	}
-	if response.ContentLength > maxVideoContractDocumentBytes {
-		return "", videoContractImportSource{}, errors.New("链接文档不能超过 8 MB")
-	}
-	data, err := readLimitedVideoContractDocument(response.Body)
-	if err != nil {
-		return "", videoContractImportSource{}, err
-	}
-	name := videoContractDocumentResponseName(response, parsed)
-	content, err := extractVideoContractDocument(data, name, response.Header.Get("Content-Type"))
-	return content, videoContractImportSource{Type: "url", Name: name}, err
+	return fetchVideoContractDocumentSet(ctx, value, service.SafeMediaProxyHTTPClient())
 }
 
 func readLimitedVideoContractDocument(reader io.Reader) ([]byte, error) {
@@ -987,21 +993,32 @@ func decodeGeneratedVideoModelContracts(content, sourceDocument string) ([]proto
 	}
 
 	contracts := make([]protocol.VideoModelContract, 0, len(document.Contracts))
+	problems := make([]string, 0)
 	for index, raw := range document.Contracts {
 		normalizedRaw, err := normalizeGeneratedVideoContractRuleMaps(raw)
 		if err != nil {
-			return nil, fmt.Errorf("第 %d 份契约无效: %w", index+1, err)
+			problems = append(problems, fmt.Sprintf("第 %d 份契约无效: %s", index+1, err.Error()))
+			continue
 		}
 		contract, err := decodeGeneratedVideoModelContractJSON(normalizedRaw)
 		if err != nil {
-			return nil, fmt.Errorf("第 %d 份契约无效: %w", index+1, err)
+			problems = append(problems, fmt.Sprintf("第 %d 份契约无效: %s", index+1, err.Error()))
+			continue
 		}
+		modelMissing := false
 		for _, model := range contract.Models {
 			if !videoModelIDAppearsInDocument(sourceDocument, model) {
-				return nil, fmt.Errorf("第 %d 份契约的模型 %q 未在原始文档中出现，请删除臆造模型", index+1, model)
+				problems = append(problems, fmt.Sprintf("第 %d 份契约的模型 %q 未在原始文档中出现，请删除臆造模型", index+1, model))
+				modelMissing = true
 			}
 		}
+		if modelMissing {
+			continue
+		}
 		contracts = append(contracts, contract)
+	}
+	if len(problems) > 0 {
+		return nil, errors.New(strings.Join(problems, "；"))
 	}
 	contracts = mergeEquivalentGeneratedVideoModelContracts(contracts)
 	if err := protocol.ValidateVideoContracts(contracts); err != nil {
@@ -1107,12 +1124,31 @@ func decodeGeneratedVideoModelContractJSON(data []byte) (protocol.VideoModelCont
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
 		return protocol.VideoModelContract{}, errors.New("契约中包含多个 JSON 对象")
 	}
+	contract = normalizeGeneratedVideoContractRuleUI(contract)
 	contract = normalizeGeneratedVideoContractModeMaterials(contract)
 	normalized, err := protocol.NormalizeVideoModelContract(contract)
 	if err != nil {
 		return protocol.VideoModelContract{}, fmt.Errorf("未通过校验: %w", err)
 	}
 	return normalized, nil
+}
+
+func normalizeGeneratedVideoContractRuleUI(contract protocol.VideoModelContract) protocol.VideoModelContract {
+	for index := range contract.Rules {
+		ruleUI := &contract.Rules[index].UI
+		hidden := make(map[string]struct{}, len(ruleUI.Hide))
+		for _, field := range ruleUI.Hide {
+			hidden[strings.ToLower(strings.TrimSpace(field))] = struct{}{}
+		}
+		filtered := ruleUI.Disable[:0]
+		for _, field := range ruleUI.Disable {
+			if _, exists := hidden[strings.ToLower(strings.TrimSpace(field))]; !exists {
+				filtered = append(filtered, field)
+			}
+		}
+		ruleUI.Disable = filtered
+	}
+	return contract
 }
 
 func normalizeGeneratedVideoContractModeMaterials(contract protocol.VideoModelContract) protocol.VideoModelContract {

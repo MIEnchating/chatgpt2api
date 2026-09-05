@@ -20,7 +20,7 @@ func TestDeclaredVideoContractRequestPayload(t *testing.T) {
 		{
 			name: "text",
 			payload: map[string]any{
-				"model": "minimax-h3-768p", "prompt": "city at night", "seconds": 5,
+				"model": "minimax-h3-768p", "prompt": "city at night", "seconds": "5",
 				"size": "9:16", "resolution": "768p", "watermark": true,
 			},
 			want: map[string]any{
@@ -68,6 +68,39 @@ func TestDeclaredVideoContractRequestPayload(t *testing.T) {
 				t.Fatalf("declaredVideoContractRequestPayload() = %#v, want %#v", got, test.want)
 			}
 		})
+	}
+}
+
+func TestDeclaredVideoContractRequestPayloadEncodesStringDuration(t *testing.T) {
+	contract := protocol.DefaultVideoContracts()[0]
+	contract.Request.DurationField = "seconds"
+	contract.Request.DurationValueType = "string"
+
+	got := declaredVideoContractRequestPayload(map[string]any{
+		"model": "minimax-h3-768p", "prompt": "city at night", "seconds": 15,
+	}, contract)
+	if got["seconds"] != "15" {
+		t.Fatalf("string duration = %#v, want %q", got["seconds"], "15")
+	}
+}
+
+func TestDeclaredVideoContractRequestPayloadBuildsIndexedFrameArray(t *testing.T) {
+	contract := protocol.DefaultVideoContracts()[0]
+	contract.Request.FirstFrameField = "images[0]"
+	contract.Request.LastFrameField = "images[1]"
+
+	got := declaredVideoContractRequestPayload(map[string]any{
+		"model": "minimax-h3-768p", "prompt": "transition",
+		"first_frame_url": "https://cdn.example.com/first.png",
+		"last_frame_url":  "https://cdn.example.com/last.png",
+	}, contract)
+	images, ok := got["images"].([]any)
+	if !ok || !reflect.DeepEqual(images, []any{"https://cdn.example.com/first.png", "https://cdn.example.com/last.png"}) {
+		t.Fatalf("indexed frame array = %#v", got["images"])
+	}
+	videoDeleteObjectPath(got, "images[1]")
+	if !reflect.DeepEqual(got["images"], []any{"https://cdn.example.com/first.png"}) {
+		t.Fatalf("indexed frame deletion = %#v", got["images"])
 	}
 }
 

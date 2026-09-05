@@ -135,6 +135,8 @@ function formatElapsedSeconds(seconds: number) {
 function videoContractImportStatusLabel(stage: VideoModelContractImportProgress["stage"] | undefined) {
   switch (stage) {
     case "reading_document": return "正在读取文档";
+    case "planning_documents": return "正在规划文档范围";
+    case "reading_documents": return "正在读取相关页面";
     case "document_ready": return "文档读取完成";
     case "preparing": return "正在准备分析请求";
     case "generating": return "正在请求分析模型";
@@ -219,6 +221,7 @@ function videoContractDriverLabel(driver: VideoModelContract["driver"]) {
 
 const REQUEST_FIELD_HELP: Record<keyof VideoModelContract["request"], string> = {
   duration_field: "上游 API 请求体中接收视频时长的字段路径，例如 duration 或 metadata.durationSeconds。",
+  duration_value_type: "上游 API 请求体中视频时长值的 JSON 类型。数字会发送 5，字符串会发送 \"5\"。",
   aspect_ratio_field: "上游 API 请求体中接收画幅比例的字段路径，例如 ratio 或 metadata.aspectRatio。",
   resolution_field: "上游 API 请求体中接收清晰度的字段路径，例如 resolution 或 metadata.resolution。",
   generate_audio_field: "上游 API 请求体中控制是否生成音频的字段名，例如 generate_audio；接口不支持时留空。",
@@ -280,6 +283,7 @@ const emptyContract: VideoModelContract = {
   rules: [],
   request: {
     duration_field: "duration",
+    duration_value_type: "number",
     aspect_ratio_field: "ratio",
     resolution_field: "resolution",
     generate_audio_field: "",
@@ -2303,6 +2307,13 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
                   <TextField id="video-contract-query-path" label="任务查询路径" help="可选。留空时使用厂家驱动默认入口；自定义路径必须包含 {task_id}。" value={transport.query_path} disabled={readOnly} placeholder="例如 /v1/videos/{task_id}" onChange={(value) => updateContract((contract) => { contract.transport.query_path = value; })} />
                 </div>
                 <div className={`${settingsPanelClassName} grid gap-4 sm:grid-cols-2`}>
+                  <Field>
+                    <ContractFieldLabel htmlFor="video-contract-duration-value-type" label="时长值类型" help={REQUEST_FIELD_HELP.duration_value_type} />
+                    <Select value={request.duration_value_type} disabled={readOnly} onValueChange={(value) => updateContract((contract) => { contract.request.duration_value_type = value as VideoModelContract["request"]["duration_value_type"]; })}>
+                      <SelectTrigger id="video-contract-duration-value-type" className="h-11"><SelectValue /></SelectTrigger>
+                      <SelectContent><SelectItem value="number">数字，例如 5</SelectItem><SelectItem value="string">字符串，例如 "5"</SelectItem></SelectContent>
+                    </Select>
+                  </Field>
                   {([
 					["duration_field", "时长字段"], ["aspect_ratio_field", "画幅字段"], ["resolution_field", "清晰度字段"],
 					["generate_audio_field", "生成音频字段"], ["watermark_field", "水印字段"], ["generation_mode_field", "生成模式字段"], ["first_frame_field", "首帧字段"],
