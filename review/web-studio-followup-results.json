@@ -1,0 +1,196 @@
+{
+  "reviewer": "review_storage_config",
+  "scope": "独占复核 web/src/app/image/page.tsx 及相关回归；只修改页面及两个测试文件。",
+  "files": [
+    {
+      "path": "web/src/app/image/page.tsx",
+      "sha256": "0dbd89fc7cae49a638d6d85c01870ad31741e69eb8cc685d523df0f0f20276d7",
+      "bytes": 242303,
+      "lines": 5748,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整逐段读取旧版全部 5691 行，并复核本批新增/修改内容与最终差异。",
+        "沿 preset/market/continue-edit/queue 路径检查下载、上传与会话边界；沿 recoverLoadedItems 检查逐次保存和失败清理。",
+        "核对取消与提交竞态、视频正规化引用、API 模式快照、尺寸 preview/submit/edit/persist/queue 链路。",
+        "核对首尾帧/视频/音频并发上传、草稿重置计数与时长检查；保留主代理既有 relay key、storageKey 与 IME 相关修复。"
+      ],
+      "finding_ids": [
+        "WSF-01",
+        "WSF-02",
+        "WSF-03",
+        "WSF-04",
+        "WSF-05",
+        "WSF-06",
+        "WSF-07",
+        "WSF-08"
+      ]
+    },
+    {
+      "path": "web/src/app/image/use-video-task-queue.ts",
+      "sha256": "9d39751da2022521fdb8f2e4bbc6758b6b4fe9c5524a2070ceb65524d9be1593",
+      "bytes": 3226,
+      "lines": 90,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取全部 90 行；核对扇出提交、失败重试及 assertDispatchAllowed 调用，确认页面提前 return 绕过后置补偿；本文件无需修改。"
+      ],
+      "finding_ids": []
+    },
+    {
+      "path": "web/src/app/image/video-task-state.ts",
+      "sha256": "50ed6a4e2c43c23b393bed75aa765e551ade322e91cbc14103cf5286fd14d21c",
+      "bytes": 851,
+      "lines": 21,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取全部 21 行；确认正规化映射包含全部视频参数与引用字段，两个调用者只拷贝子集是缺陷来源；本文件无需修改。"
+      ],
+      "finding_ids": []
+    },
+    {
+      "path": "web/tests/studio-review-regressions.test.mjs",
+      "sha256": "babdd9495cdcc80e1f8bc54cec3713a66c75b964a30b61d4c55f0f582a67d9fa",
+      "bytes": 8208,
+      "lines": 154,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取全部现有回归；只补充新增 ref 的 fixture，保留全部 7 项行为测试并验证通过。"
+      ],
+      "finding_ids": []
+    },
+    {
+      "path": "web/tests/studio-followup-regressions.test.mjs",
+      "sha256": "bc74d58c0b1ad0c1c40765b3190410e2b441872021ac613be33500c553f9e20b",
+      "bytes": 19974,
+      "lines": 367,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取新增 22 项行为回归；通过 TypeScript AST 执行真实函数/表达式，使用 deferred API 捕获跨 await 生命周期问题。",
+        "覆盖下载→上传跨账号、逐次恢复保存、取消补偿、并发上传/重置/时长、文本重试、视频引用正规化、API 模式与尺寸链路。"
+      ],
+      "finding_ids": []
+    }
+  ],
+  "findings": [
+    {
+      "id": "WSF-01",
+      "priority": "P1",
+      "title": "参考图下载结束后可使用新账号上传",
+      "status": "fixed",
+      "evidence": "三个下载→上传 helper 只在 UI 回填时检查状态；7 项初始延迟测试全部失败，其中 3 项复现下载结束后继续上传。队列也在参考文件下载后直接上传视频参考图。",
+      "fix": "三个 helper 显式接收原页面会话断言；下载前及上传前验证。队列使用原 session key 与 page epoch，在下载/上传边界校验。",
+      "tests": [
+        "buildReferenceImagesFromUrls / buildReferenceImageFromStoredImage / ensureReferenceImageAsset session expiry",
+        "video queue does not upload a reference downloaded by an expired session"
+      ]
+    },
+    {
+      "id": "WSF-02",
+      "priority": "P1",
+      "title": "历史恢复保存循环在账号切换后继续保存后续会话",
+      "status": "fixed",
+      "evidence": "延迟首个 save，切换页面后仍观察到第二个 conversation save。",
+      "fix": "每次保存前检查原 session key、页面活动状态、取消状态和 mutation revision；失效后不继续保存、回填或清理其他会话失败状态。"
+    },
+    {
+      "id": "WSF-03",
+      "priority": "P1",
+      "title": "视频提交提前返回导致取消补偿被跳过",
+      "status": "fixed",
+      "evidence": "视频 API 提交 pending 时取消，API 随后返回已创建任务，原 submitTaskGroups 直接成功返回且未补偿。",
+      "fix": "图片与视频提交共享后置取消检测和补偿；补偿两次请求分别检查原会话，防止延迟中切换账号后继续取消。"
+    },
+    {
+      "id": "WSF-04",
+      "priority": "P2",
+      "title": "关闭 16 倍数对齐后提交、编辑、持久化和队列仍改写尺寸",
+      "status": "fixed",
+      "evidence": "提交/编辑调用把 snap 参数写为 undefined；保存 custom selection 的 parseImageSizeDimensions 再次正规化；队列再次默认开启对齐。",
+      "fix": "提交和编辑使用开关实际值；精确解析已生成尺寸用于保存/编辑预览；队列保留提交时保存的自定义尺寸，避免偏好后续变化改变旧任务。",
+      "tests": [
+        "1001x997 对齐关闭保持 1001x997；开启转为 1008x1008，提交→保存→队列链路一致"
+      ]
+    },
+    {
+      "id": "WSF-05",
+      "priority": "P2",
+      "title": "排队任务使用当前 API 模式而不是任务快照",
+      "status": "fixed",
+      "evidence": "生成与编辑两条提交路径均读取 imageAPIMode，尽管创建 turn 已保存 apiMode。",
+      "fix": "两条路径均使用 activeTurn.apiMode。"
+    },
+    {
+      "id": "WSF-06",
+      "priority": "P2",
+      "title": "视频重试丢弃正规化后的引用字段",
+      "status": "fixed",
+      "evidence": "两个 retry handler 只复制正规化后的 6 个字段，遗漏首尾帧与各类参考 URL；旧 local references 可重新加入被新模型隐藏的字段。",
+      "fix": "完整保存正规化字段，并将仍有效的本地参考图保留为可上传资源、从显式 URL 清单移除重复引用；被新契约隐藏的素材正确清除。",
+      "tests": [
+        "真实当前契约隐藏普通素材后两条 retry 路径清除旧素材；仍有效本地素材不重复、不丢失"
+      ]
+    },
+    {
+      "id": "WSF-07",
+      "priority": "P2",
+      "title": "文本回复卡片的重试按钮被处理函数拒绝",
+      "status": "fixed",
+      "evidence": "image-results 为非 chat 的 message 状态渲染重试按钮，handleRetryImage 却把 message 与 chat 一起拒绝。",
+      "fix": "允许非 chat 的 message 槽位重试；成功图片和 chat 仍不允许单槽重试。"
+    },
+    {
+      "id": "WSF-08",
+      "priority": "P2",
+      "title": "并发上传结束状态、重置和音频时长检查存在竞态",
+      "status": "fixed",
+      "evidence": "视频/音频任一上传完成即设 uploading=false；旧 finally 可能扣新草稿 pending count；音频第二次 inspection 晚到时使用旧 URL 闭包，未计入第一个已完成上传时长（回归初始 totals 为 [0,0]）。",
+      "fix": "使用上传计数/首尾帧 Map，统一重置代次，旧 finally 不影响新代次；音频 inspection 也计入 busy。提交直接检查所有 pending refs。音频时长检查使用同步维护的当前 URL ref，统计已完成并发上传。"
+    }
+  ],
+  "validation": [
+    {
+      "command": "bun test web/tests/studio-followup-regressions.test.mjs (initial 7 tests before fixes)",
+      "result": "预期失败：0 pass / 7 fail，确认原始竞态",
+      "log": "build/review/web-studio-followup-before.log"
+    },
+    {
+      "command": "bun test web/tests/studio-followup-regressions.test.mjs (audio duration reproduction)",
+      "result": "预期失败：21 pass / 1 fail，确认延迟音频 inspection 时长漏计",
+      "log": "build/review/web-studio-followup-audio-before.log"
+    },
+    {
+      "command": "bun test web/tests/studio-followup-regressions.test.mjs web/tests/studio-review-regressions.test.mjs web/tests/video-request-normalizer.test.mjs web/tests/image-options.test.mjs web/tests/image-task-state.test.mjs",
+      "result": "PASS: 79 pass / 0 fail，5 files",
+      "log": "build/review/web-studio-followup-tests.log"
+    },
+    {
+      "command": "cd web && npm run build",
+      "result": "PASS",
+      "log": "build/review/web-studio-followup-build.log"
+    },
+    {
+      "command": "cd web && npm run lint",
+      "result": "PASS: 0 warnings / 0 errors",
+      "log": "build/review/web-studio-followup-lint.log"
+    },
+    {
+      "command": "cd web && npm test",
+      "result": "771 pass / 1 fail。唯一失败为非本批 my-assets.test.mjs:67 旧正则要求 upsertMyAsset(asset)，当前外部修复已传 signal；已通知主代理统一更新。",
+      "log": "build/review/web-studio-followup-all-tests.log"
+    },
+    {
+      "command": "git diff --check",
+      "result": "PASS"
+    }
+  ],
+  "limits": [
+    "此批验证为源函数级行为回归与前端构建/lint；未使用真实账号向上游提交生成或上传素材。",
+    "浏览器验证由独立任务处理，本批未新增视觉验证。",
+    "全量前端测试唯一外部失败需主代理处理并最终重跑；未修改总 inventory 或 REVIEW。"
+  ]
+}

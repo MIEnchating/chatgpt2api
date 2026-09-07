@@ -440,7 +440,7 @@ curl http://localhost:8000/api/creation-tasks/img-task-20260511-001/cancel \
 
 - 内部任务的正式生成结果都会保存到服务端图片库；`visibility` 决定图片是 `private` 还是 `public`。
 - 服务端图片库只使用本地存储，图片通过 `/images/...` 登录态鉴权接口访问。
-- Web 创作台、无限画布和工作流会把最终图片通过统一 `/api/files` 合同写入管理员或用户配置的 S3/R2、WebDAV Provider；未配置 Provider 时回退浏览器 IndexedDB。
+- Web 创作台、无限画布和工作流会把最终图片通过统一 `/api/files` 合同写入管理员或用户配置的 S3/R2、WebDAV Provider；未配置外部 Provider 时写入服务器本机 `data/storage_files`。
 - `partial_images` 渐进预览只用于当前响应；只有最终完成的图片会进入图库和统一结果存储。
 - 生成结果关联的缩略图、元数据和参考图会随原图作为一组治理。
 - Web 创作台上传的图生图参考图保存到 `/app/data/image_conversation_assets/`，访问时校验所属用户。
@@ -448,7 +448,7 @@ curl http://localhost:8000/api/creation-tasks/img-task-20260511-001/cancel \
 - `IMAGE_STORAGE_LIMIT_MB` 按治理页口径统计生成原图、缩略图、元数据和会话参考图；清理原图时会同步删除其关联参考图。`0` 表示不按容量自动清理。
 - 公开图片默认不参与普通自动清理；管理员执行存储清理时可以明确选择包含公开图片。
 - 管理员在设置页维护统一 S3/R2、WebDAV Provider、容量上限和统计 Cron；普通用户可以在个人资料页维护个人 Provider，敏感凭据不会由设置接口返回明文。
-- 登录后会自动迁移浏览器 IndexedDB 中尚未进入 Provider 的图片、视频和音频；容量统计可由管理员手动执行，也可按 Cron 自动执行。
+- 旧浏览器 IndexedDB 媒体不会自动迁移；升级前应导出仍需保留的本地素材。外部存储容量统计可由管理员手动执行，也可按 Cron 自动执行。
 
 ## 推荐调用流程
 

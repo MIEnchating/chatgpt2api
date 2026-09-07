@@ -1,0 +1,1260 @@
+[
+  {
+    "path": "web/src/app/assets/asset-display.tsx",
+    "sha256": "1d94b1adcd3e0b5f995a0d1e509721e5871232508360ddfcbfebf4cdc9443511",
+    "bytes": 11158,
+    "lines": 145,
+    "status": "reviewed",
+    "reviewer": "review_auth_tasks",
+    "checks": [
+      "完整读取第 1–145 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "素材卡片/预览的媒体分支、受鉴权图片组件、来源与可见性标签、文本复制/提示词提取入口、操作权限和空值渲染。"
+    ],
+    "finding": false,
+    "findings": [
+      "未发现本轮可确认的其他缺陷。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/src/app/assets/asset-form.tsx",
+    "sha256": "b379f55ac6154fe45246c227b344430b6f8c2561ed134616e437ccd4f21848c7",
+    "bytes": 14165,
+    "lines": 237,
+    "status": "reviewed",
+    "reviewer": "review_auth_tasks",
+    "checks": [
+      "完整读取第 1–237 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "表单初始化与类型切换、上传结果的 storageKey/媒体元数据、URL/标题校验、预览与持久化 payload 一致性。",
+      "保存等待成功后反馈；同步 ref 防重复提交；保存时禁用编辑；明确清空被删除的可选字段。"
+    ],
+    "finding": true,
+    "findings": [
+      "已修复：保存未等待持久化造成失败也报成功、重复提交；编辑清空可选字段和更换媒体类型/URL 时旧元数据残留。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。",
+      "build/review/web-management-before.log：最初 7 项回归全部失败；build/review/web-management-after.log：首批修复后通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/src/app/assets/asset-library.ts",
+    "sha256": "dff85f9c0992727d19430cadbb4a8208a2b699fcab46f29d9373009fd8816773",
+    "bytes": 3098,
+    "lines": 80,
+    "status": "reviewed",
+    "reviewer": "review_auth_tasks",
+    "checks": [
+      "完整读取第 1–80 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "素材唯一标识、托管图片到 MyAsset 映射、owner/owned 管理能力、合并去重、提示词内容回收、递归收集 storageKey。"
+    ],
+    "finding": false,
+    "findings": [
+      "未发现本轮可确认的其他缺陷。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/src/app/assets/asset-media.ts",
+    "sha256": "04df9174a66b229a6017f3bec952895795ec6b0276ce02527dd6a0129b9bf822",
+    "bytes": 3539,
+    "lines": 84,
+    "status": "reviewed",
+    "reviewer": "review_auth_tasks",
+    "checks": [
+      "完整读取第 1–84 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "不同媒体下载路径、storageKey 对应存储读取、fetch/Blob 下载与 object URL 清理、元数据摘要和单位转换。"
+    ],
+    "finding": false,
+    "findings": [
+      "未发现本轮可确认的其他缺陷。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/src/app/assets/page.tsx",
+    "sha256": "cf59f89ddaf70448f8fbc8acd8bfe58dc207ecaa255443adf32ab4123749d541",
+    "bytes": 24818,
+    "lines": 395,
+    "status": "reviewed",
+    "reviewer": "review_auth_tasks",
+    "checks": [
+      "完整读取第 1–395 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "登录态和 owner/共享素材合并；加载取消、筛选分页、选择集校正；单项/批量删除、可见性和文件引用清理。",
+      "按 session.key 重挂载内容；旧请求返回检查 abort；卸载后终止文件清理的后续账号请求；保存错误传播回表单。"
+    ],
+    "finding": true,
+    "findings": [
+      "已修复：账号切换后上一账号素材列表/编辑状态残留；清理过程中卸载后仍串联账号请求；素材保存异常被父组件吞掉。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。",
+      "build/review/web-management-before.log：最初 7 项回归全部失败；build/review/web-management-after.log：首批修复后通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/src/app/login/page.tsx",
+    "sha256": "2f59ee03fa4072d81aa454fec4a6a92a9d0b79f9022103669647c21c2c7e59e2",
+    "bytes": 13472,
+    "lines": 268,
+    "status": "reviewed",
+    "reviewer": "review_auth_tasks",
+    "checks": [
+      "完整读取第 1–268 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "登录用户名规范化、密码原文保留、账号记忆与本地主题、认证会话写入和默认路由跳转、公开元数据与背景舞台入口。"
+    ],
+    "finding": false,
+    "findings": [
+      "未发现本轮可确认的其他缺陷。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/src/app/logs/log-pagination.ts",
+    "sha256": "fe225fdaa7fb5d906eafdfea3cf5ec80bc122c8f9dbfa0c9234dca7e121b74ba",
+    "bytes": 868,
+    "lines": 28,
+    "status": "reviewed",
+    "reviewer": "review_auth_tasks",
+    "checks": [
+      "完整读取第 1–28 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "空列表与最小总页数、页码边界、分页窗口、跳页参数。"
+    ],
+    "finding": false,
+    "findings": [
+      "未发现本轮可确认的其他缺陷。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/src/app/logs/page.tsx",
+    "sha256": "a1e8a57ea0b58b22ef11030a47ebe248a490ad94b6f8cdad692668f00baadbaf",
+    "bytes": 37639,
+    "lines": 855,
+    "status": "reviewed",
+    "reviewer": "review_auth_tasks",
+    "checks": [
+      "完整读取第 1–855 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "整页筛选、视图切换和分页、日志详情和复制、请求参数序列化与刷新、keyed 账号内容、AbortController 和请求版本隔离。"
+    ],
+    "finding": false,
+    "findings": [
+      "未发现本轮可确认的其他缺陷。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/src/app/page.tsx",
+    "sha256": "acf22b7522f54dee70a35915d345aa1827b99bf25606c4303e41df583fe3a3bc",
+    "bytes": 675,
+    "lines": 30,
+    "status": "reviewed",
+    "reviewer": "review_auth_tasks",
+    "checks": [
+      "完整读取第 1–30 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "根路由认证查询和默认路由重定向、effect 卸载 active 标记、replace 导航和空渲染。"
+    ],
+    "finding": false,
+    "findings": [
+      "未发现本轮可确认的其他缺陷。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/src/app/profile/page.tsx",
+    "sha256": "276063ba0c46768369486243dd58fbd51546ffb3cd3ef655acc16591daf75a3c",
+    "bytes": 50402,
+    "lines": 997,
+    "status": "reviewed",
+    "reviewer": "review_auth_tasks",
+    "checks": [
+      "完整读取第 1–997 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "账号信息与密码、余额/Keys 加载和选择、模型偏好与并发版本、个人存储保存/容量测量、按 session.key 的页面隔离与 hash 导航。"
+    ],
+    "finding": true,
+    "findings": [
+      "已修复：非法百分号编码的 URL fragment 导致个人中心渲染抛出 URIError。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。",
+      "build/review/web-management-before.log：最初 7 项回归全部失败；build/review/web-management-after.log：首批修复后通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/src/app/profile/storage-provider-card.tsx",
+    "sha256": "ff0eb7b8ce123ae0185c63cf1f07a6ac711c2eca05b65b7f9ec826603e79e4dd",
+    "bytes": 11364,
+    "lines": 153,
+    "status": "reviewed",
+    "reviewer": "review_auth_tasks",
+    "checks": [
+      "完整读取第 1–153 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "外部存储类型字段、启用开关、删除/容量入口、密码/密钥留空语义、权限与容量展示。"
+    ],
+    "finding": false,
+    "findings": [
+      "未发现本轮可确认的其他缺陷。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/src/app/prompt-library/page.tsx",
+    "sha256": "a04710ab52699aadd04f1163127e4a9f70e76be93c79eff7d5d54dd1933f4496",
+    "bytes": 2733,
+    "lines": 58,
+    "status": "reviewed",
+    "reviewer": "review_auth_tasks",
+    "checks": [
+      "完整读取第 1–58 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "提示词来源筛选、提示词工作台 handoff、去重读取与素材保存、切换账号/卸载中止串联请求与过期反馈。"
+    ],
+    "finding": true,
+    "findings": [
+      "已修复：读取旧账号素材期间切换账号后仍向当前账号写入提示词素材。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。",
+      "build/review/web-management-before.log：最初 7 项回归全部失败；build/review/web-management-after.log：首批修复后通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/src/app/prompt-library/prompt-handoff.ts",
+    "sha256": "0996bd574e6eeb1a43317a4f7f17fa36a4209c6e24efd85af8c0b34149dbdcbe",
+    "bytes": 2145,
+    "lines": 47,
+    "status": "reviewed",
+    "reviewer": "review_auth_tasks",
+    "checks": [
+      "完整读取第 1–47 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "sessionStorage 交接记录的账号绑定、序列化/消费清理、prompt 字段校验、解析失败与一次性消费；浏览器存储不可用场景未运行验证。"
+    ],
+    "finding": false,
+    "findings": [
+      "未发现本轮可确认的其他缺陷。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/src/app/rbac/page.tsx",
+    "sha256": "67ffdd8a2e8380d9677a594bd1b9e00abd0e9f2b0eb523631ff16cac5bd7a0b0",
+    "bytes": 23021,
+    "lines": 557,
+    "status": "reviewed",
+    "reviewer": "review_auth_tasks",
+    "checks": [
+      "完整读取第 1–557 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "角色与权限组 CRUD、权限选择和接口标识、删除反馈、并行加载、请求版本与 session key 隔离、弹窗草稿和提交状态。"
+    ],
+    "finding": false,
+    "findings": [
+      "未发现本轮可确认的其他缺陷。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/src/app/route-config.tsx",
+    "sha256": "357b3040d2b8ef1f8fa2e5470e6f33581495d777f17e1b1c9940186d1a75ccf5",
+    "bytes": 2507,
+    "lines": 50,
+    "status": "reviewed",
+    "reviewer": "review_auth_tasks",
+    "checks": [
+      "完整读取第 1–50 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "懒加载组件、路由路径到导航页面映射、权限元信息、根入口和不存在路由策略。"
+    ],
+    "finding": false,
+    "findings": [
+      "未发现本轮可确认的其他缺陷。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/src/app/settings/components/announcements-card.tsx",
+    "sha256": "8318a35b8e742f453076061ad57a85d00aebddce5f1dd8ad2046a6aed84f2f62",
+    "bytes": 17101,
+    "lines": 460,
+    "status": "reviewed",
+    "reviewer": "review_auth_tasks",
+    "checks": [
+      "完整读取第 1–460 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "公告列表与表单、发布/撤回/删除、时间字段、内容与目标范围、ScopedMutationLifecycle、乐观状态和并发响应合并。"
+    ],
+    "finding": false,
+    "findings": [
+      "未发现本轮可确认的其他缺陷。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/src/app/settings/components/config-card.tsx",
+    "sha256": "66872e03d6e32274045014de0115577d406e628b3db6be7a855a149b6a571bde",
+    "bytes": 20057,
+    "lines": 432,
+    "status": "reviewed",
+    "reviewer": "review_auth_tasks",
+    "checks": [
+      "完整读取第 1–432 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "基础设置字段与 store 绑定、用户默认并发/RPM、图片容量/保留/超时、数据库驱动字段、全局代理测试、敏感字段与保存按钮。"
+    ],
+    "finding": false,
+    "findings": [
+      "未发现本轮可确认的其他缺陷。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/src/app/settings/components/image-storage-governance-card.tsx",
+    "sha256": "ac28688a87ea334ee85ee745ce6663317f821a6e68754f212b5b30840c10a168",
+    "bytes": 14246,
+    "lines": 332,
+    "status": "reviewed",
+    "reviewer": "review_auth_tasks",
+    "checks": [
+      "完整读取第 1–332 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "图片/缩略图/本地媒体统计、容量与保留策略展示、保留期/配额/缩略图清理确认、store 操作绑定与忙碌状态。"
+    ],
+    "finding": false,
+    "findings": [
+      "未发现本轮可确认的其他缺陷。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/src/app/settings/components/log-governance-card.tsx",
+    "sha256": "4cb10e5a944e7c005054b173f7630487964a34380acbdd5be435edf6055086e8",
+    "bytes": 14360,
+    "lines": 374,
+    "status": "reviewed",
+    "reviewer": "review_auth_tasks",
+    "checks": [
+      "完整读取第 1–374 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "日志保留天数、清理计划、级别和默认视图、统计/清理弹窗；配置草稿写入后是否存在可用保存入口。"
+    ],
+    "finding": true,
+    "findings": [
+      "已修复：日志治理字段仅更新内存草稿，当前卡片没有保存入口；增加保存日志配置操作。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。",
+      "build/review/web-management-before.log：最初 7 项回归全部失败；build/review/web-management-after.log：首批修复后通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/src/app/settings/components/login-page-image-card.tsx",
+    "sha256": "2557f708b2aa26172dc0effab72dd4aa60db82ad9b33acb9f5919881958bb89d",
+    "bytes": 7913,
+    "lines": 221,
+    "status": "reviewed",
+    "reviewer": "review_auth_tasks",
+    "checks": [
+      "完整读取第 1–221 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "背景图管理、上传/预览/删除、开关与专用保存、缓存刷新与错误反馈、图片尺寸和状态展示。"
+    ],
+    "finding": false,
+    "findings": [
+      "未发现本轮可确认的其他缺陷。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/src/app/settings/components/model-config-card.tsx",
+    "sha256": "e37132dbf68412f8376687e159aa663950ea3b51765d779837809cba87622cdf",
+    "bytes": 28473,
+    "lines": 701,
+    "status": "reviewed",
+    "reviewer": "review_auth_tasks",
+    "checks": [
+      "完整读取第 1–701 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "四类模型的加载/添加/删除/清空/拖动排序、模型源 Key 选择、请求版本隔离与全局默认标签语义。"
+    ],
+    "finding": false,
+    "findings": [
+      "未发现本轮可确认的其他缺陷。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/src/app/settings/components/prompt-source-content-dialog.tsx",
+    "sha256": "f1daa81c9205ca6d80aacdab3bc39548b4a6435105357f57842c57299439c6a8",
+    "bytes": 10559,
+    "lines": 198,
+    "status": "reviewed",
+    "reviewer": "review_auth_tasks",
+    "checks": [
+      "完整读取第 1–198 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "来源内容拉取、分页和封面/内容预览、load generation/source ID/open 标记对旧响应的隔离、加载错误与复制入口。"
+    ],
+    "finding": false,
+    "findings": [
+      "未发现本轮可确认的其他缺陷。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/src/app/settings/components/prompt-sources-card.tsx",
+    "sha256": "a6202633e22152637d40d77b4a10cc43dcada505923bc440d106209516cc09a9",
+    "bytes": 14842,
+    "lines": 310,
+    "status": "reviewed",
+    "reviewer": "review_auth_tasks",
+    "checks": [
+      "完整读取第 1–310 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "自定义来源 URL 校验与编辑/删除、来源启用、单项/全部拉取状态、内容浏览弹窗、规范化顺序与 store 保存绑定。"
+    ],
+    "finding": false,
+    "findings": [
+      "未发现本轮可确认的其他缺陷。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/src/app/settings/components/settings-ui.tsx",
+    "sha256": "435a57824c6cf046e47848fd75891c031548bfff7c81c5a7a43671bc018be51d",
+    "bytes": 4071,
+    "lines": 151,
+    "status": "reviewed",
+    "reviewer": "review_auth_tasks",
+    "checks": [
+      "完整读取第 1–151 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "SettingsCard 和字段/面板样式接口、action 挂载、色调映射、响应式结构与复用组件 props。"
+    ],
+    "finding": false,
+    "findings": [
+      "未发现本轮可确认的其他缺陷。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/src/app/settings/components/site-icon-card.tsx",
+    "sha256": "9bc83ec8256f7b8006603e75aa2bfcaaaeb10f71d8f61da4cb51293ee99706ee",
+    "bytes": 5394,
+    "lines": 136,
+    "status": "reviewed",
+    "reviewer": "review_auth_tasks",
+    "checks": [
+      "完整读取第 1–136 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "站点图标输入/上传/清除、专用保存、预览、文件类型与失败反馈、提交期间状态。"
+    ],
+    "finding": false,
+    "findings": [
+      "未发现本轮可确认的其他缺陷。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/src/app/settings/components/storage-providers-card.tsx",
+    "sha256": "bc54875e1a562855f7edfa647416d086dfe08c8a947fb143045a8889c185ba2c",
+    "bytes": 21950,
+    "lines": 282,
+    "status": "reviewed",
+    "reviewer": "review_auth_tasks",
+    "checks": [
+      "完整读取第 1–282 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "全局本地/外部存储策略、容量限额/Cron、S3/WebDAV 字段、启用互斥和保存。",
+      "测量返回以最新 store 为基础合并；校验 session generation 与原 provider 对象身份；旧快照不被原地修改。"
+    ],
+    "finding": true,
+    "findings": [
+      "已修复：容量统计晚到后覆盖统计期间的新草稿或复活已删除 provider；切换账号后拒绝应用旧统计；启用 provider 不再原地修改旧 store 对象。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。",
+      "build/review/web-management-before.log：最初 7 项回归全部失败；build/review/web-management-after.log：首批修复后通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/src/app/settings/components/use-prompt-source-pulls.ts",
+    "sha256": "f802d7785e38ee3f8830cbea8aa3f0f5f8a9850573005955cdd6658b707cc197",
+    "bytes": 3474,
+    "lines": 94,
+    "status": "reviewed",
+    "reviewer": "review_auth_tasks",
+    "checks": [
+      "完整读取第 1–94 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "按来源 busy Set 防重复、单项/全部来源拉取、AbortController 映射与卸载清理、成功失败汇总和 quiet 反馈；不涉及定时轮询。"
+    ],
+    "finding": false,
+    "findings": [
+      "未发现本轮可确认的其他缺陷。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/src/app/settings/components/video-model-contracts-card.tsx",
+    "sha256": "585ad476a39d42122c1b1b72b6b43dbad3f73bccf369703b4a0dd4f753baec47",
+    "bytes": 138135,
+    "lines": 2548,
+    "status": "reviewed",
+    "reviewer": "review_auth_tasks",
+    "checks": [
+      "完整读取第 1–2548 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "完整审查 2540 行原文件：契约模板/JSON 编辑、字段规则、能力限制、请求/响应映射、预览与模拟、导入导出、列表筛选、选择与 CRUD。",
+      "单项/批量乐观状态、ScopedMutationLifecycle ticket、批量请求逐项校验当前 session、帧输入数量与可见性组合；未据静态笔记改动上游协议。"
+    ],
+    "finding": true,
+    "findings": [
+      "已修复：批量更新/删除在账号失效后继续发送下一项请求；预览 frameLimit=0 仍展示首帧输入。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。",
+      "build/review/web-management-before.log：最初 7 项回归全部失败；build/review/web-management-after.log：首批修复后通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/src/app/settings/page.tsx",
+    "sha256": "aaf1c6e6571c2be8475bfa1b37a8d93dfb3348eb411f17ce32e5cf404462f597",
+    "bytes": 5828,
+    "lines": 114,
+    "status": "reviewed",
+    "reviewer": "review_auth_tasks",
+    "checks": [
+      "完整读取第 1–114 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "管理员设置 section 映射、hash 解码、账号激活/清除、子卡片挂载顺序与权限、未知 section 导航。"
+    ],
+    "finding": true,
+    "findings": [
+      "已修复：非法 URL fragment 导致设置页渲染抛出 URIError。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。",
+      "build/review/web-management-before.log：最初 7 项回归全部失败；build/review/web-management-after.log：首批修复后通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/src/app/settings/specialized-config-merge.ts",
+    "sha256": "c78730dc66ac464f6409fd5a25cde019b3e0a612e448af0d546119f855208eb9",
+    "bytes": 881,
+    "lines": 32,
+    "status": "reviewed",
+    "reviewer": "review_auth_tasks",
+    "checks": [
+      "完整读取第 1–32 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "站点图标和登录图专用保存仅合并其拥有字段，保留其他本地未保存草稿，null config 安全返回。"
+    ],
+    "finding": false,
+    "findings": [
+      "未发现本轮可确认的其他缺陷。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/src/app/settings/store.ts",
+    "sha256": "69d1089f7e329f904529a4878e03cdfba47c270e014a0c9629b4499fb5daf828",
+    "bytes": 33757,
+    "lines": 866,
+    "status": "reviewed",
+    "reviewer": "review_auth_tasks",
+    "checks": [
+      "完整读取第 1–866 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "完整检查状态类型/默认值/注入依赖、session generation、配置加载/保存、专用保存字段合并、媒体/日志治理清理。",
+      "四类模型列表编辑同步更新第一项默认模型；保存规范化与空列表处理，旧 session 无副作用。"
+    ],
+    "finding": true,
+    "findings": [
+      "已修复：调整模型顺序后 UI 第一项标为全局默认，但保存继续保留旧默认模型。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。",
+      "build/review/web-management-before.log：最初 7 项回归全部失败；build/review/web-management-after.log：首批修复后通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/src/app/users/page.tsx",
+    "sha256": "c12ab06640c9518da1ab7fa3990e5e5ba2dd3ab78189504cad0457887b45af00",
+    "bytes": 42917,
+    "lines": 1085,
+    "status": "reviewed",
+    "reviewer": "review_auth_tasks",
+    "checks": [
+      "完整读取第 1–1085 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "用户创建/删除/启停与角色分配、密码输入字节校验、角色来源、调用量曲线、筛选/排序/分页和批量操作、按账号重挂载与加载取消；保留本轮已有改动。"
+    ],
+    "finding": false,
+    "findings": [
+      "未发现本轮可确认的其他缺陷。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/src/main.tsx",
+    "sha256": "7d639c90880146445df0638b726035c665a5803af073281affce137e0ba470ea",
+    "bytes": 557,
+    "lines": 23,
+    "status": "reviewed",
+    "reviewer": "review_auth_tasks",
+    "checks": [
+      "完整读取第 1–23 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "React 根节点存在性检查、StrictMode/BrowserRouter/App 入口装配、首屏主题应用与全局样式。"
+    ],
+    "finding": false,
+    "findings": [
+      "未发现本轮可确认的其他缺陷。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/src/vite-env.d.ts",
+    "sha256": "65996936fbb042915f7b74a200fcdde7e410f32a669b1ab9597cfaa4b0faddb5",
+    "bytes": 38,
+    "lines": 1,
+    "status": "reviewed",
+    "reviewer": "review_auth_tasks",
+    "checks": [
+      "完整读取第 1–1 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "完整读取 Vite 客户端环境类型声明。"
+    ],
+    "finding": false,
+    "findings": [
+      "未发现本轮可确认的其他缺陷。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/tests/asset-library.test.mjs",
+    "sha256": "b0dfc0ea38a915268e7ec55206b0f9a526e5871fa3231967404d3268369918ef",
+    "bytes": 3920,
+    "lines": 91,
+    "status": "reviewed",
+    "reviewer": "review_auth_tasks",
+    "checks": [
+      "完整读取第 1–91 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "素材映射、权限、合并去重、storageKey 引用与提示词内容的输入边界和断言。"
+    ],
+    "finding": false,
+    "findings": [
+      "已核对测试夹具、断言和适用边界。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/tests/prompt-handoff.test.mjs",
+    "sha256": "d9b4e743525002e6683b6879accdc23281850f73b8dbf0029c228ce319453d83",
+    "bytes": 2785,
+    "lines": 88,
+    "status": "reviewed",
+    "reviewer": "review_auth_tasks",
+    "checks": [
+      "完整读取第 1–88 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "账号绑定暂存/一次性消费、引用信息保留、未指定生成模式时不凭空补值、跨账号消费拒绝和记录清理。"
+    ],
+    "finding": false,
+    "findings": [
+      "已核对测试夹具、断言和适用边界。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/tests/settings-session-isolation.test.mjs",
+    "sha256": "f6f87ba7d03d54b0fe745ba0d86df03cafaa3e0aba25e4b6537e7bcb5f6588be",
+    "bytes": 9966,
+    "lines": 286,
+    "status": "reviewed",
+    "reviewer": "review_auth_tasks",
+    "checks": [
+      "完整读取第 1–286 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "实际 Zustand store 的 A/B 会话交错、旧保存反馈、卸载代次、模型规范化与默认值范围、页面激活顺序。"
+    ],
+    "finding": false,
+    "findings": [
+      "已核对测试夹具、断言和适用边界。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/tests/settings-hash-navigation.test.mjs",
+    "sha256": "20e31652363dfae27e416978d9f22f6b668c7f3194a1f8268ae7bbd61371583c",
+    "bytes": 941,
+    "lines": 13,
+    "status": "reviewed",
+    "reviewer": "review_auth_tasks",
+    "checks": [
+      "完整读取第 1–13 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "设置 hash section 与路由入口映射、媒体治理导航引用。"
+    ],
+    "finding": false,
+    "findings": [
+      "已核对测试夹具、断言和适用边界。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/tests/settings-specialized-save-merge.test.mjs",
+    "sha256": "60bd91c32edad66cbec6202db6e4174c0b61bc86f7fb5c9e014cf5b782190019",
+    "bytes": 2885,
+    "lines": 98,
+    "status": "reviewed",
+    "reviewer": "review_auth_tasks",
+    "checks": [
+      "完整读取第 1–98 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "真实专用保存合并的并发草稿与 null 配置边界、非所属字段保留。"
+    ],
+    "finding": false,
+    "findings": [
+      "已核对测试夹具、断言和适用边界。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/tests/prompt-favorite-request-lifecycle.test.mjs",
+    "sha256": "50ad4348c9e360d5bbbb4d7d8ed321116e3e89c23c005e9bdd0e390ac9a9d5d5",
+    "bytes": 4222,
+    "lines": 122,
+    "status": "reviewed",
+    "reviewer": "review_auth_tasks",
+    "checks": [
+      "完整读取第 1–122 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "提示词收藏请求代次、加载/保存中止与账号更换后的应用资格；测试依赖未全部纳入本分支实现阅读。"
+    ],
+    "finding": false,
+    "findings": [
+      "已核对测试夹具、断言和适用边界。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/tests/creative-library-layouts.test.mjs",
+    "sha256": "427220b952b817a853816a10075c6e346690f0601ad8b8071d5c6ac04beba5fe",
+    "bytes": 9749,
+    "lines": 140,
+    "status": "reviewed",
+    "reviewer": "review_auth_tasks",
+    "checks": [
+      "完整读取第 1–140 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "素材库/提示词库相关布局与操作入口的已有源码断言，未将结构断言解释为浏览器交互测试。"
+    ],
+    "finding": false,
+    "findings": [
+      "已核对测试夹具、断言和适用边界。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/tests/login-page-image-stage.test.mjs",
+    "sha256": "f7ad0a80d108f54eb83a38a810e2d8a266e2f05d1e9d9a1f9b380910d88c760b",
+    "bytes": 770,
+    "lines": 14,
+    "status": "reviewed",
+    "reviewer": "review_auth_tasks",
+    "checks": [
+      "完整读取第 1–14 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "背景图失败标记绑定到发生错误的 URL，核对源码断言及共享 hook；此测试不覆盖图片实际加载。"
+    ],
+    "finding": false,
+    "findings": [
+      "已核对测试夹具、断言和适用边界。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/tests/prompt-reference-sources.test.mjs",
+    "sha256": "5ee9ad6e71aaf09d0b2f2675d068ee2ac3c8d6c23f32ea2888cf59fd8e5ee0e8",
+    "bytes": 5139,
+    "lines": 113,
+    "status": "reviewed",
+    "reviewer": "review_auth_tasks",
+    "checks": [
+      "完整读取第 1–113 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "默认来源顺序、JSON cover/metadata 映射不凭空生成引用、Markdown 相对图片路径解析和受控 fetch 夹具。"
+    ],
+    "finding": false,
+    "findings": [
+      "已核对测试夹具、断言和适用边界。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/tests/prompt-sources.test.mjs",
+    "sha256": "f5c78efaa0ddfd7897a4bc68e64b47388ee0f138eefe9567ae23828977c52b1f",
+    "bytes": 4994,
+    "lines": 129,
+    "status": "reviewed",
+    "reviewer": "review_auth_tasks",
+    "checks": [
+      "完整读取第 1–129 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "搜索字段与更新时间排序、内置/自定义来源顺序、文档 camelCase 媒体字段映射、相同配置共享外部加载请求。"
+    ],
+    "finding": false,
+    "findings": [
+      "已核对测试夹具、断言和适用边界。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/tests/wide-page-layouts.test.mjs",
+    "sha256": "d1e442b87aac782678d0a2dc9695e52ddadd758b8962b85bf17bc92f4d838397",
+    "bytes": 9546,
+    "lines": 157,
+    "status": "reviewed",
+    "reviewer": "review_auth_tasks",
+    "checks": [
+      "完整读取第 1–157 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "宽页面分栏、容器宽度与滚动区域的源码断言；不代表真实视口视觉验证。"
+    ],
+    "finding": false,
+    "findings": [
+      "已核对测试夹具、断言和适用边界。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/tests/management-review-regressions.test.mjs",
+    "sha256": "5011368bce239cfe509897999018c83752ea86be0070f0b35531700fd12b4bcd",
+    "bytes": 10773,
+    "lines": 203,
+    "status": "reviewed",
+    "reviewer": "review_auth_tasks",
+    "checks": [
+      "完整读取第 1–203 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "新增 11 项真实处理函数/真实 store 回归：素材字段清空、等待持久化/防重复/失败反馈、四类默认模型、容量测量并发与状态不变性、非法 hash、批量操作/提示词/清理的会话取消。",
+      "修复前首次 7 项均失败（另有未等待 Promise 导致的未处理错误）；修复后 11 项通过。"
+    ],
+    "finding": false,
+    "findings": [
+      "已核对测试夹具、断言和适用边界。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。",
+      "build/review/web-management-before.log：最初 7 项回归全部失败；build/review/web-management-after.log：首批修复后通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  }
+]

@@ -1,0 +1,1068 @@
+[
+  {
+    "path": "web/src/app/canvas/agent/canvas-agent-context.ts",
+    "sha256": "e6444c0e39f07709764979b0867b940caf2b75219e8d4fff9ac44cb8f8a87e04",
+    "lines": 126,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read context snapshots, selected/connected node prioritization, resource summaries and task-status projection. Context is bounded before sending to the text model."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/agent/canvas-agent-generation.ts",
+    "sha256": "2739cd2c9b952b314f9b4739886e0f032514d17f7b8459defbe8e695d7d75967",
+    "lines": 130,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read media layout, source-node selection, configured video contract duration/audio gates, group positioning and script-node defaults. Existing contract fixtures cover configured models; no live upstream claims."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/agent/canvas-agent-request.ts",
+    "sha256": "4f1a84e56793ecc0c5d154f2966ffafdf30b8bb62de64f15a803a32ad9dbcede",
+    "lines": 176,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Fixed cancellation during delayed planning-task acknowledgement, pre-aborted submission, cancellation error identity and polling abort checks. Three regressions failed before the fix and now pass."
+    ],
+    "finding": true,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/agent/canvas-agent-run-gate.ts",
+    "sha256": "76d7e2cbbc248fc1626812fa2197a64b89775e3dc47c67c22fce2976a1513f73",
+    "lines": 49,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read synchronous controller ownership, epoch lifecycle invalidation, abort and release identity. Existing tests exercise delayed references and unmount ownership."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/agent/canvas-agent-runtime.ts",
+    "sha256": "49d4e0c06cf48849989e797ce0c11b441af9038289635ce29949f6e51082f407",
+    "lines": 126,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read every planning step, native tool/action normalization, parallel-media versus sequential-structure execution, protocol trimming and persisted media redaction. Fixed cancelled task IDs remaining pending; focused runtime regression failed before the fix."
+    ],
+    "finding": true,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/agent/canvas-agent-sessions.ts",
+    "sha256": "5ccfbc07797081ddbe952e36d0708f52078f16ff53cac35aa7b1e33eeebfb01d",
+    "lines": 59,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read session normalization and resource-reference synchronization, removed-node content clearing and interrupted-message recovery. No external requests are issued by this module."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/agent/canvas-agent-skills.ts",
+    "sha256": "ed9219ec074be5477c426ab476757d2fe487bce41614928cd7d14652b1825456",
+    "lines": 85,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read skill routing by phase, requested action and available context. Embedded app prompts are application data; their provider-specific wording was not treated as new upstream evidence."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/agent/canvas-agent-starter.ts",
+    "sha256": "ed16f9ba9da693762fc8b0c643f3dbde24408dc32581dacc35db73981ba9d658",
+    "lines": 177,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read default models/settings, pending asset IDs, media payloads and insertion geometry. Existing tests cover preservation of configured defaults and media metadata."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/agent/canvas-agent-tools.ts",
+    "sha256": "9257490f4036f60700ea9a069143fc797d1ce3e341332e5e9240745b762f2ab6",
+    "lines": 206,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read tool definitions and action argument normalization, required identifiers, media settings and labels. Backend/relay authorization remains authoritative; no current API aliases added."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/agent/canvas-agent-types.ts",
+    "sha256": "60d6186101a825f66a19ac704f2584a95ddc69024b2a09c5309acdebad628b8e",
+    "lines": 75,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read every protocol, action, state and context type and compared runtime consumers. TypeScript build validates actual imports and assignments."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/agent/skills/audio.ts",
+    "sha256": "01372736a651a26d70d5bc0b418e20e04a9d99031d178b57081141e3fd8fdc01",
+    "lines": 140,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read every line of the audio application prompt: phase/action guidance, referenced tool names, source-node instructions and output constraints. This is app prompt content, not a Codex skill or fresh upstream protocol evidence; no speculative provider-contract changes made."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/agent/skills/core.ts",
+    "sha256": "bed30c7a17d6a227bae1b83a778a30f2ae84e75191d7d196de6b9ceaf648aebc",
+    "lines": 234,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read every line of the core application prompt: phase/action guidance, referenced tool names, source-node instructions and output constraints. This is app prompt content, not a Codex skill or fresh upstream protocol evidence; no speculative provider-contract changes made."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/agent/skills/image-character-sheet.ts",
+    "sha256": "3c09682aa8bb029e6ff432d6739d3414d4378173fcde0c2a51f8bddf157ad293",
+    "lines": 235,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read every line of the image-character-sheet application prompt: phase/action guidance, referenced tool names, source-node instructions and output constraints. This is app prompt content, not a Codex skill or fresh upstream protocol evidence; no speculative provider-contract changes made."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/agent/skills/image-storyboard.ts",
+    "sha256": "44060b51caf2e2c93c01987d3bcbd50972d0766fd79ce65f820c8bc21fba3ba1",
+    "lines": 170,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read every line of the image-storyboard application prompt: phase/action guidance, referenced tool names, source-node instructions and output constraints. This is app prompt content, not a Codex skill or fresh upstream protocol evidence; no speculative provider-contract changes made."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/agent/skills/image.ts",
+    "sha256": "d87ed1499f68de012d4f12c4c6ef7710eebc45a304e044359bcfaea5b3d332ec",
+    "lines": 240,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read every line of the image application prompt: phase/action guidance, referenced tool names, source-node instructions and output constraints. This is app prompt content, not a Codex skill or fresh upstream protocol evidence; no speculative provider-contract changes made."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/agent/skills/organize.ts",
+    "sha256": "298dd468821a33b2368275bcbad45768e746b33dfe66cef5cf69121306182225",
+    "lines": 169,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read every line of the organize application prompt: phase/action guidance, referenced tool names, source-node instructions and output constraints. This is app prompt content, not a Codex skill or fresh upstream protocol evidence; no speculative provider-contract changes made."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/agent/skills/script.ts",
+    "sha256": "d1ce969a096d9b9ea73f9cb51201ff2d2d0ebe54b05efe9c8085bde556a6cbe0",
+    "lines": 285,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read every line of the script application prompt: phase/action guidance, referenced tool names, source-node instructions and output constraints. This is app prompt content, not a Codex skill or fresh upstream protocol evidence; no speculative provider-contract changes made."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/agent/skills/video-editing.ts",
+    "sha256": "bb228e6216df8efb4fdfe50a1e6834a65cac5a264bb3764389ee14e5f2df0e96",
+    "lines": 170,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read every line of the video-editing application prompt: phase/action guidance, referenced tool names, source-node instructions and output constraints. This is app prompt content, not a Codex skill or fresh upstream protocol evidence; no speculative provider-contract changes made."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/agent/skills/video-extension.ts",
+    "sha256": "b69a85ad4b766ade9f469896e97d547dddb7581a2c68cd55e37df0eae6fddde5",
+    "lines": 233,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read every line of the video-extension application prompt: phase/action guidance, referenced tool names, source-node instructions and output constraints. This is app prompt content, not a Codex skill or fresh upstream protocol evidence; no speculative provider-contract changes made."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/agent/skills/video-multi-shot.ts",
+    "sha256": "da4f9dd71cc3c2444e1958e1584433779d649fed933d862d87ad4aafdf2fc559",
+    "lines": 179,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read every line of the video-multi-shot application prompt: phase/action guidance, referenced tool names, source-node instructions and output constraints. This is app prompt content, not a Codex skill or fresh upstream protocol evidence; no speculative provider-contract changes made."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/agent/skills/video-single-shot.ts",
+    "sha256": "daa977c454dd1d11e69b8d938401d436d5bff598dc7d3115fbecab1d295f4173",
+    "lines": 148,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read every line of the video-single-shot application prompt: phase/action guidance, referenced tool names, source-node instructions and output constraints. This is app prompt content, not a Codex skill or fresh upstream protocol evidence; no speculative provider-contract changes made."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/agent/skills/video.ts",
+    "sha256": "cc32c0a83a9ea535523b2d7c3664021983a9656ed4d3d543027eed55928b78fe",
+    "lines": 325,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read every line of the video application prompt: phase/action guidance, referenced tool names, source-node instructions and output constraints. This is app prompt content, not a Codex skill or fresh upstream protocol evidence; no speculative provider-contract changes made."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/agent/skills/workflow.ts",
+    "sha256": "b20f88b50b6066b9da1789e63e703d0666f2f8bc9cc5326c69861d202453702a",
+    "lines": 245,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read every line of the workflow application prompt: phase/action guidance, referenced tool names, source-node instructions and output constraints. This is app prompt content, not a Codex skill or fresh upstream protocol evidence; no speculative provider-contract changes made."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-agent-generation-settings-summary.ts",
+    "sha256": "ff4fe657870fc9dfcd425ca04f81277c918e45965dda9a7d7a2808139b866038",
+    "lines": 18,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read compact image/video parameter summaries and their default/empty-value behavior."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-agent-generation-settings.tsx",
+    "sha256": "a55e77bf75da73fc5fa40cc7ee46aaf7cec684e7a33698afe045af2cc186d8b0",
+    "lines": 84,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read shared image/video setting panels and callbacks against configured options. Reuses generation components rather than independent provider contracts."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-agent-panel.tsx",
+    "sha256": "842eab051d744a85e7a937097e3aef0817dab14c5870097524b3102504fc27fd",
+    "lines": 465,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read complete run lifecycle, initial-request consumption, saved-reference hydration, checkpoint callbacks, history mutations and resize cleanup. Run-gate and existing UI tests cover stale callbacks and synchronous ownership."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-agent-prompt-chip-input.tsx",
+    "sha256": "f9cdec66025e4250f567eca829e1da1f7b2ea6c5174cef7debdafd062d521d09",
+    "lines": 381,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read DOM chip rendering, serialization, mention placement, keyboard/IME handling and reference removal. Compared its composition guard with config composer; fixed the missing guard there."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-asset-picker.tsx",
+    "sha256": "b4bf8b6d713c4e03943668b6aa1a509d48070f0765d38a95fc5a2e4264d32b88",
+    "lines": 177,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read asset query lifecycle, filtering, selection and insertion payload creation. Asset requests are mocked in tests; authenticated browser smoke covers canvas route loading, not every remote asset."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-audio.ts",
+    "sha256": "a276a1a592ce0cd05df24188d288531a41fcb3b0c733a36745f44273024d62d5",
+    "lines": 222,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read provider selection, clone-reference resolution, generation request formats, speeds and model defaults. Existing tests cover OpenAI, GLM, Grok, Gemini and MiMo shape construction; live audio synthesis was not invoked."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-batches.ts",
+    "sha256": "fcd52aa69b4e65fade3b8006133a2988176621802fa0c92d684541f07d9694b1",
+    "lines": 129,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Fixed primary-preview storage_key/bytes/mime_type synchronization for explicit selection, retry and removal. Compared collapse/motion, deletion expansion and root replacement. Regression showed old storage keys surviving preview changes."
+    ],
+    "finding": true,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-camera-control.tsx",
+    "sha256": "97ebbf25ea16b5c33a04ce0ba954f161151497117d06e40a0d7156cbda4fc985",
+    "lines": 125,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read controlled camera/profile/lens/focal/aperture updates and disabled state against camera defaults."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-camera.ts",
+    "sha256": "42f7210974c86213bed1d849e1b86071c8f67f1e8dd65a2273d4733d5ce62377",
+    "lines": 314,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read optical presets and prompt construction, including disabled passthrough and no-physical-camera instruction. Existing camera tests cover supported presets and authored prompt preservation."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-clipboard.ts",
+    "sha256": "3b66cb4969812065cc5d497a753c74962fe4dcbecb4a7b5314f922e5c854ac43",
+    "lines": 112,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Fixed pasted batch ownership retaining original child/root IDs, which allowed deleting a pasted root to delete original children. Remaps only copied batch ownership and detaches external batch links; authored prompt/frame bindings retain existing semantics. Read schema and graph validation in full."
+    ],
+    "finding": true,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-config-composer.tsx",
+    "sha256": "aea31b8f3adb5be7bfc427d83632f42c0aa73f61b4180cdda40ce5d0fd906b73",
+    "lines": 396,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Fixed IME confirmation being intercepted by reference candidate navigation. Executed actual JSX key handler for composing state, native isComposing and keyCode 229, plus ordinary Enter. Read editor serialization, deletion and popover placement."
+    ],
+    "finding": true,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-config-inputs.ts",
+    "sha256": "13b3082fc938c7f6a6ab3780959e106740d34cf8b6ae5d208e04d81c281d73c9",
+    "lines": 99,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read connection-order input indexing, direct-versus-config generation semantics, explicit composer reference selection and prompt ownership. Existing tests cover empty inputs and intentionally cleared composer content."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-connections.ts",
+    "sha256": "5bc284d6d875db1856e1141d4274bbe3bc559a730b99777d9386ecac684f934d",
+    "lines": 125,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read connection validation, graph traversal and drag-handle direction semantics. Existing tests explicitly require ordinary-node drag origin to stay upstream from either handle; preserved this product behavior."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-contenteditable.ts",
+    "sha256": "da899a715a998f53e231482d653737f72c42c1a1e514dbb20a019a758cb8efc5",
+    "lines": 149,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read DOM serialization, caret/range operations, chip deletion, plain-text paste and mention navigation. Existing tests cover block lines, caret marker stripping and reference identity."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-director-node-panel.tsx",
+    "sha256": "ad48590f1f4ad8de00be1441251e946d06bcefe1751773a5553647501c460012",
+    "lines": 26,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read director panel open/save/generation controls, prop wiring and current project updates."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-director-output.ts",
+    "sha256": "e572ca1db5c6fe7eeb08faa919310169beda48c964afcad1fd4c0fc000fb1cb8",
+    "lines": 29,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read output ordering and video fitting against connected image/video node bounds. Existing tests exclude unrelated audio and disconnected nodes."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-director.tsx",
+    "sha256": "61c8a6594ba37e235ed7f30412a6771b6f365eeb0adb30482f3e075f96686db3",
+    "lines": 156,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read full director workspace embedding and callbacks for media creation, project updates and panel lifecycle. External generation remained mocked."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-engine.tsx",
+    "sha256": "4569aabffe5d5814bc5ec6a8d6abcd37d7e5c3b1fbb148efce424440ba5bcfc1",
+    "lines": 1066,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read the entire rendering/interaction engine, viewport culling, pointer capture, node/connection drag, resizing, group/batch visibility, selection and panel positioning. Existing geometry/connection tests and desktop/mobile smoke cover core behavior; no exhaustive pointer-device matrix."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-export.ts",
+    "sha256": "9db88e594679877435d4e09ef8a46cef728800d3a70eb5529c873e8b3f8bca61",
+    "lines": 21,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read export bounds, padding and world-to-export transform. Existing tests cover negative coordinates and multiple nodes."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-floating-panel.ts",
+    "sha256": "4233ae268fce18ee174ea0fc37a0437bcf2ed42c527d15579d3266883cf663ce",
+    "lines": 36,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read viewport clamp, above/below choice and available-height bounds. Narrow-screen and constrained-height cases are covered."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-generation-context.ts",
+    "sha256": "31861c09fc7b9d0ce90f97d99d086f7a2d671689eaf86f21e366c1ed415d86f2",
+    "lines": 250,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read all prompt/reference construction, config ownership, media frame bindings, retry model resolution and recovery status logic. Existing tests cover explicit clearing, sparse inputs and stale blob recovery."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-generation-footer.tsx",
+    "sha256": "b296c16ff74c41bbb29dd2cf8674c2e16df28030f643300c2fa25ae49b60fbe6",
+    "lines": 74,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read shared submit/stop controls and disabled/progress state wiring across node types."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-generation-layout.ts",
+    "sha256": "46c12e80a076ceb8b21be3b71220cbae0dff68685c1e915d0a0208c2cc3acfc9",
+    "lines": 48,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read result insertion/replacement ordering, stale batch removal and config-only generation status updates. Existing tests cover downstream append and in-place replacement."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-groups.ts",
+    "sha256": "bce86e181e08de469360da81821725a09fed1e5409dee76ddfc9a8e27287412a",
+    "lines": 69,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read bounds, membership expansion, topmost drop-target selection, clamping and group removal. Existing tests cover membership changes without deleting child nodes."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-history.ts",
+    "sha256": "78374bc23835ce54e13a145ac66c06110eaf742bfb866d4bd89423430cec6eec",
+    "lines": 40,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read snapshot keys, viewport exclusion, revision preservation, generation baseline compaction and history limit. Lifecycle fixes in page.tsx stop old runs from committing another operation's history."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-image-data.ts",
+    "sha256": "1f36cabc928a8d65699eb7595de9e60b389b3f2fcd59933ba8a77308b9af2e27",
+    "lines": 142,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read crop/grid/upscale/angle helpers, bounded grid sizes, proportional dimensions and largest-gap insertion. Existing tests cover limits and authored angle prompts."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-image-model.ts",
+    "sha256": "3025487b7d332def7a779a48483a3d5f9fcb1feb94764a3e480e901d22b59ccb",
+    "lines": 10,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read actual-model resolution and authoritative empty configuration behavior. Existing tests cover auto exclusion and configured defaults."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-image-parameter-defaults.ts",
+    "sha256": "aa5763c1da69c19f23da5fd29a34ad184c51979d70a260201381eeadd2126e41",
+    "lines": 28,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read inherited/default image settings against current model capabilities and editable node parameters."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-image-parameters.tsx",
+    "sha256": "f6e59401a5ba1a6f5b882e1826776ded8a2ccbc0d1068d2ba90e9ba2a2b4ff6d",
+    "lines": 170,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read controlled image settings, count/size/output controls, capability visibility and parent update callbacks."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-image-title.ts",
+    "sha256": "bcb58766252b83d89da11762d3f14d9fa565baa814fc8edb55ca083fdcb639bf",
+    "lines": 16,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read prompt-first naming and generic/storage filename filtering. Existing tests distinguish descriptive names from generated file identifiers."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-image-tools.tsx",
+    "sha256": "35ea228338e3bb673f6a64b58fd929091b2610c09123d968a4a31b917876815b",
+    "lines": 393,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read crop, split, upscale and angle dialogs and every pointer-drag cleanup path. Existing tests assert release on pointerup/cancel/blur/unmount; crop ratio UX was not changed without a contract."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-inline-model-select.tsx",
+    "sha256": "432cde31ef261aef0e91077d65ad6a7b681c7f951120963a70e3c0d5e9364402",
+    "lines": 23,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read option filtering, value selection, disabled state and shared selector wiring."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-node-actions-panel.tsx",
+    "sha256": "afe0649ab0d1bef9f3e99cff2c8a69e3853de2e5d34e3a63e43410dddda9b01f",
+    "lines": 311,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read operation availability by node type, callbacks and collapsible action controls. Existing source tests cover all exposed operations and actual page handlers."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-node-geometry.ts",
+    "sha256": "063762ddf0f88b0d112fd09de613dabe9574b028ec3ab51a9a4ea14d5294b64a",
+    "lines": 58,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read natural/current aspect ratios, centered placement, replacement anchoring and generated frame fitting. Existing tests cover landscape/portrait and fixed-size cases."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-node-info.ts",
+    "sha256": "af5f1f9bfd5d9820d32a66a5d92ac62d65faeac59bf350c93ebca1be12e72544",
+    "lines": 12,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read status labels and JSON formatting/redaction of inline image payloads. Existing tests preserve ordinary image URLs and human-authored prompt text."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-node-specs.ts",
+    "sha256": "97285e7db66840b85e701f7bd04a39997dc9a59fd7aeff60379832adc23a701c",
+    "lines": 12,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read node-type sizes, fallback labels and available-node metadata used by engine and creation handlers."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-panorama-viewer.tsx",
+    "sha256": "d67e440ade74388d34f3b445aef7b088c264bf6e2547ab628d76ff2eb48415be",
+    "lines": 170,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read viewer lifecycle, texture loading, projection controls and resource disposal. No fresh upstream panorama behavior was inferred; existing browser smoke does not validate a GPU/texture matrix."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-panorama.ts",
+    "sha256": "b5e6daf4bf2528238837cf1c7165f311bfd3c171c89abb93dd56931092a8e807",
+    "lines": 67,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read panorama prompt/retry contracts, fixed 2:1 dimensions, quality/count mapping and proxy URL selection. Existing tests cover text/edit variants and fixed display dimensions."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-project-dialog.tsx",
+    "sha256": "e980ce444f898291439bf86891fc92ca761146c5bc374d07cd4492be677563b1",
+    "lines": 54,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read mode-specific project forms, busy controls, validation and submit/cancel wiring. Bulk-delete dialog lifecycle fixes are in library-page.tsx."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-project-transfer-types.ts",
+    "sha256": "8fb42713db4ddde07592519c3c8660d7c272967c9ff6f9ee6fdfe42b9e2194b5",
+    "lines": 42,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read archive document/media manifest interfaces against writer/reader consumers."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-project-transfer.ts",
+    "sha256": "c8f90cfd8ecd716f006edf2b050be5837b3f5dc2299a55c5e909ed8872092df2",
+    "lines": 156,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read the complete archive traversal, storage-key deduplication, upload/remapping and error cleanup. Earlier fixes enforce project-count preflight and remove newly uploaded files after partial import failure; focused transfer tests cover both. Archive decompression is local and does not constitute live provider validation."
+    ],
+    "finding": true,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-prompt-library.tsx",
+    "sha256": "5989a1dc9eef60a413787e60cd44a7646c994fbded7066a4e3359e9e06ba332b",
+    "lines": 36,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read prompt listing, filtering, selection and controlled insertion callbacks."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-resource-mention-textarea.tsx",
+    "sha256": "763eba0ded209259aa50f33fade360dd3b2f55cb65df994e4f3e0f85a6a060eb",
+    "lines": 284,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read mention detection/selection, input keyboard handling, submit-key semantics and caret restoration."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-resource-mentions.ts",
+    "sha256": "19b59c6bef09a802f58fe80f955e43b4cc3346f0375be0bd72f562d19127f009",
+    "lines": 61,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read standalone-at detection, active-reference filtering, numbered-label insertion and IME-safe submit keys. Existing tests cover composing Enter and modified Enter."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-resources.ts",
+    "sha256": "9fc19b6d11ac5fe9cae0bc67ca6b14fad94ebb32a24872c8cdd4aa267ee950da",
+    "lines": 83,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read canvas resource indexing, media-kind mappings and connection-ordered numbering. Existing tests cover video/audio/panorama and connected-config resources."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-save.ts",
+    "sha256": "0cda1402fdd80edb85d3ff4233ec310ad298e909f6892589aa5d6648f289cab6",
+    "lines": 22,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read change-version checks and save flushing until stable. Tests cover edits during save, failed save and project switch."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-side-panel.tsx",
+    "sha256": "9a6636d0ed3b93ab7d0096799181cfd8e02c6f99b8ba92ce791ae02b1b1dd27e",
+    "lines": 661,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read the entire asset/prompt/history panel, session-scoped prompt cache, request versioning, pagination/category limits and resize/selection behavior. Existing tests cover bounded cache and stale response protection."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-special-nodes.tsx",
+    "sha256": "09aba9fbfb86d01744b3b0033a79d1f093eea96e0f08c1b64a0b7d5c069ab733",
+    "lines": 132,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read audio/video/panorama/director/config controls, shared generation footer and real parent callbacks. Provider execution was not called during UI verification."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-task-results.ts",
+    "sha256": "0df184cddf300e5f9c0d935097f1a600ee4430e86b32eae48b6f30cbe52f260f",
+    "lines": 400,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Fixed persisted partial batches compacting unfinished output slots and assigning image 1 to later nodes. Preserves complete slot ordering, leaves already completed nodes intact and separates independent panorama tasks. Also avoids counting video nodes as image outputs. Tests cover running/terminal recovery and a separately retried earlier child."
+    ],
+    "finding": true,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-text-generation.ts",
+    "sha256": "99e597b97f9a16d58b324dcefa54671123287ec23b989fe1ab1ae70cae69d3ab",
+    "lines": 33,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read text edit-versus-new-node plans, count bounds and configured text model resolution. Existing tests cover empty text nodes, source-preserving edits and config counts."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-video-import.ts",
+    "sha256": "ddc5f58b7eee4644ffed0bcb213f8bbc3a284380a06f1e08b88cbd35d8a96125",
+    "lines": 17,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read file MIME/extension/size acceptance and display fitting against backend MP4/MOV contract. Existing tests cover rejected formats and 50 MiB boundary."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-video-node-bindings.tsx",
+    "sha256": "eec489cd14ef3c8c8556655a3ac3222f66403830c8d0916ae1cc01f70d15ab85",
+    "lines": 58,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read connected-resource options and controlled first/last frame bindings against generation context selection."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-video-player.tsx",
+    "sha256": "c99801bfaaeac67d6a33b78ac59bece7b347fd71d24a5506a855aaa92a754d35",
+    "lines": 256,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read player controls, playback state and dialog wiring, including shared focus policy. Existing time-format tests and source checks cover current behavior; not a codec compatibility survey."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-video-time.ts",
+    "sha256": "1fb2e260a033dbf8841abd852fa06abedd3f33f9c24ffd7c1a586bfede065df5",
+    "lines": 8,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read finite-time normalization and minute/hour formatting. Tests cover NaN, zero and hour-long durations."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/canvas-viewport.ts",
+    "sha256": "3d2e42046fe149f369a3e6cb8c0a87472a4d5e6b5c6a9cacb9f1c5722623eaa4",
+    "lines": 72,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read zoom clamps, anchor-preserving transforms, grid metrics and padded viewport culling. Tests cover toolbar/wheel zoom and offscreen nodes."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/library-page.tsx",
+    "sha256": "c6de177feb3fa98a1c2db1840ee3459d269e36ba04fc7a9f22cfd349fb9d4458",
+    "lines": 481,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read complete project/Agent library workflows. Fixed bulk-delete dialog staying open and partial deletion leaving already deleted projects selected, causing repeat failures. Actual handler tests cover full and partial success."
+    ],
+    "finding": true,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/library-route.tsx",
+    "sha256": "c69ba18c7c68b64bf15962eda2ebec5488c876b076dc805a564b897eae93759f",
+    "lines": 14,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read canvas library route entry and lazy component wiring. Authenticated browser smoke loaded the library on desktop/mobile."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/page.tsx",
+    "sha256": "93435c4f0cf2a30ade4b69e8dc91b2e66cff5382efb0bcd723449581ab50215c",
+    "lines": 5028,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read all lines, including workspace load/save, history, assets, upload/import, node actions, Agent dispatch and every generation path. Fixed text cancellation leaving loading/error toasts; scoped text/audio/video/panorama results and catches by project epoch; strengthened image epoch ownership; detached duplicate batch ownership and included batch children when copying. Actual handler regressions cover late success/failure after undo and project switch. Earlier branch changes were preserved."
+    ],
+    "finding": true,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/src/app/canvas/route.tsx",
+    "sha256": "713bd0848283d07e7fa2a8a9daebe90e348e4b524d9df0ad7e0d5e85f8cb6fa7",
+    "lines": 34,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete file read, including imports/types, all function bodies and JSX or prompt content.",
+      "Read project route parameter handling and lazy canvas entry. Authenticated browser smoke covered document GET/PUT, stale revision conflict and logout rejection."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  }
+]

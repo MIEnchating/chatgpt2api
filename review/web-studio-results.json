@@ -1,0 +1,192 @@
+[
+  {
+    "path": "web/src/app/image/banana-prompts.ts",
+    "sha256": "0415a114f56f92ea58ce27b0b3447bddd6e9e1bcc6a0c9e4f29178503baf5fb2",
+    "bytes": 18949,
+    "lines": 521,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "完整读取文件；核对任务/展示/上传/提示词解析等当前实现与调用关系"
+    ]
+  },
+  {
+    "path": "web/src/app/image/components/chat-markdown.tsx",
+    "sha256": "2eb2b281d2d37e12cecb73ea554d88c5093b6f3a18dac19132d4b9b78d94b66a",
+    "bytes": 15368,
+    "lines": 593,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "完整读取文件；核对任务/展示/上传/提示词解析等当前实现与调用关系"
+    ]
+  },
+  {
+    "path": "web/src/app/image/components/image-composer.tsx",
+    "sha256": "c4ec552ecb177c4bf9635ad710e1eeb66abbc01e3f467f49d71e5637cf5ff7dd",
+    "bytes": 53190,
+    "lines": 1003,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "完整读取文件；核对任务/展示/上传/提示词解析等当前实现与调用关系",
+      "修复输入法组合 Enter 误提交；实际键盘处理函数正反向回归通过"
+    ]
+  },
+  {
+    "path": "web/src/app/image/components/image-prompt-market.tsx",
+    "sha256": "0b5c4a3288d69093c76b9d63004ef33a34b836d461746569bbb70cb35860bfbb",
+    "bytes": 35291,
+    "lines": 799,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "完整读取文件；核对任务/展示/上传/提示词解析等当前实现与调用关系"
+    ]
+  },
+  {
+    "path": "web/src/app/image/components/image-results.tsx",
+    "sha256": "26af931f920e686070f6499070cf70db453dd69dc578425a70d6ae42941e1325",
+    "bytes": 59524,
+    "lines": 1231,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "完整读取文件；核对任务/展示/上传/提示词解析等当前实现与调用关系"
+    ]
+  },
+  {
+    "path": "web/src/app/image/components/image-sidebar.tsx",
+    "sha256": "e0cd8b0d968a72994ec1644caef27cdd2c8134087967a5a47a81ed2432994949",
+    "bytes": 6332,
+    "lines": 147,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "完整读取文件；核对任务/展示/上传/提示词解析等当前实现与调用关系"
+    ]
+  },
+  {
+    "path": "web/src/app/image/image-presets.ts",
+    "sha256": "cf65db36f084596ca764649329ca7cfdfde986d20f9590279768f767ac97223e",
+    "bytes": 7381,
+    "lines": 42,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "完整读取文件；核对任务/展示/上传/提示词解析等当前实现与调用关系"
+    ]
+  },
+  {
+    "path": "web/src/app/image/page.tsx",
+    "sha256": "33840478aee9c4641b162d80fed246a3115786704a89c069117f1159f5e0c004",
+    "bytes": 239174,
+    "lines": 5691,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "完整读取文件；核对任务/展示/上传/提示词解析等当前实现与调用关系",
+      "修复编辑模型 Key 错选、重试旧 storageKey 和视频音频上传晚到；七项实际回调回归已通过",
+      "仍待核实：任务准备阶段跨账号上传、视频提交取消路径、尺寸对齐开关与队列参数一致性"
+    ]
+  },
+  {
+    "path": "web/src/app/image/prompt-favorite-request-lifecycle.ts",
+    "sha256": "9840fc3417b608d1f53c3eb6880ee94a4f414df3d1fb14eafeea963f9b8c5281",
+    "bytes": 3575,
+    "lines": 130,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "完整读取文件；核对任务/展示/上传/提示词解析等当前实现与调用关系"
+    ]
+  },
+  {
+    "path": "web/src/app/image/prompt-favorites.ts",
+    "sha256": "76b4174ce522f12056d5f9ace7e7c11e91c2dacb487ad08de9fbb16091236db0",
+    "bytes": 4043,
+    "lines": 140,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "完整读取文件；核对任务/展示/上传/提示词解析等当前实现与调用关系"
+    ]
+  },
+  {
+    "path": "web/src/app/image/reference-prompt-sources.ts",
+    "sha256": "ce492913435771d7b8883a40c053eb849dbde9e0f18740914bf780340e3b96c4",
+    "bytes": 14757,
+    "lines": 305,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "完整读取文件；核对任务/展示/上传/提示词解析等当前实现与调用关系"
+    ]
+  },
+  {
+    "path": "web/src/app/image/use-video-task-queue.ts",
+    "sha256": "9d39751da2022521fdb8f2e4bbc6758b6b4fe9c5524a2070ceb65524d9be1593",
+    "bytes": 3226,
+    "lines": 90,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "完整读取文件；核对任务/展示/上传/提示词解析等当前实现与调用关系"
+    ]
+  },
+  {
+    "path": "web/src/app/image/video-task-state.ts",
+    "sha256": "50ed6a4e2c43c23b393bed75aa765e551ade322e91cbc14103cf5286fd14d21c",
+    "bytes": 851,
+    "lines": 21,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "完整读取文件；核对任务/展示/上传/提示词解析等当前实现与调用关系"
+    ]
+  },
+  {
+    "path": "web/tests/prompt-favorite-request-lifecycle.test.mjs",
+    "sha256": "50ad4348c9e360d5bbbb4d7d8ed321116e3e89c23c005e9bdd0e390ac9a9d5d5",
+    "bytes": 4222,
+    "lines": 122,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "完整读取所有测试及 mock 清理；对应源码全文已读；新回归执行真实回调而非源码字符串断言"
+    ]
+  },
+  {
+    "path": "web/tests/prompt-reference-sources.test.mjs",
+    "sha256": "5ee9ad6e71aaf09d0b2f2675d068ee2ac3c8d6c23f32ea2888cf59fd8e5ee0e8",
+    "bytes": 5139,
+    "lines": 113,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "完整读取所有测试及 mock 清理；对应源码全文已读；新回归执行真实回调而非源码字符串断言"
+    ]
+  },
+  {
+    "path": "web/tests/prompt-sources.test.mjs",
+    "sha256": "f5c78efaa0ddfd7897a4bc68e64b47388ee0f138eefe9567ae23828977c52b1f",
+    "bytes": 4994,
+    "lines": 129,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "完整读取所有测试及 mock 清理；对应源码全文已读；新回归执行真实回调而非源码字符串断言"
+    ]
+  },
+  {
+    "path": "web/tests/studio-review-regressions.test.mjs",
+    "sha256": "3f2aa93f712a1a54bbf1a845f1357f1f1b9100b40857caa6a9874d9f0148301e",
+    "bytes": 7993,
+    "lines": 151,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "完整读取所有测试及 mock 清理；对应源码全文已读；新回归执行真实回调而非源码字符串断言"
+    ]
+  }
+]

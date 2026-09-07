@@ -1310,6 +1310,21 @@ func (s *ImageService) writeImageMetadataForRefOnce(ref imageFileRef, ownerID, o
 	}
 	err = s.writeImageMetadata(ref.rel, meta)
 	if finishReferenceReplacement != nil {
+		if err != nil && !errors.Is(err, storage.ErrConcurrentRowUpdate) {
+			// A failed commit response does not prove that the metadata was not
+			// saved. Keep any potentially committed reference files intact.
+			current, loadErr := s.loadImageMetadata(ref.rel)
+			if loadErr != nil {
+				return errors.Join(err, fmt.Errorf("check image reference commit: %w", loadErr))
+			}
+			for _, stored := range current.ReferenceImages {
+				for _, candidate := range meta.ReferenceImages {
+					if stored.Path == candidate.Path {
+						return err
+					}
+				}
+			}
+		}
 		finishReferenceReplacement(err == nil)
 	}
 	return err

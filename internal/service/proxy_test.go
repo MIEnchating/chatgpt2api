@@ -2,10 +2,12 @@ package service
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"strings"
 	"sync"
@@ -50,6 +52,50 @@ func waitForSignal(t *testing.T, signal <-chan struct{}, message string) {
 	case <-signal:
 	case <-time.After(5 * time.Second):
 		t.Fatal(message)
+	}
+}
+
+func TestSOCKS5DialCancellationClosesStalledHandshake(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		connection, acceptErr := listener.Accept()
+		if acceptErr == nil {
+			accepted <- connection
+		}
+	}()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		connection, dialErr := socks5DialContext(&url.URL{Scheme: "socks5h", Host: listener.Addr().String()})(ctx, "tcp", "example.com:443")
+		if connection != nil {
+			_ = connection.Close()
+		}
+		done <- dialErr
+	}()
+	var connection net.Conn
+	select {
+	case connection = <-accepted:
+	case <-time.After(3 * time.Second):
+		t.Fatal("proxy connection was not established")
+	}
+	defer connection.Close()
+	if _, err := io.ReadFull(connection, make([]byte, 3)); err != nil {
+		t.Fatal(err)
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("dial error = %v, want context.Canceled", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("cancellation left the SOCKS handshake blocked")
 	}
 }
 

@@ -1,0 +1,180 @@
+[
+  {
+    "path": "web/src/app/workflows/creative-workflow-workspace.tsx",
+    "status": "reviewed",
+    "reviewer": "root",
+    "sha256": "0d80d39ea591e5abfeb5497f10cab45bc8a198857850a34fb395f9acfc7174ec",
+    "lines": 2589,
+    "bytes": 133080,
+    "checks": [
+      "完整读取当前文件；核对工作流持久化、任务恢复、引用生命周期、异步身份边界与页面控制关系",
+      "真实 Chrome 复现旧工作流规划返回覆盖新 runner，增加 runner 代次/当前账号检查；当前 runner 正常生成验证通过",
+      "批次部分提交失败后刷新可能长期显示缺少子任务，尚未完整复现；账号切换时其他异步路径仍需继续核实"
+    ]
+  },
+  {
+    "path": "web/src/app/workflows/workflow-runtime.ts",
+    "status": "reviewed",
+    "reviewer": "root",
+    "sha256": "4a5bd9deb1507fbe87db5120304f8f7b7032fa861f58323c5b23a8ee64ce18b0",
+    "lines": 481,
+    "bytes": 17861,
+    "checks": [
+      "完整读取当前文件；核对工作流持久化、任务恢复、引用生命周期、异步身份边界与页面控制关系"
+    ]
+  },
+  {
+    "path": "web/src/app/workflows/workflow-task-runtime.ts",
+    "status": "reviewed",
+    "reviewer": "root",
+    "sha256": "6cfaf80e80e7caeab2fe5f0b811c22ff36e1a15741bd38bc5886dec52aa76c14",
+    "lines": 219,
+    "bytes": 7922,
+    "checks": [
+      "完整读取当前文件；核对工作流持久化、任务恢复、引用生命周期、异步身份边界与页面控制关系"
+    ]
+  },
+  {
+    "path": "web/src/app/workflows/workflow-agent-draft-lifecycle.ts",
+    "status": "reviewed",
+    "reviewer": "root",
+    "sha256": "40de7116f377df8934a2fffc1b45cd47eed0c95edac7bf0b2e52e430e5a01ae2",
+    "lines": 20,
+    "bytes": 727,
+    "checks": [
+      "完整读取当前文件；核对工作流持久化、任务恢复、引用生命周期、异步身份边界与页面控制关系"
+    ]
+  },
+  {
+    "path": "web/src/app/workflows/workflow-reference-lifecycle.ts",
+    "status": "reviewed",
+    "reviewer": "root",
+    "sha256": "13288be21a40fd4905ac284c32657dcb839c1a83e19d1ed5a752ab38f9587e36",
+    "lines": 49,
+    "bytes": 1655,
+    "checks": [
+      "完整读取当前文件；核对工作流持久化、任务恢复、引用生命周期、异步身份边界与页面控制关系"
+    ]
+  },
+  {
+    "path": "web/src/app/workflows/page.tsx",
+    "status": "reviewed",
+    "reviewer": "root",
+    "sha256": "93405e87f103f4e77a39441c03ad8d4187b468c92d13970a54c912febec70c7e",
+    "lines": 7,
+    "bytes": 189,
+    "checks": [
+      "完整读取当前文件；核对工作流持久化、任务恢复、引用生命周期、异步身份边界与页面控制关系"
+    ]
+  },
+  {
+    "path": "web/tests/workflow-runtime.test.mjs",
+    "status": "reviewed",
+    "reviewer": "root",
+    "sha256": "44f1f32bdd807f43289413c3fbc8ede0b54972df77588f7087122e97d5348468",
+    "lines": 546,
+    "bytes": 19108,
+    "checks": [
+      "完整阅读测试断言及夹具；功能回归与源码断言证据按实际区分，非完整 UI 自动化"
+    ]
+  },
+  {
+    "path": "web/tests/workflow-task-polling.test.mjs",
+    "status": "reviewed",
+    "reviewer": "root",
+    "sha256": "b8f5a6d9cf2d4ec3f9fcd792d786cea0f0b75f1232b511a5535a08eedb94af13",
+    "lines": 15,
+    "bytes": 861,
+    "checks": [
+      "完整阅读测试断言及夹具；功能回归与源码断言证据按实际区分，非完整 UI 自动化"
+    ]
+  },
+  {
+    "path": "web/tests/workflow-save-concurrency.test.mjs",
+    "status": "reviewed",
+    "reviewer": "root",
+    "sha256": "1326ea10c8ceacf41de72fbca0f3cf58883eed0ef1db0056202706cf67b21224",
+    "lines": 48,
+    "bytes": 2144,
+    "checks": [
+      "完整阅读测试断言及夹具；功能回归与源码断言证据按实际区分，非完整 UI 自动化"
+    ]
+  },
+  {
+    "path": "web/tests/workflow-agent-draft-session.test.mjs",
+    "status": "reviewed",
+    "reviewer": "root",
+    "sha256": "030de3551f702e287d3f26e0e97a164a733e703aa63754f35e0686c57e60a722",
+    "lines": 115,
+    "bytes": 3939,
+    "checks": [
+      "完整阅读测试断言及夹具；功能回归与源码断言证据按实际区分，非完整 UI 自动化"
+    ]
+  },
+  {
+    "path": "web/tests/workflow-reference-lifecycle.test.mjs",
+    "status": "reviewed",
+    "reviewer": "root",
+    "sha256": "16350a3cad51e7eda98a72873176bca541326950f640b5f34e1c6a59f3ccdbf7",
+    "lines": 125,
+    "bytes": 6031,
+    "checks": [
+      "完整阅读测试断言及夹具；功能回归与源码断言证据按实际区分，非完整 UI 自动化"
+    ]
+  },
+  {
+    "path": "web/tests/workflow-reference-grid.test.mjs",
+    "status": "reviewed",
+    "reviewer": "root",
+    "sha256": "a8a891b8c22978b430952375cb0b9873f3f7b95e3eb8a566f399a8a31839edf6",
+    "lines": 18,
+    "bytes": 942,
+    "checks": [
+      "完整阅读测试断言及夹具；功能回归与源码断言证据按实际区分，非完整 UI 自动化"
+    ]
+  },
+  {
+    "path": "web/src/App.tsx",
+    "status": "reviewed",
+    "reviewer": "root",
+    "sha256": "2234896718b40e8e616bf80f5bc744a69fbb7493e1e1e1252ff8741ed016e004",
+    "lines": 14,
+    "bytes": 407,
+    "checks": [
+      "完整读取当前文件；核对工作流持久化、任务恢复、引用生命周期、异步身份边界与页面控制关系"
+    ]
+  },
+  {
+    "path": "web/src/app/app-shell.tsx",
+    "status": "reviewed",
+    "reviewer": "root",
+    "sha256": "785dd1f4839109b2be3a0f34997af9886dbc55dd6f0bbd0f7bddd20f8d2f516f",
+    "lines": 25,
+    "bytes": 862,
+    "checks": [
+      "完整读取当前文件；核对工作流持久化、任务恢复、引用生命周期、异步身份边界与页面控制关系"
+    ]
+  },
+  {
+    "path": "web/src/app/animated-routes.tsx",
+    "status": "reviewed",
+    "reviewer": "root",
+    "sha256": "7b3773c9d6e9c165b8449bf01498f9e016ada62fbca0eb051416dee107393b77",
+    "lines": 52,
+    "bytes": 1421,
+    "checks": [
+      "完整读取当前文件；核对工作流持久化、任务恢复、引用生命周期、异步身份边界与页面控制关系"
+    ]
+  },
+  {
+    "path": "web/src/constants/common-env.ts",
+    "status": "reviewed",
+    "reviewer": "root",
+    "sha256": "8c0f7d16fd9aa6d5f096ac58d04360f8388dca9b13bf003455da2479a374107e",
+    "lines": 5,
+    "bytes": 96,
+    "checks": [
+      "完整读取当前文件；核对工作流持久化、任务恢复、引用生命周期、异步身份边界与页面控制关系"
+    ]
+  }
+]

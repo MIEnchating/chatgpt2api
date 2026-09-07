@@ -233,11 +233,10 @@ function useImageConversationsForQueue() {
       const requestSequence = ++requestSequenceRef.current;
       try {
         const { firstPage, activePage } = await loadImageConversationHistoryWindow(24);
+        if (!active || requestSequence !== requestSequenceRef.current) return;
         const sourceItems = [...firstPage.items, ...activePage.items];
         const items = mergeImageConversationItems(firstPage.items, activePage.items);
-        if (active && requestSequence === requestSequenceRef.current) {
-          setConversations(items);
-        }
+        setConversations(items);
         for (const conversation of sourceItems) {
           if (!isWorkflowImageConversation(conversation) || cleanupIDsRef.current.has(conversation.id)) continue;
           cleanupIDsRef.current.add(conversation.id);
@@ -566,7 +565,11 @@ export function ImageTaskQueue({ className }: { className?: string }) {
   }, [activeCount, hasRecentCompletion, open, progressByTurnKey]);
 
   const handleOpenConversation = (conversationId: string) => {
-    window.localStorage.setItem(ACTIVE_IMAGE_CONVERSATION_STORAGE_KEY, conversationId);
+    try {
+      window.localStorage.setItem(ACTIVE_IMAGE_CONVERSATION_STORAGE_KEY, conversationId);
+    } catch {
+      // Navigation and the active-conversation event still work without browser storage.
+    }
     window.dispatchEvent(
       new CustomEvent(IMAGE_ACTIVE_CONVERSATION_REQUEST_EVENT, {
         detail: { conversationId },

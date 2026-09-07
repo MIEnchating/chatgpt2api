@@ -1217,6 +1217,48 @@ func TestImageServiceReferenceReplacementRollsBackWhenMetadataSaveFails(t *testi
 	}
 }
 
+func TestImageServiceReferenceReplacementPreservesCommittedFilesAfterSaveError(t *testing.T) {
+	config := testImageConfig{root: t.TempDir()}
+	backend := newTestStorageBackend(t)
+	documents := backend.(storage.JSONDocumentBackend)
+	service := NewImageService(config, backend)
+	imageURL, err := service.SaveImageBytes(context.Background(), testPNGBytes(t, 32, 24), "", "owner", "Owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ref := service.imageFileRefs([]string{imageURL})[0]
+	if err := service.writeImageMetadataForRef(ref, "owner", "Owner", ImageVisibilityPrivate, GeneratedImageMetadata{
+		ReferenceImages: []GeneratedImageReference{{Filename: "first.png", Data: testPNGBytes(t, 8, 8)}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	wantErr := errors.New("commit response was lost")
+	service.store = &myAssetCommitThenFailDocumentSaveBackend{
+		Backend: backend, JSONDocumentBackend: documents,
+		documentName: imageOwnerDocumentName(ref.rel), failNext: 1, err: wantErr,
+	}
+	newData := testPNGBytes(t, 10, 10)
+	err = service.writeImageMetadataForRef(ref, "owner", "Owner", ImageVisibilityPrivate, GeneratedImageMetadata{
+		ReferenceImages: []GeneratedImageReference{{Filename: "second.png", Data: newData}},
+	})
+	if !errors.Is(err, wantErr) {
+		t.Fatalf("metadata update error = %v, want uncertain commit error", err)
+	}
+	reloaded := NewImageService(config, backend)
+	meta, err := reloaded.loadImageMetadata(ref.rel)
+	if err != nil || len(meta.ReferenceImages) != 1 || meta.ReferenceImages[0].Filename != "second.png" {
+		t.Fatalf("committed metadata = (%#v, %v)", meta, err)
+	}
+	access, err := reloaded.ImageReferenceFileAccess(meta.ReferenceImages[0].Path)
+	if err != nil {
+		t.Fatalf("committed reference was deleted during rollback: %v", err)
+	}
+	stored, err := os.ReadFile(access.Path)
+	if err != nil || !bytes.Equal(stored, newData) {
+		t.Fatalf("committed reference data differs: %v", err)
+	}
+}
+
 func TestImageServicePublicListHidesUnsharedGenerationMetadata(t *testing.T) {
 	root := t.TempDir()
 	config := testImageConfig{root: root}

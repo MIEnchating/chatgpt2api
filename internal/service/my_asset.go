@@ -171,6 +171,41 @@ func (s *MyAssetService) List(ownerID string) ([]MyAsset, error) {
 	return s.loadLocked(ownerID)
 }
 
+// ReadStorageObjectForIdentity grants shared reads only through a public asset
+// in the actual storage object's owner's document. Ownership checks elsewhere
+// remain independent of asset visibility.
+func (s *MyAssetService) ReadStorageObjectForIdentity(viewerID string, admin bool, objectID string) (model.StorageObject, error) {
+	viewerID = strings.TrimSpace(viewerID)
+	if viewerID == "" {
+		return model.StorageObject{}, ErrStorageObjectAccessDenied
+	}
+	if s.objects == nil {
+		return model.StorageObject{}, errors.New("asset object storage is required")
+	}
+	object, err := s.objects.InfoForIdentity(viewerID, true, strings.TrimSpace(objectID))
+	if err != nil {
+		return model.StorageObject{}, err
+	}
+	if admin || object.CreatedBy == viewerID {
+		return object, nil
+	}
+	if strings.TrimSpace(object.CreatedBy) == "" {
+		return model.StorageObject{}, ErrStorageObjectAccessDenied
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	document, err := s.loadDocumentLocked(object.CreatedBy)
+	if err != nil {
+		return model.StorageObject{}, err
+	}
+	for _, item := range document.items {
+		if item.Visibility == MyAssetPublic && storageObjectIDFromKey(item.StorageKey) == object.ID {
+			return object, nil
+		}
+	}
+	return model.StorageObject{}, ErrStorageObjectAccessDenied
+}
+
 // Upsert applies one asset mutation to the latest stored document. Retrying the
 // item-level intent after a document CAS conflict preserves unrelated writes.
 func (s *MyAssetService) Upsert(ctx context.Context, ownerID string, admin bool, input MyAsset) (MyAsset, error) {

@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -72,6 +73,42 @@ func newGenericStorageTestService(t *testing.T, setting model.StorageSetting) *G
 		t.Fatal(err)
 	}
 	return service
+}
+
+type cancelingStorageReader struct {
+	reader io.Reader
+	cancel context.CancelFunc
+}
+
+func (r cancelingStorageReader) Read(p []byte) (int, error) {
+	n, err := r.reader.Read(p)
+	r.cancel()
+	return n, err
+}
+
+func TestGenericStorageUploadHonorsCancellation(t *testing.T) {
+	for _, cancelBefore := range []bool{false, true} {
+		t.Run(fmt.Sprintf("cancel-before-%v", cancelBefore), func(t *testing.T) {
+			service := newGenericStorageTestService(t, model.StorageSetting{})
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			var source io.Reader = cancelingStorageReader{reader: strings.NewReader("media"), cancel: cancel}
+			if cancelBefore {
+				cancel()
+			}
+			if result, err := service.UploadReader(ctx, "user-1", false, "media.bin", "application/octet-stream", source, 5, nil); !errors.Is(err, context.Canceled) {
+				t.Fatalf("UploadReader() = (%#v, %v), want context.Canceled", result, err)
+			}
+			objects, err := service.objects.StorageObjectUsageByMIME(service.localStorageProvider().ID)
+			if err != nil || len(objects) != 0 {
+				t.Fatalf("stored objects = (%#v, %v), want none", objects, err)
+			}
+			used, err := measureLocalStorageProvider(service.localStorageProvider())
+			if err != nil || used != 0 {
+				t.Fatalf("local storage bytes = (%d, %v), want zero", used, err)
+			}
+		})
+	}
 }
 
 func TestRemoveEmptyLocalStorageDirectoriesStopsAtConfiguredRoot(t *testing.T) {
@@ -185,6 +222,28 @@ func TestGenericStorageServiceMeasureUserHonorsProviderSetting(t *testing.T) {
 	}
 	if requests != 0 {
 		t.Fatalf("private endpoint received %d requests", requests)
+	}
+}
+
+func TestGenericStorageServiceRejectsLocalUserProviderOverrides(t *testing.T) {
+	for _, kind := range []string{"local", " LOCAL ", "unknown", ""} {
+		t.Run(kind, func(t *testing.T) {
+			service := newGenericStorageTestService(t, model.StorageSetting{AllowUserProvider: true})
+			outside := t.TempDir()
+			input := StorageObjectProviderInput{Type: kind, Endpoint: outside}
+			_, uploadErr := service.Upload(context.Background(), "user-1", false, "sample.txt", "text/plain", []byte("outside storage"), &input)
+			var validationErr StorageValidationError
+			if !errors.As(uploadErr, &validationErr) {
+				t.Fatalf("Upload() error = %v, want provider type validation error", uploadErr)
+			}
+			if entries, err := os.ReadDir(outside); err != nil || len(entries) != 0 {
+				t.Fatalf("user override modified local directory: entries=%v, error=%v", entries, err)
+			}
+			_, measureErr := service.MeasureUser(context.Background(), "user-1", input)
+			if !errors.As(measureErr, &validationErr) {
+				t.Fatalf("MeasureUser() error = %v, want provider type validation error", measureErr)
+			}
+		})
 	}
 }
 

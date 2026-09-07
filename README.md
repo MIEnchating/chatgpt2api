@@ -56,7 +56,7 @@
 
 - React 19 + Vite 管理端。
 - 登录页、创作台、无限画布、工作流、提示词库、素材库、用户管理、角色权限、日志管理和设置页。
-- 登录只保留内置管理员和 NewAPI 普通用户；NewAPI 数据库只读，不在本系统写入用户、Key 或令牌。
+- 登录支持内置管理员、管理员创建的本地密码用户，以及 NewAPI / Sub2API 普通用户；上游用户数据库只读，不在上游写入用户、Key 或令牌。
 - 本地鉴权只使用登录接口签发的 HttpOnly Cookie；不签发个人 API Key，也不接受 `Authorization`、`x-api-key` 等请求头作为内部业务接口凭据。升级时会清除旧版本遗留的本地 API Key 记录。
 - 普通用户按本人可用的 NewAPI Key 名称选择令牌；切换 Key 后，新请求按当前选择精确读取对应密钥。
 - 首次启动自动初始化管理员；未配置密码时会生成一次性管理员密码并输出到启动日志。
@@ -418,7 +418,7 @@ bun run build
 
 ### CI
 
-`.github/workflows/ci.yml` 在 `main` push 和 pull request 上执行：
+`.github/workflows/ci.yml` 在 `main`、`dev` push 和 pull request 上执行：
 
 - `bun install --frozen-lockfile`
 - `bun run lint`

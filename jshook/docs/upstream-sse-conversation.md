@@ -157,7 +157,7 @@ Conversation SSE 是上游对话链路的流式返回协议。每条 SSE `data:`
 | 条件 | 说明 |
 |:--|:--|
 | `message.author.role == "tool"` | 来源是工具消息 |
-| `metadata.async_task_type == "image_gen"` | 工具任务是图片生成 |
+| 有图片生成工具标识 | 检查 `metadata.async_task_type == "image_gen"`，或该次抓包确认的图片工具 `author.name` / `recipient`；本目录生图样本使用 `t2uay3k.sj1i4kz` 且没有 `async_task_type`，不能仅因缺少该字段丢弃结果 |
 | `asset_pointer` 为 `file-service://...` 或 `sediment://...` | 指向可解析图片资源 |
 
 ## 图片指针类型
@@ -202,7 +202,7 @@ I can't assist with that request. If you have another type of modification...
 |:--|:--|
 | 有 assistant 拒绝文本 | 应返回文本消息 |
 | `tool_invoked == false` | 说明没有实际工具结果 |
-| 没有 `role=tool` 且 `async_task_type=image_gen` 的消息 | 不应收集输出图片 |
+| 没有带图片生成工具标识的 `role=tool` 消息 | 不应收集输出图片 |
 | 用户输入消息里有图片指针 | 仍然只视为输入附件 |
 
 ## moderation 场景
@@ -266,6 +266,5 @@ SSE 结束后可按以下顺序判断结果：
 1. 如果已经收集到图片工具输出指针，解析并下载输出图片。
 2. 如果没有输出图片指针，但有 assistant 文本，并且本轮被拦截或未调用工具，返回文本消息。
 3. 如果没有输出图片指针，但有 `conversation_id`，可查询完整会话明细，继续寻找图片工具输出。
-4. 查询完整会话时，仍然只读取 `role=tool` 且 `async_task_type=image_gen` 的消息。
+4. 查询完整会话时，仍然只读取带图片生成工具标识的 `role=tool` 消息；旧回合或输入附件不能当作当前输出。
 5. 如果没有图片结果也没有文本，返回上游异常或空结果错误。
-

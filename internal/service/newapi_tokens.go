@@ -621,7 +621,10 @@ func (r *NewAPITokenReader) hasTableColumn(ctx context.Context, table, column st
 	key := "column:" + strings.ToLower(table) + ":" + strings.ToLower(column)
 	return r.cachedSchemaPresence(key, func() (bool, error) {
 		if r.driver != "sqlite" {
-			query := "SELECT 1 FROM information_schema.columns WHERE table_name = " + r.placeholder(1) + " AND column_name = " + r.placeholder(2) + " LIMIT 1"
+			query := "SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ? LIMIT 1"
+			if r.driver == "postgres" {
+				query = "SELECT 1 FROM pg_catalog.pg_attribute WHERE attrelid = to_regclass($1) AND attname = $2 AND attnum > 0 AND NOT attisdropped LIMIT 1"
+			}
 			var exists int
 			err := r.db.QueryRowContext(ctx, query, table, column).Scan(&exists)
 			if errors.Is(err, sql.ErrNoRows) {
@@ -658,10 +661,12 @@ func (r *NewAPITokenReader) hasTable(ctx context.Context, table string) bool {
 	key := "table:" + strings.ToLower(strings.TrimSpace(table))
 	return r.cachedSchemaPresence(key, func() (bool, error) {
 		var exists int
-		query := "SELECT 1 FROM information_schema.tables WHERE table_name = " + r.placeholder(1) + " LIMIT 1"
+		query := "SELECT 1 FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name = ? LIMIT 1"
 		arguments := []any{table}
 		if r.driver == "sqlite" {
 			query = "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ? LIMIT 1"
+		} else if r.driver == "postgres" {
+			query = "SELECT 1 WHERE to_regclass($1) IS NOT NULL"
 		}
 		err := r.db.QueryRowContext(ctx, query, arguments...).Scan(&exists)
 		if errors.Is(err, sql.ErrNoRows) {

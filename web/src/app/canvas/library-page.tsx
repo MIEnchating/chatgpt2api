@@ -261,16 +261,22 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
     const selected = projects.filter((project) => selectedProjectIDs.has(project.id));
     if (!selected.length || busy) return;
     setBusy(true);
+    let deletedCount = 0;
     try {
       for (const project of selected) {
         await updateCanvasProject({ action: "delete", project_id: project.id, revision: project.revision });
+        deletedCount += 1;
+        setProjects((current) => current.filter((item) => item.id !== project.id));
+        setSelectedProjectIDs((current) => new Set([...current].filter((id) => id !== project.id)));
       }
+      setProjectDialog(null);
       const workspace = await fetchCanvasDocument();
       setProjects(workspace.projects || []);
       setActiveProjectID(workspace.active_project_id || workspace.document?.id || "");
       setSelectedProjectIDs(new Set());
       toast.success(`已删除 ${selected.length} 个画布`);
     } catch (error) {
+      if (deletedCount < selected.length) setProjectDialog({ mode: "delete", count: selected.length - deletedCount });
       toast.error(error instanceof Error ? error.message : "批量删除画布失败");
     } finally {
       setBusy(false);

@@ -815,6 +815,9 @@ func (s *ImageConversationAssetService) assetizeReference(ctx context.Context, o
 	}
 	access, err := s.Access(value, ownerID, false)
 	if err != nil {
+		if errors.Is(err, ErrImageConversationAssetNotFound) && imageConversationReferenceIsOwnedCanonical(item, ownerID) {
+			return cloneImageConversationAssetMap(item), false, nil
+		}
 		return nil, false, err
 	}
 	if touchManaged {
@@ -930,6 +933,9 @@ func (s *ImageConversationAssetService) prepareReference(ctx context.Context, ow
 		return nil
 	}
 	_, err := s.Access(value, ownerID, false)
+	if errors.Is(err, ErrImageConversationAssetNotFound) && imageConversationReferenceIsOwnedCanonical(item, ownerID) {
+		return nil
+	}
 	return err
 }
 
@@ -1155,6 +1161,17 @@ func imageConversationReferenceNeedsAssetization(item map[string]any) bool {
 		}
 	}
 	return false
+}
+
+// Retention cleanup can remove a managed file while its conversation remains.
+// Preserve its canonical metadata for the owner without granting file access.
+func imageConversationReferenceIsOwnedCanonical(item map[string]any, ownerID string) bool {
+	if !imageConversationReferenceIsCanonical(item) {
+		return false
+	}
+	ownerID = strings.TrimSpace(ownerID)
+	_, ownerHash, _, _, err := parseImageConversationAssetPath(toString(item["assetPath"]))
+	return err == nil && ownerID != "" && ownerID != "anonymous" && ownerHash == imageConversationAssetHash([]byte(ownerID))
 }
 
 func imageConversationReferenceIsCanonical(item map[string]any) bool {

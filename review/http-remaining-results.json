@@ -1,0 +1,142 @@
+[
+  {
+    "path": "internal/httpapi/relay.go",
+    "sha256": "922853be3a1309105e023004c63b3b7ef12ec9a885f279afe99d22c4ed8b6cff",
+    "line_count": 3661,
+    "status": "reviewed",
+    "reviewer": "review_storage_config",
+    "checks": [
+      "完整逐文件阅读当前文件的 3661 行内容；SHA256 对应本轮修复后版本。",
+      "完整阅读 relay 选择、私有自定义上游的 SafeOutbound、请求裁剪、槽位生命周期、JSON/multipart 构造、错误处理和有界 JSON/SSE 读取。",
+      "完整阅读视频声明契约 driver、字段映射/轮询状态/产物鉴权、允许域名/同源重定向、流式写盘原子替换；仅修复零字节产物被当作成功及覆盖已有文件。",
+      "确认并修复 SSE 完成标记后继续读导致错误/等待：收到 [DONE] 后成功关闭流和响应体，不再处理后续错误帧。",
+      "确认并修复尺寸比例接受 NaN/Inf、比例除法上溢/下溢，以及大有限比例中间乘法溢出；不修改供应商实时协议或模型目录。",
+      "协议行为仅由当前代码和本地 mock 回归验证，未执行真实供应商网络请求；多行 SSE 与数字任务 ID 未在缺乏当前上游证据时推测修改。",
+      "补充确认整数尺寸舍入 value+8 在 MaxInt 附近溢出，使用余数和有界加法保持正数；修复极大宽高比例翻转或方图缩成低分辨率。"
+    ],
+    "validation": [
+      "build/review/http-remaining-tests.log",
+      "build/review/http-remaining-race.log"
+    ]
+  },
+  {
+    "path": "internal/httpapi/relay_test.go",
+    "sha256": "3017f82f7258e43d8db6d8813db72808061337bf906273fc5e4d712578ffbfaa",
+    "line_count": 2635,
+    "status": "reviewed",
+    "reviewer": "review_storage_config",
+    "checks": [
+      "完整逐文件阅读当前文件的 2635 行内容；SHA256 对应本轮修复后版本。",
+      "完整阅读私有上游/密钥裁剪、槽位获取/释放/取消后 drain、下载鉴权/跨协议或端口跳转拒绝、任务文件隔离与有界视频写盘。",
+      "完整阅读 multipart/JSON 材料、视频契约 driver/轮询取消、Gemini 并发及部分产物保留、image JSON/SSE sniff、嵌入错误/大帧限制/心跳。",
+      "现有供应商参数/KIE 映射测试以本地 mock 为证据，不作为真实上游实时契约已验证的依据。"
+    ],
+    "validation": [
+      "build/review/http-remaining-tests.log",
+      "build/review/http-remaining-race.log"
+    ]
+  },
+  {
+    "path": "internal/httpapi/app_test.go",
+    "sha256": "59fc954a76508fb83bc7abe89f78445902c410f0784bc45f5ea292546758683e",
+    "line_count": 4661,
+    "status": "reviewed",
+    "reviewer": "review_storage_config",
+    "checks": [
+      "完整逐文件阅读当前文件的 4661 行内容；SHA256 对应本轮修复后版本。",
+      "完整阅读任务持久化状态映射、参数整数校验、视频内部字段清理、快照/异步任务、Cookie 鉴权及已移除路由 404。",
+      "完整阅读公告与偏好权限、密码登录/禁用优先、token reader 故障 503/密钥脱敏、自定义 relay 可见性、配置 reader 刷新与失败保留。",
+      "完整阅读工作流公共模板/命令 ID/重复初始化、修订冲突与 last-run、草稿参数校验、服务错误脱敏、请求与业务日志敏感数据排除。",
+      "完整阅读图像本地化/部分成功/取消保留、完成前槽位释放边界、图像参数和 SSE 汇总、工具调用片段合并、画廊元数据及参考图权限。",
+      "完整阅读登录页面与图标上传、媒体删除批量预检/懒缩略图/坏源失效、Cookie 生命周期/host-only、CORS 来源与预检边界。",
+      "完整阅读用户列表分页/排序/无效查询无副作用、任务轮询禁缓存、审计噪声筛选、日志保留计划、个人资产账户隔离及共享可见性。",
+      "测试资源使用临时目录与 SQLite；外部账户测试辅助函数实际调用 UpsertNewAPISession，密码登录端到端由专门用例覆盖。"
+    ],
+    "validation": [
+      "build/review/http-remaining-tests.log",
+      "build/review/http-remaining-race.log"
+    ]
+  },
+  {
+    "path": "internal/httpapi/video_declared_contract_test.go",
+    "sha256": "dfd29fc85f94fbe9847ee43f5f8afe035c793f53a28e32bfa5b010abc0b173b0",
+    "line_count": 579,
+    "status": "reviewed",
+    "reviewer": "review_storage_config",
+    "checks": [
+      "完整逐文件阅读当前文件的 579 行内容；SHA256 对应本轮修复后版本。",
+      "完整阅读 canonical 参数规则只应用一次、契约快照隔离、嵌套路径/数组提取、driver 完备性、材料模式/数量/参数约束和 HTTP 400。",
+      "完整阅读 authenticated artifacts 的同源、跨端口拒绝及显式允许域名；mock 测试不声明实时供应商网络契约有效。"
+    ],
+    "validation": [
+      "build/review/http-remaining-tests.log",
+      "build/review/http-remaining-race.log"
+    ]
+  },
+  {
+    "path": "internal/httpapi/video_model_contracts_test.go",
+    "sha256": "df030aef65605e2b06918ad9d88b1c2800430ad71f5d5b26ac85829e7e5716c5",
+    "line_count": 587,
+    "status": "reviewed",
+    "reviewer": "review_storage_config",
+    "checks": [
+      "完整逐文件阅读当前文件的 587 行内容；SHA256 对应本轮修复后版本。",
+      "完整阅读管理员契约生命周期、严格 v4 导入、预览、LLM schema prompt 和文档非可信边界、DOCX/HTML 文本提取。",
+      "完整阅读生成未知字段/原始文档模型证据校验、修复重试/流式进度/心跳、未保存草稿和不向日志写入私有文档。"
+    ],
+    "validation": [
+      "build/review/http-remaining-tests.log",
+      "build/review/http-remaining-race.log"
+    ]
+  },
+  {
+    "path": "internal/httpapi/image_conversation_assets_test.go",
+    "sha256": "9c4963cc97e6c59e4020ac59ba601def67b6ed6115544a44ee47bfecddf434d1",
+    "line_count": 391,
+    "status": "reviewed",
+    "reviewer": "review_storage_config",
+    "checks": [
+      "完整逐文件阅读当前文件的 391 行内容；SHA256 对应本轮修复后版本。",
+      "完整阅读 owner/匿名/跨账户/admin 资产访问、ETag/Vary Cookie、资产去重与图库不混合。",
+      "完整阅读容量治理/保留清理、扫描失败无提前删除、批量预检无孤儿和故障响应不泄漏文件路径。"
+    ],
+    "validation": [
+      "build/review/http-remaining-tests.log",
+      "build/review/http-remaining-race.log"
+    ]
+  },
+  {
+    "path": "internal/httpapi/image_conversation_history_test.go",
+    "sha256": "0c5730eee39fb89334fdd6761d2f7e9067f20ec2e2c39cc9584a9110b5258b0b",
+    "line_count": 422,
+    "status": "reviewed",
+    "reviewer": "review_storage_config",
+    "checks": [
+      "完整逐文件阅读当前文件的 422 行内容；SHA256 对应本轮修复后版本。",
+      "完整阅读账户隔离、旧 revision/timestamp 的 409、删除/清空 410、30 条分页和最小 ACK。",
+      "完整阅读批量保存部分 stale 与新条目成功、超限 413、持久化失败 503 和无效请求 400。"
+    ],
+    "validation": [
+      "build/review/http-remaining-tests.log",
+      "build/review/http-remaining-race.log"
+    ]
+  },
+  {
+    "path": "internal/httpapi/relay_boundary_test.go",
+    "sha256": "882a4224fa266ca4514887cededfb333c329344abf82fcd8a95f8e640067f44b",
+    "line_count": 112,
+    "status": "reviewed",
+    "reviewer": "review_storage_config",
+    "checks": [
+      "完整逐文件阅读当前文件的 112 行内容；SHA256 对应本轮修复后版本。",
+      "完整阅读并新增可重复的 [DONE] 后连接错误/已缓冲错误帧回归，验证既有输出、成功终止、无后续读取和响应体关闭。",
+      "验证空视频不能创建成功产物或覆盖既有文件，失败后临时文件清理。",
+      "验证 NaN/Inf/比值上溢下溢拒绝，以及大有限比例保持横竖 2:1；全部新增用例均在修复前观察到预期失败。",
+      "新增 MaxInt、MaxInt/2 的横图/竖图/方图回归；修复前宽高方向反转或错误缩小，修复后分别保持 3840x1920、1920x3840、2880x2880。"
+    ],
+    "validation": [
+      "build/review/http-remaining-tests.log",
+      "build/review/http-remaining-race.log"
+    ]
+  }
+]

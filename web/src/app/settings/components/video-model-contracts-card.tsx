@@ -33,6 +33,8 @@ import {
   X,
 } from "lucide-react";
 import { toast } from "sonner";
+import { AUTH_SESSION_CHANGE_EVENT } from "@/lib/auth-session";
+import { getCachedAuthSession } from "@/lib/session";
 
 import { ImageParameterLabel } from "@/components/generation/image-parameter-ui";
 import { ManagementPagination } from "@/components/management-page";
@@ -885,7 +887,7 @@ function ContractReferenceMaterialPreview({ contract, ruleValues }: { contract: 
   const referenceLimits = contract.capability.references;
   const uiState = videoContractUIState(contract, ruleValues);
   const visible = (field: VideoModelContractRuleField) => !uiState.hidden.has(field);
-  const visibleFrameLimit = Number(visible("first_frame")) + Number(frameLimit > 1 && visible("last_frame"));
+  const visibleFrameLimit = Number(frameLimit > 0 && visible("first_frame")) + Number(frameLimit > 1 && visible("last_frame"));
   const hasReferences = visibleFrameLimit > 0 || referenceLimits.image > 0 && visible("reference_image") || referenceLimits.video > 0 && visible("reference_video") || referenceLimits.audio > 0 && visible("reference_audio");
   if (!hasReferences) return null;
 
@@ -1084,7 +1086,12 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
     mountedRef.current = true;
     mutationTrackerRef.current?.activateSession(sessionKey);
     void loadContracts(sessionKey, true);
+    const handleSessionChange = () => {
+      if (getCachedAuthSession()?.key !== sessionKey) mutationTrackerRef.current?.deactivateSession(sessionKey);
+    };
+    window.addEventListener(AUTH_SESSION_CHANGE_EVENT, handleSessionChange);
     return () => {
+      window.removeEventListener(AUTH_SESSION_CHANGE_EVENT, handleSessionChange);
       mountedRef.current = false;
       mutationTrackerRef.current?.deactivateSession(sessionKey);
       contractLoadVersionRef.current += 1;
@@ -1720,6 +1727,10 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
     });
     try {
       for (const item of targets) {
+        if (!mutationTrackerRef.current!.isCurrent(ticket)) {
+          current = false;
+          return;
+        }
         try {
           const data = await setVideoModelContractEnabled(item.id, enabled);
           latestItems = data.items;
@@ -1738,12 +1749,12 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
         toast.success(`已${enabled ? "启用" : "停用"} ${targets.length} 个契约`);
       }
     } finally {
-      setPendingIds((pending) => {
+      if (current) setPendingIds((pending) => {
         const next = new Set(pending);
         for (const id of targetIds) next.delete(id);
         return next;
       });
-      setOptimisticEnabledByID((values) => {
+      if (current) setOptimisticEnabledByID((values) => {
         const next = new Map(values);
         for (const id of targetIds) next.delete(id);
         return next;
@@ -1764,6 +1775,10 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
     setPendingIds((pending) => new Set([...pending, ...targetIds]));
     try {
       for (const item of targets) {
+        if (!mutationTrackerRef.current!.isCurrent(ticket)) {
+          current = false;
+          return;
+        }
         try {
           const data = await deleteVideoModelContract(item.id);
           latestItems = data.items;
@@ -1784,7 +1799,7 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
         toast.success(`已删除 ${targets.length} 个契约`);
       }
     } finally {
-      setPendingIds((pending) => {
+      if (current) setPendingIds((pending) => {
         const next = new Set(pending);
         for (const id of targetIds) next.delete(id);
         return next;

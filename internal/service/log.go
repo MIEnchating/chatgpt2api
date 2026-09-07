@@ -109,7 +109,7 @@ func (s *LogService) Add(summary string, detail map[string]any) error {
 		"time":    util.NowLocal(),
 		"type":    LogTypeEvent,
 		"summary": summary,
-		"detail":  detail,
+		"detail":  SanitizeLogValue(detail),
 	}
 	if s.store != nil {
 		s.mu.Lock()
@@ -744,7 +744,7 @@ func NewLogger(dataDir string, levels func() []string) (*Logger, error) {
 	writer := io.MultiWriter(os.Stdout, file)
 	return &Logger{
 		levels: levels,
-		logger: slog.New(slog.NewJSONHandler(writer, nil)),
+		logger: slog.New(slog.NewJSONHandler(writer, &slog.HandlerOptions{Level: slog.LevelDebug})),
 		file:   file,
 	}, nil
 }
@@ -837,11 +837,20 @@ func SanitizeLogValue(v any) any {
 			out[i] = SanitizeLogValue(item)
 		}
 		return out
+	case []string:
+		out := make([]string, len(x))
+		for i, item := range x {
+			out[i] = SanitizeLogValue(item).(string)
+		}
+		return out
 	case error:
 		return x.Error()
 	case string:
 		if strings.HasPrefix(strings.TrimSpace(x), "data:") && strings.Contains(x, ";base64,") {
 			return maskBase64(x)
+		}
+		if parsed, err := url.Parse(strings.TrimSpace(x)); err == nil && parsed.Scheme != "" && parsed.Host != "" {
+			return SanitizeLogURL(x)
 		}
 		return x
 	default:
@@ -862,6 +871,7 @@ func SanitizeLogURL(value string) string {
 		return value
 	}
 	parsed.RawQuery = ""
+	parsed.User = nil
 	parsed.ForceQuery = false
 	parsed.Fragment = ""
 	parsed.RawFragment = ""
@@ -869,15 +879,25 @@ func SanitizeLogURL(value string) string {
 }
 
 func sanitizeLogField(key string, value any) any {
+	lowerKey := strings.ToLower(strings.TrimSpace(key))
+	if lowerKey == "token_preview" || lowerKey == "upstream_token_preview" {
+		if text, ok := value.(string); ok {
+			fingerprint, prefixed := strings.CutPrefix(text, "token:")
+			if prefixed && (fingerprint == "empty" || len(fingerprint) == 10 && strings.Trim(fingerprint, "0123456789abcdef") == "") {
+				return text
+			}
+		}
+		return redactedLogValue
+	}
 	if sensitiveLogKey(key) {
 		return redactedLogValue
 	}
-	switch strings.ToLower(strings.TrimSpace(key)) {
-	case "url":
+	switch {
+	case strings.HasSuffix(lowerKey, "url"):
 		if text, ok := value.(string); ok {
 			return SanitizeLogURL(text)
 		}
-	case "urls":
+	case strings.HasSuffix(lowerKey, "urls"):
 		return sanitizeLogURLs(value)
 	}
 	if s, ok := value.(string); ok && base64LogKey(key) {

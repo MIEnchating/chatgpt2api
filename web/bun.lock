@@ -2,7 +2,7 @@
   "lockfileVersion": 1,
   "workspaces": {
     "": {
-      "name": "next-starter",
+      "name": "chatgpt2api-web",
       "dependencies": {
         "@photo-sphere-viewer/core": "^5.14.1",
         "@radix-ui/react-checkbox": "^1.3.3",

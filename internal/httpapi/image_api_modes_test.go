@@ -2,12 +2,42 @@ package httpapi
 
 import (
 	"encoding/base64"
+	"io"
 	"reflect"
+	"strings"
 	"testing"
 
 	"chatgpt2api/internal/protocol"
 	"chatgpt2api/internal/util"
 )
+
+func TestResponsesImageStreamDoesNotCommitPartialOrFailedOutput(t *testing.T) {
+	for _, ending := range []string{
+		"",
+		`data: {"type":"response.failed","response":{"status":"failed","error":{"message":"generation failed"},"output":[]}}` + "\n\n",
+		`data: {"type":"response.incomplete","response":{"status":"incomplete","output":[]}}` + "\n\n",
+	} {
+		stream := relayStreamResult(io.NopCloser(strings.NewReader(`data: {"type":"response.image_generation_call.partial_image","output_index":0,"partial_image_b64":"cHJldmlldw=="}` + "\n\n" + ending)))
+		result, err := responsesImageTaskResult(nil, stream, nil)
+		if err == nil || len(util.AsMapSlice(result["data"])) != 0 {
+			t.Fatalf("unfinished image reported success: result=%#v, err=%v", result, err)
+		}
+	}
+}
+
+func TestResponsesImageStreamCommitsCompletedOutput(t *testing.T) {
+	stream := relayStreamResult(io.NopCloser(strings.NewReader(
+		`data: {"type":"response.image_generation_call.partial_image","output_index":3,"partial_image_b64":"cHJldmlldw=="}` + "\n\n" +
+			`data: {"type":"response.completed","response":{"status":"completed","output":[{"type":"image_generation_call","result":"ZmluYWw="}]}}` + "\n\n")))
+	result, err := responsesImageTaskResult(nil, stream, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	data := util.AsMapSlice(result["data"])
+	if len(data) != 1 || data[0]["b64_json"] != "ZmluYWw=" {
+		t.Fatalf("completed output = %#v", result)
+	}
+}
 
 func TestCopyRelayTaskCredentialsCopiesCurrentFieldOnly(t *testing.T) {
 	target := map[string]any{}

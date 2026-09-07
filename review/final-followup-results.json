@@ -1,0 +1,216 @@
+[
+  {
+    "path": "web/src/app/assets/page.tsx",
+    "sha256": "6362a610aec6f597304393c63fc888e793ccdd34f5b0a8e4b70d830cf8ceeab0",
+    "bytes": 25403,
+    "lines": 405,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "完整读取第 1–395 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "登录态和 owner/共享素材合并；加载取消、筛选分页、选择集校正；单项/批量删除、可见性和文件引用清理。",
+      "按 session.key 重挂载内容；旧请求返回检查 abort；卸载后终止文件清理的后续账号请求；保存错误传播回表单。",
+      "复核全部增量 diff；AUTH 事件同步取消串联删除，显式会话代次重建工作区；同 key 重新验证浏览器回归通过。"
+    ],
+    "finding": true,
+    "findings": [
+      "已修复：账号切换后上一账号素材列表/编辑状态残留；清理过程中卸载后仍串联账号请求；素材保存异常被父组件吞掉。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。",
+      "build/review/web-management-before.log：最初 7 项回归全部失败；build/review/web-management-after.log：首批修复后通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/src/app/prompt-library/page.tsx",
+    "sha256": "0077b0640fc38cb7719d6a4a53b4956c4b63fde9c99a13c55aeb0f7644b73a6f",
+    "bytes": 3520,
+    "lines": 73,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "完整读取第 1–58 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "提示词来源筛选、提示词工作台 handoff、去重读取与素材保存、切换账号/卸载中止串联请求与过期反馈。",
+      "复核完整 73 行及增量；拆分会话工作区，AUTH 事件同步取消旧查重/写入；重新验证后新工作区可用。"
+    ],
+    "finding": true,
+    "findings": [
+      "已修复：读取旧账号素材期间切换账号后仍向当前账号写入提示词素材。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。",
+      "build/review/web-management-before.log：最初 7 项回归全部失败；build/review/web-management-after.log：首批修复后通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/src/app/settings/components/video-model-contracts-card.tsx",
+    "sha256": "722b2b87225b66c379181d03cf8e49e42a49c558305d2313aaafc99dcc8b2dcc",
+    "bytes": 138572,
+    "lines": 2555,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "完整读取第 1–2548 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "完整审查 2540 行原文件：契约模板/JSON 编辑、字段规则、能力限制、请求/响应映射、预览与模拟、导入导出、列表筛选、选择与 CRUD。",
+      "单项/批量乐观状态、ScopedMutationLifecycle ticket、批量请求逐项校验当前 session、帧输入数量与可见性组合；未据静态笔记改动上游协议。",
+      "复核增量 diff；AUTH 事件在 React cleanup 前失效 mutation ticket，阻止后续批量修改。"
+    ],
+    "finding": true,
+    "findings": [
+      "已修复：批量更新/删除在账号失效后继续发送下一项请求；预览 frameLimit=0 仍展示首帧输入。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。",
+      "build/review/web-management-before.log：最初 7 项回归全部失败；build/review/web-management-after.log：首批修复后通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/src/app/settings/page.tsx",
+    "sha256": "8efc1df6eaa7dc586f85c85e58df2e4d473a4a04a42d25d7da080113daf4afb7",
+    "bytes": 6412,
+    "lines": 124,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "完整读取第 1–114 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "管理员设置 section 映射、hash 解码、账号激活/清除、子卡片挂载顺序与权限、未知 section 导航。",
+      "完整复核当前文件；同步失效设置 store，显式会话代次确保同 key 验证后重新初始化；Chrome 通过。"
+    ],
+    "finding": true,
+    "findings": [
+      "已修复：非法 URL fragment 导致设置页渲染抛出 URIError。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。",
+      "build/review/web-management-before.log：最初 7 项回归全部失败；build/review/web-management-after.log：首批修复后通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/src/app/workflows/creative-workflow-workspace.tsx",
+    "status": "reviewed",
+    "reviewer": "root",
+    "sha256": "c4586020ac537e992d5f22415fa811833806a59b92fba7c62ab857973fdf4eb1",
+    "lines": 2604,
+    "bytes": 134248,
+    "checks": [
+      "完整读取当前文件；核对工作流持久化、任务恢复、引用生命周期、异步身份边界与页面控制关系",
+      "真实 Chrome 复现旧工作流规划返回覆盖新 runner，增加 runner 代次/当前账号检查；当前 runner 正常生成验证通过",
+      "批次部分提交失败后刷新可能长期显示缺少子任务，尚未完整复现；账号切换时其他异步路径仍需继续核实",
+      "复核 R33/R53 与本轮全部 diff；同步终止旧账号任务，清理保护，复用会话代次 hook；恢复轮询使用完整账号快照发现后续子任务，保留 runtime 缺失超时失败并避免覆盖本地仍在提交批次；正常/过期/跨账号 Chrome 通过。"
+    ]
+  },
+  {
+    "path": "web/src/app/workflows/workflow-task-runtime.ts",
+    "status": "reviewed",
+    "reviewer": "root",
+    "sha256": "179260ec90d2724e32a7b17022844f44ebe77046596542966128b90c16dd563f",
+    "lines": 226,
+    "bytes": 8609,
+    "checks": [
+      "完整读取当前文件；核对工作流持久化、任务恢复、引用生命周期、异步身份边界与页面控制关系",
+      "完整读取最终实现；缺失且已有子任务全部终态，超过 expectedCount × (timeout + 60 秒提交预算) 的无活动恢复窗口才判失败；仍有 running 子任务时继续等待，保留已产出结果；注入 now 边界回归。"
+    ]
+  },
+  {
+    "path": "web/tests/management-review-regressions.test.mjs",
+    "sha256": "b89a9b4308c52ce5b3cb46e1d34b4a28b3b6f8535efb49bfc47f6b82adf5822f",
+    "bytes": 13383,
+    "lines": 244,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "完整读取第 1–203 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "新增 11 项真实处理函数/真实 store 回归：素材字段清空、等待持久化/防重复/失败反馈、四类默认模型、容量测量并发与状态不变性、非法 hash、批量操作/提示词/清理的会话取消。",
+      "修复前首次 7 项均失败（另有未等待 Promise 导致的未处理错误）；修复后 11 项通过。",
+      "完整读取原测试及本轮新增测试；实际 effect 执行证明 AUTH 事件在 React cleanup 前取消两类 controller 并失效设置和契约生命周期。"
+    ],
+    "finding": false,
+    "findings": [
+      "已核对测试夹具、断言和适用边界。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。",
+      "build/review/web-management-before.log：最初 7 项回归全部失败；build/review/web-management-after.log：首批修复后通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/tests/settings-session-isolation.test.mjs",
+    "sha256": "f63e4dab229c48b559f6c310424686920c3778685e3876454d284f58d1193338",
+    "bytes": 10002,
+    "lines": 286,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "完整读取第 1–286 行；延续压缩前逐段完整阅读记录，修改后复读 diff。",
+      "实际 Zustand store 的 A/B 会话交错、旧保存反馈、卸载代次、模型规范化与默认值范围、页面激活顺序。",
+      "原文件由管理代理完整审阅；复核本轮两条既有页面断言更新，匹配监听清理和会话代次 key；全量通过。"
+    ],
+    "finding": false,
+    "findings": [
+      "已核对测试夹具、断言和适用边界。"
+    ],
+    "validation": [
+      "build/review/web-management-tests.log：61 项通过，0 失败，12 个测试文件。",
+      "build/review/web-management-build.log：TypeScript 与 Vite build 通过；画布调用点由主代理同步更新。",
+      "build/review/web-management-lint.log：Oxlint 0 warnings / 0 errors。",
+      "git diff --check 通过。"
+    ],
+    "boundaries": [
+      "未使用真实 ChatGPT 上游、外部存储或浏览器执行本批新交互；异步回归执行真实处理函数或 store，I/O 使用受控替身。",
+      "此记录只覆盖指定管理页面/入口与列出的相关测试；App.tsx、common-env.ts 已由其他记录 reviewed，本批跳过。",
+      "未将相关测试引用的所有画布/图片工作台/共享组件认定为本批完整阅读；它们由其他审查分支负责。"
+    ]
+  },
+  {
+    "path": "web/tests/workflow-runtime.test.mjs",
+    "status": "reviewed",
+    "reviewer": "root",
+    "sha256": "53db3867ca9dd3cf70a44b3e859f84184c89157b02b735e0309acf0192453b10",
+    "lines": 570,
+    "bytes": 20599,
+    "checks": [
+      "完整阅读测试断言及夹具；功能回归与源码断言证据按实际区分，非完整 UI 自动化",
+      "原文件由工作流审查完整覆盖；复核新增两项缺失/超时/仍运行/补齐回归，原未超时用例固定 now；全量通过。"
+    ]
+  }
+]

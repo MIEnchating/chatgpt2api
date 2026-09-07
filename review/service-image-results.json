@@ -1,0 +1,294 @@
+[
+  {
+    "path": "internal/service/image.go",
+    "sha256": "9c3a7ddb36dd442730a06110677abf7f0fc968894ec4390f3c80bad6b8d00155",
+    "line_count": 2753,
+    "status": "reviewed",
+    "checks": [
+      "完整读取第 1–2753 行；长文件分段读完，初次截断处已补读，后续变更已复读。",
+      "图片路径解析及 owner/public 权限、列表批量元数据、缩略图读写和复用、删除批次预检",
+      "生成参数与引用图片目录替换、CAS 冲突重试、提交结果不明确时的文件保留",
+      "容量/保留期扫描失败传播、公开图片默认保留和删除时重查可见性；已核对本轮已有上下文取消回滚"
+    ],
+    "findings": [
+      "已修复：引用元数据提交实际成功但返回错误时，不再按失败结果删除已提交的新引用文件；写入错误后回读元数据，结果不确定则保留文件。"
+    ],
+    "validation": [
+      "build/review/image-reference-commit-before.log",
+      "build/review/service-image-final-tests.log"
+    ],
+    "boundaries": [
+      "本轮为本地完整代码阅读与聚焦 Go 测试；未调用真实 ChatGPT 图像/视频上游，不据旧研究调整上游协议。",
+      "未模拟恶意本机 symlink 竞争、进程崩溃或跨进程文件系统 staging 竞争；不把此记录解释为这些场景已验证。"
+    ]
+  },
+  {
+    "path": "internal/service/image_conversation_asset_summary_test.go",
+    "sha256": "97a0a00bfc93b49240a0a9371b670587f944e14ec963546546cd550998ae0840",
+    "line_count": 173,
+    "status": "reviewed",
+    "checks": [
+      "完整读取第 1–173 行；长文件分段读完，初次截断处已补读，后续变更已复读。",
+      "完整检查引用摘要不泄漏内部字段、过大摘要安全拒绝和阻塞 DB 扫描的上下文取消",
+      "核对统计引用所用存储夹具、取消时机和失败断言"
+    ],
+    "findings": [
+      "未发现本轮可确认缺陷。"
+    ],
+    "validation": [
+      "build/review/service-image-final-tests.log"
+    ],
+    "boundaries": [
+      "本轮为本地完整代码阅读与聚焦 Go 测试；未调用真实 ChatGPT 图像/视频上游，不据旧研究调整上游协议。",
+      "未模拟恶意本机 symlink 竞争、进程崩溃或跨进程文件系统 staging 竞争；不把此记录解释为这些场景已验证。"
+    ]
+  },
+  {
+    "path": "internal/service/image_conversation_assets.go",
+    "sha256": "8973e38c2024ef61c306e6224b3e0b95b997f378e6009f490ee375d3d2729745",
+    "line_count": 1607,
+    "status": "reviewed",
+    "checks": [
+      "完整读取第 1–1607 行；长文件分段读完，初次截断处已补读，后续变更已复读。",
+      "内容寻址与 owner 哈希隔离、Data URL 类型/字节/数量预检、批量预算和文件回滚",
+      "取消上下文与文件锁、清理保留期/容量/孤儿引用、扫描错误和 owner 标记修复",
+      "会话预处理/批量资产化、canonical 引用、移除素材后的历史保存；缺失 canonical 引用保留仍检查 owner 且不授予文件访问"
+    ],
+    "findings": [
+      "已修复：过期或容量清理移除引用素材后，历史会话无法继续保存；允许保留归属于当前 owner 的完整 canonical 缺失引用元数据，不改变素材读取权限。"
+    ],
+    "validation": [
+      "build/review/image-conversation-cleanup-before.log",
+      "build/review/service-image-final-tests.log"
+    ],
+    "boundaries": [
+      "本轮为本地完整代码阅读与聚焦 Go 测试；未调用真实 ChatGPT 图像/视频上游，不据旧研究调整上游协议。",
+      "未模拟恶意本机 symlink 竞争、进程崩溃或跨进程文件系统 staging 竞争；不把此记录解释为这些场景已验证。"
+    ]
+  },
+  {
+    "path": "internal/service/image_conversation_assets_test.go",
+    "sha256": "db0ace72be9f18f7ab586bbad71531248d250998f64093ec5ef75a0d3bace200",
+    "line_count": 970,
+    "status": "reviewed",
+    "checks": [
+      "完整读取第 1–970 行；长文件分段读完，初次截断处已补读，后续变更已复读。",
+      "逐个检查素材预检、并发去重、共享预算、批量回滚和取消锁等待回归",
+      "检查历史接受 hash、引用摘要重建、延迟资产化和过期/容量清理测试",
+      "新增真实历史保存→清理引用文件→读取→重命名保存回归，并断言文件保持不可读、跨 owner 和非 canonical 缺失引用仍拒绝"
+    ],
+    "findings": [
+      "新增 TestImageConversationHistoryCanSaveAfterReferenceCleanup；修复前真实历史重命名保存因已清理引用失败，修复后通过并校验 owner 和格式边界。"
+    ],
+    "validation": [
+      "build/review/image-conversation-cleanup-before.log",
+      "build/review/service-image-final-tests.log"
+    ],
+    "boundaries": [
+      "本轮为本地完整代码阅读与聚焦 Go 测试；未调用真实 ChatGPT 图像/视频上游，不据旧研究调整上游协议。",
+      "未模拟恶意本机 symlink 竞争、进程崩溃或跨进程文件系统 staging 竞争；不把此记录解释为这些场景已验证。"
+    ]
+  },
+  {
+    "path": "internal/service/image_conversation_history.go",
+    "sha256": "d7eedd053a8842b80517aeb234ba45bf388550030884ef0d78a305e635336dbb",
+    "line_count": 577,
+    "status": "reviewed",
+    "checks": [
+      "完整读取第 1–577 行；长文件分段读完，初次截断处已补读，后续变更已复读。",
+      "历史输入归一化、owner 边界、摘要状态推导和分页/详情入口",
+      "任务 identity/revision/终态排序以及多设备 turn 合并，避免旧活动快照重开已终态任务"
+    ],
+    "findings": [
+      "未发现本轮可确认缺陷。"
+    ],
+    "validation": [
+      "build/review/service-image-final-tests.log"
+    ],
+    "boundaries": [
+      "本轮为本地完整代码阅读与聚焦 Go 测试；未调用真实 ChatGPT 图像/视频上游，不据旧研究调整上游协议。",
+      "未模拟恶意本机 symlink 竞争、进程崩溃或跨进程文件系统 staging 竞争；不把此记录解释为这些场景已验证。"
+    ]
+  },
+  {
+    "path": "internal/service/image_conversation_history_test.go",
+    "sha256": "fb3ccda28daede32927a07a694a4f2d09c76180291fe4e5789716facb7e01aea",
+    "line_count": 636,
+    "status": "reviewed",
+    "checks": [
+      "完整读取第 1–636 行；长文件分段读完，初次截断处已补读，后续变更已复读。",
+      "完整检查 owner 隔离、tombstone/clear watermark、无效输入和 merge acknowledgements",
+      "核对任务 revision 优先级、同 task 身份、终态和 active preview、跨设备遗漏 turn 的保留及同版本旧图片不复活"
+    ],
+    "findings": [
+      "未发现本轮可确认缺陷。"
+    ],
+    "validation": [
+      "build/review/service-image-final-tests.log"
+    ],
+    "boundaries": [
+      "本轮为本地完整代码阅读与聚焦 Go 测试；未调用真实 ChatGPT 图像/视频上游，不据旧研究调整上游协议。",
+      "未模拟恶意本机 symlink 竞争、进程崩溃或跨进程文件系统 staging 竞争；不把此记录解释为这些场景已验证。"
+    ]
+  },
+  {
+    "path": "internal/service/image_conversation_rows.go",
+    "sha256": "c2ee8f826ea14c6a7a47438dbd28894d5961a8cb50008c5db9410bd5a4847f9e",
+    "line_count": 977,
+    "status": "reviewed",
+    "checks": [
+      "完整读取第 1–977 行；长文件分段读完，初次截断处已补读，后续变更已复读。",
+      "分页游标 generation 校验、GetItem 重查代际、active 列表界限和 CAS 批量写入",
+      "删除/清空 watermark、每会话冲突重评、丢失确认重放、资产化后 accepted hash",
+      "内部引用摘要与 owner 过滤、JSON 大小检查和素材预检失败不写入"
+    ],
+    "findings": [
+      "未发现本轮可确认缺陷。"
+    ],
+    "validation": [
+      "build/review/service-image-final-tests.log"
+    ],
+    "boundaries": [
+      "本轮为本地完整代码阅读与聚焦 Go 测试；未调用真实 ChatGPT 图像/视频上游，不据旧研究调整上游协议。",
+      "未模拟恶意本机 symlink 竞争、进程崩溃或跨进程文件系统 staging 竞争；不把此记录解释为这些场景已验证。"
+    ]
+  },
+  {
+    "path": "internal/service/image_conversation_rows_test.go",
+    "sha256": "70c978c42b6a04b8d58eaa05ec4861ea5e2ac21cab0279f085b710486fe0a002",
+    "line_count": 436,
+    "status": "reviewed",
+    "checks": [
+      "完整读取第 1–436 行；长文件分段读完，初次截断处已补读，后续变更已复读。",
+      "完整检查分页排序变更使游标失效、批量 CAS 返回冲突重试、单次批量写入",
+      "检查删除缺失条目推进 generation、读后重查、超过 100 条 active、丢失确认幂等和 stale 请求只读"
+    ],
+    "findings": [
+      "未发现本轮可确认缺陷。"
+    ],
+    "validation": [
+      "build/review/service-image-final-tests.log"
+    ],
+    "boundaries": [
+      "本轮为本地完整代码阅读与聚焦 Go 测试；未调用真实 ChatGPT 图像/视频上游，不据旧研究调整上游协议。",
+      "未模拟恶意本机 symlink 竞争、进程崩溃或跨进程文件系统 staging 竞争；不把此记录解释为这些场景已验证。"
+    ]
+  },
+  {
+    "path": "internal/service/image_generation_preferences.go",
+    "sha256": "6245b06e104c3c8d8e9f36d3c6425f4264b79130c0f0c210b06b12eb3ca98da8",
+    "line_count": 506,
+    "status": "reviewed",
+    "checks": [
+      "完整读取第 1–506 行；长文件分段读完，初次截断处已补读，后续变更已复读。",
+      "用户偏好 owner 文档隔离、JSON/数值/字符串归一化及模型/尺寸配置",
+      "配置 profile 清洗、patch CAS 重试、并发可选字段保留和持久化错误分类"
+    ],
+    "findings": [
+      "未发现本轮可确认缺陷。"
+    ],
+    "validation": [
+      "build/review/service-image-final-tests.log"
+    ],
+    "boundaries": [
+      "本轮为本地完整代码阅读与聚焦 Go 测试；未调用真实 ChatGPT 图像/视频上游，不据旧研究调整上游协议。",
+      "未模拟恶意本机 symlink 竞争、进程崩溃或跨进程文件系统 staging 竞争；不把此记录解释为这些场景已验证。"
+    ]
+  },
+  {
+    "path": "internal/service/image_generation_preferences_test.go",
+    "sha256": "6cd3d14f3b0c85d06823e4a75a4d3e717eee7f128101556501ad30e591f22d9b",
+    "line_count": 282,
+    "status": "reviewed",
+    "checks": [
+      "完整读取第 1–282 行；长文件分段读完，初次截断处已补读，后续变更已复读。",
+      "完整检查个人偏好持久化、默认值/无效配置归一化及 owner 隔离",
+      "检查跨实例并发 patch、profile 更新不覆盖并发可选字段、存储异常分类断言"
+    ],
+    "findings": [
+      "未发现本轮可确认缺陷。"
+    ],
+    "validation": [
+      "build/review/service-image-final-tests.log"
+    ],
+    "boundaries": [
+      "本轮为本地完整代码阅读与聚焦 Go 测试；未调用真实 ChatGPT 图像/视频上游，不据旧研究调整上游协议。",
+      "未模拟恶意本机 symlink 竞争、进程崩溃或跨进程文件系统 staging 竞争；不把此记录解释为这些场景已验证。"
+    ]
+  },
+  {
+    "path": "internal/service/image_task.go",
+    "sha256": "2acf20a11a99f34aebc3733f842bee29aa05483bd81e4b47cff46ea3ae257eaa",
+    "line_count": 2172,
+    "status": "reviewed",
+    "checks": [
+      "完整读取第 1–2172 行；长文件分段读完，初次截断处已补读，后续变更已复读。",
+      "任务提交、排队/运行/取消/恢复状态、请求分离上下文、重复 ID、owner 键和删除墓碑",
+      "任务加载字段白名单、视频私有 timeout 持久化、公有图像工具选项和媒体访问授权刷新",
+      "CAS 多实例合并、取消监控、任务结果元数据、保留期与并发配额；复读父代理新增墓碑过滤/分隔符修复"
+    ],
+    "findings": [
+      "已修复：从数据库重载视频任务时保留私有超时合同，避免其他实例将仍在允许时间内运行的视频误判超时。",
+      "已修复：重载保留图像工具 stream、partial_images（含 0）、moderation 字段。",
+      "已修复：媒体访问检查在内存匹配后仍刷新存储，任务被其他实例删除后撤销授权。",
+      "同时复核本轮已有修复：合并统一过滤墓碑、防止重用已删除 ID、owner/ID 使用无歧义分隔符。"
+    ],
+    "validation": [
+      "build/review/image-task-reload-before.log",
+      "build/review/image-task-access-before.log",
+      "build/review/image-task-review-tests.log",
+      "build/review/service-image-final-tests.log"
+    ],
+    "boundaries": [
+      "本轮为本地完整代码阅读与聚焦 Go 测试；未调用真实 ChatGPT 图像/视频上游，不据旧研究调整上游协议。",
+      "未模拟恶意本机 symlink 竞争、进程崩溃或跨进程文件系统 staging 竞争；不把此记录解释为这些场景已验证。"
+    ]
+  },
+  {
+    "path": "internal/service/image_task_test.go",
+    "sha256": "d4da5f68e65201c90f950408c4ec72134150fa61fed2350f7122978a0058fd47",
+    "line_count": 2924,
+    "status": "reviewed",
+    "checks": [
+      "完整读取第 1–2924 行；长文件分段读完，初次截断处已补读，后续变更已复读。",
+      "逐个检查任务生命周期、跨实例取消/删除、恢复超时、重复提交、故障持久化和 owner 隔离回归",
+      "新增视频超时重载、stream/partial_images=0/moderation 重载和双 SQLite 连接媒体删除授权回归",
+      "复读本轮已有墓碑阻止热实例读取/再次提交、含冒号 owner 和 ID 的墓碑重载回归"
+    ],
+    "findings": [
+      "新增 3 项回归分别验证长视频重载不超时且不泄漏私有字段、图像工具选项重载、跨实例删除撤销媒体授权；修复前均有失败记录。"
+    ],
+    "validation": [
+      "build/review/image-task-reload-before.log",
+      "build/review/image-task-access-before.log",
+      "build/review/image-task-review-tests.log",
+      "build/review/service-image-final-tests.log"
+    ],
+    "boundaries": [
+      "本轮为本地完整代码阅读与聚焦 Go 测试；未调用真实 ChatGPT 图像/视频上游，不据旧研究调整上游协议。",
+      "未模拟恶意本机 symlink 竞争、进程崩溃或跨进程文件系统 staging 竞争；不把此记录解释为这些场景已验证。"
+    ]
+  },
+  {
+    "path": "internal/service/image_test.go",
+    "sha256": "13ba3750474b06e38c983aaafce8ae73b8ae6e8ae57a1f5d571c9187846c768b",
+    "line_count": 1776,
+    "status": "reviewed",
+    "checks": [
+      "完整读取第 1–1776 行；长文件分段读完，初次截断处已补读，后续变更已复读。",
+      "逐个检查图片权限、缩略图缓存刷新、并发元数据、批次删除预检、清理扫描错误等测试与断言",
+      "新增提交已成功但返回错误的引用替换回归，使用真实 SQLite 持久化与故障注入，检查保存后引用文件仍可读取"
+    ],
+    "findings": [
+      "新增 TestImageServiceReferenceReplacementPreservesCommittedFilesAfterSaveError；修复前可复现 committed reference was deleted during rollback，修复后通过。"
+    ],
+    "validation": [
+      "build/review/image-reference-commit-before.log",
+      "build/review/service-image-final-tests.log"
+    ],
+    "boundaries": [
+      "本轮为本地完整代码阅读与聚焦 Go 测试；未调用真实 ChatGPT 图像/视频上游，不据旧研究调整上游协议。",
+      "未模拟恶意本机 symlink 竞争、进程崩溃或跨进程文件系统 staging 竞争；不把此记录解释为这些场景已验证。"
+    ]
+  }
+]

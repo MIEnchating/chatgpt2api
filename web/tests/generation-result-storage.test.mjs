@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { spyOn } from "bun:test";
+import * as myAssets from "../src/lib/my-assets.ts";
 
 import {
   generatedAssetRegistrationKey,
@@ -117,6 +119,47 @@ test("already managed image results keep their durable server URL", async () => 
   assert.equal(await persistCreationTaskOutputs(task, { expectedSessionKey: "session-a" }), task);
   assert.equal(task.data[0].url, "/images/2026/08/27/result.png");
   assert.equal(task.data[0].storageKey, undefined);
+});
+
+test("material registration failure preserves the uploaded result for retry", async () => {
+  await activateSession("session-persistence-retry");
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  const failures = [];
+  const registrationError = new Error("material storage unavailable");
+  const upsert = spyOn(myAssets, "upsertMyAsset").mockRejectedValueOnce(registrationError)
+    .mockImplementation(async (asset) => asset);
+  globalThis.fetch = async (input) => {
+    const url = String(input);
+    requests.push(url);
+    if (url === "https://media.example/result.mp3") {
+      return new Response(new Blob(["audio"], { type: "audio/mpeg" }));
+    }
+    assert.equal(url, "/api/files");
+    return Response.json({ object: {
+      url: "/api/files/saved-audio/content", storageKey: "server:saved-audio",
+      bytes: 5, mimeType: "audio/mpeg",
+    } });
+  };
+  const task = {
+    id: "registration-retry", status: "success", output_type: "audio",
+    data: [{ type: "audio", audio_url: "https://media.example/result.mp3", mime_type: "audio/mpeg" }],
+  };
+  try {
+    const options = { expectedSessionKey: "session-persistence-retry", onError: (failure) => failures.push(failure) };
+    const persisted = await persistCreationTaskOutputs(task, options);
+    assert.equal(persisted.data[0].storageKey, "server:saved-audio");
+    assert.equal(persisted.data[0].audio_url, "/api/files/saved-audio/content");
+    assert.equal(failures.length, 1);
+    assert.equal(failures[0].error, registrationError);
+    const retried = await persistCreationTaskOutputs(persisted, options);
+    assert.equal(retried.data[0].storageKey, "server:saved-audio");
+    assert.equal(upsert.mock.calls.length, 2);
+    assert.deepEqual(requests, ["https://media.example/result.mp3", "/api/files"]);
+  } finally {
+    upsert.mockRestore();
+    globalThis.fetch = originalFetch;
+  }
 });
 
 test("external video persistence omits cross-origin credentials and never changes generation success", async () => {

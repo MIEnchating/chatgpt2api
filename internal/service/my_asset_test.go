@@ -116,6 +116,67 @@ func newMyAssetObjectStorageStub() *myAssetObjectStorageStub {
 	}
 }
 
+func TestMyAssetPublicStorageObjectReadAuthorization(t *testing.T) {
+	backend := newTestStorageBackend(t)
+	objects := newMyAssetObjectStorageStub()
+	objects.seedObject("shared-object", "owner", "image/png")
+	assets := NewMyAssetService(backend, objects)
+	item := MyAsset{ID: "shared-asset", Kind: "image", Title: "Shared", URL: "/api/files/shared-object/content", StorageKey: "server:shared-object", Visibility: MyAssetPrivate}
+	if _, err := assets.Upsert(context.Background(), "owner", false, item); err != nil {
+		t.Fatal(err)
+	}
+	for _, identity := range []struct {
+		id    string
+		admin bool
+	}{{"owner", false}, {"admin", true}} {
+		object, err := assets.ReadStorageObjectForIdentity(identity.id, identity.admin, "shared-object")
+		if err != nil || object.CreatedBy != "owner" {
+			t.Fatalf("owner/admin read = (%#v, %v)", object, err)
+		}
+	}
+	if _, err := assets.ReadStorageObjectForIdentity("viewer", false, "shared-object"); !errors.Is(err, ErrStorageObjectAccessDenied) {
+		t.Fatalf("private read error = %v", err)
+	}
+
+	// A different owner's public reference cannot share somebody else's object.
+	forged := item
+	forged.Visibility = MyAssetPublic
+	assets.mu.Lock()
+	err := assets.saveDocumentLocked("viewer", myAssetDocument{items: []MyAsset{forged}})
+	assets.mu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := assets.ReadStorageObjectForIdentity("viewer", false, "shared-object"); !errors.Is(err, ErrStorageObjectAccessDenied) {
+		t.Fatalf("forged public reference error = %v", err)
+	}
+
+	item.Visibility = MyAssetPublic
+	if _, err := assets.Upsert(context.Background(), "owner", false, item); err != nil {
+		t.Fatal(err)
+	}
+	if object, err := assets.ReadStorageObjectForIdentity("viewer", false, "shared-object"); err != nil || object.CreatedBy != "owner" {
+		t.Fatalf("public read = (%#v, %v)", object, err)
+	}
+	if _, err := assets.ReadStorageObjectForIdentity("", false, "shared-object"); !errors.Is(err, ErrStorageObjectAccessDenied) {
+		t.Fatalf("unauthenticated read error = %v", err)
+	}
+	if _, err := objects.InfoForIdentity("viewer", false, "shared-object"); err == nil {
+		t.Fatal("public visibility unexpectedly granted object ownership")
+	}
+	if _, err := assets.Upsert(context.Background(), "viewer", false, item); err == nil {
+		t.Fatal("public visibility unexpectedly allowed another owner to adopt the object")
+	}
+
+	item.Visibility = MyAssetPrivate
+	if _, err := assets.Upsert(context.Background(), "owner", false, item); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := assets.ReadStorageObjectForIdentity("viewer", false, "shared-object"); !errors.Is(err, ErrStorageObjectAccessDenied) {
+		t.Fatalf("revoked public read error = %v", err)
+	}
+}
+
 func (s *myAssetObjectStorageStub) Upload(_ context.Context, ownerID string, _ bool, filename, contentType string, data []byte, _ *StorageObjectProviderInput) (UploadedStorageObject, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

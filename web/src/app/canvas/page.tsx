@@ -2376,6 +2376,10 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     const id = `${source.type}-${randomID()}`;
     const duplicated: CanvasNode = {
       ...source,
+      batch_child_ids: undefined,
+      batch_root_id: undefined,
+      batch_primary_id: undefined,
+      batch_expanded: undefined,
       id,
       title: `${source.title || canvasNodeFallbackTitle(source.type)} Copy`,
       x: source.x + 36,
@@ -2785,7 +2789,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
   }
 
   async function copySelected() {
-    const copiedIDs = expandCanvasGroupNodeIDs(selectedNodeIDs, nodesRef.current);
+    const copiedIDs = expandCanvasBatchNodeIDs(expandCanvasGroupNodeIDs(selectedNodeIDs, nodesRef.current), nodesRef.current);
     const copiedNodes = nodesRef.current.filter((node) => copiedIDs.has(node.id));
     if (!copiedNodes.length) return;
     const ids = new Set(copiedNodes.map((node) => node.id));
@@ -3135,6 +3139,9 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
   }
 
   async function runTextGeneration(nodeID: string, retry = false) {
+    const projectID = documentRef.current.id;
+    const operationEpoch = canvasOperationEpochRef.current;
+    const isCurrentProject = () => mountedRef.current && documentRef.current.id === projectID && canvasOperationEpochRef.current === operationEpoch;
     const requestedNode = nodesRef.current.find((node) => node.id === nodeID && (node.type === "text" || node.type === "config" && node.generation_mode === "text"));
     if (!requestedNode || activeGenerationsRef.current.has(nodeID)) return;
     const retrying = requestedNode.type === "text" && retry && requestedNode.generation_status === "error";
@@ -3194,29 +3201,38 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     ]);
     try {
       const messages = await canvasTextGenerationMessages(context.prompt.trim(), context.referenceImageURLs, controller.signal);
+      if (!isCurrentProject()) return;
+      controller.signal.throwIfAborted();
       const outcomes = await Promise.all(resultIDs.map(async (resultID) => {
         const clientTaskID = clientTaskIDs.get(resultID) || `canvas-text-${randomID()}`;
         try {
           const submitted = await createChatGenerationTask({ clientTaskId: clientTaskID, prompt: context.prompt.trim(), model, messages, relayTokenName, requestOptions: { signal: controller.signal } });
           const serverTaskID = submitted.id || clientTaskID;
           addActiveGenerationTask(activeGeneration, serverTaskID, clientTaskID);
+          if (!isCurrentProject()) return false;
+          controller.signal.throwIfAborted();
           replaceNodes(nodesRef.current.map((node) => node.id === resultID ? { ...node, task_id: serverTaskID } : node));
           if (!retrying && resultID === resultIDs[0] && sourceNode.type === "config") replaceNodes(nodesRef.current.map((node) => node.id === sourceNode.id ? { ...node, task_id: serverTaskID } : node));
           const completed = await waitForTask(serverTaskID, (task) => {
+            if (!isCurrentProject() || controller.signal.aborted) return;
             const streamed = (task.data || []).map((item) => String(item.text_response || "")).join("\n").trim();
             if (streamed) replaceNodes(nodesRef.current.map((node) => node.id === resultID ? { ...node, prompt: streamed } : node));
           }, controller.signal);
+          if (!isCurrentProject()) return false;
+          controller.signal.throwIfAborted();
           const content = (completed.data || []).map((item) => String(item.text_response || "")).join("\n").trim();
           if (!content) throw new Error(completed.error || "文本任务完成但没有返回内容");
           replaceNodes(nodesRef.current.map((node) => node.id === resultID ? { ...node, prompt: content, composer_content: context.prompt, generation_status: "success", generation_progress: 100, generation_error: "", task_id: completed.id || serverTaskID } : node));
           return true;
         } catch (error) {
-          if (controller.signal.aborted) return false;
+          if (!isCurrentProject() || controller.signal.aborted) return false;
           const message = error instanceof Error ? error.message : "文本生成失败";
           replaceNodes(nodesRef.current.map((node) => node.id === resultID ? { ...node, generation_status: "error", generation_error: message } : node));
           return false;
         }
       }));
+      if (!isCurrentProject()) return;
+      controller.signal.throwIfAborted();
       const succeeded = outcomes.filter(Boolean).length;
       if (!retrying && sourceNode.type === "config") replaceNodes(nodesRef.current.map((node) => node.id === sourceNode.id ? { ...node, generation_status: succeeded ? "success" : "error", generation_error: succeeded ? "" : "全部文本任务生成失败" } : node));
       commitGenerationHistory(historyBase);
@@ -3224,6 +3240,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       else if (succeeded < outcomes.length) toast.error(`已生成 ${succeeded} 个文本，${outcomes.length - succeeded} 个失败`);
       else toast.success(`已生成 ${succeeded} 个文本节点`);
     } catch (error) {
+      if (!isCurrentProject()) return;
       if (controller.signal.aborted) {
         replaceNodes(nodesRef.current.map((node) => resultIDs.includes(node.id) || !retrying && node.id === sourceNode.id && sourceNode.type === "config"
           ? { ...node, generation_status: node.generation_status === "loading" ? "idle" as const : node.generation_status, generation_error: "" }
@@ -3241,6 +3258,9 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
   }
 
   async function runAudioGeneration(nodeID: string, concurrent = true, retry = false) {
+    const projectID = documentRef.current.id;
+    const operationEpoch = canvasOperationEpochRef.current;
+    const isCurrentProject = () => mountedRef.current && documentRef.current.id === projectID && canvasOperationEpochRef.current === operationEpoch;
     const requestedNode = nodesRef.current.find((node) => node.id === nodeID && (node.type === "audio" || node.type === "config" && node.generation_mode === "audio"));
     if (!requestedNode || activeGenerationsRef.current.has(nodeID) || runningNodeID && !concurrent) return;
     const retrying = requestedNode.type === "audio" && retry && requestedNode.generation_status === "error";
@@ -3310,12 +3330,16 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
           throw new Error("已连接多个音频节点，请在音频设置中选择参考音频");
         }
         cloneDataURL = await canvasAudioCloneDataURL(selectedReference, controller.signal);
+        if (!isCurrentProject()) return;
+        controller.signal.throwIfAborted();
         replaceNodes(nodesRef.current.map((node) => node.id === resultID ? { ...node, generation_audio_mimo_voice_clone_node_id: selectedReference.nodeID } : node));
       }
       const request = buildCanvasAudioGenerationRequest(resultNode, text, cloneDataURL);
       const submitted = await createAudioGenerationTask({ clientTaskId: taskID, request, relayTokenName, requestOptions: { signal: controller.signal } });
       const serverTaskID = submitted.id || taskID;
       addActiveGenerationTask(activeGeneration, serverTaskID, taskID);
+      if (!isCurrentProject()) return;
+      controller.signal.throwIfAborted();
       if (!concurrent) {
         pendingTaskIDRef.current = serverTaskID;
         submittedTaskIDRef.current = serverTaskID;
@@ -3329,12 +3353,14 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         signal: controller.signal,
       });
       const item = completed.data?.find((entry) => entry.audio_url || entry.url);
+      if (!isCurrentProject()) return;
+      controller.signal.throwIfAborted();
       const url = String(item?.audio_url || item?.url || "").trim();
       if (!url) throw new Error(completed.error || "音频任务完成但没有返回音频地址");
       replaceNodes(nodesRef.current.map((node) => node.id === resultID ? { ...node, url, storage_key: item?.storageKey || item?.storage_key, mime_type: item?.mime_type || `audio/${canvasAudioResponseFormat(resultNode) === "mp3" ? "mpeg" : canvasAudioResponseFormat(resultNode)}`, bytes: item?.bytes, duration_ms: Date.now() - generationStartedAt, generation_status: "success", generation_progress: 100, generation_error: "", task_id: completed.id || serverTaskID, audio_task_id: completed.id || serverTaskID, audio_task_result_id: completed.id || serverTaskID } : node));
       finishHistory(); toast.success("已添加音频到画布");
     } catch (error) {
-      if (getCachedAuthSession()?.key !== expectedSessionKey) return;
+      if (!isCurrentProject() || getCachedAuthSession()?.key !== expectedSessionKey) return;
       if (controller.signal.aborted) {
         replaceNodes(nodesRef.current.map((node) => node.id === resultID && node.generation_status === "loading" || node.id === requestedNode.id && requestedNode.type === "config" ? { ...node, duration_ms: node.id === resultID ? Date.now() - generationStartedAt : node.duration_ms, generation_status: "idle", generation_error: "" } : node));
         finishHistory();
@@ -3345,7 +3371,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       }
     } finally {
       completeActiveGeneration(activeGeneration);
-      if (!concurrent && getCachedAuthSession()?.key === expectedSessionKey) {
+      if (!concurrent && isCurrentProject() && generationAbortControllerRef.current === controller && getCachedAuthSession()?.key === expectedSessionKey) {
         if (generationAbortControllerRef.current === controller) generationAbortControllerRef.current = null;
         submittedTaskIDsRef.current.forEach((submittedID) => cancelledTaskIDsRef.current.delete(submittedID));
         submittedTaskIDsRef.current.clear();
@@ -3357,6 +3383,9 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
   }
 
   async function runPanoramaGeneration(nodeID: string, retry = false) {
+    const projectID = documentRef.current.id;
+    const operationEpoch = canvasOperationEpochRef.current;
+    const isCurrentProject = () => mountedRef.current && documentRef.current.id === projectID && canvasOperationEpochRef.current === operationEpoch;
     const sourceNode = nodesRef.current.find((node) => node.id === nodeID && node.type === "panorama");
     if (!sourceNode || activeGenerationsRef.current.has(nodeID)) return;
     const retrying = retry && sourceNode.generation_status === "error";
@@ -3475,6 +3504,8 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         const extension = blob.type === "image/jpeg" ? "jpg" : blob.type === "image/webp" ? "webp" : "png";
         return new File([blob], `panorama-reference-${index + 1}.${extension}`, { type: blob.type || "image/png" });
       })) : [];
+      if (!isCurrentProject()) return;
+      controller.signal.throwIfAborted();
       const results = await Promise.all(targetIDs.map(async (targetID) => {
         const clientTaskID = taskIDs.get(targetID) || `canvas-panorama-${randomID()}`;
         try {
@@ -3483,6 +3514,8 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
             : await createImageGenerationTask(clientTaskID, prompt, generationModel || undefined, PANORAMA_IMAGE_SIZE, PANORAMA_IMAGE_SIZE, quality, 1, "private", resolution, outputFormat, outputCompression, stream, partialImages, { apiMode: imageGenerationPreferences.api_mode, responseFormatB64JSON: sourceNode.generation_response_format_b64_json, generationSource: "canvas" }, undefined, relayTokenName, undefined, undefined, { signal: controller.signal });
           const serverTaskID = submitted.id || clientTaskID;
           addActiveGenerationTask(activeGeneration, serverTaskID, clientTaskID);
+          if (!isCurrentProject()) return false;
+          controller.signal.throwIfAborted();
           replaceNodes(nodesRef.current.map((node) => node.id === targetID ? { ...node, task_id: serverTaskID } : node));
           const completed = await persistCreationTaskOutputs(await waitForTask(serverTaskID, undefined, controller.signal), {
             assetContext: { source: "无限画布" },
@@ -3490,6 +3523,8 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
             signal: controller.signal,
           });
           const result = summarizeCanvasTaskResult(completed, 1);
+          if (!isCurrentProject()) return false;
+          controller.signal.throwIfAborted();
           const image = result.images[0];
           if (!image?.url) throw new Error(result.error || "全景图任务没有返回图片");
           let nextNodes = nodesRef.current.map((node): CanvasNode => {
@@ -3532,14 +3567,14 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
           replaceNodes(nextNodes);
           return true;
         } catch (error) {
-          if (getCachedAuthSession()?.key !== expectedSessionKey) return false;
+          if (!isCurrentProject() || getCachedAuthSession()?.key !== expectedSessionKey) return false;
           if (controller.signal.aborted) return false;
           const message = error instanceof Error ? error.message : "全景图生成失败";
           replaceNodes(nodesRef.current.map((node) => node.id === targetID ? { ...node, duration_ms: Date.now() - generationStartedAt, generation_status: "error", generation_error: message } : node));
           return false;
         }
       }));
-      if (getCachedAuthSession()?.key !== expectedSessionKey) return;
+      if (!isCurrentProject() || getCachedAuthSession()?.key !== expectedSessionKey) return;
       if (controller.signal.aborted) {
         replaceNodes(nodesRef.current.map((node) => targetIDs.includes(node.id) && node.generation_status === "loading"
           ? { ...node, duration_ms: Date.now() - generationStartedAt, generation_status: "idle", generation_error: "" }
@@ -3556,7 +3591,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       if (successCount < results.length) toast.error(`已生成 ${successCount} 张全景图，${results.length - successCount} 张失败`);
       else toast.success(count > 1 ? `已生成 ${count} 张全景图` : "全景图已生成");
     } catch (error) {
-      if (getCachedAuthSession()?.key !== expectedSessionKey) return;
+      if (!isCurrentProject() || getCachedAuthSession()?.key !== expectedSessionKey) return;
       if (!controller.signal.aborted) { const message = error instanceof Error ? error.message : "全景图生成失败"; replaceNodes(nodesRef.current.map((node) => node.id === rootID ? { ...node, duration_ms: Date.now() - generationStartedAt, generation_status: "error", generation_error: message } : node)); commitGenerationHistory(historyBase); toast.error(message); }
     } finally {
       completeActiveGeneration(activeGeneration);
@@ -3564,6 +3599,9 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
   }
 
   async function runVideoGeneration(nodeID: string, prompt?: string, concurrent = true) {
+    const projectID = documentRef.current.id;
+    const operationEpoch = canvasOperationEpochRef.current;
+    const isCurrentProject = () => mountedRef.current && documentRef.current.id === projectID && canvasOperationEpochRef.current === operationEpoch;
     const sourceNode = nodesRef.current.find((node) => node.id === nodeID && (node.type === "video" || node.type === "config" && node.generation_mode === "video"));
     if (!sourceNode || activeGenerationsRef.current.has(nodeID) || runningNodeID && !concurrent) return;
     const params = canvasVideoParameters(sourceNode);
@@ -3670,6 +3708,8 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
 				referenceAudioURLs: preparedReferenceAudioURLs,
 				referenceMode,
 			});
+      if (!isCurrentProject()) return;
+      controller.signal.throwIfAborted();
 				const submitted = await createVideoGenerationTask({
 				clientTaskId: taskID,
 					prompt: requestPrompt,
@@ -3691,6 +3731,8 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
 				});
       const serverTaskID = submitted.id || taskID;
       addActiveGenerationTask(activeGeneration, serverTaskID, taskID);
+      if (!isCurrentProject()) return;
+      controller.signal.throwIfAborted();
       if (!concurrent) {
         pendingTaskIDRef.current = serverTaskID;
         submittedTaskIDRef.current = serverTaskID;
@@ -3704,12 +3746,14 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         signal: controller.signal,
       });
       const item = completed.data?.find((entry) => String(entry.type || "") === "video" || entry.video_url || entry.url);
+      if (!isCurrentProject()) return;
+      controller.signal.throwIfAborted();
       const url = String(item?.video_url || item?.url || "").trim();
       if (!url) throw new Error(completed.error || "视频任务完成但没有返回视频地址");
       replaceNodes(nodesRef.current.map((node) => node.id === resultNodeID ? { ...node, url, storage_key: item?.storageKey || item?.storage_key, mime_type: item?.mime_type || "video/mp4", bytes: item?.bytes || item?.size, duration_ms: Date.now() - generationStartedAt, generation_status: "success" as const, generation_progress: 100, generation_error: "", task_id: completed.id || serverTaskID } : node));
       finishHistory(); toast.success("已添加视频到画布");
     } catch (error) {
-      if (getCachedAuthSession()?.key !== expectedSessionKey) return;
+      if (!isCurrentProject() || getCachedAuthSession()?.key !== expectedSessionKey) return;
       if (controller.signal.aborted) {
         replaceNodes(nodesRef.current.map((node) => node.id === resultNodeID && node.generation_status === "loading" ? { ...node, generation_status: "idle" as const, generation_error: "" } : node));
         finishHistory();
@@ -3720,7 +3764,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       finishHistory(); toast.error(message);
     } finally {
       completeActiveGeneration(activeGeneration);
-      if (!concurrent && getCachedAuthSession()?.key === expectedSessionKey) {
+      if (!concurrent && isCurrentProject() && generationAbortControllerRef.current === controller && getCachedAuthSession()?.key === expectedSessionKey) {
         if (generationAbortControllerRef.current === controller) generationAbortControllerRef.current = null;
         submittedTaskIDsRef.current.forEach((submittedID) => cancelledTaskIDsRef.current.delete(submittedID));
         submittedTaskIDsRef.current.clear();
@@ -3799,7 +3843,9 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     const generationEpoch = concurrent ? generationEpochRef.current : generationEpochRef.current + 1;
     if (!concurrent) generationEpochRef.current = generationEpoch;
     const generationProjectID = documentRef.current.id;
-    const generationOwnsCanvas = () => documentRef.current.id === generationProjectID
+    const operationEpoch = canvasOperationEpochRef.current;
+    const generationOwnsCanvas = () => mountedRef.current && canvasOperationEpochRef.current === operationEpoch
+      && documentRef.current.id === generationProjectID
       && nodesRef.current.some((node) => node.id === sourceNode.id);
     const generationIsCurrent = () => generationOwnsCanvas()
       && !controller.signal.aborted
@@ -4115,7 +4161,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
   async function importProjectArchive(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]; event.target.value = ""; if (!file) return;
     try {
-      const projects = await readCanvasProjectArchive(file);
+      const projects = await readCanvasProjectArchive(file, 1);
       if (projects.length !== 1) throw new Error("请在画布库中导入包含多个项目的压缩包");
       const [parsed] = projects;
       canvasOperationEpochRef.current += 1;

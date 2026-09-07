@@ -126,3 +126,11 @@ func TestXAIImageGenerationParametersFollowOfficialValues(t *testing.T) {
 		t.Fatal("unsupported xAI resolution was accepted")
 	}
 }
+
+func TestNormalizeXAIImageAspectRatioRejectsNonFiniteDimensions(t *testing.T) {
+	for _, input := range []string{"infx1", "1xinf", "infxinf", "nanx1", "1e308x1e-308", "1e-308x1e308"} {
+		if got, ok := NormalizeXAIImageAspectRatio(input); ok {
+			t.Errorf("NormalizeXAIImageAspectRatio(%q) = %q, true; want rejection", input, got)
+		}
+	}
+}

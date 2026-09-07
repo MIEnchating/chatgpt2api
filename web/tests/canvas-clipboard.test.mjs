@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { normalizeCanvasClipboard, remapCanvasNodeReferences } from "../src/app/canvas/canvas-clipboard.ts";
+import { expandCanvasBatchNodeIDs, reconcileCanvasBatchesAfterRemoval } from "../src/app/canvas/canvas-batches.ts";
 
 function node(id, values = {}) {
   return { id, type: "image", x: 0, y: 0, width: 340, height: 240, scale_x: 1, scale_y: 1, ...values };
@@ -74,7 +75,7 @@ test("rejects dangling, duplicate, and self connections", () => {
   assert.equal(normalizeCanvasClipboard({ nodes, connections: [{ id: "x", from_node_id: "a", to_node_id: "a" }] }), null);
 });
 
-test("preserves prompt and batch references when nodes are pasted", () => {
+test("remaps batch ownership while preserving authored prompt references", () => {
   const mapped = remapCanvasNodeReferences(node("config-copy", {
     type: "config",
     composer_content: "让 @[node:image-old] 参考 @[node:text-old]，保留 @[node:not-copied]",
@@ -87,14 +88,24 @@ test("preserves prompt and batch references when nodes are pasted", () => {
     ["root-old", "root-new"],
   ]));
   assert.equal(mapped.composer_content, "让 @[node:image-old] 参考 @[node:text-old]，保留 @[node:not-copied]");
-  assert.deepEqual(mapped.batch_child_ids, ["image-old", "not-copied"]);
-  assert.equal(mapped.batch_root_id, "root-old");
-  assert.equal(mapped.batch_primary_id, "image-old");
+  assert.deepEqual(mapped.batch_child_ids, ["image-new"]);
+  assert.equal(mapped.batch_root_id, "root-new");
+  assert.equal(mapped.batch_primary_id, "image-new");
 });
 
-test("preserves batch links that point outside the copied graph", () => {
+test("detaches batch links that point outside the copied graph", () => {
   const mapped = remapCanvasNodeReferences(node("child-copy", { batch_root_id: "outside" }), new Map());
-  assert.equal(mapped.batch_root_id, "outside");
+  assert.equal(mapped.batch_root_id, undefined);
+});
+
+test("deleting a pasted batch cannot remove the original children", () => {
+  const originals = [node("root", { batch_child_ids: ["a", "b"], batch_primary_id: "a" }), node("a", { batch_root_id: "root" }), node("b", { batch_root_id: "root" })];
+  const ids = new Map(originals.map((item) => [item.id, `${item.id}-copy`]));
+  const copies = originals.map((item) => remapCanvasNodeReferences({ ...item, id: ids.get(item.id) }, ids));
+  const allNodes = [...originals, ...copies];
+  const removed = expandCanvasBatchNodeIDs(new Set(["root-copy"]), allNodes);
+  assert.deepEqual([...removed], ["root-copy", "a-copy", "b-copy"]);
+  assert.deepEqual(reconcileCanvasBatchesAfterRemoval(allNodes, removed), originals);
 });
 
 test("preserves generic video frame and audio clone node bindings", () => {

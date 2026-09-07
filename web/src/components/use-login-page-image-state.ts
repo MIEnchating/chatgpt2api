@@ -84,12 +84,11 @@ export function useLoginPageImageState({ mode, positionX, positionY, src, zoom }
     );
   }, []);
 
-  const onImageError = useCallback((event: SyntheticEvent<HTMLImageElement>) => {
-    if (event.currentTarget.src !== fallbackSrc) {
-      event.currentTarget.src = fallbackSrc;
+  const onImageError = useCallback(() => {
+    if (currentSrc !== fallbackSrc) {
       setFailedSrc(resolvedSrc);
     }
-  }, [fallbackSrc, resolvedSrc]);
+  }, [currentSrc, fallbackSrc, resolvedSrc]);
 
   const imageStyle: CSSProperties = imageLayout
     ? {

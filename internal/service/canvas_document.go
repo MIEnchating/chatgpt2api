@@ -31,6 +31,7 @@ const (
 	canvasDocumentMaxTitle                     = 200
 	canvasDocumentMaxNodeDim                   = 20000
 	canvasDocumentMaxGenerationReferenceImages = 14
+	canvasDocumentMaxGenerationCount           = 15
 	canvasDocumentMaxAgentMessages             = 100
 	canvasDocumentMaxAgentSessions             = 24
 	canvasDocumentMaxAgentDataBytes            = 512 << 10
@@ -1415,7 +1416,7 @@ func normalizeCanvasNode(node CanvasNode) (CanvasNode, error) {
 	if node.GenerationQuality != "" && node.GenerationQuality != "low" && node.GenerationQuality != "medium" && node.GenerationQuality != "high" {
 		return CanvasNode{}, invalidCanvasDocument("node generation quality is invalid")
 	}
-	if node.GenerationCount < 0 || node.GenerationCount > 15 {
+	if node.GenerationCount < 0 || node.GenerationCount > canvasDocumentMaxGenerationCount {
 		return CanvasNode{}, invalidCanvasDocument("node generation count is invalid")
 	}
 	if node.GenerationOutputFormat != "" && node.GenerationOutputFormat != "png" && node.GenerationOutputFormat != "jpeg" && node.GenerationOutputFormat != "webp" {
@@ -1474,7 +1475,7 @@ func normalizeCanvasNode(node CanvasNode) (CanvasNode, error) {
 	if len(node.GroupID) > 128 || node.GroupID == node.ID || node.Type == "group" && node.GroupID != "" {
 		return CanvasNode{}, invalidCanvasDocument("node group relationship is invalid")
 	}
-	if len(node.BatchChildIDs) > 10 || len(node.BatchRootID) > 128 || len(node.BatchPrimaryID) > 128 {
+	if len(node.BatchChildIDs) > canvasDocumentMaxGenerationCount || len(node.BatchRootID) > 128 || len(node.BatchPrimaryID) > 128 {
 		return CanvasNode{}, invalidCanvasDocument("node batch relationship is invalid")
 	}
 	batchChildIDs := make(map[string]struct{}, len(node.BatchChildIDs))

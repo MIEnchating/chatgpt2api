@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"database/sql/driver"
 	"encoding/json"
 	"errors"
@@ -10,6 +11,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 type logDeleteResult struct {
@@ -30,6 +32,54 @@ func openSQLiteStorageTestBackend(t *testing.T, path string) *DatabaseBackend {
 	}
 	t.Cleanup(func() { _ = backend.Close() })
 	return backend
+}
+
+func TestSQLiteConnectionSettingsSurviveReconnect(t *testing.T) {
+	backend := openSQLiteStorageTestBackend(t, filepath.Join(t.TempDir(), "reconnect.db"))
+	for _, reconnect := range []bool{false, true} {
+		if reconnect {
+			backend.db.SetMaxIdleConns(0)
+			backend.db.SetMaxIdleConns(1)
+		}
+		connection, err := backend.db.Conn(context.Background())
+		if err != nil {
+			t.Fatal(err)
+		}
+		for pragma, want := range map[string]int{"busy_timeout": 5000, "foreign_keys": 1, "synchronous": 1, "temp_store": 2} {
+			var got int
+			if err := connection.QueryRowContext(context.Background(), "PRAGMA "+pragma).Scan(&got); err != nil {
+				t.Error(err)
+			} else if got != want {
+				t.Errorf("reconnect=%v: %s = %d, want %d", reconnect, pragma, got, want)
+			}
+		}
+		if err := connection.Close(); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestDatabaseBackendDiagnosticsRedactURLSecrets(t *testing.T) {
+	backend := openSQLiteStorageTestBackend(t, filepath.Join(t.TempDir(), "diagnostics.db"))
+	for _, raw := range []string{
+		"postgres://reader:userinfo-secret@db.example/app?password=query-secret&sslmode=require",
+		"postgres://db.example/app?user=reader&password=query-secret",
+		"mysql://reader:userinfo-secret@db.example/app?tls=custom#fragment-secret",
+		"postgres://reader:userinfo-secret@db.example/%invalid",
+	} {
+		backend.databaseURL = raw
+		for _, info := range []map[string]any{backend.Info(), backend.HealthCheck()} {
+			encoded, err := json.Marshal(info)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, secret := range []string{"userinfo-secret", "query-secret", "fragment-secret"} {
+				if strings.Contains(string(encoded), secret) {
+					t.Errorf("diagnostic response leaked %s", secret)
+				}
+			}
+		}
+	}
 }
 
 func TestDatabaseBackendStoresDocumentsAndLogs(t *testing.T) {
@@ -118,6 +168,41 @@ func TestAppendLogDoesNotMutateCallerData(t *testing.T) {
 	logs, err := backend.QueryLogs("", "", 1)
 	if err != nil || len(logs) != 1 || logs[0]["type"] != "event" {
 		t.Fatalf("QueryLogs() = (%#v, %v), want normalized event", logs, err)
+	}
+}
+
+func TestAppendLogFillsMissingTimestampConsistently(t *testing.T) {
+	backend := openSQLiteStorageTestBackend(t, filepath.Join(t.TempDir(), "log-time.db"))
+	for _, item := range []map[string]any{nil, {}, {"time": nil}, {"time": " \t "}} {
+		if err := backend.AppendLog(item); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rows, err := backend.db.Query("SELECT created_at, day, data FROM logs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var createdAt, day, data string
+		if err := rows.Scan(&createdAt, &day, &data); err != nil {
+			t.Fatal(err)
+		}
+		parsed, err := time.Parse("2006-01-02 15:04:05", createdAt)
+		if err != nil {
+			t.Errorf("created_at is not a valid timestamp: %q", createdAt)
+			continue
+		}
+		var record map[string]any
+		if err := json.Unmarshal([]byte(data), &record); err != nil {
+			t.Fatal(err)
+		}
+		if record["time"] != createdAt || day != parsed.Format("2006-01-02") {
+			t.Errorf("stored timestamp and log payload disagree: created_at=%q day=%q time=%v", createdAt, day, record["time"])
+		}
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatal(err)
 	}
 }
 

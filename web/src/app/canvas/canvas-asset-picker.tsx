@@ -147,10 +147,9 @@ export function CanvasAssetPicker({ open, session, onInsert, onClose }: {
         open={createOpen}
         asset={null}
         onClose={() => setCreateOpen(false)}
-        onSave={(asset) => {
-          void upsertAsset(asset)
-            .then(() => setCreateOpen(false))
-            .catch((error) => toast.error(error instanceof Error ? `素材保存失败：${error.message}` : "素材保存失败"));
+        onSave={async (asset) => {
+          await upsertAsset(asset);
+          setCreateOpen(false);
         }}
       />
     </>

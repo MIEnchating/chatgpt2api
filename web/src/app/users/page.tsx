@@ -119,10 +119,11 @@ function validateCreateUserForm(values: CreateUserForm) {
   if (!accountUsernamePattern.test(username)) {
     errors.username = "用户名需为 3-32 位小写字母、数字、点、下划线或短横线，并以字母或数字开头";
   }
-  if (values.password.length < 8) {
-    errors.password = "密码长度不能少于 8 位";
-  } else if (values.password.length > 128) {
-    errors.password = "密码长度不能超过 128 位";
+  const passwordBytes = new TextEncoder().encode(values.password).length;
+  if (passwordBytes < 8) {
+    errors.password = "密码长度不能少于 8 字节";
+  } else if (passwordBytes > 72) {
+    errors.password = "密码长度不能超过 72 字节";
   }
   if (!values.confirmPassword) {
     errors.confirmPassword = "请确认密码";

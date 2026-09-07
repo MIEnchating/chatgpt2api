@@ -23,6 +23,10 @@ const pendingAuthenticatedImageReservations = new Map<string, CachedAuthenticate
 let authenticatedImageCacheBytes = 0;
 let authenticatedImageCacheGeneration = 0;
 
+function authenticatedImageCacheKey(src: string) {
+  return `${authenticatedImageCacheGeneration}\u0000${resolveImageRequestURL(src)}`;
+}
+
 function isAbsoluteURL(value: string) {
   return /^[a-z][a-z\d+.-]*:/i.test(value) || value.startsWith("//");
 }
@@ -184,13 +188,13 @@ export async function fetchAuthenticatedImageBlob(src: string, signal?: AbortSig
 }
 
 export function retainCachedAuthenticatedImage(src: string): RetainedAuthenticatedImage | null {
-  const key = resolveImageRequestURL(src);
+  const key = authenticatedImageCacheKey(src);
   const entry = authenticatedImageCache.get(key);
   return entry ? retainAuthenticatedImageCacheEntry(key, entry) : null;
 }
 
 export async function fetchCachedAuthenticatedImage(src: string): Promise<RetainedAuthenticatedImage> {
-  const key = resolveImageRequestURL(src);
+  const key = authenticatedImageCacheKey(src);
   const cached = authenticatedImageCache.get(key);
   if (cached) {
     return retainAuthenticatedImageCacheEntry(key, cached);
@@ -239,8 +243,9 @@ export async function fetchCachedAuthenticatedImage(src: string): Promise<Retain
 }
 
 export async function primeAuthenticatedImageCache(src: string, blob: Blob) {
-  const key = resolveImageRequestURL(src);
-  if (!key || authenticatedImageCache.has(key)) return;
+  if (!src.trim()) return;
+  const key = authenticatedImageCacheKey(src);
+  if (authenticatedImageCache.has(key)) return;
   const generation = authenticatedImageCacheGeneration;
   let objectURL = "";
   try {
@@ -269,7 +274,7 @@ export function releaseCachedAuthenticatedImage(key: string) {
 export function getCachedAuthenticatedImageByteSize(src?: string) {
   if (!src) return 0;
   try {
-    const entry = authenticatedImageCache.get(resolveImageRequestURL(src));
+    const entry = authenticatedImageCache.get(authenticatedImageCacheKey(src));
     if (!entry) {
       return 0;
     }

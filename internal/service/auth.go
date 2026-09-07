@@ -31,6 +31,7 @@ const (
 )
 
 var ErrAuthUserCreationDisabled = authError("auth user creation is disabled")
+var ErrAuthUserDisabled = authError("用户已被禁用")
 
 type AuthPersistenceError struct {
 	Err error
@@ -318,9 +319,12 @@ func (s *AuthService) UpsertNewAPISession(user NewAPIUser) (*Identity, string, e
 	now := util.NowISO()
 
 	s.mu.Lock()
+	if err := s.refreshAuthStateLocked(); err != nil {
+		s.mu.Unlock()
+		return nil, "", AuthPersistenceError{Err: err}
+	}
 	previousItems := cloneAuthItems(s.items)
 	previousRoles := append([]ManagedRole(nil), s.roles...)
-	sessionEnabled := true
 	ownerSeen := false
 	ownerHasEnabled := false
 	for _, item := range s.items {
@@ -333,7 +337,8 @@ func (s *AuthService) UpsertNewAPISession(user NewAPIUser) (*Identity, string, e
 		}
 	}
 	if ownerSeen && !ownerHasEnabled {
-		sessionEnabled = false
+		s.mu.Unlock()
+		return nil, "", ErrAuthUserDisabled
 	}
 	for index, item := range s.items {
 		if util.Clean(item["kind"]) != AuthKindSession ||
@@ -346,7 +351,7 @@ func (s *AuthService) UpsertNewAPISession(user NewAPIUser) (*Identity, string, e
 		next["name"] = name
 		delete(next, "key")
 		next["key_hash"] = util.SHA256Hex(raw)
-		next["enabled"] = sessionEnabled
+		next["enabled"] = true
 		next["owner_name"] = name
 		next["username"] = user.Username
 		next["email"] = user.Email
@@ -356,7 +361,7 @@ func (s *AuthService) UpsertNewAPISession(user NewAPIUser) (*Identity, string, e
 		next["role"] = role
 		s.applyNewAPISessionRoleLocked(next, role, owner.ID)
 		s.items[index] = next
-		guardRole := authItemUsesCustomRole(next)
+		guardRole := authItemUsesManagedRole(next)
 		var err error
 		if guardRole {
 			err = s.saveAuthAndRolesLocked()
@@ -381,11 +386,11 @@ func (s *AuthService) UpsertNewAPISession(user NewAPIUser) (*Identity, string, e
 	item := newAuthItem(role, name, owner, raw)
 	item["username"] = user.Username
 	item["email"] = user.Email
-	item["enabled"] = sessionEnabled
+	item["enabled"] = true
 	item["updated_at"] = now
 	s.applyNewAPISessionRoleLocked(item, role, owner.ID)
 	s.items = append(s.items, item)
-	guardRole := authItemUsesCustomRole(item)
+	guardRole := authItemUsesManagedRole(item)
 	var err error
 	if guardRole {
 		err = s.saveAuthAndRolesLocked()
@@ -513,12 +518,12 @@ func (s *AuthService) UpdateUser(id string, updates map[string]any) (map[string]
 	}
 	account, hasPasswordAccount := passwordAccountByIDLocked(s.accounts, id)
 	hasPasswordAccount = hasPasswordAccount && account.Role == AuthRoleUser
-	hasCustomRoleUpdate := hasRoleID && selectedRole.ID != DefaultManagedRoleID
+	hasManagedRoleUpdate := hasRoleID
 	var err error
 	switch {
-	case hasCustomRoleUpdate && hasPasswordAccount:
+	case hasManagedRoleUpdate && hasPasswordAccount:
 		err = s.saveCompleteAuthStateLocked()
-	case hasCustomRoleUpdate:
+	case hasManagedRoleUpdate:
 		err = s.saveAuthAndRolesLocked()
 	case hasPasswordAccount:
 		err = s.saveAuthAndPasswordAccountsLocked()
@@ -527,9 +532,9 @@ func (s *AuthService) UpdateUser(id string, updates map[string]any) (map[string]
 	}
 	if err != nil {
 		switch {
-		case hasCustomRoleUpdate && hasPasswordAccount:
+		case hasManagedRoleUpdate && hasPasswordAccount:
 			s.restoreCompleteAuthStateAfterSaveFailureLocked(previousAccounts, previousRoles, previousItems, err)
-		case hasCustomRoleUpdate:
+		case hasManagedRoleUpdate:
 			s.restoreAuthRolesAfterSaveFailureLocked(previousRoles, previousItems, err)
 		case hasPasswordAccount:
 			s.restoreAuthAccountsAfterSaveFailureLocked(previousAccounts, previousItems, err)
@@ -597,6 +602,9 @@ func (s *AuthService) Authenticate(raw string) *Identity {
 	hash := util.SHA256Hex(candidate)
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.refreshAuthStateLocked(); err != nil {
+		return nil
+	}
 	for index, item := range s.items {
 		if !util.ToBool(util.ValueOr(item["enabled"], true)) {
 			continue
@@ -609,7 +617,6 @@ func (s *AuthService) Authenticate(raw string) *Identity {
 			continue
 		}
 		next := util.CopyMap(item)
-		s.applyRoleToAuthItem(next, managedAuthRoleID(next))
 		now := time.Now().UTC()
 		next["last_used_at"] = now.Format(time.RFC3339Nano)
 		s.items[index] = next
@@ -619,8 +626,10 @@ func (s *AuthService) Authenticate(raw string) *Identity {
 				s.lastUsedFlushAt[id] = now
 			} else {
 				s.items[index] = item
-				s.reloadAuthItemsAfterConflictLocked(err)
 				if errors.Is(err, storage.ErrConcurrentRowUpdate) {
+					if err := s.refreshAuthStateLocked(); err != nil {
+						return nil
+					}
 					for _, current := range s.items {
 						if util.Clean(current["kind"]) != AuthKindSession ||
 							!util.ToBool(util.ValueOr(current["enabled"], true)) ||
@@ -660,13 +669,20 @@ func (s *AuthService) RevokeSessions(rawTokens ...string) (int, error) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.refreshAuthStateLocked(); err != nil {
+		return 0, AuthPersistenceError{Err: err}
+	}
 	previous := cloneAuthItems(s.items)
 	next := make([]map[string]any, 0, len(s.items))
 	removed := 0
+	now := time.Now().UTC()
 	for _, item := range s.items {
-		if util.Clean(item["kind"]) == AuthKindSession && authHashMatchesAny(util.Clean(item["key_hash"]), hashes) {
+		if util.Clean(item["kind"]) == AuthKindSession && !authSessionExpired(item, now) && authHashMatchesAny(util.Clean(item["key_hash"]), hashes) {
 			removed++
-			continue
+			// External accounts keep their managed role and disabled state here.
+			item = util.CopyMap(item)
+			item["expires_at"] = now.Format(time.RFC3339Nano)
+			item["updated_at"] = now.Format(time.RFC3339Nano)
 		}
 		next = append(next, item)
 	}
@@ -718,7 +734,7 @@ func (s *AuthService) pruneLastUsedFlushAtLocked() {
 	}
 	activeSessionIDs := make(map[string]struct{}, len(s.items))
 	for _, item := range s.items {
-		if util.Clean(item["kind"]) != AuthKindSession {
+		if util.Clean(item["kind"]) != AuthKindSession || authSessionExpired(item, time.Now().UTC()) {
 			continue
 		}
 		if id := util.Clean(item["id"]); id != "" {
@@ -799,11 +815,29 @@ func (s *AuthService) reloadAuthItemsAfterConflictLocked(saveErr error) {
 	if !errors.Is(saveErr, storage.ErrConcurrentRowUpdate) {
 		return
 	}
+	_ = s.refreshAuthStateLocked()
+}
+
+func (s *AuthService) refreshAuthStateLocked() error {
+	accounts, err := s.loadPasswordAccounts()
+	if err != nil {
+		return err
+	}
+	roles, err := s.loadRoles()
+	if err != nil {
+		return err
+	}
 	items, _, err := s.load()
 	if err != nil {
-		return
+		return err
 	}
-	s.applyLoadedAuthItemsLocked(items)
+	s.accounts = accounts
+	s.roles = roles
+	// Session permissions are persisted together with account and role changes.
+	// Do not overwrite them with related documents read before a concurrent change.
+	s.items = items
+	s.pruneLastUsedFlushAtLocked()
+	return nil
 }
 
 func (s *AuthService) applyLoadedAuthItemsLocked(items []map[string]any) {
@@ -1013,8 +1047,8 @@ func (s *AuthService) applyRoleToAuthItem(item map[string]any, roleID string) {
 	applyManagedRoleToAuthItem(item, role)
 }
 
-func authItemUsesCustomRole(item map[string]any) bool {
-	return util.Clean(item["role"]) == AuthRoleUser && managedAuthRoleID(item) != DefaultManagedRoleID
+func authItemUsesManagedRole(item map[string]any) bool {
+	return util.Clean(item["role"]) == AuthRoleUser
 }
 
 func newAuthItem(role, name string, owner AuthOwner, raw string) map[string]any {
@@ -1355,7 +1389,10 @@ func mergeManagedAuthUser(user, item map[string]any) {
 	if len(permissions.APIPermissions) > 0 || len(util.AsStringSlice(user["api_permissions"])) == 0 {
 		user["api_permissions"] = append([]string(nil), permissions.APIPermissions...)
 	}
-	user["credential_count"] = util.ToInt(user["credential_count"], 0) + 1
+	activeSession := util.Clean(item["kind"]) == AuthKindSession && !authSessionExpired(item, time.Now().UTC())
+	if activeSession {
+		user["credential_count"] = util.ToInt(user["credential_count"], 0) + 1
+	}
 	if created := util.Clean(item["created_at"]); created != "" {
 		current := util.Clean(user["created_at"])
 		if current == "" || created < current {
@@ -1374,7 +1411,7 @@ func mergeManagedAuthUser(user, item map[string]any) {
 			user["updated_at"] = updated
 		}
 	}
-	if util.Clean(item["kind"]) == AuthKindSession {
+	if activeSession {
 		user["has_session"] = true
 		if util.Clean(user["session_id"]) == "" {
 			user["session_id"] = util.Clean(item["id"])

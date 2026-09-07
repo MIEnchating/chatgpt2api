@@ -4,7 +4,9 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useState, type ReactN
 import { Archive, Bell, Clapperboard, Database, ImageIcon, ListChecks, LoaderCircle, ScrollText, Settings2, Sparkles } from "lucide-react";
 
 import { useAuthGuard } from "@/lib/use-auth-guard";
-import type { StoredAuthSession } from "@/lib/auth-session";
+import { AUTH_SESSION_CHANGE_EVENT, type StoredAuthSession } from "@/lib/auth-session";
+import { getCachedAuthSession } from "@/lib/session";
+import { useAuthSessionRevision } from "@/lib/use-auth-session-revision";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SectionNavigation } from "@/components/section-navigation";
 
@@ -28,7 +30,14 @@ function SettingsDataController({ children, sessionKey }: { children: ReactNode;
   useLayoutEffect(() => {
     activateSession(sessionKey);
     void initialize(sessionKey);
-    return () => deactivateSession(sessionKey);
+    const handleSessionChange = () => {
+      if (getCachedAuthSession()?.key !== sessionKey) deactivateSession(sessionKey);
+    };
+    window.addEventListener(AUTH_SESSION_CHANGE_EVENT, handleSessionChange);
+    return () => {
+      window.removeEventListener(AUTH_SESSION_CHANGE_EVENT, handleSessionChange);
+      deactivateSession(sessionKey);
+    };
   }, [activateSession, deactivateSession, initialize, sessionKey]);
 
   return activeSessionKey === sessionKey ? children : null;
@@ -48,7 +57,12 @@ function AdminSettingsPageContent({ session }: { session: StoredAuthSession }) {
   ], [session]);
   const sectionFromHash = useCallback(() => {
     if (typeof window === "undefined") return settingsItems[0].id;
-    const hash = decodeURIComponent(window.location.hash.slice(1));
+    let hash: string;
+    try {
+      hash = decodeURIComponent(window.location.hash.slice(1));
+    } catch {
+      return settingsItems[0].id;
+    }
     if (hash === "database-connection") return "config";
     if (hash === "image-storage-governance") return "media-storage-governance";
     return settingsItems.some((item) => item.id === hash) ? hash : settingsItems[0].id;
@@ -96,8 +110,9 @@ function AdminSettingsPageContent({ session }: { session: StoredAuthSession }) {
 
 export default function SettingsPage() {
   const { isCheckingAuth, session } = useAuthGuard(undefined, "/settings");
+  const sessionRevision = useAuthSessionRevision();
 
-  if (isCheckingAuth || !session) {
+  if (isCheckingAuth || !session || getCachedAuthSession()?.key !== session.key) {
     return (
       <div className="flex min-h-[40vh] items-center justify-center">
         <LoaderCircle className="size-5 animate-spin text-muted-foreground" />
@@ -105,5 +120,5 @@ export default function SettingsPage() {
     );
   }
 
-  return <AdminSettingsPageContent key={session.key} session={session} />;
+  return <AdminSettingsPageContent key={`${session.key}:${sessionRevision}`} session={session} />;
 }

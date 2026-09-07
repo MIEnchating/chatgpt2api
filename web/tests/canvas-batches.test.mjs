@@ -13,7 +13,7 @@ import {
 } from "../src/app/canvas/canvas-batches.ts";
 
 function node(id, values = {}) {
-  return { id, type: "image", x: 0, y: 0, width: 100, height: 100, scale_x: 1, scale_y: 1, ...values };
+  return { id, type: "image", x: 0, y: 0, width: 100, height: 100, scale_x: 1, scale_y: 1, storage_key: undefined, bytes: undefined, mime_type: undefined, ...values };
 }
 
 test("collapsed batch children are hidden while expanded children remain visible", () => {
@@ -55,7 +55,7 @@ test("removing a child dissolves a batch that only has one result left", () => {
   const childA = node("a", { url: "a.png", batch_root_id: "root" });
   const childB = node("b", { url: "b.png", thumbnail_url: "b-thumb.png", natural_width: 2048, natural_height: 1024, free_resize: true, batch_root_id: "root" });
   const next = reconcileCanvasBatchesAfterRemoval([root, childA, childB], new Set(["a"]));
-  assert.deepEqual(next[0], { id: "root", type: "image", x: 0, y: 0, width: 100, height: 100, scale_x: 1, scale_y: 1, url: "b.png", thumbnail_url: "b-thumb.png", natural_width: 2048, natural_height: 1024, free_resize: true });
+  assert.deepEqual(next[0], node("root", { url: "b.png", thumbnail_url: "b-thumb.png", natural_width: 2048, natural_height: 1024, free_resize: true }));
   assert.equal(next[1].batch_root_id, undefined);
 });
 
@@ -85,6 +85,24 @@ test("a batch child can become the root preview", () => {
   const childB = node("b", { url: "b.png", thumbnail_url: "b-thumb.png", width: 320, height: 180, batch_root_id: "root" });
   const next = setCanvasBatchPrimary([root, childA, childB], "b");
   assert.deepEqual(next[0], { ...root, url: "b.png", thumbnail_url: "b-thumb.png", width: 320, height: 180, batch_primary_id: "b" });
+});
+
+test("selecting or removing a batch primary keeps its durable media metadata synchronized", () => {
+  const root = node("root", { url: "a.png", storage_key: "server:a", bytes: 10, mime_type: "image/png", batch_child_ids: ["a", "b", "c"], batch_primary_id: "a" });
+  const children = [
+    node("a", { url: "a.png", batch_root_id: "root" }),
+    node("b", { url: "b.webp", storage_key: "server:b", bytes: 20, mime_type: "image/webp", batch_root_id: "root" }),
+    node("c", { url: "c.png", batch_root_id: "root" }),
+  ];
+  for (const nodes of [setCanvasBatchPrimary([root, ...children], "b"), reconcileCanvasBatchesAfterRemoval([root, ...children], new Set(["a"]))]) {
+    assert.equal(nodes[0].storage_key, "server:b");
+    assert.equal(nodes[0].bytes, 20);
+    assert.equal(nodes[0].mime_type, "image/webp");
+  }
+  const cleared = setCanvasBatchPrimary([root, ...children], "c")[0];
+  assert.equal(cleared.storage_key, undefined);
+  assert.equal(cleared.bytes, undefined);
+  assert.equal(cleared.mime_type, undefined);
 });
 
 test("retrying the current or first usable batch child refreshes the root", () => {

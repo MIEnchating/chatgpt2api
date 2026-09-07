@@ -1,0 +1,511 @@
+[
+  {
+    "path": "internal/architecture_test.go",
+    "sha256": "fa1a4190cd4d3a31b5e0cfe9f48f59ed8c5bf8988fd32b9be2c101004b313485",
+    "status": "reviewed",
+    "reviewer": "review_storage_config",
+    "checks": [
+      "完整逐文件阅读当前文件的 159 行内容；记录哈希对应本轮修复后的版本。",
+      "完整阅读架构测试：transport→service→storage 依赖方向、Go import 解析与违反依赖的报告；通过 internal 包测试。"
+    ],
+    "validation": [
+      "build/review/backend-foundation-tests.log",
+      "build/review/backend-foundation-race.log",
+      "build/review/backend-foundation-boundaries.log"
+    ]
+  },
+  {
+    "path": "internal/config/config.go",
+    "sha256": "02997b0a1d4ed63d48c9827a1d37ce22c13818a824e562ff36b16026c5fc53c3",
+    "status": "reviewed",
+    "reviewer": "review_storage_config",
+    "checks": [
+      "完整逐文件阅读当前文件的 1681 行内容；记录哈希对应本轮修复后的版本。",
+      "完整阅读配置优先级、RootDir 和目录初始化、env 读写/Compose 转义、设置快照/回滚、数字边界、Provider 容量测量指纹及秘密保留。",
+      "修复 relay_database_password 更新和持久化裁剪空白；验证测试连接、保存、无关更新与重启读取使用相同原文密码。",
+      "保持初始 AdminPassword 原文；未读取或写入真实 .env，文件写入故障行为由临时目录回归。"
+    ],
+    "validation": [
+      "build/review/backend-foundation-tests.log",
+      "build/review/backend-foundation-race.log",
+      "build/review/backend-foundation-boundaries.log"
+    ]
+  },
+  {
+    "path": "internal/config/config_test.go",
+    "sha256": "4ba77bc413c5fbbe598c87f136f8126fe74fe8d73082f150fcc2af6ae4dbaf6c",
+    "status": "reviewed",
+    "reviewer": "review_storage_config",
+    "checks": [
+      "完整逐文件阅读当前文件的 1580 行内容；记录哈希对应本轮修复后的版本。",
+      "完整阅读环境优先级/旧变量忽略、JSON 设置、Provider 秘密与容量 CAS、配置快照、数值溢出、目录错误和 .env 权限回归。",
+      "新增数据库密码预览/保存/进程环境/从磁盘重启的一致性回归；修复前失败、修复后通过。"
+    ],
+    "validation": [
+      "build/review/backend-foundation-tests.log",
+      "build/review/backend-foundation-race.log",
+      "build/review/backend-foundation-boundaries.log"
+    ]
+  },
+  {
+    "path": "internal/main.go",
+    "sha256": "f605725bb659956eef32f6875c6d8e6635e20fd3d093f7ae6b87a059e77daf0e",
+    "status": "reviewed",
+    "reviewer": "review_storage_config",
+    "checks": [
+      "完整逐文件阅读当前文件的 85 行内容；记录哈希对应本轮修复后的版本。",
+      "完整阅读启动、信号监听、HTTP 超时、Shutdown 与资源 Close 顺序；未启动真实业务进程或连接现有数据。"
+    ],
+    "validation": [
+      "build/review/backend-foundation-tests.log",
+      "build/review/backend-foundation-race.log",
+      "build/review/backend-foundation-boundaries.log"
+    ]
+  },
+  {
+    "path": "internal/model/storage.go",
+    "sha256": "5db0be82e69693d15db5c8a3a45ed2f19d25b58c6dbabe5263b6471498b01671",
+    "status": "reviewed",
+    "reviewer": "review_storage_config",
+    "checks": [
+      "完整逐文件阅读当前文件的 61 行内容；记录哈希对应本轮修复后的版本。",
+      "完整阅读 Provider、容量计划和 StorageObject 数据模型：JSON 字段、凭据字段与元数据类型；公开接口脱敏在 config/service 层复核。"
+    ],
+    "validation": [
+      "build/review/backend-foundation-tests.log",
+      "build/review/backend-foundation-race.log",
+      "build/review/backend-foundation-boundaries.log"
+    ]
+  },
+  {
+    "path": "internal/protocol/core.go",
+    "sha256": "61d05457a594332cad5313ad5d342e1a2edaab340a499a6ba34440c9d090e1ad",
+    "status": "reviewed",
+    "reviewer": "review_storage_config",
+    "checks": [
+      "完整逐文件阅读当前文件的 303 行内容；记录哈希对应本轮修复后的版本。",
+      "完整阅读 Token/引用图 data URL 与 base64 处理、聊天消息内容转换、模型标识与上游请求结构；未根据历史 jshook 证据改变实时协议。"
+    ],
+    "validation": [
+      "build/review/backend-foundation-tests.log",
+      "build/review/backend-foundation-race.log",
+      "build/review/backend-foundation-boundaries.log"
+    ]
+  },
+  {
+    "path": "internal/protocol/core_test.go",
+    "sha256": "e993324fa354fc1e967451b08ad5b288db97dbb378d7e22939d7035f69af9799",
+    "status": "reviewed",
+    "reviewer": "review_storage_config",
+    "checks": [
+      "完整逐文件阅读当前文件的 75 行内容；记录哈希对应本轮修复后的版本。",
+      "完整阅读聊天引用图片识别、内容处理及请求回归；本地输入输出测试不等同于真实上游联调。"
+    ],
+    "validation": [
+      "build/review/backend-foundation-tests.log",
+      "build/review/backend-foundation-race.log",
+      "build/review/backend-foundation-boundaries.log"
+    ]
+  },
+  {
+    "path": "internal/protocol/video_capabilities.go",
+    "sha256": "a8a3b48c4a70c6c91d111bdee27633f109f32d469080f7079295ec1cf39c4202",
+    "status": "reviewed",
+    "reviewer": "review_storage_config",
+    "checks": [
+      "完整逐文件阅读当前文件的 15 行内容；记录哈希对应本轮修复后的版本。",
+      "完整阅读视频能力对注册契约的映射及模型能力查询；检查返回集合的所有权与未匹配模型行为。"
+    ],
+    "validation": [
+      "build/review/backend-foundation-tests.log",
+      "build/review/backend-foundation-race.log",
+      "build/review/backend-foundation-boundaries.log"
+    ]
+  },
+  {
+    "path": "internal/protocol/video_capabilities_test.go",
+    "sha256": "5dbc0bf52f71eda70d5b45a7e8ce7b168e5dfce084906cb48d2fb9ebe6a60b15",
+    "status": "reviewed",
+    "reviewer": "review_storage_config",
+    "checks": [
+      "完整逐文件阅读当前文件的 32 行内容；记录哈希对应本轮修复后的版本。",
+      "完整阅读视频能力随契约注册变化的测试及全局注册表清理。"
+    ],
+    "validation": [
+      "build/review/backend-foundation-tests.log",
+      "build/review/backend-foundation-race.log",
+      "build/review/backend-foundation-boundaries.log"
+    ]
+  },
+  {
+    "path": "internal/protocol/video_contract_drivers.go",
+    "sha256": "a11466e250848f39bca7a0eb257188e4220e4350e88f5ecf2b0fe271c3167d96",
+    "status": "reviewed",
+    "reviewer": "review_storage_config",
+    "checks": [
+      "完整逐文件阅读当前文件的 44 行内容；记录哈希对应本轮修复后的版本。",
+      "完整阅读支持的驱动常量/列表/规范化及请求材料能力边界；未新增兼容驱动。"
+    ],
+    "validation": [
+      "build/review/backend-foundation-tests.log",
+      "build/review/backend-foundation-race.log",
+      "build/review/backend-foundation-boundaries.log"
+    ]
+  },
+  {
+    "path": "internal/protocol/video_model_contracts.go",
+    "sha256": "d41d2159e80afd03c73bc5efafc8c9ae9625b8ae158ad16127ba6584f1c7418b",
+    "status": "reviewed",
+    "reviewer": "review_storage_config",
+    "checks": [
+      "完整逐文件阅读当前文件的 1308 行内容；记录哈希对应本轮修复后的版本。",
+      "完整阅读契约所有嵌套字段规范化与校验：路径占位、材料上下限、规则矛盾、时长/强制值、Driver、artifact auth、轮询状态、名称/模型冲突、通配符优先级及深拷贝和锁。",
+      "修复轮询 task_id/status/progress/error/result JSON 字段路径大小写不应合并；HTTP 提取使用大小写敏感 map 键，保留候选路径顺序并去除完全重复。",
+      "通用契约声明验证；未验证各供应商当前实际接口。"
+    ],
+    "validation": [
+      "build/review/backend-foundation-tests.log",
+      "build/review/backend-foundation-race.log",
+      "build/review/backend-foundation-boundaries.log"
+    ]
+  },
+  {
+    "path": "internal/protocol/video_model_contracts.json",
+    "sha256": "dd4316ef9297929561f9eb3e9f6666f91c3acf196ec8f78b5654dc04acffbb66",
+    "status": "reviewed",
+    "reviewer": "review_storage_config",
+    "checks": [
+      "完整逐文件阅读当前文件的 125 行内容；记录哈希对应本轮修复后的版本。",
+      "完整阅读默认 MiniMax 契约 JSON，包括模型、generation mode、材料、rule、transport、artifact 和 polling；与当前解析器/默认契约测试对照，未改供应商声明。"
+    ],
+    "validation": [
+      "build/review/backend-foundation-tests.log",
+      "build/review/backend-foundation-race.log",
+      "build/review/backend-foundation-boundaries.log"
+    ]
+  },
+  {
+    "path": "internal/protocol/video_model_contracts_ownership_test.go",
+    "sha256": "d07f47af7e6a2d37cca6ed24aa03a4dcd0d2006d4fc95cca8814ccc54de7363c",
+    "status": "reviewed",
+    "reviewer": "review_storage_config",
+    "checks": [
+      "完整逐文件阅读当前文件的 250 行内容；记录哈希对应本轮修复后的版本。",
+      "完整阅读注册/返回对象的嵌套切片与 map 所有权测试、并发读取与隔离；确认注册表数据不由调用方修改。"
+    ],
+    "validation": [
+      "build/review/backend-foundation-tests.log",
+      "build/review/backend-foundation-race.log",
+      "build/review/backend-foundation-boundaries.log"
+    ]
+  },
+  {
+    "path": "internal/protocol/video_model_contracts_test.go",
+    "sha256": "254b0e82e19cd9650895a1a6690572f40706723059f68129e6b5aed8a83b8952",
+    "status": "reviewed",
+    "reviewer": "review_storage_config",
+    "checks": [
+      "完整逐文件阅读当前文件的 691 行内容；记录哈希对应本轮修复后的版本。",
+      "完整阅读契约 v4 序列化、深拷贝、规范化、Driver/endpoint/规则/模式/材料验证及模型匹配测试。",
+      "新增五类 JSON 响应路径大小写候选保留回归，修复前全部失败、修复后通过。"
+    ],
+    "validation": [
+      "build/review/backend-foundation-tests.log",
+      "build/review/backend-foundation-race.log",
+      "build/review/backend-foundation-boundaries.log"
+    ]
+  },
+  {
+    "path": "internal/storage/image_conversations.go",
+    "sha256": "37bc372be3305c5307419da7bf542328119d8af13e100d42760d58d66b91cf30",
+    "status": "reviewed",
+    "reviewer": "review_storage_config",
+    "checks": [
+      "完整逐文件阅读当前文件的 1291 行内容；记录哈希对应本轮修复后的版本。",
+      "完整阅读 owner/conversation 哈希键、冲突检测、owner 行锁、generation/cursor generation、CAS 批量原子性、summary 派生、分页二次代次校验、删除墓碑与清空事务。",
+      "检查版本溢出 fail-closed、现存墓碑不重写、clear 时间不倒退和已删除会话不复活；未发现本轮新增确认缺陷。"
+    ],
+    "validation": [
+      "build/review/backend-foundation-tests.log",
+      "build/review/backend-foundation-race.log",
+      "build/review/backend-foundation-boundaries.log"
+    ]
+  },
+  {
+    "path": "internal/storage/image_conversations_test.go",
+    "sha256": "ab1e0da989f1feb63a172bf5dcc9961039b15b8d9764eacda03e8b1f267065b4",
+    "status": "reviewed",
+    "reviewer": "review_storage_config",
+    "checks": [
+      "完整逐文件阅读当前文件的 740 行内容；记录哈希对应本轮修复后的版本。",
+      "完整阅读独立 SQLite backend 夹具、批量 CAS/分页重排失效/删除/清空/溢出原子性、数据库触发器失败回滚、双连接并发同一行冲突测试。"
+    ],
+    "validation": [
+      "build/review/backend-foundation-tests.log",
+      "build/review/backend-foundation-race.log",
+      "build/review/backend-foundation-boundaries.log"
+    ]
+  },
+  {
+    "path": "internal/storage/storage.go",
+    "sha256": "c51414c9145c42c303b59e3435ebf022a374c50283a00be655b09cd087d8ca16",
+    "status": "reviewed",
+    "reviewer": "review_storage_config",
+    "checks": [
+      "完整逐文件阅读当前文件的 1174 行内容；记录哈希对应本轮修复后的版本。",
+      "完整阅读三类数据库 URL/DSN、SQLite 重连 PRAGMA、schema、行与文档 CAS/事务/快照/错误分类、日志写入分页清理、前缀查询与诊断信息。",
+      "修复 Info/HealthCheck 数据库 URL 查询参数和 fragment 泄露，解析失败不回显原文；真实 SQLite 诊断路径回归。",
+      "修复缺失/nil/空白日志时间，保证 created_at/day/data.time 一致；保持调用方 map 不变。",
+      "PostgreSQL/MySQL 本轮未重建真实库，默认集成显式清空 TEST_* URL；上一分工数据库集成记录另列。"
+    ],
+    "validation": [
+      "build/review/backend-foundation-tests.log",
+      "build/review/backend-foundation-race.log",
+      "build/review/backend-foundation-boundaries.log"
+    ]
+  },
+  {
+    "path": "internal/storage/storage_integration_test.go",
+    "sha256": "2c6e98bfa54c1c3ad11b5c4577cc18b5a3f021f694620e7a7370cd1224ed9355",
+    "status": "reviewed",
+    "reviewer": "review_storage_config",
+    "checks": [
+      "完整逐文件阅读当前文件的 478 行内容；记录哈希对应本轮修复后的版本。",
+      "完整阅读真实 PostgreSQL/MySQL 集成夹具、环境显式启用、表清理与 CAS/日志/会话事务断言。",
+      "本轮清空 TEST_POSTGRES_DATABASE_URL 和 TEST_MYSQL_DATABASE_URL，未对现有业务库执行；不把跳过记为数据库集成通过。"
+    ],
+    "validation": [
+      "build/review/backend-foundation-tests.log",
+      "build/review/backend-foundation-race.log",
+      "build/review/backend-foundation-boundaries.log"
+    ]
+  },
+  {
+    "path": "internal/storage/storage_objects.go",
+    "sha256": "6b01e2c51d5e2b81127cf10ebd34ca22b838ae1f7a26d6622094036698e5bf5f",
+    "status": "reviewed",
+    "reviewer": "review_storage_config",
+    "checks": [
+      "完整逐文件阅读当前文件的 103 行内容；记录哈希对应本轮修复后的版本。",
+      "完整阅读对象元数据保存/读取/列表/删除、占位符及 created_by 过滤；仅持久化职责，授权归服务/HTTP。"
+    ],
+    "validation": [
+      "build/review/backend-foundation-tests.log",
+      "build/review/backend-foundation-race.log",
+      "build/review/backend-foundation-boundaries.log"
+    ]
+  },
+  {
+    "path": "internal/storage/storage_objects_test.go",
+    "sha256": "7becc371468278ad81f1d906ec71cf675bd667dd993aea6eef5b2d613d0aa5b2",
+    "status": "reviewed",
+    "reviewer": "review_storage_config",
+    "checks": [
+      "完整逐文件阅读当前文件的 69 行内容；记录哈希对应本轮修复后的版本。",
+      "完整阅读 SQLite storage object 持久化与所有者过滤测试、时间/类型字段往返；通过相关包测试。"
+    ],
+    "validation": [
+      "build/review/backend-foundation-tests.log",
+      "build/review/backend-foundation-race.log",
+      "build/review/backend-foundation-boundaries.log"
+    ]
+  },
+  {
+    "path": "internal/storage/storage_test.go",
+    "sha256": "619354c5f8b5943873217916c31f7962e6bc3ef015458137d33f37872b541da5",
+    "status": "reviewed",
+    "reviewer": "review_storage_config",
+    "checks": [
+      "完整逐文件阅读当前文件的 903 行内容；记录哈希对应本轮修复后的版本。",
+      "完整阅读 SQLite 文档/行 CAS、查询排序、日志分页清理、连接重建与不修改输入测试。",
+      "新增诊断 URL 凭据脱敏和日志缺省时间一致性测试；先观察失败再修复，六包测试与 race 纳入验证。"
+    ],
+    "validation": [
+      "build/review/backend-foundation-tests.log",
+      "build/review/backend-foundation-race.log",
+      "build/review/backend-foundation-boundaries.log"
+    ]
+  },
+  {
+    "path": "internal/util/image_model_capabilities.go",
+    "sha256": "e26ed7c444a7f0ceeec19ff43ddf4769ff56153f533f5ff1cc0c095bb370dc50",
+    "status": "reviewed",
+    "reviewer": "review_storage_config",
+    "checks": [
+      "完整逐文件阅读当前文件的 190 行内容；记录哈希对应本轮修复后的版本。",
+      "完整阅读模型分类、输出/参考图数量、质量和尺寸映射；修复无穷维度及比例溢出/下溢被当作合法尺寸。",
+      "仅修正通用数值校验，不改变支持的供应商模型、比例和分辨率目录；真实供应商未联调。"
+    ],
+    "validation": [
+      "build/review/backend-foundation-tests.log",
+      "build/review/backend-foundation-race.log",
+      "build/review/backend-foundation-boundaries.log"
+    ]
+  },
+  {
+    "path": "internal/util/image_model_capabilities_test.go",
+    "sha256": "960c5ea91d0703bc0a2c42b8e4ad397c29940c03b6611042e711d2701a292c09",
+    "status": "reviewed",
+    "reviewer": "review_storage_config",
+    "checks": [
+      "完整逐文件阅读当前文件的 136 行内容；记录哈希对应本轮修复后的版本。",
+      "完整阅读模型标识、数量、质量/尺寸参数测试；新增 Inf/NaN/有限数除法溢出下溢回归，修复前失败、修复后通过。"
+    ],
+    "validation": [
+      "build/review/backend-foundation-tests.log",
+      "build/review/backend-foundation-race.log",
+      "build/review/backend-foundation-boundaries.log"
+    ]
+  },
+  {
+    "path": "internal/util/json.go",
+    "sha256": "4ba2db881c798761e218c525c7f92ddf348cfba5e7338b106e0bf27eb4b91a0e",
+    "status": "reviewed",
+    "reviewer": "review_storage_config",
+    "checks": [
+      "完整逐文件阅读当前文件的 288 行内容；记录哈希对应本轮修复后的版本。",
+      "完整阅读严格单 JSON/UseNumber、响应编码、字符串/map/数值转换、整数溢出、随机 ID/哈希和时间 helper；未发现本轮新增确认缺陷。"
+    ],
+    "validation": [
+      "build/review/backend-foundation-tests.log",
+      "build/review/backend-foundation-race.log",
+      "build/review/backend-foundation-boundaries.log"
+    ]
+  },
+  {
+    "path": "internal/util/json_test.go",
+    "sha256": "16c903ac9fa6b3e98bd4ce13173e85f138735020d3cb496bd70977cbd7be2f5f",
+    "status": "reviewed",
+    "reviewer": "review_storage_config",
+    "checks": [
+      "完整逐文件阅读当前文件的 113 行内容；记录哈希对应本轮修复后的版本。",
+      "完整阅读 JSON 对象/数字精度、严格整数和转换边界回归；通过 util 测试与 race。"
+    ],
+    "validation": [
+      "build/review/backend-foundation-tests.log",
+      "build/review/backend-foundation-race.log",
+      "build/review/backend-foundation-boundaries.log"
+    ]
+  },
+  {
+    "path": "internal/util/raster_image.go",
+    "sha256": "ce732779ad18a3c2545fddeaa430a170609c415f73882c8b66d9b09fc8c298ac",
+    "status": "reviewed",
+    "reviewer": "review_storage_config",
+    "checks": [
+      "完整逐文件阅读当前文件的 111 行内容；记录哈希对应本轮修复后的版本。",
+      "完整阅读图片 DecodeConfig、格式/MIME、维度与像素上限、完整解码验证；编码字节总量在调用层限制，本轮未扩大解码契约。"
+    ],
+    "validation": [
+      "build/review/backend-foundation-tests.log",
+      "build/review/backend-foundation-race.log",
+      "build/review/backend-foundation-boundaries.log"
+    ]
+  },
+  {
+    "path": "internal/util/raster_image_test.go",
+    "sha256": "5259a883ca520913de791e669b941140c5a902c8391898760afe8cabf84d6632",
+    "status": "reviewed",
+    "reviewer": "review_storage_config",
+    "checks": [
+      "完整逐文件阅读当前文件的 48 行内容；记录哈希对应本轮修复后的版本。",
+      "完整阅读图片格式/解码/边界夹具及异常输入断言；不依赖远程图片。"
+    ],
+    "validation": [
+      "build/review/backend-foundation-tests.log",
+      "build/review/backend-foundation-race.log",
+      "build/review/backend-foundation-boundaries.log"
+    ]
+  },
+  {
+    "path": "internal/util/upstream_error.go",
+    "sha256": "ccebc11ae8637c6ee9145107fdd435b25a6ff3e7df29be59b2a18430b83eb243",
+    "status": "reviewed",
+    "reviewer": "review_storage_config",
+    "checks": [
+      "完整逐文件阅读当前文件的 24 行内容；记录哈希对应本轮修复后的版本。",
+      "完整阅读上游错误结构中的候选 message/type/code 提取及缺省行为；不回写上游数据。"
+    ],
+    "validation": [
+      "build/review/backend-foundation-tests.log",
+      "build/review/backend-foundation-race.log",
+      "build/review/backend-foundation-boundaries.log"
+    ]
+  },
+  {
+    "path": "internal/util/upstream_error_test.go",
+    "sha256": "7af53ad4b56f9bddd47cc43758f2a164303ba423506ed246f43061debce8cdce",
+    "status": "reviewed",
+    "reviewer": "review_storage_config",
+    "checks": [
+      "完整逐文件阅读当前文件的 25 行内容；记录哈希对应本轮修复后的版本。",
+      "完整阅读嵌套上游错误消息和 fallback 行为测试；仅模拟响应。"
+    ],
+    "validation": [
+      "build/review/backend-foundation-tests.log",
+      "build/review/backend-foundation-race.log",
+      "build/review/backend-foundation-boundaries.log"
+    ]
+  },
+  {
+    "path": "internal/videocontract/store.go",
+    "sha256": "ab962524d7a0025c63f7b3cea743d82c29ab4d9bb57d20580ccece5ba8186b43",
+    "status": "reviewed",
+    "reviewer": "review_storage_config",
+    "checks": [
+      "完整逐文件阅读当前文件的 910 行内容；记录哈希对应本轮修复后的版本。",
+      "完整阅读契约 initialize/create/import/update/draft/publish/version/rollback/enable/delete、文档 CAS 重试、runtime 刷新、数量及历史版本上限、迁移链及候选冲突校验。",
+      "区分外部契约格式 v4 与持久化格式 v8；保留原有数据迁移、不新增兼容路径；真实供应商和跨进程 runtime 同步不由此包测试证明。"
+    ],
+    "validation": [
+      "build/review/backend-foundation-tests.log",
+      "build/review/backend-foundation-race.log",
+      "build/review/backend-foundation-boundaries.log"
+    ]
+  },
+  {
+    "path": "internal/videocontract/store_test.go",
+    "sha256": "e89751d4fe1030657cdaee553746924b0713de0cc3f64d7109c9cae853d6eb7b",
+    "status": "reviewed",
+    "reviewer": "review_storage_config",
+    "checks": [
+      "完整逐文件阅读当前文件的 873 行内容；记录哈希对应本轮修复后的版本。",
+      "完整阅读 SQLite 持久化/重载、草稿发布与回滚、批量导入原子性、CAS 交错重试、默认删除不复原、v3-v8 存储迁移与嵌套历史契约测试。"
+    ],
+    "validation": [
+      "build/review/backend-foundation-tests.log",
+      "build/review/backend-foundation-race.log",
+      "build/review/backend-foundation-boundaries.log"
+    ]
+  },
+  {
+    "path": "internal/web/web.go",
+    "sha256": "f42d92e445bdbc2c9be25f51d9a545b7be21a5ef219cbcb013066185019a2d49",
+    "status": "reviewed",
+    "reviewer": "review_storage_config",
+    "checks": [
+      "完整逐文件阅读当前文件的 64 行内容；记录哈希对应本轮修复后的版本。",
+      "完整阅读 go:embed all:dist、SPA 文件回退、路径清理、MIME 与 index no-cache；缺失 assets 不回退到 index。"
+    ],
+    "validation": [
+      "build/review/backend-foundation-tests.log",
+      "build/review/backend-foundation-race.log",
+      "build/review/backend-foundation-boundaries.log"
+    ]
+  },
+  {
+    "path": "internal/web/web_test.go",
+    "sha256": "b9180b913aa372b3fb427f9f3850f2f5f366cc310f6626276eb24b2e599fc808",
+    "status": "reviewed",
+    "reviewer": "review_storage_config",
+    "checks": [
+      "完整逐文件阅读当前文件的 32 行内容；记录哈希对应本轮修复后的版本。",
+      "完整阅读嵌入资源/SPA fallback/不存在资源测试；使用已构建 frontend assets，本分工不声称页面交互已验证。"
+    ],
+    "validation": [
+      "build/review/backend-foundation-tests.log",
+      "build/review/backend-foundation-race.log",
+      "build/review/backend-foundation-boundaries.log"
+    ]
+  }
+]

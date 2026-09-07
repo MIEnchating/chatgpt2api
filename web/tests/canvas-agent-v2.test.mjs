@@ -7,6 +7,7 @@ const agentReplies = [];
 const submittedInputs = [];
 const cancelledTasks = [];
 let taskCounter = 0;
+let submitOverride;
 
 mock.module("@/lib/api", () => ({
   isImageOutputFormat: (value) => ["png", "jpeg", "webp"].includes(value),
@@ -17,6 +18,7 @@ mock.module("@/lib/api", () => ({
   },
   createChatGenerationTask: async (input) => {
     submittedInputs.push(input);
+    if (submitOverride) return submitOverride(input);
     return { id: `agent-task-${++taskCounter}` };
   },
   fetchCreationTasks: async () => {
@@ -48,6 +50,7 @@ const { buildCanvasAgentSkillPrompt } = await import("../src/app/canvas/agent/ca
 const { runCanvasAgent, createCanvasAgentState } = await import("../src/app/canvas/agent/canvas-agent-runtime.ts");
 const { abortCanvasAgentRun, beginCanvasAgentRunEpoch, claimCanvasAgentRun, createCanvasAgentRunLifecycle, invalidateCanvasAgentRunLifecycle, isCurrentCanvasAgentRun, mountCanvasAgentRunLifecycle, releaseCanvasAgentRun } = await import("../src/app/canvas/agent/canvas-agent-run-gate.ts");
 const { CANVAS_AGENT_TOOLS, normalizeCanvasAgentAction } = await import("../src/app/canvas/agent/canvas-agent-tools.ts");
+const { requestCanvasAgentTurn } = await import("../src/app/canvas/agent/canvas-agent-request.ts");
 
 function context(state = createCanvasAgentState()) {
   return buildCanvasAgentContext({
@@ -91,6 +94,39 @@ function toolReply(calls, textResponse = "") {
 }
 
 describe("canvas agent v2 tool contract", () => {
+  test("cancels a planning task acknowledged after the run was stopped", async () => {
+    let resolveSubmission;
+    submitOverride = () => new Promise((resolve) => { resolveSubmission = resolve; });
+    const controller = new AbortController();
+    try {
+      const pending = requestCanvasAgentTurn({ model: "gpt-5", relayTokenName: "text-key", prompt: "plan", systemPrompt: "plan", messages: [], tools: [], signal: controller.signal });
+      controller.abort();
+      resolveSubmission({ id: "late-planning-task" });
+      await assert.rejects(pending, { name: "AbortError" });
+      assert.ok(cancelledTasks.includes("late-planning-task"));
+    } finally {
+      submitOverride = undefined;
+    }
+  });
+
+  test("keeps submission cancellation recognizable as AbortError", async () => {
+    const controller = new AbortController();
+    submitOverride = async () => { controller.abort(); throw new DOMException("Aborted", "AbortError"); };
+    try {
+      await assert.rejects(requestCanvasAgentTurn({ model: "gpt-5", relayTokenName: "text-key", prompt: "plan", systemPrompt: "plan", messages: [], tools: [], signal: controller.signal }), { name: "AbortError" });
+    } finally {
+      submitOverride = undefined;
+    }
+  });
+
+  test("does not submit planning work for an already stopped run", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const before = submittedInputs.length;
+    await assert.rejects(requestCanvasAgentTurn({ model: "gpt-5", relayTokenName: "text-key", prompt: "plan", systemPrompt: "plan", messages: [], tools: [], signal: controller.signal }), { name: "AbortError" });
+    assert.equal(submittedInputs.length, before);
+  });
+
   test("claims one panel run synchronously until its controller is released", () => {
     const slot = { current: null };
     const first = claimCanvasAgentRun(slot);
@@ -449,6 +485,16 @@ describe("canvas agent v2 runtime", () => {
     assert.equal(result.state.phase, "video");
     assert.deepEqual(result.state.approvedNodeIds, ["text-1"]);
     assert.deepEqual(result.state.pendingTaskIds, ["video-task-1"]);
+  });
+
+  test("cancelled media tasks leave the Agent pending queue", async () => {
+    agentReplies.push(toolReply([{ name: "get_media_task_status", arguments: { nodeId: "video-node" } }]), { text_response: "已停止" });
+    const result = await run({
+      initialState: { ...createCanvasAgentState(), pendingTaskIds: ["cancelled-video", "still-running"] },
+      executeAction: async () => ({ ok: true, taskId: "cancelled-video", status: "cancelled" }),
+    });
+    assert.deepEqual(result.state.pendingTaskIds, ["still-running"]);
+    assert.deepEqual(result.state.completedTaskIds, []);
   });
 
   test("runs a pure media batch concurrently", async () => {

@@ -67,7 +67,6 @@ func (s *AuthService) EnsureBootstrapAdmin(username, password string) (Bootstrap
 	if err != nil {
 		return BootstrapAdminResult{}, err
 	}
-	password = strings.TrimSpace(password)
 	generated := false
 	if password == "" {
 		password = util.RandomTokenURL(12)
@@ -200,18 +199,8 @@ func (s *AuthService) CreatePasswordUser(username, password, name, roleID string
 	previousRoles := append([]ManagedRole(nil), s.roles...)
 	previousItems := cloneAuthItems(s.items)
 	s.accounts = append(s.accounts, account)
-	var saveErr error
-	if accountUsesCustomRole(account) {
-		saveErr = s.saveCompleteAuthStateLocked()
-	} else {
-		saveErr = s.savePasswordAccountsLocked()
-	}
-	if saveErr != nil {
-		if accountUsesCustomRole(account) {
-			s.restoreCompleteAuthStateAfterSaveFailureLocked(previousAccounts, previousRoles, previousItems, saveErr)
-		} else {
-			s.restoreAuthAccountsAfterSaveFailureLocked(previousAccounts, previousItems, saveErr)
-		}
+	if saveErr := s.saveCompleteAuthStateLocked(); saveErr != nil {
+		s.restoreCompleteAuthStateAfterSaveFailureLocked(previousAccounts, previousRoles, previousItems, saveErr)
 		s.mu.Unlock()
 		return nil, saveErr
 	}
@@ -227,6 +216,9 @@ func (s *AuthService) LoginPassword(username, password string) (*Identity, strin
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if err := s.refreshAuthStateLocked(); err != nil {
+		return nil, "", AuthPersistenceError{Err: err}
+	}
 	index, account, ok := passwordAccountIndexByUsernameLocked(s.accounts, username)
 	if !ok {
 		return nil, "", ErrInvalidPasswordCredentials
@@ -246,13 +238,13 @@ func (s *AuthService) LoginPassword(username, password string) (*Identity, strin
 	s.accounts[index] = account
 	item, raw := s.issuePasswordSessionLocked(account, now)
 	var saveErr error
-	if accountUsesCustomRole(account) {
+	if accountUsesManagedRole(account) {
 		saveErr = s.saveCompleteAuthStateLocked()
 	} else {
 		saveErr = s.saveAuthAndPasswordAccountsLocked()
 	}
 	if saveErr != nil {
-		if accountUsesCustomRole(account) {
+		if accountUsesManagedRole(account) {
 			s.restoreCompleteAuthStateAfterSaveFailureLocked(previousAccounts, previousRoles, previousItems, saveErr)
 		} else {
 			s.restoreAuthAccountsAfterSaveFailureLocked(previousAccounts, previousItems, saveErr)
@@ -322,8 +314,8 @@ func roleForAccountLocked(roles []ManagedRole, account PasswordAccount) ManagedR
 	return role
 }
 
-func accountUsesCustomRole(account PasswordAccount) bool {
-	return account.Role == AuthRoleUser && account.ManagedRoleID() != DefaultManagedRoleID
+func accountUsesManagedRole(account PasswordAccount) bool {
+	return account.Role == AuthRoleUser
 }
 
 func normalizePasswordAccounts(raw any) []PasswordAccount {
@@ -457,10 +449,10 @@ func normalizeAccountDisplayName(name, username string) string {
 
 func validateAccountPassword(password string) error {
 	if len(password) < 8 {
-		return errors.New("密码长度不能少于 8 位")
+		return errors.New("密码长度不能少于 8 字节")
 	}
-	if len(password) > 128 {
-		return errors.New("密码长度不能超过 128 位")
+	if len(password) > 72 {
+		return errors.New("密码长度不能超过 72 字节")
 	}
 	return nil
 }

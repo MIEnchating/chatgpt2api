@@ -16,11 +16,18 @@ test("rejects local, private, inline, and credentialed references", () => {
     "http://10.0.0.8/video.mp4",
     "http://192.168.1.8/video.mp4",
     "http://[::1]/video.mp4",
+    "http://[::ffff:127.0.0.1]/video.mp4",
+    "http://[::ffff:a00:1]/video.mp4",
+    "http://[::ffff:c0a8:108]/video.mp4",
     "https://user:pass@cdn.example.com/video.mp4",
     "/video.mp4",
   ]) {
     assert.equal(isPublicReferenceURL(value), false, value);
   }
+});
+
+test("accepts public IPv4-mapped IPv6 references", () => {
+  assert.equal(isPublicReferenceURL("http://[::ffff:8.8.8.8]/audio.mp3"), true);
 });
 
 test("enforces the upstream URL length limit", () => {

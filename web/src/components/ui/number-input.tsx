@@ -34,6 +34,7 @@ const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
       max,
       min,
       onValueChange,
+      readOnly,
       step = 1,
       suffix,
       value,
@@ -50,11 +51,11 @@ const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
       Math.max(String(value).length, String(min ?? "").length, String(max ?? "").length, 1),
     );
     const decrementDisabled = Boolean(
-      disabled ||
+      disabled || readOnly ||
         (currentValue !== null && minimum !== null && currentValue <= minimum),
     );
     const incrementDisabled = Boolean(
-      disabled ||
+      disabled || readOnly ||
         (currentValue !== null && maximum !== null && currentValue >= maximum),
     );
 
@@ -72,7 +73,7 @@ const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
 
     const changeByStep = (direction: -1 | 1) => {
       const input = inputRef.current;
-      if (!input) {
+      if (!input || disabled || readOnly) {
         return;
       }
       input.focus();
@@ -137,6 +138,7 @@ const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
             type="number"
             data-slot="number-input"
             disabled={disabled}
+            readOnly={readOnly}
             min={min}
             max={max}
             step={step}

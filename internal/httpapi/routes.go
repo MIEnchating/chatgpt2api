@@ -907,9 +907,10 @@ func (a *App) handleAdminUsers(w http.ResponseWriter, r *http.Request) {
 			if value, ok := body["enabled"]; ok {
 				enabled = util.ToBool(value)
 			}
+			password, _ := body["password"].(string)
 			item, err := a.auth.CreatePasswordUser(
 				util.Clean(body["username"]),
-				util.Clean(body["password"]),
+				password,
 				util.Clean(body["name"]),
 				util.Clean(body["role_id"]),
 				enabled,

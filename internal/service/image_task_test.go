@@ -208,6 +208,43 @@ func TestImageTaskServiceAuthorizesMediaResultsByTaskOwner(t *testing.T) {
 	}
 }
 
+func TestImageTaskServiceMediaAccessObservesRemoteTaskDeletion(t *testing.T) {
+	databaseURL := "sqlite:///" + filepath.ToSlash(filepath.Join(t.TempDir(), "media-deletion.db"))
+	backendA, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = backendA.Close() })
+	backendB, err := storage.NewDatabaseBackend(databaseURL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = backendB.Close() })
+	const resultURL = "/videos/private.mp4"
+	now := util.NowISO()
+	if err := backendA.SaveJSONDocument("image_tasks.json", map[string]any{"tasks": []map[string]any{{
+		"id": "private-video", "owner_id": "owner", "mode": "video", "status": TaskStatusSuccess,
+		"created_at": now, "updated_at": now, "revision": 1,
+		"data": []map[string]any{{"video_url": resultURL}},
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	observer := newImageTaskService(backendA, nil, nil, nil, nil)
+	writer := newImageTaskService(backendB, nil, nil, nil, nil)
+	t.Cleanup(func() { _ = observer.Close() })
+	t.Cleanup(func() { _ = writer.Close() })
+	identity := Identity{ID: "owner", Role: AuthRoleUser}
+	if allowed, err := observer.CanAccessMediaResult(identity, resultURL); err != nil || !allowed {
+		t.Fatalf("initial media access = (%v, %v)", allowed, err)
+	}
+	if _, err := writer.DeleteTasks(identity, []string{"private-video"}); err != nil {
+		t.Fatal(err)
+	}
+	if allowed, err := observer.CanAccessMediaResult(identity, resultURL); err != nil || allowed {
+		t.Fatalf("deleted task still authorizes media through a warm instance: (%v, %v)", allowed, err)
+	}
+}
+
 func TestImageTaskServiceDoesNotApplyLegacyVideoDurationLimit(t *testing.T) {
 	handlerCalls := make(chan map[string]any, 1)
 	handler := func(_ context.Context, _ Identity, payload map[string]any) (map[string]any, error) {
@@ -1878,6 +1915,68 @@ func TestImageTaskServiceHonorsVideoContractTimeout(t *testing.T) {
 	waitForTaskStatus(t, svc, identity, "video-contract-timeout", TaskStatusSuccess)
 }
 
+func TestImageTaskServiceReloadPreservesVideoRecoveryTimeout(t *testing.T) {
+	backend := newTestStorageBackend(t)
+	documents := backend.(storage.JSONDocumentBackend)
+	updatedAt := time.Now().UTC().Add(-10 * time.Minute).Format(time.RFC3339Nano)
+	if err := documents.SaveJSONDocument("image_tasks.json", map[string]any{"tasks": []map[string]any{{
+		"id": "long-video", "owner_id": "owner", "mode": "video", "status": TaskStatusRunning,
+		"created_at": updatedAt, "updated_at": updatedAt, "revision": 1,
+		VideoTaskTimeoutSecondsPayloadKey: 1800,
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	svc := NewStoredImageTaskService(backend, nil, nil, nil, nil)
+	t.Cleanup(func() { _ = svc.Close() })
+	listed, err := svc.ListTasksWithError(Identity{ID: "owner"}, []string{"long-video"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := util.AsMapSlice(listed["items"])
+	if len(items) != 1 || items[0]["status"] != TaskStatusRunning {
+		t.Fatalf("contract-valid video was interrupted after reload: %#v", items)
+	}
+	if _, exists := items[0][VideoTaskTimeoutSecondsPayloadKey]; exists {
+		t.Fatal("internal recovery timeout leaked into public task")
+	}
+	svc.mu.Lock()
+	err = svc.saveLocked()
+	svc.mu.Unlock()
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := documents.LoadJSONDocument("image_tasks.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stored := util.AsMapSlice(util.StringMap(raw)["tasks"])
+	if len(stored) != 1 || util.ToInt(stored[0][VideoTaskTimeoutSecondsPayloadKey], 0) != 1800 {
+		t.Fatalf("reloaded save lost recovery timeout: %#v", stored)
+	}
+}
+
+func TestImageTaskServiceReloadPreservesPublicImageToolOptions(t *testing.T) {
+	backend := newTestStorageBackend(t)
+	documents := backend.(storage.JSONDocumentBackend)
+	if err := documents.SaveJSONDocument("image_tasks.json", map[string]any{"tasks": []map[string]any{{
+		"id": "image-options", "owner_id": "owner", "mode": "generate", "status": TaskStatusSuccess,
+		"created_at": util.NowISO(), "updated_at": util.NowISO(), "revision": 1,
+		"stream": true, "partial_images": 0, "moderation": "low",
+	}}}); err != nil {
+		t.Fatal(err)
+	}
+	svc := NewStoredImageTaskService(backend, nil, nil, nil, nil)
+	t.Cleanup(func() { _ = svc.Close() })
+	listed, err := svc.ListTasksWithError(Identity{ID: "owner"}, []string{"image-options"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := util.AsMapSlice(listed["items"])
+	if len(items) != 1 || items[0]["stream"] != true || items[0]["partial_images"] != 0 || items[0]["moderation"] != "low" {
+		t.Fatalf("reloaded task lost image tool options: %#v", items)
+	}
+}
+
 func TestImageTaskServicePreservesTextOutputType(t *testing.T) {
 	handler := func(ctx context.Context, identity Identity, payload map[string]any) (map[string]any, error) {
 		return map[string]any{"message": "text response", "output_type": "text"}, nil
@@ -2563,6 +2662,9 @@ func TestImageTaskServiceDeletionTombstonePreventsConcurrentResurrection(t *test
 	if _, err := serviceA.DeleteTasks(Identity{ID: "owner"}, []string{"task-a"}); err != nil {
 		t.Fatalf("DeleteTasks() error = %v", err)
 	}
+	if got := serviceB.ListTasks(Identity{ID: "owner"}, []string{"task-a"}); len(got["items"].([]map[string]any)) != 0 {
+		t.Fatalf("warm instance still exposes deleted task: %#v", got)
+	}
 	serviceB.mu.Lock()
 	serviceB.tasks[taskKey("owner", "task-b")] = map[string]any{
 		"id": "task-b", "owner_id": "owner", "status": TaskStatusSuccess,
@@ -2580,6 +2682,27 @@ func TestImageTaskServiceDeletionTombstonePreventsConcurrentResurrection(t *test
 	items := got["items"].([]map[string]any)
 	if len(items) != 1 || util.Clean(items[0]["id"]) != "task-b" {
 		t.Fatalf("deleted task was resurrected: %#v", got)
+	}
+	if _, err := serviceB.submit(Identity{ID: "owner"}, "task-a", "generate", map[string]any{}); err == nil {
+		t.Fatal("deleted task ID was accepted for a new submission")
+	}
+}
+
+func TestImageTaskDeletionPreservesIDSeparators(t *testing.T) {
+	backend := jsonDocumentStoreFromBackend(newTestStorageBackend(t))
+	svc := newImageTaskService(backend, nil, nil, nil, nil)
+	const owner, id = "newapi:42", "task:part:1"
+	now := util.NowISO()
+	svc.tasks[taskKey(owner, id)] = map[string]any{"id": id, "owner_id": owner, "status": TaskStatusSuccess, "mode": "generate", "created_at": now, "updated_at": now}
+	if err := svc.saveLocked(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := svc.DeleteTasks(Identity{ID: owner}, []string{id}); err != nil {
+		t.Fatal(err)
+	}
+	reloaded := newImageTaskService(backend, nil, nil, nil, nil)
+	if _, exists := reloaded.deletedTasks[taskKey(owner, id)]; !exists {
+		t.Fatal("deletion marker changed the task owner or ID")
 	}
 }
 

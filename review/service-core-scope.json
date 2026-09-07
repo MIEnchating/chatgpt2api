@@ -1,0 +1,22 @@
+[
+  "internal/service/auth.go",
+  "internal/service/auth_role_concurrency_test.go",
+  "internal/service/auth_test.go",
+  "internal/service/canvas_document.go",
+  "internal/service/canvas_document_test.go",
+  "internal/service/image.go",
+  "internal/service/image_conversation_asset_summary_test.go",
+  "internal/service/image_conversation_assets.go",
+  "internal/service/image_conversation_assets_test.go",
+  "internal/service/image_conversation_history.go",
+  "internal/service/image_conversation_history_test.go",
+  "internal/service/image_conversation_rows.go",
+  "internal/service/image_conversation_rows_test.go",
+  "internal/service/image_generation_preferences.go",
+  "internal/service/image_generation_preferences_test.go",
+  "internal/service/image_task.go",
+  "internal/service/image_task_test.go",
+  "internal/service/image_test.go",
+  "internal/service/password_accounts.go",
+  "internal/service/password_accounts_test.go"
+]

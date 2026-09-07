@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AudioLines, Download, FileText, Globe2, Image as ImageIcon, LockKeyhole, MoreHorizontal, Plus, RefreshCw, Search, Trash2, Video, X } from "lucide-react";
 import { toast } from "sonner";
 
@@ -21,7 +21,9 @@ import { deleteManagedImages, fetchManagedImages, updateManagedImageVisibility }
 import { fetchVisibleMyAssets, type MyAsset, type MyAssetKind, type MyAssetVisibility } from "@/lib/my-assets";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import { cn } from "@/lib/utils";
-import { hasAPIPermission } from "@/lib/auth-session";
+import { AUTH_SESSION_CHANGE_EVENT, hasAPIPermission, type StoredAuthSession } from "@/lib/auth-session";
+import { getCachedAuthSession } from "@/lib/session";
+import { useAuthSessionRevision } from "@/lib/use-auth-session-revision";
 import { fetchCanvasDocument } from "@/services/api/canvas";
 import { deleteStoredMedia } from "@/services/file-storage";
 import { deleteStoredImages } from "@/services/image-storage";
@@ -42,8 +44,27 @@ const visibilityOptions: Array<{ value: "all" | MyAssetVisibility; label: string
 
 export default function AssetsPage() {
   const { isCheckingAuth, session } = useAuthGuard(undefined, "/assets");
-  const scope = session?.key || "anonymous";
-  const { assets, upsertAsset, deleteAsset, loading } = useMyAssets(scope, Boolean(session));
+  const sessionRevision = useAuthSessionRevision();
+  if (isCheckingAuth || !session || getCachedAuthSession()?.key !== session.key) return <div className="flex h-full items-center justify-center text-sm text-muted-foreground">正在加载我的素材...</div>;
+  return <AssetsContent key={`${session.key}:${sessionRevision}`} session={session} />;
+}
+
+function AssetsContent({ session }: { session: StoredAuthSession }) {
+  const scope = session.key;
+  const { assets, upsertAsset, deleteAsset, loading } = useMyAssets(scope, true);
+  const mutationControllerRef = useRef<AbortController | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    mutationControllerRef.current = controller;
+    const handleSessionChange = () => {
+      if (getCachedAuthSession()?.key !== session.key) controller.abort();
+    };
+    window.addEventListener(AUTH_SESSION_CHANGE_EVENT, handleSessionChange);
+    return () => {
+      window.removeEventListener(AUTH_SESSION_CHANGE_EVENT, handleSessionChange);
+      controller.abort();
+    };
+  }, [session.key]);
   const [managedAssets, setManagedAssets] = useState<MyAsset[]>([]);
   const [managedLoading, setManagedLoading] = useState(true);
   const [managedError, setManagedError] = useState("");
@@ -72,10 +93,12 @@ export default function AssetsPage() {
     const load = async () => {
       if (session.role === "admin") {
         const { items } = await fetchManagedImages({ scope: "all" }, { signal: controller.signal });
+        if (controller.signal.aborted) return;
         setManagedAssets(items.map((item) => managedImageAsset(item, Boolean(item.owner_id && item.owner_id === session.subjectId))));
         return;
       }
       const { items } = await fetchManagedImages({ scope: "visible" }, { signal: controller.signal });
+      if (controller.signal.aborted) return;
       setManagedAssets(items.map((item) => managedImageAsset(item, Boolean(item.owner_id && item.owner_id === session.subjectId))));
     };
     void load()
@@ -91,7 +114,7 @@ export default function AssetsPage() {
     const controller = new AbortController();
     setVisibleLoading(true);
     void fetchVisibleMyAssets(scope, controller.signal)
-      .then((items) => setVisibleRemoteAssets(items.filter((item) => item.owned !== true)))
+      .then((items) => { if (!controller.signal.aborted) setVisibleRemoteAssets(items.filter((item) => item.owned !== true)); })
       .catch((error) => {
         if (!controller.signal.aborted) toast.error(error instanceof Error ? `共享素材读取失败：${error.message}` : "共享素材读取失败");
       })
@@ -130,8 +153,6 @@ export default function AssetsPage() {
     });
   }, [allAssets]);
 
-  if (isCheckingAuth || !session) return <div className="flex h-full items-center justify-center text-sm text-muted-foreground">正在加载我的素材...</div>;
-
   const copyText = async (asset: MyAsset) => {
     try {
       await navigator.clipboard.writeText(asset.content || "");
@@ -162,28 +183,34 @@ export default function AssetsPage() {
 
   const confirmDelete = async () => {
     if (!deleting || deleteBusy) return;
+    const signal = mutationControllerRef.current?.signal;
+    if (!signal || signal.aborted) return;
     if (!canManageAsset(deleting)) {
       setDeleting(null);
       return toast.error("只能删除自己的素材");
     }
     setDeleteBusy(true);
     try {
-	      if (deleting.managedPath) {
-	        await deleteManagedImages([deleting.managedPath]);
-	        setManagedAssets((current) => current.filter((item) => item.managedPath !== deleting.managedPath));
-	      } else {
-	        await deleteAsset(deleting.id);
-	        try {
-	          await deleteUnusedAssetStorage(deleting, assets.filter((item) => item.id !== deleting.id));
-	        } catch (error) {
-	          toast.warning(error instanceof Error ? `素材记录已删除，文件清理失败：${error.message}` : "素材记录已删除，文件稍后清理");
-	        }
-	      }
+      if (deleting.managedPath) {
+        await deleteManagedImages([deleting.managedPath]);
+        if (signal.aborted) return;
+        setManagedAssets((current) => current.filter((item) => item.managedPath !== deleting.managedPath));
+      } else {
+        await deleteAsset(deleting.id);
+        try {
+          await deleteUnusedAssetStorage(deleting, assets.filter((item) => item.id !== deleting.id), signal);
+        } catch (error) {
+          if (signal.aborted) return;
+          toast.warning(error instanceof Error ? `素材记录已删除，文件清理失败：${error.message}` : "素材记录已删除，文件稍后清理");
+        }
+      }
+      if (signal.aborted) return;
       if (preview?.id === deleting.id) setPreview(null);
       setSelectedKeys((current) => { const next = new Set(current); next.delete(assetListKey(deleting)); return next; });
       toast.success("素材已删除");
       setDeleting(null);
     } catch (error) {
+      if (signal.aborted) return;
       toast.error(error instanceof Error ? error.message : "删除失败");
     } finally {
       setDeleteBusy(false);
@@ -200,15 +227,19 @@ export default function AssetsPage() {
 
   const downloadSelected = async () => {
     if (!selectedAssets.length || bulkActionBusy) return;
+    const signal = mutationControllerRef.current?.signal;
+    if (!signal || signal.aborted) return;
     setBulkActionBusy(true);
     let completed = 0;
     try {
       for (const asset of selectedAssets) {
+        signal.throwIfAborted();
         await downloadMyAsset(asset);
         completed += 1;
       }
-      toast.success(`已下载 ${completed} 个素材`);
+      if (!signal.aborted) toast.success(`已下载 ${completed} 个素材`);
     } catch (error) {
+      if (signal.aborted) return;
       toast.error(error instanceof Error ? `已下载 ${completed} 个，剩余素材下载失败：${error.message}` : "批量下载失败");
     } finally {
       setBulkActionBusy(false);
@@ -262,6 +293,8 @@ export default function AssetsPage() {
 
   const deleteSelected = async () => {
     if (!deletableSelectedAssets.length || bulkActionBusy) return;
+    const signal = mutationControllerRef.current?.signal;
+    if (!signal || signal.aborted) return;
     setBulkActionBusy(true);
     const deletingKeys = new Set(deletableSelectedAssets.map(assetListKey));
     const managedPaths = deletableSelectedAssets.map((asset) => asset.managedPath).filter((path): path is string => Boolean(path));
@@ -269,17 +302,23 @@ export default function AssetsPage() {
     const remainingOwnedAssets = assets.filter((asset) => !deletingKeys.has(assetListKey(asset)));
     try {
       if (managedPaths.length) await deleteManagedImages(managedPaths);
-	      for (const asset of ownedAssetsToDelete) await deleteAsset(asset.id);
-	      const cleanupResults = await Promise.allSettled(ownedAssetsToDelete.map((asset) =>
-	        deleteUnusedAssetStorage(asset, remainingOwnedAssets),
-	      ));
-	      if (managedPaths.length) setManagedAssets((current) => current.filter((asset) => !asset.managedPath || !managedPaths.includes(asset.managedPath)));
-	      setSelectedKeys(new Set());
-	      setBulkDeleteOpen(false);
-	      toast.success(`已删除 ${deletableSelectedAssets.length} 个素材`);
-	      const cleanupFailures = cleanupResults.filter((result) => result.status === "rejected").length;
-	      if (cleanupFailures) toast.warning(`${cleanupFailures} 个素材文件清理失败，素材记录已删除`);
+      signal.throwIfAborted();
+      for (const asset of ownedAssetsToDelete) {
+        signal.throwIfAborted();
+        await deleteAsset(asset.id);
+      }
+      const cleanupResults = await Promise.allSettled(ownedAssetsToDelete.map((asset) =>
+        deleteUnusedAssetStorage(asset, remainingOwnedAssets, signal),
+      ));
+      if (signal.aborted) return;
+      if (managedPaths.length) setManagedAssets((current) => current.filter((asset) => !asset.managedPath || !managedPaths.includes(asset.managedPath)));
+      setSelectedKeys(new Set());
+      setBulkDeleteOpen(false);
+      toast.success(`已删除 ${deletableSelectedAssets.length} 个素材`);
+      const cleanupFailures = cleanupResults.filter((result) => result.status === "rejected").length;
+      if (cleanupFailures) toast.warning(`${cleanupFailures} 个素材文件清理失败，素材记录已删除`);
     } catch (error) {
+      if (signal.aborted) return;
       toast.error(error instanceof Error ? error.message : "批量删除失败");
     } finally {
       setBulkActionBusy(false);
@@ -339,7 +378,7 @@ export default function AssetsPage() {
           }}
         />
       </ManagementPanel>
-      <AssetForm open={formOpen} asset={editing} onClose={() => setFormOpen(false)} onSave={(next) => { void upsertAsset(next).then(() => setFormOpen(false)).catch((error) => toast.error(error instanceof Error ? `素材保存失败：${error.message}` : "素材保存失败")); }} />
+      <AssetForm open={formOpen} asset={editing} onClose={() => setFormOpen(false)} onSave={async (next) => { await upsertAsset(next); setFormOpen(false); }} />
       <AssetPreview asset={preview} onClose={() => setPreview(null)} onCopy={() => preview && void copyText(preview)} onCopyPrompt={() => preview && void copyPrompt(preview)} onDownload={() => preview && void download(preview)} />
       <Dialog open={Boolean(deleting)} onOpenChange={(open) => !open && !deleteBusy && setDeleting(null)}><DialogContent className="w-[min(92vw,420px)]"><DialogHeader><DialogTitle>删除素材？</DialogTitle><DialogDescription>{deleting?.managedPath ? `确定永久删除生成图片“${deleting.title}”吗？` : `确定删除“${deleting?.title}”吗？删除后会同步到当前账号。`}</DialogDescription></DialogHeader><DialogFooter><Button type="button" variant="outline" disabled={deleteBusy} onClick={() => setDeleting(null)}>取消</Button><Button type="button" variant="destructive" disabled={deleteBusy} onClick={() => void confirmDelete()}>{deleteBusy ? "删除中" : "删除"}</Button></DialogFooter></DialogContent></Dialog>
       <Dialog open={bulkDeleteOpen} onOpenChange={(open) => !bulkActionBusy && setBulkDeleteOpen(open)}><DialogContent className="w-[min(92vw,440px)]"><DialogHeader><DialogTitle>批量删除素材？</DialogTitle><DialogDescription>将永久删除选中的 {deletableSelectedAssets.length} 个自有素材。共享素材和无删除权限的素材不会被删除。</DialogDescription></DialogHeader><DialogFooter><Button type="button" variant="outline" disabled={bulkActionBusy} onClick={() => setBulkDeleteOpen(false)}>取消</Button><Button type="button" variant="destructive" disabled={bulkActionBusy} onClick={() => void deleteSelected()}>{bulkActionBusy ? "删除中" : `删除 ${deletableSelectedAssets.length} 项`}</Button></DialogFooter></DialogContent></Dialog>
@@ -347,14 +386,17 @@ export default function AssetsPage() {
   );
 }
 
-async function deleteUnusedAssetStorage(asset: MyAsset, remainingAssets: MyAsset[]) {
+async function deleteUnusedAssetStorage(asset: MyAsset, remainingAssets: MyAsset[], signal: AbortSignal) {
+  signal.throwIfAborted();
   if (asset.kind === "text" || !asset.storageKey) return;
   const usedKeys = collectAssetStorageKeys(remainingAssets);
   const workspace = await fetchCanvasDocument();
+  signal.throwIfAborted();
   collectAssetStorageKeys(workspace.document, usedKeys);
   for (const project of workspace.projects) {
     if (project.id === workspace.document.id) continue;
     const projectWorkspace = await fetchCanvasDocument(project.id);
+    signal.throwIfAborted();
     collectAssetStorageKeys(projectWorkspace.document, usedKeys);
   }
   if (usedKeys.has(asset.storageKey)) return;

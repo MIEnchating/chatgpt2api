@@ -121,6 +121,8 @@ export function AnnouncementCenter({ className, sessionKey }: { className?: stri
   useEffect(() => {
     const loadLifecycle = lifecycleRef.current;
     const preferenceMutationLifecycle = preferenceMutationLifecycleRef.current;
+    loadLifecycle.activateSession(sessionKey);
+    preferenceMutationLifecycle?.activateSession(sessionKey);
     setAnnouncements([]);
     setPreferences(emptyPreferences);
     setIsLoaded(false);
@@ -145,6 +147,7 @@ export function AnnouncementCenter({ className, sessionKey }: { className?: stri
       window.clearInterval(refreshTimer);
       loadLifecycle.deactivateSession(sessionKey);
       preferenceMutationLifecycle?.deactivateSession(sessionKey);
+      if (loadPromiseRef.current?.sessionKey === sessionKey) loadPromiseRef.current = null;
     };
   }, [load, sessionKey]);
 

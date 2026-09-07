@@ -306,7 +306,26 @@ func (s *GenericStorageService) Upload(ctx context.Context, ownerID string, admi
 	return s.UploadReader(ctx, ownerID, admin, filename, contentType, bytes.NewReader(data), int64(len(data)), providerInput)
 }
 
+type storageUploadReader struct {
+	ctx    context.Context
+	source io.Reader
+}
+
+func (r storageUploadReader) Read(p []byte) (int, error) {
+	if err := r.ctx.Err(); err != nil {
+		return 0, err
+	}
+	n, err := r.source.Read(p)
+	if contextErr := r.ctx.Err(); contextErr != nil {
+		return n, contextErr
+	}
+	return n, err
+}
+
 func (s *GenericStorageService) UploadReader(ctx context.Context, ownerID string, admin bool, filename, contentType string, source io.Reader, size int64, providerInput *StorageObjectProviderInput) (UploadedStorageObject, error) {
+	if err := ctx.Err(); err != nil {
+		return UploadedStorageObject{}, err
+	}
 	ownerID = strings.TrimSpace(ownerID)
 	if ownerID == "" {
 		return UploadedStorageObject{}, storageValidationError("user is required")
@@ -314,12 +333,16 @@ func (s *GenericStorageService) UploadReader(ctx context.Context, ownerID string
 	if source == nil || size < 1 {
 		return UploadedStorageObject{}, storageValidationError("file is empty")
 	}
+	source = storageUploadReader{ctx: ctx, source: source}
 	setting := s.settings.StorageSettings()
 	var provider model.StorageProvider
 	var err error
 	if providerInput != nil {
 		if !setting.AllowUserProvider {
 			return UploadedStorageObject{}, ErrUserStorageProviderDisabled
+		}
+		if err := validateUserStorageProviderType(*providerInput); err != nil {
+			return UploadedStorageObject{}, err
 		}
 		provider = normalizeUserStorageProvider(ownerID, *providerInput)
 		if !provider.Enabled || !storageProviderConfigured(provider) {
@@ -374,6 +397,12 @@ func (s *GenericStorageService) UploadReader(ctx context.Context, ownerID string
 			return UploadedStorageObject{}, errors.Join(mismatchErr, fmt.Errorf("rollback invalid storage object: %w", cleanupErr))
 		}
 		return UploadedStorageObject{}, mismatchErr
+	}
+	if err := ctx.Err(); err != nil {
+		if cleanupErr := rollbackStorageObjectData(ctx, provider, objectKey, storageObjectRollbackTimeout); cleanupErr != nil {
+			return UploadedStorageObject{}, errors.Join(err, fmt.Errorf("rollback canceled storage object: %w", cleanupErr))
+		}
+		return UploadedStorageObject{}, err
 	}
 	object := model.StorageObject{
 		ID: objectID, ProviderID: provider.ID, Bucket: provider.Bucket, ObjectKey: objectKey,
@@ -456,6 +485,9 @@ func (s *GenericStorageService) Delete(ctx context.Context, ownerID string, admi
 	}
 	providers := s.providersForObject(object)
 	if providerInput != nil && s.settings.StorageSettings().AllowUserProvider {
+		if err := validateUserStorageProviderType(*providerInput); err != nil {
+			return err
+		}
 		providers = append([]model.StorageProvider{normalizeUserStorageProvider(ownerID, *providerInput)}, providers...)
 	}
 	provider, ok := findStorageProviderForObject(object, providers)
@@ -515,6 +547,9 @@ func (s *GenericStorageService) storageObjectForIdentity(ownerID string, admin b
 func (s *GenericStorageService) MeasureUser(ctx context.Context, ownerID string, input StorageObjectProviderInput) (StorageCapacityResult, error) {
 	if !s.settings.StorageSettings().AllowUserProvider {
 		return StorageCapacityResult{}, ErrUserStorageProviderDisabled
+	}
+	if err := validateUserStorageProviderType(input); err != nil {
+		return StorageCapacityResult{}, err
 	}
 	provider := normalizeUserStorageProvider(ownerID, input)
 	bytesUsed, err := measureStorageProvider(ctx, provider)
@@ -740,6 +775,15 @@ func normalizeStorageProvider(provider model.StorageProvider) model.StorageProvi
 
 func providerEnabled(enabled *bool) bool {
 	return enabled == nil || *enabled
+}
+
+func validateUserStorageProviderType(input StorageObjectProviderInput) error {
+	switch strings.ToLower(strings.TrimSpace(input.Type)) {
+	case model.StorageProviderTypeS3, model.StorageProviderTypeWebDAV:
+		return nil
+	default:
+		return storageValidationError("user storage provider must be S3/R2 or WebDAV")
+	}
 }
 
 func validateUserStorageProviderTypes(providers UserStorageProviders) error {

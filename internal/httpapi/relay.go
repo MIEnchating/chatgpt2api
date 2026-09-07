@@ -1600,6 +1600,10 @@ func storeRelayVideoStream(directory, name string, source io.Reader, maxBytes in
 		_ = temporary.Close()
 		return copyErr
 	}
+	if written == 0 {
+		_ = temporary.Close()
+		return fmt.Errorf("video content is empty")
+	}
 	if written > maxBytes {
 		_ = temporary.Close()
 		return fmt.Errorf("video content exceeds 512 MB")
@@ -3160,11 +3164,14 @@ func parseRelayImageRatio(value string) (float64, float64, bool) {
 		return 0, 0, false
 	}
 	width, err := strconv.ParseFloat(parts[0], 64)
-	if err != nil || width <= 0 {
+	if err != nil || width <= 0 || math.IsNaN(width) || math.IsInf(width, 0) {
 		return 0, 0, false
 	}
 	height, err := strconv.ParseFloat(parts[1], 64)
-	if err != nil || height <= 0 {
+	if err != nil || height <= 0 || math.IsNaN(height) || math.IsInf(height, 0) {
+		return 0, 0, false
+	}
+	if ratio := width / height; ratio <= 0 || math.IsInf(ratio, 0) {
 		return 0, 0, false
 	}
 	return width, height, true
@@ -3178,9 +3185,9 @@ func relayImageSizeFromRatio(ratioWidth, ratioHeight float64) string {
 		return normalizeRelayImageDimensions(1024, 1024)
 	}
 	if ratioWidth > ratioHeight {
-		return normalizeRelayImageDimensions(1536, int(float64(1536)*ratioHeight/ratioWidth+0.5))
+		return normalizeRelayImageDimensions(1536, int(ratioHeight/ratioWidth*1536+0.5))
 	}
-	return normalizeRelayImageDimensions(int(float64(1536)*ratioWidth/ratioHeight+0.5), 1536)
+	return normalizeRelayImageDimensions(int(ratioWidth/ratioHeight*1536+0.5), 1536)
 }
 
 func normalizeRelayImageDimensions(width, height int) string {
@@ -3222,7 +3229,12 @@ func normalizeRelayImageDimensions(width, height int) string {
 }
 
 func roundToRelayImageMultiple(value int) int {
-	return max(relayImageDimensionMultiple, ((value+relayImageDimensionMultiple/2)/relayImageDimensionMultiple)*relayImageDimensionMultiple)
+	remainder := value % relayImageDimensionMultiple
+	rounded := value - remainder
+	if remainder >= relayImageDimensionMultiple/2 && rounded <= math.MaxInt-relayImageDimensionMultiple {
+		rounded += relayImageDimensionMultiple
+	}
+	return max(relayImageDimensionMultiple, rounded)
 }
 
 func floorToRelayImageMultiple(value float64) int {
@@ -3480,7 +3492,11 @@ func relayStreamResult(body io.ReadCloser) *protocol.StreamResult {
 			if !ok {
 				continue
 			}
-			if data == "" || data == "[DONE]" || strings.HasPrefix(data, ":") {
+			if data == "[DONE]" {
+				errCh <- nil
+				return
+			}
+			if data == "" || strings.HasPrefix(data, ":") {
 				continue
 			}
 			var item map[string]any

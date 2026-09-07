@@ -23,6 +23,29 @@ func TestVideoModelContractJSONKeepsV4Fields(t *testing.T) {
 	}
 }
 
+func TestNormalizeVideoModelContractPreservesCaseSensitiveJSONPaths(t *testing.T) {
+	contract := DefaultVideoContracts()[0]
+	paths := []string{" data.Value ", "data.value", "data.Value", ""}
+	contract.Polling.TaskIDFields = paths
+	contract.Polling.StatusFields = paths
+	contract.Polling.ProgressFields = paths
+	contract.Polling.ErrorFields = paths
+	contract.Polling.ResultFields = paths
+	normalized, err := NormalizeVideoModelContract(contract)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, got := range map[string][]string{
+		"task_id": normalized.Polling.TaskIDFields, "status": normalized.Polling.StatusFields,
+		"progress": normalized.Polling.ProgressFields, "error": normalized.Polling.ErrorFields,
+		"result": normalized.Polling.ResultFields,
+	} {
+		if !slices.Equal(got, []string{"data.Value", "data.value"}) {
+			t.Errorf("%s paths = %#v; case-distinct JSON fields must remain selectable", name, got)
+		}
+	}
+}
+
 func TestNormalizeVideoModelContractUsesJSONArrayForEmptyRules(t *testing.T) {
 	contract := DefaultVideoContracts()[0]
 	contract.Rules = nil

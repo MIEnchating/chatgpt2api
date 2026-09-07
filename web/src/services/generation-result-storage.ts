@@ -72,9 +72,9 @@ export async function persistCreationTaskOutputs(
       if (!shouldPersistTaskItem(task, item, index)) return item;
       const stored = item as StoredCreationTaskData;
       const kind = taskItemKind(task, item);
+      let persistedItem = item;
       try {
         sessionGuard.assertCurrent();
-        let persistedItem = item;
         if (kind === "image") {
           if (stored.storageKey || stored.storage_key) return item;
           const source = taskItemImageSource(item);
@@ -131,7 +131,7 @@ export async function persistCreationTaskOutputs(
         if (!sessionGuard.isCurrent()) throw new GenerationResultSessionChangedError();
         if (sessionGuard.signal.aborted) sessionGuard.signal.throwIfAborted();
         options.onError?.({ error, index, kind, taskId: task.id });
-        return item;
+        return persistedItem;
       }
     }));
 

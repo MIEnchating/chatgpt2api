@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   clearAuthenticatedImageCache,
   fetchCachedAuthenticatedImage,
+  getCachedAuthenticatedImageByteSize,
   releaseCachedAuthenticatedImage,
 } from "../src/lib/authenticated-image.ts";
 
@@ -37,6 +38,27 @@ test("a newly fetched image is retained before cache capacity trimming", async (
     globalThis.fetch = originalFetch;
     URL.createObjectURL = originalCreateObjectURL;
     URL.revokeObjectURL = originalRevokeObjectURL;
+  }
+});
+
+test("releasing an image from a cleared cache does not release a new session image", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: true, blob: async () => new Blob(["image"]) });
+  clearAuthenticatedImageCache();
+  const retained = [];
+  try {
+    const oldImage = await fetchCachedAuthenticatedImage("/images/shared.png");
+    clearAuthenticatedImageCache();
+    retained.push(await fetchCachedAuthenticatedImage("/images/shared.png"));
+    releaseCachedAuthenticatedImage(oldImage.key);
+    for (let index = 0; index < 320; index += 1) {
+      retained.push(await fetchCachedAuthenticatedImage(`/images/new-${index}.png`));
+    }
+    assert.equal(getCachedAuthenticatedImageByteSize("/images/shared.png"), 5);
+  } finally {
+    for (const entry of retained) releaseCachedAuthenticatedImage(entry.key);
+    clearAuthenticatedImageCache();
+    globalThis.fetch = originalFetch;
   }
 });
 

@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -102,6 +104,27 @@ func TestLogServiceStoresLogsInDatabase(t *testing.T) {
 	}
 	if _, ok := items[0]["type"]; ok {
 		t.Fatalf("List()[0] should not expose log type: %#v", items[0])
+	}
+}
+
+func TestLoggerHonorsConfiguredDebugLevel(t *testing.T) {
+	root := t.TempDir()
+	levels := []string{"info"}
+	logger, err := NewLogger(root, func() []string { return levels })
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = logger.Close() })
+	logger.Debug("disabled debug message")
+	levels = []string{"debug"}
+	logger.Debug("enabled debug message")
+	logger.Info("disabled info message")
+	data, err := os.ReadFile(filepath.Join(root, "logs", "server.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "enabled debug message") || strings.Contains(string(data), "disabled") {
+		t.Fatalf("configured log levels were not respected: %s", data)
 	}
 }
 
@@ -428,6 +451,43 @@ func TestSanitizeLogValueRedactsSensitiveFieldsRegardlessOfValueShape(t *testing
 	}
 	if item["url"] != "https://example.test/resource" {
 		t.Fatalf("SanitizeLogValue()[url] = %#v", item["url"])
+	}
+}
+
+func TestLogServiceRedactsCredentialsInConnectionAndMediaURLs(t *testing.T) {
+	logs := NewLogService(newTestStorageBackend(t))
+	if err := logs.Add("settings update", map[string]any{
+		"relay_database_url": "postgres://review:database-password@db.example/review?sslmode=require",
+		"proxy":              "socks5://review:proxy-password@proxy.example:1080",
+		"video_url":          "/videos/output.mp4?token=video-secret",
+		"reference_urls":     []string{"https://cdn.example/file?signature=download-secret"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	items := mustSearchLogs(t, logs, LogQuery{Limit: 10})
+	encoded, err := json.Marshal(items)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, secret := range []string{"database-password", "proxy-password", "video-secret", "download-secret"} {
+		if strings.Contains(string(encoded), secret) {
+			t.Fatalf("stored log contains %s", secret)
+		}
+	}
+}
+
+func TestSanitizeLogValuePreservesOnlyAnonymizedTokenPreviews(t *testing.T) {
+	for _, field := range []string{"token_preview", "upstream_token_preview"} {
+		for _, value := range []string{"token:0123456789", "token:empty", "raw-token", "token:not-a-hash", "token:0123456789-secret"} {
+			want := redactedLogValue
+			if value == "token:0123456789" || value == "token:empty" {
+				want = value
+			}
+			result := SanitizeLogValue(map[string]any{field: value}).(map[string]any)
+			if result[field] != want {
+				t.Fatalf("sanitize %s = %#v, want %q", field, result[field], want)
+			}
+		}
 	}
 }
 

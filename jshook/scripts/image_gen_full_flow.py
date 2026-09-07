@@ -13,20 +13,16 @@ import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
-from pathlib import Path
 from typing import Iterator
 
 import pybase64
 from curl_cffi import requests
+from capture_safety import download_image, new_capture_directory, require_access_token, write_private_capture
 # PIL only needed for image upload; text-only prompts don't need it
 
 # ============ 配置 ============
-ACCESS_TOKEN = "YOUR_ACCESS_TOKEN_HERE"
-
 PROMPT = "A serene Japanese zen garden with cherry blossoms falling, golden hour lighting, photorealistic"
 BASE_URL = "https://chatgpt.com"
-OUTPUT_DIR = Path("jshook/responses")
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 CLIENT_VERSION = "prod-be885abbfcfe7b1f511e88b3003d9ee44757fbad"
 CLIENT_BUILD_NUMBER = "5955942"
@@ -41,11 +37,7 @@ def new_uuid() -> str:
 def ensure_ok(response, context: str) -> None:
     if 200 <= response.status_code < 300:
         return
-    try:
-        body = response.json()
-    except Exception:
-        body = response.text[:500]
-    raise RuntimeError(f"{context} failed: HTTP {response.status_code}, body={body}")
+    raise RuntimeError(f"{context} failed: HTTP {response.status_code}")
 
 
 # ============ 指纹/设备信息 ============
@@ -347,6 +339,8 @@ def iter_sse_payloads(response) -> Iterator[str]:
 
 # ============ 主流程 ============
 def main():
+    access_token = require_access_token()
+    output_dir = new_capture_directory()
     fp = FINGERPRINT
     ua = fp["user-agent"]
     impersonate = fp["impersonate"]
@@ -378,7 +372,7 @@ def main():
         "OAI-Language": "zh-CN",
         "OAI-Client-Version": CLIENT_VERSION,
         "OAI-Client-Build-Number": CLIENT_BUILD_NUMBER,
-        "Authorization": f"Bearer {ACCESS_TOKEN}",
+        "Authorization": f"Bearer {access_token}",
     })
 
     def api_headers(path: str, extra: dict | None = None) -> dict:
@@ -425,7 +419,7 @@ def main():
     ensure_ok(r, "chat-requirements")
     req_data = r.json()
     print(f"  Response keys: {list(req_data.keys())}")
-    print(f"  Token: {req_data.get('token', 'N/A')[:50]}...")
+    print(f"  Token received: {bool(req_data.get('token'))}")
     print(f"  Arkose required: {(req_data.get('arkose') or {}).get('required', False)}")
 
     # ====== Step 3: Solve PoW (如果需要) ======
@@ -438,7 +432,7 @@ def main():
             pow_info.get("difficulty", ""),
             ua, pow_script_sources, pow_data_build,
         )
-        print(f"  PoW solved: {proof_token[:50]}...")
+        print("  PoW solved")
     else:
         print("\nStep 3: PoW not required, skipping")
 
@@ -455,14 +449,13 @@ def main():
     # 构建 requirements
     req_token = req_data.get("token", "")
     if not req_token:
-        raise RuntimeError(f"Missing chat requirements token: {req_data}")
+        raise RuntimeError("Missing chat requirements token")
 
     # ====== Step 5: Verify /me ======
     print("\nStep 5: Verify Account — GET /backend-api/me")
     r = session.get(BASE_URL + "/backend-api/me", headers=api_headers("/backend-api/me"), timeout=20)
     ensure_ok(r, "me")
-    me = r.json()
-    print(f"  Email: {me.get('email')}, Plan: {me.get('name')}")
+    print("  Account verified")
 
     # ====== Step 6: Prepare Image Conversation ======
     print(f"\nStep 6: Prepare Image — POST /backend-api/f/conversation/prepare")
@@ -502,8 +495,9 @@ def main():
     ensure_ok(r, "prepare")
     prepare_resp = r.json()
     conduit_token = prepare_resp.get("conduit_token", "")
-    print(f"  conduit_token: {conduit_token[:50]}..." if conduit_token else "  ERROR: No conduit_token!")
-    print(f"  Full prepare response: {json.dumps(prepare_resp, indent=2, ensure_ascii=False)[:500]}")
+    if not conduit_token:
+        raise RuntimeError("Missing conduit token")
+    print("  Conduit token received")
 
     # ====== Step 7: Start Image Generation (SSE) ======
     print(f"\nStep 7: Generate Image — POST /backend-api/f/conversation (SSE)")
@@ -573,17 +567,20 @@ def main():
     all_events = []
     conversation_id = None
     for payload in iter_sse_payloads(r):
+        if payload == "[DONE]":
+            all_events.append({"raw": payload})
+            break
         try:
             data = json.loads(payload)
         except json.JSONDecodeError:
             all_events.append({"raw": payload})
-            print(f"  SSE(raw): {payload[:200]}")
+            print("  SSE: non-JSON event")
             continue
 
         # data 可能是 dict, list, 或其他类型
         if not isinstance(data, dict):
             all_events.append({"parsed": data})
-            print(f"  SSE(parsed): type={type(data).__name__}, value={str(data)[:200]}")
+            print(f"  SSE(parsed): type={type(data).__name__}")
             continue
 
         all_events.append(data)
@@ -593,12 +590,12 @@ def main():
             cid = data.get("conversation_id")
             if cid:
                 conversation_id = cid
-                print(f"  conversation_id: {conversation_id}")
+                print("  Conversation ID received")
 
         # 提取 message_id
         msg_id = data.get("message_id", "")
         if msg_id:
-            print(f"  SSE: message_id={msg_id[:40]}")
+            print("  SSE: message ID received")
 
         # 打印关键事件摘要
         msg = data.get("message") or {}
@@ -610,7 +607,7 @@ def main():
             role = author.get("role", "")
             msg_type = msg.get("metadata", {}).get("message_type", "")
             if ct:
-                print(f"  SSE: content_type={ct}, asset_pointer={ap[:60] if ap else 'N/A'}")
+                print(f"  SSE: content_type={ct}, asset_pointer_present={bool(ap)}")
             elif role == "tool":
                 print(f"  SSE: tool message, message_type={msg_type}")
             else:
@@ -618,16 +615,15 @@ def main():
 
         # 检查是否有 error
         if data.get("error"):
-            print(f"  SSE ERROR: {data.get('error')}")
+            print("  SSE error received; inspect the private capture")
 
     r.close()
 
     print(f"\n  Total SSE events: {len(all_events)}")
 
     # 保存完整 SSE 响应
-    sse_file = OUTPUT_DIR / "image-gen-sse-response.json"
-    with open(sse_file, "w", encoding="utf-8") as f:
-        json.dump(all_events, f, indent=2, ensure_ascii=False)
+    sse_file = output_dir / "image-gen-sse-response.json"
+    write_private_capture(sse_file, json.dumps(all_events, indent=2, ensure_ascii=False).encode("utf-8"))
     print(f"  SSE response saved to: {sse_file}")
 
     # ====== Step 8: 从 SSE events 直接提取 image_asset_pointer ======
@@ -665,7 +661,7 @@ def main():
                     gen = meta.get("generation", {})
                     print(f"  Image: {part.get('width')}x{part.get('height')}, "
                           f"{part.get('size_bytes')} bytes, "
-                          f"gen_id={gen.get('gen_id', '?')[:20]}...")
+                          f"generation_present={bool(gen)}")
 
     # 也尝试从 raw text 中搜索
     full_text = json.dumps(all_events)
@@ -676,12 +672,12 @@ def main():
         if hit not in file_ids and hit != "file_upload":
             file_ids.append(hit)
 
-    print(f"  file_ids: {file_ids}")
-    print(f"  sediment_ids: {sediment_ids}")
+    print(f"  File references: {len(file_ids)}")
+    print(f"  Sediment references: {len(sediment_ids)}")
 
     # ====== Step 9: 如果 SSE 中没拿到，轮询 conversation ======
     if not file_ids and not sediment_ids and conversation_id:
-        print(f"\nStep 9: Polling conversation {conversation_id} for results...")
+        print("\nStep 9: Polling conversation for results...")
         start = time.time()
         while time.time() - start < 60:
             time.sleep(3)
@@ -729,15 +725,15 @@ def main():
                 ensure_ok(r, f"download_{fid}")
                 url = r.json().get("download_url") or r.json().get("url") or ""
                 if url:
-                    print(f"  Downloading file {fid[:40]}...")
-                    img_r = session.get(url, timeout=120)
-                    ensure_ok(img_r, f"image_download_{fid}")
-                    img_path = OUTPUT_DIR / f"{fid}.png"
-                    img_path.write_bytes(img_r.content)
+                    print("  Downloading file...")
+                    img_r = download_image(session, requests.get, url, ua)
+                    img_path = output_dir / f"image-{downloaded + 1}.png"
+                    write_private_capture(img_path, img_r.content)
+                    img_r.close()
                     print(f"  Saved: {img_path} ({len(img_r.content)} bytes)")
                     downloaded += 1
             except Exception as e:
-                print(f"  File download failed for {fid[:40]}: {e}")
+                print(f"  File download failed: {type(e).__name__}")
 
         for sid in sediment_ids:
             att_path = f"/backend-api/conversation/{conversation_id}/attachment/{sid}/download"
@@ -750,14 +746,15 @@ def main():
                 if r.status_code == 200:
                     url = r.json().get("download_url") or r.json().get("url") or ""
                     if url:
-                        print(f"  Downloading sediment {sid[:40]}...")
-                        img_r = session.get(url, timeout=120)
-                        img_path = OUTPUT_DIR / f"{sid}.png"
-                        img_path.write_bytes(img_r.content)
+                        print("  Downloading sediment...")
+                        img_r = download_image(session, requests.get, url, ua)
+                        img_path = output_dir / f"image-{downloaded + 1}.png"
+                        write_private_capture(img_path, img_r.content)
+                        img_r.close()
                         print(f"  Saved: {img_path} ({len(img_r.content)} bytes)")
                         downloaded += 1
             except Exception as e:
-                print(f"  Sediment download failed for {sid[:40]}: {e}")
+                print(f"  Sediment download failed: {type(e).__name__}")
 
         print(f"  Total downloaded: {downloaded} images")
     else:

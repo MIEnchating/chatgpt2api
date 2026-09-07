@@ -6,6 +6,7 @@ import {
   Info,
   LoaderCircle,
   RefreshCw,
+  Save,
   ScrollText,
   Trash2,
 } from "lucide-react";
@@ -112,6 +113,8 @@ export function LogGovernanceCard() {
   const [cleanupDialogOpen, setCleanupDialogOpen] = useState(false);
   const config = useSettingsStore((state) => state.config);
   const isLoadingConfig = useSettingsStore((state) => state.isLoadingConfig);
+  const isSavingConfig = useSettingsStore((state) => state.isSavingConfig);
+  const saveConfig = useSettingsStore((state) => state.saveConfig);
   const logGovernance = useSettingsStore((state) => state.logGovernance);
   const lastLogCleanup = useSettingsStore((state) => state.lastLogCleanup);
   const isLoadingLogGovernance = useSettingsStore(
@@ -167,20 +170,26 @@ export function LogGovernanceCard() {
       description="配置日志保留周期、级别和历史数据清理。"
       tone="amber"
       action={
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => void loadLogGovernance()}
-          disabled={isLoadingLogGovernance}
-        >
-          {isLoadingLogGovernance ? (
-            <LoaderCircle data-icon="inline-start" className="animate-spin" />
-          ) : (
-            <RefreshCw data-icon="inline-start" />
-          )}
-          刷新统计
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => void loadLogGovernance()}
+            disabled={isLoadingLogGovernance}
+          >
+            {isLoadingLogGovernance ? (
+              <LoaderCircle data-icon="inline-start" className="animate-spin" />
+            ) : (
+              <RefreshCw data-icon="inline-start" />
+            )}
+            刷新统计
+          </Button>
+          <Button type="button" size="sm" disabled={!config || isSavingConfig} onClick={() => void saveConfig()}>
+            {isSavingConfig ? <LoaderCircle className="animate-spin" /> : <Save />}
+            保存日志配置
+          </Button>
+        </div>
       }
     >
       <div className="flex flex-col">

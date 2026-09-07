@@ -163,6 +163,7 @@ export function CanvasConfigComposer({ node, inputs, children, promptTools, onCo
             onCompositionEnd={() => { composingRef.current = false; syncFromEditor(); }}
             onKeyDown={(event: KeyboardEvent<HTMLDivElement>) => {
               event.stopPropagation();
+              if (composingRef.current || event.nativeEvent.isComposing || event.keyCode === 229) return;
               const mentionAction = mention ? getContentEditableMentionKeyAction(event.key, candidates.length) : null;
               if (mentionAction) {
                 event.preventDefault();

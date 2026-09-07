@@ -37,7 +37,6 @@ import {
   isImageAspectRatio,
   isImageResolution,
   isImageSizeMode,
-  parseImageSizeDimensions,
   parseImageRatio,
   resolveReferenceImageRequestSize,
   type ImageAspectRatio,
@@ -285,7 +284,7 @@ type PublishRecipeOptions = {
 };
 
 function normalizeRetryVideoTurnFields(turn: ImageTurn, model: string) {
-  return videoTurnFieldsFromNormalizedRequest(normalizeVideoRequest({
+  const fields = videoTurnFieldsFromNormalizedRequest(normalizeVideoRequest({
     model,
     size: turn.size,
     seconds: turn.videoSeconds,
@@ -302,6 +301,12 @@ function normalizeRetryVideoTurnFields(turn: ImageTurn, model: string) {
     referenceVideoURLs: turn.videoReferenceVideoURLs,
     referenceAudioURLs: turn.videoReferenceAudioURLs,
   }));
+  const referenceImages = turn.referenceImages.filter((image) => fields.videoReferenceImageURLs.includes(image.dataUrl.trim()));
+  return {
+    ...fields,
+    referenceImages,
+    videoReferenceImageURLs: fields.videoReferenceImageURLs.filter((url) => !referenceImages.some((image) => image.dataUrl.trim() === url)),
+  };
 }
 
 type CreationTaskDataItem = NonNullable<CreationTask["data"]>[number];
@@ -405,10 +410,13 @@ function buildReferenceFileName(url: string, index: number, fallbackPrefix: stri
 async function buildReferenceImagesFromUrls(
   urls: readonly string[],
   fallbackPrefix: string,
+  assertCurrent: () => void,
 ): Promise<StoredReferenceImage[]> {
+  assertCurrent();
   const files = await Promise.all(
     urls.map((url, index) => fetchImageAsFile(url, buildReferenceFileName(url, index, fallbackPrefix))),
   );
+  assertCurrent();
   return uploadReferenceFiles(files);
 }
 
@@ -416,7 +424,8 @@ function getPromptReferenceImageUrls(prompt: BananaPrompt) {
   return Array.from(new Set(prompt.referenceImageUrls.map((url) => url.trim()).filter(Boolean)));
 }
 
-async function buildReferenceImageFromStoredImage(image: StoredImage, fileName: string) {
+async function buildReferenceImageFromStoredImage(image: StoredImage, fileName: string, assertCurrent: () => void) {
+  assertCurrent();
   const mimeType = imageMimeTypeForOutputFormat(image.outputFormat);
   const source = image.b64_json
     ? `data:${mimeType};base64,${image.b64_json}`
@@ -427,17 +436,21 @@ async function buildReferenceImageFromStoredImage(image: StoredImage, fileName: 
     return null;
   }
   const file = await dataUrlToFile(source, fileName, mimeType);
+  assertCurrent();
   return (await uploadReferenceFiles([file], "conversation"))[0] || null;
 }
 
 async function ensureReferenceImageAsset(
   image: StoredReferenceImage,
   source: StoredReferenceImage["source"],
+  assertCurrent: () => void,
 ) {
+  assertCurrent();
   if (image.assetPath || isImageConversationAssetURL(image.dataUrl)) {
     return { ...image, source };
   }
   const file = await dataUrlToFile(image.dataUrl, image.name, image.type);
+  assertCurrent();
   return (await uploadReferenceFiles([file], source))[0] || null;
 }
 
@@ -474,11 +487,16 @@ function buildEffectiveImageSizeRequest(model: ImageModel, selection: ImageSizeS
   };
 }
 
+function parseRequestedImageSizeDimensions(size: string) {
+  const match = size.match(/^(\d+)x(\d+)$/);
+  return match ? { width: match[1], height: match[2] } : null;
+}
+
 function applyNormalizedCustomImageSize(selection: ImageSizeSelection, normalizedSize: string): ImageSizeSelection {
   if (selection.mode !== "custom") {
     return selection;
   }
-  const dimensions = parseImageSizeDimensions(normalizedSize);
+  const dimensions = parseRequestedImageSizeDimensions(normalizedSize);
   if (!dimensions) {
     return selection;
   }
@@ -493,7 +511,7 @@ function customImageSizeChanged(selection: ImageSizeSelection, normalizedSize: s
   if (selection.mode !== "custom") {
     return false;
   }
-  const dimensions = parseImageSizeDimensions(normalizedSize);
+  const dimensions = parseRequestedImageSizeDimensions(normalizedSize);
   return Boolean(
     dimensions &&
       (String(Number(selection.customWidth)) !== dimensions.width ||
@@ -1415,6 +1433,9 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   const referenceImagesRef = useRef<StoredReferenceImage[]>([]);
   const referenceUploadEpochRef = useRef(0);
   const referenceUploadPendingCountRef = useRef(0);
+  const videoFrameUploadsRef = useRef(new Map<symbol, "first" | "last">());
+  const videoReferenceUploadPendingCountRef = useRef(0);
+  const audioReferenceUploadPendingCountRef = useRef(0);
   const audioReferenceMetadataRef = useRef(new Map<string, AudioReferenceFileMetadata>());
   const pendingAudioReferenceDurationMsRef = useRef(0);
   const editReferenceUploadPendingCountRef = useRef(0);
@@ -1481,9 +1502,28 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   const [videoReferenceImageURLs, setVideoReferenceImageURLs] = useState<string[]>([]);
   const [videoReferenceVideoURLs, setVideoReferenceVideoURLs] = useState<string[]>([]);
   const [videoReferenceAudioURLs, setVideoReferenceAudioURLs] = useState<string[]>([]);
+  const videoReferenceAudioURLsRef = useRef<string[]>([]);
   const [videoReferenceUploading, setVideoReferenceUploading] = useState(false);
   const [audioReferenceUploading, setAudioReferenceUploading] = useState(false);
+  const resetReferenceUploads = useCallback(() => {
+    referenceUploadEpochRef.current += 1;
+    referenceUploadPendingCountRef.current = 0;
+    videoFrameUploadsRef.current.clear();
+    videoReferenceUploadPendingCountRef.current = 0;
+    audioReferenceUploadPendingCountRef.current = 0;
+    pendingAudioReferenceDurationMsRef.current = 0;
+    setVideoFrameUploading(null);
+    setVideoReferenceUploading(false);
+    setAudioReferenceUploading(false);
+  }, []);
+  const assertPageSessionCurrent = useCallback(() => {
+    if (!pageActiveRef.current || getCachedAuthSession()?.key !== session.key) {
+      throw new DOMException("The creator session has changed", "AbortError");
+    }
+  }, [session.key]);
   const handleVideoFrameFileChange = useCallback(async (slot: "first" | "last", file: File) => {
+    const uploadEpoch = referenceUploadEpochRef.current;
+    const isCurrent = () => pageActiveRef.current && uploadEpoch === referenceUploadEpochRef.current;
     const mime = file.type.toLowerCase().split(";", 1)[0];
     if (!(mime === "image/png" || mime === "image/jpeg" || mime === "image/webp" || /\.(png|jpe?g|webp)$/i.test(file.name))) {
       toast.error("首尾帧仅支持 PNG、JPEG 或 WebP 图片");
@@ -1493,19 +1533,28 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       toast.error("首尾帧图片不能超过 30 MiB");
       return;
     }
+    const uploadId = Symbol();
+    videoFrameUploadsRef.current.set(uploadId, slot);
     setVideoFrameUploading(slot);
     try {
       const uploaded = await uploadVideoImageReference(file);
+      if (!isCurrent()) return;
       if (slot === "first") setVideoFirstFrameURL(uploaded.url);
       else setVideoLastFrameURL(uploaded.url);
       toast.success(slot === "first" ? "首帧已上传" : "尾帧已上传");
     } catch (error) {
+      if (!isCurrent()) return;
       toast.error(error instanceof Error ? error.message : "首尾帧上传失败");
     } finally {
-      setVideoFrameUploading(null);
+      if (isCurrent()) {
+        videoFrameUploadsRef.current.delete(uploadId);
+        setVideoFrameUploading(videoFrameUploadsRef.current.values().next().value ?? null);
+      }
     }
   }, []);
   const handleVideoReferenceFileChange = useCallback(async (file: File) => {
+    const uploadEpoch = referenceUploadEpochRef.current;
+    const isCurrent = () => pageActiveRef.current && uploadEpoch === referenceUploadEpochRef.current;
     const mime = file.type.toLowerCase().split(";", 1)[0];
     if (!(mime === "video/mp4" || mime === "video/quicktime" || /\.(mp4|mov)$/i.test(file.name))) {
       toast.error("参考视频仅支持 MP4 或 MOV 格式");
@@ -1515,53 +1564,65 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       toast.error("参考视频不能超过 50 MiB");
       return;
     }
+    videoReferenceUploadPendingCountRef.current += 1;
     setVideoReferenceUploading(true);
     try {
       const uploaded = await uploadVideoReference(file);
+      if (!isCurrent()) return;
       setVideoReferenceVideoURLs((current) => [...current, uploaded.url].slice(0, 3));
       toast.success("参考视频已上传");
     } catch (error) {
+      if (!isCurrent()) return;
       toast.error(error instanceof Error ? error.message : "参考视频上传失败");
     } finally {
-      setVideoReferenceUploading(false);
+      if (isCurrent()) {
+        videoReferenceUploadPendingCountRef.current -= 1;
+        setVideoReferenceUploading(videoReferenceUploadPendingCountRef.current > 0);
+      }
     }
   }, []);
   const handleAudioReferenceFileChange = useCallback(async (file: File) => {
+    const uploadEpoch = referenceUploadEpochRef.current;
+    const isCurrent = () => pageActiveRef.current && uploadEpoch === referenceUploadEpochRef.current;
     const mime = file.type.toLowerCase().split(";", 1)[0];
     if (!(mime === "audio/mpeg" || mime === "audio/wav" || /\.(mp3|wav)$/i.test(file.name))) { toast.error("参考音频仅支持 MP3 或 WAV 格式"); return; }
     if (file.size > 15 * 1024 * 1024) { toast.error("参考音频不能超过 15 MiB"); return; }
-    let inspectedMetadata: AudioReferenceFileMetadata;
-    try {
-      inspectedMetadata = await inspectAudioReferenceFile(file);
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "无法读取参考音频信息");
-      return;
-    }
-    const storedDurationMs = videoReferenceAudioURLs.reduce((total, url) => total + (audioReferenceMetadataRef.current.get(url)?.durationMs || 0), 0);
-    const metadataError = audioReferenceMetadataError(inspectedMetadata, storedDurationMs + pendingAudioReferenceDurationMsRef.current);
-    if (metadataError) {
-      toast.error(metadataError);
-      return;
-    }
-    pendingAudioReferenceDurationMsRef.current += inspectedMetadata.durationMs;
+    audioReferenceUploadPendingCountRef.current += 1;
     setAudioReferenceUploading(true);
+    let reservedDurationMs = 0;
     try {
+      const inspectedMetadata = await inspectAudioReferenceFile(file);
+      if (!isCurrent()) return;
+      const storedDurationMs = videoReferenceAudioURLsRef.current.reduce((total, url) => total + (audioReferenceMetadataRef.current.get(url)?.durationMs || 0), 0);
+      const metadataError = audioReferenceMetadataError(inspectedMetadata, storedDurationMs + pendingAudioReferenceDurationMsRef.current);
+      if (metadataError) {
+        toast.error(metadataError);
+        return;
+      }
+      reservedDurationMs = inspectedMetadata.durationMs;
+      pendingAudioReferenceDurationMsRef.current += reservedDurationMs;
       const uploaded = await uploadAudioReference(file);
+      if (!isCurrent()) return;
       audioReferenceMetadataRef.current.set(uploaded.url, inspectedMetadata);
-      setVideoReferenceAudioURLs((current) => [...current, uploaded.url].slice(0, 3));
+      const nextURLs = [...videoReferenceAudioURLsRef.current, uploaded.url].slice(0, 3);
+      videoReferenceAudioURLsRef.current = nextURLs;
+      setVideoReferenceAudioURLs(nextURLs);
       toast.success("参考音频已上传");
-    } catch (error) { toast.error(error instanceof Error ? error.message : "参考音频上传失败"); }
+    } catch (error) { if (!isCurrent()) return; toast.error(error instanceof Error ? error.message : "参考音频上传失败"); }
     finally {
-      pendingAudioReferenceDurationMsRef.current = Math.max(0, pendingAudioReferenceDurationMsRef.current - inspectedMetadata.durationMs);
-      setAudioReferenceUploading(false);
+      if (isCurrent()) {
+        pendingAudioReferenceDurationMsRef.current = Math.max(0, pendingAudioReferenceDurationMsRef.current - reservedDurationMs);
+        audioReferenceUploadPendingCountRef.current -= 1;
+        setAudioReferenceUploading(audioReferenceUploadPendingCountRef.current > 0);
+      }
     }
-  }, [videoReferenceAudioURLs]);
+  }, []);
   const handleVideoModelChange = useCallback((model: string) => {
     // Keep the previous model's async upload from racing with the new model.
     // Existing references and raw settings remain available across switches.
-    referenceUploadEpochRef.current += 1;
+    resetReferenceUploads();
     setVideoModel(model);
-  }, []);
+  }, [resetReferenceUploads]);
   const { refreshTokenModels, routeForModel, tokenNameForModel } = useRelayTokenPreferences();
   const [relayTokenDialogKind, setRelayTokenDialogKind] = useState<CreationRelayTokenKind | null>(null);
   const [relayImageModelOptions, setRelayImageModelOptions] = useState<ImageModelOption[]>(() =>
@@ -1596,10 +1657,10 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   });
 
   const replaceReferenceImages = useCallback((items: StoredReferenceImage[]) => {
-    referenceUploadEpochRef.current += 1;
+    resetReferenceUploads();
     referenceImagesRef.current = items;
     setReferenceImages(items);
-  }, []);
+  }, [resetReferenceUploads]);
 
   useEffect(() => {
     pageActiveRef.current = true;
@@ -1609,7 +1670,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       pageSessionEpochRef.current += 1;
       pageActiveRef.current = false;
       promptApplyRequestIdRef.current += 1;
-      referenceUploadEpochRef.current += 1;
+      resetReferenceUploads();
       activeQueueIds.clear();
       conversationRevisionReservationsRef.current.clear();
       conversationMutationRevisionRef.current += 1;
@@ -1634,7 +1695,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       window.removeEventListener(AUTH_SESSION_CHANGE_EVENT, handleAuthSessionChange);
       deactivatePage();
     };
-  }, [session.key]);
+  }, [resetReferenceUploads, session.key]);
 
   const imageSize = useMemo(
     () => {
@@ -1661,8 +1722,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       customRatio: editingTurnDraft.customRatio,
       customWidth: editingTurnDraft.customWidth,
       customHeight: editingTurnDraft.customHeight,
-    }, undefined, editingTurnDraft.quality);
-  }, [editingTurnDraft]);
+    }, imageSnapToMultiple16, editingTurnDraft.quality);
+  }, [editingTurnDraft, imageSnapToMultiple16]);
   const editingDraftEffectiveSizeSelection = editingDraftSizeRequest?.selection;
   const editingDraftDimensionsDisabled = editingDraftEffectiveSizeSelection?.mode === "auto";
   const editingDraftImageSize = useMemo(() => {
@@ -1704,7 +1765,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       editingDraftImageSize &&
       isHighResolutionImageSize(editingDraftImageSize, editingDraftEffectiveSizeSelection),
   );
-  const editingDraftDimensions = parseImageSizeDimensions(editingDraftDisplaySize);
+  const editingDraftDimensions = parseRequestedImageSizeDimensions(editingDraftDisplaySize);
   const editingDraftDisplayedWidth =
     editingDraftEffectiveSizeSelection?.mode === "custom"
       ? editingTurnDraft?.customWidth || editingDraftDimensions?.width || ""
@@ -2016,13 +2077,12 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       };
       const recoverLoadedItems = (items: ImageConversation[]) => {
         const recoveryMutationRevision = conversationMutationRevisionRef.current;
+        const recoveryIsCurrent = () => !cancelled && pageActiveRef.current
+          && getCachedAuthSession()?.key === session.key
+          && recoveryMutationRevision === conversationMutationRevisionRef.current;
         void recoverConversationHistory(items, creationTaskRequestOptions, session.key)
           .then(async ({ items: recoveredItems, saves }) => {
-            if (
-              cancelled ||
-              !pageActiveRef.current ||
-              recoveryMutationRevision !== conversationMutationRevisionRef.current
-            ) {
+            if (!recoveryIsCurrent()) {
               return;
             }
             if (!recoveredItems.some((conversation, index) => conversation !== items[index])) {
@@ -2030,9 +2090,11 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
             }
             try {
               for (const conversation of saves) {
+                if (!recoveryIsCurrent()) return;
                 await saveImageConversation(conversation);
               }
             } catch (error) {
+              if (!recoveryIsCurrent()) return;
               for (const conversation of saves) {
                 discardFailedImageConversationSave(conversation.id, error);
               }
@@ -2041,11 +2103,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
               }
               return;
             }
-            if (
-              cancelled ||
-              !pageActiveRef.current ||
-              recoveryMutationRevision !== conversationMutationRevisionRef.current
-            ) {
+            if (!recoveryIsCurrent()) {
               return;
             }
             conversationMutationRevisionRef.current += 1;
@@ -2643,6 +2701,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     setDefaultImageVisibility("private");
     setVideoReferenceImageURLs([]);
     setVideoReferenceVideoURLs([]);
+    videoReferenceAudioURLsRef.current = [];
     setVideoReferenceAudioURLs([]);
     audioReferenceMetadataRef.current.clear();
     pendingAudioReferenceDurationMsRef.current = 0;
@@ -2675,7 +2734,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
 
     const toastId = toast.loading("正在读取参考图");
     try {
-      const [referenceImage] = await buildReferenceImagesFromUrls([preset.imageSrc], "preset-reference");
+      const [referenceImage] = await buildReferenceImagesFromUrls([preset.imageSrc], "preset-reference", assertPageSessionCurrent);
       if (promptApplyRequestIdRef.current !== requestId) {
         toast.dismiss(toastId);
         return;
@@ -2709,7 +2768,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       }
       toast.error("参考图读取失败，未修改创作台", { id: toastId });
     }
-  }, [imageModel, replaceReferenceImages]);
+  }, [assertPageSessionCurrent, imageModel, replaceReferenceImages]);
 
   const handleApplyMarketPrompt = useCallback(async (prompt: BananaPrompt) => {
     if (composerMode === "video") {
@@ -2775,7 +2834,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
 
     const toastId = toast.loading(`正在读取 ${referenceImageUrls.length} 张参考图`);
     try {
-      const loadedReferences = await buildReferenceImagesFromUrls(referenceImageUrls, "prompt-reference");
+      const loadedReferences = await buildReferenceImagesFromUrls(referenceImageUrls, "prompt-reference", assertPageSessionCurrent);
       if (promptApplyRequestIdRef.current !== requestId) {
         toast.dismiss(toastId);
         return;
@@ -2790,7 +2849,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       const message = error instanceof Error ? error.message : "未知错误";
       toast.error(`提示词已套用，但参考图读取失败：${message}`, { id: toastId });
     }
-  }, [composerMode, imageCreationModelOptions, imageModel, replaceReferenceImages]);
+  }, [assertPageSessionCurrent, composerMode, imageCreationModelOptions, imageModel, replaceReferenceImages]);
 
   useEffect(() => {
     if (!imageModelConfigReady) {
@@ -2983,12 +3042,15 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         return next;
       });
     } catch (error) {
+      if (uploadEpoch !== referenceUploadEpochRef.current) return;
       const message = error instanceof Error ? error.message : "上传参考图失败";
       toast.error(message);
     } finally {
-      referenceUploadPendingCountRef.current = Math.max(0, referenceUploadPendingCountRef.current - files.length);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
+      if (uploadEpoch === referenceUploadEpochRef.current) {
+        referenceUploadPendingCountRef.current = Math.max(0, referenceUploadPendingCountRef.current - files.length);
+        if (fileInputRef.current) {
+          fileInputRef.current.value = "";
+        }
       }
     }
   }, [composerMode, imageModel, videoModel]);
@@ -3059,10 +3121,11 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       try {
         const nextReference =
           "dataUrl" in image
-            ? await ensureReferenceImageAsset(image, "conversation")
+            ? await ensureReferenceImageAsset(image, "conversation", assertPageSessionCurrent)
             : await buildReferenceImageFromStoredImage(
                 image,
                 `conversation-${conversationId}-${Date.now()}.${imageFileExtensionForOutputFormat(image.outputFormat)}`,
+                assertPageSessionCurrent,
               );
         if (!nextReference || uploadEpoch !== referenceUploadEpochRef.current) {
           if (!nextReference) {
@@ -3084,13 +3147,19 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         textareaRef.current?.focus();
         toast.success("已加入当前参考图，继续输入描述即可编辑", { id: toastId });
       } catch (error) {
+        if (uploadEpoch !== referenceUploadEpochRef.current) {
+          toast.dismiss(toastId);
+          return;
+        }
         const message = error instanceof Error ? error.message : "读取结果图失败";
         toast.error(message, { id: toastId });
       } finally {
-        referenceUploadPendingCountRef.current = Math.max(0, referenceUploadPendingCountRef.current - 1);
+        if (uploadEpoch === referenceUploadEpochRef.current) {
+          referenceUploadPendingCountRef.current = Math.max(0, referenceUploadPendingCountRef.current - 1);
+        }
       }
     },
-    [imageModel],
+    [assertPageSessionCurrent, imageModel],
   );
 
   const openLightbox = useCallback((images: ImageLightboxItem[], index: number) => {
@@ -3224,7 +3293,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       setVideoLastFrameURL(targetTurn.videoLastFrameURL || "");
       setVideoReferenceImageURLs(targetTurn.videoReferenceImageURLs || []);
       setVideoReferenceVideoURLs(targetTurn.videoReferenceVideoURLs || []);
-      setVideoReferenceAudioURLs(targetTurn.videoReferenceAudioURLs || []);
+      videoReferenceAudioURLsRef.current = targetTurn.videoReferenceAudioURLs || [];
+      setVideoReferenceAudioURLs(videoReferenceAudioURLsRef.current);
       replaceReferenceImages(targetTurn.referenceImages);
       window.requestAnimationFrame(() => textareaRef.current?.focus());
       toast.message("已载入视频提示词和参数");
@@ -3356,7 +3426,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       const activeTurnStartedAt = imageTurnStartedAtTimestamp(activeTurn.processingStartedAt, activeTurn.createdAt);
       const taskDispatchIsAllowed = (taskIds: string[] = []) => canDispatchImageTurn({
         pageActive: pageActiveRef.current,
-        sessionCurrent: runnerSessionEpoch === pageSessionEpochRef.current,
+        sessionCurrent: runnerSessionEpoch === pageSessionEpochRef.current && getCachedAuthSession()?.key === expectedSessionKey,
         conversationDeleted: deletedConversationIdsRef.current.has(conversationId),
         turnCancelled: cancelledTurnIdsRef.current.has(activeTurnKey),
         conversation: conversationsRef.current.find((conversation) => conversation.id === conversationId),
@@ -3582,11 +3652,13 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
           });
           if (referenceError) throw new Error(referenceError);
         }
+        assertTaskDispatchAllowed();
         const referenceFiles = await Promise.all(
           activeTurn.referenceImages.map((image, index) =>
             dataUrlToFile(image.dataUrl, image.name || `${activeTurn.id}-${index + 1}.png`, image.type),
           ),
         );
+        assertTaskDispatchAllowed();
         if (usesReferenceImages(activeTurn.mode) && referenceFiles.length === 0) {
           throw new Error("未找到可用的参考图");
         }
@@ -3602,10 +3674,12 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
               if (!file) {
                 throw new Error("未找到可用的视频参考图");
               }
+              assertTaskDispatchAllowed();
               const [uploaded] = await uploadVideoMultimodalImages([file]);
               return uploaded.dataUrl;
             }))
           : [];
+        assertTaskDispatchAllowed();
         const videoReferenceUrls = activeTurn.mode === "video" && activeTurn.videoReferenceMode !== "reference" && !activeTurn.videoFirstFrameURL && !activeTurn.videoLastFrameURL
           ? [
               ...(activeTurn.videoReferenceImageURLs || []),
@@ -3614,10 +3688,11 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
           : activeTurn.mode === "video"
             ? Array.from(new Set([...(activeTurn.videoReferenceImageURLs || []), ...uploadedVideoReferenceURLs]))
             : [];
+        // Persisted custom dimensions already include the submit-time alignment choice.
         const activeTurnSizeRequest = buildEffectiveImageSizeRequest(
           activeTurn.model,
           restoreImageSizeSelection(activeTurn.sizeSelection, activeTurn.size),
-          undefined,
+          false,
           activeTurn.quality,
         );
         const taskOutputFormat = imageOutputFormatForModel(
@@ -3660,7 +3735,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
               taskStream,
               taskPartialImages,
               {
-                apiMode: imageAPIMode,
+                apiMode: activeTurn.apiMode,
                 responseFormatB64JSON: activeTurn.responseFormatB64JSON ?? imageResponseFormatB64JSON,
                 codexCLICompatibility: activeTurn.codexCLICompatibility ?? imageCodexCLICompatibility,
                 systemPrompt: activeTurn.imageSystemPrompt ?? imageGenerationPreferences.system_prompt,
@@ -3687,7 +3762,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
             taskStream,
             taskPartialImages,
             {
-              apiMode: imageAPIMode,
+              apiMode: activeTurn.apiMode,
               responseFormatB64JSON: activeTurn.responseFormatB64JSON ?? imageResponseFormatB64JSON,
               codexCLICompatibility: activeTurn.codexCLICompatibility ?? imageCodexCLICompatibility,
               systemPrompt: activeTurn.imageSystemPrompt ?? imageGenerationPreferences.system_prompt,
@@ -3714,17 +3789,20 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         };
         const cancelTaskGroupsAfterSameSessionAbort = async (taskIds: string[]) => {
           const uniqueTaskIds = Array.from(new Set(taskIds));
-          const cancelAll = () => Promise.allSettled(
-            uniqueTaskIds.map((taskId) => cancelCreationTask(taskId, creationTaskRequestOptions)),
-          );
+          const cancelAll = () => {
+            if (!pageActiveRef.current || runnerSessionEpoch !== pageSessionEpochRef.current
+              || getCachedAuthSession()?.key !== expectedSessionKey) return Promise.resolve([]);
+            return Promise.allSettled(uniqueTaskIds.map((taskId) => cancelCreationTask(taskId, creationTaskRequestOptions)));
+          };
           await cancelAll();
           await sleep(500);
           await cancelAll();
         };
         const submitTaskGroups = async <T extends { taskId: string; count: number }>(groups: T[]) => {
           assertTaskDispatchAllowed(groups.map((group) => group.taskId));
+          let submission: { submitted: CreationTask[]; failed: Array<{ group: { taskId: string; count: number }; error: unknown }> };
           if (activeTurn.mode === "video") {
-            return submitVideoTaskGroups(groups, {
+            submission = await submitVideoTaskGroups(groups, {
               prompt: activeTurn.prompt,
               model: activeTurn.model,
               size: activeTurn.size || undefined,
@@ -3742,12 +3820,16 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
               relayTokenName: activeTurnRelayTokenName,
               assertDispatchAllowed: (taskIds) => assertTaskDispatchAllowed(taskIds),
             });
+          } else {
+            const results = await Promise.allSettled(groups.map(submitTaskGroupWithRetry));
+            submission = {
+              submitted: results.flatMap((result) => result.status === "fulfilled" ? [result.value] : []),
+              failed: results.flatMap((result, index) =>
+                result.status === "rejected" ? [{ group: groups[index], error: result.reason }] : [],
+              ),
+            };
           }
-          const results = await Promise.allSettled(groups.map(submitTaskGroupWithRetry));
-          const submitted = results.flatMap((result) => result.status === "fulfilled" ? [result.value] : []);
-          const failed = results.flatMap((result, index) =>
-            result.status === "rejected" ? [{ group: groups[index], error: result.reason }] : [],
-          );
+          const { submitted, failed } = submission;
           const dispatchAborted = failed.find(({ error }) => error instanceof ImageTaskDispatchAbortedError);
           if (dispatchAborted || !taskDispatchIsAllowed(groups.map((group) => group.taskId))) {
             if (pageActiveRef.current && runnerSessionEpoch === pageSessionEpochRef.current) {
@@ -4057,7 +4139,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     [
       clearTurnProgress,
       creationTaskRequestOptions,
-      imageAPIMode,
       imageCodexCLICompatibility,
       imageGenerationPreferences.system_prompt,
       imageResponseFormatB64JSON,
@@ -4219,7 +4300,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         toast.error("未找到对应的图片记录");
         return;
       }
-      if (targetTurn.mode === "chat" || targetImage.status === "message") {
+      if (targetTurn.mode === "chat") {
         toast.error("当前站点只支持图片生成");
         return;
       }
@@ -4231,8 +4312,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         toast.error("请输入提示词");
         return;
       }
-      if (targetImage.status !== "error") {
-        toast.error("只有失败图片可以单独重试");
+      if (targetImage.status !== "error" && targetImage.status !== "message") {
+        toast.error("只有失败或仅返回文本的结果可以单独重试");
         return;
       }
       const retryModel = targetTurn.mode === "video" ? videoModel.trim() : imageModel.trim();
@@ -4245,7 +4326,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         toast.error(referenceValidationError);
         return;
       }
-      let retryVideoFields: ReturnType<typeof videoTurnFieldsFromNormalizedRequest> | undefined;
+      let retryVideoFields: ReturnType<typeof normalizeRetryVideoTurnFields> | undefined;
       if (targetTurn.mode === "video") {
         try {
           retryVideoFields = normalizeRetryVideoTurnFields(targetTurn, retryModel);
@@ -4281,6 +4362,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                   ? {
                       ...image,
                       taskId: retryTaskId,
+                      storageKey: undefined,
                       taskRevision: undefined,
                       taskStatus: "queued" as const,
                       status: "loading" as const,
@@ -4309,14 +4391,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                 ...turn,
                 ...derived,
                 model: retryModel,
-                ...(retryVideoFields ? {
-                  size: retryVideoFields.size,
-                  videoSeconds: retryVideoFields.videoSeconds,
-                  videoResolution: retryVideoFields.videoResolution,
-                  videoGenerateAudio: retryVideoFields.videoGenerateAudio,
-                  videoWatermark: retryVideoFields.videoWatermark,
-                  videoReferenceMode: retryVideoFields.videoReferenceMode,
-                } : {}),
+                ...retryVideoFields,
                 processingStartedAt: undefined,
                 tokenGroup: undefined,
                 tokenName: relayTokenNameForKind(targetTurn.mode === "video" ? "video" : "image", retryModel) || undefined,
@@ -4380,7 +4455,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         toast.error(referenceValidationError);
         return;
       }
-      let retryVideoFields: ReturnType<typeof videoTurnFieldsFromNormalizedRequest> | undefined;
+      let retryVideoFields: ReturnType<typeof normalizeRetryVideoTurnFields> | undefined;
       if (targetTurn.mode === "video") {
         try {
           retryVideoFields = normalizeRetryVideoTurnFields(targetTurn, retryModel);
@@ -4420,14 +4495,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
               return {
                 ...turn,
                 model: retryModel,
-                ...(retryVideoFields ? {
-                  size: retryVideoFields.size,
-                  videoSeconds: retryVideoFields.videoSeconds,
-                  videoResolution: retryVideoFields.videoResolution,
-                  videoGenerateAudio: retryVideoFields.videoGenerateAudio,
-                  videoWatermark: retryVideoFields.videoWatermark,
-                  videoReferenceMode: retryVideoFields.videoReferenceMode,
-                } : {}),
+                ...retryVideoFields,
                 count: imageCount,
                 status: "queued",
                 error: undefined,
@@ -4536,7 +4604,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         customHeight: draft.customHeight,
       };
       const draftSizeRequest =
-        buildEffectiveImageSizeRequest(draft.model, rawDraftSizeSelection, undefined, draft.quality);
+        buildEffectiveImageSizeRequest(draft.model, rawDraftSizeSelection, imageSnapToMultiple16, draft.quality);
       if (
         draftSizeRequest &&
         isInvalidCustomRatioSelection(
@@ -4616,7 +4684,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                 partialImages: draftStream ? normalizedImagePartialImages(Number(draft.partialImages)) : 0,
                 tokenGroup: regenerate ? undefined : draft.tokenGroup || undefined,
                 tokenName: regenerate
-                  ? relayTokenNameForKind(targetTurn.mode === "video" ? "video" : "image", targetTurn.model) || undefined
+                  ? relayTokenNameForKind("image", draft.model) || undefined
                   : draft.tokenName || undefined,
                 visibility: draft.visibility,
               };
@@ -4669,6 +4737,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     },
     [
       editingTurnDraft,
+      imageSnapToMultiple16,
       isConfiguredCreationModel,
       relayTokenNameForKind,
       requireRelayToken,
@@ -4681,7 +4750,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     if (isSubmitDispatchingRef.current) {
       return;
     }
-    if (referenceUploadPendingCountRef.current > 0) {
+    if (referenceUploadPendingCountRef.current > 0 || videoFrameUploadsRef.current.size > 0
+      || videoReferenceUploadPendingCountRef.current > 0 || audioReferenceUploadPendingCountRef.current > 0) {
       toast.error("参考图正在上传，请稍候");
       return;
     }
@@ -4831,7 +4901,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         customWidth: imageCustomWidth,
         customHeight: imageCustomHeight,
       };
-      const currentImageSizeRequest = videoMode ? null : buildEffectiveImageSizeRequest(effectiveModel, rawImageSizeSelection, undefined, imageQuality);
+      const currentImageSizeRequest = videoMode ? null : buildEffectiveImageSizeRequest(effectiveModel, rawImageSizeSelection, imageSnapToMultiple16, imageQuality);
       if (
         currentImageSizeRequest?.selection.mode === "custom" &&
         !currentImageSizeRequest.size
@@ -5541,6 +5611,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                   setVideoReferenceVideoURLs(value);
                 }}
                 onVideoReferenceAudioURLsChange={(value) => {
+                  videoReferenceAudioURLsRef.current = value;
                   setVideoReferenceAudioURLs(value);
                 }}
                 videoReferenceUploading={videoReferenceUploading}

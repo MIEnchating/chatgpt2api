@@ -242,9 +242,9 @@ export function reconcileCancelledCanvasTaskNodes(
 }
 
 export function reconcilePersistedCanvasTaskNodes(nodes: readonly CanvasNode[], task: CreationTask) {
+  const allTaskNodeIDs = new Set(nodes.filter((node) => node.task_id === task.id || node.audio_task_id === task.id).map((node) => node.id));
   const taskNodeIDs = new Set(nodes.flatMap((node) => (
-    (node.task_id === task.id || node.audio_task_id === task.id)
-      && canvasGenerationNeedsRecovery(node)
+    allTaskNodeIDs.has(node.id) && canvasGenerationNeedsRecovery(node)
       ? [node.id]
       : []
   )));
@@ -253,24 +253,25 @@ export function reconcilePersistedCanvasTaskNodes(nodes: readonly CanvasNode[], 
   }
 
   const batchRoot = nodes.find((node) => (
-    taskNodeIDs.has(node.id)
+    allTaskNodeIDs.has(node.id)
     && (node.type === "image" || node.type === "panorama")
     && node.batch_child_ids?.some((childID) => taskNodeIDs.has(childID))
   ));
   const outputNodeIDs = batchRoot
-    ? (batchRoot.batch_child_ids || []).filter((nodeID) => taskNodeIDs.has(nodeID))
-    : nodes.flatMap((node) => taskNodeIDs.has(node.id) && (node.type === "image" || node.type === "panorama" || node.type === "video") ? [node.id] : []);
-  const videoNodeIDs = nodes.flatMap((node) => taskNodeIDs.has(node.id) && node.type === "video" ? [node.id] : []);
+    // Image batches share ordered task slots; panorama children have separate tasks.
+    ? (batchRoot.batch_child_ids || []).filter((nodeID) => batchRoot.type === "image" || allTaskNodeIDs.has(nodeID))
+    : nodes.flatMap((node) => allTaskNodeIDs.has(node.id) && (node.type === "image" || node.type === "panorama") ? [node.id] : []);
+  const videoNodeIDs = nodes.flatMap((node) => allTaskNodeIDs.has(node.id) && node.type === "video" ? [node.id] : []);
   const videoByNodeID = new Map(videoNodeIDs.flatMap((nodeID, index) => {
     const video = canvasTaskVideo(task.data?.[index]);
     return video ? [[nodeID, video] as const] : [];
   }));
-  const audioNodeIDs = nodes.flatMap((node) => taskNodeIDs.has(node.id) && node.type === "audio" ? [node.id] : []);
+  const audioNodeIDs = nodes.flatMap((node) => allTaskNodeIDs.has(node.id) && node.type === "audio" ? [node.id] : []);
   const audioByNodeID = new Map(audioNodeIDs.flatMap((nodeID, index) => {
     const audio = canvasTaskAudio(task.data?.[index]);
     return audio ? [[nodeID, audio] as const] : [];
   }));
-  const textNodeIDs = nodes.flatMap((node) => taskNodeIDs.has(node.id) && node.type === "text" ? [node.id] : []);
+  const textNodeIDs = nodes.flatMap((node) => allTaskNodeIDs.has(node.id) && node.type === "text" ? [node.id] : []);
   const textByNodeID = new Map(textNodeIDs.flatMap((nodeID, index) => {
     const content = canvasTaskText(task.data?.[index]);
     return content ? [[nodeID, content] as const] : [];
@@ -282,7 +283,8 @@ export function reconcilePersistedCanvasTaskNodes(nodes: readonly CanvasNode[], 
   });
   const terminal = isTerminalCanvasTask(task);
   if (!terminal) {
-    const progressNodes = progress.nodes.map((node): CanvasNode => {
+    const progressNodes = progress.nodes.map((node, index): CanvasNode => {
+      if (!taskNodeIDs.has(node.id)) return nodes[index];
       const content = textByNodeID.get(node.id);
       return content ? { ...node, prompt: content } : node;
     });
@@ -301,8 +303,8 @@ export function reconcilePersistedCanvasTaskNodes(nodes: readonly CanvasNode[], 
     : outputNodeIDs.find((nodeID) => completedImageByNodeID.has(nodeID));
   const cancelled = task.status === "cancelled";
   const terminalError = String(task.error || "").trim() || "生成失败";
-  const nextNodes = progress.nodes.map((node): CanvasNode => {
-    if (!taskNodeIDs.has(node.id)) return node;
+  const nextNodes = progress.nodes.map((node, index): CanvasNode => {
+    if (!taskNodeIDs.has(node.id)) return nodes[index];
     if (node.type === "video") {
       const video = videoByNodeID.get(node.id);
       return video

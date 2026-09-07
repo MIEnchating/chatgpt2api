@@ -251,6 +251,12 @@ const ScrollArea = React.forwardRef<ScrollAreaHandle, ScrollAreaProps>(function 
   }, [onWheel, scheduleScrollbarHide, showScrollbar]);
 
   const handleKeyDown = React.useCallback((event: React.KeyboardEvent<HTMLDivElement>) => {
+    onKeyDown?.(event);
+    if (event.defaultPrevented) return;
+    const target = event.target;
+    if (target instanceof HTMLElement && (
+      target.isContentEditable || target.closest("input, textarea, select, [role='textbox'], [role='combobox'], [role='slider'], [role='listbox']")
+    )) return;
     const page = Math.max(80, metrics.viewportHeight * 0.85);
     if (event.key === "ArrowDown") { event.preventDefault(); updateScroll({ scrollTop: scrollRef.current.scrollTop + 48 }); }
     else if (event.key === "ArrowUp") { event.preventDefault(); updateScroll({ scrollTop: scrollRef.current.scrollTop - 48 }); }
@@ -258,7 +264,6 @@ const ScrollArea = React.forwardRef<ScrollAreaHandle, ScrollAreaProps>(function 
     else if (event.key === "PageUp") { event.preventDefault(); updateScroll({ scrollTop: scrollRef.current.scrollTop - page }); }
     else if (event.key === "Home") { event.preventDefault(); updateScroll({ scrollTop: 0 }); }
     else if (event.key === "End") { event.preventDefault(); updateScroll({ scrollTop: metrics.contentHeight }); }
-    onKeyDown?.(event);
   }, [metrics.contentHeight, metrics.viewportHeight, onKeyDown, updateScroll]);
 
   const handleNativeScroll = React.useCallback((event: React.UIEvent<HTMLDivElement>) => {

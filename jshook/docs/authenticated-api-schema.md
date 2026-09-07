@@ -2,6 +2,8 @@
 
 > 更新: 2026-05-07 — 已通过 curl-cffi + PoW 完整绕过 Cloudflare，成功触发生图并下载图片
 
+本文件保留的是当时单步 Sentinel 实验，不代表今天的上游要求；同目录综合分析记录了另一份浏览器 HAR 的三步 Sentinel、Turnstile 和完整性签名。`arkose.required` 与 `turnstile.required` 是独立字段，不能用前者判断后者是否触发；请以对应抓包为准。
+
 ## 一、Cloudflare 绕过方案（✅ 已验证）
 
 ### 成功组合

@@ -298,11 +298,11 @@ func NormalizeVideoModelContract(contract VideoModelContract) (VideoModelContrac
 	contract.Polling.RunningStatuses = uniqueTrimmedStrings(contract.Polling.RunningStatuses, true)
 	contract.Polling.SuccessStatuses = uniqueTrimmedStrings(contract.Polling.SuccessStatuses, true)
 	contract.Polling.FailureStatuses = uniqueTrimmedStrings(contract.Polling.FailureStatuses, true)
-	contract.Polling.TaskIDFields = uniqueTrimmedStrings(contract.Polling.TaskIDFields, false)
-	contract.Polling.StatusFields = uniqueTrimmedStrings(contract.Polling.StatusFields, false)
-	contract.Polling.ProgressFields = uniqueTrimmedStrings(contract.Polling.ProgressFields, false)
-	contract.Polling.ErrorFields = uniqueTrimmedStrings(contract.Polling.ErrorFields, false)
-	contract.Polling.ResultFields = uniqueTrimmedStrings(contract.Polling.ResultFields, false)
+	contract.Polling.TaskIDFields = uniqueVideoResponsePaths(contract.Polling.TaskIDFields)
+	contract.Polling.StatusFields = uniqueVideoResponsePaths(contract.Polling.StatusFields)
+	contract.Polling.ProgressFields = uniqueVideoResponsePaths(contract.Polling.ProgressFields)
+	contract.Polling.ErrorFields = uniqueVideoResponsePaths(contract.Polling.ErrorFields)
+	contract.Polling.ResultFields = uniqueVideoResponsePaths(contract.Polling.ResultFields)
 	// Version 3 contracts created before active status tracking only declared
 	// terminal states. NewAPI's public /v1/videos response uses these defaults.
 	if queuedStatusesMissing {
@@ -1219,6 +1219,20 @@ func cloneVideoContract(contract VideoModelContract) VideoModelContract {
 	contract.Polling.FailureStatuses = slices.Clone(contract.Polling.FailureStatuses)
 	contract.Polling.ResultFields = slices.Clone(contract.Polling.ResultFields)
 	return contract
+}
+
+func uniqueVideoResponsePaths(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	result := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if _, exists := seen[value]; value == "" || exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		result = append(result, value)
+	}
+	return result
 }
 
 func uniqueTrimmedStrings(values []string, lower bool) []string {

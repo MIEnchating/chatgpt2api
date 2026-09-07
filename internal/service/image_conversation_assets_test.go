@@ -738,6 +738,45 @@ func TestImageConversationHistoryMergeAssetizesBeforeAcceptedHash(t *testing.T) 
 	}
 }
 
+func TestImageConversationHistoryCanSaveAfterReferenceCleanup(t *testing.T) {
+	backend := newTestStorageBackend(t)
+	assets := NewImageConversationAssetService(t.TempDir())
+	history := NewImageConversationHistoryService(backend)
+	history.SetConversationAssetService(assets)
+	ownerID := "cleaned-reference-owner"
+	item := imageConversationAssetHistoryItem(t, "cleaned-reference", 1, "success")
+	if _, _, err := history.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, []map[string]any{item}); err != nil {
+		t.Fatal(err)
+	}
+	if usage, err := assets.CleanupToMaxBytes(0); err != nil || usage.DeletedCount != 1 {
+		t.Fatalf("CleanupToMaxBytes() = %#v, %v", usage, err)
+	}
+	stored, found, _, err := history.GetItem(context.Background(), ownerID, "cleaned-reference")
+	if err != nil || !found {
+		t.Fatalf("GetItem() found=%v error=%v", found, err)
+	}
+	stored["revision"] = 2
+	stored["title"] = "renamed after cleanup"
+	stored["updatedAt"] = "2026-07-20T13:00:00Z"
+	acks, _, err := history.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, []map[string]any{stored})
+	if err != nil || len(acks) != 1 || !acks[0].Accepted {
+		t.Fatalf("save after cleanup acknowledgements=%#v error=%v", acks, err)
+	}
+	turns, _ := imageConversationAssetAnySlice(stored["turns"])
+	references, _ := imageConversationAssetAnySlice(turns[0].(map[string]any)["referenceImages"])
+	reference := references[0].(map[string]any)
+	if _, err := assets.Access(toString(reference["assetPath"]), ownerID, false); !errors.Is(err, ErrImageConversationAssetNotFound) {
+		t.Fatalf("cleaned file access error = %v", err)
+	}
+	if _, _, err := history.MergeWithAcknowledgementsMinimal(context.Background(), "another-owner", []map[string]any{stored}); !errors.Is(err, ErrImageConversationAssetNotFound) {
+		t.Fatalf("cross-owner missing reference error = %v", err)
+	}
+	delete(reference, "type")
+	if _, _, err := history.MergeWithAcknowledgementsMinimal(context.Background(), ownerID, []map[string]any{stored}); !errors.Is(err, ErrImageConversationAssetNotFound) {
+		t.Fatalf("malformed missing reference error = %v", err)
+	}
+}
+
 func TestImageConversationHistoryBatchPreflightRejectsBeforeWritingAnyAsset(t *testing.T) {
 	backend := newTestStorageBackend(t)
 	assets := NewImageConversationAssetService(t.TempDir())

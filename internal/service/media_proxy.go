@@ -38,10 +38,6 @@ func SafeOutboundTransport() http.RoundTripper {
 	return safeOutboundTransport
 }
 
-func newSafeMediaProxyHTTPClient() *http.Client {
-	return SafeOutboundHTTPClient(5 * time.Minute)
-}
-
 func newSafeOutboundTransport() *http.Transport {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.Proxy = nil

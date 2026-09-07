@@ -35,7 +35,6 @@ const (
 	maxRelayImageMultipartMemory  = 1 << 20
 	maxRelayImageEditRequestBytes = 192 << 20
 	maxLoginRequestBodyBytes      = 64 << 10
-	imageThumbnailCacheControl    = "public, max-age=31536000, immutable"
 	relayImageLocalizationTimeout = time.Minute
 	authSessionCookieName         = "chatgpt2api_session"
 	defaultVideoModel             = "grok-imagine-video"
@@ -871,7 +870,7 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	username := util.Clean(body["username"])
-	password := util.Clean(body["password"])
+	password, _ := body["password"].(string)
 	loginLimiter := a.loginLimiter
 	requestIP := clientIP(r)
 	if retryAfter, allowed := loginLimiter.allow(requestIP, username); !allowed {
@@ -904,6 +903,10 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 		}
 		identity, token, err = a.auth.UpsertNewAPISession(newAPIUser)
 		if err != nil {
+			if errors.Is(err, service.ErrAuthUserDisabled) {
+				util.WriteError(w, http.StatusForbidden, err.Error())
+				return
+			}
 			if !a.writeAuthPersistenceError(w, err) {
 				util.WriteError(w, http.StatusInternalServerError, "登录会话保存失败")
 			}
@@ -1751,6 +1754,8 @@ func (a *App) handleImageReferenceFile(w http.ResponseWriter, r *http.Request) {
 }
 
 func setRasterResponseSecurityHeaders(w http.ResponseWriter) {
+	// Visibility can change without changing the media URL.
+	w.Header().Set("Cache-Control", "private, no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
 	w.Header().Set("Content-Security-Policy", "default-src 'none'; sandbox")
 }
@@ -1793,11 +1798,11 @@ func (a *App) handleImageThumbnail(w http.ResponseWriter, r *http.Request) {
 	if _, ok := a.authorizeImageFileRequest(w, r, sourceRel); !ok {
 		return
 	}
+	setRasterResponseSecurityHeaders(w)
 	thumbnailErr := a.images.EnsureThumbnail(thumbnailRel)
 	if thumbnailErr == nil {
 		thumbPath := filepath.Join(a.config.ImageThumbnailsDir(), filepath.FromSlash(thumbnailRel))
 		if info, err := os.Stat(thumbPath); err == nil && !info.IsDir() {
-			w.Header().Set("Cache-Control", imageThumbnailCacheControl)
 			http.ServeFile(w, r, thumbPath)
 			return
 		}
@@ -3584,12 +3589,12 @@ func collectURLs(v any) []string {
 		for key, value := range x {
 			if key == "url" {
 				if u := util.Clean(value); u != "" {
-					urls = append(urls, service.SanitizeLogURL(u))
+					urls = append(urls, u)
 				}
 			} else if key == "urls" {
 				for _, raw := range anyList(value) {
 					if u := util.Clean(raw); u != "" {
-						urls = append(urls, service.SanitizeLogURL(u))
+						urls = append(urls, u)
 					}
 				}
 			} else {

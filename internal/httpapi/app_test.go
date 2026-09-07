@@ -3317,8 +3317,8 @@ func TestImageThumbnailsAreGeneratedOnDemand(t *testing.T) {
 	if res.Body.Len() == 0 {
 		t.Fatal("thumbnail body is empty")
 	}
-	if got := res.Header().Get("Cache-Control"); got != imageThumbnailCacheControl {
-		t.Fatalf("thumbnail Cache-Control = %q, want %q", got, imageThumbnailCacheControl)
+	if got := res.Header().Get("Cache-Control"); got != "private, no-store" {
+		t.Fatalf("thumbnail Cache-Control = %q, want private, no-store", got)
 	}
 	if got := res.Header().Get("Content-Type"); !strings.Contains(got, "image/jpeg") {
 		t.Fatalf("thumbnail Content-Type = %q, want image/jpeg", got)

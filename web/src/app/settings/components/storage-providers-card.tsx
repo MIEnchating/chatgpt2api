@@ -118,24 +118,34 @@ export function StorageProvidersCard() {
     if (patch.enabled === true) {
       const enabledType = providers[index].type;
       providers.forEach((provider, providerIndex) => {
-        if (providerIndex !== index && provider.type !== enabledType) provider.enabled = false;
+        if (providerIndex !== index && provider.type !== enabledType) providers[providerIndex] = { ...provider, enabled: false };
       });
     }
     updateSetting({ providers });
   };
 
   const measure = async (index: number) => {
+    const requestState = useSettingsStore.getState();
+    const requestedProvider = index >= 0 ? setting.providers[index] : undefined;
     setMeasuringIndex(index);
     try {
-      const response = await measureAdminStorageProvider(index, index >= 0 ? setting.providers[index] : undefined);
+      const response = await measureAdminStorageProvider(index, requestedProvider);
+      const state = useSettingsStore.getState();
+      if (state.activeSessionKey !== requestState.activeSessionKey || state.sessionGeneration !== requestState.sessionGeneration) return;
       if (index === -1) {
         setLocalUsage({ bytes: response.result.bytes, limitBytes: response.result.limitBytes, overLimit: response.result.overLimit, checkedAt: response.result.checkedAt });
       } else {
-        patchProvider(index, {
-          capacityBytes: response.result.bytes,
-          capacityCheckedAt: response.result.checkedAt,
-          capacityExceeded: response.result.overLimit,
-          enabled: response.result.overLimit ? false : setting.providers[index].enabled,
+        const latest = state.config?.storage;
+        if (!latest || !latest.providers.includes(requestedProvider!)) return;
+        state.setStorage({
+          ...latest,
+          providers: latest.providers.map((provider) => provider === requestedProvider ? {
+            ...provider,
+            capacityBytes: response.result.bytes,
+            capacityCheckedAt: response.result.checkedAt,
+            capacityExceeded: response.result.overLimit,
+            enabled: response.result.overLimit ? false : provider.enabled,
+          } : provider),
         });
       }
       toast.success("容量统计已更新");

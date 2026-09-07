@@ -23,7 +23,7 @@ const kindOptions: Array<{ value: MyAssetKind; label: string; icon: typeof FileT
   { value: "audio", label: "音频", icon: AudioLines },
 ];
 
-export function AssetForm({ open, asset, onClose, onSave }: { open: boolean; asset: MyAsset | null; onClose: () => void; onSave: (asset: MyAsset) => void }) {
+export function AssetForm({ open, asset, onClose, onSave }: { open: boolean; asset: MyAsset | null; onClose: () => void; onSave: (asset: MyAsset) => Promise<void> }) {
   const [kind, setKind] = useState<MyAssetKind>("text");
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
@@ -34,6 +34,8 @@ export function AssetForm({ open, asset, onClose, onSave }: { open: boolean; ass
   const [mediaMetadata, setMediaMetadata] = useState<AssetMediaMetadata>({});
   const [mediaStorageKey, setMediaStorageKey] = useState("");
   const [busyTarget, setBusyTarget] = useState<"cover" | "content" | "">("");
+  const [isSaving, setIsSaving] = useState(false);
+  const savePendingRef = useRef(false);
   const coverInputRef = useRef<HTMLInputElement | null>(null);
   const contentInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -94,7 +96,8 @@ export function AssetForm({ open, asset, onClose, onSave }: { open: boolean; ass
     }
   }
 
-  function submit() {
+  async function submit() {
+    if (savePendingRef.current) return;
     const nextTitle = title.trim();
     const value = content.trim();
     const cover = coverUrl.trim();
@@ -104,24 +107,37 @@ export function AssetForm({ open, asset, onClose, onSave }: { open: boolean; ass
     const base = {
       kind,
       title: nextTitle,
-      ...(cover ? { coverUrl: cover } : {}),
+      coverUrl: cover || undefined,
       tags: [],
       visibility,
-      ...(source.trim() ? { source: source.trim() } : {}),
-      ...(note.trim() ? { note: note.trim() } : {}),
-      ...(kind === "text" ? {} : mediaMetadata),
-      ...(kind !== "text" && mediaStorageKey ? { storageKey: mediaStorageKey } : {}),
+      source: source.trim() || undefined,
+      note: note.trim() || undefined,
+      bytes: kind === "text" ? undefined : mediaMetadata.bytes,
+      mimeType: kind === "text" ? undefined : mediaMetadata.mimeType,
+      width: kind === "text" ? undefined : mediaMetadata.width,
+      height: kind === "text" ? undefined : mediaMetadata.height,
+      durationMs: kind === "text" ? undefined : mediaMetadata.durationMs,
+      storageKey: kind !== "text" && mediaStorageKey ? mediaStorageKey : undefined,
       metadata: asset?.metadata || { source: "manual" },
     };
     const next = asset
       ? { ...asset, ...base, ...(kind === "text" ? { content: value, url: undefined } : { url: value, content: undefined }), updatedAt: new Date().toISOString() }
       : createMyAsset({ ...base, ...(kind === "text" ? { content: value } : { url: value }) });
-    onSave(next);
-    toast.success(asset ? "素材已更新" : "素材已保存");
+    savePendingRef.current = true;
+    setIsSaving(true);
+    try {
+      await onSave(next);
+      toast.success(asset ? "素材已更新" : "素材已保存");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "素材保存失败");
+    } finally {
+      savePendingRef.current = false;
+      setIsSaving(false);
+    }
   }
 
   const previewAsset = previewMyAsset({ asset, kind, title, content, coverUrl, visibility, source, note, mediaMetadata, mediaStorageKey });
-  const busy = Boolean(busyTarget);
+  const busy = Boolean(busyTarget) || isSaving;
 
   return (
     <Dialog open={open} onOpenChange={(value) => !value && !busy && onClose()}>
@@ -131,7 +147,7 @@ export function AssetForm({ open, asset, onClose, onSave }: { open: boolean; ass
           <DialogDescription>保存可重复使用的文本、图片、视频或音频。</DialogDescription>
         </DialogHeader>
         <ScrollArea className="min-h-0 flex-1" viewportClassName="px-5 py-5 sm:px-6">
-          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_280px]">
+          <fieldset disabled={busy} className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_280px]">
             <div className="grid min-w-0 gap-4">
               <Field label="类型">
                 <div className="grid grid-cols-4 gap-1 rounded-lg bg-muted p-1">
@@ -164,11 +180,11 @@ export function AssetForm({ open, asset, onClose, onSave }: { open: boolean; ass
               )}
             </div>
             <AssetFormPreview asset={previewAsset} />
-          </div>
+          </fieldset>
         </ScrollArea>
         <DialogFooter flush>
           <Button type="button" variant="outline" disabled={busy} onClick={onClose}>取消</Button>
-          <Button type="button" disabled={busy} onClick={submit}>保存</Button>
+          <Button type="button" disabled={busy} onClick={() => void submit()}>保存</Button>
         </DialogFooter>
         <input ref={coverInputRef} type="file" className="hidden" accept="image/*" onChange={(event) => { void uploadCover(event.target.files?.[0]); event.target.value = ""; }} />
         <input ref={contentInputRef} type="file" className="hidden" accept={kind === "image" ? "image/*" : kind === "video" ? "video/mp4,video/quicktime,.mp4,.mov" : "audio/mpeg,audio/wav,audio/x-wav,.mp3,.wav"} onChange={(event) => { void uploadContent(event.target.files?.[0]); event.target.value = ""; }} />

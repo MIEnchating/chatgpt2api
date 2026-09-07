@@ -1,0 +1,104 @@
+[
+  {
+    "path": "internal/service/canvas_document.go",
+    "sha256": "793e05420f242128911b73f9431e6d60c04547cb0f1e951729000ebc64730aac",
+    "status": "reviewed",
+    "reviewer": "root",
+    "bytes": 69205,
+    "lines": 1561,
+    "checks": [
+      "完整读取画布结构校验、项目 CAS、工作区代次、存储对象删除围栏、深复制及 Agent 数据验证",
+      "修复 15 张生成批次只能保存 10 个子节点；统一参数和批次上限"
+    ]
+  },
+  {
+    "path": "internal/service/canvas_document_test.go",
+    "sha256": "95a3a507c93947b6461f9f278627155c3cc9e52ec6201f7d5c35a62a8b28b24c",
+    "status": "reviewed",
+    "reviewer": "root",
+    "bytes": 65970,
+    "lines": 1521,
+    "checks": [
+      "完整阅读画布与项目保存/重载、修订冲突、对象删除 ABA、分组/连线、媒体参数、Agent 与导入回归；已覆盖双实例交错"
+    ]
+  },
+  {
+    "path": "internal/service/canvas_batch_limit_test.go",
+    "sha256": "0a849907880319ee150cf419d676f4b77c2cf7d6afc4696a452b1b68957ba05f",
+    "status": "reviewed",
+    "reviewer": "root",
+    "bytes": 1537,
+    "lines": 39,
+    "checks": [
+      "新增保存/重新读取 15 张批次的复现回归，16 个子节点必须拒绝；修复前失败后通过"
+    ]
+  },
+  {
+    "path": "internal/service/auth.go",
+    "sha256": "70d6e04b7cce61b3ce7e143337f5ed3955b69f4133a345932d7da49869decc90",
+    "status": "reviewed",
+    "reviewer": "root",
+    "bytes": 47718,
+    "lines": 1695,
+    "checks": [
+      "完整阅读身份鉴权、外部登录、角色/账户管理、会话轮换/撤销、存储 CAS 和失败恢复",
+      "核对既有 R05/R08/R14：刷新不以旧角色覆盖新会话，默认角色也参与写入 CAS；管理入口依赖 HTTP 已鉴权刷新"
+    ]
+  },
+  {
+    "path": "internal/service/auth_test.go",
+    "sha256": "68db24a3cbb6fc03cfab1c9c2fd592d347debaf24272a33ec0b6c41aa0203fb0",
+    "status": "reviewed",
+    "reviewer": "root",
+    "bytes": 41214,
+    "lines": 1031,
+    "checks": [
+      "完整阅读双实例鉴权、默认/自定义角色变更、角色删除与分配交错、首次启动并发、失败回滚和会话裁剪测试"
+    ]
+  },
+  {
+    "path": "internal/service/auth_role_concurrency_test.go",
+    "sha256": "26c2227de8819bad3dde671038944c5072fb3bad3a0739dbb80f2f6da617e077",
+    "status": "reviewed",
+    "reviewer": "root",
+    "bytes": 5282,
+    "lines": 142,
+    "checks": [
+      "完整阅读确定性角色读取钩子；覆盖本地/外部首次与再次登录、角色分配和创建用户的旧角色冲突"
+    ]
+  },
+  {
+    "path": "internal/service/password_accounts.go",
+    "sha256": "dbd3fa28646b2c97f0642763fc88639d07b6722be0853f234c8b0e11428d0f7b",
+    "status": "reviewed",
+    "reviewer": "root",
+    "bytes": 13764,
+    "lines": 473,
+    "checks": [
+      "完整阅读初始管理员创建、账号创建和规范化、bcrypt、会话轮换及账户/角色原子保存",
+      "核对密码首尾空白保留与 8-72 字节限制；冲突不签发凭据"
+    ]
+  },
+  {
+    "path": "internal/service/password_accounts_test.go",
+    "sha256": "13e7d6887936eac7c38953aeee472bcbd499352493f5e673ea048d310abc803f",
+    "status": "reviewed",
+    "reviewer": "root",
+    "bytes": 590,
+    "lines": 24,
+    "checks": [
+      "完整阅读 bcrypt UTF-8 字节上下界回归，覆盖 7/8/72/73 ASCII 字节和中文"
+    ]
+  },
+  {
+    "path": "internal/main_test.go",
+    "sha256": "a0df4763c7d2814c9ce9c1cf4acc908cb7ada8305b884c342293f8d00ec94844",
+    "status": "reviewed",
+    "reviewer": "root",
+    "bytes": 1377,
+    "lines": 40,
+    "checks": [
+      "完整阅读 HTTP 读取超时及 Listen 失败回归；流式写入无全局超时"
+    ]
+  }
+]

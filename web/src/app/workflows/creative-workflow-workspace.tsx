@@ -129,8 +129,9 @@ import type { MyAsset } from "@/lib/my-assets";
 import { getManagedImagePathFromUrl } from "@/lib/image-path";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import { useImageGenerationPreferences } from "@/lib/use-image-generation-preferences";
-import { AUTH_SESSION_CHANGE_EVENT, hasAPIPermission } from "@/lib/auth-session";
+import { AUTH_SESSION_CHANGE_EVENT, hasAPIPermission, type StoredAuthSession } from "@/lib/auth-session";
 import { getCachedAuthSession } from "@/lib/session";
+import { useAuthSessionRevision } from "@/lib/use-auth-session-revision";
 import { cn } from "@/lib/utils";
 import { configuredModelNames, resolveConfiguredModel } from "@/lib/model-config-selection";
 
@@ -274,13 +275,22 @@ function taskText(task: CreationTask) {
     .join("\n\n");
 }
 
-export function CreativeWorkflowWorkspace({
+export function CreativeWorkflowWorkspace(props: CreativeWorkflowWorkspaceProps = {}) {
+  const { isCheckingAuth, session } = useAuthGuard(undefined, "/workflows");
+  const sessionRevision = useAuthSessionRevision();
+  if (isCheckingAuth || !session || getCachedAuthSession()?.key !== session.key) {
+    return <div className="flex h-full items-center justify-center text-sm text-muted-foreground"><LoaderCircle className="mr-2 size-4 animate-spin" />正在加载工作流</div>;
+  }
+  return <CreativeWorkflowWorkspaceContent key={`${session.key}:${sessionRevision}`} {...props} session={session} />;
+}
+
+function CreativeWorkflowWorkspaceContent({
   embedded = false,
   hideTaskList = false,
   generationDefaults,
-}: CreativeWorkflowWorkspaceProps = {}) {
-  const { isCheckingAuth, session } = useAuthGuard(undefined, "/workflows");
-  const sessionKey = session?.key || "";
+  session,
+}: CreativeWorkflowWorkspaceProps & { session: StoredAuthSession }) {
+  const sessionKey = session.key;
   const { preferences, isReady: preferencesReady } = useImageGenerationPreferences(sessionKey);
   const { isReady: relayPreferencesReady, tokenNameForModel } = useRelayTokenPreferences();
   const sessionTextChannelID = tokenNameForModel("text", preferences.default_text_model || "");
@@ -404,9 +414,9 @@ export function CreativeWorkflowWorkspace({
         [...workflowReferencesRef.current, ...agentReferencesRef.current, ...allTaskReferences],
         retained,
       );
-      if (keys.length) void deleteStoredImages(keys).catch(() => undefined);
+      if (keys.length && getCachedAuthSession()?.key === sessionKey) void deleteStoredImages(keys).catch(() => undefined);
     };
-  }, []);
+  }, [sessionKey]);
 
   useEffect(() => {
     agentDraftAbortControllerRef.current?.abort();
@@ -421,6 +431,7 @@ export function CreativeWorkflowWorkspace({
   useEffect(() => {
     const handleAuthSessionChange = () => {
       if (getCachedAuthSession()?.key !== currentSessionKeyRef.current) {
+        taskWaitAbortControllerRef.current?.abort();
         agentDraftAbortControllerRef.current?.abort();
         if (workspaceActiveRef.current) setAgentBusy(false);
       }
@@ -501,10 +512,10 @@ export function CreativeWorkflowWorkspace({
     if (!runningWorkflowTaskIDs) return;
     const controller = new AbortController();
     const poll = async () => {
-      const ids = runningWorkflowTaskIDs.split(",");
       while (!controller.signal.aborted) {
         try {
-          const response = await fetchCreationTasks(ids, { signal: controller.signal });
+          // Discover children submitted after the initial history snapshot.
+          const response = await fetchCreationTasks([], { signal: controller.signal });
           const updates = new Map(
             restoreWorkflowTasks(response.items).map((task) => [task.id, task]),
           );
@@ -518,6 +529,7 @@ export function CreativeWorkflowWorkspace({
             const unitErrors = { ...task.unit_errors, ...update.unit_errors };
             const count = Math.max(task.count, update.count);
             const incomplete = completedUnits.length < count;
+            const recoveryExpired = update.status === "failed" && !inFlightTaskCountsRef.current.has(task.id);
             return {
               ...task,
               ...update,
@@ -525,8 +537,8 @@ export function CreativeWorkflowWorkspace({
               backend_task_ids: Array.from(new Set([...task.backend_task_ids, ...update.backend_task_ids])),
               completed_units: completedUnits,
               unit_errors: unitErrors,
-              status: incomplete ? "running" : Object.keys(unitErrors).length ? "failed" : "success",
-              ended_at: incomplete ? undefined : update.ended_at,
+              status: incomplete && !recoveryExpired ? "running" : recoveryExpired || Object.keys(unitErrors).length ? "failed" : "success",
+              ended_at: incomplete && !recoveryExpired ? undefined : update.ended_at,
             };
           }));
         } catch {
@@ -659,6 +671,7 @@ export function CreativeWorkflowWorkspace({
 
   function openRunner(workflow: CreativeWorkflow) {
     workflowReferenceUploadGenerationRef.current += 1;
+    setSeriesDraftLoading(false);
     const discarded = workflowReferencesRef.current;
     updateWorkflowReferences(() => []);
     cleanupDiscardedWorkflowReferences(discarded);
@@ -670,6 +683,7 @@ export function CreativeWorkflowWorkspace({
 
   function closeRunner() {
     workflowReferenceUploadGenerationRef.current += 1;
+    setSeriesDraftLoading(false);
     const discarded = workflowReferencesRef.current;
     updateWorkflowReferences(() => []);
     cleanupDiscardedWorkflowReferences(discarded);
@@ -712,6 +726,7 @@ export function CreativeWorkflowWorkspace({
           };
         }),
       );
+      if (getCachedAuthSession()?.key !== sessionKey) return;
       if (!workspaceActiveRef.current) {
         const staleKeys = workflowReferenceCleanupKeys(uploaded, []);
         if (staleKeys.length) await deleteStoredImages(staleKeys).catch(() => undefined);
@@ -803,7 +818,7 @@ export function CreativeWorkflowWorkspace({
     seriesDraftIndex?: number,
     seriesRun?: WorkflowSeriesRun,
   ) {
-    if (!session) throw new Error("登录状态已失效");
+    if (!workspaceActiveRef.current || getCachedAuthSession()?.key !== sessionKey) throw new DOMException("Session changed", "AbortError");
     const taskController = taskWaitAbortControllerRef.current;
     if (!taskController || taskController.signal.aborted) {
       throw taskController?.signal.reason || new DOMException("Workspace closed", "AbortError");
@@ -906,6 +921,7 @@ export function CreativeWorkflowWorkspace({
     };
     try {
       const imageFiles = taskReferences.length ? await workflowImageFiles(taskReferences, taskController.signal) : [];
+      taskController.signal.throwIfAborted();
       const settled = await Promise.allSettled(
         Array.from({ length: count }, async (_, index) => {
           const batchIndex = seriesRun && seriesIndex ? seriesIndex : index + 1;
@@ -939,6 +955,7 @@ export function CreativeWorkflowWorkspace({
           const submitted = imageFiles.length
             ? await createImageEditTask(clientTaskID, imageFiles, prompt, model, runtime.size || undefined, undefined, quality, 1, "private", undefined, undefined, undefined, stream, partialImages, toolOptions, undefined, relayTokenName || undefined, undefined, undefined, { signal: taskController.signal })
             : await createImageGenerationTask(clientTaskID, prompt, model, runtime.size || undefined, undefined, quality, 1, "private", undefined, undefined, undefined, stream, partialImages, toolOptions, undefined, relayTokenName || undefined, undefined, undefined, { signal: taskController.signal });
+          taskController.signal.throwIfAborted();
           updateTasks((current) => current.map((task) =>
             task.id === localTaskID
               ? {
@@ -1045,6 +1062,13 @@ export function CreativeWorkflowWorkspace({
     }
     const taskController = taskWaitAbortControllerRef.current;
     if (!taskController || taskController.signal.aborted) return;
+    const runnerGeneration = workflowReferenceUploadGenerationRef.current;
+    const requestSessionKey = sessionKey;
+    const isCurrent = () => workspaceActiveRef.current
+      && !taskController.signal.aborted
+      && workflowReferenceUploadGenerationRef.current === runnerGeneration
+      && getCachedAuthSession()?.key === requestSessionKey;
+    if (!isCurrent()) return;
     setSeriesDraftLoading(true);
     try {
       const count = Math.max(
@@ -1069,20 +1093,21 @@ export function CreativeWorkflowWorkspace({
         submitted.id,
         600,
       );
+      if (!isCurrent()) return;
       const drafts = parseWorkflowSeriesDrafts(taskText(completed), count, renderedPrompt);
       setSeriesDrafts(drafts);
       toast.success("多图提示词已生成，请审核后生成图片");
       if (running.series_config.review_required === false) {
         window.setTimeout(() => {
-          void runAllSeriesDrafts(drafts);
+          if (isCurrent()) void runAllSeriesDrafts(drafts);
         }, 0);
       }
     } catch (error) {
-      if (!taskController.signal.aborted && !isWorkflowPollAbort(error)) {
+      if (isCurrent() && !isWorkflowPollAbort(error)) {
         toast.error(error instanceof Error ? error.message : "系列提示词生成失败");
       }
     } finally {
-      if (!taskController.signal.aborted) {
+      if (isCurrent()) {
         setSeriesDraftLoading(false);
       }
     }
@@ -1357,7 +1382,7 @@ export function CreativeWorkflowWorkspace({
     setAgentOpen(false);
   }
 
-  if (isCheckingAuth || !session || loading) {
+  if (loading) {
     return (
       <div className="flex h-full items-center justify-center text-sm text-muted-foreground">
         <LoaderCircle className="mr-2 size-4 animate-spin" />

@@ -9,17 +9,20 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from image_gen_full_flow import (
-    ACCESS_TOKEN, DEVICE_ID, SESSION_ID, CLIENT_VERSION, CLIENT_BUILD_NUMBER,
+    DEVICE_ID, SESSION_ID, CLIENT_VERSION, CLIENT_BUILD_NUMBER,
     FINGERPRINT, new_uuid, ensure_ok, build_proof_token,
     build_legacy_requirements_token, parse_pow_resources, iter_sse_payloads,
 )
 from curl_cffi import requests
+from capture_safety import new_capture_directory, require_access_token, write_private_capture
 
 BASE_URL = "https://chatgpt.com"
 POW_SCRIPT_DEFAULT = "https://chatgpt.com/backend-api/sentinel/sdk.js"
 
 def test_text_chat_endpoint():
     """测试 /backend-api/conversation (文本聊天) 端点"""
+    access_token = require_access_token()
+    output_dir = new_capture_directory()
     fp = FINGERPRINT
     ua = fp["user-agent"]
     impersonate = fp["impersonate"]
@@ -43,7 +46,7 @@ def test_text_chat_endpoint():
         "OAI-Language": "zh-CN",
         "OAI-Client-Version": CLIENT_VERSION,
         "OAI-Client-Build-Number": CLIENT_BUILD_NUMBER,
-        "Authorization": f"Bearer {ACCESS_TOKEN}",
+        "Authorization": f"Bearer {access_token}",
     })
 
     def api_headers(path, extra=None):
@@ -113,7 +116,7 @@ def test_text_chat_endpoint():
         "history_and_training_disabled": False,
     }
 
-    print(f"  Request: {json.dumps(text_body, indent=2, ensure_ascii=False)[:500]}")
+    print("  Submitting the fixed text fixture")
     r = session.post(
         BASE_URL + test_path,
         headers=api_headers(test_path, test_headers),
@@ -146,18 +149,14 @@ def test_text_chat_endpoint():
         print(f"  Event type distribution: {event_types}")
 
         # 保存
-        out = Path("jshook/responses/text-chat-sse-response.json")
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps(events, indent=2, ensure_ascii=False), encoding="utf-8")
+        out = output_dir / "text-chat-sse-response.json"
+        write_private_capture(out, json.dumps(events, indent=2, ensure_ascii=False).encode("utf-8"))
         print(f"  Saved to: {out}")
 
         r.close()
     else:
-        try:
-            error = r.json()
-            print(f"  Error: {json.dumps(error, indent=2, ensure_ascii=False)[:500]}")
-        except Exception:
-            print(f"  Raw: {r.text[:500]}")
+        print("  Text request failed")
+        r.close()
 
     # ============ 测试 2: /backend-api/conversation 带 multimodal_text ============
     print("\n===== TEST 2: /backend-api/conversation with multimodal_text =====")
@@ -174,7 +173,7 @@ def test_text_chat_endpoint():
         "timezone_offset_min": -480,
     }
 
-    print(f"  Request: {json.dumps(mm_body, indent=2, ensure_ascii=False)[:500]}")
+    print("  Submitting the fixed multimodal fixture")
     r = session.post(
         BASE_URL + test_path,
         headers=api_headers(test_path, test_headers),
@@ -194,11 +193,8 @@ def test_text_chat_endpoint():
         print(f"  SSE events: {count}")
         r.close()
     else:
-        try:
-            error = r.json()
-            print(f"  Error: {json.dumps(error, indent=2, ensure_ascii=False)[:500]}")
-        except Exception:
-            print(f"  Raw: {r.text[:500]}")
+        print("  Multimodal request failed")
+        r.close()
 
     # ============ 测试 3: /backend-api/conversation 带 conversation_id ============
     print("\n===== TEST 3: /backend-api/conversation with conversation_id =====")
@@ -225,11 +221,8 @@ def test_text_chat_endpoint():
     )
     print(f"  Status: {r.status_code}")
     if r.status_code != 200:
-        try:
-            error = r.json()
-            print(f"  Error: {json.dumps(error, indent=2, ensure_ascii=False)[:500]}")
-        except Exception:
-            print(f"  Raw: {r.text[:500]}")
+        print("  Conversation ID request failed")
+        r.close()
     else:
         count = 0
         for payload in iter_sse_payloads(r):

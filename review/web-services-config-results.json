@@ -1,0 +1,332 @@
+[
+  {
+    "path": "web/src/services/api/storage.ts",
+    "sha256": "827d1412183bb9e14c15bb163b1168edb6d07b3fa0269c3f4d148fbf1156090a",
+    "status": "reviewed",
+    "reviewer": "root",
+    "bytes": 2919,
+    "lines": 82,
+    "checks": [
+      "完整阅读对象上传/查询/下载/删除、ID 编码、取消与错误处理；权限由后端执行，跨域公开 URL 依赖 CORS"
+    ]
+  },
+  {
+    "path": "web/src/services/api/workflows.ts",
+    "sha256": "be4bf4ba9fd9b8374f574f6c0bbb360696af42f0ab475818c52bfda168210b73",
+    "status": "reviewed",
+    "reviewer": "root",
+    "bytes": 3805,
+    "lines": 147,
+    "checks": [
+      "完整阅读工作流类型与 CRUD/初始化/last-run/Agent 路由、HTTP 方法和超时"
+    ]
+  },
+  {
+    "path": "web/src/services/api/canvas.ts",
+    "sha256": "426b5a9688d2730244949296106644c278320f4a4fb2fd9c38fb266842782ee5",
+    "status": "reviewed",
+    "reviewer": "root",
+    "bytes": 6842,
+    "lines": 222,
+    "checks": [
+      "完整阅读画布节点/Agent/项目合同及保存修订/清空/导入路由，与后端类型核对"
+    ]
+  },
+  {
+    "path": "web/src/services/api/image-conversations.ts",
+    "sha256": "bd7f8b0a12696626033d81aa63c8de8e648cf210a27d740f5f8349904b7b7c53",
+    "status": "reviewed",
+    "reviewer": "root",
+    "bytes": 4488,
+    "lines": 153,
+    "checks": [
+      "完整阅读历史分页/窗口/详情、merge ack 类型及删除/清空路由和缓存头"
+    ]
+  },
+  {
+    "path": "web/src/services/file-storage.ts",
+    "sha256": "a976ddabc75d8907572d54005a12aa7165420ccf6f5d1c5e012f4e8497551677",
+    "status": "reviewed",
+    "reviewer": "root",
+    "bytes": 5807,
+    "lines": 187,
+    "checks": [
+      "完整阅读媒体上传、可选音视频元数据、解码超时与资源清理；已上传媒体不因可选解码失败丢失"
+    ]
+  },
+  {
+    "path": "web/src/services/image-storage.ts",
+    "sha256": "4a143014d7b9c71d80bb71746bfa7eb8b8ff971d5a770da36bf76e28b24a066c",
+    "status": "reviewed",
+    "reviewer": "root",
+    "bytes": 10048,
+    "lines": 308,
+    "checks": [
+      "完整阅读图片解码先于上传、Bitmap/Image 生命周期与超时、取消及 Data URL 读取；外部 URL 受浏览器 CORS 约束"
+    ]
+  },
+  {
+    "path": "web/src/services/storage-provider.ts",
+    "sha256": "7e24ca6f45fea7189cfee50312dcb05bf9878bf55bd6554a475fb543034575d3",
+    "status": "reviewed",
+    "reviewer": "root",
+    "bytes": 4654,
+    "lines": 155,
+    "checks": [
+      "完整阅读 Provider 类型与缓存代次、旧响应隔离、更新缓存与测量请求；已有并发失效回归"
+    ]
+  },
+  {
+    "path": "web/src/services/generation-result-storage.ts",
+    "sha256": "a28bbca52e6997042b2b3b55bf1cc316d16ff6081d9692fd2bc5c247d43bbb55",
+    "status": "reviewed",
+    "reviewer": "root",
+    "bytes": 13383,
+    "lines": 351,
+    "checks": [
+      "完整阅读终态结果上传和素材登记、会话 guard、去重及元数据；复核 R04 保留上传成功但登记失败的结果"
+    ]
+  },
+  {
+    "path": "web/src/store/canvas-task-queue.ts",
+    "sha256": "dc0e6a3504239693c1681ab925bfb5b258575429d6c98daae531250e856e05bb",
+    "status": "reviewed",
+    "reviewer": "root",
+    "bytes": 8187,
+    "lines": 208,
+    "checks": [
+      "完整阅读任务分组/批次数量、终态清理、ID 切换和跨会话更新保护；timer 有清理入口"
+    ]
+  },
+  {
+    "path": "web/src/store/image-turn-progress.ts",
+    "sha256": "400ef784890e105945e436aeedbed523fb14735654a977794d2c10405514f8b5",
+    "status": "reviewed",
+    "reviewer": "root",
+    "bytes": 2385,
+    "lines": 85,
+    "checks": [
+      "完整阅读进度快照、订阅与退出清理；调用方负责旧请求生命周期"
+    ]
+  },
+  {
+    "path": "web/src/store/image-conversation-session-scope.ts",
+    "sha256": "55ccff3d58aad9f313c2e0be4ab669886a61cd066356b3be528e3e4a974c65e4",
+    "status": "reviewed",
+    "reviewer": "root",
+    "bytes": 13195,
+    "lines": 461,
+    "checks": [
+      "完整阅读会话代次、串行写队列/退休、ACK 完整性与冲突分类、错误绑定；未知批次项不会作为成功"
+    ]
+  },
+  {
+    "path": "web/src/store/image-conversations.ts",
+    "sha256": "27e7f017b4c410bec61c2bd8bf0d1df8e59f5c0afa073d1e1cc831e4b4b9cf9c",
+    "status": "reviewed",
+    "reviewer": "root",
+    "bytes": 52007,
+    "lines": 1413,
+    "checks": [
+      "完整阅读历史数据规范化、分页代次、持久化 ACK、合并重试/rebase、失败快照与账号隔离；修复重试等待后账号切换仍提交旧数据"
+    ]
+  },
+  {
+    "path": "web/.gitignore",
+    "sha256": "55f31bdddaac5fdc48c85f54d6ad979f52f15e3d96e0cc2b98df3c9436af3c52",
+    "status": "reviewed",
+    "reviewer": "root",
+    "bytes": 497,
+    "lines": 42,
+    "checks": [
+      "完整阅读本地环境/构建/依赖/日志排除规则"
+    ]
+  },
+  {
+    "path": "web/.oxlintrc.json",
+    "sha256": "ee4dfa5992f9b2d2a39b72d652df8dfd109a6ba26ce418ad53de2f10d06b04f3",
+    "status": "reviewed",
+    "reviewer": "root",
+    "bytes": 772,
+    "lines": 25,
+    "checks": [
+      "完整阅读 Oxlint 正确性、React Hooks、禁止警告及目录排除；director 是预构建资源"
+    ]
+  },
+  {
+    "path": "web/knip.json",
+    "sha256": "402f7b15e04e7ab77ee6b5a2917a88400a1603ca4807638b907e151e447d633f",
+    "status": "reviewed",
+    "reviewer": "root",
+    "bytes": 46,
+    "lines": 3,
+    "checks": [
+      "完整阅读仅排除 director 预构建脚本的配置"
+    ]
+  },
+  {
+    "path": "web/components.json",
+    "sha256": "85cce81de2d8877cb2de704ed02a7c36497d23fa9d2104c63287111fda40b1f0",
+    "status": "reviewed",
+    "reviewer": "root",
+    "bytes": 505,
+    "lines": 24,
+    "checks": [
+      "完整阅读 shadcn 路径别名、样式入口和 registry；未运行远程安装"
+    ]
+  },
+  {
+    "path": "web/index.html",
+    "sha256": "22fbca7d14b96e6bb005b9e69272584d842be5ad79f84fecdf2327e9ba17d17b",
+    "status": "reviewed",
+    "reviewer": "root",
+    "bytes": 508,
+    "lines": 15,
+    "checks": [
+      "完整阅读页面语言、meta、静态图标与 Vite 入口"
+    ]
+  },
+  {
+    "path": "web/package.json",
+    "sha256": "388fea5d599641a1a9973dc31cf7f5ba0348bb184fed55f9c8d77de4062ce10c",
+    "status": "reviewed",
+    "reviewer": "root",
+    "bytes": 1580,
+    "lines": 58,
+    "checks": [
+      "完整阅读依赖/脚本/overrides；Bun 测试、tsc/Vite 构建和 Oxlint 对应项目工具链"
+    ]
+  },
+  {
+    "path": "web/postcss.config.mjs",
+    "sha256": "9631b4dbc5bb7152430ccb649808ace11ef45612bb9ae81b896aa74690343cfd",
+    "status": "reviewed",
+    "reviewer": "root",
+    "bytes": 102,
+    "lines": 7,
+    "checks": [
+      "完整阅读 Tailwind PostCSS 插件配置"
+    ]
+  },
+  {
+    "path": "web/tsconfig.json",
+    "sha256": "df89a6c8f2b79f3cae578f61a2ff1775bd36b2ee54d73ce157bdaf303f31c84c",
+    "status": "reviewed",
+    "reviewer": "root",
+    "bytes": 690,
+    "lines": 37,
+    "checks": [
+      "完整阅读严格模式/无未用标识符、bundler 解析、路径和编译包含排除"
+    ]
+  },
+  {
+    "path": "web/vite.config.ts",
+    "sha256": "9aaa9dc1f99d8e54d6b5f202d0f27ba32eecc38ce062665a61f66c17140decbd",
+    "status": "reviewed",
+    "reviewer": "root",
+    "bytes": 2920,
+    "lines": 114,
+    "checks": [
+      "完整阅读媒体反代根路径、dev v1 拒绝、alias/outDir 与分块配置；构建不包含真实环境凭据"
+    ]
+  },
+  {
+    "path": "web/tests/file-storage.test.mjs",
+    "sha256": "78227ce54817de38b58d3cb43d4c1a84ca209eaaef698c913f06d0ecb891494a",
+    "status": "reviewed",
+    "reviewer": "root",
+    "bytes": 5997,
+    "lines": 173,
+    "checks": [
+      "完整阅读测试；核对实际执行断言、异步失败/资源清理和测试边界；源码正则断言仅证明静态结构，不等同 UI 行为验证"
+    ]
+  },
+  {
+    "path": "web/tests/image-storage.test.mjs",
+    "sha256": "bd5bb81bf89d1226998b04934730d823202775b7b2359a58f12f0e9337b55abd",
+    "status": "reviewed",
+    "reviewer": "root",
+    "bytes": 7350,
+    "lines": 238,
+    "checks": [
+      "完整阅读测试；核对实际执行断言、异步失败/资源清理和测试边界；源码正则断言仅证明静态结构，不等同 UI 行为验证"
+    ]
+  },
+  {
+    "path": "web/tests/storage-provider-cache.test.mjs",
+    "sha256": "a26c0cdc836845f3a0bb6860e22ddd2411610985ab589e9c5453ac49ec26b643",
+    "status": "reviewed",
+    "reviewer": "root",
+    "bytes": 2869,
+    "lines": 78,
+    "checks": [
+      "完整阅读测试；核对实际执行断言、异步失败/资源清理和测试边界；源码正则断言仅证明静态结构，不等同 UI 行为验证"
+    ]
+  },
+  {
+    "path": "web/tests/canvas-task-queue.test.mjs",
+    "sha256": "a0f002e35e01e6055ec47329d23add0448f94f87b50a0721c08464a799d969d3",
+    "status": "reviewed",
+    "reviewer": "root",
+    "bytes": 4538,
+    "lines": 124,
+    "checks": [
+      "完整阅读测试；核对实际执行断言、异步失败/资源清理和测试边界；源码正则断言仅证明静态结构，不等同 UI 行为验证"
+    ]
+  },
+  {
+    "path": "web/tests/image-conversation-session-scope.test.mjs",
+    "sha256": "27bb328bd7a96eb96ba9985d8c7d395add6c48c1a9659b2ca7189b2199490de8",
+    "status": "reviewed",
+    "reviewer": "root",
+    "bytes": 10449,
+    "lines": 275,
+    "checks": [
+      "完整阅读测试；核对实际执行断言、异步失败/资源清理和测试边界；源码正则断言仅证明静态结构，不等同 UI 行为验证"
+    ]
+  },
+  {
+    "path": "web/tests/dev-proxy-routes.test.mjs",
+    "sha256": "9d17120afcd491e354edadbaae18643a515519ada9d27c31487aadb9db94bbdf",
+    "status": "reviewed",
+    "reviewer": "root",
+    "bytes": 524,
+    "lines": 15,
+    "checks": [
+      "完整阅读测试；核对实际执行断言、异步失败/资源清理和测试边界；源码正则断言仅证明静态结构，不等同 UI 行为验证"
+    ]
+  },
+  {
+    "path": "web/tests/architecture-boundaries.test.mjs",
+    "sha256": "38a0f263e208a8b11027211b3f7e1747c8dc007e28b07678aeaec9cb55b16784",
+    "status": "reviewed",
+    "reviewer": "root",
+    "bytes": 7748,
+    "lines": 174,
+    "checks": [
+      "完整阅读测试；核对实际执行断言、异步失败/资源清理和测试边界；源码正则断言仅证明静态结构，不等同 UI 行为验证"
+    ]
+  },
+  {
+    "path": "web/tests/image-history-error-recovery.test.mjs",
+    "sha256": "4f74a7bf58cbd1826b662ddba82c33141a5d9d906606eaaadf23d34e0831f8c6",
+    "status": "reviewed",
+    "reviewer": "root",
+    "bytes": 1015,
+    "lines": 20,
+    "checks": [
+      "完整阅读测试；核对实际执行断言、异步失败/资源清理和测试边界；源码正则断言仅证明静态结构，不等同 UI 行为验证"
+    ]
+  },
+  {
+    "path": "web/tests/image-history-retry-session.test.mjs",
+    "sha256": "3633712d0fa252f2f47ce4bfa8f7c12dc1951b05c23fd8081a69a47520f79522",
+    "status": "reviewed",
+    "reviewer": "root",
+    "bytes": 2308,
+    "lines": 49,
+    "checks": [
+      "完整阅读测试；核对实际执行断言、异步失败/资源清理和测试边界；源码正则断言仅证明静态结构，不等同 UI 行为验证"
+    ]
+  }
+]

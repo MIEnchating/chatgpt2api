@@ -405,9 +405,6 @@ func (s *ImageTaskService) CanAccessMediaResult(identity Identity, resultURL str
 	if err := s.ensureLoadedLocked(); err != nil {
 		return false, ImageTaskLoadError{Err: err}
 	}
-	if imageTaskMediaResultVisible(s.tasks, identity, owner, resultURL) {
-		return true, nil
-	}
 	if err := s.refreshTasksLocked(); err != nil {
 		return false, ImageTaskLoadError{Err: err}
 	}
@@ -572,6 +569,10 @@ func (s *ImageTaskService) submit(identity Identity, clientTaskID, mode string, 
 		_ = s.saveWithRetryLocked()
 	}
 	cleaned := s.cleanupLocked()
+	if _, deleted := s.deletedTasks[key]; deleted {
+		s.mu.Unlock()
+		return nil, fmt.Errorf("client_task_id has been deleted; submit with a new ID")
+	}
 	if existing := s.tasks[key]; existing != nil {
 		if cleaned {
 			_ = s.saveWithRetryLocked()
@@ -1271,6 +1272,12 @@ func (s *ImageTaskService) loadLocked() (map[string]map[string]any, error) {
 		now := util.NowISO()
 		normalized := map[string]any{"id": id, "owner_id": owner, "status": status, "mode": mode, "model": firstNonEmpty(util.Clean(task["model"]), util.ImageModelAuto), "size": util.Clean(task["size"]), "quality": util.Clean(task["quality"]), "visibility": visibility, "count": count, "revision": revision, "created_at": firstNonEmpty(util.Clean(task["created_at"]), now), "updated_at": firstNonEmpty(util.Clean(task["updated_at"]), util.Clean(task["created_at"]), now)}
 		mergeMediaTaskFields(normalized, task, mode)
+		mergePublicImageToolTaskFields(normalized, task)
+		if mode == "video" {
+			if timeoutSeconds := util.ToInt(task[VideoTaskTimeoutSecondsPayloadKey], 0); timeoutSeconds > 0 {
+				normalized[VideoTaskTimeoutSecondsPayloadKey] = timeoutSeconds
+			}
+		}
 		if workflowContext := util.StringMap(task["workflow_context"]); len(workflowContext) > 0 {
 			normalized["workflow_context"] = workflowContext
 		}
@@ -1325,7 +1332,7 @@ func (s *ImageTaskService) refreshTasksLocked() error {
 	if err != nil {
 		return err
 	}
-	s.tasks = mergeImageTaskMaps(remoteTasks, s.tasks)
+	s.tasks = s.mergeTaskMapsLocked(remoteTasks, s.tasks)
 	return nil
 }
 
@@ -1364,7 +1371,7 @@ func (s *ImageTaskService) monitorRemoteCancellations() {
 			s.mu.Unlock()
 			continue
 		}
-		s.tasks = mergeImageTaskMaps(remoteTasks, s.tasks)
+		s.tasks = s.mergeTaskMapsLocked(remoteTasks, s.tasks)
 		cancels := make([]context.CancelFunc, 0)
 		for key, cancel := range s.cancels {
 			remoteTask := remoteTasks[key]
@@ -1391,7 +1398,7 @@ func (s *ImageTaskService) saveLocked() error {
 	if loadErr != nil {
 		return fmt.Errorf("reload image tasks after concurrent update: %w", loadErr)
 	}
-	s.tasks = mergeImageTaskMaps(remoteTasks, s.tasks)
+	s.tasks = s.mergeTaskMapsLocked(remoteTasks, s.tasks)
 	s.cleanupLocked()
 	return s.persistLocked()
 }
@@ -1401,6 +1408,9 @@ func (s *ImageTaskService) saveLocked() error {
 // claim; this instance returns that task without starting a duplicate request.
 func (s *ImageTaskService) persistNewTaskLocked(key string) (map[string]any, bool, error) {
 	for attempt := 0; attempt < imageTaskInsertMaxAttempts; attempt++ {
+		if _, deleted := s.deletedTasks[key]; deleted {
+			return nil, false, fmt.Errorf("client_task_id has been deleted; submit with a new ID")
+		}
 		err := s.persistLocked()
 		if err == nil {
 			s.persistenceDirty = false
@@ -1429,12 +1439,12 @@ func (s *ImageTaskService) persistNewTaskLocked(key string) (map[string]any, boo
 					localWithoutClaim[localKey] = task
 				}
 			}
-			s.tasks = mergeImageTaskMaps(remoteTasks, localWithoutClaim)
+			s.tasks = s.mergeTaskMapsLocked(remoteTasks, localWithoutClaim)
 			s.cleanupLocked()
 			return s.tasks[key], false, nil
 		}
 
-		s.tasks = mergeImageTaskMaps(remoteTasks, localTasks)
+		s.tasks = s.mergeTaskMapsLocked(remoteTasks, localTasks)
 		s.cleanupLocked()
 	}
 
@@ -1463,11 +1473,10 @@ func (s *ImageTaskService) persistLocked() error {
 	sort.Slice(items, func(i, j int) bool { return util.Clean(items[i]["updated_at"]) > util.Clean(items[j]["updated_at"]) })
 	deletedItems := make([]map[string]any, 0, len(s.deletedTasks))
 	for key, deletedAt := range s.deletedTasks {
-		separator := strings.LastIndex(key, ":")
-		if separator < 1 || separator == len(key)-1 {
+		owner, id, ok := strings.Cut(key, "\x00")
+		if !ok || owner == "" || id == "" {
 			continue
 		}
-		owner, id := key[:separator], key[separator+1:]
 		deletedItems = append(deletedItems, map[string]any{"owner_id": owner, "id": id, "deleted_at": deletedAt})
 	}
 	sort.Slice(deletedItems, func(i, j int) bool {
@@ -1480,7 +1489,7 @@ func (s *ImageTaskService) persistLocked() error {
 	return fmt.Errorf("storage document backend is required")
 }
 
-func mergeImageTaskMaps(remote, local map[string]map[string]any) map[string]map[string]any {
+func (s *ImageTaskService) mergeTaskMapsLocked(remote, local map[string]map[string]any) map[string]map[string]any {
 	merged := make(map[string]map[string]any, len(remote)+len(local))
 	for key, task := range remote {
 		merged[key] = util.CopyMap(task)
@@ -1490,6 +1499,9 @@ func mergeImageTaskMaps(remote, local map[string]map[string]any) map[string]map[
 		if previous == nil || imageTaskSnapshotNewer(task, previous) {
 			merged[key] = util.CopyMap(task)
 		}
+	}
+	for key := range s.deletedTasks {
+		delete(merged, key)
 	}
 	return merged
 }
@@ -1760,7 +1772,7 @@ func ownerID(identity Identity) string {
 }
 
 func taskKey(owner, id string) string {
-	return owner + ":" + id
+	return owner + "\x00" + id
 }
 
 func normalizedImageTaskCount(n int) int {

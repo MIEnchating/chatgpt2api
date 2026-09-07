@@ -280,7 +280,7 @@ func (s *Store) AdminUsername() string {
 }
 
 func (s *Store) AdminPassword() string {
-	return strings.TrimSpace(os.Getenv("ADMIN_PASSWORD"))
+	return os.Getenv("ADMIN_PASSWORD")
 }
 
 func (s *Store) ImageRetentionDays() int {
@@ -826,10 +826,13 @@ func (s *Store) Update(data map[string]any) (map[string]any, error) {
 		}
 		next["relay_database_driver"] = driver
 	}
-	for _, key := range []string{"relay_database_host", "relay_database_port", "relay_database_name", "relay_database_user", "relay_database_password"} {
+	for _, key := range []string{"relay_database_host", "relay_database_port", "relay_database_name", "relay_database_user"} {
 		if value, ok := next[key]; ok {
 			next[key] = strings.TrimSpace(fmt.Sprint(value))
 		}
+	}
+	if value, ok := next["relay_database_password"]; ok {
+		next["relay_database_password"] = fmt.Sprint(value)
 	}
 	if value, ok := next["prompt_sources"]; ok {
 		next["prompt_sources"] = normalizePromptSourcesValue(value)
@@ -1340,6 +1343,11 @@ func unquoteEnvValue(value string) string {
 			var decoded strings.Builder
 			decoded.Grow(len(inner))
 			for index := 0; index < len(inner); index++ {
+				if inner[index] == '$' && index+1 < len(inner) && inner[index+1] == '$' {
+					decoded.WriteByte('$')
+					index++
+					continue
+				}
 				if inner[index] != '\\' || index+1 >= len(inner) {
 					decoded.WriteByte(inner[index])
 					continue
@@ -1395,6 +1403,8 @@ func stringifyEnvValue(value any) string {
 
 func stringifySettingEnvValue(settingKey string, value any) string {
 	switch settingKey {
+	case "relay_database_password":
+		return fmt.Sprint(util.ValueOr(value, ""))
 	case "prompt_sources":
 		value = normalizePromptSourcesValue(value)
 	case "storage":
@@ -1665,5 +1675,7 @@ func formatEnvValue(value string) string {
 	value = strings.ReplaceAll(value, "\r", `\r`)
 	value = strings.ReplaceAll(value, "\t", `\t`)
 	value = strings.ReplaceAll(value, "\n", `\n`)
+	// Compose reads this file too; escape interpolation without changing the value.
+	value = strings.ReplaceAll(value, "$", "$$")
 	return `"` + value + `"`
 }

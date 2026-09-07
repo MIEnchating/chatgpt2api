@@ -1,0 +1,507 @@
+[
+  {
+    "path": "internal/httpapi/announcements.go",
+    "sha256": "8e030713bdc4adac07e5dc5a79e1911f4cbdb1bcf6770ec59db81b8e5af81a8b",
+    "lines": 177,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "Checked authentication, explicit admin guard, full resource matching, storage failures and CAS mapping."
+    ],
+    "finding": false
+  },
+  {
+    "path": "internal/httpapi/canvas.go",
+    "sha256": "6b3c38436973955cac8f4b3448dda4fc2c1f5a952506c3766bc179036781db27",
+    "lines": 164,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "Checked owner scope, revision requirements, decoding, image size/type checks and cancellation; save/import implementation remains separately pending."
+    ],
+    "finding": false
+  },
+  {
+    "path": "internal/httpapi/custom_relay_configs.go",
+    "sha256": "24baf14e216a3eadea2c4a89c27b5abb9e90ef7b58cf86be4e420e34d4c0dfe4",
+    "lines": 97,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "Checked own-user scope and admin-controlled feature permission, CRUD shape and storage error mapping."
+    ],
+    "finding": false
+  },
+  {
+    "path": "internal/httpapi/generated_media_cleanup.go",
+    "sha256": "7e9554e47155b68f60c682af8dec9e12e52394b37324675c73e9a298f864d9a4",
+    "lines": 100,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "Checked retention bounds, directory regular-file filtering, cutoff and worker lifetime."
+    ],
+    "finding": false
+  },
+  {
+    "path": "internal/httpapi/system.go",
+    "sha256": "407b4a51da29642529a5dec1afd5c6d8447c8b893a9c14b8dc420966d9946ad0",
+    "lines": 13,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "Health returns constant status; no configuration or credentials exposed."
+    ],
+    "finding": false
+  },
+  {
+    "path": "internal/httpapi/image_proxy.go",
+    "sha256": "7ffde1faec5a985eed72f9e8a2a15ab7c453bb1c9dc2dfdd25fdc34c7727761b",
+    "lines": 60,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "Checked URL scheme/userinfo, safe fetch client delegation, response size/type and CSP; safe client review delegated."
+    ],
+    "finding": false
+  },
+  {
+    "path": "internal/httpapi/login_limiter.go",
+    "sha256": "03324f6dc2fd52509bcbcf225f58e5e53a60ee140002efe9c5248db577848e3f",
+    "lines": 154,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "Checked failure windows, account/IP normalization, map cap and mutex ownership; distributed enforcement not provided."
+    ],
+    "finding": false
+  },
+  {
+    "path": "internal/httpapi/image_conversation_write_limiter.go",
+    "sha256": "9590d055df42e215b756d2e60acb83c3193ba6eec2dc67399e1de00a18c17f22",
+    "lines": 120,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "Checked exclusive waiter registration/cancellation, starvation prevention and idempotent release."
+    ],
+    "finding": false
+  },
+  {
+    "path": "internal/httpapi/router.go",
+    "sha256": "943bd6c3a16edc045168d6035bc927b8ee46aa21d84565db68b190ca4f1a9ee7",
+    "lines": 209,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "Checked exact/subtree boundaries, authentication routing, API body cap, CORS origin policy; matched requireIdentity permission implementation."
+    ],
+    "finding": false
+  },
+  {
+    "path": "internal/httpapi/storage_files.go",
+    "sha256": "12ec67104ca2618dce639cb4b98842f5f8890dc16307f738593c5f3c617166a3",
+    "lines": 312,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "Checked routing, user/admin identity, multipart limits, headers, range download and error mapping; delegated confirmed client-local-provider bypass fix with route regression pending."
+    ],
+    "finding": true
+  },
+  {
+    "path": "internal/httpapi/workflows.go",
+    "sha256": "1396a411db98d1583fb45f52c1c09c36e2e0bfcac45e227c939ba0dc55fbe548",
+    "lines": 183,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "Checked own-user CRUD, JSON decode, error mapping, model selection and draft-result conversion."
+    ],
+    "finding": false
+  },
+  {
+    "path": "internal/httpapi/video_contract_planner.go",
+    "sha256": "84f91b5504bc7de3a99c9eba91c5a0503857d63b12eae222c0ffc35fe085c396",
+    "lines": 169,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "Checked candidate-only IDs, bounded unique selections, schema and error handling; integration with page discovery remains pending."
+    ],
+    "finding": false
+  },
+  {
+    "path": "internal/httpapi/video_model_contract_prompt.go",
+    "sha256": "858f963e875be931208ed5b139ce49c162efa639025d1d8aaea7071e984f364d",
+    "lines": 278,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "Checked extraction prompt, schema required fields/enums and array-to-map duplicate validation; full protocol validator reviewed separately later."
+    ],
+    "finding": false
+  },
+  {
+    "path": "internal/httpapi/image_api_modes.go",
+    "sha256": "07bf0bdd76a789198cc564594030a66922d3a701b3ddfb206064ffae0ee236d5",
+    "lines": 288,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "Removed partial-preview to final-result fallback; failed/incomplete Responses image results return errors. Real SSE parser/task conversion reproduction failed before the fix and focused image-mode regressions passed after (build/review/responses-completion-{before,after}.log)."
+    ],
+    "finding": true
+  },
+  {
+    "path": "internal/httpapi/image_api_modes_test.go",
+    "sha256": "a52babe0f5e41ec89644c01bef62dfccd6885381e7bdb0f9a95c12709e8a3e54",
+    "lines": 158,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "Read existing request/result regressions; added real SSE parser to task-result tests for partial/truncated/failed output and completed image."
+    ],
+    "finding": false
+  },
+  {
+    "path": "internal/httpapi/router_test.go",
+    "sha256": "8a6aef243282e1001a8eedde7f6b1281173cf3fc6b04121ce25636b30c444bcc",
+    "lines": 69,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "Read routing, malformed JSON, no-side-effect assertions and request/response invariants; tests use isolated app/database or loopback servers."
+    ]
+  },
+  {
+    "path": "internal/httpapi/request_path_test.go",
+    "sha256": "203f4a3f7c5abf639b065b3b24309abd4581e87ecf1b70b215cea7cb8bc1ef3e",
+    "lines": 39,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "Read routing, malformed JSON, no-side-effect assertions and request/response invariants; tests use isolated app/database or loopback servers."
+    ]
+  },
+  {
+    "path": "internal/httpapi/proxy_json_test.go",
+    "sha256": "27b8ff107b44312a258a7b6ba34765726d16e094537696bed307528cec1e8436",
+    "lines": 38,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "Read routing, malformed JSON, no-side-effect assertions and request/response invariants; tests use isolated app/database or loopback servers."
+    ]
+  },
+  {
+    "path": "internal/httpapi/relay_sanitize_test.go",
+    "sha256": "36a455a781f6e2e6885011e2a7f717851e4d377aacfc954571db7ac527abae12",
+    "lines": 35,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "Read routing, malformed JSON, no-side-effect assertions and request/response invariants; tests use isolated app/database or loopback servers."
+    ]
+  },
+  {
+    "path": "internal/httpapi/routes_json_test.go",
+    "sha256": "d610d7ea459ac4f226c8432dd95d6d9dfc5cd81bf8f001c446067024eed78079",
+    "lines": 91,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "Read routing, malformed JSON, no-side-effect assertions and request/response invariants; tests use isolated app/database or loopback servers."
+    ]
+  },
+  {
+    "path": "internal/httpapi/single_json_body_test.go",
+    "sha256": "893aad2cd7d29cee68820bade7a1986d072d7b7311444c950596abaab46ce970",
+    "lines": 127,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "Read routing, malformed JSON, no-side-effect assertions and request/response invariants; tests use isolated app/database or loopback servers."
+    ]
+  },
+  {
+    "path": "internal/httpapi/bootstrap_password_test.go",
+    "sha256": "71501c8158bf23e5bfb01a69d70d2173736f09a35659220c0f1b1722e20f4b8f",
+    "lines": 40,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "Read regression setup and assertions for password whitespace, content isolation, retention, and startup resource cleanup; no live credentials."
+    ]
+  },
+  {
+    "path": "internal/httpapi/password_input_test.go",
+    "sha256": "724e27f12c93a2ae177b85561d7e1db61ced90102d0806b90f4e6eb0e2c2715f",
+    "lines": 38,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "Read regression setup and assertions for password whitespace, content isolation, retention, and startup resource cleanup; no live credentials."
+    ]
+  },
+  {
+    "path": "internal/httpapi/image_proxy_test.go",
+    "sha256": "001a6deef88475c2c67dc1fc4e41f27a0bda397e33ca1a73a2051825f637ebca",
+    "lines": 50,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "Read regression setup and assertions for password whitespace, content isolation, retention, and startup resource cleanup; no live credentials."
+    ]
+  },
+  {
+    "path": "internal/httpapi/generated_media_cleanup_test.go",
+    "sha256": "d7f78471dc63fbc782cf94544f4aa0b84f7ee82736f5e6d6d644cd9180fcbbca",
+    "lines": 52,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "Read regression setup and assertions for password whitespace, content isolation, retention, and startup resource cleanup; no live credentials."
+    ]
+  },
+  {
+    "path": "internal/httpapi/app_startup_cleanup_test.go",
+    "sha256": "5a2199fbeac996280f0122d8903f87eaec298ff89e9c422a0670d44e908b9b86",
+    "lines": 108,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "Read regression setup and assertions for password whitespace, content isolation, retention, and startup resource cleanup; no live credentials."
+    ]
+  },
+  {
+    "path": "internal/httpapi/canvas_test.go",
+    "sha256": "903afd223b36482c041e3f2e8b69ad797c16ac8d0083bc56f11894a72c5185cb",
+    "lines": 318,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "Read full state mutation, stale revision, owner isolation, cancellation and injected storage failure tests; verification scope matches test names."
+    ]
+  },
+  {
+    "path": "internal/httpapi/announcements_test.go",
+    "sha256": "8bd4eb0c4e4781f7bf0a254045d553ce8c42245699dd14cc9c5bb1040b6c004a",
+    "lines": 150,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "Read full state mutation, stale revision, owner isolation, cancellation and injected storage failure tests; verification scope matches test names."
+    ]
+  },
+  {
+    "path": "internal/httpapi/announcement_prompt_storage_errors_test.go",
+    "sha256": "c91ed0d363f5b3a8e22d8deb0580accfec7f4b26806a0cac366a52ba5683c24a",
+    "lines": 136,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "Read full state mutation, stale revision, owner isolation, cancellation and injected storage failure tests; verification scope matches test names."
+    ]
+  },
+  {
+    "path": "internal/httpapi/generated_media_authorization_test.go",
+    "sha256": "e1dc0b15eeaf07f0530a3a5f65670ace4ce624dd1d8f3ca38e7dd858024b10a2",
+    "lines": 115,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "Read owner/admin media access and worker concurrency/shutdown tests, synchronization and bounded waits; implementation reviewed separately."
+    ]
+  },
+  {
+    "path": "internal/httpapi/image_cleanup_shutdown_test.go",
+    "sha256": "130647fc848c582054e665a69dab5d85b99d94793007d7b27c3670aa0fb6dd79",
+    "lines": 137,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "Read owner/admin media access and worker concurrency/shutdown tests, synchronization and bounded waits; implementation reviewed separately."
+    ]
+  },
+  {
+    "path": "internal/httpapi/image_cleanup_worker_test.go",
+    "sha256": "f45072618880a736fb07dbe8e59a72a48dac6b2a11c06ab50eb4b2e81e38154c",
+    "lines": 267,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "Read owner/admin media access and worker concurrency/shutdown tests, synchronization and bounded waits; implementation reviewed separately."
+    ]
+  },
+  {
+    "path": "internal/httpapi/log_status_filter_test.go",
+    "sha256": "42f334c0c41cd90b1fa95a4a23c67eabf5aed678b948c1499affe1fae36d5dbc",
+    "lines": 67,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "Read snapshot pagination, cursor rejection, business status filtering and degraded storage/usage behavior tests."
+    ]
+  },
+  {
+    "path": "internal/httpapi/log_pagination_test.go",
+    "sha256": "ae5e7bc97f450c43b57169d428b4ac483371faa03b8d453ed494689eea015159",
+    "lines": 122,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "Read snapshot pagination, cursor rejection, business status filtering and degraded storage/usage behavior tests."
+    ]
+  },
+  {
+    "path": "internal/httpapi/log_errors_test.go",
+    "sha256": "9ee12a4e87f3ced335edd1cec37f784c28c19ef2175eda0f11aa28443d3368a6",
+    "lines": 265,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "Read snapshot pagination, cursor rejection, business status filtering and degraded storage/usage behavior tests."
+    ]
+  },
+  {
+    "path": "internal/httpapi/custom_relay_models_test.go",
+    "sha256": "1fe05e5142d7c7bb8c278181197ae48123b36762102ef4ad05abcdca4103edac",
+    "lines": 70,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "Read selected relay routing/credential test, disabled/empty model invariants, audio conversion and fixture validity checks; provider live contracts not inferred from tests."
+    ]
+  },
+  {
+    "path": "internal/httpapi/model_config_invariants_test.go",
+    "sha256": "4c7b5790e1bbcba3608e9724d602ba01621d5cfaf8a941fc404668f76103f361",
+    "lines": 164,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "Read selected relay routing/credential test, disabled/empty model invariants, audio conversion and fixture validity checks; provider live contracts not inferred from tests."
+    ]
+  },
+  {
+    "path": "internal/httpapi/audio_test.go",
+    "sha256": "f28a92dff93041f4cffa684aeb06067e9890e195de05e0704687eee462d07fff",
+    "lines": 166,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "Read selected relay routing/credential test, disabled/empty model invariants, audio conversion and fixture validity checks; provider live contracts not inferred from tests."
+    ]
+  },
+  {
+    "path": "internal/httpapi/image_conversation_write_limiter_test.go",
+    "sha256": "5957c1a25a065c444adc4ce7fa46ad99c11a658d1f1db4097460ede8a1fff8a7",
+    "lines": 171,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "Read limiter exclusivity/cancellation/starvation tests and multipart/body/model/mask size boundary tests."
+    ]
+  },
+  {
+    "path": "internal/httpapi/upload_limits_test.go",
+    "sha256": "239b374ccaa6a9ef4ed66564595e76f704f1a25f85cb65bb565f7931eb4bae26",
+    "lines": 228,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "Read limiter exclusivity/cancellation/starvation tests and multipart/body/model/mask size boundary tests."
+    ]
+  },
+  {
+    "path": "internal/httpapi/video_parameters_test.go",
+    "sha256": "24126a2c17023e16b3b7902d7bce81d2be58b04e7d46b106348f3b8b2cd287a5",
+    "lines": 48,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "Read reference URL bounds and signatures, path traversal rejection, media content checks, document discovery/selection restrictions and isolated fixture servers."
+    ]
+  },
+  {
+    "path": "internal/httpapi/video_contract_site_test.go",
+    "sha256": "2395ec4204d814dfd8e9aff213a7f8714b5efdfb291bf6774213c32869996ce3",
+    "lines": 208,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "Read reference URL bounds and signatures, path traversal rejection, media content checks, document discovery/selection restrictions and isolated fixture servers."
+    ]
+  },
+  {
+    "path": "internal/httpapi/video_references_test.go",
+    "sha256": "5c53e00a2561079fefed05c51b69d1809627a1a54dcfb448d4a48cbfbb886073",
+    "lines": 313,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "Read reference URL bounds and signatures, path traversal rejection, media content checks, document discovery/selection restrictions and isolated fixture servers."
+    ]
+  },
+  {
+    "path": "internal/httpapi/audit_test.go",
+    "sha256": "b3c538e1a78cd2765cd9932f6d07add05a040c337bf28da98ffb25fe1de10a42",
+    "lines": 236,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "Read bounded binary/JSON response capture, login/custom-relay credential masking, malformed payload omission, mutation audit and trusted proxy IP assertions."
+    ]
+  },
+  {
+    "path": "internal/httpapi/image_apimart_adapters_test.go",
+    "sha256": "5194ea51a9ec9912f62c3172573f15814a45a62642cb19f8bfadd6ec3d6998ab",
+    "lines": 256,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "Read parameter matrix, references/required inputs/provider precedence and routing metadata assertions; describes local adapter only, not fresh live upstream behavior."
+    ]
+  },
+  {
+    "path": "internal/httpapi/my_assets_test.go",
+    "sha256": "77c1b4d46b9e22b6553df576487376d5c61ea3516115316df0a51a1eede082ff",
+    "lines": 76,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "Read concurrent rename/generated asset upsert persistence and delete/removed full-table mutation rejection."
+    ]
+  },
+  {
+    "path": "internal/httpapi/profile_preference_storage_errors_test.go",
+    "sha256": "9ded10865408c3930ca2afba71aa5aeccf60c7c249cfe995f726ece8ccbc06a2",
+    "lines": 105,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "Read injected storage failures/conflicts and missing custom relay selection errors; public responses hide private backend errors."
+    ]
+  },
+  {
+    "path": "internal/httpapi/mutation_boundaries_test.go",
+    "sha256": "83a265fce4dceef27b79130f623ea18905d69cd7d2f7e1f8cd4611a59e4ab3eb",
+    "lines": 223,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "Read post-write read failure isolation and canceled reference-upload no-file assertions with local fixture backends."
+    ]
+  },
+  {
+    "path": "internal/httpapi/image_conversation_rows_test.go",
+    "sha256": "e0fb2332a4779f9512f7636ff689a3df2c2fb40f546f26f3be00777283b0d495",
+    "lines": 284,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "Read full pagination/detail/window, generation invalidation, tombstone/clear fencing and failed-save public error assertions."
+    ]
+  }
+]

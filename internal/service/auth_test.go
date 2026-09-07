@@ -22,6 +22,97 @@ func newTestAuthService(t *testing.T, backend storage.Backend) *AuthService {
 	return auth
 }
 
+func TestAuthServiceObservesSessionChangesAcrossInstances(t *testing.T) {
+	for _, action := range []string{"disable", "logout", "permissions"} {
+		t.Run(action, func(t *testing.T) {
+			databaseURL := "sqlite:///" + filepath.ToSlash(filepath.Join(t.TempDir(), "auth.db"))
+			open := func() *AuthService {
+				backend, err := storage.NewDatabaseBackend(databaseURL)
+				if err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = backend.Close() })
+				return newTestAuthService(t, backend)
+			}
+			writer := open()
+			reader := open()
+			user, err := writer.CreatePasswordUser("alice", "review-password", "Alice", DefaultManagedRoleID, true)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, token, err := writer.LoginPassword("alice", "review-password")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if reader.Authenticate(token) == nil {
+				t.Fatal("another instance cannot authenticate the new session")
+			}
+			if writer.Authenticate(token) == nil {
+				t.Fatal("writer cannot refresh the session before the management request")
+			}
+			switch action {
+			case "disable":
+				_, err = writer.UpdateUser(util.Clean(user["id"]), map[string]any{"enabled": false})
+			case "logout":
+				_, err = writer.RevokeSessions(token)
+			case "permissions":
+				_, err = writer.UpdateRole(DefaultManagedRoleID, map[string]any{"api_permissions": []string{}})
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			identity := reader.Authenticate(token)
+			if action == "permissions" {
+				if identity == nil || len(identity.APIPermissions) != 0 {
+					t.Fatalf("stale permissions: %#v", identity)
+				}
+			} else if identity != nil {
+				t.Fatalf("revoked session still authenticates: %#v", identity)
+			}
+		})
+	}
+}
+
+func TestExternalLogoutPreservesManagedRoleAndDisabledState(t *testing.T) {
+	for _, disabled := range []bool{false, true} {
+		t.Run(map[bool]string{false: "custom role", true: "disabled user"}[disabled], func(t *testing.T) {
+			backend := newTestStorageBackend(t)
+			auth := newTestAuthService(t, backend)
+			role, err := auth.CreateRole(map[string]any{"name": "Restricted", "menu_paths": []string{}, "api_permissions": []string{}})
+			if err != nil {
+				t.Fatal(err)
+			}
+			user := NewAPIUser{ID: 77, Username: "external-user"}
+			identity, token, err := auth.UpsertNewAPISession(user)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := auth.UpdateUser(identity.ID, map[string]any{"role_id": role["id"], "enabled": !disabled}); err != nil {
+				t.Fatal(err)
+			}
+			if revoked, err := auth.RevokeSessions(token); err != nil || revoked != 1 {
+				t.Fatalf("RevokeSessions = %d, %v", revoked, err)
+			}
+			auth = newTestAuthService(t, backend)
+			if auth.Authenticate(token) != nil {
+				t.Fatal("revoked token remains valid after restart")
+			}
+			users := auth.ListUsers()
+			if len(users) != 1 || users[0]["role_id"] != role["id"] || users[0]["enabled"] != !disabled || util.ToBool(users[0]["has_session"]) {
+				t.Fatalf("logout lost managed user state: %#v", users)
+			}
+			refreshed, _, err := auth.UpsertNewAPISession(user)
+			if disabled {
+				if err == nil || refreshed != nil {
+					t.Fatalf("disabled user logged in: %#v, %v", refreshed, err)
+				}
+			} else if err != nil || refreshed.RoleID != util.Clean(role["id"]) || len(refreshed.APIPermissions) != 0 {
+				t.Fatalf("login lost restricted role: %#v, %v", refreshed, err)
+			}
+		})
+	}
+}
+
 type failingAuthStorage struct {
 	items    []map[string]any
 	failLoad bool
@@ -190,7 +281,7 @@ func TestAuthServiceConcurrentNewAPISessionPersistsOneToken(t *testing.T) {
 	}
 }
 
-func TestAuthServiceConcurrentNewAPISessionsForDifferentOwnersDoNotConflict(t *testing.T) {
+func TestAuthServiceConcurrentNewAPISessionsSerializeManagedRoleSnapshots(t *testing.T) {
 	databaseURL := "sqlite:///" + filepath.ToSlash(filepath.Join(t.TempDir(), "different-owners.db"))
 	first, second, saveReady, releaseFirst, releaseSecond := newCoordinatedAuthServices(t, databaseURL)
 	firstResult := make(chan newAPISessionCallResult, 1)
@@ -206,14 +297,17 @@ func TestAuthServiceConcurrentNewAPISessionsForDifferentOwnersDoNotConflict(t *t
 	waitForAuthTestValue(t, saveReady)
 	waitForAuthTestValue(t, saveReady)
 	releaseFirst <- struct{}{}
+	committed := waitForAuthTestValue(t, firstResult)
+	if committed.err != nil || committed.identity == nil || committed.token == "" {
+		t.Fatalf("first UpsertNewAPISession() = (%#v, %q, %v)", committed.identity, committed.token, committed.err)
+	}
 	releaseSecond <- struct{}{}
-	for index, result := range []newAPISessionCallResult{
-		waitForAuthTestValue(t, firstResult),
-		waitForAuthTestValue(t, secondResult),
-	} {
-		if result.err != nil || result.identity == nil || result.token == "" {
-			t.Fatalf("UpsertNewAPISession(result %d) = (%#v, %q, %v)", index, result.identity, result.token, result.err)
-		}
+	conflicted := waitForAuthTestValue(t, secondResult)
+	if !errors.Is(conflicted.err, storage.ErrConcurrentRowUpdate) || conflicted.identity != nil || conflicted.token != "" {
+		t.Fatalf("second UpsertNewAPISession() = (%#v, %q, %v), want role snapshot conflict", conflicted.identity, conflicted.token, conflicted.err)
+	}
+	if identity, token, err := second.UpsertNewAPISession(NewAPIUser{ID: 2, Username: "bob"}); err != nil || identity == nil || token == "" {
+		t.Fatalf("subsequent UpsertNewAPISession() = (%#v, %q, %v)", identity, token, err)
 	}
 
 	verifierBackend, err := storage.NewDatabaseBackend(databaseURL)

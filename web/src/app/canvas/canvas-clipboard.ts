@@ -32,9 +32,14 @@ const CANVAS_CLIPBOARD_CONNECTION_FIELDS = new Set<keyof CanvasConnection>([
 ]);
 
 export function remapCanvasNodeReferences(node: CanvasNode, idMap: ReadonlyMap<string, string>): CanvasNode {
+  const childIDs = node.batch_child_ids?.flatMap((id) => idMap.has(id) ? [idMap.get(id)!] : []);
   return {
     ...node,
     group_id: node.group_id ? idMap.get(node.group_id) : undefined,
+    batch_root_id: node.batch_root_id ? idMap.get(node.batch_root_id) : undefined,
+    batch_child_ids: childIDs?.length ? childIDs : undefined,
+    batch_primary_id: node.batch_primary_id && childIDs?.includes(idMap.get(node.batch_primary_id) || "") ? idMap.get(node.batch_primary_id) : undefined,
+    batch_expanded: childIDs?.length ? node.batch_expanded : undefined,
   };
 }
 

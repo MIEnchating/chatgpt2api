@@ -78,6 +78,9 @@ export function reconcileCanvasBatchesAfterRemoval(nodes: readonly CanvasNode[],
 function canvasBatchPreview(node: CanvasNode) {
   return {
     url: node.url,
+    storage_key: node.storage_key,
+    bytes: node.bytes,
+    mime_type: node.mime_type,
     thumbnail_url: node.thumbnail_url || "",
     ...(node.natural_width && node.natural_height ? { natural_width: node.natural_width, natural_height: node.natural_height } : {}),
     ...(node.free_resize !== undefined ? { free_resize: node.free_resize } : {}),
@@ -89,12 +92,9 @@ export function setCanvasBatchPrimary(nodes: readonly CanvasNode[], childID: str
   if (!child?.batch_root_id) return [...nodes];
   return nodes.map((node): CanvasNode => node.id === child.batch_root_id ? {
     ...node,
-    url: child.url,
-    thumbnail_url: child.thumbnail_url || "",
+    ...canvasBatchPreview(child),
     width: child.width,
     height: child.height,
-    ...(child.natural_width && child.natural_height ? { natural_width: child.natural_width, natural_height: child.natural_height } : {}),
-    ...(child.free_resize !== undefined ? { free_resize: child.free_resize } : {}),
     batch_primary_id: child.id,
   } : node);
 }

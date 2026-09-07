@@ -25,8 +25,12 @@ function isNonPublicIPv6(hostname: string) {
   if (host === "::" || host === "::1" || host.startsWith("fc") || host.startsWith("fd") || /^fe[89ab]/.test(host) || host.startsWith("ff") || host.startsWith("2001:db8:")) {
     return true;
   }
-  const mappedIPv4 = host.match(/::ffff:(\d+\.\d+\.\d+\.\d+)$/)?.[1];
-  return mappedIPv4 ? isNonPublicIPv4(mappedIPv4) : false;
+  // URL serializes IPv4-mapped addresses using two hexadecimal groups.
+  const mappedIPv4 = host.match(/^::ffff:([\da-f]{1,4}):([\da-f]{1,4})$/);
+  if (!mappedIPv4) return false;
+  const high = Number.parseInt(mappedIPv4[1], 16);
+  const low = Number.parseInt(mappedIPv4[2], 16);
+  return isNonPublicIPv4(`${high >> 8}.${high & 255}.${low >> 8}.${low & 255}`);
 }
 
 export function isPublicReferenceURL(value: string) {

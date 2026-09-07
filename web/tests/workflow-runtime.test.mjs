@@ -389,7 +389,7 @@ test("workflow batch stays running until every expected child is persisted", () 
       batch_index: 1,
       batch_count: 3,
     },
-  }]);
+  }], Date.parse("2026-08-26T08:01:01Z"));
 
   assert.equal(restored.length, 1);
   assert.equal(restored[0].id, "series-run");
@@ -544,3 +544,27 @@ test("editing one workflow does not change another workflow's generation setting
   assert.equal(second.config.size, "auto");
   assert.equal(second.config.count, "1");
 });
+
+for (const status of ["success", "running"]) {
+  test(`restored missing workflow children expire only when known children are terminal (${status})`, () => {
+    const created = Date.parse("2026-08-26T08:00:00Z");
+    const child = {
+      id: "first", status, mode: "generation", created_at: new Date(created).toISOString(), updated_at: new Date(created + 60000).toISOString(),
+      data: [{ url: "/images/first.png" }],
+      workflow_context: {
+        workflow_id: "workflow", workflow_name: "Batch", prompt: "first", inputs: {}, references: [],
+        config: { ...workflowConfig, timeout: "600" }, execution: workflowExecution, count: 2,
+        batch_task_id: "batch", batch_index: 1, batch_count: 2,
+      },
+    };
+    assert.equal(restoreWorkflowTasks([child], created + 61000)[0].status, "running");
+    const expired = restoreWorkflowTasks([child], created + 3600000)[0];
+    assert.equal(expired.status, status === "running" ? "running" : "failed");
+    assert.deepEqual(expired.completed_units, status === "running" ? [] : [1]);
+    if (status === "success") assert.match(expired.error, /缺少.*1/);
+    const second = { ...child, id: "second", status: "success", workflow_context: { ...child.workflow_context, batch_index: 2 } };
+    const complete = restoreWorkflowTasks([{ ...child, status: "success" }, second], created + 3600000)[0];
+    assert.equal(complete.status, "success");
+    assert.equal(complete.error, undefined);
+  });
+}

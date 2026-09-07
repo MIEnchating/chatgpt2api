@@ -135,7 +135,14 @@ func NewDatabaseBackend(databaseURL string) (*DatabaseBackend, error) {
 	if err != nil {
 		return nil, err
 	}
-	db, err := sql.Open(driver, dsn)
+	connectionDSN := dsn
+	if driver == "sqlite" {
+		connectionDSN, err = sqliteConnectionDSN(dsn)
+		if err != nil {
+			return nil, err
+		}
+	}
+	db, err := sql.Open(driver, connectionDSN)
 	if err != nil {
 		return nil, err
 	}
@@ -148,10 +155,6 @@ func NewDatabaseBackend(databaseURL string) (*DatabaseBackend, error) {
 		documentSnapshots: make(map[string]jsonDocumentSnapshot),
 	}
 	backend.configurePool()
-	if err := backend.configureSQLite(); err != nil {
-		_ = db.Close()
-		return nil, err
-	}
 	if err := backend.init(); err != nil {
 		_ = db.Close()
 		return nil, err
@@ -177,22 +180,23 @@ func (b *DatabaseBackend) Close() error {
 	return b.db.Close()
 }
 
-func (b *DatabaseBackend) configureSQLite() error {
-	if b.driver != "sqlite" {
-		return nil
+func sqliteConnectionDSN(dsn string) (string, error) {
+	filename, query, _ := strings.Cut(dsn, "?")
+	params, err := url.ParseQuery(query)
+	if err != nil {
+		return "", fmt.Errorf("invalid SQLite connection parameters: %w", err)
 	}
-	for _, stmt := range []string{
-		`PRAGMA journal_mode=WAL`,
-		`PRAGMA synchronous=NORMAL`,
-		`PRAGMA busy_timeout=5000`,
-		`PRAGMA temp_store=MEMORY`,
-		`PRAGMA foreign_keys=ON`,
+	// The driver reapplies these settings whenever the pool opens a connection.
+	for _, pragma := range []string{
+		`busy_timeout=5000`,
+		`journal_mode=WAL`,
+		`synchronous=NORMAL`,
+		`temp_store=MEMORY`,
+		`foreign_keys=ON`,
 	} {
-		if _, err := b.db.Exec(stmt); err != nil {
-			return err
-		}
+		params.Add("_pragma", pragma)
 	}
-	return nil
+	return filename + "?" + params.Encode(), nil
 }
 
 func (b *DatabaseBackend) init() error {
@@ -860,13 +864,17 @@ func (b *DatabaseBackend) AppendLog(item map[string]any) error {
 		record = map[string]any{}
 	}
 	record["type"] = "event"
+	createdAt := ""
+	if record["time"] != nil {
+		createdAt = strings.TrimSpace(fmt.Sprint(record["time"]))
+	}
+	if createdAt == "" {
+		createdAt = time.Now().Format("2006-01-02 15:04:05")
+	}
+	record["time"] = createdAt
 	data, err := json.Marshal(record)
 	if err != nil {
 		return err
-	}
-	createdAt := strings.TrimSpace(fmt.Sprint(record["time"]))
-	if createdAt == "" {
-		createdAt = time.Now().Format("2006-01-02 15:04:05")
 	}
 	logType := "event"
 	day := logDay(createdAt)
@@ -1149,12 +1157,18 @@ func ParseDatabaseURL(databaseURL string) (driver, dsn string, err error) {
 
 func maskPassword(raw string) string {
 	u, err := url.Parse(raw)
-	if err != nil || u.User == nil {
-		return raw
+	if err != nil {
+		return "[redacted]"
 	}
-	username := u.User.Username()
-	if _, ok := u.User.Password(); ok {
-		u.User = url.UserPassword(username, "****")
+	if u.User != nil {
+		if _, ok := u.User.Password(); ok {
+			u.User = url.UserPassword(u.User.Username(), "****")
+		}
 	}
+	// Database drivers may accept credentials in query parameters as well.
+	u.RawQuery = ""
+	u.ForceQuery = false
+	u.Fragment = ""
+	u.RawFragment = ""
 	return u.String()
 }

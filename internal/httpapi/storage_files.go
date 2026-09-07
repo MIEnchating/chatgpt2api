@@ -135,7 +135,7 @@ func (a *App) handleStorageFiles(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodGet:
-		object, err := a.storageFiles.InfoForIdentity(identity.ID, identity.Role == service.AuthRoleAdmin, id)
+		object, err := a.myAssets.ReadStorageObjectForIdentity(identity.ID, identity.Role == service.AuthRoleAdmin, id)
 		if err != nil {
 			a.writeStorageServiceError(w, err)
 			return
@@ -235,7 +235,13 @@ func (a *App) handleStorageFileDirect(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) handleStorageFileContent(w http.ResponseWriter, r *http.Request, identity service.Identity, id string) {
-	download, err := a.storageFiles.DownloadForIdentity(r.Context(), identity.ID, identity.Role == service.AuthRoleAdmin, id, r.Header.Get("Range"))
+	object, err := a.myAssets.ReadStorageObjectForIdentity(identity.ID, identity.Role == service.AuthRoleAdmin, id)
+	if err != nil {
+		a.writeStorageServiceError(w, err)
+		return
+	}
+	// The asset service has authorized this read against the object's real owner.
+	download, err := a.storageFiles.DownloadForIdentity(r.Context(), object.CreatedBy, false, object.ID, r.Header.Get("Range"))
 	if err != nil {
 		a.writeStorageServiceError(w, err)
 		return

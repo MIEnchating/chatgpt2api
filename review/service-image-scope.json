@@ -1,0 +1,15 @@
+[
+  "internal/service/image.go",
+  "internal/service/image_conversation_asset_summary_test.go",
+  "internal/service/image_conversation_assets.go",
+  "internal/service/image_conversation_assets_test.go",
+  "internal/service/image_conversation_history.go",
+  "internal/service/image_conversation_history_test.go",
+  "internal/service/image_conversation_rows.go",
+  "internal/service/image_conversation_rows_test.go",
+  "internal/service/image_generation_preferences.go",
+  "internal/service/image_generation_preferences_test.go",
+  "internal/service/image_task.go",
+  "internal/service/image_task_test.go",
+  "internal/service/image_test.go"
+]

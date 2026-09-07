@@ -9,6 +9,7 @@ chatgpt2api.exe
 venv/
 .venv/
 __pycache__/
+jshook/responses/local/
 docs/*
 !docs/architecture.md
 !docs/image-generation-api.md

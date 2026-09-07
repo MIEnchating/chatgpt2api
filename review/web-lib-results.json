@@ -1,0 +1,650 @@
+[
+  {
+    "path": "web/src/lib/announcement-events.ts",
+    "sha256": "7f808d9642fb5c49783f9172a0222343ddf07a580b37f89c178c12b4271e29bf",
+    "lines": 7,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Checked browser guard and event dispatch; no server authorization is performed here."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/announcement-lifecycle.ts",
+    "sha256": "09a05bedb7dff2054efde00a2b759b85cffe71b0194954d10c2e2fd83d00d585",
+    "lines": 126,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read load generation/session invalidation and monotonic seen/snooze/permanent merges; focused tests cover late loads and concurrent mutation scopes."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/api.ts",
+    "sha256": "75566d62a2002b7bc5889c2d9614ec3288d2bee289695626f89aa98af1735959",
+    "lines": 1964,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read all request builders, current resource paths, encoded IDs, password preservation, multipart masks/uploads, task status polling, NDJSON completion/errors and caches. Fixed late pre-invalidation model responses replacing the global video contract registry; regression reproduces old-account overwrite. External upstream calls are mocked."
+    ],
+    "finding": true,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/app-meta.ts",
+    "sha256": "c00c4d901161ee03218e00b95b62cdd84db3394751ddf18867b5ce1e5572f143",
+    "lines": 135,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read title/icon/image normalization, API origin mapping and event-vs-initial-load merging. DOM icon use is covered by earlier browser smoke, not arbitrary third-party URLs."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/audio-reference-file.ts",
+    "sha256": "ff25513590007b0142173739d47983035e01f39a42a8280f4eadf96dbed710ba",
+    "lines": 89,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read metadata timeout, finite positive duration checks, exactly-once settlement and cleanup on decode/timer errors. Unit harness covers resource cleanup; no codec catalog verification."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/auth-session.ts",
+    "sha256": "678df74a36a0830dbd05e2d3268c5c15245d4ea64ec6999c0e1a622dc6905a59",
+    "lines": 82,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read admin/user path checks, profile default and API permission keys. Browser menu checks are advisory; server authorization is outside this file."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/authenticated-image.ts",
+    "sha256": "079628be04df233d371cf949383e84881a029bed38b602dace1f5360974fcae9",
+    "lines": 297,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read URL resolution, fetch credential selection, decoding, pending deduplication, reference reservations, byte/count eviction and cache reset. Fixed stale releases decrementing a new-generation entry; actual capacity regression fails before and passes after. Live CORS/large decoded bitmap pressure not tested."
+    ],
+    "finding": true,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/canvas-project-route.ts",
+    "sha256": "a9b3416d6f63de4d4991f1d38f33fa47a5de8b51535e99966f9a5c6f7125eb64",
+    "lines": 12,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read current canvas prefix and path encoding/route restoration; server validates actual project IDs."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/deprecated-browser-persistence.ts",
+    "sha256": "574fda65c32ada848f5fd470f45ca2b069159065260b6c562915aed0d63559a5",
+    "lines": 34,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read explicit obsolete-key allowlist and reverse localStorage traversal; current username-only login preference is normalized before cleanup."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/expiring-request-cache.ts",
+    "sha256": "fad8f8a8d67cf14fa8747e3f747c912fc63a231b322c192a99014d5bf2a49dd3",
+    "lines": 59,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read TTL, deduplication, store/clear revisions and promise identity cleanup. Tests cover stale reads and mutation responses; returned obsolete values still require caller lifecycle guards."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/generation-frame-aspect.ts",
+    "sha256": "e7a0ff57d3710603926faeefcf4ebec35be4b22509b9863945514898d16a83aa",
+    "lines": 48,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read positive finite dimension parsing and image/video fallback aspect selection; tested custom and ratio inputs plus portrait width limits."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/generation-task-contract.ts",
+    "sha256": "19cc6cf80cacd6e6b2b137b2e48e676c85851b20ce9faf5ebdd9f1739b7e294d",
+    "lines": 19,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read media-neutral type vocabulary and transient polling status classification; tests distinguish 4xx permanent and retryable 408/425/429/5xx."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/image-api-contract.ts",
+    "sha256": "263f836c02112d1ebad64dde566322761708eda4dd8ad690e2ddbd6c0b78c263",
+    "lines": 31,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read system/user prompt composition, opt-in prompt guard, output count and partial-image clamping. Existing tests lock current API semantics."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/image-conversation-assets.ts",
+    "sha256": "bcbd4db5746369d568f6a9935986bdece7154a52bb8933cb6cb4e33baf7403b4",
+    "lines": 179,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read reference normalization, MIME/extension validation, per-file/batch size limits and ordered batching; tests exercise 40 MiB and 80 MiB boundaries."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/image-conversation-history.ts",
+    "sha256": "44f5e147a1dd44813cf854e53ad8a80ada75e19fc3a02b9610f897ad9883b4ca",
+    "lines": 84,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read positive generation parsing, BigInt comparison, cursor reset and detail fallback statuses; tests cover stale generation and transient detail errors."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/image-conversation-source.ts",
+    "sha256": "e41fefecb91b7b6945fef0dbe4352dc99e99af7e70fb043d2817e763044b30be",
+    "lines": 14,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read workflow origin classification and call sites; tests isolate workflow IDs and explicit source/task fields."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/image-conversation-types.ts",
+    "sha256": "b548204ba312a7e117da55ab89a6ef7abf0b30b3f4067532f979382163a3fca1",
+    "lines": 134,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read all persisted conversation/turn/image types, statuses and reference metadata; runtime validation belongs to storage/API boundaries."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/image-generation-preferences-events.ts",
+    "sha256": "ed980a5a6ff4363ce86079b131f9ee4d51151ae0139f5ff2def6d284d3f247f4",
+    "lines": 41,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read event detail validation and matching nonempty session key; tests reject wrong/empty scope."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/image-generation-preferences-retry.ts",
+    "sha256": "c3876dfe1b4e04268095531242ce2f51a1e983c22c0cb0e8c2d9f889194b7c31",
+    "lines": 36,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read shared persistent error toast and retry event dispatch; event tests verify one action reaches consumers."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/image-model-capabilities.ts",
+    "sha256": "47e9f6cbeed9bcf59d768f60031026035ba0ac0de3fb5631882aab2cf894cef0",
+    "lines": 426,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read all provider classification branches, image/edit/mask/stream/output/count/reference/ratio/resolution/quality tables. Existing model-table tests reviewed; upstream capability freshness not verified without live capture."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/image-options.ts",
+    "sha256": "6b387d775a22dce266b21405817c2c157f8aa9f3d9f3a6f8b7c9e22a9bef6afd",
+    "lines": 596,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read all presets, dimension normalization, pixel/edge/aspect bounds, manual snapping and stored-selection inference. Existing custom-draft and preset tests reviewed; unusual arbitrary numeric ratios are not exhaustive."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/image-path.ts",
+    "sha256": "90a6bec83d691a3d54e669fb7e4180b67a9cc5468b1796d97f8089e910f93d71",
+    "lines": 61,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read managed-image/thumbnail extraction, URL decoding, traversal-segment rejection and encoded URL construction. Recognition is path-based; server access remains authoritative."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/image-size.ts",
+    "sha256": "25cf36fc97ef3417b4f74912733dc7920c79b5f1c0d068b71d6bf39eba8e53f5",
+    "lines": 13,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read base64 padding byte estimate and display units; helper assumes caller supplies base64 payload rather than an entire data URL."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/image-source-file.ts",
+    "sha256": "7afdf7207324b917671b9fad0eb21694e7b4d4514811127505d43fd91b4c9577",
+    "lines": 26,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read authenticated loader delegation and base64-to-File restoration; tests confirm managed source uses loader and data source avoids fetch. Non-base64 data URLs are not supported by this contract."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/image-task-state.ts",
+    "sha256": "a9987c2821a7b201ee56b6ddcc638385779e14c713e0229504ecea99da0666cc",
+    "lines": 609,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read all task and conversation merging, terminal protection, per-output preview handling, revision/time ordering, regeneration replacement, summary invalidation and rebase. Full regression tests reviewed; audio_url-only payloads are handled by separate audio canvas/result code, not this image history helper."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/image-turn-validation.ts",
+    "sha256": "618ee89344450159167738e4ca317d8350abdbd183c41e455c8a825611a529a3",
+    "lines": 13,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read reference-required modes and missing-reference error; tests cover image/edit versus generate/video."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/login-page-image-layout.ts",
+    "sha256": "f5d2de15147ce94410298ad261ea3ddf6637cd4aba5d224f0a909619477eaf7e",
+    "lines": 119,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read mode/zoom/position normalization, contain/cover/fill geometry and drag offset conversion; actual browser frame/image dimensions assumed finite positive."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/model-capabilities.ts",
+    "sha256": "e8fbe75006d66b460410b3ada61392ce1ac98196317ef17488b3f94a480eb7cb",
+    "lines": 43,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read media-kind keyword classification and negative matching; unit model families reviewed. Classification is heuristic, not a live provider capability guarantee."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/model-config-selection.ts",
+    "sha256": "1f2da32846c141a79788a7a3a11596278c383c1084d1754a95a550d3e5b1b97c",
+    "lines": 24,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read deduplicated model normalization and configured-only preference/default selection; tests preserve explicit empty model lists."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/my-assets-core.ts",
+    "sha256": "579f6518625b0052aa2201d2e69d46edf5fd71b3e5614695a118d096bb3b204f",
+    "lines": 136,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read stable ID generation, latest timestamp merge, private-by-default normalization, type/media/duration metadata and blob URL rejection; tests cover ownership and remote metadata tie-breaking."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/my-assets.ts",
+    "sha256": "3758295e9875c018ccbc72dbbd883ecdaba043854055ff842acb9de39de36fad",
+    "lines": 131,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read scope/visibility cache keys, TTL/size pruning, pending deduplication and epoch invalidation around item mutations. Shared request cancellation stops a waiter; it does not abort the shared transport."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/prompt-market-types.ts",
+    "sha256": "13c2d3f382859e4b06eb556a3ad5a2370858f65dcb8b11fd15171b2bdf525c49",
+    "lines": 44,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read current prompt source/configuration and localization types; runtime external content validation is elsewhere."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/public-reference-url.ts",
+    "sha256": "edd9e7a18acd64bd018a6665472f858ab80830b4d5d08359308ab006ff7747cd",
+    "lines": 49,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read URL schemes, userinfo, length and nonpublic host checks. Fixed IPv4-mapped IPv6 serialized hex groups bypassing private/loopback rejection; tests cover mapped public and private hosts. DNS resolution/rebinding is a server responsibility."
+    ],
+    "finding": true,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/relay-token-preference-mutations.ts",
+    "sha256": "aed38b1602fc287625c1883af9df9015019ae64de318ac8a2fe6f010ee1db242",
+    "lines": 45,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read per-session and per-media-kind version tracker; tests reject old-session and old-choice completions."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/relay-token-preferences.tsx",
+    "sha256": "6c603748130f5d91b93c80f90cdb87b9bf3fdf58a11147cc0e52a2651b8c0516",
+    "lines": 163,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read session synchronization, preference load readiness, model discovery, optimistic writes/rollback and mutation generation checks. Requests are not live-tested against external model providers."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/relay-token-selection.ts",
+    "sha256": "5241d844e7a5dca7e40c95924bdf66dccdd4ccc4d1f69686714aedeadc3abd2a",
+    "lines": 94,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read normalized ordered key names, authoritative availability filtering and explicit missing/error/unavailable routing states; tests cover key order and failed discovery."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/remembered-login.ts",
+    "sha256": "bd0e6c38cb897ce22a5258cbdfa323f45a4db0a39011e1f02102e9ffbc9174be",
+    "lines": 79,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read defensive localStorage access, malformed JSON handling and username-only persistence; tests verify passwords are removed and storage denial does not block login."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/request-error.ts",
+    "sha256": "0e198861d82b26ff74877e1655ff14823f960c38f4829f89028080f3241cdd40",
+    "lines": 27,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read recursive provider string/object/array message extraction; JSON response inputs assumed acyclic."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/request-response-error.ts",
+    "sha256": "6e995442866e5efbd524f138b582e3a97969547fb810b8e57ff68915bd64b990",
+    "lines": 75,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read Axios status/code/type extraction and opt-out 401 redirect with rejecting promise; tests verify caller finally executes and redirect-disabled behavior."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/request.ts",
+    "sha256": "c78a2af3afc7afa8d00a495bc92004bed3ee430b24eab92ecec3c0b8c2e0b6a3",
+    "lines": 60,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read configured API base, cookie credentials, default timeout, per-request signal/progress and response interceptor; ordinary timeout policy checked by existing tests."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/scoped-mutation-lifecycle.ts",
+    "sha256": "549f03e7704e3bee70b3f35149ebe2c75cd50a290aef2d34a5c1e3fdd5c5a3d0",
+    "lines": 148,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read per-session batch/sequence/scope checks, global mutation conflicts, reconciliation on completion/failure and stable item merge; announcement/contract lifecycle tests cover interleavings."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/session.ts",
+    "sha256": "bc3df5ae00cd3d12a6c274c3e0f394c747d8ef9ca3cb341e01746f980de16df1",
+    "lines": 161,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read credential identifier validation, in-memory verified state, shared verification, generation invalidation, cross-tab broadcasts and explicit-401 handling; tests cover network/503 retry, 403 retention and permission refresh."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/theme.ts",
+    "sha256": "304a334dd497d2b0d3b1300443fa6eb9c1694334f108a17403bcfa6339fc0360",
+    "lines": 97,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read storage denial handling, OS preference, root classes, transition availability and complexity guard; existing test is source-based, not transition animation simulation."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/use-app-meta.ts",
+    "sha256": "2241572daab4b5ecbb7dab8f91f4c129671e20b1bb944365f23f773024af3d6d",
+    "lines": 69,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read unmount guards, merge-before-set semantics, document title and favicon updates; initial response/event races covered by pure merge tests."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/use-auth-guard.ts",
+    "sha256": "5e6369bbf65e49eeadf2b19cb00156f54fe1b5a11f58eeec4a207c33fc67fae2",
+    "lines": 167,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read centralized verification lifecycle, focus/visibility refresh, retry error handling and role/path redirects; source-based tests supplement earlier browser login smoke."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/use-image-generation-preferences.ts",
+    "sha256": "88d8d02aad695c4d6fa0841208ea76734a827e8ca657b0ca5af80e0ff142e5db",
+    "lines": 182,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read defaults/normalization, session load generation, stale read suppression, retries and scoped change events. Server events are expected to carry the saved preferences snapshot."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/use-my-assets.ts",
+    "sha256": "90cb3f1f5acbdaf52354eac9e0439a84a357092700b54b643cc1dbcb9866d631",
+    "lines": 100,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read scope activation, initial load cancellation and per-asset mutation queue/controller cleanup. Current tests include source-level lifecycle assertions; multi-render scheduling is not exhaustively simulated."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/use-relay-token-preferences.ts",
+    "sha256": "e4a13caa1862ea85deb610b21ee7922d8410311f68444413d7894d041783ed99",
+    "lines": 24,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read typed context shape and provider-required hook; no additional persistence or side effects."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/utils.ts",
+    "sha256": "414110cc454e8071dc9ef10196a77805362699538973e2859b3eede998cf5689",
+    "lines": 17,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read class merge and elapsed-clock formatting; elapsed clock expects integer seconds from callers."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/video-model-capabilities.ts",
+    "sha256": "918ac5ab71dbba7dddd93f6af988257b754dc69d1787b0bf773b011231c92162",
+    "lines": 305,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read contract-only defaults/options, required materials, frame/reference controls and UI pixel/ratio labels; tests check configured models and explicit preview contracts without registry mutation."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/video-model-contracts.ts",
+    "sha256": "3e2a4dcf7e80f32c290ceaf4f83c3c8b5074e348cc534867119249d33d9068e4",
+    "lines": 289,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read contract clone ownership, atomic install/index, wildcard ordering, material limits, conditional rules, typed forced values and UI rule chaining; registry tests cover duplicate install and mutable clone isolation."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/video-reference-validation.ts",
+    "sha256": "19ca8f32cba97014d5aa4907c00f3503438c7dfce4b527942a575451bfb285d0",
+    "lines": 10,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read 2-15 second per-file and aggregate limit; metadata producer performs finite-duration validation before use."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/video-request-normalizer.ts",
+    "sha256": "032d4f222bb26f738a2bab9852db18e3308cf8405104574c4b4e0696d4db6ef1",
+    "lines": 260,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read mode inference, material count distribution, hidden field removal, contract options/defaults and generation request fields. Tests cover unsupported modes and excess image materials; server enforces final request rules."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  },
+  {
+    "path": "web/src/lib/zip.ts",
+    "sha256": "c3b4dc4719c20e8b6275d6694ff9194e8c6f1761bb580489157108d3d4125d1a",
+    "lines": 19,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read async Blob conversion and fflate ZIP creation/decompression; real canvas archive tests cover media contents and failure handling. Decompression currently has no archive size/entry budget; untrusted oversized archives remain a resource-pressure boundary."
+    ],
+    "finding": false,
+    "validation": "npm test: 698 tests / 103 files / 0 fail; npm run build and npm run lint passed. Logs: build/review/web-lib-all-tests.log, web-lib-build.log, web-lib-lint.log."
+  }
+]

@@ -816,11 +816,17 @@ type ImageGenerationPreferencesResponse = { preferences: ImageGenerationPreferen
 
 const imageGenerationPreferencesCache = createExpiringRequestCache<ImageGenerationPreferencesResponse>(30_000);
 const modelConfigCache = createExpiringRequestCache<{ config: ModelConfig }>(30_000);
+let modelConfigGeneration = 0;
 const grokTTSVoiceRequests = new Map<string, Promise<GrokTTSVoice[]>>();
+
+function clearModelConfigCache() {
+  modelConfigGeneration += 1;
+  modelConfigCache.clear();
+}
 
 function clearAccountScopedAPICaches() {
 	imageGenerationPreferencesCache.clear();
-	modelConfigCache.clear();
+	clearModelConfigCache();
 	grokTTSVoiceRequests.clear();
 }
 
@@ -1401,7 +1407,7 @@ export async function updateSettingsConfig(settings: SettingsConfig) {
     method: "POST",
     body: settings,
   });
-  modelConfigCache.clear();
+  clearModelConfigCache();
   return response;
 }
 
@@ -1413,10 +1419,13 @@ export function measureAdminStorageProvider(index: number, provider?: StoragePro
 }
 
 export async function fetchModelConfig() {
+  const generation = modelConfigGeneration;
   const data = await modelConfigCache.get(() => (
     httpRequest<{ config: ModelConfig }>("/api/model-config")
   ));
-  installVideoModelContracts(data.config.video_model_contracts);
+  if (generation === modelConfigGeneration) {
+    installVideoModelContracts(data.config.video_model_contracts);
+  }
   return data;
 }
 
@@ -1504,7 +1513,7 @@ export async function importVideoModelContractJSON(document: VideoModelContractT
     method: "POST",
     body: document,
   });
-  modelConfigCache.clear();
+  clearModelConfigCache();
   return response;
 }
 
@@ -1520,7 +1529,7 @@ export async function createVideoModelContract(input: VideoModelContractMutation
     method: "POST",
     body: input,
   });
-  modelConfigCache.clear();
+  clearModelConfigCache();
   return response;
 }
 
@@ -1536,7 +1545,7 @@ export async function publishVideoModelContract(id: string, input: VideoModelCon
     `/api/admin/video-model-contracts/${encodeURIComponent(id)}/publish`,
     { method: "POST", body: input },
   );
-  modelConfigCache.clear();
+  clearModelConfigCache();
   return response;
 }
 
@@ -1552,7 +1561,7 @@ export async function rollbackVideoModelContract(id: string, revision: number) {
     `/api/admin/video-model-contracts/${encodeURIComponent(id)}/rollback`,
     { method: "POST", body: { revision } },
   );
-  modelConfigCache.clear();
+  clearModelConfigCache();
   return response;
 }
 
@@ -1586,7 +1595,7 @@ export async function setVideoModelContractEnabled(id: string, enabled: boolean)
     `/api/admin/video-model-contracts/${encodeURIComponent(id)}`,
     { method: "PATCH", body: { enabled, contract: {} } },
   );
-  modelConfigCache.clear();
+  clearModelConfigCache();
   return response;
 }
 
@@ -1595,7 +1604,7 @@ export async function deleteVideoModelContract(id: string) {
     `/api/admin/video-model-contracts/${encodeURIComponent(id)}`,
     { method: "DELETE" },
   );
-  modelConfigCache.clear();
+  clearModelConfigCache();
   return response;
 }
 

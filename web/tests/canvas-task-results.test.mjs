@@ -493,3 +493,33 @@ test("persisted canvas batch root keeps the upstream error when no output comple
   assert.equal(result.nodes[1].generation_error, "upstream quota exhausted");
   assert.equal(result.nodes[2].generation_error, "upstream quota exhausted");
 });
+
+test("batch recovery preserves output positions when earlier slots already completed", () => {
+  const base = { type: "image", task_id: "task", generation_status: "loading", x: 0, y: 0, width: 340, height: 240, scale_x: 1, scale_y: 1 };
+  const root = { ...base, id: "root", generation_status: "success", url: "/images/first.png", batch_child_ids: ["first", "second"], batch_primary_id: "first" };
+  const first = { ...base, id: "first", generation_status: "success", url: "/images/first.png", batch_root_id: "root" };
+  const second = { ...base, id: "second", batch_root_id: "root" };
+  for (const status of ["running", "success"]) {
+    const result = reconcilePersistedCanvasTaskNodes([root, first, second], {
+      id: "task", status,
+      data: [{ url: "/images/first.png" }, { url: "/images/second.png" }],
+      output_statuses: ["success", "success"],
+    });
+    assert.equal(result.nodes[2].url, "/images/second.png");
+    assert.equal(result.nodes[0], root);
+    assert.equal(result.nodes[1], first);
+  }
+});
+
+test("batch recovery keeps task slots aligned when an earlier child was retried separately", () => {
+  const base = { type: "image", task_id: "task", generation_status: "loading", x: 0, y: 0, width: 340, height: 240, scale_x: 1, scale_y: 1 };
+  const root = { ...base, id: "root", generation_status: "success", url: "/images/retry.png", batch_child_ids: ["first", "second"], batch_primary_id: "first" };
+  const first = { ...base, id: "first", task_id: "retry-task", generation_status: "success", url: "/images/retry.png", batch_root_id: "root" };
+  const second = { ...base, id: "second", batch_root_id: "root" };
+  const result = reconcilePersistedCanvasTaskNodes([root, first, second], {
+    id: "task", status: "success", data: [{ url: "/images/first.png" }, { url: "/images/second.png" }], output_statuses: ["success", "success"],
+  });
+  assert.equal(result.nodes[2].url, "/images/second.png");
+  assert.equal(result.nodes[1], first);
+  assert.equal(result.nodes[0], root);
+});

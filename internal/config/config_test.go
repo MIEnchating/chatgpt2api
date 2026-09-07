@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"math"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -923,6 +924,52 @@ func TestStoreBuildsRelayDatabaseURLsFromStructuredFields(t *testing.T) {
 	}
 }
 
+func TestStorePreservesRelayDatabasePasswordAcrossUpdateAndReload(t *testing.T) {
+	t.Setenv("ROOT_DIR", t.TempDir())
+	for _, envKey := range settingEnvKeys {
+		unsetEnv(t, envKey)
+	}
+	store, err := NewStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	password := "  p@ss$VALUE\t "
+	update := map[string]any{
+		"relay_database_driver": "postgres", "relay_database_host": "db.example",
+		"relay_database_name": "app", "relay_database_user": "reader",
+		"relay_database_password": password,
+	}
+	preview := store.RelayDatabaseConnectionURLWithUpdate(update)
+	if _, err := store.Update(update); err != nil {
+		t.Fatal(err)
+	}
+	if got := store.RelayDatabaseConnectionURL(); got != preview {
+		t.Error("saved database connection differs from tested connection")
+	}
+	if _, err := store.Update(map[string]any{"app_title": "Unrelated edit"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := os.Getenv("DATABASE_PASSWORD"); got != password {
+		t.Error("runtime database password lost whitespace")
+	}
+	for _, envKey := range settingEnvKeys {
+		if err := os.Unsetenv(envKey); err != nil {
+			t.Fatal(err)
+		}
+	}
+	reloaded, err := NewStore()
+	if err != nil {
+		t.Fatal(err)
+	}
+	parsed, err := url.Parse(reloaded.RelayDatabaseConnectionURL())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := parsed.User.Password(); got != password {
+		t.Error("persisted database password lost whitespace")
+	}
+}
+
 func TestStoreNormalizesUnsupportedLoginPageImageMode(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("ROOT_DIR", root)
@@ -1379,10 +1426,18 @@ func TestEnvValueFormattingRoundTripsEscapes(t *testing.T) {
 		`literal\tsequence`,
 		"line one\nline two\r\n\tindent",
 		`quote " and trailing slash\`,
+		`password$USER${HOME}$$`,
+		"dollar $USER and\nnewline",
 	} {
 		if got := unquoteEnvValue(formatEnvValue(value)); got != value {
 			t.Errorf("environment value round trip = %q, want %q", got, value)
 		}
+	}
+}
+
+func TestEnvValueEscapesComposeInterpolation(t *testing.T) {
+	if got := formatEnvValue(`secret$USER${HOME}$$`); got != `"secret$$USER$${HOME}$$$$"` {
+		t.Fatalf("Compose interpolation is not escaped: %q", got)
 	}
 }
 

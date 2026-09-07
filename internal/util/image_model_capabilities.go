@@ -130,9 +130,14 @@ func NormalizeXAIImageAspectRatio(value string) (string, bool) {
 	if parts := strings.Split(normalized, "x"); len(parts) == 2 {
 		width, widthErr := strconv.ParseFloat(parts[0], 64)
 		height, heightErr := strconv.ParseFloat(parts[1], 64)
-		if widthErr == nil && heightErr == nil && width > 0 && height > 0 {
-			normalized = closestXAIImageAspectRatio(width / height)
+		if widthErr != nil || heightErr != nil || width <= 0 || height <= 0 || math.IsNaN(width) || math.IsNaN(height) || math.IsInf(width, 0) || math.IsInf(height, 0) {
+			return "", false
 		}
+		ratio := width / height
+		if ratio <= 0 || math.IsInf(ratio, 0) {
+			return "", false
+		}
+		normalized = closestXAIImageAspectRatio(ratio)
 	}
 	switch normalized {
 	case "", "auto", "1:1", "16:9", "9:16", "4:3", "3:4", "3:2", "2:3",

@@ -1,0 +1,549 @@
+[
+  {
+    "path": "internal/service/announcement.go",
+    "sha256": "43b9c7beb4643335d6c94b521886c8bdd4c9ddd8ffda72955495f6cda05fff20",
+    "status": "reviewed",
+    "checks": [
+      "完整读取第 1–480 行及本记录对应回归；非仅搜索或运行测试。",
+      "公告创建/更新/删除的 CAS 重读与重试终止、找不到条目的返回值",
+      "标题正文字符数、偏好 owner 哈希隔离、日期验证与 500 项限额"
+    ],
+    "findings": [
+      "未发现本轮可确认缺陷。"
+    ],
+    "validation": [
+      "build/review/service-support-tests.log"
+    ]
+  },
+  {
+    "path": "internal/service/announcement_prompt_storage_errors_test.go",
+    "sha256": "789ae55e4d978095f6d0554a2d36711e527dee5a19e662f22703b8841e221cec",
+    "status": "reviewed",
+    "checks": [
+      "完整读取第 1–145 行及本记录对应回归；非仅搜索或运行测试。",
+      "读写故障包装 errors.As/errors.Is",
+      "业务校验与存储错误分类、公告偏好和提示词收藏测试夹具"
+    ],
+    "findings": [
+      "未发现本轮可确认缺陷。"
+    ],
+    "validation": [
+      "build/review/service-support-tests.log"
+    ]
+  },
+  {
+    "path": "internal/service/announcement_test.go",
+    "sha256": "af9db196d08b1885a10b9811e0e3514c8d2b05d2286d61e3edc22429695202b9",
+    "status": "reviewed",
+    "checks": [
+      "完整读取第 1–364 行及本记录对应回归；非仅搜索或运行测试。",
+      "公告可见性及重载、owner 偏好隔离",
+      "501 条偏好逐出和并发公告/偏好 CAS 保留两项写入"
+    ],
+    "findings": [
+      "未发现本轮可确认缺陷。"
+    ],
+    "validation": [
+      "build/review/service-support-tests.log"
+    ]
+  },
+  {
+    "path": "internal/service/custom_relay_config.go",
+    "sha256": "89a847d6cb3e3dab2b0de809a430d11635be0c65303ae99e7f7d157229378da5",
+    "status": "reviewed",
+    "checks": [
+      "完整读取第 1–346 行及本记录对应回归；非仅搜索或运行测试。",
+      "owner 文档隔离、20 条上限、CRUD 冲突恢复",
+      "HTTP URL scheme/userinfo/query/fragment/IP 验证、跨 origin 修改强制重填 API Key、状态响应不返回 Key"
+    ],
+    "findings": [
+      "未发现本轮可确认缺陷。"
+    ],
+    "validation": [
+      "build/review/service-support-tests.log"
+    ]
+  },
+  {
+    "path": "internal/service/custom_relay_config_test.go",
+    "sha256": "4c1ea01bf586c9f33995e8a6ecd5fd207d60b6037fdb10fcef2f63e16038b418",
+    "status": "reviewed",
+    "checks": [
+      "完整读取第 1–151 行及本记录对应回归；非仅搜索或运行测试。",
+      "多配置和密钥保留/换来源校验",
+      "私网 IP 拒绝、并发创建、存储失败和 missing 分类"
+    ],
+    "findings": [
+      "未发现本轮可确认缺陷。"
+    ],
+    "validation": [
+      "build/review/service-support-tests.log"
+    ]
+  },
+  {
+    "path": "internal/service/generic_local_storage.go",
+    "sha256": "303a88a4ea3a75e81dae7f53135c7b1e293f1adbcd7c3ce29dbdbeb10782ed47",
+    "status": "reviewed",
+    "checks": [
+      "完整读取第 1–163 行及本记录对应回归；非仅搜索或运行测试。",
+      "路径清理和根目录相对包含约束",
+      "临时文件原子 rename、准确尺寸、失败清理、range 和 Close",
+      "删除空目录不移除根、容量扫描；未模拟本机恶意 symlink 竞争"
+    ],
+    "findings": [
+      "未发现本轮可确认缺陷。"
+    ],
+    "validation": [
+      "build/review/service-storage-tests.log"
+    ]
+  },
+  {
+    "path": "internal/service/generic_storage.go",
+    "sha256": "3eaa7c9763c338d4c477e9046a6d96300e6f8d2bf19ddcbd15b4928d6ac88038",
+    "status": "reviewed",
+    "checks": [
+      "完整读取第 1–1102 行及本记录对应回归；非仅搜索或运行测试。",
+      "上传取消、size 校验及 provider/metadata 失败回滚",
+      "配置 owner 隔离、显式 provider 类型验证、容量上限和关闭调度",
+      "对象读写授权、S3/WebDAV SSRF transport 和 public URL 边界"
+    ],
+    "findings": [
+      "P1 已修复：AllowUserProvider 开启时，显式 type=local 能上传到客户端指定的本机目录并测量目录；现上传/测量/删除 override 仅允许 S3/R2 或 WebDAV。",
+      "公开素材下载问题由 MyAssetService 新增读取授权并交主代理接入 HTTP；InfoForIdentity 和 DownloadForIdentity 保持 owner/admin 语义。"
+    ],
+    "validation": [
+      "build/review/service-storage-tests.log"
+    ]
+  },
+  {
+    "path": "internal/service/generic_storage_test.go",
+    "sha256": "9f7b43a0f9df21ed4fbc3f3884e07a04887e5996763c9fd4a22615bda76f8517",
+    "status": "reviewed",
+    "checks": [
+      "完整读取第 1–958 行及本记录对应回归；非仅搜索或运行测试。",
+      "本机/WebDAV 生命周期、上下文取消、短/长流回滚",
+      "容量调度替换/关闭、SSRF、metadata 和 cleanup 失败组合",
+      "新增本机 provider override 回归：修复前 local 与 LOCAL 测例上传成功，修复后全部验证错误且目录无写入"
+    ],
+    "findings": [
+      "新增 P1 provider override 回归，修复前失败日志 local-provider-before.log。"
+    ],
+    "validation": [
+      "build/review/service-storage-tests.log"
+    ]
+  },
+  {
+    "path": "internal/service/generic_webdav_storage.go",
+    "sha256": "607a4e77feb251467329364fde692d3bf416b859fcc9dfa0825a90f9a9048677",
+    "status": "reviewed",
+    "checks": [
+      "完整读取第 1–163 行及本记录对应回归；非仅搜索或运行测试。",
+      "client context 注入和超时、用户 SafeOutboundTransport",
+      "对象路径段清理、上传建目录、删除父目录边界",
+      "range 提前验证和错误传播、目录容量递归；未用真实 WebDAV 账户联调"
+    ],
+    "findings": [
+      "未发现本轮可确认缺陷。"
+    ],
+    "validation": [
+      "build/review/service-storage-tests.log"
+    ]
+  },
+  {
+    "path": "internal/service/log.go",
+    "sha256": "baaf5da8990de575aa41cc3010ac927ff618e475224dfbaf940e5a10bb7a0014",
+    "status": "reviewed",
+    "checks": [
+      "完整读取第 1–965 行及本记录对应回归；非仅搜索或运行测试。",
+      "日志详情递归脱敏、URL userinfo/query/fragment、token preview 指纹",
+      "查询过滤、usage 统计隔离/复制、保留清理上下文",
+      "Logger 动态配置等级与 slog Handler 最低等级"
+    ],
+    "findings": [
+      "P2 已修复：配置开启 debug 后 slog 默认 Info 门槛仍丢弃所有 debug；Handler 设置 LevelDebug，外层动态 levels 继续控制输出。"
+    ],
+    "validation": [
+      "build/review/service-log-tests.log"
+    ]
+  },
+  {
+    "path": "internal/service/log_pagination.go",
+    "sha256": "d69bc81a6eb94f956c852ca37bcf22b1f0c67b6184639f085250017bffcbc6ab",
+    "status": "reviewed",
+    "checks": [
+      "完整读取第 1–199 行及本记录对应回归；非仅搜索或运行测试。",
+      "稀疏过滤跨批扫描、快照与最后匹配游标一致性",
+      "游标 Base64/JSON 大小、日期/ID 关系、query hash 绑定及不同 filter 拒绝"
+    ],
+    "findings": [
+      "未发现本轮可确认缺陷。"
+    ],
+    "validation": [
+      "build/review/service-log-tests.log"
+    ]
+  },
+  {
+    "path": "internal/service/log_status_filter_test.go",
+    "sha256": "3d1376b62a6f9aba5855bab5fae316c597127692433165ad4413100f6a8a975c",
+    "status": "reviewed",
+    "checks": [
+      "完整读取第 1–46 行及本记录对应回归；非仅搜索或运行测试。",
+      "success/failed 对应 outcome，数字及 queued 匹配原始 status",
+      "business/all view 与状态叠加"
+    ],
+    "findings": [
+      "未发现本轮可确认缺陷。"
+    ],
+    "validation": [
+      "build/review/service-log-tests.log"
+    ]
+  },
+  {
+    "path": "internal/service/log_test.go",
+    "sha256": "d3e2305c685890b5676aa75554dace3262b80de9fdc7fac9c635221e802a91ae",
+    "status": "reviewed",
+    "checks": [
+      "完整读取第 1–651 行及本记录对应回归；非仅搜索或运行测试。",
+      "快照分页不丢稀疏记录、回填排除、游标错配",
+      "存储故障不 fallback、不缓存失败、脱敏覆盖和 cleanup 边界",
+      "新增实际 server.log 输出回归，验证开启 debug 输出且关闭等级不输出"
+    ],
+    "findings": [
+      "新增 debug 日志回归，修复前日志为空：logger-debug-before.log。"
+    ],
+    "validation": [
+      "build/review/service-log-tests.log"
+    ]
+  },
+  {
+    "path": "internal/service/media_proxy.go",
+    "sha256": "e70a3a881f5c9ed3b578fbca6654b8eed7abc0c6b42b5fb8591b23f799f50650",
+    "status": "reviewed",
+    "checks": [
+      "完整读取第 1–83 行及本记录对应回归；非仅搜索或运行测试。",
+      "禁用环境代理、DNS 所有解析地址检查并按已验证 IP 拨号",
+      "阻止 loopback/private/linklocal/multicast/CGNAT、重定向 scheme/次数限制",
+      "保留 TLS 默认校验；未进行公网 DNS 轮换或真实 CDN 联调"
+    ],
+    "findings": [
+      "未发现本轮可确认缺陷。"
+    ],
+    "validation": [
+      "build/review/service-support-tests.log"
+    ]
+  },
+  {
+    "path": "internal/service/media_proxy_test.go",
+    "sha256": "941c3c9e335a4d09faf4e976061cb3707bfb4acab41a6eb566f19b9c974490f5",
+    "status": "reviewed",
+    "checks": [
+      "完整读取第 1–20 行及本记录对应回归；非仅搜索或运行测试。",
+      "公私网 IPv4/IPv6 地址判定测试与实现规则对照"
+    ],
+    "findings": [
+      "未发现本轮可确认缺陷。"
+    ],
+    "validation": [
+      "build/review/service-support-tests.log"
+    ]
+  },
+  {
+    "path": "internal/service/my_asset.go",
+    "sha256": "97390e1a6600990dd32ad0c05a3f1a9d6b6e5ebc290983918ce3db7d491599ec",
+    "status": "reviewed",
+    "checks": [
+      "完整读取第 1–961 行及本记录对应回归；非仅搜索或运行测试。",
+      "owner/public 可见性、文本 staging 和冲突后重用",
+      "不确定提交不删已引用对象、durable deletion outbox 与 canvas fence 协同",
+      "请求 cleanup 超时/批量、跨实例删除标记、media 对象 owner/MIME 检查"
+    ],
+    "findings": [
+      "P2 服务层已修复并交主代理接入 HTTP：ReadStorageObjectForIdentity 仅按对象真实 CreatedBy 的素材文档内 public StorageKey 引用授权读取，保留现有所有权校验；拒绝伪造公开引用且取消公开立即失效。"
+    ],
+    "validation": [
+      "build/review/service-support-tests.log",
+      "build/review/myasset-public-read-tests.log"
+    ]
+  },
+  {
+    "path": "internal/service/my_asset_test.go",
+    "sha256": "6f2215fdcc44ea4d08f392a6a5030a176a4bc2e5b5c2cd115efe09a17e67786c",
+    "status": "reviewed",
+    "checks": [
+      "完整读取第 1–983 行及本记录对应回归；非仅搜索或运行测试。",
+      "生成素材重放与 stale 手工编辑不丢数据",
+      "失败 outbox 重启恢复、远端 I/O 不阻塞列表、cleanup bounded",
+      "删除与 canvas 引用竞争、跨 owner/MIME、uncertain commit 回滚保护",
+      "新增公开读取回归：真实 owner/admin、private 拒绝、public 允许、撤销拒绝、伪造 owner 引用拒绝、共享不能转移所有权"
+    ],
+    "findings": [
+      "新增 public 素材读取授权回归。"
+    ],
+    "validation": [
+      "build/review/service-support-tests.log",
+      "build/review/myasset-public-read-tests.log"
+    ]
+  },
+  {
+    "path": "internal/service/newapi_tokens.go",
+    "sha256": "f4fc2d91130fb1b6e58d9acd4fb0b02bc195f29a4a3557e7bcc6cc08fe79483c",
+    "status": "reviewed",
+    "checks": [
+      "完整读取第 1–957 行及本记录对应回归；非仅搜索或运行测试。",
+      "身份稳定 ID、用户名匹配、停用/已删除/过期/无配额过滤",
+      "token 名称歧义和分组路由、SQL 参数、bcrypt 与只读 SQLite",
+      "Schema 缓存错误不缓存、数据库及 search_path 的实际解析范围"
+    ],
+    "findings": [
+      "P2 已修复：information_schema 查询未限定当前数据库/schema，能把其他 schema 的 role/usage_logs 当作本库字段和表；PostgreSQL 改为 to_regclass 解析真实可见关系，MySQL 限制 table_schema=DATABASE()。"
+    ],
+    "validation": [
+      "build/review/relay-schema-tests.log",
+      "build/review/relay-schema-mysql-tests.log"
+    ]
+  },
+  {
+    "path": "internal/service/newapi_tokens_test.go",
+    "sha256": "1031df9a19de1d24112af137b27054196daf56af585ee361a158dbf1dff9a855",
+    "status": "reviewed",
+    "checks": [
+      "完整读取第 1–649 行及本记录对应回归；非仅搜索或运行测试。",
+      "NewAPI 和 Sub2API fixture schema、密码/管理员角色/余额映射",
+      "owner 和稳定 ID、禁用/配额/路由/同名 token 选择",
+      "Schema presence 成功缓存和错误不缓存；未连接真实外部 NewAPI/Sub2API 数据"
+    ],
+    "findings": [
+      "未发现本轮可确认缺陷。"
+    ],
+    "validation": [
+      "build/review/relay-schema-tests.log"
+    ]
+  },
+  {
+    "path": "internal/service/permissions.go",
+    "sha256": "df16a7d8c335dfc2656d4e8b821b533b5192ccdd6390cb25d392014d698aa11a",
+    "status": "reviewed",
+    "checks": [
+      "完整读取第 1–332 行及本记录对应回归；非仅搜索或运行测试。",
+      "已知 API/menu 白名单、方法大小写与路径尾斜线归一",
+      "exact 先于 subtree、子路由分隔符、防相似前缀越权",
+      "默认角色创作资源权限与管理员目录"
+    ],
+    "findings": [
+      "未发现本轮可确认缺陷。"
+    ],
+    "validation": [
+      "build/review/service-support-tests.log"
+    ]
+  },
+  {
+    "path": "internal/service/permissions_test.go",
+    "sha256": "93d103c2864ce9c1f1fec1ed71b7dd4a6e0e4be792d1acf902742ac9798aec6c",
+    "status": "reviewed",
+    "checks": [
+      "完整读取第 1–112 行及本记录对应回归；非仅搜索或运行测试。",
+      "删除资源权限拒绝、canvas/workflow/media 创作完整路由",
+      "默认用户菜单、未知 menu 拒绝及既有菜单映射"
+    ],
+    "findings": [
+      "未发现本轮可确认缺陷。"
+    ],
+    "validation": [
+      "build/review/service-support-tests.log"
+    ]
+  },
+  {
+    "path": "internal/service/prompt_favorite.go",
+    "sha256": "d200d7bbfd758adab069834489a707783deefe978c0dc90b8d475ba1b6930782",
+    "status": "reviewed",
+    "checks": [
+      "完整读取第 1–366 行及本记录对应回归；非仅搜索或运行测试。",
+      "owner 哈希隔离、source 白名单、字段验证与去重",
+      "稳定 ID/favorited_at、CAS 重读保留无关更新",
+      "reference 来源禁止虚构 mode/ref、语言配置白名单"
+    ],
+    "findings": [
+      "未发现本轮可确认缺陷。"
+    ],
+    "validation": [
+      "build/review/service-support-tests.log"
+    ]
+  },
+  {
+    "path": "internal/service/prompt_favorite_test.go",
+    "sha256": "63331f3cdfe3501f69d66cee9e5058f21b8107a03e93535095fd69fa3bd6c43a",
+    "status": "reviewed",
+    "checks": [
+      "完整读取第 1–258 行及本记录对应回归；非仅搜索或运行测试。",
+      "收藏去重/重放/所有者隔离和删除幂等",
+      "输入缺失、reference 来源规范化、并发写入屏障与最终记录断言"
+    ],
+    "findings": [
+      "未发现本轮可确认缺陷。"
+    ],
+    "validation": [
+      "build/review/service-support-tests.log"
+    ]
+  },
+  {
+    "path": "internal/service/proxy.go",
+    "sha256": "30a31eca3c0d7bc2da151968636f463b377306e92b1415f640a3084cfa5c4263",
+    "status": "reviewed",
+    "checks": [
+      "完整读取第 1–517 行及本记录对应回归；非仅搜索或运行测试。",
+      "共享 transport 生命周期、代理切换 retired idle 回收和 Close",
+      "无效 scheme 拒绝直连、TLS 校验和 timeout",
+      "SOCKS5 认证/目标地址编码、取消握手 conn 关闭及成功交接"
+    ],
+    "findings": [
+      "未发现本轮可确认缺陷。"
+    ],
+    "validation": [
+      "build/review/service-support-tests.log"
+    ]
+  },
+  {
+    "path": "internal/service/proxy_test.go",
+    "sha256": "2274d21b3061458dac877a1d5467cdc4c876062b45c556ea859dd6834645e11f",
+    "status": "reviewed",
+    "checks": [
+      "完整读取第 1–351 行及本记录对应回归；非仅搜索或运行测试。",
+      "真实本机代理连接复用/切换/Close",
+      "SOCKS stalled handshake 取消、地址模式及 browser auth headers",
+      "未知 proxy 不发直连请求"
+    ],
+    "findings": [
+      "未发现本轮可确认缺陷。"
+    ],
+    "validation": [
+      "build/review/service-support-tests.log"
+    ]
+  },
+  {
+    "path": "internal/service/storage_helpers.go",
+    "sha256": "8258f1cbd7406afb72de6c26ca12b14df4cb122f6a105cf313bdb06fc4e459c3",
+    "status": "reviewed",
+    "checks": [
+      "完整读取第 1–35 行及本记录对应回归；非仅搜索或运行测试。",
+      "backend interface 断言、nil 读取/保存语义及错误透传"
+    ],
+    "findings": [
+      "未发现本轮可确认缺陷。"
+    ],
+    "validation": [
+      "build/review/service-support-tests.log"
+    ]
+  },
+  {
+    "path": "internal/service/test_helpers_test.go",
+    "sha256": "17a35f6cd226ec3dde816e7f875e726f05350f589a46c33cfea9c6784d3e0627",
+    "status": "reviewed",
+    "checks": [
+      "完整读取第 1–21 行及本记录对应回归；非仅搜索或运行测试。",
+      "独立临时 SQLite、初始化失败及时终止和 t.Cleanup 释放"
+    ],
+    "findings": [
+      "未发现本轮可确认缺陷。"
+    ],
+    "validation": [
+      "build/review/service-support-tests.log"
+    ]
+  },
+  {
+    "path": "internal/service/value_helpers.go",
+    "sha256": "0aac3308869813797f5cf55e092b6cffdfcb9b3777e83f1b3a320fa24d54884b",
+    "status": "reviewed",
+    "checks": [
+      "完整读取第 1–27 行及本记录对应回归；非仅搜索或运行测试。",
+      "any slice/map slice 转换与类型不匹配结果",
+      "firstNonEmpty 空白判定但保留原字符串"
+    ],
+    "findings": [
+      "未发现本轮可确认缺陷。"
+    ],
+    "validation": [
+      "build/review/service-support-tests.log"
+    ]
+  },
+  {
+    "path": "internal/service/workflow.go",
+    "sha256": "105344a97e9774fa7fac16c6e07b5fe4b5a9fb7d85ee53bf970ea3e345fbe266",
+    "status": "reviewed",
+    "checks": [
+      "完整读取第 1–631 行及本记录对应回归；非仅搜索或运行测试。",
+      "私有/public 可见性、所有者修改保护、rev 防 stale 写回",
+      "全局文档 CAS 创建/删除/last-run 合并与 limits",
+      "变量 key/ID 唯一性、深拷贝、时间戳单调、损坏文档错误包装"
+    ],
+    "findings": [
+      "未发现本轮可确认缺陷。"
+    ],
+    "validation": [
+      "build/review/service-support-tests.log"
+    ]
+  },
+  {
+    "path": "internal/service/workflow_agent.go",
+    "sha256": "f2526d8bcc78c0ac96d622d13e994f69079b2523e6907ab390b72e8b1979e220",
+    "status": "reviewed",
+    "checks": [
+      "完整读取第 1–146 行及本记录对应回归；非仅搜索或运行测试。",
+      "JSON 截取和 null map 拒绝、scope 由请求覆盖",
+      "变量归一及冲突 key 拒绝、仅 data:image 引用进入多模态消息"
+    ],
+    "findings": [
+      "未发现本轮可确认缺陷。"
+    ],
+    "validation": [
+      "build/review/service-support-tests.log"
+    ]
+  },
+  {
+    "path": "internal/service/workflow_agent_test.go",
+    "sha256": "befa576e820f137a30edf764048a584ed77a42ef875bee398ac267aa626af05b",
+    "status": "reviewed",
+    "checks": [
+      "完整读取第 1–11 行及本记录对应回归；非仅搜索或运行测试。",
+      "null 与带空白 null 无 panic 回归"
+    ],
+    "findings": [
+      "未发现本轮可确认缺陷。"
+    ],
+    "validation": [
+      "build/review/service-support-tests.log"
+    ]
+  },
+  {
+    "path": "internal/service/workflow_test.go",
+    "sha256": "f5b3025ce64e290264fa81c47ee3e686e6cee2e2054b810cc2206416e8b501f7",
+    "status": "reviewed",
+    "checks": [
+      "完整读取第 1–773 行及本记录对应回归；非仅搜索或运行测试。",
+      "CRUD/public 与私有 owner、rev/输入资源限额",
+      "并发初始化只一次、同记录并发编辑/删除冲突，save+touch 合并",
+      "Agent 字段 scope/变量冲突/引用构造"
+    ],
+    "findings": [
+      "未发现本轮可确认缺陷。"
+    ],
+    "validation": [
+      "build/review/service-support-tests.log"
+    ]
+  },
+  {
+    "path": "internal/service/newapi_tokens_schema_integration_test.go",
+    "sha256": "4051ac0f0adb9a576db5a07d0e3eb02982104223ebccdfcd1033772a25955109",
+    "status": "reviewed",
+    "checks": [
+      "完整读取第 1–69 行及本记录对应回归；非仅搜索或运行测试。",
+      "在独立随机 schema/database 中构造同名 users、foreign-only role 和 usage_logs",
+      "真实 PostgreSQL/MySQL 验证当前 schema 对象查找；t.Cleanup 只删自建 schema"
+    ],
+    "findings": [
+      "新增 schema 隔离回归；真实 PostgreSQL 修改前两项误判失败，见 relay-schema-before.log。"
+    ],
+    "validation": [
+      "build/review/relay-schema-tests.log",
+      "build/review/relay-schema-mysql-tests.log"
+    ]
+  }
+]

@@ -101,7 +101,7 @@ func NormalizeWorkflowAgentDraft(content, scope string) (map[string]any, []strin
 	}
 
 	var draft map[string]any
-	if err := json.Unmarshal([]byte(content), &draft); err != nil {
+	if err := json.Unmarshal([]byte(content), &draft); err != nil || draft == nil {
 		return nil, nil, errors.New("工作流 Agent 返回内容格式异常，请重试")
 	}
 	draft["scope"] = "private"

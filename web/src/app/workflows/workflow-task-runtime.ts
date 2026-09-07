@@ -132,7 +132,7 @@ function taskTimestamp(value: string, fallback: number) {
   return Number.isFinite(timestamp) ? timestamp : fallback;
 }
 
-export function restoreWorkflowTasks(tasks: CreationTask[]): WorkflowTask[] {
+export function restoreWorkflowTasks(tasks: CreationTask[], now = Date.now()): WorkflowTask[] {
   const groups = new Map<string, RestorableWorkflowTask[]>();
   for (const task of tasks) {
     if (!isRestorableWorkflowTask(task)) continue;
@@ -155,9 +155,15 @@ export function restoreWorkflowTasks(tasks: CreationTask[]): WorkflowTask[] {
         ordered.length,
         ...ordered.map((task) => Number(task.workflow_context.batch_count) || 0),
       );
-      const status: WorkflowTask["status"] = statuses.includes("running") || ordered.length < expectedCount
+      const latestActivity = Math.max(...ordered.map((task) => taskTimestamp(task.updated_at, now)));
+      // Allow the full serial execution and submission budget before expiring absent children.
+      const recoveryBudget = expectedCount * (Math.max(1, Number(context.config.timeout) || 600) + 60) * 1000;
+      const missingCount = expectedCount - ordered.length;
+      const missingExpired = missingCount > 0 && !statuses.includes("running")
+        && now - latestActivity > recoveryBudget;
+      const status: WorkflowTask["status"] = statuses.includes("running") || (missingCount > 0 && !missingExpired)
         ? "running"
-        : statuses.includes("failed")
+        : statuses.includes("failed") || missingExpired
           ? "failed"
           : "success";
       const startedAt = Math.min(
@@ -186,12 +192,13 @@ export function restoreWorkflowTasks(tasks: CreationTask[]): WorkflowTask[] {
         status,
         started_at: startedAt,
         ended_at: endedAt,
-        error:
-          ordered
+        error: [
+          ...ordered
             .filter((task) => creationTaskStatus(task) === "failed")
             .map((task) => task.error?.trim())
-            .filter((value): value is string => Boolean(value))
-            .join("\n") || undefined,
+            .filter((value): value is string => Boolean(value)),
+          ...(missingExpired ? [`批次恢复等待超时：缺少 ${missingCount} 个子任务，请重新运行未完成的生成。`] : []),
+        ].join("\n") || undefined,
         image_urls: images.map((image) => image.url),
         images,
         series_title: context.series_title,

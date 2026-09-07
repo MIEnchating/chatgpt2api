@@ -500,19 +500,19 @@ export function createSettingsStore(
   },
 
   setImageModels: (value) => {
-    set((state) => state.config ? { config: { ...state.config, image_models: value } } : {});
+    set((state) => state.config ? { config: { ...state.config, image_models: value, default_image_model: normalizeModelNames(value, [])[0] || "" } } : {});
   },
 
   setVideoModels: (value) => {
-    set((state) => state.config ? { config: { ...state.config, video_models: value } } : {});
+    set((state) => state.config ? { config: { ...state.config, video_models: value, default_video_model: normalizeModelNames(value, [])[0] || "" } } : {});
   },
 
   setTextModels: (value) => {
-    set((state) => state.config ? { config: { ...state.config, text_models: value } } : {});
+    set((state) => state.config ? { config: { ...state.config, text_models: value, default_text_model: normalizeModelNames(value, [])[0] || "" } } : {});
   },
 
   setAudioModels: (value) => {
-    set((state) => state.config ? { config: { ...state.config, audio_models: value } } : {});
+    set((state) => state.config ? { config: { ...state.config, audio_models: value, default_audio_model: normalizeModelNames(value, [])[0] || "" } } : {});
   },
 
   setUserDefaultConcurrentLimit: (value) => {

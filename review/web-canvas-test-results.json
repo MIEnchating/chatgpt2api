@@ -1,0 +1,483 @@
+[
+  {
+    "path": "web/tests/canvas-export.test.mjs",
+    "sha256": "98c3b6c7a7a4ab434ec5cde8b15911bb1a56660ae97a4be98c11e64dff06271c",
+    "lines": 15,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete test file read; inspected setup, mocks/cleanup, all assertions and the corresponding canvas implementation.",
+      "New behavior regressions execute actual page handlers with controlled state/I/O where relevant; source-style UI tests are not claimed as full interaction coverage."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/tests/canvas-video-import.test.mjs",
+    "sha256": "081c4e1eb74a7bb47100b58df76499678b962fec1143aa06df61d9e7ca752d8e",
+    "lines": 17,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete test file read; inspected setup, mocks/cleanup, all assertions and the corresponding canvas implementation.",
+      "New behavior regressions execute actual page handlers with controlled state/I/O where relevant; source-style UI tests are not claimed as full interaction coverage."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/tests/canvas-panorama.test.mjs",
+    "sha256": "5accbec937580b38ff8a47ca61158aba094e56b12a659a8fef08c804c0c3e954",
+    "lines": 64,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete test file read; inspected setup, mocks/cleanup, all assertions and the corresponding canvas implementation.",
+      "New behavior regressions execute actual page handlers with controlled state/I/O where relevant; source-style UI tests are not claimed as full interaction coverage."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/tests/canvas-floating-panel.test.mjs",
+    "sha256": "089085a7da6d585fccd0fdb08ff9bb73e73a2be5b381527aa77dd051c82c155b",
+    "lines": 40,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete test file read; inspected setup, mocks/cleanup, all assertions and the corresponding canvas implementation.",
+      "New behavior regressions execute actual page handlers with controlled state/I/O where relevant; source-style UI tests are not claimed as full interaction coverage."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/tests/canvas-image-model.test.mjs",
+    "sha256": "00dc9005b6c72d57ebb98a78f82bfe1c45090847ff6ad390451b7937c602f79b",
+    "lines": 17,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete test file read; inspected setup, mocks/cleanup, all assertions and the corresponding canvas implementation.",
+      "New behavior regressions execute actual page handlers with controlled state/I/O where relevant; source-style UI tests are not claimed as full interaction coverage."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/tests/canvas-batches.test.mjs",
+    "sha256": "d7491dafa16e50b7d8081253c86d1d2e62559e05c17d828084198f3ba5532296",
+    "lines": 154,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete test file read; inspected setup, mocks/cleanup, all assertions and the corresponding canvas implementation.",
+      "New behavior regressions execute actual page handlers with controlled state/I/O where relevant; source-style UI tests are not claimed as full interaction coverage."
+    ],
+    "finding": true,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/tests/canvas-save.test.mjs",
+    "sha256": "dbe4673f77bfd43a19dd74422236d861df4f35b5d36a14afd9b3077bf8988994",
+    "lines": 58,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete test file read; inspected setup, mocks/cleanup, all assertions and the corresponding canvas implementation.",
+      "New behavior regressions execute actual page handlers with controlled state/I/O where relevant; source-style UI tests are not claimed as full interaction coverage."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/tests/canvas-node-info.test.mjs",
+    "sha256": "3b2147247fdd61ff103d57d902f64c729ab9887346d48cd70a300e43146899c4",
+    "lines": 22,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete test file read; inspected setup, mocks/cleanup, all assertions and the corresponding canvas implementation.",
+      "New behavior regressions execute actual page handlers with controlled state/I/O where relevant; source-style UI tests are not claimed as full interaction coverage."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/tests/canvas-image-data.test.mjs",
+    "sha256": "92686470045178ac3ce6b4160fe60ba17e8de486b0eb29746f90d864732db659",
+    "lines": 37,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete test file read; inspected setup, mocks/cleanup, all assertions and the corresponding canvas implementation.",
+      "New behavior regressions execute actual page handlers with controlled state/I/O where relevant; source-style UI tests are not claimed as full interaction coverage."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/tests/architecture-boundaries.test.mjs",
+    "sha256": "38a0f263e208a8b11027211b3f7e1747c8dc007e28b07678aeaec9cb55b16784",
+    "lines": 174,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete test file read; inspected setup, mocks/cleanup, all assertions and the corresponding canvas implementation.",
+      "New behavior regressions execute actual page handlers with controlled state/I/O where relevant; source-style UI tests are not claimed as full interaction coverage."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/tests/canvas-clipboard.test.mjs",
+    "sha256": "f83da0026b6812090b7424e7cd0b96691549c79a59eff1150eae3816a0f6984c",
+    "lines": 142,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete test file read; inspected setup, mocks/cleanup, all assertions and the corresponding canvas implementation.",
+      "New behavior regressions execute actual page handlers with controlled state/I/O where relevant; source-style UI tests are not claimed as full interaction coverage."
+    ],
+    "finding": true,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/tests/canvas-contenteditable.test.mjs",
+    "sha256": "cf513dd83f8f56b7c5486b4cb47abd457ecf3391bcb402c0f45596e5aae19f56",
+    "lines": 68,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete test file read; inspected setup, mocks/cleanup, all assertions and the corresponding canvas implementation.",
+      "New behavior regressions execute actual page handlers with controlled state/I/O where relevant; source-style UI tests are not claimed as full interaction coverage."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/tests/canvas-viewport.test.mjs",
+    "sha256": "3d66dc8f68aeae4b09ed6d25a1b037cd1655610d9b2358366e96fe868f357686",
+    "lines": 82,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete test file read; inspected setup, mocks/cleanup, all assertions and the corresponding canvas implementation.",
+      "New behavior regressions execute actual page handlers with controlled state/I/O where relevant; source-style UI tests are not claimed as full interaction coverage."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/tests/canvas-task-queue.test.mjs",
+    "sha256": "a0f002e35e01e6055ec47329d23add0448f94f87b50a0721c08464a799d969d3",
+    "lines": 124,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete test file read; inspected setup, mocks/cleanup, all assertions and the corresponding canvas implementation.",
+      "New behavior regressions execute actual page handlers with controlled state/I/O where relevant; source-style UI tests are not claimed as full interaction coverage."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/tests/canvas-text-node-readonly.test.mjs",
+    "sha256": "f04a6fe1d147af940d97acf7516b8543dcfd2e3c52a50da48c77627bc03123e0",
+    "lines": 24,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete test file read; inspected setup, mocks/cleanup, all assertions and the corresponding canvas implementation.",
+      "New behavior regressions execute actual page handlers with controlled state/I/O where relevant; source-style UI tests are not claimed as full interaction coverage."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/tests/canvas-resource-mentions.test.mjs",
+    "sha256": "f85e105b95b727420ccc10e9ed35cfbecd9700c52f24896b225b1bb5eaff4f6c",
+    "lines": 44,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete test file read; inspected setup, mocks/cleanup, all assertions and the corresponding canvas implementation.",
+      "New behavior regressions execute actual page handlers with controlled state/I/O where relevant; source-style UI tests are not claimed as full interaction coverage."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/tests/canvas-node-actions.test.mjs",
+    "sha256": "8a134e420f5aea58790d666f2f68ddf6648c068357a1d0683bf260d28a3bc801",
+    "lines": 341,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete test file read; inspected setup, mocks/cleanup, all assertions and the corresponding canvas implementation.",
+      "New behavior regressions execute actual page handlers with controlled state/I/O where relevant; source-style UI tests are not claimed as full interaction coverage."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/tests/canvas-audio.test.mjs",
+    "sha256": "13188d8313a7e17d7e1fdc54a71c43fa15d27bef7c04595af80f048357ec9441",
+    "lines": 113,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete test file read; inspected setup, mocks/cleanup, all assertions and the corresponding canvas implementation.",
+      "New behavior regressions execute actual page handlers with controlled state/I/O where relevant; source-style UI tests are not claimed as full interaction coverage."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/tests/canvas-config-inputs.test.mjs",
+    "sha256": "649962063fa85877ea39dd9d2037364bc614e4f5b81272d9dfae4ffb4b73c1f8",
+    "lines": 103,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete test file read; inspected setup, mocks/cleanup, all assertions and the corresponding canvas implementation.",
+      "New behavior regressions execute actual page handlers with controlled state/I/O where relevant; source-style UI tests are not claimed as full interaction coverage."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/tests/canvas-generation-lifecycle.test.mjs",
+    "sha256": "7faa01e2ebe1ea10a3b7a4c0f4aeec8010c41f399d2cb146de20c812e6f82a57",
+    "lines": 14,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete test file read; inspected setup, mocks/cleanup, all assertions and the corresponding canvas implementation.",
+      "New behavior regressions execute actual page handlers with controlled state/I/O where relevant; source-style UI tests are not claimed as full interaction coverage."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/tests/canvas-camera.test.mjs",
+    "sha256": "3ddb9c5c3d059daf1cd67b7c0168e605afe95b510c9b55ed795fa9c8eff8751e",
+    "lines": 44,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete test file read; inspected setup, mocks/cleanup, all assertions and the corresponding canvas implementation.",
+      "New behavior regressions execute actual page handlers with controlled state/I/O where relevant; source-style UI tests are not claimed as full interaction coverage."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/tests/canvas-node-geometry.test.mjs",
+    "sha256": "f9fe6f62f87ffc6545bba14f83d1d28b4d0033528507cbe772602a3f7332e7f0",
+    "lines": 54,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete test file read; inspected setup, mocks/cleanup, all assertions and the corresponding canvas implementation.",
+      "New behavior regressions execute actual page handlers with controlled state/I/O where relevant; source-style UI tests are not claimed as full interaction coverage."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/tests/creative-library-layouts.test.mjs",
+    "sha256": "427220b952b817a853816a10075c6e346690f0601ad8b8071d5c6ac04beba5fe",
+    "lines": 140,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete test file read; inspected setup, mocks/cleanup, all assertions and the corresponding canvas implementation.",
+      "New behavior regressions execute actual page handlers with controlled state/I/O where relevant; source-style UI tests are not claimed as full interaction coverage."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/tests/canvas-task-results.test.mjs",
+    "sha256": "339b1e15e07e345a25897fb1e38ecfaeae8d3a0d3e9aa462510cfa40de03ac1b",
+    "lines": 525,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete test file read; inspected setup, mocks/cleanup, all assertions and the corresponding canvas implementation.",
+      "New behavior regressions execute actual page handlers with controlled state/I/O where relevant; source-style UI tests are not claimed as full interaction coverage."
+    ],
+    "finding": true,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/tests/canvas-resources.test.mjs",
+    "sha256": "63afafa69c36c2cddae27010da45c3cc97fa5f58e005ca46ba0ba86bc85e0de9",
+    "lines": 64,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete test file read; inspected setup, mocks/cleanup, all assertions and the corresponding canvas implementation.",
+      "New behavior regressions execute actual page handlers with controlled state/I/O where relevant; source-style UI tests are not claimed as full interaction coverage."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/tests/canvas-director.test.mjs",
+    "sha256": "e1fac4bed941f16596c89666cd4a721874fc36768a923677361d89d227e7570b",
+    "lines": 45,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete test file read; inspected setup, mocks/cleanup, all assertions and the corresponding canvas implementation.",
+      "New behavior regressions execute actual page handlers with controlled state/I/O where relevant; source-style UI tests are not claimed as full interaction coverage."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/tests/canvas-generation-layout.test.mjs",
+    "sha256": "34b51352745500abc2da179f5603df74384997963845838bb231e4a5634adc0f",
+    "lines": 59,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete test file read; inspected setup, mocks/cleanup, all assertions and the corresponding canvas implementation.",
+      "New behavior regressions execute actual page handlers with controlled state/I/O where relevant; source-style UI tests are not claimed as full interaction coverage."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/tests/canvas-groups.test.mjs",
+    "sha256": "35217f6faf2421a7bbc2d17b7b5946e9192586465c9f4fc2d832f1b208d77296",
+    "lines": 54,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete test file read; inspected setup, mocks/cleanup, all assertions and the corresponding canvas implementation.",
+      "New behavior regressions execute actual page handlers with controlled state/I/O where relevant; source-style UI tests are not claimed as full interaction coverage."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/tests/canvas-connections.test.mjs",
+    "sha256": "20e4a8466e034eb8c630b3f92c06cbd8d31fb3242f216d0b3492c7fb65cd2f11",
+    "lines": 124,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete test file read; inspected setup, mocks/cleanup, all assertions and the corresponding canvas implementation.",
+      "New behavior regressions execute actual page handlers with controlled state/I/O where relevant; source-style UI tests are not claimed as full interaction coverage."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/tests/canvas-history.test.mjs",
+    "sha256": "decfb1bc28f8b6a49d0a44c1b26544d33c7f5ca74876cd238a6dd68dd8cf7785",
+    "lines": 67,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete test file read; inspected setup, mocks/cleanup, all assertions and the corresponding canvas implementation.",
+      "New behavior regressions execute actual page handlers with controlled state/I/O where relevant; source-style UI tests are not claimed as full interaction coverage."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/tests/canvas-generation-context.test.mjs",
+    "sha256": "52c592bf9b8512c89a334510946219c7c892f6ac661696cc09807a4684a71a22",
+    "lines": 472,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete test file read; inspected setup, mocks/cleanup, all assertions and the corresponding canvas implementation.",
+      "New behavior regressions execute actual page handlers with controlled state/I/O where relevant; source-style UI tests are not claimed as full interaction coverage."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/tests/canvas-library-layout.test.mjs",
+    "sha256": "e16992e2edf06703532700c2047863983edee32a557f31ad1928b9358552bda7",
+    "lines": 49,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete test file read; inspected setup, mocks/cleanup, all assertions and the corresponding canvas implementation.",
+      "New behavior regressions execute actual page handlers with controlled state/I/O where relevant; source-style UI tests are not claimed as full interaction coverage."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/tests/canvas-image-title.test.mjs",
+    "sha256": "308894dd955c5890b70f28c4a4c0fa3493f38604e1e61406be05cfda75cec2fa",
+    "lines": 19,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete test file read; inspected setup, mocks/cleanup, all assertions and the corresponding canvas implementation.",
+      "New behavior regressions execute actual page handlers with controlled state/I/O where relevant; source-style UI tests are not claimed as full interaction coverage."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/tests/canvas-video-player.test.mjs",
+    "sha256": "be138cf04d129c9e97ade54701b50e58ffeeaa80b2fb95316d223168900a3a63",
+    "lines": 11,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete test file read; inspected setup, mocks/cleanup, all assertions and the corresponding canvas implementation.",
+      "New behavior regressions execute actual page handlers with controlled state/I/O where relevant; source-style UI tests are not claimed as full interaction coverage."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/tests/canvas-text-generation.test.mjs",
+    "sha256": "1b4411ad001e5e47ed9765605187020ef7b66a7b374d3e770f4eb4ad41d8e052",
+    "lines": 49,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete test file read; inspected setup, mocks/cleanup, all assertions and the corresponding canvas implementation.",
+      "New behavior regressions execute actual page handlers with controlled state/I/O where relevant; source-style UI tests are not claimed as full interaction coverage."
+    ],
+    "finding": false,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/tests/canvas-review-regressions.test.mjs",
+    "sha256": "68eb83a7468f6dacd28172d1ddafb8f57d567267004504d4a042ad35d0d1eb32",
+    "lines": 189,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete test file read; inspected setup, mocks/cleanup, all assertions and the corresponding canvas implementation.",
+      "New behavior regressions execute actual page handlers with controlled state/I/O where relevant; source-style UI tests are not claimed as full interaction coverage."
+    ],
+    "finding": true,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  },
+  {
+    "path": "web/tests/canvas-agent-v2.test.mjs",
+    "sha256": "1ac9ae989fd1bfbb03df225ad1d7216154c62ed5e369d42928e1160104c083de",
+    "lines": 564,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Complete test file read; inspected setup, mocks/cleanup, all assertions and the corresponding canvas implementation.",
+      "New behavior regressions execute actual page handlers with controlled state/I/O where relevant; source-style UI tests are not claimed as full interaction coverage."
+    ],
+    "finding": true,
+    "validation": "npm test: 725 tests / 106 files / 0 fail; npm run build and npm run lint passed; git diff --check passed. Logs: build/review/web-canvas-all-tests.log, web-canvas-build.log, web-canvas-lint.log. Reproduction logs: web-canvas-before.log, web-canvas-agent-before.log, web-canvas-page-before.log, web-canvas-clipboard-before.log, web-canvas-runtime-before.log."
+  }
+]

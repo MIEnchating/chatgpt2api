@@ -36,6 +36,7 @@ export async function requestCanvasAgentTurn(input: RequestCanvasAgentTurnInput)
 }
 
 async function requestCompletion(input: RequestCanvasAgentTurnInput & { tools: CanvasAgentToolDefinition[] }) {
+  throwIfAborted(input.signal);
   let submitted;
   try {
     submitted = await createChatGenerationTask({
@@ -52,6 +53,7 @@ async function requestCompletion(input: RequestCanvasAgentTurnInput & { tools: C
       requestOptions: { signal: input.signal },
     });
   } catch (error) {
+    throwIfAborted(input.signal);
     throw normalizeRequestError(error);
   }
 
@@ -59,9 +61,14 @@ async function requestCompletion(input: RequestCanvasAgentTurnInput & { tools: C
   input.signal?.addEventListener("abort", cancelSubmitted, { once: true });
   const deadline = Date.now() + 4 * 60_000;
   try {
+    if (input.signal?.aborted) {
+      cancelSubmitted();
+      throw abortError();
+    }
     while (Date.now() < deadline) {
       throwIfAborted(input.signal);
       const task = (await fetchCreationTasks([submitted.id], { signal: input.signal })).items[0];
+      throwIfAborted(input.signal);
       if (task?.status === "success") {
         const data = task.data?.[0];
         const content = typeof data?.text_response === "string" ? data.text_response : "";
@@ -138,12 +145,14 @@ function parseToolArguments(value: string | Record<string, unknown> | undefined)
 }
 
 function normalizeRequestError(error: unknown) {
+  if (error instanceof Error && error.name === "AbortError") return error;
   if (error instanceof CanvasAgentRequestError) return error;
   return new CanvasAgentRequestError(error instanceof Error ? error.message : "Agent 请求失败");
 }
 
 function waitForPoll(signal?: AbortSignal) {
   return new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) { reject(abortError()); return; }
     const timer = globalThis.setTimeout(() => {
       signal?.removeEventListener("abort", onAbort);
       resolve();

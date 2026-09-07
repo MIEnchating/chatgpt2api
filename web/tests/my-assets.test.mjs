@@ -64,6 +64,6 @@ test("my asset clients persist item mutations without delayed full-table snapsho
   assert.doesNotMatch(hook, /syncMyAssets|setTimeout\(/);
   assert.match(hook, /upsertMyAsset\(asset, signal\)/);
   assert.match(hook, /deleteMyAsset\(id, signal\)/);
-  assert.match(prompts, /await upsertMyAsset\(asset\)/);
+  assert.match(prompts, /await upsertMyAsset\(asset, signal\)/);
   assert.match(canvas, /await upsertMyAsset\(asset\)/);
 });

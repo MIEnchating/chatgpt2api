@@ -203,6 +203,9 @@ func responsesImageTaskResult(result map[string]any, stream *protocol.StreamResu
 			return result, err
 		}
 	}
+	if status := util.Clean(result["status"]); status == "failed" || status == "incomplete" {
+		return result, protocol.HTTPError{Status: http.StatusBadGateway, Message: firstNonEmpty(relayErrorMessageFromValue(result["error"]), "Responses API 图片生成未完成")}
+	}
 	data := responsesImageData(result)
 	if len(data) == 0 {
 		return result, protocol.HTTPError{Status: http.StatusBadGateway, Message: "Responses API 没有返回图片"}
@@ -213,7 +216,6 @@ func responsesImageTaskResult(result map[string]any, stream *protocol.StreamResu
 func collectResponsesImageTaskStream(stream *protocol.StreamResult) (map[string]any, error) {
 	result := map[string]any{"created_at": time.Now().Unix(), "output": []map[string]any{}}
 	items := make([]map[string]any, 0)
-	partials := map[int]string{}
 	for event := range stream.Items {
 		if response := util.StringMap(event["response"]); len(response) > 0 {
 			result = response
@@ -221,23 +223,9 @@ func collectResponsesImageTaskStream(stream *protocol.StreamResult) (map[string]
 		if item := util.StringMap(event["item"]); util.Clean(item["type"]) == "image_generation_call" {
 			items = append(items, item)
 		}
-		if util.Clean(event["type"]) == "response.image_generation_call.partial_image" {
-			if b64 := util.Clean(event["partial_image_b64"]); b64 != "" {
-				partials[util.ToInt(event["output_index"], 0)] = b64
-			}
-		}
 	}
 	if len(util.AsMapSlice(result["output"])) == 0 && len(items) > 0 {
 		result["output"] = items
-	}
-	if len(responsesImageData(result)) == 0 && len(partials) > 0 {
-		output := make([]map[string]any, 0, len(partials))
-		for index := 0; index <= len(partials); index++ {
-			if b64 := partials[index]; b64 != "" {
-				output = append(output, map[string]any{"type": "image_generation_call", "result": b64})
-			}
-		}
-		result["output"] = output
 	}
 	if err := <-stream.Err; err != nil {
 		return result, err

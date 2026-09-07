@@ -842,7 +842,12 @@ type ProfileSection = "account" | "keys" | "creation" | "storage";
 
 function profileSectionFromHash(): ProfileSection {
   if (typeof window === "undefined") return "account";
-  const hash = decodeURIComponent(window.location.hash.slice(1));
+  let hash: string;
+  try {
+    hash = decodeURIComponent(window.location.hash.slice(1));
+  } catch {
+    return "account";
+  }
   return (["account", "keys", "creation", "storage"] as const).includes(hash as ProfileSection) ? hash as ProfileSection : "account";
 }
 

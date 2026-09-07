@@ -971,6 +971,7 @@ async function mergeImageConversationBatchWithRebase(
   let rebased = false;
 
   for (let attempt = 0; attempt < 3 && pendingIndices.length > 0; attempt += 1) {
+    assertCurrentImageConversationScope(state);
     const pending = pendingIndices.map((index) => candidates[index]);
     let response: ImageConversationHistoryMergeResponse;
     try {

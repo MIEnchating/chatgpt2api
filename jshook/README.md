@@ -7,6 +7,8 @@
 
 本目录是 ChatGPT Web 图片生成链路的逆向资料索引，覆盖前端函数映射、请求体构造、认证/PoW/Sentinel、SSE 事件结构、资产下载、验证脚本和脱敏响应样本。上游行为变化较快，修改后端协议实现前应优先用 `jshook` 或 `jshook/scripts/` 重新验证。
 
+以下结论和脚本保留的是 2026-05-07 的历史研究状态，不代表当前服务实现或今天的上游协议。综合分析记录了后续浏览器 HAR 中的 Sentinel 三步流程、Turnstile 和完整性签名；早期脚本及认证 Schema 记录的是单步实验，两者不能混作同一次抓包。当前应用通过配置的中转服务生成媒体，已移除旧 ChatGPT 账号池与直接文本代理。
+
 ## 快速入口
 
 | 目的 | 首选文档 | 适用场景 |
@@ -54,10 +56,12 @@
 
 | 脚本 | 用途 | 产物 |
 | --- | --- | --- |
-| [scripts/image_gen_full_flow.py](scripts/image_gen_full_flow.py) | 完整认证生图链路验证：Bootstrap -> Chat Requirements -> PoW -> Prepare -> Generate SSE -> Download | `responses/image-gen-sse-response.json`、下载图片 |
-| [scripts/verify_text_chat.py](scripts/verify_text_chat.py) | 验证 `/backend-api/conversation` 文本聊天端点，并与生图端点对比 | `responses/text-chat-sse-response.json` |
+| [scripts/image_gen_full_flow.py](scripts/image_gen_full_flow.py) | 历史认证生图链路验证：Bootstrap -> Chat Requirements -> PoW -> Prepare -> Generate SSE -> Download | `responses/local/<本次运行 ID>/image-gen-sse-response.json`、下载图片 |
+| [scripts/verify_text_chat.py](scripts/verify_text_chat.py) | 验证历史 `/backend-api/conversation` 文本聊天端点，并与生图端点对比 | `responses/local/<本次运行 ID>/text-chat-sse-response.json` |
 
 脚本通常需要本地有效认证状态、网络访问和 `curl-cffi` 等 Python 依赖。不要把真实 OAuth token、cookie、账号信息、代理凭据或可复用下载 URL 写入脚本或响应样本。
+
+通过本地环境变量 `JSHOOK_ACCESS_TOKEN` 提供凭据，不要编辑脚本嵌入 token。实时响应只保存到 Git 忽略的 `responses/local/`，运行目录权限为 `0700`、文件为 `0600`；这些原始文件仍含敏感信息，不可直接分享。需要更新已提交 fixture 时，必须先人工脱敏并另存。下载到其他域名时不会携带 ChatGPT Session，下载重定向会被拒绝。离线验证命令为 `python3 -m unittest discover -s jshook/scripts -p 'test_*.py'`，不会访问上游。
 
 ## 响应样本索引
 

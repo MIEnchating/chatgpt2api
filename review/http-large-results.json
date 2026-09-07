@@ -1,0 +1,164 @@
+[
+  {
+    "path": "internal/httpapi/app.go",
+    "sha256": "461066d4306250e35fe828e25565f2e440bea0f09955f86e5da4b08de7bb8969",
+    "lines": 3704,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "完整读取 1–3703 行；检查启动回滚、后台关闭、会话/权限、上传路径、存储清理、流式结果收集、图片落盘和媒体响应。",
+      "确认私有缩略图 public immutable 缓存泄漏，原图和参考图缺少撤销后重验证；修复为 private no-store，专项回归通过。",
+      "settings 非管理员返回数据一致性、真实模型及复杂部署仍依赖后续跨模块核对。"
+    ]
+  },
+  {
+    "path": "internal/httpapi/audit.go",
+    "sha256": "34d9094dfd7917a9612edb2beb74e9dc3330071927f669add504e81b3897fe41",
+    "lines": 565,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "完整读取 565 行；核对请求重放读取、日志体上限、multipart/JSON 处理、敏感字段委托、响应写入/Flush/ReadFrom、可信内网代理 IP 与游标参数。",
+      "未发现本轮可确认新缺陷；内网代理信任范围取决于部署隔离。"
+    ]
+  },
+  {
+    "path": "internal/httpapi/image_conversation_assets.go",
+    "sha256": "a7f0ad8e2fd2e289b32859a0e88fb985224cb28b8439b97f751fd57d44e0dac7",
+    "lines": 546,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "完整读取 546 行；检查清理 worker 超时/恢复/关闭、上传并发槽、批量校验、所有者校验、ETag 与 Cookie Vary、孤立对象清理预算。",
+      "附件 private immutable 按 Cookie 区分；对已缓存本会话内容的即时撤回不在当前实现保证范围。"
+    ]
+  },
+  {
+    "path": "internal/httpapi/storage_provider_boundary_test.go",
+    "sha256": "c15dbf2d847e077dfb26ab1b16eb9ec7897adc1fa001139989d0561f62fd444e",
+    "lines": 69,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "完整读取新增 HTTP 回归；普通用户 upload/measure 拒绝 local 目录输入且目录不得创建；专项通过。"
+    ]
+  },
+  {
+    "path": "internal/httpapi/public_asset_storage_test.go",
+    "sha256": "a9db4e049a7386186a2d8c00a62407039d4415d8ff4d21ff0a736b9591b2dc1b",
+    "lines": 66,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "编写并完整复核公开素材读取端到端测试：私有拒绝、公开 GET/HEAD/Info、匿名拒绝、禁止删除和冒认、撤销后拒绝；修改前失败、修改后通过。"
+    ]
+  },
+  {
+    "path": "internal/httpapi/image_cache_privacy_test.go",
+    "sha256": "9da34fd060f16c13bfea55af2cf9d8854b97b25002a6ab8d4c7e84580c86d62a",
+    "lines": 57,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "编写并完整复核图库缓存权限回归：private/public/private、原图/缩略图、匿名与已登录，响应不得共享或保存；修改前失败、修改后通过。"
+    ]
+  },
+  {
+    "path": "internal/httpapi/storage_files.go",
+    "sha256": "db6792008adb9fd685d36abd9761e2f633ba452e489e5aeead35f7b853c7d694",
+    "lines": 318,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "完整复核文件 API 上传/下载/HEAD/Range/元信息/删除边界；读入口通过素材服务核对真实 owner 的 public 引用，写操作保留原所有权要求；专项回归通过。"
+    ]
+  },
+  {
+    "path": "internal/httpapi/routes.go",
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "完整读取 2115 行；检查偏好参数/模型限制、角色及用户管理、分页裁剪、历史 generation/CAS、创作任务白名单与身份选凭据、错误映射。",
+      "视频 alias 元数据保留需与 relay 继续核对；未凭旧文档改变上游合同。"
+    ],
+    "sha256": "54c2dbf9e4a4c23d3dcae2253d6f106546e0f7f56119ae41b1cc46db9bbab6be",
+    "lines": 2115
+  },
+  {
+    "path": "internal/httpapi/audio.go",
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "完整读取 617 行；音频参数、有限语速、base64 上限、模型路径、JSON/二进制结果、WAV 封装、原子落盘和任务访问校验。",
+      "确认业务提取 URL 被日志脱敏剥除签名；collectURLs 保留原值，持久化日志仍脱敏；修改前失败/后通过。"
+    ],
+    "sha256": "056bff80cf31995eea399db07d9fcd27b77630cfd3fe979e0f77cca064222476",
+    "lines": 617
+  },
+  {
+    "path": "internal/httpapi/video_references.go",
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "完整读取 528 行；上传大小/MIME检查、随机文件名、HMAC路径和到期、解析引用路径、MP3/WAV头及本地路径隔离。",
+      "签名密钥仅当前实例有效，重启失效/跨实例引用为现有部署边界；视频容器只验证头部，未真实解码媒体。"
+    ],
+    "sha256": "dd356efd049838e164b1b2eb1bb449edeefa6f65b47fa5083e3c9ea5c57c356f",
+    "lines": 528
+  },
+  {
+    "path": "internal/httpapi/image_apimart_adapters.go",
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "完整读取 509 行；模型分派优先级、能力合同、分辨率/宽高比/count规范化、引用递归深度和数量、provider字段清除。",
+      "仅检查当前本地输入输出路径，未对供应商真实 API 合同作新断言。"
+    ],
+    "sha256": "ab826b6f3ef772ccb810591643d349853a5b4c7a19ac02aeca39d15fe041be0b",
+    "lines": 509
+  },
+  {
+    "path": "internal/httpapi/audio_url_integrity_test.go",
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "编写并完整复核音频签名 URL 保真与日志脱敏集成回归；修改前签名被剥除，修改后业务 URL 完整、日志无签名。"
+    ],
+    "sha256": "960de2f33ee1c87582cbbb890c4bdefe3f8c1a6c71b046d9c5bd9b7ba4d07142",
+    "lines": 35
+  },
+  {
+    "path": "internal/httpapi/video_contract_site.go",
+    "sha256": "99bd6c6d73a9036da78d1f2c280b2a34068369a62bd7ec783e0402a68661b635",
+    "lines": 342,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "完整读取 342 行；核对文档同源链接、抓取总预算、200候选/24页面限制、重定向最终来源和HTML/Markdown解析。",
+      "使用 SafeMediaProxyHTTPClient；真实文档站未访问。"
+    ]
+  },
+  {
+    "path": "internal/httpapi/video_model_contracts.go",
+    "sha256": "a36c0097b7911637f0a850da0a122f216077e2ca9e3b4bb2a8e5112b38ba3f8e",
+    "lines": 1314,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "完整读取 1314 行；检查管理员授权、严格JSON与v4导入、草稿/发布/回滚、DOCX/HTML解析、NDJSON进度写锁及心跳结束、有限模型重试与schema校验。",
+      "DOCX按条目限制XML读取且限制提取文本；总XML解压工作量还缺少全归档预算，记录为待补边界。"
+    ]
+  },
+  {
+    "path": "internal/httpapi/storage_files_test.go",
+    "sha256": "47994e0d9a7824fdc3802f2864009e17341bd26f5bb2c685cd7195ff5281dc84",
+    "lines": 452,
+    "bytes": 19590,
+    "status": "reviewed",
+    "reviewer": "root",
+    "checks": [
+      "完整读取 452 行；文件 owner/admin/匿名权限、GET/HEAD/Range、素材/画布引用阻止删除、provider保存/禁用/显式角色权限、direct资源隔离、HTML下载与错误脱敏。",
+      "本轮 go test ./... 全量通过。"
+    ]
+  }
+]

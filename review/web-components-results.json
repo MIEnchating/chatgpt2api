@@ -1,0 +1,805 @@
+{
+  "reviewer": "review_storage_config",
+  "scope": "review/web-components-scope.json 的全部 46 文件，加 2 个相关 pending 测试与 1 个新增行为回归文件。",
+  "files": [
+    {
+      "path": "web/src/components/announcement-center.tsx",
+      "sha256": "91f86d171459631e8f25ce8c83b73bbc66ec446aeac8da2bc8376698801acbc8",
+      "lines": 342,
+      "bytes": 13940,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取本文件全部 342 行；SHA256 与字节数对应本次修复后版本。",
+        "完整阅读公告快照加载、会话切换、定时刷新、已读/今日/永久偏好合并和弹窗流程。",
+        "修复 StrictMode effect 重放复用已失效 Promise，恢复 load/mutation 生命周期并清理旧 in-flight 引用；行为测试验证旧快照不覆盖新快照。"
+      ],
+      "finding_ids": [
+        "WC-08"
+      ]
+    },
+    {
+      "path": "web/src/components/authenticated-image.tsx",
+      "sha256": "591839eecbf57f4b8e8f4d7e1a712e1ee362c786719578dd6d78d787a2318082",
+      "lines": 141,
+      "bytes": 4229,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取本文件全部 141 行；SHA256 与字节数对应本次修复后版本。",
+        "完整阅读认证图片缓存 retain/release、异步完成与卸载保护、blob URL/直接地址选择、错误占位及尺寸保留。",
+        "本文件未改动；会话缓存实现由独立 lib 审查负责，组件回调仅对活跃请求更新状态。"
+      ],
+      "finding_ids": []
+    },
+    {
+      "path": "web/src/components/date-range-filter.tsx",
+      "sha256": "22e524103169830437e3134bcfb07516a80dd78a6faea10d629d56b44d27436b",
+      "lines": 70,
+      "bytes": 2737,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取本文件全部 70 行；SHA256 与字节数对应本次修复后版本。",
+        "完整阅读受控日期区间、date-fns 解析/格式化、单/双月响应式切换和 matchMedia 监听清理；日历选择向父级发出起止日期。"
+      ],
+      "finding_ids": []
+    },
+    {
+      "path": "web/src/components/generation/aspect-ratio-option.tsx",
+      "sha256": "68d29aba7059f8810237d1bde1dd9980c977fb99cb9c84db23a8e1a3ded10a66",
+      "lines": 101,
+      "bytes": 4096,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取本文件全部 101 行；SHA256 与字节数对应本次修复后版本。",
+        "完整阅读比例名称/语法解析、缩略图边界尺寸、自动模式、受控选中和禁用状态；该层只显示选项，不负责上游参数校验。"
+      ],
+      "finding_ids": []
+    },
+    {
+      "path": "web/src/components/generation/generation-size-badge.tsx",
+      "sha256": "87fc3c86cd1701cf81edf92d768331f4d269d97db3d0f998816169aadd8a8e9e",
+      "lines": 18,
+      "bytes": 476,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取本文件全部 18 行；SHA256 与字节数对应本次修复后版本。",
+        "完整阅读尺寸标签和高分辨率样式分支；纯展示组件，无异步副作用或外部数据写入。"
+      ],
+      "finding_ids": []
+    },
+    {
+      "path": "web/src/components/generation/image-parameter-styles.ts",
+      "sha256": "b5bc3ff9b1b1bd25f4f7326559ac972e6f741fdb513f05e662fd225692abbd53",
+      "lines": 10,
+      "bytes": 664,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取本文件全部 10 行；SHA256 与字节数对应本次修复后版本。",
+        "完整阅读共享参数按钮状态样式、禁用 hover 和深色样式合并；未发现需修改的运行逻辑。"
+      ],
+      "finding_ids": []
+    },
+    {
+      "path": "web/src/components/generation/image-parameter-ui.tsx",
+      "sha256": "5636b0f628457d76ef1f00b7a8711825de806653227d635ea30fe81b274b5af9",
+      "lines": 26,
+      "bytes": 1118,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取本文件全部 26 行；SHA256 与字节数对应本次修复后版本。",
+        "完整阅读参数标签/帮助按钮、Tooltip、type=button 和可访问名称；纯展示，无服务调用。"
+      ],
+      "finding_ids": []
+    },
+    {
+      "path": "web/src/components/generation/image-settings-panel.tsx",
+      "sha256": "668ac2bc233ab3ce94e271af8bfa686bf7936779c9a0aab3a2c5f924f3831ad5",
+      "lines": 194,
+      "bytes": 7654,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取本文件全部 194 行；SHA256 与字节数对应本次修复后版本。",
+        "完整阅读图像质量、预设/手动尺寸切换、16 倍数对齐、焦点编辑缓冲、模型数量上限和禁用状态。",
+        "尺寸更新仅通过 Partial patch 回调提交；NumberInput 只读与 ScrollArea 键盘边界的共享修复由聚焦行为测试覆盖。"
+      ],
+      "finding_ids": []
+    },
+    {
+      "path": "web/src/components/generation/image-size-preset-controls.tsx",
+      "sha256": "47dc4386f25f7fa10ad6373fc4954cfea55ff91bba28cfd5aba40f9f12494915",
+      "lines": 66,
+      "bytes": 2405,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取本文件全部 66 行；SHA256 与字节数对应本次修复后版本。",
+        "完整阅读自动/ratio 模式、比例和分辨率联合选中、档位 patch 及 aria-pressed；复用比例选项和尺寸提示。"
+      ],
+      "finding_ids": []
+    },
+    {
+      "path": "web/src/components/generation/prompt-textarea-frame.tsx",
+      "sha256": "11f31187c9ef540f0e34b1185734c0a335846ddbb6e5311b579be661f4ceffd0",
+      "lines": 39,
+      "bytes": 1541,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取本文件全部 39 行；SHA256 与字节数对应本次修复后版本。",
+        "完整阅读 textarea 高度同步、input/ResizeObserver 订阅及 cleanup；RAF 回调通过当前 ref 检查已卸载元素。"
+      ],
+      "finding_ids": []
+    },
+    {
+      "path": "web/src/components/generation/video-settings-panel.tsx",
+      "sha256": "a56f2b7793fae58834070d0cf1fb161c1cab201b27dcd96c1077ba61cf537204",
+      "lines": 201,
+      "bytes": 14235,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取本文件全部 201 行；SHA256 与字节数对应本次修复后版本。",
+        "完整阅读声明契约的隐藏/禁用 UI、尺寸/清晰度/时长/音频/水印与任务数控制、编辑缓冲提交和可选尺寸校验。",
+        "参数能力来自当前本地契约；未修改供应商模型目录，未宣称通过真实上游联调。"
+      ],
+      "finding_ids": []
+    },
+    {
+      "path": "web/src/components/image-lightbox.tsx",
+      "sha256": "954c8158616cc6483af3d2be5b4bea2a6600436ac94e55a1e9d2d9140e26dfbc",
+      "lines": 387,
+      "bytes": 13844,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取本文件全部 387 行；SHA256 与字节数对应本次修复后版本。",
+        "完整阅读 Radix 焦点与关闭、图片索引、键盘切换/缩放、pointer capture 平移、滚轮锚点计算、鉴权下载和 object URL 回收。",
+        "本轮未实际浏览器验证所有缩放/拖动视觉状态；组件级阅读不等于真实媒体网络下载验证。"
+      ],
+      "finding_ids": []
+    },
+    {
+      "path": "web/src/components/image-task-queue.tsx",
+      "sha256": "a3672411cbe4860d4d8b693c52d77f6175c768ec66e2c91587ca780c72ed970b",
+      "lines": 673,
+      "bytes": 29066,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取本文件全部 673 行；SHA256 与字节数对应本次修复后版本。",
+        "完整阅读历史窗口合并、工作流临时历史清理、请求序号/卸载、文本图像视频状态聚合、画布外部 store、完成提示保留和计时器清理。",
+        "修复过期/卸载请求仍触发 deleteImageConversation；当前请求仍执行清理，过期请求无副作用。",
+        "修复 localStorage 拒绝写入使点击任务无法导航；保留事件派发与 /studio 导航。配合 TopNav 会话 key 隔离队列组件状态。"
+      ],
+      "finding_ids": [
+        "WC-04",
+        "WC-06"
+      ]
+    },
+    {
+      "path": "web/src/components/login-page-image-editor.tsx",
+      "sha256": "dd1ad15f47cbc2ccc60393d598d2497a5b18c9dd5c75e9d23ab8beb0d1010924",
+      "lines": 251,
+      "bytes": 8131,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取本文件全部 251 行；SHA256 与字节数对应本次修复后版本。",
+        "完整阅读缩放锚点保持、位置百分比转换、pointer 捕获与取消、非被动 wheel 注册/清理、Slider 与视图重置。",
+        "共享图片状态 hook 修复默认图片失败时的重复加载；未修改用户保存的图片或变换配置。"
+      ],
+      "finding_ids": []
+    },
+    {
+      "path": "web/src/components/login-page-image-stage.tsx",
+      "sha256": "7dd12bab09f7e5f3b862e16e06e74070625a73b05a03fc2491ea3e5ab975d620",
+      "lines": 71,
+      "bytes": 1838,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取本文件全部 71 行；SHA256 与字节数对应本次修复后版本。",
+        "完整阅读普通/填满父容器两个布局模式及共享加载事件；修复普通模式缺少 relative 使绝对定位图片脱离预览框。",
+        "该布局修复经过类型构建及既有布局测试，未添加镜像样式实现的测试，未执行新的浏览器截图。"
+      ],
+      "finding_ids": [
+        "WC-10"
+      ]
+    },
+    {
+      "path": "web/src/components/management-page.tsx",
+      "sha256": "aaff003c7922e091591121cc42d67cbf9407a51728092a5b68c7cf3da71c77f0",
+      "lines": 175,
+      "bytes": 4910,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取本文件全部 175 行；SHA256 与字节数对应本次修复后版本。",
+        "完整阅读管理页容器、工具栏、总数/游标两类分页、空页与前后翻页禁用、每页大小回调；未改动管理页面源码。"
+      ],
+      "finding_ids": []
+    },
+    {
+      "path": "web/src/components/media-video-player.tsx",
+      "sha256": "c32c38a878264aa524769d36d8e50ad3d0f08794266e8a5cbe0afdbf9c5ea8df",
+      "lines": 84,
+      "bytes": 2052,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取本文件全部 84 行；SHA256 与字节数对应本次修复后版本。",
+        "完整阅读 XGPlayer 初始化、src 更新后 destroy、播放/速率/全屏/下载配置、纵横比和可访问组标签；既有测试覆盖配置和打包边界。"
+      ],
+      "finding_ids": []
+    },
+    {
+      "path": "web/src/components/overflow-marquee-text.tsx",
+      "sha256": "695ace27b471d1f693d6a9e6d3294469b404512ae9b64aaf9e617e59b0fff556",
+      "lines": 53,
+      "bytes": 2300,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取本文件全部 53 行；SHA256 与字节数对应本次修复后版本。",
+        "完整阅读滚动文字宽度测量、ResizeObserver 订阅清理、hover/always 分支、重复文本 aria-hidden 和动画距离计算。"
+      ],
+      "finding_ids": []
+    },
+    {
+      "path": "web/src/components/page-header.tsx",
+      "sha256": "4c9e9eec988541750bb89a82944adc4186727f06600186df53f398d60c47cede",
+      "lines": 21,
+      "bytes": 479,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取本文件全部 21 行；SHA256 与字节数对应本次修复后版本。",
+        "完整阅读操作区布局、换行和 className 合并；无业务副作用。"
+      ],
+      "finding_ids": []
+    },
+    {
+      "path": "web/src/components/permission-editor.tsx",
+      "sha256": "7256b676fe029ed63ce1e9b97dd7a9e19c36cd47a55b4594b8cbd11a16d6be73",
+      "lines": 191,
+      "bytes": 10116,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取本文件全部 191 行；SHA256 与字节数对应本次修复后版本。",
+        "完整阅读菜单树展平、API 分组、Set 去重、单项/分组/全选清空、indeterminate 和 disabled 传递；不改变服务端鉴权。"
+      ],
+      "finding_ids": []
+    },
+    {
+      "path": "web/src/components/relay-token-required-dialog.tsx",
+      "sha256": "e204c6145136f1e314b0f631bc5a5b2df60b3a4a496e4db9fa8403ffbedc1080",
+      "lines": 58,
+      "bytes": 1806,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取本文件全部 58 行；SHA256 与字节数对应本次修复后版本。",
+        "完整阅读不同生成类型提示、受控弹窗关闭和个人中心导航；type=button 防止表单误提交。"
+      ],
+      "finding_ids": []
+    },
+    {
+      "path": "web/src/components/section-navigation.tsx",
+      "sha256": "3ce1cb0524d58dbc372f321f2a1abfe3b75eaf2c38e4c6174ee101dcae87566b",
+      "lines": 70,
+      "bytes": 2051,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取本文件全部 70 行；SHA256 与字节数对应本次修复后版本。",
+        "完整阅读分区菜单泛型、受控 activeId、aria-current、水平滚动及桌面侧栏响应式布局。"
+      ],
+      "finding_ids": []
+    },
+    {
+      "path": "web/src/components/top-nav.tsx",
+      "sha256": "d9586b22c7d3540a1c629a26642139e949449b7c6a3928f437995251003e12a5",
+      "lines": 355,
+      "bytes": 13344,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取本文件全部 355 行；SHA256 与字节数对应本次修复后版本。",
+        "完整阅读缓存/已验证会话读取、路由与会话事件监听、权限菜单、注销、主题切换和账户菜单。",
+        "修复初始会话验证 Promise 拒绝无人处理；错误展示继续由 route guard 负责。",
+        "为 ImageTaskQueue 设置 session.key，行为测试模拟会话变更验证 React key 改变，旧队列本地状态不复用。"
+      ],
+      "finding_ids": [
+        "WC-05",
+        "WC-09"
+      ]
+    },
+    {
+      "path": "web/src/components/ui/badge.tsx",
+      "sha256": "b9506f88dd18b6d8030b521784dae3361da2231c08759895eb4bb7dca9e3c340",
+      "lines": 45,
+      "bytes": 1842,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取本文件全部 45 行；SHA256 与字节数对应本次修复后版本。",
+        "完整阅读 variants、默认/语义色、className 合并和 span 属性传递；纯展示组件。"
+      ],
+      "finding_ids": []
+    },
+    {
+      "path": "web/src/components/ui/button.tsx",
+      "sha256": "b2f81d98183608f8b93945e284a8153181011124aeda2b3ffbff53f7ae1f5bee",
+      "lines": 64,
+      "bytes": 2431,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取本文件全部 64 行；SHA256 与字节数对应本次修复后版本。",
+        "完整阅读 Radix Slot/asChild、样式 variants、原生 props 和 title→Tooltip/aria-label；禁用与事件由原生按钮/调用者管理。"
+      ],
+      "finding_ids": []
+    },
+    {
+      "path": "web/src/components/ui/calendar.tsx",
+      "sha256": "eaa635e56bb9d143f2574d06f28b5825e6fb5767bdfab7f491f9ca9bb93f8d76",
+      "lines": 51,
+      "bytes": 2728,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取本文件全部 51 行；SHA256 与字节数对应本次修复后版本。",
+        "完整阅读 DayPicker 属性传递、单/多月布局、range/today/disabled 状态样式及 Chevron 替换；不涉及日期持久化。"
+      ],
+      "finding_ids": []
+    },
+    {
+      "path": "web/src/components/ui/card.tsx",
+      "sha256": "58baf32878de7ae46433c2b032c573366adc19aa454a5f1e08b9251ac9d4ebaa",
+      "lines": 61,
+      "bytes": 1402,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取本文件全部 61 行；SHA256 与字节数对应本次修复后版本。",
+        "完整阅读 Card/Header/Title/Description/Content 的 props 与样式传递；纯布局组件。"
+      ],
+      "finding_ids": []
+    },
+    {
+      "path": "web/src/components/ui/checkbox.tsx",
+      "sha256": "954903ad6ce9bad2a04333a433e839ff24ce140cc1b9f5c4306d0c4d523a6ed3",
+      "lines": 27,
+      "bytes": 1156,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取本文件全部 27 行；SHA256 与字节数对应本次修复后版本。",
+        "完整阅读 Radix Checkbox 受控属性透传、checked/disabled/invalid 状态和 Indicator；不新增鉴权逻辑。"
+      ],
+      "finding_ids": []
+    },
+    {
+      "path": "web/src/components/ui/dialog.tsx",
+      "sha256": "a7b05441bed3273b1acc6376f184c8790ecc75e828f7c92e20af76d4968d4b0b",
+      "lines": 186,
+      "bytes": 5702,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取本文件全部 186 行；SHA256 与字节数对应本次修复后版本。",
+        "完整阅读 Portal/Overlay、焦点处理、children Fragment 展平、固定 Header/Footer 与滚动 Body、关闭按钮及可访问标题/描述。"
+      ],
+      "finding_ids": []
+    },
+    {
+      "path": "web/src/components/ui/empty-state.tsx",
+      "sha256": "63ff45066ebdeabafb0e15614f85511b2ed3174b2b8ed0dc787624b75f7fee87",
+      "lines": 45,
+      "bytes": 1173,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取本文件全部 45 行；SHA256 与字节数对应本次修复后版本。",
+        "完整阅读空状态标题/说明/可选图标和动作、compact 分支与 div 属性透传。"
+      ],
+      "finding_ids": []
+    },
+    {
+      "path": "web/src/components/ui/field.tsx",
+      "sha256": "5d7fe8b2491946623f98a15d7a59e018536d10bdeb0e5497a1c7d1d66b74f6f5",
+      "lines": 27,
+      "bytes": 667,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取本文件全部 27 行；SHA256 与字节数对应本次修复后版本。",
+        "完整阅读 Field/Label/Description 原生语义及属性传递；无业务状态或副作用。"
+      ],
+      "finding_ids": []
+    },
+    {
+      "path": "web/src/components/ui/file-upload-button.tsx",
+      "sha256": "d6fd3b1aaf420d84a0abf27ae25b4cac9ba042a2451738038bb949072d3778a4",
+      "lines": 39,
+      "bytes": 1582,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取本文件全部 39 行；SHA256 与字节数对应本次修复后版本。",
+        "完整阅读 loading/disabled 合并、aria-busy、上传图标和原生 button props；该组件本身不触发文件网络上传。"
+      ],
+      "finding_ids": []
+    },
+    {
+      "path": "web/src/components/ui/input-tag.tsx",
+      "sha256": "d67c2c2ebaa8f966404b1ebc6f16b206747665c7d0967785cc7671a2231a2c80",
+      "lines": 233,
+      "bytes": 7713,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取本文件全部 233 行；SHA256 与字节数对应本次修复后版本。",
+        "完整阅读分隔符、批量粘贴、标签校验/重复/上限、IME 组合输入、Enter/Backspace、blur 提交、删除与转发 ref。"
+      ],
+      "finding_ids": []
+    },
+    {
+      "path": "web/src/components/ui/input.tsx",
+      "sha256": "b63f22a0ce1b22c3c359b8de0f9ab3dc8fedee0656fc75f9c66ee24b48a8b2b1",
+      "lines": 50,
+      "bytes": 2344,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取本文件全部 50 行；SHA256 与字节数对应本次修复后版本。",
+        "完整阅读密码显示切换、原生 input 属性/ref、禁用状态、可访问切换按钮和阻止鼠标按下抢焦点。"
+      ],
+      "finding_ids": []
+    },
+    {
+      "path": "web/src/components/ui/multi-select.tsx",
+      "sha256": "b0de1cd1d59632d0da7536028e048bc9ed66911b6f061f2c8eb3ae08e8b20aac",
+      "lines": 249,
+      "bytes": 10628,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取本文件全部 249 行；SHA256 与字节数对应本次修复后版本。",
+        "完整阅读选项去重、标签宽度测量/折叠、ResizeObserver 清理、Popover/禁用、删除和 listbox 多选。",
+        "修复根 combobox 拦截子删除按钮 Enter/Space：仅处理触发器自身且未被取消的按键。"
+      ],
+      "finding_ids": [
+        "WC-03"
+      ]
+    },
+    {
+      "path": "web/src/components/ui/number-input.tsx",
+      "sha256": "ec7a03e24b4cebb129d47f64bf81ad14d58ac08c02687c1cb299890fd2337f9b",
+      "lines": 178,
+      "bytes": 5829,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取本文件全部 178 行；SHA256 与字节数对应本次修复后版本。",
+        "完整阅读数值边界、原生 stepUp/stepDown、输入/ref 转发、split/trailing 布局和 min/max 禁用。",
+        "修复 readOnly 输入仍可由加减按钮触发变更；按钮和步进函数均阻止只读/禁用修改。"
+      ],
+      "finding_ids": [
+        "WC-02"
+      ]
+    },
+    {
+      "path": "web/src/components/ui/popover.tsx",
+      "sha256": "28e41bf161332c70f749c66336588d3a9f16c70c92a9b593663aa51bf92207f0",
+      "lines": 56,
+      "bytes": 1772,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取本文件全部 56 行；SHA256 与字节数对应本次修复后版本。",
+        "完整阅读 Radix Portal、自动焦点策略、滚动包装及碰撞/最大高度约束；不改变受控 open 语义。"
+      ],
+      "finding_ids": []
+    },
+    {
+      "path": "web/src/components/ui/scroll-area.tsx",
+      "sha256": "f8281657b6ddcf31bd269ed17941b2167bb8d1b3ea2e5e4a0bb29949f764e160",
+      "lines": 442,
+      "bytes": 20661,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取本文件全部 442 行；SHA256 与字节数对应本次修复后版本。",
+        "完整阅读原生 viewport 滚动、测量/比例滚动条、RAF/定时器清理、pointer 捕获拖动/轨道分页、边界事件和 imperative handle。",
+        "修复全局键盘管理抢占输入/textarea/contenteditable/ARIA 控件的编辑按键，并在滚动前尊重 onKeyDown.preventDefault；行为测试验证无多余 scrollTo。"
+      ],
+      "finding_ids": [
+        "WC-01"
+      ]
+    },
+    {
+      "path": "web/src/components/ui/select.tsx",
+      "sha256": "e5f59da607cb89468ee2c928249d4b4133e166e46ffaee63fcd5d98082328fdf",
+      "lines": 153,
+      "bytes": 5225,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取本文件全部 153 行；SHA256 与字节数对应本次修复后版本。",
+        "完整阅读 controlled/undefined value 处理、内部/受控 open、再次按触发器关闭、Radix viewport 和 manageKeyboard=false、选项/禁用状态。"
+      ],
+      "finding_ids": []
+    },
+    {
+      "path": "web/src/components/ui/slider.tsx",
+      "sha256": "fa98448060090e182989f2a0f8520258521761287a9f96f1e971af0735d81d74",
+      "lines": 21,
+      "bytes": 1005,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取本文件全部 21 行；SHA256 与字节数对应本次修复后版本。",
+        "完整阅读原生 range 属性透传、键盘由浏览器处理、focus/disabled 和浏览器 thumb 样式；无业务状态。"
+      ],
+      "finding_ids": []
+    },
+    {
+      "path": "web/src/components/ui/switch.tsx",
+      "sha256": "68f69358cb45413260dc3bd81fc08d760684287ef3a85e1c3be23363d9906fef",
+      "lines": 57,
+      "bytes": 1736,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取本文件全部 57 行；SHA256 与字节数对应本次修复后版本。",
+        "完整阅读受控/非受控 checked、onClick 组合、防重复处理取消事件、disabled、role=switch 和 aria-checked。"
+      ],
+      "finding_ids": []
+    },
+    {
+      "path": "web/src/components/ui/table.tsx",
+      "sha256": "e0e1754ae0f1b848747dfe821652c923122d58c0138d4b78fe6ff75b2893e34e",
+      "lines": 29,
+      "bytes": 1209,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取本文件全部 29 行；SHA256 与字节数对应本次修复后版本。",
+        "完整阅读 table/thead/tbody/tr/th/td 原生语义、属性与样式传递；表格溢出由页面容器处理。"
+      ],
+      "finding_ids": []
+    },
+    {
+      "path": "web/src/components/ui/tag.ts",
+      "sha256": "443edd9f87dd504a22868f503a7fd5a20a1815353ef9a8370bfe0c485ebe5f9b",
+      "lines": 16,
+      "bytes": 802,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取本文件全部 16 行；SHA256 与字节数对应本次修复后版本。",
+        "完整阅读标签 cva 选中/默认样式、交互/深色变体；纯样式函数。"
+      ],
+      "finding_ids": []
+    },
+    {
+      "path": "web/src/components/ui/textarea.tsx",
+      "sha256": "ff6356cdfd1eabacc5056928405091f5560c561b195cbd392402b8264c8bb27b",
+      "lines": 18,
+      "bytes": 707,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取本文件全部 18 行；SHA256 与字节数对应本次修复后版本。",
+        "完整阅读 textarea 属性透传、尺寸/焦点/禁用样式；事件保留原生语义，父 ScrollArea 编辑按键修复另有行为回归。"
+      ],
+      "finding_ids": []
+    },
+    {
+      "path": "web/src/components/ui/tooltip.tsx",
+      "sha256": "0ae926d041eb15120280fd895af6339dd3be5004a3e1af472c6018ad79702017",
+      "lines": 217,
+      "bytes": 7433,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取本文件全部 217 行；SHA256 与字节数对应本次修复后版本。",
+        "完整阅读 Radix Tooltip 提示、Button ref、DOM bridge 的 pointer/focus 目标、延迟 timer、位置测量/ResizeObserver/滚动监听清理。"
+      ],
+      "finding_ids": []
+    },
+    {
+      "path": "web/src/components/use-login-page-image-state.ts",
+      "sha256": "093a3465e8bfb59fd675686251c3b4f64f8d640039eb6f644e1805c5efb64236",
+      "lines": 122,
+      "bytes": 3762,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取本文件全部 122 行；SHA256 与字节数对应本次修复后版本。",
+        "完整阅读按失败 URL 作用域的 fallback、frame ResizeObserver、自然尺寸、布局及变换计算。",
+        "修复绝对 currentTarget.src 与相对 fallbackSrc 比较导致失败默认图被重复赋值重试；统一由 React currentSrc 状态决定切换，默认图失败后不重试。"
+      ],
+      "finding_ids": [
+        "WC-07"
+      ]
+    },
+    {
+      "path": "web/tests/login-page-image-stage.test.mjs",
+      "sha256": "f7ad0a80d108f54eb83a38a810e2d8a266e2f05d1e9d9a1f9b380910d88c760b",
+      "lines": 14,
+      "bytes": 770,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取本文件全部 14 行；SHA256 与字节数对应本次修复后版本。",
+        "完整阅读失败 URL 作用域和共享 hook 的现有断言；该文件是源码结构测试，不能单独证明浏览器错误重试行为，后者由新行为测试验证。"
+      ],
+      "finding_ids": []
+    },
+    {
+      "path": "web/tests/wide-page-layouts.test.mjs",
+      "sha256": "d1e442b87aac782678d0a2dc9695e52ddadd758b8962b85bf17bc92f4d838397",
+      "lines": 157,
+      "bytes": 9546,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取本文件全部 157 行；SHA256 与字节数对应本次修复后版本。",
+        "完整阅读宽屏布局、视频播放器配置/分包、设置/个人中心滚动区域、模型清空与管理密度断言；仅审查本测试文件，不据此标记其引用的其他页面已完成审查。"
+      ],
+      "finding_ids": []
+    },
+    {
+      "path": "web/tests/shared-component-boundaries.test.mjs",
+      "sha256": "8fd480024604e81ae74f24a18b23c7ef53a0e724deb451228d92bb4b86ac5990",
+      "lines": 284,
+      "bytes": 13234,
+      "status": "reviewed",
+      "reviewer": "review_storage_config",
+      "checks": [
+        "完整读取本文件全部 284 行；SHA256 与字节数对应本次修复后版本。",
+        "完整阅读新增 9 个行为测试及 TypeScript→VM 执行辅助器：真实组件/事件函数运行，React 状态/hooks、浏览器和网络依赖使用局部桩，不污染其他测试全局模块。",
+        "覆盖键盘编辑/取消、只读步进、嵌套按钮、过期异步删除、账号切换 key、存储拒绝导航、默认图失败、StrictMode 公告重放和网络拒绝。",
+        "最初六个行为用例均先观察到修复前失败；其余跟进回归通过。该测试不是浏览器 E2E/真实 React DOM 挂载测试。"
+      ],
+      "finding_ids": []
+    }
+  ],
+  "findings": [
+    {
+      "id": "WC-01",
+      "priority": 2,
+      "path": "web/src/components/ui/scroll-area.tsx",
+      "line": 253,
+      "title": "滚动区域抢占子输入控件的编辑按键",
+      "trigger": "在滚动区域内的输入框或 contenteditable 按 ArrowDown/Home/End 等键，或调用方取消按键。",
+      "fix": "先调用消费者处理器并尊重 defaultPrevented；为原生输入和 ARIA 输入控件保留键盘事件。",
+      "evidence": "新增行为测试在修复前失败；修复后验证输入/编辑/已取消事件不调用 scrollTo，普通滚动键仍正常执行。"
+    },
+    {
+      "id": "WC-02",
+      "priority": 3,
+      "path": "web/src/components/ui/number-input.tsx",
+      "line": 54,
+      "title": "只读数字输入仍可通过加减按钮修改",
+      "trigger": "NumberInput 的 readOnly 为 true 时，步进控件只判断 disabled 和上下限。",
+      "fix": "只读状态同时禁用步进按钮并阻止步进函数，保留原生 input.readOnly。",
+      "evidence": "新增行为测试修复前触发步进；修复后按钮禁用且不调用 stepUp/stepDown/onValueChange。"
+    },
+    {
+      "id": "WC-03",
+      "priority": 2,
+      "path": "web/src/components/ui/multi-select.tsx",
+      "line": 137,
+      "title": "多选标签删除按钮无法用键盘激活",
+      "trigger": "聚焦标签删除按钮按 Enter/Space，事件冒泡至 combobox 并被 preventDefault。",
+      "fix": "combobox 只处理自身且未被取消的按键，子按钮保留原生键盘激活。",
+      "evidence": "新增行为测试修复前取消嵌套按钮按键；修复后嵌套按钮不被拦截，触发器 Enter 仍打开列表。"
+    },
+    {
+      "id": "WC-04",
+      "priority": 2,
+      "path": "web/src/components/image-task-queue.tsx",
+      "line": 236,
+      "title": "卸载或过期队列请求仍触发历史删除",
+      "trigger": "历史刷新被新的请求取代或组件卸载后，旧响应返回工作流临时历史。",
+      "fix": "在处理响应及删除前统一检查 active 和请求序号。",
+      "evidence": "新增行为测试修复前卸载请求调用 deleteImageConversation；修复后卸载/被取代请求无删除副作用，当前请求仍正常清理。"
+    },
+    {
+      "id": "WC-05",
+      "priority": 2,
+      "path": "web/src/components/top-nav.tsx",
+      "line": 342,
+      "title": "会话切换复用旧任务队列本地状态",
+      "trigger": "导航仍挂载且 session.key 改变时，未设 key 的 ImageTaskQueue 保留旧历史和最近完成状态。",
+      "fix": "以 session.key 作为队列 React key，隔离组件状态与请求生命周期。",
+      "evidence": "新增行为测试模拟会话变更，验证队列 key 从 session-a 切换至 session-b。"
+    },
+    {
+      "id": "WC-06",
+      "priority": 2,
+      "path": "web/src/components/image-task-queue.tsx",
+      "line": 567,
+      "title": "浏览器存储不可用阻断任务导航",
+      "trigger": "点击队列任务时 localStorage.setItem 抛出访问/配额异常。",
+      "fix": "捕获本地记录写入失败，继续派发活动会话事件并导航到创作台。",
+      "evidence": "新增行为测试令 setItem 抛错，确认活动会话事件及 /studio 导航仍执行。"
+    },
+    {
+      "id": "WC-07",
+      "priority": 2,
+      "path": "web/src/components/use-login-page-image-state.ts",
+      "line": 87,
+      "title": "默认登录图片失败后反复重试",
+      "trigger": "默认图加载失败时，DOM src 的绝对地址与相对 fallbackSrc 永远不相等，错误处理不断重设 src。",
+      "fix": "使用受控 currentSrc 判断是否已切换默认图，交由 React 更新 src，默认图失败后不再赋值重试。",
+      "evidence": "新增行为测试修复前两次手动重设 src；修复后自定义图失败切换默认图，默认图再次失败不触发重试。"
+    },
+    {
+      "id": "WC-08",
+      "priority": 2,
+      "path": "web/src/components/announcement-center.tsx",
+      "line": 124,
+      "title": "StrictMode 重放后公告复用失效请求导致不加载",
+      "trigger": "项目开发入口 StrictMode 执行 setup→cleanup→setup，cleanup 已使 load token 失效，但保留的 Promise 被下一次 setup 复用。",
+      "fix": "setup 激活两类生命周期，cleanup 清理所属会话的 in-flight Promise，使重放创建新 token 与请求。",
+      "evidence": "新增行为测试修复前只有一个失效请求；修复后两个请求中只接受新响应并显示最新公告。"
+    },
+    {
+      "id": "WC-09",
+      "priority": 3,
+      "path": "web/src/components/top-nav.tsx",
+      "line": 251,
+      "title": "首次导航会话验证拒绝未被处理",
+      "trigger": "getVerifiedAuthSession 因网络故障拒绝，首次 pathname effect 直接 void load。",
+      "fix": "捕获首次加载拒绝，保留由 route guard 统一展示错误和重试。",
+      "evidence": "新增行为测试注入网络拒绝，验证请求已执行且测试进程无未处理 Promise rejection。"
+    },
+    {
+      "id": "WC-10",
+      "priority": 3,
+      "path": "web/src/components/login-page-image-stage.tsx",
+      "line": 54,
+      "title": "普通登录图片预览缺少定位容器",
+      "trigger": "使用默认 fillParent=false 时图片 absolute 定位，但测量的预览框不是定位上下文。",
+      "fix": "所有模式使用 relative 预览框，使计算出的图片尺寸和偏移锚定同一元素。",
+      "evidence": "静态布局检查、TypeScript/Vite 构建与现有布局测试通过；未进行新的浏览器视觉验证。"
+    }
+  ],
+  "validation": [
+    {
+      "command": "cd web && bun test tests/shared-component-boundaries.test.mjs tests/login-page-image-stage.test.mjs tests/wide-page-layouts.test.mjs tests/ui-interactions.test.mjs tests/auth-guard-lifecycle.test.mjs tests/announcement-lifecycle.test.mjs tests/management-page-layouts.test.mjs tests/architecture-boundaries.test.mjs",
+      "result": "PASS: 123 tests, 0 failures",
+      "log": "build/review/web-components-tests.log"
+    },
+    {
+      "command": "cd web && npm run build",
+      "result": "PASS: TypeScript and Vite production build",
+      "log": "build/review/web-components-build.log"
+    },
+    {
+      "command": "cd web && npm run lint",
+      "result": "PASS: 0 warnings, 0 errors",
+      "log": "build/review/web-components-lint.log"
+    },
+    {
+      "command": "git diff --check",
+      "result": "PASS"
+    }
+  ],
+  "limits": [
+    "没有执行本轮浏览器视觉回归或真实供应商网络联调；轻量 hooks 行为测试不能替代浏览器焦点、布局和媒体播放测试。",
+    "未修改总 review/inventory.json 或 REVIEW.md；未修改 canvas、管理页面、image/workflows 源码，未提交。"
+  ]
+}

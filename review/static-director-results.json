@@ -1,0 +1,167 @@
+[
+  {
+    "path": "web/public/director/assets/index-oQuo7db8.js",
+    "sha256": "8b3272eaa7a40d795893c27d530208afcab7fc491d549928927c0bc551151292",
+    "bytes": 1446833,
+    "lines": 4919,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Parsed the entire 1.4 MB JavaScript bundle into 489284 TypeScript AST nodes with zero parse diagnostics; scanned complete literal/call structure for module requests, postMessage, persistence and credential/API headers. No application API or credential-bearing header literals were present.",
+      "Reviewed business boundaries and their consumers: scoped scene/local-model/camera-capture persistence; import/hydration/rebinding; undo/copy/paste/delete; camera targeting; panorama normalization; parent bridge initialization/project notifications; capture/MP4 recording cleanup; viewport state and inspector rendering. Business regions are interleaved with third-party dependencies.",
+      "Fixed camera inspector hook-order crash when deleting the last camera in camera view by mounting its hook-bearing component only when an active camera exists. Before-fix Chrome returned React error 300 and an empty body; after-fix delete and undo both pass.",
+      "Fixed paste helper retargeting every existing camera to copied actors. It now remaps only newly pasted cameras. A regression executes the actual shipped paste function in both camera-first and actor-first clipboard orders; failed before, passes after.",
+      "Verified a reverse application of the two exact business-code substitutions equals the original tracked bundle byte-for-byte. All vendor code remains unchanged; frontend build copied the exact fixed bundle into embedded assets."
+    ],
+    "finding": true,
+    "findings": [
+      {
+        "priority": 1,
+        "status": "fixed",
+        "summary": "Deleting the final camera caused a hook-order exception and blank director UI."
+      },
+      {
+        "priority": 2,
+        "status": "fixed",
+        "summary": "Pasting actors/cameras changed tracking targets on original cameras."
+      }
+    ],
+    "validation": "Focused director tests: 2 passed; npm run build and npm run lint passed; git diff --check passed. Chrome desktop/mobile loads returned 200 for HTML, JS, CSS and GLB with no page errors. Iframe regression: delete final camera, undo, capture/send and close handshake all passed. Logs/artifacts: build/review/static-director/. Concurrent full frontend run: 750 passed / 5 failed / 110 files; failures are unrelated in my-asset source assertion and draft media-upload harnesses, to be resolved by their owning review agents.",
+    "limits": [
+      "Complete parsing does not establish correctness or security of every React, Three.js, react-three-fiber, localforage, GLTF/model loader or other bundled vendor implementation. Vendor code was not claimed as line-by-line audited.",
+      "No upstream source map/build project is present for this static bundle. Fixes are narrowly applied to shipped business functions and protected by actual artifact/browser regressions; regenerating from upstream must carry equivalent fixes.",
+      "Browser validation used software WebGL in Chrome, synthetic local scenes and isolated browser state. Arbitrary third-party model files, all GPU/codec combinations, H.264 export and exhaustive timeline/UI gesture combinations were not tested."
+    ]
+  },
+  {
+    "path": "web/public/director/assets/index-BaMsYsAL.css",
+    "sha256": "9cf43a8934314a4f8a7a8cf5af52f70b55a145c7cae76f55a3b6d71e3bab43e1",
+    "bytes": 71403,
+    "lines": 1,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Parsed the complete CSS with PostCSS: 2861 nodes, 504 rules and 2355 declarations; all url() references were absent. Inspected responsive rules at 1180px/920px, viewport/sidebar layout, pointer-event layers, capture hover actions, focus states and recording/capture overlays.",
+      "Desktop 1440x1000 and mobile 390x844 screenshots showed a rendered mannequin and controls with no horizontal document overflow. Explicitly hovered the capture thumbnail before operating its hover-only send control; no forced click was used."
+    ],
+    "finding": false,
+    "findings": [],
+    "validation": "Focused director tests: 2 passed; npm run build and npm run lint passed; git diff --check passed. Chrome desktop/mobile loads returned 200 for HTML, JS, CSS and GLB with no page errors. Iframe regression: delete final camera, undo, capture/send and close handshake all passed. Logs/artifacts: build/review/static-director/. Concurrent full frontend run: 750 passed / 5 failed / 110 files; failures are unrelated in my-asset source assertion and draft media-upload harnesses, to be resolved by their owning review agents.",
+    "limits": [
+      "Full syntactic/declaration inspection and two viewport renders do not cover every theme, device, font or interaction combination. No business data is stored in CSS."
+    ]
+  },
+  {
+    "path": "web/public/director/models/ue-mannequin-retopology.glb",
+    "sha256": "5622c6150467fb96ff70d30eb3393286131c8523feaa3b78f80515d499cb1a14",
+    "bytes": 750464,
+    "lines": null,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read the entire 750464-byte GLB. Verified magic/version/declared length, 4-byte chunk alignment, JSON plus BIN chunk order, buffer and all seven bufferView bounds, all nine accessor component sizes/strides/alignment and finite values, mesh attribute counts and index bounds, node/skin references and acyclic scene hierarchy.",
+      "Verified 73 nodes, one mesh, one skin with 67 joints, one embedded PNG image, one scene, no animations and no external buffer/image URIs. Inverse bind matrices match the skin joint count.",
+      "Chrome fetched the GLB with HTTP 200 and rendered the bundled skinned mannequin in desktop/mobile screenshots without page errors or asset-loading errors."
+    ],
+    "finding": false,
+    "findings": [],
+    "validation": "Focused director tests: 2 passed; npm run build and npm run lint passed; git diff --check passed. Chrome desktop/mobile loads returned 200 for HTML, JS, CSS and GLB with no page errors. Iframe regression: delete final camera, undo, capture/send and close handshake all passed. Logs/artifacts: build/review/static-director/. Concurrent full frontend run: 750 passed / 5 failed / 110 files; failures are unrelated in my-asset source assertion and draft media-upload harnesses, to be resolved by their owning review agents.",
+    "limits": [
+      "Binary file: line count is not applicable. This is structural and current-browser rendering validation, not a complete glTF conformance/fuzzing suite or certification of all possible renderer/GPU behavior."
+    ]
+  },
+  {
+    "path": "web/public/director/models/ue-mannequin-retopology.license.txt",
+    "sha256": "26b0b701ff1feaa5dccde23ae249681bd350ff219d773b8f717359810da4729b",
+    "bytes": 439,
+    "lines": 8,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read the complete attribution and license text. Title, author, source and SKETCHFAB Standard license reference exactly match the GLB asset.extras metadata. No model or licensing statement was altered."
+    ],
+    "finding": false,
+    "findings": [],
+    "validation": "Focused director tests: 2 passed; npm run build and npm run lint passed; git diff --check passed. Chrome desktop/mobile loads returned 200 for HTML, JS, CSS and GLB with no page errors. Iframe regression: delete final camera, undo, capture/send and close handshake all passed. Logs/artifacts: build/review/static-director/. Concurrent full frontend run: 750 passed / 5 failed / 110 files; failures are unrelated in my-asset source assertion and draft media-upload harnesses, to be resolved by their owning review agents.",
+    "limits": [
+      "Checked bundled attribution consistency only; did not independently verify the original acquisition terms, purchase entitlement or legal redistribution rights."
+    ]
+  },
+  {
+    "path": "web/public/director/LICENSE",
+    "sha256": "2898e4433785a55b5d8bc15c32084dfe21dcea8b4fbd3b1138d9bebfc5401f18",
+    "bytes": 1065,
+    "lines": 21,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read the complete MIT text, copyright owner/year, permission conditions and warranty clauses. Preserved the supplied copyright/permission notice."
+    ],
+    "finding": false,
+    "findings": [],
+    "validation": "Focused director tests: 2 passed; npm run build and npm run lint passed; git diff --check passed. Chrome desktop/mobile loads returned 200 for HTML, JS, CSS and GLB with no page errors. Iframe regression: delete final camera, undo, capture/send and close handshake all passed. Logs/artifacts: build/review/static-director/. Concurrent full frontend run: 750 passed / 5 failed / 110 files; failures are unrelated in my-asset source assertion and draft media-upload harnesses, to be resolved by their owning review agents.",
+    "limits": [
+      "This file documents the director application license. It is not proof that every bundled dependency or separately licensed model has identical licensing terms."
+    ]
+  },
+  {
+    "path": "web/public/director/index.html",
+    "sha256": "770829dae3d0ac4ed3c49d3e4e7c8b284462c29943c59b0edb9fcaa8f1b82a1e",
+    "bytes": 1407,
+    "lines": 63,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read the entire document, local module/CSS references, root element, viewport/lang metadata and mobile overrides. Referenced assets all exist and loaded successfully in both viewports.",
+      "Verified the static root can run directly and as a same-origin iframe. The iframe handshake delivered ready, project-changed, captures-sent and close messages using synthetic local state."
+    ],
+    "finding": false,
+    "findings": [],
+    "validation": "Focused director tests: 2 passed; npm run build and npm run lint passed; git diff --check passed. Chrome desktop/mobile loads returned 200 for HTML, JS, CSS and GLB with no page errors. Iframe regression: delete final camera, undo, capture/send and close handshake all passed. Logs/artifacts: build/review/static-director/. Concurrent full frontend run: 750 passed / 5 failed / 110 files; failures are unrelated in my-asset source assertion and draft media-upload harnesses, to be resolved by their owning review agents.",
+    "limits": [
+      "Only the current root deployment path /director/ was tested. No external website, live credentials or authentication bypass was used."
+    ]
+  },
+  {
+    "path": "web/bun.lock",
+    "sha256": "30b1912d61e95c95126c0541a2b83ea743ca98977f0def07279ddc4ad852fe31",
+    "bytes": 112985,
+    "lines": 764,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Parsed the entire lockfile as JSON with trailing-comma support. Compared workspace name, every direct dependency/devDependency and overrides to package.json. Fixed the stale workspace name next-starter to chatgpt2api-web; all versions/ranges remain unchanged.",
+      "Inspected all 355 locked package entries. Every integrity field is a structurally valid 64-byte SHA-512 digest; resolved archive URLs use HTTPS registry.npmmirror.com with no URL userinfo. Bun frozen-lockfile dry-run with scripts disabled succeeds."
+    ],
+    "finding": true,
+    "findings": [
+      {
+        "priority": 3,
+        "status": "fixed",
+        "summary": "Root workspace name in bun.lock disagreed with the current package manifest."
+      }
+    ],
+    "validation": "Focused director tests: 2 passed; npm run build and npm run lint passed; git diff --check passed. Chrome desktop/mobile loads returned 200 for HTML, JS, CSS and GLB with no page errors. Iframe regression: delete final camera, undo, capture/send and close handshake all passed. Logs/artifacts: build/review/static-director/. Concurrent full frontend run: 750 passed / 5 failed / 110 files; failures are unrelated in my-asset source assertion and draft media-upload harnesses, to be resolved by their owning review agents.",
+    "limits": [
+      "A frozen dry-run validates lock resolution without installing or downloading packages. Integrity field structure was verified, not re-hashing every registry archive; this is not a transitive source or advisory audit."
+    ]
+  },
+  {
+    "path": "web/tests/director-static.test.mjs",
+    "sha256": "150b15500b7a942796ad2284947e3d7a1aedf1079aae66fcbe761e5cbceaaa3f",
+    "bytes": 2309,
+    "lines": 36,
+    "status": "reviewed",
+    "reviewer": "browser_verification",
+    "checks": [
+      "Read the entire new regression file. It resolves the actual bundle from director/index.html, parses all JavaScript and executes the actual paste function with controlled geometry/naming dependencies.",
+      "Both clipboard orders verify original camera identity/target preservation and copied camera remapping; focused two-test suite passes."
+    ],
+    "finding": false,
+    "findings": [],
+    "validation": "Focused director tests: 2 passed; npm run build and npm run lint passed; git diff --check passed. Chrome desktop/mobile loads returned 200 for HTML, JS, CSS and GLB with no page errors. Iframe regression: delete final camera, undo, capture/send and close handshake all passed. Logs/artifacts: build/review/static-director/. Concurrent full frontend run: 750 passed / 5 failed / 110 files; failures are unrelated in my-asset source assertion and draft media-upload harnesses, to be resolved by their owning review agents.",
+    "limits": [
+      "Tests intentionally target compiled business helper identities and will require updating when a new upstream bundle changes minified symbols. Browser hook-order regression artifacts are separate under build/review/static-director/."
+    ]
+  }
+]

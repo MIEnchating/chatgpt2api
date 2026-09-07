@@ -279,8 +279,8 @@ describe("settings store session isolation", () => {
     expect(settingsPageSource).toContain("useLayoutEffect(() => {");
     expect(settingsPageSource).toContain("activateSession(sessionKey);");
     expect(settingsPageSource).toContain("void initialize(sessionKey);");
-    expect(settingsPageSource).toContain("return () => deactivateSession(sessionKey);");
+    expect(settingsPageSource).toMatch(/return \(\) => \{[\s\S]*?deactivateSession\(sessionKey\);/);
     expect(settingsPageSource).toContain("return activeSessionKey === sessionKey ? children : null;");
-    expect(settingsPageSource).toContain("<AdminSettingsPageContent key={session.key} session={session} />");
+    expect(settingsPageSource).toContain("<AdminSettingsPageContent key={`${session.key}:${sessionRevision}`} session={session} />");
   });
 });

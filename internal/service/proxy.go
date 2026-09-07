@@ -339,6 +339,8 @@ func socks5DialContext(proxyURL *url.URL) func(context.Context, string, string) 
 		if err != nil {
 			return nil, err
 		}
+		stopCancellation := context.AfterFunc(ctx, func() { _ = conn.Close() })
+		defer stopCancellation()
 		if deadline, ok := ctx.Deadline(); ok {
 			_ = conn.SetDeadline(deadline)
 			defer func() {
@@ -347,7 +349,14 @@ func socks5DialContext(proxyURL *url.URL) func(context.Context, string, string) 
 		}
 		if err := socks5Handshake(ctx, conn, proxyURL, address); err != nil {
 			_ = conn.Close()
+			if ctx.Err() != nil {
+				return nil, ctx.Err()
+			}
 			return nil, err
+		}
+		if !stopCancellation() {
+			_ = conn.Close()
+			return nil, ctx.Err()
 		}
 		return conn, nil
 	}
