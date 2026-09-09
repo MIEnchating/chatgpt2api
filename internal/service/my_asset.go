@@ -136,10 +136,10 @@ func (s *MyAssetService) TextGovernance(viewerID string, admin bool, owners []My
 }
 
 type MyAssetService struct {
-	mu                  sync.Mutex
-	store               storage.JSONDocumentBackend
-	objects             MyAssetObjectStorage
-	deletionCoordinator StorageObjectDeletionCoordinator
+	mu                   sync.Mutex
+	store                storage.JSONDocumentBackend
+	objects              MyAssetObjectStorage
+	deletionCoordinators []StorageObjectDeletionCoordinator
 }
 
 type MyAssetObjectStorage interface {
@@ -154,11 +154,11 @@ type StorageObjectDeletionCoordinator interface {
 }
 
 func NewMyAssetService(backend storage.Backend, objects MyAssetObjectStorage, coordinators ...StorageObjectDeletionCoordinator) *MyAssetService {
-	service := &MyAssetService{store: jsonDocumentStoreFromBackend(backend), objects: objects}
-	if len(coordinators) > 0 {
-		service.deletionCoordinator = coordinators[0]
+	return &MyAssetService{
+		store:                jsonDocumentStoreFromBackend(backend),
+		objects:              objects,
+		deletionCoordinators: append([]StorageObjectDeletionCoordinator(nil), coordinators...),
 	}
-	return service
 }
 
 func (s *MyAssetService) List(ownerID string) ([]MyAsset, error) {
@@ -699,11 +699,20 @@ func (s *MyAssetService) retryPendingObjectDeletions(ctx context.Context, ownerI
 			deleteErrors = append(deleteErrors, err)
 			continue
 		}
-		if s.deletionCoordinator != nil {
-			if err := s.deletionCoordinator.ReserveStorageObjectDeletion(ownerID, objectID); err != nil {
+		reservedCoordinators := make([]StorageObjectDeletionCoordinator, 0, len(s.deletionCoordinators))
+		for _, coordinator := range s.deletionCoordinators {
+			if err := coordinator.ReserveStorageObjectDeletion(ownerID, objectID); err != nil {
+				for index := len(reservedCoordinators) - 1; index >= 0; index-- {
+					_ = reservedCoordinators[index].CompleteStorageObjectDeletion(ownerID, objectID)
+				}
 				deleteErrors = append(deleteErrors, fmt.Errorf("reserve asset storage object deletion %q: %w", objectID, err))
-				continue
+				reservedCoordinators = nil
+				break
 			}
+			reservedCoordinators = append(reservedCoordinators, coordinator)
+		}
+		if len(reservedCoordinators) != len(s.deletionCoordinators) {
+			continue
 		}
 		deleteProvider := (*StorageObjectProviderInput)(nil)
 		if objectID == preferredObjectID {
@@ -713,11 +722,15 @@ func (s *MyAssetService) retryPendingObjectDeletions(ctx context.Context, ownerI
 			deleteErrors = append(deleteErrors, fmt.Errorf("delete asset storage object %q: %w", objectID, err))
 			continue
 		}
-		if s.deletionCoordinator != nil {
-			if err := s.deletionCoordinator.CompleteStorageObjectDeletion(ownerID, objectID); err != nil {
+		completionFailed := false
+		for _, coordinator := range reservedCoordinators {
+			if err := coordinator.CompleteStorageObjectDeletion(ownerID, objectID); err != nil {
 				deleteErrors = append(deleteErrors, fmt.Errorf("complete asset storage object deletion %q: %w", objectID, err))
-				continue
+				completionFailed = true
 			}
+		}
+		if completionFailed {
+			continue
 		}
 		deleted[objectID] = struct{}{}
 	}

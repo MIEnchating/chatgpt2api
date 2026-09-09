@@ -361,6 +361,44 @@ func TestMyAssetPendingDeletionRecoversAfterServiceRestartWithoutOwnerRequest(t 
 	}
 }
 
+type storageDeletionCoordinatorStub struct {
+	reserveErr error
+	reserved   int
+	completed  int
+}
+
+func (s *storageDeletionCoordinatorStub) ReserveStorageObjectDeletion(string, string) error {
+	s.reserved++
+	return s.reserveErr
+}
+
+func (s *storageDeletionCoordinatorStub) CompleteStorageObjectDeletion(string, string) error {
+	s.completed++
+	return nil
+}
+
+func TestMyAssetDeletionCoordinatesEveryReferenceOwner(t *testing.T) {
+	backend := newTestStorageBackend(t)
+	objects := newMyAssetObjectStorageStub()
+	objects.seedObject("object-a", "owner", "image/png")
+	first := &storageDeletionCoordinatorStub{}
+	second := &storageDeletionCoordinatorStub{reserveErr: ErrStorageObjectInUse}
+	assets := NewMyAssetService(backend, objects, first, second)
+
+	if err := assets.DeleteStorageObject(context.Background(), "owner", false, "object-a", nil); !errors.Is(err, ErrStorageObjectInUse) {
+		t.Fatalf("DeleteStorageObject() error = %v", err)
+	}
+	if first.reserved != 1 || first.completed != 1 || second.reserved != 1 || second.completed != 0 {
+		t.Fatalf("coordinator calls = first(%d,%d) second(%d,%d)", first.reserved, first.completed, second.reserved, second.completed)
+	}
+	objects.mu.Lock()
+	_, exists := objects.objects["object-a"]
+	objects.mu.Unlock()
+	if !exists {
+		t.Fatal("storage object was deleted after a coordinator rejected deletion")
+	}
+}
+
 func (b *myAssetFailNextDocumentSaveBackend) SaveJSONDocument(name string, value any) error {
 	if name == b.documentName && b.failNext > 0 {
 		b.failNext--

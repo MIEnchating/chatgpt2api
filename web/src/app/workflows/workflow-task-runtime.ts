@@ -81,6 +81,14 @@ function isGenerationConfig(value: unknown): value is WorkflowGenerationConfig {
     && (value.api_mode === "images" || value.api_mode === "responses" || value.api_mode === "chat");
 }
 
+function isWorkflowReference(value: unknown) {
+  return isObject(value)
+    && typeof value.id === "string"
+    && typeof value.name === "string"
+    && typeof value.url === "string"
+    && (value.role === "template" || value.role === "product");
+}
+
 function isRestorableWorkflowTask(task: CreationTask): task is RestorableWorkflowTask {
   const context = task.workflow_context;
   return isObject(context)
@@ -91,6 +99,7 @@ function isRestorableWorkflowTask(task: CreationTask): task is RestorableWorkflo
     && typeof context.prompt === "string"
     && isObject(context.inputs)
     && Array.isArray(context.references)
+    && context.references.every(isWorkflowReference)
     && isGenerationConfig(context.config)
     && isExecutionSnapshot(context.execution)
     && typeof context.count === "number"
@@ -176,7 +185,7 @@ export function restoreWorkflowTasks(tasks: CreationTask[], now = Date.now()): W
           );
       const images = ordered.flatMap((task, fallbackIndex) => {
         const context = task.workflow_context;
-        const index = Math.max(0, Number(context.batch_index || fallbackIndex + 1) - 1);
+        const index = Math.max(0, Number(context.series_index || context.batch_index || fallbackIndex + 1) - 1);
         return creationTaskImages(task).map((image) => ({
           ...image,
           index,

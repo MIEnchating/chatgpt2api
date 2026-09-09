@@ -41,6 +41,14 @@ export type WorkflowSeriesConfig = {
   concurrency: string;
 };
 
+export type WorkflowTemplateReference = {
+  id: string;
+  name: string;
+  url: string;
+  storageKey?: string;
+  visibility?: "private" | "public";
+};
+
 export type CreativeWorkflow = {
   id: string;
   revision?: number;
@@ -51,6 +59,7 @@ export type CreativeWorkflow = {
   description: string;
   mode: "single_image" | "multi_image_series";
   variables: WorkflowVariable[];
+  template_references: WorkflowTemplateReference[];
   config: WorkflowGenerationConfig;
   series_config: WorkflowSeriesConfig;
   created_at?: string;
@@ -70,6 +79,7 @@ export type WorkflowTaskContext = {
     url: string;
     storageKey?: string;
     temporary?: boolean;
+    role: "template" | "product";
   }>;
   config: WorkflowGenerationConfig;
   execution: WorkflowExecutionSnapshot;

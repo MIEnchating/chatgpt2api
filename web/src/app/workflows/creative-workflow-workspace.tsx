@@ -35,8 +35,10 @@ import {
   buildSeriesPromptDraftRequest,
   createBlankWorkflow,
   createDefaultInputValues,
+  createProductDetailWorkflow,
   createStarterWorkflows,
   createWorkflowVariable,
+  composeWorkflowReferencePrompt,
   isWorkflowModelConfigured,
   mergeWorkflowRunMetadata,
   normalizeWorkflow,
@@ -66,6 +68,7 @@ import {
   workflowReferenceCleanupKeys,
 } from "@/app/workflows/workflow-reference-lifecycle";
 import { runCurrentWorkflowAgentDraft } from "@/app/workflows/workflow-agent-draft-lifecycle";
+import { assetListKey, managedImageAsset, mergeAssetLibrary } from "@/app/assets/asset-library";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -104,7 +107,9 @@ import {
   deleteCreationTasks,
   deleteManagedImages,
   fetchCreationTasks,
+  fetchManagedImages,
   fetchModelConfig,
+  imageReferenceImageLimit,
   isImageQuality,
   type CreationTask,
   type ImageGenerationPreferences,
@@ -122,10 +127,11 @@ import {
   type CreativeWorkflow,
   type WorkflowGenerationConfig,
   type WorkflowSeriesConfig,
+  type WorkflowTemplateReference,
   type WorkflowVariable,
 } from "@/services/api/workflows";
 import { useRelayTokenPreferences } from "@/lib/use-relay-token-preferences";
-import type { MyAsset } from "@/lib/my-assets";
+import { createMyAsset, fetchVisibleMyAssets, type MyAsset } from "@/lib/my-assets";
 import { getManagedImagePathFromUrl } from "@/lib/image-path";
 import { useAuthGuard } from "@/lib/use-auth-guard";
 import { useImageGenerationPreferences } from "@/lib/use-image-generation-preferences";
@@ -135,12 +141,9 @@ import { useAuthSessionRevision } from "@/lib/use-auth-session-revision";
 import { cn } from "@/lib/utils";
 import { configuredModelNames, resolveConfiguredModel } from "@/lib/model-config-selection";
 
-type WorkflowReference = {
-  id: string;
-  name: string;
-  url: string;
-  storageKey?: string;
+type WorkflowReference = WorkflowTemplateReference & {
   temporary?: boolean;
+  role?: "template" | "product";
 };
 
 type WorkflowSeriesRun = {
@@ -294,7 +297,7 @@ function CreativeWorkflowWorkspaceContent({
   const { preferences, isReady: preferencesReady } = useImageGenerationPreferences(sessionKey);
   const { isReady: relayPreferencesReady, tokenNameForModel } = useRelayTokenPreferences();
   const sessionTextChannelID = tokenNameForModel("text", preferences.default_text_model || "");
-  const { assets: myAssets, loading: assetLoading } = useMyAssets(
+  const { assets: myAssets, upsertAsset, loading: assetLoading } = useMyAssets(
     session?.key || "",
     Boolean(session),
   );
@@ -334,7 +337,10 @@ function CreativeWorkflowWorkspaceContent({
   const [agentBusy, setAgentBusy] = useState(false);
   const [agentDraft, setAgentDraft] = useState<CreativeWorkflow | null>(null);
   const [agentWarnings, setAgentWarnings] = useState<string[]>([]);
-  const [assetPickerTarget, setAssetPickerTarget] = useState<"workflow" | "agent" | null>(null);
+  const [assetPickerTarget, setAssetPickerTarget] = useState<"workflow" | "template" | "agent" | null>(null);
+  const [sharedAssets, setSharedAssets] = useState<MyAsset[]>([]);
+  const [managedAssets, setManagedAssets] = useState<MyAsset[]>([]);
+  const [assetLibraryLoading, setAssetLibraryLoading] = useState(false);
   const workspaceActiveRef = useRef(false);
   const currentSessionKeyRef = useRef(sessionKey);
   const agentDraftAbortControllerRef = useRef<AbortController | null>(null);
@@ -344,6 +350,10 @@ function CreativeWorkflowWorkspaceContent({
   const inFlightTaskCountsRef = useRef(new Map<string, number>());
   currentSessionKeyRef.current = sessionKey;
   tasksRef.current = tasks;
+  const assetLibrary = useMemo(
+    () => mergeAssetLibrary(myAssets, sharedAssets, managedAssets),
+    [managedAssets, myAssets, sharedAssets],
+  );
 
   function updateWorkflowReferences(updater: (current: WorkflowReference[]) => WorkflowReference[]) {
     const next = updater(workflowReferencesRef.current);
@@ -427,6 +437,36 @@ function CreativeWorkflowWorkspaceContent({
       agentDraftAbortControllerRef.current = null;
     };
   }, [sessionKey]);
+
+  useEffect(() => {
+    if (!assetPickerTarget) return;
+    const controller = new AbortController();
+    setAssetLibraryLoading(true);
+    void Promise.all([
+      fetchVisibleMyAssets(sessionKey, controller.signal),
+      fetchManagedImages(
+        { scope: session.role === "admin" ? "all" : "visible" },
+        { signal: controller.signal },
+      ),
+    ])
+      .then(([visible, images]) => {
+        if (controller.signal.aborted) return;
+        setSharedAssets(visible.filter((asset) => asset.owned !== true));
+        setManagedAssets(images.items.map((item) => managedImageAsset(
+          item,
+          Boolean(item.owner_id && item.owner_id === session.subjectId),
+        )));
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted) {
+          toast.error(error instanceof Error ? `素材库读取失败：${error.message}` : "素材库读取失败");
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setAssetLibraryLoading(false);
+      });
+    return () => controller.abort();
+  }, [assetPickerTarget, session.role, session.subjectId, sessionKey]);
 
   useEffect(() => {
     const handleAuthSessionChange = () => {
@@ -593,6 +633,10 @@ function CreativeWorkflowWorkspaceContent({
       toast.error("请输入提示词模板");
       return;
     }
+    if (workflow.scope === "public" && workflow.template_references.some((reference) => reference.visibility !== "public")) {
+      toast.error("公开工作流只能使用公开的模板图");
+      return;
+    }
     if (workflowSaveBusyRef.current) return;
     workflowSaveBusyRef.current = true;
     setWorkflowSaving(true);
@@ -705,7 +749,10 @@ function CreativeWorkflowWorkspaceContent({
     );
   }
 
-  async function addReferences(files: FileList | null, agent = false) {
+  async function addReferences(
+    files: FileList | null,
+    target: "workflow" | "template" | "agent" = "workflow",
+  ) {
     const selected = Array.from(files || []).filter((file) =>
       file.type.startsWith("image/"),
     );
@@ -717,12 +764,40 @@ function CreativeWorkflowWorkspaceContent({
       const { uploaded, errors } = await settleWorkflowReferenceUploads(
         selected.map(async (file) => {
           const image = await uploadImage(file);
+          if (target === "template") {
+            try {
+              const asset = await upsertAsset(createMyAsset({
+                kind: "image",
+                title: file.name,
+                url: image.url,
+                storageKey: image.storageKey,
+                mimeType: image.mimeType,
+                bytes: image.bytes,
+                width: image.width,
+                height: image.height,
+                tags: ["工作流模板"],
+                source: "工作流模板",
+                visibility: editing?.scope === "public" ? "public" : "private",
+              }));
+              return {
+                id: taskID("template-reference"),
+                name: asset.title,
+                url: asset.url || image.url,
+                storageKey: asset.storageKey || image.storageKey,
+                visibility: asset.visibility,
+              };
+            } catch (error) {
+              await deleteStoredImages([image.storageKey]).catch(() => undefined);
+              throw error;
+            }
+          }
           return {
             id: taskID("reference"),
             name: file.name,
             url: image.url,
             storageKey: image.storageKey,
             temporary: true,
+            role: "product" as const,
           };
         }),
       );
@@ -732,7 +807,7 @@ function CreativeWorkflowWorkspaceContent({
         if (staleKeys.length) await deleteStoredImages(staleKeys).catch(() => undefined);
         return;
       }
-      if (!agent && workflowUploadGeneration !== workflowReferenceUploadGenerationRef.current) {
+      if (target === "workflow" && workflowUploadGeneration !== workflowReferenceUploadGenerationRef.current) {
         const staleKeys = workflowReferenceCleanupKeys(uploaded, []);
         if (staleKeys.length) {
           await deleteStoredImages(staleKeys).catch((error) =>
@@ -742,8 +817,25 @@ function CreativeWorkflowWorkspaceContent({
         return;
       }
       if (uploaded.length) {
-        if (agent) updateAgentReferences((value) => [...value, ...uploaded]);
-        else updateWorkflowReferences((value) => [...value, ...uploaded]);
+        if (target === "agent") {
+          updateAgentReferences((value) => [...value, ...uploaded]);
+        } else if (target === "template") {
+          setEditing((current) => {
+            if (!current) return current;
+            const existing = new Set(current.template_references.map((reference) => reference.storageKey || reference.url));
+            const added = uploaded.filter((reference) => !existing.has(reference.storageKey || reference.url));
+            const templateReferences = [...current.template_references, ...added].slice(0, 14);
+            return {
+              ...current,
+              template_references: templateReferences,
+              series_config: current.mode === "multi_image_series" && added.length
+                ? { ...current.series_config, target_count: String(templateReferences.length) }
+                : current.series_config,
+            };
+          });
+        } else {
+          updateWorkflowReferences((value) => [...value, ...uploaded]);
+        }
       }
       if (errors.length) {
         const firstError = errors[0];
@@ -758,7 +850,7 @@ function CreativeWorkflowWorkspaceContent({
 
   function insertWorkflowAsset(asset: MyAsset) {
     if (!assetPickerTarget) return;
-    if (asset.kind === "text") {
+    if (asset.kind === "text" && assetPickerTarget !== "template") {
       const content = String(asset.content || "").trim();
       if (content) {
         if (assetPickerTarget === "agent") {
@@ -775,9 +867,31 @@ function CreativeWorkflowWorkspaceContent({
       toast.error("视频或音频素材不能作为工作流参考图");
       return;
     }
-    const reference = { id: taskID("asset-reference"), name: asset.title, url: asset.url, temporary: false };
+    const reference = {
+      id: taskID("asset-reference"),
+      name: asset.title,
+      url: asset.url,
+      storageKey: asset.storageKey,
+      visibility: asset.visibility,
+      temporary: false,
+      role: "product" as const,
+    };
     if (assetPickerTarget === "agent") {
       updateAgentReferences((current) => [...current, reference]);
+    } else if (assetPickerTarget === "template") {
+      setEditing((current) => {
+        if (!current) return current;
+        const key = reference.storageKey || reference.url;
+        if (current.template_references.some((item) => (item.storageKey || item.url) === key)) return current;
+        const templateReferences = [...current.template_references, reference].slice(0, 14);
+        return {
+          ...current,
+          template_references: templateReferences,
+          series_config: current.mode === "multi_image_series"
+            ? { ...current.series_config, target_count: String(templateReferences.length) }
+            : current.series_config,
+        };
+      });
     } else {
       updateWorkflowReferences((current) => [...current, reference]);
     }
@@ -817,6 +931,7 @@ function CreativeWorkflowWorkspaceContent({
     draft?: WorkflowSeriesDraft,
     seriesDraftIndex?: number,
     seriesRun?: WorkflowSeriesRun,
+    seriesBatchIndex?: number,
   ) {
     if (!workspaceActiveRef.current || getCachedAuthSession()?.key !== sessionKey) throw new DOMException("Session changed", "AbortError");
     const taskController = taskWaitAbortControllerRef.current;
@@ -843,8 +958,29 @@ function CreativeWorkflowWorkspaceContent({
       token_name: relayTokenName || undefined,
     };
     const localTaskID = seriesRun?.id || taskID("workflow-image");
-    const taskReferences = freezeWorkflowReferences(
+    const productReferences = freezeWorkflowReferences(
       seriesRun?.references || workflowReferencesRef.current,
+    ).map((reference) => ({ ...reference, role: "product" as const }));
+    const templateReferences = workflow.template_references.length && draft
+      ? workflow.template_references[seriesDraftIndex || 0]
+        ? [workflow.template_references[seriesDraftIndex || 0]]
+        : []
+      : workflow.template_references;
+    if (workflow.template_references.length && !productReferences.length) {
+      throw new Error("使用模板图时至少需要一张新产品实拍图");
+    }
+    const taskReferences = freezeWorkflowReferences([
+      ...templateReferences.map((reference) => ({ ...reference, temporary: false, role: "template" as const })),
+      ...productReferences,
+    ]);
+    const referenceLimit = imageReferenceImageLimit(model);
+    if (taskReferences.length > referenceLimit) {
+      throw new Error(`当前模型最多支持 ${referenceLimit} 张参考图，本次需要 ${taskReferences.length} 张`);
+    }
+    const taskPrompt = composeWorkflowReferencePrompt(
+      prompt,
+      templateReferences,
+      productReferences.length,
     );
     const startedAt = Date.now();
     const taskConfig = {
@@ -859,12 +995,15 @@ function CreativeWorkflowWorkspaceContent({
       timeout: String(runtime.timeout),
     };
     const seriesIndex = draft ? Math.max(0, seriesDraftIndex || 0) + 1 : undefined;
+    const batchSeriesIndex = seriesRun
+      ? Math.max(1, seriesBatchIndex || seriesIndex || 1)
+      : seriesIndex;
     const taskCount = seriesRun?.total || count;
     const taskSnapshot: WorkflowTask = {
       id: localTaskID,
       workflow_id: workflow.id,
       workflow_name: workflow.name,
-      prompt,
+      prompt: taskPrompt,
       status: "running",
       started_at: startedAt,
       image_urls: [],
@@ -886,8 +1025,8 @@ function CreativeWorkflowWorkspaceContent({
     updateTasks((current) => prependWorkflowTask(current, taskSnapshot));
     if (draft) patchSeriesDraft(draft.id, { status: "running", error: undefined });
     const settleLocalTask = (nextImages: WorkflowTask["images"], taskError?: string) => {
-      const unitIndexes = seriesRun && seriesIndex
-        ? [seriesIndex]
+      const unitIndexes = seriesRun && batchSeriesIndex
+        ? [batchSeriesIndex]
         : Array.from({ length: count }, (_, index) => index + 1);
       updateTasks((current) => current.map((task) => {
         if (task.id !== localTaskID) return task;
@@ -924,7 +1063,7 @@ function CreativeWorkflowWorkspaceContent({
       taskController.signal.throwIfAborted();
       const settled = await Promise.allSettled(
         Array.from({ length: count }, async (_, index) => {
-          const batchIndex = seriesRun && seriesIndex ? seriesIndex : index + 1;
+          const batchIndex = seriesRun && batchSeriesIndex ? batchSeriesIndex : index + 1;
           const batchCount = seriesRun?.total || count;
           const clientTaskID = seriesRun
             ? `${localTaskID}-${batchIndex}`
@@ -932,7 +1071,7 @@ function CreativeWorkflowWorkspaceContent({
           const workflowContext = {
             workflow_id: workflow.id,
             workflow_name: workflow.name,
-            prompt,
+            prompt: taskPrompt,
             inputs: { ...values },
             references: taskReferences.map((reference) => ({ ...reference })),
             config: { ...taskConfig, count: "1" },
@@ -953,8 +1092,8 @@ function CreativeWorkflowWorkspaceContent({
             generationSource: "workflow" as const,
           };
           const submitted = imageFiles.length
-            ? await createImageEditTask(clientTaskID, imageFiles, prompt, model, runtime.size || undefined, undefined, quality, 1, "private", undefined, undefined, undefined, stream, partialImages, toolOptions, undefined, relayTokenName || undefined, undefined, undefined, { signal: taskController.signal })
-            : await createImageGenerationTask(clientTaskID, prompt, model, runtime.size || undefined, undefined, quality, 1, "private", undefined, undefined, undefined, stream, partialImages, toolOptions, undefined, relayTokenName || undefined, undefined, undefined, { signal: taskController.signal });
+            ? await createImageEditTask(clientTaskID, imageFiles, taskPrompt, model, runtime.size || undefined, undefined, quality, 1, "private", undefined, undefined, undefined, stream, partialImages, toolOptions, undefined, relayTokenName || undefined, undefined, undefined, { signal: taskController.signal })
+            : await createImageGenerationTask(clientTaskID, taskPrompt, model, runtime.size || undefined, undefined, quality, 1, "private", undefined, undefined, undefined, stream, partialImages, toolOptions, undefined, relayTokenName || undefined, undefined, undefined, { signal: taskController.signal });
           taskController.signal.throwIfAborted();
           updateTasks((current) => current.map((task) =>
             task.id === localTaskID
@@ -982,7 +1121,7 @@ function CreativeWorkflowWorkspaceContent({
           ...image,
           index: seriesRun && seriesIndex ? seriesIndex - 1 : index,
           ...(draft?.title ? { title: draft.title } : {}),
-          ...(draft ? { prompt } : {}),
+          ...(draft ? { prompt: taskPrompt } : {}),
         })),
       );
       const imageURLs = images.map((image) => image.url);
@@ -1166,10 +1305,11 @@ function CreativeWorkflowWorkspaceContent({
     index: number,
     seriesRun?: WorkflowSeriesRun,
     notifyError = true,
+    seriesBatchIndex?: number,
   ) {
     if (!running || !draft.prompt.trim() || draft.status === "running") return false;
     try {
-      await executeImageTask(running, draft.prompt.trim(), 1, draft, index, seriesRun);
+      await executeImageTask(running, draft.prompt.trim(), 1, draft, index, seriesRun, seriesBatchIndex);
       return true;
     } catch (error) {
       if (isWorkflowPollAbort(error)) return false;
@@ -1189,9 +1329,9 @@ function CreativeWorkflowWorkspaceContent({
     }
     const controller = taskWaitAbortControllerRef.current;
     if (!controller || controller.signal.aborted) return;
-    const drafts = source.filter(
-      (draft) => draft.prompt.trim() && draft.status !== "running" && draft.status !== "success",
-    );
+    const drafts = source
+      .map((draft, sourceIndex) => ({ draft, sourceIndex }))
+      .filter(({ draft }) => draft.prompt.trim() && draft.status !== "running" && draft.status !== "success");
     if (!drafts.length) {
       toast.error("没有可生成的提示词");
       return;
@@ -1211,12 +1351,13 @@ function CreativeWorkflowWorkspaceContent({
       for (let index = 0; index < drafts.length; index += concurrency) {
         if (controller.signal.aborted) return;
         const results = await Promise.all(
-          drafts.slice(index, index + concurrency).map((draft, chunkIndex) =>
+          drafts.slice(index, index + concurrency).map(({ draft, sourceIndex }, chunkIndex) =>
             runOneSeriesDraft(
               draft,
-              index + chunkIndex,
+              sourceIndex,
               seriesRun,
               false,
+              index + chunkIndex + 1,
             ),
           ),
         );
@@ -1399,6 +1540,7 @@ function CreativeWorkflowWorkspaceContent({
         任务记录
         {runningTaskCount ? <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-[#1456f0] px-1.5 text-[10px] font-semibold leading-5 text-white">{runningTaskCount}</span> : null}
       </Button> : null}
+      <Button variant="outline" onClick={() => setEditing(createProductDetailWorkflow(models, preferences, workflowGenerationDefaults(preferences, generationDefaults, sessionTextChannelID)))}><Layers3 />新建详情模板</Button>
       <Button onClick={() => setEditing(createBlankWorkflow(models, preferences, "single_image", workflowGenerationDefaults(preferences, generationDefaults, sessionTextChannelID)))}><Plus />新建工作流</Button>
     </>
   );
@@ -1504,8 +1646,11 @@ function CreativeWorkflowWorkspaceContent({
         models={models}
         preferences={preferences}
         saving={workflowSaving}
+        referenceBusy={referenceBusy}
         onChange={setEditing}
         onSave={persist}
+        onAssetsOpen={() => setAssetPickerTarget("template")}
+        onReferencesAdd={(files) => void addReferences(files, "template")}
         onClose={() => setEditing(null)}
       />
       <WorkflowRunner
@@ -1522,7 +1667,7 @@ function CreativeWorkflowWorkspaceContent({
         batchAppend={seriesBatchAppend}
         onValuesChange={setValues}
         onAssetsOpen={() => setAssetPickerTarget("workflow")}
-        onReferencesAdd={(files) => void addReferences(files)}
+        onReferencesAdd={(files) => void addReferences(files, "workflow")}
         onReferenceRemove={removeWorkflowReference}
         onRun={() => void runWorkflow()}
         onGenerateDrafts={() => void generateSeriesDrafts()}
@@ -1549,7 +1694,7 @@ function CreativeWorkflowWorkspaceContent({
         onScopeChange={setAgentScope}
         onModelChange={setAgentModel}
         onAssetsOpen={() => setAssetPickerTarget("agent")}
-        onReferencesAdd={(files) => void addReferences(files, true)}
+        onReferencesAdd={(files) => void addReferences(files, "agent")}
         onReferenceRemove={removeAgentReference}
         onRun={() => void draftWithAgent()}
         onApply={applyAgentDraft}
@@ -1557,8 +1702,9 @@ function CreativeWorkflowWorkspaceContent({
       />
       <WorkflowAssetPicker
         open={assetPickerTarget !== null}
-        assets={myAssets}
-        loading={assetLoading}
+        assets={assetLibrary}
+        loading={assetLoading || assetLibraryLoading}
+        imageOnly={assetPickerTarget === "template"}
         onInsert={insertWorkflowAsset}
         onClose={() => setAssetPickerTarget(null)}
       />
@@ -1585,6 +1731,7 @@ function WorkflowCard({ workflow, onRun, onEdit, onCopy, onDelete }: { workflow:
           {isSeries ? "多图生成" : "单图生成"}
         </Badge>
         <span className="shrink-0">{workflow.variables.length} 个变量</span>
+        {workflow.template_references.length ? <span className="shrink-0">{workflow.template_references.length} 张模板图</span> : null}
         {workflow.last_run_at ? <span className="min-w-0 truncate">最近运行 {new Date(workflow.last_run_at).toLocaleString("zh-CN")}</span> : null}
       </div>
       <div className="mt-3 flex items-center gap-1 border-t border-border/70 pt-3">
@@ -1841,6 +1988,8 @@ function WorkflowTaskDialog({ task, now, onClose }: { task: WorkflowTask | null;
   const activeImagePrompt = activeImage?.prompt || task.prompt;
   const activeImageTitle = activeImage?.title?.trim() || `第 ${selectedImage + 1} 张`;
   const inputEntries = Object.entries(task.inputs).filter(([, value]) => String(value).trim());
+  const templateReferences = task.references.filter((reference) => reference.role === "template");
+  const productReferences = task.references.filter((reference) => reference.role === "product");
   const title = task.series_title ? `${task.workflow_name} · ${task.series_title}` : task.workflow_name;
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -1892,7 +2041,7 @@ function WorkflowTaskDialog({ task, now, onClose }: { task: WorkflowTask | null;
                 <h3 className="text-sm font-semibold">输入变量</h3>
                 {inputEntries.length ? <dl className="mt-3 divide-y divide-border/70">{inputEntries.map(([key, value]) => <div key={key} className="grid grid-cols-[minmax(90px,0.35fr)_minmax(0,1fr)] gap-3 py-2 text-xs"><dt className="break-words text-muted-foreground">{key}</dt><dd className="whitespace-pre-wrap break-words text-foreground">{value}</dd></div>)}</dl> : <p className="mt-2 text-xs text-muted-foreground">没有输入变量</p>}
               </section>
-              {task.references.length ? <section className="border-b border-border py-5"><h3 className="text-sm font-semibold">参考图</h3><div className="mt-3 grid grid-cols-4 gap-2">{task.references.map((reference) => <a key={reference.id} href={reference.url} target="_blank" rel="noreferrer" className="group min-w-0"><div className="aspect-square overflow-hidden rounded-md border border-border bg-muted"><AuthenticatedImage src={reference.url} alt={reference.name} className="size-full object-cover" placeholderClassName="min-h-0" /></div><p className="mt-1 truncate text-[11px] text-muted-foreground">{reference.name}</p></a>)}</div></section> : null}
+              {task.references.length ? <section className="border-b border-border py-5">{[["风格模板", templateReferences], ["产品实拍", productReferences]].map(([label, items]) => (items as WorkflowReference[]).length ? <div key={label as string} className="mb-4 last:mb-0"><h3 className="text-sm font-semibold">{label as string}</h3><div className="mt-3 grid grid-cols-4 gap-2">{(items as WorkflowReference[]).map((reference) => <a key={reference.id} href={reference.url} target="_blank" rel="noreferrer" className="group min-w-0"><div className="aspect-square overflow-hidden rounded-md border border-border bg-muted"><AuthenticatedImage src={reference.url} alt={reference.name} className="size-full object-cover" placeholderClassName="min-h-0" /></div><p className="mt-1 truncate text-[11px] text-muted-foreground">{reference.name}</p></a>)}</div></div> : null)}</section> : null}
               <section className="border-b border-border py-5">
                 <h3 className="text-sm font-semibold">创作参数快照</h3>
                 <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-3 text-xs">
@@ -1920,12 +2069,30 @@ function WorkflowTaskDialog({ task, now, onClose }: { task: WorkflowTask | null;
   );
 }
 
-function WorkflowEditor({ workflow, models, preferences, saving, onChange, onSave, onClose }: { workflow: CreativeWorkflow | null; models: ModelConfig | null; preferences: ImageGenerationPreferences; saving: boolean; onChange: (workflow: CreativeWorkflow | null) => void; onSave: (workflow: CreativeWorkflow) => void; onClose: () => void }) {
+function WorkflowEditor({ workflow, models, preferences, saving, referenceBusy, onChange, onSave, onAssetsOpen, onReferencesAdd, onClose }: { workflow: CreativeWorkflow | null; models: ModelConfig | null; preferences: ImageGenerationPreferences; saving: boolean; referenceBusy: boolean; onChange: (workflow: CreativeWorkflow | null) => void; onSave: (workflow: CreativeWorkflow) => void; onAssetsOpen: () => void; onReferencesAdd: (files: FileList | null) => void; onClose: () => void }) {
+  const templateInputRef = useRef<HTMLInputElement>(null);
   if (!workflow) return null;
   const patch = (value: Partial<CreativeWorkflow>) => onChange({ ...workflow, ...value });
   const patchConfig = (value: Partial<WorkflowGenerationConfig>) => patch({ config: { ...workflow.config, ...value } });
   const patchSeries = (value: Partial<WorkflowSeriesConfig>) => patch({ series_config: { ...workflow.series_config, ...value } });
   const patchVariable = (id: string, value: Partial<WorkflowVariable>) => patch({ variables: workflow.variables.map((item) => item.id === id ? { ...item, ...value } : item) });
+  const removeTemplateReference = (id: string) => {
+    const templateReferences = workflow.template_references.filter((reference) => reference.id !== id);
+    patch({
+      template_references: templateReferences,
+      series_config: workflow.mode === "multi_image_series" && templateReferences.length
+        ? { ...workflow.series_config, target_count: String(templateReferences.length) }
+        : workflow.series_config,
+    });
+  };
+  const moveTemplateReference = (id: string, direction: -1 | 1) => {
+    const index = workflow.template_references.findIndex((reference) => reference.id === id);
+    const target = index + direction;
+    if (index < 0 || target < 0 || target >= workflow.template_references.length) return;
+    const references = [...workflow.template_references];
+    [references[index], references[target]] = [references[target], references[index]];
+    patch({ template_references: references });
+  };
   const imageModel = resolveConfiguredModel(
     models?.image_models,
     workflow.config.image_model,
@@ -1965,7 +2132,12 @@ function WorkflowEditor({ workflow, models, preferences, saving, onChange, onSav
               <Field label="工作流名称"><Input value={workflow.name} onChange={(event) => patch({ name: event.target.value })} placeholder="输入工作流名称" /></Field>
               <Field label="分类"><Input value={workflow.category} onChange={(event) => patch({ category: event.target.value })} placeholder="输入分类" /></Field>
               <Field label="生成方式">
-                <Select value={workflow.mode} onValueChange={(mode: CreativeWorkflow["mode"]) => patch({ mode })}>
+                <Select value={workflow.mode} onValueChange={(mode: CreativeWorkflow["mode"]) => patch({
+                  mode,
+                  series_config: mode === "multi_image_series" && workflow.template_references.length
+                    ? { ...workflow.series_config, target_count: String(workflow.template_references.length) }
+                    : workflow.series_config,
+                })}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent><SelectItem value="single_image">单图生成</SelectItem><SelectItem value="multi_image_series">多图生成</SelectItem></SelectContent>
                 </Select>
@@ -1980,12 +2152,52 @@ function WorkflowEditor({ workflow, models, preferences, saving, onChange, onSav
             </div>
           </section>
 
+          <section className="border-b border-border pb-6">
+            <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+              <div className="flex items-start gap-2">
+                <span className="grid size-6 shrink-0 place-items-center rounded-md bg-muted text-xs font-semibold text-muted-foreground">2</span>
+                <div>
+                  <h3 className="flex items-center gap-2 text-sm font-semibold"><ImageIcon className="size-4" />风格模板图 <Badge variant="outline">{workflow.template_references.length}</Badge></h3>
+                  <p className="mt-1 text-xs text-muted-foreground">按详情页顺序添加优秀成品图。生成时只迁移版式和视觉风格，商品外观以运行时实拍图为准。</p>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" onClick={onAssetsOpen}>我的素材</Button>
+                <Button size="sm" variant="outline" disabled={referenceBusy || workflow.template_references.length >= 14} onClick={() => templateInputRef.current?.click()}>
+                  {referenceBusy ? <LoaderCircle className="animate-spin" /> : <Upload />}上传模板图
+                </Button>
+                <input
+                  ref={templateInputRef}
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  className="hidden"
+                  onChange={(event) => {
+                    onReferencesAdd(event.currentTarget.files);
+                    event.currentTarget.value = "";
+                  }}
+                />
+              </div>
+            </div>
+            {workflow.scope === "public" && workflow.template_references.some((reference) => reference.visibility !== "public") ? (
+              <p className="mb-3 border-l-2 border-amber-500 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/30 dark:text-amber-300">公开工作流只能使用公开素材。请移除个人模板图，或将工作流改为个人。</p>
+            ) : null}
+            <WorkflowReferenceGrid
+              references={workflow.template_references}
+              className="grid-cols-3 sm:grid-cols-5 lg:grid-cols-7"
+              emptyMessage="还没有模板图"
+              disabled={referenceBusy}
+              onRemove={removeTemplateReference}
+              onMove={moveTemplateReference}
+            />
+          </section>
+
           <div className="grid min-w-0 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
             <div className="min-w-0 space-y-6">
               <section className="border-b border-border pb-6">
                 <div className="mb-4 flex items-center justify-between gap-3">
                   <div className="flex items-center gap-2">
-                    <span className="grid size-6 place-items-center rounded-md bg-muted text-xs font-semibold text-muted-foreground">2</span>
+                    <span className="grid size-6 place-items-center rounded-md bg-muted text-xs font-semibold text-muted-foreground">3</span>
                     <h3 className="text-sm font-semibold">输入变量</h3>
                     <Badge variant="outline">{workflow.variables.length}</Badge>
                   </div>
@@ -2010,7 +2222,7 @@ function WorkflowEditor({ workflow, models, preferences, saving, onChange, onSav
 
               <section className={cn(workflow.mode === "multi_image_series" && "border-b border-border pb-6")}>
                 <div className="mb-4 flex items-center gap-2">
-                  <span className="grid size-6 place-items-center rounded-md bg-muted text-xs font-semibold text-muted-foreground">3</span>
+                  <span className="grid size-6 place-items-center rounded-md bg-muted text-xs font-semibold text-muted-foreground">4</span>
                   <h3 className="text-sm font-semibold">提示词模板</h3>
                 </div>
                 <div className="space-y-4">
@@ -2025,7 +2237,7 @@ function WorkflowEditor({ workflow, models, preferences, saving, onChange, onSav
               {workflow.mode === "multi_image_series" ? (
                 <section>
                   <div className="mb-4 flex items-start gap-2">
-                    <span className="grid size-6 shrink-0 place-items-center rounded-md bg-muted text-xs font-semibold text-muted-foreground">4</span>
+                    <span className="grid size-6 shrink-0 place-items-center rounded-md bg-muted text-xs font-semibold text-muted-foreground">5</span>
                     <div>
                       <h3 className="flex items-center gap-2 text-sm font-semibold"><Layers3 className="size-4" />多图提示词规划</h3>
                       <p className="mt-1 text-xs text-muted-foreground">设置系列拆分数量、并发和每张图片的规划要求。</p>
@@ -2106,16 +2318,17 @@ function VariableEditor({ index, variable, onChange, onDelete }: { index: number
   );
 }
 
-function WorkflowReferenceGrid({ references, className, emptyMessage, disabled = false, onRemove }: { references: WorkflowReference[]; className: string; emptyMessage?: string; disabled?: boolean; onRemove: (id: string) => void }) {
+function WorkflowReferenceGrid({ references, className, emptyMessage, disabled = false, onRemove, onMove }: { references: readonly WorkflowReference[]; className: string; emptyMessage?: string; disabled?: boolean; onRemove?: (id: string) => void; onMove?: (id: string, direction: -1 | 1) => void }) {
   if (!references.length) {
     return emptyMessage ? <div className="mt-3 rounded-lg border border-dashed py-5 text-center text-xs text-muted-foreground">{emptyMessage}</div> : null;
   }
   return (
     <div className={cn("mt-3 grid gap-2", className)}>
-      {references.map((reference) => (
+      {references.map((reference, index) => (
         <div key={reference.id} className="group relative aspect-square overflow-hidden rounded-lg border">
           <AuthenticatedImage src={reference.url} alt={reference.name} className="size-full object-cover" placeholderClassName="min-h-0" />
-          <button
+          {onMove ? <span className="absolute top-1 left-1 grid size-5 place-items-center rounded bg-black/65 text-[10px] font-semibold text-white">{index + 1}</span> : null}
+          {onRemove ? <button
             type="button"
             aria-label={`移除参考图 ${reference.name}`}
             disabled={disabled}
@@ -2123,7 +2336,13 @@ function WorkflowReferenceGrid({ references, className, emptyMessage, disabled =
             onClick={() => onRemove(reference.id)}
           >
             <X className="size-3" />
-          </button>
+          </button> : null}
+          {onMove ? (
+            <div className="absolute bottom-1 left-1 flex gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100">
+              <button type="button" title="前移" disabled={disabled || index === 0} onClick={() => onMove(reference.id, -1)} className="grid size-6 place-items-center rounded bg-black/65 text-white disabled:cursor-not-allowed disabled:opacity-40"><ArrowUp className="size-3 rotate-[-90deg]" /></button>
+              <button type="button" title="后移" disabled={disabled || index === references.length - 1} onClick={() => onMove(reference.id, 1)} className="grid size-6 place-items-center rounded bg-black/65 text-white disabled:cursor-not-allowed disabled:opacity-40"><ArrowDown className="size-3 rotate-[-90deg]" /></button>
+            </div>
+          ) : null}
         </div>
       ))}
     </div>
@@ -2142,6 +2361,13 @@ function WorkflowRunner({ workflow, values, prompt, references, referenceBusy, d
     models?.default_image_model,
   );
   const imageModelAvailable = isWorkflowModelConfigured(imageModel, models?.image_models);
+  const referenceLimit = imageReferenceImageLimit(imageModel);
+  const templateReferenceCount = workflow.mode === "multi_image_series"
+    ? Math.min(1, workflow.template_references.length)
+    : workflow.template_references.length;
+  const totalReferenceCount = templateReferenceCount + references.length;
+  const referenceOverflow = totalReferenceCount > referenceLimit;
+  const missingProductReference = workflow.template_references.length > 0 && references.length === 0;
   const textModel = resolveWorkflowTextModel(workflow, models, preferences);
   const textModelAvailable = isWorkflowModelConfigured(textModel, models?.text_models);
   const imageSettings = workflowImageSettings(workflow.config);
@@ -2208,9 +2434,24 @@ function WorkflowRunner({ workflow, values, prompt, references, referenceBusy, d
                 />
               )) : <p className="rounded-lg bg-muted/40 px-3 py-5 text-center text-xs text-muted-foreground">此工作流没有需要填写的变量</p>}
             </div>
+            {workflow.template_references.length ? (
+              <div className="border-t border-border p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold">风格模板</h3>
+                    <p className="mt-1 text-xs text-muted-foreground">已随工作流加载；多图任务会按顺序为每一页匹配模板。</p>
+                  </div>
+                  <Badge variant="outline">{workflow.template_references.length} 张</Badge>
+                </div>
+                <WorkflowReferenceGrid references={workflow.template_references} className="grid-cols-4" />
+              </div>
+            ) : null}
             <div className="border-t border-border p-4">
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold">参考图</h3>
+                <div>
+                  <h3 className="text-sm font-semibold">新产品实拍图</h3>
+                  <p className="mt-1 text-xs text-muted-foreground">商品外观、颜色、材质和包装将以这些图片为准。</p>
+                </div>
                 <div className="flex gap-2">
                   <Button size="sm" variant="outline" onClick={onAssetsOpen}>我的素材</Button>
                   <Button size="sm" variant="outline" disabled={referenceBusy} onClick={() => inputRef.current?.click()}>
@@ -2230,7 +2471,8 @@ function WorkflowRunner({ workflow, values, prompt, references, referenceBusy, d
                   }}
                 />
               </div>
-              <WorkflowReferenceGrid references={references} className="grid-cols-4" emptyMessage="未添加参考图" disabled={referenceBusy} onRemove={onReferenceRemove} />
+              <WorkflowReferenceGrid references={references} className="grid-cols-4" emptyMessage={workflow.template_references.length ? "请添加至少一张新产品实拍图" : "未添加产品参考图"} disabled={referenceBusy} onRemove={onReferenceRemove} />
+              {referenceOverflow ? <p className="mt-2 text-xs text-rose-600">当前模型最多支持 {referenceLimit} 张参考图，本次共需 {totalReferenceCount} 张。</p> : null}
             </div>
           </section>
           <div className="space-y-4">
@@ -2353,7 +2595,11 @@ function WorkflowRunner({ workflow, values, prompt, references, referenceBusy, d
         </ScrollArea>
         <DialogFooter flush className="flex-row">
           <p className="mr-auto hidden text-xs text-muted-foreground sm:block">
-            {workflow.mode === "multi_image_series"
+            {missingProductReference
+              ? "请添加新产品实拍图后再生成"
+              : referenceOverflow
+                ? `参考图超过当前模型的 ${referenceLimit} 张上限`
+                : workflow.mode === "multi_image_series"
               ? seriesNextStep
               : requiredVariables.length && completedRequiredVariables < requiredVariables.length
               ? `还有 ${requiredVariables.length - completedRequiredVariables} 个必填项未完成`
@@ -2361,7 +2607,7 @@ function WorkflowRunner({ workflow, values, prompt, references, referenceBusy, d
           </p>
           <Button variant="outline" onClick={onClose}>取消</Button>
           <Button
-            disabled={!primaryModelAvailable || referenceBusy || completedRequiredVariables < requiredVariables.length || draftLoading || workflow.mode === "multi_image_series" && drafts.length > 0 && (!runnableDraftCount || runningDraftCount > 0)}
+            disabled={!primaryModelAvailable || referenceBusy || referenceOverflow || missingProductReference || completedRequiredVariables < requiredVariables.length || draftLoading || workflow.mode === "multi_image_series" && drafts.length > 0 && (!runnableDraftCount || runningDraftCount > 0)}
             onClick={workflow.mode === "multi_image_series" && drafts.length > 0 ? onRunAll : onRun}
           >
             {draftLoading || runningDraftCount > 0 ? <LoaderCircle className="animate-spin" /> : workflow.mode === "multi_image_series" ? drafts.length ? <Play /> : <Layers3 /> : <Play />}
@@ -2558,29 +2804,33 @@ function AgentDialog({
   );
 }
 
-function WorkflowAssetPicker({ open, assets, loading, onInsert, onClose }: { open: boolean; assets: MyAsset[]; loading: boolean; onInsert: (asset: MyAsset) => void; onClose: () => void }) {
+function WorkflowAssetPicker({ open, assets, loading, imageOnly = false, onInsert, onClose }: { open: boolean; assets: MyAsset[]; loading: boolean; imageOnly?: boolean; onInsert: (asset: MyAsset) => void; onClose: () => void }) {
   const [query, setQuery] = useState("");
+  useEffect(() => {
+    if (open) setQuery("");
+  }, [open]);
   const filtered = assets.filter((asset) => {
+    if (imageOnly && asset.kind !== "image") return false;
     const text = query.trim().toLowerCase();
     return !text || [asset.title, asset.content, asset.source, ...(asset.tags || [])].some((value) => String(value || "").toLowerCase().includes(text));
   });
   return (
     <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
       <DialogContent className="w-[min(94vw,900px)]">
-        <DialogHeader><DialogTitle>我的素材</DialogTitle><DialogDescription>选择文本填入变量或提示词，选择图片作为参考图。</DialogDescription></DialogHeader>
+        <DialogHeader><DialogTitle>我的素材</DialogTitle><DialogDescription>{imageOnly ? "选择图片作为工作流的持久风格模板。" : "选择文本填入变量或提示词，选择图片作为参考图。"}</DialogDescription></DialogHeader>
         <div className="relative">
           <Search className="absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
           <Input className="pl-8" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索素材" />
         </div>
         <ScrollArea className="h-[min(58vh,560px)]" viewportClassName="pr-3">
-          {loading ? (
+          {loading && !filtered.length ? (
             <div className="grid h-48 place-items-center text-sm text-muted-foreground"><LoaderCircle className="size-5 animate-spin" /></div>
           ) : filtered.length ? (
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
               {filtered.map((asset) => (
-                <button key={asset.id} type="button" data-interaction="primary" className="interactive-card min-w-0 overflow-hidden rounded-xl border border-border bg-card text-left shadow-sm" onClick={() => onInsert(asset)}>
+                <button key={assetListKey(asset)} type="button" data-interaction="primary" className="interactive-card min-w-0 overflow-hidden rounded-xl border border-border bg-card text-left shadow-sm" onClick={() => onInsert(asset)}>
                   <div className="flex aspect-[4/3] items-center justify-center overflow-hidden bg-muted/50">
-                    {asset.kind === "image" && asset.url ? <AuthenticatedImage src={asset.url} alt={asset.title} className="size-full object-cover" placeholderClassName="min-h-0" /> : asset.kind === "video" && asset.url ? <video src={`${asset.url}#t=0.1`} muted playsInline preload="metadata" className="size-full object-cover" /> : <p className="line-clamp-6 p-4 text-xs leading-5 text-muted-foreground">{asset.content || (asset.kind === "audio" ? "音频素材" : "媒体素材")}</p>}
+                    {asset.kind === "image" && asset.url ? <AuthenticatedImage src={asset.coverUrl || asset.url} alt={asset.title} className="size-full object-cover" placeholderClassName="min-h-0" /> : asset.kind === "video" && asset.url ? <video src={`${asset.url}#t=0.1`} muted playsInline preload="metadata" className="size-full object-cover" /> : <p className="line-clamp-6 p-4 text-xs leading-5 text-muted-foreground">{asset.content || (asset.kind === "audio" ? "音频素材" : "媒体素材")}</p>}
                   </div>
                   <div className="p-3"><p className="truncate text-sm font-semibold">{asset.title}</p><p className="mt-1 text-xs text-muted-foreground">{asset.kind === "text" ? "文本" : asset.kind === "image" ? "图片" : asset.kind === "video" ? "视频" : "音频"}</p></div>
                 </button>

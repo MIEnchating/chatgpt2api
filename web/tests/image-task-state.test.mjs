@@ -8,6 +8,7 @@ import {
   effectiveTaskOutputStatus,
   effectiveStoredImageLoadingPhase,
   hasFinalTaskOutput,
+  imageConversationDisplaySnapshot,
   mergeImageConversationLists,
   mergeImageConversationSnapshot,
   mergeCreationTaskList,
@@ -530,6 +531,28 @@ test("a newer summary invalidates an older full snapshot in either merge order",
     assert.deepEqual(merged.historySummary, { turnCount: 2, queued: 1, running: 0 });
     assert.equal(merged.revision, 8);
   }
+});
+
+test("conversation display keeps the last full snapshot while a newer summary loads", () => {
+  const full = conversation({ id: "image-display", status: "error", taskStatus: "error" }, {
+    id: "image-display",
+    revision: 7,
+  });
+  const summary = {
+    id: full.id,
+    revision: 8,
+    title: full.title,
+    createdAt: full.createdAt,
+    updatedAt: "2026-07-19T10:00:08Z",
+    turns: [],
+    historySummaryOnly: true,
+    historySummary: { turnCount: 1, queued: 0, running: 0 },
+  };
+
+  assert.equal(imageConversationDisplaySnapshot(summary, full), full);
+  assert.equal(imageConversationDisplaySnapshot(summary, null), summary);
+  assert.equal(imageConversationDisplaySnapshot(full, summary), full);
+  assert.equal(imageConversationDisplaySnapshot(null, full), null);
 });
 
 test("authoritative remote deletion does not preserve unrelated clean local conversations", () => {

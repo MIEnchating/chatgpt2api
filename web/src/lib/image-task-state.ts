@@ -568,6 +568,19 @@ export function mergeImageConversationSnapshot(
   };
 }
 
+export function imageConversationDisplaySnapshot(
+  current: ImageConversation | null,
+  lastFull: ImageConversation | null,
+): ImageConversation | null {
+  if (!current || current.historySummaryOnly !== true) {
+    return current;
+  }
+  if (!lastFull || lastFull.id !== current.id || lastFull.historySummaryOnly === true) {
+    return current;
+  }
+  return lastFull;
+}
+
 /**
  * Rebase a pending conversation on the authoritative snapshot returned after
  * a revision conflict. Keeping this operation pure makes every persistence

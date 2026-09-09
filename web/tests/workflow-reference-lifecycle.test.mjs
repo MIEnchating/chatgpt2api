@@ -111,7 +111,9 @@ test("workflow task ownership can be registered synchronously without duplicates
   assert.match(workspaceSource, /finally \{\s*finishWorkflowTaskSubmission\(localTaskID, taskReferences\)/);
   assert.match(workspaceSource, /backend_task_ids: Array\.from\(new Set\(\[\.\.\.task\.backend_task_ids, submitted\.id\]\)\)/);
   assert.match(workspaceSource, /const inFlightTaskCounts = inFlightTaskCountsRef\.current;[\s\S]*?const retained = ownedWorkflowTaskReferences\(\s*tasksRef\.current,\s*new Set\(inFlightTaskCounts\.keys\(\)\),\s*\)/);
-  assert.match(workspaceSource, /const taskReferences = freezeWorkflowReferences\(\s*seriesRun\?\.references \|\| workflowReferencesRef\.current,\s*\)/);
+  assert.match(workspaceSource, /const productReferences = freezeWorkflowReferences\(\s*seriesRun\?\.references \|\| workflowReferencesRef\.current,\s*\)/);
+  assert.match(workspaceSource, /\.\.\.templateReferences\.map\(\(reference\) => \(\{ \.\.\.reference, temporary: false, role: "template" as const \}\)\)/);
+  assert.match(workspaceSource, /\.\.\.productReferences/);
   assert.match(workspaceSource, /const seriesRun: WorkflowSeriesRun = \{[\s\S]*?references: freezeWorkflowReferences\(workflowReferencesRef\.current\),[\s\S]*?\};\s*beginWorkflowTaskSubmission\(seriesRun\.id\);/);
   assert.match(workspaceSource, /finally \{\s*finishWorkflowTaskSubmission\(seriesRun\.id, seriesRun\.references\);\s*\}/);
   assert.match(workspaceSource, /workflowReferencesRef\.current = next;\s*setReferences\(next\)/);

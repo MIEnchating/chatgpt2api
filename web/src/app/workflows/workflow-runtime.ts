@@ -4,6 +4,7 @@ import type {
   CreativeWorkflow,
   WorkflowGenerationConfig,
   WorkflowSeriesConfig,
+  WorkflowTemplateReference,
   WorkflowVariable,
 } from "@/services/api/workflows";
 
@@ -155,6 +156,7 @@ export function createBlankWorkflow(
           createWorkflowVariable("product_name", "产品名称"),
           createWorkflowVariable("selling_points", "产品卖点", "textarea"),
         ],
+    template_references: [],
     config: {
       ...createWorkflowConfig(models, preferences, defaults),
       ...(series
@@ -167,6 +169,34 @@ export function createBlankWorkflow(
     },
     series_config: createWorkflowSeriesConfig(models, preferences, defaults),
   }, models, preferences, defaults);
+}
+
+export function createProductDetailWorkflow(
+  models: ModelConfig | null,
+  preferences: ImageGenerationPreferences | undefined,
+  defaults: WorkflowGenerationDefaults = {},
+): CreativeWorkflow {
+  const workflow = createBlankWorkflow(models, preferences, "multi_image_series", defaults);
+  workflow.name = "商品详情图模板";
+  workflow.category = "电商详情";
+  workflow.description = "根据现有详情页模板、新产品卖点和实拍素材，生成一套风格统一的新商品详情图。";
+  workflow.variables = [
+    createWorkflowVariable("product_name", "新产品名称"),
+    createWorkflowVariable("selling_points", "新产品卖点", "textarea"),
+    createWorkflowVariable("target_audience", "目标人群", "textarea"),
+    createWorkflowVariable("campaign", "活动信息"),
+  ];
+  workflow.variables[2].required = false;
+  workflow.variables[3].required = false;
+  workflow.config.count = "1";
+  workflow.config.prompt_template =
+    "为 {{product_name}} 生成一套电商详情图。\n新产品卖点：{{selling_points}}\n目标人群：{{target_audience}}\n活动信息：{{campaign}}\n要求：准确保留新产品外观与品牌信息，按模板页的版式节奏和视觉语言重新创作，形成连贯但不重复的详情页系列。";
+  workflow.series_config = {
+    ...workflow.series_config,
+    prompt_instruction:
+      "严格按照模板图顺序一一规划详情页；每条提示词只负责对应模板页，保留其信息层级、构图节奏和视觉风格，但必须替换旧商品、旧品牌、旧文案、价格和参数。",
+  };
+  return workflow;
 }
 
 export function createStarterWorkflows(
@@ -274,6 +304,22 @@ export function normalizeWorkflow(
         : "single_image",
     category: workflow.category || "",
     description: workflow.description || "",
+    template_references: Array.isArray(workflow.template_references)
+      ? workflow.template_references.flatMap((reference, index) => {
+          if (!reference || typeof reference !== "object") return [];
+          const url = String(reference.url || "").trim();
+          if (!url) return [];
+          return [{
+            id: String(reference.id || "").trim() || uid(),
+            name: String(reference.name || "").trim() || `模板图 ${index + 1}`,
+            url,
+            ...(String(reference.storageKey || "").trim()
+              ? { storageKey: String(reference.storageKey).trim() }
+              : {}),
+            visibility: reference.visibility === "public" ? "public" as const : "private" as const,
+          }];
+        })
+      : [],
     variables: (workflow.variables || []).map((variable) => {
       const sourceKey = String(variable.key || "");
       const key = sourceKey.replace(/[^\w.-]/g, "_");
@@ -370,6 +416,33 @@ export function renderWorkflowPrompt(
   return negativePrompt ? `${prompt}\n\n避免：${negativePrompt}` : prompt;
 }
 
+export function composeWorkflowReferencePrompt(
+  prompt: string,
+  templateReferences: readonly WorkflowTemplateReference[],
+  productReferenceCount: number,
+) {
+  const templateCount = templateReferences.length;
+  if (!templateCount && !productReferenceCount) return prompt.trim();
+  const templateOrder = templateReferences
+    .map((reference, index) => `${index + 1}=${reference.name}`)
+    .join("；");
+  const instructions = [
+    prompt.trim(),
+    "参考图使用规则：",
+    templateCount
+      ? `- 第 1-${templateCount} 张是风格模板图。只参考其版式结构、构图节奏、色彩、光影、字体层级和装饰语言；不要复制其中的旧商品、品牌、Logo、文案、价格或参数。`
+      : "",
+    templateOrder ? `- 模板顺序：${templateOrder}。` : "",
+    productReferenceCount
+      ? `- 后续 ${productReferenceCount} 张是当前新产品实拍图。新商品的外观、颜色、材质、结构、包装和品牌信息必须以这些实拍图为准，不得被模板中的旧商品替换。`
+      : "",
+    templateCount && productReferenceCount
+      ? "- 将新产品自然放入模板的视觉体系，保持商品身份准确，同时生成一张全新的详情图。"
+      : "",
+  ];
+  return instructions.filter(Boolean).join("\n\n");
+}
+
 export function buildSeriesPromptDraftRequest(
   workflow: CreativeWorkflow,
   basePrompt: string,
@@ -379,6 +452,9 @@ export function buildSeriesPromptDraftRequest(
   const variables = Object.entries(values)
     .filter(([, value]) => String(value).trim())
     .map(([key, value]) => `- ${key}: ${value}`)
+    .join("\n");
+  const templatePages = workflow.template_references
+    .map((reference, index) => `- 第 ${index + 1} 张：${reference.name}`)
     .join("\n");
   return [
     "你是多图创作策划助手。请基于工作流信息，为同一主题生成一组互相连贯但画面重点不同的图片生成提示词。",
@@ -391,6 +467,9 @@ export function buildSeriesPromptDraftRequest(
       ? `系列拆分规则：${workflow.series_config.prompt_instruction}`
       : "",
     variables ? `用户输入变量：\n${variables}` : "",
+    templatePages
+      ? `模板详情页（按顺序一一对应规划，不复制旧商品和旧文案）：\n${templatePages}`
+      : "",
     `基础提示词：\n${basePrompt}`,
     "要求：每条 prompt 必须可以独立用于图片生成；保持统一主题、统一风格和连续叙事；避免重复构图；不要包含解释文字。",
   ]

@@ -5,6 +5,8 @@ import {
   buildSeriesPromptDraftRequest,
   createBlankWorkflow,
   createDefaultInputValues,
+  createProductDetailWorkflow,
+  composeWorkflowReferencePrompt,
   isWorkflowModelConfigured,
   mergeWorkflowRunMetadata,
   normalizeWorkflow,
@@ -161,6 +163,15 @@ test("multi-image workflow contains reference planning parameters", () => {
   assert.match(workflow.series_config.prompt_instruction, /封面图/);
 });
 
+test("product detail workflow is ready for template-driven generation", () => {
+  const workflow = createProductDetailWorkflow(models, preferences);
+  assert.equal(workflow.mode, "multi_image_series");
+  assert.equal(workflow.category, "电商详情");
+  assert.deepEqual(workflow.variables.slice(0, 2).map((item) => item.key), ["product_name", "selling_points"]);
+  assert.match(workflow.config.prompt_template, /新产品卖点/);
+  assert.match(workflow.series_config.prompt_instruction, /模板图顺序一一规划/);
+});
+
 test("prompt rendering formats all variable types and appends negative prompt", () => {
   const workflow = createBlankWorkflow(models, preferences);
   workflow.variables = [
@@ -211,6 +222,10 @@ test("series request carries workflow metadata, variables, rules, and base promp
   const workflow = createBlankWorkflow(models, preferences, "multi_image_series");
   workflow.name = "文章配图";
   workflow.category = "内容创作";
+  workflow.template_references = [
+    { id: "cover", name: "首屏模板", url: "/cover.png", visibility: "private" },
+    { id: "detail", name: "细节模板", url: "/detail.png", visibility: "private" },
+  ];
   const request = buildSeriesPromptDraftRequest(
     workflow,
     "为咖啡教程生成配图",
@@ -221,7 +236,22 @@ test("series request carries workflow metadata, variables, rules, and base promp
   assert.match(request, /工作流名称：文章配图/);
   assert.match(request, /系列拆分规则/);
   assert.match(request, /- topic: 手冲咖啡/);
+  assert.match(request, /第 1 张：首屏模板/);
+  assert.match(request, /第 2 张：细节模板/);
   assert.match(request, /为咖啡教程生成配图/);
+});
+
+test("template references add strict style and product identity roles", () => {
+  const prompt = composeWorkflowReferencePrompt(
+    "生成商品详情页",
+    [{ id: "template", name: "首屏", url: "/template.png" }],
+    2,
+  );
+  assert.match(prompt, /第 1-1 张是风格模板图/);
+  assert.match(prompt, /模板顺序：1=首屏/);
+  assert.match(prompt, /后续 2 张是当前新产品实拍图/);
+  assert.match(prompt, /不要复制其中的旧商品、品牌、Logo、文案、价格或参数/);
+  assert.match(prompt, /新商品的外观、颜色、材质、结构、包装和品牌信息/);
 });
 
 test("series parser accepts fenced JSON and follows reference fallbacks", () => {
@@ -280,7 +310,7 @@ test("workflow creation tasks restore as one ordered image batch", () => {
     workflow_name: "商品海报",
     prompt: "生成两张商品海报",
     inputs: { product: "旅行背包" },
-    references: [{ id: "ref-1", name: "参考图", url: "/api/files/ref/content", storageKey: "server:ref", temporary: true }],
+    references: [{ id: "ref-1", name: "参考图", url: "/api/files/ref/content", storageKey: "server:ref", temporary: true, role: "product" }],
     config: {
       ...workflowConfig,
       quality: "high",
@@ -327,6 +357,7 @@ test("workflow creation tasks restore as one ordered image batch", () => {
     url: "/api/files/ref/content",
     storageKey: "server:ref",
     temporary: true,
+    role: "product",
   }]);
   assert.deepEqual(restored[0].images[0], {
     url: "/images/result.png",

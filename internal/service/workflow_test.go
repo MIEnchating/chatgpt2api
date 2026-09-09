@@ -77,6 +77,53 @@ func TestWorkflowServiceCRUDVisibilityAndReferenceRun(t *testing.T) {
 	}
 }
 
+func TestWorkflowServicePersistsTemplateReferencesAndProtectsTheirFiles(t *testing.T) {
+	workflows := NewWorkflowService(newTestStorageBackend(t))
+	workflow := referenceWorkflow()
+	workflow.Scope = "private"
+	workflow.TemplateReferences = []WorkflowTemplateReference{{
+		ID:         "template-1",
+		Name:       "首屏模板",
+		URL:        "/api/files/template-object/content",
+		StorageKey: "server:template-object",
+		Visibility: "private",
+	}}
+	created, err := workflows.Save("alice", workflow)
+	if err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+	if len(created.TemplateReferences) != 1 || created.TemplateReferences[0].Name != "首屏模板" {
+		t.Fatalf("template references = %#v", created.TemplateReferences)
+	}
+	if err := workflows.ReserveStorageObjectDeletion("alice", "template-object"); !errors.Is(err, ErrStorageObjectInUse) {
+		t.Fatalf("ReserveStorageObjectDeletion(referenced) error = %v", err)
+	}
+	if err := workflows.Delete("alice", created.ID); err != nil {
+		t.Fatalf("Delete() error = %v", err)
+	}
+	if err := workflows.ReserveStorageObjectDeletion("alice", "template-object"); err != nil {
+		t.Fatalf("ReserveStorageObjectDeletion(unreferenced) error = %v", err)
+	}
+	workflow.ID = ""
+	workflow.Revision = 0
+	if _, err := workflows.Save("alice", workflow); err == nil || !strings.Contains(err.Error(), "正在删除") {
+		t.Fatalf("Save(pending template) error = %v", err)
+	}
+	if err := workflows.CompleteStorageObjectDeletion("alice", "template-object"); err != nil {
+		t.Fatalf("CompleteStorageObjectDeletion() error = %v", err)
+	}
+}
+
+func TestWorkflowServiceRejectsPrivateTemplateImagesInPublicWorkflow(t *testing.T) {
+	workflow := referenceWorkflow()
+	workflow.TemplateReferences = []WorkflowTemplateReference{{
+		ID: "template-1", Name: "私有模板", URL: "/api/files/template/content", Visibility: "private",
+	}}
+	if _, err := NewWorkflowService(newTestStorageBackend(t)).Save("alice", workflow); err == nil || !strings.Contains(err.Error(), "只能使用公开") {
+		t.Fatalf("Save() error = %v", err)
+	}
+}
+
 func TestWorkflowServiceNormalizesDraftFieldsLikeReferenceFrontend(t *testing.T) {
 	workflows := NewWorkflowService(newTestStorageBackend(t))
 	invalidVariable := referenceWorkflow()

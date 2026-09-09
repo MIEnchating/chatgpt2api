@@ -447,6 +447,17 @@ export function ImageResults({
     );
   }
 
+  if (selectedConversation.historySummaryOnly === true) {
+    return (
+      <div data-image-conversation-detail-loading className="flex h-full min-h-[300px] items-center justify-center px-0 py-3 text-center sm:min-h-[420px] sm:py-6">
+        <div className="inline-flex items-center gap-2 rounded-full border border-[#e5e7eb] bg-white px-4 py-2 text-sm text-[#45515e] shadow-sm dark:border-border dark:bg-card dark:text-muted-foreground">
+          <LoaderCircle className="size-4 animate-spin text-[#1456f0] dark:text-sky-300" />
+          正在读取会话详情
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto flex w-full max-w-[1180px] flex-col gap-5 sm:gap-8">
       {selectedConversation.turns.map((turn, turnIndex) => {

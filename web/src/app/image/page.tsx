@@ -58,6 +58,7 @@ import {
   effectiveTaskSlotStatus,
   effectiveTaskOutputStatus,
   hasFinalTaskOutput,
+  imageConversationDisplaySnapshot,
   isTaskActive,
   mergeCreationTaskList,
   mergeCreationTaskSnapshot,
@@ -1413,6 +1414,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   const deletedConversationIdsRef = useRef(new Set<string>());
   const taskSnapshotsRef = useRef(new Map<string, CreationTask>());
   const conversationsRef = useRef<ImageConversation[]>([]);
+  const fullConversationSnapshotsRef = useRef(new Map<string, ImageConversation>());
   const conversationMutationChainsRef = useRef(new Map<string, Promise<void>>());
   const conversationRevisionReservationsRef = useRef(new Map<string, number>());
   const conversationMutationRevisionRef = useRef(0);
@@ -1803,6 +1805,15 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     () => conversations.find((item) => item.id === selectedConversationId) ?? null,
     [conversations, selectedConversationId],
   );
+  const displayedConversation = imageConversationDisplaySnapshot(
+    selectedConversation,
+    selectedConversationId ? fullConversationSnapshotsRef.current.get(selectedConversationId) ?? null : null,
+  );
+  useLayoutEffect(() => {
+    if (selectedConversation && !isImageConversationHistorySummaryOnly(selectedConversation)) {
+      fullConversationSnapshotsRef.current.set(selectedConversation.id, selectedConversation);
+    }
+  }, [selectedConversation]);
   const activeRelayTokenKind: CreationRelayTokenKind = composerMode === "video" ? "video" : "image";
   const activeRelayTokenName = tokenNameForModel(activeRelayTokenKind, composerMode === "video" ? videoModel : imageModel);
   const relayTokenNameForKind = useCallback((kind: CreationRelayTokenKind, model: string) => tokenNameForModel(kind, model), [tokenNameForModel]);
@@ -2184,7 +2195,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   }, [creationTaskRequestOptions, session.key]);
 
   useLayoutEffect(() => {
-    const turnCount = selectedConversation?.turns.length ?? 0;
+    const turnCount = displayedConversation?.turns.length ?? 0;
     const previousTarget = lastResultsScrollTargetRef.current;
     const conversationChanged = previousTarget.conversationId !== selectedConversationId;
     const turnAdded = !conversationChanged && turnCount > previousTarget.turnCount;
@@ -2209,7 +2220,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     return () => {
       window.cancelAnimationFrame(frame);
     };
-  }, [scrollResultsToBottom, selectedConversation?.turns.length, selectedConversationId]);
+  }, [displayedConversation?.turns.length, scrollResultsToBottom, selectedConversationId]);
 
   useLayoutEffect(() => {
     if (!selectedConversationId || !shouldStickToResultsBottomRef.current) {
@@ -2220,7 +2231,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     return () => {
       window.cancelAnimationFrame(frame);
     };
-  }, [composerDockHeight, progressByTurnKey, scrollResultsToBottom, selectedConversation, selectedConversationId]);
+  }, [composerDockHeight, displayedConversation, progressByTurnKey, scrollResultsToBottom, selectedConversationId]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -5502,7 +5513,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
             >
             <div ref={resultsContentRef} className="min-h-full">
               <ImageResults
-                selectedConversation={selectedConversation}
+                selectedConversation={displayedConversation}
                 isLoadingHistory={isLoadingHistory}
                 progressByTurnKey={progressByTurnKey}
                 progressNow={progressNow}

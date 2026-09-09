@@ -21,6 +21,7 @@ const imageSettingsPanelSource = await readFile(new URL("../src/components/gener
 const imageSidebarSource = await readFile(new URL("../src/app/image/components/image-sidebar.tsx", import.meta.url), "utf8");
 const videoSettingsPanelSource = await readFile(new URL("../src/components/generation/video-settings-panel.tsx", import.meta.url), "utf8");
 const imageComposerSource = await readFile(new URL("../src/app/image/components/image-composer.tsx", import.meta.url), "utf8");
+const imageResultsSource = await readFile(new URL("../src/app/image/components/image-results.tsx", import.meta.url), "utf8");
 const imagePageSource = await readFile(new URL("../src/app/image/page.tsx", import.meta.url), "utf8");
 const logGovernanceSource = await readFile(new URL("../src/app/settings/components/log-governance-card.tsx", import.meta.url), "utf8");
 const videoContractsSource = await readFile(new URL("../src/app/settings/components/video-model-contracts-card.tsx", import.meta.url), "utf8");
@@ -572,6 +573,14 @@ test("video composer places reference materials before settings and uses video t
   assert.match(imageComposerSource, /activeVideoSupportsFrames[\s\S]*activeVideoMaterialSections\.image[\s\S]*<VideoSettingsPanel/);
   assert.match(imagePageSource, /message: "正在生成视频"/);
   assert.match(imagePageSource, /activeTurn\.mode === "video" \? "生成视频失败" : "生成图片失败"/);
+});
+
+test("conversation detail refresh keeps content visible instead of flashing an empty workspace", () => {
+  assert.match(imagePageSource, /imageConversationDisplaySnapshot\(/);
+  assert.match(imagePageSource, /fullConversationSnapshotsRef/);
+  assert.match(imagePageSource, /selectedConversation=\{displayedConversation\}/);
+  assert.match(imageResultsSource, /data-image-conversation-detail-loading/);
+  assert.match(imageResultsSource, /正在读取会话详情/);
 });
 
 test("result retries use the currently selected model instead of the failed turn model", () => {

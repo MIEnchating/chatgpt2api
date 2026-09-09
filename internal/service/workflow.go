@@ -23,6 +23,7 @@ const (
 	maxWorkflowsPerOwner       = 200
 	maxWorkflowVariables       = 100
 	maxWorkflowVariableOptions = 200
+	maxWorkflowTemplateImages  = 14
 	maxWorkflowNameRunes       = 200
 	maxWorkflowPayloadBytes    = 512 << 10
 )
@@ -100,31 +101,44 @@ type WorkflowSeriesConfig struct {
 	Concurrency       string `json:"concurrency"`
 }
 
+type WorkflowTemplateReference struct {
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	URL        string `json:"url"`
+	StorageKey string `json:"storageKey,omitempty"`
+	Visibility string `json:"visibility,omitempty"`
+}
+
 type CreativeWorkflow struct {
-	ID           string                   `json:"id"`
-	Revision     int64                    `json:"revision"`
-	OwnerID      string                   `json:"owner_id"`
-	Scope        string                   `json:"scope"`
-	Mode         string                   `json:"mode"`
-	Name         string                   `json:"name"`
-	Category     string                   `json:"category,omitempty"`
-	Description  string                   `json:"description,omitempty"`
-	Variables    []WorkflowVariable       `json:"variables"`
-	Config       WorkflowGenerationConfig `json:"config"`
-	SeriesConfig WorkflowSeriesConfig     `json:"series_config"`
-	CreatedAt    string                   `json:"created_at"`
-	UpdatedAt    string                   `json:"updated_at"`
-	LastRunAt    string                   `json:"last_run_at,omitempty"`
-	Editable     bool                     `json:"editable"`
+	ID                 string                      `json:"id"`
+	Revision           int64                       `json:"revision"`
+	OwnerID            string                      `json:"owner_id"`
+	Scope              string                      `json:"scope"`
+	Mode               string                      `json:"mode"`
+	Name               string                      `json:"name"`
+	Category           string                      `json:"category,omitempty"`
+	Description        string                      `json:"description,omitempty"`
+	Variables          []WorkflowVariable          `json:"variables"`
+	TemplateReferences []WorkflowTemplateReference `json:"template_references"`
+	Config             WorkflowGenerationConfig    `json:"config"`
+	SeriesConfig       WorkflowSeriesConfig        `json:"series_config"`
+	CreatedAt          string                      `json:"created_at"`
+	UpdatedAt          string                      `json:"updated_at"`
+	LastRunAt          string                      `json:"last_run_at,omitempty"`
+	Editable           bool                        `json:"editable"`
 }
 
 type WorkflowService struct {
-	mu    sync.Mutex
-	store storage.JSONDocumentBackend
+	mu                     sync.Mutex
+	store                  storage.JSONDocumentBackend
+	pendingObjectDeletions map[string]map[string]struct{}
 }
 
 func NewWorkflowService(backend ...storage.Backend) *WorkflowService {
-	return &WorkflowService{store: firstJSONDocumentStore(backend)}
+	return &WorkflowService{
+		store:                  firstJSONDocumentStore(backend),
+		pendingObjectDeletions: make(map[string]map[string]struct{}),
+	}
 }
 
 func (s *WorkflowService) List(ownerID string) ([]CreativeWorkflow, error) {
@@ -265,6 +279,9 @@ func (s *WorkflowService) Save(ownerID string, input CreativeWorkflow) (Creative
 		if err := normalizeWorkflow(&candidate); err != nil {
 			return CreativeWorkflow{}, err
 		}
+		if err := s.validateTemplateReferencesAgainstPendingDeletion(ownerID, candidate.TemplateReferences); err != nil {
+			return CreativeWorkflow{}, err
+		}
 		if err := validateWorkflowSaveLimits(candidate); err != nil {
 			return CreativeWorkflow{}, err
 		}
@@ -379,6 +396,66 @@ func (s *WorkflowService) Delete(ownerID, id string) error {
 	return fmt.Errorf("failed to delete workflow")
 }
 
+func (s *WorkflowService) ReserveStorageObjectDeletion(ownerID, objectID string) error {
+	ownerID = strings.TrimSpace(ownerID)
+	objectID = strings.TrimSpace(objectID)
+	if ownerID == "" || objectID == "" {
+		return errors.New("workflow owner and storage object id are required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	items, err := s.loadLocked()
+	if err != nil {
+		return err
+	}
+	for _, item := range items {
+		if item.OwnerID != ownerID {
+			continue
+		}
+		for _, reference := range item.TemplateReferences {
+			if workflowTemplateReferenceObjectID(reference) == objectID {
+				return fmt.Errorf("%w by workflow %q", ErrStorageObjectInUse, item.Name)
+			}
+		}
+	}
+	if s.pendingObjectDeletions[ownerID] == nil {
+		s.pendingObjectDeletions[ownerID] = make(map[string]struct{})
+	}
+	s.pendingObjectDeletions[ownerID][objectID] = struct{}{}
+	return nil
+}
+
+func (s *WorkflowService) CompleteStorageObjectDeletion(ownerID, objectID string) error {
+	ownerID = strings.TrimSpace(ownerID)
+	objectID = strings.TrimSpace(objectID)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	pending := s.pendingObjectDeletions[ownerID]
+	delete(pending, objectID)
+	if len(pending) == 0 {
+		delete(s.pendingObjectDeletions, ownerID)
+	}
+	return nil
+}
+
+func (s *WorkflowService) validateTemplateReferencesAgainstPendingDeletion(ownerID string, references []WorkflowTemplateReference) error {
+	pending := s.pendingObjectDeletions[ownerID]
+	for _, reference := range references {
+		objectID := workflowTemplateReferenceObjectID(reference)
+		if _, exists := pending[objectID]; objectID != "" && exists {
+			return workflowValidationError("模板图 %q 正在删除，请重新选择", reference.Name)
+		}
+	}
+	return nil
+}
+
+func workflowTemplateReferenceObjectID(reference WorkflowTemplateReference) string {
+	if objectID := storageObjectIDFromKey(reference.StorageKey); objectID != "" {
+		return objectID
+	}
+	return canvasStorageObjectIDFromReference(reference.URL)
+}
+
 func workflowByID(items []CreativeWorkflow, id string) (int, *CreativeWorkflow) {
 	for index := range items {
 		if items[index].ID == id {
@@ -404,6 +481,9 @@ func validateWorkflowSaveLimits(item CreativeWorkflow) error {
 	}
 	if len(item.Variables) > maxWorkflowVariables {
 		return workflowValidationError("每个工作流最多支持 %d 个变量", maxWorkflowVariables)
+	}
+	if len(item.TemplateReferences) > maxWorkflowTemplateImages {
+		return workflowValidationError("每个工作流最多支持 %d 张模板图", maxWorkflowTemplateImages)
 	}
 	for i := range item.Variables {
 		if len(item.Variables[i].Options) > maxWorkflowVariableOptions {
@@ -439,6 +519,10 @@ func workflowTextBytes(item CreativeWorkflow) int {
 			total += len(option)
 		}
 	}
+	for i := range item.TemplateReferences {
+		reference := item.TemplateReferences[i]
+		total += len(reference.ID) + len(reference.Name) + len(reference.URL) + len(reference.StorageKey) + len(reference.Visibility)
+	}
 	return total
 }
 
@@ -456,6 +540,10 @@ func copyWorkflow(item *CreativeWorkflow) *CreativeWorkflow {
 			cloned.Variables[index].Options = make([]string, len(item.Variables[index].Options))
 			copy(cloned.Variables[index].Options, item.Variables[index].Options)
 		}
+	}
+	if item.TemplateReferences != nil {
+		cloned.TemplateReferences = make([]WorkflowTemplateReference, len(item.TemplateReferences))
+		copy(cloned.TemplateReferences, item.TemplateReferences)
 	}
 	return &cloned
 }
@@ -505,9 +593,52 @@ func normalizeWorkflow(item *CreativeWorkflow) error {
 	if err := normalizeWorkflowVariables(item.Variables); err != nil {
 		return err
 	}
+	if err := normalizeWorkflowTemplateReferences(item); err != nil {
+		return err
+	}
 	item.Config.PromptTemplate = strings.TrimSpace(item.Config.PromptTemplate)
 	normalizeWorkflowConfig(&item.Config)
 	normalizeSeriesConfig(&item.SeriesConfig)
+	return nil
+}
+
+func normalizeWorkflowTemplateReferences(item *CreativeWorkflow) error {
+	if item.TemplateReferences == nil {
+		item.TemplateReferences = []WorkflowTemplateReference{}
+	}
+	ids := make(map[string]struct{}, len(item.TemplateReferences))
+	for index := range item.TemplateReferences {
+		reference := &item.TemplateReferences[index]
+		reference.ID = strings.TrimSpace(reference.ID)
+		reference.Name = strings.TrimSpace(reference.Name)
+		reference.URL = strings.TrimSpace(reference.URL)
+		reference.StorageKey = strings.TrimSpace(reference.StorageKey)
+		if reference.ID == "" {
+			reference.ID = util.NewUUID()
+		}
+		if reference.Name == "" {
+			reference.Name = fmt.Sprintf("模板图 %d", index+1)
+		}
+		if reference.URL == "" {
+			return workflowValidationError("第 %d 张模板图缺少图片地址", index+1)
+		}
+		if _, exists := ids[reference.ID]; exists {
+			return workflowValidationError("模板图 ID %q 重复", reference.ID)
+		}
+		ids[reference.ID] = struct{}{}
+		if strings.EqualFold(strings.TrimSpace(reference.Visibility), "public") {
+			reference.Visibility = "public"
+		} else {
+			reference.Visibility = "private"
+		}
+	}
+	if item.Scope == "public" {
+		for _, reference := range item.TemplateReferences {
+			if reference.Visibility != "public" {
+				return workflowValidationError("公开工作流只能使用公开的模板图")
+			}
+		}
+	}
 	return nil
 }
 
