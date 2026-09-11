@@ -400,12 +400,20 @@ func (s *AnnouncementService) loadLocked() ([]Announcement, error) {
 	if err != nil {
 		return nil, announcementStorageError(err)
 	}
-	items := make([]Announcement, 0)
+	itemsByID := make(map[string]Announcement)
 	for _, candidate := range util.AsMapSlice(util.StringMap(raw)["items"]) {
 		item, ok := storedAnnouncement(candidate)
-		if ok {
-			items = append(items, item)
+		if !ok {
+			continue
 		}
+		existing, exists := itemsByID[item.ID]
+		if !exists || item.UpdatedAt > existing.UpdatedAt {
+			itemsByID[item.ID] = item
+		}
+	}
+	items := make([]Announcement, 0, len(itemsByID))
+	for _, item := range itemsByID {
+		items = append(items, item)
 	}
 	sortAnnouncements(items)
 	return items, nil

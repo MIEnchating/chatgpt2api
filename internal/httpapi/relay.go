@@ -17,6 +17,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -990,6 +991,9 @@ func (a *App) relayVideoTask(ctx context.Context, payload map[string]any) (map[s
 		return nil, err
 	}
 	created, err := a.relayVideoSubmitAt(ctx, baseURL, apiKey, createPath, request, contract)
+	if a.logger != nil {
+		a.logger.Debug("video upstream submit", "method", http.MethodPost, "path", createPath, "model", model, "request_fields", sortedMapKeys(request), "response_fields", sortedMapKeys(created), "error", errorText(err), "task_id", videoContractFirstString(created, contract.Polling.TaskIDFields))
+	}
 	if err != nil {
 		return created, err
 	}
@@ -1061,6 +1065,25 @@ func (a *App) relayVideoTask(ctx context.Context, payload map[string]any) (map[s
 		case <-timer.C:
 		}
 	}
+}
+
+func sortedMapKeys(value map[string]any) []string {
+	if len(value) == 0 {
+		return nil
+	}
+	keys := make([]string, 0, len(value))
+	for key := range value {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+func errorText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 func videoContractDriverPaths(contract protocol.VideoModelContract, payload map[string]any) (string, string, error) {
@@ -1786,6 +1809,18 @@ func videoContractProgressForContract(state map[string]any, contract protocol.Vi
 
 func videoContractFirstString(value any, paths []string) string {
 	for _, path := range paths {
+		if result := strings.TrimSpace(util.Clean(videoJSONPathValue(value, path))); result != "" {
+			return result
+		}
+	}
+	// Public video providers commonly use either snake_case or camelCase for
+	// the asynchronous task identifier. Keep the declared contract preferred,
+	// then accept the documented response shapes when a provider omits one of
+	// the configured aliases.
+	for _, path := range []string{
+		"id", "task_id", "taskId", "data.id", "data.task_id", "data.taskId",
+		"data.task.id", "data.task_id.id",
+	} {
 		if result := strings.TrimSpace(util.Clean(videoJSONPathValue(value, path))); result != "" {
 			return result
 		}

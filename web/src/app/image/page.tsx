@@ -4415,7 +4415,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
           return;
         }
         void runConversationQueue(conversationId);
-        toast.success("已加入重试队列");
       } catch (error) {
         if (pageActiveRef.current) {
           toast.error(formatCreationTaskError(error, "提交重试失败"));
@@ -4628,9 +4627,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         return;
       }
       const draftImageSize = draftSizeRequest?.size ?? "";
-      const draftSelectionChanged = draftSizeRequest
-        ? customImageSizeChanged(rawDraftSizeSelection, draftImageSize)
-        : false;
       const draftSelection = draftSizeRequest
         ? applyNormalizedCustomImageSize(draftSizeRequest.selection, draftImageSize)
         : undefined;
@@ -4650,15 +4646,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
           : imageOutputCompressionForModel(draft.model, draftOutputFormat, draft.outputCompression);
       const draftQuality = imageQualityForRequest(draft.quality);
       const draftStream = draft.stream;
-      if (
-        supportsStructuredImageParameters(draft.model) &&
-        isHighResolutionImageSize(draftImageSize, draftSizeRequest?.selection)
-      ) {
-        const sizeLabel = formatImageSizeDisplay(draftImageSize);
-        if (regenerate) {
-          toast.message(`${sizeLabel} 属于大尺寸目标，实际像素以生成结果为准。`);
-        }
-      }
       const turnQueueKey = imageTurnProgressKey(draft.conversationId, draft.turnId);
       if (queueingTurnIdsRef.current.has(turnQueueKey)) {
         return;
@@ -4736,12 +4723,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       if (editFileInputRef.current) {
         editFileInputRef.current.value = "";
       }
-      if (draftSelectionChanged && draftSelection) {
-        toast.message(`宽高已自动校正为 ${formatImageSizeDisplay(draftImageSize)}`);
-      }
       if (regenerate) {
         void runConversationQueue(draft.conversationId);
-        toast.success("已保存并加入重新生成队列");
       } else {
         toast.success("已保存编辑设置");
       }
@@ -4948,13 +4931,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
           : imageOutputCompressionForModel(effectiveModel, effectiveOutputFormat, imageOutputCompression);
       const effectiveImageQuality = videoMode ? undefined : imageQualityForRequest(imageQuality);
       const effectiveImageStream = !videoMode && imageStreamEnabled;
-      const isHighResolutionRequest =
-        supportsStructuredImageParameters(effectiveModel) &&
-        isHighResolutionImageSize(currentImageSize, currentImageSizeRequest?.selection);
-      if (isHighResolutionRequest) {
-        const sizeLabel = formatImageSizeDisplay(currentImageSize);
-          toast.message(`${sizeLabel} 属于大尺寸目标，实际像素以生成结果为准。`);
-      }
       const targetConversation = selectedConversationId
         ? conversationsRef.current.find((conversation) => conversation.id === selectedConversationId) ?? null
         : null;
@@ -5037,7 +5013,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       if (currentSelectionChanged && currentSelection) {
         setImageCustomWidth(currentSelection.customWidth);
         setImageCustomHeight(currentSelection.customHeight);
-        toast.message(`宽高已自动校正为 ${formatImageSizeDisplay(currentImageSize)}`);
       }
       if (videoMode) {
         setImagePrompt("");
@@ -5045,15 +5020,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         clearComposerInputs();
       }
       void runConversationQueue(conversationId);
-
-      const targetStats = getImageConversationStats(baseConversation);
-      if (targetStats.running > 0 || targetStats.queued > 1) {
-        toast.success(videoMode ? "已加入当前视频队列" : "已加入当前图片队列");
-      } else if (!targetConversation) {
-        toast.success(videoMode ? "已创建新视频任务并开始处理" : "已创建新图片任务并开始处理");
-      } else {
-        toast.success(videoMode ? "已发送到当前创作记录" : "已发送到当前图片记录");
-      }
     } catch (error) {
       if (draftProgressTarget) {
         clearTurnProgress(draftProgressTarget.conversationId, draftProgressTarget.turnId);

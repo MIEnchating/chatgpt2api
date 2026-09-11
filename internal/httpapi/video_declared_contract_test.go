@@ -318,6 +318,23 @@ func TestVideoContractResponseFieldPaths(t *testing.T) {
 	}
 }
 
+func TestVideoContractFirstStringAcceptsCommonTaskIDAliases(t *testing.T) {
+	for name, test := range map[string]struct {
+		response map[string]any
+		want     string
+	}{
+		"camel case":         {response: map[string]any{"taskId": "task-camel"}, want: "task-camel"},
+		"nested camel case":  {response: map[string]any{"data": map[string]any{"taskId": "task-nested"}}, want: "task-nested"},
+		"nested task object": {response: map[string]any{"data": map[string]any{"task": map[string]any{"id": "task-object"}}}, want: "task-object"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := videoContractFirstString(test.response, nil); got != test.want {
+				t.Fatalf("videoContractFirstString(%#v) = %q, want %q", test.response, got, test.want)
+			}
+		})
+	}
+}
+
 func TestDeclaredVideoContractExplicitGenerationModeTakesPriority(t *testing.T) {
 	contract, ok := protocol.VideoContractForModel("minimax-h3-768p")
 	if !ok {

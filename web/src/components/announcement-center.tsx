@@ -43,6 +43,16 @@ function announcementVersion(item: Announcement) {
   return `${item.id}:${item.updated_at}`;
 }
 
+function uniqueAnnouncements(items: Announcement[]) {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const version = announcementVersion(item);
+    if (seen.has(version)) return false;
+    seen.add(version);
+    return true;
+  });
+}
+
 function localDateKey(date = new Date()) {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -91,7 +101,7 @@ export function AnnouncementCenter({ className, sessionKey }: { className?: stri
     const token = lifecycleRef.current.beginLoad(sessionKey);
     const request = loadAnnouncementSnapshot(fetchAnnouncements, fetchAnnouncementPreferences).then((snapshot) => {
       if (!lifecycleRef.current.completeLoad(token, Date.now())) return;
-      setAnnouncements(Array.isArray(snapshot.announcements.items) ? snapshot.announcements.items : []);
+      setAnnouncements(Array.isArray(snapshot.announcements.items) ? uniqueAnnouncements(snapshot.announcements.items) : []);
       setPreferences(snapshot.preferences.preferences || emptyPreferences);
       setIsLoaded(true);
     }).catch(() => undefined).finally(() => {

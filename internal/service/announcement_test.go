@@ -106,6 +106,31 @@ func TestAnnouncementServiceValidatesContent(t *testing.T) {
 	}
 }
 
+func TestAnnouncementServiceDeduplicatesStoredAnnouncementIDs(t *testing.T) {
+	backend := newTestStorageBackend(t)
+	store := jsonDocumentStoreFromBackend(backend)
+	if err := store.SaveJSONDocument(announcementDocumentName, map[string]any{"items": []map[string]any{
+		{
+			"id": "duplicate", "title": "旧公告", "content": "旧内容", "enabled": true,
+			"created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z",
+		},
+		{
+			"id": "duplicate", "title": "新公告", "content": "新内容", "enabled": true,
+			"created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-02T00:00:00Z",
+		},
+	}}); err != nil {
+		t.Fatalf("SaveJSONDocument() error = %v", err)
+	}
+
+	items, err := NewAnnouncementService(backend).ListVisible()
+	if err != nil {
+		t.Fatalf("ListVisible() error = %v", err)
+	}
+	if len(items) != 1 || items[0].Title != "新公告" || items[0].Content != "新内容" {
+		t.Fatalf("ListVisible() = %#v, want the latest unique announcement", items)
+	}
+}
+
 func TestAnnouncementPreferencesPersistPerOwner(t *testing.T) {
 	backend := newTestStorageBackend(t)
 	announcements := NewAnnouncementService(backend)
