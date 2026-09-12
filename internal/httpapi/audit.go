@@ -271,6 +271,7 @@ func isNoisySuccessfulAuditRequest(r *http.Request) bool {
 			path == "/api/profile/announcement-preferences",
 			path == "/api/profile/image-generation-preferences",
 			path == "/api/profile/assets",
+			path == "/api/profile/asset-groups",
 			path == "/api/profile/prompt-favorites",
 			path == "/api/profile/storage-provider",
 			path == "/api/profile/custom-relay-configs",
@@ -335,7 +336,7 @@ func auditMediaType(contentType string) string {
 }
 
 func captureAuditRequest(r *http.Request) auditRequestCapture {
-	if r == nil {
+	if r == nil || strings.HasPrefix(r.URL.Path, "/auth/sso/") {
 		return auditRequestCapture{}
 	}
 	query := captureAuditQuery(r)

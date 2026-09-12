@@ -2,6 +2,7 @@ import type { CreationTask } from "@/lib/api";
 import type { CanvasNode } from "@/services/api/canvas";
 import { canvasGenerationNeedsRecovery } from "./canvas-generation-context.ts";
 import { taskDataIsPreview } from "../../lib/image-task-state.ts";
+import { normalizeGenerationProgress } from "../../lib/generation-task-contract.ts";
 
 export type CanvasTaskImage = {
   url: string;
@@ -241,6 +242,14 @@ export function reconcileCancelledCanvasTaskNodes(
   return { nodes: nextNodes, completedImageByNodeID };
 }
 
+export function applyCanvasVideoTaskProgressNodes(nodes: readonly CanvasNode[], task: CreationTask): CanvasNode[] {
+  const progress = task.status === "success" ? 100 : normalizeGenerationProgress(task.progress);
+  return nodes.map((node) => node.type === "video" && node.task_id === task.id && node.generation_status === "loading"
+    && progress !== undefined && node.generation_progress !== progress
+    ? { ...node, generation_progress: progress }
+    : node);
+}
+
 export function reconcilePersistedCanvasTaskNodes(nodes: readonly CanvasNode[], task: CreationTask) {
   const allTaskNodeIDs = new Set(nodes.filter((node) => node.task_id === task.id || node.audio_task_id === task.id).map((node) => node.id));
   const taskNodeIDs = new Set(nodes.flatMap((node) => (
@@ -276,7 +285,7 @@ export function reconcilePersistedCanvasTaskNodes(nodes: readonly CanvasNode[], 
     const content = canvasTaskText(task.data?.[index]);
     return content ? [[nodeID, content] as const] : [];
   }));
-  const progress = applyCanvasTaskProgressNodes(nodes, task, {
+  const progress = applyCanvasTaskProgressNodes(applyCanvasVideoTaskProgressNodes(nodes, task), task, {
     outputNodeIDs,
     batchRootID: batchRoot?.id,
     taskID: task.id,

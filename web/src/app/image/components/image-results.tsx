@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { Check, CircleStop, Clock3, Clapperboard, Download, Eye, Globe2, LoaderCircle, Lock, PencilLine, Plus, RotateCcw } from "lucide-react";
+import { AlertCircle, Check, CircleStop, Clock3, Clapperboard, Download, Eye, Globe2, LoaderCircle, Lock, PencilLine, Plus, RotateCcw } from "lucide-react";
 
 import { AuthenticatedImage } from "@/components/authenticated-image";
 import { MediaVideoPlayer } from "@/components/media-video-player";
+import { GenerationProgress } from "@/components/generation/generation-progress";
+import { videoTaskErrorMessage } from "@/lib/video-task-error";
 import { ChatMarkdown } from "@/app/image/components/chat-markdown";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -1106,7 +1108,12 @@ export function ImageResults({
                           className="mb-3 inline-flex min-h-[160px] w-full break-inside-avoid flex-col overflow-hidden rounded-[18px] border border-rose-200 bg-rose-50 sm:mb-4"
                         >
                           <div className="flex min-h-[112px] flex-1 items-center justify-center whitespace-pre-wrap break-words px-4 py-4 text-center text-sm leading-6 text-rose-600 sm:px-5">
-                            {image.error || "生成失败"}
+                            {video ? (
+                              <div className="flex max-w-xl flex-col items-center gap-2">
+                                <span className="inline-flex items-center gap-2 font-semibold"><AlertCircle className="size-4 shrink-0" />视频生成失败</span>
+                                <p className="text-sm font-normal">{videoTaskErrorMessage(image.error)}</p>
+                              </div>
+                            ) : image.error || "生成失败"}
                           </div>
                           <div className="flex justify-end border-t border-rose-100 bg-white/70 px-3 py-2.5">
                             <Button
@@ -1155,6 +1162,7 @@ export function ImageResults({
                           <p className="text-sm">
                             {imageBusyLabel}
                           </p>
+                          {video && imageLoadingPhase === "running" ? <GenerationProgress progress={image.taskProgress} label="视频生成进度" className="mt-2 max-w-64" /> : null}
                           {imageLoadingPhase === "running" ? (
                             <p className="min-w-[7.5rem] rounded-full bg-white/70 px-2.5 py-1 font-mono text-xs tabular-nums text-stone-400">
                               已运行 {elapsedClock}

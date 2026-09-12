@@ -57,6 +57,7 @@ import { displaySubjectId } from "@/lib/session";
 import {
   relayTokenAvailabilityFromBalance,
   relayTokenNamesUpdateForAvailability,
+  relayTokenOptions,
   relayTokenPreferencesFromNames,
   type RelayTokenAvailability,
   type RelayTokenKind,
@@ -153,6 +154,7 @@ function RelayKeyPreference({
   kind,
   onChange,
   onEditCustom,
+  onDeleteCustom,
   selectedTokenNames,
   tokenNameOptions,
 }: {
@@ -161,6 +163,7 @@ function RelayKeyPreference({
   kind: RelayTokenKind;
   onChange: (value: string[]) => void;
   onEditCustom: (status?: CustomRelayConfigStatus) => void;
+  onDeleteCustom: (status: CustomRelayConfigStatus) => void;
   selectedTokenNames: string[];
   tokenNameOptions: string[];
 }) {
@@ -171,11 +174,7 @@ function RelayKeyPreference({
     audio: { icon: AudioLines, title: "音频模型 Key", description: "用于音频模型请求" },
   }[kind];
   const Icon = metadata.icon;
-  const matchingCustomConfigs = customConfigs.filter((config) => config.kind === kind && config.configured);
-  const options = [
-    ...tokenNameOptions.map((name) => ({ value: name, label: name, custom: undefined as CustomRelayConfigStatus | undefined })),
-    ...matchingCustomConfigs.map((config) => ({ value: config.token_name, label: config.name, custom: config })),
-  ];
+  const options = relayTokenOptions(tokenNameOptions, customConfigs, kind);
   const selected = selectedTokenNames.filter((name) => options.some((option) => option.value === name));
 
   return (
@@ -201,7 +200,14 @@ function RelayKeyPreference({
             value: option.value,
             label: option.label,
             meta: option.custom ? <span className="text-[10px] text-muted-foreground">自定义</span> : null,
-            action: option.custom && customConfigurable ? <Button type="button" variant="ghost" size="icon" className="mr-1 size-7" title="编辑自定义 API" onClick={() => onEditCustom(option.custom)}><Pencil className="size-3.5" /></Button> : null,
+            action: option.custom && customConfigurable ? <div className="mr-1 flex shrink-0 items-center gap-0.5">
+              <TooltipHint content="编辑自定义 Key">
+                <Button type="button" variant="ghost" size="icon" className="size-7" aria-label={`编辑 ${option.label}`} onClick={() => onEditCustom(option.custom)}><Pencil className="size-3.5" /></Button>
+              </TooltipHint>
+              <TooltipHint content="删除自定义 Key">
+                <Button type="button" variant="ghost" size="icon" className="size-7 text-muted-foreground hover:text-destructive" aria-label={`删除 ${option.label}`} onClick={() => { if (option.custom) onDeleteCustom(option.custom); }}><Trash2 className="size-3.5" /></Button>
+              </TooltipHint>
+            </div> : null,
           }))}
           disabled={options.length === 0}
           placeholder="请选择 Key"
@@ -219,6 +225,7 @@ function RelayKeyPreference({
 }
 
 function CustomRelayConfigDialog({
+  deleteRequested = false,
   kind,
   onDeleted,
   onOpenChange,
@@ -226,6 +233,7 @@ function CustomRelayConfigDialog({
   open,
   status,
 }: {
+  deleteRequested?: boolean;
   kind: RelayTokenKind | null;
   onDeleted: (status: CustomRelayConfigStatus) => void;
   onOpenChange: (open: boolean) => void;
@@ -244,8 +252,8 @@ function CustomRelayConfigDialog({
     setName(status?.name || "");
     setBaseURL(status?.base_url || "");
     setAPIKey("");
-    setConfirmDelete(false);
-  }, [open, status?.base_url, status?.name]);
+    setConfirmDelete(deleteRequested);
+  }, [open, deleteRequested, status?.id, status?.base_url, status?.name]);
 
   if (!kind) return null;
   const title = { text: "文本", image: "图片", video: "视频", audio: "音频" }[kind];
@@ -288,13 +296,13 @@ function CustomRelayConfigDialog({
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(value) => { if (!isSaving) onOpenChange(value); }}>
       <DialogContent className="w-[min(92vw,560px)]" scrollable={false}>
         <DialogHeader>
-          <DialogTitle>{title}自定义 API 配置</DialogTitle>
-          <DialogDescription>仅用于{title}模型请求，保存后会作为独立选项出现在 Key 选择中。</DialogDescription>
+          <DialogTitle>{confirmDelete ? "删除自定义 Key" : `${title}自定义 API 配置`}</DialogTitle>
+          <DialogDescription className="break-words">{confirmDelete ? `确定删除“${status?.name}”？此配置将被移除，无法继续用于模型请求。` : `仅用于${title}模型请求，保存后会作为独立选项出现在 Key 选择中。`}</DialogDescription>
         </DialogHeader>
-        <div className="grid gap-4 py-1">
+        {!confirmDelete ? <div className="grid gap-4 py-1">
           <label className="grid gap-1.5 text-sm font-medium text-foreground">
             <span>配置名称</span>
             <Input value={name} onChange={(event) => setName(event.target.value)} placeholder={`例如 ${title}备用线路`} />
@@ -308,15 +316,15 @@ function CustomRelayConfigDialog({
             <span>API Key</span>
             <Input type="password" value={apiKey} onChange={(event) => setAPIKey(event.target.value)} placeholder={status?.has_key ? "已配置，留空保持原 Key" : "请输入 API Key"} autoComplete="new-password" />
           </label>
-        </div>
+        </div> : null}
         <DialogFooter>
           {status ? <Button type="button" variant={confirmDelete ? "destructive" : "outline"} className="sm:mr-auto" disabled={isSaving} onClick={() => void remove()}>
             <Trash2 className="size-4" />{confirmDelete ? "确认删除" : "删除配置"}
           </Button> : null}
           <Button type="button" variant="outline" disabled={isSaving} onClick={() => onOpenChange(false)}>取消</Button>
-          <Button type="button" disabled={!canSave || isSaving} onClick={() => void save()}>
+          {!confirmDelete ? <Button type="button" disabled={!canSave || isSaving} onClick={() => void save()}>
             {isSaving ? <LoaderCircle className="size-4 animate-spin" /> : <Save className="size-4" />}保存并使用
-          </Button>
+          </Button> : null}
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -327,6 +335,7 @@ function AccountResourcesCard({
   customConfigs,
   customConfigurable,
   onEditCustom,
+  onDeleteCustom,
   onTokenNameChange,
   selectedTokenNames,
   tokenNameOptions,
@@ -334,6 +343,7 @@ function AccountResourcesCard({
   customConfigs?: CustomRelayConfigsResponse["configs"];
   customConfigurable: boolean;
   onEditCustom: (kind: RelayTokenKind, status?: CustomRelayConfigStatus) => void;
+  onDeleteCustom: (kind: RelayTokenKind, status: CustomRelayConfigStatus) => void;
   onTokenNameChange: (kind: RelayTokenKind, value: string[]) => void;
   selectedTokenNames: Record<RelayTokenKind, string[]>;
   tokenNameOptions: string[];
@@ -363,6 +373,7 @@ function AccountResourcesCard({
               tokenNameOptions={tokenNameOptions}
               onChange={(value) => onTokenNameChange(kind, value)}
               onEditCustom={(status) => onEditCustom(kind, status)}
+              onDeleteCustom={(status) => onDeleteCustom(kind, status)}
             />
           ))}
         </div>
@@ -858,7 +869,7 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
     names: [],
   });
   const [customRelayConfigs, setCustomRelayConfigs] = useState<CustomRelayConfigsResponse | null>(null);
-  const [editingCustomRelay, setEditingCustomRelay] = useState<{ kind: RelayTokenKind; status?: CustomRelayConfigStatus } | null>(null);
+  const [editingCustomRelay, setEditingCustomRelay] = useState<{ kind: RelayTokenKind; status?: CustomRelayConfigStatus; deleteRequested?: boolean } | null>(null);
   const { tokenNames: selectedTokenNames, setTokenNames } = useRelayTokenPreferences();
   const [isLoadingBalance, setIsLoadingBalance] = useState(true);
   const [activeSection, setActiveSection] = useState<ProfileSection>(profileSectionFromHash);
@@ -961,7 +972,7 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
         />
         <main id={activeSection} className="min-w-0 lg:h-full lg:min-h-0">
           <div hidden={activeSection !== "account"}><AccountOverviewCard balance={balance} isLoading={isLoadingBalance} onRefresh={() => void loadBalance()} session={session} /></div>
-          <div hidden={activeSection !== "keys"}><AccountResourcesCard customConfigs={customRelayConfigs?.configs} customConfigurable={customRelayConfigs?.configurable === true} selectedTokenNames={selectedTokenNames} tokenNameOptions={tokenNameOptions} onTokenNameChange={selectRelayTokenNames} onEditCustom={(kind, status) => setEditingCustomRelay({ kind, status })} /></div>
+          <div hidden={activeSection !== "keys"}><AccountResourcesCard customConfigs={customRelayConfigs?.configs} customConfigurable={customRelayConfigs?.configurable === true} selectedTokenNames={selectedTokenNames} tokenNameOptions={tokenNameOptions} onTokenNameChange={selectRelayTokenNames} onEditCustom={(kind, status) => setEditingCustomRelay({ kind, status })} onDeleteCustom={(kind, status) => setEditingCustomRelay({ kind, status, deleteRequested: true })} /></div>
           <div hidden={activeSection !== "creation"} className="lg:h-full lg:min-h-0"><ImageGenerationPreferencesCard sessionKey={session.key} /></div>
           <div hidden={activeSection !== "storage"}><StorageProviderCard /></div>
         </main>
@@ -970,6 +981,7 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
         open={editingCustomRelay !== null}
         kind={editingCustomRelay?.kind || null}
         status={editingCustomRelay?.status}
+        deleteRequested={editingCustomRelay?.deleteRequested}
         onOpenChange={(open) => { if (!open) setEditingCustomRelay(null); }}
         onSaved={(status) => {
           setCustomRelayConfigs((current) => current ? { ...current, configs: [...current.configs.filter((item) => item.id !== status.id), status] } : current);

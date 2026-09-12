@@ -1809,20 +1809,10 @@ func videoContractProgressForContract(state map[string]any, contract protocol.Vi
 
 func videoContractFirstString(value any, paths []string) string {
 	for _, path := range paths {
-		if result := strings.TrimSpace(util.Clean(videoJSONPathValue(value, path))); result != "" {
-			return result
-		}
-	}
-	// Public video providers commonly use either snake_case or camelCase for
-	// the asynchronous task identifier. Keep the declared contract preferred,
-	// then accept the documented response shapes when a provider omits one of
-	// the configured aliases.
-	for _, path := range []string{
-		"id", "task_id", "taskId", "data.id", "data.task_id", "data.taskId",
-		"data.task.id", "data.task_id.id",
-	} {
-		if result := strings.TrimSpace(util.Clean(videoJSONPathValue(value, path))); result != "" {
-			return result
+		if result, ok := videoJSONPathValue(value, path).(string); ok {
+			if result = strings.TrimSpace(result); result != "" {
+				return result
+			}
 		}
 	}
 	return ""
@@ -1832,7 +1822,7 @@ func videoContractErrorMessage(state map[string]any, contract protocol.VideoMode
 	if message := videoContractFirstString(state, contract.Polling.ErrorFields); message != "" {
 		return message
 	}
-	return "视频上游任务执行失败"
+	return "视频生成失败，上游未提供具体原因，请稍后重试"
 }
 
 func videoContractResultURLValue(value any) string {

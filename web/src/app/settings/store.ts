@@ -112,6 +112,10 @@ function normalizeConfig(config: SettingsConfig): SettingsConfig {
       typeof config.relay_base_url === "string" && config.relay_base_url.trim()
         ? config.relay_base_url
         : "https://www.yunmian.tech",
+    relay_text_group: String(config.relay_text_group || "").trim(),
+    relay_image_group: String(config.relay_image_group || "").trim(),
+    relay_video_group: String(config.relay_video_group || "").trim(),
+    relay_audio_group: String(config.relay_audio_group || "").trim(),
     relay_database_url: "",
     relay_database_type: config.relay_database_type === "sub2api" ? "sub2api" : "newapi",
     relay_database_driver: relayDatabaseFields.driver,
@@ -202,6 +206,7 @@ type SettingsStore = SettingsSessionData & {
   setProxy: (value: string) => void;
   setBaseUrl: (value: string) => void;
   setRelayBaseUrl: (value: string) => void;
+  setRelayCreationGroup: (kind: "text" | "image" | "video" | "audio", value: string) => void;
   setRelayDatabaseType: (value: "newapi" | "sub2api") => void;
   setRelayDatabaseDriver: (value: "sqlite" | "postgres" | "mysql") => void;
   setRelayDatabaseField: (field: "host" | "port" | "name" | "user" | "password", value: string) => void;
@@ -409,6 +414,10 @@ export function createSettingsStore(
         app_title: String(config.app_title || "云棉").trim() || "云棉",
         project_name: String(config.app_title || "云棉").trim() || "云棉",
         relay_base_url: String(config.relay_base_url || "").trim(),
+        relay_text_group: String(config.relay_text_group || "").trim(),
+        relay_image_group: String(config.relay_image_group || "").trim(),
+        relay_video_group: String(config.relay_video_group || "").trim(),
+        relay_audio_group: String(config.relay_audio_group || "").trim(),
         relay_database_type: config.relay_database_type === "sub2api" ? "sub2api" : "newapi",
         relay_database_driver: config.relay_database_driver === "sqlite" ? "sqlite" : config.relay_database_driver === "mysql" ? "mysql" : "postgres",
         relay_database_host: String(config.relay_database_host || "").trim(),
@@ -577,6 +586,10 @@ export function createSettingsStore(
         },
       };
     });
+  },
+
+  setRelayCreationGroup: (kind, value) => {
+    set((state) => state.config ? { config: { ...state.config, [`relay_${kind}_group`]: value } } : {});
   },
 
   setRelayDatabaseType: (value) => {

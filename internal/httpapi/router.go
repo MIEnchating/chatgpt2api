@@ -38,6 +38,8 @@ func (a *App) routes() []appRoute {
 		exact(http.MethodPost, "/auth/login", a.handleLogin),
 		exact(http.MethodPost, "/auth/logout", a.handleLogout),
 		exact(http.MethodGet, "/auth/session", a.handleSession),
+		exact(http.MethodGet, "/auth/sso/start", a.handleSSOStart),
+		exact(http.MethodGet, "/auth/sso/callback", a.handleSSOCallback),
 		exact(http.MethodGet, "/health", a.handleHealth),
 		exact(http.MethodGet, "/api/storage/config", a.handleStorageConfig),
 
@@ -55,6 +57,7 @@ func (a *App) routes() []appRoute {
 		exact("", "/api/profile/balance", a.handleProfileBalance),
 		subtree("/api/profile/prompt-favorites", a.handleProfilePromptFavorites),
 		exact("", "/api/profile/assets", a.handleProfileAssets),
+		exact("", "/api/profile/asset-groups", a.handleProfileAssetGroups),
 		subtree("/api/profile/image-conversations", a.handleProfileImageConversations),
 		exact(http.MethodPost, "/api/workflows/initialize", a.handleWorkflowInitialize),
 		exact(http.MethodPost, "/api/workflows/agent-draft", a.handleWorkflowAgentDraft),

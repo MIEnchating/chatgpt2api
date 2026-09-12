@@ -36,7 +36,7 @@ import { CANVAS_GROUP_PADDING, canvasNodeBounds, detachCanvasNodesFromRemovedGro
 import { CANVAS_NODE_DEFAULT_SIZE } from "@/app/canvas/canvas-node-specs";
 import { PANORAMA_IMAGE_SIZE, PANORAMA_NODE_SIZE, buildPanoramaPrompt, isStrictPanoramaSize, panoramaGenerationCount, panoramaGenerationQuality, panoramaRetryPrompt, panoramaRetryReferenceURLs } from "@/app/canvas/canvas-panorama";
 import type { CanvasMaskEditPayload } from "@/app/canvas/canvas-image-tools";
-import { applyCanvasTaskImage, applyCanvasTaskProgressNodes, reconcileCancelledCanvasTaskNodes, reconcilePersistedCanvasTaskNodes, restoreCanvasTaskInitialImage, summarizeCanvasTaskResult } from "@/app/canvas/canvas-task-results";
+import { applyCanvasVideoTaskProgressNodes, applyCanvasTaskImage, applyCanvasTaskProgressNodes, reconcileCancelledCanvasTaskNodes, reconcilePersistedCanvasTaskNodes, restoreCanvasTaskInitialImage, summarizeCanvasTaskResult } from "@/app/canvas/canvas-task-results";
 import { canvasExportBounds } from "@/app/canvas/canvas-export";
 import { createCanvasProjectArchive, downloadCanvasProjectArchive, readCanvasProjectArchive } from "@/app/canvas/canvas-project-transfer";
 import { normalizeCanvasClipboard, remapCanvasNodeReferences } from "@/app/canvas/canvas-clipboard";
@@ -3665,7 +3665,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     const resultNodeID = createsResult ? `video-${randomID()}` : sourceNode.id;
     const activeGeneration = registerActiveGeneration(controller, [sourceNode.id, resultNodeID], [taskID]);
     const videoNodeSize = canvasNodeSizeFromRatio(params.generation_video_size, CANVAS_NODE_DEFAULT_SIZE.video.width, CANVAS_NODE_DEFAULT_SIZE.video.height) || CANVAS_NODE_DEFAULT_SIZE.video;
-    const resultNode = createsResult ? { ...buildVideoNode({ title: text.slice(0, 32) || "视频", prompt: text, taskID }, { x: sourceNode.x + sourceNode.width + 96, y: sourceNode.y + sourceNode.height / 2 - videoNodeSize.height / 2 }, sourceNode), ...videoNodeSize, id: resultNodeID, generation_status: "loading" as const, generation_started_at: generationStartedAt, generation_progress: 0, generation_model: params.generation_video_model, task_id: taskID, camera_control: sourceNode.camera_control } : { ...sourceNode, prompt: text, task_id: taskID, generation_status: "loading" as const, generation_started_at: generationStartedAt, generation_progress: 0, generation_model: params.generation_video_model };
+    const resultNode = createsResult ? { ...buildVideoNode({ title: text.slice(0, 32) || "视频", prompt: text, taskID }, { x: sourceNode.x + sourceNode.width + 96, y: sourceNode.y + sourceNode.height / 2 - videoNodeSize.height / 2 }, sourceNode), ...videoNodeSize, id: resultNodeID, generation_status: "loading" as const, generation_started_at: generationStartedAt, generation_progress: undefined, generation_model: params.generation_video_model, task_id: taskID, camera_control: sourceNode.camera_control } : { ...sourceNode, prompt: text, task_id: taskID, generation_status: "loading" as const, generation_started_at: generationStartedAt, generation_progress: undefined, generation_model: params.generation_video_model };
     const historyBase = concurrent ? historyRef.current : appendCanvasHistorySnapshot(historyRef.current, cloneDocument(captureDocument()), MAX_HISTORY);
     if (!concurrent) historyRef.current = historyBase;
     const finishHistory = () => concurrent ? scheduleSave() : commitGenerationHistory(historyBase);
@@ -3740,7 +3740,12 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         setRunningTaskID(serverTaskID);
       }
       replaceNodes(nodesRef.current.map((node) => node.id === resultNodeID ? { ...node, task_id: serverTaskID } : node));
-      const completed = await persistCreationTaskOutputs(await waitForTask(serverTaskID, undefined, controller.signal), {
+      const updateVideoProgress = (task: CreationTask) => {
+        if (!isCurrentProject() || controller.signal.aborted) return;
+        replaceNodes(applyCanvasVideoTaskProgressNodes(nodesRef.current, task));
+      };
+      updateVideoProgress(submitted);
+      const completed = await persistCreationTaskOutputs(await waitForTask(serverTaskID, updateVideoProgress, controller.signal), {
         assetContext: { prompt, source: "无限画布", metadata: { projectId: documentRef.current.id, nodeId: resultNodeID } },
         expectedSessionKey,
         signal: controller.signal,

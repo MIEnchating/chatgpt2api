@@ -10,6 +10,7 @@ import {
   relayTokenRouteForModel,
   relayTokenNamesFromPreferences,
   relayTokenPreferenceField,
+  relayTokenOptions,
   retainSelectedRelayTokenNames,
 } from "../src/lib/relay-token-selection.ts";
 
@@ -79,6 +80,27 @@ test("only authoritative balance results can remove saved relay token selections
   assert.equal(relayTokenNamesUpdateForAvailability(["saved-key"], failed), null);
   assert.equal(relayTokenNamesUpdateForAvailability(["saved-key"], malformed), null);
   assert.deepEqual(relayTokenNamesUpdateForAvailability(["saved-key"], loaded), []);
+});
+
+test("shows each custom key once by display name and only for its model kind", () => {
+  const video = { id: "video", kind: "video", name: "Video primary", token_name: "__custom_relay__:video", configured: true };
+  const image = { id: "image", kind: "image", name: "Image primary", token_name: "__custom_relay__:image", configured: true };
+  const incomplete = { ...video, id: "incomplete", token_name: "__custom_relay__:incomplete", configured: false };
+  const names = [" codex ", "codex", "", video.token_name, image.token_name, "__custom_relay__:deleted"];
+  assert.deepEqual(relayTokenOptions(names, [video, image, incomplete], "video"), [
+    { value: "codex", label: "codex", custom: undefined },
+    { value: video.token_name, label: video.name, custom: video },
+  ]);
+  assert.deepEqual(relayTokenOptions(names, [], "video"), [{ value: "codex", label: "codex", custom: undefined }]);
+});
+
+test("removes missing and wrong-kind custom selections even when balance is unavailable", () => {
+  const current = ["codex", "__custom_relay__:deleted", "__custom_relay__:video", "__custom_relay__:image"];
+  const availableCustom = ["__custom_relay__:video"];
+  assert.deepEqual(relayTokenNamesUpdateForAvailability(current, { authoritative: false, names: [] }, availableCustom), ["codex", ...availableCustom]);
+  assert.deepEqual(relayTokenNamesUpdateForAvailability(current, { authoritative: true, names: [] }, availableCustom), availableCustom);
+  assert.deepEqual(relayTokenNamesUpdateForAvailability(current, { authoritative: false, names: [] }, []), ["codex"]);
+  assert.equal(relayTokenNamesUpdateForAvailability(["codex", ...availableCustom], { authoritative: false, names: [] }, availableCustom), null);
 });
 
 test("routes a model to the first selected key that exposes it", () => {

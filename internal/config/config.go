@@ -27,6 +27,10 @@ var settingEnvKeys = map[string]string{
 	"project_name":                   "PROJECT_NAME",
 	"site_icon_url":                  "SITE_ICON_URL",
 	"relay_base_url":                 "API_BASE_URL",
+	"relay_text_group":               "RELAY_TEXT_GROUP",
+	"relay_image_group":              "RELAY_IMAGE_GROUP",
+	"relay_video_group":              "RELAY_VIDEO_GROUP",
+	"relay_audio_group":              "RELAY_AUDIO_GROUP",
 	"relay_database_url":             "DATABASE_URL",
 	"relay_database_type":            "DATABASE_TYPE",
 	"relay_database_driver":          "DATABASE_DRIVER",
@@ -449,6 +453,18 @@ func (s *Store) RelayBaseURL() string {
 	return strings.TrimRight(strings.TrimSpace(fmt.Sprint(s.settingValue("relay_base_url", defaultRelayBaseURL))), "/")
 }
 
+// RelayCreationGroups contains only explicitly configured category mappings.
+// Both providers use group names here; the Sub2API client resolves their IDs.
+func (s *Store) RelayCreationGroups() map[string]string {
+	groups := make(map[string]string)
+	for _, kind := range []string{"text", "image", "video", "audio"} {
+		if group := strings.TrimSpace(fmt.Sprint(s.settingValue("relay_"+kind+"_group", ""))); group != "" {
+			groups[kind] = group
+		}
+	}
+	return groups
+}
+
 func (s *Store) RelayDatabaseURL() string {
 	return strings.TrimSpace(fmt.Sprint(s.settingValue("relay_database_url", "")))
 }
@@ -718,6 +734,10 @@ func (s *Store) Get() map[string]any {
 	data["site_icon_url"] = snapshot.SiteIconURL()
 	data["relay_base_url"] = snapshot.RelayBaseURL()
 	data["relay_database_type"] = snapshot.RelayDatabaseType()
+	data["relay_text_group"] = strings.TrimSpace(fmt.Sprint(snapshot.data["relay_text_group"]))
+	data["relay_image_group"] = strings.TrimSpace(fmt.Sprint(snapshot.data["relay_image_group"]))
+	data["relay_video_group"] = strings.TrimSpace(fmt.Sprint(snapshot.data["relay_video_group"]))
+	data["relay_audio_group"] = strings.TrimSpace(fmt.Sprint(snapshot.data["relay_audio_group"]))
 	driver, host, port, name, user := relayDatabasePublicFields(snapshot.RelayDatabaseConnectionURL(), snapshot.RelayDatabaseDriver())
 	data["relay_database_driver"] = driver
 	data["relay_database_host"] = host

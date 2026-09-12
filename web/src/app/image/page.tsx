@@ -67,7 +67,7 @@ import {
   taskImageHasPreview,
   deriveGenerationTaskStatus,
 } from "@/lib/image-task-state";
-import { isRetryableTaskPollError } from "@/lib/generation-task-contract";
+import { isRetryableTaskPollError, normalizeGenerationProgress } from "@/lib/generation-task-contract";
 import { Button } from "@/components/ui/button";
 import { ScrollArea, type ScrollAreaHandle } from "@/components/ui/scroll-area";
 import { resolveConfiguredVideoModel, supportsVideoMultimodalReferences, videoDefaultSeconds, videoReferenceImageLimit, videoRequiresMultimodalReferenceMode, videoRequiresReferenceAudio, videoRequiresReferenceImage, videoRequiresReferenceVideo, videoWorkbenchReferenceLimits } from "@/lib/video-model-capabilities";
@@ -621,6 +621,7 @@ const STORED_IMAGE_FIELDS: Array<keyof StoredImage> = [
   "storageKey",
   "taskRevision",
   "taskStatus",
+  "taskProgress",
   "status",
   "path",
   "visibility",
@@ -719,10 +720,11 @@ function parseCreationTaskTime(value: string | undefined) {
   return Date.parse(text.replace(" ", "T"));
 }
 
-function creationTaskTimingUpdates(task: CreationTask, completed: boolean): Partial<StoredImage> {
+function creationTaskMetadataUpdates(task: CreationTask, completed: boolean): Partial<StoredImage> {
   const updates: Partial<StoredImage> = {
     taskCreatedAt: task.created_at,
     taskUpdatedAt: task.updated_at,
+    taskProgress: task.mode === "video" ? task.status === "success" ? 100 : normalizeGenerationProgress(task.progress) : undefined,
   };
   if (!completed) {
     updates.generationDurationMs = undefined;
@@ -739,8 +741,8 @@ function creationTaskTimingUpdates(task: CreationTask, completed: boolean): Part
 
 function taskDataToStoredImage(image: StoredImage, task: CreationTask, dataIndex = 0, fallbackVisibility?: ImageVisibility): StoredImage {
   const taskVisibility = task.visibility || fallbackVisibility || image.visibility || "private";
-  const activeTiming = creationTaskTimingUpdates(task, false);
-  const finalTiming = creationTaskTimingUpdates(task, true);
+  const activeMetadata = creationTaskMetadataUpdates(task, false);
+  const finalMetadata = creationTaskMetadataUpdates(task, true);
   const taskRevision = Number(task.revision);
   const normalizedTaskRevision = Number.isSafeInteger(taskRevision) && taskRevision > 0 ? taskRevision : image.taskRevision;
   const sameTask = image.taskId === task.id;
@@ -769,7 +771,7 @@ function taskDataToStoredImage(image: StoredImage, task: CreationTask, dataIndex
     return {
       taskId: task.id,
       taskRevision: normalizedTaskRevision,
-      ...finalTiming,
+      ...finalMetadata,
       taskStatus: "success" as const,
       status: "success" as const,
       b64_json: item.b64_json,
@@ -795,7 +797,7 @@ function taskDataToStoredImage(image: StoredImage, task: CreationTask, dataIndex
       return updateStoredImage(image, {
         taskId: task.id,
         taskRevision: normalizedTaskRevision,
-        ...finalTiming,
+        ...finalMetadata,
         taskStatus: "success",
         status: "message",
         text_response: task.data?.[dataIndex]?.text_response || task.error || "",
@@ -814,7 +816,7 @@ function taskDataToStoredImage(image: StoredImage, task: CreationTask, dataIndex
         return updateStoredImage(image, {
           taskId: task.id,
           taskRevision: normalizedTaskRevision,
-          ...finalTiming,
+          ...finalMetadata,
           taskStatus: slotStatus,
           status: slotStatus === "cancelled" ? "cancelled" : "error",
           error: slotStatus === "cancelled" ? task.error || "任务已终止" : task.error || "生成失败",
@@ -823,7 +825,7 @@ function taskDataToStoredImage(image: StoredImage, task: CreationTask, dataIndex
       return updateStoredImage(image, {
         taskId: task.id,
         taskRevision: normalizedTaskRevision,
-        ...finalTiming,
+        ...finalMetadata,
         taskStatus: "success",
         status: "error",
         error: `未返回第 ${dataIndex + 1} 张图片数据`,
@@ -847,7 +849,7 @@ function taskDataToStoredImage(image: StoredImage, task: CreationTask, dataIndex
         ...(item && (item.b64_json || item.url || item.video_url) ? successUpdates(item) : {}),
         taskId: task.id,
         taskRevision: normalizedTaskRevision,
-        ...finalTiming,
+        ...finalMetadata,
         taskStatus: slotStatus,
         status: slotStatus,
         text_response: undefined,
@@ -859,7 +861,7 @@ function taskDataToStoredImage(image: StoredImage, task: CreationTask, dataIndex
         return updateStoredImage(image, {
           taskId: task.id,
           taskRevision: normalizedTaskRevision,
-          ...finalTiming,
+          ...finalMetadata,
           taskStatus: "success",
           status: "message",
           text_response: item?.text_response || "",
@@ -878,7 +880,7 @@ function taskDataToStoredImage(image: StoredImage, task: CreationTask, dataIndex
       return updateStoredImage(image, {
         taskId: task.id,
         taskRevision: normalizedTaskRevision,
-        ...activeTiming,
+        ...activeMetadata,
         taskStatus: activeTaskStatus,
         status: "loading",
         text_response: item.text_response,
@@ -893,7 +895,7 @@ function taskDataToStoredImage(image: StoredImage, task: CreationTask, dataIndex
     if (item?.b64_json || item?.url || item?.video_url) {
       return updateStoredImage(image, {
         ...successUpdates(item),
-        ...activeTiming,
+        ...activeMetadata,
         taskRevision: normalizedTaskRevision,
         taskStatus: activeTaskStatus,
         status: "loading",
@@ -903,7 +905,7 @@ function taskDataToStoredImage(image: StoredImage, task: CreationTask, dataIndex
     return updateStoredImage(image, {
       taskId: task.id,
       taskRevision: normalizedTaskRevision,
-      ...activeTiming,
+      ...activeMetadata,
       taskStatus: activeTaskStatus,
       status: "loading",
       ...(preview ? {} : { b64_json: undefined, url: undefined, path: undefined }),
@@ -917,7 +919,7 @@ function taskDataToStoredImage(image: StoredImage, task: CreationTask, dataIndex
       return updateStoredImage(image, {
         taskId: task.id,
         taskRevision: normalizedTaskRevision,
-        ...finalTiming,
+        ...finalMetadata,
         taskStatus: "success",
         status: "message",
         text_response: task.error || "",
@@ -945,7 +947,7 @@ function taskDataToStoredImage(image: StoredImage, task: CreationTask, dataIndex
         ...image,
         taskId: task.id,
         taskRevision: normalizedTaskRevision,
-        ...finalTiming,
+        ...finalMetadata,
         taskStatus: "error",
         status: "error",
         error,
@@ -954,7 +956,7 @@ function taskDataToStoredImage(image: StoredImage, task: CreationTask, dataIndex
     return updateStoredImage(image, {
       taskId: task.id,
       taskRevision: normalizedTaskRevision,
-      ...finalTiming,
+      ...finalMetadata,
       taskStatus: "error",
       status: "error",
       text_response: undefined,
@@ -982,7 +984,7 @@ function taskDataToStoredImage(image: StoredImage, task: CreationTask, dataIndex
         ...image,
         taskId: task.id,
         taskRevision: normalizedTaskRevision,
-        ...finalTiming,
+        ...finalMetadata,
         taskStatus: "cancelled",
         status: "cancelled",
         error: task.error || "任务已终止",
@@ -991,7 +993,7 @@ function taskDataToStoredImage(image: StoredImage, task: CreationTask, dataIndex
     return updateStoredImage(image, {
       taskId: task.id,
       taskRevision: normalizedTaskRevision,
-      ...finalTiming,
+      ...finalMetadata,
       taskStatus: "cancelled",
       status: "cancelled",
       error: task.error || "任务已终止",
@@ -1001,7 +1003,7 @@ function taskDataToStoredImage(image: StoredImage, task: CreationTask, dataIndex
   return updateStoredImage(image, {
     taskId: task.id,
     taskRevision: normalizedTaskRevision,
-    ...activeTiming,
+    ...activeMetadata,
     taskStatus: creationTaskImageStatus(task, dataIndex) || "queued",
     status: "loading",
     text_response: undefined,
@@ -1283,6 +1285,7 @@ async function recoverConversationHistory(
             taskId: image.id,
             taskRevision: undefined,
             taskStatus: "queued" as const,
+            taskProgress: undefined,
             taskCreatedAt: undefined,
             taskUpdatedAt: undefined,
             generationDurationMs: undefined,
@@ -1297,6 +1300,7 @@ async function recoverConversationHistory(
             taskId: imageTaskIdForImage(turn.id, turn.images, imageIndex),
             taskRevision: undefined,
             taskStatus: "queued" as const,
+            taskProgress: undefined,
             taskCreatedAt: undefined,
             taskUpdatedAt: undefined,
             generationDurationMs: undefined,
@@ -4021,6 +4025,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                                   taskId: recoveryTaskId,
                                   taskRevision: undefined,
                                   taskStatus: "queued" as const,
+                                  taskProgress: undefined,
                                   b64_json: undefined,
                                   url: undefined,
                                   path: undefined,
@@ -4376,6 +4381,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                       storageKey: undefined,
                       taskRevision: undefined,
                       taskStatus: "queued" as const,
+                      taskProgress: undefined,
                       status: "loading" as const,
                       b64_json: undefined,
                       url: undefined,
@@ -4520,6 +4526,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                       ? `${turn.id}-${regenerationId}-video-${index}`
                       : imageTaskBatchId(`${turn.id}-${regenerationId}`, index),
                     taskStatus: "queued" as const,
+                    taskProgress: undefined,
                     status: "loading" as const,
                     mediaType: turn.mode === "video" ? "video" as const : "image" as const,
                     visibility,
@@ -4702,6 +4709,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                       ? `${turn.id}-${regenerationId}-video-${index}`
                       : imageTaskBatchId(`${turn.id}-${regenerationId}`, index),
                     taskStatus: "queued" as const,
+                    taskProgress: undefined,
                     status: "loading" as const,
                     visibility: baseTurn.visibility,
                   };
@@ -4975,6 +4983,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
             id: imageId,
             taskId: videoMode ? `${turnId}-video-${index}` : imageTaskBatchId(turnId, index),
             taskStatus: "queued" as const,
+            taskProgress: undefined,
             status: "loading" as const,
             mediaType: videoMode ? "video" as const : "image" as const,
             visibility: defaultImageVisibility,

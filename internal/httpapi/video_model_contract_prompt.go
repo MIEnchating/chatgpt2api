@@ -35,7 +35,7 @@ const videoContractImportSystemPrompt = `# Role
 10. artifact.mode 为 response_url 时从 result_fields 读取地址；结果 URL 需要 Bearer Key 时 auth 为 relay 并限制 allowed_hosts。独立内容接口使用 task_content，content_path 必须含 {task_id} 且 auth 为 relay。
 
 # Deterministic defaults
-- 文档未说明轮询：interval_seconds=5、timeout_seconds=900、task_id_fields=["id","task_id","data.id","data.task_id"]、status_fields=["status","data.status"]、progress_fields=["progress","data.progress"]、error_fields=["error.message","message","data.error.message","data.message"]、queued_statuses=["queued"]、processing_statuses=["in_progress"]、success_statuses=["completed"]、failure_statuses=["failed","cancelled"]、result_fields=["video_url","video_urls","url"]。
+- 文档未说明轮询：interval_seconds=5、timeout_seconds=900、task_id_fields=["id","task_id","data.id","data.task_id"]、status_fields=["status","data.status"]、progress_fields=["progress","data.progress"]、error_fields=["error.message","message","data.error.message","data.message","fail_reason","error","data.error"]、queued_statuses=["queued"]、processing_statuses=["in_progress"]、success_statuses=["completed"]、failure_statuses=["failed","cancelled"]、result_fields=["video_url","video_urls","url"]。
 - 文档未说明提示词上限时 max_prompt_characters=5000。
 - 文档未说明产物接口时 artifact={mode:"response_url",content_path:"",auth:"none",allowed_hosts:[]}。
 

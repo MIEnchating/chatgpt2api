@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { AudioLines, Clock3, Copy, Download, Eye, FileText, Globe2, Image as ImageIcon, LockKeyhole, Pencil, Trash2, Video } from "lucide-react";
 
-import { assetPrompt, formatAssetCreatedTime } from "@/app/assets/asset-library";
+import { assetModel, assetPrompt, formatAssetCreatedTime } from "@/app/assets/asset-library";
 import { assetMediaSummary } from "@/app/assets/asset-media";
 import { AuthenticatedImage } from "@/components/authenticated-image";
 import { MediaVideoPlayer } from "@/components/media-video-player";
@@ -72,10 +72,9 @@ export function AssetCard({ asset, selected = false, onSelectedChange, onOpen, o
             {asset.visibility === "public" ? <Globe2 className="size-3" /> : <LockKeyhole className="size-3" />}
             {asset.visibility === "public" ? "公开" : "个人"}
           </span>
+          {assetModel(asset) ? <span className="inline-flex max-w-full items-center rounded-md border border-border bg-muted/45 px-2 text-[11px] font-medium text-muted-foreground"><span className="truncate">{assetModel(asset)}</span></span> : null}
         </div>
-        <p className="line-clamp-2 break-words text-xs leading-5 text-muted-foreground">
-          {asset.kind === "text" ? asset.content || "暂无文本内容" : assetMediaSummary(asset)}
-        </p>
+        {asset.kind === "text" ? <p className="line-clamp-2 break-words text-xs leading-5 text-muted-foreground">{asset.content || "暂无文本内容"}</p> : null}
         <p className="flex items-center gap-1.5 text-[11px] tabular-nums text-muted-foreground">
           <Clock3 className="size-3.5 shrink-0" />
           <span>{formatAssetCreatedTime(asset.createdAt)}</span>
@@ -101,7 +100,7 @@ export function AssetPreview({ asset, onClose, onCopy, onCopyPrompt, onDownload 
         <ScrollArea data-asset-preview-scroll tabindex={0} ariaLabel="素材详情内容" className="min-h-0 flex-1" viewportClassName="overscroll-contain pr-3">
           <div className="space-y-4">
             {asset?.kind === "text" ? <div className="space-y-4">{coverURL ? <AuthenticatedImage src={coverURL} alt={asset.title} className="max-h-72 w-full rounded-lg object-contain" /> : null}<p className="whitespace-pre-wrap break-words rounded-lg bg-muted/55 p-4 text-sm leading-7">{asset.content}</p></div> : asset?.kind === "image" ? <AuthenticatedImage src={mediaURL} alt={asset.title} className="max-h-[58vh] w-full rounded-lg object-contain" /> : asset?.kind === "video" ? <MediaVideoPlayer src={mediaURL} title={asset.title || "素材视频"} className="max-h-[58vh] rounded-lg" /> : asset?.kind === "audio" ? <audio src={mediaURL} controls className="w-full" /> : null}
-            {asset ? <div className="grid gap-2 text-sm sm:grid-cols-2"><Info label="媒体信息" value={assetMediaSummary(asset)} /><Info label="来源" value={asset.source || "未标注"} /><Info label="创建时间" value={formatAssetCreatedTime(asset.createdAt)} /><Info label="可见范围" value={asset.visibility === "public" ? "公开" : "个人"} />{asset.ownerName ? <Info label="所有者" value={asset.ownerName} /> : null}{asset.note ? <Info label="备注" value={asset.note} className="sm:col-span-2" /> : null}</div> : null}
+            {asset ? <div className="grid gap-2 text-sm sm:grid-cols-2"><Info label="媒体信息" value={assetMediaSummary(asset)} />{assetModel(asset) ? <Info label="生成模型" value={assetModel(asset)} /> : null}<Info label="来源" value={asset.source || "未标注"} /><Info label="创建时间" value={formatAssetCreatedTime(asset.createdAt)} /><Info label="可见范围" value={asset.visibility === "public" ? "公开" : "个人"} /><Info label="所有者" value={asset.ownerName || (asset.owned !== false ? "我" : "未知")} />{asset.note ? <Info label="备注" value={asset.note} className="sm:col-span-2" /> : null}</div> : null}
           </div>
         </ScrollArea>
         <DialogFooter>{asset?.kind === "text" ? <Button type="button" variant="outline" onClick={onCopy}><Copy />复制文本</Button> : null}{asset && asset.kind !== "text" && prompt ? <Button type="button" variant="outline" onClick={onCopyPrompt}><Copy />复制提示词</Button> : null}{asset && asset.kind !== "text" ? <Button type="button" variant="outline" onClick={onDownload}><Download />下载{assetKindLabel(asset.kind)}</Button> : null}<Button type="button" onClick={onClose}>关闭</Button></DialogFooter>

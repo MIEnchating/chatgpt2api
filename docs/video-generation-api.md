@@ -70,6 +70,8 @@ NewAPI 根据原样传入的模型 ID 选择渠道；本项目的驱动决定请
 
 NewAPI 的 `/v1/videos` 对外状态为 `unknown`、`queued`、`in_progress`、`completed`、`failed`。契约分别声明排队、处理中、成功和失败原始状态；未匹配的值统一视为 `unknown` 并继续轮询。平台任务将 `queued` 保持为排队中，将 `in_progress` 和 `unknown` 映射为处理中，并保留 `upstream_status` 与 `progress` 供任务界面展示和排查。旧契约缺少新增字段时会自动采用 `queued`、`in_progress` 和 `progress` 路径。
 
+进度条需要契约明确声明查询响应中的进度路径。例如接口返回 `{"progress":9}` 时，设置 `polling.progress_fields` 为 `["progress"]`；嵌套响应使用 `["data.progress"]`。显式空数组 `[]` 表示不读取进度，即使上游有百分比，界面也只能显示等待状态。修改契约只影响新提交任务，已经提交的任务继续使用原契约快照。
+
 契约可以把本地参考素材声明为：
 
 - `url`：参考素材必须是上游可访问的 HTTP 或 HTTPS URL。

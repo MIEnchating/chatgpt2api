@@ -258,16 +258,16 @@ function RBACContent() {
 
   return (
     <ManagementPage data-rbac-layout>
-      <div className="grid min-h-0 flex-1 gap-[var(--page-section-gap)] overflow-y-auto xl:grid-cols-[320px_minmax(0,1fr)] xl:overflow-hidden">
+      <div className="grid min-h-0 flex-1 gap-4 overflow-y-auto xl:grid-cols-[360px_minmax(0,1fr)] xl:overflow-hidden">
         <ManagementPanel className="min-h-[420px] xl:min-h-0">
-            <ManagementToolbar className="flex items-center gap-2">
+            <ManagementToolbar className="flex items-center gap-2 bg-muted/20 px-4 py-3">
               <div className="relative min-w-0 flex-1">
                 <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   value={searchText}
                   onChange={(event) => setSearchText(event.target.value)}
                   placeholder="搜索角色"
-                  className="h-10 rounded-lg pl-9"
+                  className="h-10 rounded-xl pl-9 shadow-sm"
                 />
               </div>
             <Button
@@ -276,7 +276,7 @@ function RBACContent() {
               title="刷新角色权限"
               onClick={() => void loadRBAC()}
               disabled={isLoading || isDirty}
-              className="size-10 rounded-lg"
+              className="size-10 rounded-xl"
             >
               <RefreshCw className={cn("size-4", isLoading ? "animate-spin" : "")} />
             </Button>
@@ -285,7 +285,7 @@ function RBACContent() {
               title="创建角色"
               onClick={() => setIsCreateDialogOpen(true)}
               disabled={isLoading}
-              className="size-10 rounded-lg"
+              className="size-10 rounded-xl"
             >
               <Plus className="size-4" />
             </Button>
@@ -307,8 +307,8 @@ function RBACContent() {
                         key={role.id}
                         type="button"
                         className={cn(
-                          "relative block w-full border-b border-border px-5 py-4 text-left transition hover:bg-muted/50",
-                          active ? "bg-primary/[0.045] before:absolute before:inset-y-3 before:left-0 before:w-0.5 before:rounded-r before:bg-primary" : "",
+                          "group relative block w-full border-b border-border/70 px-5 py-5 text-left transition-colors hover:bg-muted/50",
+                          active ? "bg-primary/[0.07] before:absolute before:inset-y-3 before:left-0 before:w-1 before:rounded-r before:bg-primary" : "",
                         )}
                         aria-pressed={active}
                         onClick={() => requestRoleSelection(role)}
@@ -327,11 +327,13 @@ function RBACContent() {
                         {role.description ? (
                           <p className="mt-2 line-clamp-2 text-xs leading-5 text-muted-foreground">{role.description}</p>
                         ) : null}
-                        <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                          <span>{permissionCountLabel(role)}</span>
+                        <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                          <span className="rounded-md bg-muted px-2 py-1">{permissionCountLabel(role)}</span>
                           <span className="flex items-center gap-1">
+                            <span className="rounded-md bg-muted px-2 py-1 flex items-center gap-1">
                             <Users className="size-3.5" />
                             {role.user_count || 0}
+                            </span>
                           </span>
                         </div>
                       </button>
@@ -342,12 +344,12 @@ function RBACContent() {
         </ManagementPanel>
 
         <ManagementPanel className="min-h-[940px] lg:min-h-[720px] xl:min-h-0">
-            <ManagementToolbar className="flex flex-col gap-3">
+            <ManagementToolbar className="flex flex-col gap-4 bg-muted/10 px-5 py-5">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <div className="min-w-0">
                   <div className="flex min-w-0 items-center gap-2">
                     <ShieldCheck className="size-5 shrink-0 text-[#1456f0]" />
-                    <h2 className="truncate text-base font-semibold text-foreground">
+                    <h2 className="truncate text-lg font-semibold text-foreground">
                       {selectedRole?.name || "未选择角色"}
                     </h2>
                   </div>
@@ -410,7 +412,7 @@ function RBACContent() {
                     }}
                     placeholder="角色名称"
                     disabled={!selectedRole || isLoading || isSaving}
-                    className="h-10 rounded-lg text-foreground"
+                    className="h-11 rounded-xl bg-background/70 text-foreground"
                   />
                 </label>
                 <label className="grid gap-1.5 text-xs font-medium text-muted-foreground">
@@ -423,7 +425,7 @@ function RBACContent() {
                     }}
                     placeholder="说明角色职责或适用范围"
                     disabled={!selectedRole || isLoading || isSaving}
-                    className="h-10 rounded-lg text-foreground"
+                    className="h-11 rounded-xl bg-background/70 text-foreground"
                   />
                 </label>
               </div>

@@ -4,6 +4,11 @@
 
 @custom-variant dark (&:is(.dark *));
 
+@keyframes generation-progress-indeterminate {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(334%); }
+}
+
 @keyframes canvas-batch-child-in {
   from {
     opacity: 0;

@@ -2,6 +2,7 @@ import { AlertCircle, ChevronRight, ImagePlus, LoaderCircle, RefreshCw, Settings
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent as ReactWheelEvent } from "react";
 
 import { AuthenticatedImage } from "@/components/authenticated-image";
+import { GenerationProgress } from "@/components/generation/generation-progress";
 import { OverflowMarqueeText } from "@/components/overflow-marquee-text";
 import {
   activeCanvasConnectionPath,
@@ -1001,13 +1002,10 @@ function CanvasGenerationLoading({ node, now }: { node: CanvasNode; now: number 
       <div className="pointer-events-none absolute inset-0 z-30 flex flex-col justify-between rounded-[inherit] bg-card p-4 text-foreground">
         <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-3">
           <LoaderCircle className="size-9 animate-spin text-[#1456f0]" />
-          <span className="text-sm font-semibold text-[#1456f0]">正在创作 {progress}%</span>
+          <span className="text-sm font-semibold text-[#1456f0]">正在创作视频</span>
           <span className="rounded-full bg-muted px-2 py-1 text-xs tabular-nums">{elapsed}</span>
         </div>
-        <div className="space-y-1">
-          <div className="flex items-center justify-between text-[11px] text-muted-foreground"><span>当前创作进度</span><span>{progress}%</span></div>
-          <div className="h-1.5 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-[#1456f0] transition-[width]" style={{ width: `${progress}%` }} /></div>
-        </div>
+        <GenerationProgress progress={node.generation_progress} label="当前创作进度" />
       </div>
     );
   }

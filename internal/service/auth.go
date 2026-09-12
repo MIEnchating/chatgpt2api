@@ -46,6 +46,8 @@ func (e AuthPersistenceError) Unwrap() error {
 }
 
 type Identity struct {
+	SSOReference   string `json:"-"`
+	SSOIssuer      string `json:"-"`
 	ID             string
 	Username       string
 	Name           string
@@ -358,6 +360,7 @@ func (s *AuthService) UpsertNewAPISession(user NewAPIUser) (*Identity, string, e
 		next["last_used_at"] = nil
 		next["updated_at"] = now
 		next["expires_at"] = authSessionExpiry(now)
+		applySSOBinding(next, user)
 		next["role"] = role
 		s.applyNewAPISessionRoleLocked(next, role, owner.ID)
 		s.items[index] = next
@@ -387,6 +390,7 @@ func (s *AuthService) UpsertNewAPISession(user NewAPIUser) (*Identity, string, e
 	item["username"] = user.Username
 	item["email"] = user.Email
 	item["enabled"] = true
+	applySSOBinding(item, user)
 	item["updated_at"] = now
 	s.applyNewAPISessionRoleLocked(item, role, owner.ID)
 	s.items = append(s.items, item)
@@ -1147,6 +1151,8 @@ func normalizeAuthItem(raw map[string]any) map[string]any {
 		return nil
 	}
 	out["expires_at"] = expiresAt
+	out["sso_reference"] = util.Clean(raw["sso_reference"])
+	out["sso_issuer"] = util.Clean(raw["sso_issuer"])
 	if role == AuthRoleUser {
 		roleID := util.Clean(raw["role_id"])
 		if roleID == "" {
@@ -1188,6 +1194,8 @@ func identityForAuthItem(item map[string]any) *Identity {
 		name = credentialName
 	}
 	return &Identity{
+		SSOReference:   util.Clean(item["sso_reference"]),
+		SSOIssuer:      util.Clean(item["sso_issuer"]),
 		ID:             id,
 		Username:       util.Clean(item["username"]),
 		Name:           name,
@@ -1692,4 +1700,16 @@ type authError string
 
 func (e authError) Error() string {
 	return string(e)
+}
+
+// applySSOBinding makes source-session revocation enforceable after restarts.
+func applySSOBinding(item map[string]any, user NewAPIUser) {
+	delete(item, "sso_reference")
+	delete(item, "sso_issuer")
+	if user.SSOReference != "" {
+		item["sso_reference"] = user.SSOReference
+		item["sso_issuer"] = user.SSOIssuer
+		expiry := min(user.SSOExpiresAt, time.Now().Add(AuthSessionLifetime).Unix())
+		item["expires_at"] = time.Unix(expiry, 0).UTC().Format(time.RFC3339Nano)
+	}
 }

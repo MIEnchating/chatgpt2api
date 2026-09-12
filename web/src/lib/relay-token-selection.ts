@@ -1,3 +1,5 @@
+import type { CustomRelayConfigStatus } from "./api";
+
 export type RelayTokenKind = "text" | "image" | "video" | "audio";
 
 export type RelayTokenNames = Record<RelayTokenKind, string[]>;
@@ -47,6 +49,20 @@ export function relayTokenPreferenceField(kind: RelayTokenKind) {
   return `default_${kind}_relay_token_names` as const;
 }
 
+function isCustomRelayTokenName(name: string) {
+  return name.startsWith("__custom_relay__:");
+}
+
+export function relayTokenOptions(tokenNames: string[], customConfigs: CustomRelayConfigStatus[], kind: RelayTokenKind) {
+  return [
+    ...Array.from(new Set(tokenNames.map((name) => name.trim())))
+      .filter((name) => name && !isCustomRelayTokenName(name))
+      .map((name) => ({ value: name, label: name, custom: undefined as CustomRelayConfigStatus | undefined })),
+    ...customConfigs.filter((config) => config.kind === kind && config.configured)
+      .map((config) => ({ value: config.token_name, label: config.name, custom: config })),
+  ];
+}
+
 export function retainSelectedRelayTokenNames(current: string[], options: string[]) {
   const available = new Set(options);
   return normalizeRelayTokenNames(current).filter((name) => available.has(name));
@@ -64,10 +80,11 @@ export function relayTokenAvailabilityFromBalance(
 export function relayTokenNamesUpdateForAvailability(
   current: string[],
   availability: RelayTokenAvailability,
-  additionalOptions: string[] = [],
+  customTokenNames?: string[],
 ) {
-  if (!availability.authoritative) return null;
-  const retained = retainSelectedRelayTokenNames(current, [...availability.names, ...additionalOptions]);
+  const retained = normalizeRelayTokenNames(current).filter((name) => isCustomRelayTokenName(name)
+    ? customTokenNames === undefined || customTokenNames.includes(name)
+    : !availability.authoritative || availability.names.includes(name));
   return retained.join("\0") === normalizeRelayTokenNames(current).join("\0") ? null : retained;
 }
 

@@ -303,7 +303,7 @@ const emptyContract: VideoModelContract = {
     task_id_fields: ["id", "task_id", "data.id", "data.task_id"],
     status_fields: ["status", "data.status"],
     progress_fields: ["progress", "data.progress"],
-    error_fields: ["error.message", "message", "data.error.message", "data.message"],
+    error_fields: ["error.message", "message", "data.error.message", "data.message", "fail_reason", "error", "data.error"],
     queued_statuses: ["queued"],
     processing_statuses: ["in_progress"],
     success_statuses: ["completed"],

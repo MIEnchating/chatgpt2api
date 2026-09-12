@@ -55,6 +55,12 @@ export default function LoginPage() {
     const session = authSessionFromLoginResponse(data);
     await setVerifiedAuthSession(session);
     toast.success(message);
+    if (data.relay_onboarding_warnings?.length) {
+      toast.warning("部分默认密钥未配置完成", {
+        description: data.relay_onboarding_warnings.join("；"),
+        duration: 12000,
+      });
+    }
     navigate(redirectTo || getDefaultRouteForSession(session), { replace: true });
   };
 

@@ -183,6 +183,10 @@ export type SettingsConfig = {
   project_name?: string;
   site_icon_url?: string;
   relay_base_url?: string;
+  relay_text_group?: string;
+  relay_image_group?: string;
+  relay_video_group?: string;
+  relay_audio_group?: string;
   relay_database_url?: string;
   relay_database_type?: "newapi" | "sub2api" | string;
   relay_database_driver?: "sqlite" | "postgres" | "mysql" | string;
@@ -675,6 +679,7 @@ type CreationTaskListResponse = {
 
 export type LoginResponse = {
   ok: boolean;
+  relay_onboarding_warnings?: string[];
   role: AuthRole;
   role_id?: string;
   role_name?: string;

@@ -47,6 +47,7 @@ import {
   type CustomRelayConfigStatus,
 } from "@/lib/api";
 import { useRelayTokenPreferences } from "@/lib/use-relay-token-preferences";
+import { relayTokenOptions } from "@/lib/relay-token-selection";
 import { filterModelsByCapability } from "@/lib/model-capabilities";
 import { cn } from "@/lib/utils";
 import type { StoredAuthSession } from "@/lib/auth-session";
@@ -68,19 +69,6 @@ function normalizeTokenNames(values: unknown) {
   return Array.isArray(values)
     ? Array.from(new Set(values.map((name) => String(name || "").trim()).filter(Boolean)))
     : [];
-}
-
-function relayTokenOptions(
-  tokenNames: string[],
-  customConfigs: CustomRelayConfigStatus[],
-  kind: ModelKind,
-) {
-  const options = tokenNames.map((name) => ({ value: name, label: name, custom: false }));
-  for (const config of customConfigs) {
-    if (config.kind !== kind || !config.configured || options.some((option) => option.value === config.token_name)) continue;
-    options.push({ value: config.token_name, label: config.name, custom: true });
-  }
-  return options;
 }
 
 function moveModel(models: string[], index: number, offset: -1 | 1) {

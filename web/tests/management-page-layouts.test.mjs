@@ -91,7 +91,7 @@ test("role authorization separates permission types and supports focused review"
   assert.match(permissionEditorSource, /功能权限/);
   assert.match(permissionEditorSource, /toggleListValues/);
   assert.match(permissionEditorSource, /disabled=\{disabled\}/);
-  assert.match(permissionEditorSource, /lg:grid-cols-\[300px_minmax\(0,1fr\)\]/);
+  assert.match(permissionEditorSource, /lg:grid-cols-\[320px_minmax\(0,1fr\)\]/);
   assert.doesNotMatch(permissionEditorSource, /仅看已选|setSection/);
 });
 
@@ -106,7 +106,7 @@ test("management actions share the same row as their filters", () => {
   assert.match(assetsSource, /data-asset-filter-bar[\s\S]*新增素材/);
   assert.match(usersSource, /data-user-toolbar[\s\S]*刷新[\s\S]*创建用户/);
   assert.match(logsSource, /<ManagementToolbar>[\s\S]*刷新[\s\S]*<\/ManagementToolbar>/);
-  assert.match(rbacSource, /<ManagementToolbar className="flex items-center gap-2">[\s\S]*刷新角色权限[\s\S]*创建角色/);
+  assert.match(rbacSource, /<ManagementToolbar className="flex items-center gap-2[^"]*">[\s\S]*刷新角色权限[\s\S]*创建角色/);
   for (const source of [assetsSource, usersSource, rbacSource, logsSource]) {
     assert.doesNotMatch(source, /<ManagementPage[\s\S]{0,120}actions=\{/);
   }

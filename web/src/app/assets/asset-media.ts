@@ -5,7 +5,7 @@ import { resolveImageURL } from "@/services/image-storage";
 
 export type AssetMediaMetadata = Pick<MyAsset, "bytes" | "mimeType" | "width" | "height" | "durationMs">;
 
-function formatAssetBytes(value?: number) {
+export function formatAssetBytes(value?: number) {
   if (!value || value < 1) return "";
   if (value < 1024) return `${value} B`;
   if (value < 1024 * 1024) return `${(value / 1024).toFixed(value < 10 * 1024 ? 1 : 0)} KB`;
@@ -20,11 +20,13 @@ function formatAssetDuration(value?: number) {
   return minutes ? `${minutes}:${String(seconds).padStart(2, "0")}` : `${seconds} 秒`;
 }
 
-export function assetMediaSummary(asset: MyAsset) {
+export function assetMediaSummary(asset: MyAsset, options: { includeMimeType?: boolean; includeBytes?: boolean } = {}) {
   if (asset.kind === "text") return asset.content || "暂无文本内容";
-  return [asset.width && asset.height ? `${asset.width} × ${asset.height}` : "", formatAssetDuration(asset.durationMs), formatAssetBytes(asset.bytes), asset.mimeType || ""]
+  const includeMimeType = options.includeMimeType !== false;
+  const includeBytes = options.includeBytes !== false;
+  return [asset.width && asset.height ? `${asset.width} × ${asset.height}` : "", formatAssetDuration(asset.durationMs), includeBytes ? formatAssetBytes(asset.bytes) : "", includeMimeType ? asset.mimeType || "" : ""]
     .filter(Boolean)
-    .join(" · ") || asset.url || "暂无媒体信息";
+    .join(" · ") || "暂无媒体信息";
 }
 
 export async function downloadMyAsset(asset: MyAsset) {

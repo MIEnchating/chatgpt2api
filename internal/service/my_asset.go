@@ -66,6 +66,7 @@ type MyAssetTextGovernance struct {
 type myAssetDocument struct {
 	ownerID                string
 	items                  []MyAsset
+	groups                 []MyAssetGroup
 	pendingObjectDeletions []string
 	generation             int64
 }
@@ -849,6 +850,7 @@ func (s *MyAssetService) loadDocumentLocked(ownerID string) (myAssetDocument, er
 	return myAssetDocument{
 		ownerID:                strings.TrimSpace(util.Clean(value[myAssetDocumentOwnerIDField])),
 		items:                  decodeMyAssets(raw),
+		groups:                 decodeMyAssetGroups(value["groups"]),
 		pendingObjectDeletions: appendMyAssetObjectDeletionIDs(nil, util.AsStringSlice(value[myAssetPendingObjectDeletionsField])...),
 		generation:             int64(util.ToInt(value[myAssetDocumentGenerationField], 0)),
 	}, nil
@@ -861,6 +863,7 @@ func (s *MyAssetService) saveDocumentLocked(ownerID string, document myAssetDocu
 		document.generation = 1
 	}
 	value := map[string]any{"items": document.items, myAssetDocumentGenerationField: document.generation, myAssetDocumentOwnerIDField: document.ownerID}
+	value["groups"] = document.groups
 	if len(document.pendingObjectDeletions) > 0 {
 		value[myAssetPendingObjectDeletionsField] = document.pendingObjectDeletions
 	}

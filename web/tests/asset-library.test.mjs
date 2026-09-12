@@ -22,6 +22,17 @@ test("asset library keeps owned assets separate from read-only visible assets", 
   assert.notEqual(assetListKey(owned), assetListKey(shared));
 });
 
+test("asset library sorts all sources by newest update time", () => {
+  const oldOwned = textAsset("old-owned", { updatedAt: "2026-01-01T00:00:00Z" });
+  const newestShared = textAsset("new-shared", { updatedAt: "2026-01-03T00:00:00Z", ownerId: "user-b", owned: false, visibility: "public" });
+  const middleGenerated = textAsset("middle-generated", { kind: "image", content: undefined, url: "/images/middle.png", managedPath: "middle.png", updatedAt: "2026-01-02T00:00:00Z" });
+
+  assert.deepEqual(
+    mergeAssetLibrary([oldOwned], [newestShared], [middleGenerated]).map((asset) => asset.id),
+    ["new-shared", "middle-generated", "old-owned"],
+  );
+});
+
 test("managed image projection preserves visibility, owner, and ownership", () => {
   const asset = managedImageAsset({
     name: "result.png",

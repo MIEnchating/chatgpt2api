@@ -1,5 +1,7 @@
 "use client";
 
+import { normalizeGenerationProgress } from "@/lib/generation-task-contract";
+
 import {
   clearImageConversationHistory,
   deleteImageConversationHistoryItem,
@@ -544,6 +546,7 @@ function normalizeStoredImage(image: StoredImage): StoredImage {
         ? taskRevision
         : undefined,
     taskStatus,
+    taskProgress: normalizeGenerationProgress(image.taskProgress),
     path:
       typeof image.path === "string" && image.path
         ? image.path

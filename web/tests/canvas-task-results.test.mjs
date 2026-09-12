@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { applyCanvasTaskProgressNodes, canvasTaskImageSlots, canvasTaskImages, reconcileCancelledCanvasTaskNodes, reconcilePersistedCanvasTaskNodes, successfulCanvasTaskImagesByNodeID, summarizeCanvasTaskResult } from "../src/app/canvas/canvas-task-results.ts";
+import { applyCanvasVideoTaskProgressNodes, applyCanvasTaskProgressNodes, canvasTaskImageSlots, canvasTaskImages, reconcileCancelledCanvasTaskNodes, reconcilePersistedCanvasTaskNodes, successfulCanvasTaskImagesByNodeID, summarizeCanvasTaskResult } from "../src/app/canvas/canvas-task-results.ts";
 
 test("canvas task images preserve output order and support base64 results", () => {
   assert.deepEqual(canvasTaskImages({ id: "task", status: "success", data: [
@@ -522,4 +522,38 @@ test("batch recovery keeps task slots aligned when an earlier child was retried 
   assert.equal(result.nodes[2].url, "/images/second.png");
   assert.equal(result.nodes[1], first);
   assert.equal(result.nodes[0], root);
+});
+
+
+test("video polling updates only the matching active video node", () => {
+  const active = { id: "video", type: "video", task_id: "task", generation_status: "loading", generation_progress: 0 };
+  const other = { ...active, id: "other", task_id: "other-task" };
+  const finished = { ...active, id: "finished", generation_status: "success", generation_progress: 100 };
+  const image = { ...active, id: "image", type: "image" };
+  const nodes = [active, other, finished, image];
+  const updated = applyCanvasVideoTaskProgressNodes(nodes, { id: "task", status: "running", progress: 9 });
+  assert.equal(updated[0].generation_progress, 9);
+  assert.equal(updated[1], other);
+  assert.equal(updated[2], finished);
+  assert.equal(updated[3], image);
+  assert.equal(applyCanvasVideoTaskProgressNodes(updated, { id: "task", status: "running" })[0], updated[0]);
+  assert.equal(applyCanvasVideoTaskProgressNodes(updated, { id: "task", status: "success", progress: 42 })[0].generation_progress, 100);
+  assert.equal(applyCanvasVideoTaskProgressNodes(updated, { id: "task", status: "error", progress: 37 })[0].generation_progress, 37);
+});
+
+test("recovered video tasks restore progress and preserve it on failure", () => {
+  const nodes = [{ id: "video", type: "video", task_id: "task", generation_status: "loading", generation_progress: 9 }];
+  const running = reconcilePersistedCanvasTaskNodes(nodes, { id: "task", mode: "video", status: "running", progress: 42 });
+  assert.equal(running.changed, true);
+  assert.equal(running.terminal, false);
+  assert.equal(running.nodes[0].generation_progress, 42);
+  const queued = reconcilePersistedCanvasTaskNodes(nodes, { id: "task", mode: "video", status: "queued", progress: 0 });
+  assert.equal(queued.nodes[0].generation_progress, 0);
+  const failed = reconcilePersistedCanvasTaskNodes(running.nodes, { id: "task", mode: "video", status: "error", progress: 63, error: "task failed" });
+  assert.equal(failed.terminal, true);
+  assert.equal(failed.nodes[0].generation_progress, 63);
+  assert.equal(failed.nodes[0].generation_status, "error");
+  const success = reconcilePersistedCanvasTaskNodes(running.nodes, { id: "task", mode: "video", status: "success", data: [{ video_url: "/video.mp4" }] });
+  assert.equal(success.nodes[0].generation_progress, 100);
+  assert.equal(success.nodes[0].generation_status, "success");
 });

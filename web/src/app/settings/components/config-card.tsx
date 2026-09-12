@@ -130,6 +130,7 @@ export function ConfigCard({ isAdmin }: { isAdmin: boolean }) {
   const setProxy = useSettingsStore((state) => state.setProxy);
   const setBaseUrl = useSettingsStore((state) => state.setBaseUrl);
   const setRelayBaseUrl = useSettingsStore((state) => state.setRelayBaseUrl);
+  const setRelayCreationGroup = useSettingsStore((state) => state.setRelayCreationGroup);
   const setRelayDatabaseType = useSettingsStore((state) => state.setRelayDatabaseType);
   const setRelayDatabaseDriver = useSettingsStore((state) => state.setRelayDatabaseDriver);
   const setRelayDatabaseField = useSettingsStore((state) => state.setRelayDatabaseField);
@@ -277,6 +278,24 @@ export function ConfigCard({ isAdmin }: { isAdmin: boolean }) {
                 className={settingsInputClassName}
               />
             </Field>
+            <div className="sm:col-span-2 2xl:col-span-3 border-t border-border/60 pt-4">
+              <p className="text-sm font-medium text-foreground">新用户默认密钥分组</p>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">登录后通过上游 API 自动创建；留空表示跳过该分类。填写分组名称，必须是用户有权限使用的分组。</p>
+            </div>
+            {(["text", "image", "video", "audio"] as const).map((kind) => (
+              <Field key={kind} className={configFieldClassName}>
+                <ConfigFieldLabel htmlFor={`settings-relay-${kind}-group`} tip="留空则不自动创建此分类密钥。">
+                  {kind === "text" ? "文本分组" : kind === "image" ? "图片分组" : kind === "video" ? "视频分组" : "音频分组"}
+                </ConfigFieldLabel>
+                <Input
+                  id={`settings-relay-${kind}-group`}
+                  value={String(config?.[`relay_${kind}_group`] || "")}
+                  onChange={(event) => setRelayCreationGroup(kind, event.target.value)}
+                  placeholder="留空则跳过"
+                  className={settingsInputClassName}
+                />
+              </Field>
+            ))}
           </div>
         </section>
 

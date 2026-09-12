@@ -896,6 +896,10 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusUnauthorized, "用户名或密码错误")
 			return
 		}
+		if ssoConfigured() && !newAPIKeys.IsSub2API() {
+			util.WriteError(w, http.StatusUnauthorized, "请通过平台的单点登录入口进入")
+			return
+		}
 		newAPIUser, newAPIErr := newAPIKeys.AuthenticatePassword(r.Context(), username, password)
 		if newAPIErr != nil {
 			loginLimiter.recordFailure(requestIP, username)
@@ -946,6 +950,10 @@ func (a *App) handleLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *App) writeLoginResponse(w http.ResponseWriter, identity service.Identity) {
+	a.writeLoginResponseWithOnboarding(w, identity, nil)
+}
+
+func (a *App) writeLoginResponseWithOnboarding(w http.ResponseWriter, identity service.Identity, warnings []string) {
 	permissions := a.identityPermissions(identity)
 	payload := map[string]any{
 		"ok":                        true,
@@ -963,6 +971,9 @@ func (a *App) writeLoginResponse(w http.ResponseWriter, identity service.Identit
 		"menu_paths":                permissions.MenuPaths,
 		"api_permissions":           permissions.APIPermissions,
 		"menus":                     service.FilterMenuPermissions(permissions.MenuPaths),
+	}
+	if len(warnings) > 0 {
+		payload["relay_onboarding_warnings"] = warnings
 	}
 	util.WriteJSON(w, http.StatusOK, payload)
 }
@@ -2124,7 +2135,7 @@ func (a *App) handleProxyTest(w http.ResponseWriter, r *http.Request) {
 
 func (a *App) requireIdentity(w http.ResponseWriter, r *http.Request) (service.Identity, bool) {
 	token := requestAuthCookieToken(r)
-	if identity := a.auth.Authenticate(token); identity != nil {
+	if identity := a.authenticateSession(r, token); identity != nil {
 		if !a.identityCanAccessRequest(*identity, r) {
 			util.WriteError(w, http.StatusForbidden, "permission denied")
 			return service.Identity{}, false
@@ -2150,7 +2161,7 @@ func (a *App) imageRequestIdentity(w http.ResponseWriter, r *http.Request) (serv
 		util.WriteError(w, http.StatusUnauthorized, "authorization is invalid")
 		return service.Identity{}, false
 	}
-	if identity := a.auth.Authenticate(token); identity != nil {
+	if identity := a.authenticateSession(r, token); identity != nil {
 		return *identity, true
 	}
 	util.WriteError(w, http.StatusUnauthorized, "authorization is invalid")
@@ -2216,6 +2227,8 @@ func isPermissionCheckSkipped(method, path string) bool {
 	case "/api/profile/prompt-favorites":
 		return true
 	case "/api/profile/assets":
+		return true
+	case "/api/profile/asset-groups":
 		return true
 	case "/api/profile/image-conversations":
 		return true

@@ -31,6 +31,9 @@ type NewAPITokenReaderConfig struct {
 }
 
 type NewAPIUser struct {
+	SSOReference  string
+	SSOIssuer     string
+	SSOExpiresAt  int64
 	ID            int64
 	Username      string
 	Email         string

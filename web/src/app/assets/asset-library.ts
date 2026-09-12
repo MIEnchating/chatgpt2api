@@ -19,7 +19,7 @@ export function managedImageAsset(item: ManagedImage, owned: boolean): MyAsset {
     width: item.width,
     height: item.height,
     managedPath: item.path,
-    ...(item.prompt ? { metadata: { prompt: item.prompt } } : {}),
+    metadata: { prompt: item.prompt, model: item.model },
     createdAt: item.created_at || item.date,
     updatedAt: item.created_at || item.date,
   };
@@ -28,6 +28,11 @@ export function managedImageAsset(item: ManagedImage, owned: boolean): MyAsset {
 export function assetPrompt(asset: MyAsset | null) {
   const prompt = asset?.metadata?.prompt;
   return typeof prompt === "string" ? prompt.trim() : "";
+}
+
+export function assetModel(asset: MyAsset | null) {
+  const model = asset?.metadata?.model;
+  return typeof model === "string" ? model.trim() : "";
 }
 
 export function formatAssetCreatedTime(value: string) {
@@ -50,11 +55,19 @@ function managedImageSourceLabel(source: ManagedImage["generation_source"]) {
 
 export function mergeAssetLibrary(ownedAssets: MyAsset[], visibleAssets: MyAsset[], managedAssets: MyAsset[]) {
   const persistentURLs = new Set(ownedAssets.map((asset) => asset.url).filter(Boolean));
-  return [
+  const merged = [
     ...ownedAssets,
     ...visibleAssets.filter((asset) => asset.owned !== true),
     ...managedAssets.filter((asset) => asset.owned !== true || !persistentURLs.has(asset.url)),
   ];
+  return merged.sort((left, right) => assetTimestamp(right) - assetTimestamp(left));
+}
+
+function assetTimestamp(asset: MyAsset) {
+  const updatedAt = Date.parse(asset.updatedAt || "");
+  if (!Number.isNaN(updatedAt)) return updatedAt;
+  const createdAt = Date.parse(asset.createdAt || "");
+  return Number.isNaN(createdAt) ? 0 : createdAt;
 }
 
 export function canManageAsset(asset: MyAsset) {

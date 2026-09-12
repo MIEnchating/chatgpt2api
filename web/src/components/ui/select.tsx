@@ -111,6 +111,7 @@ function SelectContent({
           maxHeight="min(24rem, var(--radix-select-content-available-height))"
           className="w-full"
           viewportClassName="w-full overscroll-contain px-1 py-2"
+          viewClass="flex flex-col gap-2"
         >
           {children}
         </ScrollArea>
@@ -128,7 +129,7 @@ function SelectItem({
     <SelectPrimitive.Item
       data-slot="select-item"
       className={cn(
-        "relative my-1 flex w-full cursor-default items-center gap-2 rounded-lg py-2 pr-8 pl-3 text-sm outline-none select-none first:mt-0 last:mb-0 data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[state=checked]:bg-accent data-[state=checked]:font-medium data-[state=checked]:text-accent-foreground focus:bg-accent focus:text-accent-foreground",
+        "relative flex w-full cursor-default items-center gap-2 rounded-lg py-2 pr-8 pl-3 text-sm outline-none select-none data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[state=checked]:bg-accent data-[state=checked]:font-medium data-[state=checked]:text-accent-foreground hover:bg-transparent hover:text-foreground hover:ring-1 hover:ring-inset hover:ring-border data-[highlighted]:bg-transparent data-[highlighted]:text-foreground data-[highlighted]:ring-1 data-[highlighted]:ring-inset data-[highlighted]:ring-border data-[state=checked]:data-[highlighted]:bg-accent focus:bg-transparent focus:text-foreground focus:ring-1 focus:ring-inset focus:ring-border data-[state=checked]:focus:bg-accent",
         className,
       )}
       {...props}
@@ -138,7 +139,11 @@ function SelectItem({
           <Check className="size-4" />
         </SelectPrimitive.ItemIndicator>
       </span>
-      <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+      <SelectPrimitive.ItemText>
+        <span className="inline-flex shrink-0 items-center gap-2 whitespace-nowrap">
+          {children}
+        </span>
+      </SelectPrimitive.ItemText>
     </SelectPrimitive.Item>
   );
 }

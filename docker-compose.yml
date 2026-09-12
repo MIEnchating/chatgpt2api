@@ -1,6 +1,9 @@
 services:
   chatgpt2api:
-    image: ${DOCKER_IMAGE:-mienvirtuoso/chatgpt2api:latest}
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ${DOCKER_IMAGE:-chatgpt2api:local}
     container_name: chatgpt2api
     restart: unless-stopped
     env_file:

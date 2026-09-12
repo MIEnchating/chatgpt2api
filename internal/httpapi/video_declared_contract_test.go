@@ -318,18 +318,42 @@ func TestVideoContractResponseFieldPaths(t *testing.T) {
 	}
 }
 
-func TestVideoContractFirstStringAcceptsCommonTaskIDAliases(t *testing.T) {
+func TestVideoContractFirstStringUsesDeclaredTaskIDPaths(t *testing.T) {
 	for name, test := range map[string]struct {
 		response map[string]any
+		path     string
 		want     string
 	}{
-		"camel case":         {response: map[string]any{"taskId": "task-camel"}, want: "task-camel"},
-		"nested camel case":  {response: map[string]any{"data": map[string]any{"taskId": "task-nested"}}, want: "task-nested"},
-		"nested task object": {response: map[string]any{"data": map[string]any{"task": map[string]any{"id": "task-object"}}}, want: "task-object"},
+		"camel case":         {response: map[string]any{"taskId": "task-camel"}, path: "taskId", want: "task-camel"},
+		"nested camel case":  {response: map[string]any{"data": map[string]any{"taskId": "task-nested"}}, path: "data.taskId", want: "task-nested"},
+		"nested task object": {response: map[string]any{"data": map[string]any{"task": map[string]any{"id": "task-object"}}}, path: "data.task.id", want: "task-object"},
+		"undeclared ID":      {response: map[string]any{"id": "task-unrelated"}, path: "message", want: ""},
 	} {
 		t.Run(name, func(t *testing.T) {
-			if got := videoContractFirstString(test.response, nil); got != test.want {
+			if got := videoContractFirstString(test.response, []string{test.path}); got != test.want {
 				t.Fatalf("videoContractFirstString(%#v) = %q, want %q", test.response, got, test.want)
+			}
+		})
+	}
+}
+
+func TestVideoContractErrorMessageReadsDeclaredErrorShapes(t *testing.T) {
+	contract := protocol.DefaultVideoContracts()[0]
+	contract.Polling.ErrorFields = []string{"error.message", "error", "fail_reason"}
+	for name, tc := range map[string]struct {
+		state map[string]any
+		want  string
+	}{
+		"string error":           {map[string]any{"id": "task-example", "status": "failed", "error": "请更换提示词后重试（积分已退回）"}, "请更换提示词后重试（积分已退回）"},
+		"object error":           {map[string]any{"error": map[string]any{"message": "upstream rejected the request"}}, "upstream rejected the request"},
+		"failure reason":         {map[string]any{"task_id": "task-example", "status": "FAILURE", "fail_reason": "task failed"}, "task failed"},
+		"object without message": {map[string]any{"error": map[string]any{"code": "failed"}, "fail_reason": "generation rejected"}, "generation rejected"},
+		"empty error":            {map[string]any{"id": "task-example", "error": "  "}, "视频生成失败，上游未提供具体原因，请稍后重试"},
+		"missing error":          {map[string]any{"task_id": "task-example", "status": "failed", "progress": "100%"}, "视频生成失败，上游未提供具体原因，请稍后重试"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			if got := videoContractErrorMessage(tc.state, contract); got != tc.want {
+				t.Fatalf("error message = %q, want %q", got, tc.want)
 			}
 		})
 	}
@@ -588,6 +612,11 @@ func TestDeclaredVideoContractReferenceAndPollingRules(t *testing.T) {
 	}
 	if progress, ok := videoContractProgressForContract(map[string]any{"progress": "37%"}, contract); !ok || progress != 37 {
 		t.Fatalf("progress = %d, %v", progress, ok)
+	}
+	for _, value := range []any{"22.7%", 22.7, 23} {
+		if progress, ok := videoContractProgressForContract(map[string]any{"progress": value}, contract); !ok || progress != 23 {
+			t.Fatalf("fractional progress %v = %d, %v", value, progress, ok)
+		}
 	}
 	state := map[string]any{"video_url": "https://cdn.example.com/result.mp4"}
 	if got := videoResultURLForContract(state, "https://api.example.com", contract); got != "https://cdn.example.com/result.mp4" {

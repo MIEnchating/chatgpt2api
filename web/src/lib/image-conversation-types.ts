@@ -27,6 +27,7 @@ export type StoredImage = {
   taskRevision?: number;
   status?: "loading" | "success" | "error" | "cancelled" | "message";
   taskStatus?: GenerationTaskStatus;
+  taskProgress?: number;
   path?: string;
   visibility?: ImageVisibility;
   b64_json?: string;

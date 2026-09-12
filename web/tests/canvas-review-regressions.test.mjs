@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
+import { applyCanvasVideoTaskProgressNodes } from "../src/app/canvas/canvas-task-results.ts";
 import { canvasTextGenerationPlan } from "../src/app/canvas/canvas-text-generation.ts";
 import { buildCanvasGenerationContext } from "../src/app/canvas/canvas-generation-context.ts";
 import { appendCanvasHistorySnapshot } from "../src/app/canvas/canvas-history.ts";
@@ -93,6 +94,7 @@ for (const kind of ["audio", "video", "panorama"]) {
       let rejectPoll;
       const polling = new Promise((resolve) => { notifyPoll = resolve; });
       const dependencies = {
+        applyCanvasVideoTaskProgressNodes,
         nodesRef, documentRef, canvasOperationEpochRef, mountedRef: { current: true },
         connectionsRef: { current: [] }, activeGenerationsRef: { current: new Map() }, historyRef: { current: [] },
         runningNodeID: "", session: { key: "session" }, getCachedAuthSession: () => ({ key: "session" }),

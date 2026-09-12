@@ -105,8 +105,8 @@ test("global selects keep the neutral selected treatment shown across settings",
   assert.match(selectSource, /data-\[state=checked\]:font-medium/);
   assert.match(selectSource, /data-\[state=checked\]:text-accent-foreground/);
   assert.match(selectSource, /viewportClassName="w-full overscroll-contain px-1 py-2"/);
-  assert.match(selectSource, /relative my-1 flex w-full/);
-  assert.match(selectSource, /first:mt-0 last:mb-0/);
+  assert.match(selectSource, /relative flex w-full/);
+  assert.match(selectSource, /viewClass="flex flex-col gap-2"/);
   assert.doesNotMatch(selectSource, /data-\[state=checked\]:bg-\[#eef4ff\]/);
 });
 
@@ -634,7 +634,7 @@ test("log governance exposes a persisted daily cleanup schedule", () => {
 });
 
 test("key preferences expose scoped custom API configuration without revealing saved keys", () => {
-  assert.match(profileSource, /<DialogTitle>\{title\}自定义 API 配置<\/DialogTitle>/);
+  assert.match(profileSource, /<DialogTitle>\{confirmDelete \? "删除自定义 Key" : `\$\{title\}自定义 API 配置`\}<\/DialogTitle>/);
   assert.match(profileSource, /已配置，留空保持原 Key/);
   assert.match(profileSource, /createCustomRelayConfig/);
   assert.match(profileSource, /updateCustomRelayConfig/);
@@ -674,8 +674,8 @@ test("settings model discovery merges all selected keys and rejects obsolete res
   assert.match(modelConfigSource, /Promise\.all\(\s*requestTokenNames\.map\(\(tokenName\) => fetchRelayModels\(\{ tokenName, signal: controller\.signal \}\)\)/);
   assert.match(modelConfigSource, /responses\.flatMap/);
   assert.match(modelConfigSource, /fetchCustomRelayConfigs\(\)/);
-  assert.match(modelConfigSource, /config\.kind !== kind \|\| !config\.configured/);
-  assert.match(modelConfigSource, /label: config\.name, custom: true/);
+  assert.match(modelConfigSource, /relayTokenOptions\(tokenNames, customConfigs, kind\)/);
+  assert.match(modelConfigSource, /relayTokenOptions\(names, customConfigResponse\.configs, preferredKind\)/);
   assert.match(modelConfigSource, /<MultiSelect/);
   assert.match(modelConfigSource, /<div className="grid gap-2 text-sm font-medium">\s*<span>用于获取模型的 Key<\/span>\s*<MultiSelect/);
   assert.doesNotMatch(modelConfigSource, /<label[^>]*>\s*用于获取模型的 Key\s*<MultiSelect/);

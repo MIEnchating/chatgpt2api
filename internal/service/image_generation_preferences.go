@@ -89,6 +89,18 @@ type ImageGenerationPreferencePatch struct {
 	RelayTokenNames       map[string][]string
 }
 
+// InitializeRelayToken sets a category default only when the user has not selected one.
+func (s *ImageGenerationPreferenceService) InitializeRelayToken(ownerID, kind, name string) error {
+	preferences, err := s.Preferences(ownerID)
+	if err != nil { return err }
+	selected := map[string][]string{"text": preferences.DefaultTextRelayTokens, "image": preferences.DefaultImageRelayTokens, "video": preferences.DefaultVideoRelayTokens, "audio": preferences.DefaultAudioRelayTokens}
+	if len(selected[kind]) > 0 { return nil }
+	return func() error {
+		_, err := s.Patch(ownerID, ImageGenerationPreferencePatch{RelayTokenNames: map[string][]string{kind: {name}}})
+		return err
+	}()
+}
+
 func NewImageGenerationPreferenceService(backend storage.Backend) *ImageGenerationPreferenceService {
 	return &ImageGenerationPreferenceService{store: jsonDocumentStoreFromBackend(backend)}
 }

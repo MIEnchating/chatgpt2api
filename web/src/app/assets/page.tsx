@@ -6,7 +6,9 @@ import { toast } from "sonner";
 
 import { AssetCard, AssetPreview } from "@/app/assets/asset-display";
 import { AssetForm } from "@/app/assets/asset-form";
-import { assetListKey, assetPrompt, canManageAsset, collectAssetStorageKeys, managedImageAsset, mergeAssetLibrary } from "@/app/assets/asset-library";
+import { AssetGroupToolbar } from "@/app/assets/asset-groups";
+import { useAssetGroups } from "@/lib/use-asset-groups";
+import { assetListKey, assetModel, assetPrompt, canManageAsset, collectAssetStorageKeys, managedImageAsset, mergeAssetLibrary } from "@/app/assets/asset-library";
 import { downloadMyAsset } from "@/app/assets/asset-media";
 import { useMyAssets } from "@/lib/use-my-assets";
 import { ManagementPage, ManagementPagination, ManagementPanel } from "@/components/management-page";
@@ -52,6 +54,8 @@ export default function AssetsPage() {
 function AssetsContent({ session }: { session: StoredAuthSession }) {
   const scope = session.key;
   const { assets, upsertAsset, deleteAsset, loading } = useMyAssets(scope, true);
+  const groupState = useAssetGroups(scope);
+  const [groupFilter, setGroupFilter] = useState("all");
   const mutationControllerRef = useRef<AbortController | null>(null);
   useEffect(() => {
     const controller = new AbortController();
@@ -125,16 +129,22 @@ function AssetsContent({ session }: { session: StoredAuthSession }) {
   const allAssets = useMemo(() => {
     return mergeAssetLibrary(assets, visibleRemoteAssets, managedAssets);
   }, [assets, managedAssets, visibleRemoteAssets]);
+  const availableGroupKeys = useMemo(() => new Set(allAssets.map(assetListKey)), [allAssets]);
+  const groupedKeys = useMemo(() => new Set(groupState.groups.flatMap((group) => group.assetKeys)), [groupState.groups]);
+  const activeGroupKeys = useMemo(() => new Set(groupState.groups.find((group) => group.id === groupFilter)?.assetKeys), [groupState.groups, groupFilter]);
 
   const filtered = useMemo(() => {
     const query = keyword.trim().toLowerCase();
     return allAssets.filter((asset) => {
+      const key = assetListKey(asset);
+      if (groupFilter === "ungrouped" && groupedKeys.has(key)) return false;
+      if (groupFilter !== "all" && groupFilter !== "ungrouped" && !activeGroupKeys.has(key)) return false;
       if (kind !== "all" && asset.kind !== kind) return false;
       if (visibility !== "all" && asset.visibility !== visibility) return false;
       if (!query) return true;
-      return [asset.title, asset.content || "", asset.url || "", asset.note || "", asset.source || "", asset.ownerName || "", asset.mimeType || ""].join(" ").toLowerCase().includes(query);
+      return [asset.title, asset.content || "", asset.url || "", asset.note || "", asset.source || "", asset.ownerName || "", asset.mimeType || "", assetModel(asset)].join(" ").toLowerCase().includes(query);
     });
-  }, [allAssets, kind, keyword, visibility]);
+  }, [allAssets, kind, keyword, visibility, groupFilter, groupedKeys, activeGroupKeys]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const visibleAssets = filtered.slice((page - 1) * pageSize, page * pageSize);
@@ -143,7 +153,7 @@ function AssetsContent({ session }: { session: StoredAuthSession }) {
   const selectedOnPage = visibleKeys.filter((key) => selectedKeys.has(key)).length;
   const allVisibleSelected = visibleKeys.length > 0 && selectedOnPage === visibleKeys.length;
 
-  useEffect(() => setPage(1), [keyword, kind, pageSize, visibility]);
+  useEffect(() => setPage(1), [keyword, kind, pageSize, visibility, groupFilter]);
   useEffect(() => setPage((current) => Math.min(current, totalPages)), [totalPages]);
   useEffect(() => {
     const availableKeys = new Set(allAssets.map(assetListKey));
@@ -336,6 +346,7 @@ function AssetsContent({ session }: { session: StoredAuthSession }) {
           <Button type="button" className="ml-auto shrink-0" onClick={() => { setEditing(null); setFormOpen(true); }}><Plus />新增素材</Button>
         </div>
         </div>
+        <AssetGroupToolbar state={groupState} filter={groupFilter} onFilterChange={setGroupFilter} selectedKeys={selectedAssets.map(assetListKey)} availableKeys={availableGroupKeys} />
         <div data-asset-selection-toolbar className="hide-scrollbar flex h-12 shrink-0 items-center gap-2 overflow-x-auto border-b border-border px-5 sm:px-8">
           <label data-disabled={!visibleAssets.length} className="selection-trigger flex shrink-0 items-center gap-2 text-xs font-medium"><Checkbox checked={allVisibleSelected ? true : selectedOnPage > 0 ? "indeterminate" : false} disabled={!visibleAssets.length} onCheckedChange={(checked) => toggleVisibleSelection(checked === true)} /><span>全选当前页</span></label>
           {selectedAssets.length ? (
@@ -346,12 +357,12 @@ function AssetsContent({ session }: { session: StoredAuthSession }) {
           ) : <span className="shrink-0 px-1 text-xs text-muted-foreground">未选择素材</span>}
           <div className="ml-auto flex shrink-0 items-center gap-2">
             <Select value={selectedVisibility} disabled={!visibilityManageableAssets.length || bulkActionBusy} onValueChange={(value: MyAssetVisibility) => void updateSelectedVisibility(value)}>
-              <SelectTrigger className="h-8 w-[116px] shrink-0" aria-label="设置所选素材可见范围">
-                <SelectValue placeholder="可见范围" />
+              <SelectTrigger className="h-8 w-[128px] shrink-0 px-2.5 text-xs" aria-label="设置所选素材可见范围">
+                <SelectValue placeholder="可见范围" className="inline-flex min-w-0 items-center gap-2 whitespace-nowrap [&>svg]:shrink-0" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="private"><LockKeyhole className="size-3.5" />个人</SelectItem>
-                <SelectItem value="public"><Globe2 className="size-3.5" />公开</SelectItem>
+                <SelectItem value="private"><LockKeyhole className="size-3.5 shrink-0" />个人</SelectItem>
+                <SelectItem value="public"><Globe2 className="size-3.5 shrink-0" />公开</SelectItem>
               </SelectContent>
             </Select>
             <Button type="button" variant="outline" size="sm" className="h-8 w-[72px] shrink-0 px-2" disabled={!selectedAssets.length || bulkActionBusy} onClick={() => void downloadSelected()}><Download />下载</Button>
@@ -361,7 +372,7 @@ function AssetsContent({ session }: { session: StoredAuthSession }) {
         <ScrollArea className="min-h-0 flex-1" viewportClassName="px-5 py-5 sm:px-8">
         <div data-asset-content className="flex w-full flex-col gap-5">
           {managedError ? <div role="alert" className="flex items-center gap-3 border-b border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700"><span className="min-w-0 flex-1 break-words">生成图片读取失败：{managedError}</span><Button type="button" variant="outline" size="sm" onClick={() => setManagedReloadKey((value) => value + 1)}><RefreshCw />重试</Button></div> : null}
-          {(loading || visibleLoading || managedLoading) && allAssets.length === 0 ? <div className="flex min-h-80 items-center justify-center text-sm text-muted-foreground">正在同步素材...</div> : visibleAssets.length ? <div data-asset-grid className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,280px),1fr))] gap-4">{visibleAssets.map((asset) => { const key = assetListKey(asset); const canManage = canManageAsset(asset); return <AssetCard key={key} asset={asset} selected={selectedKeys.has(key)} onSelectedChange={(checked) => setSelectedKeys((current) => { const next = new Set(current); if (checked) next.add(key); else next.delete(key); return next; })} onOpen={() => setPreview(asset)} onEdit={canManage && !asset.managedPath ? () => { setEditing(asset); setFormOpen(true); } : undefined} onDelete={canManage && (!asset.managedPath || hasAPIPermission(session, "DELETE", "/api/images")) ? () => setDeleting(asset) : undefined} onCopy={() => void copyText(asset)} onDownload={() => void download(asset)} />; })}</div> : managedError && allAssets.length === 0 ? null : <EmptyState icon={ImageIcon} title={allAssets.length ? "没有找到匹配的素材" : "还没有可用素材"} description={allAssets.length ? "调整搜索词或筛选条件后再试" : "上传或生成的素材会统一显示在这里"} className="min-h-80" />}
+          {(loading || visibleLoading || managedLoading) && allAssets.length === 0 ? <div className="flex min-h-80 items-center justify-center text-sm text-muted-foreground">正在同步素材...</div> : visibleAssets.length ? <div data-asset-grid className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,280px),1fr))] gap-4">{visibleAssets.map((asset) => { const key = assetListKey(asset); const canManage = canManageAsset(asset); return <AssetCard key={key} asset={asset} selected={selectedKeys.has(key)} onSelectedChange={(checked) => setSelectedKeys((current) => { const next = new Set(current); if (checked) next.add(key); else next.delete(key); return next; })} onOpen={() => setPreview(asset)} onEdit={canManage && asset.kind !== "video" && !asset.managedPath ? () => { setEditing(asset); setFormOpen(true); } : undefined} onDelete={canManage && (!asset.managedPath || hasAPIPermission(session, "DELETE", "/api/images")) ? () => setDeleting(asset) : undefined} onCopy={() => void copyText(asset)} onDownload={() => void download(asset)} />; })}</div> : managedError && allAssets.length === 0 ? null : <EmptyState icon={ImageIcon} title={allAssets.length ? "没有找到匹配的素材" : "还没有可用素材"} description={allAssets.length ? "调整搜索词或筛选条件后再试" : "上传或生成的素材会统一显示在这里"} className="min-h-80" />}
         </div>
         </ScrollArea>
         <ManagementPagination

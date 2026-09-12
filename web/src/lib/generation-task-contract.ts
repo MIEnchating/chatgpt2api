@@ -10,6 +10,12 @@ export type GenerationTaskSlot = {
 
 export type GenerationTaskMode = "generate" | "edit" | "chat" | "video" | "audio";
 
+export function normalizeGenerationProgress(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.max(0, Math.min(100, Math.round(value)))
+    : undefined;
+}
+
 export function isRetryableTaskPollError(error: unknown) {
   const status = typeof error === "object" && error !== null && "status" in error
     ? Number((error as { status?: unknown }).status)

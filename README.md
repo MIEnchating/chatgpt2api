@@ -372,22 +372,13 @@ STORAGE_DATABASE_URL=mysql://user:password@host:3306/chatgpt2api
 
 ```bash
 bun install --cwd web --frozen-lockfile
-bun run --cwd web build
-go test ./...
-go build -tags=embed -o chatgpt2api ./internal
-ADMIN_PASSWORD=change_me_please ./chatgpt2api
+PORT=8090 go run ./internal
 ```
 
-后端单独启动时默认监听：
+开发阶段后端直接运行 Go 源码，不使用 Docker、Compose 或已编译二进制。后端监听：
 
 ```text
-http://127.0.0.1:8000
-```
-
-与 Vite 前端一起开发时，建议把后端放在 `8001`，避免占用前端默认端口 `8000`：
-
-```bash
-PORT=8001 ./chatgpt2api
+http://127.0.0.1:8090
 ```
 
 ### 前端
@@ -395,14 +386,22 @@ PORT=8001 ./chatgpt2api
 ```bash
 cd web
 bun install
-bun run dev
+VITE_BACKEND_URL=http://127.0.0.1:8090 bun run dev -- --host 0.0.0.0 --port 8002
 ```
 
-前端开发服务器通过同源代理访问后端，代理目标由 `VITE_BACKEND_URL` 设置。未设置时默认使用：
+前端开发服务器必须使用 Vite `dev` 模式，访问：
 
 ```text
-http://127.0.0.1:8001
+http://127.0.0.1:8002
 ```
+
+前端通过同源代理访问后端，代理目标由 `VITE_BACKEND_URL` 设置。开发环境统一使用：
+
+```text
+http://127.0.0.1:8090
+```
+
+日常开发禁止使用 `vite preview`、Docker/Compose 或生产二进制启动前后端；这些方式仅用于部署和发布验证。修改 Go 代码后重启 `go run` 进程，前端修改由 Vite HMR 自动生效。
 
 前端验证命令：
 
