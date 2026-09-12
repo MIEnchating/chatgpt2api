@@ -40,11 +40,11 @@ export function AssetCard({ asset, selected = false, onSelectedChange, onOpen, o
       <button type="button" className="interactive-card-trigger block w-full overflow-hidden text-left" onClick={onOpen} aria-label={`查看素材 ${asset.title}`}>
         <div className="flex aspect-[16/10] items-center justify-center overflow-hidden bg-muted/35">
           {previewCoverURL ? (
-            <AuthenticatedImage src={previewCoverURL} alt={asset.title} className="size-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.025]" />
+            <AuthenticatedImage src={previewCoverURL} alt={asset.title} loading="lazy" className="size-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.025]" />
           ) : asset.kind === "image" && mediaURL ? (
-            <AuthenticatedImage src={mediaURL} alt={asset.title} className="size-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.025]" />
+            <AuthenticatedImage src={mediaURL} alt={asset.title} loading="lazy" className="size-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.025]" />
           ) : asset.kind === "video" && mediaURL ? (
-            <video data-asset-video-thumbnail src={`${mediaURL}#t=0.1`} muted playsInline preload="metadata" className="size-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.025]" />
+            <video data-asset-video-thumbnail src={`${mediaURL}#t=0.1`} muted playsInline preload="none" className="size-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.025]" />
           ) : asset.kind === "audio" ? (
             <div className="flex flex-col items-center gap-2 text-[#1456f0] dark:text-sky-300">
               <span className="flex size-14 items-center justify-center rounded-full bg-[#edf4ff] dark:bg-sky-950/50"><AudioLines className="size-7" /></span>

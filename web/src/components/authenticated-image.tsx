@@ -1,7 +1,7 @@
 "use client";
 
 import { ImageOff, LoaderCircle } from "lucide-react";
-import { useEffect, useMemo, useState, type CSSProperties, type ImgHTMLAttributes } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ImgHTMLAttributes } from "react";
 
 import {
   fetchCachedAuthenticatedImage,
@@ -27,6 +27,8 @@ export function AuthenticatedImage({ alt, className, placeholderClassName, src, 
   const [fallbackToDirectSrc, setFallbackToDirectSrc] = useState(false);
   const [retainedCacheKey, setRetainedCacheKey] = useState("");
   const [loadFailed, setLoadFailed] = useState(false);
+  const containerRef = useRef<HTMLSpanElement | null>(null);
+  const [isVisible, setIsVisible] = useState(props.loading !== "lazy");
   const directSrc = useMemo(() => {
     if (!src) {
       return "";
@@ -40,9 +42,27 @@ export function AuthenticatedImage({ alt, className, placeholderClassName, src, 
   const shouldFetchWithAuth = useMemo(() => shouldUseAuthenticatedImageFallback(src), [src]);
 
   useEffect(() => {
+    setIsVisible(props.loading !== "lazy");
+  }, [props.loading, src]);
+
+  useEffect(() => {
+    if (props.loading !== "lazy" || isVisible || typeof IntersectionObserver === "undefined") return;
+    const element = containerRef.current;
+    if (!element) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        setIsVisible(true);
+        observer.disconnect();
+      }
+    }, { rootMargin: "200px" });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [isVisible, props.loading]);
+
+  useEffect(() => {
     setLoadFailed(false);
     setFallbackToDirectSrc(false);
-    if (!shouldFetchWithAuth) {
+    if (!shouldFetchWithAuth || !isVisible) {
       setObjectSrc("");
       setRetainedCacheKey("");
       return;
@@ -88,7 +108,7 @@ export function AuthenticatedImage({ alt, className, placeholderClassName, src, 
         releaseCachedAuthenticatedImage(activeCacheKey);
       }
     };
-  }, [shouldFetchWithAuth, src]);
+  }, [isVisible, shouldFetchWithAuth, src]);
 
   const displaySrc = shouldFetchWithAuth ? objectSrc || (fallbackToDirectSrc ? directSrc : "") : directSrc;
   const showPlaceholder = shouldFetchWithAuth && !displaySrc;
@@ -103,6 +123,7 @@ export function AuthenticatedImage({ alt, className, placeholderClassName, src, 
   if (showPlaceholder || showFailurePlaceholder) {
     return (
       <span
+        ref={containerRef}
         className={cn(
           className,
           "flex min-h-24 w-full items-center justify-center bg-[#f0f0f0] text-stone-400",
