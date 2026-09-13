@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+mapfile -d '' go_files < <(git diff --cached --name-only --diff-filter=ACMR -z -- '*.go')
+if ((${#go_files[@]} == 0)); then
+  exit 0
+fi
+
+gofmt -w -- "${go_files[@]}"
+git add -- "${go_files[@]}"

@@ -16,6 +16,10 @@
 > [!CAUTION]
 > 公网部署时请务必添加外部访问控制，不要暴露敏感配置、账号 Token、数据库连接串或管理端入口，并保持部署及时更新。
 
+## Git Hooks
+
+首次克隆后执行 `bash scripts/install-git-hooks.sh` 安装 Git hooks。提交前 hook 会自动对已暂存的 Go 文件运行 `gofmt` 并重新加入暂存区。
+
 ## 目录
 
 - [快速入口](#快速入口)
