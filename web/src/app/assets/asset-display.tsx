@@ -25,7 +25,7 @@ export function AssetCard({ asset, selected = false, onSelectedChange, onOpen, o
       data-asset-card
       data-selected={selected}
       data-interaction="trigger"
-      className="interactive-card group relative flex min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-card shadow-sm"
+      className="interactive-card group relative flex h-full min-w-0 flex-col overflow-hidden rounded-lg border border-border bg-card shadow-sm"
     >
       {onSelectedChange ? (
         <div className="selection-control-frame absolute left-3 top-3 z-10 rounded-md">
@@ -58,21 +58,21 @@ export function AssetCard({ asset, selected = false, onSelectedChange, onOpen, o
           )}
         </div>
       </button>
-      <div data-asset-card-content className="flex flex-col gap-3 p-4">
+      <div data-asset-card-content className="flex min-h-0 flex-1 flex-col gap-3 p-4">
         <div className="min-w-0">
           <h2 className="line-clamp-2 min-h-10 break-words text-sm font-semibold leading-5 text-foreground">{asset.title || "未命名素材"}</h2>
           <p className="mt-1 truncate text-xs text-muted-foreground">{asset.ownerName && !asset.owned ? asset.ownerName : asset.source || "未标注来源"}</p>
         </div>
-        <div className="flex min-w-0 flex-wrap items-center gap-1.5">
-          <span className="inline-flex h-6 items-center gap-1 rounded-md border border-border bg-muted/45 px-2 text-[11px] font-medium text-muted-foreground">
+        <div className="flex min-h-6 min-w-0 flex-nowrap items-center gap-1.5 overflow-hidden">
+          <span className="inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-border bg-muted/45 px-2 text-[11px] font-medium text-muted-foreground">
             <Icon className="size-3" />
             {assetKindLabel(asset.kind)}
           </span>
-          <span className="inline-flex h-6 items-center gap-1 rounded-md border border-border bg-muted/45 px-2 text-[11px] font-medium text-muted-foreground">
+          <span className="inline-flex h-6 shrink-0 items-center gap-1 rounded-md border border-border bg-muted/45 px-2 text-[11px] font-medium text-muted-foreground">
             {asset.visibility === "public" ? <Globe2 className="size-3" /> : <LockKeyhole className="size-3" />}
             {asset.visibility === "public" ? "公开" : "个人"}
           </span>
-          {assetModel(asset) ? <span className="inline-flex max-w-full items-center rounded-md border border-border bg-muted/45 px-2 text-[11px] font-medium text-muted-foreground"><span className="truncate">{assetModel(asset)}</span></span> : null}
+          {assetModel(asset) ? <span className="inline-flex h-6 min-w-0 max-w-full items-center rounded-md border border-border bg-muted/45 px-2 text-[11px] font-medium text-muted-foreground"><span className="min-w-0 truncate">{assetModel(asset)}</span></span> : null}
         </div>
         {asset.kind === "text" ? <p className="line-clamp-2 break-words text-xs leading-5 text-muted-foreground">{asset.content || "暂无文本内容"}</p> : null}
         <p className="flex items-center gap-1.5 text-[11px] tabular-nums text-muted-foreground">
