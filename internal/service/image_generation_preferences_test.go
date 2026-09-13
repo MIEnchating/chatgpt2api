@@ -280,3 +280,37 @@ func TestImageGenerationPreferenceServiceClassifiesStorageErrors(t *testing.T) {
 		t.Fatalf("Preferences() error = %T %v, want storage error", err, err)
 	}
 }
+
+func TestInitializeRelayTokensPreservesExplicitChoicesAndEmptySelections(t *testing.T) {
+	backend, err := storage.NewDatabaseBackend("sqlite:///" + filepath.ToSlash(filepath.Join(t.TempDir(), "preferences.db")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer backend.Close()
+	s := NewImageGenerationPreferenceService(backend)
+	if err := s.store.SaveJSONDocument(imageGenerationPreferenceDocumentName("alice"), map[string]any{"default_text_relay_token_names": []string{"chosen"}, "default_image_relay_token_names": []string{}, "system_prompt": "keep"}); err != nil {
+		t.Fatal(err)
+	}
+	groups, err := s.UnconfiguredRelayGroups("alice", map[string]string{"text": "shared", "image": "shared", "video": "shared"})
+	if err != nil || len(groups) != 1 || groups["video"] != "shared" {
+		t.Fatalf("groups=%v err=%v", groups, err)
+	}
+	defaults := map[string][]string{"text": {"first", "second"}, "image": {"first", "second"}, "video": {"first", "second"}}
+	if err := s.InitializeRelayTokens("alice", defaults); err != nil {
+		t.Fatal(err)
+	}
+	p, err := s.Preferences("alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(p.DefaultTextRelayTokens, []string{"chosen"}) || len(p.DefaultImageRelayTokens) != 0 || !reflect.DeepEqual(p.DefaultVideoRelayTokens, []string{"first", "second"}) || p.SystemPrompt != "keep" {
+		t.Fatalf("preferences=%#v", p)
+	}
+	if err := s.InitializeRelayTokens("alice", map[string][]string{"video": {"replacement"}}); err != nil {
+		t.Fatal(err)
+	}
+	p, err = s.Preferences("alice")
+	if err != nil || !reflect.DeepEqual(p.DefaultVideoRelayTokens, []string{"first", "second"}) {
+		t.Fatalf("reinitialized=%#v err=%v", p, err)
+	}
+}

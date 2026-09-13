@@ -879,6 +879,7 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 		util.WriteError(w, http.StatusTooManyRequests, "登录尝试过于频繁，请稍后再试")
 		return
 	}
+	var onboardingWarnings []string
 	identity, token, err := a.auth.LoginPassword(username, password)
 	if err != nil {
 		if a.writeAuthPersistenceError(w, err) {
@@ -917,10 +918,11 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 			}
 			return
 		}
+		onboardingWarnings = a.initializeRelayGroups(r.Context(), newAPIKeys, *identity, &newAPIUser, password)
 	}
 	loginLimiter.recordSuccess(username)
 	setAuthSessionCookie(w, r, token)
-	a.writeLoginResponse(w, *identity)
+	a.writeLoginResponseWithOnboarding(w, *identity, onboardingWarnings)
 }
 
 func (a *App) handleSession(w http.ResponseWriter, r *http.Request) {

@@ -27,6 +27,12 @@ func (a *App) handleImageGenerationPreferences(w http.ResponseWriter, r *http.Re
 	ownerID := identityScope(identity)
 	switch r.Method {
 	case http.MethodGet:
+		var onboardingWarnings []string
+		if identity.Provider == service.AuthProviderNewAPI || identity.Provider == service.AuthProviderSub2API {
+			reader, release := a.acquireRelayTokenReader()
+			onboardingWarnings = a.initializeRelayGroups(r.Context(), reader, identity, nil, "")
+			release()
+		}
 		preferences, err := a.imagePreferences.Preferences(ownerID)
 		if err != nil {
 			util.WriteError(w, http.StatusServiceUnavailable, "创作偏好存储暂时不可用")
@@ -38,7 +44,7 @@ func (a *App) handleImageGenerationPreferences(w http.ResponseWriter, r *http.Re
 		preferences.DefaultAudioModel = allowedPersonalModel(preferences.DefaultAudioModel, a.config.AudioModels())
 		preferences.Workbench.ImageModel = allowedPersonalModel(preferences.Workbench.ImageModel, a.config.ImageModels())
 		preferences.Workbench.VideoModel = allowedPersonalModel(preferences.Workbench.VideoModel, a.configuredVideoModels())
-		util.WriteJSON(w, http.StatusOK, map[string]any{"preferences": preferences})
+		util.WriteJSON(w, http.StatusOK, map[string]any{"preferences": preferences, "relay_onboarding_warnings": onboardingWarnings})
 	case http.MethodPut, http.MethodPost:
 		body, err := readJSONMap(r)
 		if err != nil {

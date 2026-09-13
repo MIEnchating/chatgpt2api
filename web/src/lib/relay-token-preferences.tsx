@@ -2,11 +2,14 @@
 
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 
+import { toast } from "sonner";
+
 import { fetchImageGenerationPreferences, fetchRelayModels, updateRelayTokenPreferences } from "@/lib/api";
 import {
   EMPTY_RELAY_TOKEN_NAMES,
   relayTokenNamesFromPreferences,
   relayTokenNameForModel,
+  nextRelayTokenNameForModel,
   relayTokenRouteForModel,
   relayTokenPreferenceField,
   type RelayTokenKind,
@@ -29,6 +32,7 @@ export function RelayTokenPreferencesProvider({ children }: { children: ReactNod
   const [session, setSession] = useState<StoredAuthSession | null>(() => getCachedAuthSession() ?? null);
   const sessionKey = session?.key || "";
   const [tokenNames, setSelectedTokenNames] = useState<RelayTokenNames>(EMPTY_RELAY_TOKEN_NAMES);
+  const lastTokenByModelRef = useRef(new Map<string, string>());
   const tokenNamesRef = useRef<RelayTokenNames>(EMPTY_RELAY_TOKEN_NAMES);
   const [preferencesReady, setPreferencesReady] = useState(false);
   const [routingReady, setRoutingReady] = useState(false);
@@ -40,6 +44,7 @@ export function RelayTokenPreferencesProvider({ children }: { children: ReactNod
 
   useLayoutEffect(() => {
     mutationTracker.activateSession(sessionKey);
+    lastTokenByModelRef.current.clear();
   }, [mutationTracker, sessionKey]);
 
   useEffect(() => {
@@ -78,8 +83,11 @@ export function RelayTokenPreferencesProvider({ children }: { children: ReactNod
       return () => { ignore = true; };
     }
     void fetchImageGenerationPreferences()
-      .then(({ preferences }) => {
+      .then(({ preferences, relay_onboarding_warnings }) => {
         if (!ignore) {
+          if (relay_onboarding_warnings?.length) {
+            toast.warning("默认分组 Key 初始化未完成", { id: "relay-group-initialization", description: relay_onboarding_warnings.join("；") });
+          }
           const loaded = relayTokenNamesFromPreferences(preferences);
           tokenNamesRef.current = loaded;
           setSelectedTokenNames(loaded);
@@ -150,13 +158,20 @@ export function RelayTokenPreferencesProvider({ children }: { children: ReactNod
     relayTokenNameForModel(tokenNamesRef.current[kind], model, modelsByToken)
   ), [modelsByToken]);
 
+  const nextTokenNameForModel = useCallback((kind: RelayTokenKind, model: string) => {
+    const key = `${kind}:${model.trim().toLowerCase()}`;
+    const name = nextRelayTokenNameForModel(tokenNamesRef.current[kind], model, modelsByToken, lastTokenByModelRef.current.get(key) || "");
+    if (name) lastTokenByModelRef.current.set(key, name);
+    return name;
+  }, [modelsByToken]);
+
   const refreshTokenModels = useCallback(() => setModelRefreshVersion((version) => version + 1), []);
   const routeForModel = useCallback((kind: RelayTokenKind, model: string) => (
     relayTokenRouteForModel(tokenNamesRef.current[kind], model, modelsByToken, failedModelTokenNames, preferencesReady && routingReady)
   ), [failedModelTokenNames, modelsByToken, preferencesReady, routingReady]);
 
   return (
-    <RelayTokenPreferencesContext.Provider value={{ failedModelTokenNames, isReady: preferencesReady && routingReady, modelsByToken, refreshTokenModels, routeForModel, setTokenNames, tokenNames, tokenNameForModel }}>
+    <RelayTokenPreferencesContext.Provider value={{ failedModelTokenNames, isReady: preferencesReady && routingReady, modelsByToken, nextTokenNameForModel, refreshTokenModels, routeForModel, setTokenNames, tokenNames, tokenNameForModel }}>
       {children}
     </RelayTokenPreferencesContext.Provider>
   );

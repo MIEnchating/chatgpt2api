@@ -817,7 +817,7 @@ export async function verifySession() {
   });
 }
 
-type ImageGenerationPreferencesResponse = { preferences: ImageGenerationPreferences };
+type ImageGenerationPreferencesResponse = { preferences: ImageGenerationPreferences; relay_onboarding_warnings?: string[] };
 
 const imageGenerationPreferencesCache = createExpiringRequestCache<ImageGenerationPreferencesResponse>(30_000);
 const modelConfigCache = createExpiringRequestCache<{ config: ModelConfig }>(30_000);
@@ -1335,6 +1335,10 @@ export async function deleteCreationTasks(
     body: { ids },
     timeout: 20_000,
   });
+}
+
+export async function fetchRelayCreationGroups(signal?: AbortSignal) {
+  return httpRequest<{ groups: string[] }>("/api/settings/relay-groups", { signal });
 }
 
 export async function fetchSettingsConfig() {

@@ -824,7 +824,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
   const [videoModels, setVideoModels] = useState<string[]>([]);
   const [audioModel, setAudioModel] = useState("gpt-4o-mini-tts");
   const [audioModels, setAudioModels] = useState(["gpt-4o-mini-tts"]);
-  const { tokenNameForModel } = useRelayTokenPreferences();
+  const { tokenNameForModel, nextTokenNameForModel } = useRelayTokenPreferences();
   const [relayTokenDialogKind, setRelayTokenDialogKind] = useState<RelayTokenCreationKind | null>(null);
   const [switchPhase, setSwitchPhase] = useState<CanvasSwitchPhase>(null);
   const [loading, setLoading] = useState(true);
@@ -1858,7 +1858,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
           ? audioModel
           : imageModel;
       const configuredModels = type === "video" ? videoModels : type === "audio" ? audioModels : imageModels;
-      const relayTokenName = tokenNameForModel(type, generationModel);
+      const relayTokenName = nextTokenNameForModel(type, generationModel);
       if (!configuredModels.includes(generationModel) || !relayTokenName.trim()) return { ok: false, code: "model_not_configured", message: `请先在个人中心完成${type === "video" ? "视频" : type === "audio" ? "音频" : "图片"}模型和密钥配置` };
       let videoSeconds: number | undefined;
       let videoGenerateAudio: boolean | undefined;
@@ -3155,7 +3155,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     if (!context.prompt.trim() && !context.referenceImageURLs.length) return toast.error("请填写文本指令或连接有效输入");
     const model = sourceNode.generation_text_model?.trim() || textModel;
     if (!textModels.includes(model)) return toast.error("请选择全局模型设置中已启用的文本模型");
-    const relayTokenName = tokenNameForModel("text", model);
+    const relayTokenName = nextTokenNameForModel("text", model);
     if (!relayTokenName.trim()) { setRelayTokenDialogKind("text"); return; }
     const resultIDs = retrying ? [requestedNode.id] : plan.createsChildNodes ? Array.from({ length: plan.count }, () => `text-${randomID()}`) : [requestedNode.id];
     const childIDs = retrying ? [] : plan.createsChildNodes ? resultIDs : [];
@@ -3272,7 +3272,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     if (!text) return toast.error("请填写音频内容或连接文本节点");
     const generationAudioModel = (sourceNode.generation_audio_model || audioModel).trim();
     if (!audioModels.includes(generationAudioModel)) return toast.error("请选择全局模型设置中已启用的音频模型");
-    const relayTokenName = tokenNameForModel("audio", generationAudioModel);
+    const relayTokenName = nextTokenNameForModel("audio", generationAudioModel);
     if (!relayTokenName.trim()) { setRelayTokenDialogKind("audio"); return; }
     const taskID = `canvas-audio-${randomID()}`;
     const controller = new AbortController();
@@ -3394,7 +3394,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     const effectivePrompt = context?.prompt.trim() || "";
     const generationModel = sourceNode.generation_model?.trim() || imageModel.trim();
     if (!imageModels.includes(generationModel)) return toast.error("请选择全局模型设置中已启用的图片模型");
-    const relayTokenName = tokenNameForModel("image", generationModel);
+    const relayTokenName = nextTokenNameForModel("image", generationModel);
     if (!relayTokenName.trim()) { setRelayTokenDialogKind("image"); return; }
     const referenceLimit = imageReferenceImageLimit(generationModel);
     const referenceImageURLs = (retrying
@@ -3609,7 +3609,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     if (!selectedModel || !videoModels.includes(selectedModel)) {
       return toast.error("请选择全局模型设置中已启用的视频模型");
     }
-    const relayTokenName = tokenNameForModel("video", selectedModel);
+    const relayTokenName = nextTokenNameForModel("video", selectedModel);
     if (!relayTokenName.trim()) {
       setRelayTokenDialogKind("video");
       return;
@@ -3799,7 +3799,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     const contextNode = retryConfiguration || sourceNode;
     const generationModel = options.generationModel?.trim() || canvasGenerationModel(imageModel, sourceNode, retryConfiguration, retrying);
     if (!imageModels.includes(generationModel)) return toast.error("请选择全局模型设置中已启用的图片模型");
-    const taskRelayTokenName = tokenNameForModel("image", generationModel).trim();
+    const taskRelayTokenName = nextTokenNameForModel("image", generationModel).trim();
     if (!taskRelayTokenName) {
       setRelayTokenDialogKind("image");
       return;

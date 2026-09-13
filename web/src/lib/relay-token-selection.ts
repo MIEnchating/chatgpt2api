@@ -94,6 +94,13 @@ export function relayTokenNameForModel(names: string[], model: string, modelsByT
   return names.find((name) => (modelsByToken[name] || []).some((candidate) => candidate.trim().toLowerCase() === normalizedModel)) || "";
 }
 
+export function nextRelayTokenNameForModel(names: string[], model: string, modelsByToken: RelayTokenModels, previousName: string) {
+  const normalizedModel = model.trim().toLowerCase();
+  const eligible = names.filter((name) => !normalizedModel || (modelsByToken[name] || []).some((candidate) => candidate.trim().toLowerCase() === normalizedModel));
+  if (eligible.length === 0) return "";
+  return eligible[(eligible.indexOf(previousName) + 1) % eligible.length];
+}
+
 export function relayTokenRouteForModel(
   names: string[],
   model: string,

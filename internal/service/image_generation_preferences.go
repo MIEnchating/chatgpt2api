@@ -89,20 +89,65 @@ type ImageGenerationPreferencePatch struct {
 	RelayTokenNames       map[string][]string
 }
 
-// InitializeRelayToken sets a category default only when the user has not selected one.
-func (s *ImageGenerationPreferenceService) InitializeRelayToken(ownerID, kind, name string) error {
-	preferences, err := s.Preferences(ownerID)
+// UnconfiguredRelayGroups preserves explicit choices, including an empty selection.
+func (s *ImageGenerationPreferenceService) UnconfiguredRelayGroups(ownerID string, mappings map[string]string) (map[string]string, error) {
+	result := map[string]string{}
+	if len(mappings) == 0 {
+		return result, nil
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	raw, err := s.store.LoadJSONDocument(imageGenerationPreferenceDocumentName(ownerID))
+	if err != nil {
+		return nil, imageGenerationPreferenceStorageError(err)
+	}
+	document := util.StringMap(raw)
+	for kind, group := range mappings {
+		if _, exists := document["default_"+kind+"_relay_token_names"]; !exists {
+			result[kind] = group
+		}
+	}
+	return result, nil
+}
+
+// InitializeRelayTokens only supplies fields that the user has never configured.
+// Explicitly cleared selections and concurrent preference edits are preserved.
+func (s *ImageGenerationPreferenceService) InitializeRelayTokens(ownerID string, values map[string][]string) error {
+	if len(values) == 0 {
+		return nil
+	}
+	normalized, err := normalizeRelayTokenUpdates(values)
 	if err != nil {
 		return err
 	}
-	selected := map[string][]string{"text": preferences.DefaultTextRelayTokens, "image": preferences.DefaultImageRelayTokens, "video": preferences.DefaultVideoRelayTokens, "audio": preferences.DefaultAudioRelayTokens}
-	if len(selected[kind]) > 0 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for attempt := 0; attempt < imageGenerationPreferenceSaveAttempts; attempt++ {
+		raw, err := s.store.LoadJSONDocument(imageGenerationPreferenceDocumentName(ownerID))
+		if err != nil {
+			return imageGenerationPreferenceStorageError(err)
+		}
+		document := util.CopyMap(util.StringMap(raw))
+		changed := false
+		for kind, names := range normalized {
+			field := "default_" + kind + "_relay_token_names"
+			if _, exists := document[field]; !exists && len(names) > 0 {
+				document[field] = names
+				changed = true
+			}
+		}
+		if !changed {
+			return nil
+		}
+		if err := s.store.SaveJSONDocument(imageGenerationPreferenceDocumentName(ownerID), document); err != nil {
+			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < imageGenerationPreferenceSaveAttempts {
+				continue
+			}
+			return imageGenerationPreferenceStorageError(err)
+		}
 		return nil
 	}
-	return func() error {
-		_, err := s.Patch(ownerID, ImageGenerationPreferencePatch{RelayTokenNames: map[string][]string{kind: {name}}})
-		return err
-	}()
+	return imageGenerationPreferenceStorageError(storage.ErrConcurrentRowUpdate)
 }
 
 func NewImageGenerationPreferenceService(backend storage.Backend) *ImageGenerationPreferenceService {

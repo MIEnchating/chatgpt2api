@@ -186,11 +186,11 @@ test("canvas task queue is cleared across projects and sessions before stale wor
 });
 
 test("canvas routes every generation through the key matched to its actual node model", () => {
-  assert.match(pageSource, /const relayTokenName = tokenNameForModel\("text", model\)/);
-  assert.match(pageSource, /const relayTokenName = tokenNameForModel\("audio", generationAudioModel\)/);
-  assert.match(pageSource, /const relayTokenName = tokenNameForModel\("image", generationModel\)/);
-  assert.match(pageSource, /const relayTokenName = tokenNameForModel\("video", selectedModel\)/);
-  assert.match(pageSource, /const taskRelayTokenName = tokenNameForModel\("image", generationModel\)\.trim\(\)/);
+  assert.match(pageSource, /const relayTokenName = nextTokenNameForModel\("text", model\)/);
+  assert.match(pageSource, /const relayTokenName = nextTokenNameForModel\("audio", generationAudioModel\)/);
+  assert.match(pageSource, /const relayTokenName = nextTokenNameForModel\("image", generationModel\)/);
+  assert.match(pageSource, /const relayTokenName = nextTokenNameForModel\("video", selectedModel\)/);
+  assert.match(pageSource, /const taskRelayTokenName = nextTokenNameForModel\("image", generationModel\)\.trim\(\)/);
   assert.match(pageSource, /relayTokenName=\{tokenNameForModel\("audio", nodeAudioModel\)\}/);
   assert.doesNotMatch(pageSource, /const (?:image|video|audio|text)RelayTokenName = tokenNameForModel/);
 });

@@ -126,9 +126,16 @@ function AssetsContent({ session }: { session: StoredAuthSession }) {
     return () => controller.abort();
   }, [scope, session]);
 
+  const [initialLoadComplete, setInitialLoadComplete] = useState(false);
+  const sourcesLoading = loading || visibleLoading || managedLoading;
+  useEffect(() => {
+    if (!sourcesLoading) setInitialLoadComplete(true);
+  }, [sourcesLoading]);
+
   const allAssets = useMemo(() => {
+    if (!initialLoadComplete) return [];
     return mergeAssetLibrary(assets, visibleRemoteAssets, managedAssets);
-  }, [assets, managedAssets, visibleRemoteAssets]);
+  }, [assets, initialLoadComplete, managedAssets, visibleRemoteAssets]);
   const availableGroupKeys = useMemo(() => new Set(allAssets.map(assetListKey)), [allAssets]);
   const groupedKeys = useMemo(() => new Set(groupState.groups.flatMap((group) => group.assetKeys)), [groupState.groups]);
   const activeGroupKeys = useMemo(() => new Set(groupState.groups.find((group) => group.id === groupFilter)?.assetKeys), [groupState.groups, groupFilter]);
@@ -372,10 +379,10 @@ function AssetsContent({ session }: { session: StoredAuthSession }) {
         <ScrollArea className="min-h-0 flex-1" viewportClassName="px-5 py-5 sm:px-8">
         <div data-asset-content className="flex w-full flex-col gap-5">
           {managedError ? <div role="alert" className="flex items-center gap-3 border-b border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700"><span className="min-w-0 flex-1 break-words">生成图片读取失败：{managedError}</span><Button type="button" variant="outline" size="sm" onClick={() => setManagedReloadKey((value) => value + 1)}><RefreshCw />重试</Button></div> : null}
-          {(loading || visibleLoading || managedLoading) && allAssets.length === 0 ? <div className="flex min-h-80 items-center justify-center text-sm text-muted-foreground">正在同步素材...</div> : visibleAssets.length ? <div data-asset-grid className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,280px),1fr))] gap-4">{visibleAssets.map((asset, index) => { const key = assetListKey(asset); const canManage = canManageAsset(asset); return <AssetCard key={key} asset={asset} eager={index < 6} selected={selectedKeys.has(key)} onSelectedChange={(checked) => setSelectedKeys((current) => { const next = new Set(current); if (checked) next.add(key); else next.delete(key); return next; })} onOpen={() => setPreview(asset)} onEdit={canManage && asset.kind !== "video" && !asset.managedPath ? () => { setEditing(asset); setFormOpen(true); } : undefined} onDelete={canManage && (!asset.managedPath || hasAPIPermission(session, "DELETE", "/api/images")) ? () => setDeleting(asset) : undefined} onCopy={() => void copyText(asset)} onDownload={() => void download(asset)} />; })}</div> : managedError && allAssets.length === 0 ? null : <EmptyState icon={ImageIcon} title={allAssets.length ? "没有找到匹配的素材" : "还没有可用素材"} description={allAssets.length ? "调整搜索词或筛选条件后再试" : "上传或生成的素材会统一显示在这里"} className="min-h-80" />}
+          {!initialLoadComplete ? <div role="status" className="flex min-h-80 items-center justify-center text-sm text-muted-foreground">正在同步素材...</div> : visibleAssets.length ? <div data-asset-grid className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,280px),1fr))] gap-4">{visibleAssets.map((asset, index) => { const key = assetListKey(asset); const canManage = canManageAsset(asset); return <AssetCard key={key} asset={asset} eager={index < 6} selected={selectedKeys.has(key)} onSelectedChange={(checked) => setSelectedKeys((current) => { const next = new Set(current); if (checked) next.add(key); else next.delete(key); return next; })} onOpen={() => setPreview(asset)} onEdit={canManage && asset.kind !== "video" && !asset.managedPath ? () => { setEditing(asset); setFormOpen(true); } : undefined} onDelete={canManage && (!asset.managedPath || hasAPIPermission(session, "DELETE", "/api/images")) ? () => setDeleting(asset) : undefined} onCopy={() => void copyText(asset)} onDownload={() => void download(asset)} />; })}</div> : managedError && allAssets.length === 0 ? null : <EmptyState icon={ImageIcon} title={allAssets.length ? "没有找到匹配的素材" : "还没有可用素材"} description={allAssets.length ? "调整搜索词或筛选条件后再试" : "上传或生成的素材会统一显示在这里"} className="min-h-80" />}
         </div>
         </ScrollArea>
-        <ManagementPagination
+        {!initialLoadComplete ? <div className="min-h-14 shrink-0 border-t border-border" /> : <ManagementPagination
           page={page}
           totalPages={totalPages}
           totalItems={filtered.length}
@@ -387,7 +394,7 @@ function AssetsContent({ session }: { session: StoredAuthSession }) {
             setPageSize(value);
             setPage(1);
           }}
-        />
+        />}
       </ManagementPanel>
       <AssetForm open={formOpen} asset={editing} onClose={() => setFormOpen(false)} onSave={async (next) => { await upsertAsset(next); setFormOpen(false); }} />
       <AssetPreview asset={preview} onClose={() => setPreview(null)} onCopy={() => preview && void copyText(preview)} onCopyPrompt={() => preview && void copyPrompt(preview)} onDownload={() => preview && void download(preview)} />

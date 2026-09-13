@@ -12,6 +12,7 @@ export type RelayTokenPreferencesContextValue = {
   refreshTokenModels: () => void;
   routeForModel: (kind: RelayTokenKind, model: string) => RelayTokenRoute;
   setTokenNames: (kind: RelayTokenKind, tokenNames: string[]) => Promise<void>;
+  nextTokenNameForModel: (kind: RelayTokenKind, model: string) => string;
   tokenNameForModel: (kind: RelayTokenKind, model: string) => string;
 };
 

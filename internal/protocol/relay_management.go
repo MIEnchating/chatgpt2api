@@ -33,18 +33,19 @@ type RelayManagementClient struct {
 }
 
 type RelayManagedToken struct {
-	ID             int64           `json:"id"`
-	UserID         int64           `json:"user_id"`
-	Name           string          `json:"name"`
-	Group          string          `json:"group"`
-	GroupID        int64           `json:"group_id"`
-	Status         json.RawMessage `json:"status"`
-	ExpiresAt      *time.Time      `json:"expires_at"`
-	ExpiredTime    int64           `json:"expired_time"`
-	UnlimitedQuota bool            `json:"unlimited_quota"`
-	RemainQuota    float64         `json:"remain_quota"`
-	Quota          float64         `json:"quota"`
-	QuotaUsed      float64         `json:"quota_used"`
+	ID               int64           `json:"id"`
+	UserID           int64           `json:"user_id"`
+	Name             string          `json:"name"`
+	Group            string          `json:"group"`
+	GroupRouteConfig string          `json:"group_route_config"`
+	GroupID          int64           `json:"group_id"`
+	Status           json.RawMessage `json:"status"`
+	ExpiresAt        *time.Time      `json:"expires_at"`
+	ExpiredTime      int64           `json:"expired_time"`
+	UnlimitedQuota   bool            `json:"unlimited_quota"`
+	RemainQuota      float64         `json:"remain_quota"`
+	Quota            float64         `json:"quota"`
+	QuotaUsed        float64         `json:"quota_used"`
 }
 
 func (t RelayManagedToken) Usable(provider string) bool {

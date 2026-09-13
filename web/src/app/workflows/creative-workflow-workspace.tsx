@@ -295,7 +295,7 @@ function CreativeWorkflowWorkspaceContent({
 }: CreativeWorkflowWorkspaceProps & { session: StoredAuthSession }) {
   const sessionKey = session.key;
   const { preferences, isReady: preferencesReady } = useImageGenerationPreferences(sessionKey);
-  const { isReady: relayPreferencesReady, tokenNameForModel } = useRelayTokenPreferences();
+  const { isReady: relayPreferencesReady, tokenNameForModel, nextTokenNameForModel } = useRelayTokenPreferences();
   const sessionTextChannelID = tokenNameForModel("text", preferences.default_text_model || "");
   const { assets: myAssets, upsertAsset, loading: assetLoading } = useMyAssets(
     session?.key || "",
@@ -949,7 +949,7 @@ function CreativeWorkflowWorkspaceContent({
       : undefined;
     const stream = preferences.stream;
     const partialImages = preferences.partial_images || undefined;
-    const relayTokenName = tokenNameForModel("image", model);
+    const relayTokenName = nextTokenNameForModel("image", model);
     const execution = {
       stream,
       partial_images: preferences.partial_images,
@@ -1224,7 +1224,7 @@ function CreativeWorkflowWorkspaceContent({
         clientTaskId: taskID("workflow-series"),
         prompt,
         model,
-        relayTokenName: tokenNameForModel("text", model),
+        relayTokenName: nextTokenNameForModel("text", model),
         messages: [{ role: "user", content: prompt }],
         requestOptions: { signal: taskController.signal },
       });

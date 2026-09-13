@@ -458,11 +458,20 @@ func (s *Store) RelayBaseURL() string {
 func (s *Store) RelayCreationGroups() map[string]string {
 	groups := make(map[string]string)
 	for _, kind := range []string{"text", "image", "video", "audio"} {
-		if group := strings.TrimSpace(fmt.Sprint(s.settingValue("relay_"+kind+"_group", ""))); group != "" {
+		if group := normalizeRelayCreationGroup(s.settingValue("relay_"+kind+"_group", "")); group != "" {
 			groups[kind] = group
 		}
 	}
 	return groups
+}
+
+func normalizeRelayCreationGroup(value any) string {
+	group := util.Clean(value)
+	// Older settings responses could persist fmt.Sprint(nil) as a group name.
+	if group == "<nil>" {
+		return ""
+	}
+	return group
 }
 
 func (s *Store) RelayDatabaseURL() string {
@@ -734,10 +743,10 @@ func (s *Store) Get() map[string]any {
 	data["site_icon_url"] = snapshot.SiteIconURL()
 	data["relay_base_url"] = snapshot.RelayBaseURL()
 	data["relay_database_type"] = snapshot.RelayDatabaseType()
-	data["relay_text_group"] = strings.TrimSpace(fmt.Sprint(snapshot.data["relay_text_group"]))
-	data["relay_image_group"] = strings.TrimSpace(fmt.Sprint(snapshot.data["relay_image_group"]))
-	data["relay_video_group"] = strings.TrimSpace(fmt.Sprint(snapshot.data["relay_video_group"]))
-	data["relay_audio_group"] = strings.TrimSpace(fmt.Sprint(snapshot.data["relay_audio_group"]))
+	for _, kind := range []string{"text", "image", "video", "audio"} {
+		key := "relay_" + kind + "_group"
+		data[key] = normalizeRelayCreationGroup(snapshot.data[key])
+	}
 	driver, host, port, name, user := relayDatabasePublicFields(snapshot.RelayDatabaseConnectionURL(), snapshot.RelayDatabaseDriver())
 	data["relay_database_driver"] = driver
 	data["relay_database_host"] = host
@@ -794,6 +803,12 @@ func (s *Store) Update(data map[string]any) (map[string]any, error) {
 		next[key] = value
 	}
 	delete(next, "image_concurrent_limit")
+	for _, kind := range []string{"text", "image", "video", "audio"} {
+		key := "relay_" + kind + "_group"
+		if value, exists := next[key]; exists {
+			next[key] = normalizeRelayCreationGroup(value)
+		}
+	}
 	if value, ok := next["login_page_image_mode"]; ok {
 		next["login_page_image_mode"] = normalizeLoginPageImageMode(value)
 	}

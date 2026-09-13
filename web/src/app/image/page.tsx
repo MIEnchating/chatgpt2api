@@ -1629,7 +1629,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     resetReferenceUploads();
     setVideoModel(model);
   }, [resetReferenceUploads]);
-  const { refreshTokenModels, routeForModel, tokenNameForModel } = useRelayTokenPreferences();
+  const { refreshTokenModels, routeForModel, nextTokenNameForModel } = useRelayTokenPreferences();
   const [relayTokenDialogKind, setRelayTokenDialogKind] = useState<CreationRelayTokenKind | null>(null);
   const [relayImageModelOptions, setRelayImageModelOptions] = useState<ImageModelOption[]>(() =>
     [...IMAGE_CREATION_MODEL_OPTIONS],
@@ -1819,8 +1819,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     }
   }, [selectedConversation]);
   const activeRelayTokenKind: CreationRelayTokenKind = composerMode === "video" ? "video" : "image";
-  const activeRelayTokenName = tokenNameForModel(activeRelayTokenKind, composerMode === "video" ? videoModel : imageModel);
-  const relayTokenNameForKind = useCallback((kind: CreationRelayTokenKind, model: string) => tokenNameForModel(kind, model), [tokenNameForModel]);
+  const relayTokenNameForKind = useCallback((kind: CreationRelayTokenKind, model: string) => nextTokenNameForModel(kind, model), [nextTokenNameForModel]);
   const requireRelayToken = useCallback((kind: CreationRelayTokenKind, model: string) => {
     const route = routeForModel(kind, model);
     if (route.status === "ready") return true;
@@ -4975,7 +4974,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         videoReferenceAudioURLs: videoMode ? normalizedVideoTurnFields?.videoReferenceAudioURLs : undefined,
         videoSystemPrompt: videoMode ? (imageGenerationPreferences.video_system_prompt || undefined) : undefined,
         tokenGroup: undefined,
-        tokenName: activeRelayTokenName || undefined,
+        tokenName: nextTokenNameForModel(activeRelayTokenKind, composerMode === "video" ? videoModel : imageModel) || undefined,
         visibility: defaultImageVisibility,
         images: Array.from({ length: requestedCount }, (_, index): StoredImage => {
           const imageId = `${turnId}-${index}`;
