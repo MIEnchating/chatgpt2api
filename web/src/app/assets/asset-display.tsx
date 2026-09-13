@@ -16,7 +16,7 @@ import type { MyAsset, MyAssetKind } from "@/lib/my-assets";
 import { resolveMediaURL } from "@/services/file-storage";
 import { resolveImageURL } from "@/services/image-storage";
 
-export function AssetCard({ asset, selected = false, onSelectedChange, onOpen, onEdit, onDelete, onCopy, onDownload }: { asset: MyAsset; selected?: boolean; onSelectedChange?: (selected: boolean) => void; onOpen: () => void; onEdit?: () => void; onDelete?: () => void; onCopy: () => void; onDownload: () => void }) {
+export function AssetCard({ asset, selected = false, eager = false, onSelectedChange, onOpen, onEdit, onDelete, onCopy, onDownload }: { asset: MyAsset; selected?: boolean; eager?: boolean; onSelectedChange?: (selected: boolean) => void; onOpen: () => void; onEdit?: () => void; onDelete?: () => void; onCopy: () => void; onDownload: () => void }) {
   const Icon = asset.kind === "text" ? FileText : asset.kind === "image" ? ImageIcon : asset.kind === "video" ? Video : AudioLines;
   const { coverURL, mediaURL } = useResolvedAssetURLs(asset);
   const previewCoverURL = asset.kind === "video" && (coverURL === mediaURL || coverURL === asset.url) ? "" : coverURL;
@@ -40,11 +40,11 @@ export function AssetCard({ asset, selected = false, onSelectedChange, onOpen, o
       <button type="button" className="interactive-card-trigger block w-full overflow-hidden text-left" onClick={onOpen} aria-label={`查看素材 ${asset.title}`}>
         <div className="flex aspect-[16/10] items-center justify-center overflow-hidden bg-muted/35">
           {previewCoverURL ? (
-            <AuthenticatedImage src={previewCoverURL} alt={asset.title} loading="lazy" className="size-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.025]" />
+            <AuthenticatedImage src={previewCoverURL} alt={asset.title} loading={eager ? "eager" : "lazy"} className="size-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.025]" />
           ) : asset.kind === "image" && mediaURL ? (
-            <AuthenticatedImage src={mediaURL} alt={asset.title} loading="lazy" className="size-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.025]" />
+            <AuthenticatedImage src={mediaURL} alt={asset.title} loading={eager ? "eager" : "lazy"} className="size-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.025]" />
           ) : asset.kind === "video" && mediaURL ? (
-            <video data-asset-video-thumbnail src={`${mediaURL}#t=0.1`} muted playsInline preload="none" className="size-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.025]" />
+            <video data-asset-video-thumbnail src={`${mediaURL}#t=0.1`} muted playsInline preload={eager ? "metadata" : "none"} className="size-full object-cover transition-transform duration-300 ease-out group-hover:scale-[1.025]" />
           ) : asset.kind === "audio" ? (
             <div className="flex flex-col items-center gap-2 text-[#1456f0] dark:text-sky-300">
               <span className="flex size-14 items-center justify-center rounded-full bg-[#edf4ff] dark:bg-sky-950/50"><AudioLines className="size-7" /></span>
@@ -58,7 +58,7 @@ export function AssetCard({ asset, selected = false, onSelectedChange, onOpen, o
           )}
         </div>
       </button>
-      <div data-asset-card-content className="flex min-h-0 flex-1 flex-col gap-3 p-4">
+      <div data-asset-card-content className="flex min-h-0 flex-col gap-3 p-4">
         <div className="min-w-0">
           <h2 className="line-clamp-2 min-h-10 break-words text-sm font-semibold leading-5 text-foreground">{asset.title || "未命名素材"}</h2>
           <p className="mt-1 truncate text-xs text-muted-foreground">{asset.ownerName && !asset.owned ? asset.ownerName : asset.source || "未标注来源"}</p>
@@ -80,7 +80,7 @@ export function AssetCard({ asset, selected = false, onSelectedChange, onOpen, o
           <span>{formatAssetCreatedTime(asset.createdAt)}</span>
         </p>
       </div>
-      <div className="flex min-h-12 items-center gap-1 border-t border-border px-3 py-2">
+      <div className="mt-auto flex min-h-12 items-center gap-1 border-t border-border px-3 py-2">
         <Button type="button" variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={onOpen}><Eye className="size-3.5" />查看</Button>
         {asset.kind === "text" ? <Button type="button" variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={onCopy}><Copy className="size-3.5" />复制</Button> : <Button type="button" variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={onDownload}><Download className="size-3.5" />下载</Button>}
         {onEdit ? <Button type="button" variant="ghost" size="sm" className="h-8 px-2 text-xs" onClick={onEdit}><Pencil className="size-3.5" />编辑</Button> : null}
