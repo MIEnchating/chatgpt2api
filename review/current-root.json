@@ -1,0 +1,951 @@
+{
+  "date": "2026-09-14",
+  "scope": "root",
+  "files": [
+    {
+      "path": ".env.example",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "497aa5033c03090b3c134179ad960fddacdd389dcfb680a1016ef9bd8f2bbd6c",
+      "bytes": 7227
+    },
+    {
+      "path": ".gitattributes",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "d59488df661126b6e07efd98c43772b1adaa582d886266ede4028a30af7e2551",
+      "bytes": 101
+    },
+    {
+      "path": ".githooks/pre-commit",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "d42155460d16b7cb79f7cff12701a125f0b98b98451fca5fb22844a416b630ee",
+      "bytes": 852
+    },
+    {
+      "path": ".github/workflows/ci.yml",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "b2abd3167af5e9dcc7fc5dbd1d0c6097abca0c2e3ad2c64f26c2ac5e023f9401",
+      "bytes": 4286
+    },
+    {
+      "path": ".github/workflows/release.yml",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "ccb9feb133fbbbf0a48f2badc94bf1563f4d17b70adacefbc62032ad748d6292",
+      "bytes": 6168
+    },
+    {
+      "path": ".gitignore",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "6dc2dfa31c1d9e48a6bebd77d947ab5dabf3637af19ddbd653ecb5ea566f4216",
+      "bytes": 631
+    },
+    {
+      "path": ".goreleaser.yaml",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "1cf7d08bf304523aaa6e3b89e3dfec29550ae3349904e5cb8ae4d22f24808f09",
+      "bytes": 1268
+    },
+    {
+      "path": "AGENTS.md",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "d1bfab3e2c017ef486e622af9affc7e7e268a27b6857dd81b7e934cfff4f5cde",
+      "bytes": 6771
+    },
+    {
+      "path": "Dockerfile",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "9b7f08cbbd7df7253855c6559f5a4964d0bf07bcb8bad7980a9a58526ff34de0",
+      "bytes": 1766
+    },
+    {
+      "path": "Dockerfile.dockerignore",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "b9ad8ed3186b3a107b0847d873ee49b69cc36b4bed56617505100f4dfc82d56c",
+      "bytes": 645
+    },
+    {
+      "path": "Dockerfile.release",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "00960053277078327afb274d606bbb3162987b5be071b44f731ad46ca5a7dafd",
+      "bytes": 673
+    },
+    {
+      "path": "docker-compose.yml",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "d9e91e863ea6b43a2183f64c2d67cb70a03d3cd90dbc60ed29f66346a8fe72fc",
+      "bytes": 407
+    },
+    {
+      "path": "go.mod",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "18ee0432b8be8680f260ea4e31fba9e8f3ce86d00bb4740ce09e5bab7e3d08fe",
+      "bytes": 2080
+    },
+    {
+      "path": "scripts/install-git-hooks.sh",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "f4acbd657156568f3558bc8e57ae1095940b54fb7d29da4cc2efa86e0db82633",
+      "bytes": 185
+    },
+    {
+      "path": "scripts/test-git-hooks.sh",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "bb3271d4509970f66b8558d4155b7c68da17caf5765736be56edf909c338c9e2",
+      "bytes": 2915
+    },
+    {
+      "path": "scripts/validate-release-notes.sh",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "8223ac2ae948f4382f35b32170d5040048bc420990d7703feb3fda300f1ac28f",
+      "bytes": 2033
+    },
+    {
+      "path": "staticcheck.conf",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "c26212d636e05cfa31b7908e5eea0cfbdfc03267e648763fd8eb8793d3007d5a",
+      "bytes": 32
+    },
+    {
+      "path": "web/.gitignore",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "55f31bdddaac5fdc48c85f54d6ad979f52f15e3d96e0cc2b98df3c9436af3c52",
+      "bytes": 497
+    },
+    {
+      "path": "web/.oxlintrc.json",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "ee4dfa5992f9b2d2a39b72d652df8dfd109a6ba26ce418ad53de2f10d06b04f3",
+      "bytes": 772
+    },
+    {
+      "path": "web/components.json",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "85cce81de2d8877cb2de704ed02a7c36497d23fa9d2104c63287111fda40b1f0",
+      "bytes": 505
+    },
+    {
+      "path": "web/index.html",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "22fbca7d14b96e6bb005b9e69272584d842be5ad79f84fecdf2327e9ba17d17b",
+      "bytes": 508
+    },
+    {
+      "path": "web/knip.json",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "402f7b15e04e7ab77ee6b5a2917a88400a1603ca4807638b907e151e447d633f",
+      "bytes": 46
+    },
+    {
+      "path": "web/package.json",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "388fea5d599641a1a9973dc31cf7f5ba0348bb184fed55f9c8d77de4062ce10c",
+      "bytes": 1580
+    },
+    {
+      "path": "web/postcss.config.mjs",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "9631b4dbc5bb7152430ccb649808ace11ef45612bb9ae81b896aa74690343cfd",
+      "bytes": 102
+    },
+    {
+      "path": "web/src/App.tsx",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "8adad3184bd2cd851494db82030ae6fd129bd36adc287e672288477da276f5a8",
+      "bytes": 575
+    },
+    {
+      "path": "web/src/constants/common-env.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "8c0f7d16fd9aa6d5f096ac58d04360f8388dca9b13bf003455da2479a374107e",
+      "bytes": 96
+    },
+    {
+      "path": "web/src/lib/announcement-events.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "7f808d9642fb5c49783f9172a0222343ddf07a580b37f89c178c12b4271e29bf",
+      "bytes": 247
+    },
+    {
+      "path": "web/src/lib/announcement-lifecycle.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "09a05bedb7dff2054efde00a2b759b85cffe71b0194954d10c2e2fd83d00d585",
+      "bytes": 3760
+    },
+    {
+      "path": "web/src/lib/api.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "b6844111c86a82f4a0f9fa6c95fccfee061920fa1e1b6e0dd36dc92bcda10d06",
+      "bytes": 57398
+    },
+    {
+      "path": "web/src/lib/app-meta.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "c00c4d901161ee03218e00b95b62cdd84db3394751ddf18867b5ce1e5572f143",
+      "bytes": 4151
+    },
+    {
+      "path": "web/src/lib/asset-groups.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "a70c747419e1c2cc90300a23ed9a19a96a9b1f9720e4c8678a384e5cd56eead2",
+      "bytes": 686
+    },
+    {
+      "path": "web/src/lib/audio-reference-file.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "ff25513590007b0142173739d47983035e01f39a42a8280f4eadf96dbed710ba",
+      "bytes": 3193
+    },
+    {
+      "path": "web/src/lib/auth-session.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "678df74a36a0830dbd05e2d3268c5c15245d4ea64ec6999c0e1a622dc6905a59",
+      "bytes": 1859
+    },
+    {
+      "path": "web/src/lib/authenticated-image.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "079628be04df233d371cf949383e84881a029bed38b602dace1f5360974fcae9",
+      "bytes": 9467
+    },
+    {
+      "path": "web/src/lib/canvas-project-route.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "a9b3416d6f63de4d4991f1d38f33fa47a5de8b51535e99966f9a5c6f7125eb64",
+      "bytes": 465
+    },
+    {
+      "path": "web/src/lib/deprecated-browser-persistence.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "574fda65c32ada848f5fd470f45ca2b069159065260b6c562915aed0d63559a5",
+      "bytes": 1159
+    },
+    {
+      "path": "web/src/lib/expiring-request-cache.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "fad8f8a8d67cf14fa8747e3f747c912fc63a231b322c192a99014d5bf2a49dd3",
+      "bytes": 1593
+    },
+    {
+      "path": "web/src/lib/generation-frame-aspect.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "e7a0ff57d3710603926faeefcf4ebec35be4b22509b9863945514898d16a83aa",
+      "bytes": 1695
+    },
+    {
+      "path": "web/src/lib/generation-task-contract.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "5bc34dd0b1e9df8bb43f94d9c45d8985edba3e725886a9f283885ff51ddf7f8d",
+      "bytes": 1094
+    },
+    {
+      "path": "web/src/lib/image-api-contract.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "263f836c02112d1ebad64dde566322761708eda4dd8ad690e2ddbd6c0b78c263",
+      "bytes": 952
+    },
+    {
+      "path": "web/src/lib/image-conversation-assets.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "bcbd4db5746369d568f6a9935986bdece7154a52bb8933cb6cb4e33baf7403b4",
+      "bytes": 5972
+    },
+    {
+      "path": "web/src/lib/image-conversation-history.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "44f5e147a1dd44813cf854e53ad8a80ada75e19fc3a02b9610f897ad9883b4ca",
+      "bytes": 2806
+    },
+    {
+      "path": "web/src/lib/image-conversation-source.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "e41fefecb91b7b6945fef0dbe4352dc99e99af7e70fb043d2817e763044b30be",
+      "bytes": 468
+    },
+    {
+      "path": "web/src/lib/image-conversation-types.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "ea9c7ed10334170e5ae088593794240bae3bd9941ff8a32e09f8083f2db4602a",
+      "bytes": 3389
+    },
+    {
+      "path": "web/src/lib/image-generation-preferences-events.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "ed980a5a6ff4363ce86079b131f9ee4d51151ae0139f5ff2def6d284d3f247f4",
+      "bytes": 1433
+    },
+    {
+      "path": "web/src/lib/image-generation-preferences-retry.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "c3876dfe1b4e04268095531242ce2f51a1e983c22c0cb0e8c2d9f889194b7c31",
+      "bytes": 1186
+    },
+    {
+      "path": "web/src/lib/image-model-capabilities.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "7d29c64328f37b94cb3992ab24755eb31bf2207a29feb419db7495e23aeefbf5",
+      "bytes": 15529
+    },
+    {
+      "path": "web/src/lib/image-options.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "6b387d775a22dce266b21405817c2c157f8aa9f3d9f3a6f8b7c9e22a9bef6afd",
+      "bytes": 21119
+    },
+    {
+      "path": "web/src/lib/image-path.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "90a6bec83d691a3d54e669fb7e4180b67a9cc5468b1796d97f8089e910f93d71",
+      "bytes": 1749
+    },
+    {
+      "path": "web/src/lib/image-size.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "25cf36fc97ef3417b4f74912733dc7920c79b5f1c0d068b71d6bf39eba8e53f5",
+      "bytes": 541
+    },
+    {
+      "path": "web/src/lib/image-source-file.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "7afdf7207324b917671b9fad0eb21694e7b4d4514811127505d43fd91b4c9577",
+      "bytes": 897
+    },
+    {
+      "path": "web/src/lib/image-task-state.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "e858ceffee2ff173eb7d4df9b93b4996c04cddcf81e8685182cd6acfb819b693",
+      "bytes": 21659
+    },
+    {
+      "path": "web/src/lib/image-turn-validation.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "618ee89344450159167738e4ca317d8350abdbd183c41e455c8a825611a529a3",
+      "bytes": 475
+    },
+    {
+      "path": "web/src/lib/login-page-image-layout.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "f5d2de15147ce94410298ad261ea3ddf6637cd4aba5d224f0a909619477eaf7e",
+      "bytes": 3487
+    },
+    {
+      "path": "web/src/lib/model-capabilities.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "e8fbe75006d66b460410b3ada61392ce1ac98196317ef17488b3f94a480eb7cb",
+      "bytes": 1882
+    },
+    {
+      "path": "web/src/lib/model-config-selection.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "1f2da32846c141a79788a7a3a11596278c383c1084d1754a95a550d3e5b1b97c",
+      "bytes": 753
+    },
+    {
+      "path": "web/src/lib/my-assets-core.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "579f6518625b0052aa2201d2e69d46edf5fd71b3e5614695a118d096bb3b204f",
+      "bytes": 5452
+    },
+    {
+      "path": "web/src/lib/my-assets.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "3758295e9875c018ccbc72dbbd883ecdaba043854055ff842acb9de39de36fad",
+      "bytes": 3925
+    },
+    {
+      "path": "web/src/lib/prompt-market-types.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "13c2d3f382859e4b06eb556a3ad5a2370858f65dcb8b11fd15171b2bdf525c49",
+      "bytes": 1029
+    },
+    {
+      "path": "web/src/lib/public-reference-url.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "edd9e7a18acd64bd018a6665472f858ab80830b4d5d08359308ab006ff7747cd",
+      "bytes": 2290
+    },
+    {
+      "path": "web/src/lib/relay-token-preference-mutations.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "aed38b1602fc287625c1883af9df9015019ae64de318ac8a2fe6f010ee1db242",
+      "bytes": 1223
+    },
+    {
+      "path": "web/src/lib/relay-token-preferences.tsx",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "725568fb59bd67e1000d500ff8a1a714093723f430784a758769251fb1b65fcd",
+      "bytes": 7856
+    },
+    {
+      "path": "web/src/lib/relay-token-selection.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "997d3803458bbf3390eba1521cf4f41e7d384f2326d3379b5c07b717603a7764",
+      "bytes": 5238
+    },
+    {
+      "path": "web/src/lib/remembered-login.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "bd0e6c38cb897ce22a5258cbdfa323f45a4db0a39011e1f02102e9ffbc9174be",
+      "bytes": 1950
+    },
+    {
+      "path": "web/src/lib/request-error.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "0e198861d82b26ff74877e1655ff14823f960c38f4829f89028080f3241cdd40",
+      "bytes": 906
+    },
+    {
+      "path": "web/src/lib/request-response-error.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "6e995442866e5efbd524f138b582e3a97969547fb810b8e57ff68915bd64b990",
+      "bytes": 2589
+    },
+    {
+      "path": "web/src/lib/request.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "c78a2af3afc7afa8d00a495bc92004bed3ee430b24eab92ecec3c0b8c2e0b6a3",
+      "bytes": 1850
+    },
+    {
+      "path": "web/src/lib/scoped-mutation-lifecycle.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "549f03e7704e3bee70b3f35149ebe2c75cd50a290aef2d34a5c1e3fdd5c5a3d0",
+      "bytes": 4299
+    },
+    {
+      "path": "web/src/lib/session.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "bc3df5ae00cd3d12a6c274c3e0f394c747d8ef9ca3cb341e01746f980de16df1",
+      "bytes": 4865
+    },
+    {
+      "path": "web/src/lib/theme.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "907d031f49ad4f24a12de6c863ffc151e45c358935442ee2f6037fa631eda268",
+      "bytes": 3179
+    },
+    {
+      "path": "web/src/lib/use-app-meta.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "2241572daab4b5ecbb7dab8f91f4c129671e20b1bb944365f23f773024af3d6d",
+      "bytes": 1842
+    },
+    {
+      "path": "web/src/lib/use-asset-groups.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "6cb9d20428ca426ee7dbfc3e15411fa7de67830d3c731fc2aa23956e110b84a2",
+      "bytes": 1815
+    },
+    {
+      "path": "web/src/lib/use-auth-guard.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "5e6369bbf65e49eeadf2b19cb00156f54fe1b5a11f58eeec4a207c33fc67fae2",
+      "bytes": 5053
+    },
+    {
+      "path": "web/src/lib/use-auth-session-revision.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "d42a8f02a7965815a9ada0a2147bcdd0c4005d10d65505a2e7ba7437b77281d4",
+      "bytes": 569
+    },
+    {
+      "path": "web/src/lib/use-color-theme.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "f00812ddaaf7e7550e7a253704a0ac0ceeb72efb43823ccc11fba3d2847827b1",
+      "bytes": 531
+    },
+    {
+      "path": "web/src/lib/use-image-generation-preferences.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "88d8d02aad695c4d6fa0841208ea76734a827e8ca657b0ca5af80e0ff142e5db",
+      "bytes": 7976
+    },
+    {
+      "path": "web/src/lib/use-my-assets.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "ead3e99089198d21dd15e1dff61404e03f32bc7b9164843b51f4f751bde8cbb7",
+      "bytes": 4564
+    },
+    {
+      "path": "web/src/lib/use-relay-token-preferences.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "028616f193c3f51689d011504bbeb8366af5d79de9828eda03d7e517de73eb2b",
+      "bytes": 1033
+    },
+    {
+      "path": "web/src/lib/utils.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "414110cc454e8071dc9ef10196a77805362699538973e2859b3eede998cf5689",
+      "bytes": 648
+    },
+    {
+      "path": "web/src/lib/video-model-capabilities.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "918ac5ab71dbba7dddd93f6af988257b754dc69d1787b0bf773b011231c92162",
+      "bytes": 11719
+    },
+    {
+      "path": "web/src/lib/video-model-contracts.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "3e2a4dcf7e80f32c290ceaf4f83c3c8b5074e348cc534867119249d33d9068e4",
+      "bytes": 11371
+    },
+    {
+      "path": "web/src/lib/video-reference-validation.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "19ca8f32cba97014d5aa4907c00f3503438c7dfce4b527942a575451bfb285d0",
+      "bytes": 432
+    },
+    {
+      "path": "web/src/lib/video-request-normalizer.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "032d4f222bb26f738a2bab9852db18e3308cf8405104574c4b4e0696d4db6ef1",
+      "bytes": 12376
+    },
+    {
+      "path": "web/src/lib/video-task-error.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "7d43fdab9b5e605314c2aa912fb60ce55609ec0fff1b0f1a8dfc9d6a898db18d",
+      "bytes": 449
+    },
+    {
+      "path": "web/src/lib/zip-worker-contract.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "bfa24f57274425776e6f1ea6fead430854779217cb8dda67f1fed86de5c747c9",
+      "bytes": 252
+    },
+    {
+      "path": "web/src/lib/zip-worker.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "ab7928aebda4c9a737c38262eb938c564bd1cf2eda29d2404605a6315e1a62a6",
+      "bytes": 1453
+    },
+    {
+      "path": "web/src/lib/zip.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "00640bcd5ab17826592fb934898c52309e044bc7419c651693fc1d260eedc917",
+      "bytes": 2730
+    },
+    {
+      "path": "web/src/main.tsx",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "7d639c90880146445df0638b726035c665a5803af073281affce137e0ba470ea",
+      "bytes": 557
+    },
+    {
+      "path": "web/src/services/api/canvas.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "426b5a9688d2730244949296106644c278320f4a4fb2fd9c38fb266842782ee5",
+      "bytes": 6842
+    },
+    {
+      "path": "web/src/services/api/image-conversations.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "bd7f8b0a12696626033d81aa63c8de8e648cf210a27d740f5f8349904b7b7c53",
+      "bytes": 4488
+    },
+    {
+      "path": "web/src/services/api/storage.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "827d1412183bb9e14c15bb163b1168edb6d07b3fa0269c3f4d148fbf1156090a",
+      "bytes": 2919
+    },
+    {
+      "path": "web/src/services/api/workflows.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "6d306eeb1dad3dc7d9bda477e5e3e1c80312fe7dfe0464272003fe2372d2d3fe",
+      "bytes": 4042
+    },
+    {
+      "path": "web/src/services/file-storage.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "a976ddabc75d8907572d54005a12aa7165420ccf6f5d1c5e012f4e8497551677",
+      "bytes": 5807
+    },
+    {
+      "path": "web/src/services/generation-result-storage.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "a28bbca52e6997042b2b3b55bf1cc316d16ff6081d9692fd2bc5c247d43bbb55",
+      "bytes": 13383
+    },
+    {
+      "path": "web/src/services/image-storage.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "4a143014d7b9c71d80bb71746bfa7eb8b8ff971d5a770da36bf76e28b24a066c",
+      "bytes": 10048
+    },
+    {
+      "path": "web/src/services/storage-provider.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "7e24ca6f45fea7189cfee50312dcb05bf9878bf55bd6554a475fb543034575d3",
+      "bytes": 4654
+    },
+    {
+      "path": "web/src/store/image-conversation-session-scope.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "55ccff3d58aad9f313c2e0be4ab669886a61cd066356b3be528e3e4a974c65e4",
+      "bytes": 13195
+    },
+    {
+      "path": "web/src/store/image-conversations.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "3568cfa9286103e22c3ae6377dc84d69fdd5bfb8d2b40ee5257bb740426f1587",
+      "bytes": 52153
+    },
+    {
+      "path": "web/src/store/image-turn-progress.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "400ef784890e105945e436aeedbed523fb14735654a977794d2c10405514f8b5",
+      "bytes": 2385
+    },
+    {
+      "path": "web/src/vite-env.d.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "65996936fbb042915f7b74a200fcdde7e410f32a669b1ab9597cfaa4b0faddb5",
+      "bytes": 38
+    },
+    {
+      "path": "web/tests/image-history-merge-efficiency.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "6d021609a2206d66073403cd5eecd08d60239cc9368c5875d1bd216aa42cf333",
+      "bytes": 1167
+    },
+    {
+      "path": "web/tests/image-task-state.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "000d93d458d3f7f7c8f2b6faef2cb7f2bb3756110433b622036f00486858f081",
+      "bytes": 22184
+    },
+    {
+      "path": "web/tests/zip.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "6d34ad3df76e48720c12ebc64f5494133f010a842dfdde62c799544bd3619114",
+      "bytes": 2118
+    },
+    {
+      "path": "web/tsconfig.json",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "df89a6c8f2b79f3cae578f61a2ff1775bd36b2ee54d73ce157bdaf303f31c84c",
+      "bytes": 690
+    },
+    {
+      "path": "web/vite.config.ts",
+      "status": "reviewed",
+      "checks": [
+        "全文阅读；检查调用边界、状态生命周期、复杂度及配置一致性"
+      ],
+      "sha256": "044f25530c8830f29833dc5e3cc8ff26fec0c82a350f53c5646f75908265dd16",
+      "bytes": 2920
+    }
+  ]
+}

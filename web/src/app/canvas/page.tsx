@@ -1289,9 +1289,11 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       return asset;
     }));
     if (!mountedRef.current || canvasOperationEpochRef.current !== operationEpoch || documentRef.current.id !== projectID) return;
-    const previousNodes = nodesRef.current;
     const center = canvasCenterPosition();
-    const insertedNodes = hydratedAssets.map((asset, index) => canvasPendingAgentAssetNode(asset, index, hydratedAssets.length, center));
+    const existingNodeIDs = new Set(nodesRef.current.map((node) => node.id));
+    const insertedNodes = hydratedAssets.flatMap((asset, index) => existingNodeIDs.has(asset.nodeId)
+      ? []
+      : [canvasPendingAgentAssetNode(asset, index, hydratedAssets.length, center)]);
     if (insertedNodes.length) {
       replaceNodes([...nodesRef.current, ...insertedNodes]);
     }
@@ -1319,8 +1321,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
     };
     scheduleSave();
     if (!await persistCanvas()) {
-      if (documentRef.current.id === projectID) {
-        replaceNodes(previousNodes);
+      if (mountedRef.current && canvasOperationEpochRef.current === operationEpoch && documentRef.current.id === projectID) {
         documentRef.current = { ...documentRef.current, pending_agent_request: request };
       }
       return;
@@ -1819,6 +1820,9 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       if (fromNode.type === "config" && toNode.type === "config") return { ok: false, code: "invalid_connection", message: "配置节点之间不能连接" };
       const existing = connectionsRef.current.find((connection) => connection.from_node_id === fromNodeID && connection.to_node_id === toNodeID);
       if (existing) return { ok: true, connectionId: existing.id, alreadyExists: true };
+      if (!canCreateCanvasConnection(fromNodeID, toNodeID, connectionsRef.current, nodesRef.current)) {
+        return { ok: false, code: "invalid_connection", message: "这些节点类型之间不能创建连线" };
+      }
       const connection: CanvasConnection = { id: `connection-${randomID()}`, from_node_id: fromNodeID, to_node_id: toNodeID };
       replaceConnections([...connectionsRef.current, connection]); pushHistory();
       return { ok: true, connectionId: connection.id };
@@ -2790,7 +2794,9 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
 
   async function copySelected() {
     const copiedIDs = expandCanvasBatchNodeIDs(expandCanvasGroupNodeIDs(selectedNodeIDs, nodesRef.current), nodesRef.current);
-    const copiedNodes = nodesRef.current.filter((node) => copiedIDs.has(node.id));
+    const copiedNodes = nodesRef.current.filter((node) => copiedIDs.has(node.id)).map((node) => (
+      node.group_id && !copiedIDs.has(node.group_id) ? { ...node, group_id: undefined } : node
+    ));
     if (!copiedNodes.length) return;
     const ids = new Set(copiedNodes.map((node) => node.id));
     const copiedConnections = connectionsRef.current.filter((connection) => ids.has(connection.from_node_id) && ids.has(connection.to_node_id));
@@ -3544,7 +3550,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
               generation_error: "",
               task_id: completed.id || serverTaskID,
             };
-            if (node.id === rootID && targetID !== rootID && node.batch_primary_id === targetID) return {
+            if (node.id === rootID && targetID !== rootID && (node.batch_primary_id === targetID || !node.url)) return {
               ...node,
               ...PANORAMA_NODE_SIZE,
               url: image.url,
@@ -3576,7 +3582,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       }));
       if (!isCurrentProject() || getCachedAuthSession()?.key !== expectedSessionKey) return;
       if (controller.signal.aborted) {
-        replaceNodes(nodesRef.current.map((node) => targetIDs.includes(node.id) && node.generation_status === "loading"
+        replaceNodes(nodesRef.current.map((node) => (node.id === rootID || targetIDs.includes(node.id)) && node.generation_status === "loading"
           ? { ...node, duration_ms: Date.now() - generationStartedAt, generation_status: "idle", generation_error: "" }
           : node));
         commitGenerationHistory(historyBase);
@@ -3592,7 +3598,13 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       else toast.success(count > 1 ? `已生成 ${count} 张全景图` : "全景图已生成");
     } catch (error) {
       if (!isCurrentProject() || getCachedAuthSession()?.key !== expectedSessionKey) return;
-      if (!controller.signal.aborted) { const message = error instanceof Error ? error.message : "全景图生成失败"; replaceNodes(nodesRef.current.map((node) => node.id === rootID ? { ...node, duration_ms: Date.now() - generationStartedAt, generation_status: "error", generation_error: message } : node)); commitGenerationHistory(historyBase); toast.error(message); }
+      const cancelled = controller.signal.aborted;
+      const message = cancelled ? "" : error instanceof Error ? error.message : "全景图生成失败";
+      replaceNodes(nodesRef.current.map((node) => (node.id === rootID || targetIDs.includes(node.id)) && node.generation_status === "loading"
+        ? { ...node, duration_ms: Date.now() - generationStartedAt, generation_status: cancelled ? "idle" : "error", generation_error: message }
+        : node));
+      commitGenerationHistory(historyBase);
+      if (!cancelled) toast.error(message);
     } finally {
       completeActiveGeneration(activeGeneration);
     }

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { spyOn } from "bun:test";
 import * as mediaStorage from "../src/services/file-storage.ts";
-import { createZip } from "../src/lib/zip.ts";
+import { createZip, readZip } from "../src/lib/zip.ts";
 import { createCanvasProjectArchive, readCanvasProjectArchive } from "../src/app/canvas/canvas-project-transfer.ts";
 
 import { isCanvasExportFile } from "../src/app/canvas/canvas-project-transfer-types.ts";
@@ -76,4 +76,73 @@ test("canvas export rejects missing media instead of silently producing an incom
   try {
     await assert.rejects(createCanvasProjectArchive([{ ...project, nodes: [{ id: "media", storage_key: "server:missing" }] }]), /无法读取/);
   } finally { read.mockRestore(); }
+});
+
+test("canvas import preserves independent thumbnails and empty thumbnail fields", async () => {
+  const upload = spyOn(mediaStorage, "uploadMediaBlob").mockImplementation(async (_blob, name) => ({
+    storageKey: `server:new-${name}`, url: `/api/files/new-${name}/content`, mimeType: "video/mp4", bytes: 3,
+  }));
+  try {
+    const input = { ...project, nodes: [
+      { id: "video", storage_key: "server:old", url: "/api/files/old/content", thumbnail_url: "/api/files/poster/content" },
+      { id: "without-poster", storage_key: "server:old", url: "/api/files/old/content", thumbnail_url: "" },
+    ] };
+    const poster = { storageKey: "server:poster", path: "poster.bin", mimeType: "video/mp4", bytes: 3 };
+    const [result] = await readCanvasProjectArchive(await archive([{ project: input, files: [media, poster] }], [
+      { name: "media.bin", data: "abc" }, { name: "poster.bin", data: "def" },
+    ]));
+    assert.equal(result.nodes[0].url, "/api/files/new-media.bin/content");
+    assert.equal(result.nodes[0].thumbnail_url, "/api/files/new-poster.bin/content");
+    assert.equal(result.nodes[1].thumbnail_url, "");
+  } finally { upload.mockRestore(); }
+});
+
+test("canvas import rejects conflicting content for a shared storage key before uploading", async () => {
+  const upload = spyOn(mediaStorage, "uploadMediaBlob");
+  try {
+    const file = await archive([{ project, files: [media, { ...media, path: "other.bin" }] }], [
+      { name: "media.bin", data: "abc" }, { name: "other.bin", data: "def" },
+    ]);
+    await assert.rejects(readCanvasProjectArchive(file), /冲突的媒体引用/);
+    assert.equal(upload.mock.calls.length, 0);
+  } finally { upload.mockRestore(); }
+});
+
+test("canvas export shares media across projects without normalized filename collisions", async () => {
+  const read = spyOn(mediaStorage, "getMediaBlob").mockImplementation(async (key) => new Blob([key], { type: "audio/mpeg" }));
+  try {
+    const first = { ...project, nodes: [{ storage_key: "server:a/b" }, { storage_key: "server:a_b" }] };
+    const blob = await createCanvasProjectArchive([first, { ...first, id: "second" }]);
+    const contents = await readZip(blob);
+    const manifest = JSON.parse(await contents.get("projects.json").text());
+    assert.equal(read.mock.calls.length, 2);
+    assert.equal(contents.size, 3);
+    assert.equal(new Set(manifest.projects[0].files.map((file) => file.path)).size, 2);
+    for (const item of manifest.projects) for (const file of item.files) {
+      assert.equal(await contents.get(file.path).text(), file.storageKey);
+    }
+  } finally { read.mockRestore(); }
+});
+
+test("canvas project transfers bound concurrent media requests", async () => {
+  let inFlight = 0;
+  let peak = 0;
+  const track = async () => {
+    peak = Math.max(peak, ++inFlight);
+    await new Promise((resolve) => setTimeout(resolve, 1));
+    inFlight -= 1;
+  };
+  const read = spyOn(mediaStorage, "getMediaBlob").mockImplementation(async (key) => { await track(); return new Blob([key], { type: "audio/mpeg" }); });
+  const upload = spyOn(mediaStorage, "uploadMediaBlob").mockImplementation(async (_blob, name) => {
+    await track();
+    return { storageKey: `server:${name}`, url: `/api/files/${name}/content`, bytes: 12, mimeType: "audio/mpeg" };
+  });
+  try {
+    const input = { ...project, nodes: Array.from({ length: 12 }, (_, index) => ({ storage_key: `server:key-${index}` })) };
+    const blob = await createCanvasProjectArchive([input]);
+    assert.ok(peak > 1 && peak <= 4, `Unexpected export concurrency ${peak}`);
+    peak = 0;
+    await readCanvasProjectArchive(blob);
+    assert.ok(peak > 1 && peak <= 4, `Unexpected import concurrency ${peak}`);
+  } finally { read.mockRestore(); upload.mockRestore(); }
 });

@@ -535,10 +535,12 @@ export function CanvasEngine({
         connectionRef.current = null;
         setConnectionTargetID("");
         const connection = connectionFor(origin, dropTarget.nodeID);
-        if (connection) {
+        if (event.type === "pointercancel") {
+          setConnecting(null);
+        } else if (connection) {
           setConnecting(null);
           onConnect(connection.sourceID, connection.targetID);
-        } else if (dropTarget.isNearNode || event.type === "pointercancel") {
+        } else if (dropTarget.isNearNode) {
           setConnecting(null);
         } else {
           setMouseWorld(point);
@@ -823,6 +825,10 @@ function CanvasDOMNode({ node, showImageInfo, selected, related, focusRelated, s
     if (!editingTitle) return;
     titleInputRef.current?.focus();
     titleInputRef.current?.select();
+  }, [editingTitle]);
+
+  useEffect(() => {
+    if (!editingTitle) return;
     const handleOutsidePointerDown = (event: PointerEvent) => {
       const target = event.target;
       if (target instanceof Node && titleInputRef.current?.contains(target)) return;
@@ -872,6 +878,7 @@ function CanvasDOMNode({ node, showImageInfo, selected, related, focusRelated, s
             onChange={(event) => setTitleDraft(event.target.value)}
             onBlur={finishTitleEditing}
             onKeyDown={(event) => {
+              if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
               if (event.key === "Enter") finishTitleEditing();
               if (event.key === "Escape") {
                 setTitleDraft(node.title || "");

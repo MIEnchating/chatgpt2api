@@ -710,17 +710,26 @@ func extractDOCXText(data []byte) (string, error) {
 		return "", errors.New("DOCX 文档格式无效")
 	}
 	var text strings.Builder
+	remainingBytes := int64(maxVideoContractDocumentBytes)
 	for _, entry := range archive.File {
 		name := strings.ToLower(entry.Name)
 		if name != "word/document.xml" && !strings.HasPrefix(name, "word/header") && !strings.HasPrefix(name, "word/footer") && name != "word/footnotes.xml" && name != "word/endnotes.xml" {
 			continue
 		}
+		if entry.UncompressedSize64 > uint64(remainingBytes) {
+			return "", errors.New("DOCX 解压后的内容过大")
+		}
 		reader, openErr := entry.Open()
 		if openErr != nil {
 			return "", errors.New("读取 DOCX 文本失败")
 		}
-		decodeErr := appendWordprocessingText(&text, io.LimitReader(reader, maxVideoContractDocumentBytes+1))
+		limited := &io.LimitedReader{R: reader, N: remainingBytes + 1}
+		decodeErr := appendWordprocessingText(&text, limited)
 		_ = reader.Close()
+		remainingBytes = limited.N - 1
+		if remainingBytes < 0 {
+			return "", errors.New("DOCX 解压后的内容过大")
+		}
 		if decodeErr != nil {
 			return "", errors.New("读取 DOCX 文本失败")
 		}

@@ -85,7 +85,7 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Can
 
   function selectReference(reference: CanvasResourceReference) {
     if (!mention) return;
-    const next = insertCanvasResourceMention(value, mention, textareaRef.current?.selectionStart ?? value.length, reference);
+    const next = insertCanvasResourceMention(value, mention, textareaRef.current?.selectionEnd ?? value.length, reference);
     closeMention();
     onChange(next.value);
     requestAnimationFrame(() => {
@@ -146,7 +146,7 @@ export const CanvasResourceMentionTextarea = forwardRef<HTMLTextAreaElement, Can
           onPointerUp?.(event);
         }}
         onKeyDown={(event) => {
-          if (event.nativeEvent.isComposing) {
+          if (event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) {
             onKeyDown?.(event);
             return;
           }

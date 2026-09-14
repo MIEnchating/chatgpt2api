@@ -1360,6 +1360,8 @@ export async function deleteImageConversation(id: string): Promise<void> {
     state.failedSnapshots.delete(id);
     state.coalescedFailures.delete(id);
     state.durableFailures.delete(id);
+    const pending = state.coalescedSaves.get(id);
+    if (pending) rejectCoalescedConversationWaiters([pending], imageConversationGoneError(id));
     state.coalescedSaves.delete(id);
     state.paginationEpoch += 1;
     state.pageRequests.clear();
@@ -1375,6 +1377,9 @@ export async function clearImageConversations(): Promise<void> {
     const response = await clearImageConversationHistory(historyRequestOptions());
     updateRemoteCursorGenerationFromResponse(state, response);
     state.failedSnapshots.clear();
+    for (const [id, pending] of state.coalescedSaves) {
+      rejectCoalescedConversationWaiters([pending], imageConversationGoneError(id));
+    }
     state.coalescedSaves.clear();
     state.coalescedFailures.clear();
     state.durableFailures.clear();

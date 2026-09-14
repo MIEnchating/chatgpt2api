@@ -270,19 +270,6 @@ func NormalizeVideoModelContract(contract VideoModelContract) (VideoModelContrac
 		rule.UI.Show = uniqueTrimmedStrings(rule.UI.Show, true)
 		rule.UI.Hide = uniqueTrimmedStrings(rule.UI.Hide, true)
 		rule.UI.Disable = uniqueTrimmedStrings(rule.UI.Disable, true)
-		if len(rule.Require) > 0 && len(rule.RequireAny) > 0 {
-			required := make(map[string]struct{}, len(rule.Require))
-			for _, field := range rule.Require {
-				required[field] = struct{}{}
-			}
-			filtered := rule.RequireAny[:0]
-			for _, field := range rule.RequireAny {
-				if _, exists := required[field]; !exists {
-					filtered = append(filtered, field)
-				}
-			}
-			rule.RequireAny = filtered
-		}
 		rule.Message = strings.TrimSpace(rule.Message)
 		var err error
 		rule.Limits, err = normalizedVideoContractIntMap(rule.Limits)

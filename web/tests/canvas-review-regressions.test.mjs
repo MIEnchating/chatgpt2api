@@ -6,6 +6,7 @@ import { applyCanvasVideoTaskProgressNodes } from "../src/app/canvas/canvas-task
 import { canvasTextGenerationPlan } from "../src/app/canvas/canvas-text-generation.ts";
 import { buildCanvasGenerationContext } from "../src/app/canvas/canvas-generation-context.ts";
 import { appendCanvasHistorySnapshot } from "../src/app/canvas/canvas-history.ts";
+import { canCreateCanvasConnection } from "../src/app/canvas/canvas-connections.ts";
 
 // Execute the actual page handlers with controlled state and I/O dependencies.
 function pageHandler(file, name, dependencies) {
@@ -13,6 +14,7 @@ function pageHandler(file, name, dependencies) {
   let declaration;
   function visit(node) {
     if (ts.isFunctionDeclaration(node) && node.name?.text === name) declaration = node;
+    if (ts.isVariableDeclaration(node) && node.name.getText(source) === name && node.initializer && (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer))) declaration = node.initializer;
     if (ts.isJsxAttribute(node) && node.name.text === name && ts.isJsxExpression(node.initializer)) declaration = node.initializer.expression;
     ts.forEachChild(node, visit);
   }
@@ -188,4 +190,101 @@ test("config mentions leave IME confirmation keys to the input method", () => {
   composingRef.current = false;
   handleKeyDown(event);
   assert.equal(selectedCount, 1);
+});
+
+test("canvas agent connection actions enforce the same node rules as manual connections", async () => {
+  for (const [source, target, allowed] of [["group", "image", false], ["text", "director", false], ["image", "director", true]]) {
+    const connectionsRef = { current: [] };
+    const run = pageHandler("page.tsx", "executeCanvasAgentAction", {
+      documentRef: { current: {} }, connectionsRef,
+      nodesRef: { current: [{ id: "source", type: source }, { id: "target", type: target }] },
+      canCreateCanvasConnection, randomID: () => "connection",
+      replaceConnections: (value) => { connectionsRef.current = value; }, pushHistory: () => {},
+    });
+    const result = await run({ name: "create_connection", arguments: { fromNodeId: "source", toNodeId: "target" } }, []);
+    assert.equal(result.ok, allowed, `${source} -> ${target}`);
+    assert.equal(connectionsRef.current.length, allowed ? 1 : 0);
+  }
+});
+
+function panoramaGenerationHarness({ reference = false, fetchReference, poll } = {}) {
+  let sequence = 0;
+  let controller;
+  const nodesRef = { current: [{ id: "panorama", type: "panorama", x: 0, y: 0, width: 340, height: 170, prompt: "Scene" }] };
+  const errors = [];
+  const dependencies = {
+    nodesRef, documentRef: { current: { id: "project" } }, canvasOperationEpochRef: { current: 1 }, mountedRef: { current: true },
+    connectionsRef: { current: [] }, activeGenerationsRef: { current: new Map() }, historyRef: { current: [] },
+    session: { key: "session" }, getCachedAuthSession: () => ({ key: "session" }),
+    buildCanvasGenerationContext: () => ({ prompt: "Scene", referenceImageURLs: reference ? ["/reference.png"] : [] }),
+    imageModel: "model", imageModels: ["model"], imageGenerationPreferences: {}, nextTokenNameForModel: () => "key",
+    imageReferenceImageLimit: () => 4, buildPanoramaPrompt: (text) => text, supportsImageEditing: () => true,
+    imageConversationReferenceLimitMessage: () => "", canvasImageParameters: () => ({}), panoramaGenerationCount: () => 2,
+    panoramaGenerationQuality: () => "medium", supportsStructuredImageParameters: () => false,
+    supportsImageOutputControls: () => false, supportsImageStreaming: () => false,
+    PANORAMA_NODE_SIZE: { width: 340, height: 170 }, PANORAMA_IMAGE_SIZE: "2:1",
+    randomID: () => String(++sequence), createdAt: () => "now", MAX_HISTORY: 50,
+    appendCanvasHistorySnapshot, cloneDocument: structuredClone, captureDocument: () => ({ id: "project", nodes: nodesRef.current }),
+    registerActiveGeneration: (value) => { controller = value; return {}; }, addActiveGenerationTask: () => {}, completeActiveGeneration: () => {},
+    replaceNodes: (value) => { nodesRef.current = value; }, replaceConnections: () => {},
+    setSelectedNodeIDs: () => {}, setSelectedConnectionID: () => {}, setPanelNodeID: () => {}, commitGenerationHistory: () => {},
+    fetchAuthenticatedImageBlob: fetchReference,
+    createImageGenerationTask: async (id) => ({ id }), createImageEditTask: async (id) => ({ id }),
+    waitForTask: poll || (async () => ({ data: [{ url: "/result.png" }] })), persistCreationTaskOutputs: async (task) => task,
+    summarizeCanvasTaskResult: (task) => ({ images: task.data || [], error: task.error }),
+    toast: { error: (message) => errors.push(message), success: () => {} },
+  };
+  return { run: () => pageHandler("page.tsx", "runPanoramaGeneration", dependencies)("panorama"), nodesRef, errors, abort: () => controller.abort() };
+}
+
+test("a panorama batch adopts a completed image when its first output fails", async () => {
+  let count = 0;
+  const harness = panoramaGenerationHarness({ poll: async () => ++count === 1 ? { error: "Failed", data: [] } : { data: [{ url: "/second.png" }] } });
+  await harness.run();
+  const root = harness.nodesRef.current.find((node) => node.id === "panorama");
+  assert.equal(root.generation_status, "success");
+  assert.equal(root.url, "/second.png");
+  assert.equal(harness.nodesRef.current.find((node) => node.id === root.batch_primary_id).url, root.url);
+  assert.equal(harness.nodesRef.current.some((node) => node.generation_status === "loading"), false);
+});
+
+for (const cancelled of [false, true]) {
+  test(`panorama reference ${cancelled ? "cancellation" : "failure"} settles every placeholder`, async () => {
+    let notifyStarted;
+    let rejectReference;
+    const started = new Promise((resolve) => { notifyStarted = resolve; });
+    const harness = panoramaGenerationHarness({ reference: true, fetchReference: () => {
+      notifyStarted();
+      return new Promise((_resolve, reject) => { rejectReference = reject; });
+    } });
+    const pending = harness.run();
+    await started;
+    if (cancelled) harness.abort();
+    rejectReference(cancelled ? new DOMException("Aborted", "AbortError") : new Error("Missing reference"));
+    await pending;
+    assert.equal(harness.nodesRef.current.length, 3);
+    assert.ok(harness.nodesRef.current.every((node) => node.generation_status === (cancelled ? "idle" : "error")));
+    assert.equal(harness.errors.length, cancelled ? 0 : 1);
+  });
+}
+
+test("cancelling a canvas connection drag never creates an edge", () => {
+  const created = [];
+  const connectionRef = { current: { nodeID: "from", handleType: "source" } };
+  const handler = pageHandler("canvas-engine.tsx", "handleUp", {
+    panRef: { current: { active: false } }, dragRef: { current: { active: false } }, resizeRef: { current: { active: false } },
+    selectionRef: { current: null }, connectionRef,
+    screenToWorld: (x, y) => ({ x, y }), connectionTargetAt: () => ({ nodeID: "to", isNearNode: true }),
+    connectionFor: () => ({ sourceID: "from", targetID: "to" }), setConnectionTargetID: () => {}, setConnecting: () => {},
+    onConnect: (...args) => created.push(args),
+  });
+  handler({ type: "pointercancel", clientX: 100, clientY: 100 });
+  assert.deepEqual(created, []);
+  assert.equal(connectionRef.current, null);
+});
+
+test("canvas project dialog ignores resubmission while a mutation is pending", () => {
+  let submissions = 0;
+  pageHandler("canvas-project-dialog.tsx", "submit", { busy: true, editable: true, draft: "Project", onConfirm: () => { submissions += 1; } })();
+  assert.equal(submissions, 0);
 });

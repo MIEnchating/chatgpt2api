@@ -9,7 +9,9 @@ const cancelledTasks = [];
 let taskCounter = 0;
 let submitOverride;
 
+const actualAPI = await import("../src/lib/api.ts");
 mock.module("@/lib/api", () => ({
+  ...actualAPI,
   isImageOutputFormat: (value) => ["png", "jpeg", "webp"].includes(value),
   isImageQuality: (value) => ["low", "medium", "high"].includes(value),
   cancelCreationTask: async (id) => {

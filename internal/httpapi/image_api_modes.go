@@ -162,8 +162,10 @@ func uploadedImageDataURLs(images []protocol.UploadedImage) []string {
 }
 
 func copyRelayTaskCredentials(target, source map[string]any) {
-	if value, ok := source["api_key"]; ok {
-		target["api_key"] = value
+	for _, key := range []string{"api_key", "relay_base_url", relayCustomEndpointPayloadKey} {
+		if value, ok := source[key]; ok {
+			target[key] = value
+		}
 	}
 }
 

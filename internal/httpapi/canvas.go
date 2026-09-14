@@ -118,10 +118,18 @@ func (a *App) handleCanvasImageUpload(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	if err := r.ParseMultipartForm(maxRelayImageBytes + (1 << 20)); err != nil {
-		util.WriteError(w, http.StatusBadRequest, "invalid multipart form")
+	release, acquired := a.acquireImageUpload(r.Context())
+	if !acquired {
+		util.WriteError(w, http.StatusRequestTimeout, "image upload was canceled")
 		return
 	}
+	defer release()
+	r.Body = http.MaxBytesReader(w, r.Body, maxRelayImageBytes+(1<<20))
+	if err := r.ParseMultipartForm(maxRelayImageMultipartMemory); err != nil {
+		writeMultipartImageBodyError(w, err)
+		return
+	}
+	defer r.MultipartForm.RemoveAll()
 	header := firstMultipartFile(r.MultipartForm, "image")
 	if header == nil {
 		util.WriteError(w, http.StatusBadRequest, "image is required")
@@ -129,7 +137,7 @@ func (a *App) handleCanvasImageUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	upload, err := readUpload(header)
 	if err != nil {
-		util.WriteError(w, http.StatusBadRequest, err.Error())
+		writeMultipartImageBodyError(w, err)
 		return
 	}
 	if len(upload.Data) == 0 {

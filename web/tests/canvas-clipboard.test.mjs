@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { normalizeCanvasClipboard, remapCanvasNodeReferences } from "../src/app/canvas/canvas-clipboard.ts";
 import { expandCanvasBatchNodeIDs, reconcileCanvasBatchesAfterRemoval } from "../src/app/canvas/canvas-batches.ts";
+import { buildCanvasGenerationContext } from "../src/app/canvas/canvas-generation-context.ts";
 
 function node(id, values = {}) {
   return { id, type: "image", x: 0, y: 0, width: 340, height: 240, scale_x: 1, scale_y: 1, ...values };
@@ -75,7 +76,7 @@ test("rejects dangling, duplicate, and self connections", () => {
   assert.equal(normalizeCanvasClipboard({ nodes, connections: [{ id: "x", from_node_id: "a", to_node_id: "a" }] }), null);
 });
 
-test("remaps batch ownership while preserving authored prompt references", () => {
+test("remaps batch ownership and copied prompt references", () => {
   const mapped = remapCanvasNodeReferences(node("config-copy", {
     type: "config",
     composer_content: "让 @[node:image-old] 参考 @[node:text-old]，保留 @[node:not-copied]",
@@ -87,7 +88,7 @@ test("remaps batch ownership while preserving authored prompt references", () =>
     ["text-old", "text-new"],
     ["root-old", "root-new"],
   ]));
-  assert.equal(mapped.composer_content, "让 @[node:image-old] 参考 @[node:text-old]，保留 @[node:not-copied]");
+  assert.equal(mapped.composer_content, "让 @[node:image-new] 参考 @[node:text-new]，保留 @[node:not-copied]");
   assert.deepEqual(mapped.batch_child_ids, ["image-new"]);
   assert.equal(mapped.batch_root_id, "root-new");
   assert.equal(mapped.batch_primary_id, "image-new");
@@ -108,7 +109,7 @@ test("deleting a pasted batch cannot remove the original children", () => {
   assert.deepEqual(reconcileCanvasBatchesAfterRemoval(allNodes, removed), originals);
 });
 
-test("preserves generic video frame and audio clone node bindings", () => {
+test("remaps copied video frame and audio clone node bindings", () => {
   const mapped = remapCanvasNodeReferences(node("video-copy", {
     type: "video",
     generation_video_first_frame_node_id: "first-old",
@@ -122,9 +123,9 @@ test("preserves generic video frame and audio clone node bindings", () => {
     ["video-old", "video-new"],
     ["audio-old", "audio-new"],
   ]));
-  assert.equal(mapped.generation_video_first_frame_node_id, "first-old");
-  assert.equal(mapped.generation_video_last_frame_node_id, "last-old");
-  assert.equal(mapped.generation_audio_mimo_voice_clone_node_id, "audio-old");
+  assert.equal(mapped.generation_video_first_frame_node_id, "first-new");
+  assert.equal(mapped.generation_video_last_frame_node_id, "last-new");
+  assert.equal(mapped.generation_audio_mimo_voice_clone_node_id, "audio-new");
 });
 
 test("preserves valid groups and remaps membership when pasted", () => {
@@ -139,4 +140,26 @@ test("preserves valid groups and remaps membership when pasted", () => {
 test("rejects dangling and nested group membership", () => {
   assert.equal(normalizeCanvasClipboard({ nodes: [node("child", { group_id: "missing" })] }), null);
   assert.equal(normalizeCanvasClipboard({ nodes: [node("group", { type: "group", group_id: "other" }), node("other", { type: "group" })] }), null);
+});
+
+test("copied configurations keep their generated prompt and image inputs", () => {
+  const originals = [
+    node("image", { url: "/image.png" }),
+    node("text", { type: "text", prompt: "Original prompt" }),
+    node("config", { type: "config", composer_content: "@[node:text] @[node:image]" }),
+  ];
+  const idMap = new Map(originals.map((item) => [item.id, `${item.id}-copy`]));
+  const copied = originals.map((item) => remapCanvasNodeReferences({ ...item, id: idMap.get(item.id) }, idMap));
+  const config = copied[2];
+  const context = buildCanvasGenerationContext(config.id, copied, [
+    { id: "text-input", from_node_id: "text-copy", to_node_id: "config-copy" },
+    { id: "image-input", from_node_id: "image-copy", to_node_id: "config-copy" },
+  ], config.composer_content);
+  assert.match(context.prompt, /Original prompt/);
+  assert.deepEqual(context.referenceImageURLs, ["/image.png"]);
+});
+
+test("clipboard accepts the current automatic video duration value", () => {
+  assert.equal(normalizeCanvasClipboard({ nodes: [node("video", { type: "video", generation_video_seconds: -1 })] })?.nodes[0].generation_video_seconds, -1);
+  assert.equal(normalizeCanvasClipboard({ nodes: [node("video", { type: "video", generation_video_seconds: -2 })] }), null);
 });

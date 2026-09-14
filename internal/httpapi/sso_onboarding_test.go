@@ -14,6 +14,93 @@ import (
 	"chatgpt2api/internal/service"
 )
 
+func TestSSOConfigurationPreservesPasswordLogin(t *testing.T) {
+	for _, scenario := range []string{"username", "email", "existing-session", "wrong-password", "invalid-sso-config"} {
+		t.Run(scenario, func(t *testing.T) {
+			t.Setenv("CHATGPT2API_SSO_SECRET", "")
+			t.Setenv("CHATGPT2API_SSO_ORIGIN", "")
+			t.Setenv("NEWAPI_SSO_ORIGINS", "")
+			app := newTestApp(t)
+			defer app.Close()
+			dbURL := newHTTPTestNewAPIDatabase(t)
+			insertHTTPTestNewAPIUser(t, dbURL, 1, "alice", "alice@example.test")
+			insertHTTPTestNewAPITokenNamed(t, dbURL, 1, 1, "shared", "existing-key", "private-key", -1, 0, true)
+			reader, err := service.NewNewAPITokenReader(service.NewAPITokenReaderConfig{DatabaseURL: dbURL})
+			if err != nil {
+				t.Fatal(err)
+			}
+			app.swapRelayTokenReader(reader)
+			if _, err := app.config.Update(map[string]any{"relay_text_group": "shared", "relay_image_group": "shared", "relay_video_group": "", "relay_audio_group": ""}); err != nil {
+				t.Fatal(err)
+			}
+			var ssoCalls atomic.Int32
+			upstream := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				ssoCalls.Add(1)
+				w.WriteHeader(http.StatusUnauthorized)
+			}))
+			defer upstream.Close()
+			previousTransport := http.DefaultTransport
+			http.DefaultTransport = upstream.Client().Transport
+			t.Cleanup(func() { http.DefaultTransport = previousTransport })
+			enableSSO := func() {
+				t.Setenv("CHATGPT2API_SSO_SECRET", "sso-password-test-shared-secret-123456")
+				t.Setenv("CHATGPT2API_SSO_ORIGIN", "https://studio.example.test")
+				t.Setenv("NEWAPI_SSO_ORIGINS", upstream.URL)
+				if scenario == "invalid-sso-config" {
+					t.Setenv("CHATGPT2API_SSO_SECRET", "invalid")
+				}
+			}
+			if scenario != "existing-session" {
+				enableSSO()
+			}
+			username, password := "alice", "Password123"
+			if scenario == "email" {
+				username = "alice@example.test"
+			}
+			if scenario == "wrong-password" {
+				password = "WrongPassword123"
+			}
+			body, err := json.Marshal(map[string]string{"username": username, "password": password})
+			if err != nil {
+				t.Fatal(err)
+			}
+			req := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(string(body)))
+			res := httptest.NewRecorder()
+			app.Handler().ServeHTTP(res, req)
+			cookie := findResponseCookieByDomain(res.Result(), authSessionCookieName, "")
+			if scenario == "wrong-password" {
+				if res.Code != http.StatusUnauthorized || cookie != nil && cookie.Value != "" || ssoCalls.Load() != 0 {
+					t.Fatalf("wrong password status=%d cookie=%#v sso_calls=%d", res.Code, cookie, ssoCalls.Load())
+				}
+				return
+			}
+			if res.Code != http.StatusOK || cookie == nil || cookie.Value == "" {
+				t.Fatalf("password login status=%d body=%s cookie=%#v", res.Code, res.Body.String(), cookie)
+			}
+			identity := app.auth.Authenticate(cookie.Value)
+			if identity == nil || identity.OwnerID != "newapi:1" || identity.Username != "alice" || identity.SSOReference != "" || identity.SSOIssuer != "" {
+				t.Fatalf("password identity=%#v", identity)
+			}
+			if scenario == "existing-session" {
+				enableSSO()
+			}
+			for _, path := range []string{"/auth/session", "/api/profile/image-generation-preferences"} {
+				req := httptest.NewRequest(http.MethodGet, path, nil)
+				setRequestAuthCookie(req, cookie.Value)
+				res := httptest.NewRecorder()
+				app.Handler().ServeHTTP(res, req)
+				if res.Code != http.StatusOK {
+					t.Fatalf("password session path=%s status=%d body=%s", path, res.Code, res.Body.String())
+				}
+			}
+			preferences, err := app.imagePreferences.Preferences("newapi:1")
+			if err != nil || !reflect.DeepEqual(preferences.DefaultTextRelayTokens, []string{"existing-key"}) || !reflect.DeepEqual(preferences.DefaultImageRelayTokens, []string{"existing-key"}) || ssoCalls.Load() != 0 {
+				t.Fatalf("password preferences=%#v error=%v sso_calls=%d", preferences, err, ssoCalls.Load())
+			}
+		})
+	}
+}
+
 func TestSSOPreferencesInitializeRelayKeys(t *testing.T) {
 	for _, scenario := range []string{"create", "reuse", "denied", "revoked", "expired", "mismatched-session", "not-visible", "cleared"} {
 		t.Run(scenario, func(t *testing.T) {

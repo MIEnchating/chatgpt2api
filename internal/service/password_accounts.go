@@ -215,19 +215,33 @@ func (s *AuthService) LoginPassword(username, password string) (*Identity, strin
 		return nil, "", ErrInvalidPasswordCredentials
 	}
 	s.mu.Lock()
+	accounts, err := s.loadPasswordAccounts()
+	s.mu.Unlock()
+	if err != nil {
+		return nil, "", AuthPersistenceError{Err: err}
+	}
+	_, verifiedAccount, ok := passwordAccountIndexByUsernameLocked(accounts, username)
+	if !ok {
+		return nil, "", ErrInvalidPasswordCredentials
+	}
+	if !verifiedAccount.Enabled {
+		return nil, "", ErrAuthUserDisabled
+	}
+	if !verifyAccountPassword(password, verifiedAccount.PasswordHash) {
+		return nil, "", ErrInvalidPasswordCredentials
+	}
+
+	s.mu.Lock()
 	defer s.mu.Unlock()
 	if err := s.refreshAuthStateLocked(); err != nil {
 		return nil, "", AuthPersistenceError{Err: err}
 	}
 	index, account, ok := passwordAccountIndexByUsernameLocked(s.accounts, username)
-	if !ok {
+	if !ok || account.ID != verifiedAccount.ID || account.PasswordHash != verifiedAccount.PasswordHash {
 		return nil, "", ErrInvalidPasswordCredentials
 	}
 	if !account.Enabled {
-		return nil, "", authError("用户已被禁用")
-	}
-	if !verifyAccountPassword(password, account.PasswordHash) {
-		return nil, "", ErrInvalidPasswordCredentials
+		return nil, "", ErrAuthUserDisabled
 	}
 	now := util.NowISO()
 	previousAccounts := append([]PasswordAccount(nil), s.accounts...)

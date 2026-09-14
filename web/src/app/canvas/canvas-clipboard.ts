@@ -1,4 +1,5 @@
 import type { CanvasConnection, CanvasNode } from "@/services/api/canvas";
+import { CANVAS_CONFIG_REFERENCE_PATTERN } from "./canvas-config-inputs";
 
 export type CanvasClipboard = {
   nodes: CanvasNode[];
@@ -40,6 +41,12 @@ export function remapCanvasNodeReferences(node: CanvasNode, idMap: ReadonlyMap<s
     batch_child_ids: childIDs?.length ? childIDs : undefined,
     batch_primary_id: node.batch_primary_id && childIDs?.includes(idMap.get(node.batch_primary_id) || "") ? idMap.get(node.batch_primary_id) : undefined,
     batch_expanded: childIDs?.length ? node.batch_expanded : undefined,
+    composer_content: node.composer_content?.replace(CANVAS_CONFIG_REFERENCE_PATTERN, (token, id: string) => (
+      idMap.has(id) ? `@[node:${idMap.get(id)}]` : token
+    )),
+    generation_video_first_frame_node_id: idMap.get(node.generation_video_first_frame_node_id || "") || node.generation_video_first_frame_node_id,
+    generation_video_last_frame_node_id: idMap.get(node.generation_video_last_frame_node_id || "") || node.generation_video_last_frame_node_id,
+    generation_audio_mimo_voice_clone_node_id: idMap.get(node.generation_audio_mimo_voice_clone_node_id || "") || node.generation_audio_mimo_voice_clone_node_id,
   };
 }
 
@@ -68,7 +75,7 @@ export function normalizeCanvasClipboard(value: unknown): CanvasClipboard | null
     if (source.generation_model !== undefined && (typeof source.generation_model !== "string" || source.generation_model.trim().length > 256)) return null;
     if (source.generation_video_model !== undefined && (typeof source.generation_video_model !== "string" || source.generation_video_model.trim().length > 256)) return null;
     if (source.generation_video_size !== undefined && (typeof source.generation_video_size !== "string" || source.generation_video_size.length > 64)) return null;
-    if (source.generation_video_seconds !== undefined && (!isFiniteNumber(source.generation_video_seconds) || source.generation_video_seconds < 1 || source.generation_video_seconds > 3600 || !Number.isInteger(source.generation_video_seconds))) return null;
+    if (source.generation_video_seconds !== undefined && (!isFiniteNumber(source.generation_video_seconds) || source.generation_video_seconds !== -1 && source.generation_video_seconds < 1 || source.generation_video_seconds > 3600 || !Number.isInteger(source.generation_video_seconds))) return null;
     if (source.generation_video_resolution !== undefined && (typeof source.generation_video_resolution !== "string" || source.generation_video_resolution.length > 64)) return null;
     if (source.batch_child_ids !== undefined && (!Array.isArray(source.batch_child_ids) || source.batch_child_ids.some((childID) => typeof childID !== "string"))) return null;
     if (source.generation_reference_urls !== undefined && (!Array.isArray(source.generation_reference_urls) || source.generation_reference_urls.some((url) => typeof url !== "string"))) return null;

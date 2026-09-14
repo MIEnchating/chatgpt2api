@@ -592,8 +592,19 @@ func TestVideoContractRuleNormalizationAndConflicts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("overlapping require and require_any rejected: %v", err)
 	}
-	if got := normalized.Rules[0].RequireAny; len(got) != 1 || got[0] != "reference_image" {
+	if got := normalized.Rules[0].RequireAny; !slices.Equal(got, []string{"size", "reference_image"}) {
 		t.Fatalf("normalized require_any = %#v", got)
+	}
+	for _, values := range []map[string]any{
+		{"generate_audio": true, "size": "16:9"},
+		{"generate_audio": true, "reference_image": []string{"reference.png"}},
+		{"generate_audio": true},
+	} {
+		before := ValidateVideoContractRuleValues(contract, values)
+		after := ValidateVideoContractRuleValues(normalized, values)
+		if (before == nil) != (after == nil) {
+			t.Fatalf("normalization changed rule behavior for %#v: before=%v after=%v", values, before, after)
+		}
 	}
 	contract.Rules[0].UI = VideoModelContractRuleUI{Show: []string{" WATERMARK ", "watermark"}, Disable: []string{"duration"}}
 	normalized, err = NormalizeVideoModelContract(contract)

@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"maps"
 	"mime/multipart"
 	"net/http"
@@ -300,6 +301,34 @@ func TestExtractVideoContractDocuments(t *testing.T) {
 
 	if _, err := extractVideoContractDocument([]byte("pdf"), "docs.pdf", "application/pdf"); err == nil || !strings.Contains(err.Error(), "暂不支持 PDF") {
 		t.Fatalf("PDF error = %v", err)
+	}
+}
+
+func TestExtractDOCXTextLimitsTotalDecompressedContent(t *testing.T) {
+	for _, entryCount := range []int{1, 2} {
+		t.Run(fmt.Sprintf("entries_%d", entryCount), func(t *testing.T) {
+			var document bytes.Buffer
+			archive := zip.NewWriter(&document)
+			for index := range entryCount {
+				entry, err := archive.Create(fmt.Sprintf("word/header%d.xml", index))
+				if err != nil {
+					t.Fatalf("create DOCX entry: %v", err)
+				}
+				content := `<w:document xmlns:w="urn:w"><w:t>text</w:t>` + strings.Repeat(" ", maxVideoContractDocumentBytes/entryCount) + `</w:document>`
+				if _, err := io.WriteString(entry, content); err != nil {
+					t.Fatalf("write DOCX entry: %v", err)
+				}
+			}
+			if err := archive.Close(); err != nil {
+				t.Fatalf("close DOCX: %v", err)
+			}
+			if document.Len() >= maxVideoContractDocumentBytes {
+				t.Fatal("compressed fixture must fit the upload limit")
+			}
+			if _, err := extractDOCXText(document.Bytes()); err == nil || !strings.Contains(err.Error(), "解压后的内容过大") {
+				t.Fatalf("oversized DOCX error = %v", err)
+			}
+		})
 	}
 }
 

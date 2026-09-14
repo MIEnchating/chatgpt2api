@@ -1,0 +1,873 @@
+{
+  "scope": "internal/httpapi/**, internal/main.go, internal/main_test.go, internal/architecture_test.go, internal/web/web.go, internal/web/web_test.go; generated dist excluded",
+  "files": [
+    {
+      "path": "internal/architecture_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "fa1a4190cd4d3a31b5e0cfe9f48f59ed8c5bf8988fd32b9be2c101004b313485",
+      "bytes": 5452
+    },
+    {
+      "path": "internal/httpapi/announcement_prompt_storage_errors_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "c91ed0d363f5b3a8e22d8deb0580accfec7f4b26806a0cac366a52ba5683c24a",
+      "bytes": 7579
+    },
+    {
+      "path": "internal/httpapi/announcements.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Request/data flow, authentication, limits, resource lifetime, concurrency and performance reviewed"
+      ],
+      "sha256": "8e030713bdc4adac07e5dc5a79e1911f4cbdb1bcf6770ec59db81b8e5af81a8b",
+      "bytes": 4737
+    },
+    {
+      "path": "internal/httpapi/announcements_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "8bd4eb0c4e4781f7bf0a254045d553ce8c42245699dd14cc9c5bb1040b6c004a",
+      "bytes": 5111
+    },
+    {
+      "path": "internal/httpapi/app.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Request/data flow, authentication, limits, resource lifetime, concurrency and performance reviewed"
+      ],
+      "sha256": "8fb1a1a3345d9edc95a63033975f7d264b026fecf7457c51be0913f1a5eeda14",
+      "bytes": 116012
+    },
+    {
+      "path": "internal/httpapi/app_startup_cleanup_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "5a2199fbeac996280f0122d8903f87eaec298ff89e9c422a0670d44e908b9b86",
+      "bytes": 2973
+    },
+    {
+      "path": "internal/httpapi/app_test.go",
+      "status": "pending",
+      "checks": [
+        "Full contents read in this review: lines 1-400 and 4583-4661; remaining lines pending"
+      ],
+      "sha256": "59fc954a76508fb83bc7abe89f78445902c410f0784bc45f5ea292546758683e",
+      "bytes": 184868
+    },
+    {
+      "path": "internal/httpapi/audio.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Request/data flow, authentication, limits, resource lifetime, concurrency and performance reviewed"
+      ],
+      "sha256": "056bff80cf31995eea399db07d9fcd27b77630cfd3fe979e0f77cca064222476",
+      "bytes": 22535
+    },
+    {
+      "path": "internal/httpapi/audio_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "f28a92dff93041f4cffa684aeb06067e9890e195de05e0704687eee462d07fff",
+      "bytes": 8632
+    },
+    {
+      "path": "internal/httpapi/audio_url_integrity_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "960de2f33ee1c87582cbbb890c4bdefe3f8c1a6c71b046d9c5bd9b7ba4d07142",
+      "bytes": 1285
+    },
+    {
+      "path": "internal/httpapi/audit.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Request/data flow, authentication, limits, resource lifetime, concurrency and performance reviewed"
+      ],
+      "sha256": "ef7469b960c2fde9f6f247adbcf3f907dde01dc63b008d79bdf702a03b2c4dc7",
+      "bytes": 15547
+    },
+    {
+      "path": "internal/httpapi/audit_body_boundary_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "35ee8acc5b77b0410f582789488e6972dce6b8cf793842d8622978a829ee82c5",
+      "bytes": 2103
+    },
+    {
+      "path": "internal/httpapi/audit_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "b3c538e1a78cd2765cd9932f6d07add05a040c337bf28da98ffb25fe1de10a42",
+      "bytes": 9768
+    },
+    {
+      "path": "internal/httpapi/bootstrap_password_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "71501c8158bf23e5bfb01a69d70d2173736f09a35659220c0f1b1722e20f4b8f",
+      "bytes": 1110
+    },
+    {
+      "path": "internal/httpapi/canvas.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Request/data flow, authentication, limits, resource lifetime, concurrency and performance reviewed"
+      ],
+      "sha256": "3e56c8477f5ac2b3608df6f289493197ce7c47fd77ffbb0215c128ca0d73f1b0",
+      "bytes": 5934
+    },
+    {
+      "path": "internal/httpapi/canvas_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "ff165c0c75bd1ce60022ca0baccb93b3f98ba94110d502e15e321c6ea6cfce76",
+      "bytes": 11093
+    },
+    {
+      "path": "internal/httpapi/custom_relay_configs.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Request/data flow, authentication, limits, resource lifetime, concurrency and performance reviewed"
+      ],
+      "sha256": "24baf14e216a3eadea2c4a89c27b5abb9e90ef7b58cf86be4e420e34d4c0dfe4",
+      "bytes": 3238
+    },
+    {
+      "path": "internal/httpapi/custom_relay_models_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "1fe05e5142d7c7bb8c278181197ae48123b36762102ef4ad05abcdca4103edac",
+      "bytes": 2538
+    },
+    {
+      "path": "internal/httpapi/generated_media_authorization_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "e1dc0b15eeaf07f0530a3a5f65670ace4ce624dd1d8f3ca38e7dd858024b10a2",
+      "bytes": 4303
+    },
+    {
+      "path": "internal/httpapi/generated_media_cleanup.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Request/data flow, authentication, limits, resource lifetime, concurrency and performance reviewed"
+      ],
+      "sha256": "7e9554e47155b68f60c682af8dec9e12e52394b37324675c73e9a298f864d9a4",
+      "bytes": 2524
+    },
+    {
+      "path": "internal/httpapi/generated_media_cleanup_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "d7f78471dc63fbc782cf94544f4aa0b84f7ee82736f5e6d6d644cd9180fcbbca",
+      "bytes": 1608
+    },
+    {
+      "path": "internal/httpapi/image_api_modes.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Request/data flow, authentication, limits, resource lifetime, concurrency and performance reviewed"
+      ],
+      "sha256": "3af56b1b596453f99c8055e1d00de9a74e201d63cbf76b28367f9b20e52223d7",
+      "bytes": 9738
+    },
+    {
+      "path": "internal/httpapi/image_api_modes_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "a52babe0f5e41ec89644c01bef62dfccd6885381e7bdb0f9a95c12709e8a3e54",
+      "bytes": 6245
+    },
+    {
+      "path": "internal/httpapi/image_apimart_adapters.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Request/data flow, authentication, limits, resource lifetime, concurrency and performance reviewed"
+      ],
+      "sha256": "ab826b6f3ef772ccb810591643d349853a5b4c7a19ac02aeca39d15fe041be0b",
+      "bytes": 15677
+    },
+    {
+      "path": "internal/httpapi/image_apimart_adapters_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "5194ea51a9ec9912f62c3172573f15814a45a62642cb19f8bfadd6ec3d6998ab",
+      "bytes": 10762
+    },
+    {
+      "path": "internal/httpapi/image_cache_privacy_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "9da34fd060f16c13bfea55af2cf9d8854b97b25002a6ab8d4c7e84580c86d62a",
+      "bytes": 1903
+    },
+    {
+      "path": "internal/httpapi/image_cleanup_shutdown_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "130647fc848c582054e665a69dab5d85b99d94793007d7b27c3670aa0fb6dd79",
+      "bytes": 3821
+    },
+    {
+      "path": "internal/httpapi/image_cleanup_worker_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "f45072618880a736fb07dbe8e59a72a48dac6b2a11c06ab50eb4b2e81e38154c",
+      "bytes": 7257
+    },
+    {
+      "path": "internal/httpapi/image_conversation_assets.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Request/data flow, authentication, limits, resource lifetime, concurrency and performance reviewed"
+      ],
+      "sha256": "a7f0ad8e2fd2e289b32859a0e88fb985224cb28b8439b97f751fd57d44e0dac7",
+      "bytes": 14362
+    },
+    {
+      "path": "internal/httpapi/image_conversation_assets_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "9c4963cc97e6c59e4020ac59ba601def67b6ed6115544a44ee47bfecddf434d1",
+      "bytes": 14659
+    },
+    {
+      "path": "internal/httpapi/image_conversation_history_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "0c5730eee39fb89334fdd6761d2f7e9067f20ec2e2c39cc9584a9110b5258b0b",
+      "bytes": 17606
+    },
+    {
+      "path": "internal/httpapi/image_conversation_rows_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "e0fb2332a4779f9512f7636ff689a3df2c2fb40f546f26f3be00777283b0d495",
+      "bytes": 12813
+    },
+    {
+      "path": "internal/httpapi/image_conversation_write_limiter.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Request/data flow, authentication, limits, resource lifetime, concurrency and performance reviewed"
+      ],
+      "sha256": "9590d055df42e215b756d2e60acb83c3193ba6eec2dc67399e1de00a18c17f22",
+      "bytes": 2614
+    },
+    {
+      "path": "internal/httpapi/image_conversation_write_limiter_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "5957c1a25a065c444adc4ce7fa46ad99c11a658d1f1db4097460ede8a1fff8a7",
+      "bytes": 4522
+    },
+    {
+      "path": "internal/httpapi/image_mode_boundaries_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "869d13ad1759951f612ad76b46acf355dd519ff670d9e3f23796c6a589da7e29",
+      "bytes": 7933
+    },
+    {
+      "path": "internal/httpapi/image_proxy.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Request/data flow, authentication, limits, resource lifetime, concurrency and performance reviewed"
+      ],
+      "sha256": "7ffde1faec5a985eed72f9e8a2a15ab7c453bb1c9dc2dfdd25fdc34c7727761b",
+      "bytes": 2143
+    },
+    {
+      "path": "internal/httpapi/image_proxy_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "001a6deef88475c2c67dc1fc4e41f27a0bda397e33ca1a73a2051825f637ebca",
+      "bytes": 1637
+    },
+    {
+      "path": "internal/httpapi/log_errors_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "9ee12a4e87f3ced335edd1cec37f784c28c19ef2175eda0f11aa28443d3368a6",
+      "bytes": 9509
+    },
+    {
+      "path": "internal/httpapi/log_pagination_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "ae5e7bc97f450c43b57169d428b4ac483371faa03b8d453ed494689eea015159",
+      "bytes": 4959
+    },
+    {
+      "path": "internal/httpapi/log_status_filter_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "42f334c0c41cd90b1fa95a4a23c67eabf5aed678b948c1499affe1fae36d5dbc",
+      "bytes": 2295
+    },
+    {
+      "path": "internal/httpapi/login_limiter.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Request/data flow, authentication, limits, resource lifetime, concurrency and performance reviewed"
+      ],
+      "sha256": "03324f6dc2fd52509bcbcf225f58e5e53a60ee140002efe9c5248db577848e3f",
+      "bytes": 3500
+    },
+    {
+      "path": "internal/httpapi/model_config_invariants_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "4c7b5790e1bbcba3608e9724d602ba01621d5cfaf8a941fc404668f76103f361",
+      "bytes": 6448
+    },
+    {
+      "path": "internal/httpapi/mutation_boundaries_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "83a265fce4dceef27b79130f623ea18905d69cd7d2f7e1f8cd4611a59e4ab3eb",
+      "bytes": 6982
+    },
+    {
+      "path": "internal/httpapi/my_asset_groups.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Request/data flow, authentication, limits, resource lifetime, concurrency and performance reviewed"
+      ],
+      "sha256": "17cf42596a9c6fd16c81b353efe1f61416b5cc841f7ee48ba857b1d640fbd724",
+      "bytes": 1149
+    },
+    {
+      "path": "internal/httpapi/my_assets_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "77c1b4d46b9e22b6553df576487376d5c61ea3516115316df0a51a1eede082ff",
+      "bytes": 2641
+    },
+    {
+      "path": "internal/httpapi/password_input_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "724e27f12c93a2ae177b85561d7e1db61ced90102d0806b90f4e6eb0e2c2715f",
+      "bytes": 1205
+    },
+    {
+      "path": "internal/httpapi/profile_preference_storage_errors_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "9ded10865408c3930ca2afba71aa5aeccf60c7c249cfe995f726ece8ccbc06a2",
+      "bytes": 4542
+    },
+    {
+      "path": "internal/httpapi/proxy_json_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "27b8ff107b44312a258a7b6ba34765726d16e094537696bed307528cec1e8436",
+      "bytes": 1010
+    },
+    {
+      "path": "internal/httpapi/public_asset_storage_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "a9db4e049a7386186a2d8c00a62407039d4415d8ff4d21ff0a736b9591b2dc1b",
+      "bytes": 2714
+    },
+    {
+      "path": "internal/httpapi/relay.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Request/data flow, authentication, limits, resource lifetime, concurrency and performance reviewed"
+      ],
+      "sha256": "b6ed0c9ac42c6f388664dc2fcb1233d5ea588cb1c4cc3950b2b6d2739ca264a2",
+      "bytes": 125404
+    },
+    {
+      "path": "internal/httpapi/relay_boundary_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "882a4224fa266ca4514887cededfb333c329344abf82fcd8a95f8e640067f44b",
+      "bytes": 3523
+    },
+    {
+      "path": "internal/httpapi/relay_groups.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Request/data flow, authentication, limits, resource lifetime, concurrency and performance reviewed"
+      ],
+      "sha256": "38407ae3eb8705aaffc4660aee387b2cd26e6d551175e4243165efadf565083f",
+      "bytes": 674
+    },
+    {
+      "path": "internal/httpapi/relay_groups_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "4cb22dbf64a439c9f02e44551bad3f01cad3214c38b5670cef79ebc6370d0e69",
+      "bytes": 2178
+    },
+    {
+      "path": "internal/httpapi/relay_onboarding.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Request/data flow, authentication, limits, resource lifetime, concurrency and performance reviewed"
+      ],
+      "sha256": "1839799b853ec88f6382d602bd899941afeb0e1fea518be2afda3087f772c853",
+      "bytes": 1363
+    },
+    {
+      "path": "internal/httpapi/relay_onboarding_client.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Request/data flow, authentication, limits, resource lifetime, concurrency and performance reviewed"
+      ],
+      "sha256": "6557ea2cd0e73600fb6d13f78e22109f4ea9c70a9548631c09c9e0a30945a2b5",
+      "bytes": 2727
+    },
+    {
+      "path": "internal/httpapi/relay_onboarding_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "4b2729c017592039e341cb9cae582f5d1dd6a3ac13501f6245d1b74a7dfe8ee0",
+      "bytes": 7019
+    },
+    {
+      "path": "internal/httpapi/relay_sanitize_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "36a455a781f6e2e6885011e2a7f717851e4d377aacfc954571db7ac527abae12",
+      "bytes": 937
+    },
+    {
+      "path": "internal/httpapi/relay_test.go",
+      "status": "pending",
+      "checks": [
+        "Full contents read in this review: lines 1480-1620; remaining lines pending"
+      ],
+      "sha256": "fdceea27152c9d7d4bef5b94bebbafc0b6cad446054c44357dba15aec357a6ad",
+      "bytes": 107080
+    },
+    {
+      "path": "internal/httpapi/request_path_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "203f4a3f7c5abf639b065b3b24309abd4581e87ecf1b70b215cea7cb8bc1ef3e",
+      "bytes": 1516
+    },
+    {
+      "path": "internal/httpapi/router.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Request/data flow, authentication, limits, resource lifetime, concurrency and performance reviewed"
+      ],
+      "sha256": "435c5a746f2af290554627b85a9588f91b63e530572392dccd6612a50c035df1",
+      "bytes": 8367
+    },
+    {
+      "path": "internal/httpapi/router_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "8a6aef243282e1001a8eedde7f6b1281173cf3fc6b04121ce25636b30c444bcc",
+      "bytes": 2244
+    },
+    {
+      "path": "internal/httpapi/routes.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Request/data flow, authentication, limits, resource lifetime, concurrency and performance reviewed"
+      ],
+      "sha256": "d29c70e356bf9d6d82073b4e54cc80e3e8370ef9a271131d5e85a47bc75b8161",
+      "bytes": 70351
+    },
+    {
+      "path": "internal/httpapi/routes_json_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "d610d7ea459ac4f226c8432dd95d6d9dfc5cd81bf8f001c446067024eed78079",
+      "bytes": 2588
+    },
+    {
+      "path": "internal/httpapi/single_json_body_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "893aad2cd7d29cee68820bade7a1986d072d7b7311444c950596abaab46ce970",
+      "bytes": 5817
+    },
+    {
+      "path": "internal/httpapi/sso.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Request/data flow, authentication, limits, resource lifetime, concurrency and performance reviewed"
+      ],
+      "sha256": "c41b6cc1494b7fe14fe90ba5dc32b5a373146a507e8b0d6cb6cb24ce8a3688f8",
+      "bytes": 8415
+    },
+    {
+      "path": "internal/httpapi/sso_onboarding_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "c71d1683afe1d2839cf1bfe063386a6f94ea8696bc5aacab17db2956dfc5da4c",
+      "bytes": 12665
+    },
+    {
+      "path": "internal/httpapi/storage_direct_reference_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "c4585173e786e985bd7749fe2c520dad3b4b6041fd3931d141930da78299f595",
+      "bytes": 4334
+    },
+    {
+      "path": "internal/httpapi/storage_files.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Request/data flow, authentication, limits, resource lifetime, concurrency and performance reviewed"
+      ],
+      "sha256": "3fafeea2226786fb5f9dd9c898ff8bc309ccd0558fcbd7da4ea4baa9ac88dca1",
+      "bytes": 10840
+    },
+    {
+      "path": "internal/httpapi/storage_files_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "47994e0d9a7824fdc3802f2864009e17341bd26f5bb2c685cd7195ff5281dc84",
+      "bytes": 19590
+    },
+    {
+      "path": "internal/httpapi/storage_provider_boundary_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "c15dbf2d847e077dfb26ab1b16eb9ec7897adc1fa001139989d0561f62fd444e",
+      "bytes": 2190
+    },
+    {
+      "path": "internal/httpapi/system.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Request/data flow, authentication, limits, resource lifetime, concurrency and performance reviewed"
+      ],
+      "sha256": "407b4a51da29642529a5dec1afd5c6d8447c8b893a9c14b8dc420966d9946ad0",
+      "bytes": 214
+    },
+    {
+      "path": "internal/httpapi/upload_limits_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "239b374ccaa6a9ef4ed66564595e76f704f1a25f85cb65bb565f7931eb4bae26",
+      "bytes": 7936
+    },
+    {
+      "path": "internal/httpapi/video_contract_planner.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Request/data flow, authentication, limits, resource lifetime, concurrency and performance reviewed"
+      ],
+      "sha256": "84f91b5504bc7de3a99c9eba91c5a0503857d63b12eae222c0ffc35fe085c396",
+      "bytes": 6963
+    },
+    {
+      "path": "internal/httpapi/video_contract_site.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Request/data flow, authentication, limits, resource lifetime, concurrency and performance reviewed"
+      ],
+      "sha256": "99bd6c6d73a9036da78d1f2c280b2a34068369a62bd7ec783e0402a68661b635",
+      "bytes": 12119
+    },
+    {
+      "path": "internal/httpapi/video_contract_site_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "2395ec4204d814dfd8e9aff213a7f8714b5efdfb291bf6774213c32869996ce3",
+      "bytes": 8841
+    },
+    {
+      "path": "internal/httpapi/video_declared_contract_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "aaa7abc7e70aa1c3065f03fb06b9de8e9cbdc1e1edb9dc538fa7fa3e48a8ef60",
+      "bytes": 30049
+    },
+    {
+      "path": "internal/httpapi/video_model_contract_prompt.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Request/data flow, authentication, limits, resource lifetime, concurrency and performance reviewed"
+      ],
+      "sha256": "fb5c5f49b82633c1d7877523c0e71de6725eb844d2679081334adc7a261f7345",
+      "bytes": 14185
+    },
+    {
+      "path": "internal/httpapi/video_model_contracts.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Request/data flow, authentication, limits, resource lifetime, concurrency and performance reviewed"
+      ],
+      "sha256": "5bd14ca717d1ea02c9955ad61ee72d2130e2d7e041cb1837d6dec0b14d802cd1",
+      "bytes": 47106
+    },
+    {
+      "path": "internal/httpapi/video_model_contracts_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "efd17b4bf0188b5c93bd4f2be9a60008d8d12a2cd758c4ca67e67003c0ff27bb",
+      "bytes": 27812
+    },
+    {
+      "path": "internal/httpapi/video_parameters_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "24126a2c17023e16b3b7902d7bce81d2be58b04e7d46b106348f3b8b2cd287a5",
+      "bytes": 1704
+    },
+    {
+      "path": "internal/httpapi/video_references.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Request/data flow, authentication, limits, resource lifetime, concurrency and performance reviewed"
+      ],
+      "sha256": "dd356efd049838e164b1b2eb1bb449edeefa6f65b47fa5083e3c9ea5c57c356f",
+      "bytes": 17191
+    },
+    {
+      "path": "internal/httpapi/video_references_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "5c53e00a2561079fefed05c51b69d1809627a1a54dcfb448d4a48cbfbb886073",
+      "bytes": 12433
+    },
+    {
+      "path": "internal/httpapi/workflows.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Request/data flow, authentication, limits, resource lifetime, concurrency and performance reviewed"
+      ],
+      "sha256": "1396a411db98d1583fb45f52c1c09c36e2e0bfcac45e227c939ba0dc55fbe548",
+      "bytes": 6077
+    },
+    {
+      "path": "internal/main.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Request/data flow, authentication, limits, resource lifetime, concurrency and performance reviewed"
+      ],
+      "sha256": "f605725bb659956eef32f6875c6d8e6635e20fd3d093f7ae6b87a059e77daf0e",
+      "bytes": 1730
+    },
+    {
+      "path": "internal/main_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "a0df4763c7d2814c9ce9c1cf4acc908cb7ada8305b884c342293f8d00ec94844",
+      "bytes": 1377
+    },
+    {
+      "path": "internal/web/web.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Request/data flow, authentication, limits, resource lifetime, concurrency and performance reviewed"
+      ],
+      "sha256": "475ecd455a7607affcd61921a9174f3636b3fa686bbb78a494df4f3980b867d9",
+      "bytes": 1597
+    },
+    {
+      "path": "internal/web/web_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and relevant production contracts reviewed"
+      ],
+      "sha256": "845d54b2e3126300c19186f77dafe8730c5351d122b319f6b9b4e9ff45cafb67",
+      "bytes": 2419
+    }
+  ]
+}

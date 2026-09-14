@@ -50,9 +50,6 @@ func validSSOOrigin(raw string) bool {
 	u, err := url.Parse(raw)
 	return err == nil && u.Scheme == "https" && u.Hostname() != "" && u.User == nil && u.Path == "" && u.RawQuery == "" && u.Fragment == "" && u.String() == raw
 }
-func ssoConfigured() bool {
-	return os.Getenv("CHATGPT2API_SSO_SECRET") != "" || os.Getenv("CHATGPT2API_SSO_ORIGIN") != "" || os.Getenv("NEWAPI_SSO_ORIGINS") != ""
-}
 
 type ssoTransaction struct {
 	Issuer    string `json:"issuer"`
@@ -230,10 +227,6 @@ func (a *App) authenticateSession(r *http.Request, token string) *service.Identi
 		return nil
 	}
 	if identity.SSOReference == "" {
-		// Enabling SSO invalidates legacy New API password sessions as well.
-		if ssoConfigured() && identity.Provider == service.AuthProviderNewAPI {
-			return nil
-		}
 		return identity
 	}
 	cfg, err := loadSSOConfig()

@@ -316,3 +316,22 @@ func TestCanceledCanvasImageUploadDoesNotCreateImageOrThumbnail(t *testing.T) {
 		t.Fatalf("canceled upload created thumbnails: %#v", thumbnailEntries)
 	}
 }
+
+func TestCanvasUploadWaitsForImageSlotBeforeReadingBody(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+	token := adminSessionToken(t, app)
+	app.imageUploadSlots = make(chan struct{}, 1)
+	app.imageUploadSlots <- struct{}{}
+	defer func() { <-app.imageUploadSlots }()
+	request := httptest.NewRequest(http.MethodPost, "/api/canvas/images", strings.NewReader("unread multipart body"))
+	request.Header.Set("Content-Type", "multipart/form-data; boundary=test")
+	setRequestAuthCookie(request, token)
+	ctx, cancel := context.WithCancel(request.Context())
+	cancel()
+	response := httptest.NewRecorder()
+	app.Handler().ServeHTTP(response, request.WithContext(ctx))
+	if response.Code != http.StatusRequestTimeout {
+		t.Fatalf("canceled upload status = %d, body = %s", response.Code, response.Body.String())
+	}
+}

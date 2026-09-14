@@ -897,10 +897,6 @@ func (a *App) handleLogin(w http.ResponseWriter, r *http.Request) {
 			util.WriteError(w, http.StatusUnauthorized, "用户名或密码错误")
 			return
 		}
-		if ssoConfigured() && !newAPIKeys.IsSub2API() {
-			util.WriteError(w, http.StatusUnauthorized, "请通过平台的单点登录入口进入")
-			return
-		}
 		newAPIUser, newAPIErr := newAPIKeys.AuthenticatePassword(r.Context(), username, password)
 		if newAPIErr != nil {
 			loginLimiter.recordFailure(requestIP, username)
@@ -2295,27 +2291,30 @@ func readMultipartImageBody(w http.ResponseWriter, r *http.Request) (map[string]
 	}
 	defer r.MultipartForm.RemoveAll()
 	body := map[string]any{
-		"client_task_id":          firstForm(r.MultipartForm, "client_task_id"),
-		"prompt":                  firstForm(r.MultipartForm, "prompt"),
-		"model":                   firstForm(r.MultipartForm, "model"),
-		"n":                       firstForm(r.MultipartForm, "n"),
-		"size":                    firstForm(r.MultipartForm, "size"),
-		"requested_size":          firstForm(r.MultipartForm, "requested_size"),
-		"image_resolution":        firstForm(r.MultipartForm, "image_resolution"),
-		"quality":                 firstForm(r.MultipartForm, "quality"),
-		"moderation":              firstForm(r.MultipartForm, "moderation"),
-		"input_image_mask":        firstForm(r.MultipartForm, "input_image_mask"),
-		"output_format":           firstForm(r.MultipartForm, "output_format"),
-		"output_compression":      firstForm(r.MultipartForm, "output_compression"),
-		"stream":                  firstForm(r.MultipartForm, "stream"),
-		"partial_images":          firstForm(r.MultipartForm, "partial_images"),
-		"share_prompt_parameters": firstForm(r.MultipartForm, "share_prompt_parameters"),
-		"share_reference_images":  firstForm(r.MultipartForm, "share_reference_images"),
-		"visibility":              firstForm(r.MultipartForm, "visibility"),
-		"token_group":             firstForm(r.MultipartForm, "token_group"),
-		"token_name":              firstForm(r.MultipartForm, "token_name"),
-		"api_key":                 firstForm(r.MultipartForm, "api_key"),
-		"response_format":         firstForm(r.MultipartForm, "response_format"),
+		"client_task_id":           firstForm(r.MultipartForm, "client_task_id"),
+		"api_mode":                 firstForm(r.MultipartForm, "api_mode"),
+		"generation_source":        firstForm(r.MultipartForm, "generation_source"),
+		"frontend_conversation_id": firstForm(r.MultipartForm, "frontend_conversation_id"),
+		"prompt":                   firstForm(r.MultipartForm, "prompt"),
+		"model":                    firstForm(r.MultipartForm, "model"),
+		"n":                        firstForm(r.MultipartForm, "n"),
+		"size":                     firstForm(r.MultipartForm, "size"),
+		"requested_size":           firstForm(r.MultipartForm, "requested_size"),
+		"image_resolution":         firstForm(r.MultipartForm, "image_resolution"),
+		"quality":                  firstForm(r.MultipartForm, "quality"),
+		"moderation":               firstForm(r.MultipartForm, "moderation"),
+		"input_image_mask":         firstForm(r.MultipartForm, "input_image_mask"),
+		"output_format":            firstForm(r.MultipartForm, "output_format"),
+		"output_compression":       firstForm(r.MultipartForm, "output_compression"),
+		"stream":                   firstForm(r.MultipartForm, "stream"),
+		"partial_images":           firstForm(r.MultipartForm, "partial_images"),
+		"share_prompt_parameters":  firstForm(r.MultipartForm, "share_prompt_parameters"),
+		"share_reference_images":   firstForm(r.MultipartForm, "share_reference_images"),
+		"visibility":               firstForm(r.MultipartForm, "visibility"),
+		"token_group":              firstForm(r.MultipartForm, "token_group"),
+		"token_name":               firstForm(r.MultipartForm, "token_name"),
+		"api_key":                  firstForm(r.MultipartForm, "api_key"),
+		"response_format":          firstForm(r.MultipartForm, "response_format"),
 	}
 	maskHeaders := r.MultipartForm.File["mask"]
 	if len(maskHeaders) > 1 {
@@ -2886,6 +2885,7 @@ func (a *App) localizeRelayImageResult(ctx context.Context, identity service.Ide
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	ctx = relayContextForPayload(ctx, payload)
 	localizeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), relayImageLocalizationTimeout)
 	defer cancel()
 	ownerID := identityScope(identity)

@@ -526,9 +526,10 @@ export function mergeImageConversationSnapshot(
     : (() => {
         const previousTurns = new Map(previous.turns.map((turn) => [turn.id, turn]));
         const incomingTurns = new Map(incoming.turns.map((turn) => [turn.id, turn]));
+        const preferredTurns = preferIncoming ? incomingTurns : previousTurns;
         const turnIDs = [
           ...preferred.turns.map((turn) => turn.id),
-          ...fallback.turns.map((turn) => turn.id).filter((id) => !preferred.turns.some((turn) => turn.id === id)),
+          ...fallback.turns.map((turn) => turn.id).filter((id) => !preferredTurns.has(id)),
         ];
         return turnIDs.flatMap((id) => {
           const previousTurn = previousTurns.get(id);

@@ -163,7 +163,8 @@ function CanvasAssetCard({ asset, onInsert }: { asset: MyAsset; onInsert: () => 
     <button type="button" className="group min-w-0 overflow-hidden rounded-lg border border-border bg-card text-left transition hover:border-brand/40 hover:shadow-md" onClick={onInsert}>
       <div className="flex aspect-[4/3] items-center justify-center overflow-hidden bg-muted/50">
         {asset.kind === "image" && preview ? <AuthenticatedImage src={preview} alt={asset.title} className="size-full object-cover" /> : null}
-        {asset.kind === "video" && preview ? <video src={`${preview}#t=0.1`} muted playsInline preload="metadata" className="size-full object-cover" /> : null}
+        {asset.kind === "video" && asset.coverUrl ? <AuthenticatedImage src={asset.coverUrl} alt={asset.title} className="size-full object-cover" /> : null}
+        {asset.kind === "video" && !asset.coverUrl && asset.url ? <video src={`${asset.url}#t=0.1`} muted playsInline preload="metadata" className="size-full object-cover" /> : null}
         {asset.kind === "text" ? <p className="line-clamp-6 p-4 text-xs leading-5 text-muted-foreground">{asset.content}</p> : null}
         {asset.kind === "audio" || (!preview && asset.kind !== "text") ? <Icon className="size-9 text-muted-foreground" /> : null}
       </div>

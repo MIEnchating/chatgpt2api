@@ -1,0 +1,1135 @@
+{
+  "scope": [
+    "internal/service",
+    "internal/storage",
+    "internal/protocol",
+    "internal/config",
+    "internal/util",
+    "internal/model",
+    "internal/videocontract"
+  ],
+  "reviewed_at": "2026-09-14T17:53:41.438Z",
+  "method": "Current source and tests read in full through bounded shell output; no historical review reused. Pending files are not reviewed.",
+  "files": [
+    {
+      "path": "internal/config/config.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "77a40184f0000b51da599b324d2b254c9366b35aecdd56e8be256745b803d1f6",
+      "bytes": 50073
+    },
+    {
+      "path": "internal/config/config_test.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "4ba77bc413c5fbbe598c87f136f8126fe74fe8d73082f150fcc2af6ae4dbaf6c",
+      "bytes": 54930
+    },
+    {
+      "path": "internal/config/relay_groups_test.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "d5edf03b6fd08426480d84ade85072d5d0263dc99ec30abbffd1e9d2db1c70d4",
+      "bytes": 1752
+    },
+    {
+      "path": "internal/config/settings_inputs_test.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "3d3c797c05fc6813c6dfb89af2c72e53d7de90c0960a1bc9423ed432e4e944a9",
+      "bytes": 1609
+    },
+    {
+      "path": "internal/model/storage.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "5db0be82e69693d15db5c8a3a45ed2f19d25b58c6dbabe5263b6471498b01671",
+      "bytes": 2290
+    },
+    {
+      "path": "internal/protocol/core.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "e2a717c92d390240d1e279bc767453fd021871ab55470625572a632c3773f749",
+      "bytes": 7833
+    },
+    {
+      "path": "internal/protocol/core_test.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "4eb718957ec6c58c65fc9cfc9fb2cabecda982bf7873073aee461ffb52f5ddc9",
+      "bytes": 4930
+    },
+    {
+      "path": "internal/protocol/newapi_sso_tokens.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "9ce171533b817a8e661bcda9d94871cc9eed3507f7556bfb9a8e2dd6cd45b923",
+      "bytes": 3743
+    },
+    {
+      "path": "internal/protocol/newapi_sso_tokens_test.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "f3cc375641789536dcdaa8cc99f460e496f366cc329fa57bd32e0b5e12cb1d88",
+      "bytes": 4075
+    },
+    {
+      "path": "internal/protocol/relay_management.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "0d3bd1be8ecec1792a3a9b5d85de1e233c0ecae93ff8b3e4717bf2291ade6870",
+      "bytes": 10082
+    },
+    {
+      "path": "internal/protocol/video_capabilities.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "a8a3b48c4a70c6c91d111bdee27633f109f32d469080f7079295ec1cf39c4202",
+      "bytes": 439
+    },
+    {
+      "path": "internal/protocol/video_capabilities_test.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "5dbc0bf52f71eda70d5b45a7e8ce7b168e5dfce084906cb48d2fb9ebe6a60b15",
+      "bytes": 1220
+    },
+    {
+      "path": "internal/protocol/video_contract_drivers.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "a11466e250848f39bca7a0eb257188e4220e4350e88f5ecf2b0fe271c3167d96",
+      "bytes": 1264
+    },
+    {
+      "path": "internal/protocol/video_model_contracts.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "a6c61efaa6dbde0c7def0762567ec1dea85bb01174ee47b8154dfccc4f2e5089",
+      "bytes": 50681
+    },
+    {
+      "path": "internal/protocol/video_model_contracts.json",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "d6f3dc80da9c8d3ecec738af8808bb44aae3723f2ec92aaf29a82def89356ae6",
+      "bytes": 4445
+    },
+    {
+      "path": "internal/protocol/video_model_contracts_ownership_test.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "d07f47af7e6a2d37cca6ed24aa03a4dcd0d2006d4fc95cca8814ccc54de7363c",
+      "bytes": 9275
+    },
+    {
+      "path": "internal/protocol/video_model_contracts_test.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "9c8751f3dd4f4cef8052f06d4844e7535608521c290ccd8e243b6534e00fb050",
+      "bytes": 28433
+    },
+    {
+      "path": "internal/service/announcement.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "c35cd0b20ac97ba433ef7017adfde0a3e674c871727bdabd40023550ebda68b8",
+      "bytes": 14703
+    },
+    {
+      "path": "internal/service/announcement_prompt_storage_errors_test.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "789ae55e4d978095f6d0554a2d36711e527dee5a19e662f22703b8841e221cec",
+      "bytes": 4504
+    },
+    {
+      "path": "internal/service/announcement_test.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "0820f2af853097d6a53851b9b67681209cd6958fffd9afc8785b9860a8168d03",
+      "bytes": 14843
+    },
+    {
+      "path": "internal/service/auth.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "e945c236f5a72ab12fda50a07b2d051836b6ab43202d557c46ddeba84df71967",
+      "bytes": 48527
+    },
+    {
+      "path": "internal/service/auth_role_concurrency_test.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "26c2227de8819bad3dde671038944c5072fb3bad3a0739dbb80f2f6da617e077",
+      "bytes": 5282
+    },
+    {
+      "path": "internal/service/auth_test.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "68db24a3cbb6fc03cfab1c9c2fd592d347debaf24272a33ec0b6c41aa0203fb0",
+      "bytes": 41214
+    },
+    {
+      "path": "internal/service/canvas_batch_limit_test.go",
+      "status": "pending",
+      "checks": [],
+      "sha256": "0a849907880319ee150cf419d676f4b77c2cf7d6afc4696a452b1b68957ba05f",
+      "bytes": 1537
+    },
+    {
+      "path": "internal/service/canvas_document.go",
+      "status": "pending",
+      "checks": [],
+      "sha256": "793e05420f242128911b73f9431e6d60c04547cb0f1e951729000ebc64730aac",
+      "bytes": 69205
+    },
+    {
+      "path": "internal/service/canvas_document_test.go",
+      "status": "pending",
+      "checks": [],
+      "sha256": "95a3a507c93947b6461f9f278627155c3cc9e52ec6201f7d5c35a62a8b28b24c",
+      "bytes": 65970
+    },
+    {
+      "path": "internal/service/custom_relay_config.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "89a847d6cb3e3dab2b0de809a430d11635be0c65303ae99e7f7d157229378da5",
+      "bytes": 11525
+    },
+    {
+      "path": "internal/service/custom_relay_config_test.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "4c1ea01bf586c9f33995e8a6ecd5fd207d60b6037fdb10fcef2f63e16038b418",
+      "bytes": 5890
+    },
+    {
+      "path": "internal/service/generic_local_storage.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "303a88a4ea3a75e81dae7f53135c7b1e293f1adbcd7c3ce29dbdbeb10782ed47",
+      "bytes": 4563
+    },
+    {
+      "path": "internal/service/generic_storage.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "3eaa7c9763c338d4c477e9046a6d96300e6f8d2bf19ddcbd15b4928d6ac88038",
+      "bytes": 40065
+    },
+    {
+      "path": "internal/service/generic_storage_test.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "9f7b43a0f9df21ed4fbc3f3884e07a04887e5996763c9fd4a22615bda76f8517",
+      "bytes": 37907
+    },
+    {
+      "path": "internal/service/generic_webdav_storage.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "607a4e77feb251467329364fde692d3bf416b859fcc9dfa0825a90f9a9048677",
+      "bytes": 5071
+    },
+    {
+      "path": "internal/service/image.go",
+      "status": "pending",
+      "checks": [],
+      "sha256": "9c3a7ddb36dd442730a06110677abf7f0fc968894ec4390f3c80bad6b8d00155",
+      "bytes": 77536
+    },
+    {
+      "path": "internal/service/image_conversation_asset_summary_test.go",
+      "status": "pending",
+      "checks": [],
+      "sha256": "97a0a00bfc93b49240a0a9371b670587f944e14ec963546546cd550998ae0840",
+      "bytes": 7037
+    },
+    {
+      "path": "internal/service/image_conversation_assets.go",
+      "status": "pending",
+      "checks": [],
+      "sha256": "8973e38c2024ef61c306e6224b3e0b95b997f378e6009f490ee375d3d2729745",
+      "bytes": 50624
+    },
+    {
+      "path": "internal/service/image_conversation_assets_test.go",
+      "status": "pending",
+      "checks": [],
+      "sha256": "db0ace72be9f18f7ab586bbad71531248d250998f64093ec5ef75a0d3bace200",
+      "bytes": 42591
+    },
+    {
+      "path": "internal/service/image_conversation_history.go",
+      "status": "pending",
+      "checks": [],
+      "sha256": "d7eedd053a8842b80517aeb234ba45bf388550030884ef0d78a305e635336dbb",
+      "bytes": 16254
+    },
+    {
+      "path": "internal/service/image_conversation_history_test.go",
+      "status": "pending",
+      "checks": [],
+      "sha256": "fb3ccda28daede32927a07a694a4f2d09c76180291fe4e5789716facb7e01aea",
+      "bytes": 25900
+    },
+    {
+      "path": "internal/service/image_conversation_rows.go",
+      "status": "pending",
+      "checks": [],
+      "sha256": "c2ee8f826ea14c6a7a47438dbd28894d5961a8cb50008c5db9410bd5a4847f9e",
+      "bytes": 34561
+    },
+    {
+      "path": "internal/service/image_conversation_rows_test.go",
+      "status": "pending",
+      "checks": [],
+      "sha256": "70c978c42b6a04b8d58eaa05ec4861ea5e2ac21cab0279f085b710486fe0a002",
+      "bytes": 21380
+    },
+    {
+      "path": "internal/service/image_generation_preferences.go",
+      "status": "pending",
+      "checks": [],
+      "sha256": "e12aac249ff052c4eb02ee9069c11c16b12b3d337498eb9c960c839a7aabc166",
+      "bytes": 25153
+    },
+    {
+      "path": "internal/service/image_generation_preferences_test.go",
+      "status": "pending",
+      "checks": [],
+      "sha256": "94fd792aa662842b4890334a18f131292438d71ad36dbdb92ab6910fe8d1c4a3",
+      "bytes": 13293
+    },
+    {
+      "path": "internal/service/image_task.go",
+      "status": "pending",
+      "checks": [],
+      "sha256": "2acf20a11a99f34aebc3733f842bee29aa05483bd81e4b47cff46ea3ae257eaa",
+      "bytes": 65610
+    },
+    {
+      "path": "internal/service/image_task_test.go",
+      "status": "pending",
+      "checks": [],
+      "sha256": "d4da5f68e65201c90f950408c4ec72134150fa61fed2350f7122978a0058fd47",
+      "bytes": 120404
+    },
+    {
+      "path": "internal/service/image_test.go",
+      "status": "pending",
+      "checks": [],
+      "sha256": "13ba3750474b06e38c983aaafce8ae73b8ae6e8ae57a1f5d571c9187846c768b",
+      "bytes": 65644
+    },
+    {
+      "path": "internal/service/log.go",
+      "status": "pending",
+      "checks": [],
+      "sha256": "360cf66e2da4e0d21e34a7689bdebdf453d04e7497ea07b77ea1457831500d83",
+      "bytes": 24575
+    },
+    {
+      "path": "internal/service/log_pagination.go",
+      "status": "pending",
+      "checks": [],
+      "sha256": "d69bc81a6eb94f956c852ca37bcf22b1f0c67b6184639f085250017bffcbc6ab",
+      "bytes": 6369
+    },
+    {
+      "path": "internal/service/log_status_filter_test.go",
+      "status": "pending",
+      "checks": [],
+      "sha256": "3d1376b62a6f9aba5855bab5fae316c597127692433165ad4413100f6a8a975c",
+      "bytes": 1752
+    },
+    {
+      "path": "internal/service/log_test.go",
+      "status": "pending",
+      "checks": [],
+      "sha256": "28cc840c5cdcfd39c00dd64b91673c04faf78f19c977ad7daa953724bc76d57a",
+      "bytes": 23207
+    },
+    {
+      "path": "internal/service/log_usage_efficiency_test.go",
+      "status": "pending",
+      "checks": [],
+      "sha256": "295707b974686ec6565ca734273adfa4614d6d9fcb6a931c7a954f4b4b6d5561",
+      "bytes": 5881
+    },
+    {
+      "path": "internal/service/media_proxy.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "e70a3a881f5c9ed3b578fbca6654b8eed7abc0c6b42b5fb8591b23f799f50650",
+      "bytes": 2244
+    },
+    {
+      "path": "internal/service/media_proxy_test.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "941c3c9e335a4d09faf4e976061cb3707bfb4acab41a6eb566f19b9c974490f5",
+      "bytes": 583
+    },
+    {
+      "path": "internal/service/my_asset.go",
+      "status": "pending",
+      "checks": [],
+      "sha256": "e7c58d50d8ffdd07173e8da138118c74d2febf2189eb14a3d52f2bf4a5c8d92b",
+      "bytes": 34732
+    },
+    {
+      "path": "internal/service/my_asset_direct_record_test.go",
+      "status": "pending",
+      "checks": [],
+      "sha256": "124d6f0fadf7b085598da3b49efbebdb436647154b1b774ea6a52799269f743e",
+      "bytes": 6918
+    },
+    {
+      "path": "internal/service/my_asset_group.go",
+      "status": "pending",
+      "checks": [],
+      "sha256": "a5dcc796871f32f8d434aa5d348d4f56ebebc52ca33058b5be78c97eb919f843",
+      "bytes": 3990
+    },
+    {
+      "path": "internal/service/my_asset_group_test.go",
+      "status": "pending",
+      "checks": [],
+      "sha256": "c07e73e0407df6f3fe5e29201107d2a91118b363635e5c38c226906d4ea7b07d",
+      "bytes": 1355
+    },
+    {
+      "path": "internal/service/my_asset_test.go",
+      "status": "pending",
+      "checks": [],
+      "sha256": "d37203ad7caee24c3d1e8c5f9ff613241ab02f53858e71ca2adffc06ddd71f71",
+      "bytes": 42369
+    },
+    {
+      "path": "internal/service/newapi_tokens.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "739f1beedf63f9092d5a419faf77426bcd4cbc34e05fe45078b4b317d8e749a6",
+      "bytes": 33108
+    },
+    {
+      "path": "internal/service/newapi_tokens_schema_integration_test.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "4051ac0f0adb9a576db5a07d0e3eb02982104223ebccdfcd1033772a25955109",
+      "bytes": 2319
+    },
+    {
+      "path": "internal/service/newapi_tokens_test.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "1031df9a19de1d24112af137b27054196daf56af585ee361a158dbf1dff9a855",
+      "bytes": 29011
+    },
+    {
+      "path": "internal/service/password_accounts.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "268017503fb8ff25407224e57a5f82a3d8645046cb1a3e39f69e5fbb12d6787d",
+      "bytes": 14210
+    },
+    {
+      "path": "internal/service/password_accounts_test.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "13e7d6887936eac7c38953aeee472bcbd499352493f5e673ea048d310abc803f",
+      "bytes": 590
+    },
+    {
+      "path": "internal/service/password_login_concurrency_test.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "a77fbc8a511eb4b218de869fb1480f1ac46887d5a8a8e4584696677ea8007755",
+      "bytes": 2063
+    },
+    {
+      "path": "internal/service/permissions.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "df16a7d8c335dfc2656d4e8b821b533b5192ccdd6390cb25d392014d698aa11a",
+      "bytes": 11187
+    },
+    {
+      "path": "internal/service/permissions_test.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "93d103c2864ce9c1f1fec1ed71b7dd4a6e0e4be792d1acf902742ac9798aec6c",
+      "bytes": 4487
+    },
+    {
+      "path": "internal/service/prompt_favorite.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "d200d7bbfd758adab069834489a707783deefe978c0dc90b8d475ba1b6930782",
+      "bytes": 10272
+    },
+    {
+      "path": "internal/service/prompt_favorite_test.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "63331f3cdfe3501f69d66cee9e5058f21b8107a03e93535095fd69fa3bd6c43a",
+      "bytes": 9005
+    },
+    {
+      "path": "internal/service/proxy.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "30a31eca3c0d7bc2da151968636f463b377306e92b1415f640a3084cfa5c4263",
+      "bytes": 13011
+    },
+    {
+      "path": "internal/service/proxy_test.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "2274d21b3061458dac877a1d5467cdc4c876062b45c556ea859dd6834645e11f",
+      "bytes": 10438
+    },
+    {
+      "path": "internal/service/relay_groups.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "c46294fb573ba2818ddc52e7ebc26fa97599310f7f5a5a35deb4adff8716529d",
+      "bytes": 2124
+    },
+    {
+      "path": "internal/service/relay_groups_test.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "48bb9ee29a9468cbbe36a56524c1a0f473f2d6a7bb410427acd9c7e072979b5c",
+      "bytes": 3215
+    },
+    {
+      "path": "internal/service/relay_onboarding.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "ebd745f62428b752d30d714720da9670a4a68a90ba56d0c93fc8237c72044e5e",
+      "bytes": 4112
+    },
+    {
+      "path": "internal/service/relay_onboarding_test.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "21aa4979f919a9b005d5b773f28fadde15601fe39f6e08f5c5447c6446bae069",
+      "bytes": 8340
+    },
+    {
+      "path": "internal/service/storage_helpers.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "8258f1cbd7406afb72de6c26ca12b14df4cb122f6a105cf313bdb06fc4e459c3",
+      "bytes": 810
+    },
+    {
+      "path": "internal/service/test_helpers_test.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "17a35f6cd226ec3dde816e7f875e726f05350f589a46c33cfea9c6784d3e0627",
+      "bytes": 437
+    },
+    {
+      "path": "internal/service/value_helpers.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "0aac3308869813797f5cf55e092b6cffdfcb9b3777e83f1b3a320fa24d54884b",
+      "bytes": 438
+    },
+    {
+      "path": "internal/service/workflow.go",
+      "status": "pending",
+      "checks": [],
+      "sha256": "6a6c27bee3c88d06e667cd360515fb26164c0791727968902d6c099ff99ecedc",
+      "bytes": 26674
+    },
+    {
+      "path": "internal/service/workflow_agent.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "f2526d8bcc78c0ac96d622d13e994f69079b2523e6907ab390b72e8b1979e220",
+      "bytes": 4738
+    },
+    {
+      "path": "internal/service/workflow_agent_test.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "befa576e820f137a30edf764048a584ed77a42ef875bee398ac267aa626af05b",
+      "bytes": 342
+    },
+    {
+      "path": "internal/service/workflow_deletion_test.go",
+      "status": "pending",
+      "checks": [],
+      "sha256": "a8659096a1b2fe81acfe6a28df6cb405a8a4d90aaf2413019c803b1d5eb2a373",
+      "bytes": 14309
+    },
+    {
+      "path": "internal/service/workflow_reference_integrity_test.go",
+      "status": "pending",
+      "checks": [],
+      "sha256": "ab788e1f0f8207d5d9c893b344c5099abe861886e2f428e712e33c166c7b07ef",
+      "bytes": 6233
+    },
+    {
+      "path": "internal/service/workflow_test.go",
+      "status": "pending",
+      "checks": [],
+      "sha256": "c03f8ec2d65341e2b1bda6b216306348d1e7db9558cd22fd582d29719cc63690",
+      "bytes": 28882
+    },
+    {
+      "path": "internal/storage/image_conversations.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "37bc372be3305c5307419da7bf542328119d8af13e100d42760d58d66b91cf30",
+      "bytes": 44523
+    },
+    {
+      "path": "internal/storage/image_conversations_test.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "ab1e0da989f1feb63a172bf5dcc9961039b15b8d9764eacda03e8b1f267065b4",
+      "bytes": 31609
+    },
+    {
+      "path": "internal/storage/log_pagination_efficiency_test.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "20f1f8f1e1404d607acc88e652f65e41be8797e1b2102f80ff4497da3f7f5138",
+      "bytes": 3704
+    },
+    {
+      "path": "internal/storage/storage.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "5b706056e9a72eaa483241e551c6565878f32b77e24fb5f04742546375a9fb76",
+      "bytes": 38278
+    },
+    {
+      "path": "internal/storage/storage_integration_test.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "88572e34842c59a899a3f5c129d822ce62b3dc90b98db37cd8126ab4d19dce46",
+      "bytes": 19154
+    },
+    {
+      "path": "internal/storage/storage_objects.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "6b01e2c51d5e2b81127cf10ebd34ca22b838ae1f7a26d6622094036698e5bf5f",
+      "bytes": 3611
+    },
+    {
+      "path": "internal/storage/storage_objects_test.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "7becc371468278ad81f1d906ec71cf675bd667dd993aea6eef5b2d613d0aa5b2",
+      "bytes": 2419
+    },
+    {
+      "path": "internal/storage/storage_test.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "619354c5f8b5943873217916c31f7962e6bc3ef015458137d33f37872b541da5",
+      "bytes": 33333
+    },
+    {
+      "path": "internal/util/image_model_capabilities.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "1cca81fc60108073929c22fd3e2f9e6dd43e403a4d84a0063f661a830a6907b1",
+      "bytes": 6026
+    },
+    {
+      "path": "internal/util/image_model_capabilities_test.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "f2d38cb878a88513611566cde99cb52a40f29d0198ab8bf93c8c93146905015c",
+      "bytes": 6219
+    },
+    {
+      "path": "internal/util/json.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "96ede2decd5b5cc27c28eecf88877ce2cc7422484e5a60e90627ae992d67628e",
+      "bytes": 6123
+    },
+    {
+      "path": "internal/util/json_test.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "8c1271e016c56b928ac0e8a8fa3f19aa13ce06395e197e32a073cebb479ab805",
+      "bytes": 4247
+    },
+    {
+      "path": "internal/util/raster_image.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "ce732779ad18a3c2545fddeaa430a170609c415f73882c8b66d9b09fc8c298ac",
+      "bytes": 3036
+    },
+    {
+      "path": "internal/util/raster_image_test.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "5259a883ca520913de791e669b941140c5a902c8391898760afe8cabf84d6632",
+      "bytes": 1424
+    },
+    {
+      "path": "internal/util/upstream_error.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "ccebc11ae8637c6ee9145107fdd435b25a6ff3e7df29be59b2a18430b83eb243",
+      "bytes": 942
+    },
+    {
+      "path": "internal/util/upstream_error_test.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "7af53ad4b56f9bddd47cc43758f2a164303ba423506ed246f43061debce8cdce",
+      "bytes": 881
+    },
+    {
+      "path": "internal/videocontract/store.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "ab962524d7a0025c63f7b3cea743d82c29ab4d9bb57d20580ccece5ba8186b43",
+      "bytes": 30432
+    },
+    {
+      "path": "internal/videocontract/store_test.go",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full-text read in current review",
+        "correctness and error propagation",
+        "resource ownership and concurrency",
+        "runtime cost and bounds",
+        "existing test contract consistency"
+      ],
+      "sha256": "e89751d4fe1030657cdaee553746924b0713de0cc3f64d7109c9cae853d6eb7b",
+      "bytes": 37781
+    }
+  ]
+}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -579,7 +580,7 @@ func buildRelayDatabaseConnectionURL(driver, host, port, name, user, password, f
 	if password != "" {
 		credentials = url.UserPassword(user, password)
 	}
-	connection := &url.URL{Scheme: scheme, User: credentials, Host: host + ":" + port, Path: "/" + name}
+	connection := &url.URL{Scheme: scheme, User: credentials, Host: net.JoinHostPort(host, port), Path: "/" + name}
 	if driver == "postgres" {
 		connection.RawQuery = "sslmode=disable"
 	}
@@ -1229,6 +1230,9 @@ func floatSetting(value any, fallback float64) float64 {
 		parsed = float64(v)
 	case int64:
 		parsed = float64(v)
+	case json.Number:
+		n, err := v.Float64()
+		parsed, ok = n, err == nil
 	case string:
 		n, err := strconv.ParseFloat(strings.TrimSpace(v), 64)
 		parsed, ok = n, err == nil

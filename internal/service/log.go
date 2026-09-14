@@ -865,7 +865,7 @@ func SanitizeLogValue(v any) any {
 		}
 		return out
 	case error:
-		return x.Error()
+		return sanitizeLogError(x)
 	case string:
 		if strings.HasPrefix(strings.TrimSpace(x), "data:") && strings.Contains(x, ";base64,") {
 			return maskBase64(x)
@@ -877,6 +877,32 @@ func SanitizeLogValue(v any) any {
 	default:
 		return v
 	}
+}
+
+func sanitizeLogError(err error) string {
+	if err == nil {
+		return ""
+	}
+	if requestErr, ok := err.(*url.Error); ok {
+		sanitized := *requestErr
+		sanitized.URL = SanitizeLogURL(requestErr.URL)
+		sanitized.Err = errors.New(sanitizeLogError(requestErr.Err))
+		return sanitized.Error()
+	}
+	message := err.Error()
+	var children []error
+	switch wrapped := err.(type) {
+	case interface{ Unwrap() []error }:
+		children = wrapped.Unwrap()
+	case interface{ Unwrap() error }:
+		children = []error{wrapped.Unwrap()}
+	}
+	for _, child := range children {
+		if child != nil {
+			message = strings.ReplaceAll(message, child.Error(), sanitizeLogError(child))
+		}
+	}
+	return message
 }
 
 func SanitizeLogURL(value string) string {
