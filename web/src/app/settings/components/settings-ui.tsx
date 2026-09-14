@@ -17,10 +17,10 @@ import { cn } from "@/lib/utils";
 type SettingsCardTone = "blue" | "amber" | "slate" | "violet";
 
 const toneClassNames: Record<SettingsCardTone, string> = {
-  amber: "bg-amber-50 text-amber-700 ring-1 ring-amber-100",
-  blue: "bg-[#edf4ff] text-[#1456f0] ring-1 ring-blue-100",
+  amber: "bg-amber-50 text-amber-700 ring-1 ring-amber-100 dark:bg-amber-950/30 dark:text-amber-300 dark:ring-amber-900/50",
+  blue: "bg-primary/10 text-primary ring-1 ring-primary/15",
   slate: "bg-secondary text-muted-foreground ring-1 ring-border",
-  violet: "bg-violet-50 text-violet-700 ring-1 ring-violet-100",
+  violet: "bg-violet-50 text-violet-700 ring-1 ring-violet-100 dark:bg-violet-950/30 dark:text-violet-300 dark:ring-violet-900/50",
 };
 
 type SettingsCardProps = {
@@ -37,9 +37,9 @@ type SettingsCardProps = {
 };
 
 export const settingsInputClassName = "bg-background";
-export const settingsDialogInputClassName = "h-11 bg-background";
+export const settingsDialogInputClassName = "h-10 bg-background";
 export const settingsListItemClassName =
-  "rounded-xl border border-border/80 bg-background px-4 py-4 shadow-[0_4px_6px_rgba(0,0,0,0.04)]";
+  "min-w-0 rounded-xl border border-border bg-background p-4 shadow-[var(--shadow-card)]";
 export const settingsPanelClassName =
   "rounded-xl border border-border/70 bg-muted/30 p-4";
 export function SettingsCard({
@@ -58,7 +58,7 @@ export function SettingsCard({
     <Card
       data-settings-card
       className={cn(
-        "overflow-hidden rounded-xl border-border/80 lg:h-full lg:min-h-0",
+        "min-w-0 overflow-hidden rounded-xl lg:h-full lg:min-h-0",
         className,
       )}
     >
@@ -68,9 +68,9 @@ export function SettingsCard({
       >
         <CardHeader
           data-settings-card-header
-          className="gap-4 border-b border-border/80 bg-card p-5 sm:flex-row sm:items-center sm:justify-between"
+          className="gap-4 border-b border-border bg-card p-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between sm:p-5"
         >
-          <div className="flex min-w-0 items-center gap-3">
+          <div className="flex min-w-0 items-center gap-3 sm:flex-[1_1_16rem]">
             <div
               className={cn(
                 "flex size-10 shrink-0 items-center justify-center rounded-lg",
@@ -83,13 +83,13 @@ export function SettingsCard({
               <CardTitle className="text-lg leading-7 font-semibold">
                 {title}
               </CardTitle>
-              <CardDescription className="mt-1 line-clamp-2 text-sm leading-5">
+              <CardDescription className="mt-1 break-words text-sm leading-5">
                 {description}
               </CardDescription>
             </div>
           </div>
           {meta || action ? (
-            <div className="flex shrink-0 flex-wrap items-center gap-2 sm:justify-end">
+            <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2 sm:justify-end">
               {meta}
               {action}
             </div>
@@ -99,16 +99,15 @@ export function SettingsCard({
       {contentScrollable ? (
         <ScrollArea
           data-settings-card-body
-          className="min-h-0 lg:flex-1"
-          viewportClassName="pr-4"
+          className="min-h-0 min-w-0 lg:flex-1"
         >
-          <CardContent className={cn("p-5 pt-0 sm:p-6 sm:pt-0", contentClassName)}>
+          <CardContent className={cn("min-w-0 p-4 sm:p-5", contentClassName)}>
             {children}
           </CardContent>
         </ScrollArea>
       ) : (
-        <div data-settings-card-body className="min-h-0 lg:flex lg:flex-1 lg:flex-col">
-          <CardContent className={cn("p-5 pt-0 sm:p-6 sm:pt-0", contentClassName)}>
+        <div data-settings-card-body className="min-h-0 min-w-0 lg:flex lg:flex-1 lg:flex-col">
+          <CardContent className={cn("min-w-0 p-4 sm:p-5", contentClassName)}>
             {children}
           </CardContent>
         </div>

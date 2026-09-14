@@ -27,6 +27,7 @@ import {
 import { PromptFavoriteRequestLifecycle } from "@/app/image/prompt-favorite-request-lifecycle";
 import { tagVariants } from "@/components/ui/tag";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import {
   Dialog,
   DialogContent,
@@ -411,24 +412,26 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
   };
 
   const renderFavoriteTabs = (className?: string) => (
-    <div className={cn("flex h-10 rounded-full bg-[#f0f0f0] p-1", className)}>
+    <div className={cn("flex h-10 rounded-lg bg-muted p-1", className)} role="group" aria-label="提示词收藏筛选">
       <button
         type="button"
         className={cn(
-          "inline-flex min-w-0 flex-1 items-center justify-center rounded-full px-3 text-xs font-semibold text-muted-foreground transition",
+          "inline-flex min-w-0 flex-1 items-center justify-center rounded-md px-3 text-xs font-semibold text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
           favoriteFilter === "all" && "bg-card text-foreground shadow-sm",
         )}
         onClick={() => setFavoriteFilter("all")}
+        aria-pressed={favoriteFilter === "all"}
       >
         全部
       </button>
       <button
         type="button"
         className={cn(
-          "inline-flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-full px-3 text-xs font-semibold text-muted-foreground transition",
-          favoriteFilter === "favorites" && "bg-card text-[#1456f0] shadow-sm",
+          "inline-flex min-w-0 flex-1 items-center justify-center gap-1.5 rounded-md px-3 text-xs font-semibold text-muted-foreground transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          favoriteFilter === "favorites" && "bg-card text-brand shadow-sm",
         )}
         onClick={() => setFavoriteFilter("favorites")}
+        aria-pressed={favoriteFilter === "favorites"}
       >
         <Star className={cn("size-3.5", favoriteFilter === "favorites" && "fill-current")} />
         {visibleFavoritePrompts.length > 0 ? `收藏 ${visibleFavoritePrompts.length}` : "收藏"}
@@ -578,11 +581,11 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
             </div>
           ) : null}
           {favoriteError ? (
-            <div className="mt-2 flex items-center justify-between gap-3 rounded-[12px] bg-[#fff7ed] px-3 py-2 text-xs text-[#9a3412]">
-              <span>{favoriteError}</span>
-              <button type="button" className="font-semibold text-[#1456f0]" onClick={loadFavoriteData}>
+            <div role="alert" className="mt-2 flex min-w-0 flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-xs text-destructive">
+              <span className="min-w-0 break-words">{favoriteError}</span>
+              <Button type="button" variant="ghost" size="sm" className="h-8 shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive" onClick={loadFavoriteData}>
                 重试
-              </button>
+              </Button>
             </div>
           ) : null}
         </div>
@@ -590,7 +593,7 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
         <ScrollArea ref={scrollAreaRef} className="min-h-0 flex-1 px-4 py-3 sm:px-6 sm:py-4">
           {favoriteFilter !== "favorites" && isLoading ? (
             <div className="flex h-full min-h-[320px] flex-col items-center justify-center gap-3 text-muted-foreground">
-              <LoaderCircle className="size-6 animate-spin text-[#1456f0]" />
+              <LoaderCircle className="size-6 animate-spin text-brand" />
               <p className="text-sm">正在读取远程提示词市场...</p>
             </div>
           ) : favoriteFilter !== "favorites" && error ? (
@@ -608,17 +611,15 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
             </div>
           ) : favoriteFilter === "favorites" && isLoadingFavorites && favoriteItems.length === 0 ? (
             <div className="flex h-full min-h-[320px] flex-col items-center justify-center gap-3 text-muted-foreground">
-              <LoaderCircle className="size-6 animate-spin text-[#1456f0]" />
+              <LoaderCircle className="size-6 animate-spin text-brand" />
               <p className="text-sm">正在读取收藏...</p>
             </div>
           ) : visiblePrompts.length === 0 ? (
-            <div className="flex h-full min-h-[320px] items-center justify-center text-sm text-muted-foreground">
-              {favoriteFilter === "favorites"
+            <EmptyState icon={favoriteFilter === "favorites" ? Star : Search} className="min-h-72" title={favoriteFilter === "favorites"
                   ? visibleFavoritePrompts.length === 0
                     ? "还没有收藏提示词"
                     : "没有匹配的收藏提示词"
-                : "没有找到匹配的提示词"}
-            </div>
+                : "没有找到匹配的提示词"} description={favoriteFilter === "favorites" && visibleFavoritePrompts.length === 0 ? "点击提示词卡片上的星标，将常用提示词保存在这里。" : "试试其他关键词，或调整分类与标签筛选。"} />
           ) : (
             <div className="flex flex-col gap-4">
               <div data-prompt-library-grid className="grid grid-cols-1 items-stretch gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
@@ -635,7 +636,7 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
                   return (
                     <article
                       key={prompt.id}
-                      className="group flex h-full flex-col overflow-hidden rounded-lg border border-border bg-card shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                      className="group flex h-full min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-card shadow-[var(--shadow-card)] transition-[border-color,box-shadow] hover:border-brand/35 hover:shadow-[var(--shadow-elevated)]"
                     >
                       <button type="button" className="relative block aspect-[16/10] w-full overflow-hidden bg-muted text-left" onClick={() => setSelectedPrompt(localizedPrompt)} aria-label={`查看提示词：${localizedPrompt.title}`}>
                         <PromptPreviewImage prompt={localizedPrompt} />
@@ -659,7 +660,7 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
                               type="button"
                               className={cn(
                                 "inline-flex size-8 items-center justify-center rounded-full border border-border text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60",
-                                isFavorite && "border-[#bfdbfe] bg-[#eef4ff] text-[#1456f0]",
+                                isFavorite && "border-brand-border bg-brand-soft text-brand",
                               )}
                               onClick={() => void toggleFavorite(prompt)}
                               disabled={isFavoriteBusy}
@@ -679,7 +680,7 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
                           <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t border-border/60 pt-3 text-xs text-muted-foreground">
                             {prompt.source ? (
                               <TooltipHint content={`分类：${prompt.source}`}><span className="inline-flex min-w-0 items-center gap-1.5 font-medium text-foreground/80">
-                                <Tags className="size-3.5 shrink-0 text-[#1456f0]" />
+                                <Tags className="size-3.5 shrink-0 text-brand" />
                                 <span className="max-w-52 truncate">分类：{prompt.source}</span>
                               </span></TooltipHint>
                             ) : null}
@@ -731,7 +732,7 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
                           <Button
                             type="button"
                             size="sm"
-                            className="h-8 rounded-full bg-[#1456f0] px-4 text-xs text-white shadow-sm hover:bg-[#2563eb]"
+                            className="h-8 rounded-full bg-primary px-4 text-xs text-primary-foreground shadow-sm hover:bg-primary/90"
                             onClick={() => void onApplyPrompt(localizedPrompt)}
                           >
                             套用
@@ -758,20 +759,20 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
           )}
         </ScrollArea>
         <Dialog open={Boolean(selectedPrompt)} onOpenChange={(nextOpen) => !nextOpen && setSelectedPrompt(null)}>
-          <DialogContent scrollable={false} className="flex max-h-[90dvh] w-[min(94vw,920px)] max-w-none flex-col overflow-hidden p-0">
-            <div className="grid min-h-0 md:grid-cols-[minmax(0,1fr)_minmax(320px,0.8fr)]">
-              <div className="flex min-h-64 items-center justify-center overflow-hidden bg-muted md:min-h-[560px]">
-                {selectedPrompt ? <img src={selectedPrompt.preview} alt={selectedPrompt.title} className="max-h-[70dvh] size-full object-contain" /> : null}
+          <DialogContent scrollable={false} className="flex h-[min(90dvh,760px)] w-[min(94vw,920px)] max-w-none flex-col overflow-hidden p-0">
+            <div className="grid min-h-0 flex-1 grid-rows-[minmax(0,0.7fr)_minmax(0,1.3fr)] md:grid-cols-[minmax(0,1fr)_minmax(320px,0.8fr)] md:grid-rows-1">
+              <div className="flex min-h-0 items-center justify-center overflow-hidden bg-muted">
+                {selectedPrompt ? <img src={selectedPrompt.preview} alt={selectedPrompt.title} className="size-full object-contain" /> : null}
               </div>
               <div className="flex min-h-0 flex-col p-5 pr-6 sm:p-6 sm:pr-7">
-                <DialogTitle className="pr-20 text-xl leading-7">{selectedPrompt?.title}</DialogTitle>
+                <DialogTitle className="shrink-0 break-words text-xl leading-7 md:pr-20">{selectedPrompt?.title}</DialogTitle>
                 <DialogDescription className="mt-1.5">{selectedPrompt?.source}</DialogDescription>
                 <ScrollArea className="mt-5 min-h-0 flex-1" viewportClassName="pr-3">
                   <p className="whitespace-pre-wrap break-words text-sm leading-7 text-foreground">{selectedPrompt?.prompt}</p>
                   {selectedPrompt && promptFilterTags(selectedPrompt).length ? <div className="mt-4 flex flex-wrap gap-1.5">{promptFilterTags(selectedPrompt).map((tag) => <span key={tag} className="rounded-md bg-muted px-2 py-1 text-[11px] text-muted-foreground">{tag}</span>)}</div> : null}
                   {selectedPrompt?.referenceImageUrls.length ? <p className="mt-4 text-xs text-muted-foreground">包含 {selectedPrompt.referenceImageUrls.length} 张参考图，套用时会一并载入。</p> : null}
                 </ScrollArea>
-                <div className="mt-5 flex flex-wrap justify-end gap-2 border-t border-border pt-4">
+                <div className="mt-4 flex shrink-0 flex-wrap justify-end gap-2 border-t border-border pt-4">
                   {selectedPrompt && onSavePrompt ? <Button type="button" variant="outline" disabled={saveBusyIds.has(selectedPrompt.id)} onClick={() => void savePrompt(selectedPrompt)}>{saveBusyIds.has(selectedPrompt.id) ? <><LoaderCircle className="size-4 animate-spin" />保存中</> : "保存到我的素材"}</Button> : null}
                   {selectedPrompt ? <Button type="button" variant="outline" onClick={() => void copyPrompt(selectedPrompt)}><ClipboardCopy className="size-4" />复制提示词</Button> : null}
                   {selectedPrompt ? <Button type="button" onClick={() => void onApplyPrompt(selectedPrompt)}>套用到创作台</Button> : null}
@@ -784,12 +785,12 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
   );
 
   if (presentation === "page") {
-    return <section className="card-surface flex h-full min-h-0 w-full flex-col overflow-hidden rounded-xl border border-border/80 shadow-[0_4px_16px_rgba(24,40,72,0.05)]">{content}</section>;
+    return <section className="card-surface flex h-full min-h-0 w-full flex-col overflow-hidden rounded-xl border border-border/80 shadow-[var(--shadow-card)]">{content}</section>;
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent scrollable={false} className="flex h-[min(94dvh,860px)] w-[min(96vw,1180px)] max-w-none flex-col overflow-hidden rounded-[24px] p-0 sm:h-[min(90dvh,860px)] sm:rounded-[28px]">
+      <DialogContent scrollable={false} className="flex h-[min(94dvh,860px)] w-[min(96vw,1180px)] max-w-none flex-col overflow-hidden p-0 sm:h-[min(90dvh,860px)]">
         <DialogTitle className="sr-only">提示词库</DialogTitle>
         <DialogDescription className="sr-only">搜索、筛选、收藏并套用提示词。</DialogDescription>
         {content}

@@ -27,7 +27,7 @@ test("management pages share one page and panel layout contract", () => {
   assert.match(managementSource, /data-management-page/);
   assert.match(managementSource, /gap-\[var\(--page-section-gap\)\]/);
   assert.match(managementSource, /data-management-panel/);
-  assert.match(managementSource, /card-surface[\s\S]*border border-border\/80/);
+  assert.match(managementSource, /card-surface[\s\S]*border border-border shadow-\[var\(--shadow-card\)\]/);
   assert.doesNotMatch(managementSource, /data-management-panel[\s\S]{0,240}bg-background/);
   assert.doesNotMatch(managementSource, /components\/ui\/card/);
   assert.match(managementSource, /data-management-toolbar/);
@@ -82,7 +82,7 @@ test("every page-level pagination stays fixed to the bottom of its full-height p
 
 test("role panels use the full shared management content height", () => {
   assert.doesNotMatch(rbacSource, /max-h-\[calc\(100dvh-/);
-  assert.match(rbacSource, /min-h-\[940px\] lg:min-h-\[720px\] xl:min-h-0/);
+  assert.match(rbacSource, /h-\[max\(42rem,80dvh\)\] min-h-0 xl:h-auto/);
 });
 
 test("role authorization separates permission types and supports focused review", () => {
@@ -91,7 +91,7 @@ test("role authorization separates permission types and supports focused review"
   assert.match(permissionEditorSource, /功能权限/);
   assert.match(permissionEditorSource, /toggleListValues/);
   assert.match(permissionEditorSource, /disabled=\{disabled\}/);
-  assert.match(permissionEditorSource, /lg:grid-cols-\[320px_minmax\(0,1fr\)\]/);
+  assert.match(permissionEditorSource, /xl:grid-cols-\[minmax\(220px,0\.7fr\)_minmax\(0,2fr\)\]/);
   assert.doesNotMatch(permissionEditorSource, /仅看已选|setSection/);
 });
 
@@ -105,7 +105,7 @@ test("switching roles protects unsaved authorization changes", () => {
 test("management actions share the same row as their filters", () => {
   assert.match(assetsSource, /data-asset-filter-bar[\s\S]*新增素材/);
   assert.match(usersSource, /data-user-toolbar[\s\S]*刷新[\s\S]*创建用户/);
-  assert.match(logsSource, /<ManagementToolbar>[\s\S]*刷新[\s\S]*<\/ManagementToolbar>/);
+  assert.match(logsSource, /<ManagementToolbar[^>]*>[\s\S]*刷新[\s\S]*<\/ManagementToolbar>/);
   assert.match(rbacSource, /<ManagementToolbar className="flex items-center gap-2[^"]*">[\s\S]*刷新角色权限[\s\S]*创建角色/);
   for (const source of [assetsSource, usersSource, rbacSource, logsSource]) {
     assert.doesNotMatch(source, /<ManagementPage[\s\S]{0,120}actions=\{/);
@@ -149,7 +149,7 @@ test("role permission queries abort stale loads and preserve the latest selectio
 });
 
 test("log detail header reserves the global dialog close-button area", () => {
-  assert.match(logsSource, /<DialogHeader className="border-b border-border py-5 pl-6 pr-20">/);
+  assert.match(logsSource, /<DialogHeader className="shrink-0 border-b border-border py-4 pl-4 pr-14 sm:py-5 sm:pl-6">/);
   assert.match(logsSource, /className="h-9 shrink-0 self-start rounded-lg px-3"[\s\S]*?复制 JSON/);
   assert.doesNotMatch(logsSource, /<DialogHeader className="[^"]*px-6[^"]*">[\s\S]*?复制 JSON/);
 });

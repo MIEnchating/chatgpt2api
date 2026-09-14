@@ -69,5 +69,12 @@ function PromptLibraryContent({ session }: { session: StoredAuthSession }) {
       toast.error(error instanceof Error ? `保存素材失败：${error.message}` : "保存素材失败");
     }
   };
-  return <ImagePromptMarket open presentation="page" initialSource={initialSource} onOpenChange={() => undefined} onApplyPrompt={(prompt) => { stagePromptForWorkbench(prompt, session.key); navigate("/studio"); }} onSavePrompt={savePrompt} />;
+  const applyPrompt = (prompt: BananaPrompt) => {
+    if (!stagePromptForWorkbench(prompt, session.key)) {
+      toast.error("套用提示词失败：浏览器无法保存提示词，请检查站点存储设置或清理空间后重试");
+      return;
+    }
+    navigate("/studio");
+  };
+  return <ImagePromptMarket open presentation="page" initialSource={initialSource} onOpenChange={() => undefined} onApplyPrompt={applyPrompt} onSavePrompt={savePrompt} />;
 }

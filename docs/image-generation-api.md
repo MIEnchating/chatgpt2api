@@ -32,13 +32,14 @@ curl -c ./cloud-cotton.cookies http://localhost:8000/auth/login \
 | `gpt-image-2` | NewAPI 转发 | 转发给当前用户所选 Key 对应的 NewAPI 渠道。 |
 | `codex-gpt-image-2` | NewAPI 转发 | 可用于在 NewAPI 中配置独立的 Codex 图片渠道。实际支持取决于渠道。 |
 | `gemini-3.1-flash-image` | NewAPI `/v1/chat/completions` | 默认 Google 图片模型；支持参考图，宽高比和分辨率通过 `extra_body.google.image_config` 发送。 |
+| `gemini-3.1-flash-image-preview` | NewAPI `/v1/chat/completions` | 使用 Gemini 3.1 Flash Image 图片适配器，支持文生图和参考图编辑；模型名称原样传给上游，渠道须支持此 ID。 |
 | `grok-imagine-image` | NewAPI `/v1/images/generations` | 默认 Grok 文生图模型；最新 NewAPI 已内置。 |
 | `grok-imagine-image-quality` | NewAPI `/v1/images/generations` | xAI 官方质量模型；NewAPI 当前内置其 `grok-imagine-image-pro` 别名，使用规范名称前需要配置模型映射。 |
 | `grok-imagine-image-2.0` | NewAPI `/v1/images/generations` | xAI 官方新模型；当前 NewAPI 使用前需要配置自定义模型映射。 |
 
 云棉从当前登录用户可用的 NewAPI Key 名称中读取选择，并按该名称精确取得密钥。请求随后发送到 `API_BASE_URL`；模型对应的账号、额度和最终上游协议由 NewAPI 决定。内部 `GET /api/profile/upstream-models` 会读取上游模型目录，但图片生成/图片编辑任务只应使用 NewAPI 图片渠道实际支持的模型。
 
-默认模型列表为 `gpt-image-2`、`gemini-3.1-flash-image` 和 `grok-imagine-image`。Google 链路只识别官方当前模型 ID：`gemini-3.1-flash-lite-image`、`gemini-3.1-flash-image`、`gemini-3-pro-image`、`gemini-2.5-flash-image`，不再把旧 Nano Banana 别名当作正式 ID。图片生成可用模型通过 `IMAGE_MODELS` 或设置页统一配置，供创作台、无限画布和工作流内部任务共用；模型必须已在 NewAPI / Sub2API 中存在可用渠道。
+默认模型列表为 `gpt-image-2`、`gemini-3.1-flash-image` 和 `grok-imagine-image`。Google 链路识别模型 ID：`gemini-3.1-flash-lite-image`、`gemini-3.1-flash-image`、`gemini-3.1-flash-image-preview`、`gemini-3-pro-image`、`gemini-2.5-flash-image`。其中 `gemini-3.1-flash-image-preview` 使用与正式型号相同的图片参数和参考图能力，保留原始模型名称，不自动改名或重试其他型号。旧 Nano Banana 别名不作为 Google 链路的模型 ID。图片生成可用模型通过 `IMAGE_MODELS` 或设置页统一配置，供创作台、无限画布和工作流内部任务共用；模型必须已在 NewAPI / Sub2API 中存在可用渠道。
 
 图片创作台的行为以参考项目 `web/src/services/api/image.ts` 和 `web/src/app/(user)/image/page.tsx` 为合同来源，不再由本项目自行根据厂商名称隐藏工作台参数。不同上游的差异只在请求适配层处理：
 

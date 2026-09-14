@@ -46,6 +46,7 @@ func isGoogleGeminiImageModelName(value string) bool {
 	switch value {
 	case "gemini-3.1-flash-lite-image",
 		"gemini-3.1-flash-image",
+		"gemini-3.1-flash-image-preview",
 		"gemini-3-pro-image",
 		"gemini-2.5-flash-image":
 		return true
@@ -85,7 +86,8 @@ func IsGoogleGeminiImageModel(model string) bool {
 
 // IsGoogleGemini31FlashImageModel identifies Gemini 3.1 Flash Image.
 func IsGoogleGemini31FlashImageModel(model string) bool {
-	return strings.EqualFold(strings.TrimSpace(model), "gemini-3.1-flash-image")
+	value := strings.ToLower(strings.TrimSpace(model))
+	return value == "gemini-3.1-flash-image" || value == "gemini-3.1-flash-image-preview"
 }
 
 func IsXAIImageModel(model string) bool {

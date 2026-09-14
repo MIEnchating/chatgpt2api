@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"unicode/utf8"
 )
 
 // Serialize initialization for the same upstream user within this process.
@@ -21,13 +22,17 @@ func (r *NewAPITokenReader) EnsureCreationGroupTokens(ctx context.Context, ident
 	if r == nil || !r.configured || r.db == nil {
 		return result, []string{"请先配置上游数据库连接"}
 	}
-	userID, err := r.relayOnboardingUserID(ctx, identity)
-	if err != nil {
-		return result, []string{err.Error()}
+	userID, ok := r.identityUserID(identity)
+	if !ok {
+		return result, []string{"平台用户身份无效，请重新登录"}
 	}
 	lock := &relayOnboardingLocks[uint64(userID)%uint64(len(relayOnboardingLocks))]
 	lock.Lock()
 	defer lock.Unlock()
+	// Keep the identity read inside the lock so it cannot race another login's write.
+	if _, err := r.relayOnboardingUserID(ctx, identity); err != nil {
+		return result, []string{err.Error()}
+	}
 	warnings := []string{}
 	resolved := map[string][]string{}
 	for _, kind := range []string{"text", "image", "video", "audio"} {
@@ -50,7 +55,7 @@ func (r *NewAPITokenReader) EnsureCreationGroupTokens(ctx context.Context, ident
 		names, err := r.relayGroupTokenNames(ctx, userID, group)
 		if err == nil && len(names) == 0 {
 			if create == nil {
-				err = fmt.Errorf("分组“%s”没有可用 Key，请通过上游账号密码登录以自动创建", group)
+				err = fmt.Errorf("分组“%s”没有可用 Key，请在平台创建后重试", group)
 			} else if err = create(ctx, group); err == nil {
 				names, err = r.relayGroupTokenNames(ctx, userID, group)
 				if err == nil && len(names) == 0 {
@@ -106,9 +111,13 @@ func (r *NewAPITokenReader) relayGroupTokenNames(ctx context.Context, userID int
 
 func RelayCreationTokenName(group string) string {
 	digest := sha256.Sum256([]byte(group))
-	label := []rune(group)
-	if len(label) > 20 {
-		label = label[:20]
+	label := group
+	// New API limits names to 50 bytes; the prefix and digest consume 16 bytes.
+	for index, char := range group {
+		if index+utf8.RuneLen(char) > 34 {
+			label = group[:index]
+			break
+		}
 	}
-	return fmt.Sprintf("云棉-%s-%x", string(label), digest[:4])
+	return fmt.Sprintf("云棉-%s-%x", label, digest[:4])
 }

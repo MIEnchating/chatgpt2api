@@ -24,22 +24,22 @@ export function EmptyState({
     <div
       data-empty-state
       className={cn(
-        "flex min-w-0 flex-col items-center justify-center px-6 text-center",
+        "flex min-w-0 flex-col items-center justify-center px-4 sm:px-6 text-center",
         compact ? "min-h-32 py-8" : "min-h-44 py-10",
         className,
       )}
       {...props}
     >
       {Icon ? (
-        <span className="mb-3 grid size-10 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground/70">
+        <span className="mb-3 grid size-10 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground">
           <Icon className="size-5" />
         </span>
       ) : null}
-      <p className="text-sm font-medium text-foreground">{title}</p>
+      <p className="max-w-full text-sm leading-6 font-medium text-foreground [overflow-wrap:anywhere]">{title}</p>
       {description ? (
-        <p className="mt-1 max-w-md text-xs leading-5 text-muted-foreground">{description}</p>
+        <p className="mt-1 max-w-md text-sm leading-6 text-muted-foreground [overflow-wrap:anywhere]">{description}</p>
       ) : null}
-      {action ? <div className="mt-4">{action}</div> : null}
+      {action ? <div className="mt-4 flex max-w-full flex-wrap justify-center gap-2">{action}</div> : null}
     </div>
   );
 }

@@ -3,6 +3,7 @@ export type ImageModelRoute = "openai-image" | "google-gemini-image" | "xai-imag
 const GOOGLE_GEMINI_IMAGE_MODELS = new Set([
   "gemini-3.1-flash-lite-image",
   "gemini-3.1-flash-image",
+  "gemini-3.1-flash-image-preview",
   "gemini-3-pro-image",
   "gemini-2.5-flash-image",
 ]);
@@ -231,7 +232,7 @@ function isKIEImageEditModel(model: string) {
 function isGoogleGemini3ImageModel(model: string) {
   const value = model.trim().toLowerCase();
   return value === "gemini-3.1-flash-lite-image" ||
-    value === "gemini-3.1-flash-image" ||
+    isGoogleGemini31FlashImageModel(value) ||
     value === "gemini-3-pro-image";
 }
 
@@ -240,12 +241,12 @@ function isGoogleGeminiFlashLiteImageModel(model: string) {
 }
 
 function isGoogleGemini31FlashImageModel(model: string) {
-  return model.trim().toLowerCase() === "gemini-3.1-flash-image";
+  const value = model.trim().toLowerCase();
+  return value === "gemini-3.1-flash-image" || value === "gemini-3.1-flash-image-preview";
 }
 
 function supportsGoogleGeminiExtendedAspectRatios(model: string) {
-  const value = model.trim().toLowerCase();
-  return value === "gemini-3.1-flash-image";
+  return isGoogleGemini31FlashImageModel(model);
 }
 
 export function imageModelRoute(model: string): ImageModelRoute {

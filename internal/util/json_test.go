@@ -2,10 +2,31 @@ package util
 
 import (
 	"encoding/json"
+	"fmt"
 	"math"
 	"strings"
 	"testing"
 )
+
+func TestCleanPreservesValueFormatting(t *testing.T) {
+	for _, value := range []any{nil, "", " \t text \n", "\u2003中文\u3000", 123, true, json.Number("1.5"), []byte{1, 2}, []string{" a", "b "}} {
+		want := strings.TrimSpace(fmt.Sprint(ValueOr(value, "")))
+		if got := Clean(value); got != want {
+			t.Errorf("Clean(%#v) = %q, want %q", value, got, want)
+		}
+	}
+}
+
+func BenchmarkCleanLargeString(b *testing.B) {
+	var value any = strings.Repeat("a", 64<<10)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		if len(Clean(value)) != 64<<10 {
+			b.Fatal("unexpected clean length")
+		}
+	}
+}
 
 func TestDecodeJSONAcceptsSingleValueAndPreservesNumbers(t *testing.T) {
 	var payload map[string]any

@@ -246,7 +246,7 @@ test("every canvas parameter panel uses the shared generation footer", () => {
   assert.ok((pageSource.match(/<CanvasGenerationFooter/g) || []).length >= 3);
   assert.ok((specialNodesSource.match(/<CanvasGenerationFooter/g) || []).length >= 2);
   assert.match(generationFooterSource, /h-10 w-full/);
-  assert.match(generationFooterSource, /bg-\[#1456f0\]/);
+  assert.match(generationFooterSource, /variant=\{running \? "destructive" : "default"\}/);
 });
 
 test("canvas and creator video parameters use the shared settings panel", () => {

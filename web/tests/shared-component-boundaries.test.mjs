@@ -75,6 +75,45 @@ function deferred() {
   return { promise, resolve };
 }
 
+test("applying library prompts navigates only after the handoff is saved", () => {
+  for (const failure of [null, "SecurityError", "QuotaExceededError"]) {
+    const state = hooks();
+    const session = { key: "session-a", role: "user" };
+    const navigations = [];
+    const errors = [];
+    const values = new Map();
+    const browser = {
+      get sessionStorage() {
+        if (failure === "SecurityError") throw new DOMException("Storage access denied", failure);
+        return {
+          setItem(key, value) {
+            if (failure === "QuotaExceededError") throw new DOMException("Storage is full", failure);
+            values.set(key, value);
+          },
+          getItem: (key) => values.get(key) ?? null,
+          removeItem: (key) => values.delete(key),
+        };
+      },
+    };
+    const handoff = loadSource("../src/app/prompt-library/prompt-handoff.ts", {}, { window: browser });
+    const { default: PromptLibraryPage } = loadSource("../src/app/prompt-library/page.tsx", {
+      react: state.react,
+      "react-router-dom": { useNavigate: () => (path) => navigations.push(path), useSearchParams: () => [new URLSearchParams()] },
+      "@/lib/use-auth-guard": { useAuthGuard: () => ({ isCheckingAuth: false, session }) },
+      "@/lib/use-auth-session-revision": { useAuthSessionRevision: () => 0 },
+      "@/lib/session": { getCachedAuthSession: () => session },
+      "@/app/prompt-library/prompt-handoff": handoff,
+      sonner: { toast: { error: (message) => errors.push(message) } },
+    });
+    const content = state.render(PromptLibraryPage);
+    const market = state.render(content.type, content.props);
+    market.props.onApplyPrompt({ id: "prompt", title: "Prompt", prompt: "Draw a product" });
+    assert.deepEqual(navigations, failure ? [] : ["/studio"], failure ?? "available storage");
+    assert.equal(errors.length, failure ? 1 : 0);
+    assert.equal(handoff.consumePromptForWorkbench(session.key)?.prompt, failure ? undefined : "Draw a product");
+  }
+});
+
 class KeyboardTarget {
   constructor(control = false, editable = false) { this.control = control; this.isContentEditable = editable; }
   closest() { return this.control ? this : null; }
@@ -205,7 +244,7 @@ test("announcement effect replay starts a fresh load and applies its response", 
   cleanup();
 });
 
-test("task queue state is remounted when the active session changes", () => {
+test("navigation widgets have distinct stable keys and remount when the active session changes", () => {
   const state = hooks();
   let session = { key: "session-a", role: "user" };
   const listeners = new Map();
@@ -218,14 +257,22 @@ test("task queue state is remounted when the active session changes", () => {
     "@/lib/app-meta": { resolveSiteIconSrc: () => "/icon.svg" },
     "@/lib/theme": { getPreferredColorTheme: () => "light" },
   }, { window: { addEventListener: (name, callback) => listeners.set(name, callback), removeEventListener() {} } });
-  const queue = descendants(state.render(TopNav)).find((item) => item.type === "ImageTaskQueue");
-  assert.equal(queue.key, session.key);
+  const widgets = (tree) => descendants(tree).filter((item) => item.type === "ImageTaskQueue" || item.type === "AnnouncementCenter");
+  const initialWidgets = widgets(state.render(TopNav));
+  assert.equal(initialWidgets.length, 2);
+  assert.ok(initialWidgets.every((item) => typeof item.key === "string" && item.key.length > 0));
+  assert.equal(new Set(initialWidgets.map((item) => item.key)).size, 2);
   const cleanup = state.effects[1]();
+  const sameSessionWidgets = widgets(state.render(TopNav));
+  assert.deepEqual(sameSessionWidgets.map((item) => item.key), initialWidgets.map((item) => item.key));
   session = { key: "session-b", role: "user" };
   listeners.get("session-change")();
-  const nextQueue = descendants(state.render(TopNav)).find((item) => item.type === "ImageTaskQueue");
-  assert.equal(nextQueue.key, session.key);
-  assert.notEqual(nextQueue.key, queue.key);
+  const nextWidgets = widgets(state.render(TopNav));
+  assert.equal(nextWidgets.length, 2);
+  assert.equal(new Set(nextWidgets.map((item) => item.key)).size, 2);
+  for (const widget of nextWidgets) {
+    assert.notEqual(widget.key, initialWidgets.find((item) => item.type === widget.type).key);
+  }
   cleanup();
 });
 

@@ -39,19 +39,19 @@ export function DateRangeFilter({ startDate, endDate, onChange, className }: Dat
   }, []);
 
   return (
-    <Field className={cn("w-full sm:w-[240px]", className)}>
+    <Field className={cn("min-w-0 w-full sm:w-[240px]", className)}>
       <Popover>
         <PopoverTrigger asChild>
           <Button
             variant="outline"
-            className="h-10 w-full min-w-0 justify-start rounded-lg px-3 font-normal dark:border-border dark:bg-background/70 dark:text-foreground dark:hover:bg-accent/60"
+            className="h-10 w-full min-w-0 justify-start rounded-lg px-3 font-normal"
           >
-            <CalendarIcon className="size-4 shrink-0 text-muted-foreground dark:text-muted-foreground" />
+            <CalendarIcon className="size-4 shrink-0 text-muted-foreground" />
             <span className="truncate">{label}</span>
           </Button>
         </PopoverTrigger>
         <PopoverContent
-          className="w-[min(calc(100vw-1.5rem),20.5rem)] border-border bg-popover p-2 shadow-[0_20px_60px_-30px_rgba(15,23,42,0.35)] dark:border-border dark:bg-card dark:shadow-[0_24px_80px_-28px_rgba(0,0,0,0.72)] sm:w-auto sm:max-w-none sm:p-3"
+          className="w-[min(calc(100vw-1.5rem),20.5rem)] border-border bg-popover p-2 shadow-[var(--shadow-elevated)] sm:w-auto sm:p-3"
           align="center"
           collisionPadding={12}
           sideOffset={8}

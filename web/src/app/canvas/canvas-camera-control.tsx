@@ -38,7 +38,7 @@ export function CanvasCameraControl({
         <Button
           type="button"
           variant="outline"
-          className={cn("justify-start", value?.enabled && "border-[#1456f0] text-[#1456f0]", className)}
+          className={cn("justify-start", value?.enabled && "border-brand text-brand", className)}
         >
           <Camera />摄像机
         </Button>

@@ -7,6 +7,7 @@ import (
 	"math"
 	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -129,26 +130,35 @@ type CreativeWorkflow struct {
 }
 
 type WorkflowService struct {
-	mu                     sync.Mutex
-	store                  storage.JSONDocumentBackend
-	pendingObjectDeletions map[string]map[string]struct{}
+	mu      sync.Mutex
+	store   storage.JSONDocumentBackend
+	objects storage.StorageObjectBackend
+}
+
+type workflowDocument struct {
+	Version                int                 `json:"version"`
+	Items                  []CreativeWorkflow  `json:"items"`
+	PendingObjectDeletions map[string][]string `json:"pending_storage_object_deletions,omitempty"`
 }
 
 func NewWorkflowService(backend ...storage.Backend) *WorkflowService {
-	return &WorkflowService{
-		store:                  firstJSONDocumentStore(backend),
-		pendingObjectDeletions: make(map[string]map[string]struct{}),
+	service := &WorkflowService{
+		store: firstJSONDocumentStore(backend),
 	}
+	if len(backend) > 0 {
+		service.objects, _ = backend[0].(storage.StorageObjectBackend)
+	}
+	return service
 }
 
 func (s *WorkflowService) List(ownerID string) ([]CreativeWorkflow, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	items, err := s.loadLocked()
+	document, err := s.loadLocked()
 	if err != nil {
 		return nil, err
 	}
-	return visibleWorkflows(items, ownerID), nil
+	return visibleWorkflows(document.Items, ownerID), nil
 }
 
 func (s *WorkflowService) InitializeIfEmpty(ownerID string, inputs []CreativeWorkflow) ([]CreativeWorkflow, error) {
@@ -186,28 +196,31 @@ func (s *WorkflowService) InitializeIfEmpty(ownerID string, inputs []CreativeWor
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for attempt := 0; attempt < workflowSaveAttempts; attempt++ {
-		items, err := s.loadLocked()
+		document, err := s.loadLocked()
 		if err != nil {
 			return nil, err
 		}
-		if visible := visibleWorkflows(items, ownerID); len(visible) > 0 {
+		if visible := visibleWorkflows(document.Items, ownerID); len(visible) > 0 {
 			return visible, nil
 		}
-		if workflowOwnerCount(items, ownerID)+len(candidates) > maxWorkflowsPerOwner {
+		if workflowOwnerCount(document.Items, ownerID)+len(candidates) > maxWorkflowsPerOwner {
 			return nil, workflowValidationError("每个用户最多保存 %d 个工作流", maxWorkflowsPerOwner)
 		}
 		for _, candidate := range candidates {
+			if err := s.validateTemplateReferences(document, candidate.TemplateReferences); err != nil {
+				return nil, err
+			}
 			stored := candidate
 			stored.Editable = false
-			items = append(items, stored)
+			document.Items = append(document.Items, stored)
 		}
-		if err := s.saveLocked(items); err != nil {
+		if err := s.saveLocked(document); err != nil {
 			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < workflowSaveAttempts {
 				continue
 			}
 			return nil, err
 		}
-		return visibleWorkflows(items, ownerID), nil
+		return visibleWorkflows(document.Items, ownerID), nil
 	}
 	return nil, fmt.Errorf("failed to initialize workflows")
 }
@@ -241,11 +254,11 @@ func (s *WorkflowService) Save(ownerID string, input CreativeWorkflow) (Creative
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for attempt := 0; attempt < workflowSaveAttempts; attempt++ {
-		items, err := s.loadLocked()
+		document, err := s.loadLocked()
 		if err != nil {
 			return CreativeWorkflow{}, err
 		}
-		index, current := workflowByID(items, input.ID)
+		index, current := workflowByID(document.Items, input.ID)
 		if current != nil && current.OwnerID != ownerID {
 			return CreativeWorkflow{}, ErrWorkflowAccessDenied
 		}
@@ -254,7 +267,7 @@ func (s *WorkflowService) Save(ownerID string, input CreativeWorkflow) (Creative
 			if !creating && input.Revision != 0 {
 				return CreativeWorkflow{}, workflowConcurrentMutationError(input.ID)
 			}
-			if workflowOwnerCount(items, ownerID) >= maxWorkflowsPerOwner {
+			if workflowOwnerCount(document.Items, ownerID) >= maxWorkflowsPerOwner {
 				return CreativeWorkflow{}, workflowValidationError("每个用户最多保存 %d 个工作流", maxWorkflowsPerOwner)
 			}
 			candidate.OwnerID = ownerID
@@ -279,7 +292,7 @@ func (s *WorkflowService) Save(ownerID string, input CreativeWorkflow) (Creative
 		if err := normalizeWorkflow(&candidate); err != nil {
 			return CreativeWorkflow{}, err
 		}
-		if err := s.validateTemplateReferencesAgainstPendingDeletion(ownerID, candidate.TemplateReferences); err != nil {
+		if err := s.validateTemplateReferences(document, candidate.TemplateReferences); err != nil {
 			return CreativeWorkflow{}, err
 		}
 		if err := validateWorkflowSaveLimits(candidate); err != nil {
@@ -288,11 +301,11 @@ func (s *WorkflowService) Save(ownerID string, input CreativeWorkflow) (Creative
 		stored := candidate
 		stored.Editable = false
 		if index < 0 {
-			items = append(items, stored)
+			document.Items = append(document.Items, stored)
 		} else {
-			items[index] = stored
+			document.Items[index] = stored
 		}
-		if err := s.saveLocked(items); err != nil {
+		if err := s.saveLocked(document); err != nil {
 			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < workflowSaveAttempts {
 				continue
 			}
@@ -321,11 +334,11 @@ func (s *WorkflowService) TouchLastRun(ownerID, id, lastRunAt string) (CreativeW
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for attempt := 0; attempt < workflowSaveAttempts; attempt++ {
-		items, err := s.loadLocked()
+		document, err := s.loadLocked()
 		if err != nil {
 			return CreativeWorkflow{}, err
 		}
-		index, current := workflowByID(items, id)
+		index, current := workflowByID(document.Items, id)
 		if index < 0 {
 			return CreativeWorkflow{}, fmt.Errorf("%w: %q", ErrWorkflowNotFound, id)
 		}
@@ -342,8 +355,8 @@ func (s *WorkflowService) TouchLastRun(ownerID, id, lastRunAt string) (CreativeW
 		candidate.LastRunAt = lastRunAt
 		candidate.UpdatedAt = latestWorkflowTimestamp(current.UpdatedAt, lastRunAt)
 		candidate.Editable = false
-		items[index] = candidate
-		if err := s.saveLocked(items); err != nil {
+		document.Items[index] = candidate
+		if err := s.saveLocked(document); err != nil {
 			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < workflowSaveAttempts {
 				continue
 			}
@@ -361,11 +374,11 @@ func (s *WorkflowService) Delete(ownerID, id string) error {
 	defer s.mu.Unlock()
 	var expected *CreativeWorkflow
 	for attempt := 0; attempt < workflowSaveAttempts; attempt++ {
-		items, err := s.loadLocked()
+		document, err := s.loadLocked()
 		if err != nil {
 			return err
 		}
-		_, current := workflowByID(items, id)
+		_, current := workflowByID(document.Items, id)
 		if attempt == 0 {
 			if current == nil {
 				return nil
@@ -379,13 +392,14 @@ func (s *WorkflowService) Delete(ownerID, id string) error {
 		if current.OwnerID != ownerID {
 			return ErrWorkflowAccessDenied
 		}
-		next := make([]CreativeWorkflow, 0, len(items))
-		for _, item := range items {
+		next := make([]CreativeWorkflow, 0, len(document.Items))
+		for _, item := range document.Items {
 			if item.ID != id {
 				next = append(next, item)
 			}
 		}
-		if err := s.saveLocked(next); err != nil {
+		document.Items = next
+		if err := s.saveLocked(document); err != nil {
 			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < workflowSaveAttempts {
 				continue
 			}
@@ -404,25 +418,34 @@ func (s *WorkflowService) ReserveStorageObjectDeletion(ownerID, objectID string)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	items, err := s.loadLocked()
-	if err != nil {
-		return err
-	}
-	for _, item := range items {
-		if item.OwnerID != ownerID {
-			continue
+	for attempt := 0; attempt < workflowSaveAttempts; attempt++ {
+		document, err := s.loadLocked()
+		if err != nil {
+			return err
 		}
-		for _, reference := range item.TemplateReferences {
-			if workflowTemplateReferenceObjectID(reference) == objectID {
-				return fmt.Errorf("%w by workflow %q", ErrStorageObjectInUse, item.Name)
+		for _, item := range document.Items {
+			for _, reference := range item.TemplateReferences {
+				if slices.Contains(workflowTemplateReferenceObjectIDs(reference), objectID) {
+					if item.OwnerID != ownerID {
+						return ErrStorageObjectInUse
+					}
+					return fmt.Errorf("%w by workflow %q", ErrStorageObjectInUse, item.Name)
+				}
 			}
 		}
+		if slices.Contains(document.PendingObjectDeletions[ownerID], objectID) {
+			return nil
+		}
+		document.PendingObjectDeletions[ownerID] = append(document.PendingObjectDeletions[ownerID], objectID)
+		if err := s.saveLocked(document); err != nil {
+			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < workflowSaveAttempts {
+				continue
+			}
+			return err
+		}
+		return nil
 	}
-	if s.pendingObjectDeletions[ownerID] == nil {
-		s.pendingObjectDeletions[ownerID] = make(map[string]struct{})
-	}
-	s.pendingObjectDeletions[ownerID][objectID] = struct{}{}
-	return nil
+	return storage.ErrConcurrentRowUpdate
 }
 
 func (s *WorkflowService) CompleteStorageObjectDeletion(ownerID, objectID string) error {
@@ -430,30 +453,63 @@ func (s *WorkflowService) CompleteStorageObjectDeletion(ownerID, objectID string
 	objectID = strings.TrimSpace(objectID)
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	pending := s.pendingObjectDeletions[ownerID]
-	delete(pending, objectID)
-	if len(pending) == 0 {
-		delete(s.pendingObjectDeletions, ownerID)
+	for attempt := 0; attempt < workflowSaveAttempts; attempt++ {
+		document, err := s.loadLocked()
+		if err != nil {
+			return err
+		}
+		pending := document.PendingObjectDeletions[ownerID]
+		if !slices.Contains(pending, objectID) {
+			return nil
+		}
+		remaining := slices.DeleteFunc(pending, func(id string) bool { return id == objectID })
+		if len(remaining) == 0 {
+			delete(document.PendingObjectDeletions, ownerID)
+		} else {
+			document.PendingObjectDeletions[ownerID] = remaining
+		}
+		if err := s.saveLocked(document); err != nil {
+			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < workflowSaveAttempts {
+				continue
+			}
+			return err
+		}
+		return nil
 	}
-	return nil
+	return storage.ErrConcurrentRowUpdate
 }
 
-func (s *WorkflowService) validateTemplateReferencesAgainstPendingDeletion(ownerID string, references []WorkflowTemplateReference) error {
-	pending := s.pendingObjectDeletions[ownerID]
+func (s *WorkflowService) validateTemplateReferences(document workflowDocument, references []WorkflowTemplateReference) error {
 	for _, reference := range references {
-		objectID := workflowTemplateReferenceObjectID(reference)
-		if _, exists := pending[objectID]; objectID != "" && exists {
-			return workflowValidationError("模板图 %q 正在删除，请重新选择", reference.Name)
+		for _, objectID := range workflowTemplateReferenceObjectIDs(reference) {
+			for _, pending := range document.PendingObjectDeletions {
+				if slices.Contains(pending, objectID) {
+					return workflowValidationError("模板图 %q 正在删除，请重新选择", reference.Name)
+				}
+			}
+			if s.objects == nil {
+				return workflowStorageError(errors.New("storage object backend is required"))
+			}
+			if _, err := s.objects.LoadStorageObject(objectID); err != nil {
+				if errors.Is(err, storage.ErrStorageObjectNotFound) {
+					return workflowValidationError("模板图 %q 不存在，请重新选择", reference.Name)
+				}
+				return workflowStorageError(err)
+			}
 		}
 	}
 	return nil
 }
 
-func workflowTemplateReferenceObjectID(reference WorkflowTemplateReference) string {
+func workflowTemplateReferenceObjectIDs(reference WorkflowTemplateReference) []string {
+	objectIDs := make([]string, 0, 2)
 	if objectID := storageObjectIDFromKey(reference.StorageKey); objectID != "" {
-		return objectID
+		objectIDs = append(objectIDs, objectID)
 	}
-	return canvasStorageObjectIDFromReference(reference.URL)
+	if objectID := canvasStorageObjectIDFromReference(reference.URL); objectID != "" && !slices.Contains(objectIDs, objectID) {
+		objectIDs = append(objectIDs, objectID)
+	}
+	return objectIDs
 }
 
 func workflowByID(items []CreativeWorkflow, id string) (int, *CreativeWorkflow) {
@@ -721,23 +777,24 @@ func normalizeSeriesConfig(config *WorkflowSeriesConfig) {
 	}
 }
 
-func (s *WorkflowService) loadLocked() ([]CreativeWorkflow, error) {
+func (s *WorkflowService) loadLocked() (workflowDocument, error) {
+	document := workflowDocument{Items: []CreativeWorkflow{}, PendingObjectDeletions: make(map[string][]string)}
 	raw, err := loadStoredJSON(s.store, workflowDocumentName)
 	if err != nil || raw == nil {
-		return []CreativeWorkflow{}, workflowStorageError(err)
+		return document, workflowStorageError(err)
 	}
 	data, err := json.Marshal(raw)
 	if err != nil {
-		return nil, workflowStorageError(err)
-	}
-	var document struct {
-		Items []CreativeWorkflow `json:"items"`
+		return workflowDocument{}, workflowStorageError(err)
 	}
 	if err := json.Unmarshal(data, &document); err != nil {
-		return nil, workflowStorageError(err)
+		return workflowDocument{}, workflowStorageError(err)
 	}
 	if document.Items == nil {
 		document.Items = []CreativeWorkflow{}
+	}
+	if document.PendingObjectDeletions == nil {
+		document.PendingObjectDeletions = make(map[string][]string)
 	}
 	for i := range document.Items {
 		if document.Items[i].Revision <= 0 {
@@ -748,15 +805,16 @@ func (s *WorkflowService) loadLocked() ([]CreativeWorkflow, error) {
 			if identifier == "" {
 				identifier = fmt.Sprintf("第 %d 条", i+1)
 			}
-			return nil, workflowStorageError(fmt.Errorf("工作流 %s 的存储数据无效: %w", identifier, err))
+			return workflowDocument{}, workflowStorageError(fmt.Errorf("工作流 %s 的存储数据无效: %w", identifier, err))
 		}
 	}
-	return document.Items, nil
+	return document, nil
 }
 
-func (s *WorkflowService) saveLocked(items []CreativeWorkflow) error {
-	if items == nil {
-		items = []CreativeWorkflow{}
+func (s *WorkflowService) saveLocked(document workflowDocument) error {
+	document.Version = 3
+	if document.Items == nil {
+		document.Items = []CreativeWorkflow{}
 	}
-	return workflowStorageError(saveStoredJSON(s.store, workflowDocumentName, map[string]any{"version": 3, "items": items}))
+	return workflowStorageError(saveStoredJSON(s.store, workflowDocumentName, document))
 }

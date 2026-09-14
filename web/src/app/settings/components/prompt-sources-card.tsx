@@ -224,7 +224,7 @@ export function PromptSourcesCard() {
                       </Button>
                     ) : null}
                     {!source.builtin ? (
-                      <Button type="button" variant="ghost" size="icon" className="size-8 text-rose-600" title="删除来源" aria-label={`删除${source.label}`} onClick={() => removeSource(source)}>
+                      <Button type="button" variant="ghost" size="icon" className="size-8 text-rose-600 dark:text-rose-300" title="删除来源" aria-label={`删除${source.label}`} onClick={() => removeSource(source)}>
                         <Trash2 className="size-4" />
                       </Button>
                     ) : null}

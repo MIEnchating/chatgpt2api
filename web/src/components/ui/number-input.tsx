@@ -120,8 +120,9 @@ const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
     return (
       <div
         className={cn(
-          "flex h-10 w-full min-w-0 items-center rounded-lg border border-input bg-background shadow-[0_1px_3px_rgba(0,0,0,0.03)] transition-[border-color,box-shadow,background-color] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/20",
+          "flex h-10 w-full min-w-0 items-center rounded-lg border border-input bg-background shadow-xs transition-[border-color,box-shadow,background-color] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/20 has-[input[aria-invalid=true]]:border-destructive has-[input[aria-invalid=true]]:focus-within:border-destructive has-[input[aria-invalid=true]]:focus-within:ring-destructive/20",
           disabled && "cursor-not-allowed bg-muted/50 opacity-60",
+          readOnly && "bg-muted/30",
           className,
         )}
       >
@@ -145,7 +146,7 @@ const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
             value={value}
             onChange={(event) => onValueChange(event.target.value)}
             className={cn(
-              "h-full min-w-0 appearance-none bg-transparent py-2 text-sm tabular-nums outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none",
+              "h-full min-w-0 max-w-full appearance-none bg-transparent py-2 text-sm tabular-nums outline-none placeholder:text-muted-foreground disabled:cursor-not-allowed [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none",
               controlsLayout === "split" ? "flex-none px-0 text-right" : "flex-1 px-3",
               inputClassName,
             )}
@@ -154,7 +155,7 @@ const NumberInput = React.forwardRef<HTMLInputElement, NumberInputProps>(
           {suffix ? (
             <span
               className={cn(
-                "shrink-0 text-xs font-medium text-muted-foreground",
+                "min-w-0 max-w-24 truncate text-xs font-medium text-muted-foreground",
                 controlsLayout === "split" ? "px-0" : "px-2",
               )}
             >

@@ -113,7 +113,7 @@ export function CanvasAssetPicker({ open, session, onInsert, onClose }: {
           </DialogHeader>
           <div className="flex shrink-0 items-center gap-1 border-b border-border px-5 pt-3 sm:px-6">
             {([{"value":"my-assets","label":"我的素材"},{"value":"library","label":"素材库"}] as const).map((item) => (
-              <button key={item.value} type="button" onClick={() => setTab(item.value)} className={cn("h-9 border-b-2 px-3 text-sm font-medium text-muted-foreground", tab === item.value ? "border-[#1456f0] text-[#1456f0]" : "border-transparent")}>{item.label}</button>
+              <button key={item.value} type="button" onClick={() => setTab(item.value)} className={cn("h-9 border-b-2 px-3 text-sm font-medium text-muted-foreground", tab === item.value ? "border-brand text-brand" : "border-transparent")}>{item.label}</button>
             ))}
           </div>
           <div className="flex shrink-0 flex-wrap items-center gap-2 px-5 pt-4 sm:px-6">
@@ -160,7 +160,7 @@ function CanvasAssetCard({ asset, onInsert }: { asset: MyAsset; onInsert: () => 
   const Icon = asset.kind === "image" ? ImageIcon : asset.kind === "video" ? Video : asset.kind === "audio" ? AudioLines : FileText;
   const preview = asset.coverUrl || asset.url || "";
   return (
-    <button type="button" className="group min-w-0 overflow-hidden rounded-lg border border-border bg-card text-left transition hover:border-[#9bb8f8] hover:shadow-md" onClick={onInsert}>
+    <button type="button" className="group min-w-0 overflow-hidden rounded-lg border border-border bg-card text-left transition hover:border-brand/40 hover:shadow-md" onClick={onInsert}>
       <div className="flex aspect-[4/3] items-center justify-center overflow-hidden bg-muted/50">
         {asset.kind === "image" && preview ? <AuthenticatedImage src={preview} alt={asset.title} className="size-full object-cover" /> : null}
         {asset.kind === "video" && preview ? <video src={`${preview}#t=0.1`} muted playsInline preload="metadata" className="size-full object-cover" /> : null}

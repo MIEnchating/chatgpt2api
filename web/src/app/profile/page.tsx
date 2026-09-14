@@ -352,7 +352,7 @@ function AccountResourcesCard({
     <Card className="overflow-hidden">
       <CardHeader className="pb-4">
         <div className="flex min-w-0 items-center gap-3">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-[#edf4ff] text-[#1456f0] ring-1 ring-blue-100 dark:bg-sky-950/30 dark:text-sky-300 dark:ring-sky-900/50">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/15">
             <KeyRound className="size-5" />
           </div>
           <div className="min-w-0">
@@ -661,7 +661,7 @@ function ImageGenerationPreferencesCard({ sessionKey }: { sessionKey: string }) 
     <Card data-profile-preferences-card className="overflow-hidden lg:h-full lg:min-h-0">
       <CardHeader
         data-profile-preferences-header
-        className="shrink-0 border-b border-border/80 bg-card p-5 sm:p-6"
+        className="shrink-0 border-b border-border bg-card p-4 sm:p-5"
       >
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
@@ -682,9 +682,8 @@ function ImageGenerationPreferencesCard({ sessionKey }: { sessionKey: string }) 
       <ScrollArea
         data-profile-preferences-body
         className="min-h-0 lg:flex-1"
-        viewportClassName="pr-4"
       >
-        <CardContent className="space-y-6 pb-6 pt-5 sm:pt-6">
+        <CardContent className="space-y-6 p-4 sm:p-5">
         <section className="space-y-4 border-t border-border/70 pt-5 first:border-t-0 first:pt-0">
           <div>
             <h2 className="text-sm font-semibold text-foreground">默认模型</h2>
@@ -812,20 +811,21 @@ function ImageGenerationPreferencesCard({ sessionKey }: { sessionKey: string }) 
 function AccountOverviewCard({ balance, isLoading, onRefresh, session }: { balance: ProfileBalanceStatus | null; isLoading: boolean; onRefresh: () => void; session: StoredAuthSession }) {
   const roleLabel = sessionRoleLabel(session);
   const subjectId = displaySubjectId(session.subjectId, session.provider);
+  const showBalance = session.provider === "newapi" || session.provider === "sub2api";
   return (
     <Card className="overflow-hidden">
       <CardHeader className="pb-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-3">
             <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground"><UserCircle2 className="size-5" /></div>
-            <div className="min-w-0"><CardTitle className="truncate text-lg leading-7">{session.name || "用户"}</CardTitle><p className="mt-1 text-sm text-muted-foreground">账户信息与使用额度</p></div>
+            <div className="min-w-0"><CardTitle className="truncate text-lg leading-7">{session.name || "用户"}</CardTitle><p className="mt-1 text-sm text-muted-foreground">{showBalance ? "账户信息与使用额度" : "账户信息"}</p></div>
           </div>
           <Badge variant={session.role === "admin" ? "violet" : "secondary"} className="shrink-0 rounded-md">{roleLabel}</Badge>
         </div>
       </CardHeader>
       <CardContent>
-        <div className="grid gap-6 lg:grid-cols-2 lg:divide-x lg:divide-border/70">
-          <section className="min-w-0 lg:pr-6">
+        <div className={showBalance ? "grid gap-6 lg:grid-cols-2 lg:divide-x lg:divide-border/70" : "grid gap-6"}>
+          <section className={showBalance ? "min-w-0 lg:pr-6" : "min-w-0"}>
             <h2 className="mb-2 text-sm font-semibold text-foreground">基本信息</h2>
             <div className="border-y border-border/70 px-1">
               <SidebarInfoRow label="用户 ID" value={subjectId} code />
@@ -834,7 +834,7 @@ function AccountOverviewCard({ balance, isLoading, onRefresh, session }: { balan
               <SidebarInfoRow label="每分钟请求限制" value={creationRpmLimitLabel(session)} />
             </div>
           </section>
-          <section className="min-w-0 lg:pl-6">
+          {showBalance ? <section className="min-w-0 lg:pl-6">
             <div className="mb-2 flex h-8 items-center justify-between gap-3">
               <div className="flex items-center gap-2"><WalletCards className="size-4 text-muted-foreground" /><h2 className="text-sm font-semibold text-foreground">账户概览</h2></div>
               <Button type="button" variant="ghost" size="icon" className="size-8" onClick={onRefresh} disabled={isLoading} aria-label="刷新账户概览" title="刷新账户概览">{isLoading ? <LoaderCircle className="size-4 animate-spin" /> : <RefreshCw className="size-4" />}</Button>
@@ -842,7 +842,7 @@ function AccountOverviewCard({ balance, isLoading, onRefresh, session }: { balan
             {isLoading ? <div className="flex h-36 items-center justify-center text-sm text-muted-foreground"><LoaderCircle className="mr-2 size-4 animate-spin" />正在读取</div> : balance?.has_balance ? (
               <div className="border-y border-border/70 px-1"><SidebarInfoRow label="当前余额" value={formatYunMianQuota(balance.quota)} /><SidebarInfoRow label="已用额度" value={formatYunMianQuota(balance.used_quota)} /><SidebarInfoRow label="邮箱" value={balance.email || "-"} /></div>
             ) : <div className="flex min-h-36 items-center justify-center border-y border-border/70 px-4 text-center text-xs leading-5 text-muted-foreground">{balance?.database_configured === false || /数据库连接/.test(balance?.message || "") ? session.role === "admin" ? "请先配置数据库连接" : "数据库连接未配置，请联系管理员" : balance?.message || "暂时无法读取账户余额"}</div>}
-          </section>
+          </section> : null}
         </div>
       </CardContent>
     </Card>
@@ -957,11 +957,11 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
 
   return (
     <ScrollArea
-      className="h-full min-h-0"
-      viewportClassName="pr-4 lg:pr-0"
+      className="h-full min-h-0 min-w-0"
+      viewportClassName="pr-1 lg:pr-0"
       viewStyle={{ height: "100%", minHeight: "100%" }}
     >
-      <div data-profile-layout className="grid min-h-full w-full grid-cols-[minmax(0,1fr)] items-start gap-4 pr-1 lg:h-full lg:min-h-0 lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-5 2xl:grid-cols-[240px_minmax(0,1fr)]">
+      <div data-profile-layout className="grid min-h-full w-full grid-cols-[minmax(0,1fr)] items-start gap-[var(--page-section-gap)] lg:h-full lg:min-h-0 lg:grid-cols-[220px_minmax(0,1fr)] 2xl:grid-cols-[240px_minmax(0,1fr)]">
         <SectionNavigation
           title="个人设置"
           description="管理账户与创作偏好"
@@ -1001,7 +1001,7 @@ export default function ProfilePage() {
   if (isCheckingAuth || !session) {
     return (
       <div className="flex min-h-[40vh] items-center justify-center">
-        <LoaderCircle className="size-5 animate-spin text-stone-400" />
+        <LoaderCircle className="size-5 animate-spin text-muted-foreground" />
       </div>
     );
   }

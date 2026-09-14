@@ -2,6 +2,8 @@ package protocol
 
 import (
 	"bytes"
+	"encoding/base64"
+	"fmt"
 	"testing"
 )
 
@@ -71,5 +73,54 @@ func TestExtractImagesFromMessageContentRejectsMalformedDataURLs(t *testing.T) {
 	if len(images) != 2 || images[0].ContentType != "image/png" || !bytes.Equal(images[0].Data, []byte{1, 2, 3}) ||
 		images[1].ContentType != "image/jpeg" || !bytes.Equal(images[1].Data, []byte{4, 5, 6}) {
 		t.Fatalf("ExtractImagesFromMessageContent() = %#v", images)
+	}
+}
+
+func TestExtractChatContextImagesKeepsLatestValidImagesInOrder(t *testing.T) {
+	for _, textContent := range []bool{false, true} {
+		t.Run(fmt.Sprintf("text=%v", textContent), func(t *testing.T) {
+			var messages []map[string]any
+			for start := 0; start < 24; start += 6 {
+				var parts []map[string]any
+				var text string
+				for index := start; index < start+6; index++ {
+					value := "data:image/png;base64," + base64.StdEncoding.EncodeToString([]byte{byte(index)})
+					parts = append(parts, map[string]any{"type": "input_image", "image_url": value})
+					text += "![image](" + value + ")\n"
+				}
+				parts = append(parts, map[string]any{"type": "input_image", "image_url": "data:image/png;base64,A"})
+				text += "![invalid](data:image/png;base64,A)\n"
+				var content any = parts
+				if textContent {
+					content = text
+				}
+				messages = append(messages, map[string]any{"role": "user", "content": content})
+			}
+			images := ExtractChatContextImages(map[string]any{"messages": messages})
+			if len(images) != 14 {
+				t.Fatalf("image count = %d, want 14", len(images))
+			}
+			for index, image := range images {
+				if !bytes.Equal(image.Data, []byte{byte(index + 10)}) || image.ContentType != "image/png" {
+					t.Errorf("image %d = %#v, want data %d", index, image, index+10)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkExtractChatContextImagesLongHistory(b *testing.B) {
+	encoded := "data:image/png;base64," + base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{1}, 64<<10))
+	messages := make([]map[string]any, 100)
+	for index := range messages {
+		messages[index] = map[string]any{"role": "user", "content": []map[string]any{{"type": "input_image", "image_url": encoded}}}
+	}
+	payload := map[string]any{"messages": messages}
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		if images := ExtractChatContextImages(payload); len(images) != 14 {
+			b.Fatalf("image count = %d, want 14", len(images))
+		}
 	}
 }

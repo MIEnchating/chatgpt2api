@@ -9,5 +9,25 @@ if ((${#go_files[@]} == 0)); then
   exit 0
 fi
 
-gofmt -w -- "${go_files[@]}"
-git add -- "${go_files[@]}"
+format_files=()
+for file in "${go_files[@]}"; do
+  if git diff --quiet -- "$file"; then
+    format_files+=("$file")
+    continue
+  fi
+
+  if ! needs_formatting="$(git show ":$file" | gofmt -l)"; then
+    printf 'pre-commit: cannot format staged Go file: %s\n' "$file" >&2
+    exit 1
+  fi
+  if [[ -n "$needs_formatting" ]]; then
+    printf 'pre-commit: partially staged Go file needs gofmt: %s\n' "$file" >&2
+    printf 'Format and stage the intended changes before committing.\n' >&2
+    exit 1
+  fi
+done
+
+if ((${#format_files[@]} > 0)); then
+  gofmt -w -- "${format_files[@]}"
+  git add -- "${format_files[@]}"
+fi

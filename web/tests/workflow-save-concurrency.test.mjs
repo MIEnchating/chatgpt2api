@@ -44,5 +44,5 @@ test("workflow saves use a synchronous gate and keep the editor locked while pen
   assert.match(workspaceSource, /aria-busy=\{saving\}/);
   assert.match(workspaceSource, /<fieldset disabled=\{saving\} className="contents space-y-6">/);
   assert.match(workspaceSource, /variant="outline" disabled=\{saving\} onClick=\{onClose\}>取消/);
-  assert.match(workspaceSource, /disabled=\{saving \|\| !workflow\.name\.trim\(\)/);
+  assert.match(workspaceSource, /disabled=\{saving \|\| referenceBusy \|\| !workflow\.name\.trim\(\)/);
 });

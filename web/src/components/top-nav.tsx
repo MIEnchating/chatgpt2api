@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ChevronDown, LogOut, MoonStar, ShieldCheck, Sun, UserCircle2 } from "lucide-react";
+import { ChevronDown, LogOut, ShieldCheck, UserCircle2 } from "lucide-react";
 import { motion, useReducedMotion, type Transition } from "motion/react";
 import { Link, NavLink, useLocation, useNavigate } from "react-router-dom";
 
 import { ImageTaskQueue } from "@/components/image-task-queue";
 import { AnnouncementCenter } from "@/components/announcement-center";
+import { ThemeToggle } from "@/components/theme-toggle";
 import {
   clearVerifiedAuthSession,
   displaySubjectId,
@@ -21,12 +22,6 @@ import { logout } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import { useAppMeta } from "@/lib/use-app-meta";
 import { resolveSiteIconSrc } from "@/lib/app-meta";
-import {
-  applyColorTheme,
-  getPreferredColorTheme,
-  saveColorTheme,
-  type ColorTheme,
-} from "@/lib/theme";
 
 const navItems = [
   { href: "/studio", label: "创作台" },
@@ -51,34 +46,6 @@ const reducedNavActiveTransition: Transition = {
   duration: 0.01,
 };
 
-function ThemeToggleButton({
-  theme,
-  onToggle,
-  className,
-}: {
-  theme: ColorTheme;
-  onToggle: (button: HTMLButtonElement) => void;
-  className?: string;
-}) {
-  const dark = theme === "dark";
-
-  return (
-    <Button
-      type="button"
-      variant="ghost"
-      size="icon"
-      className={cn("relative size-8 rounded-full", className)}
-      onClick={(event) => onToggle(event.currentTarget)}
-      aria-label={dark ? "切换到浅色模式" : "切换到深色模式"}
-      title={dark ? "浅色模式" : "深色模式"}
-    >
-      <Sun className="scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" />
-      <MoonStar className="absolute scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" />
-      <span className="sr-only">切换界面主题</span>
-    </Button>
-  );
-}
-
 type NavItem = {
   href: string;
   label: string;
@@ -88,19 +55,26 @@ function isActivePath(pathname: string, href: string) {
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
-function NavPill({ item, pathname }: { item: NavItem; pathname: string }) {
+function NavPill({ item, pathname, onPreloadRoute }: {
+  item: NavItem;
+  pathname: string;
+  onPreloadRoute: (pathname: string) => void;
+}) {
   const active = isActivePath(pathname, item.href);
   const prefersReducedMotion = useReducedMotion();
 
   return (
     <NavLink
       to={item.href}
+      onPointerEnter={() => onPreloadRoute(item.href)}
+      onFocus={() => onPreloadRoute(item.href)}
+      onTouchStart={() => onPreloadRoute(item.href)}
       className={() =>
         cn(
-          "relative isolate shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-[13px] font-medium transition-colors sm:text-sm",
+          "relative isolate shrink-0 whitespace-nowrap rounded-lg px-3 py-2 text-[13px] font-medium transition-colors sm:text-sm",
           active
-            ? "text-[#18181b] dark:text-accent-foreground"
-            : "text-[#45515e] hover:bg-black/[0.05] hover:text-[#18181b] dark:text-muted-foreground dark:hover:bg-accent dark:hover:text-accent-foreground",
+            ? "text-accent-foreground"
+            : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
         )
       }
     >
@@ -108,7 +82,7 @@ function NavPill({ item, pathname }: { item: NavItem; pathname: string }) {
         <motion.span
           layoutId={NAV_ACTIVE_LAYOUT_ID}
           transition={prefersReducedMotion ? reducedNavActiveTransition : navActiveTransition}
-          className="absolute inset-0 -z-10 rounded-full bg-black/[0.06] shadow-[inset_0_0_0_1px_rgba(20,86,240,0.08)] dark:bg-accent"
+          className="absolute inset-0 -z-10 rounded-lg bg-accent"
         />
       ) : null}
       <motion.span
@@ -126,11 +100,13 @@ function AccountMenu({
   session,
   roleLabel,
   pathname,
+  onPreloadRoute,
   onLogout,
 }: {
   session: StoredAuthSession;
   roleLabel: string;
   pathname: string;
+  onPreloadRoute: (pathname: string) => void;
   onLogout: () => Promise<void>;
 }) {
   const [open, setOpen] = useState(false);
@@ -147,8 +123,8 @@ function AccountMenu({
           type="button"
           variant="outline"
           className={cn(
-            "h-9 rounded-full px-2.5 shadow-none",
-            profileActive ? "border-[#1456f0]/30 bg-[#edf4ff] text-[#1456f0] dark:bg-sky-950/30 dark:text-sky-300" : "",
+            "h-9 rounded-lg px-2.5 shadow-none",
+            profileActive ? "border-brand/30 bg-brand/10 text-brand" : "",
           )}
           aria-label="账号菜单"
         >
@@ -162,12 +138,12 @@ function AccountMenu({
       <PopoverContent
         align="end"
         sideOffset={8}
-        className="w-[min(calc(100vw-2rem),260px)] rounded-2xl border-border bg-card p-1.5 text-card-foreground shadow-[0_18px_48px_-26px_rgba(15,23,42,0.5)] dark:border-border dark:bg-card"
+        className="w-[min(calc(100vw-2rem),280px)] p-1.5"
       >
         <div className="flex flex-col gap-1">
           <div className="rounded-xl bg-muted/55 px-3 py-2.5">
             <div className="flex min-w-0 items-center gap-2.5">
-              <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-[#181d25] text-sm font-semibold text-white shadow-[0_8px_18px_-12px_rgba(15,23,42,0.65)] dark:bg-primary dark:text-primary-foreground">
+              <span className="flex size-10 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-semibold text-primary-foreground">
                 {initial}
               </span>
               <div className="min-w-0 flex-1 space-y-1">
@@ -188,9 +164,12 @@ function AccountMenu({
           <div className="grid grid-cols-1 gap-1">
             <Link
               to={profileNavItem.href}
+              onPointerEnter={() => onPreloadRoute(profileNavItem.href)}
+              onFocus={() => onPreloadRoute(profileNavItem.href)}
+              onTouchStart={() => onPreloadRoute(profileNavItem.href)}
               className={cn(
                 "flex h-9 items-center gap-2 rounded-xl px-2.5 text-sm font-medium transition hover:bg-accent hover:text-accent-foreground",
-                profileActive ? "bg-[#edf4ff] text-[#1456f0] dark:bg-sky-950/30 dark:text-sky-300" : "text-foreground",
+                profileActive ? "bg-brand/10 text-brand" : "text-foreground",
               )}
               onClick={() => setOpen(false)}
             >
@@ -198,13 +177,13 @@ function AccountMenu({
                 <UserCircle2 className="size-4" />
               </span>
               <span className="flex-1 text-left">个人中心</span>
-              {profileActive ? <ShieldCheck className="size-4 text-[#1456f0] dark:text-sky-300" /> : null}
+              {profileActive ? <ShieldCheck className="size-4 text-brand" /> : null}
             </Link>
           </div>
 
           <button
             type="button"
-            className="flex h-9 items-center gap-2 rounded-xl px-2.5 text-sm font-medium text-rose-600 transition hover:bg-rose-50 hover:text-rose-700 dark:text-rose-400 dark:hover:bg-rose-950/30"
+            className="flex h-9 items-center gap-2 rounded-xl px-2.5 text-sm font-medium text-rose-600 transition hover:bg-rose-50 hover:text-rose-700 dark:text-rose-400 dark:hover:bg-rose-950/30 dark:hover:text-rose-300"
             onClick={() => {
               setOpen(false);
               void onLogout();
@@ -221,13 +200,12 @@ function AccountMenu({
   );
 }
 
-export function TopNav() {
+export function TopNav({ onPreloadRoute }: { onPreloadRoute: (pathname: string) => void }) {
   const location = useLocation();
   const navigate = useNavigate();
   const appMeta = useAppMeta();
   const pathname = location.pathname.replace(/\/+$/, "") || "/";
   const [session, setSession] = useState<StoredAuthSession | null | undefined>(() => getCachedAuthSession());
-  const [theme, setTheme] = useState<ColorTheme>(() => getPreferredColorTheme());
 
   useEffect(() => {
     let active = true;
@@ -291,23 +269,6 @@ export function TopNav() {
     navigate("/login", { replace: true });
   };
 
-  const handleThemeToggle = (button: HTMLButtonElement) => {
-    const nextTheme = theme === "dark" ? "light" : "dark";
-    const rect = button.getBoundingClientRect();
-    applyColorTheme(
-      nextTheme,
-      {
-        force: true,
-        origin: {
-          x: rect.left + rect.width / 2,
-          y: rect.top + rect.height / 2,
-        },
-      },
-    );
-    saveColorTheme(nextTheme);
-    setTheme(nextTheme);
-  };
-
   if (pathname === "/login" || session === undefined || !session) {
     return null;
   }
@@ -317,35 +278,36 @@ export function TopNav() {
   const canAccessImageTasks = canAccessPath(session, "/studio");
 
   return (
-    <header className="sticky top-3 z-40 rounded-2xl border border-border bg-card/92 shadow-[0_12px_36px_-28px_rgba(15,23,42,0.55)] backdrop-blur dark:border-border dark:bg-card/92">
+    <header className="relative z-40 shrink-0 rounded-xl border border-border bg-card/95 soft-card-shadow backdrop-blur">
       <div className="grid min-h-14 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-2 px-3 py-2 xl:grid-cols-[auto_minmax(0,1fr)_auto] xl:gap-4 xl:px-4">
         <div className="flex min-w-0 items-center gap-2 xl:col-start-1 xl:justify-self-start">
-          <div className="flex h-9 max-w-[190px] items-center gap-2 rounded-xl px-1.5 pr-2 text-[15px] font-semibold text-[#18181b] sm:max-w-none dark:text-foreground">
+          <div className="flex h-9 max-w-[190px] items-center gap-2 rounded-xl px-1.5 pr-2 text-[15px] font-semibold text-foreground sm:max-w-none">
             <img
               src={resolveSiteIconSrc(appMeta.site_icon_url)}
               alt=""
               aria-hidden="true"
-              className="size-7 rounded-[10px] shadow-[0_4px_10px_rgba(184,90,127,0.16)]"
+              className="size-7 shrink-0 rounded-lg"
             />
             <span className="truncate">{appMeta.app_title}</span>
           </div>
         </div>
         <nav
           aria-label="主导航"
-          className="hide-scrollbar col-span-2 row-start-2 -mx-1 flex min-w-0 gap-1 overflow-x-auto overscroll-x-contain px-1 pb-0.5 scroll-px-1 touch-pan-x [-webkit-overflow-scrolling:touch] xl:col-span-1 xl:col-start-2 xl:row-start-1 xl:mx-0 xl:w-full xl:justify-self-stretch xl:gap-1.5 xl:px-0 xl:pb-0 [@media(min-width:1280px)]:[justify-content:safe_center]"
+          className="hide-scrollbar col-span-2 row-start-2 -mx-1 flex min-w-0 gap-1 overflow-x-auto overscroll-x-contain px-1 pb-0.5 scroll-px-1 touch-pan-x [-webkit-overflow-scrolling:touch] xl:col-span-1 xl:col-start-2 xl:row-start-1 xl:mx-0 xl:w-full xl:justify-self-stretch xl:gap-1.5 xl:px-1 xl:py-1 [@media(min-width:1280px)]:[justify-content:safe_center]"
         >
           {visibleNavItems.map((item) => (
-            <NavPill key={item.href} item={item} pathname={pathname} />
+            <NavPill key={item.href} item={item} pathname={pathname} onPreloadRoute={onPreloadRoute} />
           ))}
         </nav>
         <div className="col-start-2 row-start-1 flex items-center justify-end gap-1 xl:col-start-3 xl:gap-1.5 xl:justify-self-end">
-          {canAccessImageTasks ? <ImageTaskQueue key={session.key} className="size-8 px-0 lg:h-9 lg:w-auto lg:px-3" /> : null}
-          <AnnouncementCenter key={session.key} sessionKey={session.key} />
-          <ThemeToggleButton theme={theme} onToggle={handleThemeToggle} />
+          {canAccessImageTasks ? <ImageTaskQueue key={`task-queue:${session.key}`} className="size-8 px-0 lg:h-9 lg:w-auto lg:px-3" /> : null}
+          <AnnouncementCenter key={`announcements:${session.key}`} sessionKey={session.key} />
+          <ThemeToggle />
           <AccountMenu
             session={session}
             roleLabel={roleLabel}
             pathname={pathname}
+            onPreloadRoute={onPreloadRoute}
             onLogout={handleLogout}
           />
         </div>

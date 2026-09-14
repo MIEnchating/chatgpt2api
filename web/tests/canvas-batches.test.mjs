@@ -34,6 +34,24 @@ test("a batch without an explicit expansion flag starts collapsed like the refer
   assert.deepEqual(visibleCanvasNodes([root, childA, childB]).map((item) => item.id), ["root"]);
 });
 
+test("batch visibility keeps orphan children and resolves roots appearing after their children", () => {
+  const orphan = node("orphan", { batch_root_id: "missing" });
+  const child = node("child", { batch_root_id: "root" });
+  const root = node("root", { batch_child_ids: ["child"] });
+  assert.deepEqual(visibleCanvasNodes([orphan, child, root]), [orphan, root]);
+  assert.deepEqual(visibleCanvasNodes([orphan, child, { ...root, batch_expanded: true }]).map((item) => item.id), ["orphan", "child", "root"]);
+});
+
+test("batch visibility performs bounded work for a full 500-node canvas", () => {
+  let idReads = 0;
+  const nodes = Array.from({ length: 500 }, (_, index) => ({
+    ...node(`node-${index}`, index % 10 ? { batch_root_id: `node-${index - index % 10}` } : {}),
+    get id() { idReads += 1; return `node-${index}`; },
+  }));
+  assert.equal(visibleCanvasNodes(nodes).length, 50);
+  assert.ok(idReads <= nodes.length * 3, `visibility read node IDs ${idReads} times`);
+});
+
 test("batch children animate toward the same stack positions as the reference project", () => {
   const root = node("root", { x: 100, y: 80, batch_child_ids: ["a", "b"] });
   const childA = node("a", { x: 500, y: 240, batch_root_id: "root" });

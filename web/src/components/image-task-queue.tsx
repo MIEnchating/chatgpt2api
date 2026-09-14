@@ -120,7 +120,7 @@ function getStatusClass(status: ImageTurnStatus) {
     return "bg-amber-50 text-amber-700 ring-amber-100 dark:bg-amber-950/30 dark:text-amber-300 dark:ring-amber-800";
   }
   if (status === "generating") {
-    return "bg-sky-50 text-[#1456f0] ring-sky-100 dark:bg-sky-950/30 dark:text-sky-300 dark:ring-sky-800";
+    return "bg-sky-50 text-brand ring-sky-100 dark:bg-sky-950/30 dark:text-sky-300 dark:ring-sky-800";
   }
   return "bg-muted text-muted-foreground ring-border";
 }
@@ -317,22 +317,22 @@ function QueueItem({
           className={cn(
             "mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-md ring-1",
             isQueued
-              ? "bg-amber-50 text-amber-700 ring-amber-100"
-              : "bg-sky-50 text-[#1456f0] ring-sky-100",
+              ? "bg-amber-50 text-amber-700 ring-amber-100 dark:bg-amber-950/35 dark:text-amber-300 dark:ring-amber-800/70"
+              : "bg-sky-50 text-brand ring-sky-100 dark:bg-sky-950/35 dark:ring-sky-800/70",
           )}
         >
           {isQueued ? <Clock3 className="size-4" /> : <LoaderCircle className="size-4 animate-spin" />}
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center justify-between gap-2">
-            <p className="truncate text-sm font-semibold text-[#222222] dark:text-foreground">
+            <p className="truncate text-sm font-semibold text-foreground">
               {item.conversationTitle || item.turn.prompt || "未命名任务"}
             </p>
             <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ring-1", getStatusClass(effectiveStatus))}>
               {getStatusLabel(effectiveStatus)}
             </span>
           </div>
-          <p className="mt-1 line-clamp-2 text-xs leading-5 text-[#45515e] dark:text-muted-foreground">
+          <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
             {item.turn.prompt || "无提示词内容"}
           </p>
 
@@ -351,14 +351,14 @@ function QueueItem({
           </div>
 
           <div className="mt-3">
-            <div className="mb-1.5 flex items-center justify-between gap-2 text-[11px] text-[#45515e] dark:text-muted-foreground">
-              <span className="truncate font-medium text-[#222222] dark:text-foreground">{progressMessage}</span>
+            <div className="mb-1.5 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+              <span className="truncate font-medium text-foreground">{progressMessage}</span>
               <span className="shrink-0 font-mono tabular-nums">{progressPercent}%</span>
             </div>
             <div className="h-1.5 overflow-hidden rounded-full bg-[#edf2f7] dark:bg-muted">
               <div className="h-full rounded-full bg-[#1456f0] transition-[width] duration-300" style={{ width: `${progressPercent}%` }} />
             </div>
-            <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px] text-[#8e8e93] dark:text-muted-foreground">
+            <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
               <span className="truncate">{longTaskHint || progressDetail || formatQueueTime(item.turn.createdAt)}</span>
               {elapsed ? <span className="shrink-0 font-mono tabular-nums">已运行 {elapsed}</span> : null}
             </div>
@@ -395,19 +395,19 @@ function CompletionItem({
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center justify-between gap-2">
-            <p className="truncate text-sm font-semibold text-[#222222] dark:text-foreground">
+            <p className="truncate text-sm font-semibold text-foreground">
               {item.conversationTitle || item.turn.prompt || "未命名任务"}
             </p>
             <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ring-1", tone.badgeClass)}>
               {getStatusLabel(item.finalStatus)}
             </span>
           </div>
-          <p className="mt-1 line-clamp-2 text-xs leading-5 text-[#45515e] dark:text-muted-foreground">
+          <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">
             {item.turn.prompt || "无提示词内容"}
           </p>
           <div className="mt-3">
-            <div className="mb-1.5 flex items-center justify-between gap-2 text-[11px] text-[#45515e] dark:text-muted-foreground">
-              <span className="truncate font-medium text-[#222222] dark:text-foreground">{tone.message}</span>
+            <div className="mb-1.5 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+              <span className="truncate font-medium text-foreground">{tone.message}</span>
               <span className="shrink-0 font-mono tabular-nums">{resultText}</span>
             </div>
             <div className="h-1.5 overflow-hidden rounded-full bg-[#edf2f7] dark:bg-muted">
@@ -436,7 +436,7 @@ function CanvasQueueItem({ item, now, onOpenCanvas }: { item: CanvasTaskQueueIte
   const elapsed = formatElapsedClock(Math.max(0, Math.floor(((item.completedAt || now) - item.startedAt) / 1000)));
   const statusLabel = item.status === "generating" ? "处理中" : successful ? "已完成" : item.status === "cancelled" ? "已终止" : "失败";
   const tone = item.status === "generating"
-    ? "bg-sky-50 text-[#1456f0] ring-sky-100 dark:bg-sky-950/30 dark:text-sky-300 dark:ring-sky-800"
+    ? "bg-sky-50 text-brand ring-sky-100 dark:bg-sky-950/30 dark:text-sky-300 dark:ring-sky-800"
     : successful
       ? "bg-emerald-50 text-emerald-700 ring-emerald-100 dark:bg-emerald-950/30 dark:text-emerald-300 dark:ring-emerald-800"
       : item.status === "cancelled"
@@ -458,20 +458,20 @@ function CanvasQueueItem({ item, now, onOpenCanvas }: { item: CanvasTaskQueueIte
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center justify-between gap-2">
-            <p className="truncate text-sm font-semibold text-[#222222] dark:text-foreground">{item.title || `${meta.label}任务`}</p>
+            <p className="truncate text-sm font-semibold text-foreground">{item.title || `${meta.label}任务`}</p>
             <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ring-1", tone)}>{statusLabel}</span>
           </div>
-          <p className="mt-1 line-clamp-2 text-xs leading-5 text-[#45515e] dark:text-muted-foreground">{item.prompt || "无提示词内容"}</p>
+          <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{item.prompt || "无提示词内容"}</p>
           <p className="mt-1.5 truncate text-[11px] text-muted-foreground">{["无限画布", meta.label, item.model, `${item.completedCount + item.failedCount}/${item.totalCount}`].filter(Boolean).join(" · ")}</p>
           <div className="mt-3">
-            <div className="mb-1.5 flex items-center justify-between gap-2 text-[11px] text-[#45515e] dark:text-muted-foreground">
-              <span className="truncate font-medium text-[#222222] dark:text-foreground">{item.error || `${item.canvasTitle} · ${statusLabel}`}</span>
+            <div className="mb-1.5 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+              <span className="truncate font-medium text-foreground">{item.error || `${item.canvasTitle} · ${statusLabel}`}</span>
               <span className="shrink-0 font-mono tabular-nums">{item.progress}%</span>
             </div>
             <div className="h-1.5 overflow-hidden rounded-full bg-[#edf2f7] dark:bg-muted">
               <div className={cn("h-full rounded-full transition-[width] duration-300", successful ? "bg-emerald-500" : item.status === "error" ? "bg-rose-500" : item.status === "cancelled" ? "bg-amber-500" : "bg-[#1456f0]")} style={{ width: `${item.progress}%` }} />
             </div>
-            <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px] text-[#8e8e93] dark:text-muted-foreground">
+            <div className="mt-1.5 flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
               <span className="truncate">{item.canvasTitle}</span>
               <span className="shrink-0 font-mono tabular-nums">{terminal ? "耗时" : "已运行"} {elapsed}</span>
             </div>
@@ -593,9 +593,9 @@ export function ImageTaskQueue({ className }: { className?: string }) {
           className={cn(
             "h-9 rounded-lg px-2.5 shadow-none",
             activeCount > 0
-              ? "border-sky-200 bg-sky-50 text-[#1456f0] hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-300"
+              ? "border-sky-200 bg-sky-50 text-brand hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950/30 dark:text-sky-300 dark:hover:bg-sky-950/35"
               : hasRecentCompletion
-                ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300"
+                ? "border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/30 dark:text-emerald-300 dark:hover:bg-emerald-950/35"
               : "border-border bg-background text-muted-foreground hover:bg-accent hover:text-accent-foreground",
             className,
           )}
@@ -620,12 +620,12 @@ export function ImageTaskQueue({ className }: { className?: string }) {
       <PopoverContent align="end" sideOffset={8} className="w-[min(calc(100vw-2rem),420px)] overflow-hidden rounded-lg p-0">
         <div className="flex items-center justify-between gap-3 border-b border-[#f2f3f5] px-4 py-3 dark:border-border">
           <div className="flex min-w-0 items-center gap-2">
-            <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-[#edf4ff] text-[#1456f0] dark:bg-sky-950/30 dark:text-sky-300">
+            <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-brand-soft text-brand dark:bg-sky-950/30 dark:text-sky-300">
               <ClipboardList className="size-4" />
             </span>
             <div className="min-w-0">
-              <div className="text-sm font-semibold text-[#222222] dark:text-foreground">任务队列</div>
-              <div className="text-xs text-[#8e8e93] dark:text-muted-foreground">
+              <div className="text-sm font-semibold text-foreground">任务队列</div>
+              <div className="text-xs text-muted-foreground">
                 {activeCount > 0
                   ? `${activeCount} 个任务正在排队或处理`
                   : hasRecentCompletion
@@ -663,8 +663,8 @@ export function ImageTaskQueue({ className }: { className?: string }) {
             <span className="mx-auto flex size-10 items-center justify-center rounded-lg border border-emerald-100 bg-emerald-50 text-emerald-600 shadow-sm dark:border-emerald-900/60 dark:bg-emerald-950/30 dark:text-emerald-300">
               <CheckCircle2 className="size-5" />
             </span>
-            <div className="mt-3 text-sm font-semibold text-[#222222] dark:text-foreground">暂无处理中的任务</div>
-            <div className="mt-1 text-xs leading-5 text-[#8e8e93] dark:text-muted-foreground">新任务开始后，状态与进度会显示在这里</div>
+            <div className="mt-3 text-sm font-semibold text-foreground">暂无处理中的任务</div>
+            <div className="mt-1 text-xs leading-5 text-muted-foreground">新任务开始后，状态与进度会显示在这里</div>
           </div>
         )}
       </PopoverContent>

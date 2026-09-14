@@ -70,6 +70,7 @@ export function applyColorTheme(theme: ColorTheme, options: ThemeTransitionOptio
   const startViewTransition = (document as ViewTransitionDocument).startViewTransition;
   if (
     origin
+    && !window.matchMedia("(prefers-reduced-motion: reduce)").matches
     && typeof startViewTransition === "function"
     && (options.force || shouldAnimateThemeTransition())
   ) {

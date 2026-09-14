@@ -86,12 +86,12 @@ function AdminSettingsPageContent({ session }: { session: StoredAuthSession }) {
   return (
     <SettingsDataController sessionKey={session.key}>
       <ScrollArea
-        className="h-full min-h-0"
-        viewportClassName="pr-4 lg:pr-0"
+        className="h-full min-h-0 min-w-0"
+        viewportClassName="pr-1 lg:pr-0"
         viewStyle={{ height: "100%", minHeight: "100%" }}
       >
         <div data-settings-layout className="min-h-full w-full lg:h-full lg:min-h-0">
-          <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-4 lg:h-full lg:min-h-0 lg:grid-cols-[220px_minmax(0,1fr)] lg:gap-5 2xl:grid-cols-[240px_minmax(0,1fr)]">
+          <div className="grid grid-cols-[minmax(0,1fr)] items-start gap-[var(--page-section-gap)] lg:h-full lg:min-h-0 lg:grid-cols-[220px_minmax(0,1fr)] 2xl:grid-cols-[240px_minmax(0,1fr)]">
             <SectionNavigation
               title="系统设置"
               description="按类别管理站点配置"

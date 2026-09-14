@@ -973,16 +973,14 @@ func (b *DatabaseBackend) QueryLogPage(startDate, endDate string, cursor *LogCur
 		args = append(args, endDate)
 		filters = append(filters, "day <= "+b.placeholder(len(args)))
 	}
-	if cursor != nil && cursor.ID > 0 {
-		args = append(args, strings.TrimSpace(cursor.Day), strings.TrimSpace(cursor.Day), cursor.ID)
-		last := len(args)
-		filters = append(filters, "(day < "+b.placeholder(last-2)+" OR (day = "+b.placeholder(last-1)+" AND id < "+b.placeholder(last)+"))")
-	}
 	if len(filters) > 0 {
 		query += " WHERE " + strings.Join(filters, " AND ")
 	}
 	args = append(args, limit+1)
 	query += " ORDER BY day DESC, id DESC LIMIT " + b.placeholder(len(args))
+	if cursor != nil && cursor.ID > 0 {
+		query, args = b.positionedLogPageQuery(startDate, endDate, *cursor, limit+1)
+	}
 	rows, err := b.db.Query(query, args...)
 	if err != nil {
 		return LogPage{}, err
@@ -1018,6 +1016,46 @@ func (b *DatabaseBackend) QueryLogPage(startDate, endDate string, cursor *LogCur
 		return LogPage{}, err
 	}
 	return page, nil
+}
+
+func (b *DatabaseBackend) positionedLogPageQuery(startDate, endDate string, cursor LogCursor, limit int) (string, []any) {
+	args := make([]any, 0, 9)
+	argument := func(value any) string {
+		args = append(args, value)
+		return b.placeholder(len(args))
+	}
+	day := strings.TrimSpace(cursor.Day)
+	queries := make([]string, 0, 2)
+	if (startDate == "" || day >= startDate) && (endDate == "" || day <= endDate) {
+		// The ID cursor is already within the snapshot. A second ID upper bound
+		// can make SQLite seek from the newer bound and rescan previous pages.
+		queries = append(queries, "SELECT id, day, data FROM logs WHERE day = "+argument(day)+
+			" AND id < "+argument(cursor.ID)+" ORDER BY id DESC LIMIT "+argument(limit))
+	}
+	if startDate == "" || day > startDate {
+		query := "SELECT id, day, data FROM logs WHERE id <= " + argument(cursor.SnapshotID)
+		if startDate != "" {
+			query += " AND day >= " + argument(startDate)
+		}
+		if endDate != "" && endDate < day {
+			query += " AND day <= " + argument(endDate)
+		} else {
+			query += " AND day < " + argument(day)
+		}
+		queries = append(queries, query+" ORDER BY day DESC, id DESC LIMIT "+argument(limit))
+	}
+	if len(queries) == 0 {
+		return "SELECT id, day, data FROM logs WHERE 1 = 0", nil
+	}
+	if len(queries) == 1 {
+		return queries[0], args
+	}
+	// Separate the current day and older days so both ranges can seek through
+	// (day, id). Each branch contributes at most one page to the final sort.
+	query := "SELECT id, day, data FROM (" + queries[0] + ") AS current_day UNION ALL " +
+		"SELECT id, day, data FROM (" + queries[1] + ") AS earlier_days " +
+		"ORDER BY day DESC, id DESC LIMIT " + argument(limit)
+	return query, args
 }
 
 func (b *DatabaseBackend) LogSummary() (int, string, string, error) {

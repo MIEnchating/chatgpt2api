@@ -4,6 +4,7 @@ import {
   Navigate,
   Route,
   Routes,
+  useLocation,
 } from "react-router-dom";
 
 import { appRoutes } from "@/app/route-config";
@@ -28,11 +29,14 @@ function PermissionRoute({ requiredPath, children }: { requiredPath?: string; ch
 }
 
 export function AnimatedRoutes() {
+  const { pathname } = useLocation();
+
   return (
     <div className="h-full min-h-0 min-w-0">
       <Suspense
+        key={pathname}
         fallback={(
-          <div className="flex h-full min-h-[240px] items-center justify-center text-sm text-muted-foreground">
+          <div role="status" className="flex h-full min-h-[240px] items-center justify-center text-sm text-muted-foreground">
             正在加载页面
           </div>
         )}

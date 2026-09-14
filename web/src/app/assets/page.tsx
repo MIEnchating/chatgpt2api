@@ -8,10 +8,10 @@ import { AssetCard, AssetPreview } from "@/app/assets/asset-display";
 import { AssetForm } from "@/app/assets/asset-form";
 import { AssetGroupToolbar } from "@/app/assets/asset-groups";
 import { useAssetGroups } from "@/lib/use-asset-groups";
-import { assetListKey, assetModel, assetPrompt, canManageAsset, collectAssetStorageKeys, managedImageAsset, mergeAssetLibrary } from "@/app/assets/asset-library";
+import { assetListKey, assetModel, canManageAsset, collectAssetStorageKeys, managedImageAsset, mergeAssetLibrary } from "@/app/assets/asset-library";
 import { downloadMyAsset } from "@/app/assets/asset-media";
 import { useMyAssets } from "@/lib/use-my-assets";
-import { ManagementPage, ManagementPagination, ManagementPanel } from "@/components/management-page";
+import { ManagementPage, ManagementPagination, ManagementPanel, ManagementToolbar } from "@/components/management-page";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -179,17 +179,6 @@ function AssetsContent({ session }: { session: StoredAuthSession }) {
     }
   };
 
-  const copyPrompt = async (asset: MyAsset) => {
-    const prompt = assetPrompt(asset);
-    if (!prompt) return;
-    try {
-      await navigator.clipboard.writeText(prompt);
-      toast.success("提示词已复制");
-    } catch {
-      toast.error("复制失败，请手动复制");
-    }
-  };
-
   const download = async (asset: MyAsset) => {
     try {
       await downloadMyAsset(asset);
@@ -215,7 +204,7 @@ function AssetsContent({ session }: { session: StoredAuthSession }) {
       } else {
         await deleteAsset(deleting.id);
         try {
-          await deleteUnusedAssetStorage(deleting, assets.filter((item) => item.id !== deleting.id), signal);
+          await createAssetStorageCleanup(assets.filter((item) => item.id !== deleting.id), signal)(deleting);
         } catch (error) {
           if (signal.aborted) return;
           toast.warning(error instanceof Error ? `素材记录已删除，文件清理失败：${error.message}` : "素材记录已删除，文件稍后清理");
@@ -316,22 +305,49 @@ function AssetsContent({ session }: { session: StoredAuthSession }) {
     const deletingKeys = new Set(deletableSelectedAssets.map(assetListKey));
     const managedPaths = deletableSelectedAssets.map((asset) => asset.managedPath).filter((path): path is string => Boolean(path));
     const ownedAssetsToDelete = assets.filter((asset) => deletingKeys.has(assetListKey(asset)));
-    const remainingOwnedAssets = assets.filter((asset) => !deletingKeys.has(assetListKey(asset)));
+    const deletedKeys = new Set<string>();
+    const deletedOwnedAssets: MyAsset[] = [];
+    let failedCount = 0;
+    let firstError: unknown;
     try {
-      if (managedPaths.length) await deleteManagedImages(managedPaths);
+      if (managedPaths.length) {
+        try {
+          await deleteManagedImages(managedPaths);
+          signal.throwIfAborted();
+          for (const asset of deletableSelectedAssets) {
+            if (asset.managedPath) deletedKeys.add(assetListKey(asset));
+          }
+          setManagedAssets((current) => current.filter((asset) => !asset.managedPath || !managedPaths.includes(asset.managedPath)));
+        } catch (error) {
+          signal.throwIfAborted();
+          failedCount += managedPaths.length;
+          firstError = error;
+        }
+      }
       signal.throwIfAborted();
       for (const asset of ownedAssetsToDelete) {
         signal.throwIfAborted();
-        await deleteAsset(asset.id);
+        try {
+          await deleteAsset(asset.id);
+          deletedKeys.add(assetListKey(asset));
+          deletedOwnedAssets.push(asset);
+        } catch (error) {
+          signal.throwIfAborted();
+          failedCount += 1;
+          firstError ??= error;
+        }
       }
-      const cleanupResults = await Promise.allSettled(ownedAssetsToDelete.map((asset) =>
-        deleteUnusedAssetStorage(asset, remainingOwnedAssets, signal),
-      ));
+      const remainingOwnedAssets = assets.filter((asset) => !deletedKeys.has(assetListKey(asset)));
+      const cleanup = createAssetStorageCleanup(remainingOwnedAssets, signal);
+      const cleanupResults = await Promise.allSettled(deletedOwnedAssets.map(cleanup));
       if (signal.aborted) return;
-      if (managedPaths.length) setManagedAssets((current) => current.filter((asset) => !asset.managedPath || !managedPaths.includes(asset.managedPath)));
-      setSelectedKeys(new Set());
+      setSelectedKeys((current) => new Set([...current].filter((key) => !deletedKeys.has(key))));
       setBulkDeleteOpen(false);
-      toast.success(`已删除 ${deletableSelectedAssets.length} 个素材`);
+      if (failedCount) {
+        toast.error(`已删除 ${deletedKeys.size} 个素材，${failedCount} 个删除失败${firstError instanceof Error ? `：${firstError.message}` : ""}`);
+      } else {
+        toast.success(`已删除 ${deletedKeys.size} 个素材`);
+      }
       const cleanupFailures = cleanupResults.filter((result) => result.status === "rejected").length;
       if (cleanupFailures) toast.warning(`${cleanupFailures} 个素材文件清理失败，素材记录已删除`);
     } catch (error) {
@@ -345,16 +361,16 @@ function AssetsContent({ session }: { session: StoredAuthSession }) {
   return (
     <ManagementPage data-assets-layout>
       <ManagementPanel className="flex-1">
-        <div className="shrink-0 border-b border-border px-5 py-3 sm:px-8">
+        <ManagementToolbar>
         <div data-asset-filter-bar className="flex w-full flex-wrap items-center gap-2">
-          <div className="relative min-w-[220px] flex-1"><Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" /><Input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="搜索标题、内容、来源、所有者或备注" className="pl-9" /></div>
+          <div className="relative min-w-0 basis-full flex-1 lg:basis-60"><Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" /><Input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="搜索标题、内容、来源、所有者或备注" className="pl-9" /></div>
           <div className="hide-scrollbar flex max-w-full items-center gap-1 overflow-x-auto rounded-lg bg-muted p-1">{kindOptions.map((option) => { const Icon = option.icon; return <button key={option.value} type="button" onClick={() => setKind(option.value)} className={cn("inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium text-muted-foreground transition", kind === option.value && "bg-card text-foreground shadow-sm")}>{option.value === "all" ? null : <Icon className="size-3.5" />}{option.label}</button>; })}</div>
           <div className="hide-scrollbar flex max-w-full items-center gap-1 overflow-x-auto rounded-lg bg-muted p-1">{visibilityOptions.map((option) => { const Icon = option.icon; return <button key={option.value} type="button" onClick={() => setVisibility(option.value)} className={cn("inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium text-muted-foreground transition", visibility === option.value && "bg-card text-foreground shadow-sm")}>{Icon ? <Icon className="size-3.5" /> : null}{option.label}</button>; })}</div>
           <Button type="button" className="ml-auto shrink-0" onClick={() => { setEditing(null); setFormOpen(true); }}><Plus />新增素材</Button>
         </div>
-        </div>
+        </ManagementToolbar>
         <AssetGroupToolbar state={groupState} filter={groupFilter} onFilterChange={setGroupFilter} selectedKeys={selectedAssets.map(assetListKey)} availableKeys={availableGroupKeys} />
-        <div data-asset-selection-toolbar className="hide-scrollbar flex h-12 shrink-0 items-center gap-2 overflow-x-auto border-b border-border px-5 sm:px-8">
+        <div data-asset-selection-toolbar className="flex min-h-14 min-w-0 shrink-0 flex-wrap items-center gap-2 border-b border-border px-4 py-2 sm:px-5">
           <label data-disabled={!visibleAssets.length} className="selection-trigger flex shrink-0 items-center gap-2 text-xs font-medium"><Checkbox checked={allVisibleSelected ? true : selectedOnPage > 0 ? "indeterminate" : false} disabled={!visibleAssets.length} onCheckedChange={(checked) => toggleVisibleSelection(checked === true)} /><span>全选当前页</span></label>
           {selectedAssets.length ? (
             <div className="flex h-8 shrink-0 items-center gap-1 rounded-lg bg-muted/70 py-1 pr-1 pl-2.5 text-xs text-muted-foreground">
@@ -362,9 +378,9 @@ function AssetsContent({ session }: { session: StoredAuthSession }) {
               <Button type="button" variant="ghost" size="icon" className="size-6 shrink-0 rounded-md" onClick={() => setSelectedKeys(new Set())} aria-label="清空选择" title="清空选择"><X className="size-3.5" /></Button>
             </div>
           ) : <span className="shrink-0 px-1 text-xs text-muted-foreground">未选择素材</span>}
-          <div className="ml-auto flex shrink-0 items-center gap-2">
+          <div className="ml-auto flex min-w-0 flex-wrap items-center gap-2">
             <Select value={selectedVisibility} disabled={!visibilityManageableAssets.length || bulkActionBusy} onValueChange={(value: MyAssetVisibility) => void updateSelectedVisibility(value)}>
-              <SelectTrigger className="h-8 w-[128px] shrink-0 px-2.5 text-xs" aria-label="设置所选素材可见范围">
+              <SelectTrigger className="h-9 w-[128px] shrink-0 px-2.5 text-xs" aria-label="设置所选素材可见范围">
                 <SelectValue placeholder="可见范围" className="inline-flex min-w-0 items-center gap-2 whitespace-nowrap [&>svg]:shrink-0" />
               </SelectTrigger>
               <SelectContent>
@@ -372,13 +388,13 @@ function AssetsContent({ session }: { session: StoredAuthSession }) {
                 <SelectItem value="public"><Globe2 className="size-3.5 shrink-0" />公开</SelectItem>
               </SelectContent>
             </Select>
-            <Button type="button" variant="outline" size="sm" className="h-8 w-[72px] shrink-0 px-2" disabled={!selectedAssets.length || bulkActionBusy} onClick={() => void downloadSelected()}><Download />下载</Button>
-            <Button type="button" variant="outline" size="sm" className="h-8 w-[72px] shrink-0 px-2 text-rose-600 hover:text-rose-600" disabled={!deletableSelectedAssets.length || bulkActionBusy} onClick={() => setBulkDeleteOpen(true)}><Trash2 />删除</Button>
+            <Button type="button" variant="outline" size="sm" className="h-9 w-[72px] shrink-0 px-2" disabled={!selectedAssets.length || bulkActionBusy} onClick={() => void downloadSelected()}><Download />下载</Button>
+            <Button type="button" variant="outline" size="sm" className="h-9 w-[72px] shrink-0 px-2 text-destructive hover:bg-destructive/10 hover:text-destructive" disabled={!deletableSelectedAssets.length || bulkActionBusy} onClick={() => setBulkDeleteOpen(true)}><Trash2 />删除</Button>
           </div>
         </div>
-        <ScrollArea className="min-h-0 flex-1" viewportClassName="px-5 py-5 sm:px-8">
-        <div data-asset-content className="flex w-full flex-col gap-5">
-          {managedError ? <div role="alert" className="flex items-center gap-3 border-b border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700"><span className="min-w-0 flex-1 break-words">生成图片读取失败：{managedError}</span><Button type="button" variant="outline" size="sm" onClick={() => setManagedReloadKey((value) => value + 1)}><RefreshCw />重试</Button></div> : null}
+        <ScrollArea className="min-h-0 flex-1" viewportClassName="p-4 sm:p-5">
+        <div data-asset-content className="flex min-w-0 w-full flex-col gap-[var(--page-section-gap)]">
+          {managedError ? <div role="alert" className="flex min-w-0 flex-wrap items-center gap-3 rounded-lg border border-destructive/25 bg-destructive/10 px-3 py-2 text-sm text-destructive"><span className="min-w-0 flex-1 break-words">生成图片读取失败：{managedError}</span><Button type="button" variant="outline" size="sm" onClick={() => setManagedReloadKey((value) => value + 1)}><RefreshCw />重试</Button></div> : null}
           {!initialLoadComplete ? <div role="status" className="flex min-h-80 items-center justify-center text-sm text-muted-foreground">正在同步素材...</div> : visibleAssets.length ? <div data-asset-grid className="grid grid-cols-[repeat(auto-fill,minmax(min(100%,280px),1fr))] gap-4">{visibleAssets.map((asset, index) => { const key = assetListKey(asset); const canManage = canManageAsset(asset); return <AssetCard key={key} asset={asset} eager={index < 6} selected={selectedKeys.has(key)} onSelectedChange={(checked) => setSelectedKeys((current) => { const next = new Set(current); if (checked) next.add(key); else next.delete(key); return next; })} onOpen={() => setPreview(asset)} onEdit={canManage && asset.kind !== "video" && !asset.managedPath ? () => { setEditing(asset); setFormOpen(true); } : undefined} onDelete={canManage && (!asset.managedPath || hasAPIPermission(session, "DELETE", "/api/images")) ? () => setDeleting(asset) : undefined} onCopy={() => void copyText(asset)} onDownload={() => void download(asset)} />; })}</div> : managedError && allAssets.length === 0 ? null : <EmptyState icon={ImageIcon} title={allAssets.length ? "没有找到匹配的素材" : "还没有可用素材"} description={allAssets.length ? "调整搜索词或筛选条件后再试" : "上传或生成的素材会统一显示在这里"} className="min-h-80" />}
         </div>
         </ScrollArea>
@@ -397,27 +413,43 @@ function AssetsContent({ session }: { session: StoredAuthSession }) {
         />}
       </ManagementPanel>
       <AssetForm open={formOpen} asset={editing} onClose={() => setFormOpen(false)} onSave={async (next) => { await upsertAsset(next); setFormOpen(false); }} />
-      <AssetPreview asset={preview} onClose={() => setPreview(null)} onCopy={() => preview && void copyText(preview)} onCopyPrompt={() => preview && void copyPrompt(preview)} onDownload={() => preview && void download(preview)} />
+      <AssetPreview asset={preview} onClose={() => setPreview(null)} onCopy={() => preview && void copyText(preview)} onDownload={() => preview && void download(preview)} />
       <Dialog open={Boolean(deleting)} onOpenChange={(open) => !open && !deleteBusy && setDeleting(null)}><DialogContent className="w-[min(92vw,420px)]"><DialogHeader><DialogTitle>删除素材？</DialogTitle><DialogDescription>{deleting?.managedPath ? `确定永久删除生成图片“${deleting.title}”吗？` : `确定删除“${deleting?.title}”吗？删除后会同步到当前账号。`}</DialogDescription></DialogHeader><DialogFooter><Button type="button" variant="outline" disabled={deleteBusy} onClick={() => setDeleting(null)}>取消</Button><Button type="button" variant="destructive" disabled={deleteBusy} onClick={() => void confirmDelete()}>{deleteBusy ? "删除中" : "删除"}</Button></DialogFooter></DialogContent></Dialog>
       <Dialog open={bulkDeleteOpen} onOpenChange={(open) => !bulkActionBusy && setBulkDeleteOpen(open)}><DialogContent className="w-[min(92vw,440px)]"><DialogHeader><DialogTitle>批量删除素材？</DialogTitle><DialogDescription>将永久删除选中的 {deletableSelectedAssets.length} 个自有素材。共享素材和无删除权限的素材不会被删除。</DialogDescription></DialogHeader><DialogFooter><Button type="button" variant="outline" disabled={bulkActionBusy} onClick={() => setBulkDeleteOpen(false)}>取消</Button><Button type="button" variant="destructive" disabled={bulkActionBusy} onClick={() => void deleteSelected()}>{bulkActionBusy ? "删除中" : `删除 ${deletableSelectedAssets.length} 项`}</Button></DialogFooter></DialogContent></Dialog>
     </ManagementPage>
   );
 }
 
-async function deleteUnusedAssetStorage(asset: MyAsset, remainingAssets: MyAsset[], signal: AbortSignal) {
-  signal.throwIfAborted();
-  if (asset.kind === "text" || !asset.storageKey) return;
+function createAssetStorageCleanup(remainingAssets: MyAsset[], signal: AbortSignal) {
   const usedKeys = collectAssetStorageKeys(remainingAssets);
-  const workspace = await fetchCanvasDocument();
-  signal.throwIfAborted();
-  collectAssetStorageKeys(workspace.document, usedKeys);
-  for (const project of workspace.projects) {
-    if (project.id === workspace.document.id) continue;
-    const projectWorkspace = await fetchCanvasDocument(project.id);
+  const deletionRequests = new Map<string, Promise<void>>();
+  let canvasReferences: Promise<void> | null = null;
+  const loadCanvasReferences = async () => {
+    const workspace = await fetchCanvasDocument();
     signal.throwIfAborted();
-    collectAssetStorageKeys(projectWorkspace.document, usedKeys);
-  }
-  if (usedKeys.has(asset.storageKey)) return;
-  if (asset.kind === "image") await deleteStoredImages([asset.storageKey]);
-  else await deleteStoredMedia([asset.storageKey]);
+    collectAssetStorageKeys(workspace.document, usedKeys);
+    for (const project of workspace.projects) {
+      if (project.id === workspace.document.id) continue;
+      const projectWorkspace = await fetchCanvasDocument(project.id);
+      signal.throwIfAborted();
+      collectAssetStorageKeys(projectWorkspace.document, usedKeys);
+    }
+  };
+  return async (asset: MyAsset) => {
+    signal.throwIfAborted();
+    if (asset.kind === "text" || !asset.storageKey || usedKeys.has(asset.storageKey)) return;
+    // Share only this operation's reference reads; the server still checks each deletion.
+    canvasReferences ??= loadCanvasReferences();
+    await canvasReferences;
+    signal.throwIfAborted();
+    if (usedKeys.has(asset.storageKey)) return;
+    let deletion = deletionRequests.get(asset.storageKey);
+    if (!deletion) {
+      deletion = asset.kind === "image"
+        ? deleteStoredImages([asset.storageKey])
+        : deleteStoredMedia([asset.storageKey]);
+      deletionRequests.set(asset.storageKey, deletion);
+    }
+    await deletion;
+  };
 }

@@ -44,6 +44,7 @@ func (b *failingLogQueryBackend) QueryLogs(string, string, int) ([]map[string]an
 }
 
 func (b *failingLogQueryBackend) QueryLogPage(string, string, *storage.LogCursor, int) (storage.LogPage, error) {
+	b.queryCalls++
 	return storage.LogPage{}, b.err
 }
 
@@ -550,7 +551,7 @@ func TestLogServiceUserUsageStatsForUsersReturnsQueryErrorWithoutCachingFailure(
 		}
 	}
 	if backend.queryCalls != 2 {
-		t.Fatalf("QueryLogs() calls = %d, want 2 so a transient failure is not cached", backend.queryCalls)
+		t.Fatalf("log query calls = %d, want 2 so a transient failure is not cached", backend.queryCalls)
 	}
 }
 

@@ -60,8 +60,8 @@ export function StorageProviderCard() {
     return () => { cancelled = true; };
   }, []);
 
-  if (loading) return <Card><CardContent className="flex min-h-48 items-center justify-center"><LoaderCircle className="size-5 animate-spin text-muted-foreground" /></CardContent></Card>;
-  if (!allowed) return <Card><CardContent className="flex min-h-48 flex-col items-center justify-center gap-3 text-center"><span className="flex size-10 items-center justify-center rounded-lg bg-muted text-muted-foreground"><HardDrive className="size-5" /></span><div><p className="text-sm font-semibold text-foreground">使用服务器本机存储</p><p className="mt-1 text-sm text-muted-foreground">管理员暂未开放个人外部存储配置</p></div></CardContent></Card>;
+  if (loading) return <Card><CardContent className="flex min-h-48 items-center justify-center p-4 sm:p-5"><LoaderCircle className="size-5 animate-spin text-muted-foreground" /></CardContent></Card>;
+  if (!allowed) return <Card><CardContent className="flex min-h-48 flex-col items-center justify-center gap-3 p-4 text-center sm:p-5"><span className="flex size-10 items-center justify-center rounded-lg bg-muted text-muted-foreground"><HardDrive className="size-5" /></span><div><p className="text-sm font-semibold text-foreground">使用服务器本机存储</p><p className="mt-1 text-sm text-muted-foreground">管理员暂未开放个人外部存储配置</p></div></CardContent></Card>;
 
   const provider: UserStorageProvider = activeType === "s3" ? s3 : webdav;
 
@@ -143,8 +143,8 @@ export function StorageProviderCard() {
             <StorageField label="素材目录前缀"><Input value={webdav.pathPrefix} onChange={(event) => setWebDAV((value) => ({ ...value, pathPrefix: event.target.value }))} placeholder="assets" /></StorageField>
           </div>
         )}
-        <div className="flex items-center justify-between gap-3 border-t pt-4">
-          <span className="text-sm text-muted-foreground">已用容量：{usage[activeType] || "尚未统计"}</span>
+        <div className="flex min-w-0 flex-wrap items-center justify-between gap-3 border-t border-border pt-4">
+          <span className="min-w-0 break-words text-sm text-muted-foreground">已用容量：{usage[activeType] || "尚未统计"}</span>
           <Button type="button" variant="outline" onClick={() => void measure()} disabled={measuring || !provider.enabled}>{measuring ? <LoaderCircle className="animate-spin" /> : <Gauge />}统计容量</Button>
         </div>
       </CardContent>

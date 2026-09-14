@@ -38,13 +38,13 @@ function PopoverContent({
         sideOffset={sideOffset}
         collisionPadding={8}
         className={cn(
-          "z-50 max-h-[var(--radix-popover-content-available-height)] max-w-[calc(100vw-1rem)] overscroll-contain rounded-xl border border-border bg-popover p-3 text-popover-foreground shadow-[0_20px_60px_-30px_rgba(15,23,42,0.35)] outline-none",
+          "z-50 flex min-w-0 flex-col max-h-[var(--radix-popover-content-available-height)] max-w-[calc(100vw-1rem)] overflow-hidden overscroll-contain rounded-xl border border-border bg-popover p-3 text-popover-foreground shadow-[var(--shadow-popover)] outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0",
           className,
         )}
         {...props}
       >
         {scrollable ? (
-          <ScrollArea className="max-h-[var(--radix-popover-content-available-height)]" viewportClassName="max-h-[var(--radix-popover-content-available-height)]">
+          <ScrollArea className="min-h-0 min-w-0 flex-1" maxHeight="calc(var(--radix-popover-content-available-height) - 1.5rem)">
             {children}
           </ScrollArea>
         ) : children}

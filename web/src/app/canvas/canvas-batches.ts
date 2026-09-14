@@ -21,7 +21,11 @@ export function isCanvasBatchChildHidden(node: CanvasNode, nodes: readonly Canva
 }
 
 export function visibleCanvasNodes(nodes: readonly CanvasNode[], transientVisibleRootIDs: ReadonlySet<string> = new Set()) {
-  return nodes.filter((node) => !isCanvasBatchChildHidden(node, nodes, transientVisibleRootIDs));
+  const nodeByID = new Map(nodes.map((node) => [node.id, node]));
+  return nodes.filter((node) => {
+    const root = node.batch_root_id ? nodeByID.get(node.batch_root_id) : undefined;
+    return !root || root.batch_expanded || transientVisibleRootIDs.has(root.id);
+  });
 }
 
 export function canvasBatchMotion(node: CanvasNode, nodeByID: ReadonlyMap<string, CanvasNode>) {

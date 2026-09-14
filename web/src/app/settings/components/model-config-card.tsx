@@ -474,7 +474,7 @@ function AddModelDialog({
               onValueChange={(value) => selectModelKind(value as ModelKind)}
               disabled={isLoadingKeys}
             >
-              <SelectTrigger className="h-11"><SelectValue /></SelectTrigger>
+              <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {(Object.keys(modelKindMetadata) as ModelKind[]).map((modelKind) => {
                   const metadata = modelKindMetadata[modelKind];

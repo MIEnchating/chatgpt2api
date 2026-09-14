@@ -73,7 +73,7 @@ import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Checkbox } from "@/components/ui/checkbox";
 import { AuthenticatedImage } from "@/components/authenticated-image";
-import { ManagementPagination } from "@/components/management-page";
+import { ManagementPage, ManagementPagination, ManagementPanel } from "@/components/management-page";
 import { PromptTextareaFrame } from "@/components/generation/prompt-textarea-frame";
 import {
   ImageSettingsPanel,
@@ -310,6 +310,7 @@ function CreativeWorkflowWorkspaceContent({
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(12);
   const [editing, setEditing] = useState<CreativeWorkflow | null>(null);
+  const workflowEditorGenerationRef = useRef(0);
   const [workflowSaving, setWorkflowSaving] = useState(false);
   const workflowSaveBusyRef = useRef(false);
   const [running, setRunning] = useState<CreativeWorkflow | null>(null);
@@ -367,6 +368,11 @@ function CreativeWorkflowWorkspaceContent({
     setAgentReferences(next);
   }
 
+  function replaceEditor(workflow: CreativeWorkflow | null) {
+    workflowEditorGenerationRef.current += 1;
+    setEditing(workflow);
+  }
+
   function updateTasks(updater: (current: WorkflowTask[]) => WorkflowTask[]) {
     const next = updater(tasksRef.current);
     tasksRef.current = next;
@@ -409,6 +415,7 @@ function CreativeWorkflowWorkspaceContent({
     return () => {
       workspaceActiveRef.current = false;
       workflowReferenceUploadGenerationRef.current += 1;
+      workflowEditorGenerationRef.current += 1;
       agentDraftAbortControllerRef.current?.abort();
       agentDraftAbortControllerRef.current = null;
       controller.abort();
@@ -625,6 +632,7 @@ function CreativeWorkflowWorkspaceContent({
     [running, values],
   );
   async function persist(workflow: CreativeWorkflow) {
+    if (referenceUploadCountRef.current > 0) return;
     if (!workflow.name.trim()) {
       toast.error("请输入工作流名称");
       return;
@@ -648,7 +656,7 @@ function CreativeWorkflowWorkspaceContent({
         preferences,
       );
       setItems((current) => [saved, ...current.filter((item) => item.id !== saved.id)]);
-      setEditing(null);
+      replaceEditor(null);
       if (generatedByAgent) {
         await cleanupAgentReferences();
         setAgentDraft(null);
@@ -757,14 +765,26 @@ function CreativeWorkflowWorkspaceContent({
       file.type.startsWith("image/"),
     );
     if (!selected.length) return;
+    const signal = taskWaitAbortControllerRef.current?.signal;
+    if (!signal || signal.aborted || !workspaceActiveRef.current || getCachedAuthSession()?.key !== sessionKey) return;
     const workflowUploadGeneration = workflowReferenceUploadGenerationRef.current;
+    const editorGeneration = workflowEditorGenerationRef.current;
     referenceUploadCountRef.current += 1;
     setReferenceBusy(true);
     try {
       const { uploaded, errors } = await settleWorkflowReferenceUploads(
         selected.map(async (file) => {
-          const image = await uploadImage(file);
+          const image = await uploadImage(file, signal);
+          const reference = {
+            id: taskID("reference"),
+            name: file.name,
+            url: image.url,
+            storageKey: image.storageKey,
+            temporary: true,
+            role: "product" as const,
+          };
           if (target === "template") {
+            if (signal.aborted || getCachedAuthSession()?.key !== sessionKey || !workspaceActiveRef.current || editorGeneration !== workflowEditorGenerationRef.current) return reference;
             try {
               const asset = await upsertAsset(createMyAsset({
                 kind: "image",
@@ -787,18 +807,13 @@ function CreativeWorkflowWorkspaceContent({
                 visibility: asset.visibility,
               };
             } catch (error) {
-              await deleteStoredImages([image.storageKey]).catch(() => undefined);
+              if (getCachedAuthSession()?.key === sessionKey) {
+                await deleteStoredImages([image.storageKey]).catch(() => undefined);
+              }
               throw error;
             }
           }
-          return {
-            id: taskID("reference"),
-            name: file.name,
-            url: image.url,
-            storageKey: image.storageKey,
-            temporary: true,
-            role: "product" as const,
-          };
+          return reference;
         }),
       );
       if (getCachedAuthSession()?.key !== sessionKey) return;
@@ -807,7 +822,8 @@ function CreativeWorkflowWorkspaceContent({
         if (staleKeys.length) await deleteStoredImages(staleKeys).catch(() => undefined);
         return;
       }
-      if (target === "workflow" && workflowUploadGeneration !== workflowReferenceUploadGenerationRef.current) {
+      if ((target === "workflow" && workflowUploadGeneration !== workflowReferenceUploadGenerationRef.current)
+        || (target === "template" && editorGeneration !== workflowEditorGenerationRef.current)) {
         const staleKeys = workflowReferenceCleanupKeys(uploaded, []);
         if (staleKeys.length) {
           await deleteStoredImages(staleKeys).catch((error) =>
@@ -821,7 +837,7 @@ function CreativeWorkflowWorkspaceContent({
           updateAgentReferences((value) => [...value, ...uploaded]);
         } else if (target === "template") {
           setEditing((current) => {
-            if (!current) return current;
+            if (!current || editorGeneration !== workflowEditorGenerationRef.current) return current;
             const existing = new Set(current.template_references.map((reference) => reference.storageKey || reference.url));
             const added = uploaded.filter((reference) => !existing.has(reference.storageKey || reference.url));
             const templateReferences = [...current.template_references, ...added].slice(0, 14);
@@ -844,7 +860,7 @@ function CreativeWorkflowWorkspaceContent({
       }
     } finally {
       referenceUploadCountRef.current = Math.max(0, referenceUploadCountRef.current - 1);
-      if (referenceUploadCountRef.current === 0) setReferenceBusy(false);
+      if (workspaceActiveRef.current && referenceUploadCountRef.current === 0) setReferenceBusy(false);
     }
   }
 
@@ -1519,7 +1535,7 @@ function CreativeWorkflowWorkspaceContent({
 
   function applyAgentDraft() {
     if (!agentDraft) return;
-    setEditing(structuredClone(agentDraft));
+    replaceEditor(structuredClone(agentDraft));
     setAgentOpen(false);
   }
 
@@ -1538,31 +1554,31 @@ function CreativeWorkflowWorkspaceContent({
       {!hideTaskList ? <Button variant="outline" className="relative" onClick={() => setTaskHistoryOpen(true)}>
         {runningTaskCount ? <LoaderCircle className="animate-spin" /> : <ClipboardList />}
         任务记录
-        {runningTaskCount ? <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-[#1456f0] px-1.5 text-[10px] font-semibold leading-5 text-white">{runningTaskCount}</span> : null}
+        {runningTaskCount ? <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-primary px-1.5 text-[10px] font-semibold leading-5 text-primary-foreground">{runningTaskCount}</span> : null}
       </Button> : null}
-      <Button variant="outline" onClick={() => setEditing(createProductDetailWorkflow(models, preferences, workflowGenerationDefaults(preferences, generationDefaults, sessionTextChannelID)))}><Layers3 />新建详情模板</Button>
-      <Button onClick={() => setEditing(createBlankWorkflow(models, preferences, "single_image", workflowGenerationDefaults(preferences, generationDefaults, sessionTextChannelID)))}><Plus />新建工作流</Button>
+      <Button variant="outline" onClick={() => replaceEditor(createProductDetailWorkflow(models, preferences, workflowGenerationDefaults(preferences, generationDefaults, sessionTextChannelID)))}><Layers3 />新建详情模板</Button>
+      <Button onClick={() => replaceEditor(createBlankWorkflow(models, preferences, "single_image", workflowGenerationDefaults(preferences, generationDefaults, sessionTextChannelID)))}><Plus />新建工作流</Button>
     </>
   );
 
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden bg-background">
-      <div className={cn("flex min-h-0 flex-1 flex-col overflow-hidden", embedded ? "bg-transparent" : "card-surface rounded-xl border border-border/80 shadow-[0_4px_16px_rgba(24,40,72,0.05)]")}>
-        <header className={cn("shrink-0 border-b border-border px-5 py-3 sm:px-8", embedded && "pr-14 sm:pr-14")}>
+    <ManagementPage>
+      <ManagementPanel className={cn("flex-1", embedded && "rounded-none border-0 bg-transparent shadow-none")}>
+        <header className={cn("shrink-0 border-b border-border p-4 sm:px-5", embedded && "pr-14 sm:pr-14")}>
           <div data-workflow-toolbar className="flex w-full flex-wrap items-center gap-3">
-            <div className="relative min-w-[240px] flex-[1_1_320px]">
+            <div className="relative min-w-0 basis-full sm:flex-[1_1_320px]">
               <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input className="pl-9" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索名称、分类或描述" />
+              <Input className="h-10 pl-9" aria-label="搜索工作流" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索名称、分类或描述" />
             </div>
-            <div className="flex min-w-0 items-center gap-2">
+            <div className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:w-auto">
               <Select value={category} onValueChange={setCategory}>
-                <SelectTrigger className="min-w-0 flex-1 sm:w-36 sm:flex-none"><SelectValue /></SelectTrigger>
+                <SelectTrigger className="h-10 min-w-0 flex-1 sm:w-36 sm:flex-none" aria-label="工作流分类"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">全部分类</SelectItem>
                   {categories.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}
                 </SelectContent>
               </Select>
-              <div className="hide-scrollbar flex max-w-full shrink-0 items-center gap-1 overflow-x-auto rounded-lg bg-muted p-1">
+              <div className="hide-scrollbar flex max-w-full items-center gap-1 overflow-x-auto rounded-lg bg-muted p-1" role="group" aria-label="工作流范围">
                 {workflowScopeOptions.map((option) => {
                   const Icon = option.icon;
                   return (
@@ -1570,8 +1586,9 @@ function CreativeWorkflowWorkspaceContent({
                       key={option.value}
                       type="button"
                       onClick={() => setScopeFilter(option.value)}
+                      aria-pressed={scopeFilter === option.value}
                       className={cn(
-                        "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium text-muted-foreground transition",
+                        "inline-flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
                         scopeFilter === option.value && "bg-card text-foreground shadow-sm",
                       )}
                     >
@@ -1582,12 +1599,12 @@ function CreativeWorkflowWorkspaceContent({
                 })}
               </div>
             </div>
-            <div data-workflow-actions className="ml-auto flex shrink-0 items-center gap-2">
+            <div data-workflow-actions className="flex w-full min-w-0 flex-wrap items-center gap-2 sm:ml-auto sm:w-auto">
               {workflowActions}
             </div>
           </div>
         </header>
-        <ScrollArea className="min-h-0 flex-1" viewportClassName="px-5 py-5 sm:px-8 lg:py-6">
+        <ScrollArea className="min-h-0 flex-1" viewportClassName="p-4 sm:p-5">
           <div className="flex w-full flex-col gap-8">
             {visibleWorkflows.length ? (
               <section aria-label="工作流列表">
@@ -1597,7 +1614,7 @@ function CreativeWorkflowWorkspaceContent({
                     key={workflow.id}
                     workflow={workflow}
                     onRun={() => openRunner(workflow)}
-                    onEdit={() => setEditing(structuredClone(workflow))}
+                    onEdit={() => replaceEditor(structuredClone(workflow))}
                     onCopy={() => void duplicateWorkflow(workflow)}
                     onDelete={async () => {
                       if (!window.confirm(`确定删除「${workflow.name}」吗？已生成的图片不受影响。`)) return;
@@ -1627,7 +1644,7 @@ function CreativeWorkflowWorkspaceContent({
           onPageChange={setPage}
           onPageSizeChange={setPageSize}
         />
-      </div>
+      </ManagementPanel>
       <WorkflowTaskHistoryDialog
         open={taskHistoryOpen}
         tasks={tasks}
@@ -1651,7 +1668,7 @@ function CreativeWorkflowWorkspaceContent({
         onSave={persist}
         onAssetsOpen={() => setAssetPickerTarget("template")}
         onReferencesAdd={(files) => void addReferences(files, "template")}
-        onClose={() => setEditing(null)}
+        onClose={() => replaceEditor(null)}
       />
       <WorkflowRunner
         key={running?.id || "closed-workflow-runner"}
@@ -1709,7 +1726,7 @@ function CreativeWorkflowWorkspaceContent({
         onClose={() => setAssetPickerTarget(null)}
       />
       <WorkflowTaskDialog task={selectedTask} now={now} onClose={() => setSelectedTaskID("")} />
-    </div>
+    </ManagementPage>
   );
 }
 
@@ -1718,7 +1735,7 @@ function WorkflowCard({ workflow, onRun, onEdit, onCopy, onDelete }: { workflow:
   return (
     <article data-interaction="controls" className="interactive-card group flex min-h-44 flex-col rounded-lg border border-border bg-card p-4 shadow-sm">
       <div className="flex items-start gap-3">
-        <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-[#edf4ff] text-[#1456f0] dark:bg-blue-950/40 dark:text-blue-300"><WorkflowIcon className="size-4" /></span>
+        <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-brand-soft text-brand"><WorkflowIcon className="size-4" /></span>
         <div className="min-w-0 flex-1">
           <div className="flex min-w-0 items-center gap-2"><h3 className="truncate text-sm font-semibold">{workflow.name}</h3><span className="inline-flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground">{workflow.scope === "public" ? <Globe2 className="size-3" /> : <LockKeyhole className="size-3" />}{workflow.scope === "public" ? "公开" : "个人"}</span></div>
           <p className="mt-0.5 text-xs text-muted-foreground">{workflow.category || "未分类"}</p>
@@ -1738,7 +1755,7 @@ function WorkflowCard({ workflow, onRun, onEdit, onCopy, onDelete }: { workflow:
         <Button size="sm" onClick={onRun}><Play />运行</Button>
         {workflow.editable !== false ? <Button size="icon" variant="ghost" title="编辑" onClick={onEdit}><Pencil /></Button> : null}
         <Button size="icon" variant="ghost" title="复制" onClick={onCopy}><Copy /></Button>
-        {workflow.editable !== false ? <Button size="icon" variant="ghost" className="ml-auto text-rose-600" title="删除" onClick={onDelete}><Trash2 /></Button> : null}
+        {workflow.editable !== false ? <Button size="icon" variant="ghost" className="ml-auto text-destructive dark:text-rose-300" title="删除" onClick={onDelete}><Trash2 /></Button> : null}
       </div>
     </article>
   );
@@ -2026,7 +2043,7 @@ function WorkflowTaskDialog({ task, now, onClose }: { task: WorkflowTask | null;
               )}
             </section>
             <aside className="min-w-0 p-4 sm:p-6">
-              {task.error ? <section className="mb-5 border-l-2 border-rose-500 bg-rose-50 px-3 py-2.5 text-sm text-rose-700 dark:bg-rose-950/30 dark:text-rose-300"><h3 className="font-semibold">失败原因</h3><p className="mt-1 whitespace-pre-wrap text-xs leading-5">{task.error}</p></section> : null}
+              {task.error ? <section className="mb-5 border-l-2 border-rose-500 bg-destructive/10 px-3 py-2.5 text-sm text-destructive dark:bg-rose-950/30 dark:text-rose-300"><h3 className="font-semibold">失败原因</h3><p className="mt-1 whitespace-pre-wrap text-xs leading-5">{task.error}</p></section> : null}
               <section className="border-b border-border pb-5">
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
@@ -2271,7 +2288,7 @@ function WorkflowEditor({ workflow, models, preferences, saving, referenceBusy, 
         <DialogFooter flush className="flex-row">
           <p className="mr-auto hidden text-xs text-muted-foreground sm:block">{!workflow.name.trim() ? "请填写工作流名称" : !workflow.config.prompt_template.trim() ? "请填写用户提示词模板" : "工作流配置已就绪"}</p>
           <Button variant="outline" disabled={saving} onClick={onClose}>取消</Button>
-          <Button disabled={saving || !workflow.name.trim() || !workflow.config.prompt_template.trim()} onClick={() => onSave(workflow)}>{saving ? <LoaderCircle className="animate-spin" /> : <Save />}{saving ? "保存中" : "保存"}</Button>
+          <Button disabled={saving || referenceBusy || !workflow.name.trim() || !workflow.config.prompt_template.trim()} onClick={() => onSave(workflow)}>{saving ? <LoaderCircle className="animate-spin" /> : <Save />}{saving ? "保存中" : "保存"}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -2472,7 +2489,7 @@ function WorkflowRunner({ workflow, values, prompt, references, referenceBusy, d
                 />
               </div>
               <WorkflowReferenceGrid references={references} className="grid-cols-4" emptyMessage={workflow.template_references.length ? "请添加至少一张新产品实拍图" : "未添加产品参考图"} disabled={referenceBusy} onRemove={onReferenceRemove} />
-              {referenceOverflow ? <p className="mt-2 text-xs text-rose-600">当前模型最多支持 {referenceLimit} 张参考图，本次共需 {totalReferenceCount} 张。</p> : null}
+              {referenceOverflow ? <p className="mt-2 text-xs text-destructive dark:text-rose-300">当前模型最多支持 {referenceLimit} 张参考图，本次共需 {totalReferenceCount} 张。</p> : null}
             </div>
           </section>
           <div className="space-y-4">
@@ -2667,7 +2684,7 @@ function SeriesDraftCard({ draft, index, first, last, generationDisabled, onChan
         </div>
       </div>
       <div className="flex min-h-12 items-center justify-between gap-3 border-t border-border bg-muted/15 px-3 py-2.5">
-        <p className={cn("min-w-0 text-xs leading-5", draft.status === "failed" ? "text-rose-600" : draft.status === "success" ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground")}>{draft.error || (draft.status === "success" ? "生成完成，结果已显示在卡片中" : running ? "任务已提交，完成后会在这里显示结果" : "确认标题和提示词无误后生成此图")}</p>
+        <p className={cn("min-w-0 text-xs leading-5", draft.status === "failed" ? "text-destructive dark:text-rose-300" : draft.status === "success" ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground")}>{draft.error || (draft.status === "success" ? "生成完成，结果已显示在卡片中" : running ? "任务已提交，完成后会在这里显示结果" : "确认标题和提示词无误后生成此图")}</p>
         <Button size="sm" variant={draft.status === "draft" || draft.status === "failed" ? "default" : "outline"} className="shrink-0" disabled={generationDisabled || !draft.prompt.trim() || running || draft.status === "success"} onClick={onRun}>
           {running ? <LoaderCircle className="animate-spin" /> : draft.status === "success" ? <CircleCheck /> : <Play />}
           {running ? "生成中" : draft.status === "success" ? "已生成" : "生成此图"}
@@ -2787,7 +2804,7 @@ function AgentDialog({
                 <p className="text-xs leading-5 text-muted-foreground">{draft.description || "暂无描述"}</p>
                 <ScrollArea maxHeight="16rem" className="rounded-lg bg-muted/50" viewportClassName="p-3" viewClass="whitespace-pre-wrap text-xs leading-5">{draft.config.prompt_template}</ScrollArea>
                 {warnings.length ? (
-                  <div className="space-y-1 rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800">
+                  <div className="space-y-1 rounded-lg border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800 dark:bg-amber-950/35 dark:text-amber-300">
                     {warnings.map((warning) => <p key={warning}>{warning}</p>)}
                   </div>
                 ) : null}

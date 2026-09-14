@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 
@@ -121,12 +122,17 @@ func ExtractChatPrompt(body map[string]any) string {
 func ExtractChatContextImages(body map[string]any) []UploadedImage {
 	const maxContextImages = 14
 	var images []UploadedImage
-	for _, message := range util.AsMapSlice(body["messages"]) {
-		images = append(images, ExtractImagesFromMessageContent(message["content"])...)
+	messages := util.AsMapSlice(body["messages"])
+	// Decode only the retained history instead of allocating every old image.
+	for index := len(messages) - 1; index >= 0 && len(images) < maxContextImages; index-- {
+		urls := inlineImageURLsFromMessageContent(messages[index]["content"])
+		for imageIndex := len(urls) - 1; imageIndex >= 0 && len(images) < maxContextImages; imageIndex-- {
+			if image, ok := decodeInlineImageDataURL(urls[imageIndex]); ok {
+				images = append(images, image)
+			}
+		}
 	}
-	if len(images) > maxContextImages {
-		images = images[len(images)-maxContextImages:]
-	}
+	slices.Reverse(images)
 	return images
 }
 
@@ -155,10 +161,20 @@ func ExtractPromptFromMessageContent(content any) string {
 }
 
 func ExtractImagesFromMessageContent(content any) []UploadedImage {
-	if text, ok := content.(string); ok {
-		return extractImagesFromText(text)
-	}
 	var images []UploadedImage
+	for _, value := range inlineImageURLsFromMessageContent(content) {
+		if image, ok := decodeInlineImageDataURL(value); ok {
+			images = append(images, image)
+		}
+	}
+	return images
+}
+
+func inlineImageURLsFromMessageContent(content any) []string {
+	if text, ok := content.(string); ok {
+		return inlineImageDataURLRE.FindAllString(text, -1)
+	}
+	var urls []string
 	for _, raw := range anyList(content) {
 		item, ok := raw.(map[string]any)
 		if !ok {
@@ -176,24 +192,11 @@ func ExtractImagesFromMessageContent(content any) []UploadedImage {
 		if itemType == "input_image" {
 			imageURL = util.Clean(item["image_url"])
 		}
-		if image, ok := decodeInlineImageDataURL(imageURL); ok {
-			images = append(images, image)
+		if imageURL != "" {
+			urls = append(urls, imageURL)
 		}
 	}
-	return images
-}
-
-func extractImagesFromText(text string) []UploadedImage {
-	var images []UploadedImage
-	for _, match := range inlineImageDataURLRE.FindAllStringSubmatch(text, -1) {
-		if len(match) < 3 {
-			continue
-		}
-		if image, ok := decodeInlineImageDataURL(match[0]); ok {
-			images = append(images, image)
-		}
-	}
-	return images
+	return urls
 }
 
 func decodeInlineImageDataURL(value string) (UploadedImage, bool) {

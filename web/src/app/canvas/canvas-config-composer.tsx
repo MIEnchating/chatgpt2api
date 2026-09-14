@@ -132,7 +132,7 @@ export function CanvasConfigComposer({ node, inputs, children, promptTools, onCo
   return (
     <div
       data-canvas-no-zoom
-      className="rounded-2xl border border-border bg-card p-3 shadow-[0_18px_50px_rgba(15,23,42,.18)] backdrop-blur-xl"
+      className="rounded-xl border border-border bg-card p-3 shadow-[var(--shadow-elevated)] backdrop-blur-xl"
       onMouseDown={(event) => event.stopPropagation()}
       onPointerDown={(event) => event.stopPropagation()}
       onWheel={(event) => event.stopPropagation()}
@@ -144,12 +144,15 @@ export function CanvasConfigComposer({ node, inputs, children, promptTools, onCo
         </div>
         <Button variant="ghost" size="icon" className="size-7 shrink-0" aria-label="关闭提示词面板" onClick={onClose}><X className="size-3.5" /></Button>
       </div>
-      <div className="canvas-prompt-editor-resize relative h-28 rounded-xl border border-border bg-background">
+      <div className="canvas-prompt-editor-resize relative h-28 rounded-lg border border-border bg-background transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20">
           {!value.trim() && !usesConnectedText ? <div className="pointer-events-none absolute top-2 left-3 text-sm leading-7 text-muted-foreground">输入提示词，按 @ 引用连接的图片或文本</div> : null}
           <ScrollArea className="h-full" viewportClassName="h-full" viewClass="w-full" viewStyle={{ minHeight: "100%" }}>
           <div
             ref={editorRef}
             contentEditable
+            role="textbox"
+            aria-label="组装提示词"
+            aria-multiline="true"
             suppressContentEditableWarning
             className="min-h-28 w-full whitespace-pre-wrap break-words px-3 py-2 text-sm leading-7 outline-none"
             onInput={() => { if (!composingRef.current) syncFromEditor(); }}
@@ -300,7 +303,7 @@ function createReferenceChip(input: CanvasConfigInput, inputs: CanvasConfigInput
 
   const icon = document.createElement("span");
   icon.textContent = input.type === "image" ? "▧" : "T";
-  icon.className = input.type === "image" ? "text-[#1456f0]" : "text-amber-600";
+  icon.className = input.type === "image" ? "text-brand" : "text-amber-600 dark:text-amber-300";
   const label = document.createElement("span");
   label.className = "block truncate";
   label.textContent = `${canvasConfigInputLabel(input, inputs)} · ${input.type === "text" ? input.text || input.title : input.title}`;

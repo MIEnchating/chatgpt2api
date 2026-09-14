@@ -104,7 +104,7 @@ export function CanvasVideoNodePlayer({
   );
 }
 
-const previewControlClassName = "flex size-9 items-center justify-center rounded-lg text-white transition-colors hover:bg-white/10";
+const previewControlClassName = "flex size-9 items-center justify-center rounded-lg text-white transition-colors hover:bg-white/10 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/80";
 
 export function CanvasVideoPreview({
   src,
@@ -189,7 +189,7 @@ export function CanvasVideoPreview({
               setCurrentTime(time);
             }}
             onPointerUp={() => videoRef.current?.focus({ preventScroll: true })}
-            className="pointer-events-auto block h-1 w-full cursor-pointer appearance-none rounded-full focus-visible:outline-none [&::-moz-range-thumb]:size-3 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-white [&::-webkit-slider-thumb]:size-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
+            className="pointer-events-auto block h-1 w-full cursor-pointer appearance-none rounded-full focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white [&::-moz-range-thumb]:size-3 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-white [&::-webkit-slider-thumb]:size-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
             style={{ background: `linear-gradient(to right, #67e8f9 ${duration ? Math.min(currentTime / duration, 1) * 100 : 0}%, rgba(255,255,255,0.35) 0)` }}
           />
           <div className="pointer-events-auto mt-2 flex items-center justify-between">
@@ -226,7 +226,7 @@ export function CanvasVideoPreview({
                     }
                   }}
                   onPointerUp={() => videoRef.current?.focus({ preventScroll: true })}
-                  className="h-1 w-0 pointer-events-none cursor-pointer appearance-none rounded-full opacity-0 transition-[width,opacity] duration-200 focus-visible:outline-none group-hover/volume:mx-1 group-hover/volume:w-20 group-hover/volume:pointer-events-auto group-hover/volume:opacity-100 [&::-moz-range-thumb]:size-2 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-white [&::-webkit-slider-thumb]:size-2 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
+                  className="h-1 w-0 pointer-events-none cursor-pointer appearance-none rounded-full opacity-0 transition-[width,opacity] duration-200 group-hover/volume:mx-1 group-hover/volume:w-20 group-hover/volume:pointer-events-auto group-hover/volume:opacity-100 group-focus-within/volume:mx-1 group-focus-within/volume:w-20 group-focus-within/volume:pointer-events-auto group-focus-within/volume:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-white [&::-moz-range-thumb]:size-2 [&::-moz-range-thumb]:rounded-full [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-white [&::-webkit-slider-thumb]:size-2 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
                   style={{ background: `linear-gradient(to right, white ${volume * 100}%, rgba(255,255,255,0.35) 0)` }}
                 />
               </div>

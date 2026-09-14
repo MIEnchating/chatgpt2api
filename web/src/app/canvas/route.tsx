@@ -14,8 +14,8 @@ export default function CanvasRoute() {
 
   if (isCheckingAuth || !session) {
     return (
-      <div className="flex h-full min-h-[540px] items-center justify-center">
-        <LoaderCircle className="size-6 animate-spin text-[#1456f0]" />
+      <div className="flex h-full min-h-0 items-center justify-center">
+        <LoaderCircle className="size-6 animate-spin text-brand" />
       </div>
     );
   }
@@ -23,8 +23,8 @@ export default function CanvasRoute() {
   return (
     <Suspense
       fallback={(
-        <div className="flex h-full min-h-[540px] items-center justify-center rounded-xl border border-border bg-card">
-          <LoaderCircle className="size-6 animate-spin text-[#1456f0]" />
+        <div className="flex h-full min-h-0 items-center justify-center rounded-xl border border-border bg-card">
+          <LoaderCircle className="size-6 animate-spin text-brand" />
         </div>
       )}
     >

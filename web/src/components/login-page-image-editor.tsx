@@ -152,7 +152,7 @@ export function LoginPageImageEditor({
     <div className="flex flex-col gap-3">
       <div
         ref={frameRef}
-        className="relative mx-auto flex aspect-[10/13] w-full max-w-[20rem] touch-none items-stretch justify-stretch overflow-hidden rounded-2xl border bg-stone-100/60 shadow-inner dark:bg-muted/10"
+        className="relative mx-auto flex aspect-[10/13] w-full max-w-[20rem] touch-none items-stretch justify-stretch overflow-hidden rounded-2xl border bg-muted/60 shadow-inner"
         onPointerDown={(event) => {
           dragStateRef.current = {
             pointerId: event.pointerId,

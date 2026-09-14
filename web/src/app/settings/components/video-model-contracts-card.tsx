@@ -790,7 +790,7 @@ function ContractModeEditor({
           <Field>
             <ContractFieldLabel htmlFor={`video-contract-mode-kind-${index}`} label="模式类型" help="模式类型决定系统如何根据素材自动选择模式。" />
             <Select value={mode.kind} disabled={disabled} onValueChange={(kind) => onChange({ ...mode, kind: kind as VideoModelGenerationMode["kind"] })}>
-              <SelectTrigger id={`video-contract-mode-kind-${index}`} className="h-11"><SelectValue /></SelectTrigger>
+              <SelectTrigger id={`video-contract-mode-kind-${index}`} className="h-10"><SelectValue /></SelectTrigger>
               <SelectContent><SelectItem value="text">文生视频</SelectItem><SelectItem value="image">图生视频</SelectItem><SelectItem value="reference">参考素材生视频</SelectItem></SelectContent>
             </Select>
           </Field>
@@ -820,7 +820,7 @@ function ContractModeEditor({
             ))}
           </div>
         </div>
-        {!disabled && canRemove ? <div className="flex justify-end border-t border-border/60 pt-3"><Button type="button" variant="ghost" size="sm" className="text-rose-600 hover:text-rose-700" onClick={onRemove}><Trash2 className="size-4" />删除模式</Button></div> : null}
+        {!disabled && canRemove ? <div className="flex justify-end border-t border-border/60 pt-3"><Button type="button" variant="ghost" size="sm" className="text-rose-600 hover:text-rose-700 dark:text-rose-300 dark:hover:text-rose-300" onClick={onRemove}><Trash2 className="size-4" />删除模式</Button></div> : null}
       </div>
     </details>
   );
@@ -838,20 +838,20 @@ function ContractRuleEditor({ disabled, index, onChange, onRemove, rule }: {
     <div data-video-contract-rule className="space-y-4 rounded-lg border border-border/70 bg-muted/15 p-4">
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm font-medium">规则 {index + 1}</p>
-        {!disabled ? <Button type="button" variant="ghost" size="icon" className="size-8 text-rose-600" title="删除规则" onClick={onRemove}><Trash2 className="size-4" /></Button> : null}
+        {!disabled ? <Button type="button" variant="ghost" size="icon" className="size-8 text-rose-600 dark:text-rose-300" title="删除规则" onClick={onRemove}><Trash2 className="size-4" /></Button> : null}
       </div>
       <div className="grid items-start gap-4 sm:grid-cols-2 xl:grid-cols-3">
         <Field>
           <FieldLabel>条件字段</FieldLabel>
           <Select value={rule.when.field} disabled={disabled} onValueChange={(field) => onChange({ ...rule, when: { ...rule.when, field: field as VideoModelContractRuleField } })}>
-            <SelectTrigger className="h-11"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
             <SelectContent>{CONTRACT_RULE_FIELDS.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectContent>
           </Select>
         </Field>
         <Field>
           <FieldLabel>判断方式</FieldLabel>
           <Select value={rule.when.operator} disabled={disabled} onValueChange={(operator) => onChange({ ...rule, when: { ...rule.when, operator: operator as "present" | "equals" } })}>
-            <SelectTrigger className="h-11"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="h-10"><SelectValue /></SelectTrigger>
             <SelectContent><SelectItem value="present">存在或已启用</SelectItem><SelectItem value="equals">等于指定值</SelectItem></SelectContent>
           </Select>
         </Field>
@@ -1899,7 +1899,7 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
               <Button type="button" size="sm" variant="outline" disabled={isBulkActionBusy || selectedItems.length === 0} onClick={exportSelectedContracts}>
                 <Download className="size-4" />导出选中
               </Button>
-              <Button type="button" size="sm" variant="outline" className="text-rose-600 hover:text-rose-700" disabled={isBulkActionBusy || selectedItems.length === 0} onClick={() => setBulkDeleteOpen(true)}>
+              <Button type="button" size="sm" variant="outline" className="text-rose-600 hover:text-rose-700 dark:text-rose-300 dark:hover:text-rose-300" disabled={isBulkActionBusy || selectedItems.length === 0} onClick={() => setBulkDeleteOpen(true)}>
                 <Trash2 className="size-4" />删除选中
               </Button>
               <TooltipHint content="清除选择">
@@ -2015,7 +2015,7 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
                     <Button type="button" variant="ghost" size="icon" className="size-8" onClick={() => downloadVideoContractDocument(videoContractTransferDocument([item]), videoContractExportName(item.contract.name))} aria-label="导出契约" title="导出契约"><Download className="size-4" /></Button>
                     <Button type="button" variant="ghost" size="icon" className="size-8" onClick={() => openCopy(item)} aria-label="复制契约" title="复制契约"><Copy className="size-4" /></Button>
                     <Button type="button" variant="ghost" size="icon" className="size-8" disabled={pending || isBulkActionBusy} onClick={() => openEdit(item)} aria-label="编辑契约" title="编辑契约"><Pencil className="size-4" /></Button>
-                    <Button type="button" variant="ghost" size="icon" className="size-8 text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:hover:bg-rose-950/30" disabled={pending || isBulkActionBusy} onClick={() => setDeletingItem(item)} aria-label="删除契约" title="删除契约"><Trash2 className="size-4" /></Button>
+                    <Button type="button" variant="ghost" size="icon" className="size-8 text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:hover:bg-rose-950/30 dark:text-rose-300 dark:hover:text-rose-300" disabled={pending || isBulkActionBusy} onClick={() => setDeletingItem(item)} aria-label="删除契约" title="删除契约"><Trash2 className="size-4" /></Button>
                   </div>
                   </div>
                 );
@@ -2079,7 +2079,7 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
                   onChange={(event) => { setImportFile(event.target.files?.[0] || null); clearImportFeedback(); }}
                 />
                 {importFile ? (
-                  <div className="flex h-11 min-w-0 items-center gap-3 rounded-lg border border-border bg-background px-3">
+                  <div className="flex h-10 min-w-0 items-center gap-3 rounded-lg border border-border bg-background px-3">
                     <FileText className="size-4 shrink-0 text-primary" />
                     <span className="min-w-0 flex-1 truncate text-sm">{importFile.name}</span>
                     <span className="shrink-0 text-xs text-muted-foreground">{Math.max(1, Math.ceil(importFile.size / 1024))} KB</span>
@@ -2103,7 +2103,7 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
             <Field>
               <FieldLabel>分析模型</FieldLabel>
               <Select value={importModel || undefined} disabled={isImporting || isLoadingImportOptions || textModels.length === 0} onValueChange={setImportModel}>
-                <SelectTrigger className="h-11"><SelectValue placeholder={isLoadingImportOptions ? "读取模型中" : "暂无可用文本模型"} /></SelectTrigger>
+                <SelectTrigger className="h-10"><SelectValue placeholder={isLoadingImportOptions ? "读取模型中" : "暂无可用文本模型"} /></SelectTrigger>
                 <SelectContent>{textModels.map((model) => <SelectItem key={model} value={model}>{model}</SelectItem>)}</SelectContent>
               </Select>
               <FieldDescription>使用个人默认文本 Key，请确认生成结果后再保存</FieldDescription>
@@ -2233,7 +2233,7 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
                   <Field>
                     <ContractFieldLabel htmlFor="video-contract-driver" label="接口协议" help="选择当前模型采用的视频协议。协议决定请求结构和参数转换，不控制创作页面显示哪些模型。" />
                     <Select value={draft.contract.driver} disabled={readOnly} onValueChange={(value) => updateContract((contract) => { contract.driver = value as VideoModelContract["driver"]; })}>
-                      <SelectTrigger id="video-contract-driver" className="h-11"><SelectValue /></SelectTrigger>
+                      <SelectTrigger id="video-contract-driver" className="h-10"><SelectValue /></SelectTrigger>
                       <SelectContent>{VIDEO_CONTRACT_DRIVERS.map((driver) => <SelectItem key={driver.value} value={driver.value}>{driver.label}</SelectItem>)}</SelectContent>
                     </Select>
                   </Field>
@@ -2253,7 +2253,7 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
                   <NumericField id="video-contract-default-seconds" label="默认时长" min={1} max={3600} value={capability.default_seconds} disabled={readOnly} suffix="秒" onChange={(value) => updateContract((contract) => { contract.capability.default_seconds = value; })} />
                   <TextField id="video-contract-default-resolution" label="默认清晰度" value={capability.default_resolution} disabled={readOnly} onChange={(value) => updateContract((contract) => { contract.capability.default_resolution = value; })} />
                   <NumericField id="video-contract-prompt-limit" label="提示词上限" min={1} max={100000} value={draft.contract.validation.max_prompt_characters} disabled={readOnly} suffix="字符" onChange={(value) => updateContract((contract) => { contract.validation.max_prompt_characters = value; })} />
-                  <Field><ContractFieldLabel htmlFor="video-contract-audio-control" label="音频生成" help="控制创作参数面板是否显示音频开关。不支持表示不生成音频，用户开关表示由用户选择，始终生成表示请求固定携带音频。" /><Select value={capability.audio_control} disabled={readOnly} onValueChange={(value) => updateContract((contract) => { contract.capability.audio_control = value as VideoModelContract["capability"]["audio_control"]; })}><SelectTrigger id="video-contract-audio-control" className="h-11"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">不支持</SelectItem><SelectItem value="toggle">用户开关</SelectItem><SelectItem value="always">始终生成</SelectItem></SelectContent></Select></Field>
+                  <Field><ContractFieldLabel htmlFor="video-contract-audio-control" label="音频生成" help="控制创作参数面板是否显示音频开关。不支持表示不生成音频，用户开关表示由用户选择，始终生成表示请求固定携带音频。" /><Select value={capability.audio_control} disabled={readOnly} onValueChange={(value) => updateContract((contract) => { contract.capability.audio_control = value as VideoModelContract["capability"]["audio_control"]; })}><SelectTrigger id="video-contract-audio-control" className="h-10"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">不支持</SelectItem><SelectItem value="toggle">用户开关</SelectItem><SelectItem value="always">始终生成</SelectItem></SelectContent></Select></Field>
                   <ContractCheckboxField id="video-contract-watermark" label="支持水印开关" checked={capability.watermark} disabled={readOnly} className="min-h-11 self-end" onCheckedChange={(checked) => updateContract((contract) => { contract.capability.watermark = checked; })} />
                 </div>
               </section>
@@ -2311,7 +2311,7 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
                         contract.transport.multipart_file_field = "input_reference[]";
                       }
                     })}>
-                      <SelectTrigger id="video-contract-local-material" className="h-11"><SelectValue /></SelectTrigger>
+                      <SelectTrigger id="video-contract-local-material" className="h-10"><SelectValue /></SelectTrigger>
                       <SelectContent><SelectItem value="url">使用平台 URL</SelectItem><SelectItem value="multipart">转为 multipart 文件</SelectItem></SelectContent>
                     </Select>
                   </Field>
@@ -2325,7 +2325,7 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
                   <Field>
                     <ContractFieldLabel htmlFor="video-contract-duration-value-type" label="时长值类型" help={REQUEST_FIELD_HELP.duration_value_type} />
                     <Select value={request.duration_value_type} disabled={readOnly} onValueChange={(value) => updateContract((contract) => { contract.request.duration_value_type = value as VideoModelContract["request"]["duration_value_type"]; })}>
-                      <SelectTrigger id="video-contract-duration-value-type" className="h-11"><SelectValue /></SelectTrigger>
+                      <SelectTrigger id="video-contract-duration-value-type" className="h-10"><SelectValue /></SelectTrigger>
                       <SelectContent><SelectItem value="number">数字，例如 5</SelectItem><SelectItem value="string">字符串，例如 "5"</SelectItem></SelectContent>
                     </Select>
                   </Field>
@@ -2353,14 +2353,14 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
                         contract.artifact.auth = "none";
                       }
                     })}>
-                      <SelectTrigger id="video-contract-artifact-mode" className="h-11"><SelectValue /></SelectTrigger>
+                      <SelectTrigger id="video-contract-artifact-mode" className="h-10"><SelectValue /></SelectTrigger>
                       <SelectContent><SelectItem value="response_url">响应中的视频地址</SelectItem><SelectItem value="task_content">任务内容端点</SelectItem></SelectContent>
                     </Select>
                   </Field>
                   <Field>
                     <ContractFieldLabel htmlFor="video-contract-artifact-auth" label="下载鉴权" help="不鉴权不会发送中转 Key；中转鉴权仅允许向中转域名或允许域名发送 Bearer Key。" />
                     <Select value={artifact.auth} disabled={readOnly || artifact.mode === "task_content"} onValueChange={(value) => updateContract((contract) => { contract.artifact.auth = value as VideoModelContract["artifact"]["auth"]; })}>
-                      <SelectTrigger id="video-contract-artifact-auth" className="h-11"><SelectValue /></SelectTrigger>
+                      <SelectTrigger id="video-contract-artifact-auth" className="h-10"><SelectValue /></SelectTrigger>
                       <SelectContent><SelectItem value="none">不携带鉴权</SelectItem><SelectItem value="relay">携带中转鉴权</SelectItem></SelectContent>
                     </Select>
                   </Field>
@@ -2383,7 +2383,7 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
                   <TagListField id="video-contract-failure-statuses" label="失败状态" help="上游任务查询接口返回这些状态值时，系统停止轮询并标记生成失败，例如 failed 或 cancelled。" value={draft.failureStatuses} disabled={readOnly} placeholder="例如 failed" onValueChange={(value) => setDraft((current) => ({ ...current, failureStatuses: value }))} />
                   <Field>
                     <ContractFieldLabel htmlFor="video-contract-unknown-status" label="未知状态" help="没有匹配以上四组的状态统一归为 unknown。系统会保留原始状态并继续轮询，不会误判为成功或失败。" />
-                    <div id="video-contract-unknown-status" className="flex h-11 items-center gap-2 rounded-md border border-border/70 bg-muted/20 px-3 text-sm">
+                    <div id="video-contract-unknown-status" className="flex h-10 items-center gap-2 rounded-lg border border-border/70 bg-muted/20 px-3 text-sm">
                       <Badge variant="secondary" className="rounded-md font-mono">unknown</Badge>
                       <span className="text-xs text-muted-foreground">继续轮询</span>
                     </div>

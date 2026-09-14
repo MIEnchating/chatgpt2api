@@ -54,7 +54,7 @@ export function SiteIconSettings() {
         <p className="text-xs leading-5 text-muted-foreground">PNG、JPEG、WebP 或 GIF，最大 2MB</p>
       </div>
       <div className="mt-3 flex min-w-0 items-center gap-4">
-        <div className="flex size-[72px] shrink-0 items-center justify-center rounded-lg border border-border bg-background p-2 shadow-[0_1px_3px_rgba(0,0,0,0.04)]">
+        <div className="flex size-[72px] shrink-0 items-center justify-center rounded-lg border border-border bg-background p-2 shadow-[var(--shadow-card)]">
           <img src={previewUrl} alt="网站图标预览" className="size-full rounded-md object-contain" />
         </div>
         <div className="min-w-0 flex-1">

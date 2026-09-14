@@ -7,7 +7,7 @@ import (
 	"chatgpt2api/internal/service"
 )
 
-// Only upstream password authentication can supply credentials for creation.
+// SSO and password sessions supply separate credentials for platform key creation.
 // Reusing keys needs only the read-only database connection.
 func (a *App) initializeRelayGroups(ctx context.Context, reader *service.NewAPITokenReader, identity service.Identity, user *service.NewAPIUser, password string) []string {
 	mappings, err := a.imagePreferences.UnconfiguredRelayGroups(identityScope(identity), a.config.RelayCreationGroups())
@@ -20,7 +20,9 @@ func (a *App) initializeRelayGroups(ctx context.Context, reader *service.NewAPIT
 	ctx, cancel := context.WithTimeout(ctx, 20*time.Second)
 	defer cancel()
 	var create func(context.Context, string) error
-	if user != nil {
+	if identity.Provider == service.AuthProviderNewAPI && identity.SSOReference != "" && !reader.IsSub2API() {
+		create = ssoRelayGroupCreator(identity)
+	} else if user != nil {
 		create = passwordRelayGroupCreator(a.config.RelayBaseURL(), reader.Source(), *user, password, a.relayHTTPClient())
 	}
 	defaults, warnings := reader.EnsureCreationGroupTokens(ctx, identity, mappings, create)

@@ -186,7 +186,6 @@ export function ConfigCard({ isAdmin }: { isAdmin: boolean }) {
           保存参数配置
         </Button>
       }
-      contentClassName="pt-0 sm:pt-0"
     >
       <div className="grid gap-4">
         <section className={configSectionClassName}>
@@ -361,7 +360,7 @@ export function ConfigCard({ isAdmin }: { isAdmin: boolean }) {
               className={settingsInputClassName}
             />
             {proxyTestResult ? (
-              <div className={cn("rounded-lg border px-3 py-2 text-xs leading-5", proxyTestResult.ok ? "border-emerald-200 bg-emerald-50 text-emerald-800" : "border-rose-200 bg-rose-50 text-rose-800")}>
+              <div className={cn("rounded-lg border px-3 py-2 text-xs leading-5", proxyTestResult.ok ? "border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-800/70 dark:bg-emerald-950/35 dark:text-emerald-300" : "border-rose-200 bg-rose-50 text-rose-800 dark:border-rose-800/70 dark:bg-rose-950/35 dark:text-rose-300")}>
                 {proxyTestResult.ok
                   ? `代理可用：HTTP ${proxyTestResult.status}，用时 ${proxyTestResult.latency_ms} ms`
                   : `代理不可用：${proxyTestResult.error ?? "未知错误"}（用时 ${proxyTestResult.latency_ms} ms）`}

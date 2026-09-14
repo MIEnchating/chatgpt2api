@@ -20,7 +20,7 @@ test("every page shares the same full-width application shell", () => {
 test("navigation and page action rows share one vertical spacing token", () => {
   assert.match(globalStylesSource, /--page-section-gap: 1rem/);
   for (const pageSource of [source, managementPageSource]) {
-    assert.match(pageSource, /flex h-full min-h-0 flex-col gap-\[var\(--page-section-gap\)\] overflow-hidden/);
+    assert.match(pageSource, /flex h-full min-h-0(?: min-w-0)? flex-col gap-\[var\(--page-section-gap\)\]/);
   }
   for (const pageSource of [assetsSource, usersSource, rbacSource]) {
     assert.match(pageSource, /<ManagementPage/);
@@ -29,7 +29,7 @@ test("navigation and page action rows share one vertical spacing token", () => {
 });
 
 test("canvas project cards use a stable responsive four-column wide-screen grid", () => {
-  assert.match(source, /data-canvas-project-content className="w-full px-4 py-4 sm:px-6 sm:py-6"/);
+  assert.match(source, /data-canvas-project-content className="w-full p-4 sm:p-5"/);
   assert.doesNotMatch(source, /max-w-\[1600px\]/);
   assert.match(source, /data-canvas-project-grid/);
   assert.match(source, /grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4/);

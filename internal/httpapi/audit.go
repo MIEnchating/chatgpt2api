@@ -34,7 +34,16 @@ type auditRequestCapture struct {
 
 type auditBodyReadCloser struct {
 	io.Reader
-	closer io.Closer
+	closer  io.Closer
+	readErr error
+}
+
+func (r *auditBodyReadCloser) Read(data []byte) (int, error) {
+	n, err := r.Reader.Read(data)
+	if err == io.EOF && r.readErr != nil {
+		return n, r.readErr
+	}
+	return n, err
 }
 
 func (r *auditBodyReadCloser) Close() error {
@@ -340,6 +349,10 @@ func captureAuditRequest(r *http.Request) auditRequestCapture {
 		return auditRequestCapture{}
 	}
 	query := captureAuditQuery(r)
+	if r.Method != http.MethodGet && r.Method != http.MethodHead && r.ContentLength > maxAPIRequestBodyBytes {
+		// The router will reject this body without waiting for upload data.
+		return auditRequestCapture{args: query, truncated: true}
+	}
 	if strings.Contains(strings.ToLower(r.Header.Get("Content-Type")), "multipart/form-data") {
 		return auditRequestCapture{args: combineAuditArgs(query, "[multipart/form-data]")}
 	}
@@ -359,7 +372,11 @@ func captureAuditBody(r *http.Request) ([]byte, bool, bool) {
 		return nil, false, true
 	}
 	captured, err := io.ReadAll(io.LimitReader(r.Body, int64(maxAuditRequestPayloadBytes)+1))
-	r.Body = &auditBodyReadCloser{Reader: io.MultiReader(bytes.NewReader(captured), r.Body), closer: r.Body}
+	replay := &auditBodyReadCloser{Reader: bytes.NewReader(captured), closer: r.Body, readErr: err}
+	if err == nil {
+		replay.Reader = io.MultiReader(replay.Reader, r.Body)
+	}
+	r.Body = replay
 	if err != nil {
 		return nil, false, false
 	}

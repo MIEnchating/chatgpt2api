@@ -49,12 +49,7 @@ export function CanvasGenerationFooter({
           type="button"
           size="lg"
           variant={running ? "destructive" : "default"}
-          className={cn(
-            "h-10 w-full rounded-lg text-xs font-semibold text-white shadow-sm",
-            running
-              ? "bg-rose-600 hover:bg-rose-700 dark:bg-rose-600 dark:hover:bg-rose-700"
-              : "bg-[#1456f0] shadow-[0_4px_10px_rgba(20,86,240,.24)] hover:bg-[#0f45c8] hover:shadow-[0_5px_12px_rgba(20,86,240,.3)]",
-          )}
+          className="h-10 w-full text-xs font-semibold"
           disabled={disabled}
           aria-label={running ? "停止生成" : "开始生成"}
           onClick={running ? onStop : onGenerate}

@@ -148,9 +148,9 @@ function imageQualityCheckLabel(image: StoredImage) {
 function imageQualityCheckClass(image: StoredImage) {
   const check = image.qualityCheck;
   if (check?.size_matched === false || check?.output_format_matched === false) {
-    return "bg-amber-50 text-amber-700 ring-1 ring-amber-100";
+    return "bg-amber-500/10 text-amber-700 ring-1 ring-amber-500/20 dark:text-amber-300 dark:bg-amber-950/35 dark:text-amber-300 dark:ring-amber-800/70";
   }
-  return "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100";
+  return "bg-emerald-500/10 text-emerald-700 ring-1 ring-emerald-500/20 dark:text-emerald-300 dark:bg-emerald-950/35 dark:text-emerald-300 dark:ring-emerald-800/70";
 }
 
 function imageQualityCheckTitle(image: StoredImage) {
@@ -186,14 +186,14 @@ function imageVisibilityLabel(visibility?: ImageVisibility) {
 
 function imageVisibilityPillClass(visibility?: ImageVisibility) {
   return visibility === "public"
-    ? "bg-[#e8f2ff] text-[#1456f0] ring-1 ring-[#bfdbfe]"
+    ? "bg-brand-soft text-brand ring-1 ring-[var(--brand-6)]/25"
     : "bg-[#181e25]/82 text-white ring-1 ring-white/20";
 }
 
 function imageVisibilityActionClass(visibility?: ImageVisibility) {
   return visibility === "public"
-    ? "bg-white/95 text-[#1456f0] hover:bg-[#e8f2ff]"
-    : "bg-white/95 text-stone-800 hover:bg-stone-100";
+    ? "bg-card/95 text-brand hover:bg-brand-soft"
+    : "bg-card/95 text-foreground hover:bg-muted";
 }
 
 function blurFocusedElementInContainer(container: HTMLElement) {
@@ -399,8 +399,8 @@ export function ImageResults({
   if (isLoadingHistory) {
     return (
       <div className="flex h-full min-h-[300px] items-center justify-center px-0 py-3 text-center sm:min-h-[420px] sm:py-6">
-        <div className="inline-flex items-center gap-2 rounded-full border border-[#e5e7eb] bg-white px-4 py-2 text-sm text-[#45515e] shadow-sm dark:border-border dark:bg-card dark:text-muted-foreground">
-          <LoaderCircle className="size-4 animate-spin text-[#1456f0] dark:text-sky-300" />
+        <div className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-4 py-2 text-sm text-muted-foreground shadow-sm dark:border-border dark:bg-card dark:text-muted-foreground">
+          <LoaderCircle className="size-4 animate-spin text-brand" />
           正在读取历史记录
         </div>
       </div>
@@ -416,11 +416,11 @@ export function ImageResults({
               <button
                 key={preset.id}
                 type="button"
-                className="group w-[250px] shrink-0 overflow-hidden rounded-[22px] border border-[#f2f3f5] bg-white transition hover:-translate-y-0.5 hover:shadow-[0_12px_16px_-4px_rgba(36,36,36,0.08)] sm:w-auto"
+                className="group w-[250px] shrink-0 overflow-hidden rounded-[22px] border border-border bg-card transition hover:-translate-y-0.5 hover:shadow-[var(--shadow-elevated)] sm:w-auto"
                 onClick={() => void onApplyPromptPreset(preset)}
                 aria-label={`套用预设：${preset.title}`}
               >
-                <div className="relative aspect-[16/9] overflow-hidden bg-[#f0f0f0]">
+                <div className="relative aspect-[16/9] overflow-hidden bg-muted">
                   <img
                     src={preset.imageSrc}
                     alt={preset.title}
@@ -428,7 +428,7 @@ export function ImageResults({
                     className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]"
                   />
                   <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 bg-gradient-to-t from-black/70 via-black/25 to-transparent px-3 pt-8 pb-2">
-                    <span className="rounded-full bg-white/92 px-2 py-0.5 text-[11px] font-medium text-[#18181b] shadow-sm">
+                    <span className="rounded-full bg-card/95 px-2 py-0.5 text-[11px] font-medium text-foreground shadow-sm">
                       {preset.size || "自动"}
                     </span>
                     <span className="rounded-full bg-white/18 px-2 py-0.5 text-[11px] font-medium text-white shadow-sm backdrop-blur">
@@ -437,9 +437,9 @@ export function ImageResults({
                   </div>
                 </div>
                 <div className="flex flex-col gap-2 px-4 py-3.5">
-                  <div className="font-display text-sm font-semibold text-[#222222]">{preset.title}</div>
-                  <div className="line-clamp-2 text-sm leading-6 text-[#45515e]">{preset.hint}</div>
-                  <div className="border-t border-[#f2f3f5] pt-2 text-xs font-medium text-[#1456f0]">套用这个预设</div>
+                  <div className="font-display text-sm font-semibold text-foreground">{preset.title}</div>
+                  <div className="line-clamp-2 text-sm leading-6 text-muted-foreground">{preset.hint}</div>
+                  <div className="border-t border-border pt-2 text-xs font-medium text-brand">套用这个预设</div>
                 </div>
               </button>
             ))}
@@ -452,8 +452,8 @@ export function ImageResults({
   if (selectedConversation.historySummaryOnly === true) {
     return (
       <div data-image-conversation-detail-loading className="flex h-full min-h-[300px] items-center justify-center px-0 py-3 text-center sm:min-h-[420px] sm:py-6">
-        <div className="inline-flex items-center gap-2 rounded-full border border-[#e5e7eb] bg-white px-4 py-2 text-sm text-[#45515e] shadow-sm dark:border-border dark:bg-card dark:text-muted-foreground">
-          <LoaderCircle className="size-4 animate-spin text-[#1456f0] dark:text-sky-300" />
+        <div className="inline-flex items-center gap-2 rounded-full border border-border bg-card px-4 py-2 text-sm text-muted-foreground shadow-sm dark:border-border dark:bg-card dark:text-muted-foreground">
+          <LoaderCircle className="size-4 animate-spin text-brand" />
           正在读取会话详情
         </div>
       </div>
@@ -609,7 +609,7 @@ export function ImageResults({
               <Button
                 type="button"
                 size="sm"
-                className="h-8 rounded-full bg-[#1456f0] px-2.5 text-[11px] text-white shadow-sm hover:bg-[#2563eb]"
+                className="h-8 rounded-full bg-primary px-2.5 text-[11px] text-primary-foreground shadow-sm hover:bg-primary/90"
                 disabled={selectedDownloadableImages.length === 0 || downloadingKey !== null}
                 onClick={() =>
                   void downloadItems(
@@ -629,7 +629,7 @@ export function ImageResults({
                 type="button"
                 variant="outline"
                 size="sm"
-                className="h-8 rounded-full border-[#e5e7eb] bg-white px-2.5 text-[11px] text-[#45515e] shadow-sm hover:bg-black/[0.05]"
+                className="h-8 rounded-full border-border bg-card px-2.5 text-[11px] text-muted-foreground shadow-sm hover:bg-muted"
                 disabled={downloadingKey !== null}
                 onClick={() =>
                   void downloadItems(
@@ -652,28 +652,28 @@ export function ImageResults({
           <div key={turn.id} className="flex flex-col gap-3 sm:gap-4">
             <div className="flex justify-end">
               <article className={cn(
-                "w-full rounded-xl border border-border/80 bg-card px-4 py-3 text-left text-[14px] leading-6 text-foreground shadow-[0_4px_12px_rgba(0,0,0,0.05)] sm:px-5 sm:py-4 sm:text-[15px] sm:leading-7",
+                "w-full rounded-xl border border-border/80 bg-card px-4 py-3 text-left text-[14px] leading-6 text-foreground shadow-[var(--shadow-card)] sm:px-5 sm:py-4 sm:text-[15px] sm:leading-7",
                 isVideoTurn ? "max-w-[960px]" : "max-w-[min(94%,760px)]",
               )}>
-                <div className="mb-3 flex items-start justify-between gap-3 border-b border-[#f2f3f5] pb-2">
-                  <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-[11px] leading-5 text-[#45515e]">
-                    <span className="rounded-full bg-[#f0f0f0] px-2.5 py-0.5 text-[#45515e]">第 {turnIndex + 1} 轮</span>
+                <div className="mb-3 flex items-start justify-between gap-3 border-b border-border pb-2">
+                  <div className="flex min-w-0 flex-wrap items-center gap-1.5 text-[11px] leading-5 text-muted-foreground">
+                    <span className="max-w-full rounded-full bg-muted px-2.5 py-0.5 text-muted-foreground [overflow-wrap:anywhere]">第 {turnIndex + 1} 轮</span>
                     {turn.workflowName ? (
-                      <span className="rounded-full bg-sky-50 px-2.5 py-0.5 text-sky-700 ring-1 ring-sky-100">
+                      <span className="max-w-full rounded-full bg-brand-soft px-2.5 py-0.5 text-brand ring-1 ring-brand-border [overflow-wrap:anywhere] dark:bg-sky-950/35 dark:text-sky-300 dark:ring-sky-800/70">
                         工作流 {turn.workflowName}
                       </span>
                     ) : null}
-                    <span className="rounded-full bg-[#f0f0f0] px-2.5 py-0.5 text-[#45515e]">{getTurnModeLabel(turn)}</span>
-                    <span className="rounded-full bg-[#f0f0f0] px-2.5 py-0.5 text-[#45515e]">{turn.model}</span>
+                    <span className="max-w-full rounded-full bg-muted px-2.5 py-0.5 text-muted-foreground [overflow-wrap:anywhere]">{getTurnModeLabel(turn)}</span>
+                    <span className="max-w-full rounded-full bg-muted px-2.5 py-0.5 text-muted-foreground [overflow-wrap:anywhere]">{turn.model}</span>
                     {turn.mode === "video" ? (
-                      <span className="rounded-full bg-[#f0f0f0] px-2.5 py-0.5 text-[#45515e]">
+                      <span className="max-w-full rounded-full bg-muted px-2.5 py-0.5 text-muted-foreground [overflow-wrap:anywhere]">
                         {turn.videoResolution || "720p"} · {turn.videoSeconds || 4} 秒{turn.videoGenerateAudio === false ? " · 静音" : " · 声音"}
                       </span>
                     ) : null}
-                    <span className="rounded-full bg-[#f0f0f0] px-2.5 py-0.5 text-[#45515e]">
+                    <span className="max-w-full rounded-full bg-muted px-2.5 py-0.5 text-muted-foreground [overflow-wrap:anywhere]">
                       {getTurnStatusLabel(effectiveStatus)}
                     </span>
-                    <span className="px-1 text-[#8e8e93]">{formatConversationTime(turn.createdAt)}</span>
+                    <span className="px-1 text-muted-foreground">{formatConversationTime(turn.createdAt)}</span>
                   </div>
                   <div className="flex shrink-0 items-center gap-1">
                     {turnBusy ? (
@@ -681,7 +681,7 @@ export function ImageResults({
                         type="button"
                         variant="outline"
                         size="icon"
-                        className="size-8 rounded-full border-amber-200 bg-amber-50 text-amber-700 shadow-none hover:bg-amber-100"
+                        className="size-8 rounded-full border-amber-200 bg-amber-500/10 text-amber-700 dark:text-amber-300 shadow-none hover:bg-amber-100 dark:border-amber-800/70 dark:bg-amber-950/35 dark:text-amber-300 dark:hover:bg-amber-950/35"
                         onClick={() => void onCancelTurn(selectedConversation.id, turn.id)}
                         aria-label="终止生成任务"
                         title="终止"
@@ -694,7 +694,7 @@ export function ImageResults({
                           type="button"
                           variant="outline"
                           size="icon"
-                          className="size-8 rounded-full border-[#e5e7eb] bg-white text-[#45515e] shadow-none hover:bg-black/[0.05]"
+                          className="size-8 rounded-full border-border bg-card text-muted-foreground shadow-none hover:bg-muted"
                           onClick={() => onEditTurn(selectedConversation.id, turn.id)}
                           aria-label="编辑生成设置"
                           title="编辑"
@@ -705,7 +705,7 @@ export function ImageResults({
                           type="button"
                           variant="outline"
                           size="icon"
-                          className="size-8 rounded-full border-[#e5e7eb] bg-white text-[#45515e] shadow-none hover:bg-black/[0.05]"
+                          className="size-8 rounded-full border-border bg-card text-muted-foreground shadow-none hover:bg-muted"
                           disabled={turnBusy || !turn.prompt.trim()}
                           onClick={() => void onRegenerateTurn(selectedConversation.id, turn.id)}
                           aria-label="重新生成"
@@ -726,7 +726,7 @@ export function ImageResults({
                           key={`${turn.id}-${image.name}-${index}`}
                           type="button"
                           onClick={() => onOpenLightbox(referenceLightboxImages, index)}
-                          className="group relative size-20 shrink-0 overflow-hidden rounded-2xl border border-stone-200/80 bg-stone-100/60 text-left transition hover:border-stone-300 sm:size-24"
+                          className="group relative size-20 shrink-0 overflow-hidden rounded-2xl border border-border/80 bg-muted/60 text-left transition hover:border-border sm:size-24"
                           aria-label={`预览参考图 ${image.name || index + 1}`}
                         >
                           <AuthenticatedImage
@@ -751,7 +751,7 @@ export function ImageResults({
                     className={cn(
                       "mb-3 flex items-center gap-3 sm:mb-4",
                       isVideoTurn
-                        ? "flex-wrap rounded-lg border border-border/80 bg-card px-4 py-3 shadow-[0_4px_12px_rgba(0,0,0,0.04)]"
+                        ? "flex-wrap rounded-lg border border-border/80 bg-card px-4 py-3 shadow-[var(--shadow-card)]"
                         : "hide-scrollbar overflow-x-auto border-b border-border pb-3",
                     )}
                   >
@@ -794,7 +794,7 @@ export function ImageResults({
                             "inline-flex items-center rounded-md px-2 py-0.5 font-medium",
                             resultQualityCheckImage
                               ? imageQualityCheckClass(resultQualityCheckImage)
-                              : "bg-[#f3f4f6] text-[#6b7280] ring-1 ring-[#e5e7eb]",
+                              : "bg-muted text-muted-foreground ring-1 ring-border",
                           )}
                         >
                           检测：{resultQualityCheckLabel || "未检测"}
@@ -809,7 +809,7 @@ export function ImageResults({
                         <span>大小：<strong className="font-semibold text-foreground">{resultSizeLabel}</strong></span>
                       ) : null}
                       {resultFormatLabel ? (
-                        <span className="rounded-md bg-[#18181b] px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                        <span className="rounded-md bg-primary px-1.5 py-0.5 text-[10px] font-semibold text-primary-foreground">
                           {resultFormatLabel}
                         </span>
                       ) : null}
@@ -823,7 +823,7 @@ export function ImageResults({
                     {turnBusy || downloadActions ? (
                       <div className="ml-auto flex shrink-0 items-center justify-end gap-2">
                         {turnBusy ? (
-                          <span className="flex max-w-full flex-col gap-0.5 rounded-2xl bg-amber-50 px-3 py-1 text-[11px] leading-5 text-amber-700 sm:text-xs">
+                          <span className="flex max-w-full flex-col gap-0.5 rounded-2xl bg-amber-50 px-3 py-1 text-[11px] leading-5 text-amber-700 sm:text-xs dark:bg-amber-950/35 dark:text-amber-300">
                             <span className="w-fit whitespace-nowrap font-medium">{progressMessage}</span>
                             {longTaskHint ? <span className="max-w-[20rem] text-[11px] leading-5">{longTaskHint}</span> : null}
                           </span>
@@ -839,11 +839,11 @@ export function ImageResults({
                     {textReplyImages.map(({ image, index }) => (
                       <div
                         key={image.id}
-                        className="w-full max-w-[min(94%,760px)] rounded-[20px] border border-[#f2f3f5] bg-white px-4 py-3 text-left text-sm leading-6 text-[#45515e] shadow-[0_4px_6px_rgba(0,0,0,0.08)]"
+                        className="w-full max-w-[min(94%,760px)] rounded-[20px] border border-border bg-card px-4 py-3 text-left text-sm leading-6 text-muted-foreground shadow-[var(--shadow-card)]"
                       >
                         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-                          <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-stone-500">
-                            <span className="rounded-full bg-stone-100 px-2.5 py-0.5 text-stone-600">
+                          <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+                            <span className="max-w-full rounded-full bg-muted px-2.5 py-0.5 text-muted-foreground [overflow-wrap:anywhere]">
                               模型文本回复
                             </span>
                           </div>
@@ -852,7 +852,7 @@ export function ImageResults({
                               type="button"
                               variant="outline"
                               size="sm"
-                              className="h-8 rounded-full border-[#e5e7eb] bg-white px-3 text-xs text-[#45515e] shadow-none hover:bg-black/[0.05] hover:text-[#18181b]"
+                              className="h-8 rounded-full border-border bg-card px-3 text-xs text-muted-foreground shadow-none hover:bg-muted hover:text-foreground"
                               disabled={turnBusy || !turn.prompt.trim()}
                               onClick={() => void onRetryImage(selectedConversation.id, turn.id, index)}
                             >
@@ -885,7 +885,7 @@ export function ImageResults({
                         <figure
                           key={image.id}
                           data-video-result-card
-                          className="group relative mx-auto w-full max-w-[960px] overflow-hidden rounded-lg border border-border/80 bg-card shadow-[0_12px_32px_-24px_rgba(15,23,42,0.48)]"
+                          className="group relative mx-auto w-full max-w-[960px] overflow-hidden rounded-lg border border-border/80 bg-card shadow-[var(--shadow-card)]"
                           style={{ maxWidth: turnVideoFrameMaxWidth }}
                         >
                           <MediaVideoPlayer
@@ -933,11 +933,11 @@ export function ImageResults({
                       return (
                         <figure
                           key={image.id}
-                          className="group relative mb-3 inline-block w-full break-inside-avoid overflow-hidden rounded-[22px] bg-[#f0f0f0] shadow-[0_0_15px_rgba(44,30,116,0.16)] sm:mb-4"
+                          className="group relative mb-3 inline-block w-full break-inside-avoid overflow-hidden rounded-[22px] bg-muted shadow-[var(--shadow-card)] sm:mb-4"
                           onMouseLeave={(event) => blurFocusedElementInContainer(event.currentTarget)}
                         >
                           {selected ? (
-                            <div className="pointer-events-none absolute inset-0 z-10 rounded-[22px] border-[3px] border-[#1456f0]/90" />
+                            <div className="pointer-events-none absolute inset-0 z-10 rounded-[22px] border-[3px] border-brand/90" />
                           ) : null}
                           <div className="relative overflow-hidden">
                             <button
@@ -1004,7 +1004,7 @@ export function ImageResults({
                               className={cn(
                                 "absolute top-2 left-2 z-10 inline-flex size-6 items-center justify-center rounded-full border transition duration-150",
                                 selected
-                                  ? "border-[#1456f0] bg-[#1456f0] text-white opacity-100 shadow-sm"
+                                  ? "border-brand bg-primary text-primary-foreground opacity-100 shadow-sm"
                                   : "pointer-events-none border-white/90 bg-black/20 text-transparent opacity-0 shadow-sm group-hover:pointer-events-auto group-hover:opacity-100 group-focus-within:pointer-events-auto group-focus-within:opacity-100 hover:bg-black/30",
                               )}
                               disabled={isPreview}
@@ -1020,7 +1020,7 @@ export function ImageResults({
                                   event.currentTarget.blur();
                                   onOpenLightbox(successfulTurnImages, currentIndex);
                                 }}
-                                className="inline-flex h-7 items-center gap-1 rounded-full bg-white/95 px-2 text-[11px] font-medium text-stone-800 shadow-sm transition hover:bg-white hover:text-stone-950"
+                                className="inline-flex h-7 items-center gap-1 rounded-full bg-card/95 px-2 text-[11px] font-medium text-foreground shadow-sm transition hover:bg-card hover:text-foreground"
                                 aria-label="查看原图"
                                 tooltip="查看原图"
                               >
@@ -1034,7 +1034,7 @@ export function ImageResults({
                                   event.currentTarget.blur();
                                   onContinueEdit(selectedConversation.id, image);
                                 }}
-                                className="inline-flex size-7 items-center justify-center rounded-full bg-white/95 text-stone-800 shadow-sm transition hover:bg-white hover:text-stone-950"
+                                className="inline-flex size-7 items-center justify-center rounded-full bg-card/95 text-foreground shadow-sm transition hover:bg-card hover:text-foreground"
                                 aria-label="加入编辑"
                                 tooltip="加入编辑"
                               >
@@ -1092,9 +1092,9 @@ export function ImageResults({
                       return (
                         <div
                           key={image.id}
-                          className="mb-3 inline-block h-[160px] w-full break-inside-avoid overflow-hidden rounded-[18px] border border-amber-200 bg-amber-50 sm:mb-4"
+                          className="mb-3 inline-block h-[160px] w-full break-inside-avoid overflow-hidden rounded-[18px] border border-amber-200 bg-amber-50 sm:mb-4 dark:border-amber-800/70 dark:bg-amber-950/35"
                         >
-                          <div className="flex h-full min-h-16 items-center justify-center px-4 py-4 text-center text-sm leading-6 text-amber-700 sm:px-6 sm:py-8">
+                          <div className="flex h-full min-h-16 items-center justify-center px-4 py-4 text-center text-sm leading-6 text-amber-700 sm:px-6 sm:py-8 dark:text-amber-300">
                             {image.error || "任务已终止"}
                           </div>
                         </div>
@@ -1105,9 +1105,9 @@ export function ImageResults({
                       return (
                         <div
                           key={image.id}
-                          className="mb-3 inline-flex min-h-[160px] w-full break-inside-avoid flex-col overflow-hidden rounded-[18px] border border-rose-200 bg-rose-50 sm:mb-4"
+                          className="mb-3 inline-flex min-h-[160px] w-full break-inside-avoid flex-col overflow-hidden rounded-[18px] border border-destructive/20 bg-destructive/10 sm:mb-4 dark:border-rose-800/70 dark:bg-rose-950/35"
                         >
-                          <div className="flex min-h-[112px] flex-1 items-center justify-center whitespace-pre-wrap break-words px-4 py-4 text-center text-sm leading-6 text-rose-600 sm:px-5">
+                          <div className="flex min-h-[112px] flex-1 items-center justify-center whitespace-pre-wrap break-words px-4 py-4 text-center text-sm leading-6 text-destructive sm:px-5 dark:text-rose-300">
                             {video ? (
                               <div className="flex max-w-xl flex-col items-center gap-2">
                                 <span className="inline-flex items-center gap-2 font-semibold"><AlertCircle className="size-4 shrink-0" />视频生成失败</span>
@@ -1115,12 +1115,12 @@ export function ImageResults({
                               </div>
                             ) : image.error || "生成失败"}
                           </div>
-                          <div className="flex justify-end border-t border-rose-100 bg-white/70 px-3 py-2.5">
+                          <div className="flex justify-end border-t border-destructive/20 bg-card/70 px-3 py-2.5 dark:border-rose-800/70">
                             <Button
                               type="button"
                               variant="outline"
                               size="sm"
-                              className="h-8 rounded-full border-rose-200 bg-white px-3 text-xs text-rose-600 shadow-none hover:bg-rose-50 hover:text-rose-700"
+                              className="h-8 rounded-full border-destructive/20 bg-card px-3 text-xs text-destructive shadow-none hover:bg-destructive/10 hover:text-destructive dark:border-rose-800/70 dark:text-rose-300 dark:hover:bg-rose-950/35 dark:hover:text-rose-300"
                               disabled={turnBusy || !turn.prompt.trim()}
                               onClick={() => void onRetryImage(selectedConversation.id, turn.id, index)}
                             >
@@ -1143,7 +1143,7 @@ export function ImageResults({
                       <div
                         key={image.id}
                         className={cn(
-                          "mb-3 inline-block w-full break-inside-avoid overflow-hidden rounded-[18px] border border-stone-200/80 bg-stone-100/80 sm:mb-4",
+                          "mb-3 inline-block w-full break-inside-avoid overflow-hidden rounded-[18px] border border-border/80 bg-muted/80 sm:mb-4",
                           video && "mx-auto block",
                         )}
                         style={{
@@ -1151,8 +1151,8 @@ export function ImageResults({
                           ...(video ? { maxWidth: turnVideoFrameMaxWidth } : {}),
                         }}
                       >
-                        <div className="flex h-full flex-col items-center justify-center gap-2 px-5 py-5 text-center text-stone-500">
-                          <div className="rounded-full bg-white p-3 shadow-sm">
+                        <div className="flex h-full flex-col items-center justify-center gap-2 px-5 py-5 text-center text-muted-foreground">
+                          <div className="rounded-full bg-card p-3 shadow-sm">
                             {imageLoadingPhase === "queued" ? (
                               <Clock3 className="size-5" />
                             ) : (
@@ -1164,7 +1164,7 @@ export function ImageResults({
                           </p>
                           {video && imageLoadingPhase === "running" ? <GenerationProgress progress={image.taskProgress} label="视频生成进度" className="mt-2 max-w-64" /> : null}
                           {imageLoadingPhase === "running" ? (
-                            <p className="min-w-[7.5rem] rounded-full bg-white/70 px-2.5 py-1 font-mono text-xs tabular-nums text-stone-400">
+                            <p className="min-w-[7.5rem] rounded-full bg-card/70 px-2.5 py-1 font-mono text-xs tabular-nums text-muted-foreground">
                               已运行 {elapsedClock}
                             </p>
                           ) : null}
@@ -1209,21 +1209,21 @@ function turnProgressKey(conversationId: string, turnId: string) {
 
 function getStatusChipClass(status: ImageTurnStatus) {
   if (status === "queued") {
-    return "bg-amber-50 text-amber-700";
+    return "bg-amber-500/10 text-amber-700 dark:text-amber-300 dark:bg-amber-950/35 dark:text-amber-300";
   }
   if (status === "generating") {
-    return "bg-blue-50 text-[#1456f0]";
+    return "bg-brand-soft text-brand dark:bg-blue-950/35";
   }
   if (status === "success") {
-    return "bg-emerald-50 text-emerald-700";
+    return "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300 dark:bg-emerald-950/35 dark:text-emerald-300";
   }
   if (status === "message") {
-    return "bg-stone-100 text-stone-600";
+    return "bg-muted text-muted-foreground";
   }
   if (status === "cancelled") {
-    return "bg-amber-50 text-amber-700";
+    return "bg-amber-500/10 text-amber-700 dark:text-amber-300 dark:bg-amber-950/35 dark:text-amber-300";
   }
-  return "bg-rose-50 text-rose-700";
+  return "bg-destructive/10 text-destructive dark:bg-rose-950/35 dark:text-rose-300";
 }
 
 function getTurnModeLabel(turn: ImageTurn) {

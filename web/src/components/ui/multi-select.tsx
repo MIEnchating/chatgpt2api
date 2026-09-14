@@ -129,7 +129,7 @@ export function MultiSelect({
           aria-haspopup="listbox"
           aria-disabled={disabled}
           className={cn(
-            "flex min-h-9 min-w-0 cursor-pointer items-center gap-1.5 rounded-lg border border-input bg-background px-2 py-1 text-sm shadow-[0_1px_3px_rgba(0,0,0,0.03)] outline-none transition-[border-color,box-shadow,background-color] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/20",
+            "flex min-h-10 w-full min-w-0 cursor-pointer items-center gap-1.5 rounded-lg border border-input bg-background px-2 py-1 text-sm shadow-xs outline-none transition-[border-color,box-shadow,background-color] focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/20",
             disabled && "cursor-not-allowed bg-muted/50 opacity-60",
             className,
           )}
@@ -151,7 +151,7 @@ export function MultiSelect({
                   <button
                     type="button"
                     disabled={disabled}
-                    className="inline-flex size-4 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-background hover:text-foreground"
+                    className="inline-flex size-4 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-background hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/30 disabled:cursor-not-allowed"
                     aria-label={`移除 ${option.label}`}
                     onClick={(event) => {
                       event.preventDefault();
@@ -221,16 +221,16 @@ export function MultiSelect({
             {options.map((option) => {
               const checked = selected.includes(option.value);
               return (
-                <div key={option.value} className="flex items-center gap-1 rounded-md hover:bg-muted">
+                <div key={option.value} className={cn("flex min-w-0 items-center gap-1 rounded-lg transition-colors hover:bg-accent", checked && "bg-accent")}>
                   <button
                     type="button"
                     disabled={disabled}
                     role="option"
                     aria-selected={checked}
-                    className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2.5 py-2 text-left text-sm"
+                    className="flex min-h-9 min-w-0 flex-1 items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm outline-none focus-visible:bg-accent focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring/30 disabled:cursor-not-allowed disabled:opacity-60"
                     onClick={() => toggle(option.value)}
                   >
-                    <span className={cn("flex size-4 shrink-0 items-center justify-center rounded border border-border", checked && "border-primary bg-primary text-primary-foreground")}>
+                    <span className={cn("flex size-4 shrink-0 items-center justify-center rounded border border-border", checked && "border-brand bg-brand text-brand-foreground")}>
                       {checked ? <Check className="size-3" /> : null}
                     </span>
                     <span className="min-w-0 flex-1 truncate">{option.label}</span>

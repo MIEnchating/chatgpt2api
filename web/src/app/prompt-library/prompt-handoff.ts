@@ -7,17 +7,27 @@ type PromptHandoff = {
   sessionKey: string;
 };
 
-export function stagePromptForWorkbench(prompt: BananaPrompt, sessionKey: string) {
-  if (typeof window === "undefined") return;
+export function stagePromptForWorkbench(prompt: BananaPrompt, sessionKey: string): boolean {
+  if (typeof window === "undefined") return false;
   const normalizedSessionKey = sessionKey.trim();
-  if (!normalizedSessionKey) return;
-  window.sessionStorage.setItem(PROMPT_HANDOFF_KEY, JSON.stringify({ prompt, sessionKey: normalizedSessionKey }));
+  if (!normalizedSessionKey) return false;
+  try {
+    window.sessionStorage.setItem(PROMPT_HANDOFF_KEY, JSON.stringify({ prompt, sessionKey: normalizedSessionKey }));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function consumePromptForWorkbench(sessionKey: string): BananaPrompt | null {
   if (typeof window === "undefined") return null;
-  const raw = window.sessionStorage.getItem(PROMPT_HANDOFF_KEY);
-  window.sessionStorage.removeItem(PROMPT_HANDOFF_KEY);
+  let raw: string | null;
+  try {
+    raw = window.sessionStorage.getItem(PROMPT_HANDOFF_KEY);
+    window.sessionStorage.removeItem(PROMPT_HANDOFF_KEY);
+  } catch {
+    return null;
+  }
   if (!raw) return null;
   try {
     const handoff = JSON.parse(raw) as Partial<PromptHandoff>;

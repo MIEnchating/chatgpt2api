@@ -200,6 +200,25 @@ const CREATION_TASK_POLL_MAX_DURATION_MS = 8 * 60 * 1000;
 const CREATION_TASK_POLL_MAX_ERROR_RETRIES = 8;
 const CREATION_TASK_POLL_MAX_RETRY_DELAY_MS = 10_000;
 
+function readImageWorkbenchStorage(key: string) {
+  if (typeof window === "undefined") return null;
+  try {
+    return window.localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
+function writeImageWorkbenchStorage(key: string, value: string | null) {
+  if (typeof window === "undefined") return;
+  try {
+    if (value === null) window.localStorage.removeItem(key);
+    else window.localStorage.setItem(key, value);
+  } catch {
+    // Browser storage is an optional preference and may be unavailable.
+  }
+}
+
 class ImageTaskDispatchAbortedError extends Error {
   constructor() {
     super("图片任务提交已取消");
@@ -1038,7 +1057,7 @@ function getStoredComposerMode(): ComposerMode {
   if (typeof window === "undefined") {
     return "image";
   }
-  return window.localStorage.getItem(COMPOSER_MODE_STORAGE_KEY) === "video" ? "video" : "image";
+  return readImageWorkbenchStorage(COMPOSER_MODE_STORAGE_KEY) === "video" ? "video" : "image";
 }
 
 function serializeImageSizeSelection(selection: ImageSizeSelection): StoredImageSizeSelection {
@@ -2076,8 +2095,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       const applyLoadedItems = (items: ImageConversation[]) => {
         conversationsRef.current = items;
         setConversations(items);
-        const storedConversationId =
-          typeof window !== "undefined" ? window.localStorage.getItem(ACTIVE_IMAGE_CONVERSATION_STORAGE_KEY) : null;
+        const storedConversationId = readImageWorkbenchStorage(ACTIVE_IMAGE_CONVERSATION_STORAGE_KEY);
         setSelectedConversationId((current) => {
           if (current && items.some((conversation) => conversation.id === current)) {
             return current;
@@ -2127,8 +2145,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
           .catch(() => undefined);
       };
       try {
-        const storedConversationId =
-          typeof window !== "undefined" ? window.localStorage.getItem(ACTIVE_IMAGE_CONVERSATION_STORAGE_KEY) : null;
+        const storedConversationId = readImageWorkbenchStorage(ACTIVE_IMAGE_CONVERSATION_STORAGE_KEY);
         let storedSelectionDetailTransientFailure = false;
 
         const {
@@ -2241,11 +2258,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       return;
     }
 
-    if (selectedConversationId) {
-      window.localStorage.setItem(ACTIVE_IMAGE_CONVERSATION_STORAGE_KEY, selectedConversationId);
-    } else {
-      window.localStorage.removeItem(ACTIVE_IMAGE_CONVERSATION_STORAGE_KEY);
-    }
+    writeImageWorkbenchStorage(ACTIVE_IMAGE_CONVERSATION_STORAGE_KEY, selectedConversationId);
   }, [selectedConversationId]);
 
   useEffect(() => {
@@ -2279,7 +2292,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       return;
     }
 
-    window.localStorage.setItem(COMPOSER_MODE_STORAGE_KEY, composerMode);
+    writeImageWorkbenchStorage(COMPOSER_MODE_STORAGE_KEY, composerMode);
   }, [composerMode]);
 
   useEffect(() => {
@@ -5043,7 +5056,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   return (
     <>
       <section data-image-workbench-layout className="grid h-full min-h-0 w-full grid-cols-1 gap-2 px-0 pb-[env(safe-area-inset-bottom)] sm:gap-3 sm:px-3 sm:pb-0 lg:grid-cols-[240px_minmax(0,1fr)] 2xl:grid-cols-[260px_minmax(0,1fr)]">
-        <div className="hidden h-full min-h-0 border-r border-[#f2f3f5] pr-3 lg:block">
+        <div className="hidden h-full min-h-0 border-r border-border pr-3 lg:block">
           <ImageSidebar
             conversations={conversations}
             isLoadingHistory={isLoadingHistory}
@@ -5060,7 +5073,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         </div>
 
         <Dialog open={isHistoryOpen} onOpenChange={setIsHistoryOpen}>
-          <DialogContent scrollable={false} className="flex h-[min(82dvh,760px)] w-[92vw] max-w-[460px] flex-col overflow-hidden rounded-[32px] border-white/80 bg-white p-0 shadow-[0_32px_110px_-38px_rgba(15,23,42,0.45)] sm:rounded-[36px]">
+          <DialogContent scrollable={false} className="flex h-[min(82dvh,760px)] w-[92vw] max-w-[460px] flex-col overflow-hidden border-border bg-card p-0">
             <DialogHeader className="px-6 pt-7 pb-4 sm:px-8">
               <DialogTitle className="flex items-center gap-2 text-xl font-bold tracking-tight">
                 <History className="size-5" />
@@ -5118,7 +5131,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
               </DialogHeader>
               <ScrollArea className="min-h-0 flex-1 px-6 py-4">
                 <div className="flex flex-col gap-5">
-                  <label className="flex flex-col gap-2 text-sm font-medium text-stone-700">
+                  <label className="flex flex-col gap-2 text-sm font-medium text-foreground">
                     提示词
                     <Textarea
                       value={editingTurnDraft.prompt}
@@ -5127,7 +5140,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                           current ? { ...current, prompt: event.target.value } : current,
                         )
                       }
-                      className="min-h-[128px] resize-y rounded-2xl border-stone-200 bg-white text-sm leading-6 shadow-none"
+                      className="min-h-[128px] resize-y rounded-2xl border-border bg-card text-sm leading-6 shadow-none"
                     />
                   </label>
 
@@ -5145,13 +5158,13 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                       }}
                     />
                     <div className="flex items-center justify-between gap-3">
-                      <div className="text-sm font-medium text-stone-700">参考图</div>
+                      <div className="text-sm font-medium text-foreground">参考图</div>
                       <Button
                         type="button"
                         variant="outline"
                         size="sm"
                         disabled={editReferenceUploadPendingCount > 0}
-                        className="rounded-full border-stone-200 bg-white"
+                        className="rounded-full border-border bg-card"
                         onClick={() => editFileInputRef.current?.click()}
                       >
                         {editReferenceUploadPendingCount > 0 ? (
@@ -5168,7 +5181,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                           <div key={`${image.name}-${index}`} className="relative size-20 shrink-0">
                             <button
                               type="button"
-                              className="size-20 overflow-hidden rounded-2xl border border-stone-200 bg-stone-100"
+                              className="size-20 overflow-hidden rounded-2xl border border-border bg-muted"
                               onClick={() =>
                                 openLightbox(
                                   editingTurnDraft.referenceImages.map((item, itemIndex) => ({
@@ -5191,7 +5204,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                               type="button"
                               onClick={() => handleRemoveEditReferenceImage(index)}
                               disabled={editReferenceUploadPendingCount > 0}
-                              className="absolute -top-1 -right-1 z-10 inline-flex size-6 items-center justify-center rounded-full border border-stone-200 bg-white text-stone-500 shadow-sm transition hover:text-stone-900 disabled:cursor-not-allowed disabled:opacity-45"
+                              className="absolute -top-1 -right-1 z-10 inline-flex size-6 items-center justify-center rounded-full border border-border bg-card text-muted-foreground shadow-sm transition hover:text-foreground disabled:cursor-not-allowed disabled:opacity-45"
                               aria-label={`移除参考图 ${image.name || index + 1}`}
                             >
                               <X className="size-3.5" />
@@ -5234,7 +5247,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                   </label>
 
                   {editingTurnDraft.mode !== "chat" && editingDraftEffectiveSizeSelection && editingDraftSizeSupported ? (
-                    <div className="flex flex-col gap-3.5 rounded-xl border border-[#dedfe3] bg-white p-3.5 dark:border-border dark:bg-card">
+                    <div className="flex flex-col gap-3.5 rounded-xl border border-border bg-card p-3.5 dark:border-border dark:bg-card">
                       <ImageSizePresetControls
                         className="order-2"
                         ariaLabelPrefix="编辑图片"
@@ -5260,7 +5273,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                           <ImageParameterLabel help="质量档位同时参与参考项目的目标尺寸换算；厂商不支持的 quality 字段不会透传。">
                             质量
                           </ImageParameterLabel>
-                          <div className="grid grid-cols-4 gap-1 rounded-lg bg-[#f4f4f5] p-1 dark:bg-muted/70" role="group" aria-label="编辑图片质量">
+                          <div className="grid grid-cols-4 gap-1 rounded-lg bg-muted p-1 dark:bg-muted/70" role="group" aria-label="编辑图片质量">
                             {editingDraftQualityOptions.map((option) => (
                               <button
                                 key={option.value || "auto"}
@@ -5282,7 +5295,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                         </section>
                       ) : null}
 
-                      <section className="order-4 flex items-center justify-between gap-3 border-t border-[#ececef] pt-3 dark:border-border">
+                      <section className="order-4 flex items-center justify-between gap-3 border-t border-border pt-3 dark:border-border">
                         <ImageParameterLabel help={`当前模型单次请求支持 1-${editingDraftCountLimit} 张图片。`}>
                           生成数量
                         </ImageParameterLabel>
@@ -5310,7 +5323,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                         />
                       </section>
 
-                      <div className="order-3 border-t border-[#ececef] pt-2.5 dark:border-border">
+                      <div className="order-3 border-t border-border pt-2.5 dark:border-border">
                         <div className="space-y-3">
                           <section className="space-y-1.5">
                             <div className="flex items-center justify-between gap-3">
@@ -5320,13 +5333,13 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                             <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-1.5">
                               <label
                                 className={cn(
-                                  "grid h-8 grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded-lg border px-2.5",
+                                  "grid h-8 min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded-lg border px-2.5 focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20",
                                   editingDraftDimensionsDisabled
                                     ? "cursor-not-allowed border-border/60 bg-muted/50 dark:bg-muted/40"
-                                    : "border-[#e3e4e7] bg-white dark:border-border dark:bg-background/70",
+                                    : "border-border bg-card dark:border-border dark:bg-background/70",
                                 )}
                               >
-                                <span className="text-[11px] text-[#777a82] dark:text-muted-foreground">W</span>
+                                <span className="text-[11px] text-muted-foreground dark:text-muted-foreground">W</span>
                                 <Input
                                   type="number"
                                   inputMode="numeric"
@@ -5360,16 +5373,16 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                                   className="h-7 border-0 bg-transparent px-0 text-xs font-medium shadow-none disabled:bg-transparent disabled:opacity-100 focus-visible:ring-0"
                                 />
                               </label>
-                              <X className="size-3.5 text-[#9a9ca2]" aria-hidden="true" />
+                              <X className="size-3.5 text-muted-foreground" aria-hidden="true" />
                               <label
                                 className={cn(
-                                  "grid h-8 grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded-lg border px-2.5",
+                                  "grid h-8 min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded-lg border px-2.5 focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20",
                                   editingDraftDimensionsDisabled
                                     ? "cursor-not-allowed border-border/60 bg-muted/50 dark:bg-muted/40"
-                                    : "border-[#e3e4e7] bg-white dark:border-border dark:bg-background/70",
+                                    : "border-border bg-card dark:border-border dark:bg-background/70",
                                 )}
                               >
-                                <span className="text-[11px] text-[#777a82] dark:text-muted-foreground">H</span>
+                                <span className="text-[11px] text-muted-foreground dark:text-muted-foreground">H</span>
                                 <Input
                                   type="number"
                                   inputMode="numeric"
@@ -5440,7 +5453,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
 
         <div className="relative flex min-h-0 flex-col gap-2 sm:gap-4">
           {imageModelConfigError ? (
-            <div role="alert" className="mx-1 flex items-center gap-2 border-b border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700 sm:mx-4">
+            <div role="alert" className="mx-1 flex items-center gap-2 border-b border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive sm:mx-4 dark:border-rose-800/70 dark:bg-rose-950/35 dark:text-rose-300">
               <CircleAlert className="size-4 shrink-0" />
               <span className="min-w-0 flex-1 break-words">模型配置加载失败：{imageModelConfigError}</span>
               <Button type="button" variant="outline" size="sm" onClick={() => setImageModelConfigReloadKey((value) => value + 1)}>
@@ -5452,7 +5465,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
             <div className="flex min-w-0 flex-1 items-center gap-2 lg:hidden">
               <Button
                 variant="outline"
-                className="h-10 min-w-0 flex-1 shrink rounded-full border-[#e5e7eb] bg-white text-[#45515e] shadow-sm"
+                className="h-10 min-w-0 flex-1 shrink rounded-full border-border bg-card text-muted-foreground shadow-sm"
                 onClick={() => setIsHistoryOpen(true)}
               >
                 <History className="size-4" />
@@ -5467,7 +5480,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
               </Button>
               <Button
                 variant="outline"
-                className="h-10 rounded-full border-[#e5e7eb] bg-white px-3 text-[#45515e] shadow-sm"
+                className="h-10 rounded-full border-border bg-card px-3 text-muted-foreground shadow-sm"
                 onClick={openClearHistoryConfirm}
                 disabled={conversations.length === 0}
               >
@@ -5512,7 +5525,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
               type="button"
               variant="outline"
               size="icon"
-              className="absolute left-1/2 z-40 size-9 -translate-x-1/2 rounded-full border-[#dbe7ff] bg-white/95 text-[#1456f0] shadow-[0_14px_34px_-20px_rgba(20,86,240,0.65)] backdrop-blur hover:bg-[#edf4ff] dark:bg-card/95 dark:text-sky-300 dark:hover:bg-sky-950/30"
+              className="absolute left-1/2 z-40 size-9 -translate-x-1/2 rounded-full border-brand-border bg-card/95 text-brand shadow-[var(--shadow-elevated)] backdrop-blur hover:bg-brand-soft dark:bg-card/95"
               style={{ bottom: composerDockHeight > 0 ? composerDockHeight + 20 : 160 }}
               onClick={() => scrollResultsToBottom("smooth")}
               aria-label="滚动到底部"
@@ -5647,7 +5660,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
               </DialogDescription>
             </DialogHeader>
             <div className="grid gap-3 py-1">
-              <label className="flex items-start gap-3 rounded-xl border border-stone-200 bg-white px-3 py-3 text-sm">
+              <label className="flex items-start gap-3 rounded-xl border border-border bg-card px-3 py-3 text-sm">
                 <Checkbox
                   className="mt-0.5"
                   checked={publishRecipeOptions.sharePromptParameters}
@@ -5659,11 +5672,11 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                   }
                 />
                 <span className="min-w-0">
-                  <span className="block font-medium text-stone-900">公开原始提示词和生成参数</span>
-                  <span className="mt-0.5 block text-xs leading-5 text-stone-500">公开图库会展示可复用的 prompt、模型、尺寸和输出设置。</span>
+                  <span className="block font-medium text-foreground">公开原始提示词和生成参数</span>
+                  <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">公开图库会展示可复用的 prompt、模型、尺寸和输出设置。</span>
                 </span>
               </label>
-              <label className="flex items-start gap-3 rounded-xl border border-stone-200 bg-white px-3 py-3 text-sm">
+              <label className="flex items-start gap-3 rounded-xl border border-border bg-card px-3 py-3 text-sm">
                 <Checkbox
                   className="mt-0.5"
                   checked={publishRecipeOptions.shareReferenceImages}
@@ -5676,8 +5689,8 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
                   }
                 />
                 <span className="min-w-0">
-                  <span className="block font-medium text-stone-900">公开原始参考图用于同款生成</span>
-                  <span className="mt-0.5 block text-xs leading-5 text-stone-500">其他用户复用时可以读取这些参考图；不勾选时会改用公开成品图。</span>
+                  <span className="block font-medium text-foreground">公开原始参考图用于同款生成</span>
+                  <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">其他用户复用时可以读取这些参考图；不勾选时会改用公开成品图。</span>
                 </span>
               </label>
             </div>
@@ -5707,7 +5720,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
               <Button variant="outline" onClick={() => setDeleteConfirm(null)}>
                 取消
               </Button>
-              <Button className="bg-rose-600 text-white hover:bg-rose-700" onClick={() => void handleConfirmDelete()}>
+              <Button variant="destructive" onClick={() => void handleConfirmDelete()}>
                 确认删除
               </Button>
             </DialogFooter>
@@ -5724,7 +5737,7 @@ export default function ImagePage() {
   if (isCheckingAuth || !session) {
     return (
       <div className="flex min-h-[40vh] items-center justify-center">
-        <LoaderCircle className="size-5 animate-spin text-stone-400" />
+        <LoaderCircle className="size-5 animate-spin text-muted-foreground" />
       </div>
     );
   }

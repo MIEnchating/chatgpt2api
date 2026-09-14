@@ -31,16 +31,16 @@ export function SectionNavigation<T extends string>({
     <aside
       data-section-navigation
       className={cn(
-        "card-surface rounded-xl border border-border/80 p-2 shadow-[0_4px_16px_rgba(24,40,72,0.05)] lg:sticky lg:top-0",
+        "card-surface min-w-0 rounded-xl border border-border p-2 shadow-[var(--shadow-card)] lg:sticky lg:top-0",
         className,
       )}
     >
       <div className="px-2 pt-1 pb-2 lg:pb-3">
-        <h1 className="text-base font-semibold text-foreground">{title}</h1>
-        <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>
+        <h1 className="break-words text-base font-semibold text-foreground">{title}</h1>
+        <p className="mt-1 break-words text-xs leading-5 text-muted-foreground">{description}</p>
       </div>
       <nav
-        className="hide-scrollbar flex gap-1 overflow-x-auto pb-1 lg:grid lg:overflow-visible lg:pb-0"
+        className="hide-scrollbar flex min-w-0 gap-1 overflow-x-auto p-1 lg:grid lg:overflow-visible"
         aria-label={ariaLabel}
       >
         {items.map((item) => {
@@ -53,7 +53,7 @@ export function SectionNavigation<T extends string>({
               aria-current={active ? "page" : undefined}
               onClick={() => onSelect(item.id)}
               className={cn(
-                "flex h-10 shrink-0 items-center gap-2 rounded-lg px-3 text-left text-sm transition-colors lg:w-full lg:gap-2.5",
+                "flex h-10 shrink-0 items-center gap-2 rounded-lg px-3 text-left text-sm transition-colors outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card lg:w-full lg:gap-2.5",
                 active
                   ? "bg-primary text-primary-foreground shadow-sm"
                   : "text-muted-foreground hover:bg-muted hover:text-foreground",

@@ -20,6 +20,7 @@ const (
 	myAssetDocumentGenerationField     = "generation"
 	myAssetDocumentOwnerIDField        = "ownerID"
 	myAssetPendingObjectDeletionsField = "pendingObjectDeletions"
+	myAssetRecordOnlyDeletionsField    = "recordOnlyObjectDeletions"
 	maxMyAssetItems                    = 2000
 	myAssetSaveAttempts                = 8
 	myAssetRequestCleanupBatchSize     = 1
@@ -68,6 +69,7 @@ type myAssetDocument struct {
 	items                  []MyAsset
 	groups                 []MyAssetGroup
 	pendingObjectDeletions []string
+	recordOnlyDeletions    []string
 	generation             int64
 }
 
@@ -147,6 +149,7 @@ type MyAssetObjectStorage interface {
 	Upload(context.Context, string, bool, string, string, []byte, *StorageObjectProviderInput) (UploadedStorageObject, error)
 	InfoForIdentity(string, bool, string) (model.StorageObject, error)
 	Delete(context.Context, string, bool, string, *StorageObjectProviderInput) error
+	DeleteDirectRecord(string, string) error
 }
 
 type StorageObjectDeletionCoordinator interface {
@@ -437,7 +440,7 @@ func (s *MyAssetService) cleanupUncommittedTextObject(ctx context.Context, owner
 	if objectID == "" {
 		return nil
 	}
-	queued, err := s.enqueueObjectDeletion(ownerID, objectID)
+	queued, err := s.enqueueObjectDeletion(ownerID, objectID, false)
 	if err != nil {
 		// A failed document save may have committed remotely. Without a durable
 		// outbox entry, deleting here could remove an object the document references.
@@ -449,7 +452,7 @@ func (s *MyAssetService) cleanupUncommittedTextObject(ctx context.Context, owner
 	return s.retryPendingObjectDeletionsWithBudget(ctx, ownerID, admin, objectID, nil)
 }
 
-func (s *MyAssetService) enqueueObjectDeletion(ownerID, objectID string) (bool, error) {
+func (s *MyAssetService) enqueueObjectDeletion(ownerID, objectID string, recordOnly bool) (bool, error) {
 	objectID = strings.TrimSpace(objectID)
 	if objectID == "" {
 		return false, nil
@@ -466,9 +469,15 @@ func (s *MyAssetService) enqueueObjectDeletion(ownerID, objectID string) (bool, 
 		}
 		pending := appendMyAssetObjectDeletionIDs(document.pendingObjectDeletions, objectID)
 		if len(pending) == len(document.pendingObjectDeletions) {
+			if recordOnly != slices.Contains(document.recordOnlyDeletions, objectID) {
+				return false, ErrStorageObjectInUse
+			}
 			return true, nil
 		}
 		document.pendingObjectDeletions = pending
+		if recordOnly {
+			document.recordOnlyDeletions = appendMyAssetObjectDeletionIDs(document.recordOnlyDeletions, objectID)
+		}
 		if err := s.saveDocumentLocked(ownerID, document); err != nil {
 			if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < myAssetSaveAttempts {
 				continue
@@ -546,6 +555,15 @@ func (s *MyAssetService) pendingObjectDeletionOwners(knownOwnerIDs ...string) ([
 // DeleteStorageObject serializes an explicit object deletion with asset
 // mutations by publishing a durable tombstone before provider I/O begins.
 func (s *MyAssetService) DeleteStorageObject(ctx context.Context, requesterID string, admin bool, objectID string, provider *StorageObjectProviderInput) error {
+	return s.deleteStorageObject(ctx, requesterID, admin, objectID, provider, false)
+}
+
+// DeleteDirectRecord protects references while retaining the client-managed file.
+func (s *MyAssetService) DeleteDirectRecord(ctx context.Context, requesterID, objectID string) error {
+	return s.deleteStorageObject(ctx, requesterID, false, objectID, nil, true)
+}
+
+func (s *MyAssetService) deleteStorageObject(ctx context.Context, requesterID string, admin bool, objectID string, provider *StorageObjectProviderInput, recordOnly bool) error {
 	requesterID = strings.TrimSpace(requesterID)
 	objectID = strings.TrimSpace(objectID)
 	if requesterID == "" || objectID == "" {
@@ -561,11 +579,14 @@ func (s *MyAssetService) DeleteStorageObject(ctx context.Context, requesterID st
 	if err != nil {
 		return err
 	}
+	if recordOnly && !object.Direct {
+		return ErrStorageObjectAccessDenied
+	}
 	ownerID := strings.TrimSpace(object.CreatedBy)
 	if ownerID == "" {
 		ownerID = requesterID
 	}
-	queued, err := s.enqueueObjectDeletion(ownerID, objectID)
+	queued, err := s.enqueueObjectDeletion(ownerID, objectID, recordOnly)
 	if err != nil {
 		return fmt.Errorf("persist storage object deletion: %w", err)
 	}
@@ -632,6 +653,7 @@ func (s *MyAssetService) retryPendingObjectDeletions(ctx context.Context, ownerI
 	// concurrent media upsert from claiming an object selected for deletion.
 	s.mu.Lock()
 	var candidates []string
+	var recordOnlyDeletions []string
 	snapshotReady := false
 	for attempt := 0; attempt < myAssetSaveAttempts; attempt++ {
 		document, err := s.loadDocumentLocked(ownerID)
@@ -644,6 +666,7 @@ func (s *MyAssetService) retryPendingObjectDeletions(ctx context.Context, ownerI
 			return nil
 		}
 		candidates = make([]string, 0, len(document.pendingObjectDeletions))
+		recordOnlyDeletions = document.recordOnlyDeletions
 		for _, objectID := range document.pendingObjectDeletions {
 			if !myAssetDocumentReferencesObject(document, objectID) {
 				candidates = append(candidates, objectID)
@@ -719,8 +742,14 @@ func (s *MyAssetService) retryPendingObjectDeletions(ctx context.Context, ownerI
 		if objectID == preferredObjectID {
 			deleteProvider = provider
 		}
-		if err := s.objects.Delete(ctx, ownerID, admin, objectID, deleteProvider); err != nil {
-			deleteErrors = append(deleteErrors, fmt.Errorf("delete asset storage object %q: %w", objectID, err))
+		var deleteErr error
+		if slices.Contains(recordOnlyDeletions, objectID) {
+			deleteErr = s.objects.DeleteDirectRecord(ownerID, objectID)
+		} else {
+			deleteErr = s.objects.Delete(ctx, ownerID, admin, objectID, deleteProvider)
+		}
+		if deleteErr != nil {
+			deleteErrors = append(deleteErrors, fmt.Errorf("delete asset storage object %q: %w", objectID, deleteErr))
 			continue
 		}
 		completionFailed := false
@@ -852,6 +881,7 @@ func (s *MyAssetService) loadDocumentLocked(ownerID string) (myAssetDocument, er
 		items:                  decodeMyAssets(raw),
 		groups:                 decodeMyAssetGroups(value["groups"]),
 		pendingObjectDeletions: appendMyAssetObjectDeletionIDs(nil, util.AsStringSlice(value[myAssetPendingObjectDeletionsField])...),
+		recordOnlyDeletions:    appendMyAssetObjectDeletionIDs(nil, util.AsStringSlice(value[myAssetRecordOnlyDeletionsField])...),
 		generation:             int64(util.ToInt(value[myAssetDocumentGenerationField], 0)),
 	}, nil
 }
@@ -866,6 +896,15 @@ func (s *MyAssetService) saveDocumentLocked(ownerID string, document myAssetDocu
 	value["groups"] = document.groups
 	if len(document.pendingObjectDeletions) > 0 {
 		value[myAssetPendingObjectDeletionsField] = document.pendingObjectDeletions
+		recordOnly := make([]string, 0, len(document.recordOnlyDeletions))
+		for _, objectID := range document.recordOnlyDeletions {
+			if slices.Contains(document.pendingObjectDeletions, objectID) {
+				recordOnly = append(recordOnly, objectID)
+			}
+		}
+		if len(recordOnly) > 0 {
+			value[myAssetRecordOnlyDeletionsField] = recordOnly
+		}
 	}
 	return saveStoredJSON(s.store, myAssetDocumentName(ownerID), value)
 }

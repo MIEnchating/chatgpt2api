@@ -26,7 +26,13 @@ const (
 )
 
 func Clean(v any) string {
-	return strings.TrimSpace(fmt.Sprint(ValueOr(v, "")))
+	if v == nil {
+		return ""
+	}
+	if value, ok := v.(string); ok {
+		return strings.TrimSpace(value)
+	}
+	return strings.TrimSpace(fmt.Sprint(v))
 }
 
 func ValueOr(v any, fallback any) any {

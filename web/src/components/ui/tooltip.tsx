@@ -27,7 +27,7 @@ function TooltipContent({ className, sideOffset = 10, children, ...props }: Reac
         sideOffset={sideOffset}
         collisionPadding={8}
         className={cn(
-          "z-[200] max-w-[min(20rem,calc(100vw-1.5rem))] rounded-md border border-border/70 bg-popover px-2.5 py-2 text-xs leading-5 text-popover-foreground shadow-[0_10px_30px_-12px_rgba(15,23,42,0.38)] outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0",
+          "z-[200] max-w-[min(20rem,calc(100vw-1.5rem))] rounded-lg border border-border/70 bg-popover px-2.5 py-2 text-xs leading-5 text-popover-foreground [overflow-wrap:anywhere] shadow-[var(--shadow-popover)] outline-none data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0",
           className,
         )}
         {...props}

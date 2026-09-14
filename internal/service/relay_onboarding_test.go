@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+	"unicode/utf8"
 )
 
 func TestRelayOnboardingReusesAllKeysByGroup(t *testing.T) {
@@ -158,5 +160,34 @@ func TestRelayOnboardingWithoutCreationCredentialOnlyReusesExistingKeys(t *testi
 	result, warnings := reader.EnsureCreationGroupTokens(context.Background(), Identity{ID: "newapi:1"}, map[string]string{"text": "existing", "image": "missing"}, nil)
 	if !reflect.DeepEqual(result["text"], []string{"original-name"}) || len(result["image"]) != 0 || len(warnings) != 1 {
 		t.Fatalf("result=%v warnings=%v", result, warnings)
+	}
+}
+
+func TestRelayOnboardingRejectsIdentityWithoutPlatformUserID(t *testing.T) {
+	dbURL := newTestNewAPIDatabase(t)
+	insertTestNewAPIUser(t, dbURL, 1, "alice", "alice@example.test")
+	reader, err := NewNewAPITokenReader(NewAPITokenReaderConfig{DatabaseURL: dbURL})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reader.Close()
+	result, warnings := reader.EnsureCreationGroupTokens(context.Background(), Identity{Username: "alice"}, map[string]string{"image": "shared"}, func(context.Context, string) error {
+		t.Fatal("created a key based only on a matching username")
+		return nil
+	})
+	if len(result) != 0 || len(warnings) != 1 || warnings[0] != "平台用户身份无效，请重新登录" {
+		t.Fatalf("result=%v warnings=%v", result, warnings)
+	}
+}
+
+func TestRelayCreationTokenNameFitsPlatformLimit(t *testing.T) {
+	for _, group := range []string{"images", strings.Repeat("a", 80), strings.Repeat("图片分组", 10)} {
+		name := RelayCreationTokenName(group)
+		if len(name) > 50 || !utf8.ValidString(name) {
+			t.Fatalf("name exceeds platform limit or splits UTF-8: %q (%d bytes)", name, len(name))
+		}
+		if name == RelayCreationTokenName(group+"x") {
+			t.Fatal("truncated group names lost their distinguishing digest")
+		}
 	}
 }

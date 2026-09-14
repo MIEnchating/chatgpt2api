@@ -80,6 +80,7 @@ func runDatabaseBackendIntegration(t *testing.T, databaseURL, wantDriver string)
 	reopened := openIntegrationBackend(t, wantDriver)
 	defer reopened.Close()
 	verifyIntegrationCoreData(t, reopened, wantDriver)
+	exerciseLogPaginationIntegration(t, reopened)
 	exerciseImageConversationIntegration(t, ctx, reopened, wantDriver)
 
 	if err := reopened.Close(); err != nil {
@@ -101,6 +102,30 @@ func runDatabaseBackendIntegration(t *testing.T, databaseURL, wantDriver string)
 	}
 	if len(page.Records) != 0 {
 		t.Fatalf("List(after persisted clear) = %#v, want no records", page.Records)
+	}
+}
+
+func exerciseLogPaginationIntegration(t *testing.T, backend *DatabaseBackend) {
+	t.Helper()
+	for _, item := range []map[string]any{
+		{"time": "2097-01-01 10:00:00", "summary": "previous-day"},
+		{"time": "2097-01-02 10:00:00", "summary": "same-day-first"},
+		{"time": "2097-01-02 11:00:00", "summary": "same-day-second"},
+	} {
+		if err := backend.AppendLog(item); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var cursor *LogCursor
+	for _, expected := range []string{"same-day-second", "same-day-first", "previous-day"} {
+		page, err := backend.QueryLogPage("2097-01-01", "2097-01-02", cursor, 1)
+		if err != nil || len(page.Records) != 1 || page.Records[0].Item["summary"] != expected {
+			t.Fatalf("QueryLogPage() = (%#v, %v), want %q", page, err, expected)
+		}
+		cursor = page.NextCursor
+	}
+	if cursor != nil {
+		t.Fatalf("final log cursor = %#v, want nil", cursor)
 	}
 }
 

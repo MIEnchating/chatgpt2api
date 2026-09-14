@@ -9,6 +9,8 @@ func TestImageModelRouteForProviderModels(t *testing.T) {
 	}{
 		{model: "gemini-3.1-flash-lite-image", want: ImageModelRouteGoogleGemini},
 		{model: "gemini-3.1-flash-image", want: ImageModelRouteGoogleGemini},
+		{model: "gemini-3.1-flash-image-preview", want: ImageModelRouteGoogleGemini},
+		{model: " GEMINI-3.1-FLASH-IMAGE-PREVIEW ", want: ImageModelRouteGoogleGemini},
 		{model: "gemini-3-pro-image", want: ImageModelRouteGoogleGemini},
 		{model: "gemini-2.5-flash-image", want: ImageModelRouteGoogleGemini},
 		{model: "grok-2-image-1212", want: ImageModelRouteXAI},
@@ -84,9 +86,14 @@ func TestMaxImageOutputCountUsesReferenceWorkbenchAPILimit(t *testing.T) {
 	}
 }
 
-func TestGeminiImageCapabilitiesUseOfficialModelIDs(t *testing.T) {
+func TestGeminiImageCapabilitiesUseSupportedModelIDs(t *testing.T) {
 	if !IsGoogleGemini31FlashImageModel("gemini-3.1-flash-image") {
 		t.Fatal("Gemini 3.1 Flash Image was not recognized")
+	}
+	for _, model := range []string{"gemini-3.1-flash-image-preview", " GEMINI-3.1-FLASH-IMAGE-PREVIEW "} {
+		if !IsGoogleGemini31FlashImageModel(model) {
+			t.Errorf("Gemini 3.1 Flash Image preview model %q was not recognized", model)
+		}
 	}
 	if IsGoogleGemini31FlashImageModel("gemini-3.1-flash-lite-image") {
 		t.Fatal("Gemini 3.1 Flash Lite Image was recognized as the full model")

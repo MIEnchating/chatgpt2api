@@ -72,7 +72,7 @@ export function ImageSettingsPanel({
     <div className="flex flex-col gap-3.5">
       {showQuality ? <section className="order-1 space-y-1.5">
         <ImageParameterLabel help="质量档位同时参与目标尺寸换算；厂商不支持的 quality 字段不会透传。">质量</ImageParameterLabel>
-        <div className="grid grid-cols-4 gap-1 rounded-lg bg-[#f4f4f5] p-1 dark:bg-muted/70" role="group" aria-label="图片质量">
+        <div className="grid grid-cols-4 gap-1 rounded-lg bg-muted p-1 dark:bg-muted/70" role="group" aria-label="图片质量">
           {IMAGE_WORKBENCH_QUALITY_OPTIONS.map((option) => (
             <button
               key={option.value || "auto"}
@@ -88,7 +88,7 @@ export function ImageSettingsPanel({
         </div>
       </section> : null}
 
-      {showSize ? <section className="order-3 space-y-1.5 border-t border-[#ececef] pt-2.5 dark:border-border">
+      {showSize ? <section className="order-3 space-y-1.5 border-t border-border pt-2.5 dark:border-border">
         <div className="flex items-center justify-between gap-3">
           <ImageParameterLabel help="手动输入图片宽高；输入完成后可自动向上补成 16 的倍数。">自定义尺寸</ImageParameterLabel>
           {showSnapToMultiple16 ? <label className="flex items-center gap-2 text-[11px] text-muted-foreground">
@@ -105,7 +105,7 @@ export function ImageSettingsPanel({
             onChange={(customWidth) => onChange({ mode: "custom", customWidth })}
             onBlur={(raw) => alignDimension("customWidth", raw)}
           />
-          <X className="size-3.5 text-[#9a9ca2]" aria-hidden="true" />
+          <X className="size-3.5 text-muted-foreground" aria-hidden="true" />
           <DimensionInput
             disabled={disabled}
             prefix="H"
@@ -126,7 +126,7 @@ export function ImageSettingsPanel({
         onChange={onChange}
       /> : null}
 
-      {showCount ? <section className="order-4 flex items-center justify-between gap-3 border-t border-[#ececef] pt-3 dark:border-border">
+      {showCount ? <section className="order-4 flex items-center justify-between gap-3 border-t border-border pt-3 dark:border-border">
         <ImageParameterLabel help={`当前模型单次请求支持 1-${countLimit} 张图片。`}>生成数量</ImageParameterLabel>
         <NumberInput disabled={disabled} value={count} min={1} max={countLimit} controlsLayout="split" suffix="张" aria-label="生成数量" className="h-8 w-32" inputClassName="px-0 text-right text-xs font-semibold" onValueChange={(raw) => { const next = Number(raw); if (Number.isFinite(next)) onChange({ count: Math.max(1, Math.min(countLimit, Math.round(next))) }); }} />
       </section> : null}
@@ -159,18 +159,19 @@ function DimensionInput({
   return (
     <label
       className={cn(
-        "grid h-8 grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded-lg border px-2.5",
+        "grid h-8 min-w-0 grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded-lg border px-2.5 transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20",
         disabled
           ? "cursor-not-allowed border-border/60 bg-muted/50 dark:bg-muted/40"
-          : "border-[#e3e4e7] bg-white dark:border-border dark:bg-background/70",
+          : "border-border bg-card dark:border-border dark:bg-background/70",
       )}
     >
-      <span className="text-[11px] text-[#777a82] dark:text-muted-foreground">{prefix}</span>
+      <span className="text-[11px] text-muted-foreground dark:text-muted-foreground">{prefix}</span>
       <Input
         type="number"
         inputMode="numeric"
         min="1"
         step="1"
+        aria-label={prefix === "W" ? "图片宽度" : "图片高度"}
         disabled={disabled}
         value={draft}
         placeholder="自动"

@@ -172,11 +172,12 @@ test("asset file cleanup stops before further account requests after unmount", a
   const request = deferred();
   const controller = new AbortController();
   let lookups = 0, deletes = 0;
-  const pending = handler("assets/page.tsx", "deleteUnusedAssetStorage", {
+  const cleanup = handler("assets/page.tsx", "createAssetStorageCleanup", {
     collectAssetStorageKeys: (_assets, keys = new Set()) => keys,
     fetchCanvasDocument: () => { lookups++; return request.promise; },
     deleteStoredImages: async () => { deletes++; }, deleteStoredMedia: async () => { deletes++; },
-  })({ kind: "image", storageKey: "private-file" }, [], controller.signal);
+  })([], controller.signal);
+  const pending = cleanup({ kind: "image", storageKey: "private-file" });
   controller.abort();
   request.resolve({ document: { id: "one" }, projects: [{ id: "two" }] });
   await assert.rejects(pending, { name: "AbortError" });

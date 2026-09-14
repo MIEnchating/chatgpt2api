@@ -24,7 +24,7 @@ export function GenerationProgress({ progress, label = "生成进度", className
       >
         <div
           className={cn(
-            "h-full rounded-full bg-blue-600 transition-[width] duration-500 motion-reduce:transition-none dark:bg-blue-400",
+            "h-full rounded-full bg-brand transition-[width] duration-500 motion-reduce:transition-none",
             value === undefined && "animate-[generation-progress-indeterminate_1.5s_ease-in-out_infinite] motion-reduce:animate-none",
           )}
           style={{ width: value === undefined ? "30%" : `${value}%` }}

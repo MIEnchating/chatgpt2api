@@ -93,13 +93,13 @@ export function PermissionEditor({
     <div
       data-permission-editor
       className={cn(
-        "grid h-full min-h-0 min-w-0 grid-rows-[minmax(260px,0.7fr)_minmax(420px,1.3fr)] lg:grid-cols-[320px_minmax(0,1fr)] lg:grid-rows-1",
+        "grid h-full min-h-0 min-w-0 grid-rows-[minmax(0,0.7fr)_minmax(0,1.3fr)] xl:grid-cols-[minmax(220px,0.7fr)_minmax(0,2fr)] xl:grid-rows-1",
         className,
       )}
       aria-busy={disabled}
     >
-      <section className="flex min-h-0 min-w-0 flex-col border-b border-border lg:border-r lg:border-b-0">
-        <div className="flex min-h-16 shrink-0 items-center justify-between gap-3 border-b border-border bg-muted/15 px-5 py-3.5">
+      <section className="flex min-h-0 min-w-0 flex-col border-b border-border xl:border-r xl:border-b-0">
+        <div className="flex min-h-16 shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border bg-muted/15 px-5 py-3.5">
           <div className="flex min-w-0 items-center gap-2.5">
             <Menu className="size-4 shrink-0 text-muted-foreground" />
             <div className="min-w-0">
@@ -133,7 +133,7 @@ export function PermissionEditor({
       </section>
 
       <section className="flex min-h-0 min-w-0 flex-col">
-        <div className="flex min-h-16 shrink-0 items-center justify-between gap-3 border-b border-border bg-muted/15 px-5 py-3.5">
+        <div className="flex min-h-16 shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border bg-muted/15 px-5 py-3.5">
           <div className="flex min-w-0 items-center gap-2.5">
             <KeyRound className="size-4 shrink-0 text-muted-foreground" />
             <div className="min-w-0">
@@ -162,11 +162,11 @@ export function PermissionEditor({
                       </label>
                       <span className="shrink-0 text-xs tabular-nums text-muted-foreground">{selectedCount} / {group.items.length}</span>
                     </div>
-                    <div className="grid gap-3 md:grid-cols-2 2xl:grid-cols-3">
+                    <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,240px),1fr))] gap-3">
                       {group.items.map((permission) => {
                         const checked = selectedApiPermissions.includes(permission.key);
                         return (
-                          <label key={permission.key} data-selected={checked} className="flex min-h-[76px] cursor-pointer items-start gap-3 rounded-xl border border-border/80 bg-background/35 px-3.5 py-3 transition-all hover:-translate-y-px hover:border-primary/35 hover:bg-muted/50 hover:shadow-sm data-[selected=true]:border-primary/45 data-[selected=true]:bg-primary/[0.06]">
+                          <label key={permission.key} data-selected={checked} className="flex min-h-[76px] cursor-pointer items-start gap-3 rounded-xl border border-border/80 bg-background/35 px-3.5 py-3 transition-colors hover:border-primary/35 hover:bg-muted/50 hover:shadow-sm data-[selected=true]:border-primary/45 data-[selected=true]:bg-primary/[0.06]">
                             <Checkbox checked={checked} disabled={disabled} className="mt-0.5" onCheckedChange={(value) => onApiPermissionsChange(toggleListValue(selectedApiPermissions, permission.key, Boolean(value)))} />
                             <div className="min-w-0 flex-1">
                               <div className="flex min-w-0 items-center gap-2">

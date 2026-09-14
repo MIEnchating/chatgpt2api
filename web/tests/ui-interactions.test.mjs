@@ -104,9 +104,9 @@ test("global selects keep the neutral selected treatment shown across settings",
   assert.match(selectSource, /data-\[state=checked\]:bg-accent/);
   assert.match(selectSource, /data-\[state=checked\]:font-medium/);
   assert.match(selectSource, /data-\[state=checked\]:text-accent-foreground/);
-  assert.match(selectSource, /viewportClassName="w-full overscroll-contain px-1 py-2"/);
-  assert.match(selectSource, /relative flex w-full/);
-  assert.match(selectSource, /viewClass="flex flex-col gap-2"/);
+  assert.match(selectSource, /viewportClassName="w-full overscroll-contain p-1"/);
+  assert.match(selectSource, /relative flex min-h-9 w-full min-w-0/);
+  assert.match(selectSource, /viewClass="flex flex-col gap-0\.5"/);
   assert.doesNotMatch(selectSource, /data-\[state=checked\]:bg-\[#eef4ff\]/);
 });
 
@@ -159,13 +159,13 @@ test("image dimension inputs keep an empty editing draft instead of restoring 10
 test("dialog close buttons stay fixed while the body scrollbar updates", () => {
   assert.match(dialogSource, /tabIndex=\{-1\}[\s\S]*?event\.currentTarget as HTMLElement\)\.focus\(\{ preventScroll: true \}\)/);
   assert.match(dialogSource, /data-slot="dialog-auto-close"/);
-  assert.match(dialogSource, /absolute top-4 right-4 z-30/);
+  assert.match(dialogSource, /absolute top-3 right-3 z-30/);
   assert.doesNotMatch(dialogSource, /data-scroll-overflow-y=true[^\n]*dialog-auto-close/);
-  assert.match(dialogSource, /transition-\[background-color,opacity\]/);
+  assert.match(dialogSource, /transition-colors[^"]*sm:top-4 sm:right-4/);
   assert.doesNotMatch(dialogSource, /transition-\[right,background-color,opacity\]/);
   assert.match(scrollAreaSource, /data-scroll-overflow-y=\{verticalOverflow > 0 \|\| undefined\}/);
-  assert.match(dialogSource, /min-w-0 shrink-0 flex flex-col gap-2 pr-20 text-left/);
-  assert.match(dialogSource, /min-w-0 break-words text-xl leading-tight/);
+  assert.match(dialogSource, /min-w-0 shrink-0 flex flex-col gap-2 pr-10 text-left/);
+  assert.match(dialogSource, /min-w-0 text-xl leading-7 font-semibold \[overflow-wrap:anywhere\]/);
   assert.match(scrollAreaSource, /const effectiveAlways = always/);
 });
 
@@ -185,7 +185,7 @@ test("dialog footers share compact inset and full-width fixed styles", () => {
   assert.doesNotMatch(dialogSource, /sm:p-6/);
   assert.match(dialogSource, /flush = false/);
   assert.match(dialogSource, /data-flush=\{flush \|\| undefined\}/);
-  assert.match(dialogSource, /z-10 flex shrink-0/);
+  assert.match(dialogSource, /z-10 flex min-w-0 shrink-0/);
   assert.doesNotMatch(dialogSource, /sticky bottom-0 z-10 flex shrink-0/);
   assert.match(dialogSource, /\[&>\[data-slot=button\]\]:min-w-18/);
   assert.ok(dialogSource.includes("[&:has([data-slot=dialog-footer]:not([data-flush=true]))]:pb-3"));

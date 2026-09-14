@@ -31,8 +31,31 @@ let pruneTimer: ReturnType<typeof setTimeout> | null = null;
 let activeSessionKey = String(getCachedAuthSession()?.key || "").trim();
 
 function emit(next: CanvasTaskQueueItem[]) {
+  if (next.length === snapshot.length && next.every((item, index) => item === snapshot[index])) return false;
   snapshot = next;
   listeners.forEach((listener) => listener());
+  return true;
+}
+
+function sameTaskQueueItem(left: CanvasTaskQueueItem, right: CanvasTaskQueueItem) {
+  return left.id === right.id
+    && left.serverTaskID === right.serverTaskID
+    && left.canvasID === right.canvasID
+    && left.canvasTitle === right.canvasTitle
+    && left.type === right.type
+    && left.title === right.title
+    && left.prompt === right.prompt
+    && left.model === right.model
+    && left.status === right.status
+    && left.totalCount === right.totalCount
+    && left.completedCount === right.completedCount
+    && left.failedCount === right.failedCount
+    && left.progress === right.progress
+    && left.error === right.error
+    && left.startedAt === right.startedAt
+    && left.completedAt === right.completedAt
+    && left.nodeIDs.length === right.nodeIDs.length
+    && left.nodeIDs.every((id, index) => id === right.nodeIDs[index]);
 }
 
 function scheduleTerminalPrune() {
@@ -169,7 +192,7 @@ export function syncCanvasTaskQueue(sessionKey: string, canvasID: string, canvas
       startedAt: Math.min(...groupNodes.map((node) => node.generation_started_at || now)),
       ...(status === "generating" ? {} : { completedAt: existing?.completedAt || now }),
     };
-    if (existing) current[current.indexOf(existing)] = item;
+    if (existing) current[current.indexOf(existing)] = sameTaskQueueItem(existing, item) ? existing : item;
     else current.push(item);
     matchedIDs.add(item.id);
   });
@@ -180,8 +203,7 @@ export function syncCanvasTaskQueue(sessionKey: string, canvasID: string, canvas
   });
 
   current.sort((left, right) => right.startedAt - left.startedAt);
-  emit(current);
-  scheduleTerminalPrune();
+  if (emit(current)) scheduleTerminalPrune();
 }
 
 export function subscribeCanvasTaskQueue(listener: () => void) {

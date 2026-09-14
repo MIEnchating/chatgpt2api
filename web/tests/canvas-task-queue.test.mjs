@@ -7,6 +7,7 @@ import {
   clearCanvasTaskQueueForSession,
   getCanvasTaskQueueSnapshot,
   resetCanvasTaskQueueForTests,
+  subscribeCanvasTaskQueue,
   syncCanvasTaskQueue,
 } from "../src/store/canvas-task-queue.ts";
 
@@ -121,4 +122,63 @@ test("activating another session clears tasks and ignores stale session updates"
   clearCanvasTaskQueueForSession(SESSION_KEY);
   assert.deepEqual(getCanvasTaskQueueSnapshot().map((item) => item.canvasID), ["canvas-b"]);
   resetCanvasTaskQueueForTests();
+});
+
+test("moving and resizing canvas nodes preserves the task snapshot without notifying subscribers", () => {
+  startQueueSession();
+  let notifications = 0;
+  const unsubscribe = subscribeCanvasTaskQueue(() => { notifications += 1; });
+  try {
+    const empty = getCanvasTaskQueueSnapshot();
+    syncCanvasTaskQueue(SESSION_KEY, "canvas-project", "Project", []);
+    assert.equal(getCanvasTaskQueueSnapshot(), empty);
+    assert.equal(notifications, 0);
+
+    const nodes = [imageNode("image-a", "task-a")];
+    syncCanvasTaskQueue(SESSION_KEY, "canvas-project", "Project", nodes);
+    const tasks = getCanvasTaskQueueSnapshot();
+    for (let frame = 1; frame <= 60; frame += 1) {
+      syncCanvasTaskQueue(SESSION_KEY, "canvas-project", "Project", [
+        { ...nodes[0], x: frame, y: frame, width: 320 + frame, height: 240 + frame },
+      ]);
+    }
+    assert.equal(getCanvasTaskQueueSnapshot(), tasks);
+    assert.equal(notifications, 1);
+
+    syncCanvasTaskQueue(SESSION_KEY, "canvas-project", "Renamed", [
+      { ...nodes[0], generation_progress: 40, title: "Changed", prompt: "New prompt", generation_model: "model-a" },
+    ]);
+    assert.equal(notifications, 2);
+    assert.equal(getCanvasTaskQueueSnapshot()[0].canvasTitle, "Renamed");
+    assert.equal(getCanvasTaskQueueSnapshot()[0].progress, 40);
+    assert.equal(getCanvasTaskQueueSnapshot()[0].title, "Changed");
+    assert.equal(getCanvasTaskQueueSnapshot()[0].prompt, "New prompt");
+    assert.equal(getCanvasTaskQueueSnapshot()[0].model, "model-a");
+  } finally {
+    unsubscribe();
+    resetCanvasTaskQueueForTests();
+  }
+});
+
+test("unchanged task synchronization preserves terminal retention and still removes expired results", () => {
+  startQueueSession();
+  const originalNow = Date.now;
+  let now = 10_000;
+  Date.now = () => now;
+  try {
+    syncCanvasTaskQueue(SESSION_KEY, "canvas-project", "Project", [imageNode("image-a", "task-a")]);
+    const completed = [imageNode("image-a", "task-a", "success")];
+    syncCanvasTaskQueue(SESSION_KEY, "canvas-project", "Project", completed);
+    const tasks = getCanvasTaskQueueSnapshot();
+    now += 4000;
+    syncCanvasTaskQueue(SESSION_KEY, "canvas-project", "Project", completed);
+    assert.equal(getCanvasTaskQueueSnapshot(), tasks);
+    assert.equal(tasks[0].completedAt, 10_000);
+    now += 1000;
+    syncCanvasTaskQueue(SESSION_KEY, "canvas-project", "Project", completed);
+    assert.deepEqual(getCanvasTaskQueueSnapshot(), []);
+  } finally {
+    Date.now = originalNow;
+    resetCanvasTaskQueueForTests();
+  }
 });

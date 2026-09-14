@@ -80,6 +80,25 @@ test("current official Gemini image IDs use the Gemini route", () => {
   }
 });
 
+test("Gemini 3.1 Flash Image preview uses Gemini routing and image controls", () => {
+  for (const model of ["gemini-3.1-flash-image-preview", " GEMINI-3.1-FLASH-IMAGE-PREVIEW "]) {
+    assert.equal(imageModelRoute(model), "google-gemini-image", model);
+    assert.equal(imageReferenceImageLimit(model), 14, model);
+    assert.equal(supportsImageEditing(model), true, model);
+    assert.equal(supportsStructuredImageParameters(model), true, model);
+    assert.equal(supportsImageMask(model), false, model);
+    assert.equal(supportsImageStreaming(model), false, model);
+    assert.equal(supportsImageOutputControls(model), false, model);
+    assert.equal(supportsImageQuality(model), false, model);
+    for (const ratio of ["1:1", "16:9", "1:4", "1:8", "4:1", "8:1"]) {
+      assert.equal(supportsImageAspectRatio(model, ratio), true, `${model}:${ratio}`);
+    }
+    for (const resolution of ["auto", "512", "1k", "2k", "4k"]) {
+      assert.equal(supportsImageResolution(model, resolution), true, `${model}:${resolution}`);
+    }
+  }
+});
+
 test("Gemini image ratios and resolutions follow the current official model tables", () => {
   assert.equal(supportsImageAspectRatio("gemini-3.1-flash-image", "1:8"), true);
   assert.equal(supportsImageAspectRatio("gemini-3-pro-image", "1:8"), false);

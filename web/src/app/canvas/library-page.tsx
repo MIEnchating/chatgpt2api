@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Textarea } from "@/components/ui/textarea";
@@ -360,7 +361,7 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
             {projects.length ? <Button type="button" variant="ghost" disabled={busy} onClick={toggleAllProjects}><CheckSquare />{selectedProjectIDs.size === projects.length ? "取消全选" : "全选"}</Button> : null}
             {selectedProjectIDs.size ? <>
               <Button type="button" variant="outline" disabled={busy} onClick={() => void exportSelectedProjects()}><Download />导出选中 ({selectedProjectIDs.size})</Button>
-              <Button type="button" variant="outline" className="text-rose-600 hover:text-rose-700" disabled={busy} onClick={() => void deleteSelectedProjects()}><Trash2 />删除选中</Button>
+              <Button type="button" variant="outline" className="text-destructive hover:text-destructive dark:text-rose-300 dark:hover:text-rose-300" disabled={busy} onClick={() => void deleteSelectedProjects()}><Trash2 />删除选中</Button>
               <Button type="button" variant="ghost" size="icon" className="size-9" title="取消选择" aria-label="取消选择" disabled={busy} onClick={() => setSelectedProjectIDs(new Set())}><X /></Button>
             </> : null}
             <Button type="button" variant="outline" disabled={busy} onClick={() => setAgentStarterOpen(true)}><Bot />Agent</Button>
@@ -368,28 +369,28 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
           </>
         }
       />
-      <ScrollArea className="card-surface min-h-0 flex-1 rounded-xl border border-border/80 shadow-[0_4px_16px_rgba(24,40,72,0.05)]">
-        <div data-canvas-project-content className="w-full px-4 py-4 sm:px-6 sm:py-6">
+      <ScrollArea className="card-surface min-h-0 flex-1 rounded-xl border border-border/80 shadow-[var(--shadow-card)]">
+        <div data-canvas-project-content className="w-full p-4 sm:p-5">
         {loading ? (
           <div className="flex min-h-[360px] items-center justify-center text-sm text-muted-foreground"><LoaderCircle className="mr-2 size-4 animate-spin" />正在加载画布...</div>
         ) : projects.length ? (
           <div data-canvas-project-grid className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
             {projects.map((project) => (
-              <div key={project.id} data-canvas-project-card data-selected={selectedProjectIDs.has(project.id)} data-interaction="trigger" className="interactive-card group flex min-w-0 flex-col rounded-lg border border-border bg-card p-4 text-left shadow-sm">
+              <div key={project.id} data-canvas-project-card data-selected={selectedProjectIDs.has(project.id)} data-interaction="trigger" className="interactive-card group flex min-w-0 flex-col rounded-xl border border-border bg-card p-4 text-left shadow-[var(--shadow-card)]">
                 <div className="mb-3 flex min-h-5 items-center justify-between gap-3">
                   <label data-disabled={busy} className="selection-trigger flex items-center gap-2 text-xs text-muted-foreground" onClick={(event) => event.stopPropagation()}>
                     <Checkbox checked={selectedProjectIDs.has(project.id)} onCheckedChange={() => toggleProject(project.id)} className="selection-control" disabled={busy} aria-label={`选择${project.title}`} />
                     <span>{selectedProjectIDs.has(project.id) ? "已选择" : "选择"}</span>
                   </label>
-                  {project.id === activeProjectID ? <span className="text-[11px] font-medium text-[#1456f0]">当前画布</span> : null}
+                  {project.id === activeProjectID ? <span className="text-[11px] font-medium text-brand">当前画布</span> : null}
                 </div>
                 <button type="button" disabled={busy} onClick={() => void openProject(project)} className="interactive-card-trigger min-w-0 flex-1 text-left disabled:cursor-wait disabled:opacity-60">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex min-w-0 items-center gap-3">
-                      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-[#edf4ff] text-[#1456f0] dark:bg-blue-950/40 dark:text-blue-300"><Sparkles className="size-4.5" /></span>
+                      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-brand-soft text-brand"><Sparkles className="size-4.5" /></span>
                       <span className="truncate text-base font-semibold">{project.title || "未命名画布"}</span>
                     </div>
-                    <ArrowRight className="mt-1 size-4 shrink-0 text-muted-foreground transition group-hover:translate-x-1 group-hover:text-[#1456f0]" />
+                    <ArrowRight className="mt-1 size-4 shrink-0 text-muted-foreground transition group-hover:translate-x-1 group-hover:text-brand" />
                   </div>
                   <div className="mt-3 flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
                     <p className="shrink-0">{project.node_count} 个节点</p>
@@ -400,18 +401,13 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
                 <div className="mt-4 flex items-center justify-end gap-1 border-t border-border/70 pt-3">
                   <Button type="button" variant="ghost" size="icon" className="size-8 rounded-lg" title="导出画布" aria-label="导出画布" disabled={busy} onClick={() => void exportProject(project)}><Download className="size-4" /></Button>
                   <Button type="button" variant="ghost" size="icon" className="size-8 rounded-lg" title="重命名画布" aria-label="重命名画布" disabled={busy} onClick={() => void renameProject(project)}><Pencil className="size-4" /></Button>
-                  <Button type="button" variant="ghost" size="icon" className="size-8 rounded-lg text-rose-600 hover:text-rose-700" title="删除画布" aria-label="删除画布" disabled={busy} onClick={() => void deleteProject(project)}><Trash2 className="size-4" /></Button>
+                  <Button type="button" variant="ghost" size="icon" className="size-8 rounded-lg text-destructive hover:text-destructive dark:text-rose-300 dark:hover:text-rose-300" title="删除画布" aria-label="删除画布" disabled={busy} onClick={() => void deleteProject(project)}><Trash2 className="size-4" /></Button>
                 </div>
               </div>
             ))}
           </div>
         ) : (
-          <div className="flex min-h-[360px] flex-col items-center justify-center text-center">
-            <Sparkles className="size-8 text-muted-foreground/60" />
-            <h2 className="mt-4 text-xl font-medium">还没有画布</h2>
-            <p className="mt-2 text-sm text-muted-foreground">新建一个画布开始你的创作。</p>
-            <Button type="button" className="mt-6" disabled={busy} onClick={() => void createAndOpen()}><Plus />新建画布</Button>
-          </div>
+          <EmptyState icon={Sparkles} title="还没有画布" description="新建一个画布开始你的创作。" className="min-h-72" action={<Button type="button" disabled={busy} onClick={() => void createAndOpen()}><Plus />新建画布</Button>} />
         )}
         <input ref={importInputRef} type="file" accept="application/zip,.zip" className="hidden" onChange={(event) => void importProjects(event.target.files?.[0])} />
         </div>
@@ -419,10 +415,10 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
       <Dialog open={agentStarterOpen} onOpenChange={(open) => !busy && setAgentStarterOpen(open)}>
         <DialogContent className="w-[min(94vw,900px)] max-w-none gap-5 sm:p-7">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2"><Bot className="size-5 text-[#1456f0]" />Agent</DialogTitle>
+            <DialogTitle className="flex items-center gap-2"><Bot className="size-5 text-brand" />Agent</DialogTitle>
             <DialogDescription>描述创作目标，Agent 将创建画布并直接开始执行。</DialogDescription>
           </DialogHeader>
-          <div data-canvas-agent-starter className="rounded-xl border border-border bg-card p-4">
+          <div data-canvas-agent-starter className="rounded-xl border border-border bg-card p-4 transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20">
             {pendingAssets.length ? <div className="mb-2 flex flex-wrap gap-1.5">{pendingAssets.map((asset) => <span key={asset.nodeId} className="inline-flex h-7 max-w-full items-center gap-1 rounded-md border bg-muted/40 pl-2 pr-1 text-[11px]"><span className="max-w-52 truncate">{asset.reference.label} · {asset.reference.title}</span><button type="button" className="grid size-5 place-items-center rounded hover:bg-muted" aria-label={`移除${asset.reference.title}`} onClick={() => setPendingAssets((current) => current.filter((item) => item.nodeId !== asset.nodeId))}><X className="size-3" /></button></span>)}</div> : null}
             <Textarea
               value={agentPrompt}

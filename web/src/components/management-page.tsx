@@ -26,7 +26,7 @@ function ManagementPage({
     <section
       data-management-page
       className={cn(
-        "flex h-full min-h-0 flex-col gap-[var(--page-section-gap)] overflow-hidden",
+        "flex h-full min-h-0 min-w-0 flex-col gap-[var(--page-section-gap)] overflow-x-hidden overflow-y-auto",
         className
       )}
       {...props}
@@ -48,7 +48,7 @@ function ManagementPanel({
     <div
       data-management-panel
       className={cn(
-        "card-surface flex min-h-0 flex-col overflow-hidden rounded-xl border border-border/80 shadow-[0_4px_16px_rgba(24,40,72,0.05)]",
+        "card-surface flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-border shadow-[var(--shadow-card)]",
         className
       )}
       {...props}
@@ -63,7 +63,7 @@ function ManagementToolbar({ className, ...props }: ComponentProps<"div">) {
     <div
       data-management-toolbar
       className={cn(
-        "shrink-0 border-b border-border px-4 py-4 sm:px-5",
+        "min-w-0 shrink-0 border-b border-border px-4 py-4 sm:px-5",
         className
       )}
       {...props}

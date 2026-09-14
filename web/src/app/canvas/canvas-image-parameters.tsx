@@ -134,8 +134,8 @@ export function CanvasImageParameterPopover({ node, imageModel, imageModels = []
       <span ref={buttonRef} className="inline-flex">
         <Tooltip>
           <TooltipTrigger asChild>
-            <button type="button" aria-expanded={open} aria-label="打开图片参数" className={cn("inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-border/70 bg-background/75 px-2.5 text-xs font-medium text-foreground shadow-[0_1px_2px_rgba(15,23,42,.04)] transition hover:border-border hover:bg-background", open && "border-[#bfd1ff] bg-[#eaf1ff] text-[#1456f0]")} onClick={() => setOpen((value) => !value)}>
-              <SlidersHorizontal className="size-3.5 text-[#1456f0]" />
+            <button type="button" aria-expanded={open} aria-label="打开图片参数" className={cn("inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg border border-border/70 bg-background/75 px-2.5 text-xs font-medium text-foreground shadow-[0_1px_2px_rgba(15,23,42,.04)] transition hover:border-border hover:bg-background", open && "border-brand-border bg-brand-soft text-brand")} onClick={() => setOpen((value) => !value)}>
+              <SlidersHorizontal className="size-3.5 text-brand" />
               <span className="font-semibold">{sizeLabel}</span>
               <span className="text-muted-foreground">·</span>
               <span className="text-muted-foreground">{count} 张</span>
@@ -148,7 +148,7 @@ export function CanvasImageParameterPopover({ node, imageModel, imageModels = []
         <ScrollArea
           ref={panelRef}
           data-canvas-parameter-panel
-          className="fixed z-[1200] rounded-xl border border-border bg-popover text-popover-foreground shadow-[0_18px_54px_rgba(15,23,42,.18)]"
+          className="fixed z-[1200] rounded-xl border border-border bg-popover text-popover-foreground shadow-[var(--shadow-elevated)]"
           style={{
             left: panelPlacement.left,
             width: panelPlacement.width,

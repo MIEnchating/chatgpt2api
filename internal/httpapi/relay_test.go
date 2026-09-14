@@ -1380,6 +1380,9 @@ func TestGoogleGeminiAspectRatioUsesModelSpecificOfficialSet(t *testing.T) {
 	if got := googleGeminiAspectRatio("gemini-3.1-flash-image", "1:8"); got != "1:8" {
 		t.Fatalf("Gemini 3.1 Flash aspect ratio = %q, want 1:8", got)
 	}
+	if got := googleGeminiAspectRatio("gemini-3.1-flash-image-preview", "1:8"); got != "1:8" {
+		t.Fatalf("Gemini 3.1 Flash preview aspect ratio = %q, want 1:8", got)
+	}
 	if got := googleGeminiAspectRatio("gemini-3.1-flash-lite-image", "1:8"); got == "1:8" {
 		t.Fatalf("Gemini Flash Lite retained unsupported extreme ratio %q", got)
 	}
@@ -1495,6 +1498,88 @@ func TestRelayImageGenerationsUsesChatCompletionsForGemini(t *testing.T) {
 	}
 	if requestCount.Load() != 2 {
 		t.Fatalf("Gemini request count = %d, want 2", requestCount.Load())
+	}
+}
+
+func TestRelayImageCreationTaskUsesChatCompletionsForGeminiPreview(t *testing.T) {
+	const model = "gemini-3.1-flash-image-preview"
+	encoded := base64.StdEncoding.EncodeToString([]byte("generated-image"))
+	for _, edit := range []bool{false, true} {
+		t.Run(map[bool]string{false: "generation", true: "edit"}[edit], func(t *testing.T) {
+			var images []protocol.UploadedImage
+			if edit {
+				for range 14 {
+					images = append(images, protocol.UploadedImage{Data: []byte("reference-image"), ContentType: "image/png"})
+				}
+			}
+			var requestCount atomic.Int32
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requestCount.Add(1)
+				if r.Method != http.MethodPost || r.URL.Path != "/v1/chat/completions" {
+					t.Errorf("upstream request = %s %s, want POST /v1/chat/completions", r.Method, r.URL.Path)
+					w.WriteHeader(http.StatusNotFound)
+					return
+				}
+				var body map[string]any
+				if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+					t.Errorf("decode Gemini preview request: %v", err)
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				if body["model"] != model {
+					t.Errorf("upstream model = %#v, want unchanged %s", body["model"], model)
+				}
+				messages := util.AsMapSlice(body["messages"])
+				if len(messages) != 1 {
+					t.Errorf("Gemini preview messages = %#v", body["messages"])
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				if prompt := protocol.ExtractPromptFromMessageContent(messages[0]["content"]); prompt != "draw" {
+					t.Errorf("Gemini preview prompt = %q, want draw", prompt)
+				}
+				if references := protocol.ExtractImagesFromMessageContent(messages[0]["content"]); len(references) != len(images) {
+					t.Errorf("Gemini preview reference count = %d, want %d", len(references), len(images))
+				}
+				extraBody := util.StringMap(body["extra_body"])
+				google := util.StringMap(extraBody["google"])
+				imageConfig := util.StringMap(google["image_config"])
+				if imageConfig["aspect_ratio"] != "16:9" || imageConfig["image_size"] != "2K" {
+					t.Errorf("Gemini preview image config = %#v", imageConfig)
+				}
+				for _, key := range []string{"stream", "partial_images", "output_format"} {
+					if _, ok := body[key]; ok {
+						t.Errorf("Gemini preview request retained unsupported %s", key)
+					}
+				}
+				util.WriteJSON(w, http.StatusOK, map[string]any{
+					"choices": []map[string]any{{"message": map[string]any{
+						"role": "assistant", "content": "![image](data:image/png;base64," + encoded + ")",
+					}}},
+				})
+			}))
+			defer upstream.Close()
+			app := newTestApp(t)
+			defer app.Close()
+			if _, err := app.config.Update(map[string]any{"relay_base_url": upstream.URL}); err != nil {
+				t.Fatalf("update relay URL: %v", err)
+			}
+			result, err := app.relayImageCreationTask(context.Background(), map[string]any{
+				"api_key": "sk-test", "model": model, "prompt": "draw", "n": 1,
+				"api_mode": normalizeImageTaskAPIMode("responses", model),
+				"size":     "2048x1152", "stream": true, "partial_images": 2, "output_format": "webp",
+			}, images, edit)
+			if err != nil {
+				t.Fatalf("relayImageCreationTask() error = %v", err)
+			}
+			data := util.AsMapSlice(result["data"])
+			if result["model"] != model || len(data) != 1 || data[0]["b64_json"] != encoded {
+				t.Fatalf("Gemini preview result = %#v", result)
+			}
+			if requestCount.Load() != 1 {
+				t.Fatalf("Gemini preview request count = %d, want 1", requestCount.Load())
+			}
+		})
 	}
 }
 

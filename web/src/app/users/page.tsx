@@ -291,8 +291,8 @@ function UsageSparkline({ points }: { points?: ManagedUser["usage_curve"] }) {
           <title>{label}</title>
           <line x1={paddingX} x2={width - paddingX} y1={paddingTop} y2={paddingTop} className="stroke-border/70" strokeDasharray="3 5" />
           <line x1={paddingX} x2={width - paddingX} y1={baselineY} y2={baselineY} className="stroke-border/70" />
-          <path d={areaPath} className="fill-[#3b82f6] opacity-10 dark:opacity-15" />
-          <path d={linePath} fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" className="text-[#1456f0] dark:text-sky-300" />
+          <path d={areaPath} className="fill-primary opacity-10 dark:opacity-15" />
+          <path d={linePath} fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" className="text-primary" />
           {chartPoints.map(({ point, x, y }, index) => {
             const isLatest = index === chartPoints.length - 1;
             return (
@@ -640,8 +640,8 @@ function UsersContent() {
     <ManagementPage data-users-layout>
       <ManagementPanel className="flex-1">
           <ManagementToolbar>
-            <div data-user-toolbar className="grid gap-2 xl:grid-cols-[minmax(18rem,1fr)_160px_160px_auto_auto]">
-              <div className="relative">
+            <div data-user-toolbar className="grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] xl:grid-cols-[minmax(12rem,1fr)_140px_140px_auto_auto]">
+              <div className="relative col-span-2 min-w-0 sm:col-span-3 xl:col-span-1">
                 <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   value={searchInput}
@@ -692,7 +692,7 @@ function UsersContent() {
               <Button
                 type="button"
                 variant="outline"
-                className="h-10 rounded-lg px-3"
+                className="col-span-2 h-10 rounded-lg px-3 sm:col-span-1"
                 disabled={!hasActiveFilters}
                 onClick={() => {
                   setSearchInput("");
@@ -705,7 +705,7 @@ function UsersContent() {
                 <X className="size-4" />
                 清除
               </Button>
-              <div className="flex shrink-0 items-center justify-end gap-2">
+              <div className="col-span-2 flex min-w-0 flex-wrap items-center justify-end gap-2 sm:col-span-3 xl:col-span-1">
                 <Button variant="outline" onClick={() => void loadUsers()} disabled={isLoading} className="h-10 rounded-lg">
                   <RefreshCw className={`size-4 ${isLoading ? "animate-spin" : ""}`} />
                   刷新
@@ -753,7 +753,7 @@ function UsersContent() {
                           {user.id}
                         </code></TooltipHint>
                       </TableCell>
-                      <TableCell>
+                      <TableCell className="max-w-[240px]">
                         <div className="min-w-0 space-y-1.5">
                           <div className="flex min-w-0 items-center gap-2">
                             <div className="truncate font-medium text-foreground">{user.name || "普通用户"}</div>
@@ -776,8 +776,8 @@ function UsersContent() {
                       </TableCell>
                       <TableCell>
                         <div className="flex flex-col items-start gap-1">
-                          <Badge variant="secondary" className="rounded-md">
-                            {roleLabel(user, roles)}
+                          <Badge variant="secondary" className="max-w-[170px] rounded-md">
+                            <span className="truncate">{roleLabel(user, roles)}</span>
                           </Badge>
                           <code className="max-w-[170px] truncate font-mono text-[11px] text-muted-foreground">
                             {user.role_id || "default-user"}
@@ -847,7 +847,7 @@ function UsersContent() {
                             type="button"
                             variant="outline"
                             size="sm"
-                            className="min-w-[74px] rounded-lg border-rose-200 px-3 text-xs text-rose-600 hover:bg-rose-50 hover:text-rose-700"
+                            className="min-w-[74px] rounded-lg border-destructive/30 px-3 text-xs text-destructive hover:bg-destructive/10 hover:text-destructive"
                             onClick={() => setDeletingUser(user)}
                             disabled={isPending}
                           >
@@ -864,7 +864,7 @@ function UsersContent() {
           </ScrollArea>
           {isLoading ? (
             <div className="flex items-center justify-center py-14">
-              <LoaderCircle className="size-5 animate-spin text-stone-400" />
+              <LoaderCircle className="size-5 animate-spin text-muted-foreground" />
             </div>
           ) : null}
           {!isLoading && items.length === 0 ? <EmptyState icon={UserRound} title={hasActiveFilters ? "没有匹配的用户" : "暂无用户"} description={hasActiveFilters ? "调整搜索或筛选条件后再试" : "创建用户后可在这里管理账号与权限"} /> : null}
@@ -884,7 +884,7 @@ function UsersContent() {
       </ManagementPanel>
 
       <Dialog open={isCreateDialogOpen} onOpenChange={closeCreateDialog}>
-        <DialogContent className="rounded-2xl p-6 sm:max-w-2xl">
+        <DialogContent className="rounded-xl p-4 sm:p-6 sm:max-w-2xl">
           <DialogHeader className="gap-2">
             <DialogTitle>创建用户</DialogTitle>
             <DialogDescription className="text-sm leading-6">创建本地登录用户并绑定角色。</DialogDescription>
@@ -898,7 +898,7 @@ function UsersContent() {
           >
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <label className="text-sm font-medium text-stone-700 dark:text-foreground">用户名</label>
+                <label className="text-sm font-medium text-foreground">用户名</label>
                 <div className="relative">
                   <UserRound className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
@@ -906,25 +906,25 @@ function UsersContent() {
                     onChange={(event) => updateCreateField("username", event.target.value.toLowerCase())}
                     placeholder="例如：operator_01"
                     autoComplete="username"
-                    className="h-11 rounded-xl pl-9"
+                    className="h-10 rounded-lg pl-9"
                     aria-invalid={Boolean(createErrors.username)}
                   />
                 </div>
                 {createErrors.username ? <p className="text-xs leading-5 text-destructive">{createErrors.username}</p> : null}
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium text-stone-700 dark:text-foreground">显示名称</label>
+                <label className="text-sm font-medium text-foreground">显示名称</label>
                 <Input
                   value={createForm.name}
                   onChange={(event) => updateCreateField("name", event.target.value)}
                   placeholder="例如：运营账号"
-                  className="h-11 rounded-xl"
+                  className="h-10 rounded-lg"
                 />
               </div>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <label className="text-sm font-medium text-stone-700 dark:text-foreground">密码</label>
+                <label className="text-sm font-medium text-foreground">密码</label>
                 <div className="relative">
                   <KeyRound className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
@@ -933,21 +933,21 @@ function UsersContent() {
                     placeholder="至少 8 位"
                     type="password"
                     autoComplete="new-password"
-                    className="h-11 rounded-xl pl-9"
+                    className="h-10 rounded-lg pl-9"
                     aria-invalid={Boolean(createErrors.password)}
                   />
                 </div>
                 {createErrors.password ? <p className="text-xs leading-5 text-destructive">{createErrors.password}</p> : null}
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium text-stone-700 dark:text-foreground">确认密码</label>
+                <label className="text-sm font-medium text-foreground">确认密码</label>
                 <Input
                   value={createForm.confirmPassword}
                   onChange={(event) => updateCreateField("confirmPassword", event.target.value)}
                   placeholder="再次输入密码"
                   type="password"
                   autoComplete="new-password"
-                  className="h-11 rounded-xl"
+                  className="h-10 rounded-lg"
                   aria-invalid={Boolean(createErrors.confirmPassword)}
                 />
                 {createErrors.confirmPassword ? <p className="text-xs leading-5 text-destructive">{createErrors.confirmPassword}</p> : null}
@@ -955,9 +955,9 @@ function UsersContent() {
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <label className="text-sm font-medium text-stone-700 dark:text-foreground">角色</label>
+                <label className="text-sm font-medium text-foreground">角色</label>
                 <Select value={createForm.role_id} onValueChange={(value) => updateCreateField("role_id", value)}>
-                  <SelectTrigger className="h-11 rounded-xl">
+                  <SelectTrigger className="h-10 rounded-lg">
                     <SelectValue placeholder="选择角色" />
                   </SelectTrigger>
                   <SelectContent>
@@ -970,9 +970,9 @@ function UsersContent() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium text-stone-700 dark:text-foreground">状态</label>
+                <label className="text-sm font-medium text-foreground">状态</label>
                 <Select value={createForm.enabled ? "true" : "false"} onValueChange={(value) => updateCreateField("enabled", value === "true")}>
-                  <SelectTrigger className="h-11 rounded-xl">
+                  <SelectTrigger className="h-10 rounded-lg">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -983,10 +983,10 @@ function UsersContent() {
               </div>
             </div>
             <DialogFooter>
-              <Button type="button" variant="secondary" className="h-10 rounded-xl px-5" onClick={() => closeCreateDialog(false)} disabled={isCreating}>
+              <Button type="button" variant="secondary" className="h-10 rounded-lg px-5" onClick={() => closeCreateDialog(false)} disabled={isCreating}>
                 取消
               </Button>
-              <Button type="submit" className="h-10 rounded-xl px-5" disabled={isCreating}>
+              <Button type="submit" className="h-10 rounded-lg px-5" disabled={isCreating}>
                 {isCreating ? <LoaderCircle className="size-4 animate-spin" /> : <Plus className="size-4" />}
                 创建
               </Button>
@@ -996,10 +996,10 @@ function UsersContent() {
       </Dialog>
 
       <Dialog open={Boolean(roleUser)} onOpenChange={(open) => (!open ? setRoleUser(null) : null)}>
-        <DialogContent className="rounded-2xl p-6">
+        <DialogContent className="rounded-xl p-4 sm:p-6">
           <DialogHeader className="gap-2">
             <DialogTitle className="flex items-center gap-2">
-              <ShieldCheck className="size-5 text-[#1456f0]" />
+              <ShieldCheck className="size-5 text-primary" />
               分配角色
             </DialogTitle>
             <DialogDescription className="truncate text-sm">
@@ -1007,9 +1007,9 @@ function UsersContent() {
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
-            <label className="text-sm font-medium text-stone-700 dark:text-foreground">角色</label>
+            <label className="text-sm font-medium text-foreground">角色</label>
             <Select value={selectedRoleId} onValueChange={setSelectedRoleId}>
-              <SelectTrigger className="h-11 rounded-xl">
+              <SelectTrigger className="h-10 rounded-lg">
                 <SelectValue placeholder="选择角色" />
               </SelectTrigger>
               <SelectContent>
@@ -1025,7 +1025,7 @@ function UsersContent() {
             <Button
               type="button"
               variant="secondary"
-              className="h-10 rounded-xl px-5"
+              className="h-10 rounded-lg px-5"
               onClick={() => setRoleUser(null)}
               disabled={isSavingRole}
             >
@@ -1033,7 +1033,7 @@ function UsersContent() {
             </Button>
             <Button
               type="button"
-              className="h-10 rounded-xl px-5"
+              className="h-10 rounded-lg px-5"
               onClick={() => void handleSaveRole()}
               disabled={isSavingRole || !roleUser || !selectedRoleId}
             >
@@ -1045,7 +1045,7 @@ function UsersContent() {
       </Dialog>
 
       <Dialog open={Boolean(deletingUser)} onOpenChange={(open) => (!open ? setDeletingUser(null) : null)}>
-        <DialogContent className="rounded-2xl p-6">
+        <DialogContent className="rounded-xl p-4 sm:p-6">
           <DialogHeader className="gap-2">
             <DialogTitle>删除用户</DialogTitle>
             <DialogDescription className="text-sm leading-6">确认删除「{deletingUser?.name}」吗？</DialogDescription>
@@ -1054,7 +1054,7 @@ function UsersContent() {
             <Button
               type="button"
               variant="secondary"
-              className="h-10 rounded-xl px-5"
+              className="h-10 rounded-lg px-5"
               onClick={() => setDeletingUser(null)}
               disabled={deletingUser ? pendingIds.has(deletingUser.id) : false}
             >
@@ -1062,7 +1062,8 @@ function UsersContent() {
             </Button>
             <Button
               type="button"
-              className="h-10 rounded-xl bg-rose-600 px-5 text-white hover:bg-rose-700"
+              variant="destructive"
+              className="h-10 rounded-lg px-5"
               onClick={() => void handleDelete()}
               disabled={deletingUser ? pendingIds.has(deletingUser.id) : false}
             >
@@ -1079,7 +1080,7 @@ function UsersContent() {
 export default function UsersPage() {
   const { isCheckingAuth, session } = useAuthGuard(undefined, "/users");
   if (isCheckingAuth || !session) {
-    return <div className="flex min-h-[40vh] items-center justify-center"><LoaderCircle className="size-5 animate-spin text-stone-400" /></div>;
+    return <div className="flex min-h-[40vh] items-center justify-center"><LoaderCircle className="size-5 animate-spin text-muted-foreground" /></div>;
   }
   return <UsersContent key={session.key} />;
 }

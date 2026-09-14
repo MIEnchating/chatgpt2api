@@ -46,7 +46,7 @@ export function CanvasAudioPromptPanel({ node, models, audioReferences, relayTok
   useEffect(() => setPrompt(node.prompt || ""), [node.id, node.prompt]);
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
-      <div className="overflow-hidden rounded-xl border border-border/90 bg-card/96 shadow-[0_14px_38px_rgba(15,23,42,.14)]">
+      <div className="overflow-hidden rounded-xl border border-border/90 bg-card/96 shadow-[var(--shadow-elevated)]">
         <PromptTextareaFrame className="h-32 min-h-24">
           <Textarea value={prompt} onChange={(event) => { setPrompt(event.target.value); onPromptChange(event.target.value); }} onBlur={() => onPromptChange(prompt, true)} rows={6} placeholder="输入需要合成的旁白、对白或音频内容" className="min-h-full resize-none overflow-hidden rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0" />
         </PromptTextareaFrame>
@@ -113,7 +113,7 @@ export function CanvasPanoramaPromptPanel({ node, imageModel, imageModels, runni
   const selectedModel = node.generation_model?.trim() || imageModel;
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
-      <div className="overflow-hidden rounded-xl border border-border/90 bg-card/96 shadow-[0_14px_38px_rgba(15,23,42,.14)]">
+      <div className="overflow-hidden rounded-xl border border-border/90 bg-card/96 shadow-[var(--shadow-elevated)]">
         <PromptTextareaFrame className="h-36 min-h-28">
           <Textarea value={prompt} onChange={(event) => onPromptChange(event.target.value)} onBlur={(event) => onPromptChange(event.target.value, true)} rows={8} placeholder="描述一个完整的 360 度环境，包括前后左右、地面与天空" className="min-h-full resize-none overflow-hidden rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0" />
         </PromptTextareaFrame>

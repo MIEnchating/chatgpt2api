@@ -122,7 +122,7 @@ func (a *App) handleStorageFiles(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(parts) == 3 && parts[2] == "record" && r.Method == http.MethodDelete {
-		if err := a.storageFiles.DeleteDirectRecord(identity.ID, id); err != nil {
+		if err := a.myAssets.DeleteDirectRecord(r.Context(), identity.ID, id); err != nil {
 			a.writeStorageServiceError(w, err)
 			return
 		}

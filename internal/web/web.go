@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"net/http"
 	"path"
+	"regexp"
 	"strings"
 )
 
@@ -12,6 +13,9 @@ import (
 var dist embed.FS
 
 var staticFS = mustSubFS(dist, "dist")
+
+// Vite emits content hashes in the names of generated build assets.
+var versionedBuildAsset = regexp.MustCompile(`^assets/[^/]+-[A-Za-z0-9_-]{8}\.[A-Za-z0-9]+$`)
 
 func Handler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -38,7 +42,9 @@ func serveAsset(w http.ResponseWriter, r *http.Request, name string) bool {
 	for _, candidate := range assetCandidates(name) {
 		info, err := fs.Stat(staticFS, candidate)
 		if err == nil && !info.IsDir() {
-			if candidate == "index.html" {
+			if versionedBuildAsset.MatchString(candidate) {
+				w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+			} else {
 				w.Header().Set("Cache-Control", "no-cache")
 			}
 			http.ServeFileFS(w, r, staticFS, candidate)

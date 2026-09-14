@@ -54,7 +54,7 @@ export function ChatMarkdown({ children, className }: ChatMarkdownProps) {
   }
 
   return (
-    <div className={cn("space-y-3 break-words text-sm leading-6 text-[#45515e] dark:text-muted-foreground", className)}>
+    <div className={cn("space-y-3 break-words text-sm leading-6 text-muted-foreground dark:text-muted-foreground", className)}>
       {parseBlocks(content).map((block, index) => renderBlock(block, `chat-md-${index}`))}
     </div>
   );
@@ -248,7 +248,7 @@ function renderBlock(block: MarkdownBlock, key: string) {
       <HeadingTag
         key={key}
         className={cn(
-          "font-semibold tracking-normal text-[#222222] dark:text-foreground",
+          "font-semibold tracking-normal text-foreground dark:text-foreground",
           block.level <= 2 ? "text-base leading-7" : "text-sm leading-6",
         )}
       >
@@ -275,7 +275,7 @@ function renderBlock(block: MarkdownBlock, key: string) {
 
   if (block.type === "blockquote") {
     return (
-      <blockquote key={key} className="border-l-2 border-[#dbe7ff] pl-3 text-[#5f6c7a] dark:border-sky-900 dark:text-muted-foreground">
+      <blockquote key={key} className="border-l-2 border-brand-border pl-3 text-muted-foreground dark:text-muted-foreground">
         {renderInlineLines(block.lines, key)}
       </blockquote>
     );
@@ -283,14 +283,14 @@ function renderBlock(block: MarkdownBlock, key: string) {
 
   if (block.type === "code") {
     return (
-      <div key={key} className="overflow-hidden rounded-xl border border-[#e5e7eb] bg-[#f8fafc] dark:border-border dark:bg-background">
+      <div key={key} className="overflow-hidden rounded-xl border border-border bg-muted/40 dark:border-border dark:bg-background">
         {block.language ? (
-          <div className="border-b border-[#e5e7eb] px-3 py-1.5 font-mono text-[11px] text-[#8e8e93] dark:border-border">
+          <div className="border-b border-border px-3 py-1.5 font-mono text-[11px] text-muted-foreground dark:border-border">
             {block.language}
           </div>
         ) : null}
         <pre className="overflow-x-auto p-3 text-[13px] leading-6">
-          <code className="font-mono text-[#222222] dark:text-foreground">{block.code}</code>
+          <code className="font-mono text-foreground dark:text-foreground">{block.code}</code>
         </pre>
       </div>
     );
@@ -298,12 +298,12 @@ function renderBlock(block: MarkdownBlock, key: string) {
 
   if (block.type === "table") {
     return (
-      <div key={key} className="overflow-x-auto rounded-xl border border-[#e5e7eb] dark:border-border">
+      <div key={key} className="overflow-x-auto rounded-xl border border-border dark:border-border">
         <table className="w-full min-w-[28rem] border-collapse text-left text-sm">
-          <thead className="bg-[#f8fafc] text-[#222222] dark:bg-background dark:text-foreground">
+          <thead className="bg-muted/40 text-foreground dark:bg-background dark:text-foreground">
             <tr>
               {block.headers.map((header, index) => (
-                <th key={`${key}-head-${index}`} className="border-b border-[#e5e7eb] px-3 py-2 font-semibold dark:border-border">
+                <th key={`${key}-head-${index}`} className="border-b border-border px-3 py-2 font-semibold dark:border-border">
                   {renderInline(header, `${key}-head-${index}`)}
                 </th>
               ))}
@@ -311,7 +311,7 @@ function renderBlock(block: MarkdownBlock, key: string) {
           </thead>
           <tbody>
             {block.rows.map((row, rowIndex) => (
-              <tr key={`${key}-row-${rowIndex}`} className="border-b border-[#f2f3f5] last:border-0 dark:border-border">
+              <tr key={`${key}-row-${rowIndex}`} className="border-b border-border last:border-0 dark:border-border">
                 {row.map((cell, cellIndex) => (
                   <td key={`${key}-cell-${rowIndex}-${cellIndex}`} className="px-3 py-2 align-top">
                     {renderInline(cell, `${key}-cell-${rowIndex}-${cellIndex}`)}
@@ -326,7 +326,7 @@ function renderBlock(block: MarkdownBlock, key: string) {
   }
 
   if (block.type === "divider") {
-    return <hr key={key} className="border-[#e5e7eb] dark:border-border" />;
+    return <hr key={key} className="border-border dark:border-border" />;
   }
 
   return (
@@ -373,7 +373,7 @@ function renderInline(text: string, keyPrefix: string): ReactNode[] {
         pushNode(
           <code
             key={`${keyPrefix}-code-${cursor}`}
-            className="rounded-md bg-[#edf2f7] px-1.5 py-0.5 font-mono text-[0.9em] text-[#222222] dark:bg-muted dark:text-foreground"
+            className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-[0.9em] text-foreground dark:bg-muted dark:text-foreground"
           >
             {text.slice(cursor + 1, end)}
           </code>,
@@ -387,7 +387,7 @@ function renderInline(text: string, keyPrefix: string): ReactNode[] {
       const end = text.indexOf("**", cursor + 2);
       if (end > cursor + 2) {
         pushNode(
-          <strong key={`${keyPrefix}-strong-${cursor}`} className="font-semibold text-[#222222] dark:text-foreground">
+          <strong key={`${keyPrefix}-strong-${cursor}`} className="font-semibold text-foreground dark:text-foreground">
             {renderInline(text.slice(cursor + 2, end), `${keyPrefix}-strong-${cursor}`)}
           </strong>,
         );
@@ -582,7 +582,7 @@ function MarkdownLink({
 
   return (
     <a
-      className="font-medium text-[#1456f0] underline underline-offset-2 transition hover:text-[#17437d] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1456f0]/25 dark:text-sky-300 dark:hover:text-sky-200"
+      className="font-medium text-brand underline underline-offset-2 transition hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/25"
       href={href}
       target={external ? "_blank" : undefined}
       rel={external ? "noreferrer" : undefined}

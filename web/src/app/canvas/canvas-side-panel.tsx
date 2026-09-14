@@ -257,7 +257,7 @@ export function CanvasSidePanel({
           onPointerUp={stopResize}
           onPointerCancel={stopResize}
         >
-          <span className="absolute inset-y-0 left-0 w-px bg-[#1456f0]/0 transition-colors hover:bg-[#1456f0]/70" />
+          <span className="absolute inset-y-0 left-0 w-px bg-brand/0 transition-colors hover:bg-brand/70" />
         </button>
       </aside>
     </div>
@@ -278,7 +278,7 @@ function SidePanelTab({ active, className, ...props }: React.ButtonHTMLAttribute
       {...props}
     >
       {props.children}
-      {active ? <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-[#1456f0]" /> : null}
+      {active ? <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-primary" /> : null}
     </button>
   );
 }
@@ -365,7 +365,7 @@ const CanvasNodeRow = ({ ref, node, selected, onClick }: {
       type="button"
       className={cn(
         "flex h-14 w-full items-center gap-2.5 rounded-md border px-2 text-left transition-colors",
-        selected ? "border-[#8fb0f7] bg-[#edf3ff] dark:border-blue-700 dark:bg-blue-950/45" : "border-transparent hover:bg-muted/70",
+        selected ? "border-brand/40 bg-brand-soft" : "border-transparent hover:bg-muted/70",
       )}
       onClick={onClick}
     >
@@ -427,7 +427,7 @@ function CanvasAssetsTab({ images, loading, onInsert, onOpenAssets }: {
                   key={image.path}
                   type="button"
                   draggable
-                  className="group min-w-0 overflow-hidden rounded-md border border-border bg-card text-left transition hover:border-[#8fb0f7] hover:shadow-sm"
+                  className="group min-w-0 overflow-hidden rounded-md border border-border bg-card text-left transition hover:border-brand/40 hover:shadow-sm"
                   onDragStart={(event) => {
                     event.dataTransfer.setData("application/x-yunmian-image", JSON.stringify(image));
                     event.dataTransfer.effectAllowed = "copy";
@@ -636,7 +636,7 @@ function CanvasPromptRow({ prompt, onView, onInsert }: { prompt: BananaPrompt; o
       </button>
       <span className="flex shrink-0 items-center gap-0.5">
         <Button type="button" variant="ghost" size="icon" className="size-7 text-muted-foreground" aria-label={`查看 ${prompt.title}`} title="查看详情" onClick={onView}><Eye className="size-3.5" /></Button>
-        <Button type="button" variant="ghost" size="icon" className="size-7 text-[#1456f0]" aria-label={`插入 ${prompt.title}`} title="插入画布" onClick={onInsert}><Plus className="size-3.5" /></Button>
+        <Button type="button" variant="ghost" size="icon" className="size-7 text-brand" aria-label={`插入 ${prompt.title}`} title="插入画布" onClick={onInsert}><Plus className="size-3.5" /></Button>
       </span>
     </div>
   );

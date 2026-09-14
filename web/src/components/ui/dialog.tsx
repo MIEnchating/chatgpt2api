@@ -27,7 +27,7 @@ function DialogOverlay({
     <DialogPrimitive.Overlay
       data-slot="dialog-overlay"
       className={cn(
-        "data-[state=open]:animate-in fixed inset-0 z-50 bg-black/30 backdrop-blur-[2px]",
+        "fixed inset-0 z-50 bg-black/40 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 backdrop-blur-[2px]",
         className,
       )}
       {...props}
@@ -68,7 +68,7 @@ function DialogContent({
           (event.currentTarget as HTMLElement).focus({ preventScroll: true });
         }}
         className={cn(
-          "fixed top-[50%] left-[50%] z-50 flex max-h-[calc(100dvh-2rem)] w-[min(92vw,560px)] translate-x-[-50%] translate-y-[-50%] flex-col gap-4 overflow-hidden rounded-xl border border-border/80 bg-card p-[var(--dialog-padding)] [--dialog-padding:1.25rem] shadow-[0_24px_70px_-32px_rgba(15,23,42,0.42)] duration-200 data-[state=open]:animate-in sm:[--dialog-padding:1.5rem] [&:has([data-slot=dialog-footer]:not([data-flush=true]))]:pb-3",
+          "fixed top-[50%] left-[50%] z-50 flex max-h-[calc(100dvh-2rem)] w-[min(calc(100%-2rem),35rem)] min-w-0 max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] flex-col gap-4 overflow-hidden rounded-xl border border-border/80 bg-card text-card-foreground outline-none p-[var(--dialog-padding)] [--dialog-padding:1.25rem] shadow-[var(--shadow-dialog)] duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 sm:[--dialog-padding:1.5rem] [&:has([data-slot=dialog-footer]:not([data-flush=true]))]:pb-3",
           className,
         )}
         {...props}
@@ -79,9 +79,9 @@ function DialogContent({
             {body.length > 0 ? (
               <ScrollArea
                 data-slot="dialog-body"
-                className="min-h-0 flex-1"
-                viewportClassName="overscroll-contain"
-                viewClass="grid gap-4"
+                className="-mx-1 min-h-0 min-w-0 flex-1 px-1"
+                viewportClassName="overscroll-contain py-1"
+                viewClass="grid min-w-0 gap-4"
               >
                 {body}
               </ScrollArea>
@@ -90,7 +90,7 @@ function DialogContent({
           </>
         ) : children}
         {showCloseButton ? (
-          <DialogPrimitive.Close data-slot="dialog-auto-close" aria-label="关闭" className="ring-offset-background focus:ring-ring data-[state=open]:bg-accent data-[state=open]:text-muted-foreground absolute top-4 right-4 z-30 rounded-full bg-card p-1.5 opacity-70 transition-[background-color,opacity] hover:bg-accent hover:opacity-100 focus:ring-2 focus:outline-none disabled:pointer-events-none">
+          <DialogPrimitive.Close data-slot="dialog-auto-close" aria-label="关闭" className="absolute top-3 right-3 z-30 inline-flex size-9 items-center justify-center rounded-lg bg-card text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-[3px] focus-visible:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-60 sm:top-4 sm:right-4">
             <X className="size-4" />
             <span className="sr-only">Close</span>
           </DialogPrimitive.Close>
@@ -124,7 +124,7 @@ function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="dialog-header"
-      className={cn("min-w-0 shrink-0 flex flex-col gap-2 pr-20 text-left", className)}
+      className={cn("min-w-0 shrink-0 flex flex-col gap-2 pr-10 text-left", className)}
       {...props}
     />
   );
@@ -140,7 +140,7 @@ function DialogFooter({
       data-slot="dialog-footer"
       data-flush={flush || undefined}
       className={cn(
-        "z-10 flex shrink-0 flex-col-reverse gap-2 bg-card sm:flex-row sm:items-center sm:justify-end [&>[data-slot=button]]:min-w-18",
+        "z-10 flex min-w-0 shrink-0 flex-col-reverse gap-2 bg-card sm:flex-row sm:flex-wrap sm:items-center sm:justify-end [&>[data-slot=button]]:min-w-18",
         flush && "min-h-15 border-t border-border bg-card px-5 py-3 sm:px-6",
         className,
       )}
@@ -156,7 +156,7 @@ function DialogTitle({
   return (
     <DialogPrimitive.Title
       data-slot="dialog-title"
-      className={cn("font-display min-w-0 break-words text-xl leading-tight font-semibold", className)}
+      className={cn("font-display min-w-0 text-xl leading-7 font-semibold [overflow-wrap:anywhere]", className)}
       {...props}
     />
   );
@@ -169,7 +169,7 @@ function DialogDescription({
   return (
     <DialogPrimitive.Description
       data-slot="dialog-description"
-      className={cn("text-muted-foreground text-sm", className)}
+      className={cn("text-sm leading-6 text-muted-foreground [overflow-wrap:anywhere]", className)}
       {...props}
     />
   );

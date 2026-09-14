@@ -86,3 +86,34 @@ test("prompt library handoff cannot cross authenticated sessions", () => {
     globalThis.window = previousWindow;
   }
 });
+
+test("prompt handoff reports blocked storage and quota exhaustion to its caller", () => {
+  const previousWindow = globalThis.window;
+  try {
+    for (const browser of [
+      { get sessionStorage() { throw new DOMException("Storage access denied", "SecurityError"); } },
+      { sessionStorage: { setItem() { throw new DOMException("Storage is full", "QuotaExceededError"); } } },
+    ]) {
+      globalThis.window = browser;
+      assert.equal(stagePromptForWorkbench({ id: "prompt", title: "Prompt", prompt: "Draw a product" }, "session-a"), false);
+    }
+  } finally {
+    globalThis.window = previousWindow;
+  }
+});
+
+test("unreadable handoffs do not interrupt workbench initialization", () => {
+  const previousWindow = globalThis.window;
+  try {
+    for (const browser of [
+      { get sessionStorage() { throw new DOMException("Storage access denied", "SecurityError"); } },
+      { sessionStorage: { getItem() { throw new DOMException("Storage access denied", "SecurityError"); } } },
+      { sessionStorage: { getItem: () => "{}", removeItem() { throw new DOMException("Storage access denied", "SecurityError"); } } },
+    ]) {
+      globalThis.window = browser;
+      assert.equal(consumePromptForWorkbench("session-a"), null);
+    }
+  } finally {
+    globalThis.window = previousWindow;
+  }
+});

@@ -30,6 +30,7 @@ var ErrInvalidLogRetentionDays = errors.New("retention days must be between 1 an
 
 type LogService struct {
 	mu              sync.Mutex
+	usageStatsMu    sync.Mutex
 	store           storage.LogBackend
 	usageStatsCache map[string]cachedUserUsageStats
 }
@@ -499,6 +500,10 @@ func (s *LogService) UserUsageStatsForUsers(days int, userIDs []string) (map[str
 }
 
 func (s *LogService) cachedUserUsageStats(days int) (map[string]map[string]any, error) {
+	// Serialize cache fills without blocking log writes during aggregation.
+	s.usageStatsMu.Lock()
+	defer s.usageStatsMu.Unlock()
+
 	dates := usageDates(days)
 	out := map[string]map[string]any{}
 	if len(dates) == 0 {
@@ -507,6 +512,11 @@ func (s *LogService) cachedUserUsageStats(days int) (map[string]map[string]any, 
 	cacheKey := userUsageStatsCacheKey(dates)
 	now := time.Now()
 	s.mu.Lock()
+	for key, cached := range s.usageStatsCache {
+		if !now.Before(cached.expiresAt) {
+			delete(s.usageStatsCache, key)
+		}
+	}
 	if cached, ok := s.usageStatsCache[cacheKey]; ok && now.Before(cached.expiresAt) {
 		s.mu.Unlock()
 		return cached.stats, nil
@@ -516,20 +526,31 @@ func (s *LogService) cachedUserUsageStats(days int) (map[string]map[string]any, 
 	if s.store == nil {
 		return nil, fmt.Errorf("log storage backend is required")
 	}
+	pager, ok := s.store.(storage.LogPageBackend)
+	if !ok {
+		return nil, fmt.Errorf("log page storage backend is required")
+	}
 	startDate := dates[0]
 	endDate := dates[len(dates)-1]
 	byUser := map[string]*userUsageAccumulator{}
-	items, err := s.store.QueryLogs(startDate, endDate, 0)
-	if err != nil {
-		return nil, fmt.Errorf("query user usage logs: %w", err)
-	}
-	for _, item := range items {
-		accumulateUserUsageLog(byUser, item, startDate, endDate)
+	var cursor *storage.LogCursor
+	for {
+		page, err := pager.QueryLogPage(startDate, endDate, cursor, 1000)
+		if err != nil {
+			return nil, fmt.Errorf("query user usage logs: %w", err)
+		}
+		for _, record := range page.Records {
+			accumulateUserUsageLog(byUser, record.Item, startDate, endDate)
+		}
+		if page.NextCursor == nil {
+			break
+		}
+		cursor = page.NextCursor
 	}
 	for userID, acc := range byUser {
 		out[userID] = userUsageStatsMap(acc, dates)
 	}
-	s.cacheUserUsageStats(cacheKey, out, now)
+	s.cacheUserUsageStats(cacheKey, out, time.Now())
 	return out, nil
 }
 

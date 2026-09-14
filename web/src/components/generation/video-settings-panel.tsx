@@ -103,7 +103,7 @@ export function VideoSettingsPanel({
     <div className="flex flex-col gap-3.5">
       {!hidden("resolution") && resolutionOptions.length > 0 ? <section className="order-10 space-y-1.5">
         <ImageParameterLabel help="更高清晰度通常需要更长生成时间。">清晰度</ImageParameterLabel>
-        <div className={cn("grid gap-1 rounded-lg bg-[#f4f4f5] p-1 dark:bg-muted/70", resolutionOptions.length === 3 ? "grid-cols-3" : "grid-cols-2")}>
+        <div className={cn("grid gap-1 rounded-lg bg-muted p-1 dark:bg-muted/70", resolutionOptions.length === 3 ? "grid-cols-3" : "grid-cols-2")}>
           {resolutionOptions.map((resolution) => <button key={resolution} type="button" disabled={disabled("resolution")} aria-pressed={displayResolution === resolution} className={imageParameterChoiceClass(displayResolution === resolution, "h-8 uppercase")} onClick={() => onChange({ resolution })}>{resolution}</button>)}
         </div>
         {!resolutionValid ? <p className="text-[11px] text-rose-600 dark:text-rose-400">当前模型不支持该清晰度</p> : null}
@@ -122,7 +122,7 @@ export function VideoSettingsPanel({
       {!coreOnly && !hidden("duration") ? <section className="order-30 space-y-1.5">
         <ImageParameterLabel help="视频生成所需时间会随秒数增加。">秒数</ImageParameterLabel>
         <div className={cn("grid gap-2", allowsCustomDuration ? "grid-cols-[minmax(0,1fr)_6.5rem]" : "grid-cols-1")}>
-          <Select value={secondsPresets.includes(Number(displaySeconds)) ? displaySeconds : undefined} disabled={disabled("duration")} onValueChange={(seconds) => onChange({ seconds })}><SelectTrigger className="h-8 min-w-0 rounded-lg border-[#dedfe3] bg-white px-2 text-xs font-medium text-[#3f4147] shadow-none dark:border-border dark:bg-background/70 dark:text-foreground" aria-label="选择视频秒数"><SelectValue placeholder="选择秒数" /></SelectTrigger><SelectContent>{(secondsPresets.length > 0 ? secondsPresets : secondsOptions).map((seconds) => <SelectItem key={seconds} value={String(seconds)}>{seconds < 0 ? "智能时长" : `${seconds} 秒`}</SelectItem>)}</SelectContent></Select>
+          <Select value={secondsPresets.includes(Number(displaySeconds)) ? displaySeconds : undefined} disabled={disabled("duration")} onValueChange={(seconds) => onChange({ seconds })}><SelectTrigger className="h-8 min-w-0 rounded-lg border-border bg-card px-2 text-xs font-medium text-foreground shadow-none dark:border-border dark:bg-background/70 dark:text-foreground" aria-label="选择视频秒数"><SelectValue placeholder="选择秒数" /></SelectTrigger><SelectContent>{(secondsPresets.length > 0 ? secondsPresets : secondsOptions).map((seconds) => <SelectItem key={seconds} value={String(seconds)}>{seconds < 0 ? "智能时长" : `${seconds} 秒`}</SelectItem>)}</SelectContent></Select>
           {allowsCustomDuration ? <VideoDurationInput value={displaySeconds === "-1" ? "" : displaySeconds} min={minimumSeconds} max={maximumSeconds} disabled={disabled("duration")} placeholder={displaySeconds === "-1" ? "智能" : `${minimumSeconds}-${maximumSeconds}`} onChange={(seconds) => onChange({ seconds })} /> : null}
         </div>
         {!secondsValid ? <p className="text-[11px] text-rose-600 dark:text-rose-400">请输入当前模型支持的时长</p> : null}
@@ -133,8 +133,8 @@ export function VideoSettingsPanel({
         <NumberInput value={taskCount} min={1} max={6} controlsLayout="split" suffix="个" aria-label="视频任务数" className="h-8" inputClassName="px-0 text-right text-xs font-semibold" onValueChange={(raw) => { const next = Number(raw); if (Number.isFinite(next)) onChange({ taskCount: Math.max(1, Math.min(6, Math.round(next))) }); }} />
       </section> : null}
 
-      {!coreOnly && showAudio && !hidden("generate_audio") ? <section className="order-40 flex items-center justify-between gap-3 border-t border-[#ececf0] pt-3 dark:border-border"><ImageParameterLabel help="为支持该能力的模型生成与视频同步的音频。">音频生成</ImageParameterLabel><Switch checked={audioControl === "always" || (value.generateAudio && !audioDisabled)} disabled={audioDisabled || disabled("generate_audio")} onCheckedChange={(generateAudio) => onChange({ generateAudio })} /></section> : null}
-      {!coreOnly && showWatermark && !hidden("watermark") ? <section className="order-50 flex items-center justify-between gap-3 border-t border-[#ececf0] pt-3 dark:border-border"><ImageParameterLabel help="在生成的视频中添加供应商水印。">添加水印</ImageParameterLabel><Switch checked={value.watermark} disabled={disabled("watermark")} onCheckedChange={(watermark) => onChange({ watermark })} /></section> : null}
+      {!coreOnly && showAudio && !hidden("generate_audio") ? <section className="order-40 flex items-center justify-between gap-3 border-t border-border pt-3 dark:border-border"><ImageParameterLabel help="为支持该能力的模型生成与视频同步的音频。">音频生成</ImageParameterLabel><Switch checked={audioControl === "always" || (value.generateAudio && !audioDisabled)} disabled={audioDisabled || disabled("generate_audio")} onCheckedChange={(generateAudio) => onChange({ generateAudio })} /></section> : null}
+      {!coreOnly && showWatermark && !hidden("watermark") ? <section className="order-50 flex items-center justify-between gap-3 border-t border-border pt-3 dark:border-border"><ImageParameterLabel help="在生成的视频中添加供应商水印。">添加水印</ImageParameterLabel><Switch checked={value.watermark} disabled={disabled("watermark")} onCheckedChange={(watermark) => onChange({ watermark })} /></section> : null}
     </div>
   );
 }
@@ -159,7 +159,7 @@ function VideoDurationInput({ value, min, max, disabled, placeholder, onChange }
   };
 
   return (
-    <div className={cn("grid h-8 grid-cols-[1fr_auto] items-center overflow-hidden rounded-lg border bg-white dark:bg-background/70", valid ? "border-[#dedfe3] dark:border-border" : "border-rose-400 ring-2 ring-rose-500/10")}>
+    <div className={cn("grid h-8 min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center rounded-lg border bg-background transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20", valid ? "border-border dark:border-border" : "border-destructive ring-2 ring-destructive/20")}>
       <Input
         type="text"
         inputMode="numeric"
@@ -182,7 +182,7 @@ function VideoDurationInput({ value, min, max, disabled, placeholder, onChange }
           }
         }}
       />
-      <span className="pr-2 text-[11px] text-[#8e8e93] dark:text-muted-foreground">{draft ? "秒" : ""}</span>
+      <span className="pr-2 text-[11px] text-muted-foreground dark:text-muted-foreground">{draft ? "秒" : ""}</span>
     </div>
   );
 }
@@ -197,5 +197,5 @@ function VideoDimensionInputs({ value, options, disabled, onChange }: { value: s
     const next = `${dimensions.width}x${dimensions.height}`;
     if (options.includes(next)) onChange(next); else setDimensions(readDimensions(value || options[0] || ""));
   };
-  return <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) commit(); }}>{(["width", "height"] as const).map((key, index) => <div key={key} className={cn("grid h-9 min-w-0 grid-cols-[1.5rem_minmax(0,1fr)] items-center overflow-hidden rounded-lg border border-[#dedfe3] bg-white transition-colors dark:border-border dark:bg-background/70", disabled && "cursor-not-allowed border-border/60 bg-muted/50 text-muted-foreground dark:bg-muted/40", index === 1 && "col-start-3")}><span className={cn("pl-2 text-[11px] font-semibold text-[#8e8e93]", disabled && "text-muted-foreground")}>{key === "width" ? "W" : "H"}</span>{disabled ? <TooltipHint content="自动尺寸下不可手动输入"><span tabIndex={0} role="img" aria-label={`${key === "width" ? "宽度" : "高度"}已锁定`} className="flex h-full min-w-0 cursor-not-allowed items-center justify-center outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"><LockKeyhole className="size-3.5" aria-hidden="true" /></span></TooltipHint> : <Input type="number" min="1" value={dimensions[key]} onChange={(event) => setDimensions((current) => ({ ...current, [key]: event.target.value.replace(/\D/g, "") }))} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); commit(); event.currentTarget.blur(); } }} className="h-full min-w-0 border-0 bg-transparent px-1.5 text-center text-xs font-semibold shadow-none focus-visible:ring-0" aria-label={key === "width" ? "视频宽度" : "视频高度"} />}</div>)}<span className={cn("col-start-2 row-start-1 text-sm text-[#a0a3aa]", disabled && "text-muted-foreground/70")}>x</span></div>;
+  return <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2" onBlur={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) commit(); }}>{(["width", "height"] as const).map((key, index) => <div key={key} className={cn("grid h-9 min-w-0 grid-cols-[1.5rem_minmax(0,1fr)] items-center overflow-hidden rounded-lg border border-border bg-background transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20", disabled && "cursor-not-allowed border-border/60 bg-muted/50 text-muted-foreground dark:bg-muted/40", index === 1 && "col-start-3")}><span className={cn("pl-2 text-[11px] font-semibold text-muted-foreground", disabled && "text-muted-foreground")}>{key === "width" ? "W" : "H"}</span>{disabled ? <TooltipHint content="自动尺寸下不可手动输入"><span tabIndex={0} role="img" aria-label={`${key === "width" ? "宽度" : "高度"}已锁定`} className="flex h-full min-w-0 cursor-not-allowed items-center justify-center outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"><LockKeyhole className="size-3.5" aria-hidden="true" /></span></TooltipHint> : <Input type="number" min="1" value={dimensions[key]} onChange={(event) => setDimensions((current) => ({ ...current, [key]: event.target.value.replace(/\D/g, "") }))} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); commit(); event.currentTarget.blur(); } }} className="h-full min-w-0 border-0 bg-transparent px-1.5 text-center text-xs font-semibold shadow-none focus-visible:ring-0" aria-label={key === "width" ? "视频宽度" : "视频高度"} />}</div>)}<span className={cn("col-start-2 row-start-1 text-sm text-muted-foreground", disabled && "text-muted-foreground/70")}>x</span></div>;
 }

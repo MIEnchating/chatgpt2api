@@ -15,7 +15,7 @@ test("asset filters and cards use the full content width", () => {
   assert.match(assetsSource, /data-asset-grid/);
   assert.match(assetsSource, /data-asset-selection-toolbar/);
   assert.match(assetsSource, /<ManagementPagination/);
-  assert.match(assetsSource, /data-asset-selection-toolbar className="hide-scrollbar flex h-12 shrink-0/);
+  assert.match(assetsSource, /data-asset-selection-toolbar className="flex min-h-14 min-w-0 shrink-0 flex-wrap/);
   assert.doesNotMatch(assetsSource, /删除\{deletableSelectedAssets\.length/);
   assert.match(assetsSource, /全选当前页/);
   assert.match(assetsSource, /downloadSelected/);
@@ -67,7 +67,7 @@ test("asset deletion commits the record before best-effort file cleanup", () => 
     assetsSource.indexOf("const toggleVisibleSelection"),
   );
   assert.ok(singleDelete.indexOf("await deleteAsset(deleting.id)") >= 0);
-  assert.ok(singleDelete.indexOf("await deleteUnusedAssetStorage") > singleDelete.indexOf("await deleteAsset(deleting.id)"));
+  assert.ok(singleDelete.indexOf("await createAssetStorageCleanup") > singleDelete.indexOf("await deleteAsset(deleting.id)"));
   assert.match(singleDelete, /素材记录已删除，文件清理失败/);
 
   const bulkDelete = assetsSource.slice(
@@ -75,7 +75,7 @@ test("asset deletion commits the record before best-effort file cleanup", () => 
     assetsSource.indexOf("return (", assetsSource.indexOf("const deleteSelected")),
   );
   assert.ok(bulkDelete.indexOf("await deleteAsset(asset.id)") >= 0);
-  assert.ok(bulkDelete.indexOf("deleteUnusedAssetStorage") > bulkDelete.indexOf("await deleteAsset(asset.id)"));
+  assert.ok(bulkDelete.indexOf("createAssetStorageCleanup") > bulkDelete.indexOf("await deleteAsset(asset.id)"));
   assert.match(bulkDelete, /Promise\.allSettled/);
 });
 
@@ -104,7 +104,8 @@ test("prompt and workflow libraries keep dense wide-screen layouts", () => {
   assert.match(workflowsSource, /<ManagementPagination/);
   assert.match(workflowsSource, /visibleWorkflows\.map/);
   assert.doesNotMatch(workflowsSource, /<h1 className="text-base font-semibold">创意工作流|个工作流\{/);
-  assert.match(workflowsSource, /embedded \? "bg-transparent" : "card-surface rounded-xl border border-border\/80/);
+  assert.match(workflowsSource, /<ManagementPage>/);
+  assert.match(workflowsSource, /<ManagementPanel[\s\S]*embedded && "rounded-none border-0 bg-transparent shadow-none"/);
   assert.doesNotMatch(workflowsSource, /max-w-\[1680px\]/);
   assert.match(workflowsSource, /role="button"[\s\S]*?aria-label=\{`查看任务/);
   assert.match(workflowsSource, /<WorkflowTaskDialog task=\{selectedTask\}/);

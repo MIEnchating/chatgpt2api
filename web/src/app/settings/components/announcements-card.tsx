@@ -358,7 +358,7 @@ export function AnnouncementsCard({ sessionKey }: { sessionKey: string }) {
                         type="button"
                         variant="ghost"
                         size="icon"
-                        className="size-8 text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:hover:bg-rose-950/30"
+                        className="size-8 text-rose-600 hover:bg-rose-50 hover:text-rose-700 dark:hover:bg-rose-950/30 dark:text-rose-300 dark:hover:text-rose-300"
                         disabled={pending}
                         onClick={() => setDeletingItem(item)}
                         aria-label="删除公告"

@@ -194,11 +194,11 @@ export function AssetForm({ open, asset, onClose, onSave }: { open: boolean; ass
 }
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
-  return <label className="grid gap-1.5 text-xs font-medium text-foreground"><span>{label}</span>{children}</label>;
+  return <label className="grid min-w-0 gap-1.5 text-xs font-medium text-foreground"><span>{label}</span>{children}</label>;
 }
 
 function AssetFormPreview({ asset }: { asset: MyAsset }) {
-  return <aside className="min-w-0 border-t border-border pt-5 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6"><p className="text-xs font-semibold text-foreground">预览</p><div className="mt-3 flex aspect-[4/3] items-center justify-center overflow-hidden rounded-lg bg-muted/50">{asset.coverUrl ? <AuthenticatedImage src={asset.coverUrl} alt="" className="size-full object-cover" /> : asset.kind === "image" && asset.url ? <AuthenticatedImage src={asset.url} alt="" className="size-full object-contain" /> : asset.kind === "video" && asset.url ? <video src={asset.url} muted playsInline preload="metadata" className="size-full object-cover" /> : asset.kind === "audio" ? <AudioLines className="size-12 text-[#1456f0]" /> : <p className="line-clamp-6 px-5 text-center text-sm leading-6 text-muted-foreground">{asset.content || "文本内容预览"}</p>}</div><h3 className="mt-3 truncate text-sm font-semibold">{asset.title || "未命名素材"}</h3><p className="mt-1 text-xs text-muted-foreground">{asset.source || "未标注来源"}</p></aside>;
+  return <aside className="min-w-0 border-t border-border pt-5 lg:border-t-0 lg:border-l lg:pt-0 lg:pl-6"><p className="text-xs font-semibold text-foreground">预览</p><div className="mt-3 flex aspect-[4/3] items-center justify-center overflow-hidden rounded-lg bg-muted/50">{asset.coverUrl ? <AuthenticatedImage src={asset.coverUrl} alt="" className="size-full object-cover" /> : asset.kind === "image" && asset.url ? <AuthenticatedImage src={asset.url} alt="" className="size-full object-contain" /> : asset.kind === "video" && asset.url ? <video src={asset.url} muted playsInline preload="metadata" className="size-full object-cover" /> : asset.kind === "audio" ? <AudioLines className="size-12 text-primary" /> : <p className="line-clamp-6 px-5 text-center text-sm leading-6 text-muted-foreground">{asset.content || "文本内容预览"}</p>}</div><h3 className="mt-3 truncate text-sm font-semibold">{asset.title || "未命名素材"}</h3><p className="mt-1 break-words text-xs text-muted-foreground">{asset.source || "未标注来源"}</p></aside>;
 }
 
 function previewMyAsset(input: { asset: MyAsset | null; kind: MyAssetKind; title: string; content: string; coverUrl: string; visibility: MyAssetVisibility; source: string; note: string; mediaMetadata: AssetMediaMetadata; mediaStorageKey: string }): MyAsset {

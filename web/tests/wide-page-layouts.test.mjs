@@ -88,7 +88,7 @@ test("settings and profile pages no longer retain their previous centered caps",
     assert.doesNotMatch(source, /<aside className="rounded-lg border border-border bg-background/);
   }
   assert.match(sectionNavigationSource, /data-section-navigation/);
-  assert.match(sectionNavigationSource, /card-surface rounded-xl border border-border\/80/);
+  assert.match(sectionNavigationSource, /card-surface min-w-0 rounded-xl border border-border/);
   assert.match(sectionNavigationSource, /aria-current=\{active \? "page" : undefined\}/);
 });
 
@@ -100,29 +100,29 @@ test("admin navigation stays in two rows until every menu and action can fit", (
 });
 
 test("settings section titles and actions stay visible while their content scrolls", () => {
-  assert.match(settingsPageSource, /viewportClassName="pr-4 lg:pr-0"/);
+  assert.match(settingsPageSource, /viewportClassName="pr-1 lg:pr-0"/);
   assert.match(settingsPageSource, /viewStyle=\{\{ height: "100%", minHeight: "100%" \}\}/);
   assert.match(settingsPageSource, /lg:h-full lg:min-h-0 lg:grid-cols/);
   assert.doesNotMatch(settingsPageSource, /data-settings-layout className="w-full pr-1"/);
   assert.match(settingsUISource, /data-settings-card-header-frame/);
   assert.match(settingsUISource, /data-settings-card-body/);
-  assert.match(settingsUISource, /className="min-h-0 lg:flex-1"/);
-  assert.match(settingsUISource, /viewportClassName="pr-4"/);
+  assert.match(settingsUISource, /className="min-h-0 min-w-0 lg:flex-1"/);
+  assert.match(settingsUISource, /<CardContent className=\{cn\("min-w-0 p-4 sm:p-5"/);
   assert.match(settingsUISource, /className="shrink-0 bg-card"/);
   assert.match(settingsUISource, /data-settings-card-header/);
-  assert.match(settingsUISource, /border-b border-border\/80 bg-card/);
-  assert.match(settingsUISource, /overflow-hidden rounded-xl border-border\/80 lg:h-full lg:min-h-0/);
+  assert.match(settingsUISource, /border-b border-border bg-card/);
+  assert.match(settingsUISource, /overflow-hidden rounded-xl lg:h-full lg:min-h-0/);
   assert.doesNotMatch(settingsUISource, /sticky top-0/);
   assert.doesNotMatch(settingsUISource, /-mx-px -mt-px/);
 });
 
 test("profile creation title and save action stay visible while preferences scroll", () => {
-  assert.match(profilePageSource, /viewportClassName="pr-4 lg:pr-0"/);
+  assert.match(profilePageSource, /viewportClassName="pr-1 lg:pr-0"/);
   assert.match(profilePageSource, /viewStyle=\{\{ height: "100%", minHeight: "100%" \}\}/);
   assert.match(profilePageSource, /data-profile-layout className="grid min-h-full[^"]*lg:h-full lg:min-h-0/);
   assert.match(profilePreferencesSource, /data-profile-preferences-card/);
   assert.match(profilePreferencesSource, /data-profile-preferences-header/);
-  assert.match(profilePreferencesSource, /className="shrink-0 border-b border-border\/80 bg-card/);
+  assert.match(profilePreferencesSource, /className="shrink-0 border-b border-border bg-card/);
   assert.match(profilePreferencesSource, /data-profile-preferences-body/);
   assert.match(profilePreferencesSource, /className="min-h-0 lg:flex-1"/);
   assert.match(profilePreferencesSource, /data-profile-preferences-header[\s\S]*保存设置[\s\S]*data-profile-preferences-body/);
@@ -148,7 +148,7 @@ test("global model groups can be explicitly cleared", () => {
 });
 
 test("management pages add density without removing their table overflow guards", () => {
-  assert.match(permissionEditorSource, /md:grid-cols-2 2xl:grid-cols-3/);
+  assert.match(permissionEditorSource, /grid-cols-\[repeat\(auto-fit,minmax\(min\(100%,240px\),1fr\)\)\]/);
   assert.match(logsPageSource, /data-logs-layout/);
   assert.match(logsPageSource, /更多筛选/);
   assert.match(logsPageSource, /慢请求（≥ 3 秒）/);

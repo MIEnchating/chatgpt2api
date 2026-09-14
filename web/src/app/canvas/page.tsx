@@ -521,7 +521,7 @@ function CanvasVideoPromptPanel({ node, inputs, running, generationBusy, uploadi
     }
   }
 	return <div className="flex h-full min-h-0 flex-col gap-4">
-			  {showPromptEditor ? <div className="overflow-hidden rounded-xl border border-border/90 bg-card/96 shadow-[0_14px_38px_rgba(15,23,42,.14)] backdrop-blur-xl transition-[border-color,box-shadow] focus-within:border-[#8eacf0] focus-within:shadow-[0_14px_38px_rgba(15,23,42,.13),0_0_0_2px_rgba(20,86,240,.07)]">
+			  {showPromptEditor ? <div className="overflow-hidden rounded-xl border border-border bg-card/95 shadow-[var(--shadow-elevated)] backdrop-blur-xl transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20">
 			    <PromptTextareaFrame className="h-20 min-h-20">
 			      <Textarea value={prompt} onChange={(event) => { setPrompt(event.target.value); onPromptChange(event.target.value); }} onBlur={(event) => onPromptChange(event.target.value, true)} placeholder="描述你想生成的视频" className="min-h-full w-full resize-none overflow-hidden rounded-none border-0 bg-transparent px-3.5 py-3 text-sm leading-5 shadow-none outline-none placeholder:text-muted-foreground/55 focus-visible:ring-0" />
 			    </PromptTextareaFrame>
@@ -548,7 +548,7 @@ function CanvasVideoPromptPanel({ node, inputs, running, generationBusy, uploadi
 		<input ref={referenceImageInputRef} type="file" accept="image/png,image/jpeg,image/webp" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void uploadReferenceImage(file); }} />
 		<input ref={referenceVideoInputRef} type="file" accept="video/mp4,video/quicktime,.mp4,.mov" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void uploadReferenceVideo(file); }} />
 		<input ref={referenceAudioInputRef} type="file" accept="audio/mpeg,audio/wav,.mp3,.wav" className="hidden" onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ""; if (file) void uploadReferenceAudio(file); }} />
-		<div className="grid grid-cols-3 gap-2">{videoFieldVisible(imageRuleField) ? <button type="button" disabled={videoFieldDisabled(imageRuleField) || Boolean(referenceUploading)} onClick={() => referenceImageInputRef.current?.click()} className="flex h-9 items-center justify-center gap-1.5 rounded-lg border border-dashed border-border bg-background text-xs font-medium hover:border-[#1456f0] hover:text-[#1456f0] disabled:cursor-wait disabled:opacity-50"><Upload className="size-3.5" />{referenceUploading === "image" ? "上传中…" : referenceImageURL ? "替换参考图" : "上传参考图"}</button> : null}{videoFieldVisible("reference_video") ? <button type="button" disabled={videoFieldDisabled("reference_video") || !videoReferenceSupported || Boolean(referenceUploading)} onClick={() => referenceVideoInputRef.current?.click()} className="flex h-9 items-center justify-center gap-1.5 rounded-lg border border-dashed border-border bg-background text-xs font-medium hover:border-[#1456f0] hover:text-[#1456f0] disabled:cursor-not-allowed disabled:opacity-50"><Video className="size-3.5" />{referenceUploading === "video" ? "上传中…" : referenceVideoURL ? "替换参考视频" : "上传参考视频"}</button> : null}{videoFieldVisible("reference_audio") ? <button type="button" disabled={videoFieldDisabled("reference_audio") || !audioReferenceSupported || Boolean(referenceUploading)} onClick={() => referenceAudioInputRef.current?.click()} className="flex h-9 items-center justify-center gap-1.5 rounded-lg border border-dashed border-border bg-background text-xs font-medium hover:border-[#1456f0] hover:text-[#1456f0] disabled:cursor-not-allowed disabled:opacity-50"><Music className="size-3.5" />{referenceUploading === "audio" ? "上传中…" : referenceAudioURL ? "替换参考音频" : "上传参考音频"}</button> : null}</div>
+		<div className="grid grid-cols-3 gap-2">{videoFieldVisible(imageRuleField) ? <button type="button" disabled={videoFieldDisabled(imageRuleField) || Boolean(referenceUploading)} onClick={() => referenceImageInputRef.current?.click()} className="flex h-9 items-center justify-center gap-1.5 rounded-lg border border-dashed border-border bg-background text-xs font-medium hover:border-brand hover:text-brand disabled:cursor-wait disabled:opacity-50"><Upload className="size-3.5" />{referenceUploading === "image" ? "上传中…" : referenceImageURL ? "替换参考图" : "上传参考图"}</button> : null}{videoFieldVisible("reference_video") ? <button type="button" disabled={videoFieldDisabled("reference_video") || !videoReferenceSupported || Boolean(referenceUploading)} onClick={() => referenceVideoInputRef.current?.click()} className="flex h-9 items-center justify-center gap-1.5 rounded-lg border border-dashed border-border bg-background text-xs font-medium hover:border-brand hover:text-brand disabled:cursor-not-allowed disabled:opacity-50"><Video className="size-3.5" />{referenceUploading === "video" ? "上传中…" : referenceVideoURL ? "替换参考视频" : "上传参考视频"}</button> : null}{videoFieldVisible("reference_audio") ? <button type="button" disabled={videoFieldDisabled("reference_audio") || !audioReferenceSupported || Boolean(referenceUploading)} onClick={() => referenceAudioInputRef.current?.click()} className="flex h-9 items-center justify-center gap-1.5 rounded-lg border border-dashed border-border bg-background text-xs font-medium hover:border-brand hover:text-brand disabled:cursor-not-allowed disabled:opacity-50"><Music className="size-3.5" />{referenceUploading === "audio" ? "上传中…" : referenceAudioURL ? "替换参考音频" : "上传参考音频"}</button> : null}</div>
 		{referenceImageURL ? <p className="truncate text-[11px] text-emerald-600 dark:text-emerald-400">已设置参考图片，也可以连接图片节点</p> : null}
 		{referenceVideoURL ? <p className="truncate text-[11px] text-emerald-600 dark:text-emerald-400">已设置参考视频，也可以连接视频节点</p> : null}
 		<div className="grid gap-2">{videoFieldVisible(imageRuleField) ? <label className="space-y-1"><span className="text-[11px] text-muted-foreground">参考图片 URL</span><Input type="url" value={referenceImageURL} disabled={videoFieldDisabled(imageRuleField)} onChange={(event) => onParametersChange({ generation_video_reference_image_urls: event.target.value ? [event.target.value] : [], generation_video_reference_urls: [], generation_video_reference_audio_urls: [] })} placeholder="https://图片地址" className="h-8 rounded-lg px-2 text-xs shadow-none" /></label> : null}{videoFieldVisible("reference_video") ? <label className="space-y-1"><span className="text-[11px] text-muted-foreground">参考视频 URL</span><Input type="url" value={referenceVideoURL} disabled={videoFieldDisabled("reference_video") || !videoReferenceSupported} onChange={(event) => onParametersChange({ generation_video_reference_mode: "reference", generation_video_reference_urls: event.target.value ? [event.target.value] : [] })} placeholder={videoReferenceSupported ? "https://视频地址" : "当前模型不支持"} className="h-8 rounded-lg px-2 text-xs shadow-none disabled:opacity-60" /></label> : null}</div>
@@ -625,7 +625,7 @@ function CanvasTextContentPanel({ node, onContentChange, onFontSizeChange }: {
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
-      <div className="overflow-hidden rounded-xl border border-border/90 bg-card/96 shadow-[0_14px_38px_rgba(15,23,42,.14)] backdrop-blur-xl transition-[border-color,box-shadow] focus-within:border-[#8eacf0] focus-within:shadow-[0_14px_38px_rgba(15,23,42,.13),0_0_0_2px_rgba(20,86,240,.07)]">
+      <div className="overflow-hidden rounded-xl border border-border bg-card/95 shadow-[var(--shadow-elevated)] backdrop-blur-xl transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20">
         <PromptTextareaFrame className="h-48 min-h-32">
           <Textarea
             value={content}
@@ -691,7 +691,7 @@ function CanvasNodePromptPanel({ node, mentionReferences, running, generationBus
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-4">
-      <div className="overflow-hidden rounded-xl border border-border/90 bg-card/96 shadow-[0_14px_38px_rgba(15,23,42,.14)] backdrop-blur-xl transition-[border-color,box-shadow] focus-within:border-[#8eacf0] focus-within:shadow-[0_14px_38px_rgba(15,23,42,.13),0_0_0_2px_rgba(20,86,240,.07)]">
+      <div className="overflow-hidden rounded-xl border border-border bg-card/95 shadow-[var(--shadow-elevated)] backdrop-blur-xl transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20">
         <PromptTextareaFrame className="h-20 min-h-20">
           <CanvasResourceMentionTextarea
             value={prompt}
@@ -4464,7 +4464,11 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
   }, [refreshLibrary, sidePanel.open, sidePanel.tab]);
 
   useEffect(() => {
-    window.localStorage.setItem(SIDE_PANEL_STORAGE_KEY, JSON.stringify(sidePanel));
+    try {
+      window.localStorage.setItem(SIDE_PANEL_STORAGE_KEY, JSON.stringify(sidePanel));
+    } catch {
+      // The panel preference is optional when browser storage is unavailable.
+    }
   }, [sidePanel]);
 
   useEffect(() => {
@@ -4528,7 +4532,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
   const renderedCanvasID = documentRef.current.id;
 
   return (
-    <section className="relative flex h-full min-h-[540px] overflow-hidden rounded-xl border border-border bg-card shadow-[0_16px_42px_-34px_rgba(15,23,42,0.34)]">
+    <section className="relative flex h-full min-h-0 min-w-0 overflow-hidden rounded-xl border border-border bg-card shadow-[var(--shadow-card)]">
       <CanvasSidePanel
         sessionKey={session.key}
         nodes={nodes}
@@ -4553,7 +4557,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         onOpenAssets={() => setAssetPickerOpen(true)}
         onInsertPrompt={(prompt, promptTitle) => addTextNodeAt(placement(), prompt, promptTitle.trim() || prompt.trim().slice(0, 32) || "文字")}
       />
-      <div ref={hostRef} className="relative min-w-0 flex-1 overflow-hidden bg-[#f3f5f8] dark:bg-[#15181d]">
+      <div ref={hostRef} className="relative min-w-0 flex-1 overflow-hidden bg-muted/50">
       <CanvasEngine nodes={nodes} connections={connections} viewport={viewport} background={background} showImageInfo={showImageInfo} canvasSize={canvasSize} exporting={exportingCanvas} exportBounds={exportingCanvas ? canvasExportBounds(visibleCanvasNodes(nodes)) : undefined} selectedNodeIDs={selectedNodeIDs} selectedConnectionID={selectedConnectionID} panelNodeID={panelNodeID} loadingNodeID="" pendingConnectionActive={Boolean(pendingConnection)} collapsingBatchRootIDs={collapsingBatchRootIDs} openingBatchRootIDs={openingBatchRootIDs} onNodesChange={replaceNodes} onNodesCommit={pushHistory} onViewportChange={updateViewport} onSelectionChange={selectionChanged} onConnect={connectNodes} canConnect={canConnect} onConnectionDropEmpty={(origin, position, menu) => setPendingConnection({ ...origin, position, menu })} onTitleChange={updateNodeTitle} onNodePanelToggle={(nodeID) => setPanelNodeID((current) => current === nodeID ? "" : nodeID)} onNodeMediaLoad={handleNodeMediaLoad} onViewImage={(nodeID) => { setPanelNodeID(""); setPreviewNodeID(nodeID); }} onDirectorOpen={(nodeID) => { setPanelNodeID(""); setOpenDirectorNodeID(nodeID); }} onTextToImage={generateFromTextNode} onNodeRetry={(nodeID) => void runGeneration(nodeID, undefined, true)} onNodeActivate={activateNode} onToggleBatch={toggleCanvasBatch} onSetBatchPrimary={makeCanvasBatchPrimary} onNodeDelete={(nodeID) => removeNodes(new Set([nodeID]))} onNodeContextMenu={openNodeContextMenu} onConnectionContextMenu={openConnectionContextMenu} onCanvasContextMenu={openCanvasContextMenu} onCanvasDoubleClick={(event, position) => { const rect = hostRef.current?.getBoundingClientRect(); setNodeCreateMenu({ position, menu: { x: event.clientX - (rect?.left || 0), y: event.clientY - (rect?.top || 0) } }); }} renderNodePanel={renderNodePanel} renderNodeQuickActions={renderNodeQuickActions} renderNodeActions={renderNodeActions} renderNodeInfo={(node) => <CanvasNodeInfoContent node={node} configInputs={node.type === "config" ? canvasConfigInputs(node.id, nodesRef.current, connectionsRef.current) : []} />} onDrop={handleCanvasDrop} />
       {openDirectorNode ? <CanvasDirector nodeId={openDirectorNode.id} project={openDirectorNode.director_project} panoramas={directorPanoramas} theme={colorTheme} onClose={() => setOpenDirectorNodeID("")} onProjectChange={handleDirectorProjectChange} onPanoramaRemoved={handleDirectorPanoramaRemoved} onCapturesSent={handleDirectorCapturesSent} onVideoSent={handleDirectorVideoSent} /> : null}
 
@@ -4561,13 +4565,13 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       {nodeCreateMenu ? <div data-node-create-menu className="absolute z-40 w-48 rounded-xl border border-border bg-card p-1.5 shadow-xl" style={{ left: Math.max(8, Math.min(nodeCreateMenu.menu.x, (hostRef.current?.clientWidth || 240) - 200)), top: Math.max(64, Math.min(nodeCreateMenu.menu.y, (hostRef.current?.clientHeight || 240) - 300)) }}><p className="px-2 py-1.5 text-[11px] font-semibold text-muted-foreground">添加到画布</p><button className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs hover:bg-muted" onClick={() => { addTextNodeAt({ x: nodeCreateMenu.position.x - 170, y: nodeCreateMenu.position.y - 120 }); setNodeCreateMenu(null); }}><Type className="size-4" />文字节点</button><button className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs hover:bg-muted" onClick={() => { addBlankNodeAt({ x: nodeCreateMenu.position.x - 170, y: nodeCreateMenu.position.y - 120 }); setNodeCreateMenu(null); }}><ImagePlus className="size-4" />空白图片节点</button><button className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs hover:bg-muted" onClick={() => { const point = { x: nodeCreateMenu.position.x - 210, y: nodeCreateMenu.position.y - 118 }; const node = buildVideoNode({}, point); addNode(node); setPanelNodeID(node.id); setNodeCreateMenu(null); }}><Video className="size-4" />视频生成节点</button><button className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs hover:bg-muted" onClick={() => { addAudioNodeAt({ x: nodeCreateMenu.position.x - 190, y: nodeCreateMenu.position.y - 110 }); setNodeCreateMenu(null); }}><Music className="size-4" />音频生成节点</button><button className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs hover:bg-muted" onClick={() => { addPanoramaNodeAt({ x: nodeCreateMenu.position.x - 260, y: nodeCreateMenu.position.y - 146 }); setNodeCreateMenu(null); }}><Compass className="size-4" />全景图节点</button><button className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs hover:bg-muted" onClick={() => { addDirectorNodeAt({ x: nodeCreateMenu.position.x - 280, y: nodeCreateMenu.position.y - 180 }); setNodeCreateMenu(null); }}><Camera className="size-4" />导演台节点</button><button className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-xs hover:bg-muted" onClick={() => { addConfigNodeAt({ x: nodeCreateMenu.position.x - 170, y: nodeCreateMenu.position.y - 120 }); setNodeCreateMenu(null); }}><Settings2 className="size-4" />生成配置节点</button></div> : null}
 
       <div className="pointer-events-none absolute inset-x-3 top-3 z-20 flex items-start gap-3">
-        <div data-canvas-menu className="pointer-events-auto relative flex h-10 items-center rounded-xl border border-border bg-card/94 p-1 shadow-[0_8px_24px_rgba(15,23,42,.09)] backdrop-blur-xl">
+        <div data-canvas-menu className="pointer-events-auto relative flex h-10 min-w-0 max-w-full items-center rounded-xl border border-border bg-card/95 p-1 shadow-[var(--shadow-elevated)] backdrop-blur-xl">
           <Button
             aria-label={sidePanel.open ? "收起侧栏" : "展开侧栏"}
             title={sidePanel.open ? "收起侧栏" : "展开侧栏"}
             variant="ghost"
             size="icon"
-            className={cn("size-8 rounded-full transition-[color,background-color,transform] duration-200 ease-in-out hover:scale-105 active:scale-90", sidePanel.open && "bg-muted text-[#1456f0]")}
+            className={cn("size-8 rounded-full transition-[color,background-color,transform] duration-200 ease-in-out hover:scale-105 active:scale-90", sidePanel.open && "bg-muted text-brand")}
             onClick={() => setSidePanel((current) => ({ ...current, open: !current.open }))}
           >
             <span className="relative size-4.5">
@@ -4576,15 +4580,15 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
             </span>
           </Button>
           <div className="mx-1 h-5 w-px bg-border" />
-          <Button aria-label="画布菜单" title="画布菜单" variant="ghost" size="icon" className={cn("size-8 rounded-full", canvasMenuOpen && "bg-muted text-[#1456f0]")} onClick={() => { setCanvasMenuOpen((value) => !value); setProjectMenuOpen(false); }}><Menu className="size-5" /></Button>
+          <Button aria-label="画布菜单" title="画布菜单" variant="ghost" size="icon" className={cn("size-8 rounded-full", canvasMenuOpen && "bg-muted text-brand")} onClick={() => { setCanvasMenuOpen((value) => !value); setProjectMenuOpen(false); }}><Menu className="size-5" /></Button>
           <div className="mx-1 h-5 w-px bg-border" />
-          <Button aria-label="画布项目" variant="ghost" size="sm" className="h-8 max-w-[30vw] rounded-lg px-2.5 text-xs font-semibold sm:max-w-56" onClick={() => setProjectMenuOpen((value) => !value)}><span className="truncate">{title}</span><ChevronDown className="size-3.5" /></Button>
+          <Button aria-label="画布项目" variant="ghost" size="sm" className="h-8 min-w-0 max-w-[30vw] flex-1 rounded-lg px-2 text-xs font-semibold sm:max-w-56 sm:px-2.5" onClick={() => setProjectMenuOpen((value) => !value)}><span className="truncate">{title}</span><ChevronDown className="size-3.5" /></Button>
           <div className="mx-1 h-5 w-px bg-border" />
           <Button
             type="button"
             variant={agentOpen ? "secondary" : "ghost"}
             size="sm"
-            className="h-8 rounded-lg px-2.5 text-xs font-semibold"
+            className="size-8 shrink-0 rounded-lg p-0 text-xs font-semibold sm:w-auto sm:px-2.5"
             aria-label="打开 Agent"
             onClick={() => {
               setPanelNodeID("");
@@ -4593,14 +4597,14 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
               scheduleSave();
             }}
           >
-            <Bot />Agent
+            <Bot /><span className="hidden sm:inline">Agent</span>
           </Button>
           {canvasMenuOpen ? <div className="absolute left-0 top-12 z-50 w-60 overflow-hidden rounded-xl border border-border bg-card p-1.5 text-sm shadow-xl">
             <button type="button" className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-muted" onClick={() => { setCanvasMenuOpen(false); navigate("/canvas"); }}><Images className="size-4 text-muted-foreground" />我的画布</button>
             <div className="my-1 h-px bg-border" />
             <button type="button" className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-muted" onClick={() => { setCanvasMenuOpen(false); setProjectDialog({ mode: "create", title: `无限画布 ${projects.length + 1}` }); }}><Plus className="size-4 text-muted-foreground" />新建画布</button>
             <button type="button" className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-muted" onClick={() => { setCanvasMenuOpen(false); setProjectDialog({ mode: "rename", title }); }}><Pencil className="size-4 text-muted-foreground" />重命名</button>
-            <button type="button" className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/30" onClick={() => { setCanvasMenuOpen(false); setProjectDialog({ mode: "delete", title }); }}><Trash2 className="size-4" />删除当前画布</button>
+            <button type="button" className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-destructive hover:bg-destructive/10" onClick={() => { setCanvasMenuOpen(false); setProjectDialog({ mode: "delete", title }); }}><Trash2 className="size-4" />删除当前画布</button>
             <div className="my-1 h-px bg-border" />
             <button type="button" className="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left hover:bg-muted" onClick={() => { setCanvasMenuOpen(false); requestCanvasImageUpload(); }}><Upload className="size-4 text-muted-foreground" />导入素材</button>
             <div className="my-1 h-px bg-border" />
@@ -4628,13 +4632,13 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
             <ToolButton label="上传素材" disabled={Boolean(uploadingNodeID)} onClick={() => requestCanvasImageUpload()}>{uploadingNodeID === "canvas-upload" ? <LoaderCircle className="animate-spin" /> : <Upload />}</ToolButton>
             <ToolButton active={sidePanel.open && sidePanel.tab === "assets"} label="素材库" onClick={() => setSidePanel((current) => ({ ...current, open: true, tab: "assets" }))}><FolderOpen /></ToolButton>
             <ToolbarDivider />
-            <ToolButton label="删除所选" disabled={!selectedNodeIDs.size && !selectedConnection} className="text-rose-600" onClick={removeSelected}><Trash2 /></ToolButton>
-            <ToolButton label="清空画布" disabled={!nodes.length} className="text-rose-600" onClick={() => setClearConfirmationOpen(true)}><Eraser /></ToolButton>
+            <ToolButton label="删除所选" disabled={!selectedNodeIDs.size && !selectedConnection} className="text-destructive dark:text-rose-300" onClick={removeSelected}><Trash2 /></ToolButton>
+            <ToolButton label="清空画布" disabled={!nodes.length} className="text-destructive dark:text-rose-300" onClick={() => setClearConfirmationOpen(true)}><Eraser /></ToolButton>
           </div>
         </div>
       </div>
 
-      <div className="pointer-events-auto absolute bottom-3 left-3 z-30 hidden h-11 items-center gap-0.5 rounded-xl border border-border bg-card/95 p-1 shadow-[0_10px_28px_rgba(15,23,42,.12)] backdrop-blur-xl lg:flex">
+      <div className="pointer-events-auto absolute bottom-3 left-3 z-30 hidden h-11 items-center gap-0.5 rounded-xl border border-border bg-card/95 p-1 shadow-[var(--shadow-elevated)] backdrop-blur-xl lg:flex">
         <ToolButton label="重置视图" onClick={resetViewport}><Focus /></ToolButton>
         <Slider aria-label="画布缩放" min={CANVAS_MIN_ZOOM * 100} max={CANVAS_MAX_ZOOM * 100} value={Math.round(viewport.zoom * 100)} className="w-20" onChange={(event) => updateViewport(setCanvasViewportZoom(viewportRef.current, canvasSize, Number(event.target.value) / 100), true)} />
         <span className="w-11 text-center text-[11px] font-semibold text-muted-foreground">{Math.round(viewport.zoom * 100)}%</span>
@@ -4642,7 +4646,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         <ToolButton active={shortcutsOpen} label="快捷键" onClick={() => setShortcutsOpen(true)}><CircleHelp /></ToolButton>
       </div>
 
-      {projectMenuOpen ? <aside className="absolute top-16 left-3 z-30 w-80 rounded-xl border border-border bg-card shadow-xl"><div className="border-b p-3"><p className="text-sm font-semibold">画布项目</p><p className="text-[11px] text-muted-foreground">跨设备自动同步</p></div><ScrollArea className="max-h-56 p-1.5">{projects.map((project) => <button key={project.id} className={cn("flex w-full items-center gap-2 rounded-lg p-2 text-left text-xs hover:bg-muted", project.id === documentRef.current.id && "bg-[#e7efff] text-[#1456f0] dark:bg-blue-950/50 dark:text-blue-300")} onClick={() => project.id !== documentRef.current.id && void runProject({ action: "activate", project_id: project.id })}><span className="flex size-7 items-center justify-center rounded-md bg-muted">{project.id === documentRef.current.id ? <Check className="size-3.5" /> : project.node_count}</span><span className="truncate font-semibold">{project.title}</span></button>)}</ScrollArea><div className="space-y-2 border-t p-2.5"><div className="flex rounded-lg bg-muted p-1"><BackgroundButton active={background === "dots"} label="点阵" onClick={() => { backgroundRef.current = "dots"; setBackground("dots"); setTimeout(pushHistory); }}><CircleDot /></BackgroundButton><BackgroundButton active={background === "grid"} label="网格" onClick={() => { backgroundRef.current = "grid"; setBackground("grid"); setTimeout(pushHistory); }}><Grid2X2 /></BackgroundButton><BackgroundButton active={background === "plain"} label="空白" onClick={() => { backgroundRef.current = "plain"; setBackground("plain"); setTimeout(pushHistory); }}><Square /></BackgroundButton></div><label className="flex items-center justify-between gap-3 rounded-lg px-1.5 py-1 text-xs"><span className="flex min-w-0 items-center gap-1.5 text-muted-foreground"><Info className="size-3.5" />图片信息</span><Switch checked={showImageInfo} aria-label="显示图片信息" onCheckedChange={(enabled) => { showImageInfoRef.current = enabled; setShowImageInfo(enabled); pushHistory(); }} /></label></div></aside> : null}
+      {projectMenuOpen ? <aside className="absolute top-16 left-3 z-30 w-80 max-w-[calc(100%_-_1.5rem)] rounded-xl border border-border bg-card shadow-[var(--shadow-elevated)]"><div className="border-b p-3"><p className="text-sm font-semibold">画布项目</p><p className="text-[11px] text-muted-foreground">跨设备自动同步</p></div><ScrollArea className="max-h-56 p-1.5">{projects.map((project) => <button key={project.id} className={cn("flex w-full items-center gap-2 rounded-lg p-2 text-left text-xs hover:bg-muted", project.id === documentRef.current.id && "bg-brand-soft text-brand")} onClick={() => project.id !== documentRef.current.id && void runProject({ action: "activate", project_id: project.id })}><span className="flex size-7 items-center justify-center rounded-md bg-muted">{project.id === documentRef.current.id ? <Check className="size-3.5" /> : project.node_count}</span><span className="truncate font-semibold">{project.title}</span></button>)}</ScrollArea><div className="space-y-2 border-t p-2.5"><div className="flex rounded-lg bg-muted p-1"><BackgroundButton active={background === "dots"} label="点阵" onClick={() => { backgroundRef.current = "dots"; setBackground("dots"); setTimeout(pushHistory); }}><CircleDot /></BackgroundButton><BackgroundButton active={background === "grid"} label="网格" onClick={() => { backgroundRef.current = "grid"; setBackground("grid"); setTimeout(pushHistory); }}><Grid2X2 /></BackgroundButton><BackgroundButton active={background === "plain"} label="空白" onClick={() => { backgroundRef.current = "plain"; setBackground("plain"); setTimeout(pushHistory); }}><Square /></BackgroundButton></div><label className="flex items-center justify-between gap-3 rounded-lg px-1.5 py-1 text-xs"><span className="flex min-w-0 items-center gap-1.5 text-muted-foreground"><Info className="size-3.5" />图片信息</span><Switch checked={showImageInfo} aria-label="显示图片信息" onCheckedChange={(enabled) => { showImageInfoRef.current = enabled; setShowImageInfo(enabled); pushHistory(); }} /></label></div></aside> : null}
 
       {agentPanelMounted ? <Suspense fallback={null}><CanvasAgentPanel
         key={renderedCanvasID}
@@ -4749,7 +4753,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         </DialogContent>
       </Dialog>
       <Dialog open={Boolean(pendingPanoramaImport)} onOpenChange={(open) => { if (!open) setPendingPanoramaImport(null); }}>
-        <DialogContent className="w-[min(92vw,420px)] rounded-2xl">
+        <DialogContent className="w-[min(92vw,420px)]">
           <DialogHeader>
             <DialogTitle>导入 2:1 图片</DialogTitle>
             <DialogDescription>这张图片符合严格的 2:1 全景比例，请选择节点类型。</DialogDescription>
@@ -4761,7 +4765,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         </DialogContent>
       </Dialog>
       <Dialog open={Boolean(stopTargetNodeID)} onOpenChange={(open) => { if (!open) setStopTargetNodeID(""); }}>
-        <DialogContent className="w-[min(92vw,420px)] rounded-2xl">
+        <DialogContent className="w-[min(92vw,420px)]">
           <DialogHeader>
             <DialogTitle>停止生成？</DialogTitle>
             <DialogDescription>当前节点的生成请求会被中断，其他节点的任务会继续运行，已经生成完成的结果会保留。</DialogDescription>
@@ -4773,7 +4777,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         </DialogContent>
       </Dialog>
       <Dialog open={clearConfirmationOpen} onOpenChange={setClearConfirmationOpen}>
-        <DialogContent className="w-[min(92vw,420px)] rounded-2xl">
+        <DialogContent className="w-[min(92vw,420px)]">
           <DialogHeader>
             <DialogTitle>清空画布？</DialogTitle>
             <DialogDescription>这会删除当前画布上的所有节点和连线。</DialogDescription>
@@ -4811,7 +4815,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
 
 function CanvasSwitchShell({ revealing = false }: { revealing?: boolean }) {
   return (
-    <div className={cn("absolute inset-0 z-50 overflow-hidden bg-[#f3f5f8] transition-opacity duration-200 dark:bg-[#15181d]", revealing && "pointer-events-none opacity-0")} aria-label="正在加载画布">
+    <div className={cn("absolute inset-0 z-50 overflow-hidden bg-muted/50 transition-opacity duration-200", revealing && "pointer-events-none opacity-0")} aria-label="正在加载画布">
       <div className="absolute inset-0 opacity-55" style={{ backgroundImage: "radial-gradient(circle, var(--border) 1px, transparent 1px)", backgroundSize: "24px 24px" }} />
       <div className="absolute inset-x-3 top-3 flex items-center justify-between">
         <div className="h-10 w-44 animate-pulse rounded-xl border border-border bg-card/90 shadow-sm" />
@@ -4826,7 +4830,7 @@ function CanvasSwitchShell({ revealing = false }: { revealing?: boolean }) {
 }
 
 function ToolButton({ active = false, label, className, ...props }: React.ComponentProps<typeof Button> & { active?: boolean; label: string }) {
-  return <Tooltip><TooltipTrigger asChild><Button type="button" variant="ghost" size="icon" aria-label={label} className={cn("size-9 rounded-lg", active && "bg-[#e7efff] text-[#1456f0] dark:bg-blue-950/60 dark:text-blue-300", className)} {...props} /></TooltipTrigger><TooltipContent>{label}</TooltipContent></Tooltip>;
+  return <Tooltip><TooltipTrigger asChild><Button type="button" variant="ghost" size="icon" aria-label={label} className={cn("size-9 rounded-lg", active && "bg-brand-soft text-brand", className)} {...props} /></TooltipTrigger><TooltipContent>{label}</TooltipContent></Tooltip>;
 }
 
 function ToolbarDivider() {
@@ -4850,7 +4854,7 @@ function CanvasShortcut({ keys, description }: { keys: string[]; description: st
 }
 
 function BackgroundButton({ active, label, ...props }: React.ComponentProps<typeof Button> & { active: boolean; label: string }) {
-  return <Button variant="ghost" size="sm" className={cn("h-8 flex-1 text-[11px]", active && "bg-card text-[#1456f0] dark:bg-background dark:text-blue-300")} {...props}>{props.children}{label}</Button>;
+  return <Button variant="ghost" size="sm" className={cn("h-8 flex-1 text-[11px]", active && "bg-card text-brand dark:bg-background")} {...props}>{props.children}{label}</Button>;
 }
 
 function CanvasMiniMap({ nodes, viewport, viewportSize, onViewportChange }: { nodes: CanvasNode[]; viewport: CanvasDocument["viewport"]; viewportSize: { width: number; height: number }; onViewportChange: (viewport: CanvasDocument["viewport"]) => void }) {
@@ -4884,8 +4888,8 @@ function CanvasMiniMap({ nodes, viewport, viewportSize, onViewportChange }: { no
   return (
     <div className="absolute bottom-20 left-3 z-20 hidden overflow-hidden rounded-xl border border-border bg-card/90 shadow-xl backdrop-blur lg:block" style={{ width, height }}>
       <div ref={containerRef} className="relative size-full cursor-crosshair" onPointerDown={(event) => { event.preventDefault(); event.currentTarget.setPointerCapture(event.pointerId); setDragging(true); navigate(event); }} onPointerMove={(event) => { if (dragging) navigate(event); }} onPointerUp={() => setDragging(false)} onPointerCancel={() => setDragging(false)}>
-        {nodes.map((node) => { const point = toMap(node.x, node.y); return <span key={node.id} className={cn("pointer-events-none absolute rounded-sm", node.type === "image" ? "bg-[#1456f0]" : node.type === "video" ? "bg-orange-500" : node.type === "config" ? "bg-emerald-500" : "bg-amber-500")} style={{ left: point.x, top: point.y, width: Math.max(2, node.width * map.scale), height: Math.max(2, node.height * map.scale), opacity: .82 }} />; })}
-        <span className="pointer-events-none absolute border border-[#1456f0] bg-[#1456f0]/10" style={{ left: viewportStart.x, top: viewportStart.y, width: Math.max(4, viewportEnd.x - viewportStart.x), height: Math.max(4, viewportEnd.y - viewportStart.y) }} />
+        {nodes.map((node) => { const point = toMap(node.x, node.y); return <span key={node.id} className={cn("pointer-events-none absolute rounded-sm", node.type === "image" ? "bg-primary" : node.type === "video" ? "bg-orange-500" : node.type === "config" ? "bg-emerald-500" : "bg-amber-500")} style={{ left: point.x, top: point.y, width: Math.max(2, node.width * map.scale), height: Math.max(2, node.height * map.scale), opacity: .82 }} />; })}
+        <span className="pointer-events-none absolute border border-brand bg-brand-soft" style={{ left: viewportStart.x, top: viewportStart.y, width: Math.max(4, viewportEnd.x - viewportStart.x), height: Math.max(4, viewportEnd.y - viewportStart.y) }} />
       </div>
     </div>
   );
@@ -4944,7 +4948,7 @@ function CanvasRightClickMenu({ menu, onClose, onDuplicate, onDelete, onAddText,
 }
 
 function ContextMenuButton({ icon, danger = false, onClick, children }: { icon: ReactNode; danger?: boolean; onClick: () => void; children: ReactNode }) {
-  return <button type="button" className={cn("flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition hover:bg-muted", danger && "text-rose-600")} onClick={onClick}><span className="[&>svg]:size-4">{icon}</span>{children}</button>;
+  return <button type="button" className={cn("flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition hover:bg-muted", danger && "text-destructive dark:text-rose-300")} onClick={onClick}><span className="[&>svg]:size-4">{icon}</span>{children}</button>;
 }
 
 function ContextMenuDivider() {
@@ -4963,19 +4967,19 @@ function CanvasNodeInfoContent({ node, configInputs }: { node: CanvasNode; confi
       <div className="flex items-center justify-between gap-3 border-b border-border/70 pb-3">
         <p className="text-xs font-semibold text-muted-foreground">节点数据</p>
         <div className="flex rounded-lg bg-muted p-1">
-          <Button variant="ghost" size="sm" className={cn("h-7 rounded-md px-3 text-xs", view === "info" && "bg-card text-[#1456f0] shadow-sm")} onClick={() => setView("info")}>信息</Button>
-          <Button variant="ghost" size="sm" className={cn("h-7 rounded-md px-3 text-xs", view === "json" && "bg-card text-[#1456f0] shadow-sm")} onClick={() => setView("json")}>JSON</Button>
+          <Button variant="ghost" size="sm" className={cn("h-7 rounded-md px-3 text-xs", view === "info" && "bg-card text-brand shadow-sm")} onClick={() => setView("info")}>信息</Button>
+          <Button variant="ghost" size="sm" className={cn("h-7 rounded-md px-3 text-xs", view === "json" && "bg-card text-brand shadow-sm")} onClick={() => setView("json")}>JSON</Button>
         </div>
       </div>
       {view === "info" ? (
           <div className="space-y-5 text-sm">
             <div className="flex min-w-0 items-center gap-3">
-              <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-[#e7efff] text-[#1456f0] dark:bg-blue-950/55 dark:text-blue-300 [&>svg]:size-4.5">{nodeIcon}</span>
+              <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-brand-soft text-brand [&>svg]:size-4.5">{nodeIcon}</span>
               <div className="min-w-0 flex-1">
                 <p className="truncate font-semibold text-foreground">{node.title || canvasNodeFallbackTitle(node.type)}</p>
                 <p className="mt-1 text-xs text-muted-foreground">{typeLabel} · {statusLabel}</p>
               </div>
-              {node.generation_status ? <span className={cn("shrink-0 rounded-full px-2 py-1 text-[11px] font-medium", node.generation_status === "success" ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : node.generation_status === "error" ? "bg-rose-500/10 text-rose-600" : node.generation_status === "loading" ? "bg-blue-500/10 text-blue-600 dark:text-blue-300" : "bg-muted text-muted-foreground")}>{statusLabel}</span> : null}
+              {node.generation_status ? <span className={cn("shrink-0 rounded-full px-2 py-1 text-[11px] font-medium", node.generation_status === "success" ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400" : node.generation_status === "error" ? "bg-rose-500/10 text-destructive dark:text-rose-300" : node.generation_status === "loading" ? "bg-blue-500/10 text-blue-600 dark:text-blue-300" : "bg-muted text-muted-foreground")}>{statusLabel}</span> : null}
             </div>
             <InfoSection title="基础信息">
               <InfoRow label="节点 ID" value={node.id} mono copyable />

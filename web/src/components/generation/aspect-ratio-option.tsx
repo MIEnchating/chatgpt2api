@@ -74,9 +74,9 @@ export function AspectRatioOptionButton({
       disabled={disabled}
       aria-pressed={active}
       className={cn(
-        "group flex min-w-0 flex-col items-center justify-center rounded-lg border border-border/70 bg-background/65 px-1.5 text-center text-muted-foreground shadow-[0_1px_2px_rgba(15,23,42,0.03)] transition-[border-color,background-color,color,box-shadow] hover:border-foreground/20 hover:bg-muted/35 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/25 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-background/35 dark:hover:border-border dark:hover:bg-muted/35",
+        "group flex min-w-0 flex-col items-center justify-center rounded-lg border border-border bg-background px-1.5 text-center text-muted-foreground shadow-xs transition-[border-color,background-color,color,box-shadow] hover:border-foreground/20 hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50",
         layout === "visual" ? "h-[72px] gap-1.5" : "h-14 gap-1",
-        active && "border-primary/55 bg-primary/[0.07] text-primary shadow-[inset_0_0_0_1px_rgba(20,86,240,0.06)] hover:border-primary/65 hover:bg-primary/[0.09] hover:text-primary dark:border-sky-700 dark:bg-sky-950/30 dark:text-sky-300 dark:hover:border-sky-600 dark:hover:bg-sky-950/40 dark:hover:text-sky-200",
+        active && "border-brand/55 bg-brand-soft text-brand hover:border-brand/65 hover:bg-brand/15 hover:text-brand",
       )}
       onClick={onClick}
     >

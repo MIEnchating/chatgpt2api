@@ -6,13 +6,12 @@ import {
   ArrowRight,
   KeyRound,
   LoaderCircle,
-  MoonStar,
   ShieldCheck,
-  Sun,
   UserRound,
 } from "lucide-react";
 import { toast } from "sonner";
 
+import { ThemeToggle } from "@/components/theme-toggle";
 import { LoginPageImageStage } from "@/components/login-page-image-stage";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Button } from "@/components/ui/button";
@@ -25,12 +24,6 @@ import {
   saveRememberedLogin,
 } from "@/lib/remembered-login";
 import { authSessionFromLoginResponse, setVerifiedAuthSession } from "@/lib/session";
-import {
-  applyColorTheme,
-  getPreferredColorTheme,
-  saveColorTheme,
-  type ColorTheme,
-} from "@/lib/theme";
 import { useAppMeta } from "@/lib/use-app-meta";
 import { resolveSiteIconSrc } from "@/lib/app-meta";
 import { useRedirectIfAuthenticated } from "@/lib/use-auth-guard";
@@ -42,13 +35,11 @@ const loginBackgroundClass =
 export default function LoginPage() {
   const navigate = useNavigate();
   const appMeta = useAppMeta();
-  const themeToggleRef = useRef<HTMLButtonElement | null>(null);
   const rememberedLogin = useRef(getRememberedLogin()).current;
   const [username, setUsername] = useState(rememberedLogin?.username || "");
   const [password, setPassword] = useState("");
   const [rememberAccount, setRememberAccount] = useState(Boolean(rememberedLogin));
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [theme, setTheme] = useState<ColorTheme>(() => getPreferredColorTheme());
   const { isCheckingAuth } = useRedirectIfAuthenticated();
 
   const finishAuth = async (data: Awaited<ReturnType<typeof login>>, message: string, redirectTo?: string) => {
@@ -92,82 +83,56 @@ export default function LoginPage() {
     }
   };
 
-  const handleThemeToggle = () => {
-    const nextTheme = theme === "dark" ? "light" : "dark";
-    const rect = themeToggleRef.current?.getBoundingClientRect();
-    applyColorTheme(nextTheme, rect ? {
-      origin: {
-        x: rect.left + rect.width / 2,
-        y: rect.top + rect.height / 2,
-      },
-    } : undefined);
-    saveColorTheme(nextTheme);
-    setTheme(nextTheme);
-  };
-
   if (isCheckingAuth) {
     return (
       <div
-        className={`${loginBackgroundClass} fixed inset-0 z-50 grid min-h-svh w-screen place-items-center overflow-hidden px-4 py-6`}
+        className={`${loginBackgroundClass} fixed inset-0 z-50 grid min-h-svh w-full place-items-center overflow-hidden px-4 py-6`}
       >
-        <LoaderCircle className="size-5 animate-spin text-[#45515e] dark:text-white/60" />
+        <LoaderCircle className="size-5 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
   return (
     <ScrollArea
-      className={`${loginBackgroundClass} fixed inset-0 z-50 w-screen font-login`}
+      className={`${loginBackgroundClass} fixed inset-0 z-50 w-full font-sans`}
       viewportClassName="flex min-h-full items-center justify-center px-4 py-6 [align-items:safe_center] sm:px-6 lg:px-8"
       viewClass="w-full shrink-0"
     >
       <div className="fixed right-4 top-4 z-50 flex items-center gap-2 sm:right-6 sm:top-6">
-        <Button
-          ref={themeToggleRef}
-          type="button"
-          variant="outline"
-          size="icon"
-          className="relative rounded-full border-border/60 bg-background/80 shadow-sm backdrop-blur"
-          onClick={handleThemeToggle}
-          aria-label={theme === "dark" ? "切换到浅色模式" : "切换到深色模式"}
-          title={theme === "dark" ? "浅色模式" : "深色模式"}
-        >
-          <Sun className="scale-100 rotate-0 transition-all dark:scale-0 dark:-rotate-90" />
-          <MoonStar className="absolute scale-0 rotate-90 transition-all dark:scale-100 dark:rotate-0" />
-          <span className="sr-only">切换界面主题</span>
-        </Button>
+        <ThemeToggle variant="outline" className="bg-card/90 backdrop-blur" />
       </div>
 
-      <div className="relative z-10 mx-auto grid w-full max-w-[58rem] overflow-hidden rounded-[32px] border border-white/80 bg-white/95 shadow-[0_28px_80px_rgba(15,23,42,0.12),0_10px_28px_rgba(44,30,116,0.08)] backdrop-blur transition-[min-height] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none dark:border-white/10 dark:bg-[#111827]/92 dark:shadow-[0_30px_90px_rgba(2,6,23,0.58),0_12px_32px_rgba(2,6,23,0.32)] lg:min-h-[39rem] lg:grid-cols-[minmax(0,28rem)_minmax(0,1fr)]">
-        <section className="flex min-h-[500px] flex-col justify-center px-6 py-8 sm:px-10 lg:px-12">
+      <div className="relative z-10 mx-auto grid w-full max-w-[58rem] overflow-hidden rounded-2xl border border-border bg-card/95 ambient-shadow backdrop-blur transition-[min-height] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none lg:min-h-[39rem] lg:grid-cols-[minmax(0,28rem)_minmax(0,1fr)]">
+        <section className="flex min-h-[460px] flex-col justify-center px-6 py-8 sm:px-10 lg:px-12">
           <div className="flex flex-col gap-9 transition-[gap] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none">
             <div className="flex items-center gap-3">
               <img
                 src={resolveSiteIconSrc(appMeta.site_icon_url)}
                 alt=""
                 aria-hidden="true"
-                className="size-11 rounded-[16px] shadow-[0_12px_16px_-4px_rgba(36,36,36,0.12)]"
+                className="size-11 shrink-0 rounded-xl soft-card-shadow"
               />
               <div className="grid min-w-0 leading-none">
-                <div className="truncate text-sm font-semibold tracking-[-0.02em] text-[#222222] dark:text-white">
+                <div className="truncate text-sm font-semibold tracking-[-0.02em] text-foreground">
                   {appMeta.app_title || "云棉"}
                 </div>
-                <div className="truncate text-[10px] font-medium tracking-[0.28em] text-[#8e8e93] uppercase dark:text-white/50">
+                <div className="truncate text-[10px] font-medium tracking-[0.28em] text-muted-foreground uppercase">
                   {appMeta.project_name && appMeta.project_name !== appMeta.app_title ? appMeta.project_name : "控制台"}
                 </div>
               </div>
             </div>
 
             <div className="flex flex-col gap-4">
-              <div className="inline-flex w-fit items-center gap-2 rounded-full border border-[#dfe7f1] bg-white/80 px-3 py-1 text-[11px] font-semibold tracking-[0.2em] text-[#45515e] uppercase shadow-[0_4px_12px_rgba(24,40,72,0.05)] dark:border-white/10 dark:bg-white/8 dark:text-white/70 dark:shadow-[0_10px_26px_rgba(2,6,23,0.22)]">
-                <ShieldCheck className="size-3.5 text-[#1456f0] dark:text-sky-300" />
+              <div className="inline-flex w-fit items-center gap-2 rounded-full border border-border bg-muted/60 px-3 py-1 text-[11px] font-semibold tracking-[0.2em] text-muted-foreground uppercase">
+                <ShieldCheck className="size-3.5 text-brand" />
                 安全访问
               </div>
               <div className="flex flex-col gap-2 transition-all duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] motion-reduce:transition-none">
-                <h1 className="text-[2.1rem] leading-[1.12] font-semibold tracking-[-0.04em] text-[#222222] transition-opacity duration-200 dark:text-white sm:text-[2.5rem]">
+                <h1 className="text-[2.1rem] leading-[1.12] font-semibold tracking-[-0.04em] text-foreground sm:text-[2.5rem]">
                   欢迎回来
                 </h1>
-                <p className="max-w-[340px] text-sm leading-6 text-[#45515e] transition-opacity duration-200 dark:text-white/62">
+                <p className="max-w-[340px] text-sm leading-6 text-muted-foreground">
                   使用账号和密码进入 {appMeta.app_title || "云棉"} 控制台。
                 </p>
               </div>
@@ -181,11 +146,11 @@ export default function LoginPage() {
               }}
             >
               <div className="flex flex-col gap-2">
-                <label htmlFor="login-username" className="block text-sm font-semibold text-[#222222] dark:text-white/88">
+                <label htmlFor="login-username" className="block text-sm font-semibold text-foreground">
                   用户名
                 </label>
                 <div className="relative">
-                  <UserRound className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-[#8e8e93] dark:text-white/42" />
+                  <UserRound className="pointer-events-none absolute left-3.5 top-1/2 z-10 size-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
                     id="login-username"
                     type="text"
@@ -193,16 +158,16 @@ export default function LoginPage() {
                     value={username}
                     onChange={(event) => setUsername(event.target.value)}
                     placeholder="请输入用户名"
-                    className="h-12 rounded-[16px] bg-white/90 pl-10 shadow-[0_6px_18px_rgba(24,40,72,0.05)] dark:border-white/12 dark:bg-white/8 dark:text-white dark:placeholder:text-white/38 dark:shadow-[0_12px_26px_rgba(2,6,23,0.24)]"
+                    className="h-12 pl-10"
                   />
                 </div>
               </div>
               <div className="flex flex-col gap-2">
-                <label htmlFor="login-password" className="block text-sm font-semibold text-[#222222] dark:text-white/88">
+                <label htmlFor="login-password" className="block text-sm font-semibold text-foreground">
                   密码
                 </label>
                 <div className="relative">
-                  <KeyRound className="pointer-events-none absolute left-3.5 top-1/2 size-4 -translate-y-1/2 text-[#8e8e93] dark:text-white/42" />
+                  <KeyRound className="pointer-events-none absolute left-3.5 top-1/2 z-10 size-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
                     id="login-password"
                     type="password"
@@ -210,12 +175,12 @@ export default function LoginPage() {
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
                     placeholder="请输入密码"
-                    className="h-12 rounded-[16px] bg-white/90 pl-10 shadow-[0_6px_18px_rgba(24,40,72,0.05)] dark:border-white/12 dark:bg-white/8 dark:text-white dark:placeholder:text-white/38 dark:shadow-[0_12px_26px_rgba(2,6,23,0.24)]"
+                    className="h-12 pl-10"
                   />
                 </div>
               </div>
 
-              <label className="flex w-fit cursor-pointer items-center gap-2 text-sm text-[#45515e] dark:text-white/68">
+              <label className="flex w-fit cursor-pointer items-center gap-2 text-sm text-muted-foreground">
                 <Checkbox
                   checked={rememberAccount}
                   onCheckedChange={(checked) => {
@@ -233,12 +198,9 @@ export default function LoginPage() {
               <div className="flex flex-col gap-3 pt-1">
                 <Button
                   type="submit"
-                  variant="outline"
-                  className="relative mx-auto h-12 w-[88%] overflow-hidden rounded-[1.45rem] border-slate-300/85 bg-white/72 text-[#18181b] shadow-[0_12px_28px_rgba(148,163,184,0.18)] backdrop-blur-md transition-all duration-200 hover:-translate-y-0.5 hover:border-slate-300 hover:bg-white/90 hover:text-[#18181b] hover:shadow-[0_16px_34px_rgba(148,163,184,0.22)] focus-visible:ring-slate-300/55 disabled:border-slate-200/80 disabled:bg-white/58 disabled:text-slate-500 disabled:opacity-100 disabled:shadow-none disabled:hover:translate-y-0 dark:border-white/15 dark:bg-white/12 dark:text-white dark:shadow-[0_14px_30px_rgba(2,6,23,0.32)] dark:hover:border-white/22 dark:hover:bg-white/16 dark:hover:text-white dark:hover:shadow-[0_18px_36px_rgba(2,6,23,0.38)] dark:disabled:border-white/10 dark:disabled:bg-white/8 dark:disabled:text-white/45"
+                  className="h-12 w-full"
                   disabled={isSubmitting}
                 >
-                  <span className="pointer-events-none absolute inset-x-4 top-1 h-3 rounded-full bg-white/75 blur-sm dark:bg-white/14" />
-                  <span className="pointer-events-none absolute inset-[1px] rounded-[1.35rem] border border-white/55 dark:border-white/10" />
                   <span className="relative z-10 flex items-center gap-2 font-semibold tracking-[-0.01em] transition-opacity duration-150">
                     {isSubmitting ? (
                       <LoaderCircle className="size-4 animate-spin" />
@@ -253,7 +215,7 @@ export default function LoginPage() {
           </div>
         </section>
 
-        <section className="relative hidden overflow-hidden border-l border-[#e5e7eb] bg-[#f8fafc] dark:border-white/10 dark:bg-[#0c1320] lg:flex">
+        <section className="relative hidden overflow-hidden border-l border-border bg-muted lg:flex">
           <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(180deg,rgba(255,255,255,0.48),transparent_38%)] dark:bg-[linear-gradient(180deg,rgba(255,255,255,0.04),transparent_38%)]" />
           <div className="relative flex flex-1 items-stretch justify-stretch">
             <LoginPageImageStage

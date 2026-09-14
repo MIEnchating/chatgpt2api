@@ -501,10 +501,10 @@ function LogsContent() {
   return (
     <ManagementPage data-logs-layout>
       <ManagementPanel className="flex-1">
-        <ManagementToolbar>
+        <ManagementToolbar className="max-h-[38dvh] overflow-y-auto overscroll-contain">
           <form className="space-y-3" onSubmit={handleSearch}>
-            <div className="flex flex-col gap-2 xl:flex-row xl:items-center">
-              <div className="relative min-w-[220px] flex-1">
+            <div className="flex min-w-0 flex-col gap-2 2xl:flex-row 2xl:flex-wrap 2xl:items-center">
+              <div className="relative min-w-0 flex-1">
                 <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                 <Input
                   aria-label="搜索日志摘要或接口"
@@ -538,7 +538,7 @@ function LogsContent() {
                   }}
                 />
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <Button type="submit" disabled={isLoading} className="h-10 flex-1 rounded-lg px-4 xl:flex-none">
                   {isLoading ? <LoaderCircle className="size-4 animate-spin" /> : <Search className="size-4" />}
                   查询
@@ -571,6 +571,8 @@ function LogsContent() {
 
             <div
               id="log-advanced-filters"
+              inert={!isFiltersExpanded}
+              aria-hidden={!isFiltersExpanded}
               className={`grid transition-[grid-template-rows,opacity] duration-200 ${isFiltersExpanded ? "grid-rows-[1fr] opacity-100" : "grid-rows-[0fr] opacity-0"}`}
             >
               <div className="overflow-hidden">
@@ -727,8 +729,8 @@ function LogsContent() {
       </ManagementPanel>
 
       <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
-        <DialogContent scrollable={false} className="flex max-h-[90vh] w-[min(94vw,980px)] grid-rows-none flex-col gap-0 overflow-hidden rounded-2xl p-0">
-          <DialogHeader className="border-b border-border py-5 pl-6 pr-20">
+        <DialogContent scrollable={false} className="flex max-h-[90dvh] w-[min(94vw,980px)] grid-rows-none flex-col gap-0 overflow-hidden rounded-xl p-0">
+          <DialogHeader className="shrink-0 border-b border-border py-4 pl-4 pr-14 sm:py-5 sm:pl-6">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div className="min-w-0 space-y-2">
                 <DialogTitle>日志详情</DialogTitle>
@@ -745,13 +747,13 @@ function LogsContent() {
               </Button>
             </div>
           </DialogHeader>
-          <ScrollArea className="min-h-0 px-6 py-5">
+          <ScrollArea className="min-h-0 flex-1" viewportClassName="p-4 sm:p-5">
             <div className="space-y-5">
               <section className="space-y-3">
                 <div className="text-sm font-semibold text-foreground">摘要</div>
                 <div className="rounded-xl border border-border bg-muted/35 p-4">
-                  <div className="text-sm font-medium text-foreground">{detailLog?.summary || "—"}</div>
-                  <div className="mt-3 grid gap-3 text-sm sm:grid-cols-4">
+                  <div className="break-words text-sm font-medium text-foreground">{detailLog?.summary || "—"}</div>
+                  <div className="mt-3 grid min-w-0 gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
                     <div>
                       <div className="text-xs text-muted-foreground">操作人</div>
                       <div className="mt-1 truncate font-medium text-foreground">{actorText(detailLog)}</div>
@@ -780,7 +782,7 @@ function LogsContent() {
                   <div className="text-sm font-semibold text-foreground">补充信息</div>
                   <div className="grid gap-3 md:grid-cols-2">
                     {detailFieldSections.map((section) => (
-                      <div key={section.title} className="rounded-xl border border-border bg-background p-3">
+                      <div key={section.title} className="min-w-0 rounded-xl border border-border bg-background p-3">
                         <div className="mb-2 text-xs font-semibold text-muted-foreground">{section.title}</div>
                         <div className="space-y-2">
                           {section.entries.map(([key, value]) => (
@@ -799,7 +801,7 @@ function LogsContent() {
               {typeof detailLog?.detail?.error === "string" && detailLog.detail.error ? (
                 <section className="space-y-3">
                   <div className="text-sm font-semibold text-foreground">错误信息</div>
-                  <ScrollArea className="max-h-48 whitespace-pre-wrap rounded-xl border border-rose-200 bg-rose-50 p-4 text-xs leading-6 text-rose-700 dark:border-rose-800 dark:bg-rose-950/30 dark:text-rose-200">
+                  <ScrollArea className="max-h-48 whitespace-pre-wrap break-words rounded-xl border border-rose-200 bg-rose-50 p-4 text-xs leading-6 text-rose-700 dark:border-rose-800 dark:bg-rose-950/30 dark:text-rose-200">
                     {detailLog.detail.error}
                   </ScrollArea>
                 </section>
@@ -849,7 +851,7 @@ function LogsContent() {
 export default function LogsPage() {
   const { isCheckingAuth, session } = useAuthGuard(undefined, "/logs");
   if (isCheckingAuth || !session) {
-    return <div className="flex min-h-[40vh] items-center justify-center"><LoaderCircle className="size-5 animate-spin text-stone-400" /></div>;
+    return <div className="flex min-h-[40vh] items-center justify-center"><LoaderCircle className="size-5 animate-spin text-muted-foreground" /></div>;
   }
   return <LogsContent key={session.key} />;
 }

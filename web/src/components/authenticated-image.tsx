@@ -126,7 +126,7 @@ export function AuthenticatedImage({ alt, className, placeholderClassName, src, 
         ref={containerRef}
         className={cn(
           className,
-          "flex min-h-24 w-full items-center justify-center bg-[#f0f0f0] text-stone-400",
+          "flex min-h-24 w-full items-center justify-center bg-muted text-muted-foreground",
           placeholderClassName,
         )}
         style={placeholderStyle}
@@ -136,7 +136,7 @@ export function AuthenticatedImage({ alt, className, placeholderClassName, src, 
         {showPlaceholder ? (
           <LoaderCircle className="size-5 animate-spin" aria-hidden="true" />
         ) : (
-          <span className="flex items-center gap-1.5 text-xs font-medium text-stone-500">
+          <span className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
             <ImageOff className="size-4" aria-hidden="true" />
             图片加载失败
           </span>

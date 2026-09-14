@@ -78,7 +78,9 @@ func TestWorkflowServiceCRUDVisibilityAndReferenceRun(t *testing.T) {
 }
 
 func TestWorkflowServicePersistsTemplateReferencesAndProtectsTheirFiles(t *testing.T) {
-	workflows := NewWorkflowService(newTestStorageBackend(t))
+	backend := newTestStorageBackend(t)
+	saveWorkflowTestStorageObject(t, backend.(storage.StorageObjectBackend), "template-object", "alice")
+	workflows := NewWorkflowService(backend)
 	workflow := referenceWorkflow()
 	workflow.Scope = "private"
 	workflow.TemplateReferences = []WorkflowTemplateReference{{

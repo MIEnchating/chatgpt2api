@@ -263,9 +263,9 @@ export function ImageStorageGovernanceCard() {
               </div>
               <p className="text-xs text-muted-foreground">存储时间：{formatTime(governance?.oldest_image_at)} 至 {formatTime(governance?.latest_image_at)}</p>
               <div className="grid gap-2 sm:grid-cols-3">
-                <Button type="button" variant="outline" className="min-h-11" onClick={() => setCleanupAction("thumbnails")} disabled={isCleaningImageStorage || (governance?.thumbnail_files ?? 0) === 0}><ImageIcon data-icon="inline-start" />清缩略图</Button>
-                <Button type="button" variant="outline" className="min-h-11" onClick={() => setCleanupAction("retention")} disabled={isCleaningImageStorage || storedImageCount === 0}><Trash2 data-icon="inline-start" />按天数清理</Button>
-                <Button type="button" variant={overLimit ? "destructive" : "outline"} className="min-h-11" onClick={() => setCleanupAction("quota")} disabled={isCleaningImageStorage || limitMb <= 0 || storedImageCount === 0}><Database data-icon="inline-start" />按容量清理</Button>
+                <Button type="button" variant="outline" className="h-10" onClick={() => setCleanupAction("thumbnails")} disabled={isCleaningImageStorage || (governance?.thumbnail_files ?? 0) === 0}><ImageIcon data-icon="inline-start" />清缩略图</Button>
+                <Button type="button" variant="outline" className="h-10" onClick={() => setCleanupAction("retention")} disabled={isCleaningImageStorage || storedImageCount === 0}><Trash2 data-icon="inline-start" />按天数清理</Button>
+                <Button type="button" variant={overLimit ? "destructive" : "outline"} className="h-10" onClick={() => setCleanupAction("quota")} disabled={isCleaningImageStorage || limitMb <= 0 || storedImageCount === 0}><Database data-icon="inline-start" />按容量清理</Button>
               </div>
             </section>
           </>

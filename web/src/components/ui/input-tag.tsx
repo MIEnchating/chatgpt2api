@@ -153,7 +153,7 @@ const InputTag = React.forwardRef<HTMLInputElement, InputTagProps>(
         data-readonly={readOnly || undefined}
         data-limit-reached={limitReached || undefined}
         className={cn(
-          "flex min-h-10 w-full min-w-0 flex-wrap items-center gap-1.5 rounded-lg border border-input bg-background px-2 py-1.5 text-sm shadow-[0_1px_3px_rgba(0,0,0,0.03)] transition-[border-color,box-shadow,background-color] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/20",
+          "flex min-h-10 w-full min-w-0 flex-wrap items-center gap-1.5 rounded-lg border border-input bg-background px-2 py-1.5 text-sm shadow-xs transition-[border-color,box-shadow,background-color] focus-within:border-ring focus-within:ring-[3px] focus-within:ring-ring/20",
           disabled && "cursor-not-allowed bg-muted/50 opacity-60",
           readOnly && "bg-muted/30",
           invalid && "border-destructive focus-within:border-destructive focus-within:ring-destructive/20",
@@ -168,12 +168,12 @@ const InputTag = React.forwardRef<HTMLInputElement, InputTagProps>(
             key={`${tag}-${index}`}
             data-slot="input-tag-item"
             className={cn(
-              "inline-flex h-7 max-w-full items-center gap-1 rounded-[7px] border border-border/70 bg-muted/65 pl-2.5 text-xs font-medium text-foreground",
+              "inline-flex h-7 max-w-full items-center gap-1 rounded-lg border border-border/70 bg-muted/65 pl-2.5 text-xs font-medium text-foreground",
               (disabled || readOnly) && "pr-2.5",
               tagClassName,
             )}
           >
-            <span className="max-w-56 truncate" title={tag}>{tag}</span>
+            <span className="min-w-0 max-w-56 truncate" title={tag}>{tag}</span>
             {!disabled && !readOnly ? (
               <button
                 type="button"

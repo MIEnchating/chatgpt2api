@@ -219,7 +219,7 @@ export function CanvasNodeQuickActions({
   const quickActionCount = quickActionIndexByKey.size;
 
   return (
-    <div data-canvas-node-quick-actions data-collapsed={collapsed || undefined} className="flex max-h-[calc(100vh-9rem)] flex-col overflow-y-auto rounded-xl border border-border bg-card/96 p-1.5 shadow-[0_12px_32px_rgba(15,23,42,.18)] backdrop-blur-xl [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div data-canvas-node-quick-actions data-collapsed={collapsed || undefined} className="flex max-h-[calc(100vh-9rem)] flex-col overflow-y-auto rounded-xl border border-border bg-card/96 p-1.5 shadow-[var(--shadow-elevated)] backdrop-blur-xl [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       <Tooltip>
         <TooltipTrigger asChild>
           <button
@@ -295,13 +295,13 @@ function ActionButton({ icon: Icon, label, description, primary = false, disable
       type="button"
       aria-label={label}
       className={cn(
-        "group flex min-h-16 min-w-0 items-start gap-3 rounded-lg border border-border bg-background px-3 py-3 text-left transition hover:border-[#9bb8f8] hover:bg-muted/45 disabled:cursor-not-allowed disabled:opacity-45",
-        primary && "border-[#bfd1ff] bg-[#edf3ff] dark:border-blue-900 dark:bg-blue-950/35",
+        "group flex min-h-16 min-w-0 items-start gap-3 rounded-lg border border-border bg-background px-3 py-3 text-left transition hover:border-brand/40 hover:bg-muted/45 disabled:cursor-not-allowed disabled:opacity-45",
+        primary && "border-brand-border bg-brand-soft",
       )}
       disabled={disabled}
       onClick={onClick}
     >
-      <span className={cn("mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground", primary && "bg-[#1456f0] text-white")}><Icon className="size-4" /></span>
+      <span className={cn("mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground", primary && "bg-primary text-primary-foreground")}><Icon className="size-4" /></span>
       <span className="min-w-0">
         <strong className="block text-xs font-semibold text-foreground">{label}</strong>
         <span className="mt-1 block text-[11px] leading-4 text-muted-foreground">{description}</span>

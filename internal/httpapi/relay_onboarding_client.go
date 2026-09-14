@@ -3,13 +3,35 @@ package httpapi
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"net/http"
+	"slices"
+	"strconv"
 	"strings"
 
 	"chatgpt2api/internal/protocol"
 	"chatgpt2api/internal/service"
 )
+
+func ssoRelayGroupCreator(identity service.Identity) func(context.Context, string) error {
+	return func(ctx context.Context, group string) error {
+		cfg, err := loadSSOConfig()
+		if err != nil || !slices.Contains(cfg.issuers, identity.SSOIssuer) {
+			return errors.New("单点登录未正确配置，无法自动创建密钥")
+		}
+		rawID, ok := strings.CutPrefix(identity.OwnerID, service.AuthProviderNewAPI+":")
+		userID, err := strconv.ParseInt(rawID, 10, 64)
+		if !ok || err != nil || userID <= 0 {
+			return errors.New("单点登录用户身份无效，无法自动创建密钥")
+		}
+		client, err := protocol.NewNewAPISSOTokenClient(identity.SSOIssuer, cfg.secret, identity.SSOReference, userID, nil)
+		if err != nil {
+			return err
+		}
+		return client.EnsureGroupToken(ctx, group, service.RelayCreationTokenName(group))
+	}
+}
 
 // passwordRelayGroupCreator authenticates lazily, only when a group needs a key.
 func passwordRelayGroupCreator(baseURL, provider string, user service.NewAPIUser, password string, httpClient *http.Client) func(context.Context, string) error {

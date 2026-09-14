@@ -206,7 +206,7 @@ function MentionHighlightText({ value, labels, placeholder }: { value: string; l
   if (!labels.length) return <>{value}</>;
   const pattern = new RegExp(`(${labels.map(escapeRegExp).join("|")})`, "g");
   return value.split(pattern).map((part, index) => labels.includes(part) ? (
-    <span key={`${part}-${index}`} className="rounded-md bg-[#1456f0]/12 px-1 py-0.5 font-medium text-[#1456f0] ring-1 ring-[#1456f0]/20">{part}</span>
+    <span key={`${part}-${index}`} className="rounded-md bg-brand/12 px-1 py-0.5 font-medium text-brand ring-1 ring-ring/20">{part}</span>
   ) : <span key={`${part}-${index}`}>{part}</span>);
 }
 
