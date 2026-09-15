@@ -118,6 +118,7 @@ test("workflow cannot save before its template upload has finished", async () =>
   let saves = 0;
   const context = {
     referenceUploadCountRef: { current: 1 },
+    isCurrentWorkspace: () => true,
     workflowSaveBusyRef: { current: false },
     workspaceActiveRef: { current: true },
     setWorkflowSaving: () => {},

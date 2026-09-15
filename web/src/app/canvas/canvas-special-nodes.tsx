@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { AudioLines, Image as ImageIcon, LoaderCircle, Upload } from "lucide-react";
 
+import { AutoDLWorkflowFields } from "@/components/autodl-workflow-fields";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AppScrollArea } from "@/components/ui/scroll-area";
@@ -32,10 +33,10 @@ export { CanvasPanoramaViewer } from "@/app/canvas/canvas-panorama-viewer";
 
 export function CanvasSpecialNodeContent({ node, onPanoramaOpen, onPanoramaMoveStart }: { node: CanvasNode; onPanoramaOpen?: () => void; onPanoramaMoveStart?: (event: ReactMouseEvent<HTMLButtonElement>) => void }) {
   if (node.type === "audio") {
-    return <div className="flex size-full flex-col items-center justify-center gap-4 bg-card px-5"><span className="grid size-12 place-items-center rounded-lg bg-cyan-500/12 text-cyan-700 dark:text-cyan-300"><AudioLines className="size-6" /></span>{node.url ? <audio data-canvas-no-pan data-canvas-no-zoom src={node.url} controls preload="metadata" className="w-full" onMouseDown={(event) => event.stopPropagation()} /> : <p className="text-xs text-muted-foreground">空音频节点</p>}</div>;
+    return <div className="flex size-full flex-col items-center justify-center gap-3 bg-card px-4 text-center"><span className="grid size-12 shrink-0 place-items-center rounded-xl bg-violet-500/12 text-violet-600 dark:text-violet-300"><AudioLines className="size-6" /></span>{node.url ? <audio aria-label={node.title || "画布音频"} data-canvas-no-pan data-canvas-no-zoom src={node.url} controls preload="metadata" className="w-full min-w-0" onMouseDown={(event) => event.stopPropagation()} /> : <><p className="text-xs text-muted-foreground">空音频节点</p><p className="text-[11px] text-muted-foreground/70">可上传音频，或添加文字合成语音</p></>}</div>;
   }
   if (node.type === "panorama") {
-    return node.url ? <CanvasPanoramaViewer src={node.url} alt={node.title || "全景图"} proxyGeneratedPanorama={Boolean(node.task_id && !node.storage_key)} expandOnDoubleClick onMoveStart={onPanoramaMoveStart} onOpen={onPanoramaOpen} /> : <div className="flex size-full flex-col items-center justify-center gap-3 bg-neutral-950 text-neutral-300"><ImageIcon className="size-7" /><span className="text-xs">等待生成 2:1 全景图</span></div>;
+    return node.url ? <CanvasPanoramaViewer src={node.url} alt={node.title || "全景图"} proxyGeneratedPanorama={Boolean(node.task_id && !node.storage_key)} expandOnDoubleClick onMoveStart={onPanoramaMoveStart} onOpen={onPanoramaOpen} /> : <div className="flex size-full flex-col items-center justify-center gap-3 bg-muted/35 px-4 text-center text-muted-foreground"><span className="grid size-12 place-items-center rounded-xl bg-cyan-500/12 text-cyan-600 dark:text-cyan-300"><ImageIcon className="size-5" /></span><span className="text-xs">空全景图节点</span><span className="text-[11px] text-muted-foreground/70">描述场景，生成可沉浸浏览的 360° 全景图</span></div>;
   }
   return null;
 }
@@ -46,16 +47,18 @@ export function CanvasAudioPromptPanel({ node, models, audioReferences, relayTok
   useEffect(() => setPrompt(node.prompt || ""), [node.id, node.prompt]);
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
-      <div className="overflow-hidden rounded-xl border border-border/90 bg-card/96 shadow-[var(--shadow-elevated)]">
-        <PromptTextareaFrame className="h-32 min-h-24">
-          <Textarea value={prompt} onChange={(event) => { setPrompt(event.target.value); onPromptChange(event.target.value); }} onBlur={() => onPromptChange(prompt, true)} rows={6} placeholder="输入需要合成的旁白、对白或音频内容" className="min-h-full resize-none overflow-hidden rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0" />
-        </PromptTextareaFrame>
-        <div className="flex min-w-0 items-center justify-between gap-2 border-t border-border/60 px-1.5 py-1">
-          <CanvasInlineModelSelect value={model} models={models} label="音频模型" onChange={(value) => onChange({ generation_audio_model: value })} />
-          <CanvasPromptLibrary onSelect={(value) => { setPrompt(value); onPromptChange(value, true); }} />
+      <AppScrollArea className="min-h-0 flex-1" viewportClassName="pr-2" viewClass="space-y-4 pb-1">
+        <div className="overflow-hidden rounded-xl border border-border/90 bg-card/96 shadow-[var(--shadow-elevated)]">
+          <PromptTextareaFrame className="h-32 min-h-24">
+            <Textarea value={prompt} onChange={(event) => { setPrompt(event.target.value); onPromptChange(event.target.value); }} onBlur={() => onPromptChange(prompt, true)} rows={6} placeholder="输入需要合成的旁白、对白或音频内容" className="min-h-full resize-none overflow-hidden rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0" />
+          </PromptTextareaFrame>
+          <div className="flex min-w-0 items-center justify-between gap-2 border-t border-border/60 px-1.5 py-1">
+            <CanvasInlineModelSelect value={model} models={models} label="音频模型" onChange={(value) => onChange({ generation_audio_model: value })} />
+            <CanvasPromptLibrary onSelect={(value) => { setPrompt(value); onPromptChange(value, true); }} />
+          </div>
         </div>
-      </div>
-      <AppScrollArea className="h-0 min-h-40 flex-1" viewportClassName="pr-3"><div className="space-y-3"><CanvasAudioSettingsFields node={node} models={models} audioReferences={audioReferences} relayTokenName={relayTokenName} onChange={onChange} showModel={false} /></div></AppScrollArea>
+        <div className="space-y-3"><CanvasAudioSettingsFields node={node} models={models} audioReferences={audioReferences} relayTokenName={relayTokenName} onChange={onChange} showModel={false} /></div>
+      </AppScrollArea>
       <CanvasGenerationFooter running={running} disabled={!running && (busy || !canGenerate)} secondaryAction={{ label: node.url ? "替换音频" : "上传音频", icon: <Upload />, loading: uploading, disabled: uploading || running, onClick: onUpload }} onGenerate={onGenerate} onStop={onStop} />
     </div>
   );
@@ -68,11 +71,13 @@ export function CanvasAudioSettingsFields({ node, models, audioReferences, relay
   return (
     <>
       {showModel ? <label className="grid gap-1 text-xs"><span className="text-muted-foreground">模型</span><Select value={models.includes(model) ? model : ""} disabled={models.length === 0} onValueChange={(value) => onChange({ generation_audio_model: value })}><SelectTrigger><SelectValue placeholder={models.length ? "选择模型" : "暂无可用模型"} /></SelectTrigger><SelectContent>{models.map((item) => <SelectItem key={item} value={item}>{item}</SelectItem>)}</SelectContent></Select></label> : null}
+      <AutoDLWorkflowFields tokenName={relayTokenName} model={model} value={node.generation_workflow_inputs || {}} onChange={(generation_workflow_inputs) => onChange({ generation_workflow_inputs })}>
       {provider === "gemini" ? <AudioSelect label="声音" value={node.generation_audio_gemini_voice || "Kore"} options={GEMINI_TTS_VOICE_OPTIONS} onChange={(value) => onChange({ generation_audio_gemini_voice: value })} /> : null}
       {provider === "glm" ? <><AudioSelect label="声音" value={node.generation_audio_glm_voice || "tongtong"} options={GLM_TTS_VOICE_OPTIONS} onChange={(value) => onChange({ generation_audio_glm_voice: value })} /><div className="grid grid-cols-2 gap-2"><AudioSelect label="格式" value={node.generation_audio_glm_format || "wav"} options={GLM_TTS_FORMAT_OPTIONS} onChange={(value) => onChange({ generation_audio_glm_format: value as "wav" | "pcm" })} /><AudioSpeedInput label="语速" value={node.generation_audio_glm_speed || 1} min={0.5} max={2} onChange={(value) => onChange({ generation_audio_glm_speed: value })} /></div></> : null}
       {provider === "grok" ? <><GrokTTSVoiceSelect model={model} relayTokenName={relayTokenName} value={node.generation_audio_grok_voice || "eve"} onChange={(value) => onChange({ generation_audio_grok_voice: value })} /><AudioSelect label="语言" value={node.generation_audio_grok_language || "auto"} options={GROK_TTS_LANGUAGE_OPTIONS} onChange={(value) => onChange({ generation_audio_grok_language: value })} /><div className="grid grid-cols-2 gap-2"><AudioSelect label="格式" value={node.generation_audio_grok_format || "mp3"} options={GROK_TTS_FORMAT_OPTIONS} onChange={(value) => onChange({ generation_audio_grok_format: value as "mp3" | "wav" })} /><AudioSpeedInput label="语速" value={node.generation_audio_grok_speed || 1} min={0.7} max={1.5} onChange={(value) => onChange({ generation_audio_grok_speed: value })} /></div></> : null}
       {provider.startsWith("mimo-") ? <>{provider === "mimo-preset" ? <AudioSelect label="声音" value={node.generation_audio_mimo_voice || "冰糖"} options={MIMO_TTS_VOICE_OPTIONS} onChange={(value) => onChange({ generation_audio_mimo_voice: value })} /> : null}{provider === "mimo-design" ? <label className="grid gap-1 text-xs"><span className="text-muted-foreground">音色描述</span><Textarea value={node.generation_audio_mimo_voice_design_prompt || ""} onChange={(event) => onChange({ generation_audio_mimo_voice_design_prompt: event.target.value })} rows={3} placeholder="例如：年轻女性，声音清亮自然，有亲和力。" /></label> : null}{provider === "mimo-clone" ? <AudioSelect label="参考音频" value={cloneNodeID} options={audioReferences.map((reference) => ({ value: reference.nodeID, label: reference.title }))} placeholder={audioReferences.length ? "选择已连接音频" : "暂无已连接音频节点"} onChange={(value) => onChange({ generation_audio_mimo_voice_clone_node_id: value })} /> : null}<AudioSelect label="格式" value={node.generation_audio_mimo_format || "wav"} options={MIMO_TTS_FORMAT_OPTIONS} onChange={(value) => onChange({ generation_audio_mimo_format: value as "wav" | "mp3" })} />{provider === "mimo-preset" || provider === "mimo-clone" ? <label className="grid gap-1 text-xs"><span className="text-muted-foreground">声音指令</span><Textarea value={node.generation_audio_instructions || ""} onChange={(event) => onChange({ generation_audio_instructions: event.target.value })} rows={3} placeholder="例如：语速轻快，语气兴奋，结尾略微上扬。" /></label> : null}</> : null}
       {provider === "openai" ? <><div className="grid grid-cols-2 gap-2"><AudioSelect label="声音" value={node.generation_audio_voice || "alloy"} options={AUDIO_VOICE_OPTIONS} onChange={(value) => onChange({ generation_audio_voice: value })} /><AudioSelect label="格式" value={node.generation_audio_format || "mp3"} options={AUDIO_FORMAT_OPTIONS} onChange={(value) => onChange({ generation_audio_format: value as NonNullable<CanvasNode["generation_audio_format"]> })} /></div><AudioSpeedInput label="语速" value={node.generation_audio_speed || 1} min={0.25} max={4} onChange={(value) => onChange({ generation_audio_speed: value })} /><label className="grid gap-1 text-xs"><span className="text-muted-foreground">声音指令</span><Textarea value={node.generation_audio_instructions || ""} onChange={(event) => onChange({ generation_audio_instructions: event.target.value })} rows={3} placeholder="例如：自然、温暖、适合旁白。" /></label></> : null}
+      </AutoDLWorkflowFields>
     </>
   );
 }
@@ -113,14 +118,16 @@ export function CanvasPanoramaPromptPanel({ node, imageModel, imageModels, runni
   const selectedModel = node.generation_model?.trim() || imageModel;
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
-      <div className="overflow-hidden rounded-xl border border-border/90 bg-card/96 shadow-[var(--shadow-elevated)]">
-        <PromptTextareaFrame className="h-36 min-h-28">
-          <Textarea value={prompt} onChange={(event) => onPromptChange(event.target.value)} onBlur={(event) => onPromptChange(event.target.value, true)} rows={8} placeholder="描述一个完整的 360 度环境，包括前后左右、地面与天空" className="min-h-full resize-none overflow-hidden rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0" />
-        </PromptTextareaFrame>
-        <div className="flex min-w-0 items-center justify-between gap-2 border-t border-border/60 px-1.5 py-1"><CanvasInlineModelSelect value={selectedModel} models={imageModels} label="全景图模型" onChange={(value) => onChange({ generation_model: value, generation_size: "2:1" })} /><CanvasPromptLibrary onSelect={(value) => onPromptChange(value, true)} /></div>
-      </div>
-      <AppScrollArea className="h-0 min-h-40 flex-1" viewportClassName="pr-3">
-        <CanvasImageParameterPopover node={{ ...node, generation_size: "2:1" }} imageModel={imageModel} imageModels={imageModels} onChange={(patch) => onChange({ ...patch, generation_size: "2:1" })} expanded showModel={false} showSize={false} />
+      <AppScrollArea className="min-h-0 flex-1" viewportClassName="pr-2" viewClass="space-y-4 pb-1">
+        <div className="overflow-hidden rounded-xl border border-border/90 bg-card/96 shadow-[var(--shadow-elevated)]">
+          <PromptTextareaFrame className="h-36 min-h-28">
+            <Textarea value={prompt} onChange={(event) => onPromptChange(event.target.value)} onBlur={(event) => onPromptChange(event.target.value, true)} rows={8} placeholder="描述一个完整的 360 度环境，包括前后左右、地面与天空" className="min-h-full resize-none overflow-hidden rounded-none border-0 bg-transparent shadow-none focus-visible:ring-0" />
+          </PromptTextareaFrame>
+          <div className="flex min-w-0 items-center justify-between gap-2 border-t border-border/60 px-1.5 py-1"><CanvasInlineModelSelect value={selectedModel} models={imageModels} label="全景图模型" onChange={(value) => onChange({ generation_model: value, generation_size: "2:1" })} /><CanvasPromptLibrary onSelect={(value) => onPromptChange(value, true)} /></div>
+        </div>
+        <div>
+          <CanvasImageParameterPopover node={{ ...node, generation_size: "2:1" }} imageModel={imageModel} imageModels={imageModels} onChange={(patch) => onChange({ ...patch, generation_size: "2:1" })} expanded showModel={false} showSize={false} />
+        </div>
       </AppScrollArea>
       <CanvasGenerationFooter running={running} disabled={!running && (busy || !canGenerate || !imageModels.includes(selectedModel))} secondaryAction={{ label: "替换图片", icon: <Upload />, loading: uploading, disabled: uploading || running, onClick: onUpload }} onGenerate={onGenerate} onStop={onStop} />
     </div>

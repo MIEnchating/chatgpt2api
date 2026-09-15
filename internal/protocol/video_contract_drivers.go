@@ -7,6 +7,8 @@ const (
 	VideoContractDriverVertexVeo  = "vertex-veo"
 	VideoContractDriverDashScope  = "dashscope-video"
 	VideoContractDriverVolcengine = "volcengine-video"
+	VideoContractDriverArk        = "ark-seedance"
+	VideoContractDriverAutoDL     = "autodl-comfyui"
 	VideoContractDriverKling      = "kling-video"
 	VideoContractDriverMiniMax    = "minimax-video"
 	VideoContractDriverVidu       = "vidu-video"
@@ -22,6 +24,8 @@ var videoContractDrivers = []string{
 	VideoContractDriverVertexVeo,
 	VideoContractDriverDashScope,
 	VideoContractDriverVolcengine,
+	VideoContractDriverArk,
+	VideoContractDriverAutoDL,
 	VideoContractDriverKling,
 	VideoContractDriverMiniMax,
 	VideoContractDriverVidu,

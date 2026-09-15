@@ -798,7 +798,7 @@ export function ImageComposer({
                 : "输入你想要生成的画面，也可直接粘贴图片"
             }
             onKeyDown={(event) => {
-              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+              if (event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing && event.nativeEvent.keyCode !== 229) {
                 event.preventDefault();
                 if (activeModelAvailable) void onSubmit();
               }

@@ -4,6 +4,7 @@ import test from "node:test";
 import ts from "typescript";
 import { createSettingsStore } from "../src/app/settings/store.ts";
 import { ALL_MUTATIONS_SCOPE, ScopedMutationLifecycle } from "../src/lib/scoped-mutation-lifecycle.ts";
+import { settleAssetOperations } from "../src/app/assets/asset-library.ts";
 
 // Execute actual handlers with controlled state and asynchronous I/O boundaries.
 function handler(file, name, context) {
@@ -28,6 +29,139 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
+test("asset batches bound concurrency and preserve outcomes in input order", async () => {
+  let active = 0, peak = 0;
+  const items = Array.from({ length: 21 }, (_, index) => index);
+  const results = await settleAssetOperations(items, async (item) => {
+    peak = Math.max(peak, ++active);
+    await new Promise((resolve) => setTimeout(resolve, 1));
+    active--;
+    if (item === 7) throw new Error("failed item");
+    return item;
+  }, new AbortController().signal);
+  assert.equal(peak, 4);
+  assert.equal(results[7].status, "rejected");
+  assert.deepEqual(results.filter((result) => result.status === "fulfilled").map((result) => result.value), items.filter((item) => item !== 7));
+});
+
+test("asset visibility changes stop before the next account write after invalidation", async () => {
+  const controller = new AbortController();
+  const request = deferred();
+  let writes = 0, feedback = 0;
+  const pending = handler("assets/page.tsx", "updateSelectedVisibility", {
+    bulkActionBusy: false, mutationControllerRef: { current: controller },
+    visibilityManageableAssets: [{ managedPath: "managed", visibility: "private" }, { id: "custom", visibility: "private" }],
+    settleAssetOperations, updateManagedImageVisibility: () => request.promise,
+    upsertAsset: async () => { writes++; }, setBulkActionBusy: () => {},
+    setManagedAssets: () => { feedback++; },
+    toast: { success: () => { feedback++; }, error: () => { feedback++; } },
+  })("public");
+  controller.abort();
+  request.resolve({});
+  await pending;
+  assert.equal(writes, 0);
+  assert.equal(feedback, 0);
+});
+
+test("profile save responses preserve edits made during persistence", async () => {
+  const preferences = { stream: false };
+  let current = preferences;
+  const request = deferred();
+  const published = [];
+  const pending = handler("profile/page.tsx", "save", {
+    preferences, sessionKey: "session-a", saveVersionRef: { current: 0 }, currentSessionKeyRef: { current: "session-a" },
+    setIsSaving: () => {}, setMessage: () => {}, relayTokenNames: {}, relayTokenPreferencesFromNames: () => ({}),
+    selectedAudioVoice: "alloy", selectedAudioFormat: "mp3", selectedAudioSpeed: 1,
+    updateImageGenerationPreferences: () => request.promise,
+    setPreferences: (value) => { current = typeof value === "function" ? value(current) : value; },
+    dispatchImageGenerationPreferencesChanged: (_key, value) => published.push(value),
+  })();
+  current = { stream: true };
+  request.resolve({ preferences: { stream: false } });
+  await pending;
+  assert.equal(current.stream, true);
+  assert.deepEqual(published, [{ stream: false }]);
+});
+
+test("personal storage saves preserve drafts for each provider independently", async () => {
+  const s3 = { name: "old s3" }, webdav = { name: "old dav" };
+  let currentS3 = s3, currentWebdav = webdav;
+  const request = deferred();
+  const pending = handler("profile/storage-provider-card.tsx", "save", {
+    s3, webdav, setSaving: () => {}, updateUserStorageProviders: () => request.promise,
+    defaultUserStorageProvider: () => ({}), defaultUserWebDAVStorageProvider: () => ({}),
+    setS3: (value) => { currentS3 = typeof value === "function" ? value(currentS3) : value; },
+    setWebDAV: (value) => { currentWebdav = typeof value === "function" ? value(currentWebdav) : value; },
+    toast: { success: () => {}, error: (message) => { throw new Error(message); } },
+  })();
+  currentS3 = { name: "new draft" };
+  request.resolve({ s3: { name: "saved s3" }, webdav: { name: "saved dav" } });
+  await pending;
+  assert.equal(currentS3.name, "new draft");
+  assert.equal(currentWebdav.name, "saved dav");
+});
+
+test("custom relay deletion cannot update the next account token selection", async () => {
+  const request = deferred();
+  let active = true, callbacks = 0;
+  const pending = handler("profile/page.tsx", "remove", {
+    isSaving: false, isCurrentSession: () => active, confirmDelete: true, status: { id: "old-account-key" },
+    setIsSaving: () => {}, deleteCustomRelayConfig: () => request.promise,
+    onDeleted: () => { callbacks++; }, onOpenChange: () => { callbacks++; }, title: "text",
+    toast: { success: () => { callbacks++; }, error: () => { callbacks++; } },
+  })();
+  active = false;
+  request.resolve();
+  await pending;
+  assert.equal(callbacks, 0);
+});
+
+test("workflow history cleanup stops account writes after either asynchronous deletion stage", async () => {
+  for (const stage of ["tasks", "references"]) {
+    const request = deferred();
+    let active = true, referenceDeletes = 0, assetDeletes = 0, feedback = 0;
+    const completedTask = { id: "local", status: "success", backend_task_ids: ["remote"], references: [{ storageKey: "ref" }], images: [{ url: "/images/result.png" }] };
+    const pending = handler("workflows/creative-workflow-workspace.tsx", "clearCompletedTaskHistory", {
+      clearingTaskHistory: false, isCurrentWorkspace: () => active, tasks: [completedTask],
+      taskWaitAbortControllerRef: { current: new AbortController() },
+      deleteCreationTasks: () => stage === "tasks" ? request.promise : Promise.resolve({ active_ids: [] }),
+      tasksRef: { current: [completedTask] }, updateTasks: () => {}, selectedTaskID: "", setSelectedTaskID: () => {},
+      workflowReferenceCleanupKeys: () => ["ref"], ownedWorkflowTaskReferences: () => [],
+      inFlightTaskCountsRef: { current: new Map() }, workflowReferencesRef: { current: [] }, agentReferencesRef: { current: [] },
+      deleteStoredImages: () => { referenceDeletes++; return stage === "references" ? request.promise : Promise.resolve(); },
+      session: {}, hasAPIPermission: () => true, getManagedImagePathFromUrl: (url) => url,
+      deleteManagedImages: async () => { assetDeletes++; return { deleted: 1 }; },
+      setClearingTaskHistory: () => {},
+      toast: { success: () => { feedback++; }, error: () => { feedback++; } },
+    })(true);
+    await Promise.resolve();
+    active = false;
+    request.resolve({ active_ids: [] });
+    assert.equal(await pending, false);
+    assert.equal(referenceDeletes, stage === "references" ? 1 : 0);
+    assert.equal(assetDeletes, 0);
+    assert.equal(feedback, 0);
+  }
+});
+
+test("workflow save completion cannot clean references from the next account", async () => {
+  const request = deferred();
+  let active = true, callbacks = 0;
+  const workflow = { id: "draft", name: "Test", scope: "private", config: { prompt_template: "prompt" } };
+  const pending = handler("workflows/creative-workflow-workspace.tsx", "persist", {
+    isCurrentWorkspace: () => active, referenceUploadCountRef: { current: 0 }, workflowSaveBusyRef: { current: false },
+    workspaceActiveRef: { current: true }, setWorkflowSaving: () => {}, agentDraft: workflow,
+    normalizeWorkflow: (value) => value, models: {}, preferences: {}, saveWorkflow: () => request.promise,
+    setItems: () => { callbacks++; }, replaceEditor: () => { callbacks++; },
+    cleanupAgentReferences: () => { callbacks++; }, setAgentDraft: () => {}, setAgentWarnings: () => {},
+    toast: { success: () => { callbacks++; }, error: () => { callbacks++; } },
+  })(workflow);
+  active = false;
+  request.resolve(workflow);
+  await pending;
+  assert.equal(callbacks, 0);
+});
+
 function assetContext(onSave) {
   const messages = [];
   return {
@@ -36,7 +170,7 @@ function assetContext(onSave) {
       title: "updated", content: "new text", coverUrl: "", source: "", note: "",
       kind: "text", visibility: "private", mediaMetadata: {}, mediaStorageKey: "",
       asset: { id: "one", kind: "image", url: "/old.png", coverUrl: "/cover.png", source: "old", note: "old", storageKey: "old-storage", width: 100, height: 200, bytes: 999, mimeType: "image/png", durationMs: 4000 },
-      onSave, isBlobURL: () => false, savePendingRef: { current: false }, setIsSaving: () => {},
+      onSave, isBlobURL: () => false, formControllerRef: { current: new AbortController() }, savePendingRef: { current: false }, setIsSaving: () => {},
       toast: { success: (message) => messages.push(["success", message]), error: (message) => messages.push(["error", message]) },
     },
   };

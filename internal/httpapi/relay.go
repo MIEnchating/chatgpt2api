@@ -47,9 +47,10 @@ type relayBufferedReadCloser struct {
 }
 
 type relayCredential struct {
-	APIKey  string
-	BaseURL string
-	Custom  bool
+	APIKey   string
+	BaseURL  string
+	Custom   bool
+	Protocol string
 }
 
 func (a *App) attachRelayAPIKeyForIdentity(ctx context.Context, identity service.Identity, body map[string]any) error {
@@ -62,6 +63,7 @@ func (a *App) attachRelayAPIKeyForIdentity(ctx context.Context, identity service
 	}
 	protocol.RecordAccountUsage(ctx, credential.APIKey)
 	body["api_key"] = credential.APIKey
+	body["relay_protocol"] = credential.Protocol
 	if credential.Custom {
 		body[relayCustomEndpointPayloadKey] = true
 	} else {
@@ -96,7 +98,7 @@ func (a *App) relayCredentialForIdentitySelection(ctx context.Context, identity 
 		if config.BaseURL == "" || config.APIKey == "" {
 			return relayCredential{}, protocol.HTTPError{Status: http.StatusBadRequest, Message: "所选自定义 API 配置不完整，请重新配置 Base URL 和 Key"}
 		}
-		return relayCredential{APIKey: config.APIKey, BaseURL: config.BaseURL, Custom: true}, nil
+		return relayCredential{APIKey: config.APIKey, BaseURL: config.BaseURL, Custom: true, Protocol: config.Protocol}, nil
 	}
 	reader, releaseRelayTokenReader := a.acquireRelayTokenReader()
 	defer releaseRelayTokenReader()
@@ -981,9 +983,22 @@ func (a *App) relayVideoTask(ctx context.Context, payload map[string]any) (map[s
 	if apiKey == "" {
 		return nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: "视频任务缺少上游令牌"}
 	}
+	if util.Clean(payload["relay_protocol"]) == "autodl" || contract.Driver == protocol.VideoContractDriverAutoDL {
+		return a.relayAutoDLTask(ctx, payload, "video", time.Duration(contract.Polling.TimeoutSeconds)*time.Second)
+	}
 	request := declaredCanonicalVideoContractRequestPayload(payload, contract)
+	if util.Clean(payload["relay_protocol"]) == "ark" || contract.Driver == protocol.VideoContractDriverArk {
+		contract = arkVideoPollingContract(contract)
+		request, err = arkVideoRequest(payload, contract)
+		if err != nil {
+			return nil, err
+		}
+	}
 	baseURL := a.relayBaseURLFromPayload(payload)
 	createPath, queryPath, err := videoContractDriverPaths(contract, payload)
+	if util.Clean(payload["relay_protocol"]) == "ark" {
+		createPath, queryPath = "/contents/generations/tasks", "/contents/generations/tasks/{task_id}"
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -1094,6 +1109,10 @@ func videoContractDriverPaths(contract protocol.VideoModelContract, payload map[
 		return contract.Transport.CreatePath, contract.Transport.QueryPath, nil
 	}
 	switch contract.Driver {
+	case protocol.VideoContractDriverArk:
+		return "/contents/generations/tasks", "/contents/generations/tasks/{task_id}", nil
+	case protocol.VideoContractDriverAutoDL:
+		return protocol.AutoDLTaskPath(util.Clean(payload["model"]), false), "/api/v1/comfyui/comfyui_workflow/result/{task_id}", nil
 	case protocol.VideoContractDriverOpenAI,
 		protocol.VideoContractDriverXAI,
 		protocol.VideoContractDriverGeminiVeo,
@@ -3273,7 +3292,7 @@ func ceilToRelayImageMultiple(value float64) int {
 func shouldDropRelayPayloadKey(key string) bool {
 	switch key {
 	case "api_key", "relay_api_key", "relayai_api_key", "upstream_api_key",
-		"relay_base_url", relayCustomEndpointPayloadKey,
+		"relay_base_url", "relay_protocol", "workflow_inputs", relayCustomEndpointPayloadKey,
 		"token_group", "newapi_token_group", "relay_token_group",
 		"token_name", "newapi_token_name", "relay_token_name",
 		"owner_id", "owner_name", "base_url", "visibility", "client_task_id",

@@ -332,7 +332,10 @@ export type VideoModelContractTransferDocument = {
   contracts: Array<{ contract: VideoModelContract; enabled: boolean }>;
 };
 
+export type CustomRelayProtocol = "openai" | "autodl" | "ark";
+
 export type CustomRelayConfigStatus = {
+  protocol: CustomRelayProtocol;
   id: string;
   kind: "text" | "image" | "video" | "audio";
   name: string;
@@ -642,6 +645,7 @@ export type CreationTaskMessage = {
     | { type: "image_url"; image_url: { url: string } }
   >;
   reasoning_content?: string;
+  response_items?: Record<string, unknown>[];
   tool_calls?: CreationTaskToolCall[];
   tool_call_id?: string;
   name?: string;
@@ -857,7 +861,7 @@ export async function fetchCustomRelayConfigs() {
 }
 
 export async function createCustomRelayConfig(
-  input: { kind: CustomRelayConfigStatus["kind"]; name: string; base_url: string; api_key: string },
+  input: { protocol: CustomRelayProtocol; kind: CustomRelayConfigStatus["kind"]; name: string; base_url: string; api_key: string },
 ) {
   return httpRequest<{ item: CustomRelayConfigStatus }>(
     "/api/profile/custom-relay-configs",
@@ -867,7 +871,7 @@ export async function createCustomRelayConfig(
 
 export async function updateCustomRelayConfig(
   id: string,
-  input: { name: string; base_url: string; api_key: string },
+  input: { protocol: CustomRelayProtocol; name: string; base_url: string; api_key: string },
 ) {
   return httpRequest<{ item: CustomRelayConfigStatus }>(
     `/api/profile/custom-relay-configs/${encodeURIComponent(id)}`,
@@ -1088,6 +1092,9 @@ export type CreateChatGenerationTaskInput = {
   clientTaskId: string;
   prompt: string;
   model?: string;
+  apiMode?: "chat" | "responses";
+  reasoningEnabled?: boolean;
+  maxOutputTokens?: number;
   messages?: CreationTaskMessage[];
   tools?: CreationTaskToolDefinition[];
   toolChoice?: "none" | "auto" | "required" | Record<string, unknown>;
@@ -1111,6 +1118,9 @@ export async function createChatGenerationTask(
       messages,
       ...(input.tools?.length ? { tools: input.tools } : {}),
       ...(input.toolChoice !== undefined ? { tool_choice: input.toolChoice } : {}),
+      ...(input.apiMode !== undefined ? { api_mode: input.apiMode } : {}),
+      ...(input.reasoningEnabled !== undefined ? { reasoning_enabled: input.reasoningEnabled } : {}),
+      ...(input.maxOutputTokens !== undefined ? { max_output_tokens: input.maxOutputTokens } : {}),
       ...(input.model ? { model: input.model } : {}),
       ...(input.relayTokenName ? { token_name: input.relayTokenName } : {}),
     },
@@ -1164,7 +1174,7 @@ export async function uploadAudioReference(file: File) {
 
 export async function createImageEditTask(
   clientTaskId: string,
-  files: File | File[],
+  files: File | (File | string)[],
   prompt: string,
   model?: ImageModel,
   size?: string,
@@ -1199,9 +1209,19 @@ export async function createImageEditTask(
     maskFile = new File([blob], "mask.png", { type: "image/png" });
   }
 
-  uploadFiles.forEach((file) => {
-    formData.append("image", file);
-  });
+  if (uploadFiles.some((file) => typeof file === "string")) {
+    if (toolOptions?.apiMode !== "chat" && toolOptions?.apiMode !== "responses") throw new Error("远程图片引用需要 Chat 或 Responses 模式");
+    if (maskFile) throw new Error("局部编辑需要上传参考图片");
+    let uploadIndex = 0;
+    const references = uploadFiles.map((file) => {
+      if (typeof file === "string") return { url: file };
+      formData.append("image", file);
+      return { upload_index: uploadIndex++ };
+    });
+    formData.append("image_references", JSON.stringify(references));
+  } else {
+    uploadFiles.forEach((file) => formData.append("image", file));
+  }
   if (maskFile) {
     formData.append("mask", maskFile);
   }

@@ -1,0 +1,215 @@
+{
+  "scope": "web/src/app/image/**, web/tests/studio-*.test.mjs, web/tests/prompt-*.test.mjs, web/tests/image-api-modes.test.mjs, web/src/app/globals.css",
+  "files": [
+    {
+      "path": "web/src/app/globals.css",
+      "status": "reviewed",
+      "checks": [
+        "Read complete original stylesheet; checked imports, theme variables, cascade, video player overrides, responsive layouts, disabled controls and reduced-motion behavior",
+        "Studio and prompt regression suite: 58 passed across 7 files; scoped Oxlint: 0 errors and 0 warnings"
+      ],
+      "sha256": "c0450a4f365c3d74e733afa4f93a969f45aa4da44fce4981d49f8e8851003828",
+      "bytes": 19076
+    },
+    {
+      "path": "web/src/app/image/banana-prompts.ts",
+      "status": "reviewed",
+      "checks": [
+        "Checked source schemas, invalid records, disabled and empty sources, shared requests, cancellation, bounded LRU cache and search/sort behavior; fixed invalid-record failure, empty-market errors and cache retention",
+        "Studio and prompt regression suite: 58 passed across 7 files; scoped Oxlint: 0 errors and 0 warnings"
+      ],
+      "sha256": "2ba146308ff4e19f03b86bd17e748ef2635a0bbd4cfbf5130fa6c2f791951416",
+      "bytes": 19485
+    },
+    {
+      "path": "web/src/app/image/components/chat-markdown.tsx",
+      "status": "reviewed",
+      "checks": [
+        "Read full source; checked data normalization, state transitions, async lifecycle, rendering and resource handling",
+        "Studio and prompt regression suite: 58 passed across 7 files; scoped Oxlint: 0 errors and 0 warnings"
+      ],
+      "sha256": "581941ec08a201da7a22b997b3d97eee938997d946e1abe77c2e76e3a1a6fbc8",
+      "bytes": 15303
+    },
+    {
+      "path": "web/src/app/image/components/image-composer.tsx",
+      "status": "reviewed",
+      "checks": [
+        "Checked reference inputs, video controls, model selection, upload constraints and keyboard submission; fixed keyCode 229 IME confirmation",
+        "Studio and prompt regression suite: 58 passed across 7 files; scoped Oxlint: 0 errors and 0 warnings"
+      ],
+      "sha256": "82758a7f2480a0360d1a0ae7e49dd627a21dcfc877495bcde82566c49b2b2750",
+      "bytes": 51975
+    },
+    {
+      "path": "web/src/app/image/components/image-prompt-market.tsx",
+      "status": "reviewed",
+      "checks": [
+        "Checked filtering, pagination, favorites lifecycle, source configuration and request cancellation; unified retry with the configured and abortable initial-load effect",
+        "Studio and prompt regression suite: 58 passed across 7 files; scoped Oxlint: 0 errors and 0 warnings"
+      ],
+      "sha256": "f46f92f7b5324837a5054d50e6289bcc836d9d6d6640468bb12ab1a1eca9c4d8",
+      "bytes": 35942
+    },
+    {
+      "path": "web/src/app/image/components/image-results.tsx",
+      "status": "reviewed",
+      "checks": [
+        "Read full source; checked data normalization, state transitions, async lifecycle, rendering and resource handling",
+        "Studio and prompt regression suite: 58 passed across 7 files; scoped Oxlint: 0 errors and 0 warnings"
+      ],
+      "sha256": "6650bfbd55192fceff31c0c3d921304e89fa43d9cbe304ba5fd1151b848be7d4",
+      "bytes": 62063
+    },
+    {
+      "path": "web/src/app/image/components/image-sidebar.tsx",
+      "status": "reviewed",
+      "checks": [
+        "Read full source; checked data normalization, state transitions, async lifecycle, rendering and resource handling",
+        "Studio and prompt regression suite: 58 passed across 7 files; scoped Oxlint: 0 errors and 0 warnings"
+      ],
+      "sha256": "aca565257aeab1e67cf265dde3e999daaa039b1d39a46e11e5fd7a4b9b9ff600",
+      "bytes": 6548
+    },
+    {
+      "path": "web/src/app/image/image-presets.ts",
+      "status": "reviewed",
+      "checks": [
+        "Read full source; checked data normalization, state transitions, async lifecycle, rendering and resource handling",
+        "Studio and prompt regression suite: 58 passed across 7 files; scoped Oxlint: 0 errors and 0 warnings"
+      ],
+      "sha256": "cf65db36f084596ca764649329ca7cfdfde986d20f9590279768f767ac97223e",
+      "bytes": 7381
+    },
+    {
+      "path": "web/src/app/image/page.tsx",
+      "status": "reviewed",
+      "checks": [
+        "Read all page code; checked history recovery, durable queue writes, reference uploads, session cancellation, task polling, retries, publishing, model selection and submit validation; removed unnecessary public video-reference downloads and fixed validation-error reporting and effective-model token selection",
+        "Studio and prompt regression suite: 58 passed across 7 files; scoped Oxlint: 0 errors and 0 warnings"
+      ],
+      "sha256": "a238dd4835aa7582ffad7978af3288ffe8b0edb35e6a0287b881a59f660dcd38",
+      "bytes": 242099
+    },
+    {
+      "path": "web/src/app/image/prompt-favorite-request-lifecycle.ts",
+      "status": "reviewed",
+      "checks": [
+        "Read full source; checked data normalization, state transitions, async lifecycle, rendering and resource handling",
+        "Studio and prompt regression suite: 58 passed across 7 files; scoped Oxlint: 0 errors and 0 warnings"
+      ],
+      "sha256": "9840fc3417b608d1f53c3eb6880ee94a4f414df3d1fb14eafeea963f9b8c5281",
+      "bytes": 3575
+    },
+    {
+      "path": "web/src/app/image/prompt-favorites.ts",
+      "status": "reviewed",
+      "checks": [
+        "Read full source; checked data normalization, state transitions, async lifecycle, rendering and resource handling",
+        "Studio and prompt regression suite: 58 passed across 7 files; scoped Oxlint: 0 errors and 0 warnings"
+      ],
+      "sha256": "76b4174ce522f12056d5f9ace7e7c11e91c2dacb487ad08de9fbb16091236db0",
+      "bytes": 4043
+    },
+    {
+      "path": "web/src/app/image/reference-prompt-sources.ts",
+      "status": "reviewed",
+      "checks": [
+        "Read full source; checked data normalization, state transitions, async lifecycle, rendering and resource handling",
+        "Studio and prompt regression suite: 58 passed across 7 files; scoped Oxlint: 0 errors and 0 warnings"
+      ],
+      "sha256": "ce492913435771d7b8883a40c053eb849dbde9e0f18740914bf780340e3b96c4",
+      "bytes": 14757
+    },
+    {
+      "path": "web/src/app/image/use-video-task-queue.ts",
+      "status": "reviewed",
+      "checks": [
+        "Read full source; checked data normalization, state transitions, async lifecycle, rendering and resource handling",
+        "Studio and prompt regression suite: 58 passed across 7 files; scoped Oxlint: 0 errors and 0 warnings"
+      ],
+      "sha256": "9d39751da2022521fdb8f2e4bbc6758b6b4fe9c5524a2070ceb65524d9be1593",
+      "bytes": 3226
+    },
+    {
+      "path": "web/src/app/image/video-task-state.ts",
+      "status": "reviewed",
+      "checks": [
+        "Read full source; checked data normalization, state transitions, async lifecycle, rendering and resource handling",
+        "Studio and prompt regression suite: 58 passed across 7 files; scoped Oxlint: 0 errors and 0 warnings"
+      ],
+      "sha256": "50ed6a4e2c43c23b393bed75aa765e551ade322e91cbc14103cf5286fd14d21c",
+      "bytes": 851
+    },
+    {
+      "path": "web/tests/image-api-modes.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Read full test source; checked assertions, fixtures, asynchronous boundaries and cleanup against current production behavior",
+        "Studio and prompt regression suite: 58 passed across 7 files; scoped Oxlint: 0 errors and 0 warnings"
+      ],
+      "sha256": "7a930c1a238be3b9a5d974dbfc9b0b209fb932a0abfca005301466d2a298f09c",
+      "bytes": 1762
+    },
+    {
+      "path": "web/tests/prompt-favorite-request-lifecycle.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Read full test source; checked assertions, fixtures, asynchronous boundaries and cleanup against current production behavior",
+        "Studio and prompt regression suite: 58 passed across 7 files; scoped Oxlint: 0 errors and 0 warnings"
+      ],
+      "sha256": "50ad4348c9e360d5bbbb4d7d8ed321116e3e89c23c005e9bdd0e390ac9a9d5d5",
+      "bytes": 4222
+    },
+    {
+      "path": "web/tests/prompt-handoff.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Read full test source; checked assertions, fixtures, asynchronous boundaries and cleanup against current production behavior",
+        "Studio and prompt regression suite: 58 passed across 7 files; scoped Oxlint: 0 errors and 0 warnings"
+      ],
+      "sha256": "a3c8eb58dbfec0c4021995e01100203a9f41071f16e8aceba52a4eb9c0b76780",
+      "bytes": 4091
+    },
+    {
+      "path": "web/tests/prompt-reference-sources.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Read full test source; checked assertions, fixtures, asynchronous boundaries and cleanup against current production behavior",
+        "Studio and prompt regression suite: 58 passed across 7 files; scoped Oxlint: 0 errors and 0 warnings"
+      ],
+      "sha256": "5ee9ad6e71aaf09d0b2f2675d068ee2ac3c8d6c23f32ea2888cf59fd8e5ee0e8",
+      "bytes": 5139
+    },
+    {
+      "path": "web/tests/prompt-sources.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Read full test source; checked assertions, fixtures, asynchronous boundaries and cleanup against current production behavior",
+        "Studio and prompt regression suite: 58 passed across 7 files; scoped Oxlint: 0 errors and 0 warnings"
+      ],
+      "sha256": "f11459d67fa4a22b54417c425b9f6fd580f0089539fe9c086534cc1763f10c99",
+      "bytes": 7431
+    },
+    {
+      "path": "web/tests/studio-followup-regressions.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Read full test source; checked assertions, fixtures, asynchronous boundaries and cleanup against current production behavior",
+        "Studio and prompt regression suite: 58 passed across 7 files; scoped Oxlint: 0 errors and 0 warnings"
+      ],
+      "sha256": "ab956195afe2356a50375f5c3175d76b3679855b46d6bf1a93d1c326891aed2d",
+      "bytes": 26646
+    },
+    {
+      "path": "web/tests/studio-review-regressions.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Read full test source; checked assertions, fixtures, asynchronous boundaries and cleanup against current production behavior",
+        "Studio and prompt regression suite: 58 passed across 7 files; scoped Oxlint: 0 errors and 0 warnings"
+      ],
+      "sha256": "4e7044ad8c4664a1c749f1c91adbcfe5e0521f77fc12f1a487d879c9a77eded6",
+      "bytes": 8344
+    }
+  ]
+}

@@ -1,0 +1,29 @@
+{
+  "date": "2026-09-14",
+  "scope": "Ignored local files: metadata and redacted configuration checks only; not counted as source review",
+  "configuration": {
+    "path": ".env",
+    "method": "Parsed with Node util.parseEnv without printing or retaining any values; checked Git tracking and POSIX mode",
+    "parsed": true,
+    "keyCount": 44,
+    "gitTracked": false,
+    "mode": "600",
+    "contentModified": false
+  },
+  "runtimeData": {
+    "directory": "data/",
+    "fileCount": 24,
+    "method": "Enumerated every local runtime file by type; opened the active SQLite database read-only and ran PRAGMA quick_check; did not inspect business rows, media content or log text",
+    "sqliteQuickCheck": "ok",
+    "sqliteSchemaObjectCount": 21,
+    "contentModified": false,
+    "contentReview": "excluded-private-runtime-data"
+  },
+  "exclusions": [
+    { "pattern": ".git/", "reason": "Version-control internal metadata" },
+    { "pattern": "build/, internal/web/dist/, web/tsconfig.tsbuildinfo, **/__pycache__/", "reason": "Build, compiler and generated verification artifacts excluded from project source review" },
+    { "pattern": "web/node_modules/", "reason": "Installed packaged third-party dependencies; project dependency manifests and lockfiles reviewed separately" },
+    { "pattern": "chatgpt2api, chatgpt2api.previous, web/public/director/", "reason": "Compiled executable, existing executable backup and packaged Director distribution excluded by user" },
+    { "pattern": ".playwright-cli/, web/.playwright-cli/, web/test-results/, ignored assets/canvas-*.png, assets/workflow-*.png, assets/global-*.png", "reason": "Generated historical browser snapshots, logs and verification screenshots; original tracked visual assets reviewed separately" }
+  ]
+}

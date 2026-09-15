@@ -1,0 +1,1269 @@
+{
+  "scope": "web/src/app/canvas/**, web/src/store/canvas-task-queue.ts, web/tests/canvas-*.test.mjs, web/tests/director-static.test.mjs; web/public/director/** excluded as packaged content",
+  "files": [
+    {
+      "path": "web/public/director/LICENSE",
+      "status": "excluded-packaged",
+      "checks": [
+        "Packaged Director distribution excluded by user scope; original iframe boundary reviewed in canvas-director.tsx"
+      ],
+      "sha256": "2898e4433785a55b5d8bc15c32084dfe21dcea8b4fbd3b1138d9bebfc5401f18",
+      "bytes": 1065
+    },
+    {
+      "path": "web/public/director/assets/index-BaMsYsAL.css",
+      "status": "excluded-packaged",
+      "checks": [
+        "Packaged Director distribution excluded by user scope; original iframe boundary reviewed in canvas-director.tsx"
+      ],
+      "sha256": "9cf43a8934314a4f8a7a8cf5af52f70b55a145c7cae76f55a3b6d71e3bab43e1",
+      "bytes": 71403
+    },
+    {
+      "path": "web/public/director/assets/index-oQuo7db8.js",
+      "status": "excluded-packaged",
+      "checks": [
+        "Packaged Director distribution excluded by user scope; original iframe boundary reviewed in canvas-director.tsx"
+      ],
+      "sha256": "8b3272eaa7a40d795893c27d530208afcab7fc491d549928927c0bc551151292",
+      "bytes": 1446833
+    },
+    {
+      "path": "web/public/director/index.html",
+      "status": "excluded-packaged",
+      "checks": [
+        "Packaged Director distribution excluded by user scope; original iframe boundary reviewed in canvas-director.tsx"
+      ],
+      "sha256": "770829dae3d0ac4ed3c49d3e4e7c8b284462c29943c59b0edb9fcaa8f1b82a1e",
+      "bytes": 1407
+    },
+    {
+      "path": "web/public/director/models/ue-mannequin-retopology.glb",
+      "status": "excluded-packaged",
+      "checks": [
+        "Packaged Director distribution excluded by user scope; original iframe boundary reviewed in canvas-director.tsx"
+      ],
+      "sha256": "5622c6150467fb96ff70d30eb3393286131c8523feaa3b78f80515d499cb1a14",
+      "bytes": 750464
+    },
+    {
+      "path": "web/public/director/models/ue-mannequin-retopology.license.txt",
+      "status": "excluded-packaged",
+      "checks": [
+        "Packaged Director distribution excluded by user scope; original iframe boundary reviewed in canvas-director.tsx"
+      ],
+      "sha256": "26b0b701ff1feaa5dccde23ae249681bd350ff219d773b8f717359810da4729b",
+      "bytes": 439
+    },
+    {
+      "path": "web/src/app/canvas/agent/canvas-agent-context.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "e6444c0e39f07709764979b0867b940caf2b75219e8d4fff9ac44cb8f8a87e04",
+      "bytes": 4826
+    },
+    {
+      "path": "web/src/app/canvas/agent/canvas-agent-generation.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "2739cd2c9b952b314f9b4739886e0f032514d17f7b8459defbe8e695d7d75967",
+      "bytes": 5317
+    },
+    {
+      "path": "web/src/app/canvas/agent/canvas-agent-request.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "4f1a84e56793ecc0c5d154f2966ffafdf30b8bb62de64f15a803a32ad9dbcede",
+      "bytes": 5841
+    },
+    {
+      "path": "web/src/app/canvas/agent/canvas-agent-run-gate.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "76d7e2cbbc248fc1626812fa2197a64b89775e3dc47c67c22fce2976a1513f73",
+      "bytes": 1334
+    },
+    {
+      "path": "web/src/app/canvas/agent/canvas-agent-runtime.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "49d4e0c06cf48849989e797ce0c11b441af9038289635ce29949f6e51082f407",
+      "bytes": 10394
+    },
+    {
+      "path": "web/src/app/canvas/agent/canvas-agent-sessions.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "5ccfbc07797081ddbe952e36d0708f52078f16ff53cac35aa7b1e33eeebfb01d",
+      "bytes": 2362
+    },
+    {
+      "path": "web/src/app/canvas/agent/canvas-agent-skills.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "ed9219ec074be5477c426ab476757d2fe487bce41614928cd7d14652b1825456",
+      "bytes": 5853
+    },
+    {
+      "path": "web/src/app/canvas/agent/canvas-agent-starter.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "ed16f9ba9da693762fc8b0c643f3dbde24408dc32581dacc35db73981ba9d658",
+      "bytes": 6415
+    },
+    {
+      "path": "web/src/app/canvas/agent/canvas-agent-tools.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "9257490f4036f60700ea9a069143fc797d1ce3e341332e5e9240745b762f2ab6",
+      "bytes": 14624
+    },
+    {
+      "path": "web/src/app/canvas/agent/canvas-agent-types.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "60d6186101a825f66a19ac704f2584a95ddc69024b2a09c5309acdebad628b8e",
+      "bytes": 1869
+    },
+    {
+      "path": "web/src/app/canvas/agent/skills/audio.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Agent prompt text checked against current tools, reference semantics, runtime steps and model contracts"
+      ],
+      "sha256": "01372736a651a26d70d5bc0b418e20e04a9d99031d178b57081141e3fd8fdc01",
+      "bytes": 6622
+    },
+    {
+      "path": "web/src/app/canvas/agent/skills/core.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Agent prompt text checked against current tools, reference semantics, runtime steps and model contracts"
+      ],
+      "sha256": "bed30c7a17d6a227bae1b83a778a30f2ae84e75191d7d196de6b9ceaf648aebc",
+      "bytes": 15290
+    },
+    {
+      "path": "web/src/app/canvas/agent/skills/image-character-sheet.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Agent prompt text checked against current tools, reference semantics, runtime steps and model contracts"
+      ],
+      "sha256": "3c09682aa8bb029e6ff432d6739d3414d4378173fcde0c2a51f8bddf157ad293",
+      "bytes": 13296
+    },
+    {
+      "path": "web/src/app/canvas/agent/skills/image-storyboard.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Agent prompt text checked against current tools, reference semantics, runtime steps and model contracts"
+      ],
+      "sha256": "44060b51caf2e2c93c01987d3bcbd50972d0766fd79ce65f820c8bc21fba3ba1",
+      "bytes": 9619
+    },
+    {
+      "path": "web/src/app/canvas/agent/skills/image.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Agent prompt text checked against current tools, reference semantics, runtime steps and model contracts"
+      ],
+      "sha256": "d87ed1499f68de012d4f12c4c6ef7710eebc45a304e044359bcfaea5b3d332ec",
+      "bytes": 12113
+    },
+    {
+      "path": "web/src/app/canvas/agent/skills/organize.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Agent prompt text checked against current tools, reference semantics, runtime steps and model contracts"
+      ],
+      "sha256": "298dd468821a33b2368275bcbad45768e746b33dfe66cef5cf69121306182225",
+      "bytes": 8154
+    },
+    {
+      "path": "web/src/app/canvas/agent/skills/script.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Agent prompt text checked against current tools, reference semantics, runtime steps and model contracts"
+      ],
+      "sha256": "d1ce969a096d9b9ea73f9cb51201ff2d2d0ebe54b05efe9c8085bde556a6cbe0",
+      "bytes": 13273
+    },
+    {
+      "path": "web/src/app/canvas/agent/skills/video-editing.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Agent prompt text checked against current tools, reference semantics, runtime steps and model contracts"
+      ],
+      "sha256": "bb228e6216df8efb4fdfe50a1e6834a65cac5a264bb3764389ee14e5f2df0e96",
+      "bytes": 7624
+    },
+    {
+      "path": "web/src/app/canvas/agent/skills/video-extension.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Agent prompt text checked against current tools, reference semantics, runtime steps and model contracts"
+      ],
+      "sha256": "b69a85ad4b766ade9f469896e97d547dddb7581a2c68cd55e37df0eae6fddde5",
+      "bytes": 11094
+    },
+    {
+      "path": "web/src/app/canvas/agent/skills/video-multi-shot.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Agent prompt text checked against current tools, reference semantics, runtime steps and model contracts"
+      ],
+      "sha256": "da4f9dd71cc3c2444e1958e1584433779d649fed933d862d87ad4aafdf2fc559",
+      "bytes": 8883
+    },
+    {
+      "path": "web/src/app/canvas/agent/skills/video-single-shot.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Agent prompt text checked against current tools, reference semantics, runtime steps and model contracts"
+      ],
+      "sha256": "daa977c454dd1d11e69b8d938401d436d5bff598dc7d3115fbecab1d295f4173",
+      "bytes": 5679
+    },
+    {
+      "path": "web/src/app/canvas/agent/skills/video.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Agent prompt text checked against current tools, reference semantics, runtime steps and model contracts"
+      ],
+      "sha256": "cc32c0a83a9ea535523b2d7c3664021983a9656ed4d3d543027eed55928b78fe",
+      "bytes": 16252
+    },
+    {
+      "path": "web/src/app/canvas/agent/skills/workflow.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Agent prompt text checked against current tools, reference semantics, runtime steps and model contracts"
+      ],
+      "sha256": "b20f88b50b6066b9da1789e63e703d0666f2f8bc9cc5326c69861d202453702a",
+      "bytes": 12916
+    },
+    {
+      "path": "web/src/app/canvas/canvas-agent-generation-settings-summary.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "ff4fe657870fc9dfcd425ca04f81277c918e45965dda9a7d7a2808139b866038",
+      "bytes": 652
+    },
+    {
+      "path": "web/src/app/canvas/canvas-agent-generation-settings.tsx",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "a55e77bf75da73fc5fa40cc7ee46aaf7cec684e7a33698afe045af2cc186d8b0",
+      "bytes": 2434
+    },
+    {
+      "path": "web/src/app/canvas/canvas-agent-panel.tsx",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "c6ec632b5b040bad630aa793100ff4fa62c579122d264553395c1a81364d908f",
+      "bytes": 35037
+    },
+    {
+      "path": "web/src/app/canvas/canvas-agent-prompt-chip-input.tsx",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "f9cdec66025e4250f567eca829e1da1f7b2ea6c5174cef7debdafd062d521d09",
+      "bytes": 17678
+    },
+    {
+      "path": "web/src/app/canvas/canvas-asset-picker.tsx",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "795a764c082b7c9a8cc9b82d6963af5cc5116a8acc0c2df34a29fc6d4be88703",
+      "bytes": 10333
+    },
+    {
+      "path": "web/src/app/canvas/canvas-audio.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "a276a1a592ce0cd05df24188d288531a41fcb3b0c733a36745f44273024d62d5",
+      "bytes": 11398
+    },
+    {
+      "path": "web/src/app/canvas/canvas-batches.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "913e4f35a879117595537c5395445896e2ea0883a91f7abc8f860dd4ebb065e7",
+      "bytes": 5705
+    },
+    {
+      "path": "web/src/app/canvas/canvas-camera-control.tsx",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "ee7618f17e3de58e2b670620c7dd7c0ac1871e4494270f2606db4d33a67daaad",
+      "bytes": 4661
+    },
+    {
+      "path": "web/src/app/canvas/canvas-camera.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "42f7210974c86213bed1d849e1b86071c8f67f1e8dd65a2273d4733d5ce62377",
+      "bytes": 16107
+    },
+    {
+      "path": "web/src/app/canvas/canvas-clipboard.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "961afef9f0225a6449f36d0b3319364fce91a5ac9e58b57f9f9353cf93afd043",
+      "bytes": 10072
+    },
+    {
+      "path": "web/src/app/canvas/canvas-config-composer.tsx",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "b1c7fd403f3ae995428592b9c181e84c29f7d72a3697e396240ade25d7a8cb6f",
+      "bytes": 18080
+    },
+    {
+      "path": "web/src/app/canvas/canvas-config-inputs.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "13b3082fc938c7f6a6ab3780959e106740d34cf8b6ae5d208e04d81c281d73c9",
+      "bytes": 4626
+    },
+    {
+      "path": "web/src/app/canvas/canvas-connections.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "5bc284d6d875db1856e1141d4274bbe3bc559a730b99777d9386ecac684f934d",
+      "bytes": 5255
+    },
+    {
+      "path": "web/src/app/canvas/canvas-contenteditable.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "da899a715a998f53e231482d653737f72c42c1a1e514dbb20a019a758cb8efc5",
+      "bytes": 5803
+    },
+    {
+      "path": "web/src/app/canvas/canvas-director-node-panel.tsx",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "ad48590f1f4ad8de00be1441251e946d06bcefe1751773a5553647501c460012",
+      "bytes": 828
+    },
+    {
+      "path": "web/src/app/canvas/canvas-director-output.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "e572ca1db5c6fe7eeb08faa919310169beda48c964afcad1fd4c0fc000fb1cb8",
+      "bytes": 978
+    },
+    {
+      "path": "web/src/app/canvas/canvas-director.tsx",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "61c8a6594ba37e235ed7f30412a6771b6f365eeb0adb30482f3e075f96686db3",
+      "bytes": 5547
+    },
+    {
+      "path": "web/src/app/canvas/canvas-engine.tsx",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "0603b6bcbd815954f7c43cb1a3ed40b66a3746a6a22092b5c20b81a0c78f8dc9",
+      "bytes": 60331
+    },
+    {
+      "path": "web/src/app/canvas/canvas-export.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "9db88e594679877435d4e09ef8a46cef728800d3a70eb5529c873e8b3f8bca61",
+      "bytes": 923
+    },
+    {
+      "path": "web/src/app/canvas/canvas-floating-panel.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "4233ae268fce18ee174ea0fc37a0437bcf2ed42c527d15579d3266883cf663ce",
+      "bytes": 1110
+    },
+    {
+      "path": "web/src/app/canvas/canvas-generation-context.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "31861c09fc7b9d0ce90f97d99d086f7a2d671689eaf86f21e366c1ed415d86f2",
+      "bytes": 10586
+    },
+    {
+      "path": "web/src/app/canvas/canvas-generation-footer.tsx",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "733aeb87bd361c2e1b3cdc11662800492d23981c6e427fd22f41399afe69b910",
+      "bytes": 2082
+    },
+    {
+      "path": "web/src/app/canvas/canvas-generation-layout.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "46c12e80a076ceb8b21be3b71220cbae0dff68685c1e915d0a0208c2cc3acfc9",
+      "bytes": 1415
+    },
+    {
+      "path": "web/src/app/canvas/canvas-groups.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "bce86e181e08de469360da81821725a09fed1e5409dee76ddfc9a8e27287412a",
+      "bytes": 3110
+    },
+    {
+      "path": "web/src/app/canvas/canvas-history.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "78374bc23835ce54e13a145ac66c06110eaf742bfb866d4bd89423430cec6eec",
+      "bytes": 1198
+    },
+    {
+      "path": "web/src/app/canvas/canvas-image-data.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "1f36cabc928a8d65699eb7595de9e60b389b3f2fcd59933ba8a77308b9af2e27",
+      "bytes": 6909
+    },
+    {
+      "path": "web/src/app/canvas/canvas-image-model.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "3025487b7d332def7a779a48483a3d5f9fcb1feb94764a3e480e901d22b59ccb",
+      "bytes": 372
+    },
+    {
+      "path": "web/src/app/canvas/canvas-image-parameter-defaults.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "aa5763c1da69c19f23da5fd29a34ad184c51979d70a260201381eeadd2126e41",
+      "bytes": 1715
+    },
+    {
+      "path": "web/src/app/canvas/canvas-image-parameters.tsx",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "74b60cfa704fc22aac8e70c68220ff7251eeed992e0683cf4fb1df5c438b9e71",
+      "bytes": 8126
+    },
+    {
+      "path": "web/src/app/canvas/canvas-image-title.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "bcb58766252b83d89da11762d3f14d9fa565baa814fc8edb55ca083fdcb639bf",
+      "bytes": 919
+    },
+    {
+      "path": "web/src/app/canvas/canvas-image-tools.tsx",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "c38104ea5e69d4a6a1b5fa5f110274d30edc4291815e78d3ad64173333404d30",
+      "bytes": 34179
+    },
+    {
+      "path": "web/src/app/canvas/canvas-inline-model-select.tsx",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "432cde31ef261aef0e91077d65ad6a7b681c7f951120963a70e3c0d5e9364402",
+      "bytes": 1150
+    },
+    {
+      "path": "web/src/app/canvas/canvas-node-actions-panel.tsx",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "d69efab584ff6e2d4551e1dd0ccd384bebdf8f8b67c251e11dc66d819778090d",
+      "bytes": 14634
+    },
+    {
+      "path": "web/src/app/canvas/canvas-node-geometry.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "063762ddf0f88b0d112fd09de613dabe9574b028ec3ab51a9a4ea14d5294b64a",
+      "bytes": 1883
+    },
+    {
+      "path": "web/src/app/canvas/canvas-node-info.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "af5f1f9bfd5d9820d32a66a5d92ac62d65faeac59bf350c93ebca1be12e72544",
+      "bytes": 477
+    },
+    {
+      "path": "web/src/app/canvas/canvas-node-specs.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "97285e7db66840b85e701f7bd04a39997dc9a59fd7aeff60379832adc23a701c",
+      "bytes": 485
+    },
+    {
+      "path": "web/src/app/canvas/canvas-panorama-viewer.tsx",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "d67e440ade74388d34f3b445aef7b088c264bf6e2547ab628d76ff2eb48415be",
+      "bytes": 7686
+    },
+    {
+      "path": "web/src/app/canvas/canvas-panorama.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "b5e6daf4bf2528238837cf1c7165f311bfd3c171c89abb93dd56931092a8e807",
+      "bytes": 4436
+    },
+    {
+      "path": "web/src/app/canvas/canvas-project-dialog.tsx",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "50ed23874c4cb5b2d66bb6a71f7f443a90ba6763371922e72c48f2de74fd6dc8",
+      "bytes": 2243
+    },
+    {
+      "path": "web/src/app/canvas/canvas-project-transfer-types.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "8fb42713db4ddde07592519c3c8660d7c272967c9ff6f9ee6fdfe42b9e2194b5",
+      "bytes": 1494
+    },
+    {
+      "path": "web/src/app/canvas/canvas-project-transfer.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "040c38d706050ae703cfc0bd54de953196c3e26e70207210ba1f431f0986a9b2",
+      "bytes": 8931
+    },
+    {
+      "path": "web/src/app/canvas/canvas-prompt-library.tsx",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "5989a1dc9eef60a413787e60cd44a7646c994fbded7066a4e3359e9e06ba332b",
+      "bytes": 946
+    },
+    {
+      "path": "web/src/app/canvas/canvas-resource-mention-textarea.tsx",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "bae0572c12e02486ba7c2d7cb30c8cbd976b7b4e54a5ac897116faa164de54a8",
+      "bytes": 10453
+    },
+    {
+      "path": "web/src/app/canvas/canvas-resource-mentions.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "19b59c6bef09a802f58fe80f955e43b4cc3346f0375be0bd72f562d19127f009",
+      "bytes": 1905
+    },
+    {
+      "path": "web/src/app/canvas/canvas-resources.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "9fc19b6d11ac5fe9cae0bc67ca6b14fad94ebb32a24872c8cdd4aa267ee950da",
+      "bytes": 3040
+    },
+    {
+      "path": "web/src/app/canvas/canvas-save.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "0cda1402fdd80edb85d3ff4233ec310ad298e909f6892589aa5d6648f289cab6",
+      "bytes": 807
+    },
+    {
+      "path": "web/src/app/canvas/canvas-side-panel.tsx",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+    "sha256": "7d7cd8c70c38f5484f772d1b45ce8f01f80bb0526ac5892b7c05ff45124d00d8",
+      "bytes": 29128
+    },
+    {
+      "path": "web/src/app/canvas/canvas-special-nodes.tsx",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "49afdc20bf89019fdfadb5bd51bdba83cfebdd22c86ccac185b6f85af73aa62b",
+      "bytes": 16286
+    },
+    {
+      "path": "web/src/app/canvas/canvas-task-results.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "394503d9f4937cd6e714707916398d41a32bf9a66248ce4575fdde3cd7b5d631",
+      "bytes": 17627
+    },
+    {
+      "path": "web/src/app/canvas/canvas-text-generation.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "99e597b97f9a16d58b324dcefa54671123287ec23b989fe1ab1ae70cae69d3ab",
+      "bytes": 1284
+    },
+    {
+      "path": "web/src/app/canvas/canvas-video-import.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "ddc5f58b7eee4644ffed0bcb213f8bbc3a284380a06f1e08b88cbd35d8a96125",
+      "bytes": 770
+    },
+    {
+      "path": "web/src/app/canvas/canvas-video-node-bindings.tsx",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "eec489cd14ef3c8c8556655a3ac3222f66403830c8d0916ae1cc01f70d15ab85",
+      "bytes": 2905
+    },
+    {
+      "path": "web/src/app/canvas/canvas-video-player.tsx",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "b11eceb2632a8b1b640df52575ac16b0d8df887c33dea25909a1d9dcbcb14c0c",
+      "bytes": 11438
+    },
+    {
+      "path": "web/src/app/canvas/canvas-video-time.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "1fb2e260a033dbf8841abd852fa06abedd3f33f9c24ffd7c1a586bfede065df5",
+      "bytes": 387
+    },
+    {
+      "path": "web/src/app/canvas/canvas-viewport.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "3d2e42046fe149f369a3e6cb8c0a87472a4d5e6b5c6a9cacb9f1c5722623eaa4",
+      "bytes": 2269
+    },
+    {
+      "path": "web/src/app/canvas/library-page.tsx",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "78a97351612a01801e8154c68573beee3813f7631fd8390a6542d3c9f22e1f21",
+      "bytes": 28068
+    },
+    {
+      "path": "web/src/app/canvas/library-route.tsx",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "eefc3008fb8e85fc3b9fb47deedf37bd7fb4a7fcd257b530fbd14279fa72d877",
+      "bytes": 515
+    },
+    {
+      "path": "web/src/app/canvas/page.tsx",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+    "sha256": "96dddc139daed5ffedde602eb1921db6c4271d83d91273a2d5ef13f519e83015",
+    "bytes": 313992
+    },
+    {
+      "path": "web/src/app/canvas/route.tsx",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "15f9ffcd1ca58291d3695e484d18a4dfe0f50b44d14bb20143c3b87be1ff5f73",
+      "bytes": 1127
+    },
+    {
+      "path": "web/src/store/canvas-task-queue.ts",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Generation state, async ownership, graph references, media transfer, rendering work and resource lifetime reviewed"
+      ],
+      "sha256": "7fc1a33a16774e14fa8e327f77825c747ba25685a9f6bd4025cdd0886dd5870f",
+      "bytes": 9211
+    },
+    {
+      "path": "web/tests/canvas-agent-v2.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and production contract alignment reviewed"
+      ],
+      "sha256": "dc6ffc235961401275c603604ceec10e4c44ff07759bbb0050db60a7816c7f39",
+      "bytes": 28637
+    },
+    {
+      "path": "web/tests/canvas-audio.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and production contract alignment reviewed"
+      ],
+      "sha256": "13188d8313a7e17d7e1fdc54a71c43fa15d27bef7c04595af80f048357ec9441",
+      "bytes": 7357
+    },
+    {
+      "path": "web/tests/canvas-batches.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and production contract alignment reviewed"
+      ],
+      "sha256": "dc7ef42a82165bf63c6f7d39f0f529ee2a71f4c2c0c1ada31f821b46234c8d0f",
+      "bytes": 9400
+    },
+    {
+      "path": "web/tests/canvas-camera.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and production contract alignment reviewed"
+      ],
+      "sha256": "3ddb9c5c3d059daf1cd67b7c0168e605afe95b510c9b55ed795fa9c8eff8751e",
+      "bytes": 1579
+    },
+    {
+      "path": "web/tests/canvas-clipboard.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and production contract alignment reviewed"
+      ],
+      "sha256": "c85137357903c9d0016e0165ac5abd84052252b68e31e988a31609201dde86ef",
+      "bytes": 8822
+    },
+    {
+      "path": "web/tests/canvas-config-inputs.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and production contract alignment reviewed"
+      ],
+      "sha256": "649962063fa85877ea39dd9d2037364bc614e4f5b81272d9dfae4ffb4b73c1f8",
+      "bytes": 5127
+    },
+    {
+      "path": "web/tests/canvas-connections.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and production contract alignment reviewed"
+      ],
+      "sha256": "20e4a8466e034eb8c630b3f92c06cbd8d31fb3242f216d0b3492c7fb65cd2f11",
+      "bytes": 6562
+    },
+    {
+      "path": "web/tests/canvas-contenteditable.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and production contract alignment reviewed"
+      ],
+      "sha256": "cf513dd83f8f56b7c5486b4cb47abd457ecf3391bcb402c0f45596e5aae19f56",
+      "bytes": 3452
+    },
+    {
+      "path": "web/tests/canvas-director.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and production contract alignment reviewed"
+      ],
+      "sha256": "e1fac4bed941f16596c89666cd4a721874fc36768a923677361d89d227e7570b",
+      "bytes": 1710
+    },
+    {
+      "path": "web/tests/canvas-export.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and production contract alignment reviewed"
+      ],
+      "sha256": "98c3b6c7a7a4ab434ec5cde8b15911bb1a56660ae97a4be98c11e64dff06271c",
+      "bytes": 641
+    },
+    {
+      "path": "web/tests/canvas-floating-panel.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and production contract alignment reviewed"
+      ],
+      "sha256": "089085a7da6d585fccd0fdb08ff9bb73e73a2be5b381527aa77dd051c82c155b",
+      "bytes": 1295
+    },
+    {
+      "path": "web/tests/canvas-generation-context.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and production contract alignment reviewed"
+      ],
+      "sha256": "52c592bf9b8512c89a334510946219c7c892f6ac661696cc09807a4684a71a22",
+      "bytes": 20743
+    },
+    {
+      "path": "web/tests/canvas-generation-layout.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and production contract alignment reviewed"
+      ],
+      "sha256": "34b51352745500abc2da179f5603df74384997963845838bb231e4a5634adc0f",
+      "bytes": 2833
+    },
+    {
+      "path": "web/tests/canvas-generation-lifecycle.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and production contract alignment reviewed"
+      ],
+      "sha256": "7faa01e2ebe1ea10a3b7a4c0f4aeec8010c41f399d2cb146de20c812e6f82a57",
+      "bytes": 740
+    },
+    {
+      "path": "web/tests/canvas-groups.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and production contract alignment reviewed"
+      ],
+      "sha256": "35217f6faf2421a7bbc2d17b7b5946e9192586465c9f4fc2d832f1b208d77296",
+      "bytes": 2403
+    },
+    {
+      "path": "web/tests/canvas-history.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and production contract alignment reviewed"
+      ],
+      "sha256": "decfb1bc28f8b6a49d0a44c1b26544d33c7f5ca74876cd238a6dd68dd8cf7785",
+      "bytes": 2986
+    },
+    {
+      "path": "web/tests/canvas-image-data.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and production contract alignment reviewed"
+      ],
+      "sha256": "92686470045178ac3ce6b4160fe60ba17e8de486b0eb29746f90d864732db659",
+      "bytes": 1822
+    },
+    {
+      "path": "web/tests/canvas-image-model.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and production contract alignment reviewed"
+      ],
+      "sha256": "00dc9005b6c72d57ebb98a78f82bfe1c45090847ff6ad390451b7937c602f79b",
+      "bytes": 707
+    },
+    {
+      "path": "web/tests/canvas-image-title.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and production contract alignment reviewed"
+      ],
+      "sha256": "308894dd955c5890b70f28c4a4c0fa3493f38604e1e61406be05cfda75cec2fa",
+      "bytes": 842
+    },
+    {
+      "path": "web/tests/canvas-library-layout.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and production contract alignment reviewed"
+      ],
+      "sha256": "3a111157b4024f659086558925d891b783e05c61e3db049877615a41e8d28157",
+      "bytes": 2775
+    },
+    {
+      "path": "web/tests/canvas-node-actions.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and production contract alignment reviewed"
+      ],
+      "sha256": "5cfe33ed3cc2ec653b3972fc21f5e3e3ee134015683581a15f6f70f60b837b76",
+      "bytes": 23132
+    },
+    {
+      "path": "web/tests/canvas-node-geometry.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and production contract alignment reviewed"
+      ],
+      "sha256": "f9fe6f62f87ffc6545bba14f83d1d28b4d0033528507cbe772602a3f7332e7f0",
+      "bytes": 2473
+    },
+    {
+      "path": "web/tests/canvas-node-info.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and production contract alignment reviewed"
+      ],
+      "sha256": "3b2147247fdd61ff103d57d902f64c729ab9887346d48cd70a300e43146899c4",
+      "bytes": 1083
+    },
+    {
+      "path": "web/tests/canvas-panorama.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and production contract alignment reviewed"
+      ],
+      "sha256": "5accbec937580b38ff8a47ca61158aba094e56b12a659a8fef08c804c0c3e954",
+      "bytes": 3115
+    },
+    {
+      "path": "web/tests/canvas-project-route.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and production contract alignment reviewed"
+      ],
+      "sha256": "f3bdfe7afdd9b37de70064b95667a30fe2c01c3c971e52b524efa93d9fb90e21",
+      "bytes": 734
+    },
+    {
+      "path": "web/tests/canvas-project-transfer.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and production contract alignment reviewed"
+      ],
+      "sha256": "5f24af79543610df907b382ac14bc1b3ed4b6d477954251a9558238d1a540716",
+      "bytes": 7980
+    },
+    {
+      "path": "web/tests/canvas-resource-mentions.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and production contract alignment reviewed"
+      ],
+      "sha256": "f85e105b95b727420ccc10e9ed35cfbecd9700c52f24896b225b1bb5eaff4f6c",
+      "bytes": 2417
+    },
+    {
+      "path": "web/tests/canvas-resources.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and production contract alignment reviewed"
+      ],
+      "sha256": "63afafa69c36c2cddae27010da45c3cc97fa5f58e005ca46ba0ba86bc85e0de9",
+      "bytes": 3046
+    },
+    {
+      "path": "web/tests/canvas-review-regressions.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and production contract alignment reviewed"
+      ],
+    "sha256": "f6491cde9e19083a0b66f38fcb33fc31686d2809bd06a20b27395296ef6729b4",
+    "bytes": 24371
+    },
+    {
+      "path": "web/tests/canvas-save.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and production contract alignment reviewed"
+      ],
+      "sha256": "dbe4673f77bfd43a19dd74422236d861df4f35b5d36a14afd9b3077bf8988994",
+      "bytes": 1460
+    },
+    {
+      "path": "web/tests/canvas-task-queue.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and production contract alignment reviewed"
+      ],
+      "sha256": "13723e7bd3cc86d54cd9ee0c57079541b23976899b11e2f2f58af8844c278fcb",
+      "bytes": 7108
+    },
+    {
+      "path": "web/tests/canvas-task-results.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and production contract alignment reviewed"
+      ],
+      "sha256": "bbb76bc1d75d16a6e1c6edca2ffd070da66a0cc2aefd7ccc774b66aa958089ea",
+      "bytes": 23703
+    },
+    {
+      "path": "web/tests/canvas-text-generation.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and production contract alignment reviewed"
+      ],
+      "sha256": "1b4411ad001e5e47ed9765605187020ef7b66a7b374d3e770f4eb4ad41d8e052",
+      "bytes": 1828
+    },
+    {
+      "path": "web/tests/canvas-text-node-readonly.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and production contract alignment reviewed"
+      ],
+      "sha256": "f04a6fe1d147af940d97acf7516b8543dcfd2e3c52a50da48c77627bc03123e0",
+      "bytes": 1217
+    },
+    {
+      "path": "web/tests/canvas-video-import.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and production contract alignment reviewed"
+      ],
+      "sha256": "081c4e1eb74a7bb47100b58df76499678b962fec1143aa06df61d9e7ca752d8e",
+      "bytes": 1099
+    },
+    {
+      "path": "web/tests/canvas-video-player.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and production contract alignment reviewed"
+      ],
+      "sha256": "be138cf04d129c9e97ade54701b50e58ffeeaa80b2fb95316d223168900a3a63",
+      "bytes": 452
+    },
+    {
+      "path": "web/tests/canvas-viewport.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and production contract alignment reviewed"
+      ],
+      "sha256": "3d66dc8f68aeae4b09ed6d25a1b037cd1655610d9b2358366e96fe868f357686",
+      "bytes": 3030
+    },
+    {
+      "path": "web/tests/director-static.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Assertions, fixture isolation, cleanup and production contract alignment reviewed"
+      ],
+      "sha256": "150b15500b7a942796ad2284947e3d7a1aedf1079aae66fcbe761e5cbceaaa3f",
+      "bytes": 2309
+    }
+  ]
+}

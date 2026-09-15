@@ -1,0 +1,35 @@
+{
+  "scope": "Video contract management UI and focused lifecycle/registry regression tests",
+  "files": [
+    {
+      "path": "web/src/app/settings/components/video-model-contracts-card.tsx",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; truncated output reread",
+        "Contract editing, publishing, import/export, scoped mutation concurrency, session ownership and preview behavior reviewed"
+      ],
+      "sha256": "81481f61fddb75a953c11ea192b908311b3467b24faec68b280c48f8368cfad1",
+      "bytes": 139090
+    },
+    {
+      "path": "web/tests/video-model-contract-mutation-lifecycle.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; truncated output reread",
+        "Contract editing, publishing, import/export, scoped mutation concurrency, session ownership and preview behavior reviewed"
+      ],
+      "sha256": "1d6626e6380a097f6e49b2eab2fbc45511d0c7c6f35de59d6af778c497561633",
+      "bytes": 4821
+    },
+    {
+      "path": "web/tests/video-model-contract-registry.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; truncated output reread",
+        "Contract editing, publishing, import/export, scoped mutation concurrency, session ownership and preview behavior reviewed"
+      ],
+      "sha256": "9a04ebd1d80cc0cfaebc2211da781b7264cbfc6cf728484f5853ba9f09edba35",
+      "bytes": 10809
+    }
+  ]
+}

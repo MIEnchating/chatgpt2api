@@ -197,8 +197,8 @@ export function canvasGenerationReferenceImageURLs(
   maximum: number,
 ) {
   const sourceURL = String(node.url || "").trim();
-  if (sourceURL) return [sourceURL];
-  return upstreamURLs.slice(0, Math.max(0, maximum));
+  return [...new Set([...upstreamURLs, sourceURL].map((url) => url.trim()).filter(Boolean))]
+    .slice(0, Math.max(0, maximum));
 }
 
 export function canvasVideoGenerationReferences(

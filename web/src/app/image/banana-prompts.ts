@@ -105,6 +105,7 @@ export const DEFAULT_PROMPT_MARKET_SOURCES: PromptMarketSourceConfig[] = [
 ];
 
 const PROMPT_MARKET_CACHE_TTL_MS = 5 * 60 * 1000;
+const PROMPT_MARKET_CACHE_LIMIT = 8;
 const promptMarketCaches = new Map<string, ExpiringRequestCache<BananaPrompt[]>>();
 
 function promptMarketSourceCacheKey(sources: PromptMarketSourceConfig[]) {
@@ -249,7 +250,9 @@ function normalizeTags(...values: unknown[]) {
   ).slice(0, 24);
 }
 
-function normalizePrompt(item: BananaPromptSourceItem, index: number, source: PromptMarketSourceConfig): BananaPrompt | null {
+function normalizePrompt(value: unknown, index: number, source: PromptMarketSourceConfig): BananaPrompt | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const item = value as BananaPromptSourceItem;
   const title = String(item.title_cn || item.title || "").trim();
   const preview = String(
     source.format === "generic-json"
@@ -502,17 +505,25 @@ export async function fetchPromptMarketSourcePrompts(source: PromptMarketSourceC
 }
 
 export async function fetchPromptMarketPrompts(signal?: AbortSignal, configuredSources: PromptMarketSourceConfig[] = DEFAULT_PROMPT_MARKET_SOURCES) {
+  if (signal?.aborted) throw abortError();
   const sources = normalizePromptMarketSources(configuredSources).filter((source) => source.enabled);
+  if (!sources.length) return [];
   const cacheKey = promptMarketSourceCacheKey(sources);
   let cache = promptMarketCaches.get(cacheKey);
   if (!cache) {
     cache = createExpiringRequestCache<BananaPrompt[]>(PROMPT_MARKET_CACHE_TTL_MS);
-    promptMarketCaches.set(cacheKey, cache);
+  }
+  promptMarketCaches.delete(cacheKey);
+  promptMarketCaches.set(cacheKey, cache);
+  while (promptMarketCaches.size > PROMPT_MARKET_CACHE_LIMIT) {
+    const oldestKey = promptMarketCaches.keys().next().value;
+    if (oldestKey === undefined) break;
+    promptMarketCaches.delete(oldestKey);
   }
   const request = cache.get(async () => {
     const results = await Promise.allSettled(sources.map((source) => fetchPromptMarketSourcePrompts(source)));
     const prompts = results.flatMap((result) => result.status === "fulfilled" ? result.value : []);
-    if (prompts.length > 0) return prompts;
+    if (prompts.length > 0 || results.some((result) => result.status === "fulfilled")) return prompts;
 
     const failure = results.find((result): result is PromiseRejectedResult => result.status === "rejected");
     throw failure?.reason instanceof Error ? failure.reason : new Error("读取提示词市场失败");

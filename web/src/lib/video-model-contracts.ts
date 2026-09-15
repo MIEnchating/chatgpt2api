@@ -47,6 +47,8 @@ export type VideoModelContract = {
     | "vertex-veo"
     | "dashscope-video"
     | "volcengine-video"
+    | "ark-seedance"
+    | "autodl-comfyui"
     | "kling-video"
     | "minimax-video"
     | "vidu-video"

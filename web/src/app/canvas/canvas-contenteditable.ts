@@ -102,31 +102,36 @@ export function placeContentEditableCaretAtEnd(element: HTMLElement) {
   selection?.addRange(range);
 }
 
-function serializeContentEditableNodes(nodes: NodeListOf<ChildNode>, serializeReference: ReferenceSerializer) {
+function serializeContentEditableNodes(nodes: NodeListOf<ChildNode>, serializeReference: ReferenceSerializer): string {
   let result = "";
-  nodes.forEach((node) => {
-    if (node.nodeType === TEXT_NODE_TYPE) {
-      result += node.textContent || "";
-      return;
-    }
-    if (!(node instanceof HTMLElement)) return;
-    const element = node;
-    const reference = serializeReference(element);
-    if (reference) {
-      result += reference;
-      return;
-    }
-    if (element.tagName === "BR") {
-      result += "\n";
-      return;
-    }
-    const content = serializeContentEditableNodes(element.childNodes, serializeReference);
-    const isBlock = element.tagName === "DIV" || element.tagName === "P";
-    if (isBlock && result && !result.endsWith("\n")) result += "\n";
+  let pendingBreaks = 0;
+  let previousBlock = false;
+  let previousEmptyBlock = false;
+  let hasPrevious = false;
+  for (const node of Array.from(nodes)) {
+    const element = node instanceof HTMLElement ? node : null;
+    if (element?.tagName === "BR") { pendingBreaks += 1; continue; }
+    const block = element?.tagName === "DIV" || element?.tagName === "P";
+    const content = node.nodeType === TEXT_NODE_TYPE ? node.textContent || "" : element ? serializeReference(element) || serializeContentEditableNodes(element.childNodes, serializeReference) : "";
+    if (!block && !content) continue;
+    if (block || previousBlock) {
+      if (hasPrevious && (previousEmptyBlock || !result.endsWith("\n"))) result += "\n";
+    } else result += "\n".repeat(pendingBreaks);
+    pendingBreaks = 0;
     result += content;
-    if (isBlock && !content) result += "\n";
-  });
-  return result;
+    previousBlock = block;
+    previousEmptyBlock = block && !content;
+    hasPrevious = true;
+  }
+  // The last BR is a browser caret placeholder; earlier BRs are intentional lines.
+  return result + "\n".repeat(Math.max(0, pendingBreaks - 1));
+}
+
+export function appendContentEditableInline(editor: HTMLElement, ...nodes: Node[]) {
+  let line = editor;
+  while (line.lastChild instanceof HTMLElement && (line.lastChild.tagName === "DIV" || line.lastChild.tagName === "P")) line = line.lastChild;
+  if (line.lastChild instanceof HTMLBRElement) line.lastChild.remove();
+  line.append(...nodes);
 }
 
 function adjacentReferenceNode(range: Range, key: string, referenceDataKey: string) {

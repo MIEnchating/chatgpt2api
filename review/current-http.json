@@ -63,9 +63,10 @@
     },
     {
       "path": "internal/httpapi/app_test.go",
-      "status": "pending",
+      "status": "reviewed",
       "checks": [
-        "Full contents read in this review: lines 1-400 and 4583-4661; remaining lines pending"
+        "Full contents read in this review via bounded sed output, lines 1-4661",
+        "Authentication, personal preferences, task slots, cancellation, multipart routing, storage visibility, audit redaction and test cleanup reviewed"
       ],
       "sha256": "59fc954a76508fb83bc7abe89f78445902c410f0784bc45f5ea292546758683e",
       "bytes": 184868
@@ -572,9 +573,10 @@
     },
     {
       "path": "internal/httpapi/relay_test.go",
-      "status": "pending",
+      "status": "reviewed",
       "checks": [
-        "Full contents read in this review: lines 1480-1620; remaining lines pending"
+        "Full contents read in this review via bounded sed output, lines 1-2720",
+        "Custom relay routing, stream lifetime, cancellation, authenticated redirects, provider contracts, bounded responses and test cleanup reviewed"
       ],
       "sha256": "fdceea27152c9d7d4bef5b94bebbafc0b6cad446054c44357dba15aec357a6ad",
       "bytes": 107080

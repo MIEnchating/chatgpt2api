@@ -412,6 +412,35 @@ func TestWorkflowServicePreservesUnknownIDAndDeleteIsIdempotent(t *testing.T) {
 	}
 }
 
+func TestWorkflowServiceNormalizesIDBeforeLookupAndPersistence(t *testing.T) {
+	workflows := NewWorkflowService(newTestStorageBackend(t))
+	input := referenceWorkflow()
+	input.ID = " imported-workflow "
+	created, err := workflows.Save("alice", input)
+	if err != nil || created.ID != "imported-workflow" {
+		t.Fatalf("Save(import) = (%#v, %v)", created, err)
+	}
+	created.ID = " imported-workflow "
+	created.Name = "Updated"
+	if _, err := workflows.Save("bob", created); !errors.Is(err, ErrWorkflowAccessDenied) {
+		t.Fatalf("Save(other owner) error = %v", err)
+	}
+	updated, err := workflows.Save("alice", created)
+	if err != nil || updated.ID != "imported-workflow" || updated.Revision != 2 {
+		t.Fatalf("Save(update) = (%#v, %v)", updated, err)
+	}
+	if _, err := workflows.TouchLastRun("alice", updated.ID, "2026-09-14T08:00:00Z"); err != nil {
+		t.Fatalf("TouchLastRun() error = %v", err)
+	}
+	if err := workflows.Delete("alice", updated.ID); err != nil {
+		t.Fatalf("Delete() error = %v", err)
+	}
+	items, err := workflows.List("alice")
+	if err != nil || len(items) != 0 {
+		t.Fatalf("List() after deletion = (%#v, %v)", items, err)
+	}
+}
+
 func TestWorkflowServiceMergesConcurrentDatabaseCreates(t *testing.T) {
 	databaseURL := "sqlite:///" + filepath.ToSlash(filepath.Join(t.TempDir(), "shared-workflows.db"))
 	backendA, err := storage.NewDatabaseBackend(databaseURL)

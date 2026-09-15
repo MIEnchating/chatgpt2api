@@ -74,6 +74,7 @@ type ImageToolOptions struct {
 }
 
 type ImageTaskService struct {
+	fileReferences       FileReferenceProtector
 	mu                   sync.RWMutex
 	closeOnce            sync.Once
 	closeErr             error
@@ -298,6 +299,9 @@ func (s *ImageTaskService) SubmitAudio(_ context.Context, identity Identity, cli
 }
 
 func (s *ImageTaskService) submitChatWithMetadata(identity Identity, clientTaskID, prompt, model string, messages any, metadata map[string]any, nValues ...int) (map[string]any, error) {
+	if err := ValidateChatTaskOptions(metadata); err != nil {
+		return nil, err
+	}
 	prompt = strings.TrimSpace(prompt)
 	if prompt == "" {
 		return nil, fmt.Errorf("prompt is required")
@@ -316,6 +320,11 @@ func (s *ImageTaskService) submitChatWithMetadata(identity Identity, clientTaskI
 
 func mergeChatTaskMetadata(payload map[string]any, metadata map[string]any) {
 	mergeTaskRoutingMetadata(payload, metadata)
+	for _, key := range []string{"api_mode", "reasoning_enabled", "max_output_tokens"} {
+		if value, ok := metadata[key]; ok {
+			payload[key] = value
+		}
+	}
 	if tools := util.AsMapSlice(metadata["tools"]); len(tools) > 0 {
 		payload["tools"] = tools
 	}
@@ -544,7 +553,26 @@ func (s *ImageTaskService) DeleteTasks(identity Identity, taskIDs []string) (map
 	return map[string]any{"deleted_ids": deleted, "active_ids": active, "missing_ids": missing}, nil
 }
 
+func (s *ImageTaskService) SetFileReferenceProtector(protector FileReferenceProtector) {
+	s.fileReferences = protector
+}
+
 func (s *ImageTaskService) submit(identity Identity, clientTaskID, mode string, payload map[string]any) (map[string]any, error) {
+	releaseReferences, protectErr := protectStorageReferences(s.fileReferences, payload)
+	if protectErr != nil {
+		return nil, protectErr
+	}
+	referencesTransferred := false
+	defer func() {
+		if !referencesTransferred {
+			releaseReferences()
+		}
+	}()
+	referenceIDs, referenceErr := fileReferenceIDs(payload, time.Now())
+	if referenceErr != nil {
+		return nil, referenceErr
+	}
+
 	taskID := strings.TrimSpace(clientTaskID)
 	if taskID == "" {
 		return nil, fmt.Errorf("client_task_id is required")
@@ -594,6 +622,13 @@ func (s *ImageTaskService) submit(identity Identity, clientTaskID, mode string, 
 	taskCtx, cancel := context.WithCancel(context.Background())
 	outputFormat := normalizeOptionalImageOutputFormat(util.Clean(payload["output_format"]))
 	task := map[string]any{"id": taskID, "owner_id": owner, "status": TaskStatusQueued, "mode": mode, "model": firstNonEmpty(util.Clean(payload["model"]), util.ImageModelAuto), "size": util.Clean(payload["size"]), "quality": util.Clean(payload["quality"]), "visibility": util.Clean(payload["visibility"]), "count": count, "revision": 1, "created_at": now, "updated_at": now}
+	if len(referenceIDs) > 0 {
+		references := make([]string, len(referenceIDs))
+		for index, id := range referenceIDs {
+			references[index] = "server:" + id
+		}
+		task["storage_references"] = references
+	}
 	if mode == "video" {
 		for _, key := range []string{"seconds", "resolution", "generate_audio", "watermark"} {
 			if payload[key] != nil {
@@ -648,8 +683,10 @@ func (s *ImageTaskService) submit(identity Identity, clientTaskID, mode string, 
 	s.taskWorkers.Add(1)
 	s.startRemoteMonitorLocked()
 	s.mu.Unlock()
+	referencesTransferred = true
 	go func() {
 		defer s.taskWorkers.Done()
+		defer releaseReferences()
 		s.runTask(taskCtx, key, mode, identity, payload)
 	}()
 	return result, nil
@@ -1271,6 +1308,9 @@ func (s *ImageTaskService) loadLocked() (map[string]map[string]any, error) {
 		}
 		now := util.NowISO()
 		normalized := map[string]any{"id": id, "owner_id": owner, "status": status, "mode": mode, "model": firstNonEmpty(util.Clean(task["model"]), util.ImageModelAuto), "size": util.Clean(task["size"]), "quality": util.Clean(task["quality"]), "visibility": visibility, "count": count, "revision": revision, "created_at": firstNonEmpty(util.Clean(task["created_at"]), now), "updated_at": firstNonEmpty(util.Clean(task["updated_at"]), util.Clean(task["created_at"]), now)}
+		if references := util.AsStringSlice(task["storage_references"]); len(references) > 0 {
+			normalized["storage_references"] = references
+		}
 		mergeMediaTaskFields(normalized, task, mode)
 		mergePublicImageToolTaskFields(normalized, task)
 		if mode == "video" {

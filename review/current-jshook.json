@@ -1,0 +1,275 @@
+{
+  "scope": [
+    "jshook"
+  ],
+  "reviewed_at": "2026-09-14T19:12:26.609Z",
+  "method": "Current text read in full; JSON parsed and inspected; PNG decoded visually, CRC and IDAT checked, C2PA metadata inspected. No authenticated scripts or external upstream requests executed.",
+  "excluded": [
+    {
+      "path": "jshook/scripts/__pycache__/",
+      "reason": "Generated Python bytecode build output; user permits excluding build artifacts."
+    }
+  ],
+  "validation": {
+    "offline_tests": 11,
+    "syntax": "python3 -m compileall -q jshook/scripts",
+    "redactedFields": 31,
+    "publicURLs": 32,
+    "findings": []
+  },
+  "files": [
+    {
+      "path": "jshook/README.md",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full text read in current review",
+        "local links checked",
+        "historical evidence and current implementation distinguished; contradictions assessed"
+      ],
+      "sha256": "d72806df9661d6b5ace36e0bb6201c0c854ba11a76115829dcddc2cffd5155c5",
+      "bytes": 14012
+    },
+    {
+      "path": "jshook/docs/ChatGPT-gpt-image-2-generation-pipeline-analysis.md",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full text read in current review",
+        "local links checked",
+        "historical evidence and current implementation distinguished; contradictions assessed"
+      ],
+      "sha256": "c9e79b5fd4fd863729b7d3498823054f2d6165467e0fd95f25e869eb40f17ec6",
+      "bytes": 27566
+    },
+    {
+      "path": "jshook/docs/api-endpoints.md",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full text read in current review",
+        "local links checked",
+        "historical evidence and current implementation distinguished; contradictions assessed"
+      ],
+      "sha256": "0ebb70a91ad57d3879f33ddb1bc83c291c81c668b3f321c1f2f0664258819c5b",
+      "bytes": 6859
+    },
+    {
+      "path": "jshook/docs/authenticated-api-schema.md",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full text read in current review",
+        "local links checked",
+        "historical evidence and current implementation distinguished; contradictions assessed"
+      ],
+      "sha256": "1c6260a53282c662a861df856ea21e6dfb3f25787c90969dd136a4d554cc95cf",
+      "bytes": 13261
+    },
+    {
+      "path": "jshook/docs/content-type-enum.md",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full text read in current review",
+        "local links checked",
+        "historical evidence and current implementation distinguished; contradictions assessed"
+      ],
+      "sha256": "d4fc1dab32b4371d11cc394e4441b22ee980bc5db857fa6d436d0df6e7792ac8",
+      "bytes": 4671
+    },
+    {
+      "path": "jshook/docs/function-mapping.md",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full text read in current review",
+        "local links checked",
+        "historical evidence and current implementation distinguished; contradictions assessed"
+      ],
+      "sha256": "1738aac62a7e87d087b589e8893098dd9bff18d1d4e61deda122aba66ac6bc92",
+      "bytes": 3571
+    },
+    {
+      "path": "jshook/docs/internal-codenames.md",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full text read in current review",
+        "local links checked",
+        "historical evidence and current implementation distinguished; contradictions assessed"
+      ],
+      "sha256": "6ad922541d2fa88faecd48da2c34f904c7dadd2e41ac70cc018e58d5de063584",
+      "bytes": 3104
+    },
+    {
+      "path": "jshook/docs/request-completion-flow.md",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full text read in current review",
+        "local links checked",
+        "historical evidence and current implementation distinguished; contradictions assessed"
+      ],
+      "sha256": "49b2abf48599e092e9769ae44511b7c86373fcc642c964e2c16b94bbb418517a",
+      "bytes": 9168
+    },
+    {
+      "path": "jshook/docs/upstream-sse-conversation.md",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full text read in current review",
+        "local links checked",
+        "historical evidence and current implementation distinguished; contradictions assessed"
+      ],
+      "sha256": "40d2f4435d925db562b74ab2d3f369a4e1fd58f397c0754fde2a4b09c5abfdc0",
+      "bytes": 8782
+    },
+    {
+      "path": "jshook/responses/conversation-init.json",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full text read in current review",
+        "parsed complete JSON and inspected schema",
+        "credential fields and signed URL checks; prompts checked against fixed public examples"
+      ],
+      "sha256": "885512b565165bd55d48c21e7a2ff91cffaf4112a64fb84d359637fe4d1a4647",
+      "bytes": 998
+    },
+    {
+      "path": "jshook/responses/file_00000000bc987209adba1c148413e076.png",
+      "status": "binary_structure_and_visual_reviewed",
+      "checks": [
+        "decoded and visually inspected: generated garden without personal information",
+        "all PNG chunks and CRCs checked; IDAT inflated and row lengths verified",
+        "C2PA metadata strings inspected: public provenance, certificates and timestamps"
+      ],
+      "sha256": "41c83b6940e673e8104e2174cbdf8d3ab57ee4839b2d1cf34f540040038b431d",
+      "bytes": 3541231,
+      "details": {
+        "width": 1536,
+        "height": 1024,
+        "chunks": [
+          {
+            "type": "IHDR",
+            "bytes": 13
+          },
+          {
+            "type": "caBX",
+            "bytes": 23622
+          },
+          {
+            "type": "IDAT",
+            "bytes": 3517540
+          },
+          {
+            "type": "IEND",
+            "bytes": 0
+          }
+        ]
+      }
+    },
+    {
+      "path": "jshook/responses/image-gen-sse-response.json",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full text read in current review",
+        "parsed complete JSON and inspected schema",
+        "credential fields and signed URL checks; prompts checked against fixed public examples"
+      ],
+      "sha256": "4ef0d8a8b74f1592665ae5f2b92f85ac1d76280a393d1a6edb74e86b7aef8800",
+      "bytes": 9834
+    },
+    {
+      "path": "jshook/responses/images-styles.json",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full text read in current review",
+        "parsed complete JSON and inspected schema",
+        "credential fields and signed URL checks; prompts checked against fixed public examples"
+      ],
+      "sha256": "58eaca59e89849240d6b9f75ca45342fc8a98a2002967bfd395fd6e02b1da7a3",
+      "bytes": 7197
+    },
+    {
+      "path": "jshook/responses/refreshed-tokens.json",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full text read in current review",
+        "parsed complete JSON and inspected schema",
+        "credential fields and signed URL checks; prompts checked against fixed public examples"
+      ],
+      "sha256": "ec1d25bb24e0a56c15b7877cff2605412179849907b161fc2b05da75a81fb653",
+      "bytes": 190
+    },
+    {
+      "path": "jshook/responses/text-chat-sse-response.json",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full text read in current review",
+        "parsed complete JSON and inspected schema",
+        "credential fields and signed URL checks; prompts checked against fixed public examples"
+      ],
+      "sha256": "f84dcbde6e217739e8443a4a5c382e9efea6343e0f902bf7ab68e4f21d79a189",
+      "bytes": 10373
+    },
+    {
+      "path": "jshook/scripts/capture_safety.py",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full text read in current review",
+        "control flow, network credential boundaries and local file permissions reviewed",
+        "Python syntax compiled; standard-library offline tests run without authentication"
+      ],
+      "sha256": "702e7f37b5c312ff38d8f6d711a6deb3b5e9dcee95b5d1c73f9d13b045215eeb",
+      "bytes": 1911
+    },
+    {
+      "path": "jshook/scripts/image_gen_full_flow.py",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full text read in current review",
+        "control flow, network credential boundaries and local file permissions reviewed",
+        "Python syntax compiled; standard-library offline tests run without authentication"
+      ],
+      "sha256": "15c7b4bf1c003783578ca0ad2b39aa1d3489b77351366fc4b454e93010eed802",
+      "bytes": 28579
+    },
+    {
+      "path": "jshook/scripts/sse_capture.py",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full text read in current review",
+        "control flow, network credential boundaries and local file permissions reviewed",
+        "Python syntax compiled; standard-library offline tests run without authentication"
+      ],
+      "sha256": "026ac5fb9c08a25260fec1062dbe16c9ecd6a1c5a698071f7ace7becb1e202c9",
+      "bytes": 903
+    },
+    {
+      "path": "jshook/scripts/test_capture_safety.py",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full text read in current review",
+        "control flow, network credential boundaries and local file permissions reviewed",
+        "Python syntax compiled; standard-library offline tests run without authentication"
+      ],
+      "sha256": "1735b5d069c7a8b6447e12b6c7637455a9ff40c54fd39966d9f00200e76a6231",
+      "bytes": 3371
+    },
+    {
+      "path": "jshook/scripts/test_sse_capture.py",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full text read in current review",
+        "control flow, network credential boundaries and local file permissions reviewed",
+        "Python syntax compiled; standard-library offline tests run without authentication"
+      ],
+      "sha256": "c1ab40c44bb2066ac93f7cac186f9f3896c147ef9106da5f7feae0cac929a3e7",
+      "bytes": 1498
+    },
+    {
+      "path": "jshook/scripts/verify_text_chat.py",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full text read in current review",
+        "control flow, network credential boundaries and local file permissions reviewed",
+        "Python syntax compiled; standard-library offline tests run without authentication"
+      ],
+      "sha256": "16dd68e1e814f838341d38ec533a5dc74ca2dc93a8151ed5a3d092da9d7f7e05",
+      "bytes": 7976
+    }
+  ]
+}

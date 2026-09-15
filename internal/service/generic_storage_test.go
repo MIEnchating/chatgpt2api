@@ -317,6 +317,40 @@ func TestGenericWebDAVObjectLifecycleKeepsNormalRequestsWorking(t *testing.T) {
 	}
 }
 
+func TestGenericWebDAVUploadPreservesMP4Extension(t *testing.T) {
+	fileSystem := webdav.NewMemFS()
+	server := httptest.NewServer(&webdav.Handler{FileSystem: fileSystem, LockSystem: webdav.NewMemLS()})
+	defer server.Close()
+	service := newGenericStorageTestService(t, model.StorageSetting{Providers: []model.StorageProvider{{
+		ID: "webdav", Type: model.StorageProviderTypeWebDAV, Endpoint: server.URL,
+		PathPrefix: "assets", Username: "user", Password: "secret", Enabled: true, Weight: 1,
+	}}})
+	for _, test := range []struct {
+		filename, contentType, extension string
+	}{
+		{"clip.bin", "video/mp4", ".mp4"},
+		{"clip.BIN", "video/mp4; codecs=avc1", ".mp4"},
+		{"clip", "video/mp4", ".mp4"},
+		{"clip.mp4", "video/mp4", ".mp4"},
+		{"clip.mov", "video/quicktime", ".mov"},
+		{"data.bin", "application/octet-stream", ".bin"},
+	} {
+		t.Run(test.filename+"-"+test.contentType, func(t *testing.T) {
+			uploaded, err := service.Upload(context.Background(), "user-1", true, test.filename, test.contentType, []byte("media"), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			object, err := service.InfoForIdentity("user-1", false, uploaded.ID)
+			if err != nil || !strings.HasSuffix(object.ObjectKey, test.extension) {
+				t.Fatalf("uploaded object = (%#v, %v), want extension %q", object, err, test.extension)
+			}
+			if _, err := fileSystem.Stat(context.Background(), "/"+object.ObjectKey); err != nil {
+				t.Fatalf("object data was not uploaded: %v", err)
+			}
+		})
+	}
+}
+
 func TestGenericWebDAVDownloadRejectsInvalidRangesBeforeReading(t *testing.T) {
 	requests := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

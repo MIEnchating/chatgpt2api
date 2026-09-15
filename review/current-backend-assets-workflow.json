@@ -1,0 +1,75 @@
+{
+  "scope": "Service files delegated from review_service; remaining my_asset and workflow_agent files covered by that agent",
+  "files": [
+    {
+      "path": "internal/service/my_asset_group.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Ownership, mutation identity, object reference integrity, bounded inputs, allocation and algorithmic cost reviewed"
+      ],
+      "sha256": "486541fc0264d72e3a3686291d7ca58a4f6f4b8b4205ac5a8d10faf44f300910",
+      "bytes": 4199
+    },
+    {
+      "path": "internal/service/my_asset_group_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Fixtures, assertions, concurrent mutation and deletion fences reviewed"
+      ],
+      "sha256": "a4bc8f29e0d91a7e0aa21292189f8885dd6a3fdf0f8c04201180835d6b5219ee",
+      "bytes": 2641
+    },
+    {
+      "path": "internal/service/my_asset_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Fixtures, assertions, concurrent mutation and deletion fences reviewed"
+      ],
+      "sha256": "d37203ad7caee24c3d1e8c5f9ff613241ab02f53858e71ca2adffc06ddd71f71",
+      "bytes": 42369
+    },
+    {
+      "path": "internal/service/workflow.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Ownership, mutation identity, object reference integrity, bounded inputs, allocation and algorithmic cost reviewed"
+      ],
+      "sha256": "929d56626ebde292596e29d4e33f40e17803833ebc2ac867805e0c7dc7644cf9",
+      "bytes": 26695
+    },
+    {
+      "path": "internal/service/workflow_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Fixtures, assertions, concurrent mutation and deletion fences reviewed"
+      ],
+      "sha256": "5490f3185f4c181762e7764262842b104c90e9e6b81d51b5010236b67220add7",
+      "bytes": 30019
+    },
+    {
+      "path": "internal/service/workflow_deletion_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Fixtures, assertions, concurrent mutation and deletion fences reviewed"
+      ],
+      "sha256": "a8659096a1b2fe81acfe6a28df6cb405a8a4d90aaf2413019c803b1d5eb2a373",
+      "bytes": 14309
+    },
+    {
+      "path": "internal/service/workflow_reference_integrity_test.go",
+      "status": "reviewed",
+      "checks": [
+        "Full contents read in this review via bounded cat/sed output; no historical checklist reused",
+        "Fixtures, assertions, concurrent mutation and deletion fences reviewed"
+      ],
+      "sha256": "ab788e1f0f8207d5d9c893b344c5099abe861886e2f428e712e33c166c7b07ef",
+      "bytes": 6233
+    }
+  ]
+}

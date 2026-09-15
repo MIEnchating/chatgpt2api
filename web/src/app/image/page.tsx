@@ -3680,7 +3680,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
           if (referenceError) throw new Error(referenceError);
         }
         assertTaskDispatchAllowed();
-        const referenceFiles = await Promise.all(
+        const referenceFiles = activeTurn.mode === "video" ? [] : await Promise.all(
           activeTurn.referenceImages.map((image, index) =>
             dataUrlToFile(image.dataUrl, image.name || `${activeTurn.id}-${index + 1}.png`, image.type),
           ),
@@ -3697,10 +3697,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
               if (isPublicReferenceURL(existingURL)) {
                 return existingURL;
               }
-              const file = referenceFiles[index];
-              if (!file) {
-                throw new Error("未找到可用的视频参考图");
-              }
+              const file = await dataUrlToFile(image.dataUrl, image.name || `${activeTurn.id}-${index + 1}.png`, image.type);
               assertTaskDispatchAllowed();
               const [uploaded] = await uploadVideoMultimodalImages([file]);
               return uploaded.dataUrl;
@@ -4880,8 +4877,9 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       toast.error(referenceLimitMessage);
       return;
     }
-    const normalizedVideoParameters = videoMode
-      ? normalizeVideoRequest({
+    let normalizedVideoParameters: ReturnType<typeof normalizeVideoRequest> | undefined;
+    try {
+      normalizedVideoParameters = videoMode ? normalizeVideoRequest({
           model: effectiveModel,
           size: videoSize,
           seconds: selectedVideoSeconds,
@@ -4894,8 +4892,11 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
           referenceImageURLs: normalizedVideoReferenceImages,
           referenceVideoURLs: normalizedVideoReferenceVideos,
           referenceAudioURLs: normalizedVideoReferenceAudios,
-        })
-      : undefined;
+        }) : undefined;
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "视频参数无效");
+      return;
+    }
     const normalizedVideoTurnFields = normalizedVideoParameters
       ? videoTurnFieldsFromNormalizedRequest(normalizedVideoParameters)
       : undefined;
@@ -4987,7 +4988,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
         videoReferenceAudioURLs: videoMode ? normalizedVideoTurnFields?.videoReferenceAudioURLs : undefined,
         videoSystemPrompt: videoMode ? (imageGenerationPreferences.video_system_prompt || undefined) : undefined,
         tokenGroup: undefined,
-        tokenName: nextTokenNameForModel(activeRelayTokenKind, composerMode === "video" ? videoModel : imageModel) || undefined,
+        tokenName: nextTokenNameForModel(activeRelayTokenKind, effectiveModel) || undefined,
         visibility: defaultImageVisibility,
         images: Array.from({ length: requestedCount }, (_, index): StoredImage => {
           const imageId = `${turnId}-${index}`;

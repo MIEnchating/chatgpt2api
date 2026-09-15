@@ -1,0 +1,12 @@
+"use strict";
+const { spawnSync } = require("node:child_process");
+const fs = require("node:fs");
+const path = require("node:path");
+const root = path.resolve(__dirname, "../..");
+const output = path.join(root, "desktop", "bin", "chatgpt2api.exe");
+if (!fs.existsSync(path.join(root, "internal", "web", "dist", "index.html"))) throw new Error("请先在 web/ 运行 npm run build，生成内嵌网页");
+fs.mkdirSync(path.dirname(output), { recursive: true });
+const result = spawnSync("go", ["build", "-trimpath", "-tags=embed", "-ldflags=-s -w", "-o", output, "./internal"], { cwd: root, stdio: "inherit", env: { ...process.env, GOOS: "windows", GOARCH: "amd64", CGO_ENABLED: "0" }, shell: false });
+if (result.error) throw result.error;
+if (result.status !== 0) process.exit(result.status || 1);
+console.log(`Built embedded Windows backend: ${output}`);

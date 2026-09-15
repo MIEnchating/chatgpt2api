@@ -9,7 +9,7 @@ const cancelledTasks = [];
 let taskCounter = 0;
 let submitOverride;
 
-const actualAPI = await import("../src/lib/api.ts");
+const actualAPI = { ...await import("../src/lib/api.ts") };
 mock.module("@/lib/api", () => ({
   ...actualAPI,
   isImageOutputFormat: (value) => ["png", "jpeg", "webp"].includes(value),
@@ -39,6 +39,7 @@ beforeAll(() => {
   installVideoModelContracts(structuredClone(contractDocument.contracts));
 });
 afterAll(() => {
+  mock.module("@/lib/api", () => actualAPI);
   installVideoModelContracts([]);
   globalThis.window = originalWindow;
 });
@@ -175,6 +176,7 @@ describe("canvas agent v2 tool contract", () => {
 
   test("normalizes empty Agent parameters to visible generation defaults", () => {
     assert.deepEqual(defaultCanvasAgentStarterConfig(), {
+      autoGenerateMedia: false, textApiMode: "chat", textReasoningEnabled: false, activeSkillIds: [],
       imageQuality: "",
       imageSize: "1:1",
       videoQuality: "",
@@ -184,7 +186,7 @@ describe("canvas agent v2 tool contract", () => {
       { imageQuality: "", imageSize: "auto", videoQuality: "", videoSize: "" },
       { imageQuality: "", imageSize: "1:1", videoQuality: "720p", videoSize: "16:9" },
       { imageQuality: ["", "low", "medium", "high"], imageSize: ["1:1", "16:9", "9:16"], videoQuality: ["720p", "1080p"], videoSize: ["16:9", "9:16"] },
-    ), { imageQuality: "", imageSize: "1:1", videoQuality: "720p", videoSize: "16:9" });
+    ), { autoGenerateMedia: false, textApiMode: "chat", textReasoningEnabled: false, activeSkillIds: [], imageQuality: "", imageSize: "1:1", videoQuality: "720p", videoSize: "16:9" });
     assert.equal(preferredCanvasAgentVideoSize(["1:1", "16:9", "9:16"], "1:1"), "16:9");
     assert.equal(preferredCanvasAgentVideoSize(["1024x1024", "1280x720", "720x1280"], "1024x1024"), "1280x720");
   });
@@ -434,7 +436,7 @@ describe("canvas agent v2 runtime", () => {
     });
     assert.deepEqual(executed, ["get_canvas_summary"]);
     assert.equal(result.reply, "已读取真实画布");
-    assert.equal(checkpoints.length, 1);
+    assert.equal(checkpoints.length, 2);
     assert.match(JSON.stringify(result.protocolMessages), /nodeCount/);
   });
 
@@ -447,7 +449,7 @@ describe("canvas agent v2 runtime", () => {
     assert.match(systemMessage.content, /^保持品牌语气\n\n【Agent 公共执行手册】/);
   });
 
-  test("trims protocol history and never starts a request with an orphan tool message", async () => {
+  test("preserves complete tool pairs beyond 120 messages while inside the token budget", async () => {
     const submissionOffset = submittedInputs.length;
     const history = [
       { role: "assistant", content: "old assistant", toolCalls: [{ id: "old-call", name: "get_canvas_summary", arguments: {} }] },
@@ -457,7 +459,9 @@ describe("canvas agent v2 runtime", () => {
     agentReplies.push({ text_response: "完成" });
     await run({ protocolMessages: history, userText: "读取画布" });
     const sentProtocol = submittedInputs[submissionOffset].messages.slice(1);
-    assert.equal(sentProtocol.length, 119);
+    assert.equal(sentProtocol.length, 121);
+    assert.equal(sentProtocol[0].role, "assistant");
+    assert.equal(sentProtocol[1].tool_call_id, "old-call");
     assert.notEqual(sentProtocol[0].role, "tool");
   });
 
@@ -563,4 +567,101 @@ describe("canvas agent v2 runtime", () => {
     assert.equal(executions, 12);
     assert.match(result.reply, /步数上限/);
   });
+});
+
+describe("canvas agent reliability and memory", () => {
+  test("rejects wrong parameter types and unknown fields without coercion", () => {
+    for (const args of [{ prompt: "draw", sourceNodeIds: [], count: "2" }, { prompt: "draw", sourceNodeIds: [12] }, { prompt: "draw", sourceNodeIds: [], surprise: true }, { prompt: "draw", sourceNodeIds: [], count: 1.5 }, { prompt: "draw" }]) {
+      assert.throws(() => normalizeCanvasAgentAction("generate_image", args));
+    }
+  });
+
+  test("does not execute any action until a malformed batch is corrected", async () => {
+    const executed = [];
+    const offset = submittedInputs.length;
+    agentReplies.push({ tool_calls: [
+      { id: "valid", type: "function", function: { name: "create_text_node", arguments: '{"title":"draft","content":"full script"}' } },
+      { id: "invalid", type: "function", function: { name: "arrange_nodes", arguments: '{"nodeIds":[' } },
+    ] }, toolReply([{ name: "create_text_node", arguments: { title: "draft", content: "full script" } }]), "完成");
+    await run({ executeAction: async (action) => { executed.push(action.name); return { ok: true }; } });
+    assert.deepEqual(executed, ["create_text_node"]);
+    const correction = submittedInputs[offset + 1].messages.filter((message) => message.role === "tool");
+    assert.equal(correction.length, 2);
+    assert.ok(correction.every((message) => JSON.parse(message.content).code === "invalid_tool_arguments"));
+  });
+
+  test("limits correction to one attempt without submitting side effects", async () => {
+    let executed = false;
+    const malformed = { tool_calls: [{ id: "bad", function: { name: "generate_image", arguments: "[1]" } }] };
+    agentReplies.push(malformed, malformed);
+    await assert.rejects(run({ executeAction: async () => { executed = true; return { ok: true }; } }), /仍无效/);
+    assert.equal(executed, false);
+  });
+
+  test("refuses truncated output and more than twelve actions per batch", async () => {
+    let executed = 0;
+    agentReplies.push(toolReply(Array.from({ length: 13 }, () => ({ name: "get_canvas_summary" }))), { finish_reason: "length", text_response: "cut off" });
+    await assert.rejects(run({ executeAction: async () => { executed += 1; return { ok: true }; } }), /截断/);
+    assert.equal(executed, 0);
+  });
+
+  test("returns a result for suppressed arrangement calls so protocol pairs stay complete", async () => {
+    agentReplies.push(toolReply([{ name: "arrange_nodes", arguments: {} }, { name: "get_canvas_summary" }]), "已读取");
+    const executed = [];
+    const result = await run({ userText: "看看画布", executeAction: async (action) => { executed.push(action.name); return { ok: true }; } });
+    assert.deepEqual(executed, ["get_canvas_summary"]);
+    const messages = result.protocolMessages.filter((message) => message.role === "tool");
+    assert.equal(messages.length, 2);
+    assert.equal(JSON.parse(messages[0].content).code, "action_not_requested");
+  });
+
+  test("passes the explicit protocol and reasoning choice to every planning request", async () => {
+    const offset = submittedInputs.length;
+    agentReplies.push("你好");
+    await run({ userText: "你好", apiMode: "responses", reasoningEnabled: true });
+    assert.equal(submittedInputs[offset].apiMode, "responses");
+    assert.equal(submittedInputs[offset].reasoningEnabled, true);
+  });
+
+  test("selected Skills replace default workflow instructions and include attachment names", () => {
+    const prompt = buildCanvasAgentSkillPrompt("script", "写剧本", context(), [{ id: "skill-1", name: "只写诗", content: "只输出四行诗", description: "", scope: "personal", enabled: true, revision: 1, updated_at: "", file_paths: ["references/style.md"] }], "已确认意象：海");
+    assert.match(prompt, /只输出四行诗/);
+    assert.match(prompt, /references\/style.md/);
+    assert.match(prompt, /已确认意象：海/);
+    assert.doesNotMatch(prompt, /【总创作流程/);
+  });
+});
+
+test("replays Responses reasoning items with function call outputs", async () => {
+  const offset = submittedInputs.length;
+  const responseItems = [{ type: "reasoning", id: "r1", encrypted_content: "opaque-context", summary: [] }, { type: "function_call", id: "f1", call_id: "native-call-1", name: "get_canvas_summary", arguments: "{}" }];
+  agentReplies.push({ ...toolReply([{ name: "get_canvas_summary" }]), response_items: responseItems }, { text_response: "完成", response_items: [{ type: "message", id: "m1", role: "assistant", content: [{ type: "output_text", text: "完成" }] }] });
+  const result = await run({ apiMode: "responses" });
+  const replayed = submittedInputs[offset + 1].messages.find((message) => message.role === "assistant");
+  assert.deepEqual(replayed.response_items, responseItems);
+  assert.deepEqual(result.protocolMessages.find((message) => message.role === "assistant").responseItems, responseItems);
+});
+
+test("compacts long history before requesting a planning turn and persists the checkpoint", async () => {
+  const offset = submittedInputs.length;
+  const history = [
+    { role: "user", content: "已确认红色产品".repeat(25000) },
+    { role: "assistant", content: "已记录" },
+  ];
+  const checkpoints = [];
+  // Summarization is chunked, then the next planning turn returns normally.
+  submitOverride = async (input) => {
+    if (input.prompt === "整理对话记忆") agentReplies.push("用户已确认红色产品");
+    else agentReplies.push("收到");
+    return { id: `agent-task-${++taskCounter}` };
+  };
+  try {
+    const result = await run({ protocolMessages: history, userText: "继续说明", onCheckpoint: (value) => checkpoints.push(value) });
+    assert.equal(result.contextCheckpoint, "用户已确认红色产品");
+    const planning = submittedInputs.slice(offset).find((input) => input.prompt === "继续说明");
+    assert.match(planning.messages[0].content, /用户已确认红色产品/);
+    assert.equal(result.protocolMessages.length, 2);
+    assert.ok(checkpoints.some((value) => value.contextCheckpoint === "用户已确认红色产品"));
+    assert.equal(history[0].content.length, "已确认红色产品".length * 25000);
+  } finally { submitOverride = undefined; }
 });

@@ -71,6 +71,8 @@ function permissionCountLabel(role: ManagedRole) {
 }
 
 function RBACContent() {
+  const pageActiveRef = useRef(true);
+  const mutationPendingRef = useRef(false);
   const selectedRoleIdRef = useRef("");
   const draftVersionRef = useRef(0);
   const loadRBACAbortRef = useRef<AbortController | null>(null);
@@ -92,6 +94,7 @@ function RBACContent() {
   const [deletingRole, setDeletingRole] = useState<ManagedRole | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [pendingRole, setPendingRole] = useState<ManagedRole | null>(null);
+  const isMutating = isSaving || isCreating || isDeleting;
 
   const applySelectedRole = useCallback((role: ManagedRole | null | undefined) => {
     const roleID = role?.id || "";
@@ -105,6 +108,7 @@ function RBACContent() {
   }, []);
 
   const loadRBAC = useCallback(async () => {
+    if (!pageActiveRef.current || mutationPendingRef.current) return;
     const requestID = loadRBACRequestRef.current + 1;
     loadRBACRequestRef.current = requestID;
     loadRBACAbortRef.current?.abort();
@@ -139,8 +143,10 @@ function RBACContent() {
   }, [applySelectedRole]);
 
   useEffect(() => {
+    pageActiveRef.current = true;
     void loadRBAC();
     return () => {
+      pageActiveRef.current = false;
       loadRBACRequestRef.current += 1;
       loadRBACAbortRef.current?.abort();
     };
@@ -177,7 +183,7 @@ function RBACContent() {
   };
 
   const handleSave = async () => {
-    if (!selectedRole || isSaving) {
+    if (!pageActiveRef.current || !selectedRole || mutationPendingRef.current) {
       return;
     }
     const nextName = roleName.trim();
@@ -187,6 +193,10 @@ function RBACContent() {
     }
     const savingRoleID = selectedRole.id;
     const savingDraftVersion = draftVersionRef.current;
+    mutationPendingRef.current = true;
+    loadRBACRequestRef.current += 1;
+    loadRBACAbortRef.current?.abort();
+    setIsLoading(false);
     setIsSaving(true);
     try {
       const data = await updateManagedRole(savingRoleID, {
@@ -195,6 +205,7 @@ function RBACContent() {
         menu_paths: selectedMenuPaths,
         api_permissions: selectedApiPermissions,
       });
+      if (!pageActiveRef.current) return;
       const nextRoles = normalizeManagedRoles(data.items);
       setRoles(nextRoles);
       if (
@@ -205,24 +216,32 @@ function RBACContent() {
       }
       toast.success("角色已保存");
     } catch (error) {
+      if (!pageActiveRef.current) return;
       toast.error(error instanceof Error ? error.message : "保存角色失败");
     } finally {
-      setIsSaving(false);
+      mutationPendingRef.current = false;
+      if (pageActiveRef.current) setIsSaving(false);
     }
   };
 
   const handleCreate = async () => {
+    if (!pageActiveRef.current || mutationPendingRef.current) return;
     const nextName = createName.trim();
     if (!nextName) {
       toast.error("角色名称不能为空");
       return;
     }
+    mutationPendingRef.current = true;
+    loadRBACRequestRef.current += 1;
+    loadRBACAbortRef.current?.abort();
+    setIsLoading(false);
     setIsCreating(true);
     try {
       const data = await createManagedRole({
         name: nextName,
         description: createDescription.trim(),
       });
+      if (!pageActiveRef.current) return;
       const nextRoles = normalizeManagedRoles(data.items);
       setRoles(nextRoles);
       applySelectedRole(nextRoles.find((role) => role.id === data.item.id) || data.item);
@@ -231,28 +250,39 @@ function RBACContent() {
       setIsCreateDialogOpen(false);
       toast.success("角色已创建");
     } catch (error) {
+      if (!pageActiveRef.current) return;
       toast.error(error instanceof Error ? error.message : "创建角色失败");
     } finally {
-      setIsCreating(false);
+      mutationPendingRef.current = false;
+      if (pageActiveRef.current) setIsCreating(false);
     }
   };
 
   const handleDelete = async () => {
-    if (!deletingRole || isDeleting) {
+    if (!pageActiveRef.current || !deletingRole || mutationPendingRef.current) {
       return;
     }
+    mutationPendingRef.current = true;
+    loadRBACRequestRef.current += 1;
+    loadRBACAbortRef.current?.abort();
+    setIsLoading(false);
     setIsDeleting(true);
     try {
       const data = await deleteManagedRole(deletingRole.id);
+      if (!pageActiveRef.current) return;
       const nextRoles = normalizeManagedRoles(data.items);
       setRoles(nextRoles);
-      applySelectedRole(nextRoles.find((role) => role.id === selectedRoleId) || nextRoles[0] || null);
+      if (selectedRoleIdRef.current === deletingRole.id) {
+        applySelectedRole(nextRoles[0] || null);
+      }
       setDeletingRole(null);
       toast.success("角色已删除");
     } catch (error) {
+      if (!pageActiveRef.current) return;
       toast.error(error instanceof Error ? error.message : "删除角色失败");
     } finally {
-      setIsDeleting(false);
+      mutationPendingRef.current = false;
+      if (pageActiveRef.current) setIsDeleting(false);
     }
   };
 
@@ -275,7 +305,7 @@ function RBACContent() {
               size="icon"
               title="刷新角色权限"
               onClick={() => void loadRBAC()}
-              disabled={isLoading || isDirty}
+              disabled={isLoading || isDirty || isMutating}
               className="size-10 rounded-lg"
             >
               <RefreshCw className={cn("size-4", isLoading ? "animate-spin" : "")} />
@@ -284,7 +314,7 @@ function RBACContent() {
               size="icon"
               title="创建角色"
               onClick={() => setIsCreateDialogOpen(true)}
-              disabled={isLoading}
+              disabled={isLoading || isMutating}
               className="size-10 rounded-lg"
             >
               <Plus className="size-4" />
@@ -374,7 +404,7 @@ function RBACContent() {
                       size="icon"
                       title="撤销未保存修改"
                       className="size-9 rounded-lg"
-                      disabled={isSaving}
+                      disabled={isMutating}
                       onClick={() => applySelectedRole(selectedRole)}
                     >
                       <Undo2 className="size-4" />
@@ -386,14 +416,14 @@ function RBACContent() {
                     size="icon"
                     title={selectedRole?.builtin ? "内置角色不能删除" : selectedRole?.user_count ? "请先解除该角色绑定的用户" : "删除角色"}
                     className="size-9 rounded-lg border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
-                    disabled={!selectedRole || Boolean(selectedRole.builtin) || Boolean(selectedRole.user_count)}
+                    disabled={!selectedRole || Boolean(selectedRole.builtin) || Boolean(selectedRole.user_count) || isLoading || isMutating}
                     onClick={() => selectedRole ? setDeletingRole(selectedRole) : null}
                   >
                     <Trash2 className="size-4" />
                   </Button>
                   <Button
                     onClick={() => void handleSave()}
-                    disabled={!selectedRole || !isDirty || isSaving || isLoading}
+                    disabled={!selectedRole || !isDirty || isMutating || isLoading}
                     className="h-9 rounded-lg"
                   >
                     {isSaving ? <LoaderCircle className="size-4 animate-spin" /> : <Save className="size-4" />}
@@ -411,7 +441,7 @@ function RBACContent() {
                       setRoleName(event.target.value);
                     }}
                     placeholder="角色名称"
-                    disabled={!selectedRole || isLoading || isSaving}
+                    disabled={!selectedRole || isLoading || isMutating}
                     className="h-10 rounded-lg bg-background/70 text-foreground"
                   />
                 </label>
@@ -424,7 +454,7 @@ function RBACContent() {
                       setRoleDescription(event.target.value);
                     }}
                     placeholder="说明角色职责或适用范围"
-                    disabled={!selectedRole || isLoading || isSaving}
+                    disabled={!selectedRole || isLoading || isMutating}
                     className="h-10 rounded-lg bg-background/70 text-foreground"
                   />
                 </label>
@@ -449,7 +479,7 @@ function RBACContent() {
                     draftVersionRef.current += 1;
                     setSelectedApiPermissions(permissions);
                   }}
-                  disabled={isSaving}
+                  disabled={isMutating}
                 />
               ) : (
                 <EmptyState icon={ShieldCheck} title="暂无角色" description="请先创建或选择一个角色" className="min-h-[420px]" />
@@ -458,7 +488,7 @@ function RBACContent() {
         </ManagementPanel>
       </div>
 
-      <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+      <Dialog open={isCreateDialogOpen} onOpenChange={(open) => { if (!mutationPendingRef.current) setIsCreateDialogOpen(open); }}>
         <DialogContent className="rounded-xl p-4 sm:p-6">
           <DialogHeader className="gap-2">
             <DialogTitle>创建角色</DialogTitle>
@@ -468,6 +498,7 @@ function RBACContent() {
             <label className="text-sm font-medium text-foreground">名称</label>
             <Input
               value={createName}
+              disabled={isCreating}
               onChange={(event) => setCreateName(event.target.value)}
               placeholder="例如：运营人员"
               className="h-10 rounded-lg"
@@ -477,6 +508,7 @@ function RBACContent() {
             <label className="text-sm font-medium text-foreground">描述</label>
             <Input
               value={createDescription}
+              disabled={isCreating}
               onChange={(event) => setCreateDescription(event.target.value)}
               placeholder="角色职责或使用范围"
               className="h-10 rounded-lg"
@@ -486,7 +518,7 @@ function RBACContent() {
             <Button type="button" variant="secondary" className="h-10 rounded-lg px-5" onClick={() => setIsCreateDialogOpen(false)} disabled={isCreating}>
               取消
             </Button>
-            <Button type="button" className="h-10 rounded-lg px-5" onClick={() => void handleCreate()} disabled={isCreating}>
+            <Button type="button" className="h-10 rounded-lg px-5" onClick={() => void handleCreate()} disabled={isMutating}>
               {isCreating ? <LoaderCircle className="size-4 animate-spin" /> : <Plus className="size-4" />}
               创建
             </Button>
@@ -494,7 +526,7 @@ function RBACContent() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={Boolean(deletingRole)} onOpenChange={(open) => (!open ? setDeletingRole(null) : null)}>
+      <Dialog open={Boolean(deletingRole)} onOpenChange={(open) => (!open && !mutationPendingRef.current ? setDeletingRole(null) : null)}>
         <DialogContent className="rounded-xl p-4 sm:p-6">
           <DialogHeader className="gap-2">
             <DialogTitle>删除角色</DialogTitle>
@@ -511,7 +543,7 @@ function RBACContent() {
               variant="destructive"
               className="h-10 rounded-lg px-5"
               onClick={() => void handleDelete()}
-              disabled={isDeleting}
+              disabled={isMutating}
             >
               {isDeleting ? <LoaderCircle className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
               删除

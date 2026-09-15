@@ -1,0 +1,60 @@
+{
+  "scope": "Users/RBAC mutation concurrency and associated regression tests",
+  "files": [
+    {
+      "path": "web/src/app/users/page.tsx",
+      "status": "reviewed",
+      "checks": [
+        "Full source read; async query ownership, concurrent writes, dialog state, session lifetime, validation, role selection and pagination reviewed",
+        "Fixed stale mutation refresh parameters, repeated same-turn writes, pending dialog/form changes and callbacks after unmount",
+        "19 mutation concurrency tests passed; 19 existing layout/statistics tests passed; scoped Oxlint and TypeScript build passed"
+      ],
+      "sha256": "626454df3d36774cd5c1557efe9cbdb3e1d38ef49413904d98c56f9922bb96c6",
+      "bytes": 44975
+    },
+    {
+      "path": "web/src/app/rbac/page.tsx",
+      "status": "reviewed",
+      "checks": [
+        "Full source read; async query ownership, concurrent writes, dialog state, session lifetime, validation, role selection and pagination reviewed",
+        "Serialized role writes with a synchronous lock; invalidated older full-table loads; preserved newer selected drafts; locked pending dialogs and ignored unmounted responses",
+        "19 mutation concurrency tests passed; 19 existing layout/statistics tests passed; scoped Oxlint and TypeScript build passed"
+      ],
+      "sha256": "e72a6f55236739bea1c9508908f5191f08165b37be2eec96f548e508511d91a2",
+      "bytes": 25055
+    },
+    {
+      "path": "web/tests/management-mutation-concurrency.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Full test source read; assertions, async isolation, fixture cleanup and current behavior reviewed",
+        "Associated behavior regression coverage inspected",
+        "19 mutation concurrency tests passed; 19 existing layout/statistics tests passed; scoped Oxlint and TypeScript build passed"
+      ],
+      "sha256": "94ff64149f0c419c9cc312afa942015830d80ac6d620db431b9f206fdeeb0815",
+      "bytes": 11474
+    },
+    {
+      "path": "web/tests/user-usage-stats.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Full test source read; assertions, async isolation, fixture cleanup and current behavior reviewed",
+        "Associated behavior regression coverage inspected",
+        "19 mutation concurrency tests passed; 19 existing layout/statistics tests passed; scoped Oxlint and TypeScript build passed"
+      ],
+      "sha256": "a0f1f374565297212d5e4159096822592bfdbb04ba9fc1203b616fb2c639051a",
+      "bytes": 989
+    },
+    {
+      "path": "web/tests/management-page-layouts.test.mjs",
+      "status": "reviewed",
+      "checks": [
+        "Full test source read; assertions, async isolation, fixture cleanup and current behavior reviewed",
+        "Associated behavior regression coverage inspected",
+        "19 mutation concurrency tests passed; 19 existing layout/statistics tests passed; scoped Oxlint and TypeScript build passed"
+      ],
+      "sha256": "3bcbb4b087a3134744877090731897f194af98065180dfc3a89415cbb1f528f0",
+      "bytes": 9232
+    }
+  ]
+}

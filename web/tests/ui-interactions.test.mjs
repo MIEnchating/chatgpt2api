@@ -504,7 +504,7 @@ test("workflow task history stays out of the template page and opens on demand",
 test("multi-image workflow history uses one durable batch and persistent clearing", () => {
   assert.match(workflowSource, /const seriesRun: WorkflowSeriesRun = \{[\s\S]*?id: taskID\("workflow-series-images"\)/);
   assert.match(workflowSource, /batch_task_id: localTaskID,[\s\S]*?batch_index: batchIndex,[\s\S]*?batch_count: batchCount/);
-  assert.match(workflowSource, /await deleteCreationTasks\(backendTaskIDs\)/);
+  assert.match(workflowSource, /await deleteCreationTasks\(backendTaskIDs, \{ signal: taskWaitAbortControllerRef\.current!\.signal \}\)/);
   assert.match(workflowSource, />一并删除关联素材</);
   assert.match(workflowSource, /onClearCompleted: \(includeAssets: boolean\) => Promise<boolean>/);
   assert.match(workflowSource, /getManagedImagePathFromUrl\(image\.url\)/);

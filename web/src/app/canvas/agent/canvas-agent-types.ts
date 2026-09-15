@@ -39,11 +39,12 @@ export type CanvasAgentToolCall = {
   id: string;
   name: string;
   arguments: Record<string, unknown>;
+  argumentsError?: string;
 };
 
 export type CanvasAgentProtocolMessage =
   | { role: "user" | "system"; content: CanvasAgentContent }
-  | { role: "assistant"; content?: string; reasoningContent?: string; toolCalls?: CanvasAgentToolCall[] }
+  | { role: "assistant"; content?: string; reasoningContent?: string; responseItems?: Record<string, unknown>[]; toolCalls?: CanvasAgentToolCall[] }
   | { role: "tool"; content: string; toolCallId: string; name: string };
 
 export type CanvasAssistantMessageStatus = "thinking" | "running" | "waiting" | "success" | "error";
@@ -63,11 +64,19 @@ export type CanvasAssistantSession = {
   messages: CanvasAssistantMessage[];
   agentState: CanvasAgentState;
   protocolMessages: CanvasAgentProtocolMessage[];
+  contextCheckpoint?: string;
+  codexThreadId?: string;
+  codexServiceId?: string;
+  activeSkillIds?: string[];
   createdAt: string;
   updatedAt: string;
 };
 
 export type CanvasAgentConfig = {
+  autoGenerateMedia?: boolean;
+  textApiMode?: "chat" | "responses";
+  textReasoningEnabled?: boolean;
+  activeSkillIds?: string[];
   imageQuality: string;
   imageSize: string;
   videoQuality: string;

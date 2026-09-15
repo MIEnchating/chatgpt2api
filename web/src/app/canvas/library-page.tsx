@@ -1,3 +1,4 @@
+import { CanvasAgentSkillPicker } from "@/app/canvas/canvas-agent-skill-picker";
 import { ArrowRight, ArrowUp, Bot, CheckSquare, Download, FileUp, FolderOpen, Image as ImageIcon, LoaderCircle, Menu, Pencil, Plus, Sparkles, Trash2, Upload, Video, X } from "lucide-react";
 import { type ChangeEvent, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -436,6 +437,7 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
               placeholder="描述创作目标"
               aria-label="Agent 创作目标"
             />
+            <div className="mt-2"><CanvasAgentSkillPicker selectedIds={agentConfig.activeSkillIds || []} onChange={(activeSkillIds) => setAgentConfig((current) => ({ ...current, activeSkillIds }))} disabled={busy} /></div>
             <div className="mt-2 flex min-w-0 items-center gap-1.5">
               <AgentStarterAssetMenu uploading={uploadingAsset} busy={busy} onUpload={() => agentUploadInputRef.current?.click()} onOpenAssets={() => setAssetPickerOpen(true)} />
               <AgentStarterParameterMenu disabled={!agentImageModel} icon={<ImageIcon />} label="图片参数" summary={canvasAgentImageSettingsSummary(agentConfig.imageQuality, agentConfig.imageSize)}>{agentImageModel ? <CanvasAgentImageSettings model={agentImageModel} quality={agentConfig.imageQuality} size={agentConfig.imageSize} onChange={(patch) => setAgentConfig((current) => ({ ...current, ...patch }))} /> : null}</AgentStarterParameterMenu>

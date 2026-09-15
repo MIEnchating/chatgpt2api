@@ -71,6 +71,7 @@ type myAssetDocument struct {
 	pendingObjectDeletions []string
 	recordOnlyDeletions    []string
 	generation             int64
+	labelsUnified          bool
 }
 
 var ErrStorageObjectInUse = errors.New("storage object is still referenced")
@@ -94,12 +95,17 @@ func (s *MyAssetService) ListVisible(viewerID string, admin bool, owners []MyAss
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	viewerDocument, err := s.loadDocumentLocked(viewerID)
+	if err != nil {
+		return nil, err
+	}
 	documents, batched := s.listAssetDocumentsLocked()
 	items := make([]MyAsset, 0)
 	for _, owner := range ownerByID {
 		var ownedItems []MyAsset
-		if batched {
-			ownedItems = decodeMyAssets(documents[myAssetDocumentName(owner.ID)])
+		raw := documents[myAssetDocumentName(owner.ID)]
+		if batched && (raw == nil || util.StringMap(raw)["labelsUnified"] == true) {
+			ownedItems = decodeMyAssets(raw)
 		} else {
 			var err error
 			ownedItems, err = s.loadLocked(owner.ID)
@@ -115,6 +121,7 @@ func (s *MyAssetService) ListVisible(viewerID string, admin bool, owners []MyAss
 			item.OwnerID = owner.ID
 			item.OwnerName = owner.Name
 			item.Owned = owned
+			item.Tags = myAssetLabelNames(viewerDocument.groups, myAssetLabelKey(viewerID, owner.ID+":"+item.ID))
 			items = append(items, item)
 		}
 	}
@@ -139,6 +146,7 @@ func (s *MyAssetService) TextGovernance(viewerID string, admin bool, owners []My
 }
 
 type MyAssetService struct {
+	fileReferences       FileReferenceProtector
 	mu                   sync.Mutex
 	store                storage.JSONDocumentBackend
 	objects              MyAssetObjectStorage
@@ -163,6 +171,10 @@ func NewMyAssetService(backend storage.Backend, objects MyAssetObjectStorage, co
 		objects:              objects,
 		deletionCoordinators: append([]StorageObjectDeletionCoordinator(nil), coordinators...),
 	}
+}
+
+func (s *MyAssetService) SetFileReferenceProtector(protector FileReferenceProtector) {
+	s.fileReferences = protector
 }
 
 func (s *MyAssetService) List(ownerID string) ([]MyAsset, error) {
@@ -213,6 +225,12 @@ func (s *MyAssetService) ReadStorageObjectForIdentity(viewerID string, admin boo
 // Upsert applies one asset mutation to the latest stored document. Retrying the
 // item-level intent after a document CAS conflict preserves unrelated writes.
 func (s *MyAssetService) Upsert(ctx context.Context, ownerID string, admin bool, input MyAsset) (MyAsset, error) {
+	releaseReferences, err := protectStorageReferences(s.fileReferences, input)
+	if err != nil {
+		return MyAsset{}, err
+	}
+	defer releaseReferences()
+
 	ownerID = strings.TrimSpace(ownerID)
 	if ownerID == "" {
 		return MyAsset{}, fmt.Errorf("owner_id is required")
@@ -287,6 +305,12 @@ func (s *MyAssetService) Upsert(ctx context.Context, ownerID string, admin bool,
 			break
 		}
 
+		if err := addMyAssetLabels(&document, candidate.ID, candidate.Tags); err != nil {
+			s.mu.Unlock()
+			lastErr = err
+			break
+		}
+		candidate.Tags = myAssetLabelNames(document.groups, "self:"+candidate.ID)
 		if matched >= 0 {
 			items[matched] = candidate
 		} else {
@@ -871,19 +895,42 @@ func (s *MyAssetService) loadLocked(ownerID string) ([]MyAsset, error) {
 }
 
 func (s *MyAssetService) loadDocumentLocked(ownerID string) (myAssetDocument, error) {
+	for attempt := 0; attempt < myAssetSaveAttempts; attempt++ {
+		document, err := s.readDocumentLocked(ownerID)
+		if err != nil || document.labelsUnified {
+			return document, err
+		}
+		unifyMyAssetLabels(ownerID, &document)
+		if err := s.saveDocumentLocked(ownerID, document); err != nil {
+			if errors.Is(err, storage.ErrConcurrentRowUpdate) {
+				continue
+			}
+			return myAssetDocument{}, err
+		}
+		return s.readDocumentLocked(ownerID)
+	}
+	return myAssetDocument{}, storage.ErrConcurrentRowUpdate
+}
+
+func (s *MyAssetService) readDocumentLocked(ownerID string) (myAssetDocument, error) {
 	raw, err := loadStoredJSON(s.store, myAssetDocumentName(ownerID))
 	if err != nil {
 		return myAssetDocument{}, err
 	}
 	value := util.StringMap(raw)
-	return myAssetDocument{
+	document := myAssetDocument{
 		ownerID:                strings.TrimSpace(util.Clean(value[myAssetDocumentOwnerIDField])),
 		items:                  decodeMyAssets(raw),
 		groups:                 decodeMyAssetGroups(value["groups"]),
 		pendingObjectDeletions: appendMyAssetObjectDeletionIDs(nil, util.AsStringSlice(value[myAssetPendingObjectDeletionsField])...),
 		recordOnlyDeletions:    appendMyAssetObjectDeletionIDs(nil, util.AsStringSlice(value[myAssetRecordOnlyDeletionsField])...),
 		generation:             int64(util.ToInt(value[myAssetDocumentGenerationField], 0)),
-	}, nil
+		labelsUnified:          value["labelsUnified"] == true || raw == nil,
+	}
+	if document.labelsUnified {
+		projectMyAssetLabels(&document)
+	}
+	return document, nil
 }
 
 func (s *MyAssetService) saveDocumentLocked(ownerID string, document myAssetDocument) error {
@@ -892,7 +939,11 @@ func (s *MyAssetService) saveDocumentLocked(ownerID string, document myAssetDocu
 	if document.generation <= 0 {
 		document.generation = 1
 	}
-	value := map[string]any{"items": document.items, myAssetDocumentGenerationField: document.generation, myAssetDocumentOwnerIDField: document.ownerID}
+	items := append([]MyAsset(nil), document.items...)
+	for index := range items {
+		items[index].Tags = nil
+	}
+	value := map[string]any{"items": items, "labelsUnified": true, myAssetDocumentGenerationField: document.generation, myAssetDocumentOwnerIDField: document.ownerID}
 	value["groups"] = document.groups
 	if len(document.pendingObjectDeletions) > 0 {
 		value[myAssetPendingObjectDeletionsField] = document.pendingObjectDeletions
@@ -927,7 +978,7 @@ func decodeMyAssets(raw any) []MyAsset {
 		item, err := normalizeMyAsset(MyAsset{
 			ID: util.Clean(candidate["id"]), Kind: util.Clean(candidate["kind"]), Title: util.Clean(candidate["title"]),
 			CoverURL: util.Clean(candidate["coverUrl"]), URL: util.Clean(candidate["url"]), StorageKey: util.Clean(candidate["storageKey"]), Content: util.Clean(candidate["content"]),
-			MIMEType: util.Clean(candidate["mimeType"]), Tags: cleanMyAssetStrings(candidate["tags"], 24), Visibility: util.Clean(candidate["visibility"]), Source: util.Clean(candidate["source"]), Note: util.Clean(candidate["note"]),
+			MIMEType: util.Clean(candidate["mimeType"]), Tags: cleanMyAssetStrings(candidate["tags"], 200), Visibility: util.Clean(candidate["visibility"]), Source: util.Clean(candidate["source"]), Note: util.Clean(candidate["note"]),
 			Bytes: int64(util.ToInt(candidate["bytes"], 0)), Width: util.ToInt(candidate["width"], 0), Height: util.ToInt(candidate["height"], 0), DurationMs: int64(util.ToInt(candidate["durationMs"], 0)),
 			CreatedAt: util.Clean(candidate["createdAt"]), UpdatedAt: util.Clean(candidate["updatedAt"]), Metadata: util.StringMap(candidate["metadata"]),
 		})
@@ -977,7 +1028,7 @@ func normalizeMyAsset(item MyAsset) (MyAsset, error) {
 	if item.Bytes < 0 || item.Width < 0 || item.Height < 0 || item.DurationMs < 0 {
 		return MyAsset{}, fmt.Errorf("asset media metadata cannot be negative")
 	}
-	item.Tags = cleanMyAssetStrings(item.Tags, 24)
+	item.Tags = cleanMyAssetStrings(item.Tags, 200)
 	if item.CreatedAt == "" {
 		item.CreatedAt = util.NowISO()
 	}

@@ -63,6 +63,7 @@ export type CanvasNode = {
   generation_video_last_frame_node_id?: string;
   generation_mode?: "image" | "text" | "video" | "audio";
   generation_text_model?: string;
+  generation_workflow_inputs?: Record<string, string | number | boolean>;
   generation_audio_model?: string;
   generation_audio_voice?: string;
   generation_audio_format?: "mp3" | "wav" | "opus" | "aac" | "flac" | "pcm";
@@ -145,6 +146,9 @@ type CanvasAgentMessage = {
 };
 
 export type CanvasDocument = {
+  retained_storage_object_ids?: string[];
+  retained_storage_object_urls?: string[];
+  retained_storage_objects_until?: string;
   version: number;
   id: string;
   revision: number;

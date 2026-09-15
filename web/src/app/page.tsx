@@ -1,30 +1,18 @@
 "use client";
 
-import { useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { Navigate } from "react-router-dom";
 
-import { getVerifiedAuthSession } from "@/lib/session";
 import { getDefaultRouteForSession } from "@/lib/auth-session";
+import { useAuthGuard } from "@/lib/use-auth-guard";
 
 export default function HomePage() {
-  const navigate = useNavigate();
-
-  useEffect(() => {
-    let active = true;
-
-    const redirect = async () => {
-      const session = await getVerifiedAuthSession();
-      if (!active) {
-        return;
-      }
-      navigate(session ? getDefaultRouteForSession(session) : "/login", { replace: true });
-    };
-
-    void redirect();
-    return () => {
-      active = false;
-    };
-  }, [navigate]);
-
-  return null;
+  const { isCheckingAuth, session } = useAuthGuard();
+  if (!isCheckingAuth && session) {
+    return <Navigate to={getDefaultRouteForSession(session)} replace />;
+  }
+  return (
+    <div role="status" className="flex h-full items-center justify-center text-sm text-muted-foreground">
+      {isCheckingAuth ? "正在验证登录状态" : "暂时无法验证登录状态"}
+    </div>
+  );
 }

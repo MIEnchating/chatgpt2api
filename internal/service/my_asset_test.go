@@ -503,7 +503,8 @@ func TestMyAssetsVisibleScopeHonorsVisibilityAndAdminAccess(t *testing.T) {
 	if len(visible) != 3 {
 		t.Fatalf("ListVisible(user-b) = %#v", visible)
 	}
-	if countingBackend.prefixCalls != 1 || countingBackend.loadCalls != 0 {
+	// Load the viewer's labels once; asset documents are still read in one batch.
+	if countingBackend.prefixCalls != 1 || countingBackend.loadCalls != 1 {
 		t.Fatalf("ListVisible() prefix calls = %d, per-owner loads = %d", countingBackend.prefixCalls, countingBackend.loadCalls)
 	}
 	byID := make(map[string]MyAsset, len(visible))

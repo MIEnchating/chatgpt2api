@@ -79,8 +79,8 @@ export function StorageProviderCard() {
     setSaving(true);
     try {
       const providers = await updateUserStorageProviders({ s3, webdav });
-      setS3({ ...defaultUserStorageProvider(), ...providers.s3, type: "s3" });
-      setWebDAV({ ...defaultUserWebDAVStorageProvider(), ...providers.webdav, type: "webdav" });
+      setS3((current) => current === s3 ? { ...defaultUserStorageProvider(), ...providers.s3, type: "s3" } : current);
+      setWebDAV((current) => current === webdav ? { ...defaultUserWebDAVStorageProvider(), ...providers.webdav, type: "webdav" } : current);
       toast.success("存储配置已保存");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "存储配置保存失败");

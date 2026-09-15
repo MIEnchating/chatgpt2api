@@ -60,6 +60,9 @@ type App struct {
 	myAssets                *service.MyAssetService
 	history                 *service.ImageConversationHistoryService
 	canvas                  *service.CanvasDocumentService
+	agentSkills             *service.AgentSkillService
+	autoDL                  *service.AutoDLService
+	fileLifecycle           *service.FileLifecycleService
 	announce                *service.AnnouncementService
 	videoContracts          *videocontract.VideoModelContractService
 	imagePreferences        *service.ImageGenerationPreferenceService
@@ -305,8 +308,17 @@ func NewApp() (*App, error) {
 		return err
 	})
 	workflows := service.NewWorkflowService(storageBackend)
-	myAssets := service.NewMyAssetService(storageBackend, storageFiles, canvas, workflows)
-	app := &App{ctx: ctx, config: cfg, auth: auth, logs: logs, logger: logger, proxy: proxy, images: images, videoDir: videoDir, audioDir: audioDir, videoReferenceDir: videoReferenceDir, conversationAssets: service.NewImageConversationAssetService(filepath.Join(cfg.DataDir, "image_conversation_assets")), prompts: service.NewPromptFavoriteService(storageBackend), myAssets: myAssets, history: service.NewImageConversationHistoryService(storageBackend), canvas: canvas, announce: service.NewAnnouncementService(storageBackend), videoContracts: videoContracts, imagePreferences: service.NewImageGenerationPreferenceService(storageBackend), customRelayConfigs: service.NewCustomRelayConfigService(storageBackend), workflows: workflows, storageFiles: storageFiles, newAPIKeys: newAPIKeys, newRelayTokenReader: service.NewNewAPITokenReader, newSafeRelayHTTPClient: service.SafeOutboundHTTPClient, cancel: cancel, historyWriteLimiter: newImageConversationHistoryWriteLimiter(imageConversationHistoryWriteParallelism), imageUploadSlots: make(chan struct{}, 2), storageUploadSlots: make(chan struct{}, 2), loginLimiter: newLoginRateLimiter(), storageBackendCloser: storageBackendCloser}
+	fileLifecycle, err := service.NewFileLifecycleService(storageBackend)
+	if err != nil {
+		return nil, fmt.Errorf("initialize file lifecycle: %w", err)
+	}
+	myAssets := service.NewMyAssetService(storageBackend, storageFiles, canvas, workflows, fileLifecycle)
+	app := &App{ctx: ctx, config: cfg, auth: auth, logs: logs, logger: logger, proxy: proxy, images: images, videoDir: videoDir, audioDir: audioDir, videoReferenceDir: videoReferenceDir, conversationAssets: service.NewImageConversationAssetService(filepath.Join(cfg.DataDir, "image_conversation_assets")), prompts: service.NewPromptFavoriteService(storageBackend), myAssets: myAssets, history: service.NewImageConversationHistoryService(storageBackend), canvas: canvas, agentSkills: service.NewAgentSkillService(storageBackend), autoDL: service.NewAutoDLService(), announce: service.NewAnnouncementService(storageBackend), videoContracts: videoContracts, imagePreferences: service.NewImageGenerationPreferenceService(storageBackend), customRelayConfigs: service.NewCustomRelayConfigService(storageBackend), workflows: workflows, storageFiles: storageFiles, newAPIKeys: newAPIKeys, newRelayTokenReader: service.NewNewAPITokenReader, newSafeRelayHTTPClient: service.SafeOutboundHTTPClient, cancel: cancel, historyWriteLimiter: newImageConversationHistoryWriteLimiter(imageConversationHistoryWriteParallelism), imageUploadSlots: make(chan struct{}, 2), storageUploadSlots: make(chan struct{}, 2), loginLimiter: newLoginRateLimiter(), storageBackendCloser: storageBackendCloser}
+	app.fileLifecycle = fileLifecycle
+	canvas.SetFileReferenceProtector(fileLifecycle)
+	workflows.SetFileReferenceProtector(fileLifecycle)
+	myAssets.SetFileReferenceProtector(fileLifecycle)
+	app.history.SetFileReferenceProtector(fileLifecycle)
 	if _, err := cryptorand.Read(app.referenceSigningKey[:]); err != nil {
 		return nil, fmt.Errorf("initialize reference URL signing: %w", err)
 	}
@@ -341,6 +353,7 @@ func NewApp() (*App, error) {
 		cfg.UserDefaultConcurrentLimit,
 		cfg.UserDefaultRPMLimit,
 	)
+	app.tasks.SetFileReferenceProtector(fileLifecycle)
 	app.tasks.SetVideoHandler(func(ctx context.Context, identity service.Identity, payload map[string]any) (map[string]any, error) {
 		return app.runLoggedVideoTask(ctx, identity, payload)
 	})
@@ -365,7 +378,7 @@ func NewApp() (*App, error) {
 	}
 	app.startImageStorageCleaner(ctx, time.Hour)
 	app.startImageConversationAssetCleaner(ctx, time.Hour)
-	app.startMyAssetDeletionCleaner(ctx, time.Hour)
+	app.startMyAssetDeletionCleaner(ctx, time.Minute)
 	app.startGeneratedMediaCleaner(ctx, time.Hour)
 	startupCleanup.commit()
 	return app, nil
@@ -379,6 +392,11 @@ func (a *App) startMyAssetDeletionCleaner(ctx context.Context, interval time.Dur
 		interval = time.Hour
 	}
 	run := func() {
+		if a.fileLifecycle != nil {
+			if err := a.fileLifecycle.Sweep(ctx, a.myAssets); err != nil && ctx.Err() == nil && a.logger != nil {
+				a.logger.Warning("unreferenced file cleanup failed", "error", err)
+			}
+		}
 		if err := a.myAssets.RetryAllPendingObjectDeletions(ctx, a.myAssetCleanupOwnerIDs()...); err != nil && ctx.Err() == nil && a.logger != nil {
 			a.logger.Warning("retry pending asset object deletions failed", "error", err)
 		}
@@ -776,6 +794,9 @@ func (a *App) handleUpstreamModels(w http.ResponseWriter, r *http.Request) {
 		relayBaseURL = credential.BaseURL
 		if credential.Custom {
 			r = r.WithContext(withCustomRelayContext(r.Context()))
+		}
+		if a.handleExternalWorkflowModels(w, r, credential, started, identity) {
+			return
 		}
 	}
 	newAPIKeys, releaseRelayTokenReader := a.acquireRelayTokenReader()
@@ -2222,6 +2243,8 @@ func isPermissionCheckSkipped(method, path string) bool {
 		return true
 	case "/api/profile/upstream-models":
 		return true
+	case "/api/profile/agent-skills", "/api/profile/autodl-workflows":
+		return true
 	case "/api/profile/prompt-favorites":
 		return true
 	case "/api/profile/assets":
@@ -2231,7 +2254,8 @@ func isPermissionCheckSkipped(method, path string) bool {
 	case "/api/profile/image-conversations":
 		return true
 	default:
-		return strings.HasPrefix(path, "/api/profile/custom-relay-configs/") ||
+		return strings.HasPrefix(path, "/api/profile/agent-skills/") ||
+			strings.HasPrefix(path, "/api/profile/custom-relay-configs/") ||
 			strings.HasPrefix(path, "/api/profile/prompt-favorites/") ||
 			strings.HasPrefix(path, "/api/profile/image-conversations/") ||
 			(method == http.MethodGet || method == http.MethodHead) && strings.HasPrefix(path, "/api/files/")
@@ -2355,6 +2379,14 @@ func readMultipartImageBody(w http.ResponseWriter, r *http.Request) (map[string]
 			return nil, nil, fmt.Errorf("image file is empty")
 		}
 		images = append(images, image)
+	}
+	rawReferences := firstForm(r.MultipartForm, "image_references")
+	if rawReferences != "" && r.URL.Path != "/api/creation-tasks/image-edits" {
+		return nil, nil, fmt.Errorf("image_references is only supported by creation task image edits")
+	}
+	images, err := orderedImageReferences(rawReferences, images, body, r.Host)
+	if err != nil {
+		return nil, nil, err
 	}
 	return body, images, nil
 }
@@ -3368,16 +3400,13 @@ func (a *App) runLoggedChatTaskWithContext(ctx context.Context, identity service
 		a.logCall(ctx, identity, summary, http.MethodPost, endpoint, model, start, "failed", protocolErrorHTTPStatus(err), err.Error(), nil, requestCapture)
 		return nil, err
 	}
-	result, stream, err := a.relayChatCompletions(ctx, payload)
-	if stream != nil {
-		result, err = collectRelayChatTaskStream(payload, stream)
-	}
+	result, err := a.executeChatTaskRequest(ctx, payload)
 	if err != nil {
 		a.logCall(ctx, identity, summary, http.MethodPost, endpoint, model, start, "failed", protocolErrorHTTPStatus(err), err.Error(), nil, requestCapture)
 		return result, err
 	}
 	data := chatCompletionTaskData(result)
-	if util.Clean(data["text_response"]) == "" && len(util.AsMapSlice(data["tool_calls"])) == 0 {
+	if util.Clean(data["text_response"]) == "" && len(util.AsMapSlice(data["tool_calls"])) == 0 && data["finish_reason"] != "length" && data["finish_reason"] != "incomplete" {
 		err = errors.New("模型没有返回文本内容或工具调用")
 		a.logCall(ctx, identity, summary, http.MethodPost, endpoint, model, start, "failed", http.StatusBadGateway, err.Error(), nil, requestCapture)
 		return result, err
@@ -3393,6 +3422,11 @@ func (a *App) runLoggedChatTaskWithContext(ctx context.Context, identity service
 func chatCompletionTaskData(result map[string]any) map[string]any {
 	for _, item := range util.AsMapSlice(result["data"]) {
 		data := map[string]any{}
+		for _, key := range []string{"finish_reason", "usage", "response_items"} {
+			if value, ok := item[key]; ok {
+				data[key] = value
+			}
+		}
 		if text, ok := item["text_response"].(string); ok && text != "" {
 			data["text_response"] = text
 		}
@@ -3409,6 +3443,12 @@ func chatCompletionTaskData(result map[string]any) map[string]any {
 	for _, choice := range util.AsMapSlice(result["choices"]) {
 		message := util.StringMap(choice["message"])
 		data := map[string]any{}
+		if value, ok := choice["finish_reason"]; ok {
+			data["finish_reason"] = value
+		}
+		if value, ok := result["usage"]; ok {
+			data["usage"] = value
+		}
 		if text := chatCompletionContentRawText(message["content"]); text != "" {
 			data["text_response"] = text
 		}
@@ -3430,12 +3470,17 @@ func collectRelayChatTaskStream(payload map[string]any, stream *protocol.StreamR
 	model := ""
 	var text strings.Builder
 	var reasoning strings.Builder
+	var finishReason string
+	var usage any
 	toolCalls := map[int]*chatCompletionToolCallParts{}
 	onProgress := relayTextTaskProgressCallback(payload)
 
 	for item := range stream.Items {
 		if item == nil {
 			continue
+		}
+		if value, ok := item["usage"]; ok && value != nil {
+			usage = value
 		}
 		if value := util.ToInt(item["created"], 0); value > 0 {
 			created = int64(value)
@@ -3450,6 +3495,9 @@ func collectRelayChatTaskStream(payload map[string]any, stream *protocol.StreamR
 			}
 		}
 		for _, choice := range util.AsMapSlice(item["choices"]) {
+			if value := util.Clean(choice["finish_reason"]); value != "" {
+				finishReason = value
+			}
 			delta := util.StringMap(choice["delta"])
 			if value, ok := delta["reasoning_content"].(string); ok {
 				reasoning.WriteString(value)
@@ -3467,6 +3515,12 @@ func collectRelayChatTaskStream(payload map[string]any, stream *protocol.StreamR
 	}
 	content := text.String()
 	data := map[string]any{}
+	if finishReason != "" {
+		data["finish_reason"] = finishReason
+	}
+	if usage != nil {
+		data["usage"] = usage
+	}
 	if content != "" {
 		data["text_response"] = content
 	}
@@ -3476,7 +3530,7 @@ func collectRelayChatTaskStream(payload map[string]any, stream *protocol.StreamR
 	if calls := completedChatCompletionToolCalls(toolCalls); len(calls) > 0 {
 		data["tool_calls"] = calls
 	}
-	if strings.TrimSpace(content) == "" && len(util.AsMapSlice(data["tool_calls"])) == 0 {
+	if strings.TrimSpace(content) == "" && len(util.AsMapSlice(data["tool_calls"])) == 0 && finishReason != "length" {
 		return nil, errors.New("模型没有返回文本内容或工具调用")
 	}
 	return map[string]any{

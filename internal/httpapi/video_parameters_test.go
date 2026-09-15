@@ -46,3 +46,20 @@ func TestNormalizeVideoReferenceMode(t *testing.T) {
 		}
 	}
 }
+
+func TestPublicReferenceURLRejectsNonCanonicalIPv4Hosts(t *testing.T) {
+	for _, value := range []string{
+		"http://127.1/a", "http://0177.0.0.1/a", "http://0x7f.0.0.1/a", "http://127.0.0.0x1/a", "http://2130706433/a",
+		"http://0x7f000001/a", "http://127.1./a", "http://１２７.０.０.１/a", "http://127。0。0。1/a", "http://localhost。/a",
+		"http://008.008.008.008/a", "http://example.123/a", "http://example.0x1/a",
+	} {
+		if isPublicReferenceURL(value) {
+			t.Errorf("noncanonical numeric or local host accepted: %s", value)
+		}
+	}
+	for _, value := range []string{"https://8.8.8.8/a", "https://[2606:4700:4700::1111]/a", "https://cdn.example.com/a", "https://例子.中国/a", "https://127.1.example.com/a"} {
+		if !isPublicReferenceURL(value) {
+			t.Errorf("public host rejected: %s", value)
+		}
+	}
+}

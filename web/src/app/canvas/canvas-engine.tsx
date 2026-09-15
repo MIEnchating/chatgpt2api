@@ -1,4 +1,4 @@
-import { AlertCircle, ChevronRight, ImagePlus, LoaderCircle, RefreshCw, Settings2, Star, Trash2, Video, X } from "lucide-react";
+import { AlertCircle, AudioLines, Camera, ChevronRight, ImagePlus, Images, LoaderCircle, RefreshCw, Settings2, Star, Trash2, Type, Video, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent as ReactWheelEvent } from "react";
 
 import { AuthenticatedImage } from "@/components/authenticated-image";
@@ -160,6 +160,11 @@ export function CanvasEngine({
   viewportRef.current = viewport;
   selectedRef.current = selectedNodeIDs;
 
+  useEffect(() => () => {
+    if (frameRef.current !== null) cancelAnimationFrame(frameRef.current);
+    frameRef.current = null;
+  }, []);
+
   const canvasInputIndex = useMemo(() => buildCanvasInputIndex(nodes, connections), [connections, nodes]);
   const nodeByID = canvasInputIndex.nodeByID;
   const batchVisibleNodes = useMemo(() => visibleCanvasNodes(nodes, collapsingBatchRootIDs), [collapsingBatchRootIDs, nodes]);
@@ -284,12 +289,14 @@ export function CanvasEngine({
 
   function handlePointerDown(event: ReactPointerEvent<HTMLDivElement>) {
     const target = event.target instanceof Element ? event.target : null;
+    if (target && !event.currentTarget.contains(target)) return;
     const overCanvasControl = Boolean(target?.closest("[data-canvas-no-pan]"));
     const overNodeOrConnection = Boolean(target?.closest("[data-canvas-node],[data-connection-id]"));
     if (event.button === 0 && !overNodeOrConnection && document.activeElement instanceof HTMLElement && (document.activeElement.isContentEditable || document.activeElement instanceof HTMLMediaElement)) {
       document.activeElement.blur();
     }
-    if (overCanvasControl || (overNodeOrConnection && !spacePressedRef.current)) return;
+    const temporaryPan = spacePressedRef.current || event.button === 1;
+    if (!temporaryPan && (overCanvasControl || overNodeOrConnection)) return;
     if (event.button !== 0 && event.button !== 1) return;
     if (event.button === 0 && (event.ctrlKey || event.metaKey) && !spacePressedRef.current) {
       event.preventDefault();
@@ -301,6 +308,7 @@ export function CanvasEngine({
       return;
     }
     event.preventDefault();
+    if (temporaryPan) event.stopPropagation();
     panRef.current = { active: true, startX: event.clientX, startY: event.clientY, initialX: viewportRef.current.x, initialY: viewportRef.current.y, moved: false, preserveSelection: spacePressedRef.current };
     document.body.style.cursor = "grabbing";
   }
@@ -606,6 +614,9 @@ export function CanvasEngine({
     backgroundPosition: background === "plain" ? undefined : `${grid.x}px ${grid.y}px`,
   } satisfies CSSProperties;
   const panelNode = panelNodeID ? nodeByID.get(panelNodeID) || null : null;
+  const drawerTabs = panelNode?.type === "director"
+    ? [{ id: "actions", label: "操作" }, { id: "info", label: "详情" }] as const
+    : [{ id: "parameters", label: "参数" }, { id: "actions", label: "操作" }, { id: "info", label: "详情" }] as const;
 
   useEffect(() => {
     setDrawerView(panelNode?.type === "director" ? "actions" : "parameters");
@@ -621,6 +632,7 @@ export function CanvasEngine({
         ...(exporting && exportBounds ? { width: exportBounds.width, height: exportBounds.height, right: "auto", bottom: "auto" } : {}),
       }}
       onPointerDown={handlePointerDown}
+      onPointerDownCapture={(event) => { if (spacePressedRef.current || event.button === 1) handlePointerDown(event); }}
       onContextMenu={(event) => {
         const target = event.target instanceof Element ? event.target : null;
         if (target?.closest("[data-canvas-node],[data-connection-id],[data-canvas-no-pan]")) return;
@@ -720,37 +732,55 @@ export function CanvasEngine({
         ) : null}
       </div>
       {!exporting && panelNode ? (
-        <div className="pointer-events-none absolute inset-y-3 right-3 z-50 flex max-w-[calc(100%-1.5rem)] items-start gap-2 sm:inset-y-4 sm:right-4 sm:max-w-[calc(100%-2rem)]">
-          {renderNodeQuickActions ? <div data-canvas-no-pan className="pointer-events-auto mt-16 hidden shrink-0 sm:block" onMouseDown={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()}>{renderNodeQuickActions(panelNode)}</div> : null}
+        <div className="pointer-events-none absolute inset-y-3 right-3 z-50 flex max-w-[calc(100%-1.5rem)] items-start gap-2 [@media(max-height:540px)]:fixed [@media(max-height:540px)]:z-[60]">
+          {renderNodeQuickActions && canvasSize.width >= 720 ? <div data-canvas-no-pan className="pointer-events-auto mt-16 flex shrink-0 items-start" style={{ height: Math.max(0, canvasSize.height - 88) }} onMouseDown={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()} onWheel={(event) => event.stopPropagation()}>{renderNodeQuickActions(panelNode)}</div> : null}
         <div
           data-canvas-no-pan
           data-canvas-node-drawer
-          className="pointer-events-auto flex h-full w-[min(420px,calc(100vw-1.5rem))] min-w-0 flex-col overflow-hidden rounded-xl border border-border bg-card/95 shadow-[var(--shadow-elevated)] backdrop-blur-xl sm:w-[min(420px,calc(100vw-2rem))]"
+          role="region"
+          aria-label="节点设置"
+          className="pointer-events-auto flex h-full min-w-0 flex-col overflow-hidden rounded-2xl border border-border bg-card/95 shadow-[var(--shadow-elevated)] backdrop-blur-xl"
+          style={{ width: Math.min(420, Math.max(0, canvasSize.width - 24)) }}
           onMouseDown={(event) => event.stopPropagation()}
           onPointerDown={(event) => event.stopPropagation()}
           onWheel={(event) => event.stopPropagation()}
+          onKeyDown={(event) => {
+            if (event.key !== "Escape" || event.defaultPrevented || !event.currentTarget.contains(event.target as Node)) return;
+            event.preventDefault();
+            event.stopPropagation();
+            onNodePanelToggle(panelNode.id);
+          }}
         >
-          <div className="flex min-h-14 shrink-0 items-center justify-between gap-3 border-b border-border/70 px-3.5 py-2.5">
-            <div className="flex min-w-0 flex-1 items-center gap-2">
-              <div className="flex shrink-0 items-center gap-1 rounded-lg bg-muted p-1">
-                {panelNode.type !== "director" ? <button type="button" className={cn("rounded-md px-2.5 py-1 text-xs font-medium transition", drawerView === "parameters" ? "bg-card text-brand shadow-sm" : "text-muted-foreground hover:text-foreground")} onClick={() => setDrawerView("parameters")}>参数</button> : null}
-                <button type="button" className={cn("rounded-md px-2.5 py-1 text-xs font-medium transition", drawerView === "actions" ? "bg-card text-brand shadow-sm" : "text-muted-foreground hover:text-foreground")} onClick={() => setDrawerView("actions")}>操作</button>
-                <button type="button" className={cn("rounded-md px-2.5 py-1 text-xs font-medium transition", drawerView === "info" ? "bg-card text-brand shadow-sm" : "text-muted-foreground hover:text-foreground")} onClick={() => setDrawerView("info")}>详情</button>
+          <div className="shrink-0 space-y-3 border-b border-border/70 p-3">
+            <div className="flex min-w-0 items-center gap-2">
+              <CanvasNodeTypeBadge node={panelNode} />
+              <OverflowMarqueeText className="min-w-0 flex-1 text-sm font-semibold" text={panelNode.title || NODE_TYPE_BADGE[panelNode.type].label} />
+              <div className="flex shrink-0 items-center gap-1">
+                <Tooltip><TooltipTrigger asChild><button type="button" className="inline-flex size-8 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => onNodeDelete(panelNode.id)} aria-label="删除节点"><Trash2 className="size-4" /></button></TooltipTrigger><TooltipContent>删除节点</TooltipContent></Tooltip>
+                <Tooltip><TooltipTrigger asChild><button type="button" className="inline-flex size-8 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => onNodePanelToggle(panelNode.id)} aria-label="关闭节点抽屉"><X className="size-4" /></button></TooltipTrigger><TooltipContent>关闭节点抽屉</TooltipContent></Tooltip>
               </div>
-              <OverflowMarqueeText className="min-w-0 flex-1 text-xs font-medium text-muted-foreground" text={panelNode.title || (panelNode.type === "video" ? "视频" : panelNode.type === "audio" ? "音频" : panelNode.type === "panorama" ? "全景图" : panelNode.type === "director" ? "导演台" : panelNode.type === "config" ? "生成配置" : panelNode.type === "image" ? "图片" : "文字")} />
             </div>
-            <div className="flex shrink-0 items-center gap-1">
-              <Tooltip><TooltipTrigger asChild><button type="button" className="inline-flex size-8 items-center justify-center rounded-lg text-destructive transition hover:bg-destructive/10 dark:hover:bg-rose-950/30 dark:text-rose-300" onClick={() => onNodeDelete(panelNode.id)} aria-label="删除节点"><Trash2 className="size-4" /></button></TooltipTrigger><TooltipContent>删除节点</TooltipContent></Tooltip>
-              <Tooltip><TooltipTrigger asChild><button type="button" className="inline-flex size-8 items-center justify-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground" onClick={() => onNodePanelToggle(panelNode.id)} aria-label="关闭节点抽屉"><X className="size-4" /></button></TooltipTrigger><TooltipContent>关闭节点抽屉</TooltipContent></Tooltip>
+            <div role="tablist" aria-label="节点设置分类" className="flex items-center gap-1 rounded-lg bg-muted/75 p-1" onKeyDown={(event) => {
+              if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+              event.preventDefault();
+              event.stopPropagation();
+              const currentIndex = drawerTabs.findIndex((tab) => tab.id === drawerView);
+              const index = event.key === "Home" ? 0 : event.key === "End" ? drawerTabs.length - 1 : (currentIndex + (event.key === "ArrowRight" ? 1 : -1) + drawerTabs.length) % drawerTabs.length;
+              setDrawerView(drawerTabs[index].id);
+              event.currentTarget.querySelectorAll<HTMLButtonElement>("[role=tab]")[index]?.focus();
+            }}>
+              {drawerTabs.map((tab) => <button key={tab.id} id={`canvas-node-tab-${tab.id}`} type="button" role="tab" aria-selected={drawerView === tab.id} aria-controls="canvas-node-tab-content" tabIndex={drawerView === tab.id ? 0 : -1} className={cn("flex h-8 min-w-0 flex-1 items-center justify-center rounded-md text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring", drawerView === tab.id ? "bg-card text-brand shadow-sm" : "text-muted-foreground hover:bg-card/50 hover:text-foreground")} onClick={() => setDrawerView(tab.id)}>{tab.label}</button>)}
             </div>
           </div>
+          <div id="canvas-node-tab-content" role="tabpanel" aria-labelledby={`canvas-node-tab-${drawerView}`} className="flex min-h-0 flex-1 flex-col">
           {drawerView === "parameters" ? (
-            <div className="min-h-0 flex-1 overflow-hidden p-3 sm:p-4">{renderNodePanel(panelNode)}</div>
+            <div className="min-h-0 flex-1 overflow-hidden p-3">{renderNodePanel(panelNode)}</div>
           ) : (
-            <ScrollArea className="min-h-0 flex-1" viewportClassName="p-3 sm:p-4">
+            <ScrollArea key={`${panelNode.id}-${drawerView}`} className="min-h-0 flex-1" viewportClassName="p-3">
               {drawerView === "actions" ? renderNodeActions(panelNode) : renderNodeInfo(panelNode)}
             </ScrollArea>
           )}
+          </div>
         </div>
         </div>
       ) : null}
@@ -759,6 +789,28 @@ export function CanvasEngine({
 }
 
 type ResizeCorner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
+
+const NODE_TYPE_BADGE: Record<CanvasNode["type"], { label: string; icon: typeof ImagePlus }> = {
+  image: { label: "图片", icon: ImagePlus },
+  video: { label: "视频", icon: Video },
+  audio: { label: "音频", icon: AudioLines },
+  panorama: { label: "全景图", icon: Images },
+  director: { label: "导演台", icon: Camera },
+  text: { label: "文字", icon: Type },
+  config: { label: "生成配置", icon: Settings2 },
+  group: { label: "组", icon: Images },
+};
+
+const NODE_TONE_CLASS: Record<CanvasNode["type"], string> = {
+  image: "hover:border-sky-400/70",
+  video: "hover:border-orange-400/70",
+  audio: "hover:border-violet-400/70",
+  panorama: "hover:border-cyan-400/70",
+  director: "hover:border-amber-400/70",
+  text: "hover:border-blue-400/70",
+  config: "hover:border-emerald-400/70",
+  group: "hover:border-slate-400/70",
+};
 
 function CanvasDOMNode({ node, showImageInfo, selected, related, focusRelated, showPanel, loading, now, connecting, connectionTarget, configInputSummary, groupChildCount, groupDropTarget, batchClosing, batchOpening, batchRecovering, batchMotion, onMouseDown, onSelectCapture, onResize, onConnect, onTitleChange, onActivate, onViewImage, onDirectorOpen, onTextToImage, onRetry, onToggleBatch, onSetBatchPrimary, onContextMenu, onMediaLoad, onHoverStart, onHoverEnd }: {
   node: CanvasNode;
@@ -815,7 +867,7 @@ function CanvasDOMNode({ node, showImageInfo, selected, related, focusRelated, s
   }, []);
 
   const finishTitleEditing = useCallback(() => {
-    const title = titleDraft.trim() || (node.type === "image" ? "图片" : node.type === "video" ? "视频" : node.type === "config" ? "生成配置" : node.type === "group" ? "组" : "文字");
+    const title = titleDraft.trim() || NODE_TYPE_BADGE[node.type].label;
     setTitleDraft(title);
     setEditingTitle(false);
     if (title !== node.title) onTitleChange(node.id, title);
@@ -844,6 +896,8 @@ function CanvasDOMNode({ node, showImageInfo, selected, related, focusRelated, s
     <div
       data-canvas-node
       data-node-id={node.id}
+      data-canvas-node-type={node.type}
+      aria-selected={selected || undefined}
       className="group absolute overflow-visible"
       style={{
         left: node.x,
@@ -866,7 +920,7 @@ function CanvasDOMNode({ node, showImageInfo, selected, related, focusRelated, s
     >
       <div
         data-canvas-no-pan
-        className="absolute top-[-30px] left-1/2 z-30 flex max-w-[calc(100%-16px)] -translate-x-1/2 justify-center"
+        className="absolute -top-9 inset-x-2 z-30 flex h-7 min-w-0 items-center justify-center gap-2"
         onMouseDown={(event) => event.stopPropagation()}
       >
         {editingTitle ? (
@@ -874,7 +928,8 @@ function CanvasDOMNode({ node, showImageInfo, selected, related, focusRelated, s
             ref={titleInputRef}
             value={titleDraft}
             maxLength={64}
-            className="h-7 max-w-full rounded-md border border-border bg-card/92 px-2 text-center text-xs font-medium text-foreground shadow-sm outline-none backdrop-blur"
+            aria-label="节点名称"
+            className="h-7 min-w-0 flex-1 rounded-md border border-brand bg-card/95 px-2 text-xs font-medium text-foreground shadow-sm outline-none ring-2 ring-brand/20 backdrop-blur"
             onChange={(event) => setTitleDraft(event.target.value)}
             onBlur={finishTitleEditing}
             onKeyDown={(event) => {
@@ -890,7 +945,8 @@ function CanvasDOMNode({ node, showImageInfo, selected, related, focusRelated, s
           <TooltipButton
             type="button"
             tooltip="双击修改节点名称"
-            className="block h-7 max-w-full overflow-hidden rounded-md border border-transparent bg-card/78 px-2 text-center text-xs font-medium leading-7 text-foreground/70 shadow-sm backdrop-blur transition hover:border-border hover:bg-card hover:text-foreground"
+            aria-label={`${node.title || NODE_TYPE_BADGE[node.type].label}，双击修改节点名称`}
+            className="flex h-7 min-w-0 max-w-full items-center gap-1.5 overflow-hidden rounded-lg border border-border/60 bg-card/90 px-2 text-left text-xs font-medium text-foreground/80 shadow-sm backdrop-blur transition hover:border-brand/40 hover:bg-card hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             onClick={(event) => {
               event.stopPropagation();
               if (titleActivationTimerRef.current !== null) {
@@ -912,14 +968,15 @@ function CanvasDOMNode({ node, showImageInfo, selected, related, focusRelated, s
               setEditingTitle(true);
             }}
           >
-            <OverflowMarqueeText text={node.title || (node.type === "image" ? "图片" : node.type === "video" ? "视频" : node.type === "audio" ? "音频" : node.type === "panorama" ? "全景图" : node.type === "director" ? "导演台" : node.type === "group" ? "组" : node.type === "config" ? "生成配置" : "文字")} />
+            <CanvasNodeTypeBadge node={node} />
+            <OverflowMarqueeText text={node.title || NODE_TYPE_BADGE[node.type].label} />
           </TooltipButton>
         )}
+        {isGroup ? <span className="shrink-0 rounded-md bg-card/80 px-2 py-1 text-[10px] tabular-nums text-muted-foreground">{groupChildCount} 个节点</span> : null}
       </div>
-      {isGroup ? <div className="pointer-events-none absolute right-3 top-[-26px] z-30 text-xs text-muted-foreground">{groupChildCount} 个节点</div> : null}
       <div
         className={cn(
-          "relative size-full transition-[border-color,box-shadow]",
+          "relative size-full transition-[border-color,box-shadow,transform] hover:shadow-[var(--shadow-card)]",
           isGroup ? "rounded-xl border bg-card/35" : "rounded-2xl border-2",
           isBatchRoot ? "overflow-visible" : "overflow-hidden",
           mediaNode && node.url ? "bg-transparent" : "bg-card",
@@ -930,6 +987,7 @@ function CanvasDOMNode({ node, showImageInfo, selected, related, focusRelated, s
             : related
               ? "border-[var(--canvas-connection-muted)] shadow-[0_0_0_1px_var(--canvas-connection-shadow)]"
               : mediaNode && node.url ? "border-transparent" : "border-border",
+          NODE_TONE_CLASS[node.type],
         )}
         onMouseDown={(event) => onMouseDown(event, node.id)}
         onDoubleClick={(event) => {
@@ -940,10 +998,16 @@ function CanvasDOMNode({ node, showImageInfo, selected, related, focusRelated, s
       >
         {isBatchRoot ? <CanvasBatchStack count={batchCount} expanded={Boolean(node.batch_expanded)} opening={batchOpening} recovering={batchRecovering} /> : null}
         {isGroup ? null : node.type === "config" ? (
-          <div className="flex size-full flex-col bg-card px-4 py-4">
-            <div className="flex items-start gap-3">
-              <span className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-emerald-500/12 text-emerald-600 dark:text-emerald-300"><Settings2 className="size-5" /></span>
-              <div className="min-w-0"><div className="text-sm font-semibold">生成配置</div><div className="mt-1 flex flex-wrap gap-1.5 text-[11px] text-muted-foreground"><span className="rounded-md bg-muted px-2 py-1">提示词 {configInputSummary.text} 个</span><span className="rounded-md bg-muted px-2 py-1">参考图 {configInputSummary.image} 张</span><span className="rounded-md bg-muted px-2 py-1">视频 {configInputSummary.video} 个</span><span className="rounded-md bg-muted px-2 py-1">音频 {configInputSummary.audio} 个</span></div></div>
+          <div className="flex size-full flex-col gap-3 bg-card p-3">
+            <div className="flex items-center gap-2.5">
+              <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-emerald-500/12 text-emerald-600 dark:text-emerald-300"><Settings2 className="size-4" /></span>
+              <span className="text-sm font-semibold">生成配置</span>
+            </div>
+            <div className="grid grid-cols-2 gap-1.5 text-[11px] text-muted-foreground">
+              <span className="flex items-center justify-between gap-1 rounded-md bg-muted/70 px-2 py-1.5"><span>提示词</span><span className="font-medium tabular-nums text-foreground">{configInputSummary.text} 个</span></span>
+              <span className="flex items-center justify-between gap-1 rounded-md bg-muted/70 px-2 py-1.5"><span>参考图</span><span className="font-medium tabular-nums text-foreground">{configInputSummary.image} 张</span></span>
+              <span className="flex items-center justify-between gap-1 rounded-md bg-muted/70 px-2 py-1.5"><span>视频</span><span className="font-medium tabular-nums text-foreground">{configInputSummary.video} 个</span></span>
+              <span className="flex items-center justify-between gap-1 rounded-md bg-muted/70 px-2 py-1.5"><span>音频</span><span className="font-medium tabular-nums text-foreground">{configInputSummary.audio} 个</span></span>
             </div>
           </div>
         ) : node.type === "director" ? <CanvasDirectorNodePanel onOpen={() => onDirectorOpen(node.id)} /> : node.type === "audio" || node.type === "panorama" ? <CanvasSpecialNodeContent node={node} onPanoramaOpen={node.type === "panorama" && node.url ? () => onViewImage(node.id) : undefined} onPanoramaMoveStart={node.type === "panorama" ? (event) => onMouseDown(event, node.id) : undefined} /> : (node.type === "image" || node.type === "video" || node.type === "text") && node.generation_status === "error" ? (
@@ -972,21 +1036,27 @@ function CanvasDOMNode({ node, showImageInfo, selected, related, focusRelated, s
             />
           ) : <AuthenticatedImage src={node.url} alt={node.title || node.prompt || "画布图片"} draggable={false} className="pointer-events-none size-full rounded-[inherit] object-contain" onLoad={(event) => onMediaLoad(node.id, event.currentTarget.naturalWidth, event.currentTarget.naturalHeight, getCachedAuthenticatedImageByteSize(node.url))} />
         ) : (
-          <div className="flex size-full flex-col items-center justify-center gap-3 bg-muted/35 text-muted-foreground">
+          <div className="flex size-full flex-col items-center justify-center gap-3 bg-muted/35 px-4 text-center text-muted-foreground">
             <span className="flex size-12 items-center justify-center rounded-xl bg-brand-soft text-brand">
               {node.type === "video" ? <Video className="size-5" /> : <ImagePlus className="size-5" />}
             </span>
             <span className="text-[11px] tracking-[0.16em] text-muted-foreground">
               {node.type === "video" ? "空视频节点" : "空图片节点"}
             </span>
+            <span className="text-[11px] text-muted-foreground/70">可拖入素材或从参数面板上传</span>
           </div>
         ) : (
-          <ScrollArea data-canvas-no-zoom className="size-full" viewportClassName="bg-card px-4 py-4 pr-20" viewClass="whitespace-pre-wrap break-words font-mono" style={{ fontSize: node.font_size || 14, lineHeight: 1.6 }} onWheel={(event) => event.stopPropagation()}>
-            {node.prompt || <span className="text-muted-foreground">暂无文字内容</span>}
-          </ScrollArea>
+          <div className="flex size-full flex-col bg-card">
+            <div className="flex h-11 shrink-0 items-center justify-between gap-2 border-b border-border/60 bg-muted/25 px-3">
+              <span className="min-w-0 truncate text-[11px] tabular-nums text-muted-foreground">{node.prompt?.length || 0} 字</span>
+              <button data-canvas-no-pan type="button" aria-label="用文字生成图片" disabled={!node.prompt?.trim() || loading} className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-brand-border bg-brand-soft px-2.5 text-[11px] font-medium text-brand transition hover:bg-brand-soft/70 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-40" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onTextToImage(node.id); }}><ImagePlus className="size-3.5" />生成图片</button>
+            </div>
+            <ScrollArea data-canvas-no-zoom className="min-h-0 flex-1" viewportClassName="px-4 py-3" viewClass="whitespace-pre-wrap break-words font-sans [overflow-wrap:anywhere]" style={{ fontSize: node.font_size || 14, lineHeight: 1.7 }} onWheel={(event) => event.stopPropagation()}>
+              {node.prompt || <span className="text-sm leading-6 text-muted-foreground">暂无文字内容<br /><span className="text-xs text-muted-foreground/70">点击节点，在参数面板中添加文字</span></span>}
+            </ScrollArea>
+          </div>
         )}
         {showImageInfo && node.type === "image" && node.url ? <div data-canvas-image-info className="pointer-events-none absolute bottom-2 right-2 z-20 flex max-w-[calc(100%-16px)] items-center justify-end gap-1.5 text-[10px] leading-none text-white drop-shadow-[0_1px_3px_rgba(0,0,0,.9)]"><span className="shrink-0 tabular-nums">{node.natural_width && node.natural_height ? `${node.natural_width} × ${node.natural_height}` : `${Math.round(node.width)} × ${Math.round(node.height)}`}</span>{formatImageBytes(node.bytes) ? <span className="shrink-0 tabular-nums">{formatImageBytes(node.bytes)}</span> : null}</div> : null}
-        {node.type === "text" && node.generation_status !== "loading" && node.generation_status !== "error" ? <button data-canvas-no-pan type="button" className="absolute top-3 right-3 z-20 flex h-8 items-center gap-1.5 rounded-full border border-border bg-card/90 px-3 text-xs font-medium shadow-sm backdrop-blur hover:bg-muted" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onTextToImage(node.id); }}><ImagePlus className="size-3.5" />生图</button> : null}
         {loading && node.type !== "config" ? (node.type === "audio" || node.type === "panorama") ? <SpecialNodeLoading /> : !isBatchRoot || !node.url ? <CanvasGenerationLoading node={node} now={now} /> : null : null}
         {isBatchRoot ? <button data-canvas-no-pan type="button" aria-label={node.batch_expanded ? "收起图片组" : "展开图片组"} className="absolute top-2.5 right-2.5 z-40 flex h-8 items-center gap-1 rounded-full border border-border bg-card/90 px-2.5 text-xs font-semibold shadow-sm backdrop-blur" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onToggleBatch(node.id); }}><span className="text-brand">{batchCount}</span><ChevronRight className={cn("size-3.5 transition-transform", node.batch_expanded && "rotate-90")} /></button> : null}
         {isBatchChild && node.url ? <button data-canvas-no-pan type="button" className="absolute top-2.5 right-2.5 z-40 flex h-8 items-center gap-1.5 rounded-lg border border-border bg-card/90 px-2.5 text-xs font-medium opacity-100 shadow-sm backdrop-blur transition-opacity sm:opacity-0 sm:group-hover:opacity-100" onMouseDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); onSetBatchPrimary(node.id); }}><Star className="size-3.5 text-brand" />设为主图</button> : null}
@@ -1024,6 +1094,19 @@ function CanvasGenerationLoading({ node, now }: { node: CanvasNode; now: number 
       <span className="rounded-full border border-border px-2 py-1 text-xs tabular-nums text-foreground">{elapsed}</span>
       {progress > 0 ? <div className="h-1.5 w-28 overflow-hidden rounded-full bg-muted"><div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${progress}%` }} /></div> : null}
     </div>
+  );
+}
+
+function CanvasNodeTypeBadge({ node }: { node: CanvasNode }) {
+  const meta = NODE_TYPE_BADGE[node.type];
+  const Icon = meta.icon;
+  return (
+    <span
+      aria-hidden="true"
+      className="pointer-events-none inline-flex shrink-0 items-center justify-center text-muted-foreground"
+    >
+      <Icon className="size-3.5" />
+    </span>
   );
 }
 

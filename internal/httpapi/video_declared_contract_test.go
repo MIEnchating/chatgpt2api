@@ -166,6 +166,8 @@ func TestVideoContractDriverPathsAreDeclaredByContract(t *testing.T) {
 		{name: "Vertex Veo", driver: protocol.VideoContractDriverVertexVeo, mode: "text-to-video", createPath: "/v1/videos", queryPath: "/v1/videos/{task_id}"},
 		{name: "DashScope", driver: protocol.VideoContractDriverDashScope, mode: "text-to-video", createPath: "/v1/videos", queryPath: "/v1/videos/{task_id}"},
 		{name: "Volcengine", driver: protocol.VideoContractDriverVolcengine, mode: "text-to-video", createPath: "/v1/videos", queryPath: "/v1/videos/{task_id}"},
+		{name: "Ark", driver: protocol.VideoContractDriverArk, mode: "text-to-video", createPath: "/contents/generations/tasks", queryPath: "/contents/generations/tasks/{task_id}"},
+		{name: "AutoDL", driver: protocol.VideoContractDriverAutoDL, mode: "text-to-video", createPath: "/api/v1/comfyui/comfyui_workflow/", queryPath: "/api/v1/comfyui/comfyui_workflow/result/{task_id}"},
 		{name: "Kling text", driver: protocol.VideoContractDriverKling, mode: "text-to-video", createPath: "/kling/v1/videos/text2video", queryPath: "/kling/v1/videos/text2video/{task_id}"},
 		{name: "Kling image", driver: protocol.VideoContractDriverKling, mode: "image-to-video", createPath: "/kling/v1/videos/image2video", queryPath: "/kling/v1/videos/image2video/{task_id}"},
 		{name: "MiniMax", driver: protocol.VideoContractDriverMiniMax, mode: "text-to-video", createPath: "/v1/videos", queryPath: "/v1/videos/{task_id}"},

@@ -4,6 +4,7 @@ import test from "node:test";
 
 const actionsSource = readFileSync(new URL("../src/app/canvas/canvas-node-actions-panel.tsx", import.meta.url), "utf8");
 const engineSource = readFileSync(new URL("../src/app/canvas/canvas-engine.tsx", import.meta.url), "utf8");
+const controlsSource = readFileSync(new URL("../src/app/canvas/canvas-workspace-controls.tsx", import.meta.url), "utf8");
 const pageSource = readFileSync(new URL("../src/app/canvas/page.tsx", import.meta.url), "utf8");
 const specialNodesSource = readFileSync(new URL("../src/app/canvas/canvas-special-nodes.tsx", import.meta.url), "utf8");
 const generationFooterSource = readFileSync(new URL("../src/app/canvas/canvas-generation-footer.tsx", import.meta.url), "utf8");
@@ -25,7 +26,7 @@ test("the side drawer exposes the complete supported image operation set", () =>
   for (const label of ["局部编辑", "裁剪", "切图", "放大", "多角度", "自由缩放", "反推提示词", "复制提示词", "查看大图", "沉浸查看", "下载", "存入我的素材", "复制节点"]) {
     assert.match(actionsSource, new RegExp(label));
   }
-  assert.match(engineSource, />操作<\/button>/);
+  assert.match(engineSource, /id: "actions", label: "操作"/);
   assert.match(engineSource, /renderNodeActions\(panelNode\)/);
   assert.doesNotMatch(actionsSource, /ActionSection title="生成"/);
 });
@@ -51,7 +52,7 @@ test("the quick action rail supports every actionable node type", () => {
   for (const callback of ["onPreview", "onDownload", "onCopyPrompt", "onReversePrompt", "onSaveAsset", "onDuplicate", "onToggleFreeResize", "onTextToImage", "onOpenDirector"]) {
     assert.match(pageSource, new RegExp(`${callback}=\\{`));
   }
-  assert.match(actionsSource, /max-h-\[calc\(100vh-9rem\)\]/);
+  assert.match(actionsSource, /max-h-full/);
   assert.match(actionsSource, /\[scrollbar-width:none\]/);
 });
 
@@ -99,14 +100,15 @@ test("canvas node chrome supports compact details, collapsible tools, and overfl
   assert.doesNotMatch(actionsSource, /hover:scale-105[^"\n]*active:scale-90/);
   assert.match(actionsSource, /grid-rows-\[0fr\]/);
   assert.match(actionsSource, /grid-rows-\[1fr\]/);
-  assert.match(engineSource, /data-canvas-no-pan className="pointer-events-auto mt-16 hidden shrink-0 sm:block"/);
+  assert.match(engineSource, /renderNodeQuickActions && canvasSize\.width >= 720/);
   assert.ok((engineSource.match(/<OverflowMarqueeText/g) || []).length >= 2);
   assert.match(globalStylesSource, /@keyframes overflow-marquee/);
 });
 
 test("the canvas side panel animates without unmounting and uses the material library label", () => {
   assert.doesNotMatch(canvasSidePanelSource, /if \(!open\) return null/);
-  assert.match(canvasSidePanelSource, /style=\{\{ width: open \? width : 0 \}\}/);
+  assert.match(canvasSidePanelSource, /--canvas-side-panel-width/);
+  assert.match(canvasSidePanelSource, /open \? width : 0/);
   assert.match(canvasSidePanelSource, /transition-\[opacity,transform,box-shadow,border-color\] duration-300 ease-in-out/);
   assert.match(canvasSidePanelSource, />素材库<\/SidePanelTab>/);
   assert.doesNotMatch(canvasSidePanelSource, />资产<\/SidePanelTab>/);
@@ -116,8 +118,8 @@ test("the canvas side panel animates without unmounting and uses the material li
 });
 
 test("the canvas side panel resize target stays outside its internal scrollbar", () => {
-  assert.match(canvasSidePanelSource, /w-2 translate-x-full cursor-col-resize/);
-  assert.match(canvasSidePanelSource, /absolute inset-y-0 left-0 w-px/);
+  assert.match(canvasSidePanelSource, /w-2 translate-x-1\/2 cursor-col-resize/);
+  assert.match(canvasSidePanelSource, /absolute inset-y-0 left-1\/2 w-px/);
   assert.doesNotMatch(canvasSidePanelSource, /w-3 translate-x-1\/2 cursor-col-resize/);
 });
 
@@ -212,8 +214,10 @@ test("shared tooltips close when their trigger performs an action", () => {
   assert.match(tooltipSource, /onClick=\{\(\) => setOpen\(false\)\}/);
 });
 
-test("the bottom node toolbar does not render a clipped light-theme shadow", () => {
-  assert.match(pageSource, /shadow-none backdrop-blur-xl dark:shadow-\[0_10px_28px_rgba\(0,0,0,\.24\)\]/);
+test("canvas controls use available canvas width without horizontal scrolling", () => {
+  assert.match(pageSource, /width=\{controlsWidth\}/);
+  assert.match(controlsSource, /props.width < CANVAS_DOCK_BREAKPOINT/);
+  assert.doesNotMatch(controlsSource, /overflow-x-auto/);
 });
 
 test("every canvas prompt editor can resize without hiding its parameter panel", () => {
@@ -223,8 +227,8 @@ test("every canvas prompt editor can resize without hiding its parameter panel",
   assert.match(promptScrollFrameSource, /<ScrollArea className="h-full"/);
   assert.match(promptScrollFrameSource, /querySelector\("textarea"\)/);
   assert.match(promptScrollFrameSource, /Math\.max\(frame\.clientHeight, textarea\.scrollHeight\)/);
-  assert.ok((pageSource.match(/className="h-0 min-h-40 flex-1"/g) || []).length >= 2);
-  assert.ok((specialNodesSource.match(/className="h-0 min-h-40 flex-1"/g) || []).length >= 2);
+  assert.ok((pageSource.match(/className="h-0 min-h-0 flex-1"/g) || []).length >= 2);
+  assert.ok((specialNodesSource.match(/<AppScrollArea className="min-h-0 flex-1"/g) || []).length >= 2);
   assert.match(configComposerSource, /canvas-prompt-editor-resize relative h-28/);
   assert.match(configComposerSource, /<ScrollArea className="h-full" viewportClassName="h-full"/);
   assert.doesNotMatch(pageSource, /canvas-prompt-resize/);
@@ -317,9 +321,9 @@ test("Agent initial requests are consumed only after their user message is commi
   assert.ok(messageCommitIndex > claimIndex);
   assert.ok(committedCallbackIndex > messageCommitIndex);
   assert.ok(consumedIndex > submitIndex);
-  assert.match(agentPanelSource, /if \(!relayPreferencesReady \|\| !initialRequest/);
+  assert.match(agentPanelSource, /if \(\(agentMode === "native" && !relayPreferencesReady\) \|\| !initialRequest/);
   assert.match(agentPanelSource, /previous\?\.request === initialRequest && previous\.reason === result/);
-  assert.match(agentPanelSource, /\}, \[busy, initialRequest, model, relayPreferencesReady, relayTokenName\]\)/);
+  assert.match(agentPanelSource, /\}, \[agentMode, busy, codex\.connected, codex\.model, initialRequest, model, relayPreferencesReady, relayTokenName\]\)/);
   assert.match(agentPanelSource, /const stopped = controller\.signal\.aborted \|\| \(error instanceof Error && error\.name === "AbortError"\)/);
 });
 
@@ -329,7 +333,7 @@ test("Agent run callbacks and project persistence reject stale lifecycle scopes"
   assert.match(agentPanelSource, /onCheckpoint: \(checkpoint\) => updateSessionForRun\(sessionID, runEpoch/);
   assert.match(pageSource, /const renderedCanvasID = documentRef\.current\.id/);
   assert.match(pageSource, /onSessionsChange=\{\(sessions, activeSessionID\) => \{\s*if \(documentRef\.current\.id !== renderedCanvasID\) return/);
-  assert.match(pageSource, /onExecuteAction=\{\(action, messageReferenceNodeIDs\) => documentRef\.current\.id === renderedCanvasID/);
+  assert.match(pageSource, /onExecuteAction=\{\(action, messageReferenceNodeIDs, execution\) => documentRef\.current\.id === renderedCanvasID/);
 });
 
 test("Agent history deletion stays unavailable for the whole active run", () => {

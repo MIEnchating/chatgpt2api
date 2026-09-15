@@ -1,0 +1,40 @@
+{
+  "scope": "Canvas service delegated by review_service and users/RBAC frontend read before handing fixes back to root",
+  "files": [
+    {
+      "path": "internal/service/canvas_document.go",
+      "status": "reviewed",
+      "checks": ["Full contents read via bounded sed output", "Persistence revisions, ownership, validation and batch topology reviewed; activation ABA and cycles reproduced before repair; TestCanvas passed"],
+      "sha256": "3d4851441c531caf35b30a995cc08cee2407128186653149d1ede84b7165c24a",
+      "bytes": 69591
+    },
+    {
+      "path": "internal/service/canvas_document_test.go",
+      "status": "reviewed",
+      "checks": ["Full contents read via bounded sed output", "Persistence revisions, ownership, validation and batch topology reviewed; activation ABA and cycles reproduced before repair; TestCanvas passed"],
+      "sha256": "fda9dc4870235389bdc91e91ab48e5f8dbfda1158324121bc560897eb7a07636",
+      "bytes": 68205
+    },
+    {
+      "path": "internal/service/canvas_batch_limit_test.go",
+      "status": "reviewed",
+      "checks": ["Full contents read via cat", "Batch limits and persistence assertions reviewed; TestCanvas passed"],
+      "sha256": "0a849907880319ee150cf419d676f4b77c2cf7d6afc4696a452b1b68957ba05f",
+      "bytes": 1537
+    },
+    {
+      "path": "web/src/app/users/page.tsx",
+      "status": "reviewed",
+      "checks": ["Full contents read via cat and bounded sed to reread truncated users content", "Async mutation and editor-state lifecycle reviewed; stale reload and pending dialog findings handed to root for repair"],
+      "sha256": "cae7408fcd59f081d1110bdd136d22e1e8d93be5caab26f825aab6c18b1f5098",
+      "bytes": 43061
+    },
+    {
+      "path": "web/src/app/rbac/page.tsx",
+      "status": "reviewed",
+      "checks": ["Full contents read via bounded sed output", "Async mutation and editor-state lifecycle reviewed; overlapping mutation snapshots and pending dialogs handed to root for repair"],
+      "sha256": "0b6e6c53571eddc1e4329ffd4f4b077373112253b49eec241d7d92911e3db8dd",
+      "bytes": 23503
+    }
+  ]
+}

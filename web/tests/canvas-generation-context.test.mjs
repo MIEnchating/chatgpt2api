@@ -305,9 +305,11 @@ test("an explicitly cleared composer does not restore deleted connected resource
   });
 });
 
-test("a populated source image replaces upstream image references", () => {
-  assert.deepEqual(canvasGenerationReferenceImageURLs(node("target", "image", { url: "/images/source.png" }), ["/images/upstream-a.png", "/images/upstream-b.png"], 4), ["/images/source.png"]);
+test("a populated source image follows connected references without discarding them", () => {
+  assert.deepEqual(canvasGenerationReferenceImageURLs(node("target", "image", { url: "/images/source.png" }), ["/images/upstream-a.png", "/images/upstream-b.png"], 4), ["/images/upstream-a.png", "/images/upstream-b.png", "/images/source.png"]);
   assert.deepEqual(canvasGenerationReferenceImageURLs(node("target", "image"), ["a", "b", "c"], 2), ["a", "b"]);
+  assert.deepEqual(canvasGenerationReferenceImageURLs(node("target", "image", { url: " a " }), ["", "a", " b ", "b", "c"], 3), ["a", "b", "c"]);
+  assert.deepEqual(canvasGenerationReferenceImageURLs(node("target", "image", { url: "c" }), ["a", "b"], 3), ["a", "b", "c"]);
 });
 
 test("generation context collects connected video and audio references in connection order", () => {

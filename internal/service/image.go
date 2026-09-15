@@ -1002,7 +1002,7 @@ func (s *ImageService) generateThumbnail(ref imageFileRef) map[string]any {
 	if err != nil {
 		return map[string]any{}
 	}
-	thumb := resizeToFit(flattenImage(img), ThumbnailSize, ThumbnailSize)
+	thumb := flattenImage(resizeToFit(img, ThumbnailSize, ThumbnailSize))
 	if _, err := os.Stat(ref.path); err != nil {
 		return map[string]any{}
 	}

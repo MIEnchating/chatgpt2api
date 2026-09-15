@@ -40,7 +40,7 @@ func (a *App) handleProfileCustomRelayConfigs(w http.ResponseWriter, r *http.Req
 				util.WriteError(w, http.StatusBadRequest, "invalid json body")
 				return
 			}
-			status, err := a.customRelayConfigs.Create(identityScope(identity), util.Clean(body["kind"]), util.Clean(body["name"]), util.Clean(body["base_url"]), util.Clean(body["api_key"]))
+			status, err := a.customRelayConfigs.Create(identityScope(identity), util.Clean(body["kind"]), util.Clean(body["name"]), util.Clean(body["base_url"]), util.Clean(body["api_key"]), util.Clean(body["protocol"]))
 			if err != nil {
 				writeCustomRelayConfigError(w, err)
 				return
@@ -62,7 +62,7 @@ func (a *App) handleProfileCustomRelayConfigs(w http.ResponseWriter, r *http.Req
 			util.WriteError(w, http.StatusBadRequest, "invalid json body")
 			return
 		}
-		status, err := a.customRelayConfigs.Update(identityScope(identity), path, util.Clean(body["name"]), util.Clean(body["base_url"]), util.Clean(body["api_key"]))
+		status, err := a.customRelayConfigs.Update(identityScope(identity), path, util.Clean(body["name"]), util.Clean(body["base_url"]), util.Clean(body["api_key"]), util.Clean(body["protocol"]))
 		if err != nil {
 			writeCustomRelayConfigError(w, err)
 			return

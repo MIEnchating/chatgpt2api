@@ -464,6 +464,12 @@ type plannedImageConversationRowWrite struct {
 }
 
 func (s *ImageConversationHistoryService) mergeImageConversationRowsContext(ctx context.Context, ownerID string, incoming []map[string]any, strictRevision bool) ([]ImageConversationMergeAcknowledgement, int64, error) {
+	releaseReferences, protectErr := protectStorageReferences(s.fileReferences, incoming)
+	if protectErr != nil {
+		return nil, 0, protectErr
+	}
+	defer releaseReferences()
+
 	// Writes are re-evaluated per conversation against the latest internal
 	// tombstone/clear generation; otherwise deleting X could incorrectly discard
 	// an in-flight save for Y.

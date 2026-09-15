@@ -4,6 +4,7 @@ dist/
 web_dist
 chatgpt2api.exe
 /chatgpt2api
+/chatgpt2api.previous
 .omx/
 .codex/
 venv/
@@ -14,6 +15,8 @@ docs/*
 !docs/architecture.md
 !docs/image-generation-api.md
 !docs/video-generation-api.md
+!docs/windows-desktop.md
+!docs/canvas-alignment.md
 !docs/user-quota-allocation-requirements.md
 !jshook/docs/
 

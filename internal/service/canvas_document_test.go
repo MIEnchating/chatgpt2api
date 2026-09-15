@@ -10,6 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"chatgpt2api/internal/storage"
 )
@@ -25,6 +26,75 @@ func saveCanvas(service *CanvasDocumentService, ownerID string, input CanvasDocu
 
 func clearCanvas(service *CanvasDocumentService, ownerID, projectID string) (CanvasDocument, error) {
 	return service.clear(ownerID, projectID, nil)
+}
+
+func TestCanvasDocumentServiceDoesNotRenewExpiredHistory(t *testing.T) {
+	for _, publicOnly := range []bool{false, true} {
+		service := NewCanvasDocumentService(newTestStorageBackend(t))
+		document, err := loadCanvas(service, "owner")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if publicOnly {
+			document.RetainedStorageObjectURLs = []string{"https://cdn.example.test/expired.png"}
+		} else {
+			document.RetainedStorageObjectIDs = []string{"expired-object"}
+		}
+		document.RetainedStorageObjectsUntil = time.Now().Add(-time.Second).Format(time.RFC3339Nano)
+		saved, err := service.SaveAtRevision("owner", document)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(saved.RetainedStorageObjectIDs) != 0 || len(saved.RetainedStorageObjectURLs) != 0 || saved.RetainedStorageObjectsUntil != "" {
+			t.Fatalf("expired history renewed: %+v", saved)
+		}
+		saved.RetainedStorageObjectIDs = []string{"active-object"}
+		saved.RetainedStorageObjectsUntil = time.Now().Add(time.Minute).Format(time.RFC3339Nano)
+		renewed, err := service.SaveAtRevision("owner", saved)
+		if err != nil {
+			t.Fatal(err)
+		}
+		until, err := time.Parse(time.RFC3339Nano, renewed.RetainedStorageObjectsUntil)
+		if err != nil || !until.After(time.Now().Add(23*time.Hour)) || !reflect.DeepEqual(renewed.RetainedStorageObjectIDs, []string{"active-object"}) {
+			t.Fatalf("live history lease not renewed: %+v, %v", renewed, err)
+		}
+	}
+}
+
+func TestCanvasDocumentServiceTreatsHistoryTextMatchesAsCandidates(t *testing.T) {
+	f := newFileLifecycleFixture(t)
+	object := f.upload(t)
+	document, err := loadCanvas(f.canvas, "alice")
+	if err != nil {
+		t.Fatal(err)
+	}
+	document.Nodes = []CanvasNode{{ID: "text", Type: "text", Width: 340, Height: 240, ScaleX: 1, ScaleY: 1, Prompt: "说明 https://other.example/api/files/demo/content server:8080 https://other.example/%xx"}}
+	document.RetainedStorageObjectIDs = []string{object.ID, "demo", "8080", "invalid/guess"}
+	document.RetainedStorageObjectURLs = []string{"https://other.example/%xx"}
+	saved, err := f.canvas.SaveAtRevision("alice", document)
+	if err != nil {
+		t.Fatalf("text-only canvas with guessed references must save: %v", err)
+	}
+	if !reflect.DeepEqual(saved.RetainedStorageObjectIDs, []string{object.ID}) || len(saved.RetainedStorageObjectURLs) != 0 || saved.Nodes[0].Prompt != document.Nodes[0].Prompt {
+		t.Fatalf("unexpected retained candidates or text: %+v", saved)
+	}
+	saved.Nodes = append(saved.Nodes, CanvasNode{ID: "image", Type: "image", Width: 340, Height: 240, ScaleX: 1, ScaleY: 1, URL: "/api/files/missing/content"})
+	if _, err := f.canvas.SaveAtRevision("alice", saved); !errors.Is(err, ErrInvalidCanvasDocument) {
+		t.Fatalf("actual missing media must still fail: %v", err)
+	}
+}
+
+func TestCanvasDocumentServiceHistoryValidationPreservesStorageFailure(t *testing.T) {
+	storageFailure := errors.New("database unavailable")
+	service := NewCanvasDocumentService(newTestStorageBackend(t), func(ownerID, objectID string) error { return storageFailure })
+	document, err := loadCanvas(service, "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	document.RetainedStorageObjectIDs = []string{"object"}
+	if _, err := service.SaveAtRevision("owner", document); !errors.Is(err, storageFailure) {
+		t.Fatalf("storage failure was suppressed: %v", err)
+	}
 }
 
 func TestCanvasDocumentServiceStoresAgentSessions(t *testing.T) {
@@ -1444,6 +1514,69 @@ func TestCanvasDocumentServiceIgnoresStaleActiveProjectPointer(t *testing.T) {
 	}
 }
 
+func TestCanvasDocumentServiceDoesNotReviveActivePointerAfterWorkspaceReturnsToProject(t *testing.T) {
+	backend := newTestStorageBackend(t)
+	service := NewCanvasDocumentService(backend)
+	first, err := service.Workspace("owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := service.UpdateProject("owner", "create", "", "Second project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.UpdateProject("owner", "activate", first.Document.ID, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.SaveAtRevision("owner", first.Document); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := service.SaveAtRevision("owner", second.Document); err != nil {
+		t.Fatal(err)
+	}
+	reloaded, err := NewCanvasDocumentService(backend).Workspace("owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reloaded.Document.ID != second.Document.ID {
+		t.Fatalf("old activation pointer revived: got %q, want %q", reloaded.Document.ID, second.Document.ID)
+	}
+}
+
+func TestCanvasDocumentServiceRejectsBatchCycles(t *testing.T) {
+	for _, cycle := range []bool{false, true} {
+		t.Run(map[bool]string{false: "nested batch", true: "cycle"}[cycle], func(t *testing.T) {
+			service := NewCanvasDocumentService(newTestStorageBackend(t))
+			workspace, err := service.Workspace("owner")
+			if err != nil {
+				t.Fatal(err)
+			}
+			document := workspace.Document
+			document.Nodes = []CanvasNode{
+				{ID: "a", Type: "image", Width: 512, Height: 512, BatchChildIDs: []string{"b"}},
+				{ID: "b", Type: "image", Width: 512, Height: 512, BatchRootID: "a", BatchChildIDs: []string{"c"}},
+				{ID: "c", Type: "image", Width: 512, Height: 512, BatchRootID: "b"},
+			}
+			if cycle {
+				document.Nodes[0].BatchRootID = "c"
+				document.Nodes[2].BatchChildIDs = []string{"a"}
+			}
+			_, err = service.SaveAtRevision("owner", document)
+			if cycle {
+				if !errors.Is(err, ErrInvalidCanvasDocument) {
+					t.Fatalf("save cyclic batch error = %v", err)
+				}
+				persisted, loadErr := service.Workspace("owner")
+				if loadErr != nil || len(persisted.Document.Nodes) != 0 {
+					t.Fatalf("rejected cycle changed workspace: nodes=%d, error=%v", len(persisted.Document.Nodes), loadErr)
+				}
+			} else if err != nil {
+				t.Fatalf("save nested batch: %v", err)
+			}
+		})
+	}
+}
+
 func TestCanvasDocumentServiceImportsAsNewProject(t *testing.T) {
 	service := NewCanvasDocumentService(newTestStorageBackend(t))
 	initial, err := service.Workspace("owner")
@@ -1517,5 +1650,48 @@ func TestCanvasDocumentServiceRejectsInvalidAgentMessages(t *testing.T) {
 	})
 	if !errors.Is(err, ErrInvalidCanvasDocument) {
 		t.Fatalf("Save() error = %v, want ErrInvalidCanvasDocument", err)
+	}
+}
+
+func TestCanvasDocumentWorkflowInputsPersistScalarParameters(t *testing.T) {
+	service := NewCanvasDocumentService(newTestStorageBackend(t))
+	document, err := loadCanvas(service, "workflow-owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputs := map[string]any{"seed": 42, "prompt": "镜头向前移动", "enabled": false}
+	document.Nodes = []CanvasNode{{ID: "video", Type: "video", Title: "video", Width: 320, Height: 180, GenerationVideoModel: "autodl:test", GenerationVideoSeconds: 5, GenerationWorkflowInputs: inputs}}
+	saved, err := service.SaveAtRevision("workflow-owner", document)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inputs["prompt"] = "changed after save"
+	if saved.Nodes[0].GenerationWorkflowInputs["prompt"] != "镜头向前移动" {
+		t.Fatal("workflow inputs retained caller-owned map")
+	}
+	reloaded, err := service.Project("workflow-owner", saved.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(reloaded.Nodes[0].GenerationWorkflowInputs, map[string]any{"seed": float64(42), "prompt": "镜头向前移动", "enabled": false}) {
+		t.Fatalf("workflow inputs lost on reload: %#v", reloaded.Nodes[0].GenerationWorkflowInputs)
+	}
+}
+
+func TestCanvasDocumentRejectsInvalidWorkflowInputs(t *testing.T) {
+	tooMany := map[string]any{}
+	for index := 0; index < 129; index++ {
+		tooMany[strings.Repeat("x", index+1)] = true
+	}
+	oversized := map[string]any{}
+	for index := 0; index < 9; index++ {
+		oversized[strings.Repeat("x", index+1)] = strings.Repeat("x", 8192)
+	}
+	for name, inputs := range map[string]map[string]any{"array": {"value": []string{"x"}}, "object": {"value": map[string]any{"x": true}}, "null": {"value": nil}, "nan": {"value": math.NaN()}, "text": {"value": strings.Repeat("x", 8193)}, "name": {" ": true}, "field count": tooMany, "total size": oversized} {
+		t.Run(name, func(t *testing.T) {
+			if _, err := normalizeCanvasWorkflowInputs(inputs); !errors.Is(err, ErrInvalidCanvasDocument) {
+				t.Fatalf("accepted invalid workflow inputs: %v", err)
+			}
+		})
 	}
 }

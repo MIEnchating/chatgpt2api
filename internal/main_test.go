@@ -4,8 +4,22 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"strings"
 	"testing"
 )
+
+func TestDesktopRuntimeBindsLoopbackAndStopsWhenParentPipeCloses(t *testing.T) {
+	t.Setenv("LISTEN_HOST", "127.0.0.1")
+	t.Setenv("PORT", "19090")
+	if got := configuredListenAddress(); got != "127.0.0.1:19090" {
+		t.Fatalf("desktop address = %q", got)
+	}
+	stop := make(chan os.Signal, 1)
+	waitForDesktopParent(strings.NewReader(""), stop)
+	if signal := <-stop; signal != os.Interrupt {
+		t.Fatalf("parent EOF signal = %v", signal)
+	}
+}
 
 func TestNewHTTPServerSetsDefensiveReadTimeouts(t *testing.T) {
 	handler := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})

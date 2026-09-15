@@ -371,6 +371,9 @@ func (s *GenericStorageService) UploadReader(ctx context.Context, ownerID string
 	}
 	objectID := uuid.NewString()
 	extension := path.Ext(filename)
+	if mediaType, _, err := mime.ParseMediaType(contentType); err == nil && provider.Type == model.StorageProviderTypeWebDAV && mediaType == "video/mp4" && (extension == "" || strings.EqualFold(extension, ".bin")) {
+		extension = ".mp4"
+	}
 	if extension == "" {
 		extension = extensionForMIMEType(contentType)
 	}

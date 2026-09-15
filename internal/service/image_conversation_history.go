@@ -13,8 +13,13 @@ import (
 )
 
 type ImageConversationHistoryService struct {
+	fileReferences     FileReferenceProtector
 	rows               storage.ImageConversationBackend
 	conversationAssets *ImageConversationAssetService
+}
+
+func (s *ImageConversationHistoryService) SetFileReferenceProtector(protector FileReferenceProtector) {
+	s.fileReferences = protector
 }
 
 func (s *ImageConversationHistoryService) SetConversationAssetService(assets *ImageConversationAssetService) {

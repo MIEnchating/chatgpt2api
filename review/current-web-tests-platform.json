@@ -1,0 +1,277 @@
+{
+  "scope": [
+    "20 explicitly listed platform and API cache tests under web/tests"
+  ],
+  "reviewed_at": "2026-09-14T19:19:31.607Z",
+  "method": "All listed current test files read in full. No historical review reused. Behavioral tests and source structure assertions are distinguished.",
+  "fixes": [
+    "session.test.mjs: replaced persistent Bun module mocks with isolated VM dependency injection",
+    "account-scoped-api-cache.test.mjs: isolated API module, browser event target and model contract registry in VM contexts"
+  ],
+  "validation": [
+    "Minimal Bun reproduction confirmed mock.restore() does not remove mock.module() replacements",
+    "bun test tests/session.test.mjs tests/account-scoped-api-cache.test.mjs tests/storage-provider-cache.test.mjs tests/zip.test.mjs: 18 pass, 0 fail"
+  ],
+  "files": [
+    {
+      "path": "web/tests/account-scoped-api-cache.test.mjs",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full text read in current review",
+        "test assertions checked against actual helper behavior or explicit source structure contract",
+        "failure paths, delayed responses and cancellation expectations inspected where applicable",
+        "global mutation and test isolation inspected",
+        "source regex checks are not claimed as browser interaction coverage"
+      ],
+      "sha256": "f32b7b3d73c61a2dbe44487bc5a47b457c90d6ac069ecf01926b3167e811922f",
+      "bytes": 2821
+    },
+    {
+      "path": "web/tests/announcement-lifecycle.test.mjs",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full text read in current review",
+        "test assertions checked against actual helper behavior or explicit source structure contract",
+        "failure paths, delayed responses and cancellation expectations inspected where applicable",
+        "global mutation and test isolation inspected",
+        "source regex checks are not claimed as browser interaction coverage"
+      ],
+      "sha256": "5e5cbd5fa5ec0cd1a4fe7c0c9fff2ca35cf41316fc0757f24c07b288a3f47a61",
+      "bytes": 8745
+    },
+    {
+      "path": "web/tests/app-meta-lifecycle.test.mjs",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full text read in current review",
+        "test assertions checked against actual helper behavior or explicit source structure contract",
+        "failure paths, delayed responses and cancellation expectations inspected where applicable",
+        "global mutation and test isolation inspected",
+        "source regex checks are not claimed as browser interaction coverage"
+      ],
+      "sha256": "b11d1b5ae4f779af4de1006ca8e2bb2ad5d51f3497da51e54e8e95c529694e78",
+      "bytes": 1934
+    },
+    {
+      "path": "web/tests/auth-menu-paths.test.mjs",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full text read in current review",
+        "test assertions checked against actual helper behavior or explicit source structure contract",
+        "failure paths, delayed responses and cancellation expectations inspected where applicable",
+        "global mutation and test isolation inspected",
+        "source regex checks are not claimed as browser interaction coverage"
+      ],
+      "sha256": "e086d12771769b8e216a4680fbbb6cc754db89a002b2d14a82eaf24515e8a2b2",
+      "bytes": 1431
+    },
+    {
+      "path": "web/tests/authenticated-image-cache.test.mjs",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full text read in current review",
+        "test assertions checked against actual helper behavior or explicit source structure contract",
+        "failure paths, delayed responses and cancellation expectations inspected where applicable",
+        "global mutation and test isolation inspected",
+        "source regex checks are not claimed as browser interaction coverage"
+      ],
+      "sha256": "57b105ad0fa2fdf5a55ef87695e87628f2602daf8fceb6613697124d735320ee",
+      "bytes": 3852
+    },
+    {
+      "path": "web/tests/browser-storage-errors.test.mjs",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full text read in current review",
+        "test assertions checked against actual helper behavior or explicit source structure contract",
+        "failure paths, delayed responses and cancellation expectations inspected where applicable",
+        "global mutation and test isolation inspected",
+        "source regex checks are not claimed as browser interaction coverage"
+      ],
+      "sha256": "4900f3b56148da97d6c0454ad8843a7aa204e3cf5ce0e83cb61c082eee54ab04",
+      "bytes": 3891
+    },
+    {
+      "path": "web/tests/browser-storage-persistence.test.mjs",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full text read in current review",
+        "test assertions checked against actual helper behavior or explicit source structure contract",
+        "failure paths, delayed responses and cancellation expectations inspected where applicable",
+        "global mutation and test isolation inspected",
+        "source regex checks are not claimed as browser interaction coverage"
+      ],
+      "sha256": "1aee9a7493e1cdd50f3dd1e23198e1d15c6489e2fb102fa1c43ffd89a8b88c0a",
+      "bytes": 5489
+    },
+    {
+      "path": "web/tests/dev-proxy-routes.test.mjs",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full text read in current review",
+        "test assertions checked against actual helper behavior or explicit source structure contract",
+        "failure paths, delayed responses and cancellation expectations inspected where applicable",
+        "global mutation and test isolation inspected",
+        "source regex checks are not claimed as browser interaction coverage"
+      ],
+      "sha256": "9d17120afcd491e354edadbaae18643a515519ada9d27c31487aadb9db94bbdf",
+      "bytes": 524
+    },
+    {
+      "path": "web/tests/expiring-request-cache.test.mjs",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full text read in current review",
+        "test assertions checked against actual helper behavior or explicit source structure contract",
+        "failure paths, delayed responses and cancellation expectations inspected where applicable",
+        "global mutation and test isolation inspected",
+        "source regex checks are not claimed as browser interaction coverage"
+      ],
+      "sha256": "cd35e1196ab657b7c48d3b9ee2aca9fd04c6ba47e5eda5ee0bf508c28a89033e",
+      "bytes": 2281
+    },
+    {
+      "path": "web/tests/public-reference-url.test.mjs",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full text read in current review",
+        "test assertions checked against actual helper behavior or explicit source structure contract",
+        "failure paths, delayed responses and cancellation expectations inspected where applicable",
+        "global mutation and test isolation inspected",
+        "source regex checks are not claimed as browser interaction coverage"
+      ],
+      "sha256": "011f86326c434f42d2c220c2df8db1c680e49d11613cefbc210a5165e741f05b",
+      "bytes": 1458
+    },
+    {
+      "path": "web/tests/relay-creation-groups.test.mjs",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full text read in current review",
+        "test assertions checked against actual helper behavior or explicit source structure contract",
+        "failure paths, delayed responses and cancellation expectations inspected where applicable",
+        "global mutation and test isolation inspected",
+        "source regex checks are not claimed as browser interaction coverage"
+      ],
+      "sha256": "70499433f255bf66d314ab07db2a7ad5be625dc65c71cacc701fa44daf32916f",
+      "bytes": 1398
+    },
+    {
+      "path": "web/tests/relay-token-round-robin.test.mjs",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full text read in current review",
+        "test assertions checked against actual helper behavior or explicit source structure contract",
+        "failure paths, delayed responses and cancellation expectations inspected where applicable",
+        "global mutation and test isolation inspected",
+        "source regex checks are not claimed as browser interaction coverage"
+      ],
+      "sha256": "6d107c53609c2f09fbcbcad67fc046590fd326a37d6f9a8dca9888a1b5db6d3a",
+      "bytes": 1160
+    },
+    {
+      "path": "web/tests/relay-token-selection.test.mjs",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full text read in current review",
+        "test assertions checked against actual helper behavior or explicit source structure contract",
+        "failure paths, delayed responses and cancellation expectations inspected where applicable",
+        "global mutation and test isolation inspected",
+        "source regex checks are not claimed as browser interaction coverage"
+      ],
+      "sha256": "39c9745c118842f7b544c98eb427f2ca92411df6b7276b4cf5cda13d66466b51",
+      "bytes": 6744
+    },
+    {
+      "path": "web/tests/remembered-login.test.mjs",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full text read in current review",
+        "test assertions checked against actual helper behavior or explicit source structure contract",
+        "failure paths, delayed responses and cancellation expectations inspected where applicable",
+        "global mutation and test isolation inspected",
+        "source regex checks are not claimed as browser interaction coverage"
+      ],
+      "sha256": "e32caf9cae49bce3c6112ba60d65fe2fb1bf81c380158a5ffa505656e0bed0a8",
+      "bytes": 2151
+    },
+    {
+      "path": "web/tests/request-error.test.mjs",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full text read in current review",
+        "test assertions checked against actual helper behavior or explicit source structure contract",
+        "failure paths, delayed responses and cancellation expectations inspected where applicable",
+        "global mutation and test isolation inspected",
+        "source regex checks are not claimed as browser interaction coverage"
+      ],
+      "sha256": "2ffec088b58f65086b85a9b34e9fb20fecd386cafea49cedf8739eeeea50fd1e",
+      "bytes": 897
+    },
+    {
+      "path": "web/tests/request.test.mjs",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full text read in current review",
+        "test assertions checked against actual helper behavior or explicit source structure contract",
+        "failure paths, delayed responses and cancellation expectations inspected where applicable",
+        "global mutation and test isolation inspected",
+        "source regex checks are not claimed as browser interaction coverage"
+      ],
+      "sha256": "6abfb9a730bce00f84a3f467375423e391137bb889657fc612d5733bae39fdb8",
+      "bytes": 1603
+    },
+    {
+      "path": "web/tests/route-preload.test.mjs",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full text read in current review",
+        "test assertions checked against actual helper behavior or explicit source structure contract",
+        "failure paths, delayed responses and cancellation expectations inspected where applicable",
+        "global mutation and test isolation inspected",
+        "source regex checks are not claimed as browser interaction coverage"
+      ],
+      "sha256": "cc74100346f461d61374d8ae8b2f1bd42d8b707e77181842868206441ce20970",
+      "bytes": 4549
+    },
+    {
+      "path": "web/tests/session.test.mjs",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full text read in current review",
+        "test assertions checked against actual helper behavior or explicit source structure contract",
+        "failure paths, delayed responses and cancellation expectations inspected where applicable",
+        "global mutation and test isolation inspected",
+        "source regex checks are not claimed as browser interaction coverage"
+      ],
+      "sha256": "d64ff2958d79594695f10c56b976dce65ac1631305aeddd17a8a981bb60db947",
+      "bytes": 5211
+    },
+    {
+      "path": "web/tests/settings-hash-navigation.test.mjs",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full text read in current review",
+        "test assertions checked against actual helper behavior or explicit source structure contract",
+        "failure paths, delayed responses and cancellation expectations inspected where applicable",
+        "global mutation and test isolation inspected",
+        "source regex checks are not claimed as browser interaction coverage"
+      ],
+      "sha256": "20e31652363dfae27e416978d9f22f6b668c7f3194a1f8268ae7bbd61371583c",
+      "bytes": 941
+    },
+    {
+      "path": "web/tests/storage-provider-cache.test.mjs",
+      "status": "full_text_reviewed",
+      "checks": [
+        "full text read in current review",
+        "test assertions checked against actual helper behavior or explicit source structure contract",
+        "failure paths, delayed responses and cancellation expectations inspected where applicable",
+        "global mutation and test isolation inspected",
+        "source regex checks are not claimed as browser interaction coverage"
+      ],
+      "sha256": "a26c0cdc836845f3a0bb6860e22ddd2411610985ab589e9c5453ac49ec26b643",
+      "bytes": 2869
+    }
+  ]
+}

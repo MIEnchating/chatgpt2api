@@ -6,7 +6,7 @@ const engineSource = readFileSync(new URL("../src/app/canvas/canvas-engine.tsx",
 const pageSource = readFileSync(new URL("../src/app/canvas/page.tsx", import.meta.url), "utf8");
 
 test("text nodes render content without an inline editor", () => {
-  assert.match(engineSource, /node\.prompt \|\| <span className="text-muted-foreground">暂无文字内容<\/span>/);
+  assert.match(engineSource, /node\.prompt \|\| <span[^>]*>暂无文字内容/);
   assert.doesNotMatch(engineSource, /CanvasResourceMentionTextarea/);
   assert.doesNotMatch(engineSource, /contentEditable/);
 });

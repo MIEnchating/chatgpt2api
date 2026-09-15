@@ -12,10 +12,10 @@
 
 ## 认证
 
-所有受保护的内部接口只接受登录接口签发的 HttpOnly Cookie，不接受 `Authorization` 或 `x-api-key` 请求头。正常使用时 Cookie 由同源 Web 应用自动携带；本地调试可先登录并保存 Cookie：
+所有受保护的内部接口只接受登录接口签发的 HttpOnly Cookie，不接受 `Authorization` 或 `x-api-key` 请求头。正常使用时 Cookie 由同源 Web 应用自动携带；以下示例使用本地开发后端端口 `8090`，调试前先登录并保存 Cookie：
 
 ```bash
-curl -c ./cloud-cotton.cookies http://localhost:8000/auth/login \
+curl -c ./cloud-cotton.cookies http://127.0.0.1:8090/auth/login \
   -H "Content-Type: application/json" \
   -d '{"username":"<username>","password":"<password>"}'
 ```
@@ -147,7 +147,7 @@ data: [DONE]
 示例：
 
 ```bash
-curl http://localhost:8000/api/creation-tasks/image-generations \
+curl http://127.0.0.1:8090/api/creation-tasks/image-generations \
   -b ./cloud-cotton.cookies \
   -H "Content-Type: application/json" \
   -d '{
@@ -197,7 +197,7 @@ curl http://localhost:8000/api/creation-tasks/image-generations \
 示例：
 
 ```bash
-curl http://localhost:8000/api/creation-tasks/image-edits \
+curl http://127.0.0.1:8090/api/creation-tasks/image-edits \
   -b ./cloud-cotton.cookies \
   -F "client_task_id=edit-task-20260511-001" \
   -F "model=auto" \
@@ -213,7 +213,7 @@ curl http://localhost:8000/api/creation-tasks/image-edits \
 带遮罩示例：
 
 ```bash
-curl http://localhost:8000/api/creation-tasks/image-edits \
+curl http://127.0.0.1:8090/api/creation-tasks/image-edits \
   -b ./cloud-cotton.cookies \
   -F "client_task_id=edit-task-mask-001" \
   -F "model=gpt-image-2" \
@@ -229,14 +229,14 @@ curl http://localhost:8000/api/creation-tasks/image-edits \
 查询当前用户的任务列表：
 
 ```bash
-curl "http://localhost:8000/api/creation-tasks" \
+curl "http://127.0.0.1:8090/api/creation-tasks" \
   -b ./cloud-cotton.cookies
 ```
 
 按任务 ID 查询：
 
 ```bash
-curl "http://localhost:8000/api/creation-tasks?ids=img-task-20260511-001,edit-task-20260511-001" \
+curl "http://127.0.0.1:8090/api/creation-tasks?ids=img-task-20260511-001,edit-task-20260511-001" \
   -b ./cloud-cotton.cookies
 ```
 
@@ -258,12 +258,12 @@ curl "http://localhost:8000/api/creation-tasks?ids=img-task-20260511-001,edit-ta
       "visibility": "private",
       "data": [
         {
-          "url": "http://localhost:8000/images/2026/05/11/example-1.webp",
+          "url": "http://127.0.0.1:8090/images/2026/05/11/example-1.webp",
           "revised_prompt": "一张用于产品发布会的未来城市主视觉",
           "output_format": "webp"
         },
         {
-          "url": "http://localhost:8000/images/2026/05/11/example-2.webp",
+          "url": "http://127.0.0.1:8090/images/2026/05/11/example-2.webp",
           "revised_prompt": "一张用于产品发布会的未来城市主视觉",
           "output_format": "webp"
         }
@@ -281,7 +281,7 @@ curl "http://localhost:8000/api/creation-tasks?ids=img-task-20260511-001,edit-ta
 示例：
 
 ```bash
-curl http://localhost:8000/api/creation-tasks/img-task-20260511-001/cancel \
+curl http://127.0.0.1:8090/api/creation-tasks/img-task-20260511-001/cancel \
   -b ./cloud-cotton.cookies \
   -H "Content-Type: application/json" \
   -d '{}'
@@ -308,7 +308,7 @@ curl http://localhost:8000/api/creation-tasks/img-task-20260511-001/cancel \
 | `queued` | 单张输出等待开始。 |
 | `running` | 单张输出正在生成。 |
 | `success` | 单张输出已产出图片或文本结果。 |
-| `error` | 单张输出失败，或生成成功但本地余额/配额扣减失败因此未交付。 |
+| `error` | 单张输出失败。 |
 | `cancelled` | 单张输出随任务终止。 |
 
 `output_statuses` 的长度通常与 `n` 一致，适合 Web 端逐张展示占位和进度。
@@ -421,7 +421,6 @@ curl http://localhost:8000/api/creation-tasks/img-task-20260511-001/cancel \
 | `400` | 遮罩接口、模型、格式、alpha 或尺寸不合法 | `mask is only supported by the image edits endpoint`、`does not support mask editing through NewAPI` 或具体 PNG 校验错误 |
 | `400` | `messages` 表单字段不是 JSON | `invalid messages` |
 | `400` | 非法可见性 | `visibility must be private or public` |
-| `400` | 上游返回文本而非图片 | `image_generation_text_response` |
 | `401` | 未认证或 token 无效 | `authorization is invalid` |
 | `403` | 权限不足 | `permission denied` |
 | `429` | 图片额度或任务并发限制 | `insufficient_quota` 或任务限制错误文本 |

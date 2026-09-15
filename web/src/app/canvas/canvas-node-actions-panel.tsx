@@ -25,6 +25,7 @@ import type { CanvasNode } from "@/services/api/canvas";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 export type CanvasImageOperation = "mask" | "crop" | "split" | "upscale" | "angle";
+export type CanvasMediaOperation = "frame-first" | "frame-last" | "frame-current" | "extract-audio" | "trim-audio";
 
 type CanvasNodeActionsPanelProps = {
   node: CanvasNode;
@@ -43,6 +44,7 @@ type CanvasNodeActionsPanelProps = {
   onImageOperation: (operation: CanvasImageOperation) => void;
   onTextToImage: () => void;
   onOpenDirector: () => void;
+  onMediaOperation: (operation: CanvasMediaOperation) => void;
 };
 
 export function CanvasNodeActionsPanel({
@@ -62,6 +64,7 @@ export function CanvasNodeActionsPanel({
   onImageOperation,
   onTextToImage,
   onOpenDirector,
+  onMediaOperation,
 }: CanvasNodeActionsPanelProps) {
   const hasMedia = Boolean(node.url);
   const hasPrompt = Boolean((node.type === "panorama" ? node.panorama_source_prompt || node.prompt : node.prompt)?.trim());
@@ -77,7 +80,7 @@ export function CanvasNodeActionsPanel({
         : hasMedia ? "替换图片" : "上传图片";
 
   return (
-    <div className="space-y-5 pb-2">
+    <div className="space-y-4 pb-2">
       {node.type === "director" ? (
         <ActionSection title="导演台">
           <ActionButton icon={Camera} label="打开导演台" description="进入场景搭建、截图与视频录制" primary onClick={onOpenDirector} />
@@ -122,6 +125,14 @@ export function CanvasNodeActionsPanel({
         </ActionSection>
       ) : null}
 
+      {node.type === "video" && hasMedia ? <ActionSection title="视频编辑">
+        <ActionButton icon={Camera} label="截取首帧" description="将开头画面保存为图片节点" disabled={busy} onClick={() => onMediaOperation("frame-first")} />
+        <ActionButton icon={Camera} label="截取当前帧" description="将当前播放位置保存为图片节点" disabled={busy} onClick={() => onMediaOperation("frame-current")} />
+        <ActionButton icon={Camera} label="截取尾帧" description="将最后画面保存为图片节点" disabled={busy} onClick={() => onMediaOperation("frame-last")} />
+        <ActionButton icon={Music} label="分离音频" description="提取音轨并创建音频节点" disabled={busy} onClick={() => onMediaOperation("extract-audio")} />
+      </ActionSection> : null}
+      {node.type === "audio" && hasMedia ? <ActionSection title="音频编辑"><ActionButton icon={Scissors} label="截取音频" description="选择起止时间并试听" disabled={busy} onClick={() => onMediaOperation("trim-audio")} /></ActionSection> : null}
+
       <ActionSection title="节点">
         <ActionButton icon={Copy} label="复制节点" description="复制节点内容和参数" onClick={onDuplicate} />
       </ActionSection>
@@ -143,6 +154,7 @@ export function CanvasNodeQuickActions({
   onToggleFreeResize,
   onTextToImage,
   onOpenDirector,
+  onMediaOperation,
 }: {
   node: CanvasNode;
   busy: boolean;
@@ -157,6 +169,7 @@ export function CanvasNodeQuickActions({
   onToggleFreeResize: () => void;
   onTextToImage: () => void;
   onOpenDirector: () => void;
+  onMediaOperation: (operation: CanvasMediaOperation) => void;
 }) {
   const [collapsed, setCollapsed] = useState(false);
   type QuickAction = { key: string; label: string; icon: LucideIcon; disabled?: boolean; onClick: () => void };
@@ -187,12 +200,19 @@ export function CanvasNodeQuickActions({
     ]);
   } else if (node.type === "video" && hasMedia) {
     groups.push([
+      { key: "first-frame", label: "截取首帧", icon: Camera, disabled: busy, onClick: () => onMediaOperation("frame-first") },
+      { key: "current-frame", label: "截取当前帧", icon: Camera, disabled: busy, onClick: () => onMediaOperation("frame-current") },
+      { key: "last-frame", label: "截取尾帧", icon: Camera, disabled: busy, onClick: () => onMediaOperation("frame-last") },
+      { key: "extract-audio", label: "分离音频", icon: Music, disabled: busy, onClick: () => onMediaOperation("extract-audio") },
+    ]);
+    groups.push([
       { key: "preview", label: "预览视频", icon: Maximize2, onClick: onPreview },
       { key: "download", label: "下载", icon: Download, onClick: onDownload },
       { key: "save-asset", label: "存入我的素材", icon: FolderPlus, onClick: onSaveAsset },
     ]);
   } else if (node.type === "audio" && hasMedia) {
     groups.push([
+      { key: "trim-audio", label: "截取音频", icon: Scissors, disabled: busy, onClick: () => onMediaOperation("trim-audio") },
       { key: "download", label: "下载", icon: Download, onClick: onDownload },
       { key: "save-asset", label: "存入我的素材", icon: FolderPlus, onClick: onSaveAsset },
     ]);
@@ -219,7 +239,7 @@ export function CanvasNodeQuickActions({
   const quickActionCount = quickActionIndexByKey.size;
 
   return (
-    <div data-canvas-node-quick-actions data-collapsed={collapsed || undefined} className="flex max-h-[calc(100vh-9rem)] flex-col overflow-y-auto rounded-xl border border-border bg-card/96 p-1.5 shadow-[var(--shadow-elevated)] backdrop-blur-xl [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div data-canvas-node-quick-actions data-collapsed={collapsed || undefined} aria-label="节点快捷操作" className="flex max-h-full flex-col overflow-y-auto overscroll-contain rounded-xl border border-border bg-card/96 p-1.5 shadow-[var(--shadow-elevated)] backdrop-blur-xl [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       <Tooltip>
         <TooltipTrigger asChild>
           <button
@@ -227,7 +247,7 @@ export function CanvasNodeQuickActions({
             aria-label={collapsed ? "展开工具栏" : "收起工具栏"}
             aria-expanded={!collapsed}
             className={cn(
-              "grid size-9 shrink-0 place-items-center rounded-lg text-muted-foreground transition-[color,background-color,box-shadow] duration-200 ease-in-out hover:bg-muted hover:text-foreground",
+              "grid size-9 shrink-0 place-items-center rounded-lg text-muted-foreground transition-[color,background-color,box-shadow] duration-200 ease-in-out hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset",
               collapsed && "bg-muted/70 text-foreground shadow-inner",
             )}
             onClick={() => setCollapsed((value) => !value)}
@@ -237,7 +257,7 @@ export function CanvasNodeQuickActions({
         </TooltipTrigger>
         <TooltipContent side="left">{collapsed ? "展开工具栏" : "收起工具栏"}</TooltipContent>
       </Tooltip>
-      <div inert={collapsed} aria-hidden={collapsed} className={cn("grid transition-[grid-template-rows,transform] duration-300 ease-in-out", collapsed ? "pointer-events-none grid-rows-[0fr] -translate-y-1" : "grid-rows-[1fr] translate-y-0")}>
+      <div inert={collapsed} aria-hidden={collapsed} className={cn("grid shrink-0 transition-[grid-template-rows,transform] duration-300 ease-in-out motion-reduce:transition-none", collapsed ? "pointer-events-none grid-rows-[0fr] -translate-y-1" : "grid-rows-[1fr] translate-y-0")}>
         <div className="min-h-0 overflow-hidden">
           {visibleGroups.map((actions) => (
             <div key={actions[0].key} className="mt-1 flex flex-col gap-1 border-t border-border/70 pt-1">
@@ -247,7 +267,7 @@ export function CanvasNodeQuickActions({
                   <div
                     key={key}
                     className={cn(
-                      "size-9 transition-[opacity,transform] duration-150 ease-in-out",
+                      "size-9 transition-[opacity,transform] duration-150 ease-in-out motion-reduce:transition-none",
                       collapsed ? "translate-y-1 scale-90 opacity-0" : "translate-y-0 scale-100 opacity-100",
                     )}
                     style={{
@@ -258,7 +278,7 @@ export function CanvasNodeQuickActions({
                   >
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <button type="button" aria-label={label} disabled={disabled} className="grid size-9 shrink-0 place-items-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-35" onClick={onClick}><Icon className="size-4" /></button>
+                        <button type="button" aria-label={label} disabled={disabled} className="grid size-9 shrink-0 place-items-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset disabled:cursor-not-allowed disabled:opacity-35" onClick={onClick}><Icon className="size-4" /></button>
                       </TooltipTrigger>
                       <TooltipContent side="left">{label}</TooltipContent>
                     </Tooltip>
@@ -276,8 +296,8 @@ export function CanvasNodeQuickActions({
 function ActionSection({ title, children }: { title: string; children: ReactNode }) {
   return (
     <section className="space-y-2">
-      <h3 className="text-xs font-semibold text-muted-foreground">{title}</h3>
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">{children}</div>
+      <h3 className="flex items-center gap-2 px-0.5 text-[11px] font-semibold text-muted-foreground">{title}<span className="h-px flex-1 bg-border/70" /></h3>
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,160px),1fr))] gap-2">{children}</div>
     </section>
   );
 }
@@ -295,16 +315,16 @@ function ActionButton({ icon: Icon, label, description, primary = false, disable
       type="button"
       aria-label={label}
       className={cn(
-        "group flex min-h-16 min-w-0 items-start gap-3 rounded-lg border border-border bg-background px-3 py-3 text-left transition hover:border-brand/40 hover:bg-muted/45 disabled:cursor-not-allowed disabled:opacity-45",
-        primary && "border-brand-border bg-brand-soft",
+        "group flex min-h-16 min-w-0 items-start gap-2 rounded-lg border border-border/75 bg-background/65 p-2.5 text-left transition-[background-color,border-color,box-shadow] hover:border-brand/40 hover:bg-muted/45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-45",
+        primary && "col-span-full border-brand-border bg-brand-soft",
       )}
       disabled={disabled}
       onClick={onClick}
     >
-      <span className={cn("mt-0.5 grid size-8 shrink-0 place-items-center rounded-lg bg-muted text-muted-foreground", primary && "bg-primary text-primary-foreground")}><Icon className="size-4" /></span>
-      <span className="min-w-0">
-        <strong className="block text-xs font-semibold text-foreground">{label}</strong>
-        <span className="mt-1 block text-[11px] leading-4 text-muted-foreground">{description}</span>
+      <span className={cn("mt-0.5 grid size-7 shrink-0 place-items-center rounded-md bg-muted text-muted-foreground", primary && "bg-primary text-primary-foreground")}><Icon className="size-3.5" /></span>
+      <span className="min-w-0 [overflow-wrap:anywhere]">
+        <strong className="block text-xs font-semibold leading-5 text-foreground">{label}</strong>
+        <span className="mt-0.5 block text-[11px] leading-4 text-muted-foreground">{description}</span>
       </span>
     </button>
   );

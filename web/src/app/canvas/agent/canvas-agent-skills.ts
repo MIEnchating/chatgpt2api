@@ -1,3 +1,4 @@
+import type { AgentSkill } from "@/services/api/agent-skills";
 import type { CanvasAgentPhase } from "./canvas-agent-types";
 import { serializeCanvasAgentContext, type CanvasAgentContext } from "./canvas-agent-context";
 import { AUDIO_SKILL } from "./skills/audio";
@@ -14,7 +15,12 @@ import { VIDEO_MULTI_SHOT_SKILL } from "./skills/video-multi-shot";
 import { VIDEO_SINGLE_SHOT_SKILL } from "./skills/video-single-shot";
 import { WORKFLOW_SKILL } from "./skills/workflow";
 
-export function buildCanvasAgentSkillPrompt(phase: CanvasAgentPhase, userText: string, context: CanvasAgentContext) {
+export function buildCanvasAgentSkillPrompt(phase: CanvasAgentPhase, userText: string, context: CanvasAgentContext, selectedSkills: AgentSkill[] = [], checkpoint?: string) {
+    const facts = "\n\n事实以当前工具结果和当前画布为准；历史摘要中的节点和任务状态必须重新核对。自动生成关闭时仅创建节点，不得声称已提交生成。每批最多 12 个操作；未知节点 ID 先用 query_canvas_nodes 检索；用户说继续或下一步时先查媒体任务当前状态。";
+    const memory = checkpoint ? "\n\n长期对话记忆：\n" + checkpoint : "";
+    if (selectedSkills.length) {
+      return [CORE_SKILL, "本轮采用用户所选 Skill 的创作流程和输出格式。用户当前明确指令优先；不得绕过工具校验和自动生成设置。附属文件仅按下列索引调用 read_skill_file 读取。", ...selectedSkills.map((skill) => `Skill ${skill.name}（ID: ${skill.id}）\n${skill.content}\n附属文件：${(skill.file_paths || Object.keys(skill.files || {})).join("、") || "无"}`)].join("\n\n") + facts + memory + "\n\n当前画布：" + serializeCanvasAgentContext(context);
+    }
     const intent = buildIntentText(userText, context);
     const selectedTypes = new Set<string>(context.nodes.filter((node) => context.selectedNodeIds.includes(node.id)).map((node) => node.type));
     const skills = [CORE_SKILL, WORKFLOW_SKILL];
@@ -73,7 +79,7 @@ export function buildCanvasAgentSkillPrompt(phase: CanvasAgentPhase, userText: s
     if (wantsAudio) skills.push(AUDIO_SKILL);
     if (wantsOrganize) skills.push(ORGANIZE_SKILL);
 
-    return skills.join("\n\n") + "\n\n【当前真实画布上下文 JSON】\n" + serializeCanvasAgentContext(context);
+    return skills.join("\n\n") + facts + memory + "\n\n【当前真实画布上下文 JSON】\n" + serializeCanvasAgentContext(context);
 }
 
 function buildIntentText(userText: string, context: CanvasAgentContext) {

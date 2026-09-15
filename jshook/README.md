@@ -58,6 +58,9 @@
 | --- | --- | --- |
 | [scripts/image_gen_full_flow.py](scripts/image_gen_full_flow.py) | 历史认证生图链路验证：Bootstrap -> Chat Requirements -> PoW -> Prepare -> Generate SSE -> Download | `responses/local/<本次运行 ID>/image-gen-sse-response.json`、下载图片 |
 | [scripts/verify_text_chat.py](scripts/verify_text_chat.py) | 验证历史 `/backend-api/conversation` 文本聊天端点，并与生图端点对比 | `responses/local/<本次运行 ID>/text-chat-sse-response.json` |
+| [scripts/capture_safety.py](scripts/capture_safety.py) | 隔离下载凭据并以私有权限保存抓包 | 供验证脚本调用 |
+| [scripts/sse_capture.py](scripts/sse_capture.py) | 按 SSE 事件边界合并多行 `data:`，保留有效空白 | 供验证脚本调用 |
+| [scripts/test_capture_safety.py](scripts/test_capture_safety.py)、[scripts/test_sse_capture.py](scripts/test_sse_capture.py) | 离线检查凭据边界与 SSE 解析 | unittest 测试结果 |
 
 脚本通常需要本地有效认证状态、网络访问和 `curl-cffi` 等 Python 依赖。不要把真实 OAuth token、cookie、账号信息、代理凭据或可复用下载 URL 写入脚本或响应样本。
 
@@ -89,7 +92,11 @@ jshook/
 │   ├── request-completion-flow.md
 │   └── upstream-sse-conversation.md
 ├── scripts/
+│   ├── capture_safety.py
 │   ├── image_gen_full_flow.py
+│   ├── sse_capture.py
+│   ├── test_capture_safety.py
+│   ├── test_sse_capture.py
 │   └── verify_text_chat.py
 └── responses/
     ├── conversation-init.json
@@ -166,7 +173,7 @@ Bootstrap
 
 - `curl-cffi` + `edge101` 指纹 + PoW 可通过当时的 Cloudflare WAF 验证。
 - OAuth Bearer Token 可用于实抓链路，无需 Web Session Cookie。
-- Turnstile 当时未触发: `arkose.required = false`。
+- 单步实验记录的 `turnstile.required = false` 表示当次未要求 Turnstile；`arkose.required` 是独立开关。
 
 ### 生图链路验证
 

@@ -75,7 +75,28 @@ export function canManageAsset(asset: MyAsset) {
 }
 
 export function assetListKey(asset: MyAsset) {
-  return `${asset.ownerId || (asset.owned === false ? "shared" : "self")}:${asset.id}`;
+  return `${asset.owned === true ? "self" : asset.ownerId || (asset.owned === false ? "shared" : "self")}:${asset.id}`;
+}
+
+export async function settleAssetOperations<T, R>(
+  items: readonly T[],
+  operation: (item: T) => Promise<R>,
+  signal: AbortSignal,
+): Promise<PromiseSettledResult<R>[]> {
+  const results: PromiseSettledResult<R>[] = [];
+  let nextIndex = 0;
+  await Promise.all(Array.from({ length: Math.min(4, items.length) }, async () => {
+    while (nextIndex < items.length) {
+      const index = nextIndex++;
+      try {
+        signal.throwIfAborted();
+        results[index] = { status: "fulfilled", value: await operation(items[index]) };
+      } catch (reason) {
+        results[index] = { status: "rejected", reason };
+      }
+    }
+  }));
+  return results;
 }
 
 export function collectAssetStorageKeys(value: unknown, keys = new Set<string>()) {

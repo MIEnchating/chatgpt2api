@@ -12,18 +12,33 @@ type serviceDocumentErrorBackend struct {
 	loadValue any
 	loadErr   error
 	saveErr   error
+	loadCalls int
+	saveCalls int
 }
 
 func (b *serviceDocumentErrorBackend) LoadJSONDocument(string) (any, error) {
+	b.loadCalls++
 	return b.loadValue, b.loadErr
 }
 
 func (b *serviceDocumentErrorBackend) SaveJSONDocument(string, any) error {
+	b.saveCalls++
 	return b.saveErr
 }
 
 func (b *serviceDocumentErrorBackend) DeleteJSONDocument(string) error {
 	return nil
+}
+
+func TestAnnouncementUpdateMissingAvoidsRepeatedDatabaseReads(t *testing.T) {
+	backend := &serviceDocumentErrorBackend{loadValue: map[string]any{}}
+	updated, items, err := NewAnnouncementService(backend).UpdateWithItems("missing", map[string]any{"title": "changed"})
+	if err != nil || updated != nil || len(items) != 0 {
+		t.Fatalf("UpdateWithItems(missing) = (%#v, %#v, %v)", updated, items, err)
+	}
+	if backend.loadCalls != 1 || backend.saveCalls != 0 {
+		t.Fatalf("missing announcement used %d reads and %d writes, want one read and no writes", backend.loadCalls, backend.saveCalls)
+	}
 }
 
 func TestAnnouncementServiceClassifiesStorageErrors(t *testing.T) {

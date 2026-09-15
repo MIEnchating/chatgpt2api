@@ -14,6 +14,10 @@ const STARTER_NODE_GAP = 360;
 
 export function defaultCanvasAgentStarterConfig(videoModel = "") {
   return {
+    autoGenerateMedia: false,
+    textApiMode: "chat" as const,
+    textReasoningEnabled: false,
+    activeSkillIds: [],
     imageQuality: "",
     imageSize: "1:1",
     videoQuality: videoDefaultResolution(videoModel),
@@ -39,9 +43,9 @@ export function preferredCanvasAgentVideoSize(options: readonly string[], fallba
 export function normalizeCanvasAgentConfig(
   value: Partial<CanvasAgentConfig> | null | undefined,
   defaults: CanvasAgentConfig,
-  options: Record<keyof CanvasAgentConfig, readonly string[]>,
+  options: Record<"imageQuality" | "imageSize" | "videoQuality" | "videoSize", readonly string[]>,
 ): CanvasAgentConfig {
-  const select = (key: keyof CanvasAgentConfig) => {
+  const select = (key: keyof typeof options) => {
     const available = options[key];
     const current = typeof value?.[key] === "string" ? value[key].trim() : "";
     if (available.includes(current)) return current;
@@ -50,6 +54,10 @@ export function normalizeCanvasAgentConfig(
     return available[0] || "";
   };
   return {
+    autoGenerateMedia: value?.autoGenerateMedia === true,
+    textApiMode: value?.textApiMode === "responses" ? "responses" : "chat",
+    textReasoningEnabled: value?.textReasoningEnabled === true,
+    activeSkillIds: Array.isArray(value?.activeSkillIds) ? [...new Set(value.activeSkillIds.filter((id) => typeof id === "string" && id.trim()))] : [],
     imageQuality: select("imageQuality"),
     imageSize: select("imageSize"),
     videoQuality: select("videoQuality"),

@@ -30,14 +30,14 @@ export function CanvasGenerationFooter({
   onStop: () => void;
 }) {
   return (
-    <div className={cn("shrink-0 -mx-3 -mb-3 border-t border-border/80 bg-card/95 px-3 pb-1 pt-3 backdrop-blur-xl sm:-mx-4 sm:-mb-4 sm:px-4", className)}>
+    <div className={cn("shrink-0 -mx-3 -mb-3 border-t border-border/80 bg-card/95 p-3 backdrop-blur-xl", className)}>
       <div className={cn("grid gap-2", secondaryAction && "grid-cols-[auto_minmax(0,1fr)]")}>
         {secondaryAction ? (
           <Button
             type="button"
             variant="outline"
             size="lg"
-            className="h-10 px-3 text-xs"
+            className="h-10 rounded-md px-3 text-xs"
             disabled={secondaryAction.disabled}
             onClick={secondaryAction.onClick}
           >
@@ -49,7 +49,7 @@ export function CanvasGenerationFooter({
           type="button"
           size="lg"
           variant={running ? "destructive" : "default"}
-          className="h-10 w-full text-xs font-semibold"
+          className="h-10 w-full rounded-md text-xs font-semibold"
           disabled={disabled}
           aria-label={running ? "停止生成" : "开始生成"}
           onClick={running ? onStop : onGenerate}

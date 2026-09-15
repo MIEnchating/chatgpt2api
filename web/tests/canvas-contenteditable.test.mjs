@@ -66,3 +66,25 @@ test("both canvas editors keep business-specific reference deletion behavior on 
   assert.match(agentPromptSource, /deleteAdjacentContentEditableReference\(event\.key, "refLabel", \{ trimAdjacentWhitespace: true \}\)/);
   assert.match(configComposerSource, /deleteAdjacentContentEditableReference\(event\.key, "referenceNodeId"\)/);
 });
+
+test("serializes browser placeholder lines and block boundaries exactly once", () => {
+  const OriginalHTMLElement = globalThis.HTMLElement;
+  class Element {
+    constructor(tagName, childNodes = [], dataset = {}) { Object.assign(this, { nodeType: 1, tagName, childNodes, dataset }); }
+  }
+  globalThis.HTMLElement = Element;
+  const text = (textContent) => ({ nodeType: 3, textContent });
+  const block = (...children) => new Element("DIV", children);
+  const br = () => new Element("BR");
+  const serialize = (...childNodes) => serializeContentEditable({ childNodes }, (node) => node.dataset.refLabel);
+  try {
+    assert.equal(serialize(text("第一行"), block(br())), "第一行\n");
+    assert.equal(serialize(block(text("第一行")), text("第二行")), "第一行\n第二行");
+    assert.equal(serialize(text("第一行"), block(br()), block(text("第三行"))), "第一行\n\n第三行");
+    assert.equal(serialize(block(text("第一行"), br()), block(text("第二行"))), "第一行\n第二行");
+    assert.equal(serialize(text("前"), br(), text("后"), br()), "前\n后");
+    assert.equal(serialize(text("前"), br(), block(text("后"))), "前\n后");
+    assert.equal(serialize(text("前"), br(), br()), "前\n");
+    assert.equal(serialize(block(new Element("SPAN", [], { refLabel: "图片1" })), block(text("说明"))), "图片1\n说明");
+  } finally { globalThis.HTMLElement = OriginalHTMLElement; }
+});

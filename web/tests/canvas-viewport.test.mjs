@@ -57,9 +57,9 @@ test("canvas grid follows viewport translation and zoom", () => {
     dotSize: 1.15,
   });
   assert.deepEqual(canvasGridMetrics({ zoom: 0.1, x: 5, y: 7 }), {
-    size: 4.800000000000001,
-    x: 0.1999999999999993,
-    y: 2.1999999999999993,
+    size: 19.200000000000003,
+    x: 5,
+    y: 7,
     dotSize: 0.8,
   });
 });

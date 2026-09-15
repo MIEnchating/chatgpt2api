@@ -6,15 +6,23 @@ import {
   type CreationTaskToolCall,
 } from "@/lib/api";
 import type { CanvasAgentProtocolMessage, CanvasAgentToolCall } from "./canvas-agent-types";
+import { parseCanvasAgentToolArguments } from "./canvas-agent-protocol";
 import type { CanvasAgentToolDefinition } from "./canvas-agent-tools";
 
 export type CanvasAgentModelTurn = {
   content: string;
+  toolError?: string;
+  inputTokens?: number;
+  finishReason?: string;
   reasoningContent?: string;
+  responseItems?: Record<string, unknown>[];
   toolCalls: CanvasAgentToolCall[];
 };
 
-type RequestCanvasAgentTurnInput = {
+export type RequestCanvasAgentTurnInput = {
+  apiMode?: "chat" | "responses";
+  reasoningEnabled?: boolean;
+  maxOutputTokens?: number;
   model: string;
   relayTokenName: string;
   prompt: string;
@@ -43,6 +51,9 @@ async function requestCompletion(input: RequestCanvasAgentTurnInput & { tools: C
       clientTaskId: `canvas-agent-${crypto.randomUUID()}`,
       prompt: input.prompt,
       model: input.model,
+      apiMode: input.apiMode || "chat",
+      reasoningEnabled: input.reasoningEnabled === true,
+      maxOutputTokens: input.maxOutputTokens,
       relayTokenName: input.relayTokenName,
       messages: [
         { role: "system", content: input.systemPrompt },
@@ -72,12 +83,20 @@ async function requestCompletion(input: RequestCanvasAgentTurnInput & { tools: C
       if (task?.status === "success") {
         const data = task.data?.[0];
         const content = typeof data?.text_response === "string" ? data.text_response : "";
-        const toolCalls = normalizeToolCalls(data?.tool_calls);
-        if (!content && !toolCalls.length) throw new CanvasAgentRequestError("文本模型没有返回内容");
+        const { toolCalls, toolError } = normalizeToolCalls(data?.tool_calls);
+        const meta = data as Record<string, unknown> | undefined;
+        const finishReason = typeof meta?.finish_reason === "string" ? meta.finish_reason : undefined;
+        const usage = meta?.usage as { input_tokens?: number; prompt_tokens?: number } | undefined;
+        const inputTokens = usage?.input_tokens ?? usage?.prompt_tokens;
+        if (!content && !toolCalls.length && !toolError && finishReason !== "length") throw new CanvasAgentRequestError("文本模型没有返回内容");
         return {
           content,
           ...(typeof data?.reasoning_content === "string" ? { reasoningContent: data.reasoning_content } : {}),
           toolCalls,
+          toolError: finishReason === "length" || finishReason === "incomplete" ? "模型输出被截断，本批操作未执行；请减少单批操作数量并保留完整参数" : toolError,
+          finishReason,
+          responseItems: Array.isArray(meta?.response_items) ? meta.response_items as Record<string, unknown>[] : undefined,
+          inputTokens: typeof inputTokens === "number" && Number.isFinite(inputTokens) ? inputTokens : undefined,
         };
       }
       if (task?.status === "error" || task?.status === "cancelled") {
@@ -97,6 +116,7 @@ function toCreationTaskMessage(message: CanvasAgentProtocolMessage): CreationTas
     return {
       role: "assistant",
       content: message.content || null,
+      ...(message.responseItems?.length ? { response_items: message.responseItems } : {}),
       ...(message.reasoningContent !== undefined ? { reasoning_content: message.reasoningContent } : {}),
       ...(message.toolCalls?.length
         ? {
@@ -120,28 +140,12 @@ function toCreationTaskMessage(message: CanvasAgentProtocolMessage): CreationTas
   return { role: message.role, content: message.content };
 }
 
-function normalizeToolCalls(value: CreationTaskToolCall[] | undefined): CanvasAgentToolCall[] {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((toolCall, index) => {
-    const name = toolCall?.function?.name?.trim();
-    if (!name) return [];
-    return [{
-      id: toolCall.id || `tool-call-${index}`,
-      name,
-      arguments: parseToolArguments(toolCall.function.arguments),
-    }];
-  });
-}
-
-function parseToolArguments(value: string | Record<string, unknown> | undefined) {
-  if (!value) return {};
-  if (typeof value === "object") return value;
-  try {
-    const parsed = JSON.parse(value);
-    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed as Record<string, unknown> : {};
-  } catch {
-    return {};
-  }
+function normalizeToolCalls(value: CreationTaskToolCall[] | undefined): { toolCalls: CanvasAgentToolCall[]; toolError?: string } {
+  if (value === undefined) return { toolCalls: [] };
+  if (!Array.isArray(value)) return { toolCalls: [], toolError: "tool_calls 必须是数组" };
+  const invalid = value.some((call) => !call?.id || !call.function?.name?.trim());
+  if (invalid) return { toolCalls: [], toolError: "工具调用缺少 ID 或名称，本批操作未执行" };
+  return { toolCalls: value.map((call) => ({ id: call.id, name: call.function.name.trim(), ...parseCanvasAgentToolArguments(call.function.arguments) })) };
 }
 
 function normalizeRequestError(error: unknown) {

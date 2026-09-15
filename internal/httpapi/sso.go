@@ -154,6 +154,7 @@ type ssoUser struct {
 	Username    string `json:"username"`
 	Email       string `json:"email"`
 	DisplayName string `json:"display_name"`
+	IsAdmin     bool   `json:"is_admin"`
 	Reference   string `json:"reference"`
 	ExpiresAt   int64  `json:"expires_at"`
 }
@@ -216,6 +217,7 @@ func (a *App) handleSSOCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	identity, token, err := a.auth.UpsertNewAPISession(service.NewAPIUser{
 		ID: user.ID, Username: user.Username, Email: user.Email, DisplayName: user.DisplayName,
+		IsAdmin:  user.IsAdmin,
 		Provider: service.AuthProviderNewAPI, SubjectPrefix: service.AuthProviderNewAPI,
 		SSOReference: user.Reference, SSOIssuer: transaction.Issuer, SSOExpiresAt: user.ExpiresAt,
 	})

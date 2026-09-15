@@ -67,7 +67,7 @@ func TestCustomRelaySelectionRejectsPrivateEndpointWithoutForwardingInternals(t 
 	}))
 	defer upstream.Close()
 	privateHostnameURL := strings.Replace(upstream.URL, "127.0.0.1", "localhost", 1)
-	customConfig, err := app.customRelayConfigs.Create(identityScope(*identity), "text", "测试线路", privateHostnameURL, "sk-custom")
+	customConfig, err := app.customRelayConfigs.Create(identityScope(*identity), "text", "测试线路", privateHostnameURL, "sk-custom", "openai")
 	if err != nil {
 		t.Fatalf("Create() error = %v", err)
 	}

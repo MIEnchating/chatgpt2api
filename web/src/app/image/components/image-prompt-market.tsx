@@ -123,6 +123,7 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingFavorites, setIsLoadingFavorites] = useState(false);
   const [error, setError] = useState("");
+  const [promptReloadKey, setPromptReloadKey] = useState(0);
   const [favoriteError, setFavoriteError] = useState("");
   const [keyword, setKeyword] = useState("");
   const [categorySearch, setCategorySearch] = useState("");
@@ -149,19 +150,7 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
   };
 
   const loadPromptData = () => {
-    setIsLoading(true);
-    setError("");
-
-    void fetchPromptMarketPrompts(undefined, sourceConfigs)
-      .then((items) => {
-        setPrompts(items);
-      })
-      .catch((loadError: unknown) => {
-        setError(loadError instanceof Error ? loadError.message : "读取提示词市场失败");
-      })
-      .finally(() => {
-        setIsLoading(false);
-      });
+    setPromptReloadKey((current) => current + 1);
   };
 
   const loadFavoriteData = () => {
@@ -216,11 +205,13 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
 
     void fetchPromptSourcesConfig()
       .then(({ sources }) => {
+        controller.signal.throwIfAborted();
         const configured = normalizePromptMarketSources(sources);
         setSourceConfigs(configured);
         return fetchPromptMarketPrompts(controller.signal, configured);
       })
       .then((items) => {
+        controller.signal.throwIfAborted();
         setPrompts(items);
       })
       .catch((loadError: unknown) => {
@@ -236,7 +227,7 @@ export function ImagePromptMarket({ open, onOpenChange, onApplyPrompt, onSavePro
       });
 
     return () => controller.abort();
-  }, [open, prompts.length]);
+  }, [open, promptReloadKey, prompts.length]);
 
   useEffect(() => {
     if (!open || favoriteItems.length > 0) {

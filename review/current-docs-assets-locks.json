@@ -1,0 +1,670 @@
+{
+  "scope": "Current root/user documentation, historical review artifacts, dependency lockfiles, and original assets outside bundled director. Historical record validation does not claim current-source coverage for their recorded paths.",
+  "validation": [
+    "go mod verify passed",
+    "bun install --frozen-lockfile --ignore-scripts --dry-run passed",
+    "node build/review/current-docs-assets-check.mjs passed",
+    "Remark parsed all Markdown; 7 JSON examples and 20 relative document links passed",
+    "bash scripts/validate-release-notes.sh v3.0.13 passed",
+    "git diff --check -- README.md docs/image-generation-api.md passed"
+  ],
+  "files": [
+    {
+      "path": "assets/account_pool.png",
+      "status": "reviewed",
+      "sha256": "ae368d852ae5eb2ff605e886a232b70870370db0c531edc9f88b59fba62552c6",
+      "bytes": 674681,
+      "lines": null,
+      "checks": [
+        "All PNG chunks and CRCs, complete IDAT inflate, scanline lengths and filters; visual review completed separately",
+        "Full browser decode and nontransparent pixel check",
+        "Full image displayed and visually reviewed; screenshots contain demo/redacted values and are historical, not current UI evidence"
+      ]
+    },
+    {
+      "path": "assets/duilie.png",
+      "status": "reviewed",
+      "sha256": "01dd212aed4fcd6a5303e94bd5fa5f345b706e85306e4582a686e6f41bcbe19c",
+      "bytes": 471836,
+      "lines": null,
+      "checks": [
+        "All PNG chunks and CRCs, complete IDAT inflate, scanline lengths and filters; visual review completed separately",
+        "Full browser decode and nontransparent pixel check",
+        "Full image displayed and visually reviewed; screenshots contain demo/redacted values and are historical, not current UI evidence"
+      ]
+    },
+    {
+      "path": "assets/image.png",
+      "status": "reviewed",
+      "sha256": "246bd2e4ce138a1763d2606f07ff277fc6135ec16de418c3fc35c274322f5bbe",
+      "bytes": 576422,
+      "lines": null,
+      "checks": [
+        "All PNG chunks and CRCs, complete IDAT inflate, scanline lengths and filters; visual review completed separately",
+        "Full browser decode and nontransparent pixel check",
+        "Full image displayed and visually reviewed; screenshots contain demo/redacted values and are historical, not current UI evidence"
+      ]
+    },
+    {
+      "path": "assets/log.png",
+      "status": "reviewed",
+      "sha256": "a5e3f2e499bcd8d8c644435873734fe7b2f7a6b650bd3ebce1c85642f785279b",
+      "bytes": 440928,
+      "lines": null,
+      "checks": [
+        "All PNG chunks and CRCs, complete IDAT inflate, scanline lengths and filters; visual review completed separately",
+        "Full browser decode and nontransparent pixel check",
+        "Full image displayed and visually reviewed; screenshots contain demo/redacted values and are historical, not current UI evidence"
+      ]
+    },
+    {
+      "path": "assets/prompts.png",
+      "status": "reviewed",
+      "sha256": "f3fa9d0c2caae747e49c951a33807d6ed54ed0a1cb34ec1c9fc75a4302ad2173",
+      "bytes": 1937585,
+      "lines": null,
+      "checks": [
+        "All PNG chunks and CRCs, complete IDAT inflate, scanline lengths and filters; visual review completed separately",
+        "Full browser decode and nontransparent pixel check",
+        "Full image displayed and visually reviewed; screenshots contain demo/redacted values and are historical, not current UI evidence"
+      ]
+    },
+    {
+      "path": "assets/rabc.png",
+      "status": "reviewed",
+      "sha256": "ccb32cf9750b69449478acdd5fd5d871e4c7d831f7a9d2f544b181363c1a8b58",
+      "bytes": 412579,
+      "lines": null,
+      "checks": [
+        "All PNG chunks and CRCs, complete IDAT inflate, scanline lengths and filters; visual review completed separately",
+        "Full browser decode and nontransparent pixel check",
+        "Full image displayed and visually reviewed; screenshots contain demo/redacted values and are historical, not current UI evidence"
+      ]
+    },
+    {
+      "path": "assets/tuku.png",
+      "status": "reviewed",
+      "sha256": "aa7f293fadfad96efdb1d7b113829c676cc47bea4e8495c441d6a65087ab4b61",
+      "bytes": 2451745,
+      "lines": null,
+      "checks": [
+        "All PNG chunks and CRCs, complete IDAT inflate, scanline lengths and filters; visual review completed separately",
+        "Full browser decode and nontransparent pixel check",
+        "Full image displayed and visually reviewed; screenshots contain demo/redacted values and are historical, not current UI evidence"
+      ]
+    },
+    {
+      "path": "assets/zhuceji.png",
+      "status": "reviewed",
+      "sha256": "c6e7bcd894e9c0b9974bc441ecdb4dd697ea8fb7c54c88747db2b30be02933ec",
+      "bytes": 251985,
+      "lines": null,
+      "checks": [
+        "All PNG chunks and CRCs, complete IDAT inflate, scanline lengths and filters; visual review completed separately",
+        "Full browser decode and nontransparent pixel check",
+        "Full image displayed and visually reviewed; screenshots contain demo/redacted values and are historical, not current UI evidence"
+      ]
+    },
+    {
+      "path": "CHANGELOG.md",
+      "status": "reviewed",
+      "sha256": "63cdf2e611ddeeffacbd794fda3dcf9b5b3831d8a06c8810d34472934ae4e541",
+      "bytes": 27614,
+      "lines": 444,
+      "checks": [
+        "Full contents read using bounded shell output; historical claims distinguished from current implementation",
+        "Markdown parsed with remark; all JSON examples and relative file links checked"
+      ]
+    },
+    {
+      "path": "docs/architecture.md",
+      "status": "reviewed",
+      "sha256": "439ea3ef05a40da72a3f77304d06796e5677eb8a3c2fd4ac3195a1c3b578eca0",
+      "bytes": 2223,
+      "lines": 29,
+      "checks": [
+        "Full contents read using bounded shell output; historical claims distinguished from current implementation",
+        "Markdown parsed with remark; all JSON examples and relative file links checked"
+      ]
+    },
+    {
+      "path": "docs/image-generation-api.md",
+      "status": "reviewed",
+      "sha256": "baf69365575bf67265f2ba37cd4ed6bae1973e3d6c8128b5f77bb78b31c4c710",
+      "bytes": 23633,
+      "lines": 464,
+      "checks": [
+        "Full contents read using bounded shell output; historical claims distinguished from current implementation",
+        "Markdown parsed with remark; all JSON examples and relative file links checked",
+        "Corrected local dev port and removed obsolete local billing failure and text-result 400 descriptions"
+      ]
+    },
+    {
+      "path": "docs/video-generation-api.md",
+      "status": "reviewed",
+      "sha256": "a9be90b515fc4596bf49a0d1194c467a728945569fff05fad93d85313ec04338",
+      "bytes": 7865,
+      "lines": 93,
+      "checks": [
+        "Full contents read using bounded shell output; historical claims distinguished from current implementation",
+        "Markdown parsed with remark; all JSON examples and relative file links checked"
+      ]
+    },
+    {
+      "path": "go.sum",
+      "status": "reviewed",
+      "sha256": "c589decc05aa183522035f3611d596e9f10f27c036f9abf78cd2c9ab9d1ed6ea",
+      "bytes": 12864,
+      "lines": 151,
+      "checks": [
+        "Complete record syntax, unique module/version, SHA256 checksum encoding; go mod verify passed separately"
+      ]
+    },
+    {
+      "path": "LICENSE",
+      "status": "reviewed",
+      "sha256": "b21dd4c2da43718348760993f0fc138af271718dd7eb954efe54506443ccadce",
+      "bytes": 1063,
+      "lines": 21,
+      "checks": [
+        "Full contents read using bounded shell output; historical claims distinguished from current implementation"
+      ]
+    },
+    {
+      "path": "README.md",
+      "status": "reviewed",
+      "sha256": "691279098cbd7b4417a3bf70d3b88ef45fa62187b279a06f5af380e4e6a894aa",
+      "bytes": 27629,
+      "lines": 498,
+      "checks": [
+        "Full contents read using bounded shell output; historical claims distinguished from current implementation",
+        "Markdown parsed with remark; all JSON examples and relative file links checked",
+        "Aligned Go hook description with partial-stage behavior"
+      ]
+    },
+    {
+      "path": "RELEASE_NOTES.md",
+      "status": "reviewed",
+      "sha256": "af1302d2dcbbc22bd288f89b8b3b0b77bb5b0cfcf7ac5fd42e2ccf6cc2659b2b",
+      "bytes": 2564,
+      "lines": 35,
+      "checks": [
+        "Full contents read using bounded shell output; historical claims distinguished from current implementation",
+        "Markdown parsed with remark; all JSON examples and relative file links checked",
+        "bash scripts/validate-release-notes.sh v3.0.13 passed"
+      ]
+    },
+    {
+      "path": "REVIEW-files-infra.md",
+      "status": "reviewed",
+      "sha256": "fff7fd446837f54fd91193bd5416b372c06f5c429b594d4a33c8b9a667440e78",
+      "bytes": 11989,
+      "lines": 49,
+      "checks": [
+        "Full contents read using bounded shell output; historical claims distinguished from current implementation",
+        "Markdown parsed with remark; all JSON examples and relative file links checked"
+      ]
+    },
+    {
+      "path": "REVIEW.md",
+      "status": "reviewed",
+      "sha256": "171d7e24f0b47895803986138bac7e179835575b0190af62a5afc0cdc6bad109",
+      "bytes": 27686,
+      "lines": 196,
+      "checks": [
+        "Full contents read using bounded shell output; historical claims distinguished from current implementation",
+        "Markdown parsed with remark; all JSON examples and relative file links checked"
+      ]
+    },
+    {
+      "path": "review/2026-09-14-efficiency.md",
+      "status": "reviewed",
+      "sha256": "0a3a84c816204591574654bcd6cccbc64ded6da65936c256a994fb6f405fb987",
+      "bytes": 7548,
+      "lines": 70,
+      "checks": [
+        "Full contents read using bounded shell output; historical claims distinguished from current implementation",
+        "Markdown parsed with remark; all JSON examples and relative file links checked"
+      ]
+    },
+    {
+      "path": "review/2026-09-14-followup.md",
+      "status": "reviewed",
+      "sha256": "043c9c2ddc37d2150a1daed49b212727153c4ea1f5a23807546f30c604abdab3",
+      "bytes": 6111,
+      "lines": 47,
+      "checks": [
+        "Full contents read using bounded shell output; historical claims distinguished from current implementation",
+        "Markdown parsed with remark; all JSON examples and relative file links checked"
+      ]
+    },
+    {
+      "path": "review/2026-09-14-ui-unification.md",
+      "status": "reviewed",
+      "sha256": "6d41766a93cba7db90e3d7e2fb313a83d4a0e731049789760cfed8881b6f5d37",
+      "bytes": 2831,
+      "lines": 28,
+      "checks": [
+        "Full contents read using bounded shell output; historical claims distinguished from current implementation",
+        "Markdown parsed with remark; all JSON examples and relative file links checked"
+      ]
+    },
+    {
+      "path": "review/2026-09-14.md",
+      "status": "reviewed",
+      "sha256": "78a0fbe5b6fed5b64c7f811969b068249e76003818fec550bff5732ecd2b27e0",
+      "bytes": 6929,
+      "lines": 62,
+      "checks": [
+        "Full contents read using bounded shell output; historical claims distinguished from current implementation",
+        "Markdown parsed with remark; all JSON examples and relative file links checked"
+      ]
+    },
+    {
+      "path": "review/auth-canvas-results.json",
+      "status": "reviewed",
+      "sha256": "982c61ed5cd7691a94464323b2440769a54b8476e51c1dd73f1846827f9f302b",
+      "bytes": 3735,
+      "lines": 104,
+      "checks": [
+        "Complete JSON parse and every record checked for path boundaries, duplicates, checksum syntax, status, checks and metadata types; historical hashes deliberately not compared with current sources"
+      ]
+    },
+    {
+      "path": "review/backend-foundation-results.json",
+      "status": "reviewed",
+      "sha256": "a980d5f36ab06d391ea08f7182606bb496c89c3868ba8e3390193a887355c594",
+      "bytes": 24204,
+      "lines": 511,
+      "checks": [
+        "Complete JSON parse and every record checked for path boundaries, duplicates, checksum syntax, status, checks and metadata types; historical hashes deliberately not compared with current sources"
+      ]
+    },
+    {
+      "path": "review/final-followup-results.json",
+      "status": "reviewed",
+      "sha256": "5972a5a9162c28016e4d9aeba5873fe3efa59456edbc46cca806dcd24b1d1002",
+      "bytes": 13436,
+      "lines": 216,
+      "checks": [
+        "Complete JSON parse and every record checked for path boundaries, duplicates, checksum syntax, status, checks and metadata types; historical hashes deliberately not compared with current sources"
+      ]
+    },
+    {
+      "path": "review/http-large-results.json",
+      "status": "reviewed",
+      "sha256": "8a21800c82541d8b8c7c85ac1385d914fe861b3b9575da81e03acbae6b94a456",
+      "bytes": 7418,
+      "lines": 164,
+      "checks": [
+        "Complete JSON parse and every record checked for path boundaries, duplicates, checksum syntax, status, checks and metadata types; historical hashes deliberately not compared with current sources"
+      ]
+    },
+    {
+      "path": "review/http-remaining-results.json",
+      "status": "reviewed",
+      "sha256": "ce9dcdcaadf17ea90d42968055c1644342e593d37725ca2e9af2a62480a0ef06",
+      "bytes": 8338,
+      "lines": 142,
+      "checks": [
+        "Complete JSON parse and every record checked for path boundaries, duplicates, checksum syntax, status, checks and metadata types; historical hashes deliberately not compared with current sources"
+      ]
+    },
+    {
+      "path": "review/http-small-results.json",
+      "status": "reviewed",
+      "sha256": "7bede27988e53542d2c62736071b55386f2ecd051682625edbd735477efb817d",
+      "bytes": 19078,
+      "lines": 507,
+      "checks": [
+        "Complete JSON parse and every record checked for path boundaries, duplicates, checksum syntax, status, checks and metadata types; historical hashes deliberately not compared with current sources"
+      ]
+    },
+    {
+      "path": "review/http-small-scope.json",
+      "status": "reviewed",
+      "sha256": "07d50471151375dae5a50ed098acadec3e2d1a2e0c6be25aa1d32a2ba71cd0c5",
+      "bytes": 2256,
+      "lines": 51,
+      "checks": [
+        "Complete JSON parse and every record checked for path boundaries, duplicates, checksum syntax, status, checks and metadata types; historical hashes deliberately not compared with current sources"
+      ]
+    },
+    {
+      "path": "review/inventory.json",
+      "status": "reviewed",
+      "sha256": "2aafc570c7787b9c95c34c45197553cb5fab18eeef02c3e23162fa47ab8ccd8a",
+      "bytes": 469477,
+      "lines": 8896,
+      "checks": [
+        "Complete JSON parse and every record checked for path boundaries, duplicates, checksum syntax, status, checks and metadata types; historical hashes deliberately not compared with current sources"
+      ]
+    },
+    {
+      "path": "review/README.md",
+      "status": "reviewed",
+      "sha256": "94438e01e411edf314330d1d305995f0b7f896163d55777a16f5d2c225fb0a86",
+      "bytes": 1569,
+      "lines": 15,
+      "checks": [
+        "Full contents read using bounded shell output; historical claims distinguished from current implementation",
+        "Markdown parsed with remark; all JSON examples and relative file links checked"
+      ]
+    },
+    {
+      "path": "review/service-core-scope.json",
+      "status": "reviewed",
+      "sha256": "45211e16934d9f131e17736e94851d809e506da2a309f3b310bb44de6c0f98bc",
+      "bytes": 937,
+      "lines": 22,
+      "checks": [
+        "Complete JSON parse and every record checked for path boundaries, duplicates, checksum syntax, status, checks and metadata types; historical hashes deliberately not compared with current sources"
+      ]
+    },
+    {
+      "path": "review/service-image-results.json",
+      "status": "reviewed",
+      "sha256": "812004e7d5e4fb6155154d3d3149d1a5aca7e676e469eaf9fbb352fe08ac190b",
+      "bytes": 16013,
+      "lines": 294,
+      "checks": [
+        "Complete JSON parse and every record checked for path boundaries, duplicates, checksum syntax, status, checks and metadata types; historical hashes deliberately not compared with current sources"
+      ]
+    },
+    {
+      "path": "review/service-image-scope.json",
+      "status": "reviewed",
+      "sha256": "6f88fb9c5850fd4cc9ff95a3a22eab51cc006eaf2ed5b6eedb436840a6cb8ca6",
+      "bytes": 642,
+      "lines": 15,
+      "checks": [
+        "Complete JSON parse and every record checked for path boundaries, duplicates, checksum syntax, status, checks and metadata types; historical hashes deliberately not compared with current sources"
+      ]
+    },
+    {
+      "path": "review/service-support-scope.json",
+      "status": "reviewed",
+      "sha256": "84ebdeb874add97ce6e3798adab7e8d5988bcca3b453f96c5774dc642edfa6bb",
+      "bytes": 1326,
+      "lines": 34,
+      "checks": [
+        "Complete JSON parse and every record checked for path boundaries, duplicates, checksum syntax, status, checks and metadata types; historical hashes deliberately not compared with current sources"
+      ]
+    },
+    {
+      "path": "review/service-support.json",
+      "status": "reviewed",
+      "sha256": "f48ce700a42fd93323ca306c2f8e5ec334d212860c8a78d174dab30d5d88115d",
+      "bytes": 21489,
+      "lines": 549,
+      "checks": [
+        "Complete JSON parse and every record checked for path boundaries, duplicates, checksum syntax, status, checks and metadata types; historical hashes deliberately not compared with current sources"
+      ]
+    },
+    {
+      "path": "review/static-director-results.json",
+      "status": "reviewed",
+      "sha256": "5b2ef8d0ab56567c7683965cd3bb0c2eabd59b6a9c51a2025b838de0dc90d71d",
+      "bytes": 13900,
+      "lines": 167,
+      "checks": [
+        "Complete JSON parse and every record checked for path boundaries, duplicates, checksum syntax, status, checks and metadata types; historical hashes deliberately not compared with current sources"
+      ]
+    },
+    {
+      "path": "review/validate-inventory.py",
+      "status": "reviewed",
+      "sha256": "1ebf1a6fdf9d4dc68c2c7c66c3c6fa5b5beaf80838b541e9638c87343cbe51c5",
+      "bytes": 1822,
+      "lines": 46,
+      "checks": [
+        "Full contents read using bounded shell output; historical claims distinguished from current implementation",
+        "Reviewed path boundaries, Git candidate selection, full JSON parsing and historical inventory semantics; historical hashes not refreshed"
+      ]
+    },
+    {
+      "path": "review/web-canvas-results.json",
+      "status": "reviewed",
+      "sha256": "1799d00081beb37774cf60aa61fb359bc2755761bc53f6cd0aa4335cd1655598",
+      "bytes": 78410,
+      "lines": 1068,
+      "checks": [
+        "Complete JSON parse and every record checked for path boundaries, duplicates, checksum syntax, status, checks and metadata types; historical hashes deliberately not compared with current sources"
+      ]
+    },
+    {
+      "path": "review/web-canvas-scope.json",
+      "status": "reviewed",
+      "sha256": "a273103a2fb76dca9a2d637e4c2969166f1a892d4adff9de3f94e79a3831d3da",
+      "bytes": 4051,
+      "lines": 84,
+      "checks": [
+        "Complete JSON parse and every record checked for path boundaries, duplicates, checksum syntax, status, checks and metadata types; historical hashes deliberately not compared with current sources"
+      ]
+    },
+    {
+      "path": "review/web-canvas-test-results.json",
+      "status": "reviewed",
+      "sha256": "032af2c3c2be862b8d7f94d63a07fe7fa9d43ec8ff651912ed34799534ca971c",
+      "bytes": 35069,
+      "lines": 483,
+      "checks": [
+        "Complete JSON parse and every record checked for path boundaries, duplicates, checksum syntax, status, checks and metadata types; historical hashes deliberately not compared with current sources"
+      ]
+    },
+    {
+      "path": "review/web-components-results.json",
+      "status": "reviewed",
+      "sha256": "d9b1c32c4eed047897c7a4a995bd9c1ada9cc5de2c17169b19bb3b496b7cb9cf",
+      "bytes": 37332,
+      "lines": 805,
+      "checks": [
+        "Complete JSON parse and every record checked for path boundaries, duplicates, checksum syntax, status, checks and metadata types; historical hashes deliberately not compared with current sources"
+      ]
+    },
+    {
+      "path": "review/web-components-scope.json",
+      "status": "reviewed",
+      "sha256": "27c24ea0e086bbef9e95351f6dc5687b9c15a73a56fee15f655f1f1fed7a4e44",
+      "bytes": 2113,
+      "lines": 48,
+      "checks": [
+        "Complete JSON parse and every record checked for path boundaries, duplicates, checksum syntax, status, checks and metadata types; historical hashes deliberately not compared with current sources"
+      ]
+    },
+    {
+      "path": "review/web-lib-results.json",
+      "status": "reviewed",
+      "sha256": "a267a96ba0a8dc9033b41d22dc91549d8fde8dbb9f6fd40abdfb083d171f1f4a",
+      "bytes": 33842,
+      "lines": 650,
+      "checks": [
+        "Complete JSON parse and every record checked for path boundaries, duplicates, checksum syntax, status, checks and metadata types; historical hashes deliberately not compared with current sources"
+      ]
+    },
+    {
+      "path": "review/web-lib-scope.json",
+      "status": "reviewed",
+      "sha256": "ba37af5a41f94344b129bdac2938cbe25b96c8e1ae42630140f3a01b9eeb4a3d",
+      "bytes": 2155,
+      "lines": 56,
+      "checks": [
+        "Complete JSON parse and every record checked for path boundaries, duplicates, checksum syntax, status, checks and metadata types; historical hashes deliberately not compared with current sources"
+      ]
+    },
+    {
+      "path": "review/web-lib-test-results.json",
+      "status": "reviewed",
+      "sha256": "9851dfce2e4ab6cf38d0dead0b31310e53de92cab5147bc3c2795da77bd32796",
+      "bytes": 34643,
+      "lines": 576,
+      "checks": [
+        "Complete JSON parse and every record checked for path boundaries, duplicates, checksum syntax, status, checks and metadata types; historical hashes deliberately not compared with current sources"
+      ]
+    },
+    {
+      "path": "review/web-management-results.json",
+      "status": "reviewed",
+      "sha256": "7c0bbac5f56426a77d882dd54c6c8dace523e6cb6faa55ea886da7c379dacf98",
+      "bytes": 70493,
+      "lines": 1260,
+      "checks": [
+        "Complete JSON parse and every record checked for path boundaries, duplicates, checksum syntax, status, checks and metadata types; historical hashes deliberately not compared with current sources"
+      ]
+    },
+    {
+      "path": "review/web-management-scope.json",
+      "status": "reviewed",
+      "sha256": "b76f0ad2664802f231034dd18246eda1a529f7a462c997b5af47f30770b03bf7",
+      "bytes": 1633,
+      "lines": 38,
+      "checks": [
+        "Complete JSON parse and every record checked for path boundaries, duplicates, checksum syntax, status, checks and metadata types; historical hashes deliberately not compared with current sources"
+      ]
+    },
+    {
+      "path": "review/web-services-config-results.json",
+      "status": "reviewed",
+      "sha256": "e939a5eac9f1c6fbd2f244c74f0b47ac038b2c69937ccd355683516a5c583238",
+      "bytes": 11253,
+      "lines": 332,
+      "checks": [
+        "Complete JSON parse and every record checked for path boundaries, duplicates, checksum syntax, status, checks and metadata types; historical hashes deliberately not compared with current sources"
+      ]
+    },
+    {
+      "path": "review/web-studio-followup-results.json",
+      "status": "reviewed",
+      "sha256": "8a805cb2b63636e319d1d1388147a82c186a085f12ed558b081bcab2eb35e924",
+      "bytes": 9732,
+      "lines": 196,
+      "checks": [
+        "Complete JSON parse and every record checked for path boundaries, duplicates, checksum syntax, status, checks and metadata types; historical hashes deliberately not compared with current sources"
+      ]
+    },
+    {
+      "path": "review/web-studio-results.json",
+      "status": "reviewed",
+      "sha256": "ea74bec34e1b8bb016b43af7a07fb4acc3db96011f54b6c9e6f898505ee8863c",
+      "bytes": 6605,
+      "lines": 192,
+      "checks": [
+        "Complete JSON parse and every record checked for path boundaries, duplicates, checksum syntax, status, checks and metadata types; historical hashes deliberately not compared with current sources"
+      ]
+    },
+    {
+      "path": "review/web-workflow-results.json",
+      "status": "reviewed",
+      "sha256": "5f98d6b22dc9527e573a11df0d9ffb5c2b67676fbd0559ff021a23209b0c58e5",
+      "bytes": 6471,
+      "lines": 180,
+      "checks": [
+        "Complete JSON parse and every record checked for path boundaries, duplicates, checksum syntax, status, checks and metadata types; historical hashes deliberately not compared with current sources"
+      ]
+    },
+    {
+      "path": "review/workflow-followup-scope.md",
+      "status": "reviewed",
+      "sha256": "9851a84c7280139335e47fbc3f307352a1f32e08a7e7f6ce6a816fdf2c5070fc",
+      "bytes": 1262,
+      "lines": 5,
+      "checks": [
+        "Full contents read using bounded shell output; historical claims distinguished from current implementation",
+        "Markdown parsed with remark; all JSON examples and relative file links checked"
+      ]
+    },
+    {
+      "path": "web/bun.lock",
+      "status": "reviewed",
+      "sha256": "30b1912d61e95c95126c0541a2b83ea743ca98977f0def07279ddc4ad852fe31",
+      "bytes": 112985,
+      "lines": 764,
+      "checks": [
+        "Complete TypeScript JSONC parse; every dependency tuple, URL, metadata and SHA512 encoding checked; root dependencies and overrides match package.json",
+        "bun install --frozen-lockfile --ignore-scripts --dry-run passed; no dependency source or registry archive rehash claims"
+      ]
+    },
+    {
+      "path": "web/public/favicon.ico",
+      "status": "reviewed",
+      "sha256": "fee841df07b5fb128d23ab17285ccb0c045c860febcf84ae04b33bcf6d43e0a9",
+      "bytes": 60148,
+      "lines": null,
+      "checks": [
+        "Complete ICO directory, offsets and all embedded PNG CRCs/inflate checked",
+        "Full browser decode and nontransparent pixel check",
+        "Decoded public-asset contact sheet visually reviewed; original pixels retained"
+      ]
+    },
+    {
+      "path": "web/public/login-panel-illustration.svg",
+      "status": "reviewed",
+      "sha256": "4b615247e076e968a6b0a5700ccd8c1824befdd073ff20ccb2c57327b0e885fa",
+      "bytes": 4231,
+      "lines": 61,
+      "checks": [
+        "Full SVG source read; DOMParser, unique IDs, local references, no active/external content; full browser decode and nontransparent pixels",
+        "Decoded public-asset contact sheet visually reviewed; original pixels retained"
+      ]
+    },
+    {
+      "path": "web/public/logo-mark.svg",
+      "status": "reviewed",
+      "sha256": "ed04199f9f0464c335fc7f4fc4ec7765961833275df2aac8ccdd8b5a0039b333",
+      "bytes": 3115,
+      "lines": 42,
+      "checks": [
+        "Full SVG source read; DOMParser, unique IDs, local references, no active/external content; full browser decode and nontransparent pixels",
+        "Decoded public-asset contact sheet visually reviewed; original pixels retained"
+      ]
+    },
+    {
+      "path": "web/public/presets/editorial-fashion.webp",
+      "status": "reviewed",
+      "sha256": "c693211a8c3e9cdd7fb9c9483dcde8628df670f28412c90d5d224197de2b9841",
+      "bytes": 354294,
+      "lines": null,
+      "checks": [
+        "Complete RIFF/WEBP chunk sizes and container boundaries; browser decode follows",
+        "Full browser decode and nontransparent pixel check",
+        "Decoded public-asset contact sheet visually reviewed; original pixels retained"
+      ]
+    },
+    {
+      "path": "web/public/presets/forza-horizon-shenzhen.webp",
+      "status": "reviewed",
+      "sha256": "19df17e36f096644c423c67c98d8f6cfdf7d094914dbb9c5b738f87f6970c90e",
+      "bytes": 402064,
+      "lines": null,
+      "checks": [
+        "Complete RIFF/WEBP chunk sizes and container boundaries; browser decode follows",
+        "Full browser decode and nontransparent pixel check",
+        "Decoded public-asset contact sheet visually reviewed; original pixels retained"
+      ]
+    },
+    {
+      "path": "web/public/presets/qinghua-museum-infographic.webp",
+      "status": "reviewed",
+      "sha256": "f675b56ab479b98f86e9bb2be4294aa62f3d0c383b6b072eb61f15310edc7173",
+      "bytes": 593864,
+      "lines": null,
+      "checks": [
+        "Complete RIFF/WEBP chunk sizes and container boundaries; browser decode follows",
+        "Full browser decode and nontransparent pixel check",
+        "Decoded public-asset contact sheet visually reviewed; original pixels retained"
+      ]
+    },
+    {
+      "path": "web/public/presets/stellar-poster.webp",
+      "status": "reviewed",
+      "sha256": "37316c7b6101592ec9556e73f5a769cc51eb2aa16b1090c96f3ccb2ccb2cf7f0",
+      "bytes": 400406,
+      "lines": null,
+      "checks": [
+        "Complete RIFF/WEBP chunk sizes and container boundaries; browser decode follows",
+        "Full browser decode and nontransparent pixel check",
+        "Decoded public-asset contact sheet visually reviewed; original pixels retained"
+      ]
+    }
+  ]
+}

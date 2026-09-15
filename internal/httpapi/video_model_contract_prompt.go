@@ -24,7 +24,7 @@ const videoContractImportSystemPrompt = `# Role
 
 # Extraction rules
 1. name 使用文档中的厂家、产品或模型系列名称，并能区分拆分后的契约；priority 没有明确需求时为 0。
-2. driver 选择最接近的驱动：openai-videos、xai-videos、gemini-veo、vertex-veo、dashscope-video、volcengine-video、kling-video、minimax-video、vidu-video、kie-video、apimart-video、custom-video。Gemini 与 Vertex、KIE 与 APIMart 必须区分。厂家不属于内置驱动时才用 custom-video。
+2. driver 选择最接近的驱动：openai-videos、xai-videos、gemini-veo、vertex-veo、dashscope-video、volcengine-video、ark-seedance、autodl-comfyui、kling-video、minimax-video、vidu-video、kie-video、apimart-video、custom-video。Gemini 与 Vertex、KIE 与 APIMart 必须区分。厂家不属于内置驱动时才用 custom-video。方舟标准 API 或 Agent Plan 原生 content 素材协议使用 ark-seedance；其 request 素材字段填写 first_frame_url、last_frame_url、reference_image_urls、reference_video_urls、reference_audio_urls，驱动自动转换为带 role 的 content 数组。AutoDL ComfyUI 使用 autodl-comfyui，能力需与工作流 input_rules 对齐。
 3. custom-video 必须填写 create_path 和含 {task_id} 的 query_path。文档支持 multipart/form-data 文件直传时 local_material 为 multipart 并填写文件字段；否则为 url。
 4. capability 的非空能力必须有对应 request 字段：多个 seconds 选项必须有 duration_field；单一固定时长若由模型决定且文档要求不传时长，则 duration_field 为空；sizes/aspect_ratio_field、resolutions/resolution_field、toggle/generate_audio_field、watermark/watermark_field 均按文档字段映射。image 模式必须填写 first_frame_field，支持尾帧时还必须填写 last_frame_field；reference 模式中哪类素材上限非零，就必须填写对应的 reference_images_field、reference_videos_field 或 reference_audios_field。duration_value_type 必须按文档声明为 number 或 string；例如 JSON 示例中的 seconds 字符串值 "5" 必须选择 string，duration 数字值 5 必须选择 number。未支持的能力数量为 0、数组为空、字段为空字符串。
 5. seconds 至少一个值；每个默认值必须属于对应选项。sizes 或 resolutions 为空时，其对应 default_size 或 default_resolution 也必须为空。audio_control 只能是 none、toggle、always。

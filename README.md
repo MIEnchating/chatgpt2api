@@ -18,7 +18,7 @@
 
 ## Git Hooks
 
-首次克隆后执行 `bash scripts/install-git-hooks.sh` 安装 Git hooks。提交前 hook 会自动对已暂存的 Go 文件运行 `gofmt` 并重新加入暂存区。
+首次克隆后执行 `bash scripts/install-git-hooks.sh` 安装 Git hooks。提交前 hook 会自动对完全暂存的 Go 文件运行 `gofmt` 并重新加入暂存区；部分暂存的文件只检查暂存内容的格式，需要格式化时会中止提交，避免把未暂存修改带入提交。
 
 ## 目录
 
@@ -40,6 +40,8 @@
 | 配置管理员、代理、并发、存储 | [配置说明](#配置说明) |
 | 查看生图参数、任务状态和错误码 | [生图任务文档](./docs/image-generation-api.md) |
 | 查看视频模型参数和上游映射 | [视频生成参数文档](./docs/video-generation-api.md) |
+| 使用画布 Skill、Codex/MCP、AutoDL 和方舟 | [画布功能与接入说明](./docs/canvas-alignment.md) |
+| 构建和使用 Windows 桌面端 | [Windows 桌面说明](./docs/windows-desktop.md) |
 | 查看项目分层与依赖边界 | [架构文档](./docs/architecture.md) |
 | 本地改代码和验证构建 | [本地开发](#本地开发) |
 | 升级 Docker 镜像或 Release 二进制 | [升级说明](#升级说明) |

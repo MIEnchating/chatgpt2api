@@ -9,6 +9,8 @@ import (
 
 	"chatgpt2api/internal/storage"
 	"chatgpt2api/internal/util"
+
+	"github.com/google/uuid"
 )
 
 type MyAssetGroup struct {
@@ -53,17 +55,23 @@ func (s *MyAssetService) MutateGroup(ownerID, operation string, input MyAssetGro
 		return nil, errors.New("invalid group operation")
 	}
 	if len(input.Add) > 10000 || len(input.Remove) > 10000 {
-		return nil, errors.New("分组最多包含 10000 个素材")
+		return nil, errors.New("标签最多包含 10000 个素材")
 	}
-	for _, key := range append(slices.Clone(input.Add), input.Remove...) {
-		if len(key) > 2048 || strings.TrimSpace(key) == "" {
-			return nil, errors.New("素材标识无效")
+	for _, keys := range [][]string{input.Add, input.Remove} {
+		for _, key := range keys {
+			if len(key) > 2048 || strings.TrimSpace(key) == "" {
+				return nil, errors.New("素材标识无效")
+			}
 		}
+	}
+	removedKeys := make(map[string]struct{}, len(input.Remove))
+	for _, key := range input.Remove {
+		removedKeys[myAssetLabelKey(ownerID, key)] = struct{}{}
 	}
 	if input.Name != nil {
 		name := strings.TrimSpace(*input.Name)
 		if name == "" || utf8.RuneCountInString(name) > 80 {
-			return nil, errors.New("分组名称须为 1 至 80 个字符")
+			return nil, errors.New("标签名称须为 1 至 80 个字符")
 		}
 		input.Name = &name
 	}
@@ -77,23 +85,23 @@ func (s *MyAssetService) MutateGroup(ownerID, operation string, input MyAssetGro
 		index := slices.IndexFunc(document.groups, func(group MyAssetGroup) bool { return group.ID == input.ID })
 		if operation == "create" {
 			if index >= 0 {
-				return nil, errors.New("分组已存在")
+				return nil, errors.New("标签已存在")
 			}
 			if input.Name == nil {
-				return nil, errors.New("请输入分组名称")
+				return nil, errors.New("请输入标签名称")
 			}
 			for _, group := range document.groups {
 				if group.Name == *input.Name {
-					return nil, errors.New("已存在同名分组")
+					return nil, errors.New("已存在同名标签")
 				}
 			}
 			if len(document.groups) >= 200 {
-				return nil, errors.New("最多创建 200 个分组")
+				return nil, errors.New("最多创建 200 个标签")
 			}
 			document.groups = append(document.groups, MyAssetGroup{ID: input.ID, AssetKeys: []string{}})
 			index = len(document.groups) - 1
 		} else if index < 0 {
-			return nil, errors.New("分组不存在，请刷新后重试")
+			return nil, errors.New("标签不存在，请刷新后重试")
 		}
 		if operation == "delete" {
 			document.groups = slices.Delete(document.groups, index, index+1)
@@ -101,16 +109,22 @@ func (s *MyAssetService) MutateGroup(ownerID, operation string, input MyAssetGro
 			if input.Name != nil {
 				for i, group := range document.groups {
 					if i != index && group.Name == *input.Name {
-						return nil, errors.New("已存在同名分组")
+						return nil, errors.New("已存在同名标签")
 					}
 				}
 				document.groups[index].Name = *input.Name
 			}
-			keys := append(document.groups[index].AssetKeys, input.Add...)
-			keys = slices.DeleteFunc(keys, func(key string) bool { return slices.Contains(input.Remove, key) })
+			keys := append([]string(nil), document.groups[index].AssetKeys...)
+			for _, key := range input.Add {
+				keys = append(keys, myAssetLabelKey(ownerID, key))
+			}
+			keys = slices.DeleteFunc(keys, func(key string) bool {
+				_, removed := removedKeys[strings.TrimSpace(key)]
+				return removed
+			})
 			keys = cleanMyAssetStrings(keys, 10001)
 			if len(keys) > 10000 {
-				return nil, errors.New("分组最多包含 10000 个素材")
+				return nil, errors.New("标签最多包含 10000 个素材")
 			}
 			document.groups[index].AssetKeys = keys
 		}
@@ -123,4 +137,76 @@ func (s *MyAssetService) MutateGroup(ownerID, operation string, input MyAssetGro
 		return document.groups, nil
 	}
 	return nil, storage.ErrConcurrentRowUpdate
+}
+
+func myAssetLabelKey(ownerID, key string) string {
+	key = strings.TrimSpace(key)
+	if strings.HasPrefix(key, ownerID+":") {
+		return "self:" + strings.TrimPrefix(key, ownerID+":")
+	}
+	return key
+}
+
+func myAssetLabelNames(groups []MyAssetGroup, key string) []string {
+	names := []string{}
+	for _, group := range groups {
+		if slices.Contains(group.AssetKeys, key) {
+			names = append(names, group.Name)
+		}
+	}
+	return names
+}
+
+func projectMyAssetLabels(document *myAssetDocument) {
+	for index := range document.items {
+		document.items[index].Tags = myAssetLabelNames(document.groups, "self:"+document.items[index].ID)
+	}
+}
+
+// Migrate each old label into the existing membership relation before dropping
+// its duplicated item field. Existing memberships and names are preserved.
+func unifyMyAssetLabels(ownerID string, document *myAssetDocument) {
+	for index := range document.groups {
+		keys := make([]string, 0, len(document.groups[index].AssetKeys))
+		for _, key := range document.groups[index].AssetKeys {
+			keys = append(keys, myAssetLabelKey(ownerID, key))
+		}
+		document.groups[index].AssetKeys = cleanMyAssetStrings(keys, 10000)
+	}
+	for _, item := range document.items {
+		key := "self:" + item.ID
+		for _, name := range item.Tags {
+			index := slices.IndexFunc(document.groups, func(group MyAssetGroup) bool { return group.Name == name })
+			if index < 0 {
+				document.groups = append(document.groups, MyAssetGroup{ID: uuid.NewString(), Name: name, AssetKeys: []string{}})
+				index = len(document.groups) - 1
+			}
+			if !slices.Contains(document.groups[index].AssetKeys, key) {
+				document.groups[index].AssetKeys = append(document.groups[index].AssetKeys, key)
+			}
+		}
+	}
+	document.labelsUnified = true
+	projectMyAssetLabels(document)
+}
+
+func addMyAssetLabels(document *myAssetDocument, assetID string, names []string) error {
+	key := "self:" + assetID
+	for _, name := range names {
+		index := slices.IndexFunc(document.groups, func(group MyAssetGroup) bool { return group.Name == name })
+		if index < 0 {
+			if name == "" || utf8.RuneCountInString(name) > 80 {
+				return errors.New("标签名称须为 1 至 80 个字符")
+			}
+			if len(document.groups) >= 200 {
+				return errors.New("最多创建 200 个标签")
+			}
+			document.groups = append(document.groups, MyAssetGroup{ID: uuid.NewString(), Name: name, AssetKeys: []string{}})
+			index = len(document.groups) - 1
+		}
+		if !slices.Contains(document.groups[index].AssetKeys, key) {
+			document.groups[index].AssetKeys = append(document.groups[index].AssetKeys, key)
+		}
+	}
+	return nil
 }

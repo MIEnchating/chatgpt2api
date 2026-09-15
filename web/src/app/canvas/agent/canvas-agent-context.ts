@@ -2,6 +2,7 @@ import type { CanvasConnection, CanvasNode } from "@/services/api/canvas";
 import type { CanvasAgentState } from "./canvas-agent-types";
 
 export type CanvasAgentGenerationConfig = {
+  autoGenerateMedia?: boolean;
   textModel: string;
   imageModel: string;
   videoModel: string;

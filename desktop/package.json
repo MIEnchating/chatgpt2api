@@ -1,0 +1,60 @@
+{
+  "name": "chatgpt2api-desktop",
+  "version": "3.0.14",
+  "private": true,
+  "description": "chatgpt2api Windows desktop with an isolated local Go service",
+  "author": "chatgpt2api contributors",
+  "license": "MIT",
+  "main": "src/main.cjs",
+  "scripts": {
+    "dev": "electron . --development",
+    "test": "node --test tests/*.test.cjs",
+    "build:backend": "node scripts/build-backend.cjs",
+    "build:win": "npm run build:backend && electron-builder --win nsis --x64 --publish never",
+    "pack:win": "npm run build:backend && electron-builder --win dir --x64 --publish never"
+  },
+  "devDependencies": {
+    "electron": "44.3.0",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "io.github.chatgpt2api.desktop",
+    "productName": "chatgpt2api",
+    "asar": true,
+    "npmRebuild": false,
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "bin/chatgpt2api.exe",
+        "to": "backend/chatgpt2api.exe"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "../web/public/favicon.ico",
+      "artifactName": "chatgpt2api-${version}-windows-${arch}-setup.${ext}",
+      "signExecutable": false
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowElevation": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "deleteAppDataOnUninstall": false
+    }
+  }
+}

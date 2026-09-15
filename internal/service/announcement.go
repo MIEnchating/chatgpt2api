@@ -135,6 +135,7 @@ func (s *AnnouncementService) UpdateWithItems(id string, body map[string]any) (*
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+updateLoop:
 	for attempt := 0; attempt < announcementSaveAttempts; attempt++ {
 		items, err := s.loadLocked()
 		if err != nil {
@@ -173,15 +174,13 @@ func (s *AnnouncementService) UpdateWithItems(id string, body map[string]any) (*
 			sortAnnouncements(items)
 			if err := s.saveLocked(items); err != nil {
 				if errors.Is(err, storage.ErrConcurrentRowUpdate) && attempt+1 < announcementSaveAttempts {
-					break
+					continue updateLoop
 				}
 				return nil, nil, err
 			}
 			return &updated, copyAnnouncements(items), nil
 		}
-		if attempt+1 == announcementSaveAttempts {
-			return nil, copyAnnouncements(items), nil
-		}
+		return nil, copyAnnouncements(items), nil
 	}
 	return nil, nil, announcementStorageError(fmt.Errorf("failed to update announcement"))
 }

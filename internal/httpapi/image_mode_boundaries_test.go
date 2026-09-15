@@ -173,7 +173,7 @@ func TestImageTaskPreservesCountForProviderNativeCountField(t *testing.T) {
 	defer app.Close()
 	token := adminSessionToken(t, app)
 	identity := app.auth.Authenticate(token)
-	custom, err := app.customRelayConfigs.Create(identityScope(*identity), "image", "count test", "https://custom.example", "test-key")
+	custom, err := app.customRelayConfigs.Create(identityScope(*identity), "image", "count test", "https://custom.example", "test-key", "openai")
 	if err != nil {
 		t.Fatal(err)
 	}

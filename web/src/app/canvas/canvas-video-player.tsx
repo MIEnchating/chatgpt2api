@@ -1,5 +1,5 @@
 import { Download, Maximize, Maximize2, Pause, Play, Volume2, VolumeX, X } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { formatCanvasVideoTime } from "@/app/canvas/canvas-video-time";
 import { TooltipButton } from "@/components/ui/tooltip";
@@ -21,6 +21,14 @@ export function CanvasVideoNodePlayer({
   const videoRef = useRef<HTMLVideoElement>(null);
   const [playing, setPlaying] = useState(false);
   const [duration, setDuration] = useState(0);
+  const [currentTime, setCurrentTime] = useState(0);
+
+  useEffect(() => {
+    if (!selected) {
+      videoRef.current?.pause();
+      if (document.activeElement === videoRef.current) videoRef.current?.blur();
+    }
+  }, [selected, src]);
 
   function togglePlayback() {
     const video = videoRef.current;
@@ -39,7 +47,7 @@ export function CanvasVideoNodePlayer({
   return (
     <div
       className="relative size-full overflow-hidden rounded-[inherit] bg-black"
-      data-canvas-no-pan
+      data-canvas-media
       data-canvas-no-zoom
       onMouseDown={(event) => event.stopPropagation()}
       onWheel={(event) => event.stopPropagation()}
@@ -52,6 +60,7 @@ export function CanvasVideoNodePlayer({
         playsInline
         preload="metadata"
         className="size-full object-contain outline-none"
+        onLoadStart={() => { setCurrentTime(0); setDuration(0); setPlaying(false); }}
         onLoadedMetadata={(event) => {
           const video = event.currentTarget;
           setDuration(Number.isFinite(video.duration) ? video.duration : 0);
@@ -59,6 +68,7 @@ export function CanvasVideoNodePlayer({
         }}
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
+        onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
         onKeyDown={(event) => {
           if (!selected || event.code !== "Space") return;
           event.preventDefault();
@@ -85,6 +95,24 @@ export function CanvasVideoNodePlayer({
       >
         {playing ? <Pause className="size-3.5" /> : <Play className="size-3.5" />}
       </TooltipButton>
+      <div className="absolute bottom-2 left-11 right-11 z-20 flex h-7 items-center" data-canvas-no-pan onPointerDown={(event) => event.stopPropagation()} onClick={(event) => event.stopPropagation()} onDoubleClick={(event) => event.stopPropagation()}>
+        <input
+          type="range"
+          min={0}
+          max={duration}
+          step="0.01"
+          value={Math.min(currentTime, duration)}
+          disabled={duration <= 0}
+          aria-label="视频进度"
+          className="h-1 w-full cursor-pointer accent-white"
+          onChange={(event) => {
+            const time = event.currentTarget.valueAsNumber;
+            if (videoRef.current) videoRef.current.currentTime = time;
+            setCurrentTime(time);
+          }}
+          onPointerUp={() => videoRef.current?.focus({ preventScroll: true })}
+        />
+      </div>
       <TooltipButton
         type="button"
         tooltip="放大预览"

@@ -15,6 +15,7 @@ import (
 	"chatgpt2api/internal/service"
 	"chatgpt2api/internal/storage"
 	"chatgpt2api/internal/util"
+	"golang.org/x/net/idna"
 )
 
 const maxImageConversationHistoryBodyBytes = 96 << 20
@@ -1875,12 +1876,27 @@ func isPublicReferenceURL(value string) bool {
 	if err != nil || parsed.Host == "" || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.User != nil {
 		return false
 	}
-	host := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(parsed.Hostname())), ".")
+	host := strings.TrimSpace(parsed.Hostname())
+	if strings.Contains(host, ":") {
+		ip := net.ParseIP(host)
+		return ip != nil && isPublicReferenceIP(ip)
+	}
+	host, err = idna.Lookup.ToASCII(host)
+	if err != nil {
+		return false
+	}
+	host = strings.TrimSuffix(strings.ToLower(host), ".")
 	if host == "" || host == "localhost" || strings.HasSuffix(host, ".localhost") || strings.HasSuffix(host, ".local") || strings.HasSuffix(host, ".internal") || strings.HasSuffix(host, ".home.arpa") {
 		return false
 	}
 	if ip := net.ParseIP(host); ip != nil {
 		return isPublicReferenceIP(ip)
+	}
+	// Browsers interpret numeric final labels as IPv4, including shortened,
+	// octal and hexadecimal forms that net.ParseIP deliberately rejects.
+	lastLabel := host[strings.LastIndex(host, ".")+1:]
+	if strings.Trim(lastLabel, "0123456789") == "" || strings.HasPrefix(lastLabel, "0x") && strings.Trim(lastLabel[2:], "0123456789abcdef") == "" {
+		return false
 	}
 	return strings.Contains(host, ".")
 }
@@ -1925,6 +1941,11 @@ func creationTaskRequestMetadata(body map[string]any) map[string]any {
 
 func chatTaskRequestMetadata(body map[string]any) map[string]any {
 	metadata := creationTaskRequestMetadata(body)
+	for _, key := range []string{"api_mode", "reasoning_enabled", "max_output_tokens"} {
+		if value, ok := body[key]; ok {
+			metadata[key] = value
+		}
+	}
 	if tools := util.AsMapSlice(body["tools"]); len(tools) > 0 {
 		metadata["tools"] = tools
 	}
@@ -1938,6 +1959,9 @@ func videoTaskRequestMetadata(body map[string]any, contract protocol.VideoModelC
 	metadata := map[string]any{
 		protocol.VideoContractSnapshotPayloadKey:  contract,
 		service.VideoTaskTimeoutSecondsPayloadKey: contract.Polling.TimeoutSeconds + contract.Polling.IntervalSeconds,
+	}
+	if inputs, ok := body["workflow_inputs"]; ok {
+		metadata["workflow_inputs"] = inputs
 	}
 	if tokenGroup := selectedRelayTokenGroupFromPayload(body); tokenGroup != "" {
 		metadata["token_group"] = tokenGroup

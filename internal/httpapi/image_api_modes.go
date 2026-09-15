@@ -41,7 +41,7 @@ func (a *App) relayImageCreationTask(ctx context.Context, payload map[string]any
 func imageResponsesRequest(payload map[string]any, images []protocol.UploadedImage, edit bool) map[string]any {
 	prompt := util.Clean(payload["prompt"])
 	input := any(prompt)
-	if dataURLs := uploadedImageDataURLs(images); len(dataURLs) > 0 {
+	if dataURLs := imageReferenceURLs(images); len(dataURLs) > 0 {
 		content := []map[string]any{{"type": "input_text", "text": prompt}}
 		for _, dataURL := range dataURLs {
 			content = append(content, map[string]any{"type": "input_image", "image_url": dataURL})
@@ -75,7 +75,7 @@ func imageResponsesRequest(payload map[string]any, images []protocol.UploadedIma
 func imageChatRequest(payload map[string]any, images []protocol.UploadedImage) map[string]any {
 	prompt := util.Clean(payload["prompt"])
 	content := any(prompt)
-	if dataURLs := uploadedImageDataURLs(images); len(dataURLs) > 0 {
+	if dataURLs := imageReferenceURLs(images); len(dataURLs) > 0 {
 		parts := []map[string]any{{"type": "text", "text": prompt}}
 		for _, dataURL := range dataURLs {
 			parts = append(parts, map[string]any{"type": "image_url", "image_url": map[string]any{"url": dataURL}})
@@ -143,9 +143,13 @@ func referenceChatImageRatio(value string) string {
 	return closestImageAspectRatio(float64(width)/float64(height), []string{"1:1", "3:2", "2:3", "4:3", "3:4", "16:9", "9:16", "21:9"})
 }
 
-func uploadedImageDataURLs(images []protocol.UploadedImage) []string {
+func imageReferenceURLs(images []protocol.UploadedImage) []string {
 	values := make([]string, 0, len(images))
 	for _, image := range images {
+		if image.URL != "" {
+			values = append(values, image.URL)
+			continue
+		}
 		if len(image.Data) == 0 {
 			continue
 		}

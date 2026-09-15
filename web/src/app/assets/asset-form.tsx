@@ -5,6 +5,7 @@ import { AudioLines, FileText, Globe2, Image as ImageIcon, LoaderCircle, LockKey
 import { toast } from "sonner";
 
 import { assetMediaSummary, type AssetMediaMetadata } from "@/app/assets/asset-media";
+import { inspectAssetImageURL } from "@/app/assets/asset-image-metadata";
 import { AuthenticatedImage } from "@/components/authenticated-image";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -14,6 +15,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { uploadAssetMediaFile } from "@/services/file-storage";
 import { uploadImage } from "@/services/image-storage";
 import { createMyAsset, type MyAsset, type MyAssetKind, type MyAssetVisibility } from "@/lib/my-assets";
+import { AUTH_SESSION_CHANGE_EVENT } from "@/lib/auth-session";
+import { getCachedAuthSession } from "@/lib/session";
 import { cn } from "@/lib/utils";
 
 const kindOptions: Array<{ value: MyAssetKind; label: string; icon: typeof FileText }> = [
@@ -35,12 +38,28 @@ export function AssetForm({ open, asset, onClose, onSave }: { open: boolean; ass
   const [mediaStorageKey, setMediaStorageKey] = useState("");
   const [busyTarget, setBusyTarget] = useState<"cover" | "content" | "">("");
   const [isSaving, setIsSaving] = useState(false);
+  const [metadataLoading, setMetadataLoading] = useState(false);
+  const [metadataError, setMetadataError] = useState("");
+  const metadataRequestRef = useRef<{ source: string; controller: AbortController; promise: Promise<AssetMediaMetadata | null> } | null>(null);
+  const formControllerRef = useRef<AbortController | null>(null);
   const savePendingRef = useRef(false);
   const coverInputRef = useRef<HTMLInputElement | null>(null);
   const contentInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
+    metadataRequestRef.current?.controller.abort();
+    metadataRequestRef.current = null;
     if (!open) return;
+    const controller = new AbortController();
+    formControllerRef.current = controller;
+    const sessionKey = getCachedAuthSession()?.key;
+    const sessionChanged = () => {
+      if (getCachedAuthSession()?.key !== sessionKey) {
+        controller.abort();
+        metadataRequestRef.current?.controller.abort();
+      }
+    };
+    window.addEventListener(AUTH_SESSION_CHANGE_EVENT, sessionChanged);
     setKind(asset?.kind || "text");
     setTitle(asset?.title || "");
     setContent(asset?.content || asset?.url || "");
@@ -51,9 +70,57 @@ export function AssetForm({ open, asset, onClose, onSave }: { open: boolean; ass
     setMediaMetadata({ bytes: asset?.bytes, mimeType: asset?.mimeType, width: asset?.width, height: asset?.height, durationMs: asset?.durationMs });
     setMediaStorageKey(asset?.storageKey || "");
     setBusyTarget("");
+    setMetadataLoading(false);
+    setMetadataError("");
+    savePendingRef.current = false;
+    setIsSaving(false);
+    return () => {
+      controller.abort();
+      metadataRequestRef.current?.controller.abort();
+      window.removeEventListener(AUTH_SESSION_CHANGE_EVENT, sessionChanged);
+    };
   }, [asset, open]);
 
+  useEffect(() => {
+    if (!open || kind !== "image" || mediaStorageKey || !content.trim() || isBlobURL(content.trim())) return;
+    const timer = window.setTimeout(() => { void readURLMetadata(content.trim()); }, 400);
+    return () => window.clearTimeout(timer);
+  }, [content, kind, mediaStorageKey, open]);
+
+  function cancelMetadata() {
+    metadataRequestRef.current?.controller.abort();
+    metadataRequestRef.current = null;
+    setMetadataLoading(false);
+    setMetadataError("");
+  }
+
+  function readURLMetadata(value: string): Promise<AssetMediaMetadata | null> {
+    if (formControllerRef.current?.signal.aborted) return Promise.resolve(null);
+    const pending = metadataRequestRef.current;
+    if (pending?.source === value && !pending.controller.signal.aborted) return pending.promise;
+    pending?.controller.abort();
+    const controller = new AbortController();
+    setMetadataLoading(true);
+    setMetadataError("");
+    const promise = inspectAssetImageURL(value, AbortSignal.any([controller.signal, AbortSignal.timeout(15_000)]))
+      .then((metadata) => {
+        if (controller.signal.aborted) return null;
+        setMediaMetadata(metadata);
+        return metadata;
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setMetadataError("无法读取图片信息，仍可保存 URL");
+        return null;
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setMetadataLoading(false);
+      });
+    metadataRequestRef.current = { source: value, controller, promise };
+    return promise;
+  }
+
   const changeKind = (nextKind: MyAssetKind) => {
+    cancelMetadata();
     setKind(nextKind);
     setContent("");
     setMediaMetadata({});
@@ -74,6 +141,7 @@ export function AssetForm({ open, asset, onClose, onSave }: { open: boolean; ass
 
   async function uploadContent(file?: File) {
     if (!file || kind === "text") return;
+    cancelMetadata();
     setBusyTarget("content");
     try {
       const result = kind === "image"
@@ -104,35 +172,44 @@ export function AssetForm({ open, asset, onClose, onSave }: { open: boolean; ass
     if (!nextTitle) return toast.error("请输入素材标题");
     if (!value) return toast.error(kind === "text" ? "请输入文本内容" : "请上传文件或填写媒体 URL");
     if ((kind !== "text" && isBlobURL(value) && !mediaStorageKey) || isBlobURL(cover)) return toast.error("blob 地址是临时地址，请先上传文件转为可保存的 URL");
-    const base = {
-      kind,
-      title: nextTitle,
-      coverUrl: cover || undefined,
-      tags: [],
-      visibility,
-      source: source.trim() || undefined,
-      note: note.trim() || undefined,
-      bytes: kind === "text" ? undefined : mediaMetadata.bytes,
-      mimeType: kind === "text" ? undefined : mediaMetadata.mimeType,
-      width: kind === "text" ? undefined : mediaMetadata.width,
-      height: kind === "text" ? undefined : mediaMetadata.height,
-      durationMs: kind === "text" ? undefined : mediaMetadata.durationMs,
-      storageKey: kind !== "text" && mediaStorageKey ? mediaStorageKey : undefined,
-      metadata: asset?.metadata || { source: "manual" },
-    };
-    const next = asset
-      ? { ...asset, ...base, ...(kind === "text" ? { content: value, url: undefined } : { url: value, content: undefined }), updatedAt: new Date().toISOString() }
-      : createMyAsset({ ...base, ...(kind === "text" ? { content: value } : { url: value }) });
+    const formSignal = formControllerRef.current?.signal;
+    if (!formSignal || formSignal.aborted) return;
     savePendingRef.current = true;
     setIsSaving(true);
     try {
+      let metadata = mediaMetadata;
+      if (kind === "image" && !mediaStorageKey && (!metadata.width || !metadata.height)) {
+        metadata = await readURLMetadata(value) || metadata;
+        if (formSignal.aborted) return;
+      }
+      const base = {
+        kind,
+        title: nextTitle,
+        coverUrl: cover || undefined,
+        tags: [],
+        visibility,
+        source: source.trim() || undefined,
+        note: note.trim() || undefined,
+        bytes: kind === "text" ? undefined : metadata.bytes,
+        mimeType: kind === "text" ? undefined : metadata.mimeType,
+        width: kind === "text" ? undefined : metadata.width,
+        height: kind === "text" ? undefined : metadata.height,
+        durationMs: kind === "text" ? undefined : metadata.durationMs,
+        storageKey: kind !== "text" && mediaStorageKey ? mediaStorageKey : undefined,
+        metadata: asset?.metadata || { source: "manual" },
+      };
+      const next = asset
+        ? { ...asset, ...base, ...(kind === "text" ? { content: value, url: undefined } : { url: value, content: undefined }), updatedAt: new Date().toISOString() }
+        : createMyAsset({ ...base, ...(kind === "text" ? { content: value } : { url: value }) });
       await onSave(next);
-      toast.success(asset ? "素材已更新" : "素材已保存");
+      if (!formSignal.aborted) toast.success(asset ? "素材已更新" : "素材已保存");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "素材保存失败");
+      if (!formSignal.aborted) toast.error(error instanceof Error ? error.message : "素材保存失败");
     } finally {
-      savePendingRef.current = false;
-      setIsSaving(false);
+      if (!formSignal.aborted) {
+        savePendingRef.current = false;
+        setIsSaving(false);
+      }
     }
   }
 
@@ -173,8 +250,8 @@ export function AssetForm({ open, asset, onClose, onSave }: { open: boolean; ass
               ) : (
                 <Field label={`${kindLabel(kind)}内容`}>
                   <div className="rounded-lg border border-dashed border-border p-3">
-                    <div className="flex gap-2"><Input value={content} onChange={(event) => { setContent(event.target.value); setMediaMetadata({}); setMediaStorageKey(""); }} placeholder={`填写${kindLabel(kind)} URL，或上传本地文件`} /><Button type="button" variant="outline" disabled={busy} onClick={() => contentInputRef.current?.click()}>{busyTarget === "content" ? <LoaderCircle className="animate-spin" /> : <Upload />}上传</Button></div>
-                    <p className="mt-2 min-h-4 text-xs text-muted-foreground">{assetMediaSummary(previewAsset)}</p>
+                    <div className="flex gap-2"><Input value={content} onChange={(event) => { cancelMetadata(); setContent(event.target.value); setMediaMetadata({}); setMediaStorageKey(""); }} placeholder={`填写${kindLabel(kind)} URL，或上传本地文件`} /><Button type="button" variant="outline" disabled={busy} onClick={() => contentInputRef.current?.click()}>{busyTarget === "content" ? <LoaderCircle className="animate-spin" /> : <Upload />}上传</Button></div>
+                    <p className="mt-2 min-h-4 text-xs text-muted-foreground" aria-live="polite">{metadataLoading ? "正在读取图片信息..." : metadataError || assetMediaSummary(previewAsset)}</p>
                   </div>
                 </Field>
               )}

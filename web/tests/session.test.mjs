@@ -1,14 +1,29 @@
-import { afterAll, describe, expect, mock, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import vm from "node:vm";
+import ts from "typescript";
+import { AUTH_SESSION_CHANGE_EVENT } from "../src/lib/auth-session.ts";
 
 let verifySessionImplementation = async () => loginResponse();
 
-mock.module("@/lib/api", () => ({
-  verifySession: () => verifySessionImplementation(),
-}));
+const sessionSource = ts.transpileModule(
+  readFileSync(new URL("../src/lib/session.ts", import.meta.url), "utf8"),
+  { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } },
+).outputText;
 
-afterAll(() => {
-  mock.restore();
-});
+function loadSession() {
+  const exports = {};
+  vm.runInNewContext(sessionSource, {
+    exports,
+    require(name) {
+      if (name === "@/lib/api") return { verifySession: () => verifySessionImplementation() };
+      if (name === "@/lib/auth-session") return { AUTH_SESSION_CHANGE_EVENT };
+      if (name === "@/lib/authenticated-image") return { clearAuthenticatedImageCache() {} };
+      throw new Error(`Unexpected session dependency: ${name}`);
+    },
+  }, { filename: "session.ts" });
+  return exports;
+}
 
 function loginResponse(overrides = {}) {
   return {
@@ -41,7 +56,7 @@ describe("verified auth session cache", () => {
       }
       return loginResponse();
     };
-    const session = await import("../src/lib/session.ts?transient-503");
+    const session = loadSession();
 
     await expect(session.getVerifiedAuthSession()).rejects.toThrow("service unavailable");
     expect(session.getCachedAuthSession()).toBeUndefined();
@@ -58,7 +73,7 @@ describe("verified auth session cache", () => {
       }
       return loginResponse();
     };
-    const session = await import("../src/lib/session.ts?transient-network");
+    const session = loadSession();
 
     await expect(session.getVerifiedAuthSession()).rejects.toThrow("network unavailable");
     expect(session.getCachedAuthSession()).toBeUndefined();
@@ -72,7 +87,7 @@ describe("verified auth session cache", () => {
       calls += 1;
       throw requestError(401, "authorization is invalid");
     };
-    const session = await import("../src/lib/session.ts?unauthorized-401");
+    const session = loadSession();
 
     expect(await session.getVerifiedAuthSession()).toBeNull();
     verifySessionImplementation = async () => loginResponse();
@@ -89,7 +104,7 @@ describe("verified auth session cache", () => {
       }
       return loginResponse();
     };
-    const session = await import("../src/lib/session.ts?forbidden-403");
+    const session = loadSession();
 
     await expect(session.getVerifiedAuthSession()).rejects.toThrow("permission denied");
     expect(session.getCachedAuthSession()).toBeUndefined();
@@ -104,7 +119,7 @@ describe("verified auth session cache", () => {
       calls += 1;
       return response;
     };
-    const session = await import("../src/lib/session.ts?permission-refresh");
+    const session = loadSession();
 
     expect(await session.getVerifiedAuthSession()).toMatchObject({ menuPaths: ["/studio"] });
     response = loginResponse({
@@ -129,7 +144,7 @@ describe("verified auth session cache", () => {
       }
       return loginResponse();
     };
-    const session = await import("../src/lib/session.ts?failed-refresh");
+    const session = loadSession();
 
     expect(await session.getVerifiedAuthSession()).toMatchObject({ key: "credential-1" });
     await expect(session.refreshVerifiedAuthSession()).rejects.toThrow("service unavailable");

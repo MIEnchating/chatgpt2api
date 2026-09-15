@@ -309,6 +309,15 @@ func (a *App) handleVideoModelContractPreview(w http.ResponseWriter, r *http.Req
 		return
 	}
 	input["model"] = model
+	requestBody := declaredVideoContractRequestPayload(input, contract)
+	if contract.Driver == protocol.VideoContractDriverArk {
+		contract = arkVideoPollingContract(contract)
+		requestBody, err = arkVideoRequest(input, contract)
+		if err != nil {
+			util.WriteError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
 	createPath, queryPath, err := videoContractDriverPaths(contract, input)
 	if err != nil {
 		util.WriteError(w, http.StatusBadRequest, err.Error())
@@ -317,8 +326,11 @@ func (a *App) handleVideoModelContractPreview(w http.ResponseWriter, r *http.Req
 	result := map[string]any{
 		"request": map[string]any{
 			"method": "POST", "create_path": createPath, "query_path": queryPath,
-			"body": declaredVideoContractRequestPayload(input, contract), "transport": contract.Transport,
+			"body": requestBody, "transport": contract.Transport,
 		},
+	}
+	if contract.Driver == protocol.VideoContractDriverAutoDL {
+		result["notes"] = []string{"此处展示画布输入映射；AutoDL 实际请求还会读取所选线路的工作流规则，转换素材字段并校验附加参数。"}
 	}
 	if len(body.SubmitResponse) > 0 {
 		result["submit"] = map[string]any{

@@ -689,7 +689,7 @@ Statsig 是 ChatGPT 使用的特性开关/实验平台。以下特性开关通�
 | `image_resize_enabled` | `false` | **图片缩放/分辨率调整未启用** |
 | `variable_image_height_enabled` | `false` | **可变图片高度未启用** |
 | `use_default_model` | `true` | 使用默认模型（`auto` → 服务端路由） |
-| `dalle_limit` | `-1` | DALL-E 调用限制（`-1` = 已认证用户无限） |
+| `dalle_limit` | `-1` | 客户端配置值；不能据此推断服务端配额无限 |
 | `image_gen_async` | — | 异步生成模式 |
 | `image_gen_multi_stream` | — | 多流并发生成 |
 
@@ -697,7 +697,7 @@ Statsig 是 ChatGPT 使用的特性开关/实验平台。以下特性开关通�
 
 **`image_resize_enabled: false`** 和 **`variable_image_height_enabled: false`** 表明：当前 ChatGPT Images 2.0 尚未开放 "High resolution" 用户可切换选项。所有生图均以 `gen_size_v2: "16"` (smimage) 输出，分辨率由模型自主决定。
 
-`dalle_limit: -1` 表示已登录用户无调用次数限制（但服务端仍有 `image_gen` 限额进度跟踪，Plus 账号约 113 次/天）。
+`dalle_limit: -1` 是客户端配置值，服务端仍有独立的 `image_gen` 限额进度跟踪。抓包中的 `remaining: 113` 仅表示该账号在当时剩余 113 次，不能据此推断每日总配额。
 
 ### 12.3 宽高比切换实现
 
@@ -743,6 +743,6 @@ Statsig 中存在 `gpt-5-5-pro` 模型的 feature gate。该模型可能是更�
 
 4. **Sentinel 3步 vs 1步**: 当前实现仍使用 1步 `/chat-requirements`，官方已迁移至 3步 (`prepare`→`finalize`→`req`)。现有 1步端点仍在工作中，但未来可能被废弃。
 
-5. **`openai-sentinel-turnstile-token`**: 官方 HAR 中存在 Turnstile token header，但当前实际请求中 `arkose.required = false` 表示尚未强制触发。
+5. **`openai-sentinel-turnstile-token`**: 官方 HAR 中存在 Turnstile token header。`arkose.required = false` 只描述 Arkose，不能判断 Turnstile 是否必需；应分别核对对应抓包的 `turnstile.required` 和实际请求头。
 
 > **注意**: 本文档仅用于技术研究和学习目的。所有 REDACTED 标记代表已脱敏的个人身份信息。

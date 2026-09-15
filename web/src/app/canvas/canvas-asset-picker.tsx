@@ -4,6 +4,7 @@ import { toast } from "sonner";
 
 import { AssetForm } from "@/app/assets/asset-form";
 import { assetListKey, managedImageAsset } from "@/app/assets/asset-library";
+import { assetLabels, assetMatchesGroup } from "@/app/assets/asset-filters";
 import { useMyAssets } from "@/lib/use-my-assets";
 import { canvasInsertPayloadFromMyAsset } from "@/app/canvas/agent/canvas-agent-starter";
 import type { CanvasInsertAssetPayload } from "@/app/canvas/agent/canvas-agent-types";
@@ -12,6 +13,8 @@ import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { fetchAssetGroups, type AssetGroup } from "@/lib/asset-groups";
 import { fetchManagedImages } from "@/lib/api";
 import { fetchVisibleMyAssets, type MyAsset, type MyAssetKind } from "@/lib/my-assets";
 import { cn } from "@/lib/utils";
@@ -41,6 +44,9 @@ export function CanvasAssetPicker({ open, session, onInsert, onClose }: {
   const [kind, setKind] = useState<"all" | MyAssetKind>("all");
   const [page, setPage] = useState(1);
   const [createOpen, setCreateOpen] = useState(false);
+  const [groups, setGroups] = useState<AssetGroup[]>([]);
+  const [groupsLoaded, setGroupsLoaded] = useState(false);
+  const [groupFilter, setGroupFilter] = useState("all");
 
   useEffect(() => {
     if (!open) return;
@@ -48,7 +54,17 @@ export function CanvasAssetPicker({ open, session, onInsert, onClose }: {
     setQuery("");
     setKind("all");
     setPage(1);
+    setGroupFilter("all");
+    setGroups([]);
+    setGroupsLoaded(false);
+    setSharedAssets([]);
+    setManagedAssets([]);
     const controller = new AbortController();
+    void fetchAssetGroups(controller.signal).then((items) => {
+      if (!controller.signal.aborted) { setGroups(items); setGroupsLoaded(true); }
+    }).catch((error) => {
+      if (!controller.signal.aborted) toast.error(error instanceof Error ? error.message : "素材标签读取失败");
+    });
     setRemoteLoading(true);
     const managed = session.role === "admin"
       ? fetchManagedImages({ scope: "all" }, { signal: controller.signal })
@@ -62,6 +78,7 @@ export function CanvasAssetPicker({ open, session, onInsert, onClose }: {
       });
     void Promise.all([fetchVisibleMyAssets(session.key, controller.signal), managed])
       .then(([visible, images]) => {
+        if (controller.signal.aborted) return;
         setSharedAssets(visible.filter((asset) => asset.owned !== true));
         setManagedAssets(images.items.map((item) => managedImageAsset(item, Boolean(item.owner_id && item.owner_id === session.subjectId))));
       })
@@ -80,20 +97,22 @@ export function CanvasAssetPicker({ open, session, onInsert, onClose }: {
       : [...sharedAssets, ...managedAssets.filter((asset) => asset.owned !== true)];
     const records = new Map<string, MyAsset>();
     source.forEach((asset) => records.set(assetListKey(asset), asset));
-    return [...records.values()];
-  }, [assets, managedAssets, sharedAssets, tab]);
+    return [...records.values()].map((asset) => ({ ...asset, tags: assetLabels(asset, groups) }));
+  }, [assets, managedAssets, sharedAssets, tab, groups]);
   const filtered = useMemo(() => {
     const keyword = query.trim().toLowerCase();
     return tabAssets.filter((asset) => {
       if (kind !== "all" && asset.kind !== kind) return false;
+      if (!assetMatchesGroup(asset, groups, groupFilter)) return false;
       return !keyword || [asset.title, asset.content, asset.source, ...(asset.tags || [])]
         .some((value) => String(value || "").toLowerCase().includes(keyword));
     });
-  }, [kind, query, tabAssets]);
+  }, [groupFilter, groups, kind, query, tabAssets]);
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const visible = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  useEffect(() => setPage(1), [kind, query, tab]);
+  useEffect(() => setPage(1), [groupFilter, kind, query, tab]);
+  useEffect(() => { setGroupFilter("all"); }, [tab]);
   useEffect(() => setPage((current) => Math.min(current, totalPages)), [totalPages]);
 
   const insert = (asset: MyAsset) => {
@@ -122,6 +141,12 @@ export function CanvasAssetPicker({ open, session, onInsert, onClose }: {
               {kinds.map((item) => <button key={item.value} type="button" onClick={() => setKind(item.value)} className={cn("h-8 shrink-0 rounded-md px-2.5 text-xs font-medium text-muted-foreground", kind === item.value && "bg-card text-foreground shadow-sm")}>{item.label}</button>)}
             </div>
             {tab === "my-assets" ? <Button type="button" variant="outline" onClick={() => setCreateOpen(true)}><Plus />新增素材</Button> : null}
+          </div>
+          <div className="grid shrink-0 gap-2 px-5 pt-3 sm:px-6">
+            <Select value={groupFilter} onValueChange={setGroupFilter} disabled={!groupsLoaded}>
+              <SelectTrigger className="h-8 w-44" aria-label="筛选素材标签"><SelectValue /></SelectTrigger>
+              <SelectContent><SelectItem value="all">全部标签</SelectItem><SelectItem value="ungrouped">未标签</SelectItem>{groups.map((group) => <SelectItem key={group.id} value={group.id}>{group.name}</SelectItem>)}</SelectContent>
+            </Select>
           </div>
           <ScrollArea className="min-h-0 flex-1" viewportClassName="px-5 py-4 sm:px-6">
             {(loading || remoteLoading) && !tabAssets.length ? (

@@ -1,6 +1,10 @@
 export type MyAssetKind = "text" | "image" | "video" | "audio";
 export type MyAssetVisibility = "private" | "public";
 
+export function normalizeMyAssetTags(tags: readonly string[]) {
+  return [...new Set(tags.map((tag) => tag.trim()).filter(Boolean))].slice(0, 200);
+}
+
 export type MyAsset = {
   id: string;
   kind: MyAssetKind;
@@ -95,7 +99,7 @@ function normalizeMyAsset(value: unknown): MyAsset | null {
     ...(nonNegativeNumber(item.durationMs) !== undefined ? { durationMs: nonNegativeNumber(item.durationMs) } : {}),
     ...(cleanString(item.managedPath) ? { managedPath: cleanString(item.managedPath) } : {}),
     tags: Array.isArray(item.tags)
-      ? Array.from(new Set(item.tags.map(cleanString).filter((tag): tag is string => Boolean(tag)))).slice(0, 24)
+      ? normalizeMyAssetTags(item.tags.map(cleanString))
       : [],
     visibility: item.visibility === "public" ? "public" : "private",
     ...(cleanString(item.source) ? { source: cleanString(item.source) } : {}),

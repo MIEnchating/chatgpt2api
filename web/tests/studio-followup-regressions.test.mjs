@@ -8,22 +8,23 @@ import { activeVideoModelContracts, installVideoModelContracts } from "../src/li
 import { normalizeVideoRequest } from "../src/lib/video-request-normalizer.ts";
 import { videoTurnFieldsFromNormalizedRequest } from "../src/app/image/video-task-state.ts";
 import { canDispatchImageTurn, canStartImageConversationQueueRunner } from "../src/lib/image-task-state.ts";
+import { DEFAULT_PROMPT_MARKET_SOURCES, normalizePromptMarketSources } from "../src/app/image/banana-prompts.ts";
 
 const source = ts.createSourceFile("page.tsx", readFileSync(new URL("../src/app/image/page.tsx", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 
 // Execute source functions with deferred API boundaries to exercise races.
-function extract(name, context) {
+function extract(name, context, sourceFile = source) {
   let expression;
   function visit(node) {
-    if (ts.isFunctionDeclaration(node) && node.name?.text === name) expression = node.getText(source);
-    if (ts.isVariableDeclaration(node) && node.name.getText(source) === name) {
+    if (ts.isFunctionDeclaration(node) && node.name?.text === name) expression = node.getText(sourceFile);
+    if (ts.isVariableDeclaration(node) && node.name.getText(sourceFile) === name) {
       const value = node.initializer;
-      expression = ts.isCallExpression(value) && ["useCallback", "useMemo"].includes(value.expression.getText(source))
-        ? value.arguments[0].getText(source) : value.getText(source);
+      expression = ts.isCallExpression(value) && ["useCallback", "useMemo"].includes(value.expression.getText(sourceFile))
+        ? value.arguments[0].getText(sourceFile) : value.getText(sourceFile);
     }
     ts.forEachChild(node, visit);
   }
-  visit(source);
+  visit(sourceFile);
   assert.ok(expression, `Missing function ${name}`);
   const code = ts.transpile(`const handler = ${expression};`, { target: ts.ScriptTarget.ES2022 });
   return new Function(...Object.keys(context), `${code}\nreturn handler;`)(...Object.values(context));
@@ -131,6 +132,105 @@ test("video queue does not upload a reference downloaded by an expired session",
   await pending;
   assert.equal(uploads, 0);
 });
+
+test("video queue forwards public reference URLs without downloading them", async () => {
+  const active = { current: true };
+  const epoch = { current: 0 };
+  let prepared = false;
+  let downloads = 0;
+  class Aborted extends Error {}
+  const turn = { id: "turn", mode: "video", status: "queued", referenceImages: [{ dataUrl: "https://example.test/ref.png" }], images: [{ status: "loading", taskId: "task" }] };
+  const queue = extract("runConversationQueue", {
+    pageActiveRef: active, pageSessionEpochRef: epoch, session: { key: "a" },
+    activeConversationQueueIdsRef: { current: new Set() }, conversationsRef: { current: [{ id: "conversation", turns: [turn] }] },
+    cancelledTurnIdsRef: { current: new Set() }, deletedConversationIdsRef: { current: new Set() },
+    canDispatchImageTurn, canStartImageConversationQueueRunner, imageTurnProgressKey: () => "turn-key",
+    imageTurnStartedAtTimestamp: () => 0, updateTurnProgress: () => {}, usesReferenceImages: () => false,
+    videoReferenceCombinationError: () => "", ImageTaskDispatchAbortedError: Aborted,
+    dataUrlToFile: () => { downloads++; throw new Error("Cross-origin download blocked"); },
+    uploadVideoMultimodalImages: () => assert.fail("Public references must not be uploaded again"),
+    getCachedAuthSession: () => ({ key: "a" }), absoluteReferenceURL: value => value,
+    isPublicReferenceURL: () => true, videoReferenceImageLimit: () => 9,
+    restoreImageSizeSelection: () => ({}),
+    buildEffectiveImageSizeRequest: () => { prepared = true; active.current = false; epoch.current++; throw new Aborted(); },
+    formatCreationTaskError: String, toast: { error: () => {} }, updateConversation: async () => {},
+    flushImageConversationSaves: async () => {}, reportHistorySyncError: () => {}, clearTurnProgress: () => {},
+  });
+  await queue("conversation");
+  assert.equal(prepared, true);
+  assert.equal(downloads, 0);
+});
+
+test("video submit reports unsupported contracts without rejecting the event handler", async () => {
+  const errors = [];
+  const submit = extract("handleSubmit", {
+    isSubmitDispatchingRef: { current: false }, referenceUploadPendingCountRef: { current: 0 },
+    videoFrameUploadsRef: { current: new Map() }, videoReferenceUploadPendingCountRef: { current: 0 }, audioReferenceUploadPendingCountRef: { current: 0 },
+    composerMode: "video", imagePrompt: "Animate this", videoFirstFrameURL: "", videoLastFrameURL: "",
+    referenceImages: [], videoReferenceImageURLs: [], videoReferenceVideoURLs: [], videoReferenceAudioURLs: [],
+    videoModel: "missing-contract", videoModelOptions: [{ value: "missing-contract" }], videoSeconds: "4", videoSize: "1280x720",
+    videoResolution: "720p", videoGenerateAudio: false, videoWatermark: false,
+    absoluteReferenceURL: value => value, cleanReferenceURLs: values => values, requireRelayToken: () => true,
+    videoRequiresReferenceImage: () => false, videoRequiresReferenceVideo: () => false, videoRequiresReferenceAudio: () => false,
+    videoRequiresMultimodalReferenceMode: () => false, supportsVideoMultimodalReferences: () => false,
+    videoWorkbenchReferenceLimitError: () => "", videoAudioGenerationError: () => "", videoReferenceCombinationError: () => "",
+    imageConversationReferenceLimitMessage: () => "", videoReferenceImageLimit: () => 1,
+    normalizeVideoRequest, toast: { error: message => errors.push(message) },
+  });
+  await submit();
+  assert.equal(errors.length, 1);
+  assert.match(errors[0], /missing-contract/);
+});
+
+test("canvas prompt loading preserves explicitly disabled built-in sources", async () => {
+  const canvasSource = ts.createSourceFile("side-panel.tsx", readFileSync(new URL("../src/app/canvas/canvas-side-panel.tsx", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const configured = DEFAULT_PROMPT_MARKET_SOURCES.map(item => ({ ...item, enabled: false }));
+  const load = extract("loadSidePanelPrompts", {
+    sidePanelPromptCache: new Map(), cachedSidePanelPrompts: () => null, sidePanelPromptRequests: new Map(),
+    fetchPromptSourcesConfig: async () => ({ sources: configured }), normalizePromptMarketSources,
+    fetchPromptMarketPrompts: async (_signal, received) => {
+      assert.deepEqual(received, configured);
+      assert.equal(normalizePromptMarketSources(received).some(item => item.enabled), false);
+      return [];
+    },
+    localizedPrompt: item => item, sortPromptMarketPrompts: items => items, cacheSidePanelPrompts: () => {},
+  }, canvasSource);
+  assert.deepEqual(await load("session"), { prompts: [], categories: [] });
+});
+
+for (const stage of ["configuration", "prompts"]) {
+  test(`closing the prompt market prevents late ${stage} from changing state`, async () => {
+    const marketSource = ts.createSourceFile("market.tsx", readFileSync(new URL("../src/app/image/components/image-prompt-market.tsx", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+    let effect;
+    function visit(node) {
+      if (ts.isCallExpression(node) && node.expression.getText(marketSource) === "useEffect"
+        && node.arguments[0]?.getText(marketSource).includes("fetchPromptSourcesConfig()")) {
+        effect = node.arguments[0].getText(marketSource);
+      }
+      ts.forEachChild(node, visit);
+    }
+    visit(marketSource);
+    assert.ok(effect);
+    const response = deferred();
+    let promptsRequested = 0;
+    const commits = [];
+    const context = {
+      open: true, prompts: [], setIsLoading: value => commits.push(["loading", value]), setError: value => commits.push(["error", value]),
+      fetchPromptSourcesConfig: () => stage === "configuration" ? response.promise : Promise.resolve({ sources: [] }),
+      normalizePromptMarketSources: items => items, setSourceConfigs: value => commits.push(["sources", value]),
+      fetchPromptMarketPrompts: () => { promptsRequested++; return response.promise; }, setPrompts: value => commits.push(["prompts", value]),
+    };
+    const compiled = ts.transpile(`const handler = ${effect};`, { target: ts.ScriptTarget.ES2022 });
+    const cleanup = new Function(...Object.keys(context), `${compiled}\nreturn handler;`)(...Object.values(context))();
+    await Promise.resolve();
+    cleanup();
+    const before = commits.slice();
+    response.resolve(stage === "configuration" ? { sources: [] } : [{ id: "stale" }]);
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(commits, before);
+    assert.equal(promptsRequested, stage === "configuration" ? 0 : 1);
+  });
+}
 
 test("compensating cancellation stops after the session changes during its delay", async () => {
   let current = true;

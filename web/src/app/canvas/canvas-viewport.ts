@@ -43,7 +43,9 @@ export function zoomCanvasViewport(viewport: CanvasViewport, localPoint: { x: nu
 }
 
 export function canvasGridMetrics(viewport: CanvasViewport) {
-  const size = 48 * viewport.zoom;
+  let size = 48 * viewport.zoom;
+  // Skip grid subdivisions when zoomed out to keep the canvas legible.
+  while (size > 0 && size < 16) size *= 2;
   return {
     size,
     x: viewport.x % size,

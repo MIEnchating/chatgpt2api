@@ -5,6 +5,8 @@ import type { CanvasAgentPhase } from "./canvas-agent-types";
 const CANVAS_AGENT_ACTION_NAMES = [
   "get_canvas_summary",
   "get_selected_nodes",
+  "query_canvas_nodes",
+  "read_skill_file",
   "get_node",
   "get_upstream_nodes",
   "get_downstream_nodes",
@@ -78,8 +80,11 @@ function tool(name: CanvasAgentActionName, description: string, parameters: Reco
   };
 }
 
+export const CANVAS_AGENT_SKILL_FILE_TOOL = tool("read_skill_file", "读取本轮所选 Skill 明确引用的附属文件。", { skillId: STRING, path: STRING }, ["skillId", "path"]);
+
 export const CANVAS_AGENT_TOOLS: CanvasAgentToolDefinition[] = [
   tool("get_canvas_summary", "读取当前画布摘要、节点、连线、模型配置和任务状态。"),
+  tool("query_canvas_nodes", "按 ID、标题、正文、提示词或类型分页查找全画布节点。", { nodeId: STRING, keyword: STRING, type: { type: "string", enum: ["image", "video", "audio", "panorama", "director", "group", "text", "config"] }, page: { type: "integer", minimum: 1 }, pageSize: { type: "integer", minimum: 1, maximum: 50 } }),
   tool("get_selected_nodes", "读取用户当前选中的真实画布节点。"),
   tool("get_node", "按真实节点 ID 读取节点。", { nodeId: STRING }, ["nodeId"]),
   tool("get_upstream_nodes", "读取指定节点的所有直接上游节点。", { nodeId: STRING }, ["nodeId"]),
@@ -97,19 +102,28 @@ export const CANVAS_AGENT_TOOLS: CanvasAgentToolDefinition[] = [
   tool("delete_connection", "删除指定真实连线。", { connectionId: STRING }, ["connectionId"]),
   tool("create_group", "把两个或更多节点放进本项目 group 节点。", { title: STRING, nodeIds: STRING_ARRAY }, ["nodeIds"]),
   tool("arrange_nodes", "整理指定节点；不传 nodeIds 时整理当前画布顶层节点。", { nodeIds: STRING_ARRAY }),
-  tool("generate_image", "调用现有图片任务链路。sourceNodeIds 只放真实直接来源，独立生成必须传空数组；其中图片按数组顺序编号为图片1、图片2。", { prompt: STRING, title: STRING, sourceNodeIds: STRING_ARRAY, size: STRING, count: { type: "number", minimum: 1, maximum: 15 } }, ["prompt", "sourceNodeIds"]),
-  tool("edit_image", "调用现有图片编辑链路，必须提供至少一个真实图片来源节点；图片按 sourceNodeIds 顺序编号。", { prompt: STRING, title: STRING, sourceNodeIds: STRING_ARRAY, size: STRING, count: { type: "number", minimum: 1, maximum: 15 } }, ["prompt", "sourceNodeIds"]),
-  tool("generate_video", "调用现有视频任务链路。sourceNodeIds 只放真实直接来源，独立生成必须传空数组；其中图片、视频、音频分别按各自顺序编号。", { prompt: STRING, title: STRING, sourceNodeIds: STRING_ARRAY, size: STRING, seconds: { type: "number", minimum: -1, maximum: 30 }, generateAudio: { type: "boolean" } }, ["prompt", "sourceNodeIds"]),
-  tool("generate_audio", "调用现有音频任务链路。prompt 是实际朗读文本，instructions 是音色/演绎说明；sourceNodeIds 只放真实直接来源，独立生成必须传空数组。", { prompt: STRING, title: STRING, sourceNodeIds: STRING_ARRAY, voice: STRING, instructions: STRING }, ["prompt", "sourceNodeIds"]),
+  tool("generate_image", "创建图片节点，并仅在自动生成开启时提交任务。sourceNodeIds 只放真实直接来源，独立生成必须传空数组；其中图片按数组顺序编号为图片1、图片2。", { prompt: STRING, title: STRING, sourceNodeIds: STRING_ARRAY, size: STRING, count: { type: "integer", minimum: 1, maximum: 15 } }, ["prompt", "sourceNodeIds"]),
+  tool("edit_image", "创建图片编辑节点，并仅在自动生成开启时提交任务，必须提供至少一个真实图片来源节点；图片按 sourceNodeIds 顺序编号。", { prompt: STRING, title: STRING, sourceNodeIds: STRING_ARRAY, size: STRING, count: { type: "integer", minimum: 1, maximum: 15 } }, ["prompt", "sourceNodeIds"]),
+  tool("generate_video", "创建视频节点，并仅在自动生成开启时提交任务。sourceNodeIds 只放真实直接来源，独立生成必须传空数组；其中图片、视频、音频分别按各自顺序编号。", { prompt: STRING, title: STRING, sourceNodeIds: STRING_ARRAY, size: STRING, seconds: { type: "number", minimum: -1, maximum: 30 }, generateAudio: { type: "boolean" } }, ["prompt", "sourceNodeIds"]),
+  tool("generate_audio", "创建音频节点，并仅在自动生成开启时提交任务。prompt 是实际朗读文本，instructions 是音色/演绎说明；sourceNodeIds 只放真实直接来源，独立生成必须传空数组。", { prompt: STRING, title: STRING, sourceNodeIds: STRING_ARRAY, voice: STRING, instructions: STRING }, ["prompt", "sourceNodeIds"]),
   tool("get_media_task_status", "读取图片、视频或音频节点的生成状态。", { nodeId: STRING }, ["nodeId"]),
 ];
 
 export function normalizeCanvasAgentAction(name: unknown, args: unknown, id = nanoid()): CanvasAgentAction {
   if (typeof name !== "string" || !ACTION_NAMES.has(name)) throw new Error("模型返回了不允许的工具");
-  const input = isRecord(args) ? args : {};
+  if (!isRecord(args)) throw new Error("工具 arguments 必须是 JSON 对象");
+  const definition = name === "read_skill_file" ? CANVAS_AGENT_SKILL_FILE_TOOL : CANVAS_AGENT_TOOLS.find((item) => item.function.name === name)!;
+  validateCanvasAgentArguments(args, definition.function.parameters);
+  const input = args;
   const actionName = name as CanvasAgentActionName;
   let normalized: Record<string, unknown> = {};
   switch (actionName) {
+    case "query_canvas_nodes":
+      normalized = { ...input, page: input.page ?? 1, pageSize: input.pageSize ?? 20 };
+      break;
+    case "read_skill_file":
+      normalized = { skillId: requiredString(input.skillId, "skillId"), path: requiredString(input.path, "path") };
+      break;
     case "get_canvas_summary":
     case "get_selected_nodes":
     case "get_generation_config":
@@ -183,7 +197,7 @@ export function normalizeCanvasAgentAction(name: unknown, args: unknown, id = na
 
 export function canvasAgentActionLabel(action: CanvasAgentAction) {
   const labels: Record<CanvasAgentActionName, string> = {
-    get_canvas_summary: "正在读取画布", get_selected_nodes: "正在读取选中节点", get_node: "正在读取节点", get_upstream_nodes: "正在读取上游节点", get_downstream_nodes: "正在读取下游节点", get_connected_nodes: "正在读取关联节点", get_generation_config: "正在读取生成配置", get_generation_task: "正在读取任务状态", set_agent_state: "正在保存创作进度", create_primary_script_node: "正在创建主剧本节点", create_text_node: "正在创建文本节点", update_text_node: "正在更新文本节点", update_node: "正在更新节点", delete_node: "正在删除节点", create_connection: "正在创建连线", delete_connection: "正在删除连线", create_group: "正在创建分组", arrange_nodes: "正在整理画布", generate_image: "正在提交图片生成", edit_image: "正在提交图片编辑", generate_video: "正在提交视频生成", generate_audio: "正在提交音频生成", get_media_task_status: "正在读取媒体任务",
+    query_canvas_nodes: "正在查找画布节点", read_skill_file: "正在读取 Skill 文件", get_canvas_summary: "正在读取画布", get_selected_nodes: "正在读取选中节点", get_node: "正在读取节点", get_upstream_nodes: "正在读取上游节点", get_downstream_nodes: "正在读取下游节点", get_connected_nodes: "正在读取关联节点", get_generation_config: "正在读取生成配置", get_generation_task: "正在读取任务状态", set_agent_state: "正在保存创作进度", create_primary_script_node: "正在创建主剧本节点", create_text_node: "正在创建文本节点", update_text_node: "正在更新文本节点", update_node: "正在更新节点", delete_node: "正在删除节点", create_connection: "正在创建连线", delete_connection: "正在删除连线", create_group: "正在创建分组", arrange_nodes: "正在整理画布", generate_image: "正在创建图片节点", edit_image: "正在创建图片编辑节点", generate_video: "正在创建视频节点", generate_audio: "正在创建音频节点", get_media_task_status: "正在读取媒体任务",
   };
   return labels[action.name];
 }
@@ -204,3 +218,19 @@ function optionalStringArray(value: unknown, key: string) { if (value === undefi
 function positiveNumber(value: unknown) { const number = typeof value === "number" ? value : Number(value); return Number.isFinite(number) && number > 0 ? number : undefined; }
 function boundedNumber(value: unknown, minimum: number, maximum: number) { if (value === undefined || value === null || value === "") return undefined; const number = typeof value === "number" ? value : Number(value); if (!Number.isFinite(number) || number < minimum || number > maximum) throw new Error(`数值必须在 ${minimum} 到 ${maximum} 之间`); return number; }
 function boundedInteger(value: unknown, minimum: number, maximum: number) { const number = boundedNumber(value, minimum, maximum); return number === undefined ? undefined : Math.floor(number); }
+
+export function validateCanvasAgentArguments(args: Record<string, unknown>, schema: CanvasAgentToolDefinition["function"]["parameters"]) {
+  for (const key of schema.required || []) if (!(key in args)) throw new Error(`缺少工具参数 ${key}`);
+  for (const [key, value] of Object.entries(args)) {
+    const rule = schema.properties[key] as { type: string; enum?: unknown[]; minimum?: number; maximum?: number; maxItems?: number } | undefined;
+    if (!rule) throw new Error(`未知工具参数 ${key}`);
+    if (rule.type === "array") {
+      if (!Array.isArray(value) || value.some((item) => typeof item !== "string" || !item.trim())) throw new Error(`${key} 必须是非空字符串组成的数组`);
+      if (rule.maxItems !== undefined && value.length > rule.maxItems) throw new Error(`${key} 最多 ${rule.maxItems} 项`);
+    } else if (rule.type === "number" || rule.type === "integer") {
+      if (typeof value !== "number" || !Number.isFinite(value) || (rule.type === "integer" && !Number.isInteger(value))) throw new Error(`${key} 必须是${rule.type === "integer" ? "整数" : "数字"}`);
+      if ((rule.minimum !== undefined && value < rule.minimum) || (rule.maximum !== undefined && value > rule.maximum)) throw new Error(`${key} 超出允许范围`);
+    } else if (typeof value !== rule.type) throw new Error(`${key} 类型错误，应为 ${rule.type}`);
+    if (rule.enum && !rule.enum.includes(value)) throw new Error(`${key} 不是允许的值`);
+  }
+}

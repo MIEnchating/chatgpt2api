@@ -11,10 +11,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from image_gen_full_flow import (
     DEVICE_ID, SESSION_ID, CLIENT_VERSION, CLIENT_BUILD_NUMBER,
     FINGERPRINT, new_uuid, ensure_ok, build_proof_token,
-    build_legacy_requirements_token, parse_pow_resources, iter_sse_payloads,
+    build_legacy_requirements_token, parse_pow_resources,
 )
 from curl_cffi import requests
 from capture_safety import new_capture_directory, require_access_token, write_private_capture
+from sse_capture import iter_sse_payloads
 
 BASE_URL = "https://chatgpt.com"
 POW_SCRIPT_DEFAULT = "https://chatgpt.com/backend-api/sentinel/sdk.js"

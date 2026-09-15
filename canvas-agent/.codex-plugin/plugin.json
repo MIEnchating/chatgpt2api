@@ -1,0 +1,19 @@
+{
+  "name": "canvas-agent",
+  "version": "0.1.0",
+  "description": "通过本机 MCP 连接云棉画布，检索节点并执行已确认的创作操作。",
+  "author": {
+    "name": "chatgpt2api contributors"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "云棉画布",
+    "shortDescription": "连接画布、查找节点并协作创作",
+    "longDescription": "通过已有画布账号和本机服务操作节点、素材及媒体任务，提供连接 Skill 和 MCP；媒体生成遵循画布设置。",
+    "developerName": "chatgpt2api contributors",
+    "category": "Productivity",
+    "capabilities": ["Interactive", "Write"],
+    "defaultPrompt": ["连接我的云棉画布，查看当前节点。"]
+  },
+  "mcpServers": "./.mcp.json"
+}

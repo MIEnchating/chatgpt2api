@@ -53,7 +53,7 @@ import {
 } from "@/lib/api";
 import { dispatchImageGenerationPreferencesChanged } from "@/lib/image-generation-preferences-events";
 import { DEFAULT_CREATION_WORKBENCH_PREFERENCES } from "@/lib/use-image-generation-preferences";
-import { displaySubjectId } from "@/lib/session";
+import { displaySubjectId, getCachedAuthSession } from "@/lib/session";
 import {
   relayTokenAvailabilityFromBalance,
   relayTokenNamesUpdateForAvailability,
@@ -232,6 +232,7 @@ function CustomRelayConfigDialog({
   onSaved,
   open,
   status,
+  sessionKey,
 }: {
   deleteRequested?: boolean;
   kind: RelayTokenKind | null;
@@ -240,43 +241,56 @@ function CustomRelayConfigDialog({
   onSaved: (status: CustomRelayConfigStatus) => void;
   open: boolean;
   status?: CustomRelayConfigStatus;
+  sessionKey: string;
 }) {
   const [baseURL, setBaseURL] = useState("");
+  const [protocol, setProtocol] = useState<CustomRelayConfigStatus["protocol"]>("openai");
   const [name, setName] = useState("");
   const [apiKey, setAPIKey] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const mountedRef = useRef(false);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+  const isCurrentSession = () => mountedRef.current && getCachedAuthSession()?.key === sessionKey;
 
   useEffect(() => {
     if (!open) return;
     setName(status?.name || "");
+    setProtocol(status?.protocol || "openai");
     setBaseURL(status?.base_url || "");
     setAPIKey("");
     setConfirmDelete(deleteRequested);
-  }, [open, deleteRequested, status?.id, status?.base_url, status?.name]);
+  }, [open, deleteRequested, status?.id, status?.base_url, status?.name, status?.protocol]);
 
   if (!kind) return null;
   const title = { text: "文本", image: "图片", video: "视频", audio: "音频" }[kind];
   const canSave = name.trim() !== "" && baseURL.trim() !== "" && (status?.has_key || apiKey.trim() !== "");
 
   const save = async () => {
-    if (!canSave) return;
+    if (!canSave || isSaving || !isCurrentSession()) return;
     setIsSaving(true);
     try {
       const { item } = status
-        ? await updateCustomRelayConfig(status.id, { name: name.trim(), base_url: baseURL.trim(), api_key: apiKey.trim() })
-        : await createCustomRelayConfig({ kind, name: name.trim(), base_url: baseURL.trim(), api_key: apiKey.trim() });
+        ? await updateCustomRelayConfig(status.id, { protocol, name: name.trim(), base_url: baseURL.trim(), api_key: apiKey.trim() })
+        : await createCustomRelayConfig({ protocol, kind, name: name.trim(), base_url: baseURL.trim(), api_key: apiKey.trim() });
+      if (!isCurrentSession()) return;
       onSaved(item);
       toast.success(`${title}自定义 API 配置已保存`);
       onOpenChange(false);
     } catch (error) {
+      if (!isCurrentSession()) return;
       toast.error(error instanceof Error ? error.message : "保存自定义 API 配置失败");
     } finally {
-      setIsSaving(false);
+      if (isCurrentSession()) setIsSaving(false);
     }
   };
 
   const remove = async () => {
+    if (isSaving || !isCurrentSession()) return;
     if (!confirmDelete) {
       setConfirmDelete(true);
       return;
@@ -285,13 +299,15 @@ function CustomRelayConfigDialog({
     try {
       if (!status) return;
       await deleteCustomRelayConfig(status.id);
+      if (!isCurrentSession()) return;
       onDeleted(status);
       toast.success(`${title}自定义 API 配置已删除`);
       onOpenChange(false);
     } catch (error) {
+      if (!isCurrentSession()) return;
       toast.error(error instanceof Error ? error.message : "删除自定义 API 配置失败");
     } finally {
-      setIsSaving(false);
+      if (isCurrentSession()) setIsSaving(false);
     }
   };
 
@@ -308,9 +324,20 @@ function CustomRelayConfigDialog({
             <Input value={name} onChange={(event) => setName(event.target.value)} placeholder={`例如 ${title}备用线路`} />
           </label>
           <label className="grid gap-1.5 text-sm font-medium text-foreground">
+            <span>协议</span>
+            <Select value={protocol} onValueChange={(value) => setProtocol(value as CustomRelayConfigStatus["protocol"])}>
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="openai">OpenAI 兼容协议</SelectItem>
+                {kind === "video" || kind === "audio" ? <SelectItem value="autodl">AutoDL ComfyUI 工作流</SelectItem> : null}
+                {kind === "video" ? <SelectItem value="ark">火山方舟 Seedance 原生协议</SelectItem> : null}
+              </SelectContent>
+            </Select>
+          </label>
+          <label className="grid gap-1.5 text-sm font-medium text-foreground">
             <span>Base URL</span>
             <Input type="url" value={baseURL} onChange={(event) => setBaseURL(event.target.value)} placeholder="https://api.example.com" autoComplete="url" />
-            <span className="text-xs font-normal leading-5 text-muted-foreground">填写 OpenAI 兼容 API 的基础地址，不包含具体接口路径。</span>
+            <span className="text-xs font-normal leading-5 text-muted-foreground">{protocol === "autodl" ? "填写 AutoDL 基础地址，例如 https://autodl.art。工作流目录可在模型配置中拉取。" : protocol === "ark" ? "标准 API 填 https://ark.cn-beijing.volces.com/api/v3；Agent Plan 填 https://ark.cn-beijing.volces.com/api/plan/v3。" : "填写 OpenAI 兼容 API 的基础地址，不包含具体接口路径。"}</span>
           </label>
           <label className="grid gap-1.5 text-sm font-medium text-foreground">
             <span>API Key</span>
@@ -534,6 +561,7 @@ function ImageGenerationPreferencesCard({ sessionKey }: { sessionKey: string }) 
       });
     return () => {
       ignore = true;
+      saveVersionRef.current += 1;
     };
   }, [sessionKey]);
 
@@ -643,7 +671,7 @@ function ImageGenerationPreferencesCard({ sessionKey }: { sessionKey: string }) 
       };
       const { preferences: saved } = await updateImageGenerationPreferences(normalizedPreferences);
       if (saveVersionRef.current !== saveVersion || currentSessionKeyRef.current !== saveSessionKey) return;
-      setPreferences(saved);
+      setPreferences((current) => current === preferences ? saved : current);
       setMessage("设置已保存");
       dispatchImageGenerationPreferencesChanged(saveSessionKey, saved);
     } catch (error) {
@@ -978,6 +1006,7 @@ function ProfileContent({ session }: { session: StoredAuthSession }) {
         </main>
       </div>
       <CustomRelayConfigDialog
+        sessionKey={session.key}
         open={editingCustomRelay !== null}
         kind={editingCustomRelay?.kind || null}
         status={editingCustomRelay?.status}

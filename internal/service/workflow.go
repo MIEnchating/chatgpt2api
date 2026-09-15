@@ -130,9 +130,10 @@ type CreativeWorkflow struct {
 }
 
 type WorkflowService struct {
-	mu      sync.Mutex
-	store   storage.JSONDocumentBackend
-	objects storage.StorageObjectBackend
+	fileReferences FileReferenceProtector
+	mu             sync.Mutex
+	store          storage.JSONDocumentBackend
+	objects        storage.StorageObjectBackend
 }
 
 type workflowDocument struct {
@@ -162,6 +163,12 @@ func (s *WorkflowService) List(ownerID string) ([]CreativeWorkflow, error) {
 }
 
 func (s *WorkflowService) InitializeIfEmpty(ownerID string, inputs []CreativeWorkflow) ([]CreativeWorkflow, error) {
+	releaseReferences, err := protectStorageReferences(s.fileReferences, inputs)
+	if err != nil {
+		return nil, err
+	}
+	defer releaseReferences()
+
 	ownerID = strings.TrimSpace(ownerID)
 	if ownerID == "" {
 		return nil, errors.New("owner_id is required")
@@ -238,13 +245,24 @@ func visibleWorkflows(items []CreativeWorkflow, ownerID string) []CreativeWorkfl
 	return result
 }
 
+func (s *WorkflowService) SetFileReferenceProtector(protector FileReferenceProtector) {
+	s.fileReferences = protector
+}
+
 func (s *WorkflowService) Save(ownerID string, input CreativeWorkflow) (CreativeWorkflow, error) {
+	releaseReferences, err := protectStorageReferences(s.fileReferences, input)
+	if err != nil {
+		return CreativeWorkflow{}, err
+	}
+	defer releaseReferences()
+
 	ownerID = strings.TrimSpace(ownerID)
 	if ownerID == "" {
 		return CreativeWorkflow{}, errors.New("owner_id is required")
 	}
 	input = *copyWorkflow(&input)
-	creating := strings.TrimSpace(input.ID) == ""
+	input.ID = strings.TrimSpace(input.ID)
+	creating := input.ID == ""
 	if creating {
 		input.ID = util.NewUUID()
 		input.Revision = 0

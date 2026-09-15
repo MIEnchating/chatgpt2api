@@ -110,6 +110,7 @@ type UploadedImage struct {
 	Data        []byte
 	Filename    string
 	ContentType string
+	URL         string
 }
 
 func ExtractChatPrompt(body map[string]any) string {

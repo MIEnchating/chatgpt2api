@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "chatgpt2api-canvas": {
+      "command": "node",
+      "args": ["mcp.mjs"],
+      "cwd": ".",
+      "env_vars": ["CANVAS_AGENT_URL", "CANVAS_AGENT_TOKEN", "CANVAS_AGENT_SESSION_ID"]
+    }
+  }
+}

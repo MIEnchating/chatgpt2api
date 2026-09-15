@@ -325,6 +325,9 @@ function roleLabel(user: ManagedUser, roles: ManagedRole[]) {
 }
 
 function UsersContent() {
+  const pageActiveRef = useRef(true);
+  const creatingUserRef = useRef(false);
+  const pendingUserIdsRef = useRef(new Set<string>());
   const rolesLoadedRef = useRef(false);
   const loadUsersAbortRef = useRef<AbortController | null>(null);
   const loadUsersRequestRef = useRef(0);
@@ -352,8 +355,12 @@ function UsersContent() {
   const [roleUser, setRoleUser] = useState<ManagedUser | null>(null);
   const [selectedRoleId, setSelectedRoleId] = useState("");
   const [isSavingRole, setIsSavingRole] = useState(false);
+  const usersQueryRef = useRef({ page, pageSize, searchText, providerFilter, statusFilter, sortBy, sortOrder });
+  usersQueryRef.current = { page, pageSize, searchText, providerFilter, statusFilter, sortBy, sortOrder };
 
   const loadUsers = useCallback(async (overrides: { page?: number; includeRoles?: boolean } = {}) => {
+    if (!pageActiveRef.current) return;
+    const { page, pageSize, searchText, providerFilter, statusFilter, sortBy, sortOrder } = usersQueryRef.current;
     const requestedPage = overrides.page ?? page;
     const includeRoles = overrides.includeRoles ?? !rolesLoadedRef.current;
     const requestID = loadUsersRequestRef.current + 1;
@@ -409,7 +416,12 @@ function UsersContent() {
         }
       }
     }
-  }, [page, pageSize, providerFilter, searchText, sortBy, sortOrder, statusFilter]);
+  }, []);
+
+  useEffect(() => {
+    pageActiveRef.current = true;
+    return () => { pageActiveRef.current = false; };
+  }, []);
 
   useEffect(() => {
     void loadUsers();
@@ -417,7 +429,7 @@ function UsersContent() {
       loadUsersRequestRef.current += 1;
       loadUsersAbortRef.current?.abort();
     };
-  }, [loadUsers]);
+  }, [loadUsers, page, pageSize, providerFilter, searchText, sortBy, sortOrder, statusFilter]);
 
   useEffect(() => {
     const handle = window.setTimeout(() => {
@@ -441,6 +453,8 @@ function UsersContent() {
   const allPageSelected = pageUserIds.length > 0 && pageUserIds.every((id) => selectedUserIds.has(id));
   const somePageSelected = pageUserIds.some((id) => selectedUserIds.has(id));
   const setItemPending = (id: string, isPending: boolean) => {
+    if (isPending) pendingUserIdsRef.current.add(id);
+    else pendingUserIdsRef.current.delete(id);
     setPendingIds((current) => {
       const next = new Set(current);
       if (isPending) {
@@ -533,6 +547,7 @@ function UsersContent() {
   };
 
   const openCreateDialog = () => {
+    if (creatingUserRef.current) return;
     const roleId = createForm.role_id || roles[0]?.id || "";
     setCreateForm(createEmptyUserForm(roleId));
     setCreateErrors({});
@@ -540,6 +555,7 @@ function UsersContent() {
   };
 
   const closeCreateDialog = (open: boolean) => {
+    if (creatingUserRef.current) return;
     setIsCreateDialogOpen(open);
     if (!open) {
       setCreateErrors({});
@@ -548,41 +564,47 @@ function UsersContent() {
   };
 
   const handleCreate = async () => {
+    if (!pageActiveRef.current || creatingUserRef.current) return;
     const nextErrors = validateCreateUserForm(createForm);
     if (Object.keys(nextErrors).length > 0) {
       setCreateErrors(nextErrors);
       return;
     }
 
+    creatingUserRef.current = true;
     setIsCreating(true);
     try {
       await createManagedUser(createUserPayload(createForm));
+      if (!pageActiveRef.current) return;
       setCreateForm(createEmptyUserForm(createForm.role_id));
       setCreateErrors({});
-      closeCreateDialog(false);
-      if (page === 1) {
-        await loadUsers({ page: 1, includeRoles: false });
-      } else {
-        setPage(1);
-      }
+      setIsCreateDialogOpen(false);
+      await loadUsers({ includeRoles: false });
+      if (!pageActiveRef.current) return;
       toast.success("用户已创建");
     } catch (error) {
+      if (!pageActiveRef.current) return;
       toast.error(error instanceof Error ? error.message : "创建用户失败");
     } finally {
-      setIsCreating(false);
+      creatingUserRef.current = false;
+      if (pageActiveRef.current) setIsCreating(false);
     }
   };
 
   const handleToggle = async (user: ManagedUser) => {
+    if (!pageActiveRef.current || pendingUserIdsRef.current.has(user.id)) return;
     setItemPending(user.id, true);
     try {
       await updateManagedUser(user.id, { enabled: !user.enabled });
+      if (!pageActiveRef.current) return;
       await loadUsers({ includeRoles: false });
+      if (!pageActiveRef.current) return;
       toast.success(user.enabled ? "用户已禁用" : "用户已启用");
     } catch (error) {
+      if (!pageActiveRef.current) return;
       toast.error(error instanceof Error ? error.message : "更新用户失败");
     } finally {
-      setItemPending(user.id, false);
+      if (pageActiveRef.current) setItemPending(user.id, false);
     }
   };
 
@@ -592,7 +614,7 @@ function UsersContent() {
   };
 
   const handleSaveRole = async () => {
-    if (!roleUser || !selectedRoleId) {
+    if (!pageActiveRef.current || !roleUser || !selectedRoleId || pendingUserIdsRef.current.has(roleUser.id)) {
       return;
     }
     const user = roleUser;
@@ -602,37 +624,40 @@ function UsersContent() {
       await updateManagedUser(user.id, {
         role_id: selectedRoleId,
       });
+      if (!pageActiveRef.current) return;
       await loadUsers({ includeRoles: false });
+      if (!pageActiveRef.current) return;
       setRoleUser(null);
       toast.success("角色已保存");
     } catch (error) {
+      if (!pageActiveRef.current) return;
       toast.error(error instanceof Error ? error.message : "保存角色失败");
     } finally {
-      setIsSavingRole(false);
-      setItemPending(user.id, false);
+      if (pageActiveRef.current) {
+        setIsSavingRole(false);
+        setItemPending(user.id, false);
+      }
     }
   };
 
   const handleDelete = async () => {
-    if (!deletingUser) {
+    if (!pageActiveRef.current || !deletingUser || pendingUserIdsRef.current.has(deletingUser.id)) {
       return;
     }
     const user = deletingUser;
     setItemPending(user.id, true);
     try {
       await deleteManagedUser(user.id);
+      if (!pageActiveRef.current) return;
       setDeletingUser(null);
-      const nextPage = items.length === 1 && page > 1 ? page - 1 : page;
-      if (nextPage === page) {
-        await loadUsers({ page: nextPage, includeRoles: false });
-      } else {
-        setPage(nextPage);
-      }
+      await loadUsers({ includeRoles: false });
+      if (!pageActiveRef.current) return;
       toast.success("用户已删除");
     } catch (error) {
+      if (!pageActiveRef.current) return;
       toast.error(error instanceof Error ? error.message : "删除用户失败");
     } finally {
-      setItemPending(user.id, false);
+      if (pageActiveRef.current) setItemPending(user.id, false);
     }
   };
 
@@ -903,6 +928,7 @@ function UsersContent() {
                   <UserRound className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
                     value={createForm.username}
+                    disabled={isCreating}
                     onChange={(event) => updateCreateField("username", event.target.value.toLowerCase())}
                     placeholder="例如：operator_01"
                     autoComplete="username"
@@ -916,6 +942,7 @@ function UsersContent() {
                 <label className="text-sm font-medium text-foreground">显示名称</label>
                 <Input
                   value={createForm.name}
+                  disabled={isCreating}
                   onChange={(event) => updateCreateField("name", event.target.value)}
                   placeholder="例如：运营账号"
                   className="h-10 rounded-lg"
@@ -929,6 +956,7 @@ function UsersContent() {
                   <KeyRound className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
                     value={createForm.password}
+                    disabled={isCreating}
                     onChange={(event) => updateCreateField("password", event.target.value)}
                     placeholder="至少 8 位"
                     type="password"
@@ -943,6 +971,7 @@ function UsersContent() {
                 <label className="text-sm font-medium text-foreground">确认密码</label>
                 <Input
                   value={createForm.confirmPassword}
+                  disabled={isCreating}
                   onChange={(event) => updateCreateField("confirmPassword", event.target.value)}
                   placeholder="再次输入密码"
                   type="password"
@@ -956,7 +985,7 @@ function UsersContent() {
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <label className="text-sm font-medium text-foreground">角色</label>
-                <Select value={createForm.role_id} onValueChange={(value) => updateCreateField("role_id", value)}>
+                <Select value={createForm.role_id} onValueChange={(value) => updateCreateField("role_id", value)} disabled={isCreating}>
                   <SelectTrigger className="h-10 rounded-lg">
                     <SelectValue placeholder="选择角色" />
                   </SelectTrigger>
@@ -971,7 +1000,7 @@ function UsersContent() {
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium text-foreground">状态</label>
-                <Select value={createForm.enabled ? "true" : "false"} onValueChange={(value) => updateCreateField("enabled", value === "true")}>
+                <Select value={createForm.enabled ? "true" : "false"} onValueChange={(value) => updateCreateField("enabled", value === "true")} disabled={isCreating}>
                   <SelectTrigger className="h-10 rounded-lg">
                     <SelectValue />
                   </SelectTrigger>
@@ -995,7 +1024,7 @@ function UsersContent() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={Boolean(roleUser)} onOpenChange={(open) => (!open ? setRoleUser(null) : null)}>
+      <Dialog open={Boolean(roleUser)} onOpenChange={(open) => (!open && !pendingUserIdsRef.current.has(roleUser?.id || "") ? setRoleUser(null) : null)}>
         <DialogContent className="rounded-xl p-4 sm:p-6">
           <DialogHeader className="gap-2">
             <DialogTitle className="flex items-center gap-2">
@@ -1008,7 +1037,7 @@ function UsersContent() {
           </DialogHeader>
           <div className="space-y-2">
             <label className="text-sm font-medium text-foreground">角色</label>
-            <Select value={selectedRoleId} onValueChange={setSelectedRoleId}>
+            <Select value={selectedRoleId} onValueChange={setSelectedRoleId} disabled={isSavingRole}>
               <SelectTrigger className="h-10 rounded-lg">
                 <SelectValue placeholder="选择角色" />
               </SelectTrigger>
@@ -1044,7 +1073,7 @@ function UsersContent() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={Boolean(deletingUser)} onOpenChange={(open) => (!open ? setDeletingUser(null) : null)}>
+      <Dialog open={Boolean(deletingUser)} onOpenChange={(open) => (!open && !pendingUserIdsRef.current.has(deletingUser?.id || "") ? setDeletingUser(null) : null)}>
         <DialogContent className="rounded-xl p-4 sm:p-6">
           <DialogHeader className="gap-2">
             <DialogTitle>删除用户</DialogTitle>

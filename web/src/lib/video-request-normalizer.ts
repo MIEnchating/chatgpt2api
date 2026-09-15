@@ -48,6 +48,7 @@ export type VideoGenerationTaskRequestInput = VideoRequestInput & {
   clientTaskId: string;
   prompt: string;
   relayTokenName?: string;
+  workflowInputs?: Record<string, string | number | boolean>;
 };
 
 export type NormalizedVideoRequest = {
@@ -255,6 +256,7 @@ export function videoGenerationTaskRequestBody(input: VideoGenerationTaskRequest
     ...(normalized.referenceImageURLs.length ? { reference_image_urls: normalized.referenceImageURLs } : {}),
     ...(normalized.referenceVideoURLs.length ? { reference_video_urls: normalized.referenceVideoURLs } : {}),
     ...(normalized.referenceAudioURLs.length ? { reference_audio_urls: normalized.referenceAudioURLs } : {}),
+    ...(input.workflowInputs ? { workflow_inputs: input.workflowInputs } : {}),
     ...(input.relayTokenName ? { token_name: input.relayTokenName } : {}),
   };
 }

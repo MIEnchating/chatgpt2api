@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { AutoDLContractImport } from "./autodl-contract-import";
 import {
   AudioLines,
   Braces,
@@ -191,6 +192,8 @@ const VIDEO_CONTRACT_DRIVERS: Array<{
     value: "volcengine-video",
     label: "Volcengine / Seedance / 即梦",
   },
+  { value: "ark-seedance", label: "火山方舟 Seedance / Agent Plan" },
+  { value: "autodl-comfyui", label: "AutoDL ComfyUI 工作流" },
   {
     value: "kling-video",
     label: "Kling Video",
@@ -1006,6 +1009,8 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
   const [editingItem, setEditingItem] = useState<ManagedVideoModelContract | null>(null);
   const [readOnly, setReadOnly] = useState(false);
   const [draft, setDraft] = useState<ContractDraft>(newDraft);
+  const currentDraftRef = useRef(draft);
+  currentDraftRef.current = draft;
   const [deletingItem, setDeletingItem] = useState<ManagedVideoModelContract | null>(null);
   const [importOpen, setImportOpen] = useState(false);
   const [importSourceType, setImportSourceType] = useState<"file" | "url">("file");
@@ -1339,6 +1344,7 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
   };
 
   const closeContractDialog = () => {
+    if (isSaving) return;
     setDialogOpen(false);
     if (generatedEditingIndex === null) return;
     setGeneratedEditingIndex(null);
@@ -1424,10 +1430,12 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
     showSuccess = true,
     mutationTicket?: ScopedMutationToken,
   ) => {
+    const targetSessionKey = currentSessionKeyRef.current;
     const payload = mutationFromDraft(draft, editingItem?.id || "");
     const data = await validateVideoModelContract(payload);
+    if (!isCurrentSession(targetSessionKey) || currentDraftRef.current !== draft) return null;
     if (mutationTicket && !mutationTrackerRef.current!.canApply(mutationTicket)) return null;
-    setDraft(draftFromContract(data.contract, draft.enabled));
+    setDraft((current) => current === draft ? draftFromContract(data.contract, draft.enabled) : current);
     if (showSuccess) toast.success("契约校验通过");
     return { ...payload, contract: data.contract };
   };
@@ -1876,6 +1884,7 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
                 <WandSparkles className="size-4" />
                 从文档生成
               </Button>
+              <AutoDLContractImport key={sessionKey} disabled={isBulkActionBusy || selectedItems.length > 0} onDraft={(contract) => { setGeneratedContracts([contract]); setGeneratedReviewOpen(true); }} />
               <Button type="button" size="sm" disabled={isBulkActionBusy || selectedItems.length > 0} onClick={openCreate}>
                 <Plus className="size-4" />
                 添加契约
@@ -2218,7 +2227,7 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
             </DialogTitle>
             <DialogDescription>{draft.contract.name || "配置模型能力和上游字段映射"}</DialogDescription>
           </DialogHeader>
-          <div data-video-contract-layout className="grid min-h-0 min-w-0 flex-1 grid-rows-[minmax(0,1fr)_minmax(0,1fr)] gap-5 overflow-hidden lg:grid-cols-[minmax(0,1fr)_minmax(300px,20rem)] lg:grid-rows-[minmax(0,1fr)]">
+          <fieldset disabled={isSaving} data-video-contract-layout className="grid min-h-0 min-w-0 flex-1 grid-rows-[minmax(0,1fr)_minmax(0,1fr)] gap-5 overflow-hidden lg:grid-cols-[minmax(0,1fr)_minmax(300px,20rem)] lg:grid-rows-[minmax(0,1fr)]">
             <ScrollArea
               data-video-contract-details
               className="h-full min-h-0 min-w-0"
@@ -2446,7 +2455,7 @@ export function VideoModelContractsCard({ sessionKey }: { sessionKey: string }) 
                 </div>
               </details>
             </ScrollArea>
-          </div>
+          </fieldset>
           <DialogFooter>
             <Button type="button" variant="outline" onClick={closeContractDialog} disabled={isSaving}>{generatedEditingIndex !== null ? "返回审核列表" : readOnly ? "关闭" : "取消"}</Button>
             {!readOnly ? <Button type="button" variant="outline" onClick={() => void validate().catch((error) => toast.error(error instanceof Error ? error.message : "契约校验失败"))} disabled={isSaving}><ShieldCheck className="size-4" />校验配置</Button> : null}

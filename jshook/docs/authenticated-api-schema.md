@@ -11,10 +11,10 @@
 | 组件 | 配置 |
 |---|---|
 | **HTTP 库** | `curl-cffi` 0.15.0 |
-| **TLS 指纹** | `edge101` (Microsoft Edge 143) |
+| **TLS 指纹** | `edge101`；HTTP User-Agent 声明 Microsoft Edge 143，两者版本不同 |
 | **PoW** | SHA3-512 Proof of Work（`gAAAAAB` 前缀 token） |
 | **Chat Requirements** | `POST /backend-api/sentinel/chat-requirements` |
-| **Turnstile** | 当前未触发（arkose.required = false） |
+| **Turnstile** | 单步实验响应记录 `turnstile.required = false`，与 Arkose 开关独立 |
 
 ### 认证
 
@@ -391,7 +391,7 @@ Content-Type: text/event-stream; charset=utf-8
    - 早期单端点实验中的 422 错误是由其他字段或 headers 缺失导致，非 `content_type` 引起
 5. **OAuth access_token 完全可用于生图**，无需 Web Session Cookie
 6. **Cloudflare WAF 可通过 curl-cffi + edge101 指纹 + PoW 完全绕过**
-7. **Turnstile token 当前不触发**（arkose.required = false）
+7. **当次单步实验未要求 Turnstile token**（`turnstile.required = false`）；不能从 `arkose.required` 推导 Turnstile 要求
 8. **asset_pointer 使用 `sediment://` 协议**（不是 `file-service://`）
 9. **图片下载通过 attachment 端点**，返回 estuary CDN URL
 10. **parts 字段是纯字符串数组**（如 `["prompt text"]`），不是对象数组 `[{content_type: "text", text: "..."}]`

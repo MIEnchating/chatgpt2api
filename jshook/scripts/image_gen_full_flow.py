@@ -13,11 +13,11 @@ import time
 import uuid
 from datetime import datetime, timedelta, timezone
 from html.parser import HTMLParser
-from typing import Iterator
 
 import pybase64
 from curl_cffi import requests
 from capture_safety import download_image, new_capture_directory, require_access_token, write_private_capture
+from sse_capture import iter_sse_payloads
 # PIL only needed for image upload; text-only prompts don't need it
 
 # ============ 配置 ============
@@ -322,19 +322,6 @@ def solve_turnstile_token(dx: str, p: str) -> str | None:
         except Exception:
             continue
     return result or None
-
-
-# ============ SSE 解析 ============
-def iter_sse_payloads(response) -> Iterator[str]:
-    for raw_line in response.iter_lines():
-        if not raw_line:
-            continue
-        line = raw_line.decode("utf-8", errors="ignore") if isinstance(raw_line, bytes) else str(raw_line)
-        if not line.startswith("data:"):
-            continue
-        payload = line[5:].strip()
-        if payload:
-            yield payload
 
 
 # ============ 主流程 ============

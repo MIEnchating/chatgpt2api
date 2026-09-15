@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowDown,
   ArrowUp,
@@ -356,6 +356,12 @@ function CreativeWorkflowWorkspaceContent({
     [managedAssets, myAssets, sharedAssets],
   );
 
+  const isCurrentWorkspace = useCallback(() => {
+    return workspaceActiveRef.current
+      && getCachedAuthSession()?.key === sessionKey
+      && taskWaitAbortControllerRef.current?.signal.aborted === false;
+  }, [sessionKey]);
+
   function updateWorkflowReferences(updater: (current: WorkflowReference[]) => WorkflowReference[]) {
     const next = updater(workflowReferencesRef.current);
     workflowReferencesRef.current = next;
@@ -492,20 +498,24 @@ function CreativeWorkflowWorkspaceContent({
     let ignore = false;
     void Promise.all([fetchWorkflows(), fetchModelConfig(), fetchCreationTasks([])])
       .then(async ([workflows, modelResponse, creationTasks]) => {
-        if (ignore) return;
+        if (ignore || !isCurrentWorkspace()) return;
         const modelConfig = modelResponse.config;
         setModels(modelConfig);
         const restoredTasks = restoreWorkflowTasks(creationTasks.items);
         updateTasks(() => restoredTasks);
         if (workflows.length) {
+          const latestRuns = new Map<string, number>();
+          for (const task of restoredTasks) {
+            if (task.status === "success") {
+              latestRuns.set(task.workflow_id, Math.max(latestRuns.get(task.workflow_id) || 0, task.ended_at || 0));
+            }
+          }
           const normalized = workflows.map((workflow) =>
             normalizeWorkflow(workflow, modelConfig, preferences),
           );
           const recovered = normalized.map((workflow) => {
             if (workflow.editable === false) return workflow;
-            const latest = restoredTasks
-              .filter((task) => task.workflow_id === workflow.id && task.status === "success")
-              .reduce((value, task) => Math.max(value, task.ended_at || 0), 0);
+            const latest = latestRuns.get(workflow.id) || 0;
             if (!latest || latest <= Date.parse(workflow.last_run_at || "")) return workflow;
             const timestamp = new Date(latest).toISOString();
             const updated = mergeWorkflowRunMetadata(workflow, {
@@ -520,16 +530,16 @@ function CreativeWorkflowWorkspaceContent({
         }
         const starters = createStarterWorkflows(modelConfig, preferences, workflowGenerationDefaults(preferences, generationDefaults, sessionTextChannelID));
         const saved = await initializeWorkflows(starters);
-        if (!ignore) setItems(saved.map((workflow) => normalizeWorkflow(workflow, modelConfig, preferences)));
+        if (!ignore && isCurrentWorkspace()) setItems(saved.map((workflow) => normalizeWorkflow(workflow, modelConfig, preferences)));
       })
-      .catch((error) =>
-        toast.error(error instanceof Error ? error.message : "工作流加载失败"),
-      )
+      .catch((error) => {
+        if (!ignore && isCurrentWorkspace()) toast.error(error instanceof Error ? error.message : "工作流加载失败");
+      })
       .finally(() => !ignore && setLoading(false));
     return () => {
       ignore = true;
     };
-  }, [generationDefaults, preferences, preferencesReady, relayPreferencesReady, sessionKey, sessionTextChannelID]);
+  }, [generationDefaults, isCurrentWorkspace, preferences, preferencesReady, relayPreferencesReady, sessionKey, sessionTextChannelID]);
 
   useEffect(() => {
     const nextModel = resolveConfiguredModel(
@@ -632,6 +642,7 @@ function CreativeWorkflowWorkspaceContent({
     [running, values],
   );
   async function persist(workflow: CreativeWorkflow) {
+    if (!isCurrentWorkspace()) return;
     if (referenceUploadCountRef.current > 0) return;
     if (!workflow.name.trim()) {
       toast.error("请输入工作流名称");
@@ -655,16 +666,18 @@ function CreativeWorkflowWorkspaceContent({
         models,
         preferences,
       );
+      if (!isCurrentWorkspace()) return;
       setItems((current) => [saved, ...current.filter((item) => item.id !== saved.id)]);
       replaceEditor(null);
       if (generatedByAgent) {
         await cleanupAgentReferences();
+        if (!isCurrentWorkspace()) return;
         setAgentDraft(null);
         setAgentWarnings([]);
       }
       toast.success("工作流已保存");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "工作流保存失败");
+      if (isCurrentWorkspace()) toast.error(error instanceof Error ? error.message : "工作流保存失败");
     } finally {
       workflowSaveBusyRef.current = false;
       if (workspaceActiveRef.current) setWorkflowSaving(false);
@@ -672,6 +685,7 @@ function CreativeWorkflowWorkspaceContent({
   }
 
   async function duplicateWorkflow(workflow: CreativeWorkflow) {
+    if (!isCurrentWorkspace()) return;
     const copy = normalizeWorkflow(
       {
         ...structuredClone(workflow),
@@ -690,10 +704,11 @@ function CreativeWorkflowWorkspaceContent({
     );
     try {
       const saved = normalizeWorkflow(await saveWorkflow(copy), models, preferences);
+      if (!isCurrentWorkspace()) return;
       setItems((current) => [saved, ...current]);
       toast.success("工作流副本已保存");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "工作流复制失败");
+      if (isCurrentWorkspace()) toast.error(error instanceof Error ? error.message : "工作流复制失败");
     }
   }
 
@@ -745,6 +760,7 @@ function CreativeWorkflowWorkspaceContent({
   }
 
   function cleanupDiscardedWorkflowReferences(discarded: WorkflowReference[]) {
+    if (!isCurrentWorkspace()) return;
     const retained = [
       ...ownedTaskReferences(),
       ...workflowReferencesRef.current,
@@ -927,6 +943,7 @@ function CreativeWorkflowWorkspaceContent({
   }
 
   async function cleanupAgentReferences() {
+    if (!isCurrentWorkspace()) return;
     const discarded = agentReferencesRef.current;
     updateAgentReferences(() => []);
     const keys = workflowReferenceCleanupKeys(discarded, [
@@ -1388,15 +1405,16 @@ function CreativeWorkflowWorkspaceContent({
   }
 
   async function clearCompletedTaskHistory(includeAssets: boolean) {
-    if (clearingTaskHistory) return false;
+    if (clearingTaskHistory || !isCurrentWorkspace()) return false;
     const completedTasks = tasks.filter((task) => task.status !== "running");
     if (!completedTasks.length) return false;
     const backendTaskIDs = Array.from(new Set(completedTasks.flatMap((task) => task.backend_task_ids)));
     setClearingTaskHistory(true);
     try {
       const result = backendTaskIDs.length
-        ? await deleteCreationTasks(backendTaskIDs)
+        ? await deleteCreationTasks(backendTaskIDs, { signal: taskWaitAbortControllerRef.current!.signal })
         : { active_ids: [] as string[] };
+      if (!isCurrentWorkspace()) return false;
       const activeIDs = new Set(result.active_ids || []);
       const removableTaskIDs = new Set(completedTasks
         .filter((task) => !task.backend_task_ids.some((id) => activeIDs.has(id)))
@@ -1417,10 +1435,11 @@ function CreativeWorkflowWorkspaceContent({
       );
       if (removableTaskIDs.has(selectedTaskID)) setSelectedTaskID("");
       if (referenceKeys.length) {
-        await deleteStoredImages(referenceKeys).catch((error) =>
-          toast.error(error instanceof Error ? `任务记录已清理，但临时参考图删除失败：${error.message}` : "任务记录已清理，但临时参考图删除失败"),
-        );
+        await deleteStoredImages(referenceKeys).catch((error) => {
+          if (isCurrentWorkspace()) toast.error(error instanceof Error ? `任务记录已清理，但临时参考图删除失败：${error.message}` : "任务记录已清理，但临时参考图删除失败");
+        });
       }
+      if (!isCurrentWorkspace()) return false;
       let deletedAssetCount = 0;
       if (includeAssets && hasAPIPermission(session, "DELETE", "/api/images")) {
         const assetPaths = Array.from(new Set(removableTasks.flatMap((task) =>
@@ -1431,8 +1450,10 @@ function CreativeWorkflowWorkspaceContent({
         if (assetPaths.length) {
           try {
             const assetResult = await deleteManagedImages(assetPaths);
+            if (!isCurrentWorkspace()) return false;
             deletedAssetCount = assetResult.deleted;
           } catch (error) {
+            if (!isCurrentWorkspace()) return false;
             toast.error(error instanceof Error ? `任务记录已清理，但关联素材删除失败：${error.message}` : "任务记录已清理，但关联素材删除失败");
             return true;
           }
@@ -1443,10 +1464,10 @@ function CreativeWorkflowWorkspaceContent({
       else toast.success(`已清理 ${removableTasks.length} 条任务记录，关联素材已保留`);
       return true;
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "任务记录清理失败");
+      if (isCurrentWorkspace()) toast.error(error instanceof Error ? error.message : "任务记录清理失败");
       return false;
     } finally {
-      setClearingTaskHistory(false);
+      if (isCurrentWorkspace()) setClearingTaskHistory(false);
     }
   }
 

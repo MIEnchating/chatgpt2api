@@ -25,6 +25,7 @@
     "fflate": "^0.8.3",
     "html-to-image": "^1.11.13",
     "lucide-react": "^0.523.0",
+    "mediabunny": "1.55.7",
     "motion": "^12.38.0",
     "nanoid": "^5.1.6",
     "react": "19.2.5",

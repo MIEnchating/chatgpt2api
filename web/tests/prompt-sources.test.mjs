@@ -127,3 +127,49 @@ test("prompt market reuses one external load for matching source configurations"
     globalThis.fetch = previousFetch;
   }
 });
+
+test("disabled and successfully empty prompt sources produce an empty market", async () => {
+  const previousFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => { calls += 1; return Response.json([]); };
+  const disabled = DEFAULT_PROMPT_MARKET_SOURCES.map((source) => ({ ...source, enabled: false }));
+  try {
+    assert.deepEqual(await fetchPromptMarketPrompts(undefined, disabled), []);
+    assert.equal(calls, 0);
+    assert.deepEqual(await fetchPromptMarketPrompts(undefined, [...disabled, {
+      id: "empty-source", label: "Empty", url: "https://example.test/empty.json", format: "generic-json", enabled: true,
+    }]), []);
+    assert.equal(calls, 1);
+  } finally { globalThis.fetch = previousFetch; }
+});
+
+test("malformed prompt entries do not discard valid entries from the same source", async () => {
+  const previousFetch = globalThis.fetch;
+  globalThis.fetch = async () => Response.json([null, false, [], { id: "valid", title: "Valid", prompt: "Keep this prompt" }]);
+  try {
+    const prompts = await fetchPromptMarketSourcePrompts({
+      id: "mixed-source", label: "Mixed", url: "https://example.test/mixed.json", format: "generic-json", enabled: true,
+    });
+    assert.deepEqual(prompts.map((prompt) => prompt.id), ["mixed-source:valid"]);
+  } finally { globalThis.fetch = previousFetch; }
+});
+
+test("prompt market evicts old source configurations and aborts before starting a fetch", async () => {
+  const previousFetch = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => { calls += 1; return Response.json([{ id: "item", title: "Item", prompt: "Prompt" }]); };
+  const configuration = (index) => [
+    ...DEFAULT_PROMPT_MARKET_SOURCES.map((source) => ({ ...source, enabled: false })),
+    { id: `bounded-${index}`, label: `Source ${index}`, url: `https://example.test/bounded-${index}.json`, format: "generic-json", enabled: true },
+  ];
+  try {
+    for (let index = 0; index < 9; index += 1) await fetchPromptMarketPrompts(undefined, configuration(index));
+    assert.equal(calls, 9);
+    await fetchPromptMarketPrompts(undefined, configuration(8));
+    assert.equal(calls, 9);
+    await fetchPromptMarketPrompts(undefined, configuration(0));
+    assert.equal(calls, 10);
+    await assert.rejects(fetchPromptMarketPrompts(AbortSignal.abort(), configuration(10)), { name: "AbortError" });
+    assert.equal(calls, 10);
+  } finally { globalThis.fetch = previousFetch; }
+});

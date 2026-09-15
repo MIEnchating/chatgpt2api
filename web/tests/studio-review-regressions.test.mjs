@@ -148,6 +148,9 @@ test("IME confirmation does not submit a generation request", () => {
   handler(event);
   assert.equal(submitted, 0);
   assert.equal(prevented, 0);
+  handler({ ...event, nativeEvent: { isComposing: false, keyCode: 229 } });
+  assert.equal(submitted, 0);
+  assert.equal(prevented, 0);
   handler({ ...event, nativeEvent: { isComposing: false } });
   assert.equal(submitted, 1);
   assert.equal(prevented, 1);

@@ -76,7 +76,7 @@ test("asset deletion commits the record before best-effort file cleanup", () => 
   );
   assert.ok(bulkDelete.indexOf("await deleteAsset(asset.id)") >= 0);
   assert.ok(bulkDelete.indexOf("createAssetStorageCleanup") > bulkDelete.indexOf("await deleteAsset(asset.id)"));
-  assert.match(bulkDelete, /Promise\.allSettled/);
+  assert.match(bulkDelete, /settleAssetOperations\(deletedOwnedAssets, cleanup, signal\)/);
 });
 
 test("prompt and workflow libraries keep dense wide-screen layouts", () => {

@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -33,18 +35,17 @@ func run() error {
 	}
 	defer app.Close()
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "8000"
-	}
 	logger := app.Logger()
-
-	server := newHTTPServer(":"+port, app.Handler())
+	addr := configuredListenAddress()
+	server := newHTTPServer(addr, app.Handler())
 	stop := make(chan os.Signal, 1)
 	signal.Notify(stop, os.Interrupt, syscall.SIGTERM)
 	defer signal.Stop(stop)
+	if os.Getenv("DESKTOP_RUNTIME") == "1" {
+		go waitForDesktopParent(os.Stdin, stop)
+	}
 
-	logger.Info("starting server", "addr", ":"+port)
+	logger.Info("starting server", "addr", addr)
 	stoppedBySignal, err := waitForServerEvent(server, stop)
 	if err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return fmt.Errorf("listen failed: %w", err)
@@ -59,6 +60,23 @@ func run() error {
 		logger.Error("server shutdown failed", "error", err)
 	}
 	return nil
+}
+
+func configuredListenAddress() string {
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8000"
+	}
+	return net.JoinHostPort(os.Getenv("LISTEN_HOST"), port)
+}
+
+// The desktop parent owns stdin; EOF initiates the same graceful shutdown as a signal.
+func waitForDesktopParent(input io.Reader, stop chan<- os.Signal) {
+	_, _ = io.Copy(io.Discard, input)
+	select {
+	case stop <- os.Interrupt:
+	default:
+	}
 }
 
 func waitForServerEvent(server *http.Server, stop <-chan os.Signal) (bool, error) {

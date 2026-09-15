@@ -39,11 +39,12 @@ func (e *CustomRelayConfigStorageError) Unwrap() error {
 }
 
 type CustomRelayConfig struct {
-	ID      string `json:"id"`
-	Kind    string `json:"kind"`
-	Name    string `json:"name"`
-	BaseURL string `json:"base_url"`
-	APIKey  string `json:"api_key"`
+	ID       string `json:"id"`
+	Kind     string `json:"kind"`
+	Name     string `json:"name"`
+	BaseURL  string `json:"base_url"`
+	APIKey   string `json:"api_key"`
+	Protocol string `json:"protocol"`
 }
 
 type CustomRelayConfigStatus struct {
@@ -51,6 +52,7 @@ type CustomRelayConfigStatus struct {
 	Kind       string `json:"kind"`
 	Name       string `json:"name"`
 	TokenName  string `json:"token_name"`
+	Protocol   string `json:"protocol"`
 	BaseURL    string `json:"base_url"`
 	HasKey     bool   `json:"has_key"`
 	Configured bool   `json:"configured"`
@@ -140,12 +142,12 @@ func (s *CustomRelayConfigService) Statuses(ownerID string) ([]CustomRelayConfig
 	return statuses, nil
 }
 
-func (s *CustomRelayConfigService) Create(ownerID, kind, name, baseURL, apiKey string) (CustomRelayConfigStatus, error) {
+func (s *CustomRelayConfigService) Create(ownerID, kind, name, baseURL, apiKey, protocolName string) (CustomRelayConfigStatus, error) {
 	ownerID = strings.TrimSpace(ownerID)
 	if ownerID == "" {
 		return CustomRelayConfigStatus{}, fmt.Errorf("owner_id is required")
 	}
-	config, err := normalizeCustomRelayConfig(CustomRelayConfig{ID: util.NewUUID(), Kind: kind, Name: name, BaseURL: baseURL, APIKey: apiKey})
+	config, err := normalizeCustomRelayConfig(CustomRelayConfig{ID: util.NewUUID(), Kind: kind, Name: name, BaseURL: baseURL, APIKey: apiKey, Protocol: protocolName})
 	if err != nil {
 		return CustomRelayConfigStatus{}, err
 	}
@@ -171,7 +173,7 @@ func (s *CustomRelayConfigService) Create(ownerID, kind, name, baseURL, apiKey s
 	return CustomRelayConfigStatus{}, customRelayConfigStorageError(fmt.Errorf("%w: create custom relay config after %d attempts", storage.ErrConcurrentRowUpdate, customRelaySaveAttempts))
 }
 
-func (s *CustomRelayConfigService) Update(ownerID, id, name, baseURL, apiKey string) (CustomRelayConfigStatus, error) {
+func (s *CustomRelayConfigService) Update(ownerID, id, name, baseURL, apiKey, protocolName string) (CustomRelayConfigStatus, error) {
 	ownerID = strings.TrimSpace(ownerID)
 	id = strings.TrimSpace(id)
 	if ownerID == "" {
@@ -204,7 +206,7 @@ func (s *CustomRelayConfigService) Update(ownerID, id, name, baseURL, apiKey str
 			}
 			nextAPIKey = current.APIKey
 		}
-		config, normalizeErr := normalizeCustomRelayConfig(CustomRelayConfig{ID: id, Kind: current.Kind, Name: name, BaseURL: baseURL, APIKey: nextAPIKey})
+		config, normalizeErr := normalizeCustomRelayConfig(CustomRelayConfig{ID: id, Kind: current.Kind, Name: name, BaseURL: baseURL, APIKey: nextAPIKey, Protocol: protocolName})
 		if normalizeErr != nil {
 			return CustomRelayConfigStatus{}, normalizeErr
 		}
@@ -264,7 +266,7 @@ func (s *CustomRelayConfigService) loadLocked(ownerID string) (map[string]Custom
 		item := util.StringMap(value)
 		config, normalizeErr := normalizeCustomRelayConfig(CustomRelayConfig{
 			ID: key, Kind: util.Clean(item["kind"]), Name: util.Clean(item["name"]),
-			BaseURL: util.Clean(item["base_url"]), APIKey: util.Clean(item["api_key"]),
+			BaseURL: util.Clean(item["base_url"]), APIKey: util.Clean(item["api_key"]), Protocol: util.Clean(item["protocol"]),
 		})
 		if normalizeErr == nil {
 			configs[config.ID] = config
@@ -292,11 +294,28 @@ func customRelayConfigStatus(config CustomRelayConfig) CustomRelayConfigStatus {
 	configured := config.BaseURL != "" && config.APIKey != ""
 	return CustomRelayConfigStatus{
 		ID: config.ID, Kind: config.Kind, Name: config.Name, TokenName: CustomRelayTokenName(config.ID),
-		BaseURL: config.BaseURL, HasKey: config.APIKey != "", Configured: configured,
+		Protocol: config.Protocol, BaseURL: config.BaseURL, HasKey: config.APIKey != "", Configured: configured,
 	}
 }
 
 func normalizeCustomRelayConfig(config CustomRelayConfig) (CustomRelayConfig, error) {
+	config.Protocol = strings.TrimSpace(config.Protocol)
+	if config.Protocol == "" {
+		config.Protocol = "openai"
+	}
+	switch config.Protocol {
+	case "openai":
+	case "autodl":
+		if config.Kind != "video" && config.Kind != "audio" {
+			return CustomRelayConfig{}, fmt.Errorf("AutoDL 仅支持视频和音频线路")
+		}
+	case "ark":
+		if config.Kind != "video" {
+			return CustomRelayConfig{}, fmt.Errorf("方舟原生协议仅支持视频线路")
+		}
+	default:
+		return CustomRelayConfig{}, fmt.Errorf("不支持的自定义 API 协议")
+	}
 	config.ID = strings.TrimSpace(config.ID)
 	config.Kind = NormalizeCustomRelayKind(config.Kind)
 	config.Name = strings.TrimSpace(config.Name)

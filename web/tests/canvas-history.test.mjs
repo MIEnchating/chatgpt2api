@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { appendCanvasHistorySnapshot, canvasHistoryKey, commitCanvasGenerationHistory, restoreCanvasHistoryDocument } from "../src/app/canvas/canvas-history.ts";
+import { appendCanvasHistorySnapshot, canvasHistoryKey, canvasHistoryStorageObjectIDs, canvasHistoryStorageObjectURLs, canvasHistoryLeaseExpired, commitCanvasGenerationHistory, restoreCanvasHistoryDocument } from "../src/app/canvas/canvas-history.ts";
 
 function document(values = {}) {
   return {
@@ -64,4 +64,53 @@ test("generation completion keeps the configured history limit", () => {
   assert.equal(result.length, 50);
   assert.equal(result[0].title, "画布 1");
   assert.equal(result.at(-1).title, "完成");
+});
+
+
+test("history retention includes redo and nested director or Agent references without inheriting stale claims", () => {
+  const history = [document({ nodes: [{ url: "/api/files/video/content", director_project: { key: "server:director" } }], retained_storage_object_ids: ["stale"], agent_sessions: [{ messages: [{ image: "/api/files/agent/content" }] }] })];
+  const redo = [document({ nodes: [{ storage_key: "server:redo", url: "/api/files/video/content" }] })];
+  assert.deepEqual(canvasHistoryStorageObjectIDs(history, redo), ["agent", "director", "redo", "video"]);
+  assert.deepEqual(canvasHistoryStorageObjectIDs([], redo), ["redo", "video"]);
+});
+
+test("expired browser history cannot renew an already elapsed lease", () => {
+  assert.equal(canvasHistoryLeaseExpired(document(), 1000), false);
+  assert.equal(canvasHistoryLeaseExpired(document({ retained_storage_objects_until: new Date(2000).toISOString() }), 1000), false);
+  assert.equal(canvasHistoryLeaseExpired(document({ retained_storage_objects_until: new Date(2000).toISOString() }), 2000), true);
+  assert.equal(canvasHistoryLeaseExpired(document({ retained_storage_objects_until: "invalid" }), 1000), true);
+});
+
+
+test("undo preserves the renewed server lease and never resurrects an old history lease", () => {
+  const snapshot = document({ retained_storage_object_ids: ["old"], retained_storage_objects_until: "old expiry" });
+  const current = document({ retained_storage_object_ids: ["new"], retained_storage_objects_until: "new expiry" });
+  const restored = restoreCanvasHistoryDocument(current, snapshot);
+  assert.deepEqual(restored.retained_storage_object_ids, ["new"]);
+  assert.equal(restored.retained_storage_objects_until, "new expiry");
+  assert.equal(restoreCanvasHistoryDocument(document(), snapshot).retained_storage_objects_until, undefined);
+});
+
+
+test("undo retains files referenced inside serialized tool results and Markdown messages", () => {
+  const snapshot = document({ agent_sessions: [{ messages: [{ content: '{"url":"/api/files/tool/content"}' }, { content: "![picture](/api/files/markdown/content)" }, { content: '{"storage_key":"server:stored"}' }] }] });
+  assert.deepEqual(canvasHistoryStorageObjectIDs([snapshot]), ["markdown", "stored", "tool"]);
+});
+
+test("history protects public storage links without inheriting expired URL leases", () => {
+  const snapshot = document({ nodes: [{ url: "https://cdn.example.test/video.mp4" }], agent_sessions: [{ messages: [{ content: "[clip](https://cdn.example.test/audio.wav)" }] }], retained_storage_object_urls: ["https://cdn.example.test/expired.png"] });
+  assert.deepEqual(canvasHistoryStorageObjectURLs([snapshot]), ["https://cdn.example.test/audio.wav", "https://cdn.example.test/audio.wav)", "https://cdn.example.test/video.mp4"]);
+  const restored = restoreCanvasHistoryDocument(document({ retained_storage_object_urls: ["https://cdn.example.test/current.png"] }), snapshot);
+  assert.deepEqual(restored.retained_storage_object_urls, ["https://cdn.example.test/current.png"]);
+  assert.equal(restoreCanvasHistoryDocument(document(), snapshot).retained_storage_object_urls, undefined);
+});
+
+test("history retains complete public URLs with legal trailing punctuation", () => {
+  for (const suffix of [".", ")", "]", ";", "}"]) {
+    const url = `https://cdn.example.test/file${suffix}`;
+    const urls = canvasHistoryStorageObjectURLs([document({ nodes: [{ url }] })]);
+    assert.ok(urls.includes(url), `${url} must not be truncated`);
+    const markdown = canvasHistoryStorageObjectURLs([document({ nodes: [{ prompt: `[file](${url})` }] })]);
+    assert.ok(markdown.includes(url), `Markdown ${url} must not lose URL punctuation`);
+  }
 });

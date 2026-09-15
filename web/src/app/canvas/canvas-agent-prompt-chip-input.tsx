@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import { FileText, Image as ImageIcon, Music2, Video } from "lucide-react";
 
 import {
+  appendContentEditableInline,
   contentEditableTextBeforeCaret,
   deleteAdjacentContentEditableReference,
   getContentEditableMentionKeyAction,
@@ -164,8 +165,12 @@ export function CanvasAgentPromptChipInput({ value, references, onChange, onRefe
         style={{ ...style, cursor: "text" }}
         onFocus={commitPendingReferences}
         onPointerDown={commitPendingReferences}
-        onInput={() => {
-          if (!composingRef.current) syncFromEditor();
+        onInput={(event) => {
+          if (composingRef.current) return;
+          const selection = window.getSelection();
+          const tail = event.currentTarget.lastChild;
+          if (selection?.isCollapsed && selection.anchorNode === tail && selection.anchorOffset === 0 && tail instanceof Text && tail.data === "\n") tail.data = "\uFEFF";
+          syncFromEditor();
         }}
         onPaste={(event) => {
           const image = Array.from(event.clipboardData.files).find((file) => file.type.startsWith("image/"));
@@ -310,7 +315,7 @@ function createReferenceChip(reference: CanvasResourceReference, onImagePreview:
 function appendReferenceChip(editor: HTMLElement, reference: CanvasResourceReference, onImagePreview: (url: string) => void, pending = false) {
   const chip = createReferenceChip(reference, onImagePreview);
   if (pending) chip.dataset.pendingReference = "true";
-  editor.append(document.createTextNode(" "), chip, document.createTextNode(" "));
+  appendContentEditableInline(editor, document.createTextNode(" "), chip, document.createTextNode(" "));
   editor.scrollTop = editor.scrollHeight;
 }
 

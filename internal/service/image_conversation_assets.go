@@ -821,8 +821,8 @@ func (s *ImageConversationAssetService) assetizeReference(ctx context.Context, o
 		return nil, false, err
 	}
 	if touchManaged {
-		if err := s.touch(access); err != nil {
-			return nil, false, ErrImageConversationAssetNotFound
+		if err := s.touch(ctx, access); err != nil {
+			return nil, false, err
 		}
 	}
 	asset := ImageConversationAsset{
@@ -843,18 +843,23 @@ func (s *ImageConversationAssetService) assetizeReference(ctx context.Context, o
 	return next, changed, nil
 }
 
-func (s *ImageConversationAssetService) touch(access ImageConversationAssetAccess) error {
+func (s *ImageConversationAssetService) touch(ctx context.Context, access ImageConversationAssetAccess) error {
 	if s == nil || access.Path == "" {
 		return ErrImageConversationAssetNotFound
 	}
-	s.mu.Lock()
+	if err := s.mu.LockContext(ctx); err != nil {
+		return err
+	}
 	defer s.mu.Unlock()
 	info, err := os.Lstat(access.Path)
 	if err != nil || !info.Mode().IsRegular() {
 		return ErrImageConversationAssetNotFound
 	}
 	now := time.Now()
-	return os.Chtimes(access.Path, now, now)
+	if err := os.Chtimes(access.Path, now, now); err != nil {
+		return ErrImageConversationAssetNotFound
+	}
+	return nil
 }
 
 // PrepareConversations checks a complete batch without touching or creating

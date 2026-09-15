@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
 
-import { assetListKey, collectAssetStorageKeys } from "../src/app/assets/asset-library.ts";
+import { assetListKey, collectAssetStorageKeys, settleAssetOperations } from "../src/app/assets/asset-library.ts";
 
 const source = ts.createSourceFile("assets.tsx", readFileSync(new URL("../src/app/assets/page.tsx", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 const helpers = source.statements.filter((node) => ts.isFunctionDeclaration(node) && node.name?.text.includes("AssetStorage"));
@@ -30,7 +30,7 @@ function setup(items = [asset("one"), asset("two"), asset("three")]) {
   const context = {
     assets: items, deletableSelectedAssets: items, bulkActionBusy: false,
     mutationControllerRef: { current: controller },
-    assetListKey, collectAssetStorageKeys,
+    assetListKey, collectAssetStorageKeys, settleAssetOperations,
     setBulkActionBusy(value) { busy = value; },
     setBulkDeleteOpen(value) { open = value; },
     setSelectedKeys(value) { selectedKeys = typeof value === "function" ? value(selectedKeys) : value; },

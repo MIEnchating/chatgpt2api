@@ -488,6 +488,52 @@ func TestImageConversationAssetBatchContextStopsWaitingForFilesystemLock(t *test
 	}
 }
 
+func TestImageConversationAssetReferenceContextStopsWaitingForFilesystemLock(t *testing.T) {
+	assets := NewImageConversationAssetService(t.TempDir())
+	asset, err := storeConversationAsset(assets, "owner", "reference.png", imageConversationAssetTestPNG(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	access, err := assets.Access(asset.AssetPath, "owner", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := time.Now().Add(-time.Hour)
+	if err := os.Chtimes(access.Path, old, old); err != nil {
+		t.Fatal(err)
+	}
+	before, err := os.Stat(access.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reference := map[string]any{}
+	applyImageConversationAsset(reference, asset)
+	assets.mu.Lock()
+	defer assets.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+	defer cancel()
+	finished := make(chan error, 1)
+	go func() {
+		_, _, err := assetizeConversationReference(assets, ctx, "owner", reference)
+		finished <- err
+	}()
+	select {
+	case err := <-finished:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("assetizeConversationReference() error = %v, want context deadline", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("canceled reference update remained blocked on the filesystem lock")
+	}
+	after, err := os.Stat(access.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !after.ModTime().Equal(before.ModTime()) {
+		t.Fatalf("canceled reference update modified asset time: before=%v after=%v", before.ModTime(), after.ModTime())
+	}
+}
+
 func TestImageConversationHistoryStoresPreparedAssetsWithOneBudgetCheck(t *testing.T) {
 	backend := newTestStorageBackend(t)
 	assets := NewImageConversationAssetService(t.TempDir())
