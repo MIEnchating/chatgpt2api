@@ -101,6 +101,32 @@ func TestSSOConfigurationPreservesPasswordLogin(t *testing.T) {
 	}
 }
 
+func TestSSOStartRedirectsExistingSessionToStudio(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+	const secret = "sso-existing-session-test-shared-secret-123456"
+	t.Setenv("CHATGPT2API_SSO_SECRET", secret)
+	t.Setenv("CHATGPT2API_SSO_ORIGIN", "https://studio.example.test")
+	t.Setenv("NEWAPI_SSO_ORIGINS", "https://newapi.example.test")
+	_, token, err := app.auth.UpsertNewAPISession(service.NewAPIUser{
+		ID: 1, Username: "alice", Email: "alice@example.test",
+		Provider: service.AuthProviderNewAPI, SubjectPrefix: service.AuthProviderNewAPI,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "https://studio.example.test/auth/sso/start?issuer=https://newapi.example.test", nil)
+	setRequestAuthCookie(req, token)
+	res := httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusSeeOther || res.Header().Get("Location") != "/studio" {
+		t.Fatalf("status=%d location=%q body=%s", res.Code, res.Header().Get("Location"), res.Body.String())
+	}
+	if cookie := findResponseCookieByDomain(res.Result(), ssoCookieName, ""); cookie != nil && cookie.Value != "" {
+		t.Fatalf("existing session must not create an SSO transaction cookie: %#v", cookie)
+	}
+}
+
 func TestSSOPreferencesInitializeRelayKeys(t *testing.T) {
 	for _, scenario := range []string{"create", "reuse", "denied", "revoked", "expired", "mismatched-session", "not-visible", "cleared"} {
 		t.Run(scenario, func(t *testing.T) {

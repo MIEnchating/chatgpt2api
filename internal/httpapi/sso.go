@@ -108,6 +108,13 @@ func (a *App) handleSSOStart(w http.ResponseWriter, r *http.Request) {
 		util.WriteError(w, http.StatusServiceUnavailable, "单点登录未正确配置")
 		return
 	}
+	if identity := a.authenticateSession(r, requestAuthCookieToken(r)); identity != nil {
+		if token := requestAuthCookieToken(r); token != "" {
+			setAuthSessionCookie(w, r, token)
+		}
+		http.Redirect(w, r, "/studio", http.StatusSeeOther)
+		return
+	}
 	issuer := r.URL.Query().Get("issuer")
 	if issuer == "" {
 		issuer = cfg.issuers[0]
