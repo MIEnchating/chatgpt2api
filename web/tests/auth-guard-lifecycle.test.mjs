@@ -28,13 +28,20 @@ describe("auth guard lifecycle", () => {
     expect(source.match(/const \{ isCheckingAuth \} = useVerifiedSessionLifecycle\(/g)).toHaveLength(2);
   });
 
-  test("session changes and returning tabs revalidate the active route", () => {
+  test("page entry and pathname changes refresh the session without depending on query or hash", () => {
+    expect(source).toContain("const { pathname } = useLocation();");
+    expect(source).toContain("}, [onVerified, pathname, retryAuth, retryVersion]);");
+    expect(source).toContain("void load(true);");
+    expect(source).toMatch(/const storedSession = forceRefresh\s*\? await refreshVerifiedAuthSession\(\)\s*: await getVerifiedAuthSession\(\)/);
+    expect(source).toMatch(/const handleSessionChange = \(\) => \{[\s\S]*?void load\(\);\s*\};/);
+  });
+
+  test("session changes revalidate the active route without focus or visibility listeners", () => {
     expect(source).toContain("window.addEventListener(AUTH_SESSION_CHANGE_EVENT, handleSessionChange)");
-    expect(source).toContain('window.addEventListener("focus", handleWindowFocus)');
-    expect(source).toContain('document.addEventListener("visibilitychange", handleVisibilityChange)');
-    expect(source).toContain("verifyCurrentSession(true)");
-    expect(source).toContain("const verifyCurrentSession = (forceRefresh: boolean) => {");
-    expect(source).not.toMatch(/const verifyCurrentSession[\s\S]*?setIsCheckingAuth\(true\)[\s\S]*?void load\(forceRefresh\)/);
+    expect(source).toContain("window.removeEventListener(AUTH_SESSION_CHANGE_EVENT, handleSessionChange)");
+    expect(source).not.toMatch(/addEventListener\(["'](?:focus|visibilitychange)["']/);
+    expect(source).toContain("const handleSessionChange = () => {");
+    expect(source).not.toMatch(/const handleSessionChange[\s\S]*?setIsCheckingAuth\(true\)[\s\S]*?void load\(\)/);
     expect(sessionSource).toContain("new BroadcastChannel(AUTH_SESSION_CHANNEL_NAME)");
     expect(sessionSource).toContain('authSessionChannel?.postMessage(AUTH_SESSION_INVALIDATED_MESSAGE)');
     expect(sessionSource).toContain("invalidateVerifiedAuthSession();");

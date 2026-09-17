@@ -2,9 +2,12 @@ package httpapi
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"strings"
 	"sync/atomic"
@@ -101,29 +104,273 @@ func TestSSOConfigurationPreservesPasswordLogin(t *testing.T) {
 	}
 }
 
-func TestSSOStartRedirectsExistingSessionToStudio(t *testing.T) {
-	app := newTestApp(t)
-	defer app.Close()
-	const secret = "sso-existing-session-test-shared-secret-123456"
-	t.Setenv("CHATGPT2API_SSO_SECRET", secret)
-	t.Setenv("CHATGPT2API_SSO_ORIGIN", "https://studio.example.test")
-	t.Setenv("NEWAPI_SSO_ORIGINS", "https://newapi.example.test")
-	_, token, err := app.auth.UpsertNewAPISession(service.NewAPIUser{
-		ID: 1, Username: "alice", Email: "alice@example.test",
-		Provider: service.AuthProviderNewAPI, SubjectPrefix: service.AuthProviderNewAPI,
-	})
-	if err != nil {
-		t.Fatal(err)
+const testSSOSecret = "sso-session-test-shared-secret-123456"
+const testSSOOrigin = "https://studio.example.test"
+
+func newTestSSOIssuer(t *testing.T, handler http.HandlerFunc) string {
+	t.Helper()
+	upstream := httptest.NewTLSServer(handler)
+	t.Cleanup(upstream.Close)
+	previousTransport := http.DefaultTransport
+	http.DefaultTransport = upstream.Client().Transport
+	t.Cleanup(func() { http.DefaultTransport = previousTransport })
+	t.Setenv("CHATGPT2API_SSO_SECRET", testSSOSecret)
+	t.Setenv("CHATGPT2API_SSO_ORIGIN", testSSOOrigin)
+	t.Setenv("NEWAPI_SSO_ORIGINS", upstream.URL)
+	return upstream.URL
+}
+
+func TestSSOStartValidatesExistingSession(t *testing.T) {
+	for _, scenario := range []string{"same-user", "same-admin", "password-session", "different-issuer", "local-expired", "issuer-expired", "revoked", "wrong-user", "promoted", "demoted", "invalid-issuer"} {
+		t.Run(scenario, func(t *testing.T) {
+			app := newTestApp(t)
+			defer app.Close()
+			var sessions, exchanges atomic.Int32
+			issuer := newTestSSOIssuer(t, func(w http.ResponseWriter, r *http.Request) {
+				if r.URL.Path == "/api/sso/chatgpt2api/exchange" {
+					exchanges.Add(1)
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				sessions.Add(1)
+				var payload map[string]string
+				if r.Method != http.MethodPost || r.URL.Path != "/api/sso/chatgpt2api/session" || r.Header.Get("Authorization") != "Bearer "+testSSOSecret ||
+					json.NewDecoder(r.Body).Decode(&payload) != nil || payload["reference"] != "existing-reference" || payload["issuer"] != "https://"+r.Host {
+					t.Error("invalid session introspection request")
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				if scenario == "revoked" {
+					w.WriteHeader(http.StatusUnauthorized)
+					return
+				}
+				user := ssoUser{ID: 1, Username: "alice", IsAdmin: scenario == "same-admin" || scenario == "promoted", ExpiresAt: time.Now().Add(time.Hour).Unix()}
+				if scenario == "wrong-user" {
+					user.ID = 2
+				}
+				if scenario == "issuer-expired" {
+					user.ExpiresAt = time.Now().Add(-time.Minute).Unix()
+				}
+				json.NewEncoder(w).Encode(map[string]any{"success": true, "data": user})
+			})
+			user := service.NewAPIUser{ID: 1, Username: "alice", IsAdmin: scenario == "same-admin" || scenario == "demoted",
+				SSOReference: "existing-reference", SSOIssuer: issuer, SSOExpiresAt: time.Now().Add(time.Hour).Unix()}
+			if scenario == "password-session" {
+				user.SSOReference, user.SSOIssuer = "", ""
+			}
+			if scenario == "local-expired" {
+				user.SSOExpiresAt = time.Now().Add(-time.Minute).Unix()
+			}
+			_, token, err := app.auth.UpsertNewAPISession(user)
+			if err != nil {
+				t.Fatal(err)
+			}
+			requestedIssuer := issuer
+			if scenario == "different-issuer" {
+				requestedIssuer = "https://other.example.test"
+				t.Setenv("NEWAPI_SSO_ORIGINS", issuer+","+requestedIssuer)
+			}
+			if scenario == "invalid-issuer" {
+				requestedIssuer = "https://untrusted.example.test"
+			}
+			req := httptest.NewRequest(http.MethodGet, testSSOOrigin+"/auth/sso/start?issuer="+url.QueryEscape(requestedIssuer), nil)
+			setRequestAuthCookie(req, token)
+			res := httptest.NewRecorder()
+			app.Handler().ServeHTTP(res, req)
+			if exchanges.Load() != 0 || sessions.Load() != 0 {
+				t.Fatal("SSO start must redirect to verify the current browser account instead of trusting a previous session reference")
+			}
+			if scenario == "invalid-issuer" {
+				if res.Code != http.StatusBadRequest || sessions.Load() != 0 || res.Header().Get("Location") != "" {
+					t.Fatalf("untrusted issuer status=%d sessions=%d location=%q", res.Code, sessions.Load(), res.Header().Get("Location"))
+				}
+				return
+			}
+			if res.Code != http.StatusSeeOther {
+				t.Fatalf("status=%d body=%s", res.Code, res.Body.String())
+			}
+			cookie := findResponseCookieByDomain(res.Result(), ssoCookieName, "")
+			location, err := url.Parse(res.Header().Get("Location"))
+			if err != nil || location.Scheme+"://"+location.Host != requestedIssuer || location.Path != "/sso/chatgpt2api" || location.Query().Get("request") == "" || cookie == nil || cookie.Value == "" {
+				t.Fatalf("expected reauthorization: location=%q transaction=%#v error=%v", res.Header().Get("Location"), cookie, err)
+			}
+			if scenario == "promoted" || scenario == "demoted" || scenario == "revoked" || scenario == "issuer-expired" || scenario == "local-expired" || scenario == "wrong-user" {
+				for _, path := range []string{"/auth/session", "/api/settings"} {
+					req := httptest.NewRequest(http.MethodGet, path, nil)
+					setRequestAuthCookie(req, token)
+					res := httptest.NewRecorder()
+					app.Handler().ServeHTTP(res, req)
+					if res.Code != http.StatusUnauthorized {
+						t.Fatalf("stale role path=%s status=%d body=%s", path, res.Code, res.Body.String())
+					}
+				}
+			}
+		})
 	}
-	req := httptest.NewRequest(http.MethodGet, "https://studio.example.test/auth/sso/start?issuer=https://newapi.example.test", nil)
-	setRequestAuthCookie(req, token)
-	res := httptest.NewRecorder()
-	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusSeeOther || res.Header().Get("Location") != "/studio" {
-		t.Fatalf("status=%d location=%q body=%s", res.Code, res.Header().Get("Location"), res.Body.String())
+}
+
+func TestSSOCallbackRefreshesTrustedIdentityAndRole(t *testing.T) {
+	for _, scenario := range []string{"first-admin", "password-user-promoted", "sso-user-promoted", "switch-password-user", "switch-sso-user", "sso-admin-demoted", "forged-admin-query", "same-user", "same-admin", "sso-new-reference", "sso-different-issuer"} {
+		t.Run(scenario, func(t *testing.T) {
+			app := newTestApp(t)
+			defer app.Close()
+			isAdmin := scenario != "sso-admin-demoted" && scenario != "forged-admin-query" && scenario != "same-user"
+			reuseSession := scenario == "same-user" || scenario == "same-admin"
+			var exchanges atomic.Int32
+			var transaction ssoTransaction
+			issuer := newTestSSOIssuer(t, func(w http.ResponseWriter, r *http.Request) {
+				var payload map[string]string
+				if r.Method != http.MethodPost || r.Header.Get("Authorization") != "Bearer "+testSSOSecret || json.NewDecoder(r.Body).Decode(&payload) != nil || payload["issuer"] != "https://"+r.Host {
+					t.Error("invalid issuer request")
+					w.WriteHeader(http.StatusBadRequest)
+					return
+				}
+				switch r.URL.Path {
+				case "/api/sso/chatgpt2api/exchange":
+					exchanges.Add(1)
+					digest := sha256.Sum256([]byte(payload["verifier"]))
+					if payload["code"] != "one-time-code" || base64.RawURLEncoding.EncodeToString(digest[:]) != transaction.Challenge {
+						t.Error("authorization exchange did not preserve the code and PKCE binding")
+						w.WriteHeader(http.StatusUnauthorized)
+						return
+					}
+				case "/api/sso/chatgpt2api/session":
+					if payload["reference"] != "old-reference" && payload["reference"] != "new-reference" {
+						t.Error("session introspection did not use the trusted reference")
+						w.WriteHeader(http.StatusUnauthorized)
+						return
+					}
+				default:
+					t.Errorf("unexpected issuer endpoint %s", r.URL.Path)
+					w.WriteHeader(http.StatusNotFound)
+					return
+				}
+				user := ssoUser{ID: 1, Username: "alice", IsAdmin: isAdmin, Reference: "new-reference", ExpiresAt: time.Now().Add(time.Hour).Unix()}
+				if scenario == "switch-sso-user" && r.URL.Path == "/api/sso/chatgpt2api/session" && payload["reference"] == "old-reference" {
+					user.ID, user.Username, user.IsAdmin = 2, "bob", false
+				}
+				json.NewEncoder(w).Encode(map[string]any{"success": true, "data": user})
+			})
+			var oldToken string
+			if scenario != "first-admin" && scenario != "forged-admin-query" {
+				user := service.NewAPIUser{ID: 1, Username: "alice", IsAdmin: scenario == "sso-admin-demoted" || scenario == "same-admin" || scenario == "sso-new-reference" || scenario == "sso-different-issuer"}
+				if scenario == "switch-password-user" || scenario == "switch-sso-user" {
+					user.ID, user.Username = 2, "bob"
+				}
+				if strings.HasPrefix(scenario, "sso-") || scenario == "switch-sso-user" || reuseSession {
+					user.SSOReference, user.SSOIssuer, user.SSOExpiresAt = "old-reference", issuer, time.Now().Add(time.Hour).Unix()
+				}
+				if reuseSession || scenario == "sso-different-issuer" {
+					user.SSOReference = "new-reference"
+				}
+				if scenario == "sso-different-issuer" {
+					user.SSOIssuer = "https://previous.example.test"
+					t.Setenv("NEWAPI_SSO_ORIGINS", issuer+","+user.SSOIssuer)
+				}
+				var err error
+				_, oldToken, err = app.auth.UpsertNewAPISession(user)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if scenario == "switch-sso-user" {
+					req := httptest.NewRequest(http.MethodGet, "/auth/session", nil)
+					identity := app.authenticateSession(req, oldToken)
+					if identity == nil || identity.OwnerID != "newapi:2" || identity.Role != service.AuthRoleUser {
+						t.Fatalf("the previous platform account must still have a valid session: %#v", identity)
+					}
+				}
+			}
+			req := httptest.NewRequest(http.MethodGet, testSSOOrigin+"/auth/sso/start?issuer="+url.QueryEscape(issuer)+"&is_admin=true", nil)
+			setRequestAuthCookie(req, oldToken)
+			res := httptest.NewRecorder()
+			app.Handler().ServeHTTP(res, req)
+			cookie := findResponseCookieByDomain(res.Result(), ssoCookieName, "")
+			if res.Code != http.StatusSeeOther || cookie == nil || openSSO(cookie.Value, testSSOSecret, "browser", &transaction) != nil {
+				t.Fatalf("start status=%d body=%s", res.Code, res.Body.String())
+			}
+			req = httptest.NewRequest(http.MethodGet, testSSOOrigin+"/auth/sso/callback?iss="+url.QueryEscape(issuer)+"&state="+url.QueryEscape(transaction.State)+"&code=one-time-code&is_admin=true&role=admin", nil)
+			req.AddCookie(cookie)
+			setRequestAuthCookie(req, oldToken)
+			res = httptest.NewRecorder()
+			app.Handler().ServeHTTP(res, req)
+			authCookie := findResponseCookieByDomain(res.Result(), authSessionCookieName, "")
+			if res.Code != http.StatusSeeOther || res.Header().Get("Location") != "/studio" || authCookie == nil || authCookie.Value == "" || exchanges.Load() != 1 {
+				t.Fatalf("callback status=%d location=%q exchanges=%d body=%s", res.Code, res.Header().Get("Location"), exchanges.Load(), res.Body.String())
+			}
+			if (authCookie.Value == oldToken) != reuseSession {
+				t.Fatalf("session reuse=%t want=%t", authCookie.Value == oldToken, reuseSession)
+			}
+			if !authCookie.HttpOnly || !authCookie.Secure || authCookie.SameSite != http.SameSiteLaxMode {
+				t.Fatal("session cookie must preserve secure browser attributes")
+			}
+			wantRole := service.AuthRoleUser
+			if isAdmin {
+				wantRole = service.AuthRoleAdmin
+			}
+			identity := app.auth.Authenticate(authCookie.Value)
+			if identity == nil || identity.OwnerID != "newapi:1" || identity.Username != "alice" || identity.Role != wantRole || identity.SSOReference != "new-reference" || identity.SSOIssuer != issuer {
+				t.Fatalf("callback identity=%#v want role=%s", identity, wantRole)
+			}
+			if oldToken != "" && scenario != "switch-password-user" && scenario != "switch-sso-user" && !reuseSession && app.auth.Authenticate(oldToken) != nil {
+				t.Fatal("the same account's old session must be invalidated when its role is refreshed")
+			}
+			req = httptest.NewRequest(http.MethodGet, "/auth/session", nil)
+			setRequestAuthCookie(req, authCookie.Value)
+			res = httptest.NewRecorder()
+			app.Handler().ServeHTTP(res, req)
+			var payload struct {
+				Role      string `json:"role"`
+				SubjectID string `json:"subject_id"`
+			}
+			if res.Code != http.StatusOK || json.Unmarshal(res.Body.Bytes(), &payload) != nil || payload.Role != wantRole || payload.SubjectID != "newapi:1" {
+				t.Fatalf("session API status=%d body=%s", res.Code, res.Body.String())
+			}
+		})
 	}
-	if cookie := findResponseCookieByDomain(res.Result(), ssoCookieName, ""); cookie != nil && cookie.Value != "" {
-		t.Fatalf("existing session must not create an SSO transaction cookie: %#v", cookie)
+}
+
+func TestSSOCallbackRejectsInvalidTransactions(t *testing.T) {
+	for _, scenario := range []string{"state-mismatch", "expired", "bad-signature", "untrusted-issuer", "exchange-rejected"} {
+		t.Run(scenario, func(t *testing.T) {
+			app := newTestApp(t)
+			defer app.Close()
+			var exchanges atomic.Int32
+			issuer := newTestSSOIssuer(t, func(w http.ResponseWriter, r *http.Request) {
+				exchanges.Add(1)
+				w.WriteHeader(http.StatusUnauthorized)
+			})
+			transaction := ssoTransaction{Issuer: issuer, Audience: testSSOOrigin, State: "expected-state", Verifier: "secret-verifier", ExpiresAt: time.Now().Add(time.Minute).Unix()}
+			if scenario == "expired" {
+				transaction.ExpiresAt = time.Now().Add(-time.Minute).Unix()
+			}
+			if scenario == "untrusted-issuer" {
+				transaction.Issuer = "https://untrusted.example.test"
+			}
+			key := testSSOSecret
+			if scenario == "bad-signature" {
+				key = "different-key"
+			}
+			sealed, err := sealSSO(transaction, key, "browser")
+			if err != nil {
+				t.Fatal(err)
+			}
+			state := transaction.State
+			if scenario == "state-mismatch" {
+				state = "wrong-state"
+			}
+			req := httptest.NewRequest(http.MethodGet, testSSOOrigin+"/auth/sso/callback?iss="+url.QueryEscape(transaction.Issuer)+"&state="+state+"&code=code&is_admin=true", nil)
+			req.AddCookie(&http.Cookie{Name: ssoCookieName, Value: sealed})
+			res := httptest.NewRecorder()
+			app.Handler().ServeHTTP(res, req)
+			wantExchanges := int32(0)
+			if scenario == "exchange-rejected" {
+				wantExchanges = 1
+			}
+			cookie := findResponseCookieByDomain(res.Result(), authSessionCookieName, "")
+			if res.Code != http.StatusUnauthorized || exchanges.Load() != wantExchanges || cookie != nil && cookie.Value != "" {
+				t.Fatalf("invalid callback status=%d exchanges=%d session=%#v", res.Code, exchanges.Load(), cookie)
+			}
+		})
 	}
 }
 

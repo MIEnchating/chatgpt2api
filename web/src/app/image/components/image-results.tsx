@@ -422,9 +422,10 @@ export function ImageResults({
               >
                 <div className="relative aspect-[16/9] overflow-hidden bg-muted">
                   <img
-                    src={preset.imageSrc}
+                    src={preset.previewSrc}
                     alt={preset.title}
                     loading="lazy"
+                    decoding="async"
                     className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]"
                   />
                   <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 bg-gradient-to-t from-black/70 via-black/25 to-transparent px-3 pt-8 pb-2">
@@ -1105,17 +1106,18 @@ export function ImageResults({
                       return (
                         <div
                           key={image.id}
-                          className="mb-3 inline-flex min-h-[160px] w-full break-inside-avoid flex-col overflow-hidden rounded-[18px] border border-destructive/20 bg-destructive/10 sm:mb-4 dark:border-rose-800/70 dark:bg-rose-950/35"
+                          className="mb-3 inline-flex min-h-[160px] w-full min-w-0 break-inside-avoid flex-col overflow-hidden rounded-[18px] border border-destructive/20 bg-destructive/10 align-top sm:mb-4 dark:border-rose-800/70 dark:bg-rose-950/35"
                         >
-                          <div className="flex min-h-[112px] flex-1 items-center justify-center whitespace-pre-wrap break-words px-4 py-4 text-center text-sm leading-6 text-destructive sm:px-5 dark:text-rose-300">
-                            {video ? (
-                              <div className="flex max-w-xl flex-col items-center gap-2">
-                                <span className="inline-flex items-center gap-2 font-semibold"><AlertCircle className="size-4 shrink-0" />视频生成失败</span>
-                                <p className="text-sm font-normal">{videoTaskErrorMessage(image.error)}</p>
-                              </div>
-                            ) : image.error || "生成失败"}
+                          <div className="flex min-h-[112px] min-w-0 flex-1 flex-col items-start gap-2.5 px-5 py-5 text-left text-sm leading-6 text-destructive sm:px-6 dark:text-rose-300">
+                            <span className="inline-flex items-center gap-2 font-semibold">
+                              <AlertCircle className="size-4 shrink-0" />
+                              {video ? "视频生成失败" : "生成失败"}
+                            </span>
+                            <p className="w-full min-w-0 whitespace-pre-wrap font-normal [overflow-wrap:anywhere]">
+                              {video ? videoTaskErrorMessage(image.error) : image.error || "请稍后重试"}
+                            </p>
                           </div>
-                          <div className="flex justify-end border-t border-destructive/20 bg-card/70 px-3 py-2.5 dark:border-rose-800/70">
+                          <div className="flex shrink-0 justify-end border-t border-destructive/20 bg-card/70 px-5 py-3 sm:px-6 dark:border-rose-800/70">
                             <Button
                               type="button"
                               variant="outline"

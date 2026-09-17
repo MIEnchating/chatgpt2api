@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { toast } from "sonner";
 
 import {
@@ -49,6 +49,7 @@ function useVerifiedSessionLifecycle(
   initialChecking: () => boolean,
   onVerified: VerifiedSessionHandler,
 ) {
+  const { pathname } = useLocation();
   const [isCheckingAuth, setIsCheckingAuth] = useState(initialChecking);
   const [retryVersion, setRetryVersion] = useState(0);
   const retryAuth = useCallback(() => {
@@ -80,31 +81,20 @@ function useVerifiedSessionLifecycle(
       }
     };
 
-    const verifyCurrentSession = (forceRefresh: boolean) => {
+    const handleSessionChange = () => {
       if (!active) {
         return;
       }
-      void load(forceRefresh);
-    };
-    const handleSessionChange = () => verifyCurrentSession(false);
-    const handleWindowFocus = () => verifyCurrentSession(true);
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
-        verifyCurrentSession(true);
-      }
+      void load();
     };
 
-    void load();
+    void load(true);
     window.addEventListener(AUTH_SESSION_CHANGE_EVENT, handleSessionChange);
-    window.addEventListener("focus", handleWindowFocus);
-    document.addEventListener("visibilitychange", handleVisibilityChange);
     return () => {
       active = false;
       window.removeEventListener(AUTH_SESSION_CHANGE_EVENT, handleSessionChange);
-      window.removeEventListener("focus", handleWindowFocus);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [onVerified, retryAuth, retryVersion]);
+  }, [onVerified, pathname, retryAuth, retryVersion]);
 
   return { isCheckingAuth };
 }

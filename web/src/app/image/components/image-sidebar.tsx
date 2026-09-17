@@ -89,8 +89,8 @@ export function ImageSidebar({
                       "group relative w-full rounded-xl border text-left transition-colors focus-within:border-ring",
                       hideActionButtons ? "px-4 py-3.5" : "px-3 py-2 sm:py-3",
                       active
-                        ? "border-border bg-card text-foreground shadow-[var(--shadow-card)]"
-                        : "border-transparent text-muted-foreground hover:border-border hover:bg-card",
+                        ? "border-primary/40 bg-primary/10 text-foreground shadow-[var(--shadow-card)]"
+                        : "border-border bg-card/60 text-muted-foreground hover:border-muted-foreground/30 hover:bg-card",
                     )}
                   >
                     <button

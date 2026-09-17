@@ -23,6 +23,9 @@ type apimartImageContract struct {
 }
 
 func isAPIMartImagePayload(payload map[string]any) bool {
+	if _, configured := configuredImageDefinition(payload); configured {
+		return false
+	}
 	if payload == nil {
 		return false
 	}

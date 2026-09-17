@@ -1169,16 +1169,17 @@ func (a *App) modelConfig() map[string]any {
 	textModels := append([]string(nil), a.config.TextModels()...)
 	audioModels := append([]string(nil), a.config.AudioModels()...)
 	return map[string]any{
-		"image_models":          imageModels,
-		"default_image_model":   defaultConfiguredImageModel(imageModels),
-		"video_models":          videoModels,
-		"default_video_model":   defaultConfiguredVideoModel(videoModels, videoContracts),
-		"video_model_contracts": videoContracts,
-		"text_models":           textModels,
-		"default_text_model":    firstString(textModels, ""),
-		"audio_models":          audioModels,
-		"default_audio_model":   firstString(audioModels, ""),
-		"relay_base_url":        a.relayBaseURL(),
+		"image_models":            imageModels,
+		"image_model_definitions": a.config.ImageModelDefinitions(),
+		"default_image_model":     defaultConfiguredImageModel(imageModels),
+		"video_models":            videoModels,
+		"default_video_model":     defaultConfiguredVideoModel(videoModels, videoContracts),
+		"video_model_contracts":   videoContracts,
+		"text_models":             textModels,
+		"default_text_model":      firstString(textModels, ""),
+		"audio_models":            audioModels,
+		"default_audio_model":     firstString(audioModels, ""),
+		"relay_base_url":          a.relayBaseURL(),
 	}
 }
 
@@ -1242,6 +1243,7 @@ func (a *App) applyDefaultImageModel(body map[string]any) string {
 		model = a.defaultImageModel()
 		body["model"] = model
 	}
+	a.attachImageModelDefinition(body)
 	return model
 }
 
@@ -2854,6 +2856,7 @@ func (a *App) runLoggedImageTask(ctx context.Context, identity service.Identity,
 	if util.Clean(payload["model"]) == "" {
 		payload["model"] = model
 	}
+	a.attachImageModelDefinition(payload)
 	if err := validateRelayImageRequest(endpoint, model, payload, uploadedImagesFromPayload(payload["images"])); err != nil {
 		a.logCall(ctx, identity, summary, http.MethodPost, endpoint, model, start, "failed", protocolErrorHTTPStatus(err), err.Error(), nil, payloadAuditCapture(payload))
 		return nil, err

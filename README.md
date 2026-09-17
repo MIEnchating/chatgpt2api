@@ -76,6 +76,7 @@
 - 内部创作任务统一使用异步状态、取消、进度回传和结果入库。
 - 默认支持 `gpt-image-2`、Google Gemini 和 Grok 图片模型，也可通过配置添加其他 NewAPI 图片模型。
 - Gemini 通过 NewAPI 聊天接口生成并支持参考图编辑；Grok 通过 NewAPI 图片接口生成。
+- 图片模型可在设置中独立配置 Gemini、Grok 或 OpenAI Images 协议及画幅、分辨率、参考图等能力；新增同协议型号或渠道别名无需修改代码。
 - Gemini 3 图片模型最多支持 14 张参考图；Grok 生图按 xAI 官方协议提供画幅比例、1K/2K 分辨率，Grok 2.0 另支持低/中质量档位。
 - 支持流式图片生成和渐进预览；部分渠道只返回最终图片，上游错误会保留原始请求语义并直接返回。
 - GPT 图片局部编辑使用官方 multipart `mask` 文件字段；遮罩会校验 PNG、alpha 通道和尺寸，并且不会把原始 base64 写入任务或图片元数据。
@@ -296,6 +297,7 @@ go build -tags=embed -o chatgpt2api ./internal
 | `DATABASE_TYPE` | `newapi` | 数据库类型，只能是 `newapi` 或 `sub2api`；服务按类型选择对应表结构和认证逻辑 |
 | `PROXY` | 空 | 全局代理，支持 `http`、`https`、`socks5`、`socks5h` |
 | `IMAGE_MODELS` | `gpt-image-2,gemini-3.1-flash-image,grok-imagine-image` | 图片生成可用模型，创作台、无限画布和工作流共用；多个值用逗号分隔，未指定模型时使用第一项；对应模型需已在 NewAPI / Sub2API 配置可用渠道 |
+| `IMAGE_MODEL_DEFINITIONS` | `{}` | 按模型名称配置图片协议与能力的 JSON 对象；推荐在设置页编辑，详见 `docs/image-generation-api.md` |
 | `VIDEO_MODELS` | 见 `.env.example` | 视频生成可用模型，创作台和无限画布内部任务共用；多个值用逗号分隔，未指定模型时使用第一项 |
 | `TEXT_MODELS` | 见 `.env.example` | 画布 Agent 和工作流 Agent 草稿可用模型；多个值用逗号分隔 |
 | `AUDIO_MODELS` | `gpt-4o-mini-tts` | 无限画布音频节点可用模型；多个值用逗号分隔 |

@@ -135,6 +135,31 @@ describe("verified auth session cache", () => {
     expect(calls).toBe(2);
   });
 
+  test("concurrent page validations share one request even with a cached session", async () => {
+    let calls = 0;
+    verifySessionImplementation = async () => {
+      calls += 1;
+      return loginResponse();
+    };
+    const session = loadSession();
+    await session.getVerifiedAuthSession();
+
+    let resolveResponse;
+    verifySessionImplementation = () => {
+      calls += 1;
+      return new Promise((resolve) => { resolveResponse = resolve; });
+    };
+    const first = session.refreshVerifiedAuthSession();
+    const second = session.refreshVerifiedAuthSession();
+    expect(calls).toBe(2);
+
+    resolveResponse(loginResponse({ menu_paths: ["/canvas"] }));
+    expect(await first).toMatchObject({ menuPaths: ["/canvas"] });
+    expect(await second).toMatchObject({ menuPaths: ["/canvas"] });
+    await session.getVerifiedAuthSession();
+    expect(calls).toBe(2);
+  });
+
   test("keeps the last verified session when a refresh fails transiently", async () => {
     let calls = 0;
     verifySessionImplementation = async () => {

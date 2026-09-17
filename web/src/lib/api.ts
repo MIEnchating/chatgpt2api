@@ -1,4 +1,5 @@
 import { httpRequest } from "@/lib/request";
+import { installImageModelDefinitions, type ImageModelDefinitions } from "@/lib/image-model-definitions";
 import { AUTH_SESSION_CHANGE_EVENT } from "@/lib/auth-session";
 import {
   normalizeImageConversationAssetReference,
@@ -198,6 +199,7 @@ export type SettingsConfig = {
   relay_database_configured?: boolean;
   relay_database_password_configured?: boolean;
   image_models?: string[] | string;
+  image_model_definitions?: ImageModelDefinitions;
   default_image_model?: string;
   video_models?: string[] | string;
   default_video_model?: string;
@@ -271,6 +273,7 @@ export type StorageSettingConfig = {
 
 export type ModelConfig = {
   image_models: ImageModel[];
+  image_model_definitions?: ImageModelDefinitions;
   default_image_model: ImageModel;
   video_models: string[];
   default_video_model: string;
@@ -834,6 +837,7 @@ function clearModelConfigCache() {
 }
 
 function clearAccountScopedAPICaches() {
+	installImageModelDefinitions();
 	imageGenerationPreferencesCache.clear();
 	clearModelConfigCache();
 	grokTTSVoiceRequests.clear();
@@ -932,14 +936,13 @@ export async function updateRelayTokenPreferences(preferences: RelayTokenPrefere
 
 export async function updateCreationWorkbenchPreferences(
   workbench: CreationWorkbenchPreferences,
-  options: Pick<ImageGenerationPreferences, "stream" | "partial_images" | "response_format_b64_json" | "codex_cli_compatibility">,
 ) {
   const storeResponse = imageGenerationPreferencesCache.beginStore();
   return httpRequest<ImageGenerationPreferencesResponse>(
     "/api/profile/image-generation-preferences",
     {
       method: "PATCH",
-      body: { workbench, ...options },
+      body: { workbench },
     },
   ).then(storeResponse);
 }
@@ -1432,11 +1435,15 @@ export async function deleteAnnouncement(id: string) {
 }
 
 export async function updateSettingsConfig(settings: SettingsConfig) {
+  const generation = modelConfigGeneration;
   const response = await httpRequest<{ config: SettingsConfig }>("/api/settings", {
     method: "POST",
     body: settings,
   });
-  clearModelConfigCache();
+  if (generation === modelConfigGeneration) {
+    clearModelConfigCache();
+    installImageModelDefinitions(response.config.image_model_definitions);
+  }
   return response;
 }
 
@@ -1454,6 +1461,7 @@ export async function fetchModelConfig() {
   ));
   if (generation === modelConfigGeneration) {
     installVideoModelContracts(data.config.video_model_contracts);
+    installImageModelDefinitions(data.config.image_model_definitions);
   }
   return data;
 }

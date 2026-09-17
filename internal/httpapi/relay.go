@@ -166,6 +166,7 @@ func (a *App) relayListModelsAt(ctx context.Context, baseURL, apiKey string) (ma
 }
 
 func (a *App) relayImageGenerations(ctx context.Context, payload map[string]any) (map[string]any, *protocol.StreamResult, error) {
+	a.attachImageModelDefinition(payload)
 	ctx = relayContextForPayload(ctx, payload)
 	if strings.TrimSpace(util.Clean(payload["prompt"])) == "" {
 		return nil, nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: "prompt is required"}
@@ -182,7 +183,7 @@ func (a *App) relayImageGenerations(ctx context.Context, payload map[string]any)
 			return nil, nil, err
 		}
 	}
-	if util.IsGoogleGeminiImageModel(util.Clean(payload["model"])) {
+	if imagePayloadRoute(payload) == util.ImageModelRouteGoogleGemini {
 		result, err := a.relayGoogleGeminiImage(ctx, payload, nil)
 		if release != nil {
 			release()
@@ -209,6 +210,7 @@ func (a *App) relayImageGenerations(ctx context.Context, payload map[string]any)
 }
 
 func (a *App) relayImageEdits(ctx context.Context, payload map[string]any, images []protocol.UploadedImage) (map[string]any, *protocol.StreamResult, error) {
+	a.attachImageModelDefinition(payload)
 	ctx = relayContextForPayload(ctx, payload)
 	if len(images) == 0 {
 		return nil, nil, protocol.HTTPError{Status: http.StatusBadRequest, Message: "image file is required"}
@@ -232,14 +234,14 @@ func (a *App) relayImageEdits(ctx context.Context, payload map[string]any, image
 			return nil, nil, err
 		}
 	}
-	if util.IsGoogleGeminiImageModel(model) {
+	if imagePayloadRoute(payload) == util.ImageModelRouteGoogleGemini {
 		result, err := a.relayGoogleGeminiImage(ctx, payload, images)
 		if release != nil {
 			release()
 		}
 		return result, nil, err
 	}
-	if util.IsXAIImageModel(model) {
+	if imagePayloadRoute(payload) == util.ImageModelRouteXAI {
 		// Grok2API uses a JSON edit envelope instead of OpenAI's multipart
 		// image upload contract. Keep the reference images as data URLs.
 		editPayload := make(map[string]any, len(payload)+1)
@@ -273,7 +275,7 @@ func (a *App) relayImageEdits(ctx context.Context, payload map[string]any, image
 		}
 		return result, stream, nil
 	}
-	if util.IsAgnesImageModel(model) {
+	if imagePayloadRoute(payload) == util.ImageModelRouteAgnes {
 		// Agnes follows the reference project's image-edit contract: reference
 		// images are sent in extra_body.image while the endpoint remains image
 		// generations. Uploaded inputs fall back to data URLs when no public URL
@@ -329,11 +331,17 @@ func (a *App) relayImageEdits(ctx context.Context, payload map[string]any, image
 }
 
 func validateRelayImageRequest(pathValue, model string, payload map[string]any, images []protocol.UploadedImage) error {
+	if err := validateConfiguredImageRequest(payload, images); err != nil {
+		return err
+	}
 	if err := validateRelayImageIntegerParameter(payload, "partial_images", 0, 3); err != nil {
 		return err
 	}
 	if err := validateRelayImageIntegerParameter(payload, "output_compression", 0, 100); err != nil {
 		return err
+	}
+	if _, configured := configuredImageDefinition(payload); configured {
+		return validateRelayImageMask(pathValue, model, payload, images)
 	}
 	if err := validateKIEImageRequiredInput(model, payload, len(images)); err != nil {
 		return err
@@ -455,7 +463,11 @@ func validateRelayImageMask(pathValue, model string, payload map[string]any, ima
 	if pathValue != "/v1/images/edits" && pathValue != "/api/creation-tasks/image-edits" {
 		return protocol.HTTPError{Status: http.StatusBadRequest, Message: "mask is only supported by the image edits endpoint"}
 	}
-	if util.ImageModelRouteFor(model) != util.ImageModelRouteOpenAI {
+	route := util.ImageModelRouteFor(model)
+	if definition, configured := configuredImageDefinition(payload); configured {
+		route = util.ImageModelRoute(definition.Protocol)
+	}
+	if route != util.ImageModelRouteOpenAI {
 		return protocol.HTTPError{Status: http.StatusBadRequest, Message: fmt.Sprintf("model %s does not support mask editing through NewAPI", model)}
 	}
 	if len(images) == 0 {
@@ -533,6 +545,14 @@ func pngHasAlphaChannel(data []byte) bool {
 }
 
 func validateRelayImageReferenceCount(model string, count int, payloads ...map[string]any) error {
+	if len(payloads) > 0 {
+		if d, ok := configuredImageDefinition(payloads[0]); ok {
+			if count > d.MaxReferenceImages {
+				return protocol.HTTPError{Status: http.StatusBadRequest, Message: fmt.Sprintf("model %s supports at most %d reference images", model, d.MaxReferenceImages)}
+			}
+			return nil
+		}
+	}
 	if count <= 0 {
 		return nil
 	}
@@ -629,7 +649,7 @@ func marshalGoogleGeminiInlineRequest(payload map[string]any) ([]byte, error) {
 }
 
 func validateGoogleGeminiInlineRequest(payload map[string]any, images []protocol.UploadedImage) error {
-	if !util.IsGoogleGeminiImageModel(util.Clean(payload["model"])) {
+	if imagePayloadRoute(payload) != util.ImageModelRouteGoogleGemini {
 		return nil
 	}
 	body, err := googleGeminiImagePayload(payload, images)
@@ -743,6 +763,12 @@ func googleGeminiImageItems(response map[string]any, prompt string) ([]map[strin
 				"output_format":  strings.TrimPrefix(contentType, "image/"),
 			})
 		}
+		for _, imageURL := range protocol.ExtractMarkdownImageURLs(protocol.ExtractPromptFromMessageContent(content)) {
+			items = append(items, map[string]any{
+				"url":            imageURL,
+				"revised_prompt": prompt,
+			})
+		}
 		if text, ok := content.(string); ok {
 			if text = strings.TrimSpace(text); text != "" && !strings.Contains(text, "data:image/") {
 				details = append(details, text)
@@ -784,6 +810,16 @@ func googleGeminiImageItems(response map[string]any, prompt string) ([]map[strin
 
 func googleGeminiImageConfig(model string, payload map[string]any) map[string]any {
 	config := map[string]any{}
+	if d, ok := configuredImageDefinition(payload); ok {
+		if ratio := configuredImageAspectRatio(payload, d); ratio != "" {
+			config["aspect_ratio"] = ratio
+		}
+		resolution := strings.ToLower(firstNonEmpty(util.Clean(payload["image_resolution"]), util.Clean(payload["resolution"])))
+		if resolution != "" && resolution != "auto" {
+			config["image_size"] = strings.ToUpper(resolution)
+		}
+		return config
+	}
 	if aspectRatio := googleGeminiAspectRatio(model, util.Clean(payload["size"])); aspectRatio != "" {
 		config["aspect_ratio"] = aspectRatio
 	}
@@ -2110,7 +2146,7 @@ func (a *App) relayHTTPClientForContext(ctx context.Context) *http.Client {
 
 func relayPayloadForPath(pathValue string, payload map[string]any) map[string]any {
 	out := map[string]any{}
-	preserveXAIEditImages := pathValue == "/v1/images/edits" && util.IsXAIImageModel(util.Clean(payload["model"]))
+	preserveXAIEditImages := pathValue == "/v1/images/edits" && imagePayloadRoute(payload) == util.ImageModelRouteXAI
 	for key, value := range payload {
 		if (shouldDropRelayPayloadKey(key) && !(preserveXAIEditImages && key == "images")) || value == nil {
 			continue
@@ -2134,15 +2170,22 @@ func relayPayloadForPath(pathValue string, payload map[string]any) map[string]an
 	for _, key := range []string{"provider", "image_provider", "video_provider", "channel_protocol", "protocol", "channel_base_url", "provider_base_url"} {
 		delete(out, key)
 	}
+	delete(out, imageModelDefinitionPayloadKey)
 	return out
 }
 
 func sanitizeRelayImagePayload(payload map[string]any) {
 	delete(payload, "messages")
+	if sanitizeConfiguredImagePayload(payload) {
+		return
+	}
 	model := util.Clean(payload["model"])
 	isAPIMartImage := isAPIMartImagePayload(payload)
 	isKIEImage := isKnownKIEImageModel(model)
-	route := util.ImageModelRouteFor(model)
+	if _, configured := configuredImageDefinition(payload); configured {
+		isKIEImage = false
+	}
+	route := imagePayloadRoute(payload)
 	if isKIEImage || isAPIMartImage {
 		// Provider-specific schemas are strict. Their normalizers have already
 		// selected the accepted fields, so skip generic OpenAI cleanup.
@@ -2318,6 +2361,9 @@ func isKnownKIEImageModel(model string) bool {
 // provider API and maps application size metadata to provider-native fields.
 func normalizeImagePayloadForModel(payload map[string]any) {
 	if payload == nil {
+		return
+	}
+	if normalizeConfiguredImagePayload(payload) {
 		return
 	}
 	if normalizeAPIMartImagePayload(payload) {

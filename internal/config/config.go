@@ -42,6 +42,7 @@ var settingEnvKeys = map[string]string{
 	"relay_database_password":        "DATABASE_PASSWORD",
 	"proxy":                          "PROXY",
 	"image_models":                   "IMAGE_MODELS",
+	"image_model_definitions":        "IMAGE_MODEL_DEFINITIONS",
 	"video_models":                   "VIDEO_MODELS",
 	"text_models":                    "TEXT_MODELS",
 	"audio_models":                   "AUDIO_MODELS",
@@ -219,6 +220,9 @@ func NewStore() (*Store, error) {
 	s.data = settingsFromEnvValues(envFileValues)
 	for key, value := range settingsFromEnvValues(processEnvValues) {
 		s.data[key] = value
+	}
+	if _, err := decodeImageModelDefinitions(s.data["image_model_definitions"]); err != nil {
+		return nil, err
 	}
 	return s, nil
 }
@@ -714,6 +718,7 @@ func (s *Store) Get() map[string]any {
 	delete(data, "default_chat_model")
 	data["image_task_timeout_seconds"] = snapshot.ImageTaskTimeoutSeconds()
 	data["image_models"] = snapshot.ImageModels()
+	data["image_model_definitions"] = snapshot.ImageModelDefinitions()
 	data["video_models"] = snapshot.VideoModels()
 	data["text_models"] = snapshot.TextModels()
 	data["audio_models"] = snapshot.AudioModels()
@@ -950,6 +955,9 @@ func (s *Store) settingValueFromData(data map[string]any, key string, fallback a
 }
 
 func (s *Store) validateSettingsUpdateLocked(data map[string]any) error {
+	if _, err := decodeImageModelDefinitions(s.settingValueFromData(data, "image_model_definitions", nil)); err != nil {
+		return err
+	}
 	imageBaseURL := strings.TrimSpace(fmt.Sprint(util.ValueOr(data["base_url"], defaultBaseURL)))
 	if imageBaseURL != "" {
 		if err := validateAbsoluteHTTPURL(imageBaseURL); err != nil {
@@ -1448,6 +1456,8 @@ func stringifySettingEnvValue(settingKey string, value any) string {
 		value = normalizePromptSourcesValue(value)
 	case "storage":
 		value = normalizeStorageSetting(value)
+	case "image_model_definitions":
+		value, _ = decodeImageModelDefinitions(value)
 	default:
 		return stringifyEnvValue(value)
 	}

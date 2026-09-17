@@ -1,3 +1,5 @@
+import { configuredImageModel } from "./image-model-definitions";
+
 export type ImageModelRoute = "openai-image" | "google-gemini-image" | "xai-image" | "zhipu-image" | "agnes-image" | "kie-image" | "apimart-image";
 
 const GOOGLE_GEMINI_IMAGE_MODELS = new Set([
@@ -250,6 +252,8 @@ function supportsGoogleGeminiExtendedAspectRatios(model: string) {
 }
 
 export function imageModelRoute(model: string): ImageModelRoute {
+  const configured = configuredImageModel(model);
+  if (configured) return configured.protocol;
   const value = model.trim().toLowerCase();
   if (isKnownAPIMartImageModel(value)) {
     return "apimart-image";
@@ -273,6 +277,8 @@ export function imageModelRoute(model: string): ImageModelRoute {
 }
 
 export function supportsImageEditing(model: string) {
+  const configured = configuredImageModel(model);
+  if (configured) return configured.max_reference_images > 0;
   const route = imageModelRoute(model);
   if (route === "apimart-image") return apimartImageCapabilities(model)?.hasReferences === true;
   if (route === "kie-image") return isKIEImageEditModel(model);
@@ -280,10 +286,14 @@ export function supportsImageEditing(model: string) {
 }
 
 export function supportsImageMask(model: string) {
+  const configured = configuredImageModel(model);
+  if (configured) return configured.mask;
   return imageModelRoute(model) === "openai-image";
 }
 
 export function imageReferenceImageLimit(model: string) {
+  const configured = configuredImageModel(model);
+  if (configured) return configured.max_reference_images;
   const value = model.trim().toLowerCase();
   const route = imageModelRoute(model);
   if (route === "apimart-image") {
@@ -314,25 +324,35 @@ export function imageReferenceImageLimit(model: string) {
 }
 
 export function imageOutputCountLimit(model: string) {
+  const configured = configuredImageModel(model);
+  if (configured) return configured.max_output_count;
   const capabilities = apimartImageCapabilities(model);
   return capabilities && !capabilities.hasCount ? 1 : 15;
 }
 
 export function supportsImageStreaming(model: string) {
+  const configured = configuredImageModel(model);
+  if (configured) return configured.streaming;
   if (imageModelRoute(model) === "apimart-image") return false;
   const route = imageModelRoute(model);
   return route === "openai-image" || route === "xai-image";
 }
 
 export function supportsImageSize(model: string) {
+  const configured = configuredImageModel(model);
+  if (configured) return configured.exact_dimensions || configured.aspect_ratios.length > 0 || configured.resolutions.length > 0;
   return imageModelRoute(model) !== "xai-image" || isOfficialXAIImageModelName(model);
 }
 
 export function supportsImageExactDimensions(model: string) {
+  const configured = configuredImageModel(model);
+  if (configured) return configured.exact_dimensions;
   return model.trim().toLowerCase() === "gpt-image-2";
 }
 
 export function supportsImageAspectRatio(model: string, aspectRatio: string) {
+  const configured = configuredImageModel(model);
+  if (configured) return aspectRatio === "" || configured.aspect_ratios.includes(aspectRatio);
   const route = imageModelRoute(model);
   const value = model.trim().toLowerCase();
   if (route === "apimart-image") return aspectRatio === "" || APIMART_IMAGE_ASPECT_RATIOS.has(aspectRatio);
@@ -360,6 +380,8 @@ export function supportsImageAspectRatio(model: string, aspectRatio: string) {
 }
 
 export function supportsImageResolution(model: string, resolution: string) {
+  const configured = configuredImageModel(model);
+  if (configured) return resolution === "auto" || resolution === "" || configured.resolutions.includes(resolution.toLowerCase());
   const route = imageModelRoute(model);
   const value = model.trim().toLowerCase();
   if (route === "apimart-image") {
@@ -392,12 +414,15 @@ export function supportsImageResolution(model: string, resolution: string) {
 }
 
 export function supportsStructuredImageParameters(model: string) {
+  if (configuredImageModel(model)) return true;
   const value = model.trim().toLowerCase();
   const route = imageModelRoute(model);
   return value === "gpt-image-2" || route === "google-gemini-image" || route === "agnes-image" || route === "kie-image" || route === "apimart-image" || isOfficialXAIImageModelName(value);
 }
 
 export function supportsImageOutputControls(model: string) {
+  const configured = configuredImageModel(model);
+  if (configured) return configured.output_controls;
   const value = model.trim().toLowerCase();
   const apimart = apimartImageCapabilities(model);
   if (apimart) return apimart.hasOutput;
@@ -405,6 +430,8 @@ export function supportsImageOutputControls(model: string) {
 }
 
 export function supportsImageQuality(model: string) {
+  const configured = configuredImageModel(model);
+  if (configured) return configured.quality_values.length > 0;
   const value = model.trim().toLowerCase();
   const apimart = apimartImageCapabilities(model);
   if (apimart) return apimart.hasQuality;
@@ -412,6 +439,8 @@ export function supportsImageQuality(model: string) {
 }
 
 export function supportsImageQualityValue(model: string, quality: string) {
+  const configured = configuredImageModel(model);
+  if (configured) return quality === "" || configured.quality_values.includes(quality);
   if (!quality) {
     return true;
   }

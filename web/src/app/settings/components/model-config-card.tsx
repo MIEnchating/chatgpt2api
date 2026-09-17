@@ -54,6 +54,8 @@ import type { StoredAuthSession } from "@/lib/auth-session";
 
 import { useSettingsStore } from "../store";
 import { SettingsCard, settingsDialogInputClassName } from "./settings-ui";
+import { ImageModelDefinitionDialog } from "./image-model-definition-dialog";
+import { imageProtocolLabels, type ImageModelDefinitions } from "@/lib/image-model-definitions";
 
 type ModelKind = "text" | "image" | "video" | "audio";
 type AddMode = "automatic" | "custom";
@@ -86,6 +88,8 @@ function GlobalModelList({
   onChange,
   onAdd,
   onClear,
+  onConfigure,
+  definitions,
 }: {
   icon: typeof ImageIcon;
   kind: ModelKind;
@@ -93,6 +97,8 @@ function GlobalModelList({
   onChange: (models: string[]) => void;
   onAdd: () => void;
   onClear: () => void;
+  onConfigure?: (model: string) => void;
+  definitions?: ImageModelDefinitions;
 }) {
   const title = modelKindMetadata[kind].title;
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
@@ -173,6 +179,9 @@ function GlobalModelList({
               <TooltipHint content={model}><code className="min-w-0 flex-1 truncate text-xs text-foreground sm:text-sm">{model}</code></TooltipHint>
               {index === 0 ? <Badge className="shrink-0 rounded-md px-1.5 text-[11px]">全局默认</Badge> : null}
               <div className="flex shrink-0 items-center">
+                {onConfigure ? <TooltipHint content={definitions?.[model] ? imageProtocolLabels[definitions[model].protocol] : "配置协议与能力"}>
+                  <Button type="button" variant="ghost" size="icon" className="size-8" aria-label={`配置 ${model} 的协议与能力`} onClick={() => onConfigure(model)}><Settings2 className="size-3.5" /></Button>
+                </TooltipHint> : null}
                 <Button
                   type="button"
                   variant="ghost"
@@ -320,7 +329,7 @@ function AddModelDialog({
         if (!controller.signal.aborted) setIsLoadingKeys(false);
       });
     return () => controller.abort();
-  }, [initialKind, open, relayTokenNames, session]);
+  }, [initialKind, open, relayTokenNames, session.key]);
 
   useEffect(() => () => {
     modelLoadVersionRef.current += 1;
@@ -588,6 +597,8 @@ export function ModelConfigCard({ session }: { session: StoredAuthSession }) {
   const isSavingConfig = useSettingsStore((state) => state.isSavingConfig);
   const saveConfig = useSettingsStore((state) => state.saveConfig);
   const setImageModels = useSettingsStore((state) => state.setImageModels);
+  const setImageModelDefinitions = useSettingsStore((state) => state.setImageModelDefinitions);
+  const [definitionModel, setDefinitionModel] = useState("");
   const setVideoModels = useSettingsStore((state) => state.setVideoModels);
   const setTextModels = useSettingsStore((state) => state.setTextModels);
   const setAudioModels = useSettingsStore((state) => state.setAudioModels);
@@ -619,6 +630,7 @@ export function ModelConfigCard({ session }: { session: StoredAuthSession }) {
 
   function addModels(kind: ModelKind, additions: string[]) {
     updateModels(kind, [...modelsByKind[kind], ...additions]);
+    if (kind === "image" && additions.length === 1) setDefinitionModel(additions[0]);
   }
 
   function openAddDialog(kind: ModelKind) {
@@ -656,6 +668,8 @@ export function ModelConfigCard({ session }: { session: StoredAuthSession }) {
               onChange={(models) => updateModels("image", models)}
               onAdd={() => openAddDialog("image")}
               onClear={() => updateModels("image", [])}
+              onConfigure={setDefinitionModel}
+              definitions={config.image_model_definitions}
             />
             <GlobalModelList
               icon={Clapperboard}
@@ -684,6 +698,18 @@ export function ModelConfigCard({ session }: { session: StoredAuthSession }) {
         session={session}
         initialKind={addDialogKind}
       />
+      {definitionModel ? <ImageModelDefinitionDialog
+        key={definitionModel}
+        model={definitionModel}
+        definition={config.image_model_definitions?.[definitionModel]}
+        onClose={() => setDefinitionModel("")}
+        onChange={(definition) => {
+          const definitions = { ...config.image_model_definitions };
+          if (definition) definitions[definitionModel] = definition;
+          else delete definitions[definitionModel];
+          setImageModelDefinitions(definitions);
+        }}
+      /> : null}
     </>
   );
 }

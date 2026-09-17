@@ -1495,7 +1495,7 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		model := a.applyDefaultImageModel(body)
-		apiMode := normalizeImageTaskAPIMode(util.Clean(body["api_mode"]), model)
+		apiMode := normalizeImageTaskAPIMode(util.Clean(body["api_mode"]), model, body)
 		if apiMode == "" {
 			util.WriteError(w, http.StatusBadRequest, "api_mode must be images, responses, or chat")
 			return
@@ -1717,7 +1717,7 @@ func (a *App) handleCreationTasks(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		model := a.applyDefaultImageModel(body)
-		apiMode := normalizeImageTaskAPIMode(util.Clean(body["api_mode"]), model)
+		apiMode := normalizeImageTaskAPIMode(util.Clean(body["api_mode"]), model, body)
 		if apiMode == "" {
 			util.WriteError(w, http.StatusBadRequest, "api_mode must be images, responses, or chat")
 			return
@@ -1989,7 +1989,7 @@ func imageTaskRequestMetadata(body map[string]any) map[string]any {
 	if source := service.NormalizeImageGenerationSource(util.Clean(body["generation_source"])); source != "" {
 		metadata["generation_source"] = source
 	}
-	metadata["api_mode"] = normalizeImageTaskAPIMode(util.Clean(body["api_mode"]), util.Clean(body["model"]))
+	metadata["api_mode"] = normalizeImageTaskAPIMode(util.Clean(body["api_mode"]), util.Clean(body["model"]), body)
 	if preset := service.NormalizeImageResolutionPreset(firstNonEmpty(util.Clean(body["image_resolution"]), util.Clean(body["resolution"]))); preset != "" {
 		metadata["image_resolution"] = preset
 	}
@@ -2021,7 +2021,7 @@ func imageTaskRequestMetadata(body map[string]any) map[string]any {
 	return metadata
 }
 
-func normalizeImageTaskAPIMode(value, model string) string {
+func normalizeImageTaskAPIMode(value, model string, payloads ...map[string]any) string {
 	value = strings.ToLower(strings.TrimSpace(value))
 	if value == "" {
 		value = "images"
@@ -2030,6 +2030,12 @@ func normalizeImageTaskAPIMode(value, model string) string {
 		return ""
 	}
 	route := util.ImageModelRouteFor(model)
+	if len(payloads) > 0 {
+		route = imagePayloadRoute(payloads[0])
+		if _, configured := configuredImageDefinition(payloads[0]); configured {
+			return "images"
+		}
+	}
 	if route == util.ImageModelRouteGoogleGemini || route == util.ImageModelRouteZhipu {
 		return "images"
 	}

@@ -108,13 +108,6 @@ func (a *App) handleSSOStart(w http.ResponseWriter, r *http.Request) {
 		util.WriteError(w, http.StatusServiceUnavailable, "单点登录未正确配置")
 		return
 	}
-	if identity := a.authenticateSession(r, requestAuthCookieToken(r)); identity != nil {
-		if token := requestAuthCookieToken(r); token != "" {
-			setAuthSessionCookie(w, r, token)
-		}
-		http.Redirect(w, r, "/studio", http.StatusSeeOther)
-		return
-	}
 	issuer := r.URL.Query().Get("issuer")
 	if issuer == "" {
 		issuer = cfg.issuers[0]
@@ -123,6 +116,8 @@ func (a *App) handleSSOStart(w http.ResponseWriter, r *http.Request) {
 		util.WriteError(w, http.StatusBadRequest, "单点登录来源无效")
 		return
 	}
+	// Confirm the current browser identity at the issuer before reusing a
+	// local session: another platform account's session may still be valid.
 	transaction := ssoTransaction{Issuer: issuer, Audience: cfg.origin, ExpiresAt: time.Now().Add(10 * time.Minute).Unix()}
 	for _, field := range []*string{&transaction.State, &transaction.Verifier} {
 		var random [32]byte
@@ -215,6 +210,21 @@ func (a *App) handleSSOCallback(w http.ResponseWriter, r *http.Request) {
 		util.WriteError(w, http.StatusUnauthorized, "单点登录已失效，请从平台重新进入")
 		return
 	}
+	// The exchange confirms the current platform session. Reuse the local
+	// session only when its issuer, source session, account and role match.
+	role := service.AuthRoleUser
+	if user.IsAdmin {
+		role = service.AuthRoleAdmin
+	}
+	token := requestAuthCookieToken(r)
+	if identity := a.auth.Authenticate(token); identity != nil &&
+		identity.SSOIssuer == transaction.Issuer && identity.SSOReference == user.Reference &&
+		identity.OwnerID == "newapi:"+util.Clean(user.ID) && identity.Role == role {
+		*r = *r.WithContext(withRequestIdentity(r.Context(), *identity))
+		setAuthSessionCookie(w, r, token)
+		http.Redirect(w, r, "/studio", http.StatusSeeOther)
+		return
+	}
 	identity, token, err := a.auth.UpsertNewAPISession(service.NewAPIUser{
 		ID: user.ID, Username: user.Username, Email: user.Email, DisplayName: user.DisplayName,
 		IsAdmin:  user.IsAdmin,
@@ -244,6 +254,15 @@ func (a *App) authenticateSession(r *http.Request, token string) *service.Identi
 	}
 	user, err := cfg.request(r, identity.SSOIssuer, "session", map[string]string{"issuer": identity.SSOIssuer, "reference": identity.SSOReference})
 	if err != nil || identity.OwnerID != "newapi:"+util.Clean(user.ID) {
+		return nil
+	}
+	// Role changes require a fresh SSO exchange and session rotation. Never
+	// keep stale admin privileges or elevate an existing session in place.
+	role := service.AuthRoleUser
+	if user.IsAdmin {
+		role = service.AuthRoleAdmin
+	}
+	if identity.Role != role {
 		return nil
 	}
 	return identity

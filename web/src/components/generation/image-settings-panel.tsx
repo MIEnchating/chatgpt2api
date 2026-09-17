@@ -9,6 +9,8 @@ import {
   formatImageSizeDisplay,
   isHighResolutionImageSize,
   parseImageSizeDimensions,
+  isImageAspectRatio,
+  type ImageResolution,
   type ImageSizeSelection,
 } from "@/lib/image-options";
 import { ImageSizePresetControls } from "@/components/generation/image-size-preset-controls";
@@ -17,6 +19,8 @@ import { NumberInput } from "@/components/ui/number-input";
 import { Switch } from "@/components/ui/switch";
 import { imageOutputCountLimit, type ImageQuality } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { configuredImageModel } from "@/lib/image-model-definitions";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 export type ImageSettingsValue = ImageSizeSelection & {
   snapToMultiple16: boolean;
@@ -43,6 +47,18 @@ export function ImageSettingsPanel({
   showQuality?: boolean;
   showSnapToMultiple16?: boolean;
 }) {
+  const definition = configuredImageModel(model);
+  const selectedRatio = value.aspectRatio === "custom" ? value.customRatio : value.aspectRatio;
+  const qualityOptions = definition ? IMAGE_WORKBENCH_QUALITY_OPTIONS.filter((option) => option.value === "" || definition.quality_values.includes(option.value)) : IMAGE_WORKBENCH_QUALITY_OPTIONS;
+  useEffect(() => {
+    if (!definition) return;
+    const patch: Partial<ImageSettingsValue> = {};
+    if (value.quality && !definition.quality_values.includes(value.quality)) patch.quality = "";
+    if (value.resolution !== "auto" && !definition.resolutions.includes(value.resolution)) patch.resolution = "auto";
+    if (value.mode === "custom" && !definition.exact_dimensions) patch.mode = "auto";
+    if (value.mode === "ratio" && selectedRatio && !definition.aspect_ratios.includes(selectedRatio)) patch.aspectRatio = "";
+    if (Object.keys(patch).length) onChange(patch);
+  }, [definition, value.quality, value.resolution, value.mode, selectedRatio, onChange]);
   const computedSize = buildImageSize(value, { snapToMultiple16: value.snapToMultiple16 });
   const dimensions = parseImageSizeDimensions(computedSize) || { width: "1024", height: "1024" };
   const displayedWidth = value.mode === "custom" ? value.customWidth : dimensions.width;
@@ -70,10 +86,10 @@ export function ImageSettingsPanel({
 
   return (
     <div className="flex flex-col gap-3.5">
-      {showQuality ? <section className="order-1 space-y-1.5">
+      {showQuality && qualityOptions.length > 1 ? <section className="order-1 space-y-1.5">
         <ImageParameterLabel help="质量档位同时参与目标尺寸换算；厂商不支持的 quality 字段不会透传。">质量</ImageParameterLabel>
         <div className="grid grid-cols-4 gap-1 rounded-lg bg-muted p-1 dark:bg-muted/70" role="group" aria-label="图片质量">
-          {IMAGE_WORKBENCH_QUALITY_OPTIONS.map((option) => (
+          {qualityOptions.map((option) => (
             <button
               key={option.value || "auto"}
               type="button"
@@ -88,7 +104,7 @@ export function ImageSettingsPanel({
         </div>
       </section> : null}
 
-      {showSize ? <section className="order-3 space-y-1.5 border-t border-border pt-2.5 dark:border-border">
+      {showSize && (!definition || definition.exact_dimensions) ? <section className="order-3 space-y-1.5 border-t border-border pt-2.5 dark:border-border">
         <div className="flex items-center justify-between gap-3">
           <ImageParameterLabel help="手动输入图片宽高；输入完成后可自动向上补成 16 的倍数。">自定义尺寸</ImageParameterLabel>
           {showSnapToMultiple16 ? <label className="flex items-center gap-2 text-[11px] text-muted-foreground">
@@ -117,7 +133,22 @@ export function ImageSettingsPanel({
         </div>
       </section> : null}
 
-      {showSize ? <ImageSizePresetControls
+      {showSize && definition ? <section className="order-2 grid grid-cols-2 gap-3">
+        <div className="grid gap-1.5">
+          <ImageParameterLabel>画幅比例</ImageParameterLabel>
+          <Select disabled={disabled} value={value.mode === "auto" ? "auto" : selectedRatio || "auto"} onValueChange={(ratio) => onChange({ mode: "ratio", aspectRatio: ratio === "auto" ? "" : isImageAspectRatio(ratio) ? ratio : "custom", customRatio: ratio === "auto" ? "" : ratio })}>
+            <SelectTrigger className="w-full" aria-label="图片画幅比例"><SelectValue /></SelectTrigger>
+            <SelectContent><SelectItem value="auto">自动</SelectItem>{definition.aspect_ratios.map((ratio) => <SelectItem key={ratio} value={ratio}>{ratio}</SelectItem>)}</SelectContent>
+          </Select>
+        </div>
+        <div className="grid gap-1.5">
+          <ImageParameterLabel>分辨率</ImageParameterLabel>
+          <Select disabled={disabled} value={value.resolution} onValueChange={(resolution) => onChange({ mode: "ratio", resolution: resolution as ImageResolution })}>
+            <SelectTrigger className="w-full" aria-label="图片分辨率"><SelectValue /></SelectTrigger>
+            <SelectContent><SelectItem value="auto">自动</SelectItem>{definition.resolutions.map((resolution) => <SelectItem key={resolution} value={resolution}>{resolution.toUpperCase()}</SelectItem>)}</SelectContent>
+          </Select>
+        </div>
+      </section> : showSize ? <ImageSizePresetControls
         className="order-2"
         value={value}
         previewLabel={sizeLabel}

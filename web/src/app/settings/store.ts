@@ -189,6 +189,7 @@ type SettingsStore = SettingsSessionData & {
   saveConfig: () => Promise<void>;
   setImageTaskTimeoutSeconds: (value: string) => void;
   setImageModels: (value: string) => void;
+  setImageModelDefinitions: (value: NonNullable<SettingsConfig["image_model_definitions"]>) => void;
   setVideoModels: (value: string) => void;
   setTextModels: (value: string) => void;
   setAudioModels: (value: string) => void;
@@ -510,6 +511,10 @@ export function createSettingsStore(
 
   setImageModels: (value) => {
     set((state) => state.config ? { config: { ...state.config, image_models: value, default_image_model: normalizeModelNames(value, [])[0] || "" } } : {});
+  },
+
+  setImageModelDefinitions: (value) => {
+    set((state) => state.config ? { config: { ...state.config, image_model_definitions: value } } : {});
   },
 
   setVideoModels: (value) => {

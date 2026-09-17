@@ -1498,15 +1498,15 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   const [imageQuality, setImageQuality] = useState<"" | ImageQuality>(DEFAULT_CREATION_WORKBENCH_PREFERENCES.image_quality);
   const [imageOutputFormat, setImageOutputFormat] = useState<ImageOutputFormat>(DEFAULT_CREATION_WORKBENCH_PREFERENCES.image_output_format);
   const [imageOutputCompression, setImageOutputCompression] = useState(DEFAULT_CREATION_WORKBENCH_PREFERENCES.image_output_compression);
-  const [imageStreamEnabled, setImageStreamEnabled] = useState(false);
-  const [imagePartialImages, setImagePartialImages] = useState("1");
-  const [imageResponseFormatB64JSON, setImageResponseFormatB64JSON] = useState(false);
-  const [imageCodexCLICompatibility, setImageCodexCLICompatibility] = useState(false);
   const {
     preferences: imageGenerationPreferences,
     isReady: imageGenerationPreferencesReady,
     loadedSessionKey: imageGenerationPreferencesSessionKey,
   } = useImageGenerationPreferences(session.key);
+  const imageStreamEnabled = imageGenerationPreferences.stream;
+  const imagePartialImages = imageGenerationPreferences.partial_images;
+  const imageResponseFormatB64JSON = imageGenerationPreferences.response_format_b64_json;
+  const imageCodexCLICompatibility = imageGenerationPreferences.codex_cli_compatibility;
   const currentSessionKeyRef = useRef(session.key);
   currentSessionKeyRef.current = session.key;
   const imageAPIMode = imageGenerationPreferences.api_mode;
@@ -2354,13 +2354,7 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       return;
     }
     const workbench = imageGenerationPreferences.workbench;
-    persistedWorkbenchSignatureRef.current = JSON.stringify({
-      workbench,
-      stream: imageGenerationPreferences.stream,
-      partial_images: imageGenerationPreferences.partial_images,
-      response_format_b64_json: imageGenerationPreferences.response_format_b64_json,
-      codex_cli_compatibility: imageGenerationPreferences.codex_cli_compatibility,
-    });
+    persistedWorkbenchSignatureRef.current = JSON.stringify(workbench);
     setImageSizeMode(isImageSizeMode(workbench.image_size_mode) ? workbench.image_size_mode : DEFAULT_CREATION_WORKBENCH_PREFERENCES.image_size_mode);
     setImageAspectRatio(isImageAspectRatio(workbench.image_aspect_ratio) ? workbench.image_aspect_ratio : DEFAULT_CREATION_WORKBENCH_PREFERENCES.image_aspect_ratio as ImageAspectRatio);
     setImageResolution(isImageResolution(workbench.image_resolution) ? workbench.image_resolution : DEFAULT_CREATION_WORKBENCH_PREFERENCES.image_resolution as ImageResolution);
@@ -2377,10 +2371,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     setVideoResolution(workbench.video_resolution);
     setVideoGenerateAudio(workbench.video_generate_audio);
     setVideoWatermark(workbench.video_watermark);
-    setImageStreamEnabled(imageGenerationPreferences.stream);
-    setImagePartialImages(String(imageGenerationPreferences.partial_images));
-    setImageResponseFormatB64JSON(imageGenerationPreferences.response_format_b64_json);
-    setImageCodexCLICompatibility(imageGenerationPreferences.codex_cli_compatibility);
     setWorkbenchPreferencesReady(true);
   }, [imageGenerationPreferences, imageGenerationPreferencesReady, imageGenerationPreferencesSessionKey, session.key]);
 
@@ -2414,34 +2404,22 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       video_generate_audio: videoGenerateAudio,
       video_watermark: videoWatermark,
     };
-    const creationOptions = {
-      stream: imageStreamEnabled,
-      partial_images: normalizedImagePartialImages(Number(imagePartialImages)),
-      response_format_b64_json: imageResponseFormatB64JSON,
-      codex_cli_compatibility: imageCodexCLICompatibility,
-    };
-    const signature = JSON.stringify({ workbench, ...creationOptions });
+    const signature = JSON.stringify(workbench);
     currentWorkbenchSignatureRef.current = signature;
     if (signature === persistedWorkbenchSignatureRef.current) return;
     const timer = window.setTimeout(() => {
       if (currentSessionKeyRef.current !== persistenceSessionKey) return;
-      void updateCreationWorkbenchPreferences(workbench, creationOptions)
+      void updateCreationWorkbenchPreferences(workbench)
         .then(({ preferences }) => {
           if (currentSessionKeyRef.current !== persistenceSessionKey) return;
           if (currentWorkbenchSignatureRef.current !== signature) return;
-          persistedWorkbenchSignatureRef.current = JSON.stringify({
-            workbench: preferences.workbench,
-            stream: preferences.stream,
-            partial_images: preferences.partial_images,
-            response_format_b64_json: preferences.response_format_b64_json,
-            codex_cli_compatibility: preferences.codex_cli_compatibility,
-          });
+          persistedWorkbenchSignatureRef.current = JSON.stringify(preferences.workbench);
           dispatchImageGenerationPreferencesChanged(persistenceSessionKey, preferences);
         })
         .catch((error) => toast.error(error instanceof Error ? error.message : "创作参数保存失败"));
     }, 400);
     return () => window.clearTimeout(timer);
-  }, [imageAspectRatio, imageCodexCLICompatibility, imageCount, imageCustomHeight, imageCustomRatio, imageCustomWidth, imageGenerationPreferencesSessionKey, imageModel, imageModelConfigReady, imageOutputCompression, imageOutputFormat, imagePartialImages, imageQuality, imageResolution, imageResponseFormatB64JSON, imageSize, imageSizeMode, imageSnapToMultiple16, imageStreamEnabled, session.key, videoGenerateAudio, videoModel, videoResolution, videoSeconds, videoSize, videoWatermark, workbenchPreferencesReady]);
+  }, [imageAspectRatio, imageCount, imageCustomHeight, imageCustomRatio, imageCustomWidth, imageGenerationPreferencesSessionKey, imageModel, imageModelConfigReady, imageOutputCompression, imageOutputFormat, imageQuality, imageResolution, imageSize, imageSizeMode, imageSnapToMultiple16, session.key, videoGenerateAudio, videoModel, videoResolution, videoSeconds, videoSize, videoWatermark, workbenchPreferencesReady]);
 
   useEffect(() => {
     const selectedConversation = selectedConversationId
@@ -2769,7 +2747,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       if (!referenceImage) {
         throw new Error("参考图上传响应为空");
       }
-      setSelectedConversationId(null);
       setComposerMode("image");
       setImagePrompt(preset.prompt);
       setImageCount(String(preset.count));
@@ -2800,7 +2777,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
   const handleApplyMarketPrompt = useCallback(async (prompt: BananaPrompt) => {
     if (composerMode === "video") {
       promptApplyRequestIdRef.current += 1;
-      setSelectedConversationId(null);
       setImagePrompt(prompt.prompt);
       setIsPromptMarketOpen(false);
       textareaRef.current?.focus();
@@ -2813,7 +2789,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
     promptApplyRequestIdRef.current = requestId;
 
     const applyPrompt = (loadedReferences: StoredReferenceImage[], nextModel?: string) => {
-      setSelectedConversationId(null);
       setComposerMode("image");
       if (nextModel) {
         setImageModel(nextModel);
@@ -2829,8 +2804,6 @@ function ImagePageContent({ session }: { session: StoredAuthSession }) {
       setImageQuality("");
       setImageOutputFormat(DEFAULT_IMAGE_OUTPUT_FORMAT);
       setImageOutputCompression("");
-      setImageStreamEnabled(true);
-      setImagePartialImages("0");
       setDefaultImageVisibility("private");
       replaceReferenceImages(loadedReferences);
       setIsPromptMarketOpen(false);

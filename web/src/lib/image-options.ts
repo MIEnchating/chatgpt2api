@@ -1,3 +1,5 @@
+import { configuredImageModel } from "./image-model-definitions";
+
 export const CUSTOM_IMAGE_ASPECT_RATIO = "custom";
 export const DEFAULT_IMAGE_CUSTOM_RATIO = "16:9";
 
@@ -158,17 +160,20 @@ export const IMAGE_WORKBENCH_QUALITY_OPTIONS = [
 ] as const;
 
 export function imageWorkbenchAcceptsReferenceImages(model: string) {
-  void model;
+  const definition = configuredImageModel(model);
+  if (definition) return definition.max_reference_images > 0;
   return true;
 }
 
 export function imageWorkbenchReferenceImageLimit(model: string) {
-  void model;
+  const definition = configuredImageModel(model);
+  if (definition) return definition.max_reference_images;
   return Number.POSITIVE_INFINITY;
 }
 
 export function imageWorkbenchSupportsSize(model: string) {
-  void model;
+  const definition = configuredImageModel(model);
+  if (definition) return definition.exact_dimensions || definition.aspect_ratios.length > 0 || definition.resolutions.length > 0;
   return true;
 }
 

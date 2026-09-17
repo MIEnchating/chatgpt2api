@@ -26,6 +26,7 @@ function loadSource(path, dependencies = {}, globals = {}) {
 }
 
 const contracts = loadSource("../src/lib/video-model-contracts.ts", {}, { structuredClone });
+const imageDefinitions = loadSource("../src/lib/image-model-definitions.ts");
 const api = loadSource("../src/lib/api.ts", {
   "@/lib/request": {
     httpRequest: async (path) => {
@@ -42,17 +43,22 @@ const api = loadSource("../src/lib/api.ts", {
     },
   },
   "@/lib/video-model-contracts": contracts,
+  "@/lib/image-model-definitions": imageDefinitions,
 }, { window });
 
 test("a previous account model response cannot replace the current contract registry", async () => {
   const oldRequest = api.fetchModelConfig();
   window.dispatchEvent(new Event(AUTH_SESSION_CHANGE_EVENT));
   const currentRequest = api.fetchModelConfig();
-  modelRequests[1]({ config: { video_model_contracts: [{ name: "current", models: ["current-video"], priority: 0 }] } });
+  modelRequests[1]({ config: { image_model_definitions: { current: { protocol: "xai-image" } }, video_model_contracts: [{ name: "current", models: ["current-video"], priority: 0 }] } });
   await currentRequest;
-  modelRequests[0]({ config: { video_model_contracts: [{ name: "old", models: ["old-video"], priority: 0 }] } });
+  modelRequests[0]({ config: { image_model_definitions: { old: { protocol: "google-gemini-image" } }, video_model_contracts: [{ name: "old", models: ["old-video"], priority: 0 }] } });
   await oldRequest;
   assert.deepEqual(Array.from(contracts.activeVideoModelContracts(), (contract) => contract.name), ["current"]);
+  assert.equal(imageDefinitions.configuredImageModel("current").protocol, "xai-image");
+  assert.equal(imageDefinitions.configuredImageModel("old"), undefined);
+  window.dispatchEvent(new Event(AUTH_SESSION_CHANGE_EVENT));
+  assert.equal(imageDefinitions.configuredImageModel("current"), undefined);
 });
 
 test("auth session changes invalidate account-scoped API caches", async () => {

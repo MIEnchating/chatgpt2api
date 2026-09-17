@@ -21,6 +21,10 @@ const [imagePageSource, profilePageSource] = await Promise.all([
   readFile(new URL("../src/app/image/page.tsx", import.meta.url), "utf8"),
   readFile(new URL("../src/app/profile/page.tsx", import.meta.url), "utf8"),
 ]);
+const apiSource = await readFile(
+  new URL("../src/lib/api.ts", import.meta.url),
+  "utf8",
+);
 
 describe("preference lifecycle", () => {
   test("a failed preference read is not reported as authoritative", async () => {
@@ -132,6 +136,14 @@ describe("preference lifecycle", () => {
 
   test("workbench autosave verifies its session before and after the request", () => {
     expect(imagePageSource.match(/currentSessionKeyRef\.current !== persistenceSessionKey/g)).toHaveLength(2);
+  });
+
+  test("workbench actions cannot overwrite profile-level creation preferences", () => {
+    expect(imagePageSource).not.toContain("setImageStreamEnabled");
+    expect(imagePageSource).not.toContain("setImagePartialImages");
+    expect(apiSource).toMatch(
+      /updateCreationWorkbenchPreferences\([\s\S]*?body: \{ workbench \}/,
+    );
   });
 
   test("profile saves reject responses from a previous session", () => {

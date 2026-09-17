@@ -13,6 +13,8 @@ import (
 )
 
 func (a *App) relayImageCreationTask(ctx context.Context, payload map[string]any, images []protocol.UploadedImage, edit bool) (map[string]any, error) {
+	a.attachImageModelDefinition(payload)
+	payload["api_mode"] = normalizeImageTaskAPIMode(util.Clean(payload["api_mode"]), util.Clean(payload["model"]), payload)
 	switch util.Clean(payload["api_mode"]) {
 	case "responses":
 		request := imageResponsesRequest(payload, images, edit)

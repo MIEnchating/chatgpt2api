@@ -41,6 +41,24 @@ curl -c ./cloud-cotton.cookies http://127.0.0.1:8090/auth/login \
 
 默认模型列表为 `gpt-image-2`、`gemini-3.1-flash-image` 和 `grok-imagine-image`。Google 链路识别模型 ID：`gemini-3.1-flash-lite-image`、`gemini-3.1-flash-image`、`gemini-3.1-flash-image-preview`、`gemini-3-pro-image`、`gemini-2.5-flash-image`。其中 `gemini-3.1-flash-image-preview` 使用与正式型号相同的图片参数和参考图能力，保留原始模型名称，不自动改名或重试其他型号。旧 Nano Banana 别名不作为 Google 链路的模型 ID。图片生成可用模型通过 `IMAGE_MODELS` 或设置页统一配置，供创作台、无限画布和工作流内部任务共用；模型必须已在 NewAPI / Sub2API 中存在可用渠道。
 
+Gemini 聊天响应中的图片支持内嵌 Base64 数据，以及 `message.content` 内的 Markdown 图片链接（如 `![image](https://cdn.example.test/image.png)`）。远程图片由服务端下载、校验实际图片内容并保存到图库；链接下载失败会保留具体错误，普通文字链接不作为图片结果。
+
+### 自定义模型协议与能力
+
+在“设置 → 全局模型配置”中添加图片模型后，点击该模型的设置按钮，选择调用协议并配置能力，最后点击“保存模型配置”。单个图片模型添加后会直接打开协议设置。模型名称原样传给上游，不会自动改名或自动切换协议。
+
+| 协议 | 文生图 | 图生图 |
+| --- | --- | --- |
+| Gemini Chat Completions | `/v1/chat/completions`，`extra_body.google.image_config` | 同一接口，参考图写入消息内容 |
+| Grok Images | `/v1/images/generations`，`aspect_ratio`、`resolution` | `/v1/images/edits`，JSON `images` |
+| OpenAI Images | `/v1/images/generations` | `/v1/images/edits`，multipart 图片和遮罩 |
+
+配置保存在 `image_model_definitions`（环境变量 `IMAGE_MODEL_DEFINITIONS` 的 JSON 对象）中。每个键为模型名称，值包含 `protocol`、`aspect_ratios`、`resolutions`、`quality_values`、`max_reference_images`、`max_output_count`、`streaming`、`mask`、`output_controls`、`exact_dimensions`。参考图数量为 0 表示不支持参考图，分辨率/质量列表为空表示不指定这些参数。Grok 的质量档位按配置直接发送 `quality`，不根据模型名称转换成分辨率。
+
+自定义配置优先于内置模型识别，固定选择相应协议，不受个人 Chat/Responses 模式覆盖。`GET /api/model-config` 下发同一份配置，创作台、画布和工作流共享能力判断；提交和执行任务时后端校验当前服务器配置，客户端不能覆盖协议。无自定义配置的模型沿用内置规则。恢复内置配置后须保存；协议或能力变更对之后提交/执行的任务生效。
+
+新增同协议模型或渠道别名只需配置，不需要修改代码。上游仍须支持该模型及声明的参数；给普通文本模型选择图片协议不会使其获得生图能力。
+
 图片创作台的行为以参考项目 `web/src/services/api/image.ts` 和 `web/src/app/(user)/image/page.tsx` 为合同来源，不再由本项目自行根据厂商名称隐藏工作台参数。不同上游的差异只在请求适配层处理：
 
 | 分支 | 上游请求 | 参考项目合同 |
