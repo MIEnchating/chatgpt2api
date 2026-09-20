@@ -176,7 +176,7 @@ describe("canvas agent v2 tool contract", () => {
 
   test("normalizes empty Agent parameters to visible generation defaults", () => {
     assert.deepEqual(defaultCanvasAgentStarterConfig(), {
-      autoGenerateMedia: false, textApiMode: "chat", textReasoningEnabled: false, activeSkillIds: [],
+      autoGenerateMedia: false, textApiMode: "chat", textReasoningEnabled: false, textStreaming: false, activeSkillIds: [],
       imageQuality: "",
       imageSize: "1:1",
       videoQuality: "",
@@ -186,7 +186,10 @@ describe("canvas agent v2 tool contract", () => {
       { imageQuality: "", imageSize: "auto", videoQuality: "", videoSize: "" },
       { imageQuality: "", imageSize: "1:1", videoQuality: "720p", videoSize: "16:9" },
       { imageQuality: ["", "low", "medium", "high"], imageSize: ["1:1", "16:9", "9:16"], videoQuality: ["720p", "1080p"], videoSize: ["16:9", "9:16"] },
-    ), { autoGenerateMedia: false, textApiMode: "chat", textReasoningEnabled: false, activeSkillIds: [], imageQuality: "", imageSize: "1:1", videoQuality: "720p", videoSize: "16:9" });
+    ), { autoGenerateMedia: false, textApiMode: "chat", textReasoningEnabled: false, textStreaming: false, activeSkillIds: [], imageQuality: "", imageSize: "1:1", videoQuality: "720p", videoSize: "16:9" });
+    for (const textStreaming of [undefined, false, true, "true"]) {
+      assert.equal(normalizeCanvasAgentConfig({ textStreaming }, defaultCanvasAgentStarterConfig(), { imageQuality: [""], imageSize: ["1:1"], videoQuality: [""], videoSize: ["16:9"] }).textStreaming, textStreaming === true);
+    }
     assert.equal(preferredCanvasAgentVideoSize(["1:1", "16:9", "9:16"], "1:1"), "16:9");
     assert.equal(preferredCanvasAgentVideoSize(["1024x1024", "1280x720", "720x1280"], "1024x1024"), "1280x720");
   });
@@ -615,12 +618,20 @@ describe("canvas agent reliability and memory", () => {
     assert.equal(JSON.parse(messages[0].content).code, "action_not_requested");
   });
 
-  test("passes the explicit protocol and reasoning choice to every planning request", async () => {
-    const offset = submittedInputs.length;
-    agentReplies.push("你好");
-    await run({ userText: "你好", apiMode: "responses", reasoningEnabled: true });
-    assert.equal(submittedInputs[offset].apiMode, "responses");
-    assert.equal(submittedInputs[offset].reasoningEnabled, true);
+  test("passes streaming and protocol choices through every planning and tool turn", async () => {
+    for (const apiMode of ["chat", "responses"]) {
+      for (const stream of [undefined, false, true]) {
+        const offset = submittedInputs.length;
+        agentReplies.push(toolReply([{ name: "get_canvas_summary" }]), "你好");
+        await run({ userText: "你好", apiMode, reasoningEnabled: true, stream });
+        assert.equal(submittedInputs.length - offset, 2);
+        for (const input of submittedInputs.slice(offset)) {
+          assert.equal(input.apiMode, apiMode);
+          assert.equal(input.reasoningEnabled, true);
+          assert.equal(input.stream, stream === true);
+        }
+      }
+    }
   });
 
   test("selected Skills replace default workflow instructions and include attachment names", () => {
@@ -656,8 +667,9 @@ test("compacts long history before requesting a planning turn and persists the c
     return { id: `agent-task-${++taskCounter}` };
   };
   try {
-    const result = await run({ protocolMessages: history, userText: "继续说明", onCheckpoint: (value) => checkpoints.push(value) });
+    const result = await run({ stream: true, protocolMessages: history, userText: "继续说明", onCheckpoint: (value) => checkpoints.push(value) });
     assert.equal(result.contextCheckpoint, "用户已确认红色产品");
+    assert.ok(submittedInputs.slice(offset).every((input) => input.stream === true));
     const planning = submittedInputs.slice(offset).find((input) => input.prompt === "继续说明");
     assert.match(planning.messages[0].content, /用户已确认红色产品/);
     assert.equal(result.protocolMessages.length, 2);

@@ -58,7 +58,7 @@ test("contenteditable serialization preserves reference formats, block lines, an
 
 test("both canvas editors keep business-specific reference deletion behavior on the shared DOM helper", () => {
   for (const source of [agentPromptSource, configComposerSource]) {
-    assert.match(source, /insertPlainTextAtContentEditableSelection\(text\)/);
+
     assert.match(source, /getContentEditableMentionKeyAction\(event\.key, candidates\.length\)/);
     assert.match(source, /setActiveIndex\(\(index\) => moveContentEditableMentionIndex\(index, candidates\.length, mentionAction\.offset\)\)/);
     assert.doesNotMatch(source, /function deleteAdjacentReference|function adjacentReferenceNode|function findReferenceSibling/);

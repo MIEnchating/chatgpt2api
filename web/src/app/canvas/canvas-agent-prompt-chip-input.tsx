@@ -7,7 +7,6 @@ import {
   contentEditableTextBeforeCaret,
   deleteAdjacentContentEditableReference,
   getContentEditableMentionKeyAction,
-  insertPlainTextAtContentEditableSelection,
   moveContentEditableMentionIndex,
   placeContentEditableCaretAtEnd,
   removeActiveContentEditableMention,
@@ -39,7 +38,7 @@ type MentionState = {
 
 type PromptToken =
   | { type: "text"; value: string }
-  | { type: "reference"; label: string };
+  | { type: "reference"; label: string; value: string };
 
 export function CanvasAgentPromptChipInput({ value, references, onChange, onReferenceIDsChange, onSubmit, onPasteImage, pendingReferences, readOnly, className, style, placeholder, placeholderClassName }: CanvasAgentPromptChipInputProps) {
   const editorRef = useRef<HTMLDivElement>(null);
@@ -64,15 +63,7 @@ export function CanvasAgentPromptChipInput({ value, references, onChange, onRefe
     if (!editor) return;
     if (document.activeElement === editor && value === lastEmittedRef.current) return;
     editor.textContent = "";
-    tokens.forEach((token) => {
-      if (token.type === "text") {
-        editor.append(document.createTextNode(token.value));
-        return;
-      }
-      const reference = referenceByLabel.get(token.label);
-      if (reference) editor.append(createReferenceChip(reference, setImagePreview));
-      else editor.append(document.createTextNode(token.label));
-    });
+    editor.append(createPromptFragment(tokens, referenceByLabel, setImagePreview));
     lastEmittedRef.current = value;
   }, [referenceByLabel, tokens, value]);
 
@@ -182,7 +173,7 @@ export function CanvasAgentPromptChipInput({ value, references, onChange, onRefe
           const text = event.clipboardData.getData("text/plain");
           if (!text) return;
           event.preventDefault();
-          if (insertPlainTextAtContentEditableSelection(text)) syncFromEditor();
+          if (insertPromptText(editorRef.current, text, activeLabels, referenceByLabel, setImagePreview)) syncFromEditor();
         }}
         onCompositionStart={() => {
           composingRef.current = true;
@@ -284,10 +275,10 @@ function ReferencePreview({ reference }: { reference: CanvasResourceReference })
   return <span className="grid size-9 shrink-0 place-items-center rounded-md bg-muted"><Icon className="size-4" /></span>;
 }
 
-function createReferenceChip(reference: CanvasResourceReference, onImagePreview: (url: string) => void) {
+function createReferenceChip(reference: CanvasResourceReference, onImagePreview: (url: string) => void, serializedLabel = reference.label) {
   const wrapper = document.createElement("span");
   wrapper.contentEditable = "false";
-  wrapper.dataset.refLabel = reference.label;
+  wrapper.dataset.refLabel = serializedLabel;
   wrapper.dataset.refNodeId = reference.nodeID;
   if (reference.kind === "image" && reference.previewURL) {
     const image = document.createElement("img");
@@ -361,15 +352,40 @@ function closestPromptEditor(node: Node) {
   return element?.closest("[contenteditable='true']") || null;
 }
 
+function createPromptFragment(tokens: PromptToken[], references: Map<string, CanvasResourceReference>, onImagePreview: (url: string) => void) {
+  const fragment = document.createDocumentFragment();
+  for (const token of tokens) {
+    const reference = token.type === "reference" ? references.get(token.label) : undefined;
+    fragment.append(reference ? createReferenceChip(reference, onImagePreview, token.value) : document.createTextNode(token.value));
+  }
+  return fragment;
+}
+
+function insertPromptText(editor: HTMLElement | null, text: string, labels: string[], references: Map<string, CanvasResourceReference>, onImagePreview: (url: string) => void) {
+  const selection = window.getSelection();
+  const range = selection?.rangeCount ? selection.getRangeAt(0) : null;
+  if (!editor || !range || !editor.contains(range.commonAncestorContainer)) return false;
+  const fragment = createPromptFragment(parsePromptTokens(text, labels), references, onImagePreview);
+  const lastNode = fragment.lastChild;
+  if (!lastNode) return false;
+  range.deleteContents();
+  range.insertNode(fragment);
+  range.setStartAfter(lastNode);
+  range.collapse(true);
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+  return true;
+}
+
 function parsePromptTokens(value: string, labels: string[]): PromptToken[] {
   if (!labels.length) return value ? [{ type: "text", value }] : [];
-  const pattern = new RegExp(`(${labels.map(escapeRegExp).join("|")})`, "g");
+  const pattern = new RegExp(`@?(${[...labels].sort((left, right) => right.length - left.length).map(escapeRegExp).join("|")})(?![a-zA-Z0-9_])`, "g");
   const tokens: PromptToken[] = [];
   let lastIndex = 0;
   for (const match of value.matchAll(pattern)) {
     if (match.index === undefined) continue;
     if (match.index > lastIndex) tokens.push({ type: "text", value: value.slice(lastIndex, match.index) });
-    tokens.push({ type: "reference", label: match[0] });
+    tokens.push({ type: "reference", label: match[1], value: match[0] });
     lastIndex = match.index + match[0].length;
   }
   if (lastIndex < value.length) tokens.push({ type: "text", value: value.slice(lastIndex) });

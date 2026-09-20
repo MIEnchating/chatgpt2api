@@ -521,7 +521,7 @@ func TestAdminVideoModelContractImportStreamsUnsavedDraftProgress(t *testing.T) 
 		}
 		w.Header().Set("Content-Type", "text/event-stream")
 		encoded, _ := json.Marshal(map[string]any{
-			"choices": []map[string]any{{"delta": map[string]any{"content": responseContent}}},
+			"choices": []map[string]any{{"delta": map[string]any{"content": responseContent}, "finish_reason": "stop"}},
 		})
 		_, _ = fmt.Fprintf(w, "data: %s\n\ndata: [DONE]\n\n", encoded)
 	}))

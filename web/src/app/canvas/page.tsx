@@ -1934,7 +1934,10 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
         videoGenerateAudio = typeof args.generateAudio === "boolean" ? args.generateAudio : generation.videoGenerateAudio;
         if (videoGenerateAudio && !canvasAgentVideoSupportsAudio(generationModel)) return { ok: false, code: "video_audio_not_supported", message: "当前全局视频模型不支持视频原生声音" };
       }
-      const size = CANVAS_NODE_DEFAULT_SIZE[type];
+      const videoSize = type === "video" ? stringValue("size") || resolvedAgentConfig.videoSize || canvasVideoParameters({ generation_video_model: generationModel } as CanvasNode).generation_video_size : "";
+      const size = type === "video"
+        ? canvasNodeSizeFromRatio(videoSize, CANVAS_NODE_DEFAULT_SIZE.video.width, CANVAS_NODE_DEFAULT_SIZE.video.height) || CANVAS_NODE_DEFAULT_SIZE.video
+        : CANVAS_NODE_DEFAULT_SIZE[type];
       const layoutSourceNodes = canvasAgentMediaLayoutSources(type, nodesRef.current, sourceNodes);
       const point = sourcePosition(layoutSourceNodes, size);
       const prompt = stringValue("prompt");
@@ -1943,7 +1946,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
       if (type === "image") {
         node = { id: `image-${randomID()}`, type, ...point, ...size, scale_x: 1, scale_y: 1, title: titleValue, prompt, exclude_upstream_text: true, ...preferredCanvasImageParameters(), generation_model: generationModel, ...(resolvedAgentConfig.imageQuality ? { generation_quality: resolvedAgentConfig.imageQuality as CanvasNode["generation_quality"] } : {}), ...(stringValue("size") || resolvedAgentConfig.imageSize ? { generation_size: stringValue("size") || resolvedAgentConfig.imageSize } : {}), generation_count: typeof args.count === "number" ? Math.max(1, Math.min(15, Math.floor(args.count))) : imageGenerationPreferences.canvas_default_image_count, created_at: createdAt() };
       } else if (type === "video") {
-        node = { ...buildVideoNode({ title: titleValue, prompt }, point), exclude_upstream_text: true, generation_video_model: generationModel, ...(stringValue("size") || resolvedAgentConfig.videoSize ? { generation_video_size: stringValue("size") || resolvedAgentConfig.videoSize } : {}), ...(resolvedAgentConfig.videoQuality ? { generation_video_resolution: resolvedAgentConfig.videoQuality } : {}), generation_video_seconds: videoSeconds, generation_video_audio: videoGenerateAudio };
+        node = { ...buildVideoNode({ title: titleValue, prompt }, point), ...size, exclude_upstream_text: true, generation_video_model: generationModel, generation_video_size: videoSize, ...(resolvedAgentConfig.videoQuality ? { generation_video_resolution: resolvedAgentConfig.videoQuality } : {}), generation_video_seconds: videoSeconds, generation_video_audio: videoGenerateAudio };
       } else {
         const cloneNodeID = sourceNodes.find((source) => source.type === "audio" && source.url)?.id || "";
         node = { id: `audio-${randomID()}`, type, ...point, ...size, scale_x: 1, scale_y: 1, title: titleValue, prompt, exclude_upstream_text: true, generation_audio_model: generationModel, ...canvasAgentAudioNodeParameters(generationModel, stringValue("voice") || imageGenerationPreferences.default_audio_voice, stringValue("instructions") || imageGenerationPreferences.audio_instructions, cloneNodeID, { format: imageGenerationPreferences.default_audio_format, speed: imageGenerationPreferences.default_audio_speed }), created_at: createdAt() };
@@ -2035,20 +2038,21 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
   }
 
   function buildVideoNode(video: { url?: string; title?: string; prompt?: string; taskID?: string }, point: { x: number; y: number }, parent?: CanvasNode | null): CanvasNode {
+    const parameters = canvasVideoParameters(parent || ({ generation_video_model: videoModel } as CanvasNode));
+    const size = canvasNodeSizeFromRatio(parameters.generation_video_size, CANVAS_NODE_DEFAULT_SIZE.video.width, CANVAS_NODE_DEFAULT_SIZE.video.height) || CANVAS_NODE_DEFAULT_SIZE.video;
     return {
       id: `video-${randomID()}`,
       type: "video",
       x: point.x,
       y: point.y,
-      width: 420,
-      height: 236,
+      ...size,
       scale_x: 1,
       scale_y: 1,
       url: video.url || "",
       title: video.title || "视频",
       prompt: video.prompt || "",
       task_id: video.taskID || "",
-      ...canvasVideoParameters(parent || ({ generation_video_model: videoModel } as CanvasNode)),
+      ...parameters,
       created_at: createdAt(),
     };
   }
@@ -2396,7 +2400,9 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
   }
 
   function createCanvasNode(type: CanvasCreatableNodeType, center?: { x: number; y: number }) {
-    const size = CANVAS_NODE_DEFAULT_SIZE[type];
+    const size = type === "video"
+      ? canvasNodeSizeFromRatio(canvasVideoParameters({ generation_video_model: videoModel } as CanvasNode).generation_video_size, CANVAS_NODE_DEFAULT_SIZE.video.width, CANVAS_NODE_DEFAULT_SIZE.video.height) || CANVAS_NODE_DEFAULT_SIZE.video
+      : CANVAS_NODE_DEFAULT_SIZE[type];
     const point = center ? { x: center.x - size.width / 2, y: center.y - size.height / 2 } : placement();
     if (type === "text") addTextNodeAt(point);
     else if (type === "image") addBlankNodeAt(point);
@@ -2409,7 +2415,9 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
 
   function createPendingNode(type: "text" | "image" | "video" | "audio" | "panorama" | "director" | "config") {
     if (!pendingConnection) return;
-    const size = CANVAS_NODE_DEFAULT_SIZE[type];
+    const size = type === "video"
+      ? canvasNodeSizeFromRatio(canvasVideoParameters({ generation_video_model: videoModel } as CanvasNode).generation_video_size, CANVAS_NODE_DEFAULT_SIZE.video.width, CANVAS_NODE_DEFAULT_SIZE.video.height) || CANVAS_NODE_DEFAULT_SIZE.video
+      : CANVAS_NODE_DEFAULT_SIZE[type];
     const node: CanvasNode = { id: `${type}-${randomID()}`, type, x: pendingConnection.position.x - size.width / 2, y: pendingConnection.position.y - size.height / 2, ...size, ...(type === "text" ? { font_size: 14 } : {}), scale_x: 1, scale_y: 1, title: canvasNodeFallbackTitle(type), prompt: "", ...(type === "image" || type === "panorama" || type === "config" ? preferredCanvasImageParameters() : type === "video" ? canvasVideoParameters({ generation_video_model: videoModel } as CanvasNode) : type === "audio" ? preferredCanvasAudioParameters() : {}), ...(type === "config" ? { generation_mode: "image" as const, generation_model: imageModel } : {}), ...(type === "panorama" ? { generation_size: "2:1" } : {}), created_at: createdAt() };
     const connection = resolveCanvasConnection(pendingConnection, node.id, [...nodesRef.current, node]);
     if (!connection || !canConnect(connection.sourceID, connection.targetID)) {
@@ -4975,7 +4983,7 @@ export default function CanvasPage({ session, projectID }: { session: StoredAuth
 
       {miniMapOpen && showWorkspaceControls && nodes.length && canvasSize.width > 0 ? <CanvasMiniMap onClose={() => setMiniMapOpen(false)} nodes={nodes} viewport={viewport} viewportSize={canvasSize} controlsWidth={controlsWidth} onViewportChange={(next) => updateViewport(next, true)} /> : null}
 
-      {contextMenu ? <CanvasRightClickMenu mediaNode={contextMenu.type === "node" ? nodes.find((node) => node.id === contextMenu.nodeID) : undefined} mediaBusy={contextMenu.type === "node" && mediaBusyNodeIDs.has(contextMenu.nodeID)} onMediaOperation={(operation) => { if (contextMenu.type === "node") handleCanvasMediaOperation(contextMenu.nodeID, operation); }} menu={contextMenu} onClose={() => setContextMenu(null)} onDuplicate={() => { if (contextMenu.type === "node") duplicateNode(contextMenu.nodeID); setContextMenu(null); }} onDelete={() => { if (contextMenu.type === "node") removeNodes(new Set([contextMenu.nodeID])); else if (contextMenu.type === "connection") { replaceConnections(connectionsRef.current.filter((connection) => connection.id !== contextMenu.connectionID)); setSelectedConnectionID(""); pushHistory(); } setContextMenu(null); }} onAddText={() => { if (contextMenu.type === "canvas") addTextNodeAt({ x: contextMenu.position.x - 170, y: contextMenu.position.y - 120 }); setContextMenu(null); }} onAddImage={() => { if (contextMenu.type === "canvas") addBlankNodeAt({ x: contextMenu.position.x - 170, y: contextMenu.position.y - 120 }); setContextMenu(null); }} onAddVideo={() => { if (contextMenu.type === "canvas") { const point = { x: contextMenu.position.x - 210, y: contextMenu.position.y - 118 }; const node = buildVideoNode({}, point); addNode(node); setPanelNodeID(node.id); } setContextMenu(null); }} onAddConfig={() => { if (contextMenu.type === "canvas") addConfigNodeAt({ x: contextMenu.position.x - 170, y: contextMenu.position.y - 120 }); setContextMenu(null); }} onPaste={() => { void pasteSelected(); setContextMenu(null); }} onExportImage={() => { void exportImage(); setContextMenu(null); }} onExportJSON={() => { void exportProjectArchive(); setContextMenu(null); }} onImport={() => { importRef.current?.click(); setContextMenu(null); }} onClear={() => { setClearConfirmationOpen(true); setContextMenu(null); }} /> : null}
+      {contextMenu ? <CanvasRightClickMenu mediaNode={contextMenu.type === "node" ? nodes.find((node) => node.id === contextMenu.nodeID) : undefined} mediaBusy={contextMenu.type === "node" && mediaBusyNodeIDs.has(contextMenu.nodeID)} onMediaOperation={(operation) => { if (contextMenu.type === "node") handleCanvasMediaOperation(contextMenu.nodeID, operation); }} menu={contextMenu} onClose={() => setContextMenu(null)} onDuplicate={() => { if (contextMenu.type === "node") duplicateNode(contextMenu.nodeID); setContextMenu(null); }} onDelete={() => { if (contextMenu.type === "node") removeNodes(new Set([contextMenu.nodeID])); else if (contextMenu.type === "connection") { replaceConnections(connectionsRef.current.filter((connection) => connection.id !== contextMenu.connectionID)); setSelectedConnectionID(""); pushHistory(); } setContextMenu(null); }} onAddText={() => { if (contextMenu.type === "canvas") addTextNodeAt({ x: contextMenu.position.x - 170, y: contextMenu.position.y - 120 }); setContextMenu(null); }} onAddImage={() => { if (contextMenu.type === "canvas") addBlankNodeAt({ x: contextMenu.position.x - 170, y: contextMenu.position.y - 120 }); setContextMenu(null); }} onAddVideo={() => { if (contextMenu.type === "canvas") createCanvasNode("video", contextMenu.position); setContextMenu(null); }} onAddConfig={() => { if (contextMenu.type === "canvas") addConfigNodeAt({ x: contextMenu.position.x - 170, y: contextMenu.position.y - 120 }); setContextMenu(null); }} onPaste={() => { void pasteSelected(); setContextMenu(null); }} onExportImage={() => { void exportImage(); setContextMenu(null); }} onExportJSON={() => { void exportProjectArchive(); setContextMenu(null); }} onImport={() => { importRef.current?.click(); setContextMenu(null); }} onClear={() => { setClearConfirmationOpen(true); setContextMenu(null); }} /> : null}
       <RelayTokenRequiredDialog
         kind={relayTokenDialogKind || "image"}
         open={relayTokenDialogKind !== null}

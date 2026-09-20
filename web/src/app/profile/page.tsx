@@ -641,6 +641,8 @@ function ImageGenerationPreferencesCard({ sessionKey }: { sessionKey: string }) 
       });
       if (availableModels.length === 0) {
         toast.info(`该 Key 返回的模型中没有管理员开放的${{ text: "文本", image: "图片", video: "视频", audio: "音频" }[kind]}模型`);
+      } else if (responses.some((response) => response.source === "ark_agent_plan_candidates")) {
+        toast.info(`已载入 ${availableModels.length} 个候选模型，实际可用性以当前套餐为准，未验证 Key 权限。`);
       } else {
         toast.success(`已拉取 ${availableModels.length} 个可用模型`);
       }

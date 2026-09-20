@@ -12,6 +12,7 @@ function isAudioModelName(model: string) {
 
 function isVideoModelName(model: string) {
   const value = normalizedModelName(model);
+  if (/(^|\/)minimax-m3(?:$|[-.])/.test(value)) return false;
   return [
     "video", "sora", "veo", "kling", "hailuo", "minimax", "seedance", "wan2", "wan/2",
     "t2v-", "i2v-", "s2v-", "r2v", "videoedit", "jimeng", "即梦", "vidu", "pixverse",

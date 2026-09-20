@@ -9,7 +9,7 @@ import (
 )
 
 func TestChatTaskOptionsRejectInvalidValues(t *testing.T) {
-	for _, metadata := range []map[string]any{{"api_mode": "auto"}, {"api_mode": true}, {"reasoning_enabled": "false"}, {"max_output_tokens": true}, {"max_output_tokens": 1.5}, {"max_output_tokens": json.Number("3.1")}, {"max_output_tokens": "4096"}, {"max_output_tokens": 0}, {"max_output_tokens": 128001}} {
+	for _, metadata := range []map[string]any{{"api_mode": "auto"}, {"api_mode": true}, {"reasoning_enabled": "false"}, {"stream": "true"}, {"stream": 1}, {"stream": nil}, {"max_output_tokens": true}, {"max_output_tokens": 1.5}, {"max_output_tokens": json.Number("3.1")}, {"max_output_tokens": "4096"}, {"max_output_tokens": 0}, {"max_output_tokens": 128001}} {
 		if err := ValidateChatTaskOptions(metadata); err == nil {
 			t.Fatalf("accepted %#v", metadata)
 		}
@@ -24,13 +24,13 @@ func TestChatTaskOptionsSurviveTaskQueue(t *testing.T) {
 	}
 	svc := newTestImageTaskService(t, handler, handler, handler, func() int { return 30 })
 	identity := Identity{ID: "owner", Name: "Owner", Role: "user"}
-	_, err := svc.SubmitChatWithMetadata(context.Background(), identity, "chat-options", "hello", "model", []map[string]any{{"role": "user", "content": "hello"}}, map[string]any{"api_mode": "responses", "reasoning_enabled": true, "max_output_tokens": json.Number("4096")})
+	_, err := svc.SubmitChatWithMetadata(context.Background(), identity, "chat-options", "hello", "model", []map[string]any{{"role": "user", "content": "hello"}}, map[string]any{"api_mode": "responses", "stream": true, "reasoning_enabled": true, "max_output_tokens": json.Number("4096")})
 	if err != nil {
 		t.Fatal(err)
 	}
 	waitForTaskStatus(t, svc, identity, "chat-options", TaskStatusSuccess)
 	got := <-seen
-	if got["api_mode"] != "responses" || got["reasoning_enabled"] != true || util.ToInt(got["max_output_tokens"], 0) != 4096 {
+	if got["stream"] != true || got["api_mode"] != "responses" || got["reasoning_enabled"] != true || util.ToInt(got["max_output_tokens"], 0) != 4096 {
 		t.Fatalf("queue dropped options: %#v", got)
 	}
 	items := util.AsMapSlice(svc.ListTasks(identity, []string{"chat-options"})["items"])

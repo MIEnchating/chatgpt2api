@@ -1941,7 +1941,7 @@ func creationTaskRequestMetadata(body map[string]any) map[string]any {
 
 func chatTaskRequestMetadata(body map[string]any) map[string]any {
 	metadata := creationTaskRequestMetadata(body)
-	for _, key := range []string{"api_mode", "reasoning_enabled", "max_output_tokens"} {
+	for _, key := range []string{"api_mode", "reasoning_enabled", "max_output_tokens", "stream"} {
 		if value, ok := body[key]; ok {
 			metadata[key] = value
 		}

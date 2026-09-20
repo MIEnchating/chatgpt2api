@@ -1097,6 +1097,7 @@ export type CreateChatGenerationTaskInput = {
   model?: string;
   apiMode?: "chat" | "responses";
   reasoningEnabled?: boolean;
+  stream?: boolean;
   maxOutputTokens?: number;
   messages?: CreationTaskMessage[];
   tools?: CreationTaskToolDefinition[];
@@ -1122,6 +1123,7 @@ export async function createChatGenerationTask(
       ...(input.tools?.length ? { tools: input.tools } : {}),
       ...(input.toolChoice !== undefined ? { tool_choice: input.toolChoice } : {}),
       ...(input.apiMode !== undefined ? { api_mode: input.apiMode } : {}),
+      ...(input.stream !== undefined ? { stream: input.stream } : {}),
       ...(input.reasoningEnabled !== undefined ? { reasoning_enabled: input.reasoningEnabled } : {}),
       ...(input.maxOutputTokens !== undefined ? { max_output_tokens: input.maxOutputTokens } : {}),
       ...(input.model ? { model: input.model } : {}),
@@ -1987,7 +1989,7 @@ export async function fetchRelayModels(
   if (options.group?.trim()) params.set("group", options.group.trim());
   if (options.tokenName?.trim())
     params.set("token_name", options.tokenName.trim());
-  return httpRequest<{ object?: string; data?: RelayModelListItem[] | null }>(
+  return httpRequest<{ object?: string; data?: RelayModelListItem[] | null; source?: string; notice?: string }>(
     `/api/profile/upstream-models${params.toString() ? `?${params.toString()}` : ""}`,
     { signal: options.signal },
   );

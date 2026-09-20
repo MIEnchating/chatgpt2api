@@ -3516,6 +3516,9 @@ func collectRelayChatTaskStream(payload map[string]any, stream *protocol.StreamR
 	if err := <-stream.Err; err != nil {
 		return nil, err
 	}
+	if finishReason == "" {
+		return nil, errors.New("upstream chat stream ended without a finish reason")
+	}
 	content := text.String()
 	data := map[string]any{}
 	if finishReason != "" {

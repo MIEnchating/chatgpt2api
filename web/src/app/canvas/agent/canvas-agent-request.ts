@@ -22,6 +22,7 @@ export type CanvasAgentModelTurn = {
 export type RequestCanvasAgentTurnInput = {
   apiMode?: "chat" | "responses";
   reasoningEnabled?: boolean;
+  stream?: boolean;
   maxOutputTokens?: number;
   model: string;
   relayTokenName: string;
@@ -53,6 +54,7 @@ async function requestCompletion(input: RequestCanvasAgentTurnInput & { tools: C
       model: input.model,
       apiMode: input.apiMode || "chat",
       reasoningEnabled: input.reasoningEnabled === true,
+      stream: input.stream === true,
       maxOutputTokens: input.maxOutputTokens,
       relayTokenName: input.relayTokenName,
       messages: [

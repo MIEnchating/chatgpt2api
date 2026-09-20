@@ -171,27 +171,79 @@ func TestAutoDLMetadataRouteRequiresAuthenticationAndUsesSavedEndpoint(t *testin
 	}
 }
 
-func TestArkAgentPlanModelListReportsUnsupportedEndpoint(t *testing.T) {
-	app := newTestApp(t)
-	defer app.Close()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/plan/v3/models" {
-			t.Errorf("unexpected models path %s", r.URL.Path)
-		}
-		util.WriteJSON(w, http.StatusNotFound, map[string]any{"error": map[string]any{"message": "not found"}})
-	}))
-	defer server.Close()
-	externalWorkflowTestClient(app, server)
-	identity := service.Identity{ID: "admin", Role: service.AuthRoleAdmin, Name: "Admin"}
-	status, err := app.customRelayConfigs.Create(identityScope(identity), "video", "方舟", "http://ark.example/api/plan/v3", "key", "ark")
-	if err != nil {
-		t.Fatal(err)
+func TestArkAgentPlanModelCandidatesDoNotQueryModels(t *testing.T) {
+	for _, tc := range []struct {
+		protocol, kind, suffix string
+		count                  int
+	}{
+		{"ark", "video", "", 5}, {"ark", "video", "/", 5}, {"openai", "text", "", 17},
+	} {
+		t.Run(tc.protocol+tc.suffix, func(t *testing.T) {
+			app := newTestApp(t)
+			defer app.Close()
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				t.Error("Agent Plan must not request /models")
+				w.WriteHeader(http.StatusNotFound)
+			}))
+			defer server.Close()
+			externalWorkflowTestClient(app, server)
+			identity := service.Identity{ID: "admin", Role: service.AuthRoleAdmin, Name: "Admin"}
+			status, err := app.customRelayConfigs.Create(identityScope(identity), tc.kind, "方舟", "http://ark.example/api/plan/v3"+tc.suffix, "key", tc.protocol)
+			if err != nil {
+				t.Fatal(err)
+			}
+			req := httptest.NewRequest(http.MethodGet, "/api/profile/upstream-models?token_name="+status.TokenName, nil)
+			setRequestAuthCookie(req, adminSessionToken(t, app))
+			res := httptest.NewRecorder()
+			app.Handler().ServeHTTP(res, req)
+			var body map[string]any
+			if err := util.DecodeJSON(res.Body, &body); err != nil {
+				t.Fatal(err)
+			}
+			models := util.AsMapSlice(body["data"])
+			if res.Code != http.StatusOK || len(models) != tc.count || body["source"] != "ark_agent_plan_candidates" || !strings.Contains(util.Clean(body["notice"]), "未验证") {
+				t.Fatalf("models = %d %#v", res.Code, body)
+			}
+			for _, item := range models {
+				if tc.protocol == "ark" && item["kind"] != "video" {
+					t.Fatalf("non-video candidate: %#v", item)
+				}
+			}
+			unauthorized := httptest.NewRecorder()
+			app.Handler().ServeHTTP(unauthorized, httptest.NewRequest(http.MethodGet, "/api/profile/upstream-models?token_name="+status.TokenName, nil))
+			if unauthorized.Code != http.StatusUnauthorized {
+				t.Fatalf("unauthorized = %d", unauthorized.Code)
+			}
+		})
 	}
-	req := httptest.NewRequest(http.MethodGet, "/api/profile/upstream-models?token_name="+status.TokenName, nil)
-	setRequestAuthCookie(req, adminSessionToken(t, app))
-	res := httptest.NewRecorder()
-	app.Handler().ServeHTTP(res, req)
-	if res.Code != http.StatusBadRequest || !strings.Contains(res.Body.String(), "手动填写") {
-		t.Fatalf("models = %d %s", res.Code, res.Body.String())
+}
+
+func TestArkStandardModelListKeepsUpstreamResult(t *testing.T) {
+	for _, code := range []int{http.StatusOK, http.StatusNotFound} {
+		app := newTestApp(t)
+		defer app.Close()
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.Path != "/api/v3/models" {
+				t.Errorf("models path = %s", r.URL.Path)
+			}
+			util.WriteJSON(w, code, map[string]any{"object": "list", "data": []map[string]any{{"id": "account-model"}}})
+		}))
+		defer server.Close()
+		externalWorkflowTestClient(app, server)
+		identity := service.Identity{ID: "admin", Role: service.AuthRoleAdmin, Name: "Admin"}
+		status, err := app.customRelayConfigs.Create(identityScope(identity), "video", "方舟", "http://ark.example/api/v3", "key", "ark")
+		if err != nil {
+			t.Fatal(err)
+		}
+		req := httptest.NewRequest(http.MethodGet, "/api/profile/upstream-models?token_name="+status.TokenName, nil)
+		setRequestAuthCookie(req, adminSessionToken(t, app))
+		res := httptest.NewRecorder()
+		app.Handler().ServeHTTP(res, req)
+		if res.Code != code || strings.Contains(res.Body.String(), "ark_agent_plan_candidates") {
+			t.Fatalf("models = %d %s", res.Code, res.Body.String())
+		}
+		if code == http.StatusOK && !strings.Contains(res.Body.String(), "account-model") {
+			t.Fatal(res.Body.String())
+		}
 	}
 }

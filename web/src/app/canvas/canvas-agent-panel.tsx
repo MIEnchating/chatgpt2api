@@ -286,6 +286,7 @@ export function CanvasAgentPanel({ open, nodes, selectedNodeIDs, referenceNodeCl
           relayTokenName,
           configuredSystemPrompt,
           apiMode: agentConfig.textApiMode || "chat",
+          stream: agentConfig.textStreaming === true,
           reasoningEnabled: agentConfig.textApiMode === "responses" && agentConfig.textReasoningEnabled === true,
           activeSkills,
           contextCheckpoint: activeSession.contextCheckpoint,
@@ -481,6 +482,13 @@ export function CanvasAgentPanel({ open, nodes, selectedNodeIDs, referenceNodeCl
                       <SelectTrigger id="canvas-agent-text-protocol" aria-label="Agent 请求协议"><SelectValue /></SelectTrigger>
                       <SelectContent><SelectItem value="chat">Chat</SelectItem><SelectItem value="responses">Responses</SelectItem></SelectContent>
                     </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <label className="flex items-center justify-between gap-4 text-sm font-medium">
+                      <span>流式响应</span>
+                      <Switch aria-label="流式响应" aria-describedby="canvas-agent-streaming-description" checked={agentConfig.textStreaming === true} onCheckedChange={(checked) => onAgentConfigChange({ textStreaming: checked })} />
+                    </label>
+                    <p id="canvas-agent-streaming-description" className="text-xs leading-5 text-muted-foreground">分段接收模型响应，完成后展示回复并执行工具。</p>
                   </div>
                   <div className="space-y-2">
                     <label className="flex items-center justify-between gap-4 text-sm font-medium">

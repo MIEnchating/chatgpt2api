@@ -402,6 +402,7 @@ function AddModelDialog({
       setSelectedModels(new Set());
       setSearch("");
       if (models.length === 0) toast.info("所选 Key 没有返回可用模型");
+      for (const notice of new Set(responses.map((response) => response.notice).filter(Boolean))) toast.info(notice);
     } catch (error) {
       if (controller.signal.aborted || modelLoadVersionRef.current !== requestVersion) return;
       toast.error(error instanceof Error ? error.message : "获取模型失败");

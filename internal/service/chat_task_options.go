@@ -12,9 +12,11 @@ func ValidateChatTaskOptions(metadata map[string]any) error {
 			return fmt.Errorf("api_mode 必须是 chat 或 responses")
 		}
 	}
-	if value, exists := metadata["reasoning_enabled"]; exists {
-		if _, ok := value.(bool); !ok {
-			return fmt.Errorf("reasoning_enabled 必须是布尔值")
+	for _, key := range []string{"reasoning_enabled", "stream"} {
+		if value, exists := metadata[key]; exists {
+			if _, ok := value.(bool); !ok {
+				return fmt.Errorf("%s 必须是布尔值", key)
+			}
 		}
 	}
 	if value, exists := metadata["max_output_tokens"]; exists {

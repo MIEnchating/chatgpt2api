@@ -2705,7 +2705,7 @@ func TestCollectRelayChatTaskStreamPublishesProgress(t *testing.T) {
 		"choices": []map[string]any{{"delta": map[string]any{"content": "你"}}},
 	}
 	items <- map[string]any{
-		"choices": []map[string]any{{"delta": map[string]any{"content": "好"}}},
+		"choices": []map[string]any{{"delta": map[string]any{"content": "好"}, "finish_reason": "stop"}},
 	}
 	close(items)
 	errCh <- nil
@@ -2775,7 +2775,7 @@ func TestCollectRelayChatTaskStreamReassemblesToolCalls(t *testing.T) {
 		}}},
 	}
 	items <- map[string]any{
-		"choices": []map[string]any{{"delta": map[string]any{
+		"choices": []map[string]any{{"finish_reason": "tool_calls", "delta": map[string]any{
 			"reasoning_content": "节点",
 			"tool_calls": []map[string]any{{
 				"index": 0,

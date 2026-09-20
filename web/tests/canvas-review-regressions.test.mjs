@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
+import { canvasNodeSizeFromRatio } from "../src/app/canvas/canvas-node-geometry.ts";
 import { applyCanvasVideoTaskProgressNodes } from "../src/app/canvas/canvas-task-results.ts";
 import { canvasTextGenerationPlan } from "../src/app/canvas/canvas-text-generation.ts";
 import { buildCanvasGenerationContext, canvasGenerationReferenceImageURLs } from "../src/app/canvas/canvas-generation-context.ts";
@@ -25,7 +26,7 @@ function pageHandler(file, name, dependencies) {
   }
   visit(source);
   assert.ok(declaration, `Missing handler ${name}`);
-  const code = ts.transpileModule(`const handler = ${declaration.getText(source)};`, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
+  const code = ts.transpileModule(`const handler = ${declaration.getText(source).replace(/^export\s+/, "")};`, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext } }).outputText;
   return new Function(...Object.keys(dependencies), `${code}\nreturn handler;`)(...Object.values(dependencies));
 }
 
@@ -390,44 +391,52 @@ test("typing a node title keeps the insertion caret after the initial selection"
 
 test("Agent manual generation creates configured media nodes without submitting tasks", async () => {
   for (const name of ["generate_image", "edit_image", "generate_video", "generate_audio"]) {
-    for (const autoGenerateMedia of [false, true]) {
-     for (const waitForMedia of [undefined, false]) {
-      let finishGeneration;
-      const generationCompletion = new Promise((resolve) => { finishGeneration = resolve; });
-      const source = { id: "reference", type: "image", url: "/reference.png" };
-      const nodesRef = { current: [source] }, connectionsRef = { current: [] };
-      let submitted = 0, history = 0;
-      const dependencies = {
-        nodesRef, connectionsRef, documentRef: { current: { agent_config: { autoGenerateMedia } } }, selectedNodeIDsRef: { current: new Set() },
-        imageModel: "image-model", videoModel: "video-model", audioModel: "audio-model",
-        imageModels: ["image-model"], videoModels: ["video-model"], audioModels: ["audio-model"],
-        nextTokenNameForModel: () => autoGenerateMedia ? "key" : "",
-        resolvedAgentConfig: { autoGenerateMedia }, imageGenerationPreferences: { canvas_default_image_count: 1 },
-        canvasAgentSourceNodeIDs: () => ["reference"], canvasAgentMediaLayoutSources: (_kind, _nodes, sources) => sources,
-        canvasAgentNodePosition: () => ({ x: 100, y: 200 }), canvasCenterPosition: () => ({ x: 0, y: 0 }),
-        canvasNodeFallbackTitle: (kind) => kind, randomID: () => "generated", createdAt: () => "now",
-        CANVAS_NODE_DEFAULT_SIZE: { image: { width: 300, height: 300 }, video: { width: 400, height: 225 }, audio: { width: 320, height: 100 } },
-        getCanvasAgentContext: () => ({ generation: { videoSeconds: 8, videoGenerateAudio: false } }),
-        validateCanvasAgentVideoSeconds: () => "", canvasAgentVideoSupportsAudio: () => true,
-        preferredCanvasImageParameters: () => ({}), canvasAgentAudioNodeParameters: () => ({}),
-        buildVideoNode: (fields, point) => ({ id: "generated-video", type: "video", ...fields, ...point }),
-        replaceNodes: (nodes) => { nodesRef.current = nodes; }, replaceConnections: (edges) => { connectionsRef.current = edges; },
-        setSelectedNodeIDs: () => {}, setSelectedConnectionID: () => {}, pushHistory: () => { history += 1; },
-        runGeneration: async (_id, _prompt, _retry, options) => { submitted += 1; options.onSubmitted?.("confirmed-task"); if (waitForMedia === false) await generationCompletion; }, summarizeCanvasAgentTask: () => ({ status: "idle" }),
-      };
-      const run = pageHandler("page.tsx", "executeCanvasAgentAction", dependencies);
-      const result = await run({ name, arguments: { prompt: "保留参考细节", title: "成品" } }, [], { waitForMedia });
-      finishGeneration();
-      assert.equal(result.ok, true, JSON.stringify(result));
-      assert.equal(result.submitted, autoGenerateMedia);
-      if (autoGenerateMedia && waitForMedia === false) assert.equal(result.taskId, "confirmed-task");
-      assert.equal(submitted, autoGenerateMedia ? 1 : 0);
-      assert.equal(nodesRef.current.length, 2);
-      assert.equal(nodesRef.current[1].prompt, "保留参考细节");
-      assert.equal(connectionsRef.current.length, 1);
-      assert.equal(connectionsRef.current[0].from_node_id, "reference");
-      assert.equal(history, 1);
-     }
+    for (const [configuredSize, requestedSize, aspect] of name === "generate_video" ? [["16:9", "9:16", 9 / 16], ["9:16", "1:1", 1], ["9:16", undefined, 9 / 16], [undefined, undefined, 16 / 9]] : [[undefined, undefined, undefined]]) {
+      for (const autoGenerateMedia of [false, true]) {
+        for (const waitForMedia of [undefined, false]) {
+          let finishGeneration;
+          const generationCompletion = new Promise((resolve) => { finishGeneration = resolve; });
+          const source = { id: "reference", type: "image", url: "/reference.png" };
+          const nodesRef = { current: [source] }, connectionsRef = { current: [] };
+          let submitted = 0, history = 0;
+          const dependencies = {
+            nodesRef, connectionsRef, documentRef: { current: { agent_config: { autoGenerateMedia } } }, selectedNodeIDsRef: { current: new Set() },
+            imageModel: "image-model", videoModel: "video-model", audioModel: "audio-model",
+            imageModels: ["image-model"], videoModels: ["video-model"], audioModels: ["audio-model"],
+            nextTokenNameForModel: () => autoGenerateMedia ? "key" : "",
+            resolvedAgentConfig: { autoGenerateMedia, videoSize: configuredSize }, canvasNodeSizeFromRatio, canvasVideoParameters: () => ({ generation_video_size: "16:9" }), imageGenerationPreferences: { canvas_default_image_count: 1 },
+            canvasAgentSourceNodeIDs: () => ["reference"], canvasAgentMediaLayoutSources: (_kind, _nodes, sources) => sources,
+            canvasAgentNodePosition: (size) => ({ x: 100, y: 200 - size.height / 2 }), canvasCenterPosition: () => ({ x: 0, y: 0 }),
+            canvasNodeFallbackTitle: (kind) => kind, randomID: () => "generated", createdAt: () => "now",
+            CANVAS_NODE_DEFAULT_SIZE: { image: { width: 300, height: 300 }, video: { width: 400, height: 225 }, audio: { width: 320, height: 100 } },
+            getCanvasAgentContext: () => ({ generation: { videoSeconds: 8, videoGenerateAudio: false } }),
+            validateCanvasAgentVideoSeconds: () => "", canvasAgentVideoSupportsAudio: () => true,
+            preferredCanvasImageParameters: () => ({}), canvasAgentAudioNodeParameters: () => ({}),
+            buildVideoNode: (fields, point) => ({ id: "generated-video", type: "video", ...fields, ...point }),
+            replaceNodes: (nodes) => { nodesRef.current = nodes; }, replaceConnections: (edges) => { connectionsRef.current = edges; },
+            setSelectedNodeIDs: () => {}, setSelectedConnectionID: () => {}, pushHistory: () => { history += 1; },
+            runGeneration: async (_id, _prompt, _retry, options) => { submitted += 1; options.onSubmitted?.("confirmed-task"); if (waitForMedia === false) await generationCompletion; }, summarizeCanvasAgentTask: () => ({ status: "idle" }),
+          };
+          const run = pageHandler("page.tsx", "executeCanvasAgentAction", dependencies);
+          const result = await run({ name, arguments: { prompt: "保留参考细节", title: "成品", size: requestedSize } }, [], { waitForMedia });
+          finishGeneration();
+          assert.equal(result.ok, true, JSON.stringify(result));
+          assert.equal(result.submitted, autoGenerateMedia);
+          if (autoGenerateMedia && waitForMedia === false) assert.equal(result.taskId, "confirmed-task");
+          assert.equal(submitted, autoGenerateMedia ? 1 : 0);
+          assert.equal(nodesRef.current.length, 2);
+          assert.equal(nodesRef.current[1].prompt, "保留参考细节");
+          if (name === "generate_video") {
+            const node = nodesRef.current[1];
+            assert.ok(Math.abs(node.width / node.height - aspect) < 0.0001);
+            assert.equal(node.generation_video_size, requestedSize || configuredSize || "16:9");
+            assert.equal(node.y, 200 - node.height / 2);
+          }
+          assert.equal(connectionsRef.current.length, 1);
+          assert.equal(connectionsRef.current[0].from_node_id, "reference");
+          assert.equal(history, 1);
+        }
+      }
     }
   }
 });
@@ -630,4 +639,71 @@ test("desktop leave rejects failed canvas saves and ignores unrelated events", a
   assert.equal(pending.length, 1);
   await assert.rejects(pending[0], /画布保存失败/);
   assert.equal(saves, 1);
+});
+
+test("blank video nodes use the effective model ratio before generation", () => {
+  for (const [ratio, aspect] of [["16:9", 16 / 9], ["9:16", 9 / 16], ["1:1", 1], ["720x1280", 9 / 16]]) {
+    const build = pageHandler("page.tsx", "buildVideoNode", {
+      canvasVideoParameters: (parent) => ({ generation_video_model: parent.generation_video_model, generation_video_size: ratio }),
+      canvasNodeSizeFromRatio, CANVAS_NODE_DEFAULT_SIZE: { video: { width: 420, height: 236 } },
+      videoModel: "model", randomID: () => "video", createdAt: () => "now",
+    });
+    const node = build({ prompt: "draft" }, { x: 10, y: 20 });
+    assert.equal(node.generation_video_size, ratio);
+    assert.ok(Math.abs(node.width / node.height - aspect) < 0.0001);
+    assert.equal(node.x, 10);
+    assert.equal(node.y, 20);
+  }
+});
+
+test("chat task HTTP bodies preserve explicit streaming choices for both protocols", async () => {
+  const requests = [];
+  const create = pageHandler("../../lib/api.ts", "createChatGenerationTask", {
+    creationTaskRequestAuth: () => ({}), httpRequest: async (path, request) => { requests.push({ path, ...request }); return { id: "task" }; },
+  });
+  for (const apiMode of ["chat", "responses"]) {
+    for (const stream of [undefined, false, true]) {
+      await create({ clientTaskId: "task", prompt: "hello", apiMode, stream });
+      const request = requests.at(-1);
+      assert.equal(request.path, "/api/creation-tasks/chat-completions");
+      assert.equal(request.body.api_mode, apiMode);
+      assert.equal(request.body.stream, stream);
+      assert.equal(Object.hasOwn(request.body, "stream"), stream !== undefined);
+    }
+  }
+});
+
+test("Agent prompt references preserve @ as part of the atomic serialized token", () => {
+  const escapeRegExp = pageHandler("canvas-agent-prompt-chip-input.tsx", "escapeRegExp", {});
+  const parse = pageHandler("canvas-agent-prompt-chip-input.tsx", "parsePromptTokens", { escapeRegExp });
+  const labels = ["图片1", "图片10", "视频2", "素材(1)"];
+  const value = "参考 @图片10\n图片1 与 @视频2 @图片100 @未知 @素材(1)";
+  const tokens = parse(value, labels);
+  assert.deepEqual(tokens.filter((token) => token.type === "reference"), [
+    { type: "reference", label: "图片10", value: "@图片10" },
+    { type: "reference", label: "图片1", value: "图片1" },
+    { type: "reference", label: "视频2", value: "@视频2" },
+    { type: "reference", label: "素材(1)", value: "@素材(1)" },
+  ]);
+  assert.equal(tokens.map((token) => token.value).join(""), value);
+  assert.deepEqual(parse("@图片10", ["图片1"]), [{ type: "text", value: "@图片10" }]);
+});
+
+
+test("manual video creation centers the actual frame at the requested position", () => {
+  for (const ratio of ["16:9", "9:16", "1:1"]) {
+    let point;
+    const dimensions = { width: 420, height: 236 };
+    const create = pageHandler("page.tsx", "createCanvasNode", {
+      CANVAS_NODE_DEFAULT_SIZE: { video: dimensions }, videoModel: "video-model", canvasNodeSizeFromRatio,
+      canvasVideoParameters: () => ({ generation_video_size: ratio }),
+      addBlankVideoNodeAt: (value) => { point = value; }, placement: () => ({ x: 40, y: 50 }),
+    });
+    create("video", { x: 100, y: 200 });
+    const size = canvasNodeSizeFromRatio(ratio, dimensions.width, dimensions.height);
+    assert.equal(point.x + size.width / 2, 100);
+    assert.equal(point.y + size.height / 2, 200);
+    create("video");
+    assert.deepEqual(point, { x: 40, y: 50 });
+  }
 });

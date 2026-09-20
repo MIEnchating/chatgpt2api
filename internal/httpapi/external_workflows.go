@@ -22,6 +22,16 @@ func (a *App) cachedAutoDLWorkflows(ctx context.Context, client protocol.AutoDLC
 }
 
 func (a *App) handleExternalWorkflowModels(w http.ResponseWriter, r *http.Request, credential relayCredential, started time.Time, identity service.Identity) bool {
+	if (credential.Protocol == "ark" || credential.Protocol == "openai") && protocol.IsArkAgentPlanURL(credential.BaseURL) {
+		result := map[string]any{
+			"object": "list",
+			"data":   protocol.ArkAgentPlanModelCandidates(credential.Protocol == "ark"),
+			"source": "ark_agent_plan_candidates",
+			"notice": "方舟 Agent Plan 内置候选模型，实际可用性以当前套餐为准，未验证 Key 权限。",
+		}
+		a.writeUpstreamModelsResponse(w, r, result, nil, started, identity)
+		return true
+	}
 	switch credential.Protocol {
 	case "autodl":
 		items, err := a.cachedAutoDLWorkflows(r.Context(), protocol.AutoDLClient{HTTP: a.relayHTTPClientForContext(r.Context())}, credential.BaseURL, "")
@@ -33,10 +43,6 @@ func (a *App) handleExternalWorkflowModels(w http.ResponseWriter, r *http.Reques
 		return true
 	case "ark":
 		result, err := a.relayJSONAt(r.Context(), credential.BaseURL, http.MethodGet, "/models", credential.APIKey, nil)
-		var httpErr protocol.HTTPError
-		if errors.As(err, &httpErr) && httpErr.Status == http.StatusNotFound && strings.Contains(credential.BaseURL, "/api/plan/") {
-			err = protocol.HTTPError{Status: http.StatusBadRequest, Message: "方舟 Agent Plan 未提供 /models，请在模型配置中手动填写套餐支持的模型名"}
-		}
 		a.writeUpstreamModelsResponse(w, r, result, err, started, identity)
 		return true
 	}

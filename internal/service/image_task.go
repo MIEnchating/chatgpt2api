@@ -320,7 +320,7 @@ func (s *ImageTaskService) submitChatWithMetadata(identity Identity, clientTaskI
 
 func mergeChatTaskMetadata(payload map[string]any, metadata map[string]any) {
 	mergeTaskRoutingMetadata(payload, metadata)
-	for _, key := range []string{"api_mode", "reasoning_enabled", "max_output_tokens"} {
+	for _, key := range []string{"api_mode", "reasoning_enabled", "max_output_tokens", "stream"} {
 		if value, ok := metadata[key]; ok {
 			payload[key] = value
 		}
