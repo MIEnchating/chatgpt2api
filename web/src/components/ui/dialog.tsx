@@ -48,8 +48,10 @@ function DialogContent({
   children,
   showCloseButton = true,
   scrollable = true,
+  onCloseAutoFocus,
   ...props
 }: DialogContentProps) {
+  const returnFocusRef = React.useRef<HTMLElement | null>(null);
   const dialogChildren = flattenDialogChildren(children);
   const headers = dialogChildren.filter(isDialogHeaderElement);
   const footers = dialogChildren.filter(isDialogFooterElement);
@@ -64,11 +66,19 @@ function DialogContent({
         data-slot="dialog-content"
         tabIndex={-1}
         onOpenAutoFocus={(event) => {
+          returnFocusRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
           event.preventDefault();
           (event.currentTarget as HTMLElement).focus({ preventScroll: true });
         }}
+        onCloseAutoFocus={(event) => {
+          onCloseAutoFocus?.(event);
+          if (!event.defaultPrevented && returnFocusRef.current?.isConnected) {
+            event.preventDefault();
+            returnFocusRef.current.focus({ preventScroll: true });
+          }
+        }}
         className={cn(
-          "fixed top-[50%] left-[50%] z-50 flex max-h-[calc(100dvh-2rem)] w-[min(calc(100%-2rem),35rem)] min-w-0 max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] flex-col gap-4 overflow-hidden rounded-xl border border-border/80 bg-card text-card-foreground outline-none p-[var(--dialog-padding)] [--dialog-padding:1.25rem] shadow-[var(--shadow-dialog)] duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 sm:[--dialog-padding:1.5rem] [&:has([data-slot=dialog-footer]:not([data-flush=true]))]:pb-3",
+          "fixed top-[50%] left-[50%] z-50 flex max-h-[calc(100dvh-2rem)] w-[min(calc(100%-2rem),35rem)] min-w-0 max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] flex-col gap-4 overflow-hidden rounded-xl border border-border/80 bg-card text-card-foreground outline-none p-[var(--dialog-padding)] [--dialog-padding:1.25rem] shadow-[var(--shadow-dialog)] transition-none duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 sm:[--dialog-padding:1.5rem] [&:has([data-slot=dialog-footer]:not([data-flush=true]))]:pb-3",
           className,
         )}
         {...props}

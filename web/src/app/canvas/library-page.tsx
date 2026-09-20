@@ -414,31 +414,33 @@ export default function CanvasLibraryPage({ session }: { session: StoredAuthSess
         </div>
       </ScrollArea>
       <Dialog open={agentStarterOpen} onOpenChange={(open) => !busy && setAgentStarterOpen(open)}>
-        <DialogContent className="w-[min(94vw,900px)] max-w-none gap-5 sm:p-7">
+        <DialogContent scrollable={false} className="w-[min(94vw,900px)] max-w-none gap-5 sm:p-7">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2"><Bot className="size-5 text-brand" />Agent</DialogTitle>
             <DialogDescription>描述创作目标，Agent 将创建画布并直接开始执行。</DialogDescription>
           </DialogHeader>
-          <div data-canvas-agent-starter className="rounded-xl border border-border bg-card p-4 transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20">
-            {pendingAssets.length ? <div className="mb-2 flex flex-wrap gap-1.5">{pendingAssets.map((asset) => <span key={asset.nodeId} className="inline-flex h-7 max-w-full items-center gap-1 rounded-md border bg-muted/40 pl-2 pr-1 text-[11px]"><span className="max-w-52 truncate">{asset.reference.label} · {asset.reference.title}</span><button type="button" className="grid size-5 place-items-center rounded hover:bg-muted" aria-label={`移除${asset.reference.title}`} onClick={() => setPendingAssets((current) => current.filter((item) => item.nodeId !== asset.nodeId))}><X className="size-3" /></button></span>)}</div> : null}
-            <Textarea
-              value={agentPrompt}
-              onChange={(event) => setAgentPrompt(event.target.value)}
-              onPaste={(event) => {
-                const image = [...event.clipboardData.files].find((file) => file.type.startsWith("image/"));
-                if (!image) return;
-                event.preventDefault();
-                void uploadAgentAsset(image);
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) void createWithAgent();
-              }}
-              className="min-h-36 max-h-[50dvh] resize-none border-0 bg-transparent px-1 py-1 shadow-none focus-visible:ring-0 sm:min-h-48"
-              placeholder="描述创作目标"
-              aria-label="Agent 创作目标"
-            />
-            <div className="mt-2"><CanvasAgentSkillPicker selectedIds={agentConfig.activeSkillIds || []} onChange={(activeSkillIds) => setAgentConfig((current) => ({ ...current, activeSkillIds }))} disabled={busy} /></div>
-            <div className="mt-2 flex min-w-0 items-center gap-1.5">
+          <div data-canvas-agent-starter className="flex min-h-0 flex-1 flex-col rounded-xl border border-border bg-card p-4 transition-[border-color,box-shadow] focus-within:border-ring focus-within:ring-2 focus-within:ring-ring/20">
+            <ScrollArea className="min-h-0 flex-1" viewportClassName="pr-1">
+              {pendingAssets.length ? <div className="mb-2 flex flex-wrap gap-1.5">{pendingAssets.map((asset) => <span key={asset.nodeId} className="inline-flex h-7 max-w-full items-center gap-1 rounded-md border bg-muted/40 pl-2 pr-1 text-[11px]"><span className="max-w-52 truncate">{asset.reference.label} · {asset.reference.title}</span><button type="button" className="grid size-5 place-items-center rounded hover:bg-muted" aria-label={`移除${asset.reference.title}`} onClick={() => setPendingAssets((current) => current.filter((item) => item.nodeId !== asset.nodeId))}><X className="size-3" /></button></span>)}</div> : null}
+              <Textarea
+                value={agentPrompt}
+                onChange={(event) => setAgentPrompt(event.target.value)}
+                onPaste={(event) => {
+                  const image = [...event.clipboardData.files].find((file) => file.type.startsWith("image/"));
+                  if (!image) return;
+                  event.preventDefault();
+                  void uploadAgentAsset(image);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) void createWithAgent();
+                }}
+                className="min-h-36 max-h-[50dvh] resize-none border-0 bg-transparent px-1 py-1 shadow-none focus-visible:ring-0 sm:min-h-48"
+                placeholder="描述创作目标"
+                aria-label="Agent 创作目标"
+              />
+              <div className="mt-2"><CanvasAgentSkillPicker selectedIds={agentConfig.activeSkillIds || []} onChange={(activeSkillIds) => setAgentConfig((current) => ({ ...current, activeSkillIds }))} disabled={busy} /></div>
+            </ScrollArea>
+            <div className="mt-2 flex min-w-0 shrink-0 items-center gap-1.5">
               <AgentStarterAssetMenu uploading={uploadingAsset} busy={busy} onUpload={() => agentUploadInputRef.current?.click()} onOpenAssets={() => setAssetPickerOpen(true)} />
               <AgentStarterParameterMenu disabled={!agentImageModel} icon={<ImageIcon />} label="图片参数" summary={canvasAgentImageSettingsSummary(agentConfig.imageQuality, agentConfig.imageSize)}>{agentImageModel ? <CanvasAgentImageSettings model={agentImageModel} quality={agentConfig.imageQuality} size={agentConfig.imageSize} onChange={(patch) => setAgentConfig((current) => ({ ...current, ...patch }))} /> : null}</AgentStarterParameterMenu>
               <AgentStarterParameterMenu disabled={!agentVideoModel} icon={<Video />} label="视频参数" summary={canvasAgentVideoSettingsSummary(agentConfig.videoQuality, agentConfig.videoSize)}>{agentVideoModel ? <CanvasAgentVideoSettings model={agentVideoModel} quality={agentConfig.videoQuality} size={agentConfig.videoSize} onChange={(patch) => setAgentConfig((current) => ({ ...current, ...patch }))} /> : null}</AgentStarterParameterMenu>

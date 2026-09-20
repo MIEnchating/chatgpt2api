@@ -123,8 +123,8 @@ function GlobalModelList({
 
   return (
     <section className="min-w-0 rounded-xl border border-border/70 bg-muted/20 p-3 sm:p-4">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center gap-2.5">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex min-w-0 flex-[1_1_10rem] items-center gap-2.5">
           <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted text-muted-foreground ring-1 ring-border/70">
             <Icon className="size-4" />
           </span>
@@ -133,7 +133,7 @@ function GlobalModelList({
             <p className="text-xs text-muted-foreground">全站可用，共 {models.length} 个</p>
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-1.5">
+        <div className="ml-auto flex shrink-0 items-center gap-1.5">
           <Button type="button" variant="ghost" size="sm" className="h-9 px-2.5 text-muted-foreground hover:text-destructive" onClick={onClear} disabled={models.length === 0}>
             <Trash2 className="size-4" />
             清空
@@ -169,54 +169,58 @@ function GlobalModelList({
               onDragEnd={resetDragState}
               aria-grabbed={isDragging}
               className={cn(
-                "flex min-h-12 min-w-0 items-center gap-1.5 px-2 py-2 transition-colors sm:gap-2 sm:px-3",
+                "flex min-h-12 min-w-0 flex-col gap-2 px-2 py-2 transition-colors sm:flex-row sm:items-center sm:px-3",
                 isDragging && "opacity-45",
                 isDropTarget && "bg-primary/10",
               )}
             >
-              <GripVertical className="size-4 shrink-0 cursor-grab text-muted-foreground/60 active:cursor-grabbing" aria-label="拖拽排序" />
-              <span className="w-5 shrink-0 text-center font-mono text-xs text-muted-foreground">{index + 1}</span>
-              <TooltipHint content={model}><code className="min-w-0 flex-1 truncate text-xs text-foreground sm:text-sm">{model}</code></TooltipHint>
-              {index === 0 ? <Badge className="shrink-0 rounded-md px-1.5 text-[11px]">全局默认</Badge> : null}
-              <div className="flex shrink-0 items-center">
-                {onConfigure ? <TooltipHint content={definitions?.[model] ? imageProtocolLabels[definitions[model].protocol] : "配置协议与能力"}>
-                  <Button type="button" variant="ghost" size="icon" className="size-8" aria-label={`配置 ${model} 的协议与能力`} onClick={() => onConfigure(model)}><Settings2 className="size-3.5" /></Button>
-                </TooltipHint> : null}
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="size-8"
-                  onClick={() => onChange(moveModel(models, index, -1))}
-                  disabled={index === 0}
-                  aria-label={`上移 ${model}`}
-                  title="上移"
-                >
-                  <ArrowUp className="size-3.5" />
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="size-8"
-                  onClick={() => onChange(moveModel(models, index, 1))}
-                  disabled={index === models.length - 1}
-                  aria-label={`下移 ${model}`}
-                  title="下移"
-                >
-                  <ArrowDown className="size-3.5" />
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="size-8 text-muted-foreground hover:text-destructive"
-                  onClick={() => onChange(models.filter((_, itemIndex) => itemIndex !== index))}
-                  aria-label={`删除 ${model}`}
-                  title="删除"
-                >
-                  <Trash2 className="size-3.5" />
-                </Button>
+              <div className="flex min-w-0 items-center gap-1.5 sm:flex-1 sm:gap-2">
+                <GripVertical className="size-4 shrink-0 cursor-grab text-muted-foreground/60 active:cursor-grabbing" aria-label="拖拽排序" />
+                <span className="w-5 shrink-0 text-center font-mono text-xs text-muted-foreground">{index + 1}</span>
+                <TooltipHint content={model}><code className="min-w-0 flex-1 truncate text-xs text-foreground sm:text-sm">{model}</code></TooltipHint>
+              </div>
+              <div className="flex items-center justify-end gap-2 sm:shrink-0">
+                {index === 0 ? <Badge className="mr-auto shrink-0 rounded-md px-1.5 text-[11px]">全局默认</Badge> : null}
+                <div className="flex shrink-0 items-center">
+                  {onConfigure ? <TooltipHint content={definitions?.[model] ? imageProtocolLabels[definitions[model].protocol] : "配置协议与能力"}>
+                    <Button type="button" variant="ghost" size="icon" className="size-8" aria-label={`配置 ${model} 的协议与能力`} onClick={() => onConfigure(model)}><Settings2 className="size-3.5" /></Button>
+                  </TooltipHint> : null}
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-8"
+                    onClick={() => onChange(moveModel(models, index, -1))}
+                    disabled={index === 0}
+                    aria-label={`上移 ${model}`}
+                    title="上移"
+                  >
+                    <ArrowUp className="size-3.5" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-8"
+                    onClick={() => onChange(moveModel(models, index, 1))}
+                    disabled={index === models.length - 1}
+                    aria-label={`下移 ${model}`}
+                    title="下移"
+                  >
+                    <ArrowDown className="size-3.5" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-8 text-muted-foreground hover:text-destructive"
+                    onClick={() => onChange(models.filter((_, itemIndex) => itemIndex !== index))}
+                    aria-label={`删除 ${model}`}
+                    title="删除"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </Button>
+                </div>
               </div>
             </div>
           );

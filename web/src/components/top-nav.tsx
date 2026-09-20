@@ -20,6 +20,7 @@ import { Badge } from "@/components/ui/badge";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { logout } from "@/lib/api";
 import { cn } from "@/lib/utils";
+import { useActiveNavigation } from "@/lib/use-active-navigation";
 import { useAppMeta } from "@/lib/use-app-meta";
 import { resolveSiteIconSrc } from "@/lib/app-meta";
 
@@ -269,6 +270,8 @@ export function TopNav({ onPreloadRoute }: { onPreloadRoute: (pathname: string) 
     navigate("/login", { replace: true });
   };
 
+  const navigationRef = useActiveNavigation(`${session?.key || ""}:${pathname}`);
+
   if (pathname === "/login" || session === undefined || !session) {
     return null;
   }
@@ -281,7 +284,7 @@ export function TopNav({ onPreloadRoute }: { onPreloadRoute: (pathname: string) 
     <header className="relative z-40 shrink-0 rounded-xl border border-border bg-card/95 soft-card-shadow backdrop-blur">
       <div className="grid min-h-14 grid-cols-[minmax(0,1fr)_auto] items-center gap-x-2 gap-y-2 px-3 py-2 xl:grid-cols-[auto_minmax(0,1fr)_auto] xl:gap-4 xl:px-4">
         <div className="flex min-w-0 items-center gap-2 xl:col-start-1 xl:justify-self-start">
-          <div className="flex h-9 max-w-[190px] items-center gap-2 rounded-xl px-1.5 pr-2 text-[15px] font-semibold text-foreground sm:max-w-none">
+          <div className="flex h-9 min-w-0 max-w-full items-center gap-2 rounded-xl px-1.5 pr-2 text-[15px] font-semibold text-foreground xl:max-w-64">
             <img
               src={resolveSiteIconSrc(appMeta.site_icon_url)}
               alt=""
@@ -292,6 +295,7 @@ export function TopNav({ onPreloadRoute }: { onPreloadRoute: (pathname: string) 
           </div>
         </div>
         <nav
+          ref={navigationRef}
           aria-label="主导航"
           className="hide-scrollbar col-span-2 row-start-2 -mx-1 flex min-w-0 gap-1 overflow-x-auto overscroll-x-contain px-1 pb-0.5 scroll-px-1 touch-pan-x [-webkit-overflow-scrolling:touch] xl:col-span-1 xl:col-start-2 xl:row-start-1 xl:mx-0 xl:w-full xl:justify-self-stretch xl:gap-1.5 xl:px-1 xl:py-1 [@media(min-width:1280px)]:[justify-content:safe_center]"
         >

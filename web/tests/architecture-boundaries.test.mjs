@@ -151,7 +151,7 @@ test("global overlays keep focus out of editable controls while dialogs receive 
   assert.match(popover, /onOpenAutoFocus=\{\(event\) => event\.preventDefault\(\)\}/);
   for (const source of [dialog, imageLightbox]) {
     assert.match(source, /tabIndex=\{-1\}/);
-    assert.match(source, /onOpenAutoFocus=\{\(event\) => \{\s*event\.preventDefault\(\);\s*\(event\.currentTarget as HTMLElement\)\.focus\(\{ preventScroll: true \}\)/);
+    assert.match(source, /onOpenAutoFocus=\{\(event\) => \{[\s\S]*?event\.preventDefault\(\);\s*\(event\.currentTarget as HTMLElement\)\.focus\(\{ preventScroll: true \}\)/);
   }
   const videoPreview = canvasVideoPlayer.slice(canvasVideoPlayer.indexOf("export function CanvasVideoPreview"));
   assert.doesNotMatch(videoPreview, /useEffect/);

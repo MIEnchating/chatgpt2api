@@ -250,6 +250,7 @@ test("navigation widgets have distinct stable keys and remount when the active s
   const listeners = new Map();
   const { TopNav } = loadSource("../src/components/top-nav.tsx", {
     react: state.react,
+    "@/lib/use-active-navigation": loadSource("../src/lib/use-active-navigation.ts", { react: state.react }),
     "react-router-dom": { useLocation: () => ({ pathname: "/studio" }), useNavigate: () => () => {} },
     "@/lib/session": { getCachedAuthSession: () => session },
     "@/lib/auth-session": { canAccessPath: () => true, AUTH_SESSION_CHANGE_EVENT: "session-change" },
@@ -315,6 +316,7 @@ test("navigation session verification handles network rejection", async () => {
   let attempts = 0;
   const { TopNav } = loadSource("../src/components/top-nav.tsx", {
     react: state.react,
+    "@/lib/use-active-navigation": loadSource("../src/lib/use-active-navigation.ts", { react: state.react }),
     "react-router-dom": { useLocation: () => ({ pathname: "/studio" }), useNavigate: () => () => {} },
     "@/lib/session": {
       getCachedAuthSession: () => null,

@@ -850,14 +850,14 @@ export function ImageComposer({
                 >
                   <SelectTrigger
                     className={cn(
-                      "size-9 justify-center gap-1.5 rounded-full border-0 bg-muted/60 p-0 text-xs font-medium text-foreground shadow-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/30 dark:bg-muted/70 dark:text-foreground [&>svg]:hidden sm:h-8 sm:w-[190px] sm:justify-between sm:border sm:border-border sm:bg-card sm:px-3 sm:text-muted-foreground sm:dark:border-border sm:dark:bg-background/70 sm:dark:text-muted-foreground sm:[&>svg]:block",
+                      "size-9 justify-center gap-1.5 rounded-full border-0 bg-muted/60 p-0 text-xs font-medium text-foreground shadow-none hover:bg-muted focus-visible:ring-2 focus-visible:ring-ring/30 dark:bg-muted/70 dark:text-foreground [&>[data-slot=select-icon]]:hidden sm:h-8 sm:w-[190px] sm:justify-between sm:border sm:border-border sm:bg-card sm:px-3 sm:text-muted-foreground sm:dark:border-border sm:dark:bg-background/70 sm:dark:text-muted-foreground sm:[&>[data-slot=select-icon]]:block",
                       isModelMenuOpen &&
                         "bg-brand-soft text-brand sm:border-brand-border sm:bg-brand-soft sm:text-brand",
                     )}
                     aria-label={`选择模型，当前 ${imageModelLabel}`}
                   >
                     <Bot className="size-5 shrink-0 sm:hidden" />
-                    <SelectValue><span className="hidden min-w-0 flex-1 truncate text-left font-semibold sm:block">{imageModelLabel}</span></SelectValue>
+                    <SelectValue className="hidden sm:block"><span className="min-w-0 flex-1 truncate text-left font-semibold">{imageModelLabel}</span></SelectValue>
                   </SelectTrigger>
                   <SelectContent
                     side="top"

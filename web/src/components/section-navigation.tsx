@@ -1,5 +1,6 @@
 import type { LucideIcon } from "lucide-react";
 
+import { useActiveNavigation } from "@/lib/use-active-navigation";
 import { cn } from "@/lib/utils";
 
 type SectionNavigationItem<T extends string = string> = {
@@ -27,6 +28,8 @@ export function SectionNavigation<T extends string>({
   onSelect,
   className,
 }: SectionNavigationProps<T>) {
+  const navigationRef = useActiveNavigation(activeId);
+
   return (
     <aside
       data-section-navigation
@@ -40,6 +43,7 @@ export function SectionNavigation<T extends string>({
         <p className="mt-1 break-words text-xs leading-5 text-muted-foreground">{description}</p>
       </div>
       <nav
+        ref={navigationRef}
         className="hide-scrollbar flex min-w-0 gap-1 overflow-x-auto p-1 lg:grid lg:overflow-visible"
         aria-label={ariaLabel}
       >

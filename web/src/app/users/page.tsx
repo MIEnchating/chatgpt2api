@@ -915,7 +915,8 @@ function UsersContent() {
             <DialogDescription className="text-sm leading-6">创建本地登录用户并绑定角色。</DialogDescription>
           </DialogHeader>
           <form
-            className="contents"
+            id="create-managed-user-form"
+            className="grid gap-4"
             onSubmit={(event) => {
               event.preventDefault();
               void handleCreate();
@@ -1011,16 +1012,16 @@ function UsersContent() {
                 </Select>
               </div>
             </div>
-            <DialogFooter>
-              <Button type="button" variant="secondary" className="h-10 rounded-lg px-5" onClick={() => closeCreateDialog(false)} disabled={isCreating}>
-                取消
-              </Button>
-              <Button type="submit" className="h-10 rounded-lg px-5" disabled={isCreating}>
-                {isCreating ? <LoaderCircle className="size-4 animate-spin" /> : <Plus className="size-4" />}
-                创建
-              </Button>
-            </DialogFooter>
           </form>
+          <DialogFooter>
+            <Button type="button" variant="secondary" className="h-10 rounded-lg px-5" onClick={() => closeCreateDialog(false)} disabled={isCreating}>
+              取消
+            </Button>
+            <Button type="submit" form="create-managed-user-form" className="h-10 rounded-lg px-5" disabled={isCreating}>
+              {isCreating ? <LoaderCircle className="size-4 animate-spin" /> : <Plus className="size-4" />}
+              创建
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 
