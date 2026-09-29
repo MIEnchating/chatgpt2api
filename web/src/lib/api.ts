@@ -335,7 +335,7 @@ export type VideoModelContractTransferDocument = {
   contracts: Array<{ contract: VideoModelContract; enabled: boolean }>;
 };
 
-export type CustomRelayProtocol = "openai" | "autodl" | "ark";
+export type CustomRelayProtocol = "openai" | "autodl" | "ark" | "runninghub";
 
 export type CustomRelayConfigStatus = {
   protocol: CustomRelayProtocol;

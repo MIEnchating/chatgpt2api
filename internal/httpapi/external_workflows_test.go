@@ -171,6 +171,51 @@ func TestAutoDLMetadataRouteRequiresAuthenticationAndUsesSavedEndpoint(t *testin
 	}
 }
 
+func TestRunningHubWorkflowMetadataRouteUsesSavedCredentialAndRedactsKey(t *testing.T) {
+	app := newTestApp(t)
+	defer app.Close()
+	unauthorized := httptest.NewRecorder()
+	app.Handler().ServeHTTP(unauthorized, httptest.NewRequest(http.MethodGet, "/api/profile/runninghub-workflows?workflow_id=flow", nil))
+	if unauthorized.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthorized = %d", unauthorized.Code)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode request: %v", err)
+		}
+		if body["apiKey"] != "runninghub-secret" {
+			t.Errorf("apiKey = %#v", body["apiKey"])
+		}
+		util.WriteJSON(w, http.StatusOK, map[string]any{"code": 0, "data": map[string]any{"prompt": `{"1":{"class_type":"CLIPTextEncode","inputs":{"text":"hello"}}}`}})
+	}))
+	defer server.Close()
+	externalWorkflowTestClient(app, server)
+	identity := service.Identity{ID: "admin", Role: service.AuthRoleAdmin, Name: "Admin"}
+	status, err := app.customRelayConfigs.Create(identityScope(identity), "image", "RunningHub", "http://runninghub.example", "runninghub-secret", "runninghub")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req := httptest.NewRequest(http.MethodGet, "/api/profile/runninghub-workflows?token_name="+status.TokenName+"&workflow_id=flow&capability=image", nil)
+	setRequestAuthCookie(req, adminSessionToken(t, app))
+	res := httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), `"workflowId":"flow"`) || strings.Contains(res.Body.String(), "runninghub-secret") {
+		t.Fatalf("metadata = %d %s", res.Code, res.Body.String())
+	}
+	other, err := app.customRelayConfigs.Create(identityScope(identity), "image", "OpenAI", "http://runninghub.example", "ordinary-key", "openai")
+	if err != nil {
+		t.Fatal(err)
+	}
+	req = httptest.NewRequest(http.MethodGet, "/api/profile/runninghub-workflows?token_name="+other.TokenName+"&workflow_id=flow", nil)
+	setRequestAuthCookie(req, adminSessionToken(t, app))
+	res = httptest.NewRecorder()
+	app.Handler().ServeHTTP(res, req)
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("non-RunningHub metadata status = %d", res.Code)
+	}
+}
+
 func TestArkAgentPlanModelCandidatesDoNotQueryModels(t *testing.T) {
 	for _, tc := range []struct {
 		protocol, kind, suffix string

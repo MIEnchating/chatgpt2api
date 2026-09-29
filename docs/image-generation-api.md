@@ -1,5 +1,7 @@
 # 内部生图任务文档
 
+Grok、Gemini 的官方接口、NewAPI 请求格式和本项目参数映射，参见 [Grok / Gemini 生图接口及参数](./grok-gemini-image-api.md)。
+
 本文档描述 Web 创作台、无限画布和工作流使用的登录态内部图片任务接口：
 
 - `POST /api/creation-tasks/image-generations`

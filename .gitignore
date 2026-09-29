@@ -14,6 +14,7 @@ jshook/responses/local/
 docs/*
 !docs/architecture.md
 !docs/image-generation-api.md
+!docs/grok-gemini-image-api.md
 !docs/video-generation-api.md
 !docs/windows-desktop.md
 !docs/canvas-alignment.md

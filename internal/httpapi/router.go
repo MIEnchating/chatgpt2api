@@ -49,6 +49,7 @@ func (a *App) routes() []appRoute {
 		subtree("/api/admin/agent-skills", a.handleAgentSkills),
 		subtree("/api/profile/agent-skills", a.handleAgentSkills),
 		exact(http.MethodGet, "/api/profile/autodl-workflows", a.handleAutoDLWorkflows),
+		exact(http.MethodGet, "/api/profile/runninghub-workflows", a.handleRunningHubWorkflows),
 		subtree("/api/admin/video-model-contracts", a.handleAdminVideoModelContracts),
 		exact(http.MethodGet, "/api/announcements", a.handleAnnouncements),
 		exact("", "/api/profile/announcement-preferences", a.handleAnnouncementPreferences),

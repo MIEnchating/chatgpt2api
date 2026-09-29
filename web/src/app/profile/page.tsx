@@ -330,6 +330,7 @@ function CustomRelayConfigDialog({
               <SelectContent>
                 <SelectItem value="openai">OpenAI 兼容协议</SelectItem>
                 {kind === "video" || kind === "audio" ? <SelectItem value="autodl">AutoDL ComfyUI 工作流</SelectItem> : null}
+                {kind === "image" || kind === "video" || kind === "audio" ? <SelectItem value="runninghub">RunningHub 工作流</SelectItem> : null}
                 {kind === "video" ? <SelectItem value="ark">火山方舟 Seedance 原生协议</SelectItem> : null}
               </SelectContent>
             </Select>
@@ -337,7 +338,7 @@ function CustomRelayConfigDialog({
           <label className="grid gap-1.5 text-sm font-medium text-foreground">
             <span>Base URL</span>
             <Input type="url" value={baseURL} onChange={(event) => setBaseURL(event.target.value)} placeholder="https://api.example.com" autoComplete="url" />
-            <span className="text-xs font-normal leading-5 text-muted-foreground">{protocol === "autodl" ? "填写 AutoDL 基础地址，例如 https://autodl.art。工作流目录可在模型配置中拉取。" : protocol === "ark" ? "标准 API 填 https://ark.cn-beijing.volces.com/api/v3；Agent Plan 填 https://ark.cn-beijing.volces.com/api/plan/v3。" : "填写 OpenAI 兼容 API 的基础地址，不包含具体接口路径。"}</span>
+            <span className="text-xs font-normal leading-5 text-muted-foreground">{protocol === "autodl" ? "填写 AutoDL 基础地址，例如 https://autodl.art。工作流目录可在模型配置中拉取。" : protocol === "runninghub" ? "填写 RunningHub 基础地址和积分 API Key，工作流参数通过工作流 ID 拉取。" : protocol === "ark" ? "标准 API 填 https://ark.cn-beijing.volces.com/api/v3；Agent Plan 填 https://ark.cn-beijing.volces.com/api/plan/v3。" : "填写 OpenAI 兼容 API 的基础地址，不包含具体接口路径。"}</span>
           </label>
           <label className="grid gap-1.5 text-sm font-medium text-foreground">
             <span>API Key</span>

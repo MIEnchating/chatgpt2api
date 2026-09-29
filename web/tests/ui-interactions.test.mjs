@@ -550,6 +550,14 @@ test("interactive controls share a visible global disabled state", () => {
   assert.match(videoContractsSource, /<ContractCheckboxField id="video-contract-watermark"/);
 });
 
+test("number inputs hide native browser spinners across Firefox and Chromium", () => {
+  assert.match(globalStylesSource, /input\[type="number"\]\s*\{[\s\S]*-moz-appearance:\s*textfield/);
+  assert.match(globalStylesSource, /input\[type="number"\]\s*\{[\s\S]*appearance:\s*textfield/);
+  assert.match(globalStylesSource, /input\[type="number"\]::-webkit-inner-spin-button/);
+  assert.match(globalStylesSource, /input\[type="number"\]::-webkit-outer-spin-button/);
+  assert.match(globalStylesSource, /-webkit-appearance:\s*none/);
+});
+
 test("shared generation parameter buttons expose their disabled state", () => {
   assert.match(aspectRatioOptionSource, /export function AspectRatioOptionButton/);
   assert.match(imageParameterStylesSource, /disabled:cursor-not-allowed/);

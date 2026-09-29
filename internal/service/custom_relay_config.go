@@ -313,6 +313,10 @@ func normalizeCustomRelayConfig(config CustomRelayConfig) (CustomRelayConfig, er
 		if config.Kind != "video" {
 			return CustomRelayConfig{}, fmt.Errorf("方舟原生协议仅支持视频线路")
 		}
+	case "runninghub":
+		if config.Kind != "image" && config.Kind != "video" && config.Kind != "audio" {
+			return CustomRelayConfig{}, fmt.Errorf("RunningHub 仅支持图片、视频和音频线路")
+		}
 	default:
 		return CustomRelayConfig{}, fmt.Errorf("不支持的自定义 API 协议")
 	}

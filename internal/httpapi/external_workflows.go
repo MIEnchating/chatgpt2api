@@ -92,6 +92,49 @@ func (a *App) handleAutoDLWorkflows(w http.ResponseWriter, r *http.Request) {
 	util.WriteJSON(w, http.StatusOK, map[string]any{"items": items})
 }
 
+func (a *App) handleRunningHubWorkflows(w http.ResponseWriter, r *http.Request) {
+	identity, ok := a.requireIdentity(w, r)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		return
+	}
+	credential, err := a.relayCredentialForIdentitySelection(r.Context(), identity, r.URL.Query().Get("token_group"), r.URL.Query().Get("token_name"))
+	if err != nil {
+		a.writeCreationTaskSubmitError(w, err)
+		return
+	}
+	if credential.Protocol != "runninghub" {
+		util.WriteError(w, http.StatusBadRequest, "请选择协议为 RunningHub 的自定义 API 配置")
+		return
+	}
+	ctx := r.Context()
+	if credential.Custom {
+		ctx = withCustomRelayContext(ctx)
+	}
+	workflowID := strings.TrimSpace(r.URL.Query().Get("workflow_id"))
+	if workflowID == "" {
+		util.WriteError(w, http.StatusBadRequest, "请填写 RunningHub 工作流 ID")
+		return
+	}
+	kind := strings.TrimSpace(r.URL.Query().Get("kind"))
+	if kind == "" {
+		kind = "workflow"
+	}
+	capability := strings.ToLower(strings.TrimSpace(r.URL.Query().Get("capability")))
+	if capability == "" {
+		capability = "image"
+	}
+	entry, err := (protocol.RunningHubClient{HTTP: a.relayHTTPClientForContext(ctx)}).InspectWorkflow(ctx, protocol.RunningHubInspectInput{BaseURL: credential.BaseURL, APIKey: credential.APIKey, Kind: kind, WorkflowID: workflowID, Title: r.URL.Query().Get("title"), Capability: capability})
+	if err != nil {
+		util.WriteError(w, http.StatusBadGateway, err.Error())
+		return
+	}
+	util.WriteJSON(w, http.StatusOK, map[string]any{"items": []model.WorkflowEntry{entry}})
+}
+
 func arkVideoRequest(payload map[string]any, contract protocol.VideoModelContract) (map[string]any, error) {
 	request := declaredCanonicalVideoContractRequestPayload(payload, contract)
 	refs := protocol.ArkVideoReferences{}

@@ -28,8 +28,12 @@ test("classifies reference-project video model families", () => {
 
 
 test("keeps MiniMax M3 language models out of fetched video candidates", () => {
-  const textModels = ["minimax-m3", "MiniMax-M3", "minimax/minimax-m3", "minimax-m3-preview"];
+  const textModels = ["minimax-m2.5", "minimax-m3", "MiniMax-M3", "minimax/minimax-m3", "minimax-m3-preview"];
   const videos = ["minimax-video-01", "hailuo-02", "doubao-seedance-2.0"];
   assert.deepEqual(filterModelsByCapability([...textModels, ...videos], "text"), textModels);
   assert.deepEqual(filterModelsByCapability([...textModels, ...videos], "video"), videos);
+});
+
+test("keeps MiniMax H3 video models in fetched video candidates", () => {
+  assert.deepEqual(filterModelsByCapability(["minimax-h3-768p", "minimax-m2.5"], "video"), ["minimax-h3-768p"]);
 });

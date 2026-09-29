@@ -2245,7 +2245,7 @@ func isPermissionCheckSkipped(method, path string) bool {
 		return true
 	case "/api/profile/upstream-models":
 		return true
-	case "/api/profile/agent-skills", "/api/profile/autodl-workflows":
+	case "/api/profile/agent-skills", "/api/profile/autodl-workflows", "/api/profile/runninghub-workflows":
 		return true
 	case "/api/profile/prompt-favorites":
 		return true

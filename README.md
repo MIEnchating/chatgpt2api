@@ -39,6 +39,7 @@
 | 立即部署服务 | [快速部署](#快速部署) |
 | 配置管理员、代理、并发、存储 | [配置说明](#配置说明) |
 | 查看生图参数、任务状态和错误码 | [生图任务文档](./docs/image-generation-api.md) |
+| 查看 Grok、Gemini 官方接口与项目参数映射 | [Grok / Gemini 生图接口及参数](./docs/grok-gemini-image-api.md) |
 | 查看视频模型参数和上游映射 | [视频生成参数文档](./docs/video-generation-api.md) |
 | 使用画布 Skill、Codex/MCP、AutoDL 和方舟 | [画布功能与接入说明](./docs/canvas-alignment.md) |
 | 构建和使用 Windows 桌面端 | [Windows 桌面说明](./docs/windows-desktop.md) |
