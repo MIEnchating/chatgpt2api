@@ -89,7 +89,7 @@ function DialogContent({
             {body.length > 0 ? (
               <ScrollArea
                 data-slot="dialog-body"
-                className="-mx-1 min-h-0 min-w-0 flex-1 px-1"
+                className="-mx-1 min-h-0 min-w-0 flex-1 pl-1 pr-4"
                 viewportClassName="overscroll-contain py-1"
                 viewClass="grid min-w-0 gap-4"
               >

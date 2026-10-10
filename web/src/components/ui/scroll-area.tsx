@@ -120,6 +120,7 @@ const ScrollArea = React.forwardRef<ScrollAreaHandle, ScrollAreaProps>(function 
   const scrollRef = React.useRef<ScrollPosition>({ scrollTop: 0, scrollLeft: 0 });
   const scrollFrameRef = React.useRef<number | null>(null);
   const hideTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hoveredRef = React.useRef(false);
   const [metrics, setMetrics] = React.useState<ScrollMetrics>(EMPTY_METRICS);
   const metricsRef = React.useRef<ScrollMetrics>(EMPTY_METRICS);
   const [scroll, setScroll] = React.useState<ScrollPosition>({ scrollTop: 0, scrollLeft: 0 });
@@ -196,11 +197,11 @@ const ScrollArea = React.forwardRef<ScrollAreaHandle, ScrollAreaProps>(function 
   }, [effectiveAlways]);
 
   const scheduleScrollbarHide = React.useCallback(() => {
-    if (effectiveAlways || dragRef.current.active) return;
+    if (effectiveAlways || hoveredRef.current || dragRef.current.active) return;
     if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
     hideTimerRef.current = setTimeout(() => {
       hideTimerRef.current = null;
-      if (!dragRef.current.active) setInteracting(false);
+      if (!hoveredRef.current && !dragRef.current.active) setInteracting(false);
     }, 700);
   }, [effectiveAlways]);
 
@@ -210,11 +211,12 @@ const ScrollArea = React.forwardRef<ScrollAreaHandle, ScrollAreaProps>(function 
   }, []);
 
   const handleMouseMove = React.useCallback(() => {
+    hoveredRef.current = true;
     showScrollbar();
-    scheduleScrollbarHide();
-  }, [scheduleScrollbarHide, showScrollbar]);
+  }, [showScrollbar]);
 
   const handleMouseLeave = React.useCallback(() => {
+    hoveredRef.current = false;
     hideScrollbar();
   }, [hideScrollbar]);
 
@@ -341,7 +343,7 @@ const ScrollArea = React.forwardRef<ScrollAreaHandle, ScrollAreaProps>(function 
   const endThumbDrag = (event: React.PointerEvent<HTMLButtonElement>) => {
     dragRef.current.active = false;
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
-    scheduleScrollbarHide();
+    if (!hoveredRef.current) hideScrollbar();
   };
 
   const handleTrackPointerDown = (axis: "x" | "y", event: React.PointerEvent<HTMLDivElement>) => {
@@ -413,6 +415,7 @@ const ScrollArea = React.forwardRef<ScrollAreaHandle, ScrollAreaProps>(function 
       style={rootStyle}
       {...rootProps}
       onKeyDown={native || !manageKeyboard ? onKeyDown : handleKeyDown}
+      onMouseEnter={handleMouseMove}
       onMouseMove={handleMouseMove}
       onMouseLeave={handleMouseLeave}
     >

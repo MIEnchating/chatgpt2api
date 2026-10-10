@@ -317,7 +317,7 @@ function CustomRelayConfigDialog({
 
   return (
     <Dialog open={open} onOpenChange={(value) => { if (!isSaving) onOpenChange(value); }}>
-      <DialogContent className="w-[min(92vw,560px)]" scrollable={false}>
+      <DialogContent className="w-[min(92vw,560px)]">
         <DialogHeader>
           <DialogTitle>{confirmDelete ? "删除自定义 Key" : `${title}自定义 API 配置`}</DialogTitle>
           <DialogDescription className="break-words">{confirmDelete ? `确定删除“${status?.name}”？此配置将被移除，无法继续用于模型请求。` : `仅用于${title}模型请求，保存后会作为独立选项出现在 Key 选择中。`}</DialogDescription>
